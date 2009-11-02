@@ -38,7 +38,7 @@ static int is_ready(int fd)
 	struct timeval timeout;
 	FD_ZERO(&fdset);
 	FD_SET(fd, &fdset);
-	timeout.tv_sec = 0; timeout.tv_usec = 1;
+	timeout.tv_sec = 0; timeout.tv_usec = 100000;
 	return select(1, &fdset, NULL, NULL, &timeout) == 1 ? 1 : 0;
 }
 

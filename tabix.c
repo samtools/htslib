@@ -1,7 +1,11 @@
+#include <string.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include "bgzf.h"
 #include "tabix.h"
 
-#define PACKAGE_VERSION "0.0.0-4 (r503)"
+#define PACKAGE_VERSION "0.0.0-5 (r504)"
 
 static int fetch_func(int l, const char *s, void *data)
 {
@@ -11,12 +15,19 @@ static int fetch_func(int l, const char *s, void *data)
 
 int main(int argc, char *argv[])
 {
-	int c;
+	int c, skip = -1, meta = -1;
 	ti_conf_t conf = ti_conf_gff;
-	while ((c = getopt(argc, argv, "p:s:b:e:")) >= 0) {
+	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:")) >= 0) {
 		switch (c) {
+		case '0': conf.preset |= TI_FLAG_UCSC; break;
+		case 'S': skip = atoi(optarg); break;
+		case 'c': meta = optarg[0]; break;
 		case 'p':
 			if (strcmp(optarg, "gff") == 0) conf = ti_conf_gff;
+			else if (strcmp(optarg, "bed") == 0) conf = ti_conf_bed;
+			else if (strcmp(optarg, "sam") == 0) conf = ti_conf_sam;
+			else if (strcmp(optarg, "vcf") == 0) conf = ti_conf_vcf;
+			else if (strcmp(optarg, "psltbl") == 0) conf = ti_conf_psltbl;
 			else {
 				fprintf(stderr, "[main] unrecognized preset '%s'\n", optarg);
 				return 1;
@@ -27,15 +38,21 @@ int main(int argc, char *argv[])
 		case 'e': conf.ec = atoi(optarg); break;
 		}
 	}
+	if (skip >= 0) conf.line_skip = skip;
+	if (meta >= 0) conf.meta_char = meta;
 	if (optind == argc) {
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Program: tabix (TAB-delimited file InderXer)\n");
 		fprintf(stderr, "Version: %s\n\n", PACKAGE_VERSION);
 		fprintf(stderr, "Usage:   tabix <in.tab.bgz> [region1 [region2 [...]]]\n\n");
-		fprintf(stderr, "Options: -p STR     preset: gff, bed, sam, vcf [gff]\n");
+		fprintf(stderr, "Options: -p STR     preset: gff, bed, sam, vcf, psltbl [gff]\n");
 		fprintf(stderr, "         -s INT     sequence name column [1]\n");
 		fprintf(stderr, "         -b INT     start column [4]\n");
-		fprintf(stderr, "         -e INT     end column [5]\n\n");
+		fprintf(stderr, "         -e INT     end column [5]\n");
+		fprintf(stderr, "         -S INT     skip first INT lines [0]\n");
+		fprintf(stderr, "         -c CHAR    symbol for comment/meta lines [#]\n");
+		fprintf(stderr, "         -0         zero-based coordinate\n");
+		fprintf(stderr, "\n");
 		return 1;
 	}
 	if (optind + 1 == argc)
