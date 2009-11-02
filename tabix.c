@@ -1,6 +1,8 @@
 #include "bgzf.h"
 #include "tabix.h"
 
+#define PACKAGE_VERSION "0.0.0-1 (r500)"
+
 static int fetch_func(int l, const char *s, void *data)
 {
 	printf("%s\n", s);
@@ -27,6 +29,8 @@ int main(int argc, char *argv[])
 	}
 	if (optind == argc) {
 		fprintf(stderr, "\n");
+		fprintf(stderr, "Program: tabix (TAB-delimited file InderXer)\n");
+		fprintf(stderr, "Version: %s\n\n", PACKAGE_VERSION);
 		fprintf(stderr, "Usage:   tabix <in.tab.bgz> [region1 [region2 [...]]]\n\n");
 		fprintf(stderr, "Options: -p STR     preset: gff, bed, sam, vcf [gff]\n");
 		fprintf(stderr, "         -s INT     sequence name column [1]\n");
@@ -43,7 +47,7 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "[main] fail to open the data file.\n");
 			return 1;
 		}
-		if (strcmp(argv[optind+1], "*") == 0) { // retrieve all
+		if (strcmp(argv[optind+1], ".") == 0) { // retrieve all
 			kstring_t *str = calloc(1, sizeof(kstring_t));
 			while (ti_readline(fp, str) >= 0) // FIXME: check return code for error
 				printf("%s\n", str->s);

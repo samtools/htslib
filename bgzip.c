@@ -107,9 +107,9 @@ int main(int argc, char **argv)
 		fprintf(stderr, "[bgzip] Illegal region: [%ld, %ld]\n", start, end);
 		return 1;
 	}
-	if (is_ready(fileno(stdin))) pstdout = 1;
 	if (compress == 1) {
 		int f_src, f_dst = -1;
+		if (is_ready(fileno(stdin))) pstdout = 1;
 		if (argc > optind && !pstdout) {
 			if ((f_src = open(argv[optind], O_RDONLY)) < 0) {
 				fprintf(stderr, "[bgzip] Cannot open file: %s\n", argv[optind]);
@@ -140,8 +140,10 @@ int main(int argc, char **argv)
 		close(f_src);
 		return 0;
 	} else {
-		int f_dst;
-		if (argc <= optind && !pstdout) return bgzip_main_usage();
+		int f_dst, is_stdin = 0;
+		if (argc == optind) pstdout = 1;
+		if (is_ready(fileno(stdin))) is_stdin = 1;
+		if (argc <= optind && !is_stdin) return bgzip_main_usage();
 		if (argc > optind && !pstdout) {
 			char *name;
 			if (strstr(argv[optind], ".gz") - argv[optind] != strlen(argv[optind]) - 3) {
@@ -153,7 +155,7 @@ int main(int argc, char **argv)
 			f_dst = write_open(name, is_forced);
 			free(name);
 		} else f_dst = fileno(stdout);
-		fp = pstdout? bgzf_fdopen(fileno(stdin), "r") : bgzf_open(argv[optind], "r");
+		fp = (argc == optind)? bgzf_fdopen(fileno(stdin), "r") : bgzf_open(argv[optind], "r");
 		if (fp == NULL) {
 			fprintf(stderr, "[bgzip] Could not open file: %s\n", argv[optind]);
 			return 1;
