@@ -1,7 +1,7 @@
 #include "bgzf.h"
 #include "tabix.h"
 
-#define PACKAGE_VERSION "0.0.0-1 (r500)"
+#define PACKAGE_VERSION "0.0.0-2 (r501)"
 
 static int fetch_func(int l, const char *s, void *data)
 {
@@ -49,8 +49,9 @@ int main(int argc, char *argv[])
 		}
 		if (strcmp(argv[optind+1], ".") == 0) { // retrieve all
 			kstring_t *str = calloc(1, sizeof(kstring_t));
-			while (ti_readline(fp, str) >= 0) // FIXME: check return code for error
-				printf("%s\n", str->s);
+			while (ti_readline(fp, str) >= 0) { // FIXME: check return code for error
+				fputs(str->s, stdout); fputc('\n', stdout);
+			}
 			free(str->s); free(str);
 		} else { // retrieve from specified regions
 			ti_index_t *idx;
