@@ -5,7 +5,7 @@
 #include "bgzf.h"
 #include "tabix.h"
 
-#define PACKAGE_VERSION "0.0.0-5 (r504)"
+#define PACKAGE_VERSION "0.1.0 (r506)"
 
 static int fetch_func(int l, const char *s, void *data)
 {
