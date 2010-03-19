@@ -69,8 +69,8 @@ are all stored in the index file and thus not used in data retrieval. [1]
 Column of start chromosomal position. [4]
 .TP
 .BI "-e " INT
-Column of end chromosomal position. The end column can be the same as
-start column, [5]
+Column of end chromosomal position. The end column can be the same as the
+start column. [5]
 .TP
 .BI "-S " INT
 Skip first INT lines in the data file. [0]
@@ -84,7 +84,7 @@ rather than 1-based.
 .RE
 
 .SH EXAMPLE
-grep -v ^"#" unsorted.gff | sort -k1,1 -k4,4n | bgzip -c > sorted.gff.gz;
+(grep ^"#" in.gff; grep -v ^"#" in.gff | sort -k1,1 -k4,4n) | bgzip > sorted.gff.gz;
 
 tabix -p gff sorted.gff.gz;
 
