@@ -82,7 +82,6 @@ int main(int argc, char *argv[])
 			for (i = optind + 1; i < argc; ++i) {
 				int tid, beg, end;
 				if (ti_parse_region(idx, argv[i], &tid, &beg, &end) == 0) {
-					fprintf(stderr, "%d,%d\n", beg, end);
 					ti_fetch(fp, idx, tid, beg, end, 0, fetch_func);
 				} else fprintf(stderr, "[main] invalid region: unknown target name or minus interval.\n");
 			}
