@@ -15,9 +15,9 @@ static int fetch_func(int l, const char *s, void *data)
 
 int main(int argc, char *argv[])
 {
-	int c, skip = -1, meta = -1;
+	int c, skip = -1, meta = -1, list_chrms=0;
 	ti_conf_t conf = ti_conf_gff;
-	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:")) >= 0) {
+	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:l")) >= 0) {
 		switch (c) {
 		case '0': conf.preset |= TI_FLAG_UCSC; break;
 		case 'S': skip = atoi(optarg); break;
@@ -36,6 +36,7 @@ int main(int argc, char *argv[])
 		case 's': conf.sc = atoi(optarg); break;
 		case 'b': conf.bc = atoi(optarg); break;
 		case 'e': conf.ec = atoi(optarg); break;
+        case 'l': list_chrms = 1; break;
 		}
 	}
 	if (skip >= 0) conf.line_skip = skip;
@@ -52,9 +53,12 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         -S INT     skip first INT lines [0]\n");
 		fprintf(stderr, "         -c CHAR    symbol for comment/meta lines [#]\n");
 		fprintf(stderr, "         -0         zero-based coordinate\n");
+		fprintf(stderr, "         -l         list chromosome names\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
+    if (list_chrms)
+        return ti_list_chromosomes(argv[optind]);
 	if (optind + 1 == argc)
 		return ti_index_build(argv[optind], &conf);
 	{ // retrieve
