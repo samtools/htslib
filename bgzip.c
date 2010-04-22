@@ -129,11 +129,8 @@ int main(int argc, char **argv)
 				free(name);
 			}
 		}
-		else if (pstdout)
-		{
-			f_src = fileno(stdin);
-			f_dst = fileno(stdout);
-		}
+		else if (!pstdout && isatty(fileno((FILE *)stdout)) )
+			return bgzip_main_usage();
 
 		fp = bgzf_fdopen(f_dst, "w");
 		buffer = malloc(WINDOW_SIZE);
@@ -174,6 +171,8 @@ int main(int argc, char **argv)
 			f_dst = write_open(name, is_forced);
 			free(name);
 		}
+		else if (!pstdout && isatty(fileno((FILE *)stdin)) )
+			return bgzip_main_usage();
 		else
 		{
 			f_dst = fileno(stdout);
