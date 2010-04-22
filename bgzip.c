@@ -28,19 +28,10 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include "bgzf.h"
 
 static const int WINDOW_SIZE = 64 * 1024;
-
-static int is_ready(int fd)
-{
-	fd_set fdset;
-	struct timeval timeout;
-	FD_ZERO(&fdset);
-	FD_SET(fd, &fdset);
-	timeout.tv_sec = 0; timeout.tv_usec = 100000;
-	return select(1, &fdset, NULL, NULL, &timeout) == 1 ? 1 : 0;
-}
 
 static int bgzip_main_usage()
 {
@@ -48,6 +39,7 @@ static int bgzip_main_usage()
 	fprintf(stderr, "Usage:   bgzip [options] [file] ...\n\n");
 	fprintf(stderr, "Options: -c      write on standard output, keep original files unchanged\n");
 	fprintf(stderr, "         -d      decompress\n");
+	fprintf(stderr, "         -f      overwrite files without asking\n");
 	fprintf(stderr, "         -b INT  decompress at virtual file pointer INT\n");
 	fprintf(stderr, "         -s INT  decompress INT bytes in the uncompressed file\n");
 	fprintf(stderr, "         -h      give this help\n");
@@ -108,16 +100,27 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	if (compress == 1) {
-		int f_src, f_dst = -1;
-		if (is_ready(fileno(stdin))) pstdout = 1;
-		if (argc > optind && !pstdout) {
+		struct stat sbuf;
+		int f_src = fileno(stdin);
+		int f_dst = fileno(stdout);
+
+		if ( argc>optind )
+		{
+			if ( stat(argv[optind],&sbuf)<0 ) 
+			{ 
+				fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), argv[optind]);
+				return 1; 
+			}
+
 			if ((f_src = open(argv[optind], O_RDONLY)) < 0) {
-				fprintf(stderr, "[bgzip] Cannot open file: %s\n", argv[optind]);
+				fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), argv[optind]);
 				return 1;
 			}
-			if (pstdout) {
+
+			if (pstdout)
 				f_dst = fileno(stdout);
-			} else {
+			else
+			{
 				char *name = malloc(sizeof(strlen(argv[optind]) + 5));
 				strcpy(name, argv[optind]);
 				strcat(name, ".gz");
@@ -125,10 +128,13 @@ int main(int argc, char **argv)
 				if (f_dst < 0) return 1;
 				free(name);
 			}
-		} else if (pstdout) { 
+		}
+		else if (pstdout)
+		{
 			f_src = fileno(stdin);
 			f_dst = fileno(stdout);
-		} else return bgzip_main_usage();
+		}
+
 		fp = bgzf_fdopen(f_dst, "w");
 		buffer = malloc(WINDOW_SIZE);
 		while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
@@ -140,25 +146,42 @@ int main(int argc, char **argv)
 		close(f_src);
 		return 0;
 	} else {
-		int f_dst, is_stdin = 0;
-		if (argc == optind) pstdout = 1;
-		if (is_ready(fileno(stdin))) is_stdin = 1;
-		if (argc <= optind && !is_stdin) return bgzip_main_usage();
-		if (argc > optind && !pstdout) {
+		struct stat sbuf;
+		int f_dst;
+
+		if ( argc>optind )
+		{
+			if ( stat(argv[optind],&sbuf)<0 )
+			{
+				fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), argv[optind]);
+				return 1;
+			}
 			char *name;
-			if (strstr(argv[optind], ".gz") - argv[optind] != strlen(argv[optind]) - 3) {
+			int len = strlen(argv[optind]);
+			if ( strcmp(argv[optind]+len-3,".gz") )
+			{
 				fprintf(stderr, "[bgzip] %s: unknown suffix -- ignored\n", argv[optind]);
 				return 1;
 			}
+			fp = bgzf_open(argv[optind], "r");
+			if (fp == NULL) {
+				fprintf(stderr, "[bgzip] Could not open file: %s\n", argv[optind]);
+				return 1;
+			}
+
 			name = strdup(argv[optind]);
 			name[strlen(name) - 3] = '\0';
 			f_dst = write_open(name, is_forced);
 			free(name);
-		} else f_dst = fileno(stdout);
-		fp = (argc == optind)? bgzf_fdopen(fileno(stdin), "r") : bgzf_open(argv[optind], "r");
-		if (fp == NULL) {
-			fprintf(stderr, "[bgzip] Could not open file: %s\n", argv[optind]);
-			return 1;
+		}
+		else
+		{
+			f_dst = fileno(stdout);
+			fp = bgzf_fdopen(fileno(stdin), "r");
+			if (fp == NULL) {
+				fprintf(stderr, "[bgzip] Could not read from stdin: %s\n", strerror(errno));
+				return 1;
+			}
 		}
 		buffer = malloc(WINDOW_SIZE);
 		if (bgzf_seek(fp, start, SEEK_SET) < 0) fail(fp);
