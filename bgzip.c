@@ -121,7 +121,7 @@ int main(int argc, char **argv)
 				f_dst = fileno(stdout);
 			else
 			{
-				char *name = malloc(sizeof(strlen(argv[optind]) + 5));
+				char *name = malloc(strlen(argv[optind]) + 5);
 				strcpy(name, argv[optind]);
 				strcat(name, ".gz");
 				f_dst = write_open(name, is_forced);
