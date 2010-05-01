@@ -2,10 +2,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include "bgzf.h"
 #include "tabix.h"
 
-#define PACKAGE_VERSION "0.1.2 (r543)"
+#define PACKAGE_VERSION "0.1.3-2 (r555)"
 
 static int fetch_func(int l, const char *s, void *data)
 {
@@ -15,9 +16,9 @@ static int fetch_func(int l, const char *s, void *data)
 
 int main(int argc, char *argv[])
 {
-	int c, skip = -1, meta = -1, list_chrms=0;
+	int c, skip = -1, meta = -1, list_chrms = 0, force = 0;
 	ti_conf_t conf = ti_conf_gff;
-	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:l")) >= 0) {
+	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lf")) >= 0) {
 		switch (c) {
 		case '0': conf.preset |= TI_FLAG_UCSC; break;
 		case 'S': skip = atoi(optarg); break;
@@ -37,6 +38,7 @@ int main(int argc, char *argv[])
 		case 'b': conf.bc = atoi(optarg); break;
 		case 'e': conf.ec = atoi(optarg); break;
         case 'l': list_chrms = 1; break;
+		case 'f': force = 1; break;
 		}
 	}
 	if (skip >= 0) conf.line_skip = skip;
@@ -54,13 +56,26 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         -c CHAR    symbol for comment/meta lines [#]\n");
 		fprintf(stderr, "         -0         zero-based coordinate\n");
 		fprintf(stderr, "         -l         list chromosome names\n");
+		fprintf(stderr, "         -f         force to overwrite the index\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
     if (list_chrms)
         return ti_list_chromosomes(argv[optind]);
-	if (optind + 1 == argc)
+	if (optind + 1 == argc) {
+		if (force == 0) {
+			struct stat buf;
+			char *fnidx = calloc(strlen(argv[optind]) + 5, 1);
+			strcat(strcpy(fnidx, argv[optind]), ".tbi");
+			if (stat(fnidx, &buf) == 0) {
+				fprintf(stderr, "[tabix] the index file exists. Please use '-f' to overwrite.\n");
+				free(fnidx);
+				return 1;
+			}
+			free(fnidx);
+		}
 		return ti_index_build(argv[optind], &conf);
+	}
 	{ // retrieve
 		BGZF *fp;
 		fp = bgzf_open(argv[optind], "r");
