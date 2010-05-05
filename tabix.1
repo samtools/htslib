@@ -1,4 +1,4 @@
-.TH tabix 1 "16 March 2009" "tabix-0.1.1" "Bioinformatics tools"
+.TH tabix 1 "5 May 2010" "tabix-0.1.5" "Bioinformatics tools"
 .SH NAME
 .PP
 bgzip - Block compression/decompression utility
@@ -15,7 +15,7 @@ tabix - Generic indexer for TAB-delimited genome position files
 .RI [ file ]
 .PP
 .B tabix
-.RB [ \-0 ]
+.RB [ \-0lf ]
 .RB [ \-p
 .R gff|bed|sam|vcf]
 .RB [ \-s
@@ -81,6 +81,12 @@ Skip lines started with character CHAR. [#]
 .B -0
 Specify that the position in the data file is 0-based (e.g. UCSC files)
 rather than 1-based.
+.TP
+.B -f
+Force to overwrite the index file if it is present.
+.TP
+.B -l
+List the sequence names stored in the index file.
 .RE
 
 .SH EXAMPLE
