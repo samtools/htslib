@@ -6,7 +6,7 @@
 #include "bgzf.h"
 #include "tabix.h"
 
-#define PACKAGE_VERSION "0.1.6 (r563)"
+#define PACKAGE_VERSION "0.1.6 (r565)"
 
 int main(int argc, char *argv[])
 {
