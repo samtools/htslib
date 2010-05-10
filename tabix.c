@@ -6,13 +6,7 @@
 #include "bgzf.h"
 #include "tabix.h"
 
-#define PACKAGE_VERSION "0.1.5 (r560)"
-
-static int fetch_func(int l, const char *s, void *data)
-{
-	printf("%s\n", s);
-	return 0;
-}
+#define PACKAGE_VERSION "0.1.6 (r563)"
 
 int main(int argc, char *argv[])
 {
@@ -60,8 +54,21 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "\n");
 		return 1;
 	}
-    if (list_chrms)
-        return ti_list_chromosomes(argv[optind]);
+    if (list_chrms) {
+		ti_index_t *idx;
+		int i, n;
+		const char **names;
+		idx = ti_index_load(argv[optind]);
+		if (idx == 0) {
+			fprintf(stderr, "[main] fail to load the index file.\n");
+			return 1;
+		}
+		names = ti_seqname(idx, &n);
+		for (i = 0; i < n; ++i) printf("%s\n", names[i]);
+		free(names);
+		ti_index_destroy(idx);
+		return 0;
+	}
 	if (optind + 1 == argc) {
 		if (force == 0) {
 			struct stat buf;
@@ -84,11 +91,14 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 		if (strcmp(argv[optind+1], ".") == 0) { // retrieve all
-			kstring_t *str = calloc(1, sizeof(kstring_t));
-			while (ti_readline(fp, str) >= 0) { // FIXME: check return code for error
-				fputs(str->s, stdout); fputc('\n', stdout);
+			ti_iter_t iter;
+			const char *s;
+			int len;
+			iter = ti_first(fp);
+			while ((s = ti_iter_read(iter, &len)) != 0) {
+				fputs(s, stdout); fputc('\n', stdout);
 			}
-			free(str->s); free(str);
+			ti_iter_destroy(iter);
 		} else { // retrieve from specified regions
 			ti_index_t *idx;
 			int i;
@@ -101,7 +111,14 @@ int main(int argc, char *argv[])
 			for (i = optind + 1; i < argc; ++i) {
 				int tid, beg, end;
 				if (ti_parse_region(idx, argv[i], &tid, &beg, &end) == 0) {
-					ti_fetch(fp, idx, tid, beg, end, 0, fetch_func);
+					ti_iter_t iter;
+					const char *s;
+					int len;
+					iter = ti_query(fp, idx, tid, beg, end);
+					while ((s = ti_iter_read(iter, &len)) != 0) {
+						fputs(s, stdout); fputc('\n', stdout);
+					}
+					ti_iter_destroy(iter);
 				} else fprintf(stderr, "[main] invalid region: unknown target name or minus interval.\n");
 			}
 			ti_index_destroy(idx);
