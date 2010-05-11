@@ -84,9 +84,8 @@ int main(int argc, char *argv[])
 		return ti_index_build(argv[optind], &conf);
 	}
 	{ // retrieve
-		BGZF *fp;
-		fp = bgzf_open(argv[optind], "r");
-		if (fp == 0) {
+		tabix_t *t;
+		if ((t = ti_open(argv[optind], 0)) == 0) {
 			fprintf(stderr, "[main] fail to open the data file.\n");
 			return 1;
 		}
@@ -94,36 +93,29 @@ int main(int argc, char *argv[])
 			ti_iter_t iter;
 			const char *s;
 			int len;
-			iter = ti_first(fp);
-			while ((s = ti_iter_read(iter, &len)) != 0) {
+			iter = ti_query(t, 0, 0, 0);
+			while ((s = ti_read(t, iter, &len)) != 0) {
 				fputs(s, stdout); fputc('\n', stdout);
 			}
 			ti_iter_destroy(iter);
 		} else { // retrieve from specified regions
-			ti_index_t *idx;
 			int i;
-			idx = ti_index_load(argv[optind]);
-			if (idx == 0) {
-				bgzf_close(fp);
-				fprintf(stderr, "[main] fail to load the index.\n");
-				return 1;
-			}
+			ti_lazy_index_load(t);
 			for (i = optind + 1; i < argc; ++i) {
 				int tid, beg, end;
-				if (ti_parse_region(idx, argv[i], &tid, &beg, &end) == 0) {
+				if (ti_parse_region(t->idx, argv[i], &tid, &beg, &end) == 0) {
 					ti_iter_t iter;
 					const char *s;
 					int len;
-					iter = ti_query(fp, idx, tid, beg, end);
-					while ((s = ti_iter_read(iter, &len)) != 0) {
+					iter = ti_queryi(t, tid, beg, end);
+					while ((s = ti_read(t, iter, &len)) != 0) {
 						fputs(s, stdout); fputc('\n', stdout);
 					}
 					ti_iter_destroy(iter);
 				} else fprintf(stderr, "[main] invalid region: unknown target name or minus interval.\n");
 			}
-			ti_index_destroy(idx);
 		}
-		bgzf_close(fp);
+		ti_close(t);
 	}
 	return 0;
 }
