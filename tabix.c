@@ -6,7 +6,7 @@
 #include "bgzf.h"
 #include "tabix.h"
 
-#define PACKAGE_VERSION "0.2.1 (r582)"
+#define PACKAGE_VERSION "0.2.2 (r603)"
 
 int main(int argc, char *argv[])
 {
@@ -21,7 +21,7 @@ int main(int argc, char *argv[])
 			if (strcmp(optarg, "gff") == 0) conf = ti_conf_gff;
 			else if (strcmp(optarg, "bed") == 0) conf = ti_conf_bed;
 			else if (strcmp(optarg, "sam") == 0) conf = ti_conf_sam;
-			else if (strcmp(optarg, "vcf") == 0) conf = ti_conf_vcf;
+			else if (strcmp(optarg, "vcf") == 0 || strcmp(optarg, "vcf4") == 0) conf = ti_conf_vcf;
 			else if (strcmp(optarg, "psltbl") == 0) conf = ti_conf_psltbl;
 			else {
 				fprintf(stderr, "[main] unrecognized preset '%s'\n", optarg);
