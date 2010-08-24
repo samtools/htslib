@@ -81,6 +81,11 @@ int main(int argc, char *argv[])
 			}
 			free(fnidx);
 		}
+        if ( is_bgzipped(argv[optind])!=1 )
+        {
+            fprintf(stderr,"[tabix] was bgzip used to compress this file? %s\n", argv[optind]);
+            return 1;
+        }
 		return ti_index_build(argv[optind], &conf);
 	}
 	{ // retrieve
