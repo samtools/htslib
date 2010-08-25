@@ -105,7 +105,11 @@ int main(int argc, char *argv[])
 			ti_iter_destroy(iter);
 		} else { // retrieve from specified regions
 			int i;
-			ti_lazy_index_load(t);
+			if ( ti_lazy_index_load(t) ) 
+            {
+                fprintf(stderr,"[tabix] failed to load the index file.\n");
+                return 1;
+            }
 			for (i = optind + 1; i < argc; ++i) {
 				int tid, beg, end;
 				if (ti_parse_region(t->idx, argv[i], &tid, &beg, &end) == 0) {
