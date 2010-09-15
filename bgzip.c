@@ -138,7 +138,7 @@ int main(int argc, char **argv)
 			if (bgzf_write(fp, buffer, c) < 0) fail(fp);
 		// f_dst will be closed here
 		if (bgzf_close(fp) < 0) fail(fp);
-		if (argc > optind) unlink(argv[optind]);
+		if (argc > optind && !pstdout) unlink(argv[optind]);
 		free(buffer);
 		close(f_src);
 		return 0;
@@ -166,10 +166,15 @@ int main(int argc, char **argv)
 				return 1;
 			}
 
-			name = strdup(argv[optind]);
-			name[strlen(name) - 3] = '\0';
-			f_dst = write_open(name, is_forced);
-			free(name);
+			if (pstdout) {
+				f_dst = fileno(stdout);
+			}
+			else {
+				name = strdup(argv[optind]);
+				name[strlen(name) - 3] = '\0';
+				f_dst = write_open(name, is_forced);
+				free(name);
+			}
 		}
 		else if (!pstdout && isatty(fileno((FILE *)stdin)) )
 			return bgzip_main_usage();
