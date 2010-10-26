@@ -10,9 +10,9 @@
 
 int main(int argc, char *argv[])
 {
-	int c, skip = -1, meta = -1, list_chrms = 0, force = 0;
+	int c, skip = -1, meta = -1, list_chrms = 0, force = 0, print_header = 0;
 	ti_conf_t conf = ti_conf_gff;
-	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lf")) >= 0) {
+	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lhf")) >= 0) {
 		switch (c) {
 		case '0': conf.preset |= TI_FLAG_UCSC; break;
 		case 'S': skip = atoi(optarg); break;
@@ -32,6 +32,7 @@ int main(int argc, char *argv[])
 		case 'b': conf.bc = atoi(optarg); break;
 		case 'e': conf.ec = atoi(optarg); break;
         case 'l': list_chrms = 1; break;
+        case 'h': print_header = 1; break;
 		case 'f': force = 1; break;
 		}
 	}
@@ -49,6 +50,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         -S INT     skip first INT lines [0]\n");
 		fprintf(stderr, "         -c CHAR    symbol for comment/meta lines [#]\n");
 		fprintf(stderr, "         -0         zero-based coordinate\n");
+		fprintf(stderr, "         -h         print the VCF header\n");
 		fprintf(stderr, "         -l         list chromosome names\n");
 		fprintf(stderr, "         -f         force to overwrite the index\n");
 		fprintf(stderr, "\n");
@@ -110,12 +112,23 @@ int main(int argc, char *argv[])
                 fprintf(stderr,"[tabix] failed to load the index file.\n");
                 return 1;
             }
+
+            ti_iter_t iter;
+            const char *s;
+            int len;
+            if ( print_header )
+            {
+                // If requested, print the header lines here
+                iter = ti_query(t, 0, 0, 0);
+                while ((s = ti_read(t, iter, &len)) != 0) {
+                    if ( *s != '#' ) break;
+                    fputs(s, stdout); fputc('\n', stdout);
+                }
+                ti_iter_destroy(iter);
+            }
 			for (i = optind + 1; i < argc; ++i) {
 				int tid, beg, end;
 				if (ti_parse_region(t->idx, argv[i], &tid, &beg, &end) == 0) {
-					ti_iter_t iter;
-					const char *s;
-					int len;
 					iter = ti_queryi(t, tid, beg, end);
 					while ((s = ti_read(t, iter, &len)) != 0) {
 						fputs(s, stdout); fputc('\n', stdout);
