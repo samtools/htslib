@@ -134,7 +134,8 @@ int main(int argc, char *argv[])
 						fputs(s, stdout); fputc('\n', stdout);
 					}
 					ti_iter_destroy(iter);
-				} else fprintf(stderr, "[main] invalid region: unknown target name or minus interval.\n");
+				} 
+                // else fprintf(stderr, "[main] invalid region: unknown target name or minus interval.\n");
 			}
 		}
 		ti_close(t);
