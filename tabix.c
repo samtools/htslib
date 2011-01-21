@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
         // Common source of errors: new VCF is used with an old index
         stat(fnidx, &stat_tbi);
         stat(argv[optind], &stat_vcf);
-        if ( force==0 && stat_vcf.st_mtime >= stat_tbi.st_mtime )
+        if ( force==0 && stat_vcf.st_mtime > stat_tbi.st_mtime )
         {
             fprintf(stderr, "[tabix] the index file is older than the vcf file. Please use '-f' to overwrite or reindex.\n");
             free(fnidx);
