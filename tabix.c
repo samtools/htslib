@@ -71,26 +71,46 @@ int main(int argc, char *argv[])
 		ti_index_destroy(idx);
 		return 0;
 	}
+
+    struct stat stat_tbi,stat_vcf;
+    char *fnidx = calloc(strlen(argv[optind]) + 5, 1);
+    strcat(strcpy(fnidx, argv[optind]), ".tbi");
+
 	if (optind + 1 == argc) {
 		if (force == 0) {
-			struct stat buf;
-			char *fnidx = calloc(strlen(argv[optind]) + 5, 1);
-			strcat(strcpy(fnidx, argv[optind]), ".tbi");
-			if (stat(fnidx, &buf) == 0) {
-				fprintf(stderr, "[tabix] the index file exists. Please use '-f' to overwrite.\n");
-				free(fnidx);
-				return 1;
+			if (stat(fnidx, &stat_tbi) == 0) 
+            {
+                // Before complaining, check if the VCF file isn't newer. This is a common source of errors,
+                //  people tend not to notice that tabix failed
+                stat(argv[optind], &stat_vcf);
+                if ( stat_vcf.st_mtime <= stat_tbi.st_mtime )
+                {
+                    fprintf(stderr, "[tabix] the index file exists. Please use '-f' to overwrite.\n");
+                    free(fnidx);
+                    return 1;
+                }
 			}
-			free(fnidx);
 		}
         if ( is_bgzipped(argv[optind])!=1 )
         {
             fprintf(stderr,"[tabix] was bgzip used to compress this file? %s\n", argv[optind]);
+            free(fnidx);
             return 1;
         }
 		return ti_index_build(argv[optind], &conf);
 	}
 	{ // retrieve
+        // Common source of errors: new VCF is used with an old index
+        stat(fnidx, &stat_tbi);
+        stat(argv[optind], &stat_vcf);
+        if ( force==0 && stat_vcf.st_mtime >= stat_tbi.st_mtime )
+        {
+            fprintf(stderr, "[tabix] the index file is older than the vcf file. Please use '-f' to overwrite or reindex.\n");
+            free(fnidx);
+            return 1;
+        }
+        free(fnidx);
+
 		tabix_t *t;
 		if ((t = ti_open(argv[optind], 0)) == 0) {
 			fprintf(stderr, "[main] fail to open the data file.\n");
