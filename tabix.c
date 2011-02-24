@@ -3,16 +3,107 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include "bgzf.h"
 #include "tabix.h"
 
-#define PACKAGE_VERSION "0.2.3 (r876)"
+#define PACKAGE_VERSION "0.2.3 (r916)"
+
+#define error(...) { fprintf(stderr,__VA_ARGS__); return -1; }
+
+int reheader_file(const char *header, const char *file, int meta)
+{
+    BGZF *fp = bgzf_open(file,"r");
+    if (bgzf_read_block(fp) != 0 || !fp->block_length)
+        return -1;
+    
+    char *buffer = fp->uncompressed_block;
+    int skip_until = 0;
+
+    if ( buffer[0]==meta )
+    {
+        skip_until = 1;
+
+        // Skip the header
+        while (1)
+        {
+            if ( buffer[skip_until]=='\n' )
+            {
+                skip_until++;
+                if ( skip_until>=fp->block_length )
+                {
+                    if (bgzf_read_block(fp) != 0 || !fp->block_length)
+                        error("no body?\n");
+                    skip_until = 0;
+                }
+                // The header has finished
+                if ( buffer[skip_until]!=meta ) break;
+            }
+            skip_until++;
+            if ( skip_until>=fp->block_length )
+            {
+                if (bgzf_read_block(fp) != 0 || !fp->block_length)
+                    error("no body?\n");
+                skip_until = 0;
+            }
+        }
+    }
+
+    FILE *fh = fopen(header,"r");
+    if ( !fh )
+        error("%s: %s", header,strerror(errno));
+    int page_size = getpagesize();
+    char *buf = valloc(page_size);
+    BGZF *bgzf_out = bgzf_fdopen(fileno(stdout), "w");
+    ssize_t nread;
+    while ( (nread=fread(buf,1,page_size-1,fh))>0 )
+    {
+        if ( nread<page_size-1 && buf[nread-1]!='\n' )
+            buf[nread++] = '\n';
+        if (bgzf_write(bgzf_out, buf, nread) < 0) error("Error: %s\n",bgzf_out->error);
+    }
+    fclose(fh);
+
+    if ( fp->block_length - skip_until > 0 )
+    {
+        if (bgzf_write(bgzf_out, buffer+skip_until, fp->block_length-skip_until) < 0) 
+            error("Error: %s\n",fp->error);
+    }
+    if (bgzf_flush_block(bgzf_out) < 0) 
+        error("Error: %s\n",bgzf_out->error);
+
+    while (1)
+    {
+#ifdef _USE_KNETFILE
+        nread = knet_read(fp->x.fpr, buf, page_size);
+#else
+        nread = fread(buf, 1, page_size, fp->file);
+#endif
+        if ( nread<=0 ) 
+            break;
+
+#ifdef _USE_KNETFILE
+        int count = fwrite(buf, 1, nread, bgzf_out->x.fpw);
+#else
+        int count = fwrite(buf, 1, nread, bgzf_out->file);
+#endif
+        if (count != nread)
+            error("Write failed, wrote %d instead of %d bytes.\n", count,(int)nread);
+    }
+
+    if (bgzf_close(bgzf_out) < 0) 
+        error("Error: %s\n",bgzf_out->error);
+   
+    return 0;
+}
+
 
 int main(int argc, char *argv[])
 {
 	int c, skip = -1, meta = -1, list_chrms = 0, force = 0, print_header = 0;
 	ti_conf_t conf = ti_conf_gff;
-	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lhf")) >= 0) {
+    const char *reheader = NULL;
+	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lhfr:")) >= 0) {
 		switch (c) {
 		case '0': conf.preset |= TI_FLAG_UCSC; break;
 		case 'S': skip = atoi(optarg); break;
@@ -34,6 +125,7 @@ int main(int argc, char *argv[])
         case 'l': list_chrms = 1; break;
         case 'h': print_header = 1; break;
 		case 'f': force = 1; break;
+        case 'r': reheader = optarg; break;
 		}
 	}
 	if (skip >= 0) conf.line_skip = skip;
@@ -53,6 +145,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         -h         print the VCF header\n");
 		fprintf(stderr, "         -l         list chromosome names\n");
 		fprintf(stderr, "         -f         force to overwrite the index\n");
+	    fprintf(stderr, "         -r FILE    replace the header section of the bgzipped file with the content of the given file\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
@@ -71,6 +164,9 @@ int main(int argc, char *argv[])
 		ti_index_destroy(idx);
 		return 0;
 	}
+    if (reheader)
+        return reheader_file(reheader,argv[optind],conf.meta_char);
+
 
     struct stat stat_tbi,stat_vcf;
     char *fnidx = calloc(strlen(argv[optind]) + 5, 1);
