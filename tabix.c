@@ -69,7 +69,7 @@ int reheader_file(const char *header, const char *file, int meta)
         if (bgzf_write(bgzf_out, buffer+skip_until, fp->block_length-skip_until) < 0) 
             error("Error: %s\n",fp->error);
     }
-    if (bgzf_flush_block(bgzf_out) < 0) 
+    if (bgzf_flush(bgzf_out) < 0) 
         error("Error: %s\n",bgzf_out->error);
 
     while (1)
@@ -188,7 +188,7 @@ int main(int argc, char *argv[])
                 }
 			}
 		}
-        if ( is_bgzipped(argv[optind])!=1 )
+        if ( bgzf_check_bgzf(argv[optind])!=1 )
         {
             fprintf(stderr,"[tabix] was bgzip used to compress this file? %s\n", argv[optind]);
             free(fnidx);
