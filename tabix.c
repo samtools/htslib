@@ -7,7 +7,7 @@
 #include "bgzf.h"
 #include "tabix.h"
 
-#define PACKAGE_VERSION "0.2.3 (r916)"
+#define PACKAGE_VERSION "0.2.3 (r937)"
 
 #define error(...) { fprintf(stderr,__VA_ARGS__); return -1; }
 
@@ -100,11 +100,12 @@ int reheader_file(const char *header, const char *file, int meta)
 
 int main(int argc, char *argv[])
 {
-	int c, skip = -1, meta = -1, list_chrms = 0, force = 0, print_header = 0;
+	int c, skip = -1, meta = -1, list_chrms = 0, force = 0, print_header = 0, bed_reg = 0;
 	ti_conf_t conf = ti_conf_gff;
     const char *reheader = NULL;
-	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lhfr:")) >= 0) {
+	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lhfBr:")) >= 0) {
 		switch (c) {
+		case 'B': bed_reg = 1; break;
 		case '0': conf.preset |= TI_FLAG_UCSC; break;
 		case 'S': skip = atoi(optarg); break;
 		case 'c': meta = optarg[0]; break;
@@ -141,11 +142,12 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "         -e INT     end column [5]\n");
 		fprintf(stderr, "         -S INT     skip first INT lines [0]\n");
 		fprintf(stderr, "         -c CHAR    symbol for comment/meta lines [#]\n");
+	    fprintf(stderr, "         -r FILE    replace the header with the content of FILE [null]\n");
+		fprintf(stderr, "         -B         region1 is a BED file\n");
 		fprintf(stderr, "         -0         zero-based coordinate\n");
 		fprintf(stderr, "         -h         print the VCF header\n");
 		fprintf(stderr, "         -l         list chromosome names\n");
 		fprintf(stderr, "         -f         force to overwrite the index\n");
-	    fprintf(stderr, "         -r FILE    replace the header section of the bgzipped file with the content of the given file\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
@@ -167,10 +169,9 @@ int main(int argc, char *argv[])
     if (reheader)
         return reheader_file(reheader,argv[optind],conf.meta_char);
 
-
-    struct stat stat_tbi,stat_vcf;
+	struct stat stat_tbi,stat_vcf;
     char *fnidx = calloc(strlen(argv[optind]) + 5, 1);
-    strcat(strcpy(fnidx, argv[optind]), ".tbi");
+   	strcat(strcpy(fnidx, argv[optind]), ".tbi");
 
 	if (optind + 1 == argc) {
 		if (force == 0) {
@@ -196,6 +197,7 @@ int main(int argc, char *argv[])
 		return ti_index_build(argv[optind], &conf);
 	}
 	{ // retrieve
+		tabix_t *t;
         // Common source of errors: new VCF is used with an old index
         stat(fnidx, &stat_tbi);
         stat(argv[optind], &stat_vcf);
@@ -207,7 +209,6 @@ int main(int argc, char *argv[])
         }
         free(fnidx);
 
-		tabix_t *t;
 		if ((t = ti_open(argv[optind], 0)) == 0) {
 			fprintf(stderr, "[main] fail to open the data file.\n");
 			return 1;
@@ -222,36 +223,65 @@ int main(int argc, char *argv[])
 			}
 			ti_iter_destroy(iter);
 		} else { // retrieve from specified regions
-			int i;
-			if ( ti_lazy_index_load(t) ) 
-            {
+			int i, len;
+            ti_iter_t iter;
+            const char *s;
+			const ti_conf_t *idxconf;
+
+			if (ti_lazy_index_load(t) < 0 && bed_reg == 0) {
                 fprintf(stderr,"[tabix] failed to load the index file.\n");
                 return 1;
             }
+			idxconf = ti_get_conf(t->idx);
 
-            ti_iter_t iter;
-            const char *s;
-            int len;
             if ( print_header )
             {
                 // If requested, print the header lines here
                 iter = ti_query(t, 0, 0, 0);
                 while ((s = ti_read(t, iter, &len)) != 0) {
-                    if ( *s != '#' ) break;
+                    if ((int)(*s) != idxconf->meta_char) break;
                     fputs(s, stdout); fputc('\n', stdout);
                 }
                 ti_iter_destroy(iter);
             }
-			for (i = optind + 1; i < argc; ++i) {
-				int tid, beg, end;
-				if (ti_parse_region(t->idx, argv[i], &tid, &beg, &end) == 0) {
-					iter = ti_queryi(t, tid, beg, end);
-					while ((s = ti_read(t, iter, &len)) != 0) {
-						fputs(s, stdout); fputc('\n', stdout);
+			if (bed_reg) {
+				extern int bed_overlap(const void *_h, const char *chr, int beg, int end);
+				extern void *bed_read(const char *fn);
+				extern void bed_destroy(void *_h);
+
+				const ti_conf_t *conf_ = idxconf? idxconf : &conf; // use the index file if available
+				void *bed = bed_read(argv[optind+1]); // load the BED file
+				ti_interval_t intv;
+
+				if (bed == 0) {
+					fprintf(stderr, "[main] fail to read the BED file.\n");
+					return 1;
+				}
+				iter = ti_query(t, 0, 0, 0);
+				while ((s = ti_read(t, iter, &len)) != 0) {
+					int c = *intv.se;
+					ti_get_intv(conf_, len, (char*)s, &intv);
+					*intv.se = '\0';
+					if (bed_overlap(bed, intv.ss, intv.beg, intv.end)) {
+						*intv.se = c;
+						puts(s);
 					}
-					ti_iter_destroy(iter);
-				} 
-                // else fprintf(stderr, "[main] invalid region: unknown target name or minus interval.\n");
+					*intv.se = c;
+				}
+                ti_iter_destroy(iter);
+				bed_destroy(bed);
+			} else {
+				for (i = optind + 1; i < argc; ++i) {
+					int tid, beg, end;
+					if (ti_parse_region(t->idx, argv[i], &tid, &beg, &end) == 0) {
+						iter = ti_queryi(t, tid, beg, end);
+							while ((s = ti_read(t, iter, &len)) != 0) {
+							fputs(s, stdout); fputc('\n', stdout);
+						}
+						ti_iter_destroy(iter);
+					} 
+            	    // else fprintf(stderr, "[main] invalid region: unknown target name or minus interval.\n");
+				}
 			}
 		}
 		ti_close(t);
