@@ -259,9 +259,9 @@ int main(int argc, char *argv[])
 				}
 				iter = ti_query(t, 0, 0, 0);
 				while ((s = ti_read(t, iter, &len)) != 0) {
-					int c = *intv.se;
+					int c;
 					ti_get_intv(conf_, len, (char*)s, &intv);
-					*intv.se = '\0';
+					c = *intv.se; *intv.se = '\0';
 					if (bed_overlap(bed, intv.ss, intv.beg, intv.end)) {
 						*intv.se = c;
 						puts(s);
