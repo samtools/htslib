@@ -7,7 +7,7 @@
 #include "bgzf.h"
 #include "tabix.h"
 
-#define PACKAGE_VERSION "0.2.4 (r942)"
+#define PACKAGE_VERSION "0.2.4 (r949)"
 
 #define error(...) { fprintf(stderr,__VA_ARGS__); return -1; }
 
@@ -139,13 +139,13 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Options: -p STR     preset: gff, bed, sam, vcf, psltbl [gff]\n");
 		fprintf(stderr, "         -s INT     sequence name column [1]\n");
 		fprintf(stderr, "         -b INT     start column [4]\n");
-		fprintf(stderr, "         -e INT     end column [5]\n");
+		fprintf(stderr, "         -e INT     end column; can be identical to '-b' [5]\n");
 		fprintf(stderr, "         -S INT     skip first INT lines [0]\n");
 		fprintf(stderr, "         -c CHAR    symbol for comment/meta lines [#]\n");
 	    fprintf(stderr, "         -r FILE    replace the header with the content of FILE [null]\n");
-		fprintf(stderr, "         -B         region1 is a BED file\n");
+		fprintf(stderr, "         -B         region1 is a BED file (entire file will be read)\n");
 		fprintf(stderr, "         -0         zero-based coordinate\n");
-		fprintf(stderr, "         -h         print the VCF header\n");
+		fprintf(stderr, "         -h         print the header lines\n");
 		fprintf(stderr, "         -l         list chromosome names\n");
 		fprintf(stderr, "         -f         force to overwrite the index\n");
 		fprintf(stderr, "\n");
