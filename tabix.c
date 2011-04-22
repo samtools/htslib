@@ -7,7 +7,7 @@
 #include "bgzf.h"
 #include "tabix.h"
 
-#define PACKAGE_VERSION "0.2.4 (r949)"
+#define PACKAGE_VERSION "0.2.5 (r964)"
 
 #define error(...) { fprintf(stderr,__VA_ARGS__); return -1; }
 
