@@ -198,14 +198,19 @@ int main(int argc, char *argv[])
 	}
 	{ // retrieve
 		tabix_t *t;
-        // Common source of errors: new VCF is used with an old index
-        stat(fnidx, &stat_tbi);
-        stat(argv[optind], &stat_vcf);
-        if ( force==0 && stat_vcf.st_mtime > stat_tbi.st_mtime )
+        // On some systems, stat on non-existent files returns undefined value for sm_mtime, the user had to use -f
+        int is_remote = (strstr(fnidx, "ftp://") == fnidx || strstr(fnidx, "http://") == fnidx) ? 1 : 0;
+        if ( !is_remote )
         {
-            fprintf(stderr, "[tabix] the index file is older than the vcf file. Please use '-f' to overwrite or reindex.\n");
-            free(fnidx);
-            return 1;
+            // Common source of errors: new VCF is used with an old index
+            stat(fnidx, &stat_tbi);
+            stat(argv[optind], &stat_vcf);
+            if ( force==0 && stat_vcf.st_mtime > stat_tbi.st_mtime )
+            {
+                fprintf(stderr, "[tabix] the index file is older than the vcf file. Please use '-f' to overwrite or reindex.\n");
+                free(fnidx);
+                return 1;
+            }
         }
         free(fnidx);
 
