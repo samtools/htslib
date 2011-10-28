@@ -72,7 +72,7 @@ static int write_open(const char *fn, int is_forced)
 
 static void fail(BGZF* fp)
 {
-    fprintf(stderr, "Error: %s\n", fp->error);
+    fprintf(stderr, "Error: %d\n", fp->errcode);
     exit(1);
 }
 
@@ -132,7 +132,7 @@ int main(int argc, char **argv)
 		else if (!pstdout && isatty(fileno((FILE *)stdout)) )
 			return bgzip_main_usage();
 
-		fp = bgzf_fdopen(f_dst, "w");
+		fp = bgzf_dopen(f_dst, "w");
 		buffer = malloc(WINDOW_SIZE);
 		while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
 			if (bgzf_write(fp, buffer, c) < 0) fail(fp);
@@ -181,7 +181,7 @@ int main(int argc, char **argv)
 		else
 		{
 			f_dst = fileno(stdout);
-			fp = bgzf_fdopen(fileno(stdin), "r");
+			fp = bgzf_dopen(fileno(stdin), "r");
 			if (fp == NULL) {
 				fprintf(stderr, "[bgzip] Could not read from stdin: %s\n", strerror(errno));
 				return 1;

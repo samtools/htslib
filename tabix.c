@@ -6,6 +6,7 @@
 #include <errno.h>
 #include "bgzf.h"
 #include "tabix.h"
+#include "knetfile.h"
 
 #define PACKAGE_VERSION "0.2.5 (r964)"
 
@@ -54,45 +55,41 @@ int reheader_file(const char *header, const char *file, int meta)
         error("%s: %s", header,strerror(errno));
     int page_size = getpagesize();
     char *buf = valloc(page_size);
-    BGZF *bgzf_out = bgzf_fdopen(fileno(stdout), "w");
+    BGZF *bgzf_out = bgzf_dopen(fileno(stdout), "w");
     ssize_t nread;
     while ( (nread=fread(buf,1,page_size-1,fh))>0 )
     {
         if ( nread<page_size-1 && buf[nread-1]!='\n' )
             buf[nread++] = '\n';
-        if (bgzf_write(bgzf_out, buf, nread) < 0) error("Error: %s\n",bgzf_out->error);
+        if (bgzf_write(bgzf_out, buf, nread) < 0) error("Error: %d\n",bgzf_out->errcode);
     }
     fclose(fh);
 
     if ( fp->block_length - skip_until > 0 )
     {
         if (bgzf_write(bgzf_out, buffer+skip_until, fp->block_length-skip_until) < 0) 
-            error("Error: %s\n",fp->error);
+            error("Error: %d\n",fp->errcode);
     }
     if (bgzf_flush(bgzf_out) < 0) 
-        error("Error: %s\n",bgzf_out->error);
+        error("Error: %d\n",bgzf_out->errcode);
 
     while (1)
     {
 #ifdef _USE_KNETFILE
-        nread = knet_read(fp->x.fpr, buf, page_size);
+        nread = knet_read(fp->fp, buf, page_size);
 #else
-        nread = fread(buf, 1, page_size, fp->file);
+        nread = fread(buf, 1, page_size, fp->fp);
 #endif
         if ( nread<=0 ) 
             break;
 
-#ifdef _USE_KNETFILE
-        int count = fwrite(buf, 1, nread, bgzf_out->x.fpw);
-#else
-        int count = fwrite(buf, 1, nread, bgzf_out->file);
-#endif
+        int count = fwrite(buf, 1, nread, bgzf_out->fp);
         if (count != nread)
             error("Write failed, wrote %d instead of %d bytes.\n", count,(int)nread);
     }
 
     if (bgzf_close(bgzf_out) < 0) 
-        error("Error: %s\n",bgzf_out->error);
+        error("Error: %d\n",bgzf_out->errcode);
    
     return 0;
 }
@@ -188,7 +185,7 @@ int main(int argc, char *argv[])
                 }
 			}
 		}
-        if ( bgzf_check_bgzf(argv[optind])!=1 )
+        if ( bgzf_is_bgzf(argv[optind])!=1 )
         {
             fprintf(stderr,"[tabix] was bgzip used to compress this file? %s\n", argv[optind]);
             free(fnidx);
