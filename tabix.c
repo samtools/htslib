@@ -8,7 +8,7 @@
 #include "tabix.h"
 #include "knetfile.h"
 
-#define PACKAGE_VERSION "0.2.5 (r964)"
+#define PACKAGE_VERSION "0.2.5 (r998)"
 
 #define error(...) { fprintf(stderr,__VA_ARGS__); return -1; }
 
@@ -97,10 +97,10 @@ int reheader_file(const char *header, const char *file, int meta)
 
 int main(int argc, char *argv[])
 {
-	int c, skip = -1, meta = -1, list_chrms = 0, force = 0, print_header = 0, bed_reg = 0;
+	int c, skip = -1, meta = -1, list_chrms = 0, force = 0, print_header = 0, print_only_header = 0, bed_reg = 0;
 	ti_conf_t conf = ti_conf_gff;
     const char *reheader = NULL;
-	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lhfBr:")) >= 0) {
+	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lhHfBr:")) >= 0) {
 		switch (c) {
 		case 'B': bed_reg = 1; break;
 		case '0': conf.preset |= TI_FLAG_UCSC; break;
@@ -122,6 +122,7 @@ int main(int argc, char *argv[])
 		case 'e': conf.ec = atoi(optarg); break;
         case 'l': list_chrms = 1; break;
         case 'h': print_header = 1; break;
+        case 'H': print_only_header = 1; break;
 		case 'f': force = 1; break;
         case 'r': reheader = optarg; break;
 		}
@@ -142,7 +143,8 @@ int main(int argc, char *argv[])
 	    fprintf(stderr, "         -r FILE    replace the header with the content of FILE [null]\n");
 		fprintf(stderr, "         -B         region1 is a BED file (entire file will be read)\n");
 		fprintf(stderr, "         -0         zero-based coordinate\n");
-		fprintf(stderr, "         -h         print the header lines\n");
+		fprintf(stderr, "         -h         print also the header lines\n");
+		fprintf(stderr, "         -H         print only the header lines\n");
 		fprintf(stderr, "         -l         list chromosome names\n");
 		fprintf(stderr, "         -f         force to overwrite the index\n");
 		fprintf(stderr, "\n");
@@ -170,7 +172,7 @@ int main(int argc, char *argv[])
     char *fnidx = calloc(strlen(argv[optind]) + 5, 1);
    	strcat(strcpy(fnidx, argv[optind]), ".tbi");
 
-	if (optind + 1 == argc) {
+	if (optind + 1 == argc && !print_only_header) {
 		if (force == 0) {
 			if (stat(fnidx, &stat_tbi) == 0) 
             {
@@ -215,6 +217,25 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "[main] fail to open the data file.\n");
 			return 1;
 		}
+        if ( print_only_header )
+        {
+            ti_iter_t iter;
+            const char *s;
+            int len;
+            if (ti_lazy_index_load(t) < 0 && bed_reg == 0) {
+                fprintf(stderr,"[tabix] failed to load the index file.\n");
+                return 1;
+            }
+            const ti_conf_t *idxconf = ti_get_conf(t->idx);
+            iter = ti_query(t, 0, 0, 0);
+            while ((s = ti_read(t, iter, &len)) != 0) {
+                if ((int)(*s) != idxconf->meta_char) break;
+                fputs(s, stdout); fputc('\n', stdout);
+            }
+            ti_iter_destroy(iter);
+            return 0;
+        }
+
 		if (strcmp(argv[optind+1], ".") == 0) { // retrieve all
 			ti_iter_t iter;
 			const char *s;
