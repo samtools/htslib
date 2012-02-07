@@ -98,7 +98,7 @@ int reheader_file(const char *header, const char *file, int meta)
 int main(int argc, char *argv[])
 {
 	int c, skip = -1, meta = -1, list_chrms = 0, force = 0, print_header = 0, print_only_header = 0, bed_reg = 0;
-	ti_conf_t conf = ti_conf_gff;
+	ti_conf_t conf, *conf_ptr = NULL;
     const char *reheader = NULL;
 	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lhHfBr:")) >= 0) {
 		switch (c) {
@@ -107,11 +107,11 @@ int main(int argc, char *argv[])
 		case 'S': skip = atoi(optarg); break;
 		case 'c': meta = optarg[0]; break;
 		case 'p':
-			if (strcmp(optarg, "gff") == 0) conf = ti_conf_gff;
-			else if (strcmp(optarg, "bed") == 0) conf = ti_conf_bed;
-			else if (strcmp(optarg, "sam") == 0) conf = ti_conf_sam;
-			else if (strcmp(optarg, "vcf") == 0 || strcmp(optarg, "vcf4") == 0) conf = ti_conf_vcf;
-			else if (strcmp(optarg, "psltbl") == 0) conf = ti_conf_psltbl;
+			if (strcmp(optarg, "gff") == 0) conf_ptr = &ti_conf_gff;
+			else if (strcmp(optarg, "bed") == 0) conf_ptr = &ti_conf_bed;
+			else if (strcmp(optarg, "sam") == 0) conf_ptr = &ti_conf_sam;
+			else if (strcmp(optarg, "vcf") == 0 || strcmp(optarg, "vcf4") == 0) conf_ptr = &ti_conf_vcf;
+			else if (strcmp(optarg, "psltbl") == 0) conf_ptr = &ti_conf_psltbl;
 			else {
 				fprintf(stderr, "[main] unrecognized preset '%s'\n", optarg);
 				return 1;
@@ -127,8 +127,6 @@ int main(int argc, char *argv[])
         case 'r': reheader = optarg; break;
 		}
 	}
-	if (skip >= 0) conf.line_skip = skip;
-	if (meta >= 0) conf.meta_char = meta;
 	if (optind == argc) {
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Program: tabix (TAB-delimited file InderXer)\n");
@@ -150,6 +148,23 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "\n");
 		return 1;
 	}
+    if ( !conf_ptr )
+    {
+        int l = strlen(argv[optind]);
+        int strcasecmp(const char *s1, const char *s2);
+    	if (l>=7 && strcasecmp(argv[optind]+l-7, ".gff.gz") == 0) conf_ptr = &ti_conf_gff;
+        else if (l>=7 && strcasecmp(argv[optind]+l-7, ".bed.gz") == 0) conf_ptr = &ti_conf_bed;
+        else if (l>=7 && strcasecmp(argv[optind]+l-7, ".sam.gz") == 0) conf_ptr = &ti_conf_sam;
+        else if (l>=7 && strcasecmp(argv[optind]+l-7, ".vcf.gz") == 0) conf_ptr = &ti_conf_vcf;
+        else if (l>=10 && strcasecmp(argv[optind]+l-10, ".psltbl.gz") == 0) conf_ptr = &ti_conf_psltbl;
+        else {
+            fprintf(stderr, "[main] unrecognized file type '%s'\n", argv[optind]);
+            return 1;
+        }
+    }
+    conf = *conf_ptr;
+	if (skip >= 0) conf.line_skip = skip;
+	if (meta >= 0) conf.meta_char = meta;
     if (list_chrms) {
 		ti_index_t *idx;
 		int i, n;
