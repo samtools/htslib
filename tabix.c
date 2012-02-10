@@ -8,7 +8,7 @@
 #include "tabix.h"
 #include "knetfile.h"
 
-#define PACKAGE_VERSION "0.2.5 (r998)"
+#define PACKAGE_VERSION "0.2.5 (r1003)"
 
 #define error(...) { fprintf(stderr,__VA_ARGS__); return -1; }
 
@@ -157,10 +157,8 @@ int main(int argc, char *argv[])
         else if (l>=7 && strcasecmp(argv[optind]+l-7, ".sam.gz") == 0) conf_ptr = &ti_conf_sam;
         else if (l>=7 && strcasecmp(argv[optind]+l-7, ".vcf.gz") == 0) conf_ptr = &ti_conf_vcf;
         else if (l>=10 && strcasecmp(argv[optind]+l-10, ".psltbl.gz") == 0) conf_ptr = &ti_conf_psltbl;
-        else {
-            fprintf(stderr, "[main] unrecognized file type '%s'\n", argv[optind]);
-            return 1;
-        }
+        else 
+            conf_ptr = &ti_conf_gff;
     }
     conf = *conf_ptr;
 	if (skip >= 0) conf.line_skip = skip;
