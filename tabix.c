@@ -8,7 +8,7 @@
 #include "tabix.h"
 #include "knetfile.h"
 
-#define PACKAGE_VERSION "0.2.5 (r1003)"
+#define PACKAGE_VERSION "0.2.5 (r1004)"
 
 #define error(...) { fprintf(stderr,__VA_ARGS__); return -1; }
 
@@ -157,10 +157,16 @@ int main(int argc, char *argv[])
         else if (l>=7 && strcasecmp(argv[optind]+l-7, ".sam.gz") == 0) conf_ptr = &ti_conf_sam;
         else if (l>=7 && strcasecmp(argv[optind]+l-7, ".vcf.gz") == 0) conf_ptr = &ti_conf_vcf;
         else if (l>=10 && strcasecmp(argv[optind]+l-10, ".psltbl.gz") == 0) conf_ptr = &ti_conf_psltbl;
+
+        // This is to decide later between throwing or not throwing an error depending if building or just reading the index 
+        if ( conf_ptr )
+            conf = *conf_ptr;
         else 
-            conf_ptr = &ti_conf_gff;
+            conf = ti_conf_gff;
     }
-    conf = *conf_ptr;
+    else
+        conf = *conf_ptr;
+
 	if (skip >= 0) conf.line_skip = skip;
 	if (meta >= 0) conf.meta_char = meta;
     if (list_chrms) {
@@ -203,6 +209,12 @@ int main(int argc, char *argv[])
         if ( bgzf_is_bgzf(argv[optind])!=1 )
         {
             fprintf(stderr,"[tabix] was bgzip used to compress this file? %s\n", argv[optind]);
+            free(fnidx);
+            return 1;
+        }
+        if ( !conf_ptr )
+        {
+            fprintf(stderr,"[tabix] The file type not recognised, please run with '-p'.\n");
             free(fnidx);
             return 1;
         }
