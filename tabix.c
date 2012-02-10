@@ -8,7 +8,7 @@
 #include "tabix.h"
 #include "knetfile.h"
 
-#define PACKAGE_VERSION "0.2.5 (r1004)"
+#define PACKAGE_VERSION "0.2.5 (r1005)"
 
 #define error(...) { fprintf(stderr,__VA_ARGS__); return -1; }
 
@@ -98,7 +98,7 @@ int reheader_file(const char *header, const char *file, int meta)
 int main(int argc, char *argv[])
 {
 	int c, skip = -1, meta = -1, list_chrms = 0, force = 0, print_header = 0, print_only_header = 0, bed_reg = 0;
-	ti_conf_t conf, *conf_ptr = NULL;
+	ti_conf_t conf = ti_conf_gff, *conf_ptr = NULL;
     const char *reheader = NULL;
 	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lhHfBr:")) >= 0) {
 		switch (c) {
@@ -157,14 +157,8 @@ int main(int argc, char *argv[])
         else if (l>=7 && strcasecmp(argv[optind]+l-7, ".sam.gz") == 0) conf_ptr = &ti_conf_sam;
         else if (l>=7 && strcasecmp(argv[optind]+l-7, ".vcf.gz") == 0) conf_ptr = &ti_conf_vcf;
         else if (l>=10 && strcasecmp(argv[optind]+l-10, ".psltbl.gz") == 0) conf_ptr = &ti_conf_psltbl;
-
-        // This is to decide later between throwing or not throwing an error depending if building or just reading the index 
-        if ( conf_ptr )
-            conf = *conf_ptr;
-        else 
-            conf = ti_conf_gff;
     }
-    else
+    if ( conf_ptr )
         conf = *conf_ptr;
 
 	if (skip >= 0) conf.line_skip = skip;
@@ -214,9 +208,15 @@ int main(int argc, char *argv[])
         }
         if ( !conf_ptr )
         {
-            fprintf(stderr,"[tabix] The file type not recognised, please run with '-p'.\n");
-            free(fnidx);
-            return 1;
+            // Building the index but the file type was neither recognised nor given. If no custom change
+            //  has been made, warn the user that GFF is used 
+            if ( conf.preset==ti_conf_gff.preset 
+                && conf.sc==ti_conf_gff.sc 
+                && conf.bc==ti_conf_gff.bc 
+                && conf.ec==ti_conf_gff.ec 
+                && conf.meta_char==ti_conf_gff.meta_char 
+                && conf.line_skip==ti_conf_gff.line_skip )
+                fprintf(stderr,"[tabix] The file type not recognised and -p not given, using the preset [gff].\n");
         }
 		return ti_index_build(argv[optind], &conf);
 	}
