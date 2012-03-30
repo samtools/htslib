@@ -231,7 +231,7 @@ int main(int argc, char *argv[])
             stat(argv[optind], &stat_vcf);
             if ( force==0 && stat_vcf.st_mtime > stat_tbi.st_mtime )
             {
-                fprintf(stderr, "[tabix] the index file is older than the vcf file. Please use '-f' to overwrite or reindex.\n");
+                fprintf(stderr, "[tabix] the index file either does not exist or is older than the vcf file. Please reindex.\n");
                 free(fnidx);
                 return 1;
             }
