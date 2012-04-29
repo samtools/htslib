@@ -4,11 +4,9 @@
 #include <stdint.h>
 
 typedef struct {
-	uint32_t is_vcf:1, is_write:1, dummy:30;
-	union {
-		void *fp_bcf;
-		void *fp_vcf;
-	} x;
+	uint32_t is_bin:1, is_write:1, dummy:30;
+	void *buf; // a string buffer, only for VCF
+	void *fp;  // file pointer; actual type depending on is_bin and is_write
 } vcfFile;
 
 typedef struct {
@@ -22,9 +20,7 @@ typedef struct {
 } vcf_keypair_t;
 
 typedef struct {
-	int32_t n_ref, n_sample, n_key;
-	int32_t l_str, m_str;
-	int32_t l_text;
+	int32_t n_ref, n_sample, n_key, l_text;
 	vcf_keypair_t *key;
 	int *r2k, *s2k;
 	char *text;
