@@ -15,21 +15,6 @@ typedef khash_t(vdict) vdict_t;
 #include "kseq.h"
 KSTREAM_INIT(gzFile, gzread, 16384)
 
-#define VCF_DT_FLT  0
-#define VCF_DT_INFO 1
-#define VCF_DT_FMT  2
-#define VCF_DT_CTG  3
-
-#define VCF_TP_BOOL 0
-#define VCF_TP_INT  1
-#define VCF_TP_REAL 2
-#define VCF_TP_STR  3
-
-#define VCF_VTP_FIXED 0
-#define VCF_VTP_VAR   1
-#define VCF_VTP_A     2
-#define VCF_VTP_G     3
-
 int vcf_verbose = 3; // 1: error; 2: warning; 3: message; 4: progress; 5: debugging; >=10: pure debugging
 char *vcf_col_name[] = { "CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT" };
 char *vcf_type_name[] = { "Flag", "Integer", "Float", "String" };
@@ -39,28 +24,66 @@ static vcf_keyinfo_t vcf_keyinfo_def = { { 15, 15, 15 }, -1, -1, -1, -1 };
  * Basic routines *
  ******************/
 
-static inline uint8_t *expand_mem(uint8_t *mem, int32_t *max, int32_t new_len)
+static inline void align_mem(kstring_t *s)
 {
-	if (new_len > *max) {
-		*max = new_len;
-		kroundup32(*max);
-		mem = (uint8_t*)realloc(mem, *max);
+	if (s->l&7) {
+		uint64_t zero = 0;
+		int l = (s->l + 7)>>3<<3;
+		kputsn((char*)&zero, l, s);
 	}
-	return mem;
 }
 
-static inline uint8_t *append_text(uint8_t *mem, int32_t *len, int32_t *max, const char *text, int text_len)
+/*************
+ * Basic I/O *
+ *************/
+
+vcfFile *vcf_open(const char *fn, const char *mode, const char *fn_ref)
 {
-	mem = expand_mem(mem, max, (*len) + text_len + 1); // +1 to include '\0'
-	memcpy(mem + (*len), text, text_len);
-	*len += text_len;
-	mem[*len] = 0;
-	return mem;
+	const char *p;
+	vcfFile *fp;
+	fp = calloc(1, sizeof(vcfFile));
+	for (p = mode; *p; ++p) {
+		if (*p == 'w') fp->is_write = 1;
+		else if (*p == 'b') fp->is_bin = 1;
+	}
+	if (fp->is_bin) {
+		if (fp->is_write) fp->fp = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
+		else fp->fp = strcmp(fn, "-")? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
+	} else {
+		fp->buf = calloc(1, sizeof(kstring_t));
+		if (fp->is_write) {
+			fp->fp = strcmp(fn, "-")? fopen(fn, "rb") : fdopen(fileno(stdout), "rb");
+		} else {
+			gzFile gzfp;
+			gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
+			if (gzfp) fp->fp = ks_init(gzfp);
+		}
+	}
+	if (fp->fp == 0) {
+		if (vcf_verbose >= 2)
+			fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
+		free(fp);
+		return 0;
+	}
+	return fp;
 }
 
-/********************
- * Parse VCF header *
- ********************/
+void vcf_close(vcfFile *fp)
+{
+	if (!fp->is_bin) {
+		kstring_t *s = (kstring_t*)fp->buf;
+		free(s->s); free(s);
+		if (!fp->is_write) {
+			gzFile gzfp = ((kstream_t*)fp->fp)->f;
+			ks_destroy(fp->fp);
+			gzclose(gzfp);
+		} else fclose(fp->fp);
+	} else bgzf_close(fp->fp);
+}
+
+/*********************
+ * VCF header parser *
+ *********************/
 
 // return: positive => contig; zero => INFO/FILTER/FORMAT; negative => error or skipped
 int vcf_hdr_parse_line2(const char *str, uint32_t *info, int *id_beg, int *id_end)
@@ -256,53 +279,9 @@ int vcf_hdr_parse(vcf_hdr_t *h)
 	return 0;
 }
 
-/*************
- * Basic I/O *
- *************/
-
-vcfFile *vcf_open(const char *fn, const char *mode, const char *fn_ref)
-{
-	const char *p;
-	vcfFile *fp;
-	fp = calloc(1, sizeof(vcfFile));
-	for (p = mode; *p; ++p) {
-		if (*p == 'w') fp->is_write = 1;
-		else if (*p == 'b') fp->is_bin = 1;
-	}
-	if (fp->is_bin) {
-		if (fp->is_write) fp->fp = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
-		else fp->fp = strcmp(fn, "-")? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
-	} else {
-		fp->buf = calloc(1, sizeof(kstring_t));
-		if (fp->is_write) {
-			fp->fp = strcmp(fn, "-")? fopen(fn, "rb") : fdopen(fileno(stdout), "rb");
-		} else {
-			gzFile gzfp;
-			gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
-			if (gzfp) fp->fp = ks_init(gzfp);
-		}
-	}
-	if (fp->fp == 0) {
-		if (vcf_verbose >= 2)
-			fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
-		free(fp);
-		return 0;
-	}
-	return fp;
-}
-
-void vcf_close(vcfFile *fp)
-{
-	if (!fp->is_bin) {
-		kstring_t *s = (kstring_t*)fp->buf;
-		free(s->s); free(s);
-		if (!fp->is_write) {
-			gzFile gzfp = ((kstream_t*)fp->fp)->f;
-			ks_destroy(fp->fp);
-			gzclose(gzfp);
-		} else fclose(fp->fp);
-	} else bgzf_close(fp->fp);
-}
+/******************
+ * VCF header I/O *
+ ******************/
 
 vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 {
@@ -335,6 +314,140 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 	} else return h;
 }
 
+/******************
+ * VCF record I/O *
+ ******************/
+
+vcf1_t *vcf_init1()
+{
+	vcf1_t *v;
+	v = calloc(1, sizeof(vcf1_t));
+	return v;
+}
+
+static inline int get_dtype(int32_t x)
+{
+	if (x > INT16_MAX || x < INT16_MIN) return VCF_RT_INT32;
+	if (x > INT8_MAX  || x < INT8_MIN)  return VCF_RT_INT16;
+	return VCF_RT_INT8;
+}
+
+static inline void write_vec_size(kstring_t *s, int n, int type)
+{
+	if (n >= 7) {
+	}
+}
+
+static inline void write_typed_int(kstring_t *s, int32_t x, int type)
+{
+}
+
+int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
+{
+	if (fp->is_bin) {
+	} else {
+		int ret, dret, i = 0, ori_l, dtype;
+		char *p, *q, *r;
+		vdict_t *d = (vdict_t*)h->dict;
+		kstring_t *s = (kstring_t*)fp->buf;
+		kstring_t str;
+		khint_t k;
+
+		dtype = get_dtype(h->n_key);
+		str.l = v->l_str = 0; str.m = v->m_str; str.s = v->str;
+		ret = ks_getuntil(fp->fp, KS_SEP_LINE, s, &dret);
+		kputc(0, s); align_mem(s); ori_l = s->l; // the end of s will be used as a temporary buffer
+		if (ret < 0) return -1;
+		for (p = q = s->s;; ++q) {
+			int c;
+			if (*q != 0 && *q != '\t') continue;
+			c = *q; *q = 0;
+			if (i == 0) { // CHROM
+				k = kh_get(vdict, d, p);
+				if (k == kh_end(d) || kh_val(d, k).rid < 0) {
+					if (vcf_verbose >= 2)
+						fprintf(stderr, "[W::%s] can't find '%s' in the sequence dictionary\n", __func__, p);
+					return 0;
+				} else v->rid = kh_val(d, k).rid;
+			} else if (i == 1) { // POS
+				v->pos = atoi(p);
+			} else if (i == 2) { // ID
+				if (strcmp(p, ".")) kputsn(p, q - p, &str);
+				kputc(0, &str);
+			} else if (i == 3) { // REF
+				v->o_ref = str.l;
+				kputsn(p, q - p + 1, &str); // +1 to include NULL
+			} else if (i == 4) { // ALT
+				v->o_alt = str.l;
+				if (strcmp(p, ".")) {
+					v->n_alt = 1;
+					for (r = p; r != q; ++r)
+						if (*r == ',') *r = 0, ++v->n_alt;
+				} else v->n_alt = 0;
+				kputsn((char*)&v->n_alt, 2, &str);
+				if (v->n_alt) kputsn(p, q - p + 1, &str);
+			} else if (i == 5) { // QUAL
+				v->qual = atof(p);
+				kputsn((char*)&v->qual, 4, &str);
+			} else if (i == 6) { // FILTER
+				if (strcmp(p, ".")) { // FIXME: to finish
+					char *t;
+					write_vec_size(&str, v->n_flt, dtype);
+					for (r = t = p;; ++r) {
+						int c;
+						if (*r != ';' && *r != 0) continue;
+						c = *r; *r = 0;
+						k = kh_get(vdict, d, t);
+						if (k == kh_end(d)) { // not defined
+							if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined FILTER '%s'\n", __func__, t);
+						} else write_typed_int(&str, kh_val(d, k).kid, dtype);
+						*r = c;
+						if (*r == 0 || r[1] == 0) break; // r[1] if the last char is ';'
+						t = r + 1;
+					}
+				} else {
+					v->n_flt = 0;
+					write_vec_size(&str, 0, dtype);
+				}
+			} else if (i == 7) { // INFO
+				char *t;
+				v->o_info = str.l;
+				if (strcmp(p, ".")) {
+					// fill info
+					printf("*** %s\n", p);
+					for (r = t = p;; ++r) {
+						int c;
+						char *val, *end;
+						if (*r != ';' && *r != '=' && *r != 0) continue;
+						val = end = 0;
+						c = *r; *r = 0;
+						if (c == '=') {
+							val = r + 1;
+							for (end = val; *end != ';' && *end != 0; ++end);
+							c = *end; *end = 0;
+						} else end = r;
+						printf("%s, %s\n", t, val? val : ".");
+						k = kh_get(vdict, d, t);
+						if (k == kh_end(d) || kh_val(d, k).info[VCF_DT_INFO] == 15) { // not defined in the header
+							if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, t);
+						} else { // defined in the header
+						}
+						if (c == 0) break;
+						r = end;
+						t = r + 1;
+					}
+				} else v->n_info = 0;
+			}
+			++i;
+			*q = c;
+			if (*q == 0) break;
+			p = q + 1;
+		}
+		v->l_str = str.l; v->m_str = str.m; v->str = str.s;
+	}
+	return 0;
+}
+
 int main()
 {
 	vcf_hdr_t *h;
@@ -347,8 +460,12 @@ int main()
 	vcf_hdr_destroy(h);
 
 	vcfFile *fp;
-	fp = vcf_open("t.vcf", "r", 0);
+	vcf1_t *v;
+	fp = vcf_open("ex2.vcf", "r", 0);
 	h = vcf_hdr_read(fp);
+	v = vcf_init1();
+	while (vcf_read1(fp, h, v) >= 0) {
+	}
 	vcf_hdr_destroy(h);
 	return 0;
 }
