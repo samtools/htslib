@@ -1,26 +1,26 @@
 #include <zlib.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 #include "kstring.h"
 #include "bgzf.h"
 #include "vcf.h"
 
-typedef struct {
-	uint32_t info[3]; // Number:20, var:4, Type:4, ColType:4
-} vcf_keyinfo_t;
+static vcf_keyinfo_t vcf_keyinfo_def = { { 15, 15, 15 }, -1, -1, -1, -1 };
 
 #include "khash.h"
 KHASH_MAP_INIT_STR(vdict, vcf_keyinfo_t)
+typedef khash_t(vdict) vdict_t;
 
 #include "kseq.h"
 KSTREAM_INIT(gzFile, gzread, 16384)
 
-#define VCF_DT_CTG  0
-#define VCF_DT_FLT  1
-#define VCF_DT_INFO 2
-#define VCF_DT_FMT  3
+#define VCF_DT_FLT  0
+#define VCF_DT_INFO 1
+#define VCF_DT_FMT  2
+#define VCF_DT_CTG  3
 
 #define VCF_TP_BOOL 0
 #define VCF_TP_INT  1
@@ -62,7 +62,8 @@ static inline uint8_t *append_text(uint8_t *mem, int32_t *len, int32_t *max, con
  * Parse VCF header *
  ********************/
 
-int vcf_parse_hline2(const char *str, uint32_t *info, int *id_beg, int *id_end)
+// return: positive => contig; zero => INFO/FILTER/FORMAT; negative => error or skipped
+int vcf_hdr_parse_line2(const char *str, uint32_t *info, int *id_beg, int *id_end)
 {
 	const char *p, *q;
 	int ctype;
@@ -134,11 +135,84 @@ int vcf_parse_hline2(const char *str, uint32_t *info, int *id_beg, int *id_end)
 	}
 }
 
+vcf_hdr_t *vcf_hdr_init(void)
+{
+	vcf_hdr_t *h;
+	h = calloc(1, sizeof(vcf_hdr_t));
+	h->dict = kh_init(vdict);
+	return h;
+}
+
+void vcf_hdr_destroy(vcf_hdr_t *h)
+{
+	khint_t k;
+	vdict_t *d = (vdict_t*)h->dict;
+	for (k = kh_begin(d); k != kh_end(d); ++k)
+		if (kh_exist(d, k)) free((char*)kh_key(d, k));
+	kh_destroy(vdict, d);
+	free(h->key); free(h->r2k);
+	free(h);
+}
+
+int vcf_hdr_parse1(vcf_hdr_t *h, const char *str)
+{
+	if (*str != '#') return -1;
+	if (str[1] == '#') {
+		khint_t k;
+		uint32_t info;
+		int len, ret, id_beg, id_end;
+		char *s;
+		vdict_t *d = (vdict_t*)h->dict;
+
+		len = vcf_hdr_parse_line2(str, &info, &id_beg, &id_end);
+		if (len < 0) return -1;
+		s = malloc(id_end - id_beg + 1);
+		strncpy(s, str + id_beg, id_end - id_beg);
+		s[id_end - id_beg] = 0;
+		k = kh_put(vdict, d, s, &ret);
+		if (ret == 0) free(s); // if present, free s
+		else kh_val(d, k) = vcf_keyinfo_def; // set default values
+		if (len > 0) { // contig
+			kh_val(d, k).rid = h->n_ref++;
+			kh_val(d, k).rlen = len;
+		} else kh_val(d, k).info[info&0xf] = info;
+		kh_val(d, k).kid = h->n_key++;
+	} else {
+	}
+	return 0;
+}
+
+int vcf_hdr_sync(vcf_hdr_t *h)
+{
+	khint_t k;
+	vdict_t *d = (vdict_t*)h->dict;
+	h->key = malloc(h->n_key * sizeof(vcf_keypair_t));
+	h->r2k = malloc(h->n_ref * sizeof(int));
+	for (k = kh_begin(d); k != kh_end(d); ++k) {
+		int i;
+		if (!kh_exist(d, k)) continue;
+		i = kh_val(d, k).kid;
+		assert(i < h->n_key);
+		h->key[i].key = kh_key(d, k);
+		h->key[i].info = &kh_val(d, k);
+		if (kh_val(d, k).rid >= 0)
+			h->r2k[kh_val(d, k).rid] = i;
+	}
+	return 0;
+}
+
 int main()
 {
 	int id_beg, id_end;
 	uint32_t rst;
-	vcf_parse_hline2("##INFO=<Number=A,Type=Integer,Description=\"gatca,agct=gact,\",ID=MQ>", &rst, &id_beg, &id_end);
-	vcf_parse_hline2("##contig=<ID=20,length=62435964,assembly=B36>", &rst, &id_beg, &id_end);
+//	vcf_hdr_parse_line2("##INFO=<Number=A,Type=Integer,Description=\"gatca,agct=gact,\",ID=MQ>", &rst, &id_beg, &id_end);
+//	vcf_hdr_parse_line2("##contig=<ID=20,length=62435964,assembly=B36>", &rst, &id_beg, &id_end);
+
+	vcf_hdr_t *h;
+	h = vcf_hdr_init();
+	vcf_hdr_parse1(h, "##INFO=<Number=A,Type=Integer,Description=\"gatca,agct=gact,\",ID=MQ>");
+	vcf_hdr_parse1(h, "##contig=<ID=20,length=62435964,assembly=B36>");
+	vcf_hdr_sync(h);
+	vcf_hdr_destroy(h);
 	return 0;
 }

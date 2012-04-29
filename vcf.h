@@ -12,16 +12,23 @@ typedef struct {
 } vcfFile;
 
 typedef struct {
-	int32_t n_ref, n_sample;
-	int32_t l_mem, m_mem;
+	uint32_t info[3]; // Number:20, var:4, Type:4, ColType:4
+	int kid, rid, sid, rlen; // key-ID, ref-ID, sample-ID, ref-length
+} vcf_keyinfo_t;
+
+typedef struct {
+	const char *key;
+	const vcf_keyinfo_t *info;
+} vcf_keypair_t;
+
+typedef struct {
+	int32_t n_ref, n_sample, n_key;
+	int32_t l_str, m_str;
 	int32_t l_text;
-	int32_t *ref_len;
-	char **ref;
-	char **sample;
-	char **key;
-	char **lines;
-	uint8_t *mem;
-	void *dict, *ref_dict;
+	vcf_keypair_t *key;
+	int *r2k, *s2k;
+	char *text;
+	void *dict;
 } vcf_hdr_t;
 
 typedef struct {
