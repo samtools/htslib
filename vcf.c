@@ -431,6 +431,8 @@ int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 						if (k == kh_end(d) || kh_val(d, k).info[VCF_DT_INFO] == 15) { // not defined in the header
 							if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, t);
 						} else { // defined in the header
+							uint32_t y = kh_val(d, k).info[VCF_DT_INFO];
+							write_typed_int(&str, kh_val(d, k).kid, dtype);
 						}
 						if (c == 0) break;
 						r = end;
