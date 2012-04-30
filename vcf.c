@@ -413,8 +413,10 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			kputsn((char*)&v->n_alt, 2, &str);
 			if (v->n_alt) kputsn(p, q - p + 1, &str);
 		} else if (i == 5) { // QUAL
-			v->qual = atof(p);
-			kputsn((char*)&v->qual, 4, &str);
+			if (strcmp(p, ".")) {
+				v->qual = atof(p);
+				kputsn((char*)&v->qual, 4, &str);
+			} else *(uint32_t*)&v->qual = 0x7F800001;
 		} else if (i == 6) { // FILTER
 			if (strcmp(p, ".")) {
 				char *t;
@@ -512,6 +514,12 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 		p = q + 1;
 	}
 	v->l_str = str.l; v->m_str = str.m; v->str = str.s;
+	{
+		str.l = str.m = 0; str.s = 0;
+		vcf_format1(h, v, &str);
+		puts(str.s);
+		free(str.s);
+	}
 	return 0;
 }
 
@@ -527,9 +535,40 @@ int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 	return 0;
 }
 
+int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
+{
+	char *p, *q;
+	s->l = 0;
+	kputs(h->key[h->r2k[v->rid]].key, s); kputc('\t', s); // CHROM
+	kputw(v->pos + 1, s); kputc('\t', s); // POS
+	if (v->str[0]) { // ID
+		kputsn(v->str, v->o_ref - 1, s);
+		kputc('\t', s);
+	} else kputsn(".\t", 2, s);
+	if (v->str[v->o_ref]) { // REF
+		kputsn(v->str + v->o_ref, v->o_alt - v->o_ref - 1, s);
+		kputc('\t', s);
+	} else kputsn(".\t", 2, s);
+	if (v->n_alt) { // ALT
+		int i;
+		for (p = q = v->str + v->o_alt + 2, i = 0;; ++q)
+			if (*q == 0) {
+				if (i) kputc(',', s);
+				kputsn(p, q - p, s);
+				p = q + 1;
+				if (++i == v->n_alt) break;
+			}
+		kputc('\t', s);
+	} else kputsn(".\t", 2, s);
+	if (*(uint32_t*)&v->qual == 0x7F800001) kputsn(".\t", 2, s); // QUAL
+	else ksprintf(s, "%g\t", v->qual);
+	return 0;
+}
+
 int main()
 {
 	vcf_hdr_t *h;
+	/*
 	h = vcf_hdr_init();
 	vcf_hdr_parse1(h, "##INFO=<Number=A,Type=Integer,Description=\"gatca,agct=gact,\",ID=MQ>");
 	vcf_hdr_parse1(h, "##contig=<ID=NA00001,length=62435964,assembly=B36>");
@@ -537,6 +576,7 @@ int main()
 	vcf_hdr_parse1(h, "#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NA00001	NA00002	NA00003");
 	vcf_hdr_sync(h);
 	vcf_hdr_destroy(h);
+	*/
 
 	vcfFile *fp;
 	vcf1_t *v;

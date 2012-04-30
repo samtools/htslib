@@ -69,11 +69,11 @@ encode on the second haplotype.
   & \multicolumn{2}{l|}{\sf block\_size} & Length of the remainder of the VCF record & {\tt uint32\_t} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf CHROM} & Reference sequence ID & {\tt int32\_t} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf POS} & 0-based leftmost coordinate & {\tt int32\_t} & \\\cline{2-6}
+  & \multicolumn{2}{l|}{\sf QUAL} & Variant quality; {\tt 0x7F800001} for a missing value & {\tt float} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf ID} & {\sf NULL} terminated string; field length inferred & {\tt char*} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf REF} & {\sf NULL} terminated string; field length inferred & {\tt char*} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf n\_alt} & Number of {\sf ALT} alleles & {\tt int16\_t} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf ALT} & {\sf NULL} terminated string; alleles delimited by {\sf NULL} & {\tt char*} & \\\cline{2-6}
-  & \multicolumn{2}{l|}{\sf QUAL} & Variant quality; {\tt 0x7F800001} for a missing value & {\tt float} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf FILTER} & List of filters; filters are defined in the dictionary & {\tt typed vec} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf n\_info} & Number of info key-value pairs & {\tt typed int} & \\\cline{2-6}
   & \multicolumn{5}{c|}{\textcolor{gray}{\it List of key-value pairs in the INFO field (n=n\_info)}} \\\cline{3-6}

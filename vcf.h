@@ -90,7 +90,6 @@ typedef struct {
 typedef struct {
 	int32_t rid; // CHROM
 	int32_t pos; // POS
-	int32_t end; // end position
 	float qual;  // QUAL
 	uint16_t n_alt, n_info, n_fmt;
 	int l_str, m_str;
@@ -155,6 +154,7 @@ extern "C" {
 	vcf1_t *vcf_init1(void);
 	void vcf_destroy1(vcf1_t *v);
 	int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v);
+	int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s);
 	void vcf_write1(vcfFile *fp, const vcf1_t *v);
 
 #ifdef __cplusplus
