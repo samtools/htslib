@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 #include "kstring.h"
 #include "bgzf.h"
 #include "vcf.h"
@@ -150,9 +151,14 @@ int vcf_hdr_parse_line2(const char *str, uint32_t *info, int *id_beg, int *id_en
 		else return -5;
 	} else {
 		if (ctype == VCF_DT_FLT) num = 0;
-		if (num == 0) type = VCF_TP_BOOL, var = VCF_VTP_FIXED;
+		if (type == VCF_TP_FLAG) {
+			if (num != 0 && vcf_verbose >= 2)
+				fprintf(stderr, "[W::%s] ignore NUmber for a Flag\n", __func__);
+			num = 0, var = VCF_VTP_FIXED; // if Flag VCF type, force to change num to 0
+		}
+		if (num == 0) type = VCF_TP_FLAG, var = VCF_VTP_FIXED; // conversely, if num==0, force the type to Flag
 		if (*id_beg < 0 || type < 0 || num < 0 || var < 0) return -5; // missing information
-		*info = (uint32_t)num<<20 | var<<8 | type<<4 | ctype;
+		*info = (uint32_t)num<<12 | var<<8 | type<<4 | ctype;
 		//printf("%d, %s, %d, %d, [%d,%d]\n", ctype, vcf_type_name[type], var, num, *id_beg, *id_end);
 		return 0;
 	}
@@ -314,6 +320,48 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 	} else return h;
 }
 
+/*******************
+ * Typed value I/O *
+ *******************/
+
+void vcf_enc_int(kstring_t *s, int n, long *a)
+{
+	long max = LONG_MIN + 1, min = LONG_MAX;
+	int i;
+	if (n == 0) vcf_enc_size(s, 0, VCF_RT_INT8);
+	else if (n == 1) vcf_enc_int1(s, a[0]);
+	else {
+		for (i = 0; i < n; ++i) {
+			if (a[i] == LONG_MIN) continue;
+			if (max < a[i]) max = a[i];
+			if (min > a[i]) min = a[i];
+		}
+		if (max <= INT8_MAX && min > INT8_MIN) {
+			vcf_enc_size(s, n, VCF_RT_INT8);
+			for (i = 0; i < n; ++i)
+				kputc(a[i] == LONG_MIN? INT8_MIN : a[i], s);
+		} else if (max <= INT16_MAX && min > INT16_MIN) {
+			vcf_enc_size(s, n, VCF_RT_INT16);
+			for (i = 0; i < n; ++i) {
+				int16_t x = a[i] == LONG_MIN? INT16_MIN : a[i];
+				kputsn((char*)&x, 2, s);
+			}
+		} else {
+			vcf_enc_size(s, n, VCF_RT_INT32);
+			for (i = 0; i < n; ++i) {
+				int32_t x = a[i] == LONG_MIN? INT32_MIN : a[i];
+				kputsn((char*)&x, 4, s);
+			}
+		}
+	}
+}
+
+void vcf_enc_float(kstring_t *s, int n, float *a)
+{
+	vcf_enc_size(s, n, VCF_RT_FLOAT);
+	kputsn((char*)a, 4 * n, s);
+}
+
 /******************
  * VCF record I/O *
  ******************/
@@ -325,32 +373,14 @@ vcf1_t *vcf_init1()
 	return v;
 }
 
-static inline int get_dtype(int32_t x)
-{
-	if (x > INT16_MAX || x < INT16_MIN) return VCF_RT_INT32;
-	if (x > INT8_MAX  || x < INT8_MIN)  return VCF_RT_INT16;
-	return VCF_RT_INT8;
-}
-
-static inline void write_vec_size(kstring_t *s, int n, int type)
-{
-	if (n >= 7) {
-	}
-}
-
-static inline void write_typed_int(kstring_t *s, int32_t x, int type)
-{
-}
-
 int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 {
-	int ret, i = 0, ori_l, dtype;
+	int ret, i = 0, ori_l;
 	char *p, *q, *r;
 	vdict_t *d = (vdict_t*)h->dict;
 	kstring_t str;
 	khint_t k;
 
-	dtype = get_dtype(h->n_key);
 	str.l = v->l_str = 0; str.m = v->m_str; str.s = v->str;
 	kputc(0, s); align_mem(s); ori_l = s->l; // the end of s will be used as a temporary buffer
 	if (ret < 0) return -1;
@@ -386,32 +416,35 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			v->qual = atof(p);
 			kputsn((char*)&v->qual, 4, &str);
 		} else if (i == 6) { // FILTER
-			if (strcmp(p, ".")) { // FIXME: to finish
+			if (strcmp(p, ".")) {
 				char *t;
-				write_vec_size(&str, v->n_flt, dtype);
-				for (r = t = p;; ++r) {
+				long *a;
+				int n_flt = 1, i;
+				for (r = p; *r; ++r)
+					if (*r == ';') ++n_flt;
+				ks_resize(s, ori_l + n_flt * sizeof(long)); // reuse the end of s as a buffer
+				a = (long*)(s->s + ori_l);
+				for (r = t = p, i = 0;; ++r) {
 					int c;
 					if (*r != ';' && *r != 0) continue;
 					c = *r; *r = 0;
 					k = kh_get(vdict, d, t);
 					if (k == kh_end(d)) { // not defined
 						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined FILTER '%s'\n", __func__, t);
-					} else write_typed_int(&str, kh_val(d, k).kid, dtype);
+					} else a[i++] = kh_val(d, k).kid;
 					*r = c;
 					if (*r == 0 || r[1] == 0) break; // r[1] if the last char is ';'
 					t = r + 1;
 				}
-			} else {
-				v->n_flt = 0;
-				write_vec_size(&str, 0, dtype);
-			}
+				vcf_enc_int(&str, n_flt, a);
+			} else vcf_enc_int(&str, 0, 0);
 		} else if (i == 7) { // INFO
-			char *t;
+			char *key;
 			v->o_info = str.l;
 			if (strcmp(p, ".")) {
 				// fill info
 				printf("*** %s\n", p);
-				for (r = t = p;; ++r) {
+				for (r = key = p;; ++r) {
 					int c;
 					char *val, *end;
 					if (*r != ';' && *r != '=' && *r != 0) continue;
@@ -422,17 +455,54 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 						for (end = val; *end != ';' && *end != 0; ++end);
 						c = *end; *end = 0;
 					} else end = r;
-					printf("%s, %s\n", t, val? val : ".");
-					k = kh_get(vdict, d, t);
+					printf("%s, %s\n", key, val? val : ".");
+					k = kh_get(vdict, d, key);
 					if (k == kh_end(d) || kh_val(d, k).info[VCF_DT_INFO] == 15) { // not defined in the header
-						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, t);
+						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, key);
 					} else { // defined in the header
 						uint32_t y = kh_val(d, k).info[VCF_DT_INFO];
-						write_typed_int(&str, kh_val(d, k).kid, dtype);
+						if ((y>>4&0xf) == VCF_TP_FLAG) { // a flag defined in the dict
+							if (val != 0 && vcf_verbose >= 2)
+								fprintf(stderr, "[W::%s] INFO '%s' is defined as a flag in the header but has a value '%s' in VCF; value skipped\n", __func__, key, val);
+							else vcf_enc_int1(&str, kh_val(d, k).kid);
+						} else if (val == 0) { // if not Flag, there must be value(s)
+							if (vcf_verbose >= 2)
+								fprintf(stderr, "[W::%s] INFO '%s' takes at least a value, but no value is found\n", __func__, key);
+						} else if ((y>>4&0xf) == VCF_TP_STR) { // a string
+							vcf_enc_int1(&str, kh_val(d, k).kid);
+							vcf_enc_size(&str, 1, VCF_RT_CSTR);
+							kputsn(val, end - val + 1, &str); // +1 to include NULL
+						} else { // an integer or float value or array
+							int n_rec_val = 1, n_hdr_val;
+							char *t;
+							for (t = val; *t; ++t)
+								if (*t == ',') ++n_rec_val;
+							n_hdr_val = vcf_hdr_n_val(y, v->n_alt);
+							if (n_hdr_val == -1) n_hdr_val = n_rec_val; // -1 if variable size
+							else if (n_hdr_val != n_rec_val) { // check if number of values agrees with the header
+								if (vcf_verbose >= 2)
+									fprintf(stderr, "[W::%s] INFO '%s' takes %d value(s) but the header requires %d value(s); skipped\n", __func__, key, n_rec_val, n_hdr_val);
+							} else {
+								int i;
+								vcf_enc_int1(&str, kh_val(d, k).kid);
+								ks_resize(s, ori_l + n_rec_val * 8);
+								if ((y>>4&0xf) == VCF_TP_INT) {
+									long *z = (long*)(s->s + ori_l);
+									for (i = 0, t = val; i < n_rec_val; ++i, ++t)
+										z[i] = strtol(t, &t, 10);
+									vcf_enc_int(&str, n_rec_val, z);
+								} else if ((y>>4&0xf) == VCF_TP_REAL) {
+									float *z = (float*)(s->s + ori_l);
+									for (i = 0, t = val; i < n_rec_val; ++i, ++t)
+										z[i] = strtod(t, &t);
+									vcf_enc_float(&str, n_rec_val, z);
+								}
+							}
+						}
 					}
 					if (c == 0) break;
 					r = end;
-					t = r + 1;
+					key = r + 1;
 				}
 			} else v->n_info = 0;
 		}

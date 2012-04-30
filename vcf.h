@@ -2,6 +2,8 @@
 #define VCF_H
 
 #include <stdint.h>
+#include <limits.h>
+#include <assert.h>
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
@@ -34,7 +36,7 @@ typedef struct {
 #define VCF_DT_FMT  2
 #define VCF_DT_CTG  3
 
-#define VCF_TP_BOOL 0
+#define VCF_TP_FLAG 0
 #define VCF_TP_INT  1
 #define VCF_TP_REAL 2
 #define VCF_TP_STR  3
@@ -62,6 +64,8 @@ typedef struct {
 	void *dict;
 } vcf_hdr_t;
 
+#define vcf_hdr_n_val(x, _n_alt) (((x)>>8&0xf) == VCF_VTP_FIXED? (x)>>12 : ((x)>>8&0xf) == VCF_VTP_A? (_n_alt) : ((x)>>8&0xf) == VCF_VTP_G? -2 : -1)
+
 /**************
  * VCF record *
  **************/
@@ -88,12 +92,52 @@ typedef struct {
 	int32_t pos; // POS
 	int32_t end; // end position
 	float qual;  // QUAL
-	uint16_t n_alt, n_flt, n_info, n_fmt;
+	uint16_t n_alt, n_info, n_fmt;
 	int l_str, m_str;
 	int o_ref, o_alt, o_flt, o_info; // offsets in str
 	int *alt, *flt;
 	char *str;
 } vcf1_t;
+
+/*******************
+ * Typed value I/O *
+ *******************/
+
+static inline void vcf_enc_size(kstring_t *s, int size, int type)
+{
+	if (size >= 8) {
+		assert(size < 256); // not implemented yet
+		kputc(1<<7|type, s);
+		kputc(1<<4|VCF_RT_UINT8, s);
+		kputc(size, s);
+	} else kputc(size<<4|type, s);
+}
+
+static inline int vcf_enc_inttype(long x)
+{
+	if (x <= INT8_MAX && x > INT8_MIN) return VCF_RT_INT8;
+	if (x <= INT16_MAX && x > INT16_MIN) return VCF_RT_INT16;
+	return VCF_RT_INT32;
+}
+
+static inline void vcf_enc_int1(kstring_t *s, long x)
+{
+	if (x == LONG_MIN) {
+		vcf_enc_size(s, 1, VCF_RT_INT8);
+		kputc(INT8_MIN, s);
+	} else if (x <= INT8_MAX && x > INT8_MIN) {
+		vcf_enc_size(s, 1, VCF_RT_INT8);
+		kputc(x, s);
+	} else if (x <= INT16_MAX && x > INT16_MIN) {
+		int16_t z = x;
+		vcf_enc_size(s, 1, VCF_RT_INT16);
+		kputsn((char*)&z, 2, s);
+	} else {
+		int32_t z = x;
+		vcf_enc_size(s, 1, VCF_RT_INT32);
+		kputsn((char*)&z, 4, s);
+	}
+}
 
 /*******
  * API *
