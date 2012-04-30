@@ -444,7 +444,9 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			} else vcf_enc_int(&str, 0, 0);
 		} else if (i == 7) { // INFO
 			char *key;
+			int n_info = 0;
 			v->o_info = str.l;
+			kputsn("\0\0", 2, &str); // place holder for n_info
 			if (strcmp(p, ".")) {
 				// fill info
 				printf("*** %s\n", p);
@@ -468,7 +470,10 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 						if ((y>>4&0xf) == VCF_TP_FLAG) { // a flag defined in the dict
 							if (val != 0 && vcf_verbose >= 2)
 								fprintf(stderr, "[W::%s] INFO '%s' is defined as a flag in the header but has a value '%s' in VCF; value skipped\n", __func__, key, val);
-							else vcf_enc_int1(&str, kh_val(d, k).kid);
+							else {
+								vcf_enc_int1(&str, kh_val(d, k).kid);
+								++n_info;
+							}
 						} else if (val == 0) { // if not Flag, there must be value(s)
 							if (vcf_verbose >= 2)
 								fprintf(stderr, "[W::%s] INFO '%s' takes at least a value, but no value is found\n", __func__, key);
@@ -476,6 +481,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 							vcf_enc_int1(&str, kh_val(d, k).kid);
 							vcf_enc_size(&str, 1, VCF_RT_CSTR);
 							kputsn(val, end - val + 1, &str); // +1 to include NULL
+							++n_info;
 						} else { // an integer or float value or array
 							int n_rec_val = 1, n_hdr_val;
 							char *t;
@@ -488,6 +494,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 									fprintf(stderr, "[W::%s] INFO '%s' takes %d value(s) but the header requires %d value(s); skipped\n", __func__, key, n_rec_val, n_hdr_val);
 							} else {
 								int i;
+								++n_info;
 								vcf_enc_int1(&str, kh_val(d, k).kid);
 								ks_resize(s, ori_l + n_rec_val * 8);
 								if ((y>>4&0xf) == VCF_TP_INT) {
@@ -508,7 +515,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					r = end;
 					key = r + 1;
 				}
-			} else v->n_info = 0;
+			}
+			*(uint16_t*)(str.s + v->o_info) = n_info;
 		}
 		++i;
 		*q = c;
@@ -539,8 +547,7 @@ int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 
 int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 {
-	char *p, *q;
-	long x;
+	const char *p, *q;
 	int i;
 
 	s->l = 0;
@@ -568,6 +575,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	if (*(uint32_t*)&v->qual == 0x7F800001) kputsn(".\t", 2, s); // QUAL
 	else ksprintf(s, "%g\t", v->qual);
 	{ // FILTER
+		long x;
 		x = vcf_dec_size((uint8_t*)v->str + v->o_flt);
 		if (x>>4) {
 			int size, o;
@@ -583,6 +591,56 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 			}
 			kputc('\t', s);
 		} else kputsn(".\t", 2, s);
+	}
+	{ // INFO
+		int n_info;
+		uint8_t *q, *p = (uint8_t*)v->str + v->o_info + 2;
+		n_info = *(uint16_t*)(v->str + v->o_info);
+		for (i = 0; i < n_info; ++i) {
+			long x;
+			uint32_t y;
+			if (i) kputc(';', s);
+			x = vcf_dec_int1(p);
+			p += 1 + vcf_type_size[*p&0xf];
+			kputs(h->key[x].key, s);
+			y = h->key[x].info->info[VCF_DT_INFO];
+			if ((y>>4&0xf) == VCF_TP_FLAG) continue;
+			else if ((y>>4&0xf) == VCF_TP_STR) {
+				kputc('=', s);
+				for (q = p; *q; ++q);
+				kputsn((char*)p, q - p, s);
+				p = q + 1;
+			} else {
+				int j, size;
+				kputc('=', s);
+				x = vcf_dec_size(p);
+				size = vcf_type_size[*p&0xf];
+				p += x&0xf;
+				if ((y>>4&0xf) == VCF_TP_REAL) {
+					for (j = 0; j < x>>4; ++j, p += 4) {
+						if (j) kputc(',', s);
+						ksprintf(s, "%g", *(float*)p);
+					}
+				} else if ((y>>4&0xf) == VCF_TP_INT) {
+					if (size == 1) {
+						for (j = 0; j < x>>4; ++j, p += size) {
+							if (j) kputc(',', s);
+							ksprintf(s, "%d", *(int8_t*)p);
+						}
+					} else if (size == 2) {
+						for (j = 0; j < x>>4; ++j, p += size) {
+							if (j) kputc(',', s);
+							ksprintf(s, "%d", *(int16_t*)p);
+						}
+					} else {
+						for (j = 0; j < x>>4; ++j, p += size) {
+							if (j) kputc(',', s);
+							ksprintf(s, "%d", *(int32_t*)p);
+						}
+					}
+				}
+			}
+		}
 	}
 	return 0;
 }

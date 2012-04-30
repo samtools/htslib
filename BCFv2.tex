@@ -72,15 +72,15 @@ encode on the second haplotype.
   & \multicolumn{2}{l|}{\sf QUAL} & Variant quality; {\tt 0x7F800001} for a missing value & {\tt float} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf ID} & {\sf NULL} terminated string; field length inferred & {\tt char*} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf REF} & {\sf NULL} terminated string; field length inferred & {\tt char*} & \\\cline{2-6}
-  & \multicolumn{2}{l|}{\sf n\_alt} & Number of {\sf ALT} alleles & {\tt int16\_t} & \\\cline{2-6}
+  & \multicolumn{2}{l|}{\sf n\_alt} & Number of {\sf ALT} alleles & {\tt uint16\_t} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf ALT} & {\sf NULL} terminated string; alleles delimited by {\sf NULL} & {\tt char*} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf FILTER} & List of filters; filters are defined in the dictionary & {\tt typed vec} & \\\cline{2-6}
-  & \multicolumn{2}{l|}{\sf n\_info} & Number of info key-value pairs & {\tt typed int} & \\\cline{2-6}
+  & \multicolumn{2}{l|}{\sf n\_info} & Number of info key-value pairs & {\tt uint16\_t} & \\\cline{2-6}
   & \multicolumn{5}{c|}{\textcolor{gray}{\it List of key-value pairs in the INFO field (n=n\_info)}} \\\cline{3-6}
   & & {\sf info\_key} & Info key, defined in the dictionary & {\tt typed int} & \\\cline{3-6}
   & & {\sf info\_value} & Value & {\tt typed val} &\\
   \cline{2-6}
-  & \multicolumn{2}{l|}{\sf n\_fmt} & number of format fields & {\tt typed int} & \\\cline{2-6}
+  & \multicolumn{2}{l|}{\sf n\_fmt} & number of format fields & {\tt uint16\_t} & \\\cline{2-6}
   & \multicolumn{5}{c|}{\textcolor{gray}{\it List of formats and sample information (n=n\_fmt)}} \\\cline{3-6}
   & & {\sf fmt\_key} & Format key, defined in the dectionary & {\tt typed int} & \\\cline{3-6}
   & & {\sf fmt\_type} & Typing byte of each individual value, possibly followed by a typed int for the vector length & {\tt uint8\_t+} & \\\cline{3-6}

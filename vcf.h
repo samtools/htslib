@@ -93,9 +93,9 @@ typedef struct {
 	int32_t rid; // CHROM
 	int32_t pos; // POS
 	float qual;  // QUAL
-	uint16_t n_alt, n_info, n_fmt;
+	uint16_t n_alt, n_fmt;
 	int l_str, m_str;
-	int o_ref, o_alt, o_flt, o_info; // offsets in str
+	int o_ref, o_alt, o_flt, o_info, o_gt; // offsets in str
 	int *alt, *flt;
 	char *str;
 } vcf1_t;
@@ -106,9 +106,9 @@ typedef struct {
 
 static inline void vcf_enc_size(kstring_t *s, int size, int type)
 {
-	if (size >= 8) {
+	if (size >= 15) {
 		assert(size < 256); // not implemented yet
-		kputc(1<<7|type, s);
+		kputc(15<<4|type, s);
 		kputc(1<<4|VCF_RT_UINT8, s);
 		kputc(size, s);
 	} else kputc(size<<4|type, s);
