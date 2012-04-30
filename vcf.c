@@ -342,110 +342,117 @@ static inline void write_typed_int(kstring_t *s, int32_t x, int type)
 {
 }
 
+int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
+{
+	int ret, i = 0, ori_l, dtype;
+	char *p, *q, *r;
+	vdict_t *d = (vdict_t*)h->dict;
+	kstring_t str;
+	khint_t k;
+
+	dtype = get_dtype(h->n_key);
+	str.l = v->l_str = 0; str.m = v->m_str; str.s = v->str;
+	kputc(0, s); align_mem(s); ori_l = s->l; // the end of s will be used as a temporary buffer
+	if (ret < 0) return -1;
+	for (p = q = s->s;; ++q) {
+		int c;
+		if (*q != 0 && *q != '\t') continue;
+		c = *q; *q = 0;
+		if (i == 0) { // CHROM
+			k = kh_get(vdict, d, p);
+			if (k == kh_end(d) || kh_val(d, k).rid < 0) {
+				if (vcf_verbose >= 2)
+					fprintf(stderr, "[W::%s] can't find '%s' in the sequence dictionary\n", __func__, p);
+				return 0;
+			} else v->rid = kh_val(d, k).rid;
+		} else if (i == 1) { // POS
+			v->pos = atoi(p);
+		} else if (i == 2) { // ID
+			if (strcmp(p, ".")) kputsn(p, q - p, &str);
+			kputc(0, &str);
+		} else if (i == 3) { // REF
+			v->o_ref = str.l;
+			kputsn(p, q - p + 1, &str); // +1 to include NULL
+		} else if (i == 4) { // ALT
+			v->o_alt = str.l;
+			if (strcmp(p, ".")) {
+				v->n_alt = 1;
+				for (r = p; r != q; ++r)
+					if (*r == ',') *r = 0, ++v->n_alt;
+			} else v->n_alt = 0;
+			kputsn((char*)&v->n_alt, 2, &str);
+			if (v->n_alt) kputsn(p, q - p + 1, &str);
+		} else if (i == 5) { // QUAL
+			v->qual = atof(p);
+			kputsn((char*)&v->qual, 4, &str);
+		} else if (i == 6) { // FILTER
+			if (strcmp(p, ".")) { // FIXME: to finish
+				char *t;
+				write_vec_size(&str, v->n_flt, dtype);
+				for (r = t = p;; ++r) {
+					int c;
+					if (*r != ';' && *r != 0) continue;
+					c = *r; *r = 0;
+					k = kh_get(vdict, d, t);
+					if (k == kh_end(d)) { // not defined
+						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined FILTER '%s'\n", __func__, t);
+					} else write_typed_int(&str, kh_val(d, k).kid, dtype);
+					*r = c;
+					if (*r == 0 || r[1] == 0) break; // r[1] if the last char is ';'
+					t = r + 1;
+				}
+			} else {
+				v->n_flt = 0;
+				write_vec_size(&str, 0, dtype);
+			}
+		} else if (i == 7) { // INFO
+			char *t;
+			v->o_info = str.l;
+			if (strcmp(p, ".")) {
+				// fill info
+				printf("*** %s\n", p);
+				for (r = t = p;; ++r) {
+					int c;
+					char *val, *end;
+					if (*r != ';' && *r != '=' && *r != 0) continue;
+					val = end = 0;
+					c = *r; *r = 0;
+					if (c == '=') {
+						val = r + 1;
+						for (end = val; *end != ';' && *end != 0; ++end);
+						c = *end; *end = 0;
+					} else end = r;
+					printf("%s, %s\n", t, val? val : ".");
+					k = kh_get(vdict, d, t);
+					if (k == kh_end(d) || kh_val(d, k).info[VCF_DT_INFO] == 15) { // not defined in the header
+						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, t);
+					} else { // defined in the header
+						uint32_t y = kh_val(d, k).info[VCF_DT_INFO];
+						write_typed_int(&str, kh_val(d, k).kid, dtype);
+					}
+					if (c == 0) break;
+					r = end;
+					t = r + 1;
+				}
+			} else v->n_info = 0;
+		}
+		++i;
+		*q = c;
+		if (*q == 0) break;
+		p = q + 1;
+	}
+	v->l_str = str.l; v->m_str = str.m; v->str = str.s;
+	return 0;
+}
+
 int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 {
 	if (fp->is_bin) {
 	} else {
-		int ret, dret, i = 0, ori_l, dtype;
-		char *p, *q, *r;
-		vdict_t *d = (vdict_t*)h->dict;
-		kstring_t *s = (kstring_t*)fp->buf;
-		kstring_t str;
-		khint_t k;
-
-		dtype = get_dtype(h->n_key);
-		str.l = v->l_str = 0; str.m = v->m_str; str.s = v->str;
-		ret = ks_getuntil(fp->fp, KS_SEP_LINE, s, &dret);
-		kputc(0, s); align_mem(s); ori_l = s->l; // the end of s will be used as a temporary buffer
+		int ret, dret;
+		ret = ks_getuntil(fp->fp, KS_SEP_LINE, fp->buf, &dret);
 		if (ret < 0) return -1;
-		for (p = q = s->s;; ++q) {
-			int c;
-			if (*q != 0 && *q != '\t') continue;
-			c = *q; *q = 0;
-			if (i == 0) { // CHROM
-				k = kh_get(vdict, d, p);
-				if (k == kh_end(d) || kh_val(d, k).rid < 0) {
-					if (vcf_verbose >= 2)
-						fprintf(stderr, "[W::%s] can't find '%s' in the sequence dictionary\n", __func__, p);
-					return 0;
-				} else v->rid = kh_val(d, k).rid;
-			} else if (i == 1) { // POS
-				v->pos = atoi(p);
-			} else if (i == 2) { // ID
-				if (strcmp(p, ".")) kputsn(p, q - p, &str);
-				kputc(0, &str);
-			} else if (i == 3) { // REF
-				v->o_ref = str.l;
-				kputsn(p, q - p + 1, &str); // +1 to include NULL
-			} else if (i == 4) { // ALT
-				v->o_alt = str.l;
-				if (strcmp(p, ".")) {
-					v->n_alt = 1;
-					for (r = p; r != q; ++r)
-						if (*r == ',') *r = 0, ++v->n_alt;
-				} else v->n_alt = 0;
-				kputsn((char*)&v->n_alt, 2, &str);
-				if (v->n_alt) kputsn(p, q - p + 1, &str);
-			} else if (i == 5) { // QUAL
-				v->qual = atof(p);
-				kputsn((char*)&v->qual, 4, &str);
-			} else if (i == 6) { // FILTER
-				if (strcmp(p, ".")) { // FIXME: to finish
-					char *t;
-					write_vec_size(&str, v->n_flt, dtype);
-					for (r = t = p;; ++r) {
-						int c;
-						if (*r != ';' && *r != 0) continue;
-						c = *r; *r = 0;
-						k = kh_get(vdict, d, t);
-						if (k == kh_end(d)) { // not defined
-							if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined FILTER '%s'\n", __func__, t);
-						} else write_typed_int(&str, kh_val(d, k).kid, dtype);
-						*r = c;
-						if (*r == 0 || r[1] == 0) break; // r[1] if the last char is ';'
-						t = r + 1;
-					}
-				} else {
-					v->n_flt = 0;
-					write_vec_size(&str, 0, dtype);
-				}
-			} else if (i == 7) { // INFO
-				char *t;
-				v->o_info = str.l;
-				if (strcmp(p, ".")) {
-					// fill info
-					printf("*** %s\n", p);
-					for (r = t = p;; ++r) {
-						int c;
-						char *val, *end;
-						if (*r != ';' && *r != '=' && *r != 0) continue;
-						val = end = 0;
-						c = *r; *r = 0;
-						if (c == '=') {
-							val = r + 1;
-							for (end = val; *end != ';' && *end != 0; ++end);
-							c = *end; *end = 0;
-						} else end = r;
-						printf("%s, %s\n", t, val? val : ".");
-						k = kh_get(vdict, d, t);
-						if (k == kh_end(d) || kh_val(d, k).info[VCF_DT_INFO] == 15) { // not defined in the header
-							if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, t);
-						} else { // defined in the header
-							uint32_t y = kh_val(d, k).info[VCF_DT_INFO];
-							write_typed_int(&str, kh_val(d, k).kid, dtype);
-						}
-						if (c == 0) break;
-						r = end;
-						t = r + 1;
-					}
-				} else v->n_info = 0;
-			}
-			++i;
-			*q = c;
-			if (*q == 0) break;
-			p = q + 1;
-		}
-		v->l_str = str.l; v->m_str = str.m; v->str = str.s;
+		ret = vcf_parse1(fp->buf, h, v);
 	}
 	return 0;
 }
