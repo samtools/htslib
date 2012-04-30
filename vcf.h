@@ -64,6 +64,8 @@ typedef struct {
 	void *dict;
 } vcf_hdr_t;
 
+extern uint8_t vcf_type_size[];
+
 #define vcf_hdr_n_val(x, _n_alt) (((x)>>8&0xf) == VCF_VTP_FIXED? (x)>>12 : ((x)>>8&0xf) == VCF_VTP_A? (_n_alt) : ((x)>>8&0xf) == VCF_VTP_G? -2 : -1)
 
 /**************
@@ -136,6 +138,20 @@ static inline void vcf_enc_int1(kstring_t *s, long x)
 		vcf_enc_size(s, 1, VCF_RT_INT32);
 		kputsn((char*)&z, 4, s);
 	}
+}
+
+static inline long vcf_dec_int1(const uint8_t *buf)
+{
+	assert(*buf>>4 == 1 && (*buf&0xf) <= 4);
+	if ((*buf&0xf) == VCF_RT_INT8) return buf[1];
+	else if ((*buf&0xf) == VCF_RT_INT16) return *(int16_t*)(buf + 1);
+	else return *(int32_t*)(buf + 1);
+}
+
+static inline long vcf_dec_size(const uint8_t *buf) // return value: lower 4 bits: offset of the first value
+{
+	if (*buf>>7 == 0) return (long)(*buf>>4)<<4 | 1;
+	return vcf_dec_int1(buf + 1) << 4 | (1 + vcf_type_size[buf[1]&0xf]);
 }
 
 /*******

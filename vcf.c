@@ -19,6 +19,7 @@ KSTREAM_INIT(gzFile, gzread, 16384)
 int vcf_verbose = 3; // 1: error; 2: warning; 3: message; 4: progress; 5: debugging; >=10: pure debugging
 char *vcf_col_name[] = { "CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT" };
 char *vcf_type_name[] = { "Flag", "Integer", "Float", "String" };
+uint8_t vcf_type_size[] = { 0, 1, 2, 4, 8, 4, 8, 1, 1, 0, 1, 2, 4, 1, 0, 0 };
 static vcf_keyinfo_t vcf_keyinfo_def = { { 15, 15, 15 }, -1, -1, -1, -1 };
 
 /******************
@@ -418,6 +419,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				kputsn((char*)&v->qual, 4, &str);
 			} else *(uint32_t*)&v->qual = 0x7F800001;
 		} else if (i == 6) { // FILTER
+			v->o_flt = str.l;
 			if (strcmp(p, ".")) {
 				char *t;
 				long *a;
@@ -538,6 +540,9 @@ int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 {
 	char *p, *q;
+	long x;
+	int i;
+
 	s->l = 0;
 	kputs(h->key[h->r2k[v->rid]].key, s); kputc('\t', s); // CHROM
 	kputw(v->pos + 1, s); kputc('\t', s); // POS
@@ -562,6 +567,23 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	} else kputsn(".\t", 2, s);
 	if (*(uint32_t*)&v->qual == 0x7F800001) kputsn(".\t", 2, s); // QUAL
 	else ksprintf(s, "%g\t", v->qual);
+	{ // FILTER
+		x = vcf_dec_size((uint8_t*)v->str + v->o_flt);
+		if (x>>4) {
+			int size, o;
+			size = vcf_type_size[v->str[v->o_flt]&0xf];
+			for (i = 0, o = v->o_flt + (x&0xf); i < x>>4; ++i, o += size) {
+				long y;
+				if (i) kputc(';', s);
+				if (size == 1) y = *(int8_t*)(v->str + o);
+				else if (size == 2) y = *(int16_t*)(v->str + o);
+				else y = *(int32_t*)(v->str + o);
+				assert(y < h->n_key);
+				kputs(h->key[y].key, s);
+			}
+			kputc('\t', s);
+		} else kputsn(".\t", 2, s);
+	}
 	return 0;
 }
 
