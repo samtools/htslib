@@ -121,9 +121,9 @@ static inline int vcf_enc_inttype(long x)
 	return VCF_RT_INT32;
 }
 
-static inline void vcf_enc_int1(kstring_t *s, long x)
+static inline void vcf_enc_int1(kstring_t *s, int32_t x)
 {
-	if (x == LONG_MIN) {
+	if (x == INT32_MIN) {
 		vcf_enc_size(s, 1, VCF_RT_INT8);
 		kputc(INT8_MIN, s);
 	} else if (x <= INT8_MAX && x > INT8_MIN) {
@@ -140,7 +140,7 @@ static inline void vcf_enc_int1(kstring_t *s, long x)
 	}
 }
 
-static inline long vcf_dec_int1(const uint8_t *buf)
+static inline int32_t vcf_dec_int1(const uint8_t *buf)
 {
 	assert(*buf>>4 == 1 && (*buf&0xf) <= 4);
 	if ((*buf&0xf) == VCF_RT_INT8) return buf[1];
@@ -148,10 +148,10 @@ static inline long vcf_dec_int1(const uint8_t *buf)
 	else return *(int32_t*)(buf + 1);
 }
 
-static inline long vcf_dec_size(const uint8_t *buf) // return value: lower 4 bits: offset of the first value
+static inline int64_t vcf_dec_size(const uint8_t *buf) // return value: lower 4 bits: offset of the first value
 {
 	if (*buf>>7 == 0) return (long)(*buf>>4)<<4 | 1;
-	return vcf_dec_int1(buf + 1) << 4 | (1 + vcf_type_size[buf[1]&0xf]);
+	return (int64_t)vcf_dec_int1(buf + 1) << 4 | (1 + vcf_type_size[buf[1]&0xf]);
 }
 
 /*******

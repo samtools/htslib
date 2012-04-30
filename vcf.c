@@ -325,32 +325,32 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
  * Typed value I/O *
  *******************/
 
-void vcf_enc_int(kstring_t *s, int n, long *a)
+void vcf_enc_int(kstring_t *s, int n, int32_t *a)
 {
-	long max = LONG_MIN + 1, min = LONG_MAX;
+	int32_t max = INT32_MIN + 1, min = INT32_MAX;
 	int i;
 	if (n == 0) vcf_enc_size(s, 0, VCF_RT_INT8);
 	else if (n == 1) vcf_enc_int1(s, a[0]);
 	else {
 		for (i = 0; i < n; ++i) {
-			if (a[i] == LONG_MIN) continue;
+			if (a[i] == INT32_MIN) continue;
 			if (max < a[i]) max = a[i];
 			if (min > a[i]) min = a[i];
 		}
 		if (max <= INT8_MAX && min > INT8_MIN) {
 			vcf_enc_size(s, n, VCF_RT_INT8);
 			for (i = 0; i < n; ++i)
-				kputc(a[i] == LONG_MIN? INT8_MIN : a[i], s);
+				kputc(a[i] == INT32_MIN? INT8_MIN : a[i], s);
 		} else if (max <= INT16_MAX && min > INT16_MIN) {
 			vcf_enc_size(s, n, VCF_RT_INT16);
 			for (i = 0; i < n; ++i) {
-				int16_t x = a[i] == LONG_MIN? INT16_MIN : a[i];
+				int16_t x = a[i] == INT32_MIN? INT16_MIN : a[i];
 				kputsn((char*)&x, 2, s);
 			}
 		} else {
 			vcf_enc_size(s, n, VCF_RT_INT32);
 			for (i = 0; i < n; ++i) {
-				int32_t x = a[i] == LONG_MIN? INT32_MIN : a[i];
+				int32_t x = a[i] == INT32_MIN? INT32_MIN : a[i];
 				kputsn((char*)&x, 4, s);
 			}
 		}
@@ -374,10 +374,16 @@ vcf1_t *vcf_init1()
 	return v;
 }
 
+typedef struct {
+	int key, size;
+	uint32_t *val;
+} fmt_pair_t;
+
 int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 {
 	int ret, i = 0, ori_l;
-	char *p, *q, *r;
+	char *p, *q, *r, *t;
+	fmt_pair_t *fmt;
 	vdict_t *d = (vdict_t*)h->dict;
 	kstring_t str;
 	khint_t k;
@@ -421,13 +427,13 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 		} else if (i == 6) { // FILTER
 			v->o_flt = str.l;
 			if (strcmp(p, ".")) {
-				char *t;
-				long *a;
+				int32_t *a;
 				int n_flt = 1, i;
+				if (*(q-1) == ';') *(q-1) = 0;
 				for (r = p; *r; ++r)
 					if (*r == ';') ++n_flt;
-				ks_resize(s, ori_l + n_flt * sizeof(long)); // reuse the end of s as a buffer
-				a = (long*)(s->s + ori_l);
+				ks_resize(s, ori_l + n_flt * 4); // reuse the end of s as a buffer
+				a = (int32_t*)(s->s + ori_l);
 				for (r = t = p, i = 0;; ++r) {
 					int c;
 					if (*r != ';' && *r != 0) continue;
@@ -449,7 +455,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			kputsn("\0\0", 2, &str); // place holder for n_info
 			if (strcmp(p, ".")) {
 				// fill info
-				printf("*** %s\n", p);
+				if (*(q-1) == ';') *(q-1) = 0;
 				for (r = key = p;; ++r) {
 					int c;
 					char *val, *end;
@@ -461,7 +467,6 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 						for (end = val; *end != ';' && *end != 0; ++end);
 						c = *end; *end = 0;
 					} else end = r;
-					printf("%s, %s\n", key, val? val : ".");
 					k = kh_get(vdict, d, key);
 					if (k == kh_end(d) || kh_val(d, k).info[VCF_DT_INFO] == 15) { // not defined in the header
 						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, key);
@@ -498,7 +503,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 								vcf_enc_int1(&str, kh_val(d, k).kid);
 								ks_resize(s, ori_l + n_rec_val * 8);
 								if ((y>>4&0xf) == VCF_TP_INT) {
-									long *z = (long*)(s->s + ori_l);
+									int32_t *z = (int32_t*)(s->s + ori_l);
 									for (i = 0, t = val; i < n_rec_val; ++i, ++t)
 										z[i] = strtol(t, &t, 10);
 									vcf_enc_int(&str, n_rec_val, z);
@@ -517,6 +522,36 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				}
 			}
 			*(uint16_t*)(str.s + v->o_info) = n_info;
+		} else if (i == 8 && h->n_sample > 0) { // FORMAT
+			/*
+			int size_all = 0;
+			long l;
+			if (*(q-1) == ':') *(q-1) = 0;
+			v->o_fmt = str.l;
+			v->n_fmt = 1;
+			for (r = p; *r; ++r)
+				if (*r == ':') ++v->n_fmt;
+			ks_resize(s, ori_l + v->n_fmt * sizeof(fmt_pair_t));
+			fmt = (fmt_pair_t*)(s->s + ori_l);
+			l = ori_l + v->n_fmt * sizeof(fmt_pair_t);
+			for (r = t = p;; ++r) {
+				int c;
+				if (*r != ':' && *r != 0) continue;
+				k = kh_get(vdict, d, t);
+				if (k == kh_end(d) || kh_val(d, h).info[VCF_DT_FMT] == 15) {
+					if (vcf_verbose >= 2)
+						fprintf(stderr, "[W::%s] FORMAT '%s' is not defined in the header\n", __func__, t);
+					v->n_fmt = 0;
+					break;
+				} else {
+					uint32_t y = v->key[kh_val(d, h).kid]->info[VCF_DT_FMT];
+					int n_val;
+					n_val = vcf_hdr_n_val(y, v->n_alt);
+				}
+				c = *r; *r = 0;
+				t = r + 1;
+			}
+			*/
 		}
 		++i;
 		*q = c;
@@ -575,13 +610,13 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	if (*(uint32_t*)&v->qual == 0x7F800001) kputsn(".\t", 2, s); // QUAL
 	else ksprintf(s, "%g\t", v->qual);
 	{ // FILTER
-		long x;
+		int64_t x;
 		x = vcf_dec_size((uint8_t*)v->str + v->o_flt);
 		if (x>>4) {
 			int size, o;
 			size = vcf_type_size[v->str[v->o_flt]&0xf];
 			for (i = 0, o = v->o_flt + (x&0xf); i < x>>4; ++i, o += size) {
-				long y;
+				int32_t y;
 				if (i) kputc(';', s);
 				if (size == 1) y = *(int8_t*)(v->str + o);
 				else if (size == 2) y = *(int16_t*)(v->str + o);
@@ -597,7 +632,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 		uint8_t *q, *p = (uint8_t*)v->str + v->o_info + 2;
 		n_info = *(uint16_t*)(v->str + v->o_info);
 		for (i = 0; i < n_info; ++i) {
-			long x;
+			int32_t x;
 			uint32_t y;
 			if (i) kputc(';', s);
 			x = vcf_dec_int1(p);
