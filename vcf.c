@@ -767,17 +767,19 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	return 0;
 }
 
-int main()
+int main(int argc, char *argv[])
 {
 	vcf_hdr_t *h;
-
 	vcfFile *fp;
 	vcf1_t *v;
-	fp = vcf_open("ex2.vcf", "r", 0);
+	if (argc == 1) {
+		fprintf(stderr, "Usage: bcf2ls <in.vcf>\n");
+		return 1;
+	}
+	fp = vcf_open(argv[1], "r", 0);
 	h = vcf_hdr_read(fp);
 	v = vcf_init1();
-	while (vcf_read1(fp, h, v) >= 0) {
-	}
+	while (vcf_read1(fp, h, v) >= 0);
 	vcf_hdr_destroy(h);
 	return 0;
 }
