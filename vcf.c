@@ -389,14 +389,14 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 	vdict_t *d = (vdict_t*)h->dict;
 	kstring_t str;
 	khint_t k;
+	ks_tokaux_t aux;
 
 	str.l = v->l_str = 0; str.m = v->m_str; str.s = v->str;
 	kputc(0, s); align_mem(s); ori_l = s->l; // the end of s will be used as a temporary buffer
 	if (ret < 0) return -1;
-	for (p = q = s->s;; ++q) {
-		int c;
-		if (*q != 0 && *q != '\t') continue;
-		c = *q; *q = 0;
+	for (p = kstrtok(s->s, "\t", &aux), i = 0; p; p = kstrtok(0, 0, &aux), ++i) {
+		q = (char*)aux.p;
+		*q = 0;
 		if (i == 0) { // CHROM
 			k = kh_get(vdict, d, p);
 			if (k == kh_end(d) || kh_val(d, k).rid < 0) {
@@ -431,23 +431,22 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			if (strcmp(p, ".")) {
 				int32_t *a;
 				int n_flt = 1, i;
+				ks_tokaux_t aux1;
+				// count the number of filters
 				if (*(q-1) == ';') *(q-1) = 0;
 				for (r = p; *r; ++r)
 					if (*r == ';') ++n_flt;
 				ks_resize(s, ori_l + n_flt * 4); // reuse the end of s as a buffer
 				a = (int32_t*)(s->s + ori_l);
-				for (r = t = p, i = 0;; ++r) {
-					int c;
-					if (*r != ';' && *r != 0) continue;
-					c = *r; *r = 0;
+				// add filters
+				for (t = kstrtok(p, ";", &aux1), i = 0; t; t = kstrtok(0, 0, &aux1)) {
+					*(char*)aux1.p = 0;
 					k = kh_get(vdict, d, t);
 					if (k == kh_end(d)) { // not defined
 						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined FILTER '%s'\n", __func__, t);
 					} else a[i++] = kh_val(d, k).kid;
-					*r = c;
-					if (*r == 0 || r[1] == 0) break; // r[1] if the last char is ';'
-					t = r + 1;
 				}
+				n_flt = i;
 				vcf_enc_int(&str, n_flt, a);
 			} else vcf_enc_int(&str, 0, 0);
 		} else if (i == 7) { // INFO
@@ -456,7 +455,6 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			v->o_info = str.l;
 			kputsn("\0\0", 2, &str); // place holder for n_info
 			if (strcmp(p, ".")) {
-				// fill info
 				if (*(q-1) == ';') *(q-1) = 0;
 				for (r = key = p;; ++r) {
 					int c;
@@ -474,15 +472,12 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, key);
 					} else { // defined in the header
 						uint32_t y = kh_val(d, k).info[VCF_DT_INFO];
-						if ((y>>4&0xf) == VCF_TP_FLAG) { // a flag defined in the dict
+						if ((y>>4&0xf) == VCF_TP_FLAG || val == 0) { // a flag defined in the dict or without value
+							vcf_enc_int1(&str, kh_val(d, k).kid);
+							++n_info;
 							if (val != 0 && vcf_verbose >= 2)
 								fprintf(stderr, "[W::%s] INFO '%s' is defined as a flag in the header but has a value '%s' in VCF; value skipped\n", __func__, key, val);
-							else {
-								vcf_enc_int1(&str, kh_val(d, k).kid);
-								++n_info;
-							}
-						} else if (val == 0) { // if not Flag, there must be value(s)
-							if (vcf_verbose >= 2)
+							if (val == 0 && (y>>4&0xf) != VCF_TP_FLAG && vcf_verbose >= 2)
 								fprintf(stderr, "[W::%s] INFO '%s' takes at least a value, but no value is found\n", __func__, key);
 						} else if ((y>>4&0xf) == VCF_TP_STR) { // a string
 							vcf_enc_int1(&str, kh_val(d, k).kid);
@@ -490,31 +485,23 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 							kputsn(val, end - val + 1, &str); // +1 to include NULL
 							++n_info;
 						} else { // an integer or float value or array
-							int n_rec_val = 1, n_hdr_val;
+							int i, n_val = 1;
 							char *t;
 							for (t = val; *t; ++t)
-								if (*t == ',') ++n_rec_val;
-							n_hdr_val = vcf_hdr_n_val(y, v->n_alt);
-							if (n_hdr_val == -1) n_hdr_val = n_rec_val; // -1 if variable size
-							else if (n_hdr_val != n_rec_val) { // check if number of values agrees with the header
-								if (vcf_verbose >= 2)
-									fprintf(stderr, "[W::%s] INFO '%s' takes %d value(s) but the header requires %d value(s); skipped\n", __func__, key, n_rec_val, n_hdr_val);
-							} else {
-								int i;
-								++n_info;
-								vcf_enc_int1(&str, kh_val(d, k).kid);
-								ks_resize(s, ori_l + n_rec_val * 8);
-								if ((y>>4&0xf) == VCF_TP_INT) {
-									int32_t *z = (int32_t*)(s->s + ori_l);
-									for (i = 0, t = val; i < n_rec_val; ++i, ++t)
-										z[i] = strtol(t, &t, 10);
-									vcf_enc_int(&str, n_rec_val, z);
-								} else if ((y>>4&0xf) == VCF_TP_REAL) {
-									float *z = (float*)(s->s + ori_l);
-									for (i = 0, t = val; i < n_rec_val; ++i, ++t)
-										z[i] = strtod(t, &t);
-									vcf_enc_float(&str, n_rec_val, z);
-								}
+								if (*t == ',') ++n_val;
+							++n_info;
+							vcf_enc_int1(&str, kh_val(d, k).kid);
+							ks_resize(s, ori_l + n_val * 4);
+							if ((y>>4&0xf) == VCF_TP_INT) {
+								int32_t *z = (int32_t*)(s->s + ori_l);
+								for (i = 0, t = val; i < n_val; ++i, ++t)
+									z[i] = strtol(t, &t, 10);
+								vcf_enc_int(&str, n_val, z);
+							} else if ((y>>4&0xf) == VCF_TP_REAL) {
+								float *z = (float*)(s->s + ori_l);
+								for (i = 0, t = val; i < n_val; ++i, ++t)
+									z[i] = strtod(t, &t);
+								vcf_enc_float(&str, n_val, z);
 							}
 						}
 					}
@@ -526,6 +513,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			*(uint16_t*)(str.s + v->o_info) = n_info;
 		} else if (i == 8 && h->n_sample > 0) { // FORMAT
 			int j, l, m;
+			ks_tokaux_t aux1;
 			v->o_fmt = str.l;
 			// count the number of format fields
 			v->n_fmt = 1;
@@ -534,10 +522,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			// get format information from the dictionary
 			ks_resize(s, ori_l + v->n_fmt * sizeof(fmt_pair_t));
 			fmt = (fmt_pair_t*)(s->s + ori_l);
-			for (r = t = p, j = 0;; ++r) {
-				int c;
-				if (*r != ':' && *r != 0) continue;
-				c = *r; *r = 0;
+			for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
+				*(char*)aux1.p = 0;
 				k = kh_get(vdict, d, t);
 				if (k == kh_end(d) || kh_val(d, k).info[VCF_DT_FMT] == 15) {
 					if (vcf_verbose >= 2)
@@ -549,9 +535,6 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					fmt[j].key = kh_val(d, k).kid;
 					fmt[j].y = h->key[fmt[j].key].info->info[VCF_DT_FMT];
 				}
-				if (c == 0) break;
-				t = r + 1;
-				++j;
 			}
 			// compute max
 			for (r = q + 1, j = m = 0, l = 1;; ++r, ++l) {
@@ -581,10 +564,6 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			}
 			s->l = ori_l; // revert to the original length
 		}
-		++i;
-		*q = c;
-		if (*q == 0) break;
-		p = q + 1;
 	}
 	v->l_str = str.l; v->m_str = str.m; v->str = str.s;
 	{
