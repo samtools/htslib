@@ -399,9 +399,9 @@ void vcf_fmt_array(kstring_t *s, int n, int type, void *data)
 	if (n && j == 0) kputc('.', s);
 }
 
-/******************
- * VCF record I/O *
- ******************/
+/****************************
+ * Parsing VCF record lines *
+ ****************************/
 
 vcf1_t *vcf_init1()
 {
@@ -664,9 +664,13 @@ int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 	return 0;
 }
 
+/**************************
+ * Print VCF record lines *
+ **************************/
+
 typedef struct {
-	int key, type, len;
-	uint8_t *buf;
+	int key, type, n, size;
+	uint8_t *p;
 } fmt_daux_t;
 
 int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
@@ -733,31 +737,38 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 			} else continue;
 		}
 	} else kputc('.', s);
-	/*
-	if (h->n_sample) { // FORMAT
-		uint8_t **ptr;
-		ptr = alloca(v->n_fmt * sizeof(void*));
+	if (h->n_sample && v->n_fmt) { // FORMAT
+		int i, j;
+		fmt_daux_t *faux;
+		uint8_t *p;
+		faux = alloca(v->n_fmt * sizeof(fmt_daux_t));
 		kputc('\t', s);
+		p = (uint8_t*)v->str + v->o_fmt + 2;
 		for (i = 0; i < v->n_fmt; ++i) {
+			fmt_daux_t *f = &faux[i];
+			f->key = vcf_dec_typed_int1(p, &p);
+			f->n = vcf_dec_size(p, &p, &f->type);
+			f->size = vcf_type_size[f->type] * f->n;
+			f->p = p;
+			p += h->n_sample * f->size;
 			if (i) kputc(':', s);
+			kputs(h->key[f->key].key, s);
+		}
+		for (j = 0; j < h->n_sample; ++j) {
+			kputc('\t', s);
+			for (i = 0; i < v->n_fmt; ++i) {
+				fmt_daux_t *f = &faux[i];
+				if (i) kputc(':', s);
+				vcf_fmt_array(s, f->n, f->type, f->p + j * f->size);
+			}
 		}
 	}
-	*/
 	return 0;
 }
 
 int main()
 {
 	vcf_hdr_t *h;
-	/*
-	h = vcf_hdr_init();
-	vcf_hdr_parse1(h, "##INFO=<Number=A,Type=Integer,Description=\"gatca,agct=gact,\",ID=MQ>");
-	vcf_hdr_parse1(h, "##contig=<ID=NA00001,length=62435964,assembly=B36>");
-	vcf_hdr_parse1(h, "##contig=<ID=20,length=62435964,assembly=B36>");
-	vcf_hdr_parse1(h, "#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NA00001	NA00002	NA00003");
-	vcf_hdr_sync(h);
-	vcf_hdr_destroy(h);
-	*/
 
 	vcfFile *fp;
 	vcf1_t *v;
