@@ -325,30 +325,31 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
  * Typed value I/O *
  *******************/
 
-void vcf_enc_int(kstring_t *s, int n, int32_t *a)
+void vcf_enc_int(kstring_t *s, int n, int32_t *a, int wsize)
 {
 	int32_t max = INT32_MIN + 1, min = INT32_MAX;
 	int i;
 	if (n == 0) vcf_enc_size(s, 0, VCF_RT_INT8);
 	else if (n == 1) vcf_enc_int1(s, a[0]);
 	else {
+		if (wsize <= 0) wsize = n;
 		for (i = 0; i < n; ++i) {
 			if (a[i] == INT32_MIN) continue;
 			if (max < a[i]) max = a[i];
 			if (min > a[i]) min = a[i];
 		}
 		if (max <= INT8_MAX && min > INT8_MIN) {
-			vcf_enc_size(s, n, VCF_RT_INT8);
+			vcf_enc_size(s, wsize, VCF_RT_INT8);
 			for (i = 0; i < n; ++i)
 				kputc(a[i] == INT32_MIN? INT8_MIN : a[i], s);
 		} else if (max <= INT16_MAX && min > INT16_MIN) {
-			vcf_enc_size(s, n, VCF_RT_INT16);
+			vcf_enc_size(s, wsize, VCF_RT_INT16);
 			for (i = 0; i < n; ++i) {
 				int16_t x = a[i] == INT32_MIN? INT16_MIN : a[i];
 				kputsn((char*)&x, 2, s);
 			}
 		} else {
-			vcf_enc_size(s, n, VCF_RT_INT32);
+			vcf_enc_size(s, wsize, VCF_RT_INT32);
 			for (i = 0; i < n; ++i) {
 				int32_t x = a[i] == INT32_MIN? INT32_MIN : a[i];
 				kputsn((char*)&x, 4, s);
@@ -378,14 +379,14 @@ typedef struct {
 	int key, size;
 	int max_l, max_m;
 	uint32_t y;
-	uint32_t *buf;
-} fmt_pair_t;
+	uint8_t *buf;
+} fmt_aux_t;
 
 int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 {
 	int ret, i = 0, ori_l;
 	char *p, *q, *r, *t;
-	fmt_pair_t *fmt;
+	fmt_aux_t *fmt;
 	vdict_t *d = (vdict_t*)h->dict;
 	kstring_t str;
 	khint_t k;
@@ -447,8 +448,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					} else a[i++] = kh_val(d, k).kid;
 				}
 				n_flt = i;
-				vcf_enc_int(&str, n_flt, a);
-			} else vcf_enc_int(&str, 0, 0);
+				vcf_enc_int(&str, n_flt, a, -1);
+			} else vcf_enc_int(&str, 0, 0, -1);
 		} else if (i == 7) { // INFO
 			char *key;
 			int n_info = 0;
@@ -496,7 +497,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 								int32_t *z = (int32_t*)(s->s + ori_l);
 								for (i = 0, t = val; i < n_val; ++i, ++t)
 									z[i] = strtol(t, &t, 10);
-								vcf_enc_int(&str, n_val, z);
+								vcf_enc_int(&str, n_val, z, -1);
 							} else if ((y>>4&0xf) == VCF_TP_REAL) {
 								float *z = (float*)(s->s + ori_l);
 								for (i = 0, t = val; i < n_val; ++i, ++t)
@@ -520,8 +521,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			for (r = p; *r; ++r)
 				if (*r == ':') ++v->n_fmt;
 			// get format information from the dictionary
-			ks_resize(s, ori_l + v->n_fmt * sizeof(fmt_pair_t));
-			fmt = (fmt_pair_t*)(s->s + ori_l);
+			ks_resize(s, ori_l + v->n_fmt * sizeof(fmt_aux_t));
+			fmt = (fmt_aux_t*)(s->s + ori_l);
 			for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
 				*(char*)aux1.p = 0;
 				k = kh_get(vdict, d, t);
@@ -548,21 +549,62 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				if (*r == 0) break;
 			}
 			// allocate memory for arrays
-			s->l = ori_l + v->n_fmt * sizeof(fmt_pair_t);
+			s->l = ori_l + v->n_fmt * sizeof(fmt_aux_t);
 			for (j = 0; j < v->n_fmt; ++j) {
-				int size;
 				if ((fmt[j].y>>4&0xf) == VCF_TP_STR) {
-					size = fmt[j].max_l;
+					fmt[j].size = fmt[j].max_l;
 				} else if ((fmt[j].y>>4&0xf) == VCF_TP_REAL || (fmt[j].y>>4&0xf) == VCF_TP_INT) {
-					size = fmt[j].max_m * 4;
+					fmt[j].size = fmt[j].max_m << 2;
 				} else abort(); // I do not know how to do with Flag in the genotype fields
 				align_mem(s);
-				ks_resize(s, s->l + h->n_sample * size);
-				fmt[j].buf = (uint32_t*)(s->s + s->l);
+				ks_resize(s, s->l + h->n_sample * fmt[j].size);
+				fmt[j].buf = (uint8_t*)(s->s + s->l);
 				s->l += h->n_sample * fmt[j].max_l;
 				// printf("%s, %d, %d\n", h->key[fmt[j].key].key, fmt[j].max_l, fmt[j].max_m);
 			}
 			s->l = ori_l; // revert to the original length
+		} else if (i >= 9 && h->n_sample > 0) {
+			int j, l;
+			ks_tokaux_t aux1;
+			for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
+				fmt_aux_t *z = &fmt[j];
+				*(char*)aux1.p = 0;
+				if ((z->y>>4&0xf) == VCF_TP_STR) {
+					r = (char*)z->buf + z->size * (i - 9);
+					for (l = 0; l < aux1.p - t; ++l) r[l] = t[l];
+					for (; l != z->size; ++l) r[l] = 0;
+				} else if ((z->y>>4&0xf) == VCF_TP_INT) {
+					int32_t *x = (int32_t*)(z->buf + fmt[k].size * (i - 9));
+					for (r = t, l = 0; r < aux1.p; ++r) {
+						if (*r == '.') x[l++] = INT32_MIN, ++r;
+						else x[l++] = strtol(r, &r, 10);
+					}
+					for (; l != z->size>>2; ++l) x[l] = INT32_MIN;
+				} else if ((z->y>>4&0xf) == VCF_TP_REAL) {
+					float *x = (float*)(z->buf + z->size * (i - 9));
+					for (r = t, l = 0; r < aux1.p; ++r) {
+						if (*r == '.' && !isdigit(r[1])) *(int32_t*)&x[l++] = 0x7F800001;
+						else x[l++] = strtof(r, &r);
+					}
+					for (; l != z->size>>2; ++l) *(int32_t*)(x+l) = 0x7F800001;
+				}
+			}
+		}
+	}
+	if (h->n_sample > 0) { // write individual genotype information
+		kputsn((char*)&v->n_fmt, 2, &str);
+		for (i = 0; i < v->n_fmt; ++i) {
+			fmt_aux_t *z = &fmt[i];
+			vcf_enc_int1(&str, z->key);
+			if ((z->y>>4&0xf) == VCF_TP_STR) {
+				vcf_enc_size(&str, z->size, VCF_RT_CHAR);
+				kputsn((char*)z->buf, z->size * h->n_sample, &str);
+			} else if ((z->y>>4&0xf) == VCF_TP_INT) {
+				vcf_enc_int(&str, (z->size>>2) * h->n_sample, (int32_t*)z->buf, z->size>>2);
+			} else {
+				vcf_enc_size(&str, z->size>>2, VCF_RT_FLOAT);
+				kputsn((char*)z->buf, z->size * h->n_sample, &str);
+			}
 		}
 	}
 	v->l_str = str.l; v->m_str = str.m; v->str = str.s;

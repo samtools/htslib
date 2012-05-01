@@ -77,6 +77,7 @@ extern uint8_t vcf_type_size[];
 #define VCF_RT_INT32	3
 #define VCF_RT_INT64	4
 #define VCF_RT_FLOAT	5
+#define VCF_RT_CHAR		7
 #define VCF_RT_BOOL		8
 #define VCF_RT_CSTR		9
 #define VCF_RT_UINT8	13
