@@ -220,6 +220,10 @@ int vcf_hdr_parse1(vcf_hdr_t *h, const char *str)
 	} else {
 		int i = 0;
 		const char *p, *q;
+		// check if "PASS" is in the dictionary
+		k = kh_get(vdict, d, "PASS");
+		if (k == kh_end(d)) vcf_hdr_parse1(h, "##FILTER=<ID=PASS>"); // if not, add it
+		// add samples
 		for (p = q = str;; ++q) {
 			int ret;
 			if (*q != '\t' && *q != 0) continue;
