@@ -410,7 +410,7 @@ vcf1_t *vcf_init1()
 
 typedef struct {
 	int key, size;
-	int max_l, max_m;
+	int max_l, max_m, offset;
 	uint32_t y;
 	uint8_t *buf;
 } fmt_aux_t;
@@ -591,11 +591,13 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					f->size = f->max_m << 2;
 				} else abort(); // I do not know how to do with Flag in the genotype fields
 				align_mem(s);
+				f->offset = s->l;
 				ks_resize(s, s->l + h->n_sample * f->size);
-				f->buf = (uint8_t*)(s->s + s->l);
 				s->l += h->n_sample * f->size;
 				// printf("%s, %d, %d\n", h->key[f->key].key, f->max_l, f->max_m);
 			}
+			for (j = 0; j < v->n_fmt; ++j)
+				fmt[j].buf = (uint8_t*)s->s + fmt[j].offset;
 			s->l = ori_l; // revert to the original length
 		} else if (i >= 9 && h->n_sample > 0) {
 			int j, l;
@@ -608,7 +610,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					for (l = 0; l < aux1.p - t; ++l) r[l] = t[l];
 					for (; l != z->size; ++l) r[l] = 0;
 				} else if ((z->y>>4&0xf) == VCF_TP_INT) {
-					int32_t *x = (int32_t*)(z->buf + fmt[k].size * (i - 9));
+					int32_t *x = (int32_t*)(z->buf + z->size * (i - 9));
 					for (r = t, l = 0; r < aux1.p; ++r) {
 						if (*r == '.') x[l++] = INT32_MIN, ++r;
 						else x[l++] = strtol(r, &r, 10);
