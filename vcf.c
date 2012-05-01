@@ -571,7 +571,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				}
 			}
 			// compute max
-			for (r = q + 1, j = m = 0, l = 1;; ++r, ++l) {
+			for (r = q + 1, j = 0, m = l = 1;; ++r, ++l) {
 				if (*r == ':' || *r == '\t' || *r == '\0') { // end of a sample
 					if (fmt[j].max_m < m) fmt[j].max_m = m;
 					if (fmt[j].max_l < l) fmt[j].max_l = l;
