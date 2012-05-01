@@ -96,7 +96,7 @@ typedef struct {
 	float qual;  // QUAL
 	uint16_t n_alt, n_fmt;
 	int l_str, m_str;
-	int o_ref, o_alt, o_flt, o_info, o_fmt, o_gt; // offsets in str
+	int o_ref, o_alt, o_flt, o_info, o_fmt; // offsets in str
 	int *alt, *flt;
 	char *str;
 } vcf1_t;

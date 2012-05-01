@@ -664,6 +664,11 @@ int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 	return 0;
 }
 
+typedef struct {
+	int key, type, len;
+	uint8_t *buf;
+} fmt_daux_t;
+
 int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 {
 	const char *p, *q;
@@ -734,6 +739,14 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 				vcf_fmt_array(s, x>>4, *p&0xf, p + (x&0xf));
 				p += (x&0xf) + vcf_type_size[*p&0xf] * (x>>4);
 			}
+		}
+	}
+	if (h->n_sample) { // FORMAT
+		uint8_t **ptr;
+		ptr = alloca(v->n_fmt * sizeof(void*));
+		kputc('\t', s);
+		for (i = 0; i < v->n_fmt; ++i) {
+			if (i) kputc(':', s);
 		}
 	}
 	return 0;
