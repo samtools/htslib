@@ -364,6 +364,41 @@ void vcf_enc_float(kstring_t *s, int n, float *a)
 	kputsn((char*)a, 4 * n, s);
 }
 
+void vcf_fmt_array(kstring_t *s, int n, int type, void *data)
+{
+	int j = 0;
+	if (type == VCF_RT_INT8) {
+		int8_t *p = (int8_t*)data;
+		for (j = 0; j < n && *p != INT8_MIN; ++j, ++p) {
+			if (j) kputc(',', s);
+			kputw(*p, s);
+		}
+	} else if (type == VCF_RT_INT16) {
+		int16_t *p = (int16_t*)data;
+		for (j = 0; j < n && *p != INT16_MIN; ++j, ++p) {
+			if (j) kputc(',', s);
+			kputw(*p, s);
+		}
+	} else if (type == VCF_RT_INT32) {
+		int32_t *p = (int32_t*)data;
+		for (j = 0; j < n && *p != INT32_MIN; ++j, ++p) {
+			if (j) kputc(',', s);
+			kputw(*p, s);
+		}
+	} else if (type == VCF_RT_FLOAT) {
+		float *p = (float*)data;
+		for (j = 0; j < n && *(int32_t*)p != 0x7F800001; ++j, ++p) {
+			if (j) kputc(',', s);
+			ksprintf(s, "%g", *p);
+		}
+	} else if (type == VCF_RT_CHAR) {
+		char *p = (char*)data;
+		for (j = 0; j < n && *p; ++j, ++p)
+			kputc(*p, s);
+	}
+	if (n && j == 0) kputc('.', s);
+}
+
 /******************
  * VCF record I/O *
  ******************/
@@ -695,34 +730,9 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 				kputsn((char*)p, q - p, s);
 				p = q + 1;
 			} else {
-				int j, size;
-				kputc('=', s);
-				x = vcf_dec_size(p);
-				size = vcf_type_size[*p&0xf];
-				p += x&0xf;
-				if ((y>>4&0xf) == VCF_TP_REAL) {
-					for (j = 0; j < x>>4; ++j, p += 4) {
-						if (j) kputc(',', s);
-						ksprintf(s, "%g", *(float*)p);
-					}
-				} else if ((y>>4&0xf) == VCF_TP_INT) {
-					if (size == 1) {
-						for (j = 0; j < x>>4; ++j, p += size) {
-							if (j) kputc(',', s);
-							ksprintf(s, "%d", *(int8_t*)p);
-						}
-					} else if (size == 2) {
-						for (j = 0; j < x>>4; ++j, p += size) {
-							if (j) kputc(',', s);
-							ksprintf(s, "%d", *(int16_t*)p);
-						}
-					} else {
-						for (j = 0; j < x>>4; ++j, p += size) {
-							if (j) kputc(',', s);
-							ksprintf(s, "%d", *(int32_t*)p);
-						}
-					}
-				}
+				x = vcf_dec_size(p); // p+(x&0xf) is the start of the array
+				vcf_fmt_array(s, x>>4, *p&0xf, p + (x&0xf));
+				p += (x&0xf) + vcf_type_size[*p&0xf] * (x>>4);
 			}
 		}
 	}
