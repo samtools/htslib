@@ -17,8 +17,6 @@ typedef khash_t(vdict) vdict_t;
 KSTREAM_INIT(gzFile, gzread, 16384)
 
 int vcf_verbose = 3; // 1: error; 2: warning; 3: message; 4: progress; 5: debugging; >=10: pure debugging
-char *vcf_col_name[] = { "CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT" };
-char *vcf_type_name[] = { "Flag", "Integer", "Float", "String" };
 uint8_t vcf_type_size[] = { 0, 1, 2, 4, 8, 4, 8, 1, 1, 0, 1, 2, 4, 1, 0, 0 };
 static vcf_keyinfo_t vcf_keyinfo_def = { { 15, 15, 15 }, -1, -1, -1, -1 };
 
@@ -30,7 +28,7 @@ static inline void align_mem(kstring_t *s)
 {
 	if (s->l&7) {
 		uint64_t zero = 0;
-		int l = (s->l + 7)>>3<<3;
+		int l = ((s->l + 7)>>3<<3) - s->l;
 		kputsn((char*)&zero, l, s);
 	}
 }
@@ -441,7 +439,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				return 0;
 			} else v->rid = kh_val(d, k).rid;
 		} else if (i == 1) { // POS
-			v->pos = atoi(p);
+			v->pos = atoi(p) - 1;
 		} else if (i == 2) { // ID
 			if (strcmp(p, ".")) kputsn(p, q - p, &str);
 			kputc(0, &str);
@@ -586,16 +584,17 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			// allocate memory for arrays
 			s->l = ori_l + v->n_fmt * sizeof(fmt_aux_t);
 			for (j = 0; j < v->n_fmt; ++j) {
-				if ((fmt[j].y>>4&0xf) == VCF_TP_STR) {
-					fmt[j].size = fmt[j].max_l;
-				} else if ((fmt[j].y>>4&0xf) == VCF_TP_REAL || (fmt[j].y>>4&0xf) == VCF_TP_INT) {
-					fmt[j].size = fmt[j].max_m << 2;
+				fmt_aux_t *f = &fmt[j];
+				if ((f->y>>4&0xf) == VCF_TP_STR) {
+					f->size = f->max_l;
+				} else if ((f->y>>4&0xf) == VCF_TP_REAL || (f->y>>4&0xf) == VCF_TP_INT) {
+					f->size = f->max_m << 2;
 				} else abort(); // I do not know how to do with Flag in the genotype fields
 				align_mem(s);
-				ks_resize(s, s->l + h->n_sample * fmt[j].size);
-				fmt[j].buf = (uint8_t*)(s->s + s->l);
-				s->l += h->n_sample * fmt[j].max_l;
-				// printf("%s, %d, %d\n", h->key[fmt[j].key].key, fmt[j].max_l, fmt[j].max_m);
+				ks_resize(s, s->l + h->n_sample * f->size);
+				f->buf = (uint8_t*)(s->s + s->l);
+				s->l += h->n_sample * f->size;
+				// printf("%s, %d, %d\n", h->key[f->key].key, f->max_l, f->max_m);
 			}
 			s->l = ori_l; // revert to the original length
 		} else if (i >= 9 && h->n_sample > 0) {
