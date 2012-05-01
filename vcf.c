@@ -376,7 +376,9 @@ vcf1_t *vcf_init1()
 
 typedef struct {
 	int key, size;
-	uint32_t *val;
+	int max_l, max_m;
+	uint32_t y;
+	uint32_t *buf;
 } fmt_pair_t;
 
 int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
@@ -523,35 +525,61 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			}
 			*(uint16_t*)(str.s + v->o_info) = n_info;
 		} else if (i == 8 && h->n_sample > 0) { // FORMAT
-			/*
-			int size_all = 0;
-			long l;
-			if (*(q-1) == ':') *(q-1) = 0;
+			int j, l, m;
 			v->o_fmt = str.l;
+			// count the number of format fields
 			v->n_fmt = 1;
 			for (r = p; *r; ++r)
 				if (*r == ':') ++v->n_fmt;
+			// get format information from the dictionary
 			ks_resize(s, ori_l + v->n_fmt * sizeof(fmt_pair_t));
 			fmt = (fmt_pair_t*)(s->s + ori_l);
-			l = ori_l + v->n_fmt * sizeof(fmt_pair_t);
-			for (r = t = p;; ++r) {
+			for (r = t = p, j = 0;; ++r) {
 				int c;
 				if (*r != ':' && *r != 0) continue;
+				c = *r; *r = 0;
 				k = kh_get(vdict, d, t);
-				if (k == kh_end(d) || kh_val(d, h).info[VCF_DT_FMT] == 15) {
+				if (k == kh_end(d) || kh_val(d, k).info[VCF_DT_FMT] == 15) {
 					if (vcf_verbose >= 2)
 						fprintf(stderr, "[W::%s] FORMAT '%s' is not defined in the header\n", __func__, t);
 					v->n_fmt = 0;
 					break;
 				} else {
-					uint32_t y = v->key[kh_val(d, h).kid]->info[VCF_DT_FMT];
-					int n_val;
-					n_val = vcf_hdr_n_val(y, v->n_alt);
+					fmt[j].max_l = fmt[j].max_m = 0;
+					fmt[j].key = kh_val(d, k).kid;
+					fmt[j].y = h->key[fmt[j].key].info->info[VCF_DT_FMT];
 				}
-				c = *r; *r = 0;
+				if (c == 0) break;
 				t = r + 1;
+				++j;
 			}
-			*/
+			// compute max
+			for (r = q + 1, j = m = 0, l = 1;; ++r, ++l) {
+				if (*r == ':' || *r == '\t' || *r == '\0') { // end of a sample
+					if (fmt[j].max_m < m) fmt[j].max_m = m;
+					if (fmt[j].max_l < l) fmt[j].max_l = l;
+					l = 0, m = 1;
+					if (*r != ':') j = 0;
+					else ++j;
+				} else if (*r == ',') ++m;
+				if (*r == 0) break;
+			}
+			// allocate memory for arrays
+			s->l = ori_l + v->n_fmt * sizeof(fmt_pair_t);
+			for (j = 0; j < v->n_fmt; ++j) {
+				int size;
+				if ((fmt[j].y>>4&0xf) == VCF_TP_STR) {
+					size = fmt[j].max_l;
+				} else if ((fmt[j].y>>4&0xf) == VCF_TP_REAL || (fmt[j].y>>4&0xf) == VCF_TP_INT) {
+					size = fmt[j].max_m * 4;
+				} else abort(); // I do not know how to do with Flag in the genotype fields
+				align_mem(s);
+				ks_resize(s, s->l + h->n_sample * size);
+				fmt[j].buf = (uint32_t*)(s->s + s->l);
+				s->l += h->n_sample * fmt[j].max_l;
+				// printf("%s, %d, %d\n", h->key[fmt[j].key].key, fmt[j].max_l, fmt[j].max_m);
+			}
+			s->l = ori_l; // revert to the original length
 		}
 		++i;
 		*q = c;
