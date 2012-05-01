@@ -101,6 +101,29 @@ typedef struct {
 	char *str;
 } vcf1_t;
 
+/*******
+ * API *
+ *******/
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+	vcfFile *vcf_open(const char *fn, const char *mode, const char *fn_ref);
+	void vcf_close(vcfFile *fp);
+	vcf_hdr_t *vcf_hdr_read(vcfFile *fp);
+	void vcf_hdr_destroy(vcf_hdr_t *h);
+
+	vcf1_t *vcf_init1(void);
+	void vcf_destroy1(vcf1_t *v);
+	int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v);
+	int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s);
+	void vcf_write1(vcfFile *fp, const vcf1_t *v);
+
+#ifdef __cplusplus
+}
+#endif
+
 /*******************
  * Typed value I/O *
  *******************/
@@ -141,41 +164,32 @@ static inline void vcf_enc_int1(kstring_t *s, int32_t x)
 	}
 }
 
-static inline int32_t vcf_dec_int1(const uint8_t *buf)
+static inline int32_t vcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
 {
-	assert(*buf>>4 == 1 && (*buf&0xf) <= 4);
-	if ((*buf&0xf) == VCF_RT_INT8) return buf[1];
-	else if ((*buf&0xf) == VCF_RT_INT16) return *(int16_t*)(buf + 1);
-	else return *(int32_t*)(buf + 1);
+	if (type == VCF_RT_INT8) {
+		*q = (uint8_t*)p + 1;
+		return *(int8_t*)p;
+	} else if (type == VCF_RT_INT16) {
+		*q = (uint8_t*)p + 2;
+		return *(int16_t*)p;
+	} else {
+		*q = (uint8_t*)p + 4;
+		return *(int32_t*)p;
+	}
 }
 
-static inline int64_t vcf_dec_size(const uint8_t *buf) // return value: lower 4 bits: offset of the first value
+static inline int32_t vcf_dec_typed_int1(const uint8_t *p, uint8_t **q)
 {
-	if (*buf>>7 == 0) return (long)(*buf>>4)<<4 | 1;
-	return (int64_t)vcf_dec_int1(buf + 1) << 4 | (1 + vcf_type_size[buf[1]&0xf]);
+	return vcf_dec_int1(p + 1, *p&0xf, q);
 }
 
-/*******
- * API *
- *******/
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-	vcfFile *vcf_open(const char *fn, const char *mode, const char *fn_ref);
-	void vcf_close(vcfFile *fp);
-	vcf_hdr_t *vcf_hdr_read(vcfFile *fp);
-	void vcf_hdr_destroy(vcf_hdr_t *h);
-
-	vcf1_t *vcf_init1(void);
-	void vcf_destroy1(vcf1_t *v);
-	int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v);
-	int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s);
-	void vcf_write1(vcfFile *fp, const vcf1_t *v);
-
-#ifdef __cplusplus
+static inline int32_t vcf_dec_size(const uint8_t *p, uint8_t **q, int *type)
+{
+	*type = *p & 0xf;
+	if (*p>>4 != 15) {
+		*q = (uint8_t*)p + 1;
+		return *p>>4;
+	} else return vcf_dec_typed_int1(p + 1, q);
 }
-#endif
 
 #endif

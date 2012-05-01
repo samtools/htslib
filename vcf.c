@@ -671,9 +671,6 @@ typedef struct {
 
 int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 {
-	const char *p, *q;
-	int i;
-
 	s->l = 0;
 	kputs(h->key[h->r2k[v->rid]].key, s); kputc('\t', s); // CHROM
 	kputw(v->pos + 1, s); kputc('\t', s); // POS
@@ -687,6 +684,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	} else kputsn(".\t", 2, s);
 	if (v->n_alt) { // ALT
 		int i;
+		const char *p, *q;
 		for (p = q = v->str + v->o_alt + 2, i = 0;; ++q)
 			if (*q == 0) {
 				if (i) kputc(',', s);
@@ -698,49 +696,44 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	} else kputsn(".\t", 2, s);
 	if (*(uint32_t*)&v->qual == 0x7F800001) kputsn(".\t", 2, s); // QUAL
 	else ksprintf(s, "%g\t", v->qual);
-	{ // FILTER
-		int64_t x;
-		x = vcf_dec_size((uint8_t*)v->str + v->o_flt);
-		if (x>>4) {
-			int size, o;
-			size = vcf_type_size[v->str[v->o_flt]&0xf];
-			for (i = 0, o = v->o_flt + (x&0xf); i < x>>4; ++i, o += size) {
-				int32_t y;
-				if (i) kputc(';', s);
-				if (size == 1) y = *(int8_t*)(v->str + o);
-				else if (size == 2) y = *(int16_t*)(v->str + o);
-				else y = *(int32_t*)(v->str + o);
-				assert(y < h->n_key);
-				kputs(h->key[y].key, s);
-			}
-			kputc('\t', s);
-		} else kputsn(".\t", 2, s);
-	}
-	{ // INFO
-		int n_info;
+	if (v->str[v->o_flt]>>4) { // FILTER
+		int32_t x, y;
+		int type, i;
+		uint8_t *p;
+		x = vcf_dec_size((uint8_t*)v->str + v->o_flt, &p, &type);
+		for (i = 0; i < x; ++i) {
+			if (i) kputc(';', s);
+			y = vcf_dec_int1(p, type, &p);
+			kputs(h->key[y].key, s);
+		}
+		kputc('\t', s);
+	} else kputsn(".\t", 2, s);
+	if (*(uint16_t*)&v->str[v->o_info]) { // INFO
+		int i, n_info, type;
 		uint8_t *q, *p = (uint8_t*)v->str + v->o_info + 2;
-		n_info = *(uint16_t*)(v->str + v->o_info);
+		n_info = *(uint16_t*)&v->str[v->o_info];
 		for (i = 0; i < n_info; ++i) {
 			int32_t x;
 			uint32_t y;
 			if (i) kputc(';', s);
-			x = vcf_dec_int1(p);
-			p += 1 + vcf_type_size[*p&0xf];
+			x = vcf_dec_typed_int1(p, &p);
 			kputs(h->key[x].key, s);
 			y = h->key[x].info->info[VCF_DT_INFO];
-			if ((y>>4&0xf) == VCF_TP_FLAG) continue;
-			else if ((y>>4&0xf) == VCF_TP_STR) {
+			if ((y>>4&0xf) != VCF_TP_FLAG) {
 				kputc('=', s);
-				for (q = p; *q; ++q);
-				kputsn((char*)p, q - p, s);
-				p = q + 1;
-			} else {
-				x = vcf_dec_size(p); // p+(x&0xf) is the start of the array
-				vcf_fmt_array(s, x>>4, *p&0xf, p + (x&0xf));
-				p += (x&0xf) + vcf_type_size[*p&0xf] * (x>>4);
-			}
+				if ((y>>4&0xf) == VCF_TP_STR) {
+					for (q = p; *q; ++q);
+					kputsn((char*)p, q - p, s);
+					p = q + 1;
+				} else {
+					x = vcf_dec_size(p, &p, &type);
+					vcf_fmt_array(s, x, type, p);
+					p += vcf_type_size[type] * x;
+				}
+			} else continue;
 		}
-	}
+	} else kputc('.', s);
+	/*
 	if (h->n_sample) { // FORMAT
 		uint8_t **ptr;
 		ptr = alloca(v->n_fmt * sizeof(void*));
@@ -749,6 +742,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 			if (i) kputc(':', s);
 		}
 	}
+	*/
 	return 0;
 }
 
