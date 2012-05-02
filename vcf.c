@@ -51,7 +51,7 @@ vcfFile *vcf_open(const char *fn, const char *mode, const char *fn_ref)
 		else fp->fp = strcmp(fn, "-")? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
 	} else {
 		if (fp->is_write) {
-			fp->fp = strcmp(fn, "-")? fopen(fn, "rb") : fdopen(fileno(stdout), "rb");
+			fp->fp = strcmp(fn, "-")? fopen(fn, "rb") : stdout;
 		} else {
 			gzFile gzfp;
 			gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
@@ -333,7 +333,7 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 			}
 			kputsn(s->s, s->l, &txt);
 			if (s->s[1] != '#') break;
-			else kputc('\n', &txt);
+			kputc('\n', &txt);
 		}
 		h->l_text = txt.l + 1; // including NULL
 		h->text = txt.s;
@@ -342,6 +342,15 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 		vcf_hdr_destroy(h);
 		return 0;
 	} else return h;
+}
+
+void vcf_hdr_write(vcfFile *fp, const vcf_hdr_t *h)
+{
+	if (fp->is_bin) {
+	} else {
+		fwrite(h->text, 1, h->l_text, fp->fp);
+		fputc('\n', fp->fp);
+	}
 }
 
 /*******************
@@ -672,12 +681,6 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 		}
 	}
 	v->l_str = str.l; v->m_str = str.m; v->str = str.s;
-	{
-		str.l = str.m = 0; str.s = 0;
-		vcf_format1(h, v, &str);
-		puts(str.s);
-		free(str.s);
-	}
 	return 0;
 }
 
@@ -796,21 +799,36 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	return 0;
 }
 
+int vcf_write1(vcfFile *fp, const vcf_hdr_t *h, const vcf1_t *v)
+{
+	if (fp->is_bin) {
+	} else {
+		vcf_format1(h, v, &fp->line);
+		fwrite(fp->line.s, 1, fp->line.l, fp->fp);
+		fputc('\n', fp->fp);
+	}
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
 	vcf_hdr_t *h;
-	vcfFile *fp;
+	vcfFile *in, *out;
 	vcf1_t *v;
+
 	if (argc == 1) {
 		fprintf(stderr, "Usage: bcf2ls <in.vcf>\n");
 		return 1;
 	}
-	fp = vcf_open(argv[1], "r", argc > 2? argv[2] : 0);
-	h = vcf_hdr_read(fp);
+	in = vcf_open(argv[1], "r", argc > 2? argv[2] : 0);
+	out = vcf_open("-", "w", 0);
+	h = vcf_hdr_read(in);
+	vcf_hdr_write(out, h);
 	v = vcf_init1();
-	while (vcf_read1(fp, h, v) >= 0);
+	while (vcf_read1(in, h, v) >= 0) vcf_write1(out, h, v);
 	vcf_destroy1(v);
 	vcf_hdr_destroy(h);
-	vcf_close(fp);
+	vcf_close(out);
+	vcf_close(in);
 	return 0;
 }

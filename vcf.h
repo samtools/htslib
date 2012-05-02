@@ -119,7 +119,6 @@ extern "C" {
 	vcf1_t *vcf_init1(void);
 	int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v);
 	int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s);
-	void vcf_write1(vcfFile *fp, const vcf1_t *v);
 
 #ifdef __cplusplus
 }
