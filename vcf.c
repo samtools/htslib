@@ -56,12 +56,13 @@ vcfFile *vcf_open(const char *fn, const char *mode, const char *fn_ref)
 			gzFile gzfp;
 			gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
 			if (gzfp) fp->fp = ks_init(gzfp);
+			if (fn_ref) fp->fn_ref = strdup(fn_ref);
 		}
 	}
 	if (fp->fp == 0) {
 		if (vcf_verbose >= 2)
 			fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
-		free(fp);
+		free(fp->fn_ref); free(fp);
 		return 0;
 	}
 	return fp;
@@ -75,6 +76,7 @@ void vcf_close(vcfFile *fp)
 			gzFile gzfp = ((kstream_t*)fp->fp)->f;
 			ks_destroy(fp->fp);
 			gzclose(gzfp);
+			free(fp->fn_ref);
 		} else fclose(fp->fp);
 	} else bgzf_close(fp->fp);
 	free(fp);
@@ -300,19 +302,39 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 		int dret;
 		kstring_t txt, *s = &fp->line;
 		txt.l = txt.m = 0; txt.s = 0;
+		h = vcf_hdr_init();
+		if (fp->fn_ref) {
+			gzFile f;
+			kstream_t *ks;
+			f = gzopen(fp->fn_ref, "r");
+			ks = ks_init(f);
+			while (ks_getuntil(ks, 0, s, &dret) >= 0) {
+				int c;
+				txt.l = 0;
+				kputs("##contig=<ID=", &txt); kputs(s->s, &txt);
+				ks_getuntil(ks, 0, s, &dret);
+				kputs(",length=", &txt); kputw(atol(s->s), &txt); kputc('>', &txt);
+				vcf_hdr_parse1(h, txt.s);
+				if (dret != '\n')
+					while ((c = ks_getc(ks)) != '\n' && c != -1);
+			}
+			ks_destroy(ks);
+			gzclose(f);
+		}
+		txt.l = 0;
 		while (ks_getuntil(fp->fp, KS_SEP_LINE, s, &dret) >= 0) {
 			if (s->l == 0) continue;
 			if (s->s[0] != '#') {
 				if (vcf_verbose >= 2)
 					fprintf(stderr, "[E::%s] no sample line\n", __func__);
 				free(txt.s);
+				vcf_hdr_destroy(h);
 				return 0;
 			}
 			kputsn(s->s, s->l, &txt);
 			if (s->s[1] != '#') break;
 			else kputc('\n', &txt);
 		}
-		h = vcf_hdr_init();
 		h->l_text = txt.l + 1; // including NULL
 		h->text = txt.s;
 	}
@@ -783,7 +805,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Usage: bcf2ls <in.vcf>\n");
 		return 1;
 	}
-	fp = vcf_open(argv[1], "r", 0);
+	fp = vcf_open(argv[1], "r", argc > 2? argv[2] : 0);
 	h = vcf_hdr_read(fp);
 	v = vcf_init1();
 	while (vcf_read1(fp, h, v) >= 0);
