@@ -503,10 +503,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			kputsn((char*)&v->n_alt, 2, &str);
 			if (v->n_alt) kputsn(p, q - p + 1, &str);
 		} else if (i == 5) { // QUAL
-			if (strcmp(p, ".")) {
-				v->qual = atof(p);
-				kputsn((char*)&v->qual, 4, &str);
-			} else *(uint32_t*)&v->qual = 0x7F800001;
+			if (strcmp(p, ".")) v->qual = atof(p);
+			else *(uint32_t*)&v->qual = 0x7F800001;
 		} else if (i == 6) { // FILTER
 			v->o_flt = str.l;
 			if (strcmp(p, ".")) {
@@ -715,89 +713,97 @@ typedef struct {
 
 int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 {
+	uint8_t *ptr = (uint8_t*)v->str;
+	int i, l;
 	s->l = 0;
 	kputs(h->key[h->r2k[v->rid]].key, s); kputc('\t', s); // CHROM
 	kputw(v->pos + 1, s); kputc('\t', s); // POS
-	if (v->str[0]) { // ID
-		kputsn(v->str, v->o_ref - 1, s);
+	if (*ptr) { // ID
+		l = strlen((char*)ptr);
+		kputsn((char*)ptr, l, s);
 		kputc('\t', s);
+		ptr += l;
 	} else kputsn(".\t", 2, s);
-	if (v->str[v->o_ref]) { // REF
-		kputsn(v->str + v->o_ref, v->o_alt - v->o_ref - 1, s);
+	++ptr;
+	if (*ptr) { // REF
+		l = strlen((char*)ptr);
+		kputsn((char*)ptr, l, s);
 		kputc('\t', s);
+		ptr += l;
 	} else kputsn(".\t", 2, s);
-	if (v->n_alt) { // ALT
-		int i;
-		const char *p, *q;
-		for (p = q = v->str + v->o_alt + 2, i = 0;; ++q)
-			if (*q == 0) {
-				if (i) kputc(',', s);
-				kputsn(p, q - p, s);
-				p = q + 1;
-				if (++i == v->n_alt) break;
-			}
+	++ptr;
+	l = *(uint16_t*)ptr; // ALT
+	ptr += 2;
+	if (l) { // n_alt != 0
+		for (i = 0; i < l; ++i) {
+			int t = strlen((char*)ptr);
+			kputsn((char*)ptr, t, s);
+			ptr += t + 1;
+		}
 		kputc('\t', s);
 	} else kputsn(".\t", 2, s);
 	if (*(uint32_t*)&v->qual == 0x7F800001) kputsn(".\t", 2, s); // QUAL
 	else ksprintf(s, "%g\t", v->qual);
-	if (v->str[v->o_flt]>>4) { // FILTER
+	if (*ptr>>4) { // FILTER
 		int32_t x, y;
 		int type, i;
-		uint8_t *p;
-		x = vcf_dec_size((uint8_t*)v->str + v->o_flt, &p, &type);
+		x = vcf_dec_size(ptr, &ptr, &type);
 		for (i = 0; i < x; ++i) {
 			if (i) kputc(';', s);
-			y = vcf_dec_int1(p, type, &p);
+			y = vcf_dec_int1(ptr, type, &ptr);
 			kputs(h->key[y].key, s);
 		}
 		kputc('\t', s);
-	} else kputsn(".\t", 2, s);
-	if (*(uint16_t*)&v->str[v->o_info]) { // INFO
-		int i, n_info, type;
-		uint8_t *q, *p = (uint8_t*)v->str + v->o_info + 2;
-		n_info = *(uint16_t*)&v->str[v->o_info];
+	} else {
+		kputsn(".\t", 2, s);
+		++ptr;
+	}
+	l = *(uint16_t*)ptr; // INFO
+	ptr += 2;
+	if (*(uint16_t*)ptr) { // INFO
+		int i, n_info = l, type;
 		for (i = 0; i < n_info; ++i) {
 			int32_t x;
 			uint32_t y;
 			if (i) kputc(';', s);
-			x = vcf_dec_typed_int1(p, &p);
+			x = vcf_dec_typed_int1(ptr, &ptr);
 			kputs(h->key[x].key, s);
 			y = h->key[x].info->info[VCF_DT_INFO];
 			if ((y>>4&0xf) != VCF_TP_FLAG) {
 				kputc('=', s);
 				if ((y>>4&0xf) == VCF_TP_STR) {
-					++p; // skip the typing byte
-					for (q = p; *q; ++q);
-					kputsn((char*)p, q - p, s);
-					p = q + 1;
+					++ptr; // skip the typing byte
+					l = strlen((char*)ptr);
+					kputsn((char*)ptr, l, s);
+					ptr += l + 1;
 				} else {
-					x = vcf_dec_size(p, &p, &type);
-					vcf_fmt_array(s, x, type, p);
-					p += vcf_type_size[type] * x;
+					x = vcf_dec_size(ptr, &ptr, &type);
+					vcf_fmt_array(s, x, type, ptr);
+					ptr += vcf_type_size[type] * x;
 				}
 			} else continue;
 		}
 	} else kputc('.', s);
-	if (h->n_sample && v->n_fmt) { // FORMAT
-		int i, j;
+	l = *(uint16_t*)ptr;
+	ptr += 2;
+	if (h->n_sample && l) { // FORMAT
+		int i, j, n_fmt = l;
 		fmt_daux_t *faux;
-		uint8_t *p;
-		faux = alloca(v->n_fmt * sizeof(fmt_daux_t));
+		faux = alloca(n_fmt * sizeof(fmt_daux_t));
 		kputc('\t', s);
-		p = (uint8_t*)v->str + v->o_fmt + 2;
-		for (i = 0; i < v->n_fmt; ++i) {
+		for (i = 0; i < n_fmt; ++i) {
 			fmt_daux_t *f = &faux[i];
-			f->key = vcf_dec_typed_int1(p, &p);
-			f->n = vcf_dec_size(p, &p, &f->type);
+			f->key = vcf_dec_typed_int1(ptr, &ptr);
+			f->n = vcf_dec_size(ptr, &ptr, &f->type);
 			f->size = vcf_type_size[f->type] * f->n;
-			f->p = p;
-			p += h->n_sample * f->size;
+			f->p = ptr;
+			ptr += h->n_sample * f->size;
 			if (i) kputc(':', s);
 			kputs(h->key[f->key].key, s);
 		}
 		for (j = 0; j < h->n_sample; ++j) {
 			kputc('\t', s);
-			for (i = 0; i < v->n_fmt; ++i) {
+			for (i = 0; i < n_fmt; ++i) {
 				fmt_daux_t *f = &faux[i];
 				if (i) kputc(':', s);
 				vcf_fmt_array(s, f->n, f->type, f->p + j * f->size);
