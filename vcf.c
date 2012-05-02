@@ -50,7 +50,6 @@ vcfFile *vcf_open(const char *fn, const char *mode, const char *fn_ref)
 		if (fp->is_write) fp->fp = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
 		else fp->fp = strcmp(fn, "-")? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
 	} else {
-		fp->buf = calloc(1, sizeof(kstring_t));
 		if (fp->is_write) {
 			fp->fp = strcmp(fn, "-")? fopen(fn, "rb") : fdopen(fileno(stdout), "rb");
 		} else {
@@ -71,8 +70,7 @@ vcfFile *vcf_open(const char *fn, const char *mode, const char *fn_ref)
 void vcf_close(vcfFile *fp)
 {
 	if (!fp->is_bin) {
-		kstring_t *s = (kstring_t*)fp->buf;
-		free(s->s); free(s);
+		free(fp->mem.s); free(fp->line.s);
 		if (!fp->is_write) {
 			gzFile gzfp = ((kstream_t*)fp->fp)->f;
 			ks_destroy(fp->fp);
@@ -299,7 +297,7 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 	if (fp->is_bin) {
 	} else {
 		int dret;
-		kstring_t txt, *s = (kstring_t*)fp->buf;
+		kstring_t txt, *s = &fp->line;
 		txt.l = txt.m = 0; txt.s = 0;
 		while (ks_getuntil(fp->fp, KS_SEP_LINE, s, &dret) >= 0) {
 			if (s->l == 0) continue;
@@ -419,9 +417,9 @@ typedef struct {
 	uint8_t *buf;
 } fmt_aux_t;
 
-int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
+int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v, kstring_t *mem)
 {
-	int ret, i = 0, ori_l;
+	int i = 0;
 	char *p, *q, *r, *t;
 	fmt_aux_t *fmt;
 	vdict_t *d = (vdict_t*)h->dict;
@@ -429,9 +427,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 	khint_t k;
 	ks_tokaux_t aux;
 
-	str.l = v->l_str = 0; str.m = v->m_str; str.s = v->str;
-	kputc(0, s); align_mem(s); ori_l = s->l; // the end of s will be used as a temporary buffer
-	if (ret < 0) return -1;
+	mem->l = str.l = v->l_str = 0; str.m = v->m_str; str.s = v->str;
 	for (p = kstrtok(s->s, "\t", &aux), i = 0; p; p = kstrtok(0, 0, &aux), ++i) {
 		q = (char*)aux.p;
 		*q = 0;
@@ -449,6 +445,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			kputc(0, &str);
 		} else if (i == 3) { // REF
 			v->o_ref = str.l;
+			v->end = v->pos + strlen(p);
 			kputsn(p, q - p + 1, &str); // +1 to include NULL
 		} else if (i == 4) { // ALT
 			v->o_alt = str.l;
@@ -474,8 +471,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				if (*(q-1) == ';') *(q-1) = 0;
 				for (r = p; *r; ++r)
 					if (*r == ';') ++n_flt;
-				ks_resize(s, ori_l + n_flt * 4); // reuse the end of s as a buffer
-				a = (int32_t*)(s->s + ori_l);
+				a = alloca(n_flt * 4);
 				// add filters
 				for (t = kstrtok(p, ";", &aux1), i = 0; t; t = kstrtok(0, 0, &aux1)) {
 					*(char*)aux1.p = 0;
@@ -529,14 +525,16 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 								if (*t == ',') ++n_val;
 							++n_info;
 							vcf_enc_int1(&str, kh_val(d, k).kid);
-							ks_resize(s, ori_l + n_val * 4);
 							if ((y>>4&0xf) == VCF_TP_INT) {
-								int32_t *z = (int32_t*)(s->s + ori_l);
+								int32_t *z;
+								z = alloca(n_val<<2);
 								for (i = 0, t = val; i < n_val; ++i, ++t)
 									z[i] = strtol(t, &t, 10);
 								vcf_enc_int(&str, n_val, z, -1);
+								if (strcmp(key, "END") == 0) v->end = z[0];
 							} else if ((y>>4&0xf) == VCF_TP_REAL) {
-								float *z = (float*)(s->s + ori_l);
+								float *z;
+								z = alloca(n_val<<2);
 								for (i = 0, t = val; i < n_val; ++i, ++t)
 									z[i] = strtod(t, &t);
 								vcf_enc_float(&str, n_val, z);
@@ -549,6 +547,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				}
 			}
 			*(uint16_t*)(str.s + v->o_info) = n_info;
+			v->n_info = n_info;
 		} else if (i == 8 && h->n_sample > 0) { // FORMAT
 			int j, l, m;
 			ks_tokaux_t aux1;
@@ -557,9 +556,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			v->n_fmt = 1;
 			for (r = p; *r; ++r)
 				if (*r == ':') ++v->n_fmt;
+			fmt = alloca(v->n_fmt * sizeof(fmt_aux_t));
 			// get format information from the dictionary
-			ks_resize(s, ori_l + v->n_fmt * sizeof(fmt_aux_t));
-			fmt = (fmt_aux_t*)(s->s + ori_l);
 			for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
 				*(char*)aux1.p = 0;
 				k = kh_get(vdict, d, t);
@@ -586,7 +584,6 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				if (*r == 0) break;
 			}
 			// allocate memory for arrays
-			s->l = ori_l + v->n_fmt * sizeof(fmt_aux_t);
 			for (j = 0; j < v->n_fmt; ++j) {
 				fmt_aux_t *f = &fmt[j];
 				if ((f->y>>4&0xf) == VCF_TP_STR) {
@@ -594,15 +591,13 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				} else if ((f->y>>4&0xf) == VCF_TP_REAL || (f->y>>4&0xf) == VCF_TP_INT) {
 					f->size = f->max_m << 2;
 				} else abort(); // I do not know how to do with Flag in the genotype fields
-				align_mem(s);
-				f->offset = s->l;
-				ks_resize(s, s->l + h->n_sample * f->size);
-				s->l += h->n_sample * f->size;
-				// printf("%s, %d, %d\n", h->key[f->key].key, f->max_l, f->max_m);
+				align_mem(mem);
+				f->offset = mem->l;
+				ks_resize(mem, mem->l + h->n_sample * f->size);
+				mem->l += h->n_sample * f->size;
 			}
 			for (j = 0; j < v->n_fmt; ++j)
-				fmt[j].buf = (uint8_t*)s->s + fmt[j].offset;
-			s->l = ori_l; // revert to the original length
+				fmt[j].buf = (uint8_t*)mem->s + fmt[j].offset;
 		} else if (i >= 9 && h->n_sample > 0) {
 			int j, l;
 			ks_tokaux_t aux1;
@@ -624,7 +619,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					float *x = (float*)(z->buf + z->size * (i - 9));
 					for (r = t, l = 0; r < aux1.p; ++r) {
 						if (*r == '.' && !isdigit(r[1])) *(int32_t*)&x[l++] = 0x7F800001;
-						else x[l++] = strtof(r, &r);
+						else x[l++] = strtod(r, &r);
 					}
 					for (; l != z->size>>2; ++l) *(int32_t*)(x+l) = 0x7F800001;
 				}
@@ -662,9 +657,9 @@ int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 	if (fp->is_bin) {
 	} else {
 		int ret, dret;
-		ret = ks_getuntil(fp->fp, KS_SEP_LINE, fp->buf, &dret);
+		ret = ks_getuntil(fp->fp, KS_SEP_LINE, &fp->line, &dret);
 		if (ret < 0) return -1;
-		ret = vcf_parse1(fp->buf, h, v);
+		ret = vcf_parse1(&fp->line, h, v, &fp->mem);
 	}
 	return 0;
 }
