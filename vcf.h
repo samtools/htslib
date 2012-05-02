@@ -95,11 +95,8 @@ typedef struct {
 typedef struct {
 	int32_t rid; // CHROM
 	int32_t pos; // POS
-	int32_t end;
 	float qual;  // QUAL
-	uint16_t n_alt, n_info, n_fmt;
 	int l_str, m_str;
-	int o_ref, o_alt, o_flt, o_info, o_fmt; // offsets in str
 	char *str;
 } vcf1_t;
 

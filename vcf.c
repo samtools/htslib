@@ -472,6 +472,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 	kstring_t str, *mem = (kstring_t*)&h->mem;
 	khint_t k;
 	ks_tokaux_t aux;
+	uint16_t n_fmt = 0;
 
 	mem->l = str.l = v->l_str = 0; str.m = v->m_str; str.s = v->str;
 	for (p = kstrtok(s->s, "\t", &aux), i = 0; p; p = kstrtok(0, 0, &aux), ++i) {
@@ -490,23 +491,19 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			if (strcmp(p, ".")) kputsn(p, q - p, &str);
 			kputc(0, &str);
 		} else if (i == 3) { // REF
-			v->o_ref = str.l;
-			v->end = v->pos + strlen(p);
 			kputsn(p, q - p + 1, &str); // +1 to include NULL
 		} else if (i == 4) { // ALT
-			v->o_alt = str.l;
+			uint16_t n_alt;
 			if (strcmp(p, ".")) {
-				v->n_alt = 1;
-				for (r = p; r != q; ++r)
-					if (*r == ',') *r = 0, ++v->n_alt;
-			} else v->n_alt = 0;
-			kputsn((char*)&v->n_alt, 2, &str);
-			if (v->n_alt) kputsn(p, q - p + 1, &str);
+				for (r = p, n_alt = 1; r != q; ++r)
+					if (*r == ',') *r = 0, ++n_alt;
+			} else n_alt = 0;
+			kputsn((char*)&n_alt, 2, &str);
+			if (n_alt) kputsn(p, q - p + 1, &str);
 		} else if (i == 5) { // QUAL
 			if (strcmp(p, ".")) v->qual = atof(p);
 			else *(uint32_t*)&v->qual = 0x7F800001;
 		} else if (i == 6) { // FILTER
-			v->o_flt = str.l;
 			if (strcmp(p, ".")) {
 				int32_t *a;
 				int n_flt = 1, i;
@@ -529,8 +526,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			} else vcf_enc_int(&str, 0, 0, -1);
 		} else if (i == 7) { // INFO
 			char *key;
-			int n_info = 0;
-			v->o_info = str.l;
+			int n_info = 0, o_info = str.l;
 			kputsn("\0\0", 2, &str); // place holder for n_info
 			if (strcmp(p, ".")) {
 				if (*(q-1) == ';') *(q-1) = 0;
@@ -575,7 +571,6 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 								for (i = 0, t = val; i < n_val; ++i, ++t)
 									z[i] = strtol(t, &t, 10);
 								vcf_enc_int(&str, n_val, z, -1);
-								if (strcmp(key, "END") == 0) v->end = z[0];
 							} else if ((y>>4&0xf) == VCF_TP_REAL) {
 								float *z;
 								z = alloca(n_val<<2);
@@ -590,17 +585,14 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					key = r + 1;
 				}
 			}
-			*(uint16_t*)(str.s + v->o_info) = n_info;
-			v->n_info = n_info;
+			*(uint16_t*)(str.s + o_info) = n_info;
 		} else if (i == 8 && h->n_sample > 0) { // FORMAT
 			int j, l, m;
 			ks_tokaux_t aux1;
-			v->o_fmt = str.l;
 			// count the number of format fields
-			v->n_fmt = 1;
-			for (r = p; *r; ++r)
-				if (*r == ':') ++v->n_fmt;
-			fmt = alloca(v->n_fmt * sizeof(fmt_aux_t));
+			for (r = p, n_fmt = 1; *r; ++r)
+				if (*r == ':') ++n_fmt;
+			fmt = alloca(n_fmt * sizeof(fmt_aux_t));
 			// get format information from the dictionary
 			for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
 				*(char*)aux1.p = 0;
@@ -608,7 +600,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				if (k == kh_end(d) || kh_val(d, k).info[VCF_DT_FMT] == 15) {
 					if (vcf_verbose >= 2)
 						fprintf(stderr, "[W::%s] FORMAT '%s' is not defined in the header\n", __func__, t);
-					v->n_fmt = 0;
+					n_fmt = 0;
 					break;
 				} else {
 					fmt[j].max_l = fmt[j].max_m = 0;
@@ -628,7 +620,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				if (*r == 0) break;
 			}
 			// allocate memory for arrays
-			for (j = 0; j < v->n_fmt; ++j) {
+			for (j = 0; j < n_fmt; ++j) {
 				fmt_aux_t *f = &fmt[j];
 				if ((f->y>>4&0xf) == VCF_TP_STR) {
 					f->size = f->max_l;
@@ -640,7 +632,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				ks_resize(mem, mem->l + h->n_sample * f->size);
 				mem->l += h->n_sample * f->size;
 			}
-			for (j = 0; j < v->n_fmt; ++j)
+			for (j = 0; j < n_fmt; ++j)
 				fmt[j].buf = (uint8_t*)mem->s + fmt[j].offset;
 		} else if (i >= 9 && h->n_sample > 0) {
 			int j, l;
@@ -671,8 +663,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 		}
 	}
 	if (h->n_sample > 0) { // write individual genotype information
-		kputsn((char*)&v->n_fmt, 2, &str);
-		for (i = 0; i < v->n_fmt; ++i) {
+		kputsn((char*)&n_fmt, 2, &str);
+		for (i = 0; i < n_fmt; ++i) {
 			fmt_aux_t *z = &fmt[i];
 			vcf_enc_int1(&str, z->key);
 			if ((z->y>>4&0xf) == VCF_TP_STR) {
