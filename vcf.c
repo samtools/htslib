@@ -70,7 +70,7 @@ vcfFile *vcf_open(const char *fn, const char *mode, const char *fn_ref)
 void vcf_close(vcfFile *fp)
 {
 	if (!fp->is_bin) {
-		free(fp->mem.s); free(fp->line.s);
+		free(fp->line.s);
 		if (!fp->is_write) {
 			gzFile gzfp = ((kstream_t*)fp->fp)->f;
 			ks_destroy(fp->fp);
@@ -177,7 +177,7 @@ void vcf_hdr_destroy(vcf_hdr_t *h)
 	for (k = kh_begin(d); k != kh_end(d); ++k)
 		if (kh_exist(d, k)) free((char*)kh_key(d, k));
 	kh_destroy(vdict, d);
-	free(h->text); free(h->key); free(h->r2k); free(h->s2k);
+	free(h->mem.s); free(h->text); free(h->key); free(h->r2k); free(h->s2k);
 	free(h);
 }
 
@@ -424,13 +424,13 @@ typedef struct {
 	uint8_t *buf;
 } fmt_aux_t;
 
-int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v, kstring_t *mem)
+int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 {
 	int i = 0;
 	char *p, *q, *r, *t;
 	fmt_aux_t *fmt;
 	vdict_t *d = (vdict_t*)h->dict;
-	kstring_t str;
+	kstring_t str, *mem = (kstring_t*)&h->mem;
 	khint_t k;
 	ks_tokaux_t aux;
 
@@ -666,7 +666,7 @@ int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 		int ret, dret;
 		ret = ks_getuntil(fp->fp, KS_SEP_LINE, &fp->line, &dret);
 		if (ret < 0) return -1;
-		ret = vcf_parse1(&fp->line, h, v, &fp->mem);
+		ret = vcf_parse1(&fp->line, h, v);
 	}
 	return 0;
 }

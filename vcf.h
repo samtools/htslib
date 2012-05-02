@@ -23,7 +23,7 @@ typedef struct __kstring_t {
 
 typedef struct {
 	uint32_t is_bin:1, is_write:1, dummy:30;
-	kstring_t line, mem;
+	kstring_t line;
 	void *fp; // file pointer; actual type depending on is_bin and is_write
 } vcfFile;
 
@@ -62,6 +62,7 @@ typedef struct {
 	int *r2k, *s2k;
 	char *text;
 	void *dict;
+	kstring_t mem;
 } vcf_hdr_t;
 
 extern uint8_t vcf_type_size[];
