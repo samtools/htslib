@@ -96,8 +96,7 @@ typedef struct {
 	int32_t rid; // CHROM
 	int32_t pos; // POS
 	float qual;  // QUAL
-	int l_str, m_str;
-	char *str;
+	kstring_t var, ind;
 } vcf1_t;
 
 /*******

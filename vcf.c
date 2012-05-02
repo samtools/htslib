@@ -452,7 +452,7 @@ vcf1_t *vcf_init1()
 
 void vcf_destroy1(vcf1_t *v)
 {
-	free(v->str);
+	free(v->var.s); free(v->ind.s);
 	free(v);
 }
 
@@ -469,12 +469,13 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 	char *p, *q, *r, *t;
 	fmt_aux_t *fmt;
 	vdict_t *d = (vdict_t*)h->dict;
-	kstring_t str, *mem = (kstring_t*)&h->mem;
+	kstring_t *str, *mem = (kstring_t*)&h->mem;
 	khint_t k;
 	ks_tokaux_t aux;
 	uint16_t n_fmt = 0;
 
-	mem->l = str.l = v->l_str = 0; str.m = v->m_str; str.s = v->str;
+	mem->l = v->var.l = v->ind.l = 0;
+	str = &v->var;
 	for (p = kstrtok(s->s, "\t", &aux), i = 0; p; p = kstrtok(0, 0, &aux), ++i) {
 		q = (char*)aux.p;
 		*q = 0;
@@ -488,18 +489,18 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 		} else if (i == 1) { // POS
 			v->pos = atoi(p) - 1;
 		} else if (i == 2) { // ID
-			if (strcmp(p, ".")) kputsn(p, q - p, &str);
-			kputc(0, &str);
+			if (strcmp(p, ".")) kputsn(p, q - p, str);
+			kputc(0, str);
 		} else if (i == 3) { // REF
-			kputsn(p, q - p + 1, &str); // +1 to include NULL
+			kputsn(p, q - p + 1, str); // +1 to include NULL
 		} else if (i == 4) { // ALT
 			uint16_t n_alt;
 			if (strcmp(p, ".")) {
 				for (r = p, n_alt = 1; r != q; ++r)
 					if (*r == ',') *r = 0, ++n_alt;
 			} else n_alt = 0;
-			kputsn((char*)&n_alt, 2, &str);
-			if (n_alt) kputsn(p, q - p + 1, &str);
+			kputsn((char*)&n_alt, 2, str);
+			if (n_alt) kputsn(p, q - p + 1, str);
 		} else if (i == 5) { // QUAL
 			if (strcmp(p, ".")) v->qual = atof(p);
 			else *(uint32_t*)&v->qual = 0x7F800001;
@@ -522,12 +523,12 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					} else a[i++] = kh_val(d, k).kid;
 				}
 				n_flt = i;
-				vcf_enc_int(&str, n_flt, a, -1);
-			} else vcf_enc_int(&str, 0, 0, -1);
+				vcf_enc_int(str, n_flt, a, -1);
+			} else vcf_enc_int(str, 0, 0, -1);
 		} else if (i == 7) { // INFO
 			char *key;
-			int n_info = 0, o_info = str.l;
-			kputsn("\0\0", 2, &str); // place holder for n_info
+			int n_info = 0, o_info = str->l;
+			kputsn("\0\0", 2, str); // place holder for n_info
 			if (strcmp(p, ".")) {
 				if (*(q-1) == ';') *(q-1) = 0;
 				for (r = key = p;; ++r) {
@@ -547,16 +548,16 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					} else { // defined in the header
 						uint32_t y = kh_val(d, k).info[VCF_DT_INFO];
 						if ((y>>4&0xf) == VCF_TP_FLAG || val == 0) { // a flag defined in the dict or without value
-							vcf_enc_int1(&str, kh_val(d, k).kid);
+							vcf_enc_int1(str, kh_val(d, k).kid);
 							++n_info;
 							if (val != 0 && vcf_verbose >= 2)
 								fprintf(stderr, "[W::%s] INFO '%s' is defined as a flag in the header but has a value '%s' in VCF; value skipped\n", __func__, key, val);
 							if (val == 0 && (y>>4&0xf) != VCF_TP_FLAG && vcf_verbose >= 2)
 								fprintf(stderr, "[W::%s] INFO '%s' takes at least a value, but no value is found\n", __func__, key);
 						} else if ((y>>4&0xf) == VCF_TP_STR) { // a string
-							vcf_enc_int1(&str, kh_val(d, k).kid);
-							vcf_enc_size(&str, 1, VCF_RT_CSTR);
-							kputsn(val, end - val + 1, &str); // +1 to include NULL
+							vcf_enc_int1(str, kh_val(d, k).kid);
+							vcf_enc_size(str, 1, VCF_RT_CSTR);
+							kputsn(val, end - val + 1, str); // +1 to include NULL
 							++n_info;
 						} else { // an integer or float value or array
 							int i, n_val = 1;
@@ -564,19 +565,19 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 							for (t = val; *t; ++t)
 								if (*t == ',') ++n_val;
 							++n_info;
-							vcf_enc_int1(&str, kh_val(d, k).kid);
+							vcf_enc_int1(str, kh_val(d, k).kid);
 							if ((y>>4&0xf) == VCF_TP_INT) {
 								int32_t *z;
 								z = alloca(n_val<<2);
 								for (i = 0, t = val; i < n_val; ++i, ++t)
 									z[i] = strtol(t, &t, 10);
-								vcf_enc_int(&str, n_val, z, -1);
+								vcf_enc_int(str, n_val, z, -1);
 							} else if ((y>>4&0xf) == VCF_TP_REAL) {
 								float *z;
 								z = alloca(n_val<<2);
 								for (i = 0, t = val; i < n_val; ++i, ++t)
 									z[i] = strtod(t, &t);
-								vcf_enc_float(&str, n_val, z);
+								vcf_enc_float(str, n_val, z);
 							}
 						}
 					}
@@ -585,7 +586,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					key = r + 1;
 				}
 			}
-			*(uint16_t*)(str.s + o_info) = n_info;
+			*(uint16_t*)(str->s + o_info) = n_info;
 		} else if (i == 8 && h->n_sample > 0) { // FORMAT
 			int j, l, m;
 			ks_tokaux_t aux1;
@@ -663,22 +664,22 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 		}
 	}
 	if (h->n_sample > 0) { // write individual genotype information
-		kputsn((char*)&n_fmt, 2, &str);
+		str = &v->ind;
+		kputsn((char*)&n_fmt, 2, str);
 		for (i = 0; i < n_fmt; ++i) {
 			fmt_aux_t *z = &fmt[i];
-			vcf_enc_int1(&str, z->key);
+			vcf_enc_int1(str, z->key);
 			if ((z->y>>4&0xf) == VCF_TP_STR) {
-				vcf_enc_size(&str, z->size, VCF_RT_CHAR);
-				kputsn((char*)z->buf, z->size * h->n_sample, &str);
+				vcf_enc_size(str, z->size, VCF_RT_CHAR);
+				kputsn((char*)z->buf, z->size * h->n_sample, str);
 			} else if ((z->y>>4&0xf) == VCF_TP_INT) {
-				vcf_enc_int(&str, (z->size>>2) * h->n_sample, (int32_t*)z->buf, z->size>>2);
+				vcf_enc_int(str, (z->size>>2) * h->n_sample, (int32_t*)z->buf, z->size>>2);
 			} else {
-				vcf_enc_size(&str, z->size>>2, VCF_RT_FLOAT);
-				kputsn((char*)z->buf, z->size * h->n_sample, &str);
+				vcf_enc_size(str, z->size>>2, VCF_RT_FLOAT);
+				kputsn((char*)z->buf, z->size * h->n_sample, str);
 			}
 		}
 	}
-	v->l_str = str.l; v->m_str = str.m; v->str = str.s;
 	return 0;
 }
 
@@ -705,7 +706,7 @@ typedef struct {
 
 int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 {
-	uint8_t *ptr = (uint8_t*)v->str;
+	uint8_t *ptr = (uint8_t*)v->var.s;
 	int i, l;
 	s->l = 0;
 	kputs(h->key[h->r2k[v->rid]].key, s); kputc('\t', s); // CHROM
@@ -776,6 +777,8 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 			} else continue;
 		}
 	} else kputc('.', s);
+	// FORMAT and individual information
+	ptr = (uint8_t*)v->ind.s;
 	l = *(uint16_t*)ptr;
 	ptr += 2;
 	if (h->n_sample && l) { // FORMAT
