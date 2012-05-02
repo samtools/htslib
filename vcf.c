@@ -297,12 +297,17 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 {
 	vcf_hdr_t *h;
 	if (fp->is_write) return 0;
+	h = vcf_hdr_init();
 	if (fp->is_bin) {
+		uint8_t magic[4];
+		bgzf_read(fp->fp, magic, 4);
+		bgzf_read(fp->fp, &h->l_text, 4);
+		h->text = malloc(h->l_text);
+		bgzf_read(fp->fp, h->text, h->l_text);
 	} else {
 		int dret;
 		kstring_t txt, *s = &fp->line;
 		txt.l = txt.m = 0; txt.s = 0;
-		h = vcf_hdr_init();
 		if (fp->fn_ref) {
 			gzFile f;
 			kstream_t *ks;
@@ -347,6 +352,9 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 void vcf_hdr_write(vcfFile *fp, const vcf_hdr_t *h)
 {
 	if (fp->is_bin) {
+		bgzf_write(fp->fp, "BCF\2", 4);
+		bgzf_write(fp->fp, &h->l_text, 4);
+		bgzf_write(fp->fp, h->text, h->l_text);
 	} else {
 		fwrite(h->text, 1, h->l_text, fp->fp);
 		fputc('\n', fp->fp);
