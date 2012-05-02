@@ -77,6 +77,7 @@ void vcf_close(vcfFile *fp)
 			gzclose(gzfp);
 		} else fclose(fp->fp);
 	} else bgzf_close(fp->fp);
+	free(fp);
 }
 
 /*********************
@@ -176,7 +177,7 @@ void vcf_hdr_destroy(vcf_hdr_t *h)
 	for (k = kh_begin(d); k != kh_end(d); ++k)
 		if (kh_exist(d, k)) free((char*)kh_key(d, k));
 	kh_destroy(vdict, d);
-	free(h->key); free(h->r2k); free(h->s2k);
+	free(h->text); free(h->key); free(h->r2k); free(h->s2k);
 	free(h);
 }
 
@@ -408,6 +409,12 @@ vcf1_t *vcf_init1()
 	vcf1_t *v;
 	v = calloc(1, sizeof(vcf1_t));
 	return v;
+}
+
+void vcf_destroy1(vcf1_t *v)
+{
+	free(v->str);
+	free(v);
 }
 
 typedef struct {
@@ -779,6 +786,8 @@ int main(int argc, char *argv[])
 	h = vcf_hdr_read(fp);
 	v = vcf_init1();
 	while (vcf_read1(fp, h, v) >= 0);
+	vcf_destroy1(v);
 	vcf_hdr_destroy(h);
+	vcf_close(fp);
 	return 0;
 }
