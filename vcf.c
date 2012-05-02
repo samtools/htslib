@@ -452,7 +452,7 @@ vcf1_t *vcf_init1()
 
 void vcf_destroy1(vcf1_t *v)
 {
-	free(v->var.s); free(v->ind.s);
+	free(v->shared.s); free(v->indiv.s);
 	free(v);
 }
 
@@ -474,8 +474,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 	ks_tokaux_t aux;
 	uint16_t n_fmt = 0;
 
-	mem->l = v->var.l = v->ind.l = 0;
-	str = &v->var;
+	mem->l = v->shared.l = v->indiv.l = 0;
+	str = &v->shared;
 	for (p = kstrtok(s->s, "\t", &aux), i = 0; p; p = kstrtok(0, 0, &aux), ++i) {
 		q = (char*)aux.p;
 		*q = 0;
@@ -664,7 +664,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 		}
 	}
 	if (h->n_sample > 0) { // write individual genotype information
-		str = &v->ind;
+		str = &v->indiv;
 		kputsn((char*)&n_fmt, 2, str);
 		for (i = 0; i < n_fmt; ++i) {
 			fmt_aux_t *z = &fmt[i];
@@ -706,7 +706,7 @@ typedef struct {
 
 int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 {
-	uint8_t *ptr = (uint8_t*)v->var.s;
+	uint8_t *ptr = (uint8_t*)v->shared.s;
 	int i, l;
 	s->l = 0;
 	kputs(h->key[h->r2k[v->rid]].key, s); kputc('\t', s); // CHROM
@@ -778,7 +778,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 		}
 	} else kputc('.', s);
 	// FORMAT and individual information
-	ptr = (uint8_t*)v->ind.s;
+	ptr = (uint8_t*)v->indiv.s;
 	l = *(uint16_t*)ptr;
 	ptr += 2;
 	if (h->n_sample && l) { // FORMAT

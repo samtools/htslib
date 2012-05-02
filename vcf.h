@@ -85,18 +85,10 @@ extern uint8_t vcf_type_size[];
 #define VCF_RT_UINT8	13
 
 typedef struct {
-	uint32_t key:28, type:3, is_vec:1;
-	union {
-		int32_t x;
-		float f;
-	} x;
-} vcf_info_t;
-
-typedef struct {
 	int32_t rid; // CHROM
 	int32_t pos; // POS
 	float qual;  // QUAL
-	kstring_t var, ind;
+	kstring_t shared, indiv;
 } vcf1_t;
 
 /*******
