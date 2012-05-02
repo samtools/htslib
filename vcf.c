@@ -733,6 +733,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 			if ((y>>4&0xf) != VCF_TP_FLAG) {
 				kputc('=', s);
 				if ((y>>4&0xf) == VCF_TP_STR) {
+					++p; // skip the typing byte
 					for (q = p; *q; ++q);
 					kputsn((char*)p, q - p, s);
 					p = q + 1;
