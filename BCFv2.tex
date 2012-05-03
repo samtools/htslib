@@ -12,16 +12,19 @@
 
 \makeindex
 
+\title{BCF2 Quick Reference}
+\author{}
+\date{}
+
 \begin{document}
+\maketitle
 
 {\small
 In BCF2, a typed value consists of a typing byte and the actual value with type
 mandated by the typing byte. In the typing byte, the lowest four bits (bit
-0--3) give the atomic type. The 7-th bit is set if the value is a vector. For a
-vector, if the number represented by bits 4--6 is smaller than 7, the 3-bit
-number gives the number of elements in the vector; otherwise, a typed integer
-following the typing byte gives the vector size. The following table shows the
-atomic types in BCFv2:
+0--3) give the atomic type. The number represented by the higher 4 bits
+indicates the size of the following array if it is below 15; if the number
+equals 15, the following typed integer gives the array length.
 \begin{center}
 {\small\begin{tabular}{rlrl}
 \hline
@@ -30,31 +33,12 @@ Bit 0--3 & C type & Missing value & Description \\
 1 & {\tt int8\_t}   & {\tt 0x80}               & signed 8-bit integer \\
 2 & {\tt int16\_t}  & {\tt 0x8000}             & signed 16-bit integer \\
 3 & {\tt int32\_t}  & {\tt 0x80000000}         & signed 32-bit integer \\
-4 & {\tt int64\_t}  & {\tt 0x8000000000000000} & signed 64-bit integer \\
 5 & {\tt float}     & {\tt 0x7F800001}         & IEEE 32-bit floating pointer number \\
-6 & {\tt double}    & {\tt 0x7FF0000000000001} & IEEE 64-bit floating pointer number \\
 7 & {\tt char}      & `{\tt \char92 0}'        & character \\
-8 & {\tt uint8\_t}  &                    & boolean, 0 or 1 only \\
 9 & {\tt char*}     & ``{\tt\char92 0}'' & null-terminated C string \\
-10 & {\tt uint8\_t} &                    & index of the string in the dictionary \\
-11 & {\tt uint16\_t}&                    & index of the string in the dictionary \\
-12 & {\tt uint32\_t}&                    & index of the string in the dictionary \\
-13 & {\tt uint8\_t} &                    & unsigned 8-bit integer \\
 \hline
 \end{tabular}}
 \end{center}
-
-A genotype is encoded in a typed vector with the number of elements equal to
-the maximum ploidy among all samples at a site. For one individual, each allele
-is encoded as follows. The lowest bit is set if the allele has been phased.
-The integer encoded in the higher bits gives the allele. The integer equals
-0 if the allele in unknown; equals 1 if the haplotype is absent (e.g. at an
-X chromosome site of a male); equals 2 for a reference allele; equals an
-integer larger than 2 for an alternate allele. For a more compact
-representation of a diploid genotype with no more than 6 alleles, we may
-encode a genotype using a single unsigned 8-bit integer (type 13). In this
-case, the higher 4 bits encode the allele on the first haplotype and the lower
-encode on the second haplotype.
 }
 \begin{table}[ht]
 \centering
@@ -66,7 +50,7 @@ encode on the second haplotype.
   \multicolumn{3}{|l|}{\sf l\_text} & Length of the header text, including any {\sf NULL} padding & {\tt uint32\_t} & \\\cline{1-6}
   \multicolumn{3}{|l|}{\sf text} & {\sf NULL}-terminated plain VCF header text & {\tt char[{\sf l\_text}]} & \\\cline{1-6}
   \multicolumn{6}{|c|}{\textcolor{gray}{\it List of VCF records (until the end of the BGZF section)}} \\\cline{2-6}
-  & \multicolumn{2}{l|}{\sf block\_size} & Length of the remainder of the VCF record & {\tt uint32\_t} & \\\cline{2-6}
+  & \multicolumn{2}{l|}{\sf l\_shared} & Data length from {\sf CHROM} to the end of {\sf INFO} & {\tt uint32\_t} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf CHROM} & Reference sequence ID & {\tt int32\_t} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf POS} & 0-based leftmost coordinate & {\tt int32\_t} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf QUAL} & Variant quality; {\tt 0x7F800001} for a missing value & {\tt float} & \\\cline{2-6}
@@ -78,13 +62,14 @@ encode on the second haplotype.
   & \multicolumn{2}{l|}{\sf n\_info} & Number of info key-value pairs & {\tt uint16\_t} & \\\cline{2-6}
   & \multicolumn{5}{c|}{\textcolor{gray}{\it List of key-value pairs in the INFO field (n=n\_info)}} \\\cline{3-6}
   & & {\sf info\_key} & Info key, defined in the dictionary & {\tt typed int} & \\\cline{3-6}
-  & & {\sf info\_value} & Value & {\tt typed val} &\\
-  \cline{2-6}
-  & \multicolumn{2}{l|}{\sf n\_fmt} & number of format fields & {\tt uint16\_t} & \\\cline{2-6}
+  & & {\sf info\_value} & Value & {\tt typed val} &\\\cline{2-6}
+  & \multicolumn{2}{l|}{\sf l\_indiv} & Data length of {\sf FORMAT} and individual genotype fields & {\tt uint32\_t} & \\\cline{2-6}
+  & \multicolumn{2}{l|}{\sf n\_fmt} & Number of format fields & {\tt uint16\_t} & \\\cline{2-6}
   & \multicolumn{5}{c|}{\textcolor{gray}{\it List of formats and sample information (n=n\_fmt)}} \\\cline{3-6}
   & & {\sf fmt\_key} & Format key, defined in the dectionary & {\tt typed int} & \\\cline{3-6}
   & & {\sf fmt\_type} & Typing byte of each individual value, possibly followed by a typed int for the vector length & {\tt uint8\_t+} & \\\cline{3-6}
-  & & {\sf fmt\_value} & Array of values. The information of each individual is concatenated in the array. Every value is of the same {\sf fmt\_type}. & (by {\sf fmt\_type}) &\\
+  & & {\sf fmt\_value} & Array of values. The information of each individual is concatenated in the array. Every value is of the same {\sf fmt\_type}.
+  	Variable-length arrays are padded with missing values; a string is stored as an array of {\tt char}. & (by {\sf fmt\_type}) &\\
   \cline{1-6}
 \end{tabular}}
 \end{table}
