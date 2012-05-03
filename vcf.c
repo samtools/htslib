@@ -686,6 +686,20 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 {
 	if (fp->is_bin) {
+		uint32_t x[4];
+		int ret;
+		if ((ret = bgzf_read(fp->fp, x, 16)) != 16) {
+			if (ret == 0) return -1;
+			return -2;
+		}
+		ks_resize(&v->shared, x[0] - 12);
+		v->shared.l = x[0] - 12;
+		v->rid = x[1]; v->pos = x[2]; *(uint32_t*)&v->qual = x[3];
+		bgzf_read(fp->fp, v->shared.s, v->shared.l);
+		bgzf_read(fp->fp, x, 4);
+		ks_resize(&v->indiv, x[0]);
+		v->indiv.l = x[0];
+		bgzf_read(fp->fp, v->indiv.s, v->indiv.l);
 	} else {
 		int ret, dret;
 		ret = ks_getuntil(fp->fp, KS_SEP_LINE, &fp->line, &dret);
@@ -811,6 +825,14 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 int vcf_write1(vcfFile *fp, const vcf_hdr_t *h, const vcf1_t *v)
 {
 	if (fp->is_bin) {
+		uint32_t x[4];
+		x[0] = 12 + v->shared.l;
+		x[1] = v->rid; x[2] = v->pos; x[3] = *(uint32_t*)&v->qual;
+		bgzf_write(fp->fp, x, 16);
+		bgzf_write(fp->fp, v->shared.s, v->shared.l);
+		x[0] = v->indiv.l;
+		bgzf_write(fp->fp, x, 4);
+		bgzf_write(fp->fp, v->indiv.s, v->indiv.l);
 	} else {
 		vcf_format1(h, v, &fp->line);
 		fwrite(fp->line.s, 1, fp->line.l, fp->fp);
@@ -819,18 +841,36 @@ int vcf_write1(vcfFile *fp, const vcf_hdr_t *h, const vcf1_t *v)
 	return 0;
 }
 
+#include <unistd.h>
+
 int main(int argc, char *argv[])
 {
+	int c, clevel = -1, flag = 0;
+	char *fn_ref = 0, *fn_out = 0, mode[8];
 	vcf_hdr_t *h;
 	vcfFile *in, *out;
 	vcf1_t *v;
 
-	if (argc == 1) {
-		fprintf(stderr, "Usage: bcf2ls <in.vcf>\n");
+	while ((c = getopt(argc, argv, "l:bSD:o:")) >= 0) {
+		switch (c) {
+		case 'l': clevel = atoi(optarg); break;
+		case 'S': flag |= 1; break;
+		case 'b': flag |= 2; break;
+		case 'D': fn_ref = optarg; break;
+		case 'o': fn_out = optarg; break;
+		}
+	}
+	if (argc == optind) {
+		fprintf(stderr, "Usage: bcf2ls [-bS] [-D ref.fai] [-l level] <in.bcf>\n");
 		return 1;
 	}
-	in = vcf_open(argv[1], "r", argc > 2? argv[2] : 0);
-	out = vcf_open("-", "w", 0);
+	
+	strcpy(mode, "r");
+	if (clevel >= 0 && clevel <= 9) sprintf(mode + 1, "%d", clevel);
+	if ((flag&1) == 0) strcat(mode, "b");
+
+	in = vcf_open(argv[optind], mode, fn_ref);
+	out = vcf_open(fn_out? fn_out : "-", (flag&2)? "wb" : "w", 0);
 	h = vcf_hdr_read(in);
 	vcf_hdr_write(out, h);
 	v = vcf_init1();
