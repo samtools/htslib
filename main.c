@@ -13,7 +13,7 @@ int main(int argc, char *argv[])
 
 	while ((c = getopt(argc, argv, "l:bSt:o:")) >= 0) {
 		switch (c) {
-		case 'l': clevel = atoi(optarg); break;
+		case 'l': clevel = atoi(optarg); flag |= 2; break;
 		case 'S': flag |= 1; break;
 		case 'b': flag |= 2; break;
 		case 't': fn_ref = optarg; flag |= 1; break;
