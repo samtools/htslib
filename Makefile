@@ -23,10 +23,13 @@ bcf2ls:$(LOBJS) $(AOBJS)
 bgzf.o:bgzf.c bgzf.h knetfile.h khash.h
 		$(CC) -c $(CFLAGS) $(DFLAGS) -D_USE_KNETFILE $(INCLUDES) bgzf.c -o $@
 
+BCFv2.pdf:BCFv2.tex
+		pdflatex BCFv2
+
 kstring.o:kstring.h
 knetfile.o:knetfile.h
 vcf.o:vcf.h bgzf.h kstring.h khash.h
 main.o:vcf.h
 
 clean:
-		rm -fr gmon.out *.o a.out *.dSYM $(PROG) *~ *.a
+		rm -fr gmon.out *.o a.out *.dSYM $(PROG) *~ *.a BCFv2.aux BCFv2.idx BCFv2.log BCFv2.pdf
