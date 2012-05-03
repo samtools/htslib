@@ -11,17 +11,17 @@ int main(int argc, char *argv[])
 	vcfFile *in, *out;
 	vcf1_t *v;
 
-	while ((c = getopt(argc, argv, "l:bSD:o:")) >= 0) {
+	while ((c = getopt(argc, argv, "l:bSt:o:")) >= 0) {
 		switch (c) {
 		case 'l': clevel = atoi(optarg); break;
 		case 'S': flag |= 1; break;
 		case 'b': flag |= 2; break;
-		case 'D': fn_ref = optarg; flag |= 1; break;
+		case 't': fn_ref = optarg; flag |= 1; break;
 		case 'o': fn_out = optarg; break;
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: bcf2ls [-bS] [-D ref.fai] [-l level] <in.bcf>\n");
+		fprintf(stderr, "Usage: bcf2ls [-bS] [-t ref.fai] [-l level] <in.bcf>\n");
 		return 1;
 	}
 	

@@ -17,6 +17,7 @@ typedef khash_t(vdict) vdict_t;
 KSTREAM_INIT(gzFile, gzread, 16384)
 
 int vcf_verbose = 3; // 1: error; 2: warning; 3: message; 4: progress; 5: debugging; >=10: pure debugging
+uint32_t vcf_missing_float = 0x7F800001;
 uint8_t vcf_type_size[] = { 0, 1, 2, 4, 8, 4, 8, 1, 1, 0, 1, 2, 4, 1, 0, 0 };
 static vcf_keyinfo_t vcf_keyinfo_def = { { 15, 15, 15 }, -1, -1, -1, -1 };
 
@@ -308,25 +309,6 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 		int dret;
 		kstring_t txt, *s = &fp->line;
 		txt.l = txt.m = 0; txt.s = 0;
-		if (fp->fn_ref) {
-			gzFile f;
-			kstream_t *ks;
-			f = gzopen(fp->fn_ref, "r");
-			ks = ks_init(f);
-			while (ks_getuntil(ks, 0, s, &dret) >= 0) {
-				int c;
-				txt.l = 0;
-				kputs("##contig=<ID=", &txt); kputs(s->s, &txt);
-				ks_getuntil(ks, 0, s, &dret);
-				kputs(",length=", &txt); kputw(atol(s->s), &txt); kputc('>', &txt);
-				vcf_hdr_parse1(h, txt.s);
-				if (dret != '\n')
-					while ((c = ks_getc(ks)) != '\n' && c != -1);
-			}
-			ks_destroy(ks);
-			gzclose(f);
-		}
-		txt.l = 0;
 		while (ks_getuntil(fp->fp, KS_SEP_LINE, s, &dret) >= 0) {
 			if (s->l == 0) continue;
 			if (s->s[0] != '#') {
@@ -335,6 +317,26 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 				free(txt.s);
 				vcf_hdr_destroy(h);
 				return 0;
+			}
+			if (s->s[1] != '#' && fp->fn_ref) { // insert contigs here
+				gzFile f;
+				kstream_t *ks;
+				kstring_t tmp;
+				tmp.l = tmp.m = 0; tmp.s = 0;
+				f = gzopen(fp->fn_ref, "r");
+				ks = ks_init(f);
+				while (ks_getuntil(ks, 0, &tmp, &dret) >= 0) {
+					int c;
+					kputs("##contig=<ID=", &txt); kputs(tmp.s, &txt);
+					ks_getuntil(ks, 0, &tmp, &dret);
+					kputs(",length=", &txt); kputw(atol(tmp.s), &txt);
+					kputsn(">\n", 2, &txt);
+					if (dret != '\n')
+						while ((c = ks_getc(ks)) != '\n' && c != -1); // skip the rest of the line
+				}
+				free(tmp.s);
+				ks_destroy(ks);
+				gzclose(f);
 			}
 			kputsn(s->s, s->l, &txt);
 			if (s->s[1] != '#') break;
@@ -503,7 +505,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			if (n_alt) kputsn(p, q - p + 1, str);
 		} else if (i == 5) { // QUAL
 			if (strcmp(p, ".")) v->qual = atof(p);
-			else *(uint32_t*)&v->qual = 0x7F800001;
+			else memcpy(&v->qual, &vcf_missing_float, 4);
 		} else if (i == 6) { // FILTER
 			if (strcmp(p, ".")) {
 				int32_t *a;
@@ -694,7 +696,8 @@ int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 		}
 		ks_resize(&v->shared, x[0] - 12);
 		v->shared.l = x[0] - 12;
-		v->rid = x[1]; v->pos = x[2]; *(uint32_t*)&v->qual = x[3];
+		v->rid = x[1]; v->pos = x[2];
+		memcpy(&v->qual, &x[3], 4);
 		bgzf_read(fp->fp, v->shared.s, v->shared.l);
 		bgzf_read(fp->fp, x, 4);
 		ks_resize(&v->indiv, x[0]);
@@ -749,7 +752,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 		}
 		kputc('\t', s);
 	} else kputsn(".\t", 2, s);
-	if (*(uint32_t*)&v->qual == 0x7F800001) kputsn(".\t", 2, s); // QUAL
+	if (memcmp(&v->qual, &vcf_missing_float, 4) == 0) kputsn(".\t", 2, s); // QUAL
 	else ksprintf(s, "%g\t", v->qual);
 	if (*ptr>>4) { // FILTER
 		int32_t x, y;
@@ -827,7 +830,8 @@ int vcf_write1(vcfFile *fp, const vcf_hdr_t *h, const vcf1_t *v)
 	if (fp->is_bin) {
 		uint32_t x[4];
 		x[0] = 12 + v->shared.l;
-		x[1] = v->rid; x[2] = v->pos; x[3] = *(uint32_t*)&v->qual;
+		x[1] = v->rid; x[2] = v->pos;
+		memcpy(&x[3], &v->qual, 4);
 		bgzf_write(fp->fp, x, 16);
 		bgzf_write(fp->fp, v->shared.s, v->shared.l);
 		x[0] = v->indiv.l;
