@@ -136,6 +136,7 @@ int vcf_hdr_parse_line2(const char *str, uint32_t *info, int *id_beg, int *id_en
 			if (q - val == 7 && strncmp(val, "Integer", 7) == 0) type = VCF_TP_INT;
 			else if (q - val == 5 && strncmp(val, "Float", 5) == 0) type = VCF_TP_REAL;
 			else if (q - val == 6 && strncmp(val, "String", 6) == 0) type = VCF_TP_STR;
+			else if (q - val == 4 && strncmp(val, "Flag", 6) == 0) type = VCF_TP_FLAG;
 		} else if (which == 3) {
 			if (*val == 'A') var = VCF_VTP_A;
 			else if (*val == 'G') var = VCF_VTP_G;
@@ -154,7 +155,7 @@ int vcf_hdr_parse_line2(const char *str, uint32_t *info, int *id_beg, int *id_en
 		if (ctype == VCF_DT_FLT) num = 0;
 		if (type == VCF_TP_FLAG) {
 			if (num != 0 && vcf_verbose >= 2)
-				fprintf(stderr, "[W::%s] ignore NUmber for a Flag\n", __func__);
+				fprintf(stderr, "[W::%s] ignore Number for a Flag\n", __func__);
 			num = 0, var = VCF_VTP_FIXED; // if Flag VCF type, force to change num to 0
 		}
 		if (num == 0) type = VCF_TP_FLAG, var = VCF_VTP_FIXED; // conversely, if num==0, force the type to Flag
