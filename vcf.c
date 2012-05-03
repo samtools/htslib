@@ -668,9 +668,10 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			}
 		}
 	}
+	// write individual genotype information
+	str = &v->indiv;
 	kputsn((char*)&n_fmt, 2, str);
-	if (h->n_sample > 0) { // write individual genotype information
-		str = &v->indiv;
+	if (h->n_sample > 0) {
 		for (i = 0; i < n_fmt; ++i) {
 			fmt_aux_t *z = &fmt[i];
 			vcf_enc_int1(str, z->key);
