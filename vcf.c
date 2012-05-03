@@ -549,38 +549,40 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, key);
 					} else { // defined in the header
 						uint32_t y = kh_val(d, k).info[VCF_DT_INFO];
-						if ((y>>4&0xf) == VCF_TP_FLAG || val == 0) { // a flag defined in the dict or without value
+						if ((y>>4&0xf) == VCF_TP_FLAG) { // a flag defined in the dict or without value
 							vcf_enc_int1(str, kh_val(d, k).kid);
 							++n_info;
 							if (val != 0 && vcf_verbose >= 2)
 								fprintf(stderr, "[W::%s] INFO '%s' is defined as a flag in the header but has a value '%s' in VCF; value skipped\n", __func__, key, val);
-							if (val == 0 && (y>>4&0xf) != VCF_TP_FLAG && vcf_verbose >= 2)
-								fprintf(stderr, "[W::%s] INFO '%s' takes at least a value, but no value is found\n", __func__, key);
 						} else if ((y>>4&0xf) == VCF_TP_STR) { // a string
 							vcf_enc_int1(str, kh_val(d, k).kid);
-							vcf_enc_size(str, 1, VCF_RT_CSTR);
-							kputsn(val, end - val + 1, str); // +1 to include NULL
+							if (val) {
+								vcf_enc_size(str, 1, VCF_RT_CSTR);
+								kputsn(val, end - val + 1, str); // +1 to include NULL
+							} else vcf_enc_size(str, 0, VCF_RT_CSTR);
 							++n_info;
 						} else { // an integer or float value or array
-							int i, n_val = 1;
-							char *t;
-							for (t = val; *t; ++t)
-								if (*t == ',') ++n_val;
-							++n_info;
 							vcf_enc_int1(str, kh_val(d, k).kid);
-							if ((y>>4&0xf) == VCF_TP_INT) {
-								int32_t *z;
-								z = alloca(n_val<<2);
-								for (i = 0, t = val; i < n_val; ++i, ++t)
-									z[i] = strtol(t, &t, 10);
-								vcf_enc_int(str, n_val, z, -1);
-							} else if ((y>>4&0xf) == VCF_TP_REAL) {
-								float *z;
-								z = alloca(n_val<<2);
-								for (i = 0, t = val; i < n_val; ++i, ++t)
-									z[i] = strtod(t, &t);
-								vcf_enc_float(str, n_val, z);
-							}
+							if (val) {
+								int i, n_val = 1;
+								char *t;
+								for (t = val; *t; ++t)
+									if (*t == ',') ++n_val;
+								++n_info;
+								if ((y>>4&0xf) == VCF_TP_INT) {
+									int32_t *z;
+									z = alloca(n_val<<2);
+									for (i = 0, t = val; i < n_val; ++i, ++t)
+										z[i] = strtol(t, &t, 10);
+									vcf_enc_int(str, n_val, z, -1);
+								} else if ((y>>4&0xf) == VCF_TP_REAL) {
+									float *z;
+									z = alloca(n_val<<2);
+									for (i = 0, t = val; i < n_val; ++i, ++t)
+										z[i] = strtod(t, &t);
+									vcf_enc_float(str, n_val, z);
+								}
+							} else vcf_enc_size(str, 0, (y>>4&0xf) == VCF_TP_INT? VCF_RT_INT8 : VCF_RT_FLOAT);
 						}
 					}
 					if (c == 0) break;

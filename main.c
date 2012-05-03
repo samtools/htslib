@@ -6,7 +6,7 @@
 int main(int argc, char *argv[])
 {
 	int c, clevel = -1, flag = 0;
-	char *fn_ref = 0, *fn_out = 0, mode[8];
+	char *fn_ref = 0, *fn_out = 0, moder[8], modew[8];
 	vcf_hdr_t *h;
 	vcfFile *in, *out;
 	vcf1_t *v;
@@ -25,12 +25,13 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 	
-	strcpy(mode, "r");
-	if (clevel >= 0 && clevel <= 9) sprintf(mode + 1, "%d", clevel);
-	if ((flag&1) == 0) strcat(mode, "b");
+	strcpy(moder, "r"); strcpy(modew, "w");
+	if (clevel >= 0 && clevel <= 9) sprintf(modew + 1, "%d", clevel);
+	if ((flag&1) == 0) strcat(moder, "b");
+	if (flag&2) strcat(modew, "b");
 
-	in = vcf_open(argv[optind], mode, fn_ref);
-	out = vcf_open(fn_out? fn_out : "-", (flag&2)? "wb" : "w", 0);
+	in = vcf_open(argv[optind], moder, fn_ref);
+	out = vcf_open(fn_out? fn_out : "-", modew, 0);
 	h = vcf_hdr_read(in);
 	vcf_hdr_write(out, h);
 	v = vcf_init1();
