@@ -21,10 +21,11 @@
 
 {\small
 In BCF2, a typed value consists of a typing byte and the actual value with type
-mandated by the typing byte. In the typing byte, the lowest four bits (bit
-0--3) give the atomic type. The number represented by the higher 4 bits
-indicates the size of the following array if it is below 15; if the number
-equals 15, the following typed integer gives the array length.
+mandated by the typing byte. In the typing byte, the lowest four bits give the
+atomic type. If the number represented by the higher 4 bits is smaller than 15,
+it is the size of the following array; if the number equals 15, the following
+typed integer is the array size. The table below gives the atomic types and
+their missing values:
 \begin{center}
 {\small\begin{tabular}{rlrl}
 \hline
@@ -62,7 +63,7 @@ Bit 0--3 & C type & Missing value & Description \\
   & \multicolumn{2}{l|}{\sf n\_info} & Number of info key-value pairs & {\tt uint16\_t} & \\\cline{2-6}
   & \multicolumn{5}{c|}{\textcolor{gray}{\it List of key-value pairs in the INFO field (n=n\_info)}} \\\cline{3-6}
   & & {\sf info\_key} & Info key, defined in the dictionary & {\tt typed int} & \\\cline{3-6}
-  & & {\sf info\_value} & Value & {\tt typed val} &\\\cline{2-6}
+  & & {\sf info\_value} & Value; empty for a VCF Flag & {\tt typed val} &\\\cline{2-6}
   & \multicolumn{2}{l|}{\sf l\_indiv} & Data length of {\sf FORMAT} and individual genotype fields & {\tt uint32\_t} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf n\_fmt} & Number of format fields & {\tt uint16\_t} & \\\cline{2-6}
   & \multicolumn{5}{c|}{\textcolor{gray}{\it List of formats and sample information (n=n\_fmt)}} \\\cline{3-6}
