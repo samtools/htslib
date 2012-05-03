@@ -782,17 +782,19 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 			kputs(h->key[x].key, s);
 			y = h->key[x].info->info[VCF_DT_INFO];
 			if ((y>>4&0xf) != VCF_TP_FLAG) {
-				kputc('=', s);
-				if ((y>>4&0xf) == VCF_TP_STR) {
-					++ptr; // skip the typing byte
-					l = strlen((char*)ptr);
-					kputsn((char*)ptr, l, s);
-					ptr += l + 1;
-				} else {
-					x = vcf_dec_size(ptr, &ptr, &type);
-					vcf_fmt_array(s, x, type, ptr);
-					ptr += vcf_type_size[type] * x;
-				}
+				if (*ptr>>4) { // more than zero element
+					kputc('=', s);
+					if ((y>>4&0xf) == VCF_TP_STR) {
+						++ptr; // skip the typing byte
+						l = strlen((char*)ptr);
+						kputsn((char*)ptr, l, s);
+						ptr += l + 1;
+					} else {
+						x = vcf_dec_size(ptr, &ptr, &type);
+						vcf_fmt_array(s, x, type, ptr);
+						ptr += vcf_type_size[type] * x;
+					}
+				} else ++ptr;
 			} else continue;
 		}
 	} else kputc('.', s);
