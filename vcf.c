@@ -21,19 +21,6 @@ uint32_t vcf_missing_float = 0x7F800001;
 uint8_t vcf_type_shift[] = { 0, 0, 1, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 static vcf_keyinfo_t vcf_keyinfo_def = { { 15, 15, 15 }, -1, -1, -1, -1 };
 
-/******************
- * Basic routines *
- ******************/
-
-static inline void align_mem(kstring_t *s)
-{
-	if (s->l&7) {
-		uint64_t zero = 0;
-		int l = ((s->l + 7)>>3<<3) - s->l;
-		kputsn((char*)&zero, l, s);
-	}
-}
-
 /*************
  * Basic I/O *
  *************/
@@ -424,26 +411,25 @@ void vcf_fmt_array(kstring_t *s, int n, int type, void *data)
 		}
 	} else if (type == VCF_BT_CHAR) {
 		char *p = (char*)data;
-		for (j = 0; j < n && *p; ++j, ++p)
-			kputc(*p, s);
-			kputw(*p, s);
-		}
-	} else if (type == VCF_BT_FLOAT) {
-		float *p = (float*)data;
-		for (j = 0; j < n && *(int32_t*)p != 0x7F800001; ++j, ++p) {
-			if (j) kputc(',', s);
+		for (j = 0; j < n && *p; ++j, ++p) kputc(*p, s);
 	} else if (type == VCF_BT_INT32) {
 		int32_t *p = (int32_t*)data;
 		for (j = 0; j < n && *p != INT32_MIN; ++j, ++p) {
 			if (j) kputc(',', s);
 			kputw(*p, s);
 		}
+	} else if (type == VCF_BT_FLOAT) {
+		float *p = (float*)data;
+		for (j = 0; j < n && *(int32_t*)p != 0x7F800001; ++j, ++p) {
+			if (j) kputc(',', s);
 			ksprintf(s, "%g", *p);
 		}
 	} else if (type == VCF_BT_INT16) {
 		int16_t *p = (int16_t*)data;
 		for (j = 0; j < n && *p != INT16_MIN; ++j, ++p) {
 			if (j) kputc(',', s);
+			kputw(*p, s);
+		}
 	}
 	if (n && j == 0) kputc('.', s);
 }
@@ -471,6 +457,15 @@ typedef struct {
 	uint32_t y;
 	uint8_t *buf;
 } fmt_aux_t;
+
+static inline void align_mem(kstring_t *s)
+{
+	if (s->l&7) {
+		uint64_t zero = 0;
+		int l = ((s->l + 7)>>3<<3) - s->l;
+		kputsn((char*)&zero, l, s);
+	}
+}
 
 int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 {

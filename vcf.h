@@ -78,7 +78,6 @@ extern uint8_t vcf_type_shift[];
 #define VCF_BT_INT8		1
 #define VCF_BT_INT16	2
 #define VCF_BT_INT32	3
-#define VCF_BT_UINT8	4
 #define VCF_BT_FLOAT	5
 #define VCF_BT_CHAR		7
 
@@ -122,9 +121,9 @@ extern "C" {
 static inline void vcf_enc_size(kstring_t *s, int size, int type)
 {
 	if (size >= 15) {
-		assert(size < 256); // not implemented yet
+		assert(size < 128); // not implemented yet
 		kputc(15<<4|type, s);
-		kputc(1<<4|VCF_BT_UINT8, s);
+		kputc(1<<4|VCF_BT_INT8, s);
 		kputc(size, s);
 	} else kputc(size<<4|type, s);
 }
