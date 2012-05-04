@@ -422,28 +422,28 @@ void vcf_fmt_array(kstring_t *s, int n, int type, void *data)
 			if (j) kputc(',', s);
 			kputw(*p, s);
 		}
-	} else if (type == VCF_BT_INT16) {
-		int16_t *p = (int16_t*)data;
-		for (j = 0; j < n && *p != INT16_MIN; ++j, ++p) {
-			if (j) kputc(',', s);
-			kputw(*p, s);
-		}
-	} else if (type == VCF_BT_INT32) {
-		int32_t *p = (int32_t*)data;
-		for (j = 0; j < n && *p != INT32_MIN; ++j, ++p) {
-			if (j) kputc(',', s);
+	} else if (type == VCF_BT_CHAR) {
+		char *p = (char*)data;
+		for (j = 0; j < n && *p; ++j, ++p)
+			kputc(*p, s);
 			kputw(*p, s);
 		}
 	} else if (type == VCF_BT_FLOAT) {
 		float *p = (float*)data;
 		for (j = 0; j < n && *(int32_t*)p != 0x7F800001; ++j, ++p) {
 			if (j) kputc(',', s);
+	} else if (type == VCF_BT_INT32) {
+		int32_t *p = (int32_t*)data;
+		for (j = 0; j < n && *p != INT32_MIN; ++j, ++p) {
+			if (j) kputc(',', s);
+			kputw(*p, s);
+		}
 			ksprintf(s, "%g", *p);
 		}
-	} else if (type == VCF_BT_CHAR) {
-		char *p = (char*)data;
-		for (j = 0; j < n && *p; ++j, ++p)
-			kputc(*p, s);
+	} else if (type == VCF_BT_INT16) {
+		int16_t *p = (int16_t*)data;
+		for (j = 0; j < n && *p != INT16_MIN; ++j, ++p) {
+			if (j) kputc(',', s);
 	}
 	if (n && j == 0) kputc('.', s);
 }
@@ -614,7 +614,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			for (r = q + 1, j = 0, m = l = 1;; ++r, ++l) {
 				if (*r == ':' || *r == '\t' || *r == '\0') { // end of a sample
 					if (fmt[j].max_m < m) fmt[j].max_m = m;
-					if (fmt[j].max_l < l) fmt[j].max_l = l;
+					if (fmt[j].max_l < l - 1) fmt[j].max_l = l - 1;
 					l = 0, m = 1;
 					if (*r != ':') j = 0;
 					else ++j;
