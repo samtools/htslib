@@ -6,16 +6,18 @@
 int main(int argc, char *argv[])
 {
 	int c, clevel = -1, flag = 0;
+	int64_t cnt = 0;
 	char *fn_ref = 0, *fn_out = 0, moder[8], modew[8];
 	vcf_hdr_t *h;
 	vcfFile *in, *out;
 	vcf1_t *v;
 
-	while ((c = getopt(argc, argv, "l:bSt:o:")) >= 0) {
+	while ((c = getopt(argc, argv, "l:bSt:o:c")) >= 0) {
 		switch (c) {
 		case 'l': clevel = atoi(optarg); flag |= 2; break;
 		case 'S': flag |= 1; break;
 		case 'b': flag |= 2; break;
+		case 'c': flag |= 4; break; // counting only
 		case 't': fn_ref = optarg; flag |= 1; break;
 		case 'o': fn_out = optarg; break;
 		}
@@ -31,14 +33,18 @@ int main(int argc, char *argv[])
 	if (flag&2) strcat(modew, "b");
 
 	in = vcf_open(argv[optind], moder, fn_ref);
-	out = vcf_open(fn_out? fn_out : "-", modew, 0);
 	h = vcf_hdr_read(in);
-	vcf_hdr_write(out, h);
+	if (!(flag&4)) {
+		out = vcf_open(fn_out? fn_out : "-", modew, 0);
+		vcf_hdr_write(out, h);
+	}
 	v = vcf_init1();
-	while (vcf_read1(in, h, v) >= 0) vcf_write1(out, h, v);
+	if (flag&4) while (vcf_read1(in, h, v) >= 0) ++cnt;
+	else while (vcf_read1(in, h, v) >= 0) vcf_write1(out, h, v);
 	vcf_destroy1(v);
 	vcf_hdr_destroy(h);
-	vcf_close(out);
+	if (!(flag&4)) vcf_close(out);
 	vcf_close(in);
+	if (flag&4) printf("%ld\n", (long)cnt);
 	return 0;
 }
