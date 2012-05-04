@@ -10,7 +10,7 @@
 #include "vcf.h"
 
 #include "khash.h"
-KHASH_MAP_INIT_STR(vdict, vcf_keyinfo_t)
+KHASH_MAP_INIT_STR(vdict, vcf_idinfo_t)
 typedef khash_t(vdict) vdict_t;
 
 #include "kseq.h"
@@ -19,7 +19,7 @@ KSTREAM_INIT(gzFile, gzread, 16384)
 int vcf_verbose = 3; // 1: error; 2: warning; 3: message; 4: progress; 5: debugging; >=10: pure debugging
 uint32_t vcf_missing_float = 0x7F800001;
 uint8_t vcf_type_shift[] = { 0, 0, 1, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-static vcf_keyinfo_t vcf_keyinfo_def = { { 15, 15, 15 }, -1, -1, -1, -1 };
+static vcf_idinfo_t vcf_idinfo_def = { { 15, 15, 15 }, -1 };
 
 /*************
  * Basic I/O *
@@ -155,27 +155,32 @@ int vcf_hdr_parse_line2(const char *str, uint32_t *info, int *id_beg, int *id_en
 
 vcf_hdr_t *vcf_hdr_init(void)
 {
+	int i;
 	vcf_hdr_t *h;
 	h = calloc(1, sizeof(vcf_hdr_t));
-	h->dict = kh_init(vdict);
+	for (i = 0; i < 3; ++i)
+		h->dict[i] = kh_init(vdict);
 	return h;
 }
 
 void vcf_hdr_destroy(vcf_hdr_t *h)
 {
+	int i;
 	khint_t k;
-	vdict_t *d = (vdict_t*)h->dict;
-	for (k = kh_begin(d); k != kh_end(d); ++k)
-		if (kh_exist(d, k)) free((char*)kh_key(d, k));
-	kh_destroy(vdict, d);
-	free(h->mem.s); free(h->text); free(h->key); free(h->r2k); free(h->s2k);
+	for (i = 0; i < 3; ++i) {
+		vdict_t *d = (vdict_t*)h->dict[i];
+		for (k = kh_begin(d); k != kh_end(d); ++k)
+			if (kh_exist(d, k)) free((char*)kh_key(d, k));
+		kh_destroy(vdict, d);
+		free(h->id[i]);
+	}
+	free(h->mem.s); free(h->text);
 	free(h);
 }
 
 int vcf_hdr_parse1(vcf_hdr_t *h, const char *str)
 {
 	khint_t k;
-	vdict_t *d = (vdict_t*)h->dict;
 	if (*str != '#') return -1;
 	if (str[1] == '#') {
 		uint32_t info;
@@ -187,33 +192,35 @@ int vcf_hdr_parse1(vcf_hdr_t *h, const char *str)
 		s = malloc(id_end - id_beg + 1);
 		strncpy(s, str + id_beg, id_end - id_beg);
 		s[id_end - id_beg] = 0;
-		k = kh_put(vdict, d, s, &ret);
-		if (ret == 0) { // present
-			if (len > 0) {
-				if (kh_val(d, k).rlen > 0) {
-					if (vcf_verbose >= 2) // check contigs with identical name
-						fprintf(stderr, "[W::%s] Duplicated contig name '%s'. Skipped.\n", __func__, s);
-				} else {
-					kh_val(d, k).rid = h->n_ref++;
-					kh_val(d, k).rlen = len;
-				}
+		if (len > 0) { // a contig line
+			vdict_t *d = (vdict_t*)h->dict[VCF_DT_CTG];
+			k = kh_put(vdict, d, s, &ret);
+			if (ret == 0) { // a contig line
+				if (vcf_verbose >= 2)
+					fprintf(stderr, "[W::%s] Duplicated contig name '%s'. Skipped.\n", __func__, s);
+			} else {
+				kh_val(d, k) = vcf_idinfo_def;
+				kh_val(d, k).id = kh_size(d) - 1;
+				kh_val(d, k).info[0] = len;
+			}
+		} else { // a FILTER/INFO/FORMAT line
+			vdict_t *d = (vdict_t*)h->dict[VCF_DT_ID];
+			k = kh_put(vdict, d, s, &ret);
+			if (ret) { // absent from the dict
+				kh_val(d, k) = vcf_idinfo_def;
+				kh_val(d, k).info[info&0xf] = info;
+				kh_val(d, k).id = kh_size(d) - 1;
 			} else kh_val(d, k).info[info&0xf] = info;
-			free(s);
-		} else { // absent
-			kh_val(d, k) = vcf_keyinfo_def; // set default values
-			if (len > 0) { // contig
-				kh_val(d, k).rid = h->n_ref++;
-				kh_val(d, k).rlen = len;
-			} else kh_val(d, k).info[info&0xf] = info;
-			kh_val(d, k).kid = h->n_key++;
 		}
 	} else {
 		int i = 0;
 		const char *p, *q;
+		vdict_t *d = (vdict_t*)h->dict[VCF_DT_ID];
 		// check if "PASS" is in the dictionary
 		k = kh_get(vdict, d, "PASS");
-		if (k == kh_end(d)) vcf_hdr_parse1(h, "##FILTER=<ID=PASS>"); // if not, add it
+		if (k == kh_end(d)) vcf_hdr_parse1(h, "##FILTER=<ID=PASS>"); // if not, add it; this is a recursion
 		// add samples
+		d = (vdict_t*)h->dict[VCF_DT_SAMPLE];
 		for (p = q = str;; ++q) {
 			int ret;
 			if (*q != '\t' && *q != 0) continue;
@@ -223,16 +230,12 @@ int vcf_hdr_parse1(vcf_hdr_t *h, const char *str)
 				strncpy(s, p, q - p);
 				s[q - p] = 0;
 				k = kh_put(vdict, d, s, &ret);
-				if (ret == 0) { // present
-					if (kh_val(d, k).sid >= 0) {
-						if (vcf_verbose >= 2)
-							fprintf(stderr, "[W::%s] Duplicated sample name '%s'. Skipped.\n", __func__, s);
-					} else kh_val(d, k).sid = h->n_sample++;
-					free(s);
-				} else { // absent
-					kh_val(d, k) = vcf_keyinfo_def;
-					kh_val(d, k).sid = h->n_sample++;
-					kh_val(d, k).kid = h->n_key++;
+				if (ret) { // absent
+					kh_val(d, k) = vcf_idinfo_def;
+					kh_val(d, k).id = kh_size(d) - 1;
+				} else {
+					if (vcf_verbose >= 2)
+						fprintf(stderr, "[W::%s] Duplicated sample name '%s'. Skipped.\n", __func__, s);
 				}
 			}
 			if (*q == 0) break;
@@ -244,20 +247,17 @@ int vcf_hdr_parse1(vcf_hdr_t *h, const char *str)
 
 int vcf_hdr_sync(vcf_hdr_t *h)
 {
-	khint_t k;
-	vdict_t *d = (vdict_t*)h->dict;
-	h->key = malloc(h->n_key * sizeof(vcf_keypair_t));
-	h->r2k = malloc(h->n_ref * sizeof(int));
-	h->s2k = malloc(h->n_sample * sizeof(int));
-	for (k = kh_begin(d); k != kh_end(d); ++k) {
-		int i;
-		if (!kh_exist(d, k)) continue;
-		i = kh_val(d, k).kid;
-		assert(i < h->n_key);
-		h->key[i].key = kh_key(d, k);
-		h->key[i].info = &kh_val(d, k);
-		if (kh_val(d, k).rid >= 0) h->r2k[kh_val(d, k).rid] = i;
-		if (kh_val(d, k).sid >= 0) h->s2k[kh_val(d, k).sid] = i;
+	int i;
+	for (i = 0; i < 3; ++i) {
+		khint_t k;
+		vdict_t *d = (vdict_t*)h->dict[i];
+		h->n[i]  = kh_size(d);
+		h->id[i] = malloc(kh_size(d) * sizeof(vcf_idpair_t));
+		for (k = kh_begin(d); k != kh_end(d); ++k) {
+			if (!kh_exist(d, k)) continue;
+			h->id[i][kh_val(d, k).id].id   = kh_key(d, k);
+			h->id[i][kh_val(d, k).id].info = &kh_val(d, k);
+		}
 	}
 	return 0;
 }
@@ -472,7 +472,6 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 	int i = 0;
 	char *p, *q, *r, *t;
 	fmt_aux_t *fmt = 0;
-	vdict_t *d = (vdict_t*)h->dict;
 	kstring_t *str, *mem = (kstring_t*)&h->mem;
 	khint_t k;
 	ks_tokaux_t aux;
@@ -484,12 +483,13 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 		q = (char*)aux.p;
 		*q = 0;
 		if (i == 0) { // CHROM
+			vdict_t *d = (vdict_t*)h->dict[VCF_DT_CTG];
 			k = kh_get(vdict, d, p);
-			if (k == kh_end(d) || kh_val(d, k).rid < 0) {
+			if (k == kh_end(d)) {
 				if (vcf_verbose >= 2)
 					fprintf(stderr, "[W::%s] can't find '%s' in the sequence dictionary\n", __func__, p);
 				return 0;
-			} else v->rid = kh_val(d, k).rid;
+			} else v->rid = kh_val(d, k).id;
 		} else if (i == 1) { // POS
 			v->pos = atoi(p) - 1;
 		} else if (i == 2) { // ID
@@ -513,6 +513,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				int32_t *a;
 				int n_flt = 1, i;
 				ks_tokaux_t aux1;
+				vdict_t *d = (vdict_t*)h->dict[VCF_DT_ID];
 				// count the number of filters
 				if (*(q-1) == ';') *(q-1) = 0;
 				for (r = p; *r; ++r)
@@ -524,7 +525,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					k = kh_get(vdict, d, t);
 					if (k == kh_end(d)) { // not defined
 						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined FILTER '%s'\n", __func__, t);
-					} else a[i++] = kh_val(d, k).kid;
+					} else a[i++] = kh_val(d, k).id;
 				}
 				n_flt = i;
 				vcf_enc_vint(str, n_flt, a, -1);
@@ -532,6 +533,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 		} else if (i == 7) { // INFO
 			char *key;
 			int n_info = 0, o_info = str->l;
+			vdict_t *d = (vdict_t*)h->dict[VCF_DT_ID];
 			kputsn("\0\0", 2, str); // place holder for n_info
 			if (strcmp(p, ".")) {
 				if (*(q-1) == ';') *(q-1) = 0;
@@ -552,7 +554,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					} else { // defined in the header
 						uint32_t y = kh_val(d, k).info[VCF_HL_INFO];
 						++n_info;
-						vcf_enc_int1(str, kh_val(d, k).kid);
+						vcf_enc_int1(str, kh_val(d, k).id);
 						if (val == 0) {
 							vcf_enc_size(str, 0, VCF_BT_NULL);
 						} else if ((y>>4&0xf) == VCF_HT_FLAG || (y>>4&0xf) == VCF_HT_STR) { // if Flag has a value, treat it as a string
@@ -583,9 +585,10 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				}
 			}
 			*(uint16_t*)(str->s + o_info) = n_info;
-		} else if (i == 8 && h->n_sample > 0) { // FORMAT
+		} else if (i == 8 && h->n[VCF_DT_SAMPLE] > 0) { // FORMAT
 			int j, l, m;
 			ks_tokaux_t aux1;
+			vdict_t *d = (vdict_t*)h->dict[VCF_DT_ID];
 			// count the number of format fields
 			for (r = p, n_fmt = 1; *r; ++r)
 				if (*r == ':') ++n_fmt;
@@ -601,8 +604,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					break;
 				} else {
 					fmt[j].max_l = fmt[j].max_m = 0;
-					fmt[j].key = kh_val(d, k).kid;
-					fmt[j].y = h->key[fmt[j].key].info->info[VCF_HL_FMT];
+					fmt[j].key = kh_val(d, k).id;
+					fmt[j].y = h->id[0][fmt[j].key].info->info[VCF_HL_FMT];
 				}
 			}
 			// compute max
@@ -626,12 +629,12 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				} else abort(); // I do not know how to do with Flag in the genotype fields
 				align_mem(mem);
 				f->offset = mem->l;
-				ks_resize(mem, mem->l + h->n_sample * f->size);
-				mem->l += h->n_sample * f->size;
+				ks_resize(mem, mem->l + h->n[VCF_DT_SAMPLE] * f->size);
+				mem->l += h->n[VCF_DT_SAMPLE] * f->size;
 			}
 			for (j = 0; j < n_fmt; ++j)
 				fmt[j].buf = (uint8_t*)mem->s + fmt[j].offset;
-		} else if (i >= 9 && h->n_sample > 0) {
+		} else if (i >= 9 && h->n[VCF_DT_SAMPLE] > 0) {
 			int j, l;
 			ks_tokaux_t aux1;
 			for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
@@ -662,18 +665,18 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 	// write individual genotype information
 	str = &v->indiv;
 	kputsn((char*)&n_fmt, 2, str);
-	if (h->n_sample > 0) {
+	if (h->n[VCF_DT_SAMPLE] > 0) {
 		for (i = 0; i < n_fmt; ++i) {
 			fmt_aux_t *z = &fmt[i];
 			vcf_enc_int1(str, z->key);
 			if ((z->y>>4&0xf) == VCF_HT_STR) {
 				vcf_enc_size(str, z->size, VCF_BT_CHAR);
-				kputsn((char*)z->buf, z->size * h->n_sample, str);
+				kputsn((char*)z->buf, z->size * h->n[VCF_DT_SAMPLE], str);
 			} else if ((z->y>>4&0xf) == VCF_HT_INT) {
-				vcf_enc_vint(str, (z->size>>2) * h->n_sample, (int32_t*)z->buf, z->size>>2);
+				vcf_enc_vint(str, (z->size>>2) * h->n[VCF_DT_SAMPLE], (int32_t*)z->buf, z->size>>2);
 			} else {
 				vcf_enc_size(str, z->size>>2, VCF_BT_FLOAT);
-				kputsn((char*)z->buf, z->size * h->n_sample, str);
+				kputsn((char*)z->buf, z->size * h->n[VCF_DT_SAMPLE], str);
 			}
 		}
 	}
@@ -721,7 +724,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	uint8_t *ptr = (uint8_t*)v->shared.s;
 	int i, l;
 	s->l = 0;
-	kputs(h->key[h->r2k[v->rid]].key, s); kputc('\t', s); // CHROM
+	kputs(h->id[VCF_DT_CTG][v->rid].id, s); kputc('\t', s); // CHROM
 	kputw(v->pos + 1, s); kputc('\t', s); // POS
 	if (*ptr) { // ID
 		l = strlen((char*)ptr);
@@ -757,7 +760,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 		for (i = 0; i < x; ++i) {
 			if (i) kputc(';', s);
 			y = vcf_dec_int1(ptr, type, &ptr);
-			kputs(h->key[y].key, s);
+			kputs(h->id[VCF_DT_ID][y].id, s);
 		}
 		kputc('\t', s);
 	} else {
@@ -772,7 +775,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 			int32_t x;
 			if (i) kputc(';', s);
 			x = vcf_dec_typed_int1(ptr, &ptr);
-			kputs(h->key[x].key, s);
+			kputs(h->id[VCF_DT_ID][x].id, s);
 			if (*ptr>>4) { // more than zero element
 				kputc('=', s);
 				x = vcf_dec_size(ptr, &ptr, &type);
@@ -785,7 +788,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	ptr = (uint8_t*)v->indiv.s;
 	l = *(uint16_t*)ptr;
 	ptr += 2;
-	if (h->n_sample && l) { // FORMAT
+	if (h->n[VCF_DT_SAMPLE] && l) { // FORMAT
 		int i, j, n_fmt = l;
 		fmt_daux_t *faux;
 		faux = alloca(n_fmt * sizeof(fmt_daux_t));
@@ -796,11 +799,11 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 			f->n = vcf_dec_size(ptr, &ptr, &f->type);
 			f->size = f->n << vcf_type_shift[f->type];
 			f->p = ptr;
-			ptr += h->n_sample * f->size;
+			ptr += h->n[VCF_DT_SAMPLE] * f->size;
 			if (i) kputc(':', s);
-			kputs(h->key[f->key].key, s);
+			kputs(h->id[VCF_DT_ID][f->key].id, s);
 		}
-		for (j = 0; j < h->n_sample; ++j) {
+		for (j = 0; j < h->n[VCF_DT_SAMPLE]; ++j) {
 			kputc('\t', s);
 			for (i = 0; i < n_fmt; ++i) {
 				fmt_daux_t *f = &faux[i];

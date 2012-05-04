@@ -47,22 +47,36 @@ typedef struct {
 #define VCF_VL_A     2
 #define VCF_VL_G     3
 
+/* === Dictionary ===
+
+   The header keeps three dictonaries. The first keeps IDs in the
+   "FILTER/INFO/FORMAT" lines, the second keeps the sequence names and lengths
+   in the "contig" lines and the last keeps the sample names. vcf_hdr_t::dict[]
+   is the actual hash table, which is opaque to the end users. In the hash
+   table, the key is the ID or sample name as a C string and the value is a
+   vcf_idinfo_t struct. vcf_hdr_t::id[] points to the keys and values in the
+   hash table, respectively. vcf_hdr_t::n[] is the size of the hash table.
+*/
+
+#define VCF_DT_ID		0
+#define VCF_DT_CTG		1
+#define VCF_DT_SAMPLE	2
+
 typedef struct {
 	uint32_t info[3]; // Number:20, var:4, Type:4, ColType:4
-	int kid, rid, sid, rlen; // key-ID, ref-ID, sample-ID, ref-length
-} vcf_keyinfo_t;
+	int id;
+} vcf_idinfo_t;
 
 typedef struct {
-	const char *key;
-	const vcf_keyinfo_t *info;
-} vcf_keypair_t;
+	const char *id;
+	const vcf_idinfo_t *info;
+} vcf_idpair_t;
 
 typedef struct {
-	int32_t n_ref, n_sample, n_key, l_text;
-	vcf_keypair_t *key;
-	int *r2k, *s2k;
+	int32_t l_text, n[3];
+	vcf_idpair_t *id[3];
+	void *dict[3]; // ID dictionary, contig dict and sample dict
 	char *text;
-	void *dict;
 	kstring_t mem;
 } vcf_hdr_t;
 
