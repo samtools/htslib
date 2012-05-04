@@ -18,7 +18,7 @@ LIBCURSES=
 all:$(PROG)
 
 bcf2ls:$(LOBJS) $(AOBJS)
-		$(CC) $(LOBJS) $(AOBJS) -o $@ -lz
+		$(CC) $(CFLAGS) $(LOBJS) $(AOBJS) -o $@ -lz
 
 bgzf.o:bgzf.c bgzf.h knetfile.h khash.h
 		$(CC) -c $(CFLAGS) $(DFLAGS) -D_USE_KNETFILE $(INCLUDES) bgzf.c -o $@
