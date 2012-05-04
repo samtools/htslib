@@ -593,6 +593,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			int j, l, m;
 			ks_tokaux_t aux1;
 			vdict_t *d = (vdict_t*)h->dict[VCF_DT_ID];
+			char *end = s->s + s->l;
 			// count the number of format fields
 			for (r = p, n_fmt = 1; *r; ++r)
 				if (*r == ':') ++n_fmt;
@@ -614,14 +615,15 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			}
 			// compute max
 			for (r = q + 1, j = 0, m = l = 1;; ++r, ++l) {
-				if (*r == ':' || *r == '\t' || *r == '\0') { // end of a sample
+				if (*r == '\t') *r = 0;
+				if (*r == ':' || *r == '\0') { // end of a sample
 					if (fmt[j].max_m < m) fmt[j].max_m = m;
 					if (fmt[j].max_l < l - 1) fmt[j].max_l = l - 1;
 					l = 0, m = 1;
-					if (*r != ':') j = 0;
-					else ++j;
+					if (*r) ++j;
+					else j = 0;
 				} else if (*r == ',') ++m;
-				if (*r == 0) break;
+				if (r == end) break;
 			}
 			// allocate memory for arrays
 			for (j = 0; j < n_fmt; ++j) {
@@ -638,32 +640,36 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			}
 			for (j = 0; j < n_fmt; ++j)
 				fmt[j].buf = (uint8_t*)mem->s + fmt[j].offset;
-		} else if (i >= 9 && h->n[VCF_DT_SAMPLE] > 0) {
-			int j, l;
-			ks_tokaux_t aux1;
-			for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
+			// fill the sample fields; at beginning of the loop, t points to the first char of a format
+			for (t = q + 1, j = m = 0;; ++t) { // j: fmt id, m: sample id
 				fmt_aux_t *z = &fmt[j];
-				*(char*)aux1.p = 0;
 				if ((z->y>>4&0xf) == VCF_HT_STR) {
-					r = (char*)z->buf + z->size * (i - 9);
-					for (l = 0; l < aux1.p - t; ++l) r[l] = t[l];
-					for (; l != z->size; ++l) r[l] = 0;
+					char *x = (char*)z->buf + z->size * m;
+					for (r = t; *t != ':' && *t; ++t) x[l] = *t;
+					for (l = t - r; l != z->size; ++l) x[l] = 0;
 				} else if ((z->y>>4&0xf) == VCF_HT_INT) {
-					int32_t *x = (int32_t*)(z->buf + z->size * (i - 9));
-					for (r = t, l = 0; r < aux1.p; ++r) {
-						if (*r == '.') x[l++] = INT32_MIN, ++r;
-						else x[l++] = strtol(r, &r, 10);
+					int32_t *x = (int32_t*)(z->buf + z->size * m);
+					for (l = 0;; ++t) {
+						if (*t == '.') x[l++] = INT32_MIN, ++t; // ++t to skip "."
+						else x[l++] = strtol(t, &t, 10);
+						if (*t == ':' || *t == 0) break;
 					}
 					for (; l != z->size>>2; ++l) x[l] = INT32_MIN;
 				} else if ((z->y>>4&0xf) == VCF_HT_REAL) {
 					float *x = (float*)(z->buf + z->size * (i - 9));
-					for (r = t, l = 0; r < aux1.p; ++r) {
-						if (*r == '.' && !isdigit(r[1])) *(int32_t*)&x[l++] = 0x7F800001;
-						else x[l++] = strtod(r, &r);
+					for (l = 0;; ++t) {
+						if (*t == '.' && !isdigit(t[1])) *(int32_t*)&x[l++] = 0x7F800001, ++t; // ++t to skip "."
+						else x[l++] = strtod(t, &t);
+						if (*t == ':' || *t == 0) break;
 					}
 					for (; l != z->size>>2; ++l) *(int32_t*)(x+l) = 0x7F800001;
-				}
+				} else abort();
+				if (*t == 0) {
+					if (t == end) break;
+					++m, j = 0;
+				} else if (*t == ':') ++j;
 			}
+			break;
 		}
 	}
 	// write individual genotype information
