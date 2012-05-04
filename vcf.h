@@ -103,6 +103,11 @@ typedef struct {
 	kstring_t shared, indiv;
 } vcf1_t;
 
+typedef struct {
+	int id, n, type, size;
+	uint8_t *p;
+} vcf_fmt_t;
+
 /*******
  * API *
  *******/
@@ -122,6 +127,9 @@ extern "C" {
 	int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v);
 	int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s);
 	int vcf_write1(vcfFile *fp, const vcf_hdr_t *h, const vcf1_t *v);
+
+	int vcf_id2int(const vcf_hdr_t *h, int which, const char *id);
+	vcf_fmt_t *vcf_unpack_fmt(const vcf_hdr_t *h, const vcf1_t *v, int *n_fmt);
 
 #ifdef __cplusplus
 }

@@ -714,10 +714,19 @@ int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
  * Print VCF record lines *
  **************************/
 
-typedef struct {
-	int key, type, n, size;
-	uint8_t *p;
-} fmt_daux_t;
+uint8_t *vcf_unpack_fmt_core(uint8_t *ptr, int n_sample, int n_fmt, vcf_fmt_t *fmt)
+{
+	int i;
+	for (i = 0; i < n_fmt; ++i) {
+		vcf_fmt_t *f = &fmt[i];
+		f->id = vcf_dec_typed_int1(ptr, &ptr);
+		f->n = vcf_dec_size(ptr, &ptr, &f->type);
+		f->size = f->n << vcf_type_shift[f->type];
+		f->p = ptr;
+		ptr += n_sample * f->size;
+	}
+	return ptr;
+}
 
 int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 {
@@ -790,23 +799,17 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	ptr += 2;
 	if (h->n[VCF_DT_SAMPLE] && l) { // FORMAT
 		int i, j, n_fmt = l;
-		fmt_daux_t *faux;
-		faux = alloca(n_fmt * sizeof(fmt_daux_t));
-		kputc('\t', s);
+		vcf_fmt_t *fmt;
+		fmt = alloca(n_fmt * sizeof(vcf_fmt_t));
+		ptr = vcf_unpack_fmt_core(ptr, h->n[VCF_DT_SAMPLE], n_fmt, fmt);
 		for (i = 0; i < n_fmt; ++i) {
-			fmt_daux_t *f = &faux[i];
-			f->key = vcf_dec_typed_int1(ptr, &ptr);
-			f->n = vcf_dec_size(ptr, &ptr, &f->type);
-			f->size = f->n << vcf_type_shift[f->type];
-			f->p = ptr;
-			ptr += h->n[VCF_DT_SAMPLE] * f->size;
-			if (i) kputc(':', s);
-			kputs(h->id[VCF_DT_ID][f->key].key, s);
+			kputc(i? ':' : '\t', s);
+			kputs(h->id[VCF_DT_ID][fmt[i].id].key, s);
 		}
 		for (j = 0; j < h->n[VCF_DT_SAMPLE]; ++j) {
 			kputc('\t', s);
 			for (i = 0; i < n_fmt; ++i) {
-				fmt_daux_t *f = &faux[i];
+				vcf_fmt_t *f = &fmt[i];
 				if (i) kputc(':', s);
 				vcf_fmt_array(s, f->n, f->type, f->p + j * f->size);
 			}
@@ -833,4 +836,26 @@ int vcf_write1(vcfFile *fp, const vcf_hdr_t *h, const vcf1_t *v)
 		fputc('\n', fp->fp);
 	}
 	return 0;
+}
+
+/************************
+ * Data access routines *
+ ************************/
+
+int vcf_id2int(const vcf_hdr_t *h, int which, const char *id)
+{
+	khint_t k;
+	vdict_t *d = (vdict_t*)h->dict[which];
+	k = kh_get(vdict, d, id);
+	return k == kh_end(d)? -1 : kh_val(d, k).id;
+}
+
+vcf_fmt_t *vcf_unpack_fmt(const vcf_hdr_t *h, const vcf1_t *v, int *n_fmt)
+{
+	vcf_fmt_t *fmt;
+	*n_fmt = *(uint16_t*)v->indiv.s;
+	if (*n_fmt == 0) return 0;
+	fmt = malloc(*n_fmt * sizeof(vcf_fmt_t));
+	vcf_unpack_fmt_core((uint8_t*)v->indiv.s + 2, h->n[VCF_DT_SAMPLE], *n_fmt, fmt);
+	return fmt;
 }
