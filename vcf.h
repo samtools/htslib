@@ -121,10 +121,16 @@ extern "C" {
 static inline void vcf_enc_size(kstring_t *s, int size, int type)
 {
 	if (size >= 15) {
-		assert(size < 128); // not implemented yet
 		kputc(15<<4|type, s);
-		kputc(1<<4|VCF_BT_INT8, s);
-		kputc(size, s);
+		if (size >= 128) {
+			int16_t x = size;
+			assert(size <= 32767);
+			kputc(1<<4|VCF_BT_INT16, s);
+			kputsn((char*)&x, 2, s);
+		} else {
+			kputc(1<<4|VCF_BT_INT8, s);
+			kputc(size, s);
+		}
 	} else kputc(size<<4|type, s);
 }
 
