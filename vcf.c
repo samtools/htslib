@@ -18,7 +18,7 @@ KSTREAM_INIT(gzFile, gzread, 16384)
 
 int vcf_verbose = 3; // 1: error; 2: warning; 3: message; 4: progress; 5: debugging; >=10: pure debugging
 uint32_t vcf_missing_float = 0x7F800001;
-uint8_t vcf_type_size[] = { 0, 1, 2, 4, 8, 4, 8, 1, 1, 0, 1, 2, 4, 1, 0, 0 };
+uint8_t vcf_type_shift[] = { 0, 0, 1, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 static vcf_keyinfo_t vcf_keyinfo_def = { { 15, 15, 15 }, -1, -1, -1, -1 };
 
 /******************
@@ -102,10 +102,10 @@ int vcf_hdr_parse_line2(const char *str, uint32_t *info, int *id_beg, int *id_en
 	p = str + 2;
 	for (q = p; *q && *q != '='; ++q); // FIXME: do we need to check spaces?
 	if (*q == 0) return -2;
-	if (q - p == 4 && strncmp(p, "INFO", 4) == 0) ctype = VCF_DT_INFO;
-	else if (q - p == 6 && strncmp(p, "FILTER", 6) == 0) ctype = VCF_DT_FLT;
-	else if (q - p == 6 && strncmp(p, "FORMAT", 6) == 0) ctype = VCF_DT_FMT;
-	else if (q - p == 6 && strncmp(p, "contig", 6) == 0) ctype = VCF_DT_CTG;
+	if (q - p == 4 && strncmp(p, "INFO", 4) == 0) ctype = VCF_HL_INFO;
+	else if (q - p == 6 && strncmp(p, "FILTER", 6) == 0) ctype = VCF_HL_FLT;
+	else if (q - p == 6 && strncmp(p, "FORMAT", 6) == 0) ctype = VCF_HL_FMT;
+	else if (q - p == 6 && strncmp(p, "contig", 6) == 0) ctype = VCF_HL_CTG;
 	else return -3;
 	for (; *q && *q != '<'; ++q);
 	if (*q == 0) return -3;
@@ -133,32 +133,32 @@ int vcf_hdr_parse_line2(const char *str, uint32_t *info, int *id_beg, int *id_en
 		if (which == 1) {
 			*id_beg = val - str; *id_end = q - str;
 		} else if (which == 2) {
-			if (q - val == 7 && strncmp(val, "Integer", 7) == 0) type = VCF_TP_INT;
-			else if (q - val == 5 && strncmp(val, "Float", 5) == 0) type = VCF_TP_REAL;
-			else if (q - val == 6 && strncmp(val, "String", 6) == 0) type = VCF_TP_STR;
-			else if (q - val == 4 && strncmp(val, "Flag", 6) == 0) type = VCF_TP_FLAG;
+			if (q - val == 7 && strncmp(val, "Integer", 7) == 0) type = VCF_HT_INT;
+			else if (q - val == 5 && strncmp(val, "Float", 5) == 0) type = VCF_HT_REAL;
+			else if (q - val == 6 && strncmp(val, "String", 6) == 0) type = VCF_HT_STR;
+			else if (q - val == 4 && strncmp(val, "Flag", 6) == 0) type = VCF_HT_FLAG;
 		} else if (which == 3) {
-			if (*val == 'A') var = VCF_VTP_A;
-			else if (*val == 'G') var = VCF_VTP_G;
-			else if (isdigit(*val)) var = VCF_VTP_FIXED, num = strtol(val, &tmp, 10);
-			else var = VCF_VTP_VAR;
-			if (var != VCF_VTP_FIXED) num = 0xfffff;
+			if (*val == 'A') var = VCF_VL_A;
+			else if (*val == 'G') var = VCF_VL_G;
+			else if (isdigit(*val)) var = VCF_VL_FIXED, num = strtol(val, &tmp, 10);
+			else var = VCF_VL_VAR;
+			if (var != VCF_VL_FIXED) num = 0xfffff;
 		} else if (which == 4) {
 			if (isdigit(*val)) ctg_len = strtol(val, &tmp, 10);
 		}
 		p = q + 1;
 	}
-	if (ctype == VCF_DT_CTG) {
+	if (ctype == VCF_HL_CTG) {
 		if (ctg_len > 0) return ctg_len;
 		else return -5;
 	} else {
-		if (ctype == VCF_DT_FLT) num = 0;
-		if (type == VCF_TP_FLAG) {
+		if (ctype == VCF_HL_FLT) num = 0;
+		if (type == VCF_HT_FLAG) {
 			if (num != 0 && vcf_verbose >= 2)
 				fprintf(stderr, "[W::%s] ignore Number for a Flag\n", __func__);
-			num = 0, var = VCF_VTP_FIXED; // if Flag VCF type, force to change num to 0
+			num = 0, var = VCF_VL_FIXED; // if Flag VCF type, force to change num to 0
 		}
-		if (num == 0) type = VCF_TP_FLAG, var = VCF_VTP_FIXED; // conversely, if num==0, force the type to Flag
+		if (num == 0) type = VCF_HT_FLAG, var = VCF_VL_FIXED; // conversely, if num==0, force the type to Flag
 		if (*id_beg < 0 || type < 0 || num < 0 || var < 0) return -5; // missing information
 		*info = (uint32_t)num<<12 | var<<8 | type<<4 | ctype;
 		//printf("%d, %s, %d, %d, [%d,%d]\n", ctype, vcf_type_name[type], var, num, *id_beg, *id_end);
@@ -368,11 +368,11 @@ void vcf_hdr_write(vcfFile *fp, const vcf_hdr_t *h)
  * Typed value I/O *
  *******************/
 
-void vcf_enc_int(kstring_t *s, int n, int32_t *a, int wsize)
+void vcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
 {
 	int32_t max = INT32_MIN + 1, min = INT32_MAX;
 	int i;
-	if (n == 0) vcf_enc_size(s, 0, VCF_RT_INT8);
+	if (n == 0) vcf_enc_size(s, 0, VCF_BT_NULL);
 	else if (n == 1) vcf_enc_int1(s, a[0]);
 	else {
 		if (wsize <= 0) wsize = n;
@@ -382,17 +382,17 @@ void vcf_enc_int(kstring_t *s, int n, int32_t *a, int wsize)
 			if (min > a[i]) min = a[i];
 		}
 		if (max <= INT8_MAX && min > INT8_MIN) {
-			vcf_enc_size(s, wsize, VCF_RT_INT8);
+			vcf_enc_size(s, wsize, VCF_BT_INT8);
 			for (i = 0; i < n; ++i)
 				kputc(a[i] == INT32_MIN? INT8_MIN : a[i], s);
 		} else if (max <= INT16_MAX && min > INT16_MIN) {
-			vcf_enc_size(s, wsize, VCF_RT_INT16);
+			vcf_enc_size(s, wsize, VCF_BT_INT16);
 			for (i = 0; i < n; ++i) {
 				int16_t x = a[i] == INT32_MIN? INT16_MIN : a[i];
 				kputsn((char*)&x, 2, s);
 			}
 		} else {
-			vcf_enc_size(s, wsize, VCF_RT_INT32);
+			vcf_enc_size(s, wsize, VCF_BT_INT32);
 			for (i = 0; i < n; ++i) {
 				int32_t x = a[i] == INT32_MIN? INT32_MIN : a[i];
 				kputsn((char*)&x, 4, s);
@@ -401,40 +401,46 @@ void vcf_enc_int(kstring_t *s, int n, int32_t *a, int wsize)
 	}
 }
 
-void vcf_enc_float(kstring_t *s, int n, float *a)
+void vcf_enc_vfloat(kstring_t *s, int n, float *a)
 {
-	vcf_enc_size(s, n, VCF_RT_FLOAT);
-	kputsn((char*)a, 4 * n, s);
+	vcf_enc_size(s, n, VCF_BT_FLOAT);
+	kputsn((char*)a, n << 2, s);
+}
+
+void vcf_enc_vchar(kstring_t *s, int l, char *a)
+{
+	vcf_enc_size(s, l, VCF_BT_CHAR);
+	kputsn(a, l, s);
 }
 
 void vcf_fmt_array(kstring_t *s, int n, int type, void *data)
 {
 	int j = 0;
-	if (type == VCF_RT_INT8) {
+	if (type == VCF_BT_INT8) {
 		int8_t *p = (int8_t*)data;
 		for (j = 0; j < n && *p != INT8_MIN; ++j, ++p) {
 			if (j) kputc(',', s);
 			kputw(*p, s);
 		}
-	} else if (type == VCF_RT_INT16) {
+	} else if (type == VCF_BT_INT16) {
 		int16_t *p = (int16_t*)data;
 		for (j = 0; j < n && *p != INT16_MIN; ++j, ++p) {
 			if (j) kputc(',', s);
 			kputw(*p, s);
 		}
-	} else if (type == VCF_RT_INT32) {
+	} else if (type == VCF_BT_INT32) {
 		int32_t *p = (int32_t*)data;
 		for (j = 0; j < n && *p != INT32_MIN; ++j, ++p) {
 			if (j) kputc(',', s);
 			kputw(*p, s);
 		}
-	} else if (type == VCF_RT_FLOAT) {
+	} else if (type == VCF_BT_FLOAT) {
 		float *p = (float*)data;
 		for (j = 0; j < n && *(int32_t*)p != 0x7F800001; ++j, ++p) {
 			if (j) kputc(',', s);
 			ksprintf(s, "%g", *p);
 		}
-	} else if (type == VCF_RT_CHAR) {
+	} else if (type == VCF_BT_CHAR) {
 		char *p = (char*)data;
 		for (j = 0; j < n && *p; ++j, ++p)
 			kputc(*p, s);
@@ -526,8 +532,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					} else a[i++] = kh_val(d, k).kid;
 				}
 				n_flt = i;
-				vcf_enc_int(str, n_flt, a, -1);
-			} else vcf_enc_int(str, 0, 0, -1);
+				vcf_enc_vint(str, n_flt, a, -1);
+			} else vcf_enc_vint(str, 0, 0, -1);
 		} else if (i == 7) { // INFO
 			char *key;
 			int n_info = 0, o_info = str->l;
@@ -546,44 +552,34 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 						c = *end; *end = 0;
 					} else end = r;
 					k = kh_get(vdict, d, key);
-					if (k == kh_end(d) || kh_val(d, k).info[VCF_DT_INFO] == 15) { // not defined in the header
+					if (k == kh_end(d) || kh_val(d, k).info[VCF_HL_INFO] == 15) { // not defined in the header
 						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, key);
 					} else { // defined in the header
-						uint32_t y = kh_val(d, k).info[VCF_DT_INFO];
-						if ((y>>4&0xf) == VCF_TP_FLAG) { // a flag defined in the dict or without value
-							vcf_enc_int1(str, kh_val(d, k).kid);
-							++n_info;
-							if (val != 0 && vcf_verbose >= 2)
-								fprintf(stderr, "[W::%s] INFO '%s' is defined as a flag in the header but has a value '%s' in VCF; value skipped\n", __func__, key, val);
-						} else if ((y>>4&0xf) == VCF_TP_STR) { // a string
-							vcf_enc_int1(str, kh_val(d, k).kid);
-							if (val) {
-								vcf_enc_size(str, 1, VCF_RT_CSTR);
-								kputsn(val, end - val + 1, str); // +1 to include NULL
-							} else vcf_enc_size(str, 0, VCF_RT_CSTR);
-							++n_info;
-						} else { // an integer or float value or array
-							vcf_enc_int1(str, kh_val(d, k).kid);
-							if (val) {
-								int i, n_val = 1;
-								char *t;
-								for (t = val; *t; ++t)
-									if (*t == ',') ++n_val;
-								++n_info;
-								if ((y>>4&0xf) == VCF_TP_INT) {
-									int32_t *z;
-									z = alloca(n_val<<2);
-									for (i = 0, t = val; i < n_val; ++i, ++t)
-										z[i] = strtol(t, &t, 10);
-									vcf_enc_int(str, n_val, z, -1);
-								} else if ((y>>4&0xf) == VCF_TP_REAL) {
-									float *z;
-									z = alloca(n_val<<2);
-									for (i = 0, t = val; i < n_val; ++i, ++t)
-										z[i] = strtod(t, &t);
-									vcf_enc_float(str, n_val, z);
-								}
-							} else vcf_enc_size(str, 0, (y>>4&0xf) == VCF_TP_INT? VCF_RT_INT8 : VCF_RT_FLOAT);
+						uint32_t y = kh_val(d, k).info[VCF_HL_INFO];
+						++n_info;
+						vcf_enc_int1(str, kh_val(d, k).kid);
+						if (val == 0) {
+							vcf_enc_size(str, 0, VCF_BT_NULL);
+						} else if ((y>>4&0xf) == VCF_HT_FLAG || (y>>4&0xf) == VCF_HT_STR) { // if Flag has a value, treat it as a string
+							vcf_enc_vchar(str, end - val, val);
+						} else { // int/float value/array
+							int i, n_val;
+							char *t;
+							for (t = val, n_val = 1; *t; ++t) // count the number of values
+								if (*t == ',') ++n_val;
+							if ((y>>4&0xf) == VCF_HT_INT) {
+								int32_t *z;
+								z = alloca(n_val<<2);
+								for (i = 0, t = val; i < n_val; ++i, ++t)
+									z[i] = strtol(t, &t, 10);
+								vcf_enc_vint(str, n_val, z, -1);
+							} else if ((y>>4&0xf) == VCF_HT_REAL) {
+								float *z;
+								z = alloca(n_val<<2);
+								for (i = 0, t = val; i < n_val; ++i, ++t)
+									z[i] = strtod(t, &t);
+								vcf_enc_vfloat(str, n_val, z);
+							}
 						}
 					}
 					if (c == 0) break;
@@ -603,7 +599,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
 				*(char*)aux1.p = 0;
 				k = kh_get(vdict, d, t);
-				if (k == kh_end(d) || kh_val(d, k).info[VCF_DT_FMT] == 15) {
+				if (k == kh_end(d) || kh_val(d, k).info[VCF_HL_FMT] == 15) {
 					if (vcf_verbose >= 2)
 						fprintf(stderr, "[W::%s] FORMAT '%s' is not defined in the header\n", __func__, t);
 					n_fmt = 0;
@@ -611,7 +607,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				} else {
 					fmt[j].max_l = fmt[j].max_m = 0;
 					fmt[j].key = kh_val(d, k).kid;
-					fmt[j].y = h->key[fmt[j].key].info->info[VCF_DT_FMT];
+					fmt[j].y = h->key[fmt[j].key].info->info[VCF_HL_FMT];
 				}
 			}
 			// compute max
@@ -628,9 +624,9 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			// allocate memory for arrays
 			for (j = 0; j < n_fmt; ++j) {
 				fmt_aux_t *f = &fmt[j];
-				if ((f->y>>4&0xf) == VCF_TP_STR) {
+				if ((f->y>>4&0xf) == VCF_HT_STR) {
 					f->size = f->max_l;
-				} else if ((f->y>>4&0xf) == VCF_TP_REAL || (f->y>>4&0xf) == VCF_TP_INT) {
+				} else if ((f->y>>4&0xf) == VCF_HT_REAL || (f->y>>4&0xf) == VCF_HT_INT) {
 					f->size = f->max_m << 2;
 				} else abort(); // I do not know how to do with Flag in the genotype fields
 				align_mem(mem);
@@ -646,18 +642,18 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
 				fmt_aux_t *z = &fmt[j];
 				*(char*)aux1.p = 0;
-				if ((z->y>>4&0xf) == VCF_TP_STR) {
+				if ((z->y>>4&0xf) == VCF_HT_STR) {
 					r = (char*)z->buf + z->size * (i - 9);
 					for (l = 0; l < aux1.p - t; ++l) r[l] = t[l];
 					for (; l != z->size; ++l) r[l] = 0;
-				} else if ((z->y>>4&0xf) == VCF_TP_INT) {
+				} else if ((z->y>>4&0xf) == VCF_HT_INT) {
 					int32_t *x = (int32_t*)(z->buf + z->size * (i - 9));
 					for (r = t, l = 0; r < aux1.p; ++r) {
 						if (*r == '.') x[l++] = INT32_MIN, ++r;
 						else x[l++] = strtol(r, &r, 10);
 					}
 					for (; l != z->size>>2; ++l) x[l] = INT32_MIN;
-				} else if ((z->y>>4&0xf) == VCF_TP_REAL) {
+				} else if ((z->y>>4&0xf) == VCF_HT_REAL) {
 					float *x = (float*)(z->buf + z->size * (i - 9));
 					for (r = t, l = 0; r < aux1.p; ++r) {
 						if (*r == '.' && !isdigit(r[1])) *(int32_t*)&x[l++] = 0x7F800001;
@@ -675,13 +671,13 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 		for (i = 0; i < n_fmt; ++i) {
 			fmt_aux_t *z = &fmt[i];
 			vcf_enc_int1(str, z->key);
-			if ((z->y>>4&0xf) == VCF_TP_STR) {
-				vcf_enc_size(str, z->size, VCF_RT_CHAR);
+			if ((z->y>>4&0xf) == VCF_HT_STR) {
+				vcf_enc_size(str, z->size, VCF_BT_CHAR);
 				kputsn((char*)z->buf, z->size * h->n_sample, str);
-			} else if ((z->y>>4&0xf) == VCF_TP_INT) {
-				vcf_enc_int(str, (z->size>>2) * h->n_sample, (int32_t*)z->buf, z->size>>2);
+			} else if ((z->y>>4&0xf) == VCF_HT_INT) {
+				vcf_enc_vint(str, (z->size>>2) * h->n_sample, (int32_t*)z->buf, z->size>>2);
 			} else {
-				vcf_enc_size(str, z->size>>2, VCF_RT_FLOAT);
+				vcf_enc_size(str, z->size>>2, VCF_BT_FLOAT);
 				kputsn((char*)z->buf, z->size * h->n_sample, str);
 			}
 		}
@@ -774,30 +770,19 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	}
 	l = *(uint16_t*)ptr; // INFO
 	ptr += 2;
-	if (*(uint16_t*)ptr) { // INFO
+	if (l) {
 		int i, n_info = l, type;
 		for (i = 0; i < n_info; ++i) {
 			int32_t x;
-			uint32_t y;
 			if (i) kputc(';', s);
 			x = vcf_dec_typed_int1(ptr, &ptr);
 			kputs(h->key[x].key, s);
-			y = h->key[x].info->info[VCF_DT_INFO];
-			if ((y>>4&0xf) != VCF_TP_FLAG) {
-				if (*ptr>>4) { // more than zero element
-					kputc('=', s);
-					if ((y>>4&0xf) == VCF_TP_STR) {
-						++ptr; // skip the typing byte
-						l = strlen((char*)ptr);
-						kputsn((char*)ptr, l, s);
-						ptr += l + 1;
-					} else {
-						x = vcf_dec_size(ptr, &ptr, &type);
-						vcf_fmt_array(s, x, type, ptr);
-						ptr += vcf_type_size[type] * x;
-					}
-				} else ++ptr;
-			} else continue;
+			if (*ptr>>4) { // more than zero element
+				kputc('=', s);
+				x = vcf_dec_size(ptr, &ptr, &type);
+				vcf_fmt_array(s, x, type, ptr);
+				ptr += x << vcf_type_shift[type];
+			} else ++ptr;
 		}
 	} else kputc('.', s);
 	// FORMAT and individual information
@@ -813,7 +798,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 			fmt_daux_t *f = &faux[i];
 			f->key = vcf_dec_typed_int1(ptr, &ptr);
 			f->n = vcf_dec_size(ptr, &ptr, &f->type);
-			f->size = vcf_type_size[f->type] * f->n;
+			f->size = f->n << vcf_type_shift[f->type];
 			f->p = ptr;
 			ptr += h->n_sample * f->size;
 			if (i) kputc(':', s);
