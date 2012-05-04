@@ -255,8 +255,8 @@ int vcf_hdr_sync(vcf_hdr_t *h)
 		h->id[i] = malloc(kh_size(d) * sizeof(vcf_idpair_t));
 		for (k = kh_begin(d); k != kh_end(d); ++k) {
 			if (!kh_exist(d, k)) continue;
-			h->id[i][kh_val(d, k).id].id   = kh_key(d, k);
-			h->id[i][kh_val(d, k).id].info = &kh_val(d, k);
+			h->id[i][kh_val(d, k).id].key = kh_key(d, k);
+			h->id[i][kh_val(d, k).id].val = &kh_val(d, k);
 		}
 	}
 	return 0;
@@ -605,7 +605,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				} else {
 					fmt[j].max_l = fmt[j].max_m = 0;
 					fmt[j].key = kh_val(d, k).id;
-					fmt[j].y = h->id[0][fmt[j].key].info->info[VCF_HL_FMT];
+					fmt[j].y = h->id[0][fmt[j].key].val->info[VCF_HL_FMT];
 				}
 			}
 			// compute max
@@ -724,7 +724,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	uint8_t *ptr = (uint8_t*)v->shared.s;
 	int i, l;
 	s->l = 0;
-	kputs(h->id[VCF_DT_CTG][v->rid].id, s); kputc('\t', s); // CHROM
+	kputs(h->id[VCF_DT_CTG][v->rid].key, s); kputc('\t', s); // CHROM
 	kputw(v->pos + 1, s); kputc('\t', s); // POS
 	if (*ptr) { // ID
 		l = strlen((char*)ptr);
@@ -760,7 +760,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 		for (i = 0; i < x; ++i) {
 			if (i) kputc(';', s);
 			y = vcf_dec_int1(ptr, type, &ptr);
-			kputs(h->id[VCF_DT_ID][y].id, s);
+			kputs(h->id[VCF_DT_ID][y].key, s);
 		}
 		kputc('\t', s);
 	} else {
@@ -775,7 +775,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 			int32_t x;
 			if (i) kputc(';', s);
 			x = vcf_dec_typed_int1(ptr, &ptr);
-			kputs(h->id[VCF_DT_ID][x].id, s);
+			kputs(h->id[VCF_DT_ID][x].key, s);
 			if (*ptr>>4) { // more than zero element
 				kputc('=', s);
 				x = vcf_dec_size(ptr, &ptr, &type);
@@ -801,7 +801,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 			f->p = ptr;
 			ptr += h->n[VCF_DT_SAMPLE] * f->size;
 			if (i) kputc(':', s);
-			kputs(h->id[VCF_DT_ID][f->key].id, s);
+			kputs(h->id[VCF_DT_ID][f->key].key, s);
 		}
 		for (j = 0; j < h->n[VCF_DT_SAMPLE]; ++j) {
 			kputc('\t', s);

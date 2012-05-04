@@ -54,11 +54,12 @@ typedef struct {
    in the "contig" lines and the last keeps the sample names. vcf_hdr_t::dict[]
    is the actual hash table, which is opaque to the end users. In the hash
    table, the key is the ID or sample name as a C string and the value is a
-   vcf_idinfo_t struct. vcf_hdr_t::id[] points to the keys and values in the
-   hash table, respectively. vcf_hdr_t::n[] is the size of the hash table.
+   vcf_idinfo_t struct. vcf_hdr_t::id[] points to key-value pairs in the hash
+   table in the order that they appear in the VCF header. vcf_hdr_t::n[] is the
+   size of the hash table or, equivalently, the length of the id[] arrays.
 */
 
-#define VCF_DT_ID		0
+#define VCF_DT_ID		0 // dictionary type
 #define VCF_DT_CTG		1
 #define VCF_DT_SAMPLE	2
 
@@ -68,8 +69,8 @@ typedef struct {
 } vcf_idinfo_t;
 
 typedef struct {
-	const char *id;
-	const vcf_idinfo_t *info;
+	const char *key;
+	const vcf_idinfo_t *val;
 } vcf_idpair_t;
 
 typedef struct {
