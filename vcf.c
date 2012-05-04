@@ -742,6 +742,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	if (l) { // n_alt != 0
 		for (i = 0; i < l; ++i) {
 			int t = strlen((char*)ptr);
+			if (i) kputc(',', s);
 			kputsn((char*)ptr, t, s);
 			ptr += t + 1;
 		}
