@@ -195,9 +195,10 @@ int vcf_hdr_parse1(vcf_hdr_t *h, const char *str)
 		if (len > 0) { // a contig line
 			vdict_t *d = (vdict_t*)h->dict[VCF_DT_CTG];
 			k = kh_put(vdict, d, s, &ret);
-			if (ret == 0) { // a contig line
+			if (ret == 0) {
 				if (vcf_verbose >= 2)
 					fprintf(stderr, "[W::%s] Duplicated contig name '%s'. Skipped.\n", __func__, s);
+				free(s);
 			} else {
 				kh_val(d, k) = vcf_idinfo_def;
 				kh_val(d, k).id = kh_size(d) - 1;
@@ -210,7 +211,10 @@ int vcf_hdr_parse1(vcf_hdr_t *h, const char *str)
 				kh_val(d, k) = vcf_idinfo_def;
 				kh_val(d, k).info[info&0xf] = info;
 				kh_val(d, k).id = kh_size(d) - 1;
-			} else kh_val(d, k).info[info&0xf] = info;
+			} else {
+				kh_val(d, k).info[info&0xf] = info;
+				free(s);
+			}
 		}
 	} else {
 		int i = 0;
