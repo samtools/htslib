@@ -1,5 +1,5 @@
 CC=			gcc
-CFLAGS=		-g -Wall -O2
+CFLAGS=		-g -Wall -O2 -Wc++-compat
 DFLAGS=
 LOBJS=		kstring.o knetfile.o bgzf.o vcf.o
 AOBJS=		main.o

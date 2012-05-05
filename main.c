@@ -57,7 +57,7 @@ int main(int argc, char *argv[])
 		while (vcf_read1(in, h, v) >= 0) {
 			int i, *n_allele, n_fmt, j;
 			vcf_fmt_t *fmt;
-			n_allele = alloca(10 * sizeof(int));
+			n_allele = (int*)alloca(10 * sizeof(int));
 			for (i = 0; i < 10; ++i) n_allele[i] = 0;
 			fmt = vcf_unpack_fmt(h, v, &n_fmt);
 			for (i = 0; i < n_fmt; ++i)

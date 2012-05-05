@@ -29,7 +29,7 @@ vcfFile *vcf_open(const char *fn, const char *mode, const char *fn_ref)
 {
 	const char *p;
 	vcfFile *fp;
-	fp = calloc(1, sizeof(vcfFile));
+	fp = (vcfFile*)calloc(1, sizeof(vcfFile));
 	for (p = mode; *p; ++p) {
 		if (*p == 'w') fp->is_write = 1;
 		else if (*p == 'b') fp->is_bin = 1;
@@ -62,11 +62,11 @@ void vcf_close(vcfFile *fp)
 		free(fp->line.s);
 		if (!fp->is_write) {
 			gzFile gzfp = ((kstream_t*)fp->fp)->f;
-			ks_destroy(fp->fp);
+			ks_destroy((kstream_t*)fp->fp);
 			gzclose(gzfp);
 			free(fp->fn_ref);
-		} else fclose(fp->fp);
-	} else bgzf_close(fp->fp);
+		} else fclose((FILE*)fp->fp);
+	} else bgzf_close((BGZF*)fp->fp);
 	free(fp);
 }
 
@@ -157,7 +157,7 @@ vcf_hdr_t *vcf_hdr_init(void)
 {
 	int i;
 	vcf_hdr_t *h;
-	h = calloc(1, sizeof(vcf_hdr_t));
+	h = (vcf_hdr_t*)calloc(1, sizeof(vcf_hdr_t));
 	for (i = 0; i < 3; ++i)
 		h->dict[i] = kh_init(vdict);
 	return h;
@@ -189,7 +189,7 @@ int vcf_hdr_parse1(vcf_hdr_t *h, const char *str)
 
 		len = vcf_hdr_parse_line2(str, &info, &id_beg, &id_end);
 		if (len < 0) return -1;
-		s = malloc(id_end - id_beg + 1);
+		s = (char*)malloc(id_end - id_beg + 1);
 		strncpy(s, str + id_beg, id_end - id_beg);
 		s[id_end - id_beg] = 0;
 		if (len > 0) { // a contig line
@@ -230,7 +230,7 @@ int vcf_hdr_parse1(vcf_hdr_t *h, const char *str)
 			if (*q != '\t' && *q != 0) continue;
 			if (++i > 9) {
 				char *s;
-				s = malloc(q - p + 1);
+				s = (char*)malloc(q - p + 1);
 				strncpy(s, p, q - p);
 				s[q - p] = 0;
 				k = kh_put(vdict, d, s, &ret);
@@ -256,7 +256,7 @@ int vcf_hdr_sync(vcf_hdr_t *h)
 		khint_t k;
 		vdict_t *d = (vdict_t*)h->dict[i];
 		h->n[i]  = kh_size(d);
-		h->id[i] = malloc(kh_size(d) * sizeof(vcf_idpair_t));
+		h->id[i] = (vcf_idpair_t*)malloc(kh_size(d) * sizeof(vcf_idpair_t));
 		for (k = kh_begin(d); k != kh_end(d); ++k) {
 			if (!kh_exist(d, k)) continue;
 			h->id[i][kh_val(d, k).id].key = kh_key(d, k);
@@ -293,15 +293,15 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 	h = vcf_hdr_init();
 	if (fp->is_bin) {
 		uint8_t magic[4];
-		bgzf_read(fp->fp, magic, 4);
-		bgzf_read(fp->fp, &h->l_text, 4);
-		h->text = malloc(h->l_text);
-		bgzf_read(fp->fp, h->text, h->l_text);
+		bgzf_read((BGZF*)fp->fp, magic, 4);
+		bgzf_read((BGZF*)fp->fp, &h->l_text, 4);
+		h->text = (char*)malloc(h->l_text);
+		bgzf_read((BGZF*)fp->fp, h->text, h->l_text);
 	} else {
 		int dret;
 		kstring_t txt, *s = &fp->line;
 		txt.l = txt.m = 0; txt.s = 0;
-		while (ks_getuntil(fp->fp, KS_SEP_LINE, s, &dret) >= 0) {
+		while (ks_getuntil((kstream_t*)fp->fp, KS_SEP_LINE, s, &dret) >= 0) {
 			if (s->l == 0) continue;
 			if (s->s[0] != '#') {
 				if (vcf_verbose >= 2)
@@ -346,12 +346,12 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 void vcf_hdr_write(vcfFile *fp, const vcf_hdr_t *h)
 {
 	if (fp->is_bin) {
-		bgzf_write(fp->fp, "BCF\2", 4);
-		bgzf_write(fp->fp, &h->l_text, 4);
-		bgzf_write(fp->fp, h->text, h->l_text);
+		bgzf_write((BGZF*)fp->fp, "BCF\2", 4);
+		bgzf_write((BGZF*)fp->fp, &h->l_text, 4);
+		bgzf_write((BGZF*)fp->fp, h->text, h->l_text);
 	} else {
-		fwrite(h->text, 1, h->l_text, fp->fp);
-		fputc('\n', fp->fp);
+		fwrite(h->text, 1, h->l_text, (FILE*)fp->fp);
+		fputc('\n', (FILE*)fp->fp);
 	}
 }
 
@@ -445,7 +445,7 @@ void vcf_fmt_array(kstring_t *s, int n, int type, void *data)
 vcf1_t *vcf_init1()
 {
 	vcf1_t *v;
-	v = calloc(1, sizeof(vcf1_t));
+	v = (vcf1_t*)calloc(1, sizeof(vcf1_t));
 	return v;
 }
 
@@ -522,7 +522,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				if (*(q-1) == ';') *(q-1) = 0;
 				for (r = p; *r; ++r)
 					if (*r == ';') ++n_flt;
-				a = alloca(n_flt * 4);
+				a = (int32_t*)alloca(n_flt * 4);
 				// add filters
 				for (t = kstrtok(p, ";", &aux1), i = 0; t; t = kstrtok(0, 0, &aux1)) {
 					*(char*)aux1.p = 0;
@@ -570,13 +570,13 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 								if (*t == ',') ++n_val;
 							if ((y>>4&0xf) == VCF_HT_INT) {
 								int32_t *z;
-								z = alloca(n_val<<2);
+								z = (int32_t*)alloca(n_val<<2);
 								for (i = 0, t = val; i < n_val; ++i, ++t)
 									z[i] = strtol(t, &t, 10);
 								vcf_enc_vint(str, n_val, z, -1);
 							} else if ((y>>4&0xf) == VCF_HT_REAL) {
 								float *z;
-								z = alloca(n_val<<2);
+								z = (float*)alloca(n_val<<2);
 								for (i = 0, t = val; i < n_val; ++i, ++t)
 									z[i] = strtod(t, &t);
 								vcf_enc_vfloat(str, n_val, z);
@@ -597,7 +597,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			// count the number of format fields
 			for (r = p, n_fmt = 1; *r; ++r)
 				if (*r == ':') ++n_fmt;
-			fmt = alloca(n_fmt * sizeof(fmt_aux_t));
+			fmt = (fmt_aux_t*)alloca(n_fmt * sizeof(fmt_aux_t));
 			// get format information from the dictionary
 			for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
 				*(char*)aux1.p = 0;
@@ -698,7 +698,7 @@ int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 	if (fp->is_bin) {
 		uint32_t x[4];
 		int ret;
-		if ((ret = bgzf_read(fp->fp, x, 16)) != 16) {
+		if ((ret = bgzf_read((BGZF*)fp->fp, x, 16)) != 16) {
 			if (ret == 0) return -1;
 			return -2;
 		}
@@ -706,14 +706,14 @@ int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 		v->shared.l = x[0] - 12;
 		v->rid = x[1]; v->pos = x[2];
 		memcpy(&v->qual, &x[3], 4);
-		bgzf_read(fp->fp, v->shared.s, v->shared.l);
-		bgzf_read(fp->fp, x, 4);
+		bgzf_read((BGZF*)fp->fp, v->shared.s, v->shared.l);
+		bgzf_read((BGZF*)fp->fp, x, 4);
 		ks_resize(&v->indiv, x[0]);
 		v->indiv.l = x[0];
-		bgzf_read(fp->fp, v->indiv.s, v->indiv.l);
+		bgzf_read((BGZF*)fp->fp, v->indiv.s, v->indiv.l);
 	} else {
 		int ret, dret;
-		ret = ks_getuntil(fp->fp, KS_SEP_LINE, &fp->line, &dret);
+		ret = ks_getuntil((kstream_t*)fp->fp, KS_SEP_LINE, &fp->line, &dret);
 		if (ret < 0) return -1;
 		ret = vcf_parse1(&fp->line, h, v);
 	}
@@ -810,7 +810,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	if (h->n[VCF_DT_SAMPLE] && l) { // FORMAT
 		int i, j, n_fmt = l;
 		vcf_fmt_t *fmt;
-		fmt = alloca(n_fmt * sizeof(vcf_fmt_t));
+		fmt = (vcf_fmt_t*)alloca(n_fmt * sizeof(vcf_fmt_t));
 		ptr = vcf_unpack_fmt_core(ptr, h->n[VCF_DT_SAMPLE], n_fmt, fmt);
 		for (i = 0; i < n_fmt; ++i) {
 			kputc(i? ':' : '\t', s);
@@ -835,15 +835,15 @@ int vcf_write1(vcfFile *fp, const vcf_hdr_t *h, const vcf1_t *v)
 		x[0] = 12 + v->shared.l;
 		x[1] = v->rid; x[2] = v->pos;
 		memcpy(&x[3], &v->qual, 4);
-		bgzf_write(fp->fp, x, 16);
-		bgzf_write(fp->fp, v->shared.s, v->shared.l);
+		bgzf_write((BGZF*)fp->fp, x, 16);
+		bgzf_write((BGZF*)fp->fp, v->shared.s, v->shared.l);
 		x[0] = v->indiv.l;
-		bgzf_write(fp->fp, x, 4);
-		bgzf_write(fp->fp, v->indiv.s, v->indiv.l);
+		bgzf_write((BGZF*)fp->fp, x, 4);
+		bgzf_write((BGZF*)fp->fp, v->indiv.s, v->indiv.l);
 	} else {
 		vcf_format1(h, v, &fp->line);
-		fwrite(fp->line.s, 1, fp->line.l, fp->fp);
-		fputc('\n', fp->fp);
+		fwrite(fp->line.s, 1, fp->line.l, (FILE*)fp->fp);
+		fputc('\n', (FILE*)fp->fp);
 	}
 	return 0;
 }
@@ -865,7 +865,7 @@ vcf_fmt_t *vcf_unpack_fmt(const vcf_hdr_t *h, const vcf1_t *v, int *n_fmt)
 	vcf_fmt_t *fmt;
 	*n_fmt = *(uint16_t*)v->indiv.s;
 	if (*n_fmt == 0) return 0;
-	fmt = malloc(*n_fmt * sizeof(vcf_fmt_t));
+	fmt = (vcf_fmt_t*)malloc(*n_fmt * sizeof(vcf_fmt_t));
 	vcf_unpack_fmt_core((uint8_t*)v->indiv.s + 2, h->n[VCF_DT_SAMPLE], *n_fmt, fmt);
 	return fmt;
 }

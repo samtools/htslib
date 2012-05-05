@@ -33,31 +33,31 @@
 #ifdef _USE_KNETFILE
 #include "knetfile.h"
 typedef knetFile *_bgzf_file_t;
-#define _bgzf_open(fn, mode) knet_open(fn, mode)
-#define _bgzf_dopen(fp, mode) knet_dopen(fp, mode)
-#define _bgzf_close(fp) knet_close(fp)
-#define _bgzf_fileno(fp) ((fp)->fd)
-#define _bgzf_tell(fp) knet_tell(fp)
-#define _bgzf_seek(fp, offset, whence) knet_seek(fp, offset, whence)
-#define _bgzf_read(fp, buf, len) knet_read(fp, buf, len)
-#define _bgzf_write(fp, buf, len) knet_write(fp, buf, len)
+#define _bgzf_open(fn, mode) knet_open((fn), (mode))
+#define _bgzf_dopen(fd, mode) knet_dopen((fd), (mode))
+#define _bgzf_close(fp) knet_close((knetFile*)(fp))
+#define _bgzf_fileno(fp) (((knetFile*)(fp))->fd)
+#define _bgzf_tell(fp) knet_tell((knetFile*)(fp))
+#define _bgzf_seek(fp, offset, whence) knet_seek((knetFile*)(fp), (offset), (whence))
+#define _bgzf_read(fp, buf, len) knet_read((knetFile*)(fp), (buf), (len))
+#define _bgzf_write(fp, buf, len) knet_write((knetFile*)(fp), (buf), (len))
 #else // ~defined(_USE_KNETFILE)
 #if defined(_WIN32) || defined(_MSC_VER)
-#define ftello(fp) ftell(fp)
-#define fseeko(fp, offset, whence) fseek(fp, offset, whence)
+#define ftello(fp) ftell((FILE*)(fp))
+#define fseeko(fp, offset, whence) fseek((FILE*)(fp), (offset), (whence))
 #else // ~defined(_WIN32)
 extern off_t ftello(FILE *stream);
 extern int fseeko(FILE *stream, off_t offset, int whence);
 #endif // ~defined(_WIN32)
 typedef FILE *_bgzf_file_t;
-#define _bgzf_open(fn, mode) fopen(fn, mode)
-#define _bgzf_dopen(fp, mode) fdopen(fp, mode)
-#define _bgzf_close(fp) fclose(fp)
-#define _bgzf_fileno(fp) fileno(fp)
-#define _bgzf_tell(fp) ftello(fp)
-#define _bgzf_seek(fp, offset, whence) fseeko(fp, offset, whence)
-#define _bgzf_read(fp, buf, len) fread(buf, 1, len, fp)
-#define _bgzf_write(fp, buf, len) fwrite(buf, 1, len, fp)
+#define _bgzf_open(fn, mode) fopen((fn), (mode))
+#define _bgzf_dopen(fd, mode) fdopen(fd, (mode))
+#define _bgzf_close(fp) fclose((FILE*)(fp))
+#define _bgzf_fileno(fp) fileno((FILE*)(fp))
+#define _bgzf_tell(fp) ftello((FILE*)(fp))
+#define _bgzf_seek(fp, offset, whence) fseeko((FILE*)(fp), (offset), (whence))
+#define _bgzf_read(fp, buf, len) fread((buf), 1, (len), (FILE*)(fp))
+#define _bgzf_write(fp, buf, len) fwrite((buf), 1, (len), (FILE*)(fp))
 #endif // ~define(_USE_KNETFILE)
 
 #define BLOCK_HEADER_LENGTH 18
@@ -102,7 +102,7 @@ static inline void packInt32(uint8_t *buffer, uint32_t value)
 static BGZF *bgzf_read_init()
 {
 	BGZF *fp;
-	fp = calloc(1, sizeof(BGZF));
+	fp = (BGZF*)calloc(1, sizeof(BGZF));
 	fp->open_mode = 'r';
 	fp->uncompressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
 	fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
@@ -115,7 +115,7 @@ static BGZF *bgzf_read_init()
 static BGZF *bgzf_write_init(int compress_level) // compress_level==-1 for the default level
 {
 	BGZF *fp;
-	fp = calloc(1, sizeof(BGZF));
+	fp = (BGZF*)calloc(1, sizeof(BGZF));
 	fp->open_mode = 'w';
 	fp->uncompressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
 	fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
@@ -171,7 +171,7 @@ BGZF *bgzf_dopen(int fd, const char *mode)
 // Deflate the block in fp->uncompressed_block into fp->compressed_block. Also adds an extra field that stores the compressed block length.
 static int deflate_block(BGZF *fp, int block_length)
 {
-	uint8_t *buffer = fp->compressed_block;
+	uint8_t *buffer = (uint8_t*)fp->compressed_block;
 	int buffer_size = BGZF_BLOCK_SIZE;
 	int input_length = block_length;
 	int compressed_length = 0;
@@ -185,9 +185,9 @@ static int deflate_block(BGZF *fp, int block_length)
 		z_stream zs;
 		zs.zalloc = NULL;
 		zs.zfree = NULL;
-		zs.next_in = fp->uncompressed_block;
+		zs.next_in = (Bytef*)fp->uncompressed_block;
 		zs.avail_in = input_length;
-		zs.next_out = (void*)&buffer[BLOCK_HEADER_LENGTH];
+		zs.next_out = (Bytef*)&buffer[BLOCK_HEADER_LENGTH];
 		zs.avail_out = buffer_size - BLOCK_HEADER_LENGTH - BLOCK_FOOTER_LENGTH;
 		status = deflateInit2(&zs, fp->compress_level, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY); // -15 to disable zlib header/footer
 		if (status != Z_OK) {
@@ -218,14 +218,14 @@ static int deflate_block(BGZF *fp, int block_length)
 	assert(compressed_length > 0);
 	packInt16((uint8_t*)&buffer[16], compressed_length - 1); // write the compressed_length; -1 to fit 2 bytes
 	crc = crc32(0L, NULL, 0L);
-	crc = crc32(crc, fp->uncompressed_block, input_length);
+	crc = crc32(crc, (Bytef*)fp->uncompressed_block, input_length);
 	packInt32((uint8_t*)&buffer[compressed_length-8], crc);
 	packInt32((uint8_t*)&buffer[compressed_length-4], input_length);
 
 	remaining = block_length - input_length;
 	if (remaining > 0) {
 		assert(remaining <= input_length);
-		memcpy(fp->uncompressed_block, fp->uncompressed_block + input_length, remaining);
+		memcpy(fp->uncompressed_block, (uint8_t*)fp->uncompressed_block + input_length, remaining);
 	}
 	fp->block_offset = remaining;
 	return compressed_length;
@@ -237,9 +237,9 @@ static int inflate_block(BGZF* fp, int block_length)
 	z_stream zs;
 	zs.zalloc = NULL;
 	zs.zfree = NULL;
-	zs.next_in = fp->compressed_block + 18;
+	zs.next_in = (Bytef*)fp->compressed_block + 18;
 	zs.avail_in = block_length - 16;
-	zs.next_out = fp->uncompressed_block;
+	zs.next_out = (Bytef*)fp->uncompressed_block;
 	zs.avail_out = BGZF_BLOCK_SIZE;
 
 	if (inflateInit2(&zs, -15) != Z_OK) {
@@ -363,7 +363,7 @@ int bgzf_read_block(BGZF *fp)
 ssize_t bgzf_read(BGZF *fp, void *data, ssize_t length)
 {
 	ssize_t bytes_read = 0;
-	uint8_t *output = data;
+	uint8_t *output = (uint8_t*)data;
 	if (length <= 0) return 0;
 	assert(fp->open_mode == 'r');
 	while (bytes_read < length) {
@@ -375,7 +375,7 @@ ssize_t bgzf_read(BGZF *fp, void *data, ssize_t length)
 			if (available <= 0) break;
 		}
 		copy_length = length - bytes_read < available? length - bytes_read : available;
-		buffer = fp->uncompressed_block;
+		buffer = (uint8_t*)fp->uncompressed_block;
 		memcpy(output, buffer + fp->block_offset, copy_length);
 		fp->block_offset += copy_length;
 		output += copy_length;
@@ -395,7 +395,7 @@ int bgzf_flush(BGZF *fp)
 		int block_length;
 		block_length = deflate_block(fp, fp->block_offset);
 		if (block_length < 0) return -1;
-		if (fwrite(fp->compressed_block, 1, block_length, fp->fp) != block_length) {
+		if (fwrite(fp->compressed_block, 1, block_length, (FILE*)fp->fp) != (size_t)block_length) {
 			fp->errcode |= BGZF_ERR_IO; // possibly truncated file
 			return -1;
 		}
@@ -413,13 +413,12 @@ int bgzf_flush_try(BGZF *fp, ssize_t size)
 
 ssize_t bgzf_write(BGZF *fp, const void *data, ssize_t length)
 {
-	const uint8_t *input = data;
+	const uint8_t *input = (const uint8_t*)data;
 	int block_length = BGZF_BLOCK_SIZE, bytes_written;
 	assert(fp->open_mode == 'w');
-	input = data;
 	bytes_written = 0;
 	while (bytes_written < length) {
-		uint8_t* buffer = fp->uncompressed_block;
+		uint8_t* buffer = (uint8_t*)fp->uncompressed_block;
 		int copy_length = block_length - fp->block_offset < length - bytes_written? block_length - fp->block_offset : length - bytes_written;
 		memcpy(buffer + fp->block_offset, input, copy_length);
 		fp->block_offset += copy_length;
@@ -437,13 +436,13 @@ int bgzf_close(BGZF* fp)
 	if (fp->open_mode == 'w') {
 		if (bgzf_flush(fp) != 0) return -1;
 		block_length = deflate_block(fp, 0); // write an empty block
-		count = fwrite(fp->compressed_block, 1, block_length, fp->fp);
-		if (fflush(fp->fp) != 0) {
+		count = fwrite(fp->compressed_block, 1, block_length, (FILE*)fp->fp);
+		if (fflush((FILE*)fp->fp) != 0) {
 			fp->errcode |= BGZF_ERR_IO;
 			return -1;
 		}
 	}
-	ret = fp->open_mode == 'w'? fclose(fp->fp) : _bgzf_close(fp->fp);
+	ret = fp->open_mode == 'w'? fclose((FILE*)fp->fp) : _bgzf_close(fp->fp);
 	if (ret != 0) return -1;
 	free(fp->uncompressed_block);
 	free(fp->compressed_block);
@@ -459,14 +458,13 @@ void bgzf_set_cache_size(BGZF *fp, int cache_size)
 
 int bgzf_check_EOF(BGZF *fp)
 {
-	static uint8_t magic[28] = "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0";
 	uint8_t buf[28];
 	off_t offset;
 	offset = _bgzf_tell((_bgzf_file_t)fp->fp);
 	if (_bgzf_seek(fp->fp, -28, SEEK_END) < 0) return 0;
 	_bgzf_read(fp->fp, buf, 28);
 	_bgzf_seek(fp->fp, offset, SEEK_SET);
-	return (memcmp(magic, buf, 28) == 0)? 1 : 0;
+	return (memcmp("\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0", buf, 28) == 0)? 1 : 0;
 }
 
 int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
