@@ -645,8 +645,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				fmt_aux_t *z = &fmt[j];
 				if ((z->y>>4&0xf) == VCF_HT_STR) {
 					char *x = (char*)z->buf + z->size * m;
-					for (r = t; *t != ':' && *t; ++t) x[l] = *t;
-					for (l = t - r; l != z->size; ++l) x[l] = 0;
+					for (r = t, l = 0; *t != ':' && *t; ++t) x[l++] = *t;
+					for (; l != z->size; ++l) x[l] = 0;
 				} else if ((z->y>>4&0xf) == VCF_HT_INT) {
 					int32_t *x = (int32_t*)(z->buf + z->size * m);
 					for (l = 0;; ++t) {
