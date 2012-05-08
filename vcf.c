@@ -656,7 +656,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					}
 					for (; l != z->size>>2; ++l) x[l] = INT32_MIN;
 				} else if ((z->y>>4&0xf) == VCF_HT_REAL) {
-					float *x = (float*)(z->buf + z->size * (i - 9));
+					float *x = (float*)(z->buf + z->size * m);
 					for (l = 0;; ++t) {
 						if (*t == '.' && !isdigit(t[1])) *(int32_t*)&x[l++] = 0x7F800001, ++t; // ++t to skip "."
 						else x[l++] = strtod(t, &t);
