@@ -464,8 +464,8 @@ void vcf_destroy1(vcf1_t *v)
 }
 
 typedef struct {
-	int key, size;
-	int max_l, max_m, offset;
+	int key, max_m, size, offset;
+	uint32_t is_gt:1, max_g:15, max_l:16;
 	uint32_t y;
 	uint8_t *buf;
 } fmt_aux_t;
@@ -585,6 +585,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 								for (i = 0, t = val; i < n_val; ++i, ++t)
 									z[i] = strtol(t, &t, 10);
 								vcf_enc_vint(str, n_val, z, -1);
+								if (strcmp(key, "END") == 0) v->rlen = z[0] - v->pos;
 							} else if ((y>>4&0xf) == VCF_HT_REAL) {
 								float *z;
 								z = (float*)alloca(n_val<<2);
@@ -600,7 +601,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				}
 			}
 		} else if (i == 8) { // FORMAT
-			int j, l, m;
+			int j, l, m, g;
 			ks_tokaux_t aux1;
 			vdict_t *d = (vdict_t*)h->dict[VCF_DT_ID];
 			char *end = s->s + s->l;
@@ -618,28 +619,31 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					v->n_fmt = 0;
 					break;
 				} else {
-					fmt[j].max_l = fmt[j].max_m = 0;
+					fmt[j].max_l = fmt[j].max_m = fmt[j].max_g = 0;
 					fmt[j].key = kh_val(d, k).id;
+					fmt[j].is_gt = !strcmp(t, "GT");
 					fmt[j].y = h->id[0][fmt[j].key].val->info[VCF_HL_FMT];
 				}
 			}
 			// compute max
-			for (r = q + 1, j = 0, m = l = 1, v->n_sample = 0;; ++r, ++l) {
+			for (r = q + 1, j = 0, m = l = g = 1, v->n_sample = 0;; ++r, ++l) {
 				if (*r == '\t') *r = 0;
 				if (*r == ':' || *r == '\0') { // end of a sample
 					if (fmt[j].max_m < m) fmt[j].max_m = m;
 					if (fmt[j].max_l < l - 1) fmt[j].max_l = l - 1;
-					l = 0, m = 1;
+					if (fmt[j].is_gt && fmt[j].max_g < g) fmt[j].max_g = g;
+					l = 0, m = g = 1;
 					if (*r) ++j;
 					else j = 0, ++v->n_sample;
 				} else if (*r == ',') ++m;
+				else if (*r == '|' || *r == '/') ++g;
 				if (r == end) break;
 			}
 			// allocate memory for arrays
 			for (j = 0; j < v->n_fmt; ++j) {
 				fmt_aux_t *f = &fmt[j];
 				if ((f->y>>4&0xf) == VCF_HT_STR) {
-					f->size = f->max_l;
+					f->size = f->is_gt? f->max_g << 2 : f->max_l;
 				} else if ((f->y>>4&0xf) == VCF_HT_REAL || (f->y>>4&0xf) == VCF_HT_INT) {
 					f->size = f->max_m << 2;
 				} else abort(); // I do not know how to do with Flag in the genotype fields
@@ -654,9 +658,22 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			for (t = q + 1, j = m = 0;; ++t) { // j: fmt id, m: sample id
 				fmt_aux_t *z = &fmt[j];
 				if ((z->y>>4&0xf) == VCF_HT_STR) {
-					char *x = (char*)z->buf + z->size * m;
-					for (r = t, l = 0; *t != ':' && *t; ++t) x[l++] = *t;
-					for (; l != z->size; ++l) x[l] = 0;
+					if (z->is_gt) { // genotypes
+						int32_t *x = (int32_t*)(z->buf + z->size * m);
+						for (l = 0;; ++t) {
+							if (*t != '.') {
+								x[l] = (strtol(t, &t, 10) + 1) << 1;
+								if (*t == '|') x[l] |= 1;
+								++l;
+							} else x[l++] = *++t == '|'? 1 : 0;
+							if (*t == ':' || *t == 0) break;
+						}
+						for (; l != z->size>>2; ++l) x[l] = INT32_MIN;
+					} else {
+						char *x = (char*)z->buf + z->size * m;
+						for (r = t, l = 0; *t != ':' && *t; ++t) x[l++] = *t;
+						for (; l != z->size; ++l) x[l] = 0;
+					}
 				} else if ((z->y>>4&0xf) == VCF_HT_INT) {
 					int32_t *x = (int32_t*)(z->buf + z->size * m);
 					for (l = 0;; ++t) {
@@ -688,10 +705,10 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 		for (i = 0; i < v->n_fmt; ++i) {
 			fmt_aux_t *z = &fmt[i];
 			vcf_enc_int1(str, z->key);
-			if ((z->y>>4&0xf) == VCF_HT_STR) {
+			if ((z->y>>4&0xf) == VCF_HT_STR && !z->is_gt) {
 				vcf_enc_size(str, z->size, VCF_BT_CHAR);
 				kputsn((char*)z->buf, z->size * v->n_sample, str);
-			} else if ((z->y>>4&0xf) == VCF_HT_INT) {
+			} else if ((z->y>>4&0xf) == VCF_HT_INT || z->is_gt) {
 				vcf_enc_vint(str, (z->size>>2) * v->n_sample, (int32_t*)z->buf, z->size>>2);
 			} else {
 				vcf_enc_size(str, z->size>>2, VCF_BT_FLOAT);
@@ -795,20 +812,30 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	// FORMAT and individual information
 	ptr = (uint8_t*)v->indiv.s;
 	if (v->n_sample && v->n_fmt) { // FORMAT
-		int i, j;
+		int i, j, l, gt_i = -1;
 		vcf_fmt_t *fmt;
 		fmt = (vcf_fmt_t*)alloca(v->n_fmt * sizeof(vcf_fmt_t));
 		ptr = vcf_unpack_fmt_core(ptr, v->n_sample, v->n_fmt, fmt);
 		for (i = 0; i < (int)v->n_fmt; ++i) {
 			kputc(i? ':' : '\t', s);
 			kputs(h->id[VCF_DT_ID][fmt[i].id].key, s);
+			if (strcmp(h->id[VCF_DT_ID][fmt[i].id].key, "GT") == 0) gt_i = i;
 		}
 		for (j = 0; j < v->n_sample; ++j) {
 			kputc('\t', s);
 			for (i = 0; i < (int)v->n_fmt; ++i) {
 				vcf_fmt_t *f = &fmt[i];
 				if (i) kputc(':', s);
-				vcf_fmt_array(s, f->n, f->type, f->p + j * f->size);
+				if (gt_i == i) {
+					int8_t *x = (int8_t*)(f->p + j * f->size); // FIXME: does not work with n_alt >= 64
+					for (l = 0; l < f->n && x[l] != INT8_MIN; ++l) {
+						if (x[l]>>1) kputw((x[l]>>1) - 1, s);
+						else kputc('.', s);
+						kputc("/|"[x[l]&1], s);
+					}
+					if (l == 0) kputc('.', s);
+					else s->s[--s->l] = 0; // trim the last phase character
+				} else vcf_fmt_array(s, f->n, f->type, f->p + j * f->size);
 			}
 		}
 	}

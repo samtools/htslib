@@ -54,24 +54,21 @@ int main(int argc, char *argv[])
 	} else if (task == 2) { // FIXME: not working for >=10 alleles
 		int gt, *n_allele;
 		gt = vcf_id2int(h, VCF_DT_ID, "GT");
-		n_allele = (int*)alloca(10 * sizeof(int));
+		n_allele = (int*)alloca(64 * sizeof(int));
 		while (vcf_read1(in, h, v) >= 0) {
-			int i, j;
+			int i, j, l;
 			vcf_fmt_t *fmt;
 			for (i = 0; i < 10; ++i) n_allele[i] = 0;
 			fmt = vcf_unpack_fmt(h, v);
 			for (i = 0; i < v->n_fmt; ++i)
 				if (fmt[i].id == gt) break;
-			if (i != v->n_fmt && fmt[i].n == 3) { // has GT
-				uint8_t *p = fmt[i].p;
-				for (j = 0; j < v->n_sample; ++j, p += fmt[i].n) {
-					if (p[0] >= '0' && p[0] <= '9') ++n_allele[p[0] - '0'];
-					if (p[2] >= '0' && p[2] <= '9') ++n_allele[p[2] - '0'];
-				}
-				for (j = 9; j >= 0 && n_allele[j] == 0; --j);
-				++j;
+			if (i != v->n_fmt) { // has GT
+				int8_t *p = (int8_t*)fmt[i].p;
+				for (j = 0; j < v->n_sample; ++j, p += fmt[i].n)
+					for (l = 0; l < fmt[i].n; ++l)
+						if (p[l]>>1) ++n_allele[(p[l]>>1)-1];
 				printf("%s\t%d", h->id[VCF_DT_CTG][v->rid].key, v->pos + 1);
-				for (i = 0; i < j; ++i) printf("\t%d", n_allele[i]);
+				for (i = 0; i < v->n_alt + 1; ++i) printf("\t%d", n_allele[i]);
 				putchar('\n');
 			}
 			free(fmt);
