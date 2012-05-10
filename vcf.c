@@ -659,13 +659,11 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				fmt_aux_t *z = &fmt[j];
 				if ((z->y>>4&0xf) == VCF_HT_STR) {
 					if (z->is_gt) { // genotypes
-						int32_t *x = (int32_t*)(z->buf + z->size * m);
+						int32_t is_phased = 0, *x = (int32_t*)(z->buf + z->size * m);
 						for (l = 0;; ++t) {
-							if (*t != '.') {
-								x[l] = (strtol(t, &t, 10) + 1) << 1;
-								if (*t == '|') x[l] |= 1;
-								++l;
-							} else x[l++] = *++t == '|'? 1 : 0;
+							if (*t == '.') ++t, x[l++] = is_phased;
+							else x[l++] = (strtol(t, &t, 10) + 1) << 1 | is_phased;
+							is_phased = (*t == '|');
 							if (*t == ':' || *t == 0) break;
 						}
 						for (; l != z->size>>2; ++l) x[l] = INT32_MIN;
@@ -829,12 +827,11 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 				if (gt_i == i) {
 					int8_t *x = (int8_t*)(f->p + j * f->size); // FIXME: does not work with n_alt >= 64
 					for (l = 0; l < f->n && x[l] != INT8_MIN; ++l) {
+						if (l) kputc("/|"[x[l]&1], s);
 						if (x[l]>>1) kputw((x[l]>>1) - 1, s);
 						else kputc('.', s);
-						kputc("/|"[x[l]&1], s);
 					}
 					if (l == 0) kputc('.', s);
-					else s->s[--s->l] = 0; // trim the last phase character
 				} else vcf_fmt_array(s, f->n, f->type, f->p + j * f->size);
 			}
 		}
