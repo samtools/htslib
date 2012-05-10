@@ -509,18 +509,18 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			else vcf_enc_size(str, 0, VCF_BT_CHAR);
 		} else if (i == 3) { // REF
 			vcf_enc_vchar(str, q - p, p);
-			v->rlen = q - p;
+			v->n_allele = 1, v->rlen = q - p;
 		} else if (i == 4) { // ALT
 			if (strcmp(p, ".")) {
-				for (r = t = p, v->n_alt = 0;; ++r) {
+				for (r = t = p;; ++r) {
 					if (*r == ',' || *r == 0) {
 						vcf_enc_vchar(str, r - t, t);
 						t = r + 1;
-						++v->n_alt;
+						++v->n_allele;
 					}
 					if (r == q) break;
 				}
-			} else v->n_alt = 0;
+			}
 		} else if (i == 5) { // QUAL
 			if (strcmp(p, ".")) v->qual = atof(p);
 			else memcpy(&v->qual, &vcf_missing_float, 4);
@@ -769,16 +769,14 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	// ID
 	ptr = vcf_fmt_sized_array(s, ptr);
 	kputc('\t', s);
-	// REF
-	ptr = vcf_fmt_sized_array(s, ptr);
-	kputc('\t', s);
-	if (v->n_alt) { // n_alt != 0
-		for (i = 0; i < v->n_alt; ++i) {
-			if (i) kputc(',', s);
+	if (v->n_allele) { // REF and ALT
+		for (i = 0; i < v->n_allele; ++i) {
+			if (i) kputc(i == 1? '\t' : ',', s);
 			ptr = vcf_fmt_sized_array(s, ptr);
 		}
-		kputc('\t', s);
-	} else kputsn(".\t", 2, s);
+		if (v->n_allele == 1) kputsn("\t.\t", 3, s);
+		else kputc('\t', s);
+	} else kputsn(".\t.\t", 4, s);
 	if (memcmp(&v->qual, &vcf_missing_float, 4) == 0) kputsn(".\t", 2, s); // QUAL
 	else ksprintf(s, "%g\t", v->qual);
 	if (*ptr>>4) { // FILTER

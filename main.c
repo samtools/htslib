@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
 					for (l = 0; l < fmt[i].n; ++l)
 						if (p[l]>>1) ++n_allele[(p[l]>>1)-1];
 				printf("%s\t%d", h->id[VCF_DT_CTG][v->rid].key, v->pos + 1);
-				for (i = 0; i < v->n_alt + 1; ++i) printf("\t%d", n_allele[i]);
+				for (i = 0; i < v->n_allele; ++i) printf("\t%d", n_allele[i]);
 				putchar('\n');
 			}
 			free(fmt);
