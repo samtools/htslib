@@ -56,15 +56,15 @@ int main(int argc, char *argv[])
 		gt = vcf_id2int(h, VCF_DT_ID, "GT");
 		n_allele = (int*)alloca(10 * sizeof(int));
 		while (vcf_read1(in, h, v) >= 0) {
-			int i, n_fmt, j;
+			int i, j;
 			vcf_fmt_t *fmt;
 			for (i = 0; i < 10; ++i) n_allele[i] = 0;
-			fmt = vcf_unpack_fmt(h, v, &n_fmt);
-			for (i = 0; i < n_fmt; ++i)
+			fmt = vcf_unpack_fmt(h, v);
+			for (i = 0; i < v->n_fmt; ++i)
 				if (fmt[i].id == gt) break;
-			if (i != n_fmt && fmt[i].n == 3) { // has GT
+			if (i != v->n_fmt && fmt[i].n == 3) { // has GT
 				uint8_t *p = fmt[i].p;
-				for (j = 0; j < h->n[VCF_DT_SAMPLE]; ++j, p += fmt[i].n) {
+				for (j = 0; j < v->n_sample; ++j, p += fmt[i].n) {
 					if (p[0] >= '0' && p[0] <= '9') ++n_allele[p[0] - '0'];
 					if (p[2] >= '0' && p[2] <= '9') ++n_allele[p[2] - '0'];
 				}

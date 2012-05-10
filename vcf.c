@@ -705,20 +705,17 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 {
 	if (fp->is_bin) {
-		uint32_t x[4];
+		uint32_t x[8];
 		int ret;
-		if ((ret = bgzf_read((BGZF*)fp->fp, x, 16)) != 16) {
+		if ((ret = bgzf_read((BGZF*)fp->fp, x, 32)) != 32) {
 			if (ret == 0) return -1;
 			return -2;
 		}
-		ks_resize(&v->shared, x[0] - 12);
-		v->shared.l = x[0] - 12;
-		v->rid = x[1]; v->pos = x[2];
-		memcpy(&v->qual, &x[3], 4);
+		ks_resize(&v->shared, x[0]);
+		ks_resize(&v->indiv, x[1]);
+		memcpy(v, x + 2, 24);
+		v->shared.l = x[0], v->indiv.l = x[1];
 		bgzf_read((BGZF*)fp->fp, v->shared.s, v->shared.l);
-		bgzf_read((BGZF*)fp->fp, x, 4);
-		ks_resize(&v->indiv, x[0]);
-		v->indiv.l = x[0];
 		bgzf_read((BGZF*)fp->fp, v->indiv.s, v->indiv.l);
 	} else {
 		int ret, dret;
@@ -821,14 +818,12 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 int vcf_write1(vcfFile *fp, const vcf_hdr_t *h, const vcf1_t *v)
 {
 	if (fp->is_bin) {
-		uint32_t x[4];
-		x[0] = 12 + v->shared.l;
-		x[1] = v->rid; x[2] = v->pos;
-		memcpy(&x[3], &v->qual, 4);
-		bgzf_write((BGZF*)fp->fp, x, 16);
+		uint32_t x[8];
+		x[0] = v->shared.l;
+		x[1] = v->indiv.l;
+		memcpy(x + 2, v, 24);
+		bgzf_write((BGZF*)fp->fp, x, 32);
 		bgzf_write((BGZF*)fp->fp, v->shared.s, v->shared.l);
-		x[0] = v->indiv.l;
-		bgzf_write((BGZF*)fp->fp, x, 4);
 		bgzf_write((BGZF*)fp->fp, v->indiv.s, v->indiv.l);
 	} else {
 		vcf_format1(h, v, &fp->line);
@@ -850,12 +845,11 @@ int vcf_id2int(const vcf_hdr_t *h, int which, const char *id)
 	return k == kh_end(d)? -1 : kh_val(d, k).id;
 }
 
-vcf_fmt_t *vcf_unpack_fmt(const vcf_hdr_t *h, const vcf1_t *v, int *n_fmt)
+vcf_fmt_t *vcf_unpack_fmt(const vcf_hdr_t *h, const vcf1_t *v)
 {
 	vcf_fmt_t *fmt;
-	*n_fmt = *(uint16_t*)v->indiv.s;
-	if (*n_fmt == 0) return 0;
-	fmt = (vcf_fmt_t*)malloc(*n_fmt * sizeof(vcf_fmt_t));
-	vcf_unpack_fmt_core((uint8_t*)v->indiv.s + 2, h->n[VCF_DT_SAMPLE], *n_fmt, fmt);
+	if (v->n_fmt == 0) return 0;
+	fmt = (vcf_fmt_t*)malloc(v->n_fmt * sizeof(vcf_fmt_t));
+	vcf_unpack_fmt_core((uint8_t*)v->indiv.s, v->n_sample, v->n_fmt, fmt);
 	return fmt;
 }

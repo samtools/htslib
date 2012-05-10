@@ -130,7 +130,7 @@ extern "C" {
 	int vcf_write1(vcfFile *fp, const vcf_hdr_t *h, const vcf1_t *v);
 
 	int vcf_id2int(const vcf_hdr_t *h, int which, const char *id);
-	vcf_fmt_t *vcf_unpack_fmt(const vcf_hdr_t *h, const vcf1_t *v, int *n_fmt);
+	vcf_fmt_t *vcf_unpack_fmt(const vcf_hdr_t *h, const vcf1_t *v);
 
 #ifdef __cplusplus
 }
