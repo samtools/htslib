@@ -599,7 +599,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					key = r + 1;
 				}
 			}
-		} else if (i == 8 && h->n[VCF_DT_SAMPLE] > 0) { // FORMAT
+		} else if (i == 8) { // FORMAT
 			int j, l, m;
 			ks_tokaux_t aux1;
 			vdict_t *d = (vdict_t*)h->dict[VCF_DT_ID];
@@ -624,14 +624,14 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				}
 			}
 			// compute max
-			for (r = q + 1, j = 0, m = l = 1;; ++r, ++l) {
+			for (r = q + 1, j = 0, m = l = 1, v->n_sample = 0;; ++r, ++l) {
 				if (*r == '\t') *r = 0;
 				if (*r == ':' || *r == '\0') { // end of a sample
 					if (fmt[j].max_m < m) fmt[j].max_m = m;
 					if (fmt[j].max_l < l - 1) fmt[j].max_l = l - 1;
 					l = 0, m = 1;
 					if (*r) ++j;
-					else j = 0;
+					else j = 0, ++v->n_sample;
 				} else if (*r == ',') ++m;
 				if (r == end) break;
 			}
@@ -645,8 +645,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				} else abort(); // I do not know how to do with Flag in the genotype fields
 				align_mem(mem);
 				f->offset = mem->l;
-				ks_resize(mem, mem->l + h->n[VCF_DT_SAMPLE] * f->size);
-				mem->l += h->n[VCF_DT_SAMPLE] * f->size;
+				ks_resize(mem, mem->l + v->n_sample * f->size);
+				mem->l += v->n_sample * f->size;
 			}
 			for (j = 0; j < v->n_fmt; ++j)
 				fmt[j].buf = (uint8_t*)mem->s + fmt[j].offset;
@@ -684,19 +684,18 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 	}
 	// write individual genotype information
 	str = &v->indiv;
-	v->n_sample = h->n[VCF_DT_SAMPLE];
 	if (v->n_sample > 0) {
 		for (i = 0; i < v->n_fmt; ++i) {
 			fmt_aux_t *z = &fmt[i];
 			vcf_enc_int1(str, z->key);
 			if ((z->y>>4&0xf) == VCF_HT_STR) {
 				vcf_enc_size(str, z->size, VCF_BT_CHAR);
-				kputsn((char*)z->buf, z->size * h->n[VCF_DT_SAMPLE], str);
+				kputsn((char*)z->buf, z->size * v->n_sample, str);
 			} else if ((z->y>>4&0xf) == VCF_HT_INT) {
-				vcf_enc_vint(str, (z->size>>2) * h->n[VCF_DT_SAMPLE], (int32_t*)z->buf, z->size>>2);
+				vcf_enc_vint(str, (z->size>>2) * v->n_sample, (int32_t*)z->buf, z->size>>2);
 			} else {
 				vcf_enc_size(str, z->size>>2, VCF_BT_FLOAT);
-				kputsn((char*)z->buf, z->size * h->n[VCF_DT_SAMPLE], str);
+				kputsn((char*)z->buf, z->size * v->n_sample, str);
 			}
 		}
 	}
