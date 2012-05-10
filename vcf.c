@@ -438,6 +438,14 @@ void vcf_fmt_array(kstring_t *s, int n, int type, void *data)
 	if (n && j == 0) kputc('.', s);
 }
 
+uint8_t *vcf_fmt_sized_array(kstring_t *s, uint8_t *ptr)
+{
+	int x, type;
+	x = vcf_dec_size(ptr, &ptr, &type);
+	vcf_fmt_array(s, x, type, ptr);
+	return ptr + (x << vcf_type_shift[type]);
+}
+
 /****************************
  * Parsing VCF record lines *
  ****************************/
@@ -479,10 +487,10 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 	kstring_t *str, *mem = (kstring_t*)&h->mem;
 	khint_t k;
 	ks_tokaux_t aux;
-	uint16_t n_fmt = 0;
 
 	mem->l = v->shared.l = v->indiv.l = 0;
 	str = &v->shared;
+	v->n_fmt = 0;
 	for (p = kstrtok(s->s, "\t", &aux), i = 0; p; p = kstrtok(0, 0, &aux), ++i) {
 		q = (char*)aux.p;
 		*q = 0;
@@ -497,18 +505,22 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 		} else if (i == 1) { // POS
 			v->pos = atoi(p) - 1;
 		} else if (i == 2) { // ID
-			if (strcmp(p, ".")) kputsn(p, q - p, str);
-			kputc(0, str);
+			if (strcmp(p, ".")) vcf_enc_vchar(str, q - p, p);
+			else vcf_enc_size(str, 0, VCF_BT_CHAR);
 		} else if (i == 3) { // REF
-			kputsn(p, q - p + 1, str); // +1 to include NULL
+			vcf_enc_vchar(str, q - p, p);
+			v->rlen = q - p;
 		} else if (i == 4) { // ALT
-			uint16_t n_alt;
 			if (strcmp(p, ".")) {
-				for (r = p, n_alt = 1; r != q; ++r)
-					if (*r == ',') *r = 0, ++n_alt;
-			} else n_alt = 0;
-			kputsn((char*)&n_alt, 2, str);
-			if (n_alt) kputsn(p, q - p + 1, str);
+				for (r = t = p, v->n_alt = 0;; ++r) {
+					if (*r == ',' || *r == 0) {
+						vcf_enc_vchar(str, r - t, t);
+						t = r + 1;
+						++v->n_alt;
+					}
+					if (r == q) break;
+				}
+			} else v->n_alt = 0;
 		} else if (i == 5) { // QUAL
 			if (strcmp(p, ".")) v->qual = atof(p);
 			else memcpy(&v->qual, &vcf_missing_float, 4);
@@ -536,9 +548,8 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			} else vcf_enc_vint(str, 0, 0, -1);
 		} else if (i == 7) { // INFO
 			char *key;
-			int n_info = 0, o_info = str->l;
 			vdict_t *d = (vdict_t*)h->dict[VCF_DT_ID];
-			kputsn("\0\0", 2, str); // place holder for n_info
+			v->n_info = 0;
 			if (strcmp(p, ".")) {
 				if (*(q-1) == ';') *(q-1) = 0;
 				for (r = key = p;; ++r) {
@@ -557,7 +568,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, key);
 					} else { // defined in the header
 						uint32_t y = kh_val(d, k).info[VCF_HL_INFO];
-						++n_info;
+						++v->n_info;
 						vcf_enc_int1(str, kh_val(d, k).id);
 						if (val == 0) {
 							vcf_enc_size(str, 0, VCF_BT_NULL);
@@ -588,16 +599,15 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					key = r + 1;
 				}
 			}
-			*(uint16_t*)(str->s + o_info) = n_info;
 		} else if (i == 8 && h->n[VCF_DT_SAMPLE] > 0) { // FORMAT
 			int j, l, m;
 			ks_tokaux_t aux1;
 			vdict_t *d = (vdict_t*)h->dict[VCF_DT_ID];
 			char *end = s->s + s->l;
 			// count the number of format fields
-			for (r = p, n_fmt = 1; *r; ++r)
-				if (*r == ':') ++n_fmt;
-			fmt = (fmt_aux_t*)alloca(n_fmt * sizeof(fmt_aux_t));
+			for (r = p, v->n_fmt = 1; *r; ++r)
+				if (*r == ':') ++v->n_fmt;
+			fmt = (fmt_aux_t*)alloca(v->n_fmt * sizeof(fmt_aux_t));
 			// get format information from the dictionary
 			for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
 				*(char*)aux1.p = 0;
@@ -605,7 +615,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				if (k == kh_end(d) || kh_val(d, k).info[VCF_HL_FMT] == 15) {
 					if (vcf_verbose >= 2)
 						fprintf(stderr, "[W::%s] FORMAT '%s' is not defined in the header\n", __func__, t);
-					n_fmt = 0;
+					v->n_fmt = 0;
 					break;
 				} else {
 					fmt[j].max_l = fmt[j].max_m = 0;
@@ -626,7 +636,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				if (r == end) break;
 			}
 			// allocate memory for arrays
-			for (j = 0; j < n_fmt; ++j) {
+			for (j = 0; j < v->n_fmt; ++j) {
 				fmt_aux_t *f = &fmt[j];
 				if ((f->y>>4&0xf) == VCF_HT_STR) {
 					f->size = f->max_l;
@@ -638,7 +648,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				ks_resize(mem, mem->l + h->n[VCF_DT_SAMPLE] * f->size);
 				mem->l += h->n[VCF_DT_SAMPLE] * f->size;
 			}
-			for (j = 0; j < n_fmt; ++j)
+			for (j = 0; j < v->n_fmt; ++j)
 				fmt[j].buf = (uint8_t*)mem->s + fmt[j].offset;
 			// fill the sample fields; at beginning of the loop, t points to the first char of a format
 			for (t = q + 1, j = m = 0;; ++t) { // j: fmt id, m: sample id
@@ -674,9 +684,9 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 	}
 	// write individual genotype information
 	str = &v->indiv;
-	kputsn((char*)&n_fmt, 2, str);
-	if (h->n[VCF_DT_SAMPLE] > 0) {
-		for (i = 0; i < n_fmt; ++i) {
+	v->n_sample = h->n[VCF_DT_SAMPLE];
+	if (v->n_sample > 0) {
+		for (i = 0; i < v->n_fmt; ++i) {
 			fmt_aux_t *z = &fmt[i];
 			vcf_enc_int1(str, z->key);
 			if ((z->y>>4&0xf) == VCF_HT_STR) {
@@ -741,32 +751,20 @@ uint8_t *vcf_unpack_fmt_core(uint8_t *ptr, int n_sample, int n_fmt, vcf_fmt_t *f
 int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 {
 	uint8_t *ptr = (uint8_t*)v->shared.s;
-	int i, l;
+	int i;
 	s->l = 0;
 	kputs(h->id[VCF_DT_CTG][v->rid].key, s); kputc('\t', s); // CHROM
 	kputw(v->pos + 1, s); kputc('\t', s); // POS
-	if (*ptr) { // ID
-		l = strlen((char*)ptr);
-		kputsn((char*)ptr, l, s);
-		kputc('\t', s);
-		ptr += l;
-	} else kputsn(".\t", 2, s);
-	++ptr;
-	if (*ptr) { // REF
-		l = strlen((char*)ptr);
-		kputsn((char*)ptr, l, s);
-		kputc('\t', s);
-		ptr += l;
-	} else kputsn(".\t", 2, s);
-	++ptr;
-	l = *(uint16_t*)ptr; // ALT
-	ptr += 2;
-	if (l) { // n_alt != 0
-		for (i = 0; i < l; ++i) {
-			int t = strlen((char*)ptr);
+	// ID
+	ptr = vcf_fmt_sized_array(s, ptr);
+	kputc('\t', s);
+	// REF
+	ptr = vcf_fmt_sized_array(s, ptr);
+	kputc('\t', s);
+	if (v->n_alt) { // n_alt != 0
+		for (i = 0; i < v->n_alt; ++i) {
 			if (i) kputc(',', s);
-			kputsn((char*)ptr, t, s);
-			ptr += t + 1;
+			ptr = vcf_fmt_sized_array(s, ptr);
 		}
 		kputc('\t', s);
 	} else kputsn(".\t", 2, s);
@@ -786,39 +784,32 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 		kputsn(".\t", 2, s);
 		++ptr;
 	}
-	l = *(uint16_t*)ptr; // INFO
-	ptr += 2;
-	if (l) {
-		int i, n_info = l, type;
-		for (i = 0; i < n_info; ++i) {
+	if (v->n_info) {
+		for (i = 0; i < (int)v->n_info; ++i) {
 			int32_t x;
 			if (i) kputc(';', s);
 			x = vcf_dec_typed_int1(ptr, &ptr);
 			kputs(h->id[VCF_DT_ID][x].key, s);
 			if (*ptr>>4) { // more than zero element
 				kputc('=', s);
-				x = vcf_dec_size(ptr, &ptr, &type);
-				vcf_fmt_array(s, x, type, ptr);
-				ptr += x << vcf_type_shift[type];
-			} else ++ptr;
+				ptr = vcf_fmt_sized_array(s, ptr);
+			} else ++ptr; // skip 0
 		}
 	} else kputc('.', s);
 	// FORMAT and individual information
 	ptr = (uint8_t*)v->indiv.s;
-	l = *(uint16_t*)ptr;
-	ptr += 2;
-	if (h->n[VCF_DT_SAMPLE] && l) { // FORMAT
-		int i, j, n_fmt = l;
+	if (v->n_sample && v->n_fmt) { // FORMAT
+		int i, j;
 		vcf_fmt_t *fmt;
-		fmt = (vcf_fmt_t*)alloca(n_fmt * sizeof(vcf_fmt_t));
-		ptr = vcf_unpack_fmt_core(ptr, h->n[VCF_DT_SAMPLE], n_fmt, fmt);
-		for (i = 0; i < n_fmt; ++i) {
+		fmt = (vcf_fmt_t*)alloca(v->n_fmt * sizeof(vcf_fmt_t));
+		ptr = vcf_unpack_fmt_core(ptr, v->n_sample, v->n_fmt, fmt);
+		for (i = 0; i < (int)v->n_fmt; ++i) {
 			kputc(i? ':' : '\t', s);
 			kputs(h->id[VCF_DT_ID][fmt[i].id].key, s);
 		}
-		for (j = 0; j < h->n[VCF_DT_SAMPLE]; ++j) {
+		for (j = 0; j < v->n_sample; ++j) {
 			kputc('\t', s);
-			for (i = 0; i < n_fmt; ++i) {
+			for (i = 0; i < (int)v->n_fmt; ++i) {
 				vcf_fmt_t *f = &fmt[i];
 				if (i) kputc(':', s);
 				vcf_fmt_array(s, f->n, f->type, f->p + j * f->size);

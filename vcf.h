@@ -83,8 +83,6 @@ typedef struct {
 
 extern uint8_t vcf_type_shift[];
 
-#define vcf_hdr_n_val(x, _n_alt) (((x)>>8&0xf) == VCF_VTP_FIXED? (x)>>12 : ((x)>>8&0xf) == VCF_VTP_A? (_n_alt) : ((x)>>8&0xf) == VCF_VTP_G? -2 : -1)
-
 /**************
  * VCF record *
  **************/
@@ -97,9 +95,12 @@ extern uint8_t vcf_type_shift[];
 #define VCF_BT_CHAR		7
 
 typedef struct {
-	int32_t rid; // CHROM
-	int32_t pos; // POS
-	float qual;  // QUAL
+	int32_t rid;  // CHROM
+	int32_t pos;  // POS
+	int32_t rlen; // length of REF
+	float qual;   // QUAL
+	uint32_t n_info:16, n_alt:16;
+	uint32_t n_fmt:8, n_sample:24;
 	kstring_t shared, indiv;
 } vcf1_t;
 
