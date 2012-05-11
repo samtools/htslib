@@ -73,4 +73,22 @@ typedef struct {
 #define sam_get_aux(b)   ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname + (((b)->core.l_qseq + 1)>>1) + (b)->core.l_qseq)
 #define sam_seqi(s, i) ((s)[(i)>>1] >> ((~(i)&1)<<2) & 0xf)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+	void sam_hdr_destroy(sam_hdr_t *h);
+	sam_hdr_t *sam_hdr_read(htsFile *fp);
+	int sam_hdr_write(htsFile *fp, const sam_hdr_t *h);
+
+	sam1_t *sam_init1(void);
+	void sam_destroy1(sam1_t *b);
+	int sam_read1(htsFile *fp, const sam_hdr_t *h, sam1_t *b);
+	int sam_format1(const sam_hdr_t *h, const sam1_t *b, kstring_t *str);
+	int sam_write1(htsFile *fp, const sam_hdr_t *h, const sam1_t *b);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

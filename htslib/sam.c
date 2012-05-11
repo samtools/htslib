@@ -130,6 +130,12 @@ sam1_t *sam_init1()
 	return (sam1_t*)calloc(1, sizeof(sam1_t));
 }
 
+void sam_destroy1(sam1_t *b)
+{
+	if (b == 0) return;
+	free(b->data); free(b);
+}
+
 static inline int sam_aux_type2size(int x)
 {
 	if (x == 'C' || x == 'c' || x == 'A') return 1;
