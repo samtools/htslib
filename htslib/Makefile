@@ -2,29 +2,22 @@ CC=			gcc
 CFLAGS=		-g -Wall -O2 -Wc++-compat
 DFLAGS=
 LOBJS=		kstring.o knetfile.o bgzf.o hts.o vcf.o sam.o
-AOBJS=		main.o
-PROG=		bcf2ls
 INCLUDES=
 SUBDIRS=	.
 LIBPATH=
 LIBCURSES=	
 
 .SUFFIXES:.c .o
-.PHONY:all
+.PHONY:lib
 
 .c.o:
 		$(CC) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $< -o $@
 
-all:$(PROG)
-
-bcf2ls:$(LOBJS) $(AOBJS)
-		$(CC) $(CFLAGS) $(LOBJS) $(AOBJS) -o $@ -lz
+libhts.a:$(LOBJS)
+		$(AR) -csru $@ $(LOBJS)
 
 bgzf.o:bgzf.c bgzf.h knetfile.h khash.h
-		$(CC) -c $(CFLAGS) $(DFLAGS) -D_USE_KNETFILE $(INCLUDES) bgzf.c -o $@
-
-BCFv2.pdf:BCFv2.tex
-		pdflatex BCFv2
+		$(CC) -c $(CFLAGS) $(DFLAGS) -D_USE_KNETFILE -DBGZF_MT -DBGZF_CACHE $(INCLUDES) bgzf.c -o $@
 
 kstring.o:kstring.h
 knetfile.o:knetfile.h
@@ -34,4 +27,4 @@ sam.o:sam.h bgzf.h kstring.h hts.h
 main.o:vcf.h sam.h
 
 clean:
-		rm -fr gmon.out *.o a.out *.dSYM $(PROG) *~ *.a BCFv2.aux BCFv2.idx BCFv2.log BCFv2.pdf
+		rm -fr gmon.out *.o a.out *.dSYM *~ *.a *.so *.dylib

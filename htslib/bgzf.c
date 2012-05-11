@@ -294,7 +294,7 @@ static void cache_block(BGZF *fp, int size)
 	p = &kh_val(h, k);
 	p->size = fp->block_length;
 	p->end_offset = fp->block_address + size;
-	p->block = malloc(BGZF_MAX_BLOCK_SIZE);
+	p->block = (uint8_t*)malloc(BGZF_MAX_BLOCK_SIZE);
 	memcpy(kh_val(h, k).block, fp->uncompressed_block, BGZF_MAX_BLOCK_SIZE);
 }
 #else
