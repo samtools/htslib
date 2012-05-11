@@ -141,7 +141,8 @@ static inline int sam_aux_type2size(int x)
 static void swap_data(const sam1_core_t *c, int l_data, uint8_t *data)
 {
 	uint8_t *s;
-	uint32_t i, *cigar = (uint32_t*)(data + c->l_qname);
+	uint32_t *cigar = (uint32_t*)(data + c->l_qname);
+	int i;
 	s = data + c->n_cigar*4 + c->l_qname + c->l_qseq + (c->l_qseq + 1)/2;
 	for (i = 0; i < c->n_cigar; ++i) ed_swap_4p(&cigar[i]);
 	while (s < data + l_data) {

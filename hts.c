@@ -54,3 +54,4 @@ void hts_close(htsFile *fp)
 	} else bgzf_close((BGZF*)fp->fp);
 	free(fp);
 }
+

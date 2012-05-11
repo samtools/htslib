@@ -36,7 +36,7 @@ extern "C" {
 	void hts_close(htsFile *fp);
 
 #ifdef __cplusplus
-extern "C" {
+}
 #endif
 
 #endif
