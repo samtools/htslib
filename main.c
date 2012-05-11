@@ -4,7 +4,7 @@
 #include <ctype.h>
 #include "vcf.h"
 
-int main(int argc, char *argv[])
+int main_vcf(int argc, char *argv[])
 {
 	int task = 0; // 0 for conversion, 1 for counting and 2 for site frequency
 	int c, clevel = -1, flag = 0;
@@ -79,4 +79,20 @@ int main(int argc, char *argv[])
 	vcf_hdr_destroy(h);
 	vcf_close(in);
 	return 0;
+}
+
+int main_sam(int argc, char *argv[])
+{
+	return 0;
+}
+
+int main(int argc, char *argv[])
+{
+	if (argc < 2) return 1;
+	if (strcmp(argv[1], "vcf") == 0) return main_vcf(argc-1, argv+1);
+	else if (strcmp(argv[1], "sam") == 0) return main_sam(argc-1, argv+1);
+	else {
+		fprintf(stderr, "[E::%s] unrecognized command '%s'", __func__, argv[1]);
+		return 1;
+	}
 }
