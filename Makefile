@@ -1,7 +1,7 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2 -Wc++-compat
 DFLAGS=
-LOBJS=		kstring.o knetfile.o bgzf.o vcf.o sam.o
+LOBJS=		kstring.o knetfile.o bgzf.o hts.o vcf.o sam.o
 AOBJS=		main.o
 PROG=		bcf2ls
 INCLUDES=
@@ -29,7 +29,7 @@ BCFv2.pdf:BCFv2.tex
 kstring.o:kstring.h
 knetfile.o:knetfile.h
 vcf.o:vcf.h bgzf.h kstring.h khash.h
-sam.o:sam.h bgzf.h kstring.h khash.h
+sam.o:sam.h bgzf.h kstring.h khash.h hts.h
 main.o:vcf.h sam.h
 
 clean:

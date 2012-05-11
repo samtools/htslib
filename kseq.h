@@ -47,15 +47,15 @@
 #define ks_eof(ks) ((ks)->is_eof && (ks)->begin >= (ks)->end)
 #define ks_rewind(ks) ((ks)->is_eof = (ks)->begin = (ks)->end = 0)
 
-#define __KS_BASIC(type_t, __bufsize)								\
-	static inline kstream_t *ks_init(type_t f)						\
+#define __KS_BASIC(SCOPE, type_t, __bufsize)						\
+	SCOPE kstream_t *ks_init(type_t f)								\
 	{																\
 		kstream_t *ks = (kstream_t*)calloc(1, sizeof(kstream_t));	\
 		ks->f = f;													\
 		ks->buf = (unsigned char*)malloc(__bufsize);				\
 		return ks;													\
 	}																\
-	static inline void ks_destroy(kstream_t *ks)					\
+	SCOPE void ks_destroy(kstream_t *ks)							\
 	{																\
 		if (ks) {													\
 			free(ks->buf);											\
@@ -88,8 +88,8 @@ typedef struct __kstring_t {
 #define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
 #endif
 
-#define __KS_GETUNTIL(__read, __bufsize)								\
-	static int ks_getuntil2(kstream_t *ks, int delimiter, kstring_t *str, int *dret, int append) \
+#define __KS_GETUNTIL(SCOPE, __read, __bufsize)								\
+	SCOPE int ks_getuntil2(kstream_t *ks, int delimiter, kstring_t *str, int *dret, int append) \
 	{																	\
 		if (dret) *dret = 0;											\
 		str->l = append? str->l : 0;									\
@@ -140,11 +140,19 @@ typedef struct __kstring_t {
 	static inline int ks_getuntil(kstream_t *ks, int delimiter, kstring_t *str, int *dret) \
 	{ return ks_getuntil2(ks, delimiter, str, dret, 0); }
 
-#define KSTREAM_INIT(type_t, __read, __bufsize) \
+#define KSTREAM_INIT2(SCOPE, type_t, __read, __bufsize) \
 	__KS_TYPE(type_t)							\
-	__KS_BASIC(type_t, __bufsize)				\
+	__KS_BASIC(SCOPE, type_t, __bufsize)		\
 	__KS_GETC(__read, __bufsize)				\
-	__KS_GETUNTIL(__read, __bufsize)
+	__KS_GETUNTIL(SCOPE, __read, __bufsize)
+
+#define KSTREAM_INIT(type_t, __read, __bufsize) KSTREAM_INIT2(static, type_t, __read, __bufsize)
+
+#define KSTREAM_DECLARE(type_t) \
+	__KS_TYPE(type_t) \
+	extern int ks_getuntil2(kstream_t *ks, int delimiter, kstring_t *str, int *dret, int append); \
+	extern kstream_t *ks_init(type_t f); \
+	extern void ks_destroy(kstream_t *ks);
 
 #define kseq_rewind(ks) ((ks)->last_char = (ks)->f->is_eof = (ks)->f->begin = (ks)->f->end = 0)
 

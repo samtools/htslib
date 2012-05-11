@@ -2,29 +2,7 @@
 #define SAM_H
 
 #include <stdint.h>
-
-#ifndef KSTRING_T
-#define KSTRING_T kstring_t
-typedef struct __kstring_t {
-	size_t l, m;
-	char *s;
-} kstring_t;
-#endif
-
-#ifndef kroundup32
-#define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
-#endif
-
-/*******************
- * SAM file struct *
- *******************/
-
-typedef struct { // identical to vcfFile
-	uint32_t is_bin:1, is_write:1, dummy:30;
-	kstring_t line;
-	char *fn_ref; // external reference sequence dictionary
-	void *fp; // file pointer; actual type depending on is_bin and is_write
-} samFile;
+#include "hts.h"
 
 /******************
  * SAM/BAM header *

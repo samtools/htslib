@@ -7,58 +7,9 @@
 #include "sam.h"
 
 #include "kseq.h"
-KSTREAM_INIT(gzFile, gzread, 16384)
+KSTREAM_DECLARE(gzFile)
 
 int sam_verbose = 3;
-
-/******************
- * Basic file I/O *
- ******************/
-
-samFile *sam_open(const char *fn, const char *mode, const char *fn_ref)
-{ // nearly identical to vcf_open()
-	const char *p;
-	samFile *fp;
-	fp = (samFile*)calloc(1, sizeof(samFile));
-	for (p = mode; *p; ++p) {
-		if (*p == 'w') fp->is_write = 1;
-		else if (*p == 'b') fp->is_bin = 1;
-	}
-	if (fp->is_bin) {
-		if (fp->is_write) fp->fp = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
-		else fp->fp = strcmp(fn, "-")? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
-	} else {
-		if (fp->is_write) {
-			fp->fp = strcmp(fn, "-")? fopen(fn, "rb") : stdout;
-		} else {
-			gzFile gzfp;
-			gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
-			if (gzfp) fp->fp = ks_init(gzfp);
-			if (fn_ref) fp->fn_ref = strdup(fn_ref);
-		}
-	}
-	if (fp->fp == 0) {
-		if (sam_verbose >= 2)
-			fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
-		free(fp->fn_ref); free(fp);
-		return 0;
-	}
-	return fp;
-}
-
-void sam_close(samFile *fp)
-{
-	if (!fp->is_bin) {
-		free(fp->line.s);
-		if (!fp->is_write) {
-			gzFile gzfp = ((kstream_t*)fp->fp)->f;
-			ks_destroy((kstream_t*)fp->fp);
-			gzclose(gzfp);
-			free(fp->fn_ref);
-		} else fclose((FILE*)fp->fp);
-	} else bgzf_close((BGZF*)fp->fp);
-	free(fp);
-}
 
 /**************
  * Header I/O *
@@ -74,9 +25,19 @@ sam_hdr_t *sam_hdr_init()
 
 void sam_hdr_destroy(sam_hdr_t *h)
 {
+	int32_t i;
+	if (h == 0) return;
+	if (h->target_name) {
+		for (i = 0; i < h->n_targets; ++i)
+			free(h->target_name[i]);
+		free(h->target_name);
+		free(h->target_len);
+	}
+	free(h->text);
+	free(h);
 }
 
-sam_hdr_t *sam_hdr_read(samFile *fp)
+sam_hdr_t *sam_hdr_read(htsFile *fp)
 {
 	sam_hdr_t *h;
 	if (fp->is_bin) {
@@ -117,4 +78,13 @@ sam_hdr_t *sam_hdr_read(samFile *fp)
 		return h;
 	}
 	return 0;
+}
+
+/******************
+ * SAM record I/O *
+ ******************/
+
+sam1_t *sam_init1()
+{
+	return (sam1_t*)calloc(1, sizeof(sam1_t));
 }
