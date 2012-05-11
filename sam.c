@@ -7,7 +7,7 @@
 #include "sam.h"
 
 #include "kseq.h"
-KSTREAM_DECLARE(gzFile)
+KSTREAM_DECLARE(gzFile, gzread)
 
 int sam_verbose = 3;
 

@@ -14,61 +14,12 @@ KHASH_MAP_INIT_STR(vdict, vcf_idinfo_t)
 typedef khash_t(vdict) vdict_t;
 
 #include "kseq.h"
-KSTREAM_INIT(gzFile, gzread, 16384)
+KSTREAM_DECLARE(gzFile, gzread)
 
 int vcf_verbose = 3; // 1: error; 2: warning; 3: message; 4: progress; 5: debugging; >=10: pure debugging
 uint32_t vcf_missing_float = 0x7F800001;
 uint8_t vcf_type_shift[] = { 0, 0, 1, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 static vcf_idinfo_t vcf_idinfo_def = { { 15, 15, 15 }, -1 };
-
-/*************
- * Basic I/O *
- *************/
-
-vcfFile *vcf_open(const char *fn, const char *mode, const char *fn_ref)
-{
-	const char *p;
-	vcfFile *fp;
-	fp = (vcfFile*)calloc(1, sizeof(vcfFile));
-	for (p = mode; *p; ++p) {
-		if (*p == 'w') fp->is_write = 1;
-		else if (*p == 'b') fp->is_bin = 1;
-	}
-	if (fp->is_bin) {
-		if (fp->is_write) fp->fp = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
-		else fp->fp = strcmp(fn, "-")? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
-	} else {
-		if (fp->is_write) {
-			fp->fp = strcmp(fn, "-")? fopen(fn, "rb") : stdout;
-		} else {
-			gzFile gzfp;
-			gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
-			if (gzfp) fp->fp = ks_init(gzfp);
-			if (fn_ref) fp->fn_ref = strdup(fn_ref);
-		}
-	}
-	if (fp->fp == 0) {
-		if (vcf_verbose >= 2)
-			fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
-		free(fp->fn_ref); free(fp);
-		return 0;
-	}
-	return fp;
-}
-
-void vcf_close(vcfFile *fp)
-{
-	if (!fp->is_bin) {
-		free(fp->line.s);
-		if (!fp->is_write) {
-			gzFile gzfp = ((kstream_t*)fp->fp)->f;
-			ks_destroy((kstream_t*)fp->fp);
-			gzclose(gzfp);
-			free(fp->fn_ref);
-		} else fclose((FILE*)fp->fp);
-	} else bgzf_close((BGZF*)fp->fp);
-	free(fp);
-}
 
 /*********************
  * VCF header parser *
@@ -286,7 +237,7 @@ int vcf_hdr_parse(vcf_hdr_t *h)
  * VCF header I/O *
  ******************/
 
-vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
+vcf_hdr_t *vcf_hdr_read(htsFile *fp)
 {
 	vcf_hdr_t *h;
 	if (fp->is_write) return 0;
@@ -310,12 +261,12 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 				vcf_hdr_destroy(h);
 				return 0;
 			}
-			if (s->s[1] != '#' && fp->fn_ref) { // insert contigs here
+			if (s->s[1] != '#' && fp->fn_aux) { // insert contigs here
 				gzFile f;
 				kstream_t *ks;
 				kstring_t tmp;
 				tmp.l = tmp.m = 0; tmp.s = 0;
-				f = gzopen(fp->fn_ref, "r");
+				f = gzopen(fp->fn_aux, "r");
 				ks = ks_init(f);
 				while (ks_getuntil(ks, 0, &tmp, &dret) >= 0) {
 					int c;
@@ -343,7 +294,7 @@ vcf_hdr_t *vcf_hdr_read(vcfFile *fp)
 	} else return h;
 }
 
-void vcf_hdr_write(vcfFile *fp, const vcf_hdr_t *h)
+void vcf_hdr_write(htsFile *fp, const vcf_hdr_t *h)
 {
 	if (fp->is_bin) {
 		bgzf_write((BGZF*)fp->fp, "BCF\2", 4);
@@ -717,7 +668,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 	return 0;
 }
 
-int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v)
+int vcf_read1(htsFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 {
 	if (fp->is_bin) {
 		uint32_t x[8];
@@ -837,7 +788,7 @@ int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s)
 	return 0;
 }
 
-int vcf_write1(vcfFile *fp, const vcf_hdr_t *h, const vcf1_t *v)
+int vcf_write1(htsFile *fp, const vcf_hdr_t *h, const vcf1_t *v)
 {
 	if (fp->is_bin) {
 		uint32_t x[8];

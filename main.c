@@ -10,7 +10,7 @@ int main_vcf(int argc, char *argv[])
 	int c, clevel = -1, flag = 0;
 	char *fn_ref = 0, *fn_out = 0, moder[8];
 	vcf_hdr_t *h;
-	vcfFile *in;
+	htsFile *in;
 	vcf1_t *v;
 
 	while ((c = getopt(argc, argv, "l:bSt:o:T:")) >= 0) {
@@ -33,20 +33,20 @@ int main_vcf(int argc, char *argv[])
 	strcpy(moder, "r");
 	if ((flag&1) == 0) strcat(moder, "b");
 
-	in = vcf_open(argv[optind], moder, fn_ref);
+	in = hts_open(argv[optind], moder, fn_ref);
 	h = vcf_hdr_read(in);
 	v = vcf_init1();
 
 	if (task == 0) {
-		vcfFile *out;
+		htsFile *out;
 		char modew[8];
 		strcpy(modew, "w");
 		if (clevel >= 0 && clevel <= 9) sprintf(modew + 1, "%d", clevel);
 		if (flag&2) strcat(modew, "b");
-		out = vcf_open(fn_out? fn_out : "-", modew, 0);
+		out = hts_open(fn_out? fn_out : "-", modew, 0);
 		vcf_hdr_write(out, h);
 		while (vcf_read1(in, h, v) >= 0) vcf_write1(out, h, v);
-		vcf_close(out);
+		hts_close(out);
 	} else if (task == 1) {
 		int64_t cnt = 0;
 		while (vcf_read1(in, h, v) >= 0) ++cnt;
@@ -77,7 +77,7 @@ int main_vcf(int argc, char *argv[])
 
 	vcf_destroy1(v);
 	vcf_hdr_destroy(h);
-	vcf_close(in);
+	hts_close(in);
 	return 0;
 }
 

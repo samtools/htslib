@@ -4,29 +4,7 @@
 #include <stdint.h>
 #include <limits.h>
 #include <assert.h>
-
-#ifndef KSTRING_T
-#define KSTRING_T kstring_t
-typedef struct __kstring_t {
-	size_t l, m;
-	char *s;
-} kstring_t;
-#endif
-
-#ifndef kroundup32
-#define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
-#endif
-
-/*******************
- * VCF file struct *
- *******************/
-
-typedef struct {
-	uint32_t is_bin:1, is_write:1, dummy:30;
-	kstring_t line;
-	char *fn_ref; // external reference sequence dictionary
-	void *fp; // file pointer; actual type depending on is_bin and is_write
-} vcfFile;
+#include "hts.h"
 
 /*****************
  * Header struct *
@@ -117,17 +95,17 @@ typedef struct {
 extern "C" {
 #endif
 
-	vcfFile *vcf_open(const char *fn, const char *mode, const char *fn_ref);
-	void vcf_close(vcfFile *fp);
-	vcf_hdr_t *vcf_hdr_read(vcfFile *fp);
-	void vcf_hdr_write(vcfFile *fp, const vcf_hdr_t *h);
+	htsFile *vcf_open(const char *fn, const char *mode, const char *fn_ref);
+	void vcf_close(htsFile *fp);
+	vcf_hdr_t *vcf_hdr_read(htsFile *fp);
+	void vcf_hdr_write(htsFile *fp, const vcf_hdr_t *h);
 	void vcf_hdr_destroy(vcf_hdr_t *h);
 
 	vcf1_t *vcf_init1(void);
 	void vcf_destroy1(vcf1_t *v);
-	int vcf_read1(vcfFile *fp, const vcf_hdr_t *h, vcf1_t *v);
+	int vcf_read1(htsFile *fp, const vcf_hdr_t *h, vcf1_t *v);
 	int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s);
-	int vcf_write1(vcfFile *fp, const vcf_hdr_t *h, const vcf1_t *v);
+	int vcf_write1(htsFile *fp, const vcf_hdr_t *h, const vcf1_t *v);
 
 	int vcf_id2int(const vcf_hdr_t *h, int which, const char *id);
 	vcf_fmt_t *vcf_unpack_fmt(const vcf_hdr_t *h, const vcf1_t *v);
