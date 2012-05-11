@@ -411,7 +411,7 @@ static int worker_aux(worker_t *w)
 
 static void *mt_worker(void *data)
 {
-	while (worker_aux(data) == 0);
+	while (worker_aux((worker_t*)data) == 0);
 	return 0;
 }
 
@@ -421,15 +421,15 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 	mtaux_t *mt;
 	pthread_attr_t attr;
 	if (!fp->is_write || fp->mt || n_threads <= 1) return -1;
-	mt = calloc(1, sizeof(mtaux_t));
+	mt = (mtaux_t*)calloc(1, sizeof(mtaux_t));
 	mt->n_threads = n_threads;
 	mt->n_blks = n_threads * n_sub_blks;
-	mt->len = calloc(mt->n_blks, sizeof(int));
-	mt->blk = calloc(mt->n_blks, sizeof(void*));
+	mt->len = (int*)calloc(mt->n_blks, sizeof(int));
+	mt->blk = (void**)calloc(mt->n_blks, sizeof(void*));
 	for (i = 0; i < mt->n_blks; ++i)
 		mt->blk[i] = malloc(BGZF_MAX_BLOCK_SIZE);
-	mt->tid = calloc(mt->n_threads, sizeof(pthread_t)); // tid[0] is not used, as the worker 0 is launched by the master
-	mt->w = calloc(mt->n_threads, sizeof(worker_t));
+	mt->tid = (pthread_t*)calloc(mt->n_threads, sizeof(pthread_t)); // tid[0] is not used, as the worker 0 is launched by the master
+	mt->w = (worker_t*)calloc(mt->n_threads, sizeof(worker_t));
 	for (i = 0; i < mt->n_threads; ++i) {
 		mt->w[i].i = i;
 		mt->w[i].mt = mt;
@@ -492,7 +492,7 @@ static int mt_flush(BGZF *fp)
 	// dump data to disk
 	for (i = 0; i < mt->n_threads; ++i) fp->errcode |= mt->w[i].errcode;
 	for (i = 0; i < mt->curr; ++i)
-		if (fwrite(mt->blk[i], 1, mt->len[i], fp->fp) != mt->len[i])
+		if (fwrite(mt->blk[i], 1, mt->len[i], (FILE*)fp->fp) != mt->len[i])
 			fp->errcode |= BGZF_ERR_IO;
 	mt->curr = 0;
 	return 0;
@@ -509,7 +509,7 @@ static int mt_lazy_flush(BGZF *fp)
 
 static ssize_t mt_write(BGZF *fp, const void *data, ssize_t length)
 {
-	const uint8_t *input = data;
+	const uint8_t *input = (const uint8_t*)data;
 	ssize_t rest = length;
 	while (rest) {
 		int copy_length = BGZF_BLOCK_SIZE - fp->block_offset < rest? BGZF_BLOCK_SIZE - fp->block_offset : rest;
@@ -588,7 +588,7 @@ int bgzf_close(BGZF* fp)
 			return -1;
 		}
 #ifdef BGZF_MT
-		if (fp->mt) mt_destroy(fp->mt);
+		if (fp->mt) mt_destroy((mtaux_t*)fp->mt);
 #endif
 	}
 	ret = fp->is_write? fclose((FILE*)fp->fp) : _bgzf_close(fp->fp);
