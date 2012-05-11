@@ -9,6 +9,9 @@
 #include "kseq.h"
 KSTREAM_INIT2(, gzFile, gzread, 16384)
 
+#include "khash.h"
+KHASH_INIT2(s2i,, kh_cstr_t, int, 1, kh_str_hash_func, kh_str_hash_equal)
+
 int hts_verbose = 3;
 
 htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)

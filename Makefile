@@ -28,8 +28,9 @@ BCFv2.pdf:BCFv2.tex
 
 kstring.o:kstring.h
 knetfile.o:knetfile.h
-vcf.o:vcf.h bgzf.h kstring.h khash.h
-sam.o:sam.h bgzf.h kstring.h khash.h hts.h
+hts.o:hts.h khash.h
+vcf.o:vcf.h bgzf.h kstring.h khash.h hts.h
+sam.o:sam.h bgzf.h kstring.h hts.h
 main.o:vcf.h sam.h
 
 clean:

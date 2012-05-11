@@ -9,7 +9,7 @@
  ******************/
 
 typedef struct {
-	int32_t n_targets, is_be;
+	int32_t n_targets;
 	uint32_t l_text, n_text;
 	uint32_t *target_len;
 	char **target_name;
@@ -32,8 +32,10 @@ typedef struct {
 #define SAM_CDIFF       8
 #define SAM_CBACK       9
 
-#define SAM_CIGAR_STR  "MIDNSHP=XB"
-#define SAM_CIGAR_TYPE 0x3C1A7
+#define SAM_CIGAR_STR   "MIDNSHP=XB"
+#define SAM_CIGAR_SHIFT 4
+#define SAM_CIGAR_MASK  0xf
+#define SAM_CIGAR_TYPE  0x3C1A7
 
 #define sam_cigar_op(c) ((c)&SAM_CIGAR_MASK)
 #define sam_cigar_oplen(c) ((c)>>SAM_CIGAR_SHIFT)
@@ -46,14 +48,14 @@ typedef struct {
  *********************/
 
 typedef struct {
-	int32_t rid;
+	int32_t tid;
 	int32_t pos;
 	uint32_t bin:16, qual:8, l_qname:8;
 	uint32_t flag:16, n_cigar:16;
 	int32_t l_qseq;
 	int32_t mtid;
 	int32_t mpos;
-	int32_t tlen;
+	int32_t isize;
 } sam1_core_t;
 
 typedef struct {
@@ -64,9 +66,11 @@ typedef struct {
 
 #define sam_get_strand(b) (((b)->core.flag&SAM_FREVERSE) != 0)
 #define sam_get_mstrand(b) (((b)->core.flag&SAM_FMREVERSE) != 0)
-#define sam_get_qname(b) ((char*)((b)->data))
-#define sam1_seq(b) ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname)
-#define sam1_qual(b) ((b)->data + ((b)->core.n_cigar<<1) + (b)->core.l_qname + (((b)->core.l_qseq + 1)>>1))
-#define sam1_seqi(s, i) ((s)[(i)>>1] >> ((~(i)&1)<<2) & 0xf)
+#define sam_get_qname(b) ((char*)(b)->data)
+#define sam_get_cigar(b) ((uint32_t*)((b)->data + (b)->core.l_qname))
+#define sam_get_seq(b)   ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname)
+#define sam_get_qual(b)  ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname + (((b)->core.l_qseq + 1)>>1))
+#define sam_get_aux(b)   ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname + (((b)->core.l_qseq + 1)>>1) + (b)->core.l_qseq)
+#define sam_seqi(s, i) ((s)[(i)>>1] >> ((~(i)&1)<<2) & 0xf)
 
 #endif
