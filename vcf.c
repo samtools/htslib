@@ -16,7 +16,6 @@ typedef khash_t(vdict) vdict_t;
 #include "kseq.h"
 KSTREAM_DECLARE(gzFile, gzread)
 
-int vcf_verbose = 3; // 1: error; 2: warning; 3: message; 4: progress; 5: debugging; >=10: pure debugging
 uint32_t vcf_missing_float = 0x7F800001;
 uint8_t vcf_type_shift[] = { 0, 0, 1, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 static vcf_idinfo_t vcf_idinfo_def = { { 15, 15, 15 }, -1 };
@@ -92,7 +91,7 @@ int vcf_hdr_parse_line2(const char *str, uint32_t *info, int *id_beg, int *id_en
 	} else {
 		if (ctype == VCF_HL_FLT) num = 0;
 		if (type == VCF_HT_FLAG) {
-			if (num != 0 && vcf_verbose >= 2)
+			if (num != 0 && hts_verbose >= 2)
 				fprintf(stderr, "[W::%s] ignore Number for a Flag\n", __func__);
 			num = 0, var = VCF_VL_FIXED; // if Flag VCF type, force to change num to 0
 		}
@@ -147,7 +146,7 @@ int vcf_hdr_parse1(vcf_hdr_t *h, const char *str)
 			vdict_t *d = (vdict_t*)h->dict[VCF_DT_CTG];
 			k = kh_put(vdict, d, s, &ret);
 			if (ret == 0) {
-				if (vcf_verbose >= 2)
+				if (hts_verbose >= 2)
 					fprintf(stderr, "[W::%s] Duplicated contig name '%s'. Skipped.\n", __func__, s);
 				free(s);
 			} else {
@@ -189,7 +188,7 @@ int vcf_hdr_parse1(vcf_hdr_t *h, const char *str)
 					kh_val(d, k) = vcf_idinfo_def;
 					kh_val(d, k).id = kh_size(d) - 1;
 				} else {
-					if (vcf_verbose >= 2)
+					if (hts_verbose >= 2)
 						fprintf(stderr, "[W::%s] Duplicated sample name '%s'. Skipped.\n", __func__, s);
 				}
 			}
@@ -255,7 +254,7 @@ vcf_hdr_t *vcf_hdr_read(htsFile *fp)
 		while (ks_getuntil((kstream_t*)fp->fp, KS_SEP_LINE, s, &dret) >= 0) {
 			if (s->l == 0) continue;
 			if (s->s[0] != '#') {
-				if (vcf_verbose >= 2)
+				if (hts_verbose >= 2)
 					fprintf(stderr, "[E::%s] no sample line\n", __func__);
 				free(txt.s);
 				vcf_hdr_destroy(h);
@@ -449,7 +448,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 			vdict_t *d = (vdict_t*)h->dict[VCF_DT_CTG];
 			k = kh_get(vdict, d, p);
 			if (k == kh_end(d)) {
-				if (vcf_verbose >= 2)
+				if (hts_verbose >= 2)
 					fprintf(stderr, "[W::%s] can't find '%s' in the sequence dictionary\n", __func__, p);
 				return 0;
 			} else v->rid = kh_val(d, k).id;
@@ -491,7 +490,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					*(char*)aux1.p = 0;
 					k = kh_get(vdict, d, t);
 					if (k == kh_end(d)) { // not defined
-						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined FILTER '%s'\n", __func__, t);
+						if (hts_verbose >= 2) fprintf(stderr, "[W::%s] undefined FILTER '%s'\n", __func__, t);
 					} else a[i++] = kh_val(d, k).id;
 				}
 				n_flt = i;
@@ -516,7 +515,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 					} else end = r;
 					k = kh_get(vdict, d, key);
 					if (k == kh_end(d) || kh_val(d, k).info[VCF_HL_INFO] == 15) { // not defined in the header
-						if (vcf_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, key);
+						if (hts_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, key);
 					} else { // defined in the header
 						uint32_t y = kh_val(d, k).info[VCF_HL_INFO];
 						++v->n_info;
@@ -565,7 +564,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 				*(char*)aux1.p = 0;
 				k = kh_get(vdict, d, t);
 				if (k == kh_end(d) || kh_val(d, k).info[VCF_HL_FMT] == 15) {
-					if (vcf_verbose >= 2)
+					if (hts_verbose >= 2)
 						fprintf(stderr, "[W::%s] FORMAT '%s' is not defined in the header\n", __func__, t);
 					v->n_fmt = 0;
 					break;
