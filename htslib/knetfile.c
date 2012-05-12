@@ -532,40 +532,32 @@ off_t knet_seek(knetFile *fp, int64_t off, int whence)
 {
 	if (whence == SEEK_SET && off == fp->offset) return 0;
 	if (fp->type == KNF_TYPE_LOCAL) {
-		/* Be aware that lseek() returns the offset after seeking,
-		 * while fseek() returns zero on success. */
+		/* Be aware that lseek() returns the offset after seeking, while fseek() returns zero on success. */
 		off_t offset = lseek(fp->fd, off, whence);
-		if (offset == -1) {
-            // Be silent, it is OK for knet_seek to fail when the file is streamed
-            // fprintf(stderr,"[knet_seek] %s\n", strerror(errno));
-			return -1;
-		}
+		if (offset == -1) return -1;
 		fp->offset = offset;
-		return off;
+		return fp->offset;
 	} else if (fp->type == KNF_TYPE_FTP) {
-        if (whence==SEEK_CUR)
-            fp->offset += off;
-        else if (whence==SEEK_SET)
-            fp->offset = off;
-        else if ( whence==SEEK_END)
-            fp->offset = fp->file_size+off;
+		if (whence == SEEK_CUR) fp->offset += off;
+		else if (whence == SEEK_SET) fp->offset = off;
+		else if (whence == SEEK_END) fp->offset = fp->file_size + off;
+		else return -1;
 		fp->is_ready = 0;
-		return off;
+		return fp->offset;
 	} else if (fp->type == KNF_TYPE_HTTP) {
 		if (whence == SEEK_END) { // FIXME: can we allow SEEK_END in future?
 			fprintf(stderr, "[knet_seek] SEEK_END is not supported for HTTP. Offset is unchanged.\n");
 			errno = ESPIPE;
 			return -1;
 		}
-        if (whence==SEEK_CUR)
-            fp->offset += off;
-        else if (whence==SEEK_SET)
-            fp->offset = off;
+		if (whence == SEEK_CUR) fp->offset += off;
+		else if (whence == SEEK_SET) fp->offset = off;
+		else return -1;
 		fp->is_ready = 0;
-		return off;
+		return fp->offset;
 	}
 	errno = EINVAL;
-    fprintf(stderr,"[knet_seek] %s\n", strerror(errno));
+	fprintf(stderr,"[knet_seek] %s\n", strerror(errno));
 	return -1;
 }
 
