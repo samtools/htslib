@@ -107,6 +107,27 @@ static inline int kputc(int c, kstring_t *s)
 	return c;
 }
 
+static inline void kputc_(int c, kstring_t *s)
+{
+	if (s->l + 1 > s->m) {
+		s->m = s->l + 1;
+		kroundup32(s->m);
+		s->s = (char*)realloc(s->s, s->m);
+	}
+	s->s[s->l++] = c;
+}
+
+static inline void kputsn_(const char *p, int l, kstring_t *s)
+{
+	if (s->l + l > s->m) {
+		s->m = s->l + l;
+		kroundup32(s->m);
+		s->s = (char*)realloc(s->s, s->m);
+	}
+	memcpy(s->s + s->l, p, l);
+	s->l += l;
+}
+
 static inline int kputw(int c, kstring_t *s)
 {
 	char buf[16];

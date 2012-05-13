@@ -11,7 +11,7 @@
 KSTREAM_DECLARE(gzFile, gzread)
 
 #include "khash.h"
-KHASH_DECLARE(s2i, kh_cstr_t, int)
+KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 
 typedef khash_t(s2i) sdict_t;
 
@@ -35,15 +35,72 @@ void sam_hdr_destroy(sam_hdr_t *h)
 		free(h->target_len);
 	}
 	free(h->text);
-	if (h->dict) kh_destroy(s2i, (sdict_t*)h->dict);
+	if (h->sdict) kh_destroy(s2i, (sdict_t*)h->sdict);
 	free(h);
+}
+
+static sam_hdr_t *hdr_from_dict(khash_t(s2i) *d)
+{
+	sam_hdr_t *h;
+	khint_t k;
+	h = sam_hdr_init();
+	h->sdict = d;
+	h->has_SQ = (kh_size(d) > 0);
+	h->n_targets = kh_size(d);
+	h->target_len = (uint32_t*)malloc(4 * h->n_targets);
+	h->target_name = (char**)malloc(sizeof(void*) * h->n_targets);
+	for (k = kh_begin(d); k != kh_end(d); ++k) {
+		if (!kh_exist(d, k)) continue;
+		h->target_name[kh_val(d, k)>>32] = (char*)kh_key(d, k);
+		h->target_len[kh_val(d, k)>>32]  = kh_val(d, k)<<32>>32;
+		kh_val(d, k) >>= 32;
+	}
+	return h;
+}
+
+sam_hdr_t *sam_hdr_parse(int l_text, const char *text)
+{
+	const char *q, *r, *p;
+	khash_t(s2i) *d;
+	d = kh_init(s2i);
+	for (p = text; *p; ++p) {
+		if (strncmp(p, "@SQ", 3) == 0) {
+			char *sn = 0;
+			int ln = -1;
+			for (q = p + 4;; ++q) {
+				if (strncmp(q, "SN:", 3) == 0) {
+					q += 3;
+					for (r = q; *r != '\t' && *r != '\n'; ++r);
+					sn = (char*)calloc(r - q + 1, 1);
+					strncpy(sn, q, r - q);
+					q = r;
+				} else if (strncmp(q, "LN:", 3) == 0)
+					ln = strtol(q + 3, (char**)&q, 10);
+				while (*q != '\t' && *q != '\n') ++q;
+				if (*q == '\n') break;
+			}
+			p = q;
+			if (sn && ln >= 0) {
+				khint_t k;
+				int absent;
+				k = kh_put(s2i, d, sn, &absent);
+				if (!absent) {
+					if (hts_verbose >= 2)
+						fprintf(stderr, "[W::%s] duplicated sequence '%s'\n", __func__, sn);
+					free(sn);
+				} else kh_val(d, k) = (int64_t)(kh_size(d) - 1)<<32 | ln;
+			}
+		}
+		while (*p != '\n') ++p;
+	}
+	return hdr_from_dict(d);
 }
 
 sam_hdr_t *sam_hdr_read(htsFile *fp)
 {
 	sam_hdr_t *h;
 	if (fp->is_bin) {
-		char buf[4];
+		char *p, buf[4];
 		int magic_len, has_EOF;
 		int32_t i = 1, name_len;
 		// check EOF
@@ -62,7 +119,8 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
 		// read plain text and the number of reference sequences
 		bgzf_read((BGZF*)fp->fp, &h->l_text, 4);
 		if (fp->is_be) ed_swap_4p(&h->l_text);
-		h->text = (char*)calloc(h->l_text + 1, 1);
+		h->text = (char*)malloc(h->l_text + 1);
+		h->text[h->l_text] = 0; // make sure it is NULL terminated
 		bgzf_read((BGZF*)fp->fp, h->text, h->l_text);
 		bgzf_read((BGZF*)fp->fp, &h->n_targets, 4);
 		if (fp->is_be) ed_swap_4p(&h->n_targets);
@@ -77,9 +135,20 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
 			bgzf_read((BGZF*)fp->fp, &h->target_len[i], 4);
 			if (fp->is_be) ed_swap_4p(&h->target_len[i]);
 		}
-		return h;
+		if ((p = strstr(h->text, "@SQ\t")) && (p == h->text || *(p - 1) == '\n')) h->has_SQ = 1;
+	} else {
+		int dret;
+		kstring_t str;
+		str.l = str.m = 0; str.s = 0;
+		while (ks_getuntil((kstream_t*)fp->fp, KS_SEP_LINE, &fp->line, &dret) >= 0) {
+			if (fp->line.s[0] != '@') break;
+			kputsn(fp->line.s, fp->line.l, &str);
+			kputc('\n', &str);
+		}
+		h = sam_hdr_parse(str.l, str.s);
+		h->l_text = str.l; h->text = str.s;
 	}
-	return 0;
+	return h;
 }
 
 int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
@@ -117,8 +186,28 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
 			} else bgzf_write((BGZF*)fp->fp, &h->target_len[i], 4);
 		}
 		bgzf_flush((BGZF*)fp->fp);
+	} else {
+		fputs(h->text, (FILE*)fp->fp);
+		if (!h->has_SQ) {
+			int i;
+			for (i = 0; i < h->n_targets; ++i) {
+				fp->line.l = 0;
+				kputsn("@SQ\tSN:", 7, &fp->line); kputs(h->target_name[i], &fp->line);
+				kputsn("\tLN:", 4, &fp->line); kputw(h->target_len[i], &fp->line); kputc('\n', &fp->line);
+				fwrite(fp->line.s, 1, fp->line.l, (FILE*)fp->fp);
+			}
+		}
+		fflush((FILE*)fp->fp);
 	}
 	return 0;
+}
+
+int sam_get_tid(sam_hdr_t *h, const char *ref)
+{
+	sdict_t *d = (sdict_t*)h->sdict;
+	khint_t k;
+	k = kh_get(s2i, d, ref);
+	return k == kh_end(d)? -1 : kh_val(d, k);
 }
 
 /******************
@@ -134,6 +223,183 @@ void sam_destroy1(sam1_t *b)
 {
 	if (b == 0) return;
 	free(b->data); free(b);
+}
+
+int32_t sam_cigar2qlen(int n_cigar, const uint32_t *cigar)
+{
+	int k, l;
+	for (k = l = 0; k < n_cigar; ++k)
+		if (sam_cigar_type(sam_cigar_op(cigar[k]))&1)
+			l += sam_cigar_oplen(cigar[k]);
+	return l;
+}
+
+int sam_parse1(kstring_t *s, const sam_hdr_t *h, sam1_t *b)
+{
+#define _read_token(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); if (*(_p) != '\t') goto err_ret; *(_p)++ = 0
+#define _get_mem(type_t, _x, _s, _l) ks_resize((_s), (_s)->l + (_l)); *(_x) = (type_t)((_s)->s + (_s)->l); (_s)->l += (_l)
+#define _parse_err(msg) do { if (hts_verbose >= 1) fprintf(stderr, msg); goto err_ret; } while (0)
+
+	uint8_t *t;
+	char *p = s->s, *q;
+	int i;
+	long x;
+	kstring_t str;
+	sam1_core_t *c = &b->core;
+
+	b->l_data = 0;
+	str.s = (char*)b->data; str.l = 0; str.m = b->m_data;
+	// qname
+	q = _read_token(p);
+	kputsn_(q, p - q, &str);
+	// flag
+	c->flag = strtol(p, &p, 0);
+	if (*p++ != '\t') goto err_ret; // malformated flag
+	// chr
+	q = _read_token(p);
+	if (strcmp(q, "*")) {
+		if (h->n_targets == 0) _parse_err("[E::%s] missing SAM header\n", __func__);
+		c->tid = sam_get_tid(h, q);
+		if (c->tid < 0 && hts_verbose >= 2) 
+			fprintf(stderr, "[W::%s] urecognized reference '%s'; treated as '*'\n", __func__, p);
+	} else c->tid = -1;
+	// pos
+	b->pos = strtol(p, &p, 10) - 1;
+	if (*p++ != '\t') goto err_ret;
+	if (b->pos < 0 && c->tid >= 0) {
+		if (hts_verbose >= 2)
+			fprintf(stderr, "[W::%s] mapped query cannot have zero coordinate; treated as unmapped\n", __func__, p);
+		c->tid = -1;
+	}
+	if (c->tid < 0) c->flag |= SAM_FUNMAP;
+	// mapq
+	c->qual = strtol(p, &p, 10);
+	if (*p++ != '\t') goto err_ret;
+	// cigar
+	if (*p != '*') {
+		uint32_t *cigar;
+		for (q = p, c->n_cigar = 0; *q && *q != '\t'; ++q)
+			if (!isdigit(*q)) ++c->n_cigar;
+		_get_mem(uint32_t, &cigar, &str, c->n_cigar<<2);
+		for (i = 0, q = p; i < c->n_cigar; ++i, ++q) {
+			int op;
+			cigar[i] = strtol(q, &q, 10)<<SAM_CIGAR_SHIFT;
+			if ((uint8_t)*q >= 128 || (op = h->cigar_tab[*q]) < 0)
+				_parse_err("[E::%s] urecognized CIGAR operation '%c'; treated as '*'\n", __func__, *q);
+			cigar[i] |= op;
+		}
+		p = q;
+	} else {
+		if ((c->flag & SAM_FUNMAP) && hts_verbose >= 2)
+			fprintf(stderr, "[W::%s] mapped query must have a CIGAR; treated as unmapped\n", __func__);
+		c->flag |= SAM_FUNMAP;
+		q = _read_token(p);
+	}
+	// mate chr
+	q = _read_token(p);
+	if (strcmp(q, "=") == 0) c->mtid = c->tid;
+	else if (strcmp(q, "*") == 0) c->mtid = -1;
+	else c->mtid = sam_get_tid(h, q);
+	// mpos
+	c->mpos = strtol(p, &p, 10) - 1;
+	if (*p++ != '\t') goto err_ret;
+	if (c->mpos < 0 && c->mtid >= 0) {
+		if (hts_verbose >= 2)
+			fprintf(stderr, "[W::%s] mapped query cannot have zero coordinate; treated as unmapped\n", __func__, p);
+		c->mtid = -1;
+	}
+	// tlen
+	c->mpos = strtol(p, &p, 10);
+	if (*p++ != '\t') goto err_ret;
+	// seq
+	q = _read_token(p);
+	if (strcmp(q, "*")) {
+		c->l_qseq = p - q - 1;
+		if (c->l_qseq != sam_cigar2qlen(c->n_cigar, sam_get_cigar(str.s)))
+			_parse_err("[E::%s] CIGAR and query sequence are of different length\n", __func__, p);
+		i = (c->l_qseq + 1) >> 1;
+		_get_mem(uint8_t, &t, &str, i);
+		memset(t, 0, i);
+		for (i = 0; i < c->l_qseq; ++i)
+			t[i>>1] |= (uint8_t)p[i] > 127? 15 : hts_nt16_table[(int)p[i]];
+	} else c->l_qseq = 0;
+	// qual
+	q = _read_token(p);
+	_get_mem(uint8_t, &t, &str, c->l_qseq);
+	if (strcmp(q, "*")) {
+		if (p - q - 1 != c->l_qseq) _parse_err("[E::%s] SEQ and QUAL are of different length\n", __func__);
+		for (i = 0; i < c->l_qseq; ++i) t[i] = q[i] - 33;
+	} else memset(t, 0xff, c->l_qseq);
+	// aux
+	while (*(p - 1)) {
+		uint8_t type;
+		q = _read_token(p); // FIXME: can be accelerated for long 'B' arrays
+		if (p - q - 1 < 6) _parse_err("[E::%s] incomplete aux field\n", __func__);
+		kputsn_(q, 2, &str);
+		q += 3; type = *q++; ++q; // q points to value
+		if (type == 'A' || type == 'a' || type == 'c' || type == 'C') {
+			kputc_('A', &str);
+			kputc_(*q, &str);
+			++q;
+		} else if (type == 'i' || type == 'I') {
+			long x;
+			x = strtol(q, &q, 10);
+			if (x < 0) {
+				if (x >= INT8_MIN) {
+					kputc_('c', &str); kputc_(x, &str);
+				} else if (x >= INT16_MIN) {
+					int16_t y = x;
+					kputc_('s', &str); kputsn_(&y, 2, &str);
+				} else {
+					int32_t y = x;
+					kputc_('i', &str); kputsn_(&y, 4, &str);
+				}
+			} else {
+				if (x <= UINT8_MAX) {
+					kputc_('C', &str); kputc_(x, &str);
+				} else if (x <= UINT16_MAX) {
+					uint16_t y = x;
+					kputc_('S', &str); kputsn_(&y, 2, &str);
+				} else {
+					uint32_t y = x;
+					kputc_('I', &str); kputsn_(&y, 4, &str);
+				}
+			}
+		} else if (type == 'f') {
+			float x;
+			x = strtod(q, &q);
+			kputc_('f', &str); kputsn_(&x, 4, &str);
+		} else if (type == 'Z' || type == 'H') {
+			kputc_('Z', &str);
+			kputsn_(p - q, &str); // note that this include the trailing NULL
+		} else if (type == 'B') {
+			int32_t n;
+			char *r;
+			if (p - q - 1 < 3) _parse_err("[E::%s] incomplete B-typed aux field\n", __func__);
+			type = *q++; // q points to the first ',' following the typing byte
+			for (r = q, n = 0; *r; ++r)
+				if (*r == ',') ++n;
+			kputc_('B', &str); kputc_(type, &str); kputsn_(&n, 4, &str);
+			// FIXME: to evaluate which is faster: a) aligned array and then memmove(); b) unaligned array; c) kputsn_()
+			if (type == 'c')      while (q < p) { int8_t   x = strtol(q + 1, &q, 0); kputc_(x, &str); }
+			else if (type == 'C') while (q < p) { uint8_t  x = strtol(q + 1, &q, 0); kputc_(x, &str); }
+			else if (type == 's') while (q < p) { int16_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 2, &str); }
+			else if (type == 'S') while (q < p) { uint16_t x = strtol(q + 1, &q, 0); kputsn_(&x, 2, &str); }
+			else if (type == 'i') while (q < p) { int32_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 4, &str); }
+			else if (type == 'I') while (q < p) { uint32_t x = strtol(q + 1, &q, 0); kputsn_(&x, 4, &str); }
+			else if (type == 'f') while (q < p) { float    x = strtod(q + 1, &q);    kputsn_(&x, 4, &str); }
+			else _parse_err("[E::%s] unrecognized type '%c'", __func__, *q);
+		} else _parse_err("[E::%s] unrecognized type '%c'", __func__, *q);
+	}
+	b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
+	return 0;
+
+#undef _parse_err
+#undef _get_mem
+#undef _read_token
+err_ret:
+	b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
+	return -1;
 }
 
 static inline int sam_aux_type2size(int x)

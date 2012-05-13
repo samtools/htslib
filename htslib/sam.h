@@ -9,12 +9,13 @@
  ******************/
 
 typedef struct {
-	int32_t n_targets;
-	uint32_t l_text, n_text;
+	int32_t n_targets, has_SQ;
+	uint32_t l_text;
 	uint32_t *target_len;
+	uint32_t *cigar_tab;
 	char **target_name;
 	char *text;
-	void *dict;
+	void *sdict;
 } sam_hdr_t;
 
 /************************
@@ -42,6 +43,18 @@ typedef struct {
 #define sam_cigar_opchr(c) (SAM_CIGAR_STR[sam_cigar_op(c)])
 #define sam_cigar_gen(l, o) ((l)<<SAM_CIGAR_SHIFT|(o))
 #define sam_cigar_type(o) (SAM_CIGAR_TYPE>>((o)<<1)&3) // bit 1: consume query; bit 2: consume reference
+
+#define SAM_FPAIRED        1
+#define SAM_FPROPER_PAIR   2
+#define SAM_FUNMAP         4
+#define SAM_FMUNMAP        8
+#define SAM_FREVERSE      16
+#define SAM_FMREVERSE     32
+#define SAM_FREAD1        64
+#define SAM_FREAD2       128
+#define SAM_FSECONDARY   256
+#define SAM_FQCFAIL      512
+#define SAM_FDUP        1024
 
 /*********************
  * Alignment records *

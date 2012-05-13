@@ -10,9 +10,20 @@
 KSTREAM_INIT2(, gzFile, gzread, 16384)
 
 #include "khash.h"
-KHASH_INIT2(s2i,, kh_cstr_t, int, 1, kh_str_hash_func, kh_str_hash_equal)
+KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
 int hts_verbose = 3;
+
+unsigned char seq_nt16_table[128] = {
+	15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
+	15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
+	15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
+	 1, 2, 4, 8, 15,15,15,15, 15,15,15,15, 15, 0 /*=*/,15,15,
+	15, 1,14, 2, 13,15,15, 4, 11,15,15,12, 15, 3,15,15,
+	15,15, 5, 6,  8,15, 7, 9, 15,10,15,15, 15,15,15,15,
+	15, 1,14, 2, 13,15,15, 4, 11,15,15,12, 15, 3,15,15,
+	15,15, 5, 6,  8,15, 7, 9, 15,10,15,15, 15,15,15,15
+};
 
 htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 {
