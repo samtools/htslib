@@ -27,7 +27,7 @@ typedef struct {
 } htsFile;
 
 extern int hts_verbose;
-extern unsigned char seq_nt16_table[128];
+extern unsigned char seq_nt16_table[256];
 
 #ifdef __cplusplus
 extern "C" {

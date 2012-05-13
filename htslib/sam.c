@@ -238,7 +238,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 {
 #define _read_token(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); if (*(_p) != '\t') goto err_ret; *(_p)++ = 0
 #define _get_mem(type_t, _x, _s, _l) ks_resize((_s), (_s)->l + (_l)); *(_x) = (type_t*)((_s)->s + (_s)->l); (_s)->l += (_l)
-#define _parse_err(cond, msg) do { if (hts_verbose >= 1 && (cond)) fprintf(stderr, "[E::%s]" msg "\n", __func__); goto err_ret; } while (0)
+#define _parse_err(cond, msg) do { if (hts_verbose >= 1 && (cond)) { fprintf(stderr, "[E::%s]" msg "\n", __func__); goto err_ret; } } while (0)
 #define _parse_warn(cond, msg) if (hts_verbose >= 2 && (cond)) fprintf(stderr, "[W::%s]" msg "\n", __func__)
 
 	uint8_t *t;
@@ -257,6 +257,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 	// qname
 	q = _read_token(p);
 	kputsn_(q, p - q, &str);
+	c->l_qname = p - q;
 	// flag
 	c->flag = strtol(p, &p, 0);
 	if (*p++ != '\t') goto err_ret; // malformated flag
@@ -291,7 +292,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 			_parse_err(op < 0, "urecognized CIGAR operator");
 			cigar[i] |= op;
 		}
-		p = q;
+		p = q + 1;
 	} else {
 		_parse_warn((c->flag & SAM_FUNMAP), "mapped query must have a CIGAR; treated as unmapped");
 		c->flag |= SAM_FUNMAP;
@@ -310,19 +311,19 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 		c->mtid = -1;
 	}
 	// tlen
-	c->mpos = strtol(p, &p, 10);
+	c->isize = strtol(p, &p, 10);
 	if (*p++ != '\t') goto err_ret;
 	// seq
 	q = _read_token(p);
 	if (strcmp(q, "*")) {
 		c->l_qseq = p - q - 1;
-		i = sam_cigar2qlen(c->n_cigar, (uint32_t*)(str.s + c->l_qseq));
+		i = sam_cigar2qlen(c->n_cigar, (uint32_t*)(str.s + c->l_qname));
 		_parse_err(i != c->l_qseq, "CIGAR and query sequence are of different length");
 		i = (c->l_qseq + 1) >> 1;
 		_get_mem(uint8_t, &t, &str, i);
 		memset(t, 0, i);
 		for (i = 0; i < c->l_qseq; ++i)
-			t[i>>1] |= (uint8_t)p[i] > 127? 15 : seq_nt16_table[(int)p[i]];
+			t[i>>1] |= seq_nt16_table[(int)q[i]] << ((~i&1)<<2);
 	} else c->l_qseq = 0;
 	// qual
 	q = _read_token(p);
@@ -370,8 +371,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 			x = strtod(q, &q);
 			kputc_('f', &str); kputsn_(&x, 4, &str);
 		} else if (type == 'Z' || type == 'H') {
-			kputc_('Z', &str);
-			kputsn_(q, p - q, &str); // note that this include the trailing NULL
+			kputc_('Z', &str);kputsn_(q, p - q, &str); // note that this include the trailing NULL
 		} else if (type == 'B') {
 			int32_t n;
 			char *r;
