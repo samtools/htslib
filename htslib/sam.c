@@ -245,8 +245,9 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 	kstring_t str;
 	sam1_core_t *c = &b->core;
 
-	b->l_data = 0;
-	str.s = (char*)b->data; str.l = 0; str.m = b->m_data;
+	str.l = b->l_data = 0;
+	str.s = (char*)b->data; str.m = b->m_data;
+	memset(c, 0, 32);
 	if (h->cigar_tab == 0) {
 		h->cigar_tab = (uint8_t*)calloc(128, 1);
 		for (i = 0; SAM_CIGAR_STR[i]; ++i)

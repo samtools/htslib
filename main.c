@@ -95,7 +95,7 @@ int main_sam(int argc, char *argv[])
 		switch (c) {
 		case 'S': flag |= 1; break;
 		case 'b': flag |= 2; break;
-		case 'l': clevel = atoi(optarg); break;
+		case 'l': clevel = atoi(optarg); flag |= 2; break;
 		case 't': fn_ref = optarg; break;
 		}
 	}
@@ -137,7 +137,7 @@ int main(int argc, char *argv[])
 	if (strcmp(argv[1], "vcf") == 0) return main_vcf(argc-1, argv+1);
 	else if (strcmp(argv[1], "sam") == 0) return main_sam(argc-1, argv+1);
 	else {
-		fprintf(stderr, "[E::%s] unrecognized command '%s'", __func__, argv[1]);
+		fprintf(stderr, "[E::%s] unrecognized command '%s'\n", __func__, argv[1]);
 		return 1;
 	}
 }
