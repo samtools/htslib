@@ -73,7 +73,7 @@ typedef struct {
 
 typedef struct {
 	sam1_core_t core;
-	int l_aux, l_data, m_data;
+	int l_data, m_data;
 	uint8_t *data;
 } sam1_t;
 

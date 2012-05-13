@@ -95,16 +95,15 @@ typedef struct {
 extern "C" {
 #endif
 
-	htsFile *vcf_open(const char *fn, const char *mode, const char *fn_ref);
-	void vcf_close(htsFile *fp);
 	vcf_hdr_t *vcf_hdr_read(htsFile *fp);
 	void vcf_hdr_write(htsFile *fp, const vcf_hdr_t *h);
 	void vcf_hdr_destroy(vcf_hdr_t *h);
 
 	vcf1_t *vcf_init1(void);
 	void vcf_destroy1(vcf1_t *v);
-	int vcf_read1(htsFile *fp, const vcf_hdr_t *h, vcf1_t *v);
+	int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v);
 	int vcf_format1(const vcf_hdr_t *h, const vcf1_t *v, kstring_t *s);
+	int vcf_read1(htsFile *fp, const vcf_hdr_t *h, vcf1_t *v);
 	int vcf_write1(htsFile *fp, const vcf_hdr_t *h, const vcf1_t *v);
 
 	int vcf_id2int(const vcf_hdr_t *h, int which, const char *id);

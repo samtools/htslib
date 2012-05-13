@@ -379,13 +379,13 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 				if (*r == ',') ++n;
 			kputc_('B', &str); kputc_(type, &str); kputsn_(&n, 4, &str);
 			// FIXME: to evaluate which is faster: a) aligned array and then memmove(); b) unaligned array; c) kputsn_()
-			if (type == 'c')      while (q < p) { int8_t   x = strtol(q + 1, &q, 0); kputc_(x, &str); }
-			else if (type == 'C') while (q < p) { uint8_t  x = strtol(q + 1, &q, 0); kputc_(x, &str); }
-			else if (type == 's') while (q < p) { int16_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 2, &str); }
-			else if (type == 'S') while (q < p) { uint16_t x = strtol(q + 1, &q, 0); kputsn_(&x, 2, &str); }
-			else if (type == 'i') while (q < p) { int32_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 4, &str); }
-			else if (type == 'I') while (q < p) { uint32_t x = strtol(q + 1, &q, 0); kputsn_(&x, 4, &str); }
-			else if (type == 'f') while (q < p) { float    x = strtod(q + 1, &q);    kputsn_(&x, 4, &str); }
+			if (type == 'c')      while (q + 1 < p) { int8_t   x = strtol(q + 1, &q, 0); kputc_(x, &str); }
+			else if (type == 'C') while (q + 1 < p) { uint8_t  x = strtol(q + 1, &q, 0); kputc_(x, &str); }
+			else if (type == 's') while (q + 1 < p) { int16_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 2, &str); }
+			else if (type == 'S') while (q + 1 < p) { uint16_t x = strtol(q + 1, &q, 0); kputsn_(&x, 2, &str); }
+			else if (type == 'i') while (q + 1 < p) { int32_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 4, &str); }
+			else if (type == 'I') while (q + 1 < p) { uint32_t x = strtol(q + 1, &q, 0); kputsn_(&x, 4, &str); }
+			else if (type == 'f') while (q + 1 < p) { float    x = strtod(q + 1, &q);    kputsn_(&x, 4, &str); }
 			else _parse_err(1, "unrecognized type");
 		} else _parse_err(1, "unrecognized type");
 	}
@@ -469,7 +469,7 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, sam1_t *b)
 			b->data = (uint8_t*)realloc(b->data, b->m_data);
 		}
 		if (bgzf_read((BGZF*)fp->fp, b->data, b->l_data) != b->l_data) return -4;
-		b->l_aux = b->l_data - c->n_cigar * 4 - c->l_qname - c->l_qseq - (c->l_qseq+1)/2;
+		//b->l_aux = b->l_data - c->n_cigar * 4 - c->l_qname - c->l_qseq - (c->l_qseq+1)/2;
 		if (fp->is_be) swap_data(c, b->l_data, b->data);
 		return 4 + block_len;
 	} else {
@@ -529,7 +529,7 @@ int sam_format1(const sam_hdr_t *h, const sam1_t *b, kstring_t *str)
 	while (s < b->data + b->l_data) {
 		uint8_t type, key[2];
 		key[0] = s[0]; key[1] = s[1];
-		s += 2; type = *s; ++s;
+		s += 2; type = *s++;
 		kputc('\t', str); kputsn((char*)key, 2, str); kputc(':', str);
 		if (type == 'A') { kputsn("A:", 2, str); kputc(*s, str); ++s; }
 		else if (type == 'C') { kputsn("i:", 2, str); kputw(*s, str); ++s; }
@@ -546,7 +546,7 @@ int sam_format1(const sam_hdr_t *h, const sam1_t *b, kstring_t *str)
 			int32_t n;
 			memcpy(&n, s, 4);
 			s += 4; // no point to the start of the array
-			kputc(type, str); kputc(':', str); kputc(sub_type, str); // write the typing
+			kputsn("B:", 2, str); kputc(sub_type, str); // write the typing
 			for (i = 0; i < n; ++i) {
 				kputc(',', str);
 				if ('c' == sub_type || 'c' == sub_type) { kputw(*(int8_t*)s, str); ++s; }
