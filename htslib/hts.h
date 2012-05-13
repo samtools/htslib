@@ -21,6 +21,7 @@ typedef struct __kstring_t {
 
 typedef struct {
 	uint32_t is_bin:1, is_write:1, is_be:1, dummy:29;
+	int64_t lineno;
 	kstring_t line;
 	char *fn_aux;
 	void *fp; // file pointer; actual type depending on is_bin and is_write
@@ -35,6 +36,7 @@ extern "C" {
 
 	htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux);
 	void hts_close(htsFile *fp);
+	int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
 
 #ifdef __cplusplus
 }

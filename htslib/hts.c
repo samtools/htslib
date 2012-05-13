@@ -75,3 +75,10 @@ void hts_close(htsFile *fp)
 	free(fp);
 }
 
+int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
+{
+	int ret, dret;
+	ret = ks_getuntil((kstream_t*)fp->fp, delimiter, str, &dret);
+	++fp->lineno;
+	return ret;
+}

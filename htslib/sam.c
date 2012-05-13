@@ -6,9 +6,7 @@
 #include "bgzf.h"
 #include "kstring.h"
 #include "sam.h"
-
 #include "kseq.h"
-KSTREAM_DECLARE(gzFile, gzread)
 
 #include "khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
@@ -137,10 +135,9 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
 		}
 		if ((p = strstr(h->text, "@SQ\t")) && (p == h->text || *(p - 1) == '\n')) h->has_SQ = 1;
 	} else {
-		int dret;
 		kstring_t str;
 		str.l = str.m = 0; str.s = 0;
-		while (ks_getuntil((kstream_t*)fp->fp, KS_SEP_LINE, &fp->line, &dret) >= 0) {
+		while (hts_getline(fp, KS_SEP_LINE, &fp->line) >= 0) {
 			if (fp->line.s[0] != '@') break;
 			kputsn(fp->line.s, fp->line.l, &str);
 			kputc('\n', &str);
@@ -476,13 +473,14 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, sam1_t *b)
 		if (fp->is_be) swap_data(c, b->l_data, b->data);
 		return 4 + block_len;
 	} else {
-		int ret, dret;
+		int ret;
 		if (fp->line.l == 0) {
-			ret = ks_getuntil((kstream_t*)fp->fp, KS_SEP_LINE, &fp->line, &dret);
-			if (ret == -1) return -1;
-			if (ret < 0) return -2;
+			ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
+			if (ret < 0) return -1;
 		}
 		ret = sam_parse1(&fp->line, h, b);
+		if (ret < 0 && hts_verbose >= 1)
+			fprintf(stderr, "[W::%s] parse error at line %lld\n", __func__, (long long)fp->lineno);
 		fp->line.l = 0;
 		return ret;
 	}
