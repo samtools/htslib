@@ -236,8 +236,8 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 #define _read_token(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); if (*(_p) != '\t') goto err_ret; *(_p)++ = 0
 #define _read_token_aux(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); *(_p)++ = 0 // this is different in that it does not test *(_p)=='\t'
 #define _get_mem(type_t, _x, _s, _l) ks_resize((_s), (_s)->l + (_l)); *(_x) = (type_t*)((_s)->s + (_s)->l); (_s)->l += (_l)
-#define _parse_err(cond, msg) do { if ((cond) && hts_verbose >= 1) { fprintf(stderr, "[E::%s]" msg "\n", __func__); goto err_ret; } } while (0)
-#define _parse_warn(cond, msg) if ((cond) && hts_verbose >= 2) fprintf(stderr, "[W::%s]" msg "\n", __func__)
+#define _parse_err(cond, msg) do { if ((cond) && hts_verbose >= 1) { fprintf(stderr, "[E::%s] " msg "\n", __func__); goto err_ret; } } while (0)
+#define _parse_warn(cond, msg) if ((cond) && hts_verbose >= 2) fprintf(stderr, "[W::%s] " msg "\n", __func__)
 
 	uint8_t *t;
 	char *p = s->s, *q;
@@ -292,7 +292,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 		}
 		p = q + 1;
 	} else {
-		_parse_warn((c->flag & SAM_FUNMAP), "mapped query must have a CIGAR; treated as unmapped");
+		_parse_warn(!(c->flag&SAM_FUNMAP), "mapped query must have a CIGAR; treated as unmapped");
 		c->flag |= SAM_FUNMAP;
 		q = _read_token(p);
 	}
@@ -316,7 +316,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 	if (strcmp(q, "*")) {
 		c->l_qseq = p - q - 1;
 		i = sam_cigar2qlen(c->n_cigar, (uint32_t*)(str.s + c->l_qname));
-		_parse_err(i != c->l_qseq, "CIGAR and query sequence are of different length");
+		_parse_err(c->n_cigar && i != c->l_qseq, "CIGAR and query sequence are of different length");
 		i = (c->l_qseq + 1) >> 1;
 		_get_mem(uint8_t, &t, &str, i);
 		memset(t, 0, i);
