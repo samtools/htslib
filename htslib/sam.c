@@ -222,11 +222,20 @@ void sam_destroy1(sam1_t *b)
 	free(b->data); free(b);
 }
 
-int32_t sam_cigar2qlen(int n_cigar, const uint32_t *cigar)
+int sam_cigar2qlen(int n_cigar, const uint32_t *cigar)
 {
 	int k, l;
 	for (k = l = 0; k < n_cigar; ++k)
 		if (sam_cigar_type(sam_cigar_op(cigar[k]))&1)
+			l += sam_cigar_oplen(cigar[k]);
+	return l;
+}
+
+int sam_cigar2rlen(int n_cigar, const uint32_t *cigar)
+{
+	int k, l;
+	for (k = l = 0; k < n_cigar; ++k)
+		if (sam_cigar_type(sam_cigar_op(cigar[k]))&2)
 			l += sam_cigar_oplen(cigar[k]);
 	return l;
 }
@@ -292,11 +301,14 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 			cigar[i] |= op;
 		}
 		p = q + 1;
+		i = sam_cigar2rlen(c->n_cigar, cigar);
 	} else {
 		_parse_warn(!(c->flag&SAM_FUNMAP), "mapped query must have a CIGAR; treated as unmapped");
 		c->flag |= SAM_FUNMAP;
 		q = _read_token(p);
+		i = 1;
 	}
+	c->bin = hts_reg2bin(c->pos, c->pos + i);
 	// mate chr
 	q = _read_token(p);
 	if (strcmp(q, "=") == 0) c->mtid = c->tid;

@@ -42,4 +42,15 @@ extern "C" {
 }
 #endif
 
+static inline int hts_reg2bin(uint32_t beg, uint32_t end)
+{
+	--end;
+	if (beg>>14 == end>>14) return 4681 + (beg>>14);
+	if (beg>>17 == end>>17) return  585 + (beg>>17);
+	if (beg>>20 == end>>20) return   73 + (beg>>20);
+	if (beg>>23 == end>>23) return    9 + (beg>>23);
+	if (beg>>26 == end>>26) return    1 + (beg>>26);
+	return 0;
+}
+
 #endif
