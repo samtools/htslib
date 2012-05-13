@@ -117,7 +117,7 @@ static inline void kputc_(int c, kstring_t *s)
 	s->s[s->l++] = c;
 }
 
-static inline void kputsn_(const char *p, int l, kstring_t *s)
+static inline void kputsn_(const void *p, int l, kstring_t *s)
 {
 	if (s->l + l > s->m) {
 		s->m = s->l + l;

@@ -12,7 +12,7 @@ typedef struct {
 	int32_t n_targets, has_SQ;
 	uint32_t l_text;
 	uint32_t *target_len;
-	uint32_t *cigar_tab;
+	uint8_t *cigar_tab;
 	char **target_name;
 	char *text;
 	void *sdict;
@@ -96,7 +96,7 @@ extern "C" {
 
 	sam1_t *sam_init1(void);
 	void sam_destroy1(sam1_t *b);
-	int sam_read1(htsFile *fp, const sam_hdr_t *h, sam1_t *b);
+	int sam_read1(htsFile *fp, sam_hdr_t *h, sam1_t *b);
 	int sam_format1(const sam_hdr_t *h, const sam1_t *b, kstring_t *str);
 	int sam_write1(htsFile *fp, const sam_hdr_t *h, const sam1_t *b);
 

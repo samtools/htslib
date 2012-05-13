@@ -34,7 +34,7 @@ void sam_hdr_destroy(sam_hdr_t *h)
 		free(h->target_name);
 		free(h->target_len);
 	}
-	free(h->text);
+	free(h->text); free(h->cigar_tab);
 	if (h->sdict) kh_destroy(s2i, (sdict_t*)h->sdict);
 	free(h);
 }
@@ -234,21 +234,26 @@ int32_t sam_cigar2qlen(int n_cigar, const uint32_t *cigar)
 	return l;
 }
 
-int sam_parse1(kstring_t *s, const sam_hdr_t *h, sam1_t *b)
+int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 {
 #define _read_token(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); if (*(_p) != '\t') goto err_ret; *(_p)++ = 0
-#define _get_mem(type_t, _x, _s, _l) ks_resize((_s), (_s)->l + (_l)); *(_x) = (type_t)((_s)->s + (_s)->l); (_s)->l += (_l)
-#define _parse_err(msg) do { if (hts_verbose >= 1) fprintf(stderr, msg); goto err_ret; } while (0)
+#define _get_mem(type_t, _x, _s, _l) ks_resize((_s), (_s)->l + (_l)); *(_x) = (type_t*)((_s)->s + (_s)->l); (_s)->l += (_l)
+#define _parse_err(cond, msg) do { if (hts_verbose >= 1 && (cond)) fprintf(stderr, "[E::%s]" msg "\n", __func__); goto err_ret; } while (0)
+#define _parse_warn(cond, msg) if (hts_verbose >= 2 && (cond)) fprintf(stderr, "[W::%s]" msg "\n", __func__)
 
 	uint8_t *t;
 	char *p = s->s, *q;
 	int i;
-	long x;
 	kstring_t str;
 	sam1_core_t *c = &b->core;
 
 	b->l_data = 0;
 	str.s = (char*)b->data; str.l = 0; str.m = b->m_data;
+	if (h->cigar_tab == 0) {
+		h->cigar_tab = (uint8_t*)calloc(128, 1);
+		for (i = 0; SAM_CIGAR_STR[i]; ++i)
+			h->cigar_tab[(int)SAM_CIGAR_STR[i]] = i;
+	}
 	// qname
 	q = _read_token(p);
 	kputsn_(q, p - q, &str);
@@ -258,17 +263,15 @@ int sam_parse1(kstring_t *s, const sam_hdr_t *h, sam1_t *b)
 	// chr
 	q = _read_token(p);
 	if (strcmp(q, "*")) {
-		if (h->n_targets == 0) _parse_err("[E::%s] missing SAM header\n", __func__);
+		_parse_err(h->n_targets == 0, "missing SAM header");
 		c->tid = sam_get_tid(h, q);
-		if (c->tid < 0 && hts_verbose >= 2) 
-			fprintf(stderr, "[W::%s] urecognized reference '%s'; treated as '*'\n", __func__, p);
+		_parse_warn(c->tid < 0, "urecognized reference name; treated as unmapped");
 	} else c->tid = -1;
 	// pos
-	b->pos = strtol(p, &p, 10) - 1;
+	c->pos = strtol(p, &p, 10) - 1;
 	if (*p++ != '\t') goto err_ret;
-	if (b->pos < 0 && c->tid >= 0) {
-		if (hts_verbose >= 2)
-			fprintf(stderr, "[W::%s] mapped query cannot have zero coordinate; treated as unmapped\n", __func__, p);
+	if (c->pos < 0 && c->tid >= 0) {
+		_parse_warn(1, "mapped query cannot have zero coordinate; treated as unmapped");
 		c->tid = -1;
 	}
 	if (c->tid < 0) c->flag |= SAM_FUNMAP;
@@ -284,14 +287,13 @@ int sam_parse1(kstring_t *s, const sam_hdr_t *h, sam1_t *b)
 		for (i = 0, q = p; i < c->n_cigar; ++i, ++q) {
 			int op;
 			cigar[i] = strtol(q, &q, 10)<<SAM_CIGAR_SHIFT;
-			if ((uint8_t)*q >= 128 || (op = h->cigar_tab[*q]) < 0)
-				_parse_err("[E::%s] urecognized CIGAR operation '%c'; treated as '*'\n", __func__, *q);
+			op = (uint8_t)*q >= 128? -1 : h->cigar_tab[(int)*q];
+			_parse_err(op < 0, "urecognized CIGAR operator");
 			cigar[i] |= op;
 		}
 		p = q;
 	} else {
-		if ((c->flag & SAM_FUNMAP) && hts_verbose >= 2)
-			fprintf(stderr, "[W::%s] mapped query must have a CIGAR; treated as unmapped\n", __func__);
+		_parse_warn((c->flag & SAM_FUNMAP), "mapped query must have a CIGAR; treated as unmapped");
 		c->flag |= SAM_FUNMAP;
 		q = _read_token(p);
 	}
@@ -304,8 +306,7 @@ int sam_parse1(kstring_t *s, const sam_hdr_t *h, sam1_t *b)
 	c->mpos = strtol(p, &p, 10) - 1;
 	if (*p++ != '\t') goto err_ret;
 	if (c->mpos < 0 && c->mtid >= 0) {
-		if (hts_verbose >= 2)
-			fprintf(stderr, "[W::%s] mapped query cannot have zero coordinate; treated as unmapped\n", __func__, p);
+		_parse_warn(1, "mapped mate cannot have zero coordinate; treated as unmapped");
 		c->mtid = -1;
 	}
 	// tlen
@@ -315,32 +316,31 @@ int sam_parse1(kstring_t *s, const sam_hdr_t *h, sam1_t *b)
 	q = _read_token(p);
 	if (strcmp(q, "*")) {
 		c->l_qseq = p - q - 1;
-		if (c->l_qseq != sam_cigar2qlen(c->n_cigar, sam_get_cigar(str.s)))
-			_parse_err("[E::%s] CIGAR and query sequence are of different length\n", __func__, p);
+		i = sam_cigar2qlen(c->n_cigar, (uint32_t*)(str.s + c->l_qseq));
+		_parse_err(i != c->l_qseq, "CIGAR and query sequence are of different length");
 		i = (c->l_qseq + 1) >> 1;
 		_get_mem(uint8_t, &t, &str, i);
 		memset(t, 0, i);
 		for (i = 0; i < c->l_qseq; ++i)
-			t[i>>1] |= (uint8_t)p[i] > 127? 15 : hts_nt16_table[(int)p[i]];
+			t[i>>1] |= (uint8_t)p[i] > 127? 15 : seq_nt16_table[(int)p[i]];
 	} else c->l_qseq = 0;
 	// qual
 	q = _read_token(p);
 	_get_mem(uint8_t, &t, &str, c->l_qseq);
 	if (strcmp(q, "*")) {
-		if (p - q - 1 != c->l_qseq) _parse_err("[E::%s] SEQ and QUAL are of different length\n", __func__);
+		_parse_err(p - q - 1 != c->l_qseq, "SEQ and QUAL are of different length");
 		for (i = 0; i < c->l_qseq; ++i) t[i] = q[i] - 33;
 	} else memset(t, 0xff, c->l_qseq);
 	// aux
 	while (*(p - 1)) {
 		uint8_t type;
 		q = _read_token(p); // FIXME: can be accelerated for long 'B' arrays
-		if (p - q - 1 < 6) _parse_err("[E::%s] incomplete aux field\n", __func__);
+		_parse_err(p - q - 1 < 6, "incomplete aux field");
 		kputsn_(q, 2, &str);
 		q += 3; type = *q++; ++q; // q points to value
 		if (type == 'A' || type == 'a' || type == 'c' || type == 'C') {
 			kputc_('A', &str);
 			kputc_(*q, &str);
-			++q;
 		} else if (type == 'i' || type == 'I') {
 			long x;
 			x = strtol(q, &q, 10);
@@ -349,7 +349,7 @@ int sam_parse1(kstring_t *s, const sam_hdr_t *h, sam1_t *b)
 					kputc_('c', &str); kputc_(x, &str);
 				} else if (x >= INT16_MIN) {
 					int16_t y = x;
-					kputc_('s', &str); kputsn_(&y, 2, &str);
+					kputc_('s', &str); kputsn_((char*)&y, 2, &str);
 				} else {
 					int32_t y = x;
 					kputc_('i', &str); kputsn_(&y, 4, &str);
@@ -371,11 +371,11 @@ int sam_parse1(kstring_t *s, const sam_hdr_t *h, sam1_t *b)
 			kputc_('f', &str); kputsn_(&x, 4, &str);
 		} else if (type == 'Z' || type == 'H') {
 			kputc_('Z', &str);
-			kputsn_(p - q, &str); // note that this include the trailing NULL
+			kputsn_(q, p - q, &str); // note that this include the trailing NULL
 		} else if (type == 'B') {
 			int32_t n;
 			char *r;
-			if (p - q - 1 < 3) _parse_err("[E::%s] incomplete B-typed aux field\n", __func__);
+			_parse_err(p - q - 1 < 3, "incomplete B-typed aux field");
 			type = *q++; // q points to the first ',' following the typing byte
 			for (r = q, n = 0; *r; ++r)
 				if (*r == ',') ++n;
@@ -388,12 +388,13 @@ int sam_parse1(kstring_t *s, const sam_hdr_t *h, sam1_t *b)
 			else if (type == 'i') while (q < p) { int32_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 4, &str); }
 			else if (type == 'I') while (q < p) { uint32_t x = strtol(q + 1, &q, 0); kputsn_(&x, 4, &str); }
 			else if (type == 'f') while (q < p) { float    x = strtod(q + 1, &q);    kputsn_(&x, 4, &str); }
-			else _parse_err("[E::%s] unrecognized type '%c'", __func__, *q);
-		} else _parse_err("[E::%s] unrecognized type '%c'", __func__, *q);
+			else _parse_err(1, "unrecognized type");
+		} else _parse_err(1, "unrecognized type");
 	}
 	b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
 	return 0;
 
+#undef _parse_warn
 #undef _parse_err
 #undef _get_mem
 #undef _read_token
@@ -441,7 +442,7 @@ static void swap_data(const sam1_core_t *c, int l_data, uint8_t *data)
 	}
 }
 
-int sam_read1(htsFile *fp, const sam_hdr_t *h, sam1_t *b)
+int sam_read1(htsFile *fp, sam_hdr_t *h, sam1_t *b)
 {
 	if (fp->is_bin) {
 		sam1_core_t *c = &b->core;
@@ -472,7 +473,17 @@ int sam_read1(htsFile *fp, const sam_hdr_t *h, sam1_t *b)
 		b->l_aux = b->l_data - c->n_cigar * 4 - c->l_qname - c->l_qseq - (c->l_qseq+1)/2;
 		if (fp->is_be) swap_data(c, b->l_data, b->data);
 		return 4 + block_len;
-	} else return 0;
+	} else {
+		int ret, dret;
+		if (fp->line.l == 0) {
+			ret = ks_getuntil((kstream_t*)fp->fp, KS_SEP_LINE, &fp->line, &dret);
+			if (ret == -1) return -1;
+			if (ret < 0) return -2;
+		}
+		ret = sam_parse1(&fp->line, h, b);
+		fp->line.l = 0;
+		return ret;
+	}
 }
 
 int sam_format1(const sam_hdr_t *h, const sam1_t *b, kstring_t *str)
