@@ -237,9 +237,10 @@ int32_t sam_cigar2qlen(int n_cigar, const uint32_t *cigar)
 int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 {
 #define _read_token(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); if (*(_p) != '\t') goto err_ret; *(_p)++ = 0
+#define _read_token_aux(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); *(_p)++ = 0 // this is different in that it does not test *(_p)=='\t'
 #define _get_mem(type_t, _x, _s, _l) ks_resize((_s), (_s)->l + (_l)); *(_x) = (type_t*)((_s)->s + (_s)->l); (_s)->l += (_l)
-#define _parse_err(cond, msg) do { if (hts_verbose >= 1 && (cond)) { fprintf(stderr, "[E::%s]" msg "\n", __func__); goto err_ret; } } while (0)
-#define _parse_warn(cond, msg) if (hts_verbose >= 2 && (cond)) fprintf(stderr, "[W::%s]" msg "\n", __func__)
+#define _parse_err(cond, msg) do { if ((cond) && hts_verbose >= 1) { fprintf(stderr, "[E::%s]" msg "\n", __func__); goto err_ret; } } while (0)
+#define _parse_warn(cond, msg) if ((cond) && hts_verbose >= 2) fprintf(stderr, "[W::%s]" msg "\n", __func__)
 
 	uint8_t *t;
 	char *p = s->s, *q;
@@ -326,16 +327,16 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 			t[i>>1] |= seq_nt16_table[(int)q[i]] << ((~i&1)<<2);
 	} else c->l_qseq = 0;
 	// qual
-	q = _read_token(p);
+	q = _read_token_aux(p);
 	_get_mem(uint8_t, &t, &str, c->l_qseq);
 	if (strcmp(q, "*")) {
 		_parse_err(p - q - 1 != c->l_qseq, "SEQ and QUAL are of different length");
 		for (i = 0; i < c->l_qseq; ++i) t[i] = q[i] - 33;
 	} else memset(t, 0xff, c->l_qseq);
 	// aux
-	while (*(p - 1)) {
+	while (p < s->s + s->l) {
 		uint8_t type;
-		q = _read_token(p); // FIXME: can be accelerated for long 'B' arrays
+		q = _read_token_aux(p); // FIXME: can be accelerated for long 'B' arrays
 		_parse_err(p - q - 1 < 6, "incomplete aux field");
 		kputsn_(q, 2, &str);
 		q += 3; type = *q++; ++q; // q points to value
@@ -397,10 +398,11 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, sam1_t *b)
 #undef _parse_warn
 #undef _parse_err
 #undef _get_mem
+#undef _read_token_aux
 #undef _read_token
 err_ret:
 	b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
-	return -1;
+	return -2;
 }
 
 static inline int sam_aux_type2size(int x)
