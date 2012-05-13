@@ -547,9 +547,9 @@ int sam_format1(const sam_hdr_t *h, const sam1_t *b, kstring_t *str)
 			memcpy(&n, s, 4);
 			s += 4; // no point to the start of the array
 			kputsn("B:", 2, str); kputc(sub_type, str); // write the typing
-			for (i = 0; i < n; ++i) {
+			for (i = 0; i < n; ++i) { // FIXME: for better performance, put the loop after "if"
 				kputc(',', str);
-				if ('c' == sub_type || 'c' == sub_type) { kputw(*(int8_t*)s, str); ++s; }
+				if ('c' == sub_type)      { kputw(*(int8_t*)s, str); ++s; }
 				else if ('C' == sub_type) { kputw(*(uint8_t*)s, str); ++s; }
 				else if ('s' == sub_type) { kputw(*(int16_t*)s, str); s += 2; }
 				else if ('S' == sub_type) { kputw(*(uint16_t*)s, str); s += 2; }
