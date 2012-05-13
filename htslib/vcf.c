@@ -248,10 +248,9 @@ vcf_hdr_t *vcf_hdr_read(htsFile *fp)
 		h->text = (char*)malloc(h->l_text);
 		bgzf_read((BGZF*)fp->fp, h->text, h->l_text);
 	} else {
-		int dret;
 		kstring_t txt, *s = &fp->line;
 		txt.l = txt.m = 0; txt.s = 0;
-		while (ks_getuntil((kstream_t*)fp->fp, KS_SEP_LINE, s, &dret) >= 0) {
+		while (hts_getline(fp, KS_SEP_LINE, s) >= 0) {
 			if (s->l == 0) continue;
 			if (s->s[0] != '#') {
 				if (hts_verbose >= 2)
@@ -261,6 +260,7 @@ vcf_hdr_t *vcf_hdr_read(htsFile *fp)
 				return 0;
 			}
 			if (s->s[1] != '#' && fp->fn_aux) { // insert contigs here
+				int dret;
 				gzFile f;
 				kstream_t *ks;
 				kstring_t tmp;
@@ -683,8 +683,8 @@ int vcf_read1(htsFile *fp, const vcf_hdr_t *h, vcf1_t *v)
 		bgzf_read((BGZF*)fp->fp, v->shared.s, v->shared.l);
 		bgzf_read((BGZF*)fp->fp, v->indiv.s, v->indiv.l);
 	} else {
-		int ret, dret;
-		ret = ks_getuntil((kstream_t*)fp->fp, KS_SEP_LINE, &fp->line, &dret);
+		int ret;
+		ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
 		if (ret < 0) return -1;
 		ret = vcf_parse1(&fp->line, h, v);
 	}
