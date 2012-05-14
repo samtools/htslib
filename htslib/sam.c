@@ -706,8 +706,9 @@ int sam_iter_read(htsFile *fp, hts_iter_t *iter, sam1_t *b)
 		}
 		if ((ret = sam_read1(fp, 0, b)) >= 0) {
 			iter->curr_off = bgzf_tell(fp->fp);
-			if (b->core.tid != iter->tid || b->core.pos >= iter->end) break; // no need to proceed
-			else if (is_overlap(iter->beg, iter->end, b)) return ret;
+			if (b->core.tid != iter->tid || b->core.pos >= iter->end) { // no need to proceed
+				ret = -1; break;
+			} else if (is_overlap(iter->beg, iter->end, b)) return ret;
 		} else break; // end of file or error
 	}
 	iter->finished = 1;
