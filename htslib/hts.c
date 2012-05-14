@@ -307,13 +307,13 @@ void hts_idx_save(const hts_index_t *idx, void *fp, int is_bgzf)
 		if (is_be) {
 			int32_t x = lidx->n;
 			idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-		} else idx_write(is_bgzf, fp, &lidx->n, 4);
-		if (is_be) { // big endian
-			int x;
-			for (x = 0; (int)x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
+			for (x = 0; x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
 			idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
-			for (x = 0; (int)x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
-		} else idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
+			for (x = 0; x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
+		} else {
+			idx_write(is_bgzf, fp, &lidx->n, 4);
+			idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
+		}
 	}
 }
 
