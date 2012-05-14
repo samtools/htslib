@@ -612,8 +612,10 @@ hts_idx_t *sam_index(htsFile *fp)
 {
 	sam1_t *b;
 	hts_idx_t *idx;
-	sam_hdr_destroy(sam_hdr_read(fp));
-	idx = hts_idx_init(bgzf_tell(fp->fp));
+	sam_hdr_t *h;
+	h = sam_hdr_read(fp);
+	idx = hts_idx_init(h->n_targets, bgzf_tell(fp->fp));
+	sam_hdr_destroy(h);
 	b = sam_init1();
 	while (sam_read1(fp, 0, b) >= 0) {
 		int l;
@@ -639,14 +641,14 @@ int sam_index_build(const char *fn, const char *_fnidx)
 	if (_fnidx == 0) {
 		fnidx = (char*)malloc(strlen(fn) + 5);
 		strcat(strcpy(fnidx, fn), ".bai");
-	} fnidx = strdup(_fnidx);
-	if ((fpidx = fopen(fnidx, "wb")) >= 0) {
+	} else fnidx = strdup(_fnidx);
+	if ((fpidx = fopen(fnidx, "wb")) == 0) {
 		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create the index file\n", __func__);
 		return -1;
 	}
 	free(fnidx);
 	fwrite("BAI\1", 1, 4, fpidx);
-	hts_idx_save(idx, fp, 0);
+	hts_idx_save(idx, fpidx, 0);
 	fclose(fpidx);
 	hts_idx_destroy(idx);
 	return 0;

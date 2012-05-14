@@ -81,7 +81,7 @@ static inline uint64_t insert_to_l(lidx_t *l, int _beg, int _end, uint64_t offse
 	return (uint64_t)beg<<32 | end;
 }
 
-hts_idx_t *hts_idx_init(uint64_t offset0)
+hts_idx_t *hts_idx_init(int n, uint64_t offset0)
 {
 	hts_idx_t *idx;
 	idx = (hts_idx_t*)calloc(1, sizeof(hts_idx_t));
@@ -89,6 +89,11 @@ hts_idx_t *hts_idx_init(uint64_t offset0)
 	idx->z.save_off = idx->z.last_off = idx->z.off_beg = idx->z.off_end = offset0;
 	idx->z.last_coor = 0xffffffffu;
 	idx->z.offset0 = (uint64_t)-1;
+	if (n) {
+		idx->n = idx->m = n;
+		idx->bidx = (bidx_t**)calloc(n, sizeof(void*));
+		idx->lidx = (lidx_t*) calloc(n, sizeof(lidx_t));
+	}
 	return idx;
 }
 
@@ -132,8 +137,17 @@ void hts_idx_finish(hts_idx_t *idx)
 
 int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int bin, int is_mapped)
 {
+	if (tid >= idx->m) { // enlarge the index
+		int32_t oldm = idx->m;
+		idx->m = idx->m? idx->m<<1 : 2;
+		idx->bidx = (bidx_t**)realloc(idx->bidx, sizeof(void*));
+		idx->lidx = (lidx_t*) realloc(idx->lidx, sizeof(lidx_t));
+		memset(idx->bidx[oldm],  0, (idx->m - oldm) * sizeof(void*));
+		memset(&idx->lidx[oldm], 0, (idx->m - oldm) * sizeof(lidx_t));
+	}
 	if (tid < 0) ++idx->z.n_no_coor;
 	if (idx->z.finished) return 0;
+	if (idx->bidx[tid] == 0) idx->bidx[tid] = kh_init(bin);
 	if (idx->z.last_tid < tid || (idx->z.last_tid >= 0 && tid < 0)) { // change of chromosome
 		idx->z.last_tid = tid;
 		idx->z.last_bin = 0xffffffffu;
@@ -181,14 +195,14 @@ void hts_idx_destroy(hts_idx_t *idx)
 	khint_t k;
 	int i;
 	if (idx == 0) return;
-	for (i = 0; i < idx->n; ++i) {
+	for (i = 0; i < idx->m; ++i) {
 		bidx_t *bidx = idx->bidx[i];
-		lidx_t *lidx = &idx->lidx[i];
+		free(idx->lidx[i].offset);
+		if (bidx == 0) continue;
 		for (k = kh_begin(bidx); k != kh_end(bidx); ++k)
 			if (kh_exist(bidx, k))
 				free(kh_value(bidx, k).list);
 		kh_destroy(bin, bidx);
-		free(lidx->offset);
 	}
 	free(idx->bidx); free(idx->lidx);
 	free(idx);
@@ -253,6 +267,10 @@ void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf)
 			idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
 		}
 	}
+	if (is_be) { // write the number of reads without coordinates
+		uint64_t x = idx->z.n_no_coor;
+		idx_write(is_bgzf, fp, &x, 8);
+	} else idx_write(is_bgzf, fp, &idx->z.n_no_coor, 8);
 }
 
 #endif // ~!defined(HTS_NO_INDEX)

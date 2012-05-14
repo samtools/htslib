@@ -57,7 +57,7 @@ typedef struct __hts_idx_t hts_idx_t;
 extern "C" {
 #endif
 
-	hts_idx_t *hts_idx_init(uint64_t offset0);
+	hts_idx_t *hts_idx_init(int n, uint64_t offset0);
 	void hts_idx_destroy(hts_idx_t *idx);
 	int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int bin, int is_mapped);
 	void hts_idx_finish(hts_idx_t *idx);

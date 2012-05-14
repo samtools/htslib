@@ -100,6 +100,9 @@ extern "C" {
 	int sam_format1(const sam_hdr_t *h, const sam1_t *b, kstring_t *str);
 	int sam_write1(htsFile *fp, const sam_hdr_t *h, const sam1_t *b);
 
+	hts_idx_t *sam_index(htsFile *fp);
+	int sam_index_build(const char *fn, const char *_fnidx);
+
 #ifdef __cplusplus
 }
 #endif

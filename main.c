@@ -136,6 +136,7 @@ int main(int argc, char *argv[])
 	}
 	if (strcmp(argv[1], "vcf") == 0) return main_vcf(argc-1, argv+1);
 	else if (strcmp(argv[1], "sam") == 0) return main_sam(argc-1, argv+1);
+	else if (strcmp(argv[1], "bamidx") == 0) return main_bamidx(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command '%s'\n", __func__, argv[1]);
 		return 1;
