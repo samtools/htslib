@@ -668,3 +668,39 @@ hts_idx_t *sam_index_load_local(const char *fnidx)
 	fclose(fpidx);
 	return idx;
 }
+
+static inline int is_overlap(uint32_t beg, uint32_t end, const sam1_t *b)
+{
+	uint32_t rbeg = b->core.pos;
+	uint32_t rend = b->core.n_cigar? rbeg + sam_cigar2rlen(b->core.n_cigar, sam_get_cigar(b)) : rbeg + 1;
+	return (rend > beg && rbeg < end);
+}
+
+int sam_iter_read(htsFile *fp, hts_iter_t *iter, sam1_t *b)
+{
+	int ret;
+	if (iter && iter->finished) return -1;
+	if (iter == 0 || iter->from_first) {
+		ret = sam_read1(fp, 0, b);
+		if (ret < 0 && iter) iter->finished = 1;
+		return ret;
+	}
+	if (iter->off == 0) return -1;
+	for (;;) {
+		if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
+			if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
+			if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
+				bgzf_seek((BGZF*)fp->fp, iter->off[iter->i+1].u, SEEK_SET);
+				iter->curr_off = bgzf_tell(fp->fp);
+			}
+			++iter->i;
+		}
+		if ((ret = sam_read1(fp, 0, b)) >= 0) {
+			iter->curr_off = bgzf_tell(fp->fp);
+			if (b->core.tid != iter->tid || b->core.pos >= iter->end) break; // no need to proceed
+			else if (is_overlap(iter->beg, iter->end, b)) return ret;
+		} else break; // end of file or error
+	}
+	iter->finished = 1;
+	return ret;
+}

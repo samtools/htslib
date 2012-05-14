@@ -5,17 +5,17 @@
 #include "bgzf.h"
 #include "hts.h"
 
-#define IDX_MIN_CHUNK_GAP 32768
 #define IDX_LIDX_SHIFT    14
 #define IDX_MAX_BIN       37450
 
-typedef struct {
-	uint64_t u, v;
-} pair64_t;
+#define pair64_lt(a,b) ((a).u < (b).u)
+
+#include "ksort.h"
+KSORT_INIT(_off, hts_pair64_t, pair64_lt)
 
 typedef struct {
 	uint32_t m, n;
-	pair64_t *list;
+	hts_pair64_t *list;
 } bins_t;
 
 #include "khash.h"
@@ -50,11 +50,11 @@ static inline void insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
 	l = &kh_value(b, k);
 	if (absent) {
 		l->m = 1; l->n = 0;
-		l->list = (pair64_t*)calloc(l->m, 16);
+		l->list = (hts_pair64_t*)calloc(l->m, 16);
 	}
 	if (l->n == l->m) {
 		l->m <<= 1;
-		l->list = (pair64_t*)realloc(l->list, l->m * 16);
+		l->list = (hts_pair64_t*)realloc(l->list, l->m * 16);
 	}
 	l->list[l->n].u = beg;
 	l->list[l->n++].v = end;
@@ -310,7 +310,7 @@ hts_idx_t *hts_idx_load(void *fp, int is_bgzf)
 			idx_read(is_bgzf, fp, &p->n, 4);
 			if (is_be) ed_swap_4p(&p->n);
 			p->m = p->n;
-			p->list = (pair64_t*)malloc(p->m * 16);
+			p->list = (hts_pair64_t*)malloc(p->m * 16);
 			idx_read(is_bgzf, fp, p->list, p->n<<4);
 			if (is_be) swap_bins(p);
 		}
@@ -325,6 +325,91 @@ hts_idx_t *hts_idx_load(void *fp, int is_bgzf)
 	if (idx_read(is_bgzf, fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
 	if (is_be) ed_swap_8p(&idx->n_no_coor);
 	return idx;
+}
+
+
+static inline int reg2bins(uint32_t beg, uint32_t end, uint16_t list[IDX_MAX_BIN])
+{
+	int i = 0, k;
+	if (beg >= end) return 0;
+	if (end >= 1u<<29) end = 1u<<29;
+	--end;
+	list[i++] = 0;
+	for (k =    1 + (beg>>26); k <=    1 + (end>>26); ++k) list[i++] = k;
+	for (k =    9 + (beg>>23); k <=    9 + (end>>23); ++k) list[i++] = k;
+	for (k =   73 + (beg>>20); k <=   73 + (end>>20); ++k) list[i++] = k;
+	for (k =  585 + (beg>>17); k <=  585 + (end>>17); ++k) list[i++] = k;
+	for (k = 4681 + (beg>>14); k <= 4681 + (end>>14); ++k) list[i++] = k;
+	return i;
+}
+
+hts_iter_t *hts_iter_query(const hts_idx_t *idx, int tid, int beg, int end)
+{
+	uint16_t *bins;
+	int i, n_bins, n_off, l;
+	hts_pair64_t *off;
+	khint_t k;
+	bidx_t *bidx;
+	uint64_t min_off;
+	hts_iter_t *iter = 0;
+
+	if (beg < 0) beg = 0;
+	if (end < beg) return 0;
+	iter = (hts_iter_t*)calloc(1, sizeof(hts_iter_t));
+	iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
+
+	if ((bidx = idx->bidx[tid]) == 0) return 0;
+	bins = (uint16_t*)alloca(IDX_MAX_BIN<<1);
+	n_bins = reg2bins(beg, end, bins);
+	if (idx->lidx[tid].n > 0) {
+		min_off = (beg>>IDX_LIDX_SHIFT >= idx->lidx[tid].n)? idx->lidx[tid].offset[idx->lidx[tid].n-1]
+			: idx->lidx[tid].offset[beg>>IDX_LIDX_SHIFT];
+		if (min_off == 0) { // improvement for index files built by tabix prior to 0.1.4
+			int n = beg>>IDX_LIDX_SHIFT;
+			if (n > idx->lidx[tid].n) n = idx->lidx[tid].n;
+			for (i = n - 1; i >= 0; --i)
+				if (idx->lidx[tid].offset[i] != 0) break;
+			if (i >= 0) min_off = idx->lidx[tid].offset[i];
+		}
+	} else min_off = 0; // tabix 0.1.2 may produce such index files
+	for (i = n_off = 0; i < n_bins; ++i) {
+		if ((k = kh_get(bin, bidx, bins[i])) != kh_end(bidx))
+			n_off += kh_value(bidx, k).n;
+	}
+	if (n_off == 0) return iter;
+	off = (hts_pair64_t*)calloc(n_off, 16);
+	for (i = n_off = 0; i < n_bins; ++i) {
+		if ((k = kh_get(bin, bidx, bins[i])) != kh_end(bidx)) {
+			int j;
+			bins_t *p = &kh_value(bidx, k);
+			for (j = 0; j < p->n; ++j)
+				if (p->list[j].v > min_off) off[n_off++] = p->list[j];
+		}
+	}
+	if (n_off == 0) {
+		free(off); return iter;
+	}
+	ks_introsort(_off, n_off, off);
+	// resolve completely contained adjacent blocks
+	for (i = 1, l = 0; i < n_off; ++i)
+		if (off[l].v < off[i].v) off[++l] = off[i];
+	n_off = l + 1;
+	// resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
+	for (i = 1; i < n_off; ++i)
+		if (off[i-1].v >= off[i].u) off[i-1].v = off[i].u;
+	// merge adjacent blocks
+	for (i = 1, l = 0; i < n_off; ++i) {
+		if (off[l].v>>16 == off[i].u>>16) off[l].v = off[i].v;
+		else off[++l] = off[i];
+	}
+	n_off = l + 1;
+	iter->n_off = n_off; iter->off = off;
+	return iter;
+}
+
+void hts_iter_destroy(hts_iter_t *iter)
+{
+	if (iter) { free(iter->off); free(iter); }
 }
 
 #endif // ~!defined(HTS_NO_INDEX)

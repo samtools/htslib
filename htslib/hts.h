@@ -53,6 +53,17 @@ extern "C" {
 struct __hts_idx_t;
 typedef struct __hts_idx_t hts_idx_t;
 
+typedef struct {
+	uint64_t u, v;
+} hts_pair64_t;
+
+typedef struct {
+	uint32_t from_first:1, finished:1, dummy:30;
+	int tid, beg, end, n_off, i;
+	uint64_t curr_off;
+	hts_pair64_t *off;
+} hts_iter_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
