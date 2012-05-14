@@ -291,7 +291,7 @@ void hts_idx_save(const hts_index_t *idx, void *fp, int is_bgzf)
 						ed_swap_8p(&p->list[x].u);
 						ed_swap_8p(&p->list[x].v);
 					}
-					bgzf_write(fp, p->list, 16 * p->n);
+					idx_write(is_bgzf, fp, p->list, 16 * p->n);
 					for (x = 0; (int)x < p->n; ++x) {
 						ed_swap_8p(&p->list[x].u);
 						ed_swap_8p(&p->list[x].v);
