@@ -608,10 +608,10 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const sam1_t *b)
 	}
 }
 
-hts_index_t *sam_index(htsFile *fp)
+hts_idx_t *sam_index(htsFile *fp)
 {
 	sam1_t *b;
-	hts_index_t *idx;
+	hts_idx_t *idx;
 	sam_hdr_destroy(sam_hdr_read(fp));
 	idx = hts_idx_init(bgzf_tell(fp->fp));
 	b = sam_init1();
@@ -625,7 +625,29 @@ hts_index_t *sam_index(htsFile *fp)
 	return idx;
 }
 
-int sam_index_build(const char *fn)
+int sam_index_build(const char *fn, const char *_fnidx)
 {
+	char *fnidx;
+	FILE *fpidx;
+	htsFile *fp;
+	hts_idx_t *idx;
+
+	fp = hts_open(fn, "rb", 0);
+	if (fp == 0) return -1;
+	idx = sam_index(fp);
+	hts_close(fp);
+	if (_fnidx == 0) {
+		fnidx = (char*)malloc(strlen(fn) + 5);
+		strcat(strcpy(fnidx, fn), ".bai");
+	} fnidx = strdup(_fnidx);
+	if ((fpidx = fopen(fnidx, "wb")) >= 0) {
+		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create the index file\n", __func__);
+		return -1;
+	}
+	free(fnidx);
+	fwrite("BAI\1", 1, 4, fpidx);
+	hts_idx_save(idx, fp, 0);
+	fclose(fpidx);
+	hts_idx_destroy(idx);
 	return 0;
 }
