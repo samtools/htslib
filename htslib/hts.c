@@ -221,23 +221,23 @@ int hts_idx_push(hts_index_t *idx, int tid, int beg, int end, uint64_t offset, i
 	if (idx->z.last_tid < tid || (idx->z.last_tid >= 0 && tid < 0)) { // change of chromosome
 		idx->z.last_tid = tid;
 		idx->z.last_bin = 0xffffffffu;
-	} else if ((uint32_t)idx->z.last_tid > (uint32_t)tid) {
+	} else if ((uint32_t)idx->z.last_tid > (uint32_t)tid) { // test if chromosomes are out of order
 		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted chromosomes\n", __func__);
 		return -1;
-	} else if (tid >= 0 && idx->z.last_coor > beg) {
+	} else if (tid >= 0 && idx->z.last_coor > beg) { // test if positions are out of order
 		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted positions\n", __func__);
 		return -1;
 	}
 	if (tid >= 0 && is_mapped) {
 		uint64_t ret;
-		ret = insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off);
-		if (idx->z.last_off == 0) idx->z.offset0 = ret;
+		ret = insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off); // last_off points to the start of the current record
+		if (idx->z.last_off == 0) idx->z.offset0 = ret; // I forgot the purpose of offset0
 	}
 	if (bin < 0) bin = hts_reg2bin(beg, end); // compute bin if this has not been done
 	if (idx->z.last_bin != bin) { // then possibly write the binning index
 		if (idx->z.save_bin != 0xffffffffu) // save_bin==0xffffffffu only happens to the first record
 			insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, idx->z.last_off);
-		if (idx->z.last_bin == 0xffffffffu && idx->z.save_bin != 0xffffffffu) { // keep meta information
+		if (idx->z.last_bin == 0xffffffffu && idx->z.save_bin != 0xffffffffu) { // change of chr; keep meta information
 			idx->z.off_end = idx->z.last_off;
 			insert_to_b(idx->bidx[idx->z.save_tid], IDX_MAX_BIN, idx->z.off_beg, idx->z.off_end);
 			insert_to_b(idx->bidx[idx->z.save_tid], IDX_MAX_BIN, idx->z.n_mapped, idx->z.n_unmapped);
@@ -247,7 +247,7 @@ int hts_idx_push(hts_index_t *idx, int tid, int beg, int end, uint64_t offset, i
 		idx->z.save_off = idx->z.last_off;
 		idx->z.save_bin = idx->z.last_bin = bin;
 		idx->z.save_tid = tid;
-		if (tid < 0) {
+		if (tid < 0) { // come to the end of the records having coordinates
 			idx->z.last_off = offset;
 			hts_idx_finish(idx);
 			return 0;
