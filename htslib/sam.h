@@ -120,6 +120,7 @@ extern "C" {
 	int sam_index_build(const char *fn, const char *_fnidx);
 	hts_idx_t *sam_index_load_local(const char *fnidx);
 	hts_iter_t *sam_iter_querys(hts_idx_t *idx, sam_hdr_t *h, const char *reg);
+	int sam_iter_read(samFile *fp, hts_iter_t *iter, sam1_t *b);
 
 #ifdef __cplusplus
 }
