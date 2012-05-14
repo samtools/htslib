@@ -128,6 +128,8 @@ int main_sam(int argc, char *argv[])
 	return 0;
 }
 
+int main_bamidx(int argc, char *argv[]);
+
 int main(int argc, char *argv[])
 {
 	if (argc < 2) {

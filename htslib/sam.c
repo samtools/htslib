@@ -622,7 +622,7 @@ hts_idx_t *sam_index(htsFile *fp)
 		l = sam_cigar2rlen(b->core.n_cigar, sam_get_cigar(b));
 		hts_idx_push(idx, b->core.tid, b->core.pos, b->core.pos + l, bgzf_tell(fp->fp), b->core.bin, !(b->core.flag&SAM_FUNMAP));
 	}
-	hts_idx_finish(idx);
+	hts_idx_finish(idx, bgzf_tell(fp->fp));
 	sam_destroy1(b);
 	return idx;
 }
@@ -652,4 +652,19 @@ int sam_index_build(const char *fn, const char *_fnidx)
 	fclose(fpidx);
 	hts_idx_destroy(idx);
 	return 0;
+}
+
+hts_idx_t *sam_index_load_local(const char *fnidx)
+{
+	hts_idx_t *idx;
+	FILE *fpidx;
+	char magic[4];
+	if ((fpidx = fopen(fnidx, "rb")) == 0) {
+		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open the index file\n", __func__);
+		return 0;
+	}
+	fread(magic, 1, 4, fpidx);
+	idx = hts_idx_load(fpidx, 0);
+	fclose(fpidx);
+	return idx;
 }

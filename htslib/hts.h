@@ -60,8 +60,9 @@ extern "C" {
 	hts_idx_t *hts_idx_init(int n, uint64_t offset0);
 	void hts_idx_destroy(hts_idx_t *idx);
 	int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int bin, int is_mapped);
-	void hts_idx_finish(hts_idx_t *idx);
+	void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
 	void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf);
+	hts_idx_t *hts_idx_load(void *fp, int is_bgzf);
 
 #ifdef __cplusplus
 }

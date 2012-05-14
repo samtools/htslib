@@ -29,6 +29,7 @@ typedef struct {
 
 struct __hts_idx_t {
 	int n, m;
+	uint64_t n_no_coor;
 	bidx_t **bidx;
 	lidx_t *lidx;
 	struct {
@@ -36,7 +37,7 @@ struct __hts_idx_t {
 		int last_coor, last_tid, save_tid, finished;
 		uint64_t last_off, save_off, offset0;
 		uint64_t off_beg, off_end;
-		uint64_t n_no_coor, n_mapped, n_unmapped;
+		uint64_t n_mapped, n_unmapped;
 	} z; // keep internal states
 };
 
@@ -97,13 +98,13 @@ hts_idx_t *hts_idx_init(int n, uint64_t offset0)
 	return idx;
 }
 
-void hts_idx_finish(hts_idx_t *idx)
+void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 {
 	int i;
 	if (idx->z.finished) return; // do not run this function multiple times
 	if (idx->z.save_tid >= 0) {
-		insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, idx->z.last_off);
-		insert_to_b(idx->bidx[idx->z.save_tid], IDX_MAX_BIN, idx->z.off_beg, idx->z.last_off);
+		insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, final_offset);
+		insert_to_b(idx->bidx[idx->z.save_tid], IDX_MAX_BIN, idx->z.off_beg, final_offset);
 		insert_to_b(idx->bidx[idx->z.save_tid], IDX_MAX_BIN, idx->z.n_mapped, idx->z.n_unmapped);
 	}
 	for (i = 0; i < idx->n; ++i) {
@@ -145,7 +146,7 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 		memset(idx->bidx[oldm],  0, (idx->m - oldm) * sizeof(void*));
 		memset(&idx->lidx[oldm], 0, (idx->m - oldm) * sizeof(lidx_t));
 	}
-	if (tid < 0) ++idx->z.n_no_coor;
+	if (tid < 0) ++idx->n_no_coor;
 	if (idx->z.finished) return 0;
 	if (idx->bidx[tid] == 0) idx->bidx[tid] = kh_init(bin);
 	if (idx->z.last_tid < tid || (idx->z.last_tid >= 0 && tid < 0)) { // change of chromosome
@@ -178,8 +179,7 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 		idx->z.save_bin = idx->z.last_bin = bin;
 		idx->z.save_tid = tid;
 		if (tid < 0) { // come to the end of the records having coordinates
-			idx->z.last_off = offset;
-			hts_idx_finish(idx);
+			hts_idx_finish(idx, offset);
 			return 0;
 		}
 	}
@@ -208,10 +208,25 @@ void hts_idx_destroy(hts_idx_t *idx)
 	free(idx);
 }
 
+static inline long idx_read(int is_bgzf, void *fp, void *buf, long l)
+{
+	if (is_bgzf) return bgzf_read((BGZF*)fp, buf, l);
+	else return (long)fread(buf, 1, l, (FILE*)fp);
+}
+
 static inline long idx_write(int is_bgzf, void *fp, const void *buf, long l)
 {
 	if (is_bgzf) return bgzf_write((BGZF*)fp, buf, l);
 	else return (long)fwrite(buf, 1, l, (FILE*)fp);
+}
+
+static inline void swap_bins(bins_t *p)
+{
+	int i;
+	for (i = 0; i < p->n; ++i) {
+		ed_swap_8p(&p->list[i].u);
+		ed_swap_8p(&p->list[i].v);
+	}
 }
 
 void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf)
@@ -239,15 +254,9 @@ void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf)
 					uint32_t x;
 					x = kh_key(bidx, k); idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
 					x = p->n; idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-					for (x = 0; (int)x < p->n; ++x) {
-						ed_swap_8p(&p->list[x].u);
-						ed_swap_8p(&p->list[x].v);
-					}
+					swap_bins(p);
 					idx_write(is_bgzf, fp, p->list, 16 * p->n);
-					for (x = 0; (int)x < p->n; ++x) {
-						ed_swap_8p(&p->list[x].u);
-						ed_swap_8p(&p->list[x].v);
-					}
+					swap_bins(p);
 				} else {
 					idx_write(is_bgzf, fp, &kh_key(bidx, k), 4);
 					idx_write(is_bgzf, fp, &p->n, 4);
@@ -268,9 +277,54 @@ void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf)
 		}
 	}
 	if (is_be) { // write the number of reads without coordinates
-		uint64_t x = idx->z.n_no_coor;
+		uint64_t x = idx->n_no_coor;
 		idx_write(is_bgzf, fp, &x, 8);
-	} else idx_write(is_bgzf, fp, &idx->z.n_no_coor, 8);
+	} else idx_write(is_bgzf, fp, &idx->n_no_coor, 8);
+}
+
+hts_idx_t *hts_idx_load(void *fp, int is_bgzf)
+{
+	int32_t i, n, is_be;
+	hts_idx_t *idx;
+
+	is_be = ed_is_big();
+	idx_read(is_bgzf, fp, &n, 4);
+	if (is_be) ed_swap_4p(&n);
+	idx = hts_idx_init(n, 0);
+	for (i = 0; i < idx->n; ++i) {
+		bidx_t *h;
+		lidx_t *l = &idx->lidx[i];
+		uint32_t key;
+		int j, absent;
+		bins_t *p;
+		h = idx->bidx[i] = kh_init(bin);
+		// load binning index
+		idx_read(is_bgzf, fp, &n, 4);
+		if (is_be) ed_swap_4p(&n);
+		for (j = 0; j < n; ++j) {
+			khint_t k;
+			idx_read(is_bgzf, fp, &key, 4);
+			if (is_be) ed_swap_4p(&key);
+			k = kh_put(bin, h, key, &absent);
+			p = &kh_val(h, k);
+			idx_read(is_bgzf, fp, &p->n, 4);
+			if (is_be) ed_swap_4p(&p->n);
+			p->m = p->n;
+			p->list = (pair64_t*)malloc(p->m * 16);
+			idx_read(is_bgzf, fp, p->list, p->n<<4);
+			if (is_be) swap_bins(p);
+		}
+		// load linear index
+		idx_read(is_bgzf, fp, &l->n, 4);
+		if (is_be) ed_swap_4p(&l->n);
+		l->m = l->n;
+		l->offset = (uint64_t*)malloc(l->n << 3);
+		idx_read(is_bgzf, fp, l->offset, l->n << 3);
+		if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
+	}
+	if (idx_read(is_bgzf, fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
+	if (is_be) ed_swap_8p(&idx->n_no_coor);
+	return idx;
 }
 
 #endif // ~!defined(HTS_NO_INDEX)

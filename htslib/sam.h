@@ -102,6 +102,7 @@ extern "C" {
 
 	hts_idx_t *sam_index(htsFile *fp);
 	int sam_index_build(const char *fn, const char *_fnidx);
+	hts_idx_t *sam_index_load_local(const char *fnidx);
 
 #ifdef __cplusplus
 }
