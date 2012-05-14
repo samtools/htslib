@@ -15,7 +15,7 @@
 KSORT_INIT(_off, hts_pair64_t, pair64_lt)
 
 typedef struct {
-	uint32_t m, n;
+	int32_t m, n;
 	hts_pair64_t *list;
 } bins_t;
 
@@ -166,7 +166,7 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 		if (idx->z.last_off == 0) idx->z.offset0 = ret; // I forgot the purpose of offset0
 	}
 	if (bin < 0) bin = hts_reg2bin(beg, end); // compute bin if this has not been done
-	if (idx->z.last_bin != bin) { // then possibly write the binning index
+	if ((int)idx->z.last_bin != bin) { // then possibly write the binning index
 		if (idx->z.save_bin != 0xffffffffu) // save_bin==0xffffffffu only happens to the first record
 			insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, idx->z.last_off);
 		if (idx->z.last_bin == 0xffffffffu && idx->z.save_bin != 0xffffffffu) { // change of chr; keep meta information
@@ -329,11 +329,11 @@ hts_idx_t *hts_idx_load(void *fp, int is_bgzf)
 }
 
 
-static inline int reg2bins(uint32_t beg, uint32_t end, uint16_t list[IDX_MAX_BIN])
+static inline int reg2bins(int32_t beg, int32_t end, uint16_t list[IDX_MAX_BIN])
 {
 	int i = 0, k;
 	if (beg >= end) return 0;
-	if (end >= 1u<<29) end = 1u<<29;
+	if (end >= 1<<29) end = 1<<29;
 	--end;
 	list[i++] = 0;
 	for (k =    1 + (beg>>26); k <=    1 + (end>>26); ++k) list[i++] = k;

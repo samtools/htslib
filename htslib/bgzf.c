@@ -278,7 +278,7 @@ static void cache_block(BGZF *fp, int size)
 	cache_t *p;
 	khash_t(cache) *h = (khash_t(cache)*)fp->cache;
 	if (BGZF_MAX_BLOCK_SIZE >= fp->cache_size) return;
-	if ((kh_size(h) + 1) * BGZF_MAX_BLOCK_SIZE > fp->cache_size) {
+	if ((kh_size(h) + 1) * BGZF_MAX_BLOCK_SIZE > (uint32_t)fp->cache_size) {
 		/* A better way would be to remove the oldest block in the
 		 * cache, but here we remove a random one for simplicity. This
 		 * should not have a big impact on performance. */
@@ -492,7 +492,7 @@ static int mt_flush(BGZF *fp)
 	// dump data to disk
 	for (i = 0; i < mt->n_threads; ++i) fp->errcode |= mt->w[i].errcode;
 	for (i = 0; i < mt->curr; ++i)
-		if (fwrite(mt->blk[i], 1, mt->len[i], (FILE*)fp->fp) != mt->len[i])
+		if (fwrite(mt->blk[i], 1, mt->len[i], (FILE*)fp->fp) != (size_t)mt->len[i])
 			fp->errcode |= BGZF_ERR_IO;
 	mt->curr = 0;
 	return 0;
@@ -513,7 +513,7 @@ static ssize_t mt_write(BGZF *fp, const void *data, ssize_t length)
 	ssize_t rest = length;
 	while (rest) {
 		int copy_length = BGZF_BLOCK_SIZE - fp->block_offset < rest? BGZF_BLOCK_SIZE - fp->block_offset : rest;
-		memcpy(fp->uncompressed_block + fp->block_offset, input, copy_length);
+		memcpy((uint8_t*)fp->uncompressed_block + fp->block_offset, input, copy_length);
 		fp->block_offset += copy_length; input += copy_length; rest -= copy_length;
 		if (fp->block_offset == BGZF_BLOCK_SIZE) mt_lazy_flush(fp);
 	}
