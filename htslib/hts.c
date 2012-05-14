@@ -260,4 +260,61 @@ int hts_idx_push(hts_index_t *idx, int tid, int beg, int end, uint64_t offset, i
 	return 0;
 }
 
+static inline long idx_write(int is_bgzf, void *fp, void *buf, long l)
+{
+	if (is_bgzf) return bgzf_write((BGZF*)fp, buf, l);
+	else return (long)fwrite(buf, 1, l, (FILE*)fp);
+}
+
+void hts_idx_save(const hts_index_t *idx, void *fp, int is_bgzf)
+{
+	int32_t i, size, is_be;
+	is_be = ed_is_big();
+	for (i = 0; i < idx->n; ++i) {
+		khint_t k;
+		bidx_t *bidx = idx->bidx[i];
+		lidx_t *lidx = &idx->lidx[i];
+		// write binning index
+		size = kh_size(bidx);
+		if (is_be) { // big endian
+			uint32_t x = size;
+			idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
+		} else idx_write(is_bgzf, fp, &size, 4);
+		for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
+			if (kh_exist(bidx, k)) {
+				bins_t *p = &kh_value(bidx, k);
+				if (is_be) { // big endian
+					uint32_t x;
+					x = kh_key(bidx, k); idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
+					x = p->n; idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
+					for (x = 0; (int)x < p->n; ++x) {
+						ed_swap_8p(&p->list[x].u);
+						ed_swap_8p(&p->list[x].v);
+					}
+					bgzf_write(fp, p->list, 16 * p->n);
+					for (x = 0; (int)x < p->n; ++x) {
+						ed_swap_8p(&p->list[x].u);
+						ed_swap_8p(&p->list[x].v);
+					}
+				} else {
+					idx_write(is_bgzf, fp, &kh_key(bidx, k), 4);
+					idx_write(is_bgzf, fp, &p->n, 4);
+					idx_write(is_bgzf, fp, p->list, p->n << 4);
+				}
+			}
+		}
+		// write linear index
+		if (is_be) {
+			int32_t x = lidx->n;
+			idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
+		} else idx_write(is_bgzf, fp, &lidx->n, 4);
+		if (is_be) { // big endian
+			int x;
+			for (x = 0; (int)x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
+			idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
+			for (x = 0; (int)x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
+		} else idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
+	}
+}
+
 #endif
