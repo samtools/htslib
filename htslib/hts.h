@@ -50,6 +50,9 @@ extern "C" {
  * Indexing *
  ************/
 
+#define HTS_IDX_NOCOOR (-1)
+#define HTS_IDX_START  (-2)
+
 struct __hts_idx_t;
 typedef struct __hts_idx_t hts_idx_t;
 
@@ -75,6 +78,7 @@ extern "C" {
 	void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf);
 	hts_idx_t *hts_idx_load(void *fp, int is_bgzf);
 	const char *hts_parse_reg(const char *s, int *beg, int *end);
+	hts_iter_t *hts_iter_query(const hts_idx_t *idx, int tid, int beg, int end);
 
 #ifdef __cplusplus
 }

@@ -203,6 +203,15 @@ int sam_get_tid(sam_hdr_t *h, const char *ref)
 {
 	sdict_t *d = (sdict_t*)h->sdict;
 	khint_t k;
+	if (h->sdict == 0) {
+		int i, absent;
+		d = kh_init(s2i);
+		for (i = 0; i < h->n_targets; ++i) {
+			k = kh_put(s2i, d, h->target_name[i], &absent);
+			kh_val(d, k) = i;
+		}
+		h->sdict = d;
+	}
 	k = kh_get(s2i, d, ref);
 	return k == kh_end(d)? -1 : kh_val(d, k);
 }
@@ -703,4 +712,19 @@ int sam_iter_read(htsFile *fp, hts_iter_t *iter, sam1_t *b)
 	}
 	iter->finished = 1;
 	return ret;
+}
+
+hts_iter_t *sam_iter_querys(hts_idx_t *idx, sam_hdr_t *h, const char *reg)
+{
+	int tid, beg, end;
+	char *q, *tmp;
+	if (h == 0 || reg == 0) return hts_iter_query(idx, HTS_IDX_START, 0, 0);
+	q = (char*)hts_parse_reg(reg, &beg, &end);
+	tmp = (char*)alloca(q - reg + 1);
+	strncpy(tmp, reg, q - reg);
+	tmp[q - reg] = 0;
+	if ((tid = sam_get_tid(h, tmp)) < 0)
+		tid = sam_get_tid(h, reg);
+	if (tid < 0) return 0;
+	return hts_iter_query(idx, tid, beg, end);
 }

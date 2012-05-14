@@ -354,6 +354,15 @@ hts_iter_t *hts_iter_query(const hts_idx_t *idx, int tid, int beg, int end)
 	uint64_t min_off;
 	hts_iter_t *iter = 0;
 
+	if (tid < 0) {
+		if (tid == HTS_IDX_START) {
+			iter = (hts_iter_t*)calloc(1, sizeof(hts_iter_t));
+			iter->from_first = 1;
+			return iter;
+		} else if (tid == HTS_IDX_NOCOOR) {
+			return 0; // not implemented
+		} else return 0;
+	}
 	if (beg < 0) beg = 0;
 	if (end < beg) return 0;
 	iter = (hts_iter_t*)calloc(1, sizeof(hts_iter_t));

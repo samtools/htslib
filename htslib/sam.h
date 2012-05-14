@@ -86,6 +86,21 @@ typedef struct {
 #define sam_get_aux(b)   ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname + (((b)->core.l_qseq + 1)>>1) + (b)->core.l_qseq)
 #define sam_seqi(s, i) ((s)[(i)>>1] >> ((~(i)&1)<<2) & 0xf)
 
+/************************************
+ * Alias of hts types and functions *
+ ************************************/
+
+typedef htsFile samFile;
+typedef hts_idx_t sam_idx_t;
+
+#define sam_open(fn, mode, fnaux) hts_open(fn, mode, fnaux)
+#define sam_close(fp) hts_close(fp)
+#define sam_iter_queryi(idx, tid, beg, end) hts_iter_query(idx, tid, beg, end)
+
+/**********************
+ * Exported functions *
+ **********************/
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -93,6 +108,7 @@ extern "C" {
 	void sam_hdr_destroy(sam_hdr_t *h);
 	sam_hdr_t *sam_hdr_read(htsFile *fp);
 	int sam_hdr_write(htsFile *fp, const sam_hdr_t *h);
+	int sam_get_tid(sam_hdr_t *h, const char *ref);
 
 	sam1_t *sam_init1(void);
 	void sam_destroy1(sam1_t *b);
@@ -103,6 +119,7 @@ extern "C" {
 	hts_idx_t *sam_index(htsFile *fp);
 	int sam_index_build(const char *fn, const char *_fnidx);
 	hts_idx_t *sam_index_load_local(const char *fnidx);
+	hts_iter_t *sam_iter_querys(hts_idx_t *idx, sam_hdr_t *h, const char *reg);
 
 #ifdef __cplusplus
 }
