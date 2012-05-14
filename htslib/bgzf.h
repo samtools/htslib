@@ -126,7 +126,7 @@ extern "C" {
 	 * call to bgzf_seek can be used to position the file at the same point.
 	 * Return value is non-negative on success.
 	 */
-	#define bgzf_tell(fp) ((fp->block_address << 16) | (fp->block_offset & 0xFFFF))
+	#define bgzf_tell(fp) ((((BGZF*)fp)->block_address << 16) | (((BGZF*)fp)->block_offset & 0xFFFF))
 
 	/**
 	 * Set the file to read from the location specified by _pos_.

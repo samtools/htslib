@@ -607,3 +607,25 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const sam1_t *b)
 		return fp->line.l + 1;
 	}
 }
+
+hts_index_t *sam_index(htsFile *fp)
+{
+	sam1_t *b;
+	hts_index_t *idx;
+	sam_hdr_destroy(sam_hdr_read(fp));
+	idx = hts_idx_init(bgzf_tell(fp->fp));
+	b = sam_init1();
+	while (sam_read1(fp, 0, b) >= 0) {
+		int l;
+		l = sam_cigar2rlen(b->core.n_cigar, sam_get_cigar(b));
+		hts_idx_push(idx, b->core.tid, b->core.pos, b->core.pos + l, bgzf_tell(fp->fp), b->core.bin, !(b->core.flag&SAM_FUNMAP));
+	}
+	hts_idx_finish(idx);
+	sam_destroy1(b);
+	return idx;
+}
+
+int sam_index_build(const char *fn)
+{
+	return 0;
+}
