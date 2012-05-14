@@ -27,6 +27,33 @@ typedef struct {
 	void *fp; // file pointer; actual type depending on is_bin and is_write
 } htsFile;
 
+/************
+ * Indexing *
+ ************/
+
+#ifndef HTS_NO_INDEX
+
+struct __hts_index_t;
+typedef struct __hts_index_t hts_index_t;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+	hts_index_t *hts_idx_init(uint64_t offset0);
+	int hts_idx_push(hts_index_t *idx, int tid, int beg, int end, uint64_t offset, int bin, int is_mapped);
+	void hts_idx_finish(hts_index_t *idx);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+
+/**********************
+ * Exported functions *
+ **********************/
+
 extern int hts_verbose;
 extern unsigned char seq_nt16_table[256];
 
