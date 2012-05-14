@@ -74,6 +74,7 @@ extern "C" {
 	void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
 	void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf);
 	hts_idx_t *hts_idx_load(void *fp, int is_bgzf);
+	const char *hts_parse_reg(const char *s, int *beg, int *end);
 
 #ifdef __cplusplus
 }
