@@ -9,7 +9,7 @@
  ******************/
 
 typedef struct {
-	int32_t n_targets, has_SQ;
+	int32_t n_targets;
 	uint32_t l_text;
 	uint32_t *target_len;
 	uint8_t *cigar_tab;

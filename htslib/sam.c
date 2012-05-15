@@ -42,7 +42,6 @@ static bam_hdr_t *hdr_from_dict(sdict_t *d)
 	khint_t k;
 	h = bam_hdr_init();
 	h->sdict = d;
-	h->has_SQ = (kh_size(d) > 0);
 	h->n_targets = kh_size(d);
 	h->target_len = (uint32_t*)malloc(4 * h->n_targets);
 	h->target_name = (char**)malloc(sizeof(void*) * h->n_targets);
@@ -467,8 +466,10 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
 int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 {
 	if (!fp->is_bin) {
+		char *p;
 		fputs(h->text, (FILE*)fp->fp);
-		if (!h->has_SQ) {
+		p = strstr(h->text, "@SQ\t");
+		if (p == h->text || *(p-1) == '\n') {
 			int i;
 			for (i = 0; i < h->n_targets; ++i) {
 				fp->line.l = 0;
