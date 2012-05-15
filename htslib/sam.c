@@ -802,7 +802,7 @@ static cstate_t g_cstate_null = { -1, 0, 0, 0 };
 
 typedef struct __linkbuf_t {
 	bam1_t b;
-	uint32_t beg, end;
+	int32_t beg, end;
 	cstate_t s;
 	struct __linkbuf_t *next;
 } lbnode_t;
@@ -852,7 +852,7 @@ static inline void mp_free(mempool_t *mp, lbnode_t *p)
    s->x: the reference coordinate of the start of s->k
    s->y: the query coordiante of the start of s->k
  */
-static inline int resolve_cigar2(bam_pileup1_t *p, uint32_t pos, cstate_t *s)
+static inline int resolve_cigar2(bam_pileup1_t *p, int32_t pos, cstate_t *s)
 {
 #define _cop(c) ((c)&BAM_CIGAR_MASK)
 #define _cln(c) ((c)>>BAM_CIGAR_SHIFT)
