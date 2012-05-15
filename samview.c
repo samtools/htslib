@@ -43,10 +43,7 @@ int main_samview(int argc, char *argv[])
 		if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
 			int i;
 			bam_idx_t *idx;
-			char *tmp;
-			tmp = (char*)calloc(1, strlen(argv[optind]) + 5);
-			strcat(strcpy(tmp, argv[optind]), ".bai");
-			if ((idx = bam_index_load_local(tmp)) == 0) {
+			if ((idx = bam_index_load(argv[optind])) == 0) {
 				fprintf(stderr, "[E::%s] fail to load the BAM index\n", __func__);
 				return 1;
 			}
@@ -60,7 +57,6 @@ int main_samview(int argc, char *argv[])
 				hts_iter_destroy(iter);
 			}
 			hts_idx_destroy(idx);
-			free(tmp);
 		} else while (sam_read1(in, h, b) >= 0) sam_write1(out, h, b);
 		sam_close(out);
 	}

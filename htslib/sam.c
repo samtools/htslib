@@ -364,6 +364,14 @@ bam_idx_t *bam_index_load_local(const char *fnidx)
 	return idx;
 }
 
+bam_idx_t *bam_index_load(const char *fn)
+{
+	char *fnidx;
+	if ((fnidx = hts_idx_getfn(fn, ".bai")) == 0) return 0;
+	fprintf(stderr, "%s\n", fnidx);
+	return bam_index_load_local(fnidx);
+}
+
 static inline int is_overlap(uint32_t beg, uint32_t end, const bam1_t *b)
 {
 	uint32_t rbeg = b->core.pos;
@@ -484,8 +492,8 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 	if (!fp->is_bin) {
 		char *p;
 		fputs(h->text, (FILE*)fp->fp);
-		p = strstr(h->text, "@SQ\t");
-		if (p == h->text || *(p-1) == '\n') {
+		p = strstr(h->text, "@SQ\t"); // FIXME: we need a loop to make sure "@SQ\t" does not match something unwanted!!!
+		if (p == 0) {
 			int i;
 			for (i = 0; i < h->n_targets; ++i) {
 				fp->line.l = 0;
