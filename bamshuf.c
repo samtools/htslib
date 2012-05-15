@@ -46,7 +46,8 @@ static void bamshuf(const char *fn, int n_files, const char *pre, int clevel, in
 	int64_t *cnt;
 
 	// split
-	fp = bgzf_open(fn, "r");
+	fp = strcmp(fn, "-")? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
+	assert(fp);
 	h = bam_hdr_read(fp);
 	fnt = (char**)calloc(n_files, sizeof(void*));
 	fpt = (BGZF**)calloc(n_files, sizeof(void*));
@@ -119,7 +120,13 @@ int main_bamshuf(int argc, char *argv[])
 	}
 	if (is_un) clevel = 0;
 	if (optind + 2 > argc) {
-		fprintf(stderr, "Usage: bamshuf [-Ou] [-n nFiles] [-c cLevel] <in.bam> <out.prefix>\n");
+		fprintf(stderr, "\nUsage:   bamshuf [-Ou] [-n nFiles] [-c cLevel] <in.bam> <out.prefix>\n\n");
+		fprintf(stderr, "Options: -O      output to stdout\n");
+		fprintf(stderr, "         -u      uncompressed BAM output\n");
+		fprintf(stderr, "         -l INT  compression level [%d]\n", DEF_CLEVEL);
+		fprintf(stderr, "         -n INT  number of temporary files [%d]\n", n_files);
+		fprintf(stderr, "\n");
+		return 1;
 		return 1;
 	}
 	bamshuf(argv[optind], n_files, argv[optind+1], clevel, is_stdout);

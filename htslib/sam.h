@@ -78,8 +78,8 @@ typedef struct {
 	uint8_t *data;
 } bam1_t;
 
-#define bam_get_strand(b) (((b)->core.flag&BAM_FREVERSE) != 0)
-#define bam_get_mstrand(b) (((b)->core.flag&BAM_FMREVERSE) != 0)
+#define bam_is_rev(b) (((b)->core.flag&BAM_FREVERSE) != 0)
+#define bam_is_mrev(b) (((b)->core.flag&BAM_FMREVERSE) != 0)
 #define bam_get_qname(b) ((char*)(b)->data)
 #define bam_get_cigar(b) ((uint32_t*)((b)->data + (b)->core.l_qname))
 #define bam_get_seq(b)   ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname)
