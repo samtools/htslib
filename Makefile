@@ -1,7 +1,7 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2 -Wc++-compat
 DFLAGS=
-OBJS=		main.o samview.o bamidx.o
+OBJS=		main.o samview.o bamidx.o bamshuf.o
 INCLUDES=	-Ihtslib
 PROG=		htscmd
 

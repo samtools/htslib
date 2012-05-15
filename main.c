@@ -83,16 +83,26 @@ int main_vcf(int argc, char *argv[])
 
 int main_samview(int argc, char *argv[]);
 int main_bamidx(int argc, char *argv[]);
+int main_bamshuf(int argc, char *argv[]);
+
+static int usage()
+{
+	fprintf(stderr, "\nUsage:   htscmd <command> <argument>\n\n");
+	fprintf(stderr, "Command: samview      SAM<->BAM conversion\n");
+	fprintf(stderr, "         vcfview      VCF<->BCF conversion (unfinished)\n");
+	fprintf(stderr, "         bamidx       Index BAM\n");
+	fprintf(stderr, "         bamshuf      Shuffle BAM and group alignments by query name\n");
+	fprintf(stderr, "\n");
+	return 1;
+}
 
 int main(int argc, char *argv[])
 {
-	if (argc < 2) {
-		fprintf(stderr, "Usage: htscmd sam|vcf <arguments>\n");
-		return 1;
-	}
+	if (argc < 2) return usage();
 	if (strcmp(argv[1], "vcf") == 0) return main_vcf(argc-1, argv+1);
 	else if (strcmp(argv[1], "samview") == 0) return main_samview(argc-1, argv+1);
 	else if (strcmp(argv[1], "bamidx") == 0) return main_bamidx(argc-1, argv+1);
+	else if (strcmp(argv[1], "bamshuf") == 0) return main_bamshuf(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command '%s'\n", __func__, argv[1]);
 		return 1;
