@@ -21,6 +21,7 @@ knetfile.o:knetfile.h
 hts.o:hts.h bgzf.h khash.h kseq.h
 vcf.o:vcf.h bgzf.h kstring.h khash.h hts.h
 sam.o:sam.h bgzf.h kstring.h hts.h
+samext.o:sam.h bgzf.h kstring.h hts.h
 main.o:vcf.h sam.h
 
 clean:

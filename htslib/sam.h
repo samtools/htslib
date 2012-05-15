@@ -4,9 +4,9 @@
 #include <stdint.h>
 #include "hts.h"
 
-/******************
- * SAM/BAM header *
- ******************/
+/**********************
+ *** SAM/BAM header ***
+ **********************/
 
 typedef struct {
 	int32_t n_targets;
@@ -18,9 +18,9 @@ typedef struct {
 	void *sdict;
 } bam_hdr_t;
 
-/************************
- * CIGAR related macros *
- ************************/
+/****************************
+ *** CIGAR related macros ***
+ ****************************/
 
 #define BAM_CMATCH      0
 #define BAM_CINS        1
@@ -56,9 +56,9 @@ typedef struct {
 #define BAM_FQCFAIL      512
 #define BAM_FDUP        1024
 
-/*********************
- * Alignment records *
- *********************/
+/*************************
+ *** Alignment records ***
+ *************************/
 
 typedef struct {
 	int32_t tid;
@@ -86,9 +86,9 @@ typedef struct {
 #define bam_get_aux(b)   ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname + (((b)->core.l_qseq + 1)>>1) + (b)->core.l_qseq)
 #define bam_seqi(s, i) ((s)[(i)>>1] >> ((~(i)&1)<<2) & 0xf)
 
-/**********************
- * Exported functions *
- **********************/
+/**************************
+ *** Exported functions ***
+ **************************/
 
 #ifdef __cplusplus
 extern "C" {
@@ -107,6 +107,10 @@ extern "C" {
 	void bam_destroy1(bam1_t *b);
 	int bam_read1(void *fp, bam1_t *b);
 	int bam_write1(void *fp, const bam1_t *b);
+	bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc);
+
+	int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
+	int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
 
 	/********************
 	 *** BAM indexing ***
@@ -144,5 +148,50 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+
+/**************************
+ *** Pileup and Mpileup ***
+ **************************/
+
+#if !defined(BAM_NO_PILEUP)
+
+typedef struct {
+	bam1_t *b;
+	int32_t qpos;
+	int indel, level;
+	uint32_t is_del:1, is_head:1, is_tail:1, is_refskip:1, aux:28;
+} bam_pileup1_t;
+
+typedef int (*bam_plp_auto_f)(void *data, bam1_t *b);
+
+struct __bam_plp_t;
+typedef struct __bam_plp_t *bam_plp_t;
+
+struct __bam_mplp_t;
+typedef struct __bam_mplp_t *bam_mplp_t;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+	bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data);
+	void bam_plp_destroy(bam_plp_t iter);
+	int bam_plp_push(bam_plp_t iter, const bam1_t *b);
+	const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp);
+	const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp);
+	void bam_plp_set_mask(bam_plp_t iter, int mask);
+	void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt);
+	void bam_plp_reset(bam_plp_t iter);
+
+	bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data);
+	void bam_mplp_destroy(bam_mplp_t iter);
+	void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
+	int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // ~!defined(BAM_NO_PILEUP)
 
 #endif
