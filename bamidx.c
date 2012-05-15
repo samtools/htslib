@@ -7,6 +7,6 @@ int main_bamidx(int argc, char *argv[])
 		fprintf(stderr, "Usage: bamidx <in.bam>\n");
 		return 1;
 	}
-	sam_index_build(argv[1], 0);
+	bam_index_build(argv[1], 0);
 	return 0;
 }

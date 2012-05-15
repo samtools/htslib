@@ -42,7 +42,7 @@
 #define BGZF_ERR_MISUSE 8
 
 typedef struct {
-	int errcode:16, is_write:2, compress_level:14;
+	int errcode:16, is_write:2, is_be:2, compress_level:12;
 	int cache_size;
     int block_length, block_offset;
     int64_t block_address;

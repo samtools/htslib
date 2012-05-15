@@ -81,6 +81,12 @@ typedef struct {
 KHASH_MAP_INIT_INT64(cache, cache_t)
 #endif
 
+static inline int ed_is_big()
+{
+	long one= 1;
+	return !(*((char *)(&one)));
+}
+
 static inline void packInt16(uint8_t *buffer, uint16_t value)
 {
 	buffer[0] = value;
@@ -150,6 +156,7 @@ BGZF *bgzf_open(const char *path, const char *mode)
 		fp = bgzf_write_init(mode2level(mode));
 		fp->fp = fpw;
 	}
+	fp->is_be = ed_is_big();
 	return fp;
 }
 
@@ -168,6 +175,7 @@ BGZF *bgzf_dopen(int fd, const char *mode)
 		fp = bgzf_write_init(mode2level(mode));
 		fp->fp = fpw;
 	}
+	fp->is_be = ed_is_big();
 	return fp;
 }
 
