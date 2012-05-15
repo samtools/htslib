@@ -2,6 +2,7 @@
 #define HTS_H
 
 #include <stdint.h>
+#include "bgzf.h"
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t

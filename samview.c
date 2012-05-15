@@ -53,7 +53,7 @@ int main_samview(int argc, char *argv[])
 					fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
 					continue;
 				}
-				while (bam_iter_read(in->fp, iter, b) >= 0) sam_write1(out, h, b);
+				while (bam_iter_read((BGZF*)in->fp, iter, b) >= 0) sam_write1(out, h, b);
 				hts_iter_destroy(iter);
 			}
 			hts_idx_destroy(idx);

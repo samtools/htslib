@@ -2,6 +2,7 @@
 #define BAM_H
 
 #include <stdint.h>
+#include "bgzf.h"
 #include "hts.h"
 
 /**********************
@@ -98,15 +99,15 @@ extern "C" {
 	 *** BAM I/O ***
 	 ***************/
 
-	bam_hdr_t *bam_hdr_read(void *fp);
-	int bam_hdr_write(void *fp, const bam_hdr_t *h);
+	bam_hdr_t *bam_hdr_read(BGZF *fp);
+	int bam_hdr_write(BGZF *fp, const bam_hdr_t *h);
 	void bam_hdr_destroy(bam_hdr_t *h);
 	int bam_get_tid(bam_hdr_t *h, const char *ref);
 
 	bam1_t *bam_init1(void);
 	void bam_destroy1(bam1_t *b);
-	int bam_read1(void *fp, bam1_t *b);
-	int bam_write1(void *fp, const bam1_t *b);
+	int bam_read1(BGZF *fp, bam1_t *b);
+	int bam_write1(BGZF *fp, const bam1_t *b);
 	bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc);
 
 	int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
@@ -122,12 +123,12 @@ extern "C" {
 	typedef hts_idx_t bam_idx_t;
 	typedef hts_iter_t bam_iter_t;
 
-	bam_idx_t *bam_index(void *fp);
+	bam_idx_t *bam_index(BGZF *fp);
 	int bam_index_build(const char *fn, const char *_fnidx);
 	bam_idx_t *bam_index_load(const char *fnbam);
 	bam_idx_t *bam_index_load_local(const char *fnidx);
 	bam_iter_t *bam_iter_querys(hts_idx_t *idx, bam_hdr_t *h, const char *reg);
-	int bam_iter_read(void *fp, bam_iter_t *iter, bam1_t *b);
+	int bam_iter_read(BGZF *fp, bam_iter_t *iter, bam1_t *b);
 
 	/***************
 	 *** SAM I/O ***

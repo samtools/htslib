@@ -4,7 +4,6 @@
 #include <ctype.h>
 #include <zlib.h>
 #include "endian.h"
-#include "bgzf.h"
 #include "sam.h"
 
 #include "khash.h"
@@ -54,10 +53,9 @@ static bam_hdr_t *hdr_from_dict(sdict_t *d)
 	return h;
 }
 
-bam_hdr_t *bam_hdr_read(void *_fp)
+bam_hdr_t *bam_hdr_read(BGZF *fp)
 {
 	bam_hdr_t *h;
-	BGZF *fp = (BGZF*)_fp;
 	char buf[4];
 	int magic_len, has_EOF;
 	int32_t i = 1, name_len;
@@ -96,11 +94,10 @@ bam_hdr_t *bam_hdr_read(void *_fp)
 	return h;
 }
 
-int bam_hdr_write(void *_fp, const bam_hdr_t *h)
+int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
 {
 	char buf[4];
 	int32_t i, name_len, x;
-	BGZF *fp = (BGZF*)_fp;
 	// write "BAM1"
 	strncpy(buf, "BAM\1", 4);
 	bgzf_write(fp, buf, 4);
@@ -239,9 +236,8 @@ static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data)
 	}
 }
 
-int bam_read1(void *_fp, bam1_t *b)
+int bam_read1(BGZF *fp, bam1_t *b)
 {
-	BGZF *fp = (BGZF*)_fp;
 	bam1_core_t *c = &b->core;
 	int32_t block_len, ret, i;
 	uint32_t x[8];
@@ -272,9 +268,8 @@ int bam_read1(void *_fp, bam1_t *b)
 	return 4 + block_len;
 }
 
-int bam_write1(void *_fp, const bam1_t *b)
+int bam_write1(BGZF *fp, const bam1_t *b)
 {
-	BGZF *fp = (BGZF*)_fp;
 	const bam1_core_t *c = &b->core;
 	uint32_t x[8], block_len = b->l_data + 32, y;
 	int i;
@@ -303,9 +298,8 @@ int bam_write1(void *_fp, const bam1_t *b)
  *** BAM indexing ***
  ********************/
 
-bam_idx_t *bam_index(void *_fp)
+bam_idx_t *bam_index(BGZF *fp)
 {
-	BGZF *fp = (BGZF*)_fp;
 	bam1_t *b;
 	hts_idx_t *idx;
 	bam_hdr_t *h;
@@ -379,9 +373,8 @@ static inline int is_overlap(uint32_t beg, uint32_t end, const bam1_t *b)
 	return (rend > beg && rbeg < end);
 }
 
-int bam_iter_read(void *_fp, bam_iter_t *iter, bam1_t *b)
+int bam_iter_read(BGZF *fp, bam_iter_t *iter, bam1_t *b)
 {
-	BGZF *fp = (BGZF*)_fp;
 	int ret;
 	if (iter && iter->finished) return -1;
 	if (iter == 0 || iter->from_first) {
@@ -484,7 +477,7 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
 		h = sam_hdr_parse(str.l, str.s);
 		h->l_text = str.l; h->text = str.s;
 		return h;
-	} else return bam_hdr_read(fp->fp);
+	} else return bam_hdr_read((BGZF*)fp->fp);
 }
 
 int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
@@ -503,7 +496,7 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 			}
 		}
 		fflush((FILE*)fp->fp);
-	} else bam_hdr_write(fp->fp, h);
+	} else bam_hdr_write((BGZF*)fp->fp, h);
 	return 0;
 }
 
@@ -699,7 +692,7 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 			fprintf(stderr, "[W::%s] parse error at line %lld\n", __func__, (long long)fp->lineno);
 		fp->line.l = 0;
 		return ret;
-	} else return bam_read1(fp->fp, b);
+	} else return bam_read1((BGZF*)fp->fp, b);
 }
 
 int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
@@ -785,7 +778,7 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
 		fwrite(fp->line.s, 1, fp->line.l, (FILE*)fp->fp);
 		fputc('\n', (FILE*)fp->fp);
 		return fp->line.l + 1;
-	} else return bam_write1(fp->fp, b);
+	} else return bam_write1((BGZF*)fp->fp, b);
 }
 
 /**************************
