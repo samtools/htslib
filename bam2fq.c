@@ -14,7 +14,7 @@ int main_bam2fq(int argc, char *argv[])
 	uint8_t *buf;
 	int max_buf, c, has12 = 0;
 	kstring_t str;
-	int64_t n_singletons = 0;
+	int64_t n_singletons = 0, n_reads = 0;
 	char last[512], *fnse = 0;
 
 	while ((c = getopt(argc, argv, "ap:")) > 0)
@@ -40,6 +40,7 @@ int main_bam2fq(int argc, char *argv[])
 	while (bam_read1(fp, b) >= 0) {
 		int i, qlen = b->core.l_qseq, is_print = 0;
 		uint8_t *qual, *seq;
+		++n_reads;
 		if (fpse) {
 			if (str.l && strcmp(last, bam_get_qname(b))) {
 				bgzf_write(fpse, str.s, str.l);
@@ -100,6 +101,7 @@ int main_bam2fq(int argc, char *argv[])
 		fprintf(stderr, "[M::%s] discarded %lld singletons\n", __func__, (long long)n_singletons);
 		bgzf_close(fpse);
 	}
+	fprintf(stderr, "[M::%s] processed %lld reads\n", __func__, (long long)n_reads);
 	free(buf); free(str.s);
 	bam_destroy1(b);
 	bgzf_close(fp);
