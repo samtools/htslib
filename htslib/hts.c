@@ -4,7 +4,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include "bgzf.h"
-#include "endian.h"
 #include "hts.h"
 
 #include "kseq.h"

@@ -3,7 +3,6 @@
 #include <errno.h>
 #include <ctype.h>
 #include <zlib.h>
-#include "endian.h"
 #include "sam.h"
 
 #include "khash.h"
