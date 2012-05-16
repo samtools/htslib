@@ -29,11 +29,21 @@ static inline unsigned hash_X31_Wang(const char *s)
 }
 
 typedef struct {
-	uint64_t key;
+	unsigned key;
 	bam1_t *b;
 } elem_t;
 
-#define elem_lt(x, y) ((x).key < (y).key || ((x).key == (y).key && strcmp(bam_get_qname((x).b), bam_get_qname((y).b)) < 0))
+static inline int elem_lt(elem_t x, elem_t y)
+{
+	if (x.key < y.key) return 1;
+	if (x.key == y.key) {
+		int t;
+		t = strcmp(bam_get_qname(x.b), bam_get_qname(y.b));
+		if (t < 0) return 1;
+		return (t == 0 && ((x.b->core.flag>>6&3) < (y.b->core.flag>>6&3)));
+	} else return 0;
+}
+
 KSORT_INIT(bamshuf, elem_t, elem_lt)
 
 static void bamshuf(const char *fn, int n_files, const char *pre, int clevel, int is_stdout)
@@ -87,11 +97,9 @@ static void bamshuf(const char *fn, int n_files, const char *pre, int clevel, in
 		bam_hdr_destroy(bam_hdr_read(fp));
 		a = (elem_t*)calloc(c, sizeof(elem_t));
 		for (j = 0; j < c; ++j) {
-			unsigned x;
 			a[j].b = bam_init1();
 			assert(bam_read1(fp, a[j].b) >= 0);
-			x = hash_X31_Wang(bam_get_qname(a[j].b));
-			a[j].key = (uint64_t)x<<2 | (a[j].b->core.flag>>6&3);
+			a[j].key = hash_X31_Wang(bam_get_qname(a[j].b));
 		}
 		bgzf_close(fp);
 		unlink(fnt[i]);
