@@ -441,6 +441,7 @@ int vcf_parse1(kstring_t *s, const vcf_hdr_t *h, vcf1_t *v)
 	mem->l = v->shared.l = v->indiv.l = 0;
 	str = &v->shared;
 	v->n_fmt = 0;
+	memset(&aux, 0, sizeof(ks_tokaux_t));
 	for (p = kstrtok(s->s, "\t", &aux), i = 0; p; p = kstrtok(0, 0, &aux), ++i) {
 		q = (char*)aux.p;
 		*q = 0;

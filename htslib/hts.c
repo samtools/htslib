@@ -34,7 +34,7 @@ unsigned char seq_nt16_table[256] = {
 	15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15
 };
 
-char *seq_nt16_str = "=ACMGRSVTWYHKDBN";
+char seq_nt16_str[] = "=ACMGRSVTWYHKDBN";
 
 /**********************
  *** Basic file I/O ***
