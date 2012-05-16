@@ -9,21 +9,21 @@ static int8_t seq_comp_table[16] = { 0, 8, 4, 12, 2, 10, 9, 14, 1, 6, 5, 13, 3, 
 
 int main_bam2fq(int argc, char *argv[])
 {
-	BGZF *fp;
+	BGZF *fp, *fpse = 0;
 	bam1_t *b;
 	uint8_t *buf;
-	int max_buf, c, has12 = 0, pair_only = 0;
+	int max_buf, c, has12 = 0;
 	kstring_t str;
 	int64_t n_singletons = 0;
-	char last[512];
+	char last[512], *fnse = 0;
 
-	while ((c = getopt(argc, argv, "ap")) > 0)
+	while ((c = getopt(argc, argv, "ap:")) > 0)
 		if (c == 'a') has12 = 1;
-		else if (c == 'p') pair_only = 1;
-	if (argc == 1) {
-		fprintf(stderr, "\nUsage:   bam2fq [-ap] <in.bam>\n\n");
-		fprintf(stderr, "Options: -a     append /1 and /2 to the read name\n");
-		fprintf(stderr, "         -p     discard singleton reads\n");
+		else if (c == 'p') fnse = optarg;
+	if (argc == optind) {
+		fprintf(stderr, "\nUsage:   bam2fq [-a] [-p outSE] <in.bam>\n\n");
+		fprintf(stderr, "Options: -a        append /1 and /2 to the read name\n");
+		fprintf(stderr, "         -p FILE   write singleton reads to FILE [assume single-end]\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
@@ -34,14 +34,18 @@ int main_bam2fq(int argc, char *argv[])
 	max_buf = 0;
 	str.l = str.m = 0; str.s = 0;
 	last[0] = 0;
+	if (fnse) fpse = bgzf_open(fnse, "w1");
 
 	b = bam_init1();
 	while (bam_read1(fp, b) >= 0) {
 		int i, qlen = b->core.l_qseq, is_print = 0;
 		uint8_t *qual, *seq;
-		if (pair_only) {
-			if (str.l && strcmp(last, bam_get_qname(b)))
-				str.l = 0, ++n_singletons;
+		if (fpse) {
+			if (str.l && strcmp(last, bam_get_qname(b))) {
+				bgzf_write(fpse, str.s, str.l);
+				str.l = 0;
+				++n_singletons;
+			}
 			if (str.l) is_print = 1;
 			strcpy(last, bam_get_qname(b));
 		} else is_print = 1;
@@ -88,8 +92,14 @@ int main_bam2fq(int argc, char *argv[])
 			str.l = 0;
 		}
 	}
-	if (str.l) ++n_singletons;
-	if (pair_only) fprintf(stderr, "[M::%s] discarded %lld singletons\n", __func__, (long long)n_singletons);
+	if (fpse) {
+		if (str.l) {
+			bgzf_write(fpse, str.s, str.l);
+			++n_singletons;
+		}
+		fprintf(stderr, "[M::%s] discarded %lld singletons\n", __func__, (long long)n_singletons);
+		bgzf_close(fpse);
+	}
 	free(buf); free(str.s);
 	bam_destroy1(b);
 	bgzf_close(fp);
