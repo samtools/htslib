@@ -147,7 +147,7 @@ int bcf_hdr_parse1(bcf_hdr_t *h, const char *str)
 		vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
 		// check if "PASS" is in the dictionary
 		k = kh_get(vdict, d, "PASS");
-		if (k == kh_end(d)) bcf_hdr_parse1(h, "##FILTER=<ID=PASS>"); // if not, add it; this is a recursion
+		if (k == kh_end(d)) bcf_hdr_parse1(h, "##FILTER=<ID=PASS,Description=\"All filters passed\">"); // if not, add it; this is a recursion
 		// add samples
 		d = (vdict_t*)h->dict[BCF_DT_SAMPLE];
 		for (p = q = str;; ++q) {
