@@ -22,7 +22,7 @@ int main_samview(int argc, char *argv[])
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: samview [-bS] [-t ref.fai] [-l level] <in.bam>|<in.sam> [region]\n");
+		fprintf(stderr, "Usage: samview [-bS] [-l level] <in.bam>|<in.sam> [region]\n");
 		return 1;
 	}
 	strcpy(moder, "r");

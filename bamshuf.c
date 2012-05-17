@@ -135,7 +135,6 @@ int main_bamshuf(int argc, char *argv[])
 		fprintf(stderr, "         -n INT  number of temporary files [%d]\n", n_files);
 		fprintf(stderr, "\n");
 		return 1;
-		return 1;
 	}
 	bamshuf(argv[optind], n_files, argv[optind+1], clevel, is_stdout);
 	return 0;

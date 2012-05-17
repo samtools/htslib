@@ -20,7 +20,13 @@ int main_vcfview(int argc, char *argv[])
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: vcfview [-bS] [-t ref.fai] [-l level] <in.bcf>\n");
+		fprintf(stderr, "\nUsage:   vcfview [-bS] [-t ref.fai] [-l level] <in.bcf>|<in.vcf>\n\n");
+		fprintf(stderr, "Options: -b        output in BCF\n");
+		fprintf(stderr, "         -S        input is VCF\n");
+		fprintf(stderr, "         -o FILE   output file name [stdout]\n");
+		fprintf(stderr, "         -l INT    compression level [%d]\n", clevel);
+		fprintf(stderr, "         -t FILE   list of reference names and lengths [null]\n");
+		fprintf(stderr, "\n");
 		return 1;
 	}
 	strcpy(moder, "r");
