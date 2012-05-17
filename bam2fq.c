@@ -17,13 +17,13 @@ int main_bam2fq(int argc, char *argv[])
 	int64_t n_singletons = 0, n_reads = 0;
 	char last[512], *fnse = 0;
 
-	while ((c = getopt(argc, argv, "ap:")) > 0)
+	while ((c = getopt(argc, argv, "as:")) > 0)
 		if (c == 'a') has12 = 1;
-		else if (c == 'p') fnse = optarg;
+		else if (c == 's') fnse = optarg;
 	if (argc == optind) {
-		fprintf(stderr, "\nUsage:   bam2fq [-a] [-p outSE] <in.bam>\n\n");
+		fprintf(stderr, "\nUsage:   bam2fq [-a] [-s outSE] <in.bam>\n\n");
 		fprintf(stderr, "Options: -a        append /1 and /2 to the read name\n");
-		fprintf(stderr, "         -p FILE   write singleton reads to FILE [assume single-end]\n");
+		fprintf(stderr, "         -s FILE   write singleton reads to FILE [assume single-end]\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
