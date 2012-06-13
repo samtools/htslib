@@ -82,8 +82,11 @@ extern "C" {
 	int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int bin, int is_mapped);
 	void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
 	void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf);
-	hts_idx_t *hts_idx_load(void *fp, int is_bgzf);
+	hts_idx_t *hts_idx_load(void *fp, int is_bgzf, int min_shift, int n_lvls);
 	char *hts_idx_getfn(const char *fn, const char *ext);
+
+	void hts_idx_dump(const hts_idx_t *idx, const char *fn);
+	hts_idx_t *hts_idx_restore(const char *fn);
 
 	const char *hts_parse_reg(const char *s, int *beg, int *end);
 	hts_iter_t *hts_iter_query(const hts_idx_t *idx, int tid, int beg, int end);

@@ -297,72 +297,86 @@ int bam_write1(BGZF *fp, const bam1_t *b)
  *** BAM indexing ***
  ********************/
 
-bam_idx_t *bam_index(BGZF *fp)
+bam_idx_t *bam_index(BGZF *fp, int min_shift)
 {
+	int is_bai = 0, n_lvls, i;
 	bam1_t *b;
 	hts_idx_t *idx;
 	bam_hdr_t *h;
 	h = bam_hdr_read(fp);
-	idx = hts_idx_init(h->n_targets, bgzf_tell(fp), 14, 5);
+	if (min_shift > 0) {
+		int64_t max_len = 0, s;
+		for (i = 0; i < h->n_targets; ++i)
+			if (max_len < h->target_len[i]) max_len = h->target_len[i];
+		max_len += 256;
+		for (n_lvls = 1, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+	} else is_bai = 1, min_shift = 14, n_lvls = 5;
+	idx = hts_idx_init(h->n_targets, bgzf_tell(fp), min_shift, n_lvls);
 	bam_hdr_destroy(h);
 	b = bam_init1();
 	while (bam_read1(fp, b) >= 0) {
 		int l;
 		l = bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
-		hts_idx_push(idx, b->core.tid, b->core.pos, b->core.pos + l, bgzf_tell(fp), b->core.bin, !(b->core.flag&BAM_FUNMAP));
+		hts_idx_push(idx, b->core.tid, b->core.pos, b->core.pos + l, bgzf_tell(fp), -1, !(b->core.flag&BAM_FUNMAP));
 	}
 	hts_idx_finish(idx, bgzf_tell(fp));
 	bam_destroy1(b);
 	return idx;
 }
 
-int bam_index_build(const char *fn, const char *_fnidx)
+int bam_index_build(const char *fn, const char *_fnidx, int min_shift)
 {
 	char *fnidx;
-	FILE *fpidx;
 	BGZF *fp;
 	bam_idx_t *idx;
+	const char *suf;
 
 	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
-	idx = bam_index(fp);
+	suf = min_shift <= 0? ".bai" : ".hti";
+	idx = bam_index(fp, min_shift);
 	bgzf_close(fp);
 	if (_fnidx == 0) {
 		fnidx = (char*)malloc(strlen(fn) + 5);
-		strcat(strcpy(fnidx, fn), ".bai");
+		strcat(strcpy(fnidx, fn), suf);
 	} else fnidx = strdup(_fnidx);
-	if ((fpidx = fopen(fnidx, "wb")) == 0) {
-		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create the index file\n", __func__);
-		return -1;
-	}
+	if (min_shift <= 0) {
+		FILE *fpidx;
+		if ((fpidx = fopen(fnidx, "wb")) == 0) {
+			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create the index file\n", __func__);
+			return -1;
+		}
+		fwrite("BAI\1", 1, 4, fpidx);
+		hts_idx_save(idx, fpidx, 0);
+		fclose(fpidx);
+	} else hts_idx_dump(idx, fnidx);
 	free(fnidx);
-	fwrite("BAI\1", 1, 4, fpidx);
-	hts_idx_save(idx, fpidx, 0);
-	fclose(fpidx);
 	hts_idx_destroy(idx);
 	return 0;
 }
 
-bam_idx_t *bam_index_load_local(const char *fnidx)
+bam_idx_t *bam_index_load_local(const char *fnidx, int is_bai)
 {
 	bam_idx_t *idx;
-	FILE *fpidx;
-	char magic[4];
-	if ((fpidx = fopen(fnidx, "rb")) == 0) {
-		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open the index file\n", __func__);
-		return 0;
-	}
-	fread(magic, 1, 4, fpidx);
-	idx = hts_idx_load(fpidx, 0);
-	fclose(fpidx);
+	if (is_bai) {
+		FILE *fpidx;
+		char magic[4];
+		if ((fpidx = fopen(fnidx, "rb")) == 0) {
+			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open the index file\n", __func__);
+			return 0;
+		}
+		fread(magic, 1, 4, fpidx);
+		idx = hts_idx_load(fpidx, 0, 14, 5);
+		fclose(fpidx);
+	} else idx = hts_idx_restore(fnidx);
 	return idx;
 }
 
 bam_idx_t *bam_index_load(const char *fn)
 {
 	char *fnidx;
-	if ((fnidx = hts_idx_getfn(fn, ".bai")) == 0) return 0;
-	fprintf(stderr, "%s\n", fnidx);
-	return bam_index_load_local(fnidx);
+	if ((fnidx = hts_idx_getfn(fn, ".hti")) != 0) return bam_index_load_local(fnidx, 0);
+	if ((fnidx = hts_idx_getfn(fn, ".bai")) != 0) return bam_index_load_local(fnidx, 1);
+	return 0;
 }
 
 static inline int is_overlap(uint32_t beg, uint32_t end, const bam1_t *b)

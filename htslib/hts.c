@@ -114,11 +114,11 @@ typedef struct {
 
 struct __hts_idx_t {
 	int min_shift, n_lvls, n_bins;
+	uint32_t l_meta;
 	int n, m;
 	uint64_t n_no_coor;
 	bidx_t **bidx;
 	lidx_t *lidx;
-	size_t l_meta;
 	uint8_t *meta;
 	struct {
 		uint32_t last_bin, save_bin;
@@ -373,7 +373,25 @@ void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf)
 	} else idx_write(is_bgzf, fp, &idx->n_no_coor, 8);
 }
 
-hts_idx_t *hts_idx_load(void *fp, int is_bgzf)
+void hts_idx_dump(const hts_idx_t *idx, const char *fn)
+{
+	BGZF *fp;
+	uint32_t x[3];
+	int is_be, i;
+	is_be = ed_is_big();
+	fp = bgzf_open(fn, "w");
+	bgzf_write(fp, "HTI\1", 4);
+	x[0] = idx->min_shift; x[1] = idx->n_lvls; x[2] = idx->l_meta;
+	if (is_be) {
+		for (i = 0; i < 3; ++i)
+			bgzf_write(fp, ed_swap_4p(&x[i]), 4);
+	} else bgzf_write(fp, &x, 12);
+	if (idx->l_meta) bgzf_write(fp, idx->meta, idx->l_meta);
+	hts_idx_save(idx, fp, 1);
+	bgzf_close(fp);
+}
+
+hts_idx_t *hts_idx_load(void *fp, int is_bgzf, int min_shift, int n_lvls)
 {
 	int32_t i, n, is_be;
 	hts_idx_t *idx;
@@ -381,7 +399,7 @@ hts_idx_t *hts_idx_load(void *fp, int is_bgzf)
 	is_be = ed_is_big();
 	idx_read(is_bgzf, fp, &n, 4);
 	if (is_be) ed_swap_4p(&n);
-	idx = hts_idx_init(n, 0, 14, 5);
+	idx = hts_idx_init(n, 0, min_shift, n_lvls);
 	for (i = 0; i < idx->n; ++i) {
 		bidx_t *h;
 		lidx_t *l = &idx->lidx[i];
@@ -415,6 +433,29 @@ hts_idx_t *hts_idx_load(void *fp, int is_bgzf)
 	}
 	if (idx_read(is_bgzf, fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
 	if (is_be) ed_swap_8p(&idx->n_no_coor);
+	return idx;
+}
+
+hts_idx_t *hts_idx_restore(const char *fn)
+{
+	BGZF *fp;
+	hts_idx_t *idx;
+	uint32_t x[3];
+	uint8_t magic[4], *meta = 0;
+	int is_be, i;
+	is_be = ed_is_big();
+	if ((fp = bgzf_open(fn, "r")) == 0) return 0;
+	bgzf_read(fp, magic, 4);
+	bgzf_read(fp, x, 12);
+	if (is_be) for (i = 0; i < 3; ++i) ed_swap_4p(&x[i]);
+	if (x[2]) {
+		meta = (uint8_t*)malloc(x[2]);
+		bgzf_read(fp, meta, x[2]);
+	}
+	idx = hts_idx_load(fp, 1, x[0], x[1]);
+	bgzf_close(fp);
+	idx->l_meta = x[2];
+	idx->meta = meta;
 	return idx;
 }
 
