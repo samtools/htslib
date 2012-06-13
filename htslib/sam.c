@@ -303,7 +303,7 @@ bam_idx_t *bam_index(BGZF *fp)
 	hts_idx_t *idx;
 	bam_hdr_t *h;
 	h = bam_hdr_read(fp);
-	idx = hts_idx_init(h->n_targets, bgzf_tell(fp));
+	idx = hts_idx_init(h->n_targets, bgzf_tell(fp), 14, 5);
 	bam_hdr_destroy(h);
 	b = bam_init1();
 	while (bam_read1(fp, b) >= 0) {
@@ -571,7 +571,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 		q = _read_token(p);
 		i = 1;
 	}
-	c->bin = hts_reg2bin(c->pos, c->pos + i);
+	c->bin = hts_reg2bin(c->pos, c->pos + i, 14, 5);
 	// mate chr
 	q = _read_token(p);
 	if (strcmp(q, "=") == 0) c->mtid = c->tid;

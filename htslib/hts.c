@@ -93,9 +93,6 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
  *** Indexing ***
  ****************/
 
-#define IDX_LIDX_SHIFT    14
-#define IDX_MAX_BIN       37450
-
 #define pair64_lt(a,b) ((a).u < (b).u)
 
 #include "ksort.h"
@@ -116,10 +113,13 @@ typedef struct {
 } lidx_t;
 
 struct __hts_idx_t {
+	int min_shift, n_lvls, n_bins;
 	int n, m;
 	uint64_t n_no_coor;
 	bidx_t **bidx;
 	lidx_t *lidx;
+	size_t l_meta;
+	uint8_t *meta;
 	struct {
 		uint32_t last_bin, save_bin;
 		int last_coor, last_tid, save_tid, finished;
@@ -148,11 +148,11 @@ static inline void insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
 	l->list[l->n++].v = end;
 }
 
-static inline uint64_t insert_to_l(lidx_t *l, int _beg, int _end, uint64_t offset)
+static inline uint64_t insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t offset, int min_shift)
 {
 	int i, beg, end;
-	beg = _beg >> IDX_LIDX_SHIFT;
-	end = (_end - 1) >> IDX_LIDX_SHIFT;
+	beg = _beg >> min_shift;
+	end = (_end - 1) >> min_shift;
 	if (l->m < end + 1) {
 		int old_m = l->m;
 		l->m = end + 1;
@@ -170,10 +170,13 @@ static inline uint64_t insert_to_l(lidx_t *l, int _beg, int _end, uint64_t offse
 	return (uint64_t)beg<<32 | end;
 }
 
-hts_idx_t *hts_idx_init(int n, uint64_t offset0)
+hts_idx_t *hts_idx_init(int n, uint64_t offset0, int min_shift, int n_lvls)
 {
 	hts_idx_t *idx;
 	idx = (hts_idx_t*)calloc(1, sizeof(hts_idx_t));
+	idx->min_shift = min_shift;
+	idx->n_lvls = n_lvls;
+	idx->n_bins = ((1<<(3 * n_lvls + 3)) - 1) / 7;
 	idx->z.save_bin = idx->z.save_tid = idx->z.last_tid = idx->z.last_bin = 0xffffffffu;
 	idx->z.save_off = idx->z.last_off = idx->z.off_beg = idx->z.off_end = offset0;
 	idx->z.last_coor = 0xffffffffu;
@@ -192,8 +195,8 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 	if (idx->z.finished) return; // do not run this function multiple times
 	if (idx->z.save_tid >= 0) {
 		insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, final_offset);
-		insert_to_b(idx->bidx[idx->z.save_tid], IDX_MAX_BIN, idx->z.off_beg, final_offset);
-		insert_to_b(idx->bidx[idx->z.save_tid], IDX_MAX_BIN, idx->z.n_mapped, idx->z.n_unmapped);
+		insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.off_beg, final_offset);
+		insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.n_mapped, idx->z.n_unmapped);
 	}
 	for (i = 0; i < idx->n; ++i) {
 		bidx_t *bidx = idx->bidx[i];
@@ -249,17 +252,17 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 	}
 	if (tid >= 0 && is_mapped) {
 		uint64_t ret;
-		ret = insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off); // last_off points to the start of the current record
+		ret = insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off, idx->min_shift); // last_off points to the start of the current record
 		if (idx->z.last_off == 0) idx->z.offset0 = ret; // I forgot the purpose of offset0
 	}
-	if (bin < 0) bin = hts_reg2bin(beg, end); // compute bin if this has not been done
+	if (bin < 0) bin = hts_reg2bin(beg, end, idx->min_shift, idx->n_lvls); // compute bin if this has not been done
 	if ((int)idx->z.last_bin != bin) { // then possibly write the binning index
 		if (idx->z.save_bin != 0xffffffffu) // save_bin==0xffffffffu only happens to the first record
 			insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, idx->z.last_off);
 		if (idx->z.last_bin == 0xffffffffu && idx->z.save_bin != 0xffffffffu) { // change of chr; keep meta information
 			idx->z.off_end = idx->z.last_off;
-			insert_to_b(idx->bidx[idx->z.save_tid], IDX_MAX_BIN, idx->z.off_beg, idx->z.off_end);
-			insert_to_b(idx->bidx[idx->z.save_tid], IDX_MAX_BIN, idx->z.n_mapped, idx->z.n_unmapped);
+			insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.off_beg, idx->z.off_end);
+			insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.n_mapped, idx->z.n_unmapped);
 			idx->z.n_mapped = idx->z.n_unmapped = 0;
 			idx->z.off_beg = idx->z.off_end;
 		}
@@ -378,7 +381,7 @@ hts_idx_t *hts_idx_load(void *fp, int is_bgzf)
 	is_be = ed_is_big();
 	idx_read(is_bgzf, fp, &n, 4);
 	if (is_be) ed_swap_4p(&n);
-	idx = hts_idx_init(n, 0);
+	idx = hts_idx_init(n, 0, 14, 5);
 	for (i = 0; i < idx->n; ++i) {
 		bidx_t *h;
 		lidx_t *l = &idx->lidx[i];
@@ -415,26 +418,27 @@ hts_idx_t *hts_idx_load(void *fp, int is_bgzf)
 	return idx;
 }
 
-
-static inline int reg2bins(int32_t beg, int32_t end, uint16_t list[IDX_MAX_BIN])
+static inline int reg2bins(int64_t beg, int64_t end, hts_iter_t *itr, int min_shift, int n_lvls)
 {
-	int i = 0, k;
+	int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
 	if (beg >= end) return 0;
-	if (end >= 1<<29) end = 1<<29;
-	--end;
-	list[i++] = 0;
-	for (k =    1 + (beg>>26); k <=    1 + (end>>26); ++k) list[i++] = k;
-	for (k =    9 + (beg>>23); k <=    9 + (end>>23); ++k) list[i++] = k;
-	for (k =   73 + (beg>>20); k <=   73 + (end>>20); ++k) list[i++] = k;
-	for (k =  585 + (beg>>17); k <=  585 + (end>>17); ++k) list[i++] = k;
-	for (k = 4681 + (beg>>14); k <= 4681 + (end>>14); ++k) list[i++] = k;
-	return i;
+	if (end >= 1ULL<<s) end = 1ULL<<s;
+	for (--end, l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
+		int b, e, n, i;
+		b = t + (beg>>s); e = t + (end>>s); n = e - b + 1;
+		if (itr->bins.n + n > itr->bins.m) {
+			itr->bins.m = itr->bins.n + n;
+			kroundup32(itr->bins.m);
+			itr->bins.a = (int*)realloc(itr->bins.a, sizeof(int) * itr->bins.m);
+		}
+		for (i = b; i <= e; ++i) itr->bins.a[itr->bins.n++] = i;
+	}
+	return itr->bins.n;
 }
 
 hts_iter_t *hts_iter_query(const hts_idx_t *idx, int tid, int beg, int end)
 {
-	uint16_t *bins;
-	int i, n_bins, n_off, l;
+	int i, n_off, l;
 	hts_pair64_t *off;
 	khint_t k;
 	bidx_t *bidx;
@@ -452,31 +456,31 @@ hts_iter_t *hts_iter_query(const hts_idx_t *idx, int tid, int beg, int end)
 	}
 	if (beg < 0) beg = 0;
 	if (end < beg) return 0;
+	if ((bidx = idx->bidx[tid]) == 0) return 0;
+
 	iter = (hts_iter_t*)calloc(1, sizeof(hts_iter_t));
 	iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
 
-	if ((bidx = idx->bidx[tid]) == 0) return 0;
-	bins = (uint16_t*)alloca(IDX_MAX_BIN<<1);
-	n_bins = reg2bins(beg, end, bins);
+	reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
 	if (idx->lidx[tid].n > 0) {
-		min_off = (beg>>IDX_LIDX_SHIFT >= idx->lidx[tid].n)? idx->lidx[tid].offset[idx->lidx[tid].n-1]
-			: idx->lidx[tid].offset[beg>>IDX_LIDX_SHIFT];
+		min_off = (beg>>idx->min_shift >= idx->lidx[tid].n)? idx->lidx[tid].offset[idx->lidx[tid].n-1]
+			: idx->lidx[tid].offset[beg>>idx->min_shift];
 		if (min_off == 0) { // improvement for index files built by tabix prior to 0.1.4
-			int n = beg>>IDX_LIDX_SHIFT;
+			int n = beg>>idx->min_shift;
 			if (n > idx->lidx[tid].n) n = idx->lidx[tid].n;
 			for (i = n - 1; i >= 0; --i)
 				if (idx->lidx[tid].offset[i] != 0) break;
 			if (i >= 0) min_off = idx->lidx[tid].offset[i];
 		}
 	} else min_off = 0; // tabix 0.1.2 may produce such index files
-	for (i = n_off = 0; i < n_bins; ++i) {
-		if ((k = kh_get(bin, bidx, bins[i])) != kh_end(bidx))
+	for (i = n_off = 0; i < iter->bins.n; ++i) {
+		if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
 			n_off += kh_value(bidx, k).n;
 	}
 	if (n_off == 0) return iter;
 	off = (hts_pair64_t*)calloc(n_off, 16);
-	for (i = n_off = 0; i < n_bins; ++i) {
-		if ((k = kh_get(bin, bidx, bins[i])) != kh_end(bidx)) {
+	for (i = n_off = 0; i < iter->bins.n; ++i) {
+		if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
 			int j;
 			bins_t *p = &kh_value(bidx, k);
 			for (j = 0; j < p->n; ++j)
@@ -506,7 +510,7 @@ hts_iter_t *hts_iter_query(const hts_idx_t *idx, int tid, int beg, int end)
 
 void hts_iter_destroy(hts_iter_t *iter)
 {
-	if (iter) { free(iter->off); free(iter); }
+	if (iter) { free(iter->off); free(iter->bins.a); free(iter); }
 }
 
 const char *hts_parse_reg(const char *s, int *beg, int *end)

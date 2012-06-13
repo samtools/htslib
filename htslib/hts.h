@@ -67,13 +67,17 @@ typedef struct {
 	int tid, beg, end, n_off, i;
 	uint64_t curr_off;
 	hts_pair64_t *off;
+	struct {
+		int n, m;
+		int *a;
+	} bins;
 } hts_iter_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-	hts_idx_t *hts_idx_init(int n, uint64_t offset0);
+	hts_idx_t *hts_idx_init(int n, uint64_t offset0, int min_shift, int n_lvls);
 	void hts_idx_destroy(hts_idx_t *idx);
 	int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int bin, int is_mapped);
 	void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
@@ -89,14 +93,11 @@ extern "C" {
 }
 #endif
 
-static inline int hts_reg2bin(uint32_t beg, uint32_t end)
+static inline int hts_reg2bin(int64_t beg, int64_t end, int min_shift, int n_lvls)
 {
-	--end;
-	if (beg>>14 == end>>14) return 4681 + (beg>>14);
-	if (beg>>17 == end>>17) return  585 + (beg>>17);
-	if (beg>>20 == end>>20) return   73 + (beg>>20);
-	if (beg>>23 == end>>23) return    9 + (beg>>23);
-	if (beg>>26 == end>>26) return    1 + (beg>>26);
+	int l, s = min_shift, t = ((1<<((n_lvls<<1) + n_lvls)) - 1) / 7;
+	for (--end, l = n_lvls; l > 0; --l, s += 3, t -= 1<<((l<<1)+l))
+		if (beg>>s == end>>s) return t + (beg>>s);
 	return 0;
 }
 
