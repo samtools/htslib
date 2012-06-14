@@ -299,7 +299,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
 
 bam_idx_t *bam_index(BGZF *fp, int min_shift)
 {
-	int is_bai = 0, n_lvls, i;
+	int n_lvls, i;
 	bam1_t *b;
 	hts_idx_t *idx;
 	bam_hdr_t *h;
@@ -310,7 +310,7 @@ bam_idx_t *bam_index(BGZF *fp, int min_shift)
 			if (max_len < h->target_len[i]) max_len = h->target_len[i];
 		max_len += 256;
 		for (n_lvls = 1, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
-	} else is_bai = 1, min_shift = 14, n_lvls = 5;
+	} else min_shift = 14, n_lvls = 5;
 	idx = hts_idx_init(h->n_targets, bgzf_tell(fp), min_shift, n_lvls);
 	bam_hdr_destroy(h);
 	b = bam_init1();
@@ -332,7 +332,7 @@ int bam_index_build(const char *fn, const char *_fnidx, int min_shift)
 	const char *suf;
 
 	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
-	suf = min_shift <= 0? ".bai" : ".hti";
+	suf = min_shift <= 0? ".bai" : ".csi";
 	idx = bam_index(fp, min_shift);
 	bgzf_close(fp);
 	if (_fnidx == 0) {
@@ -374,7 +374,7 @@ bam_idx_t *bam_index_load_local(const char *fnidx, int is_bai)
 bam_idx_t *bam_index_load(const char *fn)
 {
 	char *fnidx;
-	if ((fnidx = hts_idx_getfn(fn, ".hti")) != 0) return bam_index_load_local(fnidx, 0);
+	if ((fnidx = hts_idx_getfn(fn, ".csi")) != 0) return bam_index_load_local(fnidx, 0);
 	if ((fnidx = hts_idx_getfn(fn, ".bai")) != 0) return bam_index_load_local(fnidx, 1);
 	return 0;
 }
@@ -874,11 +874,10 @@ static inline int resolve_cigar2(bam_pileup1_t *p, int32_t pos, cstate_t *s)
 	bam1_t *b = p->b;
 	bam1_core_t *c = &b->core;
 	uint32_t *cigar = bam_get_cigar(b);
-	int k, is_head = 0;
+	int k;
 	// determine the current CIGAR operation
 //	fprintf(stderr, "%s\tpos=%d\tend=%d\t(%d,%d,%d)\n", bam1_qname(b), pos, s->end, s->k, s->x, s->y);
 	if (s->k == -1) { // never processed
-		is_head = 1;
 		if (c->n_cigar == 1) { // just one operation, save a loop
 		  if (_cop(cigar[0]) == BAM_CMATCH || _cop(cigar[0]) == BAM_CEQUAL || _cop(cigar[0]) == BAM_CDIFF) s->k = 0, s->x = c->pos, s->y = 0;
 		} else { // find the first match or deletion

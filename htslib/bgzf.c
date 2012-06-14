@@ -396,7 +396,7 @@ typedef struct mtaux_t {
 
 static int worker_aux(worker_t *w)
 {
-	int i, tmp, stop = 0;
+	int i, stop = 0;
 	// wait for condition: to process or all done
 	pthread_mutex_lock(&w->mt->lock);
 	while (!w->toproc && !w->mt->done)
@@ -413,7 +413,7 @@ static int worker_aux(worker_t *w)
 		memcpy(w->mt->blk[i], w->buf, clen);
 		w->mt->len[i] = clen;
 	}
-	tmp = __sync_fetch_and_add(&w->mt->proc_cnt, 1);
+	__sync_fetch_and_add(&w->mt->proc_cnt, 1);
 	return 0;
 }
 
@@ -584,13 +584,13 @@ ssize_t bgzf_write(BGZF *fp, const void *data, ssize_t length)
 
 int bgzf_close(BGZF* fp)
 {
-	int ret, count, block_length;
+	int ret, block_length;
 	if (fp == 0) return -1;
 	if (fp->is_write) {
 		if (bgzf_flush(fp) != 0) return -1;
 		fp->compress_level = -1;
 		block_length = deflate_block(fp, 0); // write an empty block
-		count = fwrite(fp->compressed_block, 1, block_length, (FILE*)fp->fp);
+		fwrite(fp->compressed_block, 1, block_length, (FILE*)fp->fp);
 		if (fflush((FILE*)fp->fp) != 0) {
 			fp->errcode |= BGZF_ERR_IO;
 			return -1;
