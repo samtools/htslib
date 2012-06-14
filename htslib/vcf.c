@@ -414,6 +414,10 @@ void bcf_enc_vchar(kstring_t *s, int l, char *a)
 void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 {
 	int j = 0;
+	if (n == 0) {
+		kputc('.', s);
+		return;
+	}
 	if (type == BCF_BT_INT8) {
 		int8_t *p = (int8_t*)data;
 		for (j = 0; j < n && *p != INT8_MIN; ++j, ++p) {
