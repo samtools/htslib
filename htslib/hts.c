@@ -93,7 +93,7 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
  *** Indexing ***
  ****************/
 
-#define HTS_MIN_MARKER_DIST 0x40000
+#define HTS_MIN_MARKER_DIST 0x20000
 
 #define pair64_lt(a,b) ((a).u < (b).u)
 
