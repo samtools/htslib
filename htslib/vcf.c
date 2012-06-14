@@ -357,7 +357,9 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
 void vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
 {
 	if (!fp->is_bin) {
-		fwrite(h->text, 1, h->l_text, (FILE*)fp->fp);
+		int l = h->l_text;
+		if (l && h->text[l-1] == 0) --l;
+		fwrite(h->text, 1, h->l_text - 1, (FILE*)fp->fp);
 		fputc('\n', (FILE*)fp->fp);
 	} else bcf_hdr_write((BGZF*)fp->fp, h);
 }
