@@ -309,7 +309,7 @@ bam_idx_t *bam_index(BGZF *fp, int min_shift)
 		for (i = 0; i < h->n_targets; ++i)
 			if (max_len < h->target_len[i]) max_len = h->target_len[i];
 		max_len += 256;
-		for (n_lvls = 1, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+		for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
 	} else min_shift = 14, n_lvls = 5;
 	idx = hts_idx_init(h->n_targets, bgzf_tell(fp), min_shift, n_lvls);
 	bam_hdr_destroy(h);

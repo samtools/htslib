@@ -205,6 +205,7 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 		lidx_t *lidx = &idx->lidx[i];
 		khint_t k;
 		int l, m;
+		if (bidx == 0) continue;
 		// merge a bin to its parent if the bin is too small
 		for (l = idx->n_lvls; l > 0; --l) {
 			int start = ((1<<((l<<1) + l)) - 1) / 7;
@@ -362,11 +363,12 @@ void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf)
 		bidx_t *bidx = idx->bidx[i];
 		lidx_t *lidx = &idx->lidx[i];
 		// write binning index
-		size = kh_size(bidx);
+		size = bidx? kh_size(bidx) : 0;
 		if (is_be) { // big endian
 			uint32_t x = size;
 			idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
 		} else idx_write(is_bgzf, fp, &size, 4);
+		if (bidx == 0) goto write_lidx;
 		for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
 			if (kh_exist(bidx, k)) {
 				bins_t *p = &kh_value(bidx, k);
@@ -384,7 +386,7 @@ void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf)
 				}
 			}
 		}
-		// write linear index
+write_lidx:
 		if (is_be) {
 			int32_t x = lidx->n;
 			idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
