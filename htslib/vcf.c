@@ -437,7 +437,7 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 		}
 	} else if (type == BCF_BT_FLOAT) {
 		float *p = (float*)data;
-		for (j = 0; j < n && *(int32_t*)p != 0x7F800001; ++j, ++p) {
+		for (j = 0; j < n && *(int32_t*)p != bcf_missing_float; ++j, ++p) {
 			if (j) kputc(',', s);
 			ksprintf(s, "%g", *p);
 		}
@@ -684,11 +684,11 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 				} else if ((z->y>>4&0xf) == BCF_HT_REAL) {
 					float *x = (float*)(z->buf + z->size * m);
 					for (l = 0;; ++t) {
-						if (*t == '.' && !isdigit(t[1])) *(int32_t*)&x[l++] = 0x7F800001, ++t; // ++t to skip "."
+						if (*t == '.' && !isdigit(t[1])) *(int32_t*)&x[l++] = bcf_missing_float, ++t; // ++t to skip "."
 						else x[l++] = strtod(t, &t);
 						if (*t == ':' || *t == 0) break;
 					}
-					for (; l != z->size>>2; ++l) *(int32_t*)(x+l) = 0x7F800001;
+					for (; l != z->size>>2; ++l) *(int32_t*)(x+l) = bcf_missing_float;
 				} else abort();
 				if (*t == 0) {
 					if (t == end) break;
