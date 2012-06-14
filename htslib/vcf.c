@@ -892,7 +892,6 @@ int bcf_index_build(const char *fn, const char *_fnidx, int min_shift)
 	return 0;
 }
 
-hts_idx_t *bcf_index_load_local(const char *fnidx) { return hts_idx_restore(fnidx); }
 hts_idx_t *bcf_index_load(const char *fn) { return hts_idx_restore(hts_idx_getfn(fn, ".csi")); }
 
 static inline int is_overlap(uint32_t beg, uint32_t end, const bcf1_t *b)
