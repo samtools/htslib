@@ -93,6 +93,8 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
  *** Indexing ***
  ****************/
 
+#define HTS_MIN_MARKER_DIST 0x40000
+
 #define pair64_lt(a,b) ((a).u < (b).u)
 
 #include "ksort.h"
@@ -203,14 +205,40 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 		lidx_t *lidx = &idx->lidx[i];
 		khint_t k;
 		int l, m;
-		// merge adjacent blocks that start from the same BGZF block
+		// merge a bin to its parent if the bin is too small
+		for (l = idx->n_lvls; l > 0; --l) {
+			int start = ((1<<((l<<1) + l)) - 1) / 7;
+			for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
+				bins_t *p, *q;
+				if (!kh_exist(bidx, k) || kh_key(bidx, k) < start) continue;
+				p = &kh_value(bidx, k);
+				if (l < idx->n_lvls && p->n > 1) ks_introsort(_off, p->n, p->list);
+				if ((p->list[p->n - 1].v>>16) - (p->list[0].u>>16) < HTS_MIN_MARKER_DIST) {
+					khint_t kp;
+					kp = kh_get(bin, bidx, (kh_key(bidx, k) - 1) >> 3);
+					if (kp != kh_end(bidx)) {
+						q = &kh_val(bidx, kp);
+						if (q->n + p->n > q->m) {
+							q->m = q->n + p->n;
+							kroundup32(q->m);
+							q->list = (hts_pair64_t*)realloc(q->list, q->m * 16);
+						}
+						memcpy(q->list + q->n, p->list, p->n * 16);
+						free(p->list);
+						kh_del(bin, bidx, k);
+					}
+				}
+			}
+		}
+		// merge adjacent chunks that start from the same BGZF block
 		for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
 			bins_t *p;
 			if (!kh_exist(bidx, k)) continue;
 			p = &kh_value(bidx, k);
 			for (l = 1, m = 0; l < p->n; ++l) {
-				if (p->list[m].v>>16 == p->list[l].u>>16) p->list[m].v = p->list[l].v; // if in the same BGZF block, merge them
-				else p->list[++m] = p->list[l];
+				if (p->list[m].v>>16 >= p->list[l].u>>16) {
+					if (p->list[m].v < p->list[l].v) p->list[m].v = p->list[l].v;
+				} else p->list[++m] = p->list[l];
 			}
 			p->n = m + 1;
 		}
