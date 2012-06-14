@@ -869,12 +869,14 @@ hts_idx_t *bcf_index(BGZF *fp, int min_shift)
 			max_len = h->id[BCF_DT_CTG][i].val->info[0];
 	max_len += 256;
 	for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
-	fprintf(stderr, "%lld,%d\n", max_len, n_lvls);
 	idx = hts_idx_init(h->n[BCF_DT_CTG], bgzf_tell(fp), min_shift, n_lvls);
 	bcf_hdr_destroy(h);
 	b = bcf_init1();
-	while (bcf_read1(fp, b) >= 0)
-		hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp), -1, 1);
+	while (bcf_read1(fp, b) >= 0) {
+		int ret;
+		ret = hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp), -1, 1);
+		if (ret < 0) break;
+	}
 	hts_idx_finish(idx, bgzf_tell(fp));
 	bcf_destroy1(b);
 	return idx;

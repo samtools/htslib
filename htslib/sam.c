@@ -315,9 +315,10 @@ bam_idx_t *bam_index(BGZF *fp, int min_shift)
 	bam_hdr_destroy(h);
 	b = bam_init1();
 	while (bam_read1(fp, b) >= 0) {
-		int l;
+		int l, ret;
 		l = bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
-		hts_idx_push(idx, b->core.tid, b->core.pos, b->core.pos + l, bgzf_tell(fp), -1, !(b->core.flag&BAM_FUNMAP));
+		ret = hts_idx_push(idx, b->core.tid, b->core.pos, b->core.pos + l, bgzf_tell(fp), -1, !(b->core.flag&BAM_FUNMAP));
+		if (ret < 0) break; // unsorted
 	}
 	hts_idx_finish(idx, bgzf_tell(fp));
 	bam_destroy1(b);
