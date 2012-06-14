@@ -149,10 +149,15 @@ static inline void bcf_enc_size(kstring_t *s, int size, int type)
 	if (size >= 15) {
 		kputc(15<<4|type, s);
 		if (size >= 128) {
-			int16_t x = size;
-			assert(size <= 32767);
-			kputc(1<<4|BCF_BT_INT16, s);
-			kputsn((char*)&x, 2, s);
+			if (size >= 32768) {
+				int32_t x = size;
+				kputc(1<<4|BCF_BT_INT32, s);
+				kputsn((char*)&x, 4, s);
+			} else {
+				int16_t x = size;
+				kputc(1<<4|BCF_BT_INT16, s);
+				kputsn((char*)&x, 2, s);
+			}
 		} else {
 			kputc(1<<4|BCF_BT_INT8, s);
 			kputc(size, s);
