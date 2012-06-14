@@ -408,7 +408,7 @@ void hts_idx_dump(const hts_idx_t *idx, const char *fn)
 	int is_be, i;
 	is_be = ed_is_big();
 	fp = bgzf_open(fn, "w");
-	bgzf_write(fp, "HTI\1", 4);
+	bgzf_write(fp, "CSI\1", 4);
 	x[0] = idx->min_shift; x[1] = idx->n_lvls; x[2] = idx->l_meta;
 	if (is_be) {
 		for (i = 0; i < 3; ++i)
