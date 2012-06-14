@@ -224,6 +224,7 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 							q->list = (hts_pair64_t*)realloc(q->list, q->m * 16);
 						}
 						memcpy(q->list + q->n, p->list, p->n * 16);
+						q->n += p->n;
 						free(p->list);
 						kh_del(bin, bidx, k);
 					}
