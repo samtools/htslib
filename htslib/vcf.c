@@ -829,7 +829,7 @@ int vcf_write1(htsFile *fp, const bcf_hdr_t *h, const bcf1_t *v)
  * Data access routines *
  ************************/
 
-int vcf_id2int(const bcf_hdr_t *h, int which, const char *id)
+int bcf_id2int(const bcf_hdr_t *h, int which, const char *id)
 {
 	khint_t k;
 	vdict_t *d = (vdict_t*)h->dict[which];
@@ -844,4 +844,104 @@ bcf_fmt_t *vcf_unpack_fmt(const bcf_hdr_t *h, const bcf1_t *v)
 	fmt = (bcf_fmt_t*)malloc(v->n_fmt * sizeof(bcf_fmt_t));
 	bcf_unpack_fmt_core((uint8_t*)v->indiv.s, v->n_sample, v->n_fmt, fmt);
 	return fmt;
+}
+
+/********************
+ *** BCF indexing ***
+ ********************/
+
+hts_idx_t *bcf_index(BGZF *fp, int min_shift)
+{
+	int n_lvls, i;
+	bcf1_t *b;
+	hts_idx_t *idx;
+	bcf_hdr_t *h;
+	int64_t max_len = 0, s;
+	h = bcf_hdr_read(fp);
+	for (i = 0; i < h->n[BCF_DT_CTG]; ++i)
+		if (max_len < h->id[BCF_DT_CTG][i].val->info[0])
+			max_len = h->id[BCF_DT_CTG][i].val->info[0];
+	max_len += 256;
+	for (n_lvls = 1, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+	idx = hts_idx_init(h->n[BCF_DT_CTG], bgzf_tell(fp), min_shift, n_lvls);
+	bcf_hdr_destroy(h);
+	b = bcf_init1();
+	while (bcf_read1(fp, b) >= 0)
+		hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp), -1, 1);
+	hts_idx_finish(idx, bgzf_tell(fp));
+	bcf_destroy1(b);
+	return idx;
+}
+
+int bcf_index_build(const char *fn, const char *_fnidx, int min_shift)
+{
+	char *fnidx;
+	BGZF *fp;
+	hts_idx_t *idx;
+
+	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
+	idx = bcf_index(fp, min_shift);
+	bgzf_close(fp);
+	if (_fnidx == 0) {
+		fnidx = (char*)malloc(strlen(fn) + 5);
+		strcat(strcpy(fnidx, fn), ".csi");
+	} else fnidx = strdup(_fnidx);
+	hts_idx_dump(idx, fnidx);
+	free(fnidx);
+	hts_idx_destroy(idx);
+	return 0;
+}
+
+hts_idx_t *bcf_index_load_local(const char *fnidx) { return hts_idx_restore(fnidx); }
+hts_idx_t *bcf_index_load(const char *fn) { return hts_idx_restore(hts_idx_getfn(fn, ".csi")); }
+
+static inline int is_overlap(uint32_t beg, uint32_t end, const bcf1_t *b)
+{
+	uint32_t rbeg = b->pos, rend = b->pos + b->rlen;
+	return (rend > beg && rbeg < end);
+}
+
+int bcf_iter_read(BGZF *fp, hts_iter_t *iter, bcf1_t *b)
+{
+	int ret;
+	if (iter && iter->finished) return -1;
+	if (iter == 0 || iter->from_first) {
+		ret = bcf_read1(fp, b);
+		if (ret < 0 && iter) iter->finished = 1;
+		return ret;
+	}
+	if (iter->off == 0) return -1;
+	for (;;) {
+		if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
+			if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
+			if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
+				bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET);
+				iter->curr_off = bgzf_tell(fp);
+			}
+			++iter->i;
+		}
+		if ((ret = bcf_read1(fp, b)) >= 0) {
+			iter->curr_off = bgzf_tell(fp);
+			if (b->rid != iter->tid || b->pos >= iter->end) { // no need to proceed
+				ret = -1; break;
+			} else if (is_overlap(iter->beg, iter->end, b)) return ret;
+		} else break; // end of file or error
+	}
+	iter->finished = 1;
+	return ret;
+}
+
+hts_iter_t *bcf_iter_querys(hts_idx_t *idx, bcf_hdr_t *h, const char *reg)
+{
+	int tid, beg, end;
+	char *q, *tmp;
+	if (h == 0 || reg == 0) return hts_iter_query(idx, HTS_IDX_START, 0, 0);
+	q = (char*)hts_parse_reg(reg, &beg, &end);
+	tmp = (char*)alloca(q - reg + 1);
+	strncpy(tmp, reg, q - reg);
+	tmp[q - reg] = 0;
+	if ((tid = bcf_id2int(h, BCF_DT_CTG, tmp)) < 0)
+		tid = bcf_id2int(h, BCF_DT_CTG, reg);
+	if (tid < 0) return 0;
+	return hts_iter_query(idx, tid, beg, end);
 }
