@@ -347,7 +347,7 @@ int bam_index_build(const char *fn, const char *_fnidx, int min_shift)
 			return -1;
 		}
 		fwrite("BAI\1", 1, 4, fpidx);
-		hts_idx_save(idx, fpidx, 0);
+		hts_idx_save(idx, fpidx, 0, 0);
 		fclose(fpidx);
 	} else hts_idx_dump(idx, fnidx);
 	free(fnidx);
@@ -366,7 +366,7 @@ bam_idx_t *bam_index_load_local(const char *fnidx, int is_bai)
 			return 0;
 		}
 		fread(magic, 1, 4, fpidx);
-		idx = hts_idx_load(fpidx, 0, 14, 5);
+		idx = hts_idx_load(fpidx, 0, 14, 5, 0);
 		fclose(fpidx);
 	} else idx = hts_idx_restore(fnidx);
 	return idx;

@@ -1,7 +1,7 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2 -Wc++-compat
 DFLAGS=
-LOBJS=		knetfile.o bgzf.o hts.o vcf.o sam.o
+LOBJS=		knetfile.o bgzf.o hts.o vcf.o sam.o tbx.o
 INCLUDES=
 LIBPATH=
 
@@ -21,8 +21,7 @@ knetfile.o:knetfile.h
 hts.o:hts.h bgzf.h khash.h kseq.h
 vcf.o:vcf.h bgzf.h kstring.h khash.h hts.h
 sam.o:sam.h bgzf.h kstring.h hts.h
-samext.o:sam.h bgzf.h kstring.h hts.h
-main.o:vcf.h sam.h
+tbx.o:tbx.h bgzf.h kstring.h hts.h
 
 clean:
 		rm -fr gmon.out *.o a.out *.dSYM *~ *.a *.so *.dylib

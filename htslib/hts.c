@@ -350,7 +350,7 @@ static inline void swap_bins(bins_t *p)
 	}
 }
 
-void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf)
+void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf, int ins_meta)
 {
 	int32_t i, size, is_be;
 	is_be = ed_is_big();
@@ -358,6 +358,7 @@ void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf)
 		uint32_t x = idx->n;
 		idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
 	} else idx_write(is_bgzf, fp, &idx->n, 4);
+	if (ins_meta && idx->l_meta) idx_write(is_bgzf, fp, idx->meta, idx->l_meta);
 	for (i = 0; i < idx->n; ++i) {
 		khint_t k;
 		bidx_t *bidx = idx->bidx[i];
@@ -418,18 +419,20 @@ void hts_idx_dump(const hts_idx_t *idx, const char *fn)
 			bgzf_write(fp, ed_swap_4p(&x[i]), 4);
 	} else bgzf_write(fp, &x, 12);
 	if (idx->l_meta) bgzf_write(fp, idx->meta, idx->l_meta);
-	hts_idx_save(idx, fp, 1);
+	hts_idx_save(idx, fp, 1, 0);
 	bgzf_close(fp);
 }
 
-hts_idx_t *hts_idx_load(void *fp, int is_bgzf, int min_shift, int n_lvls)
+hts_idx_t *hts_idx_load(void *fp, int is_bgzf, int min_shift, int n_lvls, int n_seqs)
 {
 	int32_t i, n, is_be;
 	hts_idx_t *idx;
 
 	is_be = ed_is_big();
-	idx_read(is_bgzf, fp, &n, 4);
-	if (is_be) ed_swap_4p(&n);
+	if (n_seqs <= 0) {
+		idx_read(is_bgzf, fp, &n, 4);
+		if (is_be) ed_swap_4p(&n);
+	} else n = n_seqs;
 	idx = hts_idx_init(n, 0, min_shift, n_lvls);
 	for (i = 0; i < idx->n; ++i) {
 		bidx_t *h;
@@ -483,12 +486,32 @@ hts_idx_t *hts_idx_restore(const char *fn)
 		meta = (uint8_t*)malloc(x[2]);
 		bgzf_read(fp, meta, x[2]);
 	}
-	idx = hts_idx_load(fp, 1, x[0], x[1]);
+	idx = hts_idx_load(fp, 1, x[0], x[1], 0);
 	bgzf_close(fp);
 	idx->l_meta = x[2];
 	idx->meta = meta;
 	return idx;
 }
+
+void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy)
+{
+	if (idx->meta) free(idx->meta);
+	idx->l_meta = l_meta;
+	if (is_copy) {
+		idx->meta = (uint8_t*)malloc(l_meta);
+		memcpy(idx->meta, meta, l_meta);
+	} else idx->meta = meta;
+}
+
+uint8_t *hts_idx_get_meta(hts_idx_t *idx, int *l_meta)
+{
+	*l_meta = idx->l_meta;
+	return idx->meta;
+}
+
+/****************
+ *** Iterator ***
+ ****************/
 
 static inline int reg2bins(int64_t beg, int64_t end, hts_iter_t *itr, int min_shift, int n_lvls)
 {
@@ -614,6 +637,46 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
 	}
 	if (name_end == l) *beg = 0, *end = 1<<29;
 	return s + name_end;
+}
+
+hts_iter_t *hts_iter_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr)
+{
+	int tid, beg, end;
+	char *q, *tmp;
+	q = (char*)hts_parse_reg(reg, &beg, &end);
+	tmp = (char*)alloca(q - reg + 1);
+	strncpy(tmp, reg, q - reg);
+	tmp[q - reg] = 0;
+	if ((tid = getid(hdr, tmp)) < 0)
+		tid = getid(hdr, reg);
+	if (tid < 0) return 0;
+	return hts_iter_query(idx, tid, beg, end);
+}
+
+int hts_iter_next(BGZF *fp, hts_iter_t *iter, void *r, hts_readrec_f readrec, void *hdr)
+{
+	int ret;
+	if (iter && iter->finished) return -1;
+	if (iter->off == 0) return -1;
+	for (;;) {
+		int tid, beg, end;
+		if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
+			if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
+			if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
+				bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET);
+				iter->curr_off = bgzf_tell(fp);
+			}
+			++iter->i;
+		}
+		if ((ret = readrec(fp, hdr, r, &tid, &beg, &end)) >= 0) {
+			iter->curr_off = bgzf_tell(fp);
+			if (tid != iter->tid || beg >= iter->end) { // no need to proceed
+				ret = -1; break;
+			} else if (end > iter->beg && iter->end > beg) return ret;
+		} else break; // end of file or error
+	}
+	iter->finished = 1;
+	return ret;
 }
 
 /**********************
