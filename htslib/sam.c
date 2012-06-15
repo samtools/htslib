@@ -130,7 +130,7 @@ int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
 	return 0;
 }
 
-int bam_get_tid(bam_hdr_t *h, const char *ref)
+int bam_name2id(bam_hdr_t *h, const char *ref)
 {
 	sdict_t *d = (sdict_t*)h->sdict;
 	khint_t k;
@@ -297,7 +297,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
  *** BAM indexing ***
  ********************/
 
-bam_idx_t *bam_index(BGZF *fp, int min_shift)
+hts_idx_t *bam_index(BGZF *fp, int min_shift)
 {
 	int n_lvls, i;
 	bam1_t *b;
@@ -329,7 +329,7 @@ int bam_index_build(const char *fn, const char *_fnidx, int min_shift)
 {
 	char *fnidx;
 	BGZF *fp;
-	bam_idx_t *idx;
+	hts_idx_t *idx;
 	const char *suf;
 
 	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
@@ -355,9 +355,9 @@ int bam_index_build(const char *fn, const char *_fnidx, int min_shift)
 	return 0;
 }
 
-bam_idx_t *bam_index_load_local(const char *fnidx, int is_bai)
+hts_idx_t *bam_index_load_local(const char *fnidx, int is_bai)
 {
-	bam_idx_t *idx;
+	hts_idx_t *idx;
 	if (is_bai) {
 		FILE *fpidx;
 		char magic[4];
@@ -372,7 +372,7 @@ bam_idx_t *bam_index_load_local(const char *fnidx, int is_bai)
 	return idx;
 }
 
-bam_idx_t *bam_index_load(const char *fn)
+hts_idx_t *bam_index_load(const char *fn)
 {
 	char *fnidx;
 	if ((fnidx = hts_idx_getfn(fn, ".csi")) != 0) return bam_index_load_local(fnidx, 0);
@@ -380,56 +380,14 @@ bam_idx_t *bam_index_load(const char *fn)
 	return 0;
 }
 
-static inline int is_overlap(uint32_t beg, uint32_t end, const bam1_t *b)
-{
-	uint32_t rbeg = b->core.pos;
-	uint32_t rend = b->core.n_cigar? rbeg + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)) : rbeg + 1;
-	return (rend > beg && rbeg < end);
-}
-
-int bam_iter_read(BGZF *fp, bam_iter_t *iter, bam1_t *b)
+int bam_readrec(BGZF *fp, void *null, bam1_t *b, int *tid, int *beg, int *end)
 {
 	int ret;
-	if (iter && iter->finished) return -1;
-	if (iter == 0 || iter->from_first) {
-		ret = bam_read1(fp, b);
-		if (ret < 0 && iter) iter->finished = 1;
-		return ret;
+	if ((ret = bam_read1(fp, b)) >= 0) {
+		*tid = b->core.tid; *beg = b->core.pos;
+		*end = b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
 	}
-	if (iter->off == 0) return -1;
-	for (;;) {
-		if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
-			if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
-			if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-				bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET);
-				iter->curr_off = bgzf_tell(fp);
-			}
-			++iter->i;
-		}
-		if ((ret = bam_read1(fp, b)) >= 0) {
-			iter->curr_off = bgzf_tell(fp);
-			if (b->core.tid != iter->tid || b->core.pos >= iter->end) { // no need to proceed
-				ret = -1; break;
-			} else if (is_overlap(iter->beg, iter->end, b)) return ret;
-		} else break; // end of file or error
-	}
-	iter->finished = 1;
 	return ret;
-}
-
-bam_iter_t *bam_iter_querys(bam_idx_t *idx, bam_hdr_t *h, const char *reg)
-{
-	int tid, beg, end;
-	char *q, *tmp;
-	if (h == 0 || reg == 0) return hts_itr_query(idx, HTS_IDX_START, 0, 0);
-	q = (char*)hts_parse_reg(reg, &beg, &end);
-	tmp = (char*)alloca(q - reg + 1);
-	strncpy(tmp, reg, q - reg);
-	tmp[q - reg] = 0;
-	if ((tid = bam_get_tid(h, tmp)) < 0)
-		tid = bam_get_tid(h, reg);
-	if (tid < 0) return 0;
-	return hts_itr_query(idx, tid, beg, end);
 }
 
 /**********************
@@ -551,7 +509,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 	q = _read_token(p);
 	if (strcmp(q, "*")) {
 		_parse_err(h->n_targets == 0, "missing SAM header");
-		c->tid = bam_get_tid(h, q);
+		c->tid = bam_name2id(h, q);
 		_parse_warn(c->tid < 0, "urecognized reference name; treated as unmapped");
 	} else c->tid = -1;
 	// pos
@@ -591,7 +549,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 	q = _read_token(p);
 	if (strcmp(q, "=") == 0) c->mtid = c->tid;
 	else if (strcmp(q, "*") == 0) c->mtid = -1;
-	else c->mtid = bam_get_tid(h, q);
+	else c->mtid = bam_name2id(h, q);
 	// mpos
 	c->mpos = strtol(p, &p, 10) - 1;
 	if (*p++ != '\t') goto err_ret;

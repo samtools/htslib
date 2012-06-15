@@ -52,13 +52,13 @@ int main_vcfview(int argc, char *argv[])
 				return 1;
 			}
 			for (i = optind + 1; i < argc; ++i) {
-				hts_iter_t *iter;
-				if ((iter = bcf_iter_querys(idx, h, argv[i])) == 0) {
+				hts_itr_t *iter;
+				if ((iter = bcf_itr_querys(idx, h, argv[i])) == 0) {
 					fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
 					continue;
 				}
-				while (bcf_iter_read((BGZF*)in->fp, iter, b) >= 0) vcf_write1(out, h, b);
-				hts_iter_destroy(iter);
+				while (bcf_itr_next((BGZF*)in->fp, iter, b) >= 0) vcf_write1(out, h, b);
+				hts_itr_destroy(iter);
 			}
 			hts_idx_destroy(idx);
 		} else while (vcf_read1(in, h, b) >= 0) vcf_write1(out, h, b);

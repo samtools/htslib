@@ -42,19 +42,19 @@ int main_samview(int argc, char *argv[])
 		sam_hdr_write(out, h);
 		if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
 			int i;
-			bam_idx_t *idx;
+			hts_idx_t *idx;
 			if ((idx = bam_index_load(argv[optind])) == 0) {
 				fprintf(stderr, "[E::%s] fail to load the BAM index\n", __func__);
 				return 1;
 			}
 			for (i = optind + 1; i < argc; ++i) {
-				hts_iter_t *iter;
-				if ((iter = bam_iter_querys(idx, h, argv[i])) == 0) {
+				hts_itr_t *iter;
+				if ((iter = bam_itr_querys(idx, h, argv[i])) == 0) {
 					fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
 					continue;
 				}
-				while (bam_iter_read((BGZF*)in->fp, iter, b) >= 0) sam_write1(out, h, b);
-				hts_iter_destroy(iter);
+				while (bam_itr_next((BGZF*)in->fp, iter, b) >= 0) sam_write1(out, h, b);
+				hts_itr_destroy(iter);
 			}
 			hts_idx_destroy(idx);
 		} else while (sam_read1(in, h, b) >= 0) sam_write1(out, h, b);

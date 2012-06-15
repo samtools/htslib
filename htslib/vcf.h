@@ -108,19 +108,23 @@ extern "C" {
 	void bcf_destroy1(bcf1_t *v);
 	int bcf_read1(BGZF *fp, bcf1_t *v);
 	int bcf_write1(BGZF *fp, const bcf1_t *v);
+	int bcf_readrec(BGZF *fp, void *null, bcf1_t *v, int *tid, int *beg, int *end);
 
 	int bcf_id2int(const bcf_hdr_t *h, int which, const char *id);
+	int bcf_name2id(const bcf_hdr_t *h, const char *id);
 	bcf_fmt_t *bcf_unpack_fmt(const bcf_hdr_t *h, const bcf1_t *v);
 
 	/*****************
 	 *** BCF index ***
 	 *****************/
 
+	#define bcf_itr_destroy(iter) hts_itr_destroy(iter)
+	#define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query(idx, tid, beg, end)
+	#define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_name2id), (hdr))
+	#define bcf_itr_next(fp, itr, r) hts_itr_next((fp), (itr), (r), (hts_readrec_f)(bcf_readrec), 0)
+
 	int bcf_index_build(const char *fn, const char *_fnidx, int min_shift);
 	hts_idx_t *bcf_index_load(const char *fn);
-	hts_itr_t *bcf_iter_querys(hts_idx_t *idx, bcf_hdr_t *h, const char *reg);
-	int bcf_iter_read(BGZF *fp, hts_itr_t *iter, bcf1_t *b);
-	#define bcf_iter_destroy(iter) (hts_itr_destroy(iter))
 
 	/***************
 	 *** VCF I/O ***

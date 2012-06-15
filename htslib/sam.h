@@ -102,13 +102,14 @@ extern "C" {
 	bam_hdr_t *bam_hdr_read(BGZF *fp);
 	int bam_hdr_write(BGZF *fp, const bam_hdr_t *h);
 	void bam_hdr_destroy(bam_hdr_t *h);
-	int bam_get_tid(bam_hdr_t *h, const char *ref);
+	int bam_name2id(bam_hdr_t *h, const char *ref);
 
 	bam1_t *bam_init1(void);
 	void bam_destroy1(bam1_t *b);
 	int bam_read1(BGZF *fp, bam1_t *b);
 	int bam_write1(BGZF *fp, const bam1_t *b);
 	bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc);
+	int bam_readrec(BGZF *fp, void *null, bam1_t *b, int *tid, int *beg, int *end);
 
 	int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
 	int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
@@ -117,16 +118,13 @@ extern "C" {
 	 *** BAM indexing ***
 	 ********************/
 
-	#define bam_iter_queryi(idx, tid, beg, end) hts_itr_query(idx, tid, beg, end)
-	#define bam_iter_destroy(iter) hts_itr_destroy(iter)
-
-	typedef hts_idx_t bam_idx_t;
-	typedef hts_itr_t bam_iter_t;
+	#define bam_itr_destroy(iter) hts_itr_destroy(iter)
+	#define bam_itr_queryi(idx, tid, beg, end) hts_itr_query(idx, tid, beg, end)
+	#define bam_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bam_name2id), (hdr))
+	#define bam_itr_next(fp, itr, r) hts_itr_next((fp), (itr), (r), (hts_readrec_f)(bam_readrec), 0)
 
 	int bam_index_build(const char *fn, const char *_fnidx, int min_shift);
-	bam_idx_t *bam_index_load(const char *fnbam);
-	bam_iter_t *bam_iter_querys(hts_idx_t *idx, bam_hdr_t *h, const char *reg);
-	int bam_iter_read(BGZF *fp, bam_iter_t *iter, bam1_t *b);
+	hts_idx_t *bam_index_load(const char *fnbam);
 
 	/***************
 	 *** SAM I/O ***
