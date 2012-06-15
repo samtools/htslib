@@ -32,8 +32,8 @@ extern "C" {
 	int tbx_index_build(const char *fn, const char *_fnidx, int min_shift, const tbx_conf_t *conf);
 	tbx_t *tbx_index_load(const char *fn);
 
-#define tbx_itr_querys(tbx, itr, s) hts_iter_querys((itr), (s), (hts_name2id_f)(tbx_name2id), (tbx))
-#define tbx_itr_next(fp, tbx, itr, r) hts_iter_next((fp), (itr), (r), (hts_readrec_f)(tbx_readrec), (tbx))
+#define tbx_itr_querys(tbx, itr, s) hts_itr_querys((itr), (s), (hts_name2id_f)(tbx_name2id), (tbx))
+#define tbx_itr_next(fp, tbx, itr, r) hts_itr_next((fp), (itr), (r), (hts_readrec_f)(tbx_readrec), (tbx))
 
 #ifdef __cplusplus
 }

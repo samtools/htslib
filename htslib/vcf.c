@@ -874,7 +874,7 @@ hts_idx_t *bcf_index(BGZF *fp, int min_shift)
 	b = bcf_init1();
 	while (bcf_read1(fp, b) >= 0) {
 		int ret;
-		ret = hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp), -1, 1);
+		ret = hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp), 1);
 		if (ret < 0) break;
 	}
 	hts_idx_finish(idx, bgzf_tell(fp));
@@ -909,7 +909,7 @@ static inline int is_overlap(uint32_t beg, uint32_t end, const bcf1_t *b)
 	return (rend > beg && rbeg < end);
 }
 
-int bcf_iter_read(BGZF *fp, hts_iter_t *iter, bcf1_t *b)
+int bcf_iter_read(BGZF *fp, hts_itr_t *iter, bcf1_t *b)
 {
 	int ret;
 	if (iter && iter->finished) return -1;
@@ -939,11 +939,11 @@ int bcf_iter_read(BGZF *fp, hts_iter_t *iter, bcf1_t *b)
 	return ret;
 }
 
-hts_iter_t *bcf_iter_querys(hts_idx_t *idx, bcf_hdr_t *h, const char *reg)
+hts_itr_t *bcf_iter_querys(hts_idx_t *idx, bcf_hdr_t *h, const char *reg)
 {
 	int tid, beg, end;
 	char *q, *tmp;
-	if (h == 0 || reg == 0) return hts_iter_query(idx, HTS_IDX_START, 0, 0);
+	if (h == 0 || reg == 0) return hts_itr_query(idx, HTS_IDX_START, 0, 0);
 	q = (char*)hts_parse_reg(reg, &beg, &end);
 	tmp = (char*)alloca(q - reg + 1);
 	strncpy(tmp, reg, q - reg);
@@ -951,5 +951,5 @@ hts_iter_t *bcf_iter_querys(hts_idx_t *idx, bcf_hdr_t *h, const char *reg)
 	if ((tid = bcf_id2int(h, BCF_DT_CTG, tmp)) < 0)
 		tid = bcf_id2int(h, BCF_DT_CTG, reg);
 	if (tid < 0) return 0;
-	return hts_iter_query(idx, tid, beg, end);
+	return hts_itr_query(idx, tid, beg, end);
 }

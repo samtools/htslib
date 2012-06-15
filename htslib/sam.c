@@ -317,7 +317,7 @@ bam_idx_t *bam_index(BGZF *fp, int min_shift)
 	while (bam_read1(fp, b) >= 0) {
 		int l, ret;
 		l = bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
-		ret = hts_idx_push(idx, b->core.tid, b->core.pos, b->core.pos + l, bgzf_tell(fp), -1, !(b->core.flag&BAM_FUNMAP));
+		ret = hts_idx_push(idx, b->core.tid, b->core.pos, b->core.pos + l, bgzf_tell(fp), !(b->core.flag&BAM_FUNMAP));
 		if (ret < 0) break; // unsorted
 	}
 	hts_idx_finish(idx, bgzf_tell(fp));
@@ -421,7 +421,7 @@ bam_iter_t *bam_iter_querys(bam_idx_t *idx, bam_hdr_t *h, const char *reg)
 {
 	int tid, beg, end;
 	char *q, *tmp;
-	if (h == 0 || reg == 0) return hts_iter_query(idx, HTS_IDX_START, 0, 0);
+	if (h == 0 || reg == 0) return hts_itr_query(idx, HTS_IDX_START, 0, 0);
 	q = (char*)hts_parse_reg(reg, &beg, &end);
 	tmp = (char*)alloca(q - reg + 1);
 	strncpy(tmp, reg, q - reg);
@@ -429,7 +429,7 @@ bam_iter_t *bam_iter_querys(bam_idx_t *idx, bam_hdr_t *h, const char *reg)
 	if ((tid = bam_get_tid(h, tmp)) < 0)
 		tid = bam_get_tid(h, reg);
 	if (tid < 0) return 0;
-	return hts_iter_query(idx, tid, beg, end);
+	return hts_itr_query(idx, tid, beg, end);
 }
 
 /**********************

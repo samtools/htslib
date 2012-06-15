@@ -166,7 +166,7 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 			first = 1;
 		}
 		get_intv(tbx, &str, &intv, 1);
-		ret = hts_idx_push(tbx->idx, intv.tid, intv.beg, intv.end, bgzf_tell(fp), -1, 1);
+		ret = hts_idx_push(tbx->idx, intv.tid, intv.beg, intv.end, bgzf_tell(fp), 1);
 		if (ret < 0) break;
 	}
 	tbx_set_meta(tbx);

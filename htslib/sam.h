@@ -117,11 +117,11 @@ extern "C" {
 	 *** BAM indexing ***
 	 ********************/
 
-	#define bam_iter_queryi(idx, tid, beg, end) hts_iter_query(idx, tid, beg, end)
-	#define bam_iter_destroy(iter) hts_iter_destroy(iter)
+	#define bam_iter_queryi(idx, tid, beg, end) hts_itr_query(idx, tid, beg, end)
+	#define bam_iter_destroy(iter) hts_itr_destroy(iter)
 
 	typedef hts_idx_t bam_idx_t;
-	typedef hts_iter_t bam_iter_t;
+	typedef hts_itr_t bam_iter_t;
 
 	int bam_index_build(const char *fn, const char *_fnidx, int min_shift);
 	bam_idx_t *bam_index_load(const char *fnbam);

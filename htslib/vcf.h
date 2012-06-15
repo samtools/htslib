@@ -118,9 +118,9 @@ extern "C" {
 
 	int bcf_index_build(const char *fn, const char *_fnidx, int min_shift);
 	hts_idx_t *bcf_index_load(const char *fn);
-	hts_iter_t *bcf_iter_querys(hts_idx_t *idx, bcf_hdr_t *h, const char *reg);
-	int bcf_iter_read(BGZF *fp, hts_iter_t *iter, bcf1_t *b);
-	#define bcf_iter_destroy(iter) (hts_iter_destroy(iter))
+	hts_itr_t *bcf_iter_querys(hts_idx_t *idx, bcf_hdr_t *h, const char *reg);
+	int bcf_iter_read(BGZF *fp, hts_itr_t *iter, bcf1_t *b);
+	#define bcf_iter_destroy(iter) (hts_itr_destroy(iter))
 
 	/***************
 	 *** VCF I/O ***

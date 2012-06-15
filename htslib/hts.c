@@ -257,8 +257,9 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 	idx->z.finished = 1;
 }
 
-int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int bin, int is_mapped)
+int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped)
 {
+	int bin;
 	if (tid >= idx->m) { // enlarge the index
 		int32_t oldm = idx->m;
 		idx->m = idx->m? idx->m<<1 : 2;
@@ -285,7 +286,7 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 		ret = insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off, idx->min_shift); // last_off points to the start of the current record
 		if (idx->z.last_off == 0) idx->z.offset0 = ret; // I forgot the purpose of offset0
 	}
-	if (bin < 0) bin = hts_reg2bin(beg, end, idx->min_shift, idx->n_lvls); // compute bin if this has not been done
+	bin = hts_reg2bin(beg, end, idx->min_shift, idx->n_lvls);
 	if ((int)idx->z.last_bin != bin) { // then possibly write the binning index
 		if (idx->z.save_bin != 0xffffffffu) // save_bin==0xffffffffu only happens to the first record
 			insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, idx->z.last_off);
@@ -513,7 +514,7 @@ uint8_t *hts_idx_get_meta(hts_idx_t *idx, int *l_meta)
  *** Iterator ***
  ****************/
 
-static inline int reg2bins(int64_t beg, int64_t end, hts_iter_t *itr, int min_shift, int n_lvls)
+static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls)
 {
 	int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
 	if (beg >= end) return 0;
@@ -531,18 +532,18 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_iter_t *itr, int min_sh
 	return itr->bins.n;
 }
 
-hts_iter_t *hts_iter_query(const hts_idx_t *idx, int tid, int beg, int end)
+hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 {
 	int i, n_off, l;
 	hts_pair64_t *off;
 	khint_t k;
 	bidx_t *bidx;
 	uint64_t min_off;
-	hts_iter_t *iter = 0;
+	hts_itr_t *iter = 0;
 
 	if (tid < 0) {
 		if (tid == HTS_IDX_START) {
-			iter = (hts_iter_t*)calloc(1, sizeof(hts_iter_t));
+			iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
 			iter->from_first = 1;
 			return iter;
 		} else if (tid == HTS_IDX_NOCOOR) {
@@ -553,7 +554,7 @@ hts_iter_t *hts_iter_query(const hts_idx_t *idx, int tid, int beg, int end)
 	if (end < beg) return 0;
 	if ((bidx = idx->bidx[tid]) == 0) return 0;
 
-	iter = (hts_iter_t*)calloc(1, sizeof(hts_iter_t));
+	iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
 	iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
 
 	reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
@@ -603,7 +604,7 @@ hts_iter_t *hts_iter_query(const hts_idx_t *idx, int tid, int beg, int end)
 	return iter;
 }
 
-void hts_iter_destroy(hts_iter_t *iter)
+void hts_itr_destroy(hts_itr_t *iter)
 {
 	if (iter) { free(iter->off); free(iter->bins.a); free(iter); }
 }
@@ -639,7 +640,7 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
 	return s + name_end;
 }
 
-hts_iter_t *hts_iter_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr)
+hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr)
 {
 	int tid, beg, end;
 	char *q, *tmp;
@@ -650,10 +651,10 @@ hts_iter_t *hts_iter_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f
 	if ((tid = getid(hdr, tmp)) < 0)
 		tid = getid(hdr, reg);
 	if (tid < 0) return 0;
-	return hts_iter_query(idx, tid, beg, end);
+	return hts_itr_query(idx, tid, beg, end);
 }
 
-int hts_iter_next(BGZF *fp, hts_iter_t *iter, void *r, hts_readrec_f readrec, void *hdr)
+int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void *hdr)
 {
 	int ret;
 	if (iter && iter->finished) return -1;
