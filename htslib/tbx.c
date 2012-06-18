@@ -28,7 +28,10 @@ static inline int get_tid(tbx_t *tbx, const char *ss, int is_add)
 	if (is_add) {
 		int absent;
 		k = kh_put(s2i, d, ss, &absent);
-		if (absent) kh_val(d, k) = kh_size(d) - 1;
+		if (absent) {
+			kh_key(d, k) = strdup(ss);
+			kh_val(d, k) = kh_size(d) - 1;
+		}
 	} else k = kh_get(s2i, d, ss);
 	return k == kh_end(d)? -1 : kh_val(d, k);
 }
@@ -186,6 +189,9 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 void tbx_destroy(tbx_t *tbx)
 {
 	khash_t(s2i) *d = (khash_t(s2i)*)tbx->dict;
+	khint_t k;
+	for (k = kh_begin(d); k != kh_end(d); ++k)
+		if (kh_exist(d, k)) free((char*)kh_key(d, k));
 	hts_idx_destroy(tbx->idx);
 	kh_destroy(s2i, d);
 	free(tbx);
@@ -243,7 +249,7 @@ tbx_t *tbx_index_load_local(const char *fnidx, int is_tbi)
 		meta = (uint8_t*)malloc(28 + l_nm);
 		memcpy(meta, &x[1], 28);
 		bgzf_read(fpidx, meta + 28, l_nm);
-		tbx->idx = hts_idx_load(fpidx, 0, 14, 5, ed_is_big()? ed_swap_4(x[0]) : x[0]);
+		tbx->idx = hts_idx_load(fpidx, 1, 14, 5, ed_is_big()? ed_swap_4(x[0]) : x[0]);
 		hts_idx_set_meta(tbx->idx, 28 + l_nm, meta, 0);
 		bgzf_close(fpidx);
 	} else tbx->idx = hts_idx_restore(fnidx);
@@ -261,7 +267,9 @@ tbx_t *tbx_index_load_local(const char *fnidx, int is_tbi)
 tbx_t *tbx_index_load(const char *fn)
 {
 	char *fnidx;
-	if ((fnidx = hts_idx_getfn(fn, ".csi")) != 0) return tbx_index_load_local(fnidx, 0);
-	if ((fnidx = hts_idx_getfn(fn, ".tbi")) != 0) return tbx_index_load_local(fnidx, 1);
-	return 0;
+	tbx_t *tbx = 0;
+	if ((fnidx = hts_idx_getfn(fn, ".csi")) != 0) tbx = tbx_index_load_local(fnidx, 0);
+	else if ((fnidx = hts_idx_getfn(fn, ".tbi")) != 0) tbx = tbx_index_load_local(fnidx, 1);
+	free(fnidx);
+	return tbx;
 }

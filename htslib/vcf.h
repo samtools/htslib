@@ -119,7 +119,7 @@ extern "C" {
 	 *****************/
 
 	#define bcf_itr_destroy(iter) hts_itr_destroy(iter)
-	#define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query(idx, tid, beg, end)
+	#define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query((idx), (tid), (beg), (end))
 	#define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_name2id), (hdr))
 	#define bcf_itr_next(fp, itr, r) hts_itr_next((fp), (itr), (r), (hts_readrec_f)(bcf_readrec), 0)
 

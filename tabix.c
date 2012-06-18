@@ -50,6 +50,19 @@ int main_tabix(int argc, char *argv[])
 		}
 		tbx_index_build(argv[optind], 0, min_shift, &conf);
 	} else { // read with random access
+		tbx_t *tbx;
+		hts_itr_t *itr;
+		BGZF *fp;
+		kstring_t s;
+		if ((tbx = tbx_index_load(argv[optind])) == 0) return 1;
+		if ((itr = tbx_itr_querys(tbx, argv[optind+1])) == 0) return 1;
+		if ((fp = bgzf_open(argv[optind], "r")) == 0) return 1;
+		s.s = 0; s.l = s.m = 0;
+		while (tbx_itr_next(fp, tbx, itr, &s) >= 0) puts(s.s);
+		free(s.s);
+		bgzf_close(fp);
+		tbx_itr_destroy(itr);
+		tbx_destroy(tbx);
 	}
 	return 0;
 }

@@ -268,6 +268,7 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 		memset(&idx->bidx[oldm], 0, (idx->m - oldm) * sizeof(void*));
 		memset(&idx->lidx[oldm], 0, (idx->m - oldm) * sizeof(lidx_t));
 	}
+	if (idx->n < tid + 1) idx->n = tid + 1;
 	if (tid < 0) ++idx->n_no_coor;
 	if (idx->z.finished) return 0;
 	if (idx->bidx[tid] == 0) idx->bidx[tid] = kh_init(bin);
@@ -735,7 +736,10 @@ char *hts_idx_getfn(const char *fn, const char *ext)
 		strcpy(fnidx + i, ext);
 		ret = test_and_fetch(fnidx);
 	}
-	if (ret == 0) return 0;
+	if (ret == 0) {
+		free(fnidx);
+		return 0;
+	}
 	l_fn = strlen(ret);
 	memmove(fnidx, ret, l_fn + 1);
 	return fnidx;
