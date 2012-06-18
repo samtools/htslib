@@ -7,6 +7,12 @@
 #include "khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 
+tbx_conf_t tbx_conf_gff = { 0, 1, 4, 5, '#', 0 };
+tbx_conf_t tbx_conf_bed = { TBX_UCSC, 1, 2, 3, '#', 0 };
+tbx_conf_t tbx_conf_psltbl = { TBX_UCSC, 15, 17, 18, '#', 0 };
+tbx_conf_t tbx_conf_sam = { TBX_SAM, 3, 4, 0, '@', 0 };
+tbx_conf_t tbx_conf_vcf = { TBX_VCF, 1, 2, 0, '#', 0 };
+
 typedef struct {
 	int64_t beg, end;
 	char *ss, *se;
@@ -148,14 +154,16 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 {
 	tbx_t *tbx;
 	kstring_t str;
-	int ret, n_lvls, first = 0;
+	int ret, first = 0, n_lvls;
 	int64_t lineno = 0;
-	uint64_t last_off;
+	uint64_t last_off = 0;
 	tbx_intv_t intv;
 
-	if (min_shift) n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3;
-	else min_shift = 14, n_lvls = 5;
+	str.s = 0; str.l = str.m = 0;
+	tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
 	tbx->conf = *conf;
+	if (min_shift > 0) n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3;
+	else min_shift = 14, n_lvls = 5;
 	while ((ret = bgzf_getline(fp, '\n', &str)) >= 0) {
 		++lineno;
 		if (lineno <= tbx->conf.line_skip || str.s[0] == tbx->conf.meta_char) {
@@ -171,6 +179,7 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 		if (ret < 0) break;
 	}
 	tbx_set_meta(tbx);
+	free(str.s);
 	return tbx;
 }
 

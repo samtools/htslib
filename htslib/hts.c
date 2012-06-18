@@ -263,9 +263,9 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 	if (tid >= idx->m) { // enlarge the index
 		int32_t oldm = idx->m;
 		idx->m = idx->m? idx->m<<1 : 2;
-		idx->bidx = (bidx_t**)realloc(idx->bidx, sizeof(void*));
-		idx->lidx = (lidx_t*) realloc(idx->lidx, sizeof(lidx_t));
-		memset(idx->bidx[oldm],  0, (idx->m - oldm) * sizeof(void*));
+		idx->bidx = (bidx_t**)realloc(idx->bidx, idx->m * sizeof(void*));
+		idx->lidx = (lidx_t*) realloc(idx->lidx, idx->m * sizeof(lidx_t));
+		memset(&idx->bidx[oldm], 0, (idx->m - oldm) * sizeof(void*));
 		memset(&idx->lidx[oldm], 0, (idx->m - oldm) * sizeof(lidx_t));
 	}
 	if (tid < 0) ++idx->n_no_coor;
@@ -326,7 +326,7 @@ void hts_idx_destroy(hts_idx_t *idx)
 				free(kh_value(bidx, k).list);
 		kh_destroy(bin, bidx);
 	}
-	free(idx->bidx); free(idx->lidx);
+	free(idx->bidx); free(idx->lidx); free(idx->meta);
 	free(idx);
 }
 
