@@ -447,7 +447,7 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 		}
 	} else if (type == BCF_BT_FLOAT) {
 		float *p = (float*)data;
-		for (j = 0; j < n && *(int32_t*)p != bcf_missing_float; ++j, ++p) {
+		for (j = 0; j < n && *(uint32_t*)p != bcf_missing_float; ++j, ++p) {
 			if (j) kputc(',', s);
 			ksprintf(s, "%g", *p);
 		}

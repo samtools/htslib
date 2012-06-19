@@ -208,7 +208,7 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 		if (bidx == 0) continue;
 		// merge a bin to its parent if the bin is too small
 		for (l = idx->n_lvls; l > 0; --l) {
-			int start = ((1<<((l<<1) + l)) - 1) / 7;
+			unsigned start = ((1<<((l<<1) + l)) - 1) / 7;
 			for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
 				bins_t *p, *q;
 				if (!kh_exist(bidx, k) || kh_key(bidx, k) < start) continue;
@@ -519,7 +519,7 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
 {
 	int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
 	if (beg >= end) return 0;
-	if (end >= 1ULL<<s) end = 1ULL<<s;
+	if (end >= 1LL<<s) end = 1LL<<s;
 	for (--end, l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
 		int b, e, n, i;
 		b = t + (beg>>s); e = t + (end>>s); n = e - b + 1;

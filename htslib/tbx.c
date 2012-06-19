@@ -144,7 +144,7 @@ void tbx_set_meta(tbx_t *tbx)
 		for (i = 0; i < 7; ++i)
 			x[i] = ed_swap_4(x[i]);
 	memcpy(meta, x, 28);
-	for (l = 28, i = 0; i < kh_size(d); ++i) {
+	for (l = 28, i = 0; i < (int)kh_size(d); ++i) {
 		int x = strlen(name[i]) + 1;
 		memcpy(meta + l, name[i], x);
 		l += x;
