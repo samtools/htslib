@@ -25,7 +25,18 @@ int main_tabix(int argc, char *argv[])
 			else if (strcmp(optarg, "vcf") == 0) conf = tbx_conf_vcf;
 		}
 	if (optind == argc) {
-		fprintf(stderr, "Usage: tabix [options] <in.gz>\n");
+		fprintf(stderr, "\nUsage:   tabix [options] <in.gz> [reg1 [...]]\n\n");
+		fprintf(stderr, "Options: -p STR    preset: gff, bed, sam or vcf [gff]\n");
+		fprintf(stderr, "         -s INT    column number for sequence names (suppressed by -p) [1]\n");
+		fprintf(stderr, "         -b INT    column number for region start [4]\n");
+		fprintf(stderr, "         -e INT    column number for region end (if no end, set INT to -b) [5]\n");
+		fprintf(stderr, "         -0        specify coordinates are zero-based\n");
+		fprintf(stderr, "         -S INT    skip first INT lines [0]\n");
+		fprintf(stderr, "         -c CHAR   skip lines starting with CHAR [null]\n");
+		fprintf(stderr, "         -a        print all records\n");
+		fprintf(stderr, "         -f        force to overwrite existing index\n");
+		fprintf(stderr, "         -m INT    set the minimal interval size to 1<<INT; 0 for the old tabix index [0]\n");
+		fprintf(stderr, "\n");
 		return 1;
 	}
 	if (is_all) { // read without random access
@@ -51,17 +62,20 @@ int main_tabix(int argc, char *argv[])
 		tbx_index_build(argv[optind], 0, min_shift, &conf);
 	} else { // read with random access
 		tbx_t *tbx;
-		hts_itr_t *itr;
 		BGZF *fp;
 		kstring_t s;
+		int i;
 		if ((tbx = tbx_index_load(argv[optind])) == 0) return 1;
-		if ((itr = tbx_itr_querys(tbx, argv[optind+1])) == 0) return 1;
 		if ((fp = bgzf_open(argv[optind], "r")) == 0) return 1;
 		s.s = 0; s.l = s.m = 0;
-		while (tbx_itr_next(fp, tbx, itr, &s) >= 0) puts(s.s);
+		for (i = optind + 1; i < argc; ++i) {
+			hts_itr_t *itr;
+			if ((itr = tbx_itr_querys(tbx, argv[i])) == 0) continue;
+			while (tbx_itr_next(fp, tbx, itr, &s) >= 0) puts(s.s);
+			tbx_itr_destroy(itr);
+		}
 		free(s.s);
 		bgzf_close(fp);
-		tbx_itr_destroy(itr);
 		tbx_destroy(tbx);
 	}
 	return 0;
