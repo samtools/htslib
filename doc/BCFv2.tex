@@ -57,7 +57,7 @@ bits are all 0). The vector is be padded with missing values if the GT having fe
   \multicolumn{3}{|l|}{\sf l\_text} & Length of the header text, including any {\sf NULL} padding & {\tt uint32\_t} & \\\cline{1-6}
   \multicolumn{3}{|l|}{\sf text} & {\sf NULL}-terminated plain VCF header text & {\tt char[{\sf l\_text}]} & \\\cline{1-6}
   \multicolumn{6}{|c|}{\textcolor{gray}{\it List of VCF records (until the end of the BGZF section)}} \\\cline{2-6}
-  & \multicolumn{2}{l|}{\sf l\_shared} & Data length from {\sf ID} to the end of {\sf INFO} & {\tt uint32\_t} & \\\cline{2-6}
+  & \multicolumn{2}{l|}{\sf l\_shared} & Data length from {\sf CHROM} to the end of {\sf INFO} & {\tt uint32\_t} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf l\_indiv} & Data length of {\sf FORMAT} and individual genotype fields & {\tt uint32\_t} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf CHROM} & Reference sequence ID & {\tt int32\_t} & \\\cline{2-6}
   & \multicolumn{2}{l|}{\sf POS} & 0-based leftmost coordinate & {\tt int32\_t} & \\\cline{2-6}

@@ -281,6 +281,7 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 		if (ret == 0) return -1;
 		return -2;
 	}
+	x[0] -= 24; // to exclude six 32-bit integers
 	ks_resize(&v->shared, x[0]);
 	ks_resize(&v->indiv, x[1]);
 	memcpy(v, x + 2, 16);
@@ -305,7 +306,7 @@ int bcf_readrec(BGZF *fp, void *null, bcf1_t *v, int *tid, int *beg, int *end)
 int bcf_write1(BGZF *fp, const bcf1_t *v)
 {
 	uint32_t x[8];
-	x[0] = v->shared.l;
+	x[0] = v->shared.l + 24; // to include six 32-bit integers
 	x[1] = v->indiv.l;
 	memcpy(x + 2, v, 16);
 	x[6] = (uint32_t)v->n_allele<<16 | v->n_info;
