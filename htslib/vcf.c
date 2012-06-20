@@ -707,6 +707,24 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 					for (; l != z->size>>2; ++l) *(int32_t*)(x+l) = bcf_missing_float;
 				} else abort();
 				if (*t == 0) {
+					for (++j; j < v->n_fmt; ++j) { // fill missing values
+						z = &fmt[j];
+						if ((z->y>>4&0xf) == BCF_HT_STR) {
+							if (z->is_gt) {
+								int32_t *x = (int32_t*)(z->buf + z->size * m);
+								for (l = 0; l != z->size>>2; ++l) x[l] = INT32_MIN;
+							} else {
+								char *x = (char*)z->buf + z->size * m;
+								for (l = 0; l != z->size; ++l) x[l] = 0;
+							}
+						} else if ((z->y>>4&0xf) == BCF_HT_INT) {
+							int32_t *x = (int32_t*)(z->buf + z->size * m);
+							for (l = 0; l != z->size>>2; ++l) x[l] = INT32_MIN;
+						} else if ((z->y>>4&0xf) == BCF_HT_REAL) {
+							float *x = (float*)(z->buf + z->size * m);
+							for (l = 0; l != z->size>>2; ++l) *(int32_t*)(x+l) = bcf_missing_float;
+						}
+					}
 					if (t == end) break;
 					++m, j = 0;
 				} else if (*t == ':') ++j;
