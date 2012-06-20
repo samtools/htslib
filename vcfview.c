@@ -23,13 +23,13 @@ int main_vcfview(int argc, char *argv[])
 	}
 	if (argc == optind) {
 		fprintf(stderr, "\nUsage:   vcfview [options] <in.bcf>|<in.vcf>|<in.vcf.gz>\n\n");
-		fprintf(stderr, "Options: -b        output in BCF\n");
-		fprintf(stderr, "         -S        input is VCF\n");
-		fprintf(stderr, "         -o FILE   output file name [stdout]\n");
-		fprintf(stderr, "         -l INT    compression level [%d]\n", clevel);
-		fprintf(stderr, "         -t FILE   list of reference names and lengths [null]\n");
-		fprintf(stderr, "         -s FILE   list of samples [null]\n");
-		fprintf(stderr, "         -G        drop individual genotype information\n");
+		fprintf(stderr, "Options: -b           output in BCF\n");
+		fprintf(stderr, "         -S           input is VCF\n");
+		fprintf(stderr, "         -o FILE      output file name [stdout]\n");
+		fprintf(stderr, "         -l INT       compression level [%d]\n", clevel);
+		fprintf(stderr, "         -t FILE      list of reference names and lengths [null]\n");
+		fprintf(stderr, "         -s FILE/STR  list of samples (STR if started with ':'; FILE otherwise) [null]\n");
+		fprintf(stderr, "         -G           drop individual genotype information\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
