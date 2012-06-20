@@ -368,8 +368,9 @@ void vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
 {
 	if (!fp->is_bin) {
 		int l = h->l_text;
-		if (l && h->text[l-1] == 0) --l;
-		fwrite(h->text, 1, h->l_text - 1, (FILE*)fp->fp);
+		while (l && h->text[l-1] == 0) --l; // kill the trailing zeros
+		if (l && h->text[l-1] == '\n') --l;
+		fwrite(h->text, 1, l, (FILE*)fp->fp);
 		fputc('\n', (FILE*)fp->fp);
 	} else bcf_hdr_write((BGZF*)fp->fp, h);
 }
