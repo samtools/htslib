@@ -89,6 +89,32 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
 	return ret;
 }
 
+char **hts_readlines(const char *fn, int *_n)
+{
+	int m = 0, n = 0, dret;
+	char **s = 0;
+	gzFile fp;
+	kstream_t *ks;
+	kstring_t str;
+	if ((fp = gzopen(fn, "r")) == 0) return 0;
+	str.s = 0; str.l = str.m = 0;
+	ks = ks_init(fp);
+	while (ks_getuntil(ks, KS_SEP_LINE, &str, &dret) >= 0) {
+		if (str.l == 0) continue;
+		if (m == n) {
+			m = m? m<<1 : 16;
+			s = (char**)realloc(s, m * sizeof(void*));
+		}
+		s[n++] = strdup(str.s);
+	}
+	ks_destroy(ks);
+	gzclose(fp);
+	s = (char**)realloc(s, n * sizeof(void*));
+	*_n = n;
+	free(str.s);
+	return s;
+}
+
 /****************
  *** Indexing ***
  ****************/

@@ -138,6 +138,9 @@ extern "C" {
 	int vcf_read1(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
 	int vcf_write1(htsFile *fp, const bcf_hdr_t *h, const bcf1_t *v);
 
+	bcf_hdr_t *vcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
+	int vcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
+
 #ifdef __cplusplus
 }
 #endif

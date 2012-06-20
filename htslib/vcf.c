@@ -922,4 +922,70 @@ int bcf_index_build(const char *fn, const char *_fnidx, int min_shift)
 	return 0;
 }
 
-hts_idx_t *bcf_index_load(const char *fn) { return hts_idx_restore(hts_idx_getfn(fn, ".csi")); }
+hts_idx_t *bcf_index_load(const char *fn)
+{
+	char *fni;
+	hts_idx_t *idx;
+	fni = hts_idx_getfn(fn, ".csi");
+	idx = hts_idx_restore(fni);
+	free(fni);
+	return idx;
+}
+
+/*****************
+ *** Utilities ***
+ *****************/
+
+bcf_hdr_t *vcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap)
+{
+	kstring_t str;
+	bcf_hdr_t *h;
+	str.l = str.m = 0; str.s = 0;
+	h = bcf_hdr_init();
+	if (h0->n[BCF_DT_SAMPLE] > 0) {
+		char *p;
+		int i = 0;
+		while ((p = strstr(h0->text, "#CHROM\t")) != 0)
+			if (p > h0->text && *(p-1) == '\n') break;
+		while ((p = strchr(p, '\t')) != 0 && i < 8) ++i, ++p;
+		if (i != 8) {
+			free(h); free(str.s);
+			return 0; // malformated header
+		}
+		kputsn(h0->text, p - h0->text - 1, &str);
+		for (i = 0; i < n; ++i) {
+			imap[i] = bcf_id2int(h0, BCF_DT_SAMPLE, samples[i]);
+			if (imap[i] < 0) continue;
+			kputc('\t', &str);
+			kputs(samples[i], &str);
+		}
+	} else kputsn(h0->text, h0->l_text, &str);
+	h->text = str.s;
+	h->l_text = str.l;
+	bcf_hdr_parse(h);
+	return h;
+}
+
+int vcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
+{
+	kstring_t ind;
+	ind.s = 0; ind.l = ind.m = 0;
+	if (n) {
+		bcf_fmt_t *fmt;
+		int i, j;
+		fmt = (bcf_fmt_t*)alloca(v->n_fmt * sizeof(bcf_fmt_t));
+		bcf_unpack_fmt_core((uint8_t*)v->indiv.s, v->n_sample, v->n_fmt, fmt);
+		for (i = 0; i < (int)v->n_fmt; ++i) {
+			bcf_fmt_t *f = &fmt[i];
+			bcf_enc_int1(&ind, f->id);
+			bcf_enc_size(&ind, f->n, f->type);
+			for (j = 0; j < n; ++j)
+				if (imap[j] >= 0) kputsn((char*)(f->p + imap[j] * f->size), f->size, &ind);
+		}
+		for (i = j = 0; j < n; ++j) if (imap[j] >= 0) ++i;
+		v->n_sample = i;
+	}
+	free(v->indiv.s);
+	v->indiv = ind;
+	return 0;
+}
