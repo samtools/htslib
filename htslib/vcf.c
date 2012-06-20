@@ -283,7 +283,9 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 	}
 	ks_resize(&v->shared, x[0]);
 	ks_resize(&v->indiv, x[1]);
-	memcpy(v, x + 2, 24);
+	memcpy(v, x + 2, 16);
+	v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
+	v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
 	v->shared.l = x[0], v->indiv.l = x[1];
 	bgzf_read(fp, v->shared.s, v->shared.l);
 	bgzf_read(fp, v->indiv.s, v->indiv.l);
@@ -305,7 +307,9 @@ int bcf_write1(BGZF *fp, const bcf1_t *v)
 	uint32_t x[8];
 	x[0] = v->shared.l;
 	x[1] = v->indiv.l;
-	memcpy(x + 2, v, 24);
+	memcpy(x + 2, v, 16);
+	x[6] = (uint32_t)v->n_allele<<16 | v->n_info;
+	x[7] = (uint32_t)v->n_fmt<<24 | v->n_sample;
 	bgzf_write(fp, x, 32);
 	bgzf_write(fp, v->shared.s, v->shared.l);
 	bgzf_write(fp, v->indiv.s, v->indiv.l);
