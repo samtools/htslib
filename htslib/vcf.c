@@ -944,15 +944,15 @@ bcf_hdr_t *vcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
 	h = bcf_hdr_init();
 	if (h0->n[BCF_DT_SAMPLE] > 0) {
 		char *p;
-		int i = 0;
+		int i = 0, end = n? 8 : 7;
 		while ((p = strstr(h0->text, "#CHROM\t")) != 0)
 			if (p > h0->text && *(p-1) == '\n') break;
-		while ((p = strchr(p, '\t')) != 0 && i < 8) ++i, ++p;
-		if (i != 8) {
+		while ((p = strchr(p, '\t')) != 0 && i < end) ++i, ++p;
+		if (i != end) {
 			free(h); free(str.s);
 			return 0; // malformated header
 		}
-		kputsn(h0->text, p - h0->text - 1, &str);
+		kputsn(h0->text, p - h0->text, &str);
 		for (i = 0; i < n; ++i) {
 			imap[i] = bcf_id2int(h0, BCF_DT_SAMPLE, samples[i]);
 			if (imap[i] < 0) continue;
@@ -984,7 +984,7 @@ int vcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
 		}
 		for (i = j = 0; j < n; ++j) if (imap[j] >= 0) ++i;
 		v->n_sample = i;
-	}
+	} else v->n_sample = 0;
 	free(v->indiv.s);
 	v->indiv = ind;
 	return 0;

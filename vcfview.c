@@ -4,7 +4,7 @@
 
 int main_vcfview(int argc, char *argv[])
 {
-	int i, c, clevel = -1, flag = 0, n_samples = 0, *imap = 0;
+	int i, c, clevel = -1, flag = 0, n_samples = -1, *imap = 0;
 	char *fn_ref = 0, *fn_out = 0, moder[8], **samples = 0;
 	bcf_hdr_t *h, *hsub = 0;
 	htsFile *in;
@@ -15,20 +15,21 @@ int main_vcfview(int argc, char *argv[])
 		case 'l': clevel = atoi(optarg); flag |= 2; break;
 		case 'S': flag |= 1; break;
 		case 'b': flag |= 2; break;
-		case 'G': flag |= 8; break;
+		case 'G': n_samples = 0; break;
 		case 't': fn_ref = optarg; flag |= 1; break;
 		case 'o': fn_out = optarg; break;
 		case 's': samples = hts_readlines(optarg, &n_samples); break;
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "\nUsage:   vcfview [-bS] [-t ref.fai] [-l level] [-s sampleList] <in.bcf>|<in.vcf>\n\n");
+		fprintf(stderr, "\nUsage:   vcfview [options] <in.bcf>|<in.vcf>|<in.vcf.gz>\n\n");
 		fprintf(stderr, "Options: -b        output in BCF\n");
 		fprintf(stderr, "         -S        input is VCF\n");
 		fprintf(stderr, "         -o FILE   output file name [stdout]\n");
 		fprintf(stderr, "         -l INT    compression level [%d]\n", clevel);
 		fprintf(stderr, "         -t FILE   list of reference names and lengths [null]\n");
 		fprintf(stderr, "         -s FILE   list of samples [null]\n");
+		fprintf(stderr, "         -G        drop individual genotype information\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
@@ -37,8 +38,8 @@ int main_vcfview(int argc, char *argv[])
 
 	in = hts_open(argv[optind], moder, fn_ref);
 	h = vcf_hdr_read(in);
-	if (n_samples) {
-		imap = (int*)malloc(n_samples * sizeof(int));
+	if (n_samples >= 0) {
+		if (n_samples) imap = (int*)malloc(n_samples * sizeof(int));
 		hsub = vcf_hdr_subset(h, n_samples, samples, imap);
 	}
 	b = bcf_init1();
@@ -64,7 +65,7 @@ int main_vcfview(int argc, char *argv[])
 					continue;
 				}
 				while (bcf_itr_next((BGZF*)in->fp, iter, b) >= 0)
-					if (n_samples) {
+					if (n_samples >= 0) {
 						vcf_subset(h, b, n_samples, imap);
 						vcf_write1(out, hsub, b);
 					} else vcf_write1(out, h, b);
@@ -73,7 +74,7 @@ int main_vcfview(int argc, char *argv[])
 			hts_idx_destroy(idx);
 		} else {
 			while (vcf_read1(in, h, b) >= 0)
-				if (n_samples) {
+				if (n_samples >= 0) {
 					vcf_subset(h, b, n_samples, imap);
 					vcf_write1(out, hsub, b);
 				} else vcf_write1(out, h, b);
@@ -82,7 +83,7 @@ int main_vcfview(int argc, char *argv[])
 	}
 
 	bcf_destroy1(b);
-	if (n_samples) {
+	if (n_samples > 0) {
 		for (i = 0; i < n_samples; ++i) free(samples[i]);
 		free(samples);
 		bcf_hdr_destroy(hsub);
