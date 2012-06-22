@@ -248,8 +248,9 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
 		if (kh_exist(bidx, k))
 			kh_val(bidx, k).loff = kh_key(bidx, k) < idx->n_bins? lidx->offset[hts_bin_bot(kh_key(bidx, k), idx->n_lvls)] : 0;
 	if (free_lidx) {
-		free(lidx);
-		idx->lidx = 0;
+		free(lidx->offset);
+		lidx->m = lidx->n = 0;
+		lidx->offset = 0;
 	}
 }
 
@@ -298,6 +299,8 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 				}
 			}
 		}
+		k = kh_get(bin, bidx, 0);
+		if (k != kh_end(bidx)) ks_introsort(_off, kh_val(bidx, k).n, kh_val(bidx, k).list);
 		// merge adjacent chunks that start from the same BGZF block
 		for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
 			bins_t *p;
