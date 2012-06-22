@@ -15,6 +15,6 @@ int main_bamidx(int argc, char *argv[])
        writes a new index with extension '.csi'.\n\n");
 		return 1;
 	}
-	bam_index_build(argv[optind], 0, min_shift);
+	bam_index_build(argv[optind], min_shift);
 	return 0;
 }

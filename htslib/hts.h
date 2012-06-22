@@ -56,6 +56,10 @@ extern "C" {
 #define HTS_IDX_NOCOOR (-1)
 #define HTS_IDX_START  (-2)
 
+#define HTS_FMT_CSI 0
+#define HTS_FMT_BAI 1
+#define HTS_FMT_TBI 2
+
 struct __hts_idx_t;
 typedef struct __hts_idx_t hts_idx_t;
 
@@ -78,18 +82,19 @@ typedef struct {
 extern "C" {
 #endif
 
-	hts_idx_t *hts_idx_init(int n, uint64_t offset0, int min_shift, int n_lvls);
+	#define hts_bin_first(l) (((1<<(((l)<<1) + (l))) - 1) / 7)
+	#define hts_bin_parent(l) (((l) - 1) >> 3)
+
+	hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_lvls);
 	void hts_idx_destroy(hts_idx_t *idx);
 	int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped);
 	void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
-	void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf, int ins_meta);
-	hts_idx_t *hts_idx_load(void *fp, int is_bgzf, int min_shift, int n_lvls, int n_seqs);
-	char *hts_idx_getfn(const char *fn, const char *ext);
+
+	void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt);
+	hts_idx_t *hts_idx_load(const char *fn, int fmt);
+
 	uint8_t *hts_idx_get_meta(hts_idx_t *idx, int *l_meta);
 	void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy);
-
-	void hts_idx_dump(const hts_idx_t *idx, const char *fn);
-	hts_idx_t *hts_idx_restore(const char *fn);
 
 	const char *hts_parse_reg(const char *s, int *beg, int *end);
 	hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end);
@@ -111,6 +116,13 @@ static inline int hts_reg2bin(int64_t beg, int64_t end, int min_shift, int n_lvl
 	for (--end, l = n_lvls; l > 0; --l, s += 3, t -= 1<<((l<<1)+l))
 		if (beg>>s == end>>s) return t + (beg>>s);
 	return 0;
+}
+
+static inline int hts_bin_bot(int bin, int n_lvls)
+{
+	int l, b;
+	for (l = 0, b = bin; b; ++l, b = hts_bin_parent(b)); // compute the level of bin
+	return (bin - hts_bin_first(l)) << (n_lvls - l) * 3;
 }
 
 /**************

@@ -908,7 +908,7 @@ hts_idx_t *bcf_index(BGZF *fp, int min_shift)
 			max_len = h->id[BCF_DT_CTG][i].val->info[0];
 	max_len += 256;
 	for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
-	idx = hts_idx_init(h->n[BCF_DT_CTG], bgzf_tell(fp), min_shift, n_lvls);
+	idx = hts_idx_init(h->n[BCF_DT_CTG], HTS_FMT_CSI, bgzf_tell(fp), min_shift, n_lvls);
 	bcf_hdr_destroy(h);
 	b = bcf_init1();
 	while (bcf_read1(fp, b) >= 0) {
@@ -921,33 +921,16 @@ hts_idx_t *bcf_index(BGZF *fp, int min_shift)
 	return idx;
 }
 
-int bcf_index_build(const char *fn, const char *_fnidx, int min_shift)
+int bcf_index_build(const char *fn, int min_shift)
 {
-	char *fnidx;
 	BGZF *fp;
 	hts_idx_t *idx;
-
 	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
 	idx = bcf_index(fp, min_shift);
 	bgzf_close(fp);
-	if (_fnidx == 0) {
-		fnidx = (char*)malloc(strlen(fn) + 5);
-		strcat(strcpy(fnidx, fn), ".csi");
-	} else fnidx = strdup(_fnidx);
-	hts_idx_dump(idx, fnidx);
-	free(fnidx);
+	hts_idx_save(idx, fn, HTS_FMT_CSI);
 	hts_idx_destroy(idx);
 	return 0;
-}
-
-hts_idx_t *bcf_index_load(const char *fn)
-{
-	char *fni;
-	hts_idx_t *idx;
-	fni = hts_idx_getfn(fn, ".csi");
-	idx = hts_idx_restore(fni);
-	free(fni);
-	return idx;
 }
 
 /*****************

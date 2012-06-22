@@ -122,9 +122,9 @@ extern "C" {
 	#define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query((idx), (tid), (beg), (end))
 	#define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_name2id), (hdr))
 	#define bcf_itr_next(fp, itr, r) hts_itr_next((fp), (itr), (r), (hts_readrec_f)(bcf_readrec), 0)
+	#define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
 
-	int bcf_index_build(const char *fn, const char *_fnidx, int min_shift);
-	hts_idx_t *bcf_index_load(const char *fn);
+	int bcf_index_build(const char *fn, int min_shift);
 
 	/***************
 	 *** VCF I/O ***

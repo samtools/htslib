@@ -157,7 +157,7 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 {
 	tbx_t *tbx;
 	kstring_t str;
-	int ret, first = 0, n_lvls;
+	int ret, first = 0, n_lvls, fmt;
 	int64_t lineno = 0;
 	uint64_t last_off = 0;
 	tbx_intv_t intv;
@@ -165,8 +165,8 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 	str.s = 0; str.l = str.m = 0;
 	tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
 	tbx->conf = *conf;
-	if (min_shift > 0) n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3;
-	else min_shift = 14, n_lvls = 5;
+	if (min_shift > 0) n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3, fmt = HTS_FMT_CSI;
+	else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_TBI;
 	while ((ret = bgzf_getline(fp, '\n', &str)) >= 0) {
 		++lineno;
 		if (lineno <= tbx->conf.line_skip || str.s[0] == tbx->conf.meta_char) {
@@ -174,7 +174,7 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 			continue;
 		}
 		if (first == 0) {
-			tbx->idx = hts_idx_init(0, last_off, min_shift, n_lvls);
+			tbx->idx = hts_idx_init(0, fmt, last_off, min_shift, n_lvls);
 			first = 1;
 		}
 		get_intv(tbx, &str, &intv, 1);
@@ -197,79 +197,32 @@ void tbx_destroy(tbx_t *tbx)
 	free(tbx);
 }
 
-int tbx_index_build(const char *fn, const char *_fnidx, int min_shift, const tbx_conf_t *conf)
+int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf)
 {
-	char *fnidx;
-	BGZF *fp;
 	tbx_t *tbx;
-	const char *suf;
-
+	BGZF *fp;
 	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
-	suf = min_shift <= 0? ".tbi" : ".csi";
 	tbx = tbx_index(fp, min_shift, conf);
 	bgzf_close(fp);
-	if (_fnidx == 0) {
-		fnidx = (char*)malloc(strlen(fn) + 5);
-		strcat(strcpy(fnidx, fn), suf);
-	} else fnidx = strdup(_fnidx);
-	if (min_shift <= 0) {
-		BGZF *fpidx;
-		if ((fpidx = bgzf_open(fnidx, "w")) == 0) {
-			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create the index file\n", __func__);
-			return -1;
-		}
-		bgzf_write(fpidx, "TBI\1", 4);
-		hts_idx_save(tbx->idx, fpidx, 1, 1);
-		bgzf_close(fpidx);
-	} else hts_idx_dump(tbx->idx, fnidx);
-	free(fnidx);
+	hts_idx_save(tbx->idx, fn, min_shift > 0? HTS_FMT_CSI : HTS_FMT_TBI);
 	tbx_destroy(tbx);
 	return 0;
 }
 
-tbx_t *tbx_index_load_local(const char *fnidx, int is_tbi)
+tbx_t *tbx_index_load(const char *fn)
 {
 	tbx_t *tbx;
 	uint8_t *meta;
 	char *nm, *p;
-	int i, l_meta, l_nm;
-	uint32_t x[8];
-
+	uint32_t x[7];
+	int l_meta, l_nm;
 	tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
-	if (is_tbi) {
-		BGZF *fpidx;
-		char magic[4];
-		if ((fpidx = bgzf_open(fnidx, "rb")) == 0) {
-			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open the index file\n", __func__);
-			return 0;
-		}
-		bgzf_read(fpidx, magic, 4);
-		bgzf_read(fpidx, x, 32);
-		l_nm = ed_is_big()? ed_swap_4(x[7]) : x[7];
-		meta = (uint8_t*)malloc(28 + l_nm);
-		memcpy(meta, &x[1], 28);
-		bgzf_read(fpidx, meta + 28, l_nm);
-		tbx->idx = hts_idx_load(fpidx, 1, 14, 5, ed_is_big()? ed_swap_4(x[0]) : x[0]);
-		hts_idx_set_meta(tbx->idx, 28 + l_nm, meta, 0);
-		bgzf_close(fpidx);
-	} else tbx->idx = hts_idx_restore(fnidx);
+	tbx->idx = hts_idx_load(fn, HTS_FMT_TBI);
 	meta = hts_idx_get_meta(tbx->idx, &l_meta);
 	memcpy(x, meta, 28);
-	if (ed_is_big())
-		for (i = 0; i < 7; ++i) ed_swap_4p(&x[i]);
 	memcpy(&tbx->conf, x, 24);
 	p = nm = (char*)meta + 28;
 	l_nm = x[6];
 	for (; p - nm < l_nm; p += strlen(p) + 1) get_tid(tbx, p, 1);
-	return tbx;
-}
-
-tbx_t *tbx_index_load(const char *fn)
-{
-	char *fnidx;
-	tbx_t *tbx = 0;
-	if ((fnidx = hts_idx_getfn(fn, ".csi")) != 0) tbx = tbx_index_load_local(fnidx, 0);
-	else if ((fnidx = hts_idx_getfn(fn, ".tbi")) != 0) tbx = tbx_index_load_local(fnidx, 1);
-	free(fnidx);
 	return tbx;
 }

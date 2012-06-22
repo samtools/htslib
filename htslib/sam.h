@@ -122,9 +122,9 @@ extern "C" {
 	#define bam_itr_queryi(idx, tid, beg, end) hts_itr_query(idx, tid, beg, end)
 	#define bam_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bam_name2id), (hdr))
 	#define bam_itr_next(fp, itr, r) hts_itr_next((fp), (itr), (r), (hts_readrec_f)(bam_readrec), 0)
+	#define bam_index_load(fn) hts_idx_load((fn), HTS_FMT_BAI)
 
-	int bam_index_build(const char *fn, const char *_fnidx, int min_shift);
-	hts_idx_t *bam_index_load(const char *fnbam);
+	int bam_index_build(const char *fn, int min_shift);
 
 	/***************
 	 *** SAM I/O ***

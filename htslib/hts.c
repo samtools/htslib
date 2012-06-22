@@ -143,6 +143,7 @@ KSORT_INIT(_off, hts_pair64_t, pair64_lt)
 
 typedef struct {
 	int32_t m, n;
+	uint64_t loff;
 	hts_pair64_t *list;
 } bins_t;
 
@@ -156,9 +157,9 @@ typedef struct {
 } lidx_t;
 
 struct __hts_idx_t {
-	int min_shift, n_lvls, n_bins;
+	int fmt, min_shift, n_lvls, n_bins;
 	uint32_t l_meta;
-	int n, m;
+	int32_t n, m;
 	uint64_t n_no_coor;
 	bidx_t **bidx;
 	lidx_t *lidx;
@@ -213,10 +214,11 @@ static inline uint64_t insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64
 	return (uint64_t)beg<<32 | end;
 }
 
-hts_idx_t *hts_idx_init(int n, uint64_t offset0, int min_shift, int n_lvls)
+hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_lvls)
 {
 	hts_idx_t *idx;
 	idx = (hts_idx_t*)calloc(1, sizeof(hts_idx_t));
+	idx->fmt = fmt;
 	idx->min_shift = min_shift;
 	idx->n_lvls = n_lvls;
 	idx->n_bins = ((1<<(3 * n_lvls + 3)) - 1) / 7;
@@ -232,6 +234,25 @@ hts_idx_t *hts_idx_init(int n, uint64_t offset0, int min_shift, int n_lvls)
 	return idx;
 }
 
+static void update_loff(hts_idx_t *idx, int i, int free_lidx)
+{
+	bidx_t *bidx = idx->bidx[i];
+	lidx_t *lidx = &idx->lidx[i];
+	khint_t k;
+	int l;
+	for (l = 1; l < lidx->n; ++l) // fill missing values
+		if (lidx->offset[l] == 0)
+			lidx->offset[l] = lidx->offset[l-1];
+	if (bidx == 0) return;
+	for (k = kh_begin(bidx); k != kh_end(bidx); ++k) // set loff
+		if (kh_exist(bidx, k))
+			kh_val(bidx, k).loff = lidx->offset[hts_bin_bot(kh_key(bidx, k), idx->n_lvls)];
+	if (free_lidx) {
+		free(lidx);
+		idx->lidx = 0;
+	}
+}
+
 void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 {
 	int i;
@@ -241,15 +262,20 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 		insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.off_beg, final_offset);
 		insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.n_mapped, idx->z.n_unmapped);
 	}
+	// the following fixed a bug whereby we miss some records; a bug to tabix only as only in tabix a record can start at file offset 0
+	if (idx->z.offset0 != (uint64_t)-1 && idx->n && idx->lidx[0].offset) {
+		int beg = idx->z.offset0 >> 32, end = idx->z.offset0 & 0xfffffffu;
+		for (i = beg; i < end; ++i) idx->lidx[0].offset[i] = 0;
+	}
 	for (i = 0; i < idx->n; ++i) {
 		bidx_t *bidx = idx->bidx[i];
-		lidx_t *lidx = &idx->lidx[i];
 		khint_t k;
 		int l, m;
 		if (bidx == 0) continue;
+		update_loff(idx, i, (idx->fmt == HTS_FMT_CSI));
 		// merge a bin to its parent if the bin is too small
 		for (l = idx->n_lvls; l > 0; --l) {
-			unsigned start = ((1<<((l<<1) + l)) - 1) / 7;
+			unsigned start = hts_bin_first(l);
 			for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
 				bins_t *p, *q;
 				if (!kh_exist(bidx, k) || kh_key(bidx, k) < start) continue;
@@ -257,19 +283,18 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 				if (l < idx->n_lvls && p->n > 1) ks_introsort(_off, p->n, p->list);
 				if ((p->list[p->n - 1].v>>16) - (p->list[0].u>>16) < HTS_MIN_MARKER_DIST) {
 					khint_t kp;
-					kp = kh_get(bin, bidx, (kh_key(bidx, k) - 1) >> 3);
-					if (kp != kh_end(bidx)) {
-						q = &kh_val(bidx, kp);
-						if (q->n + p->n > q->m) {
-							q->m = q->n + p->n;
-							kroundup32(q->m);
-							q->list = (hts_pair64_t*)realloc(q->list, q->m * 16);
-						}
-						memcpy(q->list + q->n, p->list, p->n * 16);
-						q->n += p->n;
-						free(p->list);
-						kh_del(bin, bidx, k);
+					kp = kh_get(bin, bidx, hts_bin_parent(kh_key(bidx, k)));
+					if (kp == kh_end(bidx)) continue;
+					q = &kh_val(bidx, kp);
+					if (q->n + p->n > q->m) {
+						q->m = q->n + p->n;
+						kroundup32(q->m);
+						q->list = (hts_pair64_t*)realloc(q->list, q->m * 16);
 					}
+					memcpy(q->list + q->n, p->list, p->n * 16);
+					q->n += p->n;
+					free(p->list);
+					kh_del(bin, bidx, k);
 				}
 			}
 		}
@@ -285,15 +310,6 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 			}
 			p->n = m + 1;
 		}
-		// fill missing values in the linear index
-		for (l = 1; l < lidx->n; ++l)
-			if (lidx->offset[l] == 0)
-				lidx->offset[l] = lidx->offset[l-1];
-	}
-	// I forgot the purpose of the following block. It is in tabix and probably for a bug fix.
-	if (idx->z.offset0 != (uint64_t)-1 && idx->n && idx->lidx[0].offset) {
-		int beg = idx->z.offset0 >> 32, end = idx->z.offset0 & 0xfffffffu;
-		for (i = beg; i < end; ++i) idx->lidx[0].offset[i] = 0;
 	}
 	idx->z.finished = 1;
 }
@@ -326,7 +342,7 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 	if (tid >= 0 && is_mapped) {
 		uint64_t ret;
 		ret = insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off, idx->min_shift); // last_off points to the start of the current record
-		if (idx->z.last_off == 0) idx->z.offset0 = ret; // I forgot the purpose of offset0
+		if (idx->z.last_off == 0) idx->z.offset0 = ret; // this is for a bugfix; see hts_idx_final() for more
 	}
 	bin = hts_reg2bin(beg, end, idx->min_shift, idx->n_lvls);
 	if ((int)idx->z.last_bin != bin) { // then possibly write the binning index
@@ -393,15 +409,16 @@ static inline void swap_bins(bins_t *p)
 	}
 }
 
-void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf, int ins_meta)
+static void hts_idx_save_core(const hts_idx_t *idx, void *fp, int fmt)
 {
 	int32_t i, size, is_be;
+	int is_bgzf = (fmt != HTS_FMT_BAI);
 	is_be = ed_is_big();
 	if (is_be) {
 		uint32_t x = idx->n;
 		idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
 	} else idx_write(is_bgzf, fp, &idx->n, 4);
-	if (ins_meta && idx->l_meta) idx_write(is_bgzf, fp, idx->meta, idx->l_meta);
+	if (fmt == HTS_FMT_TBI && idx->l_meta) idx_write(is_bgzf, fp, idx->meta, idx->l_meta);
 	for (i = 0; i < idx->n; ++i) {
 		khint_t k;
 		bidx_t *bidx = idx->bidx[i];
@@ -414,32 +431,39 @@ void hts_idx_save(const hts_idx_t *idx, void *fp, int is_bgzf, int ins_meta)
 		} else idx_write(is_bgzf, fp, &size, 4);
 		if (bidx == 0) goto write_lidx;
 		for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
-			if (kh_exist(bidx, k)) {
-				bins_t *p = &kh_value(bidx, k);
-				if (is_be) { // big endian
-					uint32_t x;
-					x = kh_key(bidx, k); idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-					x = p->n; idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-					swap_bins(p);
-					idx_write(is_bgzf, fp, p->list, 16 * p->n);
-					swap_bins(p);
-				} else {
-					idx_write(is_bgzf, fp, &kh_key(bidx, k), 4);
-					idx_write(is_bgzf, fp, &p->n, 4);
-					idx_write(is_bgzf, fp, p->list, p->n << 4);
+			bins_t *p;
+			if (!kh_exist(bidx, k)) continue;
+			p = &kh_value(bidx, k);
+			if (is_be) { // big endian
+				uint32_t x;
+				x = kh_key(bidx, k); idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
+				if (fmt == HTS_FMT_CSI) {
+					uint64_t y = kh_val(bidx, k).loff;
+					idx_write(is_bgzf, fp, ed_swap_4p(&y), 8);
 				}
+				x = p->n; idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
+				swap_bins(p);
+				idx_write(is_bgzf, fp, p->list, 16 * p->n);
+				swap_bins(p);
+			} else {
+				idx_write(is_bgzf, fp, &kh_key(bidx, k), 4);
+				if (fmt == HTS_FMT_CSI) idx_write(is_bgzf, fp, &kh_val(bidx, k).loff, 8);
+				idx_write(is_bgzf, fp, &p->n, 4);
+				idx_write(is_bgzf, fp, p->list, p->n << 4);
 			}
 		}
 write_lidx:
-		if (is_be) {
-			int32_t x = lidx->n;
-			idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-			for (x = 0; x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
-			idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
-			for (x = 0; x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
-		} else {
-			idx_write(is_bgzf, fp, &lidx->n, 4);
-			idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
+		if (fmt != HTS_FMT_CSI) {
+			if (is_be) {
+				int32_t x = lidx->n;
+				idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
+				for (x = 0; x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
+				idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
+				for (x = 0; x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
+			} else {
+				idx_write(is_bgzf, fp, &lidx->n, 4);
+				idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
+			}
 		}
 	}
 	if (is_be) { // write the number of reads without coordinates
@@ -448,35 +472,47 @@ write_lidx:
 	} else idx_write(is_bgzf, fp, &idx->n_no_coor, 8);
 }
 
-void hts_idx_dump(const hts_idx_t *idx, const char *fn)
+void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
 {
-	BGZF *fp;
-	uint32_t x[3];
-	int is_be, i;
-	is_be = ed_is_big();
-	fp = bgzf_open(fn, "w");
-	bgzf_write(fp, "CSI\1", 4);
-	x[0] = idx->min_shift; x[1] = idx->n_lvls; x[2] = idx->l_meta;
-	if (is_be) {
-		for (i = 0; i < 3; ++i)
-			bgzf_write(fp, ed_swap_4p(&x[i]), 4);
-	} else bgzf_write(fp, &x, 12);
-	if (idx->l_meta) bgzf_write(fp, idx->meta, idx->l_meta);
-	hts_idx_save(idx, fp, 1, 0);
-	bgzf_close(fp);
+	char *fnidx;
+	fnidx = (char*)calloc(1, strlen(fn) + 5);
+	strcpy(fnidx, fn);
+	if (fmt == HTS_FMT_CSI) {
+		BGZF *fp;
+		uint32_t x[3];
+		int is_be, i;
+		is_be = ed_is_big();
+		fp = bgzf_open(strcat(fnidx, ".csi"), "w");
+		bgzf_write(fp, "CSI\1", 4);
+		x[0] = idx->min_shift; x[1] = idx->n_lvls; x[2] = idx->l_meta;
+		if (is_be) {
+			for (i = 0; i < 3; ++i)
+				bgzf_write(fp, ed_swap_4p(&x[i]), 4);
+		} else bgzf_write(fp, &x, 12);
+		if (idx->l_meta) bgzf_write(fp, idx->meta, idx->l_meta);
+		hts_idx_save_core(idx, fp, HTS_FMT_CSI);
+		bgzf_close(fp);
+	} else if (fmt == HTS_FMT_TBI) {
+		BGZF *fp;
+		fp = bgzf_open(strcat(fnidx, ".bai"), "w");
+		bgzf_write(fp, "TBI\1", 4);
+		hts_idx_save_core(idx, fp, HTS_FMT_TBI);
+		bgzf_close(fp);
+	} else if (fmt == HTS_FMT_BAI) {
+		FILE *fp;
+		fp = fopen(strcat(fnidx, ".tbi"), "w");
+		fwrite("BAI\1", 1, 4, fp);
+		hts_idx_save_core(idx, fp, HTS_FMT_BAI);
+		fclose(fp);
+	} else abort();
+	free(fnidx);
 }
 
-hts_idx_t *hts_idx_load(void *fp, int is_bgzf, int min_shift, int n_lvls, int n_seqs)
+static void hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
 {
 	int32_t i, n, is_be;
-	hts_idx_t *idx;
-
+	int is_bgzf = (fmt != HTS_FMT_BAI);
 	is_be = ed_is_big();
-	if (n_seqs <= 0) {
-		idx_read(is_bgzf, fp, &n, 4);
-		if (is_be) ed_swap_4p(&n);
-	} else n = n_seqs;
-	idx = hts_idx_init(n, 0, min_shift, n_lvls);
 	for (i = 0; i < idx->n; ++i) {
 		bidx_t *h;
 		lidx_t *l = &idx->lidx[i];
@@ -484,7 +520,6 @@ hts_idx_t *hts_idx_load(void *fp, int is_bgzf, int min_shift, int n_lvls, int n_
 		int j, absent;
 		bins_t *p;
 		h = idx->bidx[i] = kh_init(bin);
-		// load binning index
 		idx_read(is_bgzf, fp, &n, 4);
 		if (is_be) ed_swap_4p(&n);
 		for (j = 0; j < n; ++j) {
@@ -493,6 +528,10 @@ hts_idx_t *hts_idx_load(void *fp, int is_bgzf, int min_shift, int n_lvls, int n_
 			if (is_be) ed_swap_4p(&key);
 			k = kh_put(bin, h, key, &absent);
 			p = &kh_val(h, k);
+			if (fmt == HTS_FMT_CSI) {
+				idx_read(is_bgzf, fp, &p->loff, 8);
+				if (is_be) ed_swap_8p(&p->loff);
+			}
 			idx_read(is_bgzf, fp, &p->n, 4);
 			if (is_be) ed_swap_4p(&p->n);
 			p->m = p->n;
@@ -500,39 +539,69 @@ hts_idx_t *hts_idx_load(void *fp, int is_bgzf, int min_shift, int n_lvls, int n_
 			idx_read(is_bgzf, fp, p->list, p->n<<4);
 			if (is_be) swap_bins(p);
 		}
-		// load linear index
-		idx_read(is_bgzf, fp, &l->n, 4);
-		if (is_be) ed_swap_4p(&l->n);
-		l->m = l->n;
-		l->offset = (uint64_t*)malloc(l->n << 3);
-		idx_read(is_bgzf, fp, l->offset, l->n << 3);
-		if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
+		if (fmt != HTS_FMT_CSI) { // load linear index
+			idx_read(is_bgzf, fp, &l->n, 4);
+			if (is_be) ed_swap_4p(&l->n);
+			l->m = l->n;
+			l->offset = (uint64_t*)malloc(l->n << 3);
+			idx_read(is_bgzf, fp, l->offset, l->n << 3);
+			if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
+		}
 	}
 	if (idx_read(is_bgzf, fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
 	if (is_be) ed_swap_8p(&idx->n_no_coor);
-	return idx;
 }
 
-hts_idx_t *hts_idx_restore(const char *fn)
+hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
 {
-	BGZF *fp;
+	uint8_t magic[4];
+	int i, is_be;
 	hts_idx_t *idx;
-	uint32_t x[3];
-	uint8_t magic[4], *meta = 0;
-	int is_be, i;
 	is_be = ed_is_big();
-	if ((fp = bgzf_open(fn, "r")) == 0) return 0;
-	bgzf_read(fp, magic, 4);
-	bgzf_read(fp, x, 12);
-	if (is_be) for (i = 0; i < 3; ++i) ed_swap_4p(&x[i]);
-	if (x[2]) {
-		meta = (uint8_t*)malloc(x[2]);
-		bgzf_read(fp, meta, x[2]);
-	}
-	idx = hts_idx_load(fp, 1, x[0], x[1], 0);
-	bgzf_close(fp);
-	idx->l_meta = x[2];
-	idx->meta = meta;
+	if (fmt == HTS_FMT_CSI) {
+		BGZF *fp;
+		uint32_t x[3], n;
+		uint8_t *meta = 0;
+		if ((fp = bgzf_open(fn, "r")) == 0) return 0;
+		bgzf_read(fp, magic, 4);
+		bgzf_read(fp, x, 12);
+		if (is_be) for (i = 0; i < 3; ++i) ed_swap_4p(&x[i]);
+		if (x[2]) {
+			meta = (uint8_t*)malloc(x[2]);
+			bgzf_read(fp, meta, x[2]);
+		}
+		bgzf_read(fp, &n, 4);
+		if (is_be) ed_swap_4p(&n);
+		idx = hts_idx_init(n, fmt, 0, 14, 5);
+		idx->l_meta = x[2];
+		idx->meta = meta;
+		hts_idx_load_core(idx, fp, HTS_FMT_CSI);
+		bgzf_close(fp);
+	} else if (fmt == HTS_FMT_TBI) {
+		BGZF *fp;
+		uint32_t x[8];
+		if ((fp = bgzf_open(fn, "r")) == 0) return 0;
+		bgzf_read(fp, magic, 4);
+		bgzf_read(fp, x, 32);
+		if (is_be) for (i = 0; i < 8; ++i) ed_swap_4p(&x[i]);
+		idx = hts_idx_init(x[0], fmt, 0, x[0], x[1]);
+		idx->l_meta = 28 + x[7];
+		idx->meta = (uint8_t*)malloc(idx->l_meta);
+		memcpy(idx->meta, &x[1], 28);
+		bgzf_read(fp, idx->meta + 28, x[7]);
+		hts_idx_load_core(idx, fp, HTS_FMT_TBI);
+		bgzf_close(fp);
+	} else if (fmt == HTS_FMT_BAI) {
+		uint32_t n;
+		FILE *fp;
+		if ((fp = fopen(fn, "rb")) == 0) return 0;
+		fread(magic, 1, 4, fp);
+		fread(&n, 4, 1, fp);
+		if (is_be) ed_swap_4p(&n);
+		idx = hts_idx_init(n, fmt, 0, 14, 5);
+		hts_idx_load_core(idx, fp, HTS_FMT_BAI);
+		fclose(fp);
+	} else abort();
 	return idx;
 }
 
@@ -576,7 +645,7 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
 
 hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 {
-	int i, n_off, l;
+	int i, n_off, l, bin;
 	hts_pair64_t *off;
 	khint_t k;
 	bidx_t *bidx;
@@ -599,18 +668,20 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 	iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
 	iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
 
+	// compute min_off
+	bin = hts_bin_first(idx->n_lvls) + (beg>>idx->min_shift);
+	do {
+		int first;
+		k = kh_get(bin, bidx, bin);
+		if (k != kh_end(bidx)) break;
+		first = (hts_bin_parent(bin)<<3) + 1;
+		if (bin > first) --bin;
+		else bin = hts_bin_parent(bin);
+	} while (bin);
+	if (bin == 0) k = kh_get(bin, bidx, bin);
+	min_off = kh_val(bidx, k).loff;
+	// retrieve bins
 	reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
-	if (idx->lidx[tid].n > 0) {
-		min_off = (beg>>idx->min_shift >= idx->lidx[tid].n)? idx->lidx[tid].offset[idx->lidx[tid].n-1]
-			: idx->lidx[tid].offset[beg>>idx->min_shift];
-		if (min_off == 0) { // improvement for index files built by tabix prior to 0.1.4
-			int n = beg>>idx->min_shift;
-			if (n > idx->lidx[tid].n) n = idx->lidx[tid].n;
-			for (i = n - 1; i >= 0; --i)
-				if (idx->lidx[tid].offset[i] != 0) break;
-			if (i >= 0) min_off = idx->lidx[tid].offset[i];
-		}
-	} else min_off = 0; // tabix 0.1.2 may produce such index files
 	for (i = n_off = 0; i < iter->bins.n; ++i) {
 		if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
 			n_off += kh_value(bidx, k).n;
@@ -784,4 +855,17 @@ char *hts_idx_getfn(const char *fn, const char *ext)
 	l_fn = strlen(ret);
 	memmove(fnidx, ret, l_fn + 1);
 	return fnidx;
+}
+
+hts_idx_t *hts_idx_load(const char *fn, int fmt)
+{
+	char *fnidx;
+	hts_idx_t *idx;
+	fnidx = hts_idx_getfn(fn, ".csi");
+	if (fnidx) fmt = HTS_FMT_CSI;
+	else fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
+	if (fnidx == 0) return 0;
+	idx = hts_idx_load_local(fnidx, fmt);
+	free(fnidx);
+	return idx;
 }

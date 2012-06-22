@@ -12,6 +12,6 @@ int main_bcfidx(int argc, char *argv[])
 		fprintf(stderr, "Usage: bamidx [-s minShift] <in.bam>\n");
 		return 1;
 	}
-	bcf_index_build(argv[optind], 0, min_shift);
+	bcf_index_build(argv[optind], min_shift);
 	return 0;
 }

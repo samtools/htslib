@@ -299,7 +299,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
 
 hts_idx_t *bam_index(BGZF *fp, int min_shift)
 {
-	int n_lvls, i;
+	int n_lvls, i, fmt;
 	bam1_t *b;
 	hts_idx_t *idx;
 	bam_hdr_t *h;
@@ -310,8 +310,9 @@ hts_idx_t *bam_index(BGZF *fp, int min_shift)
 			if (max_len < h->target_len[i]) max_len = h->target_len[i];
 		max_len += 256;
 		for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
-	} else min_shift = 14, n_lvls = 5;
-	idx = hts_idx_init(h->n_targets, bgzf_tell(fp), min_shift, n_lvls);
+		fmt = HTS_FMT_CSI;
+	} else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_BAI;
+	idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp), min_shift, n_lvls);
 	bam_hdr_destroy(h);
 	b = bam_init1();
 	while (bam_read1(fp, b) >= 0) {
@@ -325,58 +326,15 @@ hts_idx_t *bam_index(BGZF *fp, int min_shift)
 	return idx;
 }
 
-int bam_index_build(const char *fn, const char *_fnidx, int min_shift)
+int bam_index_build(const char *fn, int min_shift)
 {
-	char *fnidx;
-	BGZF *fp;
 	hts_idx_t *idx;
-	const char *suf;
-
+	BGZF *fp;
 	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
-	suf = min_shift <= 0? ".bai" : ".csi";
 	idx = bam_index(fp, min_shift);
 	bgzf_close(fp);
-	if (_fnidx == 0) {
-		fnidx = (char*)malloc(strlen(fn) + 5);
-		strcat(strcpy(fnidx, fn), suf);
-	} else fnidx = strdup(_fnidx);
-	if (min_shift <= 0) {
-		FILE *fpidx;
-		if ((fpidx = fopen(fnidx, "wb")) == 0) {
-			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create the index file\n", __func__);
-			return -1;
-		}
-		fwrite("BAI\1", 1, 4, fpidx);
-		hts_idx_save(idx, fpidx, 0, 0);
-		fclose(fpidx);
-	} else hts_idx_dump(idx, fnidx);
-	free(fnidx);
+	hts_idx_save(idx, fn, min_shift > 0? HTS_FMT_CSI : HTS_FMT_BAI);
 	hts_idx_destroy(idx);
-	return 0;
-}
-
-hts_idx_t *bam_index_load_local(const char *fnidx, int is_bai)
-{
-	hts_idx_t *idx;
-	if (is_bai) {
-		FILE *fpidx;
-		char magic[4];
-		if ((fpidx = fopen(fnidx, "rb")) == 0) {
-			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open the index file\n", __func__);
-			return 0;
-		}
-		fread(magic, 1, 4, fpidx);
-		idx = hts_idx_load(fpidx, 0, 14, 5, 0);
-		fclose(fpidx);
-	} else idx = hts_idx_restore(fnidx);
-	return idx;
-}
-
-hts_idx_t *bam_index_load(const char *fn)
-{
-	char *fnidx;
-	if ((fnidx = hts_idx_getfn(fn, ".csi")) != 0) return bam_index_load_local(fnidx, 0);
-	if ((fnidx = hts_idx_getfn(fn, ".bai")) != 0) return bam_index_load_local(fnidx, 1);
 	return 0;
 }
 

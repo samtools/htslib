@@ -59,7 +59,7 @@ int main_tabix(int argc, char *argv[])
 				return 1;
 			}
 		}
-		tbx_index_build(argv[optind], 0, min_shift, &conf);
+		tbx_index_build(argv[optind], min_shift, &conf);
 	} else { // read with random access
 		tbx_t *tbx;
 		BGZF *fp;
