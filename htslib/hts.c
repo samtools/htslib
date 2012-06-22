@@ -246,7 +246,7 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
 	if (bidx == 0) return;
 	for (k = kh_begin(bidx); k != kh_end(bidx); ++k) // set loff
 		if (kh_exist(bidx, k))
-			kh_val(bidx, k).loff = lidx->offset[hts_bin_bot(kh_key(bidx, k), idx->n_lvls)];
+			kh_val(bidx, k).loff = kh_key(bidx, k) < idx->n_bins? lidx->offset[hts_bin_bot(kh_key(bidx, k), idx->n_lvls)] : 0;
 	if (free_lidx) {
 		free(lidx);
 		idx->lidx = 0;
@@ -278,7 +278,7 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 			unsigned start = hts_bin_first(l);
 			for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
 				bins_t *p, *q;
-				if (!kh_exist(bidx, k) || kh_key(bidx, k) < start) continue;
+				if (!kh_exist(bidx, k) || kh_key(bidx, k) >= idx->n_bins || kh_key(bidx, k) < start) continue;
 				p = &kh_value(bidx, k);
 				if (l < idx->n_lvls && p->n > 1) ks_introsort(_off, p->n, p->list);
 				if ((p->list[p->n - 1].v>>16) - (p->list[0].u>>16) < HTS_MIN_MARKER_DIST) {
@@ -301,7 +301,7 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 		// merge adjacent chunks that start from the same BGZF block
 		for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
 			bins_t *p;
-			if (!kh_exist(bidx, k)) continue;
+			if (!kh_exist(bidx, k) || kh_key(bidx, k) >= idx->n_bins) continue;
 			p = &kh_value(bidx, k);
 			for (l = 1, m = 0; l < p->n; ++l) {
 				if (p->list[m].v>>16 >= p->list[l].u>>16) {
@@ -494,13 +494,13 @@ void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
 		bgzf_close(fp);
 	} else if (fmt == HTS_FMT_TBI) {
 		BGZF *fp;
-		fp = bgzf_open(strcat(fnidx, ".bai"), "w");
+		fp = bgzf_open(strcat(fnidx, ".tbi"), "w");
 		bgzf_write(fp, "TBI\1", 4);
 		hts_idx_save_core(idx, fp, HTS_FMT_TBI);
 		bgzf_close(fp);
 	} else if (fmt == HTS_FMT_BAI) {
 		FILE *fp;
-		fp = fopen(strcat(fnidx, ".tbi"), "w");
+		fp = fopen(strcat(fnidx, ".bai"), "w");
 		fwrite("BAI\1", 1, 4, fp);
 		hts_idx_save_core(idx, fp, HTS_FMT_BAI);
 		fclose(fp);
