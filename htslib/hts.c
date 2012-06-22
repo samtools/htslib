@@ -254,6 +254,53 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
 	}
 }
 
+static void compress_binning(hts_idx_t *idx, int i)
+{
+	bidx_t *bidx = idx->bidx[i];
+	khint_t k;
+	int l, m;
+	if (bidx == 0) return;
+	// merge a bin to its parent if the bin is too small
+	for (l = idx->n_lvls; l > 0; --l) {
+		unsigned start = hts_bin_first(l);
+		for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
+			bins_t *p, *q;
+			if (!kh_exist(bidx, k) || kh_key(bidx, k) >= idx->n_bins || kh_key(bidx, k) < start) continue;
+			p = &kh_value(bidx, k);
+			if (l < idx->n_lvls && p->n > 1) ks_introsort(_off, p->n, p->list);
+			if ((p->list[p->n - 1].v>>16) - (p->list[0].u>>16) < HTS_MIN_MARKER_DIST) {
+				khint_t kp;
+				kp = kh_get(bin, bidx, hts_bin_parent(kh_key(bidx, k)));
+				if (kp == kh_end(bidx)) continue;
+				q = &kh_val(bidx, kp);
+				if (q->n + p->n > q->m) {
+					q->m = q->n + p->n;
+					kroundup32(q->m);
+					q->list = (hts_pair64_t*)realloc(q->list, q->m * 16);
+				}
+				memcpy(q->list + q->n, p->list, p->n * 16);
+				q->n += p->n;
+				free(p->list);
+				kh_del(bin, bidx, k);
+			}
+		}
+	}
+	k = kh_get(bin, bidx, 0);
+	if (k != kh_end(bidx)) ks_introsort(_off, kh_val(bidx, k).n, kh_val(bidx, k).list);
+	// merge adjacent chunks that start from the same BGZF block
+	for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
+		bins_t *p;
+		if (!kh_exist(bidx, k) || kh_key(bidx, k) >= idx->n_bins) continue;
+		p = &kh_value(bidx, k);
+		for (l = 1, m = 0; l < p->n; ++l) {
+			if (p->list[m].v>>16 >= p->list[l].u>>16) {
+				if (p->list[m].v < p->list[l].v) p->list[m].v = p->list[l].v;
+			} else p->list[++m] = p->list[l];
+		}
+		p->n = m + 1;
+	}
+}
+
 void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 {
 	int i;
@@ -269,50 +316,8 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 		for (i = beg; i < end; ++i) idx->lidx[0].offset[i] = 0;
 	}
 	for (i = 0; i < idx->n; ++i) {
-		bidx_t *bidx = idx->bidx[i];
-		khint_t k;
-		int l, m;
-		if (bidx == 0) continue;
 		update_loff(idx, i, (idx->fmt == HTS_FMT_CSI));
-		// merge a bin to its parent if the bin is too small
-		for (l = idx->n_lvls; l > 0; --l) {
-			unsigned start = hts_bin_first(l);
-			for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
-				bins_t *p, *q;
-				if (!kh_exist(bidx, k) || kh_key(bidx, k) >= idx->n_bins || kh_key(bidx, k) < start) continue;
-				p = &kh_value(bidx, k);
-				if (l < idx->n_lvls && p->n > 1) ks_introsort(_off, p->n, p->list);
-				if ((p->list[p->n - 1].v>>16) - (p->list[0].u>>16) < HTS_MIN_MARKER_DIST) {
-					khint_t kp;
-					kp = kh_get(bin, bidx, hts_bin_parent(kh_key(bidx, k)));
-					if (kp == kh_end(bidx)) continue;
-					q = &kh_val(bidx, kp);
-					if (q->n + p->n > q->m) {
-						q->m = q->n + p->n;
-						kroundup32(q->m);
-						q->list = (hts_pair64_t*)realloc(q->list, q->m * 16);
-					}
-					memcpy(q->list + q->n, p->list, p->n * 16);
-					q->n += p->n;
-					free(p->list);
-					kh_del(bin, bidx, k);
-				}
-			}
-		}
-		k = kh_get(bin, bidx, 0);
-		if (k != kh_end(bidx)) ks_introsort(_off, kh_val(bidx, k).n, kh_val(bidx, k).list);
-		// merge adjacent chunks that start from the same BGZF block
-		for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
-			bins_t *p;
-			if (!kh_exist(bidx, k) || kh_key(bidx, k) >= idx->n_bins) continue;
-			p = &kh_value(bidx, k);
-			for (l = 1, m = 0; l < p->n; ++l) {
-				if (p->list[m].v>>16 >= p->list[l].u>>16) {
-					if (p->list[m].v < p->list[l].v) p->list[m].v = p->list[l].v;
-				} else p->list[++m] = p->list[l];
-			}
-			p->n = m + 1;
-		}
+		compress_binning(idx, i);
 	}
 	idx->z.finished = 1;
 }
@@ -549,6 +554,7 @@ static void hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
 			l->offset = (uint64_t*)malloc(l->n << 3);
 			idx_read(is_bgzf, fp, l->offset, l->n << 3);
 			if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
+			update_loff(idx, i, 1);
 		}
 	}
 	if (idx_read(is_bgzf, fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
