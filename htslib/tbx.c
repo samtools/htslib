@@ -181,6 +181,7 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 		ret = hts_idx_push(tbx->idx, intv.tid, intv.beg, intv.end, bgzf_tell(fp), 1);
 		if (ret < 0) break;
 	}
+	hts_idx_finish(tbx->idx, bgzf_tell(fp));
 	tbx_set_meta(tbx);
 	free(str.s);
 	return tbx;

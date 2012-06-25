@@ -17,7 +17,6 @@ typedef struct {
 } tbx_conf_t;
 
 typedef struct {
-	int n, m;
 	tbx_conf_t conf;
 	hts_idx_t *idx;
 	void *dict;

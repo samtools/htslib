@@ -456,6 +456,7 @@ static void hts_idx_save_core(const hts_idx_t *idx, void *fp, int fmt)
 			} else {
 				idx_write(is_bgzf, fp, &kh_key(bidx, k), 4);
 				if (fmt == HTS_FMT_CSI) idx_write(is_bgzf, fp, &kh_val(bidx, k).loff, 8);
+				int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
 				idx_write(is_bgzf, fp, &p->n, 4);
 				idx_write(is_bgzf, fp, p->list, p->n << 4);
 			}
@@ -539,7 +540,7 @@ static void hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
 			if (fmt == HTS_FMT_CSI) {
 				idx_read(is_bgzf, fp, &p->loff, 8);
 				if (is_be) ed_swap_8p(&p->loff);
-			}
+			} else p->loff = 0;
 			idx_read(is_bgzf, fp, &p->n, 4);
 			if (is_be) ed_swap_4p(&p->n);
 			p->m = p->n;
@@ -559,6 +560,9 @@ static void hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
 	}
 	if (idx_read(is_bgzf, fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
 	if (is_be) ed_swap_8p(&idx->n_no_coor);
+	if (fmt != HTS_FMT_CSI)
+		for (i = 0; i < idx->n; ++i) // merge the linear index to the binning index
+			update_loff(idx, i, 1);
 }
 
 hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
@@ -581,7 +585,7 @@ hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
 		}
 		bgzf_read(fp, &n, 4);
 		if (is_be) ed_swap_4p(&n);
-		idx = hts_idx_init(n, fmt, 0, 14, 5);
+		idx = hts_idx_init(n, fmt, 0, x[0], x[1]);
 		idx->l_meta = x[2];
 		idx->meta = meta;
 		hts_idx_load_core(idx, fp, HTS_FMT_CSI);
@@ -593,7 +597,7 @@ hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
 		bgzf_read(fp, magic, 4);
 		bgzf_read(fp, x, 32);
 		if (is_be) for (i = 0; i < 8; ++i) ed_swap_4p(&x[i]);
-		idx = hts_idx_init(x[0], fmt, 0, x[0], x[1]);
+		idx = hts_idx_init(x[0], fmt, 0, 14, 5);
 		idx->l_meta = 28 + x[7];
 		idx->meta = (uint8_t*)malloc(idx->l_meta);
 		memcpy(idx->meta, &x[1], 28);
@@ -691,10 +695,9 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 	min_off = kh_val(bidx, k).loff;
 	// retrieve bins
 	reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
-	for (i = n_off = 0; i < iter->bins.n; ++i) {
+	for (i = n_off = 0; i < iter->bins.n; ++i)
 		if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
 			n_off += kh_value(bidx, k).n;
-	}
 	if (n_off == 0) return iter;
 	off = (hts_pair64_t*)calloc(n_off, 16);
 	for (i = n_off = 0; i < iter->bins.n; ++i) {
