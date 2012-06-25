@@ -26,21 +26,19 @@
   \multicolumn{4}{|l|}{\sf aux} & Auxilary data & {\tt uint8\_t[l\_aux]} & \\\cline{1-7}
   \multicolumn{4}{|l|}{\sf n\_ref} & \# reference sequences & {\tt int32\_t} & \\\cline{1-7}
   \multicolumn{7}{|c|}{\textcolor{gray}{\it List of indices (n=n\_ref)}} \\\cline{2-7}
-  & \multicolumn{3}{l|}{\sf n\_bin} & \# distinct bins (for the binning index) & {\tt int32\_t} & \\\cline{2-7}
+  & \multicolumn{3}{l|}{\sf n\_bin} & \# distinct bins & {\tt int32\_t} & \\\cline{2-7}
   & \multicolumn{6}{c|}{\textcolor{gray}{\it List of distinct bins (n=n\_bin)}} \\\cline{3-7}
   & & \multicolumn{2}{l|}{\sf bin} & Distinct bin & {\tt uint32\_t} & \\\cline{3-7}
+  & & \multicolumn{2}{l|}{\sf loffset} & (Virtual) file offset of the first overlapping record & {\tt uint64\_t} & \\\cline{3-7}
   & & \multicolumn{2}{l|}{\sf n\_chunk} & \# chunks & {\tt int32\_t} & \\\cline{3-7}
   & & \multicolumn{5}{c|}{\textcolor{gray}{\it List of chunks (n=n\_chunk)}} \\\cline{4-7}
   & & & {\sf chunk\_beg} & (Virtual) file offset of the start of the chunk & {\tt uint64\_t} & \\\cline{4-7}
   & & & {\sf chunk\_end} & (Virtual) file offset of the end of the chunk & {\tt uint64\_t} & \\\cline{2-7}
-  & \multicolumn{3}{l|}{\sf n\_intv} & \# minimal intervals (for the linear index) & {\tt int32\_t} & \\\cline{2-7}
-  & \multicolumn{6}{c|}{\textcolor{gray}{\it List of intervals (n=n\_intv)}} \\\cline{3-7}
-  & & \multicolumn{2}{l|}{\sf ioffset} & (Virtual) file offset of the first record in the interval & {\tt uint64\_t} & \\
   \cline{1-7}
 \end{tabular}}
 \end{table}
 
-{\small
+{\footnotesize
 \begin{verbatim}
 /* calculate bin given an alignment covering [beg,end) (zero-based, half-close-half-open) */
 int reg2bin(int64_t beg, int64_t end, int min_shift, int depth)

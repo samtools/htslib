@@ -134,7 +134,7 @@ char **hts_readlines(const char *fn, int *_n)
  *** Indexing ***
  ****************/
 
-#define HTS_MIN_MARKER_DIST 0x20000
+#define HTS_MIN_MARKER_DIST 0x10000
 
 #define pair64_lt(a,b) ((a).u < (b).u)
 
