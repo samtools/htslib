@@ -167,7 +167,7 @@ struct __hts_idx_t {
 	struct {
 		uint32_t last_bin, save_bin;
 		int last_coor, last_tid, save_tid, finished;
-		uint64_t last_off, save_off, offset0;
+		uint64_t last_off, save_off;
 		uint64_t off_beg, off_end;
 		uint64_t n_mapped, n_unmapped;
 	} z; // keep internal states
@@ -192,7 +192,7 @@ static inline void insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
 	l->list[l->n++].v = end;
 }
 
-static inline uint64_t insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t offset, int min_shift)
+static inline void insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t offset, int min_shift)
 {
 	int i, beg, end;
 	beg = _beg >> min_shift;
@@ -202,16 +202,15 @@ static inline uint64_t insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64
 		l->m = end + 1;
 		kroundup32(l->m);
 		l->offset = (uint64_t*)realloc(l->offset, l->m * 8);
-		memset(l->offset + old_m, 0, 8 * (l->m - old_m));
+		memset(l->offset + old_m, 0xff, 8 * (l->m - old_m)); // fill l->offset with (uint64_t)-1
 	}
 	if (beg == end) { // to save a loop in this case
-		if (l->offset[beg] == 0) l->offset[beg] = offset;
+		if (l->offset[beg] == (uint64_t)-1) l->offset[beg] = offset;
 	} else {
 		for (i = beg; i <= end; ++i)
-			if (l->offset[i] == 0) l->offset[i] = offset;
+			if (l->offset[i] == (uint64_t)-1) l->offset[i] = offset;
 	}
 	if (l->n < end + 1) l->n = end + 1;
-	return (uint64_t)beg<<32 | end;
 }
 
 hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_lvls)
@@ -225,7 +224,6 @@ hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_l
 	idx->z.save_bin = idx->z.save_tid = idx->z.last_tid = idx->z.last_bin = 0xffffffffu;
 	idx->z.save_off = idx->z.last_off = idx->z.off_beg = idx->z.off_end = offset0;
 	idx->z.last_coor = 0xffffffffu;
-	idx->z.offset0 = (uint64_t)-1;
 	if (n) {
 		idx->n = idx->m = n;
 		idx->bidx = (bidx_t**)calloc(n, sizeof(void*));
@@ -240,8 +238,15 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
 	lidx_t *lidx = &idx->lidx[i];
 	khint_t k;
 	int l;
-	for (l = 1; l < lidx->n; ++l) // fill missing values
-		if (lidx->offset[l] == 0)
+	uint64_t offset0 = 0;
+	if (bidx) {
+		k = kh_get(bin, bidx, idx->n_bins + 1);
+		offset0 = kh_val(bidx, k).list[0].u;
+	}
+	for (l = 0; l < lidx->n && lidx->offset[l] == (uint64_t)-1; ++l)
+		lidx->offset[l] = offset0;
+	for (; l < lidx->n; ++l) // fill missing values
+		if (lidx->offset[l] == (uint64_t)-1)
 			lidx->offset[l] = lidx->offset[l-1];
 	if (bidx == 0) return;
 	for (k = kh_begin(bidx); k != kh_end(bidx); ++k) // set loff
@@ -310,11 +315,6 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 		insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.off_beg, final_offset);
 		insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.n_mapped, idx->z.n_unmapped);
 	}
-	// the following fixed a bug whereby we miss some records; a bug to tabix only as only in tabix a record can start at file offset 0
-	if (idx->z.offset0 != (uint64_t)-1 && idx->n && idx->lidx[0].offset) {
-		int beg = idx->z.offset0 >> 32, end = idx->z.offset0 & 0xfffffffu;
-		for (i = beg; i < end; ++i) idx->lidx[0].offset[i] = 0;
-	}
 	for (i = 0; i < idx->n; ++i) {
 		update_loff(idx, i, (idx->fmt == HTS_FMT_CSI));
 		compress_binning(idx, i);
@@ -347,11 +347,8 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted positions\n", __func__);
 		return -1;
 	}
-	if (tid >= 0 && is_mapped) {
-		uint64_t ret;
-		ret = insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off, idx->min_shift); // last_off points to the start of the current record
-		if (idx->z.last_off == 0) idx->z.offset0 = ret; // this is for a bugfix; see hts_idx_final() for more
-	}
+	if (tid >= 0 && is_mapped)
+		insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off, idx->min_shift); // last_off points to the start of the current record
 	bin = hts_reg2bin(beg, end, idx->min_shift, idx->n_lvls);
 	if ((int)idx->z.last_bin != bin) { // then possibly write the binning index
 		if (idx->z.save_bin != 0xffffffffu) // save_bin==0xffffffffu only happens to the first record
@@ -456,7 +453,7 @@ static void hts_idx_save_core(const hts_idx_t *idx, void *fp, int fmt)
 			} else {
 				idx_write(is_bgzf, fp, &kh_key(bidx, k), 4);
 				if (fmt == HTS_FMT_CSI) idx_write(is_bgzf, fp, &kh_val(bidx, k).loff, 8);
-				int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
+				//int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
 				idx_write(is_bgzf, fp, &p->n, 4);
 				idx_write(is_bgzf, fp, p->list, p->n << 4);
 			}
@@ -560,9 +557,15 @@ static void hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
 	}
 	if (idx_read(is_bgzf, fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
 	if (is_be) ed_swap_8p(&idx->n_no_coor);
-	if (fmt != HTS_FMT_CSI)
-		for (i = 0; i < idx->n; ++i) // merge the linear index to the binning index
-			update_loff(idx, i, 1);
+	if (fmt != HTS_FMT_CSI) {
+		for (i = 0; i < idx->n; ++i) {
+			int l;
+			lidx_t *lidx = &idx->lidx[i];
+			for (l = 1; l < lidx->n; ++l) // fill missing values; may happen given older samtools and tabix
+				if (lidx->offset[l] == 0) lidx->offset[l] = lidx->offset[l-1];
+		}
+		for (i = 0; i < idx->n; ++i) update_loff(idx, i, 1); // merge the linear index to the binning index
+	}
 }
 
 hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
