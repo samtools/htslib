@@ -546,26 +546,20 @@ static void hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
 			if (is_be) swap_bins(p);
 		}
 		if (fmt != HTS_FMT_CSI) { // load linear index
+			int j;
 			idx_read(is_bgzf, fp, &l->n, 4);
 			if (is_be) ed_swap_4p(&l->n);
 			l->m = l->n;
 			l->offset = (uint64_t*)malloc(l->n << 3);
 			idx_read(is_bgzf, fp, l->offset, l->n << 3);
 			if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
+			for (j = 1; j < l->n; ++j) // fill missing values; may happen given older samtools and tabix
+				if (l->offset[j] == 0) l->offset[j] = l->offset[j-1];
 			update_loff(idx, i, 1);
 		}
 	}
 	if (idx_read(is_bgzf, fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
 	if (is_be) ed_swap_8p(&idx->n_no_coor);
-	if (fmt != HTS_FMT_CSI) {
-		for (i = 0; i < idx->n; ++i) {
-			int l;
-			lidx_t *lidx = &idx->lidx[i];
-			for (l = 1; l < lidx->n; ++l) // fill missing values; may happen given older samtools and tabix
-				if (lidx->offset[l] == 0) lidx->offset[l] = lidx->offset[l-1];
-		}
-		for (i = 0; i < idx->n; ++i) update_loff(idx, i, 1); // merge the linear index to the binning index
-	}
 }
 
 hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
