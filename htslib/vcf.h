@@ -114,6 +114,8 @@ extern "C" {
 	int bcf_name2id(const bcf_hdr_t *h, const char *id);
 	bcf_fmt_t *bcf_unpack_fmt(const bcf_hdr_t *h, const bcf1_t *v);
 
+	uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr);
+
 	/*****************
 	 *** BCF index ***
 	 *****************/
