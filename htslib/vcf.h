@@ -131,7 +131,7 @@ extern "C" {
 	int bcf_id2int(const bcf_hdr_t *h, int which, const char *id);
 	int bcf_name2id(const bcf_hdr_t *h, const char *id);
 	bcf_fmt_t *bcf_unpack_fmt(const bcf_hdr_t *h, const bcf1_t *v);
-
+    int bcf_unpack(bcf1_t *b);
 	uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr);
 
 	/*****************
