@@ -824,16 +824,16 @@ int bcf_unpack(bcf1_t *b)
 	d->m_str = tmp.m; d->id = tmp.s; // write tmp back
 	// FILTER
 	if (*ptr>>4) {
-		int type, x;
-		x = bcf_dec_size(ptr, &ptr, &type);
-		if (x > d->m_flt) {
-			d->m_flt = x;
+		int type;
+		d->n_flt = bcf_dec_size(ptr, &ptr, &type);
+		if (d->n_flt > d->m_flt) {
+			d->m_flt = d->n_flt;
 			kroundup32(d->m_flt);
 			d->flt = (int*)realloc(d->flt, d->m_flt * sizeof(int));
 		}
-		for (i = 0; i < x; ++i)
+		for (i = 0; i < d->n_flt; ++i)
 			d->flt[i] = bcf_dec_int1(ptr, type, &ptr);;
-	} else ++ptr;
+	} else ++ptr, d->n_flt = 0;
 	// INFO
 	if (b->n_info > d->m_info) {
 		d->m_info = b->n_info;
@@ -855,6 +855,48 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 {
 	uint8_t *ptr = (uint8_t*)v->shared.s;
 	int i;
+#if 1
+	s->l = 0;
+	bcf_unpack((bcf1_t*)v);
+	kputs(h->id[BCF_DT_CTG][v->rid].key, s); // CHROM
+	kputc('\t', s); kputw(v->pos + 1, s); // POS
+	kputc('\t', s); kputs(v->d.id, s); // ID
+	kputc('\t', s); // REF
+	if (v->n_allele > 0) kputs(v->d.allele[0], s);
+	else kputc('.', s);
+	kputc('\t', s); // ALT
+	if (v->n_allele > 1) {
+		for (i = 1; i < v->n_allele; ++i) {
+			if (i > 1) kputc(',', s);
+			kputs(v->d.allele[i], s);
+		}
+	} else kputc('.', s);
+	kputc('\t', s); // QUAL
+	if (memcmp(&v->qual, &bcf_missing_float, 4) == 0) kputc('.', s); // QUAL
+	else ksprintf(s, "%g", v->qual);
+	kputc('\t', s); // FILTER
+	if (v->d.n_flt) {
+		for (i = 0; i < v->d.n_flt; ++i) {
+			if (i) kputc(';', s);
+			kputs(h->id[BCF_DT_ID][v->d.flt[i]].key, s);
+		}
+	} else kputc('.', s);
+	kputc('\t', s); // INFO
+	if (v->n_info) {
+		for (i = 0; i < v->n_info; ++i) {
+			bcf_info_t *z = &v->d.info[i];
+			if (i) kputc(';', s);
+			kputs(h->id[BCF_DT_ID][z->key].key, s);
+			if (z->len <= 0) continue;
+			kputc('=', s);
+			if (z->len == 1) {
+				if (z->type == BCF_BT_FLOAT) ksprintf(s, "%g", z->v1.f);
+				else if (z->type != BCF_BT_CHAR) kputw(z->v1.i, s);
+				else kputc(z->v1.i, s);
+			} else bcf_fmt_array(s, z->len, z->type, z->vptr);
+		}
+	} else kputc('.', s);
+#else
 	s->l = 0;
 	kputs(h->id[BCF_DT_CTG][v->rid].key, s); kputc('\t', s); // CHROM
 	kputw(v->pos + 1, s); kputc('\t', s); // POS
@@ -897,6 +939,7 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 			} else ++ptr; // skip 0
 		}
 	} else kputc('.', s);
+#endif
 	// FORMAT and individual information
 	ptr = (uint8_t*)v->indiv.s;
 	if (v->n_sample && v->n_fmt) { // FORMAT

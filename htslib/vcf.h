@@ -83,12 +83,12 @@ typedef struct {
 	union {
 		int32_t i;
 		float f;
-	} v1; // only set if $type is integer or float and len==1
+	} v1; // only set if $len==1
 	uint8_t *vptr;
 } bcf_info_t;
 
 typedef struct {
-	int m_fmt, m_info, m_str, m_allele, m_flt;
+	int m_fmt, m_info, m_str, m_allele, m_flt, n_flt;
 	char *id, **allele;
 	int *flt;
 	bcf_fmt_t *fmt;
