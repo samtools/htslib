@@ -814,11 +814,7 @@ int bcf_unpack(bcf1_t *b)
 		ptr = bcf_fmt_sized_array(&tmp, ptr);
 		kputc('\0', &tmp);
 	}
-	if (b->n_allele > d->m_allele) {
-		d->m_allele = b->n_allele;
-		kroundup32(d->m_allele);
-		d->allele = (char**)realloc(d->allele, sizeof(char*) * d->m_allele);
-	}
+	hts_expand(char*, b->n_allele, d->m_allele, d->allele); // NM: hts_expand() is a macro
 	for (i = 0; i < b->n_allele; ++i)
 		d->allele[i] = tmp.s + offset[i];
 	d->m_str = tmp.m; d->id = tmp.s; // write tmp back
@@ -826,27 +822,15 @@ int bcf_unpack(bcf1_t *b)
 	if (*ptr>>4) {
 		int type;
 		d->n_flt = bcf_dec_size(ptr, &ptr, &type);
-		if (d->n_flt > d->m_flt) {
-			d->m_flt = d->n_flt;
-			kroundup32(d->m_flt);
-			d->flt = (int*)realloc(d->flt, d->m_flt * sizeof(int));
-		}
+		hts_expand(int, d->n_flt, d->m_flt, d->flt);
 		for (i = 0; i < d->n_flt; ++i)
-			d->flt[i] = bcf_dec_int1(ptr, type, &ptr);;
+			d->flt[i] = bcf_dec_int1(ptr, type, &ptr);
 	} else ++ptr, d->n_flt = 0;
 	// INFO
-	if (b->n_info > d->m_info) {
-		d->m_info = b->n_info;
-		kroundup32(d->m_info);
-		d->info = (bcf_info_t*)realloc(d->info, d->m_info * sizeof(bcf_info_t));
-	}
+	hts_expand(bcf_info_t, b->n_info, d->m_info, d->info);
 	bcf_unpack_info_core(ptr, b->n_info, d->info);
 	// FORMAT
-	if (b->n_fmt > d->m_fmt) {
-		d->m_fmt = b->n_fmt;
-		kroundup32(d->m_fmt);
-		d->fmt = (bcf_fmt_t*)realloc(d->fmt, d->m_fmt * sizeof(bcf_fmt_t));
-	}
+	hts_expand(bcf_fmt_t, b->n_fmt, d->m_fmt, d->fmt);
 	bcf_unpack_fmt_core((uint8_t*)b->indiv.s, b->n_sample, b->n_fmt, d->fmt);
 	return 0;
 }

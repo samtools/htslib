@@ -16,6 +16,11 @@ typedef struct __kstring_t {
 #define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
 #endif
 
+#define hts_expand(type_t, n, m, ptr) if ((n) > (m)) { \
+		(m) = (n); kroundup32(m); \
+		(ptr) = (type_t*)realloc((ptr), (m) * sizeof(type_t)); \
+	}
+
 /************
  * File I/O *
  ************/
