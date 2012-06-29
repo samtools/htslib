@@ -128,12 +128,23 @@ extern "C" {
 	int bcf_read1(BGZF *fp, bcf1_t *v);
 	int bcf_write1(BGZF *fp, const bcf1_t *v);
 	int bcf_readrec(BGZF *fp, void *null, bcf1_t *v, int *tid, int *beg, int *end);
-	int bcf_unpack(bcf1_t *b);
+
+	#define BCF_UN_STR  1 // up to ALT inclusive
+	#define BCF_UN_FLT  2 // up to FILTER
+	#define BCF_UN_INFO 4 // up to INFO
+	#define BCF_UN_SHR  (BCF_UN_STR|BCF_UN_FLT|BCF_UN_INFO) // all shared information
+	#define BCF_UN_FMT  8 // unpack format and each sample
+	#define BCF_UN_IND  BCF_UN_FMT // a synonymous of BCF_UN_FMT
+	#define BCF_UN_ALL  (BCF_UN_SHR|BCF_UN_FMT) // everything
+
+	int bcf_unpack(bcf1_t *b, int which); // to unpack everything, set $which to BCF_UN_ALL
 
 	int bcf_id2int(const bcf_hdr_t *h, int which, const char *id);
 	int bcf_name2id(const bcf_hdr_t *h, const char *id);
-	bcf_fmt_t *bcf_unpack_fmt(const bcf_hdr_t *h, const bcf1_t *v);
 
+	void bcf_fmt_array(kstring_t *s, int n, int type, void *data);
+	uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr);
+	
 	/*****************
 	 *** BCF index ***
 	 *****************/

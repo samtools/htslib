@@ -798,40 +798,46 @@ uint8_t *bcf_unpack_info_core(uint8_t *ptr, int n_info, bcf_info_t *info)
 	return ptr;
 }
 
-int bcf_unpack(bcf1_t *b)
+int bcf_unpack(bcf1_t *b, int which)
 {
-	kstring_t tmp;
 	uint8_t *ptr = (uint8_t*)b->shared.s;
 	int *offset, i;
 	bcf_dec_t *d = &b->d;
-	// ID
-	tmp.l = 0; tmp.m = d->m_str; tmp.s = d->id;
-	ptr = bcf_fmt_sized_array(&tmp, ptr); kputc('\0', &tmp);
-	// REF and ALT
-	offset = (int*)alloca(b->n_allele * sizeof(int));
-	for (i = 0; i < b->n_allele; ++i) {
-		offset[i] = tmp.l;
-		ptr = bcf_fmt_sized_array(&tmp, ptr);
-		kputc('\0', &tmp);
+	if (which & BCF_UN_FLT) which |= BCF_UN_STR;
+	if (which & BCF_UN_INFO) which |= BCF_UN_SHR;
+	if (which & BCF_UN_STR) { // ID
+		kstring_t tmp;
+		tmp.l = 0; tmp.m = d->m_str; tmp.s = d->id;
+		ptr = bcf_fmt_sized_array(&tmp, ptr); kputc('\0', &tmp);
+		// REF and ALT
+		offset = (int*)alloca(b->n_allele * sizeof(int));
+		for (i = 0; i < b->n_allele; ++i) {
+			offset[i] = tmp.l;
+			ptr = bcf_fmt_sized_array(&tmp, ptr);
+			kputc('\0', &tmp);
+		}
+		hts_expand(char*, b->n_allele, d->m_allele, d->allele); // NM: hts_expand() is a macro
+		for (i = 0; i < b->n_allele; ++i)
+			d->allele[i] = tmp.s + offset[i];
+		d->m_str = tmp.m; d->id = tmp.s; // write tmp back
 	}
-	hts_expand(char*, b->n_allele, d->m_allele, d->allele); // NM: hts_expand() is a macro
-	for (i = 0; i < b->n_allele; ++i)
-		d->allele[i] = tmp.s + offset[i];
-	d->m_str = tmp.m; d->id = tmp.s; // write tmp back
-	// FILTER
-	if (*ptr>>4) {
-		int type;
-		d->n_flt = bcf_dec_size(ptr, &ptr, &type);
-		hts_expand(int, d->n_flt, d->m_flt, d->flt);
-		for (i = 0; i < d->n_flt; ++i)
-			d->flt[i] = bcf_dec_int1(ptr, type, &ptr);
-	} else ++ptr, d->n_flt = 0;
-	// INFO
-	hts_expand(bcf_info_t, b->n_info, d->m_info, d->info);
-	bcf_unpack_info_core(ptr, b->n_info, d->info);
-	// FORMAT
-	hts_expand(bcf_fmt_t, b->n_fmt, d->m_fmt, d->fmt);
-	bcf_unpack_fmt_core((uint8_t*)b->indiv.s, b->n_sample, b->n_fmt, d->fmt);
+	if (which & BCF_UN_FLT) { // FILTER
+		if (*ptr>>4) {
+			int type;
+			d->n_flt = bcf_dec_size(ptr, &ptr, &type);
+			hts_expand(int, d->n_flt, d->m_flt, d->flt);
+			for (i = 0; i < d->n_flt; ++i)
+				d->flt[i] = bcf_dec_int1(ptr, type, &ptr);
+		} else ++ptr, d->n_flt = 0;
+	}
+	if (which & BCF_UN_INFO) { // INFO
+		hts_expand(bcf_info_t, b->n_info, d->m_info, d->info);
+		bcf_unpack_info_core(ptr, b->n_info, d->info);
+	}
+	if (which & BCF_UN_FMT) { // FORMAT
+		hts_expand(bcf_fmt_t, b->n_fmt, d->m_fmt, d->fmt);
+		bcf_unpack_fmt_core((uint8_t*)b->indiv.s, b->n_sample, b->n_fmt, d->fmt);
+	}
 	return 0;
 }
 
@@ -840,7 +846,7 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 	uint8_t *ptr = (uint8_t*)v->shared.s;
 	int i;
 	s->l = 0;
-	bcf_unpack((bcf1_t*)v);
+	bcf_unpack((bcf1_t*)v, BCF_UN_ALL);
 	kputs(h->id[BCF_DT_CTG][v->rid].key, s); // CHROM
 	kputc('\t', s); kputw(v->pos + 1, s); // POS
 	kputc('\t', s); kputs(v->d.id, s); // ID
@@ -936,15 +942,6 @@ int bcf_id2int(const bcf_hdr_t *h, int which, const char *id)
 int bcf_name2id(const bcf_hdr_t *h, const char *id)
 {
 	return bcf_id2int(h, BCF_DT_CTG, id);
-}
-
-bcf_fmt_t *vcf_unpack_fmt(const bcf_hdr_t *h, const bcf1_t *v)
-{
-	bcf_fmt_t *fmt;
-	if (v->n_fmt == 0) return 0;
-	fmt = (bcf_fmt_t*)malloc(v->n_fmt * sizeof(bcf_fmt_t));
-	bcf_unpack_fmt_core((uint8_t*)v->indiv.s, v->n_sample, v->n_fmt, fmt);
-	return fmt;
 }
 
 /********************
