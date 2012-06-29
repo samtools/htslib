@@ -855,7 +855,6 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 {
 	uint8_t *ptr = (uint8_t*)v->shared.s;
 	int i;
-#if 1
 	s->l = 0;
 	bcf_unpack((bcf1_t*)v);
 	kputs(h->id[BCF_DT_CTG][v->rid].key, s); // CHROM
@@ -896,50 +895,6 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 			} else bcf_fmt_array(s, z->len, z->type, z->vptr);
 		}
 	} else kputc('.', s);
-#else
-	s->l = 0;
-	kputs(h->id[BCF_DT_CTG][v->rid].key, s); kputc('\t', s); // CHROM
-	kputw(v->pos + 1, s); kputc('\t', s); // POS
-	// ID
-	ptr = bcf_fmt_sized_array(s, ptr);
-	kputc('\t', s);
-	if (v->n_allele) { // REF and ALT
-		for (i = 0; i < v->n_allele; ++i) {
-			if (i) kputc(i == 1? '\t' : ',', s);
-			ptr = bcf_fmt_sized_array(s, ptr);
-		}
-		if (v->n_allele == 1) kputsn("\t.\t", 3, s);
-		else kputc('\t', s);
-	} else kputsn(".\t.\t", 4, s);
-	if (memcmp(&v->qual, &bcf_missing_float, 4) == 0) kputsn(".\t", 2, s); // QUAL
-	else ksprintf(s, "%g\t", v->qual);
-	if (*ptr>>4) { // FILTER
-		int32_t x, y;
-		int type, i;
-		x = bcf_dec_size(ptr, &ptr, &type);
-		for (i = 0; i < x; ++i) {
-			if (i) kputc(';', s);
-			y = bcf_dec_int1(ptr, type, &ptr);
-			kputs(h->id[BCF_DT_ID][y].key, s);
-		}
-		kputc('\t', s);
-	} else {
-		kputsn(".\t", 2, s);
-		++ptr;
-	}
-	if (v->n_info) {
-		for (i = 0; i < (int)v->n_info; ++i) {
-			int32_t x;
-			if (i) kputc(';', s);
-			x = bcf_dec_typed_int1(ptr, &ptr);
-			kputs(h->id[BCF_DT_ID][x].key, s);
-			if (*ptr>>4) { // more than zero element
-				kputc('=', s);
-				ptr = bcf_fmt_sized_array(s, ptr);
-			} else ++ptr; // skip 0
-		}
-	} else kputc('.', s);
-#endif
 	// FORMAT and individual information
 	ptr = (uint8_t*)v->indiv.s;
 	if (v->n_sample && v->n_fmt) { // FORMAT
