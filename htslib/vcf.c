@@ -269,6 +269,7 @@ bcf1_t *bcf_init1()
 
 void bcf_destroy1(bcf1_t *v)
 {
+	free(v->d.id); free(v->d.allele); free(v->d.flt); free(v->d.info); free(v->d.fmt);
 	free(v->shared.s); free(v->indiv.s);
 	free(v);
 }
@@ -775,6 +776,79 @@ uint8_t *bcf_unpack_fmt_core(uint8_t *ptr, int n_sample, int n_fmt, bcf_fmt_t *f
 		ptr += n_sample * f->size;
 	}
 	return ptr;
+}
+
+uint8_t *bcf_unpack_info_core(uint8_t *ptr, int n_info, bcf_info_t *info)
+{
+	int i;
+	for (i = 0; i < n_info; ++i) {
+		bcf_info_t *z = &info[i];
+		z->key = bcf_dec_typed_int1(ptr, &ptr);
+		z->len = bcf_dec_size(ptr, &ptr, &z->type);
+		z->vptr = ptr;
+		z->v1.i = 0;
+		if (z->len == 1) {
+			if (z->type == BCF_BT_INT8 || z->type == BCF_BT_CHAR) z->v1.i = *(int8_t*)ptr;
+			else if (z->type == BCF_BT_INT32) z->v1.i = *(int32_t*)ptr;
+			else if (z->type == BCF_BT_FLOAT) z->v1.f = *(float*)ptr;
+			else if (z->type == BCF_BT_INT16) z->v1.i = *(int16_t*)ptr;
+		}
+		ptr += z->len << bcf_type_shift[z->type];
+	}
+	return ptr;
+}
+
+int bcf_unpack(bcf1_t *b)
+{
+	kstring_t tmp;
+	uint8_t *ptr = (uint8_t*)b->shared.s;
+	int *offset, i;
+	bcf_dec_t *d = &b->d;
+	// ID
+	tmp.l = 0; tmp.m = d->m_str; tmp.s = d->id;
+	ptr = bcf_fmt_sized_array(&tmp, ptr); kputc('\0', &tmp);
+	// REF and ALT
+	offset = (int*)alloca(b->n_allele * sizeof(int));
+	for (i = 0; i < b->n_allele; ++i) {
+		offset[i] = tmp.l;
+		ptr = bcf_fmt_sized_array(&tmp, ptr);
+		kputc('\0', &tmp);
+	}
+	if (b->n_allele > d->m_allele) {
+		d->m_allele = b->n_allele;
+		kroundup32(d->m_allele);
+		d->allele = (char**)realloc(d->allele, sizeof(char*) * sizeof(d->m_allele));
+	}
+	for (i = 0; i < b->n_allele; ++i)
+		d->allele[i] = tmp.s + offset[i];
+	d->m_str = tmp.m; d->id = tmp.s; // write tmp back
+	// FILTER
+	if (*ptr>>4) {
+		int type, x;
+		x = bcf_dec_size(ptr, &ptr, &type);
+		if (x > d->m_flt) {
+			d->m_flt = x;
+			kroundup32(d->m_flt);
+			d->flt = (int*)realloc(d->flt, d->m_flt * sizeof(int));
+		}
+		for (i = 0; i < x; ++i)
+			d->flt[i] = bcf_dec_int1(ptr, type, &ptr);;
+	} else ++ptr;
+	// INFO
+	if (b->n_info > d->m_info) {
+		d->m_info = b->n_info;
+		kroundup32(d->m_info);
+		d->info = (bcf_info_t*)realloc(d->info, d->m_info * sizeof(bcf_info_t));
+	}
+	bcf_unpack_info_core(ptr, b->n_info, d->info);
+	// FORMAT
+	if (b->n_fmt > d->m_fmt) {
+		d->m_fmt = b->n_fmt;
+		kroundup32(d->m_fmt);
+		d->fmt = (bcf_fmt_t*)realloc(d->fmt, d->m_fmt * sizeof(bcf_fmt_t));
+	}
+	bcf_unpack_fmt_core((uint8_t*)b->indiv.s, b->n_sample, b->n_fmt, d->fmt);
+	return 0;
 }
 
 int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)

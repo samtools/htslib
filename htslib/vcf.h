@@ -43,7 +43,7 @@
 #define BCF_DT_SAMPLE	2
 
 typedef struct {
-	uint32_t info[3]; // Number:20, var:4, Type:4, ColType:4
+	uint32_t info[3]; // for each number => Number:20, var:4, Type:4, ColType:4
 	int id;
 } bcf_idinfo_t;
 
@@ -74,6 +74,28 @@ extern uint8_t bcf_type_shift[];
 #define BCF_BT_CHAR		7
 
 typedef struct {
+	int id, n, type, size;
+	uint8_t *p;
+} bcf_fmt_t;
+
+typedef struct {
+	int key, type, len;
+	union {
+		int32_t i;
+		float f;
+	} v1; // only set if $type is integer or float and len==1
+	uint8_t *vptr;
+} bcf_info_t;
+
+typedef struct {
+	int m_fmt, m_info, m_str, m_allele, m_flt;
+	char *id, **allele;
+	int *flt;
+	bcf_fmt_t *fmt;
+	bcf_info_t *info;
+} bcf_dec_t;
+
+typedef struct {
 	int32_t rid;  // CHROM
 	int32_t pos;  // POS
 	int32_t rlen; // length of REF
@@ -81,12 +103,8 @@ typedef struct {
 	uint32_t n_info:16, n_allele:16;
 	uint32_t n_fmt:8, n_sample:24;
 	kstring_t shared, indiv;
+	bcf_dec_t d; // lazy evaluation: $d is only filled when necessary
 } bcf1_t;
-
-typedef struct {
-	int id, n, type, size;
-	uint8_t *p;
-} bcf_fmt_t;
 
 /*******
  * API *
