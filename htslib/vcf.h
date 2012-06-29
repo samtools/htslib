@@ -103,7 +103,7 @@ typedef struct {
 	uint32_t n_info:16, n_allele:16;
 	uint32_t n_fmt:8, n_sample:24;
 	kstring_t shared, indiv;
-	bcf_dec_t d; // lazy evaluation: $d is only filled when necessary
+	bcf_dec_t d; // lazy evaluation: $d is filled by bcf_unpack()
 } bcf1_t;
 
 /*******
