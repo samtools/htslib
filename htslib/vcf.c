@@ -817,7 +817,7 @@ int bcf_unpack(bcf1_t *b)
 	if (b->n_allele > d->m_allele) {
 		d->m_allele = b->n_allele;
 		kroundup32(d->m_allele);
-		d->allele = (char**)realloc(d->allele, sizeof(char*) * sizeof(d->m_allele));
+		d->allele = (char**)realloc(d->allele, sizeof(char*) * d->m_allele);
 	}
 	for (i = 0; i < b->n_allele; ++i)
 		d->allele[i] = tmp.s + offset[i];
