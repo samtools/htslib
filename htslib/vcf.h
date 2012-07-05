@@ -75,14 +75,14 @@ extern uint8_t bcf_type_shift[];
 
 typedef struct {
 	int id, n, type, size; // bcf_hdr_t::id[BCF_DT_ID][$id].key is the key in string; $size is the per-sample size
-	uint8_t *p;
+	uint8_t *p; // point to the data array
 } bcf_fmt_t;
 
 typedef struct {
 	int key, type, len; // bcf_hdr_t::id[BCF_DT_ID][$key].key is the key in string; $len: the length of the vector
 	union {
-		int32_t i;
-		float f;
+		int32_t i; // integer value
+		float f;   // float value
 	} v1; // only set if $len==1; for easier access
 	uint8_t *vptr; // point to data array, excluding sized bytes
 } bcf_info_t;
@@ -90,10 +90,10 @@ typedef struct {
 typedef struct {
 	int m_fmt, m_info, m_str, m_allele, m_flt; // allocated size (high-water mark); do not change
 	int n_flt; // # FILTER fields
-	char *id, **allele;
-	int *flt;
-	bcf_info_t *info;
-	bcf_fmt_t *fmt;
+	char *id, **allele; // ID, REF and ALT; allele[0] is the REF; all null terminated
+	int *flt; // filter keys in the dictionary
+	bcf_info_t *info; // INFO
+	bcf_fmt_t *fmt; // FORMAT and individual sample
 } bcf_dec_t;
 
 typedef struct {
@@ -119,14 +119,53 @@ extern "C" {
 	 *** BCF I/O ***
 	 ***************/
 
+	/**
+	 * Read BCF header
+	 *
+	 * @param fp     BGZF file pointer; file offset must be placed at the beginning
+	 * 
+	 * @return BCF header struct
+	 */
 	bcf_hdr_t *bcf_hdr_read(BGZF *fp);
+
+	/**
+	 * Write BCF header to BCF
+	 *
+	 * @param fp    BGZF file pointer; file offset placed at the beginning
+	 * @param h     BCF header
+	 */
 	void bcf_hdr_write(BGZF *fp, const bcf_hdr_t *h);
+
+	/** Destroy a BCF header struct */
 	void bcf_hdr_destroy(bcf_hdr_t *h);
 
+	/** Initialize a bcf1_t object; equivalent to calloc(1, sizeof(bcf1_t)) */
 	bcf1_t *bcf_init1();
+	
+	/** Deallocate a bcf1_t object */
 	void bcf_destroy1(bcf1_t *v);
+
+	/**
+	 * Read one BCF record
+	 *
+	 * @param fp     BGZF file pointer
+	 * @param v      BCF record read from $fp
+	 *
+	 * @return  0 on success; -1 on normal file end; <-1 on error
+	 */
 	int bcf_read1(BGZF *fp, bcf1_t *v);
+
+	/**
+	 * Write one BCF record
+	 *
+	 * @param fp     BGZF file pointer
+	 * @param v      BCF record to write
+	 *
+	 * @return
+	 */
 	int bcf_write1(BGZF *fp, const bcf1_t *v);
+
+	/** Helper function for the bcf_iter_next() macro; ignore it */
 	int bcf_readrec(BGZF *fp, void *null, bcf1_t *v, int *tid, int *beg, int *end);
 
 	#define BCF_UN_STR  1 // up to ALT inclusive
@@ -137,6 +176,9 @@ extern "C" {
 	#define BCF_UN_IND  BCF_UN_FMT // a synonymous of BCF_UN_FMT
 	#define BCF_UN_ALL  (BCF_UN_SHR|BCF_UN_FMT) // everything
 
+	/**
+	 * Unpack/decode a BCF record (fill the bcf1_t::d field
+	 */
 	int bcf_unpack(bcf1_t *b, int which); // to unpack everything, set $which to BCF_UN_ALL
 
 	int bcf_id2int(const bcf_hdr_t *h, int which, const char *id);
