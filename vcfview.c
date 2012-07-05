@@ -40,7 +40,7 @@ int main_vcfview(int argc, char *argv[])
 	h = vcf_hdr_read(in);
 	if (n_samples >= 0) {
 		if (n_samples) imap = (int*)malloc(n_samples * sizeof(int));
-		hsub = vcf_hdr_subset(h, n_samples, samples, imap);
+		hsub = bcf_hdr_subset(h, n_samples, samples, imap);
 	}
 	b = bcf_init1();
 
@@ -66,7 +66,7 @@ int main_vcfview(int argc, char *argv[])
 				}
 				while (bcf_itr_next((BGZF*)in->fp, iter, b) >= 0)
 					if (n_samples >= 0) {
-						vcf_subset(h, b, n_samples, imap);
+						bcf_subset(h, b, n_samples, imap);
 						vcf_write1(out, hsub, b);
 					} else vcf_write1(out, h, b);
 				hts_itr_destroy(iter);
@@ -75,7 +75,7 @@ int main_vcfview(int argc, char *argv[])
 		} else {
 			while (vcf_read1(in, h, b) >= 0)
 				if (n_samples >= 0) {
-					vcf_subset(h, b, n_samples, imap);
+					bcf_subset(h, b, n_samples, imap);
 					vcf_write1(out, hsub, b);
 				} else vcf_write1(out, h, b);
 		}

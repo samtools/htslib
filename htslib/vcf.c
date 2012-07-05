@@ -990,7 +990,7 @@ int bcf_index_build(const char *fn, int min_shift)
  *** Utilities ***
  *****************/
 
-bcf_hdr_t *vcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap)
+bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap)
 {
 	kstring_t str;
 	bcf_hdr_t *h;
@@ -1020,7 +1020,7 @@ bcf_hdr_t *vcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
 	return h;
 }
 
-int vcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
+int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
 {
 	kstring_t ind;
 	ind.s = 0; ind.l = ind.m = 0;

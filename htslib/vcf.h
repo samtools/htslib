@@ -160,7 +160,11 @@ extern "C" {
 	/***************
 	 *** VCF I/O ***
 	 ***************/
-	
+
+	typedef htsFile vcfFile;
+	#define vcf_open(fn, mode, fn_ref) hts_open((fn), (mode), (fn_ref)) // strchr(mode, 'b')!=0 for BCF; otherwise VCF
+	#define vcf_close(fp) hts_close(fp)
+
 	bcf_hdr_t *vcf_hdr_read(htsFile *fp);
 	void vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
 
@@ -169,8 +173,12 @@ extern "C" {
 	int vcf_read1(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
 	int vcf_write1(htsFile *fp, const bcf_hdr_t *h, const bcf1_t *v);
 
-	bcf_hdr_t *vcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
-	int vcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
+	/*************************
+	 *** VCF/BCF utilities ***
+	 *************************/
+
+	bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
+	int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
 
 #ifdef __cplusplus
 }
