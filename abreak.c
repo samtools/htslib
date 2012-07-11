@@ -80,9 +80,8 @@ static void analyze_aln(int n_aa, aln_t *aa, stat_t *s, cmdopt_t *o)
 		kroundup32(s->m);
 		s->len = (int*)realloc(s->len, sizeof(int) * s->m);
 	}
-	for (p = aa; p < aa + n_aa; ++p) s->len[s->n++] = p->len;
+	for (p = aa; p < aa + n_aa; ++p) s->len[s->n++] = p->qlen;
 	if (n_aa) { // still multi-part
-		aln_t *tmp;
 		ks_introsort(s2b, n_aa, aa);
 		for (i = 1; i < n_aa; ++i) {
 			aln_t *p = &aa[i], *q = &aa[i-1];
@@ -106,49 +105,65 @@ static void analyze_aln(int n_aa, aln_t *aa, stat_t *s, cmdopt_t *o)
 	}
 }
 
-int main_sam2break(int argc, char *argv[])
+int main_abreak(int argc, char *argv[])
 {
 	cmdopt_t o;
 	samFile *in;
 	bam_hdr_t *h;
 	int c, k, n_aa = 0, m_aa = 0;
 	aln_t a, *aa = 0;
-	kstring_t last;
+	kstring_t last, out;
 	stat_t s;
 	bam1_t *b;
 	
-	memset(&o, 0, sizeof(cmdopt_t));
 	memset(&a, 0, sizeof(aln_t));
+	memset(&s, 0, sizeof(stat_t));
 	memset(&last, 0, sizeof(kstring_t));
+	memset(&out, 0, sizeof(kstring_t));
+	memset(&o, 0, sizeof(cmdopt_t));
 	o.min_len = 150; o.min_q = 10; o.mask_level = 0.5; o.max_gap = 500;
 	while ((c = getopt(argc, argv, "l:b")) >= 0)
 		if (c == 'b') o.is_bam = 1;
+		else if (c == 'l') o.min_len = atoi(optarg);
+		else if (c == 'q') o.min_q = atoi(optarg);
+		else if (c == 'm') o.mask_level = atof(optarg);
+		else if (c == 'g') o.max_gap = atoi(optarg);
+	if (optind == argc) {
+		fprintf(stderr, "\n");
+		fprintf(stderr, "Usage:   htscmd abreak [options] <aln.sam>|<aln.bam>\n\n");
+		fprintf(stderr, "Options: -b        BAM input\n");
+		fprintf(stderr, "         -l INT    min contig length [%d]\n", o.min_len);
+		fprintf(stderr, "         -q INT    min mapping quality [%d]\n", o.min_q);
+		fprintf(stderr, "         -g INT    max gap length to patch [%d]\n", o.max_gap);
+		fprintf(stderr, "         -m FLOAT  mask level [%g]\n\n", o.mask_level);
+		fprintf(stderr, "Note: recommended BWA-SW setting is '-b9 -q16 -r1 -w500'\n\n");
+		return 1;
+	}
+
 	in = sam_open(argv[optind], o.is_bam? "rb" : "r", 0);
 	h = sam_hdr_read(in);
 	b = bam_init1();
 	while (sam_read1(in, h, b) >= 0) {
 		uint32_t *cigar = bam_get_cigar(b);
-		if (strcmp(last.s, bam_get_qname(b))) {
+		if (last.s == 0 || strcmp(last.s, bam_get_qname(b))) {
 			analyze_aln(n_aa, aa, &s, &o);
 			last.l = 0;
 			kputs(bam_get_qname(b), &last);
 			n_aa = 0;
 		}
-		a.qbeg = b->core.n_cigar && (bam_cigar_op(cigar[0]) == BAM_CSOFT_CLIP || bam_cigar_op(cigar[0]) == BAM_CHARD_CLIP)? bam_cigar_oplen(cigar[0]) : 0;
-		a.len = a.qlen = a.rlen = 0; a.clip[0] = a.clip[1] = 0;
+		a.qlen = a.rlen = 0; a.clip[0] = a.clip[1] = 0;
 		for (k = 0; k < b->core.n_cigar; ++k) {
 			int op = bam_cigar_op(cigar[k]);
 			int oplen = bam_cigar_oplen(cigar[k]);
-			if (bam_cigar_type(op)&1) a.qlen += oplen;
+			if ((bam_cigar_type(op)&1) && op != BAM_CSOFT_CLIP) a.qlen += oplen;
 			if (bam_cigar_type(op)&2) a.rlen += oplen;
-			if (op == BAM_CSOFT_CLIP || op == BAM_CHARD_CLIP) {
+			if (op == BAM_CSOFT_CLIP || op == BAM_CHARD_CLIP)
 				a.clip[k == 0? 0 : 1] = oplen;
-				a.len += oplen;
-			}
 		}
-		a.len += a.qlen;
+		a.len = a.qlen + a.clip[0] + a.clip[1];
 		if (a.len == 0) a.len = b->core.l_qseq;
-		a.pos = b->core.pos; a.flag = b->core.flag, a.mapq = b->core.qual;
+		a.tid = b->core.tid; a.pos = b->core.pos; a.flag = b->core.flag; a.mapq = b->core.qual;
+		a.qbeg = a.clip[!!(a.flag&BAM_FREVERSE)];
 		if (a.len >= o.min_len) {
 			if (n_aa == m_aa) {
 				m_aa = m_aa? m_aa<<1 : 8;
@@ -158,13 +173,14 @@ int main_sam2break(int argc, char *argv[])
 		}
 	}
 	analyze_aln(n_aa, aa, &s, &o);
+	bam_hdr_destroy(h);
 	sam_close(in);
 	{
 		uint64_t L = 0, tmp;
 		int N50;
 		ks_introsort(intr, s.n, s.len);
 		for (k = 0; k < s.n; ++k) L += s.len[k];
-		for (k = 0; k < s.n; ++k)
+		for (k = 0, tmp = 0; k < s.n; ++k)
 			if ((tmp += s.len[k]) >= L/2) break;
 		N50 = s.len[k];
 		printf("Number of unmapped contigs: %ld\n", (long)s.n_un);
