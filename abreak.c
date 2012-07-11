@@ -131,11 +131,11 @@ int main_abreak(int argc, char *argv[])
 	if (optind == argc) {
 		fprintf(stderr, "\n");
 		fprintf(stderr, "Usage:   htscmd abreak [options] <aln.sam>|<aln.bam>\n\n");
-		fprintf(stderr, "Options: -b        BAM input\n");
-		fprintf(stderr, "         -l INT    min contig length [%d]\n", o.min_len);
-		fprintf(stderr, "         -q INT    min mapping quality [%d]\n", o.min_q);
-		fprintf(stderr, "         -g INT    max gap length to patch [%d]\n", o.max_gap);
-		fprintf(stderr, "         -m FLOAT  mask level [%g]\n\n", o.mask_level);
+		fprintf(stderr, "Options: -b        assume the input is BAM (default is SAM)\n");
+		fprintf(stderr, "         -l INT    exclude contigs shorter than INT [%d]\n", o.min_len);
+		fprintf(stderr, "         -q INT    exclude alignments with mapQ below INT [%d]\n", o.min_q);
+		fprintf(stderr, "         -m FLOAT  exclude alignments overlapping another long alignment by FLOAT fraction [%g]\n", o.mask_level);
+		fprintf(stderr, "         -g INT    join alignments separated by a gap shorter than INT bp [%d]\n\n", o.max_gap);
 		fprintf(stderr, "Note: recommended BWA-SW setting is '-b9 -q16 -r1 -w500'\n\n");
 		return 1;
 	}
