@@ -17,7 +17,7 @@ static int usage()
 {
 	fprintf(stderr, "\nUsage:   htscmd <command> <argument>\n\n");
 	fprintf(stderr, "Command: samview      SAM<->BAM conversion\n");
-	fprintf(stderr, "         vcfview      VCF<->BCF conversion (unfinished)\n");
+	fprintf(stderr, "         vcfview      VCF<->BCF conversion\n");
 	fprintf(stderr, "         tabix        tabix for BGZF'd BED, GFF, SAM, VCF and more\n");
 	fprintf(stderr, "         bamidx       index BAM\n");
 	fprintf(stderr, "         bcfidx       index BCF\n\n");
