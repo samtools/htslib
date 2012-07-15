@@ -241,10 +241,11 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
 	uint64_t offset0 = 0;
 	if (bidx) {
 		k = kh_get(bin, bidx, idx->n_bins + 1);
-		offset0 = kh_val(bidx, k).list[0].u;
-	}
-	for (l = 0; l < lidx->n && lidx->offset[l] == (uint64_t)-1; ++l)
-		lidx->offset[l] = offset0;
+		if (k != kh_end(bidx))
+			offset0 = kh_val(bidx, k).list[0].u;
+		for (l = 0; l < lidx->n && lidx->offset[l] == (uint64_t)-1; ++l)
+			lidx->offset[l] = offset0;
+	} else l = 1;
 	for (; l < lidx->n; ++l) // fill missing values
 		if (lidx->offset[l] == (uint64_t)-1)
 			lidx->offset[l] = lidx->offset[l-1];
