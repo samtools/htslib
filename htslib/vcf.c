@@ -1043,3 +1043,12 @@ int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
 	v->indiv = ind;
 	return 0;
 }
+
+int bcf_is_snp(bcf1_t *v)
+{
+	int i;
+	bcf_unpack(v, BCF_UN_STR);
+	for (i = 0; i < v->n_allele; ++i)
+		if (strlen(v->d.allele[i]) != 1) break;
+	return i == v->n_allele;
+}

@@ -4,13 +4,13 @@
 
 int main_vcfview(int argc, char *argv[])
 {
-	int i, c, clevel = -1, flag = 0, n_samples = -1, *imap = 0;
+	int i, c, clevel = -1, flag = 0, n_samples = -1, *imap = 0, excl_indel = 0;
 	char *fn_ref = 0, *fn_out = 0, moder[8], **samples = 0;
 	bcf_hdr_t *h, *hsub = 0;
 	htsFile *in;
 	bcf1_t *b;
 
-	while ((c = getopt(argc, argv, "l:bSt:o:T:s:G")) >= 0) {
+	while ((c = getopt(argc, argv, "l:bSt:o:T:s:GI")) >= 0) {
 		switch (c) {
 		case 'l': clevel = atoi(optarg); flag |= 2; break;
 		case 'S': flag |= 1; break;
@@ -19,6 +19,7 @@ int main_vcfview(int argc, char *argv[])
 		case 't': fn_ref = optarg; flag |= 1; break;
 		case 'o': fn_out = optarg; break;
 		case 's': samples = hts_readlines(optarg, &n_samples); break;
+		case 'I': excl_indel = 1; break;
 		}
 	}
 	if (argc == optind) {
@@ -30,6 +31,7 @@ int main_vcfview(int argc, char *argv[])
 		fprintf(stderr, "         -t FILE      list of reference names and lengths [null]\n");
 		fprintf(stderr, "         -s FILE/STR  list of samples (STR if started with ':'; FILE otherwise) [null]\n");
 		fprintf(stderr, "         -G           drop individual genotype information\n");
+		fprintf(stderr, "         -I           exclude INDELs\n");
 		fprintf(stderr, "\n");
 		return 1;
 	}
@@ -64,20 +66,24 @@ int main_vcfview(int argc, char *argv[])
 					fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
 					continue;
 				}
-				while (bcf_itr_next((BGZF*)in->fp, iter, b) >= 0)
+				while (bcf_itr_next((BGZF*)in->fp, iter, b) >= 0) {
+					if (excl_indel && !bcf_is_snp(b)) continue;
 					if (n_samples >= 0) {
 						bcf_subset(h, b, n_samples, imap);
 						vcf_write1(out, hsub, b);
 					} else vcf_write1(out, h, b);
+				}
 				hts_itr_destroy(iter);
 			}
 			hts_idx_destroy(idx);
 		} else {
-			while (vcf_read1(in, h, b) >= 0)
+			while (vcf_read1(in, h, b) >= 0) {
+				if (excl_indel && !bcf_is_snp(b)) continue;
 				if (n_samples >= 0) {
 					bcf_subset(h, b, n_samples, imap);
 					vcf_write1(out, hsub, b);
 				} else vcf_write1(out, h, b);
+			}
 		}
 		hts_close(out);
 	}
