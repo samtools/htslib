@@ -834,7 +834,7 @@ int bcf_unpack(bcf1_t *b, int which)
 		hts_expand(bcf_info_t, b->n_info, d->m_info, d->info);
 		bcf_unpack_info_core(ptr, b->n_info, d->info);
 	}
-	if (which & BCF_UN_FMT) { // FORMAT
+	if ((which & BCF_UN_FMT) && b->n_sample) { // FORMAT
 		hts_expand(bcf_fmt_t, b->n_fmt, d->m_fmt, d->fmt);
 		bcf_unpack_fmt_core((uint8_t*)b->indiv.s, b->n_sample, b->n_fmt, d->fmt);
 	}
