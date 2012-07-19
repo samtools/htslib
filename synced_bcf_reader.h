@@ -12,8 +12,7 @@ typedef struct
 	bcf_hdr_t *header;
 	hts_itr_t *itr;
 	char *file_name;
-	bcf1_t *line;	// the active line
-	bcf1_t **buffer;
+	bcf1_t **buffer, *line;
 	int nbuffer, mbuffer;
 }
 reader_t;

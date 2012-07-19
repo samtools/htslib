@@ -14,7 +14,6 @@ typedef struct
 	stats_t stats[3];
 	int nstats;
 	readers_t files;
-	int nfiles;
 	char **argv;
 	int argc;
 }
@@ -32,10 +31,18 @@ void error(const char *format, ...)
 
 void check_vcf(args_t *args)
 {
-	int ret;
-	while ( (ret=next_line(&args->files)) )
+	int ret,i;
+	readers_t *files = &args->files;
+	while ( (ret=next_line(files)) )
 	{
-		printf("ret=%d\n", ret);
+		for (i=0; i<files->nreaders; i++)
+		{
+			if ( !(ret&1<<i) ) continue;
+			bcf1_t *line = files->readers[i].line;
+			bcf_unpack(line, BCF_UN_STR);
+			printf("ret=%d .. %s:%d %s %s\n", ret, files->seqs[files->iseq],line->pos+1, line->d.allele[0],line->d.allele[1]);
+			break;
+		}
 	}
 
 	// bcf1_t *line = bcf_init1();

@@ -221,6 +221,7 @@ extern "C" {
 
 	bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
 	int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
+	const char **bcf_seqnames(const bcf_hdr_t *h, int *nseqs);
 
 #ifdef __cplusplus
 }

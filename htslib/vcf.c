@@ -8,6 +8,7 @@
 #include "kstring.h"
 #include "bgzf.h"
 #include "vcf.h"
+#include "tbx.h"
 
 #include "khash.h"
 KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
@@ -366,8 +367,50 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
 		h->l_text = txt.l + 1; // including NULL
 		h->text = txt.s;
 		bcf_hdr_parse(h);
+		vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
+		if ( kh_begin(d)==kh_end(d) )
+		{
+			// contigs are not listed in the VCF header, read tabix index
+			tbx_t *idx = tbx_index_load(fp->fn);
+			if ( !idx ) return h;
+			int i,n;
+			const char **names = tbx_seqnames(idx, &n);
+			for (i=0; i<n; i++)
+			{
+				int ret;
+				khint_t k = kh_put(vdict, d, strdup(names[i]), &ret);
+				if (ret != 0) 
+				{
+					kh_val(d, k) = bcf_idinfo_def;
+					kh_val(d, k).id = kh_size(d) - 1;
+					kh_val(d, k).info[0] = -1;	// what is a good default value?
+				}
+			}
+			free(names);
+			tbx_destroy(idx);
+		}
 		return h;
 	} else return bcf_hdr_read((BGZF*)fp->fp);
+}
+
+const char **bcf_seqnames(const bcf_hdr_t *h, int *n)
+{
+	int m=0;
+	const char **names = NULL;
+	khint_t k;
+	vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
+	*n = 0;
+	for (k=kh_begin(d); k<kh_end(d); k++)
+	{
+		if ( !kh_exist(d,k) ) continue;
+		if ( *n>=m ) 
+		{
+			m += 50;
+			names = (const char**)realloc(names, m);
+		}
+		names[(*n)++] = kh_key(d,k);
+	}
+	return names;
 }
 
 void vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
