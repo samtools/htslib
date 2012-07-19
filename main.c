@@ -12,6 +12,7 @@ int main_bamshuf(int argc, char *argv[]);
 int main_bam2fq(int argc, char *argv[]);
 int main_tabix(int argc, char *argv[]);
 int main_abreak(int argc, char *argv[]);
+int main_vcfcheck(int argc, char *argv[]);
 
 static int usage()
 {
@@ -24,6 +25,7 @@ static int usage()
 	fprintf(stderr, "         bamshuf      shuffle BAM and group alignments by query name\n");
 	fprintf(stderr, "         bam2fq       convert name grouped BAM to interleaved fastq\n");
 	fprintf(stderr, "         abreak       summarize assembly break points\n");
+	fprintf(stderr, "         vcfcheck     produce VCF stats\n");
 	fprintf(stderr, "\n");
 	return 1;
 }
@@ -39,6 +41,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "bam2fq") == 0) return main_bam2fq(argc-1, argv+1);
 	else if (strcmp(argv[1], "tabix") == 0) return main_tabix(argc-1, argv+1);
 	else if (strcmp(argv[1], "abreak") == 0) return main_abreak(argc-1, argv+1);
+	else if (strcmp(argv[1], "vcfcheck") == 0) return main_vcfcheck(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command '%s'\n", __func__, argv[1]);
 		return 1;

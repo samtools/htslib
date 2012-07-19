@@ -37,6 +37,7 @@ extern "C" {
 	int tbx_readrec(BGZF *fp, tbx_t *tbx, kstring_t *s, int *tid, int *beg, int *end);
 	int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf);
 	tbx_t *tbx_index_load(const char *fn);
+	const char **tbx_seqnames(tbx_t *tbx, int *n);	// free the array but not the values
 	void tbx_destroy(tbx_t *tbx);
 
 #ifdef __cplusplus
