@@ -97,6 +97,7 @@ int next_line(readers_t *files)
 				}
 				vcf_parse1(&s, reader->header, reader->buffer[reader->nbuffer]);
 				bcf_unpack(reader->buffer[reader->nbuffer], BCF_UN_STR);
+				//bcf_unpack(reader->buffer[reader->nbuffer], BCF_UN_INFO);
 				reader->nbuffer++;
 				if ( reader->buffer[reader->nbuffer-1]->pos != reader->buffer[0]->pos ) break;
 			}
