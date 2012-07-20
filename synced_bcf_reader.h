@@ -11,7 +11,7 @@ typedef struct
 	tbx_t *idx;
 	bcf_hdr_t *header;
 	hts_itr_t *itr;
-	char *file_name;
+	const char *fname;
 	bcf1_t **buffer, *line;
 	int nbuffer, mbuffer;
 }
@@ -26,7 +26,7 @@ typedef struct
 }
 readers_t;
 
-int add_reader(char *fname, readers_t *readers);
+int add_reader(const char *fname, readers_t *readers);
 void destroy_readers(readers_t *readers);
 int next_line(readers_t *readers);
 

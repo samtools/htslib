@@ -4,7 +4,7 @@
 #include <limits.h>
 #include "synced_bcf_reader.h"
 
-int add_reader(char *fname, readers_t *files)
+int add_reader(const char *fname, readers_t *files)
 {
 	files->readers = (reader_t*) realloc(files->readers, sizeof(reader_t)*(files->nreaders+1));
 	reader_t *reader = &files->readers[files->nreaders++];
@@ -21,7 +21,8 @@ int add_reader(char *fname, readers_t *files)
 
 	reader->file = hts_open(fname, "rb", NULL);
 	if ( !reader->file ) return 0;
-	reader->line = bcf_init1();
+	reader->line  = bcf_init1();
+	reader->fname = fname;
 
 	// Update list of chromosomes
 	int n,i,j;
@@ -95,6 +96,7 @@ int next_line(readers_t *files)
 						reader->buffer[reader->mbuffer-j] = bcf_init1();
 				}
 				vcf_parse1(&s, reader->header, reader->buffer[reader->nbuffer]);
+				bcf_unpack(reader->buffer[reader->nbuffer], BCF_UN_STR);
 				reader->nbuffer++;
 				if ( reader->buffer[reader->nbuffer-1]->pos != reader->buffer[0]->pos ) break;
 			}
@@ -113,16 +115,38 @@ int next_line(readers_t *files)
 
 	// Set the current line
 	ret = 0;
+	bcf1_t *first = NULL;
 	for (i=0; i<files->nreaders; i++)
 	{
 		reader_t *reader = &files->readers[i];
-		int j;
 		if ( !reader->nbuffer || reader->buffer[0]->pos!=min_pos ) continue;
-// here must snps and indels be matched together
-		*reader->line = *reader->buffer[0];
-		for (j=1; j<reader->nbuffer; j++)
-			*reader->buffer[j-1] = *reader->buffer[j];
+
+		// Match the records by REF and ALT
+		int j, irec = -1;
+		if ( first )
+		{
+			for (j=0; j<reader->nbuffer; j++)
+			{
+				if ( min_pos != reader->buffer[j]->pos ) break;
+				if ( first->rlen != reader->buffer[j]->rlen ) continue;	// REFs do not match
+				if ( strcmp(first->d.allele[0], reader->buffer[j]->d.allele[0]) ) continue; // REFs do not match
+				if ( strcmp(first->d.allele[1], reader->buffer[j]->d.allele[1]) ) continue; // first ALTs do not match
+				irec = j;
+				break;
+			}
+			if ( irec==-1 ) continue;
+		}
+		else 
+		{
+			first = reader->buffer[0];
+			irec  = 0;
+		}
+		bcf1_t *tmp = reader->line;
+		reader->line = reader->buffer[irec];
+		for (j=irec+1; j<reader->nbuffer; j++)
+			reader->buffer[j-1] = reader->buffer[j];
 		reader->nbuffer--;
+		reader->buffer[ reader->nbuffer ] = tmp;
 		ret |= 1<<i;
 	}
 	if ( s.m ) free(s.s);
