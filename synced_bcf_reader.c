@@ -128,12 +128,10 @@ int next_line(readers_t *files)
 		if ( eos==files->nreaders )
 		{
 			if ( ++files->iseq >= files->nseqs ) return 0;	// all chroms scanned
-
-			char buf[100]; snprintf(buf,100,"%s:50000", files->seqs[files->iseq]);	// hack to temporarily work around a bug on Mac
 			for (i=0; i<files->nreaders; i++)
 			{
 				reader_t *reader = &files->readers[i];
-				reader->itr = tbx_itr_querys(reader->idx,buf);
+				reader->itr = tbx_itr_querys(reader->idx,files->seqs[files->iseq]);
 			}
 		}
 
