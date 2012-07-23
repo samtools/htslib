@@ -271,6 +271,7 @@ bcf1_t *bcf_init1()
 void bcf_destroy1(bcf1_t *v)
 {
 	free(v->d.id); free(v->d.allele); free(v->d.flt); free(v->d.info); free(v->d.fmt);
+	if (v->d.var ) free(v->d.var);
 	free(v->shared.s); free(v->indiv.s);
 	free(v);
 }
@@ -406,7 +407,7 @@ const char **bcf_seqnames(const bcf_hdr_t *h, int *n)
 		if ( *n>=m ) 
 		{
 			m += 50;
-			names = (const char**)realloc(names, m);
+			names = (const char**)realloc(names, m*sizeof(char**));
 		}
 		names[(*n)++] = kh_key(d,k);
 	}
@@ -863,6 +864,7 @@ int bcf_unpack(bcf1_t *b, int which)
 		for (i = 0; i < b->n_allele; ++i)
 			d->allele[i] = tmp.s + offset[i];
 		d->m_str = tmp.m; d->id = tmp.s; // write tmp back
+		d->var_type = -1;
 	}
 	if (which & BCF_UN_FLT) { // FILTER
 		if (*ptr>>4) {
@@ -1086,3 +1088,66 @@ int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
 	v->indiv = ind;
 	return 0;
 }
+
+void set_variant_type(char *ref, char *alt, variant_t *var)
+{
+	// The most frequent case
+	if ( !ref[1] && !alt[1] )
+	{
+		if ( *alt == '.' || *ref==*alt ) { var->n = 0; var->type = VCF_REF; return; }
+		var->n = 1; var->type = VCF_SNP; return;
+	}
+
+	char *r = ref, *a = alt;
+	while (*r && *a && *r==*a ) { r++; a++; }
+
+	if ( *a && !*r )
+	{
+		while ( *a ) a++;
+		var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
+	}
+	else if ( *r && !*a )
+	{
+		while ( *r ) r++;
+		var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
+	}
+	else if ( !*r && !*a )
+	{
+		var->n = 0; var->type = VCF_REF; return;
+	}
+
+	while (*r && *a)
+	{
+		if ( *r!=*a ) var->n++; 
+		r++; a++;
+	}
+
+	var->type = ( *r || *a ) ? VCF_OTHER : VCF_MNP;
+	while (*r) { r++; var->n++; }
+
+	// should do also complex events, SVs, etc...
+}
+
+void set_variant_types(bcf1_t *b)
+{
+	if ( b->d.var_type!=-1 ) return;	// already set
+
+	bcf_dec_t *d = &b->d;
+	if ( d->n_var < b->n_allele ) 
+	{
+		d->var = (variant_t *) realloc(d->var, sizeof(variant_t)*b->n_allele);
+		d->n_var = b->n_allele;
+	}
+	int i;
+	b->d.var_type = 0;
+	for (i=1; i<b->n_allele; i++)
+	{
+		set_variant_type(d->allele[0],d->allele[1], &d->var[i]);
+		b->d.var_type |= d->var[i].type;
+		// printf("[set_variant_type]	%s %s -> %d %d .. %d\n", d->allele[0],d->allele[1],d->var[i].type,d->var[i].n, b->d.var_type);
+	}
+}
+
+
+
+

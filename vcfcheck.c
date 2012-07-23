@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <unistd.h>
+#include <getopt.h>
 #include "vcf.h"
 #include "synced_bcf_reader.h"
 
@@ -90,6 +91,7 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 	{
 		for (i=1; i<line->n_allele; i++)
 		{
+			if ( !(line->d.var[i].type&VCF_SNP) ) continue;
 			int alt = acgt2int(*line->d.allele[i]);
 			if ( alt<0 ) continue;
 
@@ -128,19 +130,11 @@ void check_vcf(args_t *args)
 			line = files->readers[i].line;
 			break;
 		}
-		int is_complex = line->rlen-1;
-		if ( !is_complex )
-		{
-			for (i=1; i<line->n_allele; i++)
-			{
-				if ( strlen(line->d.allele[i])==1 ) continue;
-				is_complex = 1; break;
-			}
-		}
-		if ( is_complex ) 
-			do_indel_stats(args, &args->stats[ret-1], reader);
-		else
+		set_variant_types(line);
+		if ( line->d.var_type&VCF_SNP ) 
 			do_snp_stats(args, &args->stats[ret-1], reader);
+		if ( line->d.var_type&VCF_INDEL )
+			do_indel_stats(args, &args->stats[ret-1], reader);
 	}
 }
 
@@ -175,14 +169,14 @@ void print_stats(args_t *args)
 		printf("SN\t%d\tnumber of indels:\t%d\n", id, stats->n_indels);
 		printf("SN\t%d\tts/tv:\t%.2f\n", id, stats->n_tv?(float)stats->n_ts/stats->n_tv:(float)0);
 	}
-	printf("# Ts/Tv by non-reference allele frequency:\n# TsTvAF\t[2]id\t[3]frequency\t[4]count\n");
+	printf("# Ts/Tv by non-reference allele frequency:\n# TsTvAF\t[2]id\t[3]AF\t[4]number of SNPs\t[5]Ts/Tv\n");
 	for (id=0; id<nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
 		for (i=0; i<stats->n_af; i++)
 		{
 			if ( !stats->n_ts_af[i] || !stats->n_tv_af[i] ) continue;
-			printf("TsTvAF\t%d\t%.2f\t%.2f\n", id,(float)i/stats->n_af, (float)stats->n_ts_af[i]/stats->n_tv_af[i]);
+			printf("TsTvAF\t%d\t%.2f\t%d\t%.2f\n", id,(float)i/stats->n_af,stats->n_ts_af[i]+stats->n_tv_af[i],(float)stats->n_ts_af[i]/stats->n_tv_af[i]);
 		}
 	}
 }
@@ -192,37 +186,40 @@ void usage(void)
 	fprintf(stderr, "\nAbout:   Parses VCF or BCF and produces stats which can be plotted using plot-vcfcheck.\n");
 	fprintf(stderr, "         When two files are given, the program generates separate stats for intersection\n");
 	fprintf(stderr, "         and the complements.\n");
-	fprintf(stderr, "Usage:   vcfcheck [options] <A.vcf.gz> [<B.vcf.gz>]\n\n");
-	// fprintf(stderr, "Options: -b           output in BCF\n");
-	// fprintf(stderr, "         -S           input is VCF\n");
-	// fprintf(stderr, "         -o FILE      output file name [stdout]\n");
-	// fprintf(stderr, "         -l INT       compression level [%d]\n", clevel);
-	// fprintf(stderr, "         -t FILE      list of reference names and lengths [null]\n");
-	// fprintf(stderr, "         -s FILE/STR  list of samples (STR if started with ':'; FILE otherwise) [null]\n");
-	// fprintf(stderr, "         -G           drop individual genotype information\n");
+	fprintf(stderr, "Usage:   vcfcheck [options] <A.vcf.gz> [<B.vcf.gz>]\n");
+	fprintf(stderr, "Options:\n");
+	fprintf(stderr, "    -c, --collapse <string>       treat sites with differing alleles as same for <snps|indels|both|any>\n");
 	fprintf(stderr, "\n");
 	exit(1);
 }
 
 int main_vcfcheck(int argc, char *argv[])
 {
-	int c, clevel, flag, n_samples=-1;
-	char *fn_ref = 0, **samples = 0;
-	
-	while ((c = getopt(argc, argv, "l:bSt:o:T:s:G")) >= 0) {
+	int c;
+	args_t *args = (args_t*) calloc(1,sizeof(args_t));
+	args->argc   = argc; args->argv = argv;
+
+	static struct option loptions[] = 
+	{
+		{"help",0,0,'h'},
+		{"collapse",0,0,'c'},
+		{0,0,0,0}
+	};
+	while ((c = getopt_long(argc, argv, "hc:",loptions,NULL)) >= 0) {
 		switch (c) {
-		case 'l': clevel = atoi(optarg); flag |= 2; break;
-		case 'S': flag |= 1; break;
-		case 'b': flag |= 2; break;
-		case 'G': n_samples = 0; break;
-		case 't': fn_ref = optarg; flag |= 1; break;
-		case 's': samples = hts_readlines(optarg, &n_samples); break;
+			case 'c':
+				if ( !strcmp(optarg,"snps") ) args->files.collapse |= COLLAPSE_SNPS;
+				else if ( !strcmp(optarg,"indels") ) args->files.collapse |= COLLAPSE_INDELS;
+				else if ( !strcmp(optarg,"both") ) args->files.collapse |= COLLAPSE_SNPS | COLLAPSE_INDELS;
+				else if ( !strcmp(optarg,"any") ) args->files.collapse |= COLLAPSE_ANY;
+				break;
+			case 'h': 
+			case '?': usage();
+			default: error("Unknown argument: %s\n", optarg);
 		}
 	}
 	if (argc == optind) usage();
 
-	args_t *args = (args_t*) calloc(1,sizeof(args_t));
-	args->argc   = argc; args->argv = argv;
 	if ( argc-optind>2 ) usage();
 	while (optind<argc)
 	{

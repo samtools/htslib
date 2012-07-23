@@ -73,6 +73,16 @@ extern uint8_t bcf_type_shift[];
 #define BCF_BT_FLOAT	5
 #define BCF_BT_CHAR		7
 
+#define VCF_REF   0
+#define VCF_SNP   1
+#define VCF_MNP   2
+#define VCF_INDEL 4
+#define VCF_OTHER 8
+
+typedef struct {
+	int type, n;	// variant type and the number of bases affected, negative for indels
+} variant_t;
+
 typedef struct {
 	int id, n, type, size; // bcf_hdr_t::id[BCF_DT_ID][$id].key is the key in string; $size is the per-sample size
 	uint8_t *p; // point to the data array
@@ -94,6 +104,8 @@ typedef struct {
 	int *flt; // filter keys in the dictionary
 	bcf_info_t *info; // INFO
 	bcf_fmt_t *fmt; // FORMAT and individual sample
+	variant_t *var;	// $var and $var_type set only when set_variant_types called
+	int n_var, var_type;
 } bcf_dec_t;
 
 typedef struct {
@@ -222,6 +234,7 @@ extern "C" {
 	bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
 	int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
 	const char **bcf_seqnames(const bcf_hdr_t *h, int *nseqs);
+	void set_variant_types(bcf1_t *v);
 
 #ifdef __cplusplus
 }

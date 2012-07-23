@@ -58,61 +58,119 @@ void destroy_readers(readers_t *files)
 	free(files->seqs);
 }
 
-int next_line(readers_t *files)
-{
-	// Need to open new chromosome?
-	int ret, i,j, eos = 0;
-	for (i=0; i<files->nreaders; i++)
-		if ( !files->readers[i].itr ) eos++;
-	if ( eos==files->nreaders )
-	{
-		if ( ++files->iseq >= files->nseqs ) return 0;	// all chroms scanned
 
-		char buf[100]; snprintf(buf,100,"%s:50000", files->seqs[files->iseq]);
-		for (i=0; i<files->nreaders; i++)
+void collapse_buffer(readers_t *files, reader_t *reader)
+{
+	int irec,jrec, has_snp=0, has_indel=0, has_any=0;
+	for (irec=0; irec<reader->nbuffer; irec++)
+	{
+		bcf1_t *line = reader->buffer[irec];
+		if ( line->pos != reader->buffer[0]->pos ) break;
+		set_variant_types(line);
+		if ( files->collapse&COLLAPSE_ANY )
 		{
-			reader_t *reader = &files->readers[i];
-			reader->itr = tbx_itr_querys(reader->idx,buf);
+			if ( !has_any ) has_any = 1;
+			else line->pos = -1;
+		}
+		if ( files->collapse&COLLAPSE_SNPS && line->d.var_type&(VCF_SNP|VCF_MNP) )
+		{
+			if ( !has_snp ) has_snp = 1;
+			else line->pos = -1;
+		}
+		if ( files->collapse&COLLAPSE_INDELS && line->d.var_type&VCF_INDEL )
+		{
+			if ( !has_indel ) has_indel = 1;
+			else line->pos = -1;
 		}
 	}
+	bcf1_t *tmp;
+	irec = jrec = 0;
+	while ( irec<reader->nbuffer && jrec<reader->nbuffer )
+	{
+		if ( reader->buffer[irec]->pos != -1 ) { irec++; continue; }
+		if ( jrec<=irec ) jrec = irec+1;
+		while ( jrec<reader->nbuffer && reader->buffer[jrec]->pos==-1 ) jrec++;
+		if ( jrec<reader->nbuffer )
+		{
+			tmp = reader->buffer[irec]; reader->buffer[irec] = reader->buffer[jrec]; reader->buffer[jrec] = tmp;
+		}
+	}
+	reader->nbuffer = irec;
+}
 
-	// Find the smallest coordinate
-	int32_t min_pos = INT_MAX;
-	kstring_t s = {0,0,0};
+void debug_buffer(readers_t *files)
+{
+	int i,j;
 	for (i=0; i<files->nreaders; i++)
 	{
 		reader_t *reader = &files->readers[i];
-		int buffer_full = ( reader->nbuffer && reader->buffer[reader->nbuffer-1]->pos != reader->buffer[0]->pos ) ? 1 : 0;
-		if ( reader->itr && !buffer_full )
+		for (j=0; j<reader->nbuffer; j++)
 		{
-			// Fill the buffer with records starting at the same position
-			while ( (ret=tbx_itr_next((BGZF*)reader->file->fp, reader->idx,reader->itr, &s))>=0 )
-			{
-				if ( reader->nbuffer >= reader->mbuffer ) 
-				{
-					reader->mbuffer += 5;
-					reader->buffer = (bcf1_t**) realloc(reader->buffer, sizeof(bcf1_t*)*reader->mbuffer);
-					for (j=5; j>0; j--)
-						reader->buffer[reader->mbuffer-j] = bcf_init1();
-				}
-				vcf_parse1(&s, reader->header, reader->buffer[reader->nbuffer]);
-				bcf_unpack(reader->buffer[reader->nbuffer], BCF_UN_STR);
-				//bcf_unpack(reader->buffer[reader->nbuffer], BCF_UN_INFO);
-				reader->nbuffer++;
-				if ( reader->buffer[reader->nbuffer-1]->pos != reader->buffer[0]->pos ) break;
-			}
-			if ( ret<0 ) { tbx_itr_destroy(reader->itr); reader->itr = NULL; } // done for this chromosome
-		}
-		if ( reader->nbuffer )
-		{
-			if ( min_pos > reader->buffer[0]->pos ) min_pos = reader->buffer[0]->pos; 
+			bcf1_t *line = reader->buffer[j];
+			printf("%s\t%s:%d\t%s %s\n", reader->fname,files->seqs[files->iseq],line->pos+1,line->d.allele[0],line->d.allele[1]);
 		}
 	}
-	if ( min_pos==INT_MAX ) 
+	printf("\n\n");
+}
+
+int next_line(readers_t *files)
+{
+	int32_t min_pos = INT_MAX;
+	int ret,i,j;
+	kstring_t s = {0,0,0};
+
+	while ( min_pos==INT_MAX )
 	{
-		printf("recursion..\n");
-		return next_line(files); // No record available for this chromosome
+		// Need to open new chromosome?
+		int eos = 0;
+		for (i=0; i<files->nreaders; i++)
+			if ( !files->readers[i].itr ) eos++;
+		if ( eos==files->nreaders )
+		{
+			if ( ++files->iseq >= files->nseqs ) return 0;	// all chroms scanned
+
+			char buf[100]; snprintf(buf,100,"%s:50000", files->seqs[files->iseq]);	// hack to temporarily work around a bug on Mac
+			for (i=0; i<files->nreaders; i++)
+			{
+				reader_t *reader = &files->readers[i];
+				reader->itr = tbx_itr_querys(reader->idx,buf);
+			}
+		}
+
+		// Find the smallest coordinate
+		for (i=0; i<files->nreaders; i++)
+		{
+			reader_t *reader = &files->readers[i];
+			int buffer_full = ( reader->nbuffer && reader->buffer[reader->nbuffer-1]->pos != reader->buffer[0]->pos ) ? 1 : 0;
+			if ( reader->itr && !buffer_full )
+			{
+				// Fill the buffer with records starting at the same position
+				while ( (ret=tbx_itr_next((BGZF*)reader->file->fp, reader->idx,reader->itr, &s))>=0 )
+				{
+					if ( reader->nbuffer >= reader->mbuffer ) 
+					{
+						reader->mbuffer += 5;
+						reader->buffer = (bcf1_t**) realloc(reader->buffer, sizeof(bcf1_t*)*reader->mbuffer);
+						for (j=5; j>0; j--)
+							reader->buffer[reader->mbuffer-j] = bcf_init1();
+					}
+					vcf_parse1(&s, reader->header, reader->buffer[reader->nbuffer]);
+					bcf_unpack(reader->buffer[reader->nbuffer], BCF_UN_STR);
+					reader->nbuffer++;
+					if ( reader->buffer[reader->nbuffer-1]->pos != reader->buffer[0]->pos ) break;
+				}
+				if ( ret<0 ) { tbx_itr_destroy(reader->itr); reader->itr = NULL; } // done for this chromosome
+			}
+			if ( reader->nbuffer )
+			{
+				if ( min_pos > reader->buffer[0]->pos ) min_pos = reader->buffer[0]->pos; 
+			}
+			if ( files->collapse && reader->nbuffer>1 && reader->buffer[0]->pos==reader->buffer[1]->pos )
+				collapse_buffer(files, reader);
+		}
 	}
+
+	//debug_buffer(files);
 
 	// Set the current line
 	ret = 0;
@@ -128,12 +186,25 @@ int next_line(readers_t *files)
 		{
 			for (j=0; j<reader->nbuffer; j++)
 			{
-				if ( min_pos != reader->buffer[j]->pos ) break;
-				if ( first->rlen != reader->buffer[j]->rlen ) continue;	// REFs do not match
-				if ( strcmp(first->d.allele[0], reader->buffer[j]->d.allele[0]) ) continue; // REFs do not match
-				if ( strcmp(first->d.allele[1], reader->buffer[j]->d.allele[1]) ) continue; // first ALTs do not match
-				irec = j;
-				break;
+				bcf1_t *line = reader->buffer[j];
+				if ( min_pos != line->pos ) break;	// done with this buffer
+
+				if ( files->collapse&COLLAPSE_ANY ) { irec=j; break; }	// checking position only
+				if ( files->collapse&COLLAPSE_SNPS && first->d.var_type&VCF_SNP && line->d.var_type&VCF_SNP ) { irec=j; break; }
+				if ( files->collapse&COLLAPSE_INDELS && first->d.var_type&VCF_INDEL && line->d.var_type&VCF_INDEL ) { irec=j; break; }
+
+				// thorough check: the REFs and some of the alleles have to be shared
+				// (neglecting different representations of the same indel for now)
+				if ( first->rlen != line->rlen ) continue;	// REFs do not match
+				if ( strcmp(first->d.allele[0], line->d.allele[0]) ) continue; // REFs do not match
+				int ial,jal;
+				for (ial=1; ial<first->n_allele; ial++)
+				{
+					for (jal=1; jal<first->n_allele; jal++)
+						if ( !strcmp(first->d.allele[ial], line->d.allele[jal]) ) { irec=j; break; }
+					if ( irec>=0 ) break;
+				}
+				if ( irec>=0 ) break;
 			}
 			if ( irec==-1 ) continue;
 		}

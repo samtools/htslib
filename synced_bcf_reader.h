@@ -5,6 +5,12 @@
 #include "vcf.h"
 #include "tbx.h"
 
+// How should be treated sites with the same position but different alleles
+#define COLLAPSE_NONE   0
+#define COLLAPSE_SNPS   1
+#define COLLAPSE_INDELS 2
+#define COLLAPSE_ANY    4
+
 typedef struct
 {
 	htsFile *file;
@@ -23,6 +29,7 @@ typedef struct
 	int nreaders;
 	const char **seqs;
 	int iseq,nseqs,mseqs;
+	int collapse;
 }
 readers_t;
 
