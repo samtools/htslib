@@ -728,11 +728,11 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 							is_phased = (*t == '|');
 							if (*t == ':' || *t == 0) break;
 						}
-						for (; l != z->size>>2; ++l) x[l] = INT32_MIN;
+						for (; l < z->size>>2; ++l) x[l] = INT32_MIN;
 					} else {
 						char *x = (char*)z->buf + z->size * m;
 						for (r = t, l = 0; *t != ':' && *t; ++t) x[l++] = *t;
-						for (; l != z->size; ++l) x[l] = 0;
+						for (; l < z->size; ++l) x[l] = 0;
 					}
 				} else if ((z->y>>4&0xf) == BCF_HT_INT) {
 					int32_t *x = (int32_t*)(z->buf + z->size * m);
@@ -741,7 +741,10 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 						else x[l++] = strtol(t, &t, 10);
 						if (*t == ':' || *t == 0) break;
 					}
-					for (; l != z->size>>2; ++l) x[l] = INT32_MIN;
+					// The original condition l != z->size>>2 is not robust: with malformatted
+					//	VCFs l can be bigger than z->size>>2 (e.g. '-' instead of int)
+					// Also above x[l++] without checking the limits may not be safe.
+					for (; l < z->size>>2; ++l) x[l] = INT32_MIN;
 				} else if ((z->y>>4&0xf) == BCF_HT_REAL) {
 					float *x = (float*)(z->buf + z->size * m);
 					for (l = 0;; ++t) {
@@ -749,7 +752,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 						else x[l++] = strtod(t, &t);
 						if (*t == ':' || *t == 0) break;
 					}
-					for (; l != z->size>>2; ++l) *(int32_t*)(x+l) = bcf_missing_float;
+					for (; l < z->size>>2; ++l) *(int32_t*)(x+l) = bcf_missing_float;
 				} else abort();
 				if (*t == 0) {
 					for (++j; j < v->n_fmt; ++j) { // fill missing values
