@@ -242,7 +242,7 @@ const char **tbx_seqnames(tbx_t *tbx, int *n)
 		if ( *n>=m ) 
 		{
 			m += 50;
-			names = (const char**)realloc(names, m);
+			names = (const char**)realloc(names, m*sizeof(char**));
 		}
 		names[(*n)++] = kh_key(d,k);
 	}

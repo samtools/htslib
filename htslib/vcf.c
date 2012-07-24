@@ -291,6 +291,8 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 	v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
 	v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
 	v->shared.l = x[0], v->indiv.l = x[1];
+	v->unpacked = 0;
+	v->unpack_ptr = NULL;
 	bgzf_read(fp, v->shared.s, v->shared.l);
 	bgzf_read(fp, v->indiv.s, v->indiv.l);
 	return 0;
@@ -552,6 +554,8 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 	mem->l = v->shared.l = v->indiv.l = 0;
 	str = &v->shared;
 	v->n_fmt = 0;
+	v->unpacked = 0;
+	v->unpack_ptr = NULL;
 	memset(&aux, 0, sizeof(ks_tokaux_t));
 	for (p = kstrtok(s->s, "\t", &aux), i = 0; p; p = kstrtok(0, 0, &aux), ++i) {
 		q = (char*)aux.p;
@@ -852,7 +856,7 @@ int bcf_unpack(bcf1_t *b, int which)
 	bcf_dec_t *d = &b->d;
 	if (which & BCF_UN_FLT) which |= BCF_UN_STR;
 	if (which & BCF_UN_INFO) which |= BCF_UN_SHR;
-	if (which & BCF_UN_STR) { // ID
+	if (which & BCF_UN_STR && !(b->unpacked&BCF_UN_STR)) { // ID
 		kstring_t tmp;
 		tmp.l = 0; tmp.m = d->m_str; tmp.s = d->id;
 		ptr = bcf_fmt_sized_array(&tmp, ptr); kputc('\0', &tmp);
@@ -868,8 +872,10 @@ int bcf_unpack(bcf1_t *b, int which)
 			d->allele[i] = tmp.s + offset[i];
 		d->m_str = tmp.m; d->id = tmp.s; // write tmp back
 		d->var_type = -1;
+		b->unpack_ptr = ptr;
 	}
-	if (which & BCF_UN_FLT) { // FILTER
+	if (which & BCF_UN_FLT && !(b->unpacked&BCF_UN_FLT)) { // FILTER
+		ptr = b->unpack_ptr;
 		if (*ptr>>4) {
 			int type;
 			d->n_flt = bcf_dec_size(ptr, &ptr, &type);
@@ -877,14 +883,18 @@ int bcf_unpack(bcf1_t *b, int which)
 			for (i = 0; i < d->n_flt; ++i)
 				d->flt[i] = bcf_dec_int1(ptr, type, &ptr);
 		} else ++ptr, d->n_flt = 0;
+		b->unpack_ptr = ptr;
 	}
-	if (which & BCF_UN_INFO) { // INFO
+	if (which & BCF_UN_INFO && !(b->unpacked&BCF_UN_INFO)) { // INFO
+		ptr = b->unpack_ptr;
 		hts_expand(bcf_info_t, b->n_info, d->m_info, d->info);
 		bcf_unpack_info_core(ptr, b->n_info, d->info);
+		b->unpacked |= BCF_UN_INFO;
 	}
-	if (which & BCF_UN_FMT) { // FORMAT
+	if (which & BCF_UN_FMT && !(b->unpacked&BCF_UN_FMT)) { // FORMAT
 		hts_expand(bcf_fmt_t, b->n_fmt, d->m_fmt, d->fmt);
 		bcf_unpack_fmt_core((uint8_t*)b->indiv.s, b->n_sample, b->n_fmt, d->fmt);
+		b->unpacked |= BCF_UN_FMT;
 	}
 	return 0;
 }

@@ -2,8 +2,8 @@
 #
 # Author: petr.danecek@sanger
 #
-#  export GNUPLOT_DEFAULT_GDFONT="DejaVuSansMono"
-#  export GDFONTPATH=/usr/share/fonts/truetype/ttf-dejavu/
+#  export GNUPLOT_DEFAULT_GDFONT="Vera"
+#  export GDFONTPATH=/usr/share/fonts/truetype/ttf-bitstream-vera/
 
 use strict;
 use warnings;
@@ -59,7 +59,7 @@ sub parse_params
 sub plot
 {
     my ($cmdfile) = @_;
-    my $cmd = "gnuplot $cmdfile";
+    my $cmd = "python $cmdfile";
     system($cmd);
     if ( $? ) { error("The command exited with non-zero status $?:\n\t$cmd\n\n"); }
 }
@@ -107,10 +107,10 @@ sub get_defaults
 
     if ( !($img_fname=~/\.png$/i) ) { error("FIXME: currently only PNG supported. (Easy to extend.)\n"); }
 
-    # Determine the gnuplot script file name
-    my $gp_file = $img_fname;
-    $gp_file =~ s{\.[^.]+$}{.gp};
-    if ( !($gp_file=~/.gp$/) ) { $gp_file .= '.gp'; }
+    # Determine the plot file name
+    my $plt_file = $img_fname;
+    $plt_file =~ s{\.[^.]+$}{.py};
+    if ( !($plt_file=~/.py$/) ) { $plt_file .= '.py'; }
 
     # Determine the default title:
     #       5446_6/5446_6.bam.bc.gp -> 5446_6
@@ -118,21 +118,23 @@ sub get_defaults
     if ( !($$opts{vcfcheck}=~m{([^/]+?)(?:\.vc)?$}i) ) { error("FIXME: Could not determine the title from [$img_fname]\n"); }
     my $title = $1;
 
-    my $dir = $gp_file;
+    my $dir = $plt_file;
     $dir =~ s{/[^/]+$}{};
-    if ( $dir && $dir ne $gp_file ) { `mkdir -p $dir`; }
+    if ( $dir && $dir ne $plt_file ) { `mkdir -p $dir`; }
 
     my $wh = exists($args{wh}) ? $args{wh} : '600,400';
 
-    open(my $fh,'>',$gp_file) or error("$gp_file: $!");
+    open(my $fh,'>',$plt_file) or error("$plt_file: $!");
     return { 
         title => $title, 
-        gp    => $gp_file, 
+        plt   => $plt_file, 
         img   => $img_fname, 
         fh    => $fh, 
-        terminal => qq[set terminal png size $wh truecolor font "Vera,9"],
+        terminal => qq[set terminal png size $wh truecolor],
         grid  => 'set grid xtics ytics back lc rgb "#cccccc"',
-		with  => 'w lp pt 8 ps 0.4',
+		with  => 'w lp pt 8 ps 0.4 lw 2',
+		width  => 16/2.54,
+		height => 12/2.54,
     };
 }
 
@@ -163,7 +165,52 @@ sub get_values
 	return (@{$$opts{dat}{$key}{$id}});
 }
 
+sub iprint
+{
+	my ($fh,@txt) = @_;
+	for my $txt (@txt)
+	{
+		$txt =~ s/\n\s+/\n/g;
+		print $fh $txt;
+	}
+}
+
 sub plot_tstv_by_AF
+{
+    my ($opts,$id) = @_;
+	my @vals = get_values($opts,$id,'TsTvAF');
+    if ( !@vals ) { return; }
+    my $args = get_defaults($opts,"$$opts{prefix}$id.tstv_by_af.png");
+    my $fh = $$args{fh};
+	iprint $fh, "
+			import matplotlib as mpl
+			mpl.use('Agg')
+			import matplotlib.pyplot as plt
+			dat = [
+		";
+	for my $val (@vals) { iprint $fh, "\t[$$val[0],$$val[1],$$val[2]],\n"; }
+	iprint $fh, "]
+
+			fig = plt.figure(figsize=($$args{width},$$args{height}))
+			ax1 = fig.add_subplot(111)
+			ax1.plot([row[0] for row in dat], [row[2] for row in dat], color='k')
+			ax1.set_ylabel('Ts/Tv',color='k')
+			ax1.set_ylim(0.5,3.0)
+			for tl in ax1.get_yticklabels(): tl.set_color('k')
+			ax1.set_xlabel('Non-reference Allele Frequency')
+			ax2 = ax1.twinx()
+			ax2.plot([row[0] for row in dat], [row[1] for row in dat], color='r')
+			ax2.set_ylabel('Number of sites',color='r')
+			for tl in ax2.get_yticklabels(): tl.set_color('r')
+			plt.subplots_adjust(right=0.85)
+			plt.savefig('$$args{img}')
+			plt.close()
+		";
+    close($fh);
+    plot($$args{plt});
+}
+
+sub plot_tstv_by_AF_gnuplot
 {
     my ($opts,$id) = @_;
 	my @vals = get_values($opts,$id,'TsTvAF');
@@ -186,7 +233,7 @@ sub plot_tstv_by_AF
 	for my $val (@vals) { print $fh "$$val[0]\t$$val[2]\n"; } print $fh "end\n";
 	for my $val (@vals) { print $fh "$$val[0]\t$$val[1]\n"; } print $fh "end\n";
     close($fh);
-    plot($$args{gp});
+    plot($$args{plt});
 }
 
 sub create_pdf

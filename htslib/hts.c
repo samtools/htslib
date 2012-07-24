@@ -691,10 +691,9 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 		if (bin > first) --bin;
 		else bin = hts_bin_parent(bin);
 	} while (bin);
-	// Not sure if this is the correct fix, but the -1 stops valgrind from complaining about invalid read;
-	//	with bin=0 kh_get returns the kh_end value 
-	if (bin == 0) k = kh_get(bin, bidx, bin) - 1;
-	min_off = kh_val(bidx, k).loff;
+	// Not sure if this is the correct fix, but checking if k>=kh_end stops valgrind from complaining about invalid read
+	if (bin == 0) k = kh_get(bin, bidx, bin);
+	min_off = (k>=kh_end(bidx)) ? 0 : kh_val(bidx, k).loff;
 	// retrieve bins
 	reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
 	for (i = n_off = 0; i < iter->bins.n; ++i)

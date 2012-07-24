@@ -3,6 +3,7 @@
 #include <getopt.h>
 #include "vcf.h"
 #include "synced_bcf_reader.h"
+#include "vcfutils.h"
 
 typedef struct
 {
@@ -73,17 +74,11 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 
 	// AF
 	bcf1_t *line = reader->line;
-	bcf_unpack(line, BCF_UN_INFO);
-	int an_id = bcf_id2int(reader->header, BCF_DT_ID, "AN");
-	int ac_id = bcf_id2int(reader->header, BCF_DT_ID, "AC");
-	int i, an=0, ac_len=0;
-	uint8_t *ac=NULL;
-	for (i=0; i<line->n_info; i++)
-	{
-		bcf_info_t *z = &line->d.info[i];
-		if ( z->key == an_id ) an = z->v1.i;
-		else if ( z->key == ac_id ) { ac = z->vptr; ac_len = z->len; }
-	}
+	int *ac = (int*) calloc(line->n_allele,sizeof(int));
+	calc_ac(reader->header, line, ac, BCF_UN_FMT);
+	int i, an=0;
+	for (i=0; i<line->n_allele; i++)
+		an += ac[i];
 
 	// Ts/Tv
 	int ref = acgt2int(*line->d.allele[0]);
@@ -95,12 +90,9 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 			int alt = acgt2int(*line->d.allele[i]);
 			if ( alt<0 ) continue;
 
-			int iaf = -1;
-			if ( i<=ac_len ) 
-			{
-				iaf = ac[i-1]*(stats->n_af-1)/an;
-				if ( iaf>=stats->n_af ) iaf = stats->n_af-1;
-			}
+			int iaf = ac[i]*(stats->n_af-1)/an;
+			if ( iaf>=stats->n_af ) iaf = stats->n_af-1;
+
 			if ( abs(ref-alt)==2 ) 
 			{
 				stats->n_ts++;
@@ -113,6 +105,8 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 			}
 		}
 	}
+
+	free(ac);
 }
 
 void check_vcf(args_t *args)
@@ -141,7 +135,7 @@ void check_vcf(args_t *args)
 void print_header(args_t *args)
 {
 	int i;
-	printf("# This file was produced by vcfcheck.\n");
+	printf("# This file was produced by vcfcheck and can be plotted using plot-vcfcheck.\n");
 	printf("# The command line was:\thtscmd %s ", args->argv[0]);
 	for (i=1; i<args->argc; i++)
 		printf(" %s",args->argv[i]);
@@ -154,7 +148,7 @@ void print_header(args_t *args)
 	{
 		printf("ID\t0\t%s\n", args->files.readers[0].fname);
 		printf("ID\t1\t%s\n", args->files.readers[1].fname);
-		printf("ID\t2\t%s\t%s\n", args->files.readers[0].fname,args->files.readers[0].fname);
+		printf("ID\t2\t%s\t%s\n", args->files.readers[0].fname,args->files.readers[1].fname);
 	}
 }
 
@@ -175,8 +169,10 @@ void print_stats(args_t *args)
 		stats_t *stats = &args->stats[id];
 		for (i=0; i<stats->n_af; i++)
 		{
-			if ( !stats->n_ts_af[i] || !stats->n_tv_af[i] ) continue;
-			printf("TsTvAF\t%d\t%.2f\t%d\t%.2f\n", id,(float)i/stats->n_af,stats->n_ts_af[i]+stats->n_tv_af[i],(float)stats->n_ts_af[i]/stats->n_tv_af[i]);
+			int ts = stats->n_ts_af[i];
+			int tv = stats->n_tv_af[i];
+			if ( !ts && !tv ) continue;
+			printf("TsTvAF\t%d\t%.2f\t%d\t%.2f\n", id,(float)i/stats->n_af,ts+tv,tv?(float)ts/tv:0);
 		}
 	}
 }

@@ -52,7 +52,11 @@ void destroy_readers(readers_t *files)
 		bcf_hdr_destroy(reader->header);
 		hts_close(reader->file);
 		if ( reader->itr ) tbx_itr_destroy(reader->itr);
-		// destroy buffer, line
+		int j;
+		for (j=0; j<reader->mbuffer; j++)
+			bcf_destroy1(reader->buffer[j]);
+		bcf_destroy1(reader->line);
+		free(reader->buffer);
 	}
 	free(files->readers);
 	free(files->seqs);
@@ -198,7 +202,7 @@ int next_line(readers_t *files)
 				int ial,jal;
 				for (ial=1; ial<first->n_allele; ial++)
 				{
-					for (jal=1; jal<first->n_allele; jal++)
+					for (jal=1; jal<line->n_allele; jal++)
 						if ( !strcmp(first->d.allele[ial], line->d.allele[jal]) ) { irec=j; break; }
 					if ( irec>=0 ) break;
 				}
