@@ -2,8 +2,6 @@
 #
 # Author: petr.danecek@sanger
 #
-#  export GNUPLOT_DEFAULT_GDFONT="Vera"
-#  export GDFONTPATH=/usr/share/fonts/truetype/ttf-bitstream-vera/
 
 use strict;
 use warnings;
@@ -11,10 +9,13 @@ use Carp;
 
 my $opts = parse_params();
 parse_vcfcheck($opts);
+init_plots($opts);
+plot_venn_bars($opts);
 for my $id (file_ids($opts))
 {
 	plot_tstv_by_AF($opts,$id);
 }
+plot($opts);
 create_pdf($opts);
 
 exit;
@@ -31,6 +32,7 @@ sub error
         "Options:\n",
         "   -k, --keep-files                    Do not remove temporary files.\n",
         "   -p, --prefix <path>                 The output files prefix, add a slash to create new directory.\n",
+        "   -t, --title <string>                Use this title in plots, can be given multiple times.\n",
         "   -h, -?, --help                      This help message.\n",
         "\n";
 }
@@ -39,10 +41,16 @@ sub error
 sub parse_params
 {
     $0 =~ s{^.+/}{};
-    my $opts = { args => join(' ',$0,@ARGV), };
+    my $opts = 
+	{ 
+		args   => join(' ',$0,@ARGV), 
+		img_width  => 11/2.54,
+		img_height => 10/2.54,
+	};
     while (defined(my $arg=shift(@ARGV)))
     {
         if ( $arg eq '-k' || $arg eq '--keep-files' ) { $$opts{keep_files}=1; next; }
+        if ( $arg eq '-t' || $arg eq '--titles' ) { push @{$$opts{titles}},shift(@ARGV); next; }
         if ( $arg eq '-p' || $arg eq '--prefix' ) { $$opts{prefix}=shift(@ARGV); next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( -e $arg ) { $$opts{vcfcheck}=$arg; next; }
@@ -58,8 +66,10 @@ sub parse_params
 
 sub plot
 {
-    my ($cmdfile) = @_;
-    my $cmd = "python $cmdfile";
+    my ($opts) = @_;
+	if ( !exists($$opts{plt_fh}) ) { return; }
+	close($$opts{plt_fh}) or error("close $$opts{plt_fh}");
+    my $cmd = "python $$opts{plt_file}";
     system($cmd);
     if ( $? ) { error("The command exited with non-zero status $?:\n\t$cmd\n\n"); }
 }
@@ -90,6 +100,32 @@ sub parse_vcfcheck
     {
         error("Sanity check failed: no stats found by vcfcheck??\n");
     }
+
+	# Set titles
+	my %titles;
+	if ( exists($$opts{titles}) )
+	{
+		for (my $i=0; $i<@{$$opts{titles}}; $i++)
+		{
+			if ( !exists($$opts{dat}{ID}{$i}) ) { next; }
+			$titles{$$opts{dat}{ID}{$i}[0][0]} = $$opts{titles}[$i];
+		}
+	}
+	for my $id (file_ids($opts))
+	{
+		my @files;
+		for my $file (@{$$opts{dat}{ID}{$id}[0]})
+		{
+			if ( exists($titles{$file}) ) { $file = $titles{$file}; }
+			else 
+			{ 
+				$file =~ s{^.*/}{};
+				$file =~ s{\.vcf\.gz$}{}i;
+			}
+			push @files, $file;
+		}
+		$$opts{title}{$id} = join(' + ',@files);
+	}
 }
 
 sub file_ids
@@ -101,41 +137,33 @@ sub file_ids
 	return @out;
 }
 
-sub get_defaults
+sub iprint
 {
-    my ($opts,$img_fname,%args) = @_;
+	my ($fh,@txt) = @_;
+	for my $txt (@txt)
+	{
+		$txt =~ s/\n\s+/\n/g;
+		print $fh $txt;
+	}
+}
 
-    if ( !($img_fname=~/\.png$/i) ) { error("FIXME: currently only PNG supported. (Easy to extend.)\n"); }
+sub init_plots
+{
+    my ($opts) = @_;
 
-    # Determine the plot file name
-    my $plt_file = $img_fname;
-    $plt_file =~ s{\.[^.]+$}{.py};
-    if ( !($plt_file=~/.py$/) ) { $plt_file .= '.py'; }
+	$$opts{plt_file} = "$$opts{prefix}/plot.py";
 
-    # Determine the default title:
-    #       5446_6/5446_6.bam.bc.gp -> 5446_6
-    #       test.aaa.png -> test.aaa
-    if ( !($$opts{vcfcheck}=~m{([^/]+?)(?:\.vc)?$}i) ) { error("FIXME: Could not determine the title from [$img_fname]\n"); }
-    my $title = $1;
+	my $dir = $$opts{plt_file};
+	$dir =~ s{/[^/]+$}{};
+	if ( $dir && $dir ne $$opts{plt_file} ) { `mkdir -p $dir`; }
 
-    my $dir = $plt_file;
-    $dir =~ s{/[^/]+$}{};
-    if ( $dir && $dir ne $plt_file ) { `mkdir -p $dir`; }
-
-    my $wh = exists($args{wh}) ? $args{wh} : '600,400';
-
-    open(my $fh,'>',$plt_file) or error("$plt_file: $!");
-    return { 
-        title => $title, 
-        plt   => $plt_file, 
-        img   => $img_fname, 
-        fh    => $fh, 
-        terminal => qq[set terminal png size $wh truecolor],
-        grid  => 'set grid xtics ytics back lc rgb "#cccccc"',
-		with  => 'w lp pt 8 ps 0.4 lw 2',
-		width  => 16/2.54,
-		height => 12/2.54,
-    };
+	open(my $fh,'>',$$opts{plt_file}) or error("$$opts{plt_file}: $!");
+	iprint $fh, qq[
+		import matplotlib as mpl
+		mpl.use('Agg')
+		import matplotlib.pyplot as plt
+		];
+	$$opts{plt_fh} = $fh;
 }
 
 sub percentile
@@ -165,14 +193,55 @@ sub get_values
 	return (@{$$opts{dat}{$key}{$id}});
 }
 
-sub iprint
+sub get_value
 {
-	my ($fh,@txt) = @_;
-	for my $txt (@txt)
+	my ($opts,$id,$key) = @_;
+	if ( !exists($$opts{dat}{$id}) ) { return undef; }
+	if ( !exists($$opts{dat}{$id}{$key}) ) { return undef}
+	return $$opts{dat}{$id}{$key};
+}
+
+sub plot_venn_bars
+{
+    my ($opts) = @_;
+
+	my @ids  = file_ids($opts);
+	if ( @ids != 3 ) { return; }
+
+	my (@snps,@indels,@tstv,@snp_titles,@indel_titles);
+	for my $id (0..2)
 	{
-		$txt =~ s/\n\s+/\n/g;
-		print $fh $txt;
+		push @snps, get_value($opts,$id,'number of SNPs:');
+		push @indels, get_value($opts,$id,'number of indels:');
+		push @tstv, get_value($opts,$id,'ts/tv:');
+		push @snp_titles, "$$opts{title}{$id}\\nts/tv $tstv[$id]";
+		push @indel_titles, $$opts{title}{$id};
 	}
+
+    my $fh = $$opts{plt_fh};
+	iprint $fh, qq[
+			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
+	 		ax1 = fig.add_subplot(111)
+	 		ax1.bar([1,2,3],[$snps[0],$snps[2],$snps[1]],align='center',color='y')
+			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
+			plt.xticks([1,2,3],('$snp_titles[0]','$snp_titles[2]','$snp_titles[1]'))
+			plt.title('Number of SNPs')
+			plt.subplots_adjust(right=0.95)
+	 		plt.savefig('$$opts{prefix}/venn_bars.snps.png')
+	 		plt.savefig('$$opts{prefix}/venn_bars.snps.pdf')
+	 		plt.close()
+
+			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
+	 		ax1 = fig.add_subplot(111)
+	 		ax1.bar([1,2,3],[$indels[0],$indels[2],$indels[1]],align='center',color='r')
+			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
+			plt.xticks([1,2,3],('$indel_titles[0]','$indel_titles[2]','$indel_titles[1]'))
+			plt.title('Number of indels')
+			plt.subplots_adjust(right=0.95)
+	 		plt.savefig('$$opts{prefix}/venn_bars.indels.png')
+	 		plt.savefig('$$opts{prefix}/venn_bars.indels.pdf')
+	 		plt.close()
+		];
 }
 
 sub plot_tstv_by_AF
@@ -180,64 +249,131 @@ sub plot_tstv_by_AF
     my ($opts,$id) = @_;
 	my @vals = get_values($opts,$id,'TsTvAF');
     if ( !@vals ) { return; }
-    my $args = get_defaults($opts,"$$opts{prefix}$id.tstv_by_af.png");
-    my $fh = $$args{fh};
+
+    my $fh  = $$opts{plt_fh};
+	my $img = "$$opts{prefix}/tstv_by_af.$id";
+
 	iprint $fh, "
-			import matplotlib as mpl
-			mpl.use('Agg')
-			import matplotlib.pyplot as plt
 			dat = [
 		";
 	for my $val (@vals) { iprint $fh, "\t[$$val[0],$$val[1],$$val[2]],\n"; }
 	iprint $fh, "]
 
-			fig = plt.figure(figsize=($$args{width},$$args{height}))
+			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 			ax1 = fig.add_subplot(111)
-			ax1.plot([row[0] for row in dat], [row[2] for row in dat], color='k')
-			ax1.set_ylabel('Ts/Tv',color='k')
-			ax1.set_ylim(0.5,3.0)
+			ax1.plot([row[0] for row in dat], [row[1] for row in dat], color='k')
+			ax1.set_ylabel('Number of sites',color='k')
+			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
 			for tl in ax1.get_yticklabels(): tl.set_color('k')
 			ax1.set_xlabel('Non-reference Allele Frequency')
 			ax2 = ax1.twinx()
-			ax2.plot([row[0] for row in dat], [row[1] for row in dat], color='r')
-			ax2.set_ylabel('Number of sites',color='r')
+			ax2.plot([row[0] for row in dat], [row[2] for row in dat], color='r')
+			ax2.set_ylabel('Ts/Tv',color='r')
+			ax2.set_ylim(0.5,3.0)
 			for tl in ax2.get_yticklabels(): tl.set_color('r')
-			plt.subplots_adjust(right=0.85)
-			plt.savefig('$$args{img}')
+			plt.subplots_adjust(right=0.88)
+			plt.title('$$opts{title}{$id}')
+			plt.savefig('$img.png')
+			plt.savefig('$img.pdf')
 			plt.close()
 		";
-    close($fh);
-    plot($$args{plt});
-}
-
-sub plot_tstv_by_AF_gnuplot
-{
-    my ($opts,$id) = @_;
-	my @vals = get_values($opts,$id,'TsTvAF');
-    if ( !@vals ) { return; }
-    my $args = get_defaults($opts,"$$opts{prefix}$id.tstv_by_af.png");
-    my $fh = $$args{fh};
-    print $fh qq[
-            $$args{terminal}
-            set output "$$args{img}"
-            $$args{grid}
-            set ylabel "Ts/Tv" 
-            set y2label "Number of variants" 
-			set y2tics nomirror
-			set yrange [0.5:3.0]
-			set ytics nomirror
-            set xlabel "Non-reference Allele Frequency"
-            set title "$$args{title}"
-            plot '-' $$args{with} t 'Ts/Tv', '-' axes x1y2 $$args{with} t 'Count'
-        ];
-	for my $val (@vals) { print $fh "$$val[0]\t$$val[2]\n"; } print $fh "end\n";
-	for my $val (@vals) { print $fh "$$val[0]\t$$val[1]\n"; } print $fh "end\n";
-    close($fh);
-    plot($$args{plt});
 }
 
 sub create_pdf
 {
 	my ($opts) = @_;
+	my $pwd;
+	if ( -d $$opts{prefix} )
+	{
+		chomp(my $pwd=`pwd`);
+		chdir($$opts{prefix});
+	}
+
+	my @ids    = file_ids($opts);
+	my $width  = "15cm";
+	my $height = "10cm";
+	my $width2 = @ids==3 ? "7.5cm" : "7cm";
+	my $width3 = @ids==3 ? "4.8cm" : "7cm";
+	my $ext    = "type=pdf,ext=.pdf,read=.pdf";
+
+	my $tex_file = "summary.tex";
+	open(my $tex,'>',$tex_file) or error("$tex_file: $!");
+	print $tex qq[
+			\\documentclass{slides}
+			\\usepackage{graphicx}
+			\\usepackage[vcentering,dvips]{geometry}
+			\\geometry{papersize={$width,$height},total={$width,$height}}
+			\\usepackage{xifthen}
+			\\newcommand*{\\vslide}[2][]{
+				\\newpage
+				\\vbox to$height].qq[{\\hsize=$width
+					\\ifthenelse{\\isempty{#1}}
+						{\\vfill#2\\vfill}
+						{\\vskip0.8cm\\centerline{#1}\\vskip0.7cm #2\\vfill}}}
+			\\renewcommand{\\arraystretch}{2}
+				
+			\\begin{document}
+
+		];
+
+
+	# Table with summary numbers
+	my $slide .= q[%
+		\tiny\centerline{
+		\begin{tabular}{l r r r}
+			Callset & \\#SNPs & Ts/Tv & \\#Indels \\\\ \hline
+		];
+	for my $id (@ids)
+	{
+		my $snps   = get_value($opts,$id,'number of SNPs:');
+		my $indels = get_value($opts,$id,'number of indels:');
+		my $tstv   = get_value($opts,$id,'ts/tv:');
+
+		$slide .= qq[ $$opts{title}{$id} & $snps & $tstv & $indels \\\\ \n];
+	}
+	print $tex qq[%
+		\\vslide{%
+			$slide \\end{tabular}}
+		}
+	];
+
+
+	# Venn bars
+	if ( @ids==3 )
+	{
+		print $tex qq[%
+			\\vslide{\\centerline{
+				\\includegraphics[$ext,width=$width2]{venn_bars.snps}%
+				\\includegraphics[$ext,width=$width2]{venn_bars.indels}
+				}
+			}
+		];
+	}
+
+	
+	# Ts/Tv by AF
+	$slide = qq[\\includegraphics[$ext,width=$width3]{tstv_by_af.0}];
+	if ( @ids==3 )
+	{
+		$slide .= qq[%
+			\\includegraphics[$ext,width=$width3]{tstv_by_af.2}%
+			\\includegraphics[$ext,width=$width3]{tstv_by_af.1}
+		];
+	}
+	print $tex qq[
+			\\vslide[Ts/Tv by AF]{
+				\\centerline{$slide}
+			}
+			\\end{document}
+		];
+	close($tex);
+
+
+	my $cmd = "pdflatex $tex_file";
+	system($cmd);
+	if ( $? ) { error("The command exited with non-zero status $?:\n\t$cmd\n\n"); }
+
+	if ( -d $$opts{prefix} ) { chdir($pwd); }
 }
+
 
