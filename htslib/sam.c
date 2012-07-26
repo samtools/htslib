@@ -712,6 +712,103 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
 	} else return bam_write1((BGZF*)fp->fp, b);
 }
 
+/************************
+ *** Auxiliary fields ***
+ ************************/
+
+int bam_aux_type2size(int x)
+{
+	if (x == 'C' || x == 'c' || x == 'A') return 1;
+	else if (x == 'S' || x == 's') return 2;
+	else if (x == 'I' || x == 'i' || x == 'f') return 4;
+	else return 0;
+}
+
+void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, uint8_t *data)
+{
+	int ori_len = b->l_data;
+	b->l_data += 3 + len;
+	if (b->m_data < b->l_data) {
+		b->m_data = b->l_data;
+		kroundup32(b->m_data);
+		b->data = (uint8_t*)realloc(b->data, b->m_data);
+	}
+	b->data[ori_len] = tag[0]; b->data[ori_len + 1] = tag[1];
+	b->data[ori_len + 2] = type;
+	memcpy(b->data + ori_len + 3, data, len);
+}
+
+#define __skip_tag(s) do { \
+		int type = toupper(*(s)); \
+		++(s); \
+		if (type == 'Z' || type == 'H') { while (*(s)) ++(s); ++(s); } \
+		else if (type == 'B') (s) += 5 + bam_aux_type2size(*(s)) * (*(int32_t*)((s)+1)); \
+		else (s) += bam_aux_type2size(type); \
+	} while(0)
+
+uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
+{
+	uint8_t *s;
+	int y = tag[0]<<8 | tag[1];
+	s = bam_get_aux(b);
+	while (s < b->data + b->l_data) {
+		int x = (int)s[0]<<8 | s[1];
+		s += 2;
+		if (x == y) return s;
+		__skip_tag(s);
+	}
+	return 0;
+}
+// s MUST BE returned by bam_aux_get()
+int bam_aux_del(bam1_t *b, uint8_t *s)
+{
+	uint8_t *p, *aux;
+	int l_aux = bam_get_l_aux(b);
+	aux = bam_get_aux(b);
+	p = s - 2;
+	__skip_tag(s);
+	memmove(p, s, l_aux - (s - aux));
+	b->l_data -= s - p;
+	return 0;
+}
+
+int32_t bam_aux2i(const uint8_t *s)
+{
+	int type;
+	type = *s++;
+	if (type == 'c') return (int32_t)*(int8_t*)s;
+	else if (type == 'C') return (int32_t)*(uint8_t*)s;
+	else if (type == 's') return (int32_t)*(int16_t*)s;
+	else if (type == 'S') return (int32_t)*(uint16_t*)s;
+	else if (type == 'i' || type == 'I') return *(int32_t*)s;
+	else return 0;
+}
+
+double bam_aux2f(const uint8_t *s)
+{
+	int type;
+	type = *s++;
+	if (type == 'd') return *(double*)s;
+	else if (type == 'f') return *(float*)s;
+	else return 0.0;
+}
+
+char bam_aux2A(const uint8_t *s)
+{
+	int type;
+	type = *s++;
+	if (type == 'A') return *(char*)s;
+	else return 0;
+}
+
+char *bam_aux2Z(const uint8_t *s)
+{
+	int type;
+	type = *s++;
+	if (type == 'Z' || type == 'H') return (char*)s;
+	else return 0;
+}
+
 /**************************
  *** Pileup and Mpileup ***
  **************************/

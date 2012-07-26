@@ -85,6 +85,7 @@ typedef struct {
 #define bam_get_seq(b)   ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname)
 #define bam_get_qual(b)  ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname + (((b)->core.l_qseq + 1)>>1))
 #define bam_get_aux(b)   ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname + (((b)->core.l_qseq + 1)>>1) + (b)->core.l_qseq)
+#define bam_get_l_aux(b) ((b)->l_data - ((b)->core.n_cigar<<2) - (b)->core.l_qname - (b)->core.l_qseq - (((b)->core.l_qseq + 1)>>1))
 #define bam_seqi(s, i) ((s)[(i)>>1] >> ((~(i)&1)<<2) & 0xf)
 
 /**************************
@@ -142,6 +143,19 @@ extern "C" {
 	int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str);
 	int sam_read1(samFile *fp, bam_hdr_t *h, bam1_t *b);
 	int sam_write1(samFile *fp, const bam_hdr_t *h, const bam1_t *b);
+
+	/*************************************
+	 *** Manipulating auxiliary fields ***
+	 *************************************/
+
+	uint8_t *bam_aux_get(const bam1_t *b, const char tag[2]);
+	int32_t bam_aux2i(const uint8_t *s);
+	double bam_aux2f(const uint8_t *s);
+	char bam_aux2A(const uint8_t *s);
+	char *bam_aux2Z(const uint8_t *s);
+
+	void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, uint8_t *data);
+	int bam_aux_del(bam1_t *b, uint8_t *s);
 
 #ifdef __cplusplus
 }
