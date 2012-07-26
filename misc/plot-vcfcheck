@@ -11,6 +11,7 @@ my $opts = parse_params();
 parse_vcfcheck($opts);
 init_plots($opts);
 plot_venn_bars($opts);
+plot_counts_by_AC($opts);
 for my $id (file_ids($opts))
 {
 	plot_tstv_by_AF($opts,$id);
@@ -118,15 +119,27 @@ sub parse_vcfcheck
 		my @files;
 		for my $file (@{$$opts{dat}{ID}{$id}[0]})
 		{
-			if ( exists($titles{$file}) ) { $file = $titles{$file}; }
+			my $title = $file;
+			if ( exists($titles{$file}) ) { $title = $titles{$file}; }
 			else 
 			{ 
-				$file =~ s{^.*/}{};
-				$file =~ s{\.vcf\.gz$}{}i;
+				$title =~ s{^.*/}{};
+				$title =~ s{\.vcf\.gz$}{}i;
 			}
-			push @files, $file;
+			push @files, $title;
+			$$opts{title}{$file} = $title;
 		}
 		$$opts{title}{$id} = join(' + ',@files);
+	}
+
+	# mapping from file names to list of IDs
+	for my $id (file_ids($opts))
+	{
+		my @files;
+		for my $file (@{$$opts{dat}{ID}{$id}[0]})
+		{
+			push @{$$opts{file2ids}{$file}}, $id;
+		}
 	}
 }
 
@@ -249,7 +262,7 @@ sub plot_venn_bars
 sub plot_tstv_by_AF
 {
     my ($opts,$id) = @_;
-	my @vals = get_values($opts,$id,'TsTvAF');
+	my @vals = get_values($opts,$id,'AC');
     if ( !@vals ) { return; }
 
     my $fh  = $$opts{plt_fh};
@@ -258,7 +271,23 @@ sub plot_tstv_by_AF
 	iprint $fh, "
 			dat = [
 		";
-	for my $val (@vals) { iprint $fh, "\t[$$val[0],$$val[1],$$val[2]],\n"; }
+	my $nbins = 20;
+	my $bin = int(@vals/$nbins);
+	my ($ts,$tv);
+	for (my $i=0; $i<@vals; $i++)
+	{ 
+		my $val = $vals[$i];
+		$ts += $$val[2];
+		$tv += $$val[3];
+		if ( $i && (!($i%$bin) or $i+1==@vals) )
+		{
+			my $af = $i*$bin/$nbins;
+			my $tstv = $tv ? $ts/$tv : 0;
+			iprint $fh, "\t[$af,$ts+$tv,$tstv],\n";
+			$ts = 0;
+			$tv = 0;
+		}
+	}
 	iprint $fh, "]
 
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
@@ -279,6 +308,73 @@ sub plot_tstv_by_AF
 			plt.savefig('$img.pdf')
 			plt.close()
 		";
+}
+
+sub plot_counts_by_AC
+{
+	my ($opts) = @_;
+	plot_counts_by_AC_col($opts,1,'SNP');
+	plot_counts_by_AC_col($opts,4,'Indel');
+}
+
+sub plot_counts_by_AC_col
+{
+	my ($opts,$col,$title) = @_;
+
+    my $fh  = $$opts{plt_fh};
+	my $img = "$$opts{prefix}/counts_by_ac.".lc($title)."s";
+
+	my @files = (keys %{$$opts{file2ids}});
+	my $max_ac = 0;
+	for (my $ifile=0; $ifile<@files; $ifile++)
+	{
+		iprint $fh, "
+			dat$ifile = [
+			";
+		my $file = $files[$ifile];
+		my @vals;
+		for my $id (@{$$opts{file2ids}{$file}})
+		{
+			my @tmp = get_values($opts,$id,'AC');
+			for my $val (@tmp)
+			{
+				$vals[ $$val[0] ] += $$val[$col];
+			}
+		}
+		for (my $i=1; $i<@vals; $i++)
+		{
+			if ( !$vals[$i] ) { next; }
+			iprint $fh, "[ $i, $vals[$i] ],\n";
+		}
+		iprint $fh, "]\n";
+		if ( $max_ac<@vals ) { $max_ac = @vals + 1; }
+	}
+	
+	iprint $fh, "
+			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
+			ax1 = fig.add_subplot(111)
+			ax1.set_ylabel('Number of sites')
+			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
+			ax1.set_yscale('log')
+			ax1.set_xlabel('Non-reference allele count')
+			ax1.set_xlim(0,$max_ac)
+		";
+	my @cols = ('r','k');
+	for (my $ifile=0; $ifile<@files; $ifile++)
+	{
+		iprint $fh, "
+			ax1.plot([row[0] for row in dat$ifile], [row[1] for row in dat$ifile],color='$cols[$ifile]',label='$$opts{title}{$files[$ifile]}')
+		";
+	}
+	iprint $fh, "
+			ax1.legend().draw_frame(False)
+			plt.title('$title count by AC')
+			plt.subplots_adjust(bottom=0.2,left=0.1,right=0.95)
+			plt.savefig('$img.png')
+			plt.savefig('$img.pdf')
+			plt.close()
+		";
+
 }
 
 sub plot_indel_distribution
@@ -363,7 +459,7 @@ sub plot_substitutions
 }
 
 
-sub fmt_slide
+sub fmt_slide3
 {
 	my ($args, $image, $title) = @_;
 
@@ -455,9 +551,14 @@ sub create_pdf
 		];
 	}
 
-	print $tex fmt_slide($args, 'tstv_by_af', 'Ts/Tv by AF');
-	print $tex fmt_slide($args, 'indels', 'Indel distribution');
-	print $tex fmt_slide($args, 'substitutions', 'Substitution types');
+	print $tex qq[%
+		\\vslide{\\centerline{\\includegraphics[$ext,width=$width]{counts_by_ac.snps}}
+				\\centerline{\\includegraphics[$ext,width=$width]{counts_by_ac.indels}}}
+		];
+
+	print $tex fmt_slide3($args, 'tstv_by_af', 'Ts/Tv by AF');
+	print $tex fmt_slide3($args, 'indels', 'Indel distribution');
+	print $tex fmt_slide3($args, 'substitutions', 'Substitution types');
 
 
 	print $tex "\\end{document}\n";

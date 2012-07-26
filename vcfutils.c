@@ -2,6 +2,9 @@
 
 int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 {
+	int i;
+	for (i=0; i<line->n_allele; i++) ac[i]=0;
+
 	// Use INFO/AC,AN field only when asked
 	if ( which&BCF_UN_INFO )
 	{

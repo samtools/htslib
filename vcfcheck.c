@@ -7,9 +7,8 @@
 
 typedef struct
 {
-	int n_snps, n_indels;
-	int n_ts, n_tv;
-	int n_af, *n_ts_af, *n_tv_af;
+	int n_snps, n_indels, n_mals;
+	int *ac_ts, *ac_tv, *ac_snps, *ac_indels, m_ac;
 	int *insertions, *deletions, m_indel;	// maximum indel length
 	int subst[15];
 }
@@ -18,6 +17,7 @@ stats_t;
 typedef struct
 {
 	stats_t stats[3];
+	int *tmp_ac, ntmp_ac;
 	readers_t files;
 	char **argv;
 	int argc;
@@ -33,18 +33,46 @@ void error(const char *format, ...)
 	exit(-1);
 }
 
+inline int acgt2int(char c)
+{
+	if ( (int)c>96 ) c -= 32;
+	if ( c=='A' ) return 0;
+	if ( c=='C' ) return 1;
+	if ( c=='G' ) return 2;
+	if ( c=='T' ) return 3;
+	return -1;
+}
+#define int2acgt(i) "ACGT"[i]
+
 void init_stats(args_t *args)
 {
-	int id,nstats = args->files.nreaders==1 ? 1 : 3;
-	for (id=0; id<nstats; id++)
+	int i,nstats = args->files.nreaders==1 ? 1 : 3;
+	for (i=0; i<nstats; i++)
 	{
-		stats_t *stats = &args->stats[id];
-		stats->n_af = 20;
-		stats->n_ts_af = (int*) calloc(stats->n_af,sizeof(int));
-		stats->n_tv_af = (int*) calloc(stats->n_af,sizeof(int));
-		stats->m_indel = 60;
+		stats_t *stats = &args->stats[i];
+		stats->m_indel    = 60;
 		stats->insertions = (int*) calloc(stats->m_indel,sizeof(int));
 		stats->deletions  = (int*) calloc(stats->m_indel,sizeof(int));
+	}
+}
+int *realloc_stat(int *array, int ori, int new)
+{
+	array = (int*) realloc(array, new*sizeof(int));
+	int i;
+	for (i=ori; i<new; i++) array[i] = 0;
+	return array;
+}
+void realloc_stats(args_t *args, int ac)
+{
+	int i,nstats = args->files.nreaders==1 ? 1 : 3;
+	for (i=0; i<nstats; i++)
+	{
+		stats_t *stats = &args->stats[i];
+		stats->ac_ts     = (int*)realloc_stat(stats->ac_ts,stats->m_ac,ac);
+		stats->ac_tv     = (int*)realloc_stat(stats->ac_tv,stats->m_ac,ac);
+		stats->ac_snps   = (int*)realloc_stat(stats->ac_snps,stats->m_ac,ac);
+		stats->ac_indels = (int*)realloc_stat(stats->ac_indels,stats->m_ac,ac);
+		stats->m_ac = ac;
 	}
 }
 void destroy_stats(args_t *args)
@@ -53,9 +81,30 @@ void destroy_stats(args_t *args)
 	for (id=0; id<nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
-		free(stats->n_ts_af);
-		free(stats->n_tv_af);
+		if (stats->ac_ts) free(stats->ac_ts);
+		if (stats->ac_tv) free(stats->ac_tv);
+		if (stats->ac_snps) free(stats->ac_snps);
+		if (stats->ac_indels) free(stats->ac_indels);
+		free(stats->insertions);
+		free(stats->deletions);
 	}
+	if (args->tmp_ac) free(args->tmp_ac);
+}
+
+void init_ac(args_t *args, reader_t *reader)
+{
+	bcf1_t *line = reader->line;
+	if ( args->ntmp_ac < line->n_allele )
+	{
+		args->tmp_ac = (int*)realloc(args->tmp_ac, line->n_allele*sizeof(int));
+		args->ntmp_ac = line->n_allele;
+	}
+	calc_ac(reader->header, line, args->tmp_ac, BCF_UN_FMT);
+	int i, m_ac=0;
+	for (i=0; i<line->n_allele; i++)
+		if ( m_ac < args->tmp_ac[i] ) m_ac = args->tmp_ac[i]; 
+	if ( m_ac >= args->stats[0].m_ac )
+		realloc_stats(args, m_ac+1);
 }
 
 void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
@@ -67,6 +116,7 @@ void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
 	for (i=1; i<line->n_allele; i++)
 	{
 		if ( line->d.var[i].type!=VCF_INDEL ) continue;
+		stats->ac_indels[ args->tmp_ac[i] ]++;
 		int len  = line->d.var[i].n;
 		int *ptr = stats->insertions;
 		if ( len<0 ) 
@@ -78,58 +128,28 @@ void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
 		ptr[len]++;
 	}
 }
-
-inline int acgt2int(char c)
-{
-	if ( (int)c>96 ) c -= 32;
-	if ( c=='A' ) return 0;
-	if ( c=='C' ) return 1;
-	if ( c=='G' ) return 2;
-	if ( c=='T' ) return 3;
-	return -1;
-}
-
 void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 {
 	stats->n_snps++;
 
-	// AF
 	bcf1_t *line = reader->line;
-	int *ac = (int*) calloc(line->n_allele,sizeof(int));
-	calc_ac(reader->header, line, ac, BCF_UN_FMT);
-	int i, an=0;
-	for (i=0; i<line->n_allele; i++)
-		an += ac[i];
-
-	// Ts/Tv
 	int ref = acgt2int(*line->d.allele[0]);
-	if ( ref>=0 )
+	if ( ref<0 ) return;
+
+	int i;
+	for (i=1; i<line->n_allele; i++)
 	{
-		for (i=1; i<line->n_allele; i++)
-		{
-			if ( !(line->d.var[i].type&VCF_SNP) ) continue;
-			int alt = acgt2int(*line->d.allele[i]);
-			if ( alt<0 ) continue;
-
-			stats->subst[ref<<2|alt]++;
-
-			int iaf = ac[i]*(stats->n_af-1)/an;
-			if ( iaf>=stats->n_af ) iaf = stats->n_af-1;
-
-			if ( abs(ref-alt)==2 ) 
-			{
-				stats->n_ts++;
-				if ( iaf>=0 ) stats->n_ts_af[iaf]++;
-			}
-			else 
-			{
-				stats->n_tv++;
-				if ( iaf>=0 ) stats->n_tv_af[iaf]++;
-			}
-		}
+		if ( !(line->d.var[i].type&VCF_SNP) ) continue;
+		int alt = acgt2int(*line->d.allele[i]);
+		if ( alt<0 ) continue;
+		stats->subst[ref<<2|alt]++;
+		int ac = args->tmp_ac[i];
+		stats->ac_snps[ac]++;
+		if ( abs(ref-alt)==2 ) 
+			stats->ac_ts[ac]++;
+		else 
+			stats->ac_tv[ac]++;
 	}
-
-	free(ac);
 }
 
 void check_vcf(args_t *args)
@@ -148,10 +168,14 @@ void check_vcf(args_t *args)
 			break;
 		}
 		set_variant_types(line);
+		init_ac(args, reader);
+
 		if ( line->d.var_type&VCF_SNP ) 
 			do_snp_stats(args, &args->stats[ret-1], reader);
 		if ( line->d.var_type&VCF_INDEL )
 			do_indel_stats(args, &args->stats[ret-1], reader);
+
+		if ( line->n_allele>2 ) args->stats[ret-1].n_mals++;
 	}
 }
 
@@ -184,19 +208,18 @@ void print_stats(args_t *args)
 		stats_t *stats = &args->stats[id];
 		printf("SN\t%d\tnumber of SNPs:\t%d\n", id, stats->n_snps);
 		printf("SN\t%d\tnumber of indels:\t%d\n", id, stats->n_indels);
-		printf("SN\t%d\tts/tv:\t%.2f\n", id, stats->n_tv?(float)stats->n_ts/stats->n_tv:(float)0);
+		printf("SN\t%d\tnumber of multiallelic sites:\t%d\n", id, stats->n_mals);
+
+		int ts=0,tv=0;
+		for (i=0; i<stats->m_ac; i++) { ts += stats->ac_ts[i]; tv += stats->ac_tv[i];  }
+		printf("SN\t%d\tts/tv:\t%.2f\n", id, tv?(float)ts/tv:0);
 	}
-	printf("# Ts/Tv by non-reference allele frequency:\n# TsTvAF\t[2]id\t[3]AF\t[4]number of SNPs\t[5]Ts/Tv\n");
+	printf("# Stats by non-reference allele count:\n# AC\t[2]id\t[3]allele count\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
 	for (id=0; id<nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
-		for (i=0; i<stats->n_af; i++)
-		{
-			int ts = stats->n_ts_af[i];
-			int tv = stats->n_tv_af[i];
-			if ( !ts && !tv ) continue;
-			printf("TsTvAF\t%d\t%.2f\t%d\t%.2f\n", id,(float)i/stats->n_af,ts+tv,tv?(float)ts/tv:0);
-		}
+		for (i=0; i<stats->m_ac; i++)
+			printf("AC\t%d\t%d\t%d\t%d\t%d\t%d\n", id,i,stats->ac_snps[i],stats->ac_ts[i],stats->ac_tv[i],stats->ac_indels[i]);
 	}
 	printf("# InDel distribution:\n# IDD\t[2]id\t[3]length (deletions negative)\t[4]count\n");
 	for (id=0; id<nstats; id++)
@@ -214,7 +237,7 @@ void print_stats(args_t *args)
 		for (t=0; t<15; t++)
 		{
 			if ( t>>2 == (t&3) ) continue;
-			printf("ST\t%d\t%c>%c\t%d\n", id, "ACGT"[t>>2],"ACGT"[t&3],args->stats[id].subst[t]);
+			printf("ST\t%d\t%c>%c\t%d\n", id, int2acgt(t>>2),int2acgt(t&3),args->stats[id].subst[t]);
 		}
 	}
 }
