@@ -14,6 +14,8 @@ plot_venn_bars($opts);
 for my $id (file_ids($opts))
 {
 	plot_tstv_by_AF($opts,$id);
+	plot_indel_distribution($opts,$id);
+	plot_substitutions($opts,$id);
 }
 plot($opts);
 create_pdf($opts);
@@ -279,6 +281,107 @@ sub plot_tstv_by_AF
 		";
 }
 
+sub plot_indel_distribution
+{
+	my ($opts,$id) = @_;
+
+	my @vals = get_values($opts,$id,'IDD');
+	if ( !@vals ) { return; }
+
+	# Set xlim to show 99 of indels but ignore outliers
+	my @tmp;
+	for my $id (file_ids($opts))
+	{
+		my @v = get_values($opts,$id,'IDD');
+		for my $v (@v) { $tmp[ abs($$v[0]) ] += $$v[1]; }
+	}
+	my $n; 
+	for my $t (@tmp) { $n += $t ? $t : 0; }
+	my ($sum,$xlim);
+	for ($xlim=0; $xlim<@tmp; $xlim++)
+	{
+		$sum += $tmp[$xlim] ? $tmp[$xlim] : 0;
+		if ( $sum/$n >= 0.99 ) { last; }
+	}
+	if ( $xlim<20 ) { $xlim=20; }
+
+    my $fh  = $$opts{plt_fh};
+	my $img = "$$opts{prefix}/indels.$id";
+
+	iprint $fh, "
+			dat = [
+		";
+	for my $val (@vals) { iprint $fh, "\t[$$val[0],$$val[1]],\n"; }
+	iprint $fh, "]
+
+			fig = plt.figure(figsize=(1.5*$$opts{img_width},$$opts{img_height}))
+			ax1 = fig.add_subplot(111)
+			ax1.bar([row[0]-0.5 for row in dat], [row[1] for row in dat], color='y') #, edgecolor='y')
+			ax1.set_xlabel('InDel Length')
+			ax1.set_ylabel('Count')
+			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
+			ax1.set_xlim(-$xlim,$xlim)
+			plt.title('$$opts{title}{$id}')
+			plt.savefig('$img.png')
+			plt.savefig('$img.pdf')
+			plt.close()
+		";
+}
+
+sub plot_substitutions
+{
+	my ($opts,$id) = @_;
+
+	my @vals = get_values($opts,$id,'ST');
+    if ( !@vals ) { return; }
+
+    my $fh  = $$opts{plt_fh};
+	my $img = "$$opts{prefix}/substitutions.$id";
+
+	iprint $fh, "
+			dat = [
+		";
+	for (my $i=0; $i<@vals; $i++) { my $val=$vals[$i]; iprint $fh, "\t[$i,'$$val[0]',$$val[1]],\n"; }
+	iprint $fh, "]
+
+			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
+			cm  = mpl.cm.get_cmap('autumn')
+			n = 12
+			col = range(n)
+			for i in range(n): col[i] = cm(1.*i/n)
+			ax1 = fig.add_subplot(111)
+			ax1.bar([row[0] for row in dat], [row[2] for row in dat], color=col)
+			ax1.set_ylabel('Count')
+			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
+			ax1.set_xlim(-0.5,n+0.5)
+			plt.xticks([row[0] for row in dat],[row[1] for row in dat],rotation=45)
+			plt.title('$$opts{title}{$id}')
+			plt.savefig('$img.png')
+			plt.savefig('$img.pdf')
+			plt.close()
+		";
+}
+
+
+sub fmt_slide
+{
+	my ($args, $image, $title) = @_;
+
+	my $slide = qq[\\includegraphics[$$args{ext},width=$$args{width3}]{$image.0}];
+	if ( $$args{n}==3 )
+	{
+		$slide .= qq[%
+			\\includegraphics[$$args{ext},width=$$args{width3}]{$image.2}%
+			\\includegraphics[$$args{ext},width=$$args{width3}]{$image.1}
+		];
+	}
+	return qq[
+			\\vslide[$title]{
+				\\centerline{$slide}
+			}
+		];
+}
+
 sub create_pdf
 {
 	my ($opts) = @_;
@@ -289,12 +392,14 @@ sub create_pdf
 		chdir($$opts{prefix});
 	}
 
-	my @ids    = file_ids($opts);
-	my $width  = "15cm";
-	my $height = "10cm";
-	my $width2 = @ids==3 ? "7.5cm" : "7cm";
-	my $width3 = @ids==3 ? "4.8cm" : "7cm";
-	my $ext    = "type=pdf,ext=.pdf,read=.pdf";
+	my @ids     = file_ids($opts);
+	my $width   = "15cm";
+	my $height  = "10cm";
+	my $width2  = @ids==3 ? "7.5cm" : "7cm";
+	my $width3  = @ids==3 ? "4.8cm" : "7cm";
+	my $height3 = @ids==3 ? "3cm" : "7cm";
+	my $ext     = "type=pdf,ext=.pdf,read=.pdf";
+	my $args    = { ext=>$ext, width3=>$width3, n=>scalar @ids };
 
 	my $tex_file = "summary.tex";
 	open(my $tex,'>',$tex_file) or error("$tex_file: $!");
@@ -332,7 +437,7 @@ sub create_pdf
 		$slide .= qq[ $$opts{title}{$id} & $snps & $tstv & $indels \\\\ \n];
 	}
 	print $tex qq[%
-		\\vslide{%
+		\\vslide[Summary numbers]{%
 			$slide \\end{tabular}}
 		}
 	];
@@ -342,7 +447,7 @@ sub create_pdf
 	if ( @ids==3 )
 	{
 		print $tex qq[%
-			\\vslide{\\centerline{
+			\\vslide[Total counts]{\\centerline{
 				\\includegraphics[$ext,width=$width2]{venn_bars.snps}%
 				\\includegraphics[$ext,width=$width2]{venn_bars.indels}
 				}
@@ -350,24 +455,13 @@ sub create_pdf
 		];
 	}
 
-	
-	# Ts/Tv by AF
-	$slide = qq[\\includegraphics[$ext,width=$width3]{tstv_by_af.0}];
-	if ( @ids==3 )
-	{
-		$slide .= qq[%
-			\\includegraphics[$ext,width=$width3]{tstv_by_af.2}%
-			\\includegraphics[$ext,width=$width3]{tstv_by_af.1}
-		];
-	}
-	print $tex qq[
-			\\vslide[Ts/Tv by AF]{
-				\\centerline{$slide}
-			}
-			\\end{document}
-		];
-	close($tex);
+	print $tex fmt_slide($args, 'tstv_by_af', 'Ts/Tv by AF');
+	print $tex fmt_slide($args, 'indels', 'Indel distribution');
+	print $tex fmt_slide($args, 'substitutions', 'Substitution types');
 
+
+	print $tex "\\end{document}\n";
+	close($tex);
 
 	my $cmd = "pdflatex $tex_file";
 	system($cmd);

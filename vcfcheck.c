@@ -10,6 +10,8 @@ typedef struct
 	int n_snps, n_indels;
 	int n_ts, n_tv;
 	int n_af, *n_ts_af, *n_tv_af;
+	int *insertions, *deletions, m_indel;	// maximum indel length
+	int subst[15];
 }
 stats_t;
 
@@ -40,6 +42,9 @@ void init_stats(args_t *args)
 		stats->n_af = 20;
 		stats->n_ts_af = (int*) calloc(stats->n_af,sizeof(int));
 		stats->n_tv_af = (int*) calloc(stats->n_af,sizeof(int));
+		stats->m_indel = 60;
+		stats->insertions = (int*) calloc(stats->m_indel,sizeof(int));
+		stats->deletions  = (int*) calloc(stats->m_indel,sizeof(int));
 	}
 }
 void destroy_stats(args_t *args)
@@ -56,6 +61,22 @@ void destroy_stats(args_t *args)
 void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
 {
 	stats->n_indels++;
+
+	bcf1_t *line = reader->line;
+	int i;
+	for (i=1; i<line->n_allele; i++)
+	{
+		if ( line->d.var[i].type!=VCF_INDEL ) continue;
+		int len  = line->d.var[i].n;
+		int *ptr = stats->insertions;
+		if ( len<0 ) 
+		{
+			len *= -1;
+			ptr = stats->deletions;
+		}
+		if ( --len > stats->m_indel ) len = stats->m_indel-1;
+		ptr[len]++;
+	}
 }
 
 inline int acgt2int(char c)
@@ -89,6 +110,8 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 			if ( !(line->d.var[i].type&VCF_SNP) ) continue;
 			int alt = acgt2int(*line->d.allele[i]);
 			if ( alt<0 ) continue;
+
+			stats->subst[ref<<2|alt]++;
 
 			int iaf = ac[i]*(stats->n_af-1)/an;
 			if ( iaf>=stats->n_af ) iaf = stats->n_af-1;
@@ -173,6 +196,25 @@ void print_stats(args_t *args)
 			int tv = stats->n_tv_af[i];
 			if ( !ts && !tv ) continue;
 			printf("TsTvAF\t%d\t%.2f\t%d\t%.2f\n", id,(float)i/stats->n_af,ts+tv,tv?(float)ts/tv:0);
+		}
+	}
+	printf("# InDel distribution:\n# IDD\t[2]id\t[3]length (deletions negative)\t[4]count\n");
+	for (id=0; id<nstats; id++)
+	{
+		stats_t *stats = &args->stats[id];
+		for (i=stats->m_indel-1; i>=0; i--)
+			if ( stats->deletions[i] ) printf("IDD\t%d\t%d\t%d\n", id,-i-1,stats->deletions[i]);
+		for (i=0; i<stats->m_indel; i++)
+			if ( stats->insertions[i] ) printf("IDD\t%d\t%d\t%d\n", id,i+1,stats->insertions[i]);
+	}
+	printf("# Substitution types:\n# ST\t[2]id\t[3]type\t[4]count\n");
+	for (id=0; id<nstats; id++)
+	{
+		int t;
+		for (t=0; t<15; t++)
+		{
+			if ( t>>2 == (t&3) ) continue;
+			printf("ST\t%d\t%c>%c\t%d\n", id, "ACGT"[t>>2],"ACGT"[t&3],args->stats[id].subst[t]);
 		}
 	}
 }
