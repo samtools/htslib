@@ -690,7 +690,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 		else bin = hts_bin_parent(bin);
 	} while (bin);
 	if (bin == 0) k = kh_get(bin, bidx, bin);
-	min_off = kh_val(bidx, k).loff;
+	min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
 	// retrieve bins
 	reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
 	for (i = n_off = 0; i < iter->bins.n; ++i)
