@@ -2,6 +2,10 @@
 #
 # Author: petr.danecek@sanger
 #
+# Dependencies: 
+#	matplotlib			http://matplotlib.sourceforge.net
+#	LaTex/xcolor.sty	http://www.ukern.de/tex/xcolor.html
+#
 
 use strict;
 use warnings;
@@ -19,7 +23,7 @@ for my $id (file_ids($opts))
 	plot_substitutions($opts,$id);
 }
 plot($opts);
-create_pdf($opts);
+create_pdf($opts) unless !$$opts{make_pdf};
 
 exit;
 
@@ -35,6 +39,7 @@ sub error
         "Options:\n",
         "   -k, --keep-files                    Do not remove temporary files.\n",
         "   -p, --prefix <path>                 The output files prefix, add a slash to create new directory.\n",
+        "   -P, --no-PDF                        Skip the PDF creation step.\n",
         "   -t, --title <string>                Use this title in plots, can be given multiple times.\n",
         "   -h, -?, --help                      This help message.\n",
         "\n";
@@ -46,12 +51,14 @@ sub parse_params
     $0 =~ s{^.+/}{};
     my $opts = 
 	{ 
+		do_pdf => 1,
 		args   => join(' ',$0,@ARGV), 
 		img_width  => 11/2.54,
 		img_height => 10/2.54,
 	};
     while (defined(my $arg=shift(@ARGV)))
     {
+        if ( $arg eq '-P' || $arg eq '--no-PDF' ) { $$opts{make_pdf}=0; next; }
         if ( $arg eq '-k' || $arg eq '--keep-files' ) { $$opts{keep_files}=1; next; }
         if ( $arg eq '-t' || $arg eq '--titles' ) { push @{$$opts{titles}},shift(@ARGV); next; }
         if ( $arg eq '-p' || $arg eq '--prefix' ) { $$opts{prefix}=shift(@ARGV); next; }
@@ -458,6 +465,28 @@ sub plot_substitutions
 		";
 }
 
+sub singletons
+{
+	my ($opts,$id) = @_;
+	my @vals = get_values($opts,$id,'AC');
+	my $nsnps = 0;
+	my $nindels = 0;
+	my $ac1snps = 0;
+	my $ac1indels = 0;
+	my $tstv;
+	for my $val (@vals)
+	{
+		$nsnps += $$val[1];
+		$nindels += $$val[4];
+		if ( $$val[0]!=1 ) { next; }
+		$ac1snps = $$val[1];
+		$ac1indels = $$val[4];
+		$tstv = sprintf "%.2f", $$val[3] ? $$val[2]/$$val[3] : 0;
+	}
+	$ac1snps   = sprintf "%.1f", $ac1snps*100./$nsnps;
+	$ac1indels = sprintf "%.1f", $ac1indels*100./$nindels;
+	return { snps=>$ac1snps, indels=>$ac1indels, tstv=>$tstv };
+}
 
 sub fmt_slide3
 {
@@ -499,20 +528,39 @@ sub create_pdf
 
 	my $tex_file = "summary.tex";
 	open(my $tex,'>',$tex_file) or error("$tex_file: $!");
-	print $tex qq[
-			\\documentclass{slides}
-			\\usepackage{graphicx}
-			\\usepackage[vcentering,dvips]{geometry}
-			\\geometry{papersize={$width,$height},total={$width,$height}}
-			\\usepackage{xifthen}
-			\\newcommand*{\\vslide}[2][]{
-				\\newpage
-				\\vbox to$height].qq[{\\hsize=$width
-					\\ifthenelse{\\isempty{#1}}
-						{\\vfill#2\\vfill}
-						{\\vskip0.8cm\\centerline{#1}\\vskip0.7cm #2\\vfill}}}
-			\\renewcommand{\\arraystretch}{2}
-				
+	iprint $tex, qq[
+			\\documentclass[17pt]{memoir}
+			\\setstocksize{19cm}{25.4cm}
+			\\settrimmedsize{\\stockheight}{\\stockwidth}{*}
+			\\settrims{0pt}{0pt}
+			\\setlrmarginsandblock{1cm}{*}{*}
+			\\setulmarginsandblock{1.5cm}{*}{*}
+			\\setheadfoot{1mm}{1cm}
+			\\setlength{\\parskip}{0pt}
+			\\setheaderspaces{*}{1mm}{*}
+			\\setmarginnotes{1mm}{1mm}{1mm}
+			\\checkandfixthelayout[fixed]
+			\\usepackage{charter}	% font
+			\\pagestyle{plain}
+			\\makeevenfoot{plain}{}{}{\\thepage}
+			\\makeoddfoot{plain}{}{}{\\thepage}
+
+			% For tables
+			\\usepackage{multirow}
+			\\setlength{\\tabcolsep}{0.6em}
+			\\renewcommand{\\arraystretch}{1.2}
+			\\usepackage[table]{xcolor}
+			\\definecolor{hcol}{rgb}{0.93,0.87,0.71}
+			\\definecolor{row1}{rgb}{0.98,0.96,0.92}
+			\\definecolor{row2}{rgb}{0.98,0.93,0.85}
+
+			% Heading
+			\\newcommand{\\head}[1]{{\\Large\\centerline{#1}\\vskip0.5em}}
+
+			\\newcommand{\\hslide}[2]{%
+					\\head{#1}%
+					\\begin{vplace}[0.5]\\centerline{#2}\\end{vplace}}
+
 			\\begin{document}
 
 		];
@@ -520,45 +568,55 @@ sub create_pdf
 
 	# Table with summary numbers
 	my $slide .= q[%
-		\tiny\centerline{
-		\begin{tabular}{l r r r}
-			Callset & \\#SNPs & Ts/Tv & \\#Indels \\\\ \hline
-		];
+			\small \rowcolors*{3}{row2}{row1} \arrayrulecolor{black}
+			\begin{tabular}{l | r r | r r r | r | r}
+			  \multicolumn{1}{>{\columncolor{hcol}}l|}{}
+			& \multicolumn{2}{>{\columncolor{hcol}}c|}{SNPs}    
+			& \multicolumn{3}{>{\columncolor{hcol}}c|}{singletons} 
+			& \multicolumn{1}{>{\columncolor{hcol}}c|}{indels} 
+			& \multicolumn{1}{>{\columncolor{hcol}}c}{multiallelic} \\\\
+			%
+			  \multicolumn{1}{>{\columncolor{hcol}}l|}{Callset}
+			& \multicolumn{1}{>{\columncolor{hcol}}c}{n}  
+			& \multicolumn{1}{>{\columncolor{hcol}}c|}{ts/tv} 
+			& \multicolumn{1}{>{\columncolor{hcol}}c}{SNPs} 
+			& \multicolumn{1}{>{\columncolor{hcol}}c}{ts/tv}  
+			& \multicolumn{1}{>{\columncolor{hcol}}c|}{indels}  
+			& \multicolumn{1}{>{\columncolor{hcol}}c|}{n}
+			& \multicolumn{1}{>{\columncolor{hcol}}c}{sites} \\\\ \hline ];
 	for my $id (@ids)
 	{
 		my $snps   = get_value($opts,$id,'number of SNPs:');
 		my $indels = get_value($opts,$id,'number of indels:');
 		my $tstv   = get_value($opts,$id,'ts/tv:');
-
-		$slide .= qq[ $$opts{title}{$id} & $snps & $tstv & $indels \\\\ \n];
+		my $mals   = get_value($opts,$id,'number of multiallelic sites:');
+		my $s  = singletons($opts,$id);
+		$slide .= qq[ $$opts{title}{$id} & $snps & $tstv & $$s{snps}\\% & $$s{tstv} & $$s{indels}\\% & $indels & $mals \\\\ \n];
 	}
-	print $tex qq[%
-		\\vslide[Summary numbers]{%
-			$slide \\end{tabular}}
-		}
-	];
+	$slide .= q[ \\end{tabular} ];
+	iprint $tex, qq[\\hslide{Summary numbers}{$slide}];
 
 
-	# Venn bars
-	if ( @ids==3 )
-	{
-		print $tex qq[%
-			\\vslide[Total counts]{\\centerline{
-				\\includegraphics[$ext,width=$width2]{venn_bars.snps}%
-				\\includegraphics[$ext,width=$width2]{venn_bars.indels}
-				}
-			}
-		];
-	}
-
-	print $tex qq[%
-		\\vslide{\\centerline{\\includegraphics[$ext,width=$width]{counts_by_ac.snps}}
-				\\centerline{\\includegraphics[$ext,width=$width]{counts_by_ac.indels}}}
-		];
-
-	print $tex fmt_slide3($args, 'tstv_by_af', 'Ts/Tv by AF');
-	print $tex fmt_slide3($args, 'indels', 'Indel distribution');
-	print $tex fmt_slide3($args, 'substitutions', 'Substitution types');
+#	# Venn bars
+#	if ( @ids==3 )
+#	{
+#		print $tex qq[%
+#			\\vslide[Total counts]{\\centerline{
+#				\\includegraphics[$ext,width=$width2]{venn_bars.snps}%
+#				\\includegraphics[$ext,width=$width2]{venn_bars.indels}
+#				}
+#			}
+#		];
+#	}
+#
+#	print $tex qq[%
+#		\\vslide{\\centerline{\\includegraphics[$ext,width=$width]{counts_by_ac.snps}}
+#				\\centerline{\\includegraphics[$ext,width=$width]{counts_by_ac.indels}}}
+#		];
+#
+#	print $tex fmt_slide3($args, 'tstv_by_af', 'Ts/Tv by AF');
+#	print $tex fmt_slide3($args, 'indels', 'Indel distribution');
+#	print $tex fmt_slide3($args, 'substitutions', 'Substitution types');
 
 
 	print $tex "\\end{document}\n";
