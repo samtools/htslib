@@ -20,12 +20,20 @@
 \maketitle
 
 {\small
+In BCF2, each key in the {\sf FILTER}, {\sf INFO} and {\sf FORMAT} fields is
+required to be defined in the VCF header. For each record, a key is stored as
+an integer which is the index of its first appearance in the header. `{\tt
+PASS}' is always indexed at 0, which is special cased as VCF does not require
+the presence of this word.
+
 In BCF2, a typed value consists of a typing byte and the actual value with type
 mandated by the typing byte. In the typing byte, the lowest four bits give the
 atomic type. If the number represented by the higher 4 bits is smaller than 15,
 it is the size of the following vector; if the number equals 15, the following
-typed integer is the array size. The table below gives the atomic types and
-their missing values:
+typed integer is the array size. The highest 4 bits of a {\sf Flag} type equals
+0 and in this case, no assumptions can be made about the lower 4 bits. The
+table below gives the atomic types and their
+missing values:
 \begin{center}
 {\small\begin{tabular}{rlrl}
 \hline
@@ -40,7 +48,7 @@ Bit 0--3 & C type & Missing value & Description \\
 \end{tabular}}
 \end{center}
 
-In BCF2, a genotype (GT) is encoded as an integer vector with each integer
+A genotype (GT) is encoded as an integer vector with each integer
 describing an allele and its phase w.r.t. the previous allele. The first allele
 does not carry the phase information. In the vector, each integer is organized
 as `{\tt \char40 allele+1\char41\char60\char60 1\char124 phased}' where
