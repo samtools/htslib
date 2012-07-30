@@ -54,6 +54,8 @@ does not carry the phase information. In the vector, each integer is organized
 as `{\tt \char40 allele+1\char41\char60\char60 1\char124 phased}' where
 {\tt allele} is set to -1 if the allele in GT is a dot `.' (thus the higher
 bits are all 0). The vector is padded with missing values if the GT having fewer ploidy.
+
+A BCF2 file is BGZF compressed and all multi-byte value are little endian.
 }
 \begin{table}[ht]
 \centering
