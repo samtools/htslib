@@ -2,6 +2,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <limits.h>
+#include <errno.h>
+#include <ctype.h>
 #include "synced_bcf_reader.h"
 
 int add_reader(const char *fname, readers_t *files)
@@ -23,20 +25,35 @@ int add_reader(const char *fname, readers_t *files)
 	if ( !reader->file ) return 0;
 	reader->line  = bcf_init1();
 	reader->fname = fname;
+	reader->filter_id = -1;
+	if ( files->apply_filters )
+		reader->filter_id = bcf_id2int(reader->header, BCF_DT_ID, "PASS");
 
 	// Update list of chromosomes
-	int n,i,j;
-	const char **names = bcf_seqnames(reader->header, &n);
-	for (i=0; i<n; i++)
+	if ( files->region )
 	{
-		for (j=0; j<files->nseqs; j++)
-			if ( !strcmp(names[i],files->seqs[j]) ) break;
-		if ( j<files->nseqs ) continue;		// already have this chr
-		files->mseqs += 30;
-		files->seqs = (const char**) realloc(files->seqs, sizeof(const char*)*files->mseqs);
-		files->seqs[files->nseqs++] = names[i];
+		if ( !files->seqs )
+		{
+			files->mseqs = files->nseqs = 1;
+			files->seqs = (const char**) malloc(sizeof(const char*));
+			files->seqs[0] = files->region;
+		}
 	}
-	free(names);
+	else
+	{
+		int n,i,j;
+		const char **names = bcf_seqnames(reader->header, &n);
+		for (i=0; i<n; i++)
+		{
+			for (j=0; j<files->nseqs; j++)
+				if ( !strcmp(names[i],files->seqs[j]) ) break;
+			if ( j<files->nseqs ) continue;		// already have this chr
+			files->mseqs += 30;
+			files->seqs = (const char**) realloc(files->seqs, sizeof(const char*)*files->mseqs);
+			files->seqs[files->nseqs++] = names[i];
+		}
+		free(names);
+	}
 	files->iseq = -1;
 	return 1;
 }
@@ -128,7 +145,7 @@ int next_line(readers_t *files)
 		// Need to open new chromosome?
 		int eos = 0;
 		for (i=0; i<files->nreaders; i++)
-			if ( !files->readers[i].itr ) eos++;
+			if ( !files->readers[i].itr && !files->readers[i].nbuffer ) eos++;
 		if ( eos==files->nreaders )
 		{
 			if ( ++files->iseq >= files->nseqs ) return 0;	// all chroms scanned
@@ -157,7 +174,8 @@ int next_line(readers_t *files)
 							reader->buffer[reader->mbuffer-j] = bcf_init1();
 					}
 					vcf_parse1(&s, reader->header, reader->buffer[reader->nbuffer]);
-					bcf_unpack(reader->buffer[reader->nbuffer], BCF_UN_STR);
+					bcf_unpack(reader->buffer[reader->nbuffer], BCF_UN_STR|BCF_UN_FLT);
+					if ( reader->filter_id!=-1 && reader->buffer[reader->nbuffer]->d.n_flt && reader->filter_id!=reader->buffer[reader->nbuffer]->d.flt[0] ) continue;
 					reader->nbuffer++;
 					if ( reader->buffer[reader->nbuffer-1]->pos != reader->buffer[0]->pos ) break;
 				}
@@ -227,5 +245,180 @@ int next_line(readers_t *files)
 
 	return ret;
 }
+
+
+size_t mygetline(char **line, size_t *n, FILE *fp)
+{
+	if (line == NULL || n == NULL || fp == NULL)
+	{
+		errno = EINVAL;
+		return -1;
+	}
+	if (*n==0 || !*line)
+	{
+		*line = NULL;
+		*n = 0;
+	}
+
+	size_t nread=0;
+	int c;
+	while ((c=getc(fp))!= EOF && c!='\n')
+	{
+		if ( ++nread>=*n )
+		{
+			*n += 255;
+			*line = (char*) realloc(*line, sizeof(char)*(*n));
+		}
+		(*line)[nread-1] = c;
+	}
+	if ( nread>=*n )
+	{
+		*n += 255;
+		*line = (char*) realloc(*line, sizeof(char)*(*n));
+	}
+	(*line)[nread] = 0;
+	return nread>0 ? nread : -1;
+
+}
+
+int init_regions(const char *fname, regions_t *reg)
+{
+	int bgzf_getline(BGZF *fp, int delim, kstring_t *str);
+
+	BGZF *zfp = bgzf_open(fname, "r");
+	if ( !zfp ) 
+	{
+		fprintf(stderr,"%s: %s\n",fname,strerror(errno));
+		return 0;
+	}
+
+	int i, mseqs = 10, mpos = 0;
+	reg->nseqs = 0;
+	reg->pos   = (pos_t **)calloc(mseqs,sizeof(pos_t*));
+	reg->npos  = (int*) calloc(mseqs,sizeof(int));
+	reg->seq_names = (char **) calloc(mseqs,sizeof(char*));
+
+	kstring_t str = {0,0,0};
+	ssize_t nread;
+	while ((nread = bgzf_getline(zfp, '\n', &str)) > 0) 
+	{
+		char *line = str.s;
+		if ( line[0] == '#' ) continue;
+
+		int i = 0;
+		while ( i<nread && !isspace(line[i]) ) i++;
+		if ( i>=nread ) 
+		{ 
+			fprintf(stderr,"Could not parse the file: %s [%s]\n", fname,line); 
+			return 0; 
+		}
+		line[i] = 0;
+
+		if ( reg->nseqs==0 || strcmp(line,reg->seq_names[reg->nseqs-1]) )
+		{
+			// New sequence
+			reg->nseqs++;
+			if ( reg->nseqs >= mseqs )
+			{
+				mseqs++;
+				reg->pos  = (pos_t **) realloc(reg->pos,sizeof(pos_t*)*mseqs); reg->pos[mseqs-1] = NULL;
+				reg->npos = (int *) realloc(reg->npos,sizeof(int)*mseqs); reg->npos[mseqs-1] = 0;
+				reg->seq_names = (char**) realloc(reg->seq_names,sizeof(char*)*mseqs);
+			}
+			reg->seq_names[reg->nseqs-1] = strdup(line);
+			mpos = 0;
+		}
+
+		int iseq = reg->nseqs-1;
+		if ( reg->npos[iseq] >= mpos )
+		{
+			mpos += 100;
+			reg->pos[iseq] = (pos_t*) realloc(reg->pos[iseq],sizeof(pos_t)*mpos);
+		}
+		int ipos = reg->npos[iseq];
+		pos_t *pos = reg->pos[iseq];
+		reg->npos[iseq]++;
+		if ( (sscanf(line+i+1,"%d %d",&pos[ipos].from,&pos[ipos].to))!=2 ) 
+		{
+			fprintf(stderr,"Could not parse the region [%s]\n",line+i+1);
+			return 0;
+		}
+
+		// Check that the file is sorted
+		if ( ipos>0 && (pos[ipos].from < pos[ipos-1].from || (pos[ipos].from==pos[ipos-1].from && pos[ipos].to<pos[ipos-1].to)) )
+		{
+			fprintf(stderr,"The file is not sorted: %s\n", fname);
+			return 0;
+		}
+	}
+
+	// Check that chromosomes come in blocks
+	int j;
+	for (i=0; i<reg->nseqs; i++)
+	{
+		for (j=0; j<i; j++)
+		{
+			if ( !strcmp(reg->seq_names[i],reg->seq_names[j]) ) 
+			{
+				fprintf(stderr,"The file is not sorted: %s\n", fname);
+				return 0;
+			}
+		}
+	}
+
+	if (str.m) free(str.s);
+	else return 0;
+
+	bgzf_close(zfp);
+	return 1;
+}
+
+void destroy_regions(regions_t *reg)
+{
+	int i;
+	for (i=0; i<reg->nseqs; i++)
+	{
+		free(reg->pos[i]);
+		free(reg->seq_names[i]);
+	}
+	free(reg->seq_names);
+	free(reg->pos);
+	free(reg->npos);
+}
+
+int reset_regions(regions_t *reg, const char *seq)
+{
+	reg->cpos = 0;
+	reg->cseq = -1;
+	int i;
+	for (i=0; i<reg->nseqs; i++)
+	{
+		int n = strlen(reg->seq_names[i]);
+		if ( strncmp(reg->seq_names[i],seq,n) ) continue;
+		if ( seq[n] && seq[n]!=':' ) continue;
+		reg->cseq = i;
+		return 1;
+	}
+	return 0;
+}
+
+pos_t *is_in_regions(regions_t *reg, int32_t pos)
+{
+	if ( reg->cseq==-1 ) return NULL;
+
+	int ipos = reg->cpos;
+	int npos = reg->npos[reg->cseq];
+	if ( ipos==npos ) return NULL;	// done for this chr
+
+	pos_t *p = reg->pos[reg->cseq];
+
+	// Find a matching interval
+	while ( ipos < npos && pos > p[ipos].to ) ipos++;
+	reg->cpos = ipos;
+	if ( ipos >= npos || pos < p[ipos].from ) return NULL;
+
+	return &p[ipos];
+}
+
 
 

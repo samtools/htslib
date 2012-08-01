@@ -11,6 +11,15 @@
 #define COLLAPSE_INDELS 2
 #define COLLAPSE_ANY    4
 
+typedef struct { int32_t from, to; } pos_t;
+typedef struct
+{
+	int *npos,nseqs,cpos,cseq;
+	pos_t **pos;
+	char **seq_names;
+}
+regions_t;
+
 typedef struct
 {
 	htsFile *file;
@@ -20,6 +29,7 @@ typedef struct
 	const char *fname;
 	bcf1_t **buffer, *line;
 	int nbuffer, mbuffer;
+	int filter_id;
 }
 reader_t;
 
@@ -27,14 +37,20 @@ typedef struct
 {
 	reader_t *readers;
 	int nreaders;
-	const char **seqs;
+	const char **seqs, *region;
 	int iseq,nseqs,mseqs;
 	int collapse;
+	int apply_filters;
 }
 readers_t;
 
 int add_reader(const char *fname, readers_t *readers);
 void destroy_readers(readers_t *readers);
 int next_line(readers_t *readers);
+
+int init_regions(const char *fname, regions_t *regions);
+int reset_regions(regions_t *regions, const char *seq);
+pos_t *is_in_regions(regions_t *regions, int32_t pos);
+void destroy_regions(regions_t *regions);
 
 #endif

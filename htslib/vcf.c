@@ -873,6 +873,7 @@ int bcf_unpack(bcf1_t *b, int which)
 		d->m_str = tmp.m; d->id = tmp.s; // write tmp back
 		d->var_type = -1;
 		b->unpack_ptr = ptr;
+		b->unpacked |= BCF_UN_STR;
 	}
 	if (which & BCF_UN_FLT && !(b->unpacked&BCF_UN_FLT)) { // FILTER
 		ptr = b->unpack_ptr;
@@ -884,6 +885,7 @@ int bcf_unpack(bcf1_t *b, int which)
 				d->flt[i] = bcf_dec_int1(ptr, type, &ptr);
 		} else ++ptr, d->n_flt = 0;
 		b->unpack_ptr = ptr;
+		b->unpacked |= BCF_UN_FLT;
 	}
 	if (which & BCF_UN_INFO && !(b->unpacked&BCF_UN_INFO)) { // INFO
 		ptr = b->unpack_ptr;

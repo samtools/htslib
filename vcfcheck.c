@@ -8,8 +8,9 @@
 typedef struct
 {
 	int n_snps, n_indels, n_mals;
-	int *ac_ts, *ac_tv, *ac_snps, *ac_indels, m_ac;
+	int *af_ts, *af_tv, *af_snps, *af_indels;
 	int *insertions, *deletions, m_indel;	// maximum indel length
+	int in_frame, out_frame;
 	int subst[15];
 }
 stats_t;
@@ -17,9 +18,11 @@ stats_t;
 typedef struct
 {
 	stats_t stats[3];
-	int *tmp_ac, ntmp_ac;
+	int *tmp_iaf, ntmp_iaf, m_af;
 	readers_t files;
-	char **argv;
+	regions_t regions;
+	int prev_reg;
+	char **argv, *exons_file;
 	int argc;
 }
 args_t;
@@ -47,32 +50,28 @@ inline int acgt2int(char c)
 void init_stats(args_t *args)
 {
 	int i,nstats = args->files.nreaders==1 ? 1 : 3;
+	args->m_af = 101;
+	for (i=0; i<args->files.nreaders; i++)
+		if ( args->files.readers[i].header->n[BCF_DT_SAMPLE] + 1> args->m_af )
+			args->m_af = args->files.readers[i].header->n[BCF_DT_SAMPLE] + 1;
+
 	for (i=0; i<nstats; i++)
 	{
 		stats_t *stats = &args->stats[i];
 		stats->m_indel    = 60;
 		stats->insertions = (int*) calloc(stats->m_indel,sizeof(int));
 		stats->deletions  = (int*) calloc(stats->m_indel,sizeof(int));
+		stats->af_ts     = (int*)calloc(args->m_af,sizeof(int));
+		stats->af_tv     = (int*)calloc(args->m_af,sizeof(int));
+		stats->af_snps   = (int*)calloc(args->m_af,sizeof(int));
+		stats->af_indels = (int*)calloc(args->m_af,sizeof(int));
 	}
-}
-int *realloc_stat(int *array, int ori, int new)
-{
-	array = (int*) realloc(array, new*sizeof(int));
-	int i;
-	for (i=ori; i<new; i++) array[i] = 0;
-	return array;
-}
-void realloc_stats(args_t *args, int ac)
-{
-	int i,nstats = args->files.nreaders==1 ? 1 : 3;
-	for (i=0; i<nstats; i++)
+
+	if ( args->exons_file )
 	{
-		stats_t *stats = &args->stats[i];
-		stats->ac_ts     = (int*)realloc_stat(stats->ac_ts,stats->m_ac,ac);
-		stats->ac_tv     = (int*)realloc_stat(stats->ac_tv,stats->m_ac,ac);
-		stats->ac_snps   = (int*)realloc_stat(stats->ac_snps,stats->m_ac,ac);
-		stats->ac_indels = (int*)realloc_stat(stats->ac_indels,stats->m_ac,ac);
-		stats->m_ac = ac;
+		if ( !init_regions(args->exons_file, &args->regions) )
+			error("Error occurred while reading, was the file compressed with bgzip: %s?\n", args->exons_file);
+		args->prev_reg = -1;
 	}
 }
 void destroy_stats(args_t *args)
@@ -81,30 +80,41 @@ void destroy_stats(args_t *args)
 	for (id=0; id<nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
-		if (stats->ac_ts) free(stats->ac_ts);
-		if (stats->ac_tv) free(stats->ac_tv);
-		if (stats->ac_snps) free(stats->ac_snps);
-		if (stats->ac_indels) free(stats->ac_indels);
+		if (stats->af_ts) free(stats->af_ts);
+		if (stats->af_tv) free(stats->af_tv);
+		if (stats->af_snps) free(stats->af_snps);
+		if (stats->af_indels) free(stats->af_indels);
 		free(stats->insertions);
 		free(stats->deletions);
 	}
-	if (args->tmp_ac) free(args->tmp_ac);
+	if (args->tmp_iaf) free(args->tmp_iaf);
+	if ( args->exons_file ) destroy_regions(&args->regions);
 }
 
-void init_ac(args_t *args, reader_t *reader)
+void init_iaf(args_t *args, reader_t *reader)
 {
 	bcf1_t *line = reader->line;
-	if ( args->ntmp_ac < line->n_allele )
+	if ( args->ntmp_iaf < line->n_allele )
 	{
-		args->tmp_ac = (int*)realloc(args->tmp_ac, line->n_allele*sizeof(int));
-		args->ntmp_ac = line->n_allele;
+		args->tmp_iaf = (int*)realloc(args->tmp_iaf, line->n_allele*sizeof(int));
+		args->ntmp_iaf = line->n_allele;
 	}
-	calc_ac(reader->header, line, args->tmp_ac, BCF_UN_FMT);
-	int i, m_ac=0;
-	for (i=0; i<line->n_allele; i++)
-		if ( m_ac < args->tmp_ac[i] ) m_ac = args->tmp_ac[i]; 
-	if ( m_ac >= args->stats[0].m_ac )
-		realloc_stats(args, m_ac+1);
+	int ret = calc_ac(reader->header, line, args->tmp_iaf, BCF_UN_FMT);
+	if ( ret )
+	{
+		int i, an=0;
+		for (i=0; i<line->n_allele; i++)
+			an += args->tmp_iaf[i];
+		
+		for (i=1; i<line->n_allele; i++)
+		{
+			if ( args->tmp_iaf[i]==1 ) 
+				args->tmp_iaf[i]=0; // singletons into the first bin
+			else 
+				args->tmp_iaf[i] = 1 + args->tmp_iaf[i] * (args->m_af-2.0) / an;
+		}
+	}
+	// todo: otherwise use AF 
 }
 
 void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
@@ -112,12 +122,54 @@ void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
 	stats->n_indels++;
 
 	bcf1_t *line = reader->line;
+
+	// Check if the indel is near an exon for the frameshift statistics
+	pos_t *reg = NULL, *reg_next = NULL;
+	if ( args->regions.nseqs )
+	{
+		if ( args->files.iseq!=args->prev_reg )
+		{
+			reset_regions(&args->regions, args->files.seqs[args->files.iseq]);
+			args->prev_reg = args->files.iseq;
+		}
+		reg = is_in_regions(&args->regions, line->pos+1);
+		if ( !reg && args->regions.cseq>=0 && args->regions.cpos < args->regions.npos[args->regions.cseq] )
+			reg_next = &args->regions.pos[args->regions.cseq][args->regions.cpos];
+	}
+
 	int i;
 	for (i=1; i<line->n_allele; i++)
 	{
 		if ( line->d.var[i].type!=VCF_INDEL ) continue;
-		stats->ac_indels[ args->tmp_ac[i] ]++;
-		int len  = line->d.var[i].n;
+		stats->af_indels[ args->tmp_iaf[i] ]++;
+		int len = line->d.var[i].n;
+
+		// Check the frameshifts
+		int tlen = 0;
+		if ( reg )
+		{
+			tlen = abs(len);
+			if ( len<0 ) 
+			{
+				int to = line->pos+1 + tlen;
+				if ( to > reg->to ) tlen -= to-reg->to;
+			}
+		}
+		else if ( reg_next && len<0 )
+		{
+			tlen = abs(len) - reg_next->from + line->pos+1;
+			if ( tlen<0 ) tlen = 0;
+		}
+		if ( tlen )
+		{
+			if ( tlen%3 ) stats->out_frame++;
+			else stats->in_frame++;
+
+			//if ( tlen%3 ) printf("%s\t%d\t%d\t%d\tframeshift (tlen=%d, next=%d)\n", args->files.seqs[args->files.iseq],line->pos+1,reg->from,reg->to,tlen,reg_next);
+			//else printf("%s\t%d\t%d\t%d\tin-frame\n", args->files.seqs[args->files.iseq],line->pos+1,reg->from,reg->to);
+		}
+
+		// Indel length distribution
 		int *ptr = stats->insertions;
 		if ( len<0 ) 
 		{
@@ -143,12 +195,12 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 		int alt = acgt2int(*line->d.allele[i]);
 		if ( alt<0 ) continue;
 		stats->subst[ref<<2|alt]++;
-		int ac = args->tmp_ac[i];
-		stats->ac_snps[ac]++;
+		int iaf = args->tmp_iaf[i];
+		stats->af_snps[iaf]++;
 		if ( abs(ref-alt)==2 ) 
-			stats->ac_ts[ac]++;
+			stats->af_ts[iaf]++;
 		else 
-			stats->ac_tv[ac]++;
+			stats->af_tv[iaf]++;
 	}
 }
 
@@ -168,7 +220,7 @@ void check_vcf(args_t *args)
 			break;
 		}
 		set_variant_types(line);
-		init_ac(args, reader);
+		init_iaf(args, reader);
 
 		if ( line->d.var_type&VCF_SNP ) 
 			do_snp_stats(args, &args->stats[ret-1], reader);
@@ -203,6 +255,8 @@ void print_stats(args_t *args)
 {
 	int i, id, nstats = args->files.nreaders==1 ? 1 : 3;
 	printf("# Summary numbers:\n# SN\t[2]id\t[3]key\t[4]value\n");
+	for (id=0; id<args->files.nreaders; id++)
+		printf("SN\t%d\tnumber of samples:\t%d\n", id, args->files.readers[id].header->n[BCF_DT_SAMPLE]);
 	for (id=0; id<nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
@@ -211,15 +265,34 @@ void print_stats(args_t *args)
 		printf("SN\t%d\tnumber of multiallelic sites:\t%d\n", id, stats->n_mals);
 
 		int ts=0,tv=0;
-		for (i=0; i<stats->m_ac; i++) { ts += stats->ac_ts[i]; tv += stats->ac_tv[i];  }
+		for (i=0; i<args->m_af; i++) { ts += stats->af_ts[i]; tv += stats->af_tv[i];  }
 		printf("SN\t%d\tts/tv:\t%.2f\n", id, tv?(float)ts/tv:0);
 	}
-	printf("# Stats by non-reference allele count:\n# AC\t[2]id\t[3]allele count\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
+	printf("# Indel frameshifts:\n# FS\t[2]id\t[3]in-frame\t[4]out-frame\t[5]out/(in+out) ratio\n");
+	for (id=0; id<nstats; id++)
+	{
+		int in=args->stats[id].in_frame, out=args->stats[id].out_frame;
+		printf("FS\t%d\t%d\t%d\t%.2f\n", id, in,out,out?(float)out/(in+out):0);
+	}
+	printf("# Singleton stats:\n# SiS\t[2]id\t[3]allele count\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
 	for (id=0; id<nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
-		for (i=0; i<stats->m_ac; i++)
-			printf("AC\t%d\t%d\t%d\t%d\t%d\t%d\n", id,i,stats->ac_snps[i],stats->ac_ts[i],stats->ac_tv[i],stats->ac_indels[i]);
+		printf("SiS\t%d\t%d\t%d\t%d\t%d\t%d\n", id,1,stats->af_snps[0],stats->af_ts[0],stats->af_tv[0],stats->af_indels[0]);
+		stats->af_snps[1]   += stats->af_snps[0];
+		stats->af_ts[1]     += stats->af_ts[0];
+		stats->af_tv[1]     += stats->af_tv[0];
+		stats->af_indels[1] += stats->af_indels[0];
+	}
+	printf("# Stats by non-reference allele frequency:\n# AF\t[2]id\t[3]allele frequency\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
+	for (id=0; id<nstats; id++)
+	{
+		stats_t *stats = &args->stats[id];
+		for (i=1; i<args->m_af; i++)
+		{
+			if ( stats->af_snps[i]+stats->af_ts[i]+stats->af_tv[i]+stats->af_indels[i] == 0  ) continue;
+			printf("AF\t%d\t%f\t%d\t%d\t%d\t%d\n", id,100.*(i-1)/(args->m_af-2),stats->af_snps[i],stats->af_ts[i],stats->af_tv[i],stats->af_indels[i]);
+		}
 	}
 	printf("# InDel distribution:\n# IDD\t[2]id\t[3]length (deletions negative)\t[4]count\n");
 	for (id=0; id<nstats; id++)
@@ -249,7 +322,10 @@ void usage(void)
 	fprintf(stderr, "         and the complements.\n");
 	fprintf(stderr, "Usage:   vcfcheck [options] <A.vcf.gz> [<B.vcf.gz>]\n");
 	fprintf(stderr, "Options:\n");
-	fprintf(stderr, "    -c, --collapse <string>       treat sites with differing alleles as same for <snps|indels|both|any>\n");
+	fprintf(stderr, "    -c, --collapse <string>           treat sites with differing alleles as same for <snps|indels|both|any>\n");
+	fprintf(stderr, "    -e, --exons <file.gz>             tab-delimited file with exons for indel frameshifts (chr,from,to; 1-based, inclusive, bgzip compressed)\n");
+	fprintf(stderr, "    -f, --apply-filters	           skip sites where FILTER is other than PASS\n");
+	fprintf(stderr, "    -r, --region <chr|chr:from-to>    collect statistics in the given region only\n");
 	fprintf(stderr, "\n");
 	exit(1);
 }
@@ -264,9 +340,11 @@ int main_vcfcheck(int argc, char *argv[])
 	{
 		{"help",0,0,'h'},
 		{"collapse",0,0,'c'},
+		{"apply-filters",0,0,'f'},
+		{"exons",0,0,'e'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "hc:",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "hc:fr:e:",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'c':
 				if ( !strcmp(optarg,"snps") ) args->files.collapse |= COLLAPSE_SNPS;
@@ -274,6 +352,9 @@ int main_vcfcheck(int argc, char *argv[])
 				else if ( !strcmp(optarg,"both") ) args->files.collapse |= COLLAPSE_SNPS | COLLAPSE_INDELS;
 				else if ( !strcmp(optarg,"any") ) args->files.collapse |= COLLAPSE_ANY;
 				break;
+			case 'f': args->files.apply_filters = 1; break;
+			case 'r': args->files.region = optarg; break;
+			case 'e': args->exons_file = optarg; break;
 			case 'h': 
 			case '?': usage();
 			default: error("Unknown argument: %s\n", optarg);
