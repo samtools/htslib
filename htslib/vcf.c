@@ -8,6 +8,7 @@
 #include "kstring.h"
 #include "bgzf.h"
 #include "vcf.h"
+#include "tbx.h"
 
 #include "khash.h"
 KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
@@ -268,6 +269,7 @@ bcf1_t *bcf_init1()
 void bcf_destroy1(bcf1_t *v)
 {
 	free(v->d.id); free(v->d.allele); free(v->d.flt); free(v->d.info); free(v->d.fmt);
+	if (v->d.var ) free(v->d.var);
 	free(v->shared.s); free(v->indiv.s);
 	free(v);
 }
@@ -287,6 +289,8 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 	v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
 	v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
 	v->shared.l = x[0], v->indiv.l = x[1];
+	v->unpacked = 0;
+	v->unpack_ptr = NULL;
 	bgzf_read(fp, v->shared.s, v->shared.l);
 	bgzf_read(fp, v->indiv.s, v->indiv.l);
 	return 0;
@@ -364,8 +368,50 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
 		h->l_text = txt.l + 1; // including NULL
 		h->text = txt.s;
 		bcf_hdr_parse(h);
+		vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
+		if ( kh_begin(d)==kh_end(d) )
+		{
+			// contigs are not listed in the VCF header, read tabix index
+			tbx_t *idx = tbx_index_load(fp->fn);
+			if ( !idx ) return h;
+			int i,n;
+			const char **names = tbx_seqnames(idx, &n);
+			for (i=0; i<n; i++)
+			{
+				int ret;
+				khint_t k = kh_put(vdict, d, strdup(names[i]), &ret);
+				if (ret != 0) 
+				{
+					kh_val(d, k) = bcf_idinfo_def;
+					kh_val(d, k).id = kh_size(d) - 1;
+					kh_val(d, k).info[0] = -1;	// what is a good default value?
+				}
+			}
+			free(names);
+			tbx_destroy(idx);
+		}
 		return h;
 	} else return bcf_hdr_read((BGZF*)fp->fp);
+}
+
+const char **bcf_seqnames(const bcf_hdr_t *h, int *n)
+{
+	int m=0;
+	const char **names = NULL;
+	khint_t k;
+	vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
+	*n = 0;
+	for (k=kh_begin(d); k<kh_end(d); k++)
+	{
+		if ( !kh_exist(d,k) ) continue;
+		if ( *n>=m ) 
+		{
+			m += 50;
+			names = (const char**)realloc(names, m*sizeof(char**));
+		}
+		names[(*n)++] = kh_key(d,k);
+	}
+	return names;
 }
 
 void vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
@@ -506,6 +552,8 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 	mem->l = v->shared.l = v->indiv.l = 0;
 	str = &v->shared;
 	v->n_fmt = 0;
+	v->unpacked = 0;
+	v->unpack_ptr = NULL;
 	memset(&aux, 0, sizeof(ks_tokaux_t));
 	for (p = kstrtok(s->s, "\t", &aux), i = 0; p; p = kstrtok(0, 0, &aux), ++i) {
 		q = (char*)aux.p;
@@ -682,11 +730,11 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 							is_phased = (*t == '|');
 							if (*t == ':' || *t == 0) break;
 						}
-						for (; l != z->size>>2; ++l) x[l] = INT32_MIN;
+						for (; l < z->size>>2; ++l) x[l] = INT32_MIN;
 					} else {
 						char *x = (char*)z->buf + z->size * m;
 						for (r = t, l = 0; *t != ':' && *t; ++t) x[l++] = *t;
-						for (; l != z->size; ++l) x[l] = 0;
+						for (; l < z->size; ++l) x[l] = 0;
 					}
 				} else if ((z->y>>4&0xf) == BCF_HT_INT) {
 					int32_t *x = (int32_t*)(z->buf + z->size * m);
@@ -695,7 +743,10 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 						else x[l++] = strtol(t, &t, 10);
 						if (*t == ':' || *t == 0) break;
 					}
-					for (; l != z->size>>2; ++l) x[l] = INT32_MIN;
+					// The original condition l != z->size>>2 is not robust: with malformatted
+					//	VCFs l can be bigger than z->size>>2 (e.g. '-' instead of int)
+					// Also above x[l++] without checking the limits may not be safe.
+					for (; l < z->size>>2; ++l) x[l] = INT32_MIN;
 				} else if ((z->y>>4&0xf) == BCF_HT_REAL) {
 					float *x = (float*)(z->buf + z->size * m);
 					for (l = 0;; ++t) {
@@ -703,7 +754,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 						else x[l++] = strtod(t, &t);
 						if (*t == ':' || *t == 0) break;
 					}
-					for (; l != z->size>>2; ++l) *(int32_t*)(x+l) = bcf_missing_float;
+					for (; l < z->size>>2; ++l) *(int32_t*)(x+l) = bcf_missing_float;
 				} else abort();
 				if (*t == 0) {
 					for (++j; j < v->n_fmt; ++j) { // fill missing values
@@ -803,7 +854,7 @@ int bcf_unpack(bcf1_t *b, int which)
 	bcf_dec_t *d = &b->d;
 	if (which & BCF_UN_FLT) which |= BCF_UN_STR;
 	if (which & BCF_UN_INFO) which |= BCF_UN_SHR;
-	if (which & BCF_UN_STR) { // ID
+	if (which & BCF_UN_STR && !(b->unpacked&BCF_UN_STR)) { // ID
 		kstring_t tmp;
 		tmp.l = 0; tmp.m = d->m_str; tmp.s = d->id;
 		ptr = bcf_fmt_sized_array(&tmp, ptr); kputc('\0', &tmp);
@@ -818,8 +869,12 @@ int bcf_unpack(bcf1_t *b, int which)
 		for (i = 0; i < b->n_allele; ++i)
 			d->allele[i] = tmp.s + offset[i];
 		d->m_str = tmp.m; d->id = tmp.s; // write tmp back
+		d->var_type = -1;
+		b->unpack_ptr = ptr;
+		b->unpacked |= BCF_UN_STR;
 	}
-	if (which & BCF_UN_FLT) { // FILTER
+	if (which & BCF_UN_FLT && !(b->unpacked&BCF_UN_FLT)) { // FILTER
+		ptr = b->unpack_ptr;
 		if (*ptr>>4) {
 			int type;
 			d->n_flt = bcf_dec_size(ptr, &ptr, &type);
@@ -827,14 +882,19 @@ int bcf_unpack(bcf1_t *b, int which)
 			for (i = 0; i < d->n_flt; ++i)
 				d->flt[i] = bcf_dec_int1(ptr, type, &ptr);
 		} else ++ptr, d->n_flt = 0;
+		b->unpack_ptr = ptr;
+		b->unpacked |= BCF_UN_FLT;
 	}
-	if (which & BCF_UN_INFO) { // INFO
+	if (which & BCF_UN_INFO && !(b->unpacked&BCF_UN_INFO)) { // INFO
+		ptr = b->unpack_ptr;
 		hts_expand(bcf_info_t, b->n_info, d->m_info, d->info);
 		bcf_unpack_info_core(ptr, b->n_info, d->info);
+		b->unpacked |= BCF_UN_INFO;
 	}
-	if ((which & BCF_UN_FMT) && b->n_sample) { // FORMAT
+	if (which & BCF_UN_FMT && b->n_sample && !(b->unpacked&BCF_UN_FMT)) { // FORMAT
 		hts_expand(bcf_fmt_t, b->n_fmt, d->m_fmt, d->fmt);
 		bcf_unpack_fmt_core((uint8_t*)b->indiv.s, b->n_sample, b->n_fmt, d->fmt);
+		b->unpacked |= BCF_UN_FMT;
 	}
 	return 0;
 }
@@ -1042,6 +1102,7 @@ int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
 	return 0;
 }
 
+
 int bcf_is_snp(bcf1_t *v)
 {
 	int i;
@@ -1050,3 +1111,63 @@ int bcf_is_snp(bcf1_t *v)
 		if (strlen(v->d.allele[i]) != 1) break;
 	return i == v->n_allele;
 }
+
+void set_variant_type(char *ref, char *alt, variant_t *var)
+{
+	// The most frequent case
+	if ( !ref[1] && !alt[1] )
+	{
+		if ( *alt == '.' || *ref==*alt ) { var->n = 0; var->type = VCF_REF; return; }
+		var->n = 1; var->type = VCF_SNP; return;
+	}
+
+	char *r = ref, *a = alt;
+	while (*r && *a && *r==*a ) { r++; a++; }
+
+	if ( *a && !*r )
+	{
+		while ( *a ) a++;
+		var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
+	}
+	else if ( *r && !*a )
+	{
+		while ( *r ) r++;
+		var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
+	}
+	else if ( !*r && !*a )
+	{
+		var->n = 0; var->type = VCF_REF; return;
+	}
+
+	while (*r && *a)
+	{
+		if ( *r!=*a ) var->n++; 
+		r++; a++;
+	}
+
+	var->type = ( *r || *a ) ? VCF_OTHER : VCF_MNP;
+	while (*r) { r++; var->n++; }
+
+	// should do also complex events, SVs, etc...
+}
+
+void set_variant_types(bcf1_t *b)
+{
+	if ( b->d.var_type!=-1 ) return;	// already set
+
+	bcf_dec_t *d = &b->d;
+	if ( d->n_var < b->n_allele ) 
+	{
+		d->var = (variant_t *) realloc(d->var, sizeof(variant_t)*b->n_allele);
+		d->n_var = b->n_allele;
+	}
+	int i;
+	b->d.var_type = 0;
+	for (i=1; i<b->n_allele; i++)
+	{
+		set_variant_type(d->allele[0],d->allele[1], &d->var[i]);
+		b->d.var_type |= d->var[i].type;
+		// printf("[set_variant_type]	%s %s -> %d %d .. %d\n", d->allele[0],d->allele[1],d->var[i].type,d->var[i].n, b->d.var_type);
+	}
+}
+

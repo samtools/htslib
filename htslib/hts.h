@@ -29,7 +29,7 @@ typedef struct {
 	uint32_t is_bin:1, is_write:1, is_be:1, dummy:29;
 	int64_t lineno;
 	kstring_t line;
-	char *fn_aux;
+	char *fn, *fn_aux;
 	void *fp; // file pointer; actual type depending on is_bin and is_write
 } htsFile;
 

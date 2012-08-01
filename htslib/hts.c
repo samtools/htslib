@@ -44,6 +44,7 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 {
 	htsFile *fp;
 	fp = (htsFile*)calloc(1, sizeof(htsFile));
+	fp->fn = strdup(fn);
 	fp->is_be = ed_is_big();
 	if (strchr(mode, 'w')) fp->is_write = 1;
 	if (strchr(mode, 'b')) fp->is_bin = 1;
@@ -69,6 +70,7 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 
 void hts_close(htsFile *fp)
 {
+	free(fp->fn);
 	if (!fp->is_bin) {
 		free(fp->line.s);
 		if (!fp->is_write) {

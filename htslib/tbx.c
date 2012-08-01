@@ -219,6 +219,7 @@ tbx_t *tbx_index_load(const char *fn)
 	int l_meta, l_nm;
 	tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
 	tbx->idx = hts_idx_load(fn, HTS_FMT_TBI);
+	if ( !tbx->idx ) return NULL;
 	meta = hts_idx_get_meta(tbx->idx, &l_meta);
 	memcpy(x, meta, 28);
 	memcpy(&tbx->conf, x, 24);
@@ -227,3 +228,24 @@ tbx_t *tbx_index_load(const char *fn)
 	for (; p - nm < l_nm; p += strlen(p) + 1) get_tid(tbx, p, 1);
 	return tbx;
 }
+
+const char **tbx_seqnames(tbx_t *tbx, int *n)
+{
+	int m=0;
+	const char **names = NULL;
+	khint_t k;
+	khash_t(s2i) *d = (khash_t(s2i)*)tbx->dict;
+	*n = 0;
+	for (k=kh_begin(d); k<kh_end(d); k++)
+	{
+		if ( !kh_exist(d,k) ) continue;
+		if ( *n>=m ) 
+		{
+			m += 50;
+			names = (const char**)realloc(names, m*sizeof(char**));
+		}
+		names[(*n)++] = kh_key(d,k);
+	}
+	return names;
+}
+
