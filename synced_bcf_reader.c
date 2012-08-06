@@ -42,7 +42,7 @@ int add_reader(const char *fname, readers_t *files)
 	else
 	{
 		int n,i,j;
-		const char **names = bcf_seqnames(reader->header, &n);
+		const char **names = bcf_seq_names(reader->header, &n);
 		for (i=0; i<n; i++)
 		{
 			for (j=0; j<files->nseqs; j++)
@@ -74,9 +74,11 @@ void destroy_readers(readers_t *files)
 			bcf_destroy1(reader->buffer[j]);
 		bcf_destroy1(reader->line);
 		free(reader->buffer);
+		if ( reader->samples ) free(reader->samples);
 	}
 	free(files->readers);
 	free(files->seqs);
+	free(files->samples);
 }
 
 
@@ -246,6 +248,57 @@ int next_line(readers_t *files)
 	return ret;
 }
 
+int init_samples(const char *fname, readers_t *files)
+{
+	files->samples = NULL;
+	files->n_smpl  = 0;
+	if ( !strcmp(fname,"-") )
+	{
+		// Intersection of all samples across all readers
+		int n, i;
+		const char **smpl = (const char**) bcf_sample_names(files->readers[0].header,&n);
+		int ism;
+		for (ism=0; ism<n; ism++)
+		{
+			int n_isec = 1;
+			for (i=1; i<files->nreaders; i++)
+			{
+				if ( bcf_id2int(files->readers[i].header, BCF_DT_SAMPLE, smpl[ism])==-1 ) break;
+				n_isec++;
+			}
+			if ( n_isec<files->nreaders ) continue;
+			files->samples = (const char**) realloc(files->samples, (files->n_smpl+1)*sizeof(const char*));
+			files->samples[files->n_smpl++] = smpl[ism];
+		}
+		free(smpl);
+		if ( !files->n_smpl ) return 0;
+		for (i=0; i<files->nreaders; i++)
+		{
+			reader_t *reader = &files->readers[i];
+			reader->samples  = (int*) malloc(sizeof(int)*files->n_smpl);
+			reader->n_smpl   = files->n_smpl;
+			for (ism=0; ism<files->n_smpl; ism++)
+			{
+				reader->samples[ism] = bcf_id2int(reader->header, BCF_DT_SAMPLE, files->samples[ism]);
+				//assert( !strcmp(files->samples[ism], reader->header->id[BCF_DT_SAMPLE][reader->samples[ism]].key) );
+			}
+		}
+		return 1;
+	}
+	fprintf(stderr,"init_samples todo: not implemented yet [%s]\n", fname);
+	return 0;
+}
+
+int set_fmt_ptr(reader_t *reader, char *fmt)
+{
+	int i, gt_id = bcf_id2int(reader->header,BCF_DT_ID,fmt);
+	if ( gt_id<0 ) return 0;
+	bcf_unpack(reader->line, BCF_UN_FMT);
+	reader->fmt_ptr = NULL;
+	for (i=0; i<(int)reader->line->n_fmt; i++) 
+		if ( reader->line->d.fmt[i].id==gt_id ) { reader->fmt_ptr = &reader->line->d.fmt[i]; break; }
+	return reader->fmt_ptr ? 1 : 0;
+}
 
 size_t mygetline(char **line, size_t *n, FILE *fp)
 {

@@ -23,6 +23,7 @@ parse_vcfcheck($opts);
 init_plots($opts);
 plot_venn_bars($opts);
 plot_counts_by_AF($opts);
+plot_concordance_by_AF($opts);
 for my $id (file_ids($opts))
 {
 	plot_tstv_by_AF($opts,$id);
@@ -41,8 +42,8 @@ sub error
     my (@msg) = @_;
     if ( scalar @msg ) { confess @msg; }
     die
-        "Usage: plot-vcfcheck [OPTIONS] file.vc\n",
-        "       plot-vcfcheck -p outdir/ file.vc\n",
+        "Usage: plot-vcfcheck [OPTIONS] file.chk\n",
+        "       plot-vcfcheck -p outdir/ file.chk\n",
         "Options:\n",
         "   -k, --keep-files                    Do not remove temporary files.\n",
         "   -p, --prefix <path>                 The output files prefix, add a slash to create new directory.\n",
@@ -325,6 +326,85 @@ sub plot_tstv_by_AF
 		";
 }
 
+sub rebin_values
+{
+	my ($vals,$bin_size,$col) = @_;
+	my $prev = $$vals[0][$col];
+	my $iprev = 0;
+	my (@dat,@out);
+	for (my $i=0; $i<@$vals; $i++)
+	{
+		for (my $icol=0; $icol<@{$$vals[$i]}; $icol++)
+		{
+			if ( $icol==$col ) { next; }
+			$dat[$icol] += $$vals[$i][$icol];
+		}
+		if ( $i+1<@$vals && $$vals[$i][$col] - $prev < $bin_size ) { next; }
+		$dat[$col] = $prev;
+		for (my $icol=0; $icol<@{$$vals[$i]}; $icol++) { $out[$iprev][$icol] = $dat[$icol] ? $dat[$icol] : 0; }
+		@dat = ();
+		$iprev++;
+		$prev = $$vals[$i][$col];
+	}
+	return \@out;
+}
+
+sub plot_concordance_by_AF
+{
+	my ($opts) = @_;
+	my @vals = get_values($opts,2,'GTS');
+	if ( !@vals ) { return; }
+
+	my $fh   = $$opts{plt_fh};
+	my $img  = "$$opts{prefix}gts_by_af";
+	my $vals = rebin_values(\@vals,1,0);
+
+	my @counts;
+	iprint $fh, "
+			dat = [
+		";
+	for (my $i=0; $i<@$vals; $i++)
+	{ 
+		iprint $fh, sprintf("\t[ %f,%f,%f,%f,%f,%f,%f ],\n", 
+			$$vals[$i][0]/100., 
+			$$vals[$i][1]+$$vals[$i][4] ? $$vals[$i][1]/($$vals[$i][1]+$$vals[$i][4]) : 0,
+			$$vals[$i][2]+$$vals[$i][5] ? $$vals[$i][2]/($$vals[$i][2]+$$vals[$i][5]) : 0,
+			$$vals[$i][3]+$$vals[$i][6] ? $$vals[$i][3]/($$vals[$i][3]+$$vals[$i][6]) : 0,
+			$$vals[$i][1]+$$vals[$i][4],
+			$$vals[$i][2]+$$vals[$i][5],
+			$$vals[$i][3]+$$vals[$i][6]
+			);
+		for my $j (1..6) { $counts[$j]+=$$vals[$i][$j]; }
+	}
+	$$opts{ndr}{cnt}{RR} = $counts[1]+$counts[4];
+	$$opts{ndr}{cnt}{RA} = $counts[2]+$counts[5];
+	$$opts{ndr}{cnt}{AA} = $counts[3]+$counts[6];
+	$$opts{ndr}{mmr}{RR} = sprintf "%.2f", $counts[1]+$counts[4] ? $counts[4]*100./($counts[1]+$counts[4]) : 0;
+	$$opts{ndr}{mmr}{RA} = sprintf "%.2f", $counts[2]+$counts[5] ? $counts[5]*100./($counts[2]+$counts[5]) : 0;
+	$$opts{ndr}{mmr}{AA} = sprintf "%.2f", $counts[3]+$counts[6] ? $counts[6]*100./($counts[3]+$counts[6]) : 0;
+	iprint $fh, "]
+
+			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
+			ax1 = fig.add_subplot(111)
+			ax1.plot([row[0] for row in dat], [row[1] for row in dat],'.k',label='Hom RR')
+			ax1.plot([row[0] for row in dat], [row[2] for row in dat],'.r',label='Het RA')
+			ax1.plot([row[0] for row in dat], [row[3] for row in dat],'.',color='orange',label='Hom AA')
+			ax1.set_xlabel('Non-ref allele frequency')
+			ax1.set_ylabel('Concordance')
+			ax1.legend(numpoints=1,markerscale=2,loc='best',prop={'size':10}).draw_frame(False)
+			ax2 = ax1.twinx()
+			ax2.plot([row[0] for row in dat], [row[4] for row in dat],'k')
+			ax2.plot([row[0] for row in dat], [row[5] for row in dat],'r')
+			ax2.plot([row[0] for row in dat], [row[6] for row in dat],'-',color='orange')
+			ax2.set_ylabel('Number of genotypes')
+			ax2.set_yscale('log')
+			plt.subplots_adjust(right=0.85,bottom=0.11)
+			plt.savefig('$img.png')
+			plt.savefig('$img.pdf')
+			plt.close()
+		";
+}
+
 sub plot_counts_by_AF
 {
 	my ($opts) = @_;
@@ -487,12 +567,12 @@ sub singletons
 		$nsnps += $$val[1];
 		$nindels += $$val[4];
 	}
-	$si_snps   = sprintf "%.1f", $si_snps*100./$nsnps;
-	$si_indels = sprintf "%.1f", $si_indels*100./$nindels;
+	$si_snps   = sprintf "%.1f", $nsnps ? $si_snps*100./$nsnps : 0;
+	$si_indels = sprintf "%.1f", $nindels ? $si_indels*100./$nindels : 0;
 	return { snps=>$si_snps, indels=>$si_indels, tstv=>$si_tstv };
 }
 
-sub fmt_slide3
+sub fmt_slide3x
 {
 	my ($args, $image, $title) = @_;
 
@@ -502,6 +582,20 @@ sub fmt_slide3
 		$slide .= qq[%
 			\\includegraphics[$$args{ext},width=$$args{width3}]{$image.2}%
 			\\includegraphics[$$args{ext},width=$$args{width3}]{$image.1}
+		];
+	}
+	return qq[\\hslide{$title}{$slide}\n];
+}
+sub fmt_slide3
+{
+	my ($args, $image, $title) = @_;
+
+	my $slide = qq[\\pdf{$$args{ext},width=$$args{width3}}{$image.0}];
+	if ( $$args{n}==3 )
+	{
+		$slide .= qq[%
+			\\pdf{$$args{ext},width=$$args{width3}}{$image.2}%
+			\\pdf{$$args{ext},width=$$args{width3}}{$image.1}
 		];
 	}
 	return qq[\\hslide{$title}{$slide}\n];
@@ -534,6 +628,7 @@ sub create_pdf
 	my @ids     = file_ids($opts);
 	my $width   = "25.4cm";
 	my $height  = "19cm";
+	my $height1 = "13cm";
 	my $width1  = "23cm";
 	my $width2  = @ids==3 ? "10.5cm" : "10.5cm";
 	my $width3  = @ids==3 ? "8cm" : "15cm";
@@ -597,6 +692,8 @@ sub create_pdf
 			\\newcommand{\\hslide}[2]{%
 					\\head{#1}%
 					\\begin{vplace}[0.5]\\centerline{#2}\\end{vplace}\\newpage}
+			\\newcommand{\\pdf}[2]{\\IfFileExists{#2.pdf}{\\includegraphics[#1]{#2}}{}}
+
 
 			\\setlength{\\arrayrulewidth}{1.5pt}
 			\\begin{document}
@@ -658,6 +755,23 @@ sub create_pdf
 	print $tex fmt_slide3($args, 'tstv_by_af', 'Ts/Tv by AF');
 	print $tex fmt_slide3($args, 'indels', 'Indel distribution');
 	print $tex fmt_slide3($args, 'substitutions', 'Substitution types');
+	if ( scalar get_values($opts,2,'GTS') ) 
+	{ 
+		my $nsamples = get_value($opts,2,'Number of samples:');
+		my $ndr = get_value($opts,2,'Non-reference Discordance Rate (NDR):');
+		my $table = qq[%
+			{\\small
+			\\rowcolors*{1}{row2}{row1}\\arrayrulecolor{black}
+			\\begin{tabular}{c | c | c | c }
+			\\multicolumn{1}{>{\\columncolor{hcol1}}c|}{REF/REF} & 
+			\\multicolumn{1}{>{\\columncolor{hcol1}}c|}{REF/ALT} & 
+			\\multicolumn{1}{>{\\columncolor{hcol1}}c|}{ALT/ALT} & 
+			\\multicolumn{1}{>{\\columncolor{hcol1}}c}{NDR} \\\\ \\hline
+			$$opts{ndr}{mmr}{RR}\\% & $$opts{ndr}{mmr}{RA}\\% & $$opts{ndr}{mmr}{AA}\\% & $ndr\\% \\\\
+			\\end{tabular}}];
+		print $tex qq[\\head{Genotype concordance}\\begin{vplace}[0.7]\\centerline{$table}%
+				\\centerline{\\pdf{$ext,height=$height1}{gts_by_af}}\\end{vplace}];
+	}
 
 
 	print $tex "\\end{document}\n";

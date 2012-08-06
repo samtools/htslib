@@ -19,4 +19,20 @@
  */
 int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which);
 
+
+/**
+ * gt_type() - determines type of genotype
+ * @fmt_ptr:  the GT format field as set for example by set_fmt_ptr
+ * @i:        sample
+ *
+ * Returns one of GT_HOM_RR, GT_HET_RA, GT_HOM_AA.
+ *
+ * In the current version does not recognise unknown genotypes (".")
+ * or non-reference hets.
+ */
+#define GT_HOM_RR 0
+#define GT_HET_RA 1
+#define GT_HOM_AA 2
+inline int gt_type(bcf_fmt_t *fmt_ptr, int i);
+
 #endif

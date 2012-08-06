@@ -17,12 +17,22 @@ stats_t;
 
 typedef struct
 {
+	int m[3], mm[3];		// number of hom, het and non-ref hom matches and mismatches
+}
+gtcmp_t;
+
+typedef struct
+{
+	// stats
 	stats_t stats[3];
 	int *tmp_iaf, ntmp_iaf, m_af;
+	gtcmp_t *af_gts_snps, *af_gts_indels;
+
+	// other
 	readers_t files;
 	regions_t regions;
 	int prev_reg;
-	char **argv, *exons_file;
+	char **argv, *exons_file, *samples_file;
 	int argc;
 }
 args_t;
@@ -50,6 +60,8 @@ inline int acgt2int(char c)
 void init_stats(args_t *args)
 {
 	int i,nstats = args->files.nreaders==1 ? 1 : 3;
+
+	// AF corresponds to AC but is more robust for mixture of haploid and diploid GTs
 	args->m_af = 101;
 	for (i=0; i<args->files.nreaders; i++)
 		if ( args->files.readers[i].header->n[BCF_DT_SAMPLE] + 1> args->m_af )
@@ -73,6 +85,13 @@ void init_stats(args_t *args)
 			error("Error occurred while reading, was the file compressed with bgzip: %s?\n", args->exons_file);
 		args->prev_reg = -1;
 	}
+
+	if ( args->samples_file ) 
+	{
+		if ( !init_samples(args->samples_file,&args->files) ) error("Could not initialize samples: %s\n", args->samples_file);
+		args->af_gts_snps   = (gtcmp_t *) calloc(args->m_af,sizeof(gtcmp_t));
+		args->af_gts_indels = (gtcmp_t *) calloc(args->m_af,sizeof(gtcmp_t));
+	}
 }
 void destroy_stats(args_t *args)
 {
@@ -88,7 +107,9 @@ void destroy_stats(args_t *args)
 		free(stats->deletions);
 	}
 	if (args->tmp_iaf) free(args->tmp_iaf);
-	if ( args->exons_file ) destroy_regions(&args->regions);
+	if (args->exons_file) destroy_regions(&args->regions);
+	if (args->af_gts_snps) free(args->af_gts_snps);
+	if (args->af_gts_indels) free(args->af_gts_indels);
 }
 
 void init_iaf(args_t *args, reader_t *reader)
@@ -204,6 +225,35 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 	}
 }
 
+void do_sample_stats(args_t *args)
+{
+	readers_t *files = &args->files;
+
+	if ( files->nreaders>1 )
+	{
+		int is,ir;
+		for (ir=0; ir<files->nreaders; ir++)
+			if ( !set_fmt_ptr(&files->readers[ir],"GT") ) return;
+
+		int iaf = args->tmp_iaf[1];	// only first ALT alelle considered
+		gtcmp_t *stats = files->readers[0].line->d.var_type&VCF_SNP ? args->af_gts_snps : args->af_gts_indels;
+
+		for (is=0; is<files->n_smpl; is++)
+		{
+			// Simplified comparison: only 0/0, 0/1, 1/1 is looked at, the identity of 
+			//	actual alleles can be enforced by running without the -c option.
+			int gt = gt_type(files->readers[0].fmt_ptr, files->readers[0].samples[is]);
+			int match = 1;
+			for (ir=1; ir<files->nreaders; ir++)
+			{
+				if ( gt!=gt_type(files->readers[ir].fmt_ptr, files->readers[ir].samples[is]) ) { match = 0; break; }
+			}
+			if ( match ) stats[iaf].m[gt]++;
+			else stats[iaf].mm[gt]++;
+		}
+	}
+}
+
 void check_vcf(args_t *args)
 {
 	int ret,i;
@@ -228,6 +278,9 @@ void check_vcf(args_t *args)
 			do_indel_stats(args, &args->stats[ret-1], reader);
 
 		if ( line->n_allele>2 ) args->stats[ret-1].n_mals++;
+
+		if ( files->n_smpl )
+			do_sample_stats(args);
 	}
 }
 
@@ -313,6 +366,30 @@ void print_stats(args_t *args)
 			printf("ST\t%d\t%c>%c\t%d\n", id, int2acgt(t>>2),int2acgt(t&3),args->stats[id].subst[t]);
 		}
 	}
+	if ( args->files.nreaders>1 && args->files.n_smpl )
+	{
+		printf("# Genotype concordance by non-reference allele frequency (SNPs)\n# GTS\t[2]id\t[3]allele frequency\t[4]RR Hom matches\t[5]RA Het matches\t[6]AA Hom matches\t[7]RR Hom mismatches\t[8]RA Het mismatches\t[9]AA Hom mismatches\n");
+		gtcmp_t *stats = args->af_gts_snps;
+		int ndr_m=0, ndr_mm=0;
+		for (i=1; i<args->m_af; i++)
+		{
+			int j, n = 0;
+			for (j=0; j<3; j++) n += stats[i].m[j] + stats[i].mm[j];
+			if ( !n ) continue;
+			printf("GTS\t2\t%f", 100.*(i-1)/(args->m_af-2));
+			printf("\t%d\t%d\t%d", stats[i].m[GT_HOM_RR],stats[i].m[GT_HET_RA],stats[i].m[GT_HOM_AA]);
+			printf("\t%d\t%d\t%d\n", stats[i].mm[GT_HOM_RR],stats[i].mm[GT_HET_RA],stats[i].mm[GT_HOM_AA]);
+			ndr_m  += stats[i].m[GT_HET_RA] + stats[i].m[GT_HOM_AA];
+			ndr_mm += stats[i].mm[GT_HOM_RR] + stats[i].mm[GT_HET_RA] + stats[i].mm[GT_HOM_AA];
+		}
+
+		printf("# Overlapping samples\n# OS\t[2]id\t[3]sample\n");
+		for (i=0; i<args->files.n_smpl; i++)
+			printf("OS\t%d\t%s\n", 2,args->files.samples[i]);
+
+		printf("SN\t%d\tNon-reference Discordance Rate (NDR):\t%.2f\n", 2, ndr_m+ndr_mm ? ndr_mm*100.0/(ndr_m+ndr_mm) : 0);
+		printf("SN\t%d\tNumber of samples:\t%d\n", 2, args->files.n_smpl);
+	}
 }
 
 void usage(void)
@@ -324,8 +401,9 @@ void usage(void)
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "    -c, --collapse <string>           treat sites with differing alleles as same for <snps|indels|both|any>\n");
 	fprintf(stderr, "    -e, --exons <file.gz>             tab-delimited file with exons for indel frameshifts (chr,from,to; 1-based, inclusive, bgzip compressed)\n");
-	fprintf(stderr, "    -f, --apply-filters	           skip sites where FILTER is other than PASS\n");
+	fprintf(stderr, "    -f, --apply-filters               skip sites where FILTER is other than PASS\n");
 	fprintf(stderr, "    -r, --region <chr|chr:from-to>    collect statistics in the given region only\n");
+	fprintf(stderr, "    -s, --samples <list|file>         create sample stats, \"-\" to include all samples\n");
 	fprintf(stderr, "\n");
 	exit(1);
 }
@@ -342,9 +420,10 @@ int main_vcfcheck(int argc, char *argv[])
 		{"collapse",0,0,'c'},
 		{"apply-filters",0,0,'f'},
 		{"exons",0,0,'e'},
+		{"samples",0,0,'s'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "hc:fr:e:",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "hc:fr:e:s:",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'c':
 				if ( !strcmp(optarg,"snps") ) args->files.collapse |= COLLAPSE_SNPS;
@@ -355,6 +434,7 @@ int main_vcfcheck(int argc, char *argv[])
 			case 'f': args->files.apply_filters = 1; break;
 			case 'r': args->files.region = optarg; break;
 			case 'e': args->exons_file = optarg; break;
+			case 's': args->samples_file = optarg; break;
 			case 'h': 
 			case '?': usage();
 			default: error("Unknown argument: %s\n", optarg);

@@ -58,3 +58,20 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 	return 0;
 }
 
+inline int gt_type(bcf_fmt_t *fmt_ptr, int isample)
+{
+	int i;
+	char gt = GT_HOM_RR;
+	uint8_t *p = &fmt_ptr->p[isample*fmt_ptr->size];
+	for (i=1; i<fmt_ptr->size; i++)
+	{
+		if ( p[0]>>1 != p[i]>>1 ) 
+		{ 
+			gt = GT_HET_RA; 
+			break; 
+		}
+	}
+	if ( gt==GT_HOM_RR && (p[0]>>1)>1 ) return GT_HOM_AA;
+	return gt;
+}
+
