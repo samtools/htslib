@@ -29,6 +29,7 @@ for my $id (file_ids($opts))
 	plot_tstv_by_AF($opts,$id);
 	plot_indel_distribution($opts,$id);
 	plot_substitutions($opts,$id);
+	plot_tstv_by_sample($opts,$id);
 }
 plot($opts);
 create_pdf($opts) unless !$$opts{make_pdf};
@@ -63,6 +64,12 @@ sub parse_params
 		args       => join(' ',$0,@ARGV), 
 		img_width  => 11/2.54,
 		img_height => 10/2.54,
+		id2col     => [ 'k', 'r', 'orange' ],
+		tex => 
+		{
+			slide3v => { height1 => '7cm', height2 => '7cm',  height3 => '5cm' },
+			slide3h => { width1  => '15cm', width2 => '10cm', width3 => '8cm' },
+		},
 	};
     while (defined(my $arg=shift(@ARGV)))
     {
@@ -275,32 +282,74 @@ sub plot_venn_bars
 		];
 }
 
+sub plot_tstv_by_sample
+{
+	my ($opts,$id) = @_;
+	my @vals = get_values($opts,$id,'PSC');
+	if ( !@vals ) { return; }
+
+	my $fh   = $$opts{plt_fh};
+	my $img  = "$$opts{prefix}tstv_by_sample.$id";
+	my $img2 = "$$opts{prefix}hets_by_sample.$id";
+
+	iprint $fh, "
+			dat = [
+		";
+	for (my $i=0; $i<@vals; $i++)
+	{ 
+		iprint $fh, sprintf("\t[ %d, %f, %d ],\n", 
+			$i,
+			$vals[$i][3] ? $vals[$i][2]/$vals[$i][3] : 0,
+			$vals[$i][1]);
+	}
+	iprint $fh, "]
+
+			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
+			ax1 = fig.add_subplot(111)
+			ax1.plot([row[0] for row in dat], [row[1] for row in dat], 'o', color='$$opts{id2col}[$id]')
+			ax1.set_ylabel('Ts/Tv')
+			ax1.set_xlabel('Sample ID')
+			ax1.set_ylim(0.5,3.0)
+			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+			plt.title('$$opts{title}{$id}')
+			plt.savefig('$img.png')
+			plt.savefig('$img.pdf')
+			plt.close()
+
+			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
+			ax1 = fig.add_subplot(111)
+			ax1.plot([row[0] for row in dat], [row[2] for row in dat], 'o', color='$$opts{id2col}[$id]')
+			ax1.set_ylabel('Number of hets')
+			ax1.set_xlabel('Sample ID')
+			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
+			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+			plt.title('$$opts{title}{$id}')
+			plt.savefig('$img2.png')
+			plt.savefig('$img2.pdf')
+			plt.close()
+		";
+}
+
 sub plot_tstv_by_AF
 {
     my ($opts,$id) = @_;
 	my @vals = get_values($opts,$id,'AF');
     if ( !@vals ) { return; }
 
-    my $fh  = $$opts{plt_fh};
-	my $img = "$$opts{prefix}tstv_by_af.$id";
+    my $fh   = $$opts{plt_fh};
+	my $img  = "$$opts{prefix}tstv_by_af.$id";
+	my $vals = rebin_values(\@vals,8,0);
 
 	iprint $fh, "
 			dat = [
 		";
-	my ($ts,$tv);
-	my $prev_af = 0;
-	for (my $i=0; $i<@vals; $i++)
+	for (my $i=0; $i<@$vals; $i++)
 	{ 
-		my $val = $vals[$i];
-		my $af  = $$val[0];
-		$ts += $$val[2];
-		$tv += $$val[3];
-		if ( $af-$prev_af < 10 ) { next; }
-		if ( $ts+$tv==0 ) { next; }
-		my $tstv = sprintf "%.3f", $tv ? $ts/$tv : 0;
-		iprint $fh, "\t[$prev_af/100.,$ts+$tv,$tstv],\n";
-		$ts = $tv = 0;
-		$prev_af = int($af);
+		if ( $$vals[$i][2] + $$vals[$i][3] ==0 ) { next; }
+		iprint $fh, sprintf("\t[ %f, %d, %f ],\n", 
+			$$vals[$i][0]/100., 
+			$$vals[$i][2] + $$vals[$i][3],
+			$$vals[$i][3] ? $$vals[$i][2]/$$vals[$i][3]: 0);
 	}
 	iprint $fh, "]
 
@@ -318,7 +367,7 @@ sub plot_tstv_by_AF
 			ax2.set_ylim(0.5,3.0)
 			ax1.set_xlim(0,1)
 			for tl in ax2.get_yticklabels(): tl.set_color('r')
-			plt.subplots_adjust(right=0.88,left=0.15)
+			plt.subplots_adjust(right=0.88,left=0.15,bottom=0.11)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img.png')
 			plt.savefig('$img.pdf')
@@ -572,31 +621,40 @@ sub singletons
 	return { snps=>$si_snps, indels=>$si_indels, tstv=>$si_tstv };
 }
 
-sub fmt_slide3x
+sub fmt_slide3v
 {
-	my ($args, $image, $title) = @_;
-
-	my $slide = qq[\\includegraphics[$$args{ext},width=$$args{width3}]{$image.0}];
-	if ( $$args{n}==3 )
-	{
-		$slide .= qq[%
-			\\includegraphics[$$args{ext},width=$$args{width3}]{$image.2}%
-			\\includegraphics[$$args{ext},width=$$args{width3}]{$image.1}
-		];
+	my ($opts, $image, $title) = @_;
+	my $n = 0;
+	for my $id (0..2) 
+	{ 
+		if ( -e "$image.$id.pdf" ) { $n++; } 
 	}
+	if ( !$n ) { return ''; }
+	my $h = $$opts{tex}{slide3v}{"height$n"};
+	my $slide = q[\vbox{];
+	for my $id (0..2) 
+	{ 
+		if ( !-e "$image.$id.pdf" ) { next; }
+		$slide .= qq[\\noindent\\includegraphics[type=pdf,ext=.pdf,read=.pdf,height=$h]{$image.$id}\\\\];
+	}
+	$slide .= '}';
 	return qq[\\hslide{$title}{$slide}\n];
 }
-sub fmt_slide3
+sub fmt_slide3h
 {
-	my ($args, $image, $title) = @_;
-
-	my $slide = qq[\\pdf{$$args{ext},width=$$args{width3}}{$image.0}];
-	if ( $$args{n}==3 )
-	{
-		$slide .= qq[%
-			\\pdf{$$args{ext},width=$$args{width3}}{$image.2}%
-			\\pdf{$$args{ext},width=$$args{width3}}{$image.1}
-		];
+	my ($opts, $image, $title) = @_;
+	my $n = 0;
+	for my $id (0..2) 
+	{ 
+		if ( -e "$image.$id.pdf" ) { $n++; } 
+	}
+	if ( !$n ) { return ''; }
+	my $w = $$opts{tex}{slide3h}{"width$n"};
+	my $slide = '';
+	for my $id (0..2) 
+	{ 
+		if ( !-e "$image.$id.pdf" ) { next; }
+		$slide .= qq[\\includegraphics[type=pdf,ext=.pdf,read=.pdf,width=$w]{$image.$id}];
 	}
 	return qq[\\hslide{$title}{$slide}\n];
 }
@@ -752,9 +810,11 @@ sub create_pdf
 			\\noindent\\includegraphics[$ext,width=$width1]{counts_by_af.indels}}}
 		];
 
-	print $tex fmt_slide3($args, 'tstv_by_af', 'Ts/Tv by AF');
-	print $tex fmt_slide3($args, 'indels', 'Indel distribution');
-	print $tex fmt_slide3($args, 'substitutions', 'Substitution types');
+	print $tex fmt_slide3v($opts, 'tstv_by_sample', 'Ts/Tv by sample');
+	print $tex fmt_slide3v($opts, 'hets_by_sample', 'Number of hets by sample');
+	print $tex fmt_slide3h($opts, 'tstv_by_af', 'Ts/Tv by AF');
+	print $tex fmt_slide3h($opts, 'indels', 'Indel distribution');
+	print $tex fmt_slide3h($opts, 'substitutions', 'Substitution types');
 	if ( scalar get_values($opts,2,'GTS') ) 
 	{ 
 		my $nsamples = get_value($opts,2,'Number of samples:');
@@ -769,7 +829,7 @@ sub create_pdf
 			\\multicolumn{1}{>{\\columncolor{hcol1}}c}{NDR} \\\\ \\hline
 			$$opts{ndr}{mmr}{RR}\\% & $$opts{ndr}{mmr}{RA}\\% & $$opts{ndr}{mmr}{AA}\\% & $ndr\\% \\\\
 			\\end{tabular}}];
-		print $tex qq[\\head{Genotype concordance}\\begin{vplace}[0.7]\\centerline{$table}%
+		print $tex qq[\\head{Genotype discordance}\\begin{vplace}[0.7]\\centerline{$table}%
 				\\centerline{\\pdf{$ext,height=$height1}{gts_by_af}}\\end{vplace}];
 	}
 

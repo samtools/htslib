@@ -12,6 +12,7 @@ typedef struct
 	int *insertions, *deletions, m_indel;	// maximum indel length
 	int in_frame, out_frame;
 	int subst[15];
+	int *smpl_hets, *smpl_ts, *smpl_tv;
 }
 stats_t;
 
@@ -26,7 +27,7 @@ typedef struct
 	// stats
 	stats_t stats[3];
 	int *tmp_iaf, ntmp_iaf, m_af;
-	gtcmp_t *af_gts_snps, *af_gts_indels;
+	gtcmp_t *af_gts_snps, *af_gts_indels, *smpl_gts_snps, *smpl_gts_indels;
 
 	// other
 	readers_t files;
@@ -37,7 +38,7 @@ typedef struct
 }
 args_t;
 
-void error(const char *format, ...)
+static void error(const char *format, ...)
 {
 	va_list ap;
 	va_start(ap, format);
@@ -67,16 +68,30 @@ void init_stats(args_t *args)
 		if ( args->files.readers[i].header->n[BCF_DT_SAMPLE] + 1> args->m_af )
 			args->m_af = args->files.readers[i].header->n[BCF_DT_SAMPLE] + 1;
 
+	if ( args->samples_file )
+	{
+		if ( !init_samples(args->samples_file,&args->files) ) error("Could not initialize samples: %s\n", args->samples_file);
+		args->af_gts_snps     = (gtcmp_t *) calloc(args->m_af,sizeof(gtcmp_t));
+		args->af_gts_indels   = (gtcmp_t *) calloc(args->m_af,sizeof(gtcmp_t));
+		args->smpl_gts_snps   = (gtcmp_t *) calloc(args->files.n_smpl,sizeof(gtcmp_t));
+		args->smpl_gts_indels = (gtcmp_t *) calloc(args->files.n_smpl,sizeof(gtcmp_t));
+	}
 	for (i=0; i<nstats; i++)
 	{
 		stats_t *stats = &args->stats[i];
 		stats->m_indel    = 60;
 		stats->insertions = (int*) calloc(stats->m_indel,sizeof(int));
 		stats->deletions  = (int*) calloc(stats->m_indel,sizeof(int));
-		stats->af_ts     = (int*)calloc(args->m_af,sizeof(int));
-		stats->af_tv     = (int*)calloc(args->m_af,sizeof(int));
-		stats->af_snps   = (int*)calloc(args->m_af,sizeof(int));
-		stats->af_indels = (int*)calloc(args->m_af,sizeof(int));
+		stats->af_ts      = (int*)calloc(args->m_af,sizeof(int));
+		stats->af_tv      = (int*)calloc(args->m_af,sizeof(int));
+		stats->af_snps    = (int*)calloc(args->m_af,sizeof(int));
+		stats->af_indels  = (int*)calloc(args->m_af,sizeof(int));
+		if ( args->files.n_smpl )
+		{
+			stats->smpl_hets = (int *) calloc(args->files.n_smpl,sizeof(int));
+			stats->smpl_ts   = (int *) calloc(args->files.n_smpl,sizeof(int));
+			stats->smpl_tv   = (int *) calloc(args->files.n_smpl,sizeof(int));
+		}
 	}
 
 	if ( args->exons_file )
@@ -84,13 +99,6 @@ void init_stats(args_t *args)
 		if ( !init_regions(args->exons_file, &args->regions) )
 			error("Error occurred while reading, was the file compressed with bgzip: %s?\n", args->exons_file);
 		args->prev_reg = -1;
-	}
-
-	if ( args->samples_file ) 
-	{
-		if ( !init_samples(args->samples_file,&args->files) ) error("Could not initialize samples: %s\n", args->samples_file);
-		args->af_gts_snps   = (gtcmp_t *) calloc(args->m_af,sizeof(gtcmp_t));
-		args->af_gts_indels = (gtcmp_t *) calloc(args->m_af,sizeof(gtcmp_t));
 	}
 }
 void destroy_stats(args_t *args)
@@ -105,11 +113,16 @@ void destroy_stats(args_t *args)
 		if (stats->af_indels) free(stats->af_indels);
 		free(stats->insertions);
 		free(stats->deletions);
+		if (stats->smpl_hets) free(stats->smpl_hets);
+		if (stats->smpl_ts) free(stats->smpl_ts);
+		if (stats->smpl_tv) free(stats->smpl_tv);
 	}
 	if (args->tmp_iaf) free(args->tmp_iaf);
 	if (args->exons_file) destroy_regions(&args->regions);
 	if (args->af_gts_snps) free(args->af_gts_snps);
 	if (args->af_gts_indels) free(args->af_gts_indels);
+	if (args->smpl_gts_snps) free(args->smpl_gts_snps);
+	if (args->smpl_gts_indels) free(args->smpl_gts_indels);
 }
 
 void init_iaf(args_t *args, reader_t *reader)
@@ -223,6 +236,31 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 		else 
 			stats->af_tv[iaf]++;
 	}
+
+	if ( args->files.n_smpl )
+	{
+		if ( !set_fmt_ptr(reader,"GT") ) return;
+
+		int is;
+		for (is=0; is<args->files.n_smpl; is++)
+		{
+			int ial;
+			int gt = gt_type(reader->fmt_ptr, reader->samples[is], &ial);
+		if ( ial==254 && gt!=GT_HOM_RR ) error("really? gt=%d %s\n", gt,args->files.samples[is]);
+			if ( gt == GT_UNKN ) continue;
+			if ( gt == GT_HET_RA || gt == GT_HET_AA ) stats->smpl_hets[is]++;
+			if ( gt != GT_HOM_RR )
+			{
+				if ( !(line->d.var[ial].type&VCF_SNP) ) continue;
+				int alt = acgt2int(*line->d.allele[ial]);
+				if ( alt<0 ) continue;
+				if ( abs(ref-alt)==2 ) 
+					stats->smpl_ts[is]++;
+				else
+					stats->smpl_tv[is]++;
+			}
+		}
+	}
 }
 
 void do_sample_stats(args_t *args)
@@ -240,14 +278,16 @@ void do_sample_stats(args_t *args)
 
 		for (is=0; is<files->n_smpl; is++)
 		{
-			// Simplified comparison: only 0/0, 0/1, 1/1 is looked at, the identity of 
+			// Simplified comparison: only 0/0, 0/1, 1/1 is looked at as the identity of 
 			//	actual alleles can be enforced by running without the -c option.
-			int gt = gt_type(files->readers[0].fmt_ptr, files->readers[0].samples[is]);
+			int gt = gt_type(files->readers[0].fmt_ptr, files->readers[0].samples[is], NULL);
+			if ( gt == GT_UNKN ) continue;
 			int match = 1;
 			for (ir=1; ir<files->nreaders; ir++)
 			{
-				if ( gt!=gt_type(files->readers[ir].fmt_ptr, files->readers[ir].samples[is]) ) { match = 0; break; }
+				if ( gt!= gt_type(files->readers[ir].fmt_ptr, files->readers[ir].samples[is], NULL) ) { match = 0; break; }
 			}
+			if ( gt == GT_HET_AA ) gt = GT_HOM_AA;	// rare case, treat as AA hom
 			if ( match ) stats[iaf].m[gt]++;
 			else stats[iaf].mm[gt]++;
 		}
@@ -390,9 +430,23 @@ void print_stats(args_t *args)
 		printf("SN\t%d\tNon-reference Discordance Rate (NDR):\t%.2f\n", 2, ndr_m+ndr_mm ? ndr_mm*100.0/(ndr_m+ndr_mm) : 0);
 		printf("SN\t%d\tNumber of samples:\t%d\n", 2, args->files.n_smpl);
 	}
+
+	if ( args->files.n_smpl )
+	{
+		printf("# Per-sample counts\n# PSC\t[2]id\t[3]sample\t[4]nHets\t[5]nTransversions\t[6]nTransitions\n");
+		for (id=0; id<nstats; id++)
+		{
+			stats_t *stats = &args->stats[id];
+			for (i=0; i<args->files.n_smpl; i++)
+			{
+				if ( 0 == stats->smpl_hets[i] + stats->smpl_ts[i] + stats->smpl_tv[i] ) continue;
+				printf("PSC\t%d\t%s\t%d\t%d\t%d\n", id,args->files.samples[i], stats->smpl_hets[i], stats->smpl_ts[i], stats->smpl_tv[i]);
+			}
+		}
+	}
 }
 
-void usage(void)
+static void usage(void)
 {
 	fprintf(stderr, "\nAbout:   Parses VCF or BCF and produces stats which can be plotted using plot-vcfcheck.\n");
 	fprintf(stderr, "         When two files are given, the program generates separate stats for intersection\n");
