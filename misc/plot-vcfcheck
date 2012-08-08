@@ -24,6 +24,7 @@ init_plots($opts);
 plot_venn_bars($opts);
 plot_counts_by_AF($opts);
 plot_concordance_by_AF($opts);
+plot_concordance_by_sample($opts);
 for my $id (file_ids($opts))
 {
 	plot_tstv_by_AF($opts,$id);
@@ -262,6 +263,7 @@ sub plot_venn_bars
 	 		ax1 = fig.add_subplot(111)
 	 		ax1.bar([1,2,3],[$snps[0],$snps[2],$snps[1]],align='center',color='y')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
+			ax1.set_xlim(0.5,3.5)
 			plt.xticks([1,2,3],('$snp_titles[0]','$snp_titles[2]','$snp_titles[1]'))
 			plt.title('Number of SNPs')
 			plt.subplots_adjust(right=0.95,bottom=0.15)
@@ -273,6 +275,7 @@ sub plot_venn_bars
 	 		ax1 = fig.add_subplot(111)
 	 		ax1.bar([1,2,3],[$indels[0],$indels[2],$indels[1]],align='center',color='r')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
+			ax1.set_xlim(0.5,3.5)
 			plt.xticks([1,2,3],('$indel_titles[0]','$indel_titles[2]','$indel_titles[1]'))
 			plt.title('Number of indels')
 			plt.subplots_adjust(right=0.95,bottom=0.15)
@@ -401,7 +404,7 @@ sub rebin_values
 sub plot_concordance_by_AF
 {
 	my ($opts) = @_;
-	my @vals = get_values($opts,2,'GTS');
+	my @vals = get_values($opts,2,'GCsAF');
 	if ( !@vals ) { return; }
 
 	my $fh   = $$opts{plt_fh};
@@ -439,7 +442,7 @@ sub plot_concordance_by_AF
 			ax1.plot([row[0] for row in dat], [row[2] for row in dat],'.r',label='Het RA')
 			ax1.plot([row[0] for row in dat], [row[3] for row in dat],'.',color='orange',label='Hom AA')
 			ax1.set_xlabel('Non-ref allele frequency')
-			ax1.set_ylabel('Concordance')
+			ax1.set_ylabel('Concordance [%]')
 			ax1.legend(numpoints=1,markerscale=2,loc='best',prop={'size':10}).draw_frame(False)
 			ax2 = ax1.twinx()
 			ax2.plot([row[0] for row in dat], [row[4] for row in dat],'k')
@@ -448,6 +451,38 @@ sub plot_concordance_by_AF
 			ax2.set_ylabel('Number of genotypes')
 			ax2.set_yscale('log')
 			plt.subplots_adjust(right=0.85,bottom=0.11)
+			plt.savefig('$img.png')
+			plt.savefig('$img.pdf')
+			plt.close()
+		";
+}
+
+sub plot_concordance_by_sample
+{
+	my ($opts) = @_;
+	my @vals = get_values($opts,2,'GCsS');
+	if ( !@vals ) { return; }
+
+	my $fh   = $$opts{plt_fh};
+	my $img  = "$$opts{prefix}gts_by_sample";
+
+	my @counts;
+	iprint $fh, "
+			dat = [
+		";
+	for (my $i=0; $i<@vals; $i++)
+	{ 
+		iprint $fh, sprintf("\t[ %d,%f ],\n", $i, $vals[$i][1]);
+	}
+	iprint $fh, "]
+
+			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
+			ax1 = fig.add_subplot(111)
+			ax1.plot([row[0] for row in dat], [row[1] for row in dat],'.',color='orange')
+			ax1.set_xlabel('Sample ID')
+			ax1.set_ylabel('Non-ref discordance [%]')
+			ax1.set_ylim(0,)
+			plt.subplots_adjust(right=0.98,left=0.08,bottom=0.17)
 			plt.savefig('$img.png')
 			plt.savefig('$img.pdf')
 			plt.close()
@@ -560,6 +595,7 @@ sub plot_indel_distribution
 			ax1.set_ylabel('Count')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
 			ax1.set_xlim(-$xlim,$xlim)
+			plt.subplots_adjust(bottom=0.17)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img.png')
 			plt.savefig('$img.pdf')
@@ -684,7 +720,7 @@ sub create_pdf
 	}
 
 	my @ids     = file_ids($opts);
-	my $width   = "25.4cm";
+	my $width   = "25.4cm";	# todo: move all this to $$opts{tex}
 	my $height  = "19cm";
 	my $height1 = "13cm";
 	my $width1  = "23cm";
@@ -805,17 +841,10 @@ sub create_pdf
 		];
 	}
 
-	print $tex qq[%
-		\\hslide{}{\\vbox{\\noindent\\includegraphics[$ext,width=$width1]{counts_by_af.snps}\\\\%
-			\\noindent\\includegraphics[$ext,width=$width1]{counts_by_af.indels}}}
-		];
-
 	print $tex fmt_slide3v($opts, 'tstv_by_sample', 'Ts/Tv by sample');
 	print $tex fmt_slide3v($opts, 'hets_by_sample', 'Number of hets by sample');
-	print $tex fmt_slide3h($opts, 'tstv_by_af', 'Ts/Tv by AF');
-	print $tex fmt_slide3h($opts, 'indels', 'Indel distribution');
-	print $tex fmt_slide3h($opts, 'substitutions', 'Substitution types');
-	if ( scalar get_values($opts,2,'GTS') ) 
+	if ( scalar get_values($opts,2,'GCsS') ) { print $tex qq[\\hslide{Genotype discordance by sample}{\\pdf{$ext,width=$width1}{gts_by_sample}}]; }
+	if ( scalar get_values($opts,2,'GCsAF') ) 
 	{ 
 		my $nsamples = get_value($opts,2,'Number of samples:');
 		my $ndr = get_value($opts,2,'Non-reference Discordance Rate (NDR):');
@@ -829,10 +858,16 @@ sub create_pdf
 			\\multicolumn{1}{>{\\columncolor{hcol1}}c}{NDR} \\\\ \\hline
 			$$opts{ndr}{mmr}{RR}\\% & $$opts{ndr}{mmr}{RA}\\% & $$opts{ndr}{mmr}{AA}\\% & $ndr\\% \\\\
 			\\end{tabular}}];
-		print $tex qq[\\head{Genotype discordance}\\begin{vplace}[0.7]\\centerline{$table}%
-				\\centerline{\\pdf{$ext,height=$height1}{gts_by_af}}\\end{vplace}];
+		print $tex qq[\\head{Genotype discordance by AF}\\begin{vplace}[0.7]\\centerline{$table}%
+				\\centerline{\\pdf{$ext,height=$height1}{gts_by_af}}\\end{vplace}\\newpage];
 	}
-
+	print $tex qq[%
+		\\hslide{}{\\vbox{\\noindent\\includegraphics[$ext,width=$width1]{counts_by_af.snps}\\\\%
+			\\noindent\\includegraphics[$ext,width=$width1]{counts_by_af.indels}}}
+		];
+	print $tex fmt_slide3h($opts, 'tstv_by_af', 'Ts/Tv by AF');
+	print $tex fmt_slide3h($opts, 'indels', 'Indel distribution');
+	print $tex fmt_slide3h($opts, 'substitutions', 'Substitution types');
 
 	print $tex "\\end{document}\n";
 	close($tex);
