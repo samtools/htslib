@@ -65,10 +65,10 @@ sub parse_params
 		args       => join(' ',$0,@ARGV), 
 		img_width  => 11/2.54,
 		img_height => 10/2.54,
-		id2col     => [ 'k', 'r', 'orange' ],
+		id2col     => [ 'orange', 'r', 'k' ],
 		tex => 
 		{
-			slide3v => { height1 => '7cm', height2 => '7cm',  height3 => '5cm' },
+			slide3v => { height1 => '7cm', height2 => '7cm',  height3 => '4.5cm' },
 			slide3h => { width1  => '15cm', width2 => '10cm', width3 => '8cm' },
 		},
 	};
@@ -254,14 +254,14 @@ sub plot_venn_bars
 		push @tstv, get_value($opts,$id,'ts/tv:');
 		push @snp_titles, "$$opts{title}{$id}\\nts/tv $tstv[$id]\\n" .bignum($snps[$id]);
 		my @fs = get_values($opts,$id,'FS');
-		push @indel_titles, "$$opts{title}{$id}\\nfrmsh $fs[0][2]\\n" .bignum($indels[$id]);
+		push @indel_titles, "$$opts{title}{$id}\\nfrm $fs[0][2]\\n" .bignum($indels[$id]);
 	}
 
     my $fh = $$opts{plt_fh};
 	iprint $fh, qq[
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 	 		ax1 = fig.add_subplot(111)
-	 		ax1.bar([1,2,3],[$snps[0],$snps[2],$snps[1]],align='center',color='y')
+	 		ax1.bar([1,2,3],[$snps[0],$snps[2],$snps[1]],align='center',color='y',width=0.3)
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
 			ax1.set_xlim(0.5,3.5)
 			plt.xticks([1,2,3],('$snp_titles[0]','$snp_titles[2]','$snp_titles[1]'))
@@ -273,7 +273,7 @@ sub plot_venn_bars
 
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 	 		ax1 = fig.add_subplot(111)
-	 		ax1.bar([1,2,3],[$indels[0],$indels[2],$indels[1]],align='center',color='r')
+	 		ax1.bar([1,2,3],[$indels[0],$indels[2],$indels[1]],align='center',color='r',width=0.3)
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
 			ax1.set_xlim(0.5,3.5)
 			plt.xticks([1,2,3],('$indel_titles[0]','$indel_titles[2]','$indel_titles[1]'))
@@ -300,19 +300,17 @@ sub plot_tstv_by_sample
 		";
 	for (my $i=0; $i<@vals; $i++)
 	{ 
-		iprint $fh, sprintf("\t[ %d, %f, %d ],\n", 
-			$i,
-			$vals[$i][3] ? $vals[$i][2]/$vals[$i][3] : 0,
-			$vals[$i][1]);
+		my $tstv = $vals[$i][3] ? $vals[$i][2]/$vals[$i][3] : 0;
+		iprint $fh, sprintf("\t[ %d, %f, %d ],\n", $i, $tstv, $vals[$i][1]);
 	}
 	iprint $fh, "]
 
 			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
 			ax1 = fig.add_subplot(111)
-			ax1.plot([row[0] for row in dat], [row[1] for row in dat], 'o', color='$$opts{id2col}[$id]')
+			ax1.plot([row[0] for row in dat], [row[1] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
 			ax1.set_ylabel('Ts/Tv')
 			ax1.set_xlabel('Sample ID')
-			ax1.set_ylim(0.5,3.0)
+			ax1.set_ylim(0.5,0.5+max(3,max(row[1] for row in dat)))
 			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img.png')
@@ -321,7 +319,7 @@ sub plot_tstv_by_sample
 
 			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
 			ax1 = fig.add_subplot(111)
-			ax1.plot([row[0] for row in dat], [row[2] for row in dat], 'o', color='$$opts{id2col}[$id]')
+			ax1.plot([row[0] for row in dat], [row[2] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
 			ax1.set_ylabel('Number of hets')
 			ax1.set_xlabel('Sample ID')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
@@ -367,7 +365,7 @@ sub plot_tstv_by_AF
 			ax2 = ax1.twinx()
 			ax2.plot([row[0] for row in dat], [row[2] for row in dat], color='r')
 			ax2.set_ylabel('Ts/Tv',color='r')
-			ax2.set_ylim(0.5,3.0)
+			ax2.set_ylim(0.5,0.5+max(3,max(row[2] for row in dat)))
 			ax1.set_xlim(0,1)
 			for tl in ax2.get_yticklabels(): tl.set_color('r')
 			plt.subplots_adjust(right=0.88,left=0.15,bottom=0.11)
@@ -438,16 +436,16 @@ sub plot_concordance_by_AF
 
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 			ax1 = fig.add_subplot(111)
-			ax1.plot([row[0] for row in dat], [row[1] for row in dat],'.k',label='Hom RR')
-			ax1.plot([row[0] for row in dat], [row[2] for row in dat],'.r',label='Het RA')
-			ax1.plot([row[0] for row in dat], [row[3] for row in dat],'.',color='orange',label='Hom AA')
+			ax1.plot([row[0] for row in dat], [row[1] for row in dat],'.',color='$$opts{id2col}[1]',label='Hom RR')
+			ax1.plot([row[0] for row in dat], [row[2] for row in dat],'.',color='$$opts{id2col}[0]',label='Het RA')
+			ax1.plot([row[0] for row in dat], [row[3] for row in dat],'.',color='$$opts{id2col}[2]',label='Hom AA')
 			ax1.set_xlabel('Non-ref allele frequency')
 			ax1.set_ylabel('Concordance [%]')
 			ax1.legend(numpoints=1,markerscale=2,loc='best',prop={'size':10}).draw_frame(False)
 			ax2 = ax1.twinx()
-			ax2.plot([row[0] for row in dat], [row[4] for row in dat],'k')
-			ax2.plot([row[0] for row in dat], [row[5] for row in dat],'r')
-			ax2.plot([row[0] for row in dat], [row[6] for row in dat],'-',color='orange')
+			ax2.plot([row[0] for row in dat], [row[4] for row in dat],color='$$opts{id2col}[1]')
+			ax2.plot([row[0] for row in dat], [row[5] for row in dat],color='$$opts{id2col}[0]')
+			ax2.plot([row[0] for row in dat], [row[6] for row in dat],color='$$opts{id2col}[2]')
 			ax2.set_ylabel('Number of genotypes')
 			ax2.set_yscale('log')
 			plt.subplots_adjust(right=0.85,bottom=0.11)
@@ -660,6 +658,16 @@ sub singletons
 sub fmt_slide3v
 {
 	my ($opts, $image, $title) = @_;
+
+	# my $slide;
+	# for my $id (0..2) 
+	# { 
+	# 	if ( !-e "$image.$id.pdf" ) { next; }
+	# 	my $h = $$opts{tex}{slide3v}{"height1"};
+	# 	$slide .= qq[\\hslide{$title}{\\includegraphics[type=pdf,ext=.pdf,read=.pdf,height=$h]{$image.$id}}\n];
+	# }
+	# return $slide;
+
 	my $n = 0;
 	for my $id (0..2) 
 	{ 
@@ -671,7 +679,7 @@ sub fmt_slide3v
 	for my $id (0..2) 
 	{ 
 		if ( !-e "$image.$id.pdf" ) { next; }
-		$slide .= qq[\\noindent\\includegraphics[type=pdf,ext=.pdf,read=.pdf,height=$h]{$image.$id}\\\\];
+		$slide .= qq[\\centerline{\\includegraphics[type=pdf,ext=.pdf,read=.pdf,height=$h]{$image.$id}}];
 	}
 	$slide .= '}';
 	return qq[\\hslide{$title}{$slide}\n];
@@ -822,8 +830,10 @@ sub create_pdf
 		my @frsh   = get_values($opts,$id,'FS');
 		my $frsh   = $frsh[0][2];
 		my $mals   = get_value($opts,$id,'number of multiallelic sites:');
-		my $s  = singletons($opts,$id);
-		$slide .= qq[ $$opts{title}{$id} & ] . bignum($snps) . qq[ & $tstv & $$s{snps}\\% & $$s{tstv} & $$s{indels}\\% & ] 
+		my $s      = singletons($opts,$id);
+		my $title  = $$opts{title}{$id};
+		$title =~ s/_/\\_/g;
+		$slide .= qq[ $title & ] . bignum($snps) . qq[ & $tstv & $$s{snps}\\% & $$s{tstv} & $$s{indels}\\% & ] 
 			. bignum($indels) . qq[ & $frsh[0][2] & ] . bignum($mals) . qq[ \\\\ \n];
 	}
 	$slide .= q[ \\end{tabular} ];

@@ -246,7 +246,6 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 		{
 			int ial;
 			int gt = gt_type(reader->fmt_ptr, reader->samples[is], &ial);
-		if ( ial==254 && gt!=GT_HOM_RR ) error("really? gt=%d %s\n", gt,args->files.samples[is]);
 			if ( gt == GT_UNKN ) continue;
 			if ( gt == GT_HET_RA || gt == GT_HET_AA ) stats->smpl_hets[is]++;
 			if ( gt != GT_HOM_RR )
@@ -286,7 +285,7 @@ void do_sample_stats(args_t *args)
 			int match = 1;
 			for (ir=1; ir<files->nreaders; ir++)
 			{
-				if ( gt!= gt_type(files->readers[ir].fmt_ptr, files->readers[ir].samples[is], NULL) ) { match = 0; break; }
+				if ( gt != gt_type(files->readers[ir].fmt_ptr, files->readers[ir].samples[is], NULL) ) { match = 0; break; }
 			}
 			if ( gt == GT_HET_AA ) gt = GT_HOM_AA;	// rare case, treat as AA hom
 			if ( match ) 
@@ -297,7 +296,7 @@ void do_sample_stats(args_t *args)
 			else 
 			{
 				af_stats[iaf].mm[gt]++;
-				smpl_stats[is].m[gt]++;
+				smpl_stats[is].mm[gt]++;
 			}
 		}
 	}
@@ -328,7 +327,7 @@ void check_vcf(args_t *args)
 
 		if ( line->n_allele>2 ) args->stats[ret-1].n_mals++;
 
-		if ( files->n_smpl )
+		if ( files->n_smpl && ret==3 )
 			do_sample_stats(args);
 	}
 }
