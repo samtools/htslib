@@ -48,7 +48,7 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 			int ial;
 			for (ial=0; ial<gt->size; ial++)
 			{
-				if ( *p ) ac[((*p)>>1)-1]++;
+				if ( *p && (*p)>>1 > 0 ) ac[((*p)>>1)-1]++;
 				p++;
 			}
 		}

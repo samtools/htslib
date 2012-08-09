@@ -59,7 +59,7 @@ typedef struct
 	int nreaders;
 	const char **seqs, *region;
 	int iseq,nseqs,mseqs;
-	const char **samples;	// List of samples 
+	char **samples;	// List of samples 
 	int n_smpl;
 }
 readers_t;
