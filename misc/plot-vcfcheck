@@ -854,13 +854,13 @@ sub create_pdf
 		my $indels = get_value($opts,$id,'number of indels:');
 		my $tstv   = get_value($opts,$id,'ts/tv:');
 		my @frsh   = get_values($opts,$id,'FS');
-		my $frsh   = $frsh[0][2];
+		my $frsh   = @frsh ? $frsh[0][2] : '--';
 		my $mals   = get_value($opts,$id,'number of multiallelic sites:');
 		my $s      = singletons($opts,$id);
 		my $title  = $$opts{title}{$id};
 		$title =~ s/_/\\_/g;
 		$slide .= qq[ $title & ] . bignum($snps) . qq[ & $tstv & $$s{snps}\\% & $$s{tstv} & $$s{indels}\\% & ] 
-			. bignum($indels) . qq[ & $frsh[0][2] & ] . bignum($mals) . qq[ \\\\ \n];
+			. bignum($indels) . qq[ & $frsh & ] . bignum($mals) . qq[ \\\\ \n];
 	}
 	$slide .= q[ \\end{tabular} ];
 	iprint $tex, qq[

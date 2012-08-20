@@ -35,6 +35,7 @@ typedef struct
 	int prev_reg;
 	char **argv, *exons_file, *samples_file;
 	int argc, debug;
+	int split_by_id, nstats;
 }
 args_t;
 
@@ -60,7 +61,9 @@ inline int acgt2int(char c)
 
 void init_stats(args_t *args)
 {
-	int i,nstats = args->files.nreaders==1 ? 1 : 3;
+	int i;
+	args->nstats = args->files.nreaders==1 ? 1 : 3;
+	if ( args->split_by_id ) args->nstats = 2;
 
 	// AF corresponds to AC but is more robust for mixture of haploid and diploid GTs
 	args->m_af = 101;
@@ -76,16 +79,16 @@ void init_stats(args_t *args)
 		args->smpl_gts_snps   = (gtcmp_t *) calloc(args->files.n_smpl,sizeof(gtcmp_t));
 		args->smpl_gts_indels = (gtcmp_t *) calloc(args->files.n_smpl,sizeof(gtcmp_t));
 	}
-	for (i=0; i<nstats; i++)
+	for (i=0; i<args->nstats; i++)
 	{
 		stats_t *stats = &args->stats[i];
 		stats->m_indel    = 60;
 		stats->insertions = (int*) calloc(stats->m_indel,sizeof(int));
 		stats->deletions  = (int*) calloc(stats->m_indel,sizeof(int));
-		stats->af_ts      = (int*)calloc(args->m_af,sizeof(int));
-		stats->af_tv      = (int*)calloc(args->m_af,sizeof(int));
-		stats->af_snps    = (int*)calloc(args->m_af,sizeof(int));
-		stats->af_indels  = (int*)calloc(args->m_af,sizeof(int));
+		stats->af_ts      = (int*) calloc(args->m_af,sizeof(int));
+		stats->af_tv      = (int*) calloc(args->m_af,sizeof(int));
+		stats->af_snps    = (int*) calloc(args->m_af,sizeof(int));
+		stats->af_indels  = (int*) calloc(args->m_af,sizeof(int));
 		if ( args->files.n_smpl )
 		{
 			stats->smpl_hets = (int *) calloc(args->files.n_smpl,sizeof(int));
@@ -103,8 +106,8 @@ void init_stats(args_t *args)
 }
 void destroy_stats(args_t *args)
 {
-	int id,nstats = args->files.nreaders==1 ? 1 : 3;
-	for (id=0; id<nstats; id++)
+	int id;
+	for (id=0; id<args->nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
 		if (stats->af_ts) free(stats->af_ts);
@@ -341,12 +344,16 @@ void check_vcf(args_t *args)
 		set_variant_types(line);
 		init_iaf(args, reader);
 
-		if ( line->d.var_type&VCF_SNP ) 
-			do_snp_stats(args, &args->stats[ret-1], reader);
-		if ( line->d.var_type&VCF_INDEL )
-			do_indel_stats(args, &args->stats[ret-1], reader);
+		stats_t *stats = &args->stats[ret-1];
+		if ( args->split_by_id && line->d.id[0]=='.' && !line->d.id[1] )
+			stats = &args->stats[1];
 
-		if ( line->n_allele>2 ) args->stats[ret-1].n_mals++;
+		if ( line->d.var_type&VCF_SNP ) 
+			do_snp_stats(args, stats, reader);
+		if ( line->d.var_type&VCF_INDEL )
+			do_indel_stats(args, stats, reader);
+
+		if ( line->n_allele>2 ) stats->n_mals++;
 
 		if ( files->n_smpl && ret==3 )
 			do_sample_stats(args);
@@ -364,7 +371,15 @@ void print_header(args_t *args)
 
 	printf("# Definition of sets:\n# ID\t[2]id\t[3]tab-separated file names\n");
 	if ( args->files.nreaders==1 )
-		printf("ID\t0\t%s\n", args->files.readers[0].fname);
+	{
+		if ( args->split_by_id )
+		{
+			printf("ID\t0\t%s:known (sites with ID different from \".\")\n", args->files.readers[0].fname);
+			printf("ID\t1\t%s:novel (sites where ID column is \".\")\n", args->files.readers[0].fname);
+		}
+		else
+			printf("ID\t0\t%s\n", args->files.readers[0].fname);
+	}
 	else
 	{
 		printf("ID\t0\t%s\n", args->files.readers[0].fname);
@@ -375,11 +390,11 @@ void print_header(args_t *args)
 
 void print_stats(args_t *args)
 {
-	int i, id, nstats = args->files.nreaders==1 ? 1 : 3;
+	int i, id;
 	printf("# Summary numbers:\n# SN\t[2]id\t[3]key\t[4]value\n");
 	for (id=0; id<args->files.nreaders; id++)
 		printf("SN\t%d\tnumber of samples:\t%d\n", id, args->files.readers[id].header->n[BCF_DT_SAMPLE]);
-	for (id=0; id<nstats; id++)
+	for (id=0; id<args->nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
 		printf("SN\t%d\tnumber of SNPs:\t%d\n", id, stats->n_snps);
@@ -390,14 +405,17 @@ void print_stats(args_t *args)
 		for (i=0; i<args->m_af; i++) { ts += stats->af_ts[i]; tv += stats->af_tv[i];  }
 		printf("SN\t%d\tts/tv:\t%.2f\n", id, tv?(float)ts/tv:0);
 	}
-	printf("# Indel frameshifts:\n# FS\t[2]id\t[3]in-frame\t[4]out-frame\t[5]out/(in+out) ratio\n");
-	for (id=0; id<nstats; id++)
+	if ( args->exons_file )
 	{
-		int in=args->stats[id].in_frame, out=args->stats[id].out_frame;
-		printf("FS\t%d\t%d\t%d\t%.2f\n", id, in,out,out?(float)out/(in+out):0);
+		printf("# Indel frameshifts:\n# FS\t[2]id\t[3]in-frame\t[4]out-frame\t[5]out/(in+out) ratio\n");
+		for (id=0; id<args->nstats; id++)
+		{
+			int in=args->stats[id].in_frame, out=args->stats[id].out_frame;
+			printf("FS\t%d\t%d\t%d\t%.2f\n", id, in,out,out?(float)out/(in+out):0);
+		}
 	}
 	printf("# Singleton stats:\n# SiS\t[2]id\t[3]allele count\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
-	for (id=0; id<nstats; id++)
+	for (id=0; id<args->nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
 		printf("SiS\t%d\t%d\t%d\t%d\t%d\t%d\n", id,1,stats->af_snps[0],stats->af_ts[0],stats->af_tv[0],stats->af_indels[0]);
@@ -407,7 +425,7 @@ void print_stats(args_t *args)
 		stats->af_indels[1] += stats->af_indels[0];
 	}
 	printf("# Stats by non-reference allele frequency:\n# AF\t[2]id\t[3]allele frequency\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
-	for (id=0; id<nstats; id++)
+	for (id=0; id<args->nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
 		for (i=1; i<args->m_af; i++)
@@ -417,7 +435,7 @@ void print_stats(args_t *args)
 		}
 	}
 	printf("# InDel distribution:\n# IDD\t[2]id\t[3]length (deletions negative)\t[4]count\n");
-	for (id=0; id<nstats; id++)
+	for (id=0; id<args->nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
 		for (i=stats->m_indel-1; i>=0; i--)
@@ -426,7 +444,7 @@ void print_stats(args_t *args)
 			if ( stats->insertions[i] ) printf("IDD\t%d\t%d\t%d\n", id,i+1,stats->insertions[i]);
 	}
 	printf("# Substitution types:\n# ST\t[2]id\t[3]type\t[4]count\n");
-	for (id=0; id<nstats; id++)
+	for (id=0; id<args->nstats; id++)
 	{
 		int t;
 		for (t=0; t<15; t++)
@@ -482,7 +500,7 @@ void print_stats(args_t *args)
 	if ( args->files.n_smpl )
 	{
 		printf("# Per-sample counts\n# PSC\t[2]id\t[3]sample\t[4]nHets\t[5]nTransversions\t[6]nTransitions\n");
-		for (id=0; id<nstats; id++)
+		for (id=0; id<args->nstats; id++)
 		{
 			stats_t *stats = &args->stats[id];
 			for (i=0; i<args->files.n_smpl; i++)
@@ -505,7 +523,8 @@ static void usage(void)
 	fprintf(stderr, "    -d, --debug                       produce verbose per-site and per-sample output\n");
 	fprintf(stderr, "    -e, --exons <file.gz>             tab-delimited file with exons for indel frameshifts (chr,from,to; 1-based, inclusive, bgzip compressed)\n");
 	fprintf(stderr, "    -f, --apply-filters               skip sites where FILTER is other than PASS\n");
-	fprintf(stderr, "    -r, --region <chr|chr:from-to>    collect statistics in the given region only\n");
+	fprintf(stderr, "    -i, --split-by-ID                 collect stats for sites with ID separately (known vs novel)\n");
+	fprintf(stderr, "    -r, --region <chr|chr:from-to>    collect stats in the given region only\n");
 	fprintf(stderr, "    -s, --samples <list|file>         produce sample stats, \"-\" to include all samples\n");
 	fprintf(stderr, "\n");
 	exit(1);
@@ -525,9 +544,10 @@ int main_vcfcheck(int argc, char *argv[])
 		{"apply-filters",0,0,'f'},
 		{"exons",0,0,'e'},
 		{"samples",0,0,'s'},
+		{"split-by-ID",0,0,'i'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "hc:fr:e:s:d",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "hc:fr:e:s:di",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'c':
 				if ( !strcmp(optarg,"snps") ) args->files.collapse |= COLLAPSE_SNPS;
@@ -540,6 +560,7 @@ int main_vcfcheck(int argc, char *argv[])
 			case 'r': args->files.region = optarg; break;
 			case 'e': args->exons_file = optarg; break;
 			case 's': args->samples_file = optarg; break;
+			case 'i': args->split_by_id = 1; break;
 			case 'h': 
 			case '?': usage();
 			default: error("Unknown argument: %s\n", optarg);
@@ -548,6 +569,7 @@ int main_vcfcheck(int argc, char *argv[])
 	if (argc == optind) usage();
 
 	if ( argc-optind>2 ) usage();
+	if ( args->split_by_id && argc-optind>1 ) error("Only one file can be given with -i.\n");
 	while (optind<argc)
 	{
 		if ( !add_reader(argv[optind], &args->files) ) error("Could not load the index: %s\n", argv[optind]);
