@@ -1,6 +1,8 @@
 #ifndef HTS_H
 #define HTS_H
 
+#define HTS_VERSION "r198"
+
 #include <stdint.h>
 #include "bgzf.h"
 

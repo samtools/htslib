@@ -12,7 +12,7 @@
 
 \makeindex
 
-\title{BCF2 Quick Reference}
+\title{BCF2 Quick Reference (r198)}
 \author{}
 \date{}
 
@@ -63,7 +63,7 @@ A BCF2 file is BGZF compressed and all multi-byte value are little endian.
 \begin{tabular}{|l|l|l|p{8.2cm}|l|r|}
   \cline{1-6}
   \multicolumn{3}{|c|}{\bf Field} & \multicolumn{1}{c|}{\bf Description} & \multicolumn{1}{c|}{\bf Type} & \multicolumn{1}{c|}{\bf Value} \\\cline{1-6}
-  \multicolumn{3}{|l|}{\sf magic} & BCF2 magic string & {\tt char[4]} & {\tt BCF\char92 2}\\\cline{1-6}
+  \multicolumn{3}{|l|}{\sf magic} & BCF2 magic string & {\tt char[5]} & {\tt BCF\char92 2\char92 1}\\\cline{1-6}
   \multicolumn{3}{|l|}{\sf l\_text} & Length of the header text, including any {\sf NULL} padding & {\tt uint32\_t} & \\\cline{1-6}
   \multicolumn{3}{|l|}{\sf text} & {\sf NULL}-terminated plain VCF header text & {\tt char[{\sf l\_text}]} & \\\cline{1-6}
   \multicolumn{6}{|c|}{\textcolor{gray}{\it List of VCF records (until the end of the BGZF section)}} \\\cline{2-6}

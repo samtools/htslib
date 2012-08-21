@@ -40,6 +40,11 @@ int main_vcfview(int argc, char *argv[])
 
 	in = hts_open(argv[optind], moder, fn_ref);
 	h = vcf_hdr_read(in);
+	if (h == 0) {
+		fprintf(stderr, "[E::%s] fail to read the VCF/BCF2 header\n", __func__);
+		hts_close(in);
+		return 1;
+	}
 	if (n_samples >= 0) {
 		if (n_samples) imap = (int*)malloc(n_samples * sizeof(int));
 		hsub = bcf_hdr_subset(h, n_samples, samples, imap);
