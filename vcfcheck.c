@@ -7,7 +7,7 @@
 
 typedef struct
 {
-	int n_snps, n_indels, n_mals;
+	int n_snps, n_indels, n_mnps, n_others, n_mals;
 	int *af_ts, *af_tv, *af_snps, *af_indels;
 	int *insertions, *deletions, m_indel;	// maximum indel length
 	int in_frame, out_frame;
@@ -153,7 +153,18 @@ void init_iaf(args_t *args, reader_t *reader)
 				args->tmp_iaf[i] = 1 + args->tmp_iaf[i] * (args->m_af-2.0) / an;
 		}
 	}
+            
 	// todo: otherwise use AF 
+}
+
+inline void do_mnp_stats(args_t *args, stats_t *stats, reader_t *reader)
+{
+    stats->n_mnps++;
+}
+
+inline void do_other_stats(args_t *args, stats_t *stats, reader_t *reader)
+{
+    stats->n_others++;
 }
 
 void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
@@ -215,7 +226,7 @@ void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
 			len *= -1;
 			ptr = stats->deletions;
 		}
-		if ( --len > stats->m_indel ) len = stats->m_indel-1;
+		if ( --len >= stats->m_indel ) len = stats->m_indel-1;
 		ptr[len]++;
 	}
 }
@@ -352,6 +363,10 @@ void check_vcf(args_t *args)
 			do_snp_stats(args, stats, reader);
 		if ( line->d.var_type&VCF_INDEL )
 			do_indel_stats(args, stats, reader);
+		if ( line->d.var_type&VCF_MNP )
+		    do_mnp_stats(args, stats, reader);
+		if ( line->d.var_type&VCF_OTHER )
+		    do_other_stats(args, stats, reader);
 
 		if ( line->n_allele>2 ) stats->n_mals++;
 
@@ -398,7 +413,9 @@ void print_stats(args_t *args)
 	{
 		stats_t *stats = &args->stats[id];
 		printf("SN\t%d\tnumber of SNPs:\t%d\n", id, stats->n_snps);
+		printf("SN\t%d\tnumber of MNPs:\t%d\n", id, stats->n_mnps);
 		printf("SN\t%d\tnumber of indels:\t%d\n", id, stats->n_indels);
+		printf("SN\t%d\tnumber of others:\t%d\n", id, stats->n_others);
 		printf("SN\t%d\tnumber of multiallelic sites:\t%d\n", id, stats->n_mals);
 
 		int ts=0,tv=0;
