@@ -9,6 +9,7 @@ typedef struct
 {
 	int n_snps, n_indels, n_mnps, n_others, n_mals;
 	int *af_ts, *af_tv, *af_snps, *af_indels;
+    int *qual_ts, *qual_tv, *qual_snps, *qual_indels;
 	int *insertions, *deletions, m_indel;	// maximum indel length
 	int in_frame, out_frame;
 	int subst[15];
@@ -26,7 +27,7 @@ typedef struct
 {
 	// stats
 	stats_t stats[3];
-	int *tmp_iaf, ntmp_iaf, m_af;
+	int *tmp_iaf, ntmp_iaf, m_af, m_qual;
 	gtcmp_t *af_gts_snps, *af_gts_indels, *smpl_gts_snps, *smpl_gts_indels;
 
 	// other
@@ -71,6 +72,8 @@ void init_stats(args_t *args)
 		if ( args->files.readers[i].header->n[BCF_DT_SAMPLE] + 1> args->m_af )
 			args->m_af = args->files.readers[i].header->n[BCF_DT_SAMPLE] + 1;
 
+    args->m_qual = 500;
+
 	if ( args->samples_file )
 	{
 		if ( !init_samples(args->samples_file,&args->files) ) error("Could not initialize samples: %s\n", args->samples_file);
@@ -82,13 +85,17 @@ void init_stats(args_t *args)
 	for (i=0; i<args->nstats; i++)
 	{
 		stats_t *stats = &args->stats[i];
-		stats->m_indel    = 60;
-		stats->insertions = (int*) calloc(stats->m_indel,sizeof(int));
-		stats->deletions  = (int*) calloc(stats->m_indel,sizeof(int));
-		stats->af_ts      = (int*) calloc(args->m_af,sizeof(int));
-		stats->af_tv      = (int*) calloc(args->m_af,sizeof(int));
-		stats->af_snps    = (int*) calloc(args->m_af,sizeof(int));
-		stats->af_indels  = (int*) calloc(args->m_af,sizeof(int));
+		stats->m_indel     = 60;
+		stats->insertions  = (int*) calloc(stats->m_indel,sizeof(int));
+		stats->deletions   = (int*) calloc(stats->m_indel,sizeof(int));
+		stats->af_ts       = (int*) calloc(args->m_af,sizeof(int));
+		stats->af_tv       = (int*) calloc(args->m_af,sizeof(int));
+		stats->af_snps     = (int*) calloc(args->m_af,sizeof(int));
+		stats->af_indels   = (int*) calloc(args->m_af,sizeof(int));
+        stats->qual_ts     = (int*) calloc(args->m_qual,sizeof(int));
+        stats->qual_tv     = (int*) calloc(args->m_qual,sizeof(int));
+        stats->qual_snps   = (int*) calloc(args->m_qual,sizeof(int));
+        stats->qual_indels = (int*) calloc(args->m_qual,sizeof(int));
 		if ( args->files.n_smpl )
 		{
 			stats->smpl_hets = (int *) calloc(args->files.n_smpl,sizeof(int));
@@ -114,6 +121,10 @@ void destroy_stats(args_t *args)
 		if (stats->af_tv) free(stats->af_tv);
 		if (stats->af_snps) free(stats->af_snps);
 		if (stats->af_indels) free(stats->af_indels);
+		if (stats->qual_ts) free(stats->qual_ts);
+		if (stats->qual_tv) free(stats->qual_tv);
+		if (stats->qual_snps) free(stats->qual_snps);
+		if (stats->qual_indels) free(stats->qual_indels);
 		free(stats->insertions);
 		free(stats->deletions);
 		if (stats->smpl_hets) free(stats->smpl_hets);
@@ -136,7 +147,7 @@ void init_iaf(args_t *args, reader_t *reader)
 		args->tmp_iaf = (int*)realloc(args->tmp_iaf, line->n_allele*sizeof(int));
 		args->ntmp_iaf = line->n_allele;
 	}
-	int ret = calc_ac(reader->header, line, args->tmp_iaf, BCF_UN_FMT);
+	int ret = calc_ac(reader->header, line, args->tmp_iaf, args->samples_file ? BCF_UN_INFO|BCF_UN_FMT : BCF_UN_INFO);
 	if ( ret )
 	{
 		int i, an=0;
@@ -172,6 +183,9 @@ void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
 	stats->n_indels++;
 
 	bcf1_t *line = reader->line;
+
+    int iqual = line->qual >= args->m_qual ? args->m_qual - 1 : line->qual;
+    stats->qual_indels[iqual]++;
 
 	// Check if the indel is near an exon for the frameshift statistics
 	pos_t *reg = NULL, *reg_next = NULL;
@@ -238,6 +252,9 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 	int ref = acgt2int(*line->d.allele[0]);
 	if ( ref<0 ) return;
 
+    int iqual = line->qual >= args->m_qual ? args->m_qual - 1 : line->qual;
+    stats->qual_snps[iqual]++;
+
 	int i;
 	for (i=1; i<line->n_allele; i++)
 	{
@@ -248,9 +265,15 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 		int iaf = args->tmp_iaf[i];
 		stats->af_snps[iaf]++;
 		if ( abs(ref-alt)==2 ) 
+        {
 			stats->af_ts[iaf]++;
+            stats->qual_ts[iqual]++;
+        }
 		else 
+        {
 			stats->af_tv[iaf]++;
+            stats->qual_tv[iqual]++;
+        }
 	}
 
 	if ( args->files.n_smpl )
@@ -406,7 +429,7 @@ void print_header(args_t *args)
 void print_stats(args_t *args)
 {
 	int i, id;
-	printf("# Summary numbers:\n# SN\t[2]id\t[3]key\t[4]value\n");
+	printf("# SN, Summary numbers:\n# SN\t[2]id\t[3]key\t[4]value\n");
 	for (id=0; id<args->files.nreaders; id++)
 		printf("SN\t%d\tnumber of samples:\t%d\n", id, args->files.readers[id].header->n[BCF_DT_SAMPLE]);
 	for (id=0; id<args->nstats; id++)
@@ -424,14 +447,14 @@ void print_stats(args_t *args)
 	}
 	if ( args->exons_file )
 	{
-		printf("# Indel frameshifts:\n# FS\t[2]id\t[3]in-frame\t[4]out-frame\t[5]out/(in+out) ratio\n");
+		printf("# FS, Indel frameshifts:\n# FS\t[2]id\t[3]in-frame\t[4]out-frame\t[5]out/(in+out) ratio\n");
 		for (id=0; id<args->nstats; id++)
 		{
 			int in=args->stats[id].in_frame, out=args->stats[id].out_frame;
 			printf("FS\t%d\t%d\t%d\t%.2f\n", id, in,out,out?(float)out/(in+out):0);
 		}
 	}
-	printf("# Singleton stats:\n# SiS\t[2]id\t[3]allele count\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
+	printf("# Sis, Singleton stats:\n# SiS\t[2]id\t[3]allele count\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
 	for (id=0; id<args->nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
@@ -441,7 +464,7 @@ void print_stats(args_t *args)
 		stats->af_tv[1]     += stats->af_tv[0];
 		stats->af_indels[1] += stats->af_indels[0];
 	}
-	printf("# Stats by non-reference allele frequency:\n# AF\t[2]id\t[3]allele frequency\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
+	printf("# AF, Stats by non-reference allele frequency:\n# AF\t[2]id\t[3]allele frequency\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
 	for (id=0; id<args->nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
@@ -451,7 +474,17 @@ void print_stats(args_t *args)
 			printf("AF\t%d\t%f\t%d\t%d\t%d\t%d\n", id,100.*(i-1)/(args->m_af-2),stats->af_snps[i],stats->af_ts[i],stats->af_tv[i],stats->af_indels[i]);
 		}
 	}
-	printf("# InDel distribution:\n# IDD\t[2]id\t[3]length (deletions negative)\t[4]count\n");
+	printf("# QUAL, Stats by quality:\n# QUAL\t[2]id\t[3]Quality\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
+	for (id=0; id<args->nstats; id++)
+	{
+		stats_t *stats = &args->stats[id];
+		for (i=0; i<args->m_qual; i++)
+		{
+			if ( stats->qual_snps[i]+stats->qual_ts[i]+stats->qual_tv[i]+stats->qual_indels[i] == 0  ) continue;
+			printf("QUAL\t%d\t%d\t%d\t%d\t%d\t%d\n", id,i,stats->qual_snps[i],stats->qual_ts[i],stats->qual_tv[i],stats->qual_indels[i]);
+		}
+	}
+	printf("# IDD, InDel distribution:\n# IDD\t[2]id\t[3]length (deletions negative)\t[4]count\n");
 	for (id=0; id<args->nstats; id++)
 	{
 		stats_t *stats = &args->stats[id];
@@ -460,7 +493,7 @@ void print_stats(args_t *args)
 		for (i=0; i<stats->m_indel; i++)
 			if ( stats->insertions[i] ) printf("IDD\t%d\t%d\t%d\n", id,i+1,stats->insertions[i]);
 	}
-	printf("# Substitution types:\n# ST\t[2]id\t[3]type\t[4]count\n");
+	printf("# ST, Substitution types:\n# ST\t[2]id\t[3]type\t[4]count\n");
 	for (id=0; id<args->nstats; id++)
 	{
 		int t;
@@ -474,7 +507,7 @@ void print_stats(args_t *args)
 	{
 		printf("SN\t%d\tNumber of samples:\t%d\n", 2, args->files.n_smpl);
 
-		printf("# Genotype concordance by non-reference allele frequency (SNPs)\n# GCsAF\t[2]id\t[3]allele frequency\t[4]RR Hom matches\t[5]RA Het matches\t[6]AA Hom matches\t[7]RR Hom mismatches\t[8]RA Het mismatches\t[9]AA Hom mismatches\n");
+		printf("# GCsAF, enotype concordance by non-reference allele frequency (SNPs)\n# GCsAF\t[2]id\t[3]allele frequency\t[4]RR Hom matches\t[5]RA Het matches\t[6]AA Hom matches\t[7]RR Hom mismatches\t[8]RA Het mismatches\t[9]AA Hom mismatches\n");
 		gtcmp_t *stats = args->af_gts_snps;
 		int nrd_m[3] = {0,0,0}, nrd_mm[3] = {0,0,0};
 		for (i=1; i<args->m_af; i++)
@@ -502,7 +535,7 @@ void print_stats(args_t *args)
 			nrd_m[GT_HOM_AA]+nrd_mm[GT_HOM_AA] ? nrd_mm[GT_HOM_AA]*100.0/(nrd_m[GT_HOM_AA]+nrd_mm[GT_HOM_AA]) : 0
 			);
 
-		printf("# Genotype concordance by sample (SNPs)\n# GCsS\t[2]id\t[3]sample\t[4]non-reference discordance rate\t[5]RR Hom matches\t[6]RA Het matches\t[7]AA Hom matches\t[8]RR Hom mismatches\t[9]RA Het mismatches\t[10]AA Hom mismatches\n");
+		printf("# GCcS, Genotype concordance by sample (SNPs)\n# GCsS\t[2]id\t[3]sample\t[4]non-reference discordance rate\t[5]RR Hom matches\t[6]RA Het matches\t[7]AA Hom matches\t[8]RR Hom mismatches\t[9]RA Het mismatches\t[10]AA Hom mismatches\n");
 		stats = args->smpl_gts_snps;
 		for (i=0; i<args->files.n_smpl; i++)
 		{
@@ -516,7 +549,7 @@ void print_stats(args_t *args)
 
 	if ( args->files.n_smpl )
 	{
-		printf("# Per-sample counts\n# PSC\t[2]id\t[3]sample\t[4]nHets\t[5]nTransversions\t[6]nTransitions\n");
+		printf("# PSC, Per-sample counts\n# PSC\t[2]id\t[3]sample\t[4]nHets\t[5]nTransversions\t[6]nTransitions\n");
 		for (id=0; id<args->nstats; id++)
 		{
 			stats_t *stats = &args->stats[id];

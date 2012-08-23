@@ -30,6 +30,7 @@ if ( $$opts{make_plots} )
 	for my $id (file_ids($opts))
 	{
 		plot_tstv_by_AF($opts,$id);
+		#plot_tstv_by_QUAL($opts,$id);
 		plot_indel_distribution($opts,$id);
 		plot_substitutions($opts,$id);
 		plot_tstv_by_sample($opts,$id);
@@ -361,19 +362,23 @@ sub plot_tstv_by_AF
 	my $img  = "$$opts{prefix}tstv_by_af.$id";
 	my $vals = rebin_values(\@vals,8,0);
 
+    my $has_vals = 0;
 	iprint $fh, "
 			dat = [
 		";
 	for (my $i=0; $i<@$vals; $i++)
 	{ 
-		if ( $$vals[$i][2] + $$vals[$i][3] ==0 ) { next; }
+		if ( $$vals[$i][2] + $$vals[$i][3] == 0 ) { next; }
+        $has_vals++;
 		iprint $fh, sprintf("\t[ %f, %d, %f ],\n", 
 			$$vals[$i][0]/100., 
 			$$vals[$i][2] + $$vals[$i][3],
 			$$vals[$i][3] ? $$vals[$i][2]/$$vals[$i][3]: 0);
 	}
-	iprint $fh, "]
+	iprint $fh, "]";
+    if ( $has_vals<2 ) { return; }
 
+	iprint $fh, "
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 			ax1 = fig.add_subplot(111)
 			ax1.plot([row[0] for row in dat], [row[1] for row in dat], color='k')
@@ -387,6 +392,53 @@ sub plot_tstv_by_AF
 			ax2.set_ylabel('Ts/Tv',color='r')
 			ax2.set_ylim(0,0.5+max(3,max(row[2] for row in dat)))
 			ax1.set_xlim(0,1)
+			for tl in ax2.get_yticklabels(): tl.set_color('r')
+			plt.subplots_adjust(right=0.88,left=0.15,bottom=0.11)
+			plt.title('$$opts{title}{$id}')
+			plt.savefig('$img.png')
+			plt.savefig('$img.pdf')
+			plt.close()
+		";
+}
+
+sub plot_tstv_by_QUAL
+{
+    my ($opts,$id) = @_;
+	my @vals = get_values($opts,$id,'QUAL');
+    if ( !@vals ) { return; }
+
+    my $fh   = $$opts{plt_fh};
+	my $img  = "$$opts{prefix}tstv_by_qual.$id";
+
+    my $has_vals = 0;
+	iprint $fh, "
+			dat = [
+		";
+	for (my $i=0; $i<@vals; $i++)
+	{ 
+		if ( $vals[$i][1] == 0 ) { next; }
+        $has_vals++;
+		iprint $fh, sprintf("\t[ %d, %d, %f ],\n", 
+			$vals[$i][0], 
+			$vals[$i][1],
+			$vals[$i][3] ? $vals[$i][2]/$vals[$i][3]: 0);
+	}
+	iprint $fh, "]";
+    if ( $has_vals<2 ) { return; }
+
+	iprint $fh, "
+			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
+			ax1 = fig.add_subplot(111)
+			ax1.plot([row[0] for row in dat], [row[1] for row in dat], color='k')
+			ax1.set_ylabel('Number of sites',color='k')
+			ax1.set_yscale('log')
+			for tl in ax1.get_yticklabels(): tl.set_color('k')
+			ax1.set_xlabel('Quality')
+			ax2 = ax1.twinx()
+			ax2.plot([row[0] for row in dat], [row[2] for row in dat], color='r')
+			ax2.set_ylabel('Ts/Tv',color='r')
+			ax2.set_ylim(0,0.5+max(3,max(row[2] for row in dat)))
+			#ax1.set_xlim(0,100)
 			for tl in ax2.get_yticklabels(): tl.set_color('r')
 			plt.subplots_adjust(right=0.88,left=0.15,bottom=0.11)
 			plt.title('$$opts{title}{$id}')
@@ -460,7 +512,7 @@ sub plot_concordance_by_AF
 			ax2.plot([row[0] for row in dat], [row[6] for row in dat],color='$$opts{id2col}[2]')
 			ax2.set_ylabel('Number of genotypes')
 			ax2.set_yscale('log')
-			plt.subplots_adjust(right=0.85,bottom=0.11)
+			plt.subplots_adjust(left=0.15,right=0.83,bottom=0.11)
 			plt.savefig('$img.png')
 			plt.savefig('$img.pdf')
 			plt.close()
@@ -955,6 +1007,7 @@ sub create_pdf
 			\\noindent\\includegraphics[$ext,width=$width1]{$$opts{lprefix}counts_by_af.indels}}}
 		];
 	iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}tstv_by_af", 'Ts/Tv by AF');
+	#iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}tstv_by_qual", 'Ts/Tv by QUAL');
 	iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}indels", 'Indel distribution');
 	iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}substitutions", 'Substitution types');
 
