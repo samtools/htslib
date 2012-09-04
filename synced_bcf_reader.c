@@ -81,6 +81,7 @@ void destroy_readers(readers_t *files)
 	free(files->seqs);
 	for (i=0; i<files->n_smpl; i++) free(files->samples[i]);
 	free(files->samples);
+    memset(files,0,sizeof(readers_t));
 }
 
 
@@ -447,8 +448,12 @@ int init_regions(const char *fname, regions_t *reg)
 		reg->npos[iseq]++;
 		if ( (sscanf(line+i+1,"%d %d",&pos[ipos].from,&pos[ipos].to))!=2 ) 
 		{
-			fprintf(stderr,"Could not parse the region [%s]\n",line+i+1);
-			return 0;
+            if ( (sscanf(line+i+1,"%d",&pos[ipos].from))!=1 )
+            {
+                fprintf(stderr,"Could not parse the region [%s]\n",line+i+1);
+                return 0;
+            }
+            pos[ipos].to = pos[ipos].from;
 		}
 
 		// Check that the file is sorted

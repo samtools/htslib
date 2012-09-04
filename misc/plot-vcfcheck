@@ -34,6 +34,7 @@ if ( $$opts{make_plots} )
 		plot_indel_distribution($opts,$id);
 		plot_substitutions($opts,$id);
 		plot_tstv_by_sample($opts,$id);
+		plot_DP($opts,$id);
 	}
 	plot($opts);
 }
@@ -315,6 +316,8 @@ sub plot_tstv_by_sample
 	my $fh   = $$opts{plt_fh};
 	my $img  = "$$opts{prefix}tstv_by_sample.$id";
 	my $img2 = "$$opts{prefix}hets_by_sample.$id";
+	my $img3 = "$$opts{prefix}snps_by_sample.$id";
+	my $img4 = "$$opts{prefix}indels_by_sample.$id";
 
 	iprint $fh, "
 			dat = [
@@ -322,7 +325,7 @@ sub plot_tstv_by_sample
 	for (my $i=0; $i<@vals; $i++)
 	{ 
 		my $tstv = $vals[$i][3] ? $vals[$i][2]/$vals[$i][3] : 0;
-		iprint $fh, sprintf("\t[ %d, %f, %d ],\n", $i, $tstv, $vals[$i][1]);
+		iprint $fh, sprintf("\t[ %d, %f, %d, %d, %d ],\n", $i, $tstv, $vals[$i][1], $vals[$i][2]+$vals[$i][3], $vals[$i][4]);
 	}
 	iprint $fh, "]
 
@@ -348,6 +351,68 @@ sub plot_tstv_by_sample
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img2.png')
 			plt.savefig('$img2.pdf')
+			plt.close()
+
+			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
+			ax1 = fig.add_subplot(111)
+			ax1.plot([row[0] for row in dat], [row[3] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
+			ax1.set_ylabel('Number of SNPs')
+			ax1.set_xlabel('Sample ID')
+			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
+			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+			plt.title('$$opts{title}{$id}')
+			plt.savefig('$img3.png')
+			plt.savefig('$img3.pdf')
+			plt.close()
+
+			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
+			ax1 = fig.add_subplot(111)
+			ax1.plot([row[0] for row in dat], [row[4] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
+			ax1.set_ylabel('Number of indels')
+			ax1.set_xlabel('Sample ID')
+			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
+			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+			plt.title('$$opts{title}{$id}')
+			plt.savefig('$img4.png')
+			plt.savefig('$img4.pdf')
+			plt.close()
+		";
+}
+
+sub plot_DP
+{
+	my ($opts,$id) = @_;
+	my @vals = get_values($opts,$id,'DP');
+	if ( !@vals ) { return; }
+
+	my $fh   = $$opts{plt_fh};
+	my $img  = "$$opts{prefix}depth.$id";
+
+	iprint $fh, "
+			dat = [
+		";
+    my $sum = 0;
+	for (my $i=0; $i<@vals; $i++)
+	{ 
+        $sum += $vals[$i][2];
+        if ( $sum>99 ) { last; }
+		iprint $fh, sprintf("\t[ %d, %f, %f ],\n", $vals[$i][0], $sum, $vals[$i][2]);
+	}
+	iprint $fh, "]
+
+			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
+			ax1 = fig.add_subplot(111)
+            ax1.plot([row[0] for row in dat], [row[2] for row in dat], '-^', color='k')
+            ax1.set_ylabel('Number of genotypes [%]',color='k')
+			ax1.set_xlabel('Depth')
+            ax2 = ax1.twinx()
+			ax2.plot([row[0] for row in dat], [row[1] for row in dat], '-o', color='$$opts{id2col}[$id]')
+			ax2.set_ylabel('Cumulative number of genotypes [%]',color='$$opts{id2col}[$id]')
+            for tl in ax2.get_yticklabels(): tl.set_color('$$opts{id2col}[$id]')
+			plt.subplots_adjust(left=0.15,bottom=0.15,right=0.87)
+			plt.title('$$opts{title}{$id}')
+			plt.savefig('$img.png')
+			plt.savefig('$img.pdf')
 			plt.close()
 		";
 }
@@ -965,6 +1030,8 @@ sub create_pdf
 
 	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}tstv_by_sample", 'Ts/Tv by sample');
 	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}hets_by_sample", 'Number of hets by sample');
+	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}snps_by_sample", 'Number of SNPs by sample');
+	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}indels_by_sample", 'Number of indels by sample');
 	if ( scalar get_values($opts,2,'GCsS') ) 
 	{ 
 		iprint $tex, qq[
@@ -1009,6 +1076,7 @@ sub create_pdf
 	iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}tstv_by_af", 'Ts/Tv by AF');
 	#iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}tstv_by_qual", 'Ts/Tv by QUAL');
 	iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}indels", 'Indel distribution');
+	iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}depth", 'Depth distribution');
 	iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}substitutions", 'Substitution types');
 
 	iprint $tex, "\n\n\\end{document}\n";

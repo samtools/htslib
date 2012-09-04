@@ -1,19 +1,29 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <math.h>
 #include "vcf.h"
 #include "synced_bcf_reader.h"
 #include "vcfutils.h"
 
 typedef struct
 {
+    int min, max, step, *vals, m_vals;
+}
+idist_t;
+
+typedef struct
+{
 	int n_snps, n_indels, n_mnps, n_others, n_mals;
 	int *af_ts, *af_tv, *af_snps, *af_indels;
-    int *qual_ts, *qual_tv, *qual_snps, *qual_indels;
+    #if QUAL_STATS
+        int *qual_ts, *qual_tv, *qual_snps, *qual_indels;
+    #endif
 	int *insertions, *deletions, m_indel;	// maximum indel length
 	int in_frame, out_frame;
 	int subst[15];
-	int *smpl_hets, *smpl_ts, *smpl_tv;
+	int *smpl_hets, *smpl_ts, *smpl_tv, *smpl_indels;
+    idist_t dp;
 }
 stats_t;
 
@@ -28,6 +38,7 @@ typedef struct
 	// stats
 	stats_t stats[3];
 	int *tmp_iaf, ntmp_iaf, m_af, m_qual;
+    int dp_min, dp_max, dp_step;
 	gtcmp_t *af_gts_snps, *af_gts_indels, *smpl_gts_snps, *smpl_gts_indels;
 
 	// other
@@ -60,6 +71,29 @@ inline int acgt2int(char c)
 }
 #define int2acgt(i) "ACGT"[i]
 
+void idist_init(idist_t *d, int min, int max, int step)
+{
+    d->min = min; d->max = max; d->step = step;
+    d->m_vals = 4 + (d->max - d->min)/d->step;
+    d->vals = (int*) calloc(d->m_vals,sizeof(int));
+}
+void idist_destroy(idist_t *d)
+{
+    if ( d->vals ) free(d->vals);
+}
+inline int *idist(idist_t *d, int val)
+{
+    if ( val < d->min ) return &d->vals[0];
+    if ( val > d->max ) return &d->vals[d->m_vals-1];
+    return &d->vals[1 + (val - d->min) / d->step];
+}
+inline int idist_i2bin(idist_t *d, int i)
+{
+    if ( i<=0 ) return d->min;
+    if ( i>= d->m_vals ) return d->max;
+    return i-1+d->min;
+}
+
 void init_stats(args_t *args)
 {
 	int i;
@@ -72,7 +106,9 @@ void init_stats(args_t *args)
 		if ( args->files.readers[i].header->n[BCF_DT_SAMPLE] + 1> args->m_af )
 			args->m_af = args->files.readers[i].header->n[BCF_DT_SAMPLE] + 1;
 
-    args->m_qual = 500;
+    #if QUAL_STATS
+        args->m_qual = 500;
+    #endif
 
 	if ( args->samples_file )
 	{
@@ -92,16 +128,20 @@ void init_stats(args_t *args)
 		stats->af_tv       = (int*) calloc(args->m_af,sizeof(int));
 		stats->af_snps     = (int*) calloc(args->m_af,sizeof(int));
 		stats->af_indels   = (int*) calloc(args->m_af,sizeof(int));
-        stats->qual_ts     = (int*) calloc(args->m_qual,sizeof(int));
-        stats->qual_tv     = (int*) calloc(args->m_qual,sizeof(int));
-        stats->qual_snps   = (int*) calloc(args->m_qual,sizeof(int));
-        stats->qual_indels = (int*) calloc(args->m_qual,sizeof(int));
+        #if QUAL_STATS
+            stats->qual_ts     = (int*) calloc(args->m_qual,sizeof(int));
+            stats->qual_tv     = (int*) calloc(args->m_qual,sizeof(int));
+            stats->qual_snps   = (int*) calloc(args->m_qual,sizeof(int));
+            stats->qual_indels = (int*) calloc(args->m_qual,sizeof(int));
+        #endif
 		if ( args->files.n_smpl )
 		{
-			stats->smpl_hets = (int *) calloc(args->files.n_smpl,sizeof(int));
-			stats->smpl_ts   = (int *) calloc(args->files.n_smpl,sizeof(int));
-			stats->smpl_tv   = (int *) calloc(args->files.n_smpl,sizeof(int));
+			stats->smpl_hets   = (int *) calloc(args->files.n_smpl,sizeof(int));
+			stats->smpl_ts     = (int *) calloc(args->files.n_smpl,sizeof(int));
+			stats->smpl_tv     = (int *) calloc(args->files.n_smpl,sizeof(int));
+			stats->smpl_indels = (int *) calloc(args->files.n_smpl,sizeof(int));
 		}
+        idist_init(&stats->dp, args->dp_min,args->dp_max,args->dp_step);
 	}
 
 	if ( args->exons_file )
@@ -121,15 +161,19 @@ void destroy_stats(args_t *args)
 		if (stats->af_tv) free(stats->af_tv);
 		if (stats->af_snps) free(stats->af_snps);
 		if (stats->af_indels) free(stats->af_indels);
-		if (stats->qual_ts) free(stats->qual_ts);
-		if (stats->qual_tv) free(stats->qual_tv);
-		if (stats->qual_snps) free(stats->qual_snps);
-		if (stats->qual_indels) free(stats->qual_indels);
+        #if QUAL_STATS
+		    if (stats->qual_ts) free(stats->qual_ts);
+		    if (stats->qual_tv) free(stats->qual_tv);
+		    if (stats->qual_snps) free(stats->qual_snps);
+		    if (stats->qual_indels) free(stats->qual_indels);
+        #endif
 		free(stats->insertions);
 		free(stats->deletions);
 		if (stats->smpl_hets) free(stats->smpl_hets);
 		if (stats->smpl_ts) free(stats->smpl_ts);
 		if (stats->smpl_tv) free(stats->smpl_tv);
+		if (stats->smpl_indels) free(stats->smpl_indels);
+        idist_destroy(&stats->dp);
 	}
 	if (args->tmp_iaf) free(args->tmp_iaf);
 	if (args->exons_file) destroy_regions(&args->regions);
@@ -184,8 +228,10 @@ void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
 
 	bcf1_t *line = reader->line;
 
-    int iqual = line->qual >= args->m_qual ? args->m_qual - 1 : line->qual;
-    stats->qual_indels[iqual]++;
+    #if QUAL_STATS
+        int iqual = line->qual >= args->m_qual || isnan(line->qual) ? args->m_qual - 1 : line->qual;
+        stats->qual_indels[iqual]++;
+    #endif
 
 	// Check if the indel is near an exon for the frameshift statistics
 	pos_t *reg = NULL, *reg_next = NULL;
@@ -244,6 +290,7 @@ void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
 		ptr[len]++;
 	}
 }
+
 void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 {
 	stats->n_snps++;
@@ -252,8 +299,10 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 	int ref = acgt2int(*line->d.allele[0]);
 	if ( ref<0 ) return;
 
-    int iqual = line->qual >= args->m_qual ? args->m_qual - 1 : line->qual;
-    stats->qual_snps[iqual]++;
+    #if QUAL_STATS
+        int iqual = line->qual >= args->m_qual || isnan(line->qual) ? args->m_qual - 1 : line->qual;
+        stats->qual_snps[iqual]++;
+    #endif
 
 	int i;
 	for (i=1; i<line->n_allele; i++)
@@ -267,44 +316,75 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 		if ( abs(ref-alt)==2 ) 
         {
 			stats->af_ts[iaf]++;
-            stats->qual_ts[iqual]++;
+            #if QUAL_STATS
+                stats->qual_ts[iqual]++;
+            #endif
         }
 		else 
         {
 			stats->af_tv[iaf]++;
-            stats->qual_tv[iqual]++;
+            #if QUAL_STATS
+                stats->qual_tv[iqual]++;
+            #endif
         }
 	}
+}
 
-	if ( args->files.n_smpl )
+void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched)
+{
+	readers_t *files = &args->files;
+    bcf1_t *line = reader->line;
+
+	if ( set_fmt_ptr(reader,"GT") )
 	{
-		if ( !set_fmt_ptr(reader,"GT") ) return;
-
+        int ref = acgt2int(*line->d.allele[0]);
 		int is;
 		for (is=0; is<args->files.n_smpl; is++)
 		{
 			int ial;
 			int gt = gt_type(reader->fmt_ptr, reader->samples[is], &ial);
 			if ( gt == GT_UNKN ) continue;
-			if ( gt == GT_HET_RA || gt == GT_HET_AA ) stats->smpl_hets[is]++;
-			if ( gt != GT_HOM_RR )
-			{
-				if ( !(line->d.var[ial].type&VCF_SNP) ) continue;
-				int alt = acgt2int(*line->d.allele[ial]);
-				if ( alt<0 ) continue;
-				if ( abs(ref-alt)==2 ) 
-					stats->smpl_ts[is]++;
-				else
-					stats->smpl_tv[is]++;
-			}
-		}
+            if ( line->d.var_type&VCF_SNP )
+            {
+                if ( gt == GT_HET_RA || gt == GT_HET_AA ) stats->smpl_hets[is]++;
+                if ( gt != GT_HOM_RR && line->d.var[ial].type&VCF_SNP )
+                {
+                    int alt = acgt2int(*line->d.allele[ial]);
+                    if ( alt<0 ) continue;
+                    if ( abs(ref-alt)==2 ) 
+                        stats->smpl_ts[is]++;
+                    else
+                        stats->smpl_tv[is]++;
+                }
+            }
+            if ( line->d.var_type&VCF_INDEL )
+            {
+                if ( gt != GT_HOM_RR ) stats->smpl_indels[is]++;
+            }
+        }
 	}
-}
 
-void do_sample_stats(args_t *args)
-{
-	readers_t *files = &args->files;
-	if ( files->nreaders>1 )
+    if ( set_fmt_ptr(reader,"DP") )
+    {
+        int is;
+        if ( reader->fmt_ptr->type==BCF_BT_INT8 )
+        {
+            uint8_t *p = reader->fmt_ptr->p;
+            for (is=0; is<args->files.n_smpl; is++) (*idist(&stats->dp, p[is]))++;
+        }
+        else if (  reader->fmt_ptr->type==BCF_BT_INT16 )
+        {
+            uint16_t *p = (uint16_t *) reader->fmt_ptr->p;
+            for (is=0; is<args->files.n_smpl; is++) (*idist(&stats->dp, p[is]))++;
+        }
+        else if (  reader->fmt_ptr->type==BCF_BT_INT32 )
+        {
+            uint32_t *p = (uint32_t *) reader->fmt_ptr->p;
+            for (is=0; is<args->files.n_smpl; is++) (*idist(&stats->dp, p[is]))++;
+        }
+    }
+   
+	if ( matched==3 )
 	{
 		int is,ir;
 		for (ir=0; ir<files->nreaders; ir++)
@@ -393,8 +473,8 @@ void check_vcf(args_t *args)
 
 		if ( line->n_allele>2 ) stats->n_mals++;
 
-		if ( files->n_smpl && ret==3 )
-			do_sample_stats(args);
+		if ( files->n_smpl )
+			do_sample_stats(args, stats, reader, ret);
 	}
 }
 
@@ -474,16 +554,18 @@ void print_stats(args_t *args)
 			printf("AF\t%d\t%f\t%d\t%d\t%d\t%d\n", id,100.*(i-1)/(args->m_af-2),stats->af_snps[i],stats->af_ts[i],stats->af_tv[i],stats->af_indels[i]);
 		}
 	}
-	printf("# QUAL, Stats by quality:\n# QUAL\t[2]id\t[3]Quality\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
-	for (id=0; id<args->nstats; id++)
-	{
-		stats_t *stats = &args->stats[id];
-		for (i=0; i<args->m_qual; i++)
-		{
-			if ( stats->qual_snps[i]+stats->qual_ts[i]+stats->qual_tv[i]+stats->qual_indels[i] == 0  ) continue;
-			printf("QUAL\t%d\t%d\t%d\t%d\t%d\t%d\n", id,i,stats->qual_snps[i],stats->qual_ts[i],stats->qual_tv[i],stats->qual_indels[i]);
-		}
-	}
+    #if QUAL_STATS
+	    printf("# QUAL, Stats by quality:\n# QUAL\t[2]id\t[3]Quality\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
+	    for (id=0; id<args->nstats; id++)
+	    {
+	    	stats_t *stats = &args->stats[id];
+	    	for (i=0; i<args->m_qual; i++)
+	    	{
+	    		if ( stats->qual_snps[i]+stats->qual_ts[i]+stats->qual_tv[i]+stats->qual_indels[i] == 0  ) continue;
+	    		printf("QUAL\t%d\t%d\t%d\t%d\t%d\t%d\n", id,i,stats->qual_snps[i],stats->qual_ts[i],stats->qual_tv[i],stats->qual_indels[i]);
+	    	}
+	    }
+    #endif
 	printf("# IDD, InDel distribution:\n# IDD\t[2]id\t[3]length (deletions negative)\t[4]count\n");
 	for (id=0; id<args->nstats; id++)
 	{
@@ -549,16 +631,33 @@ void print_stats(args_t *args)
 
 	if ( args->files.n_smpl )
 	{
-		printf("# PSC, Per-sample counts\n# PSC\t[2]id\t[3]sample\t[4]nHets\t[5]nTransversions\t[6]nTransitions\n");
+		printf("# PSC, Per-sample counts\n# PSC\t[2]id\t[3]sample\t[4]nHets\t[5]nTransversions\t[6]nTransitions\t[7]nIndels\n");
 		for (id=0; id<args->nstats; id++)
 		{
 			stats_t *stats = &args->stats[id];
 			for (i=0; i<args->files.n_smpl; i++)
 			{
-				if ( 0 == stats->smpl_hets[i] + stats->smpl_ts[i] + stats->smpl_tv[i] ) continue;
-				printf("PSC\t%d\t%s\t%d\t%d\t%d\n", id,args->files.samples[i], stats->smpl_hets[i], stats->smpl_ts[i], stats->smpl_tv[i]);
+				if ( 0 == stats->smpl_hets[i] + stats->smpl_ts[i] + stats->smpl_tv[i] + stats->smpl_indels[i] ) continue;
+				printf("PSC\t%d\t%s\t%d\t%d\t%d\t%d\n", id,args->files.samples[i], stats->smpl_hets[i], stats->smpl_ts[i], stats->smpl_tv[i], stats->smpl_indels[i]);
 			}
 		}
+
+        printf("# DP, Depth distribution\n# DP\t[2]id\t[3]bin\t[4]number of genotypes\t[5]fraction of genotypes (%%)\n");
+        for (id=0; id<args->nstats; id++)
+        {
+            stats_t *stats = &args->stats[id];
+            long unsigned int sum = 0;
+            for (i=0; i<stats->dp.m_vals; i++) { sum += stats->dp.vals[i]; }
+            for (i=0; i<stats->dp.m_vals; i++)
+            {
+                if ( stats->dp.vals[i]==0 ) continue;
+                printf("DP\t%d\t", id);
+                if ( i==0 ) printf("<%d", stats->dp.min);
+                else if ( i+1==stats->dp.m_vals ) printf(">%d", stats->dp.max);
+                else printf("%d", idist_i2bin(&stats->dp,i));
+                printf("\t%d\t%f\n", stats->dp.vals[i], stats->dp.vals[i]*100./sum);
+            }
+        }
 	}
 }
 
@@ -570,7 +669,8 @@ static void usage(void)
 	fprintf(stderr, "Usage:   vcfcheck [options] <A.vcf.gz> [<B.vcf.gz>]\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "    -c, --collapse <string>           treat sites with differing alleles as same for <snps|indels|both|any>\n");
-	fprintf(stderr, "    -d, --debug                       produce verbose per-site and per-sample output\n");
+	fprintf(stderr, "    -d, --depth <int,int,int>         depth distribution: min,max,bin size [0,500,1]\n");
+	fprintf(stderr, "        --debug                       produce verbose per-site and per-sample output\n");
 	fprintf(stderr, "    -e, --exons <file.gz>             tab-delimited file with exons for indel frameshifts (chr,from,to; 1-based, inclusive, bgzip compressed)\n");
 	fprintf(stderr, "    -f, --apply-filters               skip sites where FILTER is other than PASS\n");
 	fprintf(stderr, "    -i, --split-by-ID                 collect stats for sites with ID separately (known vs novel)\n");
@@ -585,19 +685,21 @@ int main_vcfcheck(int argc, char *argv[])
 	int c;
 	args_t *args = (args_t*) calloc(1,sizeof(args_t));
 	args->argc   = argc; args->argv = argv;
+    args->dp_min = 0; args->dp_max = 500; args->dp_step = 1;
 
 	static struct option loptions[] = 
 	{
 		{"help",0,0,'h'},
-		{"collapse",0,0,'c'},
-		{"debug",0,0,'d'},
+		{"collapse",1,0,'c'},
+		{"debug",0,0,1},
+		{"depth",1,0,'d'},
 		{"apply-filters",0,0,'f'},
-		{"exons",0,0,'e'},
-		{"samples",0,0,'s'},
+		{"exons",1,0,'e'},
+		{"samples",1,0,'s'},
 		{"split-by-ID",0,0,'i'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "hc:fr:e:s:di",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "hc:fr:e:s:d:i1",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'c':
 				if ( !strcmp(optarg,"snps") ) args->files.collapse |= COLLAPSE_SNPS;
@@ -605,7 +707,13 @@ int main_vcfcheck(int argc, char *argv[])
 				else if ( !strcmp(optarg,"both") ) args->files.collapse |= COLLAPSE_SNPS | COLLAPSE_INDELS;
 				else if ( !strcmp(optarg,"any") ) args->files.collapse |= COLLAPSE_ANY;
 				break;
-			case 'd': args->debug = 1; break;
+			case  1 : args->debug = 1; break;
+			case 'd': 
+                if ( sscanf(optarg,"%d,%d,%d",&args->dp_min,&args->dp_max,&args->dp_step)!=3 )
+                    error("Could not parse --depth %s\n", optarg); 
+                if ( args->dp_min<0 || args->dp_min >= args->dp_max || args->dp_step > args->dp_max - args->dp_min + 1 )
+                    error("Is this a typo? --depth %s\n", optarg);
+                break;
 			case 'f': args->files.apply_filters = 1; break;
 			case 'r': args->files.region = optarg; break;
 			case 'e': args->exons_file = optarg; break;
