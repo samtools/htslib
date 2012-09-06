@@ -14,6 +14,7 @@ int main_tabix(int argc, char *argv[]);
 int main_abreak(int argc, char *argv[]);
 int main_bam2bed(int argc, char *argv[]);
 int main_vcfcheck(int argc, char *argv[]);
+int main_vcfisec(int argc, char *argv[]);
 int main_vcfmerge(int argc, char *argv[]);
 
 static int usage()
@@ -29,6 +30,7 @@ static int usage()
 	fprintf(stderr, "         abreak       summarize assembly break points\n");
 	fprintf(stderr, "         bam2bed      BAM->BED conversion\n");
 	fprintf(stderr, "         vcfcheck     produce VCF stats\n");
+	fprintf(stderr, "         vcfisec      intersections of VCF files\n");
 	fprintf(stderr, "         vcfmerge     merge VCF files\n");
 	fprintf(stderr, "\n");
 	return 1;
@@ -47,6 +49,7 @@ int main(int argc, char *argv[])
 	else if (strcmp(argv[1], "abreak") == 0) return main_abreak(argc-1, argv+1);
 	else if (strcmp(argv[1], "bam2bed") == 0) return main_bam2bed(argc-1, argv+1);
 	else if (strcmp(argv[1], "vcfcheck") == 0) return main_vcfcheck(argc-1, argv+1);
+	else if (strcmp(argv[1], "vcfisec") == 0) return main_vcfisec(argc-1, argv+1);
 	else if (strcmp(argv[1], "vcfmerge") == 0) return main_vcfmerge(argc-1, argv+1);
 	else {
 		fprintf(stderr, "[E::%s] unrecognized command '%s'\n", __func__, argv[1]);

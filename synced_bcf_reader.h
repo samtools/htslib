@@ -34,7 +34,8 @@ regions_t;
 typedef struct
 {
 	htsFile *file;
-	tbx_t *idx;
+    tbx_t *tbx;
+    hts_idx_t *bcf;
 	bcf_hdr_t *header;
 	hts_itr_t *itr;
 	const char *fname;

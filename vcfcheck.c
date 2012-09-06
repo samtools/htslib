@@ -730,7 +730,7 @@ int main_vcfcheck(int argc, char *argv[])
 	if ( args->split_by_id && argc-optind>1 ) error("Only one file can be given with -i.\n");
 	while (optind<argc)
 	{
-		if ( !add_reader(argv[optind], &args->files) ) error("Could not load the index: %s\n", argv[optind]);
+		if ( !add_reader(argv[optind], &args->files) ) error("Could not read the file: %s\n", argv[optind]);
 		optind++;
 	}
 
