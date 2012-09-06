@@ -1211,7 +1211,7 @@ void set_variant_types(bcf1_t *b)
 	b->d.var_type = 0;
 	for (i=1; i<b->n_allele; i++)
 	{
-		set_variant_type(d->allele[0],d->allele[1], &d->var[i]);
+		set_variant_type(d->allele[0],d->allele[i], &d->var[i]);
 		b->d.var_type |= d->var[i].type;
 		// printf("[set_variant_type]	%s %s -> %d %d .. %d\n", d->allele[0],d->allele[1],d->var[i].type,d->var[i].n, b->d.var_type);
 	}
