@@ -57,7 +57,7 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 			gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
 			if (gzfp) fp->fp = ks_init(gzfp);
 			if (fn_aux) fp->fn_aux = strdup(fn_aux);
-		} else fp->fp = strcmp(fn, "-")? fopen(fn, "rb") : stdout;
+		} else fp->fp = strcmp(fn, "-")? fopen(fn, "wb") : stdout;
 	}
 	if (fp->fp == 0) {
 		if (hts_verbose >= 2)
