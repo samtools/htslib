@@ -48,7 +48,8 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 			int ial;
 			for (ial=0; ial<gt->size; ial++)
 			{
-				if ( *p ) ac[((*p)>>1)-1]++;
+                if ( !*p || !(*p)>>1 ) { p += gt->size - ial; break; }
+				ac[((*p)>>1)-1]++;
 				p++;
 			}
 		}
@@ -56,5 +57,23 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 	}
 
 	return 0;
+}
+
+inline int gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
+{
+	uint8_t *p = &fmt_ptr->p[isample*fmt_ptr->size];
+	int i, a = p[0]>>1, b = a, min = a, nref = a>1 ? a : 255;
+	for (i=1; i<fmt_ptr->size; i++)
+	{
+		int tmp = p[i]>>1;
+		if ( tmp < min ) min = tmp;
+		if ( tmp > 1 && nref > tmp ) nref = tmp;
+		a |= tmp;
+		b &= tmp;
+	}
+	if ( min==0 ) return GT_UNKN;
+	if ( ial ) *ial = nref-1;
+	if ( a==b ) return min==1 ? GT_HOM_RR : GT_HOM_AA;
+	return min==1 ? GT_HET_RA : GT_HET_AA;
 }
 
