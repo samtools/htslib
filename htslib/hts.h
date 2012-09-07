@@ -40,8 +40,8 @@ typedef struct {
  **********************/
 
 extern int hts_verbose;
-extern unsigned char seq_nt16_table[256];
-extern char seq_nt16_str[];
+extern const unsigned char seq_nt16_table[256];
+extern const char seq_nt16_str[];
 
 #ifdef __cplusplus
 extern "C" {
