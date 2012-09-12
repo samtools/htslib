@@ -1,3 +1,5 @@
 *.o
 .*.swp
 *~
+htscmd
+htslib/libhts.a
