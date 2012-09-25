@@ -65,13 +65,14 @@ inline int gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
 	int i, a = p[0]>>1, b = a, min = a, nref = a>1 ? a : 255;
 	for (i=1; i<fmt_ptr->size; i++)
 	{
+        if ( p[i] == (uint8_t)INT8_MIN ) break;   // smaller ploidy
 		int tmp = p[i]>>1;
 		if ( tmp < min ) min = tmp;
 		if ( tmp > 1 && nref > tmp ) nref = tmp;
 		a |= tmp;
 		b &= tmp;
 	}
-	if ( min==0 ) return GT_UNKN;
+	if ( min==0 ) return GT_UNKN;       // missing GT
 	if ( ial ) *ial = nref-1;
 	if ( a==b ) return min==1 ? GT_HOM_RR : GT_HOM_AA;
 	return min==1 ? GT_HET_RA : GT_HET_AA;

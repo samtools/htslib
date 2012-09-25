@@ -15,6 +15,7 @@
 #define BCF_HL_INFO 1
 #define BCF_HL_FMT  2
 #define BCF_HL_CTG  3
+#define BCF_HL_GEN  4 // generic header line
 
 #define BCF_HT_FLAG 0 // header type
 #define BCF_HT_INT  1
@@ -42,8 +43,18 @@
 #define BCF_DT_CTG		1
 #define BCF_DT_SAMPLE	2
 
+// Complete textual representation of a header line
 typedef struct {
-	uint32_t info[3]; // for each number => Number:20, var:4, Type:4, ColType:4
+    int type;       // One of the BCF_HL_* type
+    char *key;      // The part before '=', i.e. FILTER/INFO/FORMAT/contig/fileformat etc.
+    char *value;    // Set only for generic lines, NULL for FILTER/INFO, etc.
+    int nkeys;              // Number of structured fields
+    char **keys, **vals;    // The key=value pairs
+} bcf_hrec_t;
+
+typedef struct {
+	uint32_t info[3];  // for each number => Number:20, var:4, Type:4, ColType:4
+    bcf_hrec_t *hrec[3];
 	int id;
 } bcf_idinfo_t;
 
@@ -56,7 +67,9 @@ typedef struct {
 	int32_t l_text, n[3];
 	bcf_idpair_t *id[3];
 	void *dict[3]; // ID dictionary, contig dict and sample dict
-	char *text;
+	char *text, **samples;
+    bcf_hrec_t **hrec;
+    int nhrec;
 	kstring_t mem;
 } bcf_hdr_t;
 
@@ -229,6 +242,24 @@ extern "C" {
 	int vcf_read1(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
 	int vcf_write1(htsFile *fp, const bcf_hdr_t *h, const bcf1_t *v);
 
+
+	/****************************************
+	 *** VCF header manipulation routines ***
+	 ****************************************/
+
+    bcf_hdr_t *bcf_hdr_init(void);
+    int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname);
+    void bcf_hdr_fmt_text(bcf_hdr_t *hdr);
+    bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, char *line, int *len);
+    int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec);
+    bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, char *id);   // type is one of BCF_HL_FLT,..,BCF_HL_CTG
+    bcf_hrec_t *bcf_hrec_dup(bcf_hrec_t *hrec);
+    void bcf_hrec_add_key(bcf_hrec_t *hrec, char *str, int len);
+    void bcf_hrec_set_val(bcf_hrec_t *hrec, int i, char *str, int len, int is_quoted);
+    int bcf_hrec_find_key(bcf_hrec_t *hrec, char *key);
+    void bcf_hrec_destroy(bcf_hrec_t *hrec);
+
+
 	/*************************
 	 *** VCF/BCF utilities ***
 	 *************************/
@@ -236,7 +267,6 @@ extern "C" {
 	bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
 	int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
 	const char **bcf_seq_names(const bcf_hdr_t *h, int *nseqs);
-	const char **bcf_sample_names(const bcf_hdr_t *h, int *nsmpls);
 	int bcf_is_snp(bcf1_t *v);
 	void set_variant_types(bcf1_t *v);
 

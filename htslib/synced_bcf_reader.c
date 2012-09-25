@@ -7,27 +7,14 @@
 #include <sys/stat.h>
 #include "synced_bcf_reader.h"
 
-#define VCF    1
-#define VCF_GZ 2
-#define BCF    3
-
-int file_type(const char *fname)
-{
-    int len = strlen(fname);
-    if ( !strcasecmp(".vcf.gz",fname+len-7) ) return VCF_GZ;
-    if ( !strcasecmp(".vcf",fname+len-4) ) return VCF;
-    if ( !strcasecmp(".bcf",fname+len-4) ) return BCF;
-    return 0;
-}
-
-int add_reader(const char *fname, readers_t *files)
+int bcf_sr_add_reader(readers_t *files, const char *fname)
 {
     files->readers = (reader_t*) realloc(files->readers, sizeof(reader_t)*(files->nreaders+1));
     reader_t *reader = &files->readers[files->nreaders++];
     memset(reader,0,sizeof(reader_t));
 
     int type = file_type(fname);
-    if ( type==VCF_GZ ) 
+    if ( type==IS_VCF_GZ ) 
     {
         reader->tbx = tbx_index_load(fname);
         if ( !reader->tbx )
@@ -46,7 +33,7 @@ int add_reader(const char *fname, readers_t *files)
         reader->file = hts_open(fname, "rb", NULL);
         if ( !reader->file ) return 0;
     }
-    else if ( type==BCF ) 
+    else if ( type==IS_BCF ) 
     {
         reader->file = hts_open(fname, "rb", NULL);
         if ( !reader->file ) return 0;
@@ -65,8 +52,7 @@ int add_reader(const char *fname, readers_t *files)
         return 0;
     }
 
-    reader->line  = bcf_init1();
-    reader->fname = fname;
+    reader->fname   = fname;
     reader->filter_id = -1;
     if ( files->apply_filters )
         reader->filter_id = bcf_id2int(reader->header, BCF_DT_ID, "PASS");
@@ -100,7 +86,13 @@ int add_reader(const char *fname, readers_t *files)
     return 1;
 }
 
-void destroy_readers(readers_t *files)
+readers_t *bcf_sr_init(void)
+{
+    readers_t *files = (readers_t*) calloc(1,sizeof(readers_t));
+    return files;
+}
+
+void bcf_sr_destroy(readers_t *files)
 {
     if ( !files->nreaders ) return;
     int i;
@@ -115,7 +107,6 @@ void destroy_readers(readers_t *files)
         int j;
         for (j=0; j<reader->mbuffer; j++)
             bcf_destroy1(reader->buffer[j]);
-        bcf_destroy1(reader->line);
         free(reader->buffer);
         if ( reader->samples ) free(reader->samples);
     }
@@ -123,17 +114,33 @@ void destroy_readers(readers_t *files)
     free(files->seqs);
     for (i=0; i<files->n_smpl; i++) free(files->samples[i]);
     free(files->samples);
-    memset(files,0,sizeof(readers_t));
+    if (files->targets)
+    {
+        if (files->targets->itr) tbx_itr_destroy(files->targets->itr);
+        tbx_destroy(files->targets->tbx);
+        if (files->targets->line.m) free(files->targets->line.s);
+        hts_close(files->targets->file);
+        free(files->targets->seq_names);
+        free(files->targets);
+    }
+    if ( files->tmps.m ) free(files->tmps.s);
+    free(files);
 }
 
-
-void collapse_buffer(readers_t *files, reader_t *reader)
+/*
+   Removes duplicate records from the buffer. The meaning of "duplicate" is
+   controlled by the $collapse variable, which can cause that from multiple
+   <indel|snp|any> lines only the first is considered and the rest is ignored.
+   The removal is done by setting the redundant lines' positions to -1 and
+   moving these lines at the end of the buffer.
+ */
+static void collapse_buffer(readers_t *files, reader_t *reader)
 {
     int irec,jrec, has_snp=0, has_indel=0, has_any=0;
-    for (irec=0; irec<reader->nbuffer; irec++)
+    for (irec=1; irec<=reader->nbuffer; irec++)
     {
         bcf1_t *line = reader->buffer[irec];
-        if ( line->pos != reader->buffer[0]->pos ) break;
+        if ( line->pos != reader->buffer[1]->pos ) break;
         set_variant_types(line);
         if ( files->collapse&COLLAPSE_ANY )
         {
@@ -152,40 +159,116 @@ void collapse_buffer(readers_t *files, reader_t *reader)
         }
     }
     bcf1_t *tmp;
-    irec = jrec = 0;
-    while ( irec<reader->nbuffer && jrec<reader->nbuffer )
+    irec = jrec = 1;
+    while ( irec<=reader->nbuffer && jrec<=reader->nbuffer )
     {
         if ( reader->buffer[irec]->pos != -1 ) { irec++; continue; }
         if ( jrec<=irec ) jrec = irec+1;
-        while ( jrec<reader->nbuffer && reader->buffer[jrec]->pos==-1 ) jrec++;
-        if ( jrec<reader->nbuffer )
+        while ( jrec<=reader->nbuffer && reader->buffer[jrec]->pos==-1 ) jrec++;
+        if ( jrec<=reader->nbuffer )
         {
             tmp = reader->buffer[irec]; reader->buffer[irec] = reader->buffer[jrec]; reader->buffer[jrec] = tmp;
         }
     }
-    reader->nbuffer = irec;
+    reader->nbuffer = irec - 1;
 }
 
-void debug_buffer(readers_t *files)
+void debug_buffer(FILE *fp, reader_t *reader)
 {
-    int i,j;
-    for (i=0; i<files->nreaders; i++)
+    int j;
+    for (j=0; j<=reader->nbuffer; j++)
     {
-        reader_t *reader = &files->readers[i];
-        for (j=0; j<reader->nbuffer; j++)
-        {
-            bcf1_t *line = reader->buffer[j];
-            printf("%s\t%s:%d\t%s %s\n", reader->fname,files->seqs[files->iseq],line->pos+1,line->d.allele[0],line->d.allele[1]);
-        }
+        bcf1_t *line = reader->buffer[j];
+        fprintf(fp,"%s%s\t%s:%d\t%s ", reader->fname,j==0?"*":"",reader->header->id[BCF_DT_CTG][line->rid].key,line->pos+1,line->n_allele?line->d.allele[0]:"");
+        int k;
+        for (k=1; k<line->n_allele; k++) fprintf(fp," %s", line->d.allele[k]);
+        fprintf(fp,"\n");
     }
-    printf("\n\n");
 }
 
-int next_line(readers_t *files)
+void debug_buffers(FILE *fp, readers_t *files)
+{
+    int i;
+    for (i=0; i<files->nreaders; i++)
+        debug_buffer(fp, &files->readers[i]);
+    fprintf(fp,"\n");
+}
+
+int bcf_sr_set_targets(readers_t *files, const char *fname)
+{
+    regions_t *tgts = (regions_t *) calloc(1,sizeof(regions_t));
+    tgts->file = hts_open(fname, "rb", NULL);
+    if ( !tgts->file ) return 0;
+    tgts->tbx = tbx_index_load(fname);
+    tgts->seq_names = (char**) tbx_seqnames(tgts->tbx, &tgts->nseqs);
+    tgts->cseq = -1;
+    files->targets = tgts;
+    return 1;
+}
+
+static char *tgt_next_seq(regions_t *tgt)
+{
+    if ( ++tgt->cseq >= tgt->nseqs ) return NULL;
+    if ( tgt->itr ) tbx_itr_destroy(tgt->itr);
+    tgt->itr = tbx_itr_querys(tgt->tbx,tgt->seq_names[tgt->cseq]);
+    tgt->tpos.to = -1;
+    return tgt->seq_names[tgt->cseq];
+}
+
+// 1 if position is present, 0 if not, -1 if not and done
+static int tgt_has_position(regions_t *tgt, int32_t pos)
+{
+    while ( tgt->tpos.to < pos )
+    {
+        int ret = tbx_itr_next((BGZF*)tgt->file->fp, tgt->tbx, tgt->itr, &tgt->line);
+        if ( ret<0 ) return -1;
+
+        // parse line
+        int k,l;
+        if ( tgt->tbx->conf.bc <= tgt->tbx->conf.ec ) 
+            k = tgt->tbx->conf.bc, l = tgt->tbx->conf.ec;
+        else 
+            l = tgt->tbx->conf.bc, k = tgt->tbx->conf.ec;
+
+        int i = 0;
+        char *end = tgt->line.s, *start;
+        for (i=0; i<k; i++)
+        {
+            start = i==0 ? end++ : ++end;
+            while (*end && *end!='\t') end++;
+        }
+        if ( k==l )
+            tgt->tpos.from = tgt->tpos.to = strtol(start, NULL, 10);
+        else
+        {
+            if ( k==tgt->tbx->conf.bc ) 
+                tgt->tpos.from = strtol(start, NULL, 10);
+            else
+                tgt->tpos.to = strtol(start, NULL, 10);
+
+            for (i=k; i<l; i++)
+            {
+                start = ++end;
+                while (*end && *end!='\t') end++;
+            }
+            if ( k==tgt->tbx->conf.bc ) 
+                tgt->tpos.to = strtol(start, NULL, 10);
+            else
+                tgt->tpos.from = strtol(start, NULL, 10);
+        }
+        tgt->tpos.from--;
+        tgt->tpos.to--;
+    }
+
+    if ( pos >= tgt->tpos.from && pos <= tgt->tpos.to ) return 1;
+    return 0;
+}
+
+int bcf_sr_next_line(readers_t *files)
 {
     int32_t min_pos = INT_MAX;
     int ret,i,j;
-    kstring_t s = {0,0,0};
+    kstring_t *str = &files->tmps;
 
     while ( min_pos==INT_MAX )
     {
@@ -195,14 +278,24 @@ int next_line(readers_t *files)
             if ( !files->readers[i].itr && !files->readers[i].nbuffer ) eos++;
         if ( eos==files->nreaders )
         {
-            if ( ++files->iseq >= files->nseqs ) return 0;  // all chroms scanned
+            const char *seq;
+            if ( files->targets )
+            {
+                seq = tgt_next_seq(files->targets);
+                if ( !seq ) return 0;   // all chroms scanned
+            }
+            else
+            {
+                if ( ++files->iseq >= files->nseqs ) return 0;  // all chroms scanned
+                seq = files->seqs[files->iseq];
+            }
             for (i=0; i<files->nreaders; i++)
             {
                 reader_t *reader = &files->readers[i];
                 if ( reader->tbx )
-                    reader->itr = tbx_itr_querys(reader->tbx,files->seqs[files->iseq]);
+                    reader->itr = tbx_itr_querys(reader->tbx,seq);
                 else
-                    reader->itr = bcf_itr_querys(reader->bcf,reader->header,files->seqs[files->iseq]);
+                    reader->itr = bcf_itr_querys(reader->bcf,reader->header,seq);
             }
         }
 
@@ -210,47 +303,91 @@ int next_line(readers_t *files)
         for (i=0; i<files->nreaders; i++)
         {
             reader_t *reader = &files->readers[i];
-            int buffer_full = ( reader->nbuffer && reader->buffer[reader->nbuffer-1]->pos != reader->buffer[0]->pos ) ? 1 : 0;
+            int buffer_full = ( reader->nbuffer && reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) ? 1 : 0;
             if ( reader->itr && !buffer_full )
             {
                 // Fill the buffer with records starting at the same position
                 while (1)
                 {
-                    if ( reader->nbuffer >= reader->mbuffer ) 
+                    if ( reader->nbuffer+1 >= reader->mbuffer ) 
                     {
-                        reader->mbuffer += 5;
+                        reader->mbuffer += 8;
                         reader->buffer = (bcf1_t**) realloc(reader->buffer, sizeof(bcf1_t*)*reader->mbuffer);
-                        for (j=5; j>0; j--)
+                        for (j=8; j>0; j--)
                             reader->buffer[reader->mbuffer-j] = bcf_init1();
                     }
                     if ( reader->tbx )
                     {
-                        ret = tbx_itr_next((BGZF*)reader->file->fp, reader->tbx, reader->itr, &s);
+                        ret = tbx_itr_next((BGZF*)reader->file->fp, reader->tbx, reader->itr, str);
                         if ( ret<0 ) break;
-                        vcf_parse1(&s, reader->header, reader->buffer[reader->nbuffer]);
+                        vcf_parse1(str, reader->header, reader->buffer[reader->nbuffer+1]);
                     }
                     else
                     {
-                        ret = bcf_itr_next((BGZF*)reader->file->fp, reader->itr, reader->buffer[reader->nbuffer]);
+                        ret = bcf_itr_next((BGZF*)reader->file->fp, reader->itr, reader->buffer[reader->nbuffer+1]);
                         if ( ret<0 ) break;
                     }
-                    bcf_unpack(reader->buffer[reader->nbuffer], BCF_UN_STR|BCF_UN_FLT);
-                    if ( reader->filter_id!=-1 && reader->buffer[reader->nbuffer]->d.n_flt && reader->filter_id!=reader->buffer[reader->nbuffer]->d.flt[0] ) continue;
+                    bcf_unpack(reader->buffer[reader->nbuffer+1], BCF_UN_STR|BCF_UN_FLT);
+                    // apply filter
+                    if ( reader->filter_id!=-1 && reader->buffer[reader->nbuffer+1]->d.n_flt && reader->filter_id!=reader->buffer[reader->nbuffer+1]->d.flt[0] ) continue;
                     reader->nbuffer++;
-                    if ( reader->buffer[reader->nbuffer-1]->pos != reader->buffer[0]->pos ) break;
+                    if ( reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) break;
                 }
                 if ( ret<0 ) { tbx_itr_destroy(reader->itr); reader->itr = NULL; } // done for this chromosome
             }
             if ( reader->nbuffer )
             {
-                if ( min_pos > reader->buffer[0]->pos ) min_pos = reader->buffer[0]->pos; 
+                if ( min_pos > reader->buffer[1]->pos ) min_pos = reader->buffer[1]->pos; 
             }
-            if ( files->collapse && reader->nbuffer>1 && reader->buffer[0]->pos==reader->buffer[1]->pos )
+            // The buffer is full - either there is nothing else to read or the last record has a different coordinate
+            if ( files->collapse && reader->nbuffer>2 && reader->buffer[1]->pos==reader->buffer[2]->pos )
+            {
                 collapse_buffer(files, reader);
+            }
+        }
+        if ( files->targets && min_pos!=INT_MAX )
+        {
+            int ret = tgt_has_position(files->targets, min_pos);
+            if ( ret==1 ) continue;
+
+            // The position must be skipped
+            if ( ret==-1 )
+            {
+                // done for this chromosome, don't read the rest
+                for (i=0; i<files->nreaders; i++) 
+                {
+                    files->readers[i].nbuffer = 0;
+                    if ( files->readers[i].itr )
+                    {
+                        tbx_itr_destroy(files->readers[i].itr);
+                        files->readers[i].itr = NULL;
+                    }
+                }
+                min_pos = INT_MAX;
+                continue;
+            }
+
+            // remove the active line, save the buffer line
+            for (i=0; i<files->nreaders; i++)
+            {
+                reader_t *reader = &files->readers[i];
+                for (j=1; j<=reader->nbuffer; j++)
+                    if ( reader->buffer[j]->pos!=min_pos ) break;
+                if ( j==1 ) continue;
+                if ( j<=reader->nbuffer )
+                {
+                    bcf1_t *tmp = reader->buffer[1]; reader->buffer[1] = reader->buffer[j]; reader->buffer[j] = tmp;
+                    reader->nbuffer = 1;
+                }
+                else 
+                    reader->nbuffer = 0;
+            }
+            min_pos = INT_MAX;
         }
     }
 
-    //debug_buffer(files);
+    //printf("[next_line] min_pos=%d\n", min_pos+1);
+    //debug_buffers(files);
 
     // Set the current line
     ret = 0;
@@ -258,13 +395,13 @@ int next_line(readers_t *files)
     for (i=0; i<files->nreaders; i++)
     {
         reader_t *reader = &files->readers[i];
-        if ( !reader->nbuffer || reader->buffer[0]->pos!=min_pos ) continue;
+        if ( !reader->nbuffer || reader->buffer[1]->pos!=min_pos ) continue;
 
         // Match the records by REF and ALT
         int j, irec = -1;
         if ( first )
         {
-            for (j=0; j<reader->nbuffer; j++)
+            for (j=1; j<=reader->nbuffer; j++)
             {
                 bcf1_t *line = reader->buffer[j];
                 if ( min_pos != line->pos ) break;  // done with this buffer
@@ -273,35 +410,51 @@ int next_line(readers_t *files)
                 if ( files->collapse&COLLAPSE_SNPS && first->d.var_type&VCF_SNP && line->d.var_type&VCF_SNP ) { irec=j; break; }
                 if ( files->collapse&COLLAPSE_INDELS && first->d.var_type&VCF_INDEL && line->d.var_type&VCF_INDEL ) { irec=j; break; }
 
-                // thorough check: the REFs and some of the alleles have to be shared
-                // (neglecting different representations of the same indel for now)
                 if ( first->rlen != line->rlen ) continue;  // REFs do not match
                 if ( strcmp(first->d.allele[0], line->d.allele[0]) ) continue; // REFs do not match
                 int ial,jal;
-                for (ial=1; ial<first->n_allele; ial++)
+                if ( files->collapse==COLLAPSE_NONE )
                 {
-                    for (jal=1; jal<line->n_allele; jal++)
-                        if ( !strcmp(first->d.allele[ial], line->d.allele[jal]) ) { irec=j; break; }
-                    if ( irec>=0 ) break;
+                    // require exact match, all alleles must be identical
+                    if ( first->n_allele!=line->n_allele ) continue;   // different number of alleles
+                    int nmatch = 1; // REF has been already checked
+                    for (ial=1; ial<first->n_allele; ial++)
+                    {
+                        for (jal=1; jal<line->n_allele; jal++)
+                            if ( !strcmp(first->d.allele[ial], line->d.allele[jal]) ) { nmatch++; break; }
+                    }
+                    if ( nmatch>=first->n_allele ) { irec=j; break; }
                 }
-                if ( irec>=0 ) break;
+                else
+                {
+                    // thorough check: the REFs and some of the alleles have to be shared
+                    // (neglecting different representations of the same indel for now)
+                    for (ial=1; ial<first->n_allele; ial++)
+                    {
+                        for (jal=1; jal<line->n_allele; jal++)
+                            if ( !strcmp(first->d.allele[ial], line->d.allele[jal]) ) { irec=j; break; }
+                        if ( irec>=1 ) break;
+                    }
+                }
+                if ( irec>=1 ) break;
             }
             if ( irec==-1 ) continue;
         }
         else 
         {
-            first = reader->buffer[0];
-            irec  = 0;
+            first = reader->buffer[1];
+            irec  = 1;
         }
-        bcf1_t *tmp = reader->line;
-        reader->line = reader->buffer[irec];
-        for (j=irec+1; j<reader->nbuffer; j++)
+        bcf1_t *tmp = reader->buffer[0];
+        reader->buffer[0] = reader->buffer[irec];
+        for (j=irec+1; j<=reader->nbuffer; j++)
             reader->buffer[j-1] = reader->buffer[j];
-        reader->nbuffer--;
         reader->buffer[ reader->nbuffer ] = tmp;
+        reader->nbuffer--;
         ret |= 1<<i;
     }
-    if ( s.m ) free(s.s);
+    // fprintf(stdout,"[next_line] min_pos=%d mask=%d\n", min_pos+1, ret);
+    // debug_buffers(stdout,files);
 
     return ret;
 }
@@ -340,7 +493,7 @@ size_t mygetline(char **line, size_t *n, FILE *fp)
 
 }
 
-int init_samples(const char *fname, readers_t *files)
+int bcf_sr_set_samples(readers_t *files, const char *fname)
 {
     int i;
     struct stat sbuf;
@@ -348,8 +501,8 @@ int init_samples(const char *fname, readers_t *files)
     files->n_smpl  = 0;
     if ( !strcmp(fname,"-") )   // Intersection of all samples across all readers
     {
-        int n;
-        const char **smpl = (const char**) bcf_sample_names(files->readers[0].header,&n);
+        int n = files->readers[0].header->n[BCF_DT_SAMPLE];
+        char **smpl = files->readers[0].header->samples;
         int ism;
         for (ism=0; ism<n; ism++)
         {
@@ -363,7 +516,6 @@ int init_samples(const char *fname, readers_t *files)
             files->samples = (char**) realloc(files->samples, (files->n_smpl+1)*sizeof(const char*));
             files->samples[files->n_smpl++] = strdup(smpl[ism]);
         }
-        free(smpl);
     }
     else if ( stat(fname, &sbuf) == 0 ) // read samples from file
     {
@@ -435,17 +587,6 @@ int init_samples(const char *fname, readers_t *files)
             reader->samples[ism] = bcf_id2int(reader->header, BCF_DT_SAMPLE, files->samples[ism]);
     }
     return 1;
-}
-
-int set_fmt_ptr(reader_t *reader, char *fmt)
-{
-    int i, gt_id = bcf_id2int(reader->header,BCF_DT_ID,fmt);
-    if ( gt_id<0 ) return 0;
-    bcf_unpack(reader->line, BCF_UN_FMT);
-    reader->fmt_ptr = NULL;
-    for (i=0; i<(int)reader->line->n_fmt; i++) 
-        if ( reader->line->d.fmt[i].id==gt_id ) { reader->fmt_ptr = &reader->line->d.fmt[i]; break; }
-    return reader->fmt_ptr ? 1 : 0;
 }
 
 int init_regions(const char *fname, regions_t *reg)

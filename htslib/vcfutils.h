@@ -1,3 +1,7 @@
+/*
+    Time will show if this module will be merged into others 
+    or perhaps removed completely.
+*/
 #ifndef VCF_UTILS_H
 #define VCF_UTILS_H
 

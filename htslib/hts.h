@@ -18,9 +18,21 @@ typedef struct __kstring_t {
 #define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
 #endif
 
+/**
+ * hts_expand()  - expands memory block pointed to by $ptr;
+ * hts_expand0()   the latter sets the newly allocated part to 0.
+ *
+ * @param n     requested number of elements of type type_t
+ * @param m     size of memory allocated
+ */
 #define hts_expand(type_t, n, m, ptr) if ((n) > (m)) { \
 		(m) = (n); kroundup32(m); \
 		(ptr) = (type_t*)realloc((ptr), (m) * sizeof(type_t)); \
+	}
+#define hts_expand0(type_t, n, m, ptr) if ((n) > (m)) { \
+		int t = (m); (m) = (n); kroundup32(m); \
+		(ptr) = (type_t*)realloc((ptr), (m) * sizeof(type_t)); \
+        memset((ptr)+t,0,sizeof(type_t)*((m)-t)); \
 	}
 
 /************
@@ -113,6 +125,22 @@ extern "C" {
 
 	hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr);
 	int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void *hdr);
+
+    /**
+     * file_type() - Convenience function to determine file type
+     * @fname: the file name
+     *
+     * Returns one of the IS_* defines.
+     *
+     * This function was added in order to avoid the need for excessive command
+     * line switches. Note that in the current implementation only the file name is
+     * checked, looking at magic string is also a possibility.
+     */
+    #define IS_VCF    1
+    #define IS_VCF_GZ 2
+    #define IS_BCF    4
+    int file_type(const char *fname);
+
 
 #ifdef __cplusplus
 }
