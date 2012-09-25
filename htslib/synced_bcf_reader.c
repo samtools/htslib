@@ -141,7 +141,6 @@ static void collapse_buffer(readers_t *files, reader_t *reader)
     {
         bcf1_t *line = reader->buffer[irec];
         if ( line->pos != reader->buffer[1]->pos ) break;
-        set_variant_types(line);
         if ( files->collapse&COLLAPSE_ANY )
         {
             if ( !has_any ) has_any = 1;
@@ -330,6 +329,7 @@ int bcf_sr_next_line(readers_t *files)
                     bcf_unpack(reader->buffer[reader->nbuffer+1], BCF_UN_STR|BCF_UN_FLT);
                     // apply filter
                     if ( reader->filter_id!=-1 && reader->buffer[reader->nbuffer+1]->d.n_flt && reader->filter_id!=reader->buffer[reader->nbuffer+1]->d.flt[0] ) continue;
+                    set_variant_types(reader->buffer[reader->nbuffer+1]);
                     reader->nbuffer++;
                     if ( reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) break;
                 }
