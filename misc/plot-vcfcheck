@@ -1148,8 +1148,8 @@ sub create_pdf
     {
         my $fname = $$opts{dat}{ID}{$id}[0][0];
         if ( $$opts{title}{$id} =~ / \+ / ) { next; }
-        $fname =~ s/_/\\_/g;
         $fname =~ s/.{80}/$&\\\\\\hskip2em /g;
+        $fname =~ s/_/\\_/g;
         $slide .= qq[\\item $$opts{title}{$id} .. \\texttt{\\footnotesize $fname}\n];
     }
     $slide .= q[\\end{itemize}\\end{minipage}];

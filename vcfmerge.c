@@ -46,22 +46,22 @@ typedef struct
     char *header_fname;
     strdict_t *tmph;
     kstring_t tmps;
-	readers_t *files;
+    readers_t *files;
     bcf1_t *out_line;
     htsFile *out_fh;
     bcf_hdr_t *out_hdr;
-	char **argv;
-	int argc;
+    char **argv;
+    int argc;
 }
 args_t;
 
 static void error(const char *format, ...)
 {
-	va_list ap;
-	va_start(ap, format);
-	vfprintf(stderr, format, ap);
-	va_end(ap);
-	exit(-1);
+    va_list ap;
+    va_start(ap, format);
+    vfprintf(stderr, format, ap);
+    va_end(ap);
+    exit(-1);
 }
 
 int bcf_hdr_sync(bcf_hdr_t *h);
@@ -282,7 +282,7 @@ void merge_chrom2qual(args_t *args, int mask, bcf1_t *out)
 
         // alleles
         int j;
-        for (j=1; j<line->n_allele; j++)
+        for (j=1; j<line->n_allele; j++) 
             al_idxs[ ma->d[i][0].map[j] ] = 1;
 
         // position
@@ -463,9 +463,9 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
             ma->fmt_map[k*files->nreaders+i] = j+1;
         }
         // Check if the allele numbering must be changed
-        for (j=1; j<ma->d[i][0].mmap; j++)
+        for (j=1; j<reader->buffer[0]->n_allele; j++)
             if ( ma->d[i][0].map[j]!=j ) break;
-        ma->d[i][0].als_differ = j==ma->d[i][0].mmap ? 0 : 1;
+        ma->d[i][0].als_differ = j==reader->buffer[0]->n_allele ? 0 : 1;
     }
     int gt_id = bcf_id2int(out_hdr,BCF_DT_ID,"GT");
     int j;
@@ -768,10 +768,7 @@ void merge_vcf(args_t *args)
     int ret;
     while ( (ret=bcf_sr_next_line(args->files)) )
     {
-        if ( args->collapse==COLLAPSE_NONE )
-            merge_line(args, ret);
-        else
-            merge_buffer(args, ret);
+        merge_buffer(args, ret);
         // printf("<merge done>\n");
         // debug_buffers(stdout, &args->files);
     }
@@ -786,61 +783,61 @@ void merge_vcf(args_t *args)
 
 static void usage(void)
 {
-	fprintf(stderr, "Usage:   vcfmerge [options] <A.vcf.gz> <B.vcf.gz> ...\n");
-	fprintf(stderr, "Options:\n");
-	fprintf(stderr, "        --use-header <file>           use the provided header\n");
-	fprintf(stderr, "        --print-header <file>         print only header of the output file and exit\n");
-	fprintf(stderr, "    -f, --apply-filters               skip sites where FILTER is other than PASS\n");
-	fprintf(stderr, "    -m, --merge <string>              merge sites with differing alleles for <snps|indels|both|any>\n");
-	fprintf(stderr, "    -r, --region <chr|chr:from-to>    merge in the given region only\n");
-	fprintf(stderr, "\n");
-	exit(1);
+    fprintf(stderr, "Usage:   vcfmerge [options] <A.vcf.gz> <B.vcf.gz> ...\n");
+    fprintf(stderr, "Options:\n");
+    fprintf(stderr, "        --use-header <file>           use the provided header\n");
+    fprintf(stderr, "        --print-header <file>         print only header of the output file and exit\n");
+    fprintf(stderr, "    -f, --apply-filters               skip sites where FILTER is other than PASS\n");
+    fprintf(stderr, "    -m, --merge <string>              merge sites with differing alleles for <snps|indels|both|any>\n");
+    fprintf(stderr, "    -r, --region <chr|chr:from-to>    merge in the given region only\n");
+    fprintf(stderr, "\n");
+    exit(1);
 }
 
 int main_vcfmerge(int argc, char *argv[])
 {
-	int c;
-	args_t *args = (args_t*) calloc(1,sizeof(args_t));
+    int c;
+    args_t *args = (args_t*) calloc(1,sizeof(args_t));
     args->files  = bcf_sr_init();
-	args->argc   = argc; args->argv = argv;
+    args->argc   = argc; args->argv = argv;
 
-	static struct option loptions[] = 
-	{
-		{"help",0,0,'h'},
-		{"merge",1,0,'m'},
-		{"apply-filters",0,0,'f'},
-		{"use-header",1,0,1},
-		{"print-header",0,0,2},
-		{0,0,0,0}
-	};
-	while ((c = getopt_long(argc, argv, "hm:fr:1:2",loptions,NULL)) >= 0) {
-		switch (c) {
-			case 'm':
-				if ( !strcmp(optarg,"snps") ) args->collapse |= COLLAPSE_SNPS;
-				else if ( !strcmp(optarg,"indels") ) args->collapse |= COLLAPSE_INDELS;
-				else if ( !strcmp(optarg,"both") ) args->collapse |= COLLAPSE_SNPS | COLLAPSE_INDELS;
-				else if ( !strcmp(optarg,"any") ) args->collapse |= COLLAPSE_ANY;
-				break;
-			case 'f': args->files->apply_filters = 1; break;
-			case 'r': args->files->region = optarg; break;
-			case  1 : args->header_fname = optarg; break;
-			case  2 : args->header_only = 1; break;
-			case 'h': 
-			case '?': usage();
-			default: error("Unknown argument: %s\n", optarg);
-		}
-	}
-	if (argc == optind) usage();
+    static struct option loptions[] = 
+    {
+        {"help",0,0,'h'},
+        {"merge",1,0,'m'},
+        {"apply-filters",0,0,'f'},
+        {"use-header",1,0,1},
+        {"print-header",0,0,2},
+        {0,0,0,0}
+    };
+    while ((c = getopt_long(argc, argv, "hm:fr:1:2",loptions,NULL)) >= 0) {
+        switch (c) {
+            case 'm':
+                if ( !strcmp(optarg,"snps") ) args->collapse |= COLLAPSE_SNPS;
+                else if ( !strcmp(optarg,"indels") ) args->collapse |= COLLAPSE_INDELS;
+                else if ( !strcmp(optarg,"both") ) args->collapse |= COLLAPSE_SNPS | COLLAPSE_INDELS;
+                else if ( !strcmp(optarg,"any") ) args->collapse |= COLLAPSE_ANY;
+                break;
+            case 'f': args->files->apply_filters = 1; break;
+            case 'r': args->files->region = optarg; break;
+            case  1 : args->header_fname = optarg; break;
+            case  2 : args->header_only = 1; break;
+            case 'h': 
+            case '?': usage();
+            default: error("Unknown argument: %s\n", optarg);
+        }
+    }
+    if (argc == optind) usage();
 
-	if ( argc-optind<2 ) usage();
-	while (optind<argc)
-	{
-		if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Could not load the index: %s\n", argv[optind]);
-		optind++;
-	}
-	merge_vcf(args);
-	bcf_sr_destroy(args->files);
-	free(args);
-	return 0;
+    if ( argc-optind<2 ) usage();
+    while (optind<argc)
+    {
+        if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Could not load the index: %s\n", argv[optind]);
+        optind++;
+    }
+    merge_vcf(args);
+    bcf_sr_destroy(args->files);
+    free(args);
+    return 0;
 }
 
