@@ -8,6 +8,16 @@
 #include "vcf.h"
 
 /**
+ *  trim_alleles() - remove ALT alleles unused in genotype fields
+ *  @header:  for access to BCF_DT_ID dictionary
+ *  @line:    VCF line obtain from vcf_parse1
+ *
+ *  Returns the number of removed alleles.
+ */
+int trim_alleles(const bcf_hdr_t *header, bcf1_t *line);
+
+
+/**
  *  calc_ac() - calculate the number of REF and ALT alleles
  *  @header:  for access to BCF_DT_ID dictionary
  *  @line:    VCF line obtain from vcf_parse1
