@@ -93,7 +93,7 @@ extern uint8_t bcf_type_shift[];
 #define VCF_OTHER 8
 
 typedef struct {
-	int type, n;	// variant type and the number of bases affected, negative for indels
+	int type, n;	// variant type and the number of bases affected, negative for deletions
 } variant_t;
 
 typedef struct {

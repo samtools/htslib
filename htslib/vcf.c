@@ -1466,14 +1466,26 @@ void set_variant_type(char *ref, char *alt, variant_t *var)
 		var->n = 0; var->type = VCF_REF; return;
 	}
 
-	while (*r && *a)
-	{
-		if ( *r!=*a ) var->n++; 
-		r++; a++;
-	}
+    char *re = r, *ae = a;
+    while ( re[1] ) re++;
+    while ( ae[1] ) ae++;
+    while ( *re==*ae && re>r && ae>a ) { re--; ae--; }
+    if ( ae==a ) 
+    { 
+        if ( re==r ) { var->n = 1; var->type = VCF_SNP; return; }
+        var->n = -(re-r);
+        if ( *re==*ae ) { var->type = VCF_INDEL; return; }
+        var->type = VCF_OTHER; return;
+    }
+    else if ( re==r ) 
+    { 
+        var->n = ae-a;
+        if ( *re==*ae ) { var->type = VCF_INDEL; return; }
+        var->type = VCF_OTHER; return;
+    }
 
-	var->type = ( *r || *a ) ? VCF_OTHER : VCF_MNP;
-	while (*r) { r++; var->n++; }
+	var->type = ( re-r == ae-a ) ? VCF_MNP : VCF_OTHER;
+    var->n = ( re-r > ae-a ) ? -(re-r+1) : ae-a+1;
 
 	// should do also complex events, SVs, etc...
 }
@@ -1494,7 +1506,7 @@ void set_variant_types(bcf1_t *b)
 	{
 		set_variant_type(d->allele[0],d->allele[i], &d->var[i]);
 		b->d.var_type |= d->var[i].type;
-		// printf("[set_variant_type]	%s %s -> %d %d .. %d\n", d->allele[0],d->allele[1],d->var[i].type,d->var[i].n, b->d.var_type);
+		//fprintf(stderr,"[set_variant_type] %d   %s %s -> %d %d .. %d\n", b->pos+1,d->allele[0],d->allele[i],d->var[i].type,d->var[i].n, b->d.var_type);
 	}
 }
 

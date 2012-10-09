@@ -12,7 +12,7 @@ use File::Temp qw/ tempfile tempdir /;
 my $opts = parse_params();
 
 test_tabix($opts,in=>'merge.a',reg=>'2:3199812-3199812',out=>'tabix.2.3199812.out');
-test_vcf_check($opts,in=>'merge.a',out=>'merge.a.chk');
+test_vcf_check($opts,in=>'check',out=>'check.chk');
 test_vcf_isec($opts,in=>['isec.a','isec.b'],out=>'isec.ab.out',args=>'-n =2');
 test_vcf_isec($opts,in=>['isec.a','isec.b'],out=>'isec.ab.both.out',args=>'-n =2 -c both');
 test_vcf_isec($opts,in=>['isec.a','isec.b'],out=>'isec.ab.any.out',args=>'-n =2 -c any');
@@ -103,7 +103,7 @@ sub test_cmd
 
     my ($ret,$out) = _cmd($args{cmd});
     if ( $ret ) { failed($opts,$test); return; }
-    if ( $$opts{redo_outputs} )
+    if ( $$opts{redo_outputs} && -e "$$opts{path}/$args{out}" )
     {
         rename("$$opts{path}/$args{out}","$$opts{path}/$args{out}.old");
         open(my $fh,'>',"$$opts{path}/$args{out}") or error("$$opts{path}/$args{out}: $!");
