@@ -372,8 +372,10 @@ sub get_values
         GCsS  => "# GCsS\t[2]id\t[3]sample\t[4]non-reference discordance rate\t[5]RR Hom matches\t[6]RA Het matches\t[7]AA Hom matches\t[8]RR Hom mismatches\t[9]RA Het mismatches\t[10]AA Hom mismatches\n",
         PSC   => "# PSC\t[2]id\t[3]sample\t[4]nRefHom\t[5]nNonRefHom\t[6]nHets\t[7]nTransitions\t[8]nTransversions\t[9]nIndels\t[10]average depth\n",
         DP    => "# DP\t[2]id\t[3]bin\t[4]number of genotypes\t[5]fraction of genotypes (%)\n",
+        FS    => "# FS\t[2]id\t[3]in-frame\t[4]out-frame\t[5]out/(in+out) ratio\n",
     );
     my $fields_ok = 1;
+    if ( !exists($exp{$key}) ) { error("todo: sanity check for $key\n"); } 
     if ( exists($$opts{def_line}{$key}) && $$opts{def_line}{$key} ne $exp{$key} && !$$opts{def_line_warned}{$key} )
     {
         warn("Warning: Possible version mismatch, the definition line differs\n\texpected: $exp{$key}\tfound:    $$opts{def_line}{$key}");
@@ -456,7 +458,8 @@ sub plot_tstv_by_sample
 	for (my $i=0; $i<@vals; $i++)
 	{ 
 		my $tstv = $vals[$i][5] ? $vals[$i][4]/$vals[$i][5] : 0;
-		iprint $fh, sprintf("\t[ %d, %f, %d, %d, %d ],\n", $i, $tstv, $vals[$i][3], $vals[$i][4]+$vals[$i][5], $vals[$i][6]);
+        my $hethom = $vals[$i][2] ? $vals[$i][3]/$vals[$i][2] : 0;
+		iprint $fh, sprintf("\t[ %d, %f, %f, %d, %d ],\n", $i, $tstv, $hethom, $vals[$i][4]+$vals[$i][5], $vals[$i][6]);
 	}
 	iprint $fh, "]
 
@@ -475,7 +478,7 @@ sub plot_tstv_by_sample
 			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
 			ax1 = fig.add_subplot(111)
 			ax1.plot([row[0] for row in dat], [row[2] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
-			ax1.set_ylabel('Number of hets')
+			ax1.set_ylabel('nHet(RA) / nHom(AA)')
 			ax1.set_xlabel('Sample ID')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
 			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
@@ -1176,7 +1179,7 @@ sub create_pdf
 	}
 
 	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}tstv_by_sample", 'Ts/Tv by sample');
-	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}hets_by_sample", 'Number of hets by sample');
+	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}hets_by_sample", 'Hets vs non-ref Homs by sample');
 	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}snps_by_sample", 'Number of SNPs by sample');
 	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}indels_by_sample", 'Number of indels by sample');
 	if ( scalar get_values($opts,2,'GCsS') ) 
