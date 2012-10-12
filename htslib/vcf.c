@@ -646,25 +646,28 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
         tbx_t *idx = tbx_index_load(fp->fn);
         if ( idx )
         {
-            vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
-			int i,n;
+			int i, n, need_sync = 0;
 			const char **names = tbx_seqnames(idx, &n);
 			for (i=0; i<n; i++)
 			{
-				int ret;
-                char *p = strdup(names[i]);
-				khint_t k = kh_put(vdict, d, p, &ret);
-				if (ret != 0) 
-				{
-					kh_val(d, k) = bcf_idinfo_def;
-					kh_val(d, k).id = kh_size(d) - 1;
-					kh_val(d, k).info[0] = -1;	// what is a good default value?
-				}
-                else free(p);
+                bcf_hrec_t *hrec = bcf_hdr_get_hrec(h, BCF_DT_CTG, (char*) names[i]);
+                if ( hrec ) continue;
+                hrec = (bcf_hrec_t*) calloc(1,sizeof(bcf_hrec_t));
+                hrec->key = strdup("contig");
+                bcf_hrec_add_key(hrec, "ID", strlen("ID"));
+                bcf_hrec_set_val(hrec, hrec->nkeys-1, (char*) names[i], strlen(names[i]), 0);
+                bcf_hrec_add_key(hrec, "length", strlen("length"));
+                bcf_hrec_set_val(hrec, hrec->nkeys-1, "-1", strlen("-1"), 0);   // what is a good default value?
+                bcf_hdr_add_hrec(h, hrec);
+                need_sync = 1;
 			}
 			free(names);
 			tbx_destroy(idx);
-            bcf_hdr_sync(h);
+            if ( need_sync )
+            {
+                bcf_hdr_sync(h);
+                bcf_hdr_fmt_text(h);
+            }
 		}
 		return h;
 	} else return bcf_hdr_read((BGZF*)fp->fp);
