@@ -8,6 +8,18 @@
 #include "vcf.h"
 
 /**
+ * get_fmt_ptr() - returns pointer to a FORMAT field
+ * @header: for access to BCF_DT_ID dictionary
+ * @line:   VCF line obtained from vcf_parse1
+ * @fmt:    one of GT,PL,...
+ *
+ * Returns bcf_fmt_t* if the call succeeded, or returns NULL when the field
+ * is not available.
+ */
+bcf_fmt_t *get_fmt_ptr(const bcf_hdr_t *header, bcf1_t *line, char *tag);
+
+
+/**
  *  trim_alleles() - remove ALT alleles unused in genotype fields
  *  @header:  for access to BCF_DT_ID dictionary
  *  @line:    VCF line obtain from vcf_parse1
@@ -18,11 +30,20 @@ int trim_alleles(const bcf_hdr_t *header, bcf1_t *line);
 
 
 /**
+ *  trim_alleles() - remove ALT alleles according to bitmask @mask
+ *  @header:  for access to BCF_DT_ID dictionary
+ *  @line:    VCF line obtained from vcf_parse1
+ *  @mask:    alleles to remove
+ */
+void remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int mask);
+
+
+/**
  *  calc_ac() - calculate the number of REF and ALT alleles
  *  @header:  for access to BCF_DT_ID dictionary
- *  @line:    VCF line obtain from vcf_parse1
+ *  @line:    VCF line obtained from vcf_parse1
  *  @ac:      array of length line->n_allele
- *  @which:   determined if INFO/AN,AC and indv fields be used
+ *  @which:   determine if INFO/AN,AC and indv fields be used
  *
  *  Returns 1 if the call succeeded, or 0 if the value could not 
  *  be determined.
