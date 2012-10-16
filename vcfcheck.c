@@ -192,25 +192,6 @@ void destroy_stats(args_t *args)
     if (args->smpl_gts_indels) free(args->smpl_gts_indels);
 }
 
-/**
- * get_fmt_ptr() - sets pointer to the supplied FORMAT field
- * @reader: reader_t structure with valid reader_t.line set
- * @fmt:    one of GT,PL,etc.
- *
- * Returns bcf_fmt_t* if the call succeeded, or returns NULL 0 when the field
- * is not available.
- */
-bcf_fmt_t *get_fmt_ptr(reader_t *reader, char *fmt)
-{
-    bcf1_t *line = reader->buffer[0];
-    int i, gt_id = bcf_id2int(reader->header,BCF_DT_ID,fmt);
-    if ( gt_id<0 ) return NULL;
-    bcf_unpack(line, BCF_UN_FMT);
-    for (i=0; i<(int)line->n_fmt; i++) 
-        if ( line->d.fmt[i].id==gt_id ) return &line->d.fmt[i];
-    return NULL;
-}
-
 void init_iaf(args_t *args, reader_t *reader)
 {
     bcf1_t *line = reader->buffer[0];
@@ -364,7 +345,7 @@ void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched
     bcf1_t *line = reader->buffer[0];
     bcf_fmt_t *fmt_ptr;
 
-    if ( (fmt_ptr = get_fmt_ptr(reader,"GT")) )
+    if ( (fmt_ptr = get_fmt_ptr(reader->header,reader->buffer[0],"GT")) )
     {
         int ref = acgt2int(*line->d.allele[0]);
         int is;
@@ -395,7 +376,7 @@ void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched
         }
     }
 
-    if ( (fmt_ptr = get_fmt_ptr(reader,"DP")) )
+    if ( (fmt_ptr = get_fmt_ptr(reader->header,reader->buffer[0],"DP")) )
     {
         #define BRANCH_INT(type_t,missing) {            \
             type_t *p = (type_t *) fmt_ptr->p;  \
@@ -419,8 +400,8 @@ void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched
     {
         int is;
         bcf_fmt_t *fmt0, *fmt1;
-        fmt0 = get_fmt_ptr(&files->readers[0],"GT"); if ( !fmt0 ) return;
-        fmt1 = get_fmt_ptr(&files->readers[1],"GT"); if ( !fmt1 ) return;
+        fmt0 = get_fmt_ptr(files->readers[0].header,files->readers[0].buffer[0],"GT"); if ( !fmt0 ) return;
+        fmt1 = get_fmt_ptr(files->readers[1].header,files->readers[1].buffer[0],"GT"); if ( !fmt1 ) return;
 
         int iaf = args->tmp_iaf[1]; // only first ALT alelle considered
         gtcmp_t *af_stats = files->readers[0].buffer[0]->d.var_type&VCF_SNP ? args->af_gts_snps : args->af_gts_indels;
