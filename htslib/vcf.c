@@ -1277,9 +1277,11 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 	ptr = (uint8_t*)v->indiv.s;
 	if (v->n_sample && v->n_fmt) { // FORMAT
 		int i, j, l, gt_i = -1;
-		bcf_fmt_t *fmt;
-		fmt = (bcf_fmt_t*)alloca(v->n_fmt * sizeof(bcf_fmt_t));
-		ptr = bcf_unpack_fmt_core(ptr, v->n_sample, v->n_fmt, fmt);
+		bcf_fmt_t *fmt = v->d.fmt;
+        // This way it is not possible to modify the output line. Also,
+        // the bcf_unpack_fmt_core has been already called above.
+		//      fmt = (bcf_fmt_t*)alloca(v->n_fmt * sizeof(bcf_fmt_t));
+		//      ptr = bcf_unpack_fmt_core(ptr, v->n_sample, v->n_fmt, fmt);
 		for (i = 0; i < (int)v->n_fmt; ++i) {
 			kputc(i? ':' : '\t', s);
 			kputs(h->id[BCF_DT_ID][fmt[i].id].key, s);
