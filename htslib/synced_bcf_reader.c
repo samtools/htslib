@@ -517,7 +517,7 @@ int bcf_sr_set_samples(readers_t *files, const char *fname)
             files->samples[files->n_smpl++] = strdup(smpl[ism]);
         }
     }
-    else if ( stat(fname, &sbuf) == 0 ) // read samples from file
+    else if ( stat(fname, &sbuf)==0 && S_ISREG(sbuf.st_mode) ) // read samples from file
     {
         FILE *fp = fopen(fname,"r");
         if ( !fp ) { fprintf(stderr,"%s: %s\n", fname,strerror(errno)); return 0; }
