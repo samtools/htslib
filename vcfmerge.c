@@ -458,7 +458,7 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
                 ma->fmt[k].n    = fmt->n;
                 ma->fmt[k].size = fmt->size;
                 ma->fmt[k].type = fmt->type;
-                //printf("add: %d %s  id=%d  n=%d  size=%d  type=%d\n", k,hdr->id[BCF_DT_ID][fmt->id].key, id,fmt->n,fmt->size,fmt->type);
+                //printf("add: %d %s  id=%d  n=%d  size=%d  type=%d info=%d\n", k,hdr->id[BCF_DT_ID][fmt->id].key, id,fmt->n,fmt->size,fmt->type, (hdr->id[BCF_DT_ID][fmt->id].val->info[BCF_HL_FMT]>>8)&0xf);
             }
             ma->fmt_map[k*files->nreaders+i] = j+1;
         }

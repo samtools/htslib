@@ -8,7 +8,8 @@
 
 typedef struct
 {
-    int min, max, step, *vals, m_vals;
+    int min, max, step, m_vals;
+    uint64_t *vals;
 }
 idist_t;
 
@@ -76,13 +77,13 @@ void idist_init(idist_t *d, int min, int max, int step)
 {
     d->min = min; d->max = max; d->step = step;
     d->m_vals = 4 + (d->max - d->min)/d->step;
-    d->vals = (int*) calloc(d->m_vals,sizeof(int));
+    d->vals = (uint64_t*) calloc(d->m_vals,sizeof(uint64_t));
 }
 void idist_destroy(idist_t *d)
 {
     if ( d->vals ) free(d->vals);
 }
-inline int *idist(idist_t *d, int val)
+inline uint64_t *idist(idist_t *d, int val)
 {
     if ( val < d->min ) return &d->vals[0];
     if ( val > d->max ) return &d->vals[d->m_vals-1];
@@ -665,7 +666,7 @@ void print_stats(args_t *args)
                 if ( i==0 ) printf("<%d", stats->dp.min);
                 else if ( i+1==stats->dp.m_vals ) printf(">%d", stats->dp.max);
                 else printf("%d", idist_i2bin(&stats->dp,i));
-                printf("\t%d\t%f\n", stats->dp.vals[i], stats->dp.vals[i]*100./sum);
+                printf("\t%ld\t%f\n", stats->dp.vals[i], stats->dp.vals[i]*100./sum);
             }
         }
     }

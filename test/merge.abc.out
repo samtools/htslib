@@ -17,24 +17,81 @@
 ##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes">
 ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
 ##FILTER=<ID=PASS,Description="All filters passed">
+##contig=<ID=2,length=-1>
 ##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">
 ##FILTER=<ID=q20,Description="Mapping quality below 20">
-##contig=<ID=2,assembly=b37,length=243199373>
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	A	B	2:B	C	D
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=2  type=2 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
+add: 3 GL  id=6  n=3  size=12  type=5 info=3
 1	3062915	id3D	GTTT	G	41.56	q10;q20	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=2  type=2 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
+add: 3 GL  id=6  n=3  size=12  type=5 info=3
 1	3062915	id1D;id2D	GTTT	GTT,GT	699.667	q20;q10	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 TT  id=1  n=2  size=2  type=1 info=2
+add: 2 GQ  id=4  n=1  size=2  type=2 info=0
+add: 3 DP  id=5  n=1  size=1  type=1 info=0
+add: 4 GL  id=6  n=6  size=24  type=5 info=3
 1	3062915	idSNP	G	T,C,A	177.56	test;q20	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=2  type=2 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
+add: 3 GL  id=6  n=3  size=12  type=5 info=3
 1	3106154	.	CAAA	CA,C	168.92	PASS	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=2  type=2 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
 1	3106154	.	CAAA	CTAAAA,CTAAA	259.1	PASS	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=2  type=2 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
+add: 3 GL  id=6  n=3  size=12  type=5 info=3
 1	3106154	.	C	T	999	PASS	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=1  type=1 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
 1	3157410	.	GA	GC,G	72.6667	q10	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=1  type=1 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
 1	3157410	.	G	T	46.7	q10	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=2  type=2 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
 1	3162006	.	GAA	G	154.08	PASS	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=2  type=2 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
 1	3177144	.	GT	G	363.4	PASS	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=1  type=1 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
 1	3184885	.	TAAAA	TA,T	33.128	PASS	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=2  type=2 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
 2	3188209	.	GA	G	41.5	.	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=2  type=2 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
 2	3199812	.	G	GTT,GT	186.85	PASS	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=2  type=2 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
 3	3199812	.	GA	GTT,GT	17.5	PASS	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=1  type=1 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
 3	3212016	.	CTT	C,CT	65.75	PASS	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=2  type=2 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
 4	3212016	.	CTT	C	999	q20	.
+add: 0 GT  id=3  n=2  size=2  type=1 info=0
+add: 1 GQ  id=4  n=1  size=2  type=2 info=0
+add: 2 DP  id=5  n=1  size=1  type=1 info=0
 4	3258448	.	TACACACAC	T	91.45	PASS	.

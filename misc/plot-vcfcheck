@@ -20,6 +20,8 @@ use Carp;
 
 my $opts = parse_params();
 parse_vcfcheck($opts);
+merge_vcfcheck($opts) if @{$$opts{vcfcheck}} > 1;
+
 if ( $$opts{make_plots} )
 {
 	init_plots($opts);
@@ -49,12 +51,12 @@ sub error
     my (@msg) = @_;
     if ( scalar @msg ) { confess @msg; }
     die
-        "Usage: plot-vcfcheck [OPTIONS] file.chk\n",
-        "       plot-vcfcheck -p outdir/ file.chk\n",
+        "Usage: plot-vcfcheck [OPTIONS] file.chk ...\n",
+        "       plot-vcfcheck -p outdir/ file.chk ...\n",
         "Options:\n",
-        "   -k, --keep-files                    Do not remove temporary files.\n",
         "   -p, --prefix <path>                 The output files prefix, add a slash to create new directory.\n",
         "   -P, --no-PDF                        Skip the PDF creation step.\n",
+        "   -m, --merge                         Merge vcfcheck files to STDOUT, skip plotting.\n",
         "   -t, --title <string>                Use this title in plots, can be given multiple times.\n",
         "   -h, -?, --help                      This help message.\n",
         "\n";
@@ -69,6 +71,7 @@ sub parse_params
 		verbose    => 1,
 		make_pdf   => 1,
 		make_plots => 1,
+		merge      => 0,
 		args       => join(' ',$0,@ARGV), 
 		img_width  => 11/2.54,
 		img_height => 10/2.54,
@@ -78,12 +81,78 @@ sub parse_params
 			slide3v => { height1 => '7cm', height2 => '7cm',  height3 => '4.5cm' },
 			slide3h => { width1  => '15cm', width2 => '10cm', width3 => '8cm' },
 		},
+
+        # for file version sanity check
+        sections =>
+        [
+            { 
+                id=>'ID',    
+                header=>'Definition of sets', 
+                exp=>"# ID\t[2]id\t[3]tab-separated file names\n" 
+            },
+            { 
+                id=>'SN',    
+                header=>'SN, Summary numbers', 
+                exp=>"# SN  [2]id   [3]key  [4]value\n" 
+            },
+            { 
+                id=>'SiS',   
+                header=>'Sis, Singleton stats', 
+                exp=>"# SiS\t[2]id\t[3]allele count\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n" 
+            },
+            { 
+                id=>'AF',    
+                header=>'AF, Stats by non-reference allele frequency', 
+                exp=>"# AF\t[2]id\t[3]allele frequency\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n" 
+            },
+            { 
+                id=>'IDD',   
+                header=>'IDD, InDel distribution', 
+                exp=>"# IDD\t[2]id\t[3]length (deletions negative)\t[4]count\n" 
+            },
+            { 
+                id=>'ST',    
+                header=>'ST, Substitution types', 
+                exp=>"# ST\t[2]id\t[3]type\t[4]count\n" 
+            },
+            { 
+                id=>'GCsAF', 
+                header=>'GCsAF, Genotype concordance by non-reference allele frequency (SNPs)', 
+                exp=>"# GCsAF\t[2]id\t[3]allele frequency\t[4]RR Hom matches\t[5]RA Het matches\t[6]AA Hom matches\t[7]RR Hom mismatches\t[8]RA Het mismatches\t[9]AA Hom mismatches\n" 
+            },
+            { 
+                id=>'NRD',   
+                header=>'Non-Reference Discordance (NRD)', 
+                exp=>"# NRD\t[2]id\t[3]NRD\t[4]Ref/Ref discordance\t[5]Ref/Alt discordance\t[6]Alt/Alt discordance\n" 
+            },
+            { 
+                id=>'GCsS',  
+                header=>'GCcS, Genotype concordance by sample (SNPs)', 
+                exp=>"# GCsS\t[2]id\t[3]sample\t[4]non-reference discordance rate\t[5]RR Hom matches\t[6]RA Het matches\t[7]AA Hom matches\t[8]RR Hom mismatches\t[9]RA Het mismatches\t[10]AA Hom mismatches\n" 
+            },
+            { 
+                id=>'PSC',   
+                header=>'PSC, Per-sample counts', 
+                exp=>"# PSC\t[2]id\t[3]sample\t[4]nRefHom\t[5]nNonRefHom\t[6]nHets\t[7]nTransitions\t[8]nTransversions\t[9]nIndels\t[10]average depth\n" 
+            },
+            { 
+                id=>'DP',    
+                header=>'DP, Depth distribution', 
+                exp=>"# DP\t[2]id\t[3]bin\t[4]number of genotypes\t[5]fraction of genotypes (%)\n" 
+            },
+            { 
+                id=>'FS',    
+                header=>'FS, Indel frameshifts', 
+                exp=>"# FS\t[2]id\t[3]in-frame\t[4]out-frame\t[5]out/(in+out) ratio\n" 
+            },
+        ],
 	};
+    for my $sec (@{$$opts{sections}}) { $$opts{exp}{$$sec{id}} = $$sec{exp}; $$opts{id2sec}{$$sec{id}} = $sec; }
     while (defined(my $arg=shift(@ARGV)))
     {
         if (                 $arg eq '--no-plots' ) { $$opts{make_plots}=0; next; }
         if ( $arg eq '-P' || $arg eq '--no-PDF' ) { $$opts{make_pdf}=0; next; }
-        if ( $arg eq '-k' || $arg eq '--keep-files' ) { $$opts{keep_files}=1; next; }
+        if ( $arg eq '-m' || $arg eq '--merge' ) { $$opts{make_plots}=0; $$opts{make_pdf}=0; $$opts{merge}=1; next; }
         if ( $arg eq '-t' || $arg eq '--titles' ) { push @{$$opts{titles}},shift(@ARGV); next; }
         if ( $arg eq '-p' || $arg eq '--prefix' ) { $$opts{prefix}=shift(@ARGV); next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
@@ -91,7 +160,13 @@ sub parse_params
         error("Unknown parameter or non-existent file \"$arg\". Run -h for help.\n");
     }
     if ( !exists($$opts{vcfcheck}) ) { error("No vcfcheck file?\n") }
-    if ( !exists($$opts{prefix}) ) { error("Expected -p parameter.\n") }
+    if ( !exists($$opts{prefix}) )
+    {
+        if ( !$$opts{merge} ) { error("Expected -p parameter.\n") }
+        $$opts{prefix} = './';
+    }
+    elsif ( $$opts{merge} ) { error("Only one of -p or -m should be given.\n"); }
+    if ( $$opts{merge} && @{$$opts{vcfcheck}} < 2 ) { error("Nothing to merge\n") }
 
 	$$opts{dir} = $$opts{prefix};
 	$$opts{dir} =~ s{/[^/]+$}{/};
@@ -101,7 +176,7 @@ sub parse_params
 	$$opts{lprefix} =~ s{^.+/}{};
 	$$opts{logfile} = "$$opts{lprefix}plot-vcfcheck.log";
 	if ( !-d $$opts{dir} ) { `mkdir -p $$opts{dir}`; } 
-	`> $$opts{dir}$$opts{logfile}`;
+	`> $$opts{dir}$$opts{logfile}` unless $$opts{merge};
     return $opts;
 }
 
@@ -161,8 +236,8 @@ sub parse_vcfcheck
 	for my $id (file_ids($opts))
 	{
 		my @titles;
-		for my $file (@{$$opts{dat}{ID}{$id}[0]}) { push @titles, $file2title{$file}; }
-		$$opts{title}{$id} = join(' + ',@titles);
+		for my $file (@{$$opts{dat}{ID}{$id}[0]}) { push @titles, $file2title{$file} if $file2title{$file}; }
+        $$opts{title}{$id} = join(' + ',@titles);
 	}
 
 	# mapping from file names to list of IDs
@@ -174,6 +249,29 @@ sub parse_vcfcheck
 			push @{$$opts{file2ids}{$file}}, $id;
 		}
 	}
+
+    # check sanity of the file merge: were the correct files merged?
+    if ( exists($$opts{coalesced_files}) && $$opts{verbose} )
+    {
+        print STDERR "The following files have been merged:\n";
+        my %printed;
+        for my $id (keys %{$$opts{coalesced_files}})
+        {
+            for (my $i=0; $i<@{$$opts{coalesced_files}{$id}}; $i++)
+            {
+                for (my $j=0; $j<@{$$opts{coalesced_files}{$id}[$i]}; $j++)
+                {
+                    if ( exists($printed{$$opts{dat}{ID}{$id}[$i][$j]}) ) { next; }
+                    print STDERR "\t$$opts{dat}{ID}{$id}[$i][$j]\n";
+                    for my $file (keys %{$$opts{coalesced_files}{$id}[$i][$j]})
+                    {
+                        print STDERR "\t\t$file\n";
+                    }
+                    $printed{$$opts{dat}{ID}{$id}[$i][$j]} = 1;
+                }
+            }
+        }
+    }
 }
 
 sub add_to_values
@@ -200,6 +298,37 @@ sub add_to_values
     }
 }
 
+sub rglob
+{
+    my ($a,$b) = @_;
+    if ( $a eq $b ) { return $a; }
+    $a =~ s/\*//;
+    my $la = length($a);
+    my $lb = length($b);
+    my $i = 0;
+    while ( $i<$la && $i<$lb && substr($a,$i,1) eq substr($b,$i,1) ) { $i++; }
+    $la--; $lb--;
+    while ( $la>$i && $lb>$i && substr($a,$la,1) eq substr($b,$lb,1) ) { $la--; $lb--; }
+    $la = $la==$i && $lb==$i ? 1 : $la-$i;
+    substr($a,$i,$la,'*');
+    return $a;
+}
+
+sub merge_id
+{
+    # merge id filenames
+    my ($opts,$dst,$src,$id) = @_;
+    for (my $i=0; $i<@{$$src{$id}}; $i++)
+    {
+        for (my $j=0; $j<@{$$src{$id}[$i]}; $j++)
+        {
+            my $gname = rglob($$dst{$id}[$i][$j], $$src{$id}[$i][$j]);
+            $$dst{$id}[$i][$j] = $gname;
+            $$opts{coalesced_files}{$id}[$i][$j]{$$src{$id}[$i][$j]} = 1;
+        }
+    }
+}
+
 sub add_to_avg
 {
     my ($dst,$src,$n) = @_;
@@ -220,10 +349,12 @@ sub add_to_avg
 }
 
 sub cmp_str($$) { my ($a,$b) = @_; return $a cmp $b }
-sub cmp_num($$) 
+sub cmp_num($$) { my ($a,$b) = @_; return $a <=> $b; }
+sub cmp_num_op($$) 
 { 
-    my ($a,$b) = @_;
+    # numeric compare with operators
     # Cases like <3, >500 make it complicated
+    my ($a,$b) = @_;
     my $xa = '=';
     my $xb = '=';
     if ( $a=~/^(\D+)/ ) { $xa = $1; $a = $'; }
@@ -235,7 +366,7 @@ sub cmp_num($$)
 sub merge_dp
 {
     my ($a,$b) = @_;
-    add_to_values($a,$b,0,\&cmp_num);
+    add_to_values($a,$b,0,\&cmp_num_op);
     my $sum = 0;
     for (my $i=0; $i<@$a; $i++) { $sum += $$a[$i][1]; }
     for (my $i=0; $i<@$a; $i++) { $$a[$i][2] = $$a[$i][1]*100./$sum; }
@@ -282,14 +413,17 @@ sub parse_vcfcheck1
         for my $b (keys %{$dat{$a}})
         {
             # Merging multiple vcfcheck files. Honestly, this is quite hacky.
-            if ( $a eq 'ID' ) { next; }
+            if ( !exists($$opts{dat}{$a}{$b}) ) { $$opts{dat}{$a}{$b} = $dat{$a}{$b}; next; } # copy all, first occurance
+
+            if ( $a eq 'ID' ) { merge_id($opts,$$opts{dat}{$a},$dat{$a},$b); }
             elsif ( $b eq 'ts/tv:' ) { $$opts{dat}{$a}{$b} = ($i*$$opts{dat}{$a}{$b} + $dat{$a}{$b})/($i+1); }
-            elsif ( ref($dat{$a}{$b}) ne 'ARRAY' ) { $$opts{dat}{$a}{$b} += $dat{$a}{$b}; }
+            elsif ( ref($dat{$a}{$b}) ne 'ARRAY' ) {$$opts{dat}{$a}{$b} += $dat{$a}{$b} unless $b eq 'number of samples:'; } # SN, Summary numbers, do not sum sample counts
             elsif ( $a eq 'NRD' ) { add_to_avg($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             elsif ( $a eq 'DP' ) { merge_dp($$opts{dat}{$a}{$b},$dat{$a}{$b}); }
             elsif ( $a eq 'GCsS' ) { merge_GCsS($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
-            elsif ( $a eq 'ST' or $a eq 'PSC' ) { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},0,\&cmp_str); }
-            else { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},0,\&cmp_num); }
+            elsif ( $a eq 'ST' or $a eq 'PSC') { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},0,\&cmp_str); }
+            elsif ( $a eq 'IDD') { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},0,\&cmp_num); }
+            else { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},0,\&cmp_num_op); } # SiS AF IDD
         }
     }
 }
@@ -359,26 +493,11 @@ sub get_values
 	my ($opts,$id,$key) = @_;
 	if ( !exists($$opts{dat}{$key}) ) { return (); }
 	if ( !exists($$opts{dat}{$key}{$id}) ) { return (); }
-
-    my %exp =
-    (
-        ID    => "# ID\t[2]id\t[3]tab-separated file names\n",
-        SiS   => "# SiS\t[2]id\t[3]allele count\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n",
-        AF    => "# AF\t[2]id\t[3]allele frequency\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n",
-        IDD   => "# IDD\t[2]id\t[3]length (deletions negative)\t[4]count\n",
-        ST    => "# ST\t[2]id\t[3]type\t[4]count\n",
-        GCsAF => "# GCsAF\t[2]id\t[3]allele frequency\t[4]RR Hom matches\t[5]RA Het matches\t[6]AA Hom matches\t[7]RR Hom mismatches\t[8]RA Het mismatches\t[9]AA Hom mismatches\n",
-        NRD   => "# NRD\t[2]id\t[3]NRD\t[4]Ref/Ref discordance\t[5]Ref/Alt discordance\t[6]Alt/Alt discordance\n",
-        GCsS  => "# GCsS\t[2]id\t[3]sample\t[4]non-reference discordance rate\t[5]RR Hom matches\t[6]RA Het matches\t[7]AA Hom matches\t[8]RR Hom mismatches\t[9]RA Het mismatches\t[10]AA Hom mismatches\n",
-        PSC   => "# PSC\t[2]id\t[3]sample\t[4]nRefHom\t[5]nNonRefHom\t[6]nHets\t[7]nTransitions\t[8]nTransversions\t[9]nIndels\t[10]average depth\n",
-        DP    => "# DP\t[2]id\t[3]bin\t[4]number of genotypes\t[5]fraction of genotypes (%)\n",
-        FS    => "# FS\t[2]id\t[3]in-frame\t[4]out-frame\t[5]out/(in+out) ratio\n",
-    );
     my $fields_ok = 1;
-    if ( !exists($exp{$key}) ) { error("todo: sanity check for $key\n"); } 
-    if ( exists($$opts{def_line}{$key}) && $$opts{def_line}{$key} ne $exp{$key} && !$$opts{def_line_warned}{$key} )
+    if ( !exists($$opts{exp}{$key}) ) { error("todo: sanity check for $key\n"); } 
+    if ( exists($$opts{def_line}{$key}) && $$opts{def_line}{$key} ne $$opts{exp}{$key} && !$$opts{def_line_warned}{$key} )
     {
-        warn("Warning: Possible version mismatch, the definition line differs\n\texpected: $exp{$key}\tfound:    $$opts{def_line}{$key}");
+        warn("Warning: Possible version mismatch, the definition line differs\n\texpected: $$opts{exp}{$key}\tfound:    $$opts{def_line}{$key}");
         $$opts{def_line_warned}{$key} = 1;
     }
 
@@ -1243,4 +1362,46 @@ sub create_pdf
 	print STDERR "Finished: $pdf_file\n" unless !$$opts{verbose};
 }
 
+
+sub merge_vcfcheck
+{
+	my ($opts) = @_;
+
+    my $fh = *STDOUT;
+    if ( !$$opts{merge} ) 
+    { 
+        open($fh,'>',"$$opts{prefix}merge.chk") or error("$$opts{prefix}merge.chk: $!\n");
+    }
+
+    print $fh "# This file was produced by plot-vcfcheck, the command line was:\n#   $$opts{args}\n#\n";
+
+    for my $sec (@{$$opts{sections}})
+    {
+        my $sid = $$sec{id};
+        if ( !exists($$opts{dat}{$sid}) ) { next; }
+
+        print $fh "# $$sec{header}\n$$sec{exp}";
+        for my $id (sort keys %{$$opts{dat}{$sid}})
+        {
+            for my $rec (@{$$opts{dat}{$sid}{$id}})
+            {
+                print $fh "$sid\t$id\t", join("\t",@$rec), "\n";
+            }
+        }
+
+        if ( $sid eq 'ID' )
+        {
+            print $fh "# $$opts{id2sec}{SN}{header}\n$$opts{id2sec}{SN}{exp}";
+            # output summary numbers here
+            for my $id (keys %{$$opts{dat}})
+            {
+                if ( exists($$opts{exp}{$id}) ) { next; }
+                for my $key (keys %{$$opts{dat}{$id}})
+                {
+                    print $fh "SN\t$id\t$key\t$$opts{dat}{$id}{$key}\n";
+                }
+            }
+        }
+    }
+}
 
