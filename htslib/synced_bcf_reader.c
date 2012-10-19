@@ -230,7 +230,7 @@ static int tgt_has_position(regions_t *tgt, int32_t pos)
             l = tgt->tbx->conf.bc, k = tgt->tbx->conf.ec;
 
         int i = 0;
-        char *end = tgt->line.s, *start;
+        char *end = tgt->line.s, *start = NULL;
         for (i=0; i<k; i++)
         {
             start = i==0 ? end++ : ++end;

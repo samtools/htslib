@@ -72,14 +72,14 @@ void isec_vcf(args_t *args)
         }
 
         if ( args->isec_op==OP_EQUAL )
-            if ( n!=files->nreaders ) continue;
+            if ( n != args->isec_n ) continue;
         else {
             if ( args->isec_op==OP_PLUS )
-                if ( n<files->nreaders ) continue;
+                if ( n < args->isec_n ) continue;
         }
         else {
             if ( args->isec_op==OP_MINUS )
-                if ( n>files->nreaders ) continue;
+                if ( n > args->isec_n ) continue;
         }
 
         str.l = 0;
@@ -203,7 +203,7 @@ static void destroy_data(args_t *args)
 
 static void usage(void)
 {
-	fprintf(stderr, "About:   Create intersections, unions and complements of VCF files->\n");
+	fprintf(stderr, "About:   Create intersections, unions and complements of VCF files\n");
 	fprintf(stderr, "Usage:   vcfisec [options] <A.vcf.gz> <B.vcf.gz> ...\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "    -c, --collapse <string>           treat as identical sites with differing alleles for <snps|indels|both|any>\n");
@@ -213,6 +213,12 @@ static void usage(void)
 	fprintf(stderr, "    -r, --region <chr|chr:from-to>    perform intersection in the given region only\n");
 	fprintf(stderr, "    -s, --subset <file>               subset to positions in tab-delimited tabix indexed file <chr,pos> or <chr,from,to>, 1-based, inclusive\n");
 	fprintf(stderr, "    -w, --write <list>                list of files to write with -p given as 1-based indexes. By default, all files are written\n");
+	fprintf(stderr, "Examples:\n");
+	fprintf(stderr, "   # Extract and write records from A shared by both A and B using exact allele match\n");
+	fprintf(stderr, "   vcf isec A.vcf.gz B.vcf.gz -p dir -n =2 -w 1\n");
+	fprintf(stderr, "\n");
+	fprintf(stderr, "   # Extract records private to A or B comparing by position only\n");
+	fprintf(stderr, "   vcf isec A.vcf.gz B.vcf.gz -p dir -n -1 -c any\n");
 	fprintf(stderr, "\n");
 	exit(1);
 }
