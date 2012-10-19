@@ -266,7 +266,7 @@ extern "C" {
 
 	bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
 	int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
-	const char **bcf_seq_names(const bcf_hdr_t *h, int *nseqs);
+	const char **bcf_seqnames(const bcf_hdr_t *h, int *nseqs);
 	int bcf_is_snp(bcf1_t *v);
 	void set_variant_types(bcf1_t *v);
 

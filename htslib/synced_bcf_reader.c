@@ -70,7 +70,7 @@ int bcf_sr_add_reader(readers_t *files, const char *fname)
     else
     {
         int n,i,j;
-        const char **names = bcf_seq_names(reader->header, &n);
+        const char **names = bcf_seqnames(reader->header, &n);
         for (i=0; i<n; i++)
         {
             for (j=0; j<files->nseqs; j++)

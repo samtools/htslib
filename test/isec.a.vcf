@@ -6,10 +6,7 @@
 ##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read Depth">
 ##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype Likelihood">
 ##FILTER=<ID=q10,Description="Quality below 10">
-##xcontig=<ID=10,assembly=b37,length=249250621>
-##xcontig=<ID=2,assembly=b37,length=243199373>
-##xcontig=<ID=3,assembly=b37,length=198022430>
-##xcontig=<ID=4,assembly=b37,length=191154276>
+##test=<xx=A,yy=B,zz=C>
 ##reference=file:///lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta
 ##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes">
 ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">

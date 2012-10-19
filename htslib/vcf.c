@@ -314,7 +314,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, char *line, int *len)
         while ( *q && *q!='\n' ) q++;
         hrec->value = (char*) malloc((q-p+1)*sizeof(char));
         memcpy(hrec->value, p, q-p);
-        hrec->value[q-p] = 0;
+//hrec->value[q-p] = 0;
         *len = q-line+1;
         return hrec;
     }
@@ -699,7 +699,7 @@ void bcf_hdr_fmt_text(bcf_hdr_t *hdr)
     kstring_t txt = {0,0,0};
     for (i=0; i<hdr->nhrec; i++)
     {
-        if ( hdr->hrec[i]->type!=BCF_HL_GEN )
+        if ( !hdr->hrec[i]->value )
         {
             ksprintf(&txt, "##%s=<", hdr->hrec[i]->key);
             ksprintf(&txt,"%s=%s", hdr->hrec[i]->keys[0], hdr->hrec[i]->vals[0]);
@@ -724,24 +724,24 @@ void bcf_hdr_fmt_text(bcf_hdr_t *hdr)
     hdr->l_text = txt.l;
 }
 
-const char **bcf_seq_names(const bcf_hdr_t *h, int *n)
+const char **bcf_seqnames(const bcf_hdr_t *h, int *n)
 {
-	int m=0;
-	const char **names = NULL;
-	khint_t k;
-	vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
-	*n = 0;
-	for (k=kh_begin(d); k<kh_end(d); k++)
-	{
-		if ( !kh_exist(d,k) ) continue;
-		if ( *n>=m ) 
-		{
-			m += 50;
-			names = (const char**)realloc(names, m*sizeof(char*));
-		}
-		names[(*n)++] = kh_key(d,k);
-	}
-	return names;
+    vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
+    int tid, m = kh_size(d);
+    const char **names = (const char**) calloc(m,sizeof(const char*));
+    khint_t k;
+    for (k=kh_begin(d); k<kh_end(d); k++)
+    {
+        if ( !kh_exist(d,k) ) continue;
+        tid = kh_val(d,k).id;
+        assert( tid<m );
+        names[tid] = kh_key(d,k);
+    }
+    // sanity check: there should be no gaps
+    for (tid=0; tid<m; tid++)
+        assert(names[tid]);
+    *n = m;
+    return names;
 }
 
 void vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)

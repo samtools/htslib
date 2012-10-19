@@ -16,6 +16,7 @@ test_vcf_check($opts,in=>'check',out=>'check.chk');
 test_vcf_isec($opts,in=>['isec.a','isec.b'],out=>'isec.ab.out',args=>'-n =2');
 test_vcf_isec($opts,in=>['isec.a','isec.b'],out=>'isec.ab.both.out',args=>'-n =2 -c both');
 test_vcf_isec($opts,in=>['isec.a','isec.b'],out=>'isec.ab.any.out',args=>'-n =2 -c any');
+test_vcf_isec($opts,in=>['isec.a','isec.b'],out=>'isec.ab.C.out',args=>'-C -c any');
 test_vcf_isec2($opts,vcf_in=>['isec.a'],tab_in=>'isec',out=>'isec.tab.out',args=>'');
 test_vcf_merge($opts,in=>['merge.a','merge.b','merge.c'],out=>'merge.abc.out');
 
@@ -118,10 +119,14 @@ sub test_cmd
             print "\t  new .. $$opts{path}/$args{out}\n";
         }
     }
-    open(my $fh,'<',"$$opts{path}/$args{out}") or error("$$opts{path}/$args{out}: $!");
-    my @exp = <$fh>;
-    my $exp = join('',@exp);
-    close($fh);
+    my $exp = '';
+    if ( open(my $fh,'<',"$$opts{path}/$args{out}") )
+    {
+        my @exp = <$fh>;
+        $exp = join('',@exp);
+        close($fh);
+    }
+    elsif ( !$$opts{redo_outputs} ) { error("$$opts{path}/$args{out}: $!"); }
 
     if ( $exp ne $out ) 
     { 
