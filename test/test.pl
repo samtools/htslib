@@ -126,7 +126,7 @@ sub test_cmd
         $exp = join('',@exp);
         close($fh);
     }
-    elsif ( !$$opts{redo_outputs} ) { error("$$opts{path}/$args{out}: $!"); }
+    elsif ( !$$opts{redo_outputs} ) { failed($opts,$test,"$$opts{path}/$args{out}: $!"); return; }
 
     if ( $exp ne $out ) 
     { 

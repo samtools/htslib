@@ -32,7 +32,7 @@ typedef struct
     int *nbuf;      // readers have buffers of varying lengths
     float *weight;  // weighting factor for recalculating qualities
     int *flt, mflt;
-    bcf_fmt_t *fmt;
+    bcf_fmt_t *fmt; // out_line's indiv fields
     int mfmt, *fmt_map, mfmt_map;
     maux1_t **d;    // d[i][j] i-th reader, j-th buffer line
     readers_t *files;
@@ -382,39 +382,47 @@ void merge_filter(args_t *args, int mask, bcf1_t *out)
     out->d.flt = ma->flt;
 }
 
-void merge_GT(args_t *args, maux_t *ma, bcf_fmt_t *fmt)
+void merge_GT(args_t *args, int mask, bcf_fmt_t *fmt, int *fmt_map, bcf1_t *out)
 {
-    #if 0
-    int i, is_out = 0;
+    readers_t *files = args->files;
+    bcf_hdr_t *out_hdr = args->out_hdr;
+    maux_t *ma = args->maux;
+    int i, ismpl = 0, nsamples = out_hdr->n[BCF_DT_SAMPLE];
+    if ( !fmt->p ) fmt->p = (uint8_t*) malloc(sizeof(uint8_t)*nsamples*fmt->size);
     for (i=0; i<files->nreaders; i++)
     {
         reader_t *reader = &files->readers[i];
         bcf1_t *line   = reader->buffer[0];
         bcf_hdr_t *hdr = reader->header;
 
-        int k = -1;
-        if ( mask&1<<i ) k = ma->fmt_map[j*files->nreaders+i] - 1;
+        int j, k = -1;
+        if ( mask&1<<i ) k = ma->fmt_map[i] - 1;
+            for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++)
+            {
+                fmt->p[fmt->size*(ismpl+j)] = (uint8_t)INT8_MIN;
+            }
+            ismpl += hdr->n[BCF_DT_SAMPLE];
         if ( k<0 )
         {
             // missing values
-            is_out += 0;
+            for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++)
+            {
+            }
+            
             continue;
         }
-        bcf_fmt_t *fmt = &line->d.fmt[k];
-        //fprintf(stderr,"%s %s\n", out_hdr->id[BCF_DT_ID][ma->fmt[j].id].key, k>=0 ? hdr->id[BCF_DT_ID][fmt->id].key : ".");
+        //bcf_fmt_t *fmt = &line->d.fmt[k];
         
-        if ( !maux->d[i][0].als_differ )
+        if ( !ma->d[i][0].als_differ )
         {
             // the allele numbering is unchanged
         }
         else
         {
-            // need changing allel numbering
-            int is;
-            for (is=0; ...
+            // need changing allele numbering
+            //for (is=0; ...
         }
     }
-    #endif
 }
 
 void merge_format(args_t *args, int mask, bcf1_t *out)
@@ -424,6 +432,7 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
     maux_t *ma = args->maux;
     memset(ma->fmt_map,0,ma->mfmt_map*files->nreaders);
 
+    int nsamples = out_hdr->n[BCF_DT_SAMPLE];
     int i, n_fmt = 0;
     for (i=0; i<files->nreaders; i++)
     {
@@ -446,6 +455,7 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
                 {
                     ma->fmt[k].size = fmt->size;
                     ma->fmt[k].type = fmt->type;
+                    ma->fmt[k].p = (uint8_t*) realloc(ma->fmt[k].p, sizeof(uint8_t)*nsamples);
                 }
                 //printf("already there: %d %s  id=%d  n=%d  size=%d  type=%d\n", k,hdr->id[BCF_DT_ID][fmt->id].key, id,fmt->n,fmt->size,fmt->type);
             }
@@ -458,6 +468,7 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
                 ma->fmt[k].n    = fmt->n;
                 ma->fmt[k].size = fmt->size;
                 ma->fmt[k].type = fmt->type;
+                ma->fmt[k].p    = NULL;
                 //printf("add: %d %s  id=%d  n=%d  size=%d  type=%d info=%d\n", k,hdr->id[BCF_DT_ID][fmt->id].key, id,fmt->n,fmt->size,fmt->type, (hdr->id[BCF_DT_ID][fmt->id].val->info[BCF_HL_FMT]>>8)&0xf);
             }
             ma->fmt_map[k*files->nreaders+i] = j+1;
@@ -472,12 +483,12 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
     for (j=0; j<n_fmt; j++)
     {
         if ( ma->fmt[j].id==gt_id )
-            merge_GT(args, ma, &ma->fmt[j]);
+            merge_GT(args, mask, &ma->fmt[j], &ma->fmt_map[j*files->nreaders], out);
     }
     
     out->n_fmt = 1;
     //out->n_fmt = n_fmt;
-    //out->fmt = ma->fmt;
+    out->d.fmt = ma->fmt;
 }
 
 // The core merging function, one or none line from each reader
@@ -754,7 +765,7 @@ void merge_vcf(args_t *args)
         bcf_hdr_fmt_text(args->out_hdr);
     }
 
-    vcf_hdr_write(args->out_fh, args->out_hdr);
+//    vcf_hdr_write(args->out_fh, args->out_hdr);
     if ( args->header_only )
     {
         bcf_hdr_destroy(args->out_hdr);
@@ -771,6 +782,7 @@ void merge_vcf(args_t *args)
         merge_buffer(args, ret);
         // printf("<merge done>\n");
         // debug_buffers(stdout, &args->files);
+break;
     }
 
     maux_destroy(args->maux);

@@ -314,7 +314,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, char *line, int *len)
         while ( *q && *q!='\n' ) q++;
         hrec->value = (char*) malloc((q-p+1)*sizeof(char));
         memcpy(hrec->value, p, q-p);
-//hrec->value[q-p] = 0;
+        hrec->value[q-p] = 0;
         *len = q-line+1;
         return hrec;
     }
@@ -708,7 +708,10 @@ void bcf_hdr_fmt_text(bcf_hdr_t *hdr)
             ksprintf(&txt,">\n");
         }
         else
+        {
+        fprintf(stderr,"%d .. %s .. %s\n", i, hdr->hrec[i]->key,hdr->hrec[i]->value);
             ksprintf(&txt,"##%s=%s\n", hdr->hrec[i]->key,hdr->hrec[i]->value);
+        }
     }
     ksprintf(&txt,"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO");
     if ( hdr->n[BCF_DT_SAMPLE] )
