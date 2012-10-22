@@ -218,7 +218,12 @@ void maux_destroy(maux_t *ma)
         free(ma->d[i]);
     }
     if (ma->mfmt_map) free(ma->fmt_map);
-    free(ma->fmt);
+    for (i=0; i<ma->mfmt; i++)
+        if ( ma->fmt[i].p ) {
+        fprintf(stderr,"freeing: %d %ld\n", i,(long int)ma->fmt[i].p);
+        free(ma->fmt[i].p);
+    }
+    // free(ma->fmt); freed in bcf_destroy1
     free(ma->d);
     free(ma->nbuf);
     for (i=0; i<ma->mals; i++) free(ma->als[i]);
@@ -388,7 +393,8 @@ void merge_GT(args_t *args, int mask, bcf_fmt_t *fmt, int *fmt_map, bcf1_t *out)
     bcf_hdr_t *out_hdr = args->out_hdr;
     maux_t *ma = args->maux;
     int i, ismpl = 0, nsamples = out_hdr->n[BCF_DT_SAMPLE];
-    if ( !fmt->p ) fmt->p = (uint8_t*) malloc(sizeof(uint8_t)*nsamples*fmt->size);
+    if ( !fmt->p ) 
+        fmt->p = (uint8_t*) malloc(sizeof(uint8_t)*nsamples*fmt->size);
     for (i=0; i<files->nreaders; i++)
     {
         reader_t *reader = &files->readers[i];
@@ -397,31 +403,46 @@ void merge_GT(args_t *args, int mask, bcf_fmt_t *fmt, int *fmt_map, bcf1_t *out)
 
         int j, k = -1;
         if ( mask&1<<i ) k = ma->fmt_map[i] - 1;
-            for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++)
-            {
-                fmt->p[fmt->size*(ismpl+j)] = (uint8_t)INT8_MIN;
-            }
-            ismpl += hdr->n[BCF_DT_SAMPLE];
         if ( k<0 )
         {
             // missing values
             for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++)
-            {
-            }
-            
+                fmt->p[fmt->size*(ismpl+j)] = (uint8_t)INT8_MIN;
+            ismpl += hdr->n[BCF_DT_SAMPLE];
             continue;
         }
-        //bcf_fmt_t *fmt = &line->d.fmt[k];
-        
+        bcf_fmt_t *fmt_ori = &line->d.fmt[k];
+        uint8_t *p_out = &fmt->p[fmt->size*ismpl], *p_ori = fmt_ori->p;
+
         if ( !ma->d[i][0].als_differ )
         {
             // the allele numbering is unchanged
+            for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++)
+            {
+                for (k=0; k<fmt_ori->size; k++, p_out++, p_ori++)
+                    *p_out = *p_ori;
+                for (; k<fmt->size; k++, p_out++)
+                    *p_out =  (uint8_t)INT8_MIN;
+            }
+            ismpl += hdr->n[BCF_DT_SAMPLE];
+            continue;
         }
-        else
+//for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++,ismpl++) for (k=0; k<fmt->size; k++, p_out++) *p_out = (uint8_t)INT8_MIN; continue;
+        // allele numbering needs to be changed
+        for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++)
         {
-            // need changing allele numbering
-            //for (is=0; ...
+            for (k=0; k<fmt_ori->size; k++, p_out++, p_ori++)
+            {
+                if ( *p_ori == (uint8_t)INT8_MIN ) break;
+                int al = (*p_ori>>1) - 1;
+                al = !al ? 1 : ma->d[i][0].map[al] + 1;
+                *p_out = (al << 1) | ((*p_ori)&1);
+            }
+            for (; k<fmt->size; k++, p_out++)
+                *p_out =  (uint8_t)INT8_MIN;
         }
+        ismpl += hdr->n[BCF_DT_SAMPLE];
+        continue;
     }
 }
 
@@ -431,6 +452,7 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
     bcf_hdr_t *out_hdr = args->out_hdr;
     maux_t *ma = args->maux;
     memset(ma->fmt_map,0,ma->mfmt_map*files->nreaders);
+        if ( ma->fmt) fprintf(stderr,"first: %d %ld\n", 0,(long int)ma->fmt[0].p);
 
     int nsamples = out_hdr->n[BCF_DT_SAMPLE];
     int i, n_fmt = 0;
@@ -459,16 +481,15 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
                 }
                 //printf("already there: %d %s  id=%d  n=%d  size=%d  type=%d\n", k,hdr->id[BCF_DT_ID][fmt->id].key, id,fmt->n,fmt->size,fmt->type);
             }
-            else
+            else    // new format fields
             {
                 n_fmt++;
-                hts_expand(bcf_fmt_t,n_fmt,ma->mfmt,ma->fmt);
-                hts_expand0(int,n_fmt*files->nreaders,ma->mfmt_map,ma->fmt_map);
+                hts_expand0(bcf_fmt_t,(n_fmt+1),ma->mfmt,ma->fmt);
+                hts_expand0(int,(n_fmt+1)*files->nreaders,ma->mfmt_map,ma->fmt_map);
                 ma->fmt[k].id   = id;
                 ma->fmt[k].n    = fmt->n;
                 ma->fmt[k].size = fmt->size;
                 ma->fmt[k].type = fmt->type;
-                ma->fmt[k].p    = NULL;
                 //printf("add: %d %s  id=%d  n=%d  size=%d  type=%d info=%d\n", k,hdr->id[BCF_DT_ID][fmt->id].key, id,fmt->n,fmt->size,fmt->type, (hdr->id[BCF_DT_ID][fmt->id].val->info[BCF_HL_FMT]>>8)&0xf);
             }
             ma->fmt_map[k*files->nreaders+i] = j+1;
@@ -486,6 +507,7 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
             merge_GT(args, mask, &ma->fmt[j], &ma->fmt_map[j*files->nreaders], out);
     }
     
+    out->n_sample = nsamples;
     out->n_fmt = 1;
     //out->n_fmt = n_fmt;
     out->d.fmt = ma->fmt;
