@@ -111,6 +111,39 @@ void bcf_hdr_merge(bcf_hdr_t *hw, const bcf_hdr_t *_hr, const char *clash_prefix
 }
 
 /**
+ * normalize_alleles() - create smallest possible representation of the alleles
+ * @als:    alleles to be merged, first is REF (rw)
+ * @nals:   number of $a alleles
+ *
+ * Best explained on an example:
+ *      In:  REF=GTTT  ALT=GTT
+ *      Out: REF=GT    ALT=G
+ *
+ * Note: the als array will be modified
+ */
+void normalize_alleles(char **als, int nals)
+{
+    int j, i = 1, done = 0, rlen = strlen(als[0]);
+    while ( i<rlen )
+    {
+        for (j=1; j<nals; j++)
+        {
+            int len = strlen(als[j]);
+            if ( i>=len ) done = 1;
+            if ( als[j][len-i] != als[0][rlen-i] ) { done = 1; break; }
+        }
+        if ( done ) break;
+        i++;
+    }
+    if ( i>1 )
+    {
+        i--;
+        als[0][rlen-i] = 0;
+        for (j=1; j<nals; j++) als[j][strlen(als[j])-i] = 0;
+    }
+}
+
+ /**
  * merge_alleles() - merge two REF,ALT records, $a and $b into $b.
  * @a:      alleles to be merged, first is REF
  * @na:     number of $a alleles
@@ -219,10 +252,7 @@ void maux_destroy(maux_t *ma)
     }
     if (ma->mfmt_map) free(ma->fmt_map);
     for (i=0; i<ma->mfmt; i++)
-        if ( ma->fmt[i].p ) {
-        fprintf(stderr,"freeing: %d %ld\n", i,(long int)ma->fmt[i].p);
-        free(ma->fmt[i].p);
-    }
+        if ( ma->fmt[i].p ) free(ma->fmt[i].p);
     // free(ma->fmt); freed in bcf_destroy1
     free(ma->d);
     free(ma->nbuf);
@@ -328,11 +358,25 @@ void merge_chrom2qual(args_t *args, int mask, bcf1_t *out)
     // set alleles
     int k = 0;
     for (i=1; i<ma->nals; i++) 
-        if ( al_idxs[i] ) out->n_allele++;
+    {
+        if ( !al_idxs[i] ) continue;
+        out->n_allele++;
+
+        // Adjust the indexes, the allele map could be created for multiple collapsed records, 
+        //  some of which might be unused for this output line
+        int ir, j;
+        for (ir=0; ir<files->nreaders; ir++)
+        {
+            bcf1_t *line = files->readers[ir].buffer[0];
+            for (j=0; j<line->n_allele; j++)
+                if ( ma->d[ir][0].map[j]==i ) ma->d[ir][0].map[j] = out->n_allele;
+        }
+    }
     out->n_allele++;
     out->d.allele = (char **) malloc(sizeof(char*)*out->n_allele);
     for (i=0; i<ma->nals; i++)
         if ( i==0 || al_idxs[i] ) out->d.allele[k++] = ma->als[i];
+    normalize_alleles(out->d.allele, out->n_allele);
     free(al_idxs);
 }
 
@@ -452,8 +496,6 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
     bcf_hdr_t *out_hdr = args->out_hdr;
     maux_t *ma = args->maux;
     memset(ma->fmt_map,0,ma->mfmt_map*files->nreaders);
-        if ( ma->fmt) fprintf(stderr,"first: %d %ld\n", 0,(long int)ma->fmt[0].p);
-
     int nsamples = out_hdr->n[BCF_DT_SAMPLE];
     int i, n_fmt = 0;
     for (i=0; i<files->nreaders; i++)
@@ -787,7 +829,7 @@ void merge_vcf(args_t *args)
         bcf_hdr_fmt_text(args->out_hdr);
     }
 
-//    vcf_hdr_write(args->out_fh, args->out_hdr);
+    vcf_hdr_write(args->out_fh, args->out_hdr);
     if ( args->header_only )
     {
         bcf_hdr_destroy(args->out_hdr);
@@ -804,7 +846,6 @@ void merge_vcf(args_t *args)
         merge_buffer(args, ret);
         // printf("<merge done>\n");
         // debug_buffers(stdout, &args->files);
-break;
     }
 
     maux_destroy(args->maux);
