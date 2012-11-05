@@ -811,35 +811,38 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 		kputc('.', s);
 		return;
 	}
-	if (type == BCF_BT_INT8) {
-		int8_t *p = (int8_t*)data;
-		for (j = 0; j < n && *p != INT8_MIN; ++j, ++p) {
-			if (j) kputc(',', s);
-			kputw(*p, s);
-		}
-	} else if (type == BCF_BT_CHAR) {
-		char *p = (char*)data;
-		for (j = 0; j < n && *p; ++j, ++p) kputc(*p, s);
-	} else if (type == BCF_BT_INT32) {
-		int32_t *p = (int32_t*)data;
-		for (j = 0; j < n && *p != INT32_MIN; ++j, ++p) {
-			if (j) kputc(',', s);
-			kputw(*p, s);
-		}
-	} else if (type == BCF_BT_FLOAT) {
-		float *p = (float*)data;
-		for (j = 0; j < n && *(uint32_t*)p != bcf_missing_float; ++j, ++p) {
-			if (j) kputc(',', s);
-			ksprintf(s, "%g", *p);
-		}
-	} else if (type == BCF_BT_INT16) {
-		int16_t *p = (int16_t*)data;
-		for (j = 0; j < n && *p != INT16_MIN; ++j, ++p) {
-			if (j) kputc(',', s);
-			kputw(*p, s);
-		}
-	}
-	if (n && j == 0) kputc('.', s);
+    if (type == BCF_BT_CHAR) 
+    {
+        char *p = (char*)data;
+        for (j = 0; j < n && *p; ++j, ++p) kputc(*p, s);
+    }
+    else
+    {
+        #define BRANCH(type_t, is_missing, kprint) {\
+            type_t *p = (type_t *) data; \
+            for (j=0; j<n && !(is_missing); j++) p++; \
+            if ( j ) \
+            { \
+                p = (type_t *) data; \
+                for (j=0; j<n; j++, p++) \
+                { \
+                    if ( j ) kputc(',', s); \
+                    if ( is_missing ) kputc('.', s); \
+                    else kprint; \
+                } \
+                if (n && j == 0) kputc('.', s); \
+            } \
+            else kputc('.', s); \
+        }
+        switch (type) {
+            case BCF_BT_INT8:  BRANCH(int8_t,  *p==INT8_MIN,  kputw(*p, s)); break;
+            case BCF_BT_INT16: BRANCH(int16_t, *p==INT16_MIN, kputw(*p, s)); break;
+            case BCF_BT_INT32: BRANCH(int32_t, *p==INT32_MIN, kputw(*p, s)); break;
+            case BCF_BT_FLOAT: BRANCH(float,  *(uint32_t*)p==bcf_missing_float, ksprintf(s, "%g", *p)); break;
+            default: fprintf(stderr,"todo: type %d\n", type); exit(1); break;
+        }
+        #undef BRANCH
+    }
 }
 
 uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr)
