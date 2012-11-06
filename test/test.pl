@@ -151,15 +151,23 @@ sub passed
     $$opts{nok}++;
     print ".. ok\n\n";
 }
+sub is_file_newer
+{
+    my ($afile,$bfile) = @_;
+    my (@astat) = stat($afile) or return 0;
+    my (@bstat) = stat($bfile) or return 0;
+    if ( $astat[9]>$bstat[9] ) { return 1 }
+    return 0;
+}
 sub bgzip_tabix
 {
     my ($opts,%args) = @_;
     my $file = "$args{file}.$args{suffix}";
-    if ( $$opts{redo_outputs} or !-e "$$opts{tmp}/$file.gz" )
+    if ( $$opts{redo_outputs} or !-e "$$opts{tmp}/$file.gz" or is_file_newer("$$opts{path}/$file","$$opts{tmp}/$file.gz") )
     {
         cmd("cat $$opts{path}/$file | bgzip -c > $$opts{tmp}/$file.gz");
     }
-    if ( $$opts{redo_outputs} or !-e "$$opts{tmp}/$file.gz.tbi" )
+    if ( $$opts{redo_outputs} or !-e "$$opts{tmp}/$file.gz.tbi" or is_file_newer("$$opts{tmp}/$file.gz","$$opts{tmp}/$file.gz.tbi") )
     {
         cmd("$$opts{bin}/htscmd tabix -f $args{args} $$opts{tmp}/$file.gz");
     }

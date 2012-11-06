@@ -10,7 +10,7 @@ KHASH_MAP_INIT_STR(strdict, const char *)
 typedef khash_t(strdict) strdict_t;
 
 extern uint32_t bcf_missing_float;
-#define SET_FLOAT_MISSING(var) *((uint32_t*)&(var)) = (uint32_t) bcf_missing_float
+#define SET_FLOAT_MISSING(var) *((uint32_t*)&(var)) = (uint32_t) bcf_missing_float;
 
 #define SKIP_DONE 1
 #define SKIP_DIFF 2
@@ -556,15 +556,13 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t *fmt, int *fmt_map, bc
         if ( mask&1<<i ) k = fmt_map[i] - 1;
         #define BRANCH(type_t, missing) { \
             type_t *p_out = (type_t*) &fmt->p[fmt->size*ismpl]; \
-            if ( k<0 /*|| (IS_VL_G(out_hdr,fmt->id) | IS_VL_A(out_hdr,fmt->id) && line->n_allele!=out->n_allele)*/ ) \
+            if ( k<0 ) \
             { \
-                /* Either the field is absent altogether in the input file or the number of alleles \
-                has increased and therefore some of the values are missing. Currently there \
-                is no mechanism to specify e.g. GL=-5,.,20. (TODO) */ \
+                /* the field is not present in this file */ \
                 for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++) \
                 { \
                     for (l=0; l<fmt->n; l++) missing; \
-                    p_out = (type_t *)(fmt->size + (void*)p_out); \
+                    p_out += fmt->n; \
                 } \
                 ismpl += hdr->n[BCF_DT_SAMPLE]; \
                 continue; \
@@ -625,14 +623,25 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t *fmt, int *fmt_map, bc
         }
         switch (fmt->type)
         {
-            case BCF_BT_INT8: BRANCH(uint8_t, *p_out = INT8_MIN); break;
-            case BCF_BT_INT16: BRANCH(uint16_t, *p_out = INT16_MIN); break;
-            case BCF_BT_INT32: BRANCH(uint32_t, *p_out = INT32_MIN); break;
+            case BCF_BT_INT8: BRANCH(uint8_t, p_out[l] = INT8_MIN); break;
+            case BCF_BT_INT16: BRANCH(uint16_t, p_out[l] = INT16_MIN); break;
+            case BCF_BT_INT32: BRANCH(uint32_t, p_out[l] = INT32_MIN); break;
             case BCF_BT_FLOAT: BRANCH(float, SET_FLOAT_MISSING(p_out[l]) ); break;
             default: error("Unexpected case: %d\n", fmt->type);
         }
         #undef BRANCH
     }
+
+    #if 0
+    // debug
+    for (ismpl=0; ismpl<nsamples; ismpl++) 
+    {
+        uint8_t *p = &fmt->p[ismpl*fmt->size];
+        int x=0;
+        for (i=0; i<fmt->size; i++)
+            if ( !p[i] ) x++; 
+    }
+    #endif
 }
 
 void merge_format(args_t *args, int mask, bcf1_t *out)
