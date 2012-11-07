@@ -649,7 +649,7 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
     readers_t *files = args->files;
     bcf_hdr_t *out_hdr = args->out_hdr;
     maux_t *ma = args->maux;
-    memset(ma->fmt_map,0,ma->mfmt_map*files->nreaders);
+    memset(ma->fmt_map,0,ma->mfmt_map*sizeof(int));
     int nsamples = out_hdr->n[BCF_DT_SAMPLE];
     int i, j, n_fmt = 0;
     int nG_new = out->n_allele*(out->n_allele + 1)/2;
