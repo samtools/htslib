@@ -117,6 +117,12 @@ void bcf_hdr_merge(bcf_hdr_t *hw, const bcf_hdr_t *_hr, const char *clash_prefix
     }
 }
 
+void debug_als(char **als, int nals)
+{
+    int k; for (k=0; k<nals; k++) printf("%s ", als[k]); 
+    printf("\n");
+}
+
 /**
  * normalize_alleles() - create smallest possible representation of the alleles
  * @als:    alleles to be merged, first is REF (rw)
@@ -195,7 +201,7 @@ char **merge_alleles(char **a, int na, int *map, char **b, int *nb, int *mb)
     int i,j;
     if ( rla>rlb )
     {
-        for (i=1; i<*nb; i++)
+        for (i=0; i<*nb; i++)
         {
             int l = strlen(b[i]);
             b[i] = (char*) realloc(b[i],l+rla-rlb+1);
@@ -381,7 +387,7 @@ void merge_chrom2qual(args_t *args, int mask, bcf1_t *out)
     out->n_allele++;
     out->d.allele = (char **) malloc(sizeof(char*)*out->n_allele);
     for (i=0; i<ma->nals; i++)
-        if ( i==0 || al_idxs[i] ) out->d.allele[k++] = ma->als[i];
+        if ( i==0 || al_idxs[i] ) out->d.allele[k++] = strdup(ma->als[i]);
     normalize_alleles(out->d.allele, out->n_allele);
     free(al_idxs);
 }
@@ -727,6 +733,8 @@ void merge_line(args_t *args, int mask)
 
     vcf_write1(args->out_fh, args->out_hdr, out);
 
+    int i;
+    for (i=0; i<out->n_allele; i++) free(out->d.allele[i]);
     free(out->d.allele);
     out->d.allele = 0;
     out->n_allele = 0;
@@ -872,6 +880,7 @@ void merge_buffer(args_t *args, int mask)
                 if ( j==0 ) maux->d[i][j].skip |= SKIP_DONE; // left from previous run, force to ignore
                 continue; 
             }
+            if ( args->collapse==COLLAPSE_NONE && var_type!=line->d.var_type ) continue;
             if ( var_type&VCF_SNP && !(line->d.var_type&VCF_SNP) && !(args->collapse&COLLAPSE_ANY) ) continue;
             if ( var_type&VCF_INDEL && !(line->d.var_type&VCF_INDEL) && !(args->collapse&COLLAPSE_ANY) ) continue;
             maux->d[i][j].skip = 0;
