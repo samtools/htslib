@@ -54,9 +54,10 @@ sub error
         "Usage: plot-vcfcheck [OPTIONS] file.chk ...\n",
         "       plot-vcfcheck -p outdir/ file.chk ...\n",
         "Options:\n",
+        "   -m, --merge                         Merge vcfcheck files to STDOUT, skip plotting.\n",
         "   -p, --prefix <path>                 The output files prefix, add a slash to create new directory.\n",
         "   -P, --no-PDF                        Skip the PDF creation step.\n",
-        "   -m, --merge                         Merge vcfcheck files to STDOUT, skip plotting.\n",
+        "   -r, --rasterize                     Rasterize PDF images for fast rendering.\n",
         "   -t, --title <string>                Use this title in plots, can be given multiple times.\n",
         "   -h, -?, --help                      This help message.\n",
         "\n";
@@ -152,6 +153,7 @@ sub parse_params
     {
         if (                 $arg eq '--no-plots' ) { $$opts{make_plots}=0; next; }
         if ( $arg eq '-P' || $arg eq '--no-PDF' ) { $$opts{make_pdf}=0; next; }
+        if ( $arg eq '-r' || $arg eq '--rasterize' ) { $$opts{rasterize}=1; next; }
         if ( $arg eq '-m' || $arg eq '--merge' ) { $$opts{make_plots}=0; $$opts{make_pdf}=0; $$opts{merge}=1; next; }
         if ( $arg eq '-t' || $arg eq '--titles' ) { push @{$$opts{titles}},shift(@ARGV); next; }
         if ( $arg eq '-p' || $arg eq '--prefix' ) { $$opts{prefix}=shift(@ARGV); next; }
@@ -1050,7 +1052,7 @@ sub fmt_slide3v
 	my $n = 0;
 	for my $id (0..2) 
 	{ 
-		if ( -e "$image.$id.pdf" ) { $n++; } 
+		if ( -e "$image.$id.$$opts{fmt}" ) { $n++; } 
 	}
 	if ( !$n ) { return ''; }
 	my $h = $$opts{tex}{slide3v}{"height$n"};
@@ -1058,7 +1060,7 @@ sub fmt_slide3v
 	for my $id (0..2) 
 	{ 
 		if ( !-e "$image.$id.pdf" ) { next; }
-		$slide .= qq[\\centerline{\\includegraphics[type=pdf,ext=.pdf,read=.pdf,height=$h]{$image.$id}}];
+		$slide .= qq[\\centerline{\\includegraphics[$$opts{ext},height=$h]{$image.$id}}];
 	}
 	$slide .= '}';
 	return qq[
@@ -1073,15 +1075,15 @@ sub fmt_slide3h
 	my $n = 0;
 	for my $id (0..2) 
 	{ 
-		if ( -e "$image.$id.pdf" ) { $n++; } 
+		if ( -e "$image.$id.$$opts{fmt}" ) { $n++; } 
 	}
 	if ( !$n ) { return ''; }
 	my $w = $$opts{tex}{slide3h}{"width$n"};
 	my $slide = '';
 	for my $id (0..2) 
 	{ 
-		if ( !-e "$image.$id.pdf" ) { next; }
-		$slide .= qq[\\includegraphics[type=pdf,ext=.pdf,read=.pdf,width=$w]{$image.$id}];
+		if ( !-e "$image.$id.$$opts{fmt}" ) { next; }
+		$slide .= qq[\\includegraphics[$$opts{ext},width=$w]{$image.$id}];
 	}
 	return qq[
 			% $title
@@ -1117,8 +1119,11 @@ sub create_pdf
 	my $width1  = "23cm";
 	my $width2  = @ids==3 ? "10.5cm" : "10.5cm";
 	my $width3  = @ids==3 ? "8cm" : "15cm";
-	my $ext     = "type=pdf,ext=.pdf,read=.pdf";
+    my $fmt     = $$opts{rasterize} ? 'png' : 'pdf';
+	my $ext     = "type=$fmt,ext=.$fmt,read=.$fmt";
 	my $args    = { ext=>$ext, width3=>$width3, n=>scalar @ids };
+    $$opts{fmt} = $fmt;
+    $$opts{ext} = $ext;
 
 	# Check that xcolor is available
 	my @has_xcolor = `kpsewhich xcolor.sty`;
@@ -1197,7 +1202,7 @@ sub create_pdf
 			\\newcommand*{\\hslide}[2]{%
 					\\head{#1}%
 					\\begin{vplace}[0.5]\\centerline{#2}\\end{vplace}\\newpage}
-			\\newcommand{\\pdf}[2]{\\IfFileExists{#2.pdf}{\\includegraphics[#1]{#2}}{}}
+			\\newcommand{\\pdf}[2]{\\IfFileExists{#2.$fmt}{\\includegraphics[#1]{#2}}{}}
 
 
 			% The actual slides
@@ -1336,7 +1341,7 @@ sub create_pdf
 				\\newpage
 			];
 	}
-    if ( -e "$$opts{lprefix}counts_by_af.snps.pdf" && -e "$$opts{lprefix}counts_by_af.indels.pdf" )
+    if ( -e "$$opts{lprefix}counts_by_af.snps.$fmt" && -e "$$opts{lprefix}counts_by_af.indels.$fmt" )
     {
 	    iprint $tex, qq[
 	    	% SNP and indel counts by AF
