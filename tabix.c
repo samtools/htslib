@@ -291,6 +291,7 @@ int main(int argc, char *argv[])
                     fputs(s, stdout); fputc('\n', stdout);
                 }
                 ti_iter_destroy(iter);
+                bgzf_seek(t->fp, 0, SEEK_SET);
             }
 			if (bed_reg) {
 				extern int bed_overlap(const void *_h, const char *chr, int beg, int end);
