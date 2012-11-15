@@ -1105,7 +1105,7 @@ sub fmt_slide3v
 	my $slide = q[\vbox{];
 	for my $id (0..2) 
 	{ 
-		if ( !-e "$image.$id.pdf" ) { next; }
+		if ( !-e "$image.$id.$$opts{fmt}" ) { next; }
 		$slide .= qq[\\centerline{\\includegraphics[$$opts{ext},height=$h]{$image.$id}}];
 	}
 	$slide .= '}';
