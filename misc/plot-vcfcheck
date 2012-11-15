@@ -363,6 +363,7 @@ sub add_to_avg
     }
 }
 
+sub cmp_str($$) { my ($a,$b) = @_; return $a cmp $b; }
 sub cmp_num($$) { my ($a,$b) = @_; return $a <=> $b; }
 sub cmp_num_op($$) 
 { 
@@ -381,6 +382,7 @@ sub merge_dp
 {
     my ($a,$b) = @_;
     add_to_values($a,$b,\&cmp_num_op);
+    # recalculate fraction of GTs, cannot be simply summed
     my $sum = 0;
     for (my $i=0; $i<@$a; $i++) { $sum += $$a[$i][1]; }
     for (my $i=0; $i<@$a; $i++) { $$a[$i][2] = $$a[$i][1]*100./$sum; }
@@ -389,9 +391,20 @@ sub merge_dp
 sub merge_GCsS
 {
     my ($a,$b,$n) = @_;
+    # average the non-ref discordance rate
     for (my $i=0; $i<@$a; $i++) { $$a[$i][1] *= $n; }
     add_to_sample_values($a,$b);
     for (my $i=0; $i<@$a; $i++) { $$a[$i][1] /= $n+1; }
+}
+
+sub merge_GCsAF
+{
+    my ($a,$b) = @_;
+    # recalculate r2
+    for (my $i=0; $i<@$a; $i++) { $$a[$i][7] *= $$a[$i][8]; }
+    for (my $i=0; $i<@$b; $i++) { $$b[$i][7] *= $$b[$i][8]; }
+    add_to_values($a,$b,\&cmp_num_op);
+    for (my $i=0; $i<@$a; $i++) { $$a[$i][7] /= $$a[$i][8]; }
 }
 
 sub parse_vcfcheck1
@@ -433,12 +446,13 @@ sub parse_vcfcheck1
             elsif ( $b eq 'ts/tv:' ) { $$opts{dat}{$a}{$b} = ($i*$$opts{dat}{$a}{$b} + $dat{$a}{$b})/($i+1); }
             elsif ( ref($dat{$a}{$b}) ne 'ARRAY' ) {$$opts{dat}{$a}{$b} += $dat{$a}{$b} unless $b eq 'number of samples:'; } # SN, Summary numbers, do not sum sample counts
             elsif ( $a eq 'NRD' ) { add_to_avg($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
-    #        elsif ( $a eq 'DP' ) { merge_dp($$opts{dat}{$a}{$b},$dat{$a}{$b}); }
-    #        elsif ( $a eq 'GCsS' ) { merge_GCsS($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
-    #        elsif ( $a eq 'ST' ) { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_str); }
+            elsif ( $a eq 'DP' ) { merge_dp($$opts{dat}{$a}{$b},$dat{$a}{$b}); }
+            elsif ( $a eq 'GCsS' ) { merge_GCsS($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
+            elsif ( $a eq 'GCsAF' ) { merge_GCsAF($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
+            elsif ( $a eq 'ST' ) { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_str); }
             elsif ( $a eq 'PSC') { add_to_sample_values($$opts{dat}{$a}{$b},$dat{$a}{$b}); }
-    #        elsif ( $a eq 'IDD') { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_num); }
-    #        else { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_num_op); } # SiS AF IDD
+            elsif ( $a eq 'IDD') { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_num); }
+            else { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_num_op); } # SiS AF IDD
         }
     }
 }
