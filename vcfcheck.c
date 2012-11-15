@@ -32,6 +32,8 @@ stats_t;
 typedef struct
 {
     int m[3], mm[3];        // number of hom, het and non-ref hom matches and mismatches
+    float r2sum;
+    int r2n;
 }
 gtcmp_t;
 
@@ -379,14 +381,14 @@ void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched
 
     if ( (fmt_ptr = get_fmt_ptr(reader->header,reader->buffer[0],"DP")) )
     {
-        #define BRANCH_INT(type_t,missing) {            \
-            type_t *p = (type_t *) fmt_ptr->p;  \
-            for (is=0; is<args->files->n_smpl; is++)     \
-                if (p[is]!=missing) {                   \
-                    (*idist(&stats->dp, p[is]))++;      \
-                    stats->smpl_ndp[is]++;              \
-                    stats->smpl_dp[is] += p[is];        \
-                }                                       \
+        #define BRANCH_INT(type_t,missing) { \
+            type_t *p = (type_t *) fmt_ptr->p; \
+            for (is=0; is<args->files->n_smpl; is++) \
+                if (p[is]!=missing) { \
+                    (*idist(&stats->dp, p[is]))++; \
+                    stats->smpl_ndp[is]++; \
+                    stats->smpl_dp[is] += p[is]; \
+                } \
             }
 
         int is;
@@ -408,6 +410,8 @@ void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched
         gtcmp_t *af_stats = files->readers[0].buffer[0]->d.var_type&VCF_SNP ? args->af_gts_snps : args->af_gts_indels;
         gtcmp_t *smpl_stats = files->readers[0].buffer[0]->d.var_type&VCF_SNP ? args->smpl_gts_snps : args->smpl_gts_indels;
 
+        int r2n = 0;
+        float r2a2 = 0, r2a = 0, r2b2 = 0, r2b = 0, r2ab = 0;
         for (is=0; is<files->n_smpl; is++)
         {
             // Simplified comparison: only 0/0, 0/1, 1/1 is looked at as the identity of 
@@ -422,6 +426,7 @@ void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched
 
             if ( match == -1 ) continue;
             if ( gt == GT_HET_AA ) gt = GT_HOM_AA;  // rare case, treat as AA hom
+            if ( gt2 == GT_HET_AA ) gt2 = GT_HOM_AA;
             if ( match ) 
             {
                 af_stats[iaf].m[gt]++;
@@ -432,6 +437,19 @@ void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched
                 af_stats[iaf].mm[gt]++;
                 smpl_stats[is].mm[gt]++;
             }
+            r2a2 += gt*gt;
+            r2a  += gt;
+            r2b2 += gt2*gt2;
+            r2b  += gt2;
+            r2ab += gt*gt2;
+            r2n++;
+        }
+        if ( r2n )
+        {
+            float cov  = r2ab - r2a*r2b/r2n;
+            float var2 = (r2a2 - r2a*r2a/r2n) * (r2b2 - r2b*r2b/r2n);
+            af_stats[iaf].r2sum += var2==0 ? 1 : cov*cov/var2;
+            af_stats[iaf].r2n++;
         }
 
         if ( args->debug )
@@ -599,7 +617,7 @@ void print_stats(args_t *args)
     {
         printf("SN\t%d\tNumber of samples:\t%d\n", 2, args->files->n_smpl);
 
-        printf("# GCsAF, Genotype concordance by non-reference allele frequency (SNPs)\n# GCsAF\t[2]id\t[3]allele frequency\t[4]RR Hom matches\t[5]RA Het matches\t[6]AA Hom matches\t[7]RR Hom mismatches\t[8]RA Het mismatches\t[9]AA Hom mismatches\n");
+        printf("# GCsAF, Genotype concordance by non-reference allele frequency (SNPs)\n# GCsAF\t[2]id\t[3]allele frequency\t[4]RR Hom matches\t[5]RA Het matches\t[6]AA Hom matches\t[7]RR Hom mismatches\t[8]RA Het mismatches\t[9]AA Hom mismatches\t[10]dosage r-squared\t[11]number of sites\n");
         gtcmp_t *stats = args->af_gts_snps;
         int nrd_m[3] = {0,0,0}, nrd_mm[3] = {0,0,0};
         for (i=1; i<args->m_af; i++)
@@ -614,7 +632,8 @@ void print_stats(args_t *args)
             if ( !n ) continue;
             printf("GCsAF\t2\t%f", 100.*(i-1)/(args->m_af-2));
             printf("\t%d\t%d\t%d", stats[i].m[GT_HOM_RR],stats[i].m[GT_HET_RA],stats[i].m[GT_HOM_AA]);
-            printf("\t%d\t%d\t%d\n", stats[i].mm[GT_HOM_RR],stats[i].mm[GT_HET_RA],stats[i].mm[GT_HOM_AA]);
+            printf("\t%d\t%d\t%d", stats[i].mm[GT_HOM_RR],stats[i].mm[GT_HET_RA],stats[i].mm[GT_HOM_AA]);
+            printf("\t%f\t%d\n", stats[i].r2n ? stats[i].r2sum/stats[i].r2n : -1.0, stats[i].r2n);
         }
 
         int m  = nrd_m[GT_HET_RA] + nrd_m[GT_HOM_AA];

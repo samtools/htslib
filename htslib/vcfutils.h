@@ -67,7 +67,7 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which);
  * In case of GT_HET_AA, the allele which appeared first in ALT is
  * used.
  */
-#define GT_HOM_RR 0
+#define GT_HOM_RR 0 // note: the actual value of GT_* matters, used in dosage r2 calculation
 #define GT_HOM_AA 1
 #define GT_HET_RA 2
 #define GT_HET_AA 3

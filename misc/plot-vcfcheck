@@ -120,7 +120,7 @@ sub parse_params
             { 
                 id=>'GCsAF', 
                 header=>'GCsAF, Genotype concordance by non-reference allele frequency (SNPs)', 
-                exp=>"# GCsAF\t[2]id\t[3]allele frequency\t[4]RR Hom matches\t[5]RA Het matches\t[6]AA Hom matches\t[7]RR Hom mismatches\t[8]RA Het mismatches\t[9]AA Hom mismatches\n" 
+                exp=>"# GCsAF\t[2]id\t[3]allele frequency\t[4]RR Hom matches\t[5]RA Het matches\t[6]AA Hom matches\t[7]RR Hom mismatches\t[8]RA Het mismatches\t[9]AA Hom mismatches\t[10]dosage r-squared\t[11]number of sites\n" 
             },
             { 
                 id=>'NRD',   
@@ -786,9 +786,11 @@ sub plot_tstv_by_QUAL
 
 sub rebin_values
 {
-	my ($vals,$bin_size,$col) = @_;
+	my ($vals,$bin_size,$col,%args) = @_;
+    my %avg  = exists($args{avg}) ? map {$_=>1} @{$args{avg}} : ();
 	my $prev = $$vals[0][$col];
-	my $iprev = 0;
+	my $iout = 0;
+    my $nsum = 0;
 	my (@dat,@out);
 	for (my $i=0; $i<@$vals; $i++)
 	{
@@ -797,11 +799,17 @@ sub rebin_values
 			if ( $icol==$col ) { next; }
 			$dat[$icol] += $$vals[$i][$icol];
 		}
+        $nsum++;
 		if ( $i+1<@$vals && $$vals[$i][$col] - $prev < $bin_size ) { next; }
 		$dat[$col] = $prev;
-		for (my $icol=0; $icol<@{$$vals[$i]}; $icol++) { $out[$iprev][$icol] = $dat[$icol] ? $dat[$icol] : 0; }
+		for (my $icol=0; $icol<@{$$vals[$i]}; $icol++) 
+        { 
+            $out[$iout][$icol] = $dat[$icol] ? $dat[$icol] : 0; 
+            if ( $avg{$icol} && $nsum ) { $out[$iout][$icol] /= $nsum; }
+        }
+        $nsum = 0;
 		@dat = ();
-		$iprev++;
+		$iout++;
 		$prev = $$vals[$i][$col];
 	}
 	return \@out;
@@ -812,25 +820,32 @@ sub plot_concordance_by_AF
 	my ($opts) = @_;
 	my @vals = get_values($opts,2,'GCsAF');
 	if ( !@vals ) { return; }
-
+    
+    # create a local copy and prepare r2 for rebinning
+    use Storable qw(dclone);
+    @vals = @{ dclone(\@vals) };
+    for (my $i=0; $i<@vals; $i++) { $vals[$i][7] *= $vals[$i][8]; }
+	my $vals = rebin_values(\@vals,1,0);
 	my $fh   = $$opts{plt_fh};
 	my $img  = "$$opts{prefix}gts_by_af";
-	my $vals = rebin_values(\@vals,1,0);
+	my $img2 = "$$opts{prefix}r2_by_af";
 
 	iprint $fh, "
 			dat = [
 		";
 	for (my $i=0; $i<@$vals; $i++)
 	{ 
-		iprint $fh, sprintf("\t[ %f,%f,%f,%f,%f,%f,%f ],\n", 
-			$$vals[$i][0]/100., 
-			$$vals[$i][1]+$$vals[$i][4] ? $$vals[$i][1]/($$vals[$i][1]+$$vals[$i][4]) : 1,
-			$$vals[$i][2]+$$vals[$i][5] ? $$vals[$i][2]/($$vals[$i][2]+$$vals[$i][5]) : 1,
-			$$vals[$i][3]+$$vals[$i][6] ? $$vals[$i][3]/($$vals[$i][3]+$$vals[$i][6]) : 1,
-			$$vals[$i][1]+$$vals[$i][4],
-			$$vals[$i][2]+$$vals[$i][5],
-			$$vals[$i][3]+$$vals[$i][6]
-			);
+		iprint $fh, sprintf("\t[ %f,%f,%f,%f,%f,%f,%f,%f,%d ],\n", 
+            $$vals[$i][0]/100.,
+            $$vals[$i][1]+$$vals[$i][4] ? $$vals[$i][1]/($$vals[$i][1]+$$vals[$i][4]) : 1,
+            $$vals[$i][2]+$$vals[$i][5] ? $$vals[$i][2]/($$vals[$i][2]+$$vals[$i][5]) : 1,
+            $$vals[$i][3]+$$vals[$i][6] ? $$vals[$i][3]/($$vals[$i][3]+$$vals[$i][6]) : 1,
+            $$vals[$i][1]+$$vals[$i][4],
+            $$vals[$i][2]+$$vals[$i][5],
+            $$vals[$i][3]+$$vals[$i][6],
+            $$vals[$i][8] ? $$vals[$i][7]/$$vals[$i][8] : 1,
+            $$vals[$i][8]
+            );
 	}
 	iprint $fh, "]
 
@@ -852,6 +867,22 @@ sub plot_concordance_by_AF
 			plt.savefig('$img.png')
 			if pdf_plots: plt.savefig('$img.pdf')
 			plt.close()
+
+            fig = plt.figure(figsize=($$opts{img_width}*1.3,$$opts{img_height}))
+            ax1 = fig.add_subplot(111)
+            ax2 = ax1.twinx()
+            ax1.set_zorder(ax2.get_zorder()+1)
+            ax1.patch.set_visible(False)
+            ax2.plot([row[0] for row in dat], [row[8] for row in dat], '-o', color='r',mec='r',markersize=3)
+            ax1.plot([row[0] for row in dat], [row[7] for row in dat], '-^', color='k',markersize=3)
+            for tl in ax2.get_yticklabels(): tl.set_color('r')
+            ax2.set_ylabel('Number of sites', color='r')
+            ax1.set_ylabel('Mean allelic R\$^2\$', color='k')
+            ax1.set_xlabel('Non-ref allele frequency')
+			plt.subplots_adjust(left=0.19,right=0.83,bottom=0.11)
+            plt.savefig('$img2.png')
+            if pdf_plots: plt.savefig('$img2.pdf')
+            plt.close()
 		";
 }
 
@@ -1356,6 +1387,10 @@ sub create_pdf
 				\\head{Genotype discordance by AF}\\begin{vplace}[0.7]\\centerline{$table}%
 				\\centerline{\\pdf{$ext,height=$height1}{$$opts{lprefix}gts_by_af}}\\end{vplace}
 				\\newpage
+
+                % dosage r2 by AF
+                %
+                \\hslide{Allelic R\$^2\$ by AF}{\\pdf{$ext,height=$height1}{$$opts{lprefix}r2_by_af}}
 			];
 	}
     if ( -e "$$opts{lprefix}counts_by_af.snps.$fmt" && -e "$$opts{lprefix}counts_by_af.indels.$fmt" )
