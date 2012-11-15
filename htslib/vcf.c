@@ -936,9 +936,20 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 				for (t = kstrtok(p, ";", &aux1), i = 0; t; t = kstrtok(0, 0, &aux1)) {
 					*(char*)aux1.p = 0;
 					k = kh_get(vdict, d, t);
-					if (k == kh_end(d)) { // not defined
-						if (hts_verbose >= 2) fprintf(stderr, "[W::%s] undefined FILTER '%s'\n", __func__, t);
-					} else a[i++] = kh_val(d, k).id;
+					if (k == kh_end(d)) 
+                    {
+                        // Simple error recovery for FILTERs not defined in the header. It will not help when VCF header has
+                        // been already printed, but will enable tools like vcfcheck to proceed.
+                        fprintf(stderr, "[W::%s] FILTER '%s' is not defined in the header\n", __func__, t);
+                        kstring_t tmp = {0,0,0};
+                        int l;
+                        ksprintf(&tmp, "##FILTER=<ID=%s,Description=\"Dummy\">", t);
+                        bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
+                        free(tmp.s);
+                        if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
+                        k = kh_get(vdict, d, t);
+                    }
+					a[i++] = kh_val(d, k).id;
 				}
 				n_flt = i;
 				bcf_enc_vint(str, n_flt, a, -1);
@@ -961,42 +972,49 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 						c = *end; *end = 0;
 					} else end = r;
 					k = kh_get(vdict, d, key);
-					if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_INFO] == 15) { // not defined in the header
-						if (hts_verbose >= 2) fprintf(stderr, "[W::%s] undefined INFO '%s'\n", __func__, key);
-					} else { // defined in the header
-						uint32_t y = kh_val(d, k).info[BCF_HL_INFO];
-						++v->n_info;
-						bcf_enc_int1(str, kh_val(d, k).id);
-						if (val == 0) {
-							bcf_enc_size(str, 0, BCF_BT_NULL);
-						} else if ((y>>4&0xf) == BCF_HT_FLAG || (y>>4&0xf) == BCF_HT_STR) { // if Flag has a value, treat it as a string
-							bcf_enc_vchar(str, end - val, val);
-						} else { // int/float value/array
-							int i, n_val;
-							char *t;
-							for (t = val, n_val = 1; *t; ++t) // count the number of values
-								if (*t == ',') ++n_val;
-							if ((y>>4&0xf) == BCF_HT_INT) {
-								int32_t *z;
-								z = (int32_t*)alloca(n_val<<2);
-								for (i = 0, t = val; i < n_val; ++i, ++t)
-									z[i] = strtol(t, &t, 10);
-								bcf_enc_vint(str, n_val, z, -1);
-								if (strcmp(key, "END") == 0) v->rlen = z[0] - v->pos;
-							} else if ((y>>4&0xf) == BCF_HT_REAL) {
-								float *z;
-								z = (float*)alloca(n_val<<2);
-								for (i = 0, t = val; i < n_val; ++i, ++t)
-									z[i] = strtod(t, &t);
-								bcf_enc_vfloat(str, n_val, z);
-							}
-						}
-					}
-					if (c == 0) break;
-					r = end;
-					key = r + 1;
-				}
-			}
+					if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_INFO] == 15) 
+                    {
+                        fprintf(stderr, "[W::%s] INFO '%s' is not defined in the header, assuming Type=String\n", __func__, key);
+                        kstring_t tmp = {0,0,0};
+                        int l;
+                        ksprintf(&tmp, "##INFO=<ID=%s,Number=1,Type=String,Description=\"Dummy\">", key);
+                        bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
+                        free(tmp.s);
+                        if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
+                        k = kh_get(vdict, d, key);
+                    }
+                    uint32_t y = kh_val(d, k).info[BCF_HL_INFO];
+                    ++v->n_info;
+                    bcf_enc_int1(str, kh_val(d, k).id);
+                    if (val == 0) {
+                        bcf_enc_size(str, 0, BCF_BT_NULL);
+                    } else if ((y>>4&0xf) == BCF_HT_FLAG || (y>>4&0xf) == BCF_HT_STR) { // if Flag has a value, treat it as a string
+                        bcf_enc_vchar(str, end - val, val);
+                    } else { // int/float value/array
+                        int i, n_val;
+                        char *t;
+                        for (t = val, n_val = 1; *t; ++t) // count the number of values
+                            if (*t == ',') ++n_val;
+                        if ((y>>4&0xf) == BCF_HT_INT) {
+                            int32_t *z;
+                            z = (int32_t*)alloca(n_val<<2);
+                            for (i = 0, t = val; i < n_val; ++i, ++t)
+                                z[i] = strtol(t, &t, 10);
+                            bcf_enc_vint(str, n_val, z, -1);
+                            if (strcmp(key, "END") == 0) v->rlen = z[0] - v->pos;
+                        } else if ((y>>4&0xf) == BCF_HT_REAL) {
+                            float *z;
+                            z = (float*)alloca(n_val<<2);
+                            for (i = 0, t = val; i < n_val; ++i, ++t)
+                                z[i] = strtod(t, &t);
+                            bcf_enc_vfloat(str, n_val, z);
+                        }
+                    }
+                    if (c == 0) break;
+                    r = end;
+                    key = r + 1;
+                }
+            }
 		} else if (i == 8) { // FORMAT
 			int j, l, m, g;
 			ks_tokaux_t aux1;
@@ -1011,16 +1029,19 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 				*(char*)aux1.p = 0;
 				k = kh_get(vdict, d, t);
 				if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_FMT] == 15) {
-					if (hts_verbose >= 2)
-						fprintf(stderr, "[W::%s] FORMAT '%s' is not defined in the header\n", __func__, t);
-					v->n_fmt = 0;
-					break;
-				} else {
-					fmt[j].max_l = fmt[j].max_m = fmt[j].max_g = 0;
-					fmt[j].key = kh_val(d, k).id;
-					fmt[j].is_gt = !strcmp(t, "GT");
-					fmt[j].y = h->id[0][fmt[j].key].val->info[BCF_HL_FMT];
-				}
+                    fprintf(stderr, "[W::%s] FORMAT '%s' is not defined in the header, assuming Type=String\n", __func__, t);
+                    kstring_t tmp = {0,0,0};
+                    int l;
+                    ksprintf(&tmp, "##FORMAT=<ID=%s,Number=1,Type=String,Description=\"Dummy\">", t);
+                    bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
+                    free(tmp.s);
+                    if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
+                    k = kh_get(vdict, d, t);
+                }
+                fmt[j].max_l = fmt[j].max_m = fmt[j].max_g = 0;
+                fmt[j].key = kh_val(d, k).id;
+                fmt[j].is_gt = !strcmp(t, "GT");
+                fmt[j].y = h->id[0][fmt[j].key].val->info[BCF_HL_FMT];
 			}
 			// compute max
 			for (r = q + 1, j = 0, m = l = g = 1, v->n_sample = 0;; ++r, ++l) {
