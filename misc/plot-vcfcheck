@@ -17,6 +17,7 @@
 use strict;
 use warnings;
 use Carp;
+use Storable qw(dclone);
 
 my $opts = parse_params();
 parse_vcfcheck($opts);
@@ -58,7 +59,8 @@ sub error
         "   -p, --prefix <path>                 The output files prefix, add a slash to create new directory.\n",
         "   -P, --no-PDF                        Skip the PDF creation step.\n",
         "   -r, --rasterize                     Rasterize PDF images for fast rendering.\n",
-        "   -t, --title <string>                Use this title in plots, can be given multiple times.\n",
+        "   -t, --title <string>                Identify files by these titles in plots. Can be given multiple times.\n",
+        "   -T, --main-title <string>           Main title for the PDF.\n",
         "   -h, -?, --help                      This help message.\n",
         "\n";
 }
@@ -77,7 +79,7 @@ sub parse_params
 		args       => join(' ',$0,@ARGV), 
 		img_width  => 11/2.54,
 		img_height => 10/2.54,
-		id2col     => [ 'orange', 'r', 'k' ],
+		id2col     => [ 'orange', 'red', 'darkgreen' ],
 		tex => 
 		{
 			slide3v => { height1 => '7cm', height2 => '7cm',  height3 => '4.5cm' },
@@ -157,6 +159,7 @@ sub parse_params
         if ( $arg eq '-r' || $arg eq '--rasterize' ) { $$opts{rasterize}=1; $$opts{pdf_plots} = 0; next; }
         if ( $arg eq '-m' || $arg eq '--merge' ) { $$opts{make_plots}=0; $$opts{make_pdf}=0; $$opts{merge}=1; next; }
         if ( $arg eq '-t' || $arg eq '--titles' ) { push @{$$opts{titles}},shift(@ARGV); next; }
+        if ( $arg eq '-T' || $arg eq '--main-title' ) { $$opts{main_title} = shift(@ARGV); next; }
         if ( $arg eq '-p' || $arg eq '--prefix' ) { $$opts{prefix}=shift(@ARGV); next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( -e $arg ) { push @{$$opts{vcfcheck}},$arg; next; }
@@ -566,7 +569,7 @@ sub plot_venn_bars
 	iprint $fh, qq[
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 	 		ax1 = fig.add_subplot(111)
-	 		ax1.bar([1,2,3],[$snps[0],$snps[2],$snps[1]],align='center',color='y',width=0.3)
+	 		ax1.bar([1,2,3],[$snps[0],$snps[2],$snps[1]],align='center',color='$$opts{id2col}[0]',width=0.3)
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
 			ax1.set_xlim(0.5,3.5)
 			plt.xticks([1,2,3],('$snp_titles[0]','$snp_titles[2]','$snp_titles[1]'))
@@ -578,7 +581,7 @@ sub plot_venn_bars
 
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 	 		ax1 = fig.add_subplot(111)
-	 		ax1.bar([1,2,3],[$indels[0],$indels[2],$indels[1]],align='center',color='r',width=0.3)
+	 		ax1.bar([1,2,3],[$indels[0],$indels[2],$indels[1]],align='center',color='$$opts{id2col}[1]',width=0.3)
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
 			ax1.set_xlim(0.5,3.5)
 			plt.xticks([1,2,3],('$indel_titles[0]','$indel_titles[2]','$indel_titles[1]'))
@@ -731,18 +734,18 @@ sub plot_tstv_by_AF
 	iprint $fh, "
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 			ax1 = fig.add_subplot(111)
-			ax1.plot([row[0] for row in dat], [row[1] for row in dat], color='k')
+			ax1.plot([row[0] for row in dat], [row[1] for row in dat], '-o',color='k',mec='k',markersize=3)
 			ax1.set_ylabel('Number of sites',color='k')
 			ax1.set_yscale('log')
 			#ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
 			for tl in ax1.get_yticklabels(): tl.set_color('k')
 			ax1.set_xlabel('Non-ref allele frequency')
 			ax2 = ax1.twinx()
-			ax2.plot([row[0] for row in dat], [row[2] for row in dat], color='r')
-			ax2.set_ylabel('Ts/Tv',color='r')
+			ax2.plot([row[0] for row in dat], [row[2] for row in dat], '-o',color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]',markersize=3)
+			ax2.set_ylabel('Ts/Tv',color='$$opts{id2col}[$id]')
 			ax2.set_ylim(0,0.5+max(3,max(row[2] for row in dat)))
 			ax1.set_xlim(0,1)
-			for tl in ax2.get_yticklabels(): tl.set_color('r')
+			for tl in ax2.get_yticklabels(): tl.set_color('$$opts{id2col}[$id]')
 			plt.subplots_adjust(right=0.88,left=0.15,bottom=0.11)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img.png')
@@ -836,7 +839,6 @@ sub plot_concordance_by_AF
 	if ( !@vals ) { return; }
     
     # create a local copy and prepare r2 for rebinning
-    use Storable qw(dclone);
     @vals = @{ dclone(\@vals) };
     for (my $i=0; $i<@vals; $i++) { $vals[$i][7] *= $vals[$i][8]; }
 	my $vals = rebin_values(\@vals,1,0);
@@ -863,18 +865,18 @@ sub plot_concordance_by_AF
 	}
 	iprint $fh, "]
 
-			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
+			fig = plt.figure(figsize=($$opts{img_width}*1.2,$$opts{img_height}))
 			ax1 = fig.add_subplot(111)
 			ax1.plot([row[0] for row in dat], [row[1] for row in dat],'.',color='$$opts{id2col}[1]',label='Hom RR')
 			ax1.plot([row[0] for row in dat], [row[2] for row in dat],'.',color='$$opts{id2col}[0]',label='Het RA')
-			ax1.plot([row[0] for row in dat], [row[3] for row in dat],'.',color='$$opts{id2col}[2]',label='Hom AA')
+			ax1.plot([row[0] for row in dat], [row[3] for row in dat],'.',color='k',label='Hom AA')
 			ax1.set_xlabel('Non-ref allele frequency')
 			ax1.set_ylabel('Concordance')
 			ax1.legend(numpoints=1,markerscale=2,loc='best',prop={'size':10}).draw_frame(False)
 			ax2 = ax1.twinx()
 			ax2.plot([row[0] for row in dat], [row[4] for row in dat],color='$$opts{id2col}[1]')
 			ax2.plot([row[0] for row in dat], [row[5] for row in dat],color='$$opts{id2col}[0]')
-			ax2.plot([row[0] for row in dat], [row[6] for row in dat],color='$$opts{id2col}[2]')
+			ax2.plot([row[0] for row in dat], [row[6] for row in dat],color='k')
 			ax2.set_ylabel('Number of genotypes')
 			ax2.set_yscale('log')
 			plt.subplots_adjust(left=0.15,right=0.83,bottom=0.11)
@@ -891,6 +893,7 @@ sub plot_concordance_by_AF
             ax1.plot([row[0] for row in dat], [row[7] for row in dat], '-^', color='k',markersize=3)
             for tl in ax2.get_yticklabels(): tl.set_color('r')
             ax2.set_ylabel('Number of sites', color='r')
+            ax2.set_yscale('log')
             ax1.set_ylabel('Mean allelic R\$^2\$', color='k')
             ax1.set_xlabel('Non-ref allele frequency')
 			plt.subplots_adjust(left=0.19,right=0.83,bottom=0.11)
@@ -945,54 +948,41 @@ sub plot_counts_by_AF_col
 
     my $fh  = $$opts{plt_fh};
 	my $img = "$$opts{prefix}counts_by_af.".lc($title)."s";
+    my @has_vals;
 
-	my @files = (keys %{$$opts{file2ids}});
-	for (my $ifile=0; $ifile<@files; $ifile++)
-	{
-		iprint $fh, "
-			dat$ifile = [
-			";
-		my $file = $files[$ifile];
-		my %vals;
-        my $has_vals = 0;
-		for my $id (@{$$opts{file2ids}{$file}})
-		{
-			my @tmp = get_values($opts,$id,'AF');
-			for my $val (@tmp)
-			{
-				$vals{$$val[0]} += $$val[$col];
-			}
-		}
-		for my $key (sort {$a<=>$b} keys %vals)
-		{
-			if ( !$vals{$key} ) { next; }
-			iprint $fh, "[ $key, $vals{$key} ],\n";
-            $has_vals++;
-		}
-		iprint $fh, "]\n";
-        if ( $has_vals<2 ) { return; }
-	}
+    for my $id (file_ids($opts))
+    {
+        my @tmp = get_values($opts,$id,'AF');
+        my $vals = rebin_values(\@tmp,1,0);
+        iprint $fh, "
+            dat$id = [
+            ";
+        for my $val (@$vals) 
+        { 
+            iprint $fh, "[ $$val[0], $$val[$col] ],\n"; 
+            $has_vals[$id]++;
+        }
+        iprint $fh, "]\n";
+    }
 	iprint $fh, "
 			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
 			ax1 = fig.add_subplot(111)
 			ax1.set_ylabel('Number of sites')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
 			ax1.set_yscale('log')
-			ax1.set_xscale('log')
 			ax1.set_xlabel('Non-reference allele frequency')
-			#ax1.set_xlim(0,1)
+            ax1.set_xlim(-0.05,1.05)
 		";
-	my @cols = ('r','k');
-	for (my $ifile=0; $ifile<@files; $ifile++)
-	{
-		iprint $fh, "
-			ax1.plot([row[0]/100. for row in dat$ifile], [row[1] for row in dat$ifile], '.', markersize=3, color='$cols[$ifile]',label='$$opts{title}{$ifile}')
-		";
-	}
-    if ( @files>1 )
+    my $nfiles = 0;
+    for my $id (file_ids($opts))
     {
-        iprint $fh, "ax1.legend(numpoints=1,markerscale=2).draw_frame(False)\n";
+        if ( !$has_vals[$id] or $has_vals[$id]<2 ) { next; }
+		iprint $fh, "
+			ax1.plot([row[0]/100. for row in dat$id], [row[1] for row in dat$id], '-o',markersize=3, color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]',label='$$opts{title}{$id}')
+		";
+        $nfiles++;
     }
+    iprint $fh, "ax1.legend(numpoints=1,markerscale=2,ncol=$nfiles,handletextpad=0.5).draw_frame(False)\n";
 	iprint $fh, "
 			plt.title('$title count by AF')
 			plt.subplots_adjust(bottom=0.2,left=0.1,right=0.95)
@@ -1038,7 +1028,7 @@ sub plot_indel_distribution
 
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 			ax1 = fig.add_subplot(111)
-			ax1.bar([row[0]-0.5 for row in dat], [row[1] for row in dat], color='y') #, edgecolor='y')
+			ax1.bar([row[0]-0.5 for row in dat], [row[1] for row in dat], color='$$opts{id2col}[0]')# , edgecolor='$$opts{id2col}[0]')
 			ax1.set_xlabel('InDel Length')
 			ax1.set_ylabel('Count')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
@@ -1342,10 +1332,11 @@ sub create_pdf
         $slide .= qq[\\item $$opts{title}{$id} .. \\texttt{\\footnotesize $fname}\n];
     }
     $slide .= q[\\end{itemize}\\end{minipage}];
+    my $title = exists($$opts{main_title}) ? $$opts{main_title} : 'Summary Numbers';
 	iprint $tex, qq[
 			% Table with summary numbers
 			%
-			\\hslide{Summary numbers}{$slide}
+			\\hslide{$title}{$slide}
 		
 		];
 
