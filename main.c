@@ -24,7 +24,7 @@ typedef struct
 }
 cmd_t;
 
-// By symlinking, the htscmd program can be invoked under multiple
+// By symlinking, the htscmd program can be invoked in multiple
 //  ways. For example, by creating a symlink 'htsvcf', the command
 //  'htscmd vcfcheck' can be run as 'htsvcf check'. By creating
 //  a symlink 'vcf', the same command can be run as 'vcf check'.
@@ -111,10 +111,26 @@ static int set_alias(cmd_t *cmd, const char *argv0, char **buf, int *nbuf)
     return 1;
 }
 
+
+static int known_alias(char *argv0)
+{
+    int i = 0, nbuf = 0, known = 0;
+    char *buf = NULL;
+    while (cmds[i].func)
+    {
+        if ( (known = set_alias(&cmds[i], argv0, &buf, &nbuf)) ) break;
+        i++;
+    }
+    if ( buf ) free(buf);
+    return known;
+}
+
 static int usage(char *argv0)
 {
 	fprintf(stderr, "\nUsage:   %s <command> <argument>\n", argv0);
 	fprintf(stderr, "Command:\n");
+
+    if ( !known_alias(argv0) ) argv0 = "htscmd";
 
     int i = 0, nbuf = 0;
     char *buf = NULL;
@@ -136,6 +152,7 @@ int main(int argc, char *argv[])
     while ( a0>argv[0] && a0[-1]!='/' && a0[-1]!='\\' ) a0--;
     
 	if (argc < 2) return usage(a0);
+    if ( !known_alias(a0) ) a0 = "htscmd";
 
     int i = 0, nbuf = 0;
     char *buf = NULL;
