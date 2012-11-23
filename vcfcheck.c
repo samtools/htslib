@@ -15,7 +15,7 @@ idist_t;
 
 typedef struct
 {
-    int n_snps, n_indels, n_mnps, n_others, n_mals;
+    int n_snps, n_indels, n_mnps, n_others, n_mals, n_snp_mals;
     int *af_ts, *af_tv, *af_snps, *af_indels;
     #if QUAL_STATS
         int *qual_ts, *qual_tv, *qual_snps, *qual_indels;
@@ -23,7 +23,7 @@ typedef struct
     int *insertions, *deletions, m_indel;   // maximum indel length
     int in_frame, out_frame;
     int subst[15];
-    int *smpl_hets, *smpl_homRR, *smpl_homAA, *smpl_ts, *smpl_tv, *smpl_indels, *smpl_ndp;
+    int *smpl_hets, *smpl_homRR, *smpl_homAA, *smpl_ts, *smpl_tv, *smpl_indels, *smpl_ndp, *smpl_sngl;
     unsigned long int *smpl_dp;
     idist_t dp;
 }
@@ -148,6 +148,7 @@ void init_stats(args_t *args)
             stats->smpl_indels = (int *) calloc(args->files->n_smpl,sizeof(int));
             stats->smpl_dp     = (unsigned long int *) calloc(args->files->n_smpl,sizeof(unsigned long int));
             stats->smpl_ndp    = (int *) calloc(args->files->n_smpl,sizeof(int));
+            stats->smpl_sngl    = (int *) calloc(args->files->n_smpl,sizeof(int));
         }
         idist_init(&stats->dp, args->dp_min,args->dp_max,args->dp_step);
     }
@@ -185,6 +186,7 @@ void destroy_stats(args_t *args)
         if (stats->smpl_indels) free(stats->smpl_indels);
         if (stats->smpl_dp) free(stats->smpl_dp);
         if (stats->smpl_ndp) free(stats->smpl_ndp);
+        if (stats->smpl_sngl) free(stats->smpl_sngl);
         idist_destroy(&stats->dp);
     }
     if (args->tmp_iaf) free(args->tmp_iaf);
@@ -351,12 +353,13 @@ void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched
     if ( (fmt_ptr = get_fmt_ptr(reader->header,reader->buffer[0],"GT")) )
     {
         int ref = acgt2int(*line->d.allele[0]);
-        int is;
+        int is, n_nref = 0, i_nref = 0;
         for (is=0; is<args->files->n_smpl; is++)
         {
             int ial;
             int gt = gt_type(fmt_ptr, reader->samples[is], &ial);
             if ( gt == GT_UNKN ) continue;
+            if ( gt != GT_HOM_RR ) { n_nref++; i_nref = is; }
             if ( line->d.var_type&VCF_SNP )
             {
                 if ( gt == GT_HET_RA || gt == GT_HET_AA ) stats->smpl_hets[is]++;
@@ -377,6 +380,7 @@ void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched
                 if ( gt != GT_HOM_RR ) stats->smpl_indels[is]++;
             }
         }
+        if ( n_nref==1 ) stats->smpl_sngl[i_nref]++;
     }
 
     if ( (fmt_ptr = get_fmt_ptr(reader->header,reader->buffer[0],"DP")) )
@@ -499,7 +503,11 @@ void check_vcf(args_t *args)
         if ( line->d.var_type&VCF_OTHER )
             do_other_stats(args, stats, reader);
 
-        if ( line->n_allele>2 ) stats->n_mals++;
+        if ( line->n_allele>2 ) 
+        {
+            stats->n_mals++;
+            if ( line->d.var_type == VCF_SNP ) stats->n_snp_mals++;
+        }
 
         if ( files->n_smpl )
             do_sample_stats(args, stats, reader, ret);
@@ -548,6 +556,7 @@ void print_stats(args_t *args)
         printf("SN\t%d\tnumber of indels:\t%d\n", id, stats->n_indels);
         printf("SN\t%d\tnumber of others:\t%d\n", id, stats->n_others);
         printf("SN\t%d\tnumber of multiallelic sites:\t%d\n", id, stats->n_mals);
+        printf("SN\t%d\tnumber of multiallelic SNP sites:\t%d\n", id, stats->n_snp_mals);
 
         int ts=0,tv=0;
         for (i=0; i<args->m_af; i++) { ts += stats->af_ts[i]; tv += stats->af_tv[i];  }
@@ -660,15 +669,16 @@ void print_stats(args_t *args)
 
     if ( args->files->n_smpl )
     {
-        printf("# PSC, Per-sample counts\n# PSC\t[2]id\t[3]sample\t[4]nRefHom\t[5]nNonRefHom\t[6]nHets\t[7]nTransitions\t[8]nTransversions\t[9]nIndels\t[10]average depth\n");
+        printf("# PSC, Per-sample counts\n# PSC\t[2]id\t[3]sample\t[4]nRefHom\t[5]nNonRefHom\t[6]nHets\t[7]nTransitions\t[8]nTransversions\t[9]nIndels\t[10]average depth\t[11]nSingletons\n");
         for (id=0; id<args->nstats; id++)
         {
             stats_t *stats = &args->stats[id];
             for (i=0; i<args->files->n_smpl; i++)
             {
                 float dp = stats->smpl_ndp[i] ? stats->smpl_dp[i]/stats->smpl_ndp[i] : 0;
-                printf("PSC\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%.0f\n", id,args->files->samples[i], 
-                    stats->smpl_homRR[i], stats->smpl_homAA[i], stats->smpl_hets[i], stats->smpl_ts[i], stats->smpl_tv[i], stats->smpl_indels[i],dp);
+                printf("PSC\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%.0f\t%d\n", id,args->files->samples[i], 
+                    stats->smpl_homRR[i], stats->smpl_homAA[i], stats->smpl_hets[i], stats->smpl_ts[i], 
+                    stats->smpl_tv[i], stats->smpl_indels[i],dp, stats->smpl_sngl[i]);
             }
         }
 
