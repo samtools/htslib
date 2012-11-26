@@ -129,7 +129,7 @@ void bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
     // add samples
     d = (vdict_t*)h->dict[BCF_DT_SAMPLE];
     for (p = q = str;; ++q) {
-        if (*q != '\t' && *q != 0) continue;
+        if (*q != '\t' && *q != 0 && *q != '\n') continue;
         if (++i > 9) {
             char *s;
             s = (char*)malloc(q - p + 1);
@@ -137,7 +137,7 @@ void bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
             s[q - p] = 0;
             bcf_hdr_add_sample(h,s);
         }
-        if (*q == 0) break;
+        if (*q == 0 || *q == '\n') break;
         p = q + 1;
     }
 }
