@@ -1064,6 +1064,7 @@ sub plot_counts_by_AF_col
     }
     if ( !$nfiles ) { return; }
 	iprint $fh, "
+            ax1.legend(numpoints=1,markerscale=1,loc='best',prop={'size':10},frameon=False)
 			plt.title('$title count by AF')
 			plt.subplots_adjust(bottom=0.2,left=0.1,right=0.95)
 			plt.savefig('$img.png')
