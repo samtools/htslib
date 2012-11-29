@@ -319,6 +319,14 @@ sub add_to_sample_values
     }
 }
 
+sub merge_PSC
+{
+    my ($a,$b,$n) = @_;
+    for (my $i=0; $i<@$a; $i++) { $$a[$i][7] *= $n; }   # average DP
+    add_to_sample_values($a,$b);
+    for (my $i=0; $i<@$a; $i++) { $$a[$i][7] /= $n+1; }
+}
+
 sub rglob
 {
     my ($a,$b) = @_;
@@ -466,7 +474,7 @@ sub parse_vcfcheck1
             elsif ( $a eq 'GCsS' ) { merge_GCsS($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             elsif ( $a eq 'GCsAF' ) { merge_GCsAF($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             elsif ( $a eq 'ST' ) { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_str); }
-            elsif ( $a eq 'PSC') { add_to_sample_values($$opts{dat}{$a}{$b},$dat{$a}{$b}); }
+            elsif ( $a eq 'PSC') { merge_PSC($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             elsif ( $a eq 'IDD') { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_num); }
             elsif ( $a eq 'FS') { merge_FS($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             else { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_num_op); } # SiS AF IDD
