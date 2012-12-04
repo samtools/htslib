@@ -25,85 +25,6 @@ static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, N
  *** VCF header parser ***
  *************************/
 
-// return: positive => contig; zero => INFO/FILTER/FORMAT; negative => error or skipped
-int bcf_hdr_parse_line2(const char *str, uint32_t *info, int *id_beg, int *id_end)
-{
-	const char *p, *q;
-	int ctype;
-	int type = -1; // Type
-	int num = -1; // Number
-	int var = -1; // A, G, ., or fixed
-	int ctg_len = -1;
-
-	if (*str != '#' && str[1] != '#') return -1;
-	*id_beg = *id_end = *info = -1;
-	p = str + 2;
-	for (q = p; *q && *q != '='; ++q); // FIXME: do we need to check spaces?
-	if (*q == 0) return -2;
-	if (q - p == 4 && strncmp(p, "INFO", 4) == 0) ctype = BCF_HL_INFO;
-	else if (q - p == 6 && strncmp(p, "FILTER", 6) == 0) ctype = BCF_HL_FLT;
-	else if (q - p == 6 && strncmp(p, "FORMAT", 6) == 0) ctype = BCF_HL_FMT;
-	else if (q - p == 6 && strncmp(p, "contig", 6) == 0) ctype = BCF_HL_CTG;
-	else return -3;
-	for (; *q && *q != '<'; ++q);
-	if (*q == 0) return -3;
-	p = q + 1; // now p points to the first character following '<'
-	while (*p && *p != '>') {
-		int which = 0;
-		char *tmp;
-		const char *val;
-		for (q = p; *q && *q != '='; ++q);
-		if (*q == 0) break;
-		if (q - p == 2 && strncmp(p, "ID", 2) == 0) which = 1; // ID
-		else if (q - p == 4 && strncmp(p, "Type", 4) == 0) which = 2; // Number
-		else if (q - p == 6 && strncmp(p, "Number", 6) == 0) which = 3; // Type
-		else if (q - p == 6 && strncmp(p, "length", 6) == 0) which = 4; // length
-		val = q + 1;
-		if (*val == '"') { // quoted string
-			for (q = val + 1; *q && *q != '"'; ++q)
-				if (*q == '\\' && *(q+1) != 0) ++q;
-			if (*q != '"') return -4; // open double quotation mark
-			p = q + 1;
-			if (*p == ',') ++p;
-			continue;
-		}
-		for (q = val; *q && *q != ',' && *q != '>'; ++q); // parse val
-		if (which == 1) {
-			*id_beg = val - str; *id_end = q - str;
-		} else if (which == 2) {
-			if (q - val == 7 && strncmp(val, "Integer", 7) == 0) type = BCF_HT_INT;
-			else if (q - val == 5 && strncmp(val, "Float", 5) == 0) type = BCF_HT_REAL;
-			else if (q - val == 6 && strncmp(val, "String", 6) == 0) type = BCF_HT_STR;
-			else if (q - val == 4 && strncmp(val, "Flag", 6) == 0) type = BCF_HT_FLAG;
-		} else if (which == 3) {
-			if (*val == 'A') var = BCF_VL_A;
-			else if (*val == 'G') var = BCF_VL_G;
-			else if (isdigit(*val)) var = BCF_VL_FIXED, num = strtol(val, &tmp, 10);
-			else var = BCF_VL_VAR;
-			if (var != BCF_VL_FIXED) num = 0xfffff;
-		} else if (which == 4) {
-			if (isdigit(*val)) ctg_len = strtol(val, &tmp, 10);
-		}
-		p = q + 1;
-	}
-	if (ctype == BCF_HL_CTG) {
-		if (ctg_len > 0) return ctg_len;
-		else return -5;
-	} else {
-		if (ctype == BCF_HL_FLT) num = 0;
-		if (type == BCF_HT_FLAG) {
-			if (num != 0 && hts_verbose >= 2)
-				fprintf(stderr, "[W::%s] ignore Number for a Flag\n", __func__);
-			num = 0, var = BCF_VL_FIXED; // if Flag VCF type, force to change num to 0
-		}
-		if (num == 0) type = BCF_HT_FLAG, var = BCF_VL_FIXED; // conversely, if num==0, force the type to Flag
-		if (*id_beg < 0 || type < 0 || num < 0 || var < 0) return -5; // missing information
-		*info = (uint32_t)num<<12 | var<<8 | type<<4 | ctype;
-		//printf("%d, %s, %d, %d, [%d,%d]\n", ctype, bcf_type_name[type], var, num, *id_beg, *id_end);
-		return 0;
-	}
-}
-
 void bcf_hdr_add_sample(bcf_hdr_t *h, char *s)
 {
     vdict_t *d = (vdict_t*)h->dict[BCF_DT_SAMPLE];
@@ -140,49 +61,6 @@ void bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
         if (*q == 0 || *q == '\n') break;
         p = q + 1;
     }
-}
-
-int bcf_hdr_parse1(bcf_hdr_t *h, const char *str)
-{
-	khint_t k;
-	if (*str != '#') return -1;
-	if (str[1] == '#') {
-		uint32_t info;
-		int len, ret, id_beg, id_end;
-		char *s;
-
-		len = bcf_hdr_parse_line2(str, &info, &id_beg, &id_end);
-		if (len < 0) return -1;
-		s = (char*)malloc(id_end - id_beg + 1);
-		strncpy(s, str + id_beg, id_end - id_beg);
-		s[id_end - id_beg] = 0;
-		if (len > 0) { // a contig line
-			vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
-			k = kh_put(vdict, d, s, &ret);
-			if (ret == 0) {
-				if (hts_verbose >= 2)
-					fprintf(stderr, "[W::%s] Duplicated contig name '%s'. Skipped.\n", __func__, s);
-				free(s);
-			} else {
-				kh_val(d, k) = bcf_idinfo_def;
-				kh_val(d, k).id = kh_size(d) - 1;
-				kh_val(d, k).info[0] = len;
-			}
-		} else { // a FILTER/INFO/FORMAT line
-			vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
-			k = kh_put(vdict, d, s, &ret);
-			if (ret) { // absent from the dict
-				kh_val(d, k) = bcf_idinfo_def;
-				kh_val(d, k).info[info&0xf] = info;
-				kh_val(d, k).id = kh_size(d) - 1;
-			} else {
-				kh_val(d, k).info[info&0xf] = info;
-				free(s);
-			}
-		}
-	} else 
-        bcf_hdr_parse_sample_line(h, str);
-	return 0;
 }
 
 int bcf_hdr_sync(bcf_hdr_t *h)
@@ -243,6 +121,24 @@ void bcf_hrec_debug(bcf_hrec_t *hrec)
     for (i=0; i<hrec->nkeys; i++)
         printf("\t[%s]=[%s]", hrec->keys[i],hrec->vals[i]);
     printf("\n");
+}
+
+void bcf_header_debug(bcf_hdr_t *hdr)
+{
+    int i, j;
+    for (i=0; i<hdr->nhrec; i++)
+    {
+        if ( !hdr->hrec[i]->value )
+        {
+            fprintf(stderr, "##%s=<", hdr->hrec[i]->key);
+            fprintf(stderr,"%s=%s", hdr->hrec[i]->keys[0], hdr->hrec[i]->vals[0]);
+            for (j=1; j<hdr->hrec[i]->nkeys; j++)
+                fprintf(stderr,",%s=%s", hdr->hrec[i]->keys[j], hdr->hrec[i]->vals[j]);
+            fprintf(stderr,">\n");
+        }
+        else
+            fprintf(stderr,"##%s=%s\n", hdr->hrec[i]->key,hdr->hrec[i]->value);
+    }
 }
 
 void bcf_hrec_add_key(bcf_hrec_t *hrec, char *str, int len)
@@ -419,6 +315,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     { 
         // already present
         free(str);
+        if ( kh_val(d, k).hrec[info&0xf] ) return 0;
         kh_val(d, k).info[info&0xf] = info;
         kh_val(d, k).hrec[info&0xf] = hrec;
         return 1;
@@ -432,14 +329,28 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
 int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 {
+    hrec->type = BCF_HL_GEN;
+    if ( !bcf_hdr_register_hrec(hdr,hrec) )
+    {
+        // If one of the hashed field, then it is already present
+        if ( hrec->type != BCF_HL_GEN ) return 0;
+
+        // Is one of the generic fields and already present?
+        int i;
+        for (i=0; i<hdr->nhrec; i++)
+        {
+            if ( hdr->hrec[i]->type!=BCF_HL_GEN ) continue;
+            if ( !strcmp(hdr->hrec[i]->key,hrec->key) && !strcmp(hdr->hrec[i]->value,hrec->value) ) break;
+        }
+        if ( i<hdr->nhrec ) return 0;
+    }
+
+    // New record, needs to be added
     int n = ++hdr->nhrec;
     hdr->hrec = (bcf_hrec_t**) realloc(hdr->hrec, n*sizeof(bcf_hrec_t*));
     hdr->hrec[n-1] = hrec;
 
-    hrec->type = BCF_HL_GEN;
-    if ( !hrec->key ) return 0;
-
-    return bcf_hdr_register_hrec(hdr,hrec);
+    return hrec->type==BCF_HL_GEN ? 0 : 1;
 }
 
 bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, char *id)
@@ -600,77 +511,78 @@ int bcf_write1(BGZF *fp, const bcf1_t *v)
 
 bcf_hdr_t *vcf_hdr_read(htsFile *fp)
 {
-	if (!fp->is_bin) {
-		kstring_t txt, *s = &fp->line;
-		bcf_hdr_t *h;
-		h = bcf_hdr_init();
-		txt.l = txt.m = 0; txt.s = 0;
-		while (hts_getline(fp, KS_SEP_LINE, s) >= 0) {
-			if (s->l == 0) continue;
-			if (s->s[0] != '#') {
-				if (hts_verbose >= 2)
-					fprintf(stderr, "[E::%s] no sample line\n", __func__);
-				free(txt.s);
-				bcf_hdr_destroy(h);
-				return 0;
-			}
-			if (s->s[1] != '#' && fp->fn_aux) { // insert contigs here
-				int dret;
-				gzFile f;
-				kstream_t *ks;
-				kstring_t tmp;
-				tmp.l = tmp.m = 0; tmp.s = 0;
-				f = gzopen(fp->fn_aux, "r");
-				ks = ks_init(f);
-				while (ks_getuntil(ks, 0, &tmp, &dret) >= 0) {
-					int c;
-					kputs("##contig=<ID=", &txt); kputs(tmp.s, &txt);
-					ks_getuntil(ks, 0, &tmp, &dret);
-					kputs(",length=", &txt); kputw(atol(tmp.s), &txt);
-					kputsn(">\n", 2, &txt);
-					if (dret != '\n')
-						while ((c = ks_getc(ks)) != '\n' && c != -1); // skip the rest of the line
-				}
-				free(tmp.s);
-				ks_destroy(ks);
-				gzclose(f);
-			}
-			kputsn(s->s, s->l, &txt);
-			if (s->s[1] != '#') break;
-			kputc('\n', &txt);
-		}
-		h->l_text = txt.l + 1; // including NULL
-		h->text = txt.s;
-		bcf_hdr_parse(h);
-        // check tabix index, are all contigs listed in the header? add the missing ones
-        tbx_t *idx = tbx_index_load(fp->fn);
-        if ( idx )
-        {
-			int i, n, need_sync = 0;
-			const char **names = tbx_seqnames(idx, &n);
-			for (i=0; i<n; i++)
-			{
-                bcf_hrec_t *hrec = bcf_hdr_get_hrec(h, BCF_DT_CTG, (char*) names[i]);
-                if ( hrec ) continue;
-                hrec = (bcf_hrec_t*) calloc(1,sizeof(bcf_hrec_t));
-                hrec->key = strdup("contig");
-                bcf_hrec_add_key(hrec, "ID", strlen("ID"));
-                bcf_hrec_set_val(hrec, hrec->nkeys-1, (char*) names[i], strlen(names[i]), 0);
-                bcf_hrec_add_key(hrec, "length", strlen("length"));
-                bcf_hrec_set_val(hrec, hrec->nkeys-1, "-1", strlen("-1"), 0);   // what is a good default value?
-                bcf_hdr_add_hrec(h, hrec);
-                need_sync = 1;
-			}
-			free(names);
-			tbx_destroy(idx);
-            if ( need_sync )
-            {
-                bcf_hdr_sync(h);
-                bcf_hdr_fmt_text(h);
+	if (fp->is_bin) 
+        return bcf_hdr_read((BGZF*)fp->fp);
+
+    kstring_t txt, *s = &fp->line;
+    bcf_hdr_t *h;
+    h = bcf_hdr_init();
+    txt.l = txt.m = 0; txt.s = 0;
+    while (hts_getline(fp, KS_SEP_LINE, s) >= 0) {
+        if (s->l == 0) continue;
+        if (s->s[0] != '#') {
+            if (hts_verbose >= 2)
+                fprintf(stderr, "[E::%s] no sample line\n", __func__);
+            free(txt.s);
+            bcf_hdr_destroy(h);
+            return 0;
+        }
+        if (s->s[1] != '#' && fp->fn_aux) { // insert contigs here
+            int dret;
+            gzFile f;
+            kstream_t *ks;
+            kstring_t tmp;
+            tmp.l = tmp.m = 0; tmp.s = 0;
+            f = gzopen(fp->fn_aux, "r");
+            ks = ks_init(f);
+            while (ks_getuntil(ks, 0, &tmp, &dret) >= 0) {
+                int c;
+                kputs("##contig=<ID=", &txt); kputs(tmp.s, &txt);
+                ks_getuntil(ks, 0, &tmp, &dret);
+                kputs(",length=", &txt); kputw(atol(tmp.s), &txt);
+                kputsn(">\n", 2, &txt);
+                if (dret != '\n')
+                    while ((c = ks_getc(ks)) != '\n' && c != -1); // skip the rest of the line
             }
-		}
-		return h;
-	} else return bcf_hdr_read((BGZF*)fp->fp);
+            free(tmp.s);
+            ks_destroy(ks);
+            gzclose(f);
+        }
+        kputsn(s->s, s->l, &txt);
+        if (s->s[1] != '#') break;
+        kputc('\n', &txt);
+    }
+    h->l_text = txt.l + 1; // including NULL
+    h->text = txt.s;
+    bcf_hdr_parse(h);
+    // check tabix index, are all contigs listed in the header? add the missing ones
+    tbx_t *idx = tbx_index_load(fp->fn);
+    if ( idx )
+    {
+        int i, n, need_sync = 0;
+        const char **names = tbx_seqnames(idx, &n);
+        for (i=0; i<n; i++)
+        {
+            bcf_hrec_t *hrec = bcf_hdr_get_hrec(h, BCF_DT_CTG, (char*) names[i]);
+            if ( hrec ) continue;
+            hrec = (bcf_hrec_t*) calloc(1,sizeof(bcf_hrec_t));
+            hrec->key = strdup("contig");
+            bcf_hrec_add_key(hrec, "ID", strlen("ID"));
+            bcf_hrec_set_val(hrec, hrec->nkeys-1, (char*) names[i], strlen(names[i]), 0);
+            bcf_hrec_add_key(hrec, "length", strlen("length"));
+            bcf_hrec_set_val(hrec, hrec->nkeys-1, "2147483647", strlen("2147483647"), 0);
+            bcf_hdr_add_hrec(h, hrec);
+            need_sync = 1;
+        }
+        free(names);
+        tbx_destroy(idx);
+        if ( need_sync )
+        {
+            bcf_hdr_sync(h);
+            bcf_hdr_fmt_text(h);
+        }
+    }
+    return h;
 }
 
 int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname)
@@ -1373,6 +1285,7 @@ hts_idx_t *bcf_index(BGZF *fp, int min_shift)
 	for (i = 0; i < h->n[BCF_DT_CTG]; ++i)
 		if (max_len < h->id[BCF_DT_CTG][i].val->info[0])
 			max_len = h->id[BCF_DT_CTG][i].val->info[0];
+    if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
 	max_len += 256;
 	for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
 	idx = hts_idx_init(h->n[BCF_DT_CTG], HTS_FMT_CSI, bgzf_tell(fp), min_shift, n_lvls);
