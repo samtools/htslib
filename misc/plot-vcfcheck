@@ -655,7 +655,7 @@ sub plot_per_sample_stats
 			ax1 = fig.add_subplot(111)
 			ax1.plot([row[0] for row in dat], [row[1] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
 			ax1.set_ylabel('Ts/Tv')
-			ax1.set_ylim(0,0.5+max(3,max(row[1] for row in dat)))
+			ax1.set_ylim(min(row[1] for row in dat)-0.1,max(row[1] for row in dat)+0.1)
             if sample_names: 
             \\t     plt.xticks([row[0] for row in dat],[row[7] for row in dat],**sample_font)
 			\\t     plt.subplots_adjust(**sample_margins)
