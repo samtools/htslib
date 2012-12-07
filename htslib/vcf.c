@@ -221,7 +221,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, char *line, int *len)
         p = ++q;
         while ( *q && *q!='=' ) q++;
         n = q-p;
-        if ( *q!='=' || !n ) { *len = q-line+1; return NULL; } // wrong format
+        if ( *q!='=' || !n ) { *len = q-line+1; bcf_hrec_destroy(hrec); return NULL; } // wrong format
         bcf_hrec_add_key(hrec, p, q-p);
         p = ++q;
         int quoted = *p=='"' ? 1 : 0;
@@ -333,7 +333,11 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     if ( !bcf_hdr_register_hrec(hdr,hrec) )
     {
         // If one of the hashed field, then it is already present
-        if ( hrec->type != BCF_HL_GEN ) return 0;
+        if ( hrec->type != BCF_HL_GEN ) 
+        {
+            bcf_hrec_destroy(hrec);
+            return 0;
+        }
 
         // Is one of the generic fields and already present?
         int i;
@@ -342,7 +346,11 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
             if ( hdr->hrec[i]->type!=BCF_HL_GEN ) continue;
             if ( !strcmp(hdr->hrec[i]->key,hrec->key) && !strcmp(hdr->hrec[i]->value,hrec->value) ) break;
         }
-        if ( i<hdr->nhrec ) return 0;
+        if ( i<hdr->nhrec ) 
+        {
+            bcf_hrec_destroy(hrec);
+            return 0;
+        }
     }
 
     // New record, needs to be added
