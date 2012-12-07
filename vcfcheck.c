@@ -1,3 +1,8 @@
+/*
+    Notes and known issues:
+        - SN ts/tv calculation includes all non-ref alleles listed in ALT while per-sample ts/tv
+        takes the first non-ref allele only, something to consider with many non-ref HETs.
+*/
 #include <stdio.h>
 #include <unistd.h>
 #include <getopt.h>
@@ -49,7 +54,7 @@ typedef struct
     readers_t *files;
     regions_t regions;
     int prev_reg;
-    char **argv, *exons_file, *samples_file;
+    char **argv, *exons_file, *samples_file, *targets_fname;
     int argc, debug;
     int split_by_id, nstats;
 }
@@ -585,7 +590,7 @@ void print_stats(args_t *args)
     for (id=0; id<args->nstats; id++)
     {
         stats_t *stats = &args->stats[id];
-        for (i=1; i<args->m_af; i++)
+        for (i=1; i<args->m_af; i++) // note that af[1] now contains also af[0], see SiS stats output above 
         {
             if ( stats->af_snps[i]+stats->af_ts[i]+stats->af_tv[i]+stats->af_indels[i] == 0  ) continue;
             printf("AF\t%d\t%f\t%d\t%d\t%d\t%d\n", id,100.*(i-1)/(args->m_af-2),stats->af_snps[i],stats->af_ts[i],stats->af_tv[i],stats->af_indels[i]);
@@ -716,6 +721,7 @@ static void usage(void)
     fprintf(stderr, "    -i, --split-by-ID                 collect stats for sites with ID separately (known vs novel)\n");
     fprintf(stderr, "    -r, --region <chr|chr:from-to>    collect stats in the given region only\n");
     fprintf(stderr, "    -s, --samples <list|file>         produce sample stats, \"-\" to include all samples\n");
+    fprintf(stderr, "    -t, --targets <file>              restrict to positions in tab-delimited tabix indexed file <chr,pos> or <chr,from,to>, 1-based, inclusive\n");
     fprintf(stderr, "\n");
     exit(1);
 }
@@ -737,11 +743,13 @@ int main_vcfcheck(int argc, char *argv[])
         {"apply-filters",0,0,'f'},
         {"exons",1,0,'e'},
         {"samples",1,0,'s'},
-        {"split-by-ID",0,0,'i'},
+        {"split-by-ID",1,0,'i'},
+        {"targets",1,0,'t'},
         {0,0,0,0}
     };
-    while ((c = getopt_long(argc, argv, "hc:fr:e:s:d:i1",loptions,NULL)) >= 0) {
+    while ((c = getopt_long(argc, argv, "hc:fr:e:s:d:i1t:",loptions,NULL)) >= 0) {
         switch (c) {
+            case 't': args->targets_fname = optarg; break;
             case 'c':
                 if ( !strcmp(optarg,"snps") ) args->files->collapse |= COLLAPSE_SNPS;
                 else if ( !strcmp(optarg,"indels") ) args->files->collapse |= COLLAPSE_INDELS;
@@ -769,9 +777,15 @@ int main_vcfcheck(int argc, char *argv[])
 
     if ( argc-optind>2 ) usage();
     if ( args->split_by_id && argc-optind>1 ) error("Only one file can be given with -i.\n");
+    if ( args->targets_fname )
+    {
+        if ( !bcf_sr_set_targets(args->files, args->targets_fname) )
+            error("Failed to read the targets: %s\n", args->targets_fname);
+    }
     while (optind<argc)
     {
-        if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Could not read the file: %s\n", argv[optind]);
+        if ( !bcf_sr_add_reader(args->files, argv[optind]) ) 
+            error("Could not read the file or the file is not indexed: %s\n", argv[optind]);
         optind++;
     }
 
