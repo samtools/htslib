@@ -470,7 +470,7 @@ void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched
                 int gt2 = gt_type(fmt1, files->readers[1].samples[is], NULL);
                 if ( gt != gt2 ) 
                 {
-                    fprintf(stderr,"%s\t%d\t%s\t%d\t%d\n",args->files->seqs[args->files->iseq],files->readers[0].buffer[0]->pos+1,files->samples[is],gt,gt2);
+                    printf("DBG\t%s\t%d\t%s\t%d\t%d\n",args->files->seqs[args->files->iseq],files->readers[0].buffer[0]->pos+1,files->samples[is],gt,gt2);
                 }
             }
         }
