@@ -17,42 +17,142 @@ int main_vcfcheck(int argc, char *argv[]);
 int main_vcfisec(int argc, char *argv[]);
 int main_vcfmerge(int argc, char *argv[]);
 
-static int usage()
+typedef struct
 {
-	fprintf(stderr, "\nUsage:   htscmd <command> <argument>\n\n");
-	fprintf(stderr, "Command: samview      SAM<->BAM conversion\n");
-	fprintf(stderr, "         vcfview      VCF<->BCF conversion\n");
-	fprintf(stderr, "         tabix        tabix for BGZF'd BED, GFF, SAM, VCF and more\n");
-	fprintf(stderr, "         bamidx       index BAM\n");
-	fprintf(stderr, "         bcfidx       index BCF\n\n");
-	fprintf(stderr, "         bamshuf      shuffle BAM and group alignments by query name\n");
-	fprintf(stderr, "         bam2fq       convert name grouped BAM to interleaved fastq\n");
-	fprintf(stderr, "         abreak       summarize assembly break points\n");
-	fprintf(stderr, "         bam2bed      BAM->BED conversion\n");
-	fprintf(stderr, "         vcfcheck     produce VCF stats\n");
-	fprintf(stderr, "         vcfisec      intersections of VCF files\n");
-	fprintf(stderr, "         vcfmerge     merge VCF files\n");
-	fprintf(stderr, "\n");
+    int (*func)(int, char*[]);
+    const char *alias, *help;
+}
+cmd_t;
+
+// By symlinking, the htscmd program can be invoked under multiple
+//  ways. For example, by creating a symlink 'htsvcf', the command
+//  'htscmd vcfcheck' can be run as 'htsvcf check'. By creating
+//  a symlink 'vcf', the same command can be run as 'vcf check'.
+static cmd_t cmds[] =
+{
+    { .func  = main_samview,  
+      .alias = "htscmd samview", 
+      .help  = "SAM<->BAM conversion" 
+    },
+    { .func  = main_vcfview,  
+      .alias = "htscmd vcfview, htsvcf view, vcf view", 
+      .help  = "VCF<->BCF conversion" 
+    },
+    { .func  = main_tabix,    
+      .alias = "htscmd tabix",   
+      .help  = "tabix for BGZF'd BED, GFF, SAM, VCF and more" 
+    },
+    { .func  = main_bamidx,   
+      .alias = "htscmd bamidx",
+      .help  = "index BAM" 
+    },
+    { .func = main_bcfidx,   
+      .alias = "htscmd bcfidx",  
+      .help = "index BCF" 
+    },
+    { .func  = main_bamshuf,  
+      .alias = "htscmd bamshuf", 
+      .help  = "shuffle BAM and group alignments by query name" 
+    },
+    { .func  = main_bam2fq,   
+      .alias = "htscmd bam2fq",  
+      .help  = "convert name grouped BAM to interleaved fastq" 
+    },
+    { .func  = main_abreak,   
+      .alias = "htscmd abreak",  
+      .help  = "summarize assembly break points" 
+    },
+    { .func  = main_bam2bed,  
+      .alias = "htscmd bam2bed", 
+      .help  = "BAM->BED conversion" 
+    },
+    { .func  = main_vcfcheck, 
+      .alias = "htscmd vcfcheck, htsvcf check, vcf check",
+      .help  = "produce VCF stats" 
+    },
+    { .func  = main_vcfisec,  
+      .alias = "htscmd vcfisec, htsvcf isec, vcf isec", 
+      .help  = "intersections of VCF files" 
+    },
+    { .func  = main_vcfmerge, 
+      .alias = "htscmd vcfmerge, htsvcf merge, vcf merge",
+      .help  = "merge VCF files" 
+    },
+    { .func  = NULL,
+      .alias = NULL,
+      .help  = NULL
+    }
+};
+
+static int set_alias(cmd_t *cmd, const char *argv0, char **buf, int *nbuf)
+{
+    int n = strlen(argv0);
+    const char *b = cmd->alias;
+    while ( *b )
+    {
+        while ( *b && isspace(*b) ) b++;    // skip leading spaces
+        if ( !strncmp(argv0,b,n) && isspace(b[n]) )
+        {
+            b += n+1;
+            break;  // found
+        }
+
+        while ( *b && !isspace(*b) ) b++;   // skip the argv0 string
+        while ( *b && *b!=',' ) b++;        // skip the cmd string
+        if ( *b==',' ) b++;
+    }
+
+    if ( !*b ) return 0;
+    const char *e = b;
+    while ( *e && *e!=',' ) e++;
+    if ( !*buf || e-b+1 > *nbuf ) { *nbuf = e-b+1; *buf = (char*) realloc(*buf, *nbuf); }
+    memcpy(*buf,b,e-b);
+    (*buf)[e-b] = 0;
+    return 1;
+}
+
+static int usage(char *argv0)
+{
+	fprintf(stderr, "\nUsage:   %s <command> <argument>\n", argv0);
+	fprintf(stderr, "Command:\n");
+
+    int i = 0, nbuf = 0;
+    char *buf = NULL;
+    while (cmds[i].func)
+    {
+        if ( set_alias(&cmds[i], argv0, &buf, &nbuf) )
+            printf("\t%-15s %s\n", buf,cmds[i].help);
+        i++;
+    }
+    if ( buf ) free(buf);
+
+    fprintf(stderr,"\n");
 	return 1;
 }
 
 int main(int argc, char *argv[])
 {
-	if (argc < 2) return usage();
-	if (strcmp(argv[1], "samview") == 0) return main_samview(argc-1, argv+1);
-	else if (strcmp(argv[1], "vcfview") == 0) return main_vcfview(argc-1, argv+1);
-	else if (strcmp(argv[1], "bamidx") == 0) return main_bamidx(argc-1, argv+1);
-	else if (strcmp(argv[1], "bcfidx") == 0) return main_bcfidx(argc-1, argv+1);
-	else if (strcmp(argv[1], "bamshuf") == 0) return main_bamshuf(argc-1, argv+1);
-	else if (strcmp(argv[1], "bam2fq") == 0) return main_bam2fq(argc-1, argv+1);
-	else if (strcmp(argv[1], "tabix") == 0) return main_tabix(argc-1, argv+1);
-	else if (strcmp(argv[1], "abreak") == 0) return main_abreak(argc-1, argv+1);
-	else if (strcmp(argv[1], "bam2bed") == 0) return main_bam2bed(argc-1, argv+1);
-	else if (strcmp(argv[1], "vcfcheck") == 0) return main_vcfcheck(argc-1, argv+1);
-	else if (strcmp(argv[1], "vcfisec") == 0) return main_vcfisec(argc-1, argv+1);
-	else if (strcmp(argv[1], "vcfmerge") == 0) return main_vcfmerge(argc-1, argv+1);
-	else {
-		fprintf(stderr, "[E::%s] unrecognized command '%s'\n", __func__, argv[1]);
-		return 1;
-	}
+    char *a0 = argv[0] + strlen(argv[0]) - 1;
+    while ( a0>argv[0] && a0[-1]!='/' && a0[-1]!='\\' ) a0--;
+    
+	if (argc < 2) return usage(a0);
+
+    int i = 0, nbuf = 0;
+    char *buf = NULL;
+    while (cmds[i].func)
+    {
+        if ( set_alias(&cmds[i], a0, &buf, &nbuf) )
+        {
+            if ( !strcmp(argv[1],buf) ) 
+            {
+                free(buf);
+                return cmds[i].func(argc-1,argv+1);
+            }
+        }
+        i++;
+    }
+    if ( buf ) free(buf);
+    fprintf(stderr, "[E::%s] unrecognized command '%s'\n", __func__, argv[1]);
+    return 1;
 }
+
