@@ -44,6 +44,7 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 {
 	htsFile *fp;
 	fp = (htsFile*)calloc(1, sizeof(htsFile));
+	fp->fn = strdup(fn);
 	fp->is_be = ed_is_big();
 	if (strchr(mode, 'w')) fp->is_write = 1;
 	if (strchr(mode, 'b')) fp->is_bin = 1;
@@ -69,6 +70,7 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 
 void hts_close(htsFile *fp)
 {
+	free(fp->fn);
 	if (!fp->is_bin) {
 		free(fp->line.s);
 		if (!fp->is_write) {
@@ -664,12 +666,28 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 	hts_itr_t *iter = 0;
 
 	if (tid < 0) {
+		uint64_t off0 = (uint64_t)-1;
+		khint_t k;
 		if (tid == HTS_IDX_START) {
-			iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
-			iter->from_first = 1;
-			return iter;
+			if (idx->n > 0) {
+				bidx = idx->bidx[0];
+				k = kh_get(bin, bidx, idx->n_bins + 1);
+				if (k == kh_end(bidx)) return 0;
+				off0 = kh_val(bidx, k).list[0].u;
+			} else return 0;
 		} else if (tid == HTS_IDX_NOCOOR) {
-			return 0; // not implemented
+			if (idx->n > 0) {
+				bidx = idx->bidx[idx->n - 1];
+				k = kh_get(bin, bidx, idx->n_bins + 1);
+				if (k == kh_end(bidx)) return 0;
+				off0 = kh_val(bidx, k).list[0].v;
+			} else return 0;
+		} else off0 = 0;
+		if (off0 != (uint64_t)-1) {
+			iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
+			iter->read_rest = 1;
+			iter->curr_off = off0;
+			return iter;
 		} else return 0;
 	}
 	if (beg < 0) beg = 0;
@@ -690,7 +708,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 		else bin = hts_bin_parent(bin);
 	} while (bin);
 	if (bin == 0) k = kh_get(bin, bidx, bin);
-	min_off = kh_val(bidx, k).loff;
+	min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
 	// retrieve bins
 	reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
 	for (i = n_off = 0; i < iter->bins.n; ++i)
@@ -767,23 +785,33 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
 {
 	int tid, beg, end;
 	char *q, *tmp;
-	q = (char*)hts_parse_reg(reg, &beg, &end);
-	tmp = (char*)alloca(q - reg + 1);
-	strncpy(tmp, reg, q - reg);
-	tmp[q - reg] = 0;
-	if ((tid = getid(hdr, tmp)) < 0)
-		tid = getid(hdr, reg);
-	if (tid < 0) return 0;
-	return hts_itr_query(idx, tid, beg, end);
+	if (strcmp(reg, "*")) {
+		q = (char*)hts_parse_reg(reg, &beg, &end);
+		tmp = (char*)alloca(q - reg + 1);
+		strncpy(tmp, reg, q - reg);
+		tmp[q - reg] = 0;
+		if ((tid = getid(hdr, tmp)) < 0)
+			tid = getid(hdr, reg);
+		if (tid < 0) return 0;
+		return hts_itr_query(idx, tid, beg, end);
+	} else return hts_itr_query(idx, HTS_IDX_NOCOOR, 0, 0);
 }
 
 int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void *hdr)
 {
-	int ret;
+	int ret, tid, beg, end;
 	if (iter && iter->finished) return -1;
+	if (iter->read_rest) {
+		if (iter->curr_off) { // seek to the start
+			bgzf_seek(fp, iter->curr_off, SEEK_SET);
+			iter->curr_off = 0; // only seek once
+		}
+		ret = readrec(fp, hdr, r, &tid, &beg, &end);
+		if (ret < 0) iter->finished = 1;
+		return ret;
+	}
 	if (iter->off == 0) return -1;
 	for (;;) {
-		int tid, beg, end;
 		if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
 			if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
 			if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek

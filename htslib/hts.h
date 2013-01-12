@@ -1,6 +1,8 @@
 #ifndef HTS_H
 #define HTS_H
 
+#define HTS_VERSION "r199"
+
 #include <stdint.h>
 #include "bgzf.h"
 
@@ -29,7 +31,7 @@ typedef struct {
 	uint32_t is_bin:1, is_write:1, is_be:1, dummy:29;
 	int64_t lineno;
 	kstring_t line;
-	char *fn_aux;
+	char *fn, *fn_aux;
 	void *fp; // file pointer; actual type depending on is_bin and is_write
 } htsFile;
 
@@ -58,8 +60,9 @@ extern "C" {
  * Indexing *
  ************/
 
-#define HTS_IDX_NOCOOR (-1)
-#define HTS_IDX_START  (-2)
+#define HTS_IDX_NOCOOR (-2)
+#define HTS_IDX_START  (-3)
+#define HTS_IDX_REST   (-4)
 
 #define HTS_FMT_CSI 0
 #define HTS_FMT_BAI 1
@@ -73,7 +76,7 @@ typedef struct {
 } hts_pair64_t;
 
 typedef struct {
-	uint32_t from_first:1, finished:1, dummy:30;
+	uint32_t read_rest:1, finished:1, dummy:29;
 	int tid, beg, end, n_off, i;
 	uint64_t curr_off;
 	hts_pair64_t *off;
