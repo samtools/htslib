@@ -219,7 +219,7 @@ tbx_t *tbx_index_load(const char *fn)
 	int l_meta, l_nm;
 	tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
 	tbx->idx = hts_idx_load(fn, HTS_FMT_TBI);
-	if ( !tbx->idx ) return 0;
+	if ( !tbx->idx ) return NULL;
 	meta = hts_idx_get_meta(tbx->idx, &l_meta);
 	memcpy(x, meta, 28);
 	memcpy(&tbx->conf, x, 24);
