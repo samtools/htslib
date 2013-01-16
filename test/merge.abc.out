@@ -17,7 +17,7 @@
 ##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes">
 ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
 ##FILTER=<ID=PASS,Description="All filters passed">
-##contig=<ID=2,length=-1>
+##contig=<ID=2,length=2147483647>
 ##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">
 ##FILTER=<ID=q20,Description="Mapping quality below 20">
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	A	B	2:B	C	D
