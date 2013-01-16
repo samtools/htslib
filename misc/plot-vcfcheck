@@ -1384,6 +1384,7 @@ sub create_pdf
             & \multicolumn{1}{>{\columncolor{hcol2}}c|}{}
             & \multicolumn{1}{>{\columncolor{hcol2}}c}{} \\\\ \hline 
 		];
+    my %tex_titles;
 	for my $id (@ids)
 	{
 		my $snps   = get_value($opts,$id,'number of SNPs:');
@@ -1397,6 +1398,7 @@ sub create_pdf
 		my $title  = $$opts{title}{$id};
 		$title =~ s/_/\\_/g;
         $title =~ s/^\s*\*/\$*\$/;    # leading asterisks is eaten by TeX
+        $tex_titles{$id} = $title;
 		$slide .= qq[ $title & ] . bignum($snps) . qq[ & $tstv & ] . bignum($indels) . qq[ & $frsh & $n3n & ] . bignum($mnps) . ' & ' . bignum($others) . qq[ \\\\ \n];
 	}
     $slide .= q[%
@@ -1421,9 +1423,7 @@ sub create_pdf
         my $s     = singletons($opts,$id);
         my $mals  = get_value($opts,$id,'number of multiallelic sites:');
         my $msnps = get_value($opts,$id,'number of multiallelic SNP sites:');
-		my $title = $$opts{title}{$id};
-		$title =~ s/_/\\_/g;
-        $title =~ s/^\s*\*/\$*\$/;    # leading asterisks is eaten by TeX
+		my $title = $tex_titles{$id};
 		$slide .= qq[ $title & $$s{snps}\\% & $$s{tstv} & $$s{indels}\\% &  ] . bignum($mals) . ' &' . bignum($msnps) . qq[ \\\\ \n];
     }
 	$slide .= q[ \\end{tabular}
@@ -1437,7 +1437,7 @@ sub create_pdf
         if ( $$opts{title}{$id} =~ / \+ / ) { next; }
         $fname =~ s/.{80}/$&\\\\\\hskip2em /g;
         $fname =~ s/_/\\_/g;
-        $slide .= qq[\\item $$opts{title}{$id} .. \\texttt{\\footnotesize $fname}\n];
+        $slide .= qq[\\item $tex_titles{$id} .. \\texttt{\\footnotesize $fname}\n];
     }
     $slide .= q[\\end{itemize}\\end{minipage}];
     my $title = exists($$opts{main_title}) ? $$opts{main_title} : 'Summary Numbers';
