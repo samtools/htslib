@@ -205,6 +205,29 @@ int bcf_hdr_parse(bcf_hdr_t *h)
 	return 0;
 }
 
+int bcf_hdr_append(bcf_hdr_t *h, const char *line)
+{
+	int len, i;
+	len = strlen(line);
+	if (line[len - 1] == '\n') --len;
+	if (h->m_text < h->l_text + len + 1) {
+		h->m_text = h->l_text + len + 1;
+		kroundup32(h->m_text);
+		h->text = (char*)realloc(h->text, h->m_text);
+	}
+	for (i = h->l_text - 1; i >= 0; --i)
+		if (h->text[i] == '#' && (i == 0 || h->text[i-1] == '\n'))
+			break;
+	if (i < 0) return -1; // no #CHROM line
+	memmove(&h->text[i+len+1], &h->text[i], h->l_text - i);
+	memcpy(&h->text[i], line, len);
+	h->text[i+len] = '\n';
+	h->l_text += len;
+	bcf_hdr_parse1(h, line);
+	bcf_hdr_sync(h);
+	return 0;
+}
+
 /**********************
  *** BCF header I/O ***
  **********************/
@@ -248,6 +271,7 @@ bcf_hdr_t *bcf_hdr_read(BGZF *fp)
 		return 0;
 	}
 	bgzf_read(fp, &h->l_text, 4);
+	h->m_text = h->l_text;
 	h->text = (char*)malloc(h->l_text);
 	bgzf_read(fp, h->text, h->l_text);
 	bcf_hdr_parse(h);
@@ -379,6 +403,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
 			kputc('\n', &txt);
 		}
 		h->l_text = txt.l + 1; // including NULL
+		h->m_text = txt.m;
 		h->text = txt.s;
 		bcf_hdr_parse(h);
 		return h;

@@ -53,7 +53,7 @@ typedef struct {
 } bcf_idpair_t;
 
 typedef struct {
-	int32_t l_text, n[3];
+	int32_t l_text, m_text, n[3];
 	bcf_idpair_t *id[3];
 	void *dict[3]; // ID dictionary, contig dict and sample dict
 	char *text;
@@ -229,6 +229,7 @@ extern "C" {
 	 *** VCF/BCF utilities ***
 	 *************************/
 
+	int bcf_hdr_append(bcf_hdr_t *h, const char *line);
 	bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
 	int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
 	int bcf_is_snp(bcf1_t *v);
