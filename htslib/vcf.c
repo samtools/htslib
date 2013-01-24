@@ -279,6 +279,14 @@ void bcf_destroy1(bcf1_t *v)
 	free(v);
 }
 
+void bcf_clear1(bcf1_t *v)
+{
+	v->rid = v->pos = v->rlen = v->unpacked = 0;
+	v->qual = 0;
+	v->n_info = v->n_allele = v->n_fmt = v->n_sample = 0;
+	v->shared.l = v->indiv.l = 0;
+}
+
 static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 {
 	uint32_t x[8];
