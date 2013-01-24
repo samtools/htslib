@@ -8,21 +8,22 @@ int main_samview(int argc, char *argv[])
 {
 	samFile *in;
 	char *fn_ref = 0;
-	int flag = 0, c, clevel = -1;
+	int flag = 0, c, clevel = -1, ignore_sam_err = 0;
 	char moder[8];
 	bam_hdr_t *h;
 	bam1_t *b;
 
-	while ((c = getopt(argc, argv, "bSl:t:")) >= 0) {
+	while ((c = getopt(argc, argv, "IbSl:t:")) >= 0) {
 		switch (c) {
 		case 'S': flag |= 1; break;
 		case 'b': flag |= 2; break;
 		case 'l': clevel = atoi(optarg); flag |= 2; break;
 		case 't': fn_ref = optarg; break;
+		case 'I': ignore_sam_err = 1; break;
 		}
 	}
 	if (argc == optind) {
-		fprintf(stderr, "Usage: samview [-bS] [-l level] <in.bam>|<in.sam> [region]\n");
+		fprintf(stderr, "Usage: samview [-bSI] [-l level] <in.bam>|<in.sam> [region]\n");
 		return 1;
 	}
 	strcpy(moder, "r");
@@ -30,6 +31,7 @@ int main_samview(int argc, char *argv[])
 
 	in = sam_open(argv[optind], moder, fn_ref);
 	h = sam_hdr_read(in);
+	h->ignore_sam_err = ignore_sam_err;
 	b = bam_init1();
 
 	if ((flag&4) == 0) { // SAM/BAM output
