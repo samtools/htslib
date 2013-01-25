@@ -26,8 +26,12 @@ typedef struct { int32_t from, to; } pos_t;
 typedef struct
 {
 	int *npos,nseqs,cpos,cseq;
-	pos_t **pos;
+	pos_t **pos, tpos;  // **pos and npos will be deprecated with *_regions functions
 	char **seq_names;
+    tbx_t *tbx;
+    htsFile *file;
+    hts_itr_t *itr;
+    kstring_t line;
 }
 regions_t;
 
@@ -39,11 +43,11 @@ typedef struct
 	bcf_hdr_t *header;
 	hts_itr_t *itr;
 	const char *fname;
-	bcf1_t **buffer, *line;
+	bcf1_t **buffer;
 	int nbuffer, mbuffer;
 	int filter_id;
 	int *samples, n_smpl;	// list of columns in the order consistent with readers_t.samples
-	bcf_fmt_t *fmt_ptr;	// set by set_fmt_ptr
+//	bcf_fmt_t *fmt_ptr;	    // set by set_fmt_ptr
 }
 reader_t;
 
@@ -61,54 +65,63 @@ typedef struct
 	const char **seqs, *region;
 	int iseq,nseqs,mseqs;
 	char **samples;	// List of samples 
+    regions_t *targets;
+    kstring_t tmps;
 	int n_smpl;
 }
 readers_t;
 
+/** Init readers_t struct */
+readers_t *bcf_sr_init();
+
+/** Destroy  readers_t struct */
+void bcf_sr_destroy(readers_t *readers);
+
 /**
- *  add_reader() - open new reader
- *  @fname:   the VCF file
+ *  bcf_sr_add_reader() - open new reader
  *  @readers: holder of the open readers
+ *  @fname:   the VCF file
  *
  *  Returns 1 if the call succeeded, or 0 on error.
  *
  *  See also the readers_t data structure for parameters controlling
  *  the reader's logic.
  */
-int add_reader(const char *fname, readers_t *readers);
-
-/** Destroy a readers_t struct */
-void destroy_readers(readers_t *readers);
+int bcf_sr_add_reader(readers_t *readers, const char *fname);
 
 /** 
- * next_line() - the iterator
- * @readers: holder of the open readers
+ * bcf_sr_next_line() - the iterator
+ * @readers:    holder of the open readers
  *
  * Returns 0 when all lines from all files have been read or a bit mask
  * indicating which of the readers have a reader_t.line set at this position. 
  */
-int next_line(readers_t *readers);
+int bcf_sr_next_line(readers_t *readers);
 
 /**
- * init_samples() - sets active samples
+ * bcf_sr_set_samples() - sets active samples
+ * @readers: holder of the open readers
  * @samples: this can be one of: file name with one sample per line;
  *           or column-separated list of samples; or '-' for a list of 
  *           samples shared by all files
- * @readers: holder of the open readers
  *
  * Returns 1 if the call succeeded, or 0 on error.
  */
-int init_samples(const char *samples, readers_t *readers);
+int bcf_sr_set_samples(readers_t *readers, const char *samples);
 
 /**
- * set_fmt_ptr() - sets pointer to the supplied FORMAT field
- * @reader: reader_t structure with valid reader_t.line set
- * @fmt:    one of GT,PL,etc.
+ *  bcf_sr_set_targets() - init positions 
+ *  @readers: holder of the open readers
+ *  @fname:   tabix indexed tab delimited file <chr,pos> or <chr,from,to>,
+ *            coordinates 1-based and inclusive
  *
- * Returns 1 and sets reader_t.fmt_ptr if the call succeeded, 
- * or returns 0 when the field is not available.
+ *  Returns 1 if the call succeeded, or 0 on error.
+ *
+ *  Sets target regions; positions not listed will be skipped by
+ *  bcf_sr_next_line(). Note that the files are streamed anyway, the index is
+ *  required only for reading whole chromosomes blocks.
  */
-int set_fmt_ptr(reader_t *reader, char *fmt);
+int bcf_sr_set_targets(readers_t *readers, const char *fname);
 
 
 

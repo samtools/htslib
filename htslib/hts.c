@@ -132,6 +132,16 @@ char **hts_readlines(const char *fn, int *_n)
 	return s;
 }
 
+int file_type(const char *fname)
+{
+    int len = strlen(fname);
+    if ( !strcasecmp(".vcf.gz",fname+len-7) ) return IS_VCF_GZ;
+    if ( !strcasecmp(".vcf",fname+len-4) ) return IS_VCF;
+    if ( !strcasecmp(".bcf",fname+len-4) ) return IS_BCF;
+    // ... etc
+    return 0;
+}
+
 /****************
  *** Indexing ***
  ****************/

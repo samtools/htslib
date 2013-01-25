@@ -2,6 +2,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <assert.h>
 #include "tbx.h"
 
 #include "khash.h"
@@ -231,21 +232,21 @@ tbx_t *tbx_index_load(const char *fn)
 
 const char **tbx_seqnames(tbx_t *tbx, int *n)
 {
-	int m=0;
-	const char **names = NULL;
-	khint_t k;
 	khash_t(s2i) *d = (khash_t(s2i)*)tbx->dict;
-	*n = 0;
+	int tid, m = kh_size(d);
+	const char **names = (const char**) calloc(m,sizeof(const char*));
+	khint_t k;
 	for (k=kh_begin(d); k<kh_end(d); k++)
 	{
 		if ( !kh_exist(d,k) ) continue;
-		if ( *n>=m ) 
-		{
-			m += 50;
-			names = (const char**)realloc(names, m*sizeof(char**));
-		}
-		names[(*n)++] = kh_key(d,k);
+        tid = kh_val(d,k);
+        assert( tid<m );
+		names[tid] = kh_key(d,k);
 	}
+    // sanity check: there should be no gaps
+    for (tid=0; tid<m; tid++)
+        assert(names[tid]);
+	*n = m;
 	return names;
 }
 

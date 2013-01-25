@@ -76,6 +76,9 @@ typedef struct {
 	bam1_core_t core;
 	int l_data, m_data;
 	uint8_t *data;
+#ifndef BAM_NO_ID
+	uint64_t id;
+#endif
 } bam1_t;
 
 #define bam_is_rev(b) (((b)->core.flag&BAM_FREVERSE) != 0)

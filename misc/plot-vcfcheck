@@ -20,6 +20,8 @@ use Carp;
 
 my $opts = parse_params();
 parse_vcfcheck($opts);
+merge_vcfcheck($opts) if @{$$opts{vcfcheck}} > 1;
+
 if ( $$opts{make_plots} )
 {
 	init_plots($opts);
@@ -49,12 +51,13 @@ sub error
     my (@msg) = @_;
     if ( scalar @msg ) { confess @msg; }
     die
-        "Usage: plot-vcfcheck [OPTIONS] file.chk\n",
-        "       plot-vcfcheck -p outdir/ file.chk\n",
+        "Usage: plot-vcfcheck [OPTIONS] file.chk ...\n",
+        "       plot-vcfcheck -p outdir/ file.chk ...\n",
         "Options:\n",
-        "   -k, --keep-files                    Do not remove temporary files.\n",
+        "   -m, --merge                         Merge vcfcheck files to STDOUT, skip plotting.\n",
         "   -p, --prefix <path>                 The output files prefix, add a slash to create new directory.\n",
         "   -P, --no-PDF                        Skip the PDF creation step.\n",
+        "   -r, --rasterize                     Rasterize PDF images for fast rendering.\n",
         "   -t, --title <string>                Use this title in plots, can be given multiple times.\n",
         "   -h, -?, --help                      This help message.\n",
         "\n";
@@ -66,9 +69,11 @@ sub parse_params
     $0 =~ s{^.+/}{};
     my $opts = 
 	{ 
+        pdf_plots  => 1,
 		verbose    => 1,
 		make_pdf   => 1,
 		make_plots => 1,
+		merge      => 0,
 		args       => join(' ',$0,@ARGV), 
 		img_width  => 11/2.54,
 		img_height => 10/2.54,
@@ -78,20 +83,93 @@ sub parse_params
 			slide3v => { height1 => '7cm', height2 => '7cm',  height3 => '4.5cm' },
 			slide3h => { width1  => '15cm', width2 => '10cm', width3 => '8cm' },
 		},
+
+        # for file version sanity check
+        sections =>
+        [
+            { 
+                id=>'ID',    
+                header=>'Definition of sets', 
+                exp=>"# ID\t[2]id\t[3]tab-separated file names\n" 
+            },
+            { 
+                id=>'SN',    
+                header=>'SN, Summary numbers', 
+                exp=>"# SN  [2]id   [3]key  [4]value\n" 
+            },
+            { 
+                id=>'SiS',   
+                header=>'Sis, Singleton stats', 
+                exp=>"# SiS\t[2]id\t[3]allele count\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n" 
+            },
+            { 
+                id=>'AF',    
+                header=>'AF, Stats by non-reference allele frequency', 
+                exp=>"# AF\t[2]id\t[3]allele frequency\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n" 
+            },
+            { 
+                id=>'IDD',   
+                header=>'IDD, InDel distribution', 
+                exp=>"# IDD\t[2]id\t[3]length (deletions negative)\t[4]count\n" 
+            },
+            { 
+                id=>'ST',    
+                header=>'ST, Substitution types', 
+                exp=>"# ST\t[2]id\t[3]type\t[4]count\n" 
+            },
+            { 
+                id=>'GCsAF', 
+                header=>'GCsAF, Genotype concordance by non-reference allele frequency (SNPs)', 
+                exp=>"# GCsAF\t[2]id\t[3]allele frequency\t[4]RR Hom matches\t[5]RA Het matches\t[6]AA Hom matches\t[7]RR Hom mismatches\t[8]RA Het mismatches\t[9]AA Hom mismatches\t[10]dosage r-squared\t[11]number of sites\n" 
+            },
+            { 
+                id=>'NRD',   
+                header=>'Non-Reference Discordance (NRD)', 
+                exp=>"# NRD\t[2]id\t[3]NRD\t[4]Ref/Ref discordance\t[5]Ref/Alt discordance\t[6]Alt/Alt discordance\n" 
+            },
+            { 
+                id=>'GCsS',  
+                header=>'GCcS, Genotype concordance by sample (SNPs)', 
+                exp=>"# GCsS\t[2]id\t[3]sample\t[4]non-reference discordance rate\t[5]RR Hom matches\t[6]RA Het matches\t[7]AA Hom matches\t[8]RR Hom mismatches\t[9]RA Het mismatches\t[10]AA Hom mismatches\n" 
+            },
+            { 
+                id=>'PSC',   
+                header=>'PSC, Per-sample counts', 
+                exp=>"# PSC\t[2]id\t[3]sample\t[4]nRefHom\t[5]nNonRefHom\t[6]nHets\t[7]nTransitions\t[8]nTransversions\t[9]nIndels\t[10]average depth\n" 
+            },
+            { 
+                id=>'DP',    
+                header=>'DP, Depth distribution', 
+                exp=>"# DP\t[2]id\t[3]bin\t[4]number of genotypes\t[5]fraction of genotypes (%)\n" 
+            },
+            { 
+                id=>'FS',    
+                header=>'FS, Indel frameshifts', 
+                exp=>"# FS\t[2]id\t[3]in-frame\t[4]out-frame\t[5]out/(in+out) ratio\n" 
+            },
+        ],
 	};
+    for my $sec (@{$$opts{sections}}) { $$opts{exp}{$$sec{id}} = $$sec{exp}; $$opts{id2sec}{$$sec{id}} = $sec; }
     while (defined(my $arg=shift(@ARGV)))
     {
         if (                 $arg eq '--no-plots' ) { $$opts{make_plots}=0; next; }
         if ( $arg eq '-P' || $arg eq '--no-PDF' ) { $$opts{make_pdf}=0; next; }
-        if ( $arg eq '-k' || $arg eq '--keep-files' ) { $$opts{keep_files}=1; next; }
+        if ( $arg eq '-r' || $arg eq '--rasterize' ) { $$opts{rasterize}=1; $$opts{pdf_plots} = 0; next; }
+        if ( $arg eq '-m' || $arg eq '--merge' ) { $$opts{make_plots}=0; $$opts{make_pdf}=0; $$opts{merge}=1; next; }
         if ( $arg eq '-t' || $arg eq '--titles' ) { push @{$$opts{titles}},shift(@ARGV); next; }
         if ( $arg eq '-p' || $arg eq '--prefix' ) { $$opts{prefix}=shift(@ARGV); next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
-        if ( -e $arg ) { $$opts{vcfcheck}=$arg; next; }
+        if ( -e $arg ) { push @{$$opts{vcfcheck}},$arg; next; }
         error("Unknown parameter or non-existent file \"$arg\". Run -h for help.\n");
     }
     if ( !exists($$opts{vcfcheck}) ) { error("No vcfcheck file?\n") }
-    if ( !exists($$opts{prefix}) ) { error("Expected -p parameter.\n") }
+    if ( !exists($$opts{prefix}) )
+    {
+        if ( !$$opts{merge} ) { error("Expected -p parameter.\n") }
+        $$opts{prefix} = './';
+    }
+    elsif ( $$opts{merge} ) { error("Only one of -p or -m should be given.\n"); }
+    if ( $$opts{merge} && @{$$opts{vcfcheck}} < 2 ) { error("Nothing to merge\n") }
 
 	$$opts{dir} = $$opts{prefix};
 	$$opts{dir} =~ s{/[^/]+$}{/};
@@ -101,7 +179,7 @@ sub parse_params
 	$$opts{lprefix} =~ s{^.+/}{};
 	$$opts{logfile} = "$$opts{lprefix}plot-vcfcheck.log";
 	if ( !-d $$opts{dir} ) { `mkdir -p $$opts{dir}`; } 
-	`> $$opts{dir}$$opts{logfile}`;
+	`> $$opts{dir}$$opts{logfile}` unless $$opts{merge};
     return $opts;
 }
 
@@ -121,23 +199,7 @@ sub plot
 sub parse_vcfcheck
 {
     my ($opts) = @_;
-	print STDERR "Parsing vcfcheck output: $$opts{vcfcheck}\n" unless !$$opts{verbose};
-    open(my $fh,'<',$$opts{vcfcheck}) or error("$$opts{vcfcheck}: $!");
-    my $line = <$fh>;
-    if ( !$line or !($line=~/^# This file was produced by vcfcheck/) ) { error("Sanity check failed: was this file generated by vcfcheck?"); }
-    while ($line=<$fh>)
-    {
-        if ( $line=~/^#/ ) { next; }
-        my @items = split(/\t/,$line);
-        chomp($items[-1]);
-        if ( $items[0] eq 'SN' )
-        {
-            $$opts{dat}{$items[1]}{$items[2]} = splice(@items,3);
-            next;
-        }
-        push @{$$opts{dat}{$items[0]}{$items[1]}}, [splice(@items,2)];
-    }
-    close($fh);
+    for (my $i=0; $i<@{$$opts{vcfcheck}}; $i++) { parse_vcfcheck1($opts,$i); }
 
     # Check sanity
     if ( !exists($$opts{dat}{ID}{0}) )
@@ -146,31 +208,39 @@ sub parse_vcfcheck
     }
 
 	# Set titles
-	my %titles;
+	my %file2title;
+    my %title2file;
 	if ( exists($$opts{titles}) )
 	{
 		for (my $i=0; $i<@{$$opts{titles}}; $i++)
 		{
 			if ( !exists($$opts{dat}{ID}{$i}) ) { next; }
-			$titles{$$opts{dat}{ID}{$i}[0][0]} = $$opts{titles}[$i];
+			$file2title{$$opts{dat}{ID}{$i}[0][0]} = $$opts{titles}[$i];
+            $title2file{$$opts{titles}[$i]} = $$opts{dat}{ID}{$i}[0][0];
 		}
 	}
 	for my $id (file_ids($opts))
 	{
-		my @files;
-		for my $file (@{$$opts{dat}{ID}{$id}[0]})
-		{
-			my $title = $file;
-			if ( exists($titles{$file}) ) { $title = $titles{$file}; }
-			else 
-			{ 
-				$title =~ s{^.*/}{};
-				$title =~ s{\.vcf\.gz$}{}i;
-			}
-			push @files, $title;
-			$$opts{title}{$file} = $title;
-		}
-		$$opts{title}{$id} = join(' + ',@files);
+        if ( @{$$opts{dat}{ID}{$id}[0]}>1 ) { next; }   # shared stats of two files
+        my $file = $$opts{dat}{ID}{$id}[0][0];
+        if ( !exists($file2title{$file}) )  # create short title
+        {
+            my $bname = $file;
+            $bname =~ s{^.*/}{};
+            $bname =~ s{\.vcf\.gz$}{}i;
+            if ( length($bname) > 5 ) { $bname = substr($bname,0,5); }
+            my $i = 0;
+            my $title = $bname;
+            while ( exists($title2file{$title}) ) { $title = $bname.chr(66+$i); $i++; }
+            $file2title{$file} = $title;
+            $title2file{$title} = $file;
+        }
+	}
+	for my $id (file_ids($opts))
+	{
+		my @titles;
+		for my $file (@{$$opts{dat}{ID}{$id}[0]}) { push @titles, $file2title{$file} if $file2title{$file}; }
+        $$opts{title}{$id} = join(' + ',@titles);
 	}
 
 	# mapping from file names to list of IDs
@@ -182,6 +252,209 @@ sub parse_vcfcheck
 			push @{$$opts{file2ids}{$file}}, $id;
 		}
 	}
+
+    # check sanity of the file merge: were the correct files merged?
+    if ( exists($$opts{coalesced_files}) && $$opts{verbose} )
+    {
+        print STDERR "The following files have been merged:\n";
+        my %printed;
+        for my $id (keys %{$$opts{coalesced_files}})
+        {
+            for (my $i=0; $i<@{$$opts{coalesced_files}{$id}}; $i++)
+            {
+                for (my $j=0; $j<@{$$opts{coalesced_files}{$id}[$i]}; $j++)
+                {
+                    if ( exists($printed{$$opts{dat}{ID}{$id}[$i][$j]}) ) { next; }
+                    print STDERR "\t$$opts{dat}{ID}{$id}[$i][$j]\n";
+                    for my $file (keys %{$$opts{coalesced_files}{$id}[$i][$j]})
+                    {
+                        print STDERR "\t\t$file\n";
+                    }
+                    $printed{$$opts{dat}{ID}{$id}[$i][$j]} = 1;
+                }
+            }
+        }
+    }
+}
+
+sub add_to_values
+{
+    my ($dst,$src,$cmp) = @_;
+    my $id = 0;
+    my $is = 0;
+    while ($is<@$src)
+    {
+        while ( $id<@$dst && &$cmp($$src[$is][0],$$dst[$id][0])>0 ) { $id++; }
+        if ( $id<@$dst && !&$cmp($$src[$is][0],$$dst[$id][0]) ) 
+        { 
+            for (my $j=1; $j<@{$$src[$is]}; $j++) { $$dst[$id][$j] += $$src[$is][$j]; }
+        }
+        else { splice(@$dst,$id,0,$$src[$is]); }
+        $is++;
+    }
+}
+
+sub add_to_sample_values
+{
+    my ($dst,$src) = @_;
+    my %id2i;
+    for (my $i=0; $i<@$dst; $i++)
+    {
+        $id2i{$$dst[$i][0]} = $i;
+    }
+    for (my $i=0; $i<@$src; $i++)
+    {
+        if ( !exists($id2i{$$src[$i][0]}) ) { error("Whoops, no such dst sample: $$src[$i][0]\n"); }
+        my $di = $id2i{$$src[$i][0]};
+        for (my $j=1; $j<@{$$src[$i]}; $j++)
+        {
+            $$dst[$di][$j] += $$src[$i][$j];
+        }
+    }
+}
+
+sub rglob
+{
+    my ($a,$b) = @_;
+    if ( $a eq $b ) { return $a; }
+    $a =~ s/\*//;
+    my $la = length($a);
+    my $lb = length($b);
+    my $i = 0;
+    while ( $i<$la && $i<$lb && substr($a,$i,1) eq substr($b,$i,1) ) { $i++; }
+    $la--; $lb--;
+    while ( $la>$i && $lb>$i && substr($a,$la,1) eq substr($b,$lb,1) ) { $la--; $lb--; }
+    $la = $la==$i && $lb==$i ? 1 : $la-$i;
+    substr($a,$i,$la,'*');
+    return $a;
+}
+
+sub merge_id
+{
+    # merge id filenames
+    my ($opts,$dst,$src,$id) = @_;
+    for (my $i=0; $i<@{$$src{$id}}; $i++)
+    {
+        for (my $j=0; $j<@{$$src{$id}[$i]}; $j++)
+        {
+            my $gname = rglob($$dst{$id}[$i][$j], $$src{$id}[$i][$j]);
+            $$dst{$id}[$i][$j] = $gname;
+            $$opts{coalesced_files}{$id}[$i][$j]{$$src{$id}[$i][$j]} = 1;
+        }
+    }
+}
+
+sub add_to_avg
+{
+    my ($dst,$src,$n) = @_;
+    for (my $i=0; $i<@$src; $i++)
+    {
+        if ( ref($$dst[$i]) eq 'ARRAY' )
+        {
+            for (my $j=0; $j<@{$$dst[$i]}; $j++)
+            {
+                $$dst[$i][$j] = ($n*$$dst[$i][$j]+$$src[$i][$j])/($n+1);
+            }
+        }
+        else
+        {
+            $$dst[$i] = ($n*$$dst[$i]+$$src[$i])/($n+1);
+        }
+    }
+}
+
+sub cmp_str($$) { my ($a,$b) = @_; return $a cmp $b; }
+sub cmp_num($$) { my ($a,$b) = @_; return $a <=> $b; }
+sub cmp_num_op($$) 
+{ 
+    # numeric compare with operators
+    # Cases like <3, >500 make it complicated
+    my ($a,$b) = @_;
+    my $xa = '=';
+    my $xb = '=';
+    if ( $a=~/^(\D+)/ ) { $xa = $1; $a = $'; }
+    if ( $b=~/^(\D+)/ ) { $xb = $1; $b = $'; }
+    if ( $a==$b ) { return $xa cmp $xb; }
+    $a <=> $b;
+}
+
+sub merge_dp
+{
+    my ($a,$b) = @_;
+    add_to_values($a,$b,\&cmp_num_op);
+    # recalculate fraction of GTs, cannot be simply summed
+    my $sum = 0;
+    for (my $i=0; $i<@$a; $i++) { $sum += $$a[$i][1]; }
+    for (my $i=0; $i<@$a; $i++) { $$a[$i][2] = $$a[$i][1]*100./$sum; }
+}
+
+sub merge_GCsS
+{
+    my ($a,$b,$n) = @_;
+    # average the non-ref discordance rate
+    for (my $i=0; $i<@$a; $i++) { $$a[$i][1] *= $n; }
+    add_to_sample_values($a,$b);
+    for (my $i=0; $i<@$a; $i++) { $$a[$i][1] /= $n+1; }
+}
+
+sub merge_GCsAF
+{
+    my ($a,$b) = @_;
+    # recalculate r2
+    for (my $i=0; $i<@$a; $i++) { $$a[$i][7] *= $$a[$i][8]; }
+    for (my $i=0; $i<@$b; $i++) { $$b[$i][7] *= $$b[$i][8]; }
+    add_to_values($a,$b,\&cmp_num_op);
+    for (my $i=0; $i<@$a; $i++) { $$a[$i][7] /= $$a[$i][8]; }
+}
+
+sub parse_vcfcheck1
+{
+    my ($opts,$i) = @_;
+    my $file = $$opts{vcfcheck}[$i];
+	print STDERR "Parsing vcfcheck output: $file\n" unless !$$opts{verbose};
+    open(my $fh,'<',$file) or error("$file: $!");
+    my $line = <$fh>;
+    if ( !$line or !($line=~/^# This file was produced by \S*vcfcheck/) ) { error("Sanity check failed: was this file generated by vcfcheck?"); }
+    my %dat;
+    while ($line=<$fh>)
+    {
+        if ( $line=~/^#\s+(\S+)\t/ ) 
+        {
+            $$opts{def_line}{$1} = $line;
+            next; 
+        }
+        if ( $line=~/^#/ ) { next; }
+        my @items = split(/\t/,$line);
+        chomp($items[-1]);
+        if ( $items[0] eq 'SN' )
+        {
+            $dat{$items[1]}{$items[2]} = splice(@items,3);
+            next;
+        }
+        push @{$dat{$items[0]}{$items[1]}}, [splice(@items,2)];
+    }
+    close($fh);
+    for my $a (keys %dat)
+    {
+        if ( !exists($$opts{dat}{$a}) ) { $$opts{dat}{$a} = $dat{$a}; next; } # first vcfcheck file
+        for my $b (keys %{$dat{$a}})
+        {
+            # Merging multiple vcfcheck files. Honestly, this is quite hacky.
+            if ( !exists($$opts{dat}{$a}{$b}) ) { $$opts{dat}{$a}{$b} = $dat{$a}{$b}; next; } # copy all, first occurance
+
+            if ( $a eq 'ID' ) { merge_id($opts,$$opts{dat}{$a},$dat{$a},$b); }
+            elsif ( $b eq 'ts/tv:' ) { $$opts{dat}{$a}{$b} = ($i*$$opts{dat}{$a}{$b} + $dat{$a}{$b})/($i+1); }
+            elsif ( ref($dat{$a}{$b}) ne 'ARRAY' ) {$$opts{dat}{$a}{$b} += $dat{$a}{$b} unless $b eq 'number of samples:'; } # SN, Summary numbers, do not sum sample counts
+            elsif ( $a eq 'NRD' ) { add_to_avg($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
+            elsif ( $a eq 'DP' ) { merge_dp($$opts{dat}{$a}{$b},$dat{$a}{$b}); }
+            elsif ( $a eq 'GCsS' ) { merge_GCsS($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
+            elsif ( $a eq 'GCsAF' ) { merge_GCsAF($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
+            elsif ( $a eq 'ST' ) { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_str); }
+            elsif ( $a eq 'PSC') { add_to_sample_values($$opts{dat}{$a}{$b},$dat{$a}{$b}); }
+            elsif ( $a eq 'IDD') { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_num); }
+            else { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_num_op); } # SiS AF IDD
+        }
+    }
 }
 
 sub file_ids
@@ -221,6 +494,8 @@ sub init_plots
 		import matplotlib as mpl
 		mpl.use('Agg')
 		import matplotlib.pyplot as plt
+
+        pdf_plots = $$opts{pdf_plots}
 		];
 	$$opts{plt_fh} = $fh;
 }
@@ -249,6 +524,14 @@ sub get_values
 	my ($opts,$id,$key) = @_;
 	if ( !exists($$opts{dat}{$key}) ) { return (); }
 	if ( !exists($$opts{dat}{$key}{$id}) ) { return (); }
+    my $fields_ok = 1;
+    if ( !exists($$opts{exp}{$key}) ) { error("todo: sanity check for $key\n"); } 
+    if ( exists($$opts{def_line}{$key}) && $$opts{def_line}{$key} ne $$opts{exp}{$key} && !$$opts{def_line_warned}{$key} )
+    {
+        warn("Warning: Possible version mismatch, the definition line differs\n\texpected: $$opts{exp}{$key}\tfound:    $$opts{def_line}{$key}");
+        $$opts{def_line_warned}{$key} = 1;
+    }
+
 	return (@{$$opts{dat}{$key}{$id}});
 }
 
@@ -272,7 +555,7 @@ sub plot_venn_bars
 	{
 		push @snps, get_value($opts,$id,'number of SNPs:');
 		push @indels, get_value($opts,$id,'number of indels:');
-		push @tstv, get_value($opts,$id,'ts/tv:');
+		push @tstv, sprintf("%.2f",get_value($opts,$id,'ts/tv:'));
 		push @snp_titles, "$$opts{title}{$id}\\nts/tv $tstv[$id]\\n" .bignum($snps[$id]);
 		my @fs = get_values($opts,$id,'FS');
         my $fs = @fs ? "frm $fs[0][2]\\n" : '';
@@ -290,7 +573,7 @@ sub plot_venn_bars
 			plt.title('Number of SNPs')
 			plt.subplots_adjust(right=0.95,bottom=0.15)
 	 		plt.savefig('$$opts{prefix}venn_bars.snps.png')
-	 		plt.savefig('$$opts{prefix}venn_bars.snps.pdf')
+	 		if pdf_plots: plt.savefig('$$opts{prefix}venn_bars.snps.pdf')
 	 		plt.close()
 
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
@@ -302,7 +585,7 @@ sub plot_venn_bars
 			plt.title('Number of indels')
 			plt.subplots_adjust(right=0.95,bottom=0.15)
 	 		plt.savefig('$$opts{prefix}venn_bars.indels.png')
-	 		plt.savefig('$$opts{prefix}venn_bars.indels.pdf')
+	 		if pdf_plots: plt.savefig('$$opts{prefix}venn_bars.indels.pdf')
 	 		plt.close()
 		];
 }
@@ -324,8 +607,9 @@ sub plot_tstv_by_sample
 		";
 	for (my $i=0; $i<@vals; $i++)
 	{ 
-		my $tstv = $vals[$i][3] ? $vals[$i][2]/$vals[$i][3] : 0;
-		iprint $fh, sprintf("\t[ %d, %f, %d, %d, %d ],\n", $i, $tstv, $vals[$i][1], $vals[$i][2]+$vals[$i][3], $vals[$i][4]);
+		my $tstv = $vals[$i][5] ? $vals[$i][4]/$vals[$i][5] : 0;
+        my $hethom = $vals[$i][2] ? $vals[$i][3]/$vals[$i][2] : 0;
+		iprint $fh, sprintf("\t[ %d, %f, %f, %d, %d ],\n", $i, $tstv, $hethom, $vals[$i][4]+$vals[$i][5], $vals[$i][6]);
 	}
 	iprint $fh, "]
 
@@ -338,19 +622,19 @@ sub plot_tstv_by_sample
 			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img.png')
-			plt.savefig('$img.pdf')
+			if pdf_plots: plt.savefig('$img.pdf')
 			plt.close()
 
 			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
 			ax1 = fig.add_subplot(111)
 			ax1.plot([row[0] for row in dat], [row[2] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
-			ax1.set_ylabel('Number of hets')
+			ax1.set_ylabel('nHet(RA) / nHom(AA)')
 			ax1.set_xlabel('Sample ID')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
 			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img2.png')
-			plt.savefig('$img2.pdf')
+			if pdf_plots: plt.savefig('$img2.pdf')
 			plt.close()
 
 			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
@@ -362,7 +646,7 @@ sub plot_tstv_by_sample
 			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img3.png')
-			plt.savefig('$img3.pdf')
+			if pdf_plots: plt.savefig('$img3.pdf')
 			plt.close()
 
 			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
@@ -374,7 +658,7 @@ sub plot_tstv_by_sample
 			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img4.png')
-			plt.savefig('$img4.pdf')
+			if pdf_plots: plt.savefig('$img4.pdf')
 			plt.close()
 		";
 }
@@ -394,8 +678,9 @@ sub plot_DP
     my $sum = 0;
 	for (my $i=0; $i<@vals; $i++)
 	{ 
+        if ( $sum>99. ) { last; }
+        if ( !($vals[$i][0]=~/^\d+$/) ) { next; }  # DP ">500" case
         $sum += $vals[$i][2];
-        if ( $sum>99 ) { last; }
 		iprint $fh, sprintf("\t[ %d, %f, %f ],\n", $vals[$i][0], $sum, $vals[$i][2]);
 	}
 	iprint $fh, "]
@@ -412,7 +697,7 @@ sub plot_DP
 			plt.subplots_adjust(left=0.15,bottom=0.15,right=0.87)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img.png')
-			plt.savefig('$img.pdf')
+			if pdf_plots: plt.savefig('$img.pdf')
 			plt.close()
 		";
 }
@@ -461,7 +746,7 @@ sub plot_tstv_by_AF
 			plt.subplots_adjust(right=0.88,left=0.15,bottom=0.11)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img.png')
-			plt.savefig('$img.pdf')
+			if pdf_plots: plt.savefig('$img.pdf')
 			plt.close()
 		";
 }
@@ -508,16 +793,18 @@ sub plot_tstv_by_QUAL
 			plt.subplots_adjust(right=0.88,left=0.15,bottom=0.11)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img.png')
-			plt.savefig('$img.pdf')
+			if pdf_plots: plt.savefig('$img.pdf')
 			plt.close()
 		";
 }
 
 sub rebin_values
 {
-	my ($vals,$bin_size,$col) = @_;
+	my ($vals,$bin_size,$col,%args) = @_;
+    my %avg  = exists($args{avg}) ? map {$_=>1} @{$args{avg}} : ();
 	my $prev = $$vals[0][$col];
-	my $iprev = 0;
+	my $iout = 0;
+    my $nsum = 0;
 	my (@dat,@out);
 	for (my $i=0; $i<@$vals; $i++)
 	{
@@ -526,11 +813,17 @@ sub rebin_values
 			if ( $icol==$col ) { next; }
 			$dat[$icol] += $$vals[$i][$icol];
 		}
+        $nsum++;
 		if ( $i+1<@$vals && $$vals[$i][$col] - $prev < $bin_size ) { next; }
 		$dat[$col] = $prev;
-		for (my $icol=0; $icol<@{$$vals[$i]}; $icol++) { $out[$iprev][$icol] = $dat[$icol] ? $dat[$icol] : 0; }
+		for (my $icol=0; $icol<@{$$vals[$i]}; $icol++) 
+        { 
+            $out[$iout][$icol] = $dat[$icol] ? $dat[$icol] : 0; 
+            if ( $avg{$icol} && $nsum ) { $out[$iout][$icol] /= $nsum; }
+        }
+        $nsum = 0;
 		@dat = ();
-		$iprev++;
+		$iout++;
 		$prev = $$vals[$i][$col];
 	}
 	return \@out;
@@ -541,25 +834,32 @@ sub plot_concordance_by_AF
 	my ($opts) = @_;
 	my @vals = get_values($opts,2,'GCsAF');
 	if ( !@vals ) { return; }
-
+    
+    # create a local copy and prepare r2 for rebinning
+    use Storable qw(dclone);
+    @vals = @{ dclone(\@vals) };
+    for (my $i=0; $i<@vals; $i++) { $vals[$i][7] *= $vals[$i][8]; }
+	my $vals = rebin_values(\@vals,1,0);
 	my $fh   = $$opts{plt_fh};
 	my $img  = "$$opts{prefix}gts_by_af";
-	my $vals = rebin_values(\@vals,1,0);
+	my $img2 = "$$opts{prefix}r2_by_af";
 
 	iprint $fh, "
 			dat = [
 		";
 	for (my $i=0; $i<@$vals; $i++)
 	{ 
-		iprint $fh, sprintf("\t[ %f,%f,%f,%f,%f,%f,%f ],\n", 
-			$$vals[$i][0]/100., 
-			$$vals[$i][1]+$$vals[$i][4] ? $$vals[$i][1]/($$vals[$i][1]+$$vals[$i][4]) : 0,
-			$$vals[$i][2]+$$vals[$i][5] ? $$vals[$i][2]/($$vals[$i][2]+$$vals[$i][5]) : 0,
-			$$vals[$i][3]+$$vals[$i][6] ? $$vals[$i][3]/($$vals[$i][3]+$$vals[$i][6]) : 0,
-			$$vals[$i][1]+$$vals[$i][4],
-			$$vals[$i][2]+$$vals[$i][5],
-			$$vals[$i][3]+$$vals[$i][6]
-			);
+		iprint $fh, sprintf("\t[ %f,%f,%f,%f,%f,%f,%f,%f,%d ],\n", 
+            $$vals[$i][0]/100.,
+            $$vals[$i][1]+$$vals[$i][4] ? $$vals[$i][1]/($$vals[$i][1]+$$vals[$i][4]) : 1,
+            $$vals[$i][2]+$$vals[$i][5] ? $$vals[$i][2]/($$vals[$i][2]+$$vals[$i][5]) : 1,
+            $$vals[$i][3]+$$vals[$i][6] ? $$vals[$i][3]/($$vals[$i][3]+$$vals[$i][6]) : 1,
+            $$vals[$i][1]+$$vals[$i][4],
+            $$vals[$i][2]+$$vals[$i][5],
+            $$vals[$i][3]+$$vals[$i][6],
+            $$vals[$i][8] ? $$vals[$i][7]/$$vals[$i][8] : 1,
+            $$vals[$i][8]
+            );
 	}
 	iprint $fh, "]
 
@@ -569,7 +869,7 @@ sub plot_concordance_by_AF
 			ax1.plot([row[0] for row in dat], [row[2] for row in dat],'.',color='$$opts{id2col}[0]',label='Het RA')
 			ax1.plot([row[0] for row in dat], [row[3] for row in dat],'.',color='$$opts{id2col}[2]',label='Hom AA')
 			ax1.set_xlabel('Non-ref allele frequency')
-			ax1.set_ylabel('Concordance [%]')
+			ax1.set_ylabel('Concordance')
 			ax1.legend(numpoints=1,markerscale=2,loc='best',prop={'size':10}).draw_frame(False)
 			ax2 = ax1.twinx()
 			ax2.plot([row[0] for row in dat], [row[4] for row in dat],color='$$opts{id2col}[1]')
@@ -579,8 +879,24 @@ sub plot_concordance_by_AF
 			ax2.set_yscale('log')
 			plt.subplots_adjust(left=0.15,right=0.83,bottom=0.11)
 			plt.savefig('$img.png')
-			plt.savefig('$img.pdf')
+			if pdf_plots: plt.savefig('$img.pdf')
 			plt.close()
+
+            fig = plt.figure(figsize=($$opts{img_width}*1.3,$$opts{img_height}))
+            ax1 = fig.add_subplot(111)
+            ax2 = ax1.twinx()
+            ax1.set_zorder(ax2.get_zorder()+1)
+            ax1.patch.set_visible(False)
+            ax2.plot([row[0] for row in dat], [row[8] for row in dat], '-o', color='r',mec='r',markersize=3)
+            ax1.plot([row[0] for row in dat], [row[7] for row in dat], '-^', color='k',markersize=3)
+            for tl in ax2.get_yticklabels(): tl.set_color('r')
+            ax2.set_ylabel('Number of sites', color='r')
+            ax1.set_ylabel('Mean allelic R\$^2\$', color='k')
+            ax1.set_xlabel('Non-ref allele frequency')
+			plt.subplots_adjust(left=0.19,right=0.83,bottom=0.11)
+            plt.savefig('$img2.png')
+            if pdf_plots: plt.savefig('$img2.pdf')
+            plt.close()
 		";
 }
 
@@ -599,7 +915,7 @@ sub plot_concordance_by_sample
 		";
 	for (my $i=0; $i<@vals; $i++)
 	{ 
-		iprint $fh, sprintf("\t[ %d,%f ],\n", $i, $vals[$i][1]/100.);
+		iprint $fh, sprintf("\t[ %d,%f ],\n", $i, $vals[$i][1]);
 	}
 	iprint $fh, "]
 
@@ -611,7 +927,7 @@ sub plot_concordance_by_sample
 			ax1.set_ylim(0,)
 			plt.subplots_adjust(right=0.98,left=0.08,bottom=0.17)
 			plt.savefig('$img.png')
-			plt.savefig('$img.pdf')
+			if pdf_plots: plt.savefig('$img.pdf')
 			plt.close()
 		";
 }
@@ -638,6 +954,7 @@ sub plot_counts_by_AF_col
 			";
 		my $file = $files[$ifile];
 		my %vals;
+        my $has_vals = 0;
 		for my $id (@{$$opts{file2ids}{$file}})
 		{
 			my @tmp = get_values($opts,$id,'AF');
@@ -650,10 +967,11 @@ sub plot_counts_by_AF_col
 		{
 			if ( !$vals{$key} ) { next; }
 			iprint $fh, "[ $key, $vals{$key} ],\n";
+            $has_vals++;
 		}
 		iprint $fh, "]\n";
+        if ( $has_vals<2 ) { return; }
 	}
-	
 	iprint $fh, "
 			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
 			ax1 = fig.add_subplot(111)
@@ -668,7 +986,7 @@ sub plot_counts_by_AF_col
 	for (my $ifile=0; $ifile<@files; $ifile++)
 	{
 		iprint $fh, "
-			ax1.plot([row[0]/100. for row in dat$ifile], [row[1] for row in dat$ifile], '.', markersize=3, color='$cols[$ifile]',label='$$opts{title}{$files[$ifile]}')
+			ax1.plot([row[0]/100. for row in dat$ifile], [row[1] for row in dat$ifile], '.', markersize=3, color='$cols[$ifile]',label='$$opts{title}{$ifile}')
 		";
 	}
     if ( @files>1 )
@@ -679,7 +997,7 @@ sub plot_counts_by_AF_col
 			plt.title('$title count by AF')
 			plt.subplots_adjust(bottom=0.2,left=0.1,right=0.95)
 			plt.savefig('$img.png')
-			plt.savefig('$img.pdf')
+			if pdf_plots: plt.savefig('$img.pdf')
 			plt.close()
 		";
 
@@ -728,7 +1046,7 @@ sub plot_indel_distribution
 			plt.subplots_adjust(bottom=0.17)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img.png')
-			plt.savefig('$img.pdf')
+			if pdf_plots: plt.savefig('$img.pdf')
 			plt.close()
 		";
 }
@@ -762,7 +1080,7 @@ sub plot_substitutions
 			plt.xticks([row[0] for row in dat],[row[1] for row in dat],rotation=45)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img.png')
-			plt.savefig('$img.pdf')
+			if pdf_plots: plt.savefig('$img.pdf')
 			plt.close()
 		";
 }
@@ -794,15 +1112,15 @@ sub fmt_slide3v
 	my $n = 0;
 	for my $id (0..2) 
 	{ 
-		if ( -e "$image.$id.pdf" ) { $n++; } 
+		if ( -e "$image.$id.$$opts{fmt}" ) { $n++; } 
 	}
 	if ( !$n ) { return ''; }
 	my $h = $$opts{tex}{slide3v}{"height$n"};
 	my $slide = q[\vbox{];
 	for my $id (0..2) 
 	{ 
-		if ( !-e "$image.$id.pdf" ) { next; }
-		$slide .= qq[\\centerline{\\includegraphics[type=pdf,ext=.pdf,read=.pdf,height=$h]{$image.$id}}];
+		if ( !-e "$image.$id.$$opts{fmt}" ) { next; }
+		$slide .= qq[\\centerline{\\includegraphics[$$opts{ext},height=$h]{$image.$id}}];
 	}
 	$slide .= '}';
 	return qq[
@@ -817,15 +1135,15 @@ sub fmt_slide3h
 	my $n = 0;
 	for my $id (0..2) 
 	{ 
-		if ( -e "$image.$id.pdf" ) { $n++; } 
+		if ( -e "$image.$id.$$opts{fmt}" ) { $n++; } 
 	}
 	if ( !$n ) { return ''; }
 	my $w = $$opts{tex}{slide3h}{"width$n"};
 	my $slide = '';
 	for my $id (0..2) 
 	{ 
-		if ( !-e "$image.$id.pdf" ) { next; }
-		$slide .= qq[\\includegraphics[type=pdf,ext=.pdf,read=.pdf,width=$w]{$image.$id}];
+		if ( !-e "$image.$id.$$opts{fmt}" ) { next; }
+		$slide .= qq[\\includegraphics[$$opts{ext},width=$w]{$image.$id}];
 	}
 	return qq[
 			% $title
@@ -861,8 +1179,11 @@ sub create_pdf
 	my $width1  = "23cm";
 	my $width2  = @ids==3 ? "10.5cm" : "10.5cm";
 	my $width3  = @ids==3 ? "8cm" : "15cm";
-	my $ext     = "type=pdf,ext=.pdf,read=.pdf";
+    my $fmt     = $$opts{rasterize} ? 'png' : 'pdf';
+	my $ext     = "type=$fmt,ext=.$fmt,read=.$fmt";
 	my $args    = { ext=>$ext, width3=>$width3, n=>scalar @ids };
+    $$opts{fmt} = $fmt;
+    $$opts{ext} = $ext;
 
 	# Check that xcolor is available
 	my @has_xcolor = `kpsewhich xcolor.sty`;
@@ -941,7 +1262,7 @@ sub create_pdf
 			\\newcommand*{\\hslide}[2]{%
 					\\head{#1}%
 					\\begin{vplace}[0.5]\\centerline{#2}\\end{vplace}\\newpage}
-			\\newcommand{\\pdf}[2]{\\IfFileExists{#2.pdf}{\\includegraphics[#1]{#2}}{}}
+			\\newcommand{\\pdf}[2]{\\IfFileExists{#2.$fmt}{\\includegraphics[#1]{#2}}{}}
 
 
 			% The actual slides
@@ -974,11 +1295,12 @@ sub create_pdf
 		my $indels = get_value($opts,$id,'number of indels:');
 		my $mnps   = get_value($opts,$id,'number of MNPs:');
 		my $others = get_value($opts,$id,'number of others:');
-		my $tstv   = get_value($opts,$id,'ts/tv:');
+		my $tstv   = sprintf "%.2f",get_value($opts,$id,'ts/tv:');
 		my @frsh   = get_values($opts,$id,'FS');
 		my $frsh   = @frsh ? $frsh[0][2] : '--';
 		my $title  = $$opts{title}{$id};
 		$title =~ s/_/\\_/g;
+        $title =~ s/^\s*\*/\$*\$/;    # leading asterisks is eaten by TeX
 		$slide .= qq[ $title & ] . bignum($snps) . qq[ & $tstv & ] . bignum($indels) . qq[ & $frsh & ] . bignum($mnps) . ' & ' . bignum($others) . qq[ \\\\ \n];
 	}
     $slide .= q[%
@@ -1003,9 +1325,23 @@ sub create_pdf
         my $mals  = get_value($opts,$id,'number of multiallelic sites:');
 		my $title = $$opts{title}{$id};
 		$title =~ s/_/\\_/g;
+        $title =~ s/^\s*\*/\$*\$/;    # leading asterisks is eaten by TeX
 		$slide .= qq[ $title & $$s{snps}\\% & $$s{tstv} & $$s{indels}\\% &  ] . bignum($mals) . qq[ \\\\ \n];
     }
-	$slide .= q[ \\end{tabular}\\end{minipage} ];
+	$slide .= q[ \\end{tabular}
+            \\vspace{2em}
+            \\begin{itemize}[-]
+            \\setlength{\\itemsep}{0pt}
+        ];
+    for my $id (@ids)
+    {
+        my $fname = $$opts{dat}{ID}{$id}[0][0];
+        if ( $$opts{title}{$id} =~ / \+ / ) { next; }
+        $fname =~ s/.{80}/$&\\\\\\hskip2em /g;
+        $fname =~ s/_/\\_/g;
+        $slide .= qq[\\item $$opts{title}{$id} .. \\texttt{\\footnotesize $fname}\n];
+    }
+    $slide .= q[\\end{itemize}\\end{minipage}];
 	iprint $tex, qq[
 			% Table with summary numbers
 			%
@@ -1029,7 +1365,7 @@ sub create_pdf
 	}
 
 	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}tstv_by_sample", 'Ts/Tv by sample');
-	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}hets_by_sample", 'Number of hets by sample');
+	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}hets_by_sample", 'Hets vs non-ref Homs by sample');
 	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}snps_by_sample", 'Number of SNPs by sample');
 	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}indels_by_sample", 'Number of indels by sample');
 	if ( scalar get_values($opts,2,'GCsS') ) 
@@ -1065,14 +1401,21 @@ sub create_pdf
 				\\head{Genotype discordance by AF}\\begin{vplace}[0.7]\\centerline{$table}%
 				\\centerline{\\pdf{$ext,height=$height1}{$$opts{lprefix}gts_by_af}}\\end{vplace}
 				\\newpage
+
+                % dosage r2 by AF
+                %
+                \\hslide{Allelic R\$^2\$ by AF}{\\pdf{$ext,height=$height1}{$$opts{lprefix}r2_by_af}}
 			];
 	}
-	iprint $tex, qq[
-		% SNP and indel counts by AF
-		%
-		\\hslide{}{\\vbox{\\noindent\\includegraphics[$ext,width=$width1]{$$opts{lprefix}counts_by_af.snps}\\\\%
-			\\noindent\\includegraphics[$ext,width=$width1]{$$opts{lprefix}counts_by_af.indels}}}
-		];
+    if ( -e "$$opts{lprefix}counts_by_af.snps.$fmt" && -e "$$opts{lprefix}counts_by_af.indels.$fmt" )
+    {
+	    iprint $tex, qq[
+	    	% SNP and indel counts by AF
+	    	%
+	    	\\hslide{}{\\vbox{\\noindent\\includegraphics[$ext,width=$width1]{$$opts{lprefix}counts_by_af.snps}\\\\%
+	    		\\noindent\\includegraphics[$ext,width=$width1]{$$opts{lprefix}counts_by_af.indels}}}
+	    	];
+    }
 	iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}tstv_by_af", 'Ts/Tv by AF');
 	#iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}tstv_by_qual", 'Ts/Tv by QUAL');
 	iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}indels", 'Indel distribution');
@@ -1090,4 +1433,46 @@ sub create_pdf
 	print STDERR "Finished: $pdf_file\n" unless !$$opts{verbose};
 }
 
+
+sub merge_vcfcheck
+{
+	my ($opts) = @_;
+
+    my $fh = *STDOUT;
+    if ( !$$opts{merge} ) 
+    { 
+        open($fh,'>',"$$opts{prefix}merge.chk") or error("$$opts{prefix}merge.chk: $!\n");
+    }
+
+    print $fh "# This file was produced by plot-vcfcheck, the command line was:\n#   $$opts{args}\n#\n";
+
+    for my $sec (@{$$opts{sections}})
+    {
+        my $sid = $$sec{id};
+        if ( !exists($$opts{dat}{$sid}) ) { next; }
+
+        print $fh "# $$sec{header}\n$$sec{exp}";
+        for my $id (sort keys %{$$opts{dat}{$sid}})
+        {
+            for my $rec (@{$$opts{dat}{$sid}{$id}})
+            {
+                print $fh "$sid\t$id\t", join("\t",@$rec), "\n";
+            }
+        }
+
+        if ( $sid eq 'ID' )
+        {
+            print $fh "# $$opts{id2sec}{SN}{header}\n$$opts{id2sec}{SN}{exp}";
+            # output summary numbers here
+            for my $id (keys %{$$opts{dat}})
+            {
+                if ( exists($$opts{exp}{$id}) ) { next; }
+                for my $key (keys %{$$opts{dat}{$id}})
+                {
+                    print $fh "SN\t$id\t$key\t$$opts{dat}{$id}{$key}\n";
+                }
+            }
+        }
+    }
+}
 

@@ -1,0 +1,27 @@
+##fileformat=VCFv4.1
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">
+##INFO=<ID=DP4,Number=4,Type=Integer,Description="# high-quality ref-forward bases, ref-reverse, alt-forward and alt-reverse bases">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read Depth">
+##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype Likelihood">
+##FILTER=<ID=q20,Description="Mapping quality below 20">
+##contig=<ID=1,assembly=b37,length=249250621>
+##contig=<ID=2,assembly=b37,length=243199373>
+##contig=<ID=3,assembly=b37,length=198022430>
+##contig=<ID=4,assembly=b37,length=191154276>
+##reference=file:///lustre/scratch105/projects/g1k/ref/main_project/human_g1k_v37.fasta
+##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes">
+##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	B
+1	3062915	.	G	A	376	q20	DP=14;DP4=1,2,3,4;AN=2;AC=1	GT:GQ:DP:GL	0/1:376:14:-10,0,-10
+1	3062915	.	GTTT	GT	376	q20	DP=14;DP4=1,2,3,4;AN=2;AC=1	GT:GQ:DP:GL	0/1:376:14:-10,0,-10
+1	3106154	.	C	T	677	PASS	DP=15;AN=2;AC=1	GT:GQ:DP:GL	0/1:277:15:-10,0,-10
+1	3106154	.	CAAAA	C	677	PASS	DP=15;AN=2;AC=1	GT:GQ:DP:GL	0/1:277:15:-10,0,-10
+1	3157410	.	GA	G	249	PASS	DP=11;AN=2;AC=1	GT:GQ:DP	0/1:49:11
+1	3162006	.	GAA	G	663	PASS	DP=19;AN=2;AC=1	GT:GQ:DP	0/1:589:19
+1	3177144	.	GT	G	460	PASS	DP=24;AN=2;AC=1	GT:GQ:DP	0/1:236:24
+1	3184885	.	TAAA	T	598	PASS	DP=16;AN=2;AC=1	GT:GQ:DP	0/1:435:16
+2	3188209	.	GA	G	162	.	DP=15;AN=2;AC=1	GT:GQ:DP	0/1:162:15
+3	3199812	.	G	GTT,GT	353	PASS	DP=19;AN=2;AC=1,1	GT:GQ:DP	1/2:188:19
+4	3212016	.	CTT	C	677	q20	DP=15;AN=2;AC=1	GT:GQ:DP	0/1:158:15

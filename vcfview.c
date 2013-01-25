@@ -36,7 +36,7 @@ int main_vcfview(int argc, char *argv[])
 		return 1;
 	}
 	strcpy(moder, "r");
-	if ((flag&1) == 0) strcat(moder, "b");
+	if ((flag&1) == 0 && !(file_type(argv[optind])&(IS_VCF|IS_VCF_GZ))) strcat(moder, "b");
 
 	in = hts_open(argv[optind], moder, fn_ref);
 	h = vcf_hdr_read(in);
