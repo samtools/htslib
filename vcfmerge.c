@@ -82,7 +82,7 @@ void bcf_hdr_merge(bcf_hdr_t *hw, const bcf_hdr_t *_hr, const char *clash_prefix
     int i, nw_ori = hw->nhrec;
     for (i=0; i<hr->nhrec; i++)
     {
-        if ( hr->hrec[i]->type==BCF_HL_GEN )
+        if ( hr->hrec[i]->type==BCF_HL_GEN && hr->hrec[i]->value )
         {
             int j;
             for (j=0; j<nw_ori; j++)
@@ -471,7 +471,7 @@ void merge_info(args_t *args, int mask, bcf1_t *out)
             if ( kitr == kh_end(tmph) )
             {
                 int id = bcf_id2int(out_hdr, BCF_DT_ID, key);
-                if ( id==-1 ) error("The INFO not defined: %s\n", key);
+                if ( id==-1 ) error("Error: The INFO field not defined: %s\n", key);
                 hts_expand(bcf_info_t,out->n_info+1,ma->minf,ma->inf);
                 ma->inf[out->n_info].key  = id;
                 ma->inf[out->n_info].type = inf->type;
@@ -561,7 +561,7 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t *fmt, int *fmt_map, bc
         int j, k = -1, l;
         if ( mask&1<<i ) k = fmt_map[i] - 1;
         #define BRANCH(type_t, missing) { \
-            type_t *p_out = (type_t*) &fmt->p[fmt->size*ismpl]; \
+            type_t *p_out = (type_t*) (fmt->p + fmt->size*ismpl); \
             if ( k<0 ) \
             { \
                 /* the field is not present in this file */ \
@@ -629,9 +629,9 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t *fmt, int *fmt_map, bc
         }
         switch (fmt->type)
         {
-            case BCF_BT_INT8: BRANCH(uint8_t, p_out[l] = INT8_MIN); break;
-            case BCF_BT_INT16: BRANCH(uint16_t, p_out[l] = INT16_MIN); break;
-            case BCF_BT_INT32: BRANCH(uint32_t, p_out[l] = INT32_MIN); break;
+            case BCF_BT_INT8: BRANCH(int8_t, p_out[l] = INT8_MIN); break;
+            case BCF_BT_INT16: BRANCH(int16_t, p_out[l] = INT16_MIN); break;
+            case BCF_BT_INT32: BRANCH(int32_t, p_out[l] = INT32_MIN); break;
             case BCF_BT_FLOAT: BRANCH(float, SET_FLOAT_MISSING(p_out[l]) ); break;
             default: error("Unexpected case: %d\n", fmt->type);
         }
@@ -1013,7 +1013,6 @@ void merge_vcf(args_t *args)
         // printf("<merge done>\n");
         // debug_buffers(stdout, &args->files);
     }
-
     maux_destroy(args->maux);
     bcf_hdr_destroy(args->out_hdr);
     hts_close(args->out_fh);

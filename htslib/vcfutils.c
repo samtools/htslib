@@ -30,9 +30,12 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
                     nac += p[i];                \
                 }                               \
             }
-            if ( ac_type==BCF_BT_INT8 ) { BRANCH_INT(uint8_t) }
-            else if ( ac_type==BCF_BT_INT16 ) { BRANCH_INT(uint16_t) }
-            else if ( ac_type==BCF_BT_INT32 ) { BRANCH_INT(uint32_t) }
+            switch (ac_type) {
+                case BCF_BT_INT8:  BRANCH_INT(int8_t); break;
+                case BCF_BT_INT16: BRANCH_INT(int16_t); break;
+                case BCF_BT_INT32: BRANCH_INT(int32_t); break;
+                default: fprintf(stderr, "[E::%s] todo: %d\n", __func__, ac_type); exit(1); break;
+            }
             #undef BRANCH_INT
 			ac[0] = an - nac;
 			return 1;
@@ -190,17 +193,17 @@ void remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
 
         if ( ((header->id[BCF_DT_ID][fmt->id].val->info[BCF_HL_FMT]>>8)&0xf) == BCF_VL_G )
         {
-            assert( fmt->n==nG_ori ); //diploid
+            assert( fmt->n==nG_ori );
 
             #define BRANCH_INT(type_t,missing) { \
-                type_t *p = (type_t *) fmt->p; \
                 for (j=0; j<line->n_sample; j++) \
                 { \
+                    type_t *p = (type_t *) (fmt->p + j*fmt->size); \
                     int k, nset = 0; \
                     for (k=0; k<nG_ori; k++) if ( p[k] != missing ) nset++; \
-                    assert( nset==nG_ori ); \
                     if ( nset==nG_ori ) \
                     { \
+                        /* diploid */ \
                         int ia, ib, k_ori = 0, k_new = 0; \
                         for (ia=0; ia<line->n_allele; ia++) \
                         { \
@@ -213,14 +216,25 @@ void remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                             } \
                         } \
                     } \
-                    p += fmt->n; \
+                    else if ( nset==line->n_allele ) \
+                    { \
+                        /* haploid */ \
+                        int k_ori, k_new = 0; \
+                        for (k_ori=0; k_ori<line->n_allele; k_ori++) \
+                            if ( !(rm_mask & 1<<k_ori) ) p[k_new++] = p[k_ori]; \
+                        for (; k_new<line->n_allele; k_new++) \
+                            p[k_new] = missing; \
+                    } \
+                    else { fprintf(stderr, "[E::%s] todo, missing values: %d %d\n", __func__, nset,nG_ori); exit(1); } \
                 } \
             }
-            if ( fmt->type==BCF_BT_INT8 ) { BRANCH_INT(uint8_t,INT8_MIN) }
-            else if ( fmt->type==BCF_BT_INT16 ) { BRANCH_INT(uint16_t,INT32_MIN) }
-            else if ( fmt->type==BCF_BT_INT32 ) { BRANCH_INT(uint32_t,INT16_MIN) }
-            else if ( fmt->type==BCF_BT_FLOAT ) { BRANCH_INT(float,bcf_missing_float) }
-            else { fprintf(stderr, "[E::%s] todo: %d\n", __func__, fmt->type); exit(1); }
+            switch (fmt->type) {
+                case BCF_BT_INT8:  BRANCH_INT(int8_t,INT8_MIN); break;
+                case BCF_BT_INT16: BRANCH_INT(int16_t,INT16_MIN); break;
+                case BCF_BT_INT32: BRANCH_INT(int32_t,INT32_MIN); break;
+                case BCF_BT_FLOAT: BRANCH_INT(float,bcf_missing_float); break;  // fixme: float will not work
+                default: fprintf(stderr, "[E::%s] todo: %d\n", __func__, fmt->type); exit(1); break;
+            }
             #undef BRANCH_INT
 
             fmt->n = nG_new;

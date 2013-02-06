@@ -391,20 +391,24 @@ void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched
     if ( (fmt_ptr = get_fmt_ptr(reader->header,reader->buffer[0],"DP")) )
     {
         #define BRANCH_INT(type_t,missing) { \
-            type_t *p = (type_t *) fmt_ptr->p; \
+            int is; \
             for (is=0; is<args->files->n_smpl; is++) \
-                if (p[is]!=missing) { \
-                    (*idist(&stats->dp, p[is]))++; \
+            { \
+                type_t *p = (type_t *) (fmt_ptr->p + fmt_ptr->size*is); \
+                if (*p!=missing) \
+                { \
+                    (*idist(&stats->dp, *p))++; \
                     stats->smpl_ndp[is]++; \
-                    stats->smpl_dp[is] += p[is]; \
+                    stats->smpl_dp[is] += *p; \
                 } \
-            }
-
-        int is;
-        if ( fmt_ptr->type==BCF_BT_INT8 ) { BRANCH_INT(uint8_t, 0x80) }
-        else if ( fmt_ptr->type==BCF_BT_INT16 ) { BRANCH_INT(uint16_t, 0x8000) } 
-        else if ( fmt_ptr->type==BCF_BT_INT32 ) { BRANCH_INT(uint32_t, 0x80000000) }
-
+            } \
+        }
+        switch (fmt_ptr->type) {
+            case BCF_BT_INT8:  BRANCH_INT(int8_t, INT8_MIN); break;
+            case BCF_BT_INT16: BRANCH_INT(int16_t, INT16_MIN); break;
+            case BCF_BT_INT32: BRANCH_INT(int32_t, INT32_MIN); break;
+            default: fprintf(stderr, "[E::%s] todo: %d\n", __func__, fmt_ptr->type); exit(1); break;
+        }
         #undef BRANCH_INT
     }
    

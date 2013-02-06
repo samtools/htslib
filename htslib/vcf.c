@@ -275,6 +275,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     if ( !strcmp(hrec->key, "INFO") ) hrec->type = BCF_HL_INFO;
     else if ( !strcmp(hrec->key, "FILTER") ) hrec->type = BCF_HL_FLT;
     else if ( !strcmp(hrec->key, "FORMAT") ) hrec->type = BCF_HL_FMT;
+    else if ( hrec->nkeys>0 ) { hrec->type = BCF_HL_STR; return 1; }
     else return 0;
     
     // INFO/FILTER/FORMAT
@@ -385,6 +386,15 @@ int bcf_hdr_parse(bcf_hdr_t *hdr)
     bcf_hdr_parse_sample_line(hdr,p);
     if ( needs_sync ) bcf_hdr_sync(hdr);
 	return 0;
+}
+
+int bcf_hdr_append(bcf_hdr_t *hdr, const char *line)
+{
+    int len;
+    bcf_hrec_t *hrec = bcf_hdr_parse_line(hdr, (char*) line, &len);
+    if ( bcf_hdr_add_hrec(hdr, hrec) )
+        bcf_hdr_sync(hdr);
+    return 0;
 }
 
 
@@ -705,7 +715,7 @@ void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
 		} else {
 			bcf_enc_size(s, wsize, BCF_BT_INT32);
 			for (i = 0; i < n; ++i) {
-				int32_t x = a[i] == INT32_MIN? INT32_MIN : a[i];
+				int32_t x = a[i];
 				kputsn((char*)&x, 4, s);
 			}
 		}
@@ -738,19 +748,25 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
     }
     else
     {
+        // The current BCFv2 specification is not able to distinguish between missing 
+        //  values in vectors and vectors of smaller dimensions. As a somewhat
+        //  unsatisfactory hack, vectors with all values missing are replaced with '.' 
+        //  and trailing missing values for shorter values are dropped.
+        // This allows to represent correctly mixture of haploid/diploid PL fields
+        //  and missing values, but may yield VCFs with invalid Number=G tags.
         #define BRANCH(type_t, is_missing, kprint) {\
-            type_t *p = (type_t *) data; \
-            for (j=0; j<n && !(is_missing); j++) p++; \
+            type_t *p = (type_t *) data + n-1; \
+            for (j=n; j>0 && is_missing; j--) p--; \
             if ( j ) \
             { \
                 p = (type_t *) data; \
-                for (j=0; j<n; j++, p++) \
+                int k; \
+                for (k=0; k<j; k++, p++) \
                 { \
-                    if ( j ) kputc(',', s); \
+                    if ( k ) kputc(',', s); \
                     if ( is_missing ) kputc('.', s); \
                     else kprint; \
                 } \
-                if (n && j == 0) kputc('.', s); \
             } \
             else kputc('.', s); \
         }

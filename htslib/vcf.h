@@ -15,7 +15,8 @@
 #define BCF_HL_INFO 1
 #define BCF_HL_FMT  2
 #define BCF_HL_CTG  3
-#define BCF_HL_GEN  4 // generic header line
+#define BCF_HL_STR  4 // structured header line TAG=<A=..,B=..>
+#define BCF_HL_GEN  5 // generic header line
 
 #define BCF_HT_FLAG 0 // header type
 #define BCF_HT_INT  1
@@ -250,6 +251,7 @@ extern "C" {
     bcf_hdr_t *bcf_hdr_init(void);
     int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname);
     void bcf_hdr_fmt_text(bcf_hdr_t *hdr);
+    int bcf_hdr_append(bcf_hdr_t *h, const char *line);
     bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, char *line, int *len);
     int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec);
     bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, char *id);   // type is one of BCF_HL_FLT,..,BCF_HL_CTG
