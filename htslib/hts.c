@@ -14,7 +14,7 @@ KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
 int hts_verbose = 3;
 
-unsigned char seq_nt16_table[256] = {
+const unsigned char seq_nt16_table[256] = {
 	15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
 	15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
 	15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
@@ -34,7 +34,7 @@ unsigned char seq_nt16_table[256] = {
 	15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15
 };
 
-char seq_nt16_str[] = "=ACMGRSVTWYHKDBN";
+const char seq_nt16_str[] = "=ACMGRSVTWYHKDBN";
 
 /**********************
  *** Basic file I/O ***
