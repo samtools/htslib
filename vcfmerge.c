@@ -1093,7 +1093,7 @@ return 1;
     if ( argc-optind<2 ) usage();
     while (optind<argc)
     {
-        if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Could not load the index: %s\n", argv[optind]);
+        if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open: %s\n", argv[optind]);
         optind++;
     }
     merge_vcf(args);

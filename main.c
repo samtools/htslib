@@ -16,11 +16,12 @@ int main_bam2bed(int argc, char *argv[]);
 int main_vcfcheck(int argc, char *argv[]);
 int main_vcfisec(int argc, char *argv[]);
 int main_vcfmerge(int argc, char *argv[]);
+int main_vcfquery(int argc, char *argv[]);
 
 typedef struct
 {
     int (*func)(int, char*[]);
-    const char *alias, *help;
+    const char *alias, *help, *sep;
 }
 cmd_t;
 
@@ -32,55 +33,73 @@ static cmd_t cmds[] =
 {
     { .func  = main_samview,  
       .alias = "htscmd samview", 
-      .help  = "SAM<->BAM conversion" 
+      .help  = "SAM<->BAM conversion",
+      .sep   = "General and indexing tools:"
     },
     { .func  = main_vcfview,  
       .alias = "htscmd vcfview, htsvcf view, vcf view", 
-      .help  = "VCF<->BCF conversion" 
+      .help  = "VCF<->BCF conversion",
+      .sep   = NULL
     },
     { .func  = main_tabix,    
-      .alias = "htscmd tabix",   
-      .help  = "tabix for BGZF'd BED, GFF, SAM, VCF and more" 
+      .alias = "htscmd tabix, htsvcf tabix, vcf tabix",
+      .help  = "tabix for BGZF'd BED, GFF, SAM, VCF and more",
+      .sep   = NULL
     },
     { .func  = main_bamidx,   
       .alias = "htscmd bamidx",
-      .help  = "index BAM" 
+      .help  = "index BAM", 
+      .sep   = NULL
     },
     { .func = main_bcfidx,   
-      .alias = "htscmd bcfidx",  
-      .help = "index BCF" 
+      .alias = "htscmd bcfidx, htsvcf idx, vcf idx",
+      .help = "index BCF",
+      .sep   = NULL
     },
     { .func  = main_bamshuf,  
       .alias = "htscmd bamshuf", 
-      .help  = "shuffle BAM and group alignments by query name" 
+      .help  = "shuffle BAM and group alignments by query name", 
+      .sep   = "Alignment tools:"
     },
     { .func  = main_bam2fq,   
       .alias = "htscmd bam2fq",  
-      .help  = "convert name grouped BAM to interleaved fastq" 
+      .help  = "convert name grouped BAM to interleaved fastq",
+      .sep   = NULL
     },
     { .func  = main_abreak,   
       .alias = "htscmd abreak",  
-      .help  = "summarize assembly break points" 
+      .help  = "summarize assembly break points",
+      .sep   = NULL
     },
     { .func  = main_bam2bed,  
       .alias = "htscmd bam2bed", 
-      .help  = "BAM->BED conversion" 
+      .help  = "BAM->BED conversion",
+      .sep   = NULL
     },
     { .func  = main_vcfcheck, 
       .alias = "htscmd vcfcheck, htsvcf check, vcf check",
-      .help  = "produce VCF stats" 
+      .help  = "produce VCF stats",
+      .sep   = "VCF/BCF tools:"
     },
     { .func  = main_vcfisec,  
       .alias = "htscmd vcfisec, htsvcf isec, vcf isec", 
-      .help  = "intersections of VCF files" 
+      .help  = "intersections of VCF files",
+      .sep   = NULL
     },
     { .func  = main_vcfmerge, 
       .alias = "htscmd vcfmerge, htsvcf merge, vcf merge",
-      .help  = "merge VCF files" 
+      .help  = "merge VCF files",
+      .sep   = NULL
+    },
+    { .func  = main_vcfquery, 
+      .alias = "htscmd vcfquery, htsvcf query, vcf query",
+      .help  = "merge VCF files",
+      .sep   = NULL
     },
     { .func  = NULL,
       .alias = NULL,
-      .help  = NULL
+      .help  = NULL,
+      .sep   = NULL
     }
 };
 
@@ -128,16 +147,25 @@ static int known_alias(char *argv0)
 static int usage(char *argv0)
 {
 	fprintf(stderr, "\nUsage:   %s <command> <argument>\n", argv0);
-	fprintf(stderr, "Command:\n");
+	fprintf(stderr, "Commands:\n");
 
     if ( !known_alias(argv0) ) argv0 = "htscmd";
 
     int i = 0, nbuf = 0;
     char *buf = NULL;
+    const char *sep = NULL;
     while (cmds[i].func)
     {
+        if ( cmds[i].sep ) sep = cmds[i].sep;
         if ( set_alias(&cmds[i], argv0, &buf, &nbuf) )
-            printf("\t%-15s %s\n", buf,cmds[i].help);
+        {
+            if ( sep )
+            {
+                printf("\n -- %s\n", sep);
+                sep = NULL;
+            }
+            printf("\t%-15s %s\n", buf, cmds[i].help);
+        }
         i++;
     }
     if ( buf ) free(buf);

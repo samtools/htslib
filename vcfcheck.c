@@ -69,17 +69,6 @@ static void error(const char *format, ...)
     exit(-1);
 }
 
-inline int acgt2int(char c)
-{
-    if ( (int)c>96 ) c -= 32;
-    if ( c=='A' ) return 0;
-    if ( c=='C' ) return 1;
-    if ( c=='G' ) return 2;
-    if ( c=='T' ) return 3;
-    return -1;
-}
-#define int2acgt(i) "ACGT"[i]
-
 void idist_init(idist_t *d, int min, int max, int step)
 {
     d->min = min; d->max = max; d->step = step;

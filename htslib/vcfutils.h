@@ -74,4 +74,16 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which);
 #define GT_UNKN   4
 inline int gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial);
 
+static inline int acgt2int(char c)
+{
+    if ( (int)c>96 ) c -= 32;
+    if ( c=='A' ) return 0;
+    if ( c=='C' ) return 1;
+    if ( c=='G' ) return 2;
+    if ( c=='T' ) return 3;
+    return -1;
+}
+#define int2acgt(i) "ACGT"[i]
+
+
 #endif

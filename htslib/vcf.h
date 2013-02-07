@@ -357,4 +357,6 @@ static inline int32_t bcf_dec_size(const uint8_t *p, uint8_t **q, int *type)
 	} else return bcf_dec_typed_int1(p + 1, q);
 }
 
+extern uint32_t bcf_missing_float;
+
 #endif
