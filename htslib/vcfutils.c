@@ -21,6 +21,7 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 				if ( z->key == an_id ) an = z->v1.i;
 				else if ( z->key == ac_id ) { ac_ptr = z->vptr; ac_len = z->len; ac_type = z->type; }
 			}
+            if ( i==line->n_info ) return 0;
 			int nac = 0;
             #define BRANCH_INT(type_t) {        \
                 type_t *p = (type_t *) ac_ptr;  \
@@ -34,7 +35,7 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
                 case BCF_BT_INT8:  BRANCH_INT(int8_t); break;
                 case BCF_BT_INT16: BRANCH_INT(int16_t); break;
                 case BCF_BT_INT32: BRANCH_INT(int32_t); break;
-                default: fprintf(stderr, "[E::%s] todo: %d\n", __func__, ac_type); exit(1); break;
+                default: fprintf(stderr, "[E::%s] todo: %d at %s:%d\n", __func__, ac_type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
             }
             #undef BRANCH_INT
 			ac[0] = an - nac;
