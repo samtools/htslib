@@ -1252,15 +1252,16 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 			for (i = 0; i < (int)v->n_fmt; ++i) {
 				bcf_fmt_t *f = &fmt[i];
 				if (i) kputc(':', s);
-				if (gt_i == i) {
-					int8_t *x = (int8_t*)(f->p + j * f->size); // FIXME: does not work with n_alt >= 64
-					for (l = 0; l < f->n && x[l] != INT8_MIN; ++l) {
-						if (l) kputc("/|"[x[l]&1], s);
-						if (x[l]>>1) kputw((x[l]>>1) - 1, s);
-						else kputc('.', s);
-					}
-					if (l == 0) kputc('.', s);
-				} else bcf_fmt_array(s, f->n, f->type, f->p + j * f->size);
+                if (gt_i == i) {
+                    // See also bcf_format_gt in vcfquery.c, defined as static atm
+                    int8_t *x = (int8_t*)(f->p + j * f->size); // FIXME: does not work with n_alt >= 64
+                    for (l = 0; l < f->n && x[l] != INT8_MIN; ++l) {
+                        if (l) kputc("/|"[x[l]&1], s);
+                        if (x[l]>>1) kputw((x[l]>>1) - 1, s);
+                        else kputc('.', s);
+                    }
+                    if (l == 0) kputc('.', s);
+                } else bcf_fmt_array(s, f->n, f->type, f->p + j * f->size);
 			}
 		}
 	}

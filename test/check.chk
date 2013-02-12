@@ -14,12 +14,10 @@ SN	0	number of multiallelic SNP sites:	1
 SN	0	ts/tv:	0.00
 # Sis, Singleton stats:
 # SiS	[2]id	[3]allele count	[4]number of SNPs	[5]number of transitions	[6]number of transversions	[7]number of indels
-SiS	0	1	2	0	2	0
+SiS	0	1	2	0	2	17
 # AF, Stats by non-reference allele frequency:
 # AF	[2]id	[3]allele frequency	[4]number of SNPs	[5]number of transitions	[6]number of transversions	[7]number of indels
-AF	0	0.000000	2	0	2	2
-AF	0	49.494949	1	0	1	14
-AF	0	100.000000	0	0	0	1
+AF	0	0.000000	2	0	2	17
 # IDD, InDel distribution:
 # IDD	[2]id	[3]length (deletions negative)	[4]count
 IDD	0	-10	1

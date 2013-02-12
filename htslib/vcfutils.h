@@ -7,6 +7,7 @@
 
 #include "vcf.h"
 
+
 /**
  * get_fmt_ptr() - returns pointer to a FORMAT field
  * @header: for access to BCF_DT_ID dictionary

@@ -17,6 +17,7 @@ int main_vcfcheck(int argc, char *argv[]);
 int main_vcfisec(int argc, char *argv[]);
 int main_vcfmerge(int argc, char *argv[]);
 int main_vcfquery(int argc, char *argv[]);
+int main_vcffilter(int argc, char *argv[]);
 
 typedef struct
 {
@@ -93,7 +94,12 @@ static cmd_t cmds[] =
     },
     { .func  = main_vcfquery, 
       .alias = "htscmd vcfquery, htsvcf query, vcf query",
-      .help  = "merge VCF files",
+      .help  = "transform VCF into user-defined formats",
+      .sep   = NULL
+    },
+    { .func  = main_vcffilter, 
+      .alias = "htscmd vcffilter, htsvcf filter, vcf filter",
+      .help  = "filter VCF files",
       .sep   = NULL
     },
     { .func  = NULL,

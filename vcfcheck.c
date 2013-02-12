@@ -69,30 +69,30 @@ static void error(const char *format, ...)
     exit(-1);
 }
 
-void idist_init(idist_t *d, int min, int max, int step)
+static void idist_init(idist_t *d, int min, int max, int step)
 {
     d->min = min; d->max = max; d->step = step;
     d->m_vals = 4 + (d->max - d->min)/d->step;
     d->vals = (uint64_t*) calloc(d->m_vals,sizeof(uint64_t));
 }
-void idist_destroy(idist_t *d)
+static void idist_destroy(idist_t *d)
 {
     if ( d->vals ) free(d->vals);
 }
-inline uint64_t *idist(idist_t *d, int val)
+static inline uint64_t *idist(idist_t *d, int val)
 {
     if ( val < d->min ) return &d->vals[0];
     if ( val > d->max ) return &d->vals[d->m_vals-1];
     return &d->vals[1 + (val - d->min) / d->step];
 }
-inline int idist_i2bin(idist_t *d, int i)
+static inline int idist_i2bin(idist_t *d, int i)
 {
     if ( i<=0 ) return d->min;
     if ( i>= d->m_vals ) return d->max;
     return i-1+d->min;
 }
 
-void init_stats(args_t *args)
+static void init_stats(args_t *args)
 {
     int i;
     args->nstats = args->files->nreaders==1 ? 1 : 3;
@@ -154,7 +154,7 @@ void init_stats(args_t *args)
         args->prev_reg = -1;
     }
 }
-void destroy_stats(args_t *args)
+static void destroy_stats(args_t *args)
 {
     int id;
     for (id=0; id<args->nstats; id++)
@@ -191,7 +191,7 @@ void destroy_stats(args_t *args)
     if (args->smpl_gts_indels) free(args->smpl_gts_indels);
 }
 
-void init_iaf(args_t *args, reader_t *reader)
+static void init_iaf(args_t *args, reader_t *reader)
 {
     bcf1_t *line = reader->buffer[0];
     if ( args->ntmp_iaf < line->n_allele )
@@ -220,17 +220,17 @@ void init_iaf(args_t *args, reader_t *reader)
     // todo: otherwise use AF 
 }
 
-inline void do_mnp_stats(args_t *args, stats_t *stats, reader_t *reader)
+static inline void do_mnp_stats(args_t *args, stats_t *stats, reader_t *reader)
 {
     stats->n_mnps++;
 }
 
-inline void do_other_stats(args_t *args, stats_t *stats, reader_t *reader)
+static inline void do_other_stats(args_t *args, stats_t *stats, reader_t *reader)
 {
     stats->n_others++;
 }
 
-void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
+static void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
 {
     stats->n_indels++;
 
@@ -299,7 +299,7 @@ void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
     }
 }
 
-void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
+static void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
 {
     stats->n_snps++;
 
@@ -317,7 +317,7 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
     {
         if ( !(line->d.var[i].type&VCF_SNP) ) continue;
         int alt = acgt2int(*line->d.allele[i]);
-        if ( alt<0 ) continue;
+        if ( alt<0 || ref==alt ) continue;
         stats->subst[ref<<2|alt]++;
         int iaf = args->tmp_iaf[i];
         stats->af_snps[iaf]++;
@@ -338,7 +338,7 @@ void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
     }
 }
 
-void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched)
+static void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched)
 {
     readers_t *files = args->files;
     bcf1_t *line = reader->buffer[0];
@@ -470,7 +470,7 @@ void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched
     }
 }
 
-void check_vcf(args_t *args)
+static void check_vcf(args_t *args)
 {
     int ret,i;
     readers_t *files = args->files;
@@ -512,7 +512,7 @@ void check_vcf(args_t *args)
     }
 }
 
-void print_header(args_t *args)
+static void print_header(args_t *args)
 {
     int i;
     printf("# This file was produced by vcfcheck and can be plotted using plot-vcfcheck.\n");
@@ -540,7 +540,7 @@ void print_header(args_t *args)
     }
 }
 
-void print_stats(args_t *args)
+static void print_stats(args_t *args)
 {
     int i, id;
     printf("# SN, Summary numbers:\n# SN\t[2]id\t[3]key\t[4]value\n");

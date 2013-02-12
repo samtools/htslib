@@ -6,6 +6,8 @@
 #include <assert.h>
 #include "bgzf.h"
 #include "hts.h"
+#include "kstring.h"
+
 
 /*****************
  * Header struct *
@@ -279,8 +281,6 @@ extern "C" {
 /*******************
  * Typed value I/O *
  *******************/
-
-#include "kstring.h"
 
 static inline void bcf_enc_size(kstring_t *s, int size, int type)
 {
