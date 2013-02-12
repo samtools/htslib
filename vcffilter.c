@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <math.h>
+#include <time.h>
 #include "vcf.h"
 #include "synced_bcf_reader.h"
 #include "vcfutils.h"
@@ -48,13 +49,13 @@ filters_t;
 
 typedef struct
 {   
-    char **names;               // annotation names
+    char **names;               // annotation names (0..nann-1), list of annotations actually used
     char **colnames;            // all columns' names
     int *col2names;             // mapping from column number to i-th annot. The index of unused annots is set to -1. Includes first NFIXED columns.
     int *ann2cols;              // mapping from i-th annot to j-th column of annot.tab.gz. First annotation has index NFIXED.
-    int nann;                   // number of used annotations
+    int nann, nann_som;         // number of used annotations (total, included fixed filters) and for SOM
     int ncols;                  // number of columns (total, including first NFIXED columns)
-    dist_t *dists;              // annots distributions
+    dist_t *dists;              // annots distributions (all annots, including those not requested)
     int scale;                  // should the annotations be rescaled according to lo_,hi_pctl?
     double lo_pctl, hi_pctl;    // the percentage of sites to zoom out at both ends
 
@@ -276,7 +277,6 @@ int annots_reader_next(args_t *args)
             t++;
             continue;
         }
-
         if ( (sscanf(t,"%le", &args->vals[iann])!=1) ) 
             error("Could not parse %d-th data field: [%s]\nThe line was: [%s]\n", icol,t,line);
 
@@ -288,7 +288,7 @@ int annots_reader_next(args_t *args)
         }
 
         if ( args->scale )
-            args->vals[iann] = scale_value(&args->dists[iann], args->vals[iann]);
+            args->vals[iann] = scale_value(&args->dists[icol], args->vals[iann]);
 
         args->nset++;
         args->nset_mask |= 1 << iann; 
@@ -312,9 +312,16 @@ static void create_dists(args_t *args)
     // Create stats for all annotations in args->file. Sort each annotation using unix sort
     //  and determine percentiles.
 
-    int scale_ori = args->scale; args->scale = 0;
-    int *ignore_ori = args->ignore;
-    args->ignore = (int*) calloc(args->ncols, sizeof(int));
+    // Hackety hack: annots_reader_next will subset the annotations and return them in
+    //  requested order. This is the only place where we want to read and return all the values
+    //  as they are. Change the scale, ignore, and col2names arrays temporarily.
+    //
+    int scale_ori      = args->scale; args->scale = 0;
+    int *ignore_ori    = args->ignore;
+    int *col2names_ori = args->col2names;
+    args->ignore       = (int*) calloc(args->ncols, sizeof(int));
+    args->col2names    = (int*) calloc(args->ncols, sizeof(int));
+    args->missing      = (int*) calloc(args->ncols, sizeof(int));
 
     int i, nann = args->ncols - NFIXED;
     dist_t *dists = (dist_t*) calloc(nann, sizeof(dist_t));
@@ -325,6 +332,7 @@ static void create_dists(args_t *args)
         ksprintf(&args->str, "cat | sort -g > %s.%s", args->out_prefix, args->colnames[i+NFIXED]);
         fps[i] = popen(args->str.s,"w");
         if ( !fps[i] ) error("%s: %s\n", args->str.s, strerror(errno));
+        args->col2names[i + NFIXED] = i;
     }
 
     annots_reader_reset(args);
@@ -351,13 +359,17 @@ static void create_dists(args_t *args)
             fprintf(fps[i], "%le\n", args->vals[i]);
         }
     }
+    // Change the arrays back and clean
     free(args->ignore);
-    args->ignore = ignore_ori;
-
+    free(args->col2names);
+    args->ignore    = ignore_ori;
+    args->col2names = col2names_ori;
+    args->scale = scale_ori;
     for (i=0; i<nann; i++)
         if ( pclose(fps[i]) ) error("An error occured while processing %s.%s\n", args->out_prefix, args->colnames[i+NFIXED]);
     free(fps);
 
+    // Find the extremes
     FILE *fp;
     for (i=0; i<nann; i++)
     {
@@ -391,9 +403,7 @@ static void create_dists(args_t *args)
             dists[i].good_min, dists[i].good_max, dists[i].all_min, dists[i].all_max, dists[i].scale_min, dists[i].scale_max, args->colnames[i+NFIXED]);
     }
     fclose(fp);
-
     free(dists);
-    args->scale = scale_ori;
 }
 
 static void init_dists(args_t *args)
@@ -407,7 +417,7 @@ static void init_dists(args_t *args)
     }
     if ( !fp ) error("Could not read %s.n nor %s.n\n", args->out_prefix,args->fname);
 
-    args->dists = (dist_t*) calloc(args->nann, sizeof(dist_t));
+    args->dists = (dist_t*) calloc(args->ncols, sizeof(dist_t));
     args->str.l = 0;
     ks_getline(fp, &args->str); // the header
     int i;
@@ -423,18 +433,31 @@ static void init_dists(args_t *args)
             p++;
         }
         if ( !*p ) error("Could not parse the line, expected 10 fields: [%s] [%s]\n", args->str.s, p);
-        for (j=0; j<args->nann; j++)
-            if ( !strcmp(args->names[j],p) ) break;
-        if ( j==args->nann ) continue;
+        for (j=NFIXED; j<args->ncols; j++)
+            if ( !strcmp(args->colnames[j],p) ) break;
+        if ( j==args->ncols ) continue;
         sscanf(args->str.s, "%u\t%u\t%u\t%le\t%le\t%le\t%le\t%le\t%le", &args->dists[j].nall, &args->dists[j].ngood, &args->dists[j].nmissing,
             &args->dists[j].good_min, &args->dists[j].good_max, &args->dists[j].all_min, &args->dists[j].all_max, &args->dists[j].scale_min, &args->dists[j].scale_max);
         if ( args->dists[j].scale_min==args->dists[j].scale_max ) error("The annotation %s is not looking good, please leave it out\n", args->names[j]);
     }
-    for (i=0; i<args->nann; i++)
+    for (i=NFIXED; i<args->ncols; i++)
         if ( !args->dists[i].nall && !args->dists[i].nmissing ) error("No extremes found for the annotation %s?\n", args->names[i]);
     fclose(fp);
 }
 
+static void init_extra_annot(args_t *args, char *annot)
+{
+    int i;
+    for (i=NFIXED; i<args->ncols; i++)
+        if ( !strcmp(annot,args->colnames[i]) ) break;
+    if ( i==args->ncols ) error("The annotation \"%s\" is not available.\n", annot);
+    args->names = (char**) realloc(args->names, sizeof(char*)*(args->nann+1));
+    args->names[ args->nann ] = strdup(annot);
+    args->ignore[i] = 0;
+    args->col2names[i] = args->nann;
+    args->ann2cols[ args->nann  ] = i;
+    args->nann++;
+}
 static void init_annots(args_t *args)
 {
     args->file = hts_open(args->fname, "r", NULL);
@@ -459,6 +482,7 @@ static void init_annots(args_t *args)
     args->missing   = (int*) malloc(sizeof(int)*args->ncols);
     args->ignore    = (int*) malloc(sizeof(int)*args->ncols);
     args->vals      = (double*) malloc(sizeof(double)*args->ncols);
+    args->ann2cols  = (int*) malloc(sizeof(int)*args->ncols);
     for (i=0; i<args->ncols; i++)
     {
         args->col2names[i] = -1;
@@ -471,8 +495,8 @@ static void init_annots(args_t *args)
     {
         // all annotations
         args->nann     = args->ncols - NFIXED;
-        args->names    = (char**) malloc(sizeof(char*)*args->nann);
-        args->ann2cols = (int*) malloc(sizeof(int)*args->nann);
+        args->nann_som = args->nann;
+        args->names    = (char**) malloc(sizeof(char*)*args->nann_som);
         for (i=NFIXED; i<args->ncols; i++)
         {
             args->col2names[i] = i-NFIXED;
@@ -484,14 +508,16 @@ static void init_annots(args_t *args)
         return;
     }
 
-    args->names    = split_list(args->annot_str, ',', &args->nann);
-    args->ann2cols = (int*) malloc(sizeof(int)*args->nann);
+    args->names     = split_list(args->annot_str, ',', &args->nann);
+    args->nann_som  = args->nann;
     for (i=0; i<args->nann; i++)
     {
         for (j=NFIXED; j<args->ncols; j++)
             if ( !strcmp(args->colnames[j], args->names[i]) ) break;
         if ( j==args->ncols ) 
             error("The requested annotation \"%s\" not in %s\n", args->names[i], args->fname);
+        if ( args->col2names[j]!=-1 )
+            error("The annotation \"%s\" given multiple times?\n", args->names[i]);
         args->col2names[j] = i;
         args->ann2cols[i] = j;
         args->ignore[j] = 0;
@@ -541,8 +567,8 @@ static int pass_filters(filters_t *filt, double *vec)
 static void init_filters(args_t *args, filters_t *filts, char *str, int scale)
 {
     filts->n     = args->nann;
-    filts->filt  = (filter_t**) calloc(args->nann,sizeof(filter_t*));
-    filts->nfilt = (int*) calloc(args->nann,sizeof(int));
+    filts->filt  = (filter_t**) calloc(args->ncols-NFIXED,sizeof(filter_t*));
+    filts->nfilt = (int*) calloc(args->ncols-NFIXED,sizeof(int));
 
     char *s, *e = str;
     args->str.l = 0;
@@ -589,20 +615,27 @@ static void init_filters(args_t *args, filters_t *filts, char *str, int scale)
             right.l = 0;
             kputsn(s, e-s, &right);
 
+            char *ann = NULL;
             int i;
-            for (i=0; i<args->nann; i++)
+            for (i=NFIXED; i<args->ncols; i++)
             {
-                if ( !strcmp(args->names[i],left.s) ) { s = right.s; break; }
-                if ( !strcmp(args->names[i],right.s) ) { s = left.s; break; }
+                if ( !strcmp(args->colnames[i],left.s) ) { s = right.s; ann = left.s; break; }
+                if ( !strcmp(args->colnames[i],right.s) ) { s = left.s; ann = right.s; break; }
             }
-            if ( i==args->nann ) error("Error: one or more annotations is not available in %s, the filter \"%s\" cannot be applied.\n", args->fname, str);
+            if ( i==args->ncols ) error("No such annotation is available: %s\n", str);
+            if ( args->col2names[i]==-1 )
+            {
+                init_extra_annot(args, ann);
+                filts->n = args->nann;
+            }
+            i = args->col2names[i];
             filts->nfilt[i]++;
             filts->filt[i] = (filter_t*) realloc(filts->filt[i],sizeof(filter_t)*filts->nfilt[i]);
             filter_t *filt = &filts->filt[i][filts->nfilt[i]-1];
             filt->type = type;
             if ( sscanf(s,"%le",&filt->value)!=1 ) error("Could not parse filter expression: %s\n", args->fixed_filters);
             if ( scale )
-                filt->value = scale_value(&args->dists[i], filt->value);
+                filt->value = scale_value(&args->dists[args->ann2cols[i]], filt->value);
             s = e;
             continue;
         }
@@ -748,13 +781,13 @@ static void som_init(args_t *args)
 {
     int i, j;
     som_t *som  = &args->som;
-    som->kdim   = args->nann;
+    som->kdim   = args->nann_som;
     som->radius = som->nbin / 2;
     som->w      = (double*) malloc(sizeof(double) * som->kdim * som->nbin * som->nbin);
     som->c      = (double*) calloc(som->nbin*som->nbin, sizeof(double));
     int n = INT_MAX;
-    for (i=0; i<args->nann; i++)
-        if ( args->dists[i].ngood < n ) n = args->dists[i].ngood;
+    for (i=0; i<args->nann_som; i++)
+        if ( args->dists[args->ann2cols[i]].ngood < n ) n = args->dists[args->ann2cols[i]].ngood;
     if ( !som->nt || som->nt > n ) som->nt = n;
     som->decay  = som->nt / log(som->radius);
 
@@ -763,7 +796,7 @@ static void som_init(args_t *args)
         som->w[i] = (double)random()/RAND_MAX;
 
     int nvals = 0;
-    double *vals = (double*) malloc(sizeof(double)*som->nt*args->nann);
+    double *vals = (double*) malloc(sizeof(double)*som->nt*args->nann_som);
 
     annots_reader_reset(args);
     while ( annots_reader_next(args) )
@@ -780,8 +813,8 @@ static void som_init(args_t *args)
         i = nvals < som->nt ? nvals : (double)(som->nt-1)*random()/RAND_MAX;
         assert( i>=0 && i<som->nt );
 
-        for (j=0; j<args->nann; j++)
-            vals[i*args->nann + j] = args->vals[j];
+        for (j=0; j<args->nann_som; j++)
+            vals[i*args->nann_som + j] = args->vals[j];
 
         nvals++;
     }
@@ -789,7 +822,8 @@ static void som_init(args_t *args)
     fprintf(stderr,"Selected %d training values\n", som->nt);
 
     for (i=0; i<som->nt; i++)
-        som_train(som, &vals[i*args->nann]);
+        som_train(som, &vals[i*args->nann_som]);
+        //fprintf(stderr, "train: %d %e %e\n", args->nann_som, vals[i*args->nann_som],vals[i*args->nann_som+1] );
     free(vals);
 
     som_norm(som);
@@ -840,19 +874,20 @@ static void filter_vcf(args_t *args)
     while ( annots_reader_next(args) )
     {
         if ( args->type != args->filt_type ) continue;
+        if ( args->nset != args->nann ) continue;
 
         double dist = max_dist;
-        if ( args->nset == args->nann )
+        if ( !args->filt_excl.nfilt || pass_filters(&args->filt_excl, args->vals) )
         {
-            if ( !args->filt_excl.nfilt || pass_filters(&args->filt_excl, args->vals) )
-            {
-                dist = som_calc_dist(&args->som, args->vals);
-                assert( dist>=0 && dist<=max_dist );
-            }
-            if ( IS_GOOD(args->mask) ) ngood++;
+            dist = som_calc_dist(&args->som, args->vals);
+            assert( dist>=0 && dist<=max_dist );
         }
-        fprintf(fp, "%le\t%d\t%d\t%s\t%d\n", dist, args->is_ts, IS_GOOD(args->mask)?1:0, args->chr, args->pos);
+        else
+            dist = max_dist;
+
+        if ( IS_GOOD(args->mask) ) ngood++;
         nall++;
+        fprintf(fp, "%le\t%d\t%d\t%s\t%d\n", dist, args->is_ts, IS_GOOD(args->mask)?1:0, args->chr, args->pos);
     }
     fclose(fp);
 
@@ -1025,6 +1060,7 @@ static void apply_filters(args_t *args)
             vcf_write1(out, hdr, line);
             continue;
         }
+        line->d.n_flt = 0;
         vcf_write1(out, hdr, line);
     }
     if ( snp->str.m ) free(snp->str.s); free(snp);
@@ -1050,6 +1086,7 @@ static void usage(void)
 	fprintf(stderr, "    -n, --ntrain-sites <int>                   number of training sites to use\n");
 	fprintf(stderr, "    -o, --output-prefix <string>               prefix of output files\n");
 	fprintf(stderr, "    -p, --create-plots                         create plots\n");
+	fprintf(stderr, "    -r, --random-seed <int>                    random seed, 0 for time() [1]\n");
 	fprintf(stderr, "    -s, --snp-threshold <float>                filter SNPs\n");
 	fprintf(stderr, "    -t, --type <SNP|INDEL>                     variant type to filter [SNP]\n");
 	fprintf(stderr, "Example:\n");
@@ -1084,6 +1121,7 @@ int main_vcffilter(int argc, char *argv[])
     args->filt_type = VCF_SNP;
     args->snp_th    = -1;
     args->indel_th  = -1;
+    int random_seed = 1;
 
 	static struct option loptions[] = 
 	{
@@ -1099,9 +1137,10 @@ int main_vcffilter(int argc, char *argv[])
 		{"learning-filters",1,0,'l'},
 		{"snp-threshold",1,0,'s'},
 		{"indel-threshold",1,0,'i'},
+		{"random-seed",1,0,'r'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "ho:a:s:i:pf:St:n:l:m:",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "ho:a:s:i:pf:St:n:l:m:r:",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'S': args->scale = 0; break;
 			case 't': 
@@ -1117,6 +1156,7 @@ int main_vcffilter(int argc, char *argv[])
 			case 'i': args->indel_th = atof(optarg); break;
 			case 'o': args->out_prefix = optarg; break;
 			case 'p': args->do_plot = 1; break;
+			case 'r': random_seed = atoi(optarg); break;
             case 'f': args->fixed_filters = optarg; break;
             case 'l': args->learning_filters = optarg; break;
 			case 'm': if (sscanf(optarg,"%d,%le,%le",&args->som.nbin,&args->som.learn,&args->som.th)!=3) error("Could not parse --SOM-params %s\n", optarg); break;
@@ -1125,6 +1165,9 @@ int main_vcffilter(int argc, char *argv[])
 			default: error("Unknown argument: %s\n", optarg);
 		}
 	}
+    if ( !random_seed ) random_seed = time(NULL);
+    fprintf(stderr,"Random seed %d\n", random_seed);
+    srandom(random_seed);
     if ( argc!=optind+1 ) usage();
     args->fname = argv[optind];
     if ( args->snp_th<0 && args->indel_th<0 )
