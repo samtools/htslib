@@ -48,7 +48,7 @@ struct _args_t
 	readers_t *files;
     bcf_hdr_t *header;
 	char **argv, *format, *sample_names;
-	int argc, list_columns;
+	int argc, list_columns, print_header;
 };
 
 static void error(const char *format, ...)
@@ -456,7 +456,7 @@ static void query_vcf(args_t *args)
     kstring_t str = {0,0,0};
     int i, ret;
 
-    print_header(args, &str);
+    if ( args->print_header ) print_header(args, &str);
 
     while ( (ret=bcf_sr_next_line(args->files)) )
     {
@@ -517,6 +517,7 @@ static void usage(void)
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "    -a, --annots <list>               alias for -f '%%CHROM\\t%%POS\\t%%MASK\\t%%IS_TS\\t%%TYPE\\t' + tab-separated <list>\n");
 	fprintf(stderr, "    -f, --format <string>             learn by example, see below\n");
+	fprintf(stderr, "    -H, --print-header                print header\n");
 	fprintf(stderr, "    -l, --list-columns                list columns\n");
 	fprintf(stderr, "    -r, --region <chr|chr:from-to>    perform intersection in the given region only\n");
 	fprintf(stderr, "    -s, --samples <list|file>         samples to include: comma-separated list or one name per line in a file\n");
@@ -553,11 +554,13 @@ int main_vcfquery(int argc, char *argv[])
 		{"region",1,0,'r'},
 		{"annots",1,0,'a'},
 		{"samples",1,0,'s'},
+		{"print-header",0,0,'H'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "hlr:f:a:s:",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "hlr:f:a:s:H",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'f': args->format = strdup(optarg); break;
+			case 'H': args->print_header = 1; break;
 			case 'a': 
                 {
                     kstring_t str = {0,0,0};
