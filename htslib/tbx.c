@@ -191,9 +191,12 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 void tbx_destroy(tbx_t *tbx)
 {
 	khash_t(s2i) *d = (khash_t(s2i)*)tbx->dict;
-	khint_t k;
-	for (k = kh_begin(d); k != kh_end(d); ++k)
-		if (kh_exist(d, k)) free((char*)kh_key(d, k));
+	if (d != NULL)
+	{
+		khint_t k;
+		for (k = kh_begin(d); k != kh_end(d); ++k)
+			if (kh_exist(d, k)) free((char*)kh_key(d, k));
+	}
 	hts_idx_destroy(tbx->idx);
 	kh_destroy(s2i, d);
 	free(tbx);
@@ -233,6 +236,11 @@ tbx_t *tbx_index_load(const char *fn)
 const char **tbx_seqnames(tbx_t *tbx, int *n)
 {
 	khash_t(s2i) *d = (khash_t(s2i)*)tbx->dict;
+	if (d == NULL)
+	{
+		*n = 0;
+		return NULL;
+	}
 	int tid, m = kh_size(d);
 	const char **names = (const char**) calloc(m,sizeof(const char*));
 	khint_t k;
