@@ -175,7 +175,7 @@ static void destroy_list(char **list, int n)
         free(list[i]);
     free(list);
 }
-static void py_plot(char *script)
+void py_plot(char *script)
 {
     mkdir_p(script);
     int len = strlen(script);

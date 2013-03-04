@@ -47,7 +47,7 @@ struct _args_t
     int nsamples, *samples;
 	readers_t *files;
     bcf_hdr_t *header;
-	char **argv, *format, *sample_names;
+	char **argv, *format, *sample_names, *subset_fname;
 	int argc, list_columns, print_header;
 };
 
@@ -208,7 +208,7 @@ static void process_is_ts(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, k
     set_variant_types(line);
     int is_ts = 0;
     if ( line->d.var_type & (VCF_SNP|VCF_MNP) ) 
-        is_ts = abs(acgt2int(*line->d.allele[0])-acgt2int(*line->d.allele[1])) == 2 ? 1 : 0;
+        is_ts = abs(bcf_acgt2int(*line->d.allele[0])-bcf_acgt2int(*line->d.allele[1])) == 2 ? 1 : 0;
     kputc(is_ts ? '1' : '0', str); 
 }
 static void process_type(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, kstring_t *str)
@@ -516,9 +516,11 @@ static void usage(void)
 	fprintf(stderr, "Usage:   vcfquery [options] <file.vcf.gz>\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "    -a, --annots <list>               alias for -f '%%CHROM\\t%%POS\\t%%MASK\\t%%IS_TS\\t%%TYPE\\t' + tab-separated <list>\n");
+	fprintf(stderr, "    -c, --collapse <string>           collapse lines with duplicate positions for <snps|indels|both|any>\n");
 	fprintf(stderr, "    -f, --format <string>             learn by example, see below\n");
 	fprintf(stderr, "    -H, --print-header                print header\n");
 	fprintf(stderr, "    -l, --list-columns                list columns\n");
+	fprintf(stderr, "    -p, --positions <file>            list positions in tab-delimited tabix indexed file <chr,pos> or <chr,from,to>, 1-based, inclusive\n");
 	fprintf(stderr, "    -r, --region <chr|chr:from-to>    perform intersection in the given region only\n");
 	fprintf(stderr, "    -s, --samples <list|file>         samples to include: comma-separated list or one name per line in a file\n");
 	fprintf(stderr, "Expressions:\n");
@@ -555,12 +557,21 @@ int main_vcfquery(int argc, char *argv[])
 		{"annots",1,0,'a'},
 		{"samples",1,0,'s'},
 		{"print-header",0,0,'H'},
+		{"positions",0,0,'p'},
+		{"collapse",0,0,'c'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "hlr:f:a:s:H",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "hlr:f:a:s:Hp:c:",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'f': args->format = strdup(optarg); break;
 			case 'H': args->print_header = 1; break;
+            case 'c':
+				if ( !strcmp(optarg,"snps") ) args->files->collapse |= COLLAPSE_SNPS;
+				else if ( !strcmp(optarg,"indels") ) args->files->collapse |= COLLAPSE_INDELS;
+				else if ( !strcmp(optarg,"both") ) args->files->collapse |= COLLAPSE_SNPS | COLLAPSE_INDELS;
+				else if ( !strcmp(optarg,"any") ) args->files->collapse |= COLLAPSE_ANY;
+                else error("The --collapse string \"%s\" not recognised.\n", optarg);
+				break;
 			case 'a': 
                 {
                     kstring_t str = {0,0,0};
@@ -581,12 +592,18 @@ int main_vcfquery(int argc, char *argv[])
 			case 'r': args->files->region = optarg; break;
 			case 'l': args->list_columns = 1; break;
 			case 's': args->sample_names = optarg; break;
+			case 'p': args->subset_fname = optarg; break;
 			case 'h': 
 			case '?': usage();
 			default: error("Unknown argument: %s\n", optarg);
 		}
 	}
 	if ( argc==optind ) usage();   // none or too many files given
+    if ( args->subset_fname )
+    {
+        if ( !bcf_sr_set_targets(args->files, args->subset_fname) )
+            error("Failed to read the targets: %s\n", args->subset_fname);
+    }
     while (optind<argc)
     {
         if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);

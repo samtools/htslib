@@ -18,6 +18,7 @@ int main_vcfisec(int argc, char *argv[]);
 int main_vcfmerge(int argc, char *argv[]);
 int main_vcfquery(int argc, char *argv[]);
 int main_vcffilter(int argc, char *argv[]);
+int main_vcfgtcheck(int argc, char *argv[]);
 
 typedef struct
 {
@@ -82,6 +83,15 @@ static cmd_t cmds[] =
       .help  = "produce VCF stats",
       .sep   = "VCF/BCF tools:"
     },
+    { .func  = main_vcffilter, 
+      .alias = "htscmd vcffilter, htsvcf filter, vcf filter",
+      .help  = "filter VCF files",
+      .sep   = NULL
+    },
+    { .func  = main_vcfgtcheck, 
+      .alias = "htscmd vcfgtcheck, htsvcf gtcheck, vcf gtcheck",
+      .help  = "check sample identity",
+    },
     { .func  = main_vcfisec,  
       .alias = "htscmd vcfisec, htsvcf isec, vcf isec", 
       .help  = "intersections of VCF files",
@@ -95,11 +105,6 @@ static cmd_t cmds[] =
     { .func  = main_vcfquery, 
       .alias = "htscmd vcfquery, htsvcf query, vcf query",
       .help  = "transform VCF into user-defined formats",
-      .sep   = NULL
-    },
-    { .func  = main_vcffilter, 
-      .alias = "htscmd vcffilter, htsvcf filter, vcf filter",
-      .help  = "filter VCF files",
       .sep   = NULL
     },
     { .func  = NULL,
