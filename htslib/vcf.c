@@ -290,6 +290,11 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
             else if ( !strcmp(hrec->vals[i], "Float") ) type = BCF_HT_REAL;
             else if ( !strcmp(hrec->vals[i], "String") ) type = BCF_HT_STR;
             else if ( !strcmp(hrec->vals[i], "Flag") ) type = BCF_HT_FLAG;
+            else
+            {
+                fprintf(stderr, "[E::%s] The type \"%s\" not supported, assuming \"String\"\n", __func__, hrec->vals[i]);
+                type = BCF_HT_STR;
+            }
         }
         else if ( !strcmp(hrec->keys[i], "Number") )
         {
@@ -471,7 +476,7 @@ bcf1_t *bcf_init1()
 
 void bcf_destroy1(bcf1_t *v)
 {
-	free(v->d.id); free(v->d.allele); free(v->d.flt); free(v->d.info); free(v->d.fmt);
+	free(v->d.id); free(v->d.als); free(v->d.allele); free(v->d.flt); free(v->d.info); free(v->d.fmt);
 	if (v->d.var ) free(v->d.var);
 	free(v->shared.s); free(v->indiv.s);
 	free(v);
@@ -1000,7 +1005,11 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 					f->size = f->is_gt? f->max_g << 2 : f->max_l;
 				} else if ((f->y>>4&0xf) == BCF_HT_REAL || (f->y>>4&0xf) == BCF_HT_INT) {
 					f->size = f->max_m << 2;
-				} else abort(); // I do not know how to do with Flag in the genotype fields
+				} else 
+                {
+                    fprintf(stderr, "[E::%s] the format type %d currently not supported\n", __func__, f->y>>4&0xf);
+                    abort(); // I do not know how to do with Flag in the genotype fields
+                }
 				align_mem(mem);
 				f->offset = mem->l;
 				ks_resize(mem, mem->l + v->n_sample * f->size);
@@ -1145,23 +1154,25 @@ int bcf_unpack(bcf1_t *b, int which)
 	if (which & BCF_UN_FLT) which |= BCF_UN_STR;
 	if (which & BCF_UN_INFO) which |= BCF_UN_SHR;
 	if ((which&BCF_UN_STR) && !(b->unpacked&BCF_UN_STR)) { // ID
-		kstring_t tmp;
-		tmp.l = 0; tmp.m = d->m_str; tmp.s = d->id;
-		ptr = bcf_fmt_sized_array(&tmp, ptr); kputc('\0', &tmp);
-		// REF and ALT
-		offset = (int*)alloca(b->n_allele * sizeof(int));
-		for (i = 0; i < b->n_allele; ++i) {
-			offset[i] = tmp.l;
-			ptr = bcf_fmt_sized_array(&tmp, ptr);
-			kputc('\0', &tmp);
-		}
-		hts_expand(char*, b->n_allele, d->m_allele, d->allele); // NM: hts_expand() is a macro
-		for (i = 0; i < b->n_allele; ++i)
-			d->allele[i] = tmp.s + offset[i];
-		d->m_str = tmp.m; d->id = tmp.s; // write tmp back
-		d->var_type = -1;
-		b->unpack_ptr = ptr;
-		b->unpacked |= BCF_UN_STR;
+        kstring_t tmp;
+        tmp.l = 0; tmp.m = d->m_str; tmp.s = d->id;
+        ptr = bcf_fmt_sized_array(&tmp, ptr); kputc('\0', &tmp);
+        d->m_str = tmp.m; d->id = tmp.s; // write tmp back
+        // REF and ALT
+        tmp.l = 0; tmp.m = d->m_als; tmp.s = d->als;
+        offset = (int*)alloca(b->n_allele * sizeof(int));
+        for (i = 0; i < b->n_allele; ++i) {
+            offset[i] = tmp.l;
+            ptr = bcf_fmt_sized_array(&tmp, ptr);
+            kputc('\0', &tmp);
+        }
+        hts_expand(char*, b->n_allele, d->m_allele, d->allele); // NM: hts_expand() is a macro
+        for (i = 0; i < b->n_allele; ++i)
+            d->allele[i] = tmp.s + offset[i];
+        d->m_als = tmp.m; d->als = tmp.s; // write tmp back
+        d->var_type = -1;
+        b->unpack_ptr = ptr;
+        b->unpacked |= BCF_UN_STR;
 	}
 	if ((which&BCF_UN_FLT) && !(b->unpacked&BCF_UN_FLT)) { // FILTER
 		ptr = b->unpack_ptr;
@@ -1406,7 +1417,7 @@ int bcf_is_snp(bcf1_t *v)
 	return i == v->n_allele;
 }
 
-void set_variant_type(char *ref, char *alt, variant_t *var)
+static void bcf_set_variant_type(char *ref, char *alt, variant_t *var)
 {
 	// The most frequent case
 	if ( !ref[1] && !alt[1] )
@@ -1457,7 +1468,7 @@ void set_variant_type(char *ref, char *alt, variant_t *var)
 	// should do also complex events, SVs, etc...
 }
 
-void set_variant_types(bcf1_t *b)
+void bcf_set_variant_types(bcf1_t *b)
 {
 	if ( b->d.var_type!=-1 ) return;	// already set
 
@@ -1471,7 +1482,7 @@ void set_variant_types(bcf1_t *b)
 	b->d.var_type = 0;
 	for (i=1; i<b->n_allele; i++)
 	{
-		set_variant_type(d->allele[0],d->allele[i], &d->var[i]);
+		bcf_set_variant_type(d->allele[0],d->allele[i], &d->var[i]);
 		b->d.var_type |= d->var[i].type;
 		//fprintf(stderr,"[set_variant_type] %d   %s %s -> %d %d .. %d\n", b->pos+1,d->allele[0],d->allele[i],d->var[i].type,d->var[i].n, b->d.var_type);
 	}

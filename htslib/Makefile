@@ -1,7 +1,7 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2 -Wc++-compat
 DFLAGS=
-LOBJS=		knetfile.o bgzf.o hts.o vcf.o sam.o tbx.o synced_bcf_reader.o vcfutils.o
+LOBJS=		knetfile.o bgzf.o hts.o vcf.o sam.o tbx.o faidx.o razf.o synced_bcf_reader.o vcfutils.o
 INCLUDES=
 LIBPATH=
 
@@ -22,6 +22,8 @@ hts.o:hts.h bgzf.h khash.h kseq.h
 vcf.o:vcf.h bgzf.h kstring.h khash.h hts.h
 sam.o:sam.h bgzf.h kstring.h hts.h
 tbx.o:tbx.h bgzf.h kstring.h hts.h
+faidx.o:faidx.h khash.h
+razdf.o:razf.h knetfile.h zlib.h
 synced_bcf_reader.o:vcf.h bgzf.h kstring.h khash.h hts.h tbx.h
 vcfutils.o:vcf.h bgzf.h kstring.h khash.h hts.h tbx.h
 
