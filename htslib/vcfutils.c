@@ -1,6 +1,6 @@
 #include "vcfutils.h"
 
-int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
+int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 {
 	int i;
 	for (i=0; i<line->n_allele; i++) ac[i]=0;
@@ -71,7 +71,7 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 	return 0;
 }
 
-inline int gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
+inline int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
 {
 	uint8_t *p = &fmt_ptr->p[isample*fmt_ptr->size];
 	int i, a = p[0]>>1, b = a, min = a, nref = a>1 ? a : 255;
@@ -90,7 +90,7 @@ inline int gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
 	return min==1 ? GT_HET_RA : GT_HET_AA;
 }
 
-bcf_fmt_t *get_fmt_ptr(const bcf_hdr_t *header, bcf1_t *line, char *tag)
+bcf_fmt_t *bcf_get_fmt_ptr(const bcf_hdr_t *header, bcf1_t *line, char *tag)
 {
     bcf_unpack(line, BCF_UN_FMT);
 
@@ -104,10 +104,10 @@ bcf_fmt_t *get_fmt_ptr(const bcf_hdr_t *header, bcf1_t *line, char *tag)
     return NULL;
 }
 
-int trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
+int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
 {
     int i;
-    bcf_fmt_t *gt = get_fmt_ptr(header, line, "GT");
+    bcf_fmt_t *gt = bcf_get_fmt_ptr(header, line, "GT");
     if ( !gt ) return 0;
 
     int *ac = (int*) calloc(line->n_allele,sizeof(int));
@@ -132,13 +132,13 @@ int trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
     }
     free(ac);
 
-    if ( nrm ) remove_alleles(header, line, rm_als);
+    if ( nrm ) bcf_remove_alleles(header, line, rm_als);
     return nrm;
 }
 
 extern uint32_t bcf_missing_float;
 
-void remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
+void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
 {
     int *map = (int*) calloc(line->n_allele, sizeof(int));
 
@@ -166,7 +166,7 @@ void remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
     if ( !nrm ) { free(map); return; }
 
     // remove from GT fields 
-    bcf_fmt_t *gt = get_fmt_ptr(header, line, "GT");
+    bcf_fmt_t *gt = bcf_get_fmt_ptr(header, line, "GT");
     if ( gt )
     {
         for (i=1; i<line->n_allele; i++) if ( map[i]!=i ) break;

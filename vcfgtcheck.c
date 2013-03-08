@@ -13,7 +13,7 @@
 
 typedef struct
 {
-	readers_t *files;
+	bcf_srs_t *files;
     bcf_hdr_t *gt_hdr, *sm_hdr;
     double *lks, *sigs;
     int *cnts, *dps, hom_only;

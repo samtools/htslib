@@ -7,11 +7,11 @@
 #include <sys/stat.h>
 #include "synced_bcf_reader.h"
 
-int bcf_sr_add_reader(readers_t *files, const char *fname)
+int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 {
-    files->readers = (reader_t*) realloc(files->readers, sizeof(reader_t)*(files->nreaders+1));
-    reader_t *reader = &files->readers[files->nreaders++];
-    memset(reader,0,sizeof(reader_t));
+    files->readers = (bcf_sr_t*) realloc(files->readers, sizeof(bcf_sr_t)*(files->nreaders+1));
+    bcf_sr_t *reader = &files->readers[files->nreaders++];
+    memset(reader,0,sizeof(bcf_sr_t));
 
     int type = file_type(fname);
     if ( type==IS_VCF_GZ ) 
@@ -86,19 +86,23 @@ int bcf_sr_add_reader(readers_t *files, const char *fname)
     return 1;
 }
 
-readers_t *bcf_sr_init(void)
+bcf_srs_t *bcf_sr_init(void)
 {
-    readers_t *files = (readers_t*) calloc(1,sizeof(readers_t));
+    bcf_srs_t *files = (bcf_srs_t*) calloc(1,sizeof(bcf_srs_t));
     return files;
 }
 
-void bcf_sr_destroy(readers_t *files)
+void bcf_sr_destroy(bcf_srs_t *files)
 {
-    if ( !files->nreaders ) return;
+    if ( !files->nreaders ) 
+    {
+        free(files);
+        return;
+    }
     int i;
     for (i=0; i<files->nreaders; i++)
     {
-        reader_t *reader = &files->readers[i];
+        bcf_sr_t *reader = &files->readers[i];
         if ( reader->tbx ) tbx_destroy(reader->tbx);
         if ( reader->bcf ) hts_idx_destroy(reader->bcf);
         bcf_hdr_destroy(reader->header);
@@ -134,7 +138,7 @@ void bcf_sr_destroy(readers_t *files)
    The removal is done by setting the redundant lines' positions to -1 and
    moving these lines at the end of the buffer.
  */
-static void collapse_buffer(readers_t *files, reader_t *reader)
+static void collapse_buffer(bcf_srs_t *files, bcf_sr_t *reader)
 {
     int irec,jrec, has_snp=0, has_indel=0, has_any=0;
     for (irec=1; irec<=reader->nbuffer; irec++)
@@ -172,7 +176,7 @@ static void collapse_buffer(readers_t *files, reader_t *reader)
     reader->nbuffer = irec - 1;
 }
 
-void debug_buffer(FILE *fp, reader_t *reader)
+void debug_buffer(FILE *fp, bcf_sr_t *reader)
 {
     int j;
     for (j=0; j<=reader->nbuffer; j++)
@@ -185,7 +189,7 @@ void debug_buffer(FILE *fp, reader_t *reader)
     }
 }
 
-void debug_buffers(FILE *fp, readers_t *files)
+void debug_buffers(FILE *fp, bcf_srs_t *files)
 {
     int i;
     for (i=0; i<files->nreaders; i++)
@@ -193,9 +197,9 @@ void debug_buffers(FILE *fp, readers_t *files)
     fprintf(fp,"\n");
 }
 
-int bcf_sr_set_targets(readers_t *files, const char *fname)
+int bcf_sr_set_targets(bcf_srs_t *files, const char *fname)
 {
-    regions_t *tgts = (regions_t *) calloc(1,sizeof(regions_t));
+    bcf_sr_regions_t *tgts = (bcf_sr_regions_t *) calloc(1,sizeof(bcf_sr_regions_t));
     tgts->file = hts_open(fname, "rb", NULL);
     if ( !tgts->file ) return 0;
     tgts->tbx = tbx_index_load(fname);
@@ -205,7 +209,7 @@ int bcf_sr_set_targets(readers_t *files, const char *fname)
     return 1;
 }
 
-static char *tgt_next_seq(regions_t *tgt)
+static char *tgt_next_seq(bcf_sr_regions_t *tgt)
 {
     if ( ++tgt->cseq >= tgt->nseqs ) return NULL;
     if ( tgt->itr ) tbx_itr_destroy(tgt->itr);
@@ -215,7 +219,7 @@ static char *tgt_next_seq(regions_t *tgt)
 }
 
 // 1 if position is present, 0 if not, -1 if not and done
-static int tgt_has_position(regions_t *tgt, int32_t pos)
+static int tgt_has_position(bcf_sr_regions_t *tgt, int32_t pos)
 {
     while ( tgt->tpos.to < pos )
     {
@@ -263,7 +267,7 @@ static int tgt_has_position(regions_t *tgt, int32_t pos)
     return 0;
 }
 
-int bcf_sr_next_line(readers_t *files)
+int bcf_sr_next_line(bcf_srs_t *files)
 {
     int32_t min_pos = INT_MAX;
     int ret,i,j;
@@ -290,7 +294,7 @@ int bcf_sr_next_line(readers_t *files)
             }
             for (i=0; i<files->nreaders; i++)
             {
-                reader_t *reader = &files->readers[i];
+                bcf_sr_t *reader = &files->readers[i];
                 if ( reader->tbx )
                     reader->itr = tbx_itr_querys(reader->tbx,seq);
                 else
@@ -301,7 +305,7 @@ int bcf_sr_next_line(readers_t *files)
         // Find the smallest coordinate
         for (i=0; i<files->nreaders; i++)
         {
-            reader_t *reader = &files->readers[i];
+            bcf_sr_t *reader = &files->readers[i];
             int buffer_full = ( reader->nbuffer && reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) ? 1 : 0;
             if ( reader->itr && !buffer_full )
             {
@@ -329,7 +333,7 @@ int bcf_sr_next_line(readers_t *files)
                     bcf_unpack(reader->buffer[reader->nbuffer+1], BCF_UN_STR|BCF_UN_FLT);
                     // apply filter
                     if ( reader->filter_id!=-1 && reader->buffer[reader->nbuffer+1]->d.n_flt && reader->filter_id!=reader->buffer[reader->nbuffer+1]->d.flt[0] ) continue;
-                    set_variant_types(reader->buffer[reader->nbuffer+1]);
+                    bcf_set_variant_types(reader->buffer[reader->nbuffer+1]);
                     reader->nbuffer++;
                     if ( reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) break;
                 }
@@ -370,7 +374,7 @@ int bcf_sr_next_line(readers_t *files)
             // remove the active line, save the buffer line
             for (i=0; i<files->nreaders; i++)
             {
-                reader_t *reader = &files->readers[i];
+                bcf_sr_t *reader = &files->readers[i];
                 for (j=1; j<=reader->nbuffer; j++)
                     if ( reader->buffer[j]->pos!=min_pos ) break;
                 if ( j==1 ) continue;
@@ -394,7 +398,7 @@ int bcf_sr_next_line(readers_t *files)
     bcf1_t *first = NULL;
     for (i=0; i<files->nreaders; i++)
     {
-        reader_t *reader = &files->readers[i];
+        bcf_sr_t *reader = &files->readers[i];
         if ( !reader->nbuffer || reader->buffer[1]->pos!=min_pos ) continue;
 
         // Match the records by REF and ALT
@@ -493,7 +497,7 @@ size_t mygetline(char **line, size_t *n, FILE *fp)
 
 }
 
-int bcf_sr_set_samples(readers_t *files, const char *fname)
+int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
 {
     int i;
     struct stat sbuf;
@@ -579,7 +583,7 @@ int bcf_sr_set_samples(readers_t *files, const char *fname)
     }
     for (i=0; i<files->nreaders; i++)
     {
-        reader_t *reader = &files->readers[i];
+        bcf_sr_t *reader = &files->readers[i];
         reader->samples  = (int*) malloc(sizeof(int)*files->n_smpl);
         reader->n_smpl   = files->n_smpl;
         int ism;
@@ -589,7 +593,7 @@ int bcf_sr_set_samples(readers_t *files, const char *fname)
     return 1;
 }
 
-int init_regions(const char *fname, regions_t *reg)
+int init_regions(const char *fname, bcf_sr_regions_t *reg)
 {
     int bgzf_getline(BGZF *fp, int delim, kstring_t *str);
 
@@ -602,7 +606,7 @@ int init_regions(const char *fname, regions_t *reg)
 
     int i, mseqs = 10, mpos = 0;
     reg->nseqs = 0;
-    reg->pos   = (pos_t **)calloc(mseqs,sizeof(pos_t*));
+    reg->pos   = (bcf_sr_pos_t **)calloc(mseqs,sizeof(bcf_sr_pos_t*));
     reg->npos  = (int*) calloc(mseqs,sizeof(int));
     reg->seq_names = (char **) calloc(mseqs,sizeof(char*));
 
@@ -629,7 +633,7 @@ int init_regions(const char *fname, regions_t *reg)
             if ( reg->nseqs >= mseqs )
             {
                 mseqs++;
-                reg->pos  = (pos_t **) realloc(reg->pos,sizeof(pos_t*)*mseqs); reg->pos[mseqs-1] = NULL;
+                reg->pos  = (bcf_sr_pos_t **) realloc(reg->pos,sizeof(bcf_sr_pos_t*)*mseqs); reg->pos[mseqs-1] = NULL;
                 reg->npos = (int *) realloc(reg->npos,sizeof(int)*mseqs); reg->npos[mseqs-1] = 0;
                 reg->seq_names = (char**) realloc(reg->seq_names,sizeof(char*)*mseqs);
             }
@@ -641,10 +645,10 @@ int init_regions(const char *fname, regions_t *reg)
         if ( reg->npos[iseq] >= mpos )
         {
             mpos += 100;
-            reg->pos[iseq] = (pos_t*) realloc(reg->pos[iseq],sizeof(pos_t)*mpos);
+            reg->pos[iseq] = (bcf_sr_pos_t*) realloc(reg->pos[iseq],sizeof(bcf_sr_pos_t)*mpos);
         }
         int ipos = reg->npos[iseq];
-        pos_t *pos = reg->pos[iseq];
+        bcf_sr_pos_t *pos = reg->pos[iseq];
         reg->npos[iseq]++;
         if ( (sscanf(line+i+1,"%d %d",&pos[ipos].from,&pos[ipos].to))!=2 ) 
         {
@@ -685,7 +689,7 @@ int init_regions(const char *fname, regions_t *reg)
     return 1;
 }
 
-void destroy_regions(regions_t *reg)
+void destroy_regions(bcf_sr_regions_t *reg)
 {
     int i;
     for (i=0; i<reg->nseqs; i++)
@@ -698,7 +702,7 @@ void destroy_regions(regions_t *reg)
     free(reg->npos);
 }
 
-int reset_regions(regions_t *reg, const char *seq)
+int reset_regions(bcf_sr_regions_t *reg, const char *seq)
 {
     reg->cpos = 0;
     reg->cseq = -1;
@@ -714,7 +718,7 @@ int reset_regions(regions_t *reg, const char *seq)
     return 0;
 }
 
-pos_t *is_in_regions(regions_t *reg, int32_t pos)
+bcf_sr_pos_t *is_in_regions(bcf_sr_regions_t *reg, int32_t pos)
 {
     if ( reg->cseq==-1 ) return NULL;
 
@@ -722,7 +726,7 @@ pos_t *is_in_regions(regions_t *reg, int32_t pos)
     int npos = reg->npos[reg->cseq];
     if ( ipos==npos ) return NULL;  // done for this chr
 
-    pos_t *p = reg->pos[reg->cseq];
+    bcf_sr_pos_t *p = reg->pos[reg->cseq];
 
     // Find a matching interval
     while ( ipos < npos && pos > p[ipos].to ) ipos++;

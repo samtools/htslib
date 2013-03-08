@@ -45,7 +45,7 @@ struct _args_t
     fmt_t *fmt;
     int nfmt, mfmt, unpack;
     int nsamples, *samples;
-	readers_t *files;
+	bcf_srs_t *files;
     bcf_hdr_t *header;
 	char **argv, *format, *sample_names, *subset_fname, *vcf_list;
 	int argc, list_columns, print_header;
@@ -208,7 +208,7 @@ static void process_sample(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, 
 static void process_sep(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, kstring_t *str) { if (fmt->key) kputs(fmt->key, str); }
 static void process_is_ts(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, kstring_t *str) 
 { 
-    set_variant_types(line);
+    bcf_set_variant_types(line);
     int is_ts = 0;
     if ( line->d.var_type & (VCF_SNP|VCF_MNP) ) 
         is_ts = abs(bcf_acgt2int(*line->d.allele[0])-bcf_acgt2int(*line->d.allele[1])) == 2 ? 1 : 0;
@@ -216,7 +216,7 @@ static void process_is_ts(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, k
 }
 static void process_type(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, kstring_t *str)
 {
-    set_variant_types(line);
+    bcf_set_variant_types(line);
     int i = 0;
     if ( line->d.var_type == VCF_REF ) { kputs("REF", str); i++; }
     if ( line->d.var_type & VCF_SNP ) { if (i) kputc(',',str); kputs("SNP", str); i++; }
@@ -510,7 +510,7 @@ static void query_vcf(args_t *args)
 static void list_columns(args_t *args)
 {
     int i;
-    reader_t *reader = &args->files->readers[0];
+    bcf_sr_t *reader = &args->files->readers[0];
     for (i=0; i<reader->header->n[BCF_DT_SAMPLE]; i++)
         printf("%s\n", reader->header->samples[i]);
 }

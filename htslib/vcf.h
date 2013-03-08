@@ -114,9 +114,9 @@ typedef struct {
 } bcf_info_t;
 
 typedef struct {
-	int m_fmt, m_info, m_str, m_allele, m_flt; // allocated size (high-water mark); do not change
+	int m_fmt, m_info, m_str, m_als, m_allele, m_flt; // allocated size (high-water mark); do not change
 	int n_flt; // # FILTER fields
-	char *id, **allele; // ID, REF and ALT; allele[0] is the REF; all null terminated
+	char *id, *als, **allele; // ID; REF and ALT; allele[0] is the REF; all null terminated
 	int *flt; // filter keys in the dictionary
 	bcf_info_t *info; // INFO
 	bcf_fmt_t *fmt; // FORMAT and individual sample
@@ -272,7 +272,7 @@ extern "C" {
 	int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
 	const char **bcf_seqnames(const bcf_hdr_t *h, int *nseqs);
 	int bcf_is_snp(bcf1_t *v);
-	void set_variant_types(bcf1_t *v);
+	void bcf_set_variant_types(bcf1_t *v);
 
 #ifdef __cplusplus
 }

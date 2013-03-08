@@ -1068,7 +1068,7 @@ static void apply_filters(args_t *args)
     while (vcf_read1(vcf, hdr, line) >= 0) 
     {
         bcf_unpack(line, BCF_UN_INFO);
-        set_variant_types(line);
+        bcf_set_variant_types(line);
         assert( line->d.n_flt>=1 );
         line->d.n_flt = 1;
         if ( fh_snp && sync_site(hdr, line, fh_snp, snp, VCF_SNP) )
@@ -1191,10 +1191,10 @@ int main_vcffilter(int argc, char *argv[])
 		}
 	}
     if ( !random_seed ) random_seed = time(NULL);
-    fprintf(stderr,"Random seed %d\n", random_seed);
-    srandom(random_seed);
     if ( argc!=optind+1 ) usage();
     args->fname = argv[optind];
+    fprintf(stderr,"Random seed %d\n", random_seed);
+    srandom(random_seed);
     if ( args->snp_th<0 && args->indel_th<0 )
         filter_vcf(args);
     else

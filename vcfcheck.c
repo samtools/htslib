@@ -51,8 +51,8 @@ typedef struct
     gtcmp_t *af_gts_snps, *af_gts_indels, *smpl_gts_snps, *smpl_gts_indels; // first bin of af_* stats are singletons
 
     // other
-    readers_t *files;
-    regions_t regions;
+    bcf_srs_t *files;
+    bcf_sr_regions_t regions;
     int prev_reg;
     char **argv, *exons_file, *samples_file, *targets_fname;
     int argc, debug;
@@ -191,7 +191,7 @@ static void destroy_stats(args_t *args)
     if (args->smpl_gts_indels) free(args->smpl_gts_indels);
 }
 
-static void init_iaf(args_t *args, reader_t *reader)
+static void init_iaf(args_t *args, bcf_sr_t *reader)
 {
     bcf1_t *line = reader->buffer[0];
     if ( args->ntmp_iaf < line->n_allele )
@@ -201,7 +201,7 @@ static void init_iaf(args_t *args, reader_t *reader)
     }
     // tmp_iaf is first filled with AC counts in calc_ac and then transformed to
     //  an index to af_gts_snps
-    int i, ret = calc_ac(reader->header, line, args->tmp_iaf, args->samples_file ? BCF_UN_INFO|BCF_UN_FMT : BCF_UN_INFO);
+    int i, ret = bcf_calc_ac(reader->header, line, args->tmp_iaf, args->samples_file ? BCF_UN_INFO|BCF_UN_FMT : BCF_UN_INFO);
     if ( ret )
     {
         int an=0;
@@ -226,17 +226,17 @@ static void init_iaf(args_t *args, reader_t *reader)
     // todo: otherwise use AF 
 }
 
-static inline void do_mnp_stats(args_t *args, stats_t *stats, reader_t *reader)
+static inline void do_mnp_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
 {
     stats->n_mnps++;
 }
 
-static inline void do_other_stats(args_t *args, stats_t *stats, reader_t *reader)
+static inline void do_other_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
 {
     stats->n_others++;
 }
 
-static void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
+static void do_indel_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
 {
     stats->n_indels++;
 
@@ -248,7 +248,7 @@ static void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
     #endif
 
     // Check if the indel is near an exon for the frameshift statistics
-    pos_t *reg = NULL, *reg_next = NULL;
+    bcf_sr_pos_t *reg = NULL, *reg_next = NULL;
     if ( args->regions.nseqs )
     {
         if ( args->files->iseq!=args->prev_reg )
@@ -305,7 +305,7 @@ static void do_indel_stats(args_t *args, stats_t *stats, reader_t *reader)
     }
 }
 
-static void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
+static void do_snp_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
 {
     stats->n_snps++;
 
@@ -344,20 +344,20 @@ static void do_snp_stats(args_t *args, stats_t *stats, reader_t *reader)
     }
 }
 
-static void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int matched)
+static void do_sample_stats(args_t *args, stats_t *stats, bcf_sr_t *reader, int matched)
 {
-    readers_t *files = args->files;
+    bcf_srs_t *files = args->files;
     bcf1_t *line = reader->buffer[0];
     bcf_fmt_t *fmt_ptr;
 
-    if ( (fmt_ptr = get_fmt_ptr(reader->header,reader->buffer[0],"GT")) )
+    if ( (fmt_ptr = bcf_get_fmt_ptr(reader->header,reader->buffer[0],"GT")) )
     {
         int ref = bcf_acgt2int(*line->d.allele[0]);
         int is, n_nref = 0, i_nref = 0;
         for (is=0; is<args->files->n_smpl; is++)
         {
             int ial;
-            int gt = gt_type(fmt_ptr, reader->samples[is], &ial);
+            int gt = bcf_gt_type(fmt_ptr, reader->samples[is], &ial);
             if ( gt == GT_UNKN ) continue;
             if ( gt != GT_HOM_RR ) { n_nref++; i_nref = is; }
             if ( line->d.var_type&VCF_SNP )
@@ -383,7 +383,7 @@ static void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int 
         if ( n_nref==1 ) stats->smpl_sngl[i_nref]++;
     }
 
-    if ( (fmt_ptr = get_fmt_ptr(reader->header,reader->buffer[0],"DP")) )
+    if ( (fmt_ptr = bcf_get_fmt_ptr(reader->header,reader->buffer[0],"DP")) )
     {
         #define BRANCH_INT(type_t,missing) { \
             int is; \
@@ -411,8 +411,8 @@ static void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int 
     {
         int is;
         bcf_fmt_t *fmt0, *fmt1;
-        fmt0 = get_fmt_ptr(files->readers[0].header,files->readers[0].buffer[0],"GT"); if ( !fmt0 ) return;
-        fmt1 = get_fmt_ptr(files->readers[1].header,files->readers[1].buffer[0],"GT"); if ( !fmt1 ) return;
+        fmt0 = bcf_get_fmt_ptr(files->readers[0].header,files->readers[0].buffer[0],"GT"); if ( !fmt0 ) return;
+        fmt1 = bcf_get_fmt_ptr(files->readers[1].header,files->readers[1].buffer[0],"GT"); if ( !fmt1 ) return;
 
         int iaf = args->tmp_iaf[1]; // only first ALT alelle considered
         gtcmp_t *af_stats = files->readers[0].buffer[0]->d.var_type&VCF_SNP ? args->af_gts_snps : args->af_gts_indels;
@@ -424,11 +424,11 @@ static void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int 
         {
             // Simplified comparison: only 0/0, 0/1, 1/1 is looked at as the identity of 
             //  actual alleles can be enforced by running without the -c option.
-            int gt = gt_type(fmt0, files->readers[0].samples[is], NULL);
+            int gt = bcf_gt_type(fmt0, files->readers[0].samples[is], NULL);
             if ( gt == GT_UNKN ) continue;
 
             int match = 1;
-            int gt2 = gt_type(fmt1, files->readers[1].samples[is], NULL);
+            int gt2 = bcf_gt_type(fmt1, files->readers[1].samples[is], NULL);
             if ( gt2 == GT_UNKN ) match = -1;
             else if ( gt != gt2 ) match = 0;
 
@@ -464,9 +464,9 @@ static void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int 
         {
             for (is=0; is<files->n_smpl; is++)
             {
-                int gt = gt_type(fmt0, files->readers[0].samples[is], NULL);
+                int gt = bcf_gt_type(fmt0, files->readers[0].samples[is], NULL);
                 if ( gt == GT_UNKN ) continue;
-                int gt2 = gt_type(fmt1, files->readers[1].samples[is], NULL);
+                int gt2 = bcf_gt_type(fmt1, files->readers[1].samples[is], NULL);
                 if ( gt != gt2 ) 
                 {
                     printf("DBG\t%s\t%d\t%s\t%d\t%d\n",args->files->seqs[args->files->iseq],files->readers[0].buffer[0]->pos+1,files->samples[is],gt,gt2);
@@ -479,10 +479,10 @@ static void do_sample_stats(args_t *args, stats_t *stats, reader_t *reader, int 
 static void check_vcf(args_t *args)
 {
     int ret,i;
-    readers_t *files = args->files;
+    bcf_srs_t *files = args->files;
     while ( (ret=bcf_sr_next_line(files)) )
     {
-        reader_t *reader = NULL;
+        bcf_sr_t *reader = NULL;
         bcf1_t *line = NULL;
         for (i=0; i<files->nreaders; i++)
         {
@@ -491,7 +491,7 @@ static void check_vcf(args_t *args)
             line = files->readers[i].buffer[0];
             break;
         }
-        set_variant_types(line);
+        bcf_set_variant_types(line);
         init_iaf(args, reader);
 
         stats_t *stats = &args->stats[ret-1];
