@@ -98,7 +98,7 @@ void mkdir_p(const char *fmt, ...);
  *  is stripped and \0 appended. Returns the number of characters read
  *  excluding the null byte.
  */
-static size_t ks_getline(FILE *fp, kstring_t *str)
+size_t ks_getline(FILE *fp, kstring_t *str)
 {
     size_t nread=0;
     int c;
@@ -147,7 +147,27 @@ static char *_strndup(const char *ptr, int len)
     tmp[i] = 0;
     return tmp;
 }
-static char **split_list(const char *str, int delim, int *n)
+char **read_list(char *fname, int *_n)
+{
+    int n = 0;
+    char **list = NULL;
+
+    FILE *fp = fopen(fname,"r");
+    if ( !fp ) error("%s: %s\n", fname, strerror(errno));
+
+    kstring_t str = {0,0,0};
+    while ( ks_getline(fp, &str) )
+    {
+        list = (char**) realloc(list, sizeof(char*)*(++n));
+        list[n-1] = strdup(str.s);
+        str.l = 0;
+    }
+    fclose(fp);
+    if ( str.m ) free(str.s);
+    *_n = n;
+    return list;
+}
+char **split_list(const char *str, int delim, int *n)
 {
     *n = 0;
     char **out = NULL;
@@ -168,7 +188,7 @@ static char **split_list(const char *str, int delim, int *n)
     out[(*n)-1] = _strndup(p,t-p);
     return out;
 }
-static void destroy_list(char **list, int n)
+void destroy_list(char **list, int n)
 {
     int i;
     for (i=0; i<n; i++)
@@ -1097,12 +1117,12 @@ static void usage(void)
 	fprintf(stderr, "Example:\n");
 	fprintf(stderr, "   # 1) Extract annotations from the VCF. This is because several passes through the data are required and VCF parsing is slow.\n");
 	fprintf(stderr, "   # The second VCF is required only for supervised learning\n");
-	fprintf(stderr, "   vcf query -a QUAL,Annot1,Annot2,... target.vcf.gz | bgzip -c > annots.tab.gz\n");
-	fprintf(stderr, "   vcf query -a QUAL,Annot1,Annot2,... target.vcf.gz training.vcf.gz | bgzip -c > annots.tab.gz\n");
+	fprintf(stderr, "   vcf query -Ha QUAL,Annot1,Annot2,... target.vcf.gz | bgzip -c > annots.tab.gz\n");
+	fprintf(stderr, "   vcf query -Ha QUAL,Annot1,Annot2,... target.vcf.gz training.vcf.gz | bgzip -c > annots.tab.gz\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "   # 2) Test which annotations and parameters give the best result. SNPs and INDELs are done\n");
     fprintf(stderr,"    # separately. Notice the use of -l for unsupervised learning in the second example\n");
-	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>4'\n");
+	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>4' -a Annot2,Annot3\n");
 	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>4' -l'QUAL>0.6'\n");
 	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>4' -l'QUAL>0.6' -t INDEL\n");
 	fprintf(stderr, "\n");

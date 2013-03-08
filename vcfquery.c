@@ -47,9 +47,12 @@ struct _args_t
     int nsamples, *samples;
 	readers_t *files;
     bcf_hdr_t *header;
-	char **argv, *format, *sample_names, *subset_fname;
+	char **argv, *format, *sample_names, *subset_fname, *vcf_list;
 	int argc, list_columns, print_header;
 };
+
+char **read_list(char *fname, int *n);
+void destroy_list(char **list, int n);
 
 static void error(const char *format, ...)
 {
@@ -400,6 +403,8 @@ static void destroy_data(args_t *args)
         if ( args->fmt[i].key ) free(args->fmt[i].key);
     if ( args->mfmt ) free(args->fmt);
     if ( args->samples ) free(args->samples);
+    args->nfmt = args->mfmt = 0;
+    args->fmt = NULL;
 }
 
 
@@ -510,6 +515,23 @@ static void list_columns(args_t *args)
         printf("%s\n", reader->header->samples[i]);
 }
 
+static char **copy_header(bcf_hdr_t *hdr, int *src, int nsrc)
+{
+    char **dst = (char**) malloc(sizeof(char*)*nsrc);
+    int i;
+    for (i=0; i<nsrc; i++) dst[i] = strdup(hdr->samples[src[i]]);
+    return dst;
+}
+static int compare_header(bcf_hdr_t *hdr, int *a, int na, char **b, int nb)
+{
+    if ( na!=nb ) return na-nb;
+    int i;
+    for (i=0; i<na; i++)
+        if ( strcmp(hdr->samples[a[i]],b[i]) ) return 1;
+    return 0;
+}
+
+
 static void usage(void)
 {
 	fprintf(stderr, "About:   Extracts fields from VCF/BCF file and prints them in user-defined format\n");
@@ -523,6 +545,7 @@ static void usage(void)
 	fprintf(stderr, "    -p, --positions <file>            list positions in tab-delimited tabix indexed file <chr,pos> or <chr,from,to>, 1-based, inclusive\n");
 	fprintf(stderr, "    -r, --region <chr|chr:from-to>    perform intersection in the given region only\n");
 	fprintf(stderr, "    -s, --samples <list|file>         samples to include: comma-separated list or one name per line in a file\n");
+	fprintf(stderr, "    -v, --vcf-list <file>             process multiple VCFs listed in the file\n");
 	fprintf(stderr, "Expressions:\n");
     fprintf(stderr, "\t%%CHROM          The CHROM column (similarly also other columns, such as POS, ID, QUAL, etc.)\n");
     fprintf(stderr, "\t%%INFO/TAG       Any tag in the INFO column\n");
@@ -543,9 +566,9 @@ static void usage(void)
 
 int main_vcfquery(int argc, char *argv[])
 {
-	int c;
+	int c, collapse = 0;
+    char *region = NULL;
 	args_t *args = (args_t*) calloc(1,sizeof(args_t));
-    args->files  = bcf_sr_init();
 	args->argc   = argc; args->argv = argv;
 
 	static struct option loptions[] = 
@@ -557,19 +580,21 @@ int main_vcfquery(int argc, char *argv[])
 		{"annots",1,0,'a'},
 		{"samples",1,0,'s'},
 		{"print-header",0,0,'H'},
-		{"positions",0,0,'p'},
-		{"collapse",0,0,'c'},
+		{"positions",1,0,'p'},
+		{"collapse",1,0,'c'},
+		{"vcf-list",1,0,'v'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "hlr:f:a:s:Hp:c:",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "hlr:f:a:s:Hp:c:v:",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'f': args->format = strdup(optarg); break;
 			case 'H': args->print_header = 1; break;
+            case 'v': args->vcf_list = optarg; break;
             case 'c':
-				if ( !strcmp(optarg,"snps") ) args->files->collapse |= COLLAPSE_SNPS;
-				else if ( !strcmp(optarg,"indels") ) args->files->collapse |= COLLAPSE_INDELS;
-				else if ( !strcmp(optarg,"both") ) args->files->collapse |= COLLAPSE_SNPS | COLLAPSE_INDELS;
-				else if ( !strcmp(optarg,"any") ) args->files->collapse |= COLLAPSE_ANY;
+				if ( !strcmp(optarg,"snps") ) collapse |= COLLAPSE_SNPS;
+				else if ( !strcmp(optarg,"indels") ) collapse |= COLLAPSE_INDELS;
+				else if ( !strcmp(optarg,"both") ) collapse |= COLLAPSE_SNPS | COLLAPSE_INDELS;
+				else if ( !strcmp(optarg,"any") ) collapse |= COLLAPSE_ANY;
                 else error("The --collapse string \"%s\" not recognised.\n", optarg);
 				break;
 			case 'a': 
@@ -589,7 +614,7 @@ int main_vcfquery(int argc, char *argv[])
                     args->format = str.s;
                     break;
                 }
-			case 'r': args->files->region = optarg; break;
+			case 'r': region = optarg; break;
 			case 'l': args->list_columns = 1; break;
 			case 's': args->sample_names = optarg; break;
 			case 'p': args->subset_fname = optarg; break;
@@ -598,29 +623,76 @@ int main_vcfquery(int argc, char *argv[])
 			default: error("Unknown argument: %s\n", optarg);
 		}
 	}
-	if ( argc==optind ) usage();   // none or too many files given
-    if ( args->subset_fname )
-    {
-        if ( !bcf_sr_set_targets(args->files, args->subset_fname) )
-            error("Failed to read the targets: %s\n", args->subset_fname);
-    }
-    while (optind<argc)
-    {
-        if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
-        optind++;
-    }
+    
     if ( args->list_columns )
-        list_columns(args);
-    else
     {
-        if ( !args->format ) usage();
+        args->files = bcf_sr_init();
+        if ( args->subset_fname )
+        {
+            if ( !bcf_sr_set_targets(args->files, args->subset_fname) )
+                error("Failed to read the targets: %s\n", args->subset_fname);
+        }
+        list_columns(args);
+        bcf_sr_destroy(args->files);
+        free(args);
+        return 0;
+    }
+
+    if ( !args->format ) usage();
+    if ( !args->vcf_list )
+    {
+        // a separate branch just to show how simple this is with only one VCF
+        args->files = bcf_sr_init();
+        args->files->region = region;
+        args->files->collapse = collapse;
+        while (optind<argc)
+        {
+            if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
+            optind++;
+        }
         init_data(args);
         query_vcf(args);
-        destroy_data(args);
         free(args->format);
+        destroy_data(args);
+        bcf_sr_destroy(args->files);
+        free(args);
+        return 0;
     }
-	bcf_sr_destroy(args->files);
+
+    // multiple VCFs
+    int i, k, nfiles, prev_nsamples = 0;
+    char **fnames, **prev_samples = NULL;
+    fnames = read_list(args->vcf_list, &nfiles);
+    if ( !nfiles ) error("No files in %s?\n", args->vcf_list);
+    for (i=0; i<nfiles; i++)
+    {
+        args->files = bcf_sr_init();
+        args->files->region = region;
+        args->files->collapse = collapse;
+        if ( !bcf_sr_add_reader(args->files, fnames[i]) ) error("Failed to open or the file not indexed: %s\n", fnames[i]);
+        for (k=optind; k<argc; k++) 
+            if ( !bcf_sr_add_reader(args->files, argv[k]) ) error("Failed to open or the file not indexed: %s\n", argv[k]);
+        init_data(args);
+        if ( i==0 ) 
+        {
+            prev_samples = copy_header(args->header, args->samples, args->nsamples);
+            prev_nsamples = args->nsamples;
+        }
+        else
+        {
+            args->print_header = 0;
+            if ( compare_header(args->header, args->samples, args->nsamples, prev_samples, prev_nsamples) ) 
+                error("Different samples in %s and %s\n", fnames[i-1],fnames[i]);
+        }
+        query_vcf(args);
+        destroy_data(args);
+        bcf_sr_destroy(args->files);
+    }
+    destroy_list(fnames, nfiles);
+    destroy_list(prev_samples, prev_nsamples);
+    free(args->format);
 	free(args);
 	return 0;
 }
+
 
