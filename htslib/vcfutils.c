@@ -11,17 +11,19 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 		bcf_unpack(line, BCF_UN_INFO);
 		int an_id = bcf_id2int(header, BCF_DT_ID, "AN");
 		int ac_id = bcf_id2int(header, BCF_DT_ID, "AC");
+        int i, an=0, ac_len=0, ac_type=0;
+        uint8_t *ac_ptr=NULL;
 		if ( an_id>=0 && ac_id>=0 )
 		{
-			int i, an=0, ac_len=0, ac_type=0;
-			uint8_t *ac_ptr=NULL;
 			for (i=0; i<line->n_info; i++)
 			{
 				bcf_info_t *z = &line->d.info[i];
 				if ( z->key == an_id ) an = z->v1.i;
 				else if ( z->key == ac_id ) { ac_ptr = z->vptr; ac_len = z->len; ac_type = z->type; }
 			}
-            if ( i==line->n_info ) return 0;
+        }
+        if ( ac_ptr )
+        {
 			int nac = 0;
             #define BRANCH_INT(type_t) {        \
                 type_t *p = (type_t *) ac_ptr;  \
@@ -40,7 +42,7 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
             #undef BRANCH_INT
 			ac[0] = an - nac;
 			return 1;
-		}
+        }
 	}
 
 	// Split genotype fields only when asked
@@ -66,7 +68,6 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 		}
 		return 1;
 	}
-
 	return 0;
 }
 

@@ -175,7 +175,7 @@ static void destroy_list(char **list, int n)
         free(list[i]);
     free(list);
 }
-static void py_plot(char *script)
+void py_plot(char *script)
 {
     mkdir_p(script);
     int len = strlen(script);
@@ -375,6 +375,7 @@ static void create_dists(args_t *args)
     {
         char *fname;
         fp = open_file(&fname,"r","%s.%s", args->out_prefix, args->colnames[i+NFIXED]);
+        if ( !fp ) error("Cannot not read %s.%s: %s\n", args->out_prefix, args->colnames[i+NFIXED], strerror(errno));
         int count = 0;
         double val;
         dists[i].scale_min = dists[i].scale_max = HUGE_VAL;
@@ -478,6 +479,10 @@ static void init_annots(args_t *args)
         free(colnames[i]);
     }
     free(colnames);
+    // check that column names are unique
+    for (i=0; i<args->ncols; i++)
+        for (j=0; j<i; j++)
+            if ( !strcmp(args->colnames[i],args->colnames[j]) ) error("Error: duplicate column names in %s [%s]\n", args->fname, args->colnames[i]);
     args->col2names = (int*) malloc(sizeof(int)*args->ncols);
     args->missing   = (int*) malloc(sizeof(int)*args->ncols);
     args->ignore    = (int*) malloc(sizeof(int)*args->ncols);

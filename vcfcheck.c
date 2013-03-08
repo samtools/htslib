@@ -21,7 +21,7 @@ idist_t;
 typedef struct
 {
     int n_snps, n_indels, n_mnps, n_others, n_mals, n_snp_mals;
-    int *af_ts, *af_tv, *af_snps, *af_indels;
+    int *af_ts, *af_tv, *af_snps, *af_indels;   // first bin of af_* stats are singletons
     #if QUAL_STATS
         int *qual_ts, *qual_tv, *qual_snps, *qual_indels;
     #endif
@@ -48,7 +48,7 @@ typedef struct
     stats_t stats[3];
     int *tmp_iaf, ntmp_iaf, m_af, m_qual;
     int dp_min, dp_max, dp_step;
-    gtcmp_t *af_gts_snps, *af_gts_indels, *smpl_gts_snps, *smpl_gts_indels;
+    gtcmp_t *af_gts_snps, *af_gts_indels, *smpl_gts_snps, *smpl_gts_indels; // first bin of af_* stats are singletons
 
     // other
     bcf_srs_t *files;
@@ -199,13 +199,16 @@ static void init_iaf(args_t *args, bcf_sr_t *reader)
         args->tmp_iaf = (int*)realloc(args->tmp_iaf, line->n_allele*sizeof(int));
         args->ntmp_iaf = line->n_allele;
     }
-    int ret = bcf_calc_ac(reader->header, line, args->tmp_iaf, args->samples_file ? BCF_UN_INFO|BCF_UN_FMT : BCF_UN_INFO);
+    // tmp_iaf is first filled with AC counts in calc_ac and then transformed to
+    //  an index to af_gts_snps
+    int i, ret = bcf_calc_ac(reader->header, line, args->tmp_iaf, args->samples_file ? BCF_UN_INFO|BCF_UN_FMT : BCF_UN_INFO);
     if ( ret )
     {
-        int i, an=0;
+        int an=0;
         for (i=0; i<line->n_allele; i++)
             an += args->tmp_iaf[i];
         
+        args->tmp_iaf[0] = 0;
         for (i=1; i<line->n_allele; i++)
         {
             if ( args->tmp_iaf[i]==1 ) 
@@ -216,6 +219,9 @@ static void init_iaf(args_t *args, bcf_sr_t *reader)
                 args->tmp_iaf[i] = 1 + args->tmp_iaf[i] * (args->m_af-2.0) / an;
         }
     }
+    else
+        for (i=0; i<line->n_allele; i++) 
+            args->tmp_iaf[i] = 0;
             
     // todo: otherwise use AF 
 }
@@ -304,7 +310,7 @@ static void do_snp_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
     stats->n_snps++;
 
     bcf1_t *line = reader->buffer[0];
-    int ref = acgt2int(*line->d.allele[0]);
+    int ref = bcf_acgt2int(*line->d.allele[0]);
     if ( ref<0 ) return;
 
     #if QUAL_STATS
@@ -316,7 +322,7 @@ static void do_snp_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
     for (i=1; i<line->n_allele; i++)
     {
         if ( !(line->d.var[i].type&VCF_SNP) ) continue;
-        int alt = acgt2int(*line->d.allele[i]);
+        int alt = bcf_acgt2int(*line->d.allele[i]);
         if ( alt<0 || ref==alt ) continue;
         stats->subst[ref<<2|alt]++;
         int iaf = args->tmp_iaf[i];
@@ -346,7 +352,7 @@ static void do_sample_stats(args_t *args, stats_t *stats, bcf_sr_t *reader, int 
 
     if ( (fmt_ptr = bcf_get_fmt_ptr(reader->header,reader->buffer[0],"GT")) )
     {
-        int ref = acgt2int(*line->d.allele[0]);
+        int ref = bcf_acgt2int(*line->d.allele[0]);
         int is, n_nref = 0, i_nref = 0;
         for (is=0; is<args->files->n_smpl; is++)
         {
@@ -361,7 +367,7 @@ static void do_sample_stats(args_t *args, stats_t *stats, bcf_sr_t *reader, int 
                 else if ( gt == GT_HOM_AA ) stats->smpl_homAA[is]++;
                 if ( gt != GT_HOM_RR && line->d.var[ial].type&VCF_SNP )
                 {
-                    int alt = acgt2int(*line->d.allele[ial]);
+                    int alt = bcf_acgt2int(*line->d.allele[ial]);
                     if ( alt<0 ) continue;
                     if ( abs(ref-alt)==2 ) 
                         stats->smpl_ts[is]++;
@@ -574,6 +580,7 @@ static void print_stats(args_t *args)
     {
         stats_t *stats = &args->stats[id];
         printf("SiS\t%d\t%d\t%d\t%d\t%d\t%d\n", id,1,stats->af_snps[0],stats->af_ts[0],stats->af_tv[0],stats->af_indels[0]);
+        // put the singletons stats into the first AF bin, note that not all of the stats is transferred (i.e. nrd mismatches)
         stats->af_snps[1]   += stats->af_snps[0];
         stats->af_ts[1]     += stats->af_ts[0];
         stats->af_tv[1]     += stats->af_tv[0];
@@ -617,7 +624,7 @@ static void print_stats(args_t *args)
         for (t=0; t<15; t++)
         {
             if ( t>>2 == (t&3) ) continue;
-            printf("ST\t%d\t%c>%c\t%d\n", id, int2acgt(t>>2),int2acgt(t&3),args->stats[id].subst[t]);
+            printf("ST\t%d\t%c>%c\t%d\n", id, bcf_int2acgt(t>>2),bcf_int2acgt(t&3),args->stats[id].subst[t]);
         }
     }
     if ( args->files->nreaders>1 && args->files->n_smpl )
@@ -627,7 +634,7 @@ static void print_stats(args_t *args)
         printf("# GCsAF, Genotype concordance by non-reference allele frequency (SNPs)\n# GCsAF\t[2]id\t[3]allele frequency\t[4]RR Hom matches\t[5]RA Het matches\t[6]AA Hom matches\t[7]RR Hom mismatches\t[8]RA Het mismatches\t[9]AA Hom mismatches\t[10]dosage r-squared\t[11]number of sites\n");
         gtcmp_t *stats = args->af_gts_snps;
         int nrd_m[3] = {0,0,0}, nrd_mm[3] = {0,0,0};
-        for (i=1; i<args->m_af; i++)
+        for (i=0; i<args->m_af; i++)
         {
             int j, n = 0;
             for (j=0; j<3; j++) 
@@ -636,7 +643,7 @@ static void print_stats(args_t *args)
                 nrd_m[j]  += stats[i].m[j];
                 nrd_mm[j] += stats[i].mm[j];
             }
-            if ( !n ) continue;
+            if ( !i || !n ) continue;   // skip singleton stats and empty bins
             printf("GCsAF\t2\t%f", 100.*(i-1)/(args->m_af-2));
             printf("\t%d\t%d\t%d", stats[i].m[GT_HOM_RR],stats[i].m[GT_HET_RA],stats[i].m[GT_HOM_AA]);
             printf("\t%d\t%d\t%d", stats[i].mm[GT_HOM_RR],stats[i].mm[GT_HET_RA],stats[i].mm[GT_HOM_AA]);
