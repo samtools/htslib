@@ -632,6 +632,7 @@ int main_vcfquery(int argc, char *argv[])
             if ( !bcf_sr_set_targets(args->files, args->subset_fname) )
                 error("Failed to read the targets: %s\n", args->subset_fname);
         }
+        if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
         list_columns(args);
         bcf_sr_destroy(args->files);
         free(args);
