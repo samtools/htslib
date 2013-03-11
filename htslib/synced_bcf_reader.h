@@ -5,6 +5,9 @@
 	compare multiple VCFs simultaneously and will be used also for merging,
 	creating intersections, etc.
 
+    The synced_bcf_reader also provides API for reading indexed BCF/VCF,
+    hiding differences in BCF/VCF opening, indexing and reading.
+
 	The *_regions class of functions provide a convenient way for checking if a
 	coordinate is inside one of the regions.
 */

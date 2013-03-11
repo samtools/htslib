@@ -75,7 +75,7 @@ typedef struct
     double snp_th, indel_th;
 
     char *annot_str, *fixed_filters, *learning_filters;
-	char **argv, *fname, *out_prefix;
+	char **argv, *fname, *out_prefix, *region;
 	int argc, do_plot;
 }
 args_t;
@@ -485,6 +485,7 @@ static void init_annots(args_t *args)
     if ( !args->file ) error("Could not read %s\n", args->fname);
     hts_getline(args->file,'\n',&args->str);
     const char *exp = "# [1]CHROM\t[2]POS\t[3]MASK\t[4]IS_TS\t[5]TYPE";
+    if ( args->str.s[0] != '#' ) error("Missing header line in %s, was vcf query run with -H?\n", args->fname);
     if ( strncmp(args->str.s,exp,strlen(exp)) ) error("Version mismatch? %s: %s\n", args->fname, args->str.s);
 
     int i, j;
@@ -885,14 +886,18 @@ static void destroy_data(args_t *args)
     som_destroy(&args->som);
 }
 
-static void filter_vcf(args_t *args)
+static void create_filters(args_t *args)
 {
     init_data(args);
     char *type = args->type==VCF_SNP ? "SNP" : "INDEL";
 
+    char *fname; 
+    open_file(&fname,NULL,"%s.%s.sites.gz", args->out_prefix, type); // creates also directory
+    htsFile *file = hts_open(fname, "wb", NULL);
+
     // Calculate scores
+    kstring_t str = {0,0,0};
     fprintf(stderr,"Classifying...\n");
-    FILE *fp = open_file(NULL,"w","%s.%s.sites", args->out_prefix, type);
     annots_reader_reset(args);
     int ngood = 0, nall = 0;
     double max_dist = args->som.nbin*args->som.nbin*args->som.kdim;
@@ -912,17 +917,23 @@ static void filter_vcf(args_t *args)
 
         if ( IS_GOOD(args->mask) ) ngood++;
         nall++;
-        fprintf(fp, "%le\t%d\t%d\t%s\t%d\n", dist, args->is_ts, IS_GOOD(args->mask)?1:0, args->chr, args->pos);
+
+        str.l = 0;
+        ksprintf(&str, "%le\t%d\t%d\t%s\t%d\n", dist, args->is_ts, IS_GOOD(args->mask)?1:0, args->chr, args->pos);
+        bgzf_write((BGZF *)file->fp, str.s, str.l);
     }
-    fclose(fp);
+    hts_close(file);
+    tbx_conf_t conf = { 0, 4, 5, 0, '#', 0 };
+    tbx_index_build(fname,0,&conf);
+    free(fname);
 
     // Evaluate
     fprintf(stderr,"Evaluating...\n");
     int ngood_read = 0, nall_read = 0, ntstv[2] = {0,0}, ntstv_novel[2] = {0,0};
     double prev_tstv = 0;
     args->str.l = 0;
-    ksprintf(&args->str, "cat %s.%s.sites | sort -k1,1g", args->out_prefix, type);
-    fp = popen(args->str.s, "r");
+    ksprintf(&args->str, "gunzip -c %s.%s.sites.gz | sort -k1,1g", args->out_prefix, type);
+    FILE *fp = popen(args->str.s, "r");
     if ( !fp ) error("Could not run \"%s\": %s\n", args->str.s, strerror(errno));
     FILE *out = open_file(NULL,"w","%s.%s.tab", args->out_prefix, type);
     fprintf(out,"# [1]ts/tv (all)\t[2]nAll\t[3]sensitivity\t[4]ts/tv novel\t[5]threshold\n");
@@ -960,17 +971,49 @@ static void filter_vcf(args_t *args)
 
 typedef struct
 {
+    htsFile *file;
+    hts_itr_t *itr;
+    tbx_t *tbx;
     kstring_t str;
     double score;
     int rid, pos;
 }
 site_t;
-static int sync_site(bcf_hdr_t *hdr, bcf1_t *line, FILE *fp, site_t *site, int type)
+static void destroy_site(site_t *site)
+{
+    if ( site->str.m ) free(site->str.s); 
+    if ( site->file ) hts_close(site->file);
+    if ( site->itr ) tbx_itr_destroy(site->itr);
+    if ( site->tbx ) tbx_destroy(site->tbx);
+    free(site);
+}
+static site_t *init_site(char *prefix, const char *type, char *region)
+{
+    site_t *site = (site_t*) calloc(1,sizeof(site_t));
+    char *fname = msprintf("%s.%s.sites.gz", prefix, type);
+    site->file = hts_open(fname, region ? "rb" : "r", NULL);
+    if ( !site->file ) error("Error: could not read %s\n", fname);
+    if ( region ) 
+    {
+        site->tbx = tbx_index_load(fname);
+        if ( !site->tbx ) error("Error: could not load index of %s\n", fname);
+        site->itr = tbx_itr_querys(site->tbx,region);
+        if ( !site->itr ) error("Error: could not init itr of %s\n", fname);
+    }
+    free(fname);
+    return site;
+}
+static int sync_site(bcf_hdr_t *hdr, bcf1_t *line, site_t *site, int type)
 {
     if ( !site->str.l )
     {
         // no site in the buffer
-        if ( !ks_getline(fp, &site->str) ) return 0;
+        if ( site->itr )
+        {
+            if ( tbx_itr_next((BGZF*)site->file->fp, site->tbx, site->itr, &site->str) < 0 ) return 0;
+        }
+        else
+            if ( hts_getline(site->file, '\n', &site->str) <= 0 ) return 0;
         // SCORE
         site->score = atof(site->str.s);
         char *t = column_next(site->str.s, '\t'); 
@@ -1028,57 +1071,50 @@ int bcf1_add_info_double(bcf_hdr_t *hdr, bcf1_t *line, const char *key, double *
 static void apply_filters(args_t *args)
 {
     // Init files
-    FILE *fh_snp = NULL, *fh_indel = NULL;
-    if ( args->snp_th >= 0 )
-    {
-        fh_snp = open_file(NULL,"r","%s.SNP.sites", args->out_prefix);
-        if ( !fh_snp ) error("Error: could not read %s.SNP.sites\n", args->out_prefix); 
-    }
-    if ( args->indel_th >= 0 )
-    {
-        fh_indel = open_file(NULL,"r","%s.indel.sites", args->out_prefix);
-        if ( !fh_indel ) error("Error: could not read %s.INDEL.sites\n", args->out_prefix); 
-    }
-    htsFile *vcf = hts_open(args->fname, "r", NULL);
-    if ( !vcf ) error("Error: could not read %s\n", args->fname);
+    site_t *snp = NULL, *indel = NULL;
+    if ( args->snp_th >= 0 ) snp = init_site(args->out_prefix, "SNP", args->region);
+    if ( args->indel_th >= 0 ) indel = init_site(args->out_prefix, "INDEL", args->region);
+
+    bcf_srs_t *sr = bcf_sr_init();
+    sr->region = args->region;
+    if ( !bcf_sr_add_reader(sr, args->fname) ) error("Failed to open or the file not indexed: %s\n", args->fname);
+    bcf_hdr_t *hdr = sr->readers[0].header;
 
     // Add header lines
-    bcf_hdr_t *hdr = vcf_hdr_read(vcf);
-    site_t *snp = (site_t*) calloc(1,sizeof(site_t));
-    site_t *indel = (site_t*) calloc(1,sizeof(site_t));
-    kputs("##FILTER=<ID=FailSOM,Description=\"Failed SOM filter, lower is better:", &snp->str);
-    if ( fh_snp )
+    kstring_t str = {0,0,0};
+    kputs("##FILTER=<ID=FailSOM,Description=\"Failed SOM filter, lower is better:", &str);
+    if ( snp )
     {
-        ksprintf(&snp->str, " SNP cutoff %e", args->snp_th);
-        if ( fh_indel ) kputc(';', &snp->str);
+        ksprintf(&str, " SNP cutoff %e", args->snp_th);
+        if ( indel ) kputc(';', &str);
     }
-    if ( fh_indel )
-        ksprintf(&snp->str, " INDEL cutoff %e", args->indel_th);
-    kputs(".\">", &snp->str);
-    bcf_hdr_append(hdr, snp->str.s); snp->str.l = 0;
-    bcf_hdr_append(hdr, "##INFO=<ID=FiltScore,Number=1,Type=Float,Description=\"SOM Score\">");
+    if ( indel )
+        ksprintf(&str, " INDEL cutoff %e", args->indel_th);
+    kputs(".\">", &str);
+    bcf_hdr_append(hdr, str.s); free(str.s); str.m = str.l = 0;
+    bcf_hdr_append(hdr, "##INFO=<ID=FiltScore,Number=1,Type=Float,Description=\"SOM Filtering Score\">");
     bcf_hdr_fmt_text(hdr);
     int flt_pass = bcf_id2int(hdr, BCF_DT_ID, "PASS");
     int flt_fail = bcf_id2int(hdr, BCF_DT_ID, "FailSOM");
 
     htsFile *out = hts_open("-","w",0);
     vcf_hdr_write(out, hdr);
-    bcf1_t *line = bcf_init1();
 
-    while (vcf_read1(vcf, hdr, line) >= 0) 
+    while ( bcf_sr_next_line(sr) ) 
     {
+        bcf1_t *line = sr->readers[0].buffer[0];
         bcf_unpack(line, BCF_UN_INFO);
         bcf_set_variant_types(line);
         assert( line->d.n_flt>=1 );
         line->d.n_flt = 1;
-        if ( fh_snp && sync_site(hdr, line, fh_snp, snp, VCF_SNP) )
+        if ( snp && sync_site(hdr, line, snp, VCF_SNP) )
         {
             bcf1_add_info_double(hdr, line, "FiltScore", &snp->score, 1);
             line->d.flt[0] = snp->score <= args->snp_th ? flt_pass : flt_fail;
             vcf_write1(out, hdr, line);
             continue;
         }
-        if ( fh_indel && sync_site(hdr, line, fh_indel, indel, VCF_INDEL) )
+        if ( indel && sync_site(hdr, line, indel, VCF_INDEL) )
         {
             bcf1_add_info_double(hdr, line, "FiltScore", &indel->score, 1);
             line->d.flt[0] = indel->score <= args->indel_th ? flt_pass : flt_fail;
@@ -1088,14 +1124,10 @@ static void apply_filters(args_t *args)
         line->d.n_flt = 0;
         vcf_write1(out, hdr, line);
     }
-    if ( snp->str.m ) free(snp->str.s); free(snp);
-    if ( indel->str.m ) free(indel->str.s); free(indel);
+    if ( snp ) destroy_site(snp);
+    if ( indel ) destroy_site(indel);
     hts_close(out);
-    hts_close(vcf);
-    bcf_destroy1(line);
-    bcf_hdr_destroy(hdr);
-    if ( fh_snp && fclose(fh_snp) ) error("Close error: %s.SNP.sites\n", args->out_prefix);
-    if ( fh_indel && fclose(fh_indel) ) error("Close error: %s.INDEL.sites\n", args->out_prefix);
+    bcf_sr_destroy(sr);
 }
 
 static void usage(void)
@@ -1111,7 +1143,8 @@ static void usage(void)
 	fprintf(stderr, "    -n, --ntrain-sites <int>                   number of training sites to use\n");
 	fprintf(stderr, "    -o, --output-prefix <string>               prefix of output files\n");
 	fprintf(stderr, "    -p, --create-plots                         create plots\n");
-	fprintf(stderr, "    -r, --random-seed <int>                    random seed, 0 for time() [1]\n");
+	fprintf(stderr, "    -r, --region <chr|chr:from-to>             apply filtering in this region only\n");
+	fprintf(stderr, "    -R, --random-seed <int>                    random seed, 0 for time() [1]\n");
 	fprintf(stderr, "    -s, --snp-threshold <float>                filter SNPs\n");
 	fprintf(stderr, "    -t, --type <SNP|INDEL>                     variant type to filter [SNP]\n");
 	fprintf(stderr, "Example:\n");
@@ -1162,10 +1195,11 @@ int main_vcffilter(int argc, char *argv[])
 		{"learning-filters",1,0,'l'},
 		{"snp-threshold",1,0,'s'},
 		{"indel-threshold",1,0,'i'},
-		{"random-seed",1,0,'r'},
+		{"random-seed",1,0,'R'},
+		{"region",1,0,'r'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "ho:a:s:i:pf:St:n:l:m:r:",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "ho:a:s:i:pf:St:n:l:m:r:R:",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'S': args->scale = 0; break;
 			case 't': 
@@ -1181,7 +1215,8 @@ int main_vcffilter(int argc, char *argv[])
 			case 'i': args->indel_th = atof(optarg); break;
 			case 'o': args->out_prefix = optarg; break;
 			case 'p': args->do_plot = 1; break;
-			case 'r': random_seed = atoi(optarg); break;
+			case 'R': random_seed = atoi(optarg); break;
+			case 'r': args->region = optarg; break;
             case 'f': args->fixed_filters = optarg; break;
             case 'l': args->learning_filters = optarg; break;
 			case 'm': if (sscanf(optarg,"%d,%le,%le",&args->som.nbin,&args->som.learn,&args->som.th)!=3) error("Could not parse --SOM-params %s\n", optarg); break;
@@ -1196,7 +1231,10 @@ int main_vcffilter(int argc, char *argv[])
     fprintf(stderr,"Random seed %d\n", random_seed);
     srandom(random_seed);
     if ( args->snp_th<0 && args->indel_th<0 )
-        filter_vcf(args);
+    {
+        if ( args->region ) error("The -r option is to be used with -s or -i only.\n");
+        create_filters(args);
+    }
     else
         apply_filters(args);
 	free(args);
