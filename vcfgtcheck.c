@@ -155,6 +155,8 @@ static void check_gt(args_t *args)
         isample = bcf_id2int(args->gt_hdr, BCF_DT_SAMPLE, args->sample);
         if ( isample<0 ) error("No such sample: [%s]\n", args->sample);
         if ( args->plot ) isample = -1; // different kind of output with -p
+        if ( isample>=0 )
+            printf("# [1]Chromosome\t[2]Position\t[3]Alleles in -g file\t[4]Coverage\t[5]Genotype\t[6]Alleles in sample file\t[7-]PL likelihoods\n");
     }
     while ( (ret=bcf_sr_next_line(args->files)) )
     {
@@ -221,6 +223,7 @@ static void check_gt(args_t *args)
             int8_t *gt_ptr = (int8_t*)(gt_fmt->p + isample*gt_fmt->size);
             int a = (gt_ptr[0]>>1) - 1;
             int b = (gt_ptr[1]>>1) - 1; 
+            if ( args->hom_only && a!=b ) continue; /* heterozygous genotype */
             printf("%s\t%d", args->gt_hdr->id[BCF_DT_CTG][gt_line->rid].key, gt_line->pos+1);
             for (i=0; i<gt_line->n_allele; i++) printf("%c%s", i==0?'\t':',', gt_line->d.allele[i]);
             printf("\t%d\t%s/%s", sm_line->d.info[dp_id].v1.i, a>=0 ? gt_line->d.allele[a] : ".", b>=0 ? gt_line->d.allele[b] : ".");
