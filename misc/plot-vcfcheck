@@ -647,7 +647,7 @@ sub plot_per_sample_stats
 	{ 
 		my $tstv = $vals[$i][5] ? $vals[$i][4]/$vals[$i][5] : 0;
         my $hethom = $vals[$i][2] ? $vals[$i][3]/$vals[$i][2] : 0;
-		iprint $fh, sprintf("\t[ %d, %f, %f, %d, %d, %d, %d, r'%s' ],\n", $i, $tstv, $hethom, $vals[$i][4]+$vals[$i][5], $vals[$i][6], $vals[$i][7], $vals[$i][8], $vals[$i][0]);
+		iprint $fh, sprintf("\t[ %d, %f, %f, %d, %d, %f, %d, r'%s' ],\n", $i, $tstv, $hethom, $vals[$i][4]+$vals[$i][5], $vals[$i][6], $vals[$i][7], $vals[$i][8], $vals[$i][0]);
 	}
 	iprint $fh, "]
 
