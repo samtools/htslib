@@ -135,7 +135,16 @@ sub test_cmd
         open(my $fh,'>',"$$opts{path}/$args{out}.new") or error("$$opts{path}/$args{out}.new");
         print $fh $out;
         close($fh);
-        failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new"); 
+        if ( !-e "$$opts{path}/$args{out}" )
+        {
+            rename("$$opts{path}/$args{out}.new","$$opts{path}/$args{out}") or error("rename $$opts{path}/$args{out}.new $$opts{path}/$args{out}: $!");
+            print "\tthe file with expected output does not exist, creating new one:\n";
+            print "\t\t$$opts{path}/$args{out}\n";
+        }
+        else
+        {
+            failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new"); 
+        }
         return; 
     }
     passed($opts,$test);

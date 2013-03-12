@@ -1,6 +1,3 @@
-//
-// tabix /lustre/scratch105/projects/g1k/REL-2012-11-09/calling/snps-indels/gatk-vqsr-v1/indels/20/raw.vcf.gz 20:1339270-1339292 | cut -f1-5 | head
-
 #include <stdio.h>
 #include <unistd.h>
 #include <getopt.h>
@@ -47,7 +44,7 @@ typedef struct
     bcf_hdr_t *hdr;
     faidx_t *fai;
 	char **argv, *ref_fname, *vcf_fname;
-	int argc;
+	int argc, rmdup;
 }
 args_t;
 
@@ -264,70 +261,6 @@ static void align(args_t *args, aln_aux_t *aux)
     aux->ipos = ( nout_ref>ipos && nout_seq>ipos && ref[ipos-1]==seq[ipos-1] ) ?  ipos : ipos-1;
     aux->lref = nout_ref;
     aux->lseq = nout_seq;
-
-#if 0
-printf("i=%d j=%d k=%d kmin=%d kd=%d kstart=%d\n",i,j,k, kmin, kd, (nref+1)*(nseq+1)-1);
-    i = k/(nref+1);
-    j = k - i*(nref+1);
-    l = k, ialn = nlen-1;
-    char *aln_ref = (char*) malloc(sizeof(char)*(nlen+1)); aln_ref[nlen] = 0;
-    char *aln_seq = (char*) malloc(sizeof(char)*(nlen+1)); aln_seq[nlen] = 0;
-    while ( l>0 )
-    {
-        if ( j<=0 || mat[l].dir==1 )    // i
-        {
-            aln_ref[ialn] = '-';
-            aln_seq[ialn] = seq[i-1];
-            l -= kd - 1;
-            i--;
-        }
-        else if ( i<=0 || mat[l].dir==-1 )  // d
-        {
-            aln_ref[ialn] = ref[j-1]; 
-            aln_seq[ialn] = '-';
-            l--;
-            j--;
-        }
-        else     // m
-        {
-            aln_ref[ialn] = ref[j-1];
-            aln_seq[ialn] = seq[i-1];
-            l -= kd;
-            i--;
-            j--;
-        }
-        ialn--;
-    }
-    printf("ref: %s\n", ref);
-    printf("seq: %s\n", seq);
-    printf("ialn=%d i=%d j=%d  nref=%d nseq=%d\n", ialn, i,j,nref,nseq);
-printf("ref: %s\n", &aln_ref[ialn+1]);
-printf("seq: %s\n", &aln_seq[ialn+1]);
-    ipos = 0;
-    ialn++;
-    while ( ialn<nlen && aln_ref[ialn]==aln_seq[ialn] ) { ialn++; ipos++; }
-    printf("pos += %d\n", ipos-1);
-    printf("ref: %s\n", &aln_ref[ialn-1]);
-    printf("seq: %s\n", &aln_seq[ialn-1]);
-
-    printf("      ");
-    for (j=0; j<nref; j++) printf("   %c ", ref[j]); 
-    printf("\n");
-    for (i=0; i<=nseq; i++)
-    {
-        printf("%c", i==0 ? ' ' : seq[i-1]);
-        for (j=0; j<=nref; j++)
-        {
-            char dir = ' ';
-            if ( mat[i*(nref+1)+j].dir==1 ) dir = 'i';
-            else if ( mat[i*(nref+1)+j].dir==-1 ) dir = 'd';
-            printf(" %3d%c", (int)mat[i*(nref+1)+j].val, dir);
-        }
-        printf("\n");
-    }
-    free(aln_ref);
-    free(aln_seq);
-#endif
 }
 
 void realign(args_t *args, bcf1_t *line)
@@ -382,13 +315,6 @@ void realign(args_t *args, bcf1_t *line)
 
         align(args, &args->aln);
 
-        //printf("%s  \t nref=%d\n", ref, len);
-        //printf("%s  \t nseq=%d\n", args->tseq, k);
-        //printf("win=%d  ipos=%d lref=%d lseq=%d\n", win, args->aln.ipos, args->aln.lref, args->aln.lseq);
-        //printf("-> "); for (k=args->aln.ipos; k<args->aln.lref; k++) printf("%c", ref[k]); printf("\n");
-        //printf("-> "); for (k=args->aln.ipos; k<args->aln.lseq; k++) printf("%c", args->tseq[k]); printf("\n");
-        //printf("\n");
-
         ipos[j] = args->aln.ipos;
         lref[j] = args->aln.lref;
         lseq[j] = args->aln.lseq - args->aln.ipos;
@@ -396,25 +322,6 @@ void realign(args_t *args, bcf1_t *line)
         if ( max_lref < lref[j] ) max_lref = lref[j];
         if ( max_lseq < lseq[j] ) max_lseq = lseq[j];
     }
-
-    // printf("pos_diff=%d\n", min_ipos-win);
-    // printf("req: "); for (k=min_ipos; k<max_lref; k++) printf("%c", ref[k]); printf("   .. ori=%s  min_ipos=%d  max_lref=%d  win=%d\n", line->d.allele[0], min_ipos,max_lref,win); 
-    // for (k=1; k<line->n_allele; k++) 
-    // {
-    //     printf("seq: ");
-    //     int nprefix = ipos[k] - min_ipos;
-    //     for (j=0; j<nprefix; j++) printf("%c", ref[j+min_ipos]);
-    //     printf(".");
-    //     int nshift  = win - min_ipos;
-    //     for (j=0; j<lseq[k] && j<nshift; j++) printf("%c", ref[j+min_ipos+nprefix]);
-    //     printf(".");
-    //     nshift = lseq[k] - nshift;
-    //     for (j=0; j<nshift; j++) printf("%c", line->d.allele[k][j+nprefix]);
-    //     printf(".");
-    //     int nsuffix = max_lref - lref[k];
-    //     for (j=0; j<nsuffix; j++) printf("%c", ref[lref[k]+j]);
-    //     printf("   .. nprefix=%d  ipos=%d  lseq=%d  lref=%d  ori=%s\n", nprefix,ipos[k],lseq[k],lref[k], line->d.allele[k]);
-    // }
 
     line->pos += min_ipos - win;
 
@@ -442,19 +349,27 @@ void realign(args_t *args, bcf1_t *line)
         *t = 0; t++;
         line->d.allele[k] = p;
     }
-    //for (k=0; k<line->n_allele; k++) printf("%s\n", line->d.allele[k]); printf("\n");
     free(rmme);
     free(ref);
 }
 
-void flush_buffer(args_t *args, int n)
+void flush_buffer(args_t *args, htsFile *file, int n)
 {
-    int i, k;
+    int i, k, prev_rid = -1, prev_pos = 0, prev_type = 0;
     for (i=0; i<n; i++)
     {
         k = rbuf_shift(&args->rbuf);
-        printf("%d .. k=%d n=%d nrm=%d\n", args->lines[k]->pos+1, k, args->rbuf.n, n);
-        // merge with previous if POS and the type are same?
+        // todo: merge with next record if POS and the type are same. For now, just discard if asked to do so.
+        if ( args->rmdup )
+        {
+            bcf_set_variant_types(args->lines[k]);
+            if ( prev_rid>=0 && prev_rid==args->lines[k]->rid && prev_pos==args->lines[k]->pos && prev_type==args->lines[k]->d.var_type )
+                continue;
+            prev_rid  = args->lines[k]->rid;
+            prev_pos  = args->lines[k]->pos;
+            prev_type = args->lines[k]->d.var_type;
+        }
+        vcf_write1(file, args->hdr, args->lines[k]);
     }
 }
 
@@ -481,13 +396,16 @@ static void destroy_data(args_t *args)
 #define SWAP(type_t, a, b) { type_t t = a; a = b; b = t; }
 static void normalize_vcf(args_t *args)
 {
+    htsFile *out = hts_open("-","w",0);
+    vcf_hdr_write(out, args->hdr);
+
     while ( bcf_sr_next_line(args->files) )
     {
         bcf1_t *line = args->files->readers[0].buffer[0];
 
         // still on the same chromosome?
         int i, j, ilast = rbuf_last(&args->rbuf); 
-        if ( ilast>=0 && line->rid != args->lines[ilast]->rid ) flush_buffer(args, args->rbuf.n); // new chromosome
+        if ( ilast>=0 && line->rid != args->lines[ilast]->rid ) flush_buffer(args, out, args->rbuf.n); // new chromosome
 
         realign(args, line);
 
@@ -509,16 +427,18 @@ static void normalize_vcf(args_t *args)
             j++;
         }
         if ( j==args->rbuf.m ) j = 1;
-        if ( j>0 ) flush_buffer(args, j);
+        if ( j>0 ) flush_buffer(args, out, j);
     }
-    flush_buffer(args, args->rbuf.n);
+    flush_buffer(args, out, args->rbuf.n);
+    hts_close(out);
 }
 
 static void usage(void)
 {
-	fprintf(stderr, "About:   Left-aligns indels\n");
+	fprintf(stderr, "About:   Left-align and normalize indels.\n");
 	fprintf(stderr, "Usage:   vcfnorm [options] -f ref.fa <file.vcf.gz>\n");
 	fprintf(stderr, "Options:\n");
+	fprintf(stderr, "    -D, --remove-duplicates           remove duplicate lines of the same type. [Todo: merge genotypes, don't just throw away.]\n");
 	fprintf(stderr, "    -f, --fasta-ref <file>            reference sequence\n");
 	fprintf(stderr, "    -r, --region <chr|chr:from-to>    perform intersection in the given region only\n");
 	fprintf(stderr, "    -w, --win <int,int>               alignment window and buffer window [50,1000]\n");
@@ -541,10 +461,12 @@ int main_vcfnorm(int argc, char *argv[])
 		{"fasta-ref",1,0,'f'},
 		{"region",1,0,'r'},
 		{"win",1,0,'w'},
+		{"remove-duplicates",0,0,'D'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "hr:f:w:",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "hr:f:w:D",loptions,NULL)) >= 0) {
 		switch (c) {
+			case 'D': args->rmdup = 1; break;
 			case 'f': args->ref_fname = optarg; break;
 			case 'r': args->files->region = optarg; break;
             case 'w': { if (sscanf(optarg,"%d,%d",&args->aln_win,&args->buf_win)!=2) error("Could not parse --win %s\n", optarg); break; }
