@@ -121,7 +121,7 @@ size_t ks_getline(FILE *fp, kstring_t *str)
     str->s[ str->l ] = 0;
     return nread;
 }
-static char *msprintf(const char *fmt, ...)
+char *msprintf(const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);

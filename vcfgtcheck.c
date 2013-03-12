@@ -33,6 +33,7 @@ static void error(const char *format, ...)
 
 FILE *open_file(char **fname, const char *mode, const char *fmt, ...);
 void py_plot(char *script);
+char *msprintf(const char *fmt, ...);
 
 static void do_plot(args_t *args)
 {
@@ -298,6 +299,14 @@ static void check_gt(args_t *args)
     }
 }
 
+static char *init_prefix(char *prefix)
+{
+    int len = strlen(prefix);
+    if ( prefix[len-1] == '/' || prefix[len-1] == '\\' )
+        return msprintf("%sgtcheck", prefix);
+    return strdup(prefix);
+}
+
 static void usage(void)
 {
 	fprintf(stderr, "About:   Check sample identity\n");
@@ -342,10 +351,12 @@ int main_vcfgtcheck(int argc, char *argv[])
     if ( !bcf_sr_add_reader(args->files, args->gt_fname) ) error("Failed to open or the file not indexed: %s\n", args->gt_fname);
     if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
     args->files->collapse = COLLAPSE_SNPS|COLLAPSE_INDELS;
+    if ( args->plot ) args->plot = init_prefix(args->plot);
     init_data(args);
     check_gt(args);
     destroy_data(args);
 	bcf_sr_destroy(args->files);
+    if (args->plot) free(args->plot);
 	free(args);
 	return 0;
 }
