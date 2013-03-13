@@ -626,6 +626,7 @@ int main_vcfquery(int argc, char *argv[])
     
     if ( args->list_columns )
     {
+        if ( optind==argc ) error("Missing the VCF file name\n");
         args->files = bcf_sr_init();
         if ( args->subset_fname )
         {
