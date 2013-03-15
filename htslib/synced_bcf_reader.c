@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <sys/stat.h>
 #include "synced_bcf_reader.h"
+#include "kseq.h"
 
 int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 {
@@ -13,11 +14,13 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     bcf_sr_t *reader = &files->readers[files->nreaders++];
     memset(reader,0,sizeof(bcf_sr_t));
 
-    int type = file_type(fname);
-    if ( type==IS_VCF_GZ ) 
+    if ( files->region ) files->require_index = 1;
+
+    reader->type = file_type(fname);
+    if ( reader->type==IS_VCF_GZ ) 
     {
-        reader->tbx = tbx_index_load(fname);
-        if ( !reader->tbx )
+        reader->tbx_idx = tbx_index_load(fname);
+        if ( !reader->tbx_idx )
         {
             fprintf(stderr,"[add_reader] Could not load the index of %s\n", fname);
             return 0;
@@ -33,24 +36,37 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
         reader->file = hts_open(fname, "rb", NULL);
         if ( !reader->file ) return 0;
     }
-    else if ( type==IS_BCF ) 
+    else if ( reader->type==IS_BCF ) 
     {
         reader->file = hts_open(fname, "rb", NULL);
         if ( !reader->file ) return 0;
         reader->header = vcf_hdr_read(reader->file);
 
-        reader->bcf = bcf_index_load(fname);
-        if ( !reader->bcf ) 
+        reader->bcf_idx = bcf_index_load(fname);
+        if ( !reader->bcf_idx && files->require_index ) 
         {
             fprintf(stderr,"[add_reader] Could not load the index of %s\n", fname);
             return 0;   // not indexed..?
         }
+        files->streaming = 1;
+    }
+    else if ( (reader->type==IS_VCF || reader->type==IS_STDIN) && !files->require_index )
+    {
+        reader->file = hts_open(fname,"r",NULL);
+        if ( !reader->file ) 
+        {
+            fprintf(stderr,"[add_reader] Could not open %s\n", fname);
+            return 0;
+        }
+        reader->header = vcf_hdr_read(reader->file);
+        files->streaming = 1;
     }
     else
     {
         fprintf(stderr,"Expected .vcf.gz or .bcf file\n");
         return 0;
     }
+    assert( !files->streaming || files->nreaders==1 );
 
     reader->fname   = fname;
     reader->filter_id = -1;
@@ -67,7 +83,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
             files->seqs[0] = files->region;
         }
     }
-    else
+    else if ( !files->streaming )
     {
         int n,i,j;
         const char **names = bcf_seqnames(reader->header, &n);
@@ -103,8 +119,8 @@ void bcf_sr_destroy(bcf_srs_t *files)
     for (i=0; i<files->nreaders; i++)
     {
         bcf_sr_t *reader = &files->readers[i];
-        if ( reader->tbx ) tbx_destroy(reader->tbx);
-        if ( reader->bcf ) hts_idx_destroy(reader->bcf);
+        if ( reader->tbx_idx ) tbx_destroy(reader->tbx_idx);
+        if ( reader->bcf_idx ) hts_idx_destroy(reader->bcf_idx);
         bcf_hdr_destroy(reader->header);
         hts_close(reader->file);
         if ( reader->itr ) tbx_itr_destroy(reader->itr);
@@ -267,6 +283,41 @@ static int tgt_has_position(bcf_sr_regions_t *tgt, int32_t pos)
     return 0;
 }
 
+// Note that the collapsing does not work in this mode, even if it could
+inline int bcf_sr_next_line_stream(bcf_srs_t *files)
+{
+    bcf_sr_t *reader = &files->readers[0];
+    if ( !reader->mbuffer ) 
+    {
+        reader->mbuffer = 1;
+        reader->buffer  = (bcf1_t**) realloc(reader->buffer, sizeof(bcf1_t*)*reader->mbuffer);
+        reader->buffer[0] = bcf_init1();
+        reader->buffer[0]->max_unpack = files->max_unpack;
+    }
+    while (1)
+    {
+        if ( reader->type==IS_VCF || reader->type==IS_STDIN )
+        {
+            if ( hts_getline(reader->file, KS_SEP_LINE, &reader->file->line) < 0 ) return 0;
+            vcf_parse1(&reader->file->line, reader->header, reader->buffer[0]);
+        }
+        else if ( reader->type==IS_BCF )
+            bcf_read1((BGZF*)reader->file->fp, reader->buffer[0]);
+        else return 0;
+
+        // apply filter
+        if ( reader->filter_id==-1 )
+            bcf_unpack(reader->buffer[0], BCF_UN_STR);
+        else
+        {
+            bcf_unpack(reader->buffer[0], BCF_UN_STR|BCF_UN_FLT);
+            if ( reader->buffer[0]->d.n_flt && reader->filter_id!=reader->buffer[0]->d.flt[0] ) continue;
+        }
+        break;
+    }
+    return 1;
+}
+
 int bcf_sr_next_line(bcf_srs_t *files)
 {
     int32_t min_pos = INT_MAX;
@@ -279,26 +330,35 @@ int bcf_sr_next_line(bcf_srs_t *files)
         int eos = 0;
         for (i=0; i<files->nreaders; i++)
             if ( !files->readers[i].itr && !files->readers[i].nbuffer ) eos++;
+
         if ( eos==files->nreaders )
         {
-            const char *seq;
-            if ( files->targets )
+            // No lines in the buffer, need to open new sequence or quit
+            if ( files->streaming )
             {
-                seq = tgt_next_seq(files->targets);
-                if ( !seq ) return 0;   // all chroms scanned
+                if ( files->readers[0].mbuffer ) return 0;  // read the whole file
             }
             else
             {
-                if ( ++files->iseq >= files->nseqs ) return 0;  // all chroms scanned
-                seq = files->seqs[files->iseq];
-            }
-            for (i=0; i<files->nreaders; i++)
-            {
-                bcf_sr_t *reader = &files->readers[i];
-                if ( reader->tbx )
-                    reader->itr = tbx_itr_querys(reader->tbx,seq);
+                const char *seq;
+                if ( files->targets )
+                {
+                    seq = tgt_next_seq(files->targets);
+                    if ( !seq ) return 0;   // all chroms scanned
+                }
                 else
-                    reader->itr = bcf_itr_querys(reader->bcf,reader->header,seq);
+                {
+                    if ( ++files->iseq >= files->nseqs ) return 0;  // all chroms scanned
+                    seq = files->seqs[files->iseq];
+                }
+                for (i=0; i<files->nreaders; i++)
+                {
+                    bcf_sr_t *reader = &files->readers[i];
+                    if ( reader->tbx_idx )
+                        reader->itr = tbx_itr_querys(reader->tbx_idx,seq);
+                    else
+                        reader->itr = bcf_itr_querys(reader->bcf_idx,reader->header,seq);
+                }
             }
         }
 
@@ -317,11 +377,33 @@ int bcf_sr_next_line(bcf_srs_t *files)
                         reader->mbuffer += 8;
                         reader->buffer = (bcf1_t**) realloc(reader->buffer, sizeof(bcf1_t*)*reader->mbuffer);
                         for (j=8; j>0; j--)
+                        {
                             reader->buffer[reader->mbuffer-j] = bcf_init1();
+                            reader->buffer[reader->mbuffer-j]->max_unpack = files->max_unpack;
+                        }
                     }
-                    if ( reader->tbx )
+                    if ( files->streaming )
                     {
-                        ret = tbx_itr_next((BGZF*)reader->file->fp, reader->tbx, reader->itr, str);
+                        if ( reader->type==IS_VCF || reader->type==IS_STDIN )
+                        {
+                            ret = hts_getline(reader->file, KS_SEP_LINE, str);
+                            if ( ret<0 ) break;
+                            vcf_parse1(str, reader->header, reader->buffer[reader->nbuffer+1]);
+                        }
+                        else if ( reader->type==IS_BCF )
+                        {
+                            ret = bcf_read1((BGZF*)reader->file->fp, reader->buffer[reader->nbuffer+1]);
+                            if ( ret<0 ) break;
+                        }
+                        else
+                        {
+                            fprintf(stderr,"[E::%s] fixme: not read for this\n", __func__);
+                            exit(1);
+                        }
+                    }
+                    else if ( reader->tbx_idx )
+                    {
+                        ret = tbx_itr_next((BGZF*)reader->file->fp, reader->tbx_idx, reader->itr, str);
                         if ( ret<0 ) break;
                         vcf_parse1(str, reader->header, reader->buffer[reader->nbuffer+1]);
                     }
@@ -330,9 +412,15 @@ int bcf_sr_next_line(bcf_srs_t *files)
                         ret = bcf_itr_next((BGZF*)reader->file->fp, reader->itr, reader->buffer[reader->nbuffer+1]);
                         if ( ret<0 ) break;
                     }
-                    bcf_unpack(reader->buffer[reader->nbuffer+1], BCF_UN_STR|BCF_UN_FLT);
+
                     // apply filter
-                    if ( reader->filter_id!=-1 && reader->buffer[reader->nbuffer+1]->d.n_flt && reader->filter_id!=reader->buffer[reader->nbuffer+1]->d.flt[0] ) continue;
+                    if ( reader->filter_id==-1 )
+                        bcf_unpack(reader->buffer[reader->nbuffer+1], BCF_UN_STR);
+                    else
+                    {
+                        bcf_unpack(reader->buffer[reader->nbuffer+1], BCF_UN_STR|BCF_UN_FLT);
+                        if ( reader->buffer[reader->nbuffer+1]->d.n_flt && reader->filter_id!=reader->buffer[reader->nbuffer+1]->d.flt[0] ) continue;
+                    }
                     bcf_set_variant_types(reader->buffer[reader->nbuffer+1]);
                     reader->nbuffer++;
                     if ( reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) break;

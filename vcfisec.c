@@ -371,6 +371,7 @@ int main_vcfisec(int argc, char *argv[])
         if ( argc-optind<2  ) error("Expected multiple files or the --subset option\n");
         if ( !args->isec_op ) error("Expected two file names or one of the options --complement, --nfiles or --subset\n");
     }
+    args->files->require_index = 1;
 	while (optind<argc)
 	{
 		if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open: %s\n", argv[optind]);

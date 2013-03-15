@@ -777,6 +777,7 @@ int main_vcfcheck(int argc, char *argv[])
 
     if ( argc-optind>2 ) usage();
     if ( args->split_by_id && argc-optind>1 ) error("Only one file can be given with -i.\n");
+    if ( !args->samples_file ) args->files->max_unpack = BCF_UN_INFO;
     if ( args->targets_fname )
     {
         if ( !bcf_sr_set_targets(args->files, args->targets_fname) )

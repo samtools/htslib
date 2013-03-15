@@ -429,6 +429,7 @@ void merge_filter(args_t *args, int mask, bcf1_t *out)
         bcf_sr_t *reader = &files->readers[i];
         bcf1_t *line = reader->buffer[0];
         bcf_hdr_t *hdr = reader->header;
+        bcf_unpack(line, BCF_UN_ALL);
 
         int k;
         for (k=0; k<line->d.n_flt; k++)
@@ -479,7 +480,6 @@ void merge_info(args_t *args, int mask, bcf1_t *out)
         bcf_sr_t *reader = &files->readers[i];
         bcf1_t *line = reader->buffer[0];
         bcf_hdr_t *hdr = reader->header;
-        bcf_unpack(line, BCF_UN_ALL);
         for (j=0; j<line->n_info; j++) 
         {
             bcf_info_t *inf = &line->d.info[j];
@@ -1053,27 +1053,6 @@ int main_vcfmerge(int argc, char *argv[])
     args->files  = bcf_sr_init();
     args->argc   = argc; args->argv = argv;
 
-#if 0
-int j;
-uint32_t i = bcf_missing_float;
-float f;
-uint8_t *p8;
-
-fprintf(stderr,"sizeof(float) = %ld, sizeof(uint32_t) = %ld\n", sizeof(float),sizeof(uint32_t));
-fprintf(stderr,"%d %x %e\n", i,i,(float)i);
-p8 = (uint8_t*)&i; for (j=0; j<4; j++) fprintf(stderr," %x", p8[j]); fprintf(stderr,"\n");
-
-*((uint32_t*)&f) = bcf_missing_float;
-fprintf(stderr,"%d %x %e\n", (int)f,(int)f,f);
-p8 = (uint8_t*)&f; for (j=0; j<4; j++) fprintf(stderr," %x", p8[j]); fprintf(stderr,"\n");
-
-f = bcf_missing_float;
-fprintf(stderr,"%d %x %e\n", (int)f,(int)f,f);
-p8 = (uint8_t*)&f; for (j=0; j<4; j++) fprintf(stderr," %x", p8[j]); fprintf(stderr,"\n");
-
-return 1;
-#endif
-
     static struct option loptions[] = 
     {
         {"help",0,0,'h'},
@@ -1101,8 +1080,10 @@ return 1;
         }
     }
     if (argc == optind) usage();
-
     if ( argc-optind<2 ) usage();
+
+    args->files->require_index = 1;
+
     while (optind<argc)
     {
         if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open: %s\n", argv[optind]);

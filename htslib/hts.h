@@ -139,6 +139,7 @@ extern "C" {
     #define IS_VCF    1
     #define IS_VCF_GZ 2
     #define IS_BCF    4
+    #define IS_STDIN  5
     int file_type(const char *fname);
 
 

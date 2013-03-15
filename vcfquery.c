@@ -43,7 +43,7 @@ fmt_t;
 struct _args_t
 {
     fmt_t *fmt;
-    int nfmt, mfmt, unpack;
+    int nfmt, mfmt;
     int nsamples, *samples;
 	bcf_srs_t *files;
     bcf_hdr_t *header;
@@ -250,16 +250,16 @@ static void register_tag(args_t *args, int type, char *key, int is_gtf)
         case T_REF: fmt->handler = &process_ref; break;
         case T_ALT: fmt->handler = &process_alt; break;
         case T_QUAL: fmt->handler = &process_qual; break;
-        case T_FILTER: fmt->handler = &process_filter; args->unpack |= BCF_UN_FLT; break;
-        case T_INFO: fmt->handler = &process_info; args->unpack |= BCF_UN_INFO; break;
-        case T_FORMAT: fmt->handler = &process_format; args->unpack |= BCF_UN_FMT; break;
+        case T_FILTER: fmt->handler = &process_filter; args->files->max_unpack |= BCF_UN_FLT; break;
+        case T_INFO: fmt->handler = &process_info; args->files->max_unpack |= BCF_UN_INFO; break;
+        case T_FORMAT: fmt->handler = &process_format; args->files->max_unpack |= BCF_UN_FMT; break;
         case T_SAMPLE: fmt->handler = &process_sample; break;
         case T_SEP: fmt->handler = &process_sep; break;
         case T_IS_TS: fmt->handler = &process_is_ts; break;
         case T_TYPE: fmt->handler = &process_type; break;
         case T_MASK: fmt->handler = NULL; break;
-        case T_GT: fmt->handler = &process_gt; args->unpack |= BCF_UN_FMT; break;
-        case T_TGT: fmt->handler = &process_tgt; args->unpack |= BCF_UN_FMT; break;
+        case T_GT: fmt->handler = &process_gt; args->files->max_unpack |= BCF_UN_FMT; break;
+        case T_TGT: fmt->handler = &process_tgt; args->files->max_unpack |= BCF_UN_FMT; break;
         case T_LINE: fmt->handler = &process_line; break;
         default: error("TODO: handler for type %d\n", fmt->type);
     }
@@ -461,13 +461,14 @@ static void query_vcf(args_t *args)
     kstring_t str = {0,0,0};
     int i, ret;
 
+    args->files->max_unpack |= BCF_UN_STR;
     if ( args->print_header ) print_header(args, &str);
 
     while ( (ret=bcf_sr_next_line(args->files)) )
     {
         if ( !(ret&1) ) continue;
         bcf1_t *line = args->files->readers[0].buffer[0];
-        if ( args->unpack ) bcf_unpack(line, args->unpack);
+        bcf_unpack(line, args->files->max_unpack);
 
         str.l = 0;
         for (i=0; i<args->nfmt; i++)
@@ -643,10 +644,10 @@ int main_vcfquery(int argc, char *argv[])
     if ( !args->format ) usage();
     if ( !args->vcf_list )
     {
-        // a separate branch just to show how simple this is with only one VCF
         args->files = bcf_sr_init();
         args->files->region = region;
         args->files->collapse = collapse;
+        if ( optind+1 < argc ) args->files->require_index = 1;
         while (optind<argc)
         {
             if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
@@ -671,6 +672,7 @@ int main_vcfquery(int argc, char *argv[])
         args->files = bcf_sr_init();
         args->files->region = region;
         args->files->collapse = collapse;
+        if ( optind+1 < argc ) args->files->require_index = 1;
         if ( !bcf_sr_add_reader(args->files, fnames[i]) ) error("Failed to open or the file not indexed: %s\n", fnames[i]);
         for (k=optind; k<argc; k++) 
             if ( !bcf_sr_add_reader(args->files, argv[k]) ) error("Failed to open or the file not indexed: %s\n", argv[k]);

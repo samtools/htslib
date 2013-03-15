@@ -41,16 +41,15 @@ bcf_sr_regions_t;
 typedef struct
 {
 	htsFile *file;
-    tbx_t *tbx;
-    hts_idx_t *bcf;
+    tbx_t *tbx_idx;
+    hts_idx_t *bcf_idx;
 	bcf_hdr_t *header;
 	hts_itr_t *itr;
 	const char *fname;
 	bcf1_t **buffer;
 	int nbuffer, mbuffer;
-	int filter_id;
+	int filter_id, type;
 	int *samples, n_smpl;	// list of columns in the order consistent with bcf_srs_t.samples
-//	bcf_fmt_t *fmt_ptr;	    // set by set_fmt_ptr
 }
 bcf_sr_t;
 
@@ -62,11 +61,15 @@ typedef struct
 						// than "." or "PASS" will be skipped. Active only at
 						// the time of initialization, that is during the
 						// add_reader() calls.
+    int require_index;  // Some tools do not need random access
+    const char *region; // Jump to a region (this will set also require_index)
+    int max_unpack;     // When reading VCFs and knowing some fields will not be needed, boost performance of vcf_parse1
+
 	// Auxiliary data
 	bcf_sr_t *readers;
 	int nreaders;
-	const char **seqs, *region;
-	int iseq,nseqs,mseqs;
+	const char **seqs;
+	int iseq,nseqs,mseqs, streaming;
 	char **samples;	// List of samples 
     bcf_sr_regions_t *targets;
     kstring_t tmps;

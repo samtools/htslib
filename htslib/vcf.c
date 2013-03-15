@@ -835,11 +835,20 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 		if (i == 0) { // CHROM
 			vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
 			k = kh_get(vdict, d, p);
-			if (k == kh_end(d)) {
-				if (hts_verbose >= 2)
-					fprintf(stderr, "[W::%s] can't find '%s' in the sequence dictionary\n", __func__, p);
-				return 0;
-			} else v->rid = kh_val(d, k).id;
+			if (k == kh_end(d)) 
+            {
+                // Simple error recovery for chromosomes not defined in the header. It will not help when VCF header has
+                // been already printed, but will enable tools like vcfcheck to proceed.
+                fprintf(stderr, "[W::%s] contig '%s' is not defined in the header\n", __func__, p);
+                kstring_t tmp = {0,0,0};
+                int l;
+                ksprintf(&tmp, "##contig=<ID=%s,length=2147483647>", p);
+                bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
+                free(tmp.s);
+                if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
+                k = kh_get(vdict, d, p);
+			}
+            v->rid = kh_val(d, k).id;
 		} else if (i == 1) { // POS
 			v->pos = atoi(p) - 1;
 		} else if (i == 2) { // ID
@@ -862,6 +871,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 		} else if (i == 5) { // QUAL
 			if (strcmp(p, ".")) v->qual = atof(p);
 			else memcpy(&v->qual, &bcf_missing_float, 4);
+            if ( v->max_unpack && !(v->max_unpack>>1) ) return 0; // BCF_UN_STR
 		} else if (i == 6) { // FILTER
 			if (strcmp(p, ".")) {
 				int32_t *a;
@@ -895,6 +905,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 				n_flt = i;
 				bcf_enc_vint(str, n_flt, a, -1);
 			} else bcf_enc_vint(str, 0, 0, -1);
+            if ( v->max_unpack && !(v->max_unpack>>2) ) return 0;    // BCF_UN_FLT
 		} else if (i == 7) { // INFO
 			char *key;
 			vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
@@ -956,6 +967,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                     key = r + 1;
                 }
             }
+            if ( v->max_unpack && !(v->max_unpack>>3) ) return 0; 
 		} else if (i == 8) { // FORMAT
 			int j, l, m, g;
 			ks_tokaux_t aux1;
