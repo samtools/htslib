@@ -157,6 +157,80 @@ inline int rbuf_shift(rbuf_t *rbuf)
 }
 
 
+#if 0
+static void debug_print(aln_aux_t *aux)
+{
+    cell_t *mat = aux->mat;
+    char *ref = aux->ref;
+    char *seq = aux->seq; 
+    int nref  = aux->nref;
+    int nseq  = aux->nseq;
+    int nlen  = nref>nseq ? nref : nseq;
+    int k     = (nref+1)*(nseq+1)-1;
+    int kd    = nref+2;
+    int i = k/(nref+1);
+    int j = k - i*(nref+1);
+    assert(i>0 && j>0);
+    int l = k, ialn = 0, nout_ref = 0, nout_seq = 0, ipos = 0;
+    char *aln_ref = (char*) malloc(sizeof(char)*(nlen+1));
+    char *aln_seq = (char*) malloc(sizeof(char)*(nlen+1));
+    while ( l>0 )
+    {
+        if ( j<=0 || mat[l].dir==1 )    // i
+        {
+            aln_ref[ialn] = '-';
+            aln_seq[ialn] = seq[nseq-i]; 
+            ipos = 0;
+            nout_seq++;
+            l -= kd - 1;
+            i--;
+        }
+        else if ( i<=0 || mat[l].dir==-1 )  // d
+        {
+            aln_ref[ialn] = ref[nref-j]; 
+            aln_seq[ialn] = '-'; 
+            ipos = 0;
+            nout_ref++;
+            l--;
+            j--;
+        }
+        else     // m
+        {
+            aln_ref[ialn] = ref[nref-j];
+            aln_seq[ialn] = seq[nseq-i]; 
+            ipos = ref[nref-j+1]==seq[nseq-i+1] ? ipos+1 : 1;
+            nout_seq++;
+            nout_ref++;
+            l -= kd;
+            i--;
+            j--;
+        }
+        ialn++;
+    }
+    aln_ref[ialn] = aln_seq[ialn] = 0;
+    fprintf(stderr, "ref: %s\n", ref);
+    fprintf(stderr, "seq: %s\n", seq); 
+    fprintf(stderr, "-> %s\n", aln_ref);
+    fprintf(stderr, "-> %s\n", aln_seq); 
+    free(aln_ref);
+    free(aln_seq);
+
+    fprintf(stderr, "      ");
+    for (j=0; j<nref; j++) fprintf(stderr, "   %c ", ref[nref-j-1]); fprintf(stderr, "\n"); 
+    for (i=0; i<=nseq; i++)
+    {
+        fprintf(stderr, "%c", i==0 ? ' ' : seq[nseq-i]);
+        for (j=0; j<=nref; j++)
+        {
+            char dir = ' ';
+            if ( mat[i*(nref+1)+j].dir==1 ) dir = 'i';
+            else if ( mat[i*(nref+1)+j].dir==-1 ) dir = 'd';
+            fprintf(stderr, " %3d%c", (int)mat[i*(nref+1)+j].val, dir);
+        }
+        fprintf(stderr,"\n");
+    } 
+}
+#endif
 
 static void align(args_t *args, aln_aux_t *aux)
 {
@@ -165,36 +239,55 @@ static void align(args_t *args, aln_aux_t *aux)
     char *seq = aux->seq;
     int nref  = aux->nref;
     int nseq  = aux->nseq;
-    int nlen  = nref>nseq ? nref : nseq;
     if ( (nref+1)*(nseq+1) > aux->nmat )
     {
         aux->nmat = (nref+1)*(nseq+1);
         aux->mat  = (cell_t *) realloc(aux->mat, sizeof(cell_t)*aux->nmat);
     }
+    const int GAP_OPEN = -1, GAP_CLOSE = -1, GAP_EXT = 0, MATCH = 1, MISM = -1, DI = 1, DD = -1, DM = 0;
     cell_t *mat = aux->mat;
     int i, j, k = nref+2, kd = nref+2;
-    for (j=0; j<=nref; j++) { mat[j].val = 0; mat[j].dir = 0; }
+    mat[0].val = 20; mat[0].dir = DM;
+    for (j=1; j<=nref; j++) { mat[j].val = 0; mat[j].dir = DM; }
     for (i=1; i<=nseq; i++)
     {
         mat[k-1].val = 0;
-        mat[k-1].dir = 0;
+        mat[k-1].dir = DM;
         int jmax = i-1 < nref ? i-1 : nref;
         for (j=1; j<=jmax; j++)
         {
-            // prefer insertions to deletions and mismatches
-            int max, dir;
-            if ( ref[j-1]==seq[i-1] )
+            // prefer insertions to deletions and mismatches; gap extension is not penalized
+            int max, dir, score;
+            if ( ref[nref-j]==seq[nseq-i] )
             {
-                max = mat[k-kd].val + 1; dir = 0;                                           // match
-                if ( max < mat[k-kd+1].val - 1 ) { max = mat[k-kd+1].val - 1; dir = 1; }    // insertion
-                if ( max < mat[k-1].val - 1 ) { max = mat[k-1].val - 1; dir = -1; }         // deletion
+                // match
+                max = mat[k-kd].val + MATCH;
+                if ( mat[k-kd].dir!=DM ) max += GAP_CLOSE;
+                dir = DM;
+
+                // insertion
+                score = mat[k-kd+1].dir == DI ? mat[k-kd+1].val + GAP_EXT: mat[k-kd+1].val + GAP_OPEN;
+                if ( max < score )  { max = score; dir = DI; }
+
+                // deletion
+                score = mat[k-1].dir == DD ? mat[k-1].val + GAP_EXT : mat[k-1].val + GAP_OPEN; 
+                if ( max < score ) { max = score; dir = DD; }
 
             }
             else
             {
-                max = mat[k-kd+1].val - 1; dir = 1;                                         // insertion
-                if ( max < mat[k-1].val - 1 ) { max = mat[k-1].val - 1; dir = -1; }         // deletion
-                if ( max < mat[k-kd].val - 1 ) { max = mat[k-kd].val - 1; dir = 0; }        // mismatch
+                // insertion
+                max = mat[k-kd+1].dir == DI ? mat[k-kd+1].val + GAP_EXT : mat[k-kd+1].val + GAP_OPEN; 
+                dir = DI; 
+
+                // deletion
+                score = mat[k-1].dir == DD ? mat[k-1].val + GAP_EXT : mat[k-1].val + GAP_OPEN;
+                if ( max < score ) { max = score; dir = DD; }
+
+                // mismatch
+                score = mat[k-kd].val + MISM;
+                if ( mat[k-kd].dir!=DM ) score += GAP_CLOSE;
+                if ( max < score ) { max = score; dir = DM; }
             }
             mat[k].val = max;
             mat[k].dir = dir;
@@ -202,20 +295,37 @@ static void align(args_t *args, aln_aux_t *aux)
         }
         for (j=jmax+1; j<=nref; j++)
         {
-            // prefer deletions to insertions and mismatches
-            int max, dir;
-            if ( ref[j-1]==seq[i-1] )
+            // prefer deletions to insertions and mismatches; gap extension is not penalized
+            int max, dir, score;
+            if ( ref[nref-j]==seq[nseq-i] )
             {
-                max = mat[k-kd].val + 1; dir = 0;                                           // match
-                if ( max < mat[k-1].val - 1 ) { max = mat[k-1].val - 1; dir = -1; }         // deletion
-                if ( max < mat[k-kd+1].val - 1 ) { max = mat[k-kd+1].val - 1; dir = 1; }    // insertion
+                // match
+                max = mat[k-kd].val + MATCH;
+                if ( mat[k-kd].dir!=DM ) max += GAP_CLOSE;
+                dir = DM; 
 
+                // deletion
+                score = mat[k-1].dir == DD ? mat[k-1].val + GAP_EXT: mat[k-1].val + GAP_OPEN;
+                if ( max < score ) { max = score; dir = DD; }
+
+                // insertion
+                score = mat[k-kd+1].dir == DI ? mat[k-kd+1].val + GAP_EXT : mat[k-kd+1].val + GAP_OPEN;
+                if ( max < score )  { max = score; dir = DI; }
             }
             else
             {
-                max = mat[k-1].val - 1; dir = -1;                                           // deletion
-                if ( max < mat[k-kd+1].val - 1 ) { max = mat[k-kd+1].val - 1; dir = -1; }   // insertion
-                if ( max < mat[k-kd].val - 1 ) { max = mat[k-kd].val - 1; dir = 0; }        // mismatch
+                // deletion
+                max = mat[k-1].dir == DD ? mat[k-1].val + GAP_EXT : mat[k-1].val + GAP_OPEN; 
+                dir = DD;
+
+                // insertion
+                score = mat[k-kd+1].dir == DI ? mat[k-kd+1].val + GAP_EXT : mat[k-kd+1].val + GAP_OPEN;
+                if ( max < score ) { max = score; dir = DI; }
+
+                // mismatch
+                score = mat[k-kd].val + MISM;
+                if ( mat[k-kd].dir!=DM ) score += GAP_CLOSE;
+                if ( max < score ) { max = score; dir = DM; }
             }
             mat[k].val = max;
             mat[k].dir = dir;
@@ -223,44 +333,47 @@ static void align(args_t *args, aln_aux_t *aux)
         }
         k++;
     }
+
+    // debug_print(aux);
+
     k = (nref+1)*(nseq+1)-1;
     int kmin = nref>nseq ? 2*(nref+1) - nseq : (nseq-nref)*(nref+1);
-    while (k>kmin && !mat[k].dir) k -= kd;
+    int ipos = 0;
+    while (k>kmin && !mat[k].dir) { k -= kd; ipos++; }
+
     i = k/(nref+1);
     j = k - i*(nref+1);
     assert(i>0 && j>0);
-    int l = k, ialn = nlen-1, nout_ref = 0, nout_seq = 0, ipos = 0;
+    int l = k, nout_ref = ipos, nout_seq = ipos, nsuffix = 0;
     while ( l>0 )
     {
-        if ( j<=0 || mat[l].dir==1 )    // i
+        if ( j<=0 || mat[l].dir==DI )    // i
         {
-            ipos = 0;
+            nsuffix = 0;
             nout_seq++;
             l -= kd - 1;
             i--;
         }
-        else if ( i<=0 || mat[l].dir==-1 )  // d
+        else if ( i<=0 || mat[l].dir==DD )  // d
         {
-            ipos = 0;
+            nsuffix = 0;
             nout_ref++;
             l--;
             j--;
         }
         else     // m
         {
-            ipos = ref[i]==seq[j] ? ipos+1 : 1;
+            nsuffix = ref[nref-i]==seq[nseq-j] ? nsuffix + 1 : 0;
             nout_seq++;
             nout_ref++;
             l -= kd;
             i--;
             j--;
         }
-        ialn--;
     }
-    assert(ipos>0);
-    aux->ipos = ( nout_ref>ipos && nout_seq>ipos && ref[ipos-1]==seq[ipos-1] ) ?  ipos : ipos-1;
-    aux->lref = nout_ref;
-    aux->lseq = nout_seq;
+    aux->ipos = ipos - 1;
+    aux->lref = nout_ref - nsuffix;
+    aux->lseq = nout_seq - nsuffix;
 }
 
 void realign(args_t *args, bcf1_t *line)
@@ -314,6 +427,13 @@ void realign(args_t *args, bcf1_t *line)
         args->aln.nseq = k;
 
         align(args, &args->aln);
+
+        // fprintf(stderr, "%s  \t nref=%d\n", ref, len);
+        // fprintf(stderr, "%s  \t nseq=%d\n", args->tseq, k);
+        // fprintf(stderr, "pos=%d win=%d  ipos=%d lref=%d lseq=%d\n", line->pos+1, win, args->aln.ipos, args->aln.lref, args->aln.lseq);
+        // fprintf(stderr, "-> "); for (k=args->aln.ipos; k<args->aln.lref; k++) fprintf(stderr, "%c", ref[k]); fprintf(stderr, "\n");
+        // fprintf(stderr, "-> "); for (k=args->aln.ipos; k<args->aln.lseq; k++) fprintf(stderr, "%c", args->tseq[k]); fprintf(stderr, "\n");
+        // fprintf(stderr, "\n"); 
 
         ipos[j] = args->aln.ipos;
         lref[j] = args->aln.lref;

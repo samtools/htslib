@@ -283,41 +283,6 @@ static int tgt_has_position(bcf_sr_regions_t *tgt, int32_t pos)
     return 0;
 }
 
-// Note that the collapsing does not work in this mode, even if it could
-inline int bcf_sr_next_line_stream(bcf_srs_t *files)
-{
-    bcf_sr_t *reader = &files->readers[0];
-    if ( !reader->mbuffer ) 
-    {
-        reader->mbuffer = 1;
-        reader->buffer  = (bcf1_t**) realloc(reader->buffer, sizeof(bcf1_t*)*reader->mbuffer);
-        reader->buffer[0] = bcf_init1();
-        reader->buffer[0]->max_unpack = files->max_unpack;
-    }
-    while (1)
-    {
-        if ( reader->type==IS_VCF || reader->type==IS_STDIN )
-        {
-            if ( hts_getline(reader->file, KS_SEP_LINE, &reader->file->line) < 0 ) return 0;
-            vcf_parse1(&reader->file->line, reader->header, reader->buffer[0]);
-        }
-        else if ( reader->type==IS_BCF )
-            bcf_read1((BGZF*)reader->file->fp, reader->buffer[0]);
-        else return 0;
-
-        // apply filter
-        if ( reader->filter_id==-1 )
-            bcf_unpack(reader->buffer[0], BCF_UN_STR);
-        else
-        {
-            bcf_unpack(reader->buffer[0], BCF_UN_STR|BCF_UN_FLT);
-            if ( reader->buffer[0]->d.n_flt && reader->filter_id!=reader->buffer[0]->d.flt[0] ) continue;
-        }
-        break;
-    }
-    return 1;
-}
-
 int bcf_sr_next_line(bcf_srs_t *files)
 {
     int32_t min_pos = INT_MAX;
@@ -367,7 +332,7 @@ int bcf_sr_next_line(bcf_srs_t *files)
         {
             bcf_sr_t *reader = &files->readers[i];
             int buffer_full = ( reader->nbuffer && reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) ? 1 : 0;
-            if ( reader->itr && !buffer_full )
+            if ( (reader->itr || files->streaming) && !buffer_full )
             {
                 // Fill the buffer with records starting at the same position
                 while (1)
