@@ -40,6 +40,7 @@ int main_bam2fq(int argc, char *argv[])
 	while (bam_read1(fp, b) >= 0) {
 		int i, qlen = b->core.l_qseq, is_print = 0;
 		uint8_t *qual, *seq;
+		if (b->flag&BAM_FSECONDARY) continue; // skip secondary alignments
 		++n_reads;
 		if (fpse) {
 			if (str.l && strcmp(last, bam_get_qname(b))) {
