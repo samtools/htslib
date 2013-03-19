@@ -614,14 +614,18 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 {
 	if (!fp->is_bin) {
 		int ret;
+err_recover:
 		if (fp->line.l == 0) {
 			ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
 			if (ret < 0) return -1;
 		}
 		ret = sam_parse1(&fp->line, h, b);
-		if (ret < 0 && hts_verbose >= 1)
-			fprintf(stderr, "[W::%s] parse error at line %lld\n", __func__, (long long)fp->lineno);
 		fp->line.l = 0;
+		if (ret < 0) {
+			if (hts_verbose >= 1)
+				fprintf(stderr, "[W::%s] parse error at line %lld\n", __func__, (long long)fp->lineno);
+			if (h->ignore_sam_err) goto err_recover;
+		}
 		return ret;
 	} else return bam_read1((BGZF*)fp->fp, b);
 }
