@@ -395,8 +395,11 @@ void realign(args_t *args, bcf1_t *line)
         args->nseq = len;
         args->tseq = (char*) realloc(args->tseq, sizeof(char)*len);
     }
-    char *ref  = faidx_fetch_seq(args->fai, (char*)args->hdr->id[BCF_DT_CTG][line->rid].key, line->pos-win, line->pos+ref_len, &len);
-    assert(ref[win]==line->d.allele[0][0]);
+    char *ref = faidx_fetch_seq(args->fai, (char*)args->hdr->id[BCF_DT_CTG][line->rid].key, line->pos-win, line->pos+ref_len, &len);
+
+    // Sanity check
+    if ( strncasecmp(&ref[win],line->d.allele[0],ref_len) ) 
+        error("\nSanity check failed, the reference sequence differs at %s:%d\n", args->hdr->id[BCF_DT_CTG][line->rid].key, line->pos+1);
 
     if ( args->aln.m_arr < line->n_allele )
     {
