@@ -10,7 +10,7 @@
  **********************/
 
 typedef struct {
-	int32_t n_targets;
+	int32_t n_targets, ignore_sam_err;
 	uint32_t l_text;
 	uint32_t *target_len;
 	uint8_t *cigar_tab;

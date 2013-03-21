@@ -10,6 +10,7 @@ int main_bamidx(int argc, char *argv[]);
 int main_bcfidx(int argc, char *argv[]);
 int main_bamshuf(int argc, char *argv[]);
 int main_bam2fq(int argc, char *argv[]);
+int main_bam2bed(int argc, char *argv[]);
 int main_tabix(int argc, char *argv[]);
 int main_abreak(int argc, char *argv[]);
 int main_bam2bed(int argc, char *argv[]);
