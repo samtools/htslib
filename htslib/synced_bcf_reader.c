@@ -510,8 +510,8 @@ int bcf_sr_next_line(bcf_srs_t *files)
         reader->nbuffer--;
         ret |= 1<<i;
     }
-    // fprintf(stdout,"[next_line] min_pos=%d mask=%d\n", min_pos+1, ret);
-    // debug_buffers(stdout,files);
+    // fprintf(stderr,"[next_line] min_pos=%d mask=%d\n", min_pos+1, ret);
+    // debug_buffers(stderr,files);
 
     return ret;
 }

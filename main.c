@@ -164,7 +164,9 @@ static int known_alias(char *argv0)
 
 static int usage(char *argv0)
 {
-	fprintf(stderr, "\nUsage:   %s <command> <argument>\n", argv0);
+	fprintf(stderr, "\n");
+    fprintf(stderr, "Version: %s\n", HTS_VERSION);
+	fprintf(stderr, "Usage:   %s <command> <argument>\n", argv0);
 	fprintf(stderr, "Commands:\n");
 
     if ( !known_alias(argv0) ) argv0 = "htscmd";

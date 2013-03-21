@@ -100,7 +100,8 @@ int bcf_sr_add_reader(bcf_srs_t *readers, const char *fname);
  * @readers:    holder of the open readers
  *
  * Returns 0 when all lines from all files have been read or a bit mask
- * indicating which of the readers have a bcf_sr_t.line set at this position. 
+ * indicating which of the readers have the current line (bcf_sr_t.buffer[0])
+ * set at this position. 
  */
 int bcf_sr_next_line(bcf_srs_t *readers);
 

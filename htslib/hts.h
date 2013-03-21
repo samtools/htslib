@@ -1,7 +1,11 @@
 #ifndef HTS_H
 #define HTS_H
 
-#define HTS_VERSION "r199"
+#ifndef VERSION
+#define HTS_VERSION "0.0.1+"
+#else
+#define HTS_VERSION VERSION
+#endif
 
 #include <stdint.h>
 #include "bgzf.h"

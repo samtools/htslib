@@ -34,8 +34,8 @@ aln_aux_t;
 typedef struct
 {
     aln_aux_t aln;
-    char *tseq;
-    int nseq;
+    char *tseq, *seq;
+    int mseq;
     bcf1_t **lines;
     rbuf_t rbuf;
     int buf_win;            // maximum distance between two records to consider
@@ -157,8 +157,7 @@ inline int rbuf_shift(rbuf_t *rbuf)
 }
 
 
-#if 0
-static void debug_print(aln_aux_t *aux)
+void _vcfnorm_debug_print(aln_aux_t *aux)
 {
     cell_t *mat = aux->mat;
     char *ref = aux->ref;
@@ -230,11 +229,11 @@ static void debug_print(aln_aux_t *aux)
         fprintf(stderr,"\n");
     } 
 }
-#endif
 
-static void align(args_t *args, aln_aux_t *aux)
+static int align(args_t *args, aln_aux_t *aux)
 {
-    // Needleman-Wunsch global alignment
+    // Needleman-Wunsch global alignment. Note that the sequences are aligned from
+    //  the end where matches are preferred, gaps are pushed to the front (left-aligned)
     char *ref = aux->ref;
     char *seq = aux->seq;
     int nref  = aux->nref;
@@ -243,11 +242,13 @@ static void align(args_t *args, aln_aux_t *aux)
     {
         aux->nmat = (nref+1)*(nseq+1);
         aux->mat  = (cell_t *) realloc(aux->mat, sizeof(cell_t)*aux->nmat);
+        if ( !aux->mat ) 
+            error("Could not allocate %ld bytes of memory at %d\n", sizeof(cell_t)*aux->nmat, args->files->readers[0].buffer[0]->pos+1);
     }
     const int GAP_OPEN = -1, GAP_CLOSE = -1, GAP_EXT = 0, MATCH = 1, MISM = -1, DI = 1, DD = -1, DM = 0;
     cell_t *mat = aux->mat;
     int i, j, k = nref+2, kd = nref+2;
-    mat[0].val = 20; mat[0].dir = DM;
+    mat[0].val = 20; mat[0].dir = DM;   // the last ref and alt bases match
     for (j=1; j<=nref; j++) { mat[j].val = 0; mat[j].dir = DM; }
     for (i=1; i<=nseq; i++)
     {
@@ -256,7 +257,7 @@ static void align(args_t *args, aln_aux_t *aux)
         int jmax = i-1 < nref ? i-1 : nref;
         for (j=1; j<=jmax; j++)
         {
-            // prefer insertions to deletions and mismatches; gap extension is not penalized
+            // prefer insertions to deletions and mismatches
             int max, dir, score;
             if ( ref[nref-j]==seq[nseq-i] )
             {
@@ -272,7 +273,6 @@ static void align(args_t *args, aln_aux_t *aux)
                 // deletion
                 score = mat[k-1].dir == DD ? mat[k-1].val + GAP_EXT : mat[k-1].val + GAP_OPEN; 
                 if ( max < score ) { max = score; dir = DD; }
-
             }
             else
             {
@@ -295,7 +295,7 @@ static void align(args_t *args, aln_aux_t *aux)
         }
         for (j=jmax+1; j<=nref; j++)
         {
-            // prefer deletions to insertions and mismatches; gap extension is not penalized
+            // prefer deletions to insertions and mismatches
             int max, dir, score;
             if ( ref[nref-j]==seq[nseq-i] )
             {
@@ -334,8 +334,9 @@ static void align(args_t *args, aln_aux_t *aux)
         k++;
     }
 
-    // debug_print(aux);
+    // _vcfnorm_debug_print(aux);
 
+    // skip as much of the matching sequence at the beggining as possible
     k = (nref+1)*(nseq+1)-1;
     int kmin = nref>nseq ? 2*(nref+1) - nseq : (nseq-nref)*(nref+1);
     int ipos = 0;
@@ -347,21 +348,21 @@ static void align(args_t *args, aln_aux_t *aux)
     int l = k, nout_ref = ipos, nout_seq = ipos, nsuffix = 0;
     while ( l>0 )
     {
-        if ( j<=0 || mat[l].dir==DI )    // i
+        if ( j<=0 || mat[l].dir==DI )    // insertion
         {
             nsuffix = 0;
             nout_seq++;
             l -= kd - 1;
             i--;
         }
-        else if ( i<=0 || mat[l].dir==DD )  // d
+        else if ( i<=0 || mat[l].dir==DD )  // deletion
         {
             nsuffix = 0;
             nout_ref++;
             l--;
             j--;
         }
-        else     // m
+        else     // match/mismatch
         {
             nsuffix = ref[nref-i]==seq[nseq-j] ? nsuffix + 1 : 0;
             nout_seq++;
@@ -371,12 +372,18 @@ static void align(args_t *args, aln_aux_t *aux)
             j--;
         }
     }
+    if ( !ipos ) return -1; // the window is too small
+
     aux->ipos = ipos - 1;
     aux->lref = nout_ref - nsuffix;
     aux->lseq = nout_seq - nsuffix;
+
+    // The indels and complex events do not have to be padded
+    if ( aux->lref - aux->ipos > 1 && aux->lseq - aux->ipos > 1 && ref[aux->ipos]==seq[aux->ipos] ) aux->ipos++;
+    return 0;
 }
 
-void realign(args_t *args, bcf1_t *line)
+int realign(args_t *args, bcf1_t *line)
 {
     bcf_unpack(line, BCF_UN_STR);
 
@@ -386,18 +393,27 @@ void realign(args_t *args, bcf1_t *line)
         int l = strlen(line->d.allele[i]);
         if ( len < l ) len = l;
     }
-    if ( len==1 ) return;    // SNP
+    if ( len==1 ) return 0;    // SNP
+
+    // Sanity check: exclude broken VCFs with long stretches of N's
+    if ( len>1000 )
+    {
+        for (i=0; i<ref_len; i++)
+            if ( line->d.allele[0][i]=='N' ) return -1;
+    }
 
     int win = line->pos < args->aln_win ? line->pos - 1 : args->aln_win;
     len += win + 2;
-    if ( args->nseq < len ) 
+    if ( args->mseq < len*(line->n_allele-1) ) 
     {
-        args->nseq = len;
-        args->tseq = (char*) realloc(args->tseq, sizeof(char)*len);
+        args->mseq = len*(line->n_allele-1);
+        args->seq  = (char*) realloc(args->seq, sizeof(char)*args->mseq);
     }
-    char *ref = faidx_fetch_seq(args->fai, (char*)args->hdr->id[BCF_DT_CTG][line->rid].key, line->pos-win, line->pos+ref_len, &len);
+    int ref_winlen;
+    char *ref = faidx_fetch_seq(args->fai, (char*)args->hdr->id[BCF_DT_CTG][line->rid].key, line->pos-win, line->pos+ref_len, &ref_winlen);
+    assert( ref_winlen==ref_len+win+1 );
 
-    // Sanity check
+    // Sanity check: the reference sequence must match the REF allele
     if ( strncasecmp(&ref[win],line->d.allele[0],ref_len) ) 
         error("\nSanity check failed, the reference sequence differs at %s:%d\n", args->hdr->id[BCF_DT_CTG][line->rid].key, line->pos+1);
 
@@ -409,71 +425,94 @@ void realign(args_t *args, bcf1_t *line)
         args->aln.lseq_arr = (int*) realloc(args->aln.lseq_arr, sizeof(int)*args->aln.m_arr);
     }
     int *ipos = args->aln.ipos_arr;
-    int *lref = args->aln.lref_arr;
-    int *lseq = args->aln.lseq_arr;
-    int min_ipos = INT_MAX, max_lref = 0, max_lseq = 0;
+    int *iref = args->aln.lref_arr;
+    int *iseq = args->aln.lseq_arr;
+    int min_pos = INT_MAX, max_ref = 0;
 
-    for (i=0; i<win; i++)
-        args->tseq[i] = ref[i];
     int j, k;
     for (j=1; j<line->n_allele; j++)
     {
+        // get the ALT ready for alignment
+        args->tseq = args->seq + (j-1)*len;
+        for (i=0; i<win; i++) args->tseq[i] = ref[i];
         char *t = line->d.allele[j];
-        k = i;
-        while (*t) { args->tseq[k++] = *t; t++; }
-        args->tseq[k++]   = ref[len-1];
-        args->tseq[k]     = 0;
+        while (*t) { args->tseq[i++] = *t; t++; }
+        args->tseq[i++] = ref[ref_winlen-1];
+        args->tseq[i]   = 0;
 
         args->aln.ref  = ref;
         args->aln.seq  = args->tseq;
-        args->aln.nref = len;
-        args->aln.nseq = k;
+        args->aln.nref = ref_winlen;
+        args->aln.nseq = i;
 
-        align(args, &args->aln);
+        if ( align(args, &args->aln)<0 ) 
+        {
+            // something went wrong - output the original line
+            free(ref);
+            return 0;
+        }
 
-        // fprintf(stderr, "%s  \t nref=%d\n", ref, len);
-        // fprintf(stderr, "%s  \t nseq=%d\n", args->tseq, k);
+        // fprintf(stderr, "%s  \t nref=%d\n", ref, ref_winlen);
+        // fprintf(stderr, "%s  \t nseq=%d\n", args->tseq, i);
         // fprintf(stderr, "pos=%d win=%d  ipos=%d lref=%d lseq=%d\n", line->pos+1, win, args->aln.ipos, args->aln.lref, args->aln.lseq);
         // fprintf(stderr, "-> "); for (k=args->aln.ipos; k<args->aln.lref; k++) fprintf(stderr, "%c", ref[k]); fprintf(stderr, "\n");
         // fprintf(stderr, "-> "); for (k=args->aln.ipos; k<args->aln.lseq; k++) fprintf(stderr, "%c", args->tseq[k]); fprintf(stderr, "\n");
         // fprintf(stderr, "\n"); 
 
-        ipos[j] = args->aln.ipos;
-        lref[j] = args->aln.lref;
-        lseq[j] = args->aln.lseq - args->aln.ipos;
-        if ( min_ipos > ipos[j] ) min_ipos = ipos[j];
-        if ( max_lref < lref[j] ) max_lref = lref[j];
-        if ( max_lseq < lseq[j] ) max_lseq = lseq[j];
+        ipos[j] = args->aln.ipos;   // position before the first difference (w.r.t. the window)
+        iref[j] = args->aln.lref;   // length of the REF alignment (or the index after the last aligned position)
+        iseq[j] = args->aln.lseq;
+        if ( max_ref < iref[j] ) max_ref = iref[j];
+        if ( min_pos > ipos[j] ) min_pos = ipos[j];
+        assert( iseq[j]<=len );
     }
 
-    line->pos += min_ipos - win;
+    // Check if the record's position must be changed
+    int nmv = win - min_pos;
+    assert( nmv>=0 );   // assuming that it will never align more to the right
+    line->pos -= nmv;
 
-    char *rmme = line->d.als;
-    kstring_t str; str.l = 0; str.m = max_lref-args->aln.ipos;
-    if ( str.m<max_lseq ) str.m = max_lseq;
-    str.m = line->n_allele*(str.m+1);
-    str.s = (char*) malloc(sizeof(char)*str.m);
-    line->d.m_als = str.m;
-    line->d.allele[0] = line->d.als = str.s;
-    char *t = str.s;
-    for (k=min_ipos; k<max_lref; k++) { *t = ref[k]; t++; } 
-    *t = 0; t++;
+    // todo: 
+    //      - modify the alleles only if needed. For now redoing always to catch errors
+    //      - in some cases the realignment does not really improve things, see the case at 2:114 in test/norm.vcf
+
+    // REF
+    kstring_t str = {0,0,0};
+    kputsn_(&ref[min_pos], max_ref-min_pos, &str); 
+    kputc_(0, &str);
+    // ALTs
     for (k=1; k<line->n_allele; k++)
     {
-        char *p = t;
-        int nprefix = ipos[k] - min_ipos;
-        int nshift  = win - min_ipos;   
-        int nsuffix = max_lref - lref[k];
-        for (j=0; j<nprefix; j++) { *t = ref[j+min_ipos]; t++; }
-        for (j=0; j<lseq[k] && j<nshift; j++) { *t = ref[j+min_ipos+nprefix]; t++; }
-        nshift = lseq[k] - nshift;
-        for (j=0; j<nshift; j++) { *t = line->d.allele[k][j+nprefix]; t++; }    // warning: this may be buggy
-        for (j=0; j<nsuffix; j++) { *t = ref[lref[k]+j]; t++; }
-        *t = 0; t++;
-        line->d.allele[k] = p;
+        // prefix the sequence with REF bases if the other alleles were aligned more to the left
+        int nprefix = ipos[k] - min_pos;
+        if ( nprefix ) kputsn_(&ref[min_pos], nprefix, &str);
+
+        // the ALT sequence 
+        int nseq = iseq[k] - ipos[k];
+        if ( nseq )
+        {
+            char *alt = args->seq + (k-1)*len + ipos[k];
+            kputsn_(alt, nseq, &str);
+        }
+
+        // suffix invoked by other deletions which must be added to match the REF
+        int nsuffix = max_ref - iref[k];
+        if ( nsuffix ) kputsn_(&ref[iref[k]], nsuffix, &str);
+        kputc_(0, &str);
+    }
+    // create new block of alleles 
+    char *rmme = line->d.als;
+    line->d.allele[0] = line->d.als = str.s;
+    line->d.m_als = str.m;
+    char *t = str.s;
+    for (k=1; k<line->n_allele; k++)
+    {
+        while (*t) t++;
+        line->d.allele[k] = ++t;
     }
     free(rmme);
     free(ref);
+    return 1;
 }
 
 void flush_buffer(args_t *args, htsFile *file, int n)
@@ -511,7 +550,7 @@ static void destroy_data(args_t *args)
         if ( args->lines[i] ) bcf_destroy1(args->lines[i]);
     free(args->lines);
     fai_destroy(args->fai);
-    if ( args->nseq ) free(args->tseq);
+    if ( args->mseq ) free(args->seq);
     if ( args->aln.nmat ) free(args->aln.mat);
     if ( args->aln.m_arr ) { free(args->aln.ipos_arr); free(args->aln.lref_arr); free(args->aln.lseq_arr); }
 }
@@ -525,12 +564,11 @@ static void normalize_vcf(args_t *args)
     while ( bcf_sr_next_line(args->files) )
     {
         bcf1_t *line = args->files->readers[0].buffer[0];
+        if ( realign(args, line)<0 ) continue;   // exclude broken VCF lines
 
         // still on the same chromosome?
         int i, j, ilast = rbuf_last(&args->rbuf); 
         if ( ilast>=0 && line->rid != args->lines[ilast]->rid ) flush_buffer(args, out, args->rbuf.n); // new chromosome
-
-        realign(args, line);
 
         // insert into sorted buffer
         i = j = ilast = rbuf_add(&args->rbuf);
@@ -549,7 +587,7 @@ static void normalize_vcf(args_t *args)
             if ( args->lines[ilast]->pos - args->lines[i]->pos < args->buf_win ) break;
             j++;
         }
-        if ( j==args->rbuf.m ) j = 1;
+        if ( args->rbuf.n==args->rbuf.m ) j = 1;
         if ( j>0 ) flush_buffer(args, out, j);
     }
     flush_buffer(args, out, args->rbuf.n);
