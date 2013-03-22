@@ -1224,7 +1224,6 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 {
 	uint8_t *ptr = (uint8_t*)v->shared.s;
 	int i;
-	s->l = 0;
 	bcf_unpack((bcf1_t*)v, BCF_UN_ALL);
 	kputs(h->id[BCF_DT_CTG][v->rid].key, s); // CHROM
 	kputc('\t', s); kputw(v->pos + 1, s); // POS
@@ -1302,6 +1301,7 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 int vcf_write1(htsFile *fp, const bcf_hdr_t *h, const bcf1_t *v)
 {
 	if (!fp->is_bin) {
+	    fp->line.l = 0;
 		vcf_format1(h, v, &fp->line);
 		fwrite(fp->line.s, 1, fp->line.l, (FILE*)fp->fp);
 		fputc('\n', (FILE*)fp->fp);
