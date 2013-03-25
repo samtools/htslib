@@ -225,6 +225,8 @@ extern "C" {
 	void bcf_enc_vchar(kstring_t *s, int l, char *a);
 	void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize);
 	void bcf_enc_vfloat(kstring_t *s, int n, float *a);
+
+    int *bcf_set_iarray(bcf_fmt_t *fmt, int nsmpl, int *arr, int *narr);
 	
 	/*****************
 	 *** BCF index ***

@@ -747,6 +747,46 @@ void bcf_enc_vchar(kstring_t *s, int l, char *a)
 	kputsn(a, l, s);
 }
 
+int *bcf_set_iarray(bcf_fmt_t *fmt, int nsmpl, int *arr, int *narr)
+{
+    if ( nsmpl*fmt->n > *narr )
+    {
+        *narr = nsmpl*fmt->n;
+        arr = (int*) realloc(arr, sizeof(int)*(*narr));
+    }
+
+    #define BRANCH(type_t, missing) { \
+        type_t *ptr = (type_t*) fmt->p; \
+        int i, j; \
+        if ( fmt->n==1 ) \
+        { \
+            for (i=0; i<nsmpl; i++) \
+            { \
+                arr[i] = ptr[0]==missing ? INT_MIN : ptr[0]; \
+                ptr += fmt->size; \
+            } \
+        } \
+        else \
+        { \
+            int *p_arr = arr; \
+            for (i=0; i<nsmpl; i++) \
+            { \
+                for (j=0; j<fmt->n; j++) p_arr[j] = ptr[j]==missing ? INT_MIN : ptr[j]; \
+                ptr += fmt->n; \
+                p_arr += fmt->n; \
+            } \
+        } \
+    }
+    switch (fmt->type) {
+        case BCF_BT_INT8:  BRANCH(int8_t,  INT8_MIN); break;
+        case BCF_BT_INT16: BRANCH(int16_t, INT16_MIN); break;
+        case BCF_BT_INT32: BRANCH(int32_t, INT32_MIN); break;
+        default: fprintf(stderr,"fixme: type %d in bcf_set_iarray?\n", fmt->type); abort(); break;
+    }
+    #undef BRANCH
+    return arr;
+}
+
 void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 {
 	int j = 0;
