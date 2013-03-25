@@ -16,7 +16,7 @@ typedef struct
 	bcf_srs_t *files;
     bcf_hdr_t *gt_hdr, *sm_hdr;
     double *lks, *sigs;
-    int *cnts, *dps, hom_only;
+    int *cnts, *dps, hom_only, cross_check;
 	char **argv, *gt_fname, *plot, *sample;
 	int argc;
 }
@@ -35,7 +35,7 @@ FILE *open_file(char **fname, const char *mode, const char *fmt, ...);
 void py_plot(char *script);
 char *msprintf(const char *fmt, ...);
 
-static void do_plot(args_t *args)
+static void plot_check(args_t *args)
 {
     char *fname;
     FILE *fp = open_file(&fname, "w", "%s.py", args->plot);
@@ -95,15 +95,93 @@ static void do_plot(args_t *args)
     free(fname);
 }
 
+static void plot_cross_check(args_t *args)
+{
+    char *fname;
+    FILE *fp = open_file(&fname, "w", "%s.py", args->plot);
+    fprintf(fp,
+            "import matplotlib as mpl\n"
+            "mpl.use('Agg')\n"
+            "import matplotlib.pyplot as plt\n"
+            "import csv\n"
+            "csv.register_dialect('tab', delimiter='\\t', quoting=csv.QUOTE_NONE)\n"
+            "avg   = []\n"
+            "sm2id = {}\n"
+            "dat   = None\n"
+            "min   = None\n"
+            "with open('%s.tab', 'rb') as f:\n"
+            "   reader = csv.reader(f, 'tab')\n"
+            "   i = 0\n"
+            "   for row in reader:\n"
+            "       if row[0]=='SM':\n"
+            "           sm2id[row[2]] = i\n"
+            "           avg.append([i,float(row[1])])\n"
+            "           i += 1\n"
+            "       elif row[0]=='CN':\n"
+            "           val = float(row[1])/int(row[2])\n"
+            "           if not dat:\n"
+            "               dat = [[0]*len(sm2id) for x in xrange(len(sm2id))]\n"
+            "               min = val\n"
+            "           id_i = sm2id[row[4]]\n"
+            "           id_j = sm2id[row[5]]\n"
+            "           if id_i<id_j: dat[id_i][id_j] = val\n"
+            "           else: dat[id_j][id_i] = val\n"
+            "           if min > val: min = val\n"
+            "\n"
+            "if len(sm2id)<=1: exit(1)\n"
+            "\n"
+            "fig = plt.figure()\n"
+            "fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6,7))\n"
+            "\n"
+            "ax1.plot([x[0] for x in avg],[x[1] for x in avg],'^-', ms=3, color='k')\n"
+            "im = ax2.imshow(dat,clim=(min),interpolation='nearest')\n"
+            "cb1  = plt.colorbar(im,shrink=0.8)\n"
+            "cb1.set_label('Pairwise discordance')\n"
+            "for t in cb1.ax.get_yticklabels(): t.set_fontsize(9)\n"
+            "\n"
+            "ax1.tick_params(axis='both', which='major', labelsize=9)\n"
+            "ax1.tick_params(axis='both', which='minor', labelsize=9)\n"
+            "ax2.tick_params(axis='both', which='major', labelsize=9)\n"
+            "ax2.tick_params(axis='both', which='minor', labelsize=9)\n"
+            "\n"
+            "ax1.set_title('Sample Discordance Score')\n"
+            "ax2.set_ylabel('Sample ID')\n"
+            "ax2.set_xlabel('Sample ID')\n"
+            "ax1.set_xlabel('Sample ID')\n"
+            "ax1.set_ylabel('Average discordance')\n"
+            "\n"
+            "plt.subplots_adjust(left=0.15,right=0.95,bottom=0.08,top=0.95,hspace=0.25)\n"
+            "plt.savefig('%s.png')\n"
+            "plt.close()\n"
+            "\n", args->plot,args->plot
+           );
+    fclose(fp);
+    py_plot(fname);
+    free(fname);
+}
+
 static void init_data(args_t *args)
 {
     args->gt_hdr = args->files->readers[0].header;
-    args->sm_hdr = args->files->readers[1].header;
-    if ( !args->gt_hdr->n[BCF_DT_SAMPLE] || !args->sm_hdr->n[BCF_DT_SAMPLE] ) error("No samples?\n");
-    args->lks  = (double*) calloc(args->gt_hdr->n[BCF_DT_SAMPLE],sizeof(double));
-    args->sigs = (double*) calloc(args->gt_hdr->n[BCF_DT_SAMPLE],sizeof(double));
-    args->cnts = (int*) calloc(args->gt_hdr->n[BCF_DT_SAMPLE],sizeof(int));
-    args->dps  = (int*) calloc(args->gt_hdr->n[BCF_DT_SAMPLE],sizeof(int));
+    int nsamples = args->gt_hdr->n[BCF_DT_SAMPLE];
+    if ( !nsamples ) error("No samples?\n");
+
+    if ( !args->cross_check )
+    {
+        args->sm_hdr = args->files->readers[1].header;
+        if ( !args->sm_hdr->n[BCF_DT_SAMPLE] ) error("No samples?\n");
+        args->lks  = (double*) calloc(nsamples,sizeof(double));
+        args->sigs = (double*) calloc(nsamples,sizeof(double));
+        args->cnts = (int*) calloc(nsamples,sizeof(int));
+        args->dps  = (int*) calloc(nsamples,sizeof(int));
+    }
+    else
+    {
+        int narr = (nsamples-1)*nsamples/2;
+        args->lks  = (double*) calloc(narr,sizeof(double));
+        args->cnts = (int*) calloc(narr,sizeof(int));
+        args->dps  = (int*) calloc(narr,sizeof(int));
+}
 }
 
 static void destroy_data(args_t *args)
@@ -200,7 +278,7 @@ static void check_gt(args_t *args)
         }
         if ( !pl_fmt ) error("PL not present at %s:%d?", args->sm_hdr->id[BCF_DT_CTG][sm_line->rid].key, sm_line->pos+1);
 
-        // Set counts of genotypes to test significance
+        // Set the counts of genotypes to test significance
         for (i=0; i<=n_gt2ipl; i++) gt_cnts[i] = 0;
         for (i=0; i<args->gt_hdr->n[BCF_DT_SAMPLE]; i++)
         {
@@ -292,7 +370,7 @@ static void check_gt(args_t *args)
         for (i=0; i<args->gt_hdr->n[BCF_DT_SAMPLE]; i++)
             fprintf(fp, "%f\t%f\t%.1f\t%d\t%s\n", args->lks[i], args->sigs[i], args->cnts[i]?(double)args->dps[i]/args->cnts[i]:0.0, args->cnts[i], args->gt_hdr->samples[i]);
         fclose(fp);
-        do_plot(args);
+        plot_check(args);
     }
     else if ( isample<0 )
     {
@@ -300,6 +378,122 @@ static void check_gt(args_t *args)
         for (i=0; i<args->gt_hdr->n[BCF_DT_SAMPLE]; i++)
             printf("%f\t%f\t%.1f\t%d\t%s\n", args->lks[i], args->sigs[i], args->cnts[i]?(double)args->dps[i]/args->cnts[i]:0.0, args->cnts[i], args->gt_hdr->samples[i]);
     }
+}
+
+static int cmp_doubleptr(const void *_a, const void *_b)
+{
+    double *a = *((double**)_a);
+    double *b = *((double**)_b);
+    if ( *a < *b ) return -1;
+    else if ( *a == *b ) return 0;
+    return 1;
+}
+
+
+static void cross_check_gts(args_t *args)
+{
+    int nsamples = args->gt_hdr->n[BCF_DT_SAMPLE], ndp_arr = 0, npl_arr = 0;
+    int i,j,k,idx, ret, *dp_arr = NULL, *pl_arr = NULL;
+    int pl_id = bcf_id2int(args->gt_hdr, BCF_DT_ID, "PL");
+    int dp_id = bcf_id2int(args->gt_hdr, BCF_DT_ID, "DP");
+    if ( pl_id<0 ) error("PL not present in the header?\n");
+    if ( dp_id<0 ) error("DP not present in the header?\n");
+    while ( (ret=bcf_sr_next_line(args->files)) )
+    {
+        bcf1_t *line = args->files->readers[0].buffer[0];
+        bcf_unpack(line, BCF_UN_FMT);
+
+        // Get BCF handler for PL and DP
+        bcf_fmt_t *dp_fmt = NULL, *pl_fmt = NULL;
+        for (i=0; i<(int)line->n_fmt; i++)  
+        {
+            if ( line->d.fmt[i].id==pl_id ) pl_fmt = &line->d.fmt[i];
+            if ( line->d.fmt[i].id==dp_id ) dp_fmt = &line->d.fmt[i];
+        }
+        if ( !pl_fmt ) error("PL not present at %s:%d?", args->gt_hdr->id[BCF_DT_CTG][line->rid].key, line->pos+1);
+        if ( !dp_fmt ) error("DP not present at %s:%d?", args->gt_hdr->id[BCF_DT_CTG][line->rid].key, line->pos+1);
+
+        dp_arr = bcf_set_iarray(dp_fmt, nsamples, dp_arr, &ndp_arr);
+        pl_arr = bcf_set_iarray(pl_fmt, nsamples, pl_arr, &npl_arr);
+
+        idx = 0;
+        for (i=1; i<nsamples; i++)
+        {
+            int *ipl = &pl_arr[i*pl_fmt->n];
+            if ( dp_arr[i]==INT_MIN || !dp_arr[i] || *ipl==INT_MIN ) 
+            {
+                idx += i;
+                continue;
+            }
+            for (j=0; j<i; j++)
+            {
+                int *jpl = &pl_arr[j*pl_fmt->n];
+                if ( dp_arr[j]==INT_MIN || !dp_arr[j] || *jpl==INT_MIN ) 
+                {
+                    idx++;
+                    continue;
+                }
+                int min_pl = ipl[0] + jpl[0];
+                for (k=1; k<pl_fmt->n; k++)
+                    if ( min_pl > ipl[k]+jpl[k] ) min_pl = ipl[k]+jpl[k];
+                args->lks[idx] += min_pl;
+                args->cnts[idx]++;
+                args->dps[idx] += dp_arr[i] < dp_arr[j] ? dp_arr[i] : dp_arr[j];
+                idx++;
+            }
+        }
+    }
+    if ( dp_arr ) free(dp_arr);
+    if ( pl_arr ) free(pl_arr);
+
+    FILE *fp = args->plot ? open_file(NULL, "w", "%s.tab", args->plot) : stdout;
+    // Output samples sorted by average discordance
+    double *score = (double*) calloc(nsamples,sizeof(double));
+    idx = 0;
+    for (i=1; i<nsamples; i++)
+    {
+        for (j=0; j<i; j++)
+        {
+            score[i] += args->cnts[idx] ? (double)args->lks[idx]/args->cnts[idx] : 0;
+            score[j] += args->cnts[idx] ? (double)args->lks[idx]/args->cnts[idx] : 0;
+            idx++;
+        }
+    }
+    double **p = (double**) malloc(sizeof(double*)*nsamples), avg_score = 0;
+    for (i=0; i<nsamples; i++) p[i] = &score[i];
+    qsort(p, nsamples, sizeof(int*), cmp_doubleptr);
+    fprintf(fp, "# [1]SM\t[2]Average Discordance/Number of sites\t[3]Sample\n");
+    for (i=0; i<nsamples; i++)
+    {
+        idx = p[i] - score;
+        double tmp = (double)score[idx]/nsamples;
+        avg_score += tmp;
+        fprintf(fp, "SM\t%lf\t%s\n", tmp, args->gt_hdr->samples[idx]);
+    }
+
+    // Overall score: maximum absolute deviation from the average score
+    fprintf(fp, "# [1] MD\t[2]Maximum deviation\t[3]The culprit\n");
+    fprintf(fp, "MD\t%f\t%s\n", (double)score[idx]/nsamples - avg_score/nsamples, args->gt_hdr->samples[idx]);    // idx still set
+    free(p);
+    free(score);
+
+    // Pairwise discordances
+    fprintf(fp, "# [1]CN\t[2]Discordance\t[3]Number of sites\t[4]Average minimum depth\t[5]Sample i\t[6]Sample j\n");
+    double avg = 0;
+    idx = 0;
+    for (i=0; i<nsamples; i++)
+    {
+        for (j=0; j<i; j++)
+        {
+            avg += args->lks[idx];
+            fprintf(fp, "CN\t%.0f\t%d\t%.6f\t%s\t%s\n", args->lks[idx], args->cnts[idx], args->cnts[idx]?(double)args->dps[idx]/args->cnts[idx]:0.0, 
+                    args->gt_hdr->samples[i],args->gt_hdr->samples[j]);
+            idx++;
+        }
+    }
+    fclose(fp);
+    if ( args->plot )
+        plot_cross_check(args);
 }
 
 static char *init_prefix(char *prefix)
@@ -312,13 +506,14 @@ static char *init_prefix(char *prefix)
 
 static void usage(void)
 {
-	fprintf(stderr, "About:   Check sample identity\n");
-	fprintf(stderr, "Usage:   vcfgtcheck [options] -g <genotypes.vcf.gz> <file.vcf.gz>\n");
+	fprintf(stderr, "About:   Check sample identity. With no VCF given, multi-sample cross-check is performed.\n");
+	fprintf(stderr, "Usage:   vcfgtcheck [options] -g <genotypes.vcf.gz> [<file.vcf.gz>]\n");
 	fprintf(stderr, "Options:\n");
-	fprintf(stderr, "    -g, --genotypes <file>     genotypes to compare against in VCF\n");
-	fprintf(stderr, "    -H, --homs-only            homozygous genotypes only for very low coverage data\n");
-	fprintf(stderr, "    -p, --plot <prefix>        plot\n");
-	fprintf(stderr, "    -s, --sample <string>      target sample (used for plotting only)\n");
+	fprintf(stderr, "    -g, --genotypes <file>             genotypes to compare against in VCF\n");
+	fprintf(stderr, "    -H, --homs-only                    homozygous genotypes only for very low coverage data\n");
+	fprintf(stderr, "    -p, --plot <prefix>                plot\n");
+    fprintf(stderr, "    -r, --region <chr|chr:from-to>     perform the check in the given region only\n");
+	fprintf(stderr, "    -s, --sample <string>              target sample (used for plotting only)\n");
 	fprintf(stderr, "\n");
 	exit(1);
 }
@@ -337,26 +532,33 @@ int main_vcfgtcheck(int argc, char *argv[])
 		{"genotypes",1,0,'g'},
 		{"plot",1,0,'p'},
 		{"sample",1,0,'s'},
+        {"region",1,0,'r'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "hg:p:s:H",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "hg:p:s:Hr:",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'H': args->hom_only = 1; break;
 			case 'g': args->gt_fname = optarg; break;
 			case 'p': args->plot = optarg; break;
 			case 's': args->sample = optarg; break;
+            case 'r': args->files->region = optarg; break;
 			case 'h': 
 			case '?': usage();
 			default: error("Unknown argument: %s\n", optarg);
 		}
 	}
-	if ( argc!=optind+1 || !args->gt_fname ) usage();   // none or too many files given
+    if ( !args->gt_fname ) usage();
+    if ( argc==optind ) args->cross_check = 1;
+	else if ( argc>optind+1 ) usage();   // too many files given
+    if ( !args->cross_check && !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
     if ( !bcf_sr_add_reader(args->files, args->gt_fname) ) error("Failed to open or the file not indexed: %s\n", args->gt_fname);
-    if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
     args->files->collapse = COLLAPSE_SNPS|COLLAPSE_INDELS;
     if ( args->plot ) args->plot = init_prefix(args->plot);
     init_data(args);
-    check_gt(args);
+    if ( args->cross_check )
+        cross_check_gts(args);
+    else
+        check_gt(args);
     destroy_data(args);
 	bcf_sr_destroy(args->files);
     if (args->plot) free(args->plot);
