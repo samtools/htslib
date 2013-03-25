@@ -544,7 +544,7 @@ static void usage(void)
 	fprintf(stderr, "    -H, --print-header                print header\n");
 	fprintf(stderr, "    -l, --list-columns                list columns\n");
 	fprintf(stderr, "    -p, --positions <file>            list positions in tab-delimited tabix indexed file <chr,pos> or <chr,from,to>, 1-based, inclusive\n");
-	fprintf(stderr, "    -r, --region <chr|chr:from-to>    perform intersection in the given region only\n");
+	fprintf(stderr, "    -r, --region <chr|chr:from-to>    output from the given region only\n");
 	fprintf(stderr, "    -s, --samples <list|file>         samples to include: comma-separated list or one name per line in a file\n");
 	fprintf(stderr, "    -v, --vcf-list <file>             process multiple VCFs listed in the file\n");
 	fprintf(stderr, "Expressions:\n");
@@ -553,7 +553,7 @@ static void usage(void)
     fprintf(stderr, "\t%%IS_TS          1 indicates transition, 0 transversion\n");
     fprintf(stderr, "\t%%TYPE           Variant type (REF, SNP, MNP, etc.)\n");
     fprintf(stderr, "\t%%MASK           Indicates presence of the site in other files (with multiple files)\n");
-    fprintf(stderr, "\t[]               The brackets loop over all samples\n");
+    fprintf(stderr, "\t[]              The brackets loop over all samples\n");
     fprintf(stderr, "\t%%GT             Genotype (e.g. 0/1)\n");
     fprintf(stderr, "\t%%TGT            Translated genotype (e.g. C/A)\n");
     fprintf(stderr, "\t%%LINE           Prints the whole line\n");
@@ -648,6 +648,7 @@ int main_vcfquery(int argc, char *argv[])
         args->files->region = region;
         args->files->collapse = collapse;
         if ( optind+1 < argc ) args->files->require_index = 1;
+        if ( optind==argc ) usage();
         while (optind<argc)
         {
             if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
