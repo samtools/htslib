@@ -763,7 +763,7 @@ int *bcf_set_iarray(bcf_fmt_t *fmt, int nsmpl, int *arr, int *narr)
             for (i=0; i<nsmpl; i++) \
             { \
                 arr[i] = ptr[0]==missing ? INT_MIN : ptr[0]; \
-                ptr += fmt->size; \
+                ptr = (type_t *)((void*)ptr + fmt->size); \
             } \
         } \
         else \
@@ -772,7 +772,7 @@ int *bcf_set_iarray(bcf_fmt_t *fmt, int nsmpl, int *arr, int *narr)
             for (i=0; i<nsmpl; i++) \
             { \
                 for (j=0; j<fmt->n; j++) p_arr[j] = ptr[j]==missing ? INT_MIN : ptr[j]; \
-                ptr += fmt->n; \
+                ptr = (type_t *)((void*)ptr + fmt->size); \
                 p_arr += fmt->n; \
             } \
         } \
