@@ -103,9 +103,11 @@ static void plot_cross_check(args_t *args)
             "import matplotlib as mpl\n"
             "mpl.use('Agg')\n"
             "import matplotlib.pyplot as plt\n"
+            "import matplotlib.gridspec as gridspec\n"
             "import csv\n"
             "csv.register_dialect('tab', delimiter='\\t', quoting=csv.QUOTE_NONE)\n"
             "avg   = []\n"
+            "dp    = []\n"
             "sm2id = {}\n"
             "dat   = None\n"
             "min   = None\n"
@@ -114,8 +116,9 @@ static void plot_cross_check(args_t *args)
             "   i = 0\n"
             "   for row in reader:\n"
             "       if row[0]=='SM':\n"
-            "           sm2id[row[2]] = i\n"
+            "           sm2id[row[3]] = i\n"
             "           avg.append([i,float(row[1])])\n"
+            "           dp.append([i,float(row[2])])\n"
             "           i += 1\n"
             "       elif row[0]=='CN':\n"
             "           val = float(row[1])/int(row[2])\n"
@@ -130,12 +133,20 @@ static void plot_cross_check(args_t *args)
             "\n"
             "if len(sm2id)<=1: exit(1)\n"
             "\n"
-            "fig = plt.figure()\n"
-            "fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6,7))\n"
+            "fig = plt.figure(figsize=(6,7))\n"
+            "gs  = gridspec.GridSpec(2, 1, height_ratios=[1, 1.5])\n"
+            "ax1 = plt.subplot(gs[0])\n"
+            "ax2 = plt.subplot(gs[1])\n"
             "\n"
             "ax1.plot([x[0] for x in avg],[x[1] for x in avg],'^-', ms=3, color='k')\n"
+            "ax3 = ax1.twinx()\n"
+            "ax3.plot([x[0] for x in dp],[x[1] for x in dp],'^-', ms=3, color='r',mec='r')\n"
+            "for tl in ax3.get_yticklabels():\n"
+            "   tl.set_color('r')\n"
+            "   tl.set_fontsize(9)\n"
+            "\n"
             "im = ax2.imshow(dat,clim=(min),interpolation='nearest')\n"
-            "cb1  = plt.colorbar(im,shrink=0.8)\n"
+            "cb1  = plt.colorbar(im,ax=ax2)\n"
             "cb1.set_label('Pairwise discordance')\n"
             "for t in cb1.ax.get_yticklabels(): t.set_fontsize(9)\n"
             "\n"
@@ -147,10 +158,11 @@ static void plot_cross_check(args_t *args)
             "ax1.set_title('Sample Discordance Score')\n"
             "ax2.set_ylabel('Sample ID')\n"
             "ax2.set_xlabel('Sample ID')\n"
+            "ax3.set_ylabel('Average Depth',color='r')\n"
             "ax1.set_xlabel('Sample ID')\n"
             "ax1.set_ylabel('Average discordance')\n"
             "\n"
-            "plt.subplots_adjust(left=0.15,right=0.95,bottom=0.08,top=0.95,hspace=0.25)\n"
+            "plt.subplots_adjust(left=0.15,right=0.87,bottom=0.08,top=0.93,hspace=0.25)\n"
             "plt.savefig('%s.png')\n"
             "plt.close()\n"
             "\n", args->plot,args->plot
@@ -393,6 +405,7 @@ static int cmp_doubleptr(const void *_a, const void *_b)
 static void cross_check_gts(args_t *args)
 {
     int nsamples = args->gt_hdr->n[BCF_DT_SAMPLE], ndp_arr = 0, npl_arr = 0;
+    unsigned int *dp = (unsigned int*) calloc(nsamples,sizeof(unsigned int)), *ndp = (unsigned int*) calloc(nsamples,sizeof(unsigned int)); // this will overflow one day...
     int i,j,k,idx, ret, *dp_arr = NULL, *pl_arr = NULL;
     int pl_id = bcf_id2int(args->gt_hdr, BCF_DT_ID, "PL");
     int dp_id = bcf_id2int(args->gt_hdr, BCF_DT_ID, "DP");
@@ -439,6 +452,8 @@ static void cross_check_gts(args_t *args)
                 args->lks[idx] += min_pl;
                 args->cnts[idx]++;
                 args->dps[idx] += dp_arr[i] < dp_arr[j] ? dp_arr[i] : dp_arr[j];
+                dp[i] += dp_arr[i]; ndp[i]++;
+                dp[j] += dp_arr[j]; ndp[j]++;
                 idx++;
             }
         }
@@ -462,13 +477,14 @@ static void cross_check_gts(args_t *args)
     double **p = (double**) malloc(sizeof(double*)*nsamples), avg_score = 0;
     for (i=0; i<nsamples; i++) p[i] = &score[i];
     qsort(p, nsamples, sizeof(int*), cmp_doubleptr);
-    fprintf(fp, "# [1]SM\t[2]Average Discordance/Number of sites\t[3]Sample\n");
+    fprintf(fp, "# [1]SM\t[2]Average Discordance/Number of sites\t[5]Average depth\t[4]Sample\n");
     for (i=0; i<nsamples; i++)
     {
         idx = p[i] - score;
+        double adp = ndp[idx] ? (double)dp[idx]/ndp[idx] : 0;
         double tmp = (double)score[idx]/nsamples;
         avg_score += tmp;
-        fprintf(fp, "SM\t%lf\t%s\n", tmp, args->gt_hdr->samples[idx]);
+        fprintf(fp, "SM\t%lf\t%.3lf\t%s\n", tmp, adp, args->gt_hdr->samples[idx]);
     }
 
     // Overall score: maximum absolute deviation from the average score
@@ -476,6 +492,8 @@ static void cross_check_gts(args_t *args)
     fprintf(fp, "MD\t%f\t%s\n", (double)score[idx]/nsamples - avg_score/nsamples, args->gt_hdr->samples[idx]);    // idx still set
     free(p);
     free(score);
+    free(dp);
+    free(ndp);
 
     // Pairwise discordances
     fprintf(fp, "# [1]CN\t[2]Discordance\t[3]Number of sites\t[4]Average minimum depth\t[5]Sample i\t[6]Sample j\n");
