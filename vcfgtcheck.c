@@ -13,8 +13,8 @@
 
 typedef struct
 {
-	bcf_srs_t *files;
-    bcf_hdr_t *gt_hdr, *sm_hdr;
+	bcf_srs_t *files;           // first reader is the query VCF - single sample normally or multi-sample for cross-check
+    bcf_hdr_t *gt_hdr, *sm_hdr; // VCF with genotypes to compare against and the query VCF
     double *lks, *sigs;
     int *cnts, *dps, hom_only, cross_check;
 	char **argv, *gt_fname, *plot, *sample;
@@ -68,7 +68,7 @@ static void plot_check(args_t *args)
             "ax1 = plt.subplot(gs[0])\n"
             "ax3 = plt.subplot(gs[1])\n"
             "ax2 = ax1.twinx()\n"
-            "ax1.plot([x[0] for x in dat],'g-')\n"
+            "ax1.plot([x[0] for x in dat],'o-', ms=3, color='g', mec='g')\n"
             "ax2.plot([x[1] for x in dat], '^', ms=3, color='r', mec='r')\n"
             "ax3.plot([x[2] for x in dat],'^', ms=3, color='k')\n"
             "if iq!=-1:\n"
@@ -174,14 +174,14 @@ static void plot_cross_check(args_t *args)
 
 static void init_data(args_t *args)
 {
-    args->gt_hdr = args->files->readers[0].header;
-    int nsamples = args->gt_hdr->n[BCF_DT_SAMPLE];
-    if ( !nsamples ) error("No samples?\n");
+    args->sm_hdr = args->files->readers[0].header;
+    if ( !args->sm_hdr->n[BCF_DT_SAMPLE] ) error("No samples in %s?\n", args->files->readers[0].fname);
 
     if ( !args->cross_check )
     {
-        args->sm_hdr = args->files->readers[1].header;
-        if ( !args->sm_hdr->n[BCF_DT_SAMPLE] ) error("No samples?\n");
+        args->gt_hdr = args->files->readers[1].header;
+        int nsamples = args->gt_hdr->n[BCF_DT_SAMPLE];
+        if ( !nsamples ) error("No samples in %s?\n", args->files->readers[1].fname);
         args->lks  = (double*) calloc(nsamples,sizeof(double));
         args->sigs = (double*) calloc(nsamples,sizeof(double));
         args->cnts = (int*) calloc(nsamples,sizeof(int));
@@ -189,11 +189,12 @@ static void init_data(args_t *args)
     }
     else
     {
+        int nsamples = args->sm_hdr->n[BCF_DT_SAMPLE];
         int narr = (nsamples-1)*nsamples/2;
         args->lks  = (double*) calloc(narr,sizeof(double));
         args->cnts = (int*) calloc(narr,sizeof(int));
         args->dps  = (int*) calloc(narr,sizeof(int));
-}
+    }
 }
 
 static void destroy_data(args_t *args)
@@ -236,14 +237,14 @@ static void check_gt(args_t *args)
     int gt_id = bcf_id2int(args->gt_hdr, BCF_DT_ID, "GT");
     int pl_id = bcf_id2int(args->sm_hdr, BCF_DT_ID, "PL");
     int dp_id = bcf_id2int(args->sm_hdr, BCF_DT_ID, "DP");
-    if ( gt_id<0 ) error("GT not present in the header?\n");
-    if ( pl_id<0 ) error("PL not present in the header?\n");
-    if ( dp_id<0 ) error("DP not present in the header?\n");
+    if ( gt_id<0 ) error("[E::%s] GT not present in the header of %s?\n", __func__, args->files->readers[1].fname);
+    if ( pl_id<0 ) error("[E::%s] PL not present in the header of %s?\n", __func__, args->files->readers[0].fname);
+    if ( dp_id<0 ) error("[E::%s] DP not present in the header of %s?\n", __func__, args->files->readers[0].fname);
     int isample = -1;
     if ( args->sample ) 
     {
         isample = bcf_id2int(args->gt_hdr, BCF_DT_SAMPLE, args->sample);
-        if ( isample<0 ) error("No such sample: [%s]\n", args->sample);
+        if ( isample<0 ) error("No such sample in %s: [%s]\n", args->sample, args->files->readers[1].fname);
         if ( args->plot ) isample = -1; // different kind of output with -p
         if ( isample>=0 )
             printf("# [1]Chromosome\t[2]Position\t[3]Alleles in -g file\t[4]Coverage\t[5]Genotype\t[6]Alleles in sample file\t[7-]PL likelihoods\n");
@@ -251,10 +252,10 @@ static void check_gt(args_t *args)
     while ( (ret=bcf_sr_next_line(args->files)) )
     {
         if ( ret!=3 ) continue;
-        bcf1_t *gt_line = args->files->readers[0].buffer[0];
-        bcf1_t *sm_line = args->files->readers[1].buffer[0];
-        bcf_unpack(gt_line, BCF_UN_FMT);
+        bcf1_t *sm_line = args->files->readers[0].buffer[0];
+        bcf1_t *gt_line = args->files->readers[1].buffer[0];
         bcf_unpack(sm_line, BCF_UN_ALL);
+        bcf_unpack(gt_line, BCF_UN_FMT);
 
         // Init the map between genotype and PL fields, assuming diploid genotypes
         int n_gt2ipl = gt_line->n_allele*(gt_line->n_allele + 1)/2;
@@ -404,13 +405,13 @@ static int cmp_doubleptr(const void *_a, const void *_b)
 
 static void cross_check_gts(args_t *args)
 {
-    int nsamples = args->gt_hdr->n[BCF_DT_SAMPLE], ndp_arr = 0, npl_arr = 0;
+    int nsamples = args->sm_hdr->n[BCF_DT_SAMPLE], ndp_arr = 0, npl_arr = 0;
     unsigned int *dp = (unsigned int*) calloc(nsamples,sizeof(unsigned int)), *ndp = (unsigned int*) calloc(nsamples,sizeof(unsigned int)); // this will overflow one day...
     int i,j,k,idx, ret, *dp_arr = NULL, *pl_arr = NULL;
-    int pl_id = bcf_id2int(args->gt_hdr, BCF_DT_ID, "PL");
-    int dp_id = bcf_id2int(args->gt_hdr, BCF_DT_ID, "DP");
-    if ( pl_id<0 ) error("PL not present in the header?\n");
-    if ( dp_id<0 ) error("DP not present in the header?\n");
+    int pl_id = bcf_id2int(args->sm_hdr, BCF_DT_ID, "PL");
+    int dp_id = bcf_id2int(args->sm_hdr, BCF_DT_ID, "DP");
+    if ( pl_id<0 ) error("[E::%s] PL not present in the header of %s?\n", __func__, args->files->readers[0].fname);
+    if ( dp_id<0 ) error("[E::%s] DP not present in the header of %s?\n", __func__, args->files->readers[0].fname);
     while ( (ret=bcf_sr_next_line(args->files)) )
     {
         bcf1_t *line = args->files->readers[0].buffer[0];
@@ -423,8 +424,8 @@ static void cross_check_gts(args_t *args)
             if ( line->d.fmt[i].id==pl_id ) pl_fmt = &line->d.fmt[i];
             if ( line->d.fmt[i].id==dp_id ) dp_fmt = &line->d.fmt[i];
         }
-        if ( !pl_fmt ) error("PL not present at %s:%d?", args->gt_hdr->id[BCF_DT_CTG][line->rid].key, line->pos+1);
-        if ( !dp_fmt ) error("DP not present at %s:%d?", args->gt_hdr->id[BCF_DT_CTG][line->rid].key, line->pos+1);
+        if ( !pl_fmt ) error("PL not present at %s:%d?", args->sm_hdr->id[BCF_DT_CTG][line->rid].key, line->pos+1);
+        if ( !dp_fmt ) error("DP not present at %s:%d?", args->sm_hdr->id[BCF_DT_CTG][line->rid].key, line->pos+1);
 
         dp_arr = bcf_set_iarray(dp_fmt, nsamples, dp_arr, &ndp_arr);
         pl_arr = bcf_set_iarray(pl_fmt, nsamples, pl_arr, &npl_arr);
@@ -484,12 +485,12 @@ static void cross_check_gts(args_t *args)
         double adp = ndp[idx] ? (double)dp[idx]/ndp[idx] : 0;
         double tmp = (double)score[idx]/nsamples;
         avg_score += tmp;
-        fprintf(fp, "SM\t%lf\t%.3lf\t%s\n", tmp, adp, args->gt_hdr->samples[idx]);
+        fprintf(fp, "SM\t%lf\t%.3lf\t%s\n", tmp, adp, args->sm_hdr->samples[idx]);
     }
 
     // Overall score: maximum absolute deviation from the average score
     fprintf(fp, "# [1] MD\t[2]Maximum deviation\t[3]The culprit\n");
-    fprintf(fp, "MD\t%f\t%s\n", (double)score[idx]/nsamples - avg_score/nsamples, args->gt_hdr->samples[idx]);    // idx still set
+    fprintf(fp, "MD\t%f\t%s\n", (double)score[idx]/nsamples - avg_score/nsamples, args->sm_hdr->samples[idx]);    // idx still set
     free(p);
     free(score);
     free(dp);
@@ -505,7 +506,7 @@ static void cross_check_gts(args_t *args)
         {
             avg += args->lks[idx];
             fprintf(fp, "CN\t%.0f\t%d\t%.6f\t%s\t%s\n", args->lks[idx], args->cnts[idx], args->cnts[idx]?(double)args->dps[idx]/args->cnts[idx]:0.0, 
-                    args->gt_hdr->samples[i],args->gt_hdr->samples[j]);
+                    args->sm_hdr->samples[i],args->sm_hdr->samples[j]);
             idx++;
         }
     }
@@ -525,7 +526,7 @@ static char *init_prefix(char *prefix)
 static void usage(void)
 {
 	fprintf(stderr, "About:   Check sample identity. With no VCF given, multi-sample cross-check is performed.\n");
-	fprintf(stderr, "Usage:   vcfgtcheck [options] -g <genotypes.vcf.gz> [<file.vcf.gz>]\n");
+	fprintf(stderr, "Usage:   vcfgtcheck [options] [-g <genotypes.vcf.gz>] <query.vcf.gz>\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "    -g, --genotypes <file>             genotypes to compare against in VCF\n");
 	fprintf(stderr, "    -H, --homs-only                    homozygous genotypes only for very low coverage data\n");
@@ -565,11 +566,11 @@ int main_vcfgtcheck(int argc, char *argv[])
 			default: error("Unknown argument: %s\n", optarg);
 		}
 	}
-    if ( !args->gt_fname ) usage();
-    if ( argc==optind ) args->cross_check = 1;
-	else if ( argc>optind+1 ) usage();   // too many files given
-    if ( !args->cross_check && !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
-    if ( !bcf_sr_add_reader(args->files, args->gt_fname) ) error("Failed to open or the file not indexed: %s\n", args->gt_fname);
+    if ( argc==optind || argc>optind+1 )  usage();  // none or too many files given
+    if ( !args->gt_fname ) args->cross_check = 1;   // no genotype file, run in cross-check mode
+    else args->files->require_index = 1;
+    if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
+    if ( args->gt_fname && !bcf_sr_add_reader(args->files, args->gt_fname) ) error("Failed to open or the file not indexed: %s\n", args->gt_fname);
     args->files->collapse = COLLAPSE_SNPS|COLLAPSE_INDELS;
     if ( args->plot ) args->plot = init_prefix(args->plot);
     init_data(args);

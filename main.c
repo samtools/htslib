@@ -92,7 +92,7 @@ static cmd_t cmds[] =
     },
     { .func  = main_vcfgtcheck, 
       .alias = "htscmd gtcheck, htsvcf gtcheck, vcf gtcheck",
-      .help  = "filter VCF files",
+      .help  = "tool for detecting swaps and contaminations",
       .sep   = NULL
     },
     { .func  = main_vcfisec,  
