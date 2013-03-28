@@ -1,3 +1,4 @@
+##FILTER=<ID=PASS,Description="All filters passed">
 ##fileformat=VCFv4.1
 ##INFO=<ID=TEST,Number=1,Type=Integer,Description="Testing Tag">
 ##FORMAT=<ID=TT,Number=A,Type=Integer,Description="Testing Tag, with commas and \"escapes\" and escaped escapes combined with \\\"quotes\\\\\"">
@@ -16,7 +17,6 @@
 ##readme=BBBBBB
 ##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes">
 ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
-##FILTER=<ID=PASS,Description="All filters passed">
 ##contig=<ID=2,length=2147483647>
 ##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">
 ##FILTER=<ID=q20,Description="Mapping quality below 20">

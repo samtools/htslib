@@ -378,16 +378,15 @@ bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, char *id)
 int bcf_hdr_parse(bcf_hdr_t *hdr)
 {
     int len, needs_sync = 0;
-    bcf_hrec_t *hrec;
     char *p = hdr->text;
+    bcf_hrec_t *hrec = bcf_hdr_parse_line(hdr,"##FILTER=<ID=PASS,Description=\"All filters passed\">",&len);
+    needs_sync += bcf_hdr_add_hrec(hdr, hrec);
     while ( (hrec=bcf_hdr_parse_line(hdr,p,&len)) )
     {
         // bcf_hrec_debug(hrec);
         needs_sync += bcf_hdr_add_hrec(hdr, hrec);
         p += len;
     }
-    hrec = bcf_hdr_parse_line(hdr,"##FILTER=<ID=PASS,Description=\"All filters passed\">",&len);
-    needs_sync += bcf_hdr_add_hrec(hdr, hrec);
     bcf_hdr_parse_sample_line(hdr,p);
     if ( needs_sync ) bcf_hdr_sync(hdr);
 	return 0;

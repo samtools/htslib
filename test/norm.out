@@ -1,3 +1,4 @@
+##FILTER=<ID=PASS,Description="All filters passed">
 ##fileformat=VCFv4.1
 ##INFO=<ID=INDEL,Number=0,Type=Flag,Description="Indicates that the variant is an INDEL.">
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
@@ -6,7 +7,6 @@
 ##contig=<ID=1,length=2147483647>
 ##contig=<ID=2,length=2147483647>
 ##contig=<ID=20,length=2147483647>
-##FILTER=<ID=PASS,Description="All filters passed">
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	XY00001
 1	105	.	TAAACCCTA	T,TAACCCTA	999	PASS	INDEL	GT:PL:DP	1/2:0,3,5,3,5,5,3,5,3,5:1
 2	101	.	A	ATT	999	PASS	INDEL	GT:DP	1/2:1
