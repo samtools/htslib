@@ -1,6 +1,6 @@
 #include "vcfutils.h"
 
-int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
+int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 {
 	int i;
 	for (i=0; i<line->n_allele; i++) ac[i]=0;
@@ -11,16 +11,19 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 		bcf_unpack(line, BCF_UN_INFO);
 		int an_id = bcf_id2int(header, BCF_DT_ID, "AN");
 		int ac_id = bcf_id2int(header, BCF_DT_ID, "AC");
+        int i, an=0, ac_len=0, ac_type=0;
+        uint8_t *ac_ptr=NULL;
 		if ( an_id>=0 && ac_id>=0 )
 		{
-			int i, an=0, ac_len=0, ac_type=0;
-			uint8_t *ac_ptr=NULL;
 			for (i=0; i<line->n_info; i++)
 			{
 				bcf_info_t *z = &line->d.info[i];
 				if ( z->key == an_id ) an = z->v1.i;
 				else if ( z->key == ac_id ) { ac_ptr = z->vptr; ac_len = z->len; ac_type = z->type; }
 			}
+        }
+        if ( ac_ptr )
+        {
 			int nac = 0;
             #define BRANCH_INT(type_t) {        \
                 type_t *p = (type_t *) ac_ptr;  \
@@ -30,13 +33,16 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
                     nac += p[i];                \
                 }                               \
             }
-            if ( ac_type==BCF_BT_INT8 ) { BRANCH_INT(uint8_t) }
-            else if ( ac_type==BCF_BT_INT16 ) { BRANCH_INT(uint16_t) }
-            else if ( ac_type==BCF_BT_INT32 ) { BRANCH_INT(uint32_t) }
+            switch (ac_type) {
+                case BCF_BT_INT8:  BRANCH_INT(int8_t); break;
+                case BCF_BT_INT16: BRANCH_INT(int16_t); break;
+                case BCF_BT_INT32: BRANCH_INT(int32_t); break;
+                default: fprintf(stderr, "[E::%s] todo: %d at %s:%d\n", __func__, ac_type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
+            }
             #undef BRANCH_INT
 			ac[0] = an - nac;
 			return 1;
-		}
+        }
 	}
 
 	// Split genotype fields only when asked
@@ -62,11 +68,10 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 		}
 		return 1;
 	}
-
 	return 0;
 }
 
-inline int gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
+inline int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
 {
 	uint8_t *p = &fmt_ptr->p[isample*fmt_ptr->size];
 	int i, a = p[0]>>1, b = a, min = a, nref = a>1 ? a : 255;
@@ -85,7 +90,7 @@ inline int gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
 	return min==1 ? GT_HET_RA : GT_HET_AA;
 }
 
-bcf_fmt_t *get_fmt_ptr(const bcf_hdr_t *header, bcf1_t *line, char *tag)
+bcf_fmt_t *bcf_get_fmt_ptr(const bcf_hdr_t *header, bcf1_t *line, char *tag)
 {
     bcf_unpack(line, BCF_UN_FMT);
 
@@ -99,10 +104,10 @@ bcf_fmt_t *get_fmt_ptr(const bcf_hdr_t *header, bcf1_t *line, char *tag)
     return NULL;
 }
 
-int trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
+int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
 {
     int i;
-    bcf_fmt_t *gt = get_fmt_ptr(header, line, "GT");
+    bcf_fmt_t *gt = bcf_get_fmt_ptr(header, line, "GT");
     if ( !gt ) return 0;
 
     int *ac = (int*) calloc(line->n_allele,sizeof(int));
@@ -127,13 +132,13 @@ int trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
     }
     free(ac);
 
-    if ( nrm ) remove_alleles(header, line, rm_als);
+    if ( nrm ) bcf_remove_alleles(header, line, rm_als);
     return nrm;
 }
 
 extern uint32_t bcf_missing_float;
 
-void remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
+void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
 {
     int *map = (int*) calloc(line->n_allele, sizeof(int));
 
@@ -161,7 +166,7 @@ void remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
     if ( !nrm ) { free(map); return; }
 
     // remove from GT fields 
-    bcf_fmt_t *gt = get_fmt_ptr(header, line, "GT");
+    bcf_fmt_t *gt = bcf_get_fmt_ptr(header, line, "GT");
     if ( gt )
     {
         for (i=1; i<line->n_allele; i++) if ( map[i]!=i ) break;
@@ -190,17 +195,17 @@ void remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
 
         if ( ((header->id[BCF_DT_ID][fmt->id].val->info[BCF_HL_FMT]>>8)&0xf) == BCF_VL_G )
         {
-            assert( fmt->n==nG_ori ); //diploid
+            assert( fmt->n==nG_ori );
 
             #define BRANCH_INT(type_t,missing) { \
-                type_t *p = (type_t *) fmt->p; \
                 for (j=0; j<line->n_sample; j++) \
                 { \
+                    type_t *p = (type_t *) (fmt->p + j*fmt->size); \
                     int k, nset = 0; \
                     for (k=0; k<nG_ori; k++) if ( p[k] != missing ) nset++; \
-                    assert( nset==nG_ori ); \
                     if ( nset==nG_ori ) \
                     { \
+                        /* diploid */ \
                         int ia, ib, k_ori = 0, k_new = 0; \
                         for (ia=0; ia<line->n_allele; ia++) \
                         { \
@@ -213,14 +218,25 @@ void remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                             } \
                         } \
                     } \
-                    p += fmt->n; \
+                    else if ( nset==line->n_allele ) \
+                    { \
+                        /* haploid */ \
+                        int k_ori, k_new = 0; \
+                        for (k_ori=0; k_ori<line->n_allele; k_ori++) \
+                            if ( !(rm_mask & 1<<k_ori) ) p[k_new++] = p[k_ori]; \
+                        for (; k_new<line->n_allele; k_new++) \
+                            p[k_new] = missing; \
+                    } \
+                    else { fprintf(stderr, "[E::%s] todo, missing values: %d %d\n", __func__, nset,nG_ori); exit(1); } \
                 } \
             }
-            if ( fmt->type==BCF_BT_INT8 ) { BRANCH_INT(uint8_t,INT8_MIN) }
-            else if ( fmt->type==BCF_BT_INT16 ) { BRANCH_INT(uint16_t,INT32_MIN) }
-            else if ( fmt->type==BCF_BT_INT32 ) { BRANCH_INT(uint32_t,INT16_MIN) }
-            else if ( fmt->type==BCF_BT_FLOAT ) { BRANCH_INT(float,bcf_missing_float) }
-            else { fprintf(stderr, "[E::%s] todo: %d\n", __func__, fmt->type); exit(1); }
+            switch (fmt->type) {
+                case BCF_BT_INT8:  BRANCH_INT(int8_t,INT8_MIN); break;
+                case BCF_BT_INT16: BRANCH_INT(int16_t,INT16_MIN); break;
+                case BCF_BT_INT32: BRANCH_INT(int32_t,INT32_MIN); break;
+                case BCF_BT_FLOAT: BRANCH_INT(float,bcf_missing_float); break;  // fixme: float will not work
+                default: fprintf(stderr, "[E::%s] todo: %d\n", __func__, fmt->type); exit(1); break;
+            }
             #undef BRANCH_INT
 
             fmt->n = nG_new;

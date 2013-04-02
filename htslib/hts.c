@@ -138,6 +138,7 @@ int file_type(const char *fname)
     if ( !strcasecmp(".vcf.gz",fname+len-7) ) return IS_VCF_GZ;
     if ( !strcasecmp(".vcf",fname+len-4) ) return IS_VCF;
     if ( !strcasecmp(".bcf",fname+len-4) ) return IS_BCF;
+    if ( !strcmp("-",fname) ) return IS_STDIN;
     // ... etc
     return 0;
 }
@@ -891,7 +892,7 @@ char *hts_idx_getfn(const char *fn, const char *ext)
 	fnidx = (char*)calloc(l_fn + l_ext + 1, 1);
 	strcpy(fnidx, fn); strcpy(fnidx + l_fn, ext);
 	if ((ret = test_and_fetch(fnidx)) == 0) {
-		for (i = l_fn - 1; i >= 0; --i)
+		for (i = l_fn - 1; i > 0; --i)
 			if (fnidx[i] == '.') break;
 		strcpy(fnidx + i, ext);
 		ret = test_and_fetch(fnidx);

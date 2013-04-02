@@ -5,6 +5,9 @@
 	compare multiple VCFs simultaneously and will be used also for merging,
 	creating intersections, etc.
 
+    The synced_bcf_reader also provides API for reading indexed BCF/VCF,
+    hiding differences in BCF/VCF opening, indexing and reading.
+
 	The *_regions class of functions provide a convenient way for checking if a
 	coordinate is inside one of the regions.
 */
@@ -22,34 +25,33 @@
 #define COLLAPSE_INDELS 2
 #define COLLAPSE_ANY    4
 
-typedef struct { int32_t from, to; } pos_t;
+typedef struct { int32_t from, to; } bcf_sr_pos_t;
 typedef struct
 {
 	int *npos,nseqs,cpos,cseq;
-	pos_t **pos, tpos;  // **pos and npos will be deprecated with *_regions functions
+	bcf_sr_pos_t **pos, tpos;  // **pos and npos will be deprecated with *_regions functions
 	char **seq_names;
     tbx_t *tbx;
     htsFile *file;
     hts_itr_t *itr;
     kstring_t line;
 }
-regions_t;
+bcf_sr_regions_t;
 
 typedef struct
 {
 	htsFile *file;
-    tbx_t *tbx;
-    hts_idx_t *bcf;
+    tbx_t *tbx_idx;
+    hts_idx_t *bcf_idx;
 	bcf_hdr_t *header;
 	hts_itr_t *itr;
 	const char *fname;
 	bcf1_t **buffer;
 	int nbuffer, mbuffer;
-	int filter_id;
-	int *samples, n_smpl;	// list of columns in the order consistent with readers_t.samples
-//	bcf_fmt_t *fmt_ptr;	    // set by set_fmt_ptr
+	int filter_id, type;
+	int *samples, n_smpl;	// list of columns in the order consistent with bcf_srs_t.samples
 }
-reader_t;
+bcf_sr_t;
 
 typedef struct
 {
@@ -59,23 +61,27 @@ typedef struct
 						// than "." or "PASS" will be skipped. Active only at
 						// the time of initialization, that is during the
 						// add_reader() calls.
+    int require_index;  // Some tools do not need random access
+    const char *region; // Jump to a region (this will set also require_index)
+    int max_unpack;     // When reading VCFs and knowing some fields will not be needed, boost performance of vcf_parse1
+
 	// Auxiliary data
-	reader_t *readers;
+	bcf_sr_t *readers;
 	int nreaders;
-	const char **seqs, *region;
-	int iseq,nseqs,mseqs;
+	const char **seqs;
+	int iseq,nseqs,mseqs, streaming;
 	char **samples;	// List of samples 
-    regions_t *targets;
+    bcf_sr_regions_t *targets;
     kstring_t tmps;
 	int n_smpl;
 }
-readers_t;
+bcf_srs_t;
 
-/** Init readers_t struct */
-readers_t *bcf_sr_init();
+/** Init bcf_srs_t struct */
+bcf_srs_t *bcf_sr_init();
 
-/** Destroy  readers_t struct */
-void bcf_sr_destroy(readers_t *readers);
+/** Destroy  bcf_srs_t struct */
+void bcf_sr_destroy(bcf_srs_t *readers);
 
 /**
  *  bcf_sr_add_reader() - open new reader
@@ -84,19 +90,20 @@ void bcf_sr_destroy(readers_t *readers);
  *
  *  Returns 1 if the call succeeded, or 0 on error.
  *
- *  See also the readers_t data structure for parameters controlling
+ *  See also the bcf_srs_t data structure for parameters controlling
  *  the reader's logic.
  */
-int bcf_sr_add_reader(readers_t *readers, const char *fname);
+int bcf_sr_add_reader(bcf_srs_t *readers, const char *fname);
 
 /** 
  * bcf_sr_next_line() - the iterator
  * @readers:    holder of the open readers
  *
  * Returns 0 when all lines from all files have been read or a bit mask
- * indicating which of the readers have a reader_t.line set at this position. 
+ * indicating which of the readers have the current line (bcf_sr_t.buffer[0])
+ * set at this position. 
  */
-int bcf_sr_next_line(readers_t *readers);
+int bcf_sr_next_line(bcf_srs_t *readers);
 
 /**
  * bcf_sr_set_samples() - sets active samples
@@ -107,7 +114,7 @@ int bcf_sr_next_line(readers_t *readers);
  *
  * Returns 1 if the call succeeded, or 0 on error.
  */
-int bcf_sr_set_samples(readers_t *readers, const char *samples);
+int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples);
 
 /**
  *  bcf_sr_set_targets() - init positions 
@@ -121,15 +128,15 @@ int bcf_sr_set_samples(readers_t *readers, const char *samples);
  *  bcf_sr_next_line(). Note that the files are streamed anyway, the index is
  *  required only for reading whole chromosomes blocks.
  */
-int bcf_sr_set_targets(readers_t *readers, const char *fname);
+int bcf_sr_set_targets(bcf_srs_t *readers, const char *fname);
 
 
 
 /**
- * init_regions() - initialize regions_t structure
+ * init_regions() - initialize bcf_sr_regions_t structure
  * @fname:   bgzip compressed tab delimited file with chr,from,to.
  *           Coordinates are one-based and inclusive
- * @regions: regions_t structure
+ * @regions: bcf_sr_regions_t structure
  *
  * Returns 1 if the call succeeded, or 0 on error.
  *
@@ -139,31 +146,31 @@ int bcf_sr_set_targets(readers_t *readers, const char *fname);
  * valid for some applications, it is straightforward to require
  * tabix indexed file and read the regions from the file on fly.
  */
-int init_regions(const char *fname, regions_t *regions);
+int init_regions(const char *fname, bcf_sr_regions_t *regions);
 
 /**
  * reset_regions() - position regions to next chromosome
- * @regions: regions_t structure
+ * @regions: bcf_sr_regions_t structure
  * @seq:     chromosome name or region
  *
  * Returns 1 if the call succeeded, or 0 when $seq not found.
  */
-int reset_regions(regions_t *regions, const char *seq);
+int reset_regions(bcf_sr_regions_t *regions, const char *seq);
 
 /**
  * is_in_regions() - looks up the region containing $pos
- * @regions: regions_t structure
+ * @regions: bcf_sr_regions_t structure
  * @pos:     query coordinate
  *
  * Returns pointer to the region containing the position or
  * NULL if no such position was found.
  */
-pos_t *is_in_regions(regions_t *regions, int32_t pos);
+bcf_sr_pos_t *is_in_regions(bcf_sr_regions_t *regions, int32_t pos);
 
 /**
  * destroy_regions() - free memory occupied by regions
- * @regions: regions_t structure
+ * @regions: bcf_sr_regions_t structure
  */
-void destroy_regions(regions_t *regions);
+void destroy_regions(bcf_sr_regions_t *regions);
 
 #endif

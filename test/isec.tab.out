@@ -1,3 +1,4 @@
+##FILTER=<ID=PASS,Description="All filters passed">
 ##fileformat=VCFv4.1
 ##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">
 ##INFO=<ID=DP4,Number=4,Type=Integer,Description="# high-quality ref-forward bases, ref-reverse, alt-forward and alt-reverse bases">
@@ -12,11 +13,10 @@
 ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
 ##readme=AAAAAA
 ##readme=BBBBBB
-##FILTER=<ID=PASS,Description="All filters passed">
-##contig=<ID=1,length=-1>
-##contig=<ID=2,length=-1>
-##contig=<ID=3,length=-1>
-##contig=<ID=4,length=-1>
+##contig=<ID=1,length=2147483647>
+##contig=<ID=2,length=2147483647>
+##contig=<ID=3,length=2147483647>
+##contig=<ID=4,length=2147483647>
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	A
 1	3062915	.	GTTT	G	1806	q10	DP=35;DP4=1,2,3,4;AN=2;AC=1	GT:GQ:DP:GL	0/1:409:35:-20,-5,-20
 1	3062915	.	G	T	1806	q10	DP=35;DP4=1,2,3,4;AN=2;AC=1	GT:GQ:DP:GL	0/1:409:35:-20,-5,-20

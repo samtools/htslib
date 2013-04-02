@@ -7,8 +7,9 @@
 
 #include "vcf.h"
 
+
 /**
- * get_fmt_ptr() - returns pointer to a FORMAT field
+ * bcf_get_fmt_ptr() - returns pointer to a FORMAT field
  * @header: for access to BCF_DT_ID dictionary
  * @line:   VCF line obtained from vcf_parse1
  * @fmt:    one of GT,PL,...
@@ -16,30 +17,30 @@
  * Returns bcf_fmt_t* if the call succeeded, or returns NULL when the field
  * is not available.
  */
-bcf_fmt_t *get_fmt_ptr(const bcf_hdr_t *header, bcf1_t *line, char *tag);
+bcf_fmt_t *bcf_get_fmt_ptr(const bcf_hdr_t *header, bcf1_t *line, char *tag);
 
 
 /**
- *  trim_alleles() - remove ALT alleles unused in genotype fields
+ *  bcf_trim_alleles() - remove ALT alleles unused in genotype fields
  *  @header:  for access to BCF_DT_ID dictionary
  *  @line:    VCF line obtain from vcf_parse1
  *
  *  Returns the number of removed alleles.
  */
-int trim_alleles(const bcf_hdr_t *header, bcf1_t *line);
+int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line);
 
 
 /**
- *  trim_alleles() - remove ALT alleles according to bitmask @mask
+ *  bcf_trim_alleles() - remove ALT alleles according to bitmask @mask
  *  @header:  for access to BCF_DT_ID dictionary
  *  @line:    VCF line obtained from vcf_parse1
  *  @mask:    alleles to remove
  */
-void remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int mask);
+void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int mask);
 
 
 /**
- *  calc_ac() - calculate the number of REF and ALT alleles
+ *  bcf_calc_ac() - calculate the number of REF and ALT alleles
  *  @header:  for access to BCF_DT_ID dictionary
  *  @line:    VCF line obtained from vcf_parse1
  *  @ac:      array of length line->n_allele
@@ -52,11 +53,11 @@ void remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int mask);
  *  used (BCF_UN_INFO) and and if indv fields can be splitted 
  *  (BCF_UN_FMT). 
  */
-int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which);
+int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which);
 
 
 /**
- * gt_type() - determines type of the genotype
+ * bcf_gt_type() - determines type of the genotype
  * @fmt_ptr:  the GT format field as set for example by set_fmt_ptr
  * @isample:  sample index (starting from 0)
  * @ial:      index of the non-reference allele (starting from 1)
@@ -72,6 +73,25 @@ int calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which);
 #define GT_HET_RA 2
 #define GT_HET_AA 3
 #define GT_UNKN   4
-inline int gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial);
+inline int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial);
+
+static inline int bcf_acgt2int(char c)
+{
+    if ( (int)c>96 ) c -= 32;
+    if ( c=='A' ) return 0;
+    if ( c=='C' ) return 1;
+    if ( c=='G' ) return 2;
+    if ( c=='T' ) return 3;
+    return -1;
+}
+#define bcf_int2acgt(i) "ACGT"[i]
+
+/**
+  * bcf_ij2G() - common task: allele indexes to Number=G index (diploid)
+  * @i,j:  allele indexes, 0-based, i<=j
+  * 
+  * Returns index to the Number=G diploid array
+  */
+#define bcf_ij2G(i, j) ((j)*((j)+1)/2+(i))
 
 #endif

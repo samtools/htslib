@@ -1,7 +1,11 @@
 #ifndef HTS_H
 #define HTS_H
 
-#define HTS_VERSION "r199"
+#ifndef VERSION
+#define HTS_VERSION "0.0.1+"
+#else
+#define HTS_VERSION VERSION
+#endif
 
 #include <stdint.h>
 #include "bgzf.h"
@@ -139,6 +143,7 @@ extern "C" {
     #define IS_VCF    1
     #define IS_VCF_GZ 2
     #define IS_BCF    4
+    #define IS_STDIN  5
     int file_type(const char *fname);
 
 

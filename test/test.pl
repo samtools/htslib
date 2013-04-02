@@ -19,6 +19,8 @@ test_vcf_isec($opts,in=>['isec.a','isec.b'],out=>'isec.ab.any.out',args=>'-n =2 
 test_vcf_isec($opts,in=>['isec.a','isec.b'],out=>'isec.ab.C.out',args=>'-C -c any');
 test_vcf_isec2($opts,vcf_in=>['isec.a'],tab_in=>'isec',out=>'isec.tab.out',args=>'');
 test_vcf_merge($opts,in=>['merge.a','merge.b','merge.c'],out=>'merge.abc.out');
+test_vcf_query($opts,in=>'query',out=>'query.out',args=>q[-f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%DP4\\t%AN[\\t%GT\\t%TGT]\\n']);
+test_vcf_norm($opts,in=>'norm',out=>'norm.out',fai=>'norm');
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -102,7 +104,7 @@ sub test_cmd
     print "$test:\n";
     print "\t$args{cmd}\n";
 
-    my ($ret,$out) = _cmd($args{cmd});
+    my ($ret,$out) = _cmd("$args{cmd} 2>&1");
     if ( $ret ) { failed($opts,$test); return; }
     if ( $$opts{redo_outputs} && -e "$$opts{path}/$args{out}" )
     {
@@ -133,7 +135,16 @@ sub test_cmd
         open(my $fh,'>',"$$opts{path}/$args{out}.new") or error("$$opts{path}/$args{out}.new");
         print $fh $out;
         close($fh);
-        failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new"); 
+        if ( !-e "$$opts{path}/$args{out}" )
+        {
+            rename("$$opts{path}/$args{out}.new","$$opts{path}/$args{out}") or error("rename $$opts{path}/$args{out}.new $$opts{path}/$args{out}: $!");
+            print "\tthe file with expected output does not exist, creating new one:\n";
+            print "\t\t$$opts{path}/$args{out}\n";
+        }
+        else
+        {
+            failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new"); 
+        }
         return; 
     }
     passed($opts,$test);
@@ -229,5 +240,17 @@ sub test_vcf_isec2
     my $files = join(' ',@files);
     bgzip_tabix($opts,file=>$args{tab_in},suffix=>'tab',args=>'-s 1 -b 2 -e 3');
     test_cmd($opts,%args,cmd=>"$$opts{bin}/htscmd vcfisec $args{args} -s $$opts{tmp}/$args{tab_in}.tab.gz $files");
+}
+sub test_vcf_query
+{
+    my ($opts,%args) = @_;
+    bgzip_tabix_vcf($opts,$args{in});
+    test_cmd($opts,%args,cmd=>"$$opts{bin}/htscmd vcfquery $args{args} $$opts{tmp}/$args{in}.vcf.gz");
+}
+sub test_vcf_norm
+{
+    my ($opts,%args) = @_;
+    bgzip_tabix_vcf($opts,$args{in});
+    test_cmd($opts,%args,cmd=>"$$opts{bin}/htscmd vcfnorm -f $$opts{path}/$args{fai}.fa $$opts{tmp}/$args{in}.vcf.gz");
 }
 

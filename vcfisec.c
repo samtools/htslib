@@ -19,7 +19,7 @@
 typedef struct
 {
     int isec_op, isec_n, *write;
-	readers_t *files;
+	bcf_srs_t *files;
     FILE *fh_log, *fh_sites;
     htsFile **fh_out;
 	char **argv, *prefix, **fnames, *write_files, *subset_fname;
@@ -106,7 +106,7 @@ FILE *open_file(char **fname, const char *mode, const char *fmt, ...)
 void isec_vcf(args_t *args)
 {
     int ret,i;
-    readers_t *files = args->files;
+    bcf_srs_t *files = args->files;
     kstring_t str = {0,0,0};
     htsFile *out_fh = NULL;
 
@@ -125,7 +125,7 @@ void isec_vcf(args_t *args)
 
     while ( (ret=bcf_sr_next_line(files)) )
     {
-        reader_t *reader = NULL;
+        bcf_sr_t *reader = NULL;
         bcf1_t *line = NULL;
         int n = 0;
         for (i=0; i<files->nreaders; i++)
@@ -371,6 +371,7 @@ int main_vcfisec(int argc, char *argv[])
         if ( argc-optind<2  ) error("Expected multiple files or the --subset option\n");
         if ( !args->isec_op ) error("Expected two file names or one of the options --complement, --nfiles or --subset\n");
     }
+    args->files->require_index = 1;
 	while (optind<argc)
 	{
 		if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open: %s\n", argv[optind]);

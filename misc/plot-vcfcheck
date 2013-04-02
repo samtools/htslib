@@ -17,6 +17,7 @@
 use strict;
 use warnings;
 use Carp;
+use Storable qw(dclone);
 
 my $opts = parse_params();
 parse_vcfcheck($opts);
@@ -35,7 +36,7 @@ if ( $$opts{make_plots} )
 		#plot_tstv_by_QUAL($opts,$id);
 		plot_indel_distribution($opts,$id);
 		plot_substitutions($opts,$id);
-		plot_tstv_by_sample($opts,$id);
+		plot_per_sample_stats($opts,$id);
 		plot_DP($opts,$id);
 	}
 	plot($opts);
@@ -58,7 +59,9 @@ sub error
         "   -p, --prefix <path>                 The output files prefix, add a slash to create new directory.\n",
         "   -P, --no-PDF                        Skip the PDF creation step.\n",
         "   -r, --rasterize                     Rasterize PDF images for fast rendering.\n",
-        "   -t, --title <string>                Use this title in plots, can be given multiple times.\n",
+        "   -s, --sample-names                  Use sample names for xticks rather than numeric IDs.\n",
+        "   -t, --title <string>                Identify files by these titles in plots. Can be given multiple times.\n",
+        "   -T, --main-title <string>           Main title for the PDF.\n",
         "   -h, -?, --help                      This help message.\n",
         "\n";
 }
@@ -70,6 +73,7 @@ sub parse_params
     my $opts = 
 	{ 
         pdf_plots  => 1,
+        use_sample_names => 0,
 		verbose    => 1,
 		make_pdf   => 1,
 		make_plots => 1,
@@ -77,7 +81,7 @@ sub parse_params
 		args       => join(' ',$0,@ARGV), 
 		img_width  => 11/2.54,
 		img_height => 10/2.54,
-		id2col     => [ 'orange', 'r', 'k' ],
+		id2col     => [ 'orange', 'red', 'darkgreen' ],
 		tex => 
 		{
 			slide3v => { height1 => '7cm', height2 => '7cm',  height3 => '4.5cm' },
@@ -135,7 +139,7 @@ sub parse_params
             { 
                 id=>'PSC',   
                 header=>'PSC, Per-sample counts', 
-                exp=>"# PSC\t[2]id\t[3]sample\t[4]nRefHom\t[5]nNonRefHom\t[6]nHets\t[7]nTransitions\t[8]nTransversions\t[9]nIndels\t[10]average depth\n" 
+                exp=>"# PSC\t[2]id\t[3]sample\t[4]nRefHom\t[5]nNonRefHom\t[6]nHets\t[7]nTransitions\t[8]nTransversions\t[9]nIndels\t[10]average depth\t[11]nSingletons\n" 
             },
             { 
                 id=>'DP',    
@@ -156,13 +160,15 @@ sub parse_params
         if ( $arg eq '-P' || $arg eq '--no-PDF' ) { $$opts{make_pdf}=0; next; }
         if ( $arg eq '-r' || $arg eq '--rasterize' ) { $$opts{rasterize}=1; $$opts{pdf_plots} = 0; next; }
         if ( $arg eq '-m' || $arg eq '--merge' ) { $$opts{make_plots}=0; $$opts{make_pdf}=0; $$opts{merge}=1; next; }
+        if ( $arg eq '-s' || $arg eq '--sample-names' ) { $$opts{use_sample_names}=1; next; }
         if ( $arg eq '-t' || $arg eq '--titles' ) { push @{$$opts{titles}},shift(@ARGV); next; }
+        if ( $arg eq '-T' || $arg eq '--main-title' ) { $$opts{main_title} = shift(@ARGV); next; }
         if ( $arg eq '-p' || $arg eq '--prefix' ) { $$opts{prefix}=shift(@ARGV); next; }
         if ( $arg eq '-?' || $arg eq '-h' || $arg eq '--help' ) { error(); }
         if ( -e $arg ) { push @{$$opts{vcfcheck}},$arg; next; }
         error("Unknown parameter or non-existent file \"$arg\". Run -h for help.\n");
     }
-    if ( !exists($$opts{vcfcheck}) ) { error("No vcfcheck file?\n") }
+    if ( !exists($$opts{vcfcheck}) ) { error(); }
     if ( !exists($$opts{prefix}) )
     {
         if ( !$$opts{merge} ) { error("Expected -p parameter.\n") }
@@ -313,6 +319,14 @@ sub add_to_sample_values
     }
 }
 
+sub merge_PSC
+{
+    my ($a,$b,$n) = @_;
+    for (my $i=0; $i<@$a; $i++) { $$a[$i][7] *= $n; }   # average DP
+    add_to_sample_values($a,$b);
+    for (my $i=0; $i<@$a; $i++) { $$a[$i][7] /= $n+1; }
+}
+
 sub rglob
 {
     my ($a,$b) = @_;
@@ -397,6 +411,16 @@ sub merge_GCsS
     for (my $i=0; $i<@$a; $i++) { $$a[$i][1] /= $n+1; }
 }
 
+sub merge_FS
+{
+    my ($a,$b,$n) = @_;
+    for (my $i=0; $i<@$a; $i++)
+    {
+        for (my $j=0; $j<2; $j++) { $$a[$i][$j] += $$b[$i][$j]; }
+        $$a[$i][2] = sprintf "%.2f", ($$a[$i][0] + $$a[$i][1]) ? $$a[$i][1]/($$a[$i][0] + $$a[$i][1]) : 0;
+    }
+}
+
 sub merge_GCsAF
 {
     my ($a,$b) = @_;
@@ -450,8 +474,9 @@ sub parse_vcfcheck1
             elsif ( $a eq 'GCsS' ) { merge_GCsS($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             elsif ( $a eq 'GCsAF' ) { merge_GCsAF($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             elsif ( $a eq 'ST' ) { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_str); }
-            elsif ( $a eq 'PSC') { add_to_sample_values($$opts{dat}{$a}{$b},$dat{$a}{$b}); }
+            elsif ( $a eq 'PSC') { merge_PSC($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             elsif ( $a eq 'IDD') { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_num); }
+            elsif ( $a eq 'FS') { merge_FS($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             else { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_num_op); } # SiS AF IDD
         }
     }
@@ -472,6 +497,8 @@ sub iprint
 	for my $txt (@txt)
 	{
 		$txt =~ s/\n[ \t]+/\n/g;
+        $txt =~ s/^\\t/\t/g;
+        $txt =~ s/\n\\t\s*/\n\t/g;
 		print $fh $txt;
 	}
 }
@@ -491,11 +518,20 @@ sub init_plots
 		#	python $$opts{plt_file} 
 		#
 
+        # Set to 1 to plot in PDF instead of PNG
+        pdf_plots = $$opts{pdf_plots}
+
+        # Set to 1 to use sample names for xticks instead of numeric sequential IDs
+        #   and adjust margins and font properties if necessary
+        sample_names   = $$opts{use_sample_names}
+        sample_margins = {'right':0.98, 'left':0.07, 'bottom':0.2}
+        sample_font    = {'rotation':45, 'ha':'right', 'fontsize':8}
+
+        if sample_names==0: sample_margins=(); sample_font=();
+
 		import matplotlib as mpl
 		mpl.use('Agg')
 		import matplotlib.pyplot as plt
-
-        pdf_plots = $$opts{pdf_plots}
 		];
 	$$opts{plt_fh} = $fh;
 }
@@ -566,7 +602,7 @@ sub plot_venn_bars
 	iprint $fh, qq[
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 	 		ax1 = fig.add_subplot(111)
-	 		ax1.bar([1,2,3],[$snps[0],$snps[2],$snps[1]],align='center',color='y',width=0.3)
+	 		ax1.bar([1,2,3],[$snps[0],$snps[2],$snps[1]],align='center',color='$$opts{id2col}[0]',width=0.3)
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
 			ax1.set_xlim(0.5,3.5)
 			plt.xticks([1,2,3],('$snp_titles[0]','$snp_titles[2]','$snp_titles[1]'))
@@ -578,7 +614,7 @@ sub plot_venn_bars
 
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 	 		ax1 = fig.add_subplot(111)
-	 		ax1.bar([1,2,3],[$indels[0],$indels[2],$indels[1]],align='center',color='r',width=0.3)
+	 		ax1.bar([1,2,3],[$indels[0],$indels[2],$indels[1]],align='center',color='$$opts{id2col}[1]',width=0.3)
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
 			ax1.set_xlim(0.5,3.5)
 			plt.xticks([1,2,3],('$indel_titles[0]','$indel_titles[2]','$indel_titles[1]'))
@@ -590,7 +626,7 @@ sub plot_venn_bars
 		];
 }
 
-sub plot_tstv_by_sample
+sub plot_per_sample_stats
 {
 	my ($opts,$id) = @_;
 	my @vals = get_values($opts,$id,'PSC');
@@ -601,6 +637,8 @@ sub plot_tstv_by_sample
 	my $img2 = "$$opts{prefix}hets_by_sample.$id";
 	my $img3 = "$$opts{prefix}snps_by_sample.$id";
 	my $img4 = "$$opts{prefix}indels_by_sample.$id";
+	my $img5 = "$$opts{prefix}singletons_by_sample.$id";
+	my $img6 = "$$opts{prefix}dp_by_sample.$id";
 
 	iprint $fh, "
 			dat = [
@@ -609,7 +647,7 @@ sub plot_tstv_by_sample
 	{ 
 		my $tstv = $vals[$i][5] ? $vals[$i][4]/$vals[$i][5] : 0;
         my $hethom = $vals[$i][2] ? $vals[$i][3]/$vals[$i][2] : 0;
-		iprint $fh, sprintf("\t[ %d, %f, %f, %d, %d ],\n", $i, $tstv, $hethom, $vals[$i][4]+$vals[$i][5], $vals[$i][6]);
+		iprint $fh, sprintf("\t[ %d, %f, %f, %d, %d, %f, %d, r'%s' ],\n", $i, $tstv, $hethom, $vals[$i][4]+$vals[$i][5], $vals[$i][6], $vals[$i][7], $vals[$i][8], $vals[$i][0]);
 	}
 	iprint $fh, "]
 
@@ -617,9 +655,13 @@ sub plot_tstv_by_sample
 			ax1 = fig.add_subplot(111)
 			ax1.plot([row[0] for row in dat], [row[1] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
 			ax1.set_ylabel('Ts/Tv')
-			ax1.set_xlabel('Sample ID')
-			ax1.set_ylim(0,0.5+max(3,max(row[1] for row in dat)))
-			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+			ax1.set_ylim(min(row[1] for row in dat)-0.1,max(row[1] for row in dat)+0.1)
+            if sample_names: 
+            \\t     plt.xticks([row[0] for row in dat],[row[7] for row in dat],**sample_font)
+			\\t     plt.subplots_adjust(**sample_margins)
+            else:
+			\\t     plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+			\\t     ax1.set_xlabel('Sample ID')
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img.png')
 			if pdf_plots: plt.savefig('$img.pdf')
@@ -629,9 +671,13 @@ sub plot_tstv_by_sample
 			ax1 = fig.add_subplot(111)
 			ax1.plot([row[0] for row in dat], [row[2] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
 			ax1.set_ylabel('nHet(RA) / nHom(AA)')
-			ax1.set_xlabel('Sample ID')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
-			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+            if sample_names: 
+            \\t     plt.xticks([row[0] for row in dat],[row[7] for row in dat],**sample_font)
+			\\t     plt.subplots_adjust(**sample_margins)
+            else:
+			\\t     plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+			\\t     ax1.set_xlabel('Sample ID')
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img2.png')
 			if pdf_plots: plt.savefig('$img2.pdf')
@@ -641,9 +687,13 @@ sub plot_tstv_by_sample
 			ax1 = fig.add_subplot(111)
 			ax1.plot([row[0] for row in dat], [row[3] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
 			ax1.set_ylabel('Number of SNPs')
-			ax1.set_xlabel('Sample ID')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
-			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+            if sample_names: 
+            \\t     plt.xticks([row[0] for row in dat],[row[7] for row in dat],**sample_font)
+			\\t     plt.subplots_adjust(**sample_margins)
+            else:
+			\\t     plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+			\\t     ax1.set_xlabel('Sample ID')
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img3.png')
 			if pdf_plots: plt.savefig('$img3.pdf')
@@ -653,12 +703,48 @@ sub plot_tstv_by_sample
 			ax1 = fig.add_subplot(111)
 			ax1.plot([row[0] for row in dat], [row[4] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
 			ax1.set_ylabel('Number of indels')
-			ax1.set_xlabel('Sample ID')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
-			plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+            if sample_names: 
+            \\t     plt.xticks([row[0] for row in dat],[row[7] for row in dat],**sample_font)
+			\\t     plt.subplots_adjust(**sample_margins)
+            else:
+			\\t     plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+			\\t     ax1.set_xlabel('Sample ID')
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img4.png')
 			if pdf_plots: plt.savefig('$img4.pdf')
+			plt.close()
+
+			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
+			ax1 = fig.add_subplot(111)
+			ax1.plot([row[0] for row in dat], [row[6] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
+			ax1.set_ylabel('Number of singletons')
+			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
+            if sample_names: 
+            \\t     plt.xticks([row[0] for row in dat],[row[7] for row in dat],**sample_font)
+			\\t     plt.subplots_adjust(**sample_margins)
+            else:
+			\\t     plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+			\\t     ax1.set_xlabel('Sample ID')
+			plt.title('$$opts{title}{$id}')
+			plt.savefig('$img5.png')
+			if pdf_plots: plt.savefig('$img5.pdf')
+			plt.close()
+
+			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
+			ax1 = fig.add_subplot(111)
+			ax1.plot([row[0] for row in dat], [row[5] for row in dat], 'o', color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]')
+			ax1.set_ylabel('Average depth')
+			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
+            if sample_names: 
+            \\t     plt.xticks([row[0] for row in dat],[row[7] for row in dat],**sample_font)
+			\\t     plt.subplots_adjust(**sample_margins)
+            else:
+			\\t     plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+			\\t     ax1.set_xlabel('Sample ID')
+			plt.title('$$opts{title}{$id}')
+			plt.savefig('$img6.png')
+			if pdf_plots: plt.savefig('$img6.pdf')
 			plt.close()
 		";
 }
@@ -731,18 +817,18 @@ sub plot_tstv_by_AF
 	iprint $fh, "
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 			ax1 = fig.add_subplot(111)
-			ax1.plot([row[0] for row in dat], [row[1] for row in dat], color='k')
+			ax1.plot([row[0] for row in dat], [row[1] for row in dat], '-o',color='k',mec='k',markersize=3)
 			ax1.set_ylabel('Number of sites',color='k')
 			ax1.set_yscale('log')
 			#ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
 			for tl in ax1.get_yticklabels(): tl.set_color('k')
 			ax1.set_xlabel('Non-ref allele frequency')
 			ax2 = ax1.twinx()
-			ax2.plot([row[0] for row in dat], [row[2] for row in dat], color='r')
-			ax2.set_ylabel('Ts/Tv',color='r')
+			ax2.plot([row[0] for row in dat], [row[2] for row in dat], '-o',color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]',markersize=3)
+			ax2.set_ylabel('Ts/Tv',color='$$opts{id2col}[$id]')
 			ax2.set_ylim(0,0.5+max(3,max(row[2] for row in dat)))
 			ax1.set_xlim(0,1)
-			for tl in ax2.get_yticklabels(): tl.set_color('r')
+			for tl in ax2.get_yticklabels(): tl.set_color('$$opts{id2col}[$id]')
 			plt.subplots_adjust(right=0.88,left=0.15,bottom=0.11)
 			plt.title('$$opts{title}{$id}')
 			plt.savefig('$img.png')
@@ -836,7 +922,6 @@ sub plot_concordance_by_AF
 	if ( !@vals ) { return; }
     
     # create a local copy and prepare r2 for rebinning
-    use Storable qw(dclone);
     @vals = @{ dclone(\@vals) };
     for (my $i=0; $i<@vals; $i++) { $vals[$i][7] *= $vals[$i][8]; }
 	my $vals = rebin_values(\@vals,1,0);
@@ -863,18 +948,18 @@ sub plot_concordance_by_AF
 	}
 	iprint $fh, "]
 
-			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
+			fig = plt.figure(figsize=($$opts{img_width}*1.2,$$opts{img_height}))
 			ax1 = fig.add_subplot(111)
 			ax1.plot([row[0] for row in dat], [row[1] for row in dat],'.',color='$$opts{id2col}[1]',label='Hom RR')
 			ax1.plot([row[0] for row in dat], [row[2] for row in dat],'.',color='$$opts{id2col}[0]',label='Het RA')
-			ax1.plot([row[0] for row in dat], [row[3] for row in dat],'.',color='$$opts{id2col}[2]',label='Hom AA')
+			ax1.plot([row[0] for row in dat], [row[3] for row in dat],'.',color='k',label='Hom AA')
 			ax1.set_xlabel('Non-ref allele frequency')
 			ax1.set_ylabel('Concordance')
 			ax1.legend(numpoints=1,markerscale=2,loc='best',prop={'size':10}).draw_frame(False)
 			ax2 = ax1.twinx()
 			ax2.plot([row[0] for row in dat], [row[4] for row in dat],color='$$opts{id2col}[1]')
 			ax2.plot([row[0] for row in dat], [row[5] for row in dat],color='$$opts{id2col}[0]')
-			ax2.plot([row[0] for row in dat], [row[6] for row in dat],color='$$opts{id2col}[2]')
+			ax2.plot([row[0] for row in dat], [row[6] for row in dat],color='k')
 			ax2.set_ylabel('Number of genotypes')
 			ax2.set_yscale('log')
 			plt.subplots_adjust(left=0.15,right=0.83,bottom=0.11)
@@ -891,6 +976,7 @@ sub plot_concordance_by_AF
             ax1.plot([row[0] for row in dat], [row[7] for row in dat], '-^', color='k',markersize=3)
             for tl in ax2.get_yticklabels(): tl.set_color('r')
             ax2.set_ylabel('Number of sites', color='r')
+            ax2.set_yscale('log')
             ax1.set_ylabel('Mean allelic R\$^2\$', color='k')
             ax1.set_xlabel('Non-ref allele frequency')
 			plt.subplots_adjust(left=0.19,right=0.83,bottom=0.11)
@@ -915,17 +1001,21 @@ sub plot_concordance_by_sample
 		";
 	for (my $i=0; $i<@vals; $i++)
 	{ 
-		iprint $fh, sprintf("\t[ %d,%f ],\n", $i, $vals[$i][1]);
+		iprint $fh, sprintf("\t[ %d, %f, r'%s' ],\n", $i, $vals[$i][1], $vals[$i][0]);
 	}
 	iprint $fh, "]
 
 			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
 			ax1 = fig.add_subplot(111)
 			ax1.plot([row[0] for row in dat], [row[1] for row in dat],'.',color='orange')
-			ax1.set_xlabel('Sample ID')
 			ax1.set_ylabel('Non-ref discordance')
 			ax1.set_ylim(0,)
-			plt.subplots_adjust(right=0.98,left=0.08,bottom=0.17)
+            if sample_names: 
+            \\t     plt.xticks([row[0] for row in dat],[row[2] for row in dat],**sample_font)
+            \\t     plt.subplots_adjust(**sample_margins)
+            else:
+            \\t     plt.subplots_adjust(right=0.98,left=0.07,bottom=0.17)
+            \\t     ax1.set_xlabel('Sample ID')
 			plt.savefig('$img.png')
 			if pdf_plots: plt.savefig('$img.pdf')
 			plt.close()
@@ -945,55 +1035,44 @@ sub plot_counts_by_AF_col
 
     my $fh  = $$opts{plt_fh};
 	my $img = "$$opts{prefix}counts_by_af.".lc($title)."s";
+    my @has_vals;
 
-	my @files = (keys %{$$opts{file2ids}});
-	for (my $ifile=0; $ifile<@files; $ifile++)
-	{
-		iprint $fh, "
-			dat$ifile = [
-			";
-		my $file = $files[$ifile];
-		my %vals;
-        my $has_vals = 0;
-		for my $id (@{$$opts{file2ids}{$file}})
-		{
-			my @tmp = get_values($opts,$id,'AF');
-			for my $val (@tmp)
-			{
-				$vals{$$val[0]} += $$val[$col];
-			}
-		}
-		for my $key (sort {$a<=>$b} keys %vals)
-		{
-			if ( !$vals{$key} ) { next; }
-			iprint $fh, "[ $key, $vals{$key} ],\n";
-            $has_vals++;
-		}
-		iprint $fh, "]\n";
-        if ( $has_vals<2 ) { return; }
-	}
+    for my $id (file_ids($opts))
+    {
+        my @tmp = get_values($opts,$id,'AF');
+        my $vals = rebin_values(\@tmp,1,0);
+        iprint $fh, "
+            dat$id = [
+            ";
+        for my $val (@$vals) 
+        { 
+            if ( !$$val[$col] ) { next; }
+            iprint $fh, "[ $$val[0], $$val[$col] ],\n"; 
+            $has_vals[$id]++;
+        }
+        iprint $fh, "]\n";
+    }
 	iprint $fh, "
 			fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
 			ax1 = fig.add_subplot(111)
 			ax1.set_ylabel('Number of sites')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y') 
 			ax1.set_yscale('log')
-			ax1.set_xscale('log')
 			ax1.set_xlabel('Non-reference allele frequency')
-			#ax1.set_xlim(0,1)
+            ax1.set_xlim(-0.05,1.05)
 		";
-	my @cols = ('r','k');
-	for (my $ifile=0; $ifile<@files; $ifile++)
-	{
-		iprint $fh, "
-			ax1.plot([row[0]/100. for row in dat$ifile], [row[1] for row in dat$ifile], '.', markersize=3, color='$cols[$ifile]',label='$$opts{title}{$ifile}')
-		";
-	}
-    if ( @files>1 )
+    my $nfiles = 0;
+    for my $id (file_ids($opts))
     {
-        iprint $fh, "ax1.legend(numpoints=1,markerscale=2).draw_frame(False)\n";
+        if ( !$has_vals[$id] or $has_vals[$id]<2 ) { next; }
+		iprint $fh, "
+			ax1.plot([row[0]/100. for row in dat$id], [row[1] for row in dat$id], '-o',markersize=3, color='$$opts{id2col}[$id]',mec='$$opts{id2col}[$id]',label='$$opts{title}{$id}')
+		";
+        $nfiles++;
     }
+    if ( !$nfiles ) { return; }
 	iprint $fh, "
+            ax1.legend(numpoints=1,markerscale=1,loc='best',prop={'size':10},frameon=False)
 			plt.title('$title count by AF')
 			plt.subplots_adjust(bottom=0.2,left=0.1,right=0.95)
 			plt.savefig('$img.png')
@@ -1038,7 +1117,7 @@ sub plot_indel_distribution
 
 			fig = plt.figure(figsize=($$opts{img_width},$$opts{img_height}))
 			ax1 = fig.add_subplot(111)
-			ax1.bar([row[0]-0.5 for row in dat], [row[1] for row in dat], color='y') #, edgecolor='y')
+			ax1.bar([row[0]-0.5 for row in dat], [row[1] for row in dat], color='$$opts{id2col}[0]')# , edgecolor='$$opts{id2col}[0]')
 			ax1.set_xlabel('InDel Length')
 			ax1.set_ylabel('Count')
 			ax1.ticklabel_format(style='sci', scilimits=(0,0), axis='y')
@@ -1105,6 +1184,20 @@ sub singletons
 	return { snps=>$si_snps, indels=>$si_indels, tstv=>$si_tstv };
 }
 
+sub calc_3n_n3n
+{
+    my (@vals) = @_;
+    my $n3  = 0;
+    my $nn3 = 0;
+    for my $val (@vals)
+    {
+        if ( !($$val[0]%3) ) { $n3++; }
+        else { $nn3++; }
+    }
+    if ( !$nn3 ) { return '-'; }
+    return sprintf("%.2f", $n3/$nn3);
+}
+
 sub fmt_slide3v
 {
 	my ($opts, $image, $title) = @_;
@@ -1155,6 +1248,7 @@ sub fmt_slide3h
 sub bignum
 {
 	my ($num) = @_;
+    if ( !defined $num ) { return ''; }
 	if ( !($num=~/^\d+$/) ) { return $num; }
 	my $len = length($num);
 	my $out;
@@ -1274,10 +1368,10 @@ sub create_pdf
 	my $slide .= q[
             \begin{minipage}{\textwidth}\centering
             \small \rowcolors*{3}{row2}{row1} \arrayrulecolor{black}
-            \begin{tabular}{l | r r | r r | r | r}
+            \begin{tabular}{l | r r | r r r | r | r}
             \multicolumn{1}{>{\columncolor{hcol1}}l|}{}
             & \multicolumn{2}{>{\columncolor{hcol1}}c|}{SNPs}
-            & \multicolumn{2}{>{\columncolor{hcol1}}c|}{indels}
+            & \multicolumn{3}{>{\columncolor{hcol1}}c|}{indels}
             & \multicolumn{1}{>{\columncolor{hcol1}}c|}{MNPs}
             & \multicolumn{1}{>{\columncolor{hcol1}}c}{others}  \\\\
             %
@@ -1285,10 +1379,12 @@ sub create_pdf
             & \multicolumn{1}{>{\columncolor{hcol2}}c}{n}
             & \multicolumn{1}{>{\columncolor{hcol2}}c|}{ts/tv}
             & \multicolumn{1}{>{\columncolor{hcol2}}c}{n}
-            & \multicolumn{1}{>{\columncolor{hcol2}}c|}{frm$^*$}
+            & \multicolumn{1}{>{\columncolor{hcol2}}c}{frm$^*$}
+            & \multicolumn{1}{>{\columncolor{hcol2}}c|}{3n$^{**}$}
             & \multicolumn{1}{>{\columncolor{hcol2}}c|}{}
             & \multicolumn{1}{>{\columncolor{hcol2}}c}{} \\\\ \hline 
 		];
+    my %tex_titles;
 	for my $id (@ids)
 	{
 		my $snps   = get_value($opts,$id,'number of SNPs:');
@@ -1298,35 +1394,37 @@ sub create_pdf
 		my $tstv   = sprintf "%.2f",get_value($opts,$id,'ts/tv:');
 		my @frsh   = get_values($opts,$id,'FS');
 		my $frsh   = @frsh ? $frsh[0][2] : '--';
+        my $n3n    = calc_3n_n3n(get_values($opts,$id,'IDD'));
 		my $title  = $$opts{title}{$id};
 		$title =~ s/_/\\_/g;
         $title =~ s/^\s*\*/\$*\$/;    # leading asterisks is eaten by TeX
-		$slide .= qq[ $title & ] . bignum($snps) . qq[ & $tstv & ] . bignum($indels) . qq[ & $frsh & ] . bignum($mnps) . ' & ' . bignum($others) . qq[ \\\\ \n];
+        $tex_titles{$id} = $title;
+		$slide .= qq[ $title & ] . bignum($snps) . qq[ & $tstv & ] . bignum($indels) . qq[ & $frsh & $n3n & ] . bignum($mnps) . ' & ' . bignum($others) . qq[ \\\\ \n];
 	}
     $slide .= q[%
-        \multicolumn{7}{r}{$^*$ frm = Frameshift ratio} \\\\
+        \multicolumn{8}{r}{$^*$ frameshift ratio: out/(out+in);\hspace{1em} $^{**}$ 3n/non-3n} \\\\
         \end{tabular}
         \\\\ \vspace{1em}
-        \begin{tabular}{l | r r r | r }
+        \begin{tabular}{l | r r r | r r}
         \multicolumn{1}{>{\columncolor{hcol1}}l|}{}
-        & \multicolumn{3}{>{\columncolor{hcol1}}c|}{singletons}
-        & \multicolumn{1}{>{\columncolor{hcol1}}c}{multiallelic}  \\\\
+        & \multicolumn{3}{>{\columncolor{hcol1}}c|}{singletons {\footnotesize(AC=1)}}
+        & \multicolumn{2}{>{\columncolor{hcol1}}c}{multiallelic}  \\\\
         %
         \multicolumn{1}{>{\columncolor{hcol2}}l|}{Callset}
         & \multicolumn{1}{>{\columncolor{hcol2}}c}{SNPs}
         & \multicolumn{1}{>{\columncolor{hcol2}}c}{ts/tv} 
         & \multicolumn{1}{>{\columncolor{hcol2}}c|}{indels}
-        & \multicolumn{1}{>{\columncolor{hcol2}}c}{sites} \\\\ \hline 
+        & \multicolumn{1}{>{\columncolor{hcol2}}c}{sites}
+        & \multicolumn{1}{>{\columncolor{hcol2}}c}{SNPs} \\\\ \hline 
     ];
     for my $id (@ids)
     {
         my $snps  = get_value($opts,$id,'number of SNPs:');
         my $s     = singletons($opts,$id);
         my $mals  = get_value($opts,$id,'number of multiallelic sites:');
-		my $title = $$opts{title}{$id};
-		$title =~ s/_/\\_/g;
-        $title =~ s/^\s*\*/\$*\$/;    # leading asterisks is eaten by TeX
-		$slide .= qq[ $title & $$s{snps}\\% & $$s{tstv} & $$s{indels}\\% &  ] . bignum($mals) . qq[ \\\\ \n];
+        my $msnps = get_value($opts,$id,'number of multiallelic SNP sites:');
+		my $title = $tex_titles{$id};
+		$slide .= qq[ $title & $$s{snps}\\% & $$s{tstv} & $$s{indels}\\% &  ] . bignum($mals) . ' &' . bignum($msnps) . qq[ \\\\ \n];
     }
 	$slide .= q[ \\end{tabular}
             \\vspace{2em}
@@ -1339,13 +1437,14 @@ sub create_pdf
         if ( $$opts{title}{$id} =~ / \+ / ) { next; }
         $fname =~ s/.{80}/$&\\\\\\hskip2em /g;
         $fname =~ s/_/\\_/g;
-        $slide .= qq[\\item $$opts{title}{$id} .. \\texttt{\\footnotesize $fname}\n];
+        $slide .= qq[\\item $tex_titles{$id} .. \\texttt{\\footnotesize $fname}\n];
     }
     $slide .= q[\\end{itemize}\\end{minipage}];
+    my $title = exists($$opts{main_title}) ? $$opts{main_title} : 'Summary Numbers';
 	iprint $tex, qq[
 			% Table with summary numbers
 			%
-			\\hslide{Summary numbers}{$slide}
+			\\hslide{$title}{$slide}
 		
 		];
 
@@ -1366,6 +1465,8 @@ sub create_pdf
 
 	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}tstv_by_sample", 'Ts/Tv by sample');
 	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}hets_by_sample", 'Hets vs non-ref Homs by sample');
+	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}singletons_by_sample", 'Singletons by sample {\normalsize(hets and homs)}');
+	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}dp_by_sample", 'Average depth by sample');
 	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}snps_by_sample", 'Number of SNPs by sample');
 	iprint $tex, fmt_slide3v($opts, "$$opts{lprefix}indels_by_sample", 'Number of indels by sample');
 	if ( scalar get_values($opts,2,'GCsS') ) 
