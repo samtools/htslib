@@ -379,10 +379,16 @@ int bcf_hdr_parse(bcf_hdr_t *hdr)
 {
     int len, needs_sync = 0;
     char *p = hdr->text;
-    bcf_hrec_t *hrec = bcf_hdr_parse_line(hdr,"##FILTER=<ID=PASS,Description=\"All filters passed\">",&len);
+      
+    bcf_hrec_t *hrec = bcf_hdr_parse_line(hdr,"##fileformat=VCFv4.1",&len);
+    needs_sync += bcf_hdr_add_hrec(hdr, hrec);
+    hrec = bcf_hdr_parse_line(hdr,"##FILTER=<ID=PASS,Description=\"All filters passed\">",&len);
     needs_sync += bcf_hdr_add_hrec(hdr, hrec);
     while ( (hrec=bcf_hdr_parse_line(hdr,p,&len)) )
     {
+      if ( hrec->type == BCF_HL_GEN && !strcmp(hrec->key, "fileformat") )
+	continue;
+      
         // bcf_hrec_debug(hrec);
         needs_sync += bcf_hdr_add_hrec(hdr, hrec);
         p += len;

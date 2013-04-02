@@ -4,13 +4,13 @@
 
 int main_vcfview(int argc, char *argv[])
 {
-	int i, c, clevel = -1, flag = 0, n_samples = -1, *imap = 0, excl_indel = 0;
+	int i, c, clevel = -1, flag = 0, n_samples = -1, *imap = 0, excl_snp = 0, excl_indel = 0;
 	char *fn_ref = 0, *fn_out = 0, moder[8], **samples = 0;
 	bcf_hdr_t *h, *hsub = 0;
 	htsFile *in;
 	bcf1_t *b;
 
-	while ((c = getopt(argc, argv, "l:bSt:o:T:s:GI")) >= 0) {
+	while ((c = getopt(argc, argv, "l:bSt:o:T:s:GNI")) >= 0) {
 		switch (c) {
 		case 'l': clevel = atoi(optarg); flag |= 2; break;
 		case 'S': flag |= 1; break;
@@ -19,6 +19,7 @@ int main_vcfview(int argc, char *argv[])
 		case 't': fn_ref = optarg; flag |= 1; break;
 		case 'o': fn_out = optarg; break;
 		case 's': samples = hts_readlines(optarg, &n_samples); break;
+		case 'N': excl_snp = 1; break;
 		case 'I': excl_indel = 1; break;
 		}
 	}
@@ -31,6 +32,7 @@ int main_vcfview(int argc, char *argv[])
 		fprintf(stderr, "         -t FILE      list of reference names and lengths [null]\n");
 		fprintf(stderr, "         -s FILE/STR  list of samples (STR if started with ':'; FILE otherwise) [null]\n");
 		fprintf(stderr, "         -G           drop individual genotype information\n");
+		fprintf(stderr, "         -N           exclude SNPs\n");
 		fprintf(stderr, "         -I           exclude INDELs\n");
 		fprintf(stderr, "\n");
 		return 1;
@@ -72,6 +74,7 @@ int main_vcfview(int argc, char *argv[])
 					continue;
 				}
 				while (bcf_itr_next((BGZF*)in->fp, iter, b) >= 0) {
+					if (excl_snp && bcf_is_snp(b)) continue;
 					if (excl_indel && !bcf_is_snp(b)) continue;
 					if (n_samples >= 0) {
 						bcf_subset(h, b, n_samples, imap);
@@ -83,6 +86,7 @@ int main_vcfview(int argc, char *argv[])
 			hts_idx_destroy(idx);
 		} else {
 			while (vcf_read1(in, h, b) >= 0) {
+				if (excl_snp && bcf_is_snp(b)) continue;
 				if (excl_indel && !bcf_is_snp(b)) continue;
 				if (n_samples >= 0) {
 					bcf_subset(h, b, n_samples, imap);
