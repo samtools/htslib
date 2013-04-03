@@ -207,7 +207,7 @@ static void init_iaf(args_t *args, bcf_sr_t *reader)
         int an=0;
         for (i=0; i<line->n_allele; i++)
             an += args->tmp_iaf[i];
-        
+       
         args->tmp_iaf[0] = 0;
         for (i=1; i<line->n_allele; i++)
         {
@@ -222,7 +222,7 @@ static void init_iaf(args_t *args, bcf_sr_t *reader)
     else
         for (i=0; i<line->n_allele; i++) 
             args->tmp_iaf[i] = 0;
-            
+    
     // todo: otherwise use AF 
 }
 

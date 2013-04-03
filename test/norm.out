@@ -1,5 +1,5 @@
-##FILTER=<ID=PASS,Description="All filters passed">
 ##fileformat=VCFv4.1
+##FILTER=<ID=PASS,Description="All filters passed">
 ##INFO=<ID=INDEL,Number=0,Type=Flag,Description="Indicates that the variant is an INDEL.">
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
 ##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Phred-scaled likelihood">

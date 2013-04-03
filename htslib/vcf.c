@@ -379,8 +379,18 @@ int bcf_hdr_parse(bcf_hdr_t *hdr)
 {
     int len, needs_sync = 0;
     char *p = hdr->text;
-    bcf_hrec_t *hrec = bcf_hdr_parse_line(hdr,"##FILTER=<ID=PASS,Description=\"All filters passed\">",&len);
+
+    // Check sanity: "fileformat" string must come as first
+    bcf_hrec_t *hrec = bcf_hdr_parse_line(hdr,p,&len);
+    if ( !hrec->key || strcasecmp(hrec->key,"fileformat") )
+        fprintf(stderr, "[W::%s] The first line should be ##fileformat; is the VCF/BCF header broken?\n", __func__);
     needs_sync += bcf_hdr_add_hrec(hdr, hrec);
+
+    // The filter PASS must appear first in the dictionary
+    hrec = bcf_hdr_parse_line(hdr,"##FILTER=<ID=PASS,Description=\"All filters passed\">",&len);
+    needs_sync += bcf_hdr_add_hrec(hdr, hrec);
+
+    // Parse the whole header
     while ( (hrec=bcf_hdr_parse_line(hdr,p,&len)) )
     {
         // bcf_hrec_debug(hrec);
