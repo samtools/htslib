@@ -1,5 +1,5 @@
-##FILTER=<ID=PASS,Description="All filters passed">
 ##fileformat=VCFv4.1
+##FILTER=<ID=PASS,Description="All filters passed">
 ##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">
 ##INFO=<ID=DP4,Number=4,Type=Integer,Description="# high-quality ref-forward bases, ref-reverse, alt-forward and alt-reverse bases">
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
