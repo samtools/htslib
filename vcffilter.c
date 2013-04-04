@@ -1044,30 +1044,6 @@ static int sync_site(bcf_hdr_t *hdr, bcf1_t *line, site_t *site, int type)
     return 0;
 }
 
-#include "khash.h"
-KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
-typedef khash_t(vdict) vdict_t;
-
-int bcf1_add_info_double(bcf_hdr_t *hdr, bcf1_t *line, const char *key, double *value, int n)
-{
-    // Get the number and type from the bcf_idinfo_t header line
-    vdict_t *d = (vdict_t*) hdr->dict[BCF_DT_ID];
-    khint_t k = kh_get(vdict, d, key);
-    uint32_t *i = kh_val(d,k).info;
-
-    // Create the new INFO field
-    line->n_info++;
-    hts_expand(bcf_info_t, line->n_info, line->d.m_info , line->d.info);
-    bcf_info_t *inf = &line->d.info[ line->n_info - 1 ];
-    inf->key  = kh_val(d,k).id;
-    inf->type = BCF_BT_FLOAT;
-    inf->len  = i[BCF_HL_INFO] >> 12;
-    assert( inf->len==n && n==1 );
-    inf->vptr = NULL; // todo
-    inf->v1.f = *value;
-    return 0;
-}
-
 static void apply_filters(args_t *args)
 {
     // Init files
@@ -1109,14 +1085,16 @@ static void apply_filters(args_t *args)
         line->d.n_flt = 1;
         if ( snp && sync_site(hdr, line, snp, VCF_SNP) )
         {
-            bcf1_add_info_double(hdr, line, "FiltScore", &snp->score, 1);
+            float tmp = snp->score;
+            bcf1_update_info_float(hdr, line, "FiltScore", &tmp, 1);
             line->d.flt[0] = snp->score <= args->snp_th ? flt_pass : flt_fail;
             vcf_write1(out, hdr, line);
             continue;
         }
         if ( indel && sync_site(hdr, line, indel, VCF_INDEL) )
         {
-            bcf1_add_info_double(hdr, line, "FiltScore", &indel->score, 1);
+            float tmp = snp->score;
+            bcf1_update_info_float(hdr, line, "FiltScore", &tmp, 1);
             line->d.flt[0] = indel->score <= args->indel_th ? flt_pass : flt_fail;
             vcf_write1(out, hdr, line);
             continue;

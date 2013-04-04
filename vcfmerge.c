@@ -1,3 +1,9 @@
+/*
+    Known issues:
+        - shared block needs to be updated on BCF output (BCF output currently not supported)
+        - Number=A,G tags not treated
+ */
+
 #include <stdio.h>
 #include <unistd.h>
 #include <getopt.h>
@@ -497,13 +503,58 @@ void merge_info(args_t *args, int mask, bcf1_t *out)
                 ma->inf[out->n_info].vptr = inf->vptr;
                 ma->inf[out->n_info].v1.i = inf->v1.i;
                 ma->inf[out->n_info].v1.f = inf->v1.f;
+                ma->inf[out->n_info].vptr_off  = inf->vptr_off;
+                ma->inf[out->n_info].vptr_len  = inf->vptr_len;
+                ma->inf[out->n_info].vptr_free = inf->vptr_free;
                 out->n_info++;
                 kh_put(strdict, tmph, key, &ret);
             }
-            // todo: AN,AC, G-tags, A-tags
+            // todo: G-tags, A-tags
         }
     }
     out->d.info = ma->inf;
+    out->d.m_info = ma->minf;
+    for (i=out->n_info; i<out->d.m_info; i++) out->d.info[i].vptr_free = 0;
+}
+
+// Only existing AN, AC will be modified. If not present, the line stays unchanged
+void update_AN_AC(bcf_hdr_t *hdr, bcf1_t *line)
+{
+    int i;
+    int AN_id = bcf_id2int(hdr, BCF_DT_ID, "AN");
+    int AC_id = bcf_id2int(hdr, BCF_DT_ID, "AC");
+    if ( AN_id<0 && AC_id<0 ) return;
+
+    bcf_info_t *AN_ptr = NULL, *AC_ptr = NULL;
+    if ( AN_id>=0 )
+    {
+        for (i=0; i<line->n_info; i++)
+            if ( AN_id==line->d.info[i].key ) 
+            {
+                AN_ptr = &line->d.info[i];
+                break;
+            }
+    }
+    if ( AC_id>=0 )
+    {
+        for (i=0; i<line->n_info; i++)
+            if ( AC_id==line->d.info[i].key ) 
+            {
+                AC_ptr = &line->d.info[i];
+                break;
+            }
+    }
+    if ( !AN_ptr && !AC_ptr ) return;
+
+    int32_t an = 0, *tmp = (int32_t*) malloc(sizeof(int)*line->n_allele);
+    int ret = bcf_calc_ac(hdr, line, tmp, BCF_UN_FMT);
+    if ( ret>0 )
+    {
+        for (i=0; i<line->n_allele; i++) an += tmp[i];
+        if ( AN_ptr ) bcf1_update_info_int32(hdr, line, "AN", &an, 1);
+        if ( AC_ptr ) bcf1_update_info_int32(hdr, line, "AC", tmp+1, line->n_allele-1);
+    }
+    free(tmp);
 }
 
 void merge_GT(args_t *args, int mask, bcf_fmt_t *fmt, int *fmt_map, bcf1_t *out)
@@ -733,16 +784,15 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
     }
     out->n_sample = nsamples;
     out->d.fmt = ma->fmt;
+    update_AN_AC(out_hdr, out);
 }
 
 // The core merging function, one or none line from each reader
 void merge_line(args_t *args, int mask)
 {
     bcf1_t *out = args->out_line;
-
-    out->shared.l = out->indiv.l = 0;
+    bcf_clear1(out);
     out->unpacked = BCF_UN_ALL;
-    out->unpack_ptr = NULL;
 
     merge_chrom2qual(args, mask, out);
     merge_filter(args, mask, out);

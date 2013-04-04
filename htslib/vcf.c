@@ -483,20 +483,33 @@ bcf1_t *bcf_init1()
 	return v;
 }
 
+void bcf_clear1(bcf1_t *v)
+{
+    int i;
+    for (i=0; i<v->d.m_info; i++) 
+    {
+        if ( v->d.info[i].vptr_free ) 
+        {
+            free(v->d.info[i].vptr - v->d.info[i].vptr_off);
+            v->d.info[i].vptr_free = 0;
+        }
+    }
+	v->rid = v->pos = v->rlen = v->unpacked = 0;
+    v->unpack_ptr = NULL;
+	v->qual = 0;
+	v->n_info = v->n_allele = v->n_fmt = v->n_sample = 0;
+	v->shared.l = v->indiv.l = 0;
+    v->d.var_type = -1;
+    v->d.shared_dirty = 0;
+}
+
 void bcf_destroy1(bcf1_t *v)
 {
+    bcf_clear1(v);
 	free(v->d.id); free(v->d.als); free(v->d.allele); free(v->d.flt); free(v->d.info); free(v->d.fmt);
 	if (v->d.var ) free(v->d.var);
 	free(v->shared.s); free(v->indiv.s);
 	free(v);
-}
-
-void bcf_clear1(bcf1_t *v)
-{
-	v->rid = v->pos = v->rlen = v->unpacked = 0;
-	v->qual = 0;
-	v->n_info = v->n_allele = v->n_fmt = v->n_sample = 0;
-	v->shared.l = v->indiv.l = 0;
 }
 
 static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
@@ -507,6 +520,7 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 		if (ret == 0) return -1;
 		return -2;
 	}
+    bcf_clear1(v);
 	x[0] -= 24; // to exclude six 32-bit integers
 	ks_resize(&v->shared, x[0]);
 	ks_resize(&v->indiv, x[1]);
@@ -514,8 +528,6 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 	v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
 	v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
 	v->shared.l = x[0], v->indiv.l = x[1];
-	v->unpacked = 0;
-	v->unpack_ptr = NULL;
 	bgzf_read(fp, v->shared.s, v->shared.l);
 	bgzf_read(fp, v->indiv.s, v->indiv.l);
 	return 0;
@@ -880,11 +892,9 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 	khint_t k;
 	ks_tokaux_t aux;
 
-	mem->l = v->shared.l = v->indiv.l = 0;
+    bcf_clear1(v);
+	mem->l = 0;
 	str = &v->shared;
-	v->n_fmt = 0;
-	v->unpacked = 0;
-	v->unpack_ptr = NULL;
 	memset(&aux, 0, sizeof(ks_tokaux_t));
 	for (p = kstrtok(s->s, "\t", &aux), i = 0; p; p = kstrtok(0, 0, &aux), ++i) {
 		q = (char*)aux.p;
@@ -1195,24 +1205,24 @@ uint8_t *bcf_unpack_fmt_core(uint8_t *ptr, int n_sample, int n_fmt, bcf_fmt_t *f
 	return ptr;
 }
 
-uint8_t *bcf_unpack_info_core(uint8_t *ptr, int n_info, bcf_info_t *info)
+inline uint8_t *bcf_unpack_info_core1(uint8_t *ptr, bcf_info_t *info)
 {
-	int i;
-	for (i = 0; i < n_info; ++i) {
-		bcf_info_t *z = &info[i];
-		z->key = bcf_dec_typed_int1(ptr, &ptr);
-		z->len = bcf_dec_size(ptr, &ptr, &z->type);
-		z->vptr = ptr;
-		z->v1.i = 0;
-		if (z->len == 1) {
-			if (z->type == BCF_BT_INT8 || z->type == BCF_BT_CHAR) z->v1.i = *(int8_t*)ptr;
-			else if (z->type == BCF_BT_INT32) z->v1.i = *(int32_t*)ptr;
-			else if (z->type == BCF_BT_FLOAT) z->v1.f = *(float*)ptr;
-			else if (z->type == BCF_BT_INT16) z->v1.i = *(int16_t*)ptr;
-		}
-		ptr += z->len << bcf_type_shift[z->type];
-	}
-	return ptr;
+    uint8_t *ptr_start = ptr;
+    info->key = bcf_dec_typed_int1(ptr, &ptr);
+    info->len = bcf_dec_size(ptr, &ptr, &info->type);
+    info->vptr = ptr;
+    info->vptr_off  = ptr - ptr_start;
+    info->vptr_free = 0;
+    info->v1.i = 0;
+    if (info->len == 1) {
+        if (info->type == BCF_BT_INT8 || info->type == BCF_BT_CHAR) info->v1.i = *(int8_t*)ptr;
+        else if (info->type == BCF_BT_INT32) info->v1.i = *(int32_t*)ptr;
+        else if (info->type == BCF_BT_FLOAT) info->v1.f = *(float*)ptr;
+        else if (info->type == BCF_BT_INT16) info->v1.i = *(int16_t*)ptr;
+    }
+    ptr += info->len << bcf_type_shift[info->type];
+    info->vptr_len = ptr - info->vptr;
+    return ptr;
 }
 
 int bcf_unpack(bcf1_t *b, int which)
@@ -1239,7 +1249,6 @@ int bcf_unpack(bcf1_t *b, int which)
         for (i = 0; i < b->n_allele; ++i)
             d->allele[i] = tmp.s + offset[i];
         d->m_als = tmp.m; d->als = tmp.s; // write tmp back
-        d->var_type = -1;
         b->unpack_ptr = ptr;
         b->unpacked |= BCF_UN_STR;
 	}
@@ -1258,7 +1267,9 @@ int bcf_unpack(bcf1_t *b, int which)
 	if ((which&BCF_UN_INFO) && !(b->unpacked&BCF_UN_INFO)) { // INFO
 		ptr = b->unpack_ptr;
 		hts_expand(bcf_info_t, b->n_info, d->m_info, d->info);
-		bcf_unpack_info_core(ptr, b->n_info, d->info);
+	    for (i = 0; i < d->m_info; ++i) d->info[i].vptr_free = 0;
+	    for (i = 0; i < b->n_info; ++i)
+            ptr = bcf_unpack_info_core1(ptr, &d->info[i]);
 		b->unpacked |= BCF_UN_INFO;
 	}
 	if ((which&BCF_UN_FMT) && b->n_sample && !(b->unpacked&BCF_UN_FMT)) { // FORMAT
@@ -1299,9 +1310,11 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 	} else kputc('.', s);
 	kputc('\t', s); // INFO
 	if (v->n_info) {
+        int first = 1;
 		for (i = 0; i < v->n_info; ++i) {
 			bcf_info_t *z = &v->d.info[i];
-			if (i) kputc(';', s);
+            if ( !z->vptr ) continue;
+			if ( !first ) kputc(';', s); first = 0;
 			kputs(h->id[BCF_DT_ID][z->key].key, s);
 			if (z->len <= 0) continue;
 			kputc('=', s);
@@ -1556,4 +1569,74 @@ void bcf_set_variant_types(bcf1_t *b)
 		//fprintf(stderr,"[set_variant_type] %d   %s %s -> %d %d .. %d\n", b->pos+1,d->allele[0],d->allele[i],d->var[i].type,d->var[i].n, b->d.var_type);
 	}
 }
+
+int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type)
+{
+    // Get the number and type from the bcf_idinfo_t header line
+    vdict_t *d = (vdict_t*) hdr->dict[BCF_DT_ID];
+    khint_t k = kh_get(vdict, d, key);
+    int inf_id = kh_val(d,k).id;
+
+    // Is the field already present?
+    int i;
+    for (i=0; i<line->n_info; i++)
+        if ( inf_id==line->d.info[i].key ) break;
+    bcf_info_t *inf = i==line->n_info ? NULL : &line->d.info[i];
+
+    if ( !n )
+    {
+        if ( inf )
+        {
+            // Mark the tag for removal
+            line->d.shared_dirty = 1;
+            inf->vptr = NULL;
+        }
+        return 0;
+    }
+    
+    // Encode the values and determine the size required to accommodate the values
+    kstring_t str = {0,0,0};
+    bcf_enc_int1(&str, inf_id);
+    if ( type==BCF_HT_INT )
+        bcf_enc_vint(&str, n, (int32_t*)values, -1);
+    else if ( type==BCF_HT_REAL )
+        bcf_enc_vfloat(&str, n, (float*)values);
+    else
+    {
+        fprintf(stderr, "[E::%s] the type %d currently not supported\n", __func__, type);
+        abort();
+    }
+
+    // Is the INFO tag already present
+    if ( inf )
+    {
+        // Is it big enough to accommodate new block?
+        if ( str.l <= inf->vptr_len + inf->vptr_off )
+        {
+            if ( str.l != inf->vptr_len + inf->vptr_off ) line->d.shared_dirty = 1;
+            uint8_t *ptr = inf->vptr - inf->vptr_off;
+            memcpy(ptr, str.s, str.l);
+            free(str.s);
+            bcf_unpack_info_core1(ptr, inf);
+        }
+        else
+        {
+            bcf_unpack_info_core1((uint8_t*)str.s, inf);
+            inf->vptr_free = 1;
+            line->d.shared_dirty = 1;
+        }
+    }
+    else
+    {
+        // The tag is not present, create new one
+        line->n_info++;
+        hts_expand(bcf_info_t, line->n_info, line->d.m_info , line->d.info);
+        bcf_unpack_info_core1((uint8_t*)str.s, inf);
+        inf->vptr_free = 1;
+        line->d.shared_dirty = 1;
+    }
+    return 0;
+}
+
+
 

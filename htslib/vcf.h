@@ -110,7 +110,11 @@ typedef struct {
 		int32_t i; // integer value
 		float f;   // float value
 	} v1; // only set if $len==1; for easier access
-	uint8_t *vptr; // point to data array, excluding sized bytes
+	uint8_t *vptr;          // pointer to data array in bcf1_t->shared.s, excluding sized bytes
+    uint32_t vptr_len;      // length of the vptr block or, when set, of the vptr_mod block, excluding offset
+    uint32_t vptr_off:31,   // vptr offset, i.e., the size of the INFO key plus sized bytes
+            vptr_free:1;    // indicates that vptr-vptr_off must be freed; set only when modified and the new 
+                            //    data block is bigger than the original
 } bcf_info_t;
 
 typedef struct {
@@ -122,8 +126,21 @@ typedef struct {
 	bcf_fmt_t *fmt; // FORMAT and individual sample
 	variant_t *var;	// $var and $var_type set only when set_variant_types called
 	int n_var, var_type;
+    int shared_dirty; // if set, shared.s must be recreated on BCF output
 } bcf_dec_t;
 
+
+/*
+    The bcf1_t structure corresponds to one VCF/BCF line. Reading from VCF file
+    is slower because the string is first to be parsed, packed into BCF line
+    (done in vcf_parse1), then unpacked into internal bcf1_t structure. If it
+    is known in advance that some of the fields will not be required (notably
+    the sample columns), parsing of these can be skipped by setting max_unpack
+    appropriately.
+    Similarly, it is fast to output a BCF line because the columns (kept in
+    shared.s, indiv.s, etc.) are written directly by bcf_write1, whereas a VCF
+    line must be formatted in vcf_format1. 
+ */
 typedef struct {
 	int32_t rid;  // CHROM
 	int32_t pos;  // POS
@@ -285,6 +302,11 @@ extern "C" {
 	const char **bcf_seqnames(const bcf_hdr_t *h, int *nseqs);
 	int bcf_is_snp(bcf1_t *v);
 	void bcf_set_variant_types(bcf1_t *v);
+
+    // If n==0, existing tag is removed. Otherwise it is updated or appended. (pd3 todo: reflect changes also on BCF output)
+    #define bcf1_update_info_int32(hdr,line,key,values,n) bcf1_update_info((hdr),(line),(key),(values),(n),BCF_HT_INT)
+    #define bcf1_update_info_float(hdr,line,key,values,n) bcf1_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
+    int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type);
 
 #ifdef __cplusplus
 }
