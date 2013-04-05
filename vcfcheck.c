@@ -414,7 +414,8 @@ static void do_sample_stats(args_t *args, stats_t *stats, bcf_sr_t *reader, int 
         fmt0 = bcf_get_fmt_ptr(files->readers[0].header,files->readers[0].buffer[0],"GT"); if ( !fmt0 ) return;
         fmt1 = bcf_get_fmt_ptr(files->readers[1].header,files->readers[1].buffer[0],"GT"); if ( !fmt1 ) return;
 
-        int iaf = args->tmp_iaf[1]; // only first ALT alelle considered
+        // only the first ALT allele is considered
+        int iaf = line->n_allele>1 ? args->tmp_iaf[1] : 1;
         gtcmp_t *af_stats = files->readers[0].buffer[0]->d.var_type&VCF_SNP ? args->af_gts_snps : args->af_gts_indels;
         gtcmp_t *smpl_stats = files->readers[0].buffer[0]->d.var_type&VCF_SNP ? args->smpl_gts_snps : args->smpl_gts_indels;
 
@@ -776,7 +777,11 @@ int main_vcfcheck(int argc, char *argv[])
     if (argc == optind) usage();
 
     if ( argc-optind>2 ) usage();
-    if ( args->split_by_id && argc-optind>1 ) error("Only one file can be given with -i.\n");
+    if ( argc-optind>1 )
+    {
+        args->files->require_index = 1;
+        if ( args->split_by_id ) error("Only one file can be given with -i.\n");
+    }
     if ( !args->samples_file ) args->files->max_unpack = BCF_UN_INFO;
     if ( args->targets_fname )
     {
