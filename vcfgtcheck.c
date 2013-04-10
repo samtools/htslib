@@ -430,7 +430,6 @@ static void cross_check_gts(args_t *args)
         dp_arr = bcf_set_iarray(dp_fmt, nsamples, dp_arr, &ndp_arr);
         pl_arr = bcf_set_iarray(pl_fmt, nsamples, pl_arr, &npl_arr);
 
- printf("%s:%d-%d\t%.0lf\n",  args->sm_hdr->id[BCF_DT_CTG][line->rid].key, line->pos+1,line->pos+1, args->lks[idx]);
         idx = 0;
         for (i=1; i<nsamples; i++)
         {
