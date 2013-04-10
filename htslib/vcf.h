@@ -100,8 +100,10 @@ typedef struct {
 } variant_t;
 
 typedef struct {
-	int id, n, type, size; // bcf_hdr_t::id[BCF_DT_ID][$id].key is the key in string; $size is the per-sample size
-	uint8_t *p; // point to the data array
+	int id, n, type, size; // bcf_hdr_t::id[BCF_DT_ID][$id].key is the key in string; $n is the number of values per-sample; $size is the per-sample size in bytes
+	uint8_t *p;     // same as vptr and vptr_* in bcf_info_t below
+    uint32_t p_len;
+    uint32_t p_off:31, p_free:1;
 } bcf_fmt_t;
 
 typedef struct {
@@ -126,7 +128,8 @@ typedef struct {
 	bcf_fmt_t *fmt; // FORMAT and individual sample
 	variant_t *var;	// $var and $var_type set only when set_variant_types called
 	int n_var, var_type;
-    int shared_dirty; // if set, shared.s must be recreated on BCF output
+    int shared_dirty;   // if set, shared.s must be recreated on BCF output (todo)
+    int indiv_dirty;    // if set, indiv.s must be recreated on BCF output (todo)
 } bcf_dec_t;
 
 
@@ -308,6 +311,11 @@ extern "C" {
     #define bcf1_update_info_float(hdr,line,key,values,n) bcf1_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
     int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type);
 
+    // If n==0, existing tag is removed. Otherwise it is updated or appended. (pd3 todo: reflect changes also on BCF output)
+    #define bcf1_update_format_int32(hdr,line,key,values,n) bcf1_update_format((hdr),(line),(key),(values),(n),BCF_HT_INT)
+    #define bcf1_update_format_float(hdr,line,key,values,n) bcf1_update_format((hdr),(line),(key),(values),(n),BCF_HT_REAL)
+    int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type);
+
 #ifdef __cplusplus
 }
 #endif
@@ -315,6 +323,46 @@ extern "C" {
 /*******************
  * Typed value I/O *
  *******************/
+
+/*
+    Note that in contrast with BCFv2.1 specification, HTSlib implementation
+    allows missing values in vectors. For integer types, the values 0x80,
+    0x8000, 0x80000000 are interpreted as missing values and 0x81, 0x8001,
+    0x80000001 as end-of-vector indicators.  Similarly for floats, the value of
+    0x7F800001 is interpreted as a missing value and 0x7F800002 as an
+    end-of-vector indicator. 
+    Note that the end-of-vector byte is not part of the vector.
+
+    This trial BCF version (v2.2) is compatible with the VCF specification and
+    enables to handle correctly vectors with different ploidy in presence of
+    missing values.
+ */
+#define bcf_int8_vector_end  (INT8_MIN+1)
+#define bcf_int16_vector_end (INT16_MIN+1)
+#define bcf_int32_vector_end (INT32_MIN+1)
+#define bcf_int8_missing     INT8_MIN
+#define bcf_int16_missing    INT16_MIN
+#define bcf_int32_missing    INT32_MIN
+extern uint32_t bcf_float_vector_end;
+extern uint32_t bcf_float_missing;
+#define bcf_float_set_vector_end(x) (*(int32_t*)(&(x)) = bcf_float_vector_end)
+#define bcf_float_is_vector_end(x)  (*(int32_t*)(&(x)) == bcf_float_vector_end)
+#define bcf_float_set_missing(x) (*(int32_t*)(&(x)) = bcf_float_missing)
+#define bcf_float_is_missing(x)  (*(int32_t*)(&(x)) == bcf_float_missing)
+
+static inline void bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
+{
+    assert( fmt->type==BCF_BT_INT8 );   // FIXME: does not work with n_alt >= 64
+    int l;
+    int8_t *x = (int8_t*)(fmt->p + isample*fmt->size);
+    for (l = 0; l < fmt->n && x[l] != bcf_int8_vector_end; ++l) 
+    {
+        if (l) kputc("/|"[x[l]&1], str);
+        if ( !(x[l]>>1) ) kputc('.', str);
+        else kputw((x[l]>>1) - 1, str);
+    }
+    if (l == 0) kputc('.', str);
+}
 
 static inline void bcf_enc_size(kstring_t *s, int size, int type)
 {
@@ -339,20 +387,23 @@ static inline void bcf_enc_size(kstring_t *s, int size, int type)
 
 static inline int bcf_enc_inttype(long x)
 {
-	if (x <= INT8_MAX && x > INT8_MIN) return BCF_BT_INT8;
-	if (x <= INT16_MAX && x > INT16_MIN) return BCF_BT_INT16;
+	if (x <= INT8_MAX && x > bcf_int8_missing) return BCF_BT_INT8;
+	if (x <= INT16_MAX && x > bcf_int16_missing) return BCF_BT_INT16;
 	return BCF_BT_INT32;
 }
 
 static inline void bcf_enc_int1(kstring_t *s, int32_t x)
 {
-	if (x == INT32_MIN) {
+	if (x == bcf_int32_vector_end) {
 		bcf_enc_size(s, 1, BCF_BT_INT8);
-		kputc(INT8_MIN, s);
-	} else if (x <= INT8_MAX && x > INT8_MIN) {
+		kputc(bcf_int8_vector_end, s);
+	} else if (x == bcf_int32_missing) {
+		bcf_enc_size(s, 1, BCF_BT_INT8);
+		kputc(bcf_int8_missing, s);
+	} else if (x <= INT8_MAX && x > bcf_int8_missing) {
 		bcf_enc_size(s, 1, BCF_BT_INT8);
 		kputc(x, s);
-	} else if (x <= INT16_MAX && x > INT16_MIN) {
+	} else if (x <= INT16_MAX && x > bcf_int16_missing) {
 		int16_t z = x;
 		bcf_enc_size(s, 1, BCF_BT_INT16);
 		kputsn((char*)&z, 2, s);
@@ -390,7 +441,5 @@ static inline int32_t bcf_dec_size(const uint8_t *p, uint8_t **q, int *type)
 		return *p>>4;
 	} else return bcf_dec_typed_int1(p + 1, q);
 }
-
-extern uint32_t bcf_missing_float;
 
 #endif

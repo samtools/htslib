@@ -83,7 +83,7 @@ static void process_alt(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, kst
 }
 static void process_qual(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, kstring_t *str) 
 {  
-    if ( memcmp(&line->qual, &bcf_missing_float, 4) == 0) kputc('.', str);
+    if ( memcmp(&line->qual, &bcf_float_missing, 4) == 0) kputc('.', str);
     else ksprintf(str, "%g", line->qual);
 }
 static void process_filter(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, kstring_t *str) 
@@ -152,18 +152,6 @@ static void process_format(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, 
     }
     bcf_fmt_array(str, fmt->fmt->n, fmt->fmt->type, fmt->fmt->p + isample*fmt->fmt->size);
 }
-static inline void bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
-{
-    int l;
-    int8_t *x = (int8_t*)(fmt->p + isample*fmt->size); // FIXME: does not work with n_alt >= 64
-    for (l = 0; l < fmt->n && x[l] != INT8_MIN; ++l) 
-    {
-        if (l) kputc("/|"[x[l]&1], str);
-        if (x[l]>>1) kputw((x[l]>>1) - 1, str);
-        else kputc('.', str);
-    }
-    if (l == 0) kputc('.', str);
-}
 static void process_gt(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, kstring_t *str)
 {
     if ( !fmt->ready )
@@ -186,9 +174,12 @@ static void process_tgt(args_t *args, bcf1_t *line, fmt_t *fmt, int isample, kst
         kputc('.', str);
         return;
     }
+
+    assert( fmt->fmt->type==BCF_BT_INT8 );
+
     int l;
     int8_t *x = (int8_t*)(fmt->fmt->p + isample*fmt->fmt->size); // FIXME: does not work with n_alt >= 64
-    for (l = 0; l < fmt->fmt->n && x[l] != INT8_MIN; ++l)
+    for (l = 0; l < fmt->fmt->n && x[l] != bcf_int8_vector_end; ++l)
     {
         if (l) kputc("/|"[x[l]&1], str);
         if (x[l]>>1) 

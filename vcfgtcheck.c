@@ -233,7 +233,7 @@ static int init_gt2ipl(args_t *args, bcf1_t *gt_line, bcf1_t *sm_line, int *gt2i
 
 static void check_gt(args_t *args)
 {
-    int i,j, ret, *gt2ipl = NULL, m_gt2ipl = 0, *gt_cnts = NULL;
+    int i,j, ret, *gt2ipl = NULL, m_gt2ipl = 0, *gt_cnts = NULL, *gt_arr = NULL, *pl_arr = NULL, ngt_arr = 0, npl_arr = 0;
     int gt_id = bcf_id2int(args->gt_hdr, BCF_DT_ID, "GT");
     int pl_id = bcf_id2int(args->sm_hdr, BCF_DT_ID, "PL");
     int dp_id = bcf_id2int(args->sm_hdr, BCF_DT_ID, "DP");
@@ -291,11 +291,14 @@ static void check_gt(args_t *args)
         }
         if ( !pl_fmt ) error("PL not present at %s:%d?", args->sm_hdr->id[BCF_DT_CTG][sm_line->rid].key, sm_line->pos+1);
 
+        gt_arr = bcf_set_iarray(gt_fmt, args->gt_hdr->n[BCF_DT_SAMPLE], gt_arr, &ngt_arr);
+        pl_arr = bcf_set_iarray(pl_fmt, args->sm_hdr->n[BCF_DT_SAMPLE], pl_arr, &npl_arr);
+
         // Set the counts of genotypes to test significance
         for (i=0; i<=n_gt2ipl; i++) gt_cnts[i] = 0;
         for (i=0; i<args->gt_hdr->n[BCF_DT_SAMPLE]; i++)
         {
-            int8_t *gt_ptr = (int8_t*)(gt_fmt->p + i*gt_fmt->size); /* FIXME: does not work with n_alt >= 64 */
+            int *gt_ptr = gt_arr + i*gt_fmt->n;
             int a = (gt_ptr[0]>>1) - 1;
             int b = (gt_ptr[1]>>1) - 1;
             if ( a<0 || b<0 ) 
@@ -311,10 +314,10 @@ static void check_gt(args_t *args)
         int igt = -1;
         if ( isample>=0 )
         {
-            int8_t *gt_ptr = (int8_t*)(gt_fmt->p + isample*gt_fmt->size);
+            int *gt_ptr = gt_arr + i*gt_fmt->n;
             int a = (gt_ptr[0]>>1) - 1;
             int b = (gt_ptr[1]>>1) - 1; 
-            if ( args->hom_only && a!=b ) continue; /* heterozygous genotype */
+            if ( args->hom_only && a!=b ) continue; // heterozygous genotype
             printf("%s\t%d", args->gt_hdr->id[BCF_DT_CTG][gt_line->rid].key, gt_line->pos+1);
             for (i=0; i<gt_line->n_allele; i++) printf("%c%s", i==0?'\t':',', gt_line->d.allele[i]);
             printf("\t%d\t%s/%s", sm_line->d.info[dp_id].v1.i, a>=0 ? gt_line->d.allele[a] : ".", b>=0 ? gt_line->d.allele[b] : ".");
@@ -322,50 +325,47 @@ static void check_gt(args_t *args)
         }
 
         // Calculate likelihoods for all samples, assuming diploid genotypes
-        #define BRANCH(type_t, pl_is_missing) { \
-            type_t *pl_ptr = (type_t*) pl_fmt->p; /* for now, only the first sample */ \
-            if ( isample<0 ) \
-            { \
-                for (i=0; i<args->gt_hdr->n[BCF_DT_SAMPLE]; i++) \
-                { \
-                    int8_t *gt_ptr = (int8_t*)(gt_fmt->p + i*gt_fmt->size); /* FIXME: does not work with n_alt >= 64 */ \
-                    int a = (gt_ptr[0]>>1) - 1; \
-                    int b = (gt_ptr[1]>>1) - 1; \
-                    if ( a<0 || b<0 ) continue; /* missing genotype */ \
-                    if ( args->hom_only && a!=b ) continue; /* heterozygous genotype */ \
-                    \
-                    igt = a<=b ? bcf_ij2G(a,b) : bcf_ij2G(b,a); \
-                    assert( igt<m_gt2ipl ); \
-                    args->sigs[i] += -log(1./(gt_cnts[igt]+gt_cnts[n_gt2ipl-1])); \
-                    igt = gt2ipl[igt]; \
-                    if ( !(pl_is_missing) ) { \
-                        double sum = 0; for (j=0; j<pl_fmt->n; j++) sum += pow(10, -0.1*pl_ptr[j]); \
-                        args->lks[i] += -log(pow(10, -0.1*pl_ptr[igt])/sum); \
-                        args->cnts[i]++; \
-                    } \
-                    args->dps[i] += sm_line->d.info[dp_id].v1.i; \
-                } \
-            } \
-            else \
-            { \
-                type_t *pl_ptr = (type_t*) pl_fmt->p; /* for now, only the first sample */ \
-                printf("\t%d", igt<0 ? '.' : (int)pl_ptr[ gt2ipl[igt] ]); \
-                for (i=0; i<sm_line->n_allele; i++) printf("%c%s", i==0?'\t':',', sm_line->d.allele[i]); \
-                for (igt=0; igt<pl_fmt->n && !(pl_is_missing); igt++) printf("\t%d", (int)pl_ptr[igt]); \
-                printf("\n"); \
-            } \
+        if ( isample<0 )
+        {
+            // this is the default output, check the query VCF against the -g VCF
+            for (i=0; i<args->gt_hdr->n[BCF_DT_SAMPLE]; i++)
+            {
+                int *gt_ptr = gt_arr + i*gt_fmt->n;
+                int a = (gt_ptr[0]>>1) - 1;
+                int b = (gt_ptr[1]>>1) - 1;
+                if ( a<0 || b<0 ) continue; // missing genotype
+                if ( args->hom_only && a!=b ) continue; // heterozygous genotype
+                igt = a<=b ? bcf_ij2G(a,b) : bcf_ij2G(b,a);
+                assert( igt<m_gt2ipl );
+                args->sigs[i] += -log(1./(gt_cnts[igt]+gt_cnts[n_gt2ipl-1]));
+                igt = gt2ipl[igt];
+                if ( pl_arr[igt] >=0 )  // chek the first sample from the query file
+                {
+                    double sum = 0; 
+                    for (j=0; j<pl_fmt->n; j++) 
+                        sum += pow(10, -0.1*pl_arr[j]); 
+                    args->lks[i] += -log(pow(10, -0.1*pl_arr[igt])/sum); 
+                    args->cnts[i]++; 
+                } 
+                args->dps[i] += sm_line->d.info[dp_id].v1.i; 
+            }
         }
-        switch (pl_fmt->type) {
-            case BCF_BT_INT8:  BRANCH(int8_t,  pl_ptr[igt]==INT8_MIN); break;
-            case BCF_BT_INT16: BRANCH(int16_t, pl_ptr[igt]==INT16_MIN); break;
-            case BCF_BT_INT32: BRANCH(int32_t, pl_ptr[igt]==INT32_MIN); break;
-            case BCF_BT_FLOAT: BRANCH(float,  *(uint32_t*)(&pl_ptr[igt])==bcf_missing_float); break;
-            default: error("todo: type %d\n", pl_fmt->type); break;
+        else
+        {
+            // per-site listing of the first sample from the query file
+            printf("\t%d", igt<0 ? '.' : (int)pl_arr[ gt2ipl[igt] ]); 
+            for (i=0; i<sm_line->n_allele; i++) printf("%c%s", i==0?'\t':',', sm_line->d.allele[i]); 
+            for (igt=0; igt<pl_fmt->n; igt++)   
+                if ( pl_arr[igt]==bcf_int32_vector_end ) break;
+                else if ( pl_arr[igt]==bcf_int32_missing ) printf(".");
+                else printf("\t%d", pl_arr[igt]); 
+            printf("\n"); 
         }
-        #undef BRANCH
     }
     if ( gt2ipl ) free(gt2ipl);
     if ( gt_cnts ) free(gt_cnts);
+    if ( gt_arr ) free(gt_arr);
+    if ( pl_arr ) free(pl_arr);
 
     // Scale LKs and certainties
     double max = args->lks[0];
@@ -407,7 +407,7 @@ static void cross_check_gts(args_t *args)
 {
     int nsamples = args->sm_hdr->n[BCF_DT_SAMPLE], ndp_arr = 0, npl_arr = 0;
     unsigned int *dp = (unsigned int*) calloc(nsamples,sizeof(unsigned int)), *ndp = (unsigned int*) calloc(nsamples,sizeof(unsigned int)); // this will overflow one day...
-    int i,j,k,idx, ret, *dp_arr = NULL, *pl_arr = NULL;
+    int i,j,k,idx, ret, *dp_arr = NULL, *pl_arr = NULL, pl_warned = 0, dp_warned = 0;
     int pl_id = bcf_id2int(args->sm_hdr, BCF_DT_ID, "PL");
     int dp_id = bcf_id2int(args->sm_hdr, BCF_DT_ID, "DP");
     if ( pl_id<0 ) error("[E::%s] PL not present in the header of %s?\n", __func__, args->files->readers[0].fname);
@@ -424,32 +424,33 @@ static void cross_check_gts(args_t *args)
             if ( line->d.fmt[i].id==pl_id ) pl_fmt = &line->d.fmt[i];
             if ( line->d.fmt[i].id==dp_id ) dp_fmt = &line->d.fmt[i];
         }
-        if ( !pl_fmt ) error("PL not present at %s:%d?", args->sm_hdr->id[BCF_DT_CTG][line->rid].key, line->pos+1);
-        if ( !dp_fmt ) error("DP not present at %s:%d?", args->sm_hdr->id[BCF_DT_CTG][line->rid].key, line->pos+1);
+        if ( !pl_fmt ) { pl_warned++; continue; }
+        if ( !dp_fmt ) { dp_warned++; continue; }
 
         dp_arr = bcf_set_iarray(dp_fmt, nsamples, dp_arr, &ndp_arr);
         pl_arr = bcf_set_iarray(pl_fmt, nsamples, pl_arr, &npl_arr);
 
+ printf("%s:%d-%d\t%.0lf\n",  args->sm_hdr->id[BCF_DT_CTG][line->rid].key, line->pos+1,line->pos+1, args->lks[idx]);
         idx = 0;
         for (i=1; i<nsamples; i++)
         {
             int *ipl = &pl_arr[i*pl_fmt->n];
-            if ( dp_arr[i]==INT_MIN || !dp_arr[i] || *ipl==INT_MIN ) 
-            {
-                idx += i;
-                continue;
-            }
+            if ( dp_arr[i]==bcf_int32_missing || !dp_arr[i] || *ipl==bcf_int32_missing ) { idx += i; continue; }
+
             for (j=0; j<i; j++)
             {
                 int *jpl = &pl_arr[j*pl_fmt->n];
-                if ( dp_arr[j]==INT_MIN || !dp_arr[j] || *jpl==INT_MIN ) 
-                {
-                    idx++;
-                    continue;
-                }
+                if ( dp_arr[j]==bcf_int32_missing || !dp_arr[j] || *jpl==bcf_int32_missing ) { idx++; continue; }
+
                 int min_pl = ipl[0] + jpl[0];
                 for (k=1; k<pl_fmt->n; k++)
+                {
+                    if ( ipl[k]==bcf_int32_missing || jpl[k]==bcf_int32_missing ) break;
+                    if ( ipl[k]==bcf_int32_vector_end || jpl[k]==bcf_int32_vector_end ) { k = pl_fmt->n; break; }
                     if ( min_pl > ipl[k]+jpl[k] ) min_pl = ipl[k]+jpl[k];
+                }
+                if ( k!=pl_fmt->n ) { idx++; continue; }
+
                 args->lks[idx] += min_pl;
                 args->cnts[idx]++;
                 args->dps[idx] += dp_arr[i] < dp_arr[j] ? dp_arr[i] : dp_arr[j];
@@ -461,6 +462,9 @@ static void cross_check_gts(args_t *args)
     }
     if ( dp_arr ) free(dp_arr);
     if ( pl_arr ) free(pl_arr);
+
+    if ( pl_warned ) fprintf(stderr, "[W::%s] PL was not found at %d site(s)\n", __func__, pl_warned);
+    if ( dp_warned ) fprintf(stderr, "[W::%s] DP was not found at %d site(s)\n", __func__, dp_warned);
 
     FILE *fp = args->plot ? open_file(NULL, "w", "%s.tab", args->plot) : stdout;
     // Output samples sorted by average discordance
@@ -525,7 +529,7 @@ static char *init_prefix(char *prefix)
 
 static void usage(void)
 {
-	fprintf(stderr, "About:   Check sample identity. With no VCF given, multi-sample cross-check is performed.\n");
+	fprintf(stderr, "About:   Check sample identity. With no -g VCF given, multi-sample cross-check is performed.\n");
 	fprintf(stderr, "Usage:   vcfgtcheck [options] [-g <genotypes.vcf.gz>] <query.vcf.gz>\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "    -g, --genotypes <file>             genotypes to compare against in VCF\n");

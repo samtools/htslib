@@ -12,11 +12,8 @@
 #include "vcfutils.h"
 
 #include "khash.h"
-KHASH_MAP_INIT_STR(strdict, const char *)
+KHASH_MAP_INIT_STR(strdict, int)
 typedef khash_t(strdict) strdict_t;
-
-extern uint32_t bcf_missing_float;
-#define SET_FLOAT_MISSING(var) *((uint32_t*)&(var)) = (uint32_t) bcf_missing_float;
 
 #define SKIP_DONE 1
 #define SKIP_DIFF 2
@@ -42,11 +39,13 @@ typedef struct
     int nals, mals; // size of the output array
     int *cnt, ncnt; // number of records that refer to the alleles
     int *nbuf;      // readers have buffers of varying lengths
-    float *weight;  // weighting factor for recalculating qualities
+    int *smpl_ploidy, *smpl_nGsize; // ploidy and derived number of values in Number=G tags, updated for each line (todo: cache for missing cases)
     int *flt, mflt, minf;
     bcf_info_t *inf;// out_line's INFO fields
-    bcf_fmt_t *fmt; // out_line's indiv fields
-    int mfmt, *fmt_map, mfmt_map;
+    bcf_fmt_t **fmt_map; // i-th output FORMAT field corresponds in j-th reader to i*nreader+j, first row is reserved for GT
+    int nfmt_map;        // number of rows in the fmt_map array
+    void *tmp_arr;
+    int ntmp_arr;
     maux1_t **d;    // d[i][j] i-th reader, j-th buffer line
     bcf_srs_t *files;
 }
@@ -253,12 +252,11 @@ maux_t *maux_init(bcf_srs_t *files)
     ma->nbuf   = (int *) calloc(ma->n,sizeof(int));
     ma->d      = (maux1_t**) calloc(ma->n,sizeof(maux1_t*));
     ma->files  = files;
-    ma->weight = (float*) calloc(ma->n,sizeof(float));
-    int i, n = 0;
+    int i, n_smpl = 0;
     for (i=0; i<ma->n; i++)
-        n += files->readers[i].header->n[BCF_DT_SAMPLE];
-    for (i=0; i<ma->n; i++)
-        ma->weight[i] = n ? (float)files->readers[i].header->n[BCF_DT_SAMPLE]/n : (float)1/ma->n;
+        n_smpl += files->readers[i].header->n[BCF_DT_SAMPLE];
+    ma->smpl_ploidy = (int*) calloc(n_smpl,sizeof(int));
+    ma->smpl_nGsize = (int*) malloc(n_smpl*sizeof(int));
     return ma;
 }
 void maux_destroy(maux_t *ma)
@@ -272,17 +270,16 @@ void maux_destroy(maux_t *ma)
             if ( ma->d[i][j].map ) free(ma->d[i][j].map);
         free(ma->d[i]);
     }
-    if (ma->mfmt_map) free(ma->fmt_map);
-    for (i=0; i<ma->mfmt; i++)
-        if ( ma->fmt[i].p ) free(ma->fmt[i].p);
-    // ma->fmt freed in bcf_destroy1
+    if (ma->ntmp_arr) free(ma->tmp_arr);
+    if (ma->nfmt_map) free(ma->fmt_map);
     // ma->inf freed in bcf_destroy1
     free(ma->d);
     free(ma->nbuf);
     for (i=0; i<ma->mals; i++) free(ma->als[i]);
     free(ma->als);
     free(ma->cnt);
-    free(ma->weight);
+    free(ma->smpl_ploidy);
+    free(ma->smpl_nGsize);
     free(ma);
 }
 void maux_expand1(maux_t *ma, int i)
@@ -557,111 +554,183 @@ void update_AN_AC(bcf_hdr_t *hdr, bcf1_t *line)
     free(tmp);
 }
 
-void merge_GT(args_t *args, int mask, bcf_fmt_t *fmt, int *fmt_map, bcf1_t *out)
+void merge_GT(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out)
 {
     bcf_srs_t *files = args->files;
     bcf_hdr_t *out_hdr = args->out_hdr;
     maux_t *ma = args->maux;
     int i, ismpl = 0, nsamples = out_hdr->n[BCF_DT_SAMPLE];
-    if ( !fmt->p ) 
-        fmt->p = (uint8_t*) malloc(sizeof(uint8_t)*nsamples*fmt->size);
+    
+    int nsize = 0, msize = sizeof(int32_t);
+    for (i=0; i<files->nreaders; i++)
+    {
+        if ( !fmt_map[i] ) continue;
+        if ( fmt_map[i]->n > nsize ) nsize = fmt_map[i]->n;
+    }
+
+    if ( ma->ntmp_arr < nsamples*nsize*msize )
+    {
+        ma->ntmp_arr = nsamples*nsize*msize;
+        ma->tmp_arr  = realloc(ma->tmp_arr, ma->ntmp_arr);
+    }
+    memset(ma->smpl_ploidy,0,nsamples*sizeof(int));
+
     for (i=0; i<files->nreaders; i++)
     {
         bcf_sr_t *reader = &files->readers[i];
-        bcf1_t *line   = reader->buffer[0];
         bcf_hdr_t *hdr = reader->header;
+        bcf_fmt_t *fmt_ori = fmt_map[i];
+        int32_t *tmp  = (int32_t *) ma->tmp_arr + ismpl*nsize;
 
-        int j, k = -1;
-        if ( mask&1<<i ) k = fmt_map[i] - 1;
-        if ( k<0 )
+        int j, k;
+        if ( !fmt_ori )
         {
             // missing values
             for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++)
-                fmt->p[fmt->size*(ismpl+j)] = (uint8_t)INT8_MIN;
-            ismpl += hdr->n[BCF_DT_SAMPLE];
-            continue;
-        }
-        bcf_fmt_t *fmt_ori = &line->d.fmt[k];
-        uint8_t *p_out = &fmt->p[fmt->size*ismpl], *p_ori = fmt_ori->p;
-
-        if ( !ma->d[i][0].als_differ )
-        {
-            // the allele numbering is unchanged
-            for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++)
             {
-                for (k=0; k<fmt_ori->size; k++, p_out++, p_ori++)
-                    *p_out = *p_ori;
-                for (; k<fmt->size; k++, p_out++)
-                    *p_out =  (uint8_t)INT8_MIN;
+                for (k=0; k<nsize; k++) { tmp[k] = 0; ma->smpl_ploidy[ismpl+j]++; }
+                for (; k<nsize; k++) tmp[k] = bcf_int32_vector_end;
+                tmp += nsize;
             }
             ismpl += hdr->n[BCF_DT_SAMPLE];
             continue;
         }
-        // allele numbering needs to be changed
-        for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++)
-        {
-            for (k=0; k<fmt_ori->size; k++, p_out++, p_ori++)
-            {
-                if ( *p_ori == (uint8_t)INT8_MIN ) break;
-                int al = (*p_ori>>1) - 1;
-                al = al<=0 ? al + 1 : ma->d[i][0].map[al] + 1;
-                *p_out = (al << 1) | ((*p_ori)&1);
-            }
-            for (; k<fmt->size; k++, p_out++)
-                *p_out =  (uint8_t)INT8_MIN;
-        }
-        ismpl += hdr->n[BCF_DT_SAMPLE];
-    }
-}
 
-void merge_format_field(args_t *args, int mask, bcf_fmt_t *fmt, int *fmt_map, bcf1_t *out)
-{
-    bcf_srs_t *files = args->files;
-    bcf_hdr_t *out_hdr = args->out_hdr;
-    maux_t *ma = args->maux;
-    int i, ismpl = 0, nsamples = out_hdr->n[BCF_DT_SAMPLE];
-    if ( !fmt->p ) 
-        fmt->p = (uint8_t*) malloc(sizeof(uint8_t)*nsamples*fmt->size);
-    for (i=0; i<files->nreaders; i++)
-    {
-        bcf_sr_t *reader = &files->readers[i];
-        bcf1_t *line   = reader->buffer[0];
-        bcf_hdr_t *hdr = reader->header;
-        int j, k = -1, l;
-        if ( mask&1<<i ) k = fmt_map[i] - 1;
-        #define BRANCH(type_t, missing) { \
-            type_t *p_out = (type_t*) (fmt->p + fmt->size*ismpl); \
-            if ( k<0 ) \
+        #define BRANCH(type_t, missing, vector_end) { \
+            type_t *p_ori  = (type_t*) fmt_ori->p; \
+            if ( !ma->d[i][0].als_differ ) \
             { \
-                /* the field is not present in this file */ \
+                /* the allele numbering is unchanged */ \
                 for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++) \
                 { \
-                    for (l=0; l<fmt->n; l++) missing; \
-                    p_out += fmt->n; \
+                    for (k=0; k<fmt_ori->n; k++) \
+                    { \
+                        if ( p_ori[k]==vector_end ) break; \
+                        ma->smpl_ploidy[ismpl+j]++; \
+                        if ( p_ori[k]==missing ) tmp[k] = 0; \
+                        else tmp[k] = p_ori[k]; \
+                    } \
+                    for (; k<nsize; k++) tmp[k] = bcf_int32_vector_end; \
+                    tmp += nsize; \
+                    p_ori += fmt_ori->n; \
                 } \
                 ismpl += hdr->n[BCF_DT_SAMPLE]; \
                 continue; \
             } \
-            bcf_fmt_t *fmt_ori = &line->d.fmt[k]; \
-            type_t *p_ori = (type_t*) fmt_ori->p; \
-            if ( (!IS_VL_G(out_hdr,fmt->id) && !IS_VL_A(out_hdr,fmt->id)) || (line->n_allele==out->n_allele && !ma->d[i][0].als_differ) ) \
+            /* allele numbering needs to be changed */ \
+            for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++) \
+            { \
+                for (k=0; k<fmt_ori->n; k++) \
+                { \
+                    if ( p_ori[k]==vector_end ) break; \
+                    ma->smpl_ploidy[ismpl+j]++; \
+                    if ( p_ori[k]==missing ) tmp[k] = 0; \
+                    else \
+                    { \
+                        int al = (p_ori[k]>>1) - 1; \
+                        al = al<=0 ? al + 1 : ma->d[i][0].map[al] + 1; \
+                        tmp[k] = (al << 1) | ((p_ori[k])&1); \
+                    } \
+                } \
+                for (; k<nsize; k++) tmp[k] = bcf_int32_vector_end; \
+                tmp += nsize; \
+                p_ori += fmt_ori->n; \
+            } \
+            ismpl += hdr->n[BCF_DT_SAMPLE]; \
+        }
+        switch (fmt_ori->type)
+        {
+            case BCF_BT_INT8: BRANCH(int8_t,   bcf_int8_missing,  bcf_int8_vector_end); break;
+            case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
+            case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
+            default: error("Unexpected case: %d\n", fmt_ori->type);
+        }
+        #undef BRANCH
+    }
+    bcf1_update_format_int32(out_hdr, out, "GT", (int32_t*)ma->tmp_arr, nsamples*nsize);
+    for (i=0; i<nsamples; i++)
+    {
+        assert( ma->smpl_ploidy[i]>0 && ma->smpl_ploidy[i]<=2 );
+        ma->smpl_nGsize[i] = ma->smpl_ploidy[i]==1 ?  out->n_allele : out->n_allele*(out->n_allele + 1)/2;
+    }
+}
+
+void merge_format_field(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out)
+{
+    bcf_srs_t *files = args->files;
+    bcf_hdr_t *out_hdr = args->out_hdr;
+    maux_t *ma = args->maux;
+    int i, ismpl = 0, nsamples = out_hdr->n[BCF_DT_SAMPLE];
+
+    const char *key = NULL;
+    int nsize = 0, length = BCF_VL_FIXED, type = -1;
+    for (i=0; i<files->nreaders; i++)
+    {
+        if ( !fmt_map[i] ) continue;
+        if ( !key ) key = files->readers[i].header->id[BCF_DT_ID][fmt_map[i]->id].key;
+        type = fmt_map[i]->type;
+        if ( IS_VL_G(files->readers[i].header, fmt_map[i]->id) ) { length = BCF_VL_G; nsize = out->n_allele*(out->n_allele + 1)/2; break; }
+        if ( IS_VL_A(files->readers[i].header, fmt_map[i]->id) ) { length = BCF_VL_A; nsize = out->n_allele - 1; break; }
+        if ( fmt_map[i]->n > nsize ) nsize = fmt_map[i]->n;
+    }
+
+    int msize = sizeof(float)>sizeof(int32_t) ? sizeof(float) : sizeof(int32_t);
+    if ( ma->ntmp_arr < nsamples*nsize*msize )
+    {
+        ma->ntmp_arr = nsamples*nsize*msize;
+        ma->tmp_arr  = realloc(ma->tmp_arr, ma->ntmp_arr);
+    }
+
+    // Fill the temp array for all samples by collecting values from all files
+    for (i=0; i<files->nreaders; i++)
+    {
+        bcf_sr_t *reader = &files->readers[i];
+        bcf1_t *line   = reader->buffer[0];
+        bcf_hdr_t *hdr = reader->header;
+        bcf_fmt_t *fmt_ori = fmt_map[i];
+        if ( fmt_ori ) type = fmt_ori->type;
+
+        // set the values
+        #define BRANCH(tgt_type_t, src_type_t, src_is_missing, src_is_vector_end, tgt_set_missing, tgt_set_vector_end) { \
+            int j, l; \
+            tgt_type_t *tgt = (tgt_type_t *) ma->tmp_arr + ismpl*nsize; \
+            if ( !fmt_ori ) \
+            { \
+                /* the field is not present in this file, set missing values */ \
+                for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++) \
+                { \
+                    tgt_set_missing; tgt++; for (l=1; l<nsize; l++) { tgt_set_vector_end; tgt++; } \
+                } \
+                ismpl += hdr->n[BCF_DT_SAMPLE]; \
+                continue; \
+            } \
+            src_type_t *src = (src_type_t*) fmt_ori->p; \
+            if ( (length!=BCF_VL_G && length!=BCF_VL_A) || (line->n_allele==out->n_allele && !ma->d[i][0].als_differ) ) \
             { \
                 /* alleles unchanged, copy over */ \
                 for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++) \
                 { \
-                    for (l=0; l<fmt->n; l++) p_out[l] = p_ori[l]; \
-                    p_out = (type_t *)(fmt->size + (void*)p_out); \
-                    p_ori = (type_t *)(fmt_ori->size + (void*)p_ori); \
+                    for (l=0; l<nsize; l++) \
+                    { \
+                        if ( src_is_vector_end ) break; \
+                        else if ( src_is_missing ) tgt_set_missing; \
+                        else *tgt = *src; \
+                        tgt++; src++; \
+                    } \
+                    for (; l<nsize; l++) { tgt_set_vector_end; tgt++; src++; } \
                 } \
                 ismpl += hdr->n[BCF_DT_SAMPLE]; \
                 continue; \
             } \
-            /* allele numbering needs to be changed: Number=G tags */ \
-            if ( IS_VL_G(out_hdr,fmt->id) ) \
+            /* allele numbering needs to be changed */ \
+            if ( length==BCF_VL_G ) \
             { \
+                /* Number=G tags */ \
                 for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++) \
                 { \
-                    for (l=0; l<fmt->n; l++) missing; \
+                    tgt = (tgt_type_t *) ma->tmp_arr + (ismpl+j)*nsize; \
+                    for (l=0; l<ma->smpl_nGsize[ismpl+j]; l++) { tgt_set_missing; tgt++; } \
+                    for (; l<nsize; l++) { tgt_set_vector_end; tgt++; } \
                     int iori,jori, inew,jnew; \
                     for (iori=0; iori<line->n_allele; iori++) \
                     { \
@@ -671,11 +740,17 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t *fmt, int *fmt_map, bc
                             jnew = ma->d[i][0].map[jori]; \
                             int kori = iori*(iori+1)/2 + jori; \
                             int knew = inew*(inew+1)/2 + jnew; \
-                            p_out[knew] = p_ori[kori]; \
+                            src = (src_type_t*) fmt_ori->p + j*fmt_ori->n + kori; \
+                            tgt = (tgt_type_t *) ma->tmp_arr + (ismpl+j)*nsize + knew; \
+                            if ( src_is_vector_end ) \
+                            { \
+                                iori = line->n_allele; \
+                                break; \
+                            } \
+                            if ( src_is_missing ) tgt_set_missing; \
+                            else *tgt = *src; \
                         } \
                     } \
-                    p_out = (type_t *)(fmt->size + (void*)p_out); \
-                    p_ori = (type_t *)(fmt_ori->size + (void*)p_ori); \
                 } \
             } \
             else \
@@ -683,40 +758,36 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t *fmt, int *fmt_map, bc
                 /* Number=A tags */ \
                 for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++) \
                 { \
-                    for (l=0; l<fmt->n; l++) missing; \
+                    tgt = (tgt_type_t *) ma->tmp_arr + (ismpl+j)*nsize; \
+                    for (l=0; l<nsize; l++) { tgt_set_missing; tgt++; } \
                     int iori,inew; \
                     for (iori=1; iori<line->n_allele; iori++) \
                     { \
                         inew = ma->d[i][0].map[iori] - 1; \
-                        p_out[inew] = p_ori[iori - 1]; \
+                        tgt = (tgt_type_t *) ma->tmp_arr + (ismpl+j)*nsize + inew; \
+                        if ( src_is_vector_end ) break; \
+                        if ( src_is_missing ) tgt_set_missing; \
+                        else *tgt = *src; \
+                        src++; \
                     } \
-                    p_out = (type_t *)(fmt->size + (void*)p_out); \
-                    p_ori = (type_t *)(fmt_ori->size + (void*)p_ori); \
                 } \
             } \
             ismpl += hdr->n[BCF_DT_SAMPLE]; \
         }
-        switch (fmt->type)
+        switch (type)
         {
-            case BCF_BT_INT8: BRANCH(int8_t, p_out[l] = INT8_MIN); break;
-            case BCF_BT_INT16: BRANCH(int16_t, p_out[l] = INT16_MIN); break;
-            case BCF_BT_INT32: BRANCH(int32_t, p_out[l] = INT32_MIN); break;
-            case BCF_BT_FLOAT: BRANCH(float, SET_FLOAT_MISSING(p_out[l]) ); break;
-            default: error("Unexpected case: %d\n", fmt->type);
+            case BCF_BT_INT8:  BRANCH(int32_t,  int8_t, *src==bcf_int8_missing, *src==bcf_int8_vector_end, *tgt=bcf_int32_missing, *tgt=bcf_int32_vector_end); break;
+            case BCF_BT_INT16: BRANCH(int32_t, int16_t, *src==bcf_int8_missing, *src==bcf_int8_vector_end, *tgt=bcf_int32_missing, *tgt=bcf_int32_vector_end); break;
+            case BCF_BT_INT32: BRANCH(int32_t, int32_t, *src==bcf_int8_missing, *src==bcf_int8_vector_end, *tgt=bcf_int32_missing, *tgt=bcf_int32_vector_end); break;
+            case BCF_BT_FLOAT: BRANCH(float, float, bcf_float_is_missing(*src), bcf_float_is_vector_end(*src), bcf_float_set_missing(*tgt), bcf_float_set_vector_end(*tgt)); break;
+            default: error("Unexpected case: %d\n", type);
         }
         #undef BRANCH
     }
-
-    #if 0
-    // debug
-    for (ismpl=0; ismpl<nsamples; ismpl++) 
-    {
-        uint8_t *p = &fmt->p[ismpl*fmt->size];
-        int x=0;
-        for (i=0; i<fmt->size; i++)
-            if ( !p[i] ) x++; 
-    }
-    #endif
+    if ( type==BCF_BT_FLOAT )
+        bcf1_update_format_float(out_hdr, out, key, (float*)ma->tmp_arr, nsamples*nsize);
+    else
+        bcf1_update_format_int32(out_hdr, out, key, (int32_t*)ma->tmp_arr, nsamples*nsize);
 }
 
 void merge_format(args_t *args, int mask, bcf1_t *out)
@@ -724,10 +795,18 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
     bcf_srs_t *files = args->files;
     bcf_hdr_t *out_hdr = args->out_hdr;
     maux_t *ma = args->maux;
-    memset(ma->fmt_map,0,ma->mfmt_map*sizeof(int));
-    int nsamples = out_hdr->n[BCF_DT_SAMPLE];
-    int i, j, n_fmt = 0;
-    int nG_new = out->n_allele*(out->n_allele + 1)/2;
+    if ( !ma->nfmt_map ) 
+    {
+        ma->nfmt_map = 2;
+        ma->fmt_map  = (bcf_fmt_t**) calloc(ma->nfmt_map*files->nreaders, sizeof(bcf_fmt_t*));
+    }
+    else
+        memset(ma->fmt_map, 0, ma->nfmt_map*files->nreaders*sizeof(bcf_fmt_t**));
+
+    khiter_t kitr;
+    strdict_t *tmph = args->tmph;
+    kh_clear(strdict, tmph);
+    int i, j, ret, has_GT = 0, max_ifmt = 0; // max fmt index
     for (i=0; i<files->nreaders; i++)
     {
         if ( !(mask&1<<i) ) continue;
@@ -736,55 +815,47 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
         bcf_hdr_t *hdr = reader->header;
         for (j=0; j<line->n_fmt; j++) 
         {
+            // Wat this tag already seen?
             bcf_fmt_t *fmt = &line->d.fmt[j];
-            int id = bcf_id2int(out_hdr, BCF_DT_ID, hdr->id[BCF_DT_ID][fmt->id].key);
-            int k;
-            for (k=0; k<n_fmt; k++)
-                if ( ma->fmt[k].id ==id ) break;
-            int new_n = IS_VL_G(hdr,fmt->id) ? nG_new : (IS_VL_A(hdr,fmt->id) ? out->n_allele - 1 : fmt->n);
-            int new_size = new_n * fmt->size / fmt->n;
-            if ( k<n_fmt ) // existing format field
+            const char *key = hdr->id[BCF_DT_ID][fmt->id].key;
+            kitr = kh_get(strdict, tmph, key);
+
+            int ifmt;
+            if ( kitr != kh_end(tmph) )
+                ifmt = kh_value(tmph, kitr);    // seen
+            else
             {
-                if ( new_size < fmt->size ) 
+                // new FORMAT tag
+                if ( key[0]=='G' && key[1]=='T' && key[2]==0 ) { has_GT = 1; ifmt = 0; }
+                else 
                 {
-                    ma->fmt[k].size = new_size;
-                    ma->fmt[k].type = fmt->type;
-                    ma->fmt[k].p = (uint8_t*) realloc(ma->fmt[k].p, sizeof(uint8_t)*nsamples);
+                    ifmt = ++max_ifmt;
+                    if ( max_ifmt >= ma->nfmt_map )
+                    {
+                        ma->fmt_map = (bcf_fmt_t**) realloc(ma->fmt_map, sizeof(bcf_fmt_t*)*(max_ifmt+1)*files->nreaders);
+                        memset(ma->fmt_map+ma->nfmt_map*files->nreaders, 0, (max_ifmt-ma->nfmt_map+1)*files->nreaders*sizeof(bcf_fmt_t*));
+                        ma->nfmt_map = max_ifmt+1;
+                    }
                 }
-                //printf("already there: %d %s  id=%d  n=%d  size=%d  type=%d\n", k,hdr->id[BCF_DT_ID][fmt->id].key, id,fmt->n,fmt->size,fmt->type);
+                kitr = kh_put(strdict, tmph, key, &ret);
+                kh_value(tmph, kitr) = ifmt;
             }
-            else    // new format fields
-            {
-                n_fmt++;
-                hts_expand0(bcf_fmt_t,(n_fmt+1),ma->mfmt,ma->fmt);
-                hts_expand0(int,(n_fmt+1)*files->nreaders,ma->mfmt_map,ma->fmt_map);
-                ma->fmt[k].id   = id;
-                ma->fmt[k].n    = new_n;
-                ma->fmt[k].size = new_size;
-                ma->fmt[k].type = fmt->type;
-                if ( ma->fmt[k].p ) { free(ma->fmt[k].p); ma->fmt[k].p = NULL; }
-                // printf("add: %d %s  id=%d  n=%d  size=%d  type=%d info=%d\n", k,hdr->id[BCF_DT_ID][fmt->id].key, id,fmt->n,fmt->size,fmt->type, (hdr->id[BCF_DT_ID][fmt->id].val->info[BCF_HL_FMT]>>8)&0xf);
-            }
-            ma->fmt_map[k*files->nreaders+i] = j+1;
+            ma->fmt_map[ifmt*files->nreaders+i] = fmt;
         }
         // Check if the allele numbering must be changed
         for (j=1; j<reader->buffer[0]->n_allele; j++)
             if ( ma->d[i][0].map[j]!=j ) break;
         ma->d[i][0].als_differ = j==reader->buffer[0]->n_allele ? 0 : 1;
     }
-    int gt_id = bcf_id2int(out_hdr,BCF_DT_ID,"GT");
-    out->n_fmt = n_fmt;
-    for (j=0; j<n_fmt; j++)
-    {
-        int id = ma->fmt[j].id;
-        if ( id==gt_id )
-            merge_GT(args, mask, &ma->fmt[j], &ma->fmt_map[j*files->nreaders], out);
-        else 
-            merge_format_field(args, mask, &ma->fmt[j], &ma->fmt_map[j*files->nreaders], out);
-    }
-    out->n_sample = nsamples;
-    out->d.fmt = ma->fmt;
+
+    out->n_sample = out_hdr->n[BCF_DT_SAMPLE];
+    if ( has_GT )
+        merge_GT(args, mask, ma->fmt_map, out);
     update_AN_AC(out_hdr, out);
+
+    for (i=1; i<=max_ifmt; i++)
+        merge_format_field(args, mask, &ma->fmt_map[i*files->nreaders], out);
+    out->d.indiv_dirty = 1;
 }
 
 // The core merging function, one or none line from each reader
