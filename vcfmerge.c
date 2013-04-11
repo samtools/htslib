@@ -605,9 +605,9 @@ void merge_GT(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out)
                 { \
                     for (k=0; k<fmt_ori->n; k++) \
                     { \
-                        if ( p_ori[k]==vector_end ) break; \
+                        if ( p_ori[k]==vector_end ) break; /* smaller ploidy */ \
                         ma->smpl_ploidy[ismpl+j]++; \
-                        if ( p_ori[k]==missing ) tmp[k] = 0; \
+                        if ( p_ori[k]==missing ) tmp[k] = 0; /* missing allele */ \
                         else tmp[k] = p_ori[k]; \
                     } \
                     for (; k<nsize; k++) tmp[k] = bcf_int32_vector_end; \
@@ -622,9 +622,9 @@ void merge_GT(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out)
             { \
                 for (k=0; k<fmt_ori->n; k++) \
                 { \
-                    if ( p_ori[k]==vector_end ) break; \
+                    if ( p_ori[k]==vector_end ) break; /* smaller ploidy */ \
                     ma->smpl_ploidy[ismpl+j]++; \
-                    if ( p_ori[k]==missing ) tmp[k] = 0; \
+                    if ( !(p_ori[k]>>1) || p_ori[k]==missing ) tmp[k] = 0; /* missing allele */ \
                     else \
                     { \
                         int al = (p_ori[k]>>1) - 1; \

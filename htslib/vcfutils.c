@@ -63,8 +63,8 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 		    	int ial; \
 		    	for (ial=0; ial<fmt_gt->n; ial++) \
 		    	{ \
-                    if ( !p[ial] || !(p[ial]>>1) || p[ial]==vector_end ) break; \
-                    if ( p[ial]==missing ) continue; \
+                    if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
+                    if ( !(p[ial]>>1) || p[ial]==missing ) continue; /* missing allele */ \
 		    		ac[(p[ial]>>1)-1]++; \
 		    	} \
 		    } \
@@ -90,8 +90,8 @@ inline int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
         for (i=1; i<fmt_ptr->n; i++) \
         { \
             if ( p[i] == vector_end ) break;   /* smaller ploidy */ \
-            if ( p[i] ==missing ) continue; \
             int tmp = p[i]>>1; \
+            if ( !tmp || p[i] == missing ) continue; /* missing allele */ \
             if ( tmp < min ) min = tmp; \
             if ( tmp > 1 && nref > tmp ) nref = tmp; \
             a |= tmp; \
@@ -141,8 +141,8 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
             int ial; \
             for (ial=0; ial<gt->size; ial++) \
             { \
-                if ( !p[ial] || !(p[ial]>>1) || p[ial]==vector_end ) break; \
-                if ( p[ial]==missing ) continue; \
+                if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
+                if ( !(p[ial]>>1) || p[ial]==missing ) continue; /* missing allele */ \
                 ac[(p[ial]>>1)-1]++; \
             } \
         } \
@@ -208,8 +208,8 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                     int ial; \
                     for (ial=0; ial<gt->n; ial++) \
                     { \
-                        if ( !p[ial] || !(p[ial]>>1) || p[ial]==vector_end ) break; \
-                        if ( p[ial]==missing ) continue; \
+                        if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
+                        if ( !(p[ial]>>1) || p[ial]==missing ) continue; /* missing allele */ \
                         p[ial] = (map[(p[ial]>>1)-1] + 1) <<1 | (p[ial]&1); \
                     } \
                 } \

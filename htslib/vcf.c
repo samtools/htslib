@@ -1119,6 +1119,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 							is_phased = (*t == '|');
 							if (*t == ':' || *t == 0) break;
 						}
+                        if ( !l ) x[l++] = 0;   // An empty field, insert missing value
                         for (; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
 					} else {
 						char *x = (char*)z->buf + z->size * m;
@@ -1132,6 +1133,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 						else x[l++] = strtol(t, &t, 10);
 						if (*t == ':' || *t == 0) break;
 					}
+                    if ( !l ) x[l++] = bcf_int32_missing;
 					for (; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
 				} else if ((z->y>>4&0xf) == BCF_HT_REAL) {
 					float *x = (float*)(z->buf + z->size * m);
@@ -1140,6 +1142,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 						else x[l++] = strtod(t, &t);
 						if (*t == ':' || *t == 0) break;
 					}
+                    if ( !l ) bcf_float_set_missing(x[l++]);    // An empty field, insert missing value 
 					for (; l < z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
 				} else abort();
 				if (*t == 0) {
@@ -1148,17 +1151,20 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 						if ((z->y>>4&0xf) == BCF_HT_STR) {
 							if (z->is_gt) {
 								int32_t *x = (int32_t*)(z->buf + z->size * m);
-								for (l = 0; l != z->size>>2; ++l) x[l] = bcf_int32_vector_end;
+                                x[0] = bcf_int32_missing;
+								for (l = 1; l != z->size>>2; ++l) x[l] = bcf_int32_vector_end;
 							} else {
 								char *x = (char*)z->buf + z->size * m;
 								for (l = 0; l != z->size; ++l) x[l] = 0;
 							}
 						} else if ((z->y>>4&0xf) == BCF_HT_INT) {
 							int32_t *x = (int32_t*)(z->buf + z->size * m);
-							for (l = 0; l != z->size>>2; ++l) x[l] = bcf_int32_vector_end;
+                            x[0] = bcf_int32_missing;
+							for (l = 1; l != z->size>>2; ++l) x[l] = bcf_int32_vector_end;
 						} else if ((z->y>>4&0xf) == BCF_HT_REAL) {
 							float *x = (float*)(z->buf + z->size * m);
-							for (l = 0; l != z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
+                            bcf_float_set_missing(x[0]);
+							for (l = 1; l != z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
 						}
 					}
 					if (t == end) break;
