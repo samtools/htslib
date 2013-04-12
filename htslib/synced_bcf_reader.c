@@ -83,6 +83,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
         files->streaming = 1;
     }
     assert( !files->streaming || files->nreaders==1 );
+    assert( !files->streaming || !files->targets );
 
     reader->fname   = fname;
     reader->filter_id = -1;
@@ -239,6 +240,7 @@ int bcf_sr_set_targets(bcf_srs_t *files, const char *fname)
     tgts->seq_names = (char**) tbx_seqnames(tgts->tbx, &tgts->nseqs);
     tgts->cseq = -1;
     files->targets = tgts;
+    assert( !files->streaming );
     return 1;
 }
 

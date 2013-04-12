@@ -786,6 +786,7 @@ int main_vcfcheck(int argc, char *argv[])
     if ( !args->samples_file ) args->files->max_unpack = BCF_UN_INFO;
     if ( args->targets_fname )
     {
+        args->files->require_index = 1;
         if ( !bcf_sr_set_targets(args->files, args->targets_fname) )
             error("Failed to read the targets: %s\n", args->targets_fname);
     }
