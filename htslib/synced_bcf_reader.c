@@ -235,6 +235,7 @@ int bcf_sr_set_targets(bcf_srs_t *files, const char *fname)
     tgts->file = hts_open(fname, "rb", NULL);
     if ( !tgts->file ) return 0;
     tgts->tbx = tbx_index_load(fname);
+    if ( !tgts->tbx ) return 0;
     tgts->seq_names = (char**) tbx_seqnames(tgts->tbx, &tgts->nseqs);
     tgts->cseq = -1;
     files->targets = tgts;
