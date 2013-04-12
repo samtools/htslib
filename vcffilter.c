@@ -889,7 +889,7 @@ static void destroy_data(args_t *args)
 static void create_filters(args_t *args)
 {
     init_data(args);
-    char *type = args->type==VCF_SNP ? "SNP" : "INDEL";
+    char *type = args->filt_type==VCF_SNP ? "SNP" : "INDEL";
 
     char *fname; 
     open_file(&fname,NULL,"%s.%s.sites.gz", args->out_prefix, type); // creates also directory
