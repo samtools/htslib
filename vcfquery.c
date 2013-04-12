@@ -664,7 +664,7 @@ int main_vcfquery(int argc, char *argv[])
         args->files = bcf_sr_init();
         args->files->region = region;
         args->files->collapse = collapse;
-        if ( optind+1 < argc ) args->files->require_index = 1;
+        if ( optind < argc ) args->files->require_index = 1;
         if ( !bcf_sr_add_reader(args->files, fnames[i]) ) error("Failed to open or the file not indexed: %s\n", fnames[i]);
         for (k=optind; k<argc; k++) 
             if ( !bcf_sr_add_reader(args->files, argv[k]) ) error("Failed to open or the file not indexed: %s\n", argv[k]);
