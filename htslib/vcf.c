@@ -1651,6 +1651,7 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values
         // The tag is not present, create new one
         line->n_info++;
         hts_expand(bcf_info_t, line->n_info, line->d.m_info , line->d.info);
+        inf = &line->d.info[line->n_info-1];
         bcf_unpack_info_core1((uint8_t*)str.s, inf);
         inf->vptr_free = 1;
         line->d.shared_dirty = 1;
