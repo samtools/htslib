@@ -1126,13 +1126,14 @@ static void usage(void)
 	fprintf(stderr, "    -s, --snp-threshold <float>                filter SNPs\n");
 	fprintf(stderr, "    -t, --type <SNP|INDEL>                     variant type to filter [SNP]\n");
 	fprintf(stderr, "Example:\n");
-	fprintf(stderr, "   # 1) Extract annotations from the VCF. This is because several passes through the data are required and VCF parsing is slow.\n");
-	fprintf(stderr, "   # The second VCF is required only for supervised learning\n");
+	fprintf(stderr, "   # 1) Extract annotations from the VCF. This is because several passes through the data are\n");
+    fprintf(stderr, "   # required and VCF parsing is slow. The second VCF is required only for supervised learning.\n");
 	fprintf(stderr, "   vcf query -Ha QUAL,Annot1,Annot2,... target.vcf.gz | bgzip -c > annots.tab.gz\n");
 	fprintf(stderr, "   vcf query -Ha QUAL,Annot1,Annot2,... target.vcf.gz training.vcf.gz | bgzip -c > annots.tab.gz\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "   # 2) Test which annotations and parameters give the best result. SNPs and INDELs are done\n");
-    fprintf(stderr,"    # separately. Notice the use of -l for unsupervised learning in the second example\n");
+    fprintf(stderr, "   # separately. Notice the use of -l for unsupervised learning in the second example.\n");
+    fprintf(stderr, "   # Without the -a option, all annotations from annots.tab.gz are used.\n");
 	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>4' -a Annot2,Annot3\n");
 	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>4' -l'QUAL>0.6'\n");
 	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>4' -l'QUAL>0.6' -t INDEL\n");
