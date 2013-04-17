@@ -9,7 +9,7 @@ int main_bcfidx(int argc, char *argv[])
 	while ((c = getopt(argc, argv, "s:")) >= 0)
 		if (c == 's') min_shift = atoi(optarg);
 	if (optind == argc) {
-		fprintf(stderr, "Usage: bamidx [-s minShift] <in.bam>\n");
+		fprintf(stderr, "Usage: bcfidx [-s minShift] <in.bcf>\n");
 		return 1;
 	}
 	bcf_index_build(argv[optind], min_shift);
