@@ -27,15 +27,22 @@ som_t;
 typedef struct
 {
     unsigned int ngood, nall, nmissing;
+    unsigned int nbins, *good_data, *all_data;  // used only for plotting
     double good_min, good_max;      // extremes of sites in the good set
     double all_min, all_max;        // overall extremes
     double scale_min, scale_max;    // 0.5 and 0.95 percentile
 }
 dist_t;
 
+#define FLT_LE  2       // less or equal
+#define FLT_LT  1       // less than
+#define FLT_EQ  0       // equal
+#define FLT_BT -1       // bigger than
+#define FLT_BE -2       // bigger or equal
+
 typedef struct
 {
-    int type;       // remove smaller values (-2), smaller or equal (-1), bigger (1), bigger or values (2), or equal values (0)
+    int type;       // one of the FLT_* keys above
     double value; 
 }
 filter_t;
@@ -327,8 +334,75 @@ void annots_reader_reset(args_t *args)
 }
 
 
+static void plot_dists(args_t *args, dist_t *dists, int ndist)
+{
+    fprintf(stderr,"Plotting distributions...\n");
+
+    char *fname;
+    FILE *fp = open_file(&fname,"w","%s.dists.py", args->out_prefix);
+    fprintf(fp,
+            "import matplotlib as mpl\n"
+            "mpl.use('Agg')\n"
+            "import matplotlib.pyplot as plt\n"
+            "\n"
+            "dat = [\n"
+           );
+    int i,j;
+    for (i=0; i<ndist; i++)
+    {
+        fprintf(fp,"[");
+        for (j=0; j<dists[i].nbins; j++)
+        {
+            if ( j>0 ) fprintf(fp,",");
+            fprintf(fp,"%u", dists[i].all_data[j]);
+        }
+        fprintf(fp,"],\n[");
+        for (j=0; j<dists[i].nbins; j++)
+        {
+            if ( j>0 ) fprintf(fp,",");
+            fprintf(fp,"%u", dists[i].good_data[j]);
+        }
+        fprintf(fp,"],\n[");
+        for (j=0; j<dists[i].nbins; j++)
+        {
+            if ( j>0 ) fprintf(fp,",");
+            fprintf(fp,"%e", (float)j/dists[i].nbins*(dists[i].all_max - dists[i].all_min) + dists[i].all_min);
+        }
+        fprintf(fp,"],\n");
+    }
+    fprintf(fp, "]\n");
+    for (i=0; i<ndist; i++)
+    {
+        fprintf(fp, 
+            "\n"
+            "for i in range(len(dat)):\n"
+            "   if i%%3==2: continue\n"
+            "   m = max(dat[i])\n"
+            "   for j in range(len(dat[i])):\n"
+            "       dat[i][j] = 1.0*dat[i][j]/m\n"
+            "\n"
+            "fig = plt.figure()\n"
+            "ax1 = plt.subplot(111)\n"
+            "ax1.plot(dat[%d*3+2],dat[%d*3],   'rv-', label='All')\n"
+            "ax1.plot(dat[%d*3+2],dat[%d*3+1], 'g^-', label='Good')\n"
+            "ax1.set_title('%s')\n"
+            "ax1.set_ylim([-0.1,1.1])\n"
+            "ax1.set_xlim([%e,%e])\n"
+            "ax1.legend(loc='best',frameon=False,numpoints=1)\n"
+            "plt.savefig('%s.dists.%s.png')\n"
+            "plt.close()\n"
+            "\n\n", i,i,i,i,args->colnames[i+NFIXED], dists[i].scale_min,dists[i].scale_max, args->out_prefix, args->colnames[i+NFIXED]
+           );
+    }
+    fclose(fp);
+    if ( args->do_plot ) py_plot(fname);
+    free(fname);
+
+}
 static void create_dists(args_t *args)
 {
+    fprintf(stderr,"Sorting annotations and creating distribution stats...\n");
+
     // Create stats for all annotations in args->file. Sort each annotation using unix sort
     //  and determine percentiles.
 
@@ -349,10 +423,13 @@ static void create_dists(args_t *args)
     for (i=0; i<nann; i++)
     {
         args->str.l = 0;
-        ksprintf(&args->str, "cat | sort -g > %s.%s", args->out_prefix, args->colnames[i+NFIXED]);
+        ksprintf(&args->str, "cat | sort -k1,1g > %s.%s", args->out_prefix, args->colnames[i+NFIXED]);
         fps[i] = popen(args->str.s,"w");
         if ( !fps[i] ) error("%s: %s\n", args->str.s, strerror(errno));
         args->col2names[i + NFIXED] = i;
+        dists[i].nbins = 50;
+        dists[i].good_data = (unsigned int*) calloc(dists[i].nbins,sizeof(unsigned int));
+        dists[i].all_data  = (unsigned int*) calloc(dists[i].nbins,sizeof(unsigned int));
     }
 
     annots_reader_reset(args);
@@ -376,7 +453,7 @@ static void create_dists(args_t *args)
             if ( args->vals[i] < dists[i].all_min ) dists[i].all_min = args->vals[i];
             if ( args->vals[i] > dists[i].all_max ) dists[i].all_max = args->vals[i];
             dists[i].nall++;
-            fprintf(fps[i], "%le\n", args->vals[i]);
+            fprintf(fps[i], "%le\t%d\n", args->vals[i], IS_GOOD(args->mask)?1:0);
         }
     }
     // Change the arrays back and clean
@@ -396,24 +473,27 @@ static void create_dists(args_t *args)
         char *fname;
         fp = open_file(&fname,"r","%s.%s", args->out_prefix, args->colnames[i+NFIXED]);
         if ( !fp ) error("Cannot not read %s.%s: %s\n", args->out_prefix, args->colnames[i+NFIXED], strerror(errno));
-        int count = 0;
+        int count = 0, is_good;
         double val;
         dists[i].scale_min = dists[i].scale_max = HUGE_VAL;
-        while ( fscanf(fp,"%le",&val)==1 )
+        while ( fscanf(fp,"%le\t%d",&val,&is_good)==2 )
         {
             count++;
             if ( dists[i].scale_min==HUGE_VAL && (double)100.*count/dists[i].nall >= args->lo_pctl )
                 dists[i].scale_min = val;
             if ( dists[i].scale_max==HUGE_VAL && (double)100.*count/dists[i].nall >= args->hi_pctl )
-            {
                 dists[i].scale_max = val;
-                break;
-            }
+
+            // For the distribution plots
+            int ibin = (float)(dists[i].nbins - 1)*(val - dists[i].all_min)/(dists[i].all_max - dists[i].all_min);
+            if ( is_good ) dists[i].good_data[ibin]++;
+            dists[i].all_data[ibin]++;
         }
         if ( fclose(fp) ) error("An error occurred while processing %s.%s\n", args->out_prefix, args->colnames[i+NFIXED]);
         unlink(fname);
         free(fname);
     }
+    plot_dists(args, dists, nann);
 
     fp = open_file(NULL,"w","%s.n", args->out_prefix);
     fprintf(fp, "# [1]nAll\t[2]nGood\t[3]nMissing\t[4]minGood\t[5]maxGood\t[6]minAll\t[7]maxAll\t[8]%f percentile\t[9]%f percentile\t[10]Annotation\n", 
@@ -422,6 +502,8 @@ static void create_dists(args_t *args)
     {
         fprintf(fp, "%u\t%u\t%u\t%le\t%le\t%le\t%le\t%le\t%le\t%s\n", dists[i].nall, dists[i].ngood, dists[i].nmissing, 
             dists[i].good_min, dists[i].good_max, dists[i].all_min, dists[i].all_max, dists[i].scale_min, dists[i].scale_max, args->colnames[i+NFIXED]);
+        free(dists[i].all_data);
+        free(dists[i].good_data);
     }
     fclose(fp);
     free(dists);
@@ -459,10 +541,10 @@ static void init_dists(args_t *args)
         if ( j==args->ncols ) continue;
         sscanf(args->str.s, "%u\t%u\t%u\t%le\t%le\t%le\t%le\t%le\t%le", &args->dists[j].nall, &args->dists[j].ngood, &args->dists[j].nmissing,
             &args->dists[j].good_min, &args->dists[j].good_max, &args->dists[j].all_min, &args->dists[j].all_max, &args->dists[j].scale_min, &args->dists[j].scale_max);
-        if ( args->dists[j].scale_min==args->dists[j].scale_max ) error("The annotation %s is not looking good, please leave it out\n", args->names[j]);
+        if ( args->dists[j].scale_min==args->dists[j].scale_max ) error("The annotation %s is not looking good, please leave it out\n", args->colnames[j]);
     }
     for (i=NFIXED; i<args->ncols; i++)
-        if ( !args->dists[i].nall && !args->dists[i].nmissing ) error("No extremes found for the annotation %s?\n", args->names[i]);
+        if ( !args->dists[i].nall && !args->dists[i].nmissing ) error("No extremes found for the annotation %s?\n", args->colnames[i]);
     fclose(fp);
 }
 
@@ -569,12 +651,6 @@ static void destroy_annots(args_t *args)
     if ( args->ignore ) free(args->ignore);
     if ( args->vals ) free(args->vals);
 }
-
-#define FLT_LE  2       // less or equal
-#define FLT_LT  1       // less than
-#define FLT_EQ  0       // equal
-#define FLT_BT -1       // bigger than
-#define FLT_BE -2       // bigger or equal
 
 static int pass_filters(filters_t *filt, double *vec)
 {
