@@ -570,6 +570,12 @@ static void destroy_annots(args_t *args)
     if ( args->vals ) free(args->vals);
 }
 
+#define FLT_LE  2       // less or equal
+#define FLT_LT  1       // less than
+#define FLT_EQ  0       // equal
+#define FLT_BT -1       // bigger than
+#define FLT_BE -2       // bigger or equal
+
 static int pass_filters(filters_t *filt, double *vec)
 {
     int i, j;
@@ -580,11 +586,11 @@ static int pass_filters(filters_t *filt, double *vec)
         {
             switch (filt->filt[i][j].type) 
             {
-                case -2: if ( vec[i] < filt->filt[i][j].value ) return 0; break;
-                case -1: if ( vec[i] <= filt->filt[i][j].value ) return 0; break;
-                case  0: if ( vec[i] == filt->filt[i][j].value ) return 0; break;
-                case  1: if ( vec[i] >= filt->filt[i][j].value ) return 0; break;
-                case  2: if ( vec[i] > filt->filt[i][j].value ) return 0; break;
+                case FLT_BE: if ( vec[i] < filt->filt[i][j].value ) return 0; break;
+                case FLT_BT: if ( vec[i] <= filt->filt[i][j].value ) return 0; break;
+                case FLT_EQ: if ( vec[i] != filt->filt[i][j].value ) return 0; break;
+                case FLT_LT: if ( vec[i] >= filt->filt[i][j].value ) return 0; break;
+                case FLT_LE: if ( vec[i] > filt->filt[i][j].value ) return 0; break;
             }
         }
     }
@@ -620,18 +626,18 @@ static void init_filters(args_t *args, filters_t *filts, char *str, int scale)
             if ( !*e ) error("Could not parse filter expression: %s\n", str);
             if ( e-s==2 )
             {
-                if ( !strncmp(s,"==",2) ) type = 0;
-                else if ( !strncmp(s,"<=",2) ) type = 2;
-                else if ( !strncmp(s,">=",2) ) type = -2;
+                if ( !strncmp(s,"==",2) ) type = FLT_EQ;
+                else if ( !strncmp(s,"<=",2) ) type = FLT_LE;
+                else if ( !strncmp(s,">=",2) ) type = FLT_BE;
                 else error("Could not parse filter expression: %s\n", str);
             }
             else if ( e-s==1 )
             {
                 switch (*s)
                 {
-                    case '>': type = -1; break;
-                    case '<': type = 1; break;
-                    case '=': type = 0; break;
+                    case '>': type = FLT_BT; break;
+                    case '<': type = FLT_LT; break;
+                    case '=': type = FLT_EQ; break;
                     default: error("Could not parse filter expression: %s\n", str); break;
                 }
             }
@@ -646,7 +652,7 @@ static void init_filters(args_t *args, filters_t *filts, char *str, int scale)
             for (i=NFIXED; i<args->ncols; i++)
             {
                 if ( !strcmp(args->colnames[i],left.s) ) { s = right.s; ann = left.s; break; }
-                if ( !strcmp(args->colnames[i],right.s) ) { s = left.s; ann = right.s; break; }
+                if ( !strcmp(args->colnames[i],right.s) ) { s = left.s; ann = right.s; type *= -1; break; }
             }
             if ( i==args->ncols ) error("No such annotation is available: %s\n", str);
             if ( args->col2names[i]==-1 )
