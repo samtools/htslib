@@ -1488,11 +1488,12 @@ int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
 		bcf_fmt_t *fmt;
 		int i, j;
 		fmt = (bcf_fmt_t*)alloca(v->n_fmt * sizeof(bcf_fmt_t));
+		for (i = 0; i < v->n_fmt; ++i) fmt[i].p_free = 0;
         if ( !(v->unpacked&BCF_UN_FMT) )
         {
             uint8_t *ptr = (uint8_t*)v->indiv.s;
             for (i = 0; i < v->n_fmt; ++i)
-                ptr = bcf_unpack_fmt_core1(ptr, v->n_sample, v->d.fmt);
+                ptr = bcf_unpack_fmt_core1(ptr, v->n_sample, &fmt[i]);
         }
 		for (i = 0; i < (int)v->n_fmt; ++i) {
 			bcf_fmt_t *f = &fmt[i];

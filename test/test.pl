@@ -40,6 +40,7 @@ sub error
         "About: htslib consistency test script\n",
         "Usage: test.pl [OPTIONS]\n",
         "Options:\n",
+        "   -r, --redo-outputs              Recreate expected output files.\n",
         "   -t, --temp-dir <path>           When given, temporary files will not be removed.\n",
         "   -h, -?, --help                  This help message.\n",
         "\n";
