@@ -262,10 +262,10 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                     else if ( nset==line->n_allele ) \
                     { \
                         /* haploid */ \
-                        int k_ori, k_new = 0; \
+                        int k_ori; k = 0; \
                         for (k_ori=0; k_ori<line->n_allele; k_ori++) \
-                            if ( !(rm_mask & 1<<k_ori) ) p[k_new++] = p[k_ori]; \
-                        for (; k_new<line->n_allele; k_new++) set_vector_end; \
+                            if ( !(rm_mask & 1<<k_ori) ) p[k++] = p[k_ori]; \
+                        for (; k<line->n_allele; k++) set_vector_end;  \
                     } \
                     else { fprintf(stderr, "[E::%s] todo, missing values: %d %d\n", __func__, nset,nG_ori); exit(1); } \
                 } \

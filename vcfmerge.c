@@ -197,7 +197,7 @@ char **merge_alleles(char **a, int na, int *map, char **b, int *nb, int *mb)
     }
 
     // Sanity check: reference prefixes must be identical
-    if ( strncmp(a[0],b[0],rla<rlb?rla:rlb) ) error("The REF prefixes differ: %s vs %s (%d,%d)\n", a[0],b[0]);
+    if ( strncmp(a[0],b[0],rla<rlb?rla:rlb) ) error("The REF prefixes differ: %s vs %s (%d,%d)\n", a[0],b[0],rla,rlb);
 
     int n = *nb + na;
     hts_expand0(char*,n,*mb,b);
@@ -382,6 +382,7 @@ void merge_chrom2qual(args_t *args, int mask, bcf1_t *out)
         int ir, j;
         for (ir=0; ir<files->nreaders; ir++)
         {
+            if ( !(mask&1<<ir) ) continue;
             bcf1_t *line = files->readers[ir].buffer[0];
             for (j=1; j<line->n_allele; j++)
                 if ( ma->d[ir][0].map[j]==i ) ma->d[ir][0].map[j] = out->n_allele;
@@ -666,6 +667,7 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out
     int nsize = 0, length = BCF_VL_FIXED, type = -1;
     for (i=0; i<files->nreaders; i++)
     {
+        if ( !(mask&1<<i) ) continue;
         if ( !fmt_map[i] ) continue;
         if ( !key ) key = files->readers[i].header->id[BCF_DT_ID][fmt_map[i]->id].key;
         type = fmt_map[i]->type;
@@ -685,7 +687,6 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out
     for (i=0; i<files->nreaders; i++)
     {
         bcf_sr_t *reader = &files->readers[i];
-        bcf1_t *line   = reader->buffer[0];
         bcf_hdr_t *hdr = reader->header;
         bcf_fmt_t *fmt_ori = fmt_map[i];
         if ( fmt_ori ) type = fmt_ori->type;
@@ -704,6 +705,8 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out
                 ismpl += hdr->n[BCF_DT_SAMPLE]; \
                 continue; \
             } \
+            if ( !(mask&1<<i) ) continue; \
+            bcf1_t *line    = reader->buffer[0]; \
             src_type_t *src = (src_type_t*) fmt_ori->p; \
             if ( (length!=BCF_VL_G && length!=BCF_VL_A) || (line->n_allele==out->n_allele && !ma->d[i][0].als_differ) ) \
             { \
@@ -892,6 +895,8 @@ void shake_buffer(maux_t *maux, int ir, int pos)
     bcf_sr_t *reader = &maux->files->readers[ir];
     maux1_t *m = maux->d[ir];
 
+    if ( !reader->buffer ) return;
+
     int i;
     // FILE *fp = stdout;
     // fprintf(fp,"<going to shake> nbuf=%d\t", reader->nbuffer); for (i=0; i<reader->nbuffer; i++) fprintf(fp," %d", skip[i]); fprintf(fp,"\n");
@@ -1000,6 +1005,7 @@ void merge_buffer(args_t *args, int mask)
     for (i=0; i<files->nreaders; i++)
     {
         bcf_sr_t *reader = &files->readers[i];
+        if ( !reader->buffer ) continue;
         int j;
         for (j=0; j<=reader->nbuffer; j++)
         {
@@ -1061,6 +1067,7 @@ void merge_buffer(args_t *args, int mask)
         {
             // first pass: try to find lines with the same allele
             bcf_sr_t *reader = &files->readers[i];
+            if ( !reader->buffer ) continue;
             int j;
             for (j=0; j<=reader->nbuffer; j++)
             {
