@@ -333,7 +333,6 @@ void annots_reader_reset(args_t *args)
     hts_getline(args->file,'\n',&args->str);  // eat the header
 }
 
-
 static void plot_dists(args_t *args, dist_t *dists, int ndist)
 {
     fprintf(stderr,"Plotting distributions...\n");
@@ -347,51 +346,75 @@ static void plot_dists(args_t *args, dist_t *dists, int ndist)
             "\n"
             "dat = [\n"
            );
-    int i,j;
+    int i;
     for (i=0; i<ndist; i++)
     {
-        fprintf(fp,"[");
-        for (j=0; j<dists[i].nbins; j++)
+        int j, jfrom, jto;
+        for (jfrom=0; jfrom<dists[i].nbins-1 && dists[i].all_data[jfrom]!=0; jfrom++) if ( dists[i].all_data[jfrom+1]!=0 ) break;
+        for (jto=dists[i].nbins-1; jto>0 && dists[i].all_data[jto]!=0; jto--) if ( dists[i].all_data[jto-1]!=0 ) break;
+        assert( jto >= jfrom );
+        fprintf(fp,"[ # %s\n", args->colnames[i+NFIXED]);
+        for (j=jfrom; j<=jto; j++)
         {
-            if ( j>0 ) fprintf(fp,",");
+            if ( j>jfrom ) fprintf(fp,",");
             fprintf(fp,"%u", dists[i].all_data[j]);
         }
         fprintf(fp,"],\n[");
-        for (j=0; j<dists[i].nbins; j++)
+        for (j=jfrom; j<=jto; j++)
         {
-            if ( j>0 ) fprintf(fp,",");
+            if ( j>jfrom ) fprintf(fp,",");
+            fprintf(fp,"%e", (float)j/(dists[i].nbins-1)*(dists[i].all_max - dists[i].all_min) + dists[i].all_min);
+        }
+        fprintf(fp,"],\n[");
+
+        for (jfrom=0; jfrom<dists[i].nbins-1 && dists[i].good_data[jfrom]!=0; jfrom++) if ( dists[i].good_data[jfrom+1]!=0 ) break;
+        for (jto=dists[i].nbins-1; jto>0 && dists[i].good_data[jto]!=0; jto--) if ( dists[i].good_data[jto-1]!=0 ) break;
+        assert( jto >= jfrom );
+        for (j=jfrom; j<=jto; j++)
+        {
+            if ( j>jfrom ) fprintf(fp,",");
             fprintf(fp,"%u", dists[i].good_data[j]);
         }
         fprintf(fp,"],\n[");
-        for (j=0; j<dists[i].nbins; j++)
+        for (j=jfrom; j<=jto; j++)
         {
-            if ( j>0 ) fprintf(fp,",");
-            fprintf(fp,"%e", (float)j/dists[i].nbins*(dists[i].all_max - dists[i].all_min) + dists[i].all_min);
+            if ( j>jfrom ) fprintf(fp,",");
+            fprintf(fp,"%e", (float)j/(dists[i].nbins-1)*(dists[i].all_max - dists[i].all_min) + dists[i].all_min);
         }
         fprintf(fp,"],\n");
     }
-    fprintf(fp, "]\n");
+    fprintf(fp, 
+        "]\n"
+        "\n"
+        "for i in range(len(dat)):\n"
+        "   if i%%4==1 or i%%4==3: continue\n"
+        "   m = max(dat[i])\n"
+        "   for j in range(len(dat[i])):\n"
+        "       dat[i][j] = 1.0*dat[i][j]/m\n"
+        );
     for (i=0; i<ndist; i++)
     {
         fprintf(fp, 
             "\n"
-            "for i in range(len(dat)):\n"
-            "   if i%%3==2: continue\n"
-            "   m = max(dat[i])\n"
-            "   for j in range(len(dat[i])):\n"
-            "       dat[i][j] = 1.0*dat[i][j]/m\n"
-            "\n"
             "fig = plt.figure()\n"
-            "ax1 = plt.subplot(111)\n"
-            "ax1.plot(dat[%d*3+2],dat[%d*3],   'rv-', label='All')\n"
-            "ax1.plot(dat[%d*3+2],dat[%d*3+1], 'g^-', label='Good')\n"
+            "fig, (ax1, ax2) = plt.subplots(2, 1)\n"
+            "ax1.plot(dat[%d*4+1],dat[%d*4],   'rv-', label='All')\n"
+            "ax1.plot(dat[%d*4+3],dat[%d*4+2], 'g^-', label='Good')\n"
+            "ax2.plot(dat[%d*4+1],dat[%d*4],   'rv-')\n"
+            "ax2.plot(dat[%d*4+3],dat[%d*4+2], 'g^-')\n"
             "ax1.set_title('%s')\n"
             "ax1.set_ylim([-0.1,1.1])\n"
+            "ax2.set_ylim([-0.1,1.1])\n"
             "ax1.set_xlim([%e,%e])\n"
+            "ax2.set_xlim([%e,%e])\n"
             "ax1.legend(loc='best',frameon=False,numpoints=1)\n"
+            "ax2.annotate('(Cropped tails)', xy=(0.6,0.8), xycoords='axes fraction')\n"
             "plt.savefig('%s.dists.%s.png')\n"
             "plt.close()\n"
-            "\n\n", i,i,i,i,args->colnames[i+NFIXED], dists[i].scale_min,dists[i].scale_max, args->out_prefix, args->colnames[i+NFIXED]
+            "\n\n", i,i,i,i,i,i,i,i,args->colnames[i+NFIXED], 
+                dists[i].all_min,dists[i].all_max, 
+                dists[i].good_min,dists[i].good_max, 
+                args->out_prefix, args->colnames[i+NFIXED]
            );
     }
     fclose(fp);
