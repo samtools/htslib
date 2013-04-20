@@ -779,9 +779,9 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out
         }
         switch (type)
         {
-            case BCF_BT_INT8:  BRANCH(int32_t,  int8_t, *src==bcf_int8_missing, *src==bcf_int8_vector_end, *tgt=bcf_int32_missing, *tgt=bcf_int32_vector_end); break;
-            case BCF_BT_INT16: BRANCH(int32_t, int16_t, *src==bcf_int8_missing, *src==bcf_int8_vector_end, *tgt=bcf_int32_missing, *tgt=bcf_int32_vector_end); break;
-            case BCF_BT_INT32: BRANCH(int32_t, int32_t, *src==bcf_int8_missing, *src==bcf_int8_vector_end, *tgt=bcf_int32_missing, *tgt=bcf_int32_vector_end); break;
+            case BCF_BT_INT8:  BRANCH(int32_t,  int8_t, *src==bcf_int8_missing,  *src==bcf_int8_vector_end,  *tgt=bcf_int32_missing, *tgt=bcf_int32_vector_end); break;
+            case BCF_BT_INT16: BRANCH(int32_t, int16_t, *src==bcf_int16_missing, *src==bcf_int16_vector_end, *tgt=bcf_int32_missing, *tgt=bcf_int32_vector_end); break;
+            case BCF_BT_INT32: BRANCH(int32_t, int32_t, *src==bcf_int32_missing, *src==bcf_int32_vector_end, *tgt=bcf_int32_missing, *tgt=bcf_int32_vector_end); break;
             case BCF_BT_FLOAT: BRANCH(float, float, bcf_float_is_missing(*src), bcf_float_is_vector_end(*src), bcf_float_set_missing(*tgt), bcf_float_set_vector_end(*tgt)); break;
             default: error("Unexpected case: %d\n", type);
         }
