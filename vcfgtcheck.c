@@ -319,6 +319,10 @@ static void check_gt(args_t *args)
             }
         }
 
+        bcf_info_t *dp_inf = NULL;
+        for (i=0; i<sm_line->n_info; i++)
+            if ( dp_id==sm_line->d.info[i].key ) { dp_inf = &sm_line->d.info[i]; break; }
+
         // With -s but no -p, print LKs at all sites for debugging
         int igt = -1;
         if ( tgt_isample>=0 )
@@ -329,7 +333,7 @@ static void check_gt(args_t *args)
             if ( args->hom_only && a!=b ) continue; // heterozygous genotype
             printf("%s\t%d", args->gt_hdr->id[BCF_DT_CTG][gt_line->rid].key, gt_line->pos+1);
             for (i=0; i<gt_line->n_allele; i++) printf("%c%s", i==0?'\t':',', gt_line->d.allele[i]);
-            printf("\t%d\t%s/%s", sm_line->d.info[dp_id].v1.i, a>=0 ? gt_line->d.allele[a] : ".", b>=0 ? gt_line->d.allele[b] : ".");
+            printf("\t%d\t%s/%s", dp_inf->v1.i, a>=0 ? gt_line->d.allele[a] : ".", b>=0 ? gt_line->d.allele[b] : ".");
             if (a>=0 || b>=0) igt = a<=b ? bcf_ij2G(a,b) : bcf_ij2G(b,a);
         }
 
@@ -359,7 +363,8 @@ static void check_gt(args_t *args)
                     args->lks[i] += -log(pow(10, -0.1*pl_ptr[igt])/sum); 
                     args->cnts[i]++; 
                 } 
-                args->dps[i] += sm_line->d.info[dp_id].v1.i; 
+                if ( dp_inf->v1.i<0 ) error("here it is: %d dp=%d dp_id=%d\n", sm_line->pos+1, dp_inf->v1.i, dp_id);
+                args->dps[i] += dp_inf->v1.i; 
             }
         }
         else
