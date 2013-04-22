@@ -17,7 +17,7 @@ typedef struct
     bcf_hdr_t *gt_hdr, *sm_hdr; // VCF with genotypes to compare against and the query VCF
     double *lks, *sigs;
     int *cnts, *dps, hom_only, cross_check;
-	char **argv, *gt_fname, *plot, *query_sample, *target_sample;
+	char *cwd, **argv, *gt_fname, *plot, *query_sample, *target_sample;
 	int argc;
 }
 args_t;
@@ -76,9 +76,11 @@ static void plot_check(args_t *args)
             "   ax1.annotate('%s',xy=(iq,dat[iq][0]), xytext=(5,5), textcoords='offset points',fontsize='xx-small',rotation=45,va='bottom',ha='left')\n"
             "   ax2.plot([iq],[dat[iq][1]],'^', ms=4)\n"
             "for tl in ax1.get_yticklabels(): tl.set_color('g')\n"
-            "for tl in ax2.get_yticklabels(): tl.set_color('r')\n"
+            "for tl in ax2.get_yticklabels(): tl.set_color('r'); tl.set_fontsize(9)\n"
             "ax1.set_title('Average dp = %%.1fx' %% dp)\n"
             "ax1.set_xticks([])\n"
+            "ax2.set_xlim(-1 - 0.01*len(dat))\n"
+            "ax3.set_xlim(-1 - 0.01*len(dat))\n"
             "ax3.set_xlabel('Sample ID')\n"
             "ax3.set_ylabel('Avg DP')\n"
             "ax1.set_ylabel('Concordance',color='g')\n"
@@ -203,7 +205,7 @@ static void init_data(args_t *args)
 
 static void destroy_data(args_t *args)
 {
-    free(args->lks); free(args->sigs); free(args->cnts); free(args->dps);
+    free(args->lks); free(args->sigs); free(args->cnts); free(args->dps); free(args->cwd);
 }
 
 static int allele_to_int(bcf1_t *line, char *allele)
@@ -235,6 +237,32 @@ static int init_gt2ipl(args_t *args, bcf1_t *gt_line, bcf1_t *sm_line, int *gt2i
     return 1;
 }
 
+static void set_cwd(args_t *args)
+{
+    int i;
+    char *buf;
+    size_t nbuf = 500;
+    args->cwd = (char*) malloc(sizeof(char)*nbuf);
+    for (i=0; i<5; i++)
+    {
+        if ( (buf = getcwd(args->cwd, nbuf)) ) break;
+        nbuf *= 2;
+        args->cwd = (char*) realloc(args->cwd, sizeof(char)*nbuf);
+    }
+    assert(buf);
+}
+
+static void print_header(args_t *args, FILE *fp)
+{
+    fprintf(fp, "# This file was produced by gtcheck, the command line was:\n");
+    fprintf(fp, "# \t htscmd %s ", args->argv[0]);
+    int i;
+    for (i=1; i<args->argc; i++)
+        fprintf(fp, " %s",args->argv[i]);
+    fprintf(fp, "\n# and the working directory was:\n");
+    fprintf(fp, "# \t %s\n#\n", args->cwd);
+}
+
 static void check_gt(args_t *args)
 {
     int i,j, ret, *gt2ipl = NULL, m_gt2ipl = 0, *gt_cnts = NULL, *gt_arr = NULL, *pl_arr = NULL, ngt_arr = 0, npl_arr = 0;
@@ -248,15 +276,18 @@ static void check_gt(args_t *args)
     if ( args->target_sample ) 
     {
         tgt_isample = bcf_id2int(args->gt_hdr, BCF_DT_SAMPLE, args->target_sample);
-        if ( tgt_isample<0 ) error("No such sample in %s: [%s]\n", args->target_sample, args->files->readers[1].fname);
+        if ( tgt_isample<0 ) error("No such sample in %s: [%s]\n", args->files->readers[1].fname, args->target_sample);
         if ( args->plot ) tgt_isample = -1; // different kind of output with -p
         if ( tgt_isample>=0 )
+        {
+            print_header(args, stdout);
             printf("# [1]Chromosome\t[2]Position\t[3]Alleles in -g file\t[4]Coverage\t[5]Genotype\t[6]Alleles in sample file\t[7-]PL likelihoods\n");
+        }
     }
     if ( args->query_sample )
     {
         query_isample = bcf_id2int(args->sm_hdr, BCF_DT_SAMPLE, args->query_sample);
-        if ( query_isample<0 ) error("No such sample in %s: [%s]\n", args->query_sample, args->files->readers[0].fname);
+        if ( query_isample<0 ) error("No such sample in %s: [%s]\n", args->files->readers[0].fname, args->query_sample);
     }
     while ( (ret=bcf_sr_next_line(args->files)) )
     {
@@ -353,6 +384,9 @@ static void check_gt(args_t *args)
                 if ( args->hom_only && a!=b ) continue; // heterozygous genotype
                 igt = a<=b ? bcf_ij2G(a,b) : bcf_ij2G(b,a);
                 assert( igt<m_gt2ipl );
+                // For significance we use reciprocal of the number of samples
+                //  which are either identical or have missing genotype. Bigger
+                //  values indicate smaller confidence.
                 args->sigs[i] += -log(1./(gt_cnts[igt]+gt_cnts[n_gt2ipl-1]));
                 igt = gt2ipl[igt];
                 if ( pl_ptr[igt] >=0 )
@@ -389,14 +423,12 @@ static void check_gt(args_t *args)
     double max = args->lks[0];
     for (i=0; i<args->gt_hdr->n[BCF_DT_SAMPLE]; i++) if ( max<args->lks[i] ) max = args->lks[i];
     for (i=0; i<args->gt_hdr->n[BCF_DT_SAMPLE]; i++) args->lks[i] = (max - args->lks[i]) / max;
-    max = args->sigs[0];
-    for (i=0; i<args->gt_hdr->n[BCF_DT_SAMPLE]; i++) if ( max<args->sigs[i] ) max = args->sigs[i];
-    for (i=0; i<args->gt_hdr->n[BCF_DT_SAMPLE]; i++) args->sigs[i] = (max - args->sigs[i]) / max;
 
     // Output
     if ( args->plot )
     {
         FILE *fp = open_file(NULL, "w", "%s.tab", args->plot);
+        print_header(args, fp);
         fprintf(fp, "# [1]Concordance\t[2]Uncertainty\t[3]Average depth\t[4]Number of sites\t[5]Sample\n");
         for (i=0; i<args->gt_hdr->n[BCF_DT_SAMPLE]; i++)
             fprintf(fp, "%f\t%f\t%.1f\t%d\t%s\n", args->lks[i], args->sigs[i], args->cnts[i]?(double)args->dps[i]/args->cnts[i]:0.0, args->cnts[i], args->gt_hdr->samples[i]);
@@ -405,6 +437,7 @@ static void check_gt(args_t *args)
     }
     else if ( tgt_isample<0 )
     {
+        print_header(args, stdout);
         printf("# [1]Concordance\t[2]Uncertainty\t[3]Average depth\t[4]Number of sites\t[5]Sample\n");
         for (i=0; i<args->gt_hdr->n[BCF_DT_SAMPLE]; i++)
             printf("%f\t%f\t%.1f\t%d\t%s\n", args->lks[i], args->sigs[i], args->cnts[i]?(double)args->dps[i]/args->cnts[i]:0.0, args->cnts[i], args->gt_hdr->samples[i]);
@@ -509,6 +542,7 @@ static void cross_check_gts(args_t *args)
     if ( dp_warned ) fprintf(stderr, "[W::%s] DP was not found at %d site(s)\n", __func__, dp_warned);
 
     FILE *fp = args->plot ? open_file(NULL, "w", "%s.tab", args->plot) : stdout;
+    print_header(args, fp);
     // Output samples sorted by average discordance
     double *score = (double*) calloc(nsamples,sizeof(double));
     idx = 0;
@@ -590,7 +624,7 @@ int main_vcfgtcheck(int argc, char *argv[])
 	int c;
 	args_t *args = (args_t*) calloc(1,sizeof(args_t));
     args->files  = bcf_sr_init();
-	args->argc   = argc; args->argv = argv;
+	args->argc   = argc; args->argv = argv; set_cwd(args);
 
 	static struct option loptions[] = 
 	{
