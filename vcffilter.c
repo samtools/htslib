@@ -389,6 +389,7 @@ static void plot_dists(args_t *args, dist_t *dists, int ndist)
         "for i in range(len(dat)):\n"
         "   if i%%4==1 or i%%4==3: continue\n"
         "   m = max(dat[i])\n"
+        "   if m==0: continue\n"
         "   for j in range(len(dat[i])):\n"
         "       dat[i][j] = 1.0*dat[i][j]/m\n"
         );
