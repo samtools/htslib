@@ -167,6 +167,8 @@ void isec_vcf(args_t *args)
                 kputc(',', &str);
                 kputs(line->d.allele[i], &str);
             }
+            kputc('\t', &str);
+            kputw(ret, &str);
             kputc('\n', &str);
             fwrite(str.s,sizeof(char),str.l,args->fh_sites);
         }
