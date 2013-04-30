@@ -620,11 +620,6 @@ int main_vcfquery(int argc, char *argv[])
     {
         if ( optind==argc ) error("Missing the VCF file name\n");
         args->files = bcf_sr_init();
-        if ( args->subset_fname )
-        {
-            if ( !bcf_sr_set_targets(args->files, args->subset_fname) )
-                error("Failed to read the targets: %s\n", args->subset_fname);
-        }
         if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
         list_columns(args);
         bcf_sr_destroy(args->files);
@@ -640,6 +635,12 @@ int main_vcfquery(int argc, char *argv[])
         args->files->collapse = collapse;
         if ( optind+1 < argc ) args->files->require_index = 1;
         if ( optind==argc ) usage();
+        if ( args->subset_fname )
+        {
+            args->files->require_index = 1;
+            if ( !bcf_sr_set_targets(args->files, args->subset_fname) )
+                error("Failed to read the targets: %s\n", args->subset_fname);
+        }
         while (optind<argc)
         {
             if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
@@ -665,6 +666,12 @@ int main_vcfquery(int argc, char *argv[])
         args->files->region = region;
         args->files->collapse = collapse;
         if ( optind < argc ) args->files->require_index = 1;
+        if ( args->subset_fname )
+        {
+            args->files->require_index = 1;
+            if ( !bcf_sr_set_targets(args->files, args->subset_fname) )
+                error("Failed to read the targets: %s\n", args->subset_fname);
+        }
         if ( !bcf_sr_add_reader(args->files, fnames[i]) ) error("Failed to open or the file not indexed: %s\n", fnames[i]);
         for (k=optind; k<argc; k++) 
             if ( !bcf_sr_add_reader(args->files, argv[k]) ) error("Failed to open or the file not indexed: %s\n", argv[k]);
