@@ -22,7 +22,7 @@ bam_hdr_t *bam_hdr_init()
 void bam_hdr_destroy(bam_hdr_t *h)
 {
 	int32_t i;
-	if (h == 0) return;
+	if (h == NULL) return;
 	if (h->target_name) {
 		for (i = 0; i < h->n_targets; ++i)
 			free(h->target_name[i]);
@@ -453,7 +453,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 	str.s = (char*)b->data; str.m = b->m_data;
 	memset(c, 0, 32);
 	if (h->cigar_tab == 0) {
-		h->cigar_tab = (uint8_t*)calloc(128, 1);
+		h->cigar_tab = (uint8_t*)calloc(128, sizeof(uint8_t));
 		for (i = 0; BAM_CIGAR_STR[i]; ++i)
 			h->cigar_tab[(int)BAM_CIGAR_STR[i]] = i;
 	}

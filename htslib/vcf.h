@@ -242,7 +242,7 @@ extern "C" {
 	void bcf_fmt_array(kstring_t *s, int n, int type, void *data);
 	uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr);
 
-	void bcf_enc_vchar(kstring_t *s, int l, char *a);
+	void bcf_enc_vchar(kstring_t *s, int l, const char *a);
 	void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize);
 	void bcf_enc_vfloat(kstring_t *s, int n, float *a);
 
@@ -285,13 +285,13 @@ extern "C" {
     int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname);
     void bcf_hdr_fmt_text(bcf_hdr_t *hdr);
     int bcf_hdr_append(bcf_hdr_t *h, const char *line);
-    bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, char *line, int *len);
+    bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len);
     int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec);
-    bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, char *id);   // type is one of BCF_HL_FLT,..,BCF_HL_CTG
+    bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, const char *id);   // type is one of BCF_HL_FLT,..,BCF_HL_CTG
     bcf_hrec_t *bcf_hrec_dup(bcf_hrec_t *hrec);
-    void bcf_hrec_add_key(bcf_hrec_t *hrec, char *str, int len);
-    void bcf_hrec_set_val(bcf_hrec_t *hrec, int i, char *str, int len, int is_quoted);
-    int bcf_hrec_find_key(bcf_hrec_t *hrec, char *key);
+    void bcf_hrec_add_key(bcf_hrec_t *hrec, const char *str, int len);
+    void bcf_hrec_set_val(bcf_hrec_t *hrec, int i, const char *str, int len, int is_quoted);
+    int bcf_hrec_find_key(bcf_hrec_t *hrec, const char *key);
     void bcf_hrec_destroy(bcf_hrec_t *hrec);
 
 
