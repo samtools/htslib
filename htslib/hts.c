@@ -323,7 +323,7 @@ static void compress_binning(hts_idx_t *idx, int i)
 void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 {
 	int i;
-	if (idx->z.finished) return; // do not run this function multiple times
+	if (idx == NULL || idx->z.finished) return; // do not run this function on an empty index or multiple times
 	if (idx->z.save_tid >= 0) {
 		insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, final_offset);
 		insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.off_beg, final_offset);
