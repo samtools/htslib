@@ -9,6 +9,16 @@
  *** SAM/BAM header ***
  **********************/
 
+/*! @typedef
+ @abstract Structure for the alignment header.
+ @field n_targets   number of reference sequences
+ @field l_text      length of the plain text in the header
+ @field target_len  lengths of the referene sequences
+ @field target_name names of the reference sequences
+ @field text        plain text
+ @field sdict       header dictionary
+ */
+
 typedef struct {
 	int32_t n_targets, ignore_sam_err;
 	uint32_t l_text;
@@ -45,22 +55,46 @@ typedef struct {
 #define bam_cigar_gen(l, o) ((l)<<BAM_CIGAR_SHIFT|(o))
 #define bam_cigar_type(o) (BAM_CIGAR_TYPE>>((o)<<1)&3) // bit 1: consume query; bit 2: consume reference
 
+/*! @abstract the read is paired in sequencing, no matter whether it is mapped in a pair */
 #define BAM_FPAIRED        1
+/*! @abstract the read is mapped in a proper pair */
 #define BAM_FPROPER_PAIR   2
+/*! @abstract the read itself is unmapped; conflictive with BAM_FPROPER_PAIR */
 #define BAM_FUNMAP         4
+/*! @abstract the mate is unmapped */
 #define BAM_FMUNMAP        8
+/*! @abstract the read is mapped to the reverse strand */
 #define BAM_FREVERSE      16
+/*! @abstract the mate is mapped to the reverse strand */
 #define BAM_FMREVERSE     32
+/*! @abstract this is read1 */
 #define BAM_FREAD1        64
+/*! @abstract this is read2 */
 #define BAM_FREAD2       128
+/*! @abstract not primary alignment */
 #define BAM_FSECONDARY   256
+/*! @abstract QC failure */
 #define BAM_FQCFAIL      512
+/*! @abstract optical or PCR duplicate */
 #define BAM_FDUP        1024
 
 /*************************
  *** Alignment records ***
  *************************/
 
+/*! @typedef
+ @abstract Structure for core alignment information.
+ @field  tid     chromosome ID, defined by bam_hdr_t
+ @field  pos     0-based leftmost coordinate
+ @field  bin     bin calculated by bam_reg2bin()
+ @field  qual    mapping quality
+ @field  l_qname length of the query name
+ @field  flag    bitwise flag
+ @field  n_cigar number of CIGAR operations
+ @field  l_qseq  length of the query sequence (read)
+ @field  mtid    chromosome ID of next read in template, defined by bam_hdr_t
+ @field  mpos    0-based leftmost coordinate of next read in template
+ */
 typedef struct {
 	int32_t tid;
 	int32_t pos;
@@ -72,6 +106,21 @@ typedef struct {
 	int32_t isize;
 } bam1_core_t;
 
+/*! @typedef
+ @abstract Structure for one alignment.
+ @field  core       core information about the alignment
+ @field  l_data     current length of bam1_t::data
+ @field  m_data     maximum length of bam1_t::data
+ @field  data       all variable-length data, concatenated; structure: qname-cigar-seq-qual-aux
+ 
+ @discussion Notes:
+ 
+ 1. qname is zero tailing and core.l_qname includes the tailing '\0'.
+ 2. l_qseq is calculated from the total length of an alignment block
+ on reading or from CIGAR.
+ 3. cigar data is encoded 4 bytes per CIGAR operation.
+ 4. seq is nybble-encoded according to bam_nt16_table.
+ */
 typedef struct {
 	bam1_core_t core;
 	int l_data, m_data;
