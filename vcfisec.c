@@ -105,43 +105,39 @@ FILE *open_file(char **fname, const char *mode, const char *fmt, ...)
 
 void isec_vcf(args_t *args)
 {
-    int ret,i;
     bcf_srs_t *files = args->files;
     kstring_t str = {0,0,0};
     htsFile *out_fh = NULL;
 
     // When only one VCF is output, print VCF to stdout
     int stdout_vcf = args->subset_fname && files->nreaders==1 ? 1 : 0;
-    if ( args->isec_op==OP_COMPLEMENT ) 
-    {
-        stdout_vcf = 0;
-        args->isec_n = 1;
-    }
+    if ( args->isec_op==OP_COMPLEMENT ) stdout_vcf = 0;
     if ( stdout_vcf ) 
     {
         out_fh = hts_open("-","w",0);
         vcf_hdr_write(out_fh, files->readers[0].header);
     }
 
-    while ( (ret=bcf_sr_next_line(files)) )
+    int n;
+    while ( (n=bcf_sr_next_line(files)) )
     {
         bcf_sr_t *reader = NULL;
         bcf1_t *line = NULL;
-        int n = 0;
+        int i, ret = 0;
         for (i=0; i<files->nreaders; i++)
         {
-            if ( !(ret&1<<i) ) continue;
+            if ( !bcf_sr_has_line(files,i) ) continue;
             if ( !line ) 
             {
                 line = files->readers[i].buffer[0];
                 reader = &files->readers[i];
             }
-            n++;
+            ret |= 1<<i;    // this may overflow for many files, but will be used only with two (OP_VENN)
         }
 
         switch (args->isec_op) 
         {
-            case OP_COMPLEMENT: if ( ret != args->isec_n ) continue; break;
+            case OP_COMPLEMENT: if ( n!=1 || !bcf_sr_has_line(files,0) ) continue; break;
             case OP_EQUAL: if ( n != args->isec_n ) continue; break;
             case OP_PLUS: if ( n < args->isec_n ) continue; break;
             case OP_MINUS: if ( n > args->isec_n ) continue;
@@ -168,7 +164,8 @@ void isec_vcf(args_t *args)
                 kputs(line->d.allele[i], &str);
             }
             kputc('\t', &str);
-            kputw(ret, &str);
+            for (i=0; i<files->nreaders; i++)
+                kputc(bcf_sr_has_line(files,i)?'1':'0', &str);
             kputc('\n', &str);
             fwrite(str.s,sizeof(char),str.l,args->fh_sites);
         }
@@ -181,7 +178,7 @@ void isec_vcf(args_t *args)
             {
                 for (i=0; i<files->nreaders; i++)
                 {
-                    if ( !(ret&1<<i) ) continue;
+                    if ( !bcf_sr_has_line(files,i) ) continue;
                     if ( args->write && !args->write[i] ) continue;
                     vcf_write1(args->fh_out[i], files->readers[i].header, files->readers[i].buffer[0]);
                 }

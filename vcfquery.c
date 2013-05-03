@@ -450,17 +450,17 @@ static void print_header(args_t *args, kstring_t *str)
 static void query_vcf(args_t *args)
 {
     kstring_t str = {0,0,0};
-    int i, ret;
 
     args->files->max_unpack |= BCF_UN_STR;
     if ( args->print_header ) print_header(args, &str);
 
-    while ( (ret=bcf_sr_next_line(args->files)) )
+    while ( bcf_sr_next_line(args->files) )
     {
-        if ( !(ret&1) ) continue;
+        if ( !bcf_sr_has_line(args->files,0) ) continue;
         bcf1_t *line = args->files->readers[0].buffer[0];
         bcf_unpack(line, args->files->max_unpack);
 
+        int i, ir;
         str.l = 0;
         for (i=0; i<args->nfmt; i++)
         {
@@ -479,7 +479,10 @@ static void query_vcf(args_t *args)
                     for (k=i; k<j; k++)
                     {
                         if ( args->fmt[k].type == T_MASK )
-                            kputw(ret, &str);
+                        {
+                            for (ir=0; ir<args->files->nreaders; ir++) 
+                                kputc(bcf_sr_has_line(args->files,ir)?'1':'0', &str);
+                        }
                         else if ( args->fmt[k].handler )
                             args->fmt[k].handler(args, line, &args->fmt[k], ks, &str);
                     }
@@ -489,7 +492,10 @@ static void query_vcf(args_t *args)
             }
             // Fixed fields
             if ( args->fmt[i].type == T_MASK )
-                kputw(ret, &str);
+            {
+                for (ir=0; ir<args->files->nreaders; ir++) 
+                    kputc(bcf_sr_has_line(args->files,ir)?'1':'0', &str);
+            }
             else if ( args->fmt[i].handler )
                 args->fmt[i].handler(args, line, &args->fmt[i], -1, &str);
         }

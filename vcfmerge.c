@@ -48,6 +48,7 @@ typedef struct
     int ntmp_arr;
     maux1_t **d;    // d[i][j] i-th reader, j-th buffer line
     bcf_srs_t *files;
+    int *has_line;  // which files are being merged
 }
 maux_t;
 
@@ -257,6 +258,7 @@ maux_t *maux_init(bcf_srs_t *files)
         n_smpl += files->readers[i].header->n[BCF_DT_SAMPLE];
     ma->smpl_ploidy = (int*) calloc(n_smpl,sizeof(int));
     ma->smpl_nGsize = (int*) malloc(n_smpl*sizeof(int));
+    ma->has_line = (int*) malloc(ma->n*sizeof(int));
     return ma;
 }
 void maux_destroy(maux_t *ma)
@@ -280,6 +282,7 @@ void maux_destroy(maux_t *ma)
     free(ma->cnt);
     free(ma->smpl_ploidy);
     free(ma->smpl_nGsize);
+    free(ma->has_line);
     free(ma);
 }
 void maux_expand1(maux_t *ma, int i)
@@ -309,7 +312,7 @@ void maux_debug(maux_t *ma, int ir, int ib)
     printf("\n");
 }
 
-void merge_chrom2qual(args_t *args, int mask, bcf1_t *out)
+void merge_chrom2qual(args_t *args, bcf1_t *out)
 {
     bcf_srs_t *files = args->files;
     bcf_hdr_t *out_hdr = args->out_hdr;
@@ -329,7 +332,7 @@ void merge_chrom2qual(args_t *args, int mask, bcf1_t *out)
     out->pos = -1;
     for (i=0; i<files->nreaders; i++)
     {
-        if ( !(mask&1<<i) ) continue;
+        if ( !ma->has_line[i] ) continue;
 
         bcf_sr_t *reader = &files->readers[i];
         bcf1_t *line = reader->buffer[0];
@@ -382,7 +385,7 @@ void merge_chrom2qual(args_t *args, int mask, bcf1_t *out)
         int ir, j;
         for (ir=0; ir<files->nreaders; ir++)
         {
-            if ( !(mask&1<<ir) ) continue;
+            if ( !ma->has_line[ir] ) continue;
             bcf1_t *line = files->readers[ir].buffer[0];
             for (j=1; j<line->n_allele; j++)
                 if ( ma->d[ir][0].map[j]==i ) ma->d[ir][0].map[j] = out->n_allele;
@@ -414,7 +417,7 @@ void merge_chrom2qual(args_t *args, int mask, bcf1_t *out)
     free(al_idxs);
 }
 
-void merge_filter(args_t *args, int mask, bcf1_t *out)
+void merge_filter(args_t *args, bcf1_t *out)
 {
     bcf_srs_t *files = args->files;
     bcf_hdr_t *out_hdr = args->out_hdr;
@@ -428,7 +431,7 @@ void merge_filter(args_t *args, int mask, bcf1_t *out)
     out->d.n_flt = 0;
     for (i=0; i<files->nreaders; i++)
     {
-        if ( !(mask&1<<i) ) continue;
+        if ( !ma->has_line[i]) continue;
 
         bcf_sr_t *reader = &files->readers[i];
         bcf1_t *line = reader->buffer[0];
@@ -466,7 +469,7 @@ void merge_filter(args_t *args, int mask, bcf1_t *out)
     out->d.flt = ma->flt;
 }
 
-void merge_info(args_t *args, int mask, bcf1_t *out)
+void merge_info(args_t *args, bcf1_t *out)
 {
     bcf_srs_t *files = args->files;
     bcf_hdr_t *out_hdr = args->out_hdr;
@@ -480,7 +483,7 @@ void merge_info(args_t *args, int mask, bcf1_t *out)
     out->n_info = 0;
     for (i=0; i<files->nreaders; i++)
     {
-        if ( !(mask&1<<i) ) continue;
+        if ( !ma->has_line[i] ) continue;
         bcf_sr_t *reader = &files->readers[i];
         bcf1_t *line = reader->buffer[0];
         bcf_hdr_t *hdr = reader->header;
@@ -555,7 +558,7 @@ void update_AN_AC(bcf_hdr_t *hdr, bcf1_t *line)
     free(tmp);
 }
 
-void merge_GT(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out)
+void merge_GT(args_t *args, bcf_fmt_t **fmt_map, bcf1_t *out)
 {
     bcf_srs_t *files = args->files;
     bcf_hdr_t *out_hdr = args->out_hdr;
@@ -656,7 +659,7 @@ void merge_GT(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out)
     }
 }
 
-void merge_format_field(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out)
+void merge_format_field(args_t *args, bcf_fmt_t **fmt_map, bcf1_t *out)
 {
     bcf_srs_t *files = args->files;
     bcf_hdr_t *out_hdr = args->out_hdr;
@@ -667,7 +670,7 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out
     int nsize = 0, length = BCF_VL_FIXED, type = -1;
     for (i=0; i<files->nreaders; i++)
     {
-        if ( !(mask&1<<i) ) continue;
+        if ( !ma->has_line[i] ) continue;
         if ( !fmt_map[i] ) continue;
         if ( !key ) key = files->readers[i].header->id[BCF_DT_ID][fmt_map[i]->id].key;
         type = fmt_map[i]->type;
@@ -705,7 +708,7 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out
                 ismpl += hdr->n[BCF_DT_SAMPLE]; \
                 continue; \
             } \
-            if ( !(mask&1<<i) ) continue; \
+            if ( !ma->has_line[i] ) continue; \
             bcf1_t *line    = reader->buffer[0]; \
             src_type_t *src = (src_type_t*) fmt_ori->p; \
             if ( (length!=BCF_VL_G && length!=BCF_VL_A) || (line->n_allele==out->n_allele && !ma->d[i][0].als_differ) ) \
@@ -793,7 +796,7 @@ void merge_format_field(args_t *args, int mask, bcf_fmt_t **fmt_map, bcf1_t *out
         bcf1_update_format_int32(out_hdr, out, key, (int32_t*)ma->tmp_arr, nsamples*nsize);
 }
 
-void merge_format(args_t *args, int mask, bcf1_t *out)
+void merge_format(args_t *args, bcf1_t *out)
 {
     bcf_srs_t *files = args->files;
     bcf_hdr_t *out_hdr = args->out_hdr;
@@ -812,7 +815,7 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
     int i, j, ret, has_GT = 0, max_ifmt = 0; // max fmt index
     for (i=0; i<files->nreaders; i++)
     {
-        if ( !(mask&1<<i) ) continue;
+        if ( !ma->has_line[i] ) continue;
         bcf_sr_t *reader = &files->readers[i];
         bcf1_t *line = reader->buffer[0];
         bcf_hdr_t *hdr = reader->header;
@@ -853,25 +856,25 @@ void merge_format(args_t *args, int mask, bcf1_t *out)
 
     out->n_sample = out_hdr->n[BCF_DT_SAMPLE];
     if ( has_GT )
-        merge_GT(args, mask, ma->fmt_map, out);
+        merge_GT(args, ma->fmt_map, out);
     update_AN_AC(out_hdr, out);
 
     for (i=1; i<=max_ifmt; i++)
-        merge_format_field(args, mask, &ma->fmt_map[i*files->nreaders], out);
+        merge_format_field(args, &ma->fmt_map[i*files->nreaders], out);
     out->d.indiv_dirty = 1;
 }
 
 // The core merging function, one or none line from each reader
-void merge_line(args_t *args, int mask)
+void merge_line(args_t *args)
 {
     bcf1_t *out = args->out_line;
     bcf_clear1(out);
     out->unpacked = BCF_UN_ALL;
 
-    merge_chrom2qual(args, mask, out);
-    merge_filter(args, mask, out);
-    merge_info(args, mask, out);
-    merge_format(args, mask, out);
+    merge_chrom2qual(args, out);
+    merge_filter(args, out);
+    merge_info(args, out);
+    merge_format(args, out);
 
     vcf_write1(args->out_fh, args->out_hdr, out);
 }
@@ -981,7 +984,7 @@ void shake_buffer(maux_t *maux, int ir, int pos)
 // readers and all buffered lines, expand REF,ALT and try to match lines with
 // the same ALTs. A step towards output independent on input ordering of the
 // lines.
-void merge_buffer(args_t *args, int mask)
+void merge_buffer(args_t *args)
 {
     bcf_srs_t *files = args->files;
     int i, pos = -1, var_type = 0;
@@ -991,7 +994,7 @@ void merge_buffer(args_t *args, int mask)
     // set the current position
     for (i=0; i<files->nreaders; i++)
     {
-        if ( mask&1<<i)
+        if ( bcf_sr_has_line(files,i) )
         {
             pos = files->readers[i].buffer[0]->pos;
             bcf_set_variant_types(files->readers[i].buffer[0]);
@@ -1062,9 +1065,11 @@ void merge_buffer(args_t *args, int mask)
             if ( maux->cnt[i] > maux->cnt[icnt] ) icnt = i;
         if ( maux->cnt[icnt]<0 ) break;
 
-        mask = 0;
+        int nmask = 0;
         for (i=0; i<files->nreaders; i++)
         {
+            maux->has_line[i] = 0;
+
             // first pass: try to find lines with the same allele
             bcf_sr_t *reader = &files->readers[i];
             if ( !reader->buffer ) continue;
@@ -1093,11 +1098,12 @@ void merge_buffer(args_t *args, int mask)
                 }
                 // mark as finished so that it's ignored next time
                 maux->d[i][0].skip |= SKIP_DONE;
-                mask |= 1<<i;
+                maux->has_line[i] = 1;
+                nmask++;
             }
         }
-        if ( !mask ) break;     // done, no more lines suitable for merging found 
-        merge_line(args,mask);  // merge and output the line
+        if ( !nmask ) break;    // done, no more lines suitable for merging found 
+        merge_line(args);       // merge and output the line
         maux->cnt[icnt] = -1;   // do not pick this allele again, mark it as finished
     }
 
@@ -1149,9 +1155,7 @@ void merge_vcf(args_t *args)
     int ret;
     while ( (ret=bcf_sr_next_line(args->files)) )
     {
-        merge_buffer(args, ret);
-        // printf("<merge done>\n");
-        // debug_buffers(stdout, &args->files);
+        merge_buffer(args);
     }
     maux_destroy(args->maux);
     bcf_hdr_destroy(args->out_hdr);

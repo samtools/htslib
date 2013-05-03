@@ -291,7 +291,7 @@ static void check_gt(args_t *args)
     }
     while ( (ret=bcf_sr_next_line(args->files)) )
     {
-        if ( ret!=3 ) continue;
+        if ( ret!=2 ) continue;
         bcf1_t *sm_line = args->files->readers[0].buffer[0];
         bcf1_t *gt_line = args->files->readers[1].buffer[0];
         bcf_unpack(sm_line, BCF_UN_ALL);
@@ -473,13 +473,13 @@ static void cross_check_gts(args_t *args)
 {
     int nsamples = args->sm_hdr->n[BCF_DT_SAMPLE], ndp_arr = 0, npl_arr = 0;
     unsigned int *dp = (unsigned int*) calloc(nsamples,sizeof(unsigned int)), *ndp = (unsigned int*) calloc(nsamples,sizeof(unsigned int)); // this will overflow one day...
-    int i,j,k,idx, ret, *dp_arr = NULL, *pl_arr = NULL, pl_warned = 0, dp_warned = 0;
+    int i,j,k,idx, *dp_arr = NULL, *pl_arr = NULL, pl_warned = 0, dp_warned = 0;
     int *is_hom = args->hom_only ? (int*) malloc(sizeof(int)*nsamples) : NULL;
     int pl_id = bcf_id2int(args->sm_hdr, BCF_DT_ID, "PL");
     int dp_id = bcf_id2int(args->sm_hdr, BCF_DT_ID, "DP");
     if ( pl_id<0 ) error("[E::%s] PL not present in the header of %s?\n", __func__, args->files->readers[0].fname);
     if ( dp_id<0 ) error("[E::%s] DP not present in the header of %s?\n", __func__, args->files->readers[0].fname);
-    while ( (ret=bcf_sr_next_line(args->files)) )
+    while ( bcf_sr_next_line(args->files) )
     {
         bcf1_t *line = args->files->readers[0].buffer[0];
         bcf_unpack(line, BCF_UN_FMT);

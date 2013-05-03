@@ -262,7 +262,7 @@ int annots_reader_next(args_t *args)
 
     // MASK
     if ( !args->ignore[2] )
-        args->mask = strtol(t, NULL, 10);
+        args->mask = t[2]=='1' ? 2 : 1;     // good site t="\t11", otherwise t="\t10"
     t = column_next(t+1, '\t');  
     if ( !*t ) error("Could not parse MASK: [%s]\n", line);
 
@@ -385,7 +385,7 @@ static void plot_dists(args_t *args, dist_t *dists, int ndist)
         int j, jfrom, jto;
         for (jfrom=0; jfrom<nbins-1 && all_data[jfrom]==0; jfrom++) if ( all_data[jfrom+1]!=0 ) break;
         for (jto=nbins-1; jto>0 && all_data[jto]==0; jto--) if ( all_data[jto-1]!=0 ) break;
-        assert( jto >= jfrom );
+        if ( jto < jfrom ) jto = jfrom = 0;
         fprintf(fp,"[ # %s - distribution of all sites\n", args->colnames[i+NFIXED]);
         for (j=jfrom; j<=jto; j++)
         {
@@ -402,7 +402,7 @@ static void plot_dists(args_t *args, dist_t *dists, int ndist)
 
         for (jfrom=0; jfrom<nbins-1 && good_data[jfrom]==0; jfrom++) if ( good_data[jfrom+1]!=0 ) break;
         for (jto=nbins-1; jto>0 && good_data[jto]==0; jto--) if ( good_data[jto-1]!=0 ) break;
-        assert( jto >= jfrom );
+        if ( jto < jfrom ) jto = jfrom = 0;
         for (j=jfrom; j<=jto; j++)
         {
             if ( j>jfrom ) fprintf(fp,",");
@@ -418,7 +418,7 @@ static void plot_dists(args_t *args, dist_t *dists, int ndist)
 
         for (jfrom=0; jfrom<nbins-1 && bad_data[jfrom]==0; jfrom++) if ( bad_data[jfrom+1]!=0 ) break;
         for (jto=nbins-1; jto>0 && bad_data[jto]==0; jto--) if ( bad_data[jto-1]!=0 ) break;
-        assert( jto >= jfrom );
+        if ( jto < jfrom ) jto = jfrom = 0;
         for (j=jfrom; j<=jto; j++)
         {
             if ( j>jfrom ) fprintf(fp,",");
@@ -679,6 +679,8 @@ static void init_annots(args_t *args)
 
     int i, j;
     char **colnames = split_list(args->str.s, '\t', &args->ncols);
+    if ( args->ncols >= 8*sizeof(int)-1 ) error("Fixme: Too many columns (%d), currently limited by max %d\n", args->ncols, 8*sizeof(int)-1);
+
     args->colnames  = (char**) malloc(sizeof(char*)*args->ncols);
     for (i=0; i<args->ncols; i++)
     {

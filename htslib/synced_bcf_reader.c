@@ -10,7 +10,8 @@
 
 int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 {
-    files->readers = (bcf_sr_t*) realloc(files->readers, sizeof(bcf_sr_t)*(files->nreaders+1));
+    files->has_line = (int*) realloc(files->has_line, sizeof(int)*(files->nreaders+1));
+    files->readers  = (bcf_sr_t*) realloc(files->readers, sizeof(bcf_sr_t)*(files->nreaders+1));
     bcf_sr_t *reader = &files->readers[files->nreaders++];
     memset(reader,0,sizeof(bcf_sr_t));
 
@@ -147,6 +148,7 @@ void bcf_sr_destroy(bcf_srs_t *files)
         free(reader->buffer);
         if ( reader->samples ) free(reader->samples);
     }
+    free(files->has_line);
     free(files->readers);
     free(files->seqs);
     for (i=0; i<files->n_smpl; i++) free(files->samples[i]);
@@ -470,6 +472,8 @@ int bcf_sr_next_line(bcf_srs_t *files)
     bcf1_t *first = NULL;
     for (i=0; i<files->nreaders; i++)
     {
+        files->has_line[i] = 0;
+
         bcf_sr_t *reader = &files->readers[i];
         if ( !reader->nbuffer || reader->buffer[1]->pos!=min_pos ) continue;
 
@@ -527,10 +531,9 @@ int bcf_sr_next_line(bcf_srs_t *files)
             reader->buffer[j-1] = reader->buffer[j];
         reader->buffer[ reader->nbuffer ] = tmp;
         reader->nbuffer--;
-        ret |= 1<<i;
+        ret++;
+        files->has_line[i] = 1;
     }
-    // fprintf(stderr,"[next_line] min_pos=%d mask=%d\n", min_pos+1, ret);
-    // debug_buffers(stderr,files);
 
     return ret;
 }

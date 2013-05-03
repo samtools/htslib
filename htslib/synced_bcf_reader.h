@@ -64,6 +64,7 @@ typedef struct
     int require_index;  // Some tools do not need random access
     const char *region; // Jump to a region (this will set also require_index)
     int max_unpack;     // When reading VCFs and knowing some fields will not be needed, boost performance of vcf_parse1
+    int *has_line;      // Corresponds to return value of bcf_sr_next_line but is not limited by sizeof(int). Use bcf_sr_has_line macro to query.
 
 	// Auxiliary data
 	bcf_sr_t *readers;
@@ -99,11 +100,13 @@ int bcf_sr_add_reader(bcf_srs_t *readers, const char *fname);
  * bcf_sr_next_line() - the iterator
  * @readers:    holder of the open readers
  *
- * Returns 0 when all lines from all files have been read or a bit mask
- * indicating which of the readers have the current line (bcf_sr_t.buffer[0])
- * set at this position. 
+ * Returns the number of readers which have the current line
+ * (bcf_sr_t.buffer[0]) set at this position. Use the bcf_sr_has_line macro to
+ * determine which of the readers are set.
  */
 int bcf_sr_next_line(bcf_srs_t *readers);
+#define bcf_sr_has_line(readers, i) (readers)->has_line[i]
+
 
 /**
  * bcf_sr_set_samples() - sets active samples

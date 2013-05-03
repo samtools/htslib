@@ -480,15 +480,17 @@ static void do_sample_stats(args_t *args, stats_t *stats, bcf_sr_t *reader, int 
 
 static void check_vcf(args_t *args)
 {
-    int ret,i;
     bcf_srs_t *files = args->files;
-    while ( (ret=bcf_sr_next_line(files)) )
+    assert( sizeof(int)>files->nreaders );
+    while ( bcf_sr_next_line(files) )
     {
         bcf_sr_t *reader = NULL;
         bcf1_t *line = NULL;
+        int ret = 0, i;
         for (i=0; i<files->nreaders; i++)
         {
-            if ( !(ret&1<<i) ) continue;
+            if ( !bcf_sr_has_line(files,i) ) continue;
+            ret |= 1<<i;
             reader = &files->readers[i];
             line = files->readers[i].buffer[0];
             break;
