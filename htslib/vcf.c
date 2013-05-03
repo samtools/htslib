@@ -142,7 +142,7 @@ void bcf_header_debug(bcf_hdr_t *hdr)
     }
 }
 
-void bcf_hrec_add_key(bcf_hrec_t *hrec, char *str, int len)
+void bcf_hrec_add_key(bcf_hrec_t *hrec, const char *str, int len)
 {
     int n = ++hrec->nkeys;
     hrec->keys = (char**) realloc(hrec->keys, sizeof(char*)*n);
@@ -154,7 +154,7 @@ void bcf_hrec_add_key(bcf_hrec_t *hrec, char *str, int len)
     hrec->vals[n-1] = NULL;
 }
 
-void bcf_hrec_set_val(bcf_hrec_t *hrec, int i, char *str, int len, int is_quoted)
+void bcf_hrec_set_val(bcf_hrec_t *hrec, int i, const char *str, int len, int is_quoted)
 {
     if ( !str ) { hrec->vals[i] = NULL; return; }
     if ( hrec->vals[i] ) free(hrec->vals[i]);
@@ -174,7 +174,7 @@ void bcf_hrec_set_val(bcf_hrec_t *hrec, int i, char *str, int len, int is_quoted
     }
 }
 
-int bcf_hrec_find_key(bcf_hrec_t *hrec, char *key)
+int bcf_hrec_find_key(bcf_hrec_t *hrec, const char *key)
 {
     int i;
     for (i=0; i<hrec->nkeys; i++)
@@ -182,20 +182,20 @@ int bcf_hrec_find_key(bcf_hrec_t *hrec, char *key)
     return -1;
 }
 
-inline int is_escaped(char *min, char *str)
+inline int is_escaped(const char *min, const char *str)
 {
     int n = 0;
     while ( --str>=min && *str=='\\' ) n++;
     return n%2;
 }
 
-bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, char *line, int *len)
+bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
 {
-    char *p = line;
+    const char *p = line;
     if (p[0] != '#' || p[1] != '#') { *len = 0; return NULL; }
     p += 2;
 
-    char *q = p;
+    const char *q = p;
     while ( *q && *q!='=' ) q++;
     int n = q-p;
     if ( *q!='=' || !n ) { *len = q-line+1; return NULL; } // wrong format
@@ -368,7 +368,7 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     return hrec->type==BCF_HL_GEN ? 0 : 1;
 }
 
-bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, char *id)
+bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, const char *id)
 {
     vdict_t *d = type==BCF_HL_CTG ? (vdict_t*)hdr->dict[BCF_DT_CTG] : (vdict_t*)hdr->dict[BCF_DT_ID];
     khint_t k = kh_get(vdict, d, id);
@@ -777,7 +777,7 @@ void bcf_enc_vfloat(kstring_t *s, int n, float *a)
 	kputsn((char*)a, n << 2, s);
 }
 
-void bcf_enc_vchar(kstring_t *s, int l, char *a)
+void bcf_enc_vchar(kstring_t *s, int l, const char *a)
 {
 	bcf_enc_size(s, l, BCF_BT_CHAR);
 	kputsn(a, l, s);
@@ -1516,7 +1516,7 @@ int bcf_is_snp(bcf1_t *v)
 	return i == v->n_allele;
 }
 
-static void bcf_set_variant_type(char *ref, char *alt, variant_t *var)
+static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *var)
 {
 	// The most frequent case
 	if ( !ref[1] && !alt[1] )
@@ -1525,7 +1525,7 @@ static void bcf_set_variant_type(char *ref, char *alt, variant_t *var)
 		var->n = 1; var->type = VCF_SNP; return;
 	}
 
-	char *r = ref, *a = alt;
+	const char *r = ref, *a = alt;
 	while (*r && *a && *r==*a ) { r++; a++; }
 
 	if ( *a && !*r )
@@ -1543,7 +1543,7 @@ static void bcf_set_variant_type(char *ref, char *alt, variant_t *var)
 		var->n = 0; var->type = VCF_REF; return;
 	}
 
-    char *re = r, *ae = a;
+    const char *re = r, *ae = a;
     while ( re[1] ) re++;
     while ( ae[1] ) ae++;
     while ( *re==*ae && re>r && ae>a ) { re--; ae--; }
