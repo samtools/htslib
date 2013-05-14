@@ -491,9 +491,9 @@ static void check_vcf(args_t *args)
         {
             if ( !bcf_sr_has_line(files,i) ) continue;
             ret |= 1<<i;
+            if ( reader ) continue;
             reader = &files->readers[i];
             line = files->readers[i].buffer[0];
-            break;
         }
         bcf_set_variant_types(line);
         init_iaf(args, reader);
