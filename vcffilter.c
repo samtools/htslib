@@ -13,7 +13,10 @@
 #include "vcfutils.h"
 
 #define NFIXED 5
-#define IS_GOOD(mask) ((mask)&2) 
+#define MASK_GOOD 2
+#define MASK_BAD  4
+#define IS_GOOD(mask) ((mask)&MASK_GOOD) 
+#define IS_BAD(mask) ((mask)&MASK_BAD)
 
 typedef struct
 {
@@ -73,15 +76,17 @@ typedef struct
     int *ignore;                // columns to ignore (ncols, ro)
     int pos, mask, is_ts, type; // filled by annots_reader_next
     char *chr;                  // filled by annots_reader_next
-    double *vals;               // filled by annots_reader_next (ncols)
+    double *vals;               // filled by annots_reader_next (ncols), scaled if scale set
+    double *raw_vals;           // same as vals, unscaled
     int *missing;               // columns with missing values, filled by annots_reader_next (ncols)
     int nset, nset_mask;        // number of filled coordinates and their mask, filled by annots_reader_next
 
-    som_t som;
+    som_t som, bad_som;
     int filt_type;
     filters_t filt_excl, filt_learn;
     double snp_th, indel_th;
 
+    int rand_seed;
     char *annot_str, *fixed_filters, *learning_filters;
 	char **argv, *fname, *out_prefix, *region;
 	int argc, do_plot;
@@ -237,6 +242,22 @@ inline double scale_value(dist_t *dist, double val)
     assert( val>=0 && val<=1 );
     return val;
 }
+/**
+ *  annots_reader_next() - reads next line from annots.tab.gz and sets the appropriate fields
+ *
+ *    mask:         2 if a good site, otherwise 1
+ *    is_ts:        1 if transition, 0 if transversion (meaningless with indels)
+ *    type:         one of VCF_SNP, VCF_INDEL, VCF_OTHER
+ *    nset:         number of non-missing values read into the $vals array
+ *    nset_mask:    which values are non-missing. Note that this limits the number of maximum annotations
+ *    vals:         the parsed values the order of which corresponds to $names (scaled to <0,1> if $scaled is set)
+ *    raw_vals:     same as while $vals, but unscaled
+ *    missing:      array of flags indicating whether the value is set or not (the same order as above)
+ *
+ *   In addition also these self-explanatory fields are set: chr, pos
+ *
+ *   Returns 1 on successful read or 0 if no further record could be read.
+ */
 int annots_reader_next(args_t *args)
 {
     args->str.l = 0;
@@ -315,7 +336,9 @@ int annots_reader_next(args_t *args)
             continue;
         }
 
-        if ( args->scale )
+        args->raw_vals[iann] = args->vals[iann];
+
+        if ( args->scale && args->dists )
             args->vals[iann] = scale_value(&args->dists[icol], args->vals[iann]);
 
         args->nset++;
@@ -336,7 +359,7 @@ void annots_reader_reset(args_t *args)
 
 static void smooth_dist(double *dst, unsigned int *src, int n)
 {
-    int i, j, win = 10;
+    int i, j, win = 5;
     for (i=0; i<n; i++)
     {
         // dst[i] = src[i]; continue;  // no smoothing
@@ -493,7 +516,6 @@ static void create_dists(args_t *args)
     //  requested order. This is the only place where we want to read and return all the values
     //  as they are. Change the scale, ignore, and col2names arrays temporarily.
     //
-    int scale_ori      = args->scale; args->scale = 0;
     int *ignore_ori    = args->ignore;
     int *col2names_ori = args->col2names;
     args->ignore       = (int*) calloc(args->ncols, sizeof(int));
@@ -526,7 +548,7 @@ static void create_dists(args_t *args)
     annots_reader_reset(args);
     while ( annots_reader_next(args) )
     {
-        int is_bad = tmp_flt && tmp_flt->nfilt && !pass_filters(tmp_flt, args->vals) ? 1 : 0;
+        int is_bad = tmp_flt && tmp_flt->nfilt && !pass_filters(tmp_flt, args->raw_vals) ? 1 : 0;
         for (i=0; i<nann; i++)
         {
             if ( args->missing[i] )
@@ -536,23 +558,23 @@ static void create_dists(args_t *args)
             }
             if ( IS_GOOD(args->mask) )
             {
-                if ( !dists[i].ngood ) dists[i].good_min = dists[i].good_max = args->vals[i];
-                if ( args->vals[i] < dists[i].good_min ) dists[i].good_min = args->vals[i];
-                if ( args->vals[i] > dists[i].good_max ) dists[i].good_max = args->vals[i];
+                if ( !dists[i].ngood ) dists[i].good_min = dists[i].good_max = args->raw_vals[i];
+                if ( args->raw_vals[i] < dists[i].good_min ) dists[i].good_min = args->raw_vals[i];
+                if ( args->raw_vals[i] > dists[i].good_max ) dists[i].good_max = args->raw_vals[i];
                 dists[i].ngood++;
             }
             if ( is_bad )
             {
-                if ( !dists[i].nbad ) dists[i].bad_min = dists[i].bad_max = args->vals[i];
-                if ( args->vals[i] < dists[i].bad_min ) dists[i].bad_min = args->vals[i];
-                if ( args->vals[i] > dists[i].bad_max ) dists[i].bad_max = args->vals[i];
+                if ( !dists[i].nbad ) dists[i].bad_min = dists[i].bad_max = args->raw_vals[i];
+                if ( args->raw_vals[i] < dists[i].bad_min ) dists[i].bad_min = args->raw_vals[i];
+                if ( args->raw_vals[i] > dists[i].bad_max ) dists[i].bad_max = args->raw_vals[i];
                 dists[i].nbad++;
             }
-            if ( !dists[i].nall ) dists[i].all_min = dists[i].all_max = args->vals[i];
-            if ( args->vals[i] < dists[i].all_min ) dists[i].all_min = args->vals[i];
-            if ( args->vals[i] > dists[i].all_max ) dists[i].all_max = args->vals[i];
+            if ( !dists[i].nall ) dists[i].all_min = dists[i].all_max = args->raw_vals[i];
+            if ( args->raw_vals[i] < dists[i].all_min ) dists[i].all_min = args->raw_vals[i];
+            if ( args->raw_vals[i] > dists[i].all_max ) dists[i].all_max = args->raw_vals[i];
             dists[i].nall++;
-            fprintf(fps[i], "%le\t%d\t%d\n", args->vals[i], IS_GOOD(args->mask)?1:0, is_bad);
+            fprintf(fps[i], "%le\t%d\t%d\n", args->raw_vals[i], IS_GOOD(args->mask)?1:0, is_bad);
         }
     }
     // Change the arrays back and clean
@@ -560,7 +582,6 @@ static void create_dists(args_t *args)
     free(args->col2names);
     args->ignore    = ignore_ori;
     args->col2names = col2names_ori;
-    args->scale = scale_ori;
     for (i=0; i<nann; i++)
         if ( pclose(fps[i]) ) error("An error occured while processing %s.%s\n", args->out_prefix, args->colnames[i+NFIXED]);
     free(fps);
@@ -583,10 +604,8 @@ static void create_dists(args_t *args)
         while ( fscanf(fp,"%le\t%d\t%d",&val,&is_good,&is_bad)==3 )
         {
             count++;
-            if ( dists[i].scale_min==HUGE_VAL && (double)100.*count/dists[i].nall >= args->lo_pctl )
-                dists[i].scale_min = val;
-            if ( dists[i].scale_max==HUGE_VAL && (double)100.*count/dists[i].nall >= args->hi_pctl )
-                dists[i].scale_max = val;
+            if ( dists[i].scale_min==HUGE_VAL || (double)100.*count/dists[i].nall < args->lo_pctl ) dists[i].scale_min = val;
+            if ( dists[i].scale_max==HUGE_VAL && (double)100.*count/dists[i].nall > args->hi_pctl ) dists[i].scale_max = val;
 
             // For the distribution plots
             int ibin = (float)(dists[i].nbins - 1)*(val - dists[i].all_min)/(dists[i].all_max - dists[i].all_min);
@@ -594,6 +613,7 @@ static void create_dists(args_t *args)
             if ( is_bad ) dists[i].bad_data[ibin]++;
             dists[i].all_data[ibin]++;
         }
+        if ( dists[i].scale_max==HUGE_VAL ) dists[i].scale_max = val;
         if ( fclose(fp) ) error("An error occurred while processing %s.%s\n", args->out_prefix, args->colnames[i+NFIXED]);
         unlink(fname);
         free(fname);
@@ -699,6 +719,7 @@ static void init_annots(args_t *args)
     args->missing   = (int*) malloc(sizeof(int)*args->ncols);
     args->ignore    = (int*) malloc(sizeof(int)*args->ncols);
     args->vals      = (double*) malloc(sizeof(double)*args->ncols);
+    args->raw_vals  = (double*) malloc(sizeof(double)*args->ncols);
     args->ann2cols  = (int*) malloc(sizeof(int)*args->ncols);
     for (i=0; i<args->ncols; i++)
     {
@@ -759,6 +780,7 @@ static void destroy_annots(args_t *args)
     if ( args->missing ) free(args->missing);
     if ( args->ignore ) free(args->ignore);
     if ( args->vals ) free(args->vals);
+    if ( args->raw_vals ) free(args->raw_vals);
 }
 
 static int pass_filters(filters_t *filt, double *vec)
@@ -1007,26 +1029,57 @@ static void som_init(args_t *args)
         if ( args->dists[args->ann2cols[i]].ngood < n ) n = args->dists[args->ann2cols[i]].ngood;
     if ( !som->nt || som->nt > n ) som->nt = n;
     som->decay  = som->nt / log(som->radius);
-
+    srandom(args->rand_seed);
     int n3 = som->nbin * som->nbin * som->kdim;
     for (i=0; i<n3; i++)
         som->w[i] = (double)random()/RAND_MAX;
-
-    int nvals = 0;
+    int nvals = 0, nbad_vals = 0;
     double *vals = (double*) malloc(sizeof(double)*som->nt*args->nann_som);
+    double *bad_vals = (double*) malloc(sizeof(double)*som->nt*args->nann_som);
 
+
+    // bad sites' SOM
+    som_t *bad_som  = &args->bad_som;
+    *bad_som = *som;
+    bad_som->w      = (double*) malloc(sizeof(double) * som->kdim * som->nbin * som->nbin);
+    bad_som->c      = (double*) calloc(som->nbin*som->nbin, sizeof(double));
+    for (i=0; i<n3; i++)
+        bad_som->w[i] = som->w[i];
+
+
+    srandom(args->rand_seed);
     annots_reader_reset(args);
     while ( annots_reader_next(args) )
     {
         if ( args->type != args->filt_type ) continue;
+
+        // Note that filtering and training requires that all annotations used in
+        //  hard-filtering and learning are present, even when not used in SOM filtering. 
+        //  So far the decision was that it is the responsibility of the caller
+        //  to supply meaningful default values if the annotation is not
+        //  applicable for a site (for example some tests cannot be performed
+        //  on a pure HOM site). This may not be an optimal solution and it
+        //  might be better to treat the missing values here, possibly with a
+        //  user switch to decide whether the missing values by default pass or
+        //  fail hard filters.
+        //
         if ( args->nset != args->nann ) continue;
-        if ( args->filt_excl.nfilt && !pass_filters(&args->filt_excl, args->vals) ) continue;
+        if ( args->filt_excl.nfilt && !pass_filters(&args->filt_excl, args->raw_vals) ) 
+        {
+            i = nbad_vals < bad_som->nt ? nbad_vals : (double)(bad_som->nt-1)*random()/RAND_MAX;
+            assert( i>=0 && i<bad_som->nt );
+
+            for (j=0; j<args->nann_som; j++)
+                bad_vals[i*args->nann_som + j] = args->vals[j];
+
+            nbad_vals++;
+            continue;
+        }
         if ( !IS_GOOD(args->mask) )
         {
-            if ( !args->filt_learn.nfilt ) continue;    // supervised learning, ignore
+            if ( !args->filt_learn.nfilt ) continue;    // this is supervised learning, ignore non-training sites
             if ( !pass_filters(&args->filt_learn, args->vals) ) continue;
         }
-
         i = nvals < som->nt ? nvals : (double)(som->nt-1)*random()/RAND_MAX;
         assert( i>=0 && i<som->nt );
 
@@ -1036,17 +1089,25 @@ static void som_init(args_t *args)
         nvals++;
     }
     if ( nvals < som->nt ) som->nt = nvals;
-    fprintf(stderr,"Selected %d training values\n", som->nt);
+    if ( nbad_vals < bad_som->nt ) bad_som->nt = nbad_vals;
+    fprintf(stderr,"Selected %d training values for good and %d values for bad SOM\n", som->nt, bad_som->nt);
 
     for (i=0; i<som->nt; i++)
         som_train(som, &vals[i*args->nann_som]);
-        //fprintf(stderr, "train: %d %e %e\n", args->nann_som, vals[i*args->nann_som],vals[i*args->nann_som+1] );
     free(vals);
 
+    for (i=0; i<bad_som->nt; i++)
+        som_train(bad_som, &bad_vals[i*args->nann_som]);
+    free(bad_vals);
+
     som_norm(som);
+    som_norm(bad_som);
 
     char *fname = msprintf("%s.som", args->out_prefix);
     som_plot(som, fname, args->do_plot);
+    free(fname);
+    fname = msprintf("%s.bad_som", args->out_prefix);
+    som_plot(bad_som, fname, args->do_plot);
     free(fname);
 }
 
@@ -1064,7 +1125,7 @@ static void init_data(args_t *args)
     }
     if ( !args->out_prefix ) error("Missing the -o option.\n");
     init_annots(args);
-    if ( args->fixed_filters ) init_filters(args, &args->filt_excl, args->fixed_filters, args->scale);
+    if ( args->fixed_filters ) init_filters(args, &args->filt_excl, args->fixed_filters, 0);
     if ( args->learning_filters ) init_filters(args, &args->filt_learn, args->learning_filters, 0);
     som_init(args);
 }
@@ -1075,9 +1136,10 @@ static void destroy_data(args_t *args)
     destroy_annots(args);
     free(args->out_prefix);
     som_destroy(&args->som);
+    som_destroy(&args->bad_som);
 }
 
-static void create_filters(args_t *args)
+static void eval_filters(args_t *args)
 {
     init_data(args);
     char *type = args->filt_type==VCF_SNP ? "SNP" : "INDEL";
@@ -1088,35 +1150,49 @@ static void create_filters(args_t *args)
 
     // Calculate scores
     kstring_t str = {0,0,0};
+    kputs("# [1]score\t[2]good SOM\t[3]bad SOM\t[4]is transition\t[5]mask, good(&2) or bad(&4)\t[6]chromsome\t[7]position\n", &str);
+    bgzf_write((BGZF *)file->fp, str.s, str.l);
+    str.l = 0;
+
     fprintf(stderr,"Classifying...\n");
     annots_reader_reset(args);
     int ngood = 0, nall = 0;
-    double max_dist = args->som.nbin*args->som.nbin*args->som.kdim;
+    double max_dist = args->som.kdim;
     while ( annots_reader_next(args) )
     {
         if ( args->type != args->filt_type ) continue;
         if ( args->nset != args->nann ) continue;
 
-        double dist = max_dist;
-        if ( !args->filt_excl.nfilt || pass_filters(&args->filt_excl, args->vals) )
+        double dist = max_dist, bad_dist = 0;
+        if ( !args->filt_excl.nfilt || pass_filters(&args->filt_excl, args->raw_vals) )
         {
             dist = som_calc_dist(&args->som, args->vals);
+            bad_dist = som_calc_dist(&args->bad_som, args->vals);
             assert( dist>=0 && dist<=max_dist );
         }
         else
-            dist = max_dist;
-
-        if ( IS_GOOD(args->mask) ) ngood++;
+            args->mask |= MASK_BAD;
         nall++;
 
+        if ( IS_GOOD(args->mask) ) ngood++;
+
         str.l = 0;
-        ksprintf(&str, "%le\t%d\t%d\t%s\t%d\n", dist, args->is_ts, IS_GOOD(args->mask)?1:0, args->chr, args->pos);
+        double score = dist/max_dist + (1-bad_dist/max_dist);        // 2.154    835770  99.48   2.07    1.103583e+00 (mpileup-test-2013-05-10/filter-sf-sum)
+        //* double score = dist/max_dist;                            // 2.153    837182  99.48   2.07 (mpileup-test-2013-05-10/filter-hf)
+        // double score = bad_dist>0 ? dist / bad_dist : 1e+10;      // 2.153    823529  99.35   2.07
+        // double score = dist/max_dist*(1-bad_dist/max_dist);       // 2.153    837196  99.48   2.07
+        // double score = 1-bad_dist/max_dist;                       // 2.154    822909  99.35   2.07
+        // double score = dist/max_dist + (bad_dist/max_dist<0.1 ? 0.1 : 0);    // 2.153    837198  99.48   2.07    2.037545e-01
+        // double score = dist/max_dist * (bad_dist/max_dist<1e-2 ? 2 : 1);     // 2.153    837199  99.48   2.07    2.075090e-01
+        // double score = dist/max_dist + 0.5*(1-bad_dist/max_dist);            // 2.154    835747  99.48   2.07    6.035832e-01
+        ksprintf(&str, "%le\t%le\t%le\t%d\t%d\t%s\t%d\n", score, dist/max_dist, bad_dist/max_dist, args->is_ts, args->mask, args->chr, args->pos);
         bgzf_write((BGZF *)file->fp, str.s, str.l);
     }
     hts_close(file);
-    tbx_conf_t conf = { 0, 4, 5, 0, '#', 0 };
+    tbx_conf_t conf = { 0, 6, 7, 0, '#', 0 };
     tbx_index_build(fname,0,&conf);
     free(fname);
+
 
     // Evaluate
     fprintf(stderr,"Evaluating...\n");
@@ -1130,21 +1206,33 @@ static void create_filters(args_t *args)
     fprintf(out,"# [1]ts/tv (all)\t[2]nAll\t[3]sensitivity\t[4]ts/tv novel\t[5]threshold\n");
     while ( ks_getline(fp, &args->str) )
     {
-        // DIST
+        if ( args->str.s[0]=='#' ) 
+        {
+            args->str.l = 0;
+            continue;
+        }
+
+        // SCORE
         double dist = atof(args->str.s);
         char *t = column_next(args->str.s, '\t'); 
-        if ( !*t ) error("Could not parse PROB: [%s]\n", args->str.s);
+        if ( !*t ) error("Could not parse score: [%s]\n", args->str.s);
+        // GOOD-SOM DIST
+        t = column_next(t+1, '\t'); 
+        if ( !*t ) error("Could not parse bad score: [%s]\n", args->str.s);
+        // BAD-SOM DIST
+        t = column_next(t+1, '\t'); 
+        if ( !*t ) error("Could not parse bad score: [%s]\n", args->str.s);
         // IS_TS
         int is_ts = strtol(t, NULL, 10);
         t = column_next(t+1, '\t');  
         if ( !*t ) error("Could not parse POS: [%s]\n", args->str.s);
         // IS_GOOD
-        int is_good = strtol(t, NULL, 10);
+        int mask = strtol(t, NULL, 10);
         args->str.l = 0;
 
         nall_read++;
         ntstv[is_ts]++;
-        if ( is_good ) ngood_read++;
+        if ( IS_GOOD(mask) ) ngood_read++;
         else if ( ngood ) ntstv_novel[is_ts]++;
         if ( (double)nall_read/nall < 0.1 ) continue;
         double tstv = (double)ntstv[1]/ntstv[0];
@@ -1155,6 +1243,7 @@ static void create_filters(args_t *args)
             prev_tstv = tstv;
         }
     }
+    if ( str.m ) free(str.s);
     fclose(out);
     fclose(fp);
     destroy_data(args);
@@ -1196,42 +1285,53 @@ static site_t *init_site(char *prefix, const char *type, char *region)
 }
 static int sync_site(bcf_hdr_t *hdr, bcf1_t *line, site_t *site, int type)
 {
-    if ( !site->str.l )
+    while (1)
     {
-        // no site in the buffer
-        if ( site->itr )
+        if ( !site->str.l )
         {
-            if ( tbx_itr_next((BGZF*)site->file->fp, site->tbx, site->itr, &site->str) < 0 ) return 0;
+            // no site in the buffer
+            if ( site->itr )
+            {
+                if ( tbx_itr_next((BGZF*)site->file->fp, site->tbx, site->itr, &site->str) < 0 ) return 0;
+            }
+            else
+                if ( hts_getline(site->file, '\n', &site->str) <= 0 ) return 0;
+            
+            if ( site->str.s[0]=='#' ) 
+            {
+                site->str.l = 0;
+                continue;
+            }
+
+            // SCORE
+            site->score = atof(site->str.s);
+            char *t = column_next(site->str.s, '\t'); 
+            if ( !*t ) error("Could not parse SCORE: [%s]\n", site->str.s);
+            // IS_TS
+            t = column_next(t+1, '\t');  
+            if ( !*t ) error("Could not parse IS_TS: [%s]\n", site->str.s);
+            // IS_GOOD mask
+            t = column_next(t+1, '\t');  
+            if ( !*t ) error("Could not parse IS_GOOD: [%s]\n", site->str.s);
+            // CHR
+            char *p = t+1;
+            t = column_next(t+1, '\t');  
+            *t = 0;
+            site->rid = bcf_name2id(hdr, p);
+            if ( site->rid<0 ) error("The chrom \"%s\" not in the header?\n", p);
+            // POS
+            site->pos = strtol(t+1, NULL, 10);
         }
-        else
-            if ( hts_getline(site->file, '\n', &site->str) <= 0 ) return 0;
-        // SCORE
-        site->score = atof(site->str.s);
-        char *t = column_next(site->str.s, '\t'); 
-        if ( !*t ) error("Could not parse SCORE: [%s]\n", site->str.s);
-        // IS_TS
-        t = column_next(t+1, '\t');  
-        if ( !*t ) error("Could not parse IS_TS: [%s]\n", site->str.s);
-        // IS_GOOD
-        t = column_next(t+1, '\t');  
-        if ( !*t ) error("Could not parse IS_GOOD: [%s]\n", site->str.s);
-        // CHR
-        char *p = t+1;
-        t = column_next(t+1, '\t');  
-        *t = 0;
-        site->rid = bcf_name2id(hdr, p);
-        if ( site->rid<0 ) error("The chrom \"%s\" not in the header?\n", p);
-        // POS
-        site->pos = strtol(t+1, NULL, 10);
+        if ( !(line->d.var_type & type) ) return 0;
+        if ( line->pos+1 < site->pos || line->rid != site->rid ) return 0;
+        if ( line->pos+1 == site->pos && line->rid == site->rid )
+        {
+            site->str.l = 0;
+            return 1;
+        }
+        assert( line->pos+1 <= site->pos || line->rid != site->rid );
+        break;
     }
-    if ( !(line->d.var_type & type) ) return 0;
-    if ( line->pos+1 < site->pos || line->rid != site->rid ) return 0;
-    if ( line->pos+1 == site->pos && line->rid == site->rid )
-    {
-        site->str.l = 0;
-        return 1;
-    }
-    assert( line->pos+1 <= site->pos || line->rid != site->rid );
     return 0;
 }
 
@@ -1349,7 +1449,7 @@ int main_vcffilter(int argc, char *argv[])
     args->filt_type = VCF_SNP;
     args->snp_th    = -1;
     args->indel_th  = -1;
-    int random_seed = 1;
+    args->rand_seed = 1;
 
 	static struct option loptions[] = 
 	{
@@ -1385,7 +1485,7 @@ int main_vcffilter(int argc, char *argv[])
 			case 'i': args->indel_th = atof(optarg); break;
 			case 'o': args->out_prefix = optarg; break;
 			case 'p': args->do_plot = 1; break;
-			case 'R': random_seed = atoi(optarg); break;
+			case 'R': args->rand_seed = atoi(optarg); break;
 			case 'r': args->region = optarg; break;
             case 'f': args->fixed_filters = optarg; break;
             case 'l': args->learning_filters = optarg; break;
@@ -1395,15 +1495,14 @@ int main_vcffilter(int argc, char *argv[])
 			default: error("Unknown argument: %s\n", optarg);
 		}
 	}
-    if ( !random_seed ) random_seed = time(NULL);
+    if ( !args->rand_seed ) args->rand_seed = time(NULL);
     if ( argc!=optind+1 ) usage();
     args->fname = argv[optind];
-    fprintf(stderr,"Random seed %d\n", random_seed);
-    srandom(random_seed);
+    fprintf(stderr,"Random seed %d\n", args->rand_seed);
     if ( args->snp_th<0 && args->indel_th<0 )
     {
         if ( args->region ) error("The -r option is to be used with -s or -i only.\n");
-        create_filters(args);
+        eval_filters(args);
     }
     else
         apply_filters(args);
