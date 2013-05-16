@@ -86,6 +86,7 @@ typedef struct
     filters_t filt_excl, filt_learn;
     double snp_th, indel_th;
 
+    int good_mask_bit;
     int rand_seed;
     char *annot_str, *fixed_filters, *learning_filters;
 	char **argv, *fname, *out_prefix, *region;
@@ -245,7 +246,7 @@ inline double scale_value(dist_t *dist, double val)
 /**
  *  annots_reader_next() - reads next line from annots.tab.gz and sets the appropriate fields
  *
- *    mask:         2 if a good site, otherwise 1
+ *    mask:         2 if a good site, otherwise 1. Which bit indicates a good site is controlled by good_mask_bit.
  *    is_ts:        1 if transition, 0 if transversion (meaningless with indels)
  *    type:         one of VCF_SNP, VCF_INDEL, VCF_OTHER
  *    nset:         number of non-missing values read into the $vals array
@@ -283,7 +284,19 @@ int annots_reader_next(args_t *args)
 
     // MASK
     if ( !args->ignore[2] )
-        args->mask = t[2]=='1' ? 2 : 1;     // good site t="\t11", otherwise t="\t10"
+    {
+        if ( args->good_mask_bit>0 )
+        {
+            char *q = column_next(t+1, '\t');
+            if ( args->good_mask_bit >= q-t )
+            {
+                *q = 0;
+                error("The good mask bit \"%d\" is bigger than the mask string \"%s\"\n", args->good_mask_bit, t+1);
+            }
+            args->mask = t[args->good_mask_bit]=='1' ? 2 : 1;
+        }
+        else args->mask = 1;
+    }
     t = column_next(t+1, '\t');  
     if ( !*t ) error("Could not parse MASK: [%s]\n", line);
 
@@ -1150,7 +1163,7 @@ static void eval_filters(args_t *args)
 
     // Calculate scores
     kstring_t str = {0,0,0};
-    kputs("# [1]score\t[2]good SOM\t[3]bad SOM\t[4]is transition\t[5]mask, good(&2) or bad(&4)\t[6]chromsome\t[7]position\n", &str);
+    kputs("# [1]score\t[2]good SOM\t[3]bad SOM\t[4]is transition\t[5]mask, good(&2) or bad(&4)\t[6]chromosome\t[7]position\n", &str);
     bgzf_write((BGZF *)file->fp, str.s, str.l);
     str.l = 0;
 
@@ -1167,8 +1180,9 @@ static void eval_filters(args_t *args)
         if ( !args->filt_excl.nfilt || pass_filters(&args->filt_excl, args->raw_vals) )
         {
             dist = som_calc_dist(&args->som, args->vals);
-            bad_dist = som_calc_dist(&args->bad_som, args->vals);
+            if ( args->bad_som.nt ) bad_dist = som_calc_dist(&args->bad_som, args->vals);
             assert( dist>=0 && dist<=max_dist );
+            assert( bad_dist>=0 && bad_dist<=max_dist );
         }
         else
             args->mask |= MASK_BAD;
@@ -1218,10 +1232,10 @@ static void eval_filters(args_t *args)
         if ( !*t ) error("Could not parse score: [%s]\n", args->str.s);
         // GOOD-SOM DIST
         t = column_next(t+1, '\t'); 
-        if ( !*t ) error("Could not parse bad score: [%s]\n", args->str.s);
+        if ( !*t ) error("Could not parse good-SOM score: [%s]\n", args->str.s);
         // BAD-SOM DIST
         t = column_next(t+1, '\t'); 
-        if ( !*t ) error("Could not parse bad score: [%s]\n", args->str.s);
+        if ( !*t ) error("Could not parse bad-SOM score: [%s]\n", args->str.s);
         // IS_TS
         int is_ts = strtol(t, NULL, 10);
         t = column_next(t+1, '\t');  
@@ -1406,6 +1420,7 @@ static void usage(void)
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "    -a, --annots <list>                        list of annotations (default: use all annotations)\n");
 	fprintf(stderr, "    -f, --fixed-filter <expr>                  list of fixed threshold filters to apply (absolute values, e.g. 'QUAL>4')\n");
+	fprintf(stderr, "    -g, --good-mask-bit <int>                  which of the mask bits indicate a good variant (one-based) [2]\n");
 	fprintf(stderr, "    -i, --indel-threshold <float>              filter INDELs\n");
 	fprintf(stderr, "    -l, --learning-filters <expr>              filters for selecting training sites (values scaled to interval [0-1])\n");
 	fprintf(stderr, "    -m, --map-parameters <int,float,float>     number of bins, learning constant, unit threshold [20,0.1,0.2]\n");
@@ -1450,6 +1465,7 @@ int main_vcffilter(int argc, char *argv[])
     args->snp_th    = -1;
     args->indel_th  = -1;
     args->rand_seed = 1;
+    args->good_mask_bit = 2;
 
 	static struct option loptions[] = 
 	{
@@ -1467,9 +1483,10 @@ int main_vcffilter(int argc, char *argv[])
 		{"indel-threshold",1,0,'i'},
 		{"random-seed",1,0,'R'},
 		{"region",1,0,'r'},
+		{"good-mask-bit",1,0,'g'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "ho:a:s:i:pf:St:n:l:m:r:R:",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "ho:a:s:i:pf:St:n:l:m:r:R:g:",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'S': args->scale = 0; break;
 			case 't': 
@@ -1481,6 +1498,7 @@ int main_vcffilter(int argc, char *argv[])
                 }
 			case 'a': args->annot_str = optarg; break;
 			case 'n': args->som.nt = atoi(optarg); break;
+			case 'g': args->good_mask_bit = atoi(optarg); break;
 			case 's': args->snp_th = atof(optarg); break;
 			case 'i': args->indel_th = atof(optarg); break;
 			case 'o': args->out_prefix = optarg; break;
@@ -1495,6 +1513,7 @@ int main_vcffilter(int argc, char *argv[])
 			default: error("Unknown argument: %s\n", optarg);
 		}
 	}
+
     if ( !args->rand_seed ) args->rand_seed = time(NULL);
     if ( argc!=optind+1 ) usage();
     args->fname = argv[optind];
