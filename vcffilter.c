@@ -1022,7 +1022,8 @@ static void som_norm(som_t *som)
     double max = 0;
     for (i=0; i<som->nbin*som->nbin; i++) 
         if ( max < som->c[i] ) max = som->c[i];
-    for (i=0; i<som->nbin*som->nbin; i++) som->c[i] /= max;
+    if ( max )
+        for (i=0; i<som->nbin*som->nbin; i++) som->c[i] /= max;
 }
 static void som_destroy(som_t *som)
 {
@@ -1321,6 +1322,12 @@ static int sync_site(bcf_hdr_t *hdr, bcf1_t *line, site_t *site, int type)
             site->score = atof(site->str.s);
             char *t = column_next(site->str.s, '\t'); 
             if ( !*t ) error("Could not parse SCORE: [%s]\n", site->str.s);
+            // GOOD-SOM DIST
+            t = column_next(t+1, '\t'); 
+            if ( !*t ) error("Could not parse good-SOM score: [%s]\n", site->str.s);
+            // BAD-SOM DIST
+            t = column_next(t+1, '\t'); 
+            if ( !*t ) error("Could not parse bad-SOM score: [%s]\n", site->str.s);
             // IS_TS
             t = column_next(t+1, '\t');  
             if ( !*t ) error("Could not parse IS_TS: [%s]\n", site->str.s);
