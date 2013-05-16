@@ -18,8 +18,8 @@ typedef khash_t(strdict) strdict_t;
 #define SKIP_DONE 1
 #define SKIP_DIFF 2
 
-#define IS_VL_G(hdr,_id) (((hdr)->id[BCF_DT_ID][_id].val->info[BCF_HL_FMT]>>8 & 0xf) == BCF_VL_G)
-#define IS_VL_A(hdr,_id) (((hdr)->id[BCF_DT_ID][_id].val->info[BCF_HL_FMT]>>8 & 0xf) == BCF_VL_A)
+#define IS_VL_G(hdr,id) (bcf_id2length(hdr,BCF_HL_FMT,id) == BCF_VL_G)
+#define IS_VL_A(hdr,id) (bcf_id2length(hdr,BCF_HL_FMT,id) == BCF_VL_A)
 
 // Auxiliary merge data for selecting the right combination
 //  of buffered records across multiple readers. maux1_t 
@@ -589,11 +589,10 @@ void merge_GT(args_t *args, bcf_fmt_t **fmt_map, bcf1_t *out)
         int j, k;
         if ( !fmt_ori )
         {
-            // missing values
+            // missing values: assume maximum ploidy
             for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++)
             {
                 for (k=0; k<nsize; k++) { tmp[k] = 0; ma->smpl_ploidy[ismpl+j]++; }
-                for (; k<nsize; k++) tmp[k] = bcf_int32_vector_end;
                 tmp += nsize;
             }
             ismpl += hdr->n[BCF_DT_SAMPLE];
@@ -696,7 +695,7 @@ void merge_format_field(args_t *args, bcf_fmt_t **fmt_map, bcf1_t *out)
 
         // set the values
         #define BRANCH(tgt_type_t, src_type_t, src_is_missing, src_is_vector_end, tgt_set_missing, tgt_set_vector_end) { \
-            int j, l; \
+            int j, l, k; \
             tgt_type_t *tgt = (tgt_type_t *) ma->tmp_arr + ismpl*nsize; \
             if ( !fmt_ori ) \
             { \
@@ -708,7 +707,8 @@ void merge_format_field(args_t *args, bcf_fmt_t **fmt_map, bcf1_t *out)
                 ismpl += hdr->n[BCF_DT_SAMPLE]; \
                 continue; \
             } \
-            if ( !ma->has_line[i] ) continue; \
+            assert( ma->has_line[i] ); \
+            /* if ( !ma->has_line[i] ) continue; */ \
             bcf1_t *line    = reader->buffer[0]; \
             src_type_t *src = (src_type_t*) fmt_ori->p; \
             if ( (length!=BCF_VL_G && length!=BCF_VL_A) || (line->n_allele==out->n_allele && !ma->d[i][0].als_differ) ) \
@@ -716,14 +716,15 @@ void merge_format_field(args_t *args, bcf_fmt_t **fmt_map, bcf1_t *out)
                 /* alleles unchanged, copy over */ \
                 for (j=0; j<hdr->n[BCF_DT_SAMPLE]; j++) \
                 { \
-                    for (l=0; l<nsize; l++) \
+                    for (l=0; l<fmt_ori->n; l++) \
                     { \
                         if ( src_is_vector_end ) break; \
                         else if ( src_is_missing ) tgt_set_missing; \
                         else *tgt = *src; \
                         tgt++; src++; \
                     } \
-                    for (; l<nsize; l++) { tgt_set_vector_end; tgt++; src++; } \
+                    for (k=l; k<nsize; k++) { tgt_set_vector_end; tgt++; } \
+                    for (k=l; k<fmt_ori->n; k++) { src++; } \
                 } \
                 ismpl += hdr->n[BCF_DT_SAMPLE]; \
                 continue; \
@@ -786,7 +787,7 @@ void merge_format_field(args_t *args, bcf_fmt_t **fmt_map, bcf1_t *out)
             case BCF_BT_INT16: BRANCH(int32_t, int16_t, *src==bcf_int16_missing, *src==bcf_int16_vector_end, *tgt=bcf_int32_missing, *tgt=bcf_int32_vector_end); break;
             case BCF_BT_INT32: BRANCH(int32_t, int32_t, *src==bcf_int32_missing, *src==bcf_int32_vector_end, *tgt=bcf_int32_missing, *tgt=bcf_int32_vector_end); break;
             case BCF_BT_FLOAT: BRANCH(float, float, bcf_float_is_missing(*src), bcf_float_is_vector_end(*src), bcf_float_set_missing(*tgt), bcf_float_set_vector_end(*tgt)); break;
-            default: error("Unexpected case: %d\n", type);
+            default: error("Unexpected case: %d, %s\n", type, key);
         }
         #undef BRANCH
     }
@@ -1137,6 +1138,17 @@ void merge_vcf(args_t *args)
             char buf[10]; snprintf(buf,10,"%d",i+1);
             bcf_hdr_merge(args->out_hdr, args->files->readers[i].header,buf);
         }
+        kstring_t str = {0,0,0};
+        ksprintf(&str,"##vcfmergeVersion=%s\n", HTS_VERSION);
+        bcf_hdr_append(args->out_hdr,str.s);
+
+        str.l = 0;
+        ksprintf(&str,"##vcfmergeCommand=%s", args->argv[0]);
+        for (i=1; i<args->argc; i++) ksprintf(&str, " %s", args->argv[i]);
+        kputc('\n', &str);
+        bcf_hdr_append(args->out_hdr,str.s);
+        free(str.s);
+
         bcf_hdr_sync(args->out_hdr);
         bcf_hdr_fmt_text(args->out_hdr);
     }

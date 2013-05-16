@@ -215,7 +215,7 @@ sub test_vcf_merge
         push @files, "$$opts{tmp}/$file.vcf.gz";
     }
     my $files = join(' ',@files);
-    test_cmd($opts,%args,cmd=>"$$opts{bin}/htscmd vcfmerge $files");
+    test_cmd($opts,%args,cmd=>"$$opts{bin}/htscmd vcfmerge $files | grep -v ^##vcfmerge");
 }
 sub test_vcf_isec
 {
