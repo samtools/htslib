@@ -376,6 +376,30 @@ bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, const char *id)
     return kh_val(d, k).hrec[type==BCF_HL_CTG?0:type];
 }
 
+void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
+{
+    static int PL_warned = 0, GL_warned = 0;
+
+    if ( !PL_warned )
+    {
+        int id = bcf_id2int(hdr, BCF_DT_ID, "PL");
+        if ( id>=0 && bcf_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
+        {
+            fprintf(stderr,"[W::%s] PL should be declared as Number=G\n", __func__);
+            PL_warned = 1;
+        }
+    }
+    if ( !GL_warned )
+    {
+        int id = bcf_id2int(hdr, BCF_HL_FMT, "GL");
+        if ( id>=0 && bcf_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
+        {
+            fprintf(stderr,"[W::%s] GL should be declared as Number=G\n", __func__);
+            PL_warned = 1;
+        }
+    }
+}
+
 int bcf_hdr_parse(bcf_hdr_t *hdr)
 {
     int len, needs_sync = 0;
@@ -400,6 +424,7 @@ int bcf_hdr_parse(bcf_hdr_t *hdr)
     }
     bcf_hdr_parse_sample_line(hdr,p);
     if ( needs_sync ) bcf_hdr_sync(hdr);
+    bcf_hdr_check_sanity(hdr);
 	return 0;
 }
 

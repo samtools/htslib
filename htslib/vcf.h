@@ -56,7 +56,7 @@ typedef struct {
 } bcf_hrec_t;
 
 typedef struct {
-	uint32_t info[3];  // for each number => Number:20, var:4, Type:4, ColType:4
+	uint32_t info[3];  // stores Number:20, var:4, Type:4, ColType:4 for BCF_HL_FLT,INFO,FMT
     bcf_hrec_t *hrec[3];
 	int id;
 } bcf_idinfo_t;
@@ -236,9 +236,41 @@ extern "C" {
 	 */
 	int bcf_unpack(bcf1_t *b, int which); // to unpack everything, set $which to BCF_UN_ALL
 
-	int bcf_id2int(const bcf_hdr_t *h, int which, const char *id);
-	int bcf_name2id(const bcf_hdr_t *h, const char *id);
+    /**
+      *  bcf_id2int() - Translates string into numeric ID
+      *  @type:     one of BCF_DT_ID, BCF_DT_CTG, BCF_DT_SAMPLE
+      *  @id:       tag name, such as: PL, DP, GT, etc.
+      *
+      *  Returns -1 if string is not in dictionary, otherwise numeric ID which identifies
+      *  fields in BCF records.
+      */
+	int bcf_id2int(const bcf_hdr_t *hdr, int type, const char *id);
 
+    /**
+      *  bcf_name2id() - Translates sequence names (chromosomes) into numeric ID
+      */
+	int bcf_name2id(const bcf_hdr_t *hdr, const char *id);
+
+    /**
+      *  bcf_id2*() - Macros for accessing bcf_idinfo_t 
+      *  @type:      one of BCF_HL_FLT, BCF_HL_INFO, BCF_HL_FMT
+      *  @int_id:    return value of bcf_id2int, must be >=0
+      *
+      *  The returned values are:
+      *     bcf_id2length   ..  whether the number of values is fixed or variable, one of BCF_VL_* 
+      *     bcf_id2number   ..  the number of values, 0xfffff for variable length fields
+      *     bcf_id2type     ..  the field type, one of BCF_HT_*
+      *     bcf_id2coltype  ..  the column type, one of BCF_HL_*
+      *
+      *  Notes: Prior to using the macros, the presence of the info should be
+      *  tested with bcf_idinfo_exists().
+      */
+    #define bcf_id2length(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>8 & 0xf)
+    #define bcf_id2number(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>12)
+    #define bcf_id2type(hdr,type,int_id)    ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>4 & 0xf)
+    #define bcf_id2coltype(hdr,type,int_id) ((hdr)->id[BCF_DT_ID][int_id].val->info[type] & 0xf)
+    #define bcf_idinfo_exists(hdr,type,int_id)  (bcf_id2coltype(hdr,type,int_id)==0xf ? 0 : 1)
+    
 	void bcf_fmt_array(kstring_t *s, int n, int type, void *data);
 	uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr);
 
@@ -352,16 +384,24 @@ extern uint32_t bcf_float_missing;
 
 static inline void bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 {
-    assert( fmt->type==BCF_BT_INT8 );   // FIXME: does not work with n_alt >= 64
-    int l;
-    int8_t *x = (int8_t*)(fmt->p + isample*fmt->size);
-    for (l = 0; l < fmt->n && x[l] != bcf_int8_vector_end; ++l) 
-    {
-        if (l) kputc("/|"[x[l]&1], str);
-        if ( !(x[l]>>1) ) kputc('.', str);
-        else kputw((x[l]>>1) - 1, str);
+    #define BRANCH(type_t, missing, vector_end) { \
+        type_t *ptr = (type_t*) (fmt->p + isample*fmt->size); \
+        int i; \
+        for (i=0; i<fmt->n && ptr[i]!=vector_end; i++) \
+        { \
+            if ( i ) kputc("/|"[ptr[i]&1], str); \
+            if ( !(ptr[i]>>1) ) kputc('.', str); \
+            else kputw((ptr[i]>>1) - 1, str); \
+        } \
+        if (i == 0) kputc('.', str); \
     }
-    if (l == 0) kputc('.', str);
+    switch (fmt->type) {
+        case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
+        case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
+        case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
+        default: fprintf(stderr,"FIXME: type %d in bcf_format_gt?\n", fmt->type); abort(); break;
+    }
+    #undef BRANCH
 }
 
 static inline void bcf_enc_size(kstring_t *s, int size, int type)
