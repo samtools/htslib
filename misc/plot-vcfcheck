@@ -468,6 +468,7 @@ sub parse_vcfcheck1
 
             if ( $a eq 'ID' ) { merge_id($opts,$$opts{dat}{$a},$dat{$a},$b); }
             elsif ( $b eq 'ts/tv:' ) { $$opts{dat}{$a}{$b} = ($i*$$opts{dat}{$a}{$b} + $dat{$a}{$b})/($i+1); }
+            elsif ( $b eq 'ts/tv (1st ALT):' ) { $$opts{dat}{$a}{$b} = ($i*$$opts{dat}{$a}{$b} + $dat{$a}{$b})/($i+1); }
             elsif ( ref($dat{$a}{$b}) ne 'ARRAY' ) {$$opts{dat}{$a}{$b} += $dat{$a}{$b} unless $b eq 'number of samples:'; } # SN, Summary numbers, do not sum sample counts
             elsif ( $a eq 'NRD' ) { add_to_avg($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             elsif ( $a eq 'DP' ) { merge_dp($$opts{dat}{$a}{$b},$dat{$a}{$b}); }
@@ -1368,16 +1369,17 @@ sub create_pdf
 	my $slide .= q[
             \begin{minipage}{\textwidth}\centering
             \small \rowcolors*{3}{row2}{row1} \arrayrulecolor{black}
-            \begin{tabular}{l | r r | r r r | r | r}
+            \begin{tabular}{l | r r r | r r r | r | r}
             \multicolumn{1}{>{\columncolor{hcol1}}l|}{}
-            & \multicolumn{2}{>{\columncolor{hcol1}}c|}{SNPs}
+            & \multicolumn{3}{>{\columncolor{hcol1}}c|}{SNPs}
             & \multicolumn{3}{>{\columncolor{hcol1}}c|}{indels}
             & \multicolumn{1}{>{\columncolor{hcol1}}c|}{MNPs}
             & \multicolumn{1}{>{\columncolor{hcol1}}c}{others}  \\\\
             %
             \multicolumn{1}{>{\columncolor{hcol2}}l|}{Callset}
             & \multicolumn{1}{>{\columncolor{hcol2}}c}{n}
-            & \multicolumn{1}{>{\columncolor{hcol2}}c|}{ts/tv}
+            & \multicolumn{1}{>{\columncolor{hcol2}}c }{ts/tv}
+            & \multicolumn{1}{>{\columncolor{hcol2}}c|}{\\footnotesize(1st ALT)}
             & \multicolumn{1}{>{\columncolor{hcol2}}c}{n}
             & \multicolumn{1}{>{\columncolor{hcol2}}c}{frm$^*$}
             & \multicolumn{1}{>{\columncolor{hcol2}}c|}{3n$^{**}$}
@@ -1392,6 +1394,7 @@ sub create_pdf
 		my $mnps   = get_value($opts,$id,'number of MNPs:');
 		my $others = get_value($opts,$id,'number of others:');
 		my $tstv   = sprintf "%.2f",get_value($opts,$id,'ts/tv:');
+		my $tstv1  = sprintf "%.2f",get_value($opts,$id,'ts/tv (1st ALT):');
 		my @frsh   = get_values($opts,$id,'FS');
 		my $frsh   = @frsh ? $frsh[0][2] : '--';
         my $n3n    = calc_3n_n3n(get_values($opts,$id,'IDD'));
@@ -1399,7 +1402,7 @@ sub create_pdf
 		$title =~ s/_/\\_/g;
         $title =~ s/^\s*\*/\$*\$/;    # leading asterisks is eaten by TeX
         $tex_titles{$id} = $title;
-		$slide .= qq[ $title & ] . bignum($snps) . qq[ & $tstv & ] . bignum($indels) . qq[ & $frsh & $n3n & ] . bignum($mnps) . ' & ' . bignum($others) . qq[ \\\\ \n];
+		$slide .= qq[ $title & ] . bignum($snps) . qq[ & $tstv & $tstv1 & ] . bignum($indels) . qq[ & $frsh & $n3n & ] . bignum($mnps) . ' & ' . bignum($others) . qq[ \\\\ \n];
 	}
     $slide .= q[%
         \multicolumn{8}{r}{$^*$ frameshift ratio: out/(out+in);\hspace{1em} $^{**}$ 3n/non-3n} \\\\

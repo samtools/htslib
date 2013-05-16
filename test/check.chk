@@ -12,6 +12,7 @@ SN	0	number of others:	2
 SN	0	number of multiallelic sites:	6
 SN	0	number of multiallelic SNP sites:	1
 SN	0	ts/tv:	0.00
+SN	0	ts/tv (1st ALT):	0.00
 # Sis, Singleton stats:
 # SiS	[2]id	[3]allele count	[4]number of SNPs	[5]number of transitions	[6]number of transversions	[7]number of indels
 SiS	0	1	2	0	2	0

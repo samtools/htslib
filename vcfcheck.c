@@ -22,6 +22,7 @@ typedef struct
 {
     int n_snps, n_indels, n_mnps, n_others, n_mals, n_snp_mals;
     int *af_ts, *af_tv, *af_snps, *af_indels;   // first bin of af_* stats are singletons
+    int ts_ac1, tv_ac1;
     #if QUAL_STATS
         int *qual_ts, *qual_tv, *qual_snps, *qual_indels;
     #endif
@@ -329,6 +330,7 @@ static void do_snp_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
         stats->af_snps[iaf]++;
         if ( abs(ref-alt)==2 ) 
         {
+            if (i==1) stats->ts_ac1++;
             stats->af_ts[iaf]++;
             #if QUAL_STATS
                 stats->qual_ts[iqual]++;
@@ -336,6 +338,7 @@ static void do_snp_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
         }
         else 
         {
+            if (i==1) stats->tv_ac1++;
             stats->af_tv[iaf]++;
             #if QUAL_STATS
                 stats->qual_tv[iqual]++;
@@ -569,6 +572,7 @@ static void print_stats(args_t *args)
         int ts=0,tv=0;
         for (i=0; i<args->m_af; i++) { ts += stats->af_ts[i]; tv += stats->af_tv[i];  }
         printf("SN\t%d\tts/tv:\t%.2f\n", id, tv?(float)ts/tv:0);
+        printf("SN\t%d\tts/tv (1st ALT):\t%.2f\n", id, stats->tv_ac1?(float)stats->ts_ac1/stats->tv_ac1:0);
     }
     if ( args->exons_file )
     {
