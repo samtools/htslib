@@ -262,7 +262,7 @@ sub parse_vcfcheck
     # check sanity of the file merge: were the correct files merged?
     if ( exists($$opts{coalesced_files}) && $$opts{verbose} )
     {
-        print STDERR "The following files have been merged:\n";
+        print STDERR "The vcfcheck outputs have been merged as follows:\n";
         my %printed;
         for my $id (keys %{$$opts{coalesced_files}})
         {
@@ -274,7 +274,8 @@ sub parse_vcfcheck
                     print STDERR "\t$$opts{dat}{ID}{$id}[$i][$j]\n";
                     for my $file (keys %{$$opts{coalesced_files}{$id}[$i][$j]})
                     {
-                        print STDERR "\t\t$file\n";
+                        my $n = $$opts{coalesced_files}{$id}[$i][$j]{$file};
+                        print STDERR "\t\t$file", ($n>1 ? "\t..\t${n}x" : ''),"\n";
                     }
                     $printed{$$opts{dat}{ID}{$id}[$i][$j]} = 1;
                 }
@@ -353,7 +354,7 @@ sub merge_id
         {
             my $gname = rglob($$dst{$id}[$i][$j], $$src{$id}[$i][$j]);
             $$dst{$id}[$i][$j] = $gname;
-            $$opts{coalesced_files}{$id}[$i][$j]{$$src{$id}[$i][$j]} = 1;
+            $$opts{coalesced_files}{$id}[$i][$j]{$$src{$id}[$i][$j]}++;
         }
     }
 }

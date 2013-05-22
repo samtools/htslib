@@ -528,7 +528,7 @@ static void check_vcf(args_t *args)
 static void print_header(args_t *args)
 {
     int i;
-    printf("# This file was produced by vcfcheck and can be plotted using plot-vcfcheck.\n");
+    printf("# This file was produced by vcfcheck(%s) and can be plotted using plot-vcfcheck.\n", HTS_VERSION);
     printf("# The command line was:\thtscmd %s ", args->argv[0]);
     for (i=1; i<args->argc; i++)
         printf(" %s",args->argv[i]);
@@ -537,19 +537,22 @@ static void print_header(args_t *args)
     printf("# Definition of sets:\n# ID\t[2]id\t[3]tab-separated file names\n");
     if ( args->files->nreaders==1 )
     {
+        const char *fname = strcmp("-",args->files->readers[0].fname) ? args->files->readers[0].fname : "<STDIN>";
         if ( args->split_by_id )
         {
-            printf("ID\t0\t%s:known (sites with ID different from \".\")\n", args->files->readers[0].fname);
-            printf("ID\t1\t%s:novel (sites where ID column is \".\")\n", args->files->readers[0].fname);
+            printf("ID\t0\t%s:known (sites with ID different from \".\")\n", fname);
+            printf("ID\t1\t%s:novel (sites where ID column is \".\")\n", fname);
         }
         else
-            printf("ID\t0\t%s\n", args->files->readers[0].fname);
+            printf("ID\t0\t%s\n", fname);
     }
     else
     {
-        printf("ID\t0\t%s\n", args->files->readers[0].fname);
-        printf("ID\t1\t%s\n", args->files->readers[1].fname);
-        printf("ID\t2\t%s\t%s\n", args->files->readers[0].fname,args->files->readers[1].fname);
+        const char *fname0 = strcmp("-",args->files->readers[0].fname) ? args->files->readers[0].fname : "<STDIN>";
+        const char *fname1 = strcmp("-",args->files->readers[1].fname) ? args->files->readers[1].fname : "<STDIN>";
+        printf("ID\t0\t%s\n", fname0);
+        printf("ID\t1\t%s\n", fname1);
+        printf("ID\t2\t%s\t%s\n", fname0,fname1);
     }
 }
 
