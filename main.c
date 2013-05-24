@@ -21,6 +21,7 @@ int main_vcfquery(int argc, char *argv[]);
 int main_vcffilter(int argc, char *argv[]);
 int main_vcfnorm(int argc, char *argv[]);
 int main_vcfgtcheck(int argc, char *argv[]);
+int main_vcfsubset(int argc, char *argv[]);
 
 typedef struct
 {
@@ -113,6 +114,11 @@ static cmd_t cmds[] =
     { .func  = main_vcfquery, 
       .alias = "htscmd vcfquery, htsvcf query, vcf query",
       .help  = "transform VCF into user-defined formats",
+      .sep   = NULL
+    },
+    { .func  = main_vcfsubset, 
+      .alias = "htscmd vcfsubset, htsvcf subset, vcf subset",
+      .help  = "subset and filter vcf and bcf",
       .sep   = NULL
     },
     { .func  = NULL,

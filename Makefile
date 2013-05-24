@@ -4,7 +4,7 @@ CFLAGS=		-g -Wall -Wc++-compat -O2 $(VERSION)
 DFLAGS=
 OBJS=		main.o samview.o vcfview.o bamidx.o bcfidx.o bamshuf.o bam2fq.o tabix.o \
 			abreak.o bam2bed.o vcfcheck.o vcfisec.o vcfmerge.o vcfquery.o vcffilter.o \
-            vcfnorm.o vcfgtcheck.o
+            vcfnorm.o vcfgtcheck.o vcfsubset.o
 INCLUDES=	-Ihtslib
 PROG=		htscmd
 
