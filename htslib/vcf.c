@@ -1528,7 +1528,7 @@ int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
 	} else v->n_sample = 0;
 	free(v->indiv.s);
 	v->indiv = ind;
-    v->unpacked = 0;    // only BCF is ready for output, VCF will need to unpack again
+    v->unpacked &= ~BCF_UN_FMT;    // only BCF is ready for output, VCF will need to unpack again
 	return 0;
 }
 
