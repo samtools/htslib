@@ -1,0 +1,33 @@
+##fileformat=VCFv4.1
+##FILTER=<ID=PASS,Description="All filters passed">
+##reference=file:///seq/references/1000Genomes-NCBI37.fasta
+##contig=<ID=20,length=63025520>
+##contig=<ID=X,length=155270560>
+##contig=<ID=Y,length=59373566>
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Raw read depth">
+##INFO=<ID=DP4,Number=4,Type=Integer,Description="# high-quality ref-forward bases, ref-reverse, alt-forward and alt-reverse bases">
+##INFO=<ID=Dels,Number=1,Type=Float,Description="Fraction of reads containing spanning deletions">
+##INFO=<ID=FS,Number=1,Type=Float,Description="Phred-scaled p-value using Fisher's exact test to detect strand bias">
+##INFO=<ID=HRun,Number=1,Type=Integer,Description="Largest contiguous homopolymer run of variant allele in either direction">
+##INFO=<ID=HWE,Number=1,Type=Float,Description="Hardy-Weinberg equilibrium test (PMID:15789306)">
+##INFO=<ID=ICF,Number=1,Type=Float,Description="Inbreeding coefficient F">
+##INFO=<ID=INDEL,Number=0,Type=Flag,Description="Indicates that the variant is an INDEL.">
+##INFO=<ID=IS,Number=2,Type=Float,Description="Maximum number of reads supporting an indel and fraction of indel reads">
+##INFO=<ID=MQ,Number=1,Type=Integer,Description="Root-mean-square mapping quality of covering reads">
+##INFO=<ID=MQ0,Number=1,Type=Integer,Description="Total mapping quality zero reads">
+##INFO=<ID=PV4,Number=4,Type=Float,Description="P-values for strand bias, baseQ bias, mapQ bias and tail distance bias">
+##INFO=<ID=QD,Number=1,Type=Float,Description="Variant confidence/quality by depth">
+##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes">
+##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="# high-quality bases">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=PL,Number=G,Type=Integer,Description="List of Phred-scaled genotype likelihoods">
+##FILTER=<ID=StrandBias,Description="Min P-value for strand bias (INFO/PV4) [0.0001]">
+##FILTER=<ID=BaseQualBias,Description="Min P-value for baseQ bias (INFO/PV4) [1e-100]">
+##FILTER=<ID=MapQualBias,Description="Min P-value for mapQ bias (INFO/PV4) [0]">
+##FILTER=<ID=EndDistBias,Description="Min P-value for end distance bias (INFO/PV4) [0.0001]">
+##FILTER=<ID=MinAB,Description="Minimum number of alternate bases (INFO/DP4) [2]">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NA00003
+X	2928329	rs62584840	C	T	999	PASS	DP4=302,9137,32,1329;DP=11020;Dels=0;FS=13.38;HWE=0.284332;ICF=0.0253;MQ0=0;MQ=49;PV4=0.094,0,0,1;QD=18.61;AN=2;AC=1	GT:PL:DP:GQ	0/1:73,0,19:4:30
+X	2933066	rs61746890	G	C	999	PASS	DP4=69865,100561,461,783;DP=173729;Dels=0;FS=10.833;MQ0=0;MQ=50;PV4=0.005,3.6e-14,0,1;QD=15.33;AN=2;AC=1	GT:PL:DP:GQ	0/1:255,255,255:62:99
