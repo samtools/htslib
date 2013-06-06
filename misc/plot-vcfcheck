@@ -102,6 +102,11 @@ sub parse_params
                 exp=>"# SN  [2]id   [3]key  [4]value\n" 
             },
             { 
+                id=>'TSTV',    
+                header=>'# TSTV, transition/transversions:', 
+                exp=>"# TSTV\t[2]id\t[3]ts\t[4]tv\t[5]ts/tv\t[6]ts (1st ALT)\t[7]tv (1st ALT)\t[8]ts/tv (1st ALT)\n" 
+            },
+            { 
                 id=>'SiS',   
                 header=>'Sis, Singleton stats', 
                 exp=>"# SiS\t[2]id\t[3]allele count\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n" 
@@ -419,7 +424,7 @@ sub merge_GCsS
 
 sub merge_FS
 {
-    my ($a,$b,$n) = @_;
+    my ($a,$b) = @_;
     for (my $i=0; $i<@$a; $i++)
     {
         for (my $j=0; $j<2; $j++) { $$a[$i][$j] += $$b[$i][$j]; }
@@ -429,11 +434,24 @@ sub merge_FS
 
 sub merge_IC
 {
-    my ($a,$b,$n) = @_;
+    my ($a,$b) = @_;
     for (my $i=0; $i<@$a; $i++)
     {
         for (my $j=0; $j<3; $j++) { $$a[$i][$j] += $$b[$i][$j]; }
-        $$a[$i][3] = sprintf "%.2f", ($$a[$i][0] + $$a[$i][1]) ? $$a[$i][0]/($$a[$i][0] + $$a[$i][1]) : 0;
+        $$a[$i][3] = sprintf "%.4f", ($$a[$i][0] + $$a[$i][1]) ? $$a[$i][0]/($$a[$i][0] + $$a[$i][1]) : 0;
+    }
+}
+
+sub merge_TSTV
+{
+    my ($a,$b) = @_;
+    for (my $i=0; $i<@$a; $i++)
+    {
+        for (my $j=0; $j<2; $j++) { $$a[$i][$j] += $$b[$i][$j]; }
+        $$a[$i][2] = sprintf "%.2f", $$a[$i][1] ? $$a[$i][0]/$$a[$i][1] : 0;
+
+        for (my $j=3; $j<5; $j++) { $$a[$i][$j] += $$b[$i][$j]; }
+        $$a[$i][5] = sprintf "%.2f", $$a[$i][4] ? $$a[$i][3]/$$a[$i][4] : 0;
     }
 }
 
@@ -483,8 +501,6 @@ sub parse_vcfcheck1
             if ( !exists($$opts{dat}{$a}{$b}) ) { $$opts{dat}{$a}{$b} = $dat{$a}{$b}; next; } # copy all, first occurance
 
             if ( $a eq 'ID' ) { merge_id($opts,$$opts{dat}{$a},$dat{$a},$b); }
-            elsif ( $b eq 'ts/tv:' ) { $$opts{dat}{$a}{$b} = ($i*$$opts{dat}{$a}{$b} + $dat{$a}{$b})/($i+1); }
-            elsif ( $b eq 'ts/tv (1st ALT):' ) { $$opts{dat}{$a}{$b} = ($i*$$opts{dat}{$a}{$b} + $dat{$a}{$b})/($i+1); }
             elsif ( ref($dat{$a}{$b}) ne 'ARRAY' ) {$$opts{dat}{$a}{$b} += $dat{$a}{$b} unless $b eq 'number of samples:'; } # SN, Summary numbers, do not sum sample counts
             elsif ( $a eq 'NRD' ) { add_to_avg($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             elsif ( $a eq 'DP' ) { merge_dp($$opts{dat}{$a}{$b},$dat{$a}{$b}); }
@@ -493,8 +509,9 @@ sub parse_vcfcheck1
             elsif ( $a eq 'ST' ) { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_str); }
             elsif ( $a eq 'PSC') { merge_PSC($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             elsif ( $a eq 'IDD') { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_num); }
-            elsif ( $a eq 'FS') { merge_FS($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
-            elsif ( $a eq 'IC') { merge_IC($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
+            elsif ( $a eq 'FS') { merge_FS($$opts{dat}{$a}{$b},$dat{$a}{$b}); }
+            elsif ( $a eq 'IC') { merge_IC($$opts{dat}{$a}{$b},$dat{$a}{$b}); }
+            elsif ( $a eq 'TSTV') { merge_TSTV($$opts{dat}{$a}{$b},$dat{$a}{$b},$i); }
             else { add_to_values($$opts{dat}{$a}{$b},$dat{$a}{$b},\&cmp_num_op); } # SiS AF IDD
         }
     }
@@ -575,7 +592,7 @@ sub percentile
 
 sub get_values
 {
-	my ($opts,$id,$key) = @_;
+	my ($opts,$id,$key,$i,$j) = @_;
 	if ( !exists($$opts{dat}{$key}) ) { return (); }
 	if ( !exists($$opts{dat}{$key}{$id}) ) { return (); }
     my $fields_ok = 1;
@@ -586,6 +603,11 @@ sub get_values
         $$opts{def_line_warned}{$key} = 1;
     }
 
+    if ( defined $i )
+    {
+        if ( defined $j ) { return $$opts{dat}{$key}{$id}[$i][$j]; }
+        return (@{$$opts{dat}{$key}{$id}[$i]});
+    }
 	return (@{$$opts{dat}{$key}{$id}});
 }
 
@@ -609,7 +631,7 @@ sub plot_venn_bars
 	{
 		push @snps, get_value($opts,$id,'number of SNPs:');
 		push @indels, get_value($opts,$id,'number of indels:');
-		push @tstv, sprintf("%.2f",get_value($opts,$id,'ts/tv:'));
+		push @tstv, sprintf("%.2f",get_values($opts,$id,'TSTV',0,5));
 		push @snp_titles, "$$opts{title}{$id}\\nts/tv $tstv[$id]\\n" .bignum($snps[$id]);
 		my @fs = get_values($opts,$id,'FS');
         my $fs = @fs ? "frm $fs[0][2]\\n" : '';
@@ -1410,8 +1432,8 @@ sub create_pdf
 		my $indels = get_value($opts,$id,'number of indels:');
 		my $mnps   = get_value($opts,$id,'number of MNPs:');
 		my $others = get_value($opts,$id,'number of others:');
-		my $tstv   = sprintf "%.2f",get_value($opts,$id,'ts/tv:');
-		my $tstv1  = sprintf "%.2f",get_value($opts,$id,'ts/tv (1st ALT):');
+		my $tstv   = sprintf "%.2f",get_values($opts,$id,'TSTV',0,2);
+		my $tstv1  = sprintf "%.2f",get_values($opts,$id,'TSTV',0,5);
 		my @frsh   = get_values($opts,$id,'FS');
 		my $frsh   = @frsh ? $frsh[0][2] : '--';
         my @rc     = get_values($opts,$id,'IC');

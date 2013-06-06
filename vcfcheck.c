@@ -748,11 +748,14 @@ static void print_stats(args_t *args)
         printf("SN\t%d\tnumber of others:\t%d\n", id, stats->n_others);
         printf("SN\t%d\tnumber of multiallelic sites:\t%d\n", id, stats->n_mals);
         printf("SN\t%d\tnumber of multiallelic SNP sites:\t%d\n", id, stats->n_snp_mals);
-
+    }
+    printf("# TSTV, transitions/transversions:\n# TSTV\t[2]id\t[3]ts\t[4]tv\t[5]ts/tv\t[6]ts (1st ALT)\t[7]tv (1st ALT)\t[8]ts/tv (1st ALT)\n");
+    for (id=0; id<args->nstats; id++)
+    {
+        stats_t *stats = &args->stats[id];
         int ts=0,tv=0;
         for (i=0; i<args->m_af; i++) { ts += stats->af_ts[i]; tv += stats->af_tv[i];  }
-        printf("SN\t%d\tts/tv:\t%.2f\n", id, tv?(float)ts/tv:0);
-        printf("SN\t%d\tts/tv (1st ALT):\t%.2f\n", id, stats->tv_ac1?(float)stats->ts_ac1/stats->tv_ac1:0);
+        printf("TSTV\t%d\t%d\t%d\t%.2f\t%d\t%d\t%.2f\n", id,ts,tv,tv?(float)ts/tv:0, stats->ts_ac1,stats->tv_ac1,stats->tv_ac1?(float)stats->ts_ac1/stats->tv_ac1:0);
     }
     if ( args->exons_file )
     {
