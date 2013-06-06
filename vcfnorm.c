@@ -555,10 +555,13 @@ static void destroy_data(args_t *args)
     if ( args->aln.m_arr ) { free(args->aln.ipos_arr); free(args->aln.lref_arr); free(args->aln.lseq_arr); }
 }
 
+void bcf_hdr_append_version(bcf_hdr_t *hdr, int argc, char **argv, const char *cmd);
+
 #define SWAP(type_t, a, b) { type_t t = a; a = b; b = t; }
 static void normalize_vcf(args_t *args)
 {
     htsFile *out = hts_open("-","w",0);
+    bcf_hdr_append_version(args->hdr, args->argc, args->argv, "vcfnorm");
     vcf_hdr_write(out, args->hdr);
 
     while ( bcf_sr_next_line(args->files) )

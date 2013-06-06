@@ -1121,6 +1121,24 @@ void merge_buffer(args_t *args)
         shake_buffer(maux, i, pos);
 }
 
+void bcf_hdr_append_version(bcf_hdr_t *hdr, int argc, char **argv, const char *cmd)
+{
+    kstring_t str = {0,0,0};
+    ksprintf(&str,"##%sVersion=%s\n", cmd, HTS_VERSION);
+    bcf_hdr_append(hdr,str.s);
+
+    str.l = 0;
+    ksprintf(&str,"##%sCommand=%s", cmd, argv[0]);
+    int i;
+    for (i=1; i<argc; i++) ksprintf(&str, " %s", argv[i]);
+    kputc('\n', &str);
+    bcf_hdr_append(hdr,str.s);
+    free(str.s);
+
+    bcf_hdr_sync(hdr);
+    bcf_hdr_fmt_text(hdr);
+}
+
 void merge_vcf(args_t *args)
 {
     args->out_fh = hts_open("-","w",0);
@@ -1138,17 +1156,7 @@ void merge_vcf(args_t *args)
             char buf[10]; snprintf(buf,10,"%d",i+1);
             bcf_hdr_merge(args->out_hdr, args->files->readers[i].header,buf);
         }
-        kstring_t str = {0,0,0};
-        ksprintf(&str,"##vcfmergeVersion=%s\n", HTS_VERSION);
-        bcf_hdr_append(args->out_hdr,str.s);
-
-        str.l = 0;
-        ksprintf(&str,"##vcfmergeCommand=%s", args->argv[0]);
-        for (i=1; i<args->argc; i++) ksprintf(&str, " %s", args->argv[i]);
-        kputc('\n', &str);
-        bcf_hdr_append(args->out_hdr,str.s);
-        free(str.s);
-
+        bcf_hdr_append_version(args->out_hdr, args->argc, args->argv, "vcfmerge");
         bcf_hdr_sync(args->out_hdr);
         bcf_hdr_fmt_text(args->out_hdr);
     }
