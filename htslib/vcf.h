@@ -338,6 +338,15 @@ extern "C" {
 	int bcf_is_snp(bcf1_t *v);
 	void bcf_set_variant_types(bcf1_t *v);
 
+    /**
+     *  bcf1_update_filter() - sets the FILTER column
+     *  @flt_ids:   Set of filters to set, numeric IDs returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @n:         Number of filters. If n==0, all filters are removed
+     *
+     *  todo: reflect changes also on BCF output
+     */
+    int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n);
+
     // If n==0, existing tag is removed. Otherwise it is updated or appended. (pd3 todo: reflect changes also on BCF output)
     #define bcf1_update_info_int32(hdr,line,key,values,n) bcf1_update_info((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf1_update_info_float(hdr,line,key,values,n) bcf1_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
