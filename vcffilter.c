@@ -12,7 +12,7 @@
 #include "synced_bcf_reader.h"
 #include "vcfutils.h"
 
-#define NFIXED 5
+#define NFIXED 6
 #define MASK_GOOD 2
 #define MASK_BAD  4
 #define IS_GOOD(mask) ((mask)&MASK_GOOD) 
@@ -46,17 +46,23 @@ dist_t;
 
 typedef struct
 {
-    int type;       // one of the FLT_* keys above
-    double value; 
+    int type;           // one of the FLT_* keys above
+    double value;       // threshold to use for filtering
 }
 filter_t;
 
 typedef struct
 {
-    int *nfilt, n;
-    filter_t **filt;
+    int *nfilt, n;      // nfilt: number of filters for each annotation; n: number of annotations
+    filter_t **filt;    // filters for each annotation
 }
 filters_t;
+
+// indel context functions
+typedef struct indel_ctx_t indel_ctx_t;
+indel_ctx_t *indel_ctx_init(char *fa_ref_fname);
+void indel_ctx_destroy(indel_ctx_t *ctx);
+int indel_ctx_type(indel_ctx_t *ctx, char *chr, int pos, char *ref, char *alt, int *nrep, int *nlen);
 
 typedef struct
 {   
@@ -74,8 +80,8 @@ typedef struct
     htsFile *file;              // reader
     kstring_t str;              // temporary string for annots_reader_*
     int *ignore;                // columns to ignore (ncols, ro)
-    int pos, mask, is_ts, type; // filled by annots_reader_next
-    char *chr;                  // filled by annots_reader_next
+    int pos, mask, type;        // filled by annots_reader_next
+    char *chr, *ref, *alt;      // filled by annots_reader_next
     double *vals;               // filled by annots_reader_next (ncols), scaled if scale set
     double *raw_vals;           // same as vals, unscaled
     int *missing;               // columns with missing values, filled by annots_reader_next (ncols)
@@ -86,10 +92,12 @@ typedef struct
     filters_t filt_excl, filt_learn;
     double snp_th, indel_th;
 
-    int good_mask_bit;
+    indel_ctx_t *indel_ctx;     // indel context
+
+    int good_mask;
     int rand_seed;
     char *annot_str, *fixed_filters, *learning_filters;
-	char **argv, *fname, *out_prefix, *region;
+	char **argv, *fname, *out_prefix, *region, *ref_fname;
 	int argc, do_plot;
 }
 args_t;
@@ -243,11 +251,30 @@ inline double scale_value(dist_t *dist, double val)
     assert( val>=0 && val<=1 );
     return val;
 }
+static int parse_mask(char *str)
+{
+    int i = 0, mask = 0;
+    while ( str[i] )
+    {
+        if ( str[i]=='1' ) { mask |= 1<<i; }
+        i++;
+    }
+    return mask;
+}
+static inline int str_mask_set(char *str, int mask)
+{
+    int i = 0;
+    while ( str[i]=='0' || str[i]=='1' )
+    {
+        if ( str[i]=='1' && (mask & i<<1) ) return 1;
+        i++;
+    }
+    return 0;
+}
 /**
  *  annots_reader_next() - reads next line from annots.tab.gz and sets the appropriate fields
  *
- *    mask:         2 if a good site, otherwise 1. Which bit indicates a good site is controlled by good_mask_bit.
- *    is_ts:        1 if transition, 0 if transversion (meaningless with indels)
+ *    mask:         2 if a good site, otherwise 1. Controlled by args->good_mask.
  *    type:         one of VCF_SNP, VCF_INDEL, VCF_OTHER
  *    nset:         number of non-missing values read into the $vals array
  *    nset_mask:    which values are non-missing. Note that this limits the number of maximum annotations
@@ -255,7 +282,7 @@ inline double scale_value(dist_t *dist, double val)
  *    raw_vals:     same as while $vals, but unscaled
  *    missing:      array of flags indicating whether the value is set or not (the same order as above)
  *
- *   In addition also these self-explanatory fields are set: chr, pos
+ *   In addition also these self-explanatory fields are set: chr, pos, ref, alt
  *
  *   Returns 1 on successful read or 0 if no further record could be read.
  */
@@ -284,27 +311,21 @@ int annots_reader_next(args_t *args)
 
     // MASK
     if ( !args->ignore[2] )
-    {
-        if ( args->good_mask_bit>0 )
-        {
-            char *q = column_next(t+1, '\t');
-            if ( args->good_mask_bit >= q-t )
-            {
-                *q = 0;
-                error("The good mask bit \"%d\" is bigger than the mask string \"%s\"\n", args->good_mask_bit, t+1);
-            }
-            args->mask = t[args->good_mask_bit]=='1' ? 2 : 1;
-        }
-        else args->mask = 1;
-    }
+        args->mask = args->good_mask ? 1 + str_mask_set(t+1, args->good_mask) : 1;
     t = column_next(t+1, '\t');  
     if ( !*t ) error("Could not parse MASK: [%s]\n", line);
 
-    // IS_TS
-    if ( !args->ignore[3] )
-        args->is_ts = strtol(t, NULL, 10);
+    // REF
+    args->ref = t+1;
     t = column_next(t+1, '\t');  
-    if ( !*t ) error("Could not parse IS_TS: [%s]\n", line);
+    if ( !*t ) error("Could not parse REF: [%s]\n", line);
+    *t = 0;
+
+    // ALT
+    args->alt = t+1;
+    t = column_next(t+1, '\t');  
+    if ( !*t ) error("Could not parse ALT: [%s]\n", line);
+    *t = 0;
 
     // TYPE
     if ( !args->ignore[4] )
@@ -535,17 +556,13 @@ static void create_dists(args_t *args)
     args->col2names    = (int*) calloc(args->ncols, sizeof(int));
     args->missing      = (int*) calloc(args->ncols, sizeof(int));
 
-    filters_t *tmp_flt = NULL;
-    if ( args->fixed_filters ) 
-    {
-        tmp_flt = (filters_t *) calloc(1, sizeof(filters_t));
-        init_filters(args, tmp_flt, args->fixed_filters, 0);
-    }
+    int nann_ori = args->nann; 
+    args->nann   = args->ncols - NFIXED;
 
-    int i, nann = args->ncols - NFIXED;
-    dist_t *dists = (dist_t*) calloc(nann, sizeof(dist_t));
-    FILE **fps = (FILE**) malloc(nann*sizeof(FILE*));
-    for (i=0; i<nann; i++)
+    int i;
+    dist_t *dists = (dist_t*) calloc(args->nann, sizeof(dist_t));
+    FILE **fps = (FILE**) malloc(args->nann*sizeof(FILE*));
+    for (i=0; i<args->nann; i++)
     {
         args->str.l = 0;
         ksprintf(&args->str, "cat | sort -k1,1g > %s.%s", args->out_prefix, args->colnames[i+NFIXED]);
@@ -558,11 +575,19 @@ static void create_dists(args_t *args)
         dists[i].bad_data  = (unsigned int*) calloc(dists[i].nbins,sizeof(unsigned int));
     }
 
+    filters_t *tmp_flt = NULL;
+    if ( args->fixed_filters ) 
+    {
+        tmp_flt = (filters_t *) calloc(1, sizeof(filters_t));
+        init_filters(args, tmp_flt, args->fixed_filters, 0);
+    }
+
     annots_reader_reset(args);
     while ( annots_reader_next(args) )
     {
+        if ( args->type != args->filt_type ) continue;
         int is_bad = tmp_flt && tmp_flt->nfilt && !pass_filters(tmp_flt, args->raw_vals) ? 1 : 0;
-        for (i=0; i<nann; i++)
+        for (i=0; i<args->nann; i++)
         {
             if ( args->missing[i] )
             {
@@ -595,7 +620,7 @@ static void create_dists(args_t *args)
     free(args->col2names);
     args->ignore    = ignore_ori;
     args->col2names = col2names_ori;
-    for (i=0; i<nann; i++)
+    for (i=0; i<args->nann; i++)
         if ( pclose(fps[i]) ) error("An error occured while processing %s.%s\n", args->out_prefix, args->colnames[i+NFIXED]);
     free(fps);
     if ( tmp_flt )
@@ -606,7 +631,7 @@ static void create_dists(args_t *args)
 
     // Find the extremes
     FILE *fp;
-    for (i=0; i<nann; i++)
+    for (i=0; i<args->nann; i++)
     {
         char *fname;
         fp = open_file(&fname,"r","%s.%s", args->out_prefix, args->colnames[i+NFIXED]);
@@ -621,7 +646,7 @@ static void create_dists(args_t *args)
             if ( dists[i].scale_max==HUGE_VAL && (double)100.*count/dists[i].nall > args->hi_pctl ) dists[i].scale_max = val;
 
             // For the distribution plots
-            int ibin = (float)(dists[i].nbins - 1)*(val - dists[i].all_min)/(dists[i].all_max - dists[i].all_min);
+            int ibin = dists[i].all_max==dists[i].all_min ? 0 : (float)(dists[i].nbins - 1)*(val - dists[i].all_min)/(dists[i].all_max - dists[i].all_min);
             if ( is_good ) dists[i].good_data[ibin]++;
             if ( is_bad ) dists[i].bad_data[ibin]++;
             dists[i].all_data[ibin]++;
@@ -631,11 +656,11 @@ static void create_dists(args_t *args)
         unlink(fname);
         free(fname);
     }
-    plot_dists(args, dists, nann);
+    plot_dists(args, dists, args->nann);
 
     fp = open_file(NULL,"w","%s.n", args->out_prefix);
     fprintf(fp, "# [1]nAll\t[2]nGood\t[3]nBad\t[4]nMissing\t[5]minGood\t[6]maxGood\t[7]minBad\t[8]maxBad\t[9]minAll\t[10]maxAll\t[11]%f percentile\t[12]%f percentile\t[13]Annotation\n", args->lo_pctl, args->hi_pctl);
-    for (i=0; i<nann; i++)
+    for (i=0; i<args->nann; i++)
     {
         fprintf(fp, "%u\t%u\t%u\t%u\t%le\t%le\t%le\t%le\t%le\t%le\t%le\t%le\t%s\n", dists[i].nall, dists[i].ngood, dists[i].nbad, dists[i].nmissing, 
             dists[i].good_min, dists[i].good_max, dists[i].bad_min, dists[i].bad_max, dists[i].all_min, dists[i].all_max, 
@@ -646,12 +671,13 @@ static void create_dists(args_t *args)
     }
     fclose(fp);
     free(dists);
+    args->nann = nann_ori;
 }
 
 static void init_dists(args_t *args)
 {
     FILE *fp = open_file(NULL,"r","%s.n", args->out_prefix);
-    if ( !fp ) fp = open_file(NULL,"r","%s.n", args->fname);
+    if ( !fp ) fp = open_file(NULL,"r","%s.%s.n", args->fname, args->filt_type==VCF_SNP ? "SNP" : "INDEL");
     if ( !fp ) 
     {
         create_dists(args);
@@ -681,7 +707,7 @@ static void init_dists(args_t *args)
         sscanf(args->str.s, "%u\t%u\t%u\t%u\t%le\t%le\t%le\t%le\t%le\t%le\t%le\t%le", &args->dists[j].nall, &args->dists[j].ngood, &args->dists[j].nbad, &args->dists[j].nmissing,
             &args->dists[j].good_min, &args->dists[j].good_max, &args->dists[j].bad_min, &args->dists[j].bad_max, &args->dists[j].all_min, &args->dists[j].all_max, 
             &args->dists[j].scale_min, &args->dists[j].scale_max);
-        if ( args->dists[j].scale_min==args->dists[j].scale_max ) error("The annotation %s is not looking good, please leave it out\n", args->colnames[j]);
+        if ( !args->ignore[j] && args->dists[j].scale_min==args->dists[j].scale_max ) error("The annotation %s does not look good, please leave it out\n", args->colnames[j]);
     }
     for (i=NFIXED; i<args->ncols; i++)
         if ( !args->dists[i].nall && !args->dists[i].nmissing ) error("No extremes found for the annotation: %s\n", args->colnames[i]);
@@ -706,7 +732,7 @@ static void init_annots(args_t *args)
     args->file = hts_open(args->fname, "r", NULL);
     if ( !args->file ) error("Could not read %s\n", args->fname);
     hts_getline(args->file,'\n',&args->str);
-    const char *exp = "# [1]CHROM\t[2]POS\t[3]MASK\t[4]IS_TS\t[5]TYPE";
+    const char *exp = "# [1]CHROM\t[2]POS\t[3]MASK\t[4]REF\t[5]ALT\t[6]TYPE";
     if ( args->str.s[0] != '#' ) error("Missing header line in %s, was vcf query run with -H?\n", args->fname);
     if ( strncmp(args->str.s,exp,strlen(exp)) ) error("Version mismatch? %s: %s\n", args->fname, args->str.s);
 
@@ -1067,7 +1093,7 @@ static void som_init(args_t *args)
     {
         if ( args->type != args->filt_type ) continue;
 
-        // Note that filtering and training requires that all annotations used in
+        // Note well: filtering and training requires that all annotations used in
         //  hard-filtering and learning are present, even when not used in SOM filtering. 
         //  So far the decision was that it is the responsibility of the caller
         //  to supply meaningful default values if the annotation is not
@@ -1104,7 +1130,7 @@ static void som_init(args_t *args)
     }
     if ( nvals < som->nt ) som->nt = nvals;
     if ( nbad_vals < bad_som->nt ) bad_som->nt = nbad_vals;
-    fprintf(stderr,"Selected %d training values for good and %d values for bad SOM\n", som->nt, bad_som->nt);
+    fprintf(stderr,"Selected %d training values for good and %d training values for bad SOM\n", som->nt, bad_som->nt);
 
     for (i=0; i<som->nt; i++)
         som_train(som, &vals[i*args->nann_som]);
@@ -1128,20 +1154,22 @@ static void som_init(args_t *args)
 static void init_data(args_t *args)
 {
     fprintf(stderr,"Initializing and training...\n");
-    if ( !args->out_prefix ) args->out_prefix = strdup(args->fname);
+    const char *type = args->filt_type==VCF_SNP ? "SNP" : "INDEL";
+    if ( !args->out_prefix ) args->out_prefix = msprintf("%s.%s",args->fname,type);
     else
     {
         int len = strlen(args->out_prefix);
         if ( args->out_prefix[len-1] == '/' || args->out_prefix[len-1] == '\\' )
-            args->out_prefix = msprintf("%sannots", args->out_prefix);
+            args->out_prefix = msprintf("%sannots.%s", args->out_prefix,type);
         else
-            args->out_prefix = strdup(args->out_prefix);
+            args->out_prefix = msprintf("%s.%s",args->out_prefix,type);
     }
     if ( !args->out_prefix ) error("Missing the -o option.\n");
     init_annots(args);
     if ( args->fixed_filters ) init_filters(args, &args->filt_excl, args->fixed_filters, 0);
     if ( args->learning_filters ) init_filters(args, &args->filt_learn, args->learning_filters, 0);
     som_init(args);
+    if (args->ref_fname) args->indel_ctx = indel_ctx_init(args->ref_fname);
 }
 static void destroy_data(args_t *args)
 {
@@ -1151,20 +1179,39 @@ static void destroy_data(args_t *args)
     free(args->out_prefix);
     som_destroy(&args->som);
     som_destroy(&args->bad_som);
+    if (args->indel_ctx) indel_ctx_destroy(args->indel_ctx);
+}
+
+/*
+    SNPs:   transversion=0, transition=1
+    Indels: repeat-inconsistent=0, repeat-consistent=1, not-applicable=2
+*/
+static int determine_variant_class(args_t *args)
+{
+    if ( args->filt_type==VCF_SNP )
+        return abs(bcf_acgt2int(args->ref[0])-bcf_acgt2int(args->alt[0])) == 2 ? 1 : 0;
+
+    if ( !args->indel_ctx ) return 2; 
+
+    int nrep, nlen, ndel;
+    ndel = indel_ctx_type(args->indel_ctx, args->chr, args->pos, args->ref, args->alt, &nrep, &nlen);
+    if ( nlen<=1 || nrep<=1 ) return 2;
+
+    if ( (nrep*nlen) % abs(ndel) ) return 0;
+    return 1;
 }
 
 static void eval_filters(args_t *args)
 {
     init_data(args);
-    char *type = args->filt_type==VCF_SNP ? "SNP" : "INDEL";
 
     char *fname; 
-    open_file(&fname,NULL,"%s.%s.sites.gz", args->out_prefix, type); // creates also directory
+    open_file(&fname,NULL,"%s.sites.gz", args->out_prefix); // creates also directory
     htsFile *file = hts_open(fname, "wb", NULL);
 
     // Calculate scores
     kstring_t str = {0,0,0};
-    kputs("# [1]score\t[2]good SOM\t[3]bad SOM\t[4]is transition\t[5]mask, good(&2) or bad(&4)\t[6]chromosome\t[7]position\n", &str);
+    kputs("# [1]score\t[2]good SOM\t[3]bad SOM\t[4]variant class\t[5]mask, good(&2) or bad(&4)\t[6]chromosome\t[7]position\n", &str);
     bgzf_write((BGZF *)file->fp, str.s, str.l);
     str.l = 0;
 
@@ -1192,15 +1239,9 @@ static void eval_filters(args_t *args)
         if ( IS_GOOD(args->mask) ) ngood++;
 
         str.l = 0;
-        double score = dist/max_dist + (1-bad_dist/max_dist);        // 2.154    835770  99.48   2.07    1.103583e+00 (mpileup-test-2013-05-10/filter-sf-sum)
-        //* double score = dist/max_dist;                            // 2.153    837182  99.48   2.07 (mpileup-test-2013-05-10/filter-hf)
-        // double score = bad_dist>0 ? dist / bad_dist : 1e+10;      // 2.153    823529  99.35   2.07
-        // double score = dist/max_dist*(1-bad_dist/max_dist);       // 2.153    837196  99.48   2.07
-        // double score = 1-bad_dist/max_dist;                       // 2.154    822909  99.35   2.07
-        // double score = dist/max_dist + (bad_dist/max_dist<0.1 ? 0.1 : 0);    // 2.153    837198  99.48   2.07    2.037545e-01
-        // double score = dist/max_dist * (bad_dist/max_dist<1e-2 ? 2 : 1);     // 2.153    837199  99.48   2.07    2.075090e-01
-        // double score = dist/max_dist + 0.5*(1-bad_dist/max_dist);            // 2.154    835747  99.48   2.07    6.035832e-01
-        ksprintf(&str, "%le\t%le\t%le\t%d\t%d\t%s\t%d\n", score, dist/max_dist, bad_dist/max_dist, args->is_ts, args->mask, args->chr, args->pos);
+        double score = dist/max_dist + (1-bad_dist/max_dist);
+        int class = determine_variant_class(args);
+        ksprintf(&str, "%le\t%le\t%le\t%d\t%d\t%s\t%d\n", score, dist/max_dist, bad_dist/max_dist, class, args->mask, args->chr, args->pos);
         bgzf_write((BGZF *)file->fp, str.s, str.l);
     }
     hts_close(file);
@@ -1208,17 +1249,34 @@ static void eval_filters(args_t *args)
     tbx_index_build(fname,0,&conf);
     free(fname);
 
-
-    // Evaluate
+    // Evaluate. The segregating metric is ts/tv for SNPs and repeat-consistency for indels,
+    //  see also determine_variant_class.
     fprintf(stderr,"Evaluating...\n");
-    int ngood_read = 0, nall_read = 0, ntstv[2] = {0,0}, ntstv_novel[2] = {0,0};
-    double prev_tstv = 0;
+    int ngood_read = 0, nall_read = 0, nclass[3] = {0,0,0}, nclass_novel[3] = {0,0,0};
+    double prev_metric = -1;
     args->str.l = 0;
-    ksprintf(&args->str, "gunzip -c %s.%s.sites.gz | sort -k1,1g", args->out_prefix, type);
+    ksprintf(&args->str, "gunzip -c %s.sites.gz | sort -k1,1g", args->out_prefix);
     FILE *fp = popen(args->str.s, "r");
     if ( !fp ) error("Could not run \"%s\": %s\n", args->str.s, strerror(errno));
-    FILE *out = open_file(NULL,"w","%s.%s.tab", args->out_prefix, type);
-    fprintf(out,"# [1]ts/tv (all)\t[2]nAll\t[3]sensitivity\t[4]ts/tv novel\t[5]threshold\n");
+    FILE *out = open_file(NULL,"w","%s.tab", args->out_prefix);
+
+    double metric_th = 0.005;
+    if ( args->filt_type==VCF_SNP )
+        fprintf(out,"# [1]ts/tv (all)\t[2]nAll\t[3]sensitivity\t[4]ts/tv (novel)\t[5]threshold\n");
+    else
+        fprintf(out,"# [1]repeat consistency (all)\t[2]nAll\t[3]sensitivity\t[4]repeat consistency (novel)\t[5]threshold\n");
+
+    // Version and command line string
+    str.l = 0;
+    ksprintf(&str,"# vcffilterVersion=%s\n", HTS_VERSION);
+    fputs(str.s, out);
+    str.l = 0;
+    ksprintf(&str,"# vcffilterCommand=%s", args->argv[0]);
+    int i;
+    for (i=1; i<args->argc; i++) ksprintf(&str, " %s", args->argv[i]);
+    kputc('\n', &str);
+    fputs(str.s, out);
+
     while ( ks_getline(fp, &args->str) )
     {
         if ( args->str.s[0]=='#' ) 
@@ -1237,8 +1295,8 @@ static void eval_filters(args_t *args)
         // BAD-SOM DIST
         t = column_next(t+1, '\t'); 
         if ( !*t ) error("Could not parse bad-SOM score: [%s]\n", args->str.s);
-        // IS_TS
-        int is_ts = strtol(t, NULL, 10);
+        // CLASS
+        int class = strtol(t, NULL, 10);
         t = column_next(t+1, '\t');  
         if ( !*t ) error("Could not parse POS: [%s]\n", args->str.s);
         // IS_GOOD
@@ -1246,16 +1304,22 @@ static void eval_filters(args_t *args)
         args->str.l = 0;
 
         nall_read++;
-        ntstv[is_ts]++;
+        nclass[class]++;
         if ( IS_GOOD(mask) ) ngood_read++;
-        else if ( ngood ) ntstv_novel[is_ts]++;
+        else if ( ngood ) nclass_novel[class]++;
+
+        // Do not output anything until 10% of sites is scanned
         if ( (double)nall_read/nall < 0.1 ) continue;
-        double tstv = (double)ntstv[1]/ntstv[0];
-        if ( prev_tstv==0 || fabs(tstv-prev_tstv)>0.005 )
+
+        double metric = args->filt_type==VCF_SNP ? (double)nclass[1]/nclass[0] : (double)nclass[1]/(nclass[1]+nclass[0]);
+        if ( prev_metric==-1 || fabs(prev_metric - metric)>metric_th )
         {
-            double ntstv2 = ntstv_novel[0] ? (double)ntstv_novel[1]/ntstv_novel[0] : 0;
-            fprintf(out, "%.3f\t%d\t%.2f\t%.2f\t%le\n", tstv, nall_read, ngood ? (double)100.*ngood_read/ngood : 0, ntstv2, dist);
-            prev_tstv = tstv;
+            double metric_novel;
+            if ( !nclass_novel[0] ) metric_novel = 0;
+            else if ( args->filt_type==VCF_SNP ) metric_novel = (double)nclass_novel[1]/nclass_novel[0];
+            else metric_novel = (double)nclass_novel[1]/(nclass_novel[1]+nclass_novel[0]);
+            fprintf(out, "%.3f\t%d\t%.2f\t%.3f\t%le\n", metric, nall_read, ngood ? (double)100.*ngood_read/ngood : 0, metric_novel, dist);
+            prev_metric = metric;
         }
     }
     if ( str.m ) free(str.s);
@@ -1356,6 +1420,8 @@ static int sync_site(bcf_hdr_t *hdr, bcf1_t *line, site_t *site, int type)
     return 0;
 }
 
+void bcf_hdr_append_version(bcf_hdr_t *hdr, int argc, char **argv, const char *cmd);
+
 static void apply_filters(args_t *args)
 {
     // Init files
@@ -1381,6 +1447,7 @@ static void apply_filters(args_t *args)
     kputs(".\">", &str);
     bcf_hdr_append(hdr, str.s); free(str.s); str.m = str.l = 0;
     bcf_hdr_append(hdr, "##INFO=<ID=FiltScore,Number=1,Type=Float,Description=\"SOM Filtering Score\">");
+    bcf_hdr_append_version(hdr, args->argc, args->argv, "vcffilter");
     bcf_hdr_fmt_text(hdr);
     int flt_pass = bcf_id2int(hdr, BCF_DT_ID, "PASS");
     int flt_fail = bcf_id2int(hdr, BCF_DT_ID, "FailSOM");
@@ -1393,25 +1460,23 @@ static void apply_filters(args_t *args)
         bcf1_t *line = sr->readers[0].buffer[0];
         bcf_unpack(line, BCF_UN_INFO);
         bcf_set_variant_types(line);
-        assert( line->d.n_flt>=1 );
-        line->d.n_flt = 1;
         if ( snp && sync_site(hdr, line, snp, VCF_SNP) )
         {
             float tmp = snp->score;
             bcf1_update_info_float(hdr, line, "FiltScore", &tmp, 1);
-            line->d.flt[0] = snp->score <= args->snp_th ? flt_pass : flt_fail;
+            bcf1_update_filter(hdr, line, snp->score <= args->snp_th ? &flt_pass : &flt_fail, 1);
             vcf_write1(out, hdr, line);
             continue;
         }
         if ( indel && sync_site(hdr, line, indel, VCF_INDEL) )
         {
-            float tmp = snp->score;
+            float tmp = indel->score;
             bcf1_update_info_float(hdr, line, "FiltScore", &tmp, 1);
-            line->d.flt[0] = indel->score <= args->indel_th ? flt_pass : flt_fail;
+            bcf1_update_filter(hdr, line, indel->score <= args->indel_th ? &flt_pass : &flt_fail, 1);
             vcf_write1(out, hdr, line);
             continue;
         }
-        line->d.n_flt = 0;
+        bcf1_update_filter(hdr, line, NULL, 0);
         vcf_write1(out, hdr, line);
     }
     if ( snp ) destroy_site(snp);
@@ -1427,7 +1492,8 @@ static void usage(void)
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "    -a, --annots <list>                        list of annotations (default: use all annotations)\n");
 	fprintf(stderr, "    -f, --fixed-filter <expr>                  list of fixed threshold filters to apply (absolute values, e.g. 'QUAL>4')\n");
-	fprintf(stderr, "    -g, --good-mask-bit <int>                  which of the mask bits indicate a good variant (one-based) [2]\n");
+	fprintf(stderr, "    -F, --fasta-ref <file>                     faidx indexed reference sequence file, required to determine INDEL type\n");
+	fprintf(stderr, "    -g, --good-mask <mask>                     mask to recognise good variants in annots.tab.gz [010]\n");
 	fprintf(stderr, "    -i, --indel-threshold <float>              filter INDELs\n");
 	fprintf(stderr, "    -l, --learning-filters <expr>              filters for selecting training sites (values scaled to interval [0-1])\n");
 	fprintf(stderr, "    -m, --map-parameters <int,float,float>     number of bins, learning constant, unit threshold [20,0.1,0.2]\n");
@@ -1439,20 +1505,28 @@ static void usage(void)
 	fprintf(stderr, "    -s, --snp-threshold <float>                filter SNPs\n");
 	fprintf(stderr, "    -t, --type <SNP|INDEL>                     variant type to filter [SNP]\n");
 	fprintf(stderr, "Example:\n");
-	fprintf(stderr, "   # 1) Extract annotations from the VCF. This is because several passes through the data are\n");
-    fprintf(stderr, "   # required and VCF parsing is slow. The second VCF is required only for supervised learning.\n");
-	fprintf(stderr, "   vcf query -Ha QUAL,Annot1,Annot2,... target.vcf.gz | bgzip -c > annots.tab.gz\n");
+	fprintf(stderr, "   # 1) This step extracts annotations from the VCF and creates a compressed tab-delimited file\n");
+    fprintf(stderr, "   #    which tends to be smaller and much faster to parse (several passes through the data are\n");
+    fprintf(stderr, "   #    required). The second VCF is required only for supervised learning, SNPs and indels can\n");
+    fprintf(stderr, "   #    be given in separate files.\n");
 	fprintf(stderr, "   vcf query -Ha QUAL,Annot1,Annot2,... target.vcf.gz training.vcf.gz | bgzip -c > annots.tab.gz\n");
 	fprintf(stderr, "\n");
-	fprintf(stderr, "   # 2) Test which annotations and parameters give the best result. SNPs and INDELs are done\n");
-    fprintf(stderr, "   # separately. Notice the use of -l for unsupervised learning in the second example.\n");
-    fprintf(stderr, "   # Without the -a option, all annotations from annots.tab.gz are used.\n");
-	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>4' -a Annot2,Annot3\n");
-	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>4' -l'QUAL>0.6'\n");
-	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>4' -l'QUAL>0.6' -t INDEL\n");
+    fprintf(stderr, "   # 2) This step is usually run multiple times to test which annotations and\n");
+    fprintf(stderr, "   #    parameters give the best results. Here the input values are normalized,\n");
+    fprintf(stderr, "   #    SOM model trained and filtering scores calculated for all sites.\n");
+    fprintf(stderr, "   #    Tab-delimited output files are then created to help decide about\n");
+    fprintf(stderr, "   #    best thresholds to reach the desired sensitivity, transition/transversion\n");
+    fprintf(stderr, "   #    ratio (SNPs) and repeat-consistency value (indels). \n");
+    fprintf(stderr, "   #    Note that: \n");
+    fprintf(stderr, "   #       - SNPs and INDELs are done separately (-t)\n");
+    fprintf(stderr, "   #       - The -l option can be used in both supervised and unsupervised training\n");
+    fprintf(stderr, "   #       - Without the -a option, all annotations from annots.tab.gz are used\n");
+	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>=10' -l'QUAL>0.6' -a Annot1,Annot2,Annot3\n");
+	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>=10' -l'QUAL>0.6' -a Annot2,Annot4 -t INDEL\n");
 	fprintf(stderr, "\n");
-	fprintf(stderr, "   # 3) Choose threshold in prefix.SNP.tab and prefix.INDEL.tab and apply with -i and -s options\n");
-	fprintf(stderr, "   vcf filter target.vcf.gz -o prefix -s 1.054277e-02 | bgzip -c > filtered.vcf.gz\n");
+	fprintf(stderr, "   # 3) Choose threshold in prefix.SNP.tab and prefix.INDEL.tab and apply with -i and -s. The INFO\n");
+	fprintf(stderr, "   #    tag FiltScore is added and sites failing the SOM filter have the FailSOM filter set.\n");
+	fprintf(stderr, "   vcf filter target.vcf.gz -o prefix -s 1.054277e-02 -i 5.012345e-04 | bgzip -c > filtered.vcf.gz\n");
 	fprintf(stderr, "\n");
 	exit(1);
 }
@@ -1472,7 +1546,7 @@ int main_vcffilter(int argc, char *argv[])
     args->snp_th    = -1;
     args->indel_th  = -1;
     args->rand_seed = 1;
-    args->good_mask_bit = 2;
+    args->good_mask = parse_mask("010");
 
 	static struct option loptions[] = 
 	{
@@ -1482,6 +1556,7 @@ int main_vcffilter(int argc, char *argv[])
 		{"map-params",1,0,'m'},
 		{"create-plots",0,0,'p'},
 		{"fixed-filter",1,0,'f'},
+		{"fasta-ref",1,0,'F'},
 		{"do-not-scale",0,0,'S'},
 		{"type",1,0,'t'},
 		{"ntrain-sites",1,0,'n'},
@@ -1490,10 +1565,10 @@ int main_vcffilter(int argc, char *argv[])
 		{"indel-threshold",1,0,'i'},
 		{"random-seed",1,0,'R'},
 		{"region",1,0,'r'},
-		{"good-mask-bit",1,0,'g'},
+		{"good-mask",1,0,'g'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "ho:a:s:i:pf:St:n:l:m:r:R:g:",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "ho:a:s:i:pf:St:n:l:m:r:R:g:F:",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'S': args->scale = 0; break;
 			case 't': 
@@ -1504,8 +1579,9 @@ int main_vcffilter(int argc, char *argv[])
                     break;
                 }
 			case 'a': args->annot_str = optarg; break;
+			case 'F': args->ref_fname = optarg; break;
 			case 'n': args->som.nt = atoi(optarg); break;
-			case 'g': args->good_mask_bit = atoi(optarg); break;
+			case 'g': args->good_mask = parse_mask(optarg); break;
 			case 's': args->snp_th = atof(optarg); break;
 			case 'i': args->indel_th = atof(optarg); break;
 			case 'o': args->out_prefix = optarg; break;
@@ -1528,6 +1604,7 @@ int main_vcffilter(int argc, char *argv[])
     if ( args->snp_th<0 && args->indel_th<0 )
     {
         if ( args->region ) error("The -r option is to be used with -s or -i only.\n");
+        if ( args->filt_type==VCF_INDEL && !args->ref_fname ) error("Expected the -F parameter with -t INDEL\n");
         eval_filters(args);
     }
     else

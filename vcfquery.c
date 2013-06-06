@@ -535,7 +535,7 @@ static void usage(void)
 	fprintf(stderr, "About:   Extracts fields from VCF/BCF file and prints them in user-defined format\n");
 	fprintf(stderr, "Usage:   vcfquery [options] <file.vcf.gz>\n");
 	fprintf(stderr, "Options:\n");
-	fprintf(stderr, "    -a, --annots <list>               alias for -f '%%CHROM\\t%%POS\\t%%MASK\\t%%IS_TS\\t%%TYPE\\t' + tab-separated <list>\n");
+	fprintf(stderr, "    -a, --annots <list>               alias for -f '%%CHROM\\t%%POS\\t%%MASK\\t%%REF\\t%%ALT\\t%%TYPE\\t' + tab-separated <list> of tags\n");
 	fprintf(stderr, "    -c, --collapse <string>           collapse lines with duplicate positions for <snps|indels|both|any>\n");
 	fprintf(stderr, "    -f, --format <string>             learn by example, see below\n");
 	fprintf(stderr, "    -H, --print-header                print header\n");
@@ -547,8 +547,7 @@ static void usage(void)
 	fprintf(stderr, "Expressions:\n");
     fprintf(stderr, "\t%%CHROM          The CHROM column (similarly also other columns, such as POS, ID, QUAL, etc.)\n");
     fprintf(stderr, "\t%%INFO/TAG       Any tag in the INFO column\n");
-    fprintf(stderr, "\t%%IS_TS          1 indicates transition, 0 transversion\n");
-    fprintf(stderr, "\t%%TYPE           Variant type (REF, SNP, MNP, etc.)\n");
+    fprintf(stderr, "\t%%TYPE           Variant type (REF, SNP, MNP, INDEL, OTHER)\n");
     fprintf(stderr, "\t%%MASK           Indicates presence of the site in other files (with multiple files)\n");
     fprintf(stderr, "\t[]              The brackets loop over all samples\n");
     fprintf(stderr, "\t%%GT             Genotype (e.g. 0/1)\n");
@@ -598,7 +597,7 @@ int main_vcfquery(int argc, char *argv[])
 			case 'a': 
                 {
                     kstring_t str = {0,0,0};
-                    kputs("%CHROM\t%POS\t%MASK\t%IS_TS\t%TYPE\t%", &str);
+                    kputs("%CHROM\t%POS\t%MASK\t%REF\t%ALT\t%TYPE\t%", &str);
                     char *p = optarg;
                     while ( *p )
                     {

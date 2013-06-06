@@ -10,6 +10,7 @@
 #include "vcf.h"
 #include "synced_bcf_reader.h"
 #include "vcfutils.h"
+#include "faidx.h"
 
 typedef struct
 {
@@ -21,6 +22,7 @@ idist_t;
 typedef struct
 {
     int n_snps, n_indels, n_mnps, n_others, n_mals, n_snp_mals;
+    int n_repeat[3];    // number of indels which are repeat-consistent, repeat-inconsistent, and not applicable
     int *af_ts, *af_tv, *af_snps, *af_indels;   // first bin of af_* stats are singletons
     int ts_ac1, tv_ac1;
     #if QUAL_STATS
@@ -43,6 +45,20 @@ typedef struct
 }
 gtcmp_t;
 
+typedef struct 
+{
+    char *seq;
+    int pos, cnt, len;
+} 
+_idc1_t;
+typedef struct
+{
+    faidx_t *ref;
+    _idc1_t *dat;
+    int ndat, mdat;
+}
+indel_ctx_t;
+
 typedef struct
 {
     // stats
@@ -50,6 +66,10 @@ typedef struct
     int *tmp_iaf, ntmp_iaf, m_af, m_qual;
     int dp_min, dp_max, dp_step;
     gtcmp_t *af_gts_snps, *af_gts_indels, *smpl_gts_snps, *smpl_gts_indels; // first bin of af_* stats are singletons
+
+    // indel context
+    indel_ctx_t *indel_ctx;
+    char *ref_fname;
 
     // other
     bcf_srs_t *files;
@@ -91,6 +111,145 @@ static inline int idist_i2bin(idist_t *d, int i)
     if ( i<=0 ) return d->min;
     if ( i>= d->m_vals ) return d->max;
     return i-1+d->min;
+}
+
+
+#if 0
+static void _indel_ctx_print1(_idc1_t *idc)
+{
+    int i;
+    fprintf(stderr, "%d\t", idc->cnt);
+    for (i=0; i<idc->len; i++)
+        fputc("eNACGT"[(int)idc->seq[i]], stderr);
+    fputc('\n', stderr);
+}
+static void _indel_ctx_print(indel_ctx_t *ctx)
+{
+    int i;
+    for (i=0; i<ctx->ndat; i++)
+        _indel_ctx_print1(&ctx->dat[i]);
+    fputc('\n',stderr);
+}
+#endif
+static int _indel_ctx_lookup(indel_ctx_t *ctx, char *seq, int seq_len, int *hit)
+{
+    // binary search
+    int min = 0, max = ctx->ndat - 1;
+    while ( min<=max )
+    {
+        int i = (min+max)/2;
+        int cmp = strncmp(seq, ctx->dat[i].seq, seq_len);
+        if ( cmp<0 ) max = i - 1;
+        else if ( cmp>0 ) min = i + 1;
+        else
+        {
+            if ( seq_len==ctx->dat[i].len )
+            {
+                *hit = 1;
+                return i;
+            }
+            else if ( seq_len<ctx->dat[i].len ) max = i - 1;
+            else min = i + 1;
+        }
+    }
+    *hit = 0;
+    return max;
+}
+static void _indel_ctx_insert(indel_ctx_t *ctx, char *seq, int seq_len, int pos)
+{
+    int idat, hit, i;
+    idat = _indel_ctx_lookup(ctx, seq, seq_len, &hit);
+    if ( !hit )
+    {
+        if ( pos>0 ) return;
+        idat++;
+        ctx->ndat++;
+        hts_expand(_idc1_t, ctx->ndat+1, ctx->mdat, ctx->dat);
+        if ( idat<ctx->ndat && ctx->ndat>1 )
+            memmove(&ctx->dat[idat+1], &ctx->dat[idat], ctx->ndat - idat - 1);
+        ctx->dat[idat].len = seq_len;
+        ctx->dat[idat].cnt = 1;
+        ctx->dat[idat].pos = pos;
+        ctx->dat[idat].seq = (char*) malloc(sizeof(char)*(seq_len+1));
+        for (i=0; i<seq_len; i++) ctx->dat[idat].seq[i] = seq[i];
+        ctx->dat[idat].seq[i] = 0;
+        return;
+    }
+    if ( ctx->dat[idat].pos + seq_len == pos )
+    {
+        ctx->dat[idat].cnt++;
+        ctx->dat[idat].pos = pos;
+    }
+}
+indel_ctx_t *indel_ctx_init(char *fa_ref_fname)
+{
+    indel_ctx_t *ctx = (indel_ctx_t *) calloc(1,sizeof(indel_ctx_t));
+    ctx->ref = fai_load(fa_ref_fname);
+    if ( !ctx->ref ) 
+    {
+        free(ctx);
+        return NULL;
+    }
+    return ctx;
+}
+void indel_ctx_destroy(indel_ctx_t *ctx)
+{
+    fai_destroy(ctx->ref);
+    if ( ctx->mdat ) free(ctx->dat);
+    free(ctx);
+}
+/**
+ * indel_ctx_type() - determine indel context type
+ * @ctx:
+ * @chr:    chromosome name
+ * @pos:    position of the first @ref base, 1-based
+ * @ref:    reference allele
+ * @alt:    alternate allele. Only first of multiple comma-separated alleles is
+ *          considered
+ * @nrep:   number of repeated elements (w)
+ * @nlen:   length of a single repeat element (w)
+ *
+ * Returns the INDEL length, negative for deletions, positive for insertions
+ */
+int indel_ctx_type(indel_ctx_t *ctx, char *chr, int pos, char *ref, char *alt, int *nrep, int *nlen)
+{
+    const int win_size = 50;    // hard-wired for now
+    const int rep_len  = 10;    // hard-wired for now
+
+    int ref_len = strlen(ref);
+    int alt_len = 0;
+    while ( alt[alt_len] && alt[alt_len]!=',' ) alt_len++;
+
+    int i, fai_ref_len;
+    char *fai_ref = faidx_fetch_seq(ctx->ref, chr, pos-1, pos+win_size, &fai_ref_len);
+    for (i=0; i<fai_ref_len; i++)
+        fai_ref[i] = 2 + bcf_acgt2int(fai_ref[i]);  // end of string is preserved and NACGT\0 = 123450
+
+    // Sanity check: the reference sequence must match the REF allele
+    for (i=0; i<fai_ref_len && i<ref_len; i++)
+        if ( 2 + bcf_acgt2int(ref[i]) != fai_ref[i] )
+            error("\nSanity check failed, the reference sequence differs: %s:%d+%d .. %c vs %c\n", chr, pos, i, ref[i],"eNACGT"[(int)fai_ref[i]]);
+
+    ctx->ndat = 0;
+    for (i=0; i<win_size; i++)
+    {
+        int k, kmax = rep_len <= i ? rep_len : i+1;
+        for (k=0; k<kmax; k++)
+            _indel_ctx_insert(ctx, &fai_ref[i-k+1], k+1, i-k);
+    }
+    int max_cnt = 0, max_len = 0;
+    for (i=0; i<ctx->ndat; i++)
+    {
+        if ( max_cnt < ctx->dat[i].cnt )
+        {
+            max_cnt = ctx->dat[i].cnt;
+            max_len = ctx->dat[i].len;
+        }
+        free(ctx->dat[i].seq);
+    }
+    *nrep = max_cnt;
+    *nlen = max_len;
+    return alt_len - ref_len;
 }
 
 static void init_stats(args_t *args)
@@ -154,6 +313,9 @@ static void init_stats(args_t *args)
             error("Error occurred while reading, was the file compressed with bgzip: %s?\n", args->exons_file);
         args->prev_reg = -1;
     }
+
+    if ( args->ref_fname )
+        args->indel_ctx = indel_ctx_init(args->ref_fname);
 }
 static void destroy_stats(args_t *args)
 {
@@ -190,6 +352,7 @@ static void destroy_stats(args_t *args)
     if (args->af_gts_indels) free(args->af_gts_indels);
     if (args->smpl_gts_snps) free(args->smpl_gts_snps);
     if (args->smpl_gts_indels) free(args->smpl_gts_indels);
+    if (args->indel_ctx) indel_ctx_destroy(args->indel_ctx);
 }
 
 static void init_iaf(args_t *args, bcf_sr_t *reader)
@@ -303,6 +466,20 @@ static void do_indel_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
         }
         if ( --len >= stats->m_indel ) len = stats->m_indel-1;
         ptr[len]++;
+    }
+
+    if ( args->indel_ctx && line->d.var[1].type==VCF_INDEL )
+    {
+        // Indel repeat consistency
+        int nrep, nlen, ndel;
+        ndel = indel_ctx_type(args->indel_ctx, (char*)reader->header->id[BCF_DT_CTG][line->rid].key, line->pos+1, line->d.allele[0], line->d.allele[1], &nrep, &nlen);
+        if ( nlen<=1 || nrep<=1 ) stats->n_repeat[2]++;
+        else 
+        {
+            int rlen = nrep*nlen;
+            if ( rlen % abs(ndel) ) stats->n_repeat[1]++;
+            else stats->n_repeat[0]++;
+        }
     }
 }
 
@@ -586,6 +763,15 @@ static void print_stats(args_t *args)
             printf("FS\t%d\t%d\t%d\t%.2f\n", id, in,out,out?(float)out/(in+out):0);
         }
     }
+    if ( args->indel_ctx )
+    {
+        printf("# IC, Indel context:\n# IC\t[2]id\t[3]repeat-consistent\t[4]repeat-inconsistent\t[5]not applicable\t[6]c/(c+i) ratio\n");
+        for (id=0; id<args->nstats; id++)
+        {
+            int nc = args->stats[id].n_repeat[0], ni = args->stats[id].n_repeat[1], na = args->stats[id].n_repeat[2];
+            printf("IC\t%d\t%d\t%d\t%d\t%.4f\n", id, nc,ni,na,nc+ni ? (float)nc/(nc+ni) : 0.0);
+        }
+    }
     printf("# Sis, Singleton stats:\n# SiS\t[2]id\t[3]allele count\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n");
     for (id=0; id<args->nstats; id++)
     {
@@ -729,6 +915,7 @@ static void usage(void)
     fprintf(stderr, "        --debug                       produce verbose per-site and per-sample output\n");
     fprintf(stderr, "    -e, --exons <file.gz>             tab-delimited file with exons for indel frameshifts (chr,from,to; 1-based, inclusive, bgzip compressed)\n");
     fprintf(stderr, "    -f, --apply-filters               skip sites where FILTER is other than PASS\n");
+    fprintf(stderr, "    -F, --fasta-ref <file>            faidx indexed reference sequence file to determine INDEL context\n");
     fprintf(stderr, "    -i, --split-by-ID                 collect stats for sites with ID separately (known vs novel)\n");
     fprintf(stderr, "    -r, --region <chr|chr:from-to>    collect stats in the given region only\n");
     fprintf(stderr, "    -s, --samples <list|file>         produce sample stats, \"-\" to include all samples\n");
@@ -756,10 +943,12 @@ int main_vcfcheck(int argc, char *argv[])
         {"samples",1,0,'s'},
         {"split-by-ID",1,0,'i'},
         {"targets",1,0,'t'},
+        {"fasta-ref",1,0,'F'},
         {0,0,0,0}
     };
-    while ((c = getopt_long(argc, argv, "hc:fr:e:s:d:i1t:",loptions,NULL)) >= 0) {
+    while ((c = getopt_long(argc, argv, "hc:fr:e:s:d:i1t:F:",loptions,NULL)) >= 0) {
         switch (c) {
+            case 'F': args->ref_fname = optarg; break;
             case 't': args->targets_fname = optarg; break;
             case 'c':
                 if ( !strcmp(optarg,"snps") ) args->files->collapse |= COLLAPSE_SNPS;
