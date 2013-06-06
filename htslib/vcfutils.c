@@ -155,7 +155,6 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
     }
     #undef BRANCH
 
-
     int rm_als = 0, nrm = 0;
     for (i=1; i<line->n_allele; i++) 
     {
@@ -221,20 +220,23 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                 default: fprintf(stderr, "[E::%s] todo: %d at %s:%d\n", __func__, gt->type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
             }
             #undef BRANCH
-
         }
     }
 
-    // remove from Number=G fields. Assuming haploid or diploid GTs
     int nG_ori = line->n_allele*(line->n_allele + 1)/2;
     int nG_new = (line->n_allele - nrm)*(line->n_allele - nrm + 1)/2;
+    int nA_ori = line->n_allele - 1;
+    int nA_new = line->n_allele-nrm - 1;
+
+    // remove from Number=G and Number=A FORMAT fields. Assuming haploid or diploid GTs
     for (i=0; i<(int)line->n_fmt; i++)
     {
         bcf_fmt_t *fmt = &line->d.fmt[i];
 
-        if ( ((header->id[BCF_DT_ID][fmt->id].val->info[BCF_HL_FMT]>>8)&0xf) == BCF_VL_G )
+        if ( ((header->id[BCF_DT_ID][fmt->id].val->info[BCF_HL_FMT]>>8)&0xf) == BCF_VL_G ) // FORMAT/Number==G
         {
-            assert( fmt->n==nG_ori );
+            if (fmt->type==BCF_BT_CHAR) { continue; } // todo: support for strings
+            assert( fmt->n==nG_ori || fmt->n==line->n_allele ); // diploid or haploid
 
             #define BRANCH(type_t,is_missing,is_vector_end,set_vector_end) { \
                 for (j=0; j<line->n_sample; j++) \
@@ -244,7 +246,8 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                     for (k=0; k<nG_ori; k++) \
                         if ( is_vector_end ) break; \
                         else if ( !(is_missing) ) nset++; \
-                    if ( nset==nG_ori ) \
+                    if ( nset==0 ) set_vector_end; \
+                    else if ( nset==nG_ori ) \
                     { \
                         /* diploid */ \
                         int ia, ib, k_ori = 0, k_new = 0; \
@@ -281,9 +284,164 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
 
             fmt->n = nG_new;
         }
-        else if ( ((header->id[BCF_DT_ID][fmt->id].val->info[BCF_HL_FMT]>>8)&0xf) == BCF_VL_A )
+        else if ( ((header->id[BCF_DT_ID][fmt->id].val->info[BCF_HL_FMT]>>8)&0xf) == BCF_VL_A )  // FORMAT/Number==A
         {
-            fprintf(stderr, "[E::%s] todo A\n", __func__); exit(1);
+            if (fmt->type==BCF_BT_CHAR) { continue; } // todo: support for strings
+            assert( fmt->n==nA_ori );
+            
+            if (nA_new == 0)
+            {
+                // delete FORMAT field since it now has no length
+                int k;
+                for (k=i; k<(int)line->n_fmt; k++)
+                {
+                    line->d.fmt[k]=line->d.fmt[k+1];
+                }
+                line->n_fmt--; i--;
+                continue;
+            }
+            else
+            {
+                #define BRANCH_INT(type_t,missing) {         \
+                    type_t *p = (type_t *) fmt->p;  \
+                    int ia, j, k; \
+                    for (j=0; j<line->n_sample; j++) \
+                    { \
+                        for (ia=0, k=0; ia<line->n_allele; ia++) \
+                        {                                \
+                            if ( rm_mask & 1<<(ia+1) ) \
+                            { \
+                                p[ia] = missing; \
+                                continue; \
+                            } \
+                            if ( p[k] != missing ) \
+                            { \
+                                k++; \
+                                continue; \
+                            } \
+                            p[k] = p[ia]; \
+                            p[ia] = missing; \
+                            k++; \
+                        } \
+                        p += fmt->n; \
+                    } \
+                }
+                switch (fmt->type) {
+                    case BCF_BT_INT8:  BRANCH_INT(int8_t,INT8_MIN); break;
+                    case BCF_BT_INT16: BRANCH_INT(int16_t,INT16_MIN); break;
+                    case BCF_BT_INT32: BRANCH_INT(int32_t,INT32_MIN); break;
+                    case BCF_BT_FLOAT: BRANCH_INT(float,bcf_float_missing); break;
+                    default: fprintf(stderr, "[E::%s] todo: %d\n", __func__, fmt->type); exit(1); break;
+                }
+                #undef BRANCH_INT
+            }
+            fmt->n = nA_new;
+        }
+    }
+    // remove from Number=G and Number=A INFO fields.
+    for (i=0; i<(int)line->n_info; i++)
+    {
+        bcf_info_t *info = &line->d.info[i];
+        
+        if ( ((header->id[BCF_DT_ID][info->key].val->info[BCF_HL_INFO]>>8)&0xf) == BCF_VL_G ) // INFO/Number==G
+        {
+            if (info->type==BCF_BT_CHAR) { continue; } // todo: support for strings
+            assert( info->len==nG_ori );
+
+            #define BRANCH(type_t,is_missing,is_vector_end,set_vector_end) { \
+                type_t *p = (type_t *) (type_t *) info->vptr; \
+                int k, nset = 0; \
+                for (k=0; k<nG_ori; k++) \
+                    if ( is_vector_end ) break; \
+                    else if ( !(is_missing) ) nset++; \
+                if ( nset==0 ) return; \
+                if ( nset==nG_ori ) \
+                { \
+                    /* diploid */ \
+                    int ia, ib, k_ori = 0, k_new = 0; \
+                    for (ia=0; ia<line->n_allele; ia++) \
+                    { \
+                        for (ib=0; ib<=ia; ib++) \
+                        { \
+                            if ( rm_mask & 1<<ia || rm_mask & 1<<ib ) { k_ori++; continue; } \
+                            p[k_new] = p[k_ori]; \
+                            k_ori++; \
+                            k_new++; \
+                        } \
+                    } \
+                } \
+                else if ( nset==line->n_allele ) \
+                { \
+                    /* haploid */ \
+                    int k_ori, k_new = 0; \
+                    for (k_ori=0; k_ori<line->n_allele; k_ori++) \
+                        if ( !(rm_mask & 1<<k_ori) ) p[k_new++] = p[k_ori]; \
+                    for (; k_new<line->n_allele; k_new++) set_vector_end; \
+                } \
+                else { fprintf(stderr, "[E::%s] todo, missing values: %d %d\n", __func__, nset, nG_ori); exit(1); } \
+            }
+            switch (info->type) {
+                case BCF_BT_INT8:  BRANCH(int8_t,  p[k]==bcf_int8_missing,  p[k]==bcf_int8_vector_end,  p[k]=bcf_int8_vector_end); break;
+                case BCF_BT_INT16: BRANCH(int16_t, p[k]==bcf_int16_missing, p[k]==bcf_int16_vector_end, p[k]=bcf_int16_vector_end); break;
+                case BCF_BT_INT32: BRANCH(int32_t, p[k]==bcf_int32_missing, p[k]==bcf_int32_vector_end, p[k]=bcf_int32_vector_end); break;
+                case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[k]), bcf_float_is_vector_end(p[k]), bcf_float_set_vector_end(p[k]) ); break;
+                default: fprintf(stderr, "[E::%s] todo: %d\n", __func__, info->type); exit(1); break;
+            }
+            #undef BRANCH
+            
+            info->len = nG_new;
+        }
+        else if ( ((header->id[BCF_DT_ID][info->key].val->info[BCF_HL_INFO]>>8)&0xf) == BCF_VL_A) // INFO/Number==A
+        {
+            if (info->type==BCF_BT_CHAR) { continue; } // todo: support for strings
+            assert( info->len==nA_ori );
+            
+            if (nA_new == 0)
+            {
+                // delete INFO field since it now has no length
+                int k;
+                for (k=i; k<(int)line->n_info; k++)
+                {
+                    line->d.info[k]=line->d.info[k+1];
+                }
+                line->n_info--; i--;
+                continue;
+            }
+            else
+            {
+                #define BRANCH(type_t,missing,vector_end) {         \
+                    type_t *p = (type_t *) info->vptr;  \
+                    int ia, j; \
+                    for (ia=0, j=0; ia<line->n_allele; ia++) \
+                    {                                \
+                        if ( rm_mask & 1<<(ia+1) ) \
+                        { \
+                            p[ia] = missing; \
+                            continue; \
+                        } \
+                        if ( p[j] != missing ) \
+                        { \
+                            j++; \
+                            continue; \
+                        } \
+                        p[j] = p[ia]; \
+                        p[ia] = missing; \
+                        j++; \
+                    } \
+                    if (nA_new == 1) { \
+                        info->v1.i = p[0]; \
+                    } \
+                }
+                switch (info->type) {
+                    case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
+                    case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
+                    case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
+                    case BCF_BT_FLOAT: BRANCH(float, bcf_float_missing, bcf_float_vector_end); break;
+                    default: fprintf(stderr, "[E::%s] todo: %d\n", __func__, info->type); exit(1); break;
+                }
+                #undef BRANCH
+            }
+            info->len = nA_new;
         }
     }
     line->n_allele -= nrm;
@@ -291,6 +449,3 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
     free(map);
     return;
 }
-
-
-
