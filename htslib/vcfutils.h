@@ -73,7 +73,7 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which);
 #define GT_HET_RA 2
 #define GT_HET_AA 3
 #define GT_UNKN   4
-inline int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial);
+int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial);
 
 static inline int bcf_acgt2int(char c)
 {
