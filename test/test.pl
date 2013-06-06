@@ -203,7 +203,7 @@ sub test_vcf_check
 {
     my ($opts,%args) = @_;
     bgzip_tabix_vcf($opts,$args{in});
-    test_cmd($opts,%args,cmd=>"$$opts{bin}/htscmd vcfcheck -s - $$opts{tmp}/$args{in}.vcf.gz | grep -v '^# The command' | grep -v '^ID\t'");
+    test_cmd($opts,%args,cmd=>"$$opts{bin}/htscmd vcfcheck -s - $$opts{tmp}/$args{in}.vcf.gz | grep -v '^# The command' | grep -v '^# This' | grep -v '^ID\t'");
 }
 sub test_vcf_merge
 {
@@ -252,6 +252,6 @@ sub test_vcf_norm
 {
     my ($opts,%args) = @_;
     bgzip_tabix_vcf($opts,$args{in});
-    test_cmd($opts,%args,cmd=>"$$opts{bin}/htscmd vcfnorm -f $$opts{path}/$args{fai}.fa $$opts{tmp}/$args{in}.vcf.gz");
+    test_cmd($opts,%args,cmd=>"$$opts{bin}/htscmd vcfnorm -f $$opts{path}/$args{fai}.fa $$opts{tmp}/$args{in}.vcf.gz | grep -v ^##vcfnorm");
 }
 
