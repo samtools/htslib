@@ -1408,13 +1408,18 @@ static int sync_site(bcf_hdr_t *hdr, bcf1_t *line, site_t *site, int type)
             site->pos = strtol(t+1, NULL, 10);
         }
         if ( !(line->d.var_type & type) ) return 0;
-        if ( line->pos+1 < site->pos || line->rid != site->rid ) return 0;
         if ( line->pos+1 == site->pos && line->rid == site->rid )
         {
             site->str.l = 0;
             return 1;
         }
-        assert( line->pos+1 <= site->pos || line->rid != site->rid );
+        if ( line->rid != site->rid ) 
+            error("Warning: The sites file positioned on different chromosome (%s vs %s), did you want to run with the -r option?\n", 
+                    hdr->id[BCF_DT_CTG][site->rid].key,hdr->id[BCF_DT_CTG][line->rid].key);
+        if ( line->pos+1 < site->pos ) return 0;
+        if ( line->pos+1 > site->pos && line->rid == site->rid ) 
+            error("The the sites file is out of sync, was it created from different VCF? The conflicting site is %s:%d vs %d\n", 
+                hdr->id[BCF_DT_CTG][line->rid].key, site->pos,line->pos+1);
         break;
     }
     return 0;

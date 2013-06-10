@@ -46,6 +46,9 @@ static void plot_check(args_t *args)
             "import matplotlib.gridspec as gridspec\n"
             "import csv\n"
             "csv.register_dialect('tab', delimiter='\\t', quoting=csv.QUOTE_NONE)\n"
+            "\n"
+            "sample_ids = False\n"
+            "\n"
             "dat = []\n"
             "with open('%s.tab', 'rb') as f:\n"
             "    reader = csv.reader(f, 'tab')\n"
@@ -53,7 +56,7 @@ static void plot_check(args_t *args)
             "        if row[0][0]=='#': continue\n"
             "        tgt = 0\n"
             "        if row[4]=='%s': tgt = 1\n"
-            "        dat.append([float(row[0]), float(row[1]), float(row[2]), tgt])\n"
+            "        dat.append([float(row[0]), float(row[1]), float(row[2]), tgt, row[4]])\n"
             "\n"
             "dat = sorted(dat, reverse=True)\n"
             "\n"
@@ -82,6 +85,10 @@ static void plot_check(args_t *args)
             "ax2.set_xlim(-1 - 0.01*len(dat))\n"
             "ax3.set_xlim(-1 - 0.01*len(dat))\n"
             "ax3.set_xlabel('Sample ID')\n"
+            "if sample_ids:\n"
+            "   ax3.set_xticks(range(len(dat)))\n"
+            "   ax3.set_xticklabels([x[4] for x in dat],**{'rotation':45, 'ha':'right', 'fontsize':8})\n"
+            "   plt.subplots_adjust(bottom=0.15)\n"
             "ax3.set_ylabel('Avg DP')\n"
             "ax1.set_ylabel('Concordance',color='g')\n"
             "ax2.set_ylabel('Uncertainty',color='r')\n"
@@ -281,7 +288,7 @@ static void check_gt(args_t *args)
         if ( tgt_isample>=0 )
         {
             print_header(args, stdout);
-            printf("# [1]Chromosome\t[2]Position\t[3]Alleles in -g file\t[4]Coverage\t[5]Genotype\t[6]Alleles in sample file\t[7-]PL likelihoods\n");
+            printf("# [1]Chromosome\t[2]Position\t[3]Alleles in -g file\t[4]Genotype\t[5]Coverage\t[6]Alleles in sample file\t[7-]PL likelihoods\n");
         }
     }
     if ( args->query_sample )
@@ -364,7 +371,7 @@ static void check_gt(args_t *args)
             if ( args->hom_only && a!=b ) continue; // heterozygous genotype
             printf("%s\t%d", args->gt_hdr->id[BCF_DT_CTG][gt_line->rid].key, gt_line->pos+1);
             for (i=0; i<gt_line->n_allele; i++) printf("%c%s", i==0?'\t':',', gt_line->d.allele[i]);
-            printf("\t%d\t%s/%s", dp_inf->v1.i, a>=0 ? gt_line->d.allele[a] : ".", b>=0 ? gt_line->d.allele[b] : ".");
+            printf("\t%s/%s", a>=0 ? gt_line->d.allele[a] : ".", b>=0 ? gt_line->d.allele[b] : ".");
             if (a>=0 || b>=0) igt = a<=b ? bcf_ij2G(a,b) : bcf_ij2G(b,a);
         }
 
@@ -405,7 +412,7 @@ static void check_gt(args_t *args)
         {
             // per-site listing of the query sample in the query file
             int *pl_ptr = pl_arr + query_isample*pl_fmt->n; // PLs of the query sample
-            printf("\t%d", igt<0 ? '.' : pl_ptr[ gt2ipl[igt] ]);
+            printf("\t%d", dp_inf->v1.i);
             for (i=0; i<sm_line->n_allele; i++) printf("%c%s", i==0?'\t':',', sm_line->d.allele[i]); 
             for (igt=0; igt<pl_fmt->n; igt++)   
                 if ( pl_ptr[igt]==bcf_int32_vector_end ) break;
@@ -607,6 +614,7 @@ static char *init_prefix(char *prefix)
 static void usage(void)
 {
 	fprintf(stderr, "About:   Check sample identity. With no -g VCF given, multi-sample cross-check is performed.\n");
+	fprintf(stderr, "         With -s but no -p, likelihoods at all sites are printed.\n");
 	fprintf(stderr, "Usage:   vcfgtcheck [options] [-g <genotypes.vcf.gz>] <query.vcf.gz>\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "    -g, --genotypes <file>             genotypes to compare against in VCF\n");

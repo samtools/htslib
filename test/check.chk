@@ -10,7 +10,7 @@ SN	0	number of indels:	12
 SN	0	number of others:	2
 SN	0	number of multiallelic sites:	6
 SN	0	number of multiallelic SNP sites:	1
-# TSTV, transition/transversions:
+# TSTV, transitions/transversions:
 # TSTV	[2]id	[3]ts	[4]tv	[5]ts/tv	[6]ts (1st ALT)	[7]tv (1st ALT)	[8]ts/tv (1st ALT)
 TSTV	0	0	2	0.00	0	1	0.00
 # Sis, Singleton stats:
