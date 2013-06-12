@@ -28,6 +28,7 @@ if ( $$opts{make_plots} )
 	init_plots($opts);
 	plot_venn_bars($opts);
 	plot_counts_by_AF($opts);
+    plot_overlap_by_AF($opts);
 	plot_concordance_by_AF($opts);
 	plot_concordance_by_sample($opts);
 	for my $id (file_ids($opts))
@@ -1122,6 +1123,74 @@ sub plot_counts_by_AF_col
 
 }
 
+sub plot_overlap_by_AF
+{
+	my ($opts) = @_;
+	plot_overlap_by_AF_col($opts,1,'SNP');
+	plot_overlap_by_AF_col($opts,4,'Indel');
+}
+
+sub plot_overlap_by_AF_col
+{
+	my ($opts,$col,$title) = @_;
+
+    my @ids  = file_ids($opts);
+    if ( @ids != 3 ) { return; }
+
+    my ($ia,$ib,$iab);
+    for (my $i=0; $i<@ids; $i++)
+    {
+        if ( @{$$opts{dat}{ID}{$ids[$i]}[0]}>1 ) { $iab = $i; next; }
+        if ( !defined $ia ) { $ia = $i; next; }
+        $ib = $i;
+    }
+
+    my $fh  = $$opts{plt_fh};
+	my $img = "$$opts{prefix}overlap_by_af.".lc($title)."s";
+    my @has_vals;
+
+    my @vals_a  = get_values($opts,$ia,'AF');
+    my @vals_b  = get_values($opts,$ib,'AF');
+    my @vals_ab = get_values($opts,$iab,'AF');
+
+    my (%afs,%af_a,%af_ab);
+    for my $val (@vals_a) { $afs{$$val[0]} = $$val[$col]; $af_a{$$val[0]} = $$val[$col]; }
+    for my $val (@vals_ab) { $afs{$$val[0]} = $$val[$col]; $af_ab{$$val[0]} = $$val[$col]; }
+
+    iprint $fh, "
+        dat = [
+    ";
+    for my $af (sort { $a<=>$b } keys %afs)
+    {
+        my $a  = exists($af_a{$af})  ? $af_a{$af}  : 0; 
+        my $ab = exists($af_ab{$af}) ? $af_ab{$af} : 0; 
+        my $yval =  $ab * 100. / ($a + $ab);
+        iprint $fh, "[ $af, $yval ],\n";
+    }
+
+	iprint $fh, "
+        ]
+
+        fig = plt.figure(figsize=(2*$$opts{img_width},$$opts{img_height}*0.7))
+        ax1 = fig.add_subplot(111)
+        ax1.plot([row[0] for row in dat], [row[1] for row in dat],'-o',markersize=3, color='$$opts{id2col}[1]',mec='$$opts{id2col}[1]')
+        ax1.set_ylabel('Fraction found in $$opts{title}{$ib} [%]')
+        ax1.set_xscale('log')
+        ax1.set_xlabel('Non-reference allele frequency in $$opts{title}{$ia} [%]')
+        ax1.set_xlim(0,11)
+        ax1.set_xticks([0.1,0.2,0.5,1,2,5,10])
+        ax1.set_xticklabels([0.1,0.2,0.5,1,2,5,10])
+        plt.title('$title overlap by AF')
+        plt.subplots_adjust(bottom=0.2,left=0.1,right=0.95)
+        plt.savefig('$img.png')
+        if pdf_plots: plt.savefig('$img.pdf')
+        plt.close()
+
+    ";
+
+}
+
+
 sub plot_indel_distribution
 {
 	my ($opts,$id) = @_;
@@ -1558,6 +1627,15 @@ sub create_pdf
 	    	%
 	    	\\hslide{}{\\vbox{\\noindent\\includegraphics[$ext,width=$width1]{$$opts{lprefix}counts_by_af.snps}\\\\%
 	    		\\noindent\\includegraphics[$ext,width=$width1]{$$opts{lprefix}counts_by_af.indels}}}
+	    	];
+    }
+    if ( -e "$$opts{lprefix}overlap_by_af.snps.$fmt" && -e "$$opts{lprefix}overlap_by_af.indels.$fmt" )
+    {
+	    iprint $tex, qq[
+	    	% SNP and indel overlap by AF
+	    	%
+	    	\\hslide{}{\\vbox{\\noindent\\includegraphics[$ext,width=$width1]{$$opts{lprefix}overlap_by_af.snps}\\\\%
+	    		\\noindent\\includegraphics[$ext,width=$width1]{$$opts{lprefix}overlap_by_af.indels}}}
 	    	];
     }
 	iprint $tex, fmt_slide3h($opts, "$$opts{lprefix}tstv_by_af", 'Ts/Tv by AF');
