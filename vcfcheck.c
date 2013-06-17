@@ -917,7 +917,7 @@ static void usage(void)
     fprintf(stderr, "    -d, --depth <int,int,int>         depth distribution: min,max,bin size [0,500,1]\n");
     fprintf(stderr, "        --debug                       produce verbose per-site and per-sample output\n");
     fprintf(stderr, "    -e, --exons <file.gz>             tab-delimited file with exons for indel frameshifts (chr,from,to; 1-based, inclusive, bgzip compressed)\n");
-    fprintf(stderr, "    -f, --apply-filters               skip sites where FILTER is other than PASS\n");
+    fprintf(stderr, "    -f, --apply-filters <list>        require at least one of the listed FILTER strings (e.g. \"PASS,.\")\n");
     fprintf(stderr, "    -F, --fasta-ref <file>            faidx indexed reference sequence file to determine INDEL context\n");
     fprintf(stderr, "    -i, --split-by-ID                 collect stats for sites with ID separately (known vs novel)\n");
     fprintf(stderr, "    -r, --region <chr|chr:from-to>    collect stats in the given region only\n");
@@ -941,7 +941,7 @@ int main_vcfcheck(int argc, char *argv[])
         {"collapse",1,0,'c'},
         {"debug",0,0,1},
         {"depth",1,0,'d'},
-        {"apply-filters",0,0,'f'},
+        {"apply-filters",1,0,'f'},
         {"exons",1,0,'e'},
         {"samples",1,0,'s'},
         {"split-by-ID",1,0,'i'},
@@ -949,7 +949,7 @@ int main_vcfcheck(int argc, char *argv[])
         {"fasta-ref",1,0,'F'},
         {0,0,0,0}
     };
-    while ((c = getopt_long(argc, argv, "hc:fr:e:s:d:i1t:F:",loptions,NULL)) >= 0) {
+    while ((c = getopt_long(argc, argv, "hc:r:e:s:d:i1t:F:f:",loptions,NULL)) >= 0) {
         switch (c) {
             case 'F': args->ref_fname = optarg; break;
             case 't': args->targets_fname = optarg; break;
@@ -966,7 +966,7 @@ int main_vcfcheck(int argc, char *argv[])
                 if ( args->dp_min<0 || args->dp_min >= args->dp_max || args->dp_step > args->dp_max - args->dp_min + 1 )
                     error("Is this a typo? --depth %s\n", optarg);
                 break;
-            case 'f': args->files->apply_filters = 1; break;
+            case 'f': args->files->apply_filters = optarg; break;
             case 'r': args->files->region = optarg; break;
             case 'e': args->exons_file = optarg; break;
             case 's': args->samples_file = optarg; break;

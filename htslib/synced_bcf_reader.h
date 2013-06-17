@@ -48,7 +48,8 @@ typedef struct
 	const char *fname;
 	bcf1_t **buffer;
 	int nbuffer, mbuffer;
-	int filter_id, type;
+	int nfilter_ids, *filter_ids;   // -1 for ".", otherwise filter id as returned by bcf_id2int
+    int type;
 	int *samples, n_smpl;	// list of columns in the order consistent with bcf_srs_t.samples
 }
 bcf_sr_t;
@@ -57,10 +58,11 @@ typedef struct
 {
 	// Parameters controlling the logic
 	int collapse;  // How should the duplicate sites be treated
-	int apply_filters;	// If set to non-zero, sites with FILTER value other
-						// than "." or "PASS" will be skipped. Active only at
-						// the time of initialization, that is during the
-						// add_reader() calls.
+    char *apply_filters;    // If set, sites where none of the FILTER strings is listed
+                            // will be skipped. Active only at the time of
+                            // initialization, that is during the add_reader()
+                            // calls. Therefore, each reader can be initialized with different
+                            // filters.
     int require_index;  // Some tools do not need random access
     const char *region; // Jump to a region (this will set also require_index)
     int max_unpack;     // When reading VCFs and knowing some fields will not be needed, boost performance of vcf_parse1
