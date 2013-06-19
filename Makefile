@@ -9,7 +9,7 @@ INCLUDES=	-Ihtslib
 PROG=		htscmd
 
 .SUFFIXES:.c .o
-.PHONY:all lib
+.PHONY:all lib test
 
 .c.o:
 		$(CC) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) $< -o $@
@@ -19,6 +19,8 @@ all:$(PROG)
 git-stamp:
 		make VERSION="-DVERSION='\"`git describe --always --dirty`\"'"
 
+test:
+		./test/test.pl
 lib:
 		cd htslib; $(MAKE) CC="$(CC)" CFLAGS="$(CFLAGS)" libhts.a || exit 1; cd ..
 

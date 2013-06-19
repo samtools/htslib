@@ -344,6 +344,8 @@ static int align(args_t *args, aln_aux_t *aux)
 
     i = k/(nref+1);
     j = k - i*(nref+1);
+    if ( !i && !j ) return -1;  // this is a legitimate case, consider MNPs
+
     assert(i>0 && j>0);
     int l = k, nout_ref = ipos, nout_seq = ipos, nsuffix = 0;
     while ( l>0 )
@@ -469,7 +471,9 @@ int realign(args_t *args, bcf1_t *line)
 
     // Check if the record's position must be changed
     int nmv = win - min_pos;
-    assert( nmv>=0 );   // assuming that it will never align more to the right
+    // This assertion that we will never want align more to the right is too
+    // strong, consider cases like GATG -> GACT 
+    //  assert( nmv>=0 );
     line->pos -= nmv;
 
     // todo: 
