@@ -24,12 +24,12 @@ typedef struct
     int n_snps, n_indels, n_mnps, n_others, n_mals, n_snp_mals;
     int n_repeat[3];    // number of indels which are repeat-consistent, repeat-inconsistent, and not applicable
     int *af_ts, *af_tv, *af_snps, *af_indels;   // first bin of af_* stats are singletons
-    int ts_ac1, tv_ac1;
+    int ts_alt1, tv_alt1;
     #if QUAL_STATS
         int *qual_ts, *qual_tv, *qual_snps, *qual_indels;
     #endif
     int *insertions, *deletions, m_indel;   // maximum indel length
-    int in_frame, out_frame;
+    int in_frame, out_frame, na_frame, in_frame_alt1, out_frame_alt1, na_frame_alt1;
     int subst[15];
     int *smpl_hets, *smpl_homRR, *smpl_homAA, *smpl_ts, *smpl_tv, *smpl_indels, *smpl_ndp, *smpl_sngl;
     unsigned long int *smpl_dp;
@@ -415,9 +415,9 @@ static void do_indel_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
     bcf_sr_pos_t *reg = NULL, *reg_next = NULL;
     if ( args->regions.nseqs )
     {
-        if ( args->files->iseq!=args->prev_reg )
+        if (  args->files->iseq<0 ||  args->files->iseq!=args->prev_reg )
         {
-            reset_regions(&args->regions, args->files->seqs[args->files->iseq]);
+            reset_regions(&args->regions, reader->header->id[BCF_DT_CTG][line->rid].key);
             args->prev_reg = args->files->iseq;
         }
         reg = is_in_regions(&args->regions, line->pos+1);
@@ -453,8 +453,16 @@ static void do_indel_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
             if ( tlen%3 ) stats->out_frame++;
             else stats->in_frame++;
 
-            //if ( tlen%3 ) printf("%s\t%d\t%d\t%d\tframeshift (tlen=%d, next=%d)\n", args->files->seqs[args->files->iseq],line->pos+1,reg->from,reg->to,tlen,reg_next);
-            //else printf("%s\t%d\t%d\t%d\tin-frame\n", args->files->seqs[args->files->iseq],line->pos+1,reg->from,reg->to);
+            if ( i==1 )
+            {
+                if ( tlen%3 ) stats->out_frame_alt1++;
+                else stats->in_frame_alt1++;
+            }
+        }
+        else
+        {
+            if ( i==1 ) stats->na_frame_alt1++;
+            stats->na_frame++;
         }
 
         // Indel length distribution
@@ -507,7 +515,7 @@ static void do_snp_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
         stats->af_snps[iaf]++;
         if ( abs(ref-alt)==2 ) 
         {
-            if (i==1) stats->ts_ac1++;
+            if (i==1) stats->ts_alt1++;
             stats->af_ts[iaf]++;
             #if QUAL_STATS
                 stats->qual_ts[iqual]++;
@@ -515,7 +523,7 @@ static void do_snp_stats(args_t *args, stats_t *stats, bcf_sr_t *reader)
         }
         else 
         {
-            if (i==1) stats->tv_ac1++;
+            if (i==1) stats->tv_alt1++;
             stats->af_tv[iaf]++;
             #if QUAL_STATS
                 stats->qual_tv[iqual]++;
@@ -755,20 +763,21 @@ static void print_stats(args_t *args)
         stats_t *stats = &args->stats[id];
         int ts=0,tv=0;
         for (i=0; i<args->m_af; i++) { ts += stats->af_ts[i]; tv += stats->af_tv[i];  }
-        printf("TSTV\t%d\t%d\t%d\t%.2f\t%d\t%d\t%.2f\n", id,ts,tv,tv?(float)ts/tv:0, stats->ts_ac1,stats->tv_ac1,stats->tv_ac1?(float)stats->ts_ac1/stats->tv_ac1:0);
+        printf("TSTV\t%d\t%d\t%d\t%.2f\t%d\t%d\t%.2f\n", id,ts,tv,tv?(float)ts/tv:0, stats->ts_alt1,stats->tv_alt1,stats->tv_alt1?(float)stats->ts_alt1/stats->tv_alt1:0);
     }
     if ( args->exons_file )
     {
-        printf("# FS, Indel frameshifts:\n# FS\t[2]id\t[3]in-frame\t[4]out-frame\t[5]out/(in+out) ratio\n");
+        printf("# FS, Indel frameshifts:\n# FS\t[2]id\t[3]in-frame\t[4]out-frame\t[5]not applicable\t[6]out/(in+out) ratio\t[7]in-frame (1st ALT)\t[8]out-frame (1st ALT)\t[9]not applicable (1st ALT)\t[10]out/(in+out) ratio (1st ALT)\n");
         for (id=0; id<args->nstats; id++)
         {
-            int in=args->stats[id].in_frame, out=args->stats[id].out_frame;
-            printf("FS\t%d\t%d\t%d\t%.2f\n", id, in,out,out?(float)out/(in+out):0);
+            int in=args->stats[id].in_frame, out=args->stats[id].out_frame, na=args->stats[id].na_frame;
+            int in1=args->stats[id].in_frame_alt1, out1=args->stats[id].out_frame_alt1, na1=args->stats[id].na_frame_alt1;
+            printf("FS\t%d\t%d\t%d\t%d\t%.2f\t%d\t%d\t%d\t%.2f\n", id, in,out,na,out?(float)out/(in+out):0,in1,out1,na1,out1?(float)out1/(in1+out1):0);
         }
     }
     if ( args->indel_ctx )
     {
-        printf("# IC, Indel context:\n# IC\t[2]id\t[3]repeat-consistent\t[4]repeat-inconsistent\t[5]not applicable\t[6]c/(c+i) ratio\n");
+        printf("# IC, Indel context (1st ALT):\n# IC\t[2]id\t[3]repeat-consistent\t[4]repeat-inconsistent\t[5]not applicable\t[6]c/(c+i) ratio\n");
         for (id=0; id<args->nstats; id++)
         {
             int nc = args->stats[id].n_repeat[0], ni = args->stats[id].n_repeat[1], na = args->stats[id].n_repeat[2];
