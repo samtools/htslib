@@ -23,7 +23,7 @@ typedef struct
     int nbin, kdim;     // number of bins and dimension
     int nt, t;          // total number of learning cycles and the current cycle
     double *w, *c;      // weights and counts (sum of learning influence)
-    double radius, decay, learn, th;     // SOM parameters
+    double learn, th;   // SOM parameters
 }
 som_t;
 
@@ -1012,12 +1012,11 @@ static void som_train(som_t *som, double *vec)
         }
     }
 
-    // calculate the radius
     som->t++;
-    double radius = som->radius * exp(-som->t/som->decay);
-    radius *= radius;
 
-    double learning_rate = som->learn * exp(-som->t/som->decay);
+    double radius = som->nbin * exp(-som->t/som->nt);
+    radius *= radius;
+    double learning_rate = som->learn * exp(-som->t/som->nt);
 
     // update the weights
     ptr = som->w;
@@ -1080,14 +1079,12 @@ static void som_init(args_t *args)
     int i, j;
     som_t *som  = &args->som;
     som->kdim   = args->nann_som;
-    som->radius = som->nbin / 2;
     som->w      = (double*) malloc(sizeof(double) * som->kdim * som->nbin * som->nbin);
     som->c      = (double*) calloc(som->nbin*som->nbin, sizeof(double));
     int n = INT_MAX;
     for (i=0; i<args->nann_som; i++)
         if ( args->dists[args->ann2cols[i]].ngood < n ) n = args->dists[args->ann2cols[i]].ngood;
     if ( !som->nt || som->nt > n ) som->nt = n;
-    som->decay  = som->nt / log(som->radius);
     srandom(args->rand_seed);
     int n3 = som->nbin * som->nbin * som->kdim;
     for (i=0; i<n3; i++)

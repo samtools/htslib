@@ -1167,7 +1167,7 @@ sub plot_overlap_by_AF_col
     {
         my $a  = exists($af_a{$af})  ? $af_a{$af}  : 0; 
         my $ab = exists($af_ab{$af}) ? $af_ab{$af} : 0; 
-        my $yval =  $ab * 100. / ($a + $ab);
+        my $yval =  ($a+$ab) ? $ab * 100. / ($a + $ab) : 0;
         iprint $fh, "[ $af, $yval ],\n";
     }
 
