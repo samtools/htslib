@@ -49,9 +49,7 @@ typedef struct {
     void *uncompressed_block, *compressed_block;
 	void *cache; // a pointer to a hash table
 	void *fp; // actual file handler; FILE* on writing; FILE* or knetFile* on reading
-#ifdef BGZF_MT
 	void *mt; // only used for multi-threading
-#endif
 } BGZF;
 
 #ifndef KSTRING_T
@@ -193,16 +191,15 @@ extern "C" {
 	 */
 	int bgzf_read_block(BGZF *fp);
 
-#ifdef BGZF_MT
 	/**
-	 * Enable multi-threading (only effective on writing)
+	 * Enable multi-threading (only effective on writing and when the
+	 * library was compiled with -DBGZF_MT)
 	 *
 	 * @param fp          BGZF file handler; must be opened for writing
 	 * @param n_threads   #threads used for writing
 	 * @param n_sub_blks  #blocks processed by each thread; a value 64-256 is recommended
 	 */
 	int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks);
-#endif
 
 #ifdef __cplusplus
 }
