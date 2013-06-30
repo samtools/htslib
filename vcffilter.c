@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <getopt.h>
 #include <ctype.h>
@@ -48,6 +49,7 @@ typedef struct
 {
     int type;           // one of the FLT_* keys above
     double value;       // threshold to use for filtering
+    char *desc;         // for annotating the FILTER column
 }
 filter_t;
 
@@ -98,7 +100,7 @@ typedef struct
     int rand_seed;
     char *annot_str, *fixed_filters, *learning_filters;
 	char **argv, *fname, *out_prefix, *region, *ref_fname;
-	int argc, do_plot;
+	int argc, do_plot, unset_unknowns;
 }
 args_t;
 
@@ -537,7 +539,7 @@ static void plot_dists(args_t *args, dist_t *dists, int ndist)
 }
 static void init_filters(args_t *args, filters_t *filts, char *str, int scale);
 static void destroy_filters(filters_t *filt);
-static int pass_filters(filters_t *filt, double *vec);
+static uint64_t failed_filters(filters_t *filt, double *vec);
 
 static void create_dists(args_t *args)
 {
@@ -586,7 +588,7 @@ static void create_dists(args_t *args)
     while ( annots_reader_next(args) )
     {
         if ( args->type != args->filt_type ) continue;
-        int is_bad = tmp_flt && tmp_flt->nfilt && !pass_filters(tmp_flt, args->raw_vals) ? 1 : 0;
+        int is_bad = tmp_flt && tmp_flt->nfilt && failed_filters(tmp_flt, args->raw_vals) ? 1 : 0;
         for (i=0; i<args->nann; i++)
         {
             if ( args->missing[i] )
@@ -822,9 +824,10 @@ static void destroy_annots(args_t *args)
     if ( args->raw_vals ) free(args->raw_vals);
 }
 
-static int pass_filters(filters_t *filt, double *vec)
+static uint64_t failed_filters(filters_t *filt, double *vec)
 {
-    int i, j;
+    uint64_t failed = 0;
+    int i, j, k = 0;
     for (i=0; i<filt->n; i++)
     {
         if ( !filt->nfilt[i] ) continue;
@@ -832,15 +835,16 @@ static int pass_filters(filters_t *filt, double *vec)
         {
             switch (filt->filt[i][j].type) 
             {
-                case FLT_BE: if ( vec[i] < filt->filt[i][j].value ) return 0; break;
-                case FLT_BT: if ( vec[i] <= filt->filt[i][j].value ) return 0; break;
-                case FLT_EQ: if ( vec[i] != filt->filt[i][j].value ) return 0; break;
-                case FLT_LT: if ( vec[i] >= filt->filt[i][j].value ) return 0; break;
-                case FLT_LE: if ( vec[i] > filt->filt[i][j].value ) return 0; break;
+                case FLT_BE: if ( vec[i] < filt->filt[i][j].value )  failed |= 1<<k; break;
+                case FLT_BT: if ( vec[i] <= filt->filt[i][j].value ) failed |= 1<<k; break;
+                case FLT_EQ: if ( vec[i] != filt->filt[i][j].value ) failed |= 1<<k; break;
+                case FLT_LT: if ( vec[i] >= filt->filt[i][j].value ) failed |= 1<<k; break;
+                case FLT_LE: if ( vec[i] > filt->filt[i][j].value )  failed |= 1<<k; break;
             }
+            k++;
         }
     }
-    return 1;
+    return failed;
 }
 static void init_filters(args_t *args, filters_t *filts, char *str, int scale)
 {
@@ -856,10 +860,12 @@ static void init_filters(args_t *args, filters_t *filts, char *str, int scale)
         e++;
     }
 
-    kstring_t left = {0,0,0}, right = {0,0,0};
+    kstring_t left = {0,0,0}, right = {0,0,0}, tmp = {0,0,0};
     int type = 0;
+    int nfilt_tot = 0;
 
     e = s = args->str.s;
+    char *f = s;
     while ( *e )
     {
         if ( *e=='&' ) { s = ++e; continue; }
@@ -867,6 +873,7 @@ static void init_filters(args_t *args, filters_t *filts, char *str, int scale)
         {
             left.l = 0;
             kputsn(s, e-s, &left);
+            f = s;
             s = e;
             while ( *e && (*e=='<' || *e=='>' || *e=='=') ) e++;
             if ( !*e ) error("Could not parse filter expression: %s\n", str);
@@ -906,28 +913,41 @@ static void init_filters(args_t *args, filters_t *filts, char *str, int scale)
                 init_extra_annot(args, ann);
                 filts->n = args->nann;
             }
+            tmp.l = 0;
+            ksprintf(&tmp, "%s\t", args->colnames[i]); kputsn(f, e-f, &tmp);
+
             i = args->col2names[i];
             filts->nfilt[i]++;
+            nfilt_tot++;
             filts->filt[i] = (filter_t*) realloc(filts->filt[i],sizeof(filter_t)*filts->nfilt[i]);
             filter_t *filt = &filts->filt[i][filts->nfilt[i]-1];
             filt->type = type;
             if ( sscanf(s,"%le",&filt->value)!=1 ) error("Could not parse filter expression: %s\n", args->fixed_filters);
             if ( scale )
                 filt->value = scale_value(&args->dists[args->ann2cols[i]], filt->value);
+            filt->desc = strdup(tmp.s);
             s = e;
             continue;
         }
         e++;
     }
+    if ( tmp.m ) free(tmp.s);
     if ( left.m ) free(left.s);
     if ( right.m ) free(right.s);
+    if ( nfilt_tot > sizeof(uint64_t)-1 ) error("Uh, too many hard-filters: %d\n", nfilt_tot);
 }
 static void destroy_filters(filters_t *filt)
 {
     if ( !filt->nfilt ) return;
     int i;
     for (i=0; i<filt->n; i++)
-        if ( filt->filt[i] ) free(filt->filt[i]);
+    {
+        if ( filt->filt[i] ) 
+        {
+            if ( filt->filt[i]->desc ) free(filt->filt[i]->desc);
+            free(filt->filt[i]);
+        }
+    }
     free(filt->filt);
     free(filt->nfilt);
 }
@@ -1104,7 +1124,7 @@ static void som_init(args_t *args)
         //  fail hard filters.
         //
         if ( args->nset != args->nann ) continue;
-        if ( args->filt_excl.nfilt && !pass_filters(&args->filt_excl, args->raw_vals) ) 
+        if ( args->filt_excl.nfilt && failed_filters(&args->filt_excl, args->raw_vals) ) 
         {
             i = nbad_vals < bad_som->nt ? nbad_vals : (double)(bad_som->nt-1)*random()/RAND_MAX;
             assert( i>=0 && i<bad_som->nt );
@@ -1118,7 +1138,7 @@ static void som_init(args_t *args)
         if ( !IS_GOOD(args->mask) )
         {
             if ( !args->filt_learn.nfilt ) continue;    // this is supervised learning, ignore non-training sites
-            if ( !pass_filters(&args->filt_learn, args->vals) ) continue;
+            if ( failed_filters(&args->filt_learn, args->vals) ) continue;
         }
         i = nvals < som->nt ? nvals : (double)(som->nt-1)*random()/RAND_MAX;
         assert( i>=0 && i<som->nt );
@@ -1205,13 +1225,26 @@ static void eval_filters(args_t *args)
 {
     init_data(args);
 
+    // Save fixed filters descriptions so that the FILTER field can be later annotated
+    if ( args->filt_excl.nfilt )
+    {
+        FILE *fp = open_file(NULL,"w","%s.filters", args->out_prefix);
+        int i, j;
+        for (i=0; i<args->filt_excl.n; i++)
+        {
+            if ( !args->filt_excl.nfilt[i] ) continue;
+            for (j=0; j<args->filt_excl.nfilt[i]; j++) fprintf(fp,"%s\n", args->filt_excl.filt[i][j].desc);
+        }
+        fclose(fp);
+    }
+
     char *fname; 
-    open_file(&fname,NULL,"%s.sites.gz", args->out_prefix); // creates also directory
+    open_file(&fname,NULL,"%s.sites.gz", args->out_prefix);
     htsFile *file = hts_open(fname, "wb", NULL);
 
     // Calculate scores
     kstring_t str = {0,0,0};
-    kputs("# [1]score\t[2]good SOM\t[3]bad SOM\t[4]variant class\t[5]mask, good(&2) or bad(&4)\t[6]chromosome\t[7]position\n", &str);
+    kputs("# [1]score\t[2]good SOM\t[3]bad SOM\t[4]variant class\t[5]filter mask, good(&1) or bad(&2,&4,..)\t[6]chromosome\t[7]position\n", &str);
     bgzf_write((BGZF *)file->fp, str.s, str.l);
     str.l = 0;
 
@@ -1224,24 +1257,28 @@ static void eval_filters(args_t *args)
         if ( args->type != args->filt_type ) continue;
         if ( args->nset != args->nann ) continue;
 
+        uint64_t flt_mask = 0;
         double dist = max_dist, bad_dist = 0;
-        if ( !args->filt_excl.nfilt || pass_filters(&args->filt_excl, args->raw_vals) )
+        if ( !args->filt_excl.nfilt || !(flt_mask=failed_filters(&args->filt_excl, args->raw_vals)) )
         {
             dist = som_calc_dist(&args->som, args->vals);
             if ( args->bad_som.nt ) bad_dist = som_calc_dist(&args->bad_som, args->vals);
             assert( dist>=0 && dist<=max_dist );
             assert( bad_dist>=0 && bad_dist<=max_dist );
         }
-        else
-            args->mask |= MASK_BAD;
         nall++;
 
-        if ( IS_GOOD(args->mask) ) ngood++;
+        flt_mask <<= 1;
+        if ( IS_GOOD(args->mask) ) 
+        {
+            flt_mask |= 1;
+            ngood++;
+        }
 
         str.l = 0;
         double score = dist/max_dist + (1-bad_dist/max_dist);
         int class = determine_variant_class(args);
-        ksprintf(&str, "%le\t%le\t%le\t%d\t%d\t%s\t%d\n", score, dist/max_dist, bad_dist/max_dist, class, args->mask, args->chr, args->pos);
+        ksprintf(&str, "%le\t%le\t%le\t%d\t%d\t%s\t%d\n", score, dist/max_dist, bad_dist/max_dist, class, flt_mask, args->chr, args->pos);
         bgzf_write((BGZF *)file->fp, str.s, str.l);
     }
     hts_close(file);
@@ -1305,7 +1342,7 @@ static void eval_filters(args_t *args)
 
         nall_read++;
         nclass[class]++;
-        if ( IS_GOOD(mask) ) ngood_read++;
+        if ( mask&1 ) ngood_read++;
         else if ( ngood ) nclass_novel[class]++;
 
         // Do not output anything until 10% of sites is scanned
@@ -1336,6 +1373,7 @@ typedef struct
     kstring_t str;
     double score;
     int rid, pos;
+    uint64_t flt_mask;
 }
 site_t;
 static void destroy_site(site_t *site)
@@ -1394,10 +1432,11 @@ static int sync_site(bcf_hdr_t *hdr, bcf1_t *line, site_t *site, int type)
             if ( !*t ) error("Could not parse bad-SOM score: [%s]\n", site->str.s);
             // IS_TS
             t = column_next(t+1, '\t');  
-            if ( !*t ) error("Could not parse IS_TS: [%s]\n", site->str.s);
-            // IS_GOOD mask
+            if ( !*t ) error("Could not parse variant class: [%s]\n", site->str.s);
+            // FILTER MASK
+            site->flt_mask = strtol(t+1, NULL, 10);
             t = column_next(t+1, '\t');  
-            if ( !*t ) error("Could not parse IS_GOOD: [%s]\n", site->str.s);
+            if ( !*t ) error("Could not parse FILTER MASK: [%s]\n", site->str.s);
             // CHR
             char *p = t+1;
             t = column_next(t+1, '\t');  
@@ -1408,19 +1447,81 @@ static int sync_site(bcf_hdr_t *hdr, bcf1_t *line, site_t *site, int type)
             site->pos = strtol(t+1, NULL, 10);
         }
         if ( !(line->d.var_type & type) ) return 0;
-        if ( line->pos+1 < site->pos || line->rid != site->rid ) return 0;
         if ( line->pos+1 == site->pos && line->rid == site->rid )
         {
             site->str.l = 0;
             return 1;
         }
-        assert( line->pos+1 <= site->pos || line->rid != site->rid );
+        if ( line->rid != site->rid ) 
+            error("Warning: The sites file positioned on different chromosome (%s vs %s), did you want to run with the -r option?\n", 
+                    hdr->id[BCF_DT_CTG][site->rid].key,hdr->id[BCF_DT_CTG][line->rid].key);
+        if ( line->pos+1 < site->pos ) return 0;
+        if ( line->pos+1 > site->pos && line->rid == site->rid ) 
+            error("The the sites file is out of sync, was it created from different VCF? The conflicting site is %s:%d vs %d\n", 
+                hdr->id[BCF_DT_CTG][line->rid].key, site->pos,line->pos+1);
         break;
     }
     return 0;
 }
 
 void bcf_hdr_append_version(bcf_hdr_t *hdr, int argc, char **argv, const char *cmd);
+
+
+typedef struct
+{
+    char *name;
+    int vcf_id;
+}
+flt_desc_t;
+
+static flt_desc_t *add_filter_desc(args_t *args, const char *type, bcf_hdr_t *hdr, int *nflt)
+{
+    flt_desc_t *out = NULL;
+    *nflt = 0;
+
+    FILE *fp = open_file(NULL,"r","%s.%s.filters", args->out_prefix,type);
+    if ( !fp ) return out;
+
+    kstring_t str = {0,0,0}, tmp = {0,0,0};
+    while ( ks_getline(fp, &str) )
+    {
+        char *t = str.s;
+        while (*t && *t!='\t') t++;
+        if ( !*t ) error("Could not parse %s.%s.filters: %s\n", args->out_prefix,type,str.s);
+
+        out = (flt_desc_t *) realloc(out, sizeof(flt_desc_t)*(*nflt+1));
+        str.s[t-str.s] = 0;
+        out[*nflt].name = msprintf("Fail%c%d_%s", type[0],*nflt,str.s);
+
+        ksprintf(&tmp, "##FILTER=<ID=Fail%c%d_%s,Description=\"Failed the filter: %s\">", type[0],*nflt,str.s,t+1);
+        bcf_hdr_append(hdr, tmp.s);
+
+        (*nflt)++;
+        tmp.l = 0;
+        str.l = 0;
+    }
+    fclose(fp);
+    if ( str.m ) free(str.s);
+    if ( tmp.m ) free(tmp.s);
+    return out;
+}
+static void destroy_filter_desc(flt_desc_t *flt, int nflt)
+{
+    if ( !nflt ) return;
+    int i;
+    for (i=0; i<nflt; i++) free(flt[i].name);
+    free(flt);
+}
+static int set_fixed_filter(site_t *site, int *ids, int nids, flt_desc_t *flt)
+{
+    int i = 0, n = 0;
+    while ( (site->flt_mask >>= 1) )
+    {
+        if ( site->flt_mask & 1 ) ids[n++] = flt[i].vcf_id;
+        i++;
+    }
+    return n;
+}
 
 static void apply_filters(args_t *args)
 {
@@ -1435,6 +1536,10 @@ static void apply_filters(args_t *args)
     bcf_hdr_t *hdr = sr->readers[0].header;
 
     // Add header lines
+    flt_desc_t *flt_snp = NULL, *flt_indel = NULL;
+    int nflt_snp = 0, nflt_indel = 0;
+    if ( args->snp_th >= 0 ) flt_snp = add_filter_desc(args, "SNP", hdr, &nflt_snp);
+    if ( args->indel_th >= 0 ) flt_indel = add_filter_desc(args, "INDEL", hdr, &nflt_indel);
     kstring_t str = {0,0,0};
     kputs("##FILTER=<ID=FailSOM,Description=\"Failed SOM filter, lower is better:", &str);
     if ( snp )
@@ -1451,6 +1556,14 @@ static void apply_filters(args_t *args)
     bcf_hdr_fmt_text(hdr);
     int flt_pass = bcf_id2int(hdr, BCF_DT_ID, "PASS");
     int flt_fail = bcf_id2int(hdr, BCF_DT_ID, "FailSOM");
+    int i;
+    for (i=0; i<nflt_snp; i++)
+        flt_snp[i].vcf_id = bcf_id2int(hdr, BCF_DT_ID, flt_snp[i].name);
+    for (i=0; i<nflt_indel; i++)
+        flt_indel[i].vcf_id = bcf_id2int(hdr, BCF_DT_ID, flt_indel[i].name);
+
+    int nflt_ids = nflt_snp + nflt_indel + 2; 
+    int *flt_ids = (int*) malloc(sizeof(int)*nflt_ids);
 
     htsFile *out = hts_open("-","w",0);
     vcf_hdr_write(out, hdr);
@@ -1462,25 +1575,38 @@ static void apply_filters(args_t *args)
         bcf_set_variant_types(line);
         if ( snp && sync_site(hdr, line, snp, VCF_SNP) )
         {
-            float tmp = snp->score;
-            bcf1_update_info_float(hdr, line, "FiltScore", &tmp, 1);
-            bcf1_update_filter(hdr, line, snp->score <= args->snp_th ? &flt_pass : &flt_fail, 1);
+            if ( (i=set_fixed_filter(snp, flt_ids, nflt_ids, flt_snp)) )
+                bcf1_update_filter(hdr, line, flt_ids, i);
+            else
+            {
+                float tmp = snp->score;
+                bcf1_update_info_float(hdr, line, "FiltScore", &tmp, 1);
+                bcf1_update_filter(hdr, line, snp->score <= args->snp_th ? &flt_pass : &flt_fail, 1);
+            }
             vcf_write1(out, hdr, line);
             continue;
         }
         if ( indel && sync_site(hdr, line, indel, VCF_INDEL) )
         {
-            float tmp = indel->score;
-            bcf1_update_info_float(hdr, line, "FiltScore", &tmp, 1);
-            bcf1_update_filter(hdr, line, indel->score <= args->indel_th ? &flt_pass : &flt_fail, 1);
+            if ( (i=set_fixed_filter(indel, flt_ids, nflt_ids, flt_indel)) )
+                bcf1_update_filter(hdr, line, flt_ids, i);
+            else
+            {
+                float tmp = indel->score;
+                bcf1_update_info_float(hdr, line, "FiltScore", &tmp, 1);
+                bcf1_update_filter(hdr, line, indel->score <= args->indel_th ? &flt_pass : &flt_fail, 1);
+            }
             vcf_write1(out, hdr, line);
             continue;
         }
-        bcf1_update_filter(hdr, line, NULL, 0);
+        if ( args->unset_unknowns ) bcf1_update_filter(hdr, line, NULL, 0);
         vcf_write1(out, hdr, line);
     }
     if ( snp ) destroy_site(snp);
     if ( indel ) destroy_site(indel);
+    destroy_filter_desc(flt_snp, nflt_snp);
+    destroy_filter_desc(flt_indel, nflt_indel);
+    free(flt_ids);
     hts_close(out);
     bcf_sr_destroy(sr);
 }
@@ -1504,7 +1630,8 @@ static void usage(void)
 	fprintf(stderr, "    -R, --random-seed <int>                    random seed, 0 for time() [1]\n");
 	fprintf(stderr, "    -s, --snp-threshold <float>                filter SNPs\n");
 	fprintf(stderr, "    -t, --type <SNP|INDEL>                     variant type to filter [SNP]\n");
-	fprintf(stderr, "Example:\n");
+	fprintf(stderr, "    -u, --unset-unknowns                       set FILTER of sites which are not present in annots.tab.gz to \".\"\n");
+	fprintf(stderr, "\nExample:\n");
 	fprintf(stderr, "   # 1) This step extracts annotations from the VCF and creates a compressed tab-delimited file\n");
     fprintf(stderr, "   #    which tends to be smaller and much faster to parse (several passes through the data are\n");
     fprintf(stderr, "   #    required). The second VCF is required only for supervised learning, SNPs and indels can\n");
@@ -1519,14 +1646,14 @@ static void usage(void)
     fprintf(stderr, "   #    ratio (SNPs) and repeat-consistency value (indels). \n");
     fprintf(stderr, "   #    Note that: \n");
     fprintf(stderr, "   #       - SNPs and INDELs are done separately (-t)\n");
-    fprintf(stderr, "   #       - The -l option can be used in both supervised and unsupervised training\n");
+    fprintf(stderr, "   #       - The -l option can be used also in presence of the truth set (training.vcf.gz in the example above)\n");
     fprintf(stderr, "   #       - Without the -a option, all annotations from annots.tab.gz are used\n");
 	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>=10' -l'QUAL>0.6' -a Annot1,Annot2,Annot3\n");
 	fprintf(stderr, "   vcf filter annots.tab.gz -o prefix -p -f'QUAL>=10' -l'QUAL>0.6' -a Annot2,Annot4 -t INDEL\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "   # 3) Choose threshold in prefix.SNP.tab and prefix.INDEL.tab and apply with -i and -s. The INFO\n");
 	fprintf(stderr, "   #    tag FiltScore is added and sites failing the SOM filter have the FailSOM filter set.\n");
-	fprintf(stderr, "   vcf filter target.vcf.gz -o prefix -s 1.054277e-02 -i 5.012345e-04 | bgzip -c > filtered.vcf.gz\n");
+	fprintf(stderr, "   vcf filter target.vcf.gz -uo prefix -s 1.054277e-02 -i 5.012345e-04 | bgzip -c > filtered.vcf.gz\n");
 	fprintf(stderr, "\n");
 	exit(1);
 }
@@ -1566,10 +1693,12 @@ int main_vcffilter(int argc, char *argv[])
 		{"random-seed",1,0,'R'},
 		{"region",1,0,'r'},
 		{"good-mask",1,0,'g'},
+		{"unset-unknowns",1,0,'u'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "ho:a:s:i:pf:St:n:l:m:r:R:g:F:",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "ho:a:s:i:pf:St:n:l:m:r:R:g:F:u",loptions,NULL)) >= 0) {
 		switch (c) {
+			case 'u': args->unset_unknowns = 1; break;
 			case 'S': args->scale = 0; break;
 			case 't': 
                 {

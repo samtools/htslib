@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <getopt.h>
 #include <ctype.h>
@@ -285,7 +286,7 @@ static void usage(void)
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "    -c, --collapse <string>           treat as identical sites with differing alleles for <snps|indels|both|any>\n");
 	fprintf(stderr, "    -C, --complement                  output positions present only in the first file but missing in the others\n");
-	fprintf(stderr, "    -f, --apply-filters               skip sites where FILTER is other than PASS\n");
+    fprintf(stderr, "    -f, --apply-filters <list>        require at least one of the listed FILTER strings (e.g. \"PASS,.\")\n");
 	fprintf(stderr, "    -n, --nfiles [+-=]<int>           output positions present in this many (=), this many or more (+), or this many or fewer (-) files\n");
 	fprintf(stderr, "    -p, --prefix <dir>                if given, subset each of the input files accordingly, see also -w\n");
 	fprintf(stderr, "    -r, --region <chr|chr:from-to>    perform intersection in the given region only\n");
@@ -316,14 +317,14 @@ int main_vcfisec(int argc, char *argv[])
 		{"help",0,0,'h'},
 		{"collapse",1,0,'c'},
 		{"complement",1,0,'C'},
-		{"apply-filters",0,0,'f'},
+		{"apply-filters",1,0,'f'},
 		{"nfiles",1,0,'n'},
 		{"prefix",1,0,'p'},
 		{"write",1,0,'w'},
 		{"subset",1,0,'s'},
 		{0,0,0,0}
 	};
-	while ((c = getopt_long(argc, argv, "hc:fr:p:n:w:s:C",loptions,NULL)) >= 0) {
+	while ((c = getopt_long(argc, argv, "hc:r:p:n:w:s:Cf:",loptions,NULL)) >= 0) {
 		switch (c) {
 			case 'c':
 				if ( !strcmp(optarg,"snps") ) args->files->collapse |= COLLAPSE_SNPS;
@@ -332,7 +333,7 @@ int main_vcfisec(int argc, char *argv[])
 				else if ( !strcmp(optarg,"any") ) args->files->collapse |= COLLAPSE_ANY;
                 else error("The --collapse string \"%s\" not recognised.\n", optarg);
 				break;
-			case 'f': args->files->apply_filters = 1; break;
+			case 'f': args->files->apply_filters = optarg; break;
 			case 'C': args->isec_op = OP_COMPLEMENT; break;
 			case 'r': args->files->region = optarg; break;
 			case 's': args->subset_fname = optarg; break;

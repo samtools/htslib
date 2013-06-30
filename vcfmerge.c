@@ -4,6 +4,7 @@
  */
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <getopt.h>
 #include "vcf.h"
@@ -1215,7 +1216,7 @@ static void usage(void)
     fprintf(stderr, "        --use-header <file>           use the provided header\n");
     fprintf(stderr, "        --print-header <file>         print only header of the output file and exit\n");
     fprintf(stderr, "    -b, --output-bcf                  output BCF\n");
-    fprintf(stderr, "    -f, --apply-filters               skip sites where FILTER is other than PASS\n");
+    fprintf(stderr, "    -f, --apply-filters <list>        require at least one of the listed FILTER strings (e.g. \"PASS,.\")\n");
     fprintf(stderr, "    -m, --merge <string>              merge sites with differing alleles for <snps|indels|both|any>\n");
     fprintf(stderr, "    -r, --region <chr|chr:from-to>    merge in the given region only\n");
     fprintf(stderr, "\n");
@@ -1233,13 +1234,13 @@ int main_vcfmerge(int argc, char *argv[])
     {
         {"help",0,0,'h'},
         {"merge",1,0,'m'},
-        {"apply-filters",0,0,'f'},
+        {"apply-filters",1,0,'f'},
         {"use-header",1,0,1},
         {"print-header",0,0,2},
         {"output-bcf",1,0,'b'},
         {0,0,0,0}
     };
-    while ((c = getopt_long(argc, argv, "hm:fr:1:2b",loptions,NULL)) >= 0) {
+    while ((c = getopt_long(argc, argv, "hm:f:r:1:2b",loptions,NULL)) >= 0) {
         switch (c) {
             case 'b': args->output_bcf = 1; break;
             case 'm':
@@ -1248,7 +1249,7 @@ int main_vcfmerge(int argc, char *argv[])
                 else if ( !strcmp(optarg,"both") ) args->collapse |= COLLAPSE_SNPS | COLLAPSE_INDELS;
                 else if ( !strcmp(optarg,"any") ) args->collapse |= COLLAPSE_ANY;
                 break;
-            case 'f': args->files->apply_filters = 1; break;
+            case 'f': args->files->apply_filters = optarg; break;
             case 'r': args->files->region = optarg; break;
             case  1 : args->header_fname = optarg; break;
             case  2 : args->header_only = 1; break;

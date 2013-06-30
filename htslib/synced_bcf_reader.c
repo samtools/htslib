@@ -8,6 +8,35 @@
 #include "synced_bcf_reader.h"
 #include "kseq.h"
 
+static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
+{
+    kstring_t str = {0,0,0};
+    const char *tmp = filters, *prev = filters;
+    int nout = 0, *out = NULL;
+    while ( 1 )
+    {
+        if ( *tmp==',' || !*tmp )
+        {
+            out = (int*) realloc(out, sizeof(int));
+            if ( tmp-prev==1 && *prev=='.' )
+                out[nout] = -1;
+            else
+            {
+                str.l = 0;
+                kputsn(prev, tmp-prev, &str);
+                out[nout] = bcf_id2int(hdr, BCF_DT_ID, str.s);
+            }
+            nout++;
+            if ( !*tmp ) break;
+            prev = tmp+1;
+        }
+        tmp++;
+    }
+    if ( str.m ) free(str.s);
+    *nfilters = nout;
+    return out;
+}
+
 int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 {
     files->has_line = (int*) realloc(files->has_line, sizeof(int)*(files->nreaders+1));
@@ -86,10 +115,9 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     assert( !files->streaming || files->nreaders==1 );
     assert( !files->streaming || !files->targets );
 
-    reader->fname   = fname;
-    reader->filter_id = -1;
+    reader->fname = fname;
     if ( files->apply_filters )
-        reader->filter_id = bcf_id2int(reader->header, BCF_DT_ID, "PASS");
+        reader->filter_ids = init_filters(reader->header, files->apply_filters, &reader->nfilter_ids);
 
     // Update list of chromosomes
     if ( files->region )
@@ -304,6 +332,23 @@ static int tgt_has_position(bcf_sr_regions_t *tgt, int32_t pos)
     return 0;
 }
 
+static inline int has_filter(bcf_sr_t *reader, bcf1_t *line)
+{
+    int i, j;
+    if ( !line->d.n_flt )
+    {
+        for (j=0; j<reader->nfilter_ids; j++)
+            if ( reader->filter_ids[j]<0 ) return 1;
+        return 0;
+    }
+    for (i=0; i<line->d.n_flt; i++)
+    {
+        for (j=0; j<reader->nfilter_ids; j++)
+            if ( line->d.flt[i]==reader->filter_ids[j] ) return 1;
+    }
+    return 0;
+}
+
 int bcf_sr_next_line(bcf_srs_t *files)
 {
     int32_t min_pos = INT_MAX;
@@ -400,12 +445,12 @@ int bcf_sr_next_line(bcf_srs_t *files)
                     }
 
                     // apply filter
-                    if ( reader->filter_id==-1 )
+                    if ( !reader->nfilter_ids )
                         bcf_unpack(reader->buffer[reader->nbuffer+1], BCF_UN_STR);
                     else
                     {
                         bcf_unpack(reader->buffer[reader->nbuffer+1], BCF_UN_STR|BCF_UN_FLT);
-                        if ( reader->buffer[reader->nbuffer+1]->d.n_flt && reader->filter_id!=reader->buffer[reader->nbuffer+1]->d.flt[0] ) continue;
+                        if ( !has_filter(reader, reader->buffer[reader->nbuffer+1]) ) continue;
                     }
                     bcf_set_variant_types(reader->buffer[reader->nbuffer+1]);
                     reader->nbuffer++;
