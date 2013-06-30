@@ -512,6 +512,11 @@ bcf1_t *bcf_init1()
 void bcf_clear1(bcf1_t *v)
 {
     int i;
+    if ( v->d.als_free ) 
+    {
+        free(v->d.als_free);
+        v->d.als_free = NULL;
+    }
     for (i=0; i<v->d.m_info; i++) 
     {
         if ( v->d.info[i].vptr_free ) 
@@ -577,6 +582,142 @@ int bcf_readrec(BGZF *fp, void *null, bcf1_t *v, int *tid, int *beg, int *end)
 	return ret;
 }
 
+static inline void bcf1_sync_id(bcf1_t *line, kstring_t *str)
+{
+    // single typed string
+    if (strcmp(line->d.id, ".")) bcf_enc_vchar(str, strlen(line->d.id), line->d.id);
+    else bcf_enc_size(str, 0, BCF_BT_CHAR);
+}
+static inline void bcf1_sync_alleles(bcf1_t *line, kstring_t *str)
+{
+    // list of typed strings
+    int i;
+    for (i=0; i<line->n_allele; i++)
+        bcf_enc_vchar(str, strlen(line->d.allele[i]), line->d.allele[i]);
+}
+static inline void bcf1_sync_filter(bcf1_t *line, kstring_t *str)
+{
+    // typed vector of integers
+    if ( line->d.n_flt ) bcf_enc_vint(str, line->d.n_flt, line->d.flt, -1);
+    else bcf_enc_vint(str, 0, 0, -1);
+}
+static inline void bcf1_sync_info(bcf1_t *line, kstring_t *str)
+{
+    // pairs of typed vectors
+    int i, irm = -1;
+    for (i=0; i<line->n_info; i++)
+    {
+        bcf_info_t *info = &line->d.info[i];
+        if ( !info->vptr )
+        { 
+            // marked for removal
+            if ( irm < 0 ) irm = i;
+            continue;
+        }
+        kputsn_(info->vptr - info->vptr_off, info->vptr_len + info->vptr_off, str);
+        if ( irm >=0 )
+        {
+            bcf_info_t tmp = line->d.info[irm]; line->d.info[irm] = line->d.info[i]; line->d.info[i] = tmp;
+            while ( irm<=i && line->d.info[irm].vptr ) irm++;
+        }
+    }
+    if ( irm>=0 ) line->n_info = irm;
+}
+
+int bcf1_sync(bcf1_t *line)
+{
+    int i;
+    kstring_t tmp = {0,0,0};
+    if ( !line->shared.l )
+    {
+        tmp = line->shared;
+        bcf1_sync_id(line, &tmp);
+        bcf1_sync_alleles(line, &tmp);
+        bcf1_sync_filter(line, &tmp);
+        bcf1_sync_info(line, &tmp);
+        line->shared = tmp;
+    }
+    else if ( line->d.shared_dirty )
+    {
+        uint8_t *ptr, *ptr_ori = (uint8_t *) line->shared.s;
+        int type, size;
+
+        // ID: single typed string
+        size = bcf_dec_size(ptr_ori, &ptr, &type);
+        size = (size << bcf_type_shift[type]) + (ptr - ptr_ori);
+        if ( line->d.shared_dirty & BCF1_DIRTY_ID ) 
+            bcf1_sync_id(line, &tmp);
+        else 
+            kputsn_(ptr_ori, size, &tmp);
+        ptr_ori += size;
+
+        // REF+ALT: list of typed strings
+        uint8_t *_ptr, *_ptr_ori = ptr_ori;
+        size = 0;
+        for (i=0; i<line->n_allele; i++) 
+        {
+            int _size = bcf_dec_size(_ptr_ori, &_ptr, &type);
+            size += (_size << bcf_type_shift[type]) + (_ptr - _ptr_ori);
+            _ptr_ori = _ptr + (_size << bcf_type_shift[type]);
+        }
+        if ( line->d.shared_dirty & BCF1_DIRTY_ALS ) 
+            bcf1_sync_alleles(line, &tmp);
+        else
+            kputsn_(ptr_ori, size, &tmp);
+        ptr_ori += size;
+
+        // FILTER: typed vector of integers
+        ptr = ptr_ori;
+        size = bcf_dec_size(ptr_ori, &ptr, &type);
+        for (i=0; i<size; i++) 
+            bcf_dec_int1(ptr, type, &ptr);
+        size = ptr - ptr_ori;
+        if ( line->d.shared_dirty & BCF1_DIRTY_FLT ) 
+            bcf1_sync_filter(line, &tmp);
+        else
+            kputsn_(ptr_ori, size, &tmp);
+        ptr_ori += size;
+
+        // INFO: pairs of typed vectors
+        if ( line->d.shared_dirty & BCF1_DIRTY_INF ) 
+            bcf1_sync_info(line, &tmp);
+        else
+        {
+            size = line->shared.l - (size_t)ptr_ori + (size_t)line->shared.s;
+            kputsn_(ptr_ori, size, &tmp);
+        }
+        free(line->shared.s);
+        line->shared = tmp;
+    }
+    if ( !line->indiv.l )
+    {
+        int i, irm = -1;
+        for (i=0; i<line->n_fmt; i++)
+        {
+            bcf_fmt_t *fmt = &line->d.fmt[i];
+            if ( !fmt->p ) 
+            { 
+                // marked for removal
+                if ( irm < 0 ) irm = i;
+                continue; 
+            }
+            kputsn_(fmt->p - fmt->p_off, fmt->p_len + fmt->p_off, &line->indiv);
+            if ( irm >=0 )
+            {
+                bcf_fmt_t tmp = line->d.fmt[irm]; line->d.fmt[irm] = line->d.fmt[i]; line->d.fmt[i] = tmp;
+                while ( irm<=i && line->d.fmt[irm].p ) irm++;
+            }
+
+        }
+        if ( irm>=0 ) line->n_fmt = irm;
+    }
+    else if ( line->d.indiv_dirty )
+    {
+        assert(0);
+    }
+    return 0;
+}
+
 int bcf_write1(BGZF *fp, const bcf1_t *v)
 {
 	uint32_t x[8];
@@ -586,7 +727,7 @@ int bcf_write1(BGZF *fp, const bcf1_t *v)
 	x[6] = (uint32_t)v->n_allele<<16 | v->n_info;
 	x[7] = (uint32_t)v->n_fmt<<24 | v->n_sample;
 	bgzf_write(fp, x, 32);
-	bgzf_write(fp, v->shared.s, v->shared.l);
+    bgzf_write(fp, v->shared.s, v->shared.l);
 	bgzf_write(fp, v->indiv.s, v->indiv.l);
 	return 0;
 }
@@ -1273,7 +1414,7 @@ int bcf_unpack(bcf1_t *b, int which)
 	if (which & BCF_UN_INFO) which |= BCF_UN_SHR;
 	if ((which&BCF_UN_STR) && !(b->unpacked&BCF_UN_STR)) { // ID
         kstring_t tmp;
-        tmp.l = 0; tmp.m = d->m_str; tmp.s = d->id;
+        tmp.l = 0; tmp.m = d->m_str; tmp.s = d->id;     // reuse allocated d->id 
         ptr = bcf_fmt_sized_array(&tmp, ptr); kputc('\0', &tmp);
         d->m_str = tmp.m; d->id = tmp.s; // write tmp back
         // REF and ALT
@@ -1499,6 +1640,7 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
 			kputs(samples[i], &str);
 		}
 	} else kputsn(h0->text, h0->l_text, &str);
+    if ( str.s[str.l-1] != '\n' ) kputc('\n',&str);
 	h->text = str.s;
 	h->l_text = str.l;
 	bcf_hdr_parse(h);
@@ -1528,7 +1670,7 @@ int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
 	} else v->n_sample = 0;
 	free(v->indiv.s);
 	v->indiv = ind;
-    v->unpacked = 0;    // only BCF is ready for output, VCF will need to unpack again
+    v->unpacked &= ~BCF_UN_FMT;    // only BCF is ready for output, VCF will need to unpack again
 	return 0;
 }
 
@@ -1626,12 +1768,12 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values
         if ( inf_id==line->d.info[i].key ) break;
     bcf_info_t *inf = i==line->n_info ? NULL : &line->d.info[i];
 
-    if ( !n )
+    if ( !n || (type==BCF_HT_STR && !values) )
     {
         if ( inf )
         {
             // Mark the tag for removal
-            line->d.shared_dirty = 1;
+            line->d.shared_dirty |= BCF1_DIRTY_INF;
             inf->vptr = NULL;
         }
         return 0;
@@ -1644,6 +1786,13 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values
         bcf_enc_vint(&str, n, (int32_t*)values, -1);
     else if ( type==BCF_HT_REAL )
         bcf_enc_vfloat(&str, n, (float*)values);
+    else if ( type==BCF_HT_FLAG || type==BCF_HT_STR )
+    {
+        if ( values==NULL )
+            bcf_enc_size(&str, 0, BCF_BT_NULL);
+        else
+            bcf_enc_vchar(&str, strlen((char*)values), (char*)values);
+    }
     else
     {
         fprintf(stderr, "[E::%s] the type %d not implemented yet\n", __func__, type);
@@ -1656,7 +1805,7 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values
         // Is it big enough to accommodate new block?
         if ( str.l <= inf->vptr_len + inf->vptr_off )
         {
-            if ( str.l != inf->vptr_len + inf->vptr_off ) line->d.shared_dirty = 1;
+            if ( str.l != inf->vptr_len + inf->vptr_off ) line->d.shared_dirty |= BCF1_DIRTY_INF;
             uint8_t *ptr = inf->vptr - inf->vptr_off;
             memcpy(ptr, str.s, str.l);
             free(str.s);
@@ -1664,9 +1813,10 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values
         }
         else
         {
+            assert( !inf->vptr_free );  // fix the caller or improve here: this has been modified before 
             bcf_unpack_info_core1((uint8_t*)str.s, inf);
             inf->vptr_free = 1;
-            line->d.shared_dirty = 1;
+            line->d.shared_dirty |= BCF1_DIRTY_INF;
         }
     }
     else
@@ -1677,7 +1827,7 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values
         inf = &line->d.info[line->n_info-1];
         bcf_unpack_info_core1((uint8_t*)str.s, inf);
         inf->vptr_free = 1;
-        line->d.shared_dirty = 1;
+        line->d.shared_dirty |= BCF1_DIRTY_INF;
     }
     return 0;
 }
@@ -1735,6 +1885,7 @@ int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *valu
         }
         else
         {
+            assert( !fmt->p_free );  // fix the caller or improve here: this has been modified before 
             bcf_unpack_fmt_core1((uint8_t*)str.s, line->n_sample, fmt);
             fmt->p_free = 1;
             line->d.indiv_dirty = 1;
@@ -1747,6 +1898,7 @@ int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *valu
 int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
 {
     // todo: BCF output
+    line->d.shared_dirty |= BCF1_DIRTY_FLT;
     line->d.n_flt = n;
     if ( !n ) return 0;
     hts_expand(int, line->d.n_flt, line->d.m_flt, line->d.flt);
@@ -1756,4 +1908,41 @@ int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
     return 0;
 }
 
+int bcf1_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)
+{
+    assert( !line->d.als_free );  // fix the caller or improve here: this has been modified before 
+
+    int i, len = 0;
+    kstring_t str = {0,0,0};
+
+    for (i=0; i<nals; i++)
+    {
+        int _len = strlen(alleles[i]);
+        bcf_enc_vchar(&str, _len, alleles[i]);
+        len += _len;
+    }
+
+    len += nals;
+    hts_expand(char, len, line->d.m_als, line->d.als);
+
+    line->n_allele = nals;
+    hts_expand(char*, line->n_allele, line->d.m_allele, line->d.allele);
+
+    // Copy the alleles, all are in a single block, strings are \0-separated
+    char *dst = line->d.als;
+    for (i=0; i<nals; i++)
+    {
+        const char *src = alleles[i];
+        line->d.allele[i] = dst;
+        while ( *src ) { *dst = *src; dst++; src++; } 
+        *dst = 0;
+        dst++;
+    }
+
+    line->n_allele = nals;
+    line->d.als = line->d.als;
+    line->d.shared_dirty |= BCF1_DIRTY_ALS;
+    line->d.als_free = str.s;
+    return 0;
+}
 

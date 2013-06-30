@@ -1,10 +1,10 @@
 /*
     Known issues:
-        - shared block needs to be updated on BCF output (BCF output currently not supported)
-        - Number=A,G tags not treated
+        - Number=A,G tags not treated in this version
  */
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <getopt.h>
 #include "vcf.h"
@@ -34,9 +34,9 @@ typedef struct
 maux1_t;
 typedef struct
 {
-    int n;          // number of readers
-    char **als;     // merged output alleles
-    int nals, mals; // size of the output array
+    int n;  // number of readers
+    char **als, **out_als;  // merged alleles (temp, may contain empty records) and merged alleles ready for output
+    int nals, mals, nout_als, mout_als; // size of the output array
     int *cnt, ncnt; // number of records that refer to the alleles
     int *nbuf;      // readers have buffers of varying lengths
     int *smpl_ploidy, *smpl_nGsize; // ploidy and derived number of values in Number=G tags, updated for each line (todo: cache for missing cases)
@@ -55,7 +55,7 @@ maux_t;
 typedef struct
 {
     maux_t *maux;
-    int header_only, collapse;
+    int header_only, collapse, output_bcf;
     char *header_fname;
     strdict_t *tmph;
     kstring_t tmps;
@@ -278,6 +278,7 @@ void maux_destroy(maux_t *ma)
     free(ma->d);
     free(ma->nbuf);
     for (i=0; i<ma->mals; i++) free(ma->als[i]);
+    if (ma->mout_als) free(ma->out_als);
     free(ma->als);
     free(ma->cnt);
     free(ma->smpl_ploidy);
@@ -374,11 +375,11 @@ void merge_chrom2qual(args_t *args, bcf1_t *out)
     out->d.id = strdup(tmps->s);
 
     // set alleles
-    out->n_allele = 0;
-    for (i=1; i<ma->nals; i++) 
+    ma->nout_als = 0;
+    for (i=1; i<ma->nals; i++)
     {
         if ( !al_idxs[i] ) continue;
-        out->n_allele++;
+        ma->nout_als++;
 
         // Adjust the indexes, the allele map could be created for multiple collapsed records, 
         //  some of which might be unused for this output line
@@ -388,32 +389,18 @@ void merge_chrom2qual(args_t *args, bcf1_t *out)
             if ( !ma->has_line[ir] ) continue;
             bcf1_t *line = files->readers[ir].buffer[0];
             for (j=1; j<line->n_allele; j++)
-                if ( ma->d[ir][0].map[j]==i ) ma->d[ir][0].map[j] = out->n_allele;
+                if ( ma->d[ir][0].map[j]==i ) ma->d[ir][0].map[j] = ma->nout_als;
         }
     }
     // Expand the arrays and realloc the alleles string. Note that all alleles are in a single allocated block.
-    out->n_allele++;
-    hts_expand(char*, out->n_allele, out->d.m_allele, out->d.allele);
-    int k = 0;  // new size
+    ma->nout_als++;
+    hts_expand0(char*, ma->nout_als, ma->mout_als, ma->out_als);
+    int k = 0;
     for (i=0; i<ma->nals; i++)
-        if ( i==0 || al_idxs[i] ) out->d.allele[k++] = ma->als[i];
-    normalize_alleles(out->d.allele, out->n_allele);
-    assert( k==out->n_allele );
-
-    k = 0;
-    for (i=0; i<out->n_allele; i++) k += strlen(out->d.allele[i]) + 1;
-    hts_expand(char, k, out->d.m_als, out->d.als);
-
-    // Copy the alleles 
-    char *dst = out->d.als;
-    for (i=0; i<out->n_allele; i++)
-    {
-        char *src = out->d.allele[i];
-        out->d.allele[i] = dst;
-        while ( *src ) { *dst = *src; dst++; src++; } 
-        *dst = 0;
-        dst++;
-    }
+        if ( i==0 || al_idxs[i] ) ma->out_als[k++] = ma->als[i];
+    assert( k==ma->nout_als );
+    normalize_alleles(ma->out_als, ma->nout_als);
+    bcf1_update_alleles(out_hdr, out, (const char**) ma->out_als, ma->nout_als);
     free(al_idxs);
 }
 
@@ -469,6 +456,35 @@ void merge_filter(args_t *args, bcf1_t *out)
     out->d.flt = ma->flt;
 }
 
+static void bcf_info_set_id(bcf1_t *line, bcf_info_t *info, int id, kstring_t *tmp_str)
+{
+    assert( !info->vptr_free );
+
+    uint8_t *ptr = info->vptr - info->vptr_off;
+    bcf_dec_typed_int1(ptr, &ptr);
+
+    tmp_str->l = 0;
+    bcf_enc_int1(tmp_str, id);
+
+    if ( tmp_str->l == ptr - info->vptr + info->vptr_off )
+    {
+        // the new id is represented with the same number of bytes
+        memcpy(info->vptr - info->vptr_off, tmp_str->s, tmp_str->l);
+        return;
+    }
+
+    kputsn_(ptr, info->vptr - ptr, tmp_str);
+    info->vptr_off = tmp_str->l;
+    kputsn_(info->vptr, info->len << bcf_type_shift[info->type], tmp_str);
+    
+    info->vptr = (uint8_t*) tmp_str->s + info->vptr_off;
+    info->vptr_free = 1;
+    line->d.shared_dirty |= BCF1_DIRTY_INF;
+    tmp_str->s = NULL;
+    tmp_str->m = 0;
+    tmp_str->l = 0;
+}
+
 void merge_info(args_t *args, bcf1_t *out)
 {
     bcf_srs_t *files = args->files;
@@ -507,6 +523,13 @@ void merge_info(args_t *args, bcf1_t *out)
                 ma->inf[out->n_info].vptr_off  = inf->vptr_off;
                 ma->inf[out->n_info].vptr_len  = inf->vptr_len;
                 ma->inf[out->n_info].vptr_free = inf->vptr_free;
+                if ( args->output_bcf && id!=bcf_id2int(hdr, BCF_DT_ID, key) )
+                {
+                    // The existing packed info cannot be reused. Change the id.
+                    // Although quite hacky, it's faster than anything else given 
+                    // the data structures
+                    bcf_info_set_id(out, &ma->inf[out->n_info], id, &args->tmps);
+                }
                 out->n_info++;
                 kh_put(strdict, tmph, key, &ret);
             }
@@ -877,6 +900,7 @@ void merge_line(args_t *args)
     merge_info(args, out);
     merge_format(args, out);
 
+    if ( args->output_bcf ) bcf1_sync(out);
     vcf_write1(args->out_fh, args->out_hdr, out);
 }
 
@@ -1141,7 +1165,7 @@ void bcf_hdr_append_version(bcf_hdr_t *hdr, int argc, char **argv, const char *c
 
 void merge_vcf(args_t *args)
 {
-    args->out_fh = hts_open("-","w",0);
+    args->out_fh  = args->output_bcf ? hts_open("-","wb",0) : hts_open("-","w",0);
     args->out_hdr = bcf_hdr_init();
 
     if ( args->header_fname )
@@ -1191,6 +1215,7 @@ static void usage(void)
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "        --use-header <file>           use the provided header\n");
     fprintf(stderr, "        --print-header <file>         print only header of the output file and exit\n");
+    fprintf(stderr, "    -b, --output-bcf                  output BCF\n");
     fprintf(stderr, "    -f, --apply-filters <list>        require at least one of the listed FILTER strings (e.g. \"PASS,.\")\n");
     fprintf(stderr, "    -m, --merge <string>              merge sites with differing alleles for <snps|indels|both|any>\n");
     fprintf(stderr, "    -r, --region <chr|chr:from-to>    merge in the given region only\n");
@@ -1212,10 +1237,12 @@ int main_vcfmerge(int argc, char *argv[])
         {"apply-filters",1,0,'f'},
         {"use-header",1,0,1},
         {"print-header",0,0,2},
+        {"output-bcf",1,0,'b'},
         {0,0,0,0}
     };
-    while ((c = getopt_long(argc, argv, "hm:f:r:1:2",loptions,NULL)) >= 0) {
+    while ((c = getopt_long(argc, argv, "hm:f:r:1:2b",loptions,NULL)) >= 0) {
         switch (c) {
+            case 'b': args->output_bcf = 1; break;
             case 'm':
                 if ( !strcmp(optarg,"snps") ) args->collapse |= COLLAPSE_SNPS;
                 else if ( !strcmp(optarg,"indels") ) args->collapse |= COLLAPSE_INDELS;

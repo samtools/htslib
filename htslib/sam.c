@@ -297,7 +297,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
  *** BAM indexing ***
  ********************/
 
-hts_idx_t *bam_index(BGZF *fp, int min_shift)
+static hts_idx_t *bam_index(BGZF *fp, int min_shift)
 {
 	int n_lvls, i, fmt;
 	bam1_t *b;

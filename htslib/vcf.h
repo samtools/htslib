@@ -100,7 +100,7 @@ typedef struct {
 } variant_t;
 
 typedef struct {
-	int id, n, type, size; // bcf_hdr_t::id[BCF_DT_ID][$id].key is the key in string; $n is the number of values per-sample; $size is the per-sample size in bytes
+	int id, n, type, size; // bcf_hdr_t::id[BCF_DT_ID][$id].key is the key in string; $n is the number of values per-sample; $size is the per-sample size in bytes; $type is one of BCF_BT_* types
 	uint8_t *p;     // same as vptr and vptr_* in bcf_info_t below
     uint32_t p_len;
     uint32_t p_off:31, p_free:1;
@@ -119,10 +119,17 @@ typedef struct {
                             //    data block is bigger than the original
 } bcf_info_t;
 
+
+#define BCF1_DIRTY_ID  1
+#define BCF1_DIRTY_ALS 2
+#define BCF1_DIRTY_FLT 4
+#define BCF1_DIRTY_INF 8
+
 typedef struct {
 	int m_fmt, m_info, m_str, m_als, m_allele, m_flt; // allocated size (high-water mark); do not change
 	int n_flt; // # FILTER fields
-	char *id, *als, **allele; // ID; REF and ALT; allele[0] is the REF; all null terminated
+	char *id, *als, **allele; // ID (chunk of m_str bytes); REF and ALT (m_als); allele[0] is the REF (allele[] pointers to the als block); all null terminated
+    char *als_free;
 	int *flt; // filter keys in the dictionary
 	bcf_info_t *info; // INFO
 	bcf_fmt_t *fmt; // FORMAT and individual sample
@@ -339,17 +346,28 @@ extern "C" {
 	void bcf_set_variant_types(bcf1_t *v);
 
     /**
+      *  bcf1_sync() - update BCF record
+      *
+      *  It is necessary to call iff one or more of the bcf1_update_* functions were used
+      *  and output is BCF.
+      */
+    int bcf1_sync(bcf1_t *line);
+
+    /**
      *  bcf1_update_filter() - sets the FILTER column
      *  @flt_ids:   Set of filters to set, numeric IDs returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
      *  @n:         Number of filters. If n==0, all filters are removed
-     *
-     *  todo: reflect changes also on BCF output
      */
     int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n);
+    int bcf1_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals);
+    // todo: int bcf1_update_id(bcf_hdr_t *hdr, bcf1_t *line, char *id);
 
-    // If n==0, existing tag is removed. Otherwise it is updated or appended. (pd3 todo: reflect changes also on BCF output)
-    #define bcf1_update_info_int32(hdr,line,key,values,n) bcf1_update_info((hdr),(line),(key),(values),(n),BCF_HT_INT)
-    #define bcf1_update_info_float(hdr,line,key,values,n) bcf1_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
+    // If n==0, existing tag is removed. Otherwise it is updated or appended. With *_flag, $string is optional.
+    // With *_string, existing tag is removed when $string set to NULL.
+    #define bcf1_update_info_int32(hdr,line,key,values,n)   bcf1_update_info((hdr),(line),(key),(values),(n),BCF_HT_INT)
+    #define bcf1_update_info_float(hdr,line,key,values,n)   bcf1_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
+    #define bcf1_update_info_flag(hdr,line,key,string,n)    bcf1_update_info((hdr),(line),(key),(string),(n),BCF_HT_FLAG)
+    #define bcf1_update_info_string(hdr,line,key,string)    bcf1_update_info((hdr),(line),(key),(string),1,BCF_HT_STR)
     int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type);
 
     // If n==0, existing tag is removed. Otherwise it is updated or appended. (pd3 todo: reflect changes also on BCF output)

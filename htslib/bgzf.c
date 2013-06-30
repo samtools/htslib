@@ -528,6 +528,13 @@ static ssize_t mt_write(BGZF *fp, const void *data, size_t length)
 	return length - rest;
 }
 
+#else  // ~ #ifdef BGZF_MT
+
+int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
+{
+	return 0;
+}
+
 #endif // ~ #ifdef BGZF_MT
 
 int bgzf_flush(BGZF *fp)

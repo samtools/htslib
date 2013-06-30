@@ -12,17 +12,19 @@ int main_bam2fq(int argc, char *argv[])
 	BGZF *fp, *fpse = 0;
 	bam1_t *b;
 	uint8_t *buf;
-	int max_buf, c, has12 = 0;
+	int max_buf, c, has12 = 0, use_oq = 0;
 	kstring_t str;
 	int64_t n_singletons = 0, n_reads = 0;
 	char last[512], *fnse = 0;
 
-	while ((c = getopt(argc, argv, "as:")) > 0)
+	while ((c = getopt(argc, argv, "Oas:")) > 0)
 		if (c == 'a') has12 = 1;
+		else if (c == 'O') use_oq = 1;
 		else if (c == 's') fnse = optarg;
 	if (argc == optind) {
 		fprintf(stderr, "\nUsage:   bam2fq [-a] [-s outSE] <in.bam>\n\n");
 		fprintf(stderr, "Options: -a        append /1 and /2 to the read name\n");
+		fprintf(stderr, "         -O        output quality in the OQ tag if present\n");
 		fprintf(stderr, "         -s FILE   write singleton reads to FILE [assume single-end]\n");
 		fprintf(stderr, "\n");
 		return 1;
@@ -38,8 +40,9 @@ int main_bam2fq(int argc, char *argv[])
 
 	b = bam_init1();
 	while (bam_read1(fp, b) >= 0) {
-		int i, qlen = b->core.l_qseq, is_print = 0;
+		int i, qlen = b->core.l_qseq, is_print = 0, has_qual;
 		uint8_t *qual, *seq;
+		const uint8_t *oq = 0;
 		if (b->core.flag&BAM_FSECONDARY) continue; // skip secondary alignments
 		++n_reads;
 		if (fpse) {
@@ -52,7 +55,9 @@ int main_bam2fq(int argc, char *argv[])
 			strcpy(last, bam_get_qname(b));
 		} else is_print = 1;
 		qual = bam_get_qual(b);
-		kputc(qual[0] == 0xff? '>' : '@', &str);
+		if (use_oq) oq = bam_aux_get(b, "OQ");
+		has_qual = (qual[0] != 0xff || (use_oq && oq)); // test if there is quality
+		kputc(!has_qual? '>' : '@', &str);
 		kputsn(bam_get_qname(b), b->core.l_qname - 1, &str);
 		if (has12) {
 			kputc('/', &str);
@@ -77,9 +82,10 @@ int main_bam2fq(int argc, char *argv[])
 		}
 		for (i = 0; i < qlen; ++i) buf[i] = seq_nt16_str[buf[i]];
 		kputsn((char*)buf, qlen, &str); kputc('\n', &str);
-		if (qual[0] != 0xff) {
+		if (has_qual) {
+			if (use_oq && oq) memcpy(buf, oq + 1, qlen);
+			else for (i = 0; i < qlen; ++i) buf[i] = 33 + qual[i];
 			kputsn("+\n", 2, &str);
-			for (i = 0; i < qlen; ++i) buf[i] = 33 + qual[i];
 			if (bam_is_rev(b)) { // reverse
 				for (i = 0; i < qlen>>1; ++i) {
 					uint8_t t = buf[qlen - 1 - i];
@@ -87,8 +93,8 @@ int main_bam2fq(int argc, char *argv[])
 					buf[i] = t;
 				}
 			}
+			kputsn((char*)buf, qlen, &str); kputc('\n', &str);
 		}
-		kputsn((char*)buf, qlen, &str); kputc('\n', &str);
 		if (is_print) {
 			fwrite(str.s, 1, str.l, stdout);
 			str.l = 0;
