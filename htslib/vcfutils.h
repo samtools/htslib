@@ -26,6 +26,8 @@ bcf_fmt_t *bcf_get_fmt_ptr(const bcf_hdr_t *header, bcf1_t *line, char *tag);
  *  @line:    VCF line obtain from vcf_parse1
  *
  *  Returns the number of removed alleles.
+ *
+ *  todo: BCF output
  */
 int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line);
 
@@ -35,6 +37,8 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line);
  *  @header:  for access to BCF_DT_ID dictionary
  *  @line:    VCF line obtained from vcf_parse1
  *  @mask:    alleles to remove
+ *
+ *  todo: BCF output
  */
 void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int mask);
 

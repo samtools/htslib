@@ -261,6 +261,6 @@ sub test_vcf_subset
 {
     my ($opts,%args) = @_;
     bgzip_tabix_vcf($opts,$args{in});
-    test_cmd($opts,%args,cmd=>"$$opts{bin}/htscmd vcfsubset $args{args} $$opts{tmp}/$args{in}.vcf.gz $args{reg}");
+    test_cmd($opts,%args,cmd=>"$$opts{bin}/htscmd vcfsubset $args{args} $$opts{tmp}/$args{in}.vcf.gz $args{reg} | grep -v ^##vcfsubset");
 }
 

@@ -151,7 +151,7 @@ static int filters_next_token(char **str, int *len)
 
 static void filters_set_qual(bcf1_t *line, token_t *tok)
 {
-    if ( bcf_float_is_missing(line->qual) ) 
+    if ( bcf_float_is_missing(line->qual) )     // hmm, how to do this cleanly and avoid the "strict-aliasing rules" warning?
         tok->missing_value = 1;
     else
         tok->num_value = line->qual;
@@ -728,6 +728,9 @@ int subset_vcf(args_t *args, bcf1_t *line)
     if (args->exclude_ref && n_ac == 0) return 0;
     if (args->trim_alts) bcf_trim_alleles(args->hsub ? args->hsub : args->hdr, line);
     if (args->sites_only) bcf_subset(args->hsub ? args->hsub : args->hdr, line, 0, 0);
+bcf_unpack(line,BCF_UN_ALL);
+line->d.shared_dirty |= BCF1_DIRTY_INF;
+    if (args->output_bcf) bcf1_sync(line);
     return 1;
 }
 
@@ -874,14 +877,15 @@ int main_vcfsubset(int argc, char *argv[])
     if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
     
     init_data(args);
+    bcf_hdr_t *out_hdr = args->hnull ? args->hnull : (args->hsub ? args->hsub : args->hdr);
     if (args->print_header)
-        vcf_hdr_write(args->out, args->hnull ? args->hnull : args->hsub ? args->hsub : args->hdr);
+        vcf_hdr_write(args->out, out_hdr);
     if (!args->header_only) {
         while ( bcf_sr_next_line(args->files) )
         {
             bcf1_t *line = args->files->readers[0].buffer[0];
             if ( subset_vcf(args, line) )
-                vcf_write1(args->out, args->hnull ? args->hnull : args->hsub ? args->hsub : args->hdr, line);
+                vcf_write1(args->out, out_hdr, line);
         }
     }
     hts_close(args->out);

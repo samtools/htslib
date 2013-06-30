@@ -16,10 +16,12 @@
 ##readme=BBBBBB
 ##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes">
 ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
+##INFO=<ID=INDEL,Number=0,Type=Flag,Description="Indicates that the variant is an INDEL.">
+##INFO=<ID=STR,Number=1,Type=String,Description="Test string type">
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	A	B
 1	3000150	.	C	T	59.2	PASS	AN=4;AC=2	GT:GQ	0/1:245	0/1:245
 1	3000151	.	C	T	59.2	PASS	AN=4;AC=2	GT:DP:GQ	0/1:32:245	0/1:32:245
-1	3062915	id3D	GTTT	G	12.9	q10	DP4=1,2,3,4;AN=4;AC=2	GT:GQ:DP:GL	0/1:409:35:-20,-5,-20	0/1:409:35:-20,-5,-20
+1	3062915	id3D	GTTT	G	12.9	q10	DP4=1,2,3,4;AN=4;AC=2;INDEL;STR=test	GT:GQ:DP:GL	0/1:409:35:-20,-5,-20	0/1:409:35:-20,-5,-20
 1	3062915	idSNP	G	T,C	12.6	test	TEST=5;DP4=1,2,3,4;AN=3;AC=1,1	GT:TT:GQ:DP:GL	0/1:0,1:409:35:-20,-5,-20,-20,-5,-20	2:0,1:409:35:-20,-5,-20
 1	3106154	.	CAAA	C	342	PASS	AN=4;AC=2	GT:GQ:DP	0/1:245:32	0/1:245:32
 1	3106154	.	C	CT	59.2	PASS	AN=4;AC=2	GT:GQ:DP	0/1:245:32	0/1:245:32
