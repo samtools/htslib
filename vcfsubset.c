@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <getopt.h>
 #include <ctype.h>
@@ -49,7 +50,7 @@ typedef struct _args_t
     bcf_srs_t *files;
     bcf_hdr_t *hdr, *hnull, *hsub; // original header, sites-only header, subset header
     char **argv, *format, *sample_names, *subset_fname, *targets_fname;
-    int argc, clevel, output_bcf, print_header, update_info, header_only, apply_filters, n_samples, *imap;
+    int argc, clevel, output_bcf, print_header, update_info, header_only, n_samples, *imap;
     int trim_alts, sites_only, known, novel, multiallelic, biallelic, exclude_ref, private, exclude_uncalled, min_ac, max_ac, calc_ac;
     char *fn_ref, *fn_out, **samples;
     char *include_types, *exclude_types;
@@ -763,7 +764,7 @@ static void usage(args_t *args)
     fprintf(stderr, "    -p,   --private                                print sites where only the subset samples carry an non-reference allele\n");
     fprintf(stderr, "    -e,   --exclude-filters <expr>                 include sites for which the expression is true (e.g. 'QUAL>=10 && (DP4[2]+DP4[3] > 2)\n");
     fprintf(stderr, "    -i,   --include-filters <expr>                 same as -e but with the reverse logic\n");
-    fprintf(stderr, "    -f,   --apply-filters                          print sites where FILTER is PASS\n");
+    fprintf(stderr, "    -f,   --apply-filters <list>                   require at least one of the listed FILTER strings (e.g. \"PASS,.\")\n");
     fprintf(stderr, "    -k/n, --known/--novel                          print known/novel sites only (ID is/not '.')\n");
     fprintf(stderr, "    -m/M, --multiallelic/--biallelic               print multiallelic/biallelic sites only\n");
     fprintf(stderr, "    -c/C  --min-ac/--max-ac                        minimum/maximum allele count (INFO/AC) of sites to be printed\n");
@@ -792,7 +793,7 @@ int main_vcfsubset(int argc, char *argv[])
         {"no-update",0,0,'I'},
         {"private",0,0,'p'},
         {"exclude-uncalled",0,0,'U'},
-        {"apply-filters",2,0,'f'},
+        {"apply-filters",1,0,'f'},
         {"known",0,0,'k'},
         {"novel",0,0,'n'},
         {"multiallelic",0,0,'m'},
@@ -808,7 +809,7 @@ int main_vcfsubset(int argc, char *argv[])
         {"doubletons",0,0,'2'},
         {0,0,0,0}
     };
-    while ((c = getopt_long(argc, argv, "l:bSt:o:L:s:Gfknv:V:mMaRpUhHc:C:12Ie:i:",loptions,NULL)) >= 0) {
+    while ((c = getopt_long(argc, argv, "l:bSt:o:L:s:Gf:knv:V:mMaRpUhHc:C:12Ie:i:",loptions,NULL)) >= 0) {
         switch (c) {
             case 'l': args->clevel = atoi(optarg); args->output_bcf = 1; break;
             case 'b': args->output_bcf = 1; break;
@@ -823,7 +824,7 @@ int main_vcfsubset(int argc, char *argv[])
             case 'I': args->update_info = 0; break;
             case 'G': args->sites_only = 1; break;
             
-            case 'f': args->apply_filters = 1; break;
+            case 'f': args->files->apply_filters = optarg; break;
             case 'k': args->known = 1; break;
             case 'n': args->novel = 1; break;
             case 'm': args->multiallelic = 1; break;
@@ -872,8 +873,6 @@ int main_vcfsubset(int argc, char *argv[])
         if ( !bcf_sr_set_targets(args->files, args->targets_fname) )
             error("Failed to read the targets: %s\n", args->targets_fname);
     }
-    if (args->apply_filters)
-        args->files->apply_filters = 1;
     if ( !bcf_sr_add_reader(args->files, argv[optind]) ) error("Failed to open or the file not indexed: %s\n", argv[optind]);
     
     init_data(args);

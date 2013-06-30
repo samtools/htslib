@@ -22,7 +22,7 @@ test_vcf_merge($opts,in=>['merge.a','merge.b','merge.c'],out=>'merge.abc.out');
 test_vcf_query($opts,in=>'query',out=>'query.out',args=>q[-f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%DP4\\t%AN[\\t%GT\\t%TGT]\\n']);
 test_vcf_norm($opts,in=>'norm',out=>'norm.out',fai=>'norm');
 test_vcf_subset($opts,in=>'subset',out=>'subset.1.out',args=>'-aRs NA00002 -v snps',reg=>'');
-test_vcf_subset($opts,in=>'subset',out=>'subset.2.out',args=>'-fk',reg=>'20 Y');
+test_vcf_subset($opts,in=>'subset',out=>'subset.2.out',args=>'-f PASS -k',reg=>'20 Y');
 test_vcf_subset($opts,in=>'subset',out=>'subset.3.out',args=>'-ps NA00003',reg=>'');
 
 print "\nNumber of tests:\n";
