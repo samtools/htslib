@@ -3,9 +3,9 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <assert.h>
-#include "tbx.h"
+#include "htslib/tbx.h"
 
-#include "khash.h"
+#include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 
 tbx_conf_t tbx_conf_gff = { 0, 1, 4, 5, '#', 0 };

@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
-#include "faidx.h"
-#include "khash.h"
+#include "htslib/faidx.h"
+#include "htslib/khash.h"
 
 typedef struct {
 	int32_t line_len, line_blen;
@@ -14,7 +14,7 @@ typedef struct {
 KHASH_MAP_INIT_STR(s, faidx1_t)
 
 #ifndef _NO_RAZF
-#include "razf.h"
+#include "htslib/razf.h"
 #else
 #ifdef _WIN32
 #define ftello(fp) ftell(fp)
@@ -31,7 +31,7 @@ extern int fseeko(FILE *stream, off_t offset, int whence);
 #define razf_tell(fp) ftello(fp)
 #endif
 #ifdef _USE_KNETFILE
-#include "knetfile.h"
+#include "htslib/knetfile.h"
 #endif
 
 struct __faidx_t {

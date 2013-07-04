@@ -5,16 +5,16 @@
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
-#include "kstring.h"
-#include "bgzf.h"
-#include "vcf.h"
-#include "tbx.h"
+#include "htslib/kstring.h"
+#include "htslib/bgzf.h"
+#include "htslib/vcf.h"
+#include "htslib/tbx.h"
 
-#include "khash.h"
+#include "htslib/khash.h"
 KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
 typedef khash_t(vdict) vdict_t;
 
-#include "kseq.h"
+#include "htslib/kseq.h"
 KSTREAM_DECLARE(gzFile, gzread)
 
 uint32_t bcf_float_missing    = 0x7F800001;

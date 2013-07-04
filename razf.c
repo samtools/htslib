@@ -36,7 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "razf.h"
+#include "htslib/razf.h"
 
 
 #if ZLIB_VERNUM < 0x1221

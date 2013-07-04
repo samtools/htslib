@@ -3,9 +3,9 @@
 #include <errno.h>
 #include <ctype.h>
 #include <zlib.h>
-#include "sam.h"
+#include "htslib/sam.h"
 
-#include "khash.h"
+#include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 
 typedef khash_t(s2i) sdict_t;
@@ -353,8 +353,8 @@ int bam_readrec(BGZF *fp, void *null, bam1_t *b, int *tid, int *beg, int *end)
  *** SAM header I/O ***
  **********************/
 
-#include "kseq.h"
-#include "kstring.h"
+#include "htslib/kseq.h"
+#include "htslib/kstring.h"
 
 bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
 {
