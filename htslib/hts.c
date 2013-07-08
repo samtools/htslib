@@ -677,24 +677,33 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 	hts_itr_t *iter = 0;
 
 	if (tid < 0) {
-		uint64_t off0 = (uint64_t)-1;
+		uint64_t off0 = UINT64_MAX;
 		khint_t k;
+		// FIXME: These two are quite naive and exclude the possiblity of an index file with no mapped reads
 		if (tid == HTS_IDX_START) {
 			if (idx->n > 0) {
-				bidx = idx->bidx[0];
-				k = kh_get(bin, bidx, idx->n_bins + 1);
+				int t;
+				for (t = 0; t < idx->n; t++) {
+					bidx = idx->bidx[t];
+					k = kh_get(bin, bidx, idx->n_bins + 1);
+					if (k != kh_end(bidx)) break;
+				}
 				if (k == kh_end(bidx)) return 0;
 				off0 = kh_val(bidx, k).list[0].u;
 			} else return 0;
 		} else if (tid == HTS_IDX_NOCOOR) {
 			if (idx->n > 0) {
-				bidx = idx->bidx[idx->n - 1];
-				k = kh_get(bin, bidx, idx->n_bins + 1);
+				int t;
+				for (t = idx->n-1; t >= 0; --t) {
+					bidx = idx->bidx[t];
+					k = kh_get(bin, bidx, idx->n_bins + 1);
+					if (k != kh_end(bidx)) break;
+				}
 				if (k == kh_end(bidx)) return 0;
 				off0 = kh_val(bidx, k).list[0].v;
 			} else return 0;
 		} else off0 = 0;
-		if (off0 != (uint64_t)-1) {
+		if (off0 != UINT64_MAX) {
 			iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
 			iter->read_rest = 1;
 			iter->curr_off = off0;
