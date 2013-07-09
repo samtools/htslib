@@ -13,10 +13,12 @@ int main_samview(int argc, char *argv[])
 	bam_hdr_t *h;
 	bam1_t *b;
 
-	while ((c = getopt(argc, argv, "IbSl:t:")) >= 0) {
+	while ((c = getopt(argc, argv, "IbDCSl:t:")) >= 0) {
 		switch (c) {
 		case 'S': flag |= 1; break;
 		case 'b': flag |= 2; break;
+		case 'D': flag |= 4; break;
+		case 'C': flag |= 8; break;
 		case 'l': clevel = atoi(optarg); flag |= 2; break;
 		case 't': fn_ref = optarg; break;
 		case 'I': ignore_sam_err = 1; break;
@@ -27,19 +29,21 @@ int main_samview(int argc, char *argv[])
 		return 1;
 	}
 	strcpy(moder, "r");
-	if ((flag&1) == 0) strcat(moder, "b");
+	if (flag&4) strcat(moder, "c");
+	else if ((flag&1) == 0) strcat(moder, "b");
 
 	in = sam_open(argv[optind], moder, fn_ref);
 	h = sam_hdr_read(in);
 	h->ignore_sam_err = ignore_sam_err;
 	b = bam_init1();
 
-	if ((flag&4) == 0) { // SAM/BAM output
+	if (1) { // SAM/BAM/CRAM output
 		htsFile *out;
 		char modew[8];
 		strcpy(modew, "w");
 		if (clevel >= 0 && clevel <= 9) sprintf(modew + 1, "%d", clevel);
-		if (flag&2) strcat(modew, "b");
+		if (flag&8) strcat(modew, "c");
+		else if (flag&2) strcat(modew, "b");
 		out = hts_open("-", modew, 0);
 		sam_hdr_write(out, h);
 		if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region

@@ -44,11 +44,11 @@ typedef struct __kstring_t {
  ************/
 
 typedef struct {
-	uint32_t is_bin:1, is_write:1, is_be:1, dummy:29;
+	uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, dummy:28;
 	int64_t lineno;
 	kstring_t line;
 	char *fn, *fn_aux;
-	void *fp; // file pointer; actual type depending on is_bin and is_write
+	void *fp; // file pointer; actual type depending on is_bin/cram/write
 } htsFile;
 
 /**********************

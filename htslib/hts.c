@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include "bgzf.h"
 #include "hts.h"
+#include "io_lib/cram.h"
 
 #include "kseq.h"
 KSTREAM_INIT2(, gzFile, gzread, 16384)
@@ -48,9 +49,12 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 	fp->is_be = ed_is_big();
 	if (strchr(mode, 'w')) fp->is_write = 1;
 	if (strchr(mode, 'b')) fp->is_bin = 1;
+	if (strchr(mode, 'c')) fp->is_cram = 1;
 	if (fp->is_bin) {
 		if (fp->is_write) fp->fp = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
 		else fp->fp = strcmp(fn, "-")? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
+	} else if (fp->is_cram) {
+		fp->fp = cram_open(fn, mode);
 	} else {
 		if (!fp->is_write) {
 			gzFile gzfp;
@@ -71,7 +75,11 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 void hts_close(htsFile *fp)
 {
 	free(fp->fn);
-	if (!fp->is_bin) {
+	if (fp->is_bin) {
+		bgzf_close((BGZF*)fp->fp);
+	} else if (fp->is_cram) {
+		cram_close((cram_fd *)fp->fp);
+	} else {
 		free(fp->line.s);
 		if (!fp->is_write) {
 			gzFile gzfp = ((kstream_t*)fp->fp)->f;
@@ -79,7 +87,7 @@ void hts_close(htsFile *fp)
 			gzclose(gzfp);
 			free(fp->fn_aux);
 		} else fclose((FILE*)fp->fp);
-	} else bgzf_close((BGZF*)fp->fp);
+	}
 	free(fp);
 }
 

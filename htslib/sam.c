@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include <zlib.h>
+#include "io_lib/cram.h"
 #include "sam.h"
 
 #include "khash.h"
@@ -396,7 +397,11 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
 
 bam_hdr_t *sam_hdr_read(htsFile *fp)
 {
-	if (!fp->is_bin) {
+	if (fp->is_bin) {
+		return bam_hdr_read((BGZF*)fp->fp);
+	} else if (fp->is_cram) {
+		return cram_header_to_bam(((cram_fd *)fp->fp)->header);
+	} else {
 		kstring_t str;
 		bam_hdr_t *h;
 		str.l = str.m = 0; str.s = 0;
@@ -408,12 +413,18 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
 		h = sam_hdr_parse(str.l, str.s);
 		h->l_text = str.l; h->text = str.s;
 		return h;
-	} else return bam_hdr_read((BGZF*)fp->fp);
+	}
 }
 
 int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 {
-	if (!fp->is_bin) {
+	if (fp->is_bin) {
+		bam_hdr_write((BGZF*)fp->fp, h);
+	} else if (fp->is_cram) {
+		cram_fd *fd = (cram_fd *)fp->fp;
+		fd->header = bam_header_to_cram((bam_hdr_t *)h);
+		return cram_write_SAM_hdr(fd, fd->header);
+	} else {
 		char *p;
 		fputs(h->text, (FILE*)fp->fp);
 		p = strstr(h->text, "@SQ\t"); // FIXME: we need a loop to make sure "@SQ\t" does not match something unwanted!!!
@@ -427,7 +438,7 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 			}
 		}
 		fflush((FILE*)fp->fp);
-	} else bam_hdr_write((BGZF*)fp->fp, h);
+	}
 	return 0;
 }
 
@@ -612,7 +623,11 @@ err_ret:
 
 int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 {
-	if (!fp->is_bin) {
+	if (fp->is_bin) {
+		return bam_read1((BGZF*)fp->fp, b);
+	} else if (fp->is_cram) {
+		return cram_get_bam_seq((cram_fd *)fp->fp, &b);
+	} else {
 		int ret;
 err_recover:
 		if (fp->line.l == 0) {
@@ -627,7 +642,7 @@ err_recover:
 			if (h->ignore_sam_err) goto err_recover;
 		}
 		return ret;
-	} else return bam_read1((BGZF*)fp->fp, b);
+	}
 }
 
 int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
@@ -708,12 +723,16 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 
 int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
 {
-	if (!fp->is_bin) {
+	if (fp->is_bin) {
+		return bam_write1((BGZF*)fp->fp, b);
+	} else if (fp->is_cram) {
+		return cram_put_bam_seq((cram_fd *)fp->fp, (bam1_t *)b);
+	} else {
 		sam_format1(h, b, &fp->line);
 		fwrite(fp->line.s, 1, fp->line.l, (FILE*)fp->fp);
 		fputc('\n', (FILE*)fp->fp);
 		return fp->line.l + 1;
-	} else return bam_write1((BGZF*)fp->fp, b);
+	}
 }
 
 /************************
