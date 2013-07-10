@@ -59,3 +59,13 @@ $(HTSDIR)/libhts.a: $(HTSLIB_ALL)
 
 $(HTSDIR)/libhts.so $(HTSDIR)/libhts.dylib: $(HTSLIB_ALL)
 	+cd $(HTSDIR) && $(MAKE) lib-shared
+
+# Rules for phony targets.  You may wish to have your corresponding phony
+# targets invoke these in addition to their own recipes:
+#
+#	clean: clean-htslib
+
+clean-htslib install-htslib:
+	+cd $(HTSDIR) && $(MAKE) $(@:-htslib=)
+
+.PHONY: clean-htslib install-htslib

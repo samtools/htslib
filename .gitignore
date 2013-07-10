@@ -1,5 +1,9 @@
 *.o
+*.pico
 
 lib*.a
+lib*.dylib
+lib*.so
+lib*.so.*
 
 /TAGS
