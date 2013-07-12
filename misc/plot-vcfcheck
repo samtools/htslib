@@ -34,7 +34,7 @@ if ( $$opts{make_plots} )
 	for my $id (file_ids($opts))
 	{
 		plot_tstv_by_AF($opts,$id);
-		#plot_tstv_by_QUAL($opts,$id);
+		plot_tstv_by_QUAL($opts,$id);
 		plot_indel_distribution($opts,$id);
 		plot_substitutions($opts,$id);
 		plot_per_sample_stats($opts,$id);
@@ -161,6 +161,11 @@ sub parse_params
                 id=>'IC',    
                 header=>'IC, Indel context', 
                 exp=>"# IC\t[2]id\t[3]repeat-consistent\t[4]repeat-inconsistent\t[5]not applicable\t[6]c/(c+i) ratio\n" 
+            },
+            { 
+                id=>'QUAL',
+                header=>'QUAL, Stats by quality', 
+                exp=>"# QUAL\t[2]id\t[3]Quality\t[4]number of SNPs\t[5]number of transitions\t[6]number of transversions\t[7]number of indels\n" 
             },
         ],
 	};
@@ -606,7 +611,6 @@ sub get_values
         warn("Warning: Possible version mismatch, the definition line differs\n\texpected: $$opts{exp}{$key}\tfound:    $$opts{def_line}{$key}");
         $$opts{def_line_warned}{$key} = 1;
     }
-
     if ( defined $i )
     {
         if ( defined $j ) { return $$opts{dat}{$key}{$id}[$i][$j]; }
@@ -886,6 +890,9 @@ sub plot_tstv_by_QUAL
     my ($opts,$id) = @_;
 	my @vals = get_values($opts,$id,'QUAL');
     if ( !@vals ) { return; }
+
+    my $vals = rebin_values(\@vals,10,0);
+    @vals = @$vals;
 
     my $fh   = $$opts{plt_fh};
 	my $img  = "$$opts{prefix}tstv_by_qual.$id";

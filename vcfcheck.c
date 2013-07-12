@@ -13,6 +13,8 @@
 #include "vcfutils.h"
 #include "faidx.h"
 
+#define QUAL_STATS 0
+
 typedef struct
 {
     int min, max, step, m_vals;
@@ -266,7 +268,7 @@ static void init_stats(args_t *args)
             args->m_af = args->files->readers[i].header->n[BCF_DT_SAMPLE] + 1;
 
     #if QUAL_STATS
-        args->m_qual = 500;
+        args->m_qual = 999;
     #endif
 
     if ( args->samples_file )
