@@ -17,8 +17,8 @@
 #include <math.h>
 #include <ctype.h>
 
-#include "io_lib/cram.h"
-#include "io_lib/os.h"
+#include "cram/cram.h"
+#include "cram/os.h"
 
 cram_stats *cram_stats_create(void) {
     return calloc(1, sizeof(cram_stats));
@@ -32,19 +32,20 @@ void cram_stats_add(cram_stats *st, int32_t val) {
     if (val < MAX_STAT_VAL && val >= 0) {
 	st->freqs[val]++;
     } else {
-	HashItem *hi;
+	khint_t k;
+	int r;
 
 	if (!st->h) {
-	    st->h = HashTableCreate(2048, HASH_DYNAMIC_SIZE|HASH_NONVOLATILE_KEYS|HASH_INT_KEYS);
+	    st->h = kh_init(m_i2i);
 	}
 
-	if ((hi = HashTableSearch(st->h, (char *)(size_t)val, 4))) {
-	    hi->data.i++;
-	} else {
-	    HashData hd;
-	    hd.i = 1;
-	    HashTableAdd(st->h, (char *)(size_t)val, 4, hd, NULL);
-	}
+	k = kh_put(m_i2i, st->h, val, &r);
+	if (r == 0)
+	    kh_val(st->h, k)++;
+	else if (r != -1)
+	    kh_val(st->h, k) = 1;
+	else
+	    ; // FIXME: handle error
     }
 }
 
@@ -57,11 +58,11 @@ void cram_stats_del(cram_stats *st, int32_t val) {
 	st->freqs[val]--;
 	assert(st->freqs[val] >= 0);
     } else if (st->h) {
-	HashItem *hi;
+	khint_t k = kh_get(m_i2i, st->h, val);
 
-	if ((hi = HashTableSearch(st->h, (char *)(size_t)val, 4))) {
-	    if (--hi->data.i == 0)
-		HashTableDel(st->h, hi, 0);
+	if (k != kh_end(st->h)) {
+	    if (--kh_val(st->h, k) == 0)
+		kh_del(m_i2i, st->h, k);
 	} else {
 	    fprintf(stderr, "Failed to remove val %d from cram_stats\n", val);
 	    st->nsamp++;
@@ -81,14 +82,13 @@ void cram_stats_dump(cram_stats *st) {
 	fprintf(stderr, "\t%d\t%d\n", i, st->freqs[i]);
     }
     if (st->h) {
-	HashIter *iter=  HashTableIterCreate();
-	HashItem *hi;
+	khint_t k;
+	for (k = kh_begin(st->h); k != kh_end(st->h); k++) {
+	    if (!kh_exist(st->h, k))
+		continue;
 
-	while ((hi = HashTableIterNext(st->h, iter))) {
-	    fprintf(stderr, "\t%d\t%d\n", (int)(size_t)hi->key,
-		    (int)hi->data.i);
+	    fprintf(stderr, "\t%d\t%d\n", kh_key(st->h, k), kh_val(st->h, k));
 	}
-	HashTableIterDestroy(iter);
     }
 }
 
@@ -147,11 +147,13 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
 	nvals++;
     }
     if (st->h) {
-	HashIter *iter=  HashTableIterCreate();
-	HashItem *hi;
+	khint_t k;
 	int i;
 
-	while ((hi = HashTableIterNext(st->h, iter))) {
+	for (k = kh_begin(st->h); k != kh_end(st->h); k++) {
+	    if (!kh_exist(st->h, k))
+		continue;
+
 	    if (nvals >= vals_alloc) {
 		vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
 		vals  = realloc(vals,  vals_alloc * sizeof(int));
@@ -159,15 +161,14 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
 		if (!vals || !freqs)
 		    return E_HUFFMAN; // Cannot do much else atm
 	    }
-	    i = (size_t)hi->key;
+	    i = kh_key(st->h, k);
 	    vals[nvals]=i;
-	    freqs[nvals] = hi->data.i;
+	    freqs[nvals] = kh_val(st->h, k);
 	    ntot += freqs[nvals];
 	    if (max_val < i) max_val = i;
 	    if (min_val > i) min_val = i;
 	    nvals++;
 	}
-	HashTableIterDestroy(iter);
     }
 
     st->nvals = nvals;
@@ -322,6 +323,6 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
 
 void cram_stats_free(cram_stats *st) {
     if (st->h)
-	HashTableDestroy(st->h, 0);
+	kh_destroy(m_i2i, st->h);
     free(st);
 }

@@ -34,10 +34,10 @@
 #include <math.h>
 #include <ctype.h>
 
-#include "io_lib/cram.h"
-#include "io_lib/os.h"
-#include "io_lib/md5.h"
-#include "io_lib/open_trace_file.h"
+#include "cram/cram.h"
+#include "cram/os.h"
+#include "cram/md5.h"
+#include "cram/open_trace_file.h"
 
 //#define REF_DEBUG
 
@@ -992,20 +992,21 @@ void refs_free(refs_t *r) {
 	string_pool_destroy(r->pool);
 
     if (r->h_meta) {
-	HashIter *iter = HashTableIterCreate();
-	HashItem *hi;
+	khint_t k;
 
-        while ((hi = HashTableIterNext(r->h_meta, iter))) {
-	    ref_entry *e = (ref_entry *)hi->data.p;
-	    if (!e)
+	for (k = kh_begin(r->h_meta); k != kh_end(r->h_meta); k++) {
+	    ref_entry *e;
+
+	    if (!kh_exist(r->h_meta, k))
+		continue;
+	    if (!(e = kh_val(r->h_meta, k)))
 		continue;
 	    if (e->seq)
 		free(e->seq);
 	    free(e);
 	}
 
-	HashTableIterDestroy(iter);
-	HashTableDestroy(r->h_meta, 0);
+	kh_destroy(refs, r->h_meta);
     }
     
     if (r->ref_id)
@@ -1034,8 +1035,7 @@ static refs_t *refs_create(void) {
     r->count = 1;
     r->last = NULL;
 
-    r->h_meta = HashTableCreate(16, HASH_DYNAMIC_SIZE | HASH_NONVOLATILE_KEYS);
-    if (!r->h_meta)
+    if (!(r->h_meta = kh_init(refs)))
 	goto err;
 
     pthread_mutex_init(&r->lock, NULL);
@@ -1059,7 +1059,6 @@ static refs_t *refs_create(void) {
 static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
     struct stat sb;
     FILE *fp = NULL;
-    HashData hd;
     char fai_fn[PATH_MAX];
     char line[8192];
     refs_t *r = r_orig;
@@ -1106,7 +1105,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 	ref_entry *e = malloc(sizeof(*e));
 	char *cp;
 	int n;
-	HashItem *hi;
+	khint_t k;
 
 	if (!e)
 	    return NULL;
@@ -1143,17 +1142,17 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 	e->count = 0;
 	e->seq = NULL;
 
-	hd.p = e;
-	if (!(hi = HashTableAdd(r->h_meta, e->name, strlen(e->name), hd, &n)))
+	k = kh_put(refs, r->h_meta, e->name, &n);
+	if (-1 == n)
 	    return NULL;
 
+	/* Replace old one if needed */
 	if (!n) {
-	    /* Replace old one if needed */
-	    ref_entry *r = (ref_entry *)hi->data.p;
-	    if (r)
-		free(r);
-	    hi->data.p = e;
+	    ref_entry *e = kh_val(r->h_meta, k);
+	    if (e)
+		free(e);
 	}
+	kh_val(r->h_meta, k) = e;
     }
 
     return r;
@@ -1186,9 +1185,9 @@ int refs2id(refs_t *r, SAM_hdr *h) {
 
     r->nref = h->nref;
     for (i = 0; i < h->nref; i++) {
-	HashItem *hi;
-	if ((hi = HashTableSearch(r->h_meta, h->ref[i].name, 0))) {
-	    r->ref_id[i] = hi->data.p;
+	khint_t k = kh_get(refs, r->h_meta, h->ref[i].name);
+	if (k != kh_end(r->h_meta)) {
+	    r->ref_id[i] = kh_val(r->h_meta, k);
 	} else {
 	    fprintf(stderr, "Unable to find ref name '%s'\n",
 		    h->ref[i].name);
@@ -1226,7 +1225,7 @@ static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
     for (i = 0; i < h->nref; i++) {
 	SAM_hdr_type *ty;
 	SAM_hdr_tag *tag;
-	HashData hd;
+	khint_t k;
 	int n;
 
 	if (r->ref_id[i] && 0 == strcmp(r->ref_id[i]->name, h->ref[i].name))
@@ -1246,12 +1245,10 @@ static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
 	    }
 	}
 
-	hd.p = r->ref_id[i];
-	if (!HashTableAdd(r->h_meta, r->ref_id[i]->name,
-			  strlen(r->ref_id[i]->name), hd, &n))
+	k = kh_put(refs, r->h_meta, r->ref_id[i]->name, &n);
+	if (n <= 0) // already exists or error
 	    return -1;
-	if (!n)
-	    return -1;
+	kh_val(r->h_meta, k) = r->ref_id[i];
     }
 
     return 0;
@@ -1936,7 +1933,7 @@ cram_container *cram_new_container(int nrec, int nslice) {
     
     //c->aux_B_stats = cram_stats_create();
 
-    if (!(c->tags_used = HashTableCreate(16, HASH_DYNAMIC_SIZE)))
+    if (!(c->tags_used = kh_init(s_i2i)))
 	return NULL;
     c->refs_used = 0;
 
@@ -1999,7 +1996,7 @@ void cram_free_container(cram_container *c) {
 
     //if (c->aux_B_stats) cram_stats_free(c->aux_B_stats);
     
-    if (c->tags_used) HashTableDestroy(c->tags_used, 0);
+    if (c->tags_used) kh_destroy(s_i2i, c->tags_used);
 
     free(c);
 }
@@ -2275,7 +2272,10 @@ cram_block_compression_hdr *cram_new_compression_header(void) {
     if (!(hdr->TD_blk = cram_new_block(CORE, 0)))
 	return NULL;
 
-    if (!(hdr->TD = HashTableCreate(16, HASH_DYNAMIC_SIZE)))
+    if (!(hdr->TD_hash = kh_init(m_s2i)))
+	return NULL;
+
+    if (!(hdr->TD_keys = string_pool_create(8192)))
 	return NULL;
 
     return hdr;
@@ -2288,7 +2288,7 @@ void cram_free_compression_header(cram_block_compression_hdr *hdr) {
 	free(hdr->landmark);
 
     if (hdr->preservation_map)
-	HashTableDestroy(hdr->preservation_map, 0);
+	kh_destroy(map, hdr->preservation_map);
 
     for (i = 0; i < CRAM_MAP_HASH; i++) {
 	cram_map *m, *m2;
@@ -2344,8 +2344,10 @@ void cram_free_compression_header(cram_block_compression_hdr *hdr) {
 	free(hdr->TL);
     if (hdr->TD_blk)
 	cram_free_block(hdr->TD_blk);
-    if (hdr->TD)
-	HashTableDestroy(hdr->TD, 0);
+    if (hdr->TD_hash)
+	kh_destroy(m_s2i, hdr->TD_hash);
+    if (hdr->TD_keys)
+	string_pool_destroy(hdr->TD_keys);
 
     free(hdr);
 }
@@ -2427,9 +2429,12 @@ void cram_free_slice(cram_slice *s) {
     if (s->TN)
 	free(s->TN);
 #endif
+    
+    if (s->pair_keys)
+	string_pool_destroy(s->pair_keys);
 
     if (s->pair)
-	HashTableDestroy(s->pair, 0);
+	kh_destroy(m_s2i, s->pair);
 
     free(s);
 }
@@ -2479,7 +2484,8 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
 #endif
 
     // Volatile keys as we do realloc in dstring
-    if (!(s->pair = HashTableCreate(10000, HASH_DYNAMIC_SIZE)))   return NULL;
+    if (!(s->pair_keys = string_pool_create(8192))) return NULL;
+    if (!(s->pair = kh_init(m_s2i))) return NULL;
     
 #ifdef BA_external
     s->BA_len = 0;
@@ -3224,7 +3230,7 @@ int cram_close(cram_fd *fd) {
 	next = bl->next;
 	for (i = 0; i < max_rec; i++) {
 	    if (bl->bams[i])
-		free(bl->bams[i]);
+		bam_free(bl->bams[i]);
 	}
 	free(bl->bams);
 	free(bl);

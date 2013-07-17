@@ -9,8 +9,8 @@
 #include <string.h>
 #include <assert.h>
 
-#include "io_lib/sam_header.h"
-#include "io_lib/string_alloc.h"
+#include "cram/sam_header.h"
+#include "cram/string_alloc.h"
 
 #ifdef SAMTOOLS
 #define sam_hdr_parse sam_hdr_parse_
@@ -25,16 +25,21 @@ static void sam_hdr_error(char *msg, char *line, int len, int lno) {
 }
 
 void sam_hdr_dump(SAM_hdr *hdr) {
-    HashIter *iter = HashTableIterCreate();
-    HashItem *hi;
+    khint_t k;
     int i;
 
     printf("===DUMP===\n");
-    while ((hi = HashTableIterNext(hdr->h, iter))) {
+    for (k = kh_begin(hdr->h); k != kh_end(hdr->h); k++) {
 	SAM_hdr_type *t1, *t2;
+	char c[2];
 
-	t1 = t2 = hi->data.p;
-	printf("Type %.2s, count %d\n", hi->key, t1->prev->order+1);
+	if (!kh_exist(hdr->h, k))
+	    continue;
+
+	t1 = t2 = kh_val(hdr->h, k);
+	c[0] = kh_key(hdr->h, k)>>8;
+	c[1] = kh_key(hdr->h, k)&0xff;
+	printf("Type %.2s, count %d\n", c, t1->prev->order+1);
 
 	do {
 	    SAM_hdr_tag *tag;
@@ -62,20 +67,18 @@ void sam_hdr_dump(SAM_hdr *hdr) {
     }
 
     puts("===END DUMP===");
-
-    HashTableIterDestroy(iter);
 }
 
-/* Updates the HashTables in the SAM_hdr structure.
+/* Updates the hash tables in the SAM_hdr structure.
  *
  * Returns 0 on success;
  *        -1 on failure
  */
 static int sam_hdr_update_hashes(SAM_hdr *sh,
-				 const char *type,
+				 int type,
 				 SAM_hdr_type *h_type) {
     /* Add to reference hash? */
-    if (type[0] == 'S' && type[1] == 'Q') {
+    if ((type>>8) == 'S' && (type&0xff) == 'Q') {
 	SAM_hdr_tag *tag;
 	int nref = sh->nref;
 
@@ -102,17 +105,18 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 	}
 
 	if (sh->ref[nref].name) {
-	    HashData hd;
-	    hd.i = nref;
-	    if (!HashTableAdd(sh->ref_hash, sh->ref[nref].name, 0, hd, NULL))
-		return -1;
+	    khint_t k;
+	    int r;
+	    k = kh_put(m_s2i, sh->ref_hash, sh->ref[nref].name, &r);
+	    if (-1 == r) return -1;
+	    kh_val(sh->ref_hash, k) = nref;
 	}
 
 	sh->nref++;
     }
 
     /* Add to read-group hash? */
-    if (type[0] == 'R' && type[1] == 'G') {
+    if ((type>>8) == 'R' && (type&0xff) == 'G') {
 	SAM_hdr_tag *tag;
 	int nrg = sh->nrg;
 
@@ -139,17 +143,18 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 	}
 
 	if (sh->rg[nrg].name) {
-	    HashData hd;
-	    hd.i = nrg;
-	    if (!HashTableAdd(sh->rg_hash, sh->rg[nrg].name, 0, hd, NULL))
-		return -1;
+	    khint_t k;
+	    int r;
+	    k = kh_put(m_s2i, sh->rg_hash, sh->rg[nrg].name, &r);
+	    if (-1 == r) return -1;
+	    kh_val(sh->rg_hash, k) = nrg;
 	}
 
 	sh->nrg++;
     }
 
     /* Add to program hash? */
-    if (type[0] == 'P' && type[1] == 'G') {
+    if ((type>>8) == 'P' && (type&0xff) == 'G') {
 	SAM_hdr_tag *tag;
 	int npg = sh->npg;
 
@@ -174,20 +179,23 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 		sh->pg[npg].name_len = strlen(sh->pg[npg].name);
 	    } else if (tag->str[0] == 'P' && tag->str[1] == 'P') {
 		// Resolve later if needed
-		HashItem *hi = HashTableSearch(sh->pg_hash,
-					       tag->str+3,
-					       tag->len-3);
-		if (hi) {
-		    sh->pg[npg].prev_id = sh->pg[hi->data.i].id;
+		khint_t k;
+		char tmp = tag->str[tag->len]; tag->str[tag->len] = 0;
+		k = kh_get(m_s2i, sh->pg_hash, tag->str+3);
+		tag->str[tag->len] = tmp;
+
+		if (k != kh_end(sh->pg_hash)) {
+		    int p_id = kh_val(sh->pg_hash, k);
+		    sh->pg[npg].prev_id = sh->pg[p_id].id;
 
 		    /* Unmark previous entry as a PG termination */
 		    if (sh->npg_end > 0 &&
-			sh->pg_end[sh->npg_end-1] == hi->data.i) {
+			sh->pg_end[sh->npg_end-1] == p_id) {
 			sh->npg_end--;
 		    } else {
 			int i;
 			for (i = 0; i < sh->npg_end; i++) {
-			    if (sh->pg_end[i] == hi->data.i) {
+			    if (sh->pg_end[i] == p_id) {
 				memmove(&sh->pg_end[i], &sh->pg_end[i+1],
 					(sh->npg_end-i-1)*sizeof(*sh->pg_end));
 				sh->npg_end--;
@@ -202,10 +210,11 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 	}
 
 	if (sh->pg[npg].name) {
-	    HashData hd;
-	    hd.i = npg;
-	    if (!HashTableAdd(sh->pg_hash, sh->pg[npg].name, 0, hd, NULL))
-		return -1;
+	    khint_t k;
+	    int r;
+	    k = kh_put(m_s2i, sh->pg_hash, sh->pg[npg].name, &r);
+	    if (-1 == r) return -1;
+	    kh_val(sh->pg_hash, k) = npg;
 	}
 
 	/* Add to npg_end[] array. Remove later if we find a PP line */
@@ -240,19 +249,20 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
  */
 int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
     int i, lno = 1, text_offset;
-    HashItem *hi;
-    HashData hd;
     char *hdr;
 
     if (!len)
 	len = strlen(lines);
 
-    text_offset = DSTRING_LEN(sh->text);
-    dstring_nappend(sh->text, lines, len);
-    hdr = DSTRING_STR(sh->text) + text_offset;
+    text_offset = ks_len(&sh->text);
+    if (EOF == kputsn(lines, len, &sh->text))
+	return -1;
+    hdr = ks_str(&sh->text) + text_offset;
 
     for (i = 0; i < len; i++) {
-	char *type;
+	khint32_t type;
+	khint_t k;
+
 	int l_start = i, new;
 	SAM_hdr_type *h_type;
 	SAM_hdr_tag *h_tag, *last;
@@ -266,9 +276,9 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	    return -1;
 	}
 
-	type = &hdr[i+1];
-	if (type[0] < 'A' || type[0] > 'z' ||
-	    type[1] < 'A' || type[1] > 'z') {
+	type = (hdr[i+1]<<8) | hdr[i+2];
+	if (hdr[i+1] < 'A' || hdr[i+1] > 'z' ||
+	    hdr[i+2] < 'A' || hdr[i+2] > 'z') {
 	    sam_hdr_error("Header line does not have a two character key",
 			  &hdr[l_start], len - l_start, lno);
 	    return -1;
@@ -281,13 +291,13 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	// Add the header line type
 	if (!(h_type = pool_alloc(sh->type_pool)))
 	    return -1;
-	hd.p = h_type;
-	if (!(hi = HashTableAdd(sh->h, type, 2, hd, &new)))
+	if (-1 == (k = kh_put(sam_hdr, sh->h, type, &new)))
 	    return -1;
+	kh_val(sh->h, k) = h_type;
 
 	// Form the ring, either with self or other lines of this type
 	if (!new) {
-	    SAM_hdr_type *t = hi->data.p, *p;
+	    SAM_hdr_type *t = kh_val(sh->h, k), *p;
 	    p = t->prev;
 	    
 	    assert(p->next = t);
@@ -304,7 +314,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 
 	// Parse the tags on this line
 	last = NULL;
-	if (type[0] == 'C' && type[1] == 'O') {
+	if ((type>>8) == 'C' && (type&0xff) == 'O') {
 	    int j;
 	    if (hdr[i] != '\t') {
 		sam_hdr_error("Missing tab",
@@ -385,30 +395,29 @@ int sam_hdr_add(SAM_hdr *sh, const char *type, ...) {
 
 int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
     va_list args;
-    HashItem *hi;
-    HashData hd;
     SAM_hdr_type *h_type;
     SAM_hdr_tag *h_tag, *last;
     int new;
+    khint32_t type_i = (type[0]<<8) | type[1], k;
 
 #if defined(HAVE_VA_COPY)
     va_list ap_local;
 #endif
 
-    if (-1 == dstring_append_char(sh->text, '@'))
+    if (EOF == kputc_('@', &sh->text))
 	return -1;
-    if (-1 == dstring_nappend(sh->text, type, 2))
+    if (EOF == kputsn(type, 2, &sh->text))
 	return -1;
 
     if (!(h_type = pool_alloc(sh->type_pool)))
 	return -1;
-    hd.p = h_type;
-    if (!(hi = HashTableAdd(sh->h, (char *)type, 2, hd, &new)))
+    if (-1 == (k = kh_put(sam_hdr, sh->h, type_i, &new)))
 	return -1;
-    
+    kh_val(sh->h, k) = h_type;
+
     // Form the ring, either with self or other lines of this type
     if (!new) {
-	SAM_hdr_type *t = hi->data.p, *p;
+	SAM_hdr_type *t = kh_val(sh->h, k), *p;
 	p = t->prev;
 	    
 	assert(p->next = t);
@@ -435,23 +444,23 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 	    break;
 	v = va_arg(args, char *);
 
-	if (-1 == dstring_append_char(sh->text, '\t'))
+	if (EOF == kputc_('\t', &sh->text))
 	    return -1;
 
 	if (!(h_tag = pool_alloc(sh->tag_pool)))
 	    return -1;
-	idx = DSTRING_LEN(sh->text);
+	idx = ks_len(&sh->text);
 	
-	if (-1 == dstring_append(sh->text, k))
+	if (EOF == kputs(k, &sh->text))
 	    return -1;
-	if (-1 == dstring_append_char(sh->text, ':'))
+	if (EOF == kputc_(':', &sh->text))
 	    return -1;
-	if (-1 == dstring_append(sh->text, v))
+	if (EOF == kputs(v, &sh->text))
 	    return -1;
 
-	h_tag->len = DSTRING_LEN(sh->text) - idx;
+	h_tag->len = ks_len(&sh->text) - idx;
 	h_tag->str = string_ndup(sh->str_pool,
-				 DSTRING_STR(sh->text) + idx,
+				 ks_str(&sh->text) + idx,
 				 h_tag->len);
 	h_tag->next = NULL;
 	if (!h_tag->str)
@@ -480,23 +489,23 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 	    break;
 	v = va_arg(ap, char *);
 
-	if (-1 == dstring_append_char(sh->text, '\t'))
+	if (EOF == kputc_('\t', &sh->text))
 	    return -1;
 
 	if (!(h_tag = pool_alloc(sh->tag_pool)))
 	    return -1;
-	idx = DSTRING_LEN(sh->text);
+	idx = ks_len(&sh->text);
 	
-	if (-1 == dstring_append(sh->text, k))
+	if (EOF == kputs(k, &sh->text))
 	    return -1;
-	if (-1 == dstring_append_char(sh->text, ':'))
+	if (EOF == kputc_(':', &sh->text))
 	    return -1;
-	if (-1 == dstring_append(sh->text, v))
+	if (EOF == kputs(v, &sh->text))
 	    return -1;
 
-	h_tag->len = DSTRING_LEN(sh->text) - idx;
+	h_tag->len = ks_len(&sh->text) - idx;
 	h_tag->str = string_ndup(sh->str_pool,
-				 DSTRING_STR(sh->text) + idx,
+				 ks_str(&sh->text) + idx,
 				 h_tag->len);
 	h_tag->next = NULL;
 	if (!h_tag->str)
@@ -511,10 +520,11 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
     }
     va_end(ap);
 
-    if (-1 == dstring_append_char(sh->text, '\n'))
+    if (EOF == kputc('\n', &sh->text))
 	return -1;
 
-    if (-1 == sam_hdr_update_hashes(sh, type, h_type))
+    int itype = (type[0]<<8) | type[1];
+    if (-1 == sam_hdr_update_hashes(sh, itype, h_type))
 	return -1;
 
     return h_type->order;
@@ -528,37 +538,45 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
  */
 SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
 			   char *ID_key, char *ID_value) {
-    HashItem *hi;
     SAM_hdr_type *t1, *t2;
+    int itype = (type[0]<<8)|(type[1]);
+    khint_t k;
 
     /* Special case for types we have prebuilt hashes on */
     if (ID_key) {
 	if (type[0]   == 'S' && type[1]   == 'Q' &&
 	    ID_key[0] == 'S' && ID_key[1] == 'N') {
-	    hi = HashTableSearch(hdr->ref_hash, ID_value, strlen(ID_value));
-	    return hi ? hdr->ref[hi->data.i].ty : NULL;
+	    k = kh_get(m_s2i, hdr->ref_hash, ID_value);
+	    return k != kh_end(hdr->ref_hash)
+		? hdr->ref[kh_val(hdr->ref_hash, k)].ty
+		: NULL;
 	}
 
 	if (type[0]   == 'R' && type[1]   == 'G' &&
 	    ID_key[0] == 'I' && ID_key[1] == 'D') {
-	    hi = HashTableSearch(hdr->rg_hash, ID_value, strlen(ID_value));
-	    return hi ? hdr->rg[hi->data.i].ty : NULL;
+	    k = kh_get(m_s2i, hdr->rg_hash, ID_value);
+	    return k != kh_end(hdr->rg_hash)
+		? hdr->rg[kh_val(hdr->rg_hash, k)].ty
+		: NULL;
 	}
 
 	if (type[0]   == 'P' && type[1]   == 'G' &&
 	    ID_key[0] == 'I' && ID_key[1] == 'D') {
-	    hi = HashTableSearch(hdr->pg_hash, ID_value, strlen(ID_value));
-	    return hi ? hdr->pg[hi->data.i].ty : NULL;
+	    k = kh_get(m_s2i, hdr->pg_hash, ID_value);
+	    return k != kh_end(hdr->pg_hash)
+		? hdr->pg[kh_val(hdr->pg_hash, k)].ty
+		: NULL;
 	}
     }
 
-    if (!(hi = HashTableSearch(hdr->h, type, 2)))
+    k = kh_get(sam_hdr, hdr->h, itype);
+    if (k == kh_end(hdr->h))
 	return NULL;
-
+    
     if (!ID_key)
-	return hi->data.p;
+	return kh_val(hdr->h, k);
 
-    t1 = t2 = hi->data.p;
+    t1 = t2 = kh_val(hdr->h, k);
     do {
 	SAM_hdr_tag *tag;
 	for (tag = t1->tag; tag; tag = tag->next) {
@@ -591,36 +609,27 @@ SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
 char *sam_hdr_find_line(SAM_hdr *hdr, char *type,
 			char *ID_key, char *ID_value) {
     SAM_hdr_type *ty = sam_hdr_find(hdr, type, ID_key, ID_value);
-    dstring_t *ds;
+    kstring_t ks = KS_INITIALIZER;
     SAM_hdr_tag *tag;
-    char *str = dstring_str(hdr->text);
     int r = 0;
 
     if (!ty)
 	return NULL;
 
-    if (NULL == (ds = dstring_create(NULL)))
-	return NULL;
-
     // Paste together the line from the hashed copy
-    r |= dstring_append_char(ds, '@');
-    r |= dstring_append(ds, type);
+    r |= (kputc_('@', &ks) == EOF);
+    r |= (kputs(type, &ks) == EOF);
     for (tag = ty->tag; tag; tag = tag->next) {
-	r |= dstring_append_char(ds, '\t');
-	r |= dstring_nappend(ds, tag->str, tag->len);
+	r |= (kputc_('\t', &ks) == EOF);
+	r |= (kputsn(tag->str, tag->len, &ks) == EOF);
     }
 
     if (r) {
-	dstring_destroy(ds);
+	KS_FREE(&ks);
 	return NULL;
     }
 
-    // Steal the dstring copy and return that.
-    str = DSTRING_STR(ds);
-    DSTRING_STR(ds) = NULL;
-    dstring_destroy(ds);
-
-    return str;
+    return ks_str(&ks);
 }
 
 
@@ -692,12 +701,12 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
 	    tag->next = NULL;
 	}
 
-	idx = DSTRING_LEN(hdr->text);
-	if (0 != dstring_appendf(hdr->text, "%2.2s:%s", k, v))
+	idx = ks_len(&hdr->text);
+	if (ksprintf(&hdr->text, "%2.2s:%s", k, v) < 0)
 	    return -1;
-	tag->len = DSTRING_LEN(hdr->text) - idx;
+	tag->len = ks_len(&hdr->text) - idx;
 	tag->str = string_ndup(hdr->str_pool,
-			       DSTRING_STR(hdr->text) + idx,
+			       ks_str(&hdr->text) + idx,
 			       tag->len);
 	if (!tag->str)
 	    return -1;
@@ -708,63 +717,71 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
     return 0;
 }
 
+#define K(a) (((a)[0]<<8)|((a)[1]))
+
 /*
- * Reconstructs the dstring from the header hash table.
+ * Reconstructs the kstring from the header hash table.
  * Returns 0 on success
  *        -1 on failure
  */
 int sam_hdr_rebuild(SAM_hdr *hdr) {
     /* Order: HD then others */
-    HashItem *hi;
-    HashIter *iter = HashTableIterCreate();
-    dstring_t *ds = dstring_create(NULL);
+    kstring_t ks = KS_INITIALIZER;
+    khint_t k;
 
-    if (!iter || !ds)
-	return -1;
 
-    if ((hi = HashTableSearch(hdr->h, "HD", 2))) {
-	SAM_hdr_type *ty = hi->data.p;
+    k = kh_get(sam_hdr, hdr->h, K("HD"));
+    if (k != kh_end(hdr->h)) {
+	SAM_hdr_type *ty = kh_val(hdr->h, k);
 	SAM_hdr_tag *tag;
-	if (-1 == dstring_append(ds, "@HD"))
+	if (EOF == kputs("@HD", &ks))
 	    return -1;
 	for (tag = ty->tag; tag; tag = tag->next) {
-	    if (-1 == dstring_append_char(ds, '\t'))
+	    if (EOF == kputc_('\t', &ks))
 		return -1;
-	    if (-1 == dstring_nappend(ds, tag->str, tag->len))
+	    if (EOF == kputsn_(tag->str, tag->len, &ks))
 		return -1;
 	}
-	if (-1 == dstring_append_char(ds, '\n'))
+	if (EOF == kputc('\n', &ks))
 	    return -1;
     }
 
-    while ((hi = HashTableIterNext(hdr->h, iter))) {
+    for (k = kh_begin(hdr->h); k != kh_end(hdr->h); k++) {
 	SAM_hdr_type *t1, *t2;
-	if (hi->key[0] == 'H' && hi->key[1] == 'D')
+
+	if (!kh_exist(hdr->h, k))
 	    continue;
 
-	t1 = t2 = hi->data.p;
+	if (kh_key(hdr->h, k) == K("HD"))
+	    continue;
+
+	t1 = t2 = kh_val(hdr->h, k);
 	do {
 	    SAM_hdr_tag *tag;
-	    if (-1 == dstring_append_char(ds, '@'))
+	    char c[2];
+
+	    if (EOF == kputc_('@', &ks))
 		return -1;
-	    if (-1 == dstring_nappend(ds, hi->key, 2))
+	    c[0] = kh_key(hdr->h, k)>>8;
+	    c[1] = kh_key(hdr->h, k)&0xff;
+	    if (EOF == kputsn_(c, 2, &ks))
 		return -1;
 	    for (tag = t1->tag; tag; tag=tag->next) {
-		if (-1 == dstring_append_char(ds, '\t'))
+		if (EOF == kputc_('\t', &ks))
 		    return -1;
-		if (-1 == dstring_nappend(ds, tag->str, tag->len))
+		if (EOF == kputsn_(tag->str, tag->len, &ks))
 		    return -1;
 	    }
-	    if (-1 == dstring_append_char(ds, '\n'))
+	    if (EOF == kputc('\n', &ks))
 		return -1;
 	    t1 = t1->next;
 	} while (t1 != t2);
     }
 
-    HashTableIterDestroy(iter);
+    if (ks_str(&hdr->text))
+	KS_FREE(&hdr->text);
 
-    dstring_destroy(hdr->text);
-    hdr->text = ds;
+    hdr->text = ks;
 
     return 0;
 }
@@ -782,8 +799,7 @@ SAM_hdr *sam_hdr_new() {
     if (!sh)
 	return NULL;
     
-    sh->h = HashTableCreate(16, HASH_FUNC_HSIEH |
-			    HASH_DYNAMIC_SIZE);
+    sh->h = kh_init(sam_hdr);
     if (!sh->h)
 	goto err;
 
@@ -792,29 +808,22 @@ SAM_hdr *sam_hdr_new() {
 
     sh->nref = 0;
     sh->ref  = NULL;
-    if (!(sh->ref_hash = HashTableCreate(16, HASH_FUNC_HSIEH |
-					 HASH_DYNAMIC_SIZE |
-					 HASH_NONVOLATILE_KEYS)))
+    if (!(sh->ref_hash = kh_init(m_s2i)))
 	goto err;
 
     sh->nrg = 0;
     sh->rg  = NULL;
-    if (!(sh->rg_hash = HashTableCreate(16, HASH_FUNC_HSIEH |
-					HASH_DYNAMIC_SIZE |
-					HASH_NONVOLATILE_KEYS)))
+    if (!(sh->rg_hash = kh_init(m_s2i)))
 	goto err;
 
     sh->npg = 0;
     sh->pg  = NULL;
     sh->npg_end = sh->npg_end_alloc = 0;
     sh->pg_end = NULL;
-    if (!(sh->pg_hash = HashTableCreate(16, HASH_FUNC_HSIEH |
-					HASH_DYNAMIC_SIZE |
-					HASH_NONVOLATILE_KEYS)))
+    if (!(sh->pg_hash = kh_init(m_s2i)))
 	goto err;
 
-    if (!(sh->text = dstring_create(NULL)))
-	goto err;
+    KS_INIT(&sh->text);
 
     if (!(sh->tag_pool = pool_create(sizeof(SAM_hdr_tag))))
 	goto err;
@@ -829,7 +838,7 @@ SAM_hdr *sam_hdr_new() {
 
  err:
     if (sh->h)
-	HashTableDestroy(sh->h, 0);
+	kh_destroy(sam_hdr, sh->h);
 
     if (sh->tag_pool)
 	pool_destroy(sh->tag_pool);
@@ -871,7 +880,7 @@ SAM_hdr *sam_hdr_parse(const char *hdr, int len) {
     //sam_hdr_dump(sh);
     //sam_hdr_add(sh, "RG", "ID", "foo", "SM", "bar", NULL);
     //sam_hdr_rebuild(sh);
-    //printf(">>%s<<", DSTRING_STR(sh->text));
+    //printf(">>%s<<", ks_str(sh->text));
 
     //parse_references(sh);
     //parse_read_groups(sh);
@@ -929,14 +938,14 @@ void sam_hdr_free(SAM_hdr *hdr) {
     if (--hdr->ref_count > 0)
 	return;
 
-    if (hdr->text)
-	dstring_destroy(hdr->text);
+    if (ks_str(&hdr->text))
+	KS_FREE(&hdr->text);
 
     if (hdr->h)
-	HashTableDestroy(hdr->h, 0);
+	kh_destroy(sam_hdr, hdr->h);
 
     if (hdr->ref_hash)
-	HashTableDestroy(hdr->ref_hash, 0);
+	kh_destroy(m_s2i, hdr->ref_hash);
 
     if (hdr->ref) {
 	int i;
@@ -947,7 +956,7 @@ void sam_hdr_free(SAM_hdr *hdr) {
     }
 
     if (hdr->rg_hash)
-	HashTableDestroy(hdr->rg_hash, 0);
+	kh_destroy(m_s2i, hdr->rg_hash);
 
     if (hdr->rg) {
 	int i;
@@ -958,7 +967,7 @@ void sam_hdr_free(SAM_hdr *hdr) {
     }
 
     if (hdr->pg_hash)
-	HashTableDestroy(hdr->pg_hash, 0);
+	kh_destroy(m_s2i, hdr->pg_hash);
 
     if (hdr->pg) {
 	int i;
@@ -984,11 +993,11 @@ void sam_hdr_free(SAM_hdr *hdr) {
 }
 
 int sam_hdr_length(SAM_hdr *hdr) {
-    return dstring_length(hdr->text);
+    return ks_len(&hdr->text);
 }
 
 char *sam_hdr_str(SAM_hdr *hdr) {
-    return dstring_str(hdr->text);
+    return ks_str(&hdr->text);
 }
 
 /*
@@ -996,8 +1005,8 @@ char *sam_hdr_str(SAM_hdr *hdr) {
  * Returns -1 if unknown reference.
  */
 int sam_hdr_name2ref(SAM_hdr *hdr, char *ref) {
-    HashItem *hi = HashTableSearch(hdr->ref_hash, ref, strlen(ref));
-    return hi ? hi->data.i : -1;
+    khint_t k = kh_get(m_s2i, hdr->ref_hash, ref);
+    return k == kh_end(hdr->ref_hash) ? -1 : kh_val(hdr->ref_hash, k);
 }
 
 /*
@@ -1007,8 +1016,10 @@ int sam_hdr_name2ref(SAM_hdr *hdr, char *ref) {
  * Returns NULL on failure
  */
 SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, char *rg) {
-    HashItem *hi = HashTableSearch(hdr->rg_hash, rg, 0);
-    return hi ? &hdr->rg[hi->data.i] : NULL;
+    khint_t k = kh_get(m_s2i, hdr->rg_hash, rg);
+    return k == kh_end(hdr->rg_hash)
+	? NULL
+	: &hdr->rg[kh_val(hdr->rg_hash, k)];
 }
 
 
@@ -1037,8 +1048,9 @@ int sam_hdr_link_pg(SAM_hdr *hdr) {
 	hdr->pg_end[i] = i;
 
     for (i = 0; i < hdr->npg; i++) {
-	HashItem *hi;
+	khint_t k;
 	SAM_hdr_tag *tag;
+	char tmp;
 
 	for (tag = hdr->pg[i].tag; tag; tag = tag->next) {
 	    if (tag->str[0] == 'P' && tag->str[1] == 'P')
@@ -1049,14 +1061,17 @@ int sam_hdr_link_pg(SAM_hdr *hdr) {
 	    continue;
 	}
 
-	hi = HashTableSearch(hdr->pg_hash, tag->str+3, tag->len-3);
-	if (!hi) {
+	tmp = tag->str[tag->len]; tag->str[tag->len] = 0;
+	k = kh_get(m_s2i, hdr->pg_hash, tag->str+3);
+	tag->str[tag->len] = tmp;
+
+	if (k == kh_end(hdr->pg_hash)) {
 	    ret = -1;
 	    continue;
 	}
 
-	hdr->pg[i].prev_id = hdr->pg[hi->data.i].id;
-	hdr->pg_end[hi->data.i] = -1;
+	hdr->pg[i].prev_id = hdr->pg[kh_val(hdr->pg_hash, k)].id;
+	hdr->pg_end[kh_val(hdr->pg_hash, k)] = -1;
     }
 
     for (i = j = 0; i < hdr->npg; i++) {
@@ -1075,12 +1090,14 @@ int sam_hdr_link_pg(SAM_hdr *hdr) {
  * this function.
  */
 const char *sam_hdr_PG_ID(SAM_hdr *sh, const char *name) {
-    if (!(HashTableSearch(sh->pg_hash, (char *)name, 0)))
+    khint_t k = kh_get(m_s2i, sh->pg_hash, name);
+    if (k == kh_end(sh->pg_hash))
 	return name;
 
     do {
 	sprintf(sh->ID_buf, "%.1000s.%d", name, sh->ID_cnt++);
-    } while (HashTableSearch(sh->pg_hash, sh->ID_buf, 0));
+	k = kh_get(m_s2i, sh->pg_hash, sh->ID_buf);
+    } while (k == kh_end(sh->pg_hash));
 
     return sh->ID_buf;
 }

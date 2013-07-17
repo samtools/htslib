@@ -20,13 +20,12 @@
 #include <math.h>
 #include <ctype.h>
 
-#include "io_lib/cram.h"
-#include "io_lib/os.h"
-#include "io_lib/md5.h"
+#include "cram/cram.h"
+#include "cram/os.h"
+#include "cram/md5.h"
 
 //Whether CIGAR has just M or uses = and X to indicate match and mismatch
 //#define USE_X
-
 
 /* ----------------------------------------------------------------------
  * CRAM compression headers
@@ -120,8 +119,8 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
 	}
     }
 
-    hdr->preservation_map = HashTableCreate(4, HASH_NONVOLATILE_KEYS |
-					    HASH_FUNC_TCL);
+    hdr->preservation_map = kh_init(map);
+
     memset(hdr->rec_encoding_map, 0,
 	   CRAM_MAP_HASH * sizeof(hdr->rec_encoding_map[0]));
     memset(hdr->tag_encoding_map, 0,
@@ -145,61 +144,81 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
     cp += itf8_get(cp, &map_size); cp_copy = cp;
     cp += itf8_get(cp, &map_count);
     for (i = 0; i < map_count; i++) {
-	HashData hd;
+	pmap_t hd;
+	khint_t k;
+	int r;
 
 	cp += 2;
 	switch(CRAM_KEY(cp[-2],cp[-1])) {
 	case CRAM_KEY('M','I'):
 	    hd.i = *cp++;
-	    if (!HashTableAdd(hdr->preservation_map, "MI", 2, hd, NULL)) {
+	    k = kh_put(map, hdr->preservation_map, "MI", &r);
+	    if (-1 == r) {
 		cram_free_compression_header(hdr);
-		return NULL;
-	    }
+                return NULL;
+            }
+
+	    kh_val(hdr->preservation_map, k) = hd;
 	    hdr->mapped_qs_included = hd.i;
 	    break;
 
 	case CRAM_KEY('U','I'):
 	    hd.i = *cp++;
-	    if (!HashTableAdd(hdr->preservation_map, "UI", 2, hd, NULL)) {
+	    k = kh_put(map, hdr->preservation_map, "UI", &r);
+	    if (-1 == r) {
 		cram_free_compression_header(hdr);
-		return NULL;
-	    }
+                return NULL;
+            }
+
+	    kh_val(hdr->preservation_map, k) = hd;
 	    hdr->unmapped_qs_included = hd.i;
 	    break;
 
 	case CRAM_KEY('P','I'):
 	    hd.i = *cp++;
-	    if (!HashTableAdd(hdr->preservation_map, "PI", 2, hd, NULL)) {
+	    k = kh_put(map, hdr->preservation_map, "PI", &r);
+	    if (-1 == r) {
 		cram_free_compression_header(hdr);
-		return NULL;
-	    }
+                return NULL;
+            }
+
+	    kh_val(hdr->preservation_map, k) = hd;
 	    hdr->unmapped_placed = hd.i;
 	    break;
 
 	case CRAM_KEY('R','N'):
 	    hd.i = *cp++;
-	    if (!HashTableAdd(hdr->preservation_map, "RN", 2, hd, NULL)) {
+	    k = kh_put(map, hdr->preservation_map, "RN", &r);
+	    if (-1 == r) {
 		cram_free_compression_header(hdr);
-		return NULL;
-	    }
+                return NULL;
+            }
+
+	    kh_val(hdr->preservation_map, k) = hd;
 	    hdr->read_names_included = hd.i;
 	    break;
 
 	case CRAM_KEY('A','P'):
 	    hd.i = *cp++;
-	    if (!HashTableAdd(hdr->preservation_map, "AP", 2, hd, NULL)) {
+	    k = kh_put(map, hdr->preservation_map, "AP", &r);
+	    if (-1 == r) {
 		cram_free_compression_header(hdr);
-		return NULL;
-	    }
+                return NULL;
+            }
+
+	    kh_val(hdr->preservation_map, k) = hd;
 	    hdr->AP_delta = hd.i;
 	    break;
 
 	case CRAM_KEY('R','R'):
 	    hd.i = *cp++;
-	    if (!HashTableAdd(hdr->preservation_map, "RR", 2, hd, NULL)) {
+	    k = kh_put(map, hdr->preservation_map, "RR", &r);
+	    if (-1 == r) {
 		cram_free_compression_header(hdr);
-		return NULL;
-	    }
+                return NULL;
+            }
+
+	    kh_val(hdr->preservation_map, k) = hd;
 	    fd->no_ref = !hd.i;
 	    break;
 
@@ -228,12 +247,16 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
 	    hdr->substitution_matrix[4][(cp[4]>>4)&3] = 'C';
 	    hdr->substitution_matrix[4][(cp[4]>>2)&3] = 'G';
 	    hdr->substitution_matrix[4][(cp[4]>>0)&3] = 'T';
+
 	    hd.p = cp;
 	    cp += 5;
-	    if (!HashTableAdd(hdr->preservation_map, "SM", 2, hd, NULL)) {
+
+	    k = kh_put(map, hdr->preservation_map, "SM", &r);
+	    if (-1 == r) {
 		cram_free_compression_header(hdr);
 		return NULL;
 	    }
+	    kh_val(hdr->preservation_map, k) = hd;
 	    break;
 
 	case CRAM_KEY('T','D'): {
@@ -242,12 +265,16 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
 		cram_free_compression_header(hdr);
 		return NULL;
 	    }
+
 	    hd.p = cp;
 	    cp += sz;
-	    if (!HashTableAdd(hdr->preservation_map, "TD", 2, hd, NULL)) {
+
+	    k = kh_put(map, hdr->preservation_map, "TD", &r);
+	    if (-1 == r) {
 		cram_free_compression_header(hdr);
 		return NULL;
 	    }
+	    kh_val(hdr->preservation_map, k) = hd;
 	    break;
 	}
 

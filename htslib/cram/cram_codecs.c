@@ -16,7 +16,7 @@
 #include <assert.h>
 #include <limits.h>
 
-#include "io_lib/cram.h"
+#include "cram/cram.h"
 
 static char *codec2str(enum cram_encoding codec) {
     switch (codec) {
@@ -620,16 +620,18 @@ cram_codec *cram_beta_encode_init(cram_stats *st,
 	    max_val = i;
 	}
 	if (st->h) {
-	    HashItem *hi;
-	    HashIter *iter = HashTableIterCreate();
-	    while ((hi = HashTableIterNext(st->h, iter))) {
-		i = (int)(size_t)hi->key;
+	    khint_t k;
+
+	    for (k = kh_begin(st->h); k != kh_end(st->h); k++) {
+		if (!kh_exist(st->h, k))
+		    continue;
+	    
+		i = kh_key(st->h, k);
 		if (min_val > i)
 		    min_val = i;
 		if (max_val < i)
 		    max_val = i;
 	    }
-	    HashTableIterDestroy(iter);
 	}
     }
 
@@ -1166,10 +1168,11 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 	nvals++;
     }
     if (st->h) {
-	HashIter *iter=  HashTableIterCreate();
-	HashItem *hi;
+	khint_t k;
 
-	while ((hi = HashTableIterNext(st->h, iter))) {
+	for (k = kh_begin(st->h); k != kh_end(st->h); k++) {
+	    if (!kh_exist(st->h, k))
+		continue;
 	    if (nvals >= vals_alloc) {
 		vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
 		vals  = realloc(vals,  vals_alloc * sizeof(int));
@@ -1177,15 +1180,14 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 		if (!vals || !freqs)
 		    return NULL;
 	    }
-	    vals[nvals]=(size_t)hi->key;
-	    freqs[nvals] = hi->data.i;
-	    assert(hi->data.i > 0);
+	    vals[nvals]= kh_key(st->h, k);
+	    freqs[nvals] = kh_val(st->h, k);
+	    assert(freqs[nvals] > 0);
 	    ntot += freqs[nvals];
 	    if (max_val < i) max_val = i;
 	    if (min_val > i) min_val = i;
 	    nvals++;
 	}
-	HashTableIterDestroy(iter);
     }
 
     assert(nvals > 0);

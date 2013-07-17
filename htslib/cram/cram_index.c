@@ -39,9 +39,9 @@
 #include <math.h>
 #include <ctype.h>
 
-#include "io_lib/cram.h"
-#include "io_lib/os.h"
-#include "io_lib/zfio.h"
+#include "cram/cram.h"
+#include "cram/os.h"
+#include "cram/zfio.h"
 
 #if 0
 static void dump_index_(cram_index *e, int level) {

@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <stdlib.h>
+
 /* 
  * A pooled string allocator intended to cut down on the
  * memory overhead of many small string allocations.

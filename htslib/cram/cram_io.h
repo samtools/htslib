@@ -23,7 +23,7 @@ extern "C" {
 #define ITF8_MACROS
 
 #include <stdint.h>
-#include <io_lib/misc.h>
+#include <cram/misc.h>
 
 /**@{ ----------------------------------------------------------------------
  * ITF8 encoding and decoding.

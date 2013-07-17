@@ -8,8 +8,8 @@
 #include <sys/types.h>
 #include <string.h>
 
-#include "io_lib/vlen.h"
-#include "io_lib/os.h"
+#include "cram/vlen.h"
+#include "cram/os.h"
 
 #ifndef MAX
 #define MAX(a,b) ((a)>(b)?(a):(b))

@@ -3,7 +3,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include <zlib.h>
-#include "io_lib/cram.h"
+#include "cram/cram.h"
 #include "sam.h"
 
 #include "khash.h"

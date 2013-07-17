@@ -17,9 +17,9 @@
 #include <math.h>
 #include <ctype.h>
 
-#include "io_lib/cram.h"
-#include "io_lib/os.h"
-#include "io_lib/md5.h"
+#include "cram/cram.h"
+#include "cram/os.h"
+#include "cram/md5.h"
 
 #ifdef SAMTOOLS
 #    define bam_copy(dst, src) bam_copy1(*(dst), (src))
@@ -94,85 +94,97 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 	}
     }
 
+    /* Create in-memory preservation map */
     /* FIXME: should create this when we create the container */
     {
-	HashData hd;
+	khint_t k;
+	int r;
 
-	if (!(h->preservation_map = HashTableCreate(4, HASH_NONVOLATILE_KEYS)))
+	if (!(h->preservation_map = kh_init(map)))
 	    return NULL;
 
-	hd.i = 1; HashTableAdd(h->preservation_map, "RN", 2, hd, NULL);
+	k = kh_put(map, h->preservation_map, "RN", &r);
+	if (-1 == r) return NULL;
+	kh_val(h->preservation_map, k).i = 1;
+
 	if (fd->version == CRAM_1_VERS) {
-	    hd.i = 0;
-	    if (!(HashTableAdd(h->preservation_map, "PI", 2, hd, NULL)))
-		return NULL;
+	    k = kh_put(map, h->preservation_map, "PI", &r);
+	    if (-1 == r) return NULL;
+	    kh_val(h->preservation_map, k).i = 0;
 
-	    hd.i = 1;
-	    if (!(HashTableAdd(h->preservation_map, "UI", 2, hd, NULL)))
-		return NULL;
+	    k = kh_put(map, h->preservation_map, "UI", &r);
+	    if (-1 == r) return NULL;
+	    kh_val(h->preservation_map, k).i = 1;
 
-	    hd.i = 1;
-	    if (!(HashTableAdd(h->preservation_map, "MI", 2, hd, NULL)))
-		return NULL;
+	    k = kh_put(map, h->preservation_map, "MI", &r);
+	    if (-1 == r) return NULL;
+	    kh_val(h->preservation_map, k).i = 1;
+
 	} else {
 	    // Technically SM was in 1.0, but wasn't in Java impl.
-	    hd.i = 0;
-	    if (!(HashTableAdd(h->preservation_map, "SM", 2, hd, NULL)))
-		return NULL;
+	    k = kh_put(map, h->preservation_map, "SM", &r);
+	    if (-1 == r) return NULL;
+	    kh_val(h->preservation_map, k).i = 0;
 
-	    hd.i = 0;
-	    if (!(HashTableAdd(h->preservation_map, "TD", 2, hd, NULL)))
-		return NULL;
+	    k = kh_put(map, h->preservation_map, "TD", &r);
+	    if (-1 == r) return NULL;
+	    kh_val(h->preservation_map, k).i = 0;
 
-	    hd.i = c->pos_sorted; // => DELTA
-	    if (!(HashTableAdd(h->preservation_map, "AP", 2, hd, NULL)))
-		return NULL;
+	    k = kh_put(map, h->preservation_map, "AP", &r);
+	    if (-1 == r) return NULL;
+	    kh_val(h->preservation_map, k).i = c->pos_sorted;
 
 	    if (fd->no_ref || fd->embed_ref) {
 		// Reference Required == No
-		hd.i = 0;
-		if (!(HashTableAdd(h->preservation_map, "RR", 2, hd, NULL)))
-		    return NULL;
+		k = kh_put(map, h->preservation_map, "RR", &r);
+		if (-1 == r) return NULL;
+		kh_val(h->preservation_map, k).i = 0;
 	    }
 	}
     }
 
-    /* Preservation map */
+    /* Encode preservation map; could collapse this and above into one */
     mc = 0;
     BLOCK_SIZE(map) = 0;
     if (h->preservation_map) {
-        HashItem *hi;
-        HashIter *iter = HashTableIterCreate();
-	if (!iter)
-	    return NULL;
+	khint_t k;
 
-        while ((hi = HashTableIterNext(h->preservation_map, iter))) {
-            //cram_map *m = hi->data.p;
-	    BLOCK_APPEND(map, hi->key, 2);
+	for (k = kh_begin(h->preservation_map);
+	     k != kh_end(h->preservation_map);
+	     k++) {
+	    const char *key;
+	    khash_t(map) *pmap = h->preservation_map;
 
-	    switch(CRAM_KEY(hi->key[0], hi->key[1])) {
+
+	    if (!kh_exist(pmap, k))
+		continue;
+
+	    key = kh_key(pmap, k);
+	    BLOCK_APPEND(map, key, 2);
+
+	    switch(CRAM_KEY(key[0], key[1])) {
 	    case CRAM_KEY('M','I'):
-		BLOCK_APPEND_CHAR(map, hi->data.i);
+		BLOCK_APPEND_CHAR(map, kh_val(pmap, k).i);
 		break;
 
 	    case CRAM_KEY('U','I'):
-		BLOCK_APPEND_CHAR(map, hi->data.i);
+		BLOCK_APPEND_CHAR(map, kh_val(pmap, k).i);
 		break;
 
 	    case CRAM_KEY('P','I'):
-		BLOCK_APPEND_CHAR(map, hi->data.i);
+		BLOCK_APPEND_CHAR(map, kh_val(pmap, k).i);
 		break;
 
 	    case CRAM_KEY('A','P'):
-		BLOCK_APPEND_CHAR(map, hi->data.i);
+		BLOCK_APPEND_CHAR(map, kh_val(pmap, k).i);
 		break;
 
 	    case CRAM_KEY('R','N'):
-		BLOCK_APPEND_CHAR(map, hi->data.i);
+		BLOCK_APPEND_CHAR(map, kh_val(pmap, k).i);
 		break;
 
 	    case CRAM_KEY('R','R'):
-		BLOCK_APPEND_CHAR(map, hi->data.i);
+		BLOCK_APPEND_CHAR(map, kh_val(pmap, k).i);
 		break;
 
 	    case CRAM_KEY('S','M'): {
@@ -215,14 +227,12 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 	    }
 
 	    default:
-		fprintf(stderr, "Unknown preservation key '%.2s'\n", hi->key);
+		fprintf(stderr, "Unknown preservation key '%.2s'\n", key);
 		break;
 	    }
 
 	    mc++;
         }
-
-        HashTableIterDestroy(iter);
     }
     itf8_put_blk(cb, BLOCK_SIZE(map) + itf8_size(mc));
     itf8_put_blk(cb, mc);    
@@ -418,17 +428,17 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
     mc = 0;
     BLOCK_SIZE(map) = 0;
     if (c->tags_used) {
-        HashItem *hi;
-        HashIter *iter = HashTableIterCreate();
-	if (!iter)
-	    return NULL;
+	khint_t k;
 
-        while ((hi = HashTableIterNext(c->tags_used, iter))) {
+	for (k = kh_begin(c->tags_used); k != kh_end(c->tags_used); k++) {
+	    if (!kh_exist(c->tags_used, k))
+		continue;
+
 	    mc++;
-	    itf8_put_blk(map, (hi->key[0]<<16)|(hi->key[1]<<8)|hi->key[2]);
+	    itf8_put_blk(map, kh_key(c->tags_used, k));
 
 	    // use block content id 4
-	    switch(hi->key[2]) {
+	    switch(kh_key(c->tags_used, k) & 0xff) {
 	    case 'Z': case 'H':
 		// string as byte_array_stop
 		if (fd->version == CRAM_1_VERS) {
@@ -519,12 +529,10 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 
 	    default:
 		fprintf(stderr, "Unsupported SAM aux type '%c'\n",
-			hi->key[2]);
+			kh_key(c->tags_used, k) & 0xff);
 	    }
 	    //mp += m->codec->store(m->codec, mp, NULL, fd->version);
 	}
-
-	HashTableIterDestroy(iter);
     }
 #endif
     itf8_put_blk(cb, BLOCK_SIZE(map) + itf8_size(mc));
@@ -1667,8 +1675,8 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
     cr->TN_idx = s->nTN;
 #endif
     while (aux[0] != 0) {
-	HashData hd; hd.i = 0;
 	int32_t i32;
+	int r;
 
 	if (aux[0] == 'R' && aux[1] == 'G' && aux[2] == 'Z') {
 	    rg = &aux[3];
@@ -1691,10 +1699,12 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
 	}
 
 	cr->ntags++;
-	// replace with fast hash too
-	HashTableAdd(c->tags_used, aux, 3, hd, NULL);
 
 	i32 = (aux[0]<<16) | (aux[1]<<8) | aux[2];
+	kh_put(s_i2i, c->tags_used, i32, &r);
+	if (-1 == r)
+	    return NULL;
+
 #ifndef TN_external
 	if (s->nTN >= s->aTN) {
 	    s->aTN = s->aTN ? s->aTN*2 : 1024;
@@ -1812,8 +1822,9 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 #endif
     cram_block *td_b = c->comp_hdr->TD_blk;
     int TD_blk_size = BLOCK_SIZE(td_b), new;
-    HashData hd;
-    HashItem *hi;
+    char *key;
+    khint_t k;
+
 
     /* Worst case is 1 nul char on every ??:Z: string, so +33% */
     BLOCK_GROW(s->aux_blk, aux_size*1.34+1);
@@ -1823,8 +1834,9 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
     orig = aux = (char *)bam_aux(b);
 
     // Copy aux keys to td_b and aux values to s->aux_blk
-    while (aux[0] != 0 && aux - orig < aux_size) {
-	HashData hd; hd.i = 0;
+    while (aux - orig < aux_size && aux[0] != 0) {
+	uint32_t i32;
+	int r;
 
 	if (aux[0] == 'R' && aux[1] == 'G' && aux[2] == 'Z') {
 	    rg = &aux[3];
@@ -1849,8 +1861,9 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 
 	BLOCK_APPEND(td_b, aux, 3);
 
-	// replace with fast hash too
-	if (!HashTableAdd(c->tags_used, aux, 3, hd, NULL))
+	i32 = (aux[0]<<16) | (aux[1]<<8) | aux[2];
+	kh_put(s_i2i, c->tags_used, i32, &r);
+	if (-1 == r)
 	    return NULL;
 
 	switch(aux[2]) {
@@ -1928,20 +1941,22 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
     
     // And and increment TD hash entry
     BLOCK_APPEND_CHAR(td_b, 0);
-    hd.i = c->comp_hdr->nTL;
-    hi = HashTableAdd(c->comp_hdr->TD,
-		      (char *)BLOCK_DATA(td_b) + TD_blk_size,
-		      BLOCK_SIZE(td_b) - TD_blk_size, hd, &new);
-    if (!hi)
-	return NULL;
 
-    if (!new) {
+    // Duplicate key as BLOCK_DATA() can be realloced to a new pointer.
+    key = string_ndup(c->comp_hdr->TD_keys, 
+		      (char *)BLOCK_DATA(td_b) + TD_blk_size,
+		      BLOCK_SIZE(td_b) - TD_blk_size);
+    k = kh_put(m_s2i, c->comp_hdr->TD_hash, key, &new);
+    if (new < 0) {
+	return NULL;
+    } else if (new == 0) {
 	BLOCK_SIZE(td_b) = TD_blk_size;
     } else {
+	kh_val(c->comp_hdr->TD_hash, k) = c->comp_hdr->nTL;
 	c->comp_hdr->nTL++;
     }
 
-    cr->TL = hi->data.i;
+    cr->TL = kh_val(c->comp_hdr->TD_hash, k);
     cram_stats_add(c->TL_stats, cr->TL);
 
     cr->aux = BLOCK_SIZE(s->aux_blk);
@@ -2330,26 +2345,29 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     /* Now we know apos and aend both, update mate-pair information */
     {
 	int new;
-	HashData hd;
-	HashItem *hi;
+	khint_t k;
 
-	hd.i = rnum;
-	//fprintf(stderr, "Checking %"PRId64"/%.*s\t", hd.i,
+	//fprintf(stderr, "Checking %"PRId64"/%.*s\t", rnum,
 	//	cr->name_len, DSTRING_STR(s->name_ds)+cr->name);
 	if (cr->flags & BAM_FPAIRED) {
-	    hi = HashTableAdd(s->pair,
-			      (char *)BLOCK_DATA(s->name_blk)+cr->name,
-			      cr->name_len, hd, &new);
-	    if (!hi)
+	    char *key = string_ndup(s->pair_keys,
+				    (char *)BLOCK_DATA(s->name_blk)+cr->name,
+				    cr->name_len);
+	    if (!key)
+		return -1;
+
+	    k = kh_put(m_s2i, s->pair, key, &new);
+	    kh_val(s->pair, k) = rnum;
+	    if (-1 == new)
 		return -1;
 	} else {
 	    new = 1;
 	}
 
-	if (!new) {
-	    cram_record *p = &s->crecs[hi->data.i];
+	if (new == 0) {
+	    cram_record *p = &s->crecs[kh_val(s->pair, k)];
 	    
-	    //fprintf(stderr, "paired %"PRId64"\n", hi->data.i);
+	    //fprintf(stderr, "paired %"PRId64"\n", kh_val(s->pair, k));
 
 	    // copy from p to cr
 	    cr->mate_pos = p->apos;
@@ -2389,11 +2407,10 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	    p->cram_flags  |=  CRAM_FLAG_MATE_DOWNSTREAM;
 	    cram_stats_add(c->CF_stats, p->cram_flags);
 
-	    p->mate_line = hd.i - (hi->data.i + 1);
+	    p->mate_line = rnum - (kh_val(s->pair, k) + 1);
 	    cram_stats_add(c->NF_stats, p->mate_line);
 
-	    hi->data.i = rnum;
-	    //HashTableDel(s->pair, hi, 0);
+	    kh_val(s->pair, k) = rnum;
 	} else {
 	    //fprintf(stderr, "unpaired\n");
 

@@ -12,9 +12,9 @@
 #include <unistd.h>
 #include <stdarg.h>
 
-#include "io_lib/os.h"
-#include "io_lib/mFILE.h"
-#include "io_lib/vlen.h"
+#include "cram/os.h"
+#include "cram/mFILE.h"
+#include "cram/vlen.h"
 
 /*
  * This file contains memory-based versions of the most commonly used

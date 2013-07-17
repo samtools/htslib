@@ -22,15 +22,35 @@ extern "C" {
 
 #include <stdint.h>
 
-#include "io_lib/hash_table.h"       // From io_lib aka staden-read
-#include "io_lib/thread_pool.h"
+#include "cram/thread_pool.h"
 
 #ifdef SAMTOOLS
 // From within samtools/HTSlib
-#  include "io_lib/string_alloc.h"
+#  include "cram/string_alloc.h"
+#  include "khash.h"
+
+// Generic hash-map integer -> integer
+KHASH_MAP_INIT_INT(m_i2i, int)
+
+// Generic hash-set integer -> (existance)
+KHASH_SET_INIT_INT(s_i2i)
+
+/*
+ * A union for the preservation map. Required for khash.
+ */
+typedef union {
+    int i;
+    char *p;
+} pmap_t;
+
+// Generates static functions here which isn't ideal, but we have no way
+// currently to declare the kh_map_t structure here without also declaring a
+// duplicate in the .c files due to the nature of the KHASH macros.
+KHASH_MAP_INIT_STR(map, pmap_t)
+
 #else
 // From within io_lib
-#  include "io_lib/bam.h"              // For BAM header parsing
+#  include "cram/bam.h"              // For BAM header parsing
 #endif
 
 #define SEQS_PER_SLICE 10000
@@ -47,7 +67,7 @@ extern "C" {
 //#define MAX_STAT_VAL 16
 typedef struct {
     int freqs[MAX_STAT_VAL];
-    HashTable *h;
+    khash_t(m_i2i) *h;
     int nsamp; // total number of values added
     int nvals; // total number of unique values added
 } cram_stats;
@@ -152,12 +172,13 @@ typedef struct {
     char substitution_matrix[5][4];
 
     // TD Dictionary as a concatenated block
-    cram_block *TD_blk;  // Tag Dictionary
-    int nTL;		 // number of TL entries in TD
-    unsigned char **TL;  // array of size nTL, pointer into TD_blk.
-    HashTable *TD;       // for encoding, keyed on TD entries
+    cram_block *TD_blk;          // Tag Dictionary
+    int nTL;		         // number of TL entries in TD
+    unsigned char **TL;          // array of size nTL, pointer into TD_blk.
+    khash_t(m_s2i) *TD_hash;     // Keyed on TD strings, map to TL[] indices
+    string_alloc_t *TD_keys;     // Pooled keys for TD hash.
     
-    HashTable *preservation_map;
+    khash_t(map) *preservation_map;
     struct cram_map *rec_encoding_map[CRAM_MAP_HASH];
     struct cram_map *tag_encoding_map[CRAM_MAP_HASH];
 
@@ -303,7 +324,7 @@ typedef struct {
     cram_stats *PD_stats;
     cram_stats *HC_stats;
 
-    HashTable *tags_used; // hash of tag types in use, for tag encoding map
+    khash_t(s_i2i) *tags_used; // set of tag types in use, for tag encoding map
     int *refs_used;       // array of frequency of ref seq IDs
 } cram_container;
 
@@ -468,7 +489,8 @@ typedef struct cram_slice {
     int tn_id;
 #endif
 
-    HashTable *pair;         // for identifying read-pairs in this slice.
+    string_alloc_t *pair_keys; // Pooled keys for pair hash.
+    khash_t(m_s2i) *pair;      // for identifying read-pairs in this slice.
 
     char *ref;               // slice of current reference
     int ref_start;           // start position of current reference;
@@ -496,11 +518,13 @@ typedef struct ref_entry {
     char *seq;
 } ref_entry;
 
+KHASH_MAP_INIT_STR(refs, ref_entry*)
+
 // References structure.
 typedef struct {
     string_alloc_t *pool;  // String pool for holding filenames and SN vals
 
-    HashTable *h_meta;     // ref_entry*, index by name
+    khash_t(refs) *h_meta; // ref_entry*, index by name
     ref_entry **ref_id;    // ref_entry*, index by ID
     int nref;              // number of ref_entry
 

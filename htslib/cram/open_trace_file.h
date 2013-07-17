@@ -1,7 +1,7 @@
 #ifndef _OPEN_TRACE_FILE_H_
 #define _OPEN_TRACE_FILE_H_
 
-#include "io_lib/mFILE.h"
+#include "cram/mFILE.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -14,13 +14,13 @@ extern "C" {
 #endif
 
 #ifdef SAMTOOLS
-#  include "io_lib/cram_samtools.h"
+#  include "cram/cram_samtools.h"
 #endif
 
 #ifndef _CRAM_H_
 #define _CRAM_H_
 
-#include "io_lib/sam_header.h"
+#include "cram/sam_header.h"
 #include "cram_structs.h"
 #include "cram_io.h"
 #include "cram_encode.h"

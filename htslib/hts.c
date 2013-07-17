@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include "bgzf.h"
 #include "hts.h"
-#include "io_lib/cram.h"
+#include "cram/cram.h"
 
 #include "kseq.h"
 KSTREAM_INIT2(, gzFile, gzread, 16384)

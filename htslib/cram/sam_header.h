@@ -35,9 +35,20 @@ extern "C" {
 
 #include <stdarg.h>
 
-#include "io_lib/dstring.h"
-#include "io_lib/hash_table.h"
-#include "io_lib/string_alloc.h"
+#include "cram/string_alloc.h"
+#include "cram/pooled_alloc.h"
+
+#include "khash.h"
+#include "kstring.h"
+
+// For structure assignment. Eg kstring_t s = KS_INITIALIZER;
+#define KS_INITIALIZER {0,0,0}
+
+// For initialisation elsewhere. Eg KS_INIT(x->str);
+#define KS_INIT(ks) ((ks)->l = 0, (ks)->m = 0, (ks)->s = NULL)
+
+// Frees the string subfield only. Assumes 's' itself is static.
+#define KS_FREE(ks) do { if ((ks)->s) free((ks)->s); } while(0)
 
 /*
  * Proposed new SAM header parsing
@@ -48,7 +59,7 @@ extern "C" {
 4 @RG ID:r ...
 5 @RG ID:s ...
 
-Hash table for 2-char keys without dup entries.
+Hash table for 2-char @keys without dup entries.
 If dup lines, we form a circular linked list. Ie hash keys = {RG, SQ}.
 
 HASH("SQ")--\
@@ -69,7 +80,7 @@ Ie SQ->ID(foo)->LN(100)
 /*! A single key:value pair on a header line
  *
  * These form a linked list and hold strings. The strings are
- * allocated from a string_alloc_t pool refeenced in the master
+ * allocated from a string_alloc_t pool referenced in the master
  * SAM_hdr structure. Do not attempt to free, malloc or manipulate
  * these strings directly.
  */
@@ -82,7 +93,7 @@ typedef struct SAM_hdr_tag_s {
 /*! The parsed version of the SAM header string.
  * 
  * Each header type (SQ, RG, HD, etc) points to its own SAM_hdr_type
- * struct via the main HashTable h in the SAM_hdr struct.
+ * struct via the main hash table h in the SAM_hdr struct.
  *
  * These in turn consist of circular bi-directional linked lists (ie
  * rings) to hold the multiple instances of the same header type
@@ -128,10 +139,13 @@ typedef struct {
     int prev_id;      // -1 if none
 } SAM_PG;
 
+KHASH_MAP_INIT_INT(sam_hdr, SAM_hdr_type*)
+KHASH_MAP_INIT_STR(m_s2i, int)
+
 /*! Primary structure for header manipulation
  *
- * The initial header text is held in the text dstring_t, but is also
- * parsed out into SQ, RG and PG arrays. These have a HashTable
+ * The initial header text is held in the text kstring_t, but is also
+ * parsed out into SQ, RG and PG arrays. These have a hash table
  * associated with each to allow lookup by ID or SN fields instead of
  * their numeric array indices. Additionally PG has an array to hold
  * the linked list start points (the last in a PP chain).
@@ -141,8 +155,8 @@ typedef struct {
  * updated again.
  */
 typedef struct {
-    dstring_t *text;          //!< concatenated text, indexed by SAM_hdr_tag
-    HashTable *h;             //!< 2-char IDs, values are SAM_hdr_type
+    kstring_t text;           //!< concatenated text, indexed by SAM_hdr_tag
+    khash_t(sam_hdr) *h;
     string_alloc_t *str_pool; //!< Pool of SAM_hdr_tag->str strings
     pool_alloc_t   *type_pool;//!< Pool of SAM_hdr_type structs
     pool_alloc_t   *tag_pool; //!< Pool of SAM_hdr_tag structs
@@ -150,19 +164,19 @@ typedef struct {
     // @SQ lines / references
     int nref;                 //!< Number of \@SQ lines
     SAM_SQ *ref;              //!< Array of parsed \@SQ lines
-    HashTable *ref_hash;      //!< Hash table indexed by SN: field
+    khash_t(m_s2i) *ref_hash; //!< Maps SQ SN field to sq[] index
 
     // @RG lines / read-groups
     int nrg;                  //!< Number of \@RG lines
     SAM_RG *rg;               //!< Array of parsed \@RG lines
-    HashTable *rg_hash;	      //!< Hash table indexed by ID: field
+    khash_t(m_s2i) *rg_hash;  //!< Maps RG ID field to rg[] index
 
     // @PG lines / programs
     int npg;                  //!< Number of \@PG lines
     int npg_end;              //!< Number of terminating \@PG lines
     int npg_end_alloc;        //!< Size of pg_end field
     SAM_PG *pg;		      //!< Array of parsed \@PG lines
-    HashTable *pg_hash;	      //!< Hash table indexed by ID: field
+    khash_t(m_s2i) *pg_hash;  //!< Maps PG ID field to pg[] index
     int *pg_end;              //!< \@PG chain termination IDs
 
     // @cond internal
@@ -342,7 +356,7 @@ SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
  */
 int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...);
 
-/*! Reconstructs the dstring from the header hash table.
+/*! Reconstructs the kstring from the header hash table.
  * @return
  * Returns 0 on success;
  *        -1 on failure

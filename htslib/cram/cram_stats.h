@@ -9,8 +9,6 @@
 extern "C" {
 #endif
 
-#include "io_lib/hash_table.h"
-
 cram_stats *cram_stats_create(void);
 void cram_stats_add(cram_stats *st, int32_t val);
 void cram_stats_del(cram_stats *st, int32_t val);

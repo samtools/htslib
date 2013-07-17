@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "io_lib/cram.h"
+#include "cram/cram.h"
 #include "sam.h"
 
 /*---------------------------------------------------------------------------
@@ -92,9 +92,9 @@ bam_hdr_t *cram_header_to_bam(SAM_hdr *h) {
     int i;
     bam_hdr_t *header = bam_hdr_init();
 
-    header->l_text = DSTRING_LEN(h->text);
+    header->l_text = ks_len(&h->text);
     header->text = malloc(header->l_text+1);
-    memcpy(header->text, DSTRING_STR(h->text), header->l_text);
+    memcpy(header->text, ks_str(&h->text), header->l_text);
     header->text[header->l_text] = 0;
 
     header->n_targets = h->nref;

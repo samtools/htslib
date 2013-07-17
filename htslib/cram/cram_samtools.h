@@ -24,6 +24,8 @@
 
 #define bam_dup(b)       bam_copy1(bam_init1(), (b))
 
+#define bam_free(b)      bam_destroy1((b))
+
 #define bam_reg2bin(beg,end) hts_reg2bin((beg),(end),14,5)
 
 enum cigar_op {
@@ -43,7 +45,7 @@ enum cigar_op {
 typedef bam1_t bam_seq_t;
 
 // Sorry this is a bit loopy
-#include "io_lib/cram.h"
+#include "cram/cram.h"
 
 int cram_get_bam1_seq(cram_fd *fd, bam1_t *b);
 bam_hdr_t *cram_header_to_bam(SAM_hdr *h);

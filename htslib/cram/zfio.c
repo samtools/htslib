@@ -5,8 +5,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "io_lib/os.h"
-#include "io_lib/zfio.h"
+#include "cram/os.h"
+#include "cram/zfio.h"
 
 /* ------------------------------------------------------------------------ */
 /* Some wrappers around FILE * vs gzFile *, allowing for either */
