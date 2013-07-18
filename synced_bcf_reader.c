@@ -5,8 +5,8 @@
 #include <errno.h>
 #include <ctype.h>
 #include <sys/stat.h>
-#include "synced_bcf_reader.h"
-#include "kseq.h"
+#include "htslib/synced_bcf_reader.h"
+#include "htslib/kseq.h"
 
 static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
 {

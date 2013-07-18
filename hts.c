@@ -3,14 +3,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "bgzf.h"
-#include "hts.h"
-#include "cram/cram.h"
+#include "htslib/bgzf.h"
+#include "htslib/hts.h"
+#include "htslib/cram/cram.h"
 
-#include "kseq.h"
+#include "htslib/kseq.h"
 KSTREAM_INIT2(, gzFile, gzread, 16384)
 
-#include "khash.h"
+#include "htslib/khash.h"
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
 int hts_verbose = 3;
@@ -159,7 +159,7 @@ int file_type(const char *fname)
 
 #define pair64_lt(a,b) ((a).u < (b).u)
 
-#include "ksort.h"
+#include "htslib/ksort.h"
 KSORT_INIT(_off, hts_pair64_t, pair64_lt)
 
 typedef struct {
@@ -168,7 +168,7 @@ typedef struct {
 	hts_pair64_t *list;
 } bins_t;
 
-#include "khash.h"
+#include "htslib/khash.h"
 KHASH_MAP_INIT_INT(bin, bins_t)
 typedef khash_t(bin) bidx_t;
 

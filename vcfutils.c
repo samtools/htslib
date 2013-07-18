@@ -1,4 +1,4 @@
-#include "vcfutils.h"
+#include "htslib/vcfutils.h"
 
 int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 {

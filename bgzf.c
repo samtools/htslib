@@ -29,10 +29,10 @@
 #include <assert.h>
 #include <pthread.h>
 #include <sys/types.h>
-#include "bgzf.h"
+#include "htslib/bgzf.h"
 
 #ifdef _USE_KNETFILE
-#include "knetfile.h"
+#include "htslib/knetfile.h"
 typedef knetFile *_bgzf_file_t;
 #define _bgzf_open(fn, mode) knet_open((fn), (mode))
 #define _bgzf_dopen(fd, mode) knet_dopen((fd), (mode))
@@ -77,7 +77,7 @@ typedef struct {
 	uint8_t *block;
 	int64_t end_offset;
 } cache_t;
-#include "khash.h"
+#include "htslib/khash.h"
 KHASH_MAP_INIT_INT64(cache, cache_t)
 #endif
 

@@ -3,7 +3,7 @@
 #include <ctype.h>
 #include <string.h>
 #include <stdint.h>
-#include "kstring.h"
+#include "htslib/kstring.h"
 
 int kvsprintf(kstring_t *s, const char *fmt, va_list ap)
 {
