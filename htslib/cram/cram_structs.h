@@ -35,6 +35,9 @@ KHASH_MAP_INIT_INT(m_i2i, int)
 // Generic hash-set integer -> (existance)
 KHASH_SET_INIT_INT(s_i2i)
 
+// For brevity
+typedef unsigned char uc;
+
 /*
  * A union for the preservation map. Required for khash.
  */

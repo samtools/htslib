@@ -1,10 +1,3 @@
-#if !(defined(_MSC_VER) || defined(__MINGW32__))
-#  define TRACE_ARCHIVE
-#  ifndef HAVE_LIBCURL
-#    define USE_WGET
-#  endif
-#endif
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -14,9 +7,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "cram/os.h"
-#ifdef USE_WGET
-#  include <sys/wait.h>
-#endif
 #ifndef PATH_MAX
 #  define PATH_MAX 1024
 #endif
@@ -82,43 +72,6 @@ char *tokenise_search_path(char *searchpath) {
     
     return newsearch;
 }
-
-#ifdef USE_WGET
-/* NB: non-reentrant due to reuse of handle */
-mFILE *find_file_url(char *file, char *url) {
-    char buf[8192], *cp;
-    mFILE *fp;
-    int pid;
-    int maxlen = 8190 - strlen(file);
-    char *fname = tempnam(NULL, NULL);
-    int status;
-
-    /* Expand %s for the trace name */
-    for (cp = buf; *url && cp - buf < maxlen; url++) {
-	if (*url == '%' && *(url+1) == 's') {
-	    url++;
-	    cp += strlen(strcpy(cp, file));
-	} else {
-	    *cp++ = *url;
-	}
-    }
-    *cp++ = 0;
-
-    /* Execute wget */
-    if ((pid = fork())) {
-	waitpid(pid, &status, 0);
-    } else {
-	execlp("wget", "wget", "-q", "-O", fname, buf, NULL);
-    }
-
-    /* Return a filepointer to the result (if it exists) */
-    fp = (!status && file_size(fname) != 0) ? mfopen(fname, "rb") : NULL;
-    remove(fname);
-    free(fname);
-
-    return fp;
-}
-#endif
 
 #ifdef HAVE_LIBCURL
 mFILE *find_file_url(char *file, char *url) {
@@ -214,13 +167,6 @@ mFILE *find_file_url(char *file, char *url) {
     return NULL;
 }
 #endif
-
-#if !defined(USE_WGET) && !defined(HAVE_LIBCURL)
-mFILE *find_file_url(char *file, char *url) {
-    return NULL;
-}
-#endif
-
 
 /*
  * Searches for file in the directory 'dirname'. If it finds it, it opens
@@ -345,18 +291,17 @@ mFILE *open_path_mfile(char *file, char *path, char *relative_to) {
 
 	    sprintf(file2, "%s%s", file, suffix[i]);
 
-#if defined(USE_WGET) || defined(HAVE_LIBCURL)
+#if defined(HAVE_LIBCURL)
 	    if (0 == strncmp(ele2, "URL=", 4)) {
 		if (valid && (fp = find_file_url(file2, ele2+4))) {
 		    free(newsearch);
 		    return fp;
 		}
+	    } else
 #endif
-	    } else {
-		if (valid && (fp = find_file_dir(file2, ele2))) {
-		    free(newsearch);
-		    return fp;
-		}
+	    if (valid && (fp = find_file_dir(file2, ele2))) {
+		free(newsearch);
+		return fp;
 	    }
 	}
     }
@@ -376,60 +321,3 @@ mFILE *open_path_mfile(char *file, char *path, char *relative_to) {
 
     return NULL;
 }
-
-FILE *open_path_file(char *file, char *path, char *relative_to) {
-    mFILE *mf = open_path_mfile(file, path, relative_to);
-    FILE *fp;
-
-    if (!mf)
-	return NULL;
-
-    if (mf->fp)
-	return mf->fp;
-
-    /* Secure temporary file generation */
-    if (NULL == (fp = tmpfile()))
-	return NULL;
-
-    /* Copy the data */
-    fwrite(mf->data, 1, mf->size, fp);
-    rewind(fp);
-    mfclose(mf);
-
-    return fp;
-}
-
-static char *exp_path = NULL;
-static char *trace_path = NULL;
-
-void  iolib_set_trace_path(char *path) { trace_path = path; }
-char *iolib_get_trace_path(void)       { return trace_path; }
-void  iolib_set_exp_path  (char *path) { exp_path = path; }
-char *iolib_get_exp_path  (void)       { return exp_path; }
-
-/*
- * Trace file functions: uses TRACE_PATH environment variable.
- */
-mFILE *open_trace_mfile(char *file, char *rel_to) {
-    return open_path_mfile(file, trace_path ? trace_path
-			                    : getenv("TRACE_PATH"), rel_to);
-}
-
-FILE *open_trace_file(char *file, char *rel_to) {
-    return open_path_file(file, trace_path ? trace_path
-			                   : getenv("TRACE_PATH"), rel_to);
-}
-
-/*
- * Trace file functions: uses EXP_PATH environment variable.
- */
-mFILE *open_exp_mfile(char *file, char *relative_to) {
-    return open_path_mfile(file, exp_path ? exp_path
-			                  : getenv("EXP_PATH"), relative_to);
-}
-
-FILE *open_exp_file(char *file, char *relative_to) {
-    return open_path_file(file, exp_path ? exp_path
-			                 : getenv("EXP_PATH"), relative_to);
-}
-

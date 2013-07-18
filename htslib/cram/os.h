@@ -134,11 +134,6 @@ extern "C" {
     (((x & 0x00ff) << 8) + \
      ((x & 0xff00) >> 8))
 
-#define swap_int8(src, dst) ((dst) = iswap_int8(src))
-#define swap_int4(src, dst) ((dst) = iswap_int4(src))
-#define swap_int2(src, dst) ((dst) = iswap_int2(src))
-
-
 /*
  * Linux systems may use byteswap.h to get assembly versions of byte-swap
  * on intel systems. This can be as trivial as the bswap opcode, which works
@@ -168,43 +163,12 @@ extern "C" {
  * trivial.
  */
 #ifdef SP_BIG_ENDIAN
-#define be_int8(x) (x)
-#define be_int4(x) (x)
-#define be_int2(x) (x)
-#define be_int1(x) (x)
-
-#define le_int8(x) iswap_int8((x))
 #define le_int4(x) iswap_int4((x))
-#define le_int2(x) iswap_int2((x))
-#define le_int1(x) (x)
 #endif
 
 #ifdef SP_LITTLE_ENDIAN
-#define be_int8(x) iswap_int8((x))
-#define be_int4(x) iswap_int4((x))
-#define be_int2(x) iswap_int2((x))
-#define be_int1(x) (x)
-
-#define le_int8(x) (x)
 #define le_int4(x) (x)
-#define le_int2(x) (x)
-#define le_int1(x) (x)
 #endif
-
-/*-----------------------------------------------------------------------------
- * Configuration of which io_lib sub-components we wish to support.
- * (These are now manditory for the stand-alone build of io_lib. Do
- *  not change.)
- */
-
-#define IOLIB_ABI
-#define IOLIB_SCF
-#define IOLIB_ALF
-#define IOLIB_PLN
-#define IOLIB_CTF
-#define IOLIB_EXP
-#define IOLIB_SFF
-#define IOLIB_ZTR
 
 /*-----------------------------------------------------------------------------
  * <inttypes.h> definitions, incase they're not present
@@ -235,22 +199,7 @@ extern "C" {
 #define SEEK_SET 0
 #define SEEK_CUR 1
 #define SEEK_END 2
-#define FOPEN_MAX 64
-#define FILENAME_MAX 1024
-
-/* Missing functions, defined in strings.c */
-#define NOMEMMOVE
-#define NOSTRERROR
-#define BUGGY_SSCANF
 #endif
-
-/* 
- * SunOS 5.x - gcc or Sun's cc 
- */ 
-#if (defined(__sun__) || defined(__sun)) && (defined(__svr4__) || defined(__SVR4))
-#  define IMAGEDISPLAY 
-#  define NOSTRDUP 
-#endif 
 
 /*
  * Microsoft Visual C++
@@ -259,14 +208,7 @@ extern "C" {
 #if defined(_MSC_VER)
 #define popen _popen
 #define pclose _pclose
-typedef int mode_t;
 #define ftruncate(fd,len) _chsize(fd,len)
-#define sysconf(x) 512
-#define NOPIPE
-#define NOLOCKF
-#define NOSTRCASECMP
-#define NO_STRPTIME
-#undef HAVE_SYS_WAIT_H
 #endif
 
 
@@ -275,12 +217,8 @@ typedef int mode_t;
  */
 #if defined(__MINGW32__)
 /* #define mkdir(filename,mode) mkdir((filename)) */
-#define NOPIPE
-#define NOLOCKF
-#define NO_STRPTIME
 #define sysconf(x) 512
 #define ftruncate(fd,len) _chsize(fd,len)
-#undef HAVE_SYS_WAIT_H
 #endif
 
 /* Generic WIN32 API issues */
@@ -299,117 +237,6 @@ typedef int mode_t;
 #    endif
 #  endif /* !HAVE_FSEEKO */
 #endif /* _WIN32 */
-
-/*
- * DEC Alpha's running Digital UNIX
- */
-#if defined(__alpha)
-/* Nothing as yet */
-#endif
-
-/*
- * Silicon Graphics - Irix
- */
-#if defined(__sgi)
-#define NOSTRDUP
-#define NO_STRPTIME
-#endif
-
-/*
- * Macs (<= OS 9) - yuk!
- */
-#if defined(MAC)
-#define NOSTRDUP
-#endif
-
-#if defined(__APPLE__) && defined(__ppc__)
-#define NO_STRPTIME
-#define NOLOCKF
-#endif
-
-#if defined(__APPLE__) && defined(__i386__)
-/* nothing untoward as yet */
-#endif
-
-/*-----------------------------------------------------------------------------
- * Typedefs for data sizes. Note there's umpteen versions of typedefs here
- * due to old code being supported. The ones that should be used everywhere
- * are {u,}int[124].
- *
- * C9X defines its own versions of these in inttypes.h so new code should
- * ideally be using the (for example) int32_t style of types. Again this
- * is just legacy code.
- */
-
-/*
- * Convenience of type casting
- */
-typedef unsigned char uc;
-typedef   signed char sc;
-
-/*
- * One byte integers
- */ 
-typedef unsigned char	int1;
-typedef unsigned char	uint1;
-
-/*
- * Two byte integers
- */
-typedef signed short	int2;
-typedef unsigned short	uint2;
-
-/*
- * Four byte integers
- */
-typedef signed int	int4;
-typedef unsigned int	uint4;
-
-typedef int64_t		int8;
-typedef uint64_t	uint8;
-
-/*
- * Backwards compatibility
- */
-typedef signed char	int_1;
-typedef unsigned char	uint_1;
-typedef signed short	int_2;
-typedef unsigned short	uint_2;
-typedef signed int	int_4;
-typedef unsigned int	uint_4;
-
-
-/*
- * Some handy definitions.
- */
-
-#define MAXINT8 (9223372036854775807LL)
-#define MAXINT4 (INT_MAX)
-#define MAXINT2 (SHRT_MAX)
-
-/*-----------------------------------------------------------------------------
- * The FORTRAN interface.
- */
-
-typedef int4 f_int;
-typedef int4 f_implicit;
-typedef void f_proc_ret;	/* procedure return value */
-
-/* James Bonfield compatability mode */
-typedef int4 int_f;		/* f_int */
-typedef int4 int_fl;		/* f_implicit */
-
-#define f_proc_return() return /* (f_proc_ret) 0 */
-
-/*
- * Use when calling/defining a Fortran function from C.
- */
-#ifdef VMS
-#    define FORT(symbol) (symbol)
-#else
-#    define FORT(symbol) (_symbol)
-#endif
-
 
 #ifdef __cplusplus
 }
