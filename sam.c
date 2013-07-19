@@ -362,7 +362,7 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
 	const char *q, *r, *p;
 	khash_t(s2i) *d;
 	d = kh_init(s2i);
-	for (p = text; *p; ++p) {
+	for (p = text; p && *p; ++p) {
 		if (strncmp(p, "@SQ", 3) == 0) {
 			char *sn = 0;
 			int ln = -1;
