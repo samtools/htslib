@@ -603,7 +603,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 			else if (type == 's') while (q + 1 < p) { int16_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 2, &str); }
 			else if (type == 'S') while (q + 1 < p) { uint16_t x = strtol(q + 1, &q, 0); kputsn_(&x, 2, &str); }
 			else if (type == 'i') while (q + 1 < p) { int32_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 4, &str); }
-			else if (type == 'I') while (q + 1 < p) { uint32_t x = strtol(q + 1, &q, 0); kputsn_(&x, 4, &str); }
+			else if (type == 'I') while (q + 1 < p) { uint32_t x = strtoul(q + 1, &q, 0); kputsn_(&x, 4, &str); }
 			else if (type == 'f') while (q + 1 < p) { float    x = strtod(q + 1, &q);    kputsn_(&x, 4, &str); }
 			else _parse_err(1, "unrecognized type");
 		} else _parse_err(1, "unrecognized type");
