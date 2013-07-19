@@ -578,7 +578,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 			x = strtod(q, &q);
 			kputc_('f', &str); kputsn_(&x, 4, &str);
 		} else if (type == 'Z' || type == 'H') {
-			kputc_('Z', &str);kputsn_(q, p - q, &str); // note that this include the trailing NULL
+			kputc_(type, &str);kputsn_(q, p - q, &str); // note that this include the trailing NULL
 		} else if (type == 'B') {
 			int32_t n;
 			char *r;
