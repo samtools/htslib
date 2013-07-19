@@ -77,7 +77,7 @@ CRAM_OBJS= \
 
 # TODO: edit code to remove need for -DSAMTOOLS
 # TODO: move htslib/cram/*.h down one to htslib/*.h to remove need for -I
-CFLAGS += -DSAMTOOLS=1 -Ihtslib
+CPPFLAGS = -DSAMTOOLS=1 -Ihtslib
 
 LIBHTS_OBJS = \
 	knetfile.o \
