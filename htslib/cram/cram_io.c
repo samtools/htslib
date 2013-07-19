@@ -2807,6 +2807,11 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 		int j, rlen;
 		MD5_CTX md5;
 
+		if (!fd->refs ||
+		    !fd->refs->ref_id ||
+		    !fd->refs->ref_id[i]) {
+		    return -1;
+		}
 		rlen = fd->refs->ref_id[i]->length;
 		MD5_Init(&md5);
 		cram_get_ref(fd, i, 1, rlen);
