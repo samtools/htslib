@@ -9,6 +9,10 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define SAMTOOLS
+#include "cram/cram.h"
+
 #include "sam.h"
 
 int main(int argc, char *argv[])
@@ -51,6 +55,20 @@ int main(int argc, char *argv[])
 	if (flag&8) strcat(modew, "c");
 	else if (flag&2) strcat(modew, "b");
 	out = hts_open("-", modew, 0);
+
+	/* CRAM output */
+	if (flag & 8) {
+	    // Parse input header and use for CRAM output
+	    ((cram_fd *)out->fp)->header = sam_hdr_parse_(h->text, h->l_text);
+
+	    // Create CRAM references arrays
+	    if (fn_ref)
+		cram_set_option(out->fp, CRAM_OPT_REFERENCE, fn_ref);
+	    else
+		// Attempt to fill out a cram->refs[] array from @SQ headers
+		cram_set_option(out->fp, CRAM_OPT_REFERENCE, NULL);
+	}
+
 	sam_hdr_write(out, h);
 	if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
 	    int i;

@@ -55,6 +55,8 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 		else fp->fp = strcmp(fn, "-")? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
 	} else if (fp->is_cram) {
 		fp->fp = cram_open(fn, mode);
+		if (fp->fp && fn_aux)
+			cram_set_option(fp->fp, CRAM_OPT_REFERENCE, fn_aux);
 	} else {
 		if (!fp->is_write) {
 			gzFile gzfp;
