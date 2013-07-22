@@ -293,7 +293,6 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	    return -1;
 	if (-1 == (k = kh_put(sam_hdr, sh->h, type, &new)))
 	    return -1;
-	kh_val(sh->h, k) = h_type;
 
 	// Form the ring, either with self or other lines of this type
 	if (!new) {
@@ -308,6 +307,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	    h_type->next = t;
 	    h_type->order = p->order+1;
 	} else {
+	    kh_val(sh->h, k) = h_type;
 	    h_type->prev = h_type->next = h_type;
 	    h_type->order = 0;
 	}
