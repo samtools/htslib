@@ -2357,9 +2357,10 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 		return -1;
 
 	    k = kh_put(m_s2i, s->pair, key, &new);
-	    kh_val(s->pair, k) = rnum;
 	    if (-1 == new)
 		return -1;
+	    else if (new > 0)
+		kh_val(s->pair, k) = rnum;
 	} else {
 	    new = 1;
 	}
