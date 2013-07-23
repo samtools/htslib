@@ -29,6 +29,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include <sys/types.h>
+#include "htslib/hts.h"
 #include "htslib/bgzf.h"
 
 #ifdef _USE_KNETFILE
@@ -64,6 +65,7 @@ typedef FILE *_bgzf_file_t;
 #define BLOCK_HEADER_LENGTH 18
 #define BLOCK_FOOTER_LENGTH 8
 
+
 /* BGZF/GZIP header (speciallized from RFC 1952; little endian):
  +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
  | 31|139|  8|  4|              0|  0|255|      6| 66| 67|      2|BLK_LEN|
@@ -81,11 +83,22 @@ typedef struct {
 KHASH_MAP_INIT_INT64(cache, cache_t)
 #endif
 
-static inline int ed_is_big()
+typedef struct 
 {
-	long one= 1;
-	return !(*((char *)(&one)));
+    uint64_t uaddr;  // offset w.r.t. uncompressed data
+    uint64_t caddr;  // offset w.r.t. compressed data
 }
+bgzidx1_t;
+
+struct __bgzidx_t
+{
+    int noffs, moffs;       // the size of the index, n:used, m:allocated 
+    bgzidx1_t *offs;        // offsets
+    uint64_t ublock_addr;   // offset of the current block (uncompressed data)
+};
+
+void bgzf_index_destroy(BGZF *fp);
+int bgzf_index_add_block(BGZF *fp);
 
 static inline void packInt16(uint8_t *buffer, uint16_t value)
 {
@@ -148,7 +161,19 @@ BGZF *bgzf_open(const char *path, const char *mode)
 	if (strchr(mode, 'r') || strchr(mode, 'R')) {
 		_bgzf_file_t fpr;
 		if ((fpr = _bgzf_open(path, "r")) == 0) return 0;
+
+        // determine if the file is compressed 
+        uint8_t magic[2];
+        if ( _bgzf_read(fpr,magic,2)!=2 ) 
+        {
+            _bgzf_close(fpr);
+            return 0;
+        }
+        _bgzf_close(fpr);
+        if ((fpr = _bgzf_open(path, "r")) == 0) return 0;
+
 		fp = bgzf_read_init();
+        fp->is_plain_text = ( magic[0]==0x1f && magic[1]==0x8b ) ? 0 : 1;
 		fp->fp = fpr;
 	} else if (strchr(mode, 'w') || strchr(mode, 'W')) {
 		FILE *fpw;
@@ -315,18 +340,32 @@ int bgzf_read_block(BGZF *fp)
 {
 	uint8_t header[BLOCK_HEADER_LENGTH], *compressed_block;
 	int count, size = 0, block_length, remaining;
+    if ( fp->is_plain_text==1 )
+    {
+        count = _bgzf_read(fp->fp, fp->uncompressed_block, BGZF_MAX_BLOCK_SIZE);
+        if ( count==0 ) 
+        {
+            fp->block_length = 0;
+            return 0;
+        }
+        if (fp->block_length != 0) fp->block_offset = 0;
+        fp->block_address += count;
+        fp->block_length = count;
+        return 0;
+    }
 	int64_t block_address;
 	block_address = _bgzf_tell((_bgzf_file_t)fp->fp);
 	if (fp->cache_size && load_block_from_cache(fp, block_address)) return 0;
-	count = _bgzf_read(fp->fp, header, sizeof(header));
-	if (count == 0) { // no data read
-		fp->block_length = 0;
-		return 0;
-	}
-	if (count != sizeof(header) || !check_header(header)) {
-		fp->errcode |= BGZF_ERR_HEADER;
-		return -1;
-	}
+    count = _bgzf_read(fp->fp, header, sizeof(header));
+    if (count == 0) { // no data read
+        fp->block_length = 0;
+        return 0;
+    }
+    if (count != sizeof(header) || !check_header(header)) 
+    {
+        fp->errcode |= BGZF_ERR_HEADER;
+        return -1;
+    }
 	size = count;
 	block_length = unpackInt16((uint8_t*)&header[16]) + 1; // +1 because when writing this number, we used "-1"
 	compressed_block = (uint8_t*)fp->compressed_block;
@@ -342,6 +381,11 @@ int bgzf_read_block(BGZF *fp)
 	if (fp->block_length != 0) fp->block_offset = 0; // Do not reset offset if this read follows a seek.
 	fp->block_address = block_address;
 	fp->block_length = count;
+    if ( fp->idx_build_otf ) 
+    {
+        bgzf_index_add_block(fp);
+        fp->idx->ublock_addr += count;
+    }
 	cache_block(fp, size);
 	return 0;
 }
@@ -371,6 +415,7 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
 		fp->block_address = _bgzf_tell((_bgzf_file_t)fp->fp);
 		fp->block_offset = fp->block_length = 0;
 	}
+    fp->uncompressed_address += bytes_read;
 	return bytes_read;
 }
 
@@ -544,8 +589,12 @@ int bgzf_flush(BGZF *fp)
 	if (fp->mt) return mt_flush(fp);
 #endif
 	while (fp->block_offset > 0) {
-		int block_length;
-		block_length = deflate_block(fp, fp->block_offset);
+        if ( fp->idx_build_otf ) 
+        {
+            bgzf_index_add_block(fp);
+            fp->idx->ublock_addr += fp->block_offset;
+        }
+		int block_length = deflate_block(fp, fp->block_offset);
 		if (block_length < 0) return -1;
 		if (fwrite(fp->compressed_block, 1, block_length, (FILE*)fp->fp) != (size_t)block_length) {
 			fp->errcode |= BGZF_ERR_IO; // possibly truncated file
@@ -608,6 +657,7 @@ int bgzf_close(BGZF* fp)
 	}
 	ret = fp->is_write? fclose((FILE*)fp->fp) : _bgzf_close(fp->fp);
 	if (ret != 0) return -1;
+    bgzf_index_destroy(fp);
 	free(fp->uncompressed_block);
 	free(fp->compressed_block);
 	free_cache(fp);
@@ -677,6 +727,7 @@ int bgzf_getc(BGZF *fp)
         fp->block_offset = 0;
         fp->block_length = 0;
     }
+    fp->uncompressed_address++;
 	return c;
 }
 
@@ -712,6 +763,196 @@ int bgzf_getline(BGZF *fp, int delim, kstring_t *str)
 		} 
 	} while (state == 0);
 	if (str->l == 0 && state < 0) return state;
+    fp->uncompressed_address += str->l;
 	str->s[str->l] = 0;
 	return str->l;
 }
+
+void bgzf_index_destroy(BGZF *fp)
+{
+    if ( !fp->idx ) return;
+    free(fp->idx->offs);
+    free(fp->idx);
+    fp->idx = NULL;
+    fp->idx_build_otf = 0;
+}
+
+int bgzf_index_build_init(BGZF *fp)
+{
+    bgzf_index_destroy(fp);
+    fp->idx = (bgzidx_t*) calloc(1,sizeof(bgzidx_t));
+    if ( !fp->idx ) return -1;
+    fp->idx_build_otf = 1;  // build index on the fly
+    return 0;
+}
+
+int bgzf_index_add_block(BGZF *fp)
+{
+    fp->idx->noffs++;
+    if ( fp->idx->noffs > fp->idx->moffs )
+    {
+        fp->idx->moffs = fp->idx->noffs;
+        kroundup32(fp->idx->moffs);
+        fp->idx->offs = (bgzidx1_t*) realloc(fp->idx->offs, fp->idx->moffs*sizeof(bgzidx1_t));
+        if ( !fp->idx->offs ) return -1;
+    }
+    fp->idx->offs[ fp->idx->noffs-1 ].uaddr = fp->idx->ublock_addr;
+    fp->idx->offs[ fp->idx->noffs-1 ].caddr = fp->block_address;
+    return 0;
+}
+
+int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
+{
+    if (bgzf_flush(fp) != 0) return -1;
+
+    assert(fp->idx);
+    char *tmp = NULL;
+    if ( suffix )
+    {
+        int blen = strlen(bname);
+        int slen = strlen(suffix);
+        tmp = (char*) malloc(blen + slen + 1);
+        if ( !tmp ) return -1;
+        memcpy(tmp,bname,blen);
+        memcpy(tmp+blen,suffix,slen+1);
+    }
+
+    FILE *idx = fopen(tmp?tmp:bname,"wb");
+    if ( tmp ) free(tmp);
+    if ( !idx ) return -1;
+
+    // Note that the index contains one extra record when indexing files opened
+    // for reading. The terminating record is not present when opened for writing.
+    // This is not a bug.
+
+    int i;
+    if ( fp->is_be )
+    {
+        uint64_t x = fp->idx->noffs - 1;
+        fwrite(ed_swap_8p(&x), 1, sizeof(x), idx);
+        for (i=1; i<fp->idx->noffs; i++)
+        {
+            x = fp->idx->offs[i].caddr; fwrite(ed_swap_8p(&x), 1, sizeof(x), idx);
+            x = fp->idx->offs[i].uaddr; fwrite(ed_swap_8p(&x), 1, sizeof(x), idx);
+        }
+    }
+    else
+    {
+        uint64_t x = fp->idx->noffs - 1;
+        fwrite(&x, 1, sizeof(x), idx);
+        for (i=1; i<fp->idx->noffs; i++)
+        {
+            fwrite(&fp->idx->offs[i].caddr, 1, sizeof(fp->idx->offs[i].caddr), idx);
+            fwrite(&fp->idx->offs[i].uaddr, 1, sizeof(fp->idx->offs[i].uaddr), idx);
+        }
+    }
+    fclose(idx);
+    return 0;
+}
+
+
+int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
+{
+    char *tmp = NULL;
+    if ( suffix )
+    {
+        int blen = strlen(bname);
+        int slen = strlen(suffix);
+        tmp = (char*) malloc(blen + slen + 1);
+        if ( !tmp ) return -1;
+        memcpy(tmp,bname,blen);
+        memcpy(tmp+blen,suffix,slen+1);
+    }
+
+    FILE *idx = fopen(tmp?tmp:bname,"rb");
+    if ( tmp ) free(tmp);
+    if ( !idx ) return -1;
+
+    fp->idx = (bgzidx_t*) calloc(1,sizeof(bgzidx_t));
+    uint64_t x;
+    fread(&x, 1, sizeof(x), idx);
+
+    fp->idx->noffs = fp->idx->moffs = 1 + (fp->is_be ? ed_swap_8(x) : x);
+    fp->idx->offs  = (bgzidx1_t*) malloc(fp->idx->moffs*sizeof(bgzidx1_t));
+    fp->idx->offs[0].caddr = fp->idx->offs[0].uaddr = 0;
+
+    int i;
+    if ( fp->is_be )
+    {
+        for (i=1; i<fp->idx->noffs; i++)
+        {
+            fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].caddr = ed_swap_8(x);
+            fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].uaddr = ed_swap_8(x);
+        }
+    }
+    else
+    {
+        for (i=1; i<fp->idx->noffs; i++)
+        {
+            fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].caddr = x;
+            fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].uaddr = x;
+        }
+    }
+    fclose(idx);
+    return 0;
+
+}
+
+int bgzf_useek(BGZF *fp, long uoffset, int where)
+{
+    if ( fp->is_plain_text==1 )
+    {
+        if (_bgzf_seek(fp->fp, uoffset, SEEK_SET) < 0)
+        {
+            fp->errcode |= BGZF_ERR_IO;
+            return -1;
+        }
+        fp->block_length = 0;  // indicates current block has not been loaded
+        fp->block_address = uoffset;
+        fp->block_offset = 0;
+        bgzf_read_block(fp);
+        fp->uncompressed_address = uoffset;
+        return 0;
+    }
+
+    if ( !fp->idx )
+    {
+        fp->errcode |= BGZF_ERR_IO;
+        return -1;
+    }
+
+    // binary search
+    int ilo = 0, ihi = fp->idx->noffs - 1;
+    while ( ilo<=ihi )
+    {
+        int i = (ilo+ihi)*0.5;
+        if ( uoffset < fp->idx->offs[i].uaddr ) ihi = i - 1;
+        else if ( uoffset >= fp->idx->offs[i].uaddr ) ilo = i + 1;
+        else break;
+    }
+    int i = ilo-1;
+    if (_bgzf_seek(fp->fp, fp->idx->offs[i].caddr, SEEK_SET) < 0) 
+    {
+        fp->errcode |= BGZF_ERR_IO;
+        return -1;
+    }
+    fp->block_length = 0;  // indicates current block has not been loaded
+    fp->block_address = fp->idx->offs[i].caddr;
+    fp->block_offset = 0;
+    bgzf_read_block(fp);
+    if ( uoffset - fp->idx->offs[i].uaddr > 0 )
+    {
+        fp->block_offset = uoffset - fp->idx->offs[i].uaddr;
+        assert( fp->block_offset <= fp->block_length );     // todo: skipped, unindexed, blocks
+    }
+    fp->uncompressed_address = uoffset;
+    return 0;
+}
+
+long bgzf_utell(BGZF *fp)
+{
+    return fp->uncompressed_address;    // currently maintained only when reading
+}
+
+
+

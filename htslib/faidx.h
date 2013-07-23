@@ -23,7 +23,7 @@
    SOFTWARE.
 */
 
-/* Contact: Heng Li <lh3@sanger.ac.uk> */
+/* Contact: Heng Li <lh3@sanger.ac.uk>, Petr Danecek <pd3@sanger> */
 
 #ifndef FAIDX_H
 #define FAIDX_H
@@ -32,6 +32,15 @@
   @header
 
   Index FASTA files and extract subsequence.
+
+  The fai file index columns are:
+    - chromosome name
+    - chromosome length: number of bases
+    - offset: number of bytes to skip to get to the first base
+        from the beginning of the file, including the length
+        of the sequence description string (">chr ..\n")
+    - line length: number of bases per line (excluding \n)
+    - binary line length: number of bytes, including \n
 
   @copyright The Wellcome Trust Sanger Institute.
  */

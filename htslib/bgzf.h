@@ -41,15 +41,20 @@
 #define BGZF_ERR_IO     4
 #define BGZF_ERR_MISUSE 8
 
+struct __bgzidx_t;
+typedef struct __bgzidx_t bgzidx_t;
+
 typedef struct {
-	int errcode:16, is_write:2, is_be:2, compress_level:12;
+	int errcode:16, is_write:2, is_be:2, compress_level:9, is_plain_text:3;
 	int cache_size;
     int block_length, block_offset;
-    int64_t block_address;
+    int64_t block_address, uncompressed_address;
     void *uncompressed_block, *compressed_block;
 	void *cache; // a pointer to a hash table
 	void *fp; // actual file handler; FILE* on writing; FILE* or knetFile* on reading
 	void *mt; // only used for multi-threading
+    bgzidx_t *idx;      // BGZF index
+    int idx_build_otf;  // build index on the fly, set by bgzf_index_build_init()
 } BGZF;
 
 #ifndef KSTRING_T
@@ -200,6 +205,62 @@ extern "C" {
 	 * @param n_sub_blks  #blocks processed by each thread; a value 64-256 is recommended
 	 */
 	int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks);
+
+
+	/*******************
+	 * bgzidx routines *
+	 *******************/
+
+	/**
+     *  Position BGZF at the uncompressed offset 
+     *
+     *  @param fp           BGZF file handler; must be opened for reading
+     *  @param uoffset      file offset in the uncompressed data
+     *  @param where        SEEK_SET supported atm
+     *
+     *  Returns 0 on success and -1 on error.
+	 */
+    int bgzf_useek(BGZF *fp, long uoffset, int where);
+
+	/**
+     *  Position in uncompressed BGZF
+     *
+     *  @param fp           BGZF file handler; must be opened for reading
+     *
+     *  Returns the current offset on success and -1 on error.
+	 */
+    long bgzf_utell(BGZF *fp);
+
+	/**
+	 * Tell BGZF to build index while compressing.
+     *
+	 * @param fp          BGZF file handler; can be opened for reading or writing.
+     *
+     * Returns 0 on success and -1 on error.
+	 */
+	int bgzf_index_build_init(BGZF *fp);
+
+   	/**
+	 * Load BGZF index
+	 *
+	 * @param fp          BGZF file handler
+	 * @param bname       base name
+     * @param suffix      suffix to add to bname (can be NULL)
+     *
+     * Returns 0 on success and -1 on error.
+	 */
+    int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix);
+
+   	/**
+	 * Save BGZF index
+	 *
+	 * @param fp          BGZF file handler
+	 * @param bname       base name
+     * @param suffix      suffix to add to bname (can be NULL)
+     *
+     * Returns 0 on success and -1 on error.
+	 */
+    int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix);
 
 #ifdef __cplusplus
 }

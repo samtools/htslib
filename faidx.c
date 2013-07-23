@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include "htslib/bgzf.h"
 #include "htslib/faidx.h"
 #include "htslib/khash.h"
 
@@ -13,29 +14,8 @@ typedef struct {
 } faidx1_t;
 KHASH_MAP_INIT_STR(s, faidx1_t)
 
-#ifndef _NO_RAZF
-#include "htslib/razf.h"
-#else
-#ifdef _WIN32
-#define ftello(fp) ftell(fp)
-#define fseeko(fp, offset, whence) fseek(fp, offset, whence)
-#else
-extern off_t ftello(FILE *stream);
-extern int fseeko(FILE *stream, off_t offset, int whence);
-#endif
-#define RAZF FILE
-#define razf_read(fp, buf, size) fread(buf, 1, size, fp)
-#define razf_open(fn, mode) fopen(fn, mode)
-#define razf_close(fp) fclose(fp)
-#define razf_seek(fp, offset, whence) fseeko(fp, offset, whence)
-#define razf_tell(fp) ftello(fp)
-#endif
-#ifdef _USE_KNETFILE
-#include "htslib/knetfile.h"
-#endif
-
 struct __faidx_t {
-	RAZF *rz;
+	BGZF *bgzf;
 	int n, m;
 	char **name;
 	khash_t(s) *hash;
@@ -61,10 +41,10 @@ static inline void fai_insert_index(faidx_t *idx, const char *name, int len, int
 	++idx->n;
 }
 
-faidx_t *fai_build_core(RAZF *rz)
+faidx_t *fai_build_core(BGZF *bgzf)
 {
 	char c, *name;
-	int l_name, m_name, ret;
+	int l_name, m_name;
 	int line_len, line_blen, state;
 	int l1, l2;
 	faidx_t *idx;
@@ -75,10 +55,10 @@ faidx_t *fai_build_core(RAZF *rz)
 	idx->hash = kh_init(s);
 	name = 0; l_name = m_name = 0;
 	len = line_len = line_blen = -1; state = 0; l1 = l2 = -1; offset = 0;
-	while (razf_read(rz, &c, 1)) {
+	while ( (c=bgzf_getc(bgzf))>=0 ) {
 		if (c == '\n') { // an empty line
 			if (state == 1) {
-				offset = razf_tell(rz);
+				offset = bgzf_utell(bgzf);
 				continue;
 			} else if ((state == 0 && len < 0) || state == 2) continue;
 		}
@@ -86,7 +66,7 @@ faidx_t *fai_build_core(RAZF *rz)
 			if (len >= 0)
 				fai_insert_index(idx, name, len, line_len, line_blen, offset);
 			l_name = 0;
-			while ((ret = razf_read(rz, &c, 1)) != 0 && !isspace(c)) {
+			while ( (c=bgzf_getc(bgzf))>=0 && !isspace(c)) {
 				if (m_name < l_name + 2) {
 					m_name = l_name + 2;
 					kroundup32(m_name);
@@ -95,14 +75,14 @@ faidx_t *fai_build_core(RAZF *rz)
 				name[l_name++] = c;
 			}
 			name[l_name] = '\0';
-			if (ret == 0) {
+			if ( c<0 ) {
 				fprintf(stderr, "[fai_build_core] the last entry has no sequence\n");
 				free(name); fai_destroy(idx);
 				return 0;
 			}
-			if (c != '\n') while (razf_read(rz, &c, 1) && c != '\n');
+			if (c != '\n') while ( (c=bgzf_getc(bgzf))>=0 && c != '\n');
 			state = 1; len = 0;
-			offset = razf_tell(rz);
+			offset = bgzf_utell(bgzf);
 		} else {
 			if (state == 3) {
 				fprintf(stderr, "[fai_build_core] inlined empty line is not allowed in sequence '%s'.\n", name);
@@ -114,7 +94,7 @@ faidx_t *fai_build_core(RAZF *rz)
 			do {
 				++l1;
 				if (isgraph(c)) ++l2;
-			} while ((ret = razf_read(rz, &c, 1)) && c != '\n');
+			} while ( (c=bgzf_getc(bgzf))>=0 && c != '\n');
 			if (state == 3 && l2) {
 				fprintf(stderr, "[fai_build_core] different line length in sequence '%s'.\n", name);
 				free(name); fai_destroy(idx);
@@ -181,28 +161,28 @@ void fai_destroy(faidx_t *fai)
 	for (i = 0; i < fai->n; ++i) free(fai->name[i]);
 	free(fai->name);
 	kh_destroy(s, fai->hash);
-	if (fai->rz) razf_close(fai->rz);
+	if (fai->bgzf) bgzf_close(fai->bgzf);
 	free(fai);
 }
 
 int fai_build(const char *fn)
 {
 	char *str;
-	RAZF *rz;
+	BGZF *bgzf;
 	FILE *fp;
 	faidx_t *fai;
 	str = (char*)calloc(strlen(fn) + 5, 1);
 	sprintf(str, "%s.fai", fn);
-	rz = razf_open(fn, "r");
-	if (rz == 0) {
+	bgzf = bgzf_open(fn, "r");
+	if ( !bgzf ) {
 		fprintf(stderr, "[fai_build] fail to open the FASTA file %s\n",fn);
 		free(str);
 		return -1;
 	}
-	fai = fai_build_core(rz);
-	razf_close(rz);
+	fai = fai_build_core(bgzf);
+	bgzf_close(bgzf);
 	fp = fopen(str, "wb");
-	if (fp == 0) {
+	if ( !fp ) {
 		fprintf(stderr, "[fai_build] fail to write FASTA index %s\n",str);
 		fai_destroy(fai); free(str);
 		return -1;
@@ -291,12 +271,21 @@ faidx_t *fai_load(const char *fn)
 	fai = fai_read(fp);
 	fclose(fp);
 
-	fai->rz = razf_open(fn, "rb");
+	fai->bgzf = bgzf_open(fn, "rb");
 	free(str);
-	if (fai->rz == 0) {
+	if (fai->bgzf == 0) {
 		fprintf(stderr, "[fai_load] fail to open FASTA file.\n");
 		return 0;
 	}
+    if ( !fai->bgzf->is_plain_text )
+    {
+        if ( bgzf_index_load(fai->bgzf, fn, ".gzi") < 0 )
+        {
+            fprintf(stderr, "[fai_load] failed to load .gzi index: %s[.gzi]\n", fn);
+            fai_destroy(fai);
+            return NULL;
+        }
+    }
 	return fai;
 }
 
@@ -359,43 +348,20 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
 	free(s);
 
 	// now retrieve the sequence
+	int ret = bgzf_useek(fai->bgzf, val.offset + beg / val.line_blen * val.line_len + beg % val.line_blen, SEEK_SET);
+    if ( ret<0 )
+    {
+        *len = -1;
+        fprintf(stderr, "[fai_fetch] Error: fai_fetch failed. (Seeking in a compressed, .gzi unindexed, file?)\n");
+        return NULL;
+    }
 	l = 0;
 	s = (char*)malloc(end - beg + 2);
-	razf_seek(fai->rz, val.offset + beg / val.line_blen * val.line_len + beg % val.line_blen, SEEK_SET);
-	while (razf_read(fai->rz, &c, 1) == 1 && l < end - beg && !fai->rz->z_err)
+	while ( (c=bgzf_getc(fai->bgzf))>=0 && l < end - beg )
 		if (isgraph(c)) s[l++] = c;
 	s[l] = '\0';
 	*len = l;
 	return s;
-}
-
-int faidx_main(int argc, char *argv[])
-{
-	if (argc == 1) {
-		fprintf(stderr, "Usage: faidx <in.fasta> [<reg> [...]]\n");
-		return 1;
-	} else {
-		if (argc == 2) fai_build(argv[1]);
-		else {
-			int i, j, k, l;
-			char *s;
-			faidx_t *fai;
-			fai = fai_load(argv[1]);
-			if (fai == 0) return 1;
-			for (i = 2; i != argc; ++i) {
-				printf(">%s\n", argv[i]);
-				s = fai_fetch(fai, argv[i], &l);
-				for (j = 0; j < l; j += 60) {
-					for (k = 0; k < 60 && k < l - j; ++k)
-						putchar(s[j + k]);
-					putchar('\n');
-				}
-				free(s);
-			}
-			fai_destroy(fai);
-		}
-	}
-	return 0;
 }
 
 int faidx_fetch_nseq(const faidx_t *fai) 
@@ -422,16 +388,20 @@ char *faidx_fetch_seq(const faidx_t *fai, char *c_name, int p_beg_i, int p_end_i
     else if(val.len <= p_end_i) p_end_i = val.len - 1;
 
     // Now retrieve the sequence 
+	int ret = bgzf_useek(fai->bgzf, val.offset + p_beg_i / val.line_blen * val.line_len + p_beg_i % val.line_blen, SEEK_SET);
+    if ( ret<0 )
+    {
+        *len = -1;
+        fprintf(stderr, "[fai_fetch] Error: fai_fetch failed. (Seeking in a compressed, .gzi unindexed, file?)\n");
+        return NULL;
+    }
 	l = 0;
 	seq = (char*)malloc(p_end_i - p_beg_i + 2);
-	razf_seek(fai->rz, val.offset + p_beg_i / val.line_blen * val.line_len + p_beg_i % val.line_blen, SEEK_SET);
-	while (razf_read(fai->rz, &c, 1) == 1 && l < p_end_i - p_beg_i + 1)
+	while ( (c=bgzf_getc(fai->bgzf))>=0 && l < p_end_i - p_beg_i + 1)
 		if (isgraph(c)) seq[l++] = c;
 	seq[l] = '\0';
 	*len = l;
 	return seq;
 }
 
-#ifdef FAIDX_MAIN
-int main(int argc, char *argv[]) { return faidx_main(argc, argv); }
-#endif
+

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <fcntl.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 
@@ -140,6 +141,24 @@ int file_type(const char *fname)
     if ( !strcasecmp(".bcf",fname+len-4) ) return IS_BCF;
     if ( !strcmp("-",fname) ) return IS_STDIN;
     // ... etc
+
+    int fd = open(fname, O_RDONLY);
+    if ( !fd ) return 0;
+
+    uint8_t magic[5];
+    if ( read(fd,magic,2)!=2 ) { close(fd); return 0; }
+    if ( !strncmp((char*)magic,"##",2) ) { close(fd); return IS_VCF; }
+    close(fd);
+
+    if ( magic[0]==0x1f && magic[1]==0x8b ) // compressed
+    {
+        BGZF *fp = bgzf_open(fname, "r");
+        if ( !fp ) return 0;
+        if ( bgzf_read(fp, magic, 3)!=3 ) { bgzf_close(fp); return 0; }
+        bgzf_close(fp);
+        if ( !strncmp((char*)magic,"##",2) ) return IS_VCF;
+        if ( !strncmp((char*)magic,"BCF",3) ) return IS_BCF;
+    }
     return 0;
 }
 
