@@ -939,7 +939,7 @@ int bgzf_useek(BGZF *fp, long uoffset, int where)
     fp->block_length = 0;  // indicates current block has not been loaded
     fp->block_address = fp->idx->offs[i].caddr;
     fp->block_offset = 0;
-    bgzf_read_block(fp);
+    if ( bgzf_read_block(fp) < 0 ) return -1;
     if ( uoffset - fp->idx->offs[i].uaddr > 0 )
     {
         fp->block_offset = uoffset - fp->idx->offs[i].uaddr;
