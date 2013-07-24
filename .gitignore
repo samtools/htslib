@@ -7,3 +7,5 @@ lib*.so
 lib*.so.*
 
 /TAGS
+
+test/test_view
