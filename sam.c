@@ -405,6 +405,7 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
 			kputsn(fp->line.s, fp->line.l, &str);
 			kputc('\n', &str);
 		}
+		if (str.l == 0) kputsn("", 0, &str);
 		h = sam_hdr_parse(str.l, str.s);
 		h->l_text = str.l; h->text = str.s;
 		return h;
