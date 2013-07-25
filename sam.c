@@ -540,6 +540,8 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 		for (i = 0; i < c->l_qseq; ++i) t[i] = q[i] - 33;
 	} else memset(t, 0xff, c->l_qseq);
 	// aux
+	// Note that (like the bam1_core_t fields) this aux data in b->data is
+	// stored in host endianness; so there is no byte swapping needed here.
 	while (p < s->s + s->l) {
 		uint8_t type;
 		q = _read_token_aux(p); // FIXME: can be accelerated for long 'B' arrays
@@ -589,9 +591,9 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 			kputc_('B', &str); kputc_(type, &str); kputsn_(&n, 4, &str);
 			// FIXME: to evaluate which is faster: a) aligned array and then memmove(); b) unaligned array; c) kputsn_()
 			if (type == 'c')      while (q + 1 < p) { int8_t   x = strtol(q + 1, &q, 0); kputc_(x, &str); }
-			else if (type == 'C') while (q + 1 < p) { uint8_t  x = strtol(q + 1, &q, 0); kputc_(x, &str); }
+			else if (type == 'C') while (q + 1 < p) { uint8_t  x = strtoul(q + 1, &q, 0); kputc_(x, &str); }
 			else if (type == 's') while (q + 1 < p) { int16_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 2, &str); }
-			else if (type == 'S') while (q + 1 < p) { uint16_t x = strtol(q + 1, &q, 0); kputsn_(&x, 2, &str); }
+			else if (type == 'S') while (q + 1 < p) { uint16_t x = strtoul(q + 1, &q, 0); kputsn_(&x, 2, &str); }
 			else if (type == 'i') while (q + 1 < p) { int32_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 4, &str); }
 			else if (type == 'I') while (q + 1 < p) { uint32_t x = strtoul(q + 1, &q, 0); kputsn_(&x, 4, &str); }
 			else if (type == 'f') while (q + 1 < p) { float    x = strtod(q + 1, &q);    kputsn_(&x, 4, &str); }
