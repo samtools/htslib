@@ -45,9 +45,9 @@ PACKAGE_VERSION  = 0.0.1
 LIBHTS_SOVERSION = 0
 
 
-# $(LIBHTS_NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
+# $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
 # even if this is a dirty or untagged Git working tree.
-LIBHTS_NUMERIC_VERSION = $(PACKAGE_VERSION)
+NUMERIC_VERSION = $(PACKAGE_VERSION)
 
 # If building from a Git repository, replace $(PACKAGE_VERSION) with the Git
 # description of the working tree: either a release tag with the same value
@@ -59,11 +59,11 @@ original_version := $(PACKAGE_VERSION)
 PACKAGE_VERSION := $(shell git describe --always --dirty)
 
 # Unless the Git description matches /\d*\.\d*(\.\d*)?/, i.e., is exactly a tag
-# with a numeric name, revert $(LIBHTS_NUMERIC_VERSION) to the original version
-# number written above, but with the patchlevel field bumped to 255.
+# with a numeric name, revert $(NUMERIC_VERSION) to the original version number
+# written above, but with the patchlevel field bumped to 255.
 ifneq "$(subst ..,.,$(subst 0,,$(subst 1,,$(subst 2,,$(subst 3,,$(subst 4,,$(subst 5,,$(subst 6,,$(subst 7,,$(subst 8,,$(subst 9,,$(PACKAGE_VERSION))))))))))))" "."
 empty :=
-LIBHTS_NUMERIC_VERSION := $(subst $(empty) ,.,$(wordlist 1,2,$(subst ., ,$(original_version))) 255)
+NUMERIC_VERSION := $(subst $(empty) ,.,$(wordlist 1,2,$(subst ., ,$(original_version))) 255)
 endif
 
 # Force version.h to be remade if $(PACKAGE_VERSION) has changed.
@@ -117,7 +117,7 @@ libhts.so: $(LIBHTS_OBJS:.o=.pico)
 # includes this project's build directory).
 
 libhts.dylib: $(LIBHTS_OBJS)
-	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(LIBHTS_NUMERIC_VERSION) -compatibility_version $(LIBHTS_SOVERSION) -o $@ $(LIBHTS_OBJS) -lz
+	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(LIBHTS_SOVERSION) -o $@ $(LIBHTS_OBJS) -lz
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 
