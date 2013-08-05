@@ -1,12 +1,6 @@
 #ifndef HTS_H
 #define HTS_H
 
-#ifndef VERSION
-#define HTS_VERSION "0.0.1+"
-#else
-#define HTS_VERSION VERSION
-#endif
-
 #include <stdint.h>
 #include "bgzf.h"
 
@@ -62,6 +56,13 @@ extern const char seq_nt16_str[];
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/*!
+  @abstract  Get the htslib version number
+  @return    For released versions, a string like "N.N[.N]"; or git describe
+  output if using a library built within a Git repository.
+*/
+const char *hts_version();
 
 	htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux);
 	void hts_close(htsFile *fp);

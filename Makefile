@@ -41,9 +41,38 @@ lib-shared: libhts.so
 endif
 
 
-# TODO Unify infrastructure for $(PACKAGE_VERSION), #define HTS_VERSION, etc
 PACKAGE_VERSION  = 0.0.1
 LIBHTS_SOVERSION = 0
+
+
+# $(LIBHTS_NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
+# even if this is a dirty or untagged Git working tree.
+LIBHTS_NUMERIC_VERSION = $(PACKAGE_VERSION)
+
+# If building from a Git repository, replace $(PACKAGE_VERSION) with the Git
+# description of the working tree: either a release tag with the same value
+# as $(PACKAGE_VERSION) above, or an exact description likely based on a tag.
+# Much of this is also GNU Make-specific.  If you don't have GNU Make and/or
+# are not building from a Git repository, comment out this conditional.
+ifneq "$(wildcard .git)" ""
+original_version := $(PACKAGE_VERSION)
+PACKAGE_VERSION := $(shell git describe --always --dirty)
+
+# Unless the Git description matches /\d*\.\d*(\.\d*)?/, i.e., is exactly a tag
+# with a numeric name, revert $(LIBHTS_NUMERIC_VERSION) to the original version
+# number written above, but with the patchlevel field bumped to 255.
+ifneq "$(subst ..,.,$(subst 0,,$(subst 1,,$(subst 2,,$(subst 3,,$(subst 4,,$(subst 5,,$(subst 6,,$(subst 7,,$(subst 8,,$(subst 9,,$(PACKAGE_VERSION))))))))))))" "."
+empty :=
+LIBHTS_NUMERIC_VERSION := $(subst $(empty) ,.,$(wordlist 1,2,$(subst ., ,$(original_version))) 255)
+endif
+
+# Force version.h to be remade if $(PACKAGE_VERSION) has changed.
+version.h: $(if $(wildcard version.h),$(if $(findstring "$(PACKAGE_VERSION)",$(shell cat version.h)),,force))
+endif
+
+version.h:
+	echo '#define HTS_VERSION "$(PACKAGE_VERSION)"' > $@
+
 
 .SUFFIXES: .c .o .pico
 
@@ -88,14 +117,14 @@ libhts.so: $(LIBHTS_OBJS:.o=.pico)
 # includes this project's build directory).
 
 libhts.dylib: $(LIBHTS_OBJS)
-	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(PACKAGE_VERSION) -compatibility_version $(LIBHTS_SOVERSION) -o $@ $(LIBHTS_OBJS) -lz
+	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(LIBHTS_NUMERIC_VERSION) -compatibility_version $(LIBHTS_SOVERSION) -o $@ $(LIBHTS_OBJS) -lz
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 
 bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) htslib/knetfile.h htslib/khash.h
 kstring.o kstring.pico: kstring.c htslib/kstring.h
 knetfile.o knetfile.pico: knetfile.c htslib/knetfile.h
-hts.o hts.pico: hts.c $(htslib_hts_h) $(htslib_bgzf_h) htslib/khash.h htslib/kseq.h htslib/ksort.h
+hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) htslib/khash.h htslib/kseq.h htslib/ksort.h
 vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) htslib/khash.h htslib/kseq.h htslib/kstring.h
 sam.o sam.pico: sam.c $(htslib_sam_h) htslib/khash.h htslib/kseq.h htslib/kstring.h
 tbx.o tbx.pico: tbx.c $(htslib_tbx_h) htslib/khash.h
@@ -128,7 +157,7 @@ install-dylib: libhts.dylib installdirs
 
 
 mostlyclean:
-	-rm -f *.o *.pico *.dSYM
+	-rm -f *.o *.pico *.dSYM version.h
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 	-rm -f libhts.a
@@ -147,7 +176,10 @@ tags:
 	ctags -f TAGS *.[ch] htslib/*.h
 
 
-.PHONY: all clean distclean install installdirs
+force:
+
+
+.PHONY: all clean distclean force install installdirs
 .PHONY: lib-shared lib-static mostlyclean tags
 .PHONY: clean-so install-so
 .PHONY: clean-dylib install-dylib
