@@ -306,7 +306,7 @@ static char *parse_tag(args_t *args, char *p, int is_gtf)
             if ( *q!='/' ) error("Could not parse format string: %s\n", args->format);
             p = ++q;
             str.l = 0;
-            while ( *q && isalnum(*q) ) q++;
+            while ( *q && (isalnum(*q) || *q=='_') ) q++;
             if ( q-p==0 ) error("Could not parse format string: %s\n", args->format);
             kputsn(p, q-p, &str);
             register_tag(args, T_INFO, str.s, is_gtf);
