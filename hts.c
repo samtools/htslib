@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
+#include "version.h"
 
 #include "htslib/kseq.h"
 KSTREAM_INIT2(, gzFile, gzread, 16384)
@@ -14,6 +15,11 @@ KSTREAM_INIT2(, gzFile, gzread, 16384)
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
 int hts_verbose = 3;
+
+const char *hts_version()
+{
+	return HTS_VERSION;
+}
 
 const unsigned char seq_nt16_table[256] = {
 	15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,

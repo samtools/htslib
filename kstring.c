@@ -5,22 +5,32 @@
 #include <stdint.h>
 #include "htslib/kstring.h"
 
+int kvsprintf(kstring_t *s, const char *fmt, va_list ap)
+{
+	va_list args;
+	int l;
+	va_copy(args, ap);
+	l = vsnprintf(s->s + s->l, s->m - s->l, fmt, args); // This line does not work with glibc 2.0. See `man snprintf'.
+	va_end(args);
+	if (l + 1 > s->m - s->l) {
+		s->m = s->l + l + 2;
+		kroundup32(s->m);
+		s->s = (char*)realloc(s->s, s->m);
+		va_copy(args, ap);
+		l = vsnprintf(s->s + s->l, s->m - s->l, fmt, args);
+		va_end(args);
+	}
+	s->l += l;
+	return l;
+}
+
 int ksprintf(kstring_t *s, const char *fmt, ...)
 {
 	va_list ap;
 	int l;
 	va_start(ap, fmt);
-	l = vsnprintf(s->s + s->l, s->m - s->l, fmt, ap); // This line does not work with glibc 2.0. See `man snprintf'.
+	l = kvsprintf(s, fmt, ap);
 	va_end(ap);
-	if ((size_t)l + 1 > s->m - s->l) {
-		s->m = s->l + l + 2;
-		kroundup32(s->m);
-		s->s = (char*)realloc(s->s, s->m);
-		va_start(ap, fmt);
-		l = vsnprintf(s->s + s->l, s->m - s->l, fmt, ap);
-	}
-	va_end(ap);
-	s->l += l;
 	return l;
 }
 
@@ -57,15 +67,22 @@ int ksplit_core(char *s, int delimiter, int *_max, int **_offsets)
 	n = 0; max = *_max; offsets = *_offsets;
 	l = strlen(s);
 	
-#define __ksplit_aux do {												\
-		if (_offsets) {													\
-			s[i] = 0;													\
-			if (n == max) {												\
-				max = max? max<<1 : 2;									\
-				offsets = (int*)realloc(offsets, sizeof(int) * max);	\
-			}															\
-			offsets[n++] = last_start;									\
-		} else ++n;														\
+#define __ksplit_aux do {						\
+		if (_offsets) {						\
+			s[i] = 0;					\
+			if (n == max) {					\
+				int *tmp;				\
+				max = max? max<<1 : 2;			\
+				if ((tmp = (int*)realloc(offsets, sizeof(int) * max))) {  \
+					offsets = tmp;			\
+				} else	{				\
+					free(offsets);			\
+					*_offsets = NULL;		\
+					return 0;			\
+				}					\
+			}						\
+			offsets[n++] = last_start;			\
+		} else ++n;						\
 	} while (0)
 
 	for (i = 0, last_char = last_start = 0; i <= l; ++i) {

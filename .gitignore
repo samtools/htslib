@@ -1,5 +1,6 @@
 *.o
 *.pico
+/version.h
 
 lib*.a
 lib*.dylib

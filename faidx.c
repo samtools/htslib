@@ -1,11 +1,17 @@
+#include "config.h"
+
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+
 #include "htslib/bgzf.h"
 #include "htslib/faidx.h"
 #include "htslib/khash.h"
+#ifdef _USE_KNETFILE
+#include "htslib/knetfile.h"
+#endif
 
 typedef struct {
 	int32_t line_len, line_blen;
@@ -369,7 +375,7 @@ int faidx_fetch_nseq(const faidx_t *fai)
 	return fai->n;
 }
 
-char *faidx_fetch_seq(const faidx_t *fai, char *c_name, int p_beg_i, int p_end_i, int *len)
+char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p_end_i, int *len)
 {
 	int l;
 	char c;
