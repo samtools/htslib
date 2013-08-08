@@ -18,6 +18,8 @@ prefix      = /usr/local
 exec_prefix = $(prefix)
 includedir  = $(prefix)/include
 libdir      = $(exec_prefix)/lib
+mandir      = $(prefix)/share/man
+man5dir     = $(mandir)/man5
 
 INSTALL = install -p
 INSTALL_PROGRAM = $(INSTALL)
@@ -148,9 +150,10 @@ test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/
 install: installdirs install-$(SHLIB_FLAVOUR)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
+	$(INSTALL_DATA) *.5 $(DESTDIR)$(man5dir)
 
 installdirs:
-	mkdir -p $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir)
+	mkdir -p $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man5dir)
 
 # After installation, the real file in $(libdir) will be libhts.so.X.Y.Z,
 # with symlinks libhts.so (used via -lhts during linking of client programs)
