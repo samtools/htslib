@@ -189,7 +189,7 @@ int bcf_hrec_find_key(bcf_hrec_t *hrec, const char *key)
     return -1;
 }
 
-inline int is_escaped(const char *min, const char *str)
+static inline int is_escaped(const char *min, const char *str)
 {
     int n = 0;
     while ( --str>=min && *str=='\\' ) n++;
@@ -1386,7 +1386,7 @@ int vcf_read1(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 	} else return bcf_read1((BGZF*)fp->fp, v);
 }
 
-inline uint8_t *bcf_unpack_fmt_core1(uint8_t *ptr, int n_sample, bcf_fmt_t *fmt)
+static inline uint8_t *bcf_unpack_fmt_core1(uint8_t *ptr, int n_sample, bcf_fmt_t *fmt)
 {
     uint8_t *ptr_start = ptr;
     fmt->id = bcf_dec_typed_int1(ptr, &ptr);
@@ -1400,7 +1400,7 @@ inline uint8_t *bcf_unpack_fmt_core1(uint8_t *ptr, int n_sample, bcf_fmt_t *fmt)
     return ptr;
 }
 
-inline uint8_t *bcf_unpack_info_core1(uint8_t *ptr, bcf_info_t *info)
+static inline uint8_t *bcf_unpack_info_core1(uint8_t *ptr, bcf_info_t *info)
 {
     uint8_t *ptr_start = ptr;
     info->key = bcf_dec_typed_int1(ptr, &ptr);

@@ -81,7 +81,7 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 	return 0;
 }
 
-inline int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
+int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
 {
     int i, min = 0, nref = 0, a, b;
     #define BRANCH_INT(type_t,missing,vector_end) { \
