@@ -47,18 +47,53 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 	fp = (htsFile*)calloc(1, sizeof(htsFile));
 	fp->fn = strdup(fn);
 	fp->is_be = ed_is_big();
+    /* 
+     *  The original is_bin flag is not enough to distinguish between
+     *  uncompressed BCF and compressed VCF. The additional [uz] flags
+     *  may be an overkill.
+     *
+     *  todo: finish me
+     *
+     *      [rw]b .. compressed BCF, BAM, FAI; uncompressed BCF, FAI
+     *      [rw]u .. uncompressed BCF
+     *      [rw]z .. compressed VCF
+     *      [rw]  .. uncompressed VCF
+     * 
+     *  Note that bgzf_open("rb"), called from faidx_load(), detects
+     *  uncompressed FAI and reads plain text.
+     */
 	if (strchr(mode, 'w')) fp->is_write = 1;
 	if (strchr(mode, 'b')) fp->is_bin = 1;
-	if (fp->is_bin) {
-		if (fp->is_write) fp->fp = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
+    if (strchr(mode, 'z')) fp->is_compressed = 1;
+    else if (strchr(mode, 'u')) fp->is_compressed = 0;
+    else fp->is_compressed = 2;    // not set, default behaviour
+	if (fp->is_bin) 
+    {
+		if (fp->is_write) 
+        {
+//            if ( fp->is_compressed==0 )
+//.. todo: uncompressed BCF output. What did the original mpileup? if() in bgzf or in mpileup code?
+//            else
+                fp->fp = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
+        }
 		else fp->fp = strcmp(fn, "-")? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
-	} else {
-		if (!fp->is_write) {
+	} 
+    else 
+    {
+		if (!fp->is_write) 
+        {
 			gzFile gzfp;
 			gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
 			if (gzfp) fp->fp = ks_init(gzfp);
 			if (fn_aux) fp->fn_aux = strdup(fn_aux);
-		} else fp->fp = strcmp(fn, "-")? fopen(fn, "wb") : stdout;
+		} 
+        else 
+        {
+            if ( fp->is_compressed==1 )
+                fp->fp = strcmp(fn, "-")? bgzf_open(fn, "w") : bgzf_dopen(fileno(stdout), "w");   // vcf.gz
+            else
+                fp->fp = strcmp(fn, "-")? fopen(fn, "wb") : stdout;
+        }
 	}
 	if (fp->fp == 0) {
 		if (hts_verbose >= 2)
@@ -72,8 +107,7 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 void hts_close(htsFile *fp)
 {
 	free(fp->fn);
-	if (!fp->is_bin) {
-		free(fp->line.s);
+	if (!fp->is_bin && fp->is_compressed!=1) {
 		if (!fp->is_write) {
 			gzFile gzfp = ((kstream_t*)fp->fp)->f;
 			ks_destroy((kstream_t*)fp->fp);
@@ -81,6 +115,7 @@ void hts_close(htsFile *fp)
 			free(fp->fn_aux);
 		} else fclose((FILE*)fp->fp);
 	} else bgzf_close((BGZF*)fp->fp);
+    free(fp->line.s);
 	free(fp);
 }
 

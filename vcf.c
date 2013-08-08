@@ -26,21 +26,28 @@ static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, N
  *** VCF header parser ***
  *************************/
 
-void bcf_hdr_add_sample(bcf_hdr_t *h, char *s)
+int bcf_hdr_sync(bcf_hdr_t *h);
+
+int bcf_hdr_add_sample(bcf_hdr_t *h, const char *s)
 {
     vdict_t *d = (vdict_t*)h->dict[BCF_DT_SAMPLE];
     int ret;
-    int k = kh_put(vdict, d, s, &ret);
+    char *sdup = strdup(s);
+    int k = kh_put(vdict, d, sdup, &ret);
     if (ret) { // absent
         kh_val(d, k) = bcf_idinfo_def;
         kh_val(d, k).id = kh_size(d) - 1;
     } else {
         if (hts_verbose >= 2)
             fprintf(stderr, "[W::%s] Duplicated sample name '%s'. Skipped.\n", __func__, s);
+        free(sdup);
+        return -1;
     }
     int n = kh_size(d);
     h->samples = (char**) realloc(h->samples,sizeof(char*)*n);
-    h->samples[n-1] = s;
+    h->samples[n-1] = sdup;
+    bcf_hdr_sync(h);
+    return 0;
 }
 
 void bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
@@ -53,11 +60,11 @@ void bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
     for (p = q = str;; ++q) {
         if (*q != '\t' && *q != 0 && *q != '\n') continue;
         if (++i > 9) {
-            char *s;
-            s = (char*)malloc(q - p + 1);
+            char *s = (char*)malloc(q - p + 1);
             strncpy(s, p, q - p);
             s[q - p] = 0;
             bcf_hdr_add_sample(h,s);
+            free(s);
         }
         if (*q == 0 || *q == '\n') break;
         p = q + 1;
@@ -442,13 +449,19 @@ int bcf_hdr_append(bcf_hdr_t *hdr, const char *line)
  *** BCF header I/O ***
  **********************/
 
-bcf_hdr_t *bcf_hdr_init(void)
+bcf_hdr_t *bcf_hdr_init(const char *mode)
 {
 	int i;
 	bcf_hdr_t *h;
 	h = (bcf_hdr_t*)calloc(1, sizeof(bcf_hdr_t));
 	for (i = 0; i < 3; ++i)
 		h->dict[i] = kh_init(vdict);
+    if ( strchr(mode,'w') )
+    {
+        bcf_hdr_append(h, "##fileformat=VCFv4.1");
+        // The filter PASS must appear first in the dictionary
+        bcf_hdr_append(h, "##FILTER=<ID=PASS,Description=\"All filters passed\">");
+    }
 	return h;
 }
 
@@ -476,7 +489,7 @@ bcf_hdr_t *bcf_hdr_read(BGZF *fp)
 {
 	uint8_t magic[5];
 	bcf_hdr_t *h;
-	h = bcf_hdr_init();
+	h = bcf_hdr_init("r");
 	bgzf_read(fp, magic, 5);
 	if (strncmp((char*)magic, "BCF\2\2", 5) != 0) {
 		if (hts_verbose >= 2)
@@ -512,11 +525,6 @@ bcf1_t *bcf_init1()
 void bcf_clear1(bcf1_t *v)
 {
     int i;
-    if ( v->d.als_free ) 
-    {
-        free(v->d.als_free);
-        v->d.als_free = NULL;
-    }
     for (i=0; i<v->d.m_info; i++) 
     {
         if ( v->d.info[i].vptr_free ) 
@@ -540,12 +548,18 @@ void bcf_clear1(bcf1_t *v)
 	v->shared.l = v->indiv.l = 0;
     v->d.var_type = -1;
     v->d.shared_dirty = 0;
+    v->d.indiv_dirty  = 0;
+    v->d.n_flt = 0;
+    if (v->d.m_als) v->d.als[0] = 0;
+    if (v->d.m_id) v->d.id[0] = 0;
 }
 
 void bcf_destroy1(bcf1_t *v)
 {
     bcf_clear1(v);
-	free(v->d.id); free(v->d.als); free(v->d.allele); free(v->d.flt); free(v->d.info); free(v->d.fmt);
+    free(v->d.id);
+    free(v->d.als);
+	free(v->d.allele); free(v->d.flt); free(v->d.info); free(v->d.fmt);
 	if (v->d.var ) free(v->d.var);
 	free(v->shared.s); free(v->indiv.s);
 	free(v);
@@ -585,7 +599,7 @@ int bcf_readrec(BGZF *fp, void *null, bcf1_t *v, int *tid, int *beg, int *end)
 static inline void bcf1_sync_id(bcf1_t *line, kstring_t *str)
 {
     // single typed string
-    if (strcmp(line->d.id, ".")) bcf_enc_vchar(str, strlen(line->d.id), line->d.id);
+    if ( line->d.id && strcmp(line->d.id, ".") ) bcf_enc_vchar(str, strlen(line->d.id), line->d.id);
     else bcf_enc_size(str, 0, BCF_BT_CHAR);
 }
 static inline void bcf1_sync_alleles(bcf1_t *line, kstring_t *str)
@@ -743,7 +757,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
 
     kstring_t txt, *s = &fp->line;
     bcf_hdr_t *h;
-    h = bcf_hdr_init();
+    h = bcf_hdr_init("r");
     txt.l = txt.m = 0; txt.s = 0;
     while (hts_getline(fp, KS_SEP_LINE, s) >= 0) {
         if (s->l == 0) continue;
@@ -888,9 +902,10 @@ void vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
 	if (!fp->is_bin) {
 		int l = h->l_text;
 		while (l && h->text[l-1] == 0) --l; // kill the trailing zeros
-		if (l && h->text[l-1] == '\n') --l;
-		fwrite(h->text, 1, l, (FILE*)fp->fp);
-		fputc('\n', (FILE*)fp->fp);
+        if ( fp->is_compressed==1 )
+            bgzf_write(((BGZF*)fp->fp), h->text, l);
+        else
+            fwrite(h->text, 1, l, (FILE*)fp->fp);
 	} else bcf_hdr_write((BGZF*)fp->fp, h);
 }
 
@@ -1412,23 +1427,30 @@ int bcf_unpack(bcf1_t *b, int which)
 	bcf_dec_t *d = &b->d;
 	if (which & BCF_UN_FLT) which |= BCF_UN_STR;
 	if (which & BCF_UN_INFO) which |= BCF_UN_SHR;
-	if ((which&BCF_UN_STR) && !(b->unpacked&BCF_UN_STR)) { // ID
-        kstring_t tmp;
-        tmp.l = 0; tmp.m = d->m_str; tmp.s = d->id;     // reuse allocated d->id 
-        ptr = bcf_fmt_sized_array(&tmp, ptr); kputc('\0', &tmp);
-        d->m_str = tmp.m; d->id = tmp.s; // write tmp back
-        // REF and ALT
-        tmp.l = 0; tmp.m = d->m_als; tmp.s = d->als;
+	if ((which&BCF_UN_STR) && !(b->unpacked&BCF_UN_STR)) 
+    { 
+        kstring_t tmp; 
+
+        // ID
+        tmp.l = 0; tmp.s = d->id; tmp.m = d->m_id;
+        ptr = bcf_fmt_sized_array(&tmp, ptr); 
+        kputc('\0', &tmp);
+        d->id = tmp.s; d->m_id = tmp.m;
+
+        // REF and ALT are in a single block (d->als) and d->alleles are pointers into this block
+        tmp.l = 0; tmp.s = d->als; tmp.m = d->m_als;
+        offset = (int*)alloca(b->n_allele * sizeof(int));
         offset = (int*)alloca(b->n_allele * sizeof(int));
         for (i = 0; i < b->n_allele; ++i) {
             offset[i] = tmp.l;
             ptr = bcf_fmt_sized_array(&tmp, ptr);
             kputc('\0', &tmp);
         }
+        d->als = tmp.s; d->m_als = tmp.m;
+
         hts_expand(char*, b->n_allele, d->m_allele, d->allele); // NM: hts_expand() is a macro
         for (i = 0; i < b->n_allele; ++i)
-            d->allele[i] = tmp.s + offset[i];
-        d->m_als = tmp.m; d->als = tmp.s; // write tmp back
+            d->allele[i] = d->als + offset[i];
         b->unpack_ptr = ptr;
         b->unpacked |= BCF_UN_STR;
 	}
@@ -1513,14 +1535,15 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 	if (v->n_sample && v->n_fmt) { // FORMAT
 		int i, j, gt_i = -1;
 		bcf_fmt_t *fmt = v->d.fmt;
-        // This way it is not possible to modify the output line. Also,
-        // the bcf_unpack_fmt_core has been already called above.
-		//      fmt = (bcf_fmt_t*)alloca(v->n_fmt * sizeof(bcf_fmt_t));
-		//      ptr = bcf_unpack_fmt_core(ptr, v->n_sample, v->n_fmt, fmt);
         int first = 1;
 		for (i = 0; i < (int)v->n_fmt; ++i) {
             if ( !fmt[i].p ) continue;
 			kputc(!first ? ':' : '\t', s); first = 0;
+            if ( fmt[i].id<0 ) //!bcf_idinfo_exists(h,BCF_HL_FMT,fmt[i].id) ) 
+            {
+                fprintf(stderr, "[E::%s] invalid BCF, the FORMAT tag id=%d not present in the header.\n", __func__, fmt[i].id);
+                abort();
+            }
 			kputs(h->id[BCF_DT_ID][fmt[i].id].key, s);
 			if (strcmp(h->id[BCF_DT_ID][fmt[i].id].key, "GT") == 0) gt_i = i;
 		}
@@ -1538,16 +1561,20 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 			}
 		}
 	}
+    kputc('\n', s);
 	return 0;
 }
 
 int vcf_write1(htsFile *fp, const bcf_hdr_t *h, const bcf1_t *v)
 {
-	if (!fp->is_bin) {
+	if (!fp->is_bin) 
+    {
 	    fp->line.l = 0;
 		vcf_format1(h, v, &fp->line);
-		fwrite(fp->line.s, 1, fp->line.l, (FILE*)fp->fp);
-		fputc('\n', (FILE*)fp->fp);
+        if ( fp->is_compressed==1 )
+            bgzf_write((BGZF*)fp->fp, fp->line.s, fp->line.l);
+        else
+            fwrite(fp->line.s, 1, fp->line.l, (FILE*)fp->fp);
 	} else return bcf_write1((BGZF*)fp->fp, v);
 	return 0;
 }
@@ -1621,7 +1648,7 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
 	kstring_t str;
 	bcf_hdr_t *h;
 	str.l = str.m = 0; str.s = 0;
-	h = bcf_hdr_init();
+	h = bcf_hdr_init("w");
 	if (h0->n[BCF_DT_SAMPLE] > 0) {
 		char *p;
 		int i = 0, end = n? 8 : 7;
@@ -1757,13 +1784,10 @@ void bcf_set_variant_types(bcf1_t *b)
 
 int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type)
 {
-    // Get the number and type from the bcf_idinfo_t header line
-    vdict_t *d = (vdict_t*) hdr->dict[BCF_DT_ID];
-    khint_t k = kh_get(vdict, d, key);
-    int inf_id = kh_val(d,k).id;
-
     // Is the field already present?
-    int i;
+    int i, inf_id = bcf_id2int(hdr,BCF_DT_ID,key);
+    assert( inf_id>=0 && bcf_idinfo_exists(hdr,BCF_HL_INFO,inf_id) );    // wrong usage of the API: bcf_hdr_parse_line or similar was not called
+
     for (i=0; i<line->n_info; i++)
         if ( inf_id==line->d.info[i].key ) break;
     bcf_info_t *inf = i==line->n_info ? NULL : &line->d.info[i];
@@ -1823,12 +1847,13 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values
     {
         // The tag is not present, create new one
         line->n_info++;
-        hts_expand(bcf_info_t, line->n_info, line->d.m_info , line->d.info);
+        hts_expand0(bcf_info_t, line->n_info, line->d.m_info , line->d.info);
         inf = &line->d.info[line->n_info-1];
         bcf_unpack_info_core1((uint8_t*)str.s, inf);
         inf->vptr_free = 1;
         line->d.shared_dirty |= BCF1_DIRTY_INF;
     }
+    line->unpacked |= BCF_UN_INFO;
     return 0;
 }
 
@@ -1839,6 +1864,8 @@ int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *valu
 
     // Is the field already present?
     int i, fmt_id = bcf_id2int(hdr,BCF_DT_ID,key);
+    assert( fmt_id>=0 && bcf_idinfo_exists(hdr,BCF_HL_FMT,fmt_id) );    // wrong usage of the API: bcf_hdr_parse_line or similar was not called
+
     for (i=0; i<line->n_fmt; i++)
         if ( line->d.fmt[i].id==fmt_id ) break;
     bcf_fmt_t *fmt = i==line->n_fmt ? NULL : &line->d.fmt[i];
@@ -1891,13 +1918,13 @@ int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *valu
             line->d.indiv_dirty = 1;
         }
     }
+    line->unpacked |= BCF_UN_FMT;
     return 0;
 }
 
 
 int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
 {
-    // todo: BCF output
     line->d.shared_dirty |= BCF1_DIRTY_FLT;
     line->d.n_flt = n;
     if ( !n ) return 0;
@@ -1908,41 +1935,85 @@ int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
     return 0;
 }
 
-int bcf1_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)
+static inline int _bcf1_sync_alleles(bcf_hdr_t *hdr, bcf1_t *line, int nals)
 {
-    assert( !line->d.als_free );  // fix the caller or improve here: this has been modified before 
-
-    int i, len = 0;
-    kstring_t str = {0,0,0};
-
-    for (i=0; i<nals; i++)
-    {
-        int _len = strlen(alleles[i]);
-        bcf_enc_vchar(&str, _len, alleles[i]);
-        len += _len;
-    }
-
-    len += nals;
-    hts_expand(char, len, line->d.m_als, line->d.als);
-
     line->n_allele = nals;
     hts_expand(char*, line->n_allele, line->d.m_allele, line->d.allele);
 
-    // Copy the alleles, all are in a single block, strings are \0-separated
-    char *dst = line->d.als;
+    char *als = line->d.als;
+    int n = 0;
+    while (n<nals)
+    {
+        line->d.allele[n] = als;
+        while ( *als ) als++;
+        als++;
+        n++;
+    }
+    line->n_allele = nals;
+    line->d.shared_dirty |= BCF1_DIRTY_ALS;
+    return 0;
+}
+int bcf1_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)
+{
+    kstring_t tmp;
+    tmp.l = 0; tmp.s = line->d.als; tmp.m = line->d.m_als;
+
+    int i;
     for (i=0; i<nals; i++)
     {
-        const char *src = alleles[i];
-        line->d.allele[i] = dst;
-        while ( *src ) { *dst = *src; dst++; src++; } 
-        *dst = 0;
-        dst++;
+        kputs(alleles[i], &tmp);
+        kputc(0, &tmp);
     }
+    line->d.als = tmp.s; line->d.m_als = tmp.m;
+    return _bcf1_sync_alleles(hdr,line,nals);
+}
 
-    line->n_allele = nals;
-    line->d.als = line->d.als;
-    line->d.shared_dirty |= BCF1_DIRTY_ALS;
-    line->d.als_free = str.s;
+int bcf1_update_alleles_str(bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string)
+{
+    kstring_t tmp;
+    tmp.l = 0; tmp.s = line->d.als; tmp.m = line->d.m_als;
+    kputs(alleles_string, &tmp);
+    line->d.als = tmp.s; line->d.m_als = tmp.m;
+
+    int nals = 1;
+    char *t = line->d.als;
+    while (*t)
+    {
+        if ( *t==',' ) { *t = 0; nals++; }
+        t++;
+    }
+    return _bcf1_sync_alleles(hdr, line, nals);
+}
+
+int bcf1_update_id(bcf_hdr_t *hdr, bcf1_t *line, const char *id)
+{
+    kstring_t tmp;
+    tmp.l = 0; tmp.s = line->d.id; tmp.m = line->d.m_id;
+    kputs(id, &tmp);
+    line->d.id = tmp.s; line->d.m_id = tmp.m;
+    line->d.shared_dirty |= BCF1_DIRTY_ID;
     return 0;
+}
+
+bcf_fmt_t *bcf_get_fmt(bcf_hdr_t *hdr, bcf1_t *line, const char *key)
+{
+    int i, id = bcf_id2int(hdr, BCF_DT_ID, "GT");
+    if ( !bcf_idinfo_exists(hdr,BCF_HL_FMT,id) ) return NULL;   // no such FMT field in the header
+    for (i=0; i<line->n_fmt; i++)  
+    {
+        if ( line->d.fmt[i].id==id ) return &line->d.fmt[i];
+    }
+    return NULL;
+}
+
+bcf_info_t *bcf_get_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key)
+{
+    int i, id = bcf_id2int(hdr, BCF_DT_ID, "GT");
+    if ( !bcf_idinfo_exists(hdr,BCF_HL_INFO,id) ) return NULL;   // no such INFO field in the header
+    for (i=0; i<line->n_info; i++)  
+    {
+        if ( line->d.info[i].key==id ) return &line->d.info[i];
+    }
+    return NULL;
 }
 

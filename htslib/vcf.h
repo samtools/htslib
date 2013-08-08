@@ -126,17 +126,17 @@ typedef struct {
 #define BCF1_DIRTY_INF 8
 
 typedef struct {
-	int m_fmt, m_info, m_str, m_als, m_allele, m_flt; // allocated size (high-water mark); do not change
-	int n_flt; // # FILTER fields
-	char *id, *als, **allele; // ID (chunk of m_str bytes); REF and ALT (m_als); allele[0] is the REF (allele[] pointers to the als block); all null terminated
-    char *als_free;
-	int *flt; // filter keys in the dictionary
-	bcf_info_t *info; // INFO
-	bcf_fmt_t *fmt; // FORMAT and individual sample
-	variant_t *var;	// $var and $var_type set only when set_variant_types called
+	int m_fmt, m_info, m_id, m_als, m_allele, m_flt; // allocated size (high-water mark); do not change
+	int n_flt;  // Number of FILTER fields
+	int *flt;   // FILTER keys in the dictionary
+    char *id, *als;     // ID and REF+ALT block (\0-seperated)
+	char **allele;      // allele[0] is the REF (allele[] pointers to the als block); all null terminated
+	bcf_info_t *info;   // INFO
+	bcf_fmt_t *fmt;     // FORMAT and individual sample
+	variant_t *var;	    // $var and $var_type set only when set_variant_types called
 	int n_var, var_type;
-    int shared_dirty;   // if set, shared.s must be recreated on BCF output (todo)
-    int indiv_dirty;    // if set, indiv.s must be recreated on BCF output (todo)
+    int shared_dirty;   // if set, shared.s must be recreated on BCF output
+    int indiv_dirty;    // if set, indiv.s must be recreated on BCF output
 } bcf_dec_t;
 
 
@@ -177,7 +177,7 @@ extern "C" {
 	 *** BCF I/O ***
 	 ***************/
 
-	bcf_hdr_t *bcf_hdr_init(void);
+	bcf_hdr_t *bcf_hdr_init(const char *mode);  // "r" or "w"
 	int bcf_hdr_parse(bcf_hdr_t *h);
 
 	/**
@@ -258,6 +258,7 @@ extern "C" {
       */
 	int bcf_name2id(const bcf_hdr_t *hdr, const char *id);
 
+
     /**
       *  bcf_id2*() - Macros for accessing bcf_idinfo_t 
       *  @type:      one of BCF_HL_FLT, BCF_HL_INFO, BCF_HL_FMT
@@ -320,7 +321,8 @@ extern "C" {
 	 *** VCF header manipulation routines ***
 	 ****************************************/
 
-    bcf_hdr_t *bcf_hdr_init(void);
+    bcf_hdr_t *bcf_hdr_init(const char *mode);  // "w" or "r"
+    int bcf_hdr_add_sample(bcf_hdr_t *hdr, const char *sample);
     int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname);
     void bcf_hdr_fmt_text(bcf_hdr_t *hdr);
     int bcf_hdr_append(bcf_hdr_t *h, const char *line);
@@ -355,12 +357,19 @@ extern "C" {
 
     /**
      *  bcf1_update_filter() - sets the FILTER column
-     *  @flt_ids:   Set of filters to set, numeric IDs returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
-     *  @n:         Number of filters. If n==0, all filters are removed
+     *  @flt_ids:           Set of filters to set, numeric IDs returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @n:                 Number of filters. If n==0, all filters are removed
      */
     int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n);
+    /**
+     *  bcf1_update_alleles() and bcf1_update_alleles_str() - update REF and ALLT column
+     *  @alleles:           Array of alleles
+     *  @nals:              Number of alleles
+     *  @alleles_string:    Comma-separated alleles, starting with the REF allele  
+     */
     int bcf1_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals);
-    // todo: int bcf1_update_id(bcf_hdr_t *hdr, bcf1_t *line, char *id);
+    int bcf1_update_alleles_str(bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string);
+    int bcf1_update_id(bcf_hdr_t *hdr, bcf1_t *line, const char *id);
 
     // If n==0, existing tag is removed. Otherwise it is updated or appended. With *_flag, $string is optional.
     // With *_string, existing tag is removed when $string set to NULL.
@@ -373,7 +382,18 @@ extern "C" {
     // If n==0, existing tag is removed. Otherwise it is updated or appended. (pd3 todo: reflect changes also on BCF output)
     #define bcf1_update_format_int32(hdr,line,key,values,n) bcf1_update_format((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf1_update_format_float(hdr,line,key,values,n) bcf1_update_format((hdr),(line),(key),(values),(n),BCF_HT_REAL)
+    #define bcf1_update_genotypes(hdr,line,gts,n) bcf1_update_format((hdr),(line),"GT",(gts),(n),BCF_HT_INT)
     int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type);
+
+    // For use with bcf1_update_genotypes only
+    #define bcf_gt_phased(id)       ((id+1)<<1|1)
+    #define bcf_gt_unphased(id)     ((id+1)<<1)
+    #define bcf_gt_missing          0
+    #define bcf_gt_is_phased(id)    ((id)&1)
+    #define bcf_gt_allele(id)       (((id)>>1)-1)
+
+    bcf_fmt_t *bcf_get_fmt(bcf_hdr_t *hdr, bcf1_t *line, const char *key);
+    bcf_info_t *bcf_get_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key);
 
 #ifdef __cplusplus
 }
@@ -404,10 +424,18 @@ extern "C" {
 #define bcf_int32_missing    INT32_MIN
 extern uint32_t bcf_float_vector_end;
 extern uint32_t bcf_float_missing;
-#define bcf_float_set_vector_end(x) (*(int32_t*)(&(x)) = bcf_float_vector_end)
-#define bcf_float_is_vector_end(x)  (*(int32_t*)(&(x)) == bcf_float_vector_end)
-#define bcf_float_set_missing(x) (*(int32_t*)(&(x)) = bcf_float_missing)
-#define bcf_float_is_missing(x)  (*(int32_t*)(&(x)) == bcf_float_missing)
+#define bcf_float_set_vector_end(x) (*(uint32_t*)(&(x)) = bcf_float_vector_end)
+#define bcf_float_set_missing(x) (*(uint32_t*)(&(x)) = bcf_float_missing)
+static inline int bcf_float_is_missing(float f)
+{
+    union { uint32_t i; float f; } u = { f };
+    return u.i==bcf_float_missing ? 1 : 0;
+}
+static inline int bcf_float_is_vector_end(float f)
+{
+    union { uint32_t i; float f; } u = { f };
+    return u.i==bcf_float_vector_end ? 1 : 0;
+}
 
 static inline void bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 {

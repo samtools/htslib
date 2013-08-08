@@ -173,7 +173,7 @@ BGZF *bgzf_open(const char *path, const char *mode)
         if ((fpr = _bgzf_open(path, "r")) == 0) return 0;
 
 		fp = bgzf_read_init();
-        fp->is_plain_text = ( magic[0]==0x1f && magic[1]==0x8b ) ? 0 : 1;
+        fp->is_compressed = ( magic[0]==0x1f && magic[1]==0x8b ) ? 1 : 0;
 		fp->fp = fpr;
 	} else if (strchr(mode, 'w') || strchr(mode, 'W')) {
 		FILE *fpw;
@@ -340,7 +340,7 @@ int bgzf_read_block(BGZF *fp)
 {
 	uint8_t header[BLOCK_HEADER_LENGTH], *compressed_block;
 	int count, size = 0, block_length, remaining;
-    if ( fp->is_plain_text==1 )
+    if ( !fp->is_compressed )
     {
         count = _bgzf_read(fp->fp, fp->uncompressed_block, BGZF_MAX_BLOCK_SIZE);
         if ( count==0 ) 
@@ -900,7 +900,7 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
 
 int bgzf_useek(BGZF *fp, long uoffset, int where)
 {
-    if ( fp->is_plain_text==1 )
+    if ( !fp->is_compressed )
     {
         if (_bgzf_seek(fp->fp, uoffset, SEEK_SET) < 0)
         {

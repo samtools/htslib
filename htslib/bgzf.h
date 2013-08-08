@@ -45,7 +45,7 @@ struct __bgzidx_t;
 typedef struct __bgzidx_t bgzidx_t;
 
 typedef struct {
-	int errcode:16, is_write:2, is_be:2, compress_level:9, is_plain_text:3;
+	int errcode:16, is_write:2, is_be:2, compress_level:9, is_compressed:3;
 	int cache_size;
     int block_length, block_offset;
     int64_t block_address, uncompressed_address;

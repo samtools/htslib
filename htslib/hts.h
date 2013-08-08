@@ -44,7 +44,7 @@ typedef struct __kstring_t {
  ************/
 
 typedef struct {
-	uint32_t is_bin:1, is_write:1, is_be:1, dummy:29;
+	uint32_t is_bin:1, is_write:1, is_be:1, is_compressed:2, dummy:27;
 	int64_t lineno;
 	kstring_t line;
 	char *fn, *fn_aux;
@@ -56,8 +56,12 @@ typedef struct {
  **********************/
 
 extern int hts_verbose;
+
+/*! @abstract Table for converting a nucleotide character to the 4-bit encoding. */
 extern const unsigned char seq_nt16_table[256];
-extern const char seq_nt16_str[];
+
+/*! @abstract Table for converting a 4-bit encoded nucleotide to a letter. */
+extern const char seq_nt16_str[16];
 
 #ifdef __cplusplus
 extern "C" {

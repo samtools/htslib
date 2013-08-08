@@ -57,7 +57,7 @@ bcf_sr_t;
 typedef struct
 {
 	// Parameters controlling the logic
-	int collapse;  // How should the duplicate sites be treated
+	int collapse;       // How should the duplicate sites be treated. One of the COLLAPSE_* types above.
     char *apply_filters;    // If set, sites where none of the FILTER strings is listed
                             // will be skipped. Active only at the time of
                             // initialization, that is during the add_reader()

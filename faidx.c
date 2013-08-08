@@ -277,7 +277,7 @@ faidx_t *fai_load(const char *fn)
 		fprintf(stderr, "[fai_load] fail to open FASTA file.\n");
 		return 0;
 	}
-    if ( !fai->bgzf->is_plain_text )
+    if ( fai->bgzf->is_compressed )
     {
         if ( bgzf_index_load(fai->bgzf, fn, ".gzi") < 0 )
         {
@@ -392,7 +392,7 @@ char *faidx_fetch_seq(const faidx_t *fai, char *c_name, int p_beg_i, int p_end_i
     if ( ret<0 )
     {
         *len = -1;
-        fprintf(stderr, "[fai_fetch] Error: fai_fetch failed. (Seeking in a compressed, .gzi unindexed, file?)\n");
+        fprintf(stderr, "[fai_fetch_seq] Error: fai_fetch failed. (Seeking in a compressed, .gzi unindexed, file?)\n");
         return NULL;
     }
 	l = 0;

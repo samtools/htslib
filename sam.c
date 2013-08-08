@@ -240,7 +240,6 @@ int bam_read1(BGZF *fp, bam1_t *b)
 	bam1_core_t *c = &b->core;
 	int32_t block_len, ret, i;
 	uint32_t x[8];
-
 	if ((ret = bgzf_read(fp, &block_len, 4)) != 4) {
 		if (ret == 0) return -1; // normal end-of-file
 		else return -2; // truncated
@@ -1186,7 +1185,7 @@ int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_p
 		if (iter->pos[i] == iter->min) {
 			int tid, pos;
 			iter->plp[i] = bam_plp_auto(iter->iter[i], &tid, &pos, &iter->n_plp[i]);
-			iter->pos[i] = (uint64_t)tid<<32 | pos;
+			iter->pos[i] = iter->plp[i] ? (uint64_t)tid<<32 | pos : 0;
 		}
 		if (iter->plp[i] && iter->pos[i] < new_min) new_min = iter->pos[i];
 	}

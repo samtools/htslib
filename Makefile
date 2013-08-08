@@ -132,7 +132,7 @@ install-dylib: libhts.dylib installdirs
 mostlyclean:
 	-rm -f *.o *.pico *.dSYM
 
-clean: mostlyclean clean-$(SHLIB_FLAVOUR)
+clean: mostlyclean clean-$(SHLIB_FLAVOUR) clean-recur
 	-rm -f libhts.a
 
 distclean: clean
@@ -148,8 +148,16 @@ clean-dylib:
 tags:
 	ctags -f TAGS *.[ch] htslib/*.h
 
+test clean-recur:
+	@target=`echo $@ | sed s/-recur//`; \
+	wdir=`pwd`; cd test; \
+	$(MAKE) CC="$(CC)" DFLAGS="$(DFLAGS)" CFLAGS="$(CFLAGS)" $$target || exit 1; \
+	cd $$wdir
 
-.PHONY: all clean distclean install installdirs
+
+.PHONY: all clean distclean install installdirs 
 .PHONY: lib-shared lib-static mostlyclean tags
 .PHONY: clean-so install-so
 .PHONY: clean-dylib install-dylib
+.PHONY: test
+
