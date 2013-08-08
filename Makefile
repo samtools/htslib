@@ -8,9 +8,11 @@ CC     = gcc
 AR     = ar
 RANLIB = ranlib
 
-CPPFLAGS =
+CPPFLAGS = -I.
 CFLAGS   = -g -Wall -O2 -Wc++-compat
 EXTRA_CFLAGS_PIC = -fpic
+LDFLAGS  =
+LDLIBS   =
 
 prefix      = /usr/local
 exec_prefix = $(prefix)
@@ -22,7 +24,7 @@ INSTALL_PROGRAM = $(INSTALL)
 INSTALL_DATA    = $(INSTALL) -m 644
 
 
-all: lib-static lib-shared
+all: lib-static lib-shared test/test-vcf-api
 
 HTSPREFIX =
 include htslib_vars.mk
@@ -134,6 +136,15 @@ synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
 
 
+check test: test/test-vcf-api
+	cd test && ./test.pl
+
+test/test-vcf-api: test/test-vcf-api.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-api.o libhts.a $(LDLIBS) -lz
+
+test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
+
+
 install: installdirs install-$(SHLIB_FLAVOUR)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
@@ -157,10 +168,10 @@ install-dylib: libhts.dylib installdirs
 
 
 mostlyclean:
-	-rm -f *.o *.pico *.dSYM version.h
+	-rm -f *.o *.pico test/*.o test/*.dSYM version.h
 
-clean: mostlyclean clean-$(SHLIB_FLAVOUR) clean-recur
-	-rm -f libhts.a
+clean: mostlyclean clean-$(SHLIB_FLAVOUR)
+	-rm -f libhts.a test/test-vcf-api
 
 distclean: clean
 	-rm -f TAGS
@@ -175,18 +186,11 @@ clean-dylib:
 tags:
 	ctags -f TAGS *.[ch] htslib/*.h
 
-test clean-recur:
-	@target=`echo $@ | sed s/-recur//`; \
-	wdir=`pwd`; cd test; \
-	$(MAKE) CC="$(CC)" DFLAGS="$(DFLAGS)" CFLAGS="$(CFLAGS)" $$target || exit 1; \
-	cd $$wdir
 
 force:
 
 
-.PHONY: all clean distclean force install installdirs
-.PHONY: lib-shared lib-static mostlyclean tags
+.PHONY: all check clean distclean force install installdirs
+.PHONY: lib-shared lib-static mostlyclean tags test
 .PHONY: clean-so install-so
 .PHONY: clean-dylib install-dylib
-.PHONY: test
-
