@@ -441,21 +441,20 @@ extern "C" {
 #define bcf_int32_missing    INT32_MIN
 extern uint32_t bcf_float_vector_end;
 extern uint32_t bcf_float_missing;
-/*
-    To prevent gcc warnings about type-punned pointers with strict-aliasing,
-    we use the following trick:
-
-        float f, *ptr;
-        bcf_float_set_missing(*ptr);
-        if ( bcf_float_is_missing(*ptr) ) { ... }
-
-    It is not very nice, is there a better way? Before submitting a patch,
-    please make sure that it works with tests in bcftools. 
- */
 #define bcf_float_set_vector_end(x) (*(uint32_t*)(&(x)) = bcf_float_vector_end)
 #define bcf_float_set_missing(x) (*(uint32_t*)(&(x)) = bcf_float_missing)
-#define bcf_float_is_vector_end(x)  (*(int32_t*)(&(x)) == bcf_float_vector_end)
-#define bcf_float_is_missing(x)  (*(int32_t*)(&(x)) == bcf_float_missing)
+static inline int bcf_float_is_missing(float f)
+{
+    union { uint32_t i; float f; } u;
+    u.f = f;
+    return u.i==bcf_float_missing ? 1 : 0;
+}
+static inline int bcf_float_is_vector_end(float f)
+{
+    union { uint32_t i; float f; } u;
+    u.f = f;
+    return u.i==bcf_float_vector_end ? 1 : 0;
+}
 
 static inline void bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 {
