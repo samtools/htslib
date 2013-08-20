@@ -964,54 +964,6 @@ void bcf_enc_vchar(kstring_t *s, int l, const char *a)
 	kputsn(a, l, s);
 }
 
-int *bcf_set_iarray(bcf_fmt_t *fmt, int nsmpl, int *arr, int *narr)
-{
-    if ( nsmpl*fmt->n > *narr )
-    {
-        *narr = nsmpl*fmt->n;
-        arr = (int*) realloc(arr, sizeof(int)*(*narr));
-    }
-
-    #define BRANCH(type_t, missing, vector_end) { \
-        type_t *ptr = (type_t*) fmt->p; \
-        int i, j; \
-        if ( fmt->n==1 ) \
-        { \
-            for (i=0; i<nsmpl; i++) \
-            { \
-                if ( ptr[0]==missing ) arr[i] = bcf_int32_missing; \
-                else if ( ptr[0]==vector_end ) arr[i] = bcf_int32_vector_end; \
-                else arr[i] = ptr[0]; \
-                ptr = (type_t *)((void*)ptr + fmt->size); \
-            } \
-        } \
-        else \
-        { \
-            int *p_arr = arr; \
-            for (i=0; i<nsmpl; i++) \
-            { \
-                for (j=0; j<fmt->n; j++) \
-                { \
-                    if ( ptr[j]==missing ) p_arr[j] = bcf_int32_missing; \
-                    else if ( ptr[j]==vector_end ) { p_arr[j] = bcf_int32_vector_end; break; } \
-                    else p_arr[j] = ptr[j]; \
-                } \
-                for (; j<fmt->n; j++) p_arr[j] = bcf_int32_vector_end; \
-                ptr = (type_t *)((void*)ptr + fmt->size); \
-                p_arr += fmt->n; \
-            } \
-        } \
-    }
-    switch (fmt->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
-        case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
-        case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
-        default: fprintf(stderr,"fixme: type %d in bcf_set_iarray?\n", fmt->type); abort(); break;
-    }
-    #undef BRANCH
-    return arr;
-}
-
 void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 {
 	int j = 0;
@@ -1997,7 +1949,7 @@ int bcf1_update_id(bcf_hdr_t *hdr, bcf1_t *line, const char *id)
 
 bcf_fmt_t *bcf_get_fmt(bcf_hdr_t *hdr, bcf1_t *line, const char *key)
 {
-    int i, id = bcf_id2int(hdr, BCF_DT_ID, "GT");
+    int i, id = bcf_id2int(hdr, BCF_DT_ID, key);
     if ( !bcf_idinfo_exists(hdr,BCF_HL_FMT,id) ) return NULL;   // no such FMT field in the header
     for (i=0; i<line->n_fmt; i++)  
     {
@@ -2008,12 +1960,108 @@ bcf_fmt_t *bcf_get_fmt(bcf_hdr_t *hdr, bcf1_t *line, const char *key)
 
 bcf_info_t *bcf_get_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key)
 {
-    int i, id = bcf_id2int(hdr, BCF_DT_ID, "GT");
+    int i, id = bcf_id2int(hdr, BCF_DT_ID, key);
     if ( !bcf_idinfo_exists(hdr,BCF_HL_INFO,id) ) return NULL;   // no such INFO field in the header
     for (i=0; i<line->n_info; i++)  
     {
         if ( line->d.info[i].key==id ) return &line->d.info[i];
     }
     return NULL;
+}
+
+int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
+{
+    int i,j, tag_id = bcf_id2int(hdr, BCF_DT_ID, tag);
+    if ( !bcf_idinfo_exists(hdr,BCF_HL_INFO,tag_id) ) return -1;    // no such INFO field in the header
+    if ( bcf_id2type(hdr,BCF_HL_INFO,tag_id)!=type ) return -2;     // expected different type
+
+    for (i=0; i<line->n_info; i++)
+        if ( line->d.info[i].key==tag_id ) break;
+    if ( i==line->n_info ) return -3;                               // the tag is not present in this record
+    bcf_info_t *info = &line->d.info[i];
+
+    // Make sure the buffer is big enough
+    int size1 = type==BCF_HT_INT ? sizeof(int) : sizeof(float);
+    if ( *ndst < size1*info->len )
+    {
+        *ndst = size1*info->len;
+        *dst  = realloc(*dst, *ndst);
+    }
+
+    if ( info->len == 1 )
+    {
+        if ( info->type==BCF_HT_INT ) *((int*)*dst) = info->v1.i;
+        else if ( info->type==BCF_HT_REAL ) *((float*)*dst) = info->v1.f;
+        return 1;
+    }
+
+    #define BRANCH(type_t, is_missing, is_vector_end, set_missing, out_type_t) { \
+        out_type_t *tmp = (out_type_t *) *dst; \
+        type_t *p = (type_t *) info->vptr; \
+        for (j=0; j<info->len; j++) \
+        { \
+            if ( is_vector_end ) return j; \
+            if ( is_missing ) set_missing; \
+            else *tmp = p[j]; \
+            tmp++; \
+        } \
+        return j; \
+    }
+    switch (info->type) {
+        case BCF_BT_INT8:  BRANCH(int8_t,  p[j]==bcf_int8_missing,  p[j]==bcf_int8_vector_end,  *tmp=bcf_int32_missing, int); break;
+        case BCF_BT_INT16: BRANCH(int16_t, p[j]==bcf_int16_missing, p[j]==bcf_int16_vector_end, *tmp=bcf_int32_missing, int); break;
+        case BCF_BT_INT32: BRANCH(int32_t, p[j]==bcf_int32_missing, p[j]==bcf_int32_vector_end, *tmp=bcf_int32_missing, int); break;
+        case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), bcf_float_set_missing(*tmp), float); break;
+        default: fprintf(stderr,"TODO: %s:%d .. info->type=%d\n", __FILE__,__LINE__, info->type); exit(1);
+    }
+    #undef BRANCH
+    return -4;  // this can never happen
+}
+
+int bcf_get_format_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
+{
+    int i,j, tag_id = bcf_id2int(hdr, BCF_DT_ID, tag);
+    if ( !bcf_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header
+    if ( bcf_id2type(hdr,BCF_HL_FMT,tag_id)!=type ) return -2;     // expected different type
+
+    for (i=0; i<line->n_fmt; i++)
+        if ( line->d.fmt[i].id==tag_id ) break;
+    if ( i==line->n_fmt ) return -3;                               // the tag is not present in this record
+    bcf_fmt_t *fmt = &line->d.fmt[i];
+
+    // Make sure the buffer is big enough
+    int nsmpl = hdr->n[BCF_DT_SAMPLE];
+    int size1 = type==BCF_HT_INT ? sizeof(int) : sizeof(float);
+    if ( *ndst < size1*fmt->n*nsmpl )
+    {
+        *ndst = size1*fmt->n*nsmpl;
+        *dst  = realloc(*dst, *ndst);
+    }
+
+    #define BRANCH(type_t, is_missing, is_vector_end, set_missing, set_vector_end, out_type_t) { \
+        out_type_t *tmp = (out_type_t *) *dst; \
+        type_t *p = (type_t*) fmt->p; \
+        for (i=0; i<nsmpl; i++) \
+        { \
+            for (j=0; j<fmt->n; j++) \
+            { \
+                if ( is_missing ) set_missing; \
+                else if ( is_vector_end ) { set_vector_end; break; } \
+                else *tmp = p[j]; \
+                tmp++; \
+            } \
+            for (; j<fmt->n; j++) { set_vector_end; tmp++; } \
+            p = (type_t *)((void*)p + fmt->size); \
+        } \
+    }
+    switch (fmt->type) {
+        case BCF_BT_INT8:  BRANCH(int8_t,  p[j]==bcf_int8_missing,  p[j]==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int); break;
+        case BCF_BT_INT16: BRANCH(int16_t, p[j]==bcf_int16_missing, p[j]==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int); break;
+        case BCF_BT_INT32: BRANCH(int32_t, p[j]==bcf_int32_missing, p[j]==bcf_int32_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int); break;
+        case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), bcf_float_set_missing(*tmp), bcf_float_set_vector_end(*tmp), float); break;
+        default: fprintf(stderr,"TODO: %s:%d .. fmt->type=%d\n", __FILE__,__LINE__, fmt->type); exit(1);
+    }
+    #undef BRANCH
+    return -4;  // this can never happen
 }
 

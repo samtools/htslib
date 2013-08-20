@@ -94,7 +94,8 @@ LIBHTS_OBJS = \
 	synced_bcf_reader.o \
 	tbx.o \
 	vcf.o \
-	vcfutils.o
+	vcfutils.o \
+    kfunc.o
 
 
 libhts.a: $(LIBHTS_OBJS)
@@ -132,7 +133,7 @@ faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) htslib/k
 razf.o razf.pico: razf.c $(htslib_razf_h)
 synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_bcf_reader_h) htslib/kseq.h
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
-
+kfunc.o kfunc.pico: kfunc.c htslib/kfunc.h
 
 install: installdirs install-$(SHLIB_FLAVOUR)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib

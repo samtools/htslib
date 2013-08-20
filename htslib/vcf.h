@@ -286,8 +286,6 @@ extern "C" {
 	void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize);
 	void bcf_enc_vfloat(kstring_t *s, int n, float *a);
 
-    int *bcf_set_iarray(bcf_fmt_t *fmt, int nsmpl, int *arr, int *narr);
-	
 	/*****************
 	 *** BCF index ***
 	 *****************/
@@ -394,6 +392,25 @@ extern "C" {
 
     bcf_fmt_t *bcf_get_fmt(bcf_hdr_t *hdr, bcf1_t *line, const char *key);
     bcf_info_t *bcf_get_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key);
+
+    /**
+     *  bcf_get_info*() - get INFO values, integers or floats
+     *  @hdr:       BCF header
+     *  @line:      BCF record
+     *  @tag:       INFO tag to retrieve
+     *  @dst:       *dst is pointer to a memory location, can point to NULL
+     *  @ndst:      size of the memory pointed to by *dst
+     *
+     *  Returns the number of written values or a negative value on error.
+     */
+    #define bcf_get_info_int(hdr,line,tag,dst,ndst)    bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
+    #define bcf_get_info_float(hdr,line,tag,dst,ndst)  bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)
+    int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type);
+
+    #define bcf_get_format_int(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
+    #define bcf_get_format_float(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)
+    int bcf_get_format_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type);
+	
 
 #ifdef __cplusplus
 }
