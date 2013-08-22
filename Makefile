@@ -88,6 +88,7 @@ version.h:
 
 
 LIBHTS_OBJS = \
+	kfunc.o \
 	knetfile.o \
 	kstring.o \
 	bgzf.o \
@@ -98,8 +99,7 @@ LIBHTS_OBJS = \
 	synced_bcf_reader.o \
 	tbx.o \
 	vcf.o \
-	vcfutils.o \
-    kfunc.o
+	vcfutils.o
 
 
 libhts.a: $(LIBHTS_OBJS)
@@ -138,6 +138,7 @@ razf.o razf.pico: razf.c $(htslib_razf_h)
 synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_bcf_reader_h) htslib/kseq.h
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
 kfunc.o kfunc.pico: kfunc.c htslib/kfunc.h
+
 
 check test: test/test-vcf-api
 	cd test && ./test.pl
