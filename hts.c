@@ -53,21 +53,6 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 	fp = (htsFile*)calloc(1, sizeof(htsFile));
 	fp->fn = strdup(fn);
 	fp->is_be = ed_is_big();
-    /* 
-     *  The original is_bin flag is not enough to distinguish between
-     *  uncompressed BCF and compressed VCF. The additional [uz] flags
-     *  may be an overkill.
-     *
-     *  todo: finish me
-     *
-     *      [rw]b .. compressed BCF, BAM, FAI; uncompressed BCF, FAI
-     *      [rw]u .. uncompressed BCF
-     *      [rw]z .. compressed VCF
-     *      [rw]  .. uncompressed VCF
-     * 
-     *  Note that bgzf_open("rb"), called from faidx_load(), detects
-     *  uncompressed FAI and reads plain text.
-     */
 	if (strchr(mode, 'w')) fp->is_write = 1;
 	if (strchr(mode, 'b')) fp->is_bin = 1;
     if (strchr(mode, 'z')) fp->is_compressed = 1;
@@ -75,13 +60,7 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
     else fp->is_compressed = 2;    // not set, default behaviour
 	if (fp->is_bin) 
     {
-		if (fp->is_write) 
-        {
-//            if ( fp->is_compressed==0 )
-//.. todo: uncompressed BCF output. What did the original mpileup? if() in bgzf or in mpileup code?
-//            else
-                fp->fp = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
-        }
+		if (fp->is_write) fp->fp = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
 		else fp->fp = strcmp(fn, "-")? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
 	} 
     else 

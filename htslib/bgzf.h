@@ -79,6 +79,9 @@ extern "C" {
 	 * @param fd    file descriptor
 	 * @param mode  mode matching /[rwu0-9]+/: 'r' for reading, 'w' for writing and a digit specifies
 	 *              the zlib compression level; if both 'r' and 'w' are present, 'w' is ignored.
+     *              Note that there is a distinction between 'u' and '0': the
+     *              first yields plain uncompressed output whereas the latter
+     *              outputs uncompressed data wrapped in the zlib format.
 	 * @return      BGZF file handler; 0 on error
 	 */
 	BGZF* bgzf_dopen(int fd, const char *mode);

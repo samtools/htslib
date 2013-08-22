@@ -135,11 +135,17 @@ static BGZF *bgzf_read_init()
 	return fp;
 }
 
-static BGZF *bgzf_write_init(int compress_level) // compress_level==-1 for the default level
+static BGZF *bgzf_write_init(int compress_level) // compress_level==-1 for the default level, -2 plain uncompressed
 {
 	BGZF *fp;
 	fp = (BGZF*)calloc(1, sizeof(BGZF));
 	fp->is_write = 1;
+    if ( compress_level==-2 )
+    {
+        fp->is_compressed = 0;
+        return fp;
+    }
+    fp->is_compressed = 1;
 	fp->uncompressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
 	fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
 	fp->compress_level = compress_level < 0? Z_DEFAULT_COMPRESSION : compress_level; // Z_DEFAULT_COMPRESSION==-1
@@ -153,7 +159,7 @@ static int mode2level(const char *__restrict mode)
 	for (i = 0; mode[i]; ++i)
 		if (mode[i] >= '0' && mode[i] <= '9') break;
 	if (mode[i]) compress_level = (int)mode[i] - '0';
-	if (strchr(mode, 'u')) compress_level = 0;
+	if (strchr(mode, 'u')) compress_level = -2;
 	return compress_level;
 }
 
@@ -623,6 +629,9 @@ int bgzf_flush_try(BGZF *fp, ssize_t size)
 
 ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
 {
+    if ( !fp->is_compressed )
+        return fwrite(data,1,length,(FILE*)fp->fp);
+
 	const uint8_t *input = (const uint8_t*)data;
 	int block_length = BGZF_BLOCK_SIZE, bytes_written = 0;
 	assert(fp->is_write);
@@ -645,7 +654,7 @@ int bgzf_close(BGZF* fp)
 {
 	int ret, block_length;
 	if (fp == 0) return -1;
-	if (fp->is_write) {
+	if (fp->is_write && fp->is_compressed) {
 		if (bgzf_flush(fp) != 0) return -1;
 		fp->compress_level = -1;
 		block_length = deflate_block(fp, 0); // write an empty block

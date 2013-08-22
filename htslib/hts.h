@@ -68,6 +68,20 @@ extern "C" {
 */
 const char *hts_version();
 
+    /*!
+        @param fn       The file name or "-" for stdin/stdout
+        @param mode     Mode matching /[rwbuz0-9]+/: 'r' for reading, 'w' for writing and
+                        a digit specifies the zlib compression level. Note that there
+                        is a distinction between 'u' and '0': the first yields plain
+                        uncompressed output whereas the latter outputs uncompressed
+                        data wrapped in the zlib format.
+        @example 
+                        [rw]b .. compressed BCF, BAM, FAI; with "r" detects uncompressed
+                                    files when not reading from stdin
+                        [rw]u .. uncompressed BCF
+                        [rw]z .. compressed VCF
+                        [rw]  .. uncompressed VCF
+     */
 	htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux);
 	void hts_close(htsFile *fp);
 	int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
