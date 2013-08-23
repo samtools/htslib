@@ -400,7 +400,7 @@ extern "C" {
      *  @line:      BCF record
      *  @tag:       INFO tag to retrieve
      *  @dst:       *dst is pointer to a memory location, can point to NULL
-     *  @ndst:      size of the memory pointed to by *dst
+     *  @ndst:      the number of elements in the dst array
      *
      *  Returns the number of written values or a negative value on error.
      */

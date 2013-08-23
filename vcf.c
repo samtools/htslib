@@ -1930,16 +1930,27 @@ static inline int _bcf1_sync_alleles(bcf_hdr_t *hdr, bcf1_t *line, int nals)
 }
 int bcf1_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)
 {
-    kstring_t tmp;
-    tmp.l = 0; tmp.s = line->d.als; tmp.m = line->d.m_als;
+    kstring_t tmp = {0,0,0};
+    char *free_old = NULL;
 
+    // If the supplied alleles are not pointers to line->d.als, the existing block can be reused.
     int i;
+    for (i=0; i<nals; i++)
+        if ( alleles[i]>line->d.als && alleles[i]<line->d.als+line->d.m_als ) break;
+    if ( i==nals ) 
+    {
+        tmp.l = 0; tmp.s = line->d.als; tmp.m = line->d.m_als;
+    }
+    else
+        free_old = line->d.als;
+
     for (i=0; i<nals; i++)
     {
         kputs(alleles[i], &tmp);
         kputc(0, &tmp);
     }
     line->d.als = tmp.s; line->d.m_als = tmp.m;
+    free(free_old);
     return _bcf1_sync_alleles(hdr,line,nals);
 }
 
@@ -2005,10 +2016,10 @@ int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **ds
 
     // Make sure the buffer is big enough
     int size1 = type==BCF_HT_INT ? sizeof(int) : sizeof(float);
-    if ( *ndst < size1*info->len )
+    if ( *ndst < info->len )
     {
-        *ndst = size1*info->len;
-        *dst  = realloc(*dst, *ndst);
+        *ndst = info->len;
+        *dst  = realloc(*dst, *ndst * size1);
     }
 
     if ( info->len == 1 )
@@ -2055,10 +2066,10 @@ int bcf_get_format_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **
     // Make sure the buffer is big enough
     int nsmpl = hdr->n[BCF_DT_SAMPLE];
     int size1 = type==BCF_HT_INT ? sizeof(int) : sizeof(float);
-    if ( *ndst < size1*fmt->n*nsmpl )
+    if ( *ndst < fmt->n*nsmpl )
     {
-        *ndst = size1*fmt->n*nsmpl;
-        *dst  = realloc(*dst, *ndst);
+        *ndst = fmt->n*nsmpl;
+        *dst  = realloc(*dst, *ndst*size1);
     }
 
     #define BRANCH(type_t, is_missing, is_vector_end, set_missing, set_vector_end, out_type_t) { \
