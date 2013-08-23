@@ -790,8 +790,8 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
             gzclose(f);
         }
         kputsn(s->s, s->l, &txt);
-        if (s->s[1] != '#') break;
         kputc('\n', &txt);
+        if (s->s[1] != '#') break;
     }
     h->l_text = txt.l + 1; // including NULL
     h->text = txt.s;
@@ -1595,6 +1595,15 @@ int bcf_index_build(const char *fn, int min_shift)
  *** Utilities ***
  *****************/
 
+bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr)
+{
+    bcf_hdr_t *hout = bcf_hdr_init("r");
+    hout->text = strdup(hdr->text);
+    hout->l_text = hdr->l_text;
+    bcf_hdr_parse(hout);
+    return hout;
+}
+
 bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap)
 {
 	kstring_t str;
@@ -1816,7 +1825,11 @@ int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *valu
 
     // Is the field already present?
     int i, fmt_id = bcf_id2int(hdr,BCF_DT_ID,key);
-    assert( fmt_id>=0 && bcf_idinfo_exists(hdr,BCF_HL_FMT,fmt_id) );    // wrong usage of the API: bcf_hdr_parse_line or similar was not called
+    if ( fmt_id<0 || !bcf_idinfo_exists(hdr,BCF_HL_FMT,fmt_id) )
+    {
+        fprintf(stderr,"[%s:%d] Wrong usage of bcf1_update_format: The key \"%s\" not present in the header.\n",  __FILE__, __LINE__, key);
+        abort();
+    }
 
     for (i=0; i<line->n_fmt; i++)
         if ( line->d.fmt[i].id==fmt_id ) break;
@@ -1843,9 +1856,19 @@ int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *valu
 
     if ( !fmt )
     {
+        // Not present, new format field
         line->n_fmt++;
         hts_expand0(bcf_fmt_t, line->n_fmt, line->d.m_fmt, line->d.fmt);
-        fmt = &line->d.fmt[line->n_fmt-1];
+
+        // Special case: VCF specification requires that GT is always first
+        if ( line->n_fmt > 1 && key[0]=='G' && key[1]=='T' && !key[2] )
+        {
+            for (i=line->n_fmt-1; i>0; i--)
+                line->d.fmt[i] = line->d.fmt[i-1];
+            fmt = &line->d.fmt[0];
+        }
+        else
+            fmt = &line->d.fmt[line->n_fmt-1];
         bcf_unpack_fmt_core1((uint8_t*)str.s, line->n_sample, fmt);
         line->d.indiv_dirty = 1;
         fmt->p_free = 1;
@@ -2062,6 +2085,6 @@ int bcf_get_format_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **
         default: fprintf(stderr,"TODO: %s:%d .. fmt->type=%d\n", __FILE__,__LINE__, fmt->type); exit(1);
     }
     #undef BRANCH
-    return -4;  // this can never happen
+    return nsmpl*fmt->n;
 }
 

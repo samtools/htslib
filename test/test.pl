@@ -10,7 +10,7 @@ use File::Temp qw/ tempfile tempdir /;
 
 my $opts = parse_params();
 
-test_vcf_api($opts);
+test_vcf_api($opts,out=>'test-vcf-api.out');
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -168,6 +168,6 @@ sub is_file_newer
 sub test_vcf_api
 {
     my ($opts,%args) = @_;
-
+    test_cmd($opts,%args,cmd=>"$$opts{path}/test-vcf-api $$opts{tmp}/test-vcf-api.bcf");
 }
 

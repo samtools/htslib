@@ -3,10 +3,10 @@
 #include <htslib/vcf.h>
 #include <htslib/kstring.h>
 
-int main(int argc, char **argv)
+void write_bcf(char *fname)
 {
     // Init
-    htsFile *fp    = hts_open("rmme.bcf","wb",0);
+    htsFile *fp    = hts_open(fname,"wb",0);
     bcf_hdr_t *hdr = bcf_hdr_init("w");
     bcf1_t *rec    = bcf_init1();
 
@@ -92,7 +92,7 @@ int main(int argc, char **argv)
     bcf1_sync(rec);
     vcf_write1(fp, hdr, rec);
 
-    // 20     1110696 . A      G,T     67   .   NS=2;DP=10;AF=0.333,0.667;AA=T;DB GT 2 1   ./.
+    // 20     1110696 . A      G,T     67   .   NS=2;DP=10;AF=0.333,.;AA=T;DB GT 2 1   ./.
     bcf_clear1(rec);
     rec->rid = bcf_name2id(hdr, "20");
     rec->pos = 1110695;
@@ -104,8 +104,8 @@ int main(int argc, char **argv)
     bcf1_update_info_int32(hdr, rec, "DP", &tmpi, 1);
     float *tmpfa = (float*)malloc(2*sizeof(float));
     tmpfa[0] = 0.333; 
-    tmpfa[1] = 0.667;
-    bcf1_update_info_float(hdr, rec, "AF", &tmpfa, 2);
+    bcf_float_set_missing(tmpfa[1]);
+    bcf1_update_info_float(hdr, rec, "AF", tmpfa, 2);
     bcf1_update_info_string(hdr, rec, "AA", "T");
     bcf1_update_info_flag(hdr, rec, "DB", NULL, 1);
     rec->n_sample = hdr->n[BCF_DT_SAMPLE];
@@ -122,15 +122,37 @@ int main(int argc, char **argv)
     free(tmpia);
     free(tmpfa);
 
-// test bcf_float_is_missing() .. type punning
-
-
     // Clean
     free(str.s);
     bcf_destroy1(rec);
     bcf_hdr_destroy(hdr);
     hts_close(fp);
+}
 
+void bcf_to_vcf(char *fname)
+{
+    htsFile *fp    = hts_open(fname,"rb",0);
+    bcf_hdr_t *hdr = vcf_hdr_read(fp);
+    bcf1_t *rec    = bcf_init1();
+    htsFile *out   = hts_open("-","w",0);
+
+    vcf_hdr_write(out, hdr);
+    while ( vcf_read1(fp, hdr, rec)>=0 )
+    {
+        vcf_write1(out, hdr, rec);
+    }
+    
+    bcf_destroy1(rec);
+    bcf_hdr_destroy(hdr);
+    hts_close(fp);
+    hts_close(out);
+}
+
+int main(int argc, char **argv)
+{
+    char *fname = argc>1 ? argv[1] : "rmme.bcf";
+    write_bcf(fname);
+    bcf_to_vcf(fname);
     return 0;
 }
 

@@ -320,6 +320,7 @@ extern "C" {
 	 ****************************************/
 
     bcf_hdr_t *bcf_hdr_init(const char *mode);  // "w" or "r"
+    bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr);
     int bcf_hdr_add_sample(bcf_hdr_t *hdr, const char *sample);
     int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname);
     void bcf_hdr_fmt_text(bcf_hdr_t *hdr);
