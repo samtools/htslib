@@ -1910,6 +1910,19 @@ int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
     return 0;
 }
 
+int bcf1_add_filter(bcf_hdr_t *hdr, bcf1_t *line, int flt_id)
+{
+    int i;
+    for (i=0; i<line->d.n_flt; i++)
+        if ( flt_id==line->d.flt[i] ) break;
+    if ( i<line->d.n_flt ) return 0;
+    line->d.shared_dirty |= BCF1_DIRTY_FLT;
+    line->d.n_flt++;
+    hts_expand(int, line->d.n_flt, line->d.m_flt, line->d.flt);
+    line->d.flt[i] = flt_id;
+    return 1;
+}
+
 static inline int _bcf1_sync_alleles(bcf_hdr_t *hdr, bcf1_t *line, int nals)
 {
     line->n_allele = nals;

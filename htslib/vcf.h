@@ -360,6 +360,7 @@ extern "C" {
      *  @n:                 Number of filters. If n==0, all filters are removed
      */
     int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n);
+    int bcf1_add_filter(bcf_hdr_t *hdr, bcf1_t *line, int flt_id);
     /**
      *  bcf1_update_alleles() and bcf1_update_alleles_str() - update REF and ALLT column
      *  @alleles:           Array of alleles
