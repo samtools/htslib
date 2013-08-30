@@ -490,7 +490,11 @@ bcf_hdr_t *bcf_hdr_read(BGZF *fp)
 	uint8_t magic[5];
 	bcf_hdr_t *h;
 	h = bcf_hdr_init("r");
-	bgzf_read(fp, magic, 5);
+	if ( bgzf_read(fp, magic, 5)<0 ) 
+    {
+        fprintf(stderr,"[%s:%d %s] Failed to read the header\n", __FILE__,__LINE__,__FUNCTION__);
+        return NULL;
+    }
 	if (strncmp((char*)magic, "BCF\2\2", 5) != 0) {
 		if (hts_verbose >= 2)
 			fprintf(stderr, "[E::%s] invalid BCF2 magic string\n", __func__);
@@ -644,6 +648,7 @@ int bcf1_sync(bcf1_t *line)
     kstring_t tmp = {0,0,0};
     if ( !line->shared.l )
     {
+        // New line, get ready for BCF output
         tmp = line->shared;
         bcf1_sync_id(line, &tmp);
         bcf1_sync_alleles(line, &tmp);
@@ -653,6 +658,7 @@ int bcf1_sync(bcf1_t *line)
     }
     else if ( line->d.shared_dirty )
     {
+        // The line was edited, update the BCF data block
         uint8_t *ptr, *ptr_ori = (uint8_t *) line->shared.s;
         int type, size;
 
@@ -686,10 +692,12 @@ int bcf1_sync(bcf1_t *line)
         for (i=0; i<size; i++) 
             bcf_dec_int1(ptr, type, &ptr);
         size = ptr - ptr_ori;
-        if ( line->d.shared_dirty & BCF1_DIRTY_FLT ) 
+        if ( line->d.shared_dirty & BCF1_DIRTY_FLT )
             bcf1_sync_filter(line, &tmp);
-        else
+        else if ( line->d.n_flt ) 
             kputsn_(ptr_ori, size, &tmp);
+        else
+            bcf_enc_vint(&tmp, 0, 0, -1);
         ptr_ori += size;
 
         // INFO: pairs of typed vectors
@@ -703,8 +711,10 @@ int bcf1_sync(bcf1_t *line)
         free(line->shared.s);
         line->shared = tmp;
     }
-    if ( !line->indiv.l )
+    if ( !line->indiv.l || line->d.indiv_dirty )
     {
+        // The genotype fields has changed or are not present
+        tmp.l = tmp.m = 0; tmp.s = NULL;
         int i, irm = -1;
         for (i=0; i<line->n_fmt; i++)
         {
@@ -715,19 +725,17 @@ int bcf1_sync(bcf1_t *line)
                 if ( irm < 0 ) irm = i;
                 continue; 
             }
-            kputsn_(fmt->p - fmt->p_off, fmt->p_len + fmt->p_off, &line->indiv);
+            kputsn_(fmt->p - fmt->p_off, fmt->p_len + fmt->p_off, &tmp);
             if ( irm >=0 )
             {
-                bcf_fmt_t tmp = line->d.fmt[irm]; line->d.fmt[irm] = line->d.fmt[i]; line->d.fmt[i] = tmp;
+                bcf_fmt_t tfmt = line->d.fmt[irm]; line->d.fmt[irm] = line->d.fmt[i]; line->d.fmt[i] = tfmt;
                 while ( irm<=i && line->d.fmt[irm].p ) irm++;
             }
 
         }
         if ( irm>=0 ) line->n_fmt = irm;
-    }
-    else if ( line->d.indiv_dirty )
-    {
-        assert(0);
+        free(line->indiv.s);
+        line->indiv = tmp;
     }
     return 0;
 }
@@ -795,6 +803,11 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
     }
     h->l_text = txt.l + 1; // including NULL
     h->text = txt.s;
+    if ( !h->text ) 
+    {
+        fprintf(stderr,"[%s:%d %s] Could not read the header\n", __FILE__,__LINE__,__FUNCTION__);
+        return NULL;
+    }
     bcf_hdr_parse(h);
     // check tabix index, are all contigs listed in the header? add the missing ones
     tbx_t *idx = tbx_index_load(fp->fn);
@@ -874,7 +887,7 @@ void bcf_hdr_fmt_text(bcf_hdr_t *hdr)
 
     if ( hdr->text ) free(hdr->text);
     hdr->text = txt.s;
-    hdr->l_text = txt.l;
+    hdr->l_text = txt.l + 1;    // the terminating \0 must be included
 }
 
 const char **bcf_seqnames(const bcf_hdr_t *h, int *n)
@@ -1747,7 +1760,11 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values
 {
     // Is the field already present?
     int i, inf_id = bcf_id2int(hdr,BCF_DT_ID,key);
-    assert( inf_id>=0 && bcf_idinfo_exists(hdr,BCF_HL_INFO,inf_id) );    // wrong usage of the API: bcf_hdr_parse_line or similar was not called
+    if ( inf_id<0 || !bcf_idinfo_exists(hdr,BCF_HL_INFO,inf_id) )
+    {
+        fprintf(stderr,"[%s:%d %s] The tag was not defined in the header: %s\n", __FILE__,__LINE__,__FUNCTION__,key);
+        exit(-1);
+    }
 
     for (i=0; i<line->n_info; i++)
         if ( inf_id==line->d.info[i].key ) break;
@@ -1821,19 +1838,25 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values
 
 int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type)
 {
-    assert( n );        // todo: n=0
-
     // Is the field already present?
     int i, fmt_id = bcf_id2int(hdr,BCF_DT_ID,key);
     if ( fmt_id<0 || !bcf_idinfo_exists(hdr,BCF_HL_FMT,fmt_id) )
     {
+        if ( !n ) return 0;
         fprintf(stderr,"[%s:%d] Wrong usage of bcf1_update_format: The key \"%s\" not present in the header.\n",  __FILE__, __LINE__, key);
-        abort();
+        exit(-1);
     }
 
     for (i=0; i<line->n_fmt; i++)
         if ( line->d.fmt[i].id==fmt_id ) break;
     bcf_fmt_t *fmt = i==line->n_fmt ? NULL : &line->d.fmt[i];
+
+    if ( !n )
+    {
+        line->d.indiv_dirty = 1;
+        fmt->p = NULL;
+        return 0;
+    }
 
     int nps = n / line->n_sample;  // number of values per sample
     assert( nps && nps*line->n_sample==n );     // must be divisible by n_sample
@@ -1949,7 +1972,7 @@ int bcf1_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int 
     // If the supplied alleles are not pointers to line->d.als, the existing block can be reused.
     int i;
     for (i=0; i<nals; i++)
-        if ( alleles[i]>line->d.als && alleles[i]<line->d.als+line->d.m_als ) break;
+        if ( alleles[i]>=line->d.als && alleles[i]<line->d.als+line->d.m_als ) break;
     if ( i==nals ) 
     {
         tmp.l = 0; tmp.s = line->d.als; tmp.m = line->d.m_als;

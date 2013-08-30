@@ -69,19 +69,17 @@ int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int alleles)
     return 0;
 }
 
-int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
+int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
 {
     files->has_line = (int*) realloc(files->has_line, sizeof(int)*(files->nreaders+1));
     files->readers  = (bcf_sr_t*) realloc(files->readers, sizeof(bcf_sr_t)*(files->nreaders+1));
     bcf_sr_t *reader = &files->readers[files->nreaders++];
     memset(reader,0,sizeof(bcf_sr_t));
 
-    if ( files->regions ) files->require_index = 1;
-
-    reader->type = file_type(fname);
+    reader->type = type==FT_UNKN ? file_type(fname) : type;
     if ( files->require_index )
     {
-        if ( reader->type==IS_VCF_GZ ) 
+        if ( reader->type==FT_VCF_GZ ) 
         {
             reader->tbx_idx = tbx_index_load(fname);
             if ( !reader->tbx_idx )
@@ -100,7 +98,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
             reader->file = hts_open(fname, "rb", NULL);
             if ( !reader->file ) return 0;
         }
-        else if ( reader->type==IS_BCF ) 
+        else if ( reader->type==FT_BCF_GZ ) 
         {
             reader->file = hts_open(fname, "rb", NULL);
             if ( !reader->file ) return 0;
@@ -121,15 +119,15 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     }
     else 
     {
-        if ( reader->type==IS_BCF )
+        if ( reader->type & FT_BCF )
         {
             reader->file = hts_open(fname, "rb", NULL);
             if ( !reader->file ) return 0;
             reader->header = vcf_hdr_read(reader->file);
         }
-        else if ( reader->type==IS_VCF_GZ || reader->type==IS_VCF || reader->type==IS_STDIN )
+        else if ( reader->type & FT_VCF || reader->type==FT_STDIN )
         {
-            reader->file = hts_open(fname,"r",NULL);
+            reader->file = hts_open(fname, "r", NULL);
             if ( !reader->file ) 
             {
                 fprintf(stderr,"[add_reader] Could not open %s\n", fname);
@@ -149,6 +147,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
         fprintf(stderr,"[%s:%d %s] Error: %d readers, yet require_index not set\n", __FILE__,__LINE__,__FUNCTION__,files->nreaders);
         return 0;
     }
+    if ( !reader->header ) return 0;
 
     reader->fname = fname;
     if ( files->apply_filters )
@@ -360,12 +359,12 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         }
         if ( files->streaming )
         {
-            if ( reader->type==IS_VCF_GZ || reader->type==IS_VCF || reader->type==IS_STDIN )
+            if ( reader->type & FT_VCF || reader->type==FT_STDIN )
             {
                 if ( (ret=hts_getline(reader->file, KS_SEP_LINE, &files->tmps)) < 0 ) break;   // no more lines
                 vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
             }
-            else if ( reader->type==IS_BCF )
+            else if ( reader->type & FT_BCF )
             {
                 if ( (ret=bcf_read1((BGZF*)reader->file->fp, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
             }

@@ -9,7 +9,7 @@ AR     = ar
 RANLIB = ranlib
 
 CPPFLAGS = -I.
-CFLAGS   = -g -Wall -O2 -Wc++-compat
+CFLAGS   = -g -Wall -Wc++-compat -O2
 EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
 LDLIBS   =

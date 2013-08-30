@@ -61,16 +61,16 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 	if (fp->is_bin) 
     {
 		if (fp->is_write) fp->fp = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
-		else fp->fp = strcmp(fn, "-")? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
+		else fp->fp = strcmp(fn, "-") ? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
 	} 
     else 
     {
 		if (!fp->is_write) 
         {
-			gzFile gzfp;
-			gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
-			if (gzfp) fp->fp = ks_init(gzfp);
-			if (fn_aux) fp->fn_aux = strdup(fn_aux);
+            gzFile gzfp;
+            gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
+            if (gzfp) fp->fp = ks_init(gzfp);
+            if (fn_aux) fp->fn_aux = strdup(fn_aux);
 		} 
         else 
         {
@@ -156,10 +156,10 @@ char **hts_readlines(const char *fn, int *_n)
 int file_type(const char *fname)
 {
     int len = strlen(fname);
-    if ( !strcasecmp(".vcf.gz",fname+len-7) ) return IS_VCF_GZ;
-    if ( !strcasecmp(".vcf",fname+len-4) ) return IS_VCF;
-    if ( !strcasecmp(".bcf",fname+len-4) ) return IS_BCF;
-    if ( !strcmp("-",fname) ) return IS_STDIN;
+    if ( !strcasecmp(".vcf.gz",fname+len-7) ) return FT_VCF_GZ;
+    if ( !strcasecmp(".vcf",fname+len-4) ) return FT_VCF;
+    if ( !strcasecmp(".bcf",fname+len-4) ) return FT_BCF_GZ;
+    if ( !strcmp("-",fname) ) return FT_STDIN;
     // ... etc
 
     int fd = open(fname, O_RDONLY);
@@ -167,7 +167,8 @@ int file_type(const char *fname)
 
     uint8_t magic[5];
     if ( read(fd,magic,2)!=2 ) { close(fd); return 0; }
-    if ( !strncmp((char*)magic,"##",2) ) { close(fd); return IS_VCF; }
+    if ( !strncmp((char*)magic,"##",2) ) { close(fd); return FT_VCF; }
+    if ( !strncmp((char*)magic,"BCF",3) ) { close(fd); return FT_BCF; }
     close(fd);
 
     if ( magic[0]==0x1f && magic[1]==0x8b ) // compressed
@@ -176,8 +177,8 @@ int file_type(const char *fname)
         if ( !fp ) return 0;
         if ( bgzf_read(fp, magic, 3)!=3 ) { bgzf_close(fp); return 0; }
         bgzf_close(fp);
-        if ( !strncmp((char*)magic,"##",2) ) return IS_VCF;
-        if ( !strncmp((char*)magic,"BCF",3) ) return IS_BCF;
+        if ( !strncmp((char*)magic,"##",2) ) return FT_VCF;
+        if ( !strncmp((char*)magic,"BCF",3) ) return FT_BCF_GZ;
     }
     return 0;
 }

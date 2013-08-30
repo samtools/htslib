@@ -170,19 +170,19 @@ BGZF *bgzf_open(const char *path, const char *mode)
 	if (strchr(mode, 'r') || strchr(mode, 'R')) {
 		_bgzf_file_t fpr;
 		if ((fpr = _bgzf_open(path, "r")) == 0) return 0;
-
-        // determine if the file is compressed 
-        uint8_t magic[2];
-        if ( _bgzf_read(fpr,magic,2)!=2 ) 
-        {
-            _bgzf_close(fpr);
-            return 0;
-        }
-        _bgzf_close(fpr);
-        if ((fpr = _bgzf_open(path, "r")) == 0) return 0;
-
+		
+		// is the file compressed?
+		uint8_t magic[2];
+		if ( _bgzf_read(fpr,magic,2)!=2 )
+		{
+		    _bgzf_close(fpr);
+		    return 0;
+		}
+		_bgzf_close(fpr);
+		if ((fpr = _bgzf_open(path, "r")) == 0) return 0;
+		
 		fp = bgzf_read_init();
-        fp->is_compressed = ( magic[0]==0x1f && magic[1]==0x8b ) ? 1 : 0;
+		fp->is_compressed = ( magic[0]==0x1f && magic[1]==0x8b ) ? 1 : 0;
 		fp->fp = fpr;
 	} else if (strchr(mode, 'w') || strchr(mode, 'W')) {
 		FILE *fpw;
@@ -203,6 +203,7 @@ BGZF *bgzf_dopen(int fd, const char *mode)
 		if ((fpr = _bgzf_dopen(fd, "r")) == 0) return 0;
 		fp = bgzf_read_init();
 		fp->fp = fpr;
+        fp->is_compressed = -1;
 	} else if (strchr(mode, 'w') || strchr(mode, 'W')) {
 		FILE *fpw;
 		if ((fpw = fdopen(fd, "w")) == 0) return 0;
@@ -349,9 +350,24 @@ int bgzf_read_block(BGZF *fp)
 {
 	uint8_t header[BLOCK_HEADER_LENGTH], *compressed_block;
 	int count, size = 0, block_length, remaining;
+    int nskip = 0;
+    if ( fp->is_compressed==-1 )
+    {
+        // caled for the first time, check if the file is compressed
+        count = _bgzf_read(fp->fp, header, 2);
+        if (count == 0) { fp->block_length = 0; return 0; } // no data read
+        fp->is_compressed = ( header[0]==0x1f && header[1]==0x8b ) ? 1 : 0;
+        if ( !fp->is_compressed )
+        {
+            ((uint8_t*)fp->uncompressed_block)[0] = header[0];
+            ((uint8_t*)fp->uncompressed_block)[1] = header[1];
+        }
+        nskip = 2;
+    }
+
     if ( !fp->is_compressed )
     {
-        count = _bgzf_read(fp->fp, fp->uncompressed_block, BGZF_MAX_BLOCK_SIZE);
+        count = _bgzf_read(fp->fp, fp->uncompressed_block+nskip, BGZF_MAX_BLOCK_SIZE-nskip) + nskip;
         if ( count==0 ) 
         {
             fp->block_length = 0;
@@ -363,9 +379,9 @@ int bgzf_read_block(BGZF *fp)
         return 0;
     }
 	int64_t block_address;
-	block_address = _bgzf_tell((_bgzf_file_t)fp->fp);
+	block_address = _bgzf_tell((_bgzf_file_t)fp->fp) - nskip;
 	if (fp->cache_size && load_block_from_cache(fp, block_address)) return 0;
-    count = _bgzf_read(fp->fp, header, sizeof(header));
+    count = _bgzf_read(fp->fp, header + nskip, sizeof(header) - nskip) + nskip;
     if (count == 0) { // no data read
         fp->block_length = 0;
         return 0;

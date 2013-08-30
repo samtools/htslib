@@ -283,7 +283,7 @@ faidx_t *fai_load(const char *fn)
 		fprintf(stderr, "[fai_load] fail to open FASTA file.\n");
 		return 0;
 	}
-    if ( fai->bgzf->is_compressed )
+    if ( fai->bgzf->is_compressed==1 )
     {
         if ( bgzf_index_load(fai->bgzf, fn, ".gzi") < 0 )
         {

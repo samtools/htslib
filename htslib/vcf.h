@@ -340,6 +340,15 @@ extern "C" {
 	 *************************/
 
 	int bcf_hdr_append(bcf_hdr_t *h, const char *line);
+
+    /**
+      *  @n:        number of samples to keep
+      *  @samples:  names of the samples to keep
+      *  @imap:     mapping from index in @samples to the sample index in the original file
+      *
+      *  Sample names not present in @h0 are ignored. The number of unmatched samples can be checked
+      *  by comparing @n and out_hdr->n[BCF_DT_SAMPLE].
+      */
 	bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
 	int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
 	const char **bcf_seqnames(const bcf_hdr_t *h, int *nseqs);
@@ -379,7 +388,7 @@ extern "C" {
     #define bcf1_update_info_string(hdr,line,key,string)    bcf1_update_info((hdr),(line),(key),(string),1,BCF_HT_STR)
     int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type);
 
-    // If n==0, existing tag is removed. Otherwise it is updated or appended. (pd3 todo: reflect changes also on BCF output)
+    // If n==0, existing tag is removed. Otherwise it is updated or appended.
     #define bcf1_update_format_int32(hdr,line,key,values,n) bcf1_update_format((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf1_update_format_float(hdr,line,key,values,n) bcf1_update_format((hdr),(line),(key),(values),(n),BCF_HT_REAL)
     #define bcf1_update_genotypes(hdr,line,gts,n) bcf1_update_format((hdr),(line),"GT",(gts),(n),BCF_HT_INT)

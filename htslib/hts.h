@@ -153,16 +153,18 @@ extern "C" {
      * file_type() - Convenience function to determine file type
      * @fname: the file name
      *
-     * Returns one of the IS_* defines.
+     * Returns one of the FT_* defines.
      *
      * This function was added in order to avoid the need for excessive command
-     * line switches. Note that in the current implementation only the file name is
-     * checked, looking at magic string is also a possibility.
+     * line switches.
      */
-    #define IS_VCF    1
-    #define IS_VCF_GZ 2
-    #define IS_BCF    4
-    #define IS_STDIN  5
+    #define FT_UNKN   0
+    #define FT_GZ     1
+    #define FT_VCF    2
+    #define FT_VCF_GZ (FT_GZ|FT_VCF)
+    #define FT_BCF    4
+    #define FT_BCF_GZ (FT_GZ|FT_BCF)
+    #define FT_STDIN  8
     int file_type(const char *fname);
 
 
