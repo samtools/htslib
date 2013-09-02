@@ -12,6 +12,14 @@
 
 #include <sys/types.h>
 
+#ifndef HTS_RESULT_USED
+#if defined __GNUC__ && (__GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4))
+#define HTS_RESULT_USED __attribute__ ((__warn_unused_result__))
+#else
+#define HTS_RESULT_USED
+#endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -32,20 +40,20 @@ typedef struct hFILE {
   @abstract  Open the named file or URL as a stream
   @return    An hFILE pointer, or NULL (with errno set) if an error occurred.
 */
-hFILE *hopen(const char *filename, const char *mode);
+hFILE *hopen(const char *filename, const char *mode) HTS_RESULT_USED;
 
 /*!
   @abstract  Associate a stream with an existing open file descriptor
   @return    An hFILE pointer, or NULL (with errno set) if an error occurred.
   @notes     For socket descriptors (on Windows), mode should contain 's'.
 */
-hFILE *hdopen(int fd, const char *mode);
+hFILE *hdopen(int fd, const char *mode) HTS_RESULT_USED;
 
 /*!
   @abstract  Flush (for output streams) and close the stream
   @return    0 if successful, or EOF (with errno set) if an error occurred.
 */
-int hclose(hFILE *fp);
+int hclose(hFILE *fp) HTS_RESULT_USED;
 
 /*!
   @abstract  Return the stream's error indicator
@@ -62,7 +70,7 @@ static inline int herrno(hFILE *fp)
   @return    The resulting offset within the stream (as per lseek(2)),
     or negative if an error occurred.
 */
-off_t hseek(hFILE *fp, off_t offset, int whence);
+off_t hseek(hFILE *fp, off_t offset, int whence) HTS_RESULT_USED;
 
 /*!
   @abstract  Report the current stream offset
@@ -91,7 +99,7 @@ static inline int hgetc(hFILE *fp)
   @notes  The characters peeked at remain in the stream's internal buffer,
     and will be returned by later hread() etc calls.
 */
-ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes);
+ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes) HTS_RESULT_USED;
 
 /*!
   @abstract  Read a block of characters from the file
@@ -99,7 +107,8 @@ ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes);
   @notes     The full nbytes requested will be returned, except as limited
     by EOF or I/O errors.
 */
-static inline ssize_t hread(hFILE *fp, void *buffer, size_t nbytes)
+static inline ssize_t HTS_RESULT_USED
+hread(hFILE *fp, void *buffer, size_t nbytes)
 {
     extern ssize_t hread2(hFILE *, void *, size_t, size_t);
 
@@ -142,7 +151,8 @@ static inline int hputs(const char *text, hFILE *fp)
   @return    Either nbytes, or negative if an error occurred.
   @notes     In the absence of I/O errors, the full nbytes will be written.
 */
-static inline ssize_t hwrite(hFILE *fp, const void *buffer, size_t nbytes)
+static inline ssize_t HTS_RESULT_USED
+hwrite(hFILE *fp, const void *buffer, size_t nbytes)
 {
     extern ssize_t hwrite2(hFILE *, const void *, size_t, size_t);
 
@@ -157,7 +167,7 @@ static inline ssize_t hwrite(hFILE *fp, const void *buffer, size_t nbytes)
   @abstract  For writing streams, flush buffered output to the underlying stream
   @return    0 if successful, or EOF if an error occurred.
 */
-int hflush(hFILE *fp);
+int hflush(hFILE *fp) HTS_RESULT_USED;
 
 #ifdef __cplusplus
 }
