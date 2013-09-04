@@ -22,6 +22,7 @@
 
    const hFILE_backend *backend;  // Methods to refill/flush I/O buffer
 
+   off_t offset;     // Offset within the stream of buffer position 0
    int at_eof:1;     // For reading, whether EOF has been seen
    int has_errno;    // Error number from the last failure on this stream
 
@@ -40,7 +41,8 @@ equal to buffer:
 
 Thus if begin > end then there is a non-empty write buffer, if begin < end
 then there is a non-empty read buffer, and if begin == end then both buffers
-are empty.  */
+are empty.  In all cases, the stream's file position indicator corresponds
+to the position pointed to by begin.  */
 
 int hinit_buffer(hFILE *fp, const char *mode, size_t capacity)
 {
@@ -51,6 +53,7 @@ int hinit_buffer(hFILE *fp, const char *mode, size_t capacity)
     fp->begin = fp->end = fp->buffer;
     fp->limit = &fp->buffer[capacity];
 
+    fp->offset = 0;
     fp->at_eof = 0;
     fp->has_errno = 0;
     return 0;
@@ -70,6 +73,7 @@ static ssize_t refill_buffer(hFILE *fp)
 
     // Move any unread characters to the start of the buffer
     if (fp->begin > fp->buffer) {
+        fp->offset += fp->begin - fp->buffer;
         memmove(fp->buffer, fp->begin, fp->end - fp->begin);
         fp->end = &fp->buffer[fp->end - fp->begin];
         fp->begin = fp->buffer;
@@ -121,6 +125,7 @@ ssize_t hread2(hFILE *fp, void *destv, size_t nbytes, size_t nread)
         ssize_t n = fp->backend->read(fp, dest, nbytes);
         if (n < 0) { fp->has_errno = errno; return n; }
         else if (n == 0) fp->at_eof = 1;
+        fp->offset += n;
         dest += n, nbytes -= n;
         nread += n;
     }
@@ -150,6 +155,7 @@ static ssize_t flush_buffer(hFILE *fp)
         ssize_t n = fp->backend->write(fp, buffer, fp->begin - buffer);
         if (n < 0) { fp->has_errno = errno; return n; }
         buffer += n;
+        fp->offset += n;
     }
 
     fp->begin = fp->buffer;  // Leave the buffer empty
@@ -188,6 +194,7 @@ ssize_t hwrite2(hFILE *fp, const void *srcv, size_t totalbytes, size_t ncopied)
     while (remaining * 2 >= capacity) {
         ssize_t n = fp->backend->write(fp, src, remaining);
         if (n < 0) { fp->has_errno = errno; return n; }
+        fp->offset += n;
         src += n, remaining -= n;
     }
 
@@ -220,13 +227,7 @@ off_t hseek(hFILE *fp, off_t offset, int whence)
     fp->begin = fp->end = fp->buffer;
     fp->at_eof = 0;
 
-    return pos;
-}
-
-off_t htell(hFILE *fp)
-{
-    off_t pos = fp->backend->tell(fp);
-    if (pos < 0) fp->has_errno = errno;
+    fp->offset = pos;
     return pos;
 }
 
@@ -297,12 +298,6 @@ static off_t fd_seek(hFILE *fpv, off_t offset, int whence)
     return lseek(fp->fd, offset, whence);
 }
 
-static off_t fd_tell(hFILE *fpv)
-{
-    hFILE_fd *fp = (hFILE_fd *) fpv;
-    return lseek(fp->fd, 0, SEEK_CUR);
-}
-
 static int fd_flush(hFILE *fpv)
 {
     hFILE_fd *fp = (hFILE_fd *) fpv;
@@ -335,7 +330,7 @@ static int fd_close(hFILE *fpv)
 
 static const struct hFILE_backend fd_backend =
 {
-    fd_read, fd_write, fd_seek, fd_tell, fd_flush, fd_close
+    fd_read, fd_write, fd_seek, fd_flush, fd_close
 };
 
 static size_t blksize(int fd)

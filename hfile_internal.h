@@ -26,10 +26,6 @@ struct hFILE_backend {
        negative (and setting errno) on errors.  */
     off_t (*seek)(hFILE *fp, off_t offset, int whence) HTS_RESULT_USED;
 
-    /* As per ftello(3), returning the current offset within the stream or
-       negative (and setting errno) on errors.  */
-    off_t (*tell)(hFILE *fp) HTS_RESULT_USED;
-
     /* Performs low-level flushing, if any, e.g., fsync(2); for writing streams
        only.  Returns 0 for success or negative (and sets errno) on errors. */
     int (*flush)(hFILE *fp) HTS_RESULT_USED;

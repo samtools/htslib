@@ -29,12 +29,6 @@ static off_t net_seek(hFILE *fpv, off_t offset, int whence)
     return knet_seek(fp->netfp, offset, whence);
 }
 
-static off_t net_tell(hFILE *fpv)
-{
-    hFILE_net *fp = (hFILE_net *) fpv;
-    return knet_tell(fp->netfp);
-}
-
 static int net_close(hFILE *fpv)
 {
     hFILE_net *fp = (hFILE_net *) fpv;
@@ -43,7 +37,7 @@ static int net_close(hFILE *fpv)
 
 static const struct hFILE_backend net_backend =
 {
-    net_read, NULL, net_seek, net_tell, NULL, net_close
+    net_read, NULL, net_seek, NULL, net_close
 };
 
 hFILE *hopen_net(const char *filename, const char *mode)

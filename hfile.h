@@ -31,6 +31,7 @@ struct hFILE_backend;
 typedef struct hFILE {
     char *buffer, *begin, *end, *limit;
     const struct hFILE_backend *backend;
+    off_t offset;
     int at_eof:1;
     int has_errno;
 } hFILE;
@@ -81,9 +82,12 @@ off_t hseek(hFILE *fp, off_t offset, int whence) HTS_RESULT_USED;
 
 /*!
   @abstract  Report the current stream offset
-  @return    The offset within the stream, or negative if an error occurred.
+  @return    The offset within the stream, starting from zero.
 */
-off_t htell(hFILE *fp);
+static inline off_t htell(hFILE *fp)
+{
+    return fp->offset + (fp->begin - fp->buffer);
+}
 
 /*!
   @abstract  Read one character from the stream
