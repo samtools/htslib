@@ -18,11 +18,10 @@
    char *buffer;     // Pointer to the start of the I/O buffer
    char *begin;      // First not-yet-read character / unused position
    char *end;        // First unfilled/unfillable position
-   size_t capacity;  // Size of the I/O buffer
+   char *limit;      // Pointer to the first position past the buffer
 
    const hFILE_backend *backend;  // Methods to refill/flush I/O buffer
 
-   int writing:1;    // Whether the buffer is being used for writing
    int at_eof:1;     // For reading, whether EOF has been seen
    int has_errno;    // Error number from the last failure on this stream
 
@@ -30,30 +29,36 @@ For reading, begin is the first unread character in the buffer and end is the
 first unfilled position:
 
    -----------ABCDEFGHIJKLMNO---------------
-   ^buffer    ^begin         ^end
+   ^buffer    ^begin         ^end           ^limit
 
-For writing, begin is the first unused position and end is the end of the
-buffer (so end == &buffer[capacity]):
+For writing, begin is the first unused position and end is unused so remains
+equal to buffer:
 
    ABCDEFGHIJKLMNOPQRSTUVWXYZ---------------
-   ^buffer                   ^begin         ^end
+   ^buffer                   ^begin         ^limit
+   ^end
 
-In both cases, available characters/positions are in [begin,end).  */
+Thus if begin > end then there is a non-empty write buffer, if begin < end
+then there is a non-empty read buffer, and if begin == end then both buffers
+are empty.  */
 
 int hinit_buffer(hFILE *fp, const char *mode, size_t capacity)
 {
-    fp->capacity = capacity? capacity : 32768;
-    fp->buffer = (char *) malloc(fp->capacity);
+    if (capacity == 0) capacity = 32768;
+    fp->buffer = (char *) malloc(capacity);
     if (fp->buffer == NULL) return -1;
 
-    fp->writing = (strchr(mode, 'w') != NULL || strchr(mode, 'a') != NULL);
-
-    fp->begin = fp->buffer;
-    fp->end = fp->writing? &fp->buffer[fp->capacity] : fp->buffer;
+    fp->begin = fp->end = fp->buffer;
+    fp->limit = &fp->buffer[capacity];
 
     fp->at_eof = 0;
     fp->has_errno = 0;
     return 0;
+}
+
+static inline int writebuffer_is_nonempty(hFILE *fp)
+{
+    return fp->begin > fp->end;
 }
 
 /* Refills the read buffer from the backend (once, so may only partially
@@ -61,7 +66,6 @@ int hinit_buffer(hFILE *fp, const char *mode, size_t capacity)
    (which might be 0), or negative when an error occurred.  */
 static ssize_t refill_buffer(hFILE *fp)
 {
-    size_t avail;
     ssize_t n;
 
     // Move any unread characters to the start of the buffer
@@ -71,11 +75,10 @@ static ssize_t refill_buffer(hFILE *fp)
         fp->begin = fp->buffer;
     }
 
-    // Read into the available buffer space at fp->[end,capacity)
-    avail = &fp->buffer[fp->capacity] - fp->end;
-    if (fp->at_eof || avail == 0) n = 0;
+    // Read into the available buffer space at fp->[end,limit)
+    if (fp->at_eof || fp->end == fp->limit) n = 0;
     else {
-        n = fp->backend->read(fp, fp->end, avail);
+        n = fp->backend->read(fp, fp->end, fp->limit - fp->end);
         if (n < 0) { fp->has_errno = errno; return n; }
         else if (n == 0) fp->at_eof = 1;
     }
@@ -109,11 +112,12 @@ ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes)
    have already been placed in the destination buffer.  */
 ssize_t hread2(hFILE *fp, void *destv, size_t nbytes, size_t nread)
 {
+    const size_t capacity = fp->limit - fp->buffer;
     char *dest = (char *) destv;
     dest += nread, nbytes -= nread;
 
     // Read large requests directly into the destination buffer
-    while (nbytes * 2 >= fp->capacity && !fp->at_eof) {
+    while (nbytes * 2 >= capacity && !fp->at_eof) {
         ssize_t n = fp->backend->read(fp, dest, nbytes);
         if (n < 0) { fp->has_errno = errno; return n; }
         else if (n == 0) fp->at_eof = 1;
@@ -173,6 +177,7 @@ ssize_t hwrite2(hFILE *fp, const void *srcv, size_t totalbytes, size_t ncopied)
 {
     const char *src = (const char *) srcv;
     ssize_t ret;
+    const size_t capacity = fp->limit - fp->buffer;
     size_t remaining = totalbytes - ncopied;
     src += ncopied;
 
@@ -180,7 +185,7 @@ ssize_t hwrite2(hFILE *fp, const void *srcv, size_t totalbytes, size_t ncopied)
     if (ret < 0) return ret;
 
     // Write large blocks out directly from the source buffer
-    while (remaining * 2 >= fp->capacity) {
+    while (remaining * 2 >= capacity) {
         ssize_t n = fp->backend->write(fp, src, remaining);
         if (n < 0) { fp->has_errno = errno; return n; }
         src += n, remaining -= n;
@@ -201,8 +206,20 @@ int hputs2(const char *text, size_t totalbytes, size_t ncopied, hFILE *fp)
 
 off_t hseek(hFILE *fp, off_t offset, int whence)
 {
-    off_t pos = fp->backend->seek(fp, offset, whence);
-    if (pos < 0) fp->has_errno = errno;
+    off_t pos;
+
+    if (writebuffer_is_nonempty(fp)) {
+        int ret = flush_buffer(fp);
+        if (ret < 0) return ret;
+    }
+
+    pos = fp->backend->seek(fp, offset, whence);
+    if (pos < 0) { fp->has_errno = errno; return pos; }
+
+    // Seeking succeeded, so discard any non-empty read buffer
+    fp->begin = fp->end = fp->buffer;
+    fp->at_eof = 0;
+
     return pos;
 }
 
@@ -217,7 +234,7 @@ int hclose(hFILE *fp)
 {
     int err = fp->has_errno;
 
-    if (fp->writing && hflush(fp) < 0) err = fp->has_errno;
+    if (writebuffer_is_nonempty(fp) && hflush(fp) < 0) err = fp->has_errno;
     free(fp->buffer);
     if (fp->backend->close(fp) < 0) err = errno;
 

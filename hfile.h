@@ -29,10 +29,9 @@ extern "C" {
    directly; you should imagine that hFILE is an opaque incomplete type.  */
 struct hFILE_backend;
 typedef struct hFILE {
-    char *buffer, *begin, *end;
-    size_t capacity;
+    char *buffer, *begin, *end, *limit;
     const struct hFILE_backend *backend;
-    int writing:1, at_eof:1;
+    int at_eof:1;
     int has_errno;
 } hFILE;
 
@@ -63,6 +62,14 @@ int hclose(hFILE *fp) HTS_RESULT_USED;
 static inline int herrno(hFILE *fp)
 {
     return fp->has_errno;
+}
+
+/*!
+  @abstract  Clear the stream's error indicator
+*/
+static inline void hclearerr(hFILE *fp)
+{
+    fp->has_errno = 0;
 }
 
 /*!
@@ -126,7 +133,7 @@ hread(hFILE *fp, void *buffer, size_t nbytes)
 static inline int hputc(int c, hFILE *fp)
 {
     extern int hputc2(int, hFILE *);
-    if (fp->begin < fp->end) *(fp->begin++) = c;
+    if (fp->begin < fp->limit) *(fp->begin++) = c;
     else c = hputc2(c, fp);
     return c;
 }
@@ -139,7 +146,7 @@ static inline int hputs(const char *text, hFILE *fp)
 {
     extern int hputs2(const char *, size_t, size_t, hFILE *);
 
-    size_t nbytes = strlen(text), n = fp->end - fp->begin;
+    size_t nbytes = strlen(text), n = fp->limit - fp->begin;
     if (n > nbytes) n = nbytes;
     memcpy(fp->begin, text, n);
     fp->begin += n;
@@ -156,7 +163,7 @@ hwrite(hFILE *fp, const void *buffer, size_t nbytes)
 {
     extern ssize_t hwrite2(hFILE *, const void *, size_t, size_t);
 
-    size_t n = fp->end - fp->begin;
+    size_t n = fp->limit - fp->begin;
     if (n > nbytes) n = nbytes;
     memcpy(fp->begin, buffer, n);
     fp->begin += n;
