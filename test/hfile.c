@@ -18,6 +18,17 @@ void fail(const char *format, ...)
     exit(EXIT_FAILURE);
 }
 
+void check_offset(hFILE *f, off_t off, const char *message)
+{
+    off_t ret = htell(f);
+    if (ret < 0) fail("htell(%s)", message);
+    if (ret == off) return;
+
+    fprintf(stderr, "%s offset incorrect: expected %ld but got %ld\n",
+            message, (long)off, (long)ret);
+    exit(EXIT_FAILURE);
+}
+
 char *slurp(const char *filename)
 {
     char *text;
@@ -53,13 +64,15 @@ void reopen(const char *infname, const char *outfname)
     if (fout == NULL) fail("hopen(\"%s\")", outfname);
 }
 
-int main() {
+int main()
+{
     static const int size[] = { 1, 13, 403, 999, 30000 };
 
     char buffer[40000];
     char *original;
     int c, i;
     ssize_t n;
+    off_t off;
 
     reopen("vcf.c", "test/hfile1.tmp");
     while ((c = hgetc(fin)) != EOF) {
@@ -83,17 +96,48 @@ int main() {
 
     reopen("test/hfile3.tmp", "test/hfile4.tmp");
     i = 0;
+    off = 0;
     while ((n = hread(fin, buffer, size[i++ % 5])) > 0) {
+        off += n;
         buffer[n] = '\0';
+        check_offset(fin, off, "pre-peek");
         if (hputs(buffer, fout) == EOF) fail("hputs");
         if ((n = hpeek(fin, buffer, size[(i+3) % 5])) < 0) fail("hpeek");
+        check_offset(fin, off, "post-peek");
     }
     if (n < 0) fail("hread");
+
+    reopen("test/hfile4.tmp", "test/hfile5.tmp");
+    n = hread(fin, buffer, 200);
+    if (n < 0) fail("hread");
+    else if (n != 200) fail("hread only got %d", (int)n);
+    if (hwrite(fout, buffer, 1000) != 1000) fail("hwrite");
+    check_offset(fin, 200, "input/first200");
+    check_offset(fout, 1000, "output/first200");
+
+    if (hseek(fin, 1000, SEEK_SET) < 0) fail("hseek");
+    check_offset(fin, 1000, "input/seek");
+    for (off = 1000; (n = hread(fin, buffer, sizeof buffer)) > 0; off += n)
+        if (hwrite(fout, buffer, n) != n) fail("hwrite");
+    if (n < 0) fail("hread");
+    check_offset(fin, off, "input/eof");
+    check_offset(fout, off, "output/eof");
+
+    if (hseek(fin, 200, SEEK_SET) < 0) fail("hseek");
+    if (hseek(fout, 200, SEEK_SET) < 0) fail("hseek(output)");
+    check_offset(fin, 200, "input/backto200");
+    check_offset(fout, 200, "output/backto200");
+    n = hread(fin, buffer, 800);
+    if (n < 0) fail("hread");
+    else if (n != 800) fail("hread only got %d", (int)n);
+    if (hwrite(fout, buffer, 800) != 800) fail("hwrite");
+    check_offset(fin, 1000, "input/wrote800");
+    check_offset(fout, 1000, "output/wrote800");
 
     if (hflush(fout) == EOF) fail("hflush");
 
     original = slurp("vcf.c");
-    for (i = 1; i <= 4; i++) {
+    for (i = 1; i <= 5; i++) {
         char *text;
         sprintf(buffer, "test/hfile%d.tmp", i);
         text = slurp(buffer);
