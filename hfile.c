@@ -40,6 +40,22 @@ buffer (so end == &buffer[capacity]):
 
 In both cases, available characters/positions are in [begin,end).  */
 
+int hinit_buffer(hFILE *fp, const char *mode, size_t capacity)
+{
+    fp->capacity = capacity? capacity : 32768;
+    fp->buffer = (char *) malloc(fp->capacity);
+    if (fp->buffer == NULL) return -1;
+
+    fp->writing = (strchr(mode, 'w') != NULL || strchr(mode, 'a') != NULL);
+
+    fp->begin = fp->buffer;
+    fp->end = fp->writing? &fp->buffer[fp->capacity] : fp->buffer;
+
+    fp->at_eof = 0;
+    fp->has_errno = 0;
+    return 0;
+}
+
 /* Refills the read buffer from the backend (once, so may only partially
    fill the buffer), returning the number of additional characters read
    (which might be 0), or negative when an error occurred.  */
@@ -197,6 +213,21 @@ off_t htell(hFILE *fp)
     return pos;
 }
 
+int hclose(hFILE *fp)
+{
+    int err = fp->has_errno;
+
+    if (fp->writing && hflush(fp) < 0) err = fp->has_errno;
+    free(fp->buffer);
+    if (fp->backend->close(fp) < 0) err = errno;
+
+    if (err) {
+        errno = err;
+        return EOF;
+    }
+    else return 0;
+}
+
 
 /***************************
  * File descriptor backend *
@@ -290,17 +321,22 @@ static const struct hFILE_backend fd_backend =
     fd_read, fd_write, fd_seek, fd_tell, fd_flush, fd_close
 };
 
-static hFILE *hopen_fd(const char *filename, const char *mode)
+static size_t blksize(int fd)
 {
     struct stat sbuf;
+    if (fstat(fd, &sbuf) != 0) return 0;
+    return sbuf.st_blksize;
+}
+
+static hFILE *hopen_fd(const char *filename, const char *mode)
+{
     hFILE_fd *fp = (hFILE_fd *) malloc(sizeof (hFILE_fd));
     if (fp == NULL) goto error;
 
     fp->fd = open(filename, hinit_oflags(mode), 0666);
     if (fp->fd < 0) goto error;
 
-    if (fstat(fp->fd, &sbuf) != 0) sbuf.st_blksize = 0;
-    if (hinit_buffer(&fp->base, mode, sbuf.st_blksize) < 0) goto error;
+    if (hinit_buffer(&fp->base, mode, blksize(fp->fd)) < 0) goto error;
 
     fp->is_socket = 0;
     fp->base.backend = &fd_backend;
@@ -317,12 +353,10 @@ error: {
 
 hFILE *hdopen(int fd, const char *mode)
 {
-    struct stat sbuf;
     hFILE_fd *fp = (hFILE_fd *) malloc(sizeof (hFILE_fd));
     if (fp == NULL) return NULL;
 
-    if (fstat(fd, &sbuf) != 0) sbuf.st_blksize = 0;
-    if (hinit_buffer(&fp->base, mode, sbuf.st_blksize) < 0) {
+    if (hinit_buffer(&fp->base, mode, blksize(fd)) < 0) {
         int save = errno; free(fp); errno = save;
         return NULL;
     }
@@ -364,36 +398,6 @@ int hinit_oflags(const char *mode)
 /******************************
  * hopen() backend dispatcher *
  ******************************/
-
-int hinit_buffer(hFILE *fp, const char *mode, size_t capacity) {
-    fp->capacity = capacity? capacity : 32768;
-    fp->buffer = (char *) malloc(fp->capacity);
-    if (fp->buffer == NULL) return -1;
-
-    fp->writing = (strchr(mode, 'w') != NULL || strchr(mode, 'a') != NULL);
-
-    fp->begin = fp->buffer;
-    fp->end = fp->writing? &fp->buffer[fp->capacity] : fp->buffer;
-
-    fp->at_eof = 0;
-    fp->has_errno = 0;
-    return 0;
-}
-
-int hclose(hFILE *fp)
-{
-    int err = fp->has_errno;
-
-    if (fp->writing && hflush(fp) < 0) err = fp->has_errno;
-    free(fp->buffer);
-    if (fp->backend->close(fp) < 0) err = errno;
-
-    if (err) {
-        errno = err;
-        return EOF;
-    }
-    else return 0;
-}
 
 hFILE *hopen(const char *fname, const char *mode)
 {
