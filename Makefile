@@ -128,7 +128,7 @@ libhts.dylib: $(LIBHTS_OBJS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 
-bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) htslib/knetfile.h htslib/khash.h
+bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) hfile.h htslib/khash.h
 kstring.o kstring.pico: kstring.c htslib/kstring.h
 knetfile.o knetfile.pico: knetfile.c htslib/knetfile.h
 hfile.o hfile.pico: hfile.c hfile.h hfile_internal.h
