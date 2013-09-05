@@ -558,7 +558,7 @@ void bcf_clear1(bcf1_t *v)
     if (v->d.m_id) v->d.id[0] = 0;
 }
 
-void bcf_destroy1(bcf1_t *v)
+void bcf_empty1(bcf1_t *v)
 {
     bcf_clear1(v);
     free(v->d.id);
@@ -566,6 +566,11 @@ void bcf_destroy1(bcf1_t *v)
 	free(v->d.allele); free(v->d.flt); free(v->d.info); free(v->d.fmt);
 	if (v->d.var ) free(v->d.var);
 	free(v->shared.s); free(v->indiv.s);
+}
+
+void bcf_destroy1(bcf1_t *v)
+{
+    bcf_empty1(v);
 	free(v);
 }
 
@@ -711,7 +716,7 @@ int bcf1_sync(bcf1_t *line)
         free(line->shared.s);
         line->shared = tmp;
     }
-    if ( !line->indiv.l || line->d.indiv_dirty )
+    if ( line->n_sample && line->n_fmt && (!line->indiv.l || line->d.indiv_dirty) )
     {
         // The genotype fields has changed or are not present
         tmp.l = tmp.m = 0; tmp.s = NULL;
@@ -1938,11 +1943,16 @@ int bcf1_add_filter(bcf_hdr_t *hdr, bcf1_t *line, int flt_id)
     int i;
     for (i=0; i<line->d.n_flt; i++)
         if ( flt_id==line->d.flt[i] ) break;
-    if ( i<line->d.n_flt ) return 0;
+    if ( i<line->d.n_flt ) return 0;    // this filter is already set
     line->d.shared_dirty |= BCF1_DIRTY_FLT;
-    line->d.n_flt++;
+    if ( flt_id==0 )    // set to PASS
+        line->d.n_flt = 1;
+    else if ( line->d.n_flt==1 && line->d.flt[0]==0 )
+        line->d.n_flt = 1;
+    else
+        line->d.n_flt++;
     hts_expand(int, line->d.n_flt, line->d.m_flt, line->d.flt);
-    line->d.flt[i] = flt_id;
+    line->d.flt[line->d.n_flt-1] = flt_id;
     return 1;
 }
 
@@ -2042,7 +2052,7 @@ bcf_info_t *bcf_get_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key)
 int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
 {
     int i,j, tag_id = bcf_id2int(hdr, BCF_DT_ID, tag);
-    if ( !bcf_idinfo_exists(hdr,BCF_HL_INFO,tag_id) ) return -1;    // no such INFO field in the header
+    if ( tag_id<0 || !bcf_idinfo_exists(hdr,BCF_HL_INFO,tag_id) ) return -1;    // no such INFO field in the header
     if ( bcf_id2type(hdr,BCF_HL_INFO,tag_id)!=type ) return -2;     // expected different type
 
     for (i=0; i<line->n_info; i++)
@@ -2090,8 +2100,10 @@ int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **ds
 
 int bcf_get_format_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
 {
+    if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
+
     int i,j, tag_id = bcf_id2int(hdr, BCF_DT_ID, tag);
-    if ( !bcf_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header
+    if ( tag_id<0 || !bcf_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header
     if ( bcf_id2type(hdr,BCF_HL_FMT,tag_id)!=type ) return -2;     // expected different type
 
     for (i=0; i<line->n_fmt; i++)

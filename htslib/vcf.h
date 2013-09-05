@@ -1,3 +1,9 @@
+/*
+    todo: 
+        - make the function names consistent
+        - provide calls to abstract away structs as much as possible
+ */
+
 #ifndef BCF_H
 #define BCF_H
 
@@ -243,6 +249,8 @@ extern "C" {
 	 */
 	int bcf_unpack(bcf1_t *b, int which); // to unpack everything, set $which to BCF_UN_ALL
 
+    #define bcf_nsamples(hdr) (hdr)->n[BCF_DT_SAMPLE]
+
     /**
       *  bcf_id2int() - Translates string into numeric ID
       *  @type:     one of BCF_DT_ID, BCF_DT_CTG, BCF_DT_SAMPLE
@@ -369,6 +377,13 @@ extern "C" {
      *  @n:                 Number of filters. If n==0, all filters are removed
      */
     int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n);
+    /**
+     *  bcf1_add_filter() - adds to the FILTER column
+     *  @flt_id:            filter ID to set, numeric IDs returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  
+     *  If PASS, all existing filters are moved first. If other than PASS and PASS present in $line, it
+     *  will be removed.
+     */
     int bcf1_add_filter(bcf_hdr_t *hdr, bcf1_t *line, int flt_id);
     /**
      *  bcf1_update_alleles() and bcf1_update_alleles_str() - update REF and ALLT column
