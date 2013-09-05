@@ -120,6 +120,7 @@ int bcf_sr_open_reader(bcf_srs_t *readers, const char *fname, int type);        
  */
 int bcf_sr_next_line(bcf_srs_t *readers);
 #define bcf_sr_has_line(readers, i) (readers)->has_line[i]
+#define bcf_sr_get_line(_readers, i) ((_readers)->has_line[i] ? ((_readers)->readers[i].buffer[0]) : NULL)
 
 
 /**

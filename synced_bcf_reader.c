@@ -58,6 +58,7 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions)
     readers->regions = bcf_sr_regions_init(regions);
     if ( !readers->regions ) return -1;
     readers->explicit_regs = 1;
+    readers->require_index = 1;
     return 0;
 }
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int alleles)
@@ -76,7 +77,7 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
     bcf_sr_t *reader = &files->readers[files->nreaders++];
     memset(reader,0,sizeof(bcf_sr_t));
 
-    reader->type = type==FT_UNKN ? file_type(fname) : type;
+    reader->type = type==FT_UNKN ? hts_file_type(fname) : type;
     if ( files->require_index )
     {
         if ( reader->type==FT_VCF_GZ ) 
@@ -320,12 +321,18 @@ static int _readers_next_region(bcf_srs_t *files)
     for (i=0; i<files->nreaders; i++)
     {
         bcf_sr_t *reader = &files->readers[i];
-        int tid = tbx_name2id(reader->tbx_idx, files->regions->seq);
-        if ( tid==-1 ) continue;    // the sequence not present in this file
         if ( reader->tbx_idx )
+        {
+            int tid = tbx_name2id(reader->tbx_idx, files->regions->seq);
+            if ( tid==-1 ) continue;    // the sequence not present in this file
             reader->itr = tbx_itr_queryi(reader->tbx_idx,tid,files->regions->start,files->regions->end+1);
+        }
         else
+        {
+            int tid = bcf_name2id(reader->header,files->regions->seq);
+            if ( tid==-1 ) continue;    // the sequence not present in this file
             reader->itr = bcf_itr_queryi(reader->bcf_idx,tid,files->regions->start,files->regions->end+1);
+        }
         assert(reader->itr);
     }
     return 0;
