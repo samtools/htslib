@@ -38,4 +38,12 @@ double kf_gammaq(double s, double z);
  */
 double kf_betai(double a, double b, double x);
 
+/*
+ *    n11  n12  | n1_
+ *    n21  n22  | n2_
+ *   -----------+----
+ *    n_1  n_2  | n
+ */
+double kt_fisher_exact(int n11, int n12, int n21, int n22, double *_left, double *_right, double *two);
+
 #endif
