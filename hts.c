@@ -9,7 +9,13 @@
 #include "version.h"
 
 #include "htslib/kseq.h"
-KSTREAM_INIT2(, gzFile, gzread, 16384)
+#define KS_BGZF 1
+#if KS_BGZF
+    // pd3 todo: gzread() in BGZF
+    KSTREAM_INIT2(, BGZF*, bgzf_read, 65536)
+#else
+    KSTREAM_INIT2(, gzFile, gzread, 16384)
+#endif
 
 #include "htslib/khash.h"
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
@@ -67,8 +73,11 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
     {
 		if (!fp->is_write) 
         {
-            gzFile gzfp;
-            gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
+        #if KS_BGZF
+            BGZF * gzfp = strcmp(fn, "-")? bgzf_open(fn, "rb") : bgzf_dopen(fileno(stdin), "rb");
+        #else
+            gzFile gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
+        #endif
             if (gzfp) fp->fp = ks_init(gzfp);
             if (fn_aux) fp->fn_aux = strdup(fn_aux);
 		} 
@@ -94,14 +103,47 @@ void hts_close(htsFile *fp)
 	free(fp->fn);
 	if (!fp->is_bin && fp->is_compressed!=1) {
 		if (!fp->is_write) {
+        #if KS_BGZF
+			BGZF *gzfp = ((kstream_t*)fp->fp)->f;
+			bgzf_close(gzfp);
+        #else
 			gzFile gzfp = ((kstream_t*)fp->fp)->f;
-			ks_destroy((kstream_t*)fp->fp);
 			gzclose(gzfp);
+        #endif
+			ks_destroy((kstream_t*)fp->fp);
 			free(fp->fn_aux);
 		} else fclose((FILE*)fp->fp);
 	} else bgzf_close((BGZF*)fp->fp);
     free(fp->line.s);
 	free(fp);
+}
+
+// For VCF/BCF backward sweeper. Not exposing these functions because their
+// future is uncertain. Things will probably have to change with hFILE...
+BGZF *hts_get_bgzfp(htsFile *fp)
+{
+    if ( fp->is_bin )
+        return (BGZF*)fp->fp;
+    else
+        return ((kstream_t*)fp->fp)->f;
+}
+int hts_useek(htsFile *fp, long uoffset, int where)
+{
+    if ( fp->is_bin )
+        return bgzf_useek((BGZF*)fp->fp, uoffset, where);
+    else
+    {
+        ks_rewind((kstream_t*)fp->fp);
+        ((kstream_t*)fp->fp)->seek_pos = uoffset;
+        return bgzf_useek(((kstream_t*)fp->fp)->f, uoffset, where);
+    }
+}
+long hts_utell(htsFile *fp)
+{
+    if ( fp->is_bin )
+        return bgzf_utell((BGZF*)fp->fp);
+    else
+        return ((kstream_t*)fp->fp)->seek_pos;
 }
 
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
@@ -116,8 +158,12 @@ char **hts_readlines(const char *fn, int *_n)
 {
 	int m = 0, n = 0, dret;
 	char **s = 0;
-	gzFile fp;
-	if ((fp = gzopen(fn, "r")) != 0) { // read from file
+#if KS_BGZF
+	BGZF *fp = bgzf_open(fn, "r");
+#else
+	gzFile fp = gzopen(fn, "r");
+#endif
+	if ( fp ) { // read from file
 		kstream_t *ks;
 		kstring_t str;
 		str.s = 0; str.l = str.m = 0;
@@ -153,7 +199,7 @@ char **hts_readlines(const char *fn, int *_n)
 	return s;
 }
 
-int file_type(const char *fname)
+int hts_file_type(const char *fname)
 {
     int len = strlen(fname);
     if ( !strcasecmp(".vcf.gz",fname+len-7) ) return FT_VCF_GZ;

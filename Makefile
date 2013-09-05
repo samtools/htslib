@@ -26,7 +26,7 @@ INSTALL_PROGRAM = $(INSTALL)
 INSTALL_DATA    = $(INSTALL) -m 644
 
 
-all: lib-static lib-shared test/test-vcf-api
+all: lib-static lib-shared test/test-vcf-api test/test-vcf-sweep
 
 HTSPREFIX =
 include htslib_vars.mk
@@ -97,6 +97,7 @@ LIBHTS_OBJS = \
 	razf.o \
 	sam.o \
 	synced_bcf_reader.o \
+	vcf_sweep.o \
 	tbx.o \
 	vcf.o \
 	vcfutils.o
@@ -136,17 +137,22 @@ tbx.o tbx.pico: tbx.c $(htslib_tbx_h) htslib/khash.h
 faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) htslib/khash.h htslib/knetfile.h
 razf.o razf.pico: razf.c $(htslib_razf_h)
 synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_bcf_reader_h) htslib/kseq.h
+vcf_sweep.o vcf_sweep.pico: vcf_sweep.c $(vcf_sweep_h)
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
 kfunc.o kfunc.pico: kfunc.c htslib/kfunc.h
 
 
-check test: test/test-vcf-api
+check test: test/test-vcf-api test/test-vcf-sweep
 	cd test && ./test.pl
 
 test/test-vcf-api: test/test-vcf-api.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-api.o libhts.a $(LDLIBS) -lz
 
+test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LDLIBS) -lz
+
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
+test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
 
 
 install: installdirs install-$(SHLIB_FLAVOUR)

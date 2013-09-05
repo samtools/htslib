@@ -11,6 +11,7 @@ use File::Temp qw/ tempfile tempdir /;
 my $opts = parse_params();
 
 test_vcf_api($opts,out=>'test-vcf-api.out');
+test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -169,5 +170,11 @@ sub test_vcf_api
 {
     my ($opts,%args) = @_;
     test_cmd($opts,%args,cmd=>"$$opts{path}/test-vcf-api $$opts{tmp}/test-vcf-api.bcf");
+}
+
+sub test_vcf_sweep
+{
+    my ($opts,%args) = @_;
+    test_cmd($opts,%args,cmd=>"$$opts{path}/test-vcf-sweep $$opts{tmp}/test-vcf-api.bcf");
 }
 

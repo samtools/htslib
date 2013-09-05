@@ -150,7 +150,7 @@ extern "C" {
 	int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void *hdr);
 
     /**
-     * file_type() - Convenience function to determine file type
+     * hts_file_type() - Convenience function to determine file type
      * @fname: the file name
      *
      * Returns one of the FT_* defines.
@@ -165,7 +165,7 @@ extern "C" {
     #define FT_BCF    4
     #define FT_BCF_GZ (FT_GZ|FT_BCF)
     #define FT_STDIN  8
-    int file_type(const char *fname);
+    int hts_file_type(const char *fname);
 
 
 #ifdef __cplusplus
