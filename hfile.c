@@ -59,6 +59,11 @@ int hinit_buffer(hFILE *fp, const char *mode, size_t capacity)
     return 0;
 }
 
+void hdestroy_buffer(hFILE *fp)
+{
+    if (fp) free(fp->buffer);
+}
+
 static inline int writebuffer_is_nonempty(hFILE *fp)
 {
     return fp->begin > fp->end;
@@ -236,7 +241,7 @@ int hclose(hFILE *fp)
     int err = fp->has_errno;
 
     if (writebuffer_is_nonempty(fp) && hflush(fp) < 0) err = fp->has_errno;
-    free(fp->buffer);
+    hdestroy_buffer(fp);
     if (fp->backend->close(fp) < 0) err = errno;
 
     if (err) {
@@ -357,6 +362,7 @@ static hFILE *hopen_fd(const char *filename, const char *mode)
 error: {
     int save = errno;
     if (fp && fp->fd >= 0) close(fp->fd);
+    if (fp) hdestroy_buffer(&fp->base);
     free(fp);
     errno = save;
     }

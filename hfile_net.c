@@ -55,6 +55,7 @@ hFILE *hopen_net(const char *filename, const char *mode)
 
 error: {
     int save = errno;
+    if (fp) hdestroy_buffer(&fp->base);
     free(fp);
     errno = save;
     }

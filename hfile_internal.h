@@ -50,4 +50,9 @@ int hinit_oflags(const char *mode);
    or 0 for a default-sized buffer.  */
 int hinit_buffer(hFILE *fp, const char *mode, size_t capacity) HTS_RESULT_USED;
 
+/* May be called by hopen_*() functions to undo the effects of hinit_buffer()
+   in the event opening the stream subsequently fails.  (This is safe to use
+   even if hinit_buffer() was not called.)  */
+void hdestroy_buffer(hFILE *fp);
+
 #endif
