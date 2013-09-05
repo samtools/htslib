@@ -431,13 +431,12 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
 #ifdef BGZF_MT
 
 typedef struct {
-	BGZF *fp;
-	struct mtaux_t *mt;
+	struct bgzf_mtaux_t *mt;
 	void *buf;
-	int i, errcode, toproc;
+	int i, errcode, toproc, compress_level;
 } worker_t;
 
-typedef struct mtaux_t {
+typedef struct bgzf_mtaux_t {
 	int n_threads, n_blks, curr, done;
 	volatile int proc_cnt;
 	void **blk;
@@ -462,7 +461,7 @@ static int worker_aux(worker_t *w)
 	w->errcode = 0;
 	for (i = w->i; i < w->mt->curr; i += w->mt->n_threads) {
 		int clen = BGZF_MAX_BLOCK_SIZE;
-		if (bgzf_compress(w->buf, &clen, w->mt->blk[i], w->mt->len[i], w->fp->compress_level) != 0)
+		if (bgzf_compress(w->buf, &clen, w->mt->blk[i], w->mt->len[i], w->compress_level) != 0)
 			w->errcode |= BGZF_ERR_ZLIB;
 		memcpy(w->mt->blk[i], w->buf, clen);
 		w->mt->len[i] = clen;
@@ -495,7 +494,7 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 	for (i = 0; i < mt->n_threads; ++i) {
 		mt->w[i].i = i;
 		mt->w[i].mt = mt;
-		mt->w[i].fp = fp;
+		mt->w[i].compress_level = fp->compress_level;
 		mt->w[i].buf = malloc(BGZF_MAX_BLOCK_SIZE);
 	}
 	pthread_attr_init(&attr);
@@ -528,7 +527,7 @@ static void mt_destroy(mtaux_t *mt)
 
 static void mt_queue(BGZF *fp)
 {
-	mtaux_t *mt = (mtaux_t*)fp->mt;
+	mtaux_t *mt = fp->mt;
 	assert(mt->curr < mt->n_blks); // guaranteed by the caller
 	memcpy(mt->blk[mt->curr], fp->uncompressed_block, fp->block_offset);
 	mt->len[mt->curr] = fp->block_offset;
@@ -539,7 +538,7 @@ static void mt_queue(BGZF *fp)
 static int mt_flush(BGZF *fp)
 {
 	int i;
-	mtaux_t *mt = (mtaux_t*)fp->mt;
+	mtaux_t *mt = fp->mt;
 	if (fp->block_offset) mt_queue(fp); // guaranteed that assertion does not fail
 	// signal all the workers to compress
 	pthread_mutex_lock(&mt->lock);
@@ -562,7 +561,7 @@ static int mt_flush(BGZF *fp)
 
 static int mt_lazy_flush(BGZF *fp)
 {
-	mtaux_t *mt = (mtaux_t*)fp->mt;
+	mtaux_t *mt = fp->mt;
 	if (fp->block_offset) mt_queue(fp);
 	if (mt->curr == mt->n_blks)
 		return mt_flush(fp);
@@ -664,7 +663,7 @@ int bgzf_close(BGZF* fp)
 			return -1;
 		}
 #ifdef BGZF_MT
-		if (fp->mt) mt_destroy((mtaux_t*)fp->mt);
+		if (fp->mt) mt_destroy(fp->mt);
 #endif
 	}
 	ret = fp->is_write? fclose((FILE*)fp->fp) : _bgzf_close(fp->fp);

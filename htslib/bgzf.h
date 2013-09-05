@@ -41,6 +41,7 @@
 #define BGZF_ERR_IO     4
 #define BGZF_ERR_MISUSE 8
 
+struct bgzf_mtaux_t;
 struct __bgzidx_t;
 typedef struct __bgzidx_t bgzidx_t;
 
@@ -52,7 +53,7 @@ typedef struct {
     void *uncompressed_block, *compressed_block;
 	void *cache; // a pointer to a hash table
 	void *fp; // actual file handler; FILE* on writing; FILE* or knetFile* on reading
-	void *mt; // only used for multi-threading
+    struct bgzf_mtaux_t *mt; // only used for multi-threading
     bgzidx_t *idx;      // BGZF index
     int idx_build_otf;  // build index on the fly, set by bgzf_index_build_init()
 } BGZF;
