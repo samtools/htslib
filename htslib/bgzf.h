@@ -41,7 +41,6 @@
 #define BGZF_ERR_IO     4
 #define BGZF_ERR_MISUSE 8
 
-struct __bgzidx_t;
 typedef struct __bgzidx_t bgzidx_t;
 
 typedef struct {

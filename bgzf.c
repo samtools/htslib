@@ -350,10 +350,11 @@ int bgzf_read_block(BGZF *fp)
 {
 	uint8_t header[BLOCK_HEADER_LENGTH], *compressed_block;
 	int count, size = 0, block_length, remaining;
-    int nskip = 0;
+
+    // Check whether the file is compressed (only when called for the first time)
+    int nskip = 0;  // the number of bytes read in the is_compressed check
     if ( fp->is_compressed==-1 )
     {
-        // caled for the first time, check if the file is compressed
         count = _bgzf_read(fp->fp, header, 2);
         if (count == 0) { fp->block_length = 0; return 0; } // no data read
         fp->is_compressed = ( header[0]==0x1f && header[1]==0x8b ) ? 1 : 0;
@@ -365,6 +366,7 @@ int bgzf_read_block(BGZF *fp)
         nskip = 2;
     }
 
+    // Reading an uncompressed file
     if ( !fp->is_compressed )
     {
         count = _bgzf_read(fp->fp, fp->uncompressed_block+nskip, BGZF_MAX_BLOCK_SIZE-nskip) + nskip;
@@ -378,6 +380,8 @@ int bgzf_read_block(BGZF *fp)
         fp->block_length = count;
         return 0;
     }
+
+    // Reading compressed file
 	int64_t block_address;
 	block_address = _bgzf_tell((_bgzf_file_t)fp->fp) - nskip;
 	if (fp->cache_size && load_block_from_cache(fp, block_address)) return 0;
@@ -388,6 +392,7 @@ int bgzf_read_block(BGZF *fp)
     }
     if (count != sizeof(header) || !check_header(header)) 
     {
+        fprintf(stderr,"pd3 TODO: gzread() via bgzf\n"); exit(1);
         fp->errcode |= BGZF_ERR_HEADER;
         return -1;
     }
@@ -725,7 +730,7 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
 		return -1;
 	}
 	fp->block_length = 0;  // indicates current block has not been loaded
-	fp->block_address = block_address;
+	fp->block_address = block_address << 16;
 	fp->block_offset = block_offset;
 	return 0;
 }
@@ -981,6 +986,4 @@ long bgzf_utell(BGZF *fp)
 {
     return fp->uncompressed_address;    // currently maintained only when reading
 }
-
-
 
