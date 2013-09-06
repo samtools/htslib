@@ -26,7 +26,7 @@ INSTALL_PROGRAM = $(INSTALL)
 INSTALL_DATA    = $(INSTALL) -m 644
 
 
-all: lib-static lib-shared test/test-vcf-api test/test-vcf-sweep
+all: lib-static lib-shared test/hfile test/test-vcf-api test/test-vcf-sweep
 
 HTSPREFIX =
 include htslib_vars.mk
@@ -93,6 +93,8 @@ LIBHTS_OBJS = \
 	kstring.o \
 	bgzf.o \
 	faidx.o \
+	hfile.o \
+	hfile_net.o \
 	hts.o \
 	razf.o \
 	sam.o \
@@ -127,9 +129,11 @@ libhts.dylib: $(LIBHTS_OBJS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 
-bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) htslib/knetfile.h htslib/khash.h
+bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) hfile.h htslib/khash.h
 kstring.o kstring.pico: kstring.c htslib/kstring.h
 knetfile.o knetfile.pico: knetfile.c htslib/knetfile.h
+hfile.o hfile.pico: hfile.c hfile.h hfile_internal.h
+hfile_net.o hfile_net.pico: hfile.c hfile.h hfile_internal.h htslib/knetfile.h
 hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) htslib/khash.h htslib/kseq.h htslib/ksort.h
 vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) htslib/khash.h htslib/kseq.h htslib/kstring.h
 sam.o sam.pico: sam.c $(htslib_sam_h) htslib/khash.h htslib/kseq.h htslib/kstring.h
@@ -142,8 +146,12 @@ vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
 kfunc.o kfunc.pico: kfunc.c htslib/kfunc.h
 
 
-check test: test/test-vcf-api test/test-vcf-sweep
+check test: test/hfile test/test-vcf-api test/test-vcf-sweep
+	test/hfile
 	cd test && ./test.pl
+
+test/hfile: test/hfile.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LDLIBS) -lz
 
 test/test-vcf-api: test/test-vcf-api.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-api.o libhts.a $(LDLIBS) -lz
@@ -151,6 +159,7 @@ test/test-vcf-api: test/test-vcf-api.o libhts.a
 test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LDLIBS) -lz
 
+test/hfile.o: test/hfile.c hfile.h
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
 
@@ -179,10 +188,10 @@ install-dylib: libhts.dylib installdirs
 
 
 mostlyclean:
-	-rm -f *.o *.pico test/*.o test/*.dSYM version.h
+	-rm -f *.o *.pico test/*.o test/*.dSYM test/*.tmp version.h
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
-	-rm -f libhts.a test/test-vcf-api
+	-rm -f libhts.a test/hfile test/test-vcf-api
 
 distclean: clean
 	-rm -f TAGS
