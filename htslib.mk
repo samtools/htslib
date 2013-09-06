@@ -41,6 +41,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/htslib/synced_bcf_reader.h \
 	$(HTSDIR)/htslib/tbx.h \
 	$(HTSDIR)/htslib/vcf.h \
+	$(HTSDIR)/htslib/vcf_sweep.h \
 	$(HTSDIR)/htslib/vcfutils.h \
 	$(HTSDIR)/bgzf.c \
 	$(HTSDIR)/faidx.c \
@@ -56,6 +57,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/synced_bcf_reader.c \
 	$(HTSDIR)/tbx.c \
 	$(HTSDIR)/vcf.c \
+	$(HTSDIR)/vcf_sweep.c \
 	$(HTSDIR)/vcfutils.c
 
 $(HTSDIR)/libhts.a: $(HTSLIB_ALL)

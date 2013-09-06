@@ -141,7 +141,7 @@ tbx.o tbx.pico: tbx.c $(htslib_tbx_h) htslib/khash.h
 faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) htslib/khash.h htslib/knetfile.h
 razf.o razf.pico: razf.c $(htslib_razf_h)
 synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_bcf_reader_h) htslib/kseq.h
-vcf_sweep.o vcf_sweep.pico: vcf_sweep.c $(vcf_sweep_h)
+vcf_sweep.o vcf_sweep.pico: vcf_sweep.c $(htslib_vcf_sweep_h)
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
 kfunc.o kfunc.pico: kfunc.c htslib/kfunc.h
 
@@ -161,7 +161,7 @@ test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 
 test/hfile.o: test/hfile.c hfile.h
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
-test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
+test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
 
 
 install: installdirs install-$(SHLIB_FLAVOUR)
@@ -191,7 +191,7 @@ mostlyclean:
 	-rm -f *.o *.pico test/*.o test/*.dSYM test/*.tmp version.h
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
-	-rm -f libhts.a test/hfile test/test-vcf-api
+	-rm -f libhts.a test/hfile test/test-vcf-api test/test-vcf-sweep
 
 distclean: clean
 	-rm -f TAGS
