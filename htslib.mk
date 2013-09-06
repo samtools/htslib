@@ -44,6 +44,10 @@ HTSLIB_ALL = \
 	$(HTSDIR)/htslib/vcfutils.h \
 	$(HTSDIR)/bgzf.c \
 	$(HTSDIR)/faidx.c \
+	$(HTSDIR)/hfile.h \
+	$(HTSDIR)/hfile_internal.h \
+	$(HTSDIR)/hfile.c \
+	$(HTSDIR)/hfile_net.c \
 	$(HTSDIR)/hts.c \
 	$(HTSDIR)/knetfile.c \
 	$(HTSDIR)/kstring.c \
