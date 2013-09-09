@@ -42,22 +42,12 @@ static const struct hFILE_backend net_backend =
 
 hFILE *hopen_net(const char *filename, const char *mode)
 {
-    hFILE_net *fp = (hFILE_net *) malloc(sizeof (hFILE_net));
+    hFILE_net *fp = (hFILE_net *) hfile_init(sizeof (hFILE_net), mode, 0);
     if (fp == NULL) return NULL;
 
-    if (hinit_buffer(&fp->base, mode, 0) < 0) goto error;
-
     fp->netfp = knet_open(filename, mode);
-    if (fp->netfp == NULL) goto error;
+    if (fp->netfp == NULL) { hfile_destroy((hFILE *) fp); return NULL; }
 
     fp->base.backend = &net_backend;
     return &fp->base;
-
-error: {
-    int save = errno;
-    if (fp) hdestroy_buffer(&fp->base);
-    free(fp);
-    errno = save;
-    }
-    return NULL;
 }

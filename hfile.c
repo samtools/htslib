@@ -44,11 +44,14 @@ then there is a non-empty read buffer, and if begin == end then both buffers
 are empty.  In all cases, the stream's file position indicator corresponds
 to the position pointed to by begin.  */
 
-int hinit_buffer(hFILE *fp, const char *mode, size_t capacity)
+hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity)
 {
+    hFILE *fp = (hFILE *) malloc(struct_size);
+    if (fp == NULL) goto error;
+
     if (capacity == 0) capacity = 32768;
     fp->buffer = (char *) malloc(capacity);
-    if (fp->buffer == NULL) return -1;
+    if (fp->buffer == NULL) goto error;
 
     fp->begin = fp->end = fp->buffer;
     fp->limit = &fp->buffer[capacity];
@@ -56,12 +59,19 @@ int hinit_buffer(hFILE *fp, const char *mode, size_t capacity)
     fp->offset = 0;
     fp->at_eof = 0;
     fp->has_errno = 0;
-    return 0;
+    return fp;
+
+error:
+    hfile_destroy(fp);
+    return NULL;
 }
 
-void hdestroy_buffer(hFILE *fp)
+void hfile_destroy(hFILE *fp)
 {
+    int save = errno;
     if (fp) free(fp->buffer);
+    free(fp);
+    errno = save;
 }
 
 static inline int writebuffer_is_nonempty(hFILE *fp)
@@ -241,8 +251,8 @@ int hclose(hFILE *fp)
     int err = fp->has_errno;
 
     if (writebuffer_is_nonempty(fp) && hflush(fp) < 0) err = fp->has_errno;
-    hdestroy_buffer(fp);
     if (fp->backend->close(fp) < 0) err = errno;
+    hfile_destroy(fp);
 
     if (err) {
         errno = err;
@@ -347,37 +357,28 @@ static size_t blksize(int fd)
 
 static hFILE *hopen_fd(const char *filename, const char *mode)
 {
-    hFILE_fd *fp = (hFILE_fd *) malloc(sizeof (hFILE_fd));
+    hFILE_fd *fp = NULL;
+    int fd = open(filename, hfile_oflags(mode), 0666);
+    if (fd < 0) goto error;
+
+    fp = (hFILE_fd *) hfile_init(sizeof (hFILE_fd), mode, blksize(fd));
     if (fp == NULL) goto error;
 
-    fp->fd = open(filename, hinit_oflags(mode), 0666);
-    if (fp->fd < 0) goto error;
-
-    if (hinit_buffer(&fp->base, mode, blksize(fp->fd)) < 0) goto error;
-
+    fp->fd = fd;
     fp->is_socket = 0;
     fp->base.backend = &fd_backend;
     return &fp->base;
 
-error: {
-    int save = errno;
-    if (fp && fp->fd >= 0) close(fp->fd);
-    if (fp) hdestroy_buffer(&fp->base);
-    free(fp);
-    errno = save;
-    }
+error:
+    if (fd >= 0) { int save = errno; (void) close(fd); errno = save; }
+    hfile_destroy((hFILE *) fp);
     return NULL;
 }
 
 hFILE *hdopen(int fd, const char *mode)
 {
-    hFILE_fd *fp = (hFILE_fd *) malloc(sizeof (hFILE_fd));
+    hFILE_fd *fp = (hFILE_fd*) hfile_init(sizeof (hFILE_fd), mode, blksize(fd));
     if (fp == NULL) return NULL;
-
-    if (hinit_buffer(&fp->base, mode, blksize(fd)) < 0) {
-        int save = errno; free(fp); errno = save;
-        return NULL;
-    }
 
     fp->fd = fd;
     fp->is_socket = (strchr(mode, 's') != NULL);
@@ -392,7 +393,7 @@ static hFILE *hopen_fd_stdinout(const char *mode)
     return hdopen(fd, mode);
 }
 
-int hinit_oflags(const char *mode)
+int hfile_oflags(const char *mode)
 {
     int rdwr = 0, flags = 0;
     const char *s;
