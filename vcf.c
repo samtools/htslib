@@ -1225,6 +1225,11 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                 fmt[j].is_gt = !strcmp(t, "GT");
                 fmt[j].y = h->id[0][fmt[j].key].val->info[BCF_HL_FMT];
 			}
+            if ( q>=end ) 
+            {
+                fprintf(stderr,"[%s:%d %s] Error: FORMAT column with no sample columns starting at %s:%d\n", __FILE__,__LINE__,__FUNCTION__,s->s,v->pos+1);
+                return -1;
+            }
 			// compute max
 			for (r = q + 1, j = 0, m = l = g = 1, v->n_sample = 0;; ++r, ++l) {
 				if (*r == '\t') *r = 0;
@@ -1351,8 +1356,7 @@ int vcf_read1(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 		int ret;
 		ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
 		if (ret < 0) return -1;
-		ret = vcf_parse1(&fp->line, h, v);
-		return 0;
+		return vcf_parse1(&fp->line, h, v);
 	} else return bcf_read1((BGZF*)fp->fp, v);
 }
 

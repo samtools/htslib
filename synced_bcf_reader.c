@@ -369,7 +369,8 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             if ( reader->type & FT_VCF || reader->type==FT_STDIN )
             {
                 if ( (ret=hts_getline(reader->file, KS_SEP_LINE, &files->tmps)) < 0 ) break;   // no more lines
-                vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
+                int ret = vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
+                if ( ret<0 ) break;
             }
             else if ( reader->type & FT_BCF )
             {
