@@ -7,6 +7,9 @@ lib*.dylib
 lib*.so
 lib*.so.*
 
+/test/hfile
 /test/test-vcf-api
+/test/test-vcf-sweep
+/test/*.tmp
 
 /TAGS
