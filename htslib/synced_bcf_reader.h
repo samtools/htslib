@@ -8,8 +8,21 @@
     The synced_bcf_reader also provides API for reading indexed BCF/VCF,
     hiding differences in BCF/VCF opening, indexing and reading.
 
-	The bcf_sr_regions_* functions provide a convenient way for checking if a
-	coordinate is inside one of the regions.
+
+    Example of usage:
+
+        bcf_srs_t *sr = bcf_sr_init();
+        for (i=0; i<nfiles; i++)
+            bcf_sr_add_reader(sr,files[i]);
+        while ( bcf_sr_next_line(sr) )
+        {
+            for (i=0; i<nfiles; i++)
+            {
+                bcf1_t *line = bcf_sr_get_line(sr,i);
+                ...
+            }
+        }
+        bcf_sr_destroy(sr);
 */
 
 #ifndef SYNCED_BCF_READER_H
