@@ -1,8 +1,13 @@
 #ifndef HTS_H
 #define HTS_H
 
+#include <stddef.h>
 #include <stdint.h>
-#include "bgzf.h"
+
+#ifndef HTS_BGZF_TYPEDEF
+typedef struct BGZF BGZF;
+#define HTS_BGZF_TYPEDEF
+#endif
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t

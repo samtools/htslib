@@ -2,7 +2,6 @@
 #define BAM_H
 
 #include <stdint.h>
-#include "bgzf.h"
 #include "hts.h"
 
 /**********************

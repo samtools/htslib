@@ -45,7 +45,7 @@ struct hFILE;
 struct bgzf_mtaux_t;
 typedef struct __bgzidx_t bgzidx_t;
 
-typedef struct {
+struct BGZF {
 	int errcode:16, is_write:2, is_be:2, compress_level:9, is_compressed:3;
 	int cache_size;
     int block_length, block_offset;
@@ -56,7 +56,11 @@ typedef struct {
     struct bgzf_mtaux_t *mt; // only used for multi-threading
     bgzidx_t *idx;      // BGZF index
     int idx_build_otf;  // build index on the fly, set by bgzf_index_build_init()
-} BGZF;
+};
+#ifndef HTS_BGZF_TYPEDEF
+typedef struct BGZF BGZF;
+#define HTS_BGZF_TYPEDEF
+#endif
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t

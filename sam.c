@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <zlib.h>
 #include "htslib/sam.h"
+#include "htslib/bgzf.h"
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)

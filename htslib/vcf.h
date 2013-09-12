@@ -10,7 +10,6 @@
 #include <stdint.h>
 #include <limits.h>
 #include <assert.h>
-#include "bgzf.h"
 #include "hts.h"
 #include "kstring.h"
 
