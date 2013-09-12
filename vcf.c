@@ -992,7 +992,11 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
     if (type == BCF_BT_CHAR) 
     {
         char *p = (char*)data;
-        for (j = 0; j < n && *p; ++j, ++p) kputc(*p, s);
+        for (j = 0; j < n && *p; ++j, ++p) 
+        {
+            if ( *p==bcf_str_missing ) kputc('.', s);
+            else kputc(*p, s);
+        }
     }
     else
     {
@@ -1879,6 +1883,11 @@ int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *valu
     {
         bcf_enc_size(&str, nps, BCF_BT_FLOAT);
         kputsn((char*)values, nps*line->n_sample*sizeof(float), &str);
+    }
+    else if ( type==BCF_HT_STR )
+    {
+        bcf_enc_size(&str, nps, BCF_BT_CHAR);
+        kputsn((char*)values, nps*line->n_sample, &str);
     }
     else
     {

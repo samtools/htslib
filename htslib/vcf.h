@@ -406,6 +406,7 @@ extern "C" {
     // If n==0, existing tag is removed. Otherwise it is updated or appended.
     #define bcf1_update_format_int32(hdr,line,key,values,n) bcf1_update_format((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf1_update_format_float(hdr,line,key,values,n) bcf1_update_format((hdr),(line),(key),(values),(n),BCF_HT_REAL)
+    #define bcf1_update_format_char(hdr,line,key,values,n) bcf1_update_format((hdr),(line),(key),(values),(n),BCF_HT_STR)
     #define bcf1_update_genotypes(hdr,line,gts,n) bcf1_update_format((hdr),(line),"GT",(gts),(n),BCF_HT_INT)
     int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type);
 
@@ -465,9 +466,11 @@ extern "C" {
 #define bcf_int8_vector_end  (INT8_MIN+1)
 #define bcf_int16_vector_end (INT16_MIN+1)
 #define bcf_int32_vector_end (INT32_MIN+1)
+#define bcf_str_vector_end   0
 #define bcf_int8_missing     INT8_MIN
 #define bcf_int16_missing    INT16_MIN
 #define bcf_int32_missing    INT32_MIN
+#define bcf_str_missing      0x07
 extern uint32_t bcf_float_vector_end;
 extern uint32_t bcf_float_missing;
 #define bcf_float_set_vector_end(x) (*(uint32_t*)(&(x)) = bcf_float_vector_end)
