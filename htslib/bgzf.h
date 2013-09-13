@@ -132,6 +132,30 @@ extern "C" {
 	ssize_t bgzf_write(BGZF *fp, const void *data, size_t length);
 
 	/**
+	 * Read up to _length_ bytes directly from the underlying stream without
+	 * decompressing.  Bypasses BGZF blocking, so must be used with care in
+	 * specialised circumstances only.
+	 *
+	 * @param fp     BGZF file handler
+	 * @param data   data array to read into
+	 * @param length number of raw bytes to read
+	 * @return       number of bytes actually read; 0 on end-of-file and -1 on error
+	 */
+	ssize_t bgzf_raw_read(BGZF *fp, void *data, size_t length);
+
+	/**
+	 * Write _length_ bytes directly to the underlying stream without
+	 * compressing.  Bypasses BGZF blocking, so must be used with care
+	 * in specialised circumstances only.
+	 *
+	 * @param fp     BGZF file handler
+	 * @param data   data array to write
+	 * @param length number of raw bytes to write
+	 * @return       number of bytes actually written; -1 on error
+	 */
+	ssize_t bgzf_raw_write(BGZF *fp, const void *data, size_t length);
+
+	/**
 	 * Write the data in the buffer to the file.
 	 */
 	int bgzf_flush(BGZF *fp);
