@@ -66,8 +66,8 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
     else fp->is_compressed = 2;    // not set, default behaviour
 	if (fp->is_bin) 
     {
-		if (fp->is_write) fp->fp = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
-		else fp->fp = strcmp(fn, "-") ? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
+		if (fp->is_write) fp->fp.bgzf = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
+		else fp->fp.bgzf = strcmp(fn, "-") ? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
 	} 
     else 
     {
@@ -78,18 +78,18 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
         #else
             gzFile gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
         #endif
-            if (gzfp) fp->fp = ks_init(gzfp);
+            if (gzfp) fp->fp.voidp = ks_init(gzfp);
             if (fn_aux) fp->fn_aux = strdup(fn_aux);
 		} 
         else 
         {
             if ( fp->is_compressed==1 )
-                fp->fp = strcmp(fn, "-")? bgzf_open(fn, "w") : bgzf_dopen(fileno(stdout), "w");   // vcf.gz
+                fp->fp.bgzf = strcmp(fn, "-")? bgzf_open(fn, "w") : bgzf_dopen(fileno(stdout), "w");   // vcf.gz
             else
-                fp->fp = strcmp(fn, "-")? fopen(fn, "wb") : stdout;
+                fp->fp.file = strcmp(fn, "-")? fopen(fn, "wb") : stdout;
         }
 	}
-	if (fp->fp == 0) {
+	if (fp->fp.voidp == 0) {
 		if (hts_verbose >= 2)
 			fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
 		free(fp->fn_aux); free(fp);
@@ -104,16 +104,16 @@ void hts_close(htsFile *fp)
 	if (!fp->is_bin && fp->is_compressed!=1) {
 		if (!fp->is_write) {
         #if KS_BGZF
-			BGZF *gzfp = ((kstream_t*)fp->fp)->f;
+			BGZF *gzfp = ((kstream_t*)fp->fp.voidp)->f;
 			bgzf_close(gzfp);
         #else
-			gzFile gzfp = ((kstream_t*)fp->fp)->f;
+			gzFile gzfp = ((kstream_t*)fp->fp.voidp)->f;
 			gzclose(gzfp);
         #endif
-			ks_destroy((kstream_t*)fp->fp);
+			ks_destroy((kstream_t*)fp->fp.voidp);
 			free(fp->fn_aux);
-		} else fclose((FILE*)fp->fp);
-	} else bgzf_close((BGZF*)fp->fp);
+		} else fclose(fp->fp.file);
+	} else bgzf_close(fp->fp.bgzf);
     free(fp->line.s);
 	free(fp);
 }
@@ -123,33 +123,33 @@ void hts_close(htsFile *fp)
 BGZF *hts_get_bgzfp(htsFile *fp)
 {
     if ( fp->is_bin )
-        return (BGZF*)fp->fp;
+        return fp->fp.bgzf;
     else
-        return ((kstream_t*)fp->fp)->f;
+        return ((kstream_t*)fp->fp.voidp)->f;
 }
 int hts_useek(htsFile *fp, long uoffset, int where)
 {
     if ( fp->is_bin )
-        return bgzf_useek((BGZF*)fp->fp, uoffset, where);
+        return bgzf_useek(fp->fp.bgzf, uoffset, where);
     else
     {
-        ks_rewind((kstream_t*)fp->fp);
-        ((kstream_t*)fp->fp)->seek_pos = uoffset;
-        return bgzf_useek(((kstream_t*)fp->fp)->f, uoffset, where);
+        ks_rewind((kstream_t*)fp->fp.voidp);
+        ((kstream_t*)fp->fp.voidp)->seek_pos = uoffset;
+        return bgzf_useek(((kstream_t*)fp->fp.voidp)->f, uoffset, where);
     }
 }
 long hts_utell(htsFile *fp)
 {
     if ( fp->is_bin )
-        return bgzf_utell((BGZF*)fp->fp);
+        return bgzf_utell(fp->fp.bgzf);
     else
-        return ((kstream_t*)fp->fp)->seek_pos;
+        return ((kstream_t*)fp->fp.voidp)->seek_pos;
 }
 
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
 {
 	int ret, dret;
-	ret = ks_getuntil((kstream_t*)fp->fp, delimiter, str, &dret);
+	ret = ks_getuntil((kstream_t*)fp->fp.voidp, delimiter, str, &dret);
 	++fp->lineno;
 	return ret;
 }

@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;
@@ -47,7 +48,11 @@ typedef struct {
 	int64_t lineno;
 	kstring_t line;
 	char *fn, *fn_aux;
-	void *fp; // file pointer; actual type depending on is_bin and is_write
+	union {
+		BGZF *bgzf;
+		FILE *file;
+		void *voidp;
+	} fp;
 } htsFile;
 
 /**********************

@@ -409,14 +409,14 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
 		h = sam_hdr_parse(str.l, str.s);
 		h->l_text = str.l; h->text = str.s;
 		return h;
-	} else return bam_hdr_read((BGZF*)fp->fp);
+	} else return bam_hdr_read(fp->fp.bgzf);
 }
 
 int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 {
 	if (!fp->is_bin) {
 		char *p;
-		fputs(h->text, (FILE*)fp->fp);
+		fputs(h->text, fp->fp.file);
 		p = strstr(h->text, "@SQ\t"); // FIXME: we need a loop to make sure "@SQ\t" does not match something unwanted!!!
 		if (p == 0) {
 			int i;
@@ -424,11 +424,11 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 				fp->line.l = 0;
 				kputsn("@SQ\tSN:", 7, &fp->line); kputs(h->target_name[i], &fp->line);
 				kputsn("\tLN:", 4, &fp->line); kputw(h->target_len[i], &fp->line); kputc('\n', &fp->line);
-				fwrite(fp->line.s, 1, fp->line.l, (FILE*)fp->fp);
+				fwrite(fp->line.s, 1, fp->line.l, fp->fp.file);
 			}
 		}
-		fflush((FILE*)fp->fp);
-	} else bam_hdr_write((BGZF*)fp->fp, h);
+		fflush(fp->fp.file);
+	} else bam_hdr_write(fp->fp.bgzf, h);
 	return 0;
 }
 
@@ -630,7 +630,7 @@ err_recover:
 			if (h->ignore_sam_err) goto err_recover;
 		}
 		return ret;
-	} else return bam_read1((BGZF*)fp->fp, b);
+	} else return bam_read1(fp->fp.bgzf, b);
 }
 
 int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
@@ -713,10 +713,10 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
 {
 	if (!fp->is_bin) {
 		sam_format1(h, b, &fp->line);
-		fwrite(fp->line.s, 1, fp->line.l, (FILE*)fp->fp);
-		fputc('\n', (FILE*)fp->fp);
+		fwrite(fp->line.s, 1, fp->line.l, fp->fp.file);
+		fputc('\n', fp->fp.file);
 		return fp->line.l + 1;
-	} else return bam_write1((BGZF*)fp->fp, b);
+	} else return bam_write1(fp->fp.bgzf, b);
 }
 
 /************************

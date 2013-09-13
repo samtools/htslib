@@ -31,7 +31,7 @@ extern "C" {
 	#define tbx_itr_destroy(iter) hts_itr_destroy(iter)
 	#define tbx_itr_queryi(tbx, tid, beg, end) hts_itr_query((tbx)->idx, (tid), (beg), (end))
 	#define tbx_itr_querys(tbx, s) hts_itr_querys((tbx)->idx, (s), (hts_name2id_f)(tbx_name2id), (tbx))
-	#define tbx_itr_next(htsfp, tbx, itr, r) hts_itr_next((BGZF*)(htsfp)->fp, (itr), (r), (hts_readrec_f)(tbx_readrec), (tbx))
+	#define tbx_itr_next(htsfp, tbx, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (hts_readrec_f)(tbx_readrec), (tbx))
 	#define tbx_bgzf_itr_next(bgzfp, tbx, itr, r) hts_itr_next((bgzfp), (itr), (r), (hts_readrec_f)(tbx_readrec), (tbx))
 
 	int tbx_name2id(tbx_t *tbx, const char *ss);

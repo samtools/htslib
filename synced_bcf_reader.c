@@ -373,7 +373,7 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             }
             else if ( reader->type & FT_BCF )
             {
-                if ( (ret=bcf_read1((BGZF*)reader->file->fp, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
+                if ( (ret=bcf_read1(reader->file->fp.bgzf, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
             }
             else
             {

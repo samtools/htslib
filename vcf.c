@@ -766,7 +766,7 @@ int bcf_write1(BGZF *fp, const bcf1_t *v)
 bcf_hdr_t *vcf_hdr_read(htsFile *fp)
 {
 	if (fp->is_bin) 
-        return bcf_hdr_read((BGZF*)fp->fp);
+        return bcf_hdr_read(fp->fp.bgzf);
 
     kstring_t txt, *s = &fp->line;
     bcf_hdr_t *h;
@@ -921,10 +921,10 @@ void vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
 		int l = h->l_text;
 		while (l && h->text[l-1] == 0) --l; // kill the trailing zeros
         if ( fp->is_compressed==1 )
-            bgzf_write(((BGZF*)fp->fp), h->text, l);
+            bgzf_write(fp->fp.bgzf, h->text, l);
         else
-            fwrite(h->text, 1, l, (FILE*)fp->fp);
-	} else bcf_hdr_write((BGZF*)fp->fp, h);
+            fwrite(h->text, 1, l, fp->fp.file);
+	} else bcf_hdr_write(fp->fp.bgzf, h);
 }
 
 /***********************
@@ -1353,7 +1353,7 @@ int vcf_read1(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 		if (ret < 0) return -1;
 		ret = vcf_parse1(&fp->line, h, v);
 		return 0;
-	} else return bcf_read1((BGZF*)fp->fp, v);
+	} else return bcf_read1(fp->fp.bgzf, v);
 }
 
 static inline uint8_t *bcf_unpack_fmt_core1(uint8_t *ptr, int n_sample, bcf_fmt_t *fmt)
@@ -1542,10 +1542,10 @@ int vcf_write1(htsFile *fp, const bcf_hdr_t *h, const bcf1_t *v)
 	    fp->line.l = 0;
 		vcf_format1(h, v, &fp->line);
         if ( fp->is_compressed==1 )
-            bgzf_write((BGZF*)fp->fp, fp->line.s, fp->line.l);
+            bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
         else
-            fwrite(fp->line.s, 1, fp->line.l, (FILE*)fp->fp);
-	} else return bcf_write1((BGZF*)fp->fp, v);
+            fwrite(fp->line.s, 1, fp->line.l, fp->fp.file);
+	} else return bcf_write1(fp->fp.bgzf, v);
 	return 0;
 }
 
