@@ -9,6 +9,7 @@
 #include "htslib/bgzf.h"
 #include "htslib/vcf.h"
 #include "htslib/tbx.h"
+#include "hfile.h"
 
 #include "htslib/khash.h"
 KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
@@ -923,7 +924,7 @@ void vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
         if ( fp->is_compressed==1 )
             bgzf_write(fp->fp.bgzf, h->text, l);
         else
-            fwrite(h->text, 1, l, fp->fp.file);
+            hwrite(fp->fp.hfile, h->text, l);
 	} else bcf_hdr_write(fp->fp.bgzf, h);
 }
 
@@ -1544,7 +1545,7 @@ int vcf_write1(htsFile *fp, const bcf_hdr_t *h, const bcf1_t *v)
         if ( fp->is_compressed==1 )
             bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
         else
-            fwrite(fp->line.s, 1, fp->line.l, fp->fp.file);
+            hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
 	} else return bcf_write1(fp->fp.bgzf, v);
 	return 0;
 }

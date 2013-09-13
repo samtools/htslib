@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -5,6 +6,7 @@
 #include <zlib.h>
 #include "htslib/sam.h"
 #include "htslib/bgzf.h"
+#include "hfile.h"
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
@@ -416,7 +418,7 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 {
 	if (!fp->is_bin) {
 		char *p;
-		fputs(h->text, fp->fp.file);
+		hputs(h->text, fp->fp.hfile);
 		p = strstr(h->text, "@SQ\t"); // FIXME: we need a loop to make sure "@SQ\t" does not match something unwanted!!!
 		if (p == 0) {
 			int i;
@@ -424,10 +426,10 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 				fp->line.l = 0;
 				kputsn("@SQ\tSN:", 7, &fp->line); kputs(h->target_name[i], &fp->line);
 				kputsn("\tLN:", 4, &fp->line); kputw(h->target_len[i], &fp->line); kputc('\n', &fp->line);
-				fwrite(fp->line.s, 1, fp->line.l, fp->fp.file);
+				hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
 			}
 		}
-		fflush(fp->fp.file);
+		hflush(fp->fp.hfile);
 	} else bam_hdr_write(fp->fp.bgzf, h);
 	return 0;
 }
@@ -713,8 +715,8 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
 {
 	if (!fp->is_bin) {
 		sam_format1(h, b, &fp->line);
-		fwrite(fp->line.s, 1, fp->line.l, fp->fp.file);
-		fputc('\n', fp->fp.file);
+		hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
+		hputc('\n', fp->fp.hfile);
 		return fp->line.l + 1;
 	} else return bam_write1(fp->fp.bgzf, b);
 }

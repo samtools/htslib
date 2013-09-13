@@ -3,12 +3,12 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;
 #define HTS_BGZF_TYPEDEF
 #endif
+struct hFILE;
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
@@ -50,7 +50,7 @@ typedef struct {
 	char *fn, *fn_aux;
 	union {
 		BGZF *bgzf;
-		FILE *file;
+		struct hFILE *hfile;
 		void *voidp;
 	} fp;
 } htsFile;

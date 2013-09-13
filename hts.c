@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
+#include "hfile.h"
 #include "version.h"
 
 #include "htslib/kseq.h"
@@ -86,7 +87,7 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
             if ( fp->is_compressed==1 )
                 fp->fp.bgzf = strcmp(fn, "-")? bgzf_open(fn, "w") : bgzf_dopen(fileno(stdout), "w");   // vcf.gz
             else
-                fp->fp.file = strcmp(fn, "-")? fopen(fn, "wb") : stdout;
+                fp->fp.hfile = hopen(fn, "w");
         }
 	}
 	if (fp->fp.voidp == 0) {
@@ -112,7 +113,7 @@ void hts_close(htsFile *fp)
         #endif
 			ks_destroy((kstream_t*)fp->fp.voidp);
 			free(fp->fn_aux);
-		} else fclose(fp->fp.file);
+		} else hclose(fp->fp.hfile);
 	} else bgzf_close(fp->fp.bgzf);
     free(fp->line.s);
 	free(fp);
