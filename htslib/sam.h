@@ -2,7 +2,6 @@
 #define BAM_H
 
 #include <stdint.h>
-#include "bgzf.h"
 #include "hts.h"
 
 /**********************
@@ -163,6 +162,8 @@ extern "C" {
 	int bam_read1(BGZF *fp, bam1_t *b);
 	int bam_write1(BGZF *fp, const bam1_t *b);
 	bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc);
+
+	/* Internal helper function used by bam_itr_next() */
 	int bam_readrec(BGZF *fp, void *null, bam1_t *b, int *tid, int *beg, int *end);
 
 	int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
@@ -175,7 +176,7 @@ extern "C" {
 	#define bam_itr_destroy(iter) hts_itr_destroy(iter)
 	#define bam_itr_queryi(idx, tid, beg, end) hts_itr_query(idx, tid, beg, end)
 	#define bam_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bam_name2id), (hdr))
-	#define bam_itr_next(fp, itr, r) hts_itr_next((fp), (itr), (r), (hts_readrec_f)(bam_readrec), 0)
+	#define bam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (hts_readrec_f)(bam_readrec), 0)
 	#define bam_index_load(fn) hts_idx_load((fn), HTS_FMT_BAI)
 
 	int bam_index_build(const char *fn, int min_shift);

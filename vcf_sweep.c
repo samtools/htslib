@@ -1,4 +1,5 @@
 #include "htslib/vcf_sweep.h"
+#include "htslib/bgzf.h"
 
 #define SW_FWD 0
 #define SW_BWD 1

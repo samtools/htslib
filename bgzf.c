@@ -416,6 +416,11 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
 	return bytes_read;
 }
 
+ssize_t bgzf_raw_read(BGZF *fp, void *data, size_t length)
+{
+	return hread(fp->fp, data, length);
+}
+
 #ifdef BGZF_MT
 
 typedef struct {
@@ -635,6 +640,11 @@ ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
 		if (fp->block_offset == block_length && bgzf_flush(fp)) break;
 	}
 	return bytes_written;
+}
+
+ssize_t bgzf_raw_write(BGZF *fp, const void *data, size_t length)
+{
+	return hwrite(fp->fp, data, length);
 }
 
 int bgzf_close(BGZF* fp)

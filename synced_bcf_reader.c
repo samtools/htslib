@@ -374,7 +374,7 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             }
             else if ( reader->type & FT_BCF )
             {
-                if ( (ret=bcf_read1((BGZF*)reader->file->fp, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
+                if ( (ret=bcf_read1(reader->file->fp.bgzf, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
             }
             else
             {
@@ -384,11 +384,11 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         }
         else if ( reader->tbx_idx )
         {
-            if ( (ret=tbx_itr_next((BGZF*)reader->file->fp, reader->tbx_idx, reader->itr, &files->tmps)) < 0 ) break;  // no more lines
+            if ( (ret=tbx_itr_next(reader->file, reader->tbx_idx, reader->itr, &files->tmps)) < 0 ) break;  // no more lines
             vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
         }
         else
-            if ( (ret=bcf_itr_next((BGZF*)reader->file->fp, reader->itr, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
+            if ( (ret=bcf_itr_next(reader->file, reader->itr, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
 
         // apply filter
         if ( !reader->nfilter_ids )
@@ -878,7 +878,7 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
     if ( reg->itr )
     {
         // tabix index present, reading a chromosome block
-        int ret = tbx_itr_next((BGZF*)reg->file->fp, reg->tbx, reg->itr, &reg->line);
+        int ret = tbx_itr_next(reg->file, reg->tbx, reg->itr, &reg->line);
         if ( ret<0 ) { reg->done = 1; return -1; }
     }
     else
