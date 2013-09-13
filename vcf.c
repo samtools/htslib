@@ -561,6 +561,7 @@ void bcf_clear1(bcf1_t *v)
     v->d.shared_dirty = 0;
     v->d.indiv_dirty  = 0;
     v->d.n_flt = 0;
+    v->errcode = 0;
     if (v->d.m_als) v->d.als[0] = 0;
     if (v->d.m_id) v->d.id[0] = 0;
 }
@@ -1087,6 +1088,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                 free(tmp.s);
                 if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
                 k = kh_get(vdict, d, p);
+                v->errcode = BCF_ERR_CTG_UNDEF;
 			}
             v->rid = kh_val(d, k).id;
 		} else if (i == 1) { // POS
@@ -1139,6 +1141,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         free(tmp.s);
                         if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
                         k = kh_get(vdict, d, t);
+                        v->errcode = BCF_ERR_TAG_UNDEF;
                     }
 					a[i++] = kh_val(d, k).id;
 				}
@@ -1174,6 +1177,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         free(tmp.s);
                         if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
                         k = kh_get(vdict, d, key);
+                        v->errcode = BCF_ERR_TAG_UNDEF;
                     }
                     uint32_t y = kh_val(d, k).info[BCF_HL_INFO];
                     ++v->n_info;
@@ -1230,6 +1234,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                     free(tmp.s);
                     if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
                     k = kh_get(vdict, d, t);
+                    v->errcode = BCF_ERR_TAG_UNDEF;
                 }
                 fmt[j].max_l = fmt[j].max_m = fmt[j].max_g = 0;
                 fmt[j].key = kh_val(d, k).id;
@@ -1560,7 +1565,20 @@ int vcf_write1(htsFile *fp, const bcf_hdr_t *h, const bcf1_t *v)
             bgzf_write((BGZF*)fp->fp, fp->line.s, fp->line.l);
         else
             fwrite(fp->line.s, 1, fp->line.l, (FILE*)fp->fp);
-	} else return bcf_write1((BGZF*)fp->fp, v);
+	} 
+    else 
+    {
+        if ( v->errcode ) 
+        {
+            // vcf_parse1() encountered a new contig or tag, undeclared in the header.
+            // However, the header must have been already printed, this would lead to
+            // a broken BCF file. Errors must be checked and cleared by the caller before
+            // we can proceed.
+            fprintf(stderr,"[%s:%d %s] Unchecked error (%d), exiting.\n", __FILE__,__LINE__,__FUNCTION__,v->errcode);
+            exit(1);
+        }
+        return bcf_write1((BGZF*)fp->fp, v);
+    }
 	return 0;
 }
 
@@ -1661,7 +1679,8 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
 			kputs(samples[i], &str);
 		}
 	} else kputsn(h0->text, h0->l_text, &str);
-    if ( str.s[str.l-1] != '\n' ) kputc('\n',&str);
+    while (str.l && (!str.s[str.l-1] || str.s[str.l-1]=='\n') ) str.l--; // kill trailing zeros and newlines
+    kputc('\n',&str);
 	h->text = str.s;
 	h->l_text = str.l;
 	bcf_hdr_parse(h);

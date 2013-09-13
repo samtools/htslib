@@ -146,6 +146,9 @@ typedef struct {
 } bcf_dec_t;
 
 
+#define BCF_ERR_CTG_UNDEF 1
+#define BCF_ERR_TAG_UNDEF 2
+
 /*
     The bcf1_t structure corresponds to one VCF/BCF line. Reading from VCF file
     is slower because the string is first to be parsed, packed into BCF line
@@ -169,6 +172,7 @@ typedef struct {
     int max_unpack;         // Set to BCF_UN_STR, BCF_UN_FLT, or BCF_UN_INFO to boost performance of vcf_parse1 when some of the fields won't be needed
 	int unpacked;           // remember what has been unpacked to allow calling bcf_unpack() repeatedly without redoing the work
 	uint8_t *unpack_ptr;    // position of the last unpack call
+    int errcode;    // one of BCF_ERR_* codes
 } bcf1_t;
 
 /*******
@@ -229,7 +233,6 @@ extern "C" {
 	 * @param fp     BGZF file pointer
 	 * @param v      BCF record to write
 	 *
-	 * @return
 	 */
 	int bcf_write1(BGZF *fp, const bcf1_t *v);
 
@@ -319,6 +322,13 @@ extern "C" {
 
 	int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v);
 	int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s);
+    /**
+      *  vcf_read1() - read next VCF or BCF record. 
+      *
+      *  Returns -1 on critical errors, 0 otherwise. On errors which are not
+      *  critical for reading, such as missing header definitions, v->errcode is
+      *  set and must be checked before calling vcf_write1().
+      */
 	int vcf_read1(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
 	int vcf_write1(htsFile *fp, const bcf_hdr_t *h, const bcf1_t *v);
 
