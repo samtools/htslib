@@ -224,7 +224,8 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     }
 
     // structured line, e.g. ##INFO=<ID=PV1,Number=1,Type=Float,Description="P-value for baseQ bias">
-    while ( *q && *q!='\n' )
+    int nopen = 1;
+    while ( *q && *q!='\n' && nopen )
     {
         p = ++q;
         while ( *q && *q!='=' ) q++;
@@ -238,12 +239,18 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         {
             if ( !*q ) break;
             if ( quoted ) { if ( *q=='"' && !is_escaped(p,q) ) break; }
-            else { if ( *q==',' || *q=='>' ) break; }
+            else 
+            { 
+                if ( *q=='<' ) nopen++;
+                if ( *q=='>' ) nopen--;
+                if ( !nopen ) break;
+                if ( *q==',' && nopen==1 ) break; 
+            }
             q++;
         }
         bcf_hrec_set_val(hrec, hrec->nkeys-1, p, q-p, quoted);
         if ( quoted ) q++;
-        if ( *q=='>' ) { q++; break; }
+        if ( *q=='>' ) { nopen--; q++; }
     }
     *len = q-line+1;
     return hrec;
