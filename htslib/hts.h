@@ -55,7 +55,7 @@ extern int hts_verbose;
 extern const unsigned char seq_nt16_table[256];
 
 /*! @abstract Table for converting a 4-bit encoded nucleotide to a letter. */
-extern const char seq_nt16_str[16];
+extern const char seq_nt16_str[];
 
 #ifdef __cplusplus
 extern "C" {
