@@ -143,13 +143,14 @@ static int mode2level(const char *__restrict mode)
 
 BGZF *bgzf_open(const char *path, const char *mode)
 {
+    int ret;    // to keep compiler happy
 	BGZF *fp = 0;
 	assert(compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
 	if (strchr(mode, 'r') || strchr(mode, 'R')) {
 		hFILE *fpr;
 		if ((fpr = hopen(path, "r")) == 0) return 0;
 		fp = bgzf_read_init(fpr);
-		if (fp == 0) { hclose(fpr); return 0; }
+		if (fp == 0) { ret = hclose(fpr); return NULL; }
 		fp->fp = fpr;
 	} else if (strchr(mode, 'w') || strchr(mode, 'W')) {
 		hFILE *fpw;
@@ -163,13 +164,14 @@ BGZF *bgzf_open(const char *path, const char *mode)
 
 BGZF *bgzf_dopen(int fd, const char *mode)
 {
+    int ret;    // to keep compiler happy
 	BGZF *fp = 0;
 	assert(compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
 	if (strchr(mode, 'r') || strchr(mode, 'R')) {
 		hFILE *fpr;
 		if ((fpr = hdopen(fd, "r")) == 0) return 0;
 		fp = bgzf_read_init(fpr);
-		if (fp == 0) { hclose(fpr); return 0; } // FIXME this hclose() closes fd
+		if (fp == 0) { ret = hclose(fpr); return NULL; }// FIXME this hclose() closes fd
 		fp->fp = fpr;
 	} else if (strchr(mode, 'w') || strchr(mode, 'W')) {
 		hFILE *fpw;
@@ -292,7 +294,12 @@ static int load_block_from_cache(BGZF *fp, int64_t block_address)
 	fp->block_address = block_address;
 	fp->block_length = p->size;
 	memcpy(fp->uncompressed_block, p->block, BGZF_MAX_BLOCK_SIZE);
-	hseek(fp->fp, p->end_offset, SEEK_SET);
+	if ( hseek(fp->fp, p->end_offset, SEEK_SET) < 0 ) 
+    {
+        // todo: move the error up
+        fprintf(stderr,"Could not hseek to %ld\n", p->end_offset);
+        exit(1);
+    }
 	return p->size;
 }
 
@@ -655,7 +662,7 @@ int bgzf_close(BGZF* fp)
 		if (bgzf_flush(fp) != 0) return -1;
 		fp->compress_level = -1;
 		block_length = deflate_block(fp, 0); // write an empty block
-		hwrite(fp->fp, fp->compressed_block, block_length);
+		if ( hwrite(fp->fp, fp->compressed_block, block_length) < 0 ) return -1;
 		if (hflush(fp->fp) != 0) {
 			fp->errcode |= BGZF_ERR_IO;
 			return -1;
@@ -685,8 +692,8 @@ int bgzf_check_EOF(BGZF *fp)
 	off_t offset;
 	offset = htell(fp->fp);
 	if (hseek(fp->fp, -28, SEEK_END) < 0) { hclearerr(fp->fp); return 0; }
-	hread(fp->fp, buf, 28);
-	hseek(fp->fp, offset, SEEK_SET);
+	if ( hread(fp->fp, buf, 28) < 0 ) return -1;
+	if ( hseek(fp->fp, offset, SEEK_SET) < 0 ) return -1;
 	return (memcmp("\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0", buf, 28) == 0)? 1 : 0;
 }
 
@@ -718,7 +725,7 @@ int bgzf_is_bgzf(const char *fn)
 	hFILE *fp;
 	if ((fp = hopen(fn, "r")) == 0) return 0;
 	n = hread(fp, buf, 16);
-	hclose(fp);
+	if ( hclose(fp) < 0 ) return -1;
 	if (n != 16) return 0;
 	return memcmp(g_magic, buf, 16) == 0? 1 : 0;
 }
