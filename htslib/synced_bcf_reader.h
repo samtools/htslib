@@ -46,6 +46,8 @@ typedef struct
     hts_itr_t *itr;         // tabix iterator
     kstring_t line;         // holder of the current line
     htsFile *file;
+    char *fname;
+    int is_bin;             // is open in binary mode (tabix access)
 
     // for in-memory regions (small data)
     struct _region_t *regs; // the regions
@@ -97,7 +99,8 @@ typedef struct
 	char **samples;	// List of samples 
     bcf_sr_regions_t *regions, *targets;    // see bcf_sr_set_[targets|regions] for description
     int targets_als;    // subset to targets not only by position but also by alleles? (todo)
-    char *cseq;         // current sequence
+    char *cseq;         // current sequence for targets, when regions are present
+    int crid;           // current sequence for targets, with single VCF
     kstring_t tmps;
 	int n_smpl;
 }

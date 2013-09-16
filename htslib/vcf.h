@@ -427,8 +427,17 @@ extern "C" {
     #define bcf_gt_is_phased(id)    ((id)&1)
     #define bcf_gt_allele(id)       (((id)>>1)-1)
 
-    bcf_fmt_t *bcf_get_fmt(bcf_hdr_t *hdr, bcf1_t *line, const char *key);
-    bcf_info_t *bcf_get_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key);
+    /**     
+     * bcf_get_fmt() - returns pointer to FORMAT's field data
+     * @header: for access to BCF_DT_ID dictionary 
+     * @line:   VCF line obtained from vcf_parse1
+     * @fmt:    one of GT,PL,...
+     *  
+     * Returns bcf_fmt_t* if the call succeeded, or returns NULL when the field
+     * is not available.
+     */ 
+    bcf_fmt_t *bcf_get_fmt(const bcf_hdr_t *hdr, bcf1_t *line, const char *key);
+    bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key);
 
     /**
      *  bcf_get_info*() - get INFO values, integers or floats
@@ -446,6 +455,9 @@ extern "C" {
 
     /**
      *  bcf_get_format*() - same as bcf_get_info*() above
+     *  Example: 
+     *      int ngt, *gt_arr = NULL, ngt_arr = 0;
+     *      ngt = bcf_get_format_int(hdr, line, "GT", &gt_arr, &ngt_arr);
      */
     #define bcf_get_format_int(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
     #define bcf_get_format_float(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)

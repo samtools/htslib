@@ -148,6 +148,11 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
         fprintf(stderr,"[%s:%d %s] Error: %d readers, yet require_index not set\n", __FILE__,__LINE__,__FUNCTION__,files->nreaders);
         return 0;
     }
+    if ( files->streaming && files->regions )
+    {
+        fprintf(stderr,"[%s:%d %s] Error: cannot tabix-jump in streaming mode\n", __FILE__,__LINE__,__FUNCTION__);
+        return 0;
+    }
     if ( !reader->header ) return 0;
 
     reader->fname = fname;
@@ -174,6 +179,7 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
 bcf_srs_t *bcf_sr_init(void)
 {
     bcf_srs_t *files = (bcf_srs_t*) calloc(1,sizeof(bcf_srs_t));
+    files->crid = -1;
     return files;
 }
 
@@ -313,11 +319,6 @@ static int _readers_next_region(bcf_srs_t *files)
     // No lines in the buffer, need to open new region or quit
     if ( bcf_sr_regions_next(files->regions)<0 ) return -1;
 
-    // Position targets
-    if ( files->targets && (!files->cseq || files->cseq!=files->regions->seq) )
-        bcf_sr_regions_seek(files->targets, files->regions->seq);
-    files->cseq = files->regions->seq;  // set the current sequence
-
     for (i=0; i<files->nreaders; i++)
     {
         bcf_sr_t *reader = &files->readers[i];
@@ -378,7 +379,7 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             }
             else
             {
-                fprintf(stderr,"[%s:%d %s] fixme: not read for this\n", __FILE__,__LINE__,__FUNCTION__);
+                fprintf(stderr,"[%s:%d %s] fixme: not ready for this\n", __FILE__,__LINE__,__FUNCTION__);
                 exit(1);
             }
         }
@@ -528,14 +529,37 @@ int bcf_sr_next_line(bcf_srs_t *files)
         }
 
         // Skip this position if not present in targets
-        if ( files->targets && bcf_sr_regions_query(files->targets, min_pos, min_pos)<0 ) 
+        if ( files->targets )
         {
-            // Remove all lines with this position from the buffer
-            for (i=0; i<files->nreaders; i++)
-                if ( files->readers[i].nbuffer && files->readers[i].buffer[1]->pos==min_pos ) 
-                    _reader_shift_buffer(&files->readers[i]);
-            min_pos = INT_MAX;
-            continue;
+            if  ( files->regions )
+            {
+                if ( !files->cseq || files->cseq!=files->regions->seq )
+                {
+                    bcf_sr_regions_seek(files->targets, files->regions->seq);
+                    files->cseq = files->regions->seq;  // set the current sequence
+                }
+            }
+            else
+            {
+                // If here, we must be streaming a single VCF, otherwise either explicit
+                // or implicit regions would be set. We can safely use rid as a unique sequence
+                // identifier
+                int rid = files->readers[0].buffer[1]->rid;
+                if ( files->crid<0 || files->crid!=rid )
+                {
+                    bcf_sr_regions_seek(files->targets, files->readers[0].header->id[BCF_DT_CTG][rid].key);
+                    files->crid = rid;
+                }
+            }
+            if ( bcf_sr_regions_query(files->targets, min_pos, min_pos)<0 ) 
+            {
+                // Remove all lines with this position from the buffer
+                for (i=0; i<files->nreaders; i++)
+                    if ( files->readers[i].nbuffer && files->readers[i].buffer[1]->pos==min_pos ) 
+                        _reader_shift_buffer(&files->readers[i]);
+                min_pos = INT_MAX;
+                continue;
+            }
         }
         
         break;  // done: min_pos is set 
@@ -810,6 +834,8 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions)
         return NULL;
     }
     reg->snames = (char**) tbx_seqnames(reg->tbx, &reg->nseqs);
+    reg->fname  = strdup(regions);
+    reg->is_bin = 1;
     return reg;
 }
 
@@ -817,6 +843,7 @@ void bcf_sr_regions_destroy(bcf_sr_regions_t *reg)
 {
     int i;
     free(reg->regs);
+    free(reg->fname);
     if ( reg->itr ) tbx_itr_destroy(reg->itr);
     if ( reg->tbx ) tbx_destroy(reg->tbx);
     if ( reg->file ) hts_close(reg->file);
@@ -883,6 +910,22 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
     }
     else
     {
+        if ( reg->is_bin )
+        {
+            // Waited for seek which never came. Reopen in text mode and stream
+            // through the regions, otherwise hts_getline would fail
+            hts_close(reg->file);
+            reg->file = hts_open(reg->fname, "r", NULL);
+            if ( !reg->file )
+            {
+                fprintf(stderr,"[%s:%d %s] Could not open file: %s\n", __FILE__,__LINE__,__FUNCTION__,reg->fname);
+                reg->file = NULL;
+                bcf_sr_regions_destroy(reg);
+                return -1;
+            }
+            reg->is_bin = 0;
+        }
+
         // tabix index absent, reading the whole file
         int ret = hts_getline(reg->file, KS_SEP_LINE, &reg->line);
         if ( ret<0 ) { reg->done = 1; return -1; }
@@ -928,6 +971,7 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
     while ( *se && *se!='\t' ) se++;
     for (i=0; i<reg->nseqs; i++) 
         if (!strncmp(ss,reg->snames[i],se-ss) && !reg->snames[i][se-ss] ) break;
+    if ( !(i<reg->nseqs) ) fprintf(stderr,"i=%d nseq=%d  [%s][%s] [%s]\n", i,reg->nseqs,ss,reg->line.s,reg->snames[0]);
     assert( i<reg->nseqs );
     reg->seq    = reg->snames[i];
     reg->start -= 1;

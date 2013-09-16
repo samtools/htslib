@@ -9,18 +9,6 @@
 
 
 /**
- * bcf_get_fmt_ptr() - returns pointer to a FORMAT field
- * @header: for access to BCF_DT_ID dictionary
- * @line:   VCF line obtained from vcf_parse1
- * @fmt:    one of GT,PL,...
- *
- * Returns bcf_fmt_t* if the call succeeded, or returns NULL when the field
- * is not available.
- */
-bcf_fmt_t *bcf_get_fmt_ptr(const bcf_hdr_t *header, bcf1_t *line, char *tag);
-
-
-/**
  *  bcf_trim_alleles() - remove ALT alleles unused in genotype fields
  *  @header:  for access to BCF_DT_ID dictionary
  *  @line:    VCF line obtain from vcf_parse1
@@ -76,7 +64,9 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which);
 #define GT_HOM_AA 1
 #define GT_HET_RA 2
 #define GT_HET_AA 3
-#define GT_UNKN   4
+#define GT_HAPL_R 4
+#define GT_HAPL_A 5
+#define GT_UNKN   6
 int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial);
 
 static inline int bcf_acgt2int(char c)

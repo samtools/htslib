@@ -81,21 +81,27 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 	return 0;
 }
 
-int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
+int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial)
 {
-    int i, min = 0, nref = 0, a, b;
+    int i, nals = 0, has_ref = 0, has_alt = 0, ial = 0;
     #define BRANCH_INT(type_t,missing,vector_end) { \
         type_t *p = (type_t*) (fmt_ptr->p + isample*fmt_ptr->size); \
-        a = p[0]>>1; b = a; min = a; nref = a>1 ? a : 255; \
-        for (i=1; i<fmt_ptr->n; i++) \
+        for (i=0; i<fmt_ptr->n; i++) \
         { \
-            if ( p[i] == vector_end ) break;   /* smaller ploidy */ \
+            if ( p[i] == vector_end ) break; /* smaller ploidy */ \
+            if ( !p[i] || p[i] == missing ) continue; /* missing allele */ \
             int tmp = p[i]>>1; \
-            if ( !tmp || p[i] == missing ) continue; /* missing allele */ \
-            if ( tmp < min ) min = tmp; \
-            if ( tmp > 1 && nref > tmp ) nref = tmp; \
-            a |= tmp; \
-            b &= tmp; \
+            if ( tmp>1 ) \
+            { \
+                if ( !ial ) { ial = tmp; has_alt = 1; } \
+                else if ( tmp!=ial ) \
+                { \
+                    if ( tmp<ial ) ial = tmp; \
+                    has_alt = 2; \
+                } \
+            } \
+            else has_ref = 1; \
+            nals++; \
         } \
     }
     switch (fmt_ptr->type) {
@@ -106,29 +112,21 @@ int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *ial)
     }
     #undef BRANCH_INT
 
-	if ( min==0 ) return GT_UNKN;       // missing GT
-	if ( ial ) *ial = nref-1;
-	if ( a==b ) return min==1 ? GT_HOM_RR : GT_HOM_AA;
-	return min==1 ? GT_HET_RA : GT_HET_AA;
-}
-
-bcf_fmt_t *bcf_get_fmt_ptr(const bcf_hdr_t *header, bcf1_t *line, char *tag)
-{
-    bcf_unpack(line, BCF_UN_FMT);
-
-    int i, id = bcf_id2int(header, BCF_DT_ID, tag);
-    if ( id<0 ) return NULL;
-
-    for (i=0; i<line->n_fmt; i++)
-        if ( line->d.fmt[i].id==id ) return &line->d.fmt[i];
-
-    return NULL;
+    if ( _ial ) *_ial = ial>0 ? ial-1 : ial;
+    if ( !nals ) return GT_UNKN;
+    if ( nals==1 )
+        return has_ref ? GT_HAPL_R : GT_HAPL_A;
+    if ( !has_ref ) 
+        return has_alt==1 ? GT_HOM_AA : GT_HET_AA;
+    if ( !has_alt )
+        return GT_HOM_RR;
+    return GT_HET_RA;
 }
 
 int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
 {
     int i;
-    bcf_fmt_t *gt = bcf_get_fmt_ptr(header, line, "GT");
+    bcf_fmt_t *gt = bcf_get_fmt(header, line, "GT");
     if ( !gt ) return 0;
 
     int *ac = (int*) calloc(line->n_allele,sizeof(int));
@@ -194,7 +192,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
     if ( !nrm ) { free(map); return; }
 
     // remove from GT fields 
-    bcf_fmt_t *gt = bcf_get_fmt_ptr(header, line, "GT");
+    bcf_fmt_t *gt = bcf_get_fmt(header, line, "GT");
     if ( gt )
     {
         for (i=1; i<line->n_allele; i++) if ( map[i]!=i ) break;
