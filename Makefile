@@ -134,14 +134,14 @@ kstring.o kstring.pico: kstring.c htslib/kstring.h
 knetfile.o knetfile.pico: knetfile.c htslib/knetfile.h
 hfile.o hfile.pico: hfile.c hfile.h hfile_internal.h
 hfile_net.o hfile_net.pico: hfile_net.c hfile.h hfile_internal.h htslib/knetfile.h
-hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) htslib/khash.h htslib/kseq.h htslib/ksort.h
-vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) htslib/khash.h htslib/kseq.h htslib/kstring.h
-sam.o sam.pico: sam.c $(htslib_sam_h) htslib/khash.h htslib/kseq.h htslib/kstring.h
-tbx.o tbx.pico: tbx.c $(htslib_tbx_h) htslib/khash.h
+hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) hfile.h htslib/khash.h htslib/kseq.h htslib/ksort.h
+vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) hfile.h htslib/khash.h htslib/kseq.h htslib/kstring.h
+sam.o sam.pico: sam.c $(htslib_sam_h) $(htslib_bgzf_h) hfile.h htslib/khash.h htslib/kseq.h htslib/kstring.h
+tbx.o tbx.pico: tbx.c $(htslib_tbx_h) $(htslib_bgzf_h) htslib/khash.h
 faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) htslib/khash.h htslib/knetfile.h
 razf.o razf.pico: razf.c $(htslib_razf_h)
 synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_bcf_reader_h) htslib/kseq.h
-vcf_sweep.o vcf_sweep.pico: vcf_sweep.c $(htslib_vcf_sweep_h)
+vcf_sweep.o vcf_sweep.pico: vcf_sweep.c $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
 kfunc.o kfunc.pico: kfunc.c htslib/kfunc.h
 

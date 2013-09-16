@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include "htslib/tbx.h"
+#include "htslib/bgzf.h"
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)

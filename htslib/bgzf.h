@@ -45,7 +45,7 @@ struct hFILE;
 struct bgzf_mtaux_t;
 typedef struct __bgzidx_t bgzidx_t;
 
-typedef struct {
+struct BGZF {
 	int errcode:16, is_write:2, is_be:2, compress_level:9, is_compressed:3;
 	int cache_size;
     int block_length, block_offset;
@@ -56,7 +56,11 @@ typedef struct {
     struct bgzf_mtaux_t *mt; // only used for multi-threading
     bgzidx_t *idx;      // BGZF index
     int idx_build_otf;  // build index on the fly, set by bgzf_index_build_init()
-} BGZF;
+};
+#ifndef HTS_BGZF_TYPEDEF
+typedef struct BGZF BGZF;
+#define HTS_BGZF_TYPEDEF
+#endif
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
@@ -128,6 +132,30 @@ extern "C" {
 	ssize_t bgzf_write(BGZF *fp, const void *data, size_t length);
 
 	/**
+	 * Read up to _length_ bytes directly from the underlying stream without
+	 * decompressing.  Bypasses BGZF blocking, so must be used with care in
+	 * specialised circumstances only.
+	 *
+	 * @param fp     BGZF file handler
+	 * @param data   data array to read into
+	 * @param length number of raw bytes to read
+	 * @return       number of bytes actually read; 0 on end-of-file and -1 on error
+	 */
+	ssize_t bgzf_raw_read(BGZF *fp, void *data, size_t length);
+
+	/**
+	 * Write _length_ bytes directly to the underlying stream without
+	 * compressing.  Bypasses BGZF blocking, so must be used with care
+	 * in specialised circumstances only.
+	 *
+	 * @param fp     BGZF file handler
+	 * @param data   data array to write
+	 * @param length number of raw bytes to write
+	 * @return       number of bytes actually written; -1 on error
+	 */
+	ssize_t bgzf_raw_write(BGZF *fp, const void *data, size_t length);
+
+	/**
 	 * Write the data in the buffer to the file.
 	 */
 	int bgzf_flush(BGZF *fp);
@@ -138,7 +166,7 @@ extern "C" {
 	 * call to bgzf_seek can be used to position the file at the same point.
 	 * Return value is non-negative on success.
 	 */
-	#define bgzf_tell(fp) ((((BGZF*)fp)->block_address << 16) | (((BGZF*)fp)->block_offset & 0xFFFF))
+	#define bgzf_tell(fp) (((fp)->block_address << 16) | ((fp)->block_offset & 0xFFFF))
 
 	/**
 	 * Set the file to read from the location specified by _pos_.

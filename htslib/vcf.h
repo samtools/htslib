@@ -10,7 +10,6 @@
 #include <stdint.h>
 #include <limits.h>
 #include <assert.h>
-#include "bgzf.h"
 #include "hts.h"
 #include "kstring.h"
 
@@ -236,7 +235,7 @@ extern "C" {
 	 */
 	int bcf_write1(BGZF *fp, const bcf1_t *v);
 
-	/** Helper function for the bcf_iter_next() macro; ignore it */
+	/** Helper function for the bcf_itr_next() macro; ignore it */
 	int bcf_readrec(BGZF *fp, void *null, bcf1_t *v, int *tid, int *beg, int *end);
 
 	#define BCF_UN_STR  1 // up to ALT inclusive
@@ -304,7 +303,7 @@ extern "C" {
 	#define bcf_itr_destroy(iter) hts_itr_destroy(iter)
 	#define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query((idx), (tid), (beg), (end))
 	#define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_name2id), (hdr))
-	#define bcf_itr_next(fp, itr, r) hts_itr_next((fp), (itr), (r), (hts_readrec_f)(bcf_readrec), 0)
+	#define bcf_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (hts_readrec_f)(bcf_readrec), 0)
 	#define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
 
 	int bcf_index_build(const char *fn, int min_shift);

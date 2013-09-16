@@ -1,8 +1,14 @@
 #ifndef HTS_H
 #define HTS_H
 
+#include <stddef.h>
 #include <stdint.h>
-#include "bgzf.h"
+
+#ifndef HTS_BGZF_TYPEDEF
+typedef struct BGZF BGZF;
+#define HTS_BGZF_TYPEDEF
+#endif
+struct hFILE;
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
@@ -42,7 +48,11 @@ typedef struct {
 	int64_t lineno;
 	kstring_t line;
 	char *fn, *fn_aux;
-	void *fp; // file pointer; actual type depending on is_bin and is_write
+	union {
+		BGZF *bgzf;
+		struct hFILE *hfile;
+		void *voidp;
+	} fp;
 } htsFile;
 
 /**********************
@@ -55,7 +65,7 @@ extern int hts_verbose;
 extern const unsigned char seq_nt16_table[256];
 
 /*! @abstract Table for converting a 4-bit encoded nucleotide to a letter. */
-extern const char seq_nt16_str[16];
+extern const char seq_nt16_str[];
 
 #ifdef __cplusplus
 extern "C" {
