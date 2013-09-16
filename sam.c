@@ -1011,6 +1011,9 @@ void bam_plp_destroy(bam_plp_t iter)
 	free(iter);
 }
 
+// Prepares next pileup position in bam records collected by bam_plp_auto -> user func -> bam_plp_push. Returns
+// pointer to the piled records if next position is ready or NULL if there is not enough records in the
+// buffer yet (the current position is still the maximum position across all buffered reads).
 const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp)
 {
 	if (iter->error) { *_n_plp = -1; return 0; }
