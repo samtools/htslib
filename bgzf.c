@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <unistd.h>
 #include <assert.h>
 #include <pthread.h>
@@ -141,16 +142,23 @@ static int mode2level(const char *__restrict mode)
 	return compress_level;
 }
 
+// Close abortively-opened file, ignoring any errors that occur (unlikely)
+static void close_noerr(hFILE *fp)
+{
+	int save = errno;
+	if (hclose(fp) != 0) { /* Ignore errors as we're already unwinding one */ }
+	errno = save;
+}
+
 BGZF *bgzf_open(const char *path, const char *mode)
 {
-    int ret;    // to keep compiler happy
 	BGZF *fp = 0;
 	assert(compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
 	if (strchr(mode, 'r') || strchr(mode, 'R')) {
 		hFILE *fpr;
 		if ((fpr = hopen(path, "r")) == 0) return 0;
 		fp = bgzf_read_init(fpr);
-		if (fp == 0) { ret = hclose(fpr); return NULL; }
+		if (fp == 0) { close_noerr(fpr); return NULL; }
 		fp->fp = fpr;
 	} else if (strchr(mode, 'w') || strchr(mode, 'W')) {
 		hFILE *fpw;
@@ -164,14 +172,13 @@ BGZF *bgzf_open(const char *path, const char *mode)
 
 BGZF *bgzf_dopen(int fd, const char *mode)
 {
-    int ret;    // to keep compiler happy
 	BGZF *fp = 0;
 	assert(compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
 	if (strchr(mode, 'r') || strchr(mode, 'R')) {
 		hFILE *fpr;
 		if ((fpr = hdopen(fd, "r")) == 0) return 0;
 		fp = bgzf_read_init(fpr);
-		if (fp == 0) { ret = hclose(fpr); return NULL; }// FIXME this hclose() closes fd
+		if (fp == 0) { close_noerr(fpr); return NULL; } // FIXME this closes fd
 		fp->fp = fpr;
 	} else if (strchr(mode, 'w') || strchr(mode, 'W')) {
 		hFILE *fpw;
@@ -662,8 +669,8 @@ int bgzf_close(BGZF* fp)
 		if (bgzf_flush(fp) != 0) return -1;
 		fp->compress_level = -1;
 		block_length = deflate_block(fp, 0); // write an empty block
-		if ( hwrite(fp->fp, fp->compressed_block, block_length) < 0 ) return -1;
-		if (hflush(fp->fp) != 0) {
+		if (hwrite(fp->fp, fp->compressed_block, block_length) < 0
+			|| hflush(fp->fp) != 0) {
 			fp->errcode |= BGZF_ERR_IO;
 			return -1;
 		}
