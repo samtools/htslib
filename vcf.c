@@ -1612,6 +1612,7 @@ hts_idx_t *bcf_index(BGZF *fp, int min_shift)
 	bcf_hdr_t *h;
 	int64_t max_len = 0, s;
 	h = bcf_hdr_read(fp);
+    if ( !h ) return NULL;
 	for (i = 0; i < h->n[BCF_DT_CTG]; ++i)
 		if (max_len < h->id[BCF_DT_CTG][i].val->info[0])
 			max_len = h->id[BCF_DT_CTG][i].val->info[0];
@@ -1638,6 +1639,7 @@ int bcf_index_build(const char *fn, int min_shift)
 	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
 	idx = bcf_index(fp, min_shift);
 	bgzf_close(fp);
+    if ( !idx ) return -1;
 	hts_idx_save(idx, fn, HTS_FMT_CSI);
 	hts_idx_destroy(idx);
 	return 0;
@@ -1714,7 +1716,6 @@ int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
     v->unpacked &= ~BCF_UN_FMT;    // only BCF is ready for output, VCF will need to unpack again
 	return 0;
 }
-
 
 int bcf_is_snp(bcf1_t *v)
 {
