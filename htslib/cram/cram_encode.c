@@ -41,6 +41,8 @@ void bam_copy(bam_seq_t **bt, bam_seq_t *bf) {
 #endif
 
 #define Z_CRAM_STRAT Z_FILTERED
+//#define Z_CRAM_STRAT Z_RLE
+//#define Z_CRAM_STRAT Z_HUFFMAN_ONLY
 //#define Z_CRAM_STRAT Z_DEFAULT_STRATEGY
 
 static int process_one_read(cram_fd *fd, cram_container *c,
@@ -981,28 +983,49 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
 #endif
 
     /* Compress the other blocks */
-    if (cram_compress_block(fd, s->block[1], NULL,
+    if (cram_compress_block(fd, s->block[1], NULL, //IN (seq)
 			    fd->level, Z_CRAM_STRAT,
 			    -1, -1))
 	return -1;
-    if (cram_compress_block(fd, s->block[2], fd->m[1],
-			    fd->level, Z_CRAM_STRAT, 
-			    LEVEL2, STRAT2))
-	return -1;
-    if (cram_compress_block(fd, s->block[3], NULL,
+
+    if (fd->level == 0) {
+	/* Do nothing */
+    } else if (fd->level == 1) {
+	if (cram_compress_block(fd, s->block[2], fd->m[1], //qual
+				1, Z_RLE, -1, -1))
+	    return -1;
+	if (cram_compress_block(fd, s->block[5], fd->m[4], //Tags
+				1, Z_RLE, -1, -1))
+	    return -1;
+    } else if (fd->level < 3) {
+	if (cram_compress_block(fd, s->block[2], fd->m[1], //qual
+				1, Z_RLE,
+				1, Z_HUFFMAN_ONLY))
+	    return -1;
+	if (cram_compress_block(fd, s->block[5], fd->m[4], //Tags
+				1, Z_RLE,
+				1, Z_HUFFMAN_ONLY))
+	    return -1;
+    } else {
+	if (cram_compress_block(fd, s->block[2], fd->m[1], //qual
+				fd->level, Z_CRAM_STRAT, 
+				LEVEL2, STRAT2))
+	    return -1;
+	if (cram_compress_block(fd, s->block[5], fd->m[4], //Tags
+				fd->level, Z_CRAM_STRAT,
+				LEVEL2, STRAT2))
+	    return -1;
+    }
+    if (cram_compress_block(fd, s->block[3], NULL, //Name
 			    fd->level, Z_CRAM_STRAT,
 			    -1, -1))
 	return -1;
-    if (cram_compress_block(fd, s->block[4], NULL,
+    if (cram_compress_block(fd, s->block[4], NULL, //TS, NP
 			    fd->level, Z_CRAM_STRAT,
 			    -1, -1))
-	return -1;
-    if (cram_compress_block(fd, s->block[5], fd->m[4],
-			    fd->level, Z_CRAM_STRAT,
-	                    LEVEL2, STRAT2))
 	return -1;
     if (fd->version != CRAM_1_VERS) {
-	if (cram_compress_block(fd, s->block[6], NULL,
+	if (cram_compress_block(fd, s->block[6], NULL, //SC (seq)
 				fd->level, Z_CRAM_STRAT,
 				-1, -1))
 	    return -1;
@@ -2331,9 +2354,10 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	} else {
 	    BLOCK_GROW(s->qual_blk, cr->len);
 	    qual = cp = (char *)BLOCK_END(s->qual_blk);
-	    for (i = 0; i < cr->len; i++) {
-		cp[i] = bam_qual(b)[i];
-	    }
+	    char *from = &bam_qual(b)[0];
+	    char *to = &cp[0];
+	    memcpy(to, from, cr->len);
+	    //for (i = 0; i < cr->len; i++) cp[i] = from[i];
 	}
 	BLOCK_SIZE(s->qual_blk) += cr->len;
     } else {
