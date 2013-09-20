@@ -1241,6 +1241,17 @@ static void cram_decode_slice_xref(cram_slice *s) {
     }    
 }
 
+static char *md5_print(unsigned char *md5, char *out) {
+    int i;
+    for (i = 0; i < 16; i++) {
+	out[i*2+0] = "0123456789abcdef"[md5[i]>>4];
+	out[i*2+1] = "0123456789abcdef"[md5[i]&15];
+    }
+    out[32] = 0;
+
+    return out;
+}
+
 /*
  * Decode an entire slice from container blocks. Fills out s->crecs[] array.
  * Returns 0 on success
@@ -1305,6 +1316,16 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 			    s->hdr->ref_seq_start + s->hdr->ref_seq_span -1);
 	    s->ref_start = s->hdr->ref_seq_start;
 	    s->ref_end   = s->hdr->ref_seq_start + s->hdr->ref_seq_span-1;
+
+	    /* Sanity check */
+	    if (s->ref_start < 0) {
+		fprintf(stderr, "Slice starts before base 1.\n");
+		s->ref_start = 0;
+	    }
+	    if (s->ref_end > fd->refs->ref_id[ref_id]->length) {
+		fprintf(stderr, "Slice ends beyond reference end.\n");
+		s->ref_end = fd->refs->ref_id[ref_id]->length;
+	    }
 	}
     }
 
@@ -1355,7 +1376,11 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
 	if ((!s->ref && s->hdr->ref_base_id < 0)
 	    || memcmp(digest, s->hdr->md5, 16) != 0) {
-	    fprintf(stderr, "ERROR: md5sum reference mismatch\n");
+	    char M[33];
+	    fprintf(stderr, "ERROR: md5sum reference mismatch for ref "
+		    "%d pos %d..%d\n", ref_id, s->ref_start, s->ref_end);
+	    fprintf(stderr, "CRAM: %s\n", md5_print(s->hdr->md5, M));
+	    fprintf(stderr, "Ref : %s\n", md5_print(digest, M));
 	    return -1;
 	}
     }
@@ -1660,6 +1685,11 @@ static int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
 
     /* Generate BAM record */
     rg_len = (cr->rg != -1) ? bfd->rg[cr->rg].name_len + 4 : 0;
+
+    if (!BLOCK_DATA(s->seqs_blk))
+	return -1;
+    if (!BLOCK_DATA(s->qual_blk))
+	return -1;
 
     bam_idx = bam_construct_seq(bam, cr->aux_size + rg_len,
 				name, name_len,
