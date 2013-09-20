@@ -1484,9 +1484,7 @@ void cram_ref_incr(refs_t *r, int id) {
     pthread_mutex_unlock(&r->lock);
 }
 
-void cram_ref_decr(refs_t *r, int id) {
-    pthread_mutex_lock(&r->lock);
-
+static void cram_ref_decr_locked(refs_t *r, int id) {
     RP("%d DEC REF %d, %d\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count-1:-1));
 
     if (id < 0 || !r->ref_id[id]->seq) {
@@ -1500,9 +1498,14 @@ void cram_ref_decr(refs_t *r, int id) {
 	if (r->ref_id[id]->seq) {
 	    free(r->ref_id[id]->seq);
 	    r->ref_id[id]->seq = NULL;
+	    r->ref_id[id]->length = 0;
 	}
     }
+}
 
+void cram_ref_decr(refs_t *r, int id) {
+    pthread_mutex_lock(&r->lock);
+    cram_ref_decr_locked(r, id);
     pthread_mutex_unlock(&r->lock);
 }
 
@@ -1706,16 +1709,21 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
      * A ref entry computed from @SQ lines (M5 or UR field) will have
      * r->length == 0 unless it's been loaded once and verified that we have
      * an on-disk filename for it.
+     *
+     * 19 Sep 2013: Moved the lock here as the cram_populate_ref code calls
+     * open_path_mfile and libcurl, which isn't multi-thread safe unless I
+     * rewrite my code to have one curl handle per thread.
      */
+    pthread_mutex_lock(&fd->refs->lock);
     if (r->length == 0) {
 	if (cram_populate_ref(fd, id, r) == -1) {
 	    fprintf(stderr, "Failed to populate reference for id %d\n", id);
+	    pthread_mutex_unlock(&fd->refs->lock);
 	    pthread_mutex_unlock(&fd->ref_lock);
 	    return NULL;
 	}
 	r = fd->refs->ref_id[id];
     }
-    pthread_mutex_lock(&fd->refs->lock);
 
 
     /*
@@ -1763,10 +1771,13 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
 		    cram_ref_incr_locked(fd->refs, id);
 	    }	    
 
+	    if (fd->ref && fd->ref == fd->refs->ref_id[fd->ref_id]->seq)
+		cram_ref_decr_locked(fd->refs, fd->ref_id);
 	    fd->ref       = r->seq;
 	    fd->ref_start = 1;
 	    fd->ref_end   = r->length;
 	    fd->ref_id    = id;
+	    cram_ref_incr_locked(fd->refs, fd->ref_id);
 
 	    cp = fd->refs->ref_id[id]->seq + ostart-1;
 	} else {
