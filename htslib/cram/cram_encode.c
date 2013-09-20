@@ -2354,7 +2354,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	} else {
 	    BLOCK_GROW(s->qual_blk, cr->len);
 	    qual = cp = (char *)BLOCK_END(s->qual_blk);
-	    char *from = &bam_qual(b)[0];
+	    char *from = (char *)&bam_qual(b)[0];
 	    char *to = &cp[0];
 	    memcpy(to, from, cr->len);
 	    //for (i = 0; i < cr->len; i++) cp[i] = from[i];
