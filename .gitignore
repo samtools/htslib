@@ -10,6 +10,7 @@ lib*.so.*
 /test/hfile
 /test/test-vcf-api
 /test/test-vcf-sweep
+/test/test_view
 /test/*.tmp
 
 /TAGS

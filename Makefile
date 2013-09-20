@@ -87,6 +87,30 @@ version.h:
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
 
 
+# Cram objects.
+CRAM_OBJS= \
+	htslib/cram/cram_codecs.o \
+	htslib/cram/cram_encode.o \
+	htslib/cram/cram_io.o \
+	htslib/cram/cram_decode.o \
+	htslib/cram/cram_index.o \
+	htslib/cram/cram_stats.o \
+	htslib/cram/cram_samtools.o \
+	htslib/cram/sam_header.o \
+	htslib/cram/vlen.o \
+	htslib/cram/zfio.o \
+	htslib/cram/mFILE.o \
+	htslib/cram/md5.o \
+	htslib/cram/open_trace_file.o \
+	htslib/cram/pooled_alloc.o \
+	htslib/cram/string_alloc.o \
+	htslib/cram/files.o \
+	htslib/cram/thread_pool.o
+
+# TODO: edit code to remove need for -DSAMTOOLS
+# TODO: move htslib/cram/*.h down one to htslib/*.h to remove need for -I
+CPPFLAGS += -DSAMTOOLS=1 -Ihtslib
+
 LIBHTS_OBJS = \
 	kfunc.o \
 	knetfile.o \
@@ -102,7 +126,8 @@ LIBHTS_OBJS = \
 	vcf_sweep.o \
 	tbx.o \
 	vcf.o \
-	vcfutils.o
+	vcfutils.o \
+	$(CRAM_OBJS)
 
 
 libhts.a: $(LIBHTS_OBJS)
@@ -188,7 +213,7 @@ install-dylib: libhts.dylib installdirs
 
 
 mostlyclean:
-	-rm -f *.o *.pico test/*.o test/*.dSYM test/*.tmp version.h
+	-rm -f *.o htslib/cram/*.o *.pico test/*.o test/*.dSYM test/*.tmp version.h
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 	-rm -f libhts.a test/hfile test/test-vcf-api test/test-vcf-sweep
