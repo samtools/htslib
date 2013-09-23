@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 #include "cram/cram.h"
-#include "sam.h"
+#include "htslib/sam.h"
 
 /*---------------------------------------------------------------------------
  * Samtools compatibility portion

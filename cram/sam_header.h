@@ -38,8 +38,8 @@ extern "C" {
 #include "cram/string_alloc.h"
 #include "cram/pooled_alloc.h"
 
-#include "khash.h"
-#include "kstring.h"
+#include "htslib/khash.h"
+#include "htslib/kstring.h"
 
 // For structure assignment. Eg kstring_t s = KS_INITIALIZER;
 #define KS_INITIALIZER {0,0,0}

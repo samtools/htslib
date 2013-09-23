@@ -6,7 +6,7 @@
 #include <fcntl.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
-#include "htslib/cram/cram.h"
+#include "cram/cram.h"
 #include "hfile.h"
 #include "version.h"
 

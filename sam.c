@@ -6,7 +6,7 @@
 #include <zlib.h>
 #include "htslib/sam.h"
 #include "htslib/bgzf.h"
-#include "htslib/cram/cram.h"
+#include "cram/cram.h"
 #include "hfile.h"
 
 #include "htslib/khash.h"

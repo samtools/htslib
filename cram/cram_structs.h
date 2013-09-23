@@ -27,7 +27,7 @@ extern "C" {
 #ifdef SAMTOOLS
 // From within samtools/HTSlib
 #  include "cram/string_alloc.h"
-#  include "khash.h"
+#  include "htslib/khash.h"
 
 // Generic hash-map integer -> integer
 KHASH_MAP_INIT_INT(m_i2i, int)

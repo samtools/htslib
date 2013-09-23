@@ -28,7 +28,7 @@
 
 #define bam_reg2bin(beg,end) hts_reg2bin((beg),(end),14,5)
 
-#include "sam.h"
+#include "htslib/sam.h"
 
 enum cigar_op {
     BAM_CMATCH_=BAM_CMATCH,

@@ -89,27 +89,26 @@ version.h:
 
 # Cram objects.
 CRAM_OBJS= \
-	htslib/cram/cram_codecs.o \
-	htslib/cram/cram_encode.o \
-	htslib/cram/cram_io.o \
-	htslib/cram/cram_decode.o \
-	htslib/cram/cram_index.o \
-	htslib/cram/cram_stats.o \
-	htslib/cram/cram_samtools.o \
-	htslib/cram/sam_header.o \
-	htslib/cram/vlen.o \
-	htslib/cram/zfio.o \
-	htslib/cram/mFILE.o \
-	htslib/cram/md5.o \
-	htslib/cram/open_trace_file.o \
-	htslib/cram/pooled_alloc.o \
-	htslib/cram/string_alloc.o \
-	htslib/cram/files.o \
-	htslib/cram/thread_pool.o
+	cram/cram_codecs.o \
+	cram/cram_encode.o \
+	cram/cram_io.o \
+	cram/cram_decode.o \
+	cram/cram_index.o \
+	cram/cram_stats.o \
+	cram/cram_samtools.o \
+	cram/sam_header.o \
+	cram/vlen.o \
+	cram/zfio.o \
+	cram/mFILE.o \
+	cram/md5.o \
+	cram/open_trace_file.o \
+	cram/pooled_alloc.o \
+	cram/string_alloc.o \
+	cram/files.o \
+	cram/thread_pool.o
 
 # TODO: edit code to remove need for -DSAMTOOLS
-# TODO: move htslib/cram/*.h down one to htslib/*.h to remove need for -I
-CPPFLAGS += -DSAMTOOLS=1 -Ihtslib
+CPPFLAGS += -DSAMTOOLS=1
 
 LIBHTS_OBJS = \
 	kfunc.o \
@@ -213,7 +212,7 @@ install-dylib: libhts.dylib installdirs
 
 
 mostlyclean:
-	-rm -f *.o htslib/cram/*.o *.pico test/*.o test/*.dSYM test/*.tmp version.h
+	-rm -f *.o cram/*.o *.pico test/*.o test/*.dSYM test/*.tmp version.h
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 	-rm -f libhts.a test/hfile test/test-vcf-api test/test-vcf-sweep
