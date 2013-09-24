@@ -12,5 +12,6 @@ lib*.so.*
 /test/test-vcf-sweep
 /test/test_view
 /test/*.tmp
+/test/*.tmp.*
 
 /TAGS

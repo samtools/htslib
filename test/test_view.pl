@@ -1,6 +1,6 @@
-#!/bin/perl -w
-
+#! /usr/bin/env perl
 use strict;
+use warnings;
 
 my $err_count = 0;
 my $suc_count = 0;
@@ -20,8 +20,8 @@ foreach my $sam (glob("*#*.sam")) {
     my ($base, $ref) = ($sam =~ /((.*)#.*)\.sam/);
     $ref .= ".fa";
 
-    my $bam  = "$base.bam";
-    my $cram = "$base.cram";
+    my $bam  = "$base.tmp.bam";
+    my $cram = "$base.tmp.cram";
 
     print "\n=== Testing $sam, ref $ref ===\n";
 
@@ -36,6 +36,7 @@ foreach my $sam (glob("*#*.sam")) {
     test "./compare_sam.pl $sam $cram.sam_";
 
     # BAM -> CRAM -> BAM -> SAM
+    $cram = "$bam.cram";
     test "./test_view -t $ref -C $bam > $cram";
     test "./test_view -b -D $cram > $cram.bam";
     test "./test_view $cram.bam > $cram.bam.sam_";

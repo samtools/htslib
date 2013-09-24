@@ -10,10 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define SAMTOOLS
 #include "cram/cram.h"
 
-#include "sam.h"
+#include "htslib/sam.h"
 
 int main(int argc, char *argv[])
 {
@@ -59,14 +58,14 @@ int main(int argc, char *argv[])
 	/* CRAM output */
 	if (flag & 8) {
 	    // Parse input header and use for CRAM output
-	    ((cram_fd *)out->fp)->header = sam_hdr_parse_(h->text, h->l_text);
+	    out->fp.cram->header = sam_hdr_parse_(h->text, h->l_text);
 
 	    // Create CRAM references arrays
 	    if (fn_ref)
-		cram_set_option(out->fp, CRAM_OPT_REFERENCE, fn_ref);
+		cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, fn_ref);
 	    else
 		// Attempt to fill out a cram->refs[] array from @SQ headers
-		cram_set_option(out->fp, CRAM_OPT_REFERENCE, NULL);
+		cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, NULL);
 	}
 
 	sam_hdr_write(out, h);
@@ -83,7 +82,7 @@ int main(int argc, char *argv[])
 		    fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
 		    continue;
 		}
-		while (bam_itr_next((BGZF*)in->fp, iter, b) >= 0) sam_write1(out, h, b);
+		while (bam_itr_next(in, iter, b) >= 0) sam_write1(out, h, b);
 		hts_itr_destroy(iter);
 	    }
 	    hts_idx_destroy(idx);
