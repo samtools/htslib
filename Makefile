@@ -199,7 +199,7 @@ test/hfile: test/hfile.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LDLIBS) -lz
 
 test/test_view: test/test_view.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LDLIBS) -lz
+	$(CC) -pthread $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LDLIBS) -lz
 
 test/test-vcf-api: test/test-vcf-api.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-api.o libhts.a $(LDLIBS) -lz
