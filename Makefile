@@ -8,7 +8,8 @@ CC     = gcc
 AR     = ar
 RANLIB = ranlib
 
-CPPFLAGS = -I.
+# TODO: edit cram code to remove need for -DSAMTOOLS
+CPPFLAGS = -I. -DSAMTOOLS=1
 CFLAGS   = -g -Wall -Wc++-compat -O2
 EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
@@ -87,29 +88,6 @@ version.h:
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
 
 
-# Cram objects.
-CRAM_OBJS= \
-	cram/cram_codecs.o \
-	cram/cram_encode.o \
-	cram/cram_io.o \
-	cram/cram_decode.o \
-	cram/cram_index.o \
-	cram/cram_stats.o \
-	cram/cram_samtools.o \
-	cram/sam_header.o \
-	cram/vlen.o \
-	cram/zfio.o \
-	cram/mFILE.o \
-	cram/md5.o \
-	cram/open_trace_file.o \
-	cram/pooled_alloc.o \
-	cram/string_alloc.o \
-	cram/files.o \
-	cram/thread_pool.o
-
-# TODO: edit code to remove need for -DSAMTOOLS
-CPPFLAGS += -DSAMTOOLS=1
-
 LIBHTS_OBJS = \
 	kfunc.o \
 	knetfile.o \
@@ -126,7 +104,23 @@ LIBHTS_OBJS = \
 	tbx.o \
 	vcf.o \
 	vcfutils.o \
-	$(CRAM_OBJS)
+	cram/cram_codecs.o \
+	cram/cram_decode.o \
+	cram/cram_encode.o \
+	cram/cram_index.o \
+	cram/cram_io.o \
+	cram/cram_samtools.o \
+	cram/cram_stats.o \
+	cram/files.o \
+	cram/mFILE.o \
+	cram/md5.o \
+	cram/open_trace_file.o \
+	cram/pooled_alloc.o \
+	cram/sam_header.o \
+	cram/string_alloc.o \
+	cram/thread_pool.o \
+	cram/vlen.o \
+	cram/zfio.o
 
 
 libhts.a: $(LIBHTS_OBJS)
@@ -153,14 +147,22 @@ libhts.dylib: $(LIBHTS_OBJS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 
+cram_h = cram/cram.h $(cram_samtools_h) $(cram_sam_header_h) $(cram_structs_h) $(cram_io_h) cram/cram_encode.h cram/cram_decode.h cram/cram_stats.h cram/cram_codecs.h cram/cram_index.h
+cram_io_h = cram/cram_io.h $(cram_misc_h)
+cram_misc_h = cram/misc.h cram/os.h
+cram_sam_header_h = cram/sam_header.h cram/string_alloc.h cram/pooled_alloc.h htslib/khash.h htslib/kstring.h
+cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h)
+cram_structs_h = cram/cram_structs.h cram/thread_pool.h cram/string_alloc.h htslib/khash.h
+cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
+
 bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) hfile.h htslib/khash.h
 kstring.o kstring.pico: kstring.c htslib/kstring.h
 knetfile.o knetfile.pico: knetfile.c htslib/knetfile.h
 hfile.o hfile.pico: hfile.c hfile.h hfile_internal.h
 hfile_net.o hfile_net.pico: hfile_net.c hfile.h hfile_internal.h htslib/knetfile.h
-hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) hfile.h htslib/khash.h htslib/kseq.h htslib/ksort.h
+hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) hfile.h htslib/khash.h htslib/kseq.h htslib/ksort.h
 vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) hfile.h htslib/khash.h htslib/kseq.h htslib/kstring.h
-sam.o sam.pico: sam.c $(htslib_sam_h) $(htslib_bgzf_h) hfile.h htslib/khash.h htslib/kseq.h htslib/kstring.h
+sam.o sam.pico: sam.c $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) hfile.h htslib/khash.h htslib/kseq.h htslib/kstring.h
 tbx.o tbx.pico: tbx.c $(htslib_tbx_h) $(htslib_bgzf_h) htslib/khash.h
 faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) htslib/khash.h htslib/knetfile.h
 razf.o razf.pico: razf.c $(htslib_razf_h)
@@ -168,6 +170,24 @@ synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_
 vcf_sweep.o vcf_sweep.pico: vcf_sweep.c $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
 kfunc.o kfunc.pico: kfunc.c htslib/kfunc.h
+
+cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c $(cram_h)
+cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c $(cram_h) cram/os.h cram/md5.h
+cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c $(cram_h) cram/os.h cram/md5.h
+cram/cram_index.o cram/cram_index.pico: cram/cram_index.c $(cram_h) cram/os.h cram/zfio.h
+cram/cram_io.o cram/cram_io.pico: cram/cram_io.c $(cram_h) cram/os.h cram/md5.h $(cram_open_trace_file_h)
+cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c $(cram_h) $(htslib_sam_h)
+cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c $(cram_h) cram/os.h
+cram/files.o cram/files.pico: cram/files.c $(cram_misc_h)
+cram/mFILE.o cram/mFILE.pico: cram/mFILE.c cram/os.h cram/mFILE.h cram/vlen.h
+cram/md5.o cram/md5.pico: cram/md5.c cram/md5.h
+cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c $(cram_open_trace_file_h) $(cram_misc_h)
+cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c cram/pooled_alloc.h
+cram/sam_header.o cram/sam_header.pico: cram/sam_header.c $(cram_sam_header_h) cram/string_alloc.h
+cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c cram/string_alloc.h
+cram/thread_pool.o cram/thread_pool.pico: cram/thread_pool.c cram/thread_pool.h
+cram/vlen.o cram/vlen.pico: cram/vlen.c cram/vlen.h cram/os.h
+cram/zfio.o cram/zfio.pico: cram/zfio.c cram/os.h cram/zfio.h
 
 
 check test: test/hfile test/test-vcf-api test/test-vcf-sweep
@@ -212,7 +232,7 @@ install-dylib: libhts.dylib installdirs
 
 
 mostlyclean:
-	-rm -f *.o cram/*.o *.pico test/*.o test/*.dSYM test/*.tmp version.h
+	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM test/*.tmp version.h
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 	-rm -f libhts.a test/hfile test/test-vcf-api test/test-vcf-sweep
@@ -228,7 +248,7 @@ clean-dylib:
 
 
 tags:
-	ctags -f TAGS *.[ch] htslib/*.h
+	ctags -f TAGS *.[ch] cram/*.[ch] htslib/*.h
 
 
 force:
