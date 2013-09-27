@@ -38,6 +38,7 @@
 #define COLLAPSE_INDELS 2   // the same as above, but with indels
 #define COLLAPSE_ANY    4   // any combination of alleles can be returned by bcf_sr_next_line()
 #define COLLAPSE_SOME   8   // at least some of the ALTs must match
+#define COLLAPSE_BOTH  (COLLAPSE_SNPS|COLLAPSE_INDELS)
 
 typedef struct
 {
@@ -48,6 +49,9 @@ typedef struct
     htsFile *file;
     char *fname;
     int is_bin;             // is open in binary mode (tabix access)
+    char **als;             // parsed alleles if targets_als set and _regions_match_alleles called
+    int nals, mals;         // number of set alleles and the size of allocated array
+    int als_type;           // alleles type, currently VCF_SNP or VCF_INDEL
 
     // for in-memory regions (small data)
     struct _region_t *regs; // the regions
@@ -70,8 +74,8 @@ typedef struct
 	bcf_hdr_t *header;
 	hts_itr_t *itr;
 	const char *fname;
-	bcf1_t **buffer;
-	int nbuffer, mbuffer;
+	bcf1_t **buffer;                // cached VCF records. First is the current record synced across the reader
+	int nbuffer, mbuffer;           // number of cached records (including the current record); number of allocated records
 	int nfilter_ids, *filter_ids;   // -1 for ".", otherwise filter id as returned by bcf_id2int
     int type;
 	int *samples, n_smpl;	// list of columns in the order consistent with bcf_srs_t.samples
@@ -166,9 +170,13 @@ int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples);
  *  and merely skip unlisted positions.
  *
  *  Moreover, bcf_sr_set_targets() accepts an optional parameter $alleles which
- *  is intepreted as 1-based column index in the tab-delimited file where
- *  alleles are listed. This enables to perform the COLLAPSE_* logic also with
- *  tab-delimited files.
+ *  is intepreted as a 1-based column index in the tab-delimited file where
+ *  alleles are listed. This in principle enables to perform the COLLAPSE_*
+ *  logic also with tab-delimited files. However, the current implementation
+ *  considers the alleles merely as a suggestion for prioritizing one of possibly
+ *  duplicate VCF lines. It is up to the caller to examine targets->als if
+ *  perfect match is sought after. Note that the duplicate positions in targets
+ *  file are currently not supported.
  */
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int alleles);
 int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions);
