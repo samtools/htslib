@@ -204,7 +204,7 @@ extern "C" {
 	 * @param fp    BGZF file pointer; file offset placed at the beginning
 	 * @param h     BCF header
 	 */
-	void bcf_hdr_write(BGZF *fp, const bcf_hdr_t *h);
+	int bcf_hdr_write(BGZF *fp, const bcf_hdr_t *h);
 
 	/** Destroy a BCF header struct */
 	void bcf_hdr_destroy(bcf_hdr_t *h);
@@ -317,7 +317,7 @@ extern "C" {
 	#define vcf_close(fp) hts_close(fp)
 
 	bcf_hdr_t *vcf_hdr_read(htsFile *fp);
-	void vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
+	int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
 
 	int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v);
 	int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s);
@@ -370,7 +370,12 @@ extern "C" {
 	int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
 	const char **bcf_seqnames(const bcf_hdr_t *h, int *nseqs);
 	int bcf_is_snp(bcf1_t *v);
-	void bcf_set_variant_types(bcf1_t *v);
+
+    /**
+      *  bcf_get_variant_type[s]()  - returns one of VCF_REF, VCF_SNP, etc
+      */
+    int bcf_get_variant_types(bcf1_t *rec);
+    int bcf_get_variant_type(bcf1_t *rec, int ith_allele);
 
     /**
       *  bcf1_sync() - update BCF record
@@ -410,14 +415,14 @@ extern "C" {
     #define bcf1_update_info_float(hdr,line,key,values,n)   bcf1_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
     #define bcf1_update_info_flag(hdr,line,key,string,n)    bcf1_update_info((hdr),(line),(key),(string),(n),BCF_HT_FLAG)
     #define bcf1_update_info_string(hdr,line,key,string)    bcf1_update_info((hdr),(line),(key),(string),1,BCF_HT_STR)
-    int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type);
+    int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type);
 
     // If n==0, existing tag is removed. Otherwise it is updated or appended.
     #define bcf1_update_format_int32(hdr,line,key,values,n) bcf1_update_format((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf1_update_format_float(hdr,line,key,values,n) bcf1_update_format((hdr),(line),(key),(values),(n),BCF_HT_REAL)
     #define bcf1_update_format_char(hdr,line,key,values,n) bcf1_update_format((hdr),(line),(key),(values),(n),BCF_HT_STR)
     #define bcf1_update_genotypes(hdr,line,gts,n) bcf1_update_format((hdr),(line),"GT",(gts),(n),BCF_HT_INT)
-    int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type);
+    int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type);
 
     // For use with bcf1_update_genotypes only
     #define bcf_gt_phased(id)       ((id+1)<<1|1)

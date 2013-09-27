@@ -516,11 +516,12 @@ bcf_hdr_t *bcf_hdr_read(BGZF *fp)
 	return h;
 }
 
-void bcf_hdr_write(BGZF *fp, const bcf_hdr_t *h)
+int bcf_hdr_write(BGZF *fp, const bcf_hdr_t *h)
 {
-	bgzf_write(fp, "BCF\2\2", 5);
-	bgzf_write(fp, &h->l_text, 4);
-	bgzf_write(fp, h->text, h->l_text);
+	if ( bgzf_write(fp, "BCF\2\2", 5) !=5 ) return -1;
+	if ( bgzf_write(fp, &h->l_text, 4) !=4 ) return -1;
+	if ( bgzf_write(fp, h->text, h->l_text) != h->l_text ) return -1;
+    return 0;
 }
 
 /********************
@@ -762,9 +763,9 @@ int bcf_write1(BGZF *fp, const bcf1_t *v)
 	memcpy(x + 2, v, 16);
 	x[6] = (uint32_t)v->n_allele<<16 | v->n_info;
 	x[7] = (uint32_t)v->n_fmt<<24 | v->n_sample;
-	bgzf_write(fp, x, 32);
-    bgzf_write(fp, v->shared.s, v->shared.l);
-	bgzf_write(fp, v->indiv.s, v->indiv.l);
+	if ( bgzf_write(fp, x, 32) != 32 ) return -1;
+    if ( bgzf_write(fp, v->shared.s, v->shared.l) != v->shared.l ) return -1;
+	if ( bgzf_write(fp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;
 	return 0;
 }
 
@@ -924,16 +925,19 @@ const char **bcf_seqnames(const bcf_hdr_t *h, int *n)
     return names;
 }
 
-void vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
+int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
 {
+    int ret;
 	if (!fp->is_bin) {
 		int l = h->l_text;
 		while (l && h->text[l-1] == 0) --l; // kill the trailing zeros
         if ( fp->is_compressed==1 )
-            bgzf_write(fp->fp.bgzf, h->text, l);
+            ret = bgzf_write(fp->fp.bgzf, h->text, l);
         else
-            hwrite(fp->fp.hfile, h->text, l);
-	} else bcf_hdr_write(fp->fp.bgzf, h);
+            ret = hwrite(fp->fp.hfile, h->text, l);
+	} else 
+        ret = bcf_hdr_write(fp->fp.bgzf, h);
+    return ret<0 ? -1 : 0;
 }
 
 /***********************
@@ -1558,29 +1562,28 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 
 int vcf_write1(htsFile *fp, const bcf_hdr_t *h, const bcf1_t *v)
 {
+    int ret;
 	if (!fp->is_bin) 
     {
 	    fp->line.l = 0;
 		vcf_format1(h, v, &fp->line);
         if ( fp->is_compressed==1 )
-            bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
+            ret = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
         else
-            hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
+            ret = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
+        return ret==fp->line.l ? 0 : -1;
 	} 
-    else 
+
+    if ( v->errcode ) 
     {
-        if ( v->errcode ) 
-        {
-            // vcf_parse1() encountered a new contig or tag, undeclared in the header.
-            // However, the header must have been already printed, this would lead to
-            // a broken BCF file. Errors must be checked and cleared by the caller before
-            // we can proceed.
-            fprintf(stderr,"[%s:%d %s] Unchecked error (%d), exiting.\n", __FILE__,__LINE__,__FUNCTION__,v->errcode);
-            exit(1);
-        }
-        return bcf_write1(fp->fp.bgzf, v);
+        // vcf_parse1() encountered a new contig or tag, undeclared in the header.
+        // However, the header must have been already printed, this would lead to
+        // a broken BCF file. Errors must be checked and cleared by the caller before
+        // we can proceed.
+        fprintf(stderr,"[%s:%d %s] Unchecked error (%d), exiting.\n", __FILE__,__LINE__,__FUNCTION__,v->errcode);
+        exit(1);
     }
-	return 0;
+    return bcf_write1(fp->fp.bgzf, v);
 }
 
 /************************
@@ -1732,6 +1735,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
 	if ( !ref[1] && !alt[1] )
 	{
 		if ( *alt == '.' || *ref==*alt ) { var->n = 0; var->type = VCF_REF; return; }
+        if ( *alt == 'X' ) { var->n = 0; var->type = VCF_REF; return; }  // mpileup's X allele shouldn't be treated as variant
 		var->n = 1; var->type = VCF_SNP; return;
 	}
 
@@ -1777,10 +1781,8 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
 	// should do also complex events, SVs, etc...
 }
 
-void bcf_set_variant_types(bcf1_t *b)
+static void bcf_set_variant_types(bcf1_t *b)
 {
-	if ( b->d.var_type!=-1 ) return;	// already set
-
 	bcf_dec_t *d = &b->d;
 	if ( d->n_var < b->n_allele ) 
 	{
@@ -1797,7 +1799,18 @@ void bcf_set_variant_types(bcf1_t *b)
 	}
 }
 
-int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type)
+int bcf_get_variant_types(bcf1_t *rec)
+{
+    if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
+    return rec->d.var_type;
+}
+int bcf_get_variant_type(bcf1_t *rec, int ith_allele)
+{
+    if ( rec->d.var_type==-1 ) bcf_set_variant_types(rec);
+    return rec->d.var[ith_allele].type;
+}
+
+int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
 {
     // Is the field already present?
     int i, inf_id = bcf_id2int(hdr,BCF_DT_ID,key);
@@ -1877,7 +1890,7 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values
 }
 
 
-int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, void *values, int n, int type)
+int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
 {
     // Is the field already present?
     int i, fmt_id = bcf_id2int(hdr,BCF_DT_ID,key);
