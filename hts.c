@@ -178,7 +178,11 @@ char **hts_readlines(const char *fn, int *_n)
 			s[n++] = strdup(str.s);
 		}
 		ks_destroy(ks);
-		gzclose(fp);
+        #if KS_BGZF
+            bgzf_close(fp);
+        #else
+		    gzclose(fp);
+        #endif
 		s = (char**)realloc(s, n * sizeof(void*));
 		free(str.s);
 	} else if (*fn == ':') { // read from string
