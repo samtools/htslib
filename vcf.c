@@ -1640,6 +1640,7 @@ int bcf_index_build(const char *fn, int min_shift)
 	BGZF *fp;
 	hts_idx_t *idx;
 	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
+    if ( !fp->is_compressed ) { bgzf_close(fp); return -1; }
 	idx = bcf_index(fp, min_shift);
 	bgzf_close(fp);
     if ( !idx ) return -1;
