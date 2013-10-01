@@ -924,9 +924,9 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void
 		}
 		if ((ret = readrec(fp, hdr, r, &tid, &beg, &end)) >= 0) {
 			iter->curr_off = bgzf_tell(fp);
-			if (tid != iter->tid || beg >= iter->end) { // no need to proceed
+			if (tid != iter->tid || beg > iter->end) { // no need to proceed
 				ret = -1; break;
-			} else if (end > iter->beg && iter->end > beg) return ret;
+			} else if (end >= iter->beg && iter->end > beg) return ret;
 		} else break; // end of file or error
 	}
 	iter->finished = 1;
