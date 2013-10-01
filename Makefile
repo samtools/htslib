@@ -28,6 +28,13 @@ INSTALL_PROGRAM = $(INSTALL)
 INSTALL_DATA    = $(INSTALL) -m 644
 
 
+# TODO: fix up iRODS configury
+IRODS_HOME = $(HOME)/local/opt/iRODS-3.3
+hfile_irods.o hfile_irods.pico: CPPFLAGS += -I$(IRODS_HOME)/lib/api/include -I$(IRODS_HOME)/lib/core/include -I$(IRODS_HOME)/lib/md5/include -I$(IRODS_HOME)/lib/sha1/include -I$(IRODS_HOME)/server/core/include -I$(IRODS_HOME)/server/drivers/include -I$(IRODS_HOME)/server/icat/include
+LDFLAGS += -L$(IRODS_HOME)/lib/core/obj
+LDLIBS += -lRodsAPIs -lgssapi_krb5
+
+
 all: lib-static lib-shared test/hfile test/test_view test/test-vcf-api test/test-vcf-sweep
 
 HTSPREFIX =
@@ -96,6 +103,7 @@ LIBHTS_OBJS = \
 	bgzf.o \
 	faidx.o \
 	hfile.o \
+	hfile_irods.o \
 	hfile_net.o \
 	hts.o \
 	razf.o \
@@ -160,6 +168,7 @@ bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) hfile.h htsli
 kstring.o kstring.pico: kstring.c htslib/kstring.h
 knetfile.o knetfile.pico: knetfile.c htslib/knetfile.h
 hfile.o hfile.pico: hfile.c hfile.h hfile_internal.h
+hfile_irods.o hfile_irods.pico: hfile_irods.c hfile.h hfile_internal.h
 hfile_net.o hfile_net.pico: hfile_net.c hfile.h hfile_internal.h htslib/knetfile.h
 hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) hfile.h htslib/khash.h htslib/kseq.h htslib/ksort.h
 vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) hfile.h htslib/khash.h htslib/kseq.h htslib/kstring.h

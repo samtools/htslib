@@ -422,6 +422,7 @@ hFILE *hopen(const char *fname, const char *mode)
 {
     if (strncmp(fname, "http://", 7) == 0 ||
         strncmp(fname, "ftp://", 6) == 0) return hopen_net(fname, mode);
+    else if (strncmp(fname, "irods:", 6) == 0) return hopen_irods(fname, mode);
     else if (strcmp(fname, "-") == 0) return hopen_fd_stdinout(mode);
     else return hopen_fd(fname, mode);
 }
