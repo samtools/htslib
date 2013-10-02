@@ -7,6 +7,7 @@ lib*.dylib
 lib*.so
 lib*.so.*
 
+/test/fieldarith
 /test/hfile
 /test/test-vcf-api
 /test/test-vcf-sweep

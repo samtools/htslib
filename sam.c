@@ -200,6 +200,14 @@ int bam_cigar2rlen(int n_cigar, const uint32_t *cigar)
 	return l;
 }
 
+int32_t bam_endpos(const bam1_t *b)
+{
+	if (!(b->core.flag & BAM_FUNMAP) && b->core.n_cigar > 0)
+		return b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
+	else
+		return b->core.pos + 1;
+}
+
 static inline int aux_type2size(int x)
 {
 	if (x == 'C' || x == 'c' || x == 'A') return 1;

@@ -28,7 +28,14 @@ INSTALL_PROGRAM = $(INSTALL)
 INSTALL_DATA    = $(INSTALL) -m 644
 
 
-all: lib-static lib-shared test/hfile test/test_view test/test-vcf-api test/test-vcf-sweep
+BUILT_TEST_PROGRAMS = \
+	test/fieldarith \
+	test/hfile \
+	test/test_view \
+	test/test-vcf-api \
+	test/test-vcf-sweep
+
+all: lib-static lib-shared $(BUILT_TEST_PROGRAMS)
 
 HTSPREFIX =
 include htslib_vars.mk
@@ -191,10 +198,14 @@ cram/vlen.o cram/vlen.pico: cram/vlen.c cram/vlen.h cram/os.h
 cram/zfio.o cram/zfio.pico: cram/zfio.c cram/os.h cram/zfio.h
 
 
-check test: test/hfile test/test_view test/test-vcf-api test/test-vcf-sweep
+check test: $(BUILT_TEST_PROGRAMS)
+	test/fieldarith test/fieldarith.sam
 	test/hfile
 	cd test && ./test_view.pl
 	cd test && ./test.pl
+
+test/fieldarith: test/fieldarith.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/fieldarith.o libhts.a $(LDLIBS) -lz
 
 test/hfile: test/hfile.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LDLIBS) -lz
@@ -208,6 +219,7 @@ test/test-vcf-api: test/test-vcf-api.o libhts.a
 test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LDLIBS) -lz
 
+test/fieldarith.o: test/fieldarith.c $(htslib_sam_h)
 test/hfile.o: test/hfile.c hfile.h
 test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
@@ -244,7 +256,7 @@ mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
-	-rm -f libhts.a test/hfile test/test_view test/test-vcf-api test/test-vcf-sweep
+	-rm -f libhts.a $(BUILT_TEST_PROGRAMS)
 
 distclean: clean
 	-rm -f TAGS
