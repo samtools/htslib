@@ -1829,7 +1829,12 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *
     {
         if ( inf )
         {
-            // Mark the tag for removal
+            // Mark the tag for removal, free existing memory if necessary
+            if ( inf->vptr_free )
+            {
+                free(inf->vptr - inf->vptr_off);
+                inf->vptr_free = 0;
+            }
             line->d.shared_dirty |= BCF1_DIRTY_INF;
             inf->vptr = NULL;
         }
@@ -1908,6 +1913,12 @@ int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void
 
     if ( !n )
     {
+        // Mark the tag for removal, free existing memory if necessary
+        if ( fmt->p_free )
+        {
+            free(fmt->p - fmt->p_off);
+            fmt->p_free = 0;
+        }
         line->d.indiv_dirty = 1;
         fmt->p = NULL;
         return 0;
