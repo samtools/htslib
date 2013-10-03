@@ -287,7 +287,7 @@ extern "C" {
     #define bcf_id2number(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>12)
     #define bcf_id2type(hdr,type,int_id)    ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>4 & 0xf)
     #define bcf_id2coltype(hdr,type,int_id) ((hdr)->id[BCF_DT_ID][int_id].val->info[type] & 0xf)
-    #define bcf_idinfo_exists(hdr,type,int_id)  (bcf_id2coltype(hdr,type,int_id)==0xf ? 0 : 1)
+    #define bcf_idinfo_exists(hdr,type,int_id)  ((int_id<0 || bcf_id2coltype(hdr,type,int_id)==0xf) ? 0 : 1)
     
 	void bcf_fmt_array(kstring_t *s, int n, int type, void *data);
 	uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr);

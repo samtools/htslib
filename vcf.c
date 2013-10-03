@@ -398,7 +398,7 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
     if ( !PL_warned )
     {
         int id = bcf_id2int(hdr, BCF_DT_ID, "PL");
-        if ( id>=0 && bcf_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
+        if ( bcf_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
         {
             fprintf(stderr,"[W::%s] PL should be declared as Number=G\n", __func__);
             PL_warned = 1;
@@ -407,7 +407,7 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
     if ( !GL_warned )
     {
         int id = bcf_id2int(hdr, BCF_HL_FMT, "GL");
-        if ( id>=0 && bcf_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
+        if ( bcf_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
         {
             fprintf(stderr,"[W::%s] GL should be declared as Number=G\n", __func__);
             PL_warned = 1;
@@ -1815,7 +1815,7 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *
 {
     // Is the field already present?
     int i, inf_id = bcf_id2int(hdr,BCF_DT_ID,key);
-    if ( inf_id<0 || !bcf_idinfo_exists(hdr,BCF_HL_INFO,inf_id) )
+    if ( !bcf_idinfo_exists(hdr,BCF_HL_INFO,inf_id) )
     {
         fprintf(stderr,"[%s:%d %s] The tag was not defined in the header: %s\n", __FILE__,__LINE__,__FUNCTION__,key);
         exit(-1);
@@ -1900,7 +1900,7 @@ int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void
 {
     // Is the field already present?
     int i, fmt_id = bcf_id2int(hdr,BCF_DT_ID,key);
-    if ( fmt_id<0 || !bcf_idinfo_exists(hdr,BCF_HL_FMT,fmt_id) )
+    if ( !bcf_idinfo_exists(hdr,BCF_HL_FMT,fmt_id) )
     {
         if ( !n ) return 0;
         fprintf(stderr,"[%s:%d] Wrong usage of bcf1_update_format: The key \"%s\" not present in the header.\n",  __FILE__, __LINE__, key);
@@ -2120,7 +2120,7 @@ bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key)
 int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
 {
     int i,j, tag_id = bcf_id2int(hdr, BCF_DT_ID, tag);
-    if ( tag_id<0 || !bcf_idinfo_exists(hdr,BCF_HL_INFO,tag_id) ) return -1;    // no such INFO field in the header
+    if ( !bcf_idinfo_exists(hdr,BCF_HL_INFO,tag_id) ) return -1;    // no such INFO field in the header
     if ( bcf_id2type(hdr,BCF_HL_INFO,tag_id)!=type ) return -2;     // expected different type
 
     for (i=0; i<line->n_info; i++)
@@ -2171,7 +2171,7 @@ int bcf_get_format_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **
     if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
 
     int i,j, tag_id = bcf_id2int(hdr, BCF_DT_ID, tag);
-    if ( tag_id<0 || !bcf_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header
+    if ( !bcf_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header
     if ( bcf_id2type(hdr,BCF_HL_FMT,tag_id)!=type ) return -2;     // expected different type
 
     for (i=0; i<line->n_fmt; i++)
