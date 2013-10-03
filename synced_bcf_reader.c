@@ -658,6 +658,53 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
     struct stat sbuf;
     files->samples = NULL;
     files->n_smpl  = 0;
+
+    int *exclude = NULL;
+    if ( fname[0]=='!' )    // exclude samples
+    { 
+        fname++; 
+        exclude = (int*) calloc(bcf_nsamples(files->readers[0].header),sizeof(int));
+        if ( stat(fname, &sbuf)==0 && S_ISREG(sbuf.st_mode) ) // reading from file
+        {
+            FILE *fp = fopen(fname,"r");
+            if ( !fp ) { fprintf(stderr,"%s: %s\n", fname,strerror(errno)); return 0; }
+            char *line = NULL;
+            size_t len = 0;
+            ssize_t nread;
+            while ((nread = mygetline(&line, &len, fp)) != -1)
+            {
+                int id = bcf_id2int(files->readers[0].header, BCF_DT_SAMPLE, line);
+                // sanity check our assumptions for the things to follow
+                assert( id < bcf_nsamples(files->readers[0].header) );
+                assert( !strcmp(files->readers[0].header->samples[id],line) );
+                if ( id>=0 ) exclude[id] = 1;
+            }
+        }
+        else
+        {
+            kstring_t str = {0,0,0};
+            const char *b = fname;
+            while (b)
+            {
+                str.l = 0;
+                const char *e = index(b,','); 
+                if ( !(e-b) ) break;
+                if ( e ) { kputsn(b, e-b, &str); e++; }
+                else kputs(b, &str);
+                b = e;
+                for (i=0; i<files->nreaders; i++)
+                {
+                    int id = bcf_id2int(files->readers[0].header, BCF_DT_SAMPLE, str.s);
+                    // sanity check our assumptions for the things to follow
+                    assert( id < bcf_nsamples(files->readers[0].header) );
+                    assert( !strcmp(files->readers[0].header->samples[id],str.s) );
+                    if ( id>=0 ) exclude[id] = 1;
+                }
+            }
+            free(str.s);
+        }
+        fname = "-";
+    }
     if ( !strcmp(fname,"-") )   // Intersection of all samples across all readers
     {
         int n = files->readers[0].header->n[BCF_DT_SAMPLE];
@@ -665,6 +712,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
         int ism;
         for (ism=0; ism<n; ism++)
         {
+            if ( exclude && exclude[ism] ) continue;
             int n_isec = 1;
             for (i=1; i<files->nreaders; i++)
             {
@@ -679,7 +727,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
     else if ( stat(fname, &sbuf)==0 && S_ISREG(sbuf.st_mode) ) // read samples from file
     {
         FILE *fp = fopen(fname,"r");
-        if ( !fp ) { fprintf(stderr,"%s: %s\n", fname,strerror(errno)); return 0; }
+        if ( !fp ) { free(exclude); fprintf(stderr,"%s: %s\n", fname,strerror(errno)); return 0; }
         char *line = NULL;
         size_t len = 0;
         ssize_t nread;
@@ -731,6 +779,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
         }
         if ( str.s ) free(str.s);
     }
+    free(exclude);
     if ( !files->n_smpl ) 
     {
         if ( files->nreaders>1 ) fprintf(stderr,"[init_samples] No samples in common.\n");

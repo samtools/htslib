@@ -148,7 +148,8 @@ int bcf_sr_next_line(bcf_srs_t *readers);
  * @readers: holder of the open readers
  * @samples: this can be one of: file name with one sample per line;
  *           or column-separated list of samples; or '-' for a list of 
- *           samples shared by all files
+ *           samples shared by all files. If first character is the
+ *           exclamation mark, all but the listed samples are included.
  *
  * Returns 1 if the call succeeded, or 0 on error.
  */
