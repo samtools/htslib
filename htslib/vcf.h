@@ -465,6 +465,7 @@ extern "C" {
      */
     #define bcf_get_format_int(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
     #define bcf_get_format_float(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)
+    #define bcf_get_genotypes(hdr,line,dst,ndst)  bcf_get_format_values(hdr,line,"GT",(void**)(dst),ndst,BCF_HT_STR)
     int bcf_get_format_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type);
 	
 
