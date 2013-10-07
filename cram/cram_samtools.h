@@ -44,10 +44,8 @@ enum cigar_op {
 
 typedef bam1_t bam_seq_t;
 
-// Sorry this is a bit loopy
-#include "cram/cram.h"
+#include "cram/sam_header.h"
 
-int cram_get_bam1_seq(cram_fd *fd, bam1_t *b);
 bam_hdr_t *cram_header_to_bam(SAM_hdr *h);
 SAM_hdr *bam_header_to_cram(bam_hdr_t *h);
 
