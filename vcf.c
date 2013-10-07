@@ -1784,6 +1784,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
 
 static void bcf_set_variant_types(bcf1_t *b)
 {
+    if ( !(b->unpacked & BCF_UN_STR) ) bcf_unpack(b, BCF_UN_STR);
 	bcf_dec_t *d = &b->d;
 	if ( d->n_var < b->n_allele ) 
 	{
@@ -1820,6 +1821,8 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *
         fprintf(stderr,"[%s:%d %s] The tag was not defined in the header: %s\n", __FILE__,__LINE__,__FUNCTION__,key);
         exit(-1);
     }
+
+    if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
 
     for (i=0; i<line->n_info; i++)
         if ( inf_id==line->d.info[i].key ) break;
@@ -1906,6 +1909,8 @@ int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void
         fprintf(stderr,"[%s:%d] Wrong usage of bcf1_update_format: The key \"%s\" not present in the header.\n",  __FILE__, __LINE__, key);
         exit(-1);
     }
+
+    if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
 
     for (i=0; i<line->n_fmt; i++)
         if ( line->d.fmt[i].id==fmt_id ) break;
@@ -1994,6 +1999,7 @@ int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void
 
 int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
 {
+    if ( !(line->unpacked & BCF_UN_FLT) ) bcf_unpack(line, BCF_UN_FLT);
     line->d.shared_dirty |= BCF1_DIRTY_FLT;
     line->d.n_flt = n;
     if ( !n ) return 0;
@@ -2006,6 +2012,7 @@ int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
 
 int bcf1_add_filter(bcf_hdr_t *hdr, bcf1_t *line, int flt_id)
 {
+    if ( !(line->unpacked & BCF_UN_FLT) ) bcf_unpack(line, BCF_UN_FLT);
     int i;
     for (i=0; i<line->d.n_flt; i++)
         if ( flt_id==line->d.flt[i] ) break;
@@ -2123,6 +2130,8 @@ int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **ds
     if ( !bcf_idinfo_exists(hdr,BCF_HL_INFO,tag_id) ) return -1;    // no such INFO field in the header
     if ( bcf_id2type(hdr,BCF_HL_INFO,tag_id)!=type ) return -2;     // expected different type
 
+    if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
+
     for (i=0; i<line->n_info; i++)
         if ( line->d.info[i].key==tag_id ) break;
     if ( i==line->n_info ) return -3;                               // the tag is not present in this record
@@ -2168,11 +2177,11 @@ int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **ds
 
 int bcf_get_format_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
 {
-    if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
-
     int i,j, tag_id = bcf_id2int(hdr, BCF_DT_ID, tag);
     if ( !bcf_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header
     if ( bcf_id2type(hdr,BCF_HL_FMT,tag_id)!=type ) return -2;     // expected different type
+
+    if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
 
     for (i=0; i<line->n_fmt; i++)
         if ( line->d.fmt[i].id==tag_id ) break;
