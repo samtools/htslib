@@ -611,7 +611,7 @@ int bcf_sr_next_line(bcf_srs_t *files)
         for (i=0; i<files->nreaders; i++)
         {
             if ( !files->has_line[i] ) continue;
-            if ( files->readers[i].nbuffer==1 || files->readers[i].buffer[1]->pos!=files->readers[i].buffer[0]->pos ) continue;
+            if ( files->readers[i].nbuffer==0 || files->readers[i].buffer[1]->pos!=files->readers[i].buffer[0]->pos ) continue;
             break;
         }
         if ( i==files->nreaders ) return ret;   // no more lines left, output even if target alleles are not of the same type
