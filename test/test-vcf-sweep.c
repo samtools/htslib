@@ -38,10 +38,10 @@ int main(int argc, char **argv)
         if ( !nPLs ) continue;  // PL not present
 
         // how many values are there per sample
-        int nvals = nPLs / bcf_nsamples(hdr);
+        int nvals = nPLs / bcf_hdr_nsamples(hdr);
 
         int *ptr = PLs;
-        for (i=0; i<bcf_nsamples(hdr); i++)
+        for (i=0; i<bcf_hdr_nsamples(hdr); i++)
         {
             for (j=0; j<nvals; j++)
             {
@@ -64,9 +64,9 @@ int main(int argc, char **argv)
     {
         nPLs = bcf_get_format_int(hdr, rec, "PL", &PLs, &mPLs);
         if ( !nPLs ) continue;
-        int nvals = nPLs / bcf_nsamples(hdr);
+        int nvals = nPLs / bcf_hdr_nsamples(hdr);
         int *ptr = PLs;
-        for (i=0; i<bcf_nsamples(hdr); i++)
+        for (i=0; i<bcf_hdr_nsamples(hdr); i++)
         {
             for (j=0; j<nvals; j++)
             {

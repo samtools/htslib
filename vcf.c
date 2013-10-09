@@ -605,7 +605,7 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 	return 0;
 }
 
-int bcf_read1(BGZF *fp, bcf1_t *v) { return bcf_read1_core(fp, v); }
+int bcf_read(BGZF *fp, bcf1_t *v) { return bcf_read1_core(fp, v); }
 
 int bcf_readrec(BGZF *fp, void *null, bcf1_t *v, int *tid, int *beg, int *end)
 {
@@ -657,7 +657,7 @@ static inline void bcf1_sync_info(bcf1_t *line, kstring_t *str)
     if ( irm>=0 ) line->n_info = irm;
 }
 
-int bcf1_sync(bcf1_t *line)
+static int bcf1_sync(bcf1_t *line)
 {
     int i;
     kstring_t tmp = {0,0,0};
@@ -755,8 +755,10 @@ int bcf1_sync(bcf1_t *line)
     return 0;
 }
 
-int bcf_write1(BGZF *fp, const bcf1_t *v)
+int bcf_write(BGZF *fp, bcf1_t *v)
 {
+    bcf1_sync(v);   // check if the BCF record was modified
+
 	uint32_t x[8];
 	x[0] = v->shared.l + 24; // to include six 32-bit integers
 	x[1] = v->indiv.l;
@@ -905,7 +907,7 @@ void bcf_hdr_fmt_text(bcf_hdr_t *hdr)
     hdr->l_text = txt.l + 1;    // the terminating \0 must be included
 }
 
-const char **bcf_seqnames(const bcf_hdr_t *h, int *n)
+const char **bcf_hdr_seqnames(const bcf_hdr_t *h, int *n)
 {
     vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
     int tid, m = kh_size(d);
@@ -1062,7 +1064,7 @@ static inline void align_mem(kstring_t *s)
 	}
 }
 
-int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
+int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 {
 	int i = 0;
 	char *p, *q, *r, *t;
@@ -1371,7 +1373,7 @@ int vcf_parse1(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 	return 0;
 }
 
-int vcf_read1(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
+int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
 	if (!fp->is_bin) {
 		int ret;
@@ -1417,6 +1419,7 @@ static inline uint8_t *bcf_unpack_info_core1(uint8_t *ptr, bcf_info_t *info)
 
 int bcf_unpack(bcf1_t *b, int which)
 {
+    if ( !b->shared.l ) return 0; // Building a new BCF record from scratch
 	uint8_t *ptr = (uint8_t*)b->shared.s;
 	int *offset, i;
 	bcf_dec_t *d = &b->d;
@@ -1480,14 +1483,14 @@ int bcf_unpack(bcf1_t *b, int which)
 	return 0;
 }
 
-int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
+int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 {
 	uint8_t *ptr = (uint8_t*)v->shared.s;
 	int i;
 	bcf_unpack((bcf1_t*)v, BCF_UN_ALL);
 	kputs(h->id[BCF_DT_CTG][v->rid].key, s); // CHROM
 	kputc('\t', s); kputw(v->pos + 1, s); // POS
-	kputc('\t', s); kputs(v->d.id, s); // ID
+	kputc('\t', s); kputs(v->d.id ? v->d.id : ".", s); // ID
 	kputc('\t', s); // REF
 	if (v->n_allele > 0) kputs(v->d.allele[0], s);
 	else kputc('.', s);
@@ -1560,7 +1563,7 @@ int vcf_format1(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 	return 0;
 }
 
-int vcf_write1(htsFile *fp, const bcf_hdr_t *h, const bcf1_t *v)
+int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
     int ret;
 	if (!fp->is_bin) 
@@ -1812,7 +1815,7 @@ int bcf_get_variant_type(bcf1_t *rec, int ith_allele)
     return rec->d.var[ith_allele].type;
 }
 
-int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
+int bcf_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
 {
     // Is the field already present?
     int i, inf_id = bcf_id2int(hdr,BCF_DT_ID,key);
@@ -1899,14 +1902,14 @@ int bcf1_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *
 }
 
 
-int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
+int bcf_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
 {
     // Is the field already present?
     int i, fmt_id = bcf_id2int(hdr,BCF_DT_ID,key);
     if ( !bcf_idinfo_exists(hdr,BCF_HL_FMT,fmt_id) )
     {
         if ( !n ) return 0;
-        fprintf(stderr,"[%s:%d] Wrong usage of bcf1_update_format: The key \"%s\" not present in the header.\n",  __FILE__, __LINE__, key);
+        fprintf(stderr,"[%s:%d] Wrong usage of bcf_update_format: The key \"%s\" not present in the header.\n",  __FILE__, __LINE__, key);
         exit(-1);
     }
 
@@ -1997,7 +2000,7 @@ int bcf1_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void
 }
 
 
-int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
+int bcf_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
 {
     if ( !(line->unpacked & BCF_UN_FLT) ) bcf_unpack(line, BCF_UN_FLT);
     line->d.shared_dirty |= BCF1_DIRTY_FLT;
@@ -2010,7 +2013,7 @@ int bcf1_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
     return 0;
 }
 
-int bcf1_add_filter(bcf_hdr_t *hdr, bcf1_t *line, int flt_id)
+int bcf_add_filter(bcf_hdr_t *hdr, bcf1_t *line, int flt_id)
 {
     if ( !(line->unpacked & BCF_UN_FLT) ) bcf_unpack(line, BCF_UN_FLT);
     int i;
@@ -2047,7 +2050,7 @@ static inline int _bcf1_sync_alleles(bcf_hdr_t *hdr, bcf1_t *line, int nals)
     line->d.shared_dirty |= BCF1_DIRTY_ALS;
     return 0;
 }
-int bcf1_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)
+int bcf_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)
 {
     kstring_t tmp = {0,0,0};
     char *free_old = NULL;
@@ -2058,6 +2061,7 @@ int bcf1_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int 
         if ( alleles[i]>=line->d.als && alleles[i]<line->d.als+line->d.m_als ) break;
     if ( i==nals ) 
     {
+        // all alleles point elsewhere, reuse the existing block
         tmp.l = 0; tmp.s = line->d.als; tmp.m = line->d.m_als;
     }
     else
@@ -2073,7 +2077,7 @@ int bcf1_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int 
     return _bcf1_sync_alleles(hdr,line,nals);
 }
 
-int bcf1_update_alleles_str(bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string)
+int bcf_update_alleles_str(bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string)
 {
     kstring_t tmp;
     tmp.l = 0; tmp.s = line->d.als; tmp.m = line->d.m_als;
@@ -2090,7 +2094,7 @@ int bcf1_update_alleles_str(bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_st
     return _bcf1_sync_alleles(hdr, line, nals);
 }
 
-int bcf1_update_id(bcf_hdr_t *hdr, bcf1_t *line, const char *id)
+int bcf_update_id(bcf_hdr_t *hdr, bcf1_t *line, const char *id)
 {
     kstring_t tmp;
     tmp.l = 0; tmp.s = line->d.id; tmp.m = line->d.m_id;
@@ -2147,8 +2151,8 @@ int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **ds
 
     if ( info->len == 1 )
     {
-        if ( info->type==BCF_HT_INT ) *((int*)*dst) = info->v1.i;
-        else if ( info->type==BCF_HT_REAL ) *((float*)*dst) = info->v1.f;
+        if ( info->type==BCF_BT_FLOAT ) *((float*)*dst) = info->v1.f;
+        else *((int*)*dst) = info->v1.i;
         return 1;
     }
 

@@ -47,23 +47,23 @@ void write_bcf(char *fname)
     // .. POS
     rec->pos = 14369;
     // .. ID
-    bcf1_update_id(hdr, rec, "rs6054257");
+    bcf_update_id(hdr, rec, "rs6054257");
     // .. REF and ALT
-    bcf1_update_alleles_str(hdr, rec, "G,A");
+    bcf_update_alleles_str(hdr, rec, "G,A");
     // .. QUAL
     rec->qual = 29;
     // .. FILTER
     int tmpi = bcf_id2int(hdr, BCF_DT_ID, "PASS");
-    bcf1_update_filter(hdr, rec, &tmpi, 1);
+    bcf_update_filter(hdr, rec, &tmpi, 1);
     // .. INFO
     tmpi = 3;  
-    bcf1_update_info_int32(hdr, rec, "NS", &tmpi, 1);
+    bcf_update_info_int32(hdr, rec, "NS", &tmpi, 1);
     tmpi = 14; 
-    bcf1_update_info_int32(hdr, rec, "DP", &tmpi, 1);
+    bcf_update_info_int32(hdr, rec, "DP", &tmpi, 1);
     float tmpf = 0.5;
-    bcf1_update_info_float(hdr, rec, "AF", &tmpf, 1);
-    bcf1_update_info_flag(hdr, rec, "DB", NULL, 1);
-    bcf1_update_info_flag(hdr, rec, "H2", NULL, 1);
+    bcf_update_info_float(hdr, rec, "AF", &tmpf, 1);
+    bcf_update_info_flag(hdr, rec, "DB", NULL, 1);
+    bcf_update_info_flag(hdr, rec, "H2", NULL, 1);
     // .. FORMAT
     rec->n_sample = hdr->n[BCF_DT_SAMPLE];
     int *tmpia = (int*)malloc(rec->n_sample*2*sizeof(int));
@@ -73,41 +73,41 @@ void write_bcf(char *fname)
     tmpia[3] = bcf_gt_phased(0);
     tmpia[4] = bcf_gt_unphased(1); 
     tmpia[5] = bcf_gt_unphased(1);
-    bcf1_update_genotypes(hdr, rec, tmpia, rec->n_sample*2);
+    bcf_update_genotypes(hdr, rec, tmpia, rec->n_sample*2);
     tmpia[0] = 48;
     tmpia[1] = 48;
     tmpia[2] = 43;
-    bcf1_update_format_int32(hdr, rec, "GQ", tmpia, rec->n_sample);
+    bcf_update_format_int32(hdr, rec, "GQ", tmpia, rec->n_sample);
     tmpia[0] = 1;
     tmpia[1] = 8;
     tmpia[2] = 5;
-    bcf1_update_format_int32(hdr, rec, "DP", tmpia, rec->n_sample);
+    bcf_update_format_int32(hdr, rec, "DP", tmpia, rec->n_sample);
     tmpia[0] = 51;
     tmpia[1] = 51;
     tmpia[2] = 51;
     tmpia[3] = 51;
     tmpia[4] = bcf_int32_missing;
     tmpia[5] = bcf_int32_missing;
-    bcf1_update_format_int32(hdr, rec, "HQ", tmpia, rec->n_sample*2);
-    bcf1_sync(rec);
+    bcf_update_format_int32(hdr, rec, "HQ", tmpia, rec->n_sample*2);
+    //bcf1_sync(rec);
     vcf_write1(fp, hdr, rec);
 
     // 20     1110696 . A      G,T     67   .   NS=2;DP=10;AF=0.333,.;AA=T;DB GT 2 1   ./.
     bcf_clear1(rec);
     rec->rid = bcf_name2id(hdr, "20");
     rec->pos = 1110695;
-    bcf1_update_alleles_str(hdr, rec, "A,G,T");
+    bcf_update_alleles_str(hdr, rec, "A,G,T");
     rec->qual = 67;
     tmpi = 2;
-    bcf1_update_info_int32(hdr, rec, "NS", &tmpi, 1);
+    bcf_update_info_int32(hdr, rec, "NS", &tmpi, 1);
     tmpi = 10;
-    bcf1_update_info_int32(hdr, rec, "DP", &tmpi, 1);
+    bcf_update_info_int32(hdr, rec, "DP", &tmpi, 1);
     float *tmpfa = (float*)malloc(2*sizeof(float));
     tmpfa[0] = 0.333; 
     bcf_float_set_missing(tmpfa[1]);
-    bcf1_update_info_float(hdr, rec, "AF", tmpfa, 2);
-    bcf1_update_info_string(hdr, rec, "AA", "T");
-    bcf1_update_info_flag(hdr, rec, "DB", NULL, 1);
+    bcf_update_info_float(hdr, rec, "AF", tmpfa, 2);
+    bcf_update_info_string(hdr, rec, "AA", "T");
+    bcf_update_info_flag(hdr, rec, "DB", NULL, 1);
     rec->n_sample = hdr->n[BCF_DT_SAMPLE];
     tmpia[0] = bcf_gt_phased(2);
     tmpia[1] = bcf_int32_vector_end;
@@ -115,8 +115,8 @@ void write_bcf(char *fname)
     tmpia[3] = bcf_int32_vector_end;
     tmpia[4] = bcf_gt_missing;
     tmpia[5] = bcf_gt_missing;
-    bcf1_update_genotypes(hdr, rec, tmpia, rec->n_sample*2);
-    bcf1_sync(rec);
+    bcf_update_genotypes(hdr, rec, tmpia, rec->n_sample*2);
+    //bcf1_sync(rec);
     vcf_write1(fp, hdr, rec);
 
     free(tmpia);

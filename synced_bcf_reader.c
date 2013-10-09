@@ -164,7 +164,7 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
     if ( !files->explicit_regs && !files->streaming )
     {
         int n,i;
-        const char **names = reader->tbx_idx ? tbx_seqnames(reader->tbx_idx, &n) : bcf_seqnames(reader->header, &n);
+        const char **names = reader->tbx_idx ? tbx_seqnames(reader->tbx_idx, &n) : bcf_hdr_seqnames(reader->header, &n);
         for (i=0; i<n; i++)
         {
             if ( !files->regions )
@@ -663,7 +663,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
     if ( fname[0]=='!' )    // exclude samples
     { 
         fname++; 
-        exclude = (int*) calloc(bcf_nsamples(files->readers[0].header),sizeof(int));
+        exclude = (int*) calloc(bcf_hdr_nsamples(files->readers[0].header),sizeof(int));
         if ( stat(fname, &sbuf)==0 && S_ISREG(sbuf.st_mode) ) // reading from file
         {
             FILE *fp = fopen(fname,"r");
@@ -675,7 +675,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
             {
                 int id = bcf_id2int(files->readers[0].header, BCF_DT_SAMPLE, line);
                 // sanity check our assumptions for the things to follow
-                assert( id < bcf_nsamples(files->readers[0].header) );
+                assert( id < bcf_hdr_nsamples(files->readers[0].header) );
                 assert( !strcmp(files->readers[0].header->samples[id],line) );
                 if ( id>=0 ) exclude[id] = 1;
             }
@@ -696,7 +696,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
                 {
                     int id = bcf_id2int(files->readers[0].header, BCF_DT_SAMPLE, str.s);
                     // sanity check our assumptions for the things to follow
-                    assert( id < bcf_nsamples(files->readers[0].header) );
+                    assert( id < bcf_hdr_nsamples(files->readers[0].header) );
                     assert( !strcmp(files->readers[0].header->samples[id],str.s) );
                     if ( id>=0 ) exclude[id] = 1;
                 }

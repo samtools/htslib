@@ -352,7 +352,7 @@ static size_t blksize(int fd)
 {
     struct stat sbuf;
     if (fstat(fd, &sbuf) != 0) return 0;
-    return sbuf.st_blksize;
+    return sbuf.st_blksize < 131072 ? sbuf.st_blksize : 131072;
 }
 
 static hFILE *hopen_fd(const char *filename, const char *mode)
