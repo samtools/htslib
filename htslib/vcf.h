@@ -189,16 +189,16 @@ extern "C" {
      *  records as bcf1_t data structures, therefore most functions are
      *  prefixed with bcf_. There are a few exceptions where the functions must
      *  be aware of both BCF and VCF worlds, such as bcf_parse vs vcf_parse. In
-     *  these cases, functions prefixed with vcf_ are more general and work
+     *  these cases, functions prefixed with bcf_ are more general and work
      *  with both BCF and VCF.
      *
 	 ***********************************************************************/
 
     /** These macros are defined only for consistency with other parts of htslib */
     #define bcf_init1()         bcf_init()
-    #define bcf_read1(fp,v)     bcf_read((fp),(v))
+    #define bcf_read1(fp,h,v)   bcf_read((fp),(h),(v))
     #define vcf_read1(fp,h,v)   vcf_read((fp),(h),(v))
-    #define bcf_write1(fp,v)    bcf_write((fp),(v))
+    #define bcf_write1(fp,h,v)  bcf_write((fp),(h),(v))
     #define vcf_write1(fp,h,v)  vcf_write((fp),(h),(v))
     #define bcf_destroy1(v)     bcf_destroy(v)
     #define vcf_parse1(s,h,v)   vcf_parse((s),(h),(v))
@@ -237,16 +237,18 @@ extern "C" {
 	void bcf_clear(bcf1_t *v);
 
 
-    /** vcf_open mode: see hts_open() in hts.h */
+    /** bcf_open and vcf_open mode: please see hts_open() in hts.h */
 	typedef htsFile vcfFile;
+	#define bcf_open(fn, mode, fn_ref) hts_open((fn), (mode), (fn_ref))
 	#define vcf_open(fn, mode, fn_ref) hts_open((fn), (mode), (fn_ref))
+	#define bcf_close(fp) hts_close(fp)
 	#define vcf_close(fp) hts_close(fp)
 
     /** Reads VCF or BCF header */
-	bcf_hdr_t *vcf_hdr_read(htsFile *fp);
+	bcf_hdr_t *bcf_hdr_read(htsFile *fp);
 
     /** Writes VCF or BCF header */
-	int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
+	int bcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
 
     /** Parse VCF line contained in kstring and populate the bcf1_t struct */
 	int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v);
@@ -255,14 +257,14 @@ extern "C" {
 	int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s);
 
     /**
-     *  vcf_read() - read next VCF or BCF record
+     *  bcf_read() - read next VCF or BCF record
      *
      *  Returns -1 on critical errors, 0 otherwise. On errors which are not
      *  critical for reading, such as missing header definitions, v->errcode is
      *  set to one of BCF_ERR* code and must be checked before calling
      *  vcf_write().
      */
-	int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
+	int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
 
 	/**
 	 *  bcf_unpack() - unpack/decode a BCF record (fills the bcf1_t::d field)
@@ -281,20 +283,19 @@ extern "C" {
 	int bcf_unpack(bcf1_t *b, int which);
 
     /**
-     *  vcf_write() - write one VCF or BCF record. The type is determined at the open() call.
+     *  bcf_write() - write one VCF or BCF record. The type is determined at the open() call.
      */
-	int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
+	int bcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
 
     /**
-     *  The following functions work only with BCFs and should rarely be called
-     *  directly. Usually one wants to use their vcf_* alternatives, which work
+     *  The following functions work only with VCFs and should rarely be called
+     *  directly. Usually one wants to use their bcf_* alternatives, which work
      *  transparently with both VCFs and BCFs.
      */
-	int bcf_hdr_parse(bcf_hdr_t *h);
-	bcf_hdr_t *bcf_hdr_read(BGZF *fp);
-	int bcf_hdr_write(BGZF *fp, const bcf_hdr_t *h);
-	int bcf_read(BGZF *fp, bcf1_t *v);
-	int bcf_write(BGZF *fp, bcf1_t *v);
+	bcf_hdr_t *vcf_hdr_read(htsFile *fp);
+	int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
+	int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
+	int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
 
 	/** Helper function for the bcf_itr_next() macro; internal use, ignore it */
 	int bcf_readrec(BGZF *fp, void *null, bcf1_t *v, int *tid, int *beg, int *end);
@@ -457,39 +458,39 @@ extern "C" {
 	 **************************************************************************/
  
     /**
-      *  bcf_id2int() - Translates string into numeric ID
+      *  bcf_hdr_id2int() - Translates string into numeric ID
       *  @type:     one of BCF_DT_ID, BCF_DT_CTG, BCF_DT_SAMPLE
       *  @id:       tag name, such as: PL, DP, GT, etc.
       *
       *  Returns -1 if string is not in dictionary, otherwise numeric ID which identifies
       *  fields in BCF records.
       */
-	int bcf_id2int(const bcf_hdr_t *hdr, int type, const char *id);
+	int bcf_hdr_id2int(const bcf_hdr_t *hdr, int type, const char *id);
 
     /**
-      *  bcf_name2id() - Translates sequence names (chromosomes) into numeric ID
+      *  bcf_hdr_name2id() - Translates sequence names (chromosomes) into numeric ID
       */
-	int bcf_name2id(const bcf_hdr_t *hdr, const char *id);
+	int bcf_hdr_name2id(const bcf_hdr_t *hdr, const char *id);
 
     /**
-      *  bcf_id2*() - Macros for accessing bcf_idinfo_t 
+      *  bcf_hdr_id2*() - Macros for accessing bcf_idinfo_t 
       *  @type:      one of BCF_HL_FLT, BCF_HL_INFO, BCF_HL_FMT
       *  @int_id:    return value of bcf_id2int, must be >=0
       *
       *  The returned values are:
-      *     bcf_id2length   ..  whether the number of values is fixed or variable, one of BCF_VL_* 
-      *     bcf_id2number   ..  the number of values, 0xfffff for variable length fields
-      *     bcf_id2type     ..  the field type, one of BCF_HT_*
-      *     bcf_id2coltype  ..  the column type, one of BCF_HL_*
+      *     bcf_hdr_id2length   ..  whether the number of values is fixed or variable, one of BCF_VL_* 
+      *     bcf_hdr_id2number   ..  the number of values, 0xfffff for variable length fields
+      *     bcf_hdr_id2type     ..  the field type, one of BCF_HT_*
+      *     bcf_hdr_id2coltype  ..  the column type, one of BCF_HL_*
       *
       *  Notes: Prior to using the macros, the presence of the info should be
-      *  tested with bcf_idinfo_exists().
+      *  tested with bcf_hdr_idinfo_exists().
       */
-    #define bcf_id2length(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>8 & 0xf)
-    #define bcf_id2number(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>12)
-    #define bcf_id2type(hdr,type,int_id)    ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>4 & 0xf)
-    #define bcf_id2coltype(hdr,type,int_id) ((hdr)->id[BCF_DT_ID][int_id].val->info[type] & 0xf)
-    #define bcf_idinfo_exists(hdr,type,int_id)  ((int_id<0 || bcf_id2coltype(hdr,type,int_id)==0xf) ? 0 : 1)
+    #define bcf_hdr_id2length(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>8 & 0xf)
+    #define bcf_hdr_id2number(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>12)
+    #define bcf_hdr_id2type(hdr,type,int_id)    ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>4 & 0xf)
+    #define bcf_hdr_id2coltype(hdr,type,int_id) ((hdr)->id[BCF_DT_ID][int_id].val->info[type] & 0xf)
+    #define bcf_hdr_idinfo_exists(hdr,type,int_id)  ((int_id<0 || bcf_hdr_id2coltype(hdr,type,int_id)==0xf) ? 0 : 1)
     
 	void bcf_fmt_array(kstring_t *s, int n, int type, void *data);
 	uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr);

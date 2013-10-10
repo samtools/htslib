@@ -37,13 +37,13 @@ void write_bcf(char *fname)
     bcf_hdr_add_sample(hdr, "NA00003");
 
     bcf_hdr_fmt_text(hdr);
-    vcf_hdr_write(fp, hdr);
+    bcf_hdr_write(fp, hdr);
 
 
     // Add a record
     // 20     14370   rs6054257 G      A       29   PASS   NS=3;DP=14;AF=0.5;DB;H2           GT:GQ:DP:HQ 0|0:48:1:51,51 1|0:48:8:51,51 1/1:43:5:.,.
     // .. CHROM
-    rec->rid = bcf_name2id(hdr, "20");
+    rec->rid = bcf_hdr_name2id(hdr, "20");
     // .. POS
     rec->pos = 14369;
     // .. ID
@@ -53,7 +53,7 @@ void write_bcf(char *fname)
     // .. QUAL
     rec->qual = 29;
     // .. FILTER
-    int tmpi = bcf_id2int(hdr, BCF_DT_ID, "PASS");
+    int tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
     bcf_update_filter(hdr, rec, &tmpi, 1);
     // .. INFO
     tmpi = 3;  
@@ -89,12 +89,11 @@ void write_bcf(char *fname)
     tmpia[4] = bcf_int32_missing;
     tmpia[5] = bcf_int32_missing;
     bcf_update_format_int32(hdr, rec, "HQ", tmpia, rec->n_sample*2);
-    //bcf1_sync(rec);
-    vcf_write1(fp, hdr, rec);
+    bcf_write1(fp, hdr, rec);
 
     // 20     1110696 . A      G,T     67   .   NS=2;DP=10;AF=0.333,.;AA=T;DB GT 2 1   ./.
     bcf_clear1(rec);
-    rec->rid = bcf_name2id(hdr, "20");
+    rec->rid = bcf_hdr_name2id(hdr, "20");
     rec->pos = 1110695;
     bcf_update_alleles_str(hdr, rec, "A,G,T");
     rec->qual = 67;
@@ -116,8 +115,7 @@ void write_bcf(char *fname)
     tmpia[4] = bcf_gt_missing;
     tmpia[5] = bcf_gt_missing;
     bcf_update_genotypes(hdr, rec, tmpia, rec->n_sample*2);
-    //bcf1_sync(rec);
-    vcf_write1(fp, hdr, rec);
+    bcf_write1(fp, hdr, rec);
 
     free(tmpia);
     free(tmpfa);
@@ -132,14 +130,14 @@ void write_bcf(char *fname)
 void bcf_to_vcf(char *fname)
 {
     htsFile *fp    = hts_open(fname,"rb",0);
-    bcf_hdr_t *hdr = vcf_hdr_read(fp);
+    bcf_hdr_t *hdr = bcf_hdr_read(fp);
     bcf1_t *rec    = bcf_init1();
     htsFile *out   = hts_open("-","w",0);
 
-    vcf_hdr_write(out, hdr);
-    while ( vcf_read1(fp, hdr, rec)>=0 )
+    bcf_hdr_write(out, hdr);
+    while ( bcf_read1(fp, hdr, rec)>=0 )
     {
-        vcf_write1(out, hdr, rec);
+        bcf_write1(out, hdr, rec);
     }
     
     bcf_destroy1(rec);

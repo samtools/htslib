@@ -35,7 +35,7 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
             {
                 str.l = 0;
                 kputsn(prev, tmp-prev, &str);
-                out[nout] = bcf_id2int(hdr, BCF_DT_ID, str.s);
+                out[nout] = bcf_hdr_id2int(hdr, BCF_DT_ID, str.s);
             }
             nout++;
             if ( !*tmp ) break;
@@ -93,7 +93,7 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
             // This is just to read the header
             htsFile *file = hts_open(fname, "r", NULL);
             if ( !file ) return 0;
-            reader->header = vcf_hdr_read(file);
+            reader->header = bcf_hdr_read(file);
             hts_close(file);
 
             // The VCF opened in binary tabix mode
@@ -104,7 +104,7 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
         {
             reader->file = hts_open(fname, "rb", NULL);
             if ( !reader->file ) return 0;
-            reader->header = vcf_hdr_read(reader->file);
+            reader->header = bcf_hdr_read(reader->file);
 
             reader->bcf_idx = bcf_index_load(fname);
             if ( !reader->bcf_idx ) 
@@ -125,7 +125,7 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
         {
             reader->file = hts_open(fname, "rb", NULL);
             if ( !reader->file ) return 0;
-            reader->header = vcf_hdr_read(reader->file);
+            reader->header = bcf_hdr_read(reader->file);
         }
         else if ( reader->type & FT_VCF || reader->type==FT_STDIN )
         {
@@ -135,7 +135,7 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
                 fprintf(stderr,"[add_reader] Could not open %s\n", fname);
                 return 0;
             }
-            reader->header = vcf_hdr_read(reader->file);
+            reader->header = bcf_hdr_read(reader->file);
         }
         else
         {
@@ -332,7 +332,7 @@ static int _readers_next_region(bcf_srs_t *files)
         }
         else
         {
-            int tid = bcf_name2id(reader->header,files->regions->seq);
+            int tid = bcf_hdr_name2id(reader->header,files->regions->seq);
             if ( tid==-1 ) continue;    // the sequence not present in this file
             reader->itr = bcf_itr_queryi(reader->bcf_idx,tid,files->regions->start,files->regions->end+1);
         }
@@ -377,7 +377,7 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             }
             else if ( reader->type & FT_BCF )
             {
-                if ( (ret=bcf_read1(reader->file->fp.bgzf, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
+                if ( (ret=bcf_read1(reader->file, reader->header, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
             }
             else
             {
@@ -673,7 +673,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
             ssize_t nread;
             while ((nread = mygetline(&line, &len, fp)) != -1)
             {
-                int id = bcf_id2int(files->readers[0].header, BCF_DT_SAMPLE, line);
+                int id = bcf_hdr_id2int(files->readers[0].header, BCF_DT_SAMPLE, line);
                 // sanity check our assumptions for the things to follow
                 assert( id < bcf_hdr_nsamples(files->readers[0].header) );
                 assert( !strcmp(files->readers[0].header->samples[id],line) );
@@ -694,7 +694,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
                 b = e;
                 for (i=0; i<files->nreaders; i++)
                 {
-                    int id = bcf_id2int(files->readers[0].header, BCF_DT_SAMPLE, str.s);
+                    int id = bcf_hdr_id2int(files->readers[0].header, BCF_DT_SAMPLE, str.s);
                     // sanity check our assumptions for the things to follow
                     assert( id < bcf_hdr_nsamples(files->readers[0].header) );
                     assert( !strcmp(files->readers[0].header->samples[id],str.s) );
@@ -716,7 +716,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
             int n_isec = 1;
             for (i=1; i<files->nreaders; i++)
             {
-                if ( bcf_id2int(files->readers[i].header, BCF_DT_SAMPLE, smpl[ism])==-1 ) break;
+                if ( bcf_hdr_id2int(files->readers[i].header, BCF_DT_SAMPLE, smpl[ism])==-1 ) break;
                 n_isec++;
             }
             if ( n_isec<files->nreaders ) continue;
@@ -736,7 +736,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
             int n_isec = 0;
             for (i=0; i<files->nreaders; i++)
             {
-                if ( bcf_id2int(files->readers[i].header, BCF_DT_SAMPLE, line)==-1 ) break;
+                if ( bcf_hdr_id2int(files->readers[i].header, BCF_DT_SAMPLE, line)==-1 ) break;
                 n_isec++;
             }
             if ( n_isec<files->nreaders ) 
@@ -766,7 +766,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
             int n_isec = 0;
             for (i=0; i<files->nreaders; i++)
             {
-                if ( bcf_id2int(files->readers[i].header, BCF_DT_SAMPLE, str.s)==-1 ) break;
+                if ( bcf_hdr_id2int(files->readers[i].header, BCF_DT_SAMPLE, str.s)==-1 ) break;
                 n_isec++;
             }
             if ( n_isec<files->nreaders ) 
@@ -792,7 +792,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
         reader->n_smpl   = files->n_smpl;
         int ism;
         for (ism=0; ism<files->n_smpl; ism++)
-            reader->samples[ism] = bcf_id2int(reader->header, BCF_DT_SAMPLE, files->samples[ism]);
+            reader->samples[ism] = bcf_hdr_id2int(reader->header, BCF_DT_SAMPLE, files->samples[ism]);
     }
     return 1;
 }

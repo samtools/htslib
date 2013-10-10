@@ -64,7 +64,7 @@ static void sw_fill_buffer(bcf_sweep_t *sw)
 
     sw->nrec = 0;
     bcf1_t *rec = &sw->rec[sw->nrec];
-    while ( (ret=vcf_read1(sw->file, sw->hdr, rec))==0 )
+    while ( (ret=bcf_read1(sw->file, sw->hdr, rec))==0 )
     {
         bcf_unpack(rec, BCF_UN_STR);
 
@@ -85,7 +85,7 @@ bcf_sweep_t *bcf_sweep_init(const char *fname)
     sw->file = hts_open(fname, type & FT_BCF ? "rb" : "r", NULL);
     sw->fp   = hts_get_bgzfp(sw->file);
     bgzf_index_build_init(sw->fp);
-    sw->hdr  = vcf_hdr_read(sw->file);
+    sw->hdr  = bcf_hdr_read(sw->file);
     sw->mrec = 1;
     sw->rec  = (bcf1_t*) calloc(sw->mrec,(sizeof(bcf1_t)));
     sw->block_size = 1024*1024*3;
@@ -125,7 +125,7 @@ bcf1_t *bcf_sweep_fwd(bcf_sweep_t *sw)
     long pos = hts_utell(sw->file);
 
     bcf1_t *rec = &sw->rec[0];
-    int ret = vcf_read1(sw->file, sw->hdr, rec);
+    int ret = bcf_read1(sw->file, sw->hdr, rec);
 
     if ( ret!=0 )   // last record, get ready for sweeping backwards
     {

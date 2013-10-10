@@ -397,8 +397,8 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
 
     if ( !PL_warned )
     {
-        int id = bcf_id2int(hdr, BCF_DT_ID, "PL");
-        if ( bcf_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
+        int id = bcf_hdr_id2int(hdr, BCF_DT_ID, "PL");
+        if ( bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_hdr_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
         {
             fprintf(stderr,"[W::%s] PL should be declared as Number=G\n", __func__);
             PL_warned = 1;
@@ -406,8 +406,8 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
     }
     if ( !GL_warned )
     {
-        int id = bcf_id2int(hdr, BCF_HL_FMT, "GL");
-        if ( bcf_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
+        int id = bcf_hdr_id2int(hdr, BCF_HL_FMT, "GL");
+        if ( bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_hdr_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
         {
             fprintf(stderr,"[W::%s] GL should be declared as Number=G\n", __func__);
             PL_warned = 1;
@@ -493,8 +493,12 @@ void bcf_hdr_destroy(bcf_hdr_t *h)
 	free(h);
 }
 
-bcf_hdr_t *bcf_hdr_read(BGZF *fp)
+bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
 {
+	if (!hfp->is_bin) 
+        return vcf_hdr_read(hfp);
+
+    BGZF *fp = hfp->fp.bgzf;
 	uint8_t magic[5];
 	bcf_hdr_t *h;
 	h = bcf_hdr_init("r");
@@ -516,8 +520,10 @@ bcf_hdr_t *bcf_hdr_read(BGZF *fp)
 	return h;
 }
 
-int bcf_hdr_write(BGZF *fp, const bcf_hdr_t *h)
+int bcf_hdr_write(htsFile *hfp, const bcf_hdr_t *h)
 {
+    if (!hfp->is_bin) return vcf_hdr_write(hfp, h);
+    BGZF *fp = hfp->fp.bgzf;
 	if ( bgzf_write(fp, "BCF\2\2", 5) !=5 ) return -1;
 	if ( bgzf_write(fp, &h->l_text, 4) !=4 ) return -1;
 	if ( bgzf_write(fp, h->text, h->l_text) != h->l_text ) return -1;
@@ -605,7 +611,11 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 	return 0;
 }
 
-int bcf_read(BGZF *fp, bcf1_t *v) { return bcf_read1_core(fp, v); }
+int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v) 
+{ 
+    if (!fp->is_bin) return vcf_read(fp,h,v);
+    return bcf_read1_core(fp->fp.bgzf, v); 
+}
 
 int bcf_readrec(BGZF *fp, void *null, bcf1_t *v, int *tid, int *beg, int *end)
 {
@@ -755,10 +765,22 @@ static int bcf1_sync(bcf1_t *line)
     return 0;
 }
 
-int bcf_write(BGZF *fp, bcf1_t *v)
+int bcf_write(htsFile *hfp, const bcf_hdr_t *h, bcf1_t *v)
 {
+    if ( !hfp->is_bin ) return vcf_write(hfp,h,v);
+
+    if ( v->errcode ) 
+    {
+        // vcf_parse1() encountered a new contig or tag, undeclared in the
+        // header.  At this point, the header must have been printed,
+        // proceeding would lead to a broken BCF file. Errors must be checked
+        // and cleared by the caller before we can proceed.
+        fprintf(stderr,"[%s:%d %s] Unchecked error (%d), exiting.\n", __FILE__,__LINE__,__FUNCTION__,v->errcode);
+        exit(1);
+    }
     bcf1_sync(v);   // check if the BCF record was modified
 
+    BGZF *fp = hfp->fp.bgzf;
 	uint32_t x[8];
 	x[0] = v->shared.l + 24; // to include six 32-bit integers
 	x[1] = v->indiv.l;
@@ -777,9 +799,6 @@ int bcf_write(BGZF *fp, bcf1_t *v)
 
 bcf_hdr_t *vcf_hdr_read(htsFile *fp)
 {
-	if (fp->is_bin) 
-        return bcf_hdr_read(fp->fp.bgzf);
-
     kstring_t txt, *s = &fp->line;
     bcf_hdr_t *h;
     h = bcf_hdr_init("r");
@@ -929,16 +948,13 @@ const char **bcf_hdr_seqnames(const bcf_hdr_t *h, int *n)
 
 int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
 {
+    int l = h->l_text;
+    while (l && h->text[l-1] == 0) --l; // kill the trailing zeros
     int ret;
-	if (!fp->is_bin) {
-		int l = h->l_text;
-		while (l && h->text[l-1] == 0) --l; // kill the trailing zeros
-        if ( fp->is_compressed==1 )
-            ret = bgzf_write(fp->fp.bgzf, h->text, l);
-        else
-            ret = hwrite(fp->fp.hfile, h->text, l);
-	} else 
-        ret = bcf_hdr_write(fp->fp.bgzf, h);
+    if ( fp->is_compressed==1 )
+        ret = bgzf_write(fp->fp.bgzf, h->text, l);
+    else
+        ret = hwrite(fp->fp.hfile, h->text, l);
     return ret<0 ? -1 : 0;
 }
 
@@ -1375,12 +1391,10 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 
 int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
-	if (!fp->is_bin) {
-		int ret;
-		ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
-		if (ret < 0) return -1;
-		return vcf_parse1(&fp->line, h, v);
-	} else return bcf_read1(fp->fp.bgzf, v);
+    int ret;
+    ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
+    if (ret < 0) return -1;
+    return vcf_parse1(&fp->line, h, v);
 }
 
 static inline uint8_t *bcf_unpack_fmt_core1(uint8_t *ptr, int n_sample, bcf_fmt_t *fmt)
@@ -1537,7 +1551,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 		for (i = 0; i < (int)v->n_fmt; ++i) {
             if ( !fmt[i].p ) continue;
 			kputc(!first ? ':' : '\t', s); first = 0;
-            if ( fmt[i].id<0 ) //!bcf_idinfo_exists(h,BCF_HL_FMT,fmt[i].id) ) 
+            if ( fmt[i].id<0 ) //!bcf_hdr_idinfo_exists(h,BCF_HL_FMT,fmt[i].id) ) 
             {
                 fprintf(stderr, "[E::%s] invalid BCF, the FORMAT tag id=%d not present in the header.\n", __func__, fmt[i].id);
                 abort();
@@ -1566,34 +1580,20 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
     int ret;
-	if (!fp->is_bin) 
-    {
-	    fp->line.l = 0;
-		vcf_format1(h, v, &fp->line);
-        if ( fp->is_compressed==1 )
-            ret = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
-        else
-            ret = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
-        return ret==fp->line.l ? 0 : -1;
-	} 
-
-    if ( v->errcode ) 
-    {
-        // vcf_parse1() encountered a new contig or tag, undeclared in the header.
-        // However, the header must have been already printed, this would lead to
-        // a broken BCF file. Errors must be checked and cleared by the caller before
-        // we can proceed.
-        fprintf(stderr,"[%s:%d %s] Unchecked error (%d), exiting.\n", __FILE__,__LINE__,__FUNCTION__,v->errcode);
-        exit(1);
-    }
-    return bcf_write1(fp->fp.bgzf, v);
+    fp->line.l = 0;
+    vcf_format1(h, v, &fp->line);
+    if ( fp->is_compressed==1 )
+        ret = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
+    else
+        ret = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
+    return ret==fp->line.l ? 0 : -1;
 }
 
 /************************
  * Data access routines *
  ************************/
 
-int bcf_id2int(const bcf_hdr_t *h, int which, const char *id)
+int bcf_hdr_id2int(const bcf_hdr_t *h, int which, const char *id)
 {
 	khint_t k;
 	vdict_t *d = (vdict_t*)h->dict[which];
@@ -1601,16 +1601,16 @@ int bcf_id2int(const bcf_hdr_t *h, int which, const char *id)
 	return k == kh_end(d)? -1 : kh_val(d, k).id;
 }
 
-int bcf_name2id(const bcf_hdr_t *h, const char *id)
+int bcf_hdr_name2id(const bcf_hdr_t *h, const char *id)
 {
-	return bcf_id2int(h, BCF_DT_CTG, id);
+	return bcf_hdr_id2int(h, BCF_DT_CTG, id);
 }
 
 /********************
  *** BCF indexing ***
  ********************/
 
-hts_idx_t *bcf_index(BGZF *fp, int min_shift)
+hts_idx_t *bcf_index(htsFile *fp, int min_shift)
 {
 	int n_lvls, i;
 	bcf1_t *b;
@@ -1625,27 +1625,27 @@ hts_idx_t *bcf_index(BGZF *fp, int min_shift)
     if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
 	max_len += 256;
 	for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
-	idx = hts_idx_init(h->n[BCF_DT_CTG], HTS_FMT_CSI, bgzf_tell(fp), min_shift, n_lvls);
-	bcf_hdr_destroy(h);
+	idx = hts_idx_init(h->n[BCF_DT_CTG], HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
 	b = bcf_init1();
-	while (bcf_read1(fp, b) >= 0) {
+	while (bcf_read1(fp,h, b) >= 0) {
 		int ret;
-		ret = hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp), 1);
+		ret = hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp->fp.bgzf), 1);
 		if (ret < 0) break;
 	}
-	hts_idx_finish(idx, bgzf_tell(fp));
+	hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
 	bcf_destroy1(b);
+	bcf_hdr_destroy(h);
 	return idx;
 }
 
 int bcf_index_build(const char *fn, int min_shift)
 {
-	BGZF *fp;
+    htsFile *fp;
 	hts_idx_t *idx;
-	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
-    if ( !fp->is_compressed ) { bgzf_close(fp); return -1; }
+	if ((fp = hts_open(fn, "rb", NULL)) == 0) return -1;
+    if ( !fp->fp.bgzf->is_compressed ) { hts_close(fp); return -1; }
 	idx = bcf_index(fp, min_shift);
-	bgzf_close(fp);
+	hts_close(fp);
     if ( !idx ) return -1;
 	hts_idx_save(idx, fn, HTS_FMT_CSI);
 	hts_idx_destroy(idx);
@@ -1683,7 +1683,7 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
 		}
 		kputsn(h0->text, p - h0->text, &str);
 		for (i = 0; i < n; ++i) {
-			imap[i] = bcf_id2int(h0, BCF_DT_SAMPLE, samples[i]);
+			imap[i] = bcf_hdr_id2int(h0, BCF_DT_SAMPLE, samples[i]);
 			if (imap[i] < 0) continue;
 			kputc('\t', &str);
 			kputs(samples[i], &str);
@@ -1818,8 +1818,8 @@ int bcf_get_variant_type(bcf1_t *rec, int ith_allele)
 int bcf_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
 {
     // Is the field already present?
-    int i, inf_id = bcf_id2int(hdr,BCF_DT_ID,key);
-    if ( !bcf_idinfo_exists(hdr,BCF_HL_INFO,inf_id) )
+    int i, inf_id = bcf_hdr_id2int(hdr,BCF_DT_ID,key);
+    if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_INFO,inf_id) )
     {
         fprintf(stderr,"[%s:%d %s] The tag was not defined in the header: %s\n", __FILE__,__LINE__,__FUNCTION__,key);
         exit(-1);
@@ -1905,8 +1905,8 @@ int bcf_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *v
 int bcf_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
 {
     // Is the field already present?
-    int i, fmt_id = bcf_id2int(hdr,BCF_DT_ID,key);
-    if ( !bcf_idinfo_exists(hdr,BCF_HL_FMT,fmt_id) )
+    int i, fmt_id = bcf_hdr_id2int(hdr,BCF_DT_ID,key);
+    if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,fmt_id) )
     {
         if ( !n ) return 0;
         fprintf(stderr,"[%s:%d] Wrong usage of bcf_update_format: The key \"%s\" not present in the header.\n",  __FILE__, __LINE__, key);
@@ -2106,8 +2106,8 @@ int bcf_update_id(bcf_hdr_t *hdr, bcf1_t *line, const char *id)
 
 bcf_fmt_t *bcf_get_fmt(const bcf_hdr_t *hdr, bcf1_t *line, const char *key)
 {
-    int i, id = bcf_id2int(hdr, BCF_DT_ID, key);
-    if ( !bcf_idinfo_exists(hdr,BCF_HL_FMT,id) ) return NULL;   // no such FMT field in the header
+    int i, id = bcf_hdr_id2int(hdr, BCF_DT_ID, key);
+    if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,id) ) return NULL;   // no such FMT field in the header
     if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
     for (i=0; i<line->n_fmt; i++)  
     {
@@ -2118,8 +2118,8 @@ bcf_fmt_t *bcf_get_fmt(const bcf_hdr_t *hdr, bcf1_t *line, const char *key)
 
 bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key)
 {
-    int i, id = bcf_id2int(hdr, BCF_DT_ID, key);
-    if ( !bcf_idinfo_exists(hdr,BCF_HL_INFO,id) ) return NULL;   // no such INFO field in the header
+    int i, id = bcf_hdr_id2int(hdr, BCF_DT_ID, key);
+    if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_INFO,id) ) return NULL;   // no such INFO field in the header
     if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
     for (i=0; i<line->n_info; i++)  
     {
@@ -2130,9 +2130,9 @@ bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key)
 
 int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
 {
-    int i,j, tag_id = bcf_id2int(hdr, BCF_DT_ID, tag);
-    if ( !bcf_idinfo_exists(hdr,BCF_HL_INFO,tag_id) ) return -1;    // no such INFO field in the header
-    if ( bcf_id2type(hdr,BCF_HL_INFO,tag_id)!=type ) return -2;     // expected different type
+    int i,j, tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag);
+    if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_INFO,tag_id) ) return -1;    // no such INFO field in the header
+    if ( bcf_hdr_id2type(hdr,BCF_HL_INFO,tag_id)!=type ) return -2;     // expected different type
 
     if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
 
@@ -2181,9 +2181,9 @@ int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **ds
 
 int bcf_get_format_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
 {
-    int i,j, tag_id = bcf_id2int(hdr, BCF_DT_ID, tag);
-    if ( !bcf_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header
-    if ( bcf_id2type(hdr,BCF_HL_FMT,tag_id)!=type ) return -2;     // expected different type
+    int i,j, tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag);
+    if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header
+    if ( bcf_hdr_id2type(hdr,BCF_HL_FMT,tag_id)!=type ) return -2;     // expected different type
 
     if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
 
