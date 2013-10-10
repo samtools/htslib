@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
+#include "cram/cram.h"
 #include "hfile.h"
 #include "version.h"
 
@@ -62,6 +63,7 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 	fp->is_be = ed_is_big();
 	if (strchr(mode, 'w')) fp->is_write = 1;
 	if (strchr(mode, 'b')) fp->is_bin = 1;
+	if (strchr(mode, 'c')) fp->is_cram = 1;
     if (strchr(mode, 'z')) fp->is_compressed = 1;
     else if (strchr(mode, 'u')) fp->is_compressed = 0;
     else fp->is_compressed = 2;    // not set, default behaviour
@@ -70,6 +72,11 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 		if (fp->is_write) fp->fp.bgzf = strcmp(fn, "-")? bgzf_open(fn, mode) : bgzf_dopen(fileno(stdout), mode);
 		else fp->fp.bgzf = strcmp(fn, "-") ? bgzf_open(fn, "r") : bgzf_dopen(fileno(stdin), "r");
 	} 
+	else if (fp->is_cram) {
+		fp->fp.cram = cram_open(fn, mode);
+		if (fp->fp.cram && fn_aux)
+			cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, fn_aux);
+	}
     else 
     {
 		if (!fp->is_write) 
@@ -102,7 +109,11 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 void hts_close(htsFile *fp)
 {
 	free(fp->fn);
-	if (!fp->is_bin && fp->is_compressed!=1) {
+	if (fp->is_bin || fp->is_compressed==1) {
+		bgzf_close(fp->fp.bgzf);
+	} else if (fp->is_cram) {
+		cram_close(fp->fp.cram);
+	} else {
 		if (!fp->is_write) {
         #if KS_BGZF
 			BGZF *gzfp = ((kstream_t*)fp->fp.voidp)->f;
@@ -114,7 +125,7 @@ void hts_close(htsFile *fp)
 			ks_destroy((kstream_t*)fp->fp.voidp);
 			free(fp->fn_aux);
 		} else hclose(fp->fp.hfile);
-	} else bgzf_close(fp->fp.bgzf);
+	}
     free(fp->line.s);
 	free(fp);
 }

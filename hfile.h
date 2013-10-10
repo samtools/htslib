@@ -13,7 +13,8 @@
 #include <sys/types.h>
 
 #ifndef HTS_RESULT_USED
-#if defined __GNUC__ && (__GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4))
+#if (defined __clang__ && __clang_major__ >= 3) || \
+    (defined __GNUC__ && (__GNUC__ > 4 || (__GNUC__==4 && __GNUC_MINOR__ >= 5)))
 #define HTS_RESULT_USED __attribute__ ((__warn_unused_result__))
 #else
 #define HTS_RESULT_USED

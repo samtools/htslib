@@ -8,6 +8,7 @@
 typedef struct BGZF BGZF;
 #define HTS_BGZF_TYPEDEF
 #endif
+struct cram_fd;
 struct hFILE;
 
 #ifndef KSTRING_T
@@ -44,12 +45,13 @@ typedef struct __kstring_t {
  ************/
 
 typedef struct {
-	uint32_t is_bin:1, is_write:1, is_be:1, is_compressed:2, dummy:27;
+	uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, is_compressed:2, dummy:26;
 	int64_t lineno;
 	kstring_t line;
 	char *fn, *fn_aux;
 	union {
 		BGZF *bgzf;
+		struct cram_fd *cram;
 		struct hFILE *hfile;
 		void *voidp;
 	} fp;

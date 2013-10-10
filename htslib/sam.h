@@ -169,6 +169,19 @@ extern "C" {
 	int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
 	int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
 
+	/*!
+	  @abstract Calculate the rightmost base position of an alignment on the
+	  reference genome.
+
+	  @param  b  pointer to an alignment
+	  @return    the coordinate of the first base after the alignment, 0-based
+
+	  @discussion For a mapped read, this is just b->core.pos + bam_cigar2rlen.
+	  For an unmapped read (either according to its flags or if it has no cigar
+	  string), we return b->core.pos + 1 by convention.
+	*/
+	int32_t bam_endpos(const bam1_t *b);
+
 	/********************
 	 *** BAM indexing ***
 	 ********************/
