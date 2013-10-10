@@ -178,7 +178,11 @@ char **hts_readlines(const char *fn, int *_n)
 			s[n++] = strdup(str.s);
 		}
 		ks_destroy(ks);
-		gzclose(fp);
+        #if KS_BGZF
+            bgzf_close(fp);
+        #else
+		    gzclose(fp);
+        #endif
 		s = (char**)realloc(s, n * sizeof(void*));
 		free(str.s);
 	} else if (*fn == ':') { // read from string
@@ -920,9 +924,9 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void
 		}
 		if ((ret = readrec(fp, hdr, r, &tid, &beg, &end)) >= 0) {
 			iter->curr_off = bgzf_tell(fp);
-			if (tid != iter->tid || beg >= iter->end) { // no need to proceed
+			if (tid != iter->tid || beg > iter->end) { // no need to proceed
 				ret = -1; break;
-			} else if (end > iter->beg && iter->end > beg) return ret;
+			} else if (end >= iter->beg && iter->end > beg) return ret;
 		} else break; // end of file or error
 	}
 	iter->finished = 1;

@@ -17,6 +17,7 @@ region_t;
 
 static void _regions_add(bcf_sr_regions_t *reg, const char *chr, int start, int end);
 static bcf_sr_regions_t *_regions_init_string(const char *str);
+static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *rec);
 
 static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
 {
@@ -34,7 +35,7 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
             {
                 str.l = 0;
                 kputsn(prev, tmp-prev, &str);
-                out[nout] = bcf_id2int(hdr, BCF_DT_ID, str.s);
+                out[nout] = bcf_hdr_id2int(hdr, BCF_DT_ID, str.s);
             }
             nout++;
             if ( !*tmp ) break;
@@ -92,7 +93,7 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
             // This is just to read the header
             htsFile *file = hts_open(fname, "r", NULL);
             if ( !file ) return 0;
-            reader->header = vcf_hdr_read(file);
+            reader->header = bcf_hdr_read(file);
             hts_close(file);
 
             // The VCF opened in binary tabix mode
@@ -103,7 +104,7 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
         {
             reader->file = hts_open(fname, "rb", NULL);
             if ( !reader->file ) return 0;
-            reader->header = vcf_hdr_read(reader->file);
+            reader->header = bcf_hdr_read(reader->file);
 
             reader->bcf_idx = bcf_index_load(fname);
             if ( !reader->bcf_idx ) 
@@ -124,7 +125,7 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
         {
             reader->file = hts_open(fname, "rb", NULL);
             if ( !reader->file ) return 0;
-            reader->header = vcf_hdr_read(reader->file);
+            reader->header = bcf_hdr_read(reader->file);
         }
         else if ( reader->type & FT_VCF || reader->type==FT_STDIN )
         {
@@ -134,7 +135,7 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
                 fprintf(stderr,"[add_reader] Could not open %s\n", fname);
                 return 0;
             }
-            reader->header = vcf_hdr_read(reader->file);
+            reader->header = bcf_hdr_read(reader->file);
         }
         else
         {
@@ -163,7 +164,7 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
     if ( !files->explicit_regs && !files->streaming )
     {
         int n,i;
-        const char **names = reader->tbx_idx ? tbx_seqnames(reader->tbx_idx, &n) : bcf_seqnames(reader->header, &n);
+        const char **names = reader->tbx_idx ? tbx_seqnames(reader->tbx_idx, &n) : bcf_hdr_seqnames(reader->header, &n);
         for (i=0; i<n; i++)
         {
             if ( !files->regions )
@@ -235,12 +236,13 @@ static void collapse_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             if ( !has_any ) has_any = 1;
             else line->pos = -1;
         }
-        if ( files->collapse&COLLAPSE_SNPS && line->d.var_type&(VCF_SNP|VCF_MNP) )
+        int line_type = bcf_get_variant_types(line);
+        if ( files->collapse&COLLAPSE_SNPS && line_type&(VCF_SNP|VCF_MNP) )
         {
             if ( !has_snp ) has_snp = 1;
             else line->pos = -1;
         }
-        if ( files->collapse&COLLAPSE_INDELS && line->d.var_type&VCF_INDEL )
+        if ( files->collapse&COLLAPSE_INDELS && line_type&VCF_INDEL )
         {
             if ( !has_indel ) has_indel = 1;
             else line->pos = -1;
@@ -330,7 +332,7 @@ static int _readers_next_region(bcf_srs_t *files)
         }
         else
         {
-            int tid = bcf_name2id(reader->header,files->regions->seq);
+            int tid = bcf_hdr_name2id(reader->header,files->regions->seq);
             if ( tid==-1 ) continue;    // the sequence not present in this file
             reader->itr = bcf_itr_queryi(reader->bcf_idx,tid,files->regions->start,files->regions->end+1);
         }
@@ -375,7 +377,7 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             }
             else if ( reader->type & FT_BCF )
             {
-                if ( (ret=bcf_read1(reader->file->fp.bgzf, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
+                if ( (ret=bcf_read1(reader->file, reader->header, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
             }
             else
             {
@@ -399,7 +401,6 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             bcf_unpack(reader->buffer[reader->nbuffer+1], BCF_UN_STR|BCF_UN_FLT);
             if ( !has_filter(reader, reader->buffer[reader->nbuffer+1]) ) continue;
         }
-        bcf_set_variant_types(reader->buffer[reader->nbuffer+1]);
         reader->nbuffer++;
 
         if ( reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) break;    // the buffer is full
@@ -410,7 +411,7 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         tbx_itr_destroy(reader->itr);
         reader->itr = NULL; 
     }
-    if ( files->collapse && reader->nbuffer>2 && reader->buffer[1]->pos==reader->buffer[2]->pos )
+    if ( files->collapse && reader->nbuffer>=2 && reader->buffer[1]->pos==reader->buffer[2]->pos )
         collapse_buffer(files, reader);
 }
 
@@ -447,6 +448,7 @@ static int _reader_match_alleles(bcf_srs_t *files, bcf_sr_t *reader, bcf1_t *tmp
         irec = 1;
     else
     {
+        int tmpl_type = bcf_get_variant_types(tmpl);
         for (i=1; i<=reader->nbuffer; i++)
         {
             bcf1_t *line = reader->buffer[i];
@@ -455,10 +457,12 @@ static int _reader_match_alleles(bcf_srs_t *files, bcf_sr_t *reader, bcf1_t *tmp
             // Easiest case: matching by position only
             if ( files->collapse&COLLAPSE_ANY ) { irec=i; break; }
 
+            int line_type = bcf_get_variant_types(line);
+
             // No matter what the alleles are, as long as they are both SNPs
-            if ( files->collapse&COLLAPSE_SNPS && tmpl->d.var_type&VCF_SNP && line->d.var_type&VCF_SNP ) { irec=i; break; }
+            if ( files->collapse&COLLAPSE_SNPS && tmpl_type&VCF_SNP && line_type&VCF_SNP ) { irec=i; break; }
             // ... or indels
-            if ( files->collapse&COLLAPSE_INDELS && tmpl->d.var_type&VCF_INDEL && line->d.var_type&VCF_INDEL ) { irec=i; break; }
+            if ( files->collapse&COLLAPSE_INDELS && tmpl_type&VCF_INDEL && line_type&VCF_INDEL ) { irec=i; break; }
 
             // More thorough checking: REFs must match
             if ( tmpl->rlen != line->rlen ) continue;  // different length
@@ -503,7 +507,7 @@ static int _reader_match_alleles(bcf_srs_t *files, bcf_sr_t *reader, bcf1_t *tmp
     return 0;
 }
 
-int bcf_sr_next_line(bcf_srs_t *files)
+int _reader_next_line(bcf_srs_t *files)
 {
     int i, min_pos = INT_MAX;
 
@@ -576,6 +580,8 @@ int bcf_sr_next_line(bcf_srs_t *files)
         // Skip readers with no records at this position
         if ( !files->readers[i].nbuffer || files->readers[i].buffer[1]->pos!=min_pos ) continue;
 
+        // Until now buffer[0] of all reader was empty and the lines started at buffer[1].
+        // No lines which are ready to output will be moved to buffer[0].
         if ( _reader_match_alleles(files, &files->readers[i], first) < 0 ) continue;
         if ( !first ) first = files->readers[i].buffer[0];
 
@@ -583,6 +589,33 @@ int bcf_sr_next_line(bcf_srs_t *files)
         files->has_line[i] = 1;
     }
     return nret;
+}
+
+int bcf_sr_next_line(bcf_srs_t *files)
+{
+    if ( !files->targets_als ) 
+        return _reader_next_line(files);
+
+    while (1)
+    {
+        int i, ret = _reader_next_line(files);
+        if ( !ret ) return ret;
+        
+        for (i=0; i<files->nreaders; i++)
+            if ( files->has_line[i] ) break;
+
+        if ( _regions_match_alleles(files->targets, files->targets_als-1, files->readers[i].buffer[0]) ) return ret;
+        
+        // Check if there are more duplicate lines in the buffers. If not, return this line as if it
+        // matched the targets, even if there is a type mismatch
+        for (i=0; i<files->nreaders; i++)
+        {
+            if ( !files->has_line[i] ) continue;
+            if ( files->readers[i].nbuffer==0 || files->readers[i].buffer[1]->pos!=files->readers[i].buffer[0]->pos ) continue;
+            break;
+        }
+        if ( i==files->nreaders ) return ret;   // no more lines left, output even if target alleles are not of the same type
+    }
 }
 
 size_t mygetline(char **line, size_t *n, FILE *fp)
@@ -625,6 +658,53 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
     struct stat sbuf;
     files->samples = NULL;
     files->n_smpl  = 0;
+
+    int *exclude = NULL;
+    if ( fname[0]=='!' )    // exclude samples
+    { 
+        fname++; 
+        exclude = (int*) calloc(bcf_hdr_nsamples(files->readers[0].header),sizeof(int));
+        if ( stat(fname, &sbuf)==0 && S_ISREG(sbuf.st_mode) ) // reading from file
+        {
+            FILE *fp = fopen(fname,"r");
+            if ( !fp ) { fprintf(stderr,"%s: %s\n", fname,strerror(errno)); return 0; }
+            char *line = NULL;
+            size_t len = 0;
+            ssize_t nread;
+            while ((nread = mygetline(&line, &len, fp)) != -1)
+            {
+                int id = bcf_hdr_id2int(files->readers[0].header, BCF_DT_SAMPLE, line);
+                // sanity check our assumptions for the things to follow
+                assert( id < bcf_hdr_nsamples(files->readers[0].header) );
+                assert( !strcmp(files->readers[0].header->samples[id],line) );
+                if ( id>=0 ) exclude[id] = 1;
+            }
+        }
+        else
+        {
+            kstring_t str = {0,0,0};
+            const char *b = fname;
+            while (b)
+            {
+                str.l = 0;
+                const char *e = index(b,','); 
+                if ( !(e-b) ) break;
+                if ( e ) { kputsn(b, e-b, &str); e++; }
+                else kputs(b, &str);
+                b = e;
+                for (i=0; i<files->nreaders; i++)
+                {
+                    int id = bcf_hdr_id2int(files->readers[0].header, BCF_DT_SAMPLE, str.s);
+                    // sanity check our assumptions for the things to follow
+                    assert( id < bcf_hdr_nsamples(files->readers[0].header) );
+                    assert( !strcmp(files->readers[0].header->samples[id],str.s) );
+                    if ( id>=0 ) exclude[id] = 1;
+                }
+            }
+            free(str.s);
+        }
+        fname = "-";
+    }
     if ( !strcmp(fname,"-") )   // Intersection of all samples across all readers
     {
         int n = files->readers[0].header->n[BCF_DT_SAMPLE];
@@ -632,10 +712,11 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
         int ism;
         for (ism=0; ism<n; ism++)
         {
+            if ( exclude && exclude[ism] ) continue;
             int n_isec = 1;
             for (i=1; i<files->nreaders; i++)
             {
-                if ( bcf_id2int(files->readers[i].header, BCF_DT_SAMPLE, smpl[ism])==-1 ) break;
+                if ( bcf_hdr_id2int(files->readers[i].header, BCF_DT_SAMPLE, smpl[ism])==-1 ) break;
                 n_isec++;
             }
             if ( n_isec<files->nreaders ) continue;
@@ -646,7 +727,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
     else if ( stat(fname, &sbuf)==0 && S_ISREG(sbuf.st_mode) ) // read samples from file
     {
         FILE *fp = fopen(fname,"r");
-        if ( !fp ) { fprintf(stderr,"%s: %s\n", fname,strerror(errno)); return 0; }
+        if ( !fp ) { free(exclude); fprintf(stderr,"%s: %s\n", fname,strerror(errno)); return 0; }
         char *line = NULL;
         size_t len = 0;
         ssize_t nread;
@@ -655,7 +736,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
             int n_isec = 0;
             for (i=0; i<files->nreaders; i++)
             {
-                if ( bcf_id2int(files->readers[i].header, BCF_DT_SAMPLE, line)==-1 ) break;
+                if ( bcf_hdr_id2int(files->readers[i].header, BCF_DT_SAMPLE, line)==-1 ) break;
                 n_isec++;
             }
             if ( n_isec<files->nreaders ) 
@@ -685,7 +766,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
             int n_isec = 0;
             for (i=0; i<files->nreaders; i++)
             {
-                if ( bcf_id2int(files->readers[i].header, BCF_DT_SAMPLE, str.s)==-1 ) break;
+                if ( bcf_hdr_id2int(files->readers[i].header, BCF_DT_SAMPLE, str.s)==-1 ) break;
                 n_isec++;
             }
             if ( n_isec<files->nreaders ) 
@@ -698,6 +779,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
         }
         if ( str.s ) free(str.s);
     }
+    free(exclude);
     if ( !files->n_smpl ) 
     {
         if ( files->nreaders>1 ) fprintf(stderr,"[init_samples] No samples in common.\n");
@@ -710,7 +792,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
         reader->n_smpl   = files->n_smpl;
         int ism;
         for (ism=0; ism<files->n_smpl; ism++)
-            reader->samples[ism] = bcf_id2int(reader->header, BCF_DT_SAMPLE, files->samples[ism]);
+            reader->samples[ism] = bcf_hdr_id2int(reader->header, BCF_DT_SAMPLE, files->samples[ism]);
     }
     return 1;
 }
@@ -847,6 +929,7 @@ void bcf_sr_regions_destroy(bcf_sr_regions_t *reg)
     if ( reg->itr ) tbx_itr_destroy(reg->itr);
     if ( reg->tbx ) tbx_destroy(reg->tbx);
     if ( reg->file ) hts_close(reg->file);
+    if ( reg->als ) free(reg->als);
     free(reg->line.s);
     if (reg->regs) 
         for (i=0; i<reg->nseqs; i++) free(reg->snames[i]);  // free only in-memory names, tbx names are const
@@ -889,7 +972,8 @@ int bcf_sr_regions_seek(bcf_sr_regions_t *reg, const char *seq)
 int bcf_sr_regions_next(bcf_sr_regions_t *reg)
 {
     if ( reg->done ) return -1;
-    reg->seq = NULL; reg->start = reg->end = -1;
+    reg->seq  = NULL; reg->start = reg->end = -1;
+    reg->nals = 0;
 
     if ( reg->regs )    // using in-memory regions
     {
@@ -978,6 +1062,39 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
     reg->end   -= 1;
         
     return 0;
+}
+
+static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *rec)
+{
+    int i = 0, max_len = 0;
+    if ( !reg->nals )
+    {
+        char *ss = reg->line.s;
+        while ( i<als_idx && *ss )
+        {
+            if ( *ss=='\t' ) i++;
+            ss++;
+        }
+        reg->nals = 1;
+        hts_expand(char*,reg->nals,reg->mals,reg->als);
+        reg->als[0] = ss;
+        while ( *(++ss) )
+        {
+            if ( *ss=='\t' ) break;
+            if ( *ss!=',' ) continue;
+            *ss = 0;
+            reg->nals++;
+            hts_expand(char*,reg->nals,reg->mals,reg->als);
+            reg->als[reg->nals-1] = ss+1;
+            if ( ss - reg->als[reg->nals-2] > max_len ) max_len = ss - reg->als[reg->nals-2];
+        }
+        if ( ss - reg->als[reg->nals-1] > max_len ) max_len = ss - reg->als[reg->nals-1];
+        reg->als_type = max_len > 1 ? VCF_INDEL : VCF_SNP;  // this is a too-simplified check, see vcf.c:bcf_set_variant_types
+    }
+    int type = bcf_get_variant_types(rec);
+    if ( reg->als_type & VCF_INDEL )
+        return type & VCF_INDEL ? 1 : 0;
+    return !(type & VCF_INDEL) ? 1 : 0;
 }
 
 int bcf_sr_regions_query(bcf_sr_regions_t *reg, int start, int end)
