@@ -32,6 +32,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include <sys/types.h>
+#include <inttypes.h>
 
 #include "htslib/hts.h"
 #include "htslib/bgzf.h"
@@ -304,7 +305,7 @@ static int load_block_from_cache(BGZF *fp, int64_t block_address)
 	if ( hseek(fp->fp, p->end_offset, SEEK_SET) < 0 ) 
     {
         // todo: move the error up
-        fprintf(stderr,"Could not hseek to %ld\n", p->end_offset);
+        fprintf(stderr,"Could not hseek to %"PRId64"\n", p->end_offset);
         exit(1);
     }
 	return p->size;
