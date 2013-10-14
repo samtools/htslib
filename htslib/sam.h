@@ -76,6 +76,8 @@ typedef struct {
 #define BAM_FQCFAIL      512
 /*! @abstract optical or PCR duplicate */
 #define BAM_FDUP        1024
+/*! @abstract supplementary alignment */
+#define BAM_FSUPPLEMENTARY 2048
 
 /*************************
  *** Alignment records ***
