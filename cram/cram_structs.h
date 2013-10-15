@@ -629,8 +629,8 @@ typedef struct cram_fd {
     cram_range range;
 
     // lookup tables, stored here so we can be trivially multi-threaded
-    unsigned int bam_flag_swap[0x800];  // cram -> bam flags
-    unsigned int cram_flag_swap[0x800]; // bam -> cram flags
+    unsigned int bam_flag_swap[0x1000]; // cram -> bam flags
+    unsigned int cram_flag_swap[0x1000];// bam -> cram flags
     unsigned char L1[256];              // ACGT{*} ->0123{4}
     unsigned char L2[256];              // ACGTN{*}->01234{5}
     char cram_sub_matrix[32][32];	// base substituion codes

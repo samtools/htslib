@@ -725,7 +725,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
 
 	//printf("BF=0x%x\n", cr->flags);
 	//	    bf = cram_flag_swap[cr->flags];
-	i32 = fd->cram_flag_swap[cr->flags & 0x7ff];
+	i32 = fd->cram_flag_swap[cr->flags & 0xfff];
 	r |= h->BF_codec->encode(s, h->BF_codec, core, (char *)&i32, 1);
 
 	i32 = cr->cram_flags;
@@ -2145,7 +2145,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     cr->flags       = bam_flag(b);
     if (bam_cigar_len(b) == 0)
 	cr->flags |= BAM_FUNMAP;
-    cram_stats_add(c->BF_stats, fd->cram_flag_swap[cr->flags & 0x7ff]);
+    cram_stats_add(c->BF_stats, fd->cram_flag_swap[cr->flags & 0xfff]);
 
     if (!fd->no_ref)
 	cr->cram_flags = CRAM_FLAG_PRESERVE_QUAL_SCORES;
