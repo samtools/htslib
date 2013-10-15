@@ -14,7 +14,8 @@ void fail(const char *format, ...)
     va_start(args, format);
     vfprintf(stderr, format, args);
     va_end(args);
-    fprintf(stderr, ": %s\n", strerror(err));
+    if (err != 0) fprintf(stderr, ": %s", strerror(err));
+    fprintf(stderr, "\n");
     exit(EXIT_FAILURE);
 }
 
@@ -151,6 +152,20 @@ int main()
 
     if (hclose(fin) != 0) fail("hclose(input)");
     if (hclose(fout) != 0) fail("hclose(output)");
+
+    fout = hopen("test/hfile_chars.tmp", "w");
+    if (fout == NULL) fail("hopen(\"test/hfile_chars.tmp\")");
+    for (i = 0; i < 256; i++)
+        if (hputc(i, fout) != i) fail("chars: hputc (%d)", i);
+    if (hclose(fout) != 0) fail("hclose(test/hfile_chars.tmp)");
+
+    fin = hopen("test/hfile_chars.tmp", "r");
+    if (fin == NULL) fail("hopen(\"test/hfile_chars.tmp\") for reading");
+    for (i = 0; i < 256; i++)
+        if ((c = hgetc(fin)) != i)
+            fail("chars: hgetc (%d = 0x%x) returned %d = 0x%x", i, i, c, c);
+    if ((c = hgetc(fin)) != EOF) fail("chars: hgetc (EOF) returned %d", c);
+    if (hclose(fin) != 0) fail("hclose(test/hfile_chars.tmp) for reading");
 
     return EXIT_SUCCESS;
 }

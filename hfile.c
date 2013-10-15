@@ -109,7 +109,7 @@ static ssize_t refill_buffer(hFILE *fp)
 /* Called only from hgetc(), when our buffer is empty.  */
 int hgetc2(hFILE *fp)
 {
-    return (refill_buffer(fp) > 0)? *(fp->begin++) : EOF;
+    return (refill_buffer(fp) > 0)? (unsigned char) *(fp->begin++) : EOF;
 }
 
 ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes)

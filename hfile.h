@@ -97,7 +97,7 @@ static inline off_t htell(hFILE *fp)
 static inline int hgetc(hFILE *fp)
 {
     extern int hgetc2(hFILE *);
-    return (fp->end > fp->begin)? *(fp->begin++) : hgetc2(fp);
+    return (fp->end > fp->begin)? (unsigned char) *(fp->begin++) : hgetc2(fp);
 }
 
 /*!
