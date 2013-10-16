@@ -313,8 +313,9 @@ extern "C" {
     /** Read VCF header from a file and update the header */
     int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname);
 
-    /** Append new VCF header line */
+    /** Append new VCF header line, returns 0 on success */
     int bcf_hdr_append(bcf_hdr_t *h, const char *line);
+    int bcf_hdr_printf(bcf_hdr_t *h, const char *format, ...);
 
     /** Make the header ready for output, required if bcf_hdr_append was called */
     void bcf_hdr_fmt_text(bcf_hdr_t *hdr);
@@ -364,7 +365,6 @@ extern "C" {
     int bcf_get_variant_types(bcf1_t *rec);
     int bcf_get_variant_type(bcf1_t *rec, int ith_allele);
 	int bcf_is_snp(bcf1_t *v);
-
 
     /**
      *  bcf_update_filter() - sets the FILTER column
@@ -458,34 +458,37 @@ extern "C" {
 	 **************************************************************************/
  
     /**
-      *  bcf_hdr_id2int() - Translates string into numeric ID
-      *  @type:     one of BCF_DT_ID, BCF_DT_CTG, BCF_DT_SAMPLE
-      *  @id:       tag name, such as: PL, DP, GT, etc.
-      *
-      *  Returns -1 if string is not in dictionary, otherwise numeric ID which identifies
-      *  fields in BCF records.
-      */
+     *  bcf_hdr_id2int() - Translates string into numeric ID
+     *  @type:     one of BCF_DT_ID, BCF_DT_CTG, BCF_DT_SAMPLE
+     *  @id:       tag name, such as: PL, DP, GT, etc.
+     *
+     *  Returns -1 if string is not in dictionary, otherwise numeric ID which identifies
+     *  fields in BCF records.
+     */
 	int bcf_hdr_id2int(const bcf_hdr_t *hdr, int type, const char *id);
 
     /**
-      *  bcf_hdr_name2id() - Translates sequence names (chromosomes) into numeric ID
-      */
-	int bcf_hdr_name2id(const bcf_hdr_t *hdr, const char *id);
+     *  bcf_hdr_name2id() - Translates sequence names (chromosomes) into numeric ID
+     *  bcf_hdr_id2name() - Translates numeric ID to sequence name
+     */
+	static inline int bcf_hdr_name2id(const bcf_hdr_t *hdr, const char *id) { return bcf_hdr_id2int(hdr, BCF_DT_CTG, id); }
+    static inline const char *bcf_hdr_id2name(const bcf_hdr_t *hdr, int rid) { return hdr->id[BCF_DT_CTG][rid].key; }
+    static inline const char *bcf_seqname(const bcf_hdr_t *hdr, bcf1_t *rec) { return hdr->id[BCF_DT_CTG][rec->rid].key; }
 
     /**
-      *  bcf_hdr_id2*() - Macros for accessing bcf_idinfo_t 
-      *  @type:      one of BCF_HL_FLT, BCF_HL_INFO, BCF_HL_FMT
-      *  @int_id:    return value of bcf_id2int, must be >=0
-      *
-      *  The returned values are:
-      *     bcf_hdr_id2length   ..  whether the number of values is fixed or variable, one of BCF_VL_* 
-      *     bcf_hdr_id2number   ..  the number of values, 0xfffff for variable length fields
-      *     bcf_hdr_id2type     ..  the field type, one of BCF_HT_*
-      *     bcf_hdr_id2coltype  ..  the column type, one of BCF_HL_*
-      *
-      *  Notes: Prior to using the macros, the presence of the info should be
-      *  tested with bcf_hdr_idinfo_exists().
-      */
+     *  bcf_hdr_id2*() - Macros for accessing bcf_idinfo_t 
+     *  @type:      one of BCF_HL_FLT, BCF_HL_INFO, BCF_HL_FMT
+     *  @int_id:    return value of bcf_id2int, must be >=0
+     *
+     *  The returned values are:
+     *     bcf_hdr_id2length   ..  whether the number of values is fixed or variable, one of BCF_VL_* 
+     *     bcf_hdr_id2number   ..  the number of values, 0xfffff for variable length fields
+     *     bcf_hdr_id2type     ..  the field type, one of BCF_HT_*
+     *     bcf_hdr_id2coltype  ..  the column type, one of BCF_HL_*
+     *
+     *  Notes: Prior to using the macros, the presence of the info should be
+     *  tested with bcf_hdr_idinfo_exists().
+     */
     #define bcf_hdr_id2length(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>8 & 0xf)
     #define bcf_hdr_id2number(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>12)
     #define bcf_hdr_id2type(hdr,type,int_id)    ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>4 & 0xf)

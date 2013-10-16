@@ -452,6 +452,24 @@ int bcf_hdr_append(bcf_hdr_t *hdr, const char *line)
     return 0;
 }
 
+int bcf_hdr_printf(bcf_hdr_t *hdr, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(NULL, 0, fmt, ap) + 2;
+    va_end(ap);
+
+    char *line = (char*)malloc(n);
+    va_start(ap, fmt);
+    vsnprintf(line, n, fmt, ap);
+    va_end(ap);
+
+    bcf_hdr_append(hdr, line);
+
+    free(line);
+    return 0;
+}
+
 
 /**********************
  *** BCF header I/O ***
@@ -1601,10 +1619,6 @@ int bcf_hdr_id2int(const bcf_hdr_t *h, int which, const char *id)
 	return k == kh_end(d)? -1 : kh_val(d, k).id;
 }
 
-int bcf_hdr_name2id(const bcf_hdr_t *h, const char *id)
-{
-	return bcf_hdr_id2int(h, BCF_DT_CTG, id);
-}
 
 /********************
  *** BCF indexing ***
