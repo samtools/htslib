@@ -419,6 +419,14 @@ cram_fd *cram_open(const char *filename, const char *mode);
 int cram_close(cram_fd *fd);
 
 /*
+ * Seek within a CRAM file.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int cram_seek(cram_fd *fd, off_t offset, int whence);
+
+/*
  * Flushes a CRAM file.
  * Useful for when writing to stdout without wishing to close the stream.
  *

@@ -32,14 +32,6 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos, cram_index *frm);
  */
 int cram_seek_to_refpos(cram_fd *fd, cram_range *r);
 
-/*
- * Seek within a cram file.
- *
- * Returns 0 on success
- *        -1 on failure
- */
-int cram_seek(cram_fd *fd, off_t offset, int whence);
-
 void cram_index_free(cram_fd *fd);
 
 /*
