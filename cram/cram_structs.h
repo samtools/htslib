@@ -51,9 +51,13 @@ typedef union {
 // duplicate in the .c files due to the nature of the KHASH macros.
 KHASH_MAP_INIT_STR(map, pmap_t)
 
+struct hFILE;
+typedef struct hFILE cram_FILE;
+
 #else
 // From within io_lib
 #  include "cram/bam.h"              // For BAM header parsing
+typedef FILE cram_FILE;
 #endif
 
 #define SEQS_PER_SLICE 10000
@@ -583,7 +587,7 @@ typedef struct spare_bams {
 } spare_bams;
 
 typedef struct cram_fd {
-    FILE          *fp;
+    cram_FILE     *fp;
     int            mode;     // 'r' or 'w'
     int            version;
     cram_file_def *file_def;
