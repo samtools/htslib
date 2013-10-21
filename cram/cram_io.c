@@ -50,6 +50,20 @@
 #define RP(...) 
 #endif
 
+#ifdef SAMTOOLS
+#include "hfile.h"
+#define paranoid_hclose(fp) (hclose(fp))
+#else
+#define hclose(fp)   (fclose(fp))
+#define hflush(fp)   (fflush(fp))
+#define hgetc(fp)    (getc(fp))
+#define hputc(c, fp) (putc((c), (fp)))
+#define hread(fp, buffer, nbytes)  (fread((buffer), 1, (nbytes), (fp)))
+#define hseek(fp, offset, whence)  (fseeko((fp), (offset), (whence)))
+#define hwrite(fp, buffer, nbytes) (fwrite((buffer), 1, (nbytes), (fp)))
+#define paranoid_hclose(fp)        (paranoid_fclose(fp))
+#endif
+
 /* ----------------------------------------------------------------------
  * ITF8 encoding and decoding.
  *
@@ -80,7 +94,7 @@ int itf8_decode(cram_fd *fd, int32_t *val_p) {
 	0x0f,                                           // 1111xxxx
     };
 
-    int32_t val = getc(fd->fp);
+    int32_t val = hgetc(fd->fp);
     if (val == -1)
 	return -1;
 
@@ -93,28 +107,28 @@ int itf8_decode(cram_fd *fd, int32_t *val_p) {
 	return 1;
 
     case 1:
-	val = (val<<8) | (unsigned char)getc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	*val_p = val;
 	return 2;
 
     case 2:
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	*val_p = val;
 	return 3;
 
     case 3:
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	*val_p = val;
 	return 4;
 
     case 4: // really 3.5 more, why make it different?
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<4) | (((unsigned char)getc(fd->fp)) & 0x0f);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<4) | (((unsigned char)hgetc(fd->fp)) & 0x0f);
 	*val_p = val;
     }
 
@@ -129,7 +143,7 @@ int itf8_decode(cram_fd *fd, int32_t *val_p) {
 int itf8_encode(cram_fd *fd, int32_t val) {
     char buf[5];
     int len = itf8_put(buf, val);
-    return fwrite(buf, 1, len, fd->fp) == len ? 0 : -1;
+    return hwrite(fd->fp, buf, len) == len ? 0 : -1;
 }
 
 #ifndef ITF8_MACROS
@@ -329,7 +343,7 @@ int ltf8_get(char *cp, int64_t *val_p) {
 }
 
 int ltf8_decode(cram_fd *fd, int64_t *val_p) {
-    int c = getc(fd->fp);
+    int c = hgetc(fd->fp);
     int64_t val = (unsigned char)c;
     if (c == -1)
 	return -1;
@@ -339,70 +353,70 @@ int ltf8_decode(cram_fd *fd, int64_t *val_p) {
 	return 1;
 
     } else if (val < 0xc0) {
-	val = (val<<8) | (unsigned char)getc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	*val_p = val & (((1LL<<(6+8)))-1);
 	return 2;
 
     } else if (val < 0xe0) {
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	*val_p = val & ((1LL<<(5+2*8))-1);
 	return 3;
 
     } else if (val < 0xf0) {
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	*val_p = val & ((1LL<<(4+3*8))-1);
 	return 4;
 
     } else if (val < 0xf8) {
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	*val_p = val & ((1LL<<(3+4*8))-1);
 	return 5;
 
     } else if (val < 0xfc) {
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	*val_p = val & ((1LL<<(2+5*8))-1);
 	return 6;
 
     } else if (val < 0xfe) {
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	*val_p = val & ((1LL<<(1+6*8))-1);
 	return 7;
 
     } else if (val < 0xff) {
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	*val_p = val & ((1LL<<(7*8))-1);
 	return 8;
 
     } else {
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
-	val = (val<<8) | (unsigned char)getc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	*val_p = val;
     }
 
@@ -433,7 +447,7 @@ int itf8_put_blk(cram_block *blk, int val) {
  */
 int int32_decode(cram_fd *fd, int32_t *val) {
     int32_t i;
-    if (1 != fread(&i, 4, 1, fd->fp))
+    if (4 != hread(fd->fp, &i, 4))
 	return -1;
 
     *val = le_int4(i);
@@ -448,7 +462,7 @@ int int32_decode(cram_fd *fd, int32_t *val) {
  */
 int int32_encode(cram_fd *fd, int32_t val) {
     val = le_int4(val);
-    if (1 != fwrite(&val, 4, 1, fd->fp))
+    if (4 != hwrite(fd->fp, &val, 4))
 	return -1;
 
     return 4;
@@ -641,8 +655,8 @@ cram_block *cram_read_block(cram_fd *fd) {
 
     //fprintf(stderr, "Block at %d\n", (int)ftell(fd->fp));
 
-    if (-1 == (b->method       = getc(fd->fp))) { free(b); return NULL; }
-    if (-1 == (b->content_type = getc(fd->fp))) { free(b); return NULL; }
+    if (-1 == (b->method      = hgetc(fd->fp))) { free(b); return NULL; }
+    if (-1 == (b->content_type= hgetc(fd->fp))) { free(b); return NULL; }
     if (-1 == itf8_decode(fd, &b->content_id))  { free(b); return NULL; }
     if (-1 == itf8_decode(fd, &b->comp_size))   { free(b); return NULL; }
     if (-1 == itf8_decode(fd, &b->uncomp_size)) { free(b); return NULL; }
@@ -653,7 +667,7 @@ cram_block *cram_read_block(cram_fd *fd) {
     if (b->method == RAW) {
 	b->alloc = b->uncomp_size;
 	if (!(b->data = malloc(b->uncomp_size))){ free(b); return NULL; }
-	if (b->uncomp_size != fread(b->data, 1, b->uncomp_size, fd->fp)) {
+	if (b->uncomp_size != hread(fd->fp, b->data, b->uncomp_size)) {
 	    free(b->data);
 	    free(b);
 	    return NULL;
@@ -661,7 +675,7 @@ cram_block *cram_read_block(cram_fd *fd) {
     } else {
 	b->alloc = b->comp_size;
 	if (!(b->data = malloc(b->comp_size)))  { free(b); return NULL; }
-	if (b->comp_size != fread(b->data, 1, b->comp_size, fd->fp)) {
+	if (b->comp_size != hread(fd->fp, b->data, b->comp_size)) {
 	    free(b->data);
 	    free(b);
 	    return NULL;
@@ -684,17 +698,17 @@ cram_block *cram_read_block(cram_fd *fd) {
 int cram_write_block(cram_fd *fd, cram_block *b) {
     assert(b->method != RAW || (b->comp_size == b->uncomp_size));
 
-    if (putc(b->method,       fd->fp)   == EOF) return -1;
-    if (putc(b->content_type, fd->fp)   == EOF) return -1;
+    if (hputc(b->method,       fd->fp)  == EOF) return -1;
+    if (hputc(b->content_type, fd->fp)  == EOF) return -1;
     if (itf8_encode(fd, b->content_id)  ==  -1) return -1;
     if (itf8_encode(fd, b->comp_size)   ==  -1) return -1;
     if (itf8_encode(fd, b->uncomp_size) ==  -1) return -1;
 
     if (b->method == RAW) {
-	if (b->uncomp_size != fwrite(b->data, 1, b->uncomp_size, fd->fp)) 
+	if (b->uncomp_size != hwrite(fd->fp, b->data, b->uncomp_size))
 	    return -1;
     } else {
-	if (b->comp_size != fwrite(b->data, 1, b->comp_size, fd->fp)) 
+	if (b->comp_size != hwrite(fd->fp, b->data, b->comp_size))
 	    return -1;
     }
 
@@ -2144,7 +2158,7 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
     cp += itf8_put(cp, c->num_landmarks);
     for (i = 0; i < c->num_landmarks; i++)
 	cp += itf8_put(cp, c->landmark[i]);
-    if (cp-buf != fwrite(buf, 1, cp-buf, fd->fp)) {
+    if (cp-buf != hwrite(fd->fp, buf, cp-buf)) {
 	if (buf != buf_a)
 	    free(buf);
 	return -1;
@@ -2183,7 +2197,7 @@ static int cram_flush_container2(cram_fd *fd, cram_container *c) {
 	}
     }
 
-    return fflush(fd->fp) == 0 ? 0 : -1;
+    return hflush(fd->fp) == 0 ? 0 : -1;
 }
 
 /*
@@ -2249,7 +2263,7 @@ static int cram_flush_result(cram_fd *fd) {
 
 	cram_free_container(c);
 
-	ret |= fflush(fd->fp) == 0 ? 0 : -1;
+	ret |= hflush(fd->fp) == 0 ? 0 : -1;
 
 	t_pool_delete_result(r, 1);
     }
@@ -2616,7 +2630,7 @@ cram_file_def *cram_read_file_def(cram_fd *fd) {
     if (!def)
 	return NULL;
 
-    if (26 != fread(&def->magic[0], 1, 26, fd->fp)) {
+    if (26 != hread(fd->fp, &def->magic[0], 26)) {
 	free(def);
 	return NULL;
     }
@@ -2648,7 +2662,7 @@ cram_file_def *cram_read_file_def(cram_fd *fd) {
  *        -1 on failure
  */
 int cram_write_file_def(cram_fd *fd, cram_file_def *def) {
-    return (fwrite(&def->magic[0], 1, 26, fd->fp) == 26) ? 0 : -1;
+    return (hwrite(fd->fp, &def->magic[0], 26) == 26) ? 0 : -1;
 }
 
 void cram_free_file_def(cram_file_def *def) {
@@ -2684,7 +2698,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 	    return NULL;
 
 	*header = 0;
-	if (header_len != fread(header, 1, header_len, fd->fp))
+	if (header_len != hread(fd->fp, header, header_len))
 	    return NULL;
 
 	fd->first_container += 4 + header_len;
@@ -2747,7 +2761,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 		return NULL;
 	    }
 
-	    if (c->length - len != fread(pads, 1, c->length - len, fd->fp)) {
+	    if (c->length - len != hread(fd->fp, pads, c->length - len)) {
 		cram_free_container(c);
 		return NULL;
 	    }
@@ -2866,7 +2880,7 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 	    return -1;
 
 	/* Text data */
-	if (header_len != fwrite(sam_hdr_str(hdr), 1, header_len, fd->fp))
+	if (header_len != hwrite(fd->fp, sam_hdr_str(hdr), header_len))
 	    return -1;
     } else {
 	/* Create a block inside a container */
@@ -2955,7 +2969,7 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 	// Write out padding to allow for in-line SAM header editing
 	if (NULL == (pads = calloc(1, padded_length)))
 	    return -1;
-	if (padded_length != fwrite(pads, 1, padded_length, fd->fp))
+	if (padded_length != hwrite(fd->fp, pads, padded_length))
 	    return -1;
 	free(pads);
 #endif
@@ -2966,7 +2980,7 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
     if (-1 == refs2id(fd->refs, fd->header))
 	return -1;
 
-    fflush(fd->fp);
+    hflush(fd->fp);
 
     RP("=== Finishing saving header ===\n");
 
@@ -3073,29 +3087,53 @@ static int minor_version = 0;
  *         NULL on failure.
  */
 cram_fd *cram_open(const char *filename, const char *mode) {
-    int i;
-    char *cp;
+    cram_FILE *fp;
+    cram_fd *fd;
     char fmode[3]= { mode[0], '\0', '\0' };
-    cram_fd *fd = calloc(1, sizeof(*fd));
-    if (!fd)
-	return NULL;
 
     if (strlen(mode) > 1 && (mode[1] == 'b' || mode[1] == 'c')) {
 	fmode[1] = 'b';
     }
 
+#ifdef SAMTOOLS
+    fp = hopen(filename, fmode);
+#else
+    if (strcmp(filename, "-") == 0) {
+	fp = (*fmode == 'r') ? stdin : stdout;
+    } else {
+	fp = fopen(filename, fmode);
+    }
+#endif
+    if (!fp)
+	return NULL;
+
+    fd = cram_dopen(fp, filename, mode);
+    if (!fd)
+	hclose(fp);
+
+    return fd;
+}
+
+/* Opens an existing stream for reading or writing.
+ *
+ * Returns file handle on success;
+ *         NULL on failure.
+ *
+ * cram_FILE is either htslib's hFILE or stdio's FILE, depending on how
+ * cram_structs.h has been configured.
+ */
+cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode) {
+    int i;
+    char *cp;
+    cram_fd *fd = calloc(1, sizeof(*fd));
+    if (!fd)
+	return NULL;
+
     fd->level = 5;
     if (strlen(mode) > 2 && mode[2] >= '0' && mode[2] <= '9')
 	fd->level = mode[2] - '0';
 
-    if (strcmp(filename, "-") == 0) {
-	fd->fp = (*mode == 'r') ? stdin : stdout;
-    } else {
-	fd->fp = fopen(filename, fmode);
-    }
-
-    if (!fd->fp)
-	goto err;
+    fd->fp = fp;
     fd->mode = *mode;
     fd->first_container = 0;
 
@@ -3182,12 +3220,36 @@ cram_fd *cram_open(const char *filename, const char *mode) {
     return fd;
 
  err:
-    if (fd->fp)
-	fclose(fd->fp);
     if (fd)
 	free(fd);
 
     return NULL;
+}
+
+/*
+ * Seek within a CRAM file.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int cram_seek(cram_fd *fd, off_t offset, int whence) {
+    char buf[65536];
+
+    if (hseek(fd->fp, offset, whence) == 0)
+	return 0;
+
+    if (!(whence == SEEK_CUR && offset >= 0))
+	return -1;
+
+    /* Couldn't fseek, but we're in SEEK_CUR mode so read instead */
+    while (offset > 0) {
+	int len = MIN(65536, offset);
+	if (len != hread(fd->fp, buf, len))
+	    return -1;
+	offset -= len;
+    }
+
+    return 0;
 }
 
 /*
@@ -3260,7 +3322,7 @@ int cram_close(cram_fd *fd) {
 	free(bl);
     }
 
-    if (paranoid_fclose(fd->fp) != 0)
+    if (paranoid_hclose(fd->fp) != 0)
 	return -1;
 
     if (fd->file_def)
