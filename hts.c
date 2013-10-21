@@ -112,7 +112,8 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 			size_t i, ns = decompress_peek(hfile, s, 4);
 			fp->is_kstream = 1;
 			for (i = 0; i < ns; i++)
-				if (s[i] < 0x20) { fp->is_bin = 1; fp->is_kstream = 0; }
+				if (s[i] < 0x07 || (s[i] >= 0x0e && s[i] < 0x20))
+					fp->is_bin = 1, fp->is_kstream = 0;
 		}
 		else if (hpeek(hfile, s, 2) == 2 && s[0] == 0x1f && s[1] == 0x8b) {
 			// Plain GZIP header... so a gzipped text file.
