@@ -19,7 +19,7 @@ printf "    passed  .. %d\n", $$opts{nok};
 printf "    failed  .. %d\n", $$opts{nfailed};
 print "\n";
 
-exit;
+exit ($$opts{nfailed} > 0);
 
 #--------------------
 
@@ -35,7 +35,7 @@ sub error
         "   -t, --temp-dir <path>           When given, temporary files will not be removed.\n",
         "   -h, -?, --help                  This help message.\n",
         "\n";
-    exit -1;
+    exit 1;
 }
 sub parse_params
 {
