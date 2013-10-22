@@ -90,15 +90,9 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
                 return 0;
             }
 
-            // This is just to read the header
-            htsFile *file = hts_open(fname, "r", NULL);
-            if ( !file ) return 0;
-            reader->header = bcf_hdr_read(file);
-            hts_close(file);
-
-            // The VCF opened in binary tabix mode
-            reader->file = hts_open(fname, "rb", NULL);
+            reader->file = hts_open(fname, "r", NULL);
             if ( !reader->file ) return 0;
+            reader->header = bcf_hdr_read(reader->file);
         }
         else if ( reader->type==FT_BCF_GZ ) 
         {
