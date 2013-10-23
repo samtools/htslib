@@ -78,7 +78,12 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
     bcf_sr_t *reader = &files->readers[files->nreaders++];
     memset(reader,0,sizeof(bcf_sr_t));
 
-    reader->type = type==FT_UNKN ? hts_file_type(fname) : type;
+    reader->file = hts_open(fname, "r", NULL);
+    if ( !reader->file ) return 0;
+
+    reader->type = reader->file->is_bin? FT_BCF : FT_VCF;
+    if (reader->file->is_compressed) reader->type |= FT_GZ;
+
     if ( files->require_index )
     {
         if ( reader->type==FT_VCF_GZ ) 
@@ -90,14 +95,10 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
                 return 0;
             }
 
-            reader->file = hts_open(fname, "r", NULL);
-            if ( !reader->file ) return 0;
             reader->header = bcf_hdr_read(reader->file);
         }
         else if ( reader->type==FT_BCF_GZ ) 
         {
-            reader->file = hts_open(fname, "rb", NULL);
-            if ( !reader->file ) return 0;
             reader->header = bcf_hdr_read(reader->file);
 
             reader->bcf_idx = bcf_index_load(fname);
@@ -117,18 +118,10 @@ int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
     {
         if ( reader->type & FT_BCF )
         {
-            reader->file = hts_open(fname, "rb", NULL);
-            if ( !reader->file ) return 0;
             reader->header = bcf_hdr_read(reader->file);
         }
-        else if ( reader->type & FT_VCF || reader->type==FT_STDIN )
+        else if ( reader->type & FT_VCF )
         {
-            reader->file = hts_open(fname, "r", NULL);
-            if ( !reader->file ) 
-            {
-                fprintf(stderr,"[add_reader] Could not open %s\n", fname);
-                return 0;
-            }
             reader->header = bcf_hdr_read(reader->file);
         }
         else
@@ -363,7 +356,7 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         }
         if ( files->streaming )
         {
-            if ( reader->type & FT_VCF || reader->type==FT_STDIN )
+            if ( reader->type & FT_VCF )
             {
                 if ( (ret=hts_getline(reader->file, KS_SEP_LINE, &files->tmps)) < 0 ) break;   // no more lines
                 int ret = vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
