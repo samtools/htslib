@@ -71,7 +71,7 @@ int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int alleles)
     return 0;
 }
 
-int bcf_sr_open_reader(bcf_srs_t *files, const char *fname, int type)
+int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 {
     files->has_line = (int*) realloc(files->has_line, sizeof(int)*(files->nreaders+1));
     files->readers  = (bcf_sr_t*) realloc(files->readers, sizeof(bcf_sr_t)*(files->nreaders+1));
