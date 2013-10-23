@@ -501,6 +501,19 @@ int cram_set_option(cram_fd *fd, enum cram_option opt, ...);
  */
 int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args);
 
+/*!
+ * Attaches a header to a cram_fd.
+ *
+ * This should be used when creating a new cram_fd for writing where
+ * we have an SAM_hdr already constructed (eg from a file we've read
+ * in).
+ *
+ * @return
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int cram_set_header(cram_fd *fd, SAM_hdr *hdr);
+
 /**@}*/
 
 #ifdef __cplusplus

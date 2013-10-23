@@ -1306,6 +1306,13 @@ static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
     return 0;
 }
 
+/*
+ * Attaches a header to a cram_fd.
+ *
+ * This should be used when creating a new cram_fd for writing where
+ * we have an SAM_hdr already constructed (eg from a file we've read
+ * in).
+ */
 int cram_set_header(cram_fd *fd, SAM_hdr *hdr) {
     fd->header = hdr;
     return refs_from_header(fd->refs, fd, hdr);
