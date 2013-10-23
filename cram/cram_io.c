@@ -805,6 +805,9 @@ int cram_uncompress_block(cram_block *b) {
 	abort();
 	break;
 #endif
+
+    case BM_ERROR:
+	return -1;
     }
 
     return 0;
@@ -959,6 +962,7 @@ char *cram_block_method2str(enum cram_block_method m) {
     case RAW:	return "RAW";
     case GZIP:	return "GZIP";
     case BZIP2:	return "BZIP2";
+    case BM_ERROR: break;
     }
     return "?";
 }
@@ -971,6 +975,7 @@ char *cram_content_type2str(enum cram_content_type t) {
     case UNMAPPED_SLICE:      return "UNMAPPED_SLICE";
     case EXTERNAL:            return "EXTERNAL";
     case CORE:                return "CORE";
+    case CT_ERROR:            break;
     }
     return "?";
 }
@@ -3030,7 +3035,8 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
     if (-1 == refs2id(fd->refs, fd->header))
 	return -1;
 
-    hflush(fd->fp);
+    if (0 != hflush(fd->fp))
+	return -1;
 
     RP("=== Finishing saving header ===\n");
 
@@ -3159,7 +3165,7 @@ cram_fd *cram_open(const char *filename, const char *mode) {
 
     fd = cram_dopen(fp, filename, mode);
     if (!fd)
-	hclose(fp);
+	(void)hclose(fp);
 
     return fd;
 }
