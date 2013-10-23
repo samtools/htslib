@@ -1306,6 +1306,11 @@ static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
     return 0;
 }
 
+int cram_set_header(cram_fd *fd, SAM_hdr *hdr) {
+    fd->header = hdr;
+    return refs_from_header(fd->refs, fd, hdr);
+}
+
 /*
  * Converts a directory and a filename into an expanded path, replacing %s
  * in directory with the filename and %[0-9]+s with portions of the filename
