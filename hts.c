@@ -85,6 +85,16 @@ static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
 	return destsize;
 }
 
+// Returns whether the block contains any control characters, i.e.,
+// characters less than SPACE other than whitespace etc (ASCII BEL..CR).
+static int is_binary(unsigned char *s, size_t n)
+{
+	size_t i;
+	for (i = 0; i < n; i++)
+		if (s[i] < 0x07 || (s[i] >= 0x0e && s[i] < 0x20)) return 1;
+	return 0;
+}
+
 htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 {
 	htsFile *fp = NULL;
@@ -109,15 +119,18 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 			// whether it's in a binary format (e.g., BAM or BCF, starting
 			// with four bytes of magic including a control character) or is
 			// a bgzipped SAM or VCF text file.
-			size_t i, ns = decompress_peek(hfile, s, 4);
-			fp->is_kstream = 1;
-			for (i = 0; i < ns; i++)
-				if (s[i] < 0x07 || (s[i] >= 0x0e && s[i] < 0x20))
-					fp->is_bin = 1, fp->is_kstream = 0;
+			fp->is_compressed = 1;
+			if (is_binary(s, decompress_peek(hfile, s, 4))) fp->is_bin = 1;
+			else fp->is_kstream = 1;
 		}
 		else if (hpeek(hfile, s, 2) == 2 && s[0] == 0x1f && s[1] == 0x8b) {
 			// Plain GZIP header... so a gzipped text file.
+			fp->is_compressed = 1;
 			fp->is_kstream = 1;
+		}
+		else if (hpeek(hfile, s, 4) == 4 && is_binary(s, 4)) {
+			// Binary format, but in a raw non-compressed form.
+			fp->is_bin = 1;
 		}
 		else {
 			fp->is_kstream = 1;
@@ -133,7 +146,7 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 	}
 	else goto error;
 
-	if (fp->is_bin || fp->is_compressed==1) {
+	if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
 		fp->fp.bgzf = bgzf_hopen(hfile, mode);
 		if (fp->fp.bgzf == NULL) goto error;
 	}
@@ -179,7 +192,7 @@ error:
 
 void hts_close(htsFile *fp)
 {
-	if (fp->is_bin || fp->is_compressed==1) {
+	if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
 		bgzf_close(fp->fp.bgzf);
 	} else if (fp->is_cram) {
 		cram_close(fp->fp.cram);
