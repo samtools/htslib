@@ -263,32 +263,6 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
     return e;
 }
 
-/*
- * Seek within a cram file.
- *
- * Returns 0 on success
- *        -1 on failure
- */
-int cram_seek(cram_fd *fd, off_t offset, int whence) {
-    char buf[65536];
-
-    if (fseeko(fd->fp, offset, whence) == 0)
-	return 0;
-
-    if (!(whence == SEEK_CUR && offset >= 0))
-	return -1;
-
-    /* Couldn't fseek, but we're in SEEK_CUR mode so read instead */
-    while (offset > 0) {
-	int len = MIN(65536, offset);
-	if (len != fread(buf, 1, len, fd->fp))
-	    return -1;
-	offset -= len;
-    }
-
-    return 0;
-}
-
 
 /*
  * Skips to a container overlapping the start coordinate listed in

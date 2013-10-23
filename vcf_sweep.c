@@ -81,8 +81,7 @@ static void sw_fill_buffer(bcf_sweep_t *sw)
 bcf_sweep_t *bcf_sweep_init(const char *fname)
 {
     bcf_sweep_t *sw = (bcf_sweep_t*) calloc(1,sizeof(bcf_sweep_t));
-    int type = hts_file_type(fname); 
-    sw->file = hts_open(fname, type & FT_BCF ? "rb" : "r", NULL);
+    sw->file = hts_open(fname, "r", NULL);
     sw->fp   = hts_get_bgzfp(sw->file);
     bgzf_index_build_init(sw->fp);
     sw->hdr  = bcf_hdr_read(sw->file);

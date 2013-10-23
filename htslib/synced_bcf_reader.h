@@ -126,8 +126,7 @@ void bcf_sr_destroy(bcf_srs_t *readers);
  *  See also the bcf_srs_t data structure for parameters controlling
  *  the reader's logic.
  */
-int bcf_sr_open_reader(bcf_srs_t *readers, const char *fname, int type);            // one of FT_* types defined in hts.h
-#define bcf_sr_add_reader(readers,fname) bcf_sr_open_reader(readers,fname,FT_UNKN)  // guess the file type (assumes VCF if stdin)
+int bcf_sr_add_reader(bcf_srs_t *readers, const char *fname);
 
 
 /** 

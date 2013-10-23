@@ -452,6 +452,24 @@ int bcf_hdr_append(bcf_hdr_t *hdr, const char *line)
     return 0;
 }
 
+int bcf_hdr_printf(bcf_hdr_t *hdr, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(NULL, 0, fmt, ap) + 2;
+    va_end(ap);
+
+    char *line = (char*)malloc(n);
+    va_start(ap, fmt);
+    vsnprintf(line, n, fmt, ap);
+    va_end(ap);
+
+    bcf_hdr_append(hdr, line);
+
+    free(line);
+    return 0;
+}
+
 
 /**********************
  *** BCF header I/O ***
@@ -504,11 +522,14 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
 	h = bcf_hdr_init("r");
 	if ( bgzf_read(fp, magic, 5)<0 ) 
     {
-        fprintf(stderr,"[%s:%d %s] Failed to read the header\n", __FILE__,__LINE__,__FUNCTION__);
+        fprintf(stderr,"[%s:%d %s] Failed to read the header (reading BCF in text mode?)\n", __FILE__,__LINE__,__FUNCTION__);
         return NULL;
     }
-	if (strncmp((char*)magic, "BCF\2\2", 5) != 0) {
-		if (hts_verbose >= 2)
+	if (strncmp((char*)magic, "BCF\2\2", 5) != 0) 
+    {
+        if (!strncmp((char*)magic, "BCF", 3)) 
+            fprintf(stderr,"[%s:%d %s] invalid BCF2 magic string: only BCFv2.2 is supported.\n", __FILE__,__LINE__,__FUNCTION__);
+		else if (hts_verbose >= 2)
 			fprintf(stderr, "[E::%s] invalid BCF2 magic string\n", __func__);
 		bcf_hdr_destroy(h);
 		return 0;
@@ -1601,10 +1622,6 @@ int bcf_hdr_id2int(const bcf_hdr_t *h, int which, const char *id)
 	return k == kh_end(d)? -1 : kh_val(d, k).id;
 }
 
-int bcf_hdr_name2id(const bcf_hdr_t *h, const char *id)
-{
-	return bcf_hdr_id2int(h, BCF_DT_CTG, id);
-}
 
 /********************
  *** BCF indexing ***
