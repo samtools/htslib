@@ -1350,10 +1350,14 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		fprintf(stderr, "Slice starts before base 1.\n");
 		s->ref_start = 0;
 	    }
+	    pthread_mutex_lock(&fd->ref_lock);
+	    pthread_mutex_lock(&fd->refs->lock);
 	    if (s->ref_end > fd->refs->ref_id[ref_id]->length) {
 		fprintf(stderr, "Slice ends beyond reference end.\n");
 		s->ref_end = fd->refs->ref_id[ref_id]->length;
 	    }
+	    pthread_mutex_unlock(&fd->refs->lock);
+	    pthread_mutex_unlock(&fd->ref_lock);
 	}
     }
 
@@ -1414,7 +1418,11 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     }
 
     if (ref_id == -2) {
+	pthread_mutex_lock(&fd->ref_lock);
+	pthread_mutex_lock(&fd->refs->lock);
 	refs = calloc(fd->refs->nref, sizeof(char *));
+	pthread_mutex_unlock(&fd->refs->lock);
+	pthread_mutex_unlock(&fd->ref_lock);
 	if (!refs)
 	    return -1;
     }
@@ -1452,10 +1460,13 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		    if (!refs[cr->ref_id])
 			refs[cr->ref_id] = cram_get_ref(fd, cr->ref_id, 1, 0);
 		    s->ref = refs[cr->ref_id];
-		    assert(s->ref == fd->refs->ref_id[cr->ref_id]->seq);
 		}
 		s->ref_start = 1;
+		pthread_mutex_lock(&fd->ref_lock);
+		pthread_mutex_lock(&fd->refs->lock);
 		s->ref_end = fd->refs->ref_id[cr->ref_id]->length;
+		pthread_mutex_unlock(&fd->refs->lock);
+		pthread_mutex_unlock(&fd->ref_lock);
 	    }
 	} else {
 	    cr->ref_id = ref_id; // Forced constant in CRAM 1.0
@@ -1605,15 +1616,17 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	}
     }
 
+    pthread_mutex_lock(&fd->ref_lock);
     if (refs) {
 	int i;
 	for (i = 0; i < fd->refs->nref; i++) {
 	    if (refs[i])
 		cram_ref_decr(fd->refs, i);
 	}
-    } else if (ref_id >= 0) {
+    } else if (ref_id >= 0 && s->ref != fd->ref_free) {
 	cram_ref_decr(fd->refs, ref_id);
     }
+    pthread_mutex_unlock(&fd->ref_lock);
 
     /* Resolve mate pair cross-references between recs within this slice */
     cram_decode_slice_xref(s);

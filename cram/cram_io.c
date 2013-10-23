@@ -78,6 +78,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define RP(...) 
 #endif
 
+
 /* ----------------------------------------------------------------------
  * ITF8 encoding and decoding.
  *
@@ -1174,13 +1175,20 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 	if (-1 == n)
 	    return NULL;
 
-	/* Replace old one if needed */
-	if (!n) {
-	    ref_entry *e = kh_val(r->h_meta, k);
-	    if (e)
+	if (n) {
+	    kh_val(r->h_meta, k) = e;
+	} else {
+	    ref_entry *re = kh_val(r->h_meta, k);
+	    if (re && (re->count != 0 || re->length != 0)) {
+		/* Keep old */
 		free(e);
+	    } else {
+		/* Replace old */
+		if (re)
+		    free(re);
+		kh_val(r->h_meta, k) = e;
+	    }
 	}
-	kh_val(r->h_meta, k) = e;
     }
 
     return r;
@@ -1204,6 +1212,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
  */
 int refs2id(refs_t *r, SAM_hdr *h) {
     int i;
+
     if (r->ref_id)
 	free(r->ref_id);
     if (r->last)
@@ -1500,7 +1509,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 }
 
 static void cram_ref_incr_locked(refs_t *r, int id) {
-    RP("%d INC REF %d, %d\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count+1:-1));
+    RP("%d INC REF %d, %d %p\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count+1:-999), id>=0?r->ref_id[id]->seq:(char *)1);
 
     if (id < 0 || !r->ref_id[id]->seq)
 	return;
@@ -1515,10 +1524,10 @@ void cram_ref_incr(refs_t *r, int id) {
 }
 
 static void cram_ref_decr_locked(refs_t *r, int id) {
-    RP("%d DEC REF %d, %d\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count-1:-1));
+    RP("%d DEC REF %d, %d %p\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count-1:-999), id>=0?r->ref_id[id]->seq:(char *)1);
 
     if (id < 0 || !r->ref_id[id]->seq) {
-	pthread_mutex_unlock(&r->lock);
+	assert(r->ref_id[id]->count >= 0);
 	return;
     }
 
@@ -1552,6 +1561,9 @@ static char *load_ref_portion(FILE *fp, ref_entry *e, int start, int end) {
     off_t offset, len;
     char *seq;
 
+    if (end < start)
+	end = start;
+
     /*
      * Compute locations in file. This is trivial for the MD5 files, but
      * is still necessary for the fasta variants.
@@ -1571,7 +1583,7 @@ static char *load_ref_portion(FILE *fp, ref_entry *e, int start, int end) {
 	return NULL;
     }
 
-    if (!(seq = malloc(len))) {
+    if (len == 0 || !(seq = malloc(len))) {
 	return NULL;
     }
 
@@ -1613,8 +1625,9 @@ ref_entry *cram_ref_load(refs_t *r, int id) {
     int start = 1, end = e->length;
     char *seq;
 
-    if (e->seq)
+    if (e->seq) {
 	return e;
+    }
 
     assert(e->count == 0);
 
@@ -1663,7 +1676,7 @@ ref_entry *cram_ref_load(refs_t *r, int id) {
      * Also keep track of last used ref so incr/decr loops on the same
      * sequence don't cause load/free loops.
      */
-    RP("%d cram_ref_load INCR %d\n", gettid(), id);
+    RP("%d cram_ref_load INCR %d => %d\n", gettid(), id, e->count+1);
     r->last = e;
     e->count++; 
 
@@ -1807,13 +1820,10 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
 		    cram_ref_incr_locked(fd->refs, id);
 	    }	    
 
-	    if (fd->ref && fd->ref == fd->refs->ref_id[fd->ref_id]->seq)
-		cram_ref_decr_locked(fd->refs, fd->ref_id);
-	    fd->ref       = r->seq;
+	    fd->ref = NULL; /* We never access it directly */
 	    fd->ref_start = 1;
 	    fd->ref_end   = r->length;
 	    fd->ref_id    = id;
-	    cram_ref_incr_locked(fd->refs, fd->ref_id);
 
 	    cp = fd->refs->ref_id[id]->seq + ostart-1;
 	} else {
@@ -2845,6 +2855,7 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 	int i;
 	for (i = 0; i < hdr->nref; i++) {
 	    SAM_hdr_type *ty;
+	    char *ref;
 
 	    if (!(ty = sam_hdr_find(hdr, "SQ", "SN", hdr->ref[i].name)))
 		return -1;
@@ -2861,8 +2872,8 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 		}
 		rlen = fd->refs->ref_id[i]->length;
 		MD5_Init(&md5);
-		cram_get_ref(fd, i, 1, rlen);
-		MD5_Update(&md5, fd->ref, rlen);
+		ref = cram_get_ref(fd, i, 1, rlen);
+		MD5_Update(&md5, ref, rlen);
 		MD5_Final(buf, &md5);
 
 		for (j = 0; j < 16; j++) {
