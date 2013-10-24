@@ -2029,7 +2029,7 @@ cram_container *cram_new_container(int nrec, int nslice) {
     //c->aux_B_stats = cram_stats_create();
 
     if (!(c->tags_used = kh_init(s_i2i)))
-	return NULL;
+	goto err;
     c->refs_used = 0;
 
     return c;
