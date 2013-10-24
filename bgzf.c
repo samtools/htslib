@@ -167,6 +167,8 @@ BGZF *bgzf_open(const char *path, const char *mode)
 		fp = bgzf_write_init(mode2level(mode));
 		fp->fp = fpw;
 	}
+	else { errno = EINVAL; return 0; }
+
 	fp->is_be = ed_is_big();
 	return fp;
 }
@@ -187,6 +189,8 @@ BGZF *bgzf_dopen(int fd, const char *mode)
 		fp = bgzf_write_init(mode2level(mode));
 		fp->fp = fpw;
 	}
+	else { errno = EINVAL; return 0; }
+
 	fp->is_be = ed_is_big();
 	return fp;
 }
@@ -201,6 +205,8 @@ BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
 	} else if (strchr(mode, 'w')) {
 		fp = bgzf_write_init(mode2level(mode));
 	}
+	else { errno = EINVAL; return 0; }
+
 	fp->fp = hfp;
 	fp->is_be = ed_is_big();
 	return fp;
