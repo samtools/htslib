@@ -79,6 +79,13 @@ int cram_decode_TD(char *cp, cram_block_compression_hdr *h) {
 
     /* Decode */
     cp += itf8_get(cp, &blk_size);
+    if (!blk_size) {
+	h->nTL = 0;
+	h->TL = NULL;
+	cram_free_block(b);
+        return cp - op;
+    }
+
     BLOCK_APPEND(b, cp, blk_size);
     cp += blk_size;
     sz = cp - op;
@@ -99,7 +106,7 @@ int cram_decode_TD(char *cp, cram_block_compression_hdr *h) {
 
     // Copy
     h->nTL = nTL;
-    if (!(h->TL = calloc(h->nTL, sizeof(char *))))
+    if (!(h->TL = calloc(h->nTL, sizeof(unsigned char *))))
 	return -1;
     for (nTL = i = 0; i < BLOCK_SIZE(b); i++) {
 	h->TL[nTL++] = &dat[i];
@@ -572,6 +579,7 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
 	if (!(m->codec = cram_decoder_init(encoding, cp, size,
 					   E_BYTE_ARRAY_BLOCK, fd->version))) {
 	    cram_free_compression_header(hdr);
+	    free(m);
 	    return NULL;
 	}
 	
@@ -620,8 +628,10 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
 
     cp += itf8_get(cp, &hdr->num_content_ids);
     hdr->block_content_ids = malloc(hdr->num_content_ids * sizeof(int32_t));
-    if (!hdr->block_content_ids)
+    if (!hdr->block_content_ids) {
+	free(hdr);
 	return NULL;
+    }
 
     for (i = 0; i < hdr->num_content_ids; i++) {
 	cp += itf8_get(cp, &hdr->block_content_ids[i]);
@@ -712,8 +722,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
 	if (ncigar+2 >= cigar_alloc) {
 	    cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-	    cigar = realloc(cigar, cigar_alloc * sizeof(*cigar));
-	    if (!cigar)
+	    s->cigar = cigar;
+	    if (!(cigar = realloc(cigar, cigar_alloc * sizeof(*cigar))))
 		return -1;
 	}
 
@@ -973,6 +983,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
 	if (ncigar+1 >= cigar_alloc) {
 	    cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
+	    s->cigar = cigar;
 	    if (!(cigar = realloc(cigar, cigar_alloc * sizeof(*cigar))))
 		return -1;
 	}
@@ -1216,7 +1227,6 @@ static void cram_decode_slice_xref(cram_slice *s) {
 			    id2 = s->crecs[id2].mate_line;
 			}
 		    } else {
-			tlen = 0;
 			id1 = id2 = rec;
 
 			s->crecs[id2].tlen = 0;
@@ -1581,7 +1591,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	BLOCK_SIZE(s->seqs_blk) += cr->len;
 
 	if (!seq)
-	    fprintf(stderr, "seq=%p, s->seqs_blk->data = %p\n", seq, s->seqs_blk->data);
+	    return -1;
 	
 	cr->qual = BLOCK_SIZE(s->qual_blk);
 	BLOCK_GROW(s->qual_blk, cr->len);

@@ -2380,11 +2380,11 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	if (cr->len == 0) {
 	    cram_stats_add(c->RL_stats, cr->len = fake_qual);
 	    BLOCK_GROW(s->qual_blk, cr->len);
-	    qual = cp = (char *)BLOCK_END(s->qual_blk);
+	    cp = (char *)BLOCK_END(s->qual_blk);
 	    memset(cp, 255, cr->len);
 	} else {
 	    BLOCK_GROW(s->qual_blk, cr->len);
-	    qual = cp = (char *)BLOCK_END(s->qual_blk);
+	    cp = (char *)BLOCK_END(s->qual_blk);
 	    char *from = (char *)&bam_qual(b)[0];
 	    char *to = &cp[0];
 	    memcpy(to, from, cr->len);
