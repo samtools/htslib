@@ -162,8 +162,11 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
 	    vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
 	    vals  = realloc(vals,  vals_alloc * sizeof(int));
 	    freqs = realloc(freqs, vals_alloc * sizeof(int));
-	    if (!vals || !freqs)
+	    if (!vals || !freqs) {
+		if (vals)  free(vals);
+		if (freqs) free(freqs);
 		return E_HUFFMAN; // Cannot do much else atm
+	    }
 	}
 	vals[nvals] = i;
 	freqs[nvals] = st->freqs[i];

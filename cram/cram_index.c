@@ -117,6 +117,7 @@ int cram_index_load(cram_fd *fd, char *fn) {
     sprintf(fn2, "%s.crai", fn);
     if (!(fp = zfopen(fn2, "r"))) {
 	perror(fn2);
+	free(idx_stack);
 	return -1; 
     }
 

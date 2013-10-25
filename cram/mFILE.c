@@ -254,9 +254,12 @@ mFILE *mfreopen(const char *path, const char *mode_str, FILE *fp) {
 	    if (!a)
 		fseek(fp, 0, SEEK_SET);
 	}
-    } else {
+    } else if (w) {
 	/* Write - initialise the data structures */
 	mf = mfcreate(NULL, 0);
+    } else {
+        fprintf(stderr, "Must specify either r, w or a for mode\n");
+        return NULL;
     }
     mf->fp = fp;
     mf->mode = mode;
@@ -413,7 +416,6 @@ size_t mfread(void *ptr, size_t size, size_t nmemb, mFILE *mf) {
 
     memcpy(cptr, &mf->data[mf->offset], len);
     mf->offset += len;
-    cptr += len;
     
     if (len != size * nmemb) {
 	mf->eof = 1;

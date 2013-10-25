@@ -1163,8 +1163,10 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
 				   "ID", sam_hdr_PG_ID(sh, name),
 				   "PN", name,
 				   "PP", sh->pg[end[i]].name,
-				   NULL))
+				   NULL)) {
+		free(end);
 		return  -1;
+	    }
 	}
 
 	free(end);

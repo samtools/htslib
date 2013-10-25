@@ -113,7 +113,6 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
 	*cp++ = L[(uc)seq[i]]<<4;
 
     memcpy(cp, qual, len);
-    cp += len;
 
     return 0;
 }
