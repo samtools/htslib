@@ -131,14 +131,69 @@ typedef struct {
 #endif
 } bam1_t;
 
+/*! @function
+ @abstract  Get whether the query is on the reverse strand
+ @param  b  pointer to an alignment
+ @return    boolean true if query is on the reverse strand
+ */
 #define bam_is_rev(b) (((b)->core.flag&BAM_FREVERSE) != 0)
+/*! @function
+ @abstract  Get whether the query's mate is on the reverse strand
+ @param  b  pointer to an alignment
+ @return    boolean true if query's mate on the reverse strand
+ */
 #define bam_is_mrev(b) (((b)->core.flag&BAM_FMREVERSE) != 0)
+/*! @function
+ @abstract  Get the name of the query
+ @param  b  pointer to an alignment
+ @return    pointer to the name string, null terminated
+ */
 #define bam_get_qname(b) ((char*)(b)->data)
+/*! @function
+ @abstract  Get the CIGAR array
+ @param  b  pointer to an alignment
+ @return    pointer to the CIGAR array
+
+ @discussion In the CIGAR array, each element is a 32-bit integer. The
+ lower 4 bits gives a CIGAR operation and the higher 28 bits keep the
+ length of a CIGAR.
+ */
 #define bam_get_cigar(b) ((uint32_t*)((b)->data + (b)->core.l_qname))
+/*! @function
+ @abstract  Get query sequence
+ @param  b  pointer to an alignment
+ @return    pointer to sequence
+
+ @discussion Each base is encoded in 4 bits: 1 for A, 2 for C, 4 for G,
+ 8 for T and 15 for N. Two bases are packed in one byte with the base
+ at the higher 4 bits having smaller coordinate on the read. It is
+ recommended to use bam_seqi() macro to get the base.
+ */
 #define bam_get_seq(b)   ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname)
+/*! @function
+ @abstract  Get query quality
+ @param  b  pointer to an alignment
+ @return    pointer to quality string
+ */
 #define bam_get_qual(b)  ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname + (((b)->core.l_qseq + 1)>>1))
+/*! @function
+ @abstract  Get auxiliary data
+ @param  b  pointer to an alignment
+ @return    pointer to the concatenated auxiliary data
+ */
 #define bam_get_aux(b)   ((b)->data + ((b)->core.n_cigar<<2) + (b)->core.l_qname + (((b)->core.l_qseq + 1)>>1) + (b)->core.l_qseq)
+/*! @function
+ @abstract  Get length of auxiliary data
+ @param  b  pointer to an alignment
+ @return    length of the concatenated auxiliary data
+ */
 #define bam_get_l_aux(b) ((b)->l_data - ((b)->core.n_cigar<<2) - (b)->core.l_qname - (b)->core.l_qseq - (((b)->core.l_qseq + 1)>>1))
+/*! @function
+ @abstract  Get a base on read
+ @param  s  Query sequence returned by bam1_seq()
+ @param  i  The i-th position, 0-based
+ @return    4-bit integer representing the base.
+ */
 #define bam_seqi(s, i) ((s)[(i)>>1] >> ((~(i)&1)<<2) & 0xf)
 
 /**************************
@@ -250,6 +305,24 @@ extern "C" {
 
 #if !defined(BAM_NO_PILEUP)
 
+/*! @typedef
+ @abstract Structure for one alignment covering the pileup position.
+ @field  b          pointer to the alignment
+ @field  qpos       position of the read base at the pileup site, 0-based
+ @field  indel      indel length; 0 for no indel, positive for ins and negative for del
+ @field  level      the level of the read in the "viewer" mode
+ @field  is_del     1 iff the base on the padded read is a deletion
+ @field  is_head    ???
+ @field  is_tail    ???
+ @field  is_refskip ???
+ @field  aux        ???
+
+ @discussion See also bam_plbuf_push() and bam_lplbuf_push(). The
+ difference between the two functions is that the former does not
+ set bam_pileup1_t::level, while the later does. Level helps the
+ implementation of alignment viewers, but calculating this has some
+ overhead.
+ */
 typedef struct {
 	bam1_t *b;
 	int32_t qpos;
