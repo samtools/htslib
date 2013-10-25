@@ -87,6 +87,8 @@ const char *hts_version();
                         is a distinction between 'u' and '0': the first yields plain
                         uncompressed output whereas the latter outputs uncompressed
                         data wrapped in the zlib format.
+	@param fn_aux	Format specific auxiliary data.
+			A filename for VCF; the bam header struct for CRAM writing.
         @example 
                         [rw]b .. compressed BCF, BAM, FAI; with "r" detects uncompressed
                                     files when not reading from stdin

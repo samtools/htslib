@@ -1,6 +1,32 @@
 /*
- * Author: James Bonfield, Wellcome Trust Sanger Institute. 2013
- */
+Copyright (c) 2012-2013 Genome Research Ltd.
+Author: James Bonfield <jkb@sanger.ac.uk>
+
+Redistribution and use in source and binary forms, with or without 
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice, 
+this list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright notice, 
+this list of conditions and the following disclaimer in the documentation 
+and/or other materials provided with the distribution.
+
+   3. Neither the names Genome Research Ltd and Wellcome Trust Sanger
+Institute nor the names of its contributors may be used to endorse or promote
+products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY GENOME RESEARCH LTD AND CONTRIBUTORS "AS IS" AND 
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL GENOME RESEARCH LTD OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
 
 /*
  * FIXME: add checking of cram_external_type to return NULL on unsupported
@@ -313,7 +339,7 @@ int cram_external_decode_int(cram_slice *slice, cram_codec *c,
 		break;
 	    }
 	}
-	if (i == slice->hdr->num_blocks)
+	if (i == slice->hdr->num_blocks || !b)
 	    return -1;
     }
 
@@ -344,7 +370,7 @@ int cram_external_decode_char(cram_slice *slice, cram_codec *c,
 		break;
 	    }
 	}
-	if (i == slice->hdr->num_blocks)
+	if (i == slice->hdr->num_blocks || !b)
 	    return -1;
     }
 
@@ -376,7 +402,7 @@ int cram_external_decode_block(cram_slice *slice, cram_codec *c,
 		break;
 	    }
 	}
-	if (i == slice->hdr->num_blocks)
+	if (i == slice->hdr->num_blocks || !b)
 	    return -1;
     }
 
@@ -816,7 +842,7 @@ int cram_huffman_decode_char0(cram_slice *slice, cram_codec *c,
 
 int cram_huffman_decode_char(cram_slice *slice, cram_codec *c,
 			     cram_block *in, char *out, int *out_size) {
-    int i, n;
+    int i, n, ncodes = c->huffman.ncodes;
     const cram_huffman_code * const codes = c->huffman.codes;
 
     for (i = 0, n = *out_size; i < n; i++) {
@@ -825,6 +851,8 @@ int cram_huffman_decode_char(cram_slice *slice, cram_codec *c,
 
 	for (;;) {
 	    int dlen = codes[idx].len - last_len;
+	    if (dlen <= 0 || (in->alloc - in->byte)*8 + in->bit + 7 < dlen)
+		return -1;
 
 	    //val <<= dlen;
 	    //val  |= get_bits_MSB(in, dlen);
@@ -834,6 +862,9 @@ int cram_huffman_decode_char(cram_slice *slice, cram_codec *c,
 	    for (; dlen; dlen--) GET_BIT_MSB(in, val);
 
 	    idx = val - codes[idx].p;
+	    if (idx >= ncodes || idx < 0)
+		return -1;
+
 	    if (codes[idx].code == val && codes[idx].len == len) {
 		out[i] = codes[idx].symbol;
 		break;
@@ -860,7 +891,7 @@ int cram_huffman_decode_int0(cram_slice *slice, cram_codec *c,
 int cram_huffman_decode_int(cram_slice *slice, cram_codec *c,
 			    cram_block *in, char *out, int *out_size) {
     int32_t *out_i = (int32_t *)out;
-    int i, n;
+    int i, n, ncodes = c->huffman.ncodes;
     const cram_huffman_code * const codes = c->huffman.codes;
 
     for (i = 0, n = *out_size; i < n; i++) {
@@ -870,7 +901,9 @@ int cram_huffman_decode_int(cram_slice *slice, cram_codec *c,
 	// Now one bit at a time for remaining checks
 	for (;;) {
 	    int dlen = codes[idx].len - last_len;
-
+	    if (dlen <= 0 || (in->alloc - in->byte)*8 + in->bit + 7 < dlen)
+		return -1;
+	    
 	    //val <<= dlen;
 	    //val  |= get_bits_MSB(in, dlen);
 	    //last_len = (len  += dlen);
@@ -879,6 +912,9 @@ int cram_huffman_decode_int(cram_slice *slice, cram_codec *c,
 	    for (; dlen; dlen--) GET_BIT_MSB(in, val);
 
 	    idx = val - codes[idx].p;
+	    if (idx >= ncodes || idx < 0)
+		return -1;
+
 	    if (codes[idx].code == val && codes[idx].len == len) {
 		out_i[i] = codes[idx].symbol;
 		break;
@@ -896,7 +932,7 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
 				     enum cram_external_type option,
 				     int version) {
     int32_t ncodes, i, j;
-    char *cp = data;
+    char *cp = data, *data_end = &data[size];
     cram_codec *h;
     cram_huffman_code *codes;
     int32_t val, last_len, max_len = 0;
@@ -908,15 +944,23 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
 
     h->free   = cram_huffman_decode_free;
 
+    h->huffman.ncodes = ncodes;
     codes = h->huffman.codes = malloc(ncodes * sizeof(*codes));
-    if (!codes)
+    if (!codes) {
+	free(h);
 	return NULL;
+    }
 
     /* Read symbols and bit-lengths */
-    for (i = 0; i < ncodes; i++) {
+    for (i = 0; i < ncodes && cp < data_end; i++) {
 	cp += itf8_get(cp, &codes[i].symbol);
     }
 
+    if (cp >= data_end) {
+	fprintf(stderr, "Malformed huffman header stream\n");
+	free(h);
+	return NULL;
+    }
     cp += itf8_get(cp, &i);
     if (i != ncodes) {
 	fprintf(stderr, "Malformed huffman header stream\n");
@@ -929,12 +973,12 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
 	return h;
     }
 
-    for (i = 0; i < ncodes; i++) {
+    for (i = 0; i < ncodes && cp < data_end; i++) {
 	cp += itf8_get(cp, &codes[i].len);
 	if (max_len < codes[i].len)
 	    max_len = codes[i].len;
     }
-    if (cp - data != size) {
+    if (cp - data != size || max_len >= ncodes) {
 	fprintf(stderr, "Malformed huffman header stream\n");
 	free(h);
 	return NULL;
@@ -1156,8 +1200,12 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 	    vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
 	    vals  = realloc(vals,  vals_alloc * sizeof(int));
 	    freqs = realloc(freqs, vals_alloc * sizeof(int));
-	    if (!vals || !freqs)
+	    if (!vals || !freqs) {
+		if (vals)  free(vals);
+		if (freqs) free(freqs);
+		free(c);
 		return NULL;
+	    }
 	}
 	vals[nvals] = i;
 	freqs[nvals] = st->freqs[i];
@@ -1454,14 +1502,17 @@ int cram_byte_array_stop_decode_char(cram_slice *slice, cram_codec *c,
 		break;
 	    }
 	}
-	if (i == slice->hdr->num_blocks)
+	if (i == slice->hdr->num_blocks || !b)
 	    return -1;
     }
 
-    assert(b->idx < b->uncomp_size);
+    if (b->idx >= b->uncomp_size)
+	return -1;
+
     cp = (char *)b->data + b->idx;
     while ((ch = *cp) != (char)c->byte_array_stop.stop) {
-	assert(cp - (char *)b->data < b->uncomp_size);
+	if (cp - (char *)b->data >= b->uncomp_size)
+	    return -1;
 	*out++ = ch;
 	cp++;
     }
@@ -1493,11 +1544,12 @@ int cram_byte_array_stop_decode_block(cram_slice *slice, cram_codec *c,
 		break;
 	    }
 	}
-	if (i == slice->hdr->num_blocks)
+	if (i == slice->hdr->num_blocks || !b)
 	    return -1;
     }
 
-    assert(b->idx < b->uncomp_size);
+    if (b->idx >= b->uncomp_size)
+	return -1;
     cp = (char *)b->data + b->idx;
     cp_end = (char *)b->data + b->uncomp_size;
     BLOCK_GROW(out, space);
@@ -1508,7 +1560,6 @@ int cram_byte_array_stop_decode_block(cram_slice *slice, cram_codec *c,
     while ((ch = *cp) != stop) {
 	if (cp++ == cp_end)
 	    return -1;
-	//assert(cp - (char *)b->data < b->uncomp_size);
 	*out_cp++ = ch;
 
 	if (out_cp == out_end) {

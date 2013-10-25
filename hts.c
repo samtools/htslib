@@ -153,8 +153,12 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 	else if (fp->is_cram) {
 		fp->fp.cram = cram_dopen(hfile, fn, mode);
 		if (fp->fp.cram == NULL) goto error;
-		if (fn_aux)
-			cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, fn_aux);
+		if (fn_aux) {
+		    bam_hdr_t *h = (bam_hdr_t *)fn_aux;
+		    cram_set_header(fp->fp.cram, sam_hdr_parse_(h->text, h->l_text));
+		    cram_write_SAM_hdr(fp->fp.cram, fp->fp.cram->header);
+		    cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, NULL);
+		}
 	}
 	else if (fp->is_kstream) {
 	#if KS_BGZF

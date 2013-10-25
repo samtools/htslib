@@ -1,6 +1,34 @@
 /*
- * Author: James Bonfield, Wellcome Trust Sanger Institute. 2013
- *
+Copyright (c) 2012-2013 Genome Research Ltd.
+Author: James Bonfield <jkb@sanger.ac.uk>
+
+Redistribution and use in source and binary forms, with or without 
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice, 
+this list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright notice, 
+this list of conditions and the following disclaimer in the documentation 
+and/or other materials provided with the distribution.
+
+   3. Neither the names Genome Research Ltd and Wellcome Trust Sanger
+Institute nor the names of its contributors may be used to endorse or promote
+products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY GENOME RESEARCH LTD AND CONTRIBUTORS "AS IS" AND 
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL GENOME RESEARCH LTD OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+/*
  * CRAM I/O primitives.
  *
  * - ITF8 encoding and decoding.
@@ -526,11 +554,14 @@ static char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
     err = inflateInit2(&s, 15 + 32);
     if (err != Z_OK) {
 	fprintf(stderr, "zlib inflateInit error: %s\n", s.msg);
+	free(data);
 	return NULL;
     }
 
     /* Decode to 'data' array */
     for (;s.avail_in;) {
+	unsigned char *data_tmp;
+
 	s.next_out = &data[s.total_out];
 	err = inflate(&s, Z_NO_FLUSH);
 	if (err == Z_STREAM_END)
@@ -542,9 +573,11 @@ static char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
 	}
 
 	/* More to come, so realloc */
-	data = realloc(data, data_alloc += s.avail_in + 10);
-	if (!data)
+	data = realloc((data_tmp = data), data_alloc += s.avail_in + 10);
+	if (!data) {
+	    free(data_tmp);
 	    return NULL;
+	}
 	s.avail_out += s.avail_in+10;
     }
     inflateEnd(&s);
@@ -748,7 +781,8 @@ int cram_uncompress_block(cram_block *b) {
 	uncomp = zlib_mem_inflate((char *)b->data, b->comp_size, &uncomp_size);
 	if (!uncomp)
 	    return -1;
-	assert((int)uncomp_size == b->uncomp_size);
+	if ((int)uncomp_size != b->uncomp_size)
+	    return -1;
 	free(b->data);
 	b->data = (unsigned char *)uncomp;
 	b->method = RAW;
@@ -774,9 +808,12 @@ int cram_uncompress_block(cram_block *b) {
     case BZIP2:
 	fprintf(stderr, "Bzip2 compression is not compiled into this "
 		"version.\nPlease rebuild and try again.\n");
-	abort();
-	break;
+	return -1;
 #endif
+
+    case BM_ERROR:
+    default:
+	return -1;
     }
 
     return 0;
@@ -931,6 +968,7 @@ char *cram_block_method2str(enum cram_block_method m) {
     case RAW:	return "RAW";
     case GZIP:	return "GZIP";
     case BZIP2:	return "BZIP2";
+    case BM_ERROR: break;
     }
     return "?";
 }
@@ -943,6 +981,7 @@ char *cram_content_type2str(enum cram_content_type t) {
     case UNMAPPED_SLICE:      return "UNMAPPED_SLICE";
     case EXTERNAL:            return "EXTERNAL";
     case CORE:                return "CORE";
+    case CT_ERROR:            break;
     }
     return "?";
 }
@@ -1157,16 +1196,25 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 	e->seq = NULL;
 
 	k = kh_put(refs, r->h_meta, e->name, &n);
-	if (-1 == n)
+	if (-1 == n)  {
+	    free(e);
 	    return NULL;
-
-	/* Replace old one if needed */
-	if (!n) {
-	    ref_entry *e = kh_val(r->h_meta, k);
-	    if (e)
-		free(e);
 	}
-	kh_val(r->h_meta, k) = e;
+
+	if (n) {
+	    kh_val(r->h_meta, k) = e;
+	} else {
+	    ref_entry *re = kh_val(r->h_meta, k);
+	    if (re && (re->count != 0 || re->length != 0)) {
+		/* Keep old */
+		free(e);
+	    } else {
+		/* Replace old */
+		if (re)
+		    free(re);
+		kh_val(r->h_meta, k) = e;
+	    }
+	}
     }
 
     return r;
@@ -1190,6 +1238,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
  */
 int refs2id(refs_t *r, SAM_hdr *h) {
     int i;
+
     if (r->ref_id)
 	free(r->ref_id);
     if (r->last)
@@ -1250,6 +1299,9 @@ static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
 	if (!(r->ref_id[i] = calloc(1, sizeof(ref_entry))))
 	    return -1;
 
+	if (!h->ref[i].name)
+	    return -1;
+
 	r->ref_id[i]->name = string_dup(r->pool, h->ref[i].name);
 	r->ref_id[i]->length = 0; // marker for not yet loaded
 
@@ -1271,6 +1323,18 @@ static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
 }
 
 /*
+ * Attaches a header to a cram_fd.
+ *
+ * This should be used when creating a new cram_fd for writing where
+ * we have an SAM_hdr already constructed (eg from a file we've read
+ * in).
+ */
+int cram_set_header(cram_fd *fd, SAM_hdr *hdr) {
+    fd->header = hdr;
+    return refs_from_header(fd->refs, fd, hdr);
+}
+
+/*
  * Converts a directory and a filename into an expanded path, replacing %s
  * in directory with the filename and %[0-9]+s with portions of the filename
  * Any remaining parts of filename are added to the end with /%s.
@@ -1281,7 +1345,6 @@ void expand_cache_path(char *path, char *dir, char *fn) {
     while ((cp = strchr(dir, '%'))) {
 	strncpy(path, dir, cp-dir);
 	path += cp-dir;
-	dir += cp-dir;
 
 	if (*++cp == 's') {
 	    strcpy(path, fn);
@@ -1486,7 +1549,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 }
 
 static void cram_ref_incr_locked(refs_t *r, int id) {
-    RP("%d INC REF %d, %d\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count+1:-1));
+    RP("%d INC REF %d, %d %p\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count+1:-999), id>=0?r->ref_id[id]->seq:(char *)1);
 
     if (id < 0 || !r->ref_id[id]->seq)
 	return;
@@ -1501,10 +1564,10 @@ void cram_ref_incr(refs_t *r, int id) {
 }
 
 static void cram_ref_decr_locked(refs_t *r, int id) {
-    RP("%d DEC REF %d, %d\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count-1:-1));
+    RP("%d DEC REF %d, %d %p\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count-1:-999), id>=0?r->ref_id[id]->seq:(char *)1);
 
     if (id < 0 || !r->ref_id[id]->seq) {
-	pthread_mutex_unlock(&r->lock);
+	assert(r->ref_id[id]->count >= 0);
 	return;
     }
 
@@ -1538,6 +1601,9 @@ static char *load_ref_portion(FILE *fp, ref_entry *e, int start, int end) {
     off_t offset, len;
     char *seq;
 
+    if (end < start)
+	end = start;
+
     /*
      * Compute locations in file. This is trivial for the MD5 files, but
      * is still necessary for the fasta variants.
@@ -1557,12 +1623,13 @@ static char *load_ref_portion(FILE *fp, ref_entry *e, int start, int end) {
 	return NULL;
     }
 
-    if (!(seq = malloc(len))) {
+    if (len == 0 || !(seq = malloc(len))) {
 	return NULL;
     }
 
     if (len != fread(seq, 1, len, fp)) {
 	perror("fread() on reference file");
+	free(seq);
 	return NULL;
     }
 
@@ -1580,6 +1647,7 @@ static char *load_ref_portion(FILE *fp, ref_entry *e, int start, int end) {
 
 	if (cp_to - seq != end-start+1) {
 	    fprintf(stderr, "Malformed reference file?\n");
+	    free(seq);
 	    return NULL;
 	}
     }
@@ -1599,8 +1667,9 @@ ref_entry *cram_ref_load(refs_t *r, int id) {
     int start = 1, end = e->length;
     char *seq;
 
-    if (e->seq)
+    if (e->seq) {
 	return e;
+    }
 
     assert(e->count == 0);
 
@@ -1649,7 +1718,7 @@ ref_entry *cram_ref_load(refs_t *r, int id) {
      * Also keep track of last used ref so incr/decr loops on the same
      * sequence don't cause load/free loops.
      */
-    RP("%d cram_ref_load INCR %d\n", gettid(), id);
+    RP("%d cram_ref_load INCR %d => %d\n", gettid(), id, e->count+1);
     r->last = e;
     e->count++; 
 
@@ -1793,13 +1862,10 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
 		    cram_ref_incr_locked(fd->refs, id);
 	    }	    
 
-	    if (fd->ref && fd->ref == fd->refs->ref_id[fd->ref_id]->seq)
-		cram_ref_decr_locked(fd->refs, fd->ref_id);
-	    fd->ref       = r->seq;
+	    fd->ref = NULL; /* We never access it directly */
 	    fd->ref_start = 1;
 	    fd->ref_end   = r->length;
 	    fd->ref_id    = id;
-	    cram_ref_incr_locked(fd->refs, fd->ref_id);
 
 	    cp = fd->refs->ref_id[id]->seq + ostart-1;
 	} else {
@@ -1930,47 +1996,55 @@ cram_container *cram_new_container(int nrec, int nslice) {
     c->bams = NULL;
 
     if (!(c->slices = (cram_slice **)calloc(nslice, sizeof(cram_slice *))))
-	return NULL;
+	goto err;
     c->slice = NULL;
 
     if (!(c->comp_hdr = cram_new_compression_header()))
-	return NULL;
+	goto err;
     c->comp_hdr_block = NULL;
 
-    if (!(c->BF_stats = cram_stats_create())) return NULL;
-    if (!(c->CF_stats = cram_stats_create())) return NULL;
-    if (!(c->RN_stats = cram_stats_create())) return NULL;
-    if (!(c->AP_stats = cram_stats_create())) return NULL;
-    if (!(c->RG_stats = cram_stats_create())) return NULL;
-    if (!(c->MQ_stats = cram_stats_create())) return NULL;
-    if (!(c->NS_stats = cram_stats_create())) return NULL;
-    if (!(c->NP_stats = cram_stats_create())) return NULL;
-    if (!(c->TS_stats = cram_stats_create())) return NULL;
-    if (!(c->MF_stats = cram_stats_create())) return NULL;
-    if (!(c->NF_stats = cram_stats_create())) return NULL;
-    if (!(c->RL_stats = cram_stats_create())) return NULL;
-    if (!(c->FN_stats = cram_stats_create())) return NULL;
-    if (!(c->FC_stats = cram_stats_create())) return NULL;
-    if (!(c->FP_stats = cram_stats_create())) return NULL;
-    if (!(c->DL_stats = cram_stats_create())) return NULL;
-    if (!(c->BA_stats = cram_stats_create())) return NULL;
-    if (!(c->QS_stats = cram_stats_create())) return NULL;
-    if (!(c->BS_stats = cram_stats_create())) return NULL;
-    if (!(c->TC_stats = cram_stats_create())) return NULL;
-    if (!(c->TN_stats = cram_stats_create())) return NULL;
-    if (!(c->TL_stats = cram_stats_create())) return NULL;
-    if (!(c->RI_stats = cram_stats_create())) return NULL;
-    if (!(c->RS_stats = cram_stats_create())) return NULL;
-    if (!(c->PD_stats = cram_stats_create())) return NULL;
-    if (!(c->HC_stats = cram_stats_create())) return NULL;
+    if (!(c->BF_stats = cram_stats_create())) goto err;
+    if (!(c->CF_stats = cram_stats_create())) goto err;
+    if (!(c->RN_stats = cram_stats_create())) goto err;
+    if (!(c->AP_stats = cram_stats_create())) goto err;
+    if (!(c->RG_stats = cram_stats_create())) goto err;
+    if (!(c->MQ_stats = cram_stats_create())) goto err;
+    if (!(c->NS_stats = cram_stats_create())) goto err;
+    if (!(c->NP_stats = cram_stats_create())) goto err;
+    if (!(c->TS_stats = cram_stats_create())) goto err;
+    if (!(c->MF_stats = cram_stats_create())) goto err;
+    if (!(c->NF_stats = cram_stats_create())) goto err;
+    if (!(c->RL_stats = cram_stats_create())) goto err;
+    if (!(c->FN_stats = cram_stats_create())) goto err;
+    if (!(c->FC_stats = cram_stats_create())) goto err;
+    if (!(c->FP_stats = cram_stats_create())) goto err;
+    if (!(c->DL_stats = cram_stats_create())) goto err;
+    if (!(c->BA_stats = cram_stats_create())) goto err;
+    if (!(c->QS_stats = cram_stats_create())) goto err;
+    if (!(c->BS_stats = cram_stats_create())) goto err;
+    if (!(c->TC_stats = cram_stats_create())) goto err;
+    if (!(c->TN_stats = cram_stats_create())) goto err;
+    if (!(c->TL_stats = cram_stats_create())) goto err;
+    if (!(c->RI_stats = cram_stats_create())) goto err;
+    if (!(c->RS_stats = cram_stats_create())) goto err;
+    if (!(c->PD_stats = cram_stats_create())) goto err;
+    if (!(c->HC_stats = cram_stats_create())) goto err;
     
     //c->aux_B_stats = cram_stats_create();
 
     if (!(c->tags_used = kh_init(s_i2i)))
-	return NULL;
+	goto err;
     c->refs_used = 0;
 
     return c;
+
+ err:
+    if (c) {
+	if (c->slices)
+	    free(c->slices);
+	free(c);
+    }
+    return NULL;
 }
 
 void cram_free_container(cram_container *c) {
@@ -2302,14 +2376,23 @@ cram_block_compression_hdr *cram_new_compression_header(void) {
     if (!hdr)
 	return NULL;
 
-    if (!(hdr->TD_blk = cram_new_block(CORE, 0)))
+    if (!(hdr->TD_blk = cram_new_block(CORE, 0))) {
+	free(hdr);
 	return NULL;
+    }
 
-    if (!(hdr->TD_hash = kh_init(m_s2i)))
+    if (!(hdr->TD_hash = kh_init(m_s2i))) {
+	cram_free_block(hdr->TD_blk);
+	free(hdr);
 	return NULL;
+    }
 
-    if (!(hdr->TD_keys = string_pool_create(8192)))
+    if (!(hdr->TD_keys = string_pool_create(8192))) {
+	kh_destroy(m_s2i, hdr->TD_hash);
+	cram_free_block(hdr->TD_blk);
+	free(hdr);
 	return NULL;
+    }
 
     return hdr;
 }
@@ -2485,7 +2568,7 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
 	return NULL;
 
     if (!(s->hdr = (cram_block_slice_hdr *)calloc(1, sizeof(*s->hdr))))
-	return NULL;
+	goto err;
     s->hdr->content_type = type;
 
     s->hdr_block = NULL;
@@ -2493,19 +2576,19 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
     s->block_by_id = NULL;
     s->last_apos = 0;
     s->id = 0;
-    if (!(s->crecs = malloc(nrecs * sizeof(cram_record))))        return NULL;
+    if (!(s->crecs = malloc(nrecs * sizeof(cram_record))))        goto err;
     s->cigar = NULL;
     s->cigar_alloc = 0;
     s->ncigar = 0;
 
-    if (!(s->seqs_blk = cram_new_block(EXTERNAL, 0)))             return NULL;
-    if (!(s->qual_blk = cram_new_block(EXTERNAL, CRAM_EXT_QUAL))) return NULL;
-    if (!(s->name_blk = cram_new_block(EXTERNAL, CRAM_EXT_NAME))) return NULL;
-    if (!(s->aux_blk  = cram_new_block(EXTERNAL, CRAM_EXT_TAG)))  return NULL;
-    if (!(s->base_blk = cram_new_block(EXTERNAL, CRAM_EXT_IN)))   return NULL;
-    if (!(s->soft_blk = cram_new_block(EXTERNAL, CRAM_EXT_SC)))   return NULL;
+    if (!(s->seqs_blk = cram_new_block(EXTERNAL, 0)))             goto err;
+    if (!(s->qual_blk = cram_new_block(EXTERNAL, CRAM_EXT_QUAL))) goto err;
+    if (!(s->name_blk = cram_new_block(EXTERNAL, CRAM_EXT_NAME))) goto err;
+    if (!(s->aux_blk  = cram_new_block(EXTERNAL, CRAM_EXT_TAG)))  goto err;
+    if (!(s->base_blk = cram_new_block(EXTERNAL, CRAM_EXT_IN)))   goto err;
+    if (!(s->soft_blk = cram_new_block(EXTERNAL, CRAM_EXT_SC)))   goto err;
 #ifdef TN_external
-    if (!(s->tn_blk   = cram_new_block(EXTERNAL, CRAM_EXT_TN)))   return NULL;
+    if (!(s->tn_blk   = cram_new_block(EXTERNAL, CRAM_EXT_TN)))   goto err;
 #endif
 
     s->features = NULL;
@@ -2517,14 +2600,20 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
 #endif
 
     // Volatile keys as we do realloc in dstring
-    if (!(s->pair_keys = string_pool_create(8192))) return NULL;
-    if (!(s->pair = kh_init(m_s2i))) return NULL;
+    if (!(s->pair_keys = string_pool_create(8192))) goto err;
+    if (!(s->pair = kh_init(m_s2i)))                goto err;
     
 #ifdef BA_external
     s->BA_len = 0;
 #endif
 
     return s;
+
+ err:
+    if (s)
+	cram_free_slice(s);
+
+    return NULL;
 }
 
 /*
@@ -2541,7 +2630,7 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
 cram_slice *cram_read_slice(cram_fd *fd) {
     cram_block *b = cram_read_block(fd);
     cram_slice *s = calloc(1, sizeof(*s));
-    int i, n, max_id;
+    int i, n, max_id, min_id;
 
     if (!b || !s)
 	goto err;
@@ -2564,16 +2653,19 @@ cram_slice *cram_read_slice(cram_fd *fd) {
     if (!s->block)
 	goto err;
 
-    for (max_id = i = 0; i < n; i++) {
+    for (max_id = i = 0, min_id = INT_MAX; i < n; i++) {
 	if (!(s->block[i] = cram_read_block(fd)))
 	    goto err;
 
-	if (s->block[i]->content_type == EXTERNAL &&
-	    max_id < s->block[i]->content_id)
-	    max_id = s->block[i]->content_id;
+	if (s->block[i]->content_type == EXTERNAL) {
+	    if (max_id < s->block[i]->content_id)
+		max_id = s->block[i]->content_id;
+	    if (min_id > s->block[i]->content_id)
+		min_id = s->block[i]->content_id;
+	}
     }
-    if (max_id < 1024) {
-	if (!(s->block_by_id = calloc(max_id+1, sizeof(s->block[0]))))
+    if (min_id >= 0 && max_id < 1024) {
+	if (!(s->block_by_id = calloc(1024, sizeof(s->block[0]))))
 	    goto err;
 
 	for (i = 0; i < n; i++) {
@@ -2610,8 +2702,10 @@ cram_slice *cram_read_slice(cram_fd *fd) {
  err:
     if (b)
 	cram_free_block(b);
-    if (s)
+    if (s) {
+	s->hdr_block = NULL;
 	cram_free_slice(s);
+    }
     return NULL;
 }
 
@@ -2831,6 +2925,7 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 	int i;
 	for (i = 0; i < hdr->nref; i++) {
 	    SAM_hdr_type *ty;
+	    char *ref;
 
 	    if (!(ty = sam_hdr_find(hdr, "SQ", "SN", hdr->ref[i].name)))
 		return -1;
@@ -2847,8 +2942,8 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 		}
 		rlen = fd->refs->ref_id[i]->length;
 		MD5_Init(&md5);
-		cram_get_ref(fd, i, 1, rlen);
-		MD5_Update(&md5, fd->ref, rlen);
+		ref = cram_get_ref(fd, i, 1, rlen);
+		MD5_Update(&md5, ref, rlen);
 		MD5_Final(buf, &md5);
 
 		for (j = 0; j < 16; j++) {
@@ -2902,8 +2997,11 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 #ifndef BLANK_BLOCK
 	c->num_blocks = 1;
 	c->num_landmarks = 1;
-	if (!(c->landmark = malloc(sizeof(*c->landmark))))
+	if (!(c->landmark = malloc(sizeof(*c->landmark)))) {
+	    cram_free_block(b);
+	    cram_free_container(c);
 	    return -1;
+	}
 	c->landmark[0] = 0;
 
 	c->length = b->uncomp_size + 2 +
@@ -2929,8 +3027,11 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 #ifdef PADDED_BLOCK
 	padded_length = MAX(c->length*2, 10000) - c->length;
 	c->length += padded_length;
-	if (NULL == (pads = calloc(1, padded_length)))
+	if (NULL == (pads = calloc(1, padded_length))) {
+	    cram_free_block(b);
+	    cram_free_container(c);
 	    return -1;
+	}
 	BLOCK_APPEND(b, pads, padded_length);
 	BLOCK_UPLEN(b);
 	free(pads);
@@ -2980,7 +3081,8 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
     if (-1 == refs2id(fd->refs, fd->header))
 	return -1;
 
-    hflush(fd->fp);
+    if (0 != hflush(fd->fp))
+	return -1;
 
     RP("=== Finishing saving header ===\n");
 
@@ -3109,7 +3211,7 @@ cram_fd *cram_open(const char *filename, const char *mode) {
 
     fd = cram_dopen(fp, filename, mode);
     if (!fd)
-	hclose(fp);
+	(void)hclose(fp);
 
     return fd;
 }
