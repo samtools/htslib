@@ -56,6 +56,7 @@ typedef struct {
 } cram_huffman_code;
 
 typedef struct {
+    int ncodes;
     cram_huffman_code *codes;
 } cram_huffman_decoder;
 

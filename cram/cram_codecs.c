@@ -842,7 +842,7 @@ int cram_huffman_decode_char0(cram_slice *slice, cram_codec *c,
 
 int cram_huffman_decode_char(cram_slice *slice, cram_codec *c,
 			     cram_block *in, char *out, int *out_size) {
-    int i, n;
+    int i, n, ncodes = c->huffman.ncodes;
     const cram_huffman_code * const codes = c->huffman.codes;
 
     for (i = 0, n = *out_size; i < n; i++) {
@@ -851,6 +851,8 @@ int cram_huffman_decode_char(cram_slice *slice, cram_codec *c,
 
 	for (;;) {
 	    int dlen = codes[idx].len - last_len;
+	    if (dlen <= 0 || (in->alloc - in->byte)*8 + in->bit + 7 < dlen)
+		return -1;
 
 	    //val <<= dlen;
 	    //val  |= get_bits_MSB(in, dlen);
@@ -860,6 +862,9 @@ int cram_huffman_decode_char(cram_slice *slice, cram_codec *c,
 	    for (; dlen; dlen--) GET_BIT_MSB(in, val);
 
 	    idx = val - codes[idx].p;
+	    if (idx >= ncodes || idx < 0)
+		return -1;
+
 	    if (codes[idx].code == val && codes[idx].len == len) {
 		out[i] = codes[idx].symbol;
 		break;
@@ -886,7 +891,7 @@ int cram_huffman_decode_int0(cram_slice *slice, cram_codec *c,
 int cram_huffman_decode_int(cram_slice *slice, cram_codec *c,
 			    cram_block *in, char *out, int *out_size) {
     int32_t *out_i = (int32_t *)out;
-    int i, n;
+    int i, n, ncodes = c->huffman.ncodes;
     const cram_huffman_code * const codes = c->huffman.codes;
 
     for (i = 0, n = *out_size; i < n; i++) {
@@ -896,7 +901,9 @@ int cram_huffman_decode_int(cram_slice *slice, cram_codec *c,
 	// Now one bit at a time for remaining checks
 	for (;;) {
 	    int dlen = codes[idx].len - last_len;
-
+	    if (dlen <= 0 || (in->alloc - in->byte)*8 + in->bit + 7 < dlen)
+		return -1;
+	    
 	    //val <<= dlen;
 	    //val  |= get_bits_MSB(in, dlen);
 	    //last_len = (len  += dlen);
@@ -905,6 +912,9 @@ int cram_huffman_decode_int(cram_slice *slice, cram_codec *c,
 	    for (; dlen; dlen--) GET_BIT_MSB(in, val);
 
 	    idx = val - codes[idx].p;
+	    if (idx >= ncodes || idx < 0)
+		return -1;
+
 	    if (codes[idx].code == val && codes[idx].len == len) {
 		out_i[i] = codes[idx].symbol;
 		break;
@@ -922,7 +932,7 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
 				     enum cram_external_type option,
 				     int version) {
     int32_t ncodes, i, j;
-    char *cp = data;
+    char *cp = data, *data_end = &data[size];
     cram_codec *h;
     cram_huffman_code *codes;
     int32_t val, last_len, max_len = 0;
@@ -934,6 +944,7 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
 
     h->free   = cram_huffman_decode_free;
 
+    h->huffman.ncodes = ncodes;
     codes = h->huffman.codes = malloc(ncodes * sizeof(*codes));
     if (!codes) {
 	free(h);
@@ -941,10 +952,15 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
     }
 
     /* Read symbols and bit-lengths */
-    for (i = 0; i < ncodes; i++) {
+    for (i = 0; i < ncodes && cp < data_end; i++) {
 	cp += itf8_get(cp, &codes[i].symbol);
     }
 
+    if (cp >= data_end) {
+	fprintf(stderr, "Malformed huffman header stream\n");
+	free(h);
+	return NULL;
+    }
     cp += itf8_get(cp, &i);
     if (i != ncodes) {
 	fprintf(stderr, "Malformed huffman header stream\n");
@@ -957,12 +973,12 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
 	return h;
     }
 
-    for (i = 0; i < ncodes; i++) {
+    for (i = 0; i < ncodes && cp < data_end; i++) {
 	cp += itf8_get(cp, &codes[i].len);
 	if (max_len < codes[i].len)
 	    max_len = codes[i].len;
     }
-    if (cp - data != size) {
+    if (cp - data != size || max_len >= ncodes) {
 	fprintf(stderr, "Malformed huffman header stream\n");
 	free(h);
 	return NULL;
@@ -1490,10 +1506,13 @@ int cram_byte_array_stop_decode_char(cram_slice *slice, cram_codec *c,
 	    return -1;
     }
 
-    assert(b->idx < b->uncomp_size);
+    if (b->idx >= b->uncomp_size)
+	return -1;
+
     cp = (char *)b->data + b->idx;
     while ((ch = *cp) != (char)c->byte_array_stop.stop) {
-	assert(cp - (char *)b->data < b->uncomp_size);
+	if (cp - (char *)b->data >= b->uncomp_size)
+	    return -1;
 	*out++ = ch;
 	cp++;
     }
@@ -1529,7 +1548,8 @@ int cram_byte_array_stop_decode_block(cram_slice *slice, cram_codec *c,
 	    return -1;
     }
 
-    assert(b->idx < b->uncomp_size);
+    if (b->idx >= b->uncomp_size)
+	return -1;
     cp = (char *)b->data + b->idx;
     cp_end = (char *)b->data + b->uncomp_size;
     BLOCK_GROW(out, space);
@@ -1540,7 +1560,6 @@ int cram_byte_array_stop_decode_block(cram_slice *slice, cram_codec *c,
     while ((ch = *cp) != stop) {
 	if (cp++ == cp_end)
 	    return -1;
-	//assert(cp - (char *)b->data < b->uncomp_size);
 	*out_cp++ = ch;
 
 	if (out_cp == out_end) {
