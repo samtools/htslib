@@ -433,8 +433,8 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 		bam_hdr_write(fp->fp.bgzf, h);
 	} else if (fp->is_cram) {
 		cram_fd *fd = fp->fp.cram;
-		fd->header = bam_header_to_cram((bam_hdr_t *)h);
-		return cram_write_SAM_hdr(fd, fd->header);
+		if (cram_set_header(fd, bam_header_to_cram((bam_hdr_t *)h)) < 0) return -1;
+		if (cram_write_SAM_hdr(fd, fd->header) < 0) return -1;
 	} else {
 		char *p;
 		hputs(h->text, fp->fp.hfile);
