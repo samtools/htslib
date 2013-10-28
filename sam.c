@@ -267,10 +267,15 @@ int bam_read1(BGZF *fp, bam1_t *b)
 	c->l_qseq = x[4];
 	c->mtid = x[5]; c->mpos = x[6]; c->isize = x[7];
 	b->l_data = block_len - 32;
+	if (b->l_data < 0 || c->l_qseq < 0 || c->l_qname < 0) return -4;
+	if ((char *)bam_get_aux(b) - (char *)b->data > b->l_data)
+		return -4;
 	if (b->m_data < b->l_data) {
 		b->m_data = b->l_data;
 		kroundup32(b->m_data);
 		b->data = (uint8_t*)realloc(b->data, b->m_data);
+		if (!b->data)
+			return -4;
 	}
 	if (bgzf_read(fp, b->data, b->l_data) != b->l_data) return -4;
 	//b->l_aux = b->l_data - c->n_cigar * 4 - c->l_qname - c->l_qseq - (c->l_qseq+1)/2;
@@ -637,7 +642,17 @@ err_ret:
 int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 {
 	if (fp->is_bin) {
-		return bam_read1(fp->fp.bgzf, b);
+	    	int r = bam_read1(fp->fp.bgzf, b);
+		if (r >= 0) {
+			if (b->core.tid  >= h->n_targets || b->core.tid  < -1 ||
+			    b->core.mtid >= h->n_targets || b->core.mtid < -1)
+				return -3;
+			// Not sufficient to know aux data is correct, but it
+			// tells us whether the aux starts beyond the data end, which
+			// along is sufficient to spot l_qseq and l_qname being
+			// excessive.
+		}
+		return r;
 	} else if (fp->is_cram) {
 		return cram_get_bam_seq(fp->fp.cram, &b);
 	} else {
@@ -712,12 +727,20 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 		else if (type == 'i') { kputsn("i:", 2, str); kputw(*(int32_t*)s, str); s += 4; }
 		else if (type == 'f') { ksprintf(str, "f:%g", *(float*)s); s += 4; }
 		else if (type == 'd') { ksprintf(str, "d:%g", *(double*)s); s += 8; }
-		else if (type == 'Z' || type == 'H') { kputc(type, str); kputc(':', str); while (*s) kputc(*s++, str); ++s; }
+		else if (type == 'Z' || type == 'H') {
+			kputc(type, str); kputc(':', str);
+			while (*s && s < b->data + b->l_data) kputc(*s++, str);
+			if (s >= b->data + b->l_data)
+				return -1;
+			++s;
+		}
 		else if (type == 'B') {
 			uint8_t sub_type = *(s++);
 			int32_t n;
 			memcpy(&n, s, 4);
 			s += 4; // no point to the start of the array
+			if (s + n >= b->data + b->l_data)
+			    return -1;
 			kputsn("B:", 2, str); kputc(sub_type, str); // write the typing
 			for (i = 0; i < n; ++i) { // FIXME: for better performance, put the loop after "if"
 				kputc(',', str);
@@ -741,7 +764,8 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
 	} else if (fp->is_cram) {
 		return cram_put_bam_seq(fp->fp.cram, (bam1_t *)b);
 	} else {
-		sam_format1(h, b, &fp->line);
+		if (sam_format1(h, b, &fp->line) < 0)
+			return -1;
 		hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
 		hputc('\n', fp->fp.hfile);
 		return fp->line.l + 1;
