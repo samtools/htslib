@@ -346,13 +346,21 @@ static hts_idx_t *bam_index(BGZF *fp, int min_shift)
 int bam_index_build(const char *fn, int min_shift)
 {
 	hts_idx_t *idx;
-	BGZF *fp;
-	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
-	idx = bam_index(fp, min_shift);
-	bgzf_close(fp);
-	hts_idx_save(idx, fn, min_shift > 0? HTS_FMT_CSI : HTS_FMT_BAI);
-	hts_idx_destroy(idx);
-	return 0;
+	htsFile *fp;
+	int ret = 0;
+
+	if ((fp = hts_open(fn, "r")) == 0) return -1;
+	if (fp->is_cram) {
+	    	ret = cram_index_build(fp->fp.cram, fn);
+	} else {
+	    	idx = bam_index(fp->fp.bgzf, min_shift);
+		hts_idx_save(idx, fn, min_shift > 0
+			     ? HTS_FMT_CSI : HTS_FMT_BAI);
+		hts_idx_destroy(idx);
+	}
+	hts_close(fp);
+
+	return ret;
 }
 
 int bam_readrec(BGZF *fp, void *null, bam1_t *b, int *tid, int *beg, int *end)
