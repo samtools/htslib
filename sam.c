@@ -647,10 +647,6 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 			if (b->core.tid  >= h->n_targets || b->core.tid  < -1 ||
 			    b->core.mtid >= h->n_targets || b->core.mtid < -1)
 				return -3;
-			// Not sufficient to know aux data is correct, but it
-			// tells us whether the aux starts beyond the data end, which
-			// along is sufficient to spot l_qseq and l_qname being
-			// excessive.
 		}
 		return r;
 	} else if (fp->is_cram) {
