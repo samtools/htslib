@@ -26,7 +26,7 @@ int main(int argc, char **argv)
 	int i;
 
 	for (i = 1; i < argc; i++) {
-		samFile *in = sam_open(argv[i], "r", NULL);
+		samFile *in = sam_open(argv[i], "r");
 		if (in == NULL) { perror(argv[1]); return 1; }
 
 		header = sam_hdr_read(in);

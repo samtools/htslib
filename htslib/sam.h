@@ -200,7 +200,7 @@ extern "C" {
 	 *** SAM I/O ***
 	 ***************/
 
-	#define sam_open(fn, mode, fnaux) hts_open(fn, mode, fnaux)
+	#define sam_open(fn, mode) (hts_open((fn), (mode)))
 	#define sam_close(fp) hts_close(fp)
 
 	typedef htsFile samFile;

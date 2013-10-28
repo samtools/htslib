@@ -95,7 +95,7 @@ static int is_binary(unsigned char *s, size_t n)
 	return 0;
 }
 
-htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
+htsFile *hts_open(const char *fn, const char *mode)
 {
 	htsFile *fp = NULL;
 	hFILE *hfile = hopen(fn, mode);
@@ -153,8 +153,6 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 	else if (fp->is_cram) {
 		fp->fp.cram = cram_dopen(hfile, fn, mode);
 		if (fp->fp.cram == NULL) goto error;
-		if (fn_aux)
-			cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, fn_aux);
 	}
 	else if (fp->is_kstream) {
 	#if KS_BGZF
@@ -166,7 +164,6 @@ htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
 	#endif
 		if (gzfp) fp->fp.voidp = ks_init(gzfp);
 		else goto error;
-		if (fn_aux) fp->fn_aux = strdup(fn_aux);
 	}
 	else {
 		fp->fp.hfile = hfile;
@@ -205,14 +202,26 @@ void hts_close(htsFile *fp)
 		gzclose(gzfp);
 	#endif
 		ks_destroy((kstream_t*)fp->fp.voidp);
-		free(fp->fn_aux);
 	} else {
 		hclose(fp->fp.hfile);
 	}
 
 	free(fp->fn);
+	free(fp->fn_aux);
     free(fp->line.s);
 	free(fp);
+}
+
+int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
+{
+	free(fp->fn_aux);
+	if (fn_aux) {
+		fp->fn_aux = strdup(fn_aux);
+		if (fp->fn_aux == NULL) return -1;
+	}
+	else fp->fn_aux = NULL;
+
+	return 0;
 }
 
 // For VCF/BCF backward sweeper. Not exposing these functions because their
