@@ -99,6 +99,16 @@ const char *hts_version();
 	int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
 	char **hts_readlines(const char *fn, int *_n);
 
+
+/*!
+  @abstract  Set .fai filename for a file opened for reading
+  @return    0 for success, negative on failure
+  @discussion
+      Called before *_hdr_read(), this provides the name of a .fai file
+      used to provide a reference list if the htsFile contains no @SQ headers.
+*/
+int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
+
 #ifdef __cplusplus
 }
 #endif
