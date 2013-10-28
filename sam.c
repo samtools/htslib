@@ -722,38 +722,75 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 		else for (i = 0; i < c->l_qseq; ++i) kputc(s[i] + 33, str);
 	} else kputsn("*\t*", 3, str);
 	s = bam_get_aux(b); // aux
-	while (s < b->data + b->l_data) {
+	while (s+3 < b->data + b->l_data) {
 		uint8_t type, key[2];
 		key[0] = s[0]; key[1] = s[1];
 		s += 2; type = *s++;
 		kputc('\t', str); kputsn((char*)key, 2, str); kputc(':', str);
-		if (type == 'A') { kputsn("A:", 2, str); kputc(*s, str); ++s; }
-		else if (type == 'C') { kputsn("i:", 2, str); kputw(*s, str); ++s; }
-		else if (type == 'c') { kputsn("i:", 2, str); kputw(*(int8_t*)s, str); ++s; }
-		else if (type == 'S') { kputsn("i:", 2, str); kputw(*(uint16_t*)s, str); s += 2; }
-		else if (type == 's') { kputsn("i:", 2, str); kputw(*(int16_t*)s, str); s += 2; }
-		else if (type == 'I') { kputsn("i:", 2, str); kputuw(*(uint32_t*)s, str); s += 4; }
-		else if (type == 'i') { kputsn("i:", 2, str); kputw(*(int32_t*)s, str); s += 4; }
-		else if (type == 'f') { ksprintf(str, "f:%g", *(float*)s); s += 4; }
-		else if (type == 'd') { ksprintf(str, "d:%g", *(double*)s); s += 8; }
-		else if (type == 'Z' || type == 'H') {
+		if (type == 'A') {
+			kputsn("A:", 2, str);
+			kputc(*s, str);
+			++s;
+		} else if (type == 'C') {
+			kputsn("i:", 2, str);
+			kputw(*s, str);
+			++s;
+		} else if (type == 'c') {
+			kputsn("i:", 2, str);
+			kputw(*(int8_t*)s, str);
+			++s;
+		} else if (type == 'S') {
+			if (s+2 < b->data + b->l_data) {
+				kputsn("i:", 2, str);
+				kputw(*(uint16_t*)s, str);
+				s += 2;
+			} else return -1;
+		} else if (type == 's') {
+			if (s+2 < b->data + b->l_data) {
+				kputsn("i:", 2, str);
+				kputw(*(int16_t*)s, str);
+				s += 2;
+			} else return -1;
+		} else if (type == 'I') {
+			if (s+4 < b->data + b->l_data) {
+				kputsn("i:", 2, str);
+				kputuw(*(uint32_t*)s, str);
+				s += 4;
+			} else return -1;
+		} else if (type == 'i') {
+			if (s+4 < b->data + b->l_data) {
+				kputsn("i:", 2, str);
+				kputw(*(int32_t*)s, str);
+				s += 4;
+			} else return -1;
+		} else if (type == 'f') {
+			if (s+4 < b->data + b->l_data) {
+				ksprintf(str, "f:%g", *(float*)s);
+				s += 4;
+			} else return -1;
+			
+		} else if (type == 'd') {
+			if (s+8 < b->data + b->l_data) {
+				ksprintf(str, "d:%g", *(double*)s);
+				s += 8;
+			} else return -1;
+		} else if (type == 'Z' || type == 'H') {
 			kputc(type, str); kputc(':', str);
-			while (*s && s < b->data + b->l_data) kputc(*s++, str);
+			while (s < b->data + b->l_data && *s) kputc(*s++, str);
 			if (s >= b->data + b->l_data)
 				return -1;
 			++s;
-		}
-		else if (type == 'B') {
+		} else if (type == 'B') {
 			uint8_t sub_type = *(s++);
 			int32_t n;
 			memcpy(&n, s, 4);
 			s += 4; // no point to the start of the array
 			if (s + n >= b->data + b->l_data)
-			    return -1;
+				return -1;
 			kputsn("B:", 2, str); kputc(sub_type, str); // write the typing
 			for (i = 0; i < n; ++i) { // FIXME: for better performance, put the loop after "if"
 				kputc(',', str);
-				if ('c' == sub_type)      { kputw(*(int8_t*)s, str); ++s; }
+				if ('c' == sub_type)	  { kputw(*(int8_t*)s, str); ++s; }
 				else if ('C' == sub_type) { kputw(*(uint8_t*)s, str); ++s; }
 				else if ('s' == sub_type) { kputw(*(int16_t*)s, str); s += 2; }
 				else if ('S' == sub_type) { kputw(*(uint16_t*)s, str); s += 2; }
