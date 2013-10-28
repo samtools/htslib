@@ -78,7 +78,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     bcf_sr_t *reader = &files->readers[files->nreaders++];
     memset(reader,0,sizeof(bcf_sr_t));
 
-    reader->file = hts_open(fname, "r", NULL);
+    reader->file = hts_open(fname, "r");
     if ( !reader->file ) return 0;
 
     reader->type = reader->file->is_bin? FT_BCF : FT_VCF;
@@ -887,7 +887,7 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions)
     reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
     reg->ireg = -1;
 
-    reg->file = hts_open(regions, "rb", NULL);
+    reg->file = hts_open(regions, "rb");
     if ( !reg->file )
     {
         fprintf(stderr,"[%s:%d %s] Could not open file: %s\n", __FILE__,__LINE__,__FUNCTION__,regions);
@@ -986,7 +986,7 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
             // Waited for seek which never came. Reopen in text mode and stream
             // through the regions, otherwise hts_getline would fail
             hts_close(reg->file);
-            reg->file = hts_open(reg->fname, "r", NULL);
+            reg->file = hts_open(reg->fname, "r");
             if ( !reg->file )
             {
                 fprintf(stderr,"[%s:%d %s] Could not open file: %s\n", __FILE__,__LINE__,__FUNCTION__,reg->fname);

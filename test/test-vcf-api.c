@@ -6,7 +6,7 @@
 void write_bcf(char *fname)
 {
     // Init
-    htsFile *fp    = hts_open(fname,"wb",0);
+    htsFile *fp    = hts_open(fname,"wb");
     bcf_hdr_t *hdr = bcf_hdr_init("w");
     bcf1_t *rec    = bcf_init1();
 
@@ -129,10 +129,10 @@ void write_bcf(char *fname)
 
 void bcf_to_vcf(char *fname)
 {
-    htsFile *fp    = hts_open(fname,"rb",0);
+    htsFile *fp    = hts_open(fname,"rb");
     bcf_hdr_t *hdr = bcf_hdr_read(fp);
     bcf1_t *rec    = bcf_init1();
-    htsFile *out   = hts_open("-","w",0);
+    htsFile *out   = hts_open("-","w");
 
     bcf_hdr_write(out, hdr);
     while ( bcf_read1(fp, hdr, rec)>=0 )

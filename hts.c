@@ -95,7 +95,7 @@ static int is_binary(unsigned char *s, size_t n)
 	return 0;
 }
 
-htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux)
+htsFile *hts_open(const char *fn, const char *mode)
 {
 	htsFile *fp = NULL;
 	hFILE *hfile = hopen(fn, mode);

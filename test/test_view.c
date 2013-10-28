@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
 	if (flag&4) strcat(moder, "c");
 	else if ((flag&1) == 0) strcat(moder, "b");
 
-	in = sam_open(argv[optind], moder, fn_ref);
+	in = sam_open(argv[optind], moder);
 	h = sam_hdr_read(in);
 	h->ignore_sam_err = ignore_sam_err;
 	b = bam_init1();
@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
 	if (clevel >= 0 && clevel <= 9) sprintf(modew + 1, "%d", clevel);
 	if (flag&8) strcat(modew, "c");
 	else if (flag&2) strcat(modew, "b");
-	out = hts_open("-", modew, 0);
+	out = hts_open("-", modew);
 
 	/* CRAM output */
 	if (flag & 8) {

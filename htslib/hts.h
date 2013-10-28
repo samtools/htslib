@@ -94,7 +94,7 @@ const char *hts_version();
                         [rw]z .. compressed VCF
                         [rw]  .. uncompressed VCF
      */
-	htsFile *hts_open(const char *fn, const char *mode, const char *fn_aux);
+	htsFile *hts_open(const char *fn, const char *mode);
 	void hts_close(htsFile *fp);
 	int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
 	char **hts_readlines(const char *fn, int *_n);

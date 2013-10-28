@@ -239,8 +239,8 @@ extern "C" {
 
     /** bcf_open and vcf_open mode: please see hts_open() in hts.h */
 	typedef htsFile vcfFile;
-	#define bcf_open(fn, mode, fn_ref) hts_open((fn), (mode), (fn_ref))
-	#define vcf_open(fn, mode, fn_ref) hts_open((fn), (mode), (fn_ref))
+	#define bcf_open(fn, mode) hts_open((fn), (mode))
+	#define vcf_open(fn, mode) hts_open((fn), (mode))
 	#define bcf_close(fp) hts_close(fp)
 	#define vcf_close(fp) hts_close(fp)
 
