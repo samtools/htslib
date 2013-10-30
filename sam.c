@@ -65,7 +65,7 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
 	// check EOF
 	has_EOF = bgzf_check_EOF(fp);
 	if (has_EOF < 0) {
-		if (errno != ESPIPE && hts_verbose >= 2) perror("[W::sam_hdr_read] bgzf_check_EOF");
+		perror("[W::sam_hdr_read] bgzf_check_EOF");
 	} else if (has_EOF == 0 && hts_verbose >= 2)
 		fprintf(stderr, "[W::%s] EOF marker is absent. The input is probably truncated.\n", __func__);
 	// read "BAM1"

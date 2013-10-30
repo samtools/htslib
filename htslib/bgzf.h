@@ -182,7 +182,10 @@ extern "C" {
 	 * Check if the BGZF end-of-file (EOF) marker is present
 	 *
 	 * @param fp    BGZF file handler opened for reading
-	 * @return      1 if EOF is present; 0 if not or on I/O error
+	 * @return      1 if the EOF marker is present and correct;
+	 *              2 if it can't be checked, e.g., because fp isn't seekable;
+	 *              0 if the EOF marker is absent;
+	 *              -1 (with errno set) on error
 	 */
 	int bgzf_check_EOF(BGZF *fp);
 

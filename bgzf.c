@@ -703,10 +703,12 @@ void bgzf_set_cache_size(BGZF *fp, int cache_size)
 int bgzf_check_EOF(BGZF *fp)
 {
 	uint8_t buf[28];
-	off_t offset;
-	offset = htell(fp->fp);
-	if (hseek(fp->fp, -28, SEEK_END) < 0) { hclearerr(fp->fp); return 0; }
-	if ( hread(fp->fp, buf, 28) < 0 ) return -1;
+	off_t offset = htell(fp->fp);
+	if (hseek(fp->fp, -28, SEEK_END) < 0) {
+		if (errno == ESPIPE) { hclearerr(fp->fp); return 2; }
+		else return -1;
+	}
+	if ( hread(fp->fp, buf, 28) != 28 ) return -1;
 	if ( hseek(fp->fp, offset, SEEK_SET) < 0 ) return -1;
 	return (memcmp("\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0", buf, 28) == 0)? 1 : 0;
 }
