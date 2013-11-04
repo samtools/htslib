@@ -55,9 +55,7 @@ void bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
 {
     int i = 0;
     const char *p, *q;
-    vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
     // add samples
-    d = (vdict_t*)h->dict[BCF_DT_SAMPLE];
     for (p = q = str;; ++q) {
         if (*q != '\t' && *q != 0 && *q != '\n') continue;
         if (++i > 9) {
@@ -1520,7 +1518,6 @@ int bcf_unpack(bcf1_t *b, int which)
 
 int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 {
-	uint8_t *ptr = (uint8_t*)v->shared.s;
 	int i;
 	bcf_unpack((bcf1_t*)v, BCF_UN_ALL);
 	kputs(h->id[BCF_DT_CTG][v->rid].key, s); // CHROM
@@ -1564,7 +1561,6 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 		}
 	} else kputc('.', s);
 	// FORMAT and individual information
-	ptr = (uint8_t*)v->indiv.s;
 	if (v->n_sample && v->n_fmt) { // FORMAT
 		int i, j, gt_i = -1;
 		bcf_fmt_t *fmt = v->d.fmt;

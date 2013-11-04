@@ -3211,7 +3211,7 @@ cram_fd *cram_open(const char *filename, const char *mode) {
 
     fd = cram_dopen(fp, filename, mode);
     if (!fd)
-	(void)hclose(fp);
+	errno = hclose(fp);
 
     return fd;
 }

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <errno.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 #include "cram/cram.h"
@@ -203,7 +204,7 @@ void hts_close(htsFile *fp)
 	#endif
 		ks_destroy((kstream_t*)fp->fp.voidp);
 	} else {
-		hclose(fp->fp.hfile);
+		errno = hclose(fp->fp.hfile);
 	}
 
 	free(fp->fn);
@@ -814,9 +815,9 @@ hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
 	} else if (fmt == HTS_FMT_BAI) {
 		uint32_t n;
 		FILE *fp;
-		if ((fp = fopen(fn, "rb")) == 0) return 0;
-		fread(magic, 1, 4, fp);
-		fread(&n, 4, 1, fp);
+		if ((fp = fopen(fn, "rb")) == 0) return NULL;
+		if ( fread(magic, 1, 4, fp) != 1 ) return NULL;
+		if ( fread(&n, 4, 1, fp) != 4 ) return NULL;
 		if (is_be) ed_swap_4p(&n);
 		idx = hts_idx_init(n, fmt, 0, 14, 5);
 		hts_idx_load_core(idx, fp, HTS_FMT_BAI);

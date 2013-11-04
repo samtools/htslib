@@ -265,6 +265,14 @@ extern "C" {
 	void bam_plp_reset(bam_plp_t iter);
 
 	bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data);
+    /**
+     *  bam_mplp_init_overlaps() - if called, mpileup will detect overlapping
+     *  read pairs and for each base pair set the base quality of the
+     *  lower-quality base to zero, thus effectively discarding it from
+     *  calling. If the two bases are identical, the quality of the other base
+     *  is increased to 200, otherwise it is multiplied by 0.8.
+     */
+    void bam_mplp_init_overlaps(bam_mplp_t iter);
 	void bam_mplp_destroy(bam_mplp_t iter);
 	void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
 	int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
