@@ -81,9 +81,9 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 	return 0;
 }
 
-int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial)
+int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial, int *_jal)
 {
-    int i, nals = 0, has_ref = 0, has_alt = 0, ial = 0;
+    int i, nals = 0, has_ref = 0, has_alt = 0, ial = 0, jal = 0;
     #define BRANCH_INT(type_t,missing,vector_end) { \
         type_t *p = (type_t*) (fmt_ptr->p + isample*fmt_ptr->size); \
         for (i=0; i<fmt_ptr->n; i++) \
@@ -96,7 +96,15 @@ int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial)
                 if ( !ial ) { ial = tmp; has_alt = 1; } \
                 else if ( tmp!=ial ) \
                 { \
-                    if ( tmp<ial ) ial = tmp; \
+                    if ( tmp<ial ) \
+                    { \
+                        jal = ial; \
+                        ial = tmp; \
+                    } \
+                    else \
+                    { \
+                        jal = tmp; \
+                    } \
                     has_alt = 2; \
                 } \
             } \
@@ -113,6 +121,7 @@ int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial)
     #undef BRANCH_INT
 
     if ( _ial ) *_ial = ial>0 ? ial-1 : ial;
+    if ( _jal ) *_jal = jal>0 ? jal-1 : jal;
     if ( !nals ) return GT_UNKN;
     if ( nals==1 )
         return has_ref ? GT_HAPL_R : GT_HAPL_A;
