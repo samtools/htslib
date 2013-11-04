@@ -816,8 +816,8 @@ hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
 		uint32_t n;
 		FILE *fp;
 		if ((fp = fopen(fn, "rb")) == 0) return NULL;
-		if ( fread(magic, 1, 4, fp) != 1 ) return NULL;
-		if ( fread(&n, 4, 1, fp) != 4 ) return NULL;
+		if ( fread(magic, 1, 4, fp) != 4 ) return NULL;
+		if ( fread(&n, 4, 1, fp) != 1 ) return NULL;
 		if (is_be) ed_swap_4p(&n);
 		idx = hts_idx_init(n, fmt, 0, 14, 5);
 		hts_idx_load_core(idx, fp, HTS_FMT_BAI);
