@@ -854,18 +854,36 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
         kputsn(sp,ep-sp,&tmp);
         if ( *ep==':' )
         {
-            int ret = sscanf(++ep,"%d-%d",&from,&to);
-            if ( ret==1 ) to = from;
-            else if ( ret!=2 ) 
+            sp = ep+1;
+            from = strtol(sp,(char**)&ep,10);
+            if ( sp==ep )
             {
                 fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
-                free(reg);
-                return NULL;
+                free(reg); free(tmp.s); return NULL;
             }
+            if ( !*ep || *ep==',' )
+            {
+                _regions_add(reg, tmp.s, from, from);
+                sp = ep;
+                continue;
+            }
+            if ( *ep!='-' )
+            {
+                fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
+                free(reg); free(tmp.s); return NULL;
+            }
+            ep++;
+            sp = ep;
+            to = strtol(sp,(char**)&ep,10);
+            if ( *ep && *ep!=',' )
+            {
+                fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
+                free(reg); free(tmp.s); return NULL;
+            }
+            if ( sp==ep ) to = 1<<29;
             _regions_add(reg, tmp.s, from, to);
-            while ( *ep && *ep!=',' ) ep++;
             if ( !*ep ) break;
-            sp = ++ep;
+            sp = ep;
         }
         else
         {
