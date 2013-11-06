@@ -835,14 +835,10 @@ static void _regions_add(bcf_sr_regions_t *reg, const char *chr, int start, int 
 // File name or a list of genomic locations
 static bcf_sr_regions_t *_regions_init_string(const char *str)
 {
-    bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
-
     struct stat sbuf;
-    if ( stat(str, &sbuf)==0 )  // it's a file
-    {
-        free(reg);
-        return NULL;
-    }
+    if ( stat(str, &sbuf)==0 ) return NULL; // it's a file
+
+    bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
 
     kstring_t tmp = {0,0,0};
     const char *sp = str, *ep = str;
@@ -887,7 +883,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
         }
         else
         {
-            _regions_add(reg, tmp.s, -1, -1);
+            if ( tmp.l ) _regions_add(reg, tmp.s, -1, -1);
             if ( !*ep ) break;
             sp = ++ep;
         }
