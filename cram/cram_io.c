@@ -82,7 +82,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "hfile.h"
 #define paranoid_hclose(fp) (hclose(fp))
 #else
-#define hclose(fp)   (fclose(fp))
+#define hclose_abruptly(fp) (fclose(fp))
 #define hflush(fp)   (fflush(fp))
 #define hgetc(fp)    (getc(fp))
 #define hputc(c, fp) (putc((c), (fp)))
@@ -3211,7 +3211,7 @@ cram_fd *cram_open(const char *filename, const char *mode) {
 
     fd = cram_dopen(fp, filename, mode);
     if (!fd)
-	(void)hclose(fp);
+	hclose_abruptly(fp);
 
     return fd;
 }

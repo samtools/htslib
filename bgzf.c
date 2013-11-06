@@ -143,14 +143,6 @@ static int mode2level(const char *__restrict mode)
 	return compress_level;
 }
 
-// Close abortively-opened file, ignoring any errors that occur (unlikely)
-static void close_noerr(hFILE *fp)
-{
-	int save = errno;
-	if (hclose(fp) != 0) { /* Ignore errors as we're already unwinding one */ }
-	errno = save;
-}
-
 BGZF *bgzf_open(const char *path, const char *mode)
 {
 	BGZF *fp = 0;
@@ -159,7 +151,7 @@ BGZF *bgzf_open(const char *path, const char *mode)
 		hFILE *fpr;
 		if ((fpr = hopen(path, "r")) == 0) return 0;
 		fp = bgzf_read_init(fpr);
-		if (fp == 0) { close_noerr(fpr); return NULL; }
+		if (fp == 0) { hclose_abruptly(fpr); return NULL; }
 		fp->fp = fpr;
 	} else if (strchr(mode, 'w')) {
 		hFILE *fpw;
@@ -181,7 +173,7 @@ BGZF *bgzf_dopen(int fd, const char *mode)
 		hFILE *fpr;
 		if ((fpr = hdopen(fd, "r")) == 0) return 0;
 		fp = bgzf_read_init(fpr);
-		if (fp == 0) { close_noerr(fpr); return NULL; } // FIXME this closes fd
+		if (fp == 0) { hclose_abruptly(fpr); return NULL; } // FIXME this closes fd
 		fp->fp = fpr;
 	} else if (strchr(mode, 'w')) {
 		hFILE *fpw;

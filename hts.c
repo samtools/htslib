@@ -175,9 +175,8 @@ error:
 	if (hts_verbose >= 2)
 		fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
 
-	if (hfile) {
-		if (hclose(hfile) != 0) { /* Ignore errors */ }
-	}
+	if (hfile)
+		hclose_abruptly(hfile);
 
 	if (fp) {
 		free(fp->fn);
