@@ -80,25 +80,39 @@ extern "C" {
 */
 const char *hts_version();
 
-    /*!
-        @param fn       The file name or "-" for stdin/stdout
-        @param mode     Mode matching /[rwbuz0-9]+/: 'r' for reading, 'w' for writing and
-                        a digit specifies the zlib compression level. Note that there
-                        is a distinction between 'u' and '0': the first yields plain
-                        uncompressed output whereas the latter outputs uncompressed
-                        data wrapped in the zlib format.
-        @example 
-                        [rw]b .. compressed BCF, BAM, FAI; with "r" detects uncompressed
-                                    files when not reading from stdin
-                        [rw]u .. uncompressed BCF
-                        [rw]z .. compressed VCF
-                        [rw]  .. uncompressed VCF
-     */
-	htsFile *hts_open(const char *fn, const char *mode);
-	void hts_close(htsFile *fp);
-	int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
-	char **hts_readlines(const char *fn, int *_n);
+/*!
+  @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
+  @param fn       The file name or "-" for stdin/stdout
+  @param mode     Mode matching /[rw][bcuz0-9]+/
+  @discussion
+      With 'r' opens for reading; any further format mode letters are ignored
+      as the format is detected by checking the first few bytes or BGZF blocks
+      of the file.  With 'w' opens for writing, with format specifier letters:
+        b  binary format (BAM, BCF, etc) rather than text (SAM, VCF, etc)
+        c  CRAM format
+        u  uncompressed
+        z  compressed
+        [0-9]  zlib compression level
+      Note that there is a distinction between 'u' and '0': the first yields
+      plain uncompressed output whereas the latter outputs uncompressed data
+      wrapped in the zlib format.
+  @example
+      [rw]b .. compressed BCF, BAM, FAI
+      [rw]u .. uncompressed BCF
+      [rw]z .. compressed VCF
+      [rw]  .. uncompressed VCF
+*/
+htsFile *hts_open(const char *fn, const char *mode);
 
+/*!
+  @abstract  Close a file handle, flushing buffered data for output streams
+  @param fp  The file handle to be closed
+  @return    0 for success, or negative if an error occurred.
+*/
+int hts_close(htsFile *fp);
+
+int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
+char **hts_readlines(const char *fn, int *_n);
 
 /*!
   @abstract  Set .fai filename for a file opened for reading
