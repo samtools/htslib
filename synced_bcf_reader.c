@@ -983,7 +983,12 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions)
             char *chr;
             int from, to, ret;
             ret = _regions_parse_line(reg->line.s, ichr,ifrom,ito, &chr,&from,&to);
-            if ( ret < 0 ) { hts_close(reg->file); reg->file = NULL; free(reg); return NULL; }
+            if ( ret < 0 ) 
+            {
+                fprintf(stderr,"[%s:%d] Could not parse the file %s, using the columns %d,%d,%d\n", __FILE__,__LINE__,regions,ichr+1,ifrom+1,ito+1);
+                hts_close(reg->file); reg->file = NULL; free(reg); 
+                return NULL;
+            }
             if ( !ret ) continue;
             if ( is_bed ) from++;
             _regions_add(reg, chr, from, to);
@@ -1105,7 +1110,11 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
             if ( ret<0 ) { reg->done = 1; return -1; }
         }
         ret = _regions_parse_line(reg->line.s, ichr,ifrom,ito, &chr,&from,&to);
-        if ( ret<0 ) return -1;
+        if ( ret<0 ) 
+        {
+            fprintf(stderr,"[%s:%d] Could not parse the file %s, using the columns %d,%d,%d\n", __FILE__,__LINE__,reg->fname,ichr+1,ifrom+1,ito+1);
+            return -1;
+        }
     }
     if ( is_bed ) from++;
 
