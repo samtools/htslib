@@ -574,19 +574,6 @@ static int mt_lazy_flush(BGZF *fp)
 	return -1;
 }
 
-static ssize_t mt_write(BGZF *fp, const void *data, size_t length)
-{
-	const uint8_t *input = (const uint8_t*)data;
-	ssize_t rest = length;
-	while (rest) {
-		int copy_length = BGZF_BLOCK_SIZE - fp->block_offset < rest? BGZF_BLOCK_SIZE - fp->block_offset : rest;
-		memcpy((uint8_t*)fp->uncompressed_block + fp->block_offset, input, copy_length);
-		fp->block_offset += copy_length; input += copy_length; rest -= copy_length;
-		if (fp->block_offset == BGZF_BLOCK_SIZE) mt_lazy_flush(fp);
-	}
-	return length - rest;
-}
-
 #else  // ~ #ifdef BGZF_MT
 
 int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
@@ -638,21 +625,25 @@ ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
         return hwrite(fp->fp, data, length);
 
 	const uint8_t *input = (const uint8_t*)data;
-	int block_length = BGZF_BLOCK_SIZE, bytes_written = 0;
+	ssize_t remaining = length;
 	assert(fp->is_write);
-#ifdef BGZF_MT
-	if (fp->mt) return mt_write(fp, data, length);
-#endif
-	while (bytes_written < length) {
+	while (remaining > 0) {
 		uint8_t* buffer = (uint8_t*)fp->uncompressed_block;
-		int copy_length = block_length - fp->block_offset < length - bytes_written? block_length - fp->block_offset : length - bytes_written;
+		int copy_length = BGZF_BLOCK_SIZE - fp->block_offset;
+		if (copy_length > remaining) copy_length = remaining;
 		memcpy(buffer + fp->block_offset, input, copy_length);
 		fp->block_offset += copy_length;
 		input += copy_length;
-		bytes_written += copy_length;
-		if (fp->block_offset == block_length && bgzf_flush(fp)) break;
+		remaining -= copy_length;
+		if (fp->block_offset == BGZF_BLOCK_SIZE) {
+#ifdef BGZF_MT
+			if (fp->mt) mt_lazy_flush(fp);
+			else
+#endif
+			if (bgzf_flush(fp) != 0) break;
+		}
 	}
-	return bytes_written;
+	return length - remaining;
 }
 
 ssize_t bgzf_raw_write(BGZF *fp, const void *data, size_t length)
