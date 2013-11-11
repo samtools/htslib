@@ -1355,7 +1355,8 @@ const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_
 	else { // no pileup line can be obtained; read alignments
 		*_n_plp = 0;
 		if (iter->is_eof) return 0;
-		while (iter->func(iter->data, iter->b) >= 0) {
+        int ret;
+		while ( (ret=iter->func(iter->data, iter->b)) >= 0) {
 			if (bam_plp_push(iter, iter->b) < 0) {
 				*_n_plp = -1;
 				return 0;
@@ -1363,6 +1364,7 @@ const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_
 			if ((plp = bam_plp_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
 			// otherwise no pileup line can be returned; read the next alignment.
 		}
+        if ( ret < -1 ) { iter->error = ret; *_n_plp = -1; return 0; }
 		bam_plp_push(iter, 0);
 		if ((plp = bam_plp_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
 		return 0;
@@ -1454,6 +1456,7 @@ int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_p
 		if (iter->pos[i] == iter->min) {
 			int tid, pos;
 			iter->plp[i] = bam_plp_auto(iter->iter[i], &tid, &pos, &iter->n_plp[i]);
+            if ( iter->iter[i]->error ) return -1;
 			iter->pos[i] = iter->plp[i] ? (uint64_t)tid<<32 | pos : 0;
 		}
 		if (iter->plp[i] && iter->pos[i] < new_min) new_min = iter->pos[i];

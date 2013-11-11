@@ -255,6 +255,12 @@ typedef struct __bam_mplp_t *bam_mplp_t;
 extern "C" {
 #endif
 
+    /**
+     *  bam_plp_init() - sets an iterator over multiple 
+     *  @func:      see mplp_func in bam_plcmd.c in samtools for an example. Expected return
+     *              status: 0 on success, -1 on end, < -1 on non-recoverable errors
+     *  @data:      user data to pass to @func
+     */
 	bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data);
 	void bam_plp_destroy(bam_plp_t iter);
 	int bam_plp_push(bam_plp_t iter, const bam1_t *b);
