@@ -56,13 +56,18 @@ int tbx_parse1(const tbx_conf_t *conf, int len, char *line, tbx_intv_t *intv)
 			} else if (id == conf->bc) {
 				// here ->beg is 0-based.
 				intv->beg = intv->end = strtol(line + b, &s, 0);
+                if ( s==line+b ) return -1; // expected int
 				if (!(conf->preset&TBX_UCSC)) --intv->beg;
 				else ++intv->end;
 				if (intv->beg < 0) intv->beg = 0;
 				if (intv->end < 1) intv->end = 1;
 			} else {
 				if ((conf->preset&0xffff) == TBX_GENERIC) {
-					if (id == conf->ec) intv->end = strtol(line + b, &s, 0);
+					if (id == conf->ec) 
+                    {
+                        intv->end = strtol(line + b, &s, 0);
+                        if ( s==line+b ) return -1; // expected int
+                    }
 				} else if ((conf->preset&0xffff) == TBX_SAM) {
 					if (id == 6) { // CIGAR
 						int l = 0, op;
@@ -108,7 +113,15 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
 		*intv->se = '\0'; intv->tid = get_tid(tbx, intv->ss, is_add); *intv->se = c;
 		return (intv->tid >= 0 && intv->beg >= 0 && intv->end >= 0)? 0 : -1;
 	} else {
-		fprintf(stderr, "[E::%s] fail to parse: %s\n", __func__, str->s);
+        char *type = NULL;
+        switch (tbx->conf.preset&0xffff)
+        {
+            case TBX_SAM: type = "TBX_SAM"; break;
+            case TBX_VCF: type = "TBX_VCF"; break;
+            case TBX_UCSC: type = "TBX_UCSC"; break;
+            default: type = "TBX_GENERIC"; break;
+        }
+		fprintf(stderr, "[E::%s] failed to parse %s, was wrong -p [type] used?\n%s\n", __func__, type, str->s);
 		return -1;
 	}
 }
@@ -210,6 +223,7 @@ int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf)
 	tbx_t *tbx;
 	BGZF *fp;
 	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
+    if ( !fp->is_compressed ) { bgzf_close(fp); return -1; }
 	tbx = tbx_index(fp, min_shift, conf);
 	bgzf_close(fp);
 	hts_idx_save(tbx->idx, fn, min_shift > 0? HTS_FMT_CSI : HTS_FMT_TBI);

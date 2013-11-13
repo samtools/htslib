@@ -233,7 +233,8 @@ static int kftp_get_response(knetFile *ftp)
 static int kftp_send_cmd(knetFile *ftp, const char *cmd, int is_get)
 {
 	if (socket_wait(ftp->ctrl_fd, 0) <= 0) return -1; // socket is not ready for writing
-	netwrite(ftp->ctrl_fd, cmd, strlen(cmd));
+    int len = strlen(cmd);
+	if ( netwrite(ftp->ctrl_fd, cmd, len) != len ) return -1;
 	return is_get? kftp_get_response(ftp) : 0;
 }
 
@@ -412,7 +413,7 @@ int khttp_connect_file(knetFile *fp)
 	l += sprintf(buf + l, "GET %s HTTP/1.0\r\nHost: %s\r\n", fp->path, fp->http_host);
     l += sprintf(buf + l, "Range: bytes=%lld-\r\n", (long long)fp->offset);
 	l += sprintf(buf + l, "\r\n");
-	netwrite(fp->fd, buf, l);
+	if ( netwrite(fp->fd, buf, l) != l ) return -1;
 	l = 0;
 	while (netread(fp->fd, buf + l, 1)) { // read HTTP header; FIXME: bad efficiency
 		if (buf[l] == '\n' && l >= 3)

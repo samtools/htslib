@@ -835,14 +835,10 @@ static void _regions_add(bcf_sr_regions_t *reg, const char *chr, int start, int 
 // File name or a list of genomic locations
 static bcf_sr_regions_t *_regions_init_string(const char *str)
 {
-    bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
-
     struct stat sbuf;
-    if ( stat(str, &sbuf)==0 )  // it's a file
-    {
-        free(reg);
-        return NULL;
-    }
+    if ( stat(str, &sbuf)==0 ) return NULL; // it's a file
+
+    bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
 
     kstring_t tmp = {0,0,0};
     const char *sp = str, *ep = str;
@@ -854,22 +850,40 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
         kputsn(sp,ep-sp,&tmp);
         if ( *ep==':' )
         {
-            int ret = sscanf(++ep,"%d-%d",&from,&to);
-            if ( ret==1 ) to = from;
-            else if ( ret!=2 ) 
+            sp = ep+1;
+            from = strtol(sp,(char**)&ep,10);
+            if ( sp==ep )
             {
                 fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
-                free(reg);
-                return NULL;
+                free(reg); free(tmp.s); return NULL;
             }
+            if ( !*ep || *ep==',' )
+            {
+                _regions_add(reg, tmp.s, from, from);
+                sp = ep;
+                continue;
+            }
+            if ( *ep!='-' )
+            {
+                fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
+                free(reg); free(tmp.s); return NULL;
+            }
+            ep++;
+            sp = ep;
+            to = strtol(sp,(char**)&ep,10);
+            if ( *ep && *ep!=',' )
+            {
+                fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
+                free(reg); free(tmp.s); return NULL;
+            }
+            if ( sp==ep ) to = 1<<29;
             _regions_add(reg, tmp.s, from, to);
-            while ( *ep && *ep!=',' ) ep++;
             if ( !*ep ) break;
-            sp = ++ep;
+            sp = ep;
         }
         else
         {
-            _regions_add(reg, tmp.s, -1, -1);
+            if ( tmp.l ) _regions_add(reg, tmp.s, -1, -1);
             if ( !*ep ) break;
             sp = ++ep;
         }
@@ -877,6 +891,65 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
     free(tmp.s);
     reg->ireg = -1;
     return reg;
+}
+
+// ichr,ifrom,ito are 0-based; line will be modified so that the *chr pointer is 0-terminated
+// returns -1 on error, 0 if the line is a comment line, 1 on success
+static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **chr,int *from,int *to)
+{
+    if ( line[0]=='#' ) return 0;
+
+    int k,l;    // index of the start and end column of the tab-delimited file
+    if ( ifrom <= ito ) 
+        k = ifrom, l = ito;
+    else 
+        l = ifrom, k = ito;
+
+    int i;
+    char *se = line, *ss = NULL; // start and end 
+    char *tmp;
+    for (i=0; i<=k && *se; i++)
+    {
+        ss = i==0 ? se++ : ++se;
+        while (*se && *se!='\t') se++;
+    }
+    if ( i<=k ) return -1;
+    if ( k==l )
+    {
+        *from = *to = strtol(ss, &tmp, 10);
+        if ( tmp==ss ) return -1;
+    }
+    else
+    {
+        if ( k==ifrom ) 
+            *from = strtol(ss, &tmp, 10);
+        else
+            *to = strtol(ss, &tmp, 10);
+        if ( ss==tmp ) return -1;
+
+        for (i=k; i<l && *se; i++)
+        {
+            ss = ++se;
+            while (*se && *se!='\t') se++;
+        }
+        if ( i<l ) return -1;
+        if ( k==ifrom ) 
+            *to = strtol(ss, &tmp, 10);
+        else
+            *from = strtol(ss, &tmp, 10);
+        if ( ss==tmp ) return -1;
+    }
+
+    ss = se = line;
+    for (i=0; i<=ichr && *se; i++)
+    {
+        if ( i>0 ) ss = ++se;
+        while (*se && *se!='\t') se++;
+    }
+    if ( i<=ichr ) return -1;
+    *se = 0;
+    *chr = ss;
+    return 1;
 }
 
 bcf_sr_regions_t *bcf_sr_regions_init(const char *regions)
@@ -898,9 +971,32 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions)
     reg->tbx = tbx_index_load(regions);
     if ( !reg->tbx ) 
     {
-        fprintf(stderr,"[%s:%d %s] Could not load tabix index: %s\n", __FILE__,__LINE__,__FUNCTION__,regions);
-        free(reg);
-        return NULL;
+        int ichr = 0, ifrom = 1, ito = 2;
+        int len = strlen(regions);
+        int is_bed  = strcasecmp(".bed",regions+len-4) ? 0 : 1;
+        if ( !is_bed && !strcasecmp(".bed.gz",regions+len-7) ) is_bed = 1;
+        int ft_type = hts_file_type(regions);
+        if ( ft_type & FT_VCF ) ito = 1;
+
+        // read the whole file, tabix index is not present
+        while ( hts_getline(reg->file, KS_SEP_LINE, &reg->line) > 0 )
+        {
+            char *chr;
+            int from, to, ret;
+            ret = _regions_parse_line(reg->line.s, ichr,ifrom,ito, &chr,&from,&to);
+            if ( ret < 0 ) 
+            {
+                fprintf(stderr,"[%s:%d] Could not parse the file %s, using the columns %d,%d,%d\n", __FILE__,__LINE__,regions,ichr+1,ifrom+1,ito+1);
+                hts_close(reg->file); reg->file = NULL; free(reg); 
+                return NULL;
+            }
+            if ( !ret ) continue;
+            if ( is_bed ) from++;
+            _regions_add(reg, chr, from, to);
+        }
+        hts_close(reg->file); reg->file = NULL;
+        if ( !reg->nregs ) { free(reg); return NULL; }
+        return reg;
     }
     reg->snames = (char**) tbx_seqnames(reg->tbx, &reg->nseqs);
     reg->fname  = strdup(regions);
@@ -972,82 +1068,72 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
         return 0;
     }
 
-    // reading regions from tabix
-    if ( reg->itr )
+    char *chr;
+    int ichr = 0, ifrom = 1, ito = 2, is_bed = 0, from, to;
+    if ( reg->tbx )
     {
-        // tabix index present, reading a chromosome block
-        int ret = tbx_itr_next(reg->file, reg->tbx, reg->itr, &reg->line);
-        if ( ret<0 ) { reg->done = 1; return -1; }
+        ichr   = reg->tbx->conf.sc-1;
+        ifrom  = reg->tbx->conf.bc-1;
+        ito    = reg->tbx->conf.ec-1;
+        if ( ito<0 ) ito = ifrom;
+        is_bed = reg->tbx->conf.preset==TBX_UCSC ? 1 : 0;
     }
-    else
+
+    int ret = 0;
+    while ( !ret )
     {
-        if ( reg->is_bin )
+        if ( reg->itr )
         {
-            // Waited for seek which never came. Reopen in text mode and stream
-            // through the regions, otherwise hts_getline would fail
-            hts_close(reg->file);
-            reg->file = hts_open(reg->fname, "r");
-            if ( !reg->file )
+            // tabix index present, reading a chromosome block
+            ret = tbx_itr_next(reg->file, reg->tbx, reg->itr, &reg->line);
+            if ( ret<0 ) { reg->done = 1; return -1; }
+        }
+        else
+        {
+            if ( reg->is_bin )
             {
-                fprintf(stderr,"[%s:%d %s] Could not open file: %s\n", __FILE__,__LINE__,__FUNCTION__,reg->fname);
-                reg->file = NULL;
-                bcf_sr_regions_destroy(reg);
-                return -1;
+                // Waited for seek which never came. Reopen in text mode and stream
+                // through the regions, otherwise hts_getline would fail
+                hts_close(reg->file);
+                reg->file = hts_open(reg->fname, "r");
+                if ( !reg->file )
+                {
+                    fprintf(stderr,"[%s:%d %s] Could not open file: %s\n", __FILE__,__LINE__,__FUNCTION__,reg->fname);
+                    reg->file = NULL;
+                    bcf_sr_regions_destroy(reg);
+                    return -1;
+                }
+                reg->is_bin = 0;
             }
-            reg->is_bin = 0;
+
+            // tabix index absent, reading the whole file
+            ret = hts_getline(reg->file, KS_SEP_LINE, &reg->line);
+            if ( ret<0 ) { reg->done = 1; return -1; }
         }
-
-        // tabix index absent, reading the whole file
-        int ret = hts_getline(reg->file, KS_SEP_LINE, &reg->line);
-        if ( ret<0 ) { reg->done = 1; return -1; }
-    }
-
-    // Parse the line
-    int k,l;    // index of the start and end column of the tab-delimited file
-    if ( reg->tbx->conf.bc <= reg->tbx->conf.ec ) 
-        k = reg->tbx->conf.bc, l = reg->tbx->conf.ec;
-    else 
-        l = reg->tbx->conf.bc, k = reg->tbx->conf.ec;
-
-    int i;
-    char *se = reg->line.s, *ss = NULL; // start and end 
-    for (i=0; i<k; i++)
-    {
-        ss = i==0 ? se++ : ++se;
-        while (*se && *se!='\t') se++;
-    }
-    if ( k==l )
-        reg->start = reg->end = strtol(ss, NULL, 10);
-    else
-    {
-        if ( k==reg->tbx->conf.bc ) 
-            reg->start = strtol(ss, NULL, 10);
-        else
-            reg->end = strtol(ss, NULL, 10);
-
-        for (i=k; i<l; i++)
+        ret = _regions_parse_line(reg->line.s, ichr,ifrom,ito, &chr,&from,&to);
+        if ( ret<0 ) 
         {
-            ss = ++se;
-            while (*se && *se!='\t') se++;
+            fprintf(stderr,"[%s:%d] Could not parse the file %s, using the columns %d,%d,%d\n", __FILE__,__LINE__,reg->fname,ichr+1,ifrom+1,ito+1);
+            return -1;
         }
-        if ( k==reg->tbx->conf.bc ) 
-            reg->end = strtol(ss, NULL, 10);
-        else
-            reg->start = strtol(ss, NULL, 10);
     }
+    if ( is_bed ) from++;
 
-    // Find out sequence name: assuming the number of sequences is small!
-    assert( reg->tbx->conf.sc==1 ); // assuming first column
-    ss = se = reg->line.s; 
-    while ( *se && *se!='\t' ) se++;
+    // find the chromosome name: assuming small number of chromosomes!
+    int i;
     for (i=0; i<reg->nseqs; i++) 
-        if (!strncmp(ss,reg->snames[i],se-ss) && !reg->snames[i][se-ss] ) break;
-    if ( !(i<reg->nseqs) ) fprintf(stderr,"i=%d nseq=%d  [%s][%s] [%s]\n", i,reg->nseqs,ss,reg->line.s,reg->snames[0]);
+        if (!strcmp(chr,reg->snames[i]) ) break;
+    if ( !(i<reg->nseqs) ) fprintf(stderr,"i=%d nseq=%d  [%s][%s] [%s]\n", i,reg->nseqs,chr,reg->line.s,reg->snames[0]);
     assert( i<reg->nseqs );
+
+    // This is a bit hacky: unset the chr-terminating 0 set by _regions_parse_line, or
+    //  otherwise _regions_match_alleles will be confused.
+    int len = strlen(chr);
+    if ( len < reg->line.l ) chr[len] = '\t';
+
     reg->seq    = reg->snames[i];
-    reg->start -= 1;
-    reg->end   -= 1;
-        
+    reg->start  = from - 1;
+    reg->end    = to - 1;
     return 0;
 }
 

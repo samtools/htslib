@@ -787,15 +787,15 @@ hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
 		BGZF *fp;
 		uint32_t x[3], n;
 		uint8_t *meta = 0;
-		if ((fp = bgzf_open(fn, "r")) == 0) return 0;
-		bgzf_read(fp, magic, 4);
-		bgzf_read(fp, x, 12);
+		if ((fp = bgzf_open(fn, "r")) == 0) return NULL;
+		if ( bgzf_read(fp, magic, 4) != 4 ) return NULL;
+		if ( bgzf_read(fp, x, 12) != 12 ) return NULL;
 		if (is_be) for (i = 0; i < 3; ++i) ed_swap_4p(&x[i]);
 		if (x[2]) {
 			meta = (uint8_t*)malloc(x[2]);
-			bgzf_read(fp, meta, x[2]);
+			if ( bgzf_read(fp, meta, x[2]) != x[2] ) return NULL;
 		}
-		bgzf_read(fp, &n, 4);
+		if ( bgzf_read(fp, &n, 4) != 4 ) return NULL;
 		if (is_be) ed_swap_4p(&n);
 		idx = hts_idx_init(n, fmt, 0, x[0], x[1]);
 		idx->l_meta = x[2];
@@ -805,9 +805,9 @@ hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
 	} else if (fmt == HTS_FMT_TBI) {
 		BGZF *fp;
 		uint32_t x[8];
-		if ((fp = bgzf_open(fn, "r")) == 0) return 0;
-		bgzf_read(fp, magic, 4);
-		bgzf_read(fp, x, 32);
+		if ((fp = bgzf_open(fn, "r")) == 0) return NULL;
+		if ( bgzf_read(fp, magic, 4) != 4 ) return NULL;
+		if ( bgzf_read(fp, x, 32) != 32 ) return NULL;
 		if (is_be) for (i = 0; i < 8; ++i) ed_swap_4p(&x[i]);
 		idx = hts_idx_init(x[0], fmt, 0, 14, 5);
 		idx->l_meta = 28 + x[7];
@@ -819,9 +819,9 @@ hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
 	} else if (fmt == HTS_FMT_BAI) {
 		uint32_t n;
 		FILE *fp;
-		if ((fp = fopen(fn, "rb")) == 0) return 0;
-		fread(magic, 1, 4, fp);
-		fread(&n, 4, 1, fp);
+		if ((fp = fopen(fn, "rb")) == 0) return NULL;
+		if ( fread(magic, 1, 4, fp) != 4 ) return NULL;
+		if ( fread(&n, 4, 1, fp) != 1 ) return NULL;
 		if (is_be) ed_swap_4p(&n);
 		idx = hts_idx_init(n, fmt, 0, 14, 5);
 		hts_idx_load_core(idx, fp, HTS_FMT_BAI);

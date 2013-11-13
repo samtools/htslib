@@ -885,7 +885,7 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
 
     fp->idx = (bgzidx_t*) calloc(1,sizeof(bgzidx_t));
     uint64_t x;
-    fread(&x, 1, sizeof(x), idx);
+    if ( fread(&x, 1, sizeof(x), idx) != sizeof(x) ) return -1;
 
     fp->idx->noffs = fp->idx->moffs = 1 + (fp->is_be ? ed_swap_8(x) : x);
     fp->idx->offs  = (bgzidx1_t*) malloc(fp->idx->moffs*sizeof(bgzidx1_t));
@@ -894,19 +894,23 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
     int i;
     if ( fp->is_be )
     {
+        int ret = 0;
         for (i=1; i<fp->idx->noffs; i++)
         {
-            fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].caddr = ed_swap_8(x);
-            fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].uaddr = ed_swap_8(x);
+            ret += fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].caddr = ed_swap_8(x);
+            ret += fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].uaddr = ed_swap_8(x);
         }
+        if ( ret != sizeof(x)*2*(fp->idx->noffs-1) ) return -1;
     }
     else
     {
+        int ret = 0;
         for (i=1; i<fp->idx->noffs; i++)
         {
-            fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].caddr = x;
-            fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].uaddr = x;
+            ret += fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].caddr = x;
+            ret += fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].uaddr = x;
         }
+        if ( ret != sizeof(x)*2*(fp->idx->noffs-1) ) return -1;
     }
     fclose(idx);
     return 0;

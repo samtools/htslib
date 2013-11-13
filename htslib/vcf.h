@@ -368,16 +368,15 @@ extern "C" {
 
     /**
      *  bcf_update_filter() - sets the FILTER column
-     *  @flt_ids:           Set of filters to set, numeric IDs returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
-     *  @n:                 Number of filters. If n==0, all filters are removed
+     *  @flt_ids:  The filter IDs to set, numeric IDs returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @n:        Number of filters. If n==0, all filters are removed
      */
     int bcf_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n);
     /**
      *  bcf_add_filter() - adds to the FILTER column
-     *  @flt_id:            filter ID to set, numeric IDs returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @flt_id:   filter ID to add, numeric ID returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
      *  
-     *  If PASS, all existing filters are moved first. If other than PASS and PASS present in $line, it
-     *  will be removed.
+     *  If flt_id is PASS, all existing filters are removed first. If other than PASS, existing PASS is removed.
      */
     int bcf_add_filter(bcf_hdr_t *hdr, bcf1_t *line, int flt_id);
     /**
@@ -413,6 +412,15 @@ extern "C" {
     #define bcf_gt_missing          0
     #define bcf_gt_is_phased(idx)   ((idx)&1)
     #define bcf_gt_allele(val)      (((val)>>1)-1)
+
+    /** Conversion between alleles indexes to Number=G genotype index (assuming diploid, all 0-based) */
+    #define bcf_alleles2gt(a,b) ((a)>(b)?((a)*((a)+1)/2+(b)):((b)*((b)+1)/2+(a)))
+    static inline void bcf_gt2alleles(int igt, int *a, int *b)
+    {
+        int k = 0, dk = 1;
+        while ( k<igt ) { dk++; k += dk; }
+        *b = dk - 1; *a = igt - k + *b;
+    }
 
     /**     
      * bcf_get_fmt() - returns pointer to FORMAT's field data
