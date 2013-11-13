@@ -57,6 +57,12 @@ hFILE *hdopen(int fd, const char *mode) HTS_RESULT_USED;
 int hclose(hFILE *fp) HTS_RESULT_USED;
 
 /*!
+  @abstract  Close the stream, without flushing or propagating errors
+  @notes     For use while cleaning up after an error only.  Preserves errno.
+*/
+void hclose_abruptly(hFILE *fp);
+
+/*!
   @abstract  Return the stream's error indicator
   @return    Non-zero (in fact, an errno value) if an error has occurred.
   @notes     This would be called herror() and return true/false to parallel

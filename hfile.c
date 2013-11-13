@@ -264,6 +264,14 @@ int hclose(hFILE *fp)
     else return 0;
 }
 
+void hclose_abruptly(hFILE *fp)
+{
+    int save = errno;
+    if (fp->backend->close(fp) < 0) { /* Ignore subsequent errors */ }
+    hfile_destroy(fp);
+    errno = save;
+}
+
 
 /***************************
  * File descriptor backend *

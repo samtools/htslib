@@ -176,9 +176,8 @@ error:
 	if (hts_verbose >= 2)
 		fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
 
-	if (hfile) {
-		if (hclose(hfile) != 0) { /* Ignore errors */ }
-	}
+	if (hfile)
+		hclose_abruptly(hfile);
 
 	if (fp) {
 		free(fp->fn);
@@ -188,29 +187,34 @@ error:
 	return NULL;
 }
 
-void hts_close(htsFile *fp)
+int hts_close(htsFile *fp)
 {
+	int ret, save;
+
 	if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
-		bgzf_close(fp->fp.bgzf);
+		ret = bgzf_close(fp->fp.bgzf);
 	} else if (fp->is_cram) {
-		cram_close(fp->fp.cram);
+		ret = cram_close(fp->fp.cram);
 	} else if (fp->is_kstream) {
 	#if KS_BGZF
 		BGZF *gzfp = ((kstream_t*)fp->fp.voidp)->f;
-		bgzf_close(gzfp);
+		ret = bgzf_close(gzfp);
 	#else
 		gzFile gzfp = ((kstream_t*)fp->fp.voidp)->f;
-		gzclose(gzfp);
+		ret = gzclose(gzfp);
 	#endif
 		ks_destroy((kstream_t*)fp->fp.voidp);
 	} else {
-		errno = hclose(fp->fp.hfile);
+		ret = hclose(fp->fp.hfile);
 	}
 
+	save = errno;
 	free(fp->fn);
 	free(fp->fn_aux);
     free(fp->line.s);
 	free(fp);
+	errno = save;
+	return ret;
 }
 
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
