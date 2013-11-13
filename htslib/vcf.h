@@ -413,6 +413,15 @@ extern "C" {
     #define bcf_gt_is_phased(idx)   ((idx)&1)
     #define bcf_gt_allele(val)      (((val)>>1)-1)
 
+    /** Conversion between alleles indexes to Number=G genotype index (assuming diploid, all 0-based) */
+    #define bcf_alleles2gt(a,b) ((a)>(b)?((a)*((a)+1)/2+(b)):((b)*((b)+1)/2+(a)))
+    static inline void bcf_gt2alleles(int igt, int *a, int *b)
+    {
+        int k = 0, dk = 1;
+        while ( k<igt ) { dk++; k += dk; }
+        *b = dk - 1; *a = igt - k + *b;
+    }
+
     /**     
      * bcf_get_fmt() - returns pointer to FORMAT's field data
      * @header: for access to BCF_DT_ID dictionary 

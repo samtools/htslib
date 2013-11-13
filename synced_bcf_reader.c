@@ -974,6 +974,7 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions)
         int ichr = 0, ifrom = 1, ito = 2;
         int len = strlen(regions);
         int is_bed  = strcasecmp(".bed",regions+len-4) ? 0 : 1;
+        if ( !is_bed && !strcasecmp(".bed.gz",regions+len-7) ) is_bed = 1;
         int ft_type = hts_file_type(regions);
         if ( ft_type & FT_VCF ) ito = 1;
 
