@@ -41,18 +41,26 @@
 #define BGZF_ERR_IO     4
 #define BGZF_ERR_MISUSE 8
 
-typedef struct {
-	int errcode:16, is_write:2, is_be:2, compress_level:12;
+struct hFILE;
+struct bgzf_mtaux_t;
+typedef struct __bgzidx_t bgzidx_t;
+
+struct BGZF {
+	int errcode:16, is_write:2, is_be:2, compress_level:9, is_compressed:3;
 	int cache_size;
     int block_length, block_offset;
-    int64_t block_address;
+    int64_t block_address, uncompressed_address;
     void *uncompressed_block, *compressed_block;
 	void *cache; // a pointer to a hash table
-	void *fp; // actual file handler; FILE* on writing; FILE* or knetFile* on reading
-#ifdef BGZF_MT
-	void *mt; // only used for multi-threading
+    struct hFILE *fp; // actual file handle
+    struct bgzf_mtaux_t *mt; // only used for multi-threading
+    bgzidx_t *idx;      // BGZF index
+    int idx_build_otf;  // build index on the fly, set by bgzf_index_build_init()
+};
+#ifndef HTS_BGZF_TYPEDEF
+typedef struct BGZF BGZF;
+#define HTS_BGZF_TYPEDEF
 #endif
-} BGZF;
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
@@ -76,6 +84,9 @@ extern "C" {
 	 * @param fd    file descriptor
 	 * @param mode  mode matching /[rwu0-9]+/: 'r' for reading, 'w' for writing and a digit specifies
 	 *              the zlib compression level; if both 'r' and 'w' are present, 'w' is ignored.
+     *              Note that there is a distinction between 'u' and '0': the
+     *              first yields plain uncompressed output whereas the latter
+     *              outputs uncompressed data wrapped in the zlib format.
 	 * @return      BGZF file handler; 0 on error
 	 */
 	BGZF* bgzf_dopen(int fd, const char *mode);
@@ -86,6 +97,11 @@ extern "C" {
 	 * Open the specified file for reading or writing.
 	 */
 	BGZF* bgzf_open(const char* path, const char *mode);
+
+	/**
+	 * Open an existing hFILE stream for reading or writing.
+	 */
+	BGZF* bgzf_hopen(struct hFILE *fp, const char *mode);
 
 	/**
 	 * Close the BGZF and free all associated resources.
@@ -116,6 +132,30 @@ extern "C" {
 	ssize_t bgzf_write(BGZF *fp, const void *data, size_t length);
 
 	/**
+	 * Read up to _length_ bytes directly from the underlying stream without
+	 * decompressing.  Bypasses BGZF blocking, so must be used with care in
+	 * specialised circumstances only.
+	 *
+	 * @param fp     BGZF file handler
+	 * @param data   data array to read into
+	 * @param length number of raw bytes to read
+	 * @return       number of bytes actually read; 0 on end-of-file and -1 on error
+	 */
+	ssize_t bgzf_raw_read(BGZF *fp, void *data, size_t length);
+
+	/**
+	 * Write _length_ bytes directly to the underlying stream without
+	 * compressing.  Bypasses BGZF blocking, so must be used with care
+	 * in specialised circumstances only.
+	 *
+	 * @param fp     BGZF file handler
+	 * @param data   data array to write
+	 * @param length number of raw bytes to write
+	 * @return       number of bytes actually written; -1 on error
+	 */
+	ssize_t bgzf_raw_write(BGZF *fp, const void *data, size_t length);
+
+	/**
 	 * Write the data in the buffer to the file.
 	 */
 	int bgzf_flush(BGZF *fp);
@@ -126,7 +166,7 @@ extern "C" {
 	 * call to bgzf_seek can be used to position the file at the same point.
 	 * Return value is non-negative on success.
 	 */
-	#define bgzf_tell(fp) ((((BGZF*)fp)->block_address << 16) | (((BGZF*)fp)->block_offset & 0xFFFF))
+	#define bgzf_tell(fp) (((fp)->block_address << 16) | ((fp)->block_offset & 0xFFFF))
 
 	/**
 	 * Set the file to read from the location specified by _pos_.
@@ -142,7 +182,10 @@ extern "C" {
 	 * Check if the BGZF end-of-file (EOF) marker is present
 	 *
 	 * @param fp    BGZF file handler opened for reading
-	 * @return      1 if EOF is present; 0 if not or on I/O error
+	 * @return      1 if the EOF marker is present and correct;
+	 *              2 if it can't be checked, e.g., because fp isn't seekable;
+	 *              0 if the EOF marker is absent;
+	 *              -1 (with errno set) on error
 	 */
 	int bgzf_check_EOF(BGZF *fp);
 
@@ -193,16 +236,71 @@ extern "C" {
 	 */
 	int bgzf_read_block(BGZF *fp);
 
-#ifdef BGZF_MT
 	/**
-	 * Enable multi-threading (only effective on writing)
+	 * Enable multi-threading (only effective on writing and when the
+	 * library was compiled with -DBGZF_MT)
 	 *
 	 * @param fp          BGZF file handler; must be opened for writing
 	 * @param n_threads   #threads used for writing
 	 * @param n_sub_blks  #blocks processed by each thread; a value 64-256 is recommended
 	 */
 	int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks);
-#endif
+
+
+	/*******************
+	 * bgzidx routines *
+	 *******************/
+
+	/**
+     *  Position BGZF at the uncompressed offset 
+     *
+     *  @param fp           BGZF file handler; must be opened for reading
+     *  @param uoffset      file offset in the uncompressed data
+     *  @param where        SEEK_SET supported atm
+     *
+     *  Returns 0 on success and -1 on error.
+	 */
+    int bgzf_useek(BGZF *fp, long uoffset, int where);
+
+	/**
+     *  Position in uncompressed BGZF
+     *
+     *  @param fp           BGZF file handler; must be opened for reading
+     *
+     *  Returns the current offset on success and -1 on error.
+	 */
+    long bgzf_utell(BGZF *fp);
+
+	/**
+	 * Tell BGZF to build index while compressing.
+     *
+	 * @param fp          BGZF file handler; can be opened for reading or writing.
+     *
+     * Returns 0 on success and -1 on error.
+	 */
+	int bgzf_index_build_init(BGZF *fp);
+
+   	/**
+	 * Load BGZF index
+	 *
+	 * @param fp          BGZF file handler
+	 * @param bname       base name
+     * @param suffix      suffix to add to bname (can be NULL)
+     *
+     * Returns 0 on success and -1 on error.
+	 */
+    int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix);
+
+   	/**
+	 * Save BGZF index
+	 *
+	 * @param fp          BGZF file handler
+	 * @param bname       base name
+     * @param suffix      suffix to add to bname (can be NULL)
+     *
+     * Returns 0 on success and -1 on error.
+	 */
+    int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix);
 
 #ifdef __cplusplus
 }

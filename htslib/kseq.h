@@ -41,6 +41,7 @@
 	typedef struct __kstream_t { \
 		int begin, end; \
 		int is_eof:2, bufsize:30; \
+        uint64_t seek_pos; \
 		type_t f; \
 		unsigned char *buf; \
 	} kstream_t;
@@ -73,6 +74,7 @@
 			if (ks->end < ks->bufsize) ks->is_eof = 1; \
 			if (ks->end == 0) return -1; \
 		} \
+        ks->seek_pos++; \
 		return (int)ks->buf[ks->begin++]; \
 	} \
 	static inline int ks_getuntil(kstream_t *ks, int delimiter, kstring_t *str, int *dret) \
@@ -95,6 +97,7 @@ typedef struct __kstring_t {
 	{ \
 		if (dret) *dret = 0; \
 		str->l = append? str->l : 0; \
+        uint64_t seek_pos = str->l; \
 		if (ks->begin >= ks->end && ks->is_eof) return -1; \
 		for (;;) { \
 			int i; \
@@ -124,6 +127,7 @@ typedef struct __kstring_t {
 				kroundup32(str->m); \
 				str->s = (char*)realloc(str->s, str->m); \
 			} \
+            seek_pos += i - ks->begin; if ( i < ks->end ) seek_pos++; \
 			memcpy(str->s + str->l, ks->buf + ks->begin, i - ks->begin);  \
 			str->l = str->l + (i - ks->begin); \
 			ks->begin = i + 1; \
@@ -132,6 +136,7 @@ typedef struct __kstring_t {
 				break; \
 			} \
 		} \
+        ks->seek_pos += seek_pos; \
 		if (str->s == 0) { \
 			str->m = 1; \
 			str->s = (char*)calloc(1, 1); \

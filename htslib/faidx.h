@@ -23,7 +23,7 @@
    SOFTWARE.
 */
 
-/* Contact: Heng Li <lh3@sanger.ac.uk> */
+/* Contact: Heng Li <lh3@sanger.ac.uk>, Petr Danecek <pd3@sanger> */
 
 #ifndef FAIDX_H
 #define FAIDX_H
@@ -32,6 +32,15 @@
   @header
 
   Index FASTA files and extract subsequence.
+
+  The fai file index columns are:
+    - chromosome name
+    - chromosome length: number of bases
+    - offset: number of bytes to skip to get to the first base
+        from the beginning of the file, including the length
+        of the sequence description string (">chr ..\n")
+    - line length: number of bases per line (excluding \n)
+    - binary line length: number of bytes, including \n
 
   @copyright The Wellcome Trust Sanger Institute.
  */
@@ -94,7 +103,7 @@ extern "C" {
 	  @discussion The returned sequence is allocated by malloc family
 	  and should be destroyed by end users by calling free() on it.
 	 */
-	char *faidx_fetch_seq(const faidx_t *fai, char *c_name, int p_beg_i, int p_end_i, int *len);
+	char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p_end_i, int *len);
 
 #ifdef __cplusplus
 }
