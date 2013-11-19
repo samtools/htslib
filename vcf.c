@@ -2227,7 +2227,7 @@ int bcf_get_format_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **
                 tmp++; \
             } \
             for (; j<fmt->n; j++) { set_vector_end; tmp++; } \
-            p = (type_t *)((void*)p + fmt->size); \
+            p = (type_t *)((char *)p + fmt->size); \
         } \
     }
     switch (fmt->type) {
