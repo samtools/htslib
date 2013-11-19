@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
 	bam1_t *b;
 	htsFile *out;
 	char modew[8];
-	int r, exit_code = 0;
+	int r = 0, exit_code = 0;
 
 	while ((c = getopt(argc, argv, "IbDCSl:t:")) >= 0) {
 		switch (c) {
