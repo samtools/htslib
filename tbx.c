@@ -147,7 +147,7 @@ void tbx_set_meta(tbx_t *tbx)
 	khash_t(s2i) *d = (khash_t(s2i)*)tbx->dict;
 
 	memcpy(x, &tbx->conf, 24);
-	name = (char**)malloc(sizeof(void*) * kh_size(d));
+	name = (char**)malloc(sizeof(char*) * kh_size(d));
 	for (k = kh_begin(d), l = 0; k != kh_end(d); ++k) {
 		if (!kh_exist(d, k)) continue;
 		name[kh_val(d, k)] = (char*)kh_key(d, k);

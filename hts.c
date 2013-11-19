@@ -283,7 +283,7 @@ char **hts_readlines(const char *fn, int *_n)
 			if (str.l == 0) continue;
 			if (m == n) {
 				m = m? m<<1 : 16;
-				s = (char**)realloc(s, m * sizeof(void*));
+				s = (char**)realloc(s, m * sizeof(char*));
 			}
 			s[n++] = strdup(str.s);
 		}
@@ -293,7 +293,7 @@ char **hts_readlines(const char *fn, int *_n)
         #else
 		    gzclose(fp);
         #endif
-		s = (char**)realloc(s, n * sizeof(void*));
+		s = (char**)realloc(s, n * sizeof(char*));
 		free(str.s);
 	} else if (*fn == ':') { // read from string
 		const char *q, *p;
@@ -301,7 +301,7 @@ char **hts_readlines(const char *fn, int *_n)
 			if (*p == ',' || *p == 0) {
 				if (m == n) {
 					m = m? m<<1 : 16;
-					s = (char**)realloc(s, m * sizeof(void*));
+					s = (char**)realloc(s, m * sizeof(char*));
 				}
 				s[n] = (char*)calloc(p - q + 1, 1);
 				strncpy(s[n++], q, p - q);
@@ -309,7 +309,7 @@ char **hts_readlines(const char *fn, int *_n)
 				if (*p == 0) break;
 			}
 	} else return 0;
-	s = (char**)realloc(s, n * sizeof(void*));
+	s = (char**)realloc(s, n * sizeof(char*));
 	*_n = n;
 	return s;
 }
@@ -440,7 +440,7 @@ hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_l
 	idx->z.last_coor = 0xffffffffu;
 	if (n) {
 		idx->n = idx->m = n;
-		idx->bidx = (bidx_t**)calloc(n, sizeof(void*));
+		idx->bidx = (bidx_t**)calloc(n, sizeof(bidx_t*));
 		idx->lidx = (lidx_t*) calloc(n, sizeof(lidx_t));
 	}
 	return idx;
@@ -543,9 +543,9 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 	if (tid >= idx->m) { // enlarge the index
 		int32_t oldm = idx->m;
 		idx->m = idx->m? idx->m<<1 : 2;
-		idx->bidx = (bidx_t**)realloc(idx->bidx, idx->m * sizeof(void*));
+		idx->bidx = (bidx_t**)realloc(idx->bidx, idx->m * sizeof(bidx_t*));
 		idx->lidx = (lidx_t*) realloc(idx->lidx, idx->m * sizeof(lidx_t));
-		memset(&idx->bidx[oldm], 0, (idx->m - oldm) * sizeof(void*));
+		memset(&idx->bidx[oldm], 0, (idx->m - oldm) * sizeof(bidx_t*));
 		memset(&idx->lidx[oldm], 0, (idx->m - oldm) * sizeof(lidx_t));
 	}
 	if (idx->n < tid + 1) idx->n = tid + 1;

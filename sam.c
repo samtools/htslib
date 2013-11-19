@@ -46,7 +46,7 @@ static bam_hdr_t *hdr_from_dict(sdict_t *d)
 	h->sdict = d;
 	h->n_targets = kh_size(d);
 	h->target_len = (uint32_t*)malloc(4 * h->n_targets);
-	h->target_name = (char**)malloc(sizeof(void*) * h->n_targets);
+	h->target_name = (char**)malloc(sizeof(char*) * h->n_targets);
 	for (k = kh_begin(d); k != kh_end(d); ++k) {
 		if (!kh_exist(d, k)) continue;
 		h->target_name[kh_val(d, k)>>32] = (char*)kh_key(d, k);
@@ -1479,8 +1479,8 @@ bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data)
 	iter = (bam_mplp_t)calloc(1, sizeof(struct __bam_mplp_t));
 	iter->pos = (uint64_t*)calloc(n, 8);
 	iter->n_plp = (int*)calloc(n, sizeof(int));
-	iter->plp = (const bam_pileup1_t**)calloc(n, sizeof(void*));
-	iter->iter = (bam_plp_t*)calloc(n, sizeof(void*));
+	iter->plp = (const bam_pileup1_t**)calloc(n, sizeof(bam_pileup1_t*));
+	iter->iter = (bam_plp_t*)calloc(n, sizeof(bam_plp_t));
 	iter->n = n;
 	iter->min = (uint64_t)-1;
 	for (i = 0; i < n; ++i) {
