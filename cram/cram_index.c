@@ -63,6 +63,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <math.h>
 #include <ctype.h>
 
+#include "hfile.h"
 #include "cram/cram.h"
 #include "cram/os.h"
 #include "cram/zfio.h"
@@ -297,4 +298,88 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
     }
 
     return 0;
+}
+
+
+/*
+ * Builds an index file.
+ *
+ * fd is a newly opened cram file that we wish to index.
+ * fn_base is the filename of the associated CRAM file. Internally we
+ * add ".crai" to this to get the index filename.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int cram_index_build(cram_fd *fd, const char *fn_base) {
+    cram_container *c;
+    off_t cpos, spos, hpos;
+    zfp *fp;
+    char fn_idx[PATH_MAX];
+
+    if (strlen(fn_base) > PATH_MAX-6)
+	return -1;
+
+    sprintf(fn_idx, "%s.crai", fn_base);
+    if (!(fp = zfopen(fn_idx, "wz"))) {
+        perror(fn_idx);
+        return -1;
+    }
+
+    cpos = htell(fd->fp);
+    while ((c = cram_read_container(fd))) {
+        int j;
+
+        if (fd->err) {
+            perror("Cram container read");
+            return 1;
+        }
+
+        hpos = htell(fd->fp);
+
+        if (!(c->comp_hdr_block = cram_read_block(fd)))
+            return 1;
+        assert(c->comp_hdr_block->content_type == COMPRESSION_HEADER);
+
+        c->comp_hdr = cram_decode_compression_header(fd, c->comp_hdr_block);
+        if (!c->comp_hdr)
+            return -1;
+
+        // 2.0 format
+        for (j = 0; j < c->num_landmarks; j++) {
+            char buf[1024];
+            cram_slice *s;
+            int sz;
+
+            spos = htell(fd->fp);
+            assert(spos - cpos - c->offset == c->landmark[j]);
+
+            if (!(s = cram_read_slice(fd))) {
+		zfclose(fp);
+		return -1;
+	    }
+
+            sz = (int)(htell(fd->fp) - spos);
+
+            sprintf(buf, "%d\t%d\t%d\t%"PRId64"\t%d\t%d\n",
+                    s->hdr->ref_seq_id, s->hdr->ref_seq_start,
+                    s->hdr->ref_seq_span, (int64_t)cpos,
+                    c->landmark[j], sz);
+            zfputs(buf, fp);
+
+            cram_free_slice(s);
+        }
+
+        cpos = htell(fd->fp);
+        assert(cpos == hpos + c->length);
+
+        cram_free_container(c);
+    }
+    if (fd->err) {
+	zfclose(fp);
+	return -1;
+    }
+	
+
+    return zfclose(fp);
 }

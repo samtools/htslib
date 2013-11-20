@@ -24,6 +24,7 @@ int main(int argc, char *argv[])
 	bam1_t *b;
 	htsFile *out;
 	char modew[8];
+	int r = 0, exit_code = 0;
 
 	while ((c = getopt(argc, argv, "IbDCSl:t:")) >= 0) {
 		switch (c) {
@@ -82,15 +83,32 @@ int main(int argc, char *argv[])
 		    fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
 		    continue;
 		}
-		while (bam_itr_next(in, iter, b) >= 0) sam_write1(out, h, b);
+		while ((r = bam_itr_next(in, iter, b)) >= 0) {
+		    if (sam_write1(out, h, b) < 0) {
+			fprintf(stderr, "Error writing output.\n");
+			exit_code = 1;
+			break;
+		    }
+		}
 		hts_itr_destroy(iter);
 	    }
 	    hts_idx_destroy(idx);
-	} else while (sam_read1(in, h, b) >= 0) sam_write1(out, h, b);
+	} else while ((r = sam_read1(in, h, b)) >= 0) {
+		if (sam_write1(out, h, b) < 0) {
+			fprintf(stderr, "Error writing output.\n");
+			exit_code = 1;
+			break;
+		}
+	}
 	sam_close(out);
+
+	if (r < -1) {
+	    fprintf(stderr, "Error parsing input.\n");
+	    exit_code = 1;
+	}
 
 	bam_destroy1(b);
 	bam_hdr_destroy(h);
 	sam_close(in);
-	return 0;
+	return exit_code;
 }
