@@ -854,16 +854,17 @@ static char *test_and_fetch(const char *fn)
 		for (p = fn + strlen(fn) - 1; p >= fn; --p)
 			if (*p == '/') break;
 		++p; // p now points to the local file name
-		if ((fp_remote = knet_open(fn, "r")) == 0) {
-			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open remote file\n", __func__);
-			return 0;
+		if ((fp = fopen(p, "r")) != 0) {
+			fclose(fp);
+			return (char*)p;
 		}
-		if ((fp = fopen(fn, "w")) == 0) {
+		if ((fp_remote = knet_open(fn, "r")) == 0) return 0;
+		if ((fp = fopen(p, "w")) == 0) {
 			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create file in the working directory\n", __func__);
 			knet_close(fp_remote);
 			return 0;
 		}
-		if (hts_verbose >= 3) fprintf(stderr, "[M::%s] downloading file '%s' to local directory\n", __func__, fn);
+		if (hts_verbose >= 3) fprintf(stderr, "[M::%s] downloading file '%s' to the local directory\n", __func__, fn);
 		buf = (uint8_t*)calloc(buf_size, 1);
 		while ((l = knet_read(fp_remote, buf, buf_size)) != 0) fwrite(buf, 1, l, fp);
 		free(buf);
