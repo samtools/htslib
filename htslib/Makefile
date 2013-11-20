@@ -1,6 +1,6 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2 -Wc++-compat
-DFLAGS=
+DFLAGS=		-D_USE_KURL
 LOBJS=		knetfile.o kurl.o bgzf.o hts.o vcf.o sam.o tbx.o
 INCLUDES=
 LIBPATH=
@@ -15,10 +15,10 @@ libhts.a:$(LOBJS)
 		$(AR) -csru $@ $(LOBJS)
 
 bgzf.o:bgzf.c bgzf.h knetfile.h khash.h kurl.h
-		$(CC) -c $(CFLAGS) $(DFLAGS) -D_USE_KURL -DBGZF_MT -DBGZF_CACHE $(INCLUDES) bgzf.c -o $@
+		$(CC) -c $(CFLAGS) $(DFLAGS) -DBGZF_MT -DBGZF_CACHE $(INCLUDES) bgzf.c -o $@
 
 hts.o:hts.c bgzf.h bgzf.h khash.h kurl.h
-		$(CC) -c $(CFLAGS) $(DFLAGS) -D_USE_KURL $(INCLUDES) hts.c -o $@
+		$(CC) -c $(CFLAGS) $(DFLAGS) $(INCLUDES) hts.c -o $@
 
 knetfile.o:knetfile.h
 kurl.o:kurl.h
