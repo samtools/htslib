@@ -12,6 +12,12 @@ KSTREAM_INIT2(, gzFile, gzread, 16384)
 #include "khash.h"
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
+#if defined(_USE_KURL)
+#include "kurl.h"
+#elif defined(_USE_KNETFILE)
+#include "knetfile.h"
+#endif
+
 int hts_verbose = 3;
 
 unsigned char seq_nt16_table[256] = {
@@ -838,13 +844,14 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void
 static char *test_and_fetch(const char *fn)
 {
 	FILE *fp;
-	if (strstr(fn, "ftp://") == fn || strstr(fn, "http://") == fn) {
-#ifdef _USE_KETFILE
+	if (strstr(fn, "ftp://") == fn || strstr(fn, "http://") == fn || strstr(fn, "sftp://") == fn || strstr(fn, "https://") == fn) {
+#if defined(_USE_KNETFILE) || defined(_USE_KURL)
 		const int buf_size = 1 * 1024 * 1024;
 		knetFile *fp_remote;
 		uint8_t *buf;
 		const char *p;
-		for (p = fn + strlen(fn) - 1; p >= url; --p)
+		int l;
+		for (p = fn + strlen(fn) - 1; p >= fn; --p)
 			if (*p == '/') break;
 		++p; // p now points to the local file name
 		if ((fp_remote = knet_open(fn, "r")) == 0) {
