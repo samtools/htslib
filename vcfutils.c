@@ -252,11 +252,18 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                     int k, nset = 0; \
                     for (k=0; k<nG_ori; k++) \
                         if ( is_vector_end ) break; \
-                        else if ( !(is_missing) ) nset++; \
+                        else nset++; \
                     if ( nset==0 ) set_vector_end; \
-                    else if ( nset==nG_ori ) \
+                    else if ( nset==line->n_allele ) \
                     { \
-                        /* diploid */ \
+                        /* haploid */ \
+                        int k_ori; k = 0; \
+                        for (k_ori=0; k_ori<line->n_allele; k_ori++) \
+                            if ( !(rm_mask & 1<<k_ori) ) p[k++] = p[k_ori]; \
+                        for (; k<line->n_allele; k++) set_vector_end;  \
+                    } \
+                    else /* In presence of missing values, assume diploid genotype */ \
+                    { \
                         int ia, ib, k_ori = 0, k_new = 0; \
                         for (ia=0; ia<line->n_allele; ia++) \
                         { \
@@ -269,15 +276,6 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                             } \
                         } \
                     } \
-                    else if ( nset==line->n_allele ) \
-                    { \
-                        /* haploid */ \
-                        int k_ori; k = 0; \
-                        for (k_ori=0; k_ori<line->n_allele; k_ori++) \
-                            if ( !(rm_mask & 1<<k_ori) ) p[k++] = p[k_ori]; \
-                        for (; k<line->n_allele; k++) set_vector_end;  \
-                    } \
-                    else { fprintf(stderr, "[E::%s] todo, missing values: %d %d\n", __func__, nset,nG_ori); exit(1); } \
                 } \
             }
             switch (fmt->type) {

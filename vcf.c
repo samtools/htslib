@@ -656,6 +656,7 @@ static inline void bcf1_sync_alleles(bcf1_t *line, kstring_t *str)
     int i;
     for (i=0; i<line->n_allele; i++)
         bcf_enc_vchar(str, strlen(line->d.allele[i]), line->d.allele[i]);
+    line->rlen = line->n_allele ? strlen(line->d.allele[0]) : 0;     // beware: this neglects SV's END tag
 }
 static inline void bcf1_sync_filter(bcf1_t *line, kstring_t *str)
 {
@@ -727,7 +728,10 @@ static int bcf1_sync(bcf1_t *line)
         if ( line->d.shared_dirty & BCF1_DIRTY_ALS ) 
             bcf1_sync_alleles(line, &tmp);
         else
+        {
+            line->rlen = line->n_allele ? strlen(line->d.allele[0]) : 0;     // beware: this neglects SV's END tag
             kputsn_(ptr_ori, size, &tmp);
+        }
         ptr_ori += size;
 
         // FILTER: typed vector of integers
