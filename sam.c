@@ -922,6 +922,54 @@ char *bam_aux2Z(const uint8_t *s)
 	else return 0;
 }
 
+int bam_str2flag(const char *str)
+{
+    char *end, *beg = (char*) str;
+    long int flag = strtol(str, &end, 0);
+    if ( end!=str ) return flag;    // the conversion was successful
+    flag = 0;
+    while ( *str )
+    {
+        end = beg;
+        while ( *end && *end!=',' ) end++;
+        if ( !strncasecmp(beg,"PAIRED",end-beg) ) flag |= BAM_FPAIRED;
+        else if ( !strncasecmp(beg,"PROPER_PAIR",end-beg) ) flag |= BAM_FPROPER_PAIR;
+        else if ( !strncasecmp(beg,"UNMAP",end-beg) ) flag |= BAM_FUNMAP;
+        else if ( !strncasecmp(beg,"MUNMAP",end-beg) ) flag |= BAM_FMUNMAP;
+        else if ( !strncasecmp(beg,"REVERSE",end-beg) ) flag |= BAM_FREVERSE;
+        else if ( !strncasecmp(beg,"MREVERSE",end-beg) ) flag |= BAM_FMREVERSE;
+        else if ( !strncasecmp(beg,"READ1",end-beg) ) flag |= BAM_FREAD1;
+        else if ( !strncasecmp(beg,"READ2",end-beg) ) flag |= BAM_FREAD2;
+        else if ( !strncasecmp(beg,"SECONDARY",end-beg) ) flag |= BAM_FSECONDARY;
+        else if ( !strncasecmp(beg,"QCFAIL",end-beg) ) flag |= BAM_FQCFAIL;
+        else if ( !strncasecmp(beg,"DUP",end-beg) ) flag |= BAM_FDUP;
+        else if ( !strncasecmp(beg,"SUPPLEMENTARY",end-beg) ) flag |= BAM_FSUPPLEMENTARY;
+        else return -1;
+        if ( !*end ) break;
+        beg = end + 1;
+    }
+    return flag;
+}
+
+char *bam_flag2str(int flag)
+{
+    kstring_t str = {0,0,0};
+    if ( flag&BAM_FPAIRED ) ksprintf(&str,"%s%s", str.l?",":"","PAIRED");
+    if ( flag&BAM_FPROPER_PAIR ) ksprintf(&str,"%s%s", str.l?",":"","PROPER_PAIR");
+    if ( flag&BAM_FUNMAP ) ksprintf(&str,"%s%s", str.l?",":"","UNMAP");
+    if ( flag&BAM_FMUNMAP ) ksprintf(&str,"%s%s", str.l?",":"","MUNMAP");
+    if ( flag&BAM_FREVERSE ) ksprintf(&str,"%s%s", str.l?",":"","REVERSE");
+    if ( flag&BAM_FMREVERSE ) ksprintf(&str,"%s%s", str.l?",":"","MREVERSE");
+    if ( flag&BAM_FREAD1 ) ksprintf(&str,"%s%s", str.l?",":"","READ1");
+    if ( flag&BAM_FREAD2 ) ksprintf(&str,"%s%s", str.l?",":"","READ2");
+    if ( flag&BAM_FSECONDARY ) ksprintf(&str,"%s%s", str.l?",":"","SECONDARY");
+    if ( flag&BAM_FQCFAIL ) ksprintf(&str,"%s%s", str.l?",":"","QCFAIL");
+    if ( flag&BAM_FDUP ) ksprintf(&str,"%s%s", str.l?",":"","DUP");
+    if ( flag&BAM_FSUPPLEMENTARY ) ksprintf(&str,"%s%s", str.l?",":"","SUPPLEMENTARY");
+    return str.s;
+}
+
+
 /**************************
  *** Pileup and Mpileup ***
  **************************/
@@ -929,8 +977,6 @@ char *bam_aux2Z(const uint8_t *s)
 #if !defined(BAM_NO_PILEUP)
 
 #include <assert.h>
-
-#define BAM_DEF_MASK (BAM_FUNMAP | BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP)
 
 /*******************
  *** Memory pool ***
@@ -1083,7 +1129,7 @@ struct __bam_plp_t {
 	mempool_t *mp;
 	lbnode_t *head, *tail, *dummy;
 	int32_t tid, pos, max_tid, max_pos;
-	int is_eof, flag_mask, max_plp, error, maxcnt;
+	int is_eof, max_plp, error, maxcnt;
 	uint64_t id;
 	bam_pileup1_t *plp;
 	// for the "auto" interface only
@@ -1101,7 +1147,6 @@ bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data)
 	iter->head = iter->tail = mp_alloc(iter->mp);
 	iter->dummy = mp_alloc(iter->mp);
 	iter->max_tid = iter->max_pos = -1;
-	iter->flag_mask = BAM_DEF_MASK;
 	iter->maxcnt = 8000;
 	if (func) {
 		iter->func = func;
@@ -1378,7 +1423,8 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
 	if (iter->error) return -1;
 	if (b) {
 		if (b->core.tid < 0) { overlap_remove(iter, b); return 0; }
-		if (b->core.flag & iter->flag_mask) { overlap_remove(iter, b); return 0; }
+        // Skip only unmapped reads here, any additional filtering must be done in iter->func
+        if (b->core.flag & BAM_FUNMAP) { overlap_remove(iter, b); return 0; }
 		if (iter->tid == b->core.tid && iter->pos == b->core.pos && iter->mp->cnt > iter->maxcnt) 
         { 
             overlap_remove(iter, b); 
@@ -1448,11 +1494,6 @@ void bam_plp_reset(bam_plp_t iter)
 		p = q;
 	}
 	iter->head = iter->tail;
-}
-
-void bam_plp_set_mask(bam_plp_t iter, int mask)
-{
-	iter->flag_mask = mask < 0? BAM_DEF_MASK : (BAM_FUNMAP | mask);
 }
 
 void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt)

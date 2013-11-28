@@ -184,6 +184,9 @@ extern "C" {
 	*/
 	int32_t bam_endpos(const bam1_t *b);
 
+    int   bam_str2flag(const char *str);    /** returns negative value on error */
+    char *bam_flag2str(int flag);   /** The string must be freed by the user */
+
 	/********************
 	 *** BAM indexing ***
 	 ********************/
