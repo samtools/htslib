@@ -185,7 +185,9 @@ int fai_build(const char *fn)
 		free(str);
 		return -1;
 	}
+    if ( bgzf->is_compressed ) bgzf_index_build_init(bgzf);
 	fai = fai_build_core(bgzf);
+    if ( bgzf->is_compressed ) bgzf_index_dump(bgzf, fn, ".gzi");
 	bgzf_close(bgzf);
 	fp = fopen(str, "wb");
 	if ( !fp ) {
