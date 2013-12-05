@@ -55,14 +55,13 @@ typedef struct
 
     // for in-memory regions (small data)
     struct _region_t *regs; // the regions
-    int nregs, ireg;        // number of regions; current region
 
     // shared by both tabix-index and in-memory regions
-    char **snames;          // sequence names
+    void *seq_hash;         // keys: sequence names, values: index to seqs
+    char **seq_names;       // sequence names
     int nseqs;              // number of sequences (chromosomes) in the file
-    char *seq;              // current position: chr name
+    int iseq;               // current position: chr name, index to snames
     int start, end;         // current position: start, end of the region (0-based)
-    int done;               // finished the region or the whole file if streaming
 }
 bcf_sr_regions_t;
 
@@ -103,8 +102,6 @@ typedef struct
 	char **samples;	// List of samples 
     bcf_sr_regions_t *regions, *targets;    // see bcf_sr_set_[targets|regions] for description
     int targets_als;    // subset to targets not only by position but also by alleles? (todo)
-    char *cseq;         // current sequence for targets, when regions are present
-    int crid;           // current sequence for targets, with single VCF
     kstring_t tmps;
 	int n_smpl;
 }
@@ -186,12 +183,15 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions);
 /*
  *  bcf_sr_regions_init() 
  *  @regions:   regions can be either a comma-separated list of regions
- *              (chr,chr:from-to) or a name of a tabix indexed file with a list
- *              of regions (<chr,pos> or <chr,from,to>).  Coordinates are
- *              one-based and inclusive.
+ *              (chr|chr:pos|chr:from-to|chr:from-) or VCF, BED, or
+ *              tab-delimited file (the default). The columns of the
+ *              tab-delimited file are: CHROM, POS, and, optionally, POS_TO,
+ *              where positions are 1-based and inclusive. Uncompressed files
+ *              are stored in memory, while bgzip-compressed and tabix-indexed
+ *              region files are streamed.
  */
 bcf_sr_regions_t *bcf_sr_regions_init(const char *regions);
-void bcf_sr_regions_destroy(bcf_sr_regions_t *reg);
+void bcf_sr_regions_destroy(bcf_sr_regions_t *regions);
 
 /*
  *  bcf_sr_regions_seek() - seek to the chromosome block
@@ -211,14 +211,14 @@ int bcf_sr_regions_seek(bcf_sr_regions_t *regions, const char *chr);
 int bcf_sr_regions_next(bcf_sr_regions_t *reg);
 
 /*
- *  bcf_sr_regions_query() - checks if the interval <start,end> overlaps any of
- *  the regions.  The sequence name is set by bcf_sr_regions_seek(). The
- *  coordinate queries must come in ascending order.
+ *  bcf_sr_regions_overlap() - checks if the interval <start,end> overlaps any of
+ *  the regions, the coordinates are 0-based, inclusive. The coordinate queries
+ *  must come in ascending order.
  *
  *  Returns 0 if the position is in regions; -1 if the position is not in the
  *  regions and more regions exist; -2 if not in the regions and there are no more
  *  regions left.
  */
-int bcf_sr_regions_query(bcf_sr_regions_t *reg, int start, int end);
+int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, int end);
 
 #endif

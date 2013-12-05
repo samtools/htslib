@@ -173,7 +173,7 @@ sam.o sam.pico: sam.c $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) hfile.h htslib/
 tbx.o tbx.pico: tbx.c $(htslib_tbx_h) $(htslib_bgzf_h) htslib/khash.h
 faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) htslib/khash.h htslib/knetfile.h
 razf.o razf.pico: razf.c $(htslib_razf_h)
-synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_bcf_reader_h) htslib/kseq.h
+synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_bcf_reader_h) htslib/kseq.h htslib/khash_str2int.h
 vcf_sweep.o vcf_sweep.pico: vcf_sweep.c $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
 kfunc.o kfunc.pico: kfunc.c htslib/kfunc.h
