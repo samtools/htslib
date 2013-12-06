@@ -1832,7 +1832,7 @@ int bcf_get_variant_type(bcf1_t *rec, int ith_allele)
     return rec->d.var[ith_allele].type;
 }
 
-int bcf_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
+int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
 {
     // Is the field already present?
     int i, inf_id = bcf_hdr_id2int(hdr,BCF_DT_ID,key);
@@ -1919,7 +1919,7 @@ int bcf_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *v
 }
 
 
-int bcf_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
+int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
 {
     // Is the field already present?
     int i, fmt_id = bcf_hdr_id2int(hdr,BCF_DT_ID,key);
@@ -1949,6 +1949,7 @@ int bcf_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void 
         return 0;
     }
 
+    line->n_sample = bcf_hdr_nsamples(hdr);
     int nps = n / line->n_sample;  // number of values per sample
     assert( nps && nps*line->n_sample==n );     // must be divisible by n_sample
 
@@ -2017,7 +2018,7 @@ int bcf_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void 
 }
 
 
-int bcf_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
+int bcf_update_filter(const bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
 {
     if ( !(line->unpacked & BCF_UN_FLT) ) bcf_unpack(line, BCF_UN_FLT);
     line->d.shared_dirty |= BCF1_DIRTY_FLT;
@@ -2030,7 +2031,7 @@ int bcf_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n)
     return 0;
 }
 
-int bcf_add_filter(bcf_hdr_t *hdr, bcf1_t *line, int flt_id)
+int bcf_add_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id)
 {
     if ( !(line->unpacked & BCF_UN_FLT) ) bcf_unpack(line, BCF_UN_FLT);
     int i;
@@ -2049,7 +2050,7 @@ int bcf_add_filter(bcf_hdr_t *hdr, bcf1_t *line, int flt_id)
     return 1;
 }
 
-static inline int _bcf1_sync_alleles(bcf_hdr_t *hdr, bcf1_t *line, int nals)
+static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nals)
 {
     line->n_allele = nals;
     hts_expand(char*, line->n_allele, line->d.m_allele, line->d.allele);
@@ -2067,7 +2068,7 @@ static inline int _bcf1_sync_alleles(bcf_hdr_t *hdr, bcf1_t *line, int nals)
     line->d.shared_dirty |= BCF1_DIRTY_ALS;
     return 0;
 }
-int bcf_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)
+int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)
 {
     kstring_t tmp = {0,0,0};
     char *free_old = NULL;
@@ -2094,7 +2095,7 @@ int bcf_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int n
     return _bcf1_sync_alleles(hdr,line,nals);
 }
 
-int bcf_update_alleles_str(bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string)
+int bcf_update_alleles_str(const bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string)
 {
     kstring_t tmp;
     tmp.l = 0; tmp.s = line->d.als; tmp.m = line->d.m_als;
@@ -2111,7 +2112,7 @@ int bcf_update_alleles_str(bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_str
     return _bcf1_sync_alleles(hdr, line, nals);
 }
 
-int bcf_update_id(bcf_hdr_t *hdr, bcf1_t *line, const char *id)
+int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id)
 {
     kstring_t tmp;
     tmp.l = 0; tmp.s = line->d.id; tmp.m = line->d.m_id;
@@ -2196,7 +2197,7 @@ int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **ds
     return -4;  // this can never happen
 }
 
-int bcf_get_format_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
+int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
 {
     int i,j, tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag);
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header

@@ -371,23 +371,23 @@ extern "C" {
      *  @flt_ids:  The filter IDs to set, numeric IDs returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
      *  @n:        Number of filters. If n==0, all filters are removed
      */
-    int bcf_update_filter(bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n);
+    int bcf_update_filter(const bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n);
     /**
      *  bcf_add_filter() - adds to the FILTER column
      *  @flt_id:   filter ID to add, numeric ID returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
      *  
      *  If flt_id is PASS, all existing filters are removed first. If other than PASS, existing PASS is removed.
      */
-    int bcf_add_filter(bcf_hdr_t *hdr, bcf1_t *line, int flt_id);
+    int bcf_add_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id);
     /**
      *  bcf_update_alleles() and bcf_update_alleles_str() - update REF and ALLT column
      *  @alleles:           Array of alleles
      *  @nals:              Number of alleles
      *  @alleles_string:    Comma-separated alleles, starting with the REF allele  
      */
-    int bcf_update_alleles(bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals);
-    int bcf_update_alleles_str(bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string);
-    int bcf_update_id(bcf_hdr_t *hdr, bcf1_t *line, const char *id);
+    int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals);
+    int bcf_update_alleles_str(const bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string);
+    int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id);
 
     // If n==0, existing tag is removed. Otherwise it is updated or appended. With *_flag, $string is optional.
     // With *_string, existing tag is removed when $string set to NULL.
@@ -395,14 +395,14 @@ extern "C" {
     #define bcf_update_info_float(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
     #define bcf_update_info_flag(hdr,line,key,string,n)    bcf_update_info((hdr),(line),(key),(string),(n),BCF_HT_FLAG)
     #define bcf_update_info_string(hdr,line,key,string)    bcf_update_info((hdr),(line),(key),(string),1,BCF_HT_STR)
-    int bcf_update_info(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type);
+    int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type);
 
     // If n==0, existing tag is removed. Otherwise it is updated or appended.
     #define bcf_update_format_int32(hdr,line,key,values,n) bcf_update_format((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf_update_format_float(hdr,line,key,values,n) bcf_update_format((hdr),(line),(key),(values),(n),BCF_HT_REAL)
     #define bcf_update_format_char(hdr,line,key,values,n) bcf_update_format((hdr),(line),(key),(values),(n),BCF_HT_STR)
     #define bcf_update_genotypes(hdr,line,gts,n) bcf_update_format((hdr),(line),"GT",(gts),(n),BCF_HT_INT)     // See bcf_gt_ macros below
-    int bcf_update_format(bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type);
+    int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type);
 
     // Macros for setting genotypes correctly, for use with bcf_update_genotypes only; idx corresponds
     // to VCF's GT (1-based index to ALT or 0 for the reference allele) and val is the opposite, obtained
@@ -457,7 +457,7 @@ extern "C" {
     #define bcf_get_format_int(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
     #define bcf_get_format_float(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)
     #define bcf_get_genotypes(hdr,line,dst,ndst)  bcf_get_format_values(hdr,line,"GT",(void**)(dst),ndst,BCF_HT_STR)
-    int bcf_get_format_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type);
+    int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type);
 
 
 	
@@ -521,7 +521,7 @@ extern "C" {
  
 	#define bcf_itr_destroy(iter) hts_itr_destroy(iter)
 	#define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query((idx), (tid), (beg), (end))
-	#define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_name2id), (hdr))
+	#define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_hdr_name2id), (hdr))
 	#define bcf_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (hts_readrec_f)(bcf_readrec), 0)
 	#define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
 
