@@ -659,7 +659,12 @@ uint8_t *hts_idx_get_meta(hts_idx_t *idx, int *l_meta)
  *** Iterator ***
  ****************/
 
-static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls)
+typedef struct {
+	int n, m;
+	int *a;
+} cand_bins_t;
+
+static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls, cand_bins_t *bins)
 {
 	int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
 	if (beg >= end) return 0;
@@ -667,14 +672,14 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
 	for (--end, l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
 		int b, e, n, i;
 		b = t + (beg>>s); e = t + (end>>s); n = e - b + 1;
-		if (itr->bins.n + n > itr->bins.m) {
-			itr->bins.m = itr->bins.n + n;
-			kroundup32(itr->bins.m);
-			itr->bins.a = (int*)realloc(itr->bins.a, sizeof(int) * itr->bins.m);
+		if (bins->n + n > bins->m) {
+			bins->m = bins->n + n;
+			kroundup32(bins->m);
+			bins->a = (int*)realloc(bins->a, sizeof(int) * bins->m);
 		}
-		for (i = b; i <= e; ++i) itr->bins.a[itr->bins.n++] = i;
+		for (i = b; i <= e; ++i) bins->a[bins->n++] = i;
 	}
-	return itr->bins.n;
+	return bins->n;
 }
 
 hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
@@ -685,6 +690,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 	bidx_t *bidx;
 	uint64_t min_off;
 	hts_itr_t *iter = 0;
+	cand_bins_t bins = {0,0,0};
 
 	if (tid < 0) {
 		uint64_t off0 = (uint64_t)-1;
@@ -731,14 +737,14 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 	if (bin == 0) k = kh_get(bin, bidx, bin);
 	min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
 	// retrieve bins
-	reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
-	for (i = n_off = 0; i < iter->bins.n; ++i)
-		if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
+	reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls, &bins);
+	for (i = n_off = 0; i < bins.n; ++i)
+		if ((k = kh_get(bin, bidx, bins.a[i])) != kh_end(bidx))
 			n_off += kh_value(bidx, k).n;
 	if (n_off == 0) return iter;
 	off = (hts_pair64_t*)calloc(n_off, 16);
-	for (i = n_off = 0; i < iter->bins.n; ++i) {
-		if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
+	for (i = n_off = 0; i < bins.n; ++i) {
+		if ((k = kh_get(bin, bidx, bins.a[i])) != kh_end(bidx)) {
 			int j;
 			hts_bin_t *p = &kh_value(bidx, k);
 			for (j = 0; j < p->n; ++j)
@@ -763,12 +769,13 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 	}
 	n_off = l + 1;
 	iter->n_off = n_off; iter->off = off;
+	free(bins.a);
 	return iter;
 }
 
 void hts_itr_destroy(hts_itr_t *iter)
 {
-	if (iter) { free(iter->off); free(iter->bins.a); free(iter); }
+	if (iter) { free(iter->off); free(iter); }
 }
 
 const char *hts_parse_reg(const char *s, int *beg, int *end)

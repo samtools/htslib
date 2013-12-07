@@ -1,7 +1,7 @@
 #ifndef HTS_H
 #define HTS_H
 
-#define HTS_VERSION "lite-r213"
+#define HTS_VERSION "lite-r219"
 
 #include <stdint.h>
 #include "bgzf.h"
@@ -86,10 +86,6 @@ typedef struct {
 	int tid, beg, end, n_off, i;
 	uint64_t curr_off;
 	hts_pair64_t *off;
-	struct {
-		int n, m;
-		int *a;
-	} bins;
 } hts_itr_t;
 
 #ifdef __cplusplus
