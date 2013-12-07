@@ -149,14 +149,8 @@ char **hts_readlines(const char *fn, int *_n)
 #include "ksort.h"
 KSORT_INIT(_off, hts_pair64_t, pair64_lt)
 
-typedef struct {
-	int32_t m, n;
-	uint64_t loff;
-	hts_pair64_t *list;
-} bins_t;
-
 #include "khash.h"
-KHASH_MAP_INIT_INT(bin, bins_t)
+KHASH_MAP_INIT_INT(bin, hts_bin_t)
 typedef khash_t(bin) bidx_t;
 
 typedef struct {
@@ -181,10 +175,16 @@ struct __hts_idx_t {
 	} z; // keep internal states
 };
 
+
+void *hts_idx_get_bidx(hts_idx_t *idx, int tid)
+{
+	return tid < idx->n? idx->bidx[tid] : 0;
+}
+
 static inline void insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
 {
 	khint_t k;
-	bins_t *l;
+	hts_bin_t *l;
 	int absent;
 	k = kh_put(bin, b, bin, &absent);
 	l = &kh_value(b, k);
@@ -278,7 +278,7 @@ static void compress_binning(hts_idx_t *idx, int i)
 	for (l = idx->n_lvls; l > 0; --l) {
 		unsigned start = hts_bin_first(l);
 		for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
-			bins_t *p, *q;
+			hts_bin_t *p, *q;
 			if (!kh_exist(bidx, k) || kh_key(bidx, k) >= idx->n_bins || kh_key(bidx, k) < start) continue;
 			p = &kh_value(bidx, k);
 			if (l < idx->n_lvls && p->n > 1) ks_introsort(_off, p->n, p->list);
@@ -303,7 +303,7 @@ static void compress_binning(hts_idx_t *idx, int i)
 	if (k != kh_end(bidx)) ks_introsort(_off, kh_val(bidx, k).n, kh_val(bidx, k).list);
 	// merge adjacent chunks that start from the same BGZF block
 	for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
-		bins_t *p;
+		hts_bin_t *p;
 		if (!kh_exist(bidx, k) || kh_key(bidx, k) >= idx->n_bins) continue;
 		p = &kh_value(bidx, k);
 		for (l = 1, m = 0; l < p->n; ++l) {
@@ -405,7 +405,11 @@ void hts_idx_destroy(hts_idx_t *idx)
 static inline long idx_read(int is_bgzf, void *fp, void *buf, long l)
 {
 	if (is_bgzf) return bgzf_read((BGZF*)fp, buf, l);
+#ifdef _USE_KURL
+	else return (long)kurl_read((kurl_t*)fp, buf, l);
+#else
 	else return (long)fread(buf, 1, l, (FILE*)fp);
+#endif
 }
 
 static inline long idx_write(int is_bgzf, void *fp, const void *buf, long l)
@@ -414,7 +418,7 @@ static inline long idx_write(int is_bgzf, void *fp, const void *buf, long l)
 	else return (long)fwrite(buf, 1, l, (FILE*)fp);
 }
 
-static inline void swap_bins(bins_t *p)
+static inline void swap_bins(hts_bin_t *p)
 {
 	int i;
 	for (i = 0; i < p->n; ++i) {
@@ -445,7 +449,7 @@ static void hts_idx_save_core(const hts_idx_t *idx, void *fp, int fmt)
 		} else idx_write(is_bgzf, fp, &size, 4);
 		if (bidx == 0) goto write_lidx;
 		for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
-			bins_t *p;
+			hts_bin_t *p;
 			if (!kh_exist(bidx, k)) continue;
 			p = &kh_value(bidx, k);
 			if (is_be) { // big endian
@@ -533,7 +537,7 @@ static void hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
 		lidx_t *l = &idx->lidx[i];
 		uint32_t key;
 		int j, absent;
-		bins_t *p;
+		hts_bin_t *p;
 		h = idx->bidx[i] = kh_init(bin);
 		idx_read(is_bgzf, fp, &n, 4);
 		if (is_be) ed_swap_4p(&n);
@@ -571,7 +575,7 @@ static void hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
 	if (is_be) ed_swap_8p(&idx->n_no_coor);
 }
 
-hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
+hts_idx_t *hts_idx_load_direct(const char *fn, int fmt)
 {
 	uint8_t magic[4];
 	int i, is_be;
@@ -612,14 +616,25 @@ hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
 		bgzf_close(fp);
 	} else if (fmt == HTS_FMT_BAI) {
 		uint32_t n;
+#ifdef _USE_KURL
+		kurl_t *fp;
+		if ((fp = kurl_open(fn, 0)) == 0) return 0;
+		kurl_read(fp, magic, 4);
+		kurl_read(fp, &n, 4);
+#else
 		FILE *fp;
 		if ((fp = fopen(fn, "rb")) == 0) return 0;
 		fread(magic, 1, 4, fp);
 		fread(&n, 4, 1, fp);
+#endif
 		if (is_be) ed_swap_4p(&n);
 		idx = hts_idx_init(n, fmt, 0, 14, 5);
 		hts_idx_load_core(idx, fp, HTS_FMT_BAI);
+#ifdef _USE_KURL
+		kurl_close(fp);
+#else
 		fclose(fp);
+#endif
 	} else abort();
 	return idx;
 }
@@ -725,7 +740,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 	for (i = n_off = 0; i < iter->bins.n; ++i) {
 		if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
 			int j;
-			bins_t *p = &kh_value(bidx, k);
+			hts_bin_t *p = &kh_value(bidx, k);
 			for (j = 0; j < p->n; ++j)
 				if (p->list[j].v > min_off) off[n_off++] = p->list[j];
 		}
@@ -911,7 +926,7 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt)
 	if (fnidx) fmt = HTS_FMT_CSI;
 	else fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
 	if (fnidx == 0) return 0;
-	idx = hts_idx_load_local(fnidx, fmt);
+	idx = hts_idx_load_direct(fnidx, fmt);
 	free(fnidx);
 	return idx;
 }

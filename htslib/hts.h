@@ -1,7 +1,7 @@
 #ifndef HTS_H
 #define HTS_H
 
-#define HTS_VERSION "lite-r217"
+#define HTS_VERSION "lite-r213"
 
 #include <stdint.h>
 #include "bgzf.h"
@@ -76,6 +76,12 @@ typedef struct {
 } hts_pair64_t;
 
 typedef struct {
+	int32_t m, n;
+	uint64_t loff;
+	hts_pair64_t *list;
+} hts_bin_t;
+
+typedef struct {
 	uint32_t read_rest:1, finished:1, dummy:29;
 	int tid, beg, end, n_off, i;
 	uint64_t curr_off;
@@ -99,7 +105,8 @@ extern "C" {
 	void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
 
 	void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt);
-	hts_idx_t *hts_idx_load(const char *fn, int fmt);
+	hts_idx_t *hts_idx_load(const char *fn, int fmt); // download the index if remote
+	hts_idx_t *hts_idx_load_direct(const char *fn, int fmt); // directly load the remote index
 
 	uint8_t *hts_idx_get_meta(hts_idx_t *idx, int *l_meta);
 	void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy);
