@@ -671,7 +671,7 @@ bcf1_t *bcf_init1()
 	return v;
 }
 
-void bcf_clear1(bcf1_t *v)
+void bcf_clear(bcf1_t *v)
 {
     int i;
     for (i=0; i<v->d.m_info; i++) 
