@@ -72,10 +72,10 @@ typedef struct {
 } bcf_idpair_t;
 
 typedef struct {
-	int32_t l_text, n[3];
+	int32_t n[3];
 	bcf_idpair_t *id[3];
 	void *dict[3]; // ID dictionary, contig dict and sample dict
-	char *text, **samples;
+	char **samples;
     bcf_hrec_t **hrec;
     int nhrec;
 	kstring_t mem;
@@ -313,12 +313,22 @@ extern "C" {
     /** Read VCF header from a file and update the header */
     int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname);
 
+    /** Returns formatted header (newly allocated string) and its length,
+     *  excluding the terminating \0. If is_bcf parameter is unset, IDX
+     *  fields are discarded.
+     */
+    char *bcf_hdr_fmt_text(const bcf_hdr_t *hdr, int is_bcf, int *len);
+
     /** Append new VCF header line, returns 0 on success */
     int bcf_hdr_append(bcf_hdr_t *h, const char *line);
     int bcf_hdr_printf(bcf_hdr_t *h, const char *format, ...);
 
-    /** Make the header ready for output, required if bcf_hdr_append was called */
-    void bcf_hdr_fmt_text(bcf_hdr_t *hdr);
+    /** 
+     *  bcf_hdr_remove() - remove VCF header tag
+     *  @param type:      one of BCF_HL_*
+     *  @param key:       tag name
+     */
+    void bcf_hdr_remove(bcf_hdr_t *h, int type, const char *key);
 
     /**
      *  bcf_hdr_subset() - creates a new copy of the header removing unwanted samples 

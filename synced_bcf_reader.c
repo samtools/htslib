@@ -685,7 +685,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
     }
     if ( !strcmp(fname,"-") )   // Intersection of all samples across all readers
     {
-        int n = files->readers[0].header->n[BCF_DT_SAMPLE];
+        int n = bcf_hdr_nsamples(files->readers[0].header);
         char **smpl = files->readers[0].header->samples;
         int ism;
         for (ism=0; ism<n; ism++)

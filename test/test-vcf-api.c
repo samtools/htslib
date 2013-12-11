@@ -12,9 +12,14 @@ void write_bcf(char *fname)
 
     // Create VCF header
     kstring_t str = {0,0,0};
-    kputs("##contig=<ID=20,length=63025520>", &str);
-    bcf_hdr_append(hdr, str.s);
     bcf_hdr_append(hdr, "##fileDate=20090805");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=UF,Number=1,Type=Integer,Description=\"Unused FORMAT\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=UI,Number=1,Type=Integer,Description=\"Unused INFO\">");
+    bcf_hdr_append(hdr, "##FILTER=<ID=Flt,Description=\"Unused FILTER\">");
+    bcf_hdr_append(hdr, "##unused=<XX=AA,Description=\"Unused generic\">");
+    bcf_hdr_append(hdr, "##unused=unformatted text 1");
+    bcf_hdr_append(hdr, "##unused=unformatted text 2");
+    bcf_hdr_append(hdr, "##contig=<ID=Unused,length=62435964>");
     bcf_hdr_append(hdr, "##source=myImputationProgramV3.1");
     bcf_hdr_append(hdr, "##reference=file:///seq/references/1000GenomesPilot-NCBI36.fasta");
     bcf_hdr_append(hdr, "##contig=<ID=20,length=62435964,assembly=B36,md5=f126cdf8a6e0c7f379d618ff66beb2da,species=\"Homo sapiens\",taxonomy=x>");
@@ -35,8 +40,6 @@ void write_bcf(char *fname)
     bcf_hdr_add_sample(hdr, "NA00001");
     bcf_hdr_add_sample(hdr, "NA00002");
     bcf_hdr_add_sample(hdr, "NA00003");
-
-    bcf_hdr_fmt_text(hdr);
     bcf_hdr_write(fp, hdr);
 
 
@@ -132,14 +135,23 @@ void bcf_to_vcf(char *fname)
     bcf1_t *rec    = bcf_init1();
     htsFile *out   = hts_open("-","w");
 
-    bcf_hdr_write(out, hdr);
+    bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr);
+    bcf_hdr_remove(hdr_out,BCF_HL_STR,"unused");
+    bcf_hdr_remove(hdr_out,BCF_HL_GEN,"unused");
+    bcf_hdr_remove(hdr_out,BCF_HL_FLT,"Flt");
+    bcf_hdr_remove(hdr_out,BCF_HL_INFO,"UI");
+    bcf_hdr_remove(hdr_out,BCF_HL_FMT,"UF");
+    bcf_hdr_remove(hdr_out,BCF_HL_CTG,"Unused");
+    bcf_hdr_write(out, hdr_out);
+
     while ( bcf_read1(fp, hdr, rec)>=0 )
     {
-        bcf_write1(out, hdr, rec);
+        bcf_write1(out, hdr_out, rec);
     }
     
     bcf_destroy1(rec);
     bcf_hdr_destroy(hdr);
+    bcf_hdr_destroy(hdr_out);
     hts_close(fp);
     hts_close(out);
 }
