@@ -516,7 +516,6 @@ void bcf_hdr_remove(bcf_hdr_t *hdr, int type, const char *key)
 {
     int i;
     bcf_hrec_t *hrec;
-
     while (1)
     {
         if ( type==BCF_HL_FLT || type==BCF_HL_INFO || type==BCF_HL_FMT || type== BCF_HL_CTG )
@@ -1679,36 +1678,47 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 				else kputc(z->v1.i, s);
 			} else bcf_fmt_array(s, z->len, z->type, z->vptr);
 		}
+        if ( first ) kputc('.', s);
 	} else kputc('.', s);
 	// FORMAT and individual information
-	if (v->n_sample && v->n_fmt) { // FORMAT
-		int i, j, gt_i = -1;
-		bcf_fmt_t *fmt = v->d.fmt;
-        int first = 1;
-		for (i = 0; i < (int)v->n_fmt; ++i) {
-            if ( !fmt[i].p ) continue;
-			kputc(!first ? ':' : '\t', s); first = 0;
-            if ( fmt[i].id<0 ) //!bcf_hdr_idinfo_exists(h,BCF_HL_FMT,fmt[i].id) ) 
-            {
-                fprintf(stderr, "[E::%s] invalid BCF, the FORMAT tag id=%d not present in the header.\n", __func__, fmt[i].id);
-                abort();
+	if (v->n_sample)
+    {
+        int i,j;
+        if ( v->n_fmt) 
+        {
+            int gt_i = -1;
+            bcf_fmt_t *fmt = v->d.fmt;
+            int first = 1;
+            for (i = 0; i < (int)v->n_fmt; ++i) {
+                if ( !fmt[i].p ) continue;
+                kputc(!first ? ':' : '\t', s); first = 0;
+                if ( fmt[i].id<0 ) //!bcf_hdr_idinfo_exists(h,BCF_HL_FMT,fmt[i].id) ) 
+                {
+                    fprintf(stderr, "[E::%s] invalid BCF, the FORMAT tag id=%d not present in the header.\n", __func__, fmt[i].id);
+                    abort();
+                }
+                kputs(h->id[BCF_DT_ID][fmt[i].id].key, s);
+                if (strcmp(h->id[BCF_DT_ID][fmt[i].id].key, "GT") == 0) gt_i = i;
             }
-			kputs(h->id[BCF_DT_ID][fmt[i].id].key, s);
-			if (strcmp(h->id[BCF_DT_ID][fmt[i].id].key, "GT") == 0) gt_i = i;
-		}
-		for (j = 0; j < v->n_sample; ++j) {
-			kputc('\t', s);
-            first = 1;
-			for (i = 0; i < (int)v->n_fmt; ++i) {
-				bcf_fmt_t *f = &fmt[i];
-                if ( !f->p ) continue;
-				if (!first) kputc(':', s); first = 0;
-                if (gt_i == i)
-                    bcf_format_gt(f,j,s);
-                else
-                    bcf_fmt_array(s, f->n, f->type, f->p + j * f->size);
-			}
-		}
+            if ( first ) kputs("\t.", s);
+            for (j = 0; j < v->n_sample; ++j) {
+                kputc('\t', s);
+                first = 1;
+                for (i = 0; i < (int)v->n_fmt; ++i) {
+                    bcf_fmt_t *f = &fmt[i];
+                    if ( !f->p ) continue;
+                    if (!first) kputc(':', s); first = 0;
+                    if (gt_i == i)
+                        bcf_format_gt(f,j,s);
+                    else
+                        bcf_fmt_array(s, f->n, f->type, f->p + j * f->size);
+                }
+                if ( first ) kputc('.', s);
+            }
+        }
+        else
+            for (j=0; j<=v->n_sample; j++)
+                kputs("\t.", s);
 	}
     kputc('\n', s);
 	return 0;
