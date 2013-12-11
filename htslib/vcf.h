@@ -568,8 +568,14 @@ extern "C" {
 #define bcf_str_missing      0x07
 extern uint32_t bcf_float_vector_end;
 extern uint32_t bcf_float_missing;
-#define bcf_float_set_vector_end(x) (*(uint32_t*)(&(x)) = bcf_float_vector_end)
-#define bcf_float_set_missing(x) (*(uint32_t*)(&(x)) = bcf_float_missing)
+static inline void bcf_float_set(float *ptr, uint32_t value)
+{
+    union { uint32_t i; float f; } u;
+    u.i = value;
+    *ptr = u.f;
+}
+#define bcf_float_set_vector_end(x) bcf_float_set(&(x),bcf_float_vector_end)
+#define bcf_float_set_missing(x)    bcf_float_set(&(x),bcf_float_missing)
 static inline int bcf_float_is_missing(float f)
 {
     union { uint32_t i; float f; } u;

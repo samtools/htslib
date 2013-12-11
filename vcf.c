@@ -692,7 +692,7 @@ void bcf_clear(bcf1_t *v)
     }
 	v->rid = v->pos = v->rlen = v->unpacked = 0;
     v->unpack_ptr = NULL;
-	v->qual = 0;
+	bcf_float_set_missing(v->qual);
 	v->n_info = v->n_allele = v->n_fmt = v->n_sample = 0;
 	v->shared.l = v->indiv.l = 0;
     v->d.var_type = -1;
