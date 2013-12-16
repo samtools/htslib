@@ -2164,7 +2164,8 @@ cram_container *cram_read_container(cram_fd *fd) {
 
     *c = c2;
 
-    if (!(c->landmark = malloc(c->num_landmarks * sizeof(int32_t)))) {
+    if (!(c->landmark = malloc(c->num_landmarks * sizeof(int32_t))) &&
+	c->num_landmarks) {
 	fd->err = errno;
 	cram_free_container(c);
 	return NULL;
