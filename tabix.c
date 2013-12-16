@@ -97,12 +97,13 @@ int reheader_file(const char *header, const char *file, int meta)
 
 int main(int argc, char *argv[])
 {
-	int c, skip = -1, meta = -1, list_chrms = 0, force = 0, print_header = 0, print_only_header = 0, bed_reg = 0;
+	int c, skip = -1, meta = -1, list_chrms = 0, force = 0, print_header = 0, print_only_header = 0, bed_reg = 0, bed_comp = 0;
 	ti_conf_t conf = ti_conf_gff, *conf_ptr = NULL;
     const char *reheader = NULL;
-	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lhHfBr:")) >= 0) {
+	while ((c = getopt(argc, argv, "p:s:b:e:0S:c:lhHfCBr:")) >= 0) {
 		switch (c) {
 		case 'B': bed_reg = 1; break;
+		case 'C': bed_comp = bed_reg = 1; break;
 		case '0': conf.preset |= TI_FLAG_UCSC; break;
 		case 'S': skip = atoi(optarg); break;
 		case 'c': meta = optarg[0]; break;
@@ -308,10 +309,11 @@ int main(int argc, char *argv[])
 				}
 				iter = ti_query(t, 0, 0, 0);
 				while ((s = ti_read(t, iter, &len)) != 0) {
-					int c;
+					int c, is_ovlp;
 					ti_get_intv(conf_, len, (char*)s, &intv);
 					c = *intv.se; *intv.se = '\0';
-					if (bed_overlap(bed, intv.ss, intv.beg, intv.end)) {
+					is_ovlp = bed_overlap(bed, intv.ss, intv.beg, intv.end);
+					if ((!bed_comp && is_ovlp) || (bed_comp && !is_ovlp)) { // or (bed_comp ^ is_ovlp)
 						*intv.se = c;
 						puts(s);
 					}
