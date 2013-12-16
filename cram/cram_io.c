@@ -1087,6 +1087,7 @@ static refs_t *refs_create(void) {
     r->ref_id = NULL; // see refs2id() to populate.
     r->count = 1;
     r->last = NULL;
+    r->last_id = -1;
 
     if (!(r->h_meta = kh_init(refs)))
 	goto err;
@@ -1554,6 +1555,9 @@ static void cram_ref_incr_locked(refs_t *r, int id) {
     if (id < 0 || !r->ref_id[id]->seq)
 	return;
 
+    if (r->last_id == id)
+	r->last_id = -1;
+
     ++r->ref_id[id]->count;
 }
 
@@ -1573,11 +1577,18 @@ static void cram_ref_decr_locked(refs_t *r, int id) {
 
     if (--r->ref_id[id]->count <= 0) {
 	assert(r->ref_id[id]->count == 0);
-	RP("%d FREE REF %d (%p)\n", gettid(), id, r->ref_id[id]->seq);
-	if (r->ref_id[id]->seq) {
-	    free(r->ref_id[id]->seq);
-	    r->ref_id[id]->seq = NULL;
-	    r->ref_id[id]->length = 0;
+	if (r->last_id >= 0) {
+	    if (r->ref_id[r->last_id]->count <= 0 &&
+		r->ref_id[r->last_id]->seq) {
+		RP("%d FREE REF %d (%p)\n", gettid(),
+		   r->last_id, r->ref_id[r->last_id]->seq);
+		free(r->ref_id[r->last_id]->seq);
+		r->ref_id[r->last_id]->seq = NULL;
+		r->ref_id[r->last_id]->length = 0;
+	    }
+	    r->last_id = -1;
+	} else {
+	    r->last_id = id;
 	}
     }
 }
