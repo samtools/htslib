@@ -1940,6 +1940,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 			 c->ref_seq_id == -1 &&
 			 c->ref_seq_start == 0x454f46 /* EOF */) ? 1 : 0;
 		} while (c->length == 0);
+		if (fd->ooc)
+		    break;
 
 		/* Skip containers not yet spanning our range */
 		if (fd->range.refid != -2) {
