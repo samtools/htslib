@@ -1466,13 +1466,9 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     /* Otherwise search */
     if ((mf = open_path_mfile(tag->str+3, ref_path, NULL))) {
-	mfseek(mf, 0, SEEK_END);
-	r->length = mftell(mf);
-	r->seq = malloc(r->length);
-	mrewind(mf);
-	mfread(r->seq, 1, r->length, mf);
-	mfclose(mf);
-
+	size_t sz;
+	r->seq = mfsteal(mf, &sz);
+	r->length = sz;
     } else {
 	refs_t *refs;
 	char *fn;

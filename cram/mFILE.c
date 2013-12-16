@@ -344,6 +344,29 @@ int mfdestroy(mFILE *mf) {
 }
 
 /*
+ * Steals that data out of an mFILE.  The mFILE itself will be closed.
+ * It is up to the caller to free the stolen buffer.  If size_out is
+ * not NULL, mf->size will be stored in it.
+ * This is more-or-less the opposite of mfcreate().
+ */
+
+void *mfsteal(mFILE *mf, size_t *size_out) {
+    void *data;
+
+    if (!mf) return NULL;
+
+    data = mf->data;
+    
+    if (NULL != size_out) *size_out = mf->size;
+
+    mfdetach(mf);
+    mf->data = NULL;
+    mfdestroy(mf);
+
+    return data;
+}
+
+/*
  * Seek/tell functions. Nothing more than updating and reporting an
  * in-memory index. NB we can seek on stdin or stdout even provided we
  * haven't been flushing.
