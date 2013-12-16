@@ -862,7 +862,7 @@ static int cram_compress_block_bzip2(cram_fd *fd, cram_block *b,
  */
 int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 			int level,  int strat,
-			 int level2, int strat2) {
+			int level2, int strat2) {
     char *comp = NULL;
     size_t comp_size = 0;
 
@@ -890,7 +890,7 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 		    metrics->trial, metrics->next_trial,
 		    metrics->m1, metrics->m2);
 
-    if (strat2 >= 0 && (metrics->trial || --metrics->next_trial == 0)) {
+    if (strat2 >= 0 && (metrics->trial > 0 || --metrics->next_trial <= 0)) {
 	char *c1, *c2;
 	size_t s1, s2;
 
@@ -1087,6 +1087,7 @@ static refs_t *refs_create(void) {
     r->ref_id = NULL; // see refs2id() to populate.
     r->count = 1;
     r->last = NULL;
+    r->last_id = -1;
 
     if (!(r->h_meta = kh_init(refs)))
 	goto err;
@@ -1465,13 +1466,9 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     /* Otherwise search */
     if ((mf = open_path_mfile(tag->str+3, ref_path, NULL))) {
-	mfseek(mf, 0, SEEK_END);
-	r->length = mftell(mf);
-	r->seq = malloc(r->length);
-	mrewind(mf);
-	mfread(r->seq, 1, r->length, mf);
-	mfclose(mf);
-
+	size_t sz;
+	r->seq = mfsteal(mf, &sz);
+	r->length = sz;
     } else {
 	refs_t *refs;
 	char *fn;
@@ -1554,6 +1551,9 @@ static void cram_ref_incr_locked(refs_t *r, int id) {
     if (id < 0 || !r->ref_id[id]->seq)
 	return;
 
+    if (r->last_id == id)
+	r->last_id = -1;
+
     ++r->ref_id[id]->count;
 }
 
@@ -1573,11 +1573,18 @@ static void cram_ref_decr_locked(refs_t *r, int id) {
 
     if (--r->ref_id[id]->count <= 0) {
 	assert(r->ref_id[id]->count == 0);
-	RP("%d FREE REF %d (%p)\n", gettid(), id, r->ref_id[id]->seq);
-	if (r->ref_id[id]->seq) {
-	    free(r->ref_id[id]->seq);
-	    r->ref_id[id]->seq = NULL;
-	    r->ref_id[id]->length = 0;
+	if (r->last_id >= 0) {
+	    if (r->ref_id[r->last_id]->count <= 0 &&
+		r->ref_id[r->last_id]->seq) {
+		RP("%d FREE REF %d (%p)\n", gettid(),
+		   r->last_id, r->ref_id[r->last_id]->seq);
+		free(r->ref_id[r->last_id]->seq);
+		r->ref_id[r->last_id]->seq = NULL;
+		r->ref_id[r->last_id]->length = 0;
+	    }
+	    r->last_id = -1;
+	} else {
+	    r->last_id = id;
 	}
     }
 }
@@ -2164,7 +2171,8 @@ cram_container *cram_read_container(cram_fd *fd) {
 
     *c = c2;
 
-    if (!(c->landmark = malloc(c->num_landmarks * sizeof(int32_t)))) {
+    if (!(c->landmark = malloc(c->num_landmarks * sizeof(int32_t))) &&
+	c->num_landmarks) {
 	fd->err = errno;
 	cram_free_container(c);
 	return NULL;
@@ -3384,7 +3392,6 @@ int cram_close(cram_fd *fd) {
     spare_bams *bl, *next;
     int i;
 	
-
     if (!fd)
 	return -1;
 

@@ -574,6 +574,7 @@ typedef struct {
 
     pthread_mutex_t lock;  // Mutex for multi-threaded updating
     ref_entry *last;       // Last queried sequence
+    int last_id;           // Used in cram_ref_decr_locked to delay free
 } refs_t;
 
 /*-----------------------------------------------------------------------------

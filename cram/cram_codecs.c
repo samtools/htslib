@@ -452,7 +452,10 @@ cram_codec *cram_external_decode_init(char *data, int size,
 
 int cram_external_encode(cram_slice *slice, cram_codec *c,
 			cram_block *out, char *in, int in_size) {
-    return -1; // not imp.
+    uint32_t *i32 = (uint32_t *)in;
+
+    itf8_put_blk(out, *i32);
+    return 0;
 }
 
 void cram_external_encode_free(cram_codec *c) {
