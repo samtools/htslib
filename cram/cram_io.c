@@ -3400,6 +3400,18 @@ int cram_close(cram_fd *fd) {
 	    fd->ctr->curr_slice++;
 	if (-1 == cram_flush_container_mt(fd, fd->ctr))
 	    return -1;
+	
+	/* Write EOF block */
+	if (30 != hwrite(fd->fp, "\x0b\x00\x00\x00\xff\xff\xff\xff"
+			 "\xff\xe0\x45\x4f\x46\x00\x00\x00"
+			 "\x00\x01\x00\x00\x01\x00\x06\x06"
+			 "\x01\x00\x01\x00\x01\x00", 30))
+	    return -1;
+
+//	if (1 != fwrite("\x00\x00\x00\x00\xff\xff\xff\xff"
+//			"\xff\xe0\x45\x4f\x46\x00\x00\x00"
+//			"\x00\x00\x00", 19, 1, fd->fp))
+//	    return -1;
     }
 
     if (fd->pool) {

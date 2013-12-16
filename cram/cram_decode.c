@@ -1857,6 +1857,11 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	do {
 	    if (!(c = fd->ctr = cram_read_container(fd)))
 		return NULL;
+
+	    fd->empty_container =
+		(c->length == 0 &&
+		 c->ref_seq_id == -1 &&
+		 c->ref_seq_start == 0x454f46 /* EOF */) ? 1 : 0;
 	} while (c->length == 0);
 
 	/*
@@ -1870,8 +1875,15 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		if (0 != cram_seek(fd, c->length, SEEK_CUR))
 		    return NULL;
 		cram_free_container(fd->ctr);
-		if (!(c = fd->ctr = cram_read_container(fd)))
-		    return NULL;
+		do {
+		    if (!(c = fd->ctr = cram_read_container(fd)))
+			return NULL;
+
+		    fd->empty_container =
+			(c->length == 0 &&
+			 c->ref_seq_id == -1 &&
+			 c->ref_seq_start == 0x454f46 /* EOF */) ? 1 : 0;
+		} while (c->length == 0);
 	    }
 
 	    if (c->ref_seq_id != fd->range.refid)
@@ -1910,16 +1922,24 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	    free(fd->job_pending);
 	    fd->job_pending = NULL;
 	} else if (!fd->ooc) {
+	empty_container:
 	    if (!c || c->curr_slice == c->max_slice) {
 		// new container
-		if (!(c = fd->ctr = cram_read_container(fd))) {
-		    if (fd->pool) {
-			fd->ooc = 1;
-			break;
+		do {
+		    if (!(c = fd->ctr = cram_read_container(fd))) {
+			if (fd->pool) {
+			    fd->ooc = 1;
+			    break;
+			}
+
+			return NULL;
 		    }
 
-		    return NULL;
-		}
+		    fd->empty_container =
+			(c->length == 0 &&
+			 c->ref_seq_id == -1 &&
+			 c->ref_seq_start == 0x454f46 /* EOF */) ? 1 : 0;
+		} while (c->length == 0);
 
 		/* Skip containers not yet spanning our range */
 		if (fd->range.refid != -2) {
@@ -1949,8 +1969,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		if (c->comp_hdr_block->content_type != COMPRESSION_HEADER)
 		    return NULL;
 
-		c->comp_hdr = cram_decode_compression_header(fd,
-							     c->comp_hdr_block);
+		c->comp_hdr =
+		    cram_decode_compression_header(fd, c->comp_hdr_block);
 		if (!c->comp_hdr)
 		    return NULL;
 
@@ -1960,6 +1980,14 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		    pthread_mutex_unlock(&fd->ref_lock);
 		}
 	    }
+
+	    fd->empty_container =
+		(c->num_records == 0 &&
+		 c->ref_seq_id == -1 &&
+		 c->ref_seq_start == 0x454f46 /* EOF */) ? 1 : 0;
+
+	    if (c->num_records == 0)
+		goto empty_container;
 
 	    if (!(s = c->slice = cram_read_slice(fd)))
 		return NULL;
