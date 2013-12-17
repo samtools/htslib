@@ -1854,8 +1854,10 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 
     if (!(c = fd->ctr)) {
 	// Load first container.
-	if (!(c = fd->ctr = cram_read_container(fd)))
-	    return NULL;
+	do {
+	    if (!(c = fd->ctr = cram_read_container(fd)))
+		return NULL;
+	} while (c->length == 0);
 
 	/*
 	 * The first container may be a result of a sub-range query.
