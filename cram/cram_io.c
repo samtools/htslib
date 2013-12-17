@@ -2131,14 +2131,14 @@ cram_container *cram_read_container(cram_fd *fd) {
     memset(&c2, 0, sizeof(c2));
     if (fd->version == CRAM_1_VERS) {
 	if ((s = itf8_decode(fd, &c2.length)) == -1) {
-	    fd->eof = 1;
+	    fd->eof = fd->empty_container ? 1 : 2;
 	    return NULL;
 	} else {
 	    rd+=s;
 	}
     } else {
 	if ((s = int32_decode(fd, &c2.length)) == -1) {
-	    fd->eof = 1;
+	    fd->eof = fd->empty_container ? 1 : 2;
 	    return NULL;
 	} else {
 	    rd+=s;

@@ -475,7 +475,9 @@ int cram_flush(cram_fd *fd);
 /*! Checks for end of file on a cram_fd stream.
  *
  * @return
- * Returns 1 if we hit an EOF while reading.
+ * Returns 0 if not at end of file
+ *         1 if we hit an expected EOF (end of range or EOF block)
+ *         2 for other EOF (end of stream without EOF block)
  */
 int cram_eof(cram_fd *fd);
 
@@ -514,14 +516,6 @@ int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args);
  */
 int cram_set_header(cram_fd *fd, SAM_hdr *hdr);
 
-
-/*!
- * Checks whether a CRAM file has an EOF block.
- * Returns 1 if so,
- *         0 if not
- */
-static inline int cram_has_eof_block(cram_fd *fd) {return fd->empty_container;}
-/**@}*/
 
 #ifdef __cplusplus
 }
