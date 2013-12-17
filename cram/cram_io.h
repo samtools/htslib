@@ -514,6 +514,13 @@ int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args);
  */
 int cram_set_header(cram_fd *fd, SAM_hdr *hdr);
 
+
+/*!
+ * Checks whether a CRAM file has an EOF block.
+ * Returns 1 if so,
+ *         0 if not
+ */
+static inline int cram_has_eof_block(cram_fd *fd) {return fd->empty_container;}
 /**@}*/
 
 #ifdef __cplusplus
