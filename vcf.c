@@ -583,7 +583,7 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
 		h->dict[i] = kh_init(vdict);
     if ( strchr(mode,'w') )
     {
-        bcf_hdr_append(h, "##fileformat=VCFv4.1");
+        bcf_hdr_append(h, "##fileformat=VCFv4.2");
         // The filter PASS must appear first in the dictionary
         bcf_hdr_append(h, "##FILTER=<ID=PASS,Description=\"All filters passed\">");
     }
