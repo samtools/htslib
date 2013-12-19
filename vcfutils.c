@@ -230,17 +230,21 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
         }
     }
 
-    int nG_ori = line->n_allele*(line->n_allele + 1)/2;
-    int nG_new = (line->n_allele - nrm)*(line->n_allele - nrm + 1)/2;
-    int nA_ori = line->n_allele - 1;
-    int nA_new = line->n_allele-nrm - 1;
+    int nR_ori = line->n_allele;
+    int nR_new = line->n_allele-nrm;
+    assert(nR_new > 0); // should not be able to remove reference allele
+    int nA_ori = nR_ori-1;
+    int nA_new = nR_new-1;
 
-    // remove from Number=G and Number=A FORMAT fields. Assuming haploid or diploid GTs
+    int nG_ori = nR_ori*(nR_ori + 1)/2;
+    int nG_new = nR_new*(nR_new + 1)/2;
+
+    // remove from Number=G, Number=R and Number=A FORMAT fields. Assuming haploid or diploid GTs
     for (i=0; i<(int)line->n_fmt; i++)
     {
         bcf_fmt_t *fmt = &line->d.fmt[i];
 
-        if ( ((header->id[BCF_DT_ID][fmt->id].val->info[BCF_HL_FMT]>>8)&0xf) == BCF_VL_G ) // FORMAT/Number==G
+        if (bcf_hdr_id2length(header,BCF_HL_FMT,fmt->id) == BCF_VL_G) // FORMAT/Number==G
         {
             if (fmt->type==BCF_BT_CHAR) { continue; } // todo: support for strings
             assert( fmt->n==nG_ori || fmt->n==line->n_allele ); // diploid or haploid
@@ -289,7 +293,46 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
 
             fmt->n = nG_new;
         }
-        else if ( ((header->id[BCF_DT_ID][fmt->id].val->info[BCF_HL_FMT]>>8)&0xf) == BCF_VL_A )  // FORMAT/Number==A
+        else if (bcf_hdr_id2length(header,BCF_HL_FMT,fmt->id) == BCF_VL_R) // FORMAT/Number==R
+        {
+            if (fmt->type==BCF_BT_CHAR) { continue; } // todo: support for strings
+            assert( fmt->n==nR_ori );
+            
+            #define BRANCH_INT(type_t,missing) {         \
+                type_t *p = (type_t *) fmt->p;  \
+                int ia, j, k; \
+                for (j=0; j<line->n_sample; j++) \
+                { \
+                    for (ia=0, k=0; ia<line->n_allele; ia++) \
+                    {                                \
+                        if ( rm_mask & 1<<(ia+1) ) \
+                        { \
+                            p[ia] = missing; \
+                            continue; \
+                        } \
+                        if ( p[k] != missing ) \
+                        { \
+                            k++; \
+                            continue; \
+                        } \
+                        p[k] = p[ia]; \
+                        p[ia] = missing; \
+                        k++; \
+                    } \
+                    p += fmt->n; \
+                } \
+            }
+            switch (fmt->type) {
+                case BCF_BT_INT8:  BRANCH_INT(int8_t,INT8_MIN); break;
+                case BCF_BT_INT16: BRANCH_INT(int16_t,INT16_MIN); break;
+                case BCF_BT_INT32: BRANCH_INT(int32_t,INT32_MIN); break;
+                case BCF_BT_FLOAT: BRANCH_INT(float,bcf_float_missing); break;
+                default: fprintf(stderr, "[E::%s] todo: %d\n", __func__, fmt->type); exit(1); break;
+            }
+            #undef BRANCH_INT
+            fmt->n = nR_new;
+        }
+        else if (bcf_hdr_id2length(header,BCF_HL_FMT,fmt->id) == BCF_VL_A) // FORMAT/Number==A
         {
             if (fmt->type==BCF_BT_CHAR) { continue; } // todo: support for strings
             assert( fmt->n==nA_ori );
@@ -343,12 +386,12 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
             fmt->n = nA_new;
         }
     }
-    // remove from Number=G and Number=A INFO fields.
+    // remove from Number=G, Number=R and Number=A INFO fields.
     for (i=0; i<(int)line->n_info; i++)
     {
         bcf_info_t *info = &line->d.info[i];
         
-        if ( ((header->id[BCF_DT_ID][info->key].val->info[BCF_HL_INFO]>>8)&0xf) == BCF_VL_G ) // INFO/Number==G
+        if (bcf_hdr_id2length(header,BCF_HL_INFO,info->key) == BCF_VL_G) // INFO/Number==G
         {
             if (info->type==BCF_BT_CHAR) { continue; } // todo: support for strings
             assert( info->len==nG_ori );
@@ -396,7 +439,45 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
             
             info->len = nG_new;
         }
-        else if ( ((header->id[BCF_DT_ID][info->key].val->info[BCF_HL_INFO]>>8)&0xf) == BCF_VL_A) // INFO/Number==A
+        else if (bcf_hdr_id2length(header,BCF_HL_INFO,info->key) == BCF_VL_R) // INFO/Number==R
+        {
+            if (info->type==BCF_BT_CHAR) { continue; } // todo: support for strings
+            assert( info->len==nR_ori );
+
+            #define BRANCH(type_t,missing,vector_end) {         \
+                type_t *p = (type_t *) info->vptr;  \
+                int ia, j; \
+                for (ia=0, j=0; ia<line->n_allele; ia++) \
+                {                                \
+                    if ( rm_mask & 1<<(ia+1) ) \
+                    { \
+                        p[ia] = missing; \
+                        continue; \
+                    } \
+                    if ( p[j] != missing ) \
+                    { \
+                        j++; \
+                        continue; \
+                    } \
+                    p[j] = p[ia]; \
+                    p[ia] = missing; \
+                    j++; \
+                } \
+                if (nR_new == 1) { \
+                    info->v1.i = p[0]; \
+                } \
+            }
+            switch (info->type) {
+                case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
+                case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
+                case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
+                case BCF_BT_FLOAT: BRANCH(float, bcf_float_missing, bcf_float_vector_end); break;
+                default: fprintf(stderr, "[E::%s] todo: %d\n", __func__, info->type); exit(1); break;
+            }
+            #undef BRANCH
+            info->len = nR_new;
+        }
+        else if (bcf_hdr_id2length(header,BCF_HL_INFO,info->key) == BCF_VL_A) // INFO/Number==A
         {
             if (info->type==BCF_BT_CHAR) { continue; } // todo: support for strings
             assert( info->len==nA_ori );

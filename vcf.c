@@ -373,6 +373,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         else if ( !strcmp(hrec->keys[i], "Number") )
         {
             if ( !strcmp(hrec->vals[i],"A") ) var = BCF_VL_A;
+            else if ( !strcmp(hrec->vals[i],"R") ) var = BCF_VL_R;
             else if ( !strcmp(hrec->vals[i],"G") ) var = BCF_VL_G;
             else if ( !strcmp(hrec->vals[i],".") ) var = BCF_VL_VAR;
             else 

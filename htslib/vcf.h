@@ -34,6 +34,7 @@
 #define BCF_VL_VAR   1
 #define BCF_VL_A     2
 #define BCF_VL_G     3
+#define BCF_VL_R     4
 
 /* === Dictionary ===
 
