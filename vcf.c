@@ -428,6 +428,7 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         for (i=0; i<hdr->nhrec; i++)
         {
             if ( hdr->hrec[i]->type!=BCF_HL_GEN ) continue;
+            if ( !strcmp(hdr->hrec[i]->key,hrec->key) && !strcmp(hrec->key,"fileformat") ) break;
             if ( !strcmp(hdr->hrec[i]->key,hrec->key) && !strcmp(hdr->hrec[i]->value,hrec->value) ) break;
         }
         if ( i<hdr->nhrec ) 
