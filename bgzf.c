@@ -458,6 +458,7 @@ typedef struct bgzf_mtaux_t {
 	pthread_t *tid;
 	pthread_mutex_t lock;
 	pthread_cond_t cv_start, cv_idle;
+	struct hFILE *fp;
 } mtaux_t;
 
 static void *mt_worker(void *data)
@@ -483,8 +484,16 @@ static void *mt_worker(void *data)
 		pthread_mutex_lock(&w->mt->lock);
 		w->mt->proc_cnt++;
 		if (w->mt->proc_cnt == w->mt->n_threads) {
-			// I'm the last thread to finish this round of compression. Signal the
-			// main thread that we're now idle.
+			// I'm the last thread to finish this round of compression. Write
+			// everybody's results out, then signal the main thread that we're
+			// now idle.
+			// NB: since we're using hwrite in a worker thread, it's critical
+			// to guarantee the main thread is not using hwrite at the same
+			// time
+			for (i = 0; i < w->mt->background->curr; ++i)
+				if (hwrite(w->mt->fp, w->mt->background->blk[i], w->mt->background->len[i]) != w->mt->background->len[i])
+					w->errcode |= BGZF_ERR_IO;
+			w->mt->background->curr = 0;
 			pthread_cond_signal(&w->mt->cv_idle);
 		}
 		pthread_mutex_unlock(&w->mt->lock);
@@ -528,6 +537,7 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 	for (i = 0; i < mt->n_threads; ++i)
 		pthread_create(&mt->tid[i], &attr, mt_worker, &mt->w[i]);
 	fp->mt = mt;
+	mt->fp = fp->fp;
 	return 0;
 }
 
@@ -571,28 +581,26 @@ static void mt_queue(BGZF *fp)
 // Wait for any & all background threads to complete their current compression task.
 // Postconditions:
 //   worker threads are idle
-//   background results have been written to hwrite
+//   background results have been written with hwrite
 //   fp->mt->proc_cnt == fp->mt->n_threads
 //   fp->mt->background->curr == 0
 // Idempotent until workspaces are rotated.
 static int mt_flush_background(BGZF *fp) {
-	int i;
+	int i, ret = 0;
 	mtaux_t *mt = fp->mt;
 	// wait for all the threads to complete
 	pthread_mutex_lock(&mt->lock);
 	while (mt->proc_cnt < mt->n_threads)
 		pthread_cond_wait(&mt->cv_idle, &mt->lock);
-	pthread_mutex_unlock(&mt->lock);	
-	for (i = 0; i < mt->n_threads; ++i) fp->errcode |= mt->w[i].errcode;
-	// dump data to disk
-	// todo: it would be nice to do this in the last worker thread to finish the
-	//       current compression task. look into whether this would necessitate a
-	//       mutex for fp->fp.
-	for (i = 0; i < mt->background->curr; ++i)
-		if (hwrite(fp->fp, mt->background->blk[i], mt->background->len[i]) != mt->background->len[i])
-			fp->errcode |= BGZF_ERR_IO;
-	mt->background->curr = 0;
-	return 0;
+	pthread_mutex_unlock(&mt->lock);
+	assert(mt->background->curr == 0);
+	for (i = 0; i < mt->n_threads; ++i) {
+		if (mt->w[i].errcode) {
+			fp->errcode |= mt->w[i].errcode;
+			ret = -1;
+		}
+	}
+	return ret;
 }
 
 // flush background, rotate foreground & background, launch background compression.
@@ -660,6 +668,7 @@ int bgzf_flush(BGZF *fp)
         }
 		int block_length = deflate_block(fp, fp->block_offset);
 		if (block_length < 0) return -1;
+		// safe to hwrite because worker threads are idle following mt_flush
 		if (hwrite(fp->fp, fp->compressed_block, block_length) != block_length) {
 			fp->errcode |= BGZF_ERR_IO; // possibly truncated file
 			return -1;
@@ -685,6 +694,8 @@ int bgzf_flush_try(BGZF *fp, ssize_t size)
 ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
 {
     if ( !fp->is_compressed )
+    	// safe to hwrite because is_compressed is immutable; worker threads
+    	// will never be doing anything.
         return hwrite(fp->fp, data, length);
 
 	const uint8_t *input = (const uint8_t*)data;
@@ -711,6 +722,8 @@ ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
 
 ssize_t bgzf_raw_write(BGZF *fp, const void *data, size_t length)
 {
+	// If fp->mt, some other thread could be in the middle of hwrite
+	assert(!fp->mt);
 	return hwrite(fp->fp, data, length);
 }
 
@@ -722,6 +735,7 @@ int bgzf_close(BGZF* fp)
 		if (bgzf_flush(fp) != 0) return -1;
 		fp->compress_level = -1;
 		block_length = deflate_block(fp, 0); // write an empty block
+		// safe to hwrite because worker threads are idle following bgzf_flush
 		if (hwrite(fp->fp, fp->compressed_block, block_length) < 0
 			|| hflush(fp->fp) != 0) {
 			fp->errcode |= BGZF_ERR_IO;
