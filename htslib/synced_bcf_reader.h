@@ -45,7 +45,7 @@ typedef struct
     // for reading from tabix-indexed file (big data)
     tbx_t *tbx;             // tabix index
     hts_itr_t *itr;         // tabix iterator
-    kstring_t line;         // holder of the current line
+    kstring_t line;         // holder of the current line, set only when reading from tabix-indexed files
     htsFile *file;
     char *fname;
     int is_bin;             // is open in binary mode (tabix access)
@@ -62,6 +62,7 @@ typedef struct
     int nseqs;              // number of sequences (chromosomes) in the file
     int iseq;               // current position: chr name, index to snames
     int start, end;         // current position: start, end of the region (0-based)
+    int prev_seq, prev_start;
 }
 bcf_sr_regions_t;
 
@@ -184,13 +185,18 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions);
  *  bcf_sr_regions_init() 
  *  @regions:   regions can be either a comma-separated list of regions
  *              (chr|chr:pos|chr:from-to|chr:from-) or VCF, BED, or
- *              tab-delimited file (the default). The columns of the
- *              tab-delimited file are: CHROM, POS, and, optionally, POS_TO,
- *              where positions are 1-based and inclusive. Uncompressed files
- *              are stored in memory, while bgzip-compressed and tabix-indexed
+ *              tab-delimited file (the default). Uncompressed files
+ *              are stored in memory while bgzip-compressed and tabix-indexed
  *              region files are streamed.
+ *  @chr, from, to:       
+ *              Column indexes of chromosome, start position and end position
+ *              in the tab-delimited file. The positions are 1-based and
+ *              inclusive. 
+ *              These parameters are ignored when reading from VCF, BED or
+ *              tabix-indexed files. When end position column is not present,
+ *              supply 'from' in place of 'to'.
  */
-bcf_sr_regions_t *bcf_sr_regions_init(const char *regions);
+bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int chr, int from, int to);
 void bcf_sr_regions_destroy(bcf_sr_regions_t *regions);
 
 /*

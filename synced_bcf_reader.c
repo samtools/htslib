@@ -63,7 +63,7 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions)
         fprintf(stderr,"[%s:%d %s] Error: bcf_sr_set_regions() must be called before bcf_sr_add_reader()\n", __FILE__,__LINE__,__FUNCTION__);
         return -1;
     }
-    readers->regions = bcf_sr_regions_init(regions);
+    readers->regions = bcf_sr_regions_init(regions,0,1,2);
     if ( !readers->regions ) return -1;
     readers->explicit_regs = 1;
     readers->require_index = 1;
@@ -72,7 +72,7 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions)
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int alleles)
 {
     assert( !readers->targets );
-    readers->targets = bcf_sr_regions_init(targets);
+    readers->targets = bcf_sr_regions_init(targets,0,1,2);
     if ( !readers->targets ) return -1;
     readers->targets_als = alleles;
     return 0;
@@ -836,6 +836,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
 
     bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
     reg->start = reg->end = -1;
+    reg->prev_start = reg->prev_seq = -1;
 
     kstring_t tmp = {0,0,0};
     const char *sp = str, *ep = str;
@@ -948,13 +949,14 @@ static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **ch
     return 1;
 }
 
-bcf_sr_regions_t *bcf_sr_regions_init(const char *regions)
+bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int ichr, int ifrom, int ito)
 {
     bcf_sr_regions_t *reg = _regions_init_string(regions);   // file name or a genomic region?
     if ( reg ) return reg;
 
     reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
     reg->start = reg->end = -1;
+    reg->prev_start = reg->prev_seq = -1;
 
     reg->file = hts_open(regions, "rb");
     if ( !reg->file )
@@ -967,7 +969,6 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions)
     reg->tbx = tbx_index_load(regions);
     if ( !reg->tbx ) 
     {
-        int ichr = 0, ifrom = 1, ito = 2;
         int len = strlen(regions);
         int is_bed  = strcasecmp(".bed",regions+len-4) ? 0 : 1;
         if ( !is_bed && !strcasecmp(".bed.gz",regions+len-7) ) is_bed = 1;
@@ -1171,13 +1172,17 @@ static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *re
 
 int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, int end)
 {
-    if ( reg->iseq < 0 ) return -2;     // no more regions left
-
     int iseq;
     if ( khash_str2int_get(reg->seq_hash, seq, &iseq)<0 ) return -1;    // no such sequence
 
-    // new sequence
-    if ( iseq!=reg->iseq ) { reg->start = reg->end = -1; reg->iseq = iseq; }
+    if ( reg->prev_seq==-1 || iseq!=reg->prev_seq || reg->prev_start > start ) // new chromosome
+    {
+        bcf_sr_regions_seek(reg, seq);
+        reg->start = reg->end = -1;
+    }
+    if ( reg->prev_seq==iseq && reg->iseq!=iseq ) return -2;    // no more regions on this chromosome
+    reg->prev_seq = reg->iseq;
+    reg->prev_start = start;
 
     while ( iseq==reg->iseq && reg->end < start )
     {
