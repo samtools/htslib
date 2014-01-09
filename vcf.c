@@ -2296,6 +2296,18 @@ int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **ds
     if ( i==line->n_info ) return -3;                               // the tag is not present in this record
     bcf_info_t *info = &line->d.info[i];
 
+    if ( type==BCF_HT_STR )
+    {
+        if ( *ndst < info->len+1 ) 
+        {
+            *ndst = info->len + 1;
+            *dst  = realloc(*dst, *ndst);
+        }
+        memcpy(*dst,info->vptr,info->len);
+        ((uint8_t*)*dst)[info->len] = 0;
+        return info->len;
+    }
+
     // Make sure the buffer is big enough
     int size1 = type==BCF_HT_INT ? sizeof(int) : sizeof(float);
     if ( *ndst < info->len )
