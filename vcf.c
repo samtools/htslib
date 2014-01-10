@@ -2285,7 +2285,10 @@ int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id)
 {
     kstring_t tmp;
     tmp.l = 0; tmp.s = line->d.id; tmp.m = line->d.m_id;
-    kputs(id, &tmp);
+    if ( id )
+        kputs(id, &tmp);
+    else
+        kputs(".", &tmp);
     line->d.id = tmp.s; line->d.m_id = tmp.m;
     line->d.shared_dirty |= BCF1_DIRTY_ID;
     return 0;
@@ -2420,7 +2423,12 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
 {
     int i,j, tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag);
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header
-    if ( bcf_hdr_id2type(hdr,BCF_HL_FMT,tag_id)!=type ) return -2;     // expected different type
+    if ( tag[0]=='G' && tag[1]=='T' && tag[2]==0 )
+    {
+        // Ugly: GT field is considered to be a string by the VCF header but BCF represents it as INT.
+        if ( bcf_hdr_id2type(hdr,BCF_HL_FMT,tag_id)!=BCF_HT_STR ) return -2;
+    }
+    else if ( bcf_hdr_id2type(hdr,BCF_HL_FMT,tag_id)!=type ) return -2;     // expected different type
 
     if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
 

@@ -524,7 +524,7 @@ extern "C" {
     #define bcf_get_format_int(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
     #define bcf_get_format_float(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)
     #define bcf_get_format_char(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_STR)
-    #define bcf_get_genotypes(hdr,line,dst,ndst)  bcf_get_format_values(hdr,line,"GT",(void**)(dst),ndst,BCF_HT_STR)
+    #define bcf_get_genotypes(hdr,line,dst,ndst)  bcf_get_format_values(hdr,line,"GT",(void**)(dst),ndst,BCF_HT_INT)
     int bcf_get_format_string(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, char ***dst, int *ndst);
     int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type);
 
@@ -536,6 +536,7 @@ extern "C" {
  
     /**
      *  bcf_hdr_id2int() - Translates string into numeric ID
+     *  bcf_hdr_int2id() - Translates numeric ID into string
      *  @type:     one of BCF_DT_ID, BCF_DT_CTG, BCF_DT_SAMPLE
      *  @id:       tag name, such as: PL, DP, GT, etc.
      *
@@ -543,6 +544,7 @@ extern "C" {
      *  fields in BCF records.
      */
 	int bcf_hdr_id2int(const bcf_hdr_t *hdr, int type, const char *id);
+    #define bcf_hdr_int2id(hdr,type,int_id) ((hdr)->id[type][int_id].key)
 
     /**
      *  bcf_hdr_name2id() - Translates sequence names (chromosomes) into numeric ID
