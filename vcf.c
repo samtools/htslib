@@ -1970,12 +1970,7 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
 {
     // Is the field already present?
     int i, inf_id = bcf_hdr_id2int(hdr,BCF_DT_ID,key);
-    if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_INFO,inf_id) )
-    {
-        fprintf(stderr,"[%s:%d %s] The tag was not defined in the header: %s\n", __FILE__,__LINE__,__FUNCTION__,key);
-        exit(-1);
-    }
-
+    if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_INFO,inf_id) ) return -1;    // No such INFO field in the header
     if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
 
     for (i=0; i<line->n_info; i++)
@@ -2052,6 +2047,31 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
     return 0;
 }
 
+int bcf_update_format_string(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const char **values, int n)
+{
+    if ( !n ) 
+        return bcf_update_format(hdr,line,key,NULL,0,BCF_HT_STR);
+
+    int i, max_len = 0;
+    for (i=0; i<n; i++)
+    {
+        int len = strlen(values[i]);
+        if ( len > max_len ) max_len = len;
+    }
+    char *out = (char*) malloc(max_len*n);
+    if ( !out ) return -2;
+    for (i=0; i<n; i++)
+    {
+        char *dst = out+i*max_len;
+        const char *src = values[i];
+        int j = 0;
+        while ( src[j] ) { dst[j] = src[j]; j++; }
+        for (; j<max_len; j++) dst[j] = 0;
+    }
+    int ret = bcf_update_format(hdr,line,key,out,max_len*n,BCF_HT_STR);
+    free(out);
+    return ret;
+}
 
 int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
 {
@@ -2060,8 +2080,7 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,fmt_id) )
     {
         if ( !n ) return 0;
-        fprintf(stderr,"[%s:%d] Wrong usage of bcf_update_format: The key \"%s\" not present in the header.\n",  __FILE__, __LINE__, key);
-        exit(-1);
+        return -1;  // the key not present in the header
     }
 
     if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
@@ -2346,6 +2365,44 @@ int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **ds
     return -4;  // this can never happen
 }
 
+int bcf_get_format_string(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, char ***dst, int *ndst)
+{
+    int i,tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag);
+    if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,tag_id) ) return -1;    // no such FORMAT field in the header
+    if ( bcf_hdr_id2type(hdr,BCF_HL_FMT,tag_id)!=BCF_HT_STR ) return -2;     // expected different type
+
+    if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
+
+    for (i=0; i<line->n_fmt; i++)
+        if ( line->d.fmt[i].id==tag_id ) break;
+    if ( i==line->n_fmt ) return -3;                               // the tag is not present in this record
+    bcf_fmt_t *fmt = &line->d.fmt[i];
+
+    int nsmpl = bcf_hdr_nsamples(hdr);
+    if ( !*dst )
+    {
+        *dst = (char**) malloc(sizeof(char*)*nsmpl);
+        if ( !*dst ) return -4;     // could not alloc
+        (*dst)[0] = NULL;
+    }
+    int n = (fmt->n+1)*nsmpl;
+    if ( *ndst < n )
+    {
+        (*dst)[0] = realloc((*dst)[0], n); 
+        if ( !(*dst)[0] ) return -4;    // could not alloc
+        *ndst = n;
+    }
+    for (i=0; i<nsmpl; i++)
+    {
+        uint8_t *src = fmt->p + i*fmt->n;
+        uint8_t *tmp = (uint8_t*)(*dst)[0] + i*(fmt->n+1);
+        memcpy(tmp,src,fmt->n);
+        tmp[fmt->n] = 0;
+        (*dst)[i] = (char*) tmp;
+    }
+    return n;
+}
+
 int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
 {
     int i,j, tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag);
@@ -2359,6 +2416,19 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
     if ( i==line->n_fmt ) return -3;                               // the tag is not present in this record
     bcf_fmt_t *fmt = &line->d.fmt[i];
 
+    if ( type==BCF_HT_STR )
+    {
+        int n = (fmt->n+1)*bcf_hdr_nsamples(hdr);
+        if ( *ndst < n ) 
+        {
+            *dst  = realloc(*dst, n);
+            if ( !*dst ) return -4;     // could not alloc
+            *ndst = n;
+        }
+        memcpy(*dst,fmt->p,n);
+        return n;
+    }
+
     // Make sure the buffer is big enough
     int nsmpl = bcf_hdr_nsamples(hdr);
     int size1 = type==BCF_HT_INT ? sizeof(int) : sizeof(float);
@@ -2366,6 +2436,7 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
     {
         *ndst = fmt->n*nsmpl;
         *dst  = realloc(*dst, *ndst*size1);
+        if ( !dst ) return -4;     // could not alloc
     }
 
     #define BRANCH(type_t, is_missing, is_vector_end, set_missing, set_vector_end, out_type_t) { \

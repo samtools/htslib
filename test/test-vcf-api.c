@@ -36,6 +36,7 @@ void write_bcf(char *fname)
     bcf_hdr_append(hdr, "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">");
     bcf_hdr_append(hdr, "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Read Depth\">");
     bcf_hdr_append(hdr, "##FORMAT=<ID=HQ,Number=2,Type=Integer,Description=\"Haplotype Quality\">");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=TS,Number=1,Type=String,Description=\"Test String\">");
 
     bcf_hdr_add_sample(hdr, "NA00001");
     bcf_hdr_add_sample(hdr, "NA00002");
@@ -91,6 +92,8 @@ void write_bcf(char *fname)
     tmpia[4] = bcf_int32_missing;
     tmpia[5] = bcf_int32_missing;
     bcf_update_format_int32(hdr, rec, "HQ", tmpia, bcf_hdr_nsamples(hdr)*2);
+    char *tmp_str[] = {"String1","SomeOtherString2","YetAnotherString3"};
+    bcf_update_format_string(hdr, rec, "TS", (const char**)tmp_str, 3);
     bcf_write1(fp, hdr, rec);
 
     // 20     1110696 . A      G,T     67   .   NS=2;DP=10;AF=0.333,.;AA=T;DB GT 2 1   ./.

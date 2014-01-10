@@ -400,19 +400,46 @@ extern "C" {
     int bcf_update_alleles_str(const bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string);
     int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id);
 
-    // If n==0, existing tag is removed. Otherwise it is updated or appended. With *_flag, $string is optional.
-    // With *_string, existing tag is removed when $string set to NULL.
+    /* 
+     *  bcf_update_info_*() - functions for updating INFO fields
+     *  @hdr:       the BCF header
+     *  @line:      VCF line to be edited
+     *  @key:       the INFO tag to be updated
+     *  @values:    pointer to the array of values. Pass NULL to remove the tag.
+     *  @n:         number of values in the array. When set to 0, the INFO tag is removed
+     *
+     *  The @string in bcf_update_info_flag() is optional, @n indicates whether
+     *  the flag is set or removed.
+     *
+     *  Returns 0 on success or negative value on error.
+     */
     #define bcf_update_info_int32(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf_update_info_float(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
     #define bcf_update_info_flag(hdr,line,key,string,n)    bcf_update_info((hdr),(line),(key),(string),(n),BCF_HT_FLAG)
     #define bcf_update_info_string(hdr,line,key,string)    bcf_update_info((hdr),(line),(key),(string),1,BCF_HT_STR)
     int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type);
 
-    // If n==0, existing tag is removed. Otherwise it is updated or appended.
+    /* 
+     *  bcf_update_format_*() - functions for updating FORMAT fields
+     *  @values:    pointer to the array of values, the same number of elements
+     *              is expected for each sample. Missing values must be padded 
+     *              with bcf_*_missing or bcf_*_vector_end values.
+     *  @n:         total size of the array. If n==0, existing tag is removed.
+     *
+     *  The function bcf_update_format_string() is a higher-level (slower) variant of
+     *  bcf_update_format_char(). The former accepts array of \0-terminated strings
+     *  whereas the latter requires that the strings are collapsed into a single array
+     *  of fixed-length strings. In case of strings with variable length, shorter strings
+     *  can be \0-padded. Note that the collapsed strings passed to bcf_update_format_char()
+     *  are not \0-terminated.
+     *
+     *  Returns 0 on success or negative value on error.
+     */
     #define bcf_update_format_int32(hdr,line,key,values,n) bcf_update_format((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf_update_format_float(hdr,line,key,values,n) bcf_update_format((hdr),(line),(key),(values),(n),BCF_HT_REAL)
     #define bcf_update_format_char(hdr,line,key,values,n) bcf_update_format((hdr),(line),(key),(values),(n),BCF_HT_STR)
     #define bcf_update_genotypes(hdr,line,gts,n) bcf_update_format((hdr),(line),"GT",(gts),(n),BCF_HT_INT)     // See bcf_gt_ macros below
+    int bcf_update_format_string(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const char **values, int n);
     int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type);
 
     // Macros for setting genotypes correctly, for use with bcf_update_genotypes only; idx corresponds
@@ -446,7 +473,7 @@ extern "C" {
     bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key);
 
     /**
-     *  bcf_get_info*() - get INFO values, integers or floats
+     *  bcf_get_info_*() - get INFO values, integers or floats
      *  @hdr:       BCF header
      *  @line:      BCF record
      *  @tag:       INFO tag to retrieve
@@ -468,14 +495,31 @@ extern "C" {
     int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type);
 
     /**
-     *  bcf_get_format*() - same as bcf_get_info*() above
+     *  bcf_get_format_*() - same as bcf_get_info*() above
+     *
+     *  The function bcf_get_format_string() is a higher-level (slower) variant of bcf_get_format_char().
+     *  see the description of bcf_update_format_string() and bcf_update_format_char() above. 
+     *  Unlike other bcf_get_format__*() functions, bcf_get_format_string() allocates two arrays:
+     *  a single block of \0-terminated strings collapsed into a single array and an array of pointers
+     *  to these strings. Both arrays must be cleaned by the user. 
+     *
+     *  Returns negative value on error or the number of written values on success.
+     *
+     *  Example:
+     *      int ndst = 0; char **dst = NULL;
+     *      if ( bcf_get_format_string(hdr, line, "XX", &dst, &ndst) > 0 )
+     *          for (i=0; i<bcf_hdr_nsamples(hdr); i++) printf("%s\n", dst[i]);
+     *      free(dst[0]); free(dst);
+     *
      *  Example: 
      *      int ngt, *gt_arr = NULL, ngt_arr = 0;
      *      ngt = bcf_get_format_int(hdr, line, "GT", &gt_arr, &ngt_arr);
      */
     #define bcf_get_format_int(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
     #define bcf_get_format_float(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)
+    #define bcf_get_format_char(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_STR)
     #define bcf_get_genotypes(hdr,line,dst,ndst)  bcf_get_format_values(hdr,line,"GT",(void**)(dst),ndst,BCF_HT_STR)
+    int bcf_get_format_string(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, char ***dst, int *ndst);
     int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type);
 
 
