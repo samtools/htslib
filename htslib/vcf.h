@@ -391,6 +391,12 @@ extern "C" {
      */
     int bcf_add_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id);
     /**
+     *  bcf_remove_filter() - removes from the FILTER column
+     *  @flt_id:   filter ID to remove, numeric ID returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @pass:     when set to 1 and no filters are present, set to PASS 
+     */
+    int bcf_remove_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id, int pass);
+    /**
      *  bcf_update_alleles() and bcf_update_alleles_str() - update REF and ALLT column
      *  @alleles:           Array of alleles
      *  @nals:              Number of alleles
