@@ -551,17 +551,27 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 	if (idx->n < tid + 1) idx->n = tid + 1;
 	if (tid < 0) ++idx->n_no_coor;
 	if (idx->z.finished) return 0;
-	if (idx->bidx[tid] == 0) idx->bidx[tid] = kh_init(bin);
-	if (idx->z.last_tid < tid || (idx->z.last_tid >= 0 && tid < 0)) { // change of chromosome
+	if (idx->z.last_tid != tid || (idx->z.last_tid >= 0 && tid < 0)) { // change of chromosome
 		idx->z.last_tid = tid;
 		idx->z.last_bin = 0xffffffffu;
-	} else if ((uint32_t)idx->z.last_tid > (uint32_t)tid) { // test if chromosomes are out of order
-		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted chromosomes\n", __func__);
-		return -1;
+    /*
+        // This seems a too prohibitive condition: When concatenating VCFs, the
+        // sequences may come in a different order.
+
+        } else if ((uint32_t)idx->z.last_tid > (uint32_t)tid) { // test if chromosomes are out of order
+            if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted chromosomes\n", __func__);
+            return -1;
+    */
+        if (idx->bidx[tid] != 0)
+        {
+            if (hts_verbose >= 1) fprintf(stderr, "[E::%s] chromosome blocks not continuous\n", __func__);
+            return -1;
+        }
 	} else if (tid >= 0 && idx->z.last_coor > beg) { // test if positions are out of order
 		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted positions\n", __func__);
 		return -1;
 	}
+	if (idx->bidx[tid] == 0) idx->bidx[tid] = kh_init(bin);
 	if (tid >= 0 && is_mapped)
 		insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off, idx->min_shift); // last_off points to the start of the current record
 	bin = hts_reg2bin(beg, end, idx->min_shift, idx->n_lvls);
