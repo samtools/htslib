@@ -1027,30 +1027,37 @@ int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname)
     return 0;
 }
 
+static void _bcf_hrec_format(const bcf_hrec_t *hrec, int is_bcf, kstring_t *str)
+{
+    if ( !hrec->value )
+    {
+        int j, nout = 0;
+        ksprintf(str, "##%s=<", hrec->key);
+        for (j=0; j<hrec->nkeys; j++)
+        {
+            // do not output IDX if output is VCF
+            if ( !is_bcf && !strcmp("IDX",hrec->keys[j]) ) continue;
+            if ( nout ) kputc(',',str);
+            ksprintf(str,"%s=%s", hrec->keys[j], hrec->vals[j]);
+            nout++;
+        }
+        ksprintf(str,">\n");
+    }
+    else
+        ksprintf(str,"##%s=%s\n", hrec->key,hrec->value);
+}
+
+void bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str)
+{
+    _bcf_hrec_format(hrec,0,str);
+}
 char *bcf_hdr_fmt_text(const bcf_hdr_t *hdr, int is_bcf, int *len)
 {
-    int i,j;
+    int i;
     kstring_t txt = {0,0,0};
     for (i=0; i<hdr->nhrec; i++)
-    {
-        if ( !hdr->hrec[i]->value )
-        {
-            int nout = 0;
-            ksprintf(&txt, "##%s=<", hdr->hrec[i]->key);
-            for (j=0; j<hdr->hrec[i]->nkeys; j++)
-            {
-                // do not output IDX if output is VCF
-                if ( !is_bcf && !strcmp("IDX",hdr->hrec[i]->keys[j]) ) continue;
-                if ( nout ) kputc(',',&txt);
-                ksprintf(&txt,"%s=%s", hdr->hrec[i]->keys[j], hdr->hrec[i]->vals[j]);
-                nout++;
-            }
-            ksprintf(&txt,">\n");
-        }
-        else
-            ksprintf(&txt,"##%s=%s\n", hdr->hrec[i]->key,hdr->hrec[i]->value);
+        _bcf_hrec_format(hdr->hrec[i], is_bcf, &txt);
 
-    }
     ksprintf(&txt,"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO");
     if ( bcf_hdr_nsamples(hdr) )
     {
