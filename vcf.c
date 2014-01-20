@@ -1733,6 +1733,17 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 	return 0;
 }
 
+int vcf_write_line(htsFile *fp, kstring_t *line)
+{
+    int ret;
+    if ( line->s[line->l-1]!='\n' ) kputc('\n',line);
+    if ( fp->is_compressed==1 )
+        ret = bgzf_write(fp->fp.bgzf, line->s, line->l);
+    else
+        ret = hwrite(fp->fp.hfile, line->s, line->l);
+    return ret==line->l ? 0 : -1;
+}
+
 int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
     int ret;
