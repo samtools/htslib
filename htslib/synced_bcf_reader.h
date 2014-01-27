@@ -125,6 +125,7 @@ void bcf_sr_destroy(bcf_srs_t *readers);
  *  the reader's logic.
  */
 int bcf_sr_add_reader(bcf_srs_t *readers, const char *fname);
+void bcf_sr_remove_reader(bcf_srs_t *files, int i);
 
 
 /** 
@@ -139,6 +140,11 @@ int bcf_sr_next_line(bcf_srs_t *readers);
 #define bcf_sr_has_line(readers, i) (readers)->has_line[i]
 #define bcf_sr_get_line(_readers, i) ((_readers)->has_line[i] ? ((_readers)->readers[i].buffer[0]) : NULL)
 
+/**
+ *  bcf_sr_seek() - set all readers to selected position
+ *  @pos:  0-based coordinate
+ */
+int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos);
 
 /**
  * bcf_sr_set_samples() - sets active samples
