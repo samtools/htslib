@@ -79,6 +79,7 @@ typedef struct {
 	char **samples;
     bcf_hrec_t **hrec;
     int nhrec;
+    int ntransl, *transl[2];    // for bcf_translate()
 	kstring_t mem;
 } bcf_hdr_t;
 
@@ -106,21 +107,23 @@ typedef struct {
 } variant_t;
 
 typedef struct {
-	int id, n, type, size; // bcf_hdr_t::id[BCF_DT_ID][$id].key is the key in string; $n is the number of values per-sample; $size is the per-sample size in bytes; $type is one of BCF_BT_* types
-	uint8_t *p;     // same as vptr and vptr_* in bcf_info_t below
+	int id;             // id: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$id].key
+    int n, size, type;  // n: number of values per-sample; size: number of bytes per-sample; type: one of BCF_BT_* types
+	uint8_t *p;         // same as vptr and vptr_* in bcf_info_t below
     uint32_t p_len;
     uint32_t p_off:31, p_free:1;
 } bcf_fmt_t;
 
 typedef struct {
-	int key, type, len; // bcf_hdr_t::id[BCF_DT_ID][$key].key is the key in string; $len: the length of the vector
+	int key;        // key: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$key].key
+    int type, len;  // type: one of BCF_BT_* types; len: vector length, 1 for scalars
 	union {
 		int32_t i; // integer value
 		float f;   // float value
 	} v1; // only set if $len==1; for easier access
-	uint8_t *vptr;          // pointer to data array in bcf1_t->shared.s, excluding sized bytes
+	uint8_t *vptr;          // pointer to data array in bcf1_t->shared.s, excluding the size+type and tag id bytes
     uint32_t vptr_len;      // length of the vptr block or, when set, of the vptr_mod block, excluding offset
-    uint32_t vptr_off:31,   // vptr offset, i.e., the size of the INFO key plus sized bytes
+    uint32_t vptr_off:31,   // vptr offset, i.e., the size of the INFO key plus size+type bytes
             vptr_free:1;    // indicates that vptr-vptr_off must be freed; set only when modified and the new 
                             //    data block is bigger than the original
 } bcf_info_t;
@@ -309,6 +312,8 @@ extern "C" {
 
     /** Create a new header using the supplied template */
     bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr);
+    /** Copy header lines from src to dst if not already present in dst. See also bcf_translate(). */
+    void bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src);
     int bcf_hdr_add_sample(bcf_hdr_t *hdr, const char *sample);
 
     /** Read VCF header from a file and update the header */
@@ -370,6 +375,15 @@ extern "C" {
 
     /** See the description of bcf_hdr_subset() */
 	int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
+
+    /**
+     *  bcf_translate() - translate tags ids to be consistent with different header. This function
+     *                    is useful when lines from multiple VCF need to be combined.
+     *  @dst_hdr:   the destination header, to be used in bcf_write(), see also bcf_hdr_combine()
+     *  @src_hdr:   the source header, used in bcf_read()
+     *  @src_line:  line obtained by bcf_read()
+     */
+    int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *src_line);
 
     /**
      *  bcf_get_variant_type[s]()  - returns one of VCF_REF, VCF_SNP, etc
