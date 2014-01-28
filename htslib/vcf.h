@@ -411,6 +411,10 @@ extern "C" {
      *  @pass:     when set to 1 and no filters are present, set to PASS 
      */
     int bcf_remove_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id, int pass);
+    /** 
+     *  Returns 1 if present, 0 if absent, or -1 if filter does not exist. "PASS" and "." can be used interchangeably.
+     */
+    int bcf_has_filter(const bcf_hdr_t *hdr, bcf1_t *line, char *filter);
     /**
      *  bcf_update_alleles() and bcf_update_alleles_str() - update REF and ALLT column
      *  @alleles:           Array of alleles
