@@ -187,9 +187,11 @@ extern "C" {
 
 	typedef int (*hts_readrec_f)(BGZF*, void*, void*, int*, int*, int*);
 	typedef int (*hts_name2id_f)(void*, const char*);
+	typedef const char *(*hts_id2name_f)(void*, int);
 
 	hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr);
 	int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void *hdr);
+    const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 
     /**
      * hts_file_type() - Convenience function to determine file type
@@ -204,9 +206,9 @@ extern "C" {
     #define FT_GZ     1
     #define FT_VCF    2
     #define FT_VCF_GZ (FT_GZ|FT_VCF)
-    #define FT_BCF    4
+    #define FT_BCF    (1<<2)
     #define FT_BCF_GZ (FT_GZ|FT_BCF)
-    #define FT_STDIN  8
+    #define FT_STDIN  (1<<3)
     int hts_file_type(const char *fname);
 
 

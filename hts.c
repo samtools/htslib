@@ -856,6 +856,26 @@ uint8_t *hts_idx_get_meta(hts_idx_t *idx, int *l_meta)
 	return idx->meta;
 }
 
+const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr)
+{
+    if ( !idx->n )
+    {
+        *n = 0;
+        return NULL;
+    }
+
+    int tid = 0, i;
+    const char **names = (const char**) calloc(idx->n,sizeof(const char*));
+    for (i=0; i<idx->n; i++)
+    {
+        bidx_t *bidx = idx->bidx[i];
+        if ( !bidx ) continue;
+        names[tid++] = getid(hdr,i);
+    }
+    *n = tid;
+    return names;
+}
+
 /****************
  *** Iterator ***
  ****************/
@@ -891,12 +911,15 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 		uint64_t off0 = (uint64_t)-1;
 		khint_t k;
 		if (tid == HTS_IDX_START) {
-			if (idx->n > 0) {
-				bidx = idx->bidx[0];
-				k = kh_get(bin, bidx, idx->n_bins + 1);
-				if (k == kh_end(bidx)) return 0;
-				off0 = kh_val(bidx, k).list[0].u;
-			} else return 0;
+            if ( idx->n <=0 ) return 0;
+            // Find the smallest offset, note that sequence ids may not be ordered sequentially
+            for (i=0; i<idx->n; i++)
+            {
+                bidx = idx->bidx[i];
+                k = kh_get(bin, bidx, idx->n_bins + 1);
+                if (k == kh_end(bidx)) continue;
+                if ( off0 > kh_val(bidx, k).list[0].u ) off0 = kh_val(bidx, k).list[0].u;
+            }
 		} else if (tid == HTS_IDX_NOCOOR) {
 			if (idx->n > 0) {
 				bidx = idx->bidx[idx->n - 1];
@@ -1007,7 +1030,9 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
 {
 	int tid, beg, end;
 	char *q, *tmp;
-	if (strcmp(reg, "*")) {
+	if (!strcmp(reg, "."))
+        return hts_itr_query(idx,HTS_IDX_START,0,1<<29);
+	else if (strcmp(reg, "*")) {
 		q = (char*)hts_parse_reg(reg, &beg, &end);
 		tmp = (char*)alloca(q - reg + 1);
 		strncpy(tmp, reg, q - reg);

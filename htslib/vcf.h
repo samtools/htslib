@@ -611,6 +611,7 @@ extern "C" {
 	#define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_hdr_name2id), (hdr))
 	#define bcf_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (hts_readrec_f)(bcf_readrec), 0)
 	#define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
+	#define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
 
 	int bcf_index_build(const char *fn, int min_shift);
 
