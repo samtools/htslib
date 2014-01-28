@@ -28,28 +28,13 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdarg.h>
+#include <getopt.h>
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <htslib/bgzf.h>
+#include "common.h"
 
 static const int WINDOW_SIZE = 64 * 1024;
-
-static int bgzip_main_usage()
-{
-	fprintf(stderr, "\n");
-	fprintf(stderr, "Usage:   bgzip [options] [file] ...\n\n");
-	fprintf(stderr, "Options: -c        write on standard output, keep original files unchanged\n");
-	fprintf(stderr, "         -d        decompress\n");
-	fprintf(stderr, "         -f        overwrite files without asking\n");
-	fprintf(stderr, "         -I FILE   name of the index file [file.gz.gzi]\n");
-	fprintf(stderr, "         -i        compress and create BGZF index\n");
-	fprintf(stderr, "         -r        (re)index bgzipped file\n");
-	fprintf(stderr, "         -b INT    decompress at virtual (uncompressed) file pointer INT (0 based)\n");
-	fprintf(stderr, "         -s INT    decompress INT bytes in the uncompressed file\n");
-	fprintf(stderr, "         -h        give this help\n");
-	fprintf(stderr, "\n");
-	return 1;
-}
 
 static int write_open(const char *fn, int is_forced)
 {
@@ -74,13 +59,23 @@ static int write_open(const char *fn, int is_forced)
 	return fd;
 }
 
-static void error(const char *format, ...)
+static int bgzip_main_usage()
 {
-    va_list ap;
-    va_start(ap, format);
-    vfprintf(stderr, format, ap);
-    va_end(ap);
-    exit(-1);
+	fprintf(stderr, "\n");
+	fprintf(stderr, "Version: %s\n", version());
+	fprintf(stderr, "Usage:   bgzip [OPTIONS] [FILE] ...\n");
+	fprintf(stderr, "Options:\n");
+	fprintf(stderr, "   -b, --offset INT        decompress at virtual file pointer (0-based uncompressed offset)\n");
+    fprintf(stderr, "   -c, --stdout            write on standard output, keep original files unchanged\n");
+	fprintf(stderr, "   -d, --decompress        decompress\n");
+	fprintf(stderr, "   -f, --force             overwrite files without asking\n");
+	fprintf(stderr, "   -h, --help              give this help\n");
+	fprintf(stderr, "   -i, --index             compress and create BGZF index\n");
+	fprintf(stderr, "   -I, --index-name FILE   name of BGZF index file [file.gz.gzi]\n");
+	fprintf(stderr, "   -r, --reindex           (re)index compressed file\n");
+	fprintf(stderr, "   -s, --size INT          decompress INT bytes (uncompressed size)\n");
+	fprintf(stderr, "\n");
+	return 1;
 }
 
 int main(int argc, char **argv)
@@ -91,8 +86,22 @@ int main(int argc, char **argv)
 	long start, end, size;
     char *index_fname = NULL;
 
+    static struct option loptions[] = 
+    {
+        {"help",0,0,'h'},
+        {"offset",1,0,'b'},
+        {"stdout",0,0,'c'},
+        {"decompress",0,0,'d'},
+        {"force",0,0,'f'},
+        {"index",0,0,'i'},
+        {"index-name",1,0,'I'},
+        {"reindex",0,0,'r'},
+        {"size",1,0,'s'},
+        {0,0,0,0}
+    };
+
 	compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0;
-	while((c  = getopt(argc, argv, "cdh?fb:s:iI:r")) >= 0){
+	while((c  = getopt_long(argc, argv, "cdh?fb:s:iI:r",loptions,NULL)) >= 0){
 		switch(c){
 		case 'd': compress = 0; break;
 		case 'c': pstdout = 1; break;
