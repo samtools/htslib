@@ -80,6 +80,8 @@ typedef struct {
     bcf_hrec_t **hrec;
     int nhrec;
     int ntransl, *transl[2];    // for bcf_translate()
+    int nsamples_ori;           // for bcf_hdr_set_samples()
+    uint8_t *keep_samples;
 	kstring_t mem;
 } bcf_hdr_t;
 
@@ -250,6 +252,29 @@ extern "C" {
 
     /** Reads VCF or BCF header */
 	bcf_hdr_t *bcf_hdr_read(htsFile *fp);
+
+    /**
+     *  bcf_hdr_set_samples() - for more efficient VCF parsing when only one/few samples are needed
+     *  @samples: samples to include or exclude from file or as a comma-separated string.
+     *              LIST    .. select samples in list
+     *              :FILE   .. read samples from file
+     *              ^LIST   .. exclude samples from list
+     *              ^:FILE  .. exclude samples form file
+     *              -       .. include all samples
+     *              NULL    .. exclude all samples
+     *
+     *  The bottleneck of VCF reading is parsing of genotype fields. If the
+     *  reader knows in advance that only subset of samples is needed (possibly
+     *  no samples at all), the performance of bcf_read() can be significantly
+     *  improved by calling bcf_hdr_set_samples after bcf_hdr_read().
+     *  The function bcf_read() will automaically subset the VCF/BCF records.
+     *
+     *  Returns 0 on success, -1 on error or a positive integer if the list
+     *  contains samples not present in the VCF header. In such a case, the
+     *  return value is the index of the offending sample.
+     */
+    int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples);
+
 
     /** Writes VCF or BCF header */
 	int bcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
