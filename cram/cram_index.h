@@ -40,7 +40,7 @@ extern "C" {
  * Returns 0 for success
  *        -1 for failure
  */
-int cram_index_load(cram_fd *fd, char *fn);
+int cram_index_load(cram_fd *fd, const char *fn);
 
 void cram_index_free(cram_fd *fd);
 
