@@ -922,6 +922,7 @@ char *bam_aux2Z(const uint8_t *s)
 	else return 0;
 }
 
+#define STRNCMP(a,b,n) (strncasecmp((a),(b),(n)) || strlen(a)!=(n))
 int bam_str2flag(const char *str)
 {
     char *end, *beg = (char*) str;
@@ -932,18 +933,18 @@ int bam_str2flag(const char *str)
     {
         end = beg;
         while ( *end && *end!=',' ) end++;
-        if ( !strncasecmp(beg,"PAIRED",end-beg) ) flag |= BAM_FPAIRED;
-        else if ( !strncasecmp(beg,"PROPER_PAIR",end-beg) ) flag |= BAM_FPROPER_PAIR;
-        else if ( !strncasecmp(beg,"UNMAP",end-beg) ) flag |= BAM_FUNMAP;
-        else if ( !strncasecmp(beg,"MUNMAP",end-beg) ) flag |= BAM_FMUNMAP;
-        else if ( !strncasecmp(beg,"REVERSE",end-beg) ) flag |= BAM_FREVERSE;
-        else if ( !strncasecmp(beg,"MREVERSE",end-beg) ) flag |= BAM_FMREVERSE;
-        else if ( !strncasecmp(beg,"READ1",end-beg) ) flag |= BAM_FREAD1;
-        else if ( !strncasecmp(beg,"READ2",end-beg) ) flag |= BAM_FREAD2;
-        else if ( !strncasecmp(beg,"SECONDARY",end-beg) ) flag |= BAM_FSECONDARY;
-        else if ( !strncasecmp(beg,"QCFAIL",end-beg) ) flag |= BAM_FQCFAIL;
-        else if ( !strncasecmp(beg,"DUP",end-beg) ) flag |= BAM_FDUP;
-        else if ( !strncasecmp(beg,"SUPPLEMENTARY",end-beg) ) flag |= BAM_FSUPPLEMENTARY;
+        if ( !STRNCMP("PAIRED",beg,end-beg) ) flag |= BAM_FPAIRED;
+        else if ( !STRNCMP("PROPER_PAIR",beg,end-beg) ) flag |= BAM_FPROPER_PAIR;
+        else if ( !STRNCMP("UNMAP",beg,end-beg) ) flag |= BAM_FUNMAP;
+        else if ( !STRNCMP("MUNMAP",beg,end-beg) ) flag |= BAM_FMUNMAP;
+        else if ( !STRNCMP("REVERSE",beg,end-beg) ) flag |= BAM_FREVERSE;
+        else if ( !STRNCMP("MREVERSE",beg,end-beg) ) flag |= BAM_FMREVERSE;
+        else if ( !STRNCMP("READ1",beg,end-beg) ) flag |= BAM_FREAD1;
+        else if ( !STRNCMP("READ2",beg,end-beg) ) flag |= BAM_FREAD2;
+        else if ( !STRNCMP("SECONDARY",beg,end-beg) ) flag |= BAM_FSECONDARY;
+        else if ( !STRNCMP("QCFAIL",beg,end-beg) ) flag |= BAM_FQCFAIL;
+        else if ( !STRNCMP("DUP",beg,end-beg) ) flag |= BAM_FDUP;
+        else if ( !STRNCMP("SUPPLEMENTARY",beg,end-beg) ) flag |= BAM_FSUPPLEMENTARY;
         else return -1;
         if ( !*end ) break;
         beg = end + 1;
