@@ -126,8 +126,10 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
 	}
 }
 
-int tbx_readrec(BGZF *fp, tbx_t *tbx, kstring_t *s, int *tid, int *beg, int *end)
+int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end)
 {
+	tbx_t *tbx = (tbx_t *) tbxv;
+	kstring_t *s = (kstring_t *) sv;
 	int ret;
 	if ((ret = bgzf_getline(fp, '\n', s)) >= 0) {
 		tbx_intv_t intv;

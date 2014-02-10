@@ -911,7 +911,7 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
 	return itr->bins.n;
 }
 
-hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
+hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
 {
 	int i, n_off, l, bin;
 	hts_pair64_t *off;
@@ -945,6 +945,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 			iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
 			iter->read_rest = 1;
 			iter->curr_off = off0;
+			iter->readrec = readrec;
 			return iter;
 		} else return 0;
 	}
@@ -954,6 +955,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 
 	iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
 	iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
+	iter->readrec = readrec;
 
 	// compute min_off
 	bin = hts_bin_first(idx->n_lvls) + (beg>>idx->min_shift);
@@ -1039,12 +1041,12 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
 	return s + name_end;
 }
 
-hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr)
+hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_readrec_func *readrec)
 {
 	int tid, beg, end;
 	char *q, *tmp;
 	if (!strcmp(reg, "."))
-        return hts_itr_query(idx,HTS_IDX_START,0,1<<29);
+		return hts_itr_query(idx, HTS_IDX_START, 0, 1<<29, readrec);
 	else if (strcmp(reg, "*")) {
 		q = (char*)hts_parse_reg(reg, &beg, &end);
 		tmp = (char*)alloca(q - reg + 1);
@@ -1053,11 +1055,11 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
 		if ((tid = getid(hdr, tmp)) < 0)
 			tid = getid(hdr, reg);
 		if (tid < 0) return 0;
-		return hts_itr_query(idx, tid, beg, end);
-	} else return hts_itr_query(idx, HTS_IDX_NOCOOR, 0, 0);
+		return hts_itr_query(idx, tid, beg, end, readrec);
+	} else return hts_itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
 }
 
-int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void *hdr)
+int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 {
 	int ret, tid, beg, end;
 	if (iter && iter->finished) return -1;
@@ -1066,7 +1068,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void
 			bgzf_seek(fp, iter->curr_off, SEEK_SET);
 			iter->curr_off = 0; // only seek once
 		}
-		ret = readrec(fp, hdr, r, &tid, &beg, &end);
+		ret = iter->readrec(fp, data, r, &tid, &beg, &end);
 		if (ret < 0) iter->finished = 1;
 		return ret;
 	}
@@ -1080,7 +1082,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void
 			}
 			++iter->i;
 		}
-		if ((ret = readrec(fp, hdr, r, &tid, &beg, &end)) >= 0) {
+		if ((ret = iter->readrec(fp, data, r, &tid, &beg, &end)) >= 0) {
 			iter->curr_off = bgzf_tell(fp);
 			if (tid != iter->tid || beg >= iter->end) { // no need to proceed
 				ret = -1; break;

@@ -153,11 +153,14 @@ typedef struct {
 	uint64_t u, v;
 } hts_pair64_t;
 
+typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, int *end);
+
 typedef struct {
 	uint32_t read_rest:1, finished:1, dummy:29;
 	int tid, beg, end, n_off, i;
 	uint64_t curr_off;
 	hts_pair64_t *off;
+	hts_readrec_func *readrec;
 	struct {
 		int n, m;
 		int *a;
@@ -183,15 +186,14 @@ extern "C" {
 	void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy);
 
 	const char *hts_parse_reg(const char *s, int *beg, int *end);
-	hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end);
+	hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
 	void hts_itr_destroy(hts_itr_t *iter);
 
-	typedef int (*hts_readrec_f)(BGZF*, void*, void*, int*, int*, int*);
 	typedef int (*hts_name2id_f)(void*, const char*);
 	typedef const char *(*hts_id2name_f)(void*, int);
 
-	hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr);
-	int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void *hdr);
+	hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_readrec_func *readrec);
+	int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data);
     const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 
     /**

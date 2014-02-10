@@ -363,14 +363,25 @@ int bam_index_build(const char *fn, int min_shift)
 	return ret;
 }
 
-int bam_readrec(BGZF *fp, void *null, bam1_t *b, int *tid, int *beg, int *end)
+static int bam_readrec(BGZF *fp, void *ignored, void *bv, int *tid, int *beg, int *end)
 {
+	bam1_t *b = bv;
 	int ret;
 	if ((ret = bam_read1(fp, b)) >= 0) {
 		*tid = b->core.tid; *beg = b->core.pos;
 		*end = b->core.pos + (b->core.n_cigar? bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)) : 1);
 	}
 	return ret;
+}
+
+hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
+{
+	return hts_itr_query(idx, tid, beg, end, bam_readrec);
+}
+
+hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region)
+{
+	return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr, bam_readrec);
 }
 
 /**********************
