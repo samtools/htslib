@@ -191,8 +191,9 @@ extern "C" {
 
 	typedef int (*hts_name2id_f)(void*, const char*);
 	typedef const char *(*hts_id2name_f)(void*, int);
+	typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
 
-	hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_readrec_func *readrec);
+	hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec);
 	int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data);
     const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 

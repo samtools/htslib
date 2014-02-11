@@ -381,7 +381,7 @@ hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
 
 hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region)
 {
-	return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr, bam_readrec);
+	return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr, hts_itr_query, bam_readrec);
 }
 
 /**********************

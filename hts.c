@@ -1041,12 +1041,12 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
 	return s + name_end;
 }
 
-hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_readrec_func *readrec)
+hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
 	int tid, beg, end;
 	char *q, *tmp;
 	if (strcmp(reg, ".") == 0)
-		return hts_itr_query(idx, HTS_IDX_START, 0, 1<<29, readrec);
+		return itr_query(idx, HTS_IDX_START, 0, 1<<29, readrec);
 	else if (strcmp(reg, "*") != 0) {
 		q = (char*)hts_parse_reg(reg, &beg, &end);
 		tmp = (char*)alloca(q - reg + 1);
@@ -1055,8 +1055,8 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
 		if ((tid = getid(hdr, tmp)) < 0)
 			tid = getid(hdr, reg);
 		if (tid < 0) return 0;
-		return hts_itr_query(idx, tid, beg, end, readrec);
-	} else return hts_itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
+		return itr_query(idx, tid, beg, end, readrec);
+	} else return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
 }
 
 int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
