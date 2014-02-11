@@ -159,11 +159,33 @@ void bcf_to_vcf(char *fname)
     hts_close(out);
 }
 
+void iterator(const char *fname)
+{
+    htsFile *fp = hts_open(fname, "r");
+    bcf_hdr_t *hdr = bcf_hdr_read(fp);
+    hts_idx_t *idx;
+    hts_itr_t *iter;
+
+    bcf_index_build(fname, 0);
+    idx = bcf_index_load(fname);
+
+    iter = bcf_itr_queryi(idx, bcf_hdr_name2id(hdr, "20"), 1110600, 1110800);
+    bcf_itr_destroy(iter);
+
+    iter = bcf_itr_querys(idx, hdr, "20:1110600-1110800");
+    bcf_itr_destroy(iter);
+
+    hts_idx_destroy(idx);
+    bcf_hdr_destroy(hdr);
+    hts_close(fp);
+}
+
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
     write_bcf(fname);
     bcf_to_vcf(fname);
+    iterator(fname);
     return 0;
 }
 
