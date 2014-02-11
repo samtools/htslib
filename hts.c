@@ -1045,9 +1045,9 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
 {
 	int tid, beg, end;
 	char *q, *tmp;
-	if (!strcmp(reg, "."))
+	if (strcmp(reg, ".") == 0)
 		return hts_itr_query(idx, HTS_IDX_START, 0, 1<<29, readrec);
-	else if (strcmp(reg, "*")) {
+	else if (strcmp(reg, "*") != 0) {
 		q = (char*)hts_parse_reg(reg, &beg, &end);
 		tmp = (char*)alloca(q - reg + 1);
 		strncpy(tmp, reg, q - reg);
