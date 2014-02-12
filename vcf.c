@@ -2128,10 +2128,8 @@ int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples)
     if ( samples[0]=='^' )
         for (i=0; i<bcf_hdr_nsamples(hdr); i++) bit_array_set(hdr->keep_samples,i);
 
-    // todo: the logic of hts_readline is the opposite - list prefixed with ':' and file has no prefix
-
     int idx, n, ret = 0;
-    char **smpls = hts_readlines(samples[0]=='^'?samples+1:samples, &n);
+    char **smpls = hts_readlist(samples[0]=='^'?samples+1:samples, &n);
     if ( !smpls ) return -1;
     for (i=0; i<n; i++)
     {

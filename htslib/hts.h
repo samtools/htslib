@@ -119,6 +119,7 @@ int hts_close(htsFile *fp);
 
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
 char **hts_readlines(const char *fn, int *_n);
+char **hts_readlist(const char *fn, int *_n);
 
 /*!
   @abstract  Set .fai filename for a file opened for reading

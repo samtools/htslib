@@ -265,6 +265,19 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
 	return ret;
 }
 
+char **hts_readlist(const char *string, int *n)
+{
+    if ( string[0]==':' ) 
+        return hts_readlines(string+1,n);
+    char *str = (char*) malloc(strlen(string)+2);
+    if ( !str ) { *n = -1; return NULL; }
+    str[0] = ':';
+    strcpy(str+1, string);
+    char **ret = hts_readlines(str,n);
+    free(str);
+    return ret;
+}
+
 char **hts_readlines(const char *fn, int *_n)
 {
 	int m = 0, n = 0, dret;
