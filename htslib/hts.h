@@ -145,6 +145,7 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
 #define HTS_FMT_CSI 0
 #define HTS_FMT_BAI 1
 #define HTS_FMT_TBI 2
+#define HTS_FMT_CRAI 3
 
 struct __hts_idx_t;
 typedef struct __hts_idx_t hts_idx_t;

@@ -184,20 +184,29 @@ extern "C" {
     int   bam_str2flag(const char *str);    /** returns negative value on error */
     char *bam_flag2str(int flag);   /** The string must be freed by the user */
 
-	/********************
-	 *** BAM indexing ***
-	 ********************/
+	/*************************
+	 *** BAM/CRAM indexing ***
+	 *************************/
 
+	// These BAM iterator functions work only on BAM files.  To work with either
+	// BAM or CRAM files use the sam_index_load() & sam_itr_*() functions.
 	#define bam_itr_destroy(iter) hts_itr_destroy(iter)
 	#define bam_itr_queryi(idx, tid, beg, end) sam_itr_queryi(idx, tid, beg, end)
 	#define bam_itr_querys(idx, hdr, region) sam_itr_querys(idx, hdr, region)
 	#define bam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
+
+	// Load .csi or .bai BAM index file.
 	#define bam_index_load(fn) hts_idx_load((fn), HTS_FMT_BAI)
 
 	int bam_index_build(const char *fn, int min_shift);
 
+	// Load BAM (.csi or .bai) or CRAM (.crai) index file.
+	hts_idx_t *sam_index_load(htsFile *fp, const char *fn);
+
+	#define sam_itr_destroy(iter) hts_itr_destroy(iter)
 	hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
 	hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
+	#define sam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (htsfp))
 
 	/***************
 	 *** SAM I/O ***
