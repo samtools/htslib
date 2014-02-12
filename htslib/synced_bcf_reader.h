@@ -50,6 +50,7 @@ typedef struct
     char *fname;
     int is_bin;             // is open in binary mode (tabix access)
     char **als;             // parsed alleles if targets_als set and _regions_match_alleles called
+    kstring_t als_str;      // block of parsed alleles
     int nals, mals;         // number of set alleles and the size of allocated array
     int als_type;           // alleles type, currently VCF_SNP or VCF_INDEL
 

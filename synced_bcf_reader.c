@@ -1052,6 +1052,7 @@ void bcf_sr_regions_destroy(bcf_sr_regions_t *reg)
     if ( reg->tbx ) tbx_destroy(reg->tbx);
     if ( reg->file ) hts_close(reg->file);
     if ( reg->als ) free(reg->als);
+    if ( reg->als_str.s ) free(reg->als_str.s);
     free(reg->line.s);
     if ( reg->regs ) 
     {
@@ -1185,21 +1186,35 @@ static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *re
             if ( *ss=='\t' ) i++;
             ss++;
         }
+        char *se = ss;
         reg->nals = 1;
-        hts_expand(char*,reg->nals,reg->mals,reg->als);
-        reg->als[0] = ss;
-        while ( *(++ss) )
-        {
-            if ( *ss=='\t' ) break;
-            if ( *ss!=',' ) continue;
-            *ss = 0;
-            reg->nals++;
-            hts_expand(char*,reg->nals,reg->mals,reg->als);
-            reg->als[reg->nals-1] = ss+1;
-            if ( ss - reg->als[reg->nals-2] > max_len ) max_len = ss - reg->als[reg->nals-2];
+        while ( *se && *se!='\t' ) 
+        { 
+            if ( *se==',' ) reg->nals++;
+            se++; 
         }
-        if ( ss - reg->als[reg->nals-1] > max_len ) max_len = ss - reg->als[reg->nals-1];
-        reg->als_type = max_len > 1 ? VCF_INDEL : VCF_SNP;  // this is a too-simplified check, see vcf.c:bcf_set_variant_types
+        ks_resize(&reg->als_str, se-ss+1+reg->nals);
+        reg->als_str.l = 0;
+        hts_expand(char*,reg->nals,reg->mals,reg->als);
+        reg->nals = 0;
+
+        se = ss;
+        while ( *(++se) )
+        {
+            if ( *se=='\t' ) break;
+            if ( *se!=',' ) continue;
+            reg->als[reg->nals] = &reg->als_str.s[reg->als_str.l];
+            kputsn(ss,se-ss,&reg->als_str);
+            if ( &reg->als_str.s[reg->als_str.l] - reg->als[reg->nals] > max_len ) max_len = &reg->als_str.s[reg->als_str.l] - reg->als[reg->nals];
+            reg->als_str.l++;
+            reg->nals++;
+            ss = ++se;
+        }
+        reg->als[reg->nals] = &reg->als_str.s[reg->als_str.l];
+        kputsn(ss,se-ss,&reg->als_str);
+        if ( &reg->als_str.s[reg->als_str.l] - reg->als[reg->nals] > max_len ) max_len = &reg->als_str.s[reg->als_str.l] - reg->als[reg->nals];
+        reg->nals++;
+        reg->als_type = max_len > 1 ? VCF_INDEL : VCF_SNP;  // this is a simplified check, see vcf.c:bcf_set_variant_types
     }
     int type = bcf_get_variant_types(rec);
     if ( reg->als_type & VCF_INDEL )
