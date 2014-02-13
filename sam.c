@@ -421,6 +421,9 @@ static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end
 	iter->off = NULL;
 	iter->bins.a = NULL;
 	iter->readrec = readrec;
+	// The following fields are not required by hts_itr_next(), but are
+	// filled in in case user code wants to look at them.
+	iter->tid = tid;
 	iter->beg = beg;
 	iter->end = end;
 	return iter;
