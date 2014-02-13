@@ -532,7 +532,8 @@ extern "C" {
      *
      *  Returns negative value on error or the number of written values on
      *  success. bcf_get_info_string() returns on success the number of 
-     *  characters written excluding the null-terminating byte. 
+     *  characters written excluding the null-terminating byte. bcf_get_info_flag()
+     *  returns 1 when flag is set or 0 if not.
      *
      *  List of return codes:
      *      -1 .. no such INFO tag defined in the header
@@ -542,6 +543,7 @@ extern "C" {
     #define bcf_get_info_int(hdr,line,tag,dst,ndst)    bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
     #define bcf_get_info_float(hdr,line,tag,dst,ndst)  bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)
     #define bcf_get_info_string(hdr,line,tag,dst,ndst)  bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_STR)
+    #define bcf_get_info_flag(hdr,line,tag,dst,ndst)  bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_FLAG)
     int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type);
 
     /**

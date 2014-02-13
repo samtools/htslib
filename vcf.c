@@ -2678,9 +2678,10 @@ int bcf_get_info_values(bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **ds
 
     for (i=0; i<line->n_info; i++)
         if ( line->d.info[i].key==tag_id ) break;
-    if ( i==line->n_info ) return -3;                               // the tag is not present in this record
-    bcf_info_t *info = &line->d.info[i];
+    if ( i==line->n_info ) return ( type==BCF_HT_FLAG ) ? 0 : -3;       // the tag is not present in this record
+    if ( type==BCF_HT_FLAG ) return 1;
 
+    bcf_info_t *info = &line->d.info[i];
     if ( type==BCF_HT_STR )
     {
         if ( *ndst < info->len+1 ) 
