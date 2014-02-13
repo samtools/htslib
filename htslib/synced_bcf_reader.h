@@ -45,11 +45,12 @@ typedef struct
     // for reading from tabix-indexed file (big data)
     tbx_t *tbx;             // tabix index
     hts_itr_t *itr;         // tabix iterator
-    kstring_t line;         // holder of the current line
+    kstring_t line;         // holder of the current line, set only when reading from tabix-indexed files
     htsFile *file;
     char *fname;
     int is_bin;             // is open in binary mode (tabix access)
     char **als;             // parsed alleles if targets_als set and _regions_match_alleles called
+    kstring_t als_str;      // block of parsed alleles
     int nals, mals;         // number of set alleles and the size of allocated array
     int als_type;           // alleles type, currently VCF_SNP or VCF_INDEL
 
@@ -62,6 +63,7 @@ typedef struct
     int nseqs;              // number of sequences (chromosomes) in the file
     int iseq;               // current position: chr name, index to snames
     int start, end;         // current position: start, end of the region (0-based)
+    int prev_seq, prev_start;
 }
 bcf_sr_regions_t;
 
@@ -124,6 +126,7 @@ void bcf_sr_destroy(bcf_srs_t *readers);
  *  the reader's logic.
  */
 int bcf_sr_add_reader(bcf_srs_t *readers, const char *fname);
+void bcf_sr_remove_reader(bcf_srs_t *files, int i);
 
 
 /** 
@@ -138,6 +141,11 @@ int bcf_sr_next_line(bcf_srs_t *readers);
 #define bcf_sr_has_line(readers, i) (readers)->has_line[i]
 #define bcf_sr_get_line(_readers, i) ((_readers)->has_line[i] ? ((_readers)->readers[i].buffer[0]) : NULL)
 
+/**
+ *  bcf_sr_seek() - set all readers to selected position
+ *  @pos:  0-based coordinate
+ */
+int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos);
 
 /**
  * bcf_sr_set_samples() - sets active samples
@@ -184,13 +192,18 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions);
  *  bcf_sr_regions_init() 
  *  @regions:   regions can be either a comma-separated list of regions
  *              (chr|chr:pos|chr:from-to|chr:from-) or VCF, BED, or
- *              tab-delimited file (the default). The columns of the
- *              tab-delimited file are: CHROM, POS, and, optionally, POS_TO,
- *              where positions are 1-based and inclusive. Uncompressed files
- *              are stored in memory, while bgzip-compressed and tabix-indexed
+ *              tab-delimited file (the default). Uncompressed files
+ *              are stored in memory while bgzip-compressed and tabix-indexed
  *              region files are streamed.
+ *  @chr, from, to:       
+ *              Column indexes of chromosome, start position and end position
+ *              in the tab-delimited file. The positions are 1-based and
+ *              inclusive. 
+ *              These parameters are ignored when reading from VCF, BED or
+ *              tabix-indexed files. When end position column is not present,
+ *              supply 'from' in place of 'to'.
  */
-bcf_sr_regions_t *bcf_sr_regions_init(const char *regions);
+bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int chr, int from, int to);
 void bcf_sr_regions_destroy(bcf_sr_regions_t *regions);
 
 /*

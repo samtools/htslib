@@ -363,14 +363,90 @@ int bam_index_build(const char *fn, int min_shift)
 	return ret;
 }
 
-int bam_readrec(BGZF *fp, void *null, bam1_t *b, int *tid, int *beg, int *end)
+static int bam_readrec(BGZF *fp, void *ignored, void *bv, int *tid, int *beg, int *end)
 {
+	bam1_t *b = bv;
 	int ret;
 	if ((ret = bam_read1(fp, b)) >= 0) {
 		*tid = b->core.tid; *beg = b->core.pos;
 		*end = b->core.pos + (b->core.n_cigar? bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)) : 1);
 	}
 	return ret;
+}
+
+static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
+{
+	htsFile *fp = fpv;
+	bam1_t *b = bv;
+	return cram_get_bam_seq(fp->fp.cram, &b);
+}
+
+// The CRAM implementation stores the loaded index within the cram_fd rather
+// than separately as is done elsewhere in htslib.  So if p is a pointer to
+// an hts_idx_t with p->fmt == HTS_FMT_CRAI, then it actually points to an
+// hts_cram_idx_t and should be cast accordingly.
+typedef struct hts_cram_idx_t {
+    int fmt;
+    cram_fd *cram;
+} hts_cram_idx_t;
+
+hts_idx_t *sam_index_load(samFile *fp, const char *fn)
+{
+	if (fp->is_bin) return bam_index_load(fn);
+	else if (fp->is_cram) {
+		if (cram_index_load(fp->fp.cram, fn) < 0) return NULL;
+		// Cons up a fake "index" just pointing at the associated cram_fd:
+		hts_cram_idx_t *idx = malloc(sizeof (hts_cram_idx_t));
+		if (idx == NULL) return NULL;
+		idx->fmt = HTS_FMT_CRAI;
+		idx->cram = fp->fp.cram;
+		return (hts_idx_t *) idx;
+	}
+	else return NULL; // TODO Would use tbx_index_load if it returned hts_idx_t
+}
+
+static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
+{
+	const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
+	hts_itr_t *iter;
+	// TODO Check whether htslib and CRAM agree re 0-based v 1-based coordinates
+	cram_range r = { tid, beg, end };
+	if (cram_set_option(cidx->cram, CRAM_OPT_RANGE, &r) != 0) return NULL;
+
+	// Cons up a dummy iterator for which hts_itr_next() will simply invoke
+	// the readrec function:
+	iter = (hts_itr_t *) calloc(1, sizeof(hts_itr_t));
+	if (iter == NULL) return NULL;
+	iter->read_rest = 1;
+	iter->curr_off = 0;
+	iter->off = NULL;
+	iter->bins.a = NULL;
+	iter->readrec = readrec;
+	return iter;
+}
+
+hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
+{
+	const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
+	if (cidx->fmt == HTS_FMT_CRAI)
+		return cram_itr_query(idx, tid, beg, end, cram_readrec);
+	else
+		return hts_itr_query(idx, tid, beg, end, bam_readrec);
+}
+
+static int cram_name2id(void *fdv, const char *ref)
+{
+	cram_fd *fd = (cram_fd *) fdv;
+	return sam_hdr_name2ref(fd->header, ref);
+}
+
+hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region)
+{
+	const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
+	if (cidx->fmt == HTS_FMT_CRAI)
+		return hts_itr_querys(idx, region, cram_name2id, cidx->cram, cram_itr_query, cram_readrec);
+	else
+		return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr, hts_itr_query, bam_readrec);
 }
 
 /**********************
@@ -922,6 +998,7 @@ char *bam_aux2Z(const uint8_t *s)
 	else return 0;
 }
 
+#define STRNCMP(a,b,n) (strncasecmp((a),(b),(n)) || strlen(a)!=(n))
 int bam_str2flag(const char *str)
 {
     char *end, *beg = (char*) str;
@@ -932,18 +1009,18 @@ int bam_str2flag(const char *str)
     {
         end = beg;
         while ( *end && *end!=',' ) end++;
-        if ( !strncasecmp(beg,"PAIRED",end-beg) ) flag |= BAM_FPAIRED;
-        else if ( !strncasecmp(beg,"PROPER_PAIR",end-beg) ) flag |= BAM_FPROPER_PAIR;
-        else if ( !strncasecmp(beg,"UNMAP",end-beg) ) flag |= BAM_FUNMAP;
-        else if ( !strncasecmp(beg,"MUNMAP",end-beg) ) flag |= BAM_FMUNMAP;
-        else if ( !strncasecmp(beg,"REVERSE",end-beg) ) flag |= BAM_FREVERSE;
-        else if ( !strncasecmp(beg,"MREVERSE",end-beg) ) flag |= BAM_FMREVERSE;
-        else if ( !strncasecmp(beg,"READ1",end-beg) ) flag |= BAM_FREAD1;
-        else if ( !strncasecmp(beg,"READ2",end-beg) ) flag |= BAM_FREAD2;
-        else if ( !strncasecmp(beg,"SECONDARY",end-beg) ) flag |= BAM_FSECONDARY;
-        else if ( !strncasecmp(beg,"QCFAIL",end-beg) ) flag |= BAM_FQCFAIL;
-        else if ( !strncasecmp(beg,"DUP",end-beg) ) flag |= BAM_FDUP;
-        else if ( !strncasecmp(beg,"SUPPLEMENTARY",end-beg) ) flag |= BAM_FSUPPLEMENTARY;
+        if ( !STRNCMP("PAIRED",beg,end-beg) ) flag |= BAM_FPAIRED;
+        else if ( !STRNCMP("PROPER_PAIR",beg,end-beg) ) flag |= BAM_FPROPER_PAIR;
+        else if ( !STRNCMP("UNMAP",beg,end-beg) ) flag |= BAM_FUNMAP;
+        else if ( !STRNCMP("MUNMAP",beg,end-beg) ) flag |= BAM_FMUNMAP;
+        else if ( !STRNCMP("REVERSE",beg,end-beg) ) flag |= BAM_FREVERSE;
+        else if ( !STRNCMP("MREVERSE",beg,end-beg) ) flag |= BAM_FMREVERSE;
+        else if ( !STRNCMP("READ1",beg,end-beg) ) flag |= BAM_FREAD1;
+        else if ( !STRNCMP("READ2",beg,end-beg) ) flag |= BAM_FREAD2;
+        else if ( !STRNCMP("SECONDARY",beg,end-beg) ) flag |= BAM_FSECONDARY;
+        else if ( !STRNCMP("QCFAIL",beg,end-beg) ) flag |= BAM_FQCFAIL;
+        else if ( !STRNCMP("DUP",beg,end-beg) ) flag |= BAM_FDUP;
+        else if ( !STRNCMP("SUPPLEMENTARY",beg,end-beg) ) flag |= BAM_FSUPPLEMENTARY;
         else return -1;
         if ( !*end ) break;
         beg = end + 1;

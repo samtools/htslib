@@ -119,6 +119,7 @@ int hts_close(htsFile *fp);
 
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
 char **hts_readlines(const char *fn, int *_n);
+char **hts_readlist(const char *fn, int *_n);
 
 /*!
   @abstract  Set .fai filename for a file opened for reading
@@ -144,6 +145,7 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
 #define HTS_FMT_CSI 0
 #define HTS_FMT_BAI 1
 #define HTS_FMT_TBI 2
+#define HTS_FMT_CRAI 3
 
 struct __hts_idx_t;
 typedef struct __hts_idx_t hts_idx_t;
@@ -152,11 +154,14 @@ typedef struct {
 	uint64_t u, v;
 } hts_pair64_t;
 
+typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, int *end);
+
 typedef struct {
 	uint32_t read_rest:1, finished:1, dummy:29;
 	int tid, beg, end, n_off, i;
 	uint64_t curr_off;
 	hts_pair64_t *off;
+	hts_readrec_func *readrec;
 	struct {
 		int n, m;
 		int *a;
@@ -182,14 +187,16 @@ extern "C" {
 	void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy);
 
 	const char *hts_parse_reg(const char *s, int *beg, int *end);
-	hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end);
+	hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
 	void hts_itr_destroy(hts_itr_t *iter);
 
-	typedef int (*hts_readrec_f)(BGZF*, void*, void*, int*, int*, int*);
 	typedef int (*hts_name2id_f)(void*, const char*);
+	typedef const char *(*hts_id2name_f)(void*, int);
+	typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
 
-	hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr);
-	int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void *hdr);
+	hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec);
+	int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data);
+    const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 
     /**
      * hts_file_type() - Convenience function to determine file type
@@ -204,9 +211,9 @@ extern "C" {
     #define FT_GZ     1
     #define FT_VCF    2
     #define FT_VCF_GZ (FT_GZ|FT_VCF)
-    #define FT_BCF    4
+    #define FT_BCF    (1<<2)
     #define FT_BCF_GZ (FT_GZ|FT_BCF)
-    #define FT_STDIN  8
+    #define FT_STDIN  (1<<3)
     int hts_file_type(const char *fname);
 
 

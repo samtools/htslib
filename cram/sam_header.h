@@ -393,7 +393,7 @@ int sam_hdr_rebuild(SAM_hdr *hdr);
  * @return
  * Returns -1 if unknown reference.
  */
-int sam_hdr_name2ref(SAM_hdr *hdr, char *ref);
+int sam_hdr_name2ref(SAM_hdr *hdr, const char *ref);
 
 /*! Looks up a read-group by name and returns a pointer to the start of the
  * associated tag list.
@@ -401,7 +401,7 @@ int sam_hdr_name2ref(SAM_hdr *hdr, char *ref);
  * @return
  * Returns NULL on failure
  */
-SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, char *rg);
+SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, const char *rg);
 
 /*! Fixes any PP links in @PG headers.
  *

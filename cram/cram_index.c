@@ -92,7 +92,7 @@ static void dump_index(cram_fd *fd) {
  * Returns 0 for success
  *        -1 for failure
  */
-int cram_index_load(cram_fd *fd, char *fn) {
+int cram_index_load(cram_fd *fd, const char *fn) {
     char line[1024], fn2[PATH_MAX];
     zfp *fp;
     cram_index *idx;

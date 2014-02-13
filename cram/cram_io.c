@@ -3345,7 +3345,7 @@ cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode) {
 int cram_seek(cram_fd *fd, off_t offset, int whence) {
     char buf[65536];
 
-    if (hseek(fd->fp, offset, whence) == 0)
+    if (hseek(fd->fp, offset, whence) >= 0)
 	return 0;
 
     if (!(whence == SEEK_CUR && offset >= 0))
