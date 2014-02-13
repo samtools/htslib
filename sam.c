@@ -422,6 +422,8 @@ static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end
 	iter->off = NULL;
 	iter->bins.a = NULL;
 	iter->readrec = readrec;
+	iter->beg = beg;
+	iter->end = end;
 	return iter;
 }
 
