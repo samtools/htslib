@@ -136,9 +136,12 @@ int cram_index_load(cram_fd *fd, const char *fn) {
 
 	if (e.refid != idx->refid) {
 	    if (fd->index_sz < e.refid+2) {
+		size_t index_end = fd->index_sz * sizeof(*fd->index);
 		fd->index_sz = e.refid+2;
 		fd->index = realloc(fd->index,
 				    fd->index_sz * sizeof(*fd->index));
+		memset(((char *)fd->index) + index_end, 0,
+		       fd->index_sz * sizeof(*fd->index) - index_end);
 	    }
 	    idx = &fd->index[e.refid+1];
 	    idx->refid = e.refid;

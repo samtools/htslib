@@ -195,6 +195,18 @@ int hts_close(htsFile *fp)
 		ret = bgzf_close(fp->fp.bgzf);
 	} else if (fp->is_cram) {
 		ret = cram_close(fp->fp.cram);
+		if (!fp->is_write) {
+			switch (cram_eof(fp->fp.cram)) {
+			case 0:
+				fprintf(stderr, "[E::%s] Failed to decode sequence.\n", __func__);
+				return -1;
+			case 2:
+				fprintf(stderr, "[W::%s] EOF marker is absent. The input is probably truncated.\n", __func__);
+				break;
+			default: /* case 1, expected EOF */
+				break;
+			}
+		}
 	} else if (fp->is_kstream) {
 	#if KS_BGZF
 		BGZF *gzfp = ((kstream_t*)fp->fp.voidp)->f;

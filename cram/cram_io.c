@@ -2131,14 +2131,14 @@ cram_container *cram_read_container(cram_fd *fd) {
     memset(&c2, 0, sizeof(c2));
     if (fd->version == CRAM_1_VERS) {
 	if ((s = itf8_decode(fd, &c2.length)) == -1) {
-	    fd->eof = 1;
+	    fd->eof = fd->empty_container ? 1 : 2;
 	    return NULL;
 	} else {
 	    rd+=s;
 	}
     } else {
 	if ((s = int32_decode(fd, &c2.length)) == -1) {
-	    fd->eof = 1;
+	    fd->eof = fd->empty_container ? 1 : 2;
 	    return NULL;
 	} else {
 	    rd+=s;
@@ -3417,6 +3417,20 @@ int cram_close(cram_fd *fd) {
 	//fprintf(stderr, "CRAM: destroy queue %p\n", fd->rqueue);
 
 	t_results_queue_destroy(fd->rqueue);
+    }
+
+    if (fd->mode == 'w') {
+	/* Write EOF block */
+	if (30 != hwrite(fd->fp, "\x0b\x00\x00\x00\xff\xff\xff\xff"
+			 "\xff\xe0\x45\x4f\x46\x00\x00\x00"
+			 "\x00\x01\x00\x00\x01\x00\x06\x06"
+			 "\x01\x00\x01\x00\x01\x00", 30))
+	    return -1;
+
+//	if (1 != fwrite("\x00\x00\x00\x00\xff\xff\xff\xff"
+//			"\xff\xe0\x45\x4f\x46\x00\x00\x00"
+//			"\x00\x00\x00", 19, 1, fd->fp))
+//	    return -1;
     }
 
     for (bl = fd->bl; bl; bl = next) {
