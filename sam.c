@@ -409,8 +409,7 @@ static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end
 {
 	const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
 	hts_itr_t *iter;
-	// TODO Check whether htslib and CRAM agree re 0-based v 1-based coordinates
-	cram_range r = { tid, beg, end };
+	cram_range r = { tid, beg+1, end };
 	if (cram_set_option(cidx->cram, CRAM_OPT_RANGE, &r) != 0) return NULL;
 
 	// Cons up a dummy iterator for which hts_itr_next() will simply invoke
