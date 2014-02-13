@@ -669,135 +669,64 @@ size_t mygetline(char **line, size_t *n, FILE *fp)
 
 int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
 {
-    int i;
-    struct stat sbuf;
+    int i, j, nsmpl, free_smpl = 0;
+    char **smpl = NULL;
+    
+    void *exclude = (fname[0]=='^') ? khash_str2int_init() : NULL;
+    if ( exclude || strcmp("-",fname) ) // "-" stands for all samples
+    {
+        smpl = hts_readlist(fname, &nsmpl);
+        if ( !smpl ) 
+        {
+            fprintf(stderr,"Could not read the file: \"%s\"\n", fname);
+            return 0;
+        }
+        if ( exclude )
+        {
+            for (i=0; i<nsmpl; i++)
+                khash_str2int_inc(exclude, smpl[i]);
+        }
+        free_smpl = 1;
+    }
+    if ( !smpl )
+    {
+        smpl  = files->readers[0].header->samples;   // intersection of all samples
+        nsmpl = bcf_hdr_nsamples(files->readers[0].header);
+    }
+
     files->samples = NULL;
     files->n_smpl  = 0;
+    for (i=0; i<nsmpl; i++)
+    {
+        if ( exclude && khash_str2int_has_key(exclude,smpl[i])  ) continue;
 
-    int *exclude = NULL;
-    if ( fname[0]=='!' )    // exclude samples
-    { 
-        fname++; 
-        exclude = (int*) calloc(bcf_hdr_nsamples(files->readers[0].header),sizeof(int));
-        if ( stat(fname, &sbuf)==0 && S_ISREG(sbuf.st_mode) ) // reading from file
+        int n_isec = 0;
+        for (j=0; j<files->nreaders; j++)
         {
-            FILE *fp = fopen(fname,"r");
-            if ( !fp ) { fprintf(stderr,"%s: %s\n", fname,strerror(errno)); return 0; }
-            char *line = NULL;
-            size_t len = 0;
-            ssize_t nread;
-            while ((nread = mygetline(&line, &len, fp)) != -1)
-            {
-                int id = bcf_hdr_id2int(files->readers[0].header, BCF_DT_SAMPLE, line);
-                // sanity check our assumptions for the things to follow
-                assert( id < bcf_hdr_nsamples(files->readers[0].header) );
-                assert( !strcmp(files->readers[0].header->samples[id],line) );
-                if ( id>=0 ) exclude[id] = 1;
-            }
+            if ( bcf_hdr_id2int(files->readers[j].header, BCF_DT_SAMPLE, smpl[i])<0 ) break;
+            n_isec++;
         }
-        else
+        if ( n_isec!=files->nreaders )
         {
-            kstring_t str = {0,0,0};
-            const char *b = fname;
-            while (b)
-            {
-                str.l = 0;
-                const char *e = index(b,','); 
-                if ( !(e-b) ) break;
-                if ( e ) { kputsn(b, e-b, &str); e++; }
-                else kputs(b, &str);
-                b = e;
-                for (i=0; i<files->nreaders; i++)
-                {
-                    int id = bcf_hdr_id2int(files->readers[0].header, BCF_DT_SAMPLE, str.s);
-                    // sanity check our assumptions for the things to follow
-                    assert( id < bcf_hdr_nsamples(files->readers[0].header) );
-                    assert( !strcmp(files->readers[0].header->samples[id],str.s) );
-                    if ( id>=0 ) exclude[id] = 1;
-                }
-            }
-            free(str.s);
+            fprintf(stderr,"Warning: The sample \"%s\" was not found in %s, skipping\n", smpl[i], files->readers[n_isec].fname);
+            continue;
         }
-        fname = "-";
-    }
-    if ( !strcmp(fname,"-") )   // Intersection of all samples across all readers
-    {
-        int n = bcf_hdr_nsamples(files->readers[0].header);
-        char **smpl = files->readers[0].header->samples;
-        int ism;
-        for (ism=0; ism<n; ism++)
-        {
-            if ( exclude && exclude[ism] ) continue;
-            int n_isec = 1;
-            for (i=1; i<files->nreaders; i++)
-            {
-                if ( bcf_hdr_id2int(files->readers[i].header, BCF_DT_SAMPLE, smpl[ism])==-1 ) break;
-                n_isec++;
-            }
-            if ( n_isec<files->nreaders ) continue;
-            files->samples = (char**) realloc(files->samples, (files->n_smpl+1)*sizeof(const char*));
-            files->samples[files->n_smpl++] = strdup(smpl[ism]);
-        }
-    }
-    else if ( stat(fname, &sbuf)==0 && S_ISREG(sbuf.st_mode) ) // read samples from file
-    {
-        FILE *fp = fopen(fname,"r");
-        if ( !fp ) { free(exclude); fprintf(stderr,"%s: %s\n", fname,strerror(errno)); return 0; }
-        char *line = NULL;
-        size_t len = 0;
-        ssize_t nread;
-        while ((nread = mygetline(&line, &len, fp)) != -1) 
-        {
-            int n_isec = 0;
-            for (i=0; i<files->nreaders; i++)
-            {
-                if ( bcf_hdr_id2int(files->readers[i].header, BCF_DT_SAMPLE, line)==-1 ) break;
-                n_isec++;
-            }
-            if ( n_isec<files->nreaders ) 
-            {
-                fprintf(stderr,"[init_samples] sample not found, skipping: [%s]\n", line);
-                continue;
-            }
-            files->samples = (char**) realloc(files->samples, (files->n_smpl+1)*sizeof(const char*));
-            files->samples[files->n_smpl++] = strdup(line);
-        }
-        if (line) free(line);
-        fclose(fp);
-    }
-    else    // samples given as a comma-separated list
-    {
-        kstring_t str = {0,0,0};
-        const char *b = fname;
-        while (b)
-        {
-            str.l = 0;
-            const char *e = index(b,','); 
-            if ( !(e-b) ) break;
-            if ( e ) { kputsn(b, e-b, &str); e++; }
-            else kputs(b, &str);
-            b = e;
 
-            int n_isec = 0;
-            for (i=0; i<files->nreaders; i++)
-            {
-                if ( bcf_hdr_id2int(files->readers[i].header, BCF_DT_SAMPLE, str.s)==-1 ) break;
-                n_isec++;
-            }
-            if ( n_isec<files->nreaders ) 
-            {
-                fprintf(stderr,"[init_samples] sample not found, skipping: %s\n", str.s);
-                continue;
-            }
-            files->samples = (char**) realloc(files->samples, (files->n_smpl+1)*sizeof(const char*));
-            files->samples[files->n_smpl++] = strdup(str.s);
-        }
-        if ( str.s ) free(str.s);
+        files->samples = (char**) realloc(files->samples, (files->n_smpl+1)*sizeof(const char*));
+        files->samples[files->n_smpl++] = strdup(smpl[i]);
     }
-    free(exclude);
+
+    if ( exclude ) khash_str2int_destroy(exclude);
+    if ( free_smpl ) 
+    {
+        for (i=0; i<nsmpl; i++) free(smpl[i]);
+        free(smpl);
+    }
+
     if ( !files->n_smpl ) 
     {
-        if ( files->nreaders>1 ) fprintf(stderr,"[init_samples] No samples in common.\n");
+        if ( files->nreaders>1 ) 
+            fprintf(stderr,"No samples in common.\n");
         return 0;
     }
     for (i=0; i<files->nreaders; i++)
@@ -805,9 +734,8 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
         bcf_sr_t *reader = &files->readers[i];
         reader->samples  = (int*) malloc(sizeof(int)*files->n_smpl);
         reader->n_smpl   = files->n_smpl;
-        int ism;
-        for (ism=0; ism<files->n_smpl; ism++)
-            reader->samples[ism] = bcf_hdr_id2int(reader->header, BCF_DT_SAMPLE, files->samples[ism]);
+        for (j=0; j<files->n_smpl; j++)
+            reader->samples[j] = bcf_hdr_id2int(reader->header, BCF_DT_SAMPLE, files->samples[j]);
     }
     return 1;
 }
