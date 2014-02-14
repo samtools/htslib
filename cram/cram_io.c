@@ -2742,11 +2742,9 @@ cram_file_def *cram_read_file_def(cram_fd *fd) {
 	return NULL;
     }
 
-    if (!(def->major_version == 1 && def->minor_version == 0) &&
-	!(def->major_version == 1 && def->minor_version == 1) &&
-	!(def->major_version == 2 && def->minor_version == 0)) {
+    if (def->major_version > 2) {
 	fprintf(stderr, "CRAM version number mismatch\n"
-		"Expected 1.0 or 2.0, got %d.%d\n",
+		"Expected 1.x or 2.x, got %d.%d\n",
 		def->major_version, def->minor_version);
 	free(def);
 	return NULL;
@@ -3033,7 +3031,7 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 #endif
 
 #ifdef PADDED_BLOCK
-	padded_length = MAX(c->length*2, 10000) - c->length;
+	padded_length = MIN(c->length*1.5, 10000) - c->length;
 	c->length += padded_length;
 	if (NULL == (pads = calloc(1, padded_length))) {
 	    cram_free_block(b);
@@ -3187,7 +3185,7 @@ static void cram_init_tables(cram_fd *fd) {
 
 // Default version numbers for CRAM
 static int major_version = 2;
-static int minor_version = 0;
+static int minor_version = 1;
 
 /*
  * Opens a CRAM file for read (mode "rb") or write ("wb").
@@ -3574,9 +3572,17 @@ int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args) {
 	return cram_load_reference(fd, va_arg(args, char *));
 
     case CRAM_OPT_VERSION: {
+	int major, minor;
 	char *s = va_arg(args, char *);
-	if (2 != sscanf(s, "%d.%d", &major_version, &minor_version)) {
+	if (2 != sscanf(s, "%d.%d", &major, &minor)) {
 	    fprintf(stderr, "Malformed version string %s\n", s);
+	    return -1;
+	}
+	if (!((major == 1 &&  minor == 0) ||
+	      (major == 2 && (minor == 0 || minor == 1)) ||
+	      (major == 3 &&  minor == 0))) {
+	    fprintf(stderr, "Unknown version string; "
+		    "use 1.0, 2.0, 2.1 or 3.0\n");
 	    return -1;
 	}
 	break;
