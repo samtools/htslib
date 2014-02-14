@@ -3031,7 +3031,7 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 #endif
 
 #ifdef PADDED_BLOCK
-	padded_length = MIN(c->length*1.5, 10000) - c->length;
+	padded_length = MAX(c->length*1.5, 10000) - c->length;
 	c->length += padded_length;
 	if (NULL == (pads = calloc(1, padded_length))) {
 	    cram_free_block(b);
