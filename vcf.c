@@ -31,6 +31,14 @@ int bcf_hdr_sync(bcf_hdr_t *h);
 
 int bcf_hdr_add_sample(bcf_hdr_t *h, const char *s)
 {
+    const char *ss = s;
+    while ( !*ss && isspace(*ss) ) ss++;
+    if ( !*ss )
+    {
+        fprintf(stderr,"[W::%s] Empty sample name: trailing spaces/tabs in the header line?\n", __func__);
+        abort();
+    }
+
     vdict_t *d = (vdict_t*)h->dict[BCF_DT_SAMPLE];
     int ret;
     char *sdup = strdup(s);
