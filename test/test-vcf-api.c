@@ -57,7 +57,7 @@ void write_bcf(char *fname)
     // .. QUAL
     rec->qual = 29;
     // .. FILTER
-    int tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
+    int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
     bcf_update_filter(hdr, rec, &tmpi, 1);
     // .. INFO
     tmpi = 3;  
@@ -69,7 +69,7 @@ void write_bcf(char *fname)
     bcf_update_info_flag(hdr, rec, "DB", NULL, 1);
     bcf_update_info_flag(hdr, rec, "H2", NULL, 1);
     // .. FORMAT
-    int *tmpia = (int*)malloc(bcf_hdr_nsamples(hdr)*2*sizeof(int));
+    int32_t *tmpia = (int*)malloc(bcf_hdr_nsamples(hdr)*2*sizeof(int));
     tmpia[0] = bcf_gt_phased(0); 
     tmpia[1] = bcf_gt_phased(0);
     tmpia[2] = bcf_gt_phased(1); 
