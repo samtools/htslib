@@ -43,7 +43,7 @@ typedef struct __kstring_t {
 #define hts_expand0(type_t, n, m, ptr) if ((n) > (m)) { \
 		int t = (m); (m) = (n); kroundup32(m); \
 		(ptr) = (type_t*)realloc((ptr), (m) * sizeof(type_t)); \
-        memset((ptr)+t,0,sizeof(type_t)*((m)-t)); \
+        memset(((type_t*)ptr)+t,0,sizeof(type_t)*((m)-t)); \
 	}
 
 /************
