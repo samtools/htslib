@@ -2366,7 +2366,9 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
             uint8_t *ptr = inf->vptr - inf->vptr_off;
             memcpy(ptr, str.s, str.l);
             free(str.s);
+            int vptr_free = inf->vptr_free;
             bcf_unpack_info_core1(ptr, inf);
+            inf->vptr_free = vptr_free;
         }
         else
         {
@@ -2502,7 +2504,9 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
             uint8_t *ptr = fmt->p - fmt->p_off;
             memcpy(ptr, str.s, str.l);
             free(str.s);
+            int p_free = fmt->p_free;
             bcf_unpack_fmt_core1(ptr, line->n_sample, fmt);
+            fmt->p_free = p_free;
         }
         else
         {
