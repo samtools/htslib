@@ -410,7 +410,10 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
         }
         else
+        {
             if ( (ret=bcf_itr_next(reader->file, reader->itr, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
+            bcf_subset_format(reader->header,reader->buffer[reader->nbuffer+1]);
+        }
 
         // apply filter
         if ( !reader->nfilter_ids )

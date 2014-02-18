@@ -759,8 +759,9 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 #define bit_array_test(a,i)  ((a)[(i)/8] &   (1 << ((i)%8)))
 
 static inline uint8_t *bcf_unpack_fmt_core1(uint8_t *ptr, int n_sample, bcf_fmt_t *fmt);
-static inline int _bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec)
+int bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec)
 {
+    if ( !hdr->keep_samples ) return 0;
     if ( !bcf_hdr_nsamples(hdr) )
     {
         rec->indiv.l = rec->n_sample = 0;
@@ -804,7 +805,7 @@ int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
     if (!fp->is_bin) return vcf_read(fp,h,v);
     int ret = bcf_read1_core(fp->fp.bgzf, v);
     if ( ret!=0 || !h->keep_samples ) return ret;
-    return _bcf_subset_format(h,v);
+    return bcf_subset_format(h,v);
 }
 
 int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, int *beg, int *end)

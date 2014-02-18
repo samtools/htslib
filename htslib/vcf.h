@@ -267,13 +267,17 @@ extern "C" {
      *  reader knows in advance that only subset of samples is needed (possibly
      *  no samples at all), the performance of bcf_read() can be significantly
      *  improved by calling bcf_hdr_set_samples after bcf_hdr_read().
-     *  The function bcf_read() will automaically subset the VCF/BCF records.
+     *  The function bcf_read() will subset the VCF/BCF records automatically
+     *  with the notable exception when reading records via bcf_itr_next().
+     *  In this case, bcf_subset_format() must be called explicitly, because
+     *  bcf_readrec() does not see the header.
      *
      *  Returns 0 on success, -1 on error or a positive integer if the list
      *  contains samples not present in the VCF header. In such a case, the
      *  return value is the index of the offending sample.
      */
     int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples);
+    int bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec);
 
 
     /** Writes VCF or BCF header */
