@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <sys/stat.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 #include "cram/cram.h"
@@ -1180,6 +1181,14 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt)
 	if (fnidx) fmt = HTS_FMT_CSI;
 	else fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
 	if (fnidx == 0) return 0;
+
+    // Check that the index file is up to date, the main file might have changed
+    struct stat stat_idx,stat_main;
+    if ( !stat(fn, &stat_main) && !stat(fnidx, &stat_idx) )
+    {
+        if ( stat_idx.st_mtime < stat_main.st_mtime )
+            fprintf(stderr, "Warning: The index file is older than the data file: %s\n", fnidx);
+    }
 	idx = hts_idx_load_local(fnidx, fmt);
 	free(fnidx);
 	return idx;
