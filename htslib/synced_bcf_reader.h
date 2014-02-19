@@ -140,6 +140,7 @@ void bcf_sr_remove_reader(bcf_srs_t *files, int i);
 int bcf_sr_next_line(bcf_srs_t *readers);
 #define bcf_sr_has_line(readers, i) (readers)->has_line[i]
 #define bcf_sr_get_line(_readers, i) ((_readers)->has_line[i] ? ((_readers)->readers[i].buffer[0]) : NULL)
+#define bcf_sr_region_done(_readers,i) (!(_readers)->has_line[i] && !(_readers)->readers[i].nbuffer ? 1 : 0)
 
 /**
  *  bcf_sr_seek() - set all readers to selected position
