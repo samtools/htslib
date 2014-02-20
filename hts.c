@@ -195,7 +195,6 @@ int hts_close(htsFile *fp)
 	if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
 		ret = bgzf_close(fp->fp.bgzf);
 	} else if (fp->is_cram) {
-		ret = cram_close(fp->fp.cram);
 		if (!fp->is_write) {
 			switch (cram_eof(fp->fp.cram)) {
 			case 0:
@@ -208,6 +207,7 @@ int hts_close(htsFile *fp)
 				break;
 			}
 		}
+		ret = cram_close(fp->fp.cram);
 	} else if (fp->is_kstream) {
 	#if KS_BGZF
 		BGZF *gzfp = ((kstream_t*)fp->fp.voidp)->f;
