@@ -1370,7 +1370,9 @@ static void tweak_overlap_quality(bam1_t *a, bam1_t *b)
             #if DBG
                 fprintf(stderr,"%c",seq_nt16_str[bam_seqi(a_seq,a_iseq)]);
             #endif
-            a_qual[a_iseq] = 200;   // we are very confident about this base
+            // we are very confident about this base
+            int qual = a_qual[a_iseq] + b_qual[b_iseq];
+            a_qual[a_iseq] = qual>200 ? 200 : qual;
             b_qual[b_iseq] = 0;
         }
         else
