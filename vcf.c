@@ -1980,6 +1980,11 @@ void bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src)
 int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
 {
     int i;
+    if ( line->errcode )
+    {
+        fprintf(stderr,"[%s:%d %s] Unchecked error (%d), exiting.\n", __FILE__,__LINE__,__FUNCTION__,line->errcode);
+        exit(1);
+    }
     if ( src_hdr->ntransl==-1 ) return 0;    // no need to translate, all tags have the same id
     if ( !src_hdr->ntransl )  // called for the first time, see what needs translating
     {
