@@ -334,8 +334,9 @@ static int fd_flush(hFILE *fpv)
 #else
         ret = fsync(fp->fd);
 #endif
-        // Ignore invalid-for-fsync(2) errors due to being, e.g., a pipe
-        if (ret < 0 && errno == EINVAL) ret = 0;
+        // Ignore invalid-for-fsync(2) errors due to being, e.g., a pipe,
+        // and operation-not-supported errors (Mac OS X)
+        if (ret < 0 && (errno==EINVAL || errno==ENOTSUP)) ret = 0;
     } while (ret < 0 && errno == EINTR);
     return ret;
 }
