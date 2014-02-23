@@ -1,6 +1,6 @@
 /*  hfile.c -- buffered low-level input/output streams.
 
-    Copyright (C) 2013 Genome Research Ltd.
+    Copyright (C) 2013-2014 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 */
@@ -336,7 +336,7 @@ static int fd_flush(hFILE *fpv)
 #endif
         // Ignore invalid-for-fsync(2) errors due to being, e.g., a pipe,
         // and operation-not-supported errors (Mac OS X)
-        if (ret < 0 && (errno==EINVAL || errno==ENOTSUP)) ret = 0;
+        if (ret < 0 && (errno == EINVAL || errno == ENOTSUP)) ret = 0;
     } while (ret < 0 && errno == EINTR);
     return ret;
 }
