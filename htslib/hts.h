@@ -138,9 +138,19 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
  * Indexing *
  ************/
 
+/*!
+These HTS_IDX_* macros are used as special tid values for hts_itr_query()/etc,
+producing iterators operating as follows:
+ - HTS_IDX_NOCOOR iterates over unmapped reads sorted at the end of the file
+ - HTS_IDX_START  iterates over the entire file
+ - HTS_IDX_REST   iterates from the current position to the end of the file
+ - HTS_IDX_NONE   always returns "no more alignment records"
+When one of these special tid values is used, beg and end are ignored.
+*/
 #define HTS_IDX_NOCOOR (-2)
 #define HTS_IDX_START  (-3)
 #define HTS_IDX_REST   (-4)
+#define HTS_IDX_NONE   (-5)
 
 #define HTS_FMT_CSI 0
 #define HTS_FMT_BAI 1

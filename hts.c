@@ -937,9 +937,11 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
 	hts_itr_t *iter = 0;
 
 	if (tid < 0) {
+		int finished0 = 0;
 		uint64_t off0 = (uint64_t)-1;
 		khint_t k;
-		if (tid == HTS_IDX_START) {
+		switch (tid) {
+		case HTS_IDX_START:
             if ( idx->n <=0 ) return 0;
             // Find the smallest offset, note that sequence ids may not be ordered sequentially
             for (i=0; i<idx->n; i++)
@@ -949,22 +951,40 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
                 if (k == kh_end(bidx)) continue;
                 if ( off0 > kh_val(bidx, k).list[0].u ) off0 = kh_val(bidx, k).list[0].u;
             }
-		} else if (tid == HTS_IDX_NOCOOR) {
+            break;
+
+		case HTS_IDX_NOCOOR:
 			if (idx->n > 0) {
 				bidx = idx->bidx[idx->n - 1];
 				k = kh_get(bin, bidx, idx->n_bins + 1);
 				if (k == kh_end(bidx)) return 0;
 				off0 = kh_val(bidx, k).list[0].v;
 			} else return 0;
-		} else off0 = 0;
+			break;
+
+		case HTS_IDX_REST:
+			off0 = 0;
+			break;
+
+		case HTS_IDX_NONE:
+			finished0 = 1;
+			off0 = 0;
+			break;
+
+		default:
+			return 0;
+		}
+
 		if (off0 != (uint64_t)-1) {
 			iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
 			iter->read_rest = 1;
+			iter->finished = finished0;
 			iter->curr_off = off0;
 			iter->readrec = readrec;
 			return iter;
 		} else return 0;
 	}
+
 	if (beg < 0) beg = 0;
 	if (end < beg) return 0;
 	if ((bidx = idx->bidx[tid]) == 0) return 0;
@@ -1078,7 +1098,7 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
 int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 {
 	int ret, tid, beg, end;
-	if (iter && iter->finished) return -1;
+	if (iter == NULL || iter->finished) return -1;
 	if (iter->read_rest) {
 		if (iter->curr_off) { // seek to the start
 			bgzf_seek(fp, iter->curr_off, SEEK_SET);
