@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2013 Genome Research Ltd.
+Copyright (c) 2012-2014 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without 
@@ -2952,8 +2952,11 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 		rlen = fd->refs->ref_id[i]->length;
 		MD5_Init(&md5);
 		ref = cram_get_ref(fd, i, 1, rlen);
+		if (NULL == ref) return -1;
+		rlen = fd->refs->ref_id[i]->length; /* In case it just loaded */
 		MD5_Update(&md5, ref, rlen);
 		MD5_Final(buf, &md5);
+		cram_ref_decr(fd->refs, i);
 
 		for (j = 0; j < 16; j++) {
 		    buf2[j*2+0] = "0123456789abcdef"[buf[j]>>4];
@@ -2962,7 +2965,6 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 		buf2[32] = 0;
 		if (sam_hdr_update(hdr, ty, "M5", buf2, NULL))
 		    return -1;
-		cram_ref_decr(fd->refs, i);
 	    }
 
 	    if (fd->ref_fn) {
