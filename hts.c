@@ -138,7 +138,7 @@ htsFile *hts_open(const char *fn, const char *mode)
 			fp->is_kstream = 1;
 		}
 	}
-	else if (strchr(mode, 'w')) {
+	else if (strchr(mode, 'w') || strchr(mode, 'a')) {
 		fp->is_write = 1;
 		if (strchr(mode, 'b')) fp->is_bin = 1;
 		if (strchr(mode, 'c')) fp->is_cram = 1;

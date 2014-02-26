@@ -149,13 +149,13 @@ BGZF *bgzf_open(const char *path, const char *mode)
 	assert(compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
 	if (strchr(mode, 'r')) {
 		hFILE *fpr;
-		if ((fpr = hopen(path, "r")) == 0) return 0;
+		if ((fpr = hopen(path, mode)) == 0) return 0;
 		fp = bgzf_read_init(fpr);
 		if (fp == 0) { hclose_abruptly(fpr); return NULL; }
 		fp->fp = fpr;
-	} else if (strchr(mode, 'w')) {
+	} else if (strchr(mode, 'w') || strchr(mode, 'a')) {
 		hFILE *fpw;
-		if ((fpw = hopen(path, "w")) == 0) return 0;
+		if ((fpw = hopen(path, mode)) == 0) return 0;
 		fp = bgzf_write_init(mode2level(mode));
 		fp->fp = fpw;
 	}
@@ -171,13 +171,13 @@ BGZF *bgzf_dopen(int fd, const char *mode)
 	assert(compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
 	if (strchr(mode, 'r')) {
 		hFILE *fpr;
-		if ((fpr = hdopen(fd, "r")) == 0) return 0;
+		if ((fpr = hdopen(fd, mode)) == 0) return 0;
 		fp = bgzf_read_init(fpr);
 		if (fp == 0) { hclose_abruptly(fpr); return NULL; } // FIXME this closes fd
 		fp->fp = fpr;
-	} else if (strchr(mode, 'w')) {
+	} else if (strchr(mode, 'w') || strchr(mode, 'a')) {
 		hFILE *fpw;
-		if ((fpw = hdopen(fd, "w")) == 0) return 0;
+		if ((fpw = hdopen(fd, mode)) == 0) return 0;
 		fp = bgzf_write_init(mode2level(mode));
 		fp->fp = fpw;
 	}
@@ -194,7 +194,7 @@ BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
 	if (strchr(mode, 'r')) {
 		fp = bgzf_read_init(hfp);
 		if (fp == NULL) return NULL;
-	} else if (strchr(mode, 'w')) {
+	} else if (strchr(mode, 'w') || strchr(mode, 'a')) {
 		fp = bgzf_write_init(mode2level(mode));
 	}
 	else { errno = EINVAL; return 0; }

@@ -89,11 +89,12 @@ const char *hts_version();
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
   @param fn       The file name or "-" for stdin/stdout
-  @param mode     Mode matching /[rw][bcuz0-9]+/
+  @param mode     Mode matching /[rwa][bcuz0-9]+/
   @discussion
       With 'r' opens for reading; any further format mode letters are ignored
       as the format is detected by checking the first few bytes or BGZF blocks
-      of the file.  With 'w' opens for writing, with format specifier letters:
+      of the file.  With 'w' or 'a' opens for writing or appending, with format
+      specifier letters:
         b  binary format (BAM, BCF, etc) rather than text (SAM, VCF, etc)
         c  CRAM format
         u  uncompressed
