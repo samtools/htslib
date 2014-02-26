@@ -426,6 +426,75 @@ int hfile_oflags(const char *mode)
 }
 
 
+/*********************
+ * In-memory backend *
+ *********************/
+
+typedef struct {
+    hFILE base;
+    const char *buffer;
+    size_t length, pos;
+} hFILE_mem;
+
+static ssize_t mem_read(hFILE *fpv, void *buffer, size_t nbytes)
+{
+    hFILE_mem *fp = (hFILE_mem *) fpv;
+    size_t avail = fp->length - fp->pos;
+    if (nbytes > avail) nbytes = avail;
+    memcpy(buffer, fp->buffer + fp->pos, nbytes);
+    fp->pos += nbytes;
+    return nbytes;
+}
+
+static off_t mem_seek(hFILE *fpv, off_t offset, int whence)
+{
+    hFILE_mem *fp = (hFILE_mem *) fpv;
+    size_t absoffset = (offset >= 0)? offset : -offset;
+    size_t origin;
+
+    switch (whence) {
+    case SEEK_SET: origin = 0; break;
+    case SEEK_CUR: origin = fp->pos; break;
+    case SEEK_END: origin = fp->length; break;
+    default: errno = EINVAL; return -1;
+    }
+
+    if ((offset  < 0 && absoffset > origin) ||
+        (offset >= 0 && absoffset > fp->length - origin)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    fp->pos = origin + offset;
+    return fp->pos;
+}
+
+static int mem_close(hFILE *fpv)
+{
+    return 0;
+}
+
+static const struct hFILE_backend mem_backend =
+{
+    mem_read, NULL, mem_seek, NULL, mem_close
+};
+
+static hFILE *hopen_mem(const char *data, const char *mode)
+{
+    // TODO Implement write modes, which will require memory allocation
+    if (strchr(mode, 'r') == NULL) { errno = EINVAL; return NULL; }
+
+    hFILE_mem *fp = (hFILE_mem *) hfile_init(sizeof (hFILE_mem), mode, 0);
+    if (fp == NULL) return NULL;
+
+    fp->buffer = data;
+    fp->length = strlen(data);
+    fp->pos = 0;
+    fp->base.backend = &mem_backend;
+    return &fp->base;
+}
+
+
 /******************************
  * hopen() backend dispatcher *
  ******************************/
@@ -434,6 +503,7 @@ hFILE *hopen(const char *fname, const char *mode)
 {
     if (strncmp(fname, "http://", 7) == 0 ||
         strncmp(fname, "ftp://", 6) == 0) return hopen_net(fname, mode);
+    else if (strncmp(fname, "data:", 5) == 0) return hopen_mem(fname + 5, mode);
     else if (strcmp(fname, "-") == 0) return hopen_fd_stdinout(mode);
     else return hopen_fd(fname, mode);
 }
