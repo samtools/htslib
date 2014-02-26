@@ -8,6 +8,9 @@
 #include <sys/stat.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
+#ifdef _USE_KNETFILE
+#include "htslib/knetfile.h"
+#endif
 #include "cram/cram.h"
 #include "hfile.h"
 #include "version.h"
@@ -1137,25 +1140,26 @@ static char *test_and_fetch(const char *fn)
 {
 	FILE *fp;
 	if (strstr(fn, "ftp://") == fn || strstr(fn, "http://") == fn) {
-#ifdef _USE_KETFILE
+#ifdef _USE_KNETFILE
 		const int buf_size = 1 * 1024 * 1024;
 		knetFile *fp_remote;
 		uint8_t *buf;
 		const char *p;
-		for (p = fn + strlen(fn) - 1; p >= url; --p)
+		for (p = fn + strlen(fn) - 1; p >= fn; --p)
 			if (*p == '/') break;
 		++p; // p now points to the local file name
 		if ((fp_remote = knet_open(fn, "r")) == 0) {
-			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open remote file\n", __func__);
+			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open remote file '%s'\n", __func__, fn);
 			return 0;
 		}
-		if ((fp = fopen(fn, "w")) == 0) {
-			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create file in the working directory\n", __func__);
+		if ((fp = fopen(p, "w")) == 0) {
+			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create file '%s' in the working directory\n", __func__, p);
 			knet_close(fp_remote);
 			return 0;
 		}
 		if (hts_verbose >= 3) fprintf(stderr, "[M::%s] downloading file '%s' to local directory\n", __func__, fn);
 		buf = (uint8_t*)calloc(buf_size, 1);
+		int l;
 		while ((l = knet_read(fp_remote, buf, buf_size)) != 0) fwrite(buf, 1, l, fp);
 		free(buf);
 		fclose(fp);
