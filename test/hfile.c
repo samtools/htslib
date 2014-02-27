@@ -175,5 +175,13 @@ int main()
     if ((c = hgetc(fin)) != EOF) fail("chars: hgetc (EOF) returned %d", c);
     if (hclose(fin) != 0) fail("hclose(test/hfile_chars.tmp) for reading");
 
+    fin = hopen("data:hello, world!\n", "r");
+    if (fin == NULL) fail("hopen(\"data:...\")");
+    n = hread(fin, buffer, 300);
+    if (n < 0) fail("hread");
+    buffer[n] = '\0';
+    if (strcmp(buffer, "hello, world!\n") != 0) fail("hread result");
+    if (hclose(fin) != 0) fail("hclose(\"data:...\")");
+
     return EXIT_SUCCESS;
 }

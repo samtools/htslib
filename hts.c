@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <sys/stat.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 #include "cram/cram.h"
@@ -137,7 +138,7 @@ htsFile *hts_open(const char *fn, const char *mode)
 			fp->is_kstream = 1;
 		}
 	}
-	else if (strchr(mode, 'w')) {
+	else if (strchr(mode, 'w') || strchr(mode, 'a')) {
 		fp->is_write = 1;
 		if (strchr(mode, 'b')) fp->is_bin = 1;
 		if (strchr(mode, 'c')) fp->is_cram = 1;
@@ -194,6 +195,18 @@ int hts_close(htsFile *fp)
 	if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
 		ret = bgzf_close(fp->fp.bgzf);
 	} else if (fp->is_cram) {
+		if (!fp->is_write) {
+			switch (cram_eof(fp->fp.cram)) {
+			case 0:
+				fprintf(stderr, "[E::%s] Failed to decode sequence.\n", __func__);
+				return -1;
+			case 2:
+				fprintf(stderr, "[W::%s] EOF marker is absent. The input is probably truncated.\n", __func__);
+				break;
+			default: /* case 1, expected EOF */
+				break;
+			}
+		}
 		ret = cram_close(fp->fp.cram);
 	} else if (fp->is_kstream) {
 	#if KS_BGZF
@@ -263,6 +276,19 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
 	ret = ks_getuntil((kstream_t*)fp->fp.voidp, delimiter, str, &dret);
 	++fp->lineno;
 	return ret;
+}
+
+char **hts_readlist(const char *string, int *n)
+{
+    if ( string[0]==':' ) 
+        return hts_readlines(string+1,n);
+    char *str = (char*) malloc(strlen(string)+2);
+    if ( !str ) { *n = -1; return NULL; }
+    str[0] = ':';
+    strcpy(str+1, string);
+    char **ret = hts_readlines(str,n);
+    free(str);
+    return ret;
 }
 
 char **hts_readlines(const char *fn, int *_n)
@@ -551,17 +577,27 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 	if (idx->n < tid + 1) idx->n = tid + 1;
 	if (tid < 0) ++idx->n_no_coor;
 	if (idx->z.finished) return 0;
-	if (idx->bidx[tid] == 0) idx->bidx[tid] = kh_init(bin);
-	if (idx->z.last_tid < tid || (idx->z.last_tid >= 0 && tid < 0)) { // change of chromosome
+	if (idx->z.last_tid != tid || (idx->z.last_tid >= 0 && tid < 0)) { // change of chromosome
 		idx->z.last_tid = tid;
 		idx->z.last_bin = 0xffffffffu;
-	} else if ((uint32_t)idx->z.last_tid > (uint32_t)tid) { // test if chromosomes are out of order
-		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted chromosomes\n", __func__);
-		return -1;
+    /*
+        // This seems a too prohibitive condition: When concatenating VCFs, the
+        // sequences may come in a different order.
+
+        } else if ((uint32_t)idx->z.last_tid > (uint32_t)tid) { // test if chromosomes are out of order
+            if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted chromosomes\n", __func__);
+            return -1;
+    */
+        if (idx->bidx[tid] != 0)
+        {
+            if (hts_verbose >= 1) fprintf(stderr, "[E::%s] chromosome blocks not continuous\n", __func__);
+            return -1;
+        }
 	} else if (tid >= 0 && idx->z.last_coor > beg) { // test if positions are out of order
 		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted positions\n", __func__);
 		return -1;
 	}
+	if (idx->bidx[tid] == 0) idx->bidx[tid] = kh_init(bin);
 	if (tid >= 0 && is_mapped)
 		insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off, idx->min_shift); // last_off points to the start of the current record
 	bin = hts_reg2bin(beg, end, idx->min_shift, idx->n_lvls);
@@ -595,6 +631,9 @@ void hts_idx_destroy(hts_idx_t *idx)
 	khint_t k;
 	int i;
 	if (idx == 0) return;
+	// For HTS_FMT_CRAI, idx actually points to a different type -- see sam.c
+	if (idx->fmt == HTS_FMT_CRAI) { free(idx); return; }
+
 	for (i = 0; i < idx->m; ++i) {
 		bidx_t *bidx = idx->bidx[i];
 		free(idx->lidx[i].offset);
@@ -846,6 +885,26 @@ uint8_t *hts_idx_get_meta(hts_idx_t *idx, int *l_meta)
 	return idx->meta;
 }
 
+const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr)
+{
+    if ( !idx->n )
+    {
+        *n = 0;
+        return NULL;
+    }
+
+    int tid = 0, i;
+    const char **names = (const char**) calloc(idx->n,sizeof(const char*));
+    for (i=0; i<idx->n; i++)
+    {
+        bidx_t *bidx = idx->bidx[i];
+        if ( !bidx ) continue;
+        names[tid++] = getid(hdr,i);
+    }
+    *n = tid;
+    return names;
+}
+
 /****************
  *** Iterator ***
  ****************/
@@ -868,7 +927,7 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
 	return itr->bins.n;
 }
 
-hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
+hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
 {
 	int i, n_off, l, bin;
 	hts_pair64_t *off;
@@ -878,36 +937,61 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end)
 	hts_itr_t *iter = 0;
 
 	if (tid < 0) {
+		int finished0 = 0;
 		uint64_t off0 = (uint64_t)-1;
 		khint_t k;
-		if (tid == HTS_IDX_START) {
-			if (idx->n > 0) {
-				bidx = idx->bidx[0];
-				k = kh_get(bin, bidx, idx->n_bins + 1);
-				if (k == kh_end(bidx)) return 0;
-				off0 = kh_val(bidx, k).list[0].u;
-			} else return 0;
-		} else if (tid == HTS_IDX_NOCOOR) {
+		switch (tid) {
+		case HTS_IDX_START:
+            if ( idx->n <=0 ) return 0;
+            // Find the smallest offset, note that sequence ids may not be ordered sequentially
+            for (i=0; i<idx->n; i++)
+            {
+                bidx = idx->bidx[i];
+                k = kh_get(bin, bidx, idx->n_bins + 1);
+                if (k == kh_end(bidx)) continue;
+                if ( off0 > kh_val(bidx, k).list[0].u ) off0 = kh_val(bidx, k).list[0].u;
+            }
+            break;
+
+		case HTS_IDX_NOCOOR:
 			if (idx->n > 0) {
 				bidx = idx->bidx[idx->n - 1];
 				k = kh_get(bin, bidx, idx->n_bins + 1);
 				if (k == kh_end(bidx)) return 0;
 				off0 = kh_val(bidx, k).list[0].v;
 			} else return 0;
-		} else off0 = 0;
+			break;
+
+		case HTS_IDX_REST:
+			off0 = 0;
+			break;
+
+		case HTS_IDX_NONE:
+			finished0 = 1;
+			off0 = 0;
+			break;
+
+		default:
+			return 0;
+		}
+
 		if (off0 != (uint64_t)-1) {
 			iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
 			iter->read_rest = 1;
+			iter->finished = finished0;
 			iter->curr_off = off0;
+			iter->readrec = readrec;
 			return iter;
 		} else return 0;
 	}
+
 	if (beg < 0) beg = 0;
 	if (end < beg) return 0;
 	if ((bidx = idx->bidx[tid]) == 0) return 0;
 
 	iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
 	iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
+	iter->readrec = readrec;
 
 	// compute min_off
 	bin = hts_bin_first(idx->n_lvls) + (beg>>idx->min_shift);
@@ -993,11 +1077,13 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
 	return s + name_end;
 }
 
-hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr)
+hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
 	int tid, beg, end;
 	char *q, *tmp;
-	if (strcmp(reg, "*")) {
+	if (strcmp(reg, ".") == 0)
+		return itr_query(idx, HTS_IDX_START, 0, 1<<29, readrec);
+	else if (strcmp(reg, "*") != 0) {
 		q = (char*)hts_parse_reg(reg, &beg, &end);
 		tmp = (char*)alloca(q - reg + 1);
 		strncpy(tmp, reg, q - reg);
@@ -1005,20 +1091,20 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
 		if ((tid = getid(hdr, tmp)) < 0)
 			tid = getid(hdr, reg);
 		if (tid < 0) return 0;
-		return hts_itr_query(idx, tid, beg, end);
-	} else return hts_itr_query(idx, HTS_IDX_NOCOOR, 0, 0);
+		return itr_query(idx, tid, beg, end, readrec);
+	} else return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
 }
 
-int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void *hdr)
+int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 {
 	int ret, tid, beg, end;
-	if (iter && iter->finished) return -1;
+	if (iter == NULL || iter->finished) return -1;
 	if (iter->read_rest) {
 		if (iter->curr_off) { // seek to the start
 			bgzf_seek(fp, iter->curr_off, SEEK_SET);
 			iter->curr_off = 0; // only seek once
 		}
-		ret = readrec(fp, hdr, r, &tid, &beg, &end);
+		ret = iter->readrec(fp, data, r, &tid, &beg, &end);
 		if (ret < 0) iter->finished = 1;
 		return ret;
 	}
@@ -1032,7 +1118,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void
 			}
 			++iter->i;
 		}
-		if ((ret = readrec(fp, hdr, r, &tid, &beg, &end)) >= 0) {
+		if ((ret = iter->readrec(fp, data, r, &tid, &beg, &end)) >= 0) {
 			iter->curr_off = bgzf_tell(fp);
 			if (tid != iter->tid || beg >= iter->end) { // no need to proceed
 				ret = -1; break;
@@ -1050,34 +1136,32 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void
 static char *test_and_fetch(const char *fn)
 {
 	FILE *fp;
+	// FIXME Use is_remote_scheme() helper that's true for ftp/http/irods/etc
 	if (strstr(fn, "ftp://") == fn || strstr(fn, "http://") == fn) {
-#ifdef _USE_KETFILE
 		const int buf_size = 1 * 1024 * 1024;
-		knetFile *fp_remote;
+		hFILE *fp_remote;
 		uint8_t *buf;
+		int l;
 		const char *p;
-		for (p = fn + strlen(fn) - 1; p >= url; --p)
+		for (p = fn + strlen(fn) - 1; p >= fn; --p)
 			if (*p == '/') break;
 		++p; // p now points to the local file name
-		if ((fp_remote = knet_open(fn, "r")) == 0) {
-			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open remote file\n", __func__);
+		if ((fp_remote = hopen(fn, "r")) == 0) {
+			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open remote file '%s'\n", __func__, fn);
 			return 0;
 		}
-		if ((fp = fopen(fn, "w")) == 0) {
-			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create file in the working directory\n", __func__);
-			knet_close(fp_remote);
+		if ((fp = fopen(p, "w")) == 0) {
+			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create file '%s' in the working directory\n", __func__, p);
+			hclose_abruptly(fp_remote);
 			return 0;
 		}
 		if (hts_verbose >= 3) fprintf(stderr, "[M::%s] downloading file '%s' to local directory\n", __func__, fn);
 		buf = (uint8_t*)calloc(buf_size, 1);
-		while ((l = knet_read(fp_remote, buf, buf_size)) != 0) fwrite(buf, 1, l, fp);
+		while ((l = hread(fp_remote, buf, buf_size)) > 0) fwrite(buf, 1, l, fp);
 		free(buf);
 		fclose(fp);
-		knet_close(fp_remote);
+		if (hclose(fp_remote) != 0) fprintf(stderr, "[E::%s] fail to close remote file '%s'\n", __func__, fn);
 		return (char*)p;
-#else
-		return 0;
-#endif
 	} else {
 		if ((fp = fopen(fn, "rb")) == 0) return 0;
 		fclose(fp);
@@ -1115,6 +1199,14 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt)
 	if (fnidx) fmt = HTS_FMT_CSI;
 	else fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
 	if (fnidx == 0) return 0;
+
+    // Check that the index file is up to date, the main file might have changed
+    struct stat stat_idx,stat_main;
+    if ( !stat(fn, &stat_main) && !stat(fnidx, &stat_idx) )
+    {
+        if ( stat_idx.st_mtime < stat_main.st_mtime )
+            fprintf(stderr, "Warning: The index file is older than the data file: %s\n", fnidx);
+    }
 	idx = hts_idx_load_local(fnidx, fmt);
 	free(fnidx);
 	return idx;

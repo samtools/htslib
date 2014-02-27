@@ -36,6 +36,7 @@ void write_bcf(char *fname)
     bcf_hdr_append(hdr, "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">");
     bcf_hdr_append(hdr, "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Read Depth\">");
     bcf_hdr_append(hdr, "##FORMAT=<ID=HQ,Number=2,Type=Integer,Description=\"Haplotype Quality\">");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=TS,Number=1,Type=String,Description=\"Test String\">");
 
     bcf_hdr_add_sample(hdr, "NA00001");
     bcf_hdr_add_sample(hdr, "NA00002");
@@ -56,7 +57,7 @@ void write_bcf(char *fname)
     // .. QUAL
     rec->qual = 29;
     // .. FILTER
-    int tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
+    int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
     bcf_update_filter(hdr, rec, &tmpi, 1);
     // .. INFO
     tmpi = 3;  
@@ -68,7 +69,7 @@ void write_bcf(char *fname)
     bcf_update_info_flag(hdr, rec, "DB", NULL, 1);
     bcf_update_info_flag(hdr, rec, "H2", NULL, 1);
     // .. FORMAT
-    int *tmpia = (int*)malloc(bcf_hdr_nsamples(hdr)*2*sizeof(int));
+    int32_t *tmpia = (int*)malloc(bcf_hdr_nsamples(hdr)*2*sizeof(int));
     tmpia[0] = bcf_gt_phased(0); 
     tmpia[1] = bcf_gt_phased(0);
     tmpia[2] = bcf_gt_phased(1); 
@@ -91,6 +92,8 @@ void write_bcf(char *fname)
     tmpia[4] = bcf_int32_missing;
     tmpia[5] = bcf_int32_missing;
     bcf_update_format_int32(hdr, rec, "HQ", tmpia, bcf_hdr_nsamples(hdr)*2);
+    char *tmp_str[] = {"String1","SomeOtherString2","YetAnotherString3"};
+    bcf_update_format_string(hdr, rec, "TS", (const char**)tmp_str, 3);
     bcf_write1(fp, hdr, rec);
 
     // 20     1110696 . A      G,T     67   .   NS=2;DP=10;AF=0.333,.;AA=T;DB GT 2 1   ./.
@@ -156,11 +159,33 @@ void bcf_to_vcf(char *fname)
     hts_close(out);
 }
 
+void iterator(const char *fname)
+{
+    htsFile *fp = hts_open(fname, "r");
+    bcf_hdr_t *hdr = bcf_hdr_read(fp);
+    hts_idx_t *idx;
+    hts_itr_t *iter;
+
+    bcf_index_build(fname, 0);
+    idx = bcf_index_load(fname);
+
+    iter = bcf_itr_queryi(idx, bcf_hdr_name2id(hdr, "20"), 1110600, 1110800);
+    bcf_itr_destroy(iter);
+
+    iter = bcf_itr_querys(idx, hdr, "20:1110600-1110800");
+    bcf_itr_destroy(iter);
+
+    hts_idx_destroy(idx);
+    bcf_hdr_destroy(hdr);
+    hts_close(fp);
+}
+
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
     write_bcf(fname);
     bcf_to_vcf(fname);
+    iterator(fname);
     return 0;
 }
 

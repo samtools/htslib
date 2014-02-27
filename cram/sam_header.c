@@ -1030,7 +1030,7 @@ char *sam_hdr_str(SAM_hdr *hdr) {
  * Looks up a reference sequence by name and returns the numerical ID.
  * Returns -1 if unknown reference.
  */
-int sam_hdr_name2ref(SAM_hdr *hdr, char *ref) {
+int sam_hdr_name2ref(SAM_hdr *hdr, const char *ref) {
     khint_t k = kh_get(m_s2i, hdr->ref_hash, ref);
     return k == kh_end(hdr->ref_hash) ? -1 : kh_val(hdr->ref_hash, k);
 }
@@ -1041,7 +1041,7 @@ int sam_hdr_name2ref(SAM_hdr *hdr, char *ref) {
  *
  * Returns NULL on failure
  */
-SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, char *rg) {
+SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, const char *rg) {
     khint_t k = kh_get(m_s2i, hdr->rg_hash, rg);
     return k == kh_end(hdr->rg_hash)
 	? NULL

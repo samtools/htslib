@@ -29,18 +29,19 @@ int main(int argc, char **argv)
     printf("bwd position chksum: %d\n", chksum);
 
     // And forward and backward again, this time summing the PL vectors
-    int i,j, *PLs = NULL, mPLs = 0, nPLs;
+    int i,j, mPLs = 0, nPLs;
+    int32_t *PLs = NULL;
     chksum = 0;
     while ( (rec = bcf_sweep_fwd(sw)) ) 
     {
         // get copy of the PL vectors
-        nPLs = bcf_get_format_int(hdr, rec, "PL", &PLs, &mPLs);
+        nPLs = bcf_get_format_int32(hdr, rec, "PL", &PLs, &mPLs);
         if ( !nPLs ) continue;  // PL not present
 
         // how many values are there per sample
         int nvals = nPLs / bcf_hdr_nsamples(hdr);
 
-        int *ptr = PLs;
+        int32_t *ptr = PLs;
         for (i=0; i<bcf_hdr_nsamples(hdr); i++)
         {
             for (j=0; j<nvals; j++)
@@ -62,10 +63,10 @@ int main(int argc, char **argv)
     chksum = 0;
     while ( (rec = bcf_sweep_bwd(sw)) )
     {
-        nPLs = bcf_get_format_int(hdr, rec, "PL", &PLs, &mPLs);
+        nPLs = bcf_get_format_int32(hdr, rec, "PL", &PLs, &mPLs);
         if ( !nPLs ) continue;
         int nvals = nPLs / bcf_hdr_nsamples(hdr);
-        int *ptr = PLs;
+        int32_t *ptr = PLs;
         for (i=0; i<bcf_hdr_nsamples(hdr); i++)
         {
             for (j=0; j<nvals; j++)

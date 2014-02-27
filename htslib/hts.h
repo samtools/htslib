@@ -43,7 +43,7 @@ typedef struct __kstring_t {
 #define hts_expand0(type_t, n, m, ptr) if ((n) > (m)) { \
 		int t = (m); (m) = (n); kroundup32(m); \
 		(ptr) = (type_t*)realloc((ptr), (m) * sizeof(type_t)); \
-        memset((ptr)+t,0,sizeof(type_t)*((m)-t)); \
+        memset(((type_t*)ptr)+t,0,sizeof(type_t)*((m)-t)); \
 	}
 
 /************
@@ -89,11 +89,12 @@ const char *hts_version();
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
   @param fn       The file name or "-" for stdin/stdout
-  @param mode     Mode matching /[rw][bcuz0-9]+/
+  @param mode     Mode matching /[rwa][bcuz0-9]+/
   @discussion
       With 'r' opens for reading; any further format mode letters are ignored
       as the format is detected by checking the first few bytes or BGZF blocks
-      of the file.  With 'w' opens for writing, with format specifier letters:
+      of the file.  With 'w' or 'a' opens for writing or appending, with format
+      specifier letters:
         b  binary format (BAM, BCF, etc) rather than text (SAM, VCF, etc)
         c  CRAM format
         u  uncompressed
@@ -119,6 +120,7 @@ int hts_close(htsFile *fp);
 
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
 char **hts_readlines(const char *fn, int *_n);
+char **hts_readlist(const char *fn, int *_n);
 
 /*!
   @abstract  Set .fai filename for a file opened for reading
@@ -137,13 +139,24 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
  * Indexing *
  ************/
 
+/*!
+These HTS_IDX_* macros are used as special tid values for hts_itr_query()/etc,
+producing iterators operating as follows:
+ - HTS_IDX_NOCOOR iterates over unmapped reads sorted at the end of the file
+ - HTS_IDX_START  iterates over the entire file
+ - HTS_IDX_REST   iterates from the current position to the end of the file
+ - HTS_IDX_NONE   always returns "no more alignment records"
+When one of these special tid values is used, beg and end are ignored.
+*/
 #define HTS_IDX_NOCOOR (-2)
 #define HTS_IDX_START  (-3)
 #define HTS_IDX_REST   (-4)
+#define HTS_IDX_NONE   (-5)
 
 #define HTS_FMT_CSI 0
 #define HTS_FMT_BAI 1
 #define HTS_FMT_TBI 2
+#define HTS_FMT_CRAI 3
 
 struct __hts_idx_t;
 typedef struct __hts_idx_t hts_idx_t;
@@ -152,11 +165,14 @@ typedef struct {
 	uint64_t u, v;
 } hts_pair64_t;
 
+typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, int *end);
+
 typedef struct {
 	uint32_t read_rest:1, finished:1, dummy:29;
 	int tid, beg, end, n_off, i;
 	uint64_t curr_off;
 	hts_pair64_t *off;
+	hts_readrec_func *readrec;
 	struct {
 		int n, m;
 		int *a;
@@ -182,14 +198,16 @@ extern "C" {
 	void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy);
 
 	const char *hts_parse_reg(const char *s, int *beg, int *end);
-	hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end);
+	hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
 	void hts_itr_destroy(hts_itr_t *iter);
 
-	typedef int (*hts_readrec_f)(BGZF*, void*, void*, int*, int*, int*);
 	typedef int (*hts_name2id_f)(void*, const char*);
+	typedef const char *(*hts_id2name_f)(void*, int);
+	typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
 
-	hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr);
-	int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, hts_readrec_f readrec, void *hdr);
+	hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec);
+	int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data);
+    const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 
     /**
      * hts_file_type() - Convenience function to determine file type
@@ -204,9 +222,9 @@ extern "C" {
     #define FT_GZ     1
     #define FT_VCF    2
     #define FT_VCF_GZ (FT_GZ|FT_VCF)
-    #define FT_BCF    4
+    #define FT_BCF    (1<<2)
     #define FT_BCF_GZ (FT_GZ|FT_BCF)
-    #define FT_STDIN  8
+    #define FT_STDIN  (1<<3)
     int hts_file_type(const char *fname);
 
 
