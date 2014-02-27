@@ -1136,34 +1136,32 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 static char *test_and_fetch(const char *fn)
 {
 	FILE *fp;
+	// FIXME Use is_remote_scheme() helper that's true for ftp/http/irods/etc
 	if (strstr(fn, "ftp://") == fn || strstr(fn, "http://") == fn) {
-#ifdef _USE_KETFILE
 		const int buf_size = 1 * 1024 * 1024;
-		knetFile *fp_remote;
+		hFILE *fp_remote;
 		uint8_t *buf;
+		int l;
 		const char *p;
-		for (p = fn + strlen(fn) - 1; p >= url; --p)
+		for (p = fn + strlen(fn) - 1; p >= fn; --p)
 			if (*p == '/') break;
 		++p; // p now points to the local file name
-		if ((fp_remote = knet_open(fn, "r")) == 0) {
-			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open remote file\n", __func__);
+		if ((fp_remote = hopen(fn, "r")) == 0) {
+			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open remote file '%s'\n", __func__, fn);
 			return 0;
 		}
-		if ((fp = fopen(fn, "w")) == 0) {
-			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create file in the working directory\n", __func__);
-			knet_close(fp_remote);
+		if ((fp = fopen(p, "w")) == 0) {
+			if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create file '%s' in the working directory\n", __func__, p);
+			hclose_abruptly(fp_remote);
 			return 0;
 		}
 		if (hts_verbose >= 3) fprintf(stderr, "[M::%s] downloading file '%s' to local directory\n", __func__, fn);
 		buf = (uint8_t*)calloc(buf_size, 1);
-		while ((l = knet_read(fp_remote, buf, buf_size)) != 0) fwrite(buf, 1, l, fp);
+		while ((l = hread(fp_remote, buf, buf_size)) > 0) fwrite(buf, 1, l, fp);
 		free(buf);
 		fclose(fp);
-		knet_close(fp_remote);
+		if (hclose(fp_remote) != 0) fprintf(stderr, "[E::%s] fail to close remote file '%s'\n", __func__, fn);
 		return (char*)p;
-#else
-		return 0;
-#endif
 	} else {
 		if ((fp = fopen(fn, "rb")) == 0) return 0;
 		fclose(fp);
