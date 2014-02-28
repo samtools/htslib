@@ -828,37 +828,37 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 			kputw(*(int8_t*)s, str);
 			++s;
 		} else if (type == 'S') {
-			if (s+2 < b->data + b->l_data) {
+			if (s+2 <= b->data + b->l_data) {
 				kputsn("i:", 2, str);
 				kputw(*(uint16_t*)s, str);
 				s += 2;
 			} else return -1;
 		} else if (type == 's') {
-			if (s+2 < b->data + b->l_data) {
+			if (s+2 <= b->data + b->l_data) {
 				kputsn("i:", 2, str);
 				kputw(*(int16_t*)s, str);
 				s += 2;
 			} else return -1;
 		} else if (type == 'I') {
-			if (s+4 < b->data + b->l_data) {
+			if (s+4 <= b->data + b->l_data) {
 				kputsn("i:", 2, str);
 				kputuw(*(uint32_t*)s, str);
 				s += 4;
 			} else return -1;
 		} else if (type == 'i') {
-			if (s+4 < b->data + b->l_data) {
+			if (s+4 <= b->data + b->l_data) {
 				kputsn("i:", 2, str);
 				kputw(*(int32_t*)s, str);
 				s += 4;
 			} else return -1;
 		} else if (type == 'f') {
-			if (s+4 < b->data + b->l_data) {
+			if (s+4 <= b->data + b->l_data) {
 				ksprintf(str, "f:%g", *(float*)s);
 				s += 4;
 			} else return -1;
 			
 		} else if (type == 'd') {
-			if (s+8 < b->data + b->l_data) {
+			if (s+8 <= b->data + b->l_data) {
 				ksprintf(str, "d:%g", *(double*)s);
 				s += 8;
 			} else return -1;
@@ -932,7 +932,7 @@ void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, uint8_t *d
 }
 
 #define __skip_tag(s) do { \
-		int type = toupper(*(s)); \
+		int type = *(s); \
 		++(s); \
 		if (type == 'Z' || type == 'H') { while (*(s)) ++(s); ++(s); } \
 		else if (type == 'B') (s) += 5 + bam_aux_type2size(*(s)) * (*(int32_t*)((s)+1)); \
