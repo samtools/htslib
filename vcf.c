@@ -1376,6 +1376,7 @@ int _vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char
     // allocate memory for arrays
     for (j = 0; j < v->n_fmt; ++j) {
         fmt_aux_t *f = &fmt[j];
+        if ( !f->max_m ) f->max_m = 1;  // omitted trailing format field
         if ((f->y>>4&0xf) == BCF_HT_STR) {
             f->size = f->is_gt? f->max_g << 2 : f->max_l;
         } else if ((f->y>>4&0xf) == BCF_HT_REAL || (f->y>>4&0xf) == BCF_HT_INT) {
@@ -1459,19 +1460,20 @@ int _vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char
                         if (z->is_gt) {
                             int32_t *x = (int32_t*)(z->buf + z->size * m);
                             x[0] = bcf_int32_missing;
-                            for (l = 1; l != z->size>>2; ++l) x[l] = bcf_int32_vector_end;
+                            for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
                         } else {
                             char *x = (char*)z->buf + z->size * m;
-                            for (l = 0; l != z->size; ++l) x[l] = 0;
+                            if ( z->size ) x[0] = '.';
+                            for (l = 1; l < z->size; ++l) x[l] = 0;
                         }
                     } else if ((z->y>>4&0xf) == BCF_HT_INT) {
                         int32_t *x = (int32_t*)(z->buf + z->size * m);
                         x[0] = bcf_int32_missing;
-                        for (l = 1; l != z->size>>2; ++l) x[l] = bcf_int32_vector_end;
+                        for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
                     } else if ((z->y>>4&0xf) == BCF_HT_REAL) {
                         float *x = (float*)(z->buf + z->size * m);
                         bcf_float_set_missing(x[0]);
-                        for (l = 1; l != z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
+                        for (l = 1; l < z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
                     }
                 }
                 break;
