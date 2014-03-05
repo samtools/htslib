@@ -1,6 +1,6 @@
 # Makefile for htslib, a C library for high-throughput sequencing data formats.
 #
-#    Copyright (C) 2013 Genome Research Ltd.
+#    Copyright (C) 2013-2014 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -31,6 +31,7 @@ INSTALL_DATA    = $(INSTALL) -m 644
 BUILT_TEST_PROGRAMS = \
 	test/fieldarith \
 	test/hfile \
+	test/sam \
 	test/test_view \
 	test/test-vcf-api \
 	test/test-vcf-sweep
@@ -200,6 +201,7 @@ cram/zfio.o cram/zfio.pico: cram/zfio.c cram/os.h cram/zfio.h
 check test: $(BUILT_TEST_PROGRAMS)
 	test/fieldarith test/fieldarith.sam
 	test/hfile
+	test/sam
 	cd test && ./test_view.pl
 	cd test && ./test.pl
 
@@ -208,6 +210,9 @@ test/fieldarith: test/fieldarith.o libhts.a
 
 test/hfile: test/hfile.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LDLIBS) -lz
+
+test/sam: test/sam.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/sam.o libhts.a $(LDLIBS) -lz
 
 test/test_view: test/test_view.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LDLIBS) -lz
@@ -220,6 +225,7 @@ test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 
 test/fieldarith.o: test/fieldarith.c $(htslib_sam_h)
 test/hfile.o: test/hfile.c hfile.h
+test/sam.o: test/sam.c $(htslib_sam_h) htslib/kstring.h
 test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)

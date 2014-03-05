@@ -208,41 +208,55 @@ int32_t bam_endpos(const bam1_t *b)
 		return b->core.pos + 1;
 }
 
-static inline int aux_type2size(int x)
+static inline int aux_type2size(uint8_t type)
 {
-	if (x == 'C' || x == 'c' || x == 'A') return 1;
-	else if (x == 'S' || x == 's') return 2;
-	else if (x == 'I' || x == 'i' || x == 'f') return 4;
-	else return 0;
+	switch (type) {
+	case 'A': case 'c': case 'C':
+		return 1;
+	case 's': case 'S':
+		return 2;
+	case 'i': case 'I': case 'f':
+		return 4;
+	case 'd':
+		return 8;
+	case 'Z': case 'H': case 'B':
+		return type;
+	default:
+		return 0;
+	}
 }
 
 static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data)
 {
 	uint8_t *s;
 	uint32_t *cigar = (uint32_t*)(data + c->l_qname);
-	int i;
+	uint32_t i, n;
 	s = data + c->n_cigar*4 + c->l_qname + c->l_qseq + (c->l_qseq + 1)/2;
 	for (i = 0; i < c->n_cigar; ++i) ed_swap_4p(&cigar[i]);
 	while (s < data + l_data) {
-		uint8_t type;
+		int size;
 		s += 2; // skip key
-		type = toupper(*s); ++s; // skip type
-		if (type == 'C' || type == 'A') ++s;
-		else if (type == 'S') { ed_swap_2p(s); s += 2; }
-		else if (type == 'I' || type == 'F') { ed_swap_4p(s); s += 4; }
-		else if (type == 'D') { ed_swap_8p(s); s += 8; }
-		else if (type == 'Z' || type == 'H') { while (*s) ++s; ++s; }
-		else if (type == 'B') {
-			int32_t n, Bsize = aux_type2size(*s);
-			memcpy(&n, s + 1, 4);
-			if (Bsize == 2) {
-				for (i = 0; i < n; i += 2)
-					ed_swap_2p(s + 5 + i);
-			} else if (Bsize == 4) {
-				for (i = 0; i < n; i += 4)
-					ed_swap_4p(s + 5 + i);
+		size = aux_type2size(*s); ++s; // skip type
+		switch (size) {
+		case 1: ++s; break;
+		case 2: ed_swap_2p(s); s += 2; break;
+		case 4: ed_swap_4p(s); s += 4; break;
+		case 8: ed_swap_8p(s); s += 8; break;
+		case 'Z':
+		case 'H':
+			while (*s) ++s;
+			++s;
+			break;
+		case 'B':
+			size = aux_type2size(*s); ++s;
+			ed_swap_4p(s); memcpy(&n, s, 4); s += 4;
+			switch (size) {
+			case 1: s += n; break;
+			case 2: for (i = 0; i < n; ++i, s += 2) ed_swap_2p(s); break;
+			case 4: for (i = 0; i < n; ++i, s += 4) ed_swap_4p(s); break;
+			case 8: for (i = 0; i < n; ++i, s += 8) ed_swap_8p(s); break;
 			}
-			ed_swap_4p(s+1); 
+			break;
 		}
 	}
 }
@@ -706,6 +720,10 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 			float x;
 			x = strtod(q, &q);
 			kputc_('f', &str); kputsn_(&x, 4, &str);
+		} else if (type == 'd') {
+			double x;
+			x = strtod(q, &q);
+			kputc_('d', &str); kputsn_(&x, 8, &str);
 		} else if (type == 'Z' || type == 'H') {
 			kputc_(type, &str);kputsn_(q, p - q, &str); // note that this include the trailing NULL
 		} else if (type == 'B') {
@@ -810,7 +828,7 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 		else for (i = 0; i < c->l_qseq; ++i) kputc(s[i] + 33, str);
 	} else kputsn("*\t*", 3, str);
 	s = bam_get_aux(b); // aux
-	while (s+3 < b->data + b->l_data) {
+	while (s+4 <= b->data + b->l_data) {
 		uint8_t type, key[2];
 		key[0] = s[0]; key[1] = s[1];
 		s += 2; type = *s++;
@@ -828,37 +846,37 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 			kputw(*(int8_t*)s, str);
 			++s;
 		} else if (type == 'S') {
-			if (s+2 < b->data + b->l_data) {
+			if (s+2 <= b->data + b->l_data) {
 				kputsn("i:", 2, str);
 				kputw(*(uint16_t*)s, str);
 				s += 2;
 			} else return -1;
 		} else if (type == 's') {
-			if (s+2 < b->data + b->l_data) {
+			if (s+2 <= b->data + b->l_data) {
 				kputsn("i:", 2, str);
 				kputw(*(int16_t*)s, str);
 				s += 2;
 			} else return -1;
 		} else if (type == 'I') {
-			if (s+4 < b->data + b->l_data) {
+			if (s+4 <= b->data + b->l_data) {
 				kputsn("i:", 2, str);
 				kputuw(*(uint32_t*)s, str);
 				s += 4;
 			} else return -1;
 		} else if (type == 'i') {
-			if (s+4 < b->data + b->l_data) {
+			if (s+4 <= b->data + b->l_data) {
 				kputsn("i:", 2, str);
 				kputw(*(int32_t*)s, str);
 				s += 4;
 			} else return -1;
 		} else if (type == 'f') {
-			if (s+4 < b->data + b->l_data) {
+			if (s+4 <= b->data + b->l_data) {
 				ksprintf(str, "f:%g", *(float*)s);
 				s += 4;
 			} else return -1;
 			
 		} else if (type == 'd') {
-			if (s+8 < b->data + b->l_data) {
+			if (s+8 <= b->data + b->l_data) {
 				ksprintf(str, "d:%g", *(double*)s);
 				s += 8;
 			} else return -1;
@@ -909,14 +927,6 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
  *** Auxiliary fields ***
  ************************/
 
-int bam_aux_type2size(int x)
-{
-	if (x == 'C' || x == 'c' || x == 'A') return 1;
-	else if (x == 'S' || x == 's') return 2;
-	else if (x == 'I' || x == 'i' || x == 'f') return 4;
-	else return 0;
-}
-
 void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, uint8_t *data)
 {
 	int ori_len = b->l_data;
@@ -931,13 +941,26 @@ void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, uint8_t *d
 	memcpy(b->data + ori_len + 3, data, len);
 }
 
-#define __skip_tag(s) do { \
-		int type = toupper(*(s)); \
-		++(s); \
-		if (type == 'Z' || type == 'H') { while (*(s)) ++(s); ++(s); } \
-		else if (type == 'B') (s) += 5 + bam_aux_type2size(*(s)) * (*(int32_t*)((s)+1)); \
-		else (s) += bam_aux_type2size(type); \
-	} while(0)
+static inline uint8_t *skip_aux(uint8_t *s)
+{
+	int size = aux_type2size(*s); ++s; // skip type
+	uint32_t n;
+	switch (size) {
+	case 'Z':
+	case 'H':
+		while (*s) ++s;
+		return s + 1;
+	case 'B':
+		size = aux_type2size(*s); ++s;
+		memcpy(&n, s, 4); s += 4;
+		return s + size * n;
+	case 0:
+		abort();
+		break;
+	default:
+		return s + size;
+	}
+}
 
 uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
 {
@@ -948,7 +971,7 @@ uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
 		int x = (int)s[0]<<8 | s[1];
 		s += 2;
 		if (x == y) return s;
-		__skip_tag(s);
+		s = skip_aux(s);
 	}
 	return 0;
 }
@@ -959,7 +982,7 @@ int bam_aux_del(bam1_t *b, uint8_t *s)
 	int l_aux = bam_get_l_aux(b);
 	aux = bam_get_aux(b);
 	p = s - 2;
-	__skip_tag(s);
+	s = skip_aux(s);
 	memmove(p, s, l_aux - (s - aux));
 	b->l_data -= s - p;
 	return 0;
