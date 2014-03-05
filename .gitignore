@@ -9,6 +9,7 @@ lib*.so.*
 
 /test/fieldarith
 /test/hfile
+/test/sam
 /test/test-vcf-api
 /test/test-vcf-sweep
 /test/test_view
