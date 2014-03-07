@@ -289,7 +289,10 @@ void debug_buffers(FILE *fp, bcf_srs_t *files)
 {
     int i;
     for (i=0; i<files->nreaders; i++)
+    {
+        fprintf(fp, "has_line: %d\t%s\n", bcf_sr_has_line(files,i),files->readers[i].fname);
         debug_buffer(fp, &files->readers[i]);
+    }
     fprintf(fp,"\n");
 }
 
@@ -384,6 +387,7 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             {
                 reader->buffer[reader->mbuffer-i] = bcf_init1();
                 reader->buffer[reader->mbuffer-i]->max_unpack = files->max_unpack;
+                reader->buffer[reader->mbuffer-i]->pos = -1;    // for rare cases when VCF starts from 1
             }
         }
         if ( files->streaming )
