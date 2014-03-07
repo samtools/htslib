@@ -106,6 +106,7 @@ LIBHTS_OBJS = \
 	hfile.o \
 	hfile_net.o \
 	hts.o \
+	razf.o \
 	sam.o \
 	synced_bcf_reader.o \
 	vcf_sweep.o \
