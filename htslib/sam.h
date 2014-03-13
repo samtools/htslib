@@ -158,6 +158,7 @@ extern "C" {
 	int bam_hdr_write(BGZF *fp, const bam_hdr_t *h);
 	void bam_hdr_destroy(bam_hdr_t *h);
 	int bam_name2id(bam_hdr_t *h, const char *ref);
+	bam_hdr_t* bam_hdr_dup(const bam_hdr_t *h0);
 
 	bam1_t *bam_init1(void);
 	void bam_destroy1(bam1_t *b);

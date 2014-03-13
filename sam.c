@@ -38,6 +38,31 @@ void bam_hdr_destroy(bam_hdr_t *h)
 	free(h);
 }
 
+bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
+{
+	if (h0 == NULL) return NULL;
+	bam_hdr_t *h;
+	if ((h = bam_hdr_init()) == NULL) return NULL;
+	// copy the simple data
+	h->n_targets = h0->n_targets;
+	h->ignore_sam_err = h0->ignore_sam_err;
+	h->l_text = h0->l_text;
+	// Then the pointery stuff
+	h->cigar_tab = NULL; // TODO: check what this actually does and why it exists and document it
+	h->sdict = NULL;
+	h->text = (char*)calloc(h->l_text + 1, 1);
+	memcpy(h->text, h0->text, h->l_text);
+	h->target_len = (uint32_t*)calloc(h->n_targets, 4);
+	h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
+	int i;
+	for (i = 0; i < h->n_targets; ++i) {
+		h->target_len[i] = h0->target_len[i];
+		h->target_name[i] = strdup(h0->target_name[i]);
+	}
+	return h;
+}
+
+
 static bam_hdr_t *hdr_from_dict(sdict_t *d)
 {
 	bam_hdr_t *h;
