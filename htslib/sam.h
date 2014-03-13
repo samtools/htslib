@@ -12,7 +12,7 @@
  @abstract Structure for the alignment header.
  @field n_targets   number of reference sequences
  @field l_text      length of the plain text in the header
- @field target_len  lengths of the referene sequences
+ @field target_len  lengths of the reference sequences
  @field target_name names of the reference sequences
  @field text        plain text
  @field sdict       header dictionary
