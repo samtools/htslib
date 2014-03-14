@@ -1,6 +1,6 @@
 /*  hfile_internal.h -- internal parts of low-level input/output streams.
 
-    Copyright (C) 2013 Genome Research Ltd.
+    Copyright (C) 2013-2014 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 */
@@ -8,7 +8,7 @@
 #ifndef HFILE_INTERNAL_H
 #define HFILE_INTERNAL_H
 
-#include "hfile.h"
+#include "htslib/hfile.h"
 
 struct hFILE_backend {
     /* As per read(2), returning the number of bytes read (possibly 0) or

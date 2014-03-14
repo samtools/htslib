@@ -9,7 +9,7 @@
 #include "htslib/bgzf.h"
 #include "htslib/vcf.h"
 #include "htslib/tbx.h"
-#include "hfile.h"
+#include "htslib/hfile.h"
 
 #include "htslib/khash.h"
 KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)

@@ -10,7 +10,7 @@
 #include <string.h>
 #include <errno.h>
 
-#include "hfile.h"
+#include "htslib/hfile.h"
 #include "hfile_internal.h"
 
 /* hFILE fields are used as follows:

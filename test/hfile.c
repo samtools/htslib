@@ -5,7 +5,7 @@
 
 #include <sys/stat.h>
 
-#include "hfile.h"
+#include "htslib/hfile.h"
 
 #ifndef HTS_NORETURN
 #if __clang__major__ >= 2 || __GNUC__ >= 3

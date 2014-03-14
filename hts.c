@@ -9,7 +9,7 @@
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 #include "cram/cram.h"
-#include "hfile.h"
+#include "htslib/hfile.h"
 #include "version.h"
 
 #include "htslib/kseq.h"

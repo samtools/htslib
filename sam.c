@@ -7,7 +7,7 @@
 #include "htslib/sam.h"
 #include "htslib/bgzf.h"
 #include "cram/cram.h"
-#include "hfile.h"
+#include "htslib/hfile.h"
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)

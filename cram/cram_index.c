@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013 Genome Research Ltd.
+Copyright (c) 2013-2014 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without 
@@ -63,7 +63,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <math.h>
 #include <ctype.h>
 
-#include "hfile.h"
+#include "htslib/hfile.h"
 #include "cram/cram.h"
 #include "cram/os.h"
 #include "cram/zfio.h"

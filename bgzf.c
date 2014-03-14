@@ -36,7 +36,7 @@
 
 #include "htslib/hts.h"
 #include "htslib/bgzf.h"
-#include "hfile.h"
+#include "htslib/hfile.h"
 
 #define BLOCK_HEADER_LENGTH 18
 #define BLOCK_FOOTER_LENGTH 8

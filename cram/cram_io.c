@@ -79,7 +79,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 #ifdef SAMTOOLS
-#include "hfile.h"
+#include "htslib/hfile.h"
 #define paranoid_hclose(fp) (hclose(fp))
 #else
 #define hclose_abruptly(fp) (fclose(fp))

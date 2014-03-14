@@ -1,12 +1,12 @@
 /*  hfile.h -- buffered low-level input/output streams.
 
-    Copyright (C) 2013 Genome Research Ltd.
+    Copyright (C) 2013-2014 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 */
 
-#ifndef HFILE_H
-#define HFILE_H
+#ifndef HTSLIB_HFILE_H
+#define HTSLIB_HFILE_H
 
 #include <string.h>
 
