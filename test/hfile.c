@@ -30,14 +30,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <sys/stat.h>
 
 #include "htslib/hfile.h"
-
-#ifndef HTS_NORETURN
-#if __clang__major__ >= 2 || __GNUC__ >= 3
-#define HTS_NORETURN __attribute__ ((__noreturn__))
-#else
-#define HTS_NORETURN
-#endif
-#endif
+#include "htslib/hts_defs.h"
 
 void HTS_NORETURN fail(const char *format, ...)
 {

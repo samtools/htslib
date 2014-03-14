@@ -29,14 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <sys/types.h>
 
-#ifndef HTS_RESULT_USED
-#if (defined __clang__ && __clang_major__ >= 3) || \
-    (defined __GNUC__ && (__GNUC__ > 4 || (__GNUC__==4 && __GNUC_MINOR__ >= 5)))
-#define HTS_RESULT_USED __attribute__ ((__warn_unused_result__))
-#else
-#define HTS_RESULT_USED
-#endif
-#endif
+#include "hts_defs.h"
 
 #ifdef __cplusplus
 extern "C" {

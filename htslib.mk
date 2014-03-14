@@ -30,6 +30,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/htslib/faidx.h \
 	$(HTSDIR)/htslib/hfile.h \
 	$(HTSDIR)/htslib/hts.h \
+	$(HTSDIR)/htslib/hts_defs.h \
 	$(HTSDIR)/htslib/khash.h \
 	$(HTSDIR)/htslib/klist.h \
 	$(HTSDIR)/htslib/knetfile.h \
