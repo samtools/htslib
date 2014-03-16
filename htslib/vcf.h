@@ -302,7 +302,7 @@ extern "C" {
 	/**
 	 *  bcf_unpack() - unpack/decode a BCF record (fills the bcf1_t::d field)
      *  
-     *  Note that bcf_unpack() must be called even when reading VCF. It is save
+     *  Note that bcf_unpack() must be called even when reading VCF. It is safe
      *  to call the function repeatedly, it will not unpack the same field
      *  twice.
 	 */
