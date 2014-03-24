@@ -575,31 +575,31 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 		memset(&idx->lidx[oldm], 0, (idx->m - oldm) * sizeof(lidx_t));
 	}
 	if (idx->n < tid + 1) idx->n = tid + 1;
-	if (tid < 0) ++idx->n_no_coor;
 	if (idx->z.finished) return 0;
 	if (idx->z.last_tid != tid || (idx->z.last_tid >= 0 && tid < 0)) { // change of chromosome
-		idx->z.last_tid = tid;
-		idx->z.last_bin = 0xffffffffu;
-    /*
-        // This seems a too prohibitive condition: When concatenating VCFs, the
-        // sequences may come in a different order.
-
-        } else if ((uint32_t)idx->z.last_tid > (uint32_t)tid) { // test if chromosomes are out of order
-            if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted chromosomes\n", __func__);
+        if ( tid>=0 && idx->n_no_coor )
+        {
+            if (hts_verbose >= 1) fprintf(stderr,"[E::%s] NO_COOR reads not in a single block at the end %d %d\n", __func__, tid,idx->z.last_tid);
             return -1;
-    */
-        if (idx->bidx[tid] != 0)
+        }
+        if (tid>=0 && idx->bidx[tid] != 0)
         {
             if (hts_verbose >= 1) fprintf(stderr, "[E::%s] chromosome blocks not continuous\n", __func__);
             return -1;
         }
+		idx->z.last_tid = tid;
+		idx->z.last_bin = 0xffffffffu;
 	} else if (tid >= 0 && idx->z.last_coor > beg) { // test if positions are out of order
 		if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted positions\n", __func__);
 		return -1;
 	}
-	if (idx->bidx[tid] == 0) idx->bidx[tid] = kh_init(bin);
-	if (tid >= 0 && is_mapped)
-		insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off, idx->min_shift); // last_off points to the start of the current record
+    if ( tid>=0 )
+    {
+	    if (idx->bidx[tid] == 0) idx->bidx[tid] = kh_init(bin);
+        if ( is_mapped)
+            insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off, idx->min_shift); // last_off points to the start of the current record
+    }
+	else idx->n_no_coor++;
 	bin = hts_reg2bin(beg, end, idx->min_shift, idx->n_lvls);
 	if ((int)idx->z.last_bin != bin) { // then possibly write the binning index
 		if (idx->z.save_bin != 0xffffffffu) // save_bin==0xffffffffu only happens to the first record
@@ -935,14 +935,12 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
 	bidx_t *bidx;
 	uint64_t min_off;
 	hts_itr_t *iter = 0;
-
 	if (tid < 0) {
 		int finished0 = 0;
 		uint64_t off0 = (uint64_t)-1;
 		khint_t k;
 		switch (tid) {
 		case HTS_IDX_START:
-            if ( idx->n <=0 ) return 0;
             // Find the smallest offset, note that sequence ids may not be ordered sequentially
             for (i=0; i<idx->n; i++)
             {
@@ -951,15 +949,17 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
                 if (k == kh_end(bidx)) continue;
                 if ( off0 > kh_val(bidx, k).list[0].u ) off0 = kh_val(bidx, k).list[0].u;
             }
+            if ( off0==(uint64_t)-1 && idx->n_no_coor ) off0 = 0; // only no-coor reads in this bam
             break;
 
 		case HTS_IDX_NOCOOR:
-			if (idx->n > 0) {
-				bidx = idx->bidx[idx->n - 1];
-				k = kh_get(bin, bidx, idx->n_bins + 1);
-				if (k == kh_end(bidx)) return 0;
-				off0 = kh_val(bidx, k).list[0].v;
-			} else return 0;
+            if ( idx->n>0 )
+            {
+                bidx = idx->bidx[idx->n - 1];
+                k = kh_get(bin, bidx, idx->n_bins + 1);
+                if (k != kh_end(bidx)) off0 = kh_val(bidx, k).list[0].v;
+            }
+            if ( off0==(uint64_t)-1 && idx->n_no_coor ) off0 = 0; // only no-coor reads in this bam
 			break;
 
 		case HTS_IDX_REST:
@@ -974,7 +974,6 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
 		default:
 			return 0;
 		}
-
 		if (off0 != (uint64_t)-1) {
 			iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
 			iter->read_rest = 1;
