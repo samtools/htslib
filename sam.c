@@ -1662,6 +1662,14 @@ bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data)
 	return iter;
 }
 
+void bam_mplp_set_mask(bam_mplp_t iter, int mask)
+{
+    int i;
+    for (i = 0; i < iter->n; ++i) {
+        bam_plp_set_mask(iter->iter[i], mask);
+    }
+}
+
 void bam_mplp_init_overlaps(bam_mplp_t iter)
 {
     int i;
