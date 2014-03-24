@@ -207,6 +207,12 @@ bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc)
 	return bdst;
 }
 
+bam1_t *bam_dup1(const bam1_t *bsrc)
+{
+  bam1_t *bdst = bam_init1();
+  return bam_copy1(bdst, bsrc);
+}
+
 int bam_cigar2qlen(int n_cigar, const uint32_t *cigar)
 {
 	int k, l;
