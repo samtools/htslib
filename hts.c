@@ -350,10 +350,10 @@ int hts_file_type(const char *fname)
     // ... etc
 
     int fd = open(fname, O_RDONLY);
-    if ( !fd ) return 0;
+    if ( !fd ) return FT_ERROR;
 
     uint8_t magic[5];
-    if ( read(fd,magic,2)!=2 ) { close(fd); return 0; }
+    if ( read(fd,magic,2)!=2 ) { close(fd); return FT_ERROR; }
     if ( !strncmp((char*)magic,"##",2) ) { close(fd); return FT_VCF; }
     if ( !strncmp((char*)magic,"BCF",3) ) { close(fd); return FT_BCF; }
     close(fd);
@@ -361,13 +361,14 @@ int hts_file_type(const char *fname)
     if ( magic[0]==0x1f && magic[1]==0x8b ) // compressed
     {
         BGZF *fp = bgzf_open(fname, "r");
-        if ( !fp ) return 0;
-        if ( bgzf_read(fp, magic, 3)!=3 ) { bgzf_close(fp); return 0; }
+        if ( !fp ) return FT_ERROR;
+        if ( bgzf_read(fp, magic, 3)!=3 ) { bgzf_close(fp); return FT_ERROR; }
         bgzf_close(fp);
         if ( !strncmp((char*)magic,"##",2) ) return FT_VCF;
         if ( !strncmp((char*)magic,"BCF",3) ) return FT_BCF_GZ;
+        return FT_GZ;
     }
-    return 0;
+    return FT_UNKN;
 }
 
 /****************
