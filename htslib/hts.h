@@ -218,6 +218,7 @@ extern "C" {
      * This function was added in order to avoid the need for excessive command
      * line switches.
      */
+    #define FT_ERROR  -1
     #define FT_UNKN   0
     #define FT_GZ     1
     #define FT_VCF    2
