@@ -3575,8 +3575,7 @@ int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args) {
 
     case CRAM_OPT_RANGE:
 	fd->range = *va_arg(args, cram_range *);
-	cram_seek_to_refpos(fd, &fd->range);
-	break;
+	return cram_seek_to_refpos(fd, &fd->range);
 
     case CRAM_OPT_REFERENCE:
 	return cram_load_reference(fd, va_arg(args, char *));
