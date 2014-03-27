@@ -413,11 +413,26 @@ static int bam_readrec(BGZF *fp, void *ignored, void *bv, int *tid, int *beg, in
 	return ret;
 }
 
+// This is used only with read_rest=1 iterators, so need not set tid/beg/end.
 static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
 {
 	htsFile *fp = fpv;
 	bam1_t *b = bv;
 	return cram_get_bam_seq(fp->fp.cram, &b);
+}
+
+// This is used only with read_rest=1 iterators, so need not set tid/beg/end.
+static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int *beg, int *end)
+{
+	htsFile *fp = fpv;
+	bam1_t *b = bv;
+	if (fp->is_bin) return bam_read1(bgzfp, b);
+	else if (fp->is_cram) return cram_get_bam_seq(fp->fp.cram, &b);
+	else {
+		// TODO Need headers available to implement this for SAM files
+		fprintf(stderr, "[sam_bam_cram_readrec] Not implemented for SAM files -- Exiting\n");
+		abort();
+	}
 }
 
 // The CRAM implementation stores the loaded index within the cram_fd rather
@@ -447,31 +462,49 @@ hts_idx_t *sam_index_load(samFile *fp, const char *fn)
 static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
 {
 	const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-	hts_itr_t *iter;
-	cram_range r = { tid, beg+1, end };
-	if (cram_set_option(cidx->cram, CRAM_OPT_RANGE, &r) != 0) return NULL;
+	hts_itr_t *iter = (hts_itr_t *) calloc(1, sizeof(hts_itr_t));
+	if (iter == NULL) return NULL;
 
 	// Cons up a dummy iterator for which hts_itr_next() will simply invoke
 	// the readrec function:
-	iter = (hts_itr_t *) calloc(1, sizeof(hts_itr_t));
-	if (iter == NULL) return NULL;
 	iter->read_rest = 1;
-	iter->curr_off = 0;
 	iter->off = NULL;
 	iter->bins.a = NULL;
 	iter->readrec = readrec;
-	// The following fields are not required by hts_itr_next(), but are
-	// filled in in case user code wants to look at them.
-	iter->tid = tid;
-	iter->beg = beg;
-	iter->end = end;
+
+	if (tid >= 0) {
+		cram_range r = { tid, beg+1, end };
+		if (cram_set_option(cidx->cram, CRAM_OPT_RANGE, &r) != 0) { free(iter); return NULL; }
+		iter->curr_off = 0;
+		// The following fields are not required by hts_itr_next(), but are
+		// filled in in case user code wants to look at them.
+		iter->tid = tid;
+		iter->beg = beg;
+		iter->end = end;
+	}
+	else switch (tid) {
+	case HTS_IDX_REST:
+		iter->curr_off = 0;
+		break;
+	case HTS_IDX_NONE:
+		iter->curr_off = 0;
+		iter->finished = 1;
+		break;
+	default:
+		fprintf(stderr, "[cram_itr_query] tid=%d not implemented for CRAM files -- Exiting\n", tid);
+		abort();
+		break;
+	}
+
 	return iter;
 }
 
 hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
 {
 	const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-	if (cidx->fmt == HTS_FMT_CRAI)
+	if (idx == NULL)
+		return hts_itr_query(NULL, tid, beg, end, sam_bam_cram_readrec);
+	else if (cidx->fmt == HTS_FMT_CRAI)
 		return cram_itr_query(idx, tid, beg, end, cram_readrec);
 	else
 		return hts_itr_query(idx, tid, beg, end, bam_readrec);

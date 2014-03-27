@@ -125,11 +125,18 @@ static int aux_fields1()
     return 1;
 }
 
+static void iterators1()
+{
+    hts_itr_destroy(sam_itr_queryi(NULL, HTS_IDX_REST, 0, 0));
+    hts_itr_destroy(sam_itr_queryi(NULL, HTS_IDX_NONE, 0, 0));
+}
+
 int main()
 {
     status = EXIT_SUCCESS;
 
     aux_fields1();
+    iterators1();
 
     return status;
 }

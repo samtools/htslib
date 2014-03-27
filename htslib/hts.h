@@ -147,6 +147,7 @@ producing iterators operating as follows:
  - HTS_IDX_REST   iterates from the current position to the end of the file
  - HTS_IDX_NONE   always returns "no more alignment records"
 When one of these special tid values is used, beg and end are ignored.
+When REST or NONE is used, idx is also ignored and may be NULL.
 */
 #define HTS_IDX_NOCOOR (-2)
 #define HTS_IDX_START  (-3)
