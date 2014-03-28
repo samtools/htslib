@@ -2811,7 +2811,7 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
 
     if ( type==BCF_HT_STR )
     {
-        int n = (fmt->n+1)*bcf_hdr_nsamples(hdr);
+        int n = fmt->n*bcf_hdr_nsamples(hdr);
         if ( *ndst < n ) 
         {
             *dst  = realloc(*dst, n);
