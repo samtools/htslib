@@ -155,18 +155,19 @@ int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos);
  *           or column-separated list of samples; or '-' for a list of 
  *           samples shared by all files. If first character is the
  *           exclamation mark, all but the listed samples are included.
+ * @is_file: 0: list of samples; 1: file with sample names
  *
  * Returns 1 if the call succeeded, or 0 on error.
  */
-int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples);
+int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples, int is_file);
 
 /**
  *  bcf_sr_set_targets(), bcf_sr_set_regions() - init targets/regions
  *  @readers:   holder of the open readers
- *  @targets:   regions can be either a comma-separated list of regions
- *              (chr,chr:from-to) or a name of a tabix indexed file with a list
- *              of regions (<chr,pos> or <chr,from,to>).  Coordinates are
- *              one-based and inclusive.
+ *  @targets:   list of regions, one-based and inclusive.
+ *  @is_fname:  0: targets is a comma-separated list of regions (chr,chr:from-to)
+ *              1: targets is a tabix indexed file with a list of regions
+ *              (<chr,pos> or <chr,from,to>)
  *
  *  Returns 0 if the call succeeded, or -1 on error.
  *
@@ -184,8 +185,8 @@ int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples);
  *  perfect match is sought after. Note that the duplicate positions in targets
  *  file are currently not supported.
  */
-int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int alleles);
-int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions);
+int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles);
+int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file);
 
 
 
@@ -196,6 +197,9 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions);
  *              tab-delimited file (the default). Uncompressed files
  *              are stored in memory while bgzip-compressed and tabix-indexed
  *              region files are streamed.
+ *  @is_file:   0: regions is a comma-separated list of regions
+ *                  (chr|chr:pos|chr:from-to|chr:from-)
+ *              1: VCF, BED or tab-delimited file
  *  @chr, from, to:       
  *              Column indexes of chromosome, start position and end position
  *              in the tab-delimited file. The positions are 1-based and
@@ -204,7 +208,7 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions);
  *              tabix-indexed files. When end position column is not present,
  *              supply 'from' in place of 'to'.
  */
-bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int chr, int from, int to);
+bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int chr, int from, int to);
 void bcf_sr_regions_destroy(bcf_sr_regions_t *regions);
 
 /*

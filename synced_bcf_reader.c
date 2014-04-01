@@ -55,7 +55,7 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
     return out;
 }
 
-int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions)
+int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
 {
     assert( !readers->regions );
     if ( readers->nreaders ) 
@@ -63,16 +63,16 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions)
         fprintf(stderr,"[%s:%d %s] Error: bcf_sr_set_regions() must be called before bcf_sr_add_reader()\n", __FILE__,__LINE__,__FUNCTION__);
         return -1;
     }
-    readers->regions = bcf_sr_regions_init(regions,0,1,2);
+    readers->regions = bcf_sr_regions_init(regions,is_file,0,1,2);
     if ( !readers->regions ) return -1;
     readers->explicit_regs = 1;
     readers->require_index = 1;
     return 0;
 }
-int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int alleles)
+int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles)
 {
     assert( !readers->targets );
-    readers->targets = bcf_sr_regions_init(targets,0,1,2);
+    readers->targets = bcf_sr_regions_init(targets,is_file,0,1,2);
     if ( !readers->targets ) return -1;
     readers->targets_als = alleles;
     return 0;
@@ -674,7 +674,7 @@ size_t mygetline(char **line, size_t *n, FILE *fp)
 
 }
 
-int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
+int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
 {
     int i, j, nsmpl, free_smpl = 0;
     char **smpl = NULL;
@@ -682,7 +682,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname)
     void *exclude = (fname[0]=='^') ? khash_str2int_init() : NULL;
     if ( exclude || strcmp("-",fname) ) // "-" stands for all samples
     {
-        smpl = hts_readlist(fname, &nsmpl);
+        smpl = hts_readlist(fname, is_file, &nsmpl);
         if ( !smpl ) 
         {
             fprintf(stderr,"Could not read the file: \"%s\"\n", fname);
@@ -803,9 +803,6 @@ static void _regions_add(bcf_sr_regions_t *reg, const char *chr, int start, int 
 // File name or a list of genomic locations. If file name, NULL is returned.
 static bcf_sr_regions_t *_regions_init_string(const char *str)
 {
-    struct stat sbuf;
-    if ( stat(str, &sbuf)==0 ) return NULL; // it's a file
-
     bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
     reg->start = reg->end = -1;
     reg->prev_start = reg->prev_seq = -1;
@@ -921,10 +918,10 @@ static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **ch
     return 1;
 }
 
-bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int ichr, int ifrom, int ito)
+bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr, int ifrom, int ito)
 {
-    bcf_sr_regions_t *reg = _regions_init_string(regions);   // file name or a genomic region?
-    if ( reg ) return reg;
+    bcf_sr_regions_t *reg;
+    if ( !is_file ) return _regions_init_string(regions);
 
     reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
     reg->start = reg->end = -1;

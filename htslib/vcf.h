@@ -256,12 +256,11 @@ extern "C" {
     /**
      *  bcf_hdr_set_samples() - for more efficient VCF parsing when only one/few samples are needed
      *  @samples: samples to include or exclude from file or as a comma-separated string.
-     *              LIST    .. select samples in list
-     *              :FILE   .. read samples from file
-     *              ^LIST   .. exclude samples from list
-     *              ^:FILE  .. exclude samples form file
-     *              -       .. include all samples
-     *              NULL    .. exclude all samples
+     *              LIST|FILE   .. select samples in list/file
+     *              ^LIST|FILE  .. exclude samples from list/file
+     *              -           .. include all samples
+     *              NULL        .. exclude all samples
+     *  @is_file: @samples is a file (1) or a comma-separated list (1)
      *
      *  The bottleneck of VCF reading is parsing of genotype fields. If the
      *  reader knows in advance that only subset of samples is needed (possibly
@@ -276,7 +275,7 @@ extern "C" {
      *  contains samples not present in the VCF header. In such a case, the
      *  return value is the index of the offending sample.
      */
-    int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples);
+    int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples, int is_file);
     int bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec);
 
 

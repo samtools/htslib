@@ -278,17 +278,58 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
 	return ret;
 }
 
-char **hts_readlist(const char *string, int *n)
+char **hts_readlist(const char *string, int is_file, int *_n)
 {
-    if ( string[0]==':' ) 
-        return hts_readlines(string+1,n);
-    char *str = (char*) malloc(strlen(string)+2);
-    if ( !str ) { *n = -1; return NULL; }
-    str[0] = ':';
-    strcpy(str+1, string);
-    char **ret = hts_readlines(str,n);
-    free(str);
-    return ret;
+    int m = 0, n = 0, dret;
+    char **s = 0;
+    if ( is_file )
+    {
+#if KS_BGZF
+        BGZF *fp = bgzf_open(string, "r");
+#else
+        gzFile fp = gzopen(string, "r");
+#endif
+        if ( !fp ) return NULL;
+
+        kstream_t *ks;
+        kstring_t str;
+        str.s = 0; str.l = str.m = 0;
+        ks = ks_init(fp);
+        while (ks_getuntil(ks, KS_SEP_LINE, &str, &dret) >= 0) 
+        {
+            if (str.l == 0) continue;
+            n++;
+            hts_expand(char*,n,m,s);
+            s[n-1] = strdup(str.s);
+        }
+        ks_destroy(ks);
+#if KS_BGZF
+        bgzf_close(fp);
+#else
+        gzclose(fp);
+#endif
+        free(str.s);        
+    }
+    else
+    {
+        const char *q = string, *p = string;
+        while ( 1 )
+        {
+            if (*p == ',' || *p == 0) 
+            {
+                n++;
+                hts_expand(char*,n,m,s);
+                s[n-1] = (char*)calloc(p - q + 1, 1);
+                strncpy(s[n-1], q, p - q);
+                q = p + 1;
+            }
+            if ( !*p ) break;
+            p++;
+        }
+    }
+    s = (char**)realloc(s, n * sizeof(char*));
+    *_n = n;
+    return s;
 }
 
 char **hts_readlines(const char *fn, int *_n)

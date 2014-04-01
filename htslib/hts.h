@@ -120,7 +120,15 @@ int hts_close(htsFile *fp);
 
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
 char **hts_readlines(const char *fn, int *_n);
-char **hts_readlist(const char *fn, int *_n);
+/*!
+    @abstract       Parse comma-separated list or read list from a file
+    @param list     File name or comma-separated list
+    @param is_file
+    @param _n       Size of the output array (number of items read)
+    @return         NULL on failure or pointer to newly allocated array of
+                    strings
+*/
+char **hts_readlist(const char *fn, int is_file, int *_n);
 
 /*!
   @abstract  Set .fai filename for a file opened for reading

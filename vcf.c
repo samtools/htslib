@@ -2134,7 +2134,7 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
 	return h;
 }
 
-int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples)
+int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples, int is_file)
 {
     if ( samples && !strcmp("-",samples) ) return 0;            // keep all samples 
 
@@ -2147,7 +2147,7 @@ int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples)
         for (i=0; i<bcf_hdr_nsamples(hdr); i++) bit_array_set(hdr->keep_samples,i);
 
     int idx, n, ret = 0;
-    char **smpls = hts_readlist(samples[0]=='^'?samples+1:samples, &n);
+    char **smpls = hts_readlist(samples[0]=='^'?samples+1:samples, is_file, &n);
     if ( !smpls ) return -1;
     for (i=0; i<n; i++)
     {
