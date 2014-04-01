@@ -574,10 +574,10 @@ int bcf_hdr_printf(bcf_hdr_t *hdr, const char *fmt, ...)
     vsnprintf(line, n, fmt, ap);
     va_end(ap);
 
-    bcf_hdr_append(hdr, line);
+    int ret = bcf_hdr_append(hdr, line);
 
     free(line);
-    return 0;
+    return ret;
 }
 
 
