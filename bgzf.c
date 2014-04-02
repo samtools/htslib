@@ -2,6 +2,7 @@
 
    Copyright (c) 2008 Broad Institute / Massachusetts Institute of Technology
                  2011 Attractive Chaos <attractor@live.co.uk>
+                 2014 DNAnexus, Inc.
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -442,43 +443,61 @@ typedef struct {
 	int i, errcode, toproc, compress_level;
 } worker_t;
 
-typedef struct bgzf_mtaux_t {
-	int n_threads, n_blks, curr, done;
-	volatile int proc_cnt;
+typedef struct bgzf_mtaux_workspace_t {
+	int curr;
 	void **blk;
 	int *len;
+} bgzf_mtaux_workspace_t;
+
+typedef struct bgzf_mtaux_t {
+	int n_threads, n_blks, done;
+	volatile int proc_cnt;
+	// data is compressed in the 'background', while ingest continues in the 'foreground'
+	struct bgzf_mtaux_workspace_t *background, *foreground;
 	worker_t *w;
 	pthread_t *tid;
 	pthread_mutex_t lock;
-	pthread_cond_t cv;
+	pthread_cond_t cv_start, cv_idle;
+	struct hFILE *fp;
 } mtaux_t;
-
-static int worker_aux(worker_t *w)
-{
-	int i, stop = 0;
-	// wait for condition: to process or all done
-	pthread_mutex_lock(&w->mt->lock);
-	while (!w->toproc && !w->mt->done)
-		pthread_cond_wait(&w->mt->cv, &w->mt->lock);
-	if (w->mt->done) stop = 1;
-	w->toproc = 0;
-	pthread_mutex_unlock(&w->mt->lock);
-	if (stop) return 1; // to quit the thread
-	w->errcode = 0;
-	for (i = w->i; i < w->mt->curr; i += w->mt->n_threads) {
-		int clen = BGZF_MAX_BLOCK_SIZE;
-		if (bgzf_compress(w->buf, &clen, w->mt->blk[i], w->mt->len[i], w->compress_level) != 0)
-			w->errcode |= BGZF_ERR_ZLIB;
-		memcpy(w->mt->blk[i], w->buf, clen);
-		w->mt->len[i] = clen;
-	}
-	__sync_fetch_and_add(&w->mt->proc_cnt, 1);
-	return 0;
-}
 
 static void *mt_worker(void *data)
 {
-	while (worker_aux((worker_t*)data) == 0);
+	int i;
+	worker_t *w = (worker_t *) data;
+	while (1) {
+		// wait for condition: to process or all done
+		pthread_mutex_lock(&w->mt->lock);
+		while (!w->toproc && !w->mt->done)
+			pthread_cond_wait(&w->mt->cv_start, &w->mt->lock);
+		w->toproc = 0;
+		pthread_mutex_unlock(&w->mt->lock);
+		if (w->mt->done) break;
+		w->errcode = 0;
+		for (i = w->i; i < w->mt->background->curr; i += w->mt->n_threads) {
+			int clen = BGZF_MAX_BLOCK_SIZE;
+			if (bgzf_compress(w->buf, &clen, w->mt->background->blk[i], w->mt->background->len[i], w->compress_level) != 0)
+				w->errcode |= BGZF_ERR_ZLIB;
+			memcpy(w->mt->background->blk[i], w->buf, clen);
+			w->mt->background->len[i] = clen;
+		}
+		pthread_mutex_lock(&w->mt->lock);
+		w->mt->proc_cnt++;
+		if (w->mt->proc_cnt == w->mt->n_threads) {
+			// I'm the last thread to finish this round of compression. Write
+			// everybody's results out, then signal the main thread that we're
+			// now idle.
+			// NB: since we're using hwrite in a worker thread, it's critical
+			// to guarantee the main thread is not using hwrite at the same
+			// time
+			for (i = 0; i < w->mt->background->curr; ++i)
+				if (hwrite(w->mt->fp, w->mt->background->blk[i], w->mt->background->len[i]) != w->mt->background->len[i])
+					w->errcode |= BGZF_ERR_IO;
+			w->mt->background->curr = 0;
+			pthread_cond_signal(&w->mt->cv_idle);
+		}
+		pthread_mutex_unlock(&w->mt->lock);
+	}
 	return 0;
 }
 
@@ -487,15 +506,22 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 	int i;
 	mtaux_t *mt;
 	pthread_attr_t attr;
-	if (!fp->is_write || fp->mt || n_threads <= 1) return -1;
+	if (!fp->is_write || fp->mt || n_threads < 1) return -1;
 	mt = (mtaux_t*)calloc(1, sizeof(mtaux_t));
 	mt->n_threads = n_threads;
+	mt->proc_cnt = n_threads;
 	mt->n_blks = n_threads * n_sub_blks;
-	mt->len = (int*)calloc(mt->n_blks, sizeof(int));
-	mt->blk = (void**)calloc(mt->n_blks, sizeof(void*));
-	for (i = 0; i < mt->n_blks; ++i)
-		mt->blk[i] = malloc(BGZF_MAX_BLOCK_SIZE);
-	mt->tid = (pthread_t*)calloc(mt->n_threads, sizeof(pthread_t)); // tid[0] is not used, as the worker 0 is launched by the master
+	mt->background = (struct bgzf_mtaux_workspace_t*) calloc(1, sizeof(bgzf_mtaux_workspace_t));
+	mt->background->len = (int*)calloc(mt->n_blks, sizeof(int));
+	mt->background->blk = (void**)calloc(mt->n_blks, sizeof(void*));
+	mt->foreground = (struct bgzf_mtaux_workspace_t*) calloc(1, sizeof(bgzf_mtaux_workspace_t));
+	mt->foreground->len = (int*)calloc(mt->n_blks, sizeof(int));
+	mt->foreground->blk = (void**)calloc(mt->n_blks, sizeof(void*));
+	for (i = 0; i < mt->n_blks; ++i) {
+		mt->background->blk[i] = malloc(BGZF_MAX_BLOCK_SIZE);
+		mt->foreground->blk[i] = malloc(BGZF_MAX_BLOCK_SIZE);
+	}
+	mt->tid = (pthread_t*)calloc(mt->n_threads, sizeof(pthread_t));
 	mt->w = (worker_t*)calloc(mt->n_threads, sizeof(worker_t));
 	for (i = 0; i < mt->n_threads; ++i) {
 		mt->w[i].i = i;
@@ -506,10 +532,12 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 	pthread_mutex_init(&mt->lock, 0);
-	pthread_cond_init(&mt->cv, 0);
-	for (i = 1; i < mt->n_threads; ++i) // worker 0 is effectively launched by the master thread
+	pthread_cond_init(&mt->cv_start, 0);
+	pthread_cond_init(&mt->cv_idle, 0);
+	for (i = 0; i < mt->n_threads; ++i)
 		pthread_create(&mt->tid[i], &attr, mt_worker, &mt->w[i]);
 	fp->mt = mt;
+	mt->fp = fp->fp;
 	return 0;
 }
 
@@ -519,58 +547,101 @@ static void mt_destroy(mtaux_t *mt)
 	// signal all workers to quit
 	pthread_mutex_lock(&mt->lock);
 	mt->done = 1; mt->proc_cnt = 0;
-	pthread_cond_broadcast(&mt->cv);
+	pthread_cond_broadcast(&mt->cv_start);
 	pthread_mutex_unlock(&mt->lock);
-	for (i = 1; i < mt->n_threads; ++i) pthread_join(mt->tid[i], 0); // worker 0 is effectively launched by the master thread
+	for (i = 0; i < mt->n_threads; ++i) pthread_join(mt->tid[i], 0);
 	// free other data allocated on heap
-	for (i = 0; i < mt->n_blks; ++i) free(mt->blk[i]);
+	for (i = 0; i < mt->n_blks; ++i) {
+		free(mt->background->blk[i]);
+		free(mt->foreground->blk[i]);
+	}
 	for (i = 0; i < mt->n_threads; ++i) free(mt->w[i].buf);
-	free(mt->blk); free(mt->len); free(mt->w); free(mt->tid);
-	pthread_cond_destroy(&mt->cv);
+	free(mt->background->blk); free(mt->background->len); free(mt->background);
+	free(mt->foreground->blk); free(mt->foreground->len); free(mt->foreground);
+	free(mt->w); free(mt->tid);
+	pthread_cond_destroy(&mt->cv_start);
+	pthread_cond_destroy(&mt->cv_idle);
 	pthread_mutex_destroy(&mt->lock);
 	free(mt);
 }
 
+// ingest fp->uncompressed_block into the foreground
 static void mt_queue(BGZF *fp)
 {
 	mtaux_t *mt = fp->mt;
-	assert(mt->curr < mt->n_blks); // guaranteed by the caller
-	memcpy(mt->blk[mt->curr], fp->uncompressed_block, fp->block_offset);
-	mt->len[mt->curr] = fp->block_offset;
+	// Probable cause of assertion failure: caller ignored fp->errcode after a
+	// previous bgzf_write
+	assert(mt->foreground->curr < mt->n_blks);
+	memcpy(mt->foreground->blk[mt->foreground->curr], fp->uncompressed_block, fp->block_offset);
+	mt->foreground->len[mt->foreground->curr] = fp->block_offset;
 	fp->block_offset = 0;
-	++mt->curr;
+	++mt->foreground->curr;
 }
 
-static int mt_flush(BGZF *fp)
-{
-	int i;
+// Wait for any & all background threads to complete their current compression task.
+// Postconditions:
+//   worker threads are idle
+//   background results have been written with hwrite
+//   fp->mt->proc_cnt == fp->mt->n_threads
+//   fp->mt->background->curr == 0
+// Idempotent until workspaces are rotated.
+static int mt_flush_background(BGZF *fp) {
+	int i, ret = 0;
 	mtaux_t *mt = fp->mt;
-	if (fp->block_offset) mt_queue(fp); // guaranteed that assertion does not fail
+	// wait for all the threads to complete
+	pthread_mutex_lock(&mt->lock);
+	while (mt->proc_cnt < mt->n_threads)
+		pthread_cond_wait(&mt->cv_idle, &mt->lock);
+	pthread_mutex_unlock(&mt->lock);
+	assert(mt->background->curr == 0);
+	for (i = 0; i < mt->n_threads; ++i) {
+		if (mt->w[i].errcode) {
+			fp->errcode |= mt->w[i].errcode;
+			ret = -1;
+		}
+	}
+	return ret;
+}
+
+// flush background, rotate foreground & background, launch background compression.
+static int mt_rotate(BGZF *fp) {
+	int code, i;
+	mtaux_t *mt = fp->mt;
+	bgzf_mtaux_workspace_t *tmp;
+
+	// await current background processing
+	if ((code = mt_flush_background(fp))) return code;
+
+	// At this point it's safe to manipulate background and foreground because
+	// the worker threads are idle, waiting on the condition to signal.
+	tmp = mt->background;
+	mt->background = mt->foreground;
+	mt->foreground = tmp;
+
 	// signal all the workers to compress
 	pthread_mutex_lock(&mt->lock);
 	for (i = 0; i < mt->n_threads; ++i) mt->w[i].toproc = 1;
 	mt->proc_cnt = 0;
-	pthread_cond_broadcast(&mt->cv);
+	pthread_cond_broadcast(&mt->cv_start);
 	pthread_mutex_unlock(&mt->lock);
-	// worker 0 is doing things here
-	worker_aux(&mt->w[0]);
-	// wait for all the threads to complete
-	while (mt->proc_cnt < mt->n_threads);
-	// dump data to disk
-	for (i = 0; i < mt->n_threads; ++i) fp->errcode |= mt->w[i].errcode;
-	for (i = 0; i < mt->curr; ++i)
-		if (hwrite(fp->fp, mt->blk[i], mt->len[i]) != mt->len[i])
-			fp->errcode |= BGZF_ERR_IO;
-	mt->curr = 0;
+
 	return 0;
 }
 
+// ingest fp->uncompressed_block into foreground, then flush both background and foreground
+static int mt_flush(BGZF *fp)
+{
+	if (fp->block_offset) mt_queue(fp); // guaranteed that assertion does not fail
+	return mt_rotate(fp) || mt_flush_background(fp);
+}
+
+// ingest fp->uncompressed_block into foreground; if foreground is now full, mt_rotate()
 static int mt_lazy_flush(BGZF *fp)
 {
 	mtaux_t *mt = fp->mt;
 	if (fp->block_offset) mt_queue(fp);
-	if (mt->curr == mt->n_blks)
-		return mt_flush(fp);
+	if (mt->foreground->curr == mt->n_blks)
+		return mt_rotate(fp);
 	return -1;
 }
 
@@ -597,6 +668,7 @@ int bgzf_flush(BGZF *fp)
         }
 		int block_length = deflate_block(fp, fp->block_offset);
 		if (block_length < 0) return -1;
+		// safe to hwrite because worker threads are idle following mt_flush
 		if (hwrite(fp->fp, fp->compressed_block, block_length) != block_length) {
 			fp->errcode |= BGZF_ERR_IO; // possibly truncated file
 			return -1;
@@ -622,6 +694,8 @@ int bgzf_flush_try(BGZF *fp, ssize_t size)
 ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
 {
     if ( !fp->is_compressed )
+    	// safe to hwrite because is_compressed is immutable; worker threads
+    	// will never be doing anything.
         return hwrite(fp->fp, data, length);
 
 	const uint8_t *input = (const uint8_t*)data;
@@ -648,6 +722,8 @@ ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
 
 ssize_t bgzf_raw_write(BGZF *fp, const void *data, size_t length)
 {
+	// If fp->mt, some other thread could be in the middle of hwrite
+	assert(!fp->mt);
 	return hwrite(fp->fp, data, length);
 }
 
@@ -659,6 +735,7 @@ int bgzf_close(BGZF* fp)
 		if (bgzf_flush(fp) != 0) return -1;
 		fp->compress_level = -1;
 		block_length = deflate_block(fp, 0); // write an empty block
+		// safe to hwrite because worker threads are idle following bgzf_flush
 		if (hwrite(fp->fp, fp->compressed_block, block_length) < 0
 			|| hflush(fp->fp) != 0) {
 			fp->errcode |= BGZF_ERR_IO;
