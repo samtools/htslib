@@ -337,6 +337,7 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
 	if(iter == kh_end(h)) {
 		fprintf(stderr, "[fai_fetch] Warning - Reference %s not found in FASTA file, returning empty sequence\n", str);
 		free(s);
+        *len = -2;
 		return 0;
 	};
 	val = kh_value(h, iter);
@@ -387,7 +388,12 @@ char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p
 
     // Adjust position
     iter = kh_get(s, fai->hash, c_name);
-    if(iter == kh_end(fai->hash)) return 0;
+    if (iter == kh_end(fai->hash)) 
+    {
+        *len = -2;
+        fprintf(stderr, "[fai_fetch_seq] The sequence \"%s\" not found\n", c_name);
+        return NULL;
+    }
     val = kh_value(fai->hash, iter);
 	if(p_end_i < p_beg_i) p_beg_i = p_end_i;
     if(p_beg_i < 0) p_beg_i = 0;

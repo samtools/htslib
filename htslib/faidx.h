@@ -76,7 +76,7 @@ extern "C" {
 	  @abstract    Fetch the sequence in a region.
 	  @param  fai  Pointer to the faidx_t struct
 	  @param  reg  Region in the format "chr2:20,000-30,000"
-	  @param  len  Length of the region
+	  @param  len  Length of the region; -2 if seq not present, -1 general error
 	  @return      Pointer to the sequence; null on failure
 
 	  @discussion The returned sequence is allocated by malloc family
@@ -97,7 +97,7 @@ extern "C" {
 	  @param  c_name Region name
 	  @param  p_beg_i  Beginning position number (zero-based)
 	  @param  p_end_i  End position number (zero-based)
-	  @param  len  Length of the region
+	  @param  len  Length of the region; -2 if c_name not present, -1 general error
 	  @return      Pointer to the sequence; null on failure
 
 	  @discussion The returned sequence is allocated by malloc family
