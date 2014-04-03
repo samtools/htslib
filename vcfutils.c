@@ -11,7 +11,7 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 		bcf_unpack(line, BCF_UN_INFO);
 		int an_id = bcf_hdr_id2int(header, BCF_DT_ID, "AN");
 		int ac_id = bcf_hdr_id2int(header, BCF_DT_ID, "AC");
-        int i, an=0, ac_len=0, ac_type=0;
+        int i, an=-1, ac_len=0, ac_type=0;
         uint8_t *ac_ptr=NULL;
 		if ( an_id>=0 && ac_id>=0 )
 		{
@@ -22,7 +22,7 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 				else if ( z->key == ac_id ) { ac_ptr = z->vptr; ac_len = z->len; ac_type = z->type; }
 			}
         }
-        if ( ac_ptr )
+        if ( an>=0 && ac_ptr )
         {
 			int nac = 0;
             #define BRANCH_INT(type_t) {        \
