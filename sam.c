@@ -1366,7 +1366,7 @@ static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, int
 
         if ( cig==BAM_CSOFT_CLIP ) { (*cigar)++; *iseq += ncig; *icig = 0; continue; }
         if ( cig==BAM_CHARD_CLIP ) { (*cigar)++; *icig = 0; continue; }
-        if ( cig==BAM_CMATCH ) 
+        if ( cig==BAM_CMATCH || cig==BAM_CEQUAL || cig==BAM_CDIFF ) 
         { 
             pos -= ncig; 
             if ( pos < 0 ) { *icig = ncig + pos; *iseq += *icig; *iref += *icig; return BAM_CMATCH; }
@@ -1381,6 +1381,8 @@ static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, int
             (*cigar)++; *icig = 0; *iref += ncig;
             continue;
         }
+        fprintf(stderr,"todo: cigar %d\n", cig);
+        assert(0);
     }
     *iseq = -1;
     return -1;
@@ -1392,7 +1394,7 @@ static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, in
         int cig  = (**cigar) & BAM_CIGAR_MASK;
         int ncig = (**cigar) >> BAM_CIGAR_SHIFT;
 
-        if ( cig==BAM_CMATCH ) 
+        if ( cig==BAM_CMATCH || cig==BAM_CEQUAL || cig==BAM_CDIFF ) 
         {
             if ( *icig >= ncig - 1 ) { *icig = 0;  (*cigar)++; continue; }
             (*iseq)++; (*icig)++; (*iref)++; 
@@ -1402,6 +1404,8 @@ static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, in
         if ( cig==BAM_CINS ) { (*cigar)++; *iseq += ncig; *icig = 0; continue; }
         if ( cig==BAM_CSOFT_CLIP ) { (*cigar)++; *iseq += ncig; *icig = 0; continue; }
         if ( cig==BAM_CHARD_CLIP ) { (*cigar)++; *icig = 0; continue; }
+        fprintf(stderr,"todo: cigar %d\n", cig);
+        assert(0);
     }
     *iseq = -1;
     *iref = -1; 
