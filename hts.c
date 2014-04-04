@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -953,6 +954,32 @@ const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid,
     }
     *n = tid;
     return names;
+}
+
+static const int BAI_MAX_BIN = 37450; // =(8^6-1)/7+1
+
+bool hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped)
+{
+	if ( idx->fmt != HTS_FMT_BAI ) {
+		*mapped = 0; *unmapped = 0;
+		return false;
+	}
+
+	bidx_t *h = idx->bidx[tid];
+	khint_t k = kh_get(bin, h, BAI_MAX_BIN);
+	if (k != kh_end(h)) {
+		*mapped = kh_val(h, k).list[1].u;
+		*unmapped = kh_val(h, k).list[1].v;
+		return true;
+	} else {
+		*mapped = 0; *unmapped = 0;
+		return false;
+	}
+}
+
+uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx)
+{
+	return idx->n_no_coor;
 }
 
 /****************

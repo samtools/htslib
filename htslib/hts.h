@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;
@@ -214,6 +215,9 @@ extern "C" {
 
 	uint8_t *hts_idx_get_meta(hts_idx_t *idx, int *l_meta);
 	void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy);
+	
+	bool hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped);
+	uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
 
 	const char *hts_parse_reg(const char *s, int *beg, int *end);
 	hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
