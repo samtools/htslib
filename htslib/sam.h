@@ -165,6 +165,7 @@ extern "C" {
 	int bam_read1(BGZF *fp, bam1_t *b);
 	int bam_write1(BGZF *fp, const bam1_t *b);
 	bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc);
+	bam1_t *bam_dup1(const bam1_t *bsrc);
 
 	int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
 	int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
