@@ -2108,6 +2108,8 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
 	bcf_hdr_t *h;
 	str.l = str.m = 0; str.s = 0;
 	h = bcf_hdr_init("w");
+    int j;
+    for (j=0; j<n; j++) imap[j] = -1;
 	if ( bcf_hdr_nsamples(h0) > 0) {
 		char *p;
 		int i = 0, end = n? 8 : 7;
