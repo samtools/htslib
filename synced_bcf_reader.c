@@ -195,11 +195,6 @@ static void bcf_sr_destroy1(bcf_sr_t *reader)
 }
 void bcf_sr_destroy(bcf_srs_t *files)
 {
-    if ( !files->nreaders ) 
-    {
-        free(files);
-        return;
-    }
     int i;
     for (i=0; i<files->nreaders; i++)
         bcf_sr_destroy1(&files->readers[i]);
@@ -629,8 +624,25 @@ int bcf_sr_next_line(bcf_srs_t *files)
     }
 }
 
+static void bcf_sr_seek_start(bcf_srs_t *readers)
+{
+    bcf_sr_regions_t *reg = readers->regions;
+    int i;
+    for (i=0; i<reg->nseqs; i++)
+        reg->regs[i].creg = -1;
+    reg->iseq = 0;
+}
+
+
 int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos)
 {
+    if ( !seq && !pos ) 
+    {
+        // seek to start
+        bcf_sr_seek_start(readers);
+        return 0;
+    }
+
     bcf_sr_regions_overlap(readers->regions, seq, pos, pos);
     int i, nret = 0;
     for (i=0; i<readers->nreaders; i++) 
@@ -746,7 +758,6 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
     }
     return 1;
 }
-
 
 // Add a new region into a list sorted by start,end. On input the coordinates
 // are 1-based, stored 0-based, inclusive.

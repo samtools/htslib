@@ -144,6 +144,7 @@ int bcf_sr_next_line(bcf_srs_t *readers);
 
 /**
  *  bcf_sr_seek() - set all readers to selected position
+ *  @seq:  sequence name; NULL to seek to start
  *  @pos:  0-based coordinate
  */
 int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos);
