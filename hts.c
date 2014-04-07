@@ -427,6 +427,10 @@ int hts_file_type(const char *fname)
 
 #define HTS_MIN_MARKER_DIST 0x10000
 
+// Finds the special meta bin
+//  ((1<<(3 * n_lvls + 3)) - 1) / 7 + 1
+#define META_BIN(idx) idx->n_bins + 1
+
 #define pair64_lt(a,b) ((a).u < (b).u)
 
 #include "htslib/ksort.h"
@@ -531,7 +535,7 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
 	int l;
 	uint64_t offset0 = 0;
 	if (bidx) {
-		k = kh_get(bin, bidx, idx->n_bins + 1);
+		k = kh_get(bin, bidx, META_BIN(idx));
 		if (k != kh_end(bidx))
 			offset0 = kh_val(bidx, k).list[0].u;
 		for (l = 0; l < lidx->n && lidx->offset[l] == (uint64_t)-1; ++l)
@@ -604,8 +608,8 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 	if (idx == NULL || idx->z.finished) return; // do not run this function on an empty index or multiple times
 	if (idx->z.save_tid >= 0) {
 		insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, final_offset);
-		insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.off_beg, final_offset);
-		insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.n_mapped, idx->z.n_unmapped);
+		insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.off_beg, final_offset);
+		insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.n_mapped, idx->z.n_unmapped);
 	}
 	for (i = 0; i < idx->n; ++i) {
 		update_loff(idx, i, (idx->fmt == HTS_FMT_CSI));
@@ -657,8 +661,8 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
 			insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, idx->z.last_off);
 		if (idx->z.last_bin == 0xffffffffu && idx->z.save_bin != 0xffffffffu) { // change of chr; keep meta information
 			idx->z.off_end = idx->z.last_off;
-			insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.off_beg, idx->z.off_end);
-			insert_to_b(idx->bidx[idx->z.save_tid], idx->n_bins + 1, idx->z.n_mapped, idx->z.n_unmapped);
+			insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.off_beg, idx->z.off_end);
+			insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.n_mapped, idx->z.n_unmapped);
 			idx->z.n_mapped = idx->z.n_unmapped = 0;
 			idx->z.off_beg = idx->z.off_end;
 		}
@@ -956,17 +960,15 @@ const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid,
     return names;
 }
 
-static const int BAI_MAX_BIN = 37450; // =(8^6-1)/7+1
-
 bool hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped)
 {
-	if ( idx->fmt != HTS_FMT_BAI ) {
+	if ( idx->fmt == HTS_FMT_CRAI ) {
 		*mapped = 0; *unmapped = 0;
 		return false;
 	}
 
 	bidx_t *h = idx->bidx[tid];
-	khint_t k = kh_get(bin, h, BAI_MAX_BIN);
+	khint_t k = kh_get(bin, h, META_BIN(idx));
 	if (k != kh_end(h)) {
 		*mapped = kh_val(h, k).list[1].u;
 		*unmapped = kh_val(h, k).list[1].v;
@@ -1022,7 +1024,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
             for (i=0; i<idx->n; i++)
             {
                 bidx = idx->bidx[i];
-                k = kh_get(bin, bidx, idx->n_bins + 1);
+                k = kh_get(bin, bidx, META_BIN(idx));
                 if (k == kh_end(bidx)) continue;
                 if ( off0 > kh_val(bidx, k).list[0].u ) off0 = kh_val(bidx, k).list[0].u;
             }
@@ -1033,7 +1035,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
             if ( idx->n>0 )
             {
                 bidx = idx->bidx[idx->n - 1];
-                k = kh_get(bin, bidx, idx->n_bins + 1);
+                k = kh_get(bin, bidx, META_BIN(idx));
                 if (k != kh_end(bidx)) off0 = kh_val(bidx, k).list[0].v;
             }
             if ( off0==(uint64_t)-1 && idx->n_no_coor ) off0 = 0; // only no-coor reads in this bam
