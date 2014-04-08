@@ -355,7 +355,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                     int ia, j, k; \
                     for (j=0; j<line->n_sample; j++) \
                     { \
-                        for (ia=0, k=0; ia<line->n_allele; ia++) \
+                        for (ia=0, k=0; ia<line->n_allele-1; ia++) \
                         {                                \
                             if ( rm_mask & 1<<(ia+1) ) \
                             { \
@@ -498,7 +498,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                 #define BRANCH(type_t,missing,vector_end) {         \
                     type_t *p = (type_t *) info->vptr;  \
                     int ia, j; \
-                    for (ia=0, j=0; ia<line->n_allele; ia++) \
+                    for (ia=0, j=0; ia<line->n_allele-1; ia++) \
                     {                                \
                         if ( rm_mask & 1<<(ia+1) ) \
                         { \
