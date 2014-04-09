@@ -224,7 +224,7 @@ extern "C" {
 	void bcf_hdr_destroy(bcf_hdr_t *h);
 
 	/** Initialize a bcf1_t object; equivalent to calloc(1, sizeof(bcf1_t)) */
-	bcf1_t *bcf_init();
+	bcf1_t *bcf_init(void);
 	
 	/** Deallocate a bcf1_t object */
 	void bcf_destroy(bcf1_t *v);

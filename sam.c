@@ -1170,7 +1170,7 @@ typedef struct {
 	lbnode_t **buf;
 } mempool_t;
 
-static mempool_t *mp_init()
+static mempool_t *mp_init(void)
 {
 	mempool_t *mp;
 	mp = (mempool_t*)calloc(1, sizeof(mempool_t));

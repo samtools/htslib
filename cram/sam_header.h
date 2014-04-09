@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013 Genome Research Ltd.
+Copyright (c) 2013-2014 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without 
@@ -218,7 +218,7 @@ typedef struct {
  * Returns a SAM_hdr struct on success (free with sam_hdr_free())
  *         NULL on failure
  */
-SAM_hdr *sam_hdr_new();
+SAM_hdr *sam_hdr_new(void);
 
 /*! Tokenises a SAM header into a hash table.
  *

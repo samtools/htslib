@@ -110,7 +110,7 @@ typedef struct
 bcf_srs_t;
 
 /** Init bcf_srs_t struct */
-bcf_srs_t *bcf_sr_init();
+bcf_srs_t *bcf_sr_init(void);
 
 /** Destroy  bcf_srs_t struct */
 void bcf_sr_destroy(bcf_srs_t *readers);

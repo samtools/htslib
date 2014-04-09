@@ -66,7 +66,7 @@ uint8_t *check_bam_aux_get(const bam1_t *aln, const char *tag, char type)
 #define str(x) #x
 #define xstr(x) str(x)
 
-static int aux_fields1()
+static int aux_fields1(void)
 {
     static const char sam[] = "data:"
 "@SQ\tSN:one\tLN:1000\n"
@@ -125,13 +125,13 @@ static int aux_fields1()
     return 1;
 }
 
-static void iterators1()
+static void iterators1(void)
 {
     hts_itr_destroy(sam_itr_queryi(NULL, HTS_IDX_REST, 0, 0));
     hts_itr_destroy(sam_itr_queryi(NULL, HTS_IDX_NONE, 0, 0));
 }
 
-int main()
+int main(void)
 {
     status = EXIT_SUCCESS;
 

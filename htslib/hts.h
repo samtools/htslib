@@ -84,7 +84,7 @@ extern "C" {
   @return    For released versions, a string like "N.N[.N]"; or git describe
   output if using a library built within a Git repository.
 */
-const char *hts_version();
+const char *hts_version(void);
 
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
@@ -260,7 +260,7 @@ static inline int hts_bin_bot(int bin, int n_lvls)
  * Endianness *
  **************/
 
-static inline int ed_is_big()
+static inline int ed_is_big(void)
 {
 	long one= 1;
 	return !(*((char *)(&one)));

@@ -90,7 +90,7 @@ void reopen(const char *infname, const char *outfname)
     if (fout == NULL) fail("hopen(\"%s\")", outfname);
 }
 
-int main()
+int main(void)
 {
     static const int size[] = { 1, 13, 403, 999, 30000 };
 

@@ -9,7 +9,7 @@ KHASH_MAP_INIT_STR(str2int, int)
  *  Wrappers for khash dictionaries used by mpileup. 
  */
 
-static inline void *khash_str2int_init()
+static inline void *khash_str2int_init(void)
 {
     return kh_init(str2int);
 }

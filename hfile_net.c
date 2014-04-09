@@ -1,6 +1,6 @@
 /*  hfile_net.c -- network backend for low-level input/output streams.
 
-    Copyright (C) 2013 Genome Research Ltd.
+    Copyright (C) 2013-2014 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -37,13 +37,13 @@ typedef struct {
 static int net_inited = 0;
 
 #ifdef _WIN32
-static void net_exit()
+static void net_exit(void)
 {
     knet_win32_destroy();
 }
 #endif
 
-static int net_init()
+static int net_init(void)
 {
 #ifdef _WIN32
     if (knet_win32_init() != 0) return -1;

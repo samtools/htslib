@@ -208,7 +208,7 @@ extern "C" {
 	 *** BAM I/O ***
 	 ***************/
 
-	bam_hdr_t *bam_hdr_init();
+	bam_hdr_t *bam_hdr_init(void);
 	bam_hdr_t *bam_hdr_read(BGZF *fp);
 	int bam_hdr_write(BGZF *fp, const bam_hdr_t *h);
 	void bam_hdr_destroy(bam_hdr_t *h);
