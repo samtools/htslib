@@ -1928,8 +1928,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	    if (!c || c->curr_slice == c->max_slice) {
 		// new container
 		do {
-		    if (c)
-			cram_free_container(c);
+		    //Breaks multi-threading
+		    //if (c) cram_free_container(c);
 
 		    if (!(c = fd->ctr = cram_read_container(fd))) {
 			if (fd->pool) {
