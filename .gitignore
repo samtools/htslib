@@ -7,6 +7,9 @@ lib*.dylib
 lib*.so
 lib*.so.*
 
+tabix
+bgzip
+
 /test/fieldarith
 /test/hfile
 /test/sam
