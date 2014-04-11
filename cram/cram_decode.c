@@ -1691,6 +1691,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    if (refs[i])
 		cram_ref_decr(fd->refs, i);
 	}
+	free(refs);
     } else if (ref_id >= 0 && s->ref != fd->ref_free) {
 	cram_ref_decr(fd->refs, ref_id);
     }
@@ -1927,6 +1928,9 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	    if (!c || c->curr_slice == c->max_slice) {
 		// new container
 		do {
+		    if (c)
+			cram_free_container(c);
+
 		    if (!(c = fd->ctr = cram_read_container(fd))) {
 			if (fd->pool) {
 			    fd->ooc = 1;
