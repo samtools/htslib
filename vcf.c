@@ -749,6 +749,10 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 	v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
 	v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
 	v->shared.l = x[0], v->indiv.l = x[1];
+
+    // silent fix of broken BCFs produced by earlier versions of bcf_subset, prior to and including bd6ed8b4
+    if ( (!v->indiv.l || !v->n_sample) && v->n_fmt ) v->n_fmt = 0;
+
 	bgzf_read(fp, v->shared.s, v->shared.l);
 	bgzf_read(fp, v->indiv.s, v->indiv.l);
 	return 0;
@@ -940,6 +944,7 @@ static int bcf1_sync(bcf1_t *line)
         free(line->indiv.s);
         line->indiv = tmp;
     }
+    if ( !line->n_sample ) line->n_fmt = 0;
     return 0;
 }
 
@@ -2209,6 +2214,7 @@ int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
 		for (i = j = 0; j < n; ++j) if (imap[j] >= 0) ++i;
 		v->n_sample = i;
 	} else v->n_sample = 0;
+    if ( !v->n_sample ) v->n_fmt = 0;
 	free(v->indiv.s);
 	v->indiv = ind;
     v->unpacked &= ~BCF_UN_FMT;    // only BCF is ready for output, VCF will need to unpack again
