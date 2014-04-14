@@ -207,7 +207,9 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file);
  *              inclusive. 
  *              These parameters are ignored when reading from VCF, BED or
  *              tabix-indexed files. When end position column is not present,
- *              supply 'from' in place of 'to'.
+ *              supply 'from' in place of 'to'. When 'to' is negative, first
+ *              abs(to) will be attempted and if that fails, 'from' will be used
+ *              instead.
  */
 bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int chr, int from, int to);
 void bcf_sr_regions_destroy(bcf_sr_regions_t *regions);

@@ -63,7 +63,7 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
         fprintf(stderr,"[%s:%d %s] Error: bcf_sr_set_regions() must be called before bcf_sr_add_reader()\n", __FILE__,__LINE__,__FUNCTION__);
         return -1;
     }
-    readers->regions = bcf_sr_regions_init(regions,is_file,0,1,2);
+    readers->regions = bcf_sr_regions_init(regions,is_file,0,1,-2);
     if ( !readers->regions ) return -1;
     readers->explicit_regs = 1;
     readers->require_index = 1;
@@ -72,7 +72,7 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles)
 {
     assert( !readers->targets );
-    readers->targets = bcf_sr_regions_init(targets,is_file,0,1,2);
+    readers->targets = bcf_sr_regions_init(targets,is_file,0,1,-2);
     if ( !readers->targets ) return -1;
     readers->targets_als = alleles;
     return 0;
@@ -870,10 +870,12 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
     return reg;
 }
 
-// ichr,ifrom,ito are 0-based; line will be modified so that the *chr pointer is 0-terminated.
+// ichr,ifrom,ito are 0-based;
 // returns -1 on error, 0 if the line is a comment line, 1 on success
-static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **chr,int *from,int *to)
+static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **chr,char **chr_end,int *from,int *to)
 {
+    *chr_end = NULL;
+
     if ( line[0]=='#' ) return 0;
 
     int k,l;    // index of the start and end column of the tab-delimited file
@@ -924,7 +926,7 @@ static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **ch
         while (*se && *se!='\t') se++;
     }
     if ( i<=ichr ) return -1;
-    *se = 0;
+    *chr_end = se;
     *chr = ss;
     return 1;
 }
@@ -958,18 +960,25 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         // read the whole file, tabix index is not present
         while ( hts_getline(reg->file, KS_SEP_LINE, &reg->line) > 0 )
         {
-            char *chr;
+            char *chr, *chr_end;
             int from, to, ret;
-            ret = _regions_parse_line(reg->line.s, ichr,ifrom,ito, &chr,&from,&to);
+            ret = _regions_parse_line(reg->line.s, ichr,ifrom,abs(ito), &chr,&chr_end,&from,&to);
             if ( ret < 0 ) 
             {
-                fprintf(stderr,"[%s:%d] Could not parse the file %s, using the columns %d,%d,%d\n", __FILE__,__LINE__,regions,ichr+1,ifrom+1,ito+1);
-                hts_close(reg->file); reg->file = NULL; free(reg); 
-                return NULL;
+                if ( ito<0 )
+                    ret = _regions_parse_line(reg->line.s, ichr,ifrom,ifrom, &chr,&chr_end,&from,&to);
+                if ( ret<0 )
+                {
+                    fprintf(stderr,"[%s:%d] Could not parse the file %s, using the columns %d,%d[,%d]\n", __FILE__,__LINE__,regions,ichr+1,ifrom+1,ito+1);
+                    hts_close(reg->file); reg->file = NULL; free(reg); 
+                    return NULL;
+                }
             }
             if ( !ret ) continue;
             if ( is_bed ) from++;
+            *chr_end = 0;
             _regions_add(reg, chr, from, to);
+            *chr_end = '\t';
         }
         hts_close(reg->file); reg->file = NULL;
         if ( !reg->nseqs ) { free(reg); return NULL; }
@@ -1051,7 +1060,7 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
     }
 
     // reading from tabix
-    char *chr;
+    char *chr, *chr_end;
     int ichr = 0, ifrom = 1, ito = 2, is_bed = 0, from, to;
     if ( reg->tbx )
     {
@@ -1093,7 +1102,7 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
             ret = hts_getline(reg->file, KS_SEP_LINE, &reg->line);
             if ( ret<0 ) { reg->iseq = -1; return -1; }
         }
-        ret = _regions_parse_line(reg->line.s, ichr,ifrom,ito, &chr,&from,&to);
+        ret = _regions_parse_line(reg->line.s, ichr,ifrom,ito, &chr,&chr_end,&from,&to);
         if ( ret<0 ) 
         {
             fprintf(stderr,"[%s:%d] Could not parse the file %s, using the columns %d,%d,%d\n", __FILE__,__LINE__,reg->fname,ichr+1,ifrom+1,ito+1);
@@ -1102,16 +1111,13 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
     }
     if ( is_bed ) from++;
 
+    *chr_end = 0;
     if ( khash_str2int_get(reg->seq_hash, chr, &reg->iseq)<0 )
     {
         fprintf(stderr,"Broken tabix index? The sequence \"%s\" not in dictionary [%s]\n", chr,reg->line.s);
         exit(1);
     }
-
-    // This is a bit hacky: unset the chr-terminating 0 set by _regions_parse_line, or
-    //  otherwise _regions_match_alleles will be confused.
-    int len = strlen(chr);
-    if ( len < reg->line.l ) chr[len] = '\t';
+    *chr_end = '\t';
 
     reg->start = from - 1;
     reg->end   = to - 1;
