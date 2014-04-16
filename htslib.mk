@@ -24,8 +24,13 @@ include $(HTSDIR)/htslib_vars.mk
 # will cause the library to be rebuilt as necessary:
 #
 #	foo: foo.o $(HTSDIR)/libhts.a
+#
+# or similarly if your target requires any of the tools supplied:
+#
+#	bar.bed.bgz.tbi: bar.bed.bgz $(HTSDIR)/tabix
+#		$(HTSDIR)/tabix -p bed bar.bed.bgz
 
-HTSLIB_ALL = \
+HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/bgzf.h \
 	$(HTSDIR)/htslib/faidx.h \
 	$(HTSDIR)/htslib/hfile.h \
@@ -44,7 +49,10 @@ HTSLIB_ALL = \
 	$(HTSDIR)/htslib/tbx.h \
 	$(HTSDIR)/htslib/vcf.h \
 	$(HTSDIR)/htslib/vcf_sweep.h \
-	$(HTSDIR)/htslib/vcfutils.h \
+	$(HTSDIR)/htslib/vcfutils.h
+
+HTSLIB_ALL = \
+	$(HTSLIB_PUBLIC_HEADERS) \
 	$(HTSDIR)/bgzf.c \
 	$(HTSDIR)/faidx.c \
 	$(HTSDIR)/hfile_internal.h \
@@ -103,6 +111,12 @@ $(HTSDIR)/libhts.a: $(HTSLIB_ALL)
 
 $(HTSDIR)/libhts.so $(HTSDIR)/libhts.dylib: $(HTSLIB_ALL)
 	+cd $(HTSDIR) && $(MAKE) lib-shared
+
+$(HTSDIR)/bgzip: $(HTSDIR)/bgzip.c $(HTSLIB_PUBLIC_HEADERS)
+	+cd $(HTSDIR) && $(MAKE) bgzip
+
+$(HTSDIR)/tabix: $(HTSDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS)
+	+cd $(HTSDIR) && $(MAKE) tabix
 
 # Rules for phony targets.  You may wish to have your corresponding phony
 # targets invoke these in addition to their own recipes:
