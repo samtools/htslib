@@ -68,7 +68,7 @@ static int write_open(const char *fn, int is_forced)
 	return fd;
 }
 
-static int bgzip_main_usage()
+static int bgzip_main_usage(void)
 {
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Version: %s\n", hts_version());
