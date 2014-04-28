@@ -953,6 +953,8 @@ static int bcf1_sync(bcf1_t *line)
 
 int bcf_write(htsFile *hfp, const bcf_hdr_t *h, bcf1_t *v)
 {
+    assert( bcf_hdr_nsamples(h)==v->n_sample );
+
     if ( !hfp->is_bin ) return vcf_write(hfp,h,v);
 
     if ( v->errcode ) 
