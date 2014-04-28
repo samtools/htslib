@@ -1629,21 +1629,37 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         bcf_enc_vchar(str, end - val, val);
                     } else { // int/float value/array
                         int i, n_val;
-                        char *t;
+                        char *t, *te;
                         for (t = val, n_val = 1; *t; ++t) // count the number of values
                             if (*t == ',') ++n_val;
                         if ((y>>4&0xf) == BCF_HT_INT) {
                             int32_t *z;
                             z = (int32_t*)alloca(n_val<<2);
                             for (i = 0, t = val; i < n_val; ++i, ++t)
-                                z[i] = strtol(t, &t, 10);
+                            {
+                                z[i] = strtol(t, &te, 10);
+                                if ( te==t ) // conversion failed
+                                {
+                                    z[i] = bcf_int32_missing;
+                                    while ( *te && *te!=',' ) te++;
+                                }
+                                t = te;
+                            }
                             bcf_enc_vint(str, n_val, z, -1);
                             if (strcmp(key, "END") == 0) v->rlen = z[0] - v->pos;
                         } else if ((y>>4&0xf) == BCF_HT_REAL) {
                             float *z;
                             z = (float*)alloca(n_val<<2);
                             for (i = 0, t = val; i < n_val; ++i, ++t)
-                                z[i] = strtod(t, &t);
+                            {
+                                z[i] = strtod(t, &te);
+                                if ( te==t ) // conversion failed
+                                {
+                                    bcf_float_set_missing(z[i]);
+                                    while ( *te && *te!=',' ) te++;
+                                }
+                                t = te;
+                            }
                             bcf_enc_vfloat(str, n_val, z);
                         }
                     }
