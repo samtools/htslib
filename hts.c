@@ -230,6 +230,15 @@ int hts_close(htsFile *fp)
 	return ret;
 }
 
+int hts_set_threads(htsFile *fp, int n)
+{
+	// TODO Plug in CRAM and other threading
+	if (fp->is_bin) {
+		return bgzf_mt(fp->fp.bgzf, n, 256);
+	}
+	else return 0;
+}
+
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
 {
 	free(fp->fn_aux);

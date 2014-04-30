@@ -131,6 +131,15 @@ char **hts_readlines(const char *fn, int *_n);
 char **hts_readlist(const char *fn, int is_file, int *_n);
 
 /*!
+  @abstract  Create extra threads to aid compress/decompression for this file
+  @param fp  The file handle
+  @param n   The number of worker threads to create
+  @return    0 for success, or negative if an error occurred.
+  @notes     THIS THREADING API IS LIKELY TO CHANGE IN FUTURE.
+*/
+int hts_set_threads(htsFile *fp, int n);
+
+/*!
   @abstract  Set .fai filename for a file opened for reading
   @return    0 for success, negative on failure
   @discussion
