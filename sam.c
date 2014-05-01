@@ -1136,6 +1136,7 @@ char *bam_flag2str(int flag)
     if ( flag&BAM_FQCFAIL ) ksprintf(&str,"%s%s", str.l?",":"","QCFAIL");
     if ( flag&BAM_FDUP ) ksprintf(&str,"%s%s", str.l?",":"","DUP");
     if ( flag&BAM_FSUPPLEMENTARY ) ksprintf(&str,"%s%s", str.l?",":"","SUPPLEMENTARY");
+    if ( str.l == 0 ) kputsn("", 0, &str);
     return str.s;
 }
 

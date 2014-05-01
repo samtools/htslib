@@ -149,6 +149,14 @@ int cram_write_block(cram_fd *fd, cram_block *b);
  */
 void cram_free_block(cram_block *b);
 
+/*! Uncompress a memory block using Zlib.
+ *
+ * @return
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size);
+
 /*! Uncompresses a CRAM block, if compressed.
  *
  * @return

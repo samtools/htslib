@@ -93,11 +93,15 @@ static void dump_index(cram_fd *fd) {
  *        -1 for failure
  */
 int cram_index_load(cram_fd *fd, const char *fn) {
-    char line[1024], fn2[PATH_MAX];
-    zfp *fp;
+    char fn2[PATH_MAX];
+    char buf[65536];
+    ssize_t len;
+    kstring_t kstr = {0};
+    hFILE *fp;
     cram_index *idx;
     cram_index **idx_stack = NULL, *ep, e;
     int idx_stack_alloc = 0, idx_stack_ptr = 0;
+    size_t pos = 0;
 
     /* Check if already loaded */
     if (fd->index)
@@ -116,23 +120,72 @@ int cram_index_load(cram_fd *fd, const char *fn) {
     idx_stack[idx_stack_ptr] = idx;
 
     sprintf(fn2, "%s.crai", fn);
-    if (!(fp = zfopen(fn2, "r"))) {
+    if (!(fp = hopen(fn2, "r"))) {
 	perror(fn2);
 	free(idx_stack);
 	return -1; 
     }
 
-    while (zfgets(line, 1024, fp)) {
+    // Load the file into memory
+    while ((len = hread(fp, buf, 65536)) > 0)
+	kputsn(buf, len, &kstr);
+    if (len < 0 || kstr.l < 2) {
+	if (kstr.s)
+	    free(kstr.s);
+	free(idx_stack);
+	return -1;
+    }
+
+    if (hclose(fp)) {
+	if (kstr.s)
+	    free(kstr.s);
+	free(idx_stack);
+	return -1;
+    }
+	
+
+    // Uncompress if required
+    if (kstr.s[0] == 31 && (uc)kstr.s[1] == 139) {
+	size_t l;
+	char *s = zlib_mem_inflate(kstr.s, kstr.l, &l);
+	free(kstr.s);
+	if (!s) {
+	    free(idx_stack);
+	    return -1;
+	}
+	kstr.s = s;
+	kstr.l = l;
+    }
+
+
+    // Parse it line at a time
+    do {
+	int nchars;
+	char *line = &kstr.s[pos];
+
 	/* 1.1 layout */
-	sscanf(line, "%d\t%d\t%d\t%"PRId64"\t%d\t%d",
-	       &e.refid,
-	       &e.start,
-	       &e.end,
-	       &e.offset,
-	       &e.slice,
-	       &e.len);
+	if (sscanf(line, "%d\t%d\t%d\t%"PRId64"\t%d\t%d%n",
+		   &e.refid,
+		   &e.start,
+		   &e.end,
+		   &e.offset,
+		   &e.slice,
+		   &e.len,
+		   &nchars) != 6) {
+	    free(kstr.s);
+	    free(idx_stack);
+	    return -1;
+	}
+
 	e.end += e.start-1;
 	//printf("%d/%d..%d\n", e.refid, e.start, e.end);
+
+	if (e.refid < -1) {
+	    free(kstr.s);
+	    free(idx_stack);
+	    fprintf(stderr, "Malformed index file, refid %d\n", e.refid);
+	    return -1;
+	}
 
 	if (e.refid != idx->refid) {
 	    if (fd->index_sz < e.refid+2) {
@@ -171,9 +224,15 @@ int cram_index_load(cram_fd *fd, const char *fn) {
 	    idx_stack = realloc(idx_stack, idx_stack_alloc*sizeof(*idx_stack));
 	}
 	idx_stack[idx_stack_ptr] = idx;
-    }
-    zfclose(fp);
+
+	pos += nchars;
+	while (pos < kstr.l && kstr.s[pos] != '\n')
+	    pos++;
+	pos++;
+    } while (pos < kstr.l);
+
     free(idx_stack);
+    free(kstr.s);
 
     // dump_index(fd);
 
@@ -305,6 +364,57 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
 
 
 /*
+ * A specialised form of cram_index_build (below) that deals with slices
+ * having multiple references in this (ref_id -2). In this scenario we
+ * decode the slice to look at the RI data series instead.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+static int cram_index_build_multiref(cram_fd *fd,
+				     cram_container *c,
+				     cram_slice *s,
+				     zfp *fp,
+				     off_t cpos,
+				     int32_t landmark,
+				     int sz) {
+    int i, ref = -2, ref_start = 0, ref_end;
+    char buf[1024];
+
+    if (0 != cram_decode_slice(fd, c, s, fd->header))
+	return -1;
+
+    ref_end = INT_MIN;
+    for (i = 0; i < s->hdr->num_records; i++) {
+	if (s->crecs[i].ref_id == ref) {
+	    if (ref_end < s->crecs[i].aend)
+		ref_end = s->crecs[i].aend;
+	    continue;
+	}
+
+	if (ref != -2) {
+	    sprintf(buf, "%d\t%d\t%d\t%"PRId64"\t%d\t%d\n",
+		    ref, ref_start, ref_end - ref_start + 1,
+		    (int64_t)cpos, landmark, sz);
+	    zfputs(buf, fp);
+	}
+
+	ref = s->crecs[i].ref_id;
+	ref_start = s->crecs[i].apos;
+	ref_end = INT_MIN;
+    }
+
+    if (ref != -2) {
+	sprintf(buf, "%d\t%d\t%d\t%"PRId64"\t%d\t%d\n",
+		ref, ref_start, ref_end - ref_start + 1,
+		(int64_t)cpos, landmark, sz);
+	zfputs(buf, fp);
+    }
+
+    return 0;
+}
+
+/*
  * Builds an index file.
  *
  * fd is a newly opened cram file that we wish to index.
@@ -364,11 +474,16 @@ int cram_index_build(cram_fd *fd, const char *fn_base) {
 
             sz = (int)(htell(fd->fp) - spos);
 
-            sprintf(buf, "%d\t%d\t%d\t%"PRId64"\t%d\t%d\n",
-                    s->hdr->ref_seq_id, s->hdr->ref_seq_start,
-                    s->hdr->ref_seq_span, (int64_t)cpos,
-                    c->landmark[j], sz);
-            zfputs(buf, fp);
+	    if (s->hdr->ref_seq_id == -2) {
+		cram_index_build_multiref(fd, c, s, fp,
+					  cpos, c->landmark[j], sz);
+	    } else {
+		sprintf(buf, "%d\t%d\t%d\t%"PRId64"\t%d\t%d\n",
+			s->hdr->ref_seq_id, s->hdr->ref_seq_start,
+			s->hdr->ref_seq_span, (int64_t)cpos,
+			c->landmark[j], sz);
+		zfputs(buf, fp);
+	    }
 
             cram_free_slice(s);
         }
