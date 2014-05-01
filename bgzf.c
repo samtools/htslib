@@ -541,11 +541,10 @@ static void mt_queue(BGZF *fp)
 	++mt->curr;
 }
 
-static int mt_flush(BGZF *fp)
+static int mt_flush_queue(BGZF *fp)
 {
 	int i;
 	mtaux_t *mt = fp->mt;
-	if (fp->block_offset) mt_queue(fp); // guaranteed that assertion does not fail
 	// signal all the workers to compress
 	pthread_mutex_lock(&mt->lock);
 	for (i = 0; i < mt->n_threads; ++i) mt->w[i].toproc = 1;
@@ -559,19 +558,21 @@ static int mt_flush(BGZF *fp)
 	// dump data to disk
 	for (i = 0; i < mt->n_threads; ++i) fp->errcode |= mt->w[i].errcode;
 	for (i = 0; i < mt->curr; ++i)
-		if (hwrite(fp->fp, mt->blk[i], mt->len[i]) != mt->len[i])
+		if (hwrite(fp->fp, mt->blk[i], mt->len[i]) != mt->len[i]) {
 			fp->errcode |= BGZF_ERR_IO;
+			break;
+		}
 	mt->curr = 0;
-	return 0;
+	return (fp->errcode == 0)? 0 : -1;
 }
 
-static int mt_lazy_flush(BGZF *fp)
+static int lazy_flush(BGZF *fp)
 {
-	mtaux_t *mt = fp->mt;
-	if (fp->block_offset) mt_queue(fp);
-	if (mt->curr == mt->n_blks)
-		return mt_flush(fp);
-	return -1;
+	if (fp->mt) {
+		if (fp->block_offset) mt_queue(fp);
+		return (fp->mt->curr < fp->mt->n_blks)? 0 : mt_flush_queue(fp);
+	}
+	else return bgzf_flush(fp);
 }
 
 #else  // ~ #ifdef BGZF_MT
@@ -581,13 +582,21 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 	return 0;
 }
 
+static inline int lazy_flush(BGZF *fp)
+{
+	return bgzf_flush(fp);
+}
+
 #endif // ~ #ifdef BGZF_MT
 
 int bgzf_flush(BGZF *fp)
 {
 	if (!fp->is_write) return 0;
 #ifdef BGZF_MT
-	if (fp->mt) return mt_flush(fp);
+	if (fp->mt) {
+		if (fp->block_offset) mt_queue(fp); // guaranteed that assertion does not fail
+		return mt_flush_queue(fp);
+	}
 #endif
 	while (fp->block_offset > 0) {
         if ( fp->idx_build_otf ) 
@@ -608,15 +617,8 @@ int bgzf_flush(BGZF *fp)
 
 int bgzf_flush_try(BGZF *fp, ssize_t size)
 {
-	if (fp->block_offset + size > BGZF_BLOCK_SIZE) {
-#ifdef BGZF_MT
-		if (fp->mt) return mt_lazy_flush(fp);
-		else return bgzf_flush(fp);
-#else
-		return bgzf_flush(fp);
-#endif
-	}
-	return -1;
+	if (fp->block_offset + size > BGZF_BLOCK_SIZE) return lazy_flush(fp);
+	return 0;
 }
 
 ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
@@ -636,11 +638,7 @@ ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
 		input += copy_length;
 		remaining -= copy_length;
 		if (fp->block_offset == BGZF_BLOCK_SIZE) {
-#ifdef BGZF_MT
-			if (fp->mt) mt_lazy_flush(fp);
-			else
-#endif
-			if (bgzf_flush(fp) != 0) break;
+			if (lazy_flush(fp) != 0) return -1;
 		}
 	}
 	return length - remaining;

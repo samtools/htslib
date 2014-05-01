@@ -123,12 +123,13 @@ extern "C" {
 	ssize_t bgzf_read(BGZF *fp, void *data, size_t length);
 
 	/**
-	 * Write _length_ bytes from _data_ to the file.
+	 * Write _length_ bytes from _data_ to the file.  If no I/O errors occur,
+	 * the complete _length_ bytes will be written (or queued for writing).
 	 *
 	 * @param fp     BGZF file handler
 	 * @param data   data array to write
 	 * @param length size of data to write
-	 * @return       number of bytes actually written; -1 on error
+	 * @return       number of bytes written (i.e., _length_); negative on error
 	 */
 	ssize_t bgzf_write(BGZF *fp, const void *data, size_t length);
 
@@ -212,6 +213,7 @@ extern "C" {
 
 	/**
 	 * Flush the file if the remaining buffer size is smaller than _size_ 
+	 * @return      0 if flushing succeeded or was not needed; negative on error
 	 */
 	int bgzf_flush_try(BGZF *fp, ssize_t size);
 
