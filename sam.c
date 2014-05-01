@@ -334,7 +334,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
 {
 	const bam1_core_t *c = &b->core;
 	uint32_t x[8], block_len = b->l_data + 32, y;
-	int i;
+	int i, ok;
 	x[0] = c->tid;
 	x[1] = c->pos;
 	x[2] = (uint32_t)c->bin<<16 | c->qual<<8 | c->l_qname;
@@ -343,17 +343,19 @@ int bam_write1(BGZF *fp, const bam1_t *b)
 	x[5] = c->mtid;
 	x[6] = c->mpos;
 	x[7] = c->isize;
-	bgzf_flush_try(fp, 4 + block_len);
+	ok = (bgzf_flush_try(fp, 4 + block_len) >= 0);
 	if (fp->is_be) {
 		for (i = 0; i < 8; ++i) ed_swap_4p(x + i);
 		y = block_len;
-		bgzf_write(fp, ed_swap_4p(&y), 4);
+		if (ok) ok = (bgzf_write(fp, ed_swap_4p(&y), 4) >= 0);
 		swap_data(c, b->l_data, b->data);
-	} else bgzf_write(fp, &block_len, 4);
-	bgzf_write(fp, x, 32);
-	bgzf_write(fp, b->data, b->l_data);
+	} else {
+		if (ok) ok = (bgzf_write(fp, &block_len, 4) >= 0);
+	}
+	if (ok) ok = (bgzf_write(fp, x, 32) >= 0);
+	if (ok) ok = (bgzf_write(fp, b->data, b->l_data) >= 0);
 	if (fp->is_be) swap_data(c, b->l_data, b->data);
-	return 4 + block_len;
+	return ok? 4 + block_len : -1;
 }
 
 /********************
@@ -983,9 +985,9 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
 		return cram_put_bam_seq(fp->fp.cram, (bam1_t *)b);
 	} else {
 		if (sam_format1(h, b, &fp->line) < 0) return -1;
+		kputc('\n', &fp->line);
 		if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
-		hputc('\n', fp->fp.hfile);
-		return fp->line.l + 1;
+		return fp->line.l;
 	}
 }
 
