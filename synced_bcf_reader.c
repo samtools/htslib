@@ -9,6 +9,8 @@
 #include "htslib/kseq.h"
 #include "htslib/khash_str2int.h"
 
+#define MAX_CSI_COOR 0x7fffffff     // maximum indexable coordinate of .csi
+
 typedef struct
 {
     uint32_t start, end;
@@ -310,6 +312,11 @@ static inline int has_filter(bcf_sr_t *reader, bcf1_t *line)
 
 static int _reader_seek(bcf_sr_t *reader, const char *seq, int start, int end)
 {
+    if ( end>=MAX_CSI_COOR )
+    {
+        fprintf(stderr,"The coordinate is out of csi index limit: %d\n", end+1);
+        exit(1);
+    }
     if ( reader->itr ) 
     {
         hts_itr_destroy(reader->itr); 
@@ -647,7 +654,7 @@ int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos)
     int i, nret = 0;
     for (i=0; i<readers->nreaders; i++) 
     {
-        nret += _reader_seek(&readers->readers[i],seq,pos,1<<29);
+        nret += _reader_seek(&readers->readers[i],seq,pos,MAX_CSI_COOR-1);
     }
     return nret;
 }
@@ -765,7 +772,7 @@ static void _regions_add(bcf_sr_regions_t *reg, const char *chr, int start, int 
 {
     if ( start==-1 && end==-1 )
     {
-        start = 0; end = (1<<29) - 1;
+        start = 0; end = MAX_CSI_COOR-1;
     }
     else
     {
@@ -854,7 +861,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
                 fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
                 free(reg); free(tmp.s); return NULL;
             }
-            if ( sp==ep ) to = 1<<29;
+            if ( sp==ep ) to = MAX_CSI_COOR-1;
             _regions_add(reg, tmp.s, from, to);
             if ( !*ep ) break;
             sp = ep;
