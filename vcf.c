@@ -454,8 +454,18 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     return hrec->type==BCF_HL_GEN ? 0 : 1;
 }
 
-bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, const char *id)
+bcf_hrec_t *bcf_hdr_get_hrec(const bcf_hdr_t *hdr, int type, const char *id)
 {
+    int i;
+    if ( type==BCF_HL_GEN )
+    {
+        for (i=0; i<hdr->nhrec; i++)
+        {
+             if ( hdr->hrec[i]->type!=BCF_HL_GEN ) continue;
+             if ( !strcmp(hdr->hrec[i]->key,id) ) return hdr->hrec[i];
+        }
+        return NULL;
+    }
     vdict_t *d = type==BCF_HL_CTG ? (vdict_t*)hdr->dict[BCF_DT_CTG] : (vdict_t*)hdr->dict[BCF_DT_ID];
     khint_t k = kh_get(vdict, d, id);
     if ( k == kh_end(d) ) return NULL;
@@ -584,6 +594,36 @@ int bcf_hdr_printf(bcf_hdr_t *hdr, const char *fmt, ...)
 /**********************
  *** BCF header I/O ***
  **********************/
+
+const char *bcf_hdr_get_version(const bcf_hdr_t *hdr)
+{
+    bcf_hrec_t *hrec = bcf_hdr_get_hrec(hdr, BCF_HL_GEN, "fileformat");
+    if ( !hrec ) 
+    {
+        fprintf(stderr,"No version string found, assuming VCFv4.2\n");
+        return "VCFv4.2";
+    }
+    return hrec->value;
+}
+
+void bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
+{
+    bcf_hrec_t *hrec = bcf_hdr_get_hrec(hdr, BCF_HL_GEN, "fileformat");
+    if ( !hrec )
+    {
+        int len;
+        kstring_t str = {0,0,0};
+        ksprintf(&str,"##fileformat=%s", version);
+        hrec = bcf_hdr_parse_line(hdr, str.s, &len);
+        free(str.s);
+    }
+    else
+    {
+        free(hrec->value);
+        hrec->value = strdup(version);
+    }
+    bcf_hdr_sync(hdr);
+}
 
 bcf_hdr_t *bcf_hdr_init(const char *mode)
 {
@@ -1629,21 +1669,37 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         bcf_enc_vchar(str, end - val, val);
                     } else { // int/float value/array
                         int i, n_val;
-                        char *t;
+                        char *t, *te;
                         for (t = val, n_val = 1; *t; ++t) // count the number of values
                             if (*t == ',') ++n_val;
                         if ((y>>4&0xf) == BCF_HT_INT) {
                             int32_t *z;
                             z = (int32_t*)alloca(n_val<<2);
                             for (i = 0, t = val; i < n_val; ++i, ++t)
-                                z[i] = strtol(t, &t, 10);
+                            {
+                                z[i] = strtol(t, &te, 10);
+                                if ( te==t ) // conversion failed
+                                {
+                                    z[i] = bcf_int32_missing;
+                                    while ( *te && *te!=',' ) te++;
+                                }
+                                t = te;
+                            }
                             bcf_enc_vint(str, n_val, z, -1);
                             if (strcmp(key, "END") == 0) v->rlen = z[0] - v->pos;
                         } else if ((y>>4&0xf) == BCF_HT_REAL) {
                             float *z;
                             z = (float*)alloca(n_val<<2);
                             for (i = 0, t = val; i < n_val; ++i, ++t)
-                                z[i] = strtod(t, &t);
+                            {
+                                z[i] = strtod(t, &te);
+                                if ( te==t ) // conversion failed
+                                {
+                                    bcf_float_set_missing(z[i]);
+                                    while ( *te && *te!=',' ) te++;
+                                }
+                                t = te;
+                            }
                             bcf_enc_vfloat(str, n_val, z);
                         }
                     }
@@ -2104,6 +2160,7 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
 	bcf_hdr_t *h;
 	str.l = str.m = 0; str.s = 0;
 	h = bcf_hdr_init("w");
+    bcf_hdr_set_version(h,bcf_hdr_get_version(h0));
     int j;
     for (j=0; j<n; j++) imap[j] = -1;
 	if ( bcf_hdr_nsamples(h0) > 0) {
