@@ -454,8 +454,18 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     return hrec->type==BCF_HL_GEN ? 0 : 1;
 }
 
-bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, const char *id)
+bcf_hrec_t *bcf_hdr_get_hrec(const bcf_hdr_t *hdr, int type, const char *id)
 {
+    int i;
+    if ( type==BCF_HL_GEN )
+    {
+        for (i=0; i<hdr->nhrec; i++)
+        {
+             if ( hdr->hrec[i]->type!=BCF_HL_GEN ) continue;
+             if ( !strcmp(hdr->hrec[i]->key,id) ) return hdr->hrec[i];
+        }
+        return NULL;
+    }
     vdict_t *d = type==BCF_HL_CTG ? (vdict_t*)hdr->dict[BCF_DT_CTG] : (vdict_t*)hdr->dict[BCF_DT_ID];
     khint_t k = kh_get(vdict, d, id);
     if ( k == kh_end(d) ) return NULL;
@@ -584,6 +594,36 @@ int bcf_hdr_printf(bcf_hdr_t *hdr, const char *fmt, ...)
 /**********************
  *** BCF header I/O ***
  **********************/
+
+const char *bcf_hdr_get_version(const bcf_hdr_t *hdr)
+{
+    bcf_hrec_t *hrec = bcf_hdr_get_hrec(hdr, BCF_HL_GEN, "fileformat");
+    if ( !hrec ) 
+    {
+        fprintf(stderr,"No version string found, assuming VCFv4.2\n");
+        return "VCFv4.2";
+    }
+    return hrec->value;
+}
+
+void bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
+{
+    bcf_hrec_t *hrec = bcf_hdr_get_hrec(hdr, BCF_HL_GEN, "fileformat");
+    if ( !hrec )
+    {
+        int len;
+        kstring_t str = {0,0,0};
+        ksprintf(&str,"##fileformat=%s", version);
+        hrec = bcf_hdr_parse_line(hdr, str.s, &len);
+        free(str.s);
+    }
+    else
+    {
+        free(hrec->value);
+        hrec->value = strdup(version);
+    }
+    bcf_hdr_sync(hdr);
+}
 
 bcf_hdr_t *bcf_hdr_init(const char *mode)
 {
@@ -2120,6 +2160,7 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
 	bcf_hdr_t *h;
 	str.l = str.m = 0; str.s = 0;
 	h = bcf_hdr_init("w");
+    bcf_hdr_set_version(h,bcf_hdr_get_version(h0));
     int j;
     for (j=0; j<n; j++) imap[j] = -1;
 	if ( bcf_hdr_nsamples(h0) > 0) {
