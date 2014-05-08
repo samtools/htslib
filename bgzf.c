@@ -436,7 +436,12 @@ int bgzf_read_block(BGZF *fp)
         int nskip = 10;
 
         // Check optional fields to skip: FLG.FNAME,FLG.FCOMMENT,FLG.FHCRC,FLG.FEXTRA
-        if ( header[3] & 0x8 ) // FLG.FCOMMENT
+        // Note: Some of these fields are untested, I did not have appropriate data available
+        if ( header[3] & 0x4 ) // FLG.FEXTRA
+        {
+            nskip += unpackInt16(&cblock[nskip]) + 2;
+        }
+        if ( header[3] & 0x8 ) // FLG.FNAME
         {
             while ( nskip<BGZF_BLOCK_SIZE && cblock[nskip] ) nskip++;
             if ( nskip==BGZF_BLOCK_SIZE ) 
@@ -446,7 +451,18 @@ int bgzf_read_block(BGZF *fp)
             }
             nskip++;
         }
-        // TODO: FLG.FNAME,FLG.FHCRC,FLG.FEXTRA
+        if ( header[3] & 0x10 ) // FLG.FCOMMENT
+        {
+            while ( nskip<BGZF_BLOCK_SIZE && cblock[nskip] ) nskip++;
+            if ( nskip==BGZF_BLOCK_SIZE ) 
+            {
+                fp->errcode |= BGZF_ERR_HEADER;
+                return -1;
+            }
+            nskip++;
+        }
+        if ( header[3] & 0x2 ) nskip += 2;  //  FLG.FHCRC
+
         fp->is_gzip = 1;
         fp->gz_stream = (z_stream*) calloc(1,sizeof(z_stream));
         int ret = inflateInit2(fp->gz_stream, -15);
