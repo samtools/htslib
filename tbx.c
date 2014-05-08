@@ -121,7 +121,7 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
             case TBX_UCSC: type = "TBX_UCSC"; break;
             default: type = "TBX_GENERIC"; break;
         }
-		fprintf(stderr, "[E::%s] failed to parse %s, was wrong -p [type] used?\n%s\n", __func__, type, str->s);
+		fprintf(stderr, "[E::%s] failed to parse %s, was wrong -p [type] used?\nThe offending line was: \"%s\"\n", __func__, type, str->s);
 		return -1;
 	}
 }
@@ -224,6 +224,7 @@ int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf)
 {
 	tbx_t *tbx;
 	BGZF *fp;
+    if ( bgzf_is_bgzf(fn)!=1 ) { fprintf(stderr,"Not a BGZF file: %s\n", fn); return -1; }
 	if ((fp = bgzf_open(fn, "r")) == 0) return -1;
     if ( !fp->is_compressed ) { bgzf_close(fp); return -1; }
 	tbx = tbx_index(fp, min_shift, conf);
