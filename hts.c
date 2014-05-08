@@ -15,7 +15,7 @@
 #include "htslib/kseq.h"
 #define KS_BGZF 1
 #if KS_BGZF
-    // pd3 todo: gzread() in BGZF
+    // bgzf now supports gzip-compressed files
     KSTREAM_INIT2(, BGZF*, bgzf_read, 65536)
 #else
     KSTREAM_INIT2(, gzFile, gzread, 16384)
