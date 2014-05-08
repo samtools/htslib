@@ -430,8 +430,23 @@ int bgzf_read_block(BGZF *fp)
     if ( ret==-1 )
     {
         // GZIP, not BGZF
-        memcpy(fp->compressed_block, header, sizeof(header));
-        count = hread(fp->fp, (uint8_t*)fp->compressed_block+sizeof(header), BGZF_BLOCK_SIZE - sizeof(header)) + sizeof(header);
+        uint8_t *cblock = (uint8_t*)fp->compressed_block;
+        memcpy(cblock, header, sizeof(header));
+        count = hread(fp->fp, cblock+sizeof(header), BGZF_BLOCK_SIZE - sizeof(header)) + sizeof(header);
+        int nskip = 10;
+
+        // Check optional fields to skip: FLG.FNAME,FLG.FCOMMENT,FLG.FHCRC,FLG.FEXTRA
+        if ( header[3] & 0x8 ) // FLG.FCOMMENT
+        {
+            while ( nskip<BGZF_BLOCK_SIZE && cblock[nskip] ) nskip++;
+            if ( nskip==BGZF_BLOCK_SIZE ) 
+            {
+                fp->errcode |= BGZF_ERR_HEADER;
+                return -1;
+            }
+            nskip++;
+        }
+        // TODO: FLG.FNAME,FLG.FHCRC,FLG.FEXTRA
         fp->is_gzip = 1;
         fp->gz_stream = (z_stream*) calloc(1,sizeof(z_stream));
         int ret = inflateInit2(fp->gz_stream, -15);
@@ -440,8 +455,8 @@ int bgzf_read_block(BGZF *fp)
             fp->errcode |= BGZF_ERR_ZLIB;
             return -1;
         }
-        fp->gz_stream->avail_in = count - 10;
-        fp->gz_stream->next_in  = (uint8_t*)fp->compressed_block + 10;
+        fp->gz_stream->avail_in = count - nskip;
+        fp->gz_stream->next_in  = cblock + nskip;
         count = inflate_gzip_block(fp, 1);
         if ( count<0 )
         {
