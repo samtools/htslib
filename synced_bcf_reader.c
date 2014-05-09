@@ -997,7 +997,9 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         reg->seq_hash = khash_str2int_init();
     int i;
     for (i=0; i<reg->nseqs; i++)
+    {
         khash_str2int_set(reg->seq_hash,reg->seq_names[i],i);
+    }
     reg->fname  = strdup(regions);
     reg->is_bin = 1;
     return reg;
@@ -1183,8 +1185,12 @@ int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, in
     int iseq;
     if ( khash_str2int_get(reg->seq_hash, seq, &iseq)<0 ) return -1;    // no such sequence
 
-    if ( reg->prev_seq==-1 || iseq!=reg->prev_seq || reg->prev_start > start ) // new chromosome
+    if ( reg->prev_seq==-1 || iseq!=reg->prev_seq || reg->prev_start > start ) // new chromosome or after a seek
     {
+        // flush regions left on previous chromosome
+        if ( reg->missed_reg_handler && reg->prev_seq!=-1 && reg->iseq!=-1 )
+            bcf_sr_regions_flush(reg);
+
         bcf_sr_regions_seek(reg, seq);
         reg->start = reg->end = -1;
     }
@@ -1196,8 +1202,16 @@ int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, in
     {
         if ( bcf_sr_regions_next(reg) < 0 ) return -2;  // no more regions left
         if ( reg->iseq != iseq ) return -1; // does not overlap any regions
+        if ( reg->missed_reg_handler && reg->end < start ) reg->missed_reg_handler(reg, reg->missed_reg_data);
     }
     if ( reg->start <= end ) return 0;    // region overlap
     return -1;  // no overlap
+}
+
+void bcf_sr_regions_flush(bcf_sr_regions_t *reg)
+{
+    if ( !reg->missed_reg_handler || reg->prev_seq==-1 ) return;
+    while ( !bcf_sr_regions_next(reg) ) reg->missed_reg_handler(reg, reg->missed_reg_data);
+    return;
 }
 
