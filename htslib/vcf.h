@@ -315,6 +315,15 @@ extern "C" {
 	#define BCF_UN_ALL  (BCF_UN_SHR|BCF_UN_FMT)     // everything
 	int bcf_unpack(bcf1_t *b, int which);
 
+    /*
+     *  bcf_dup() - create a copy of BCF record. 
+     *
+     *  Note that bcf_unpack() must be called on the returned copy as if it was
+     *  obtained from bcf_read(). Also note that bcf_dup() calls bcf_sync1(src)
+     *  internally to reflect any changes made by bcf_update_* functions.
+     */
+    bcf1_t *bcf_dup(bcf1_t *src);
+
     /**
      *  bcf_write() - write one VCF or BCF record. The type is determined at the open() call.
      */

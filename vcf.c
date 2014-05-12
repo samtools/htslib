@@ -988,7 +988,32 @@ static int bcf1_sync(bcf1_t *line)
         line->indiv = tmp;
     }
     if ( !line->n_sample ) line->n_fmt = 0;
+    line->d.shared_dirty = line->d.indiv_dirty = 0;
     return 0;
+}
+
+bcf1_t *bcf_dup(bcf1_t *src)
+{
+    bcf1_sync(src);
+
+    bcf1_t *out = bcf_init1();
+    
+    out->rid  = src->rid;
+    out->pos  = src->pos;
+    out->rlen = src->rlen;
+    out->qual = src->qual;
+    out->n_info = src->n_info; out->n_allele = src->n_allele;
+    out->n_fmt = src->n_fmt; out->n_sample = src->n_sample;
+
+    out->shared.m = out->shared.l = src->shared.l;
+    out->shared.s = (char*) malloc(out->shared.l);
+    memcpy(out->shared.s,src->shared.s,out->shared.l);
+
+    out->indiv.m = out->indiv.l = src->indiv.l;
+    out->indiv.s = (char*) malloc(out->indiv.l);
+    memcpy(out->indiv.s,src->indiv.s,out->indiv.l);
+
+    return out;
 }
 
 int bcf_write(htsFile *hfp, const bcf_hdr_t *h, bcf1_t *v)
