@@ -3326,7 +3326,7 @@ cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode) {
 	fd->m[i] = cram_new_metrics();
 
     fd->range.refid = -2; // no ref.
-    fd->eof = 0;
+    fd->eof = 1;          // See samtools issue #150
     fd->ref_fn = NULL;
 
     fd->bl = NULL;
