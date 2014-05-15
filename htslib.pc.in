@@ -1,0 +1,7 @@
+Name: HTSLib
+Description: A high-thoughput sequencing handling library
+Version: @VERSION@
+Requires.private: zlib
+Libs: -L@LIBDIR@ -lhts
+Libs.private: -L@LIBDIR@ -lhts -lm -lpthread
+Cflags: -I@INCLUDEDIR@

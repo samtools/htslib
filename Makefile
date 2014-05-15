@@ -42,7 +42,7 @@ BUILT_TEST_PROGRAMS = \
 	test/test-vcf-api \
 	test/test-vcf-sweep
 
-all: lib-static lib-shared $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
+all: lib-static lib-shared $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) htslib.pc
 
 HTSPREFIX =
 include htslib_vars.mk
@@ -93,14 +93,8 @@ endif
 version.h:
 	echo '#define HTS_VERSION "$(PACKAGE_VERSION)"' > $@
 
-libhts.pc:
-	echo "Name: LibHTS" > $@
-	echo "Description: A high-thoughput sequencing handling library" >> $@
-	echo "Version: $(PACKAGE_VERSION)" >> $@
-	echo "Requires:" >> $@
-	echo "Libs: -L$(libdir) -lhts" >> $@
-	echo "Libs.private: -L$(libdir) -lhts -lm -lpthread" >> $@
-	echo "Cflags: -I$(includedir)" >> $@
+htslib.pc: htslib.pc.in
+	sed -e 's#@VERSION@#$(PACKAGE_VERSION)#g;s#@LIBDIR@#$(libdir)#g;s#@INCLUDEDIR@#$(includedir)#g' $< > $@
 
 .SUFFIXES: .c .o .pico
 
@@ -256,11 +250,11 @@ test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
 
 
-install: installdirs install-$(SHLIB_FLAVOUR)
+install: installdirs install-$(SHLIB_FLAVOUR) htslib.pc
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
-	$(INSTALL_DATA) -D libhts.pc $(DESTDIR)$(pkgconfigdir)/libhts.pc
+	$(INSTALL_DATA) -D htslib.pc $(DESTDIR)$(pkgconfigdir)/htslib.pc
 	$(INSTALL_DATA) *.1 $(DESTDIR)$(man1dir)
 	$(INSTALL_DATA) *.5 $(DESTDIR)$(man5dir)
 

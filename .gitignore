@@ -1,10 +1,10 @@
 *.o
+*.pc
 *.pico
 /version.h
 
 lib*.a
 lib*.dylib
-lib*.pc
 lib*.so
 lib*.so.*
 
