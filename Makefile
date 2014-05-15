@@ -24,6 +24,7 @@ libdir      = $(exec_prefix)/lib
 mandir      = $(prefix)/share/man
 man1dir     = $(mandir)/man1
 man5dir     = $(mandir)/man5
+pkgconfigdir= $(libdir)/pkgconfig
 
 INSTALL = install -p
 INSTALL_PROGRAM = $(INSTALL)
@@ -92,6 +93,14 @@ endif
 version.h:
 	echo '#define HTS_VERSION "$(PACKAGE_VERSION)"' > $@
 
+libhts.pc:
+	echo "Name: LibHTS" > $@
+	echo "Description: A high-thoughput sequencing handling library" >> $@
+	echo "Version: $(PACKAGE_VERSION)" >> $@
+	echo "Requires:" >> $@
+	echo "Libs: -L$(libdir) -lhts" >> $@
+	echo "Libs.private: -L$(libdir) -lhts -lm -lpthread" >> $@
+	echo "Cflags: -I$(includedir)" >> $@
 
 .SUFFIXES: .c .o .pico
 
@@ -251,6 +260,7 @@ install: installdirs install-$(SHLIB_FLAVOUR)
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
+	$(INSTALL_DATA) -D libhts.pc $(DESTDIR)$(pkgconfigdir)/libhts.pc
 	$(INSTALL_DATA) *.1 $(DESTDIR)$(man1dir)
 	$(INSTALL_DATA) *.5 $(DESTDIR)$(man5dir)
 
