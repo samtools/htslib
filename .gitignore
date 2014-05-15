@@ -1,5 +1,6 @@
 *.o
 *.pico
+*-uninstalled.pc
 /version.h
 
 lib*.a

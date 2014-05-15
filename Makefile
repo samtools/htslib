@@ -42,6 +42,7 @@ libdir      = $(exec_prefix)/lib
 mandir      = $(prefix)/share/man
 man1dir     = $(mandir)/man1
 man5dir     = $(mandir)/man5
+pkgconfigdir= $(libdir)/pkgconfig
 
 MKDIR_P = mkdir -p
 INSTALL = install -p
@@ -266,7 +267,7 @@ test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
 
 
-install: installdirs install-$(SHLIB_FLAVOUR)
+install: installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
@@ -274,7 +275,7 @@ install: installdirs install-$(SHLIB_FLAVOUR)
 	$(INSTALL_DATA) *.5 $(DESTDIR)$(man5dir)
 
 installdirs:
-	$(INSTALL_DIR) $(DESTDIR)$(bindir) $(DESTDIR)$(includedir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir)
+	$(INSTALL_DIR) $(DESTDIR)$(bindir) $(DESTDIR)$(includedir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir) $(DESTDIR)$(pkgconfigdir)
 
 # After installation, the real file in $(libdir) will be libhts.so.X.Y.Z,
 # with symlinks libhts.so (used via -lhts during linking of client programs)
@@ -290,6 +291,17 @@ install-dylib: libhts.dylib installdirs
 	ln -sf libhts.$(PACKAGE_VERSION).dylib $(DESTDIR)$(libdir)/libhts.dylib
 	ln -sf libhts.$(PACKAGE_VERSION).dylib $(DESTDIR)$(libdir)/libhts.$(LIBHTS_SOVERSION).dylib
 
+# Substitute these pseudo-autoconf variables only at install time
+# so that "make install prefix=/prefix/path" etc continue to work.
+install-pkgconfig: installdirs
+	sed -e 's#@includedir@#$(includedir)#g;s#@libdir@#$(libdir)#g;s#@PACKAGE_VERSION@#$(PACKAGE_VERSION)#g' htslib.pc.in > $(DESTDIR)$(pkgconfigdir)/htslib.pc
+	chmod 644 $(DESTDIR)$(pkgconfigdir)/htslib.pc
+
+# A pkg-config file (suitable for copying to $PKG_CONFIG_PATH) that provides
+# flags for building against the uninstalled library in this build directory.
+htslib-uninstalled.pc: htslib.pc.in
+	sed -e 's#@includedir@#'`pwd`'#g;s#@libdir@#'`pwd`'#g' htslib.pc.in > $@
+
 
 testclean:
 	-rm -f test/*.tmp test/*.tmp.*
@@ -301,7 +313,7 @@ clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 	-rm -f libhts.a $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 
 distclean: clean
-	-rm -f TAGS
+	-rm -f TAGS *-uninstalled.pc
 
 clean-so:
 	-rm -f libhts.so libhts.so.*
@@ -317,7 +329,7 @@ tags:
 force:
 
 
-.PHONY: all check clean distclean force install installdirs
+.PHONY: all check clean distclean force install install-pkgconfig installdirs
 .PHONY: lib-shared lib-static mostlyclean tags test testclean
 .PHONY: clean-so install-so
 .PHONY: clean-dylib install-dylib
