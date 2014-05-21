@@ -196,7 +196,12 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 		}
 		get_intv(tbx, &str, &intv, 1);
 		ret = hts_idx_push(tbx->idx, intv.tid, intv.beg, intv.end, bgzf_tell(fp), 1);
-		if (ret < 0) break;
+		if (ret < 0) 
+        {
+            free(str.s);
+            tbx_destroy(tbx);
+            return NULL;
+        }
 	}
 	if ( !tbx->idx ) tbx->idx = hts_idx_init(0, fmt, last_off, min_shift, n_lvls);   // empty file
 	if ( !tbx->dict ) tbx->dict = kh_init(s2i);
@@ -229,6 +234,7 @@ int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf)
     if ( !fp->is_compressed ) { bgzf_close(fp); return -1; }
 	tbx = tbx_index(fp, min_shift, conf);
 	bgzf_close(fp);
+    if ( !tbx ) return -1;
 	hts_idx_save(tbx->idx, fn, min_shift > 0? HTS_FMT_CSI : HTS_FMT_TBI);
 	tbx_destroy(tbx);
 	return 0;

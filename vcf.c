@@ -2006,7 +2006,12 @@ hts_idx_t *bcf_index(htsFile *fp, int min_shift)
 	while (bcf_read1(fp,h, b) >= 0) {
 		int ret;
 		ret = hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp->fp.bgzf), 1);
-		if (ret < 0) break;
+		if (ret < 0)
+        {
+            bcf_destroy1(b);
+            hts_idx_destroy(idx);
+            return NULL;
+        }
 	}
 	hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
 	bcf_destroy1(b);

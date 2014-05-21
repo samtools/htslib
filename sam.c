@@ -385,7 +385,13 @@ static hts_idx_t *bam_index(BGZF *fp, int min_shift)
 		l = bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
 		if (l == 0) l = 1; // no zero-length records
 		ret = hts_idx_push(idx, b->core.tid, b->core.pos, b->core.pos + l, bgzf_tell(fp), !(b->core.flag&BAM_FUNMAP));
-		if (ret < 0) break; // unsorted
+		if (ret < 0)
+        {
+            // unsorted
+            bam_destroy1(b);
+            hts_idx_destroy(idx);
+            return NULL;
+        }
 	}
 	hts_idx_finish(idx, bgzf_tell(fp));
 	bam_destroy1(b);
@@ -402,7 +408,12 @@ int bam_index_build(const char *fn, int min_shift)
 	if (fp->is_cram) {
 	    	ret = cram_index_build(fp->fp.cram, fn);
 	} else {
-	    	idx = bam_index(fp->fp.bgzf, min_shift);
+			idx = bam_index(fp->fp.bgzf, min_shift);
+			if ( !idx )
+			{
+				hts_close(fp);
+				return -1;
+			}
 		hts_idx_save(idx, fn, min_shift > 0
 			     ? HTS_FMT_CSI : HTS_FMT_BAI);
 		hts_idx_destroy(idx);
