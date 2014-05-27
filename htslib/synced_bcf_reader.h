@@ -40,7 +40,7 @@
 #define COLLAPSE_SOME   8   // at least some of the ALTs must match
 #define COLLAPSE_BOTH  (COLLAPSE_SNPS|COLLAPSE_INDELS)
 
-typedef struct
+typedef struct _bcf_sr_regions_t
 {
     // for reading from tabix-indexed file (big data)
     tbx_t *tbx;             // tabix index
@@ -53,6 +53,10 @@ typedef struct
     kstring_t als_str;      // block of parsed alleles
     int nals, mals;         // number of set alleles and the size of allocated array
     int als_type;           // alleles type, currently VCF_SNP or VCF_INDEL
+
+    // user handler to deal with skipped regions without a counterpart in VCFs
+    void (*missed_reg_handler)(struct _bcf_sr_regions_t *, void *);
+    void *missed_reg_data;
 
     // for in-memory regions (small data)
     struct _region_t *regs; // the regions
@@ -241,5 +245,11 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg);
  *  regions left.
  */
 int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, int end);
+
+/*
+ *  bcf_sr_regions_flush() - calls repeatedly regs->missed_reg_handler() until
+ *  all remaining records are processed.
+ */
+void bcf_sr_regions_flush(bcf_sr_regions_t *regs);
 
 #endif

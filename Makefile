@@ -18,19 +18,20 @@ LDLIBS   =
 
 prefix      = /usr/local
 exec_prefix = $(prefix)
+bindir      = $(exec_prefix)/bin
 includedir  = $(prefix)/include
 libdir      = $(exec_prefix)/lib
-bindir      = $(exec_prefix)/bin
 mandir      = $(prefix)/share/man
+man1dir     = $(mandir)/man1
 man5dir     = $(mandir)/man5
 
 INSTALL = install -p
 INSTALL_PROGRAM = $(INSTALL)
 INSTALL_DATA    = $(INSTALL) -m 644
 
-PROGRAMS = \
-    bgzip \
-    tabix
+BUILT_PROGRAMS = \
+	bgzip \
+	tabix
 
 BUILT_TEST_PROGRAMS = \
 	test/fieldarith \
@@ -40,7 +41,7 @@ BUILT_TEST_PROGRAMS = \
 	test/test-vcf-api \
 	test/test-vcf-sweep
 
-all: lib-static lib-shared $(PROGRAMS) $(BUILT_TEST_PROGRAMS)
+all: lib-static lib-shared $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 
 HTSPREFIX =
 include htslib_vars.mk
@@ -203,6 +204,16 @@ cram/vlen.o cram/vlen.pico: cram/vlen.c cram/vlen.h cram/os.h
 cram/zfio.o cram/zfio.pico: cram/zfio.c cram/os.h cram/zfio.h
 
 
+bgzip: bgzip.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ bgzip.o libhts.a $(LDLIBS) -lz
+
+tabix: tabix.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ tabix.o libhts.a $(LDLIBS) -lz
+
+bgzip.o: bgzip.c $(htslib_bgzf_h) $(htslib_hts_h)
+tabix.o: tabix.c $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) htslib/kseq.h $(htslib_bgzf_h) $(htslib_hts_h)
+
+
 check test: $(BUILT_TEST_PROGRAMS)
 	test/fieldarith test/fieldarith.sam
 	test/hfile
@@ -235,20 +246,16 @@ test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
 
-bgzip: bgzip.o libhts.a 
-	$(CC) $(CFLAGS) -o bgzip bgzip.o libhts.a -lpthread -lz -lm -ldl
-
-tabix: tabix.o libhts.a 
-	$(CC) $(CFLAGS) -o tabix tabix.o libhts.a -lpthread -lz -lm -ldl
 
 install: installdirs install-$(SHLIB_FLAVOUR)
+	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
+	$(INSTALL_DATA) *.1 $(DESTDIR)$(man1dir)
 	$(INSTALL_DATA) *.5 $(DESTDIR)$(man5dir)
-	$(INSTALL_PROGRAM) $(PROGRAMS) $(DESTDIR)$(bindir)
 
 installdirs:
-	mkdir -p $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man5dir) $(DESTDIR)$(bindir)
+	mkdir -p $(DESTDIR)$(bindir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir)
 
 # After installation, the real file in $(libdir) will be libhts.so.X.Y.Z,
 # with symlinks libhts.so (used via -lhts during linking of client programs)
@@ -272,7 +279,7 @@ mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
-	-rm -f libhts.a $(BUILT_TEST_PROGRAMS) $(PROGRAMS)
+	-rm -f libhts.a $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 
 distclean: clean
 	-rm -f TAGS

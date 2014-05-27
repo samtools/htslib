@@ -25,7 +25,7 @@ static void error(const char *format, ...)
     va_start(ap, format);
     vfprintf(stderr, format, ap);
     va_end(ap);
-    exit(-1);
+    exit(EXIT_FAILURE);
 }
 
 
@@ -354,7 +354,7 @@ int main(int argc, char *argv[])
     {
         if ( ftype==IS_BCF ) 
         {
-            if ( bcf_index_build(fname, min_shift)!=0 ) error("bcf_index_build failed, is the BCF file compressed? %s\n", fname);
+            if ( bcf_index_build(fname, min_shift)!=0 ) error("bcf_index_build failed: %s\n", fname);
             return 0;
         }
         if ( ftype==IS_BAM )
@@ -367,8 +367,7 @@ int main(int argc, char *argv[])
     }
     else
     {
-        if ( tbx_index_build(fname, min_shift, &conf) )
-            error("tbx_index_build failed: Is the file bgzip-compressed? Was wrong -p [type] option used?\n");
+        if ( tbx_index_build(fname, min_shift, &conf) ) error("tbx_index_build failed: %s\n", fname);
         return 0;
     }
 	return 0;

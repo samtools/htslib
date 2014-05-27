@@ -1691,6 +1691,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    if (refs[i])
 		cram_ref_decr(fd->refs, i);
 	}
+	free(refs);
     } else if (ref_id >= 0 && s->ref != fd->ref_free) {
 	cram_ref_decr(fd->refs, ref_id);
     }
@@ -1852,6 +1853,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
     cram_container *c;
     cram_slice *s = NULL;
 
+    fd->eof = 0;
+
     if (!(c = fd->ctr)) {
 	// Load first container.
 	do {
@@ -1870,8 +1873,9 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	 * due to skipped containers/slices in the index. 
 	 */
 	if (fd->range.refid != -2) {
-	    while (c->ref_seq_id < fd->range.refid ||
-		   c->ref_seq_start + c->ref_seq_span-1 < fd->range.start) {
+	    while (c->ref_seq_id != -2 &&
+		   (c->ref_seq_id < fd->range.refid ||
+		    c->ref_seq_start + c->ref_seq_span-1 < fd->range.start)) {
 		if (0 != cram_seek(fd, c->length, SEEK_CUR))
 		    return NULL;
 		cram_free_container(fd->ctr);
@@ -1886,7 +1890,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		} while (c->length == 0);
 	    }
 
-	    if (c->ref_seq_id != fd->range.refid)
+	    if (c->ref_seq_id != -2 && c->ref_seq_id != fd->range.refid)
 		return NULL;
 	}
 
@@ -1944,7 +1948,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		    break;
 
 		/* Skip containers not yet spanning our range */
-		if (fd->range.refid != -2) {
+		if (fd->range.refid != -2 && c->ref_seq_id != -2) {
 		    if (c->ref_seq_id != fd->range.refid) {
 			fd->eof = 1;
 			return NULL;
@@ -1988,8 +1992,11 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		 c->ref_seq_id == -1 &&
 		 c->ref_seq_start == 0x454f46 /* EOF */) ? 1 : 0;
 
-	    if (c->num_records == 0)
+	    if (c->num_records == 0) {
+		cram_free_container(c); c = NULL;
 		goto empty_container;
+	    }
+
 
 	    if (!(s = c->slice = cram_read_slice(fd)))
 		return NULL;
@@ -2000,7 +2007,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	    s->last_apos = s->hdr->ref_seq_start;
 	    
 	    /* Skip slices not yet spanning our range */
-	    if (fd->range.refid != -2) {
+	    if (fd->range.refid != -2 && s->hdr->ref_seq_id != -2) {
 		if (s->hdr->ref_seq_id != fd->range.refid) {
 		    fd->eof = 1;
 		    cram_free_slice(s);
@@ -2097,6 +2104,11 @@ cram_record *cram_get_seq(cram_fd *fd) {
 	}
 
 	if (fd->range.refid != -2) {
+	    if (s->crecs[c->curr_rec].ref_id < fd->range.refid) {
+		c->curr_rec++;
+		continue;
+	    }
+
 	    if (s->crecs[c->curr_rec].ref_id != fd->range.refid) {
 		fd->eof = 1;
 		cram_free_slice(s);

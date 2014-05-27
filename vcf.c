@@ -454,8 +454,18 @@ int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     return hrec->type==BCF_HL_GEN ? 0 : 1;
 }
 
-bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, const char *id)
+bcf_hrec_t *bcf_hdr_get_hrec(const bcf_hdr_t *hdr, int type, const char *id)
 {
+    int i;
+    if ( type==BCF_HL_GEN )
+    {
+        for (i=0; i<hdr->nhrec; i++)
+        {
+             if ( hdr->hrec[i]->type!=BCF_HL_GEN ) continue;
+             if ( !strcmp(hdr->hrec[i]->key,id) ) return hdr->hrec[i];
+        }
+        return NULL;
+    }
     vdict_t *d = type==BCF_HL_CTG ? (vdict_t*)hdr->dict[BCF_DT_CTG] : (vdict_t*)hdr->dict[BCF_DT_ID];
     khint_t k = kh_get(vdict, d, id);
     if ( k == kh_end(d) ) return NULL;
@@ -584,6 +594,36 @@ int bcf_hdr_printf(bcf_hdr_t *hdr, const char *fmt, ...)
 /**********************
  *** BCF header I/O ***
  **********************/
+
+const char *bcf_hdr_get_version(const bcf_hdr_t *hdr)
+{
+    bcf_hrec_t *hrec = bcf_hdr_get_hrec(hdr, BCF_HL_GEN, "fileformat");
+    if ( !hrec ) 
+    {
+        fprintf(stderr,"No version string found, assuming VCFv4.2\n");
+        return "VCFv4.2";
+    }
+    return hrec->value;
+}
+
+void bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
+{
+    bcf_hrec_t *hrec = bcf_hdr_get_hrec(hdr, BCF_HL_GEN, "fileformat");
+    if ( !hrec )
+    {
+        int len;
+        kstring_t str = {0,0,0};
+        ksprintf(&str,"##fileformat=%s", version);
+        hrec = bcf_hdr_parse_line(hdr, str.s, &len);
+        free(str.s);
+    }
+    else
+    {
+        free(hrec->value);
+        hrec->value = strdup(version);
+    }
+    bcf_hdr_sync(hdr);
+}
 
 bcf_hdr_t *bcf_hdr_init(const char *mode)
 {
@@ -834,6 +874,7 @@ static inline void bcf1_sync_alleles(bcf1_t *line, kstring_t *str)
     int i;
     for (i=0; i<line->n_allele; i++)
         bcf_enc_vchar(str, strlen(line->d.allele[i]), line->d.allele[i]);
+    line->rlen = line->n_allele ? strlen(line->d.allele[0]) : 0;     // beware: this neglects SV's END tag
 }
 static inline void bcf1_sync_filter(bcf1_t *line, kstring_t *str)
 {
@@ -894,8 +935,10 @@ static int bcf1_sync(bcf1_t *line)
         if ( line->d.shared_dirty & BCF1_DIRTY_ALS  )
             bcf1_sync_alleles(line, &tmp);
         else
+        {
             kputsn_(ptr_ori, line->unpack_size[1], &tmp);
-        line->rlen = line->n_allele ? strlen(line->d.allele[0]) : 0;     // beware: this neglects SV's END tag
+            line->rlen = line->n_allele ? strlen(line->d.allele[0]) : 0;     // beware: this neglects SV's END tag
+        }
         ptr_ori += line->unpack_size[1];
 
         // FILTER: typed vector of integers
@@ -945,11 +988,38 @@ static int bcf1_sync(bcf1_t *line)
         line->indiv = tmp;
     }
     if ( !line->n_sample ) line->n_fmt = 0;
+    line->d.shared_dirty = line->d.indiv_dirty = 0;
     return 0;
+}
+
+bcf1_t *bcf_dup(bcf1_t *src)
+{
+    bcf1_sync(src);
+
+    bcf1_t *out = bcf_init1();
+    
+    out->rid  = src->rid;
+    out->pos  = src->pos;
+    out->rlen = src->rlen;
+    out->qual = src->qual;
+    out->n_info = src->n_info; out->n_allele = src->n_allele;
+    out->n_fmt = src->n_fmt; out->n_sample = src->n_sample;
+
+    out->shared.m = out->shared.l = src->shared.l;
+    out->shared.s = (char*) malloc(out->shared.l);
+    memcpy(out->shared.s,src->shared.s,out->shared.l);
+
+    out->indiv.m = out->indiv.l = src->indiv.l;
+    out->indiv.s = (char*) malloc(out->indiv.l);
+    memcpy(out->indiv.s,src->indiv.s,out->indiv.l);
+
+    return out;
 }
 
 int bcf_write(htsFile *hfp, const bcf_hdr_t *h, bcf1_t *v)
 {
+    assert( bcf_hdr_nsamples(h)==v->n_sample );
+
     if ( !hfp->is_bin ) return vcf_write(hfp,h,v);
 
     if ( v->errcode ) 
@@ -1624,21 +1694,37 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         bcf_enc_vchar(str, end - val, val);
                     } else { // int/float value/array
                         int i, n_val;
-                        char *t;
+                        char *t, *te;
                         for (t = val, n_val = 1; *t; ++t) // count the number of values
                             if (*t == ',') ++n_val;
                         if ((y>>4&0xf) == BCF_HT_INT) {
                             int32_t *z;
                             z = (int32_t*)alloca(n_val<<2);
                             for (i = 0, t = val; i < n_val; ++i, ++t)
-                                z[i] = strtol(t, &t, 10);
+                            {
+                                z[i] = strtol(t, &te, 10);
+                                if ( te==t ) // conversion failed
+                                {
+                                    z[i] = bcf_int32_missing;
+                                    while ( *te && *te!=',' ) te++;
+                                }
+                                t = te;
+                            }
                             bcf_enc_vint(str, n_val, z, -1);
                             if (strcmp(key, "END") == 0) v->rlen = z[0] - v->pos;
                         } else if ((y>>4&0xf) == BCF_HT_REAL) {
                             float *z;
                             z = (float*)alloca(n_val<<2);
                             for (i = 0, t = val; i < n_val; ++i, ++t)
-                                z[i] = strtod(t, &t);
+                            {
+                                z[i] = strtod(t, &te);
+                                if ( te==t ) // conversion failed
+                                {
+                                    bcf_float_set_missing(z[i]);
+                                    while ( *te && *te!=',' ) te++;
+                                }
+                                t = te;
+                            }
                             bcf_enc_vfloat(str, n_val, z);
                         }
                     }
@@ -1920,7 +2006,12 @@ hts_idx_t *bcf_index(htsFile *fp, int min_shift)
 	while (bcf_read1(fp,h, b) >= 0) {
 		int ret;
 		ret = hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp->fp.bgzf), 1);
-		if (ret < 0) break;
+		if (ret < 0)
+        {
+            bcf_destroy1(b);
+            hts_idx_destroy(idx);
+            return NULL;
+        }
 	}
 	hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
 	bcf_destroy1(b);
@@ -2099,6 +2190,7 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
 	bcf_hdr_t *h;
 	str.l = str.m = 0; str.s = 0;
 	h = bcf_hdr_init("w");
+    bcf_hdr_set_version(h,bcf_hdr_get_version(h0));
     int j;
     for (j=0; j<n; j++) imap[j] = -1;
 	if ( bcf_hdr_nsamples(h0) > 0) {

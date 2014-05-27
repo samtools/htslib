@@ -42,7 +42,7 @@ static void error(const char *format, ...)
     va_start(ap, format);
     vfprintf(stderr, format, ap);
     va_end(ap);
-    exit(-1);
+    exit(EXIT_FAILURE);
 }
 
 static int write_open(const char *fn, int is_forced)
@@ -55,20 +55,20 @@ static int write_open(const char *fn, int is_forced)
 			if ( scanf("%c", &c) != 1 ) c = 'n';
 			if (c != 'Y' && c != 'y') {
 				fprintf(stderr, "[bgzip] not overwritten\n");
-				exit(1);
+				exit(EXIT_FAILURE);
 			}
 		}
 	}
 	if (fd < 0) {
 		if ((fd = open(fn, O_WRONLY | O_CREAT | O_TRUNC, 0666)) < 0) {
 			fprintf(stderr, "[bgzip] %s: Fail to write\n", fn);
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 	}
 	return fd;
 }
 
-static int bgzip_main_usage()
+static int bgzip_main_usage(void)
 {
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Version: %s\n", hts_version());

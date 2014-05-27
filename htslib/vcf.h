@@ -315,6 +315,15 @@ extern "C" {
 	#define BCF_UN_ALL  (BCF_UN_SHR|BCF_UN_FMT)     // everything
 	int bcf_unpack(bcf1_t *b, int which);
 
+    /*
+     *  bcf_dup() - create a copy of BCF record. 
+     *
+     *  Note that bcf_unpack() must be called on the returned copy as if it was
+     *  obtained from bcf_read(). Also note that bcf_dup() calls bcf_sync1(src)
+     *  internally to reflect any changes made by bcf_update_* functions.
+     */
+    bcf1_t *bcf_dup(bcf1_t *src);
+
     /**
      *  bcf_write() - write one VCF or BCF record. The type is determined at the open() call.
      */
@@ -358,6 +367,9 @@ extern "C" {
     int bcf_hdr_append(bcf_hdr_t *h, const char *line);
     int bcf_hdr_printf(bcf_hdr_t *h, const char *format, ...);
 
+    const char *bcf_hdr_get_version(const bcf_hdr_t *hdr);
+    void bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version);
+
     /** 
      *  bcf_hdr_remove() - remove VCF header tag
      *  @param type:      one of BCF_HL_*
@@ -389,7 +401,7 @@ extern "C" {
     bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len);
     void bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str);
     int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec);
-    bcf_hrec_t *bcf_hdr_get_hrec(bcf_hdr_t *hdr, int type, const char *id);   // type is one of BCF_HL_FLT,..,BCF_HL_CTG
+    bcf_hrec_t *bcf_hdr_get_hrec(const bcf_hdr_t *hdr, int type, const char *id);   // type is one of BCF_HL_FLT,..,BCF_HL_CTG
     bcf_hrec_t *bcf_hrec_dup(bcf_hrec_t *hrec);
     void bcf_hrec_add_key(bcf_hrec_t *hrec, const char *str, int len);
     void bcf_hrec_set_val(bcf_hrec_t *hrec, int i, const char *str, int len, int is_quoted);

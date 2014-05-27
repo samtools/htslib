@@ -9,6 +9,8 @@
 #include "htslib/kseq.h"
 #include "htslib/khash_str2int.h"
 
+#define MAX_CSI_COOR 0x7fffffff     // maximum indexable coordinate of .csi
+
 typedef struct
 {
     uint32_t start, end;
@@ -310,6 +312,11 @@ static inline int has_filter(bcf_sr_t *reader, bcf1_t *line)
 
 static int _reader_seek(bcf_sr_t *reader, const char *seq, int start, int end)
 {
+    if ( end>=MAX_CSI_COOR )
+    {
+        fprintf(stderr,"The coordinate is out of csi index limit: %d\n", end+1);
+        exit(1);
+    }
     if ( reader->itr ) 
     {
         hts_itr_destroy(reader->itr); 
@@ -647,7 +654,7 @@ int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos)
     int i, nret = 0;
     for (i=0; i<readers->nreaders; i++) 
     {
-        nret += _reader_seek(&readers->readers[i],seq,pos,1<<29);
+        nret += _reader_seek(&readers->readers[i],seq,pos,MAX_CSI_COOR-1);
     }
     return nret;
 }
@@ -765,7 +772,7 @@ static void _regions_add(bcf_sr_regions_t *reg, const char *chr, int start, int 
 {
     if ( start==-1 && end==-1 )
     {
-        start = 0; end = (1<<29) - 1;
+        start = 0; end = MAX_CSI_COOR-1;
     }
     else
     {
@@ -854,7 +861,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
                 fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
                 free(reg); free(tmp.s); return NULL;
             }
-            if ( sp==ep ) to = 1<<29;
+            if ( sp==ep ) to = MAX_CSI_COOR-1;
             _regions_add(reg, tmp.s, from, to);
             if ( !*ep ) break;
             sp = ep;
@@ -990,7 +997,9 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         reg->seq_hash = khash_str2int_init();
     int i;
     for (i=0; i<reg->nseqs; i++)
+    {
         khash_str2int_set(reg->seq_hash,reg->seq_names[i],i);
+    }
     reg->fname  = strdup(regions);
     reg->is_bin = 1;
     return reg;
@@ -1176,8 +1185,12 @@ int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, in
     int iseq;
     if ( khash_str2int_get(reg->seq_hash, seq, &iseq)<0 ) return -1;    // no such sequence
 
-    if ( reg->prev_seq==-1 || iseq!=reg->prev_seq || reg->prev_start > start ) // new chromosome
+    if ( reg->prev_seq==-1 || iseq!=reg->prev_seq || reg->prev_start > start ) // new chromosome or after a seek
     {
+        // flush regions left on previous chromosome
+        if ( reg->missed_reg_handler && reg->prev_seq!=-1 && reg->iseq!=-1 )
+            bcf_sr_regions_flush(reg);
+
         bcf_sr_regions_seek(reg, seq);
         reg->start = reg->end = -1;
     }
@@ -1189,8 +1202,16 @@ int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, in
     {
         if ( bcf_sr_regions_next(reg) < 0 ) return -2;  // no more regions left
         if ( reg->iseq != iseq ) return -1; // does not overlap any regions
+        if ( reg->missed_reg_handler && reg->end < start ) reg->missed_reg_handler(reg, reg->missed_reg_data);
     }
     if ( reg->start <= end ) return 0;    // region overlap
     return -1;  // no overlap
+}
+
+void bcf_sr_regions_flush(bcf_sr_regions_t *reg)
+{
+    if ( !reg->missed_reg_handler || reg->prev_seq==-1 ) return;
+    while ( !bcf_sr_regions_next(reg) ) reg->missed_reg_handler(reg, reg->missed_reg_data);
+    return;
 }
 

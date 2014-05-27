@@ -46,6 +46,10 @@ int main(int argc, char *argv[])
 	else if ((flag&1) == 0) strcat(moder, "b");
 
 	in = sam_open(argv[optind], moder);
+	if (in == NULL) {
+	    fprintf(stderr, "Error opening \"%s\"\n", argv[optind]);
+	    return EXIT_FAILURE;
+	}
 	h = sam_hdr_read(in);
 	h->ignore_sam_err = ignore_sam_err;
 	b = bam_init1();
@@ -55,6 +59,10 @@ int main(int argc, char *argv[])
 	if (flag&8) strcat(modew, "c");
 	else if (flag&2) strcat(modew, "b");
 	out = hts_open("-", modew);
+	if (out == NULL) {
+	    fprintf(stderr, "Error opening standard output\n");
+	    return EXIT_FAILURE;
+	}
 
 	/* CRAM output */
 	if (flag & 8) {
@@ -100,15 +108,26 @@ int main(int argc, char *argv[])
 			break;
 		}
 	}
-	sam_close(out);
 
 	if (r < -1) {
 	    fprintf(stderr, "Error parsing input.\n");
 	    exit_code = 1;
 	}
 
+	r = sam_close(out);
+	if (r < 0) {
+	    fprintf(stderr, "Error closing output.\n");
+	    exit_code = 1;
+	}
+
 	bam_destroy1(b);
 	bam_hdr_destroy(h);
-	sam_close(in);
+
+	r = sam_close(in);
+	if (r < 0) {
+	    fprintf(stderr, "Error closing input.\n");
+	    exit_code = 1;
+	}
+
 	return exit_code;
 }

@@ -527,7 +527,7 @@ int int32_put(cram_block *b, int32_t val) {
  * They're static here as they're only used within the cram_compress_block
  * and cram_uncompress_block functions, which are the external interface.
  */
-static char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
+char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
     z_stream s;
     unsigned char *data = NULL; /* Uncompressed output */
     int data_alloc = 0;
@@ -3326,7 +3326,7 @@ cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode) {
 	fd->m[i] = cram_new_metrics();
 
     fd->range.refid = -2; // no ref.
-    fd->eof = 0;
+    fd->eof = 1;          // See samtools issue #150
     fd->ref_fn = NULL;
 
     fd->bl = NULL;

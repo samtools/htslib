@@ -15,7 +15,7 @@
 #include "htslib/kseq.h"
 #define KS_BGZF 1
 #if KS_BGZF
-    // pd3 todo: gzread() in BGZF
+    // bgzf now supports gzip-compressed files
     KSTREAM_INIT2(, BGZF*, bgzf_read, 65536)
 #else
     KSTREAM_INIT2(, gzFile, gzread, 16384)
@@ -228,6 +228,15 @@ int hts_close(htsFile *fp)
 	free(fp);
 	errno = save;
 	return ret;
+}
+
+int hts_set_threads(htsFile *fp, int n)
+{
+	// TODO Plug in CRAM and other threading
+	if (fp->is_bin) {
+		return bgzf_mt(fp->fp.bgzf, n, 256);
+	}
+	else return 0;
 }
 
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
