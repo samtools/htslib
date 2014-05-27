@@ -659,40 +659,6 @@ int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos)
     return nret;
 }
 
-size_t mygetline(char **line, size_t *n, FILE *fp)
-{
-    if (line == NULL || n == NULL || fp == NULL)
-    {
-        errno = EINVAL;
-        return -1;
-    }
-    if (*n==0 || !*line)
-    {
-        *line = NULL;
-        *n = 0;
-    }
-
-    size_t nread=0;
-    int c;
-    while ((c=getc(fp))!= EOF && c!='\n')
-    {
-        if ( ++nread>=*n )
-        {
-            *n += 255;
-            *line = (char*) realloc(*line, sizeof(char)*(*n));
-        }
-        (*line)[nread-1] = c;
-    }
-    if ( nread>=*n )
-    {
-        *n += 255;
-        *line = (char*) realloc(*line, sizeof(char)*(*n));
-    }
-    (*line)[nread] = 0;
-    return nread>0 ? nread : -1;
-
-}
-
 int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
 {
     int i, j, nsmpl, free_smpl = 0;
