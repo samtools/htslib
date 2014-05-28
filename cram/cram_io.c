@@ -2207,6 +2207,11 @@ cram_container *cram_read_container(cram_fd *fd) {
 	fd->multi_seq = 1;
     }
 
+    fd->empty_container =
+	(c->num_records == 0 &&
+	 c->ref_seq_id == -1 &&
+	 c->ref_seq_start == 0x454f46 /* EOF */) ? 1 : 0;
+
     return c;
 }
 
