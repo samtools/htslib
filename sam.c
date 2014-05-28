@@ -7,6 +7,7 @@
 #include "htslib/sam.h"
 #include "htslib/bgzf.h"
 #include "cram/cram.h"
+#include "cram/os.h"
 #include "htslib/hfile.h"
 
 #include "htslib/khash.h"
@@ -923,6 +924,10 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 	s = bam_get_aux(b); // aux
 	while (s+4 <= b->data + b->l_data) {
 		uint8_t type, key[2];
+#ifndef ALLOW_UAC
+		uint8_t tmpData[8];
+		int j;
+#endif
 		key[0] = s[0]; key[1] = s[1];
 		s += 2; type = *s++;
 		kputc('\t', str); kputsn((char*)key, 2, str); kputc(':', str);
@@ -938,6 +943,7 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 			kputsn("i:", 2, str);
 			kputw(*(int8_t*)s, str);
 			++s;
+#ifdef ALLOW_UAC
 		} else if (type == 'S') {
 			if (s+2 <= b->data + b->l_data) {
 				kputsn("i:", 2, str);
@@ -973,6 +979,54 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 				ksprintf(str, "d:%g", *(double*)s);
 				s += 8;
 			} else return -1;
+#else
+		} else if (type == 'S') {
+			if (s+2 <= b->data + b->l_data) {
+				uint16_t *ptmpData = (uint16_t*)tmpData;
+				for(j=0;j<2;j++) tmpData[j]=s[j];
+				kputsn("i:", 2, str);
+				kputw(*ptmpData, str);
+				s += 2;
+			} else return -1;
+		} else if (type == 's') {
+			if (s+2 <= b->data + b->l_data) {
+				int16_t *ptmpData = (int16_t*)tmpData;
+				for(j=0;j<2;j++) tmpData[j]=s[j];
+				kputsn("i:", 2, str);
+				kputw(*ptmpData, str);
+				s += 2;
+			} else return -1;
+		} else if (type == 'I') {
+			if (s+4 <= b->data + b->l_data) {
+				uint32_t *ptmpData = (uint32_t*)tmpData;
+				for(j=0;j<4;j++) tmpData[j]=s[j];
+				kputsn("i:", 2, str);
+				kputuw(*ptmpData, str);
+				s += 4;
+			} else return -1;
+		} else if (type == 'i') {
+			if (s+4 <= b->data + b->l_data) {
+				int32_t *ptmpData = (int32_t*)tmpData;
+				for(j=0;j<4;j++) tmpData[j]=s[j];
+				kputsn("i:", 2, str);
+				kputw(*ptmpData, str);
+				s += 4;
+			} else return -1;
+		} else if (type == 'f') {
+			if (s+4 <= b->data + b->l_data) {
+				float *ptmpData = (float*)tmpData;
+				for(j=0;j<4;j++) tmpData[j]=s[j];
+				ksprintf(str, "f:%g", *ptmpData);
+				s += 4;
+			} else return -1;
+		} else if (type == 'd') {
+			if (s+8 <= b->data + b->l_data) {
+				double *ptmpData = (double*)tmpData;
+				for(j=0;j<8;j++) tmpData[j]=s[j];
+				ksprintf(str, "d:%g", *ptmpData);
+				s += 8;
+			} else return -1;
+#endif
 		} else if (type == 'Z' || type == 'H') {
 			kputc(type, str); kputc(':', str);
 			while (s < b->data + b->l_data && *s) kputc(*s++, str);
@@ -991,11 +1045,49 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 				kputc(',', str);
 				if ('c' == sub_type)	  { kputw(*(int8_t*)s, str); ++s; }
 				else if ('C' == sub_type) { kputw(*(uint8_t*)s, str); ++s; }
+#ifdef ALLOW_UAC
 				else if ('s' == sub_type) { kputw(*(int16_t*)s, str); s += 2; }
 				else if ('S' == sub_type) { kputw(*(uint16_t*)s, str); s += 2; }
 				else if ('i' == sub_type) { kputw(*(int32_t*)s, str); s += 4; }
 				else if ('I' == sub_type) { kputuw(*(uint32_t*)s, str); s += 4; }
 				else if ('f' == sub_type) { ksprintf(str, "%g", *(float*)s); s += 4; }
+#else
+				else if ('s' == sub_type) 
+				{
+					int16_t *ptmpData = (int16_t*)tmpData;
+					for(j=0;j<2;j++)tmpData[j]=s[j];
+					kputw(*ptmpData, str);
+					s += 2;
+				}
+				else if ('S' == sub_type)
+				{
+					uint16_t *ptmpData = (uint16_t*)tmpData;
+					for(j=0;j<2;j++)tmpData[j]=s[j];
+					kputw(*ptmpData, str);
+					s += 2;
+				}
+				else if ('i' == sub_type)
+				{
+					int32_t *ptmpData = (int32_t*)tmpData;
+					for(j=0;j<4;j++)tmpData[j]=s[j];
+					kputw(*ptmpData, str);
+					s += 4;
+				}
+				else if ('I' == sub_type)
+				{
+					uint32_t *ptmpData = (uint32_t*)tmpData;
+					for(j=0;j<4;j++)tmpData[j]=s[j];
+					kputuw(*ptmpData, str);
+					s += 4;
+				}
+				else if ('f' == sub_type)
+				{
+					float *ptmpData = (float*)tmpData;
+					for(j=0;j<4;j++)tmpData[j]=s[j];
+					ksprintf(str, "%g", *ptmpData);
+					s += 4;
+				}
+#endif
 			}
 		}
 	}
@@ -1085,11 +1177,22 @@ int32_t bam_aux2i(const uint8_t *s)
 {
 	int type;
 	type = *s++;
+#ifdef ALLOW_UAC
 	if (type == 'c') return (int32_t)*(int8_t*)s;
 	else if (type == 'C') return (int32_t)*(uint8_t*)s;
 	else if (type == 's') return (int32_t)*(int16_t*)s;
 	else if (type == 'S') return (int32_t)*(uint16_t*)s;
 	else if (type == 'i' || type == 'I') return *(int32_t*)s;
+#else
+	uint8_t tmpData[4];
+	int j;
+	if (type == 'c') return (int32_t)*(int8_t*)s;
+	else if (type == 'C') return (int32_t)*(uint8_t*)s;
+	else if (type == 's'){ int16_t *ptmpData = (int16_t*)tmpData; for(j=0;j<2;j++)tmpData[j]=s[j]; return (int32_t)(*ptmpData);}
+	else if (type == 'S'){ uint16_t *ptmpData = (uint16_t*)tmpData; for(j=0;j<2;j++)tmpData[j]=s[j]; return (int32_t)(*ptmpData);}
+	else if (type == 'i'){ int32_t *ptmpData = (int32_t*)tmpData; for(j=0;j<4;j++)tmpData[j]=s[j]; return *ptmpData;}
+	else if (type == 'I'){ uint32_t *ptmpData = (uint32_t*)tmpData; for(j=0;j<4;j++)tmpData[j]=s[j]; return *ptmpData;}
+#endif
 	else return 0;
 }
 
@@ -1097,8 +1200,15 @@ double bam_aux2f(const uint8_t *s)
 {
 	int type;
 	type = *s++;
+#ifdef ALLOW_UAC
 	if (type == 'd') return *(double*)s;
 	else if (type == 'f') return *(float*)s;
+#else
+	uint8_t tmpData[8];
+	int j;
+	if (type == 'd'){ double *ptmpData = (double*)tmpData; for(j=0;j<sizeof(double);j++)tmpData[j]=s[j]; return *ptmpData;}
+	else if (type == 'f'){ float *ptmpData = (float*)tmpData; for(j=0;j<sizeof(float);j++)tmpData[j]=s[j]; return *ptmpData;}
+#endif
 	else return 0.0;
 }
 
