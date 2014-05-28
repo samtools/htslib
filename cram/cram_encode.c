@@ -1858,6 +1858,12 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
     return rg;
 }
 
+static inline int is_big_endian(){
+    int x = 0x01;
+    char *c = (char*)&x;
+    return (c[0] != 0x01);
+}
+
 /*
  * Encodes auxiliary data. Largely duplicated from above, but done so to
  * keep it simple and avoid a myriad of version ifs.
@@ -1949,10 +1955,21 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 
 	case 'B': {
 	    int type = aux[3], blen;
-	    uint32_t count = (uint32_t)((((unsigned char *)aux)[4]<< 0) +
-					(((unsigned char *)aux)[5]<< 8) +
-					(((unsigned char *)aux)[6]<<16) +
-					(((unsigned char *)aux)[7]<<24));
+	    uint32_t count;
+	    if(is_big_endian())
+	    {
+	        count = (uint32_t)((((unsigned char *)aux)[7]<< 0) +
+				(((unsigned char *)aux)[6]<< 8) +
+				(((unsigned char *)aux)[5]<<16) +
+				(((unsigned char *)aux)[4]<<24));
+	    }
+	    else
+	    {
+	        count = (uint32_t)((((unsigned char *)aux)[4]<< 0) +
+				(((unsigned char *)aux)[5]<< 8) +
+				(((unsigned char *)aux)[6]<<16) +
+				(((unsigned char *)aux)[7]<<24));
+	    }
 	    // skip TN field
 	    aux+=3;
 

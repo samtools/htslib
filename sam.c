@@ -259,9 +259,14 @@ static inline int aux_type2size(uint8_t type)
 	}
 }
 
-static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data)
+typedef enum swap_data_rw {
+	SWAP_DATA_READ,
+	SWAP_DATA_WRITE
+}swap_data_rw_t;
+
+static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data, swap_data_rw_t rw_mode)
 {
-	uint8_t *s;
+	uint8_t *s, *s_tmp;
 	uint32_t *cigar = (uint32_t*)(data + c->l_qname);
 	uint32_t i, n;
 	s = data + c->n_cigar*4 + c->l_qname + c->l_qseq + (c->l_qseq + 1)/2;
@@ -282,12 +287,21 @@ static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data)
 			break;
 		case 'B':
 			size = aux_type2size(*s); ++s;
-			ed_swap_4p(s); memcpy(&n, s, 4); s += 4;
+			if(SWAP_DATA_READ == rw_mode)
+			{
+				ed_swap_4p(s);
+			}
+			s_tmp = s;
+			memcpy(&n, s, 4); s += 4;
 			switch (size) {
 			case 1: s += n; break;
 			case 2: for (i = 0; i < n; ++i, s += 2) ed_swap_2p(s); break;
 			case 4: for (i = 0; i < n; ++i, s += 4) ed_swap_4p(s); break;
 			case 8: for (i = 0; i < n; ++i, s += 8) ed_swap_8p(s); break;
+			}
+			if(SWAP_DATA_WRITE == rw_mode)
+			{
+				ed_swap_4p(s_tmp);
 			}
 			break;
 		}
@@ -326,7 +340,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
 	}
 	if (bgzf_read(fp, b->data, b->l_data) != b->l_data) return -4;
 	//b->l_aux = b->l_data - c->n_cigar * 4 - c->l_qname - c->l_qseq - (c->l_qseq+1)/2;
-	if (fp->is_be) swap_data(c, b->l_data, b->data);
+	if (fp->is_be) swap_data(c, b->l_data, b->data, SWAP_DATA_READ);
 	return 4 + block_len;
 }
 
@@ -348,13 +362,13 @@ int bam_write1(BGZF *fp, const bam1_t *b)
 		for (i = 0; i < 8; ++i) ed_swap_4p(x + i);
 		y = block_len;
 		if (ok) ok = (bgzf_write(fp, ed_swap_4p(&y), 4) >= 0);
-		swap_data(c, b->l_data, b->data);
+		swap_data(c, b->l_data, b->data, SWAP_DATA_WRITE);
 	} else {
 		if (ok) ok = (bgzf_write(fp, &block_len, 4) >= 0);
 	}
 	if (ok) ok = (bgzf_write(fp, x, 32) >= 0);
 	if (ok) ok = (bgzf_write(fp, b->data, b->l_data) >= 0);
-	if (fp->is_be) swap_data(c, b->l_data, b->data);
+	if (fp->is_be) swap_data(c, b->l_data, b->data, SWAP_DATA_WRITE);
 	return ok? 4 + block_len : -1;
 }
 
