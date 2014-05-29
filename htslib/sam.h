@@ -52,6 +52,26 @@ typedef struct {
 #define bam_cigar_oplen(c) ((c)>>BAM_CIGAR_SHIFT)
 #define bam_cigar_opchr(c) (BAM_CIGAR_STR[bam_cigar_op(c)])
 #define bam_cigar_gen(l, o) ((l)<<BAM_CIGAR_SHIFT|(o))
+
+/* bam_cigar_type returns a bit flag with:
+ *   bit 1 set if the cigar operation consumes the query
+ *   bit 2 set if the cigar operation consumes the reference
+ * 
+ * For reference, the unobfuscated truth table for this function is: 
+ * BAM_CIGAR_TYPE  QUERY  REFERENCE
+ * --------------------------------
+ * BAM_CMATCH      1      1
+ * BAM_CINS        1      0
+ * BAM_CDEL        0      1
+ * BAM_CREF_SKIP   0      1
+ * BAM_CSOFT_CLIP  1      0
+ * BAM_CHARD_CLIP  0      0
+ * BAM_CPAD        0      0
+ * BAM_CEQUAL      1      1
+ * BAM_CDIFF       1      1
+ * BAM_CBACK       0      0
+ * --------------------------------
+ */
 #define bam_cigar_type(o) (BAM_CIGAR_TYPE>>((o)<<1)&3) // bit 1: consume query; bit 2: consume reference
 
 /*! @abstract the read is paired in sequencing, no matter whether it is mapped in a pair */
