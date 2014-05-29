@@ -53,7 +53,7 @@ extern "C" {
 #endif
 
 	/*!
-	  @abstract   Build index for a FASTA or razip compressed FASTA file.
+	  @abstract   Build index for a FASTA or bgzip-compressed FASTA file.
 	  @param  fn  FASTA file name
 	  @return     0 on success; or -1 on failure
 	  @discussion File "fn.fai" will be generated.
