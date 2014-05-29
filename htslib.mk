@@ -43,7 +43,6 @@ HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/ksort.h \
 	$(HTSDIR)/htslib/kstdint.h \
 	$(HTSDIR)/htslib/kstring.h \
-	$(HTSDIR)/htslib/razf.h \
 	$(HTSDIR)/htslib/sam.h \
 	$(HTSDIR)/htslib/synced_bcf_reader.h \
 	$(HTSDIR)/htslib/tbx.h \
@@ -61,7 +60,6 @@ HTSLIB_ALL = \
 	$(HTSDIR)/hts.c \
 	$(HTSDIR)/knetfile.c \
 	$(HTSDIR)/kstring.c \
-	$(HTSDIR)/razf.c \
 	$(HTSDIR)/sam.c \
 	$(HTSDIR)/synced_bcf_reader.c \
 	$(HTSDIR)/tbx.c \
