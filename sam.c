@@ -706,17 +706,20 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 	// cigar
 	if (*p != '*') {
 		uint32_t *cigar;
-		for (q = p, c->n_cigar = 0; *q && *q != '\t'; ++q)
-			if (!isdigit(*q)) ++c->n_cigar;
+		size_t n_cigar = 0;
+		for (q = p; *p && *p != '\t'; ++p)
+			if (!isdigit(*p)) ++n_cigar;
+		if (*p++ != '\t') goto err_ret;
+		_parse_err(n_cigar >= 65536, "too many CIGAR operations");
+		c->n_cigar = n_cigar;
 		_get_mem(uint32_t, &cigar, &str, c->n_cigar<<2);
-		for (i = 0, q = p; i < c->n_cigar; ++i, ++q) {
+		for (i = 0; i < c->n_cigar; ++i, ++q) {
 			int op;
 			cigar[i] = strtol(q, &q, 10)<<BAM_CIGAR_SHIFT;
 			op = (uint8_t)*q >= 128? -1 : h->cigar_tab[(int)*q];
 			_parse_err(op < 0, "urecognized CIGAR operator");
 			cigar[i] |= op;
 		}
-		p = q + 1;
 		i = bam_cigar2rlen(c->n_cigar, cigar);
 	} else {
 		_parse_warn(!(c->flag&BAM_FUNMAP), "mapped query must have a CIGAR; treated as unmapped");
