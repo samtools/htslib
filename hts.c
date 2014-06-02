@@ -2,7 +2,6 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdbool.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -429,7 +428,7 @@ int hts_file_type(const char *fname)
 
 // Finds the special meta bin
 //  ((1<<(3 * n_lvls + 3)) - 1) / 7 + 1
-#define META_BIN(idx) idx->n_bins + 1
+#define META_BIN(idx) ((idx)->n_bins + 1)
 
 #define pair64_lt(a,b) ((a).u < (b).u)
 
@@ -960,11 +959,11 @@ const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid,
     return names;
 }
 
-bool hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped)
+int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped)
 {
 	if ( idx->fmt == HTS_FMT_CRAI ) {
 		*mapped = 0; *unmapped = 0;
-		return false;
+		return -1;
 	}
 
 	bidx_t *h = idx->bidx[tid];
@@ -972,10 +971,10 @@ bool hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t*
 	if (k != kh_end(h)) {
 		*mapped = kh_val(h, k).list[1].u;
 		*unmapped = kh_val(h, k).list[1].v;
-		return true;
+		return 0;
 	} else {
 		*mapped = 0; *unmapped = 0;
-		return false;
+		return -1;
 	}
 }
 
