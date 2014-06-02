@@ -1119,6 +1119,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
     char fai_fn[PATH_MAX];
     char line[8192];
     refs_t *r = r_orig;
+    size_t fn_l = strlen(fn);
 
     RP("refs_load_fai %s\n", fn);
 
@@ -1139,15 +1140,19 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 
     if (!(r->fn = string_dup(r->pool, fn)))
 	goto err;
+	
+    if (fn_l > 4 && strcmp(&fn[fn_l-4], ".fai") == 0)
+	r->fn[fn_l-4] = 0;
 
-    if (!(r->fp = fopen(fn, "r"))) {
+    if (!(r->fp = fopen(r->fn, "r"))) {
 	if (is_err)
 	    perror(fn);
 	goto err;
     }
 
     /* Parse .fai file and load meta-data */
-    sprintf(fai_fn, "%.*s.fai", PATH_MAX-5, fn);
+    sprintf(fai_fn, "%.*s.fai", PATH_MAX-5, r->fn);
+
     if (stat(fai_fn, &sb) != 0) {
 	if (is_err)
 	    perror(fai_fn);
