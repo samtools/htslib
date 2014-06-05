@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cram/os.h"
+
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;
 #define HTS_BGZF_TYPEDEF
@@ -283,7 +285,17 @@ static inline uint16_t ed_swap_2(uint16_t v)
 }
 static inline void *ed_swap_2p(void *x)
 {
+#ifdef ALLOW_UAC
 	*(uint16_t*)x = ed_swap_2(*(uint16_t*)x);
+#else
+	uint8_t tmpData[2];
+	uint16_t *ptmpData = (uint16_t*)&tmpData;
+	uint8_t *px = (uint8_t*)x;
+	int j;
+	for(j=0;j<2;j++) tmpData[j] = px[j];
+        *ptmpData = ed_swap_2(*ptmpData);
+	for(j=0;j<2;j++) px[j] = tmpData[j];
+#endif
 	return x;
 }
 static inline uint32_t ed_swap_4(uint32_t v)
@@ -293,7 +305,17 @@ static inline uint32_t ed_swap_4(uint32_t v)
 }
 static inline void *ed_swap_4p(void *x)
 {
+#ifdef ALLOW_UAC
 	*(uint32_t*)x = ed_swap_4(*(uint32_t*)x);
+#else
+	uint8_t tmpData[4];
+	uint32_t *ptmpData = (uint32_t*)&tmpData;
+	uint8_t *px = (uint8_t*)x;
+	int j;
+	for(j=0;j<4;j++) tmpData[j] = px[j];
+	*ptmpData = ed_swap_4(*ptmpData);
+	for(j=0;j<4;j++) px[j] = tmpData[j];
+#endif
 	return x;
 }
 static inline uint64_t ed_swap_8(uint64_t v)
@@ -304,7 +326,17 @@ static inline uint64_t ed_swap_8(uint64_t v)
 }
 static inline void *ed_swap_8p(void *x)
 {
+#ifdef ALLOW_UAC
 	*(uint64_t*)x = ed_swap_8(*(uint64_t*)x);
+#else
+	uint8_t tmpData[8];
+	uint64_t *ptmpData = (uint64_t*)&tmpData;
+	uint8_t *px = (uint8_t*)x;
+	int j;
+	for(j=0;j<8;j++) tmpData[j] = px[j];
+	*ptmpData = ed_swap_8(*ptmpData);
+	for(j=0;j<8;j++) px[j] = tmpData[j];
+#endif
 	return x;
 }
 
