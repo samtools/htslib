@@ -155,7 +155,7 @@ htsFile *hts_open(const char *fn, const char *mode)
 	else if (fp->is_cram) {
 		fp->fp.cram = cram_dopen(hfile, fn, mode);
 		if (fp->fp.cram == NULL) goto error;
-		if (fp->is_write)
+		if (!fp->is_write)
 		    cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, 1);
 
 	}
