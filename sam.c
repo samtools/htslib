@@ -259,7 +259,7 @@ static inline int aux_type2size(uint8_t type)
 	}
 }
 
-static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data)
+static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data, int is_host)
 {
 	uint8_t *s;
 	uint32_t *cigar = (uint32_t*)(data + c->l_qname);
@@ -282,7 +282,9 @@ static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data)
 			break;
 		case 'B':
 			size = aux_type2size(*s); ++s;
-			ed_swap_4p(s); memcpy(&n, s, 4); s += 4;
+			if (is_host) memcpy(&n, s, 4), ed_swap_4p(s);
+			else ed_swap_4p(s), memcpy(&n, s, 4);
+			s += 4;
 			switch (size) {
 			case 1: s += n; break;
 			case 2: for (i = 0; i < n; ++i, s += 2) ed_swap_2p(s); break;
@@ -326,7 +328,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
 	}
 	if (bgzf_read(fp, b->data, b->l_data) != b->l_data) return -4;
 	//b->l_aux = b->l_data - c->n_cigar * 4 - c->l_qname - c->l_qseq - (c->l_qseq+1)/2;
-	if (fp->is_be) swap_data(c, b->l_data, b->data);
+	if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
 	return 4 + block_len;
 }
 
@@ -348,13 +350,13 @@ int bam_write1(BGZF *fp, const bam1_t *b)
 		for (i = 0; i < 8; ++i) ed_swap_4p(x + i);
 		y = block_len;
 		if (ok) ok = (bgzf_write(fp, ed_swap_4p(&y), 4) >= 0);
-		swap_data(c, b->l_data, b->data);
+		swap_data(c, b->l_data, b->data, 1);
 	} else {
 		if (ok) ok = (bgzf_write(fp, &block_len, 4) >= 0);
 	}
 	if (ok) ok = (bgzf_write(fp, x, 32) >= 0);
 	if (ok) ok = (bgzf_write(fp, b->data, b->l_data) >= 0);
-	if (fp->is_be) swap_data(c, b->l_data, b->data);
+	if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
 	return ok? 4 + block_len : -1;
 }
 
@@ -633,6 +635,8 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 	} else if (fp->is_cram) {
 		cram_fd *fd = fp->fp.cram;
 		if (cram_set_header(fd, bam_header_to_cram((bam_hdr_t *)h)) < 0) return -1;
+		if (fp->fn_aux)
+		    cram_load_reference(fd, fp->fn_aux);
 		if (cram_write_SAM_hdr(fd, fd->header) < 0) return -1;
 	} else {
 		char *p;

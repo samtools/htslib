@@ -514,6 +514,7 @@ hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_l
 {
 	hts_idx_t *idx;
 	idx = (hts_idx_t*)calloc(1, sizeof(hts_idx_t));
+	if (idx == NULL) return NULL;
 	idx->fmt = fmt;
 	idx->min_shift = min_shift;
 	idx->n_lvls = n_lvls;
@@ -524,7 +525,9 @@ hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_l
 	if (n) {
 		idx->n = idx->m = n;
 		idx->bidx = (bidx_t**)calloc(n, sizeof(bidx_t*));
+		if (idx->bidx == NULL) { free(idx); return NULL; }
 		idx->lidx = (lidx_t*) calloc(n, sizeof(lidx_t));
+		if (idx->lidx == NULL) { free(idx->bidx); free(idx); return NULL; }
 	}
 	return idx;
 }
@@ -825,11 +828,12 @@ void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
 	free(fnidx);
 }
 
-static void hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
+static int hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
 {
 	int32_t i, n, is_be;
 	int is_bgzf = (fmt != HTS_FMT_BAI);
 	is_be = ed_is_big();
+	if (idx == NULL) return -4;
 	for (i = 0; i < idx->n; ++i) {
 		bidx_t *h;
 		lidx_t *l = &idx->lidx[i];
@@ -837,32 +841,35 @@ static void hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
 		int j, absent;
 		bins_t *p;
 		h = idx->bidx[i] = kh_init(bin);
-		idx_read(is_bgzf, fp, &n, 4);
+		if (idx_read(is_bgzf, fp, &n, 4) != 4) return -1;
 		if (is_be) ed_swap_4p(&n);
 		for (j = 0; j < n; ++j) {
 			khint_t k;
-			idx_read(is_bgzf, fp, &key, 4);
+			if (idx_read(is_bgzf, fp, &key, 4) != 4) return -1;
 			if (is_be) ed_swap_4p(&key);
 			k = kh_put(bin, h, key, &absent);
+			if (absent <= 0) return -3; // Duplicate bin number
 			p = &kh_val(h, k);
 			if (fmt == HTS_FMT_CSI) {
-				idx_read(is_bgzf, fp, &p->loff, 8);
+				if (idx_read(is_bgzf, fp, &p->loff, 8) != 8) return -1;
 				if (is_be) ed_swap_8p(&p->loff);
 			} else p->loff = 0;
-			idx_read(is_bgzf, fp, &p->n, 4);
+			if (idx_read(is_bgzf, fp, &p->n, 4) != 4) return -1;
 			if (is_be) ed_swap_4p(&p->n);
 			p->m = p->n;
 			p->list = (hts_pair64_t*)malloc(p->m * 16);
-			idx_read(is_bgzf, fp, p->list, p->n<<4);
+			if (p->list == NULL) return -2;
+			if (idx_read(is_bgzf, fp, p->list, p->n<<4) != p->n<<4) return -1;
 			if (is_be) swap_bins(p);
 		}
 		if (fmt != HTS_FMT_CSI) { // load linear index
 			int j;
-			idx_read(is_bgzf, fp, &l->n, 4);
+			if (idx_read(is_bgzf, fp, &l->n, 4) != 4) return -1;
 			if (is_be) ed_swap_4p(&l->n);
 			l->m = l->n;
 			l->offset = (uint64_t*)malloc(l->n << 3);
-			idx_read(is_bgzf, fp, l->offset, l->n << 3);
+			if (l->offset == NULL) return -2;
+			if (idx_read(is_bgzf, fp, l->offset, l->n << 3) != l->n << 3) return -1;
 			if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
 			for (j = 1; j < l->n; ++j) // fill missing values; may happen given older samtools and tabix
 				if (l->offset[j] == 0) l->offset[j] = l->offset[j-1];
@@ -871,59 +878,85 @@ static void hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
 	}
 	if (idx_read(is_bgzf, fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
 	if (is_be) ed_swap_8p(&idx->n_no_coor);
+	return 0;
 }
 
 hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
 {
 	uint8_t magic[4];
 	int i, is_be;
-	hts_idx_t *idx;
+	hts_idx_t *idx = NULL;
 	is_be = ed_is_big();
 	if (fmt == HTS_FMT_CSI) {
 		BGZF *fp;
 		uint32_t x[3], n;
 		uint8_t *meta = 0;
 		if ((fp = bgzf_open(fn, "r")) == 0) return NULL;
-		if ( bgzf_read(fp, magic, 4) != 4 ) return NULL;
-		if ( bgzf_read(fp, x, 12) != 12 ) return NULL;
+		if (bgzf_read(fp, magic, 4) != 4) goto csi_fail;
+		if (memcmp(magic, "CSI\1", 4) != 0) goto csi_fail;
+		if (bgzf_read(fp, x, 12) != 12) goto csi_fail;
 		if (is_be) for (i = 0; i < 3; ++i) ed_swap_4p(&x[i]);
 		if (x[2]) {
-			meta = (uint8_t*)malloc(x[2]);
-			if ( bgzf_read(fp, meta, x[2]) != x[2] ) return NULL;
+			if ((meta = (uint8_t*)malloc(x[2])) == NULL) goto csi_fail;
+			if (bgzf_read(fp, meta, x[2]) != x[2]) goto csi_fail;
 		}
-		if ( bgzf_read(fp, &n, 4) != 4 ) return NULL;
+		if (bgzf_read(fp, &n, 4) != 4) goto csi_fail;
 		if (is_be) ed_swap_4p(&n);
-		idx = hts_idx_init(n, fmt, 0, x[0], x[1]);
+		if ((idx = hts_idx_init(n, fmt, 0, x[0], x[1])) == NULL) goto csi_fail;
 		idx->l_meta = x[2];
 		idx->meta = meta;
-		hts_idx_load_core(idx, fp, HTS_FMT_CSI);
+		meta = NULL;
+		if (hts_idx_load_core(idx, fp, HTS_FMT_CSI) < 0) goto csi_fail;
 		bgzf_close(fp);
+		return idx;
+
+	csi_fail:
+		bgzf_close(fp);
+		hts_idx_destroy(idx);
+		free(meta);
+		return NULL;
+
 	} else if (fmt == HTS_FMT_TBI) {
 		BGZF *fp;
 		uint32_t x[8];
 		if ((fp = bgzf_open(fn, "r")) == 0) return NULL;
-		if ( bgzf_read(fp, magic, 4) != 4 ) return NULL;
-		if ( bgzf_read(fp, x, 32) != 32 ) return NULL;
+		if (bgzf_read(fp, magic, 4) != 4) goto tbi_fail;
+		if (memcmp(magic, "TBI\1", 4) != 0) goto tbi_fail;
+		if (bgzf_read(fp, x, 32) != 32) goto tbi_fail;
 		if (is_be) for (i = 0; i < 8; ++i) ed_swap_4p(&x[i]);
-		idx = hts_idx_init(x[0], fmt, 0, 14, 5);
+		if ((idx = hts_idx_init(x[0], fmt, 0, 14, 5)) == NULL) goto tbi_fail;
 		idx->l_meta = 28 + x[7];
-		idx->meta = (uint8_t*)malloc(idx->l_meta);
+		if ((idx->meta = (uint8_t*)malloc(idx->l_meta)) == NULL) goto tbi_fail;
 		memcpy(idx->meta, &x[1], 28);
-		bgzf_read(fp, idx->meta + 28, x[7]);
-		hts_idx_load_core(idx, fp, HTS_FMT_TBI);
+		if (bgzf_read(fp, idx->meta + 28, x[7]) != x[7]) goto tbi_fail;
+		if (hts_idx_load_core(idx, fp, HTS_FMT_TBI) < 0) goto tbi_fail;
 		bgzf_close(fp);
+		return idx;
+
+	tbi_fail:
+		bgzf_close(fp);
+		hts_idx_destroy(idx);
+		return NULL;
+
 	} else if (fmt == HTS_FMT_BAI) {
 		uint32_t n;
 		FILE *fp;
 		if ((fp = fopen(fn, "rb")) == 0) return NULL;
-		if ( fread(magic, 1, 4, fp) != 4 ) return NULL;
-		if ( fread(&n, 4, 1, fp) != 1 ) return NULL;
+		if (fread(magic, 1, 4, fp) != 4) goto bai_fail;
+		if (memcmp(magic, "BAI\1", 4) != 0) goto bai_fail;
+		if (fread(&n, 4, 1, fp) != 1) goto bai_fail;
 		if (is_be) ed_swap_4p(&n);
 		idx = hts_idx_init(n, fmt, 0, 14, 5);
-		hts_idx_load_core(idx, fp, HTS_FMT_BAI);
+		if (hts_idx_load_core(idx, fp, HTS_FMT_BAI) < 0) goto bai_fail;
 		fclose(fp);
+		return idx;
+
+	bai_fail:
+		fclose(fp);
+		hts_idx_destroy(idx);
+		return NULL;
+
 	} else abort();
-	return idx;
 }
 
 void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy)

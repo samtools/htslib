@@ -80,6 +80,7 @@ static int aux_fields1(void)
     bam_hdr_t *header = sam_hdr_read(in);
     bam1_t *aln = bam_init1();
     uint8_t *p;
+    uint32_t n;
     kstring_t ks = { 0, 0, NULL };
 
     if (sam_read1(in, header, aln) >= 0) {
@@ -102,7 +103,7 @@ static int aux_fields1(void)
             fail("XH field is \"%s\", expected \"%s\"", bam_aux2Z(p), BEEF);
 
         // TODO Invent and use bam_aux2B()
-        if ((p = check_bam_aux_get(aln, "XB", 'B')) && memcmp(p, "Bc\3\0\0\0\xfe\x00\x02", 9) != 0)
+        if ((p = check_bam_aux_get(aln, "XB", 'B')) && ! (memcmp(p, "Bc", 2) == 0 && (memcpy(&n, p+2, 4), n) == 3 && memcmp(p+6, "\xfe\x00\x02", 3) == 0))
             fail("XB field is %c,..., expected c,-2,0,+2", p[1]);
 
         if ((p = check_bam_aux_get(aln, "ZZ", 'I')) && bam_aux2i(p) != 1000000)
