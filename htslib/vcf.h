@@ -352,6 +352,12 @@ extern "C" {
     bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr);
     /** Copy header lines from src to dst if not already present in dst. See also bcf_translate(). */
     void bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src);
+
+    /** 
+     *  bcf_hdr_add_sample() - add a new sample. 
+     *  @param sample:  Sample name to be added. After all samples have been added, NULL 
+     *                  must be passed to update internal header structures. 
+     */
     int bcf_hdr_add_sample(bcf_hdr_t *hdr, const char *sample);
 
     /** Read VCF header from a file and update the header */

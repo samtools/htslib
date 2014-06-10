@@ -31,6 +31,12 @@ int bcf_hdr_sync(bcf_hdr_t *h);
 
 int bcf_hdr_add_sample(bcf_hdr_t *h, const char *s)
 {
+    if ( !s )
+    {
+        bcf_hdr_sync(h);
+        return 0;
+    }
+
     const char *ss = s;
     while ( !*ss && isspace(*ss) ) ss++;
     if ( !*ss )
@@ -55,7 +61,6 @@ int bcf_hdr_add_sample(bcf_hdr_t *h, const char *s)
     int n = kh_size(d);
     h->samples = (char**) realloc(h->samples,sizeof(char*)*n);
     h->samples[n-1] = sdup;
-    bcf_hdr_sync(h);
     return 0;
 }
 
@@ -76,6 +81,7 @@ void bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
         if (*q == 0 || *q == '\n') break;
         p = q + 1;
     }
+    bcf_hdr_add_sample(h,NULL);
 }
 
 int bcf_hdr_sync(bcf_hdr_t *h)
