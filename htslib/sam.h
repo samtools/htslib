@@ -292,6 +292,8 @@ extern "C" {
 	#define sam_open(fn, mode) (hts_open((fn), (mode)))
 	#define sam_close(fp) hts_close(fp)
 
+	int sam_open_mode(char *mode, const char *fn, const char *format);
+
 	typedef htsFile samFile;
 	bam_hdr_t *sam_hdr_parse(int l_text, const char *text);
 	bam_hdr_t *sam_hdr_read(samFile *fp);

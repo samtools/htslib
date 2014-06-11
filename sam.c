@@ -1113,6 +1113,23 @@ char *bam_aux2Z(const uint8_t *s)
 	else return 0;
 }
 
+int sam_open_mode(char *mode, const char *fn, const char *format)
+{
+	// TODO Parse "bam5" etc for compression level
+	if (format == NULL) {
+		// Try to pick a format based on the filename extension
+		const char *ext = fn? strrchr(fn, '.') : NULL;
+		if (ext == NULL || strchr(ext, '/')) return -1;
+		return sam_open_mode(mode, fn, ext+1);
+	}
+	else if (strcmp(format, "bam") == 0) strcpy(mode, "b");
+	else if (strcmp(format, "cram") == 0) strcpy(mode, "c");
+	else if (strcmp(format, "sam") == 0) strcpy(mode, "");
+	else return -1;
+
+	return 0;
+}
+
 #define STRNCMP(a,b,n) (strncasecmp((a),(b),(n)) || strlen(a)!=(n))
 int bam_str2flag(const char *str)
 {
