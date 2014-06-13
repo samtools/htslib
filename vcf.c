@@ -1024,7 +1024,12 @@ bcf1_t *bcf_dup(bcf1_t *src)
 
 int bcf_write(htsFile *hfp, const bcf_hdr_t *h, bcf1_t *v)
 {
-    assert( bcf_hdr_nsamples(h)==v->n_sample );
+    if ( bcf_hdr_nsamples(h)!=v->n_sample )
+    {
+        fprintf(stderr,"[%s:%d %s] Broken VCF record, the number of columns at %s:%d does not match the number of samples (%d vs %d).\n", 
+            __FILE__,__LINE__,__FUNCTION__,bcf_seqname(h,v),v->pos+1, v->n_sample,bcf_hdr_nsamples(h));
+        return -1;
+    }
 
     if ( !hfp->is_bin ) return vcf_write(hfp,h,v);
 
