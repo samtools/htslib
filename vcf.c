@@ -1573,6 +1573,15 @@ int _vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char
 			}
 		}
 	}
+
+    if ( v->n_sample!=bcf_hdr_nsamples(h) ) 
+    {
+        fprintf(stderr,"[%s:%d %s] Number of columns at %s:%d does not match the number of samples (%d vs %d).\n", 
+             __FILE__,__LINE__,__FUNCTION__,bcf_seqname(h,v),v->pos+1, v->n_sample,bcf_hdr_nsamples(h));
+        v->errcode |= BCF_ERR_NCOLS;
+        return -1;
+    }
+
     return 0;
 }
 
