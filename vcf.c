@@ -930,6 +930,8 @@ static int bcf1_sync(bcf1_t *line)
         // to the original unchanged BCF data. 
         uint8_t *ptr_ori = (uint8_t *) line->shared.s;
 
+        assert( line->unpacked & BCF_UN_STR );
+
         // ID: single typed string
         if ( line->d.shared_dirty & BCF1_DIRTY_ID ) 
             bcf1_sync_id(line, &tmp);
@@ -947,23 +949,31 @@ static int bcf1_sync(bcf1_t *line)
         }
         ptr_ori += line->unpack_size[1];
 
-        // FILTER: typed vector of integers
-        if ( line->d.shared_dirty & BCF1_DIRTY_FLT )
-            bcf1_sync_filter(line, &tmp);
-        else if ( line->d.n_flt ) 
-            kputsn_(ptr_ori, line->unpack_size[2], &tmp);
-        else
-            bcf_enc_vint(&tmp, 0, 0, -1);
-        ptr_ori += line->unpack_size[2];
-
-        // INFO: pairs of typed vectors
-        if ( line->d.shared_dirty & BCF1_DIRTY_INF ) 
-            bcf1_sync_info(line, &tmp);
-        else
+        if ( line->unpacked & BCF_UN_FLT )
         {
-            int size = line->shared.l - (size_t)ptr_ori + (size_t)line->shared.s;
-            kputsn_(ptr_ori, size, &tmp);
+            // FILTER: typed vector of integers
+            if ( line->d.shared_dirty & BCF1_DIRTY_FLT )
+                bcf1_sync_filter(line, &tmp);
+            else if ( line->d.n_flt ) 
+                kputsn_(ptr_ori, line->unpack_size[2], &tmp);
+            else
+                bcf_enc_vint(&tmp, 0, 0, -1);
+            ptr_ori += line->unpack_size[2];
+
+            if ( line->unpacked & BCF_UN_INFO )
+            {
+                // INFO: pairs of typed vectors
+                if ( line->d.shared_dirty & BCF1_DIRTY_INF ) 
+                {
+                    bcf1_sync_info(line, &tmp);
+                    ptr_ori = (uint8_t*)line->shared.s + line->shared.l;
+                }
+            }
         }
+
+        int size = line->shared.l - (size_t)ptr_ori + (size_t)line->shared.s;
+        if ( size ) kputsn_(ptr_ori, size, &tmp);
+
         free(line->shared.s);
         line->shared = tmp;
     }
