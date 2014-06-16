@@ -2137,6 +2137,7 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
         int src_id = line->d.flt[i];
         if ( src_hdr->transl[BCF_DT_ID][src_id] >=0 ) 
             line->d.flt[i] = src_hdr->transl[BCF_DT_ID][src_id];
+        line->d.shared_dirty |= BCF1_DIRTY_FLT;
     }
 
     // INFO
@@ -2161,6 +2162,7 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
             assert( !info->vptr_free );
             kstring_t str = {0,0,0};
             bcf_enc_int1(&str, dst_id);
+            bcf_enc_size(&str, info->len,info->type);
             info->vptr_off = str.l;
             kputsn((char*)info->vptr, info->vptr_len, &str);
             info->vptr = (uint8_t*)str.s + info->vptr_off;
@@ -2192,6 +2194,7 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
             assert( !fmt->p_free );
             kstring_t str = {0,0,0};
             bcf_enc_int1(&str, dst_id);
+            bcf_enc_size(&str, fmt->n, fmt->type);
             fmt->p_off = str.l;
             kputsn((char*)fmt->p, fmt->p_len, &str);
             fmt->p = (uint8_t*)str.s + fmt->p_off;
