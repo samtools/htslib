@@ -296,6 +296,7 @@ static int inflate_gzip_block(BGZF *fp, int cached)
             fp->gz_stream->next_out = (Bytef*)fp->uncompressed_block + fp->block_offset;
             fp->gz_stream->avail_out = BGZF_MAX_BLOCK_SIZE - fp->block_offset;
             ret = inflate(fp->gz_stream, Z_NO_FLUSH);
+            if ( ret==Z_BUF_ERROR ) continue;   // non-critical error
             if ( ret<0 ) return -1;
             unsigned int have = BGZF_MAX_BLOCK_SIZE - fp->gz_stream->avail_out;
             if ( have ) return have; 
