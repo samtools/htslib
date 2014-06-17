@@ -113,6 +113,10 @@ typedef struct
 }
 bcf_srs_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /** Init bcf_srs_t struct */
 bcf_srs_t *bcf_sr_init(void);
 
@@ -251,5 +255,9 @@ int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, in
  *  all remaining records are processed.
  */
 void bcf_sr_regions_flush(bcf_sr_regions_t *regs);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
