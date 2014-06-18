@@ -150,7 +150,7 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
             { \
                 if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
                 if ( !(p[ial]>>1) || p[ial]==missing ) continue; /* missing allele */ \
-                assert((p[ial]>>1)-1<line->n_allele); \
+                if ( (p[ial]>>1)-1 >= line->n_allele ) return -1; \
                 ac[(p[ial]>>1)-1]++; \
             } \
         } \
