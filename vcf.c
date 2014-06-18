@@ -880,7 +880,7 @@ static inline void bcf1_sync_alleles(bcf1_t *line, kstring_t *str)
     int i;
     for (i=0; i<line->n_allele; i++)
         bcf_enc_vchar(str, strlen(line->d.allele[i]), line->d.allele[i]);
-    line->rlen = line->n_allele ? strlen(line->d.allele[0]) : 0;     // beware: this neglects SV's END tag
+    if ( !line->rlen && line->n_allele ) line->rlen = strlen(line->d.allele[0]);
 }
 static inline void bcf1_sync_filter(bcf1_t *line, kstring_t *str)
 {
@@ -945,7 +945,7 @@ static int bcf1_sync(bcf1_t *line)
         else
         {
             kputsn_(ptr_ori, line->unpack_size[1], &tmp);
-            line->rlen = line->n_allele ? strlen(line->d.allele[0]) : 0;     // beware: this neglects SV's END tag
+            if ( !line->rlen && line->n_allele ) line->rlen = strlen(line->d.allele[0]);
         }
         ptr_ori += line->unpack_size[1];
 
