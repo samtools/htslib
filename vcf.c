@@ -86,11 +86,11 @@ void bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
 
 int bcf_hdr_sync(bcf_hdr_t *h)
 {
-	int i;
-	for (i = 0; i < 3; i++) 
+        int i;
+        for (i = 0; i < 3; i++) 
     {
-		vdict_t *d = (vdict_t*)h->dict[i];
-		khint_t k;
+                vdict_t *d = (vdict_t*)h->dict[i];
+                khint_t k;
 
         // find out the largest id, there may be holes because of IDX
         int max_id = -1;
@@ -115,8 +115,8 @@ int bcf_hdr_sync(bcf_hdr_t *h)
             h->id[i][kh_val(d,k).id].key = kh_key(d,k);
             h->id[i][kh_val(d,k).id].val = &kh_val(d,k);
         }
-	}
-	return 0;
+        }
+        return 0;
 }
 
 void bcf_hrec_destroy(bcf_hrec_t *hrec)
@@ -526,7 +526,7 @@ int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt)
     bcf_hdr_parse_sample_line(hdr,p);
     if ( needs_sync ) bcf_hdr_sync(hdr);
     bcf_hdr_check_sanity(hdr);
-	return 0;
+        return 0;
 }
 
 int bcf_hdr_append(bcf_hdr_t *hdr, const char *line)
@@ -633,73 +633,73 @@ void bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
 
 bcf_hdr_t *bcf_hdr_init(const char *mode)
 {
-	int i;
-	bcf_hdr_t *h;
-	h = (bcf_hdr_t*)calloc(1, sizeof(bcf_hdr_t));
-	for (i = 0; i < 3; ++i)
-		h->dict[i] = kh_init(vdict);
+        int i;
+        bcf_hdr_t *h;
+        h = (bcf_hdr_t*)calloc(1, sizeof(bcf_hdr_t));
+        for (i = 0; i < 3; ++i)
+                h->dict[i] = kh_init(vdict);
     if ( strchr(mode,'w') )
     {
         bcf_hdr_append(h, "##fileformat=VCFv4.2");
         // The filter PASS must appear first in the dictionary
         bcf_hdr_append(h, "##FILTER=<ID=PASS,Description=\"All filters passed\">");
     }
-	return h;
+        return h;
 }
 
 void bcf_hdr_destroy(bcf_hdr_t *h)
 {
-	int i;
-	khint_t k;
-	for (i = 0; i < 3; ++i) {
-		vdict_t *d = (vdict_t*)h->dict[i];
-		if (d == 0) continue;
-		for (k = kh_begin(d); k != kh_end(d); ++k)
-			if (kh_exist(d, k)) free((char*)kh_key(d, k));
-		kh_destroy(vdict, d);
-		free(h->id[i]);
-	}
+        int i;
+        khint_t k;
+        for (i = 0; i < 3; ++i) {
+                vdict_t *d = (vdict_t*)h->dict[i];
+                if (d == 0) continue;
+                for (k = kh_begin(d); k != kh_end(d); ++k)
+                        if (kh_exist(d, k)) free((char*)kh_key(d, k));
+                kh_destroy(vdict, d);
+                free(h->id[i]);
+        }
     for (i=0; i<h->nhrec; i++)
         bcf_hrec_destroy(h->hrec[i]);
     if (h->nhrec) free(h->hrec);
     if (h->samples) free(h->samples);
     free(h->keep_samples);
     free(h->transl[0]); free(h->transl[1]);
-	free(h->mem.s);
-	free(h);
+        free(h->mem.s);
+        free(h);
 }
 
 bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
 {
-	if (!hfp->is_bin) 
+        if (!hfp->is_bin) 
         return vcf_hdr_read(hfp);
 
     BGZF *fp = hfp->fp.bgzf;
-	uint8_t magic[5];
-	bcf_hdr_t *h;
-	h = bcf_hdr_init("r");
-	if ( bgzf_read(fp, magic, 5)<0 ) 
+        uint8_t magic[5];
+        bcf_hdr_t *h;
+        h = bcf_hdr_init("r");
+        if ( bgzf_read(fp, magic, 5)<0 ) 
     {
         fprintf(stderr,"[%s:%d %s] Failed to read the header (reading BCF in text mode?)\n", __FILE__,__LINE__,__FUNCTION__);
         return NULL;
     }
-	if (strncmp((char*)magic, "BCF\2\2", 5) != 0) 
+        if (strncmp((char*)magic, "BCF\2\2", 5) != 0) 
     {
         if (!strncmp((char*)magic, "BCF", 3)) 
             fprintf(stderr,"[%s:%d %s] invalid BCF2 magic string: only BCFv2.2 is supported.\n", __FILE__,__LINE__,__FUNCTION__);
-		else if (hts_verbose >= 2)
-			fprintf(stderr, "[E::%s] invalid BCF2 magic string\n", __func__);
-		bcf_hdr_destroy(h);
-		return 0;
-	}
+                else if (hts_verbose >= 2)
+                        fprintf(stderr, "[E::%s] invalid BCF2 magic string\n", __func__);
+                bcf_hdr_destroy(h);
+                return 0;
+        }
     int hlen;
     char *htxt;
-	bgzf_read(fp, &hlen, 4);
-	htxt = (char*)malloc(hlen);
-	bgzf_read(fp, htxt, hlen);
-	bcf_hdr_parse(h, htxt);
+        bgzf_read(fp, &hlen, 4);
+        htxt = (char*)malloc(hlen);
+        bgzf_read(fp, htxt, hlen);
+        bcf_hdr_parse(h, htxt);
     free(htxt);
-	return h;
+        return h;
 }
 
 int bcf_hdr_write(htsFile *hfp, const bcf_hdr_t *h)
@@ -711,9 +711,9 @@ int bcf_hdr_write(htsFile *hfp, const bcf_hdr_t *h)
     hlen++; // include the \0 byte
 
     BGZF *fp = hfp->fp.bgzf;
-	if ( bgzf_write(fp, "BCF\2\2", 5) !=5 ) return -1;
-	if ( bgzf_write(fp, &hlen, 4) !=4 ) return -1;
-	if ( bgzf_write(fp, htxt, hlen) != hlen ) return -1;
+        if ( bgzf_write(fp, "BCF\2\2", 5) !=5 ) return -1;
+        if ( bgzf_write(fp, &hlen, 4) !=4 ) return -1;
+        if ( bgzf_write(fp, htxt, hlen) != hlen ) return -1;
 
     free(htxt);
     return 0;
@@ -725,9 +725,9 @@ int bcf_hdr_write(htsFile *hfp, const bcf_hdr_t *h)
 
 bcf1_t *bcf_init1()
 {
-	bcf1_t *v;
-	v = (bcf1_t*)calloc(1, sizeof(bcf1_t));
-	return v;
+        bcf1_t *v;
+        v = (bcf1_t*)calloc(1, sizeof(bcf1_t));
+        return v;
 }
 
 void bcf_clear(bcf1_t *v)
@@ -749,11 +749,11 @@ void bcf_clear(bcf1_t *v)
             v->d.fmt[i].p_free = 0;
         }
     }
-	v->rid = v->pos = v->rlen = v->unpacked = 0;
+        v->rid = v->pos = v->rlen = v->unpacked = 0;
     v->unpack_ptr = NULL;
-	bcf_float_set_missing(v->qual);
-	v->n_info = v->n_allele = v->n_fmt = v->n_sample = 0;
-	v->shared.l = v->indiv.l = 0;
+        bcf_float_set_missing(v->qual);
+        v->n_info = v->n_allele = v->n_fmt = v->n_sample = 0;
+        v->shared.l = v->indiv.l = 0;
     v->d.var_type = -1;
     v->d.shared_dirty = 0;
     v->d.indiv_dirty  = 0;
@@ -768,40 +768,40 @@ void bcf_empty1(bcf1_t *v)
     bcf_clear1(v);
     free(v->d.id);
     free(v->d.als);
-	free(v->d.allele); free(v->d.flt); free(v->d.info); free(v->d.fmt);
-	if (v->d.var ) free(v->d.var);
-	free(v->shared.s); free(v->indiv.s);
+        free(v->d.allele); free(v->d.flt); free(v->d.info); free(v->d.fmt);
+        if (v->d.var ) free(v->d.var);
+        free(v->shared.s); free(v->indiv.s);
 }
 
 void bcf_destroy1(bcf1_t *v)
 {
     bcf_empty1(v);
-	free(v);
+        free(v);
 }
 
 static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 {
-	uint32_t x[8];
-	int ret;
-	if ((ret = bgzf_read(fp, x, 32)) != 32) {
-		if (ret == 0) return -1;
-		return -2;
-	}
+        uint32_t x[8];
+        int ret;
+        if ((ret = bgzf_read(fp, x, 32)) != 32) {
+                if (ret == 0) return -1;
+                return -2;
+        }
     bcf_clear1(v);
-	x[0] -= 24; // to exclude six 32-bit integers
-	ks_resize(&v->shared, x[0]);
-	ks_resize(&v->indiv, x[1]);
-	memcpy(v, x + 2, 16);
-	v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
-	v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
-	v->shared.l = x[0], v->indiv.l = x[1];
+        x[0] -= 24; // to exclude six 32-bit integers
+        ks_resize(&v->shared, x[0]);
+        ks_resize(&v->indiv, x[1]);
+        memcpy(v, x + 2, 16);
+        v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
+        v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
+        v->shared.l = x[0], v->indiv.l = x[1];
 
     // silent fix of broken BCFs produced by earlier versions of bcf_subset, prior to and including bd6ed8b4
     if ( (!v->indiv.l || !v->n_sample) && v->n_fmt ) v->n_fmt = 0;
 
-	bgzf_read(fp, v->shared.s, v->shared.l);
-	bgzf_read(fp, v->indiv.s, v->indiv.l);
-	return 0;
+        bgzf_read(fp, v->shared.s, v->shared.l);
+        bgzf_read(fp, v->indiv.s, v->indiv.l);
+        return 0;
 }
 
 #define bit_array_size(n) ((n)/8+1)
@@ -861,11 +861,11 @@ int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 
 int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, int *beg, int *end)
 {
-	bcf1_t *v = (bcf1_t *) vv;
-	int ret;
-	if ((ret = bcf_read1_core(fp, v)) >= 0)
-		*tid = v->rid, *beg = v->pos, *end = v->pos + v->rlen;
-	return ret;
+        bcf1_t *v = (bcf1_t *) vv;
+        int ret;
+        if ((ret = bcf_read1_core(fp, v)) >= 0)
+                *tid = v->rid, *beg = v->pos, *end = v->pos + v->rlen;
+        return ret;
 }
 
 static inline void bcf1_sync_id(bcf1_t *line, kstring_t *str)
@@ -888,10 +888,16 @@ static inline void bcf1_sync_filter(bcf1_t *line, kstring_t *str)
     if ( line->d.n_flt ) bcf_enc_vint(str, line->d.n_flt, line->d.flt, -1);
     else bcf_enc_vint(str, 0, 0, -1);
 }
-static inline void bcf1_sync_info(bcf1_t *line, kstring_t *str)
+
+// @offset_array: will hold the offsets of vptr with respect to str->s
+// Cannot directly assign vptr to point within str->s as a kputs may invalidate the
+// address
+static inline void bcf1_sync_info(bcf1_t *line, kstring_t *str, int* offset_array)
 {
     // pairs of typed vectors
     int i, irm = -1;
+    int num_bytes_written = str->l;
+    int offset_idx = 0;
     for (i=0; i<line->n_info; i++)
     {
         bcf_info_t *info = &line->d.info[i];
@@ -901,7 +907,9 @@ static inline void bcf1_sync_info(bcf1_t *line, kstring_t *str)
             if ( irm < 0 ) irm = i;
             continue;
         }
-        kputsn_(info->vptr - info->vptr_off, info->vptr_len + info->vptr_off, str);
+        if(offset_array)
+            offset_array[offset_idx++] = num_bytes_written + info->vptr_off;
+        num_bytes_written += kputsn_(info->vptr - info->vptr_off, info->vptr_len + info->vptr_off, str);
         if ( irm >=0 )
         {
             bcf_info_t tmp = line->d.info[irm]; line->d.info[irm] = line->d.info[i]; line->d.info[i] = tmp;
@@ -914,6 +922,11 @@ static inline void bcf1_sync_info(bcf1_t *line, kstring_t *str)
 static int bcf1_sync(bcf1_t *line)
 {
     kstring_t tmp = {0,0,0};
+    //offset from start of tmp.s to the point where unpacking is done
+    //will be used to set line->unpack_ptr later
+    int unpack_offset = 0;
+    //offset_array: will hold the offsets of vptr in info fields with respect to tmp.s
+    int* offset_array = 0;
     if ( !line->shared.l )
     {
         // New line, get ready for BCF output
@@ -921,7 +934,7 @@ static int bcf1_sync(bcf1_t *line)
         bcf1_sync_id(line, &tmp);
         bcf1_sync_alleles(line, &tmp);
         bcf1_sync_filter(line, &tmp);
-        bcf1_sync_info(line, &tmp);
+        bcf1_sync_info(line, &tmp, offset_array);
         line->shared = tmp;
     }
     else if ( line->d.shared_dirty )
@@ -948,7 +961,8 @@ static int bcf1_sync(bcf1_t *line)
             if ( !line->rlen && line->n_allele ) line->rlen = strlen(line->d.allele[0]);
         }
         ptr_ori += line->unpack_size[1];
-
+        unpack_offset = tmp.l;
+        
         if ( line->unpacked & BCF_UN_FLT )
         {
             // FILTER: typed vector of integers
@@ -959,14 +973,33 @@ static int bcf1_sync(bcf1_t *line)
             else
                 bcf_enc_vint(&tmp, 0, 0, -1);
             ptr_ori += line->unpack_size[2];
-
+            unpack_offset = tmp.l;
+            
             if ( line->unpacked & BCF_UN_INFO )
             {
+                offset_array = (int*)malloc(line->n_info*sizeof(int));
                 // INFO: pairs of typed vectors
-                if ( line->d.shared_dirty & BCF1_DIRTY_INF ) 
+                if ( line->d.shared_dirty & BCF1_DIRTY_INF )
                 {
-                    bcf1_sync_info(line, &tmp);
+                    bcf1_sync_info(line, &tmp, offset_array); 
                     ptr_ori = (uint8_t*)line->shared.s + line->shared.l;
+                    unpack_offset = tmp.l;
+                }
+                else
+                {
+                    //INFO is clean, get number of bytes needed to store INFO from original line->shared.s
+                    //and add this number to unpack_offset
+                    unpack_offset += (int)((((uint8_t*)(line->shared.s)) + line->shared.l) - ptr_ori);
+                    int i = 0;
+                    for(i=0;i<line->n_info;++i)
+                    {
+                        bcf_info_t* info = &(line->d.info[i]);
+                        //vptr points to some region other than inside line->shared.s
+                        if(info->vptr_free || info->vptr == 0) 
+                            offset_array[i] = 0;
+                        else
+                            offset_array[i] = (int)(info->vptr - ((uint8_t*)(line->shared.s)));
+                    }
                 }
             }
         }
@@ -974,6 +1007,30 @@ static int bcf1_sync(bcf1_t *line)
         int size = line->shared.l - (size_t)ptr_ori + (size_t)line->shared.s;
         if ( size ) kputsn_(ptr_ori, size, &tmp);
 
+        // Two fixes:
+        // a. vptrs in d.info still point to locations inside old line->shared.s which is freed
+        // (see below). This causes some really nasty errors.
+        // b. unpack_ptr also has the same problem
+        // These fixes should be done only after final kputsn_/kputc on tmp
+        line->unpack_ptr = (uint8_t*)(tmp.s + unpack_offset);
+        if ( line->unpacked & BCF_UN_INFO )
+        {
+            int i = 0;
+            for(i=0;i<line->n_info;++i)
+            {
+                bcf_info_t* curr_info = &(line->d.info[i]);
+                //vptr should point to inside line->shared.s for correction
+                if(!(curr_info->vptr_free || curr_info->vptr == 0))
+                    curr_info->vptr = (uint8_t*)(tmp.s + offset_array[i]);
+                //A possible improvement - if BCF1_DIRTY_INF, then bcf1_sync_info would have written
+                //the most recent data to tmp.s. I think vptr can be freed (if vptr_free is true) and
+                //DIRTY bit can be unset. Not sure, so leaving as it is. Leaving it as it is does not 
+                //affect correctness, just consumes a little more memory and possibly a little more CPU
+                //time in future 
+            }
+            if(offset_array)
+                free(offset_array);
+        }
         free(line->shared.s);
         line->shared = tmp;
     }
@@ -1055,16 +1112,16 @@ int bcf_write(htsFile *hfp, const bcf_hdr_t *h, bcf1_t *v)
     bcf1_sync(v);   // check if the BCF record was modified
 
     BGZF *fp = hfp->fp.bgzf;
-	uint32_t x[8];
-	x[0] = v->shared.l + 24; // to include six 32-bit integers
-	x[1] = v->indiv.l;
-	memcpy(x + 2, v, 16);
-	x[6] = (uint32_t)v->n_allele<<16 | v->n_info;
-	x[7] = (uint32_t)v->n_fmt<<24 | v->n_sample;
-	if ( bgzf_write(fp, x, 32) != 32 ) return -1;
+        uint32_t x[8];
+        x[0] = v->shared.l + 24; // to include six 32-bit integers
+        x[1] = v->indiv.l;
+        memcpy(x + 2, v, 16);
+        x[6] = (uint32_t)v->n_allele<<16 | v->n_info;
+        x[7] = (uint32_t)v->n_fmt<<24 | v->n_sample;
+        if ( bgzf_write(fp, x, 32) != 32 ) return -1;
     if ( bgzf_write(fp, v->shared.s, v->shared.l) != v->shared.l ) return -1;
-	if ( bgzf_write(fp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;
-	return 0;
+        if ( bgzf_write(fp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;
+        return 0;
 }
 
 /**********************
@@ -1249,62 +1306,62 @@ int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
 
 void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
 {
-	int32_t max = INT32_MIN + 1, min = INT32_MAX;
-	int i;
-	if (n == 0) bcf_enc_size(s, 0, BCF_BT_NULL);
-	else if (n == 1) bcf_enc_int1(s, a[0]);
-	else {
-		if (wsize <= 0) wsize = n;
-		for (i = 0; i < n; ++i) {
-			if (a[i] == bcf_int32_missing || a[i] == bcf_int32_vector_end ) continue;
-			if (max < a[i]) max = a[i];
-			if (min > a[i]) min = a[i];
-		}
-		if (max <= INT8_MAX && min > bcf_int8_vector_end) {
-			bcf_enc_size(s, wsize, BCF_BT_INT8);
-			for (i = 0; i < n; ++i)
+        int32_t max = INT32_MIN + 1, min = INT32_MAX;
+        int i;
+        if (n == 0) bcf_enc_size(s, 0, BCF_BT_NULL);
+        else if (n == 1) bcf_enc_int1(s, a[0]);
+        else {
+                if (wsize <= 0) wsize = n;
+                for (i = 0; i < n; ++i) {
+                        if (a[i] == bcf_int32_missing || a[i] == bcf_int32_vector_end ) continue;
+                        if (max < a[i]) max = a[i];
+                        if (min > a[i]) min = a[i];
+                }
+                if (max <= INT8_MAX && min > bcf_int8_vector_end) {
+                        bcf_enc_size(s, wsize, BCF_BT_INT8);
+                        for (i = 0; i < n; ++i)
                 if ( a[i]==bcf_int32_vector_end ) kputc(bcf_int8_vector_end, s);
                 else if ( a[i]==bcf_int32_missing ) kputc(bcf_int8_missing, s);
                 else kputc(a[i], s);
-		} else if (max <= INT16_MAX && min > bcf_int16_vector_end) {
-			bcf_enc_size(s, wsize, BCF_BT_INT16);
-			for (i = 0; i < n; ++i) 
+                } else if (max <= INT16_MAX && min > bcf_int16_vector_end) {
+                        bcf_enc_size(s, wsize, BCF_BT_INT16);
+                        for (i = 0; i < n; ++i) 
             {
                 int16_t x;
                 if ( a[i]==bcf_int32_vector_end ) x = bcf_int16_vector_end;
                 else if ( a[i]==bcf_int32_missing ) x = bcf_int16_missing;
                 else x = a[i];
-				kputsn((char*)&x, 2, s);
-			}
-		} else {
-			bcf_enc_size(s, wsize, BCF_BT_INT32);
-			for (i = 0; i < n; ++i) {
-				int32_t x = a[i];
-				kputsn((char*)&x, 4, s);
-			}
-		}
-	}
+                                kputsn((char*)&x, 2, s);
+                        }
+                } else {
+                        bcf_enc_size(s, wsize, BCF_BT_INT32);
+                        for (i = 0; i < n; ++i) {
+                                int32_t x = a[i];
+                                kputsn((char*)&x, 4, s);
+                        }
+                }
+        }
 }
 
 void bcf_enc_vfloat(kstring_t *s, int n, float *a)
 {
-	bcf_enc_size(s, n, BCF_BT_FLOAT);
-	kputsn((char*)a, n << 2, s);
+        bcf_enc_size(s, n, BCF_BT_FLOAT);
+        kputsn((char*)a, n << 2, s);
 }
 
 void bcf_enc_vchar(kstring_t *s, int l, const char *a)
 {
-	bcf_enc_size(s, l, BCF_BT_CHAR);
-	kputsn(a, l, s);
+        bcf_enc_size(s, l, BCF_BT_CHAR);
+        kputsn(a, l, s);
 }
 
 void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 {
-	int j = 0;
-	if (n == 0) {
-		kputc('.', s);
-		return;
-	}
+        int j = 0;
+        if (n == 0) {
+                kputc('.', s);
+                return;
+        }
     if (type == BCF_BT_CHAR) 
     {
         char *p = (char*)data;
@@ -1339,10 +1396,10 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 
 uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr)
 {
-	int x, type;
-	x = bcf_dec_size(ptr, &ptr, &type);
-	bcf_fmt_array(s, x, type, ptr);
-	return ptr + (x << bcf_type_shift[type]);
+        int x, type;
+        x = bcf_dec_size(ptr, &ptr, &type);
+        bcf_fmt_array(s, x, type, ptr);
+        return ptr + (x << bcf_type_shift[type]);
 }
 
 /********************
@@ -1350,19 +1407,19 @@ uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr)
  ********************/
 
 typedef struct {
-	int key, max_m, size, offset;
-	uint32_t is_gt:1, max_g:15, max_l:16;
-	uint32_t y;
-	uint8_t *buf;
+        int key, max_m, size, offset;
+        uint32_t is_gt:1, max_g:15, max_l:16;
+        uint32_t y;
+        uint8_t *buf;
 } fmt_aux_t;
 
 static inline void align_mem(kstring_t *s)
 {
-	if (s->l&7) {
-		uint64_t zero = 0;
-		int l = ((s->l + 7)>>3<<3) - s->l;
-		kputsn((char*)&zero, l, s);
-	}
+        if (s->l&7) {
+                uint64_t zero = 0;
+                int l = ((s->l + 7)>>3<<3) - s->l;
+                kputsn((char*)&zero, l, s);
+        }
 }
 
 // p,q is the start and the end of the FORMAT field 
@@ -1565,24 +1622,24 @@ int _vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char
         m++; t++;
     }
 
-	// write individual genotype information
-	kstring_t *str = &v->indiv;
+        // write individual genotype information
+        kstring_t *str = &v->indiv;
     int i;
-	if (v->n_sample > 0) {
-		for (i = 0; i < v->n_fmt; ++i) {
-			fmt_aux_t *z = &fmt[i];
-			bcf_enc_int1(str, z->key);
-			if ((z->y>>4&0xf) == BCF_HT_STR && !z->is_gt) {
-				bcf_enc_size(str, z->size, BCF_BT_CHAR);
-				kputsn((char*)z->buf, z->size * v->n_sample, str);
-			} else if ((z->y>>4&0xf) == BCF_HT_INT || z->is_gt) {
-				bcf_enc_vint(str, (z->size>>2) * v->n_sample, (int32_t*)z->buf, z->size>>2);
-			} else {
-				bcf_enc_size(str, z->size>>2, BCF_BT_FLOAT);
-				kputsn((char*)z->buf, z->size * v->n_sample, str);
-			}
-		}
-	}
+        if (v->n_sample > 0) {
+                for (i = 0; i < v->n_fmt; ++i) {
+                        fmt_aux_t *z = &fmt[i];
+                        bcf_enc_int1(str, z->key);
+                        if ((z->y>>4&0xf) == BCF_HT_STR && !z->is_gt) {
+                                bcf_enc_size(str, z->size, BCF_BT_CHAR);
+                                kputsn((char*)z->buf, z->size * v->n_sample, str);
+                        } else if ((z->y>>4&0xf) == BCF_HT_INT || z->is_gt) {
+                                bcf_enc_vint(str, (z->size>>2) * v->n_sample, (int32_t*)z->buf, z->size>>2);
+                        } else {
+                                bcf_enc_size(str, z->size>>2, BCF_BT_FLOAT);
+                                kputsn((char*)z->buf, z->size * v->n_sample, str);
+                        }
+                }
+        }
 
     if ( v->n_sample!=bcf_hdr_nsamples(h) ) 
     {
@@ -1597,22 +1654,22 @@ int _vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char
 
 int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 {
-	int i = 0;
-	char *p, *q, *r, *t;
-	kstring_t *str;
-	khint_t k;
-	ks_tokaux_t aux;
+        int i = 0;
+        char *p, *q, *r, *t;
+        kstring_t *str;
+        khint_t k;
+        ks_tokaux_t aux;
 
     bcf_clear1(v);
-	str = &v->shared;
-	memset(&aux, 0, sizeof(ks_tokaux_t));
-	for (p = kstrtok(s->s, "\t", &aux), i = 0; p; p = kstrtok(0, 0, &aux), ++i) {
-		q = (char*)aux.p;
-		*q = 0;
-		if (i == 0) { // CHROM
-			vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
-			k = kh_get(vdict, d, p);
-			if (k == kh_end(d)) 
+        str = &v->shared;
+        memset(&aux, 0, sizeof(ks_tokaux_t));
+        for (p = kstrtok(s->s, "\t", &aux), i = 0; p; p = kstrtok(0, 0, &aux), ++i) {
+                q = (char*)aux.p;
+                *q = 0;
+                if (i == 0) { // CHROM
+                        vdict_t *d = (vdict_t*)h->dict[BCF_DT_CTG];
+                        k = kh_get(vdict, d, p);
+                        if (k == kh_end(d)) 
             {
                 // Simple error recovery for chromosomes not defined in the header. It will not help when VCF header has
                 // been already printed, but will enable tools like vcfcheck to proceed.
@@ -1625,47 +1682,47 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                 if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
                 k = kh_get(vdict, d, p);
                 v->errcode = BCF_ERR_CTG_UNDEF;
-			}
+                        }
             v->rid = kh_val(d, k).id;
-		} else if (i == 1) { // POS
-			v->pos = atoi(p) - 1;
-		} else if (i == 2) { // ID
-			if (strcmp(p, ".")) bcf_enc_vchar(str, q - p, p);
-			else bcf_enc_size(str, 0, BCF_BT_CHAR);
-		} else if (i == 3) { // REF
-			bcf_enc_vchar(str, q - p, p);
-			v->n_allele = 1, v->rlen = q - p;
-		} else if (i == 4) { // ALT
-			if (strcmp(p, ".")) {
-				for (r = t = p;; ++r) {
-					if (*r == ',' || *r == 0) {
-						bcf_enc_vchar(str, r - t, t);
-						t = r + 1;
-						++v->n_allele;
-					}
-					if (r == q) break;
-				}
-			}
-		} else if (i == 5) { // QUAL
-			if (strcmp(p, ".")) v->qual = atof(p);
-			else memcpy(&v->qual, &bcf_float_missing, 4);
+                } else if (i == 1) { // POS
+                        v->pos = atoi(p) - 1;
+                } else if (i == 2) { // ID
+                        if (strcmp(p, ".")) bcf_enc_vchar(str, q - p, p);
+                        else bcf_enc_size(str, 0, BCF_BT_CHAR);
+                } else if (i == 3) { // REF
+                        bcf_enc_vchar(str, q - p, p);
+                        v->n_allele = 1, v->rlen = q - p;
+                } else if (i == 4) { // ALT
+                        if (strcmp(p, ".")) {
+                                for (r = t = p;; ++r) {
+                                        if (*r == ',' || *r == 0) {
+                                                bcf_enc_vchar(str, r - t, t);
+                                                t = r + 1;
+                                                ++v->n_allele;
+                                        }
+                                        if (r == q) break;
+                                }
+                        }
+                } else if (i == 5) { // QUAL
+                        if (strcmp(p, ".")) v->qual = atof(p);
+                        else memcpy(&v->qual, &bcf_float_missing, 4);
             if ( v->max_unpack && !(v->max_unpack>>1) ) return 0; // BCF_UN_STR
-		} else if (i == 6) { // FILTER
-			if (strcmp(p, ".")) {
-				int32_t *a;
-				int n_flt = 1, i;
-				ks_tokaux_t aux1;
-				vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
-				// count the number of filters
-				if (*(q-1) == ';') *(q-1) = 0;
-				for (r = p; *r; ++r)
-					if (*r == ';') ++n_flt;
-				a = (int32_t*)alloca(n_flt * 4);
-				// add filters
-				for (t = kstrtok(p, ";", &aux1), i = 0; t; t = kstrtok(0, 0, &aux1)) {
-					*(char*)aux1.p = 0;
-					k = kh_get(vdict, d, t);
-					if (k == kh_end(d)) 
+                } else if (i == 6) { // FILTER
+                        if (strcmp(p, ".")) {
+                                int32_t *a;
+                                int n_flt = 1, i;
+                                ks_tokaux_t aux1;
+                                vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
+                                // count the number of filters
+                                if (*(q-1) == ';') *(q-1) = 0;
+                                for (r = p; *r; ++r)
+                                        if (*r == ';') ++n_flt;
+                                a = (int32_t*)alloca(n_flt * 4);
+                                // add filters
+                                for (t = kstrtok(p, ";", &aux1), i = 0; t; t = kstrtok(0, 0, &aux1)) {
+                                        *(char*)aux1.p = 0;
+                                        k = kh_get(vdict, d, t);
+                                        if (k == kh_end(d)) 
                     {
                         // Simple error recovery for FILTERs not defined in the header. It will not help when VCF header has
                         // been already printed, but will enable tools like vcfcheck to proceed.
@@ -1679,31 +1736,31 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         k = kh_get(vdict, d, t);
                         v->errcode = BCF_ERR_TAG_UNDEF;
                     }
-					a[i++] = kh_val(d, k).id;
-				}
-				n_flt = i;
-				bcf_enc_vint(str, n_flt, a, -1);
-			} else bcf_enc_vint(str, 0, 0, -1);
+                                        a[i++] = kh_val(d, k).id;
+                                }
+                                n_flt = i;
+                                bcf_enc_vint(str, n_flt, a, -1);
+                        } else bcf_enc_vint(str, 0, 0, -1);
             if ( v->max_unpack && !(v->max_unpack>>2) ) return 0;    // BCF_UN_FLT
-		} else if (i == 7) { // INFO
-			char *key;
-			vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
-			v->n_info = 0;
-			if (strcmp(p, ".")) {
-				if (*(q-1) == ';') *(q-1) = 0;
-				for (r = key = p;; ++r) {
-					int c;
-					char *val, *end;
-					if (*r != ';' && *r != '=' && *r != 0) continue;
-					val = end = 0;
-					c = *r; *r = 0;
-					if (c == '=') {
-						val = r + 1;
-						for (end = val; *end != ';' && *end != 0; ++end);
-						c = *end; *end = 0;
-					} else end = r;
-					k = kh_get(vdict, d, key);
-					if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_INFO] == 15) 
+                } else if (i == 7) { // INFO
+                        char *key;
+                        vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
+                        v->n_info = 0;
+                        if (strcmp(p, ".")) {
+                                if (*(q-1) == ';') *(q-1) = 0;
+                                for (r = key = p;; ++r) {
+                                        int c;
+                                        char *val, *end;
+                                        if (*r != ';' && *r != '=' && *r != 0) continue;
+                                        val = end = 0;
+                                        c = *r; *r = 0;
+                                        if (c == '=') {
+                                                val = r + 1;
+                                                for (end = val; *end != ';' && *end != 0; ++end);
+                                                c = *end; *end = 0;
+                                        } else end = r;
+                                        k = kh_get(vdict, d, key);
+                                        if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_INFO] == 15) 
                     {
                         fprintf(stderr, "[W::%s] INFO '%s' is not defined in the header, assuming Type=String\n", __func__, key);
                         kstring_t tmp = {0,0,0};
@@ -1764,10 +1821,10 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                 }
             }
             if ( v->max_unpack && !(v->max_unpack>>3) ) return 0; 
-		} else if (i == 8) // FORMAT
+                } else if (i == 8) // FORMAT
             return _vcf_parse_format(s, h, v, p, q);
-	}
-	return 0;
+        }
+        return 0;
 }
 
 int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
@@ -1815,12 +1872,12 @@ static inline uint8_t *bcf_unpack_info_core1(uint8_t *ptr, bcf_info_t *info)
 int bcf_unpack(bcf1_t *b, int which)
 {
     if ( !b->shared.l ) return 0; // Building a new BCF record from scratch
-	uint8_t *ptr = (uint8_t*)b->shared.s, *ptr_ori;
-	int *offset, i;
-	bcf_dec_t *d = &b->d;
-	if (which & BCF_UN_FLT) which |= BCF_UN_STR;
-	if (which & BCF_UN_INFO) which |= BCF_UN_SHR;
-	if ((which&BCF_UN_STR) && !(b->unpacked&BCF_UN_STR)) 
+    uint8_t *ptr = (uint8_t*)b->shared.s, *ptr_ori;
+    int *offset, i;
+    bcf_dec_t *d = &b->d;
+    if (which & BCF_UN_FLT) which |= BCF_UN_STR;
+    if (which & BCF_UN_INFO) which |= BCF_UN_SHR;
+    if ((which&BCF_UN_STR) && !(b->unpacked&BCF_UN_STR)) 
     { 
         kstring_t tmp; 
 
@@ -1849,87 +1906,87 @@ int bcf_unpack(bcf1_t *b, int which)
             d->allele[i] = d->als + offset[i];
         b->unpack_ptr = ptr;
         b->unpacked |= BCF_UN_STR;
-	}
-	if ((which&BCF_UN_FLT) && !(b->unpacked&BCF_UN_FLT)) { // FILTER
-		ptr = b->unpack_ptr;
+    }
+    if ((which&BCF_UN_FLT) && !(b->unpacked&BCF_UN_FLT)) { // FILTER
+        ptr = b->unpack_ptr;
         ptr_ori = ptr;
-		if (*ptr>>4) {
-			int type;
-			d->n_flt = bcf_dec_size(ptr, &ptr, &type);
-			hts_expand(int, d->n_flt, d->m_flt, d->flt);
-			for (i = 0; i < d->n_flt; ++i)
-				d->flt[i] = bcf_dec_int1(ptr, type, &ptr);
-		} else ++ptr, d->n_flt = 0;
+        if (*ptr>>4) {
+            int type;
+            d->n_flt = bcf_dec_size(ptr, &ptr, &type);
+            hts_expand(int, d->n_flt, d->m_flt, d->flt);
+            for (i = 0; i < d->n_flt; ++i)
+                d->flt[i] = bcf_dec_int1(ptr, type, &ptr);
+        } else ++ptr, d->n_flt = 0;
         b->unpack_size[2] = ptr - ptr_ori;
-		b->unpack_ptr = ptr;
-		b->unpacked |= BCF_UN_FLT;
-	}
-	if ((which&BCF_UN_INFO) && !(b->unpacked&BCF_UN_INFO)) { // INFO
-		ptr = b->unpack_ptr;
-		hts_expand(bcf_info_t, b->n_info, d->m_info, d->info);
-	    for (i = 0; i < d->m_info; ++i) d->info[i].vptr_free = 0;
-	    for (i = 0; i < b->n_info; ++i)
+        b->unpack_ptr = ptr;
+        b->unpacked |= BCF_UN_FLT;
+    }
+    if ((which&BCF_UN_INFO) && !(b->unpacked&BCF_UN_INFO)) { // INFO
+        ptr = b->unpack_ptr;
+        hts_expand(bcf_info_t, b->n_info, d->m_info, d->info);
+        for (i = 0; i < d->m_info; ++i) d->info[i].vptr_free = 0;
+        for (i = 0; i < b->n_info; ++i)
             ptr = bcf_unpack_info_core1(ptr, &d->info[i]);
-		b->unpacked |= BCF_UN_INFO;
-	}
-	if ((which&BCF_UN_FMT) && b->n_sample && !(b->unpacked&BCF_UN_FMT)) { // FORMAT
+        b->unpacked |= BCF_UN_INFO;
+    }
+    if ((which&BCF_UN_FMT) && b->n_sample && !(b->unpacked&BCF_UN_FMT)) { // FORMAT
         ptr = (uint8_t*)b->indiv.s;
-		hts_expand(bcf_fmt_t, b->n_fmt, d->m_fmt, d->fmt);
+        hts_expand(bcf_fmt_t, b->n_fmt, d->m_fmt, d->fmt);
         for (i = 0; i < d->m_fmt; ++i) d->fmt[i].p_free = 0;
         for (i = 0; i < b->n_fmt; ++i)
             ptr = bcf_unpack_fmt_core1(ptr, b->n_sample, &d->fmt[i]);
-		b->unpacked |= BCF_UN_FMT;
-	}
-	return 0;
+        b->unpacked |= BCF_UN_FMT;
+    }
+    return 0;
 }
 
 int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 {
-	int i;
-	bcf_unpack((bcf1_t*)v, BCF_UN_ALL);
-	kputs(h->id[BCF_DT_CTG][v->rid].key, s); // CHROM
-	kputc('\t', s); kputw(v->pos + 1, s); // POS
-	kputc('\t', s); kputs(v->d.id ? v->d.id : ".", s); // ID
-	kputc('\t', s); // REF
-	if (v->n_allele > 0) kputs(v->d.allele[0], s);
-	else kputc('.', s);
-	kputc('\t', s); // ALT
-	if (v->n_allele > 1) {
-		for (i = 1; i < v->n_allele; ++i) {
-			if (i > 1) kputc(',', s);
-			kputs(v->d.allele[i], s);
-		}
-	} else kputc('.', s);
-	kputc('\t', s); // QUAL
-	if (memcmp(&v->qual, &bcf_float_missing, 4) == 0) kputc('.', s); // QUAL
-	else ksprintf(s, "%g", v->qual);
-	kputc('\t', s); // FILTER
-	if (v->d.n_flt) {
-		for (i = 0; i < v->d.n_flt; ++i) {
-			if (i) kputc(';', s);
-			kputs(h->id[BCF_DT_ID][v->d.flt[i]].key, s);
-		}
-	} else kputc('.', s);
-	kputc('\t', s); // INFO
-	if (v->n_info) {
+        int i;
+        bcf_unpack((bcf1_t*)v, BCF_UN_ALL);
+        kputs(h->id[BCF_DT_CTG][v->rid].key, s); // CHROM
+        kputc('\t', s); kputw(v->pos + 1, s); // POS
+        kputc('\t', s); kputs(v->d.id ? v->d.id : ".", s); // ID
+        kputc('\t', s); // REF
+        if (v->n_allele > 0) kputs(v->d.allele[0], s);
+        else kputc('.', s);
+        kputc('\t', s); // ALT
+        if (v->n_allele > 1) {
+                for (i = 1; i < v->n_allele; ++i) {
+                        if (i > 1) kputc(',', s);
+                        kputs(v->d.allele[i], s);
+                }
+        } else kputc('.', s);
+        kputc('\t', s); // QUAL
+        if (memcmp(&v->qual, &bcf_float_missing, 4) == 0) kputc('.', s); // QUAL
+        else ksprintf(s, "%g", v->qual);
+        kputc('\t', s); // FILTER
+        if (v->d.n_flt) {
+                for (i = 0; i < v->d.n_flt; ++i) {
+                        if (i) kputc(';', s);
+                        kputs(h->id[BCF_DT_ID][v->d.flt[i]].key, s);
+                }
+        } else kputc('.', s);
+        kputc('\t', s); // INFO
+        if (v->n_info) {
         int first = 1;
-		for (i = 0; i < v->n_info; ++i) {
-			bcf_info_t *z = &v->d.info[i];
+                for (i = 0; i < v->n_info; ++i) {
+                        bcf_info_t *z = &v->d.info[i];
             if ( !z->vptr ) continue;
-			if ( !first ) kputc(';', s); first = 0;
-			kputs(h->id[BCF_DT_ID][z->key].key, s);
-			if (z->len <= 0) continue;
-			kputc('=', s);
-			if (z->len == 1) {
-				if (z->type == BCF_BT_FLOAT) ksprintf(s, "%g", z->v1.f);
-				else if (z->type != BCF_BT_CHAR) kputw(z->v1.i, s);
-				else kputc(z->v1.i, s);
-			} else bcf_fmt_array(s, z->len, z->type, z->vptr);
-		}
+                        if ( !first ) kputc(';', s); first = 0;
+                        kputs(h->id[BCF_DT_ID][z->key].key, s);
+                        if (z->len <= 0) continue;
+                        kputc('=', s);
+                        if (z->len == 1) {
+                                if (z->type == BCF_BT_FLOAT) ksprintf(s, "%g", z->v1.f);
+                                else if (z->type != BCF_BT_CHAR) kputw(z->v1.i, s);
+                                else kputc(z->v1.i, s);
+                        } else bcf_fmt_array(s, z->len, z->type, z->vptr);
+                }
         if ( first ) kputc('.', s);
-	} else kputc('.', s);
-	// FORMAT and individual information
-	if (v->n_sample)
+        } else kputc('.', s);
+        // FORMAT and individual information
+        if (v->n_sample)
     {
         int i,j;
         if ( v->n_fmt) 
@@ -1967,9 +2024,9 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
         else
             for (j=0; j<=v->n_sample; j++)
                 kputs("\t.", s);
-	}
+        }
     kputc('\n', s);
-	return 0;
+        return 0;
 }
 
 int vcf_write_line(htsFile *fp, kstring_t *line)
@@ -2001,10 +2058,10 @@ int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 
 int bcf_hdr_id2int(const bcf_hdr_t *h, int which, const char *id)
 {
-	khint_t k;
-	vdict_t *d = (vdict_t*)h->dict[which];
-	k = kh_get(vdict, d, id);
-	return k == kh_end(d)? -1 : kh_val(d, k).id;
+        khint_t k;
+        vdict_t *d = (vdict_t*)h->dict[which];
+        k = kh_get(vdict, d, id);
+        return k == kh_end(d)? -1 : kh_val(d, k).id;
 }
 
 
@@ -2014,53 +2071,53 @@ int bcf_hdr_id2int(const bcf_hdr_t *h, int which, const char *id)
 
 hts_idx_t *bcf_index(htsFile *fp, int min_shift)
 {
-	int n_lvls, i;
-	bcf1_t *b;
-	hts_idx_t *idx;
-	bcf_hdr_t *h;
-	int64_t max_len = 0, s;
-	h = bcf_hdr_read(fp);
+        int n_lvls, i;
+        bcf1_t *b;
+        hts_idx_t *idx;
+        bcf_hdr_t *h;
+        int64_t max_len = 0, s;
+        h = bcf_hdr_read(fp);
     if ( !h ) return NULL;
     int nids = 0;
-	for (i = 0; i < h->n[BCF_DT_CTG]; ++i)
+        for (i = 0; i < h->n[BCF_DT_CTG]; ++i)
     {
         if ( !h->id[BCF_DT_CTG][i].val ) continue;
-		if ( max_len < h->id[BCF_DT_CTG][i].val->info[0] ) max_len = h->id[BCF_DT_CTG][i].val->info[0];
+                if ( max_len < h->id[BCF_DT_CTG][i].val->info[0] ) max_len = h->id[BCF_DT_CTG][i].val->info[0];
         nids++;
     }
     if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
-	max_len += 256;
-	for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
-	idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
-	b = bcf_init1();
-	while (bcf_read1(fp,h, b) >= 0) {
-		int ret;
-		ret = hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp->fp.bgzf), 1);
-		if (ret < 0)
+        max_len += 256;
+        for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+        idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
+        b = bcf_init1();
+        while (bcf_read1(fp,h, b) >= 0) {
+                int ret;
+                ret = hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp->fp.bgzf), 1);
+                if (ret < 0)
         {
             bcf_destroy1(b);
             hts_idx_destroy(idx);
             return NULL;
         }
-	}
-	hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
-	bcf_destroy1(b);
-	bcf_hdr_destroy(h);
-	return idx;
+        }
+        hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
+        bcf_destroy1(b);
+        bcf_hdr_destroy(h);
+        return idx;
 }
 
 int bcf_index_build(const char *fn, int min_shift)
 {
     htsFile *fp;
-	hts_idx_t *idx;
-	if ((fp = hts_open(fn, "rb")) == 0) return -1;
+        hts_idx_t *idx;
+        if ((fp = hts_open(fn, "rb")) == 0) return -1;
     if ( !fp->fp.bgzf->is_compressed ) { hts_close(fp); return -1; }
-	idx = bcf_index(fp, min_shift);
-	hts_close(fp);
+        idx = bcf_index(fp, min_shift);
+        hts_close(fp);
     if ( !idx ) return -1;
-	hts_idx_save(idx, fn, HTS_FMT_CSI);
-	hts_idx_destroy(idx);
-	return 0;
+        hts_idx_save(idx, fn, HTS_FMT_CSI);
+        hts_idx_destroy(idx);
+        return 0;
 }
 
 /*****************
@@ -2219,37 +2276,37 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
 {
     int hlen;
     char *htxt = bcf_hdr_fmt_text(h0, 1, &hlen);
-	kstring_t str;
-	bcf_hdr_t *h;
-	str.l = str.m = 0; str.s = 0;
-	h = bcf_hdr_init("w");
+        kstring_t str;
+        bcf_hdr_t *h;
+        str.l = str.m = 0; str.s = 0;
+        h = bcf_hdr_init("w");
     bcf_hdr_set_version(h,bcf_hdr_get_version(h0));
     int j;
     for (j=0; j<n; j++) imap[j] = -1;
-	if ( bcf_hdr_nsamples(h0) > 0) {
-		char *p;
-		int i = 0, end = n? 8 : 7;
-		while ((p = strstr(htxt, "#CHROM\t")) != 0)
-			if (p > htxt && *(p-1) == '\n') break;
-		while ((p = strchr(p, '\t')) != 0 && i < end) ++i, ++p;
-		if (i != end) {
-			free(h); free(str.s);
-			return 0; // malformated header
-		}
-		kputsn(htxt, p - htxt, &str);
-		for (i = 0; i < n; ++i) {
-			imap[i] = bcf_hdr_id2int(h0, BCF_DT_SAMPLE, samples[i]);
-			if (imap[i] < 0) continue;
-			kputc('\t', &str);
-			kputs(samples[i], &str);
-		}
-	} else kputsn(htxt, hlen, &str);
+        if ( bcf_hdr_nsamples(h0) > 0) {
+                char *p;
+                int i = 0, end = n? 8 : 7;
+                while ((p = strstr(htxt, "#CHROM\t")) != 0)
+                        if (p > htxt && *(p-1) == '\n') break;
+                while ((p = strchr(p, '\t')) != 0 && i < end) ++i, ++p;
+                if (i != end) {
+                        free(h); free(str.s);
+                        return 0; // malformated header
+                }
+                kputsn(htxt, p - htxt, &str);
+                for (i = 0; i < n; ++i) {
+                        imap[i] = bcf_hdr_id2int(h0, BCF_DT_SAMPLE, samples[i]);
+                        if (imap[i] < 0) continue;
+                        kputc('\t', &str);
+                        kputs(samples[i], &str);
+                }
+        } else kputsn(htxt, hlen, &str);
     while (str.l && (!str.s[str.l-1] || str.s[str.l-1]=='\n') ) str.l--; // kill trailing zeros and newlines
     kputc('\n',&str);
-	bcf_hdr_parse(h, str.s);
+        bcf_hdr_parse(h, str.s);
     free(str.s);
     free(htxt);
-	return h;
+        return h;
 }
 
 int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples, int is_file)
@@ -2320,68 +2377,68 @@ int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples, int is_file)
 
 int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
 {
-	kstring_t ind;
-	ind.s = 0; ind.l = ind.m = 0;
-	if (n) {
-		bcf_fmt_t *fmt;
-		int i, j;
-		fmt = (bcf_fmt_t*)alloca(v->n_fmt * sizeof(bcf_fmt_t));
+        kstring_t ind;
+        ind.s = 0; ind.l = ind.m = 0;
+        if (n) {
+                bcf_fmt_t *fmt;
+                int i, j;
+                fmt = (bcf_fmt_t*)alloca(v->n_fmt * sizeof(bcf_fmt_t));
         uint8_t *ptr = (uint8_t*)v->indiv.s;
         for (i = 0; i < v->n_fmt; ++i)
             ptr = bcf_unpack_fmt_core1(ptr, v->n_sample, &fmt[i]);
-		for (i = 0; i < (int)v->n_fmt; ++i) {
-			bcf_fmt_t *f = &fmt[i];
-			bcf_enc_int1(&ind, f->id);
-			bcf_enc_size(&ind, f->n, f->type);
-			for (j = 0; j < n; ++j)
-				if (imap[j] >= 0) kputsn((char*)(f->p + imap[j] * f->size), f->size, &ind);
-		}
-		for (i = j = 0; j < n; ++j) if (imap[j] >= 0) ++i;
-		v->n_sample = i;
-	} else v->n_sample = 0;
+                for (i = 0; i < (int)v->n_fmt; ++i) {
+                        bcf_fmt_t *f = &fmt[i];
+                        bcf_enc_int1(&ind, f->id);
+                        bcf_enc_size(&ind, f->n, f->type);
+                        for (j = 0; j < n; ++j)
+                                if (imap[j] >= 0) kputsn((char*)(f->p + imap[j] * f->size), f->size, &ind);
+                }
+                for (i = j = 0; j < n; ++j) if (imap[j] >= 0) ++i;
+                v->n_sample = i;
+        } else v->n_sample = 0;
     if ( !v->n_sample ) v->n_fmt = 0;
-	free(v->indiv.s);
-	v->indiv = ind;
+        free(v->indiv.s);
+        v->indiv = ind;
     v->unpacked &= ~BCF_UN_FMT;    // only BCF is ready for output, VCF will need to unpack again
-	return 0;
+        return 0;
 }
 
 int bcf_is_snp(bcf1_t *v)
 {
-	int i;
-	bcf_unpack(v, BCF_UN_STR);
-	for (i = 0; i < v->n_allele; ++i)
-		if (strlen(v->d.allele[i]) != 1) break;
-	return i == v->n_allele;
+        int i;
+        bcf_unpack(v, BCF_UN_STR);
+        for (i = 0; i < v->n_allele; ++i)
+                if (strlen(v->d.allele[i]) != 1) break;
+        return i == v->n_allele;
 }
 
 static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *var)
 {
-	// The most frequent case
-	if ( !ref[1] && !alt[1] )
-	{
-		if ( *alt == '.' || *ref==*alt ) { var->n = 0; var->type = VCF_REF; return; }
+        // The most frequent case
+        if ( !ref[1] && !alt[1] )
+        {
+                if ( *alt == '.' || *ref==*alt ) { var->n = 0; var->type = VCF_REF; return; }
         if ( *alt == 'X' ) { var->n = 0; var->type = VCF_REF; return; }  // mpileup's X allele shouldn't be treated as variant
-		var->n = 1; var->type = VCF_SNP; return;
-	}
+                var->n = 1; var->type = VCF_SNP; return;
+        }
 
-	const char *r = ref, *a = alt;
-	while (*r && *a && *r==*a ) { r++; a++; }
+        const char *r = ref, *a = alt;
+        while (*r && *a && *r==*a ) { r++; a++; }
 
-	if ( *a && !*r )
-	{
-		while ( *a ) a++;
-		var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
-	}
-	else if ( *r && !*a )
-	{
-		while ( *r ) r++;
-		var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
-	}
-	else if ( !*r && !*a )
-	{
-		var->n = 0; var->type = VCF_REF; return;
-	}
+        if ( *a && !*r )
+        {
+                while ( *a ) a++;
+                var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
+        }
+        else if ( *r && !*a )
+        {
+                while ( *r ) r++;
+                var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
+        }
+        else if ( !*r && !*a )
+        {
+                var->n = 0; var->type = VCF_REF; return;
+        }
 
     const char *re = r, *ae = a;
     while ( re[1] ) re++;
@@ -2401,29 +2458,29 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
         var->type = VCF_OTHER; return;
     }
 
-	var->type = ( re-r == ae-a ) ? VCF_MNP : VCF_OTHER;
+        var->type = ( re-r == ae-a ) ? VCF_MNP : VCF_OTHER;
     var->n = ( re-r > ae-a ) ? -(re-r+1) : ae-a+1;
 
-	// should do also complex events, SVs, etc...
+        // should do also complex events, SVs, etc...
 }
 
 static void bcf_set_variant_types(bcf1_t *b)
 {
     if ( !(b->unpacked & BCF_UN_STR) ) bcf_unpack(b, BCF_UN_STR);
-	bcf_dec_t *d = &b->d;
-	if ( d->n_var < b->n_allele ) 
-	{
-		d->var = (variant_t *) realloc(d->var, sizeof(variant_t)*b->n_allele);
-		d->n_var = b->n_allele;
-	}
-	int i;
-	b->d.var_type = 0;
-	for (i=1; i<b->n_allele; i++)
-	{
-		bcf_set_variant_type(d->allele[0],d->allele[i], &d->var[i]);
-		b->d.var_type |= d->var[i].type;
-		//fprintf(stderr,"[set_variant_type] %d   %s %s -> %d %d .. %d\n", b->pos+1,d->allele[0],d->allele[i],d->var[i].type,d->var[i].n, b->d.var_type);
-	}
+        bcf_dec_t *d = &b->d;
+        if ( d->n_var < b->n_allele ) 
+        {
+                d->var = (variant_t *) realloc(d->var, sizeof(variant_t)*b->n_allele);
+                d->n_var = b->n_allele;
+        }
+        int i;
+        b->d.var_type = 0;
+        for (i=1; i<b->n_allele; i++)
+        {
+                bcf_set_variant_type(d->allele[0],d->allele[i], &d->var[i]);
+                b->d.var_type |= d->var[i].type;
+                //fprintf(stderr,"[set_variant_type] %d   %s %s -> %d %d .. %d\n", b->pos+1,d->allele[0],d->allele[i],d->var[i].type,d->var[i].n, b->d.var_type);
+        }
 }
 
 int bcf_get_variant_types(bcf1_t *rec)
