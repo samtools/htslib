@@ -552,7 +552,16 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
 	if (bidx == 0) return;
 	for (k = kh_begin(bidx); k != kh_end(bidx); ++k) // set loff
 		if (kh_exist(bidx, k))
-			kh_val(bidx, k).loff = kh_key(bidx, k) < idx->n_bins? lidx->offset[hts_bin_bot(kh_key(bidx, k), idx->n_lvls)] : 0;
+        {
+            if ( kh_key(bidx, k) < idx->n_bins )
+            {
+                int bot_bin = hts_bin_bot(kh_key(bidx, k), idx->n_lvls);
+                // disable linear index if bot_bin out of bounds
+                kh_val(bidx, k).loff = bot_bin < lidx->n ? lidx->offset[bot_bin] : 0;
+            }
+            else
+                kh_val(bidx, k).loff = 0;
+        }
 	if (free_lidx) {
 		free(lidx->offset);
 		lidx->m = lidx->n = 0;
