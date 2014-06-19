@@ -17,5 +17,5 @@ lib*.so.*
 /test/test_view
 /test/*.tmp
 /test/*.tmp.*
-
+/memcheck/memcheck
 /TAGS
