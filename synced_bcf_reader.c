@@ -511,6 +511,8 @@ static int _reader_match_alleles(bcf_srs_t *files, bcf_sr_t *reader, bcf1_t *tmp
                 if ( nmatch==tmpl->n_allele ) { irec=i; break; }    // found: exact match
                 continue;
             }
+
+            if ( line->n_allele==1 && tmpl->n_allele==1 ) { irec=i; break; }    // both sites are non-variant
             
             // COLLAPSE_SOME: at least some ALTs must match
             for (ial=1; ial<tmpl->n_allele; ial++)
