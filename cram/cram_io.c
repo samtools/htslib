@@ -1433,8 +1433,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if (fd->verbose)
 	fprintf(stderr, "cram_populate_ref on fd %p, id %d\n", fd, id);
 
-    if (!ref_path)
-	ref_path = ".";
+    if (!ref_path || *ref_path == 0)
+	ref_path = "http://www.ebi.ac.uk:80/ena/cram/md5/%s";
 
     if (!r->name)
 	return -1;
