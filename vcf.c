@@ -273,9 +273,20 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     while ( *q && *q!='\n' && nopen )
     {
         p = ++q;
-        while ( *q && *q!='=' ) q++;
+        while ( *q && isalnum(*q) ) q++;
         n = q-p;
-        if ( *q!='=' || !n ) { *len = q-line+1; bcf_hrec_destroy(hrec); return NULL; } // wrong format
+        if ( *q!='=' || !n ) 
+        { 
+            // wrong format
+            while ( *q && *q!='\n' ) q++;
+            kstring_t tmp = {0,0,0};
+            kputsn(line,q-line,&tmp);
+            fprintf(stderr,"Could not parse the header line: \"%s\"\n", tmp.s);
+            free(tmp.s);
+            *len = q-line+1;
+            bcf_hrec_destroy(hrec); 
+            return NULL; 
+        }
         bcf_hrec_add_key(hrec, p, q-p);
         p = ++q;
         int quoted = *p=='"' ? 1 : 0;
@@ -427,6 +438,8 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
 int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 {
+    if ( !hrec ) return 0;
+
     hrec->type = BCF_HL_GEN;
     if ( !bcf_hdr_register_hrec(hdr,hrec) )
     {
@@ -509,7 +522,7 @@ int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt)
 
     // Check sanity: "fileformat" string must come as first
     bcf_hrec_t *hrec = bcf_hdr_parse_line(hdr,p,&len);
-    if ( !hrec->key || strcasecmp(hrec->key,"fileformat") )
+    if ( !hrec || !hrec->key || strcasecmp(hrec->key,"fileformat") )
         fprintf(stderr, "[W::%s] The first line should be ##fileformat; is the VCF/BCF header broken?\n", __func__);
     needs_sync += bcf_hdr_add_hrec(hdr, hrec);
 
@@ -1199,7 +1212,7 @@ int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname)
     {
         int k;
         bcf_hrec_t *hrec = bcf_hdr_parse_line(hdr,lines[i],&k);
-        bcf_hdr_add_hrec(hdr, hrec);
+        if ( hrec ) bcf_hdr_add_hrec(hdr, hrec);
         free(lines[i]);
     }
     bcf_hdr_parse_sample_line(hdr,lines[n-1]);
