@@ -107,7 +107,8 @@ typedef struct
     int explicit_regs;  // was the list of regions se by bcf_sr_set_regions or guessed from tabix index?
 	char **samples;	// List of samples 
     bcf_sr_regions_t *regions, *targets;    // see bcf_sr_set_[targets|regions] for description
-    int targets_als;    // subset to targets not only by position but also by alleles? (todo)
+    int targets_als;    // subset to targets not only by position but also by alleles?
+    int targets_exclude;
     kstring_t tmps;
 	int n_smpl;
 }
@@ -193,6 +194,8 @@ int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples, int is_file);
  *  duplicate VCF lines. It is up to the caller to examine targets->als if
  *  perfect match is sought after. Note that the duplicate positions in targets
  *  file are currently not supported.
+ *  Targets (but not regions) can be prefixed with "^" to request logical complement,
+ *  for example "^X,Y,MT" indicates that sequences X, Y and MT should be skipped.
  */
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles);
 int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file);

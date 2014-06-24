@@ -74,6 +74,11 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles)
 {
     assert( !readers->targets );
+    if ( targets[0]=='^' ) 
+    {
+        readers->targets_exclude = 1;
+        targets++;
+    }
     readers->targets = bcf_sr_regions_init(targets,is_file,0,1,-2);
     if ( !readers->targets ) return -1;
     readers->targets_als = alleles;
@@ -570,7 +575,8 @@ int _reader_next_line(bcf_srs_t *files)
         // Skip this position if not present in targets
         if ( files->targets )
         {
-            if ( bcf_sr_regions_overlap(files->targets, chr, min_pos, min_pos)<0 ) 
+            int ret = bcf_sr_regions_overlap(files->targets, chr, min_pos, min_pos);
+            if ( (!files->targets_exclude && ret<0) || (files->targets_exclude && !ret) )
             {
                 // Remove all lines with this position from the buffer
                 for (i=0; i<files->nreaders; i++)
