@@ -407,7 +407,6 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
                 var = BCF_VL_FIXED;
             }
             if (var != BCF_VL_FIXED) num = 0xfffff;
-
         }
     }
     uint32_t info = (uint32_t)num<<12 | var<<8 | type<<4 | hrec->type;
@@ -536,8 +535,7 @@ int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt)
         needs_sync += bcf_hdr_add_hrec(hdr, hrec);
         p += len;
     }
-    bcf_hdr_parse_sample_line(hdr,p);
-    if ( needs_sync ) bcf_hdr_sync(hdr);
+    bcf_hdr_parse_sample_line(hdr,p);   // calls hdr_sync
     bcf_hdr_check_sanity(hdr);
     return 0;
 }
@@ -1183,7 +1181,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
         const char **names = tbx_seqnames(idx, &n);
         for (i=0; i<n; i++)
         {
-            bcf_hrec_t *hrec = bcf_hdr_get_hrec(h, BCF_DT_CTG, (char*) names[i]);
+            bcf_hrec_t *hrec = bcf_hdr_get_hrec(h, BCF_HL_CTG, (char*) names[i]);
             if ( hrec ) continue;
             hrec = (bcf_hrec_t*) calloc(1,sizeof(bcf_hrec_t));
             hrec->key = strdup("contig");
@@ -2122,9 +2120,9 @@ int bcf_index_build(const char *fn, int min_shift)
  *** Utilities ***
  *****************/
 
-void bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src)
+int bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src)
 {
-    int i, ndst_ori = dst->nhrec, need_sync = 0;
+    int i, ndst_ori = dst->nhrec, need_sync = 0, ret = 0;
     for (i=0; i<src->nhrec; i++)
     {
         if ( src->hrec[i]->type==BCF_HL_GEN && src->hrec[i]->value )
@@ -2143,9 +2141,24 @@ void bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src)
             bcf_hrec_t *rec = bcf_hdr_get_hrec(dst, src->hrec[i]->type, src->hrec[i]->vals[0]);
             if ( !rec )
                 need_sync += bcf_hdr_add_hrec(dst, bcf_hrec_dup(src->hrec[i]));
+            else if ( src->hrec[i]->type==BCF_HL_INFO || src->hrec[i]->type==BCF_HL_FMT )
+            {
+                // Check that both records are of the same type. The bcf_hdr_id2length
+                // macro cannot be used here because dst header is not synced yet.
+                vdict_t *d_src = (vdict_t*)src->dict[BCF_DT_ID];
+                vdict_t *d_dst = (vdict_t*)dst->dict[BCF_DT_ID];
+                khint_t k_src  = kh_get(vdict, d_src, src->hrec[i]->vals[0]);
+                khint_t k_dst  = kh_get(vdict, d_dst, src->hrec[i]->vals[0]);
+                if ( (kh_val(d_src,k_src).info[rec->type]>>8 & 0xf) != (kh_val(d_dst,k_dst).info[rec->type]>>8 & 0xf) )
+                {
+                    fprintf(stderr,"Warning: trying to combine \"%s\" tag definitions of different lengths\n", src->hrec[i]->vals[0]);
+                    ret |= 1;
+                }
+            }
         }
     }
     if ( need_sync ) bcf_hdr_sync(dst);
+    return ret;
 }
 int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
 {

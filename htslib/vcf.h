@@ -350,8 +350,13 @@ extern "C" {
 
     /** Create a new header using the supplied template */
     bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr);
-    /** Copy header lines from src to dst if not already present in dst. See also bcf_translate(). */
-    void bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src);
+    /** 
+     *  Copy header lines from src to dst if not already present in dst. See also bcf_translate(). 
+     *  Returns 0 on success or sets a bit on error:
+     *      1 .. conflicting definitions of tag length
+     *      // todo
+     */
+    int bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src);
 
     /** 
      *  bcf_hdr_add_sample() - add a new sample. 
