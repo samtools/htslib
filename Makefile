@@ -194,7 +194,7 @@ cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c $(cram_h) cram/os.h
 cram/files.o cram/files.pico: cram/files.c $(cram_misc_h)
 cram/mFILE.o cram/mFILE.pico: cram/mFILE.c cram/os.h cram/mFILE.h cram/vlen.h
 cram/md5.o cram/md5.pico: cram/md5.c cram/md5.h
-cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c $(cram_open_trace_file_h) $(cram_misc_h)
+cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h)
 cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c cram/pooled_alloc.h
 cram/sam_header.o cram/sam_header.pico: cram/sam_header.c $(cram_sam_header_h) cram/string_alloc.h
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c cram/string_alloc.h

@@ -32,7 +32,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 /*
-Copyright (c) 2008, 2009, 2013 Genome Research Ltd.
+Copyright (c) 2008, 2009, 2013, 2014 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without 
@@ -73,12 +73,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef PATH_MAX
 #  define PATH_MAX 1024
 #endif
-#ifdef HAVE_LIBCURL
-#  include <curl/curl.h>
-#endif
 
 #include "cram/open_trace_file.h"
 #include "cram/misc.h"
+#include "htslib/hfile.h"
 
 /*
  * Tokenises the search path splitting on colons (unix) or semicolons
@@ -117,6 +115,34 @@ char *tokenise_search_path(char *searchpath) {
 	    continue;
 	}
 
+	/* Handle http:// and ftp:// too without :: */
+	if (path_sep == ':') {
+	    if ((i == 0 || (i > 0 && searchpath[i-1] == ':')) &&
+		(!strncmp(&searchpath[i], "http:",     5) ||
+		 !strncmp(&searchpath[i], "ftp:",      4) ||
+		 !strncmp(&searchpath[i], "|http:",    6) ||
+		 !strncmp(&searchpath[i], "|ftp:",     5) ||
+		 !strncmp(&searchpath[i], "URL=http:", 9) ||
+		 !strncmp(&searchpath[i], "URL=ftp:",  8))) {
+		do {
+		    newsearch[j++] = searchpath[i];
+		} while (i<len && searchpath[i++] != ':');
+		if (searchpath[i] == ':')
+		    i++;
+		if (searchpath[i]=='/')
+		    newsearch[j++] = searchpath[i++];
+		if (searchpath[i]=='/')
+		    newsearch[j++] = searchpath[i++];
+		// Look for host:port
+		do {
+		    newsearch[j++] = searchpath[i++];
+		} while (i<len && searchpath[i] != ':' && searchpath[i] != '/');
+		newsearch[j++] = searchpath[i++];
+		if (searchpath[i] == ':')
+		    i++;
+	    }
+	}
+
 	if (searchpath[i] == path_sep) {
 	    /* Skip blank path components */
 	    if (j && newsearch[j-1] != 0)
@@ -136,26 +162,11 @@ char *tokenise_search_path(char *searchpath) {
     return newsearch;
 }
 
-#ifdef HAVE_LIBCURL
 mFILE *find_file_url(char *file, char *url) {
     char buf[8192], *cp;
-    mFILE *mf = NULL, *headers = NULL;
-    int maxlen = 8190 - strlen(file);
-    static CURL *handle = NULL;
-    static int curl_init = 0;
-    char errbuf[CURL_ERROR_SIZE];
-
-    *errbuf = 0;
-
-    if (!curl_init) {
-	if (curl_global_init(CURL_GLOBAL_ALL))
-	    return NULL;
-
-	if (NULL == (handle = curl_easy_init()))
-	    goto error;
-
-	curl_init = 1;
-    }
+    mFILE *mf = NULL;
+    int maxlen = 8190 - strlen(file), len;
+    hFILE *hf;
 
     /* Expand %s for the trace name */
     for (cp = buf; *url && cp - buf < maxlen; url++) {
@@ -168,68 +179,26 @@ mFILE *find_file_url(char *file, char *url) {
     }
     *cp++ = 0;
 
-    /* Setup the curl */
-    if (NULL == (mf = mfcreate(NULL, 0)) ||
-	NULL == (headers = mfcreate(NULL, 0)))
+    if (!(hf = hopen(buf, "r")))
 	return NULL;
 
-    if (0 != curl_easy_setopt(handle, CURLOPT_URL, buf))
-	goto error;
-    if (0 != curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 60L))
-	goto error;
-    if (0 != curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION,
-			      (curl_write_callback)mfwrite))
-	goto error;
-    if (0 != curl_easy_setopt(handle, CURLOPT_WRITEDATA, mf))
-	goto error;
-    if (0 != curl_easy_setopt(handle, CURLOPT_HEADERFUNCTION,
-			      (curl_write_callback)mfwrite))
-	goto error;
-    if (0 != curl_easy_setopt(handle, CURLOPT_WRITEHEADER, headers))
-	goto error;
-    if (0 != curl_easy_setopt(handle, CURLOPT_ERRORBUFFER, errbuf))
-	goto error;
-    
-    /* Fetch! */
-    if (0 != curl_easy_perform(handle))
-	goto error;
-    
-    /* Report errors is approproate. 404 is silent as it may have just been
-     * a search via RAWDATA path, everything else is worth reporting.
-     */
-    {
-	float version;
-	int response;
-	char nul = 0;
-	mfwrite(&nul, 1, 1, headers);
-	if (2 == sscanf(headers->data, "HTTP/%f %d", &version, &response)) {
-	    if (response != 200) {
-		if (response != 404)
-		    fprintf(stderr, "%.*s\n",
-			    (int)headers->size, headers->data);
-		goto error;
-	    }
+    if (NULL == (mf = mfcreate(NULL, 0)))
+	return NULL;
+    while ((len = hread(hf, buf, 8192)) > 0) {
+	if (mfwrite(buf, len, 1, mf) <= 0) {
+	    hclose_abruptly(hf);
+	    mfdestroy(mf);
+	    return NULL;
 	}
     }
-
-    if (mftell(mf) == 0)
-	goto error;
-
-    mfdestroy(headers);
+    if (hclose(hf) < 0) {
+	mfdestroy(mf);
+	return NULL;
+    }
 
     mrewind(mf);
     return mf;
-
- error:
-    if (mf)
-	mfdestroy(mf);
-    if (headers)
-	mfdestroy(headers);
-    if (*errbuf)
-	fprintf(stderr, "%s\n", errbuf);
-    return NULL;
 }
-#endif
 
 /*
  * Searches for file in the directory 'dirname'. If it finds it, it opens
@@ -354,15 +323,17 @@ mFILE *open_path_mfile(char *file, char *path, char *relative_to) {
 
 	    sprintf(file2, "%s%s", file, suffix[i]);
 
-#if defined(HAVE_LIBCURL)
 	    if (0 == strncmp(ele2, "URL=", 4)) {
 		if (valid && (fp = find_file_url(file2, ele2+4))) {
 		    free(newsearch);
 		    return fp;
 		}
-	    } else
-#endif
-	    if (valid && (fp = find_file_dir(file2, ele2))) {
+	    } else if (!strncmp(ele2, "http:", 5) || !strncmp(ele2, "ftp:", 4)) {
+		if (valid && (fp = find_file_url(file2, ele2))) {
+		    free(newsearch);
+		    return fp;
+		}
+	    } else if (valid && (fp = find_file_dir(file2, ele2))) {
 		free(newsearch);
 		return fp;
 	    }
