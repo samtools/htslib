@@ -2419,7 +2419,15 @@ int bcf_is_snp(bcf1_t *v)
     int i;
     bcf_unpack(v, BCF_UN_STR);
     for (i = 0; i < v->n_allele; ++i)
-        if (strlen(v->d.allele[i]) != 1) break;
+    {
+        if ( v->d.allele[i][1]==0 ) continue;
+
+        // mpileup's <X> allele, see also below. This is not completely satisfactory,
+        // a general library is here narrowly tailored to fit samtools.
+        if ( v->d.allele[i][0]=='<' && v->d.allele[i][1]=='X' && v->d.allele[i][2]=='>' ) continue;
+
+        break;
+    }
     return i == v->n_allele;
 }
 
@@ -2431,6 +2439,12 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
         if ( *alt == '.' || *ref==*alt ) { var->n = 0; var->type = VCF_REF; return; }
         if ( *alt == 'X' ) { var->n = 0; var->type = VCF_REF; return; }  // mpileup's X allele shouldn't be treated as variant
         var->n = 1; var->type = VCF_SNP; return;
+    }
+    if ( alt[0]=='<' ) 
+    { 
+        if ( alt[1]=='X' && alt[2]=='>' ) { var->n = 0; var->type = VCF_REF; return; }  // mpileup's X allele shouldn't be treated as variant
+        var->type = VCF_OTHER; 
+        return; 
     }
 
     const char *r = ref, *a = alt;
