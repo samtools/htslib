@@ -120,6 +120,8 @@ char *tokenise_search_path(char *searchpath) {
 	    if ((i == 0 || (i > 0 && searchpath[i-1] == ':')) &&
 		(!strncmp(&searchpath[i], "http:",     5) ||
 		 !strncmp(&searchpath[i], "ftp:",      4) ||
+		 !strncmp(&searchpath[i], "|http:",    6) ||
+		 !strncmp(&searchpath[i], "|ftp:",     5) ||
 		 !strncmp(&searchpath[i], "URL=http:", 9) ||
 		 !strncmp(&searchpath[i], "URL=ftp:",  8))) {
 		do {
