@@ -111,7 +111,7 @@ int main(int argc, char **argv)
         {0,0,0,0}
     };
 
-    compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0, compress_level = -1;
+        compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0, compress_level = -1;
 	while((c  = getopt_long(argc, argv, "cdh?fb:s:iI:l:r",loptions,NULL)) >= 0){
 		switch(c){
 		case 'd': compress = 0; break;

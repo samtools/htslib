@@ -33,8 +33,6 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <inttypes.h>
-#include <immintrin.h>
-#include <emmintrin.h>
 #include <stdbool.h>
 
 #include "htslib/hts.h"
@@ -45,8 +43,6 @@
 #define BLOCK_HEADER_LENGTH 18
 #define BLOCK_FOOTER_LENGTH 8
 
-#define USE_IGZIP 1
-#define FAST_COMPRESSION 1
 /* BGZF/GZIP header (speciallized from RFC 1952; little endian):
  +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
  | 31|139|  8|  4|              0|  0|255|      6| 66| 67|      2|BLK_LEN|
@@ -61,7 +57,9 @@
   records the size.
 
 */
-#ifdef USE_IGZIP
+#ifdef __x86_64
+#define USE_IGZIP 1
+#define FAST_COMPRESSION 1
 inline bool is_cpuid_ecx_bit_set(int eax, int bitidx) 
 { 
   int ecx = 0, edx = 0, ebx = 0; 
@@ -76,12 +74,7 @@ inline bool is_cpuid_ecx_bit_set(int eax, int bitidx)
 
 inline bool is_sse42_supported() 
 { 
-#ifdef __INTEL_COMPILER 
-  return  (_may_i_use_cpu_feature(_FEATURE_SSE4_2) > 0); 
-#else 
-  //  return  __builtin_cpu_supports("sse4.2"); 
   return is_cpuid_ecx_bit_set(1, 20); 
-#endif 
 }
 #endif
 
@@ -246,6 +239,7 @@ static int bgzf_compress(void *_dst, int *dlen, void *src, int slen, int level)
 {
   	uint32_t crc;
   	uint8_t *dst = (uint8_t*)_dst;
+
 #ifdef USE_IGZIP	
 	if (level == FAST_COMPRESSION && is_sse42_supported()) { //Use igzip if compression level is 1
 	  LZ_Stream2 lzs2;
