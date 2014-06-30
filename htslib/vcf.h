@@ -409,6 +409,7 @@ extern "C" {
 
 
     /** The following functions are for internal use and should rarely be called directly */
+    int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt);
     bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len);
     void bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str);
     int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec);
