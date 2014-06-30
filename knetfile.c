@@ -434,9 +434,20 @@ int khttp_connect_file(knetFile *fp)
 			rest -= my_netread(fp->fd, buf, l);
 		}
 	} else if (ret != 206 && ret != 200) {
+		// failed to open file
 		free(buf);
-		fprintf(stderr, "[khttp_connect_file] fail to open file (HTTP code: %d).\n", ret);
 		netclose(fp->fd);
+		switch (ret) {
+		case 401: errno = EPERM; break;
+		case 403: errno = EACCES; break;
+		case 404: errno = ENOENT; break;
+		case 407: errno = EPERM; break;
+		case 408: errno = ETIMEDOUT; break;
+		case 410: errno = ENOENT; break;
+		case 503: errno = EAGAIN; break;
+		case 504: errno = ETIMEDOUT; break;
+		default:  errno = (ret >= 400 && ret < 500)? EINVAL : EIO; break;
+		}
 		fp->fd = -1;
 		return -1;
 	}
