@@ -414,7 +414,15 @@ extern "C" {
     bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len);
     void bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str);
     int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec);
-    bcf_hrec_t *bcf_hdr_get_hrec(const bcf_hdr_t *hdr, int type, const char *id);   // type is one of BCF_HL_FLT,..,BCF_HL_CTG
+    /**
+     *  bcf_hdr_get_hrec() - get header line info
+     *  @param type:  one of the BCF_HL_* types: FLT,INFO,FMT,CTG,STR,GEN
+     *  @param key:   the header key for generic lines (e.g. "fileformat"), any field
+     *                  for structured lines, typically "ID".
+     *  @param value: the value which pairs with key. Can be be NULL for BCF_HL_GEN
+     *  @param str_class: the class of BCF_HL_STR line (e.g. "ALT" or "SAMPLE"), otherwise NULL
+     */
+    bcf_hrec_t *bcf_hdr_get_hrec(const bcf_hdr_t *hdr, int type, const char *key, const char *value, const char *str_class);
     bcf_hrec_t *bcf_hrec_dup(bcf_hrec_t *hrec);
     void bcf_hrec_add_key(bcf_hrec_t *hrec, const char *str, int len);
     void bcf_hrec_set_val(bcf_hrec_t *hrec, int i, const char *str, int len, int is_quoted);
