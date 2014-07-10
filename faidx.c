@@ -429,4 +429,10 @@ char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p
 	return seq;
 }
 
+int faidx_has_seq(const faidx_t *fai, const char *seq)
+{
+    khiter_t iter = kh_get(s, fai->hash, seq);
+    if (iter == kh_end(fai->hash)) return 0;
+    return 1;
+}
 
