@@ -417,7 +417,7 @@ int hts_file_type(const char *fname)
         if ( !fp ) return 0;
         if ( bgzf_read(fp, magic, 3)!=3 ) { bgzf_close(fp); return 0; }
         bgzf_close(fp);
-        if ( !strncmp((char*)magic,"##",2) ) return FT_VCF;
+        if ( !strncmp((char*)magic,"##",2) ) return FT_VCF_GZ;
         if ( !strncmp((char*)magic,"BCF",3) ) return FT_BCF_GZ;
     }
     return 0;
