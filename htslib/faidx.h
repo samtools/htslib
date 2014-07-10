@@ -110,9 +110,6 @@ extern "C" {
 	  @param  fai  Pointer to the faidx_t struct
 	  @param  seq  Sequence name 
 	  @return      1 if present or 0 if absent
-
-	  @discussion The returned sequence is allocated by malloc family
-	  and should be destroyed by end users by calling free() on it.
 	 */
     int faidx_has_seq(const faidx_t *fai, const char *seq);
 
