@@ -146,7 +146,7 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
         { \
             type_t *p = (type_t*) (gt->p + i*gt->size); \
             int ial; \
-            for (ial=0; ial<gt->size; ial++) \
+            for (ial=0; ial<gt->n; ial++) \
             { \
                 if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
                 if ( !(p[ial]>>1) || p[ial]==missing ) continue; /* missing allele */ \
