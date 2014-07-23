@@ -83,13 +83,14 @@ static int bgzip_main_usage(void)
 	fprintf(stderr, "   -I, --index-name FILE   name of BGZF index file [file.gz.gzi]\n");
 	fprintf(stderr, "   -r, --reindex           (re)index compressed file\n");
 	fprintf(stderr, "   -s, --size INT          decompress INT bytes (uncompressed size)\n");
+	fprintf(stderr, "   -l, --compress-level INT          compression level\n");
 	fprintf(stderr, "\n");
 	return 1;
 }
 
 int main(int argc, char **argv)
 {
-	int c, compress, pstdout, is_forced, index = 0, reindex = 0;
+        int c, compress, pstdout, is_forced, compress_level, index = 0, reindex = 0;
 	BGZF *fp;
 	void *buffer;
 	long start, end, size;
@@ -106,11 +107,12 @@ int main(int argc, char **argv)
         {"index-name",1,0,'I'},
         {"reindex",0,0,'r'},
         {"size",1,0,'s'},
+	{"compress-level",1,0,'l'},
         {0,0,0,0}
     };
 
-	compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0;
-	while((c  = getopt_long(argc, argv, "cdh?fb:s:iI:r",loptions,NULL)) >= 0){
+        compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0, compress_level = -1;
+	while((c  = getopt_long(argc, argv, "cdh?fb:s:iI:l:r",loptions,NULL)) >= 0){
 		switch(c){
 		case 'd': compress = 0; break;
 		case 'c': pstdout = 1; break;
@@ -120,6 +122,7 @@ int main(int argc, char **argv)
         case 'i': index = 1; break;
         case 'I': index_fname = optarg; break;
         case 'r': reindex = 1; compress = 0; break;
+	        case 'l': compress_level = atol(optarg); break;
 		case 'h': 
         case '?': return bgzip_main_usage();
 		}
@@ -166,8 +169,15 @@ int main(int argc, char **argv)
             fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
             return 1;
         }
+		char out_mode[3];
+		strcpy(out_mode, "w");
+		if (compress_level >= 0) {
+		    char tmp[2];
+		    tmp[0] = compress_level + '0'; tmp[1] = '\0';
+		    strcat(out_mode, tmp);
+		}
+		fp = bgzf_fdopen(f_dst, out_mode);
 
-		fp = bgzf_fdopen(f_dst, "w");
         if ( index ) bgzf_index_build_init(fp);
 		buffer = malloc(WINDOW_SIZE);
 		while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)

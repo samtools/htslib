@@ -33,14 +33,15 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <inttypes.h>
+#include <stdbool.h>
 
 #include "htslib/hts.h"
 #include "htslib/bgzf.h"
 #include "htslib/hfile.h"
+#include "igzip_042/include/igzip_lib.h"
 
 #define BLOCK_HEADER_LENGTH 18
 #define BLOCK_FOOTER_LENGTH 8
-
 
 /* BGZF/GZIP header (speciallized from RFC 1952; little endian):
  +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
@@ -56,6 +57,27 @@
   records the size.
 
 */
+#ifdef __x86_64
+#define USE_IGZIP 1
+#define FAST_COMPRESSION 1
+inline bool is_cpuid_ecx_bit_set(int eax, int bitidx) 
+{ 
+  int ecx = 0, edx = 0, ebx = 0; 
+  __asm__ ("cpuid" 
+	   :"=b" (ebx), 
+	    "=c" (ecx), 
+	    "=d" (edx) 
+	   :"a" (eax) 
+	   ); 
+  return (((ecx >> bitidx)&1) == 1); 
+}
+
+inline bool is_sse42_supported() 
+{ 
+  return is_cpuid_ecx_bit_set(1, 20); 
+}
+#endif
+
 static const uint8_t g_magic[19] = "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\0\0";
 
 #ifdef BGZF_CACHE
@@ -215,10 +237,34 @@ BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
 
 static int bgzf_compress(void *_dst, int *dlen, void *src, int slen, int level)
 {
-	uint32_t crc;
-	z_stream zs;
-	uint8_t *dst = (uint8_t*)_dst;
+  	uint32_t crc;
+  	uint8_t *dst = (uint8_t*)_dst;
 
+#ifdef USE_IGZIP	
+	if (level == FAST_COMPRESSION && is_sse42_supported()) { //Use igzip if compression level is 1
+	  LZ_Stream2 lzs2;
+	  init_stream(&lzs2); 
+	  lzs2.next_in = (Bytef *)src;
+	  lzs2.next_out = dst + BLOCK_HEADER_LENGTH;
+	  lzs2.avail_in = slen;
+	  lzs2.avail_out = *dlen - BLOCK_HEADER_LENGTH - BLOCK_FOOTER_LENGTH;
+	  assert(lzs2.avail_out != 0);
+	  lzs2.end_of_stream = 1;
+	  fast_lz(&lzs2);
+	  *dlen = lzs2.total_out + BLOCK_HEADER_LENGTH + BLOCK_FOOTER_LENGTH;
+	  // write the header
+	  memcpy(dst, g_magic, BLOCK_HEADER_LENGTH); // the last two bytes are a place holder for the length of the block
+	  packInt16(&dst[16], *dlen - 1); // write the compressed length; -1 to fit 2 bytes
+	  // write the footer
+	  crc = crc32(crc32(0L, NULL, 0L), (Bytef*)src, slen);
+	  packInt32((uint8_t*)&dst[*dlen - 8], crc);
+	  packInt32((uint8_t*)&dst[*dlen - 4], slen);
+	  return 0;
+	} else {
+#endif
+
+
+	z_stream zs;
 	// compress the body
 	zs.zalloc = NULL; zs.zfree = NULL;
 	zs.next_in  = (Bytef*)src;
@@ -237,6 +283,9 @@ static int bgzf_compress(void *_dst, int *dlen, void *src, int slen, int level)
 	packInt32((uint8_t*)&dst[*dlen - 8], crc);
 	packInt32((uint8_t*)&dst[*dlen - 4], slen);
 	return 0;
+#ifdef USE_IGZIP
+	}
+#endif
 }
 
 // Deflate the block in fp->uncompressed_block into fp->compressed_block. Also adds an extra field that stores the compressed block length.
