@@ -25,8 +25,8 @@
 
 /* Contact: Heng Li <lh3@sanger.ac.uk>, Petr Danecek <pd3@sanger> */
 
-#ifndef FAIDX_H
-#define FAIDX_H
+#ifndef HTSLIB_FAIDX_H
+#define HTSLIB_FAIDX_H
 
 /*!
   @header

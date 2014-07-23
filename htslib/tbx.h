@@ -1,5 +1,5 @@
-#ifndef TBX_H
-#define TBX_H
+#ifndef HTSLIB_TBX_H
+#define HTSLIB_TBX_H
 
 #include "hts.h"
 

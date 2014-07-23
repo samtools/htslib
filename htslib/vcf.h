@@ -4,8 +4,8 @@
         - provide calls to abstract away structs as much as possible
  */
 
-#ifndef BCF_H
-#define BCF_H
+#ifndef HTSLIB_VCF_H
+#define HTSLIB_VCF_H
 
 #include <stdint.h>
 #include <limits.h>

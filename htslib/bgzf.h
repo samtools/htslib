@@ -25,8 +25,8 @@
 /* The BGZF library was originally written by Bob Handsaker from the Broad
  * Institute. It was later improved by the SAMtools developers. */
 
-#ifndef __BGZF_H
-#define __BGZF_H
+#ifndef HTSLIB_BGZF_H
+#define HTSLIB_BGZF_H
 
 #include <stdint.h>
 #include <stdio.h>

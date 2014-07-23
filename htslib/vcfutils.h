@@ -2,8 +2,8 @@
     Time will show if this module will be merged into others 
     or perhaps removed completely.
 */
-#ifndef VCF_UTILS_H
-#define VCF_UTILS_H
+#ifndef HTSLIB_VCFUTILS_H
+#define HTSLIB_VCFUTILS_H
 
 #include "vcf.h"
 

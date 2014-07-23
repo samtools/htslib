@@ -1,5 +1,5 @@
-#ifndef BAM_H
-#define BAM_H
+#ifndef HTSLIB_SAM_H
+#define HTSLIB_SAM_H
 
 #include <stdint.h>
 #include "hts.h"

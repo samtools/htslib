@@ -1,5 +1,5 @@
-#ifndef __KHASH_UTILS_H__
-#define __KHASH_UTILS_H__
+#ifndef HTSLIB_KHASH_STR2INT_H
+#define HTSLIB_KHASH_STR2INT_H
 
 #include <htslib/khash.h>
 

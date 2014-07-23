@@ -25,8 +25,8 @@
         bcf_sr_destroy(sr);
 */
 
-#ifndef SYNCED_BCF_READER_H
-#define SYNCED_BCF_READER_H
+#ifndef HTSLIB_SYNCED_BCF_READER_H
+#define HTSLIB_SYNCED_BCF_READER_H
 
 #include "hts.h"
 #include "vcf.h"

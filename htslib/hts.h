@@ -1,5 +1,5 @@
-#ifndef HTS_H
-#define HTS_H
+#ifndef HTSLIB_HTS_H
+#define HTSLIB_HTS_H
 
 #include <stddef.h>
 #include <stdint.h>

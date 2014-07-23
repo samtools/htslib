@@ -1,5 +1,5 @@
-#ifndef __VCF_SWEEP_H__
-#define __VCF_SWEEP_H__
+#ifndef HTSLIB_VCF_SWEEP_H
+#define HTSLIB_VCF_SWEEP_H
 
 #include "hts.h"
 #include "vcf.h"
