@@ -8,13 +8,16 @@ CC     = gcc
 AR     = ar
 RANLIB = ranlib
 
+IGZIP_LIB = igzip_042/lib
+IGZIP_INCLUDE = igzip_042/include
+
 # TODO: edit cram code to remove need for -DSAMTOOLS
 CPPFLAGS = -I. -DSAMTOOLS=1
 # TODO: probably update cram code to make it compile cleanly with -Wc++-compat
 CFLAGS   = -g -Wall -O2
 EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
-LDLIBS   =
+LDLIBS   = -L$(IGZIP_LIB) -ligzip0c -lstdc++
 
 prefix      = /usr/local
 exec_prefix = $(prefix)
