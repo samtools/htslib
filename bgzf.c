@@ -57,6 +57,7 @@
   records the size.
 
 */
+//Enable igzip only on __x86_64 HW which supports SSE 4.2
 #ifdef __x86_64
 #define USE_IGZIP 1
 #define FAST_COMPRESSION 1
