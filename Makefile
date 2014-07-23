@@ -25,9 +25,11 @@ mandir      = $(prefix)/share/man
 man1dir     = $(mandir)/man1
 man5dir     = $(mandir)/man5
 
+MKDIR_P = mkdir -p
 INSTALL = install -p
 INSTALL_PROGRAM = $(INSTALL)
 INSTALL_DATA    = $(INSTALL) -m 644
+INSTALL_DIR     = $(MKDIR_P) -m 755
 
 BUILT_PROGRAMS = \
 	bgzip \
@@ -254,7 +256,7 @@ install: installdirs install-$(SHLIB_FLAVOUR)
 	$(INSTALL_DATA) *.5 $(DESTDIR)$(man5dir)
 
 installdirs:
-	mkdir -p $(DESTDIR)$(bindir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir)
+	$(INSTALL_DIR) $(DESTDIR)$(bindir) $(DESTDIR)$(includedir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir)
 
 # After installation, the real file in $(libdir) will be libhts.so.X.Y.Z,
 # with symlinks libhts.so (used via -lhts during linking of client programs)
