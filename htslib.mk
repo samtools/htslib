@@ -59,7 +59,6 @@ HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/knetfile.h \
 	$(HTSDIR)/htslib/kseq.h \
 	$(HTSDIR)/htslib/ksort.h \
-	$(HTSDIR)/htslib/kstdint.h \
 	$(HTSDIR)/htslib/kstring.h \
 	$(HTSDIR)/htslib/sam.h \
 	$(HTSDIR)/htslib/synced_bcf_reader.h \
