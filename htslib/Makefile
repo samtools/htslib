@@ -1,7 +1,8 @@
 CC=			gcc
 CFLAGS=		-g -Wall -O2 -Wc++-compat
-DFLAGS=		-D_USE_KURL
-LOBJS=		knetfile.o kurl.o bgzf.o hts.o vcf.o sam.o tbx.o
+#DFLAGS=		-D_USE_KURL
+DFLAGS=		-D_USE_KNETFILE
+LOBJS=		knetfile.o bgzf.o hts.o vcf.o sam.o tbx.o
 INCLUDES=
 LIBPATH=
 
