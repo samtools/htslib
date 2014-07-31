@@ -1,6 +1,8 @@
-/* The MIT License
+/* faidx.h -- FASTA random access.
 
-   Copyright (c) 2008 Genome Research Ltd (GRL).
+   Copyright (C) 2008, 2009, 2013, 2014 Genome Research Ltd.
+
+   Author: Heng Li <lh3@sanger.ac.uk>
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -22,8 +24,6 @@
    CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
    SOFTWARE.
 */
-
-/* Contact: Heng Li <lh3@sanger.ac.uk>, Petr Danecek <pd3@sanger> */
 
 #ifndef HTSLIB_FAIDX_H
 #define HTSLIB_FAIDX_H
