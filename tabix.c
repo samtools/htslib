@@ -115,7 +115,7 @@ static int query_regions(char **argv, int argc, int mode)
     {
         htsFile *fp = hts_open(fname,"r");
         if ( !fp ) error("Could not read %s\n", fname);
-        htsFile *out = hts_open("-","w"); 
+        htsFile *out = hts_open("-","w");
         if ( !out ) error("Could not open stdout\n", fname);
         hts_idx_t *idx = bcf_index_load(fname);
         if ( !idx ) error("Could not load .csi index of %s\n", fname);
@@ -170,7 +170,7 @@ static int query_chroms(char *fname)
         hts_idx_t *idx = bcf_index_load(fname);
         if ( !idx ) error("Could not load .csi index of %s\n", fname);
         seq = bcf_index_seqnames(idx, hdr, &nseq);
-        for (i=0; i<nseq; i++) 
+        for (i=0; i<nseq; i++)
             printf("%s\n", seq[i]);
         free(seq);
         bcf_hdr_destroy(hdr);
@@ -256,10 +256,10 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
 
 static int usage(void)
 {
-	fprintf(stderr, "\n");
-	fprintf(stderr, "Version: %s\n", hts_version());
-	fprintf(stderr, "Usage:   tabix [OPTIONS] [FILE] [REGION [...]]\n");
-	fprintf(stderr, "Options:\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Version: %s\n", hts_version());
+    fprintf(stderr, "Usage:   tabix [OPTIONS] [FILE] [REGION [...]]\n");
+    fprintf(stderr, "Options:\n");
     fprintf(stderr, "   -0, --zero-based        coordinates are zero-based\n");
     fprintf(stderr, "   -b, --begin INT         column number for region start [4]\n");
     fprintf(stderr, "   -c, --comment CHAR      skip comment lines starting with CHAR [null]\n");
@@ -274,16 +274,16 @@ static int usage(void)
     fprintf(stderr, "   -s, --sequence INT      column number for sequence names (suppressed by -p) [1]\n");
     fprintf(stderr, "   -S, --skip-lines INT    skip first INT lines [0]\n");
     fprintf(stderr, "\n");
-	return 1;
+    return 1;
 }
 
 int main(int argc, char *argv[])
 {
-	int c, min_shift = -1, is_force = 0, list_chroms = 0, mode = 0;
-	tbx_conf_t conf = tbx_conf_gff, *conf_ptr = NULL;
+    int c, min_shift = -1, is_force = 0, list_chroms = 0, mode = 0;
+    tbx_conf_t conf = tbx_conf_gff, *conf_ptr = NULL;
     char *reheader = NULL;
 
-    static struct option loptions[] = 
+    static struct option loptions[] =
     {
         {"help",0,0,'h'},
         {"zero-based",0,0,'0'},
@@ -301,9 +301,9 @@ int main(int argc, char *argv[])
         {0,0,0,0}
     };
 
-	while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:", loptions,NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:", loptions,NULL)) >= 0)
     {
-        switch (c) 
+        switch (c)
         {
             case 'r': reheader = optarg; break;
             case 'h': mode = PRINT_HEADER; break;
@@ -328,7 +328,7 @@ int main(int argc, char *argv[])
         }
     }
 
-	if ( optind==argc ) return usage();
+    if ( optind==argc ) return usage();
 
     if ( list_chroms )
         return query_chroms(argv[optind]);
@@ -340,16 +340,16 @@ int main(int argc, char *argv[])
     int ftype = file_type(fname);
     if ( !conf_ptr )    // no preset given
     {
-        if ( ftype==IS_GFF ) conf_ptr = &tbx_conf_gff; 
+        if ( ftype==IS_GFF ) conf_ptr = &tbx_conf_gff;
         else if ( ftype==IS_BED ) conf_ptr = &tbx_conf_bed;
         else if ( ftype==IS_SAM ) conf_ptr = &tbx_conf_sam;
         else if ( ftype==IS_VCF ) conf_ptr = &tbx_conf_vcf;
         else if ( ftype==IS_BCF )
-        { 
+        {
             if ( min_shift <= 0 ) min_shift = 14;
         }
         else if ( ftype==IS_BAM )
-        { 
+        {
             if ( min_shift <= 0 ) min_shift = 14;
         }
     }
@@ -377,7 +377,7 @@ int main(int argc, char *argv[])
 
     if ( min_shift > 0 ) // CSI index
     {
-        if ( ftype==IS_BCF ) 
+        if ( ftype==IS_BCF )
         {
             if ( bcf_index_build(fname, min_shift)!=0 ) error("bcf_index_build failed: %s\n", fname);
             return 0;
@@ -395,5 +395,5 @@ int main(int argc, char *argv[])
         if ( tbx_index_build(fname, min_shift, &conf) ) error("tbx_index_build failed: %s\n", fname);
         return 0;
     }
-	return 0;
+    return 0;
 }

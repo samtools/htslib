@@ -47,24 +47,24 @@ int main(int argc, char **argv)
 {
     bam_hdr_t *header;
     bam1_t *aln = bam_init1();
-	int i;
+    int i;
 
-	for (i = 1; i < argc; i++) {
-		samFile *in = sam_open(argv[i], "r");
-		if (in == NULL) { perror(argv[1]); return 1; }
+    for (i = 1; i < argc; i++) {
+        samFile *in = sam_open(argv[i], "r");
+        if (in == NULL) { perror(argv[1]); return 1; }
 
-		header = sam_hdr_read(in);
-		while (sam_read1(in, header, aln) >= 0) {
-			check(aln, "cigar2qlen", "XQ",
-				  bam_cigar2qlen(aln->core.n_cigar, bam_get_cigar(aln)));
-			check(aln, "cigar2rlen", "XR",
-				  bam_cigar2rlen(aln->core.n_cigar, bam_get_cigar(aln)));
-			check(aln, "endpos", "XE", bam_endpos(aln));
-		}
+        header = sam_hdr_read(in);
+        while (sam_read1(in, header, aln) >= 0) {
+            check(aln, "cigar2qlen", "XQ",
+                  bam_cigar2qlen(aln->core.n_cigar, bam_get_cigar(aln)));
+            check(aln, "cigar2rlen", "XR",
+                  bam_cigar2rlen(aln->core.n_cigar, bam_get_cigar(aln)));
+            check(aln, "endpos", "XE", bam_endpos(aln));
+        }
 
-		bam_hdr_destroy(header);
-		sam_close(in);
-	}
+        bam_hdr_destroy(header);
+        sam_close(in);
+    }
 
     bam_destroy1(aln);
 

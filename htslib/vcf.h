@@ -24,7 +24,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
 /*
-    todo: 
+    todo:
         - make the function names consistent
         - provide calls to abstract away structs as much as possible
  */
@@ -73,9 +73,9 @@ DEALINGS IN THE SOFTWARE.  */
    size of the hash table or, equivalently, the length of the id[] arrays.
 */
 
-#define BCF_DT_ID		0 // dictionary type
-#define BCF_DT_CTG		1
-#define BCF_DT_SAMPLE	2
+#define BCF_DT_ID       0 // dictionary type
+#define BCF_DT_CTG      1
+#define BCF_DT_SAMPLE   2
 
 // Complete textual representation of a header line
 typedef struct {
@@ -87,27 +87,27 @@ typedef struct {
 } bcf_hrec_t;
 
 typedef struct {
-	uint32_t info[3];  // stores Number:20, var:4, Type:4, ColType:4 for BCF_HL_FLT,INFO,FMT
+    uint32_t info[3];  // stores Number:20, var:4, Type:4, ColType:4 for BCF_HL_FLT,INFO,FMT
     bcf_hrec_t *hrec[3];
-	int id;
+    int id;
 } bcf_idinfo_t;
 
 typedef struct {
-	const char *key;
-	const bcf_idinfo_t *val;
+    const char *key;
+    const bcf_idinfo_t *val;
 } bcf_idpair_t;
 
 typedef struct {
-	int32_t n[3];
-	bcf_idpair_t *id[3];
-	void *dict[3]; // ID dictionary, contig dict and sample dict
-	char **samples;
+    int32_t n[3];
+    bcf_idpair_t *id[3];
+    void *dict[3]; // ID dictionary, contig dict and sample dict
+    char **samples;
     bcf_hrec_t **hrec;
     int nhrec;
     int ntransl, *transl[2];    // for bcf_translate()
     int nsamples_ori;           // for bcf_hdr_set_samples()
     uint8_t *keep_samples;
-	kstring_t mem;
+    kstring_t mem;
 } bcf_hdr_t;
 
 extern uint8_t bcf_type_shift[];
@@ -116,12 +116,12 @@ extern uint8_t bcf_type_shift[];
  * VCF record *
  **************/
 
-#define BCF_BT_NULL		0
-#define BCF_BT_INT8		1
-#define BCF_BT_INT16	2
-#define BCF_BT_INT32	3
-#define BCF_BT_FLOAT	5
-#define BCF_BT_CHAR		7
+#define BCF_BT_NULL     0
+#define BCF_BT_INT8     1
+#define BCF_BT_INT16    2
+#define BCF_BT_INT32    3
+#define BCF_BT_FLOAT    5
+#define BCF_BT_CHAR     7
 
 #define VCF_REF   0
 #define VCF_SNP   1
@@ -130,28 +130,28 @@ extern uint8_t bcf_type_shift[];
 #define VCF_OTHER 8
 
 typedef struct {
-	int type, n;	// variant type and the number of bases affected, negative for deletions
+    int type, n;    // variant type and the number of bases affected, negative for deletions
 } variant_t;
 
 typedef struct {
-	int id;             // id: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$id].key
+    int id;             // id: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$id].key
     int n, size, type;  // n: number of values per-sample; size: number of bytes per-sample; type: one of BCF_BT_* types
-	uint8_t *p;         // same as vptr and vptr_* in bcf_info_t below
+    uint8_t *p;         // same as vptr and vptr_* in bcf_info_t below
     uint32_t p_len;
     uint32_t p_off:31, p_free:1;
 } bcf_fmt_t;
 
 typedef struct {
-	int key;        // key: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$key].key
+    int key;        // key: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$key].key
     int type, len;  // type: one of BCF_BT_* types; len: vector length, 1 for scalars
-	union {
-		int32_t i; // integer value
-		float f;   // float value
-	} v1; // only set if $len==1; for easier access
-	uint8_t *vptr;          // pointer to data array in bcf1_t->shared.s, excluding the size+type and tag id bytes
+    union {
+        int32_t i; // integer value
+        float f;   // float value
+    } v1; // only set if $len==1; for easier access
+    uint8_t *vptr;          // pointer to data array in bcf1_t->shared.s, excluding the size+type and tag id bytes
     uint32_t vptr_len;      // length of the vptr block or, when set, of the vptr_mod block, excluding offset
     uint32_t vptr_off:31,   // vptr offset, i.e., the size of the INFO key plus size+type bytes
-            vptr_free:1;    // indicates that vptr-vptr_off must be freed; set only when modified and the new 
+            vptr_free:1;    // indicates that vptr-vptr_off must be freed; set only when modified and the new
                             //    data block is bigger than the original
 } bcf_info_t;
 
@@ -162,15 +162,15 @@ typedef struct {
 #define BCF1_DIRTY_INF 8
 
 typedef struct {
-	int m_fmt, m_info, m_id, m_als, m_allele, m_flt; // allocated size (high-water mark); do not change
-	int n_flt;  // Number of FILTER fields
-	int *flt;   // FILTER keys in the dictionary
+    int m_fmt, m_info, m_id, m_als, m_allele, m_flt; // allocated size (high-water mark); do not change
+    int n_flt;  // Number of FILTER fields
+    int *flt;   // FILTER keys in the dictionary
     char *id, *als;     // ID and REF+ALT block (\0-seperated)
-	char **allele;      // allele[0] is the REF (allele[] pointers to the als block); all null terminated
-	bcf_info_t *info;   // INFO
-	bcf_fmt_t *fmt;     // FORMAT and individual sample
-	variant_t *var;	    // $var and $var_type set only when set_variant_types called
-	int n_var, var_type;
+    char **allele;      // allele[0] is the REF (allele[] pointers to the als block); all null terminated
+    bcf_info_t *info;   // INFO
+    bcf_fmt_t *fmt;     // FORMAT and individual sample
+    variant_t *var;     // $var and $var_type set only when set_variant_types called
+    int n_var, var_type;
     int shared_dirty;   // if set, shared.s must be recreated on BCF output
     int indiv_dirty;    // if set, indiv.s must be recreated on BCF output
 } bcf_dec_t;
@@ -189,20 +189,20 @@ typedef struct {
     appropriately.
     Similarly, it is fast to output a BCF line because the columns (kept in
     shared.s, indiv.s, etc.) are written directly by bcf_write, whereas a VCF
-    line must be formatted in vcf_format. 
+    line must be formatted in vcf_format.
  */
 typedef struct {
-	int32_t rid;  // CHROM
-	int32_t pos;  // POS
-	int32_t rlen; // length of REF
-	float qual;   // QUAL
-	uint32_t n_info:16, n_allele:16;
-	uint32_t n_fmt:8, n_sample:24;
-	kstring_t shared, indiv;
-	bcf_dec_t d; // lazy evaluation: $d is not generated by bcf_read(), but by explicitly calling bcf_unpack()
+    int32_t rid;  // CHROM
+    int32_t pos;  // POS
+    int32_t rlen; // length of REF
+    float qual;   // QUAL
+    uint32_t n_info:16, n_allele:16;
+    uint32_t n_fmt:8, n_sample:24;
+    kstring_t shared, indiv;
+    bcf_dec_t d; // lazy evaluation: $d is not generated by bcf_read(), but by explicitly calling bcf_unpack()
     int max_unpack;         // Set to BCF_UN_STR, BCF_UN_FLT, or BCF_UN_INFO to boost performance of vcf_parse when some of the fields won't be needed
-	int unpacked;           // remember what has been unpacked to allow calling bcf_unpack() repeatedly without redoing the work
-    int unpack_size[3];     // the original block size of ID, REF+ALT and FILTER 
+    int unpacked;           // remember what has been unpacked to allow calling bcf_unpack() repeatedly without redoing the work
+    int unpack_size[3];     // the original block size of ID, REF+ALT and FILTER
     int errcode;    // one of BCF_ERR_* codes
 } bcf1_t;
 
@@ -214,8 +214,8 @@ typedef struct {
 extern "C" {
 #endif
 
-	/***********************************************************************
-	 *  BCF and VCF I/O
+    /***********************************************************************
+     *  BCF and VCF I/O
      *
      *  A note about naming conventions: htslib internally represents VCF
      *  records as bcf1_t data structures, therefore most functions are
@@ -224,7 +224,7 @@ extern "C" {
      *  these cases, functions prefixed with bcf_ are more general and work
      *  with both BCF and VCF.
      *
-	 ***********************************************************************/
+     ***********************************************************************/
 
     /** These macros are defined only for consistency with other parts of htslib */
     #define bcf_init1()         bcf_init()
@@ -244,40 +244,40 @@ extern "C" {
      *  When opened for writing, the mandatory fileFormat and
      *  FILTER=PASS lines are added automatically.
      */
-	bcf_hdr_t *bcf_hdr_init(const char *mode);
+    bcf_hdr_t *bcf_hdr_init(const char *mode);
 
-   	/** Destroy a BCF header struct */
-	void bcf_hdr_destroy(bcf_hdr_t *h);
+    /** Destroy a BCF header struct */
+    void bcf_hdr_destroy(bcf_hdr_t *h);
 
-	/** Initialize a bcf1_t object; equivalent to calloc(1, sizeof(bcf1_t)) */
-	bcf1_t *bcf_init(void);
-	
-	/** Deallocate a bcf1_t object */
-	void bcf_destroy(bcf1_t *v);
+    /** Initialize a bcf1_t object; equivalent to calloc(1, sizeof(bcf1_t)) */
+    bcf1_t *bcf_init(void);
 
-    /** 
+    /** Deallocate a bcf1_t object */
+    void bcf_destroy(bcf1_t *v);
+
+    /**
      *  Same as bcf_destroy() but frees only the memory allocated by bcf1_t,
-     *  not the bcf1_t object itself. 
+     *  not the bcf1_t object itself.
      */
-	void bcf_empty(bcf1_t *v);
+    void bcf_empty(bcf1_t *v);
 
-	/** 
+    /**
      *  Make the bcf1_t object ready for next read. Intended mostly for
      *  internal use, the user should rarely need to call this function
      *  directly.
      */
-	void bcf_clear(bcf1_t *v);
+    void bcf_clear(bcf1_t *v);
 
 
     /** bcf_open and vcf_open mode: please see hts_open() in hts.h */
-	typedef htsFile vcfFile;
-	#define bcf_open(fn, mode) hts_open((fn), (mode))
-	#define vcf_open(fn, mode) hts_open((fn), (mode))
-	#define bcf_close(fp) hts_close(fp)
-	#define vcf_close(fp) hts_close(fp)
+    typedef htsFile vcfFile;
+    #define bcf_open(fn, mode) hts_open((fn), (mode))
+    #define vcf_open(fn, mode) hts_open((fn), (mode))
+    #define bcf_close(fp) hts_close(fp)
+    #define vcf_close(fp) hts_close(fp)
 
     /** Reads VCF or BCF header */
-	bcf_hdr_t *bcf_hdr_read(htsFile *fp);
+    bcf_hdr_t *bcf_hdr_read(htsFile *fp);
 
     /**
      *  bcf_hdr_set_samples() - for more efficient VCF parsing when only one/few samples are needed
@@ -306,13 +306,13 @@ extern "C" {
 
 
     /** Writes VCF or BCF header */
-	int bcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
+    int bcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
 
     /** Parse VCF line contained in kstring and populate the bcf1_t struct */
-	int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v);
+    int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v);
 
     /** The opposite of vcf_parse. It should rarely be called directly, see vcf_write */
-	int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s);
+    int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s);
 
     /**
      *  bcf_read() - read next VCF or BCF record
@@ -322,26 +322,26 @@ extern "C" {
      *  set to one of BCF_ERR* code and must be checked before calling
      *  vcf_write().
      */
-	int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
+    int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
 
-	/**
-	 *  bcf_unpack() - unpack/decode a BCF record (fills the bcf1_t::d field)
-     *  
+    /**
+     *  bcf_unpack() - unpack/decode a BCF record (fills the bcf1_t::d field)
+     *
      *  Note that bcf_unpack() must be called even when reading VCF. It is safe
      *  to call the function repeatedly, it will not unpack the same field
      *  twice.
-	 */
-	#define BCF_UN_STR  1       // up to ALT inclusive
-	#define BCF_UN_FLT  2       // up to FILTER
-	#define BCF_UN_INFO 4       // up to INFO
-	#define BCF_UN_SHR  (BCF_UN_STR|BCF_UN_FLT|BCF_UN_INFO) // all shared information
-	#define BCF_UN_FMT  8                           // unpack format and each sample
-	#define BCF_UN_IND  BCF_UN_FMT                  // a synonymo of BCF_UN_FMT
-	#define BCF_UN_ALL  (BCF_UN_SHR|BCF_UN_FMT)     // everything
-	int bcf_unpack(bcf1_t *b, int which);
+     */
+    #define BCF_UN_STR  1       // up to ALT inclusive
+    #define BCF_UN_FLT  2       // up to FILTER
+    #define BCF_UN_INFO 4       // up to INFO
+    #define BCF_UN_SHR  (BCF_UN_STR|BCF_UN_FLT|BCF_UN_INFO) // all shared information
+    #define BCF_UN_FMT  8                           // unpack format and each sample
+    #define BCF_UN_IND  BCF_UN_FMT                  // a synonymo of BCF_UN_FMT
+    #define BCF_UN_ALL  (BCF_UN_SHR|BCF_UN_FMT)     // everything
+    int bcf_unpack(bcf1_t *b, int which);
 
     /*
-     *  bcf_dup() - create a copy of BCF record. 
+     *  bcf_dup() - create a copy of BCF record.
      *
      *  Note that bcf_unpack() must be called on the returned copy as if it was
      *  obtained from bcf_read(). Also note that bcf_dup() calls bcf_sync1(src)
@@ -352,41 +352,41 @@ extern "C" {
     /**
      *  bcf_write() - write one VCF or BCF record. The type is determined at the open() call.
      */
-	int bcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
+    int bcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
 
     /**
      *  The following functions work only with VCFs and should rarely be called
      *  directly. Usually one wants to use their bcf_* alternatives, which work
      *  transparently with both VCFs and BCFs.
      */
-	bcf_hdr_t *vcf_hdr_read(htsFile *fp);
-	int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
-	int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
-	int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
+    bcf_hdr_t *vcf_hdr_read(htsFile *fp);
+    int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
+    int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
+    int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
 
-	/** Helper function for the bcf_itr_next() macro; internal use, ignore it */
-	int bcf_readrec(BGZF *fp, void *null, void *v, int *tid, int *beg, int *end);
+    /** Helper function for the bcf_itr_next() macro; internal use, ignore it */
+    int bcf_readrec(BGZF *fp, void *null, void *v, int *tid, int *beg, int *end);
 
 
 
-	/**************************************************************************
-	 *  Header querying and manipulation routines
-	 **************************************************************************/
+    /**************************************************************************
+     *  Header querying and manipulation routines
+     **************************************************************************/
 
     /** Create a new header using the supplied template */
     bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr);
-    /** 
-     *  Copy header lines from src to dst if not already present in dst. See also bcf_translate(). 
+    /**
+     *  Copy header lines from src to dst if not already present in dst. See also bcf_translate().
      *  Returns 0 on success or sets a bit on error:
      *      1 .. conflicting definitions of tag length
      *      // todo
      */
     int bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src);
 
-    /** 
-     *  bcf_hdr_add_sample() - add a new sample. 
-     *  @param sample:  Sample name to be added. After all samples have been added, NULL 
-     *                  must be passed to update internal header structures. 
+    /**
+     *  bcf_hdr_add_sample() - add a new sample.
+     *  @param sample:  Sample name to be added. After all samples have been added, NULL
+     *                  must be passed to update internal header structures.
      */
     int bcf_hdr_add_sample(bcf_hdr_t *hdr, const char *sample);
 
@@ -406,7 +406,7 @@ extern "C" {
     const char *bcf_hdr_get_version(const bcf_hdr_t *hdr);
     void bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version);
 
-    /** 
+    /**
      *  bcf_hdr_remove() - remove VCF header tag
      *  @param type:      one of BCF_HL_*
      *  @param key:       tag name
@@ -414,7 +414,7 @@ extern "C" {
     void bcf_hdr_remove(bcf_hdr_t *h, int type, const char *key);
 
     /**
-     *  bcf_hdr_subset() - creates a new copy of the header removing unwanted samples 
+     *  bcf_hdr_subset() - creates a new copy of the header removing unwanted samples
      *  @param n:        number of samples to keep
      *  @param samples:  names of the samples to keep
      *  @param imap:     mapping from index in @samples to the sample index in the original file
@@ -424,10 +424,10 @@ extern "C" {
      *  This function can be used to reorder samples.
      *  See also bcf_subset() which subsets individual records.
      */
-	bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
+    bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
 
     /** Creates a list of sequence names. It is up to the caller to free the list (but not the sequence names) */
-	const char **bcf_hdr_seqnames(const bcf_hdr_t *h, int *nseqs);
+    const char **bcf_hdr_seqnames(const bcf_hdr_t *h, int *nseqs);
 
     /** Get number of samples */
     #define bcf_hdr_nsamples(hdr) (hdr)->n[BCF_DT_SAMPLE]
@@ -457,12 +457,12 @@ extern "C" {
 
 
 
-	/**************************************************************************
-	 *  Individual record querying and manipulation routines
-	 **************************************************************************/
+    /**************************************************************************
+     *  Individual record querying and manipulation routines
+     **************************************************************************/
 
     /** See the description of bcf_hdr_subset() */
-	int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
+    int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap);
 
     /**
      *  bcf_translate() - translate tags ids to be consistent with different header. This function
@@ -478,7 +478,7 @@ extern "C" {
      */
     int bcf_get_variant_types(bcf1_t *rec);
     int bcf_get_variant_type(bcf1_t *rec, int ith_allele);
-	int bcf_is_snp(bcf1_t *v);
+    int bcf_is_snp(bcf1_t *v);
 
     /**
      *  bcf_update_filter() - sets the FILTER column
@@ -489,17 +489,17 @@ extern "C" {
     /**
      *  bcf_add_filter() - adds to the FILTER column
      *  @flt_id:   filter ID to add, numeric ID returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
-     *  
+     *
      *  If flt_id is PASS, all existing filters are removed first. If other than PASS, existing PASS is removed.
      */
     int bcf_add_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id);
     /**
      *  bcf_remove_filter() - removes from the FILTER column
      *  @flt_id:   filter ID to remove, numeric ID returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
-     *  @pass:     when set to 1 and no filters are present, set to PASS 
+     *  @pass:     when set to 1 and no filters are present, set to PASS
      */
     int bcf_remove_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id, int pass);
-    /** 
+    /**
      *  Returns 1 if present, 0 if absent, or -1 if filter does not exist. "PASS" and "." can be used interchangeably.
      */
     int bcf_has_filter(const bcf_hdr_t *hdr, bcf1_t *line, char *filter);
@@ -507,7 +507,7 @@ extern "C" {
      *  bcf_update_alleles() and bcf_update_alleles_str() - update REF and ALLT column
      *  @alleles:           Array of alleles
      *  @nals:              Number of alleles
-     *  @alleles_string:    Comma-separated alleles, starting with the REF allele  
+     *  @alleles_string:    Comma-separated alleles, starting with the REF allele
      *
      *  Not that in order for indexing to work correctly in presence of INFO/END tag,
      *  the length of reference allele (line->rlen) must be set explicitly by the caller,
@@ -518,7 +518,7 @@ extern "C" {
     int bcf_update_alleles_str(const bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string);
     int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id);
 
-    /* 
+    /*
      *  bcf_update_info_*() - functions for updating INFO fields
      *  @hdr:       the BCF header
      *  @line:      VCF line to be edited
@@ -537,10 +537,10 @@ extern "C" {
     #define bcf_update_info_string(hdr,line,key,string)    bcf_update_info((hdr),(line),(key),(string),1,BCF_HT_STR)
     int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type);
 
-    /* 
+    /*
      *  bcf_update_format_*() - functions for updating FORMAT fields
      *  @values:    pointer to the array of values, the same number of elements
-     *              is expected for each sample. Missing values must be padded 
+     *              is expected for each sample. Missing values must be padded
      *              with bcf_*_missing or bcf_*_vector_end values.
      *  @n:         number of values in the array. If n==0, existing tag is removed.
      *
@@ -578,15 +578,15 @@ extern "C" {
         *b = dk - 1; *a = igt - k + *b;
     }
 
-    /**     
+    /**
      * bcf_get_fmt() - returns pointer to FORMAT's field data
-     * @header: for access to BCF_DT_ID dictionary 
+     * @header: for access to BCF_DT_ID dictionary
      * @line:   VCF line obtained from vcf_parse1
      * @fmt:    one of GT,PL,...
-     *  
+     *
      * Returns bcf_fmt_t* if the call succeeded, or returns NULL when the field
      * is not available.
-     */ 
+     */
     bcf_fmt_t *bcf_get_fmt(const bcf_hdr_t *hdr, bcf1_t *line, const char *key);
     bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key);
 
@@ -599,7 +599,7 @@ extern "C" {
      *  @ndst:      pointer to the size of allocated memory
      *
      *  Returns negative value on error or the number of written values on
-     *  success. bcf_get_info_string() returns on success the number of 
+     *  success. bcf_get_info_string() returns on success the number of
      *  characters written excluding the null-terminating byte. bcf_get_info_flag()
      *  returns 1 when flag is set or 0 if not.
      *
@@ -618,10 +618,10 @@ extern "C" {
      *  bcf_get_format_*() - same as bcf_get_info*() above
      *
      *  The function bcf_get_format_string() is a higher-level (slower) variant of bcf_get_format_char().
-     *  see the description of bcf_update_format_string() and bcf_update_format_char() above. 
+     *  see the description of bcf_update_format_string() and bcf_update_format_char() above.
      *  Unlike other bcf_get_format__*() functions, bcf_get_format_string() allocates two arrays:
      *  a single block of \0-terminated strings collapsed into a single array and an array of pointers
-     *  to these strings. Both arrays must be cleaned by the user. 
+     *  to these strings. Both arrays must be cleaned by the user.
      *
      *  Returns negative value on error or the number of written values on success.
      *
@@ -631,7 +631,7 @@ extern "C" {
      *          for (i=0; i<bcf_hdr_nsamples(hdr); i++) printf("%s\n", dst[i]);
      *      free(dst[0]); free(dst);
      *
-     *  Example: 
+     *  Example:
      *      int ngt, *gt_arr = NULL, ngt_arr = 0;
      *      ngt = bcf_get_genotypes(hdr, line, &gt_arr, &ngt_arr);
      */
@@ -643,11 +643,11 @@ extern "C" {
     int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type);
 
 
-	
-	/**************************************************************************
-	 *  Helper functions
-	 **************************************************************************/
- 
+
+    /**************************************************************************
+     *  Helper functions
+     **************************************************************************/
+
     /**
      *  bcf_hdr_id2int() - Translates string into numeric ID
      *  bcf_hdr_int2id() - Translates numeric ID into string
@@ -657,24 +657,24 @@ extern "C" {
      *  Returns -1 if string is not in dictionary, otherwise numeric ID which identifies
      *  fields in BCF records.
      */
-	int bcf_hdr_id2int(const bcf_hdr_t *hdr, int type, const char *id);
+    int bcf_hdr_id2int(const bcf_hdr_t *hdr, int type, const char *id);
     #define bcf_hdr_int2id(hdr,type,int_id) ((hdr)->id[type][int_id].key)
 
     /**
      *  bcf_hdr_name2id() - Translates sequence names (chromosomes) into numeric ID
      *  bcf_hdr_id2name() - Translates numeric ID to sequence name
      */
-	static inline int bcf_hdr_name2id(const bcf_hdr_t *hdr, const char *id) { return bcf_hdr_id2int(hdr, BCF_DT_CTG, id); }
+    static inline int bcf_hdr_name2id(const bcf_hdr_t *hdr, const char *id) { return bcf_hdr_id2int(hdr, BCF_DT_CTG, id); }
     static inline const char *bcf_hdr_id2name(const bcf_hdr_t *hdr, int rid) { return hdr->id[BCF_DT_CTG][rid].key; }
     static inline const char *bcf_seqname(const bcf_hdr_t *hdr, bcf1_t *rec) { return hdr->id[BCF_DT_CTG][rec->rid].key; }
 
     /**
-     *  bcf_hdr_id2*() - Macros for accessing bcf_idinfo_t 
+     *  bcf_hdr_id2*() - Macros for accessing bcf_idinfo_t
      *  @type:      one of BCF_HL_FLT, BCF_HL_INFO, BCF_HL_FMT
      *  @int_id:    return value of bcf_id2int, must be >=0
      *
      *  The returned values are:
-     *     bcf_hdr_id2length   ..  whether the number of values is fixed or variable, one of BCF_VL_* 
+     *     bcf_hdr_id2length   ..  whether the number of values is fixed or variable, one of BCF_VL_*
      *     bcf_hdr_id2number   ..  the number of values, 0xfffff for variable length fields
      *     bcf_hdr_id2type     ..  the field type, one of BCF_HT_*
      *     bcf_hdr_id2coltype  ..  the column type, one of BCF_HL_*
@@ -688,31 +688,31 @@ extern "C" {
     #define bcf_hdr_id2coltype(hdr,type,int_id) ((hdr)->id[BCF_DT_ID][int_id].val->info[type] & 0xf)
     #define bcf_hdr_idinfo_exists(hdr,type,int_id)  ((int_id<0 || bcf_hdr_id2coltype(hdr,type,int_id)==0xf) ? 0 : 1)
     #define bcf_hdr_id2hrec(hdr,dict_type,col_type,int_id)    ((hdr)->id[(dict_type)==BCF_DT_CTG?BCF_DT_CTG:BCF_DT_ID][int_id].val->hrec[(dict_type)==BCF_DT_CTG?0:(col_type)])
-    
-	void bcf_fmt_array(kstring_t *s, int n, int type, void *data);
-	uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr);
 
-	void bcf_enc_vchar(kstring_t *s, int l, const char *a);
-	void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize);
-	void bcf_enc_vfloat(kstring_t *s, int n, float *a);
+    void bcf_fmt_array(kstring_t *s, int n, int type, void *data);
+    uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr);
 
- 
-	/**************************************************************************
-	 *  BCF index
+    void bcf_enc_vchar(kstring_t *s, int l, const char *a);
+    void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize);
+    void bcf_enc_vfloat(kstring_t *s, int n, float *a);
+
+
+    /**************************************************************************
+     *  BCF index
      *
      *  Note that these functions work with BCFs only. See synced_bcf_reader.h
      *  which provides (amongst other things) an API to work transparently with
      *  both indexed BCFs and VCFs.
-	 **************************************************************************/
- 
-	#define bcf_itr_destroy(iter) hts_itr_destroy(iter)
-	#define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query((idx), (tid), (beg), (end), bcf_readrec)
-	#define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_hdr_name2id), (hdr), hts_itr_query, bcf_readrec)
-	#define bcf_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
-	#define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
-	#define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
+     **************************************************************************/
 
-	int bcf_index_build(const char *fn, int min_shift);
+    #define bcf_itr_destroy(iter) hts_itr_destroy(iter)
+    #define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query((idx), (tid), (beg), (end), bcf_readrec)
+    #define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_hdr_name2id), (hdr), hts_itr_query, bcf_readrec)
+    #define bcf_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
+    #define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
+    #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
+
+    int bcf_index_build(const char *fn, int min_shift);
 
 #ifdef __cplusplus
 }
@@ -728,7 +728,7 @@ extern "C" {
     0x8000, 0x80000000 are interpreted as missing values and 0x81, 0x8001,
     0x80000001 as end-of-vector indicators.  Similarly for floats, the value of
     0x7F800001 is interpreted as a missing value and 0x7F800002 as an
-    end-of-vector indicator. 
+    end-of-vector indicator.
     Note that the end-of-vector byte is not part of the vector.
 
     This trial BCF version (v2.2) is compatible with the VCF specification and
@@ -790,80 +790,80 @@ static inline void bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 
 static inline void bcf_enc_size(kstring_t *s, int size, int type)
 {
-	if (size >= 15) {
-		kputc(15<<4|type, s);
-		if (size >= 128) {
-			if (size >= 32768) {
-				int32_t x = size;
-				kputc(1<<4|BCF_BT_INT32, s);
-				kputsn((char*)&x, 4, s);
-			} else {
-				int16_t x = size;
-				kputc(1<<4|BCF_BT_INT16, s);
-				kputsn((char*)&x, 2, s);
-			}
-		} else {
-			kputc(1<<4|BCF_BT_INT8, s);
-			kputc(size, s);
-		}
-	} else kputc(size<<4|type, s);
+    if (size >= 15) {
+        kputc(15<<4|type, s);
+        if (size >= 128) {
+            if (size >= 32768) {
+                int32_t x = size;
+                kputc(1<<4|BCF_BT_INT32, s);
+                kputsn((char*)&x, 4, s);
+            } else {
+                int16_t x = size;
+                kputc(1<<4|BCF_BT_INT16, s);
+                kputsn((char*)&x, 2, s);
+            }
+        } else {
+            kputc(1<<4|BCF_BT_INT8, s);
+            kputc(size, s);
+        }
+    } else kputc(size<<4|type, s);
 }
 
 static inline int bcf_enc_inttype(long x)
 {
-	if (x <= INT8_MAX && x > bcf_int8_missing) return BCF_BT_INT8;
-	if (x <= INT16_MAX && x > bcf_int16_missing) return BCF_BT_INT16;
-	return BCF_BT_INT32;
+    if (x <= INT8_MAX && x > bcf_int8_missing) return BCF_BT_INT8;
+    if (x <= INT16_MAX && x > bcf_int16_missing) return BCF_BT_INT16;
+    return BCF_BT_INT32;
 }
 
 static inline void bcf_enc_int1(kstring_t *s, int32_t x)
 {
-	if (x == bcf_int32_vector_end) {
-		bcf_enc_size(s, 1, BCF_BT_INT8);
-		kputc(bcf_int8_vector_end, s);
-	} else if (x == bcf_int32_missing) {
-		bcf_enc_size(s, 1, BCF_BT_INT8);
-		kputc(bcf_int8_missing, s);
-	} else if (x <= INT8_MAX && x > bcf_int8_missing) {
-		bcf_enc_size(s, 1, BCF_BT_INT8);
-		kputc(x, s);
-	} else if (x <= INT16_MAX && x > bcf_int16_missing) {
-		int16_t z = x;
-		bcf_enc_size(s, 1, BCF_BT_INT16);
-		kputsn((char*)&z, 2, s);
-	} else {
-		int32_t z = x;
-		bcf_enc_size(s, 1, BCF_BT_INT32);
-		kputsn((char*)&z, 4, s);
-	}
+    if (x == bcf_int32_vector_end) {
+        bcf_enc_size(s, 1, BCF_BT_INT8);
+        kputc(bcf_int8_vector_end, s);
+    } else if (x == bcf_int32_missing) {
+        bcf_enc_size(s, 1, BCF_BT_INT8);
+        kputc(bcf_int8_missing, s);
+    } else if (x <= INT8_MAX && x > bcf_int8_missing) {
+        bcf_enc_size(s, 1, BCF_BT_INT8);
+        kputc(x, s);
+    } else if (x <= INT16_MAX && x > bcf_int16_missing) {
+        int16_t z = x;
+        bcf_enc_size(s, 1, BCF_BT_INT16);
+        kputsn((char*)&z, 2, s);
+    } else {
+        int32_t z = x;
+        bcf_enc_size(s, 1, BCF_BT_INT32);
+        kputsn((char*)&z, 4, s);
+    }
 }
 
 static inline int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
 {
-	if (type == BCF_BT_INT8) {
-		*q = (uint8_t*)p + 1;
-		return *(int8_t*)p;
-	} else if (type == BCF_BT_INT16) {
-		*q = (uint8_t*)p + 2;
-		return *(int16_t*)p;
-	} else {
-		*q = (uint8_t*)p + 4;
-		return *(int32_t*)p;
-	}
+    if (type == BCF_BT_INT8) {
+        *q = (uint8_t*)p + 1;
+        return *(int8_t*)p;
+    } else if (type == BCF_BT_INT16) {
+        *q = (uint8_t*)p + 2;
+        return *(int16_t*)p;
+    } else {
+        *q = (uint8_t*)p + 4;
+        return *(int32_t*)p;
+    }
 }
 
 static inline int32_t bcf_dec_typed_int1(const uint8_t *p, uint8_t **q)
 {
-	return bcf_dec_int1(p + 1, *p&0xf, q);
+    return bcf_dec_int1(p + 1, *p&0xf, q);
 }
 
 static inline int32_t bcf_dec_size(const uint8_t *p, uint8_t **q, int *type)
 {
-	*type = *p & 0xf;
-	if (*p>>4 != 15) {
-		*q = (uint8_t*)p + 1;
-		return *p>>4;
-	} else return bcf_dec_typed_int1(p + 1, q);
+    *type = *p & 0xf;
+    if (*p>>4 != 15) {
+        *q = (uint8_t*)p + 1;
+        return *p>>4;
+    } else return bcf_dec_typed_int1(p + 1, q);
 }
 
 #endif

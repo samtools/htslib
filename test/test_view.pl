@@ -31,10 +31,10 @@ sub test {
     my ($cmd) = @_;
     print "  $cmd\n";
     if (system("$cmd || exit 1") != 0) {
-	print "FAIL $!\n";
-	$err_count++;
+        print "FAIL $!\n";
+        $err_count++;
     } else {
-	$suc_count++;
+        $suc_count++;
     }
 }
 

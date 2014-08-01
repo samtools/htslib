@@ -85,9 +85,9 @@ void write_bcf(char *fname)
     int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
     bcf_update_filter(hdr, rec, &tmpi, 1);
     // .. INFO
-    tmpi = 3;  
+    tmpi = 3;
     bcf_update_info_int32(hdr, rec, "NS", &tmpi, 1);
-    tmpi = 14; 
+    tmpi = 14;
     bcf_update_info_int32(hdr, rec, "DP", &tmpi, 1);
     float tmpf = 0.5;
     bcf_update_info_float(hdr, rec, "AF", &tmpf, 1);
@@ -95,11 +95,11 @@ void write_bcf(char *fname)
     bcf_update_info_flag(hdr, rec, "H2", NULL, 1);
     // .. FORMAT
     int32_t *tmpia = (int*)malloc(bcf_hdr_nsamples(hdr)*2*sizeof(int));
-    tmpia[0] = bcf_gt_phased(0); 
+    tmpia[0] = bcf_gt_phased(0);
     tmpia[1] = bcf_gt_phased(0);
-    tmpia[2] = bcf_gt_phased(1); 
+    tmpia[2] = bcf_gt_phased(1);
     tmpia[3] = bcf_gt_phased(0);
-    tmpia[4] = bcf_gt_unphased(1); 
+    tmpia[4] = bcf_gt_unphased(1);
     tmpia[5] = bcf_gt_unphased(1);
     bcf_update_genotypes(hdr, rec, tmpia, bcf_hdr_nsamples(hdr)*2);
     tmpia[0] = 48;
@@ -132,14 +132,14 @@ void write_bcf(char *fname)
     tmpi = 10;
     bcf_update_info_int32(hdr, rec, "DP", &tmpi, 1);
     float *tmpfa = (float*)malloc(2*sizeof(float));
-    tmpfa[0] = 0.333; 
+    tmpfa[0] = 0.333;
     bcf_float_set_missing(tmpfa[1]);
     bcf_update_info_float(hdr, rec, "AF", tmpfa, 2);
     bcf_update_info_string(hdr, rec, "AA", "T");
     bcf_update_info_flag(hdr, rec, "DB", NULL, 1);
     tmpia[0] = bcf_gt_phased(2);
     tmpia[1] = bcf_int32_vector_end;
-    tmpia[2] = bcf_gt_phased(1);    
+    tmpia[2] = bcf_gt_phased(1);
     tmpia[3] = bcf_int32_vector_end;
     tmpia[4] = bcf_gt_missing;
     tmpia[5] = bcf_gt_missing;
@@ -195,7 +195,7 @@ void bcf_to_vcf(char *fname)
 
         bcf_write1(out, hdr_out, rec);
     }
-    
+
     bcf_destroy1(rec);
     bcf_hdr_destroy(hdr);
     bcf_hdr_destroy(hdr_out);

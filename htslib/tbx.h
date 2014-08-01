@@ -36,15 +36,15 @@ DEALINGS IN THE SOFTWARE.  */
 #define TBX_UCSC    0x10000
 
 typedef struct {
-	int32_t preset;
-	int32_t sc, bc, ec; // seq col., beg col. and end col.
-	int32_t meta_char, line_skip;
+    int32_t preset;
+    int32_t sc, bc, ec; // seq col., beg col. and end col.
+    int32_t meta_char, line_skip;
 } tbx_conf_t;
 
 typedef struct {
-	tbx_conf_t conf;
-	hts_idx_t *idx;
-	void *dict;
+    tbx_conf_t conf;
+    hts_idx_t *idx;
+    void *dict;
 } tbx_t;
 
 extern tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sam, tbx_conf_vcf;
@@ -53,22 +53,22 @@ extern tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sam, tbx
 extern "C" {
 #endif
 
-	#define tbx_itr_destroy(iter) hts_itr_destroy(iter)
-	#define tbx_itr_queryi(tbx, tid, beg, end) hts_itr_query((tbx)->idx, (tid), (beg), (end), tbx_readrec)
-	#define tbx_itr_querys(tbx, s) hts_itr_querys((tbx)->idx, (s), (hts_name2id_f)(tbx_name2id), (tbx), hts_itr_query, tbx_readrec)
-	#define tbx_itr_next(htsfp, tbx, itr, r) hts_itr_next(hts_get_bgzfp(htsfp), (itr), (r), (tbx))
-	#define tbx_bgzf_itr_next(bgzfp, tbx, itr, r) hts_itr_next((bgzfp), (itr), (r), (tbx))
+    #define tbx_itr_destroy(iter) hts_itr_destroy(iter)
+    #define tbx_itr_queryi(tbx, tid, beg, end) hts_itr_query((tbx)->idx, (tid), (beg), (end), tbx_readrec)
+    #define tbx_itr_querys(tbx, s) hts_itr_querys((tbx)->idx, (s), (hts_name2id_f)(tbx_name2id), (tbx), hts_itr_query, tbx_readrec)
+    #define tbx_itr_next(htsfp, tbx, itr, r) hts_itr_next(hts_get_bgzfp(htsfp), (itr), (r), (tbx))
+    #define tbx_bgzf_itr_next(bgzfp, tbx, itr, r) hts_itr_next((bgzfp), (itr), (r), (tbx))
 
-	int tbx_name2id(tbx_t *tbx, const char *ss);
+    int tbx_name2id(tbx_t *tbx, const char *ss);
 
-	/* Internal helper function used by tbx_itr_next() */
-	BGZF *hts_get_bgzfp(htsFile *fp);
-	int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end);
+    /* Internal helper function used by tbx_itr_next() */
+    BGZF *hts_get_bgzfp(htsFile *fp);
+    int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end);
 
-	int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf);
-	tbx_t *tbx_index_load(const char *fn);
-	const char **tbx_seqnames(tbx_t *tbx, int *n);	// free the array but not the values
-	void tbx_destroy(tbx_t *tbx);
+    int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf);
+    tbx_t *tbx_index_load(const char *fn);
+    const char **tbx_seqnames(tbx_t *tbx, int *n);  // free the array but not the values
+    void tbx_destroy(tbx_t *tbx);
 
 #ifdef __cplusplus
 }

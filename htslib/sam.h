@@ -44,13 +44,13 @@ DEALINGS IN THE SOFTWARE.  */
  */
 
 typedef struct {
-	int32_t n_targets, ignore_sam_err;
-	uint32_t l_text;
-	uint32_t *target_len;
-	int8_t *cigar_tab;
-	char **target_name;
-	char *text;
-	void *sdict;
+    int32_t n_targets, ignore_sam_err;
+    uint32_t l_text;
+    uint32_t *target_len;
+    int8_t *cigar_tab;
+    char **target_name;
+    char *text;
+    void *sdict;
 } bam_hdr_t;
 
 /****************************
@@ -142,14 +142,14 @@ typedef struct {
  @field  mpos    0-based leftmost coordinate of next read in template
  */
 typedef struct {
-	int32_t tid;
-	int32_t pos;
-	uint32_t bin:16, qual:8, l_qname:8;
-	uint32_t flag:16, n_cigar:16;
-	int32_t l_qseq;
-	int32_t mtid;
-	int32_t mpos;
-	int32_t isize;
+    int32_t tid;
+    int32_t pos;
+    uint32_t bin:16, qual:8, l_qname:8;
+    uint32_t flag:16, n_cigar:16;
+    int32_t l_qseq;
+    int32_t mtid;
+    int32_t mpos;
+    int32_t isize;
 } bam1_core_t;
 
 /*! @typedef
@@ -158,9 +158,9 @@ typedef struct {
  @field  l_data     current length of bam1_t::data
  @field  m_data     maximum length of bam1_t::data
  @field  data       all variable-length data, concatenated; structure: qname-cigar-seq-qual-aux
- 
+
  @discussion Notes:
- 
+
  1. qname is zero tailing and core.l_qname includes the tailing '\0'.
  2. l_qseq is calculated from the total length of an alignment block
  on reading or from CIGAR.
@@ -168,11 +168,11 @@ typedef struct {
  4. seq is nybble-encoded according to bam_nt16_table.
  */
 typedef struct {
-	bam1_core_t core;
-	int l_data, m_data;
-	uint8_t *data;
+    bam1_core_t core;
+    int l_data, m_data;
+    uint8_t *data;
 #ifndef BAM_NO_ID
-	uint64_t id;
+    uint64_t id;
 #endif
 } bam1_t;
 
@@ -249,98 +249,98 @@ typedef struct {
 extern "C" {
 #endif
 
-	/***************
-	 *** BAM I/O ***
-	 ***************/
+    /***************
+     *** BAM I/O ***
+     ***************/
 
-	bam_hdr_t *bam_hdr_init(void);
-	bam_hdr_t *bam_hdr_read(BGZF *fp);
-	int bam_hdr_write(BGZF *fp, const bam_hdr_t *h);
-	void bam_hdr_destroy(bam_hdr_t *h);
-	int bam_name2id(bam_hdr_t *h, const char *ref);
-	bam_hdr_t* bam_hdr_dup(const bam_hdr_t *h0);
+    bam_hdr_t *bam_hdr_init(void);
+    bam_hdr_t *bam_hdr_read(BGZF *fp);
+    int bam_hdr_write(BGZF *fp, const bam_hdr_t *h);
+    void bam_hdr_destroy(bam_hdr_t *h);
+    int bam_name2id(bam_hdr_t *h, const char *ref);
+    bam_hdr_t* bam_hdr_dup(const bam_hdr_t *h0);
 
-	bam1_t *bam_init1(void);
-	void bam_destroy1(bam1_t *b);
-	int bam_read1(BGZF *fp, bam1_t *b);
-	int bam_write1(BGZF *fp, const bam1_t *b);
-	bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc);
-	bam1_t *bam_dup1(const bam1_t *bsrc);
+    bam1_t *bam_init1(void);
+    void bam_destroy1(bam1_t *b);
+    int bam_read1(BGZF *fp, bam1_t *b);
+    int bam_write1(BGZF *fp, const bam1_t *b);
+    bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc);
+    bam1_t *bam_dup1(const bam1_t *bsrc);
 
-	int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
-	int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
+    int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
+    int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
 
-	/*!
-	  @abstract Calculate the rightmost base position of an alignment on the
-	  reference genome.
+    /*!
+      @abstract Calculate the rightmost base position of an alignment on the
+      reference genome.
 
-	  @param  b  pointer to an alignment
-	  @return    the coordinate of the first base after the alignment, 0-based
+      @param  b  pointer to an alignment
+      @return    the coordinate of the first base after the alignment, 0-based
 
-	  @discussion For a mapped read, this is just b->core.pos + bam_cigar2rlen.
-	  For an unmapped read (either according to its flags or if it has no cigar
-	  string), we return b->core.pos + 1 by convention.
-	*/
-	int32_t bam_endpos(const bam1_t *b);
+      @discussion For a mapped read, this is just b->core.pos + bam_cigar2rlen.
+      For an unmapped read (either according to its flags or if it has no cigar
+      string), we return b->core.pos + 1 by convention.
+    */
+    int32_t bam_endpos(const bam1_t *b);
 
     int   bam_str2flag(const char *str);    /** returns negative value on error */
     char *bam_flag2str(int flag);   /** The string must be freed by the user */
 
-	/*************************
-	 *** BAM/CRAM indexing ***
-	 *************************/
+    /*************************
+     *** BAM/CRAM indexing ***
+     *************************/
 
-	// These BAM iterator functions work only on BAM files.  To work with either
-	// BAM or CRAM files use the sam_index_load() & sam_itr_*() functions.
-	#define bam_itr_destroy(iter) hts_itr_destroy(iter)
-	#define bam_itr_queryi(idx, tid, beg, end) sam_itr_queryi(idx, tid, beg, end)
-	#define bam_itr_querys(idx, hdr, region) sam_itr_querys(idx, hdr, region)
-	#define bam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
+    // These BAM iterator functions work only on BAM files.  To work with either
+    // BAM or CRAM files use the sam_index_load() & sam_itr_*() functions.
+    #define bam_itr_destroy(iter) hts_itr_destroy(iter)
+    #define bam_itr_queryi(idx, tid, beg, end) sam_itr_queryi(idx, tid, beg, end)
+    #define bam_itr_querys(idx, hdr, region) sam_itr_querys(idx, hdr, region)
+    #define bam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
 
-	// Load .csi or .bai BAM index file.
-	#define bam_index_load(fn) hts_idx_load((fn), HTS_FMT_BAI)
+    // Load .csi or .bai BAM index file.
+    #define bam_index_load(fn) hts_idx_load((fn), HTS_FMT_BAI)
 
-	int bam_index_build(const char *fn, int min_shift);
+    int bam_index_build(const char *fn, int min_shift);
 
-	// Load BAM (.csi or .bai) or CRAM (.crai) index file.
-	hts_idx_t *sam_index_load(htsFile *fp, const char *fn);
+    // Load BAM (.csi or .bai) or CRAM (.crai) index file.
+    hts_idx_t *sam_index_load(htsFile *fp, const char *fn);
 
-	#define sam_itr_destroy(iter) hts_itr_destroy(iter)
-	hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
-	hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
-	#define sam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (htsfp))
+    #define sam_itr_destroy(iter) hts_itr_destroy(iter)
+    hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
+    hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
+    #define sam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (htsfp))
 
-	/***************
-	 *** SAM I/O ***
-	 ***************/
+    /***************
+     *** SAM I/O ***
+     ***************/
 
-	#define sam_open(fn, mode) (hts_open((fn), (mode)))
-	#define sam_close(fp) hts_close(fp)
+    #define sam_open(fn, mode) (hts_open((fn), (mode)))
+    #define sam_close(fp) hts_close(fp)
 
-	int sam_open_mode(char *mode, const char *fn, const char *format);
+    int sam_open_mode(char *mode, const char *fn, const char *format);
 
-	typedef htsFile samFile;
-	bam_hdr_t *sam_hdr_parse(int l_text, const char *text);
-	bam_hdr_t *sam_hdr_read(samFile *fp);
-	int sam_hdr_write(samFile *fp, const bam_hdr_t *h);
+    typedef htsFile samFile;
+    bam_hdr_t *sam_hdr_parse(int l_text, const char *text);
+    bam_hdr_t *sam_hdr_read(samFile *fp);
+    int sam_hdr_write(samFile *fp, const bam_hdr_t *h);
 
-	int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b);
-	int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str);
-	int sam_read1(samFile *fp, bam_hdr_t *h, bam1_t *b);
-	int sam_write1(samFile *fp, const bam_hdr_t *h, const bam1_t *b);
+    int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b);
+    int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str);
+    int sam_read1(samFile *fp, bam_hdr_t *h, bam1_t *b);
+    int sam_write1(samFile *fp, const bam_hdr_t *h, const bam1_t *b);
 
-	/*************************************
-	 *** Manipulating auxiliary fields ***
-	 *************************************/
+    /*************************************
+     *** Manipulating auxiliary fields ***
+     *************************************/
 
-	uint8_t *bam_aux_get(const bam1_t *b, const char tag[2]);
-	int32_t bam_aux2i(const uint8_t *s);
-	double bam_aux2f(const uint8_t *s);
-	char bam_aux2A(const uint8_t *s);
-	char *bam_aux2Z(const uint8_t *s);
+    uint8_t *bam_aux_get(const bam1_t *b, const char tag[2]);
+    int32_t bam_aux2i(const uint8_t *s);
+    double bam_aux2f(const uint8_t *s);
+    char bam_aux2A(const uint8_t *s);
+    char *bam_aux2Z(const uint8_t *s);
 
-	void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, uint8_t *data);
-	int bam_aux_del(bam1_t *b, uint8_t *s);
+    void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, uint8_t *data);
+    int bam_aux_del(bam1_t *b, uint8_t *s);
 
 #ifdef __cplusplus
 }
@@ -371,10 +371,10 @@ extern "C" {
  overhead.
  */
 typedef struct {
-	bam1_t *b;
-	int32_t qpos;
-	int indel, level;
-	uint32_t is_del:1, is_head:1, is_tail:1, is_refskip:1, aux:28;
+    bam1_t *b;
+    int32_t qpos;
+    int indel, level;
+    uint32_t is_del:1, is_head:1, is_tail:1, is_refskip:1, aux:28;
 } bam_pileup1_t;
 
 typedef int (*bam_plp_auto_f)(void *data, bam1_t *b);
@@ -390,20 +390,20 @@ extern "C" {
 #endif
 
     /**
-     *  bam_plp_init() - sets an iterator over multiple 
+     *  bam_plp_init() - sets an iterator over multiple
      *  @func:      see mplp_func in bam_plcmd.c in samtools for an example. Expected return
      *              status: 0 on success, -1 on end, < -1 on non-recoverable errors
      *  @data:      user data to pass to @func
      */
-	bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data);
-	void bam_plp_destroy(bam_plp_t iter);
-	int bam_plp_push(bam_plp_t iter, const bam1_t *b);
-	const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp);
-	const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp);
-	void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt);
-	void bam_plp_reset(bam_plp_t iter);
+    bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data);
+    void bam_plp_destroy(bam_plp_t iter);
+    int bam_plp_push(bam_plp_t iter, const bam1_t *b);
+    const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp);
+    const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp);
+    void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt);
+    void bam_plp_reset(bam_plp_t iter);
 
-	bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data);
+    bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data);
     /**
      *  bam_mplp_init_overlaps() - if called, mpileup will detect overlapping
      *  read pairs and for each base pair set the base quality of the
@@ -413,9 +413,9 @@ extern "C" {
      *  it is multiplied by 0.8.
      */
     void bam_mplp_init_overlaps(bam_mplp_t iter);
-	void bam_mplp_destroy(bam_mplp_t iter);
-	void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
-	int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
+    void bam_mplp_destroy(bam_mplp_t iter);
+    void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
+    int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
 
 #ifdef __cplusplus
 }

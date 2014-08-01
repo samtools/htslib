@@ -26,29 +26,29 @@ DEALINGS IN THE SOFTWARE.  */
 
 int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 {
-	int i;
-	for (i=0; i<line->n_allele; i++) ac[i]=0;
+    int i;
+    for (i=0; i<line->n_allele; i++) ac[i]=0;
 
-	// Use INFO/AC,AN field only when asked
-	if ( which&BCF_UN_INFO )
-	{
-		bcf_unpack(line, BCF_UN_INFO);
-		int an_id = bcf_hdr_id2int(header, BCF_DT_ID, "AN");
-		int ac_id = bcf_hdr_id2int(header, BCF_DT_ID, "AC");
+    // Use INFO/AC,AN field only when asked
+    if ( which&BCF_UN_INFO )
+    {
+        bcf_unpack(line, BCF_UN_INFO);
+        int an_id = bcf_hdr_id2int(header, BCF_DT_ID, "AN");
+        int ac_id = bcf_hdr_id2int(header, BCF_DT_ID, "AC");
         int i, an=-1, ac_len=0, ac_type=0;
         uint8_t *ac_ptr=NULL;
-		if ( an_id>=0 && ac_id>=0 )
-		{
-			for (i=0; i<line->n_info; i++)
-			{
-				bcf_info_t *z = &line->d.info[i];
-				if ( z->key == an_id ) an = z->v1.i;
-				else if ( z->key == ac_id ) { ac_ptr = z->vptr; ac_len = z->len; ac_type = z->type; }
-			}
+        if ( an_id>=0 && ac_id>=0 )
+        {
+            for (i=0; i<line->n_info; i++)
+            {
+                bcf_info_t *z = &line->d.info[i];
+                if ( z->key == an_id ) an = z->v1.i;
+                else if ( z->key == ac_id ) { ac_ptr = z->vptr; ac_len = z->len; ac_type = z->type; }
+            }
         }
         if ( an>=0 && ac_ptr )
         {
-			int nac = 0;
+            int nac = 0;
             #define BRANCH_INT(type_t) {        \
                 type_t *p = (type_t *) ac_ptr;  \
                 for (i=0; i<ac_len; i++)        \
@@ -65,33 +65,33 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
             }
             #undef BRANCH_INT
             assert( an>=nac );  // sanity check for missing values
-			ac[0] = an - nac;
-			return 1;
+            ac[0] = an - nac;
+            return 1;
         }
-	}
+    }
 
-	// Split genotype fields only when asked
-	if ( which&BCF_UN_FMT )
-	{
-		int i, gt_id = bcf_hdr_id2int(header,BCF_DT_ID,"GT");
-		if ( gt_id<0 ) return 0;
-		bcf_unpack(line, BCF_UN_FMT);
-		bcf_fmt_t *fmt_gt = NULL;
-		for (i=0; i<(int)line->n_fmt; i++) 
-			if ( line->d.fmt[i].id==gt_id ) { fmt_gt = &line->d.fmt[i]; break; }
-		if ( !fmt_gt ) return 0;
+    // Split genotype fields only when asked
+    if ( which&BCF_UN_FMT )
+    {
+        int i, gt_id = bcf_hdr_id2int(header,BCF_DT_ID,"GT");
+        if ( gt_id<0 ) return 0;
+        bcf_unpack(line, BCF_UN_FMT);
+        bcf_fmt_t *fmt_gt = NULL;
+        for (i=0; i<(int)line->n_fmt; i++)
+            if ( line->d.fmt[i].id==gt_id ) { fmt_gt = &line->d.fmt[i]; break; }
+        if ( !fmt_gt ) return 0;
         #define BRANCH_INT(type_t,missing,vector_end) { \
-		    for (i=0; i<line->n_sample; i++) \
-		    { \
+            for (i=0; i<line->n_sample; i++) \
+            { \
                 type_t *p = (type_t*) (fmt_gt->p + i*fmt_gt->size); \
-		    	int ial; \
-		    	for (ial=0; ial<fmt_gt->n; ial++) \
-		    	{ \
+                int ial; \
+                for (ial=0; ial<fmt_gt->n; ial++) \
+                { \
                     if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
                     if ( !(p[ial]>>1) || p[ial]==missing ) continue; /* missing allele */ \
-		    		ac[(p[ial]>>1)-1]++; \
-		    	} \
-		    } \
+                    ac[(p[ial]>>1)-1]++; \
+                } \
+            } \
         }
         switch (fmt_gt->type) {
             case BCF_BT_INT8:  BRANCH_INT(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
@@ -100,9 +100,9 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
             default: fprintf(stderr, "[E::%s] todo: %d at %s:%d\n", __func__, fmt_gt->type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
         }
         #undef BRANCH_INT
-		return 1;
-	}
-	return 0;
+        return 1;
+    }
+    return 0;
 }
 
 int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial, int *_jal)
@@ -149,7 +149,7 @@ int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial, int *_jal)
     if ( !nals ) return GT_UNKN;
     if ( nals==1 )
         return has_ref ? GT_HAPL_R : GT_HAPL_A;
-    if ( !has_ref ) 
+    if ( !has_ref )
         return has_alt==1 ? GT_HOM_AA : GT_HET_AA;
     if ( !has_alt )
         return GT_HOM_RR;
@@ -188,7 +188,7 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
     #undef BRANCH
 
     int rm_als = 0, nrm = 0;
-    for (i=1; i<line->n_allele; i++) 
+    for (i=1; i<line->n_allele; i++)
     {
         if ( !ac[i] ) { rm_als |= 1<<i; nrm++; }
     }
@@ -207,7 +207,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
     kputs(line->d.allele[0], &str);
 
     int nrm = 0, i,j;  // i: ori alleles, j: new alleles
-    for (i=1, j=1; i<line->n_allele; i++) 
+    for (i=1, j=1; i<line->n_allele; i++)
     {
         if ( rm_mask & 1<<i )
         {
@@ -241,7 +241,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
     {
         bcf_info_t *info = &line->d.info[i];
         int vlen = bcf_hdr_id2length(header,BCF_HL_INFO,info->key);
-        
+
         if ( vlen!=BCF_VL_A && vlen!=BCF_VL_G && vlen!=BCF_VL_R ) continue; // no need to change
 
         int type = bcf_hdr_id2type(header,BCF_HL_INFO,info->key);
@@ -252,14 +252,14 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
         mdat = mdat_bytes / size;
         nret = bcf_get_info_values(header, line, bcf_hdr_int2id(header,BCF_DT_ID,info->key), (void**)&dat, &mdat, type);
         mdat_bytes = mdat * size;
-        if ( nret<0 ) 
-        { 
-            fprintf(stderr,"[%s:%d %s] Could not access INFO/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__, 
-                bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nret); 
+        if ( nret<0 )
+        {
+            fprintf(stderr,"[%s:%d %s] Could not access INFO/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
+                bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nret);
             exit(1);
         }
-        if ( type==BCF_HT_STR ) 
-        { 
+        if ( type==BCF_HT_STR )
+        {
             str.l = 0;
             char *ss = (char*) dat, *se = (char*) dat;
             if ( vlen==BCF_VL_A || vlen==BCF_VL_R )
@@ -276,11 +276,11 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                 {
                     if ( !*se ) break;
                     while ( *se && *se!=',' ) se++;
-                    if ( rm_mask & 1<<(j+inc) ) 
-                    { 
+                    if ( rm_mask & 1<<(j+inc) )
+                    {
                         if ( *se ) se++;
-                        ss = se; 
-                        continue; 
+                        ss = se;
+                        continue;
                     }
                     if ( str.l ) kputc(',',&str);
                     kputsn(ss,se-ss,&str);
@@ -299,11 +299,11 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                         if ( !*se ) break;
                         while ( *se && *se!=',' ) se++;
                         n++;
-                        if ( rm_mask & 1<<j || rm_mask & 1<<k ) 
-                        { 
+                        if ( rm_mask & 1<<j || rm_mask & 1<<k )
+                        {
                             if ( *se ) se++;
-                            ss = se; 
-                            continue; 
+                            ss = se;
+                            continue;
                         }
                         if ( str.l ) kputc(',',&str);
                         kputsn(ss,se-ss,&str);
@@ -322,9 +322,9 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                         bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nret);
                 exit(1);
             }
-            continue; 
+            continue;
         }
-        
+
         if ( vlen==BCF_VL_A || vlen==BCF_VL_R )
         {
             int inc = 0, ntop;
@@ -355,7 +355,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                     k++; \
                 } \
             }
-            switch (type) 
+            switch (type)
             {
                 case BCF_HT_INT:  BRANCH(int32_t,ptr[j]==bcf_int32_vector_end); break;
                 case BCF_HT_REAL: BRANCH(float,bcf_float_is_vector_end(ptr[j])); break;
@@ -384,7 +384,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                     } \
                 } \
             }
-            switch (type) 
+            switch (type)
             {
                 case BCF_HT_INT:  BRANCH(int32_t,ptr[l_ori]==bcf_int32_vector_end); break;
                 case BCF_HT_REAL: BRANCH(float,bcf_float_is_vector_end(ptr[l_ori])); break;
@@ -428,7 +428,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
         }
     }
 
-    // Remove from Number=G, Number=R and Number=A FORMAT fields. 
+    // Remove from Number=G, Number=R and Number=A FORMAT fields.
     // Assuming haploid or diploid GTs
     for (i=0; i<line->n_fmt; i++)
     {
@@ -446,14 +446,14 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
         mdat = mdat_bytes / size;
         nret = bcf_get_format_values(header, line, bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), (void**)&dat, &mdat, type);
         mdat_bytes = mdat * size;
-        if ( nret<0 ) 
-        { 
-            fprintf(stderr,"[%s:%d %s] Could not access FORMAT/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__, 
-                    bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nret); 
+        if ( nret<0 )
+        {
+            fprintf(stderr,"[%s:%d %s] Could not access FORMAT/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
+                    bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nret);
             exit(1);
         }
 
-        if ( type==BCF_HT_STR ) 
+        if ( type==BCF_HT_STR )
         {
             int size = nret/line->n_sample;     // number of bytes per sample
             str.l = 0;
@@ -595,7 +595,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                     } \
                 } \
             }
-            switch (type) 
+            switch (type)
             {
                 case BCF_HT_INT:  BRANCH(int32_t,ptr_src[k_src]==bcf_int32_vector_end); break;
                 case BCF_HT_REAL: BRANCH(float,bcf_float_is_vector_end(ptr_src[k_src])); break;
@@ -644,7 +644,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                     } \
                 } \
             }
-            switch (type) 
+            switch (type)
             {
                 case BCF_HT_INT:  BRANCH(int32_t,ptr_src[k_src]==bcf_int32_vector_end); break;
                 case BCF_HT_REAL: BRANCH(float,bcf_float_is_vector_end(ptr_src[k_src])); break;

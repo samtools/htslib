@@ -49,7 +49,7 @@ sub error
 {
     my (@msg) = @_;
     if ( scalar @msg ) { confess @msg; }
-    print 
+    print
         "About: samtools/htslib consistency test script\n",
         "Usage: test.pl [OPTIONS]\n",
         "Options:\n",
@@ -65,8 +65,8 @@ sub parse_params
     my $help;
     Getopt::Long::Configure('bundling');
     my $ret = GetOptions (
-            't|temp-dir:s' => \$$opts{keep_files}, 
-            'r|redo-outputs' => \$$opts{redo_outputs}, 
+            't|temp-dir:s' => \$$opts{keep_files},
+            'r|redo-outputs' => \$$opts{redo_outputs},
             'h|?|help' => \$help
             );
     if ( !$ret or $help ) { error(); }
@@ -84,14 +84,14 @@ sub _cmd
     my @out;
     my $pid = open($kid_io, "-|");
     if ( !defined $pid ) { error("Cannot fork: $!"); }
-    if ($pid) 
+    if ($pid)
     {
         # parent
         @out = <$kid_io>;
         close($kid_io);
-    } 
-    else 
-    {      
+    }
+    else
+    {
         # child
         exec('/bin/bash', '-o','pipefail','-c', $cmd) or error("Cannot execute the command [/bin/sh -o pipefail -c $cmd]: $!");
     }
@@ -144,8 +144,8 @@ sub test_cmd
     }
     elsif ( !$$opts{redo_outputs} ) { failed($opts,$test,"$$opts{path}/$args{out}: $!"); return; }
 
-    if ( $exp ne $out ) 
-    { 
+    if ( $exp ne $out )
+    {
         open(my $fh,'>',"$$opts{path}/$args{out}.new") or error("$$opts{path}/$args{out}.new");
         print $fh $out;
         close($fh);
@@ -157,9 +157,9 @@ sub test_cmd
         }
         else
         {
-            failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new"); 
+            failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new");
         }
-        return; 
+        return;
     }
     passed($opts,$test);
 }

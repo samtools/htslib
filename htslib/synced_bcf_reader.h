@@ -23,11 +23,11 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
 /*
-	The synced_bcf_reader allows to keep multiple VCFs open and stream them
-	using the next_line iterator in a seamless matter without worrying about
-	chromosomes and synchronizing the sites. This is used by vcfcheck to
-	compare multiple VCFs simultaneously and is used also for merging,
-	creating intersections, etc.
+    The synced_bcf_reader allows to keep multiple VCFs open and stream them
+    using the next_line iterator in a seamless matter without worrying about
+    chromosomes and synchronizing the sites. This is used by vcfcheck to
+    compare multiple VCFs simultaneously and is used also for merging,
+    creating intersections, etc.
 
     The synced_bcf_reader also provides API for reading indexed BCF/VCF,
     hiding differences in BCF/VCF opening, indexing and reading.
@@ -57,7 +57,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "tbx.h"
 
 // How should be treated sites with the same position but different alleles
-#define COLLAPSE_NONE   0   // require the exact same set of alleles in all files 
+#define COLLAPSE_NONE   0   // require the exact same set of alleles in all files
 #define COLLAPSE_SNPS   1   // allow different alleles, as long as they all are SNPs
 #define COLLAPSE_INDELS 2   // the same as above, but with indels
 #define COLLAPSE_ANY    4   // any combination of alleles can be returned by bcf_sr_next_line()
@@ -97,24 +97,24 @@ bcf_sr_regions_t;
 
 typedef struct
 {
-	htsFile *file;
+    htsFile *file;
     tbx_t *tbx_idx;
     hts_idx_t *bcf_idx;
-	bcf_hdr_t *header;
-	hts_itr_t *itr;
-	const char *fname;
-	bcf1_t **buffer;                // cached VCF records. First is the current record synced across the reader
-	int nbuffer, mbuffer;           // number of cached records (including the current record); number of allocated records
-	int nfilter_ids, *filter_ids;   // -1 for ".", otherwise filter id as returned by bcf_id2int
+    bcf_hdr_t *header;
+    hts_itr_t *itr;
+    const char *fname;
+    bcf1_t **buffer;                // cached VCF records. First is the current record synced across the reader
+    int nbuffer, mbuffer;           // number of cached records (including the current record); number of allocated records
+    int nfilter_ids, *filter_ids;   // -1 for ".", otherwise filter id as returned by bcf_id2int
     int type;
-	int *samples, n_smpl;	// list of columns in the order consistent with bcf_srs_t.samples
+    int *samples, n_smpl;   // list of columns in the order consistent with bcf_srs_t.samples
 }
 bcf_sr_t;
 
 typedef struct
 {
-	// Parameters controlling the logic
-	int collapse;       // How should the duplicate sites be treated. One of the COLLAPSE_* types above.
+    // Parameters controlling the logic
+    int collapse;       // How should the duplicate sites be treated. One of the COLLAPSE_* types above.
     char *apply_filters;    // If set, sites where none of the FILTER strings is listed
                             // will be skipped. Active only at the time of
                             // initialization, that is during the add_reader()
@@ -124,17 +124,17 @@ typedef struct
     int max_unpack;     // When reading VCFs and knowing some fields will not be needed, boost performance of vcf_parse1
     int *has_line;      // Corresponds to return value of bcf_sr_next_line but is not limited by sizeof(int). Use bcf_sr_has_line macro to query.
 
-	// Auxiliary data
-	bcf_sr_t *readers;
-	int nreaders;
-	int streaming;      // reading mode: index-jumping or streaming
+    // Auxiliary data
+    bcf_sr_t *readers;
+    int nreaders;
+    int streaming;      // reading mode: index-jumping or streaming
     int explicit_regs;  // was the list of regions se by bcf_sr_set_regions or guessed from tabix index?
-	char **samples;	// List of samples 
+    char **samples; // List of samples
     bcf_sr_regions_t *regions, *targets;    // see bcf_sr_set_[targets|regions] for description
     int targets_als;    // subset to targets not only by position but also by alleles?
     int targets_exclude;
     kstring_t tmps;
-	int n_smpl;
+    int n_smpl;
 }
 bcf_srs_t;
 
@@ -162,7 +162,7 @@ int bcf_sr_add_reader(bcf_srs_t *readers, const char *fname);
 void bcf_sr_remove_reader(bcf_srs_t *files, int i);
 
 
-/** 
+/**
  * bcf_sr_next_line() - the iterator
  * @readers:    holder of the open readers
  *
@@ -186,7 +186,7 @@ int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos);
  * bcf_sr_set_samples() - sets active samples
  * @readers: holder of the open readers
  * @samples: this can be one of: file name with one sample per line;
- *           or column-separated list of samples; or '-' for a list of 
+ *           or column-separated list of samples; or '-' for a list of
  *           samples shared by all files. If first character is the
  *           exclamation mark, all but the listed samples are included.
  * @is_file: 0: list of samples; 1: file with sample names
@@ -227,7 +227,7 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file);
 
 
 /*
- *  bcf_sr_regions_init() 
+ *  bcf_sr_regions_init()
  *  @regions:   regions can be either a comma-separated list of regions
  *              (chr|chr:pos|chr:from-to|chr:from-) or VCF, BED, or
  *              tab-delimited file (the default). Uncompressed files
@@ -236,10 +236,10 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file);
  *  @is_file:   0: regions is a comma-separated list of regions
  *                  (chr|chr:pos|chr:from-to|chr:from-)
  *              1: VCF, BED or tab-delimited file
- *  @chr, from, to:       
+ *  @chr, from, to:
  *              Column indexes of chromosome, start position and end position
  *              in the tab-delimited file. The positions are 1-based and
- *              inclusive. 
+ *              inclusive.
  *              These parameters are ignored when reading from VCF, BED or
  *              tabix-indexed files. When end position column is not present,
  *              supply 'from' in place of 'to'. When 'to' is negative, first

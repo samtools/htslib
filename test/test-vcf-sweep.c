@@ -27,7 +27,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 int main(int argc, char **argv)
 {
-    if ( argc!=2 ) 
+    if ( argc!=2 )
     {
         fprintf(stderr,"Usage: test-vcf-sweep <file.bcf|file.vcf>\n");
         return 1;
@@ -47,7 +47,7 @@ int main(int argc, char **argv)
     while ( (rec = bcf_sweep_fwd(sw)) ) chksum += rec->pos+1;
     printf("fwd position chksum: %d\n", chksum);
 
-    // Now sweep backward. 
+    // Now sweep backward.
     chksum = 0;
     while ( (rec = bcf_sweep_bwd(sw)) ) chksum += rec->pos+1;
     printf("bwd position chksum: %d\n", chksum);
@@ -56,7 +56,7 @@ int main(int argc, char **argv)
     int i,j, mPLs = 0, nPLs;
     int32_t *PLs = NULL;
     chksum = 0;
-    while ( (rec = bcf_sweep_fwd(sw)) ) 
+    while ( (rec = bcf_sweep_fwd(sw)) )
     {
         // get copy of the PL vectors
         nPLs = bcf_get_format_int32(hdr, rec, "PL", &PLs, &mPLs);
