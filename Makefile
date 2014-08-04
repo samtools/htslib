@@ -42,6 +42,7 @@ libdir      = $(exec_prefix)/lib
 mandir      = $(prefix)/share/man
 man1dir     = $(mandir)/man1
 man5dir     = $(mandir)/man5
+pkgconfigdir= $(libdir)/pkgconfig
 
 MKDIR_P = mkdir -p
 INSTALL = install -p
@@ -61,7 +62,7 @@ BUILT_TEST_PROGRAMS = \
 	test/test-vcf-api \
 	test/test-vcf-sweep
 
-all: lib-static lib-shared $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
+all: lib-static lib-shared $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) htslib.pc
 
 HTSPREFIX =
 include htslib_vars.mk
@@ -112,6 +113,8 @@ endif
 version.h:
 	echo '#define HTS_VERSION "$(PACKAGE_VERSION)"' > $@
 
+htslib.pc: htslib.pc.in
+	sed -e 's#@VERSION@#$(PACKAGE_VERSION)#g;s#@LIBDIR@#$(libdir)#g;s#@INCLUDEDIR@#$(includedir)#g' $< > $@
 
 .SUFFIXES: .c .o .pico
 
@@ -168,7 +171,7 @@ libhts.a: $(LIBHTS_OBJS)
 # file used at runtime (when $LD_LIBRARY_PATH includes the build directory).
 
 libhts.so: $(LIBHTS_OBJS:.o=.pico)
-	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LDLIBS) -lz
+	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LDLIBS) -lz -lm -lpthread
 	ln -sf $@ libhts.so.$(LIBHTS_SOVERSION)
 
 # Similarly this also creates libhts.NN.dylib as a byproduct, so that programs
@@ -176,7 +179,7 @@ libhts.so: $(LIBHTS_OBJS:.o=.pico)
 # includes this project's build directory).
 
 libhts.dylib: $(LIBHTS_OBJS)
-	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) $(LDLIBS) -lz
+	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) $(LDLIBS) -lz -lm -lpthread
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 
@@ -266,10 +269,11 @@ test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
 
 
-install: installdirs install-$(SHLIB_FLAVOUR)
+install: installdirs install-$(SHLIB_FLAVOUR) htslib.pc
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
+	$(INSTALL_DATA) -D htslib.pc $(DESTDIR)$(pkgconfigdir)/htslib.pc
 	$(INSTALL_DATA) *.1 $(DESTDIR)$(man1dir)
 	$(INSTALL_DATA) *.5 $(DESTDIR)$(man5dir)
 
