@@ -1,5 +1,5 @@
 CC=			gcc
-CFLAGS=		-g -Wall -O2 -Wc++-compat
+CFLAGS=		-g -Wall -O2 -Wc++-compat -Wno-unused-function
 #DFLAGS=		-D_USE_KURL
 DFLAGS=		-D_USE_KNETFILE
 LOBJS=		knetfile.o bgzf.o hts.o vcf.o sam.o tbx.o
