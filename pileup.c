@@ -182,7 +182,7 @@ int main_pileup(int argc, char *argv[])
 					a[m] = pileup2allele(&plp[i][j], baseQ, (uint64_t)i<<32 | j);
 					if (!a[m].is_skip) ++m;
 				}
-			ks_introsort(allele, aux.tot_dp, aux.a);
+			ks_introsort(allele, m, aux.a);
 			// count alleles
 			for (i = n_alleles = 1; i < m; ++i)
 				if (a[i].indel != a[i-1].indel || a[i].hash != a[i-1].hash)
