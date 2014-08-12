@@ -29,7 +29,7 @@ static int read_bam(void *data, bam1_t *b) // read level filters better go here 
 }
 
 typedef struct {
-	uint32_t is_skip:1, q:31;
+	uint32_t is_skip:1, b:15, q:16;
 	int indel;
 	uint64_t hash;
 	uint64_t pos;
@@ -46,7 +46,7 @@ static inline allele_t pileup2allele(const bam_pileup1_t *p, int min_baseQ, uint
 	a.q = bam_get_qual(p->b)[p->qpos];
 	a.is_skip = (p->is_del || p->is_refskip || a.q < min_baseQ);
 	a.indel = p->indel;
-	a.hash = bam_seqi(seq, p->qpos);
+	a.b = a.hash = bam_seqi(seq, p->qpos);
 	a.pos = pos;
 	if (p->indel > 0)
 		for (i = 0; i < p->indel; ++i)
@@ -78,7 +78,7 @@ typedef struct {
 
 int main_pileup(int argc, char *argv[])
 {
-	int i, j, n, tid, beg, end, pos, last_tid, *n_plp, baseQ = 0, mapQ = 0, min_len = 0, l_ref = 0, depth_only = 0;
+	int i, j, n, tid, beg, end, pos, last_tid, *n_plp, baseQ = 0, mapQ = 0, min_len = 0, l_ref = 0, depth_only = 0, min_sum_q = 0;
 	const bam_pileup1_t **plp;
 	char *ref = 0, *reg = 0, *chr_end; // specified region
 	faidx_t *fai = 0;
@@ -88,12 +88,13 @@ int main_pileup(int argc, char *argv[])
 	bam_mplp_t mplp;
 
 	// parse the command line
-	while ((n = getopt(argc, argv, "r:q:Q:l:f:d")) >= 0) {
+	while ((n = getopt(argc, argv, "r:q:Q:l:f:ds:")) >= 0) {
 		if (n == 'f') fai = fai_load(optarg);
 		else if (n == 'l') min_len = atoi(optarg); // minimum query length
 		else if (n == 'r') reg = strdup(optarg);   // parsing a region requires a BAM header
 		else if (n == 'Q') baseQ = atoi(optarg);   // base quality threshold
 		else if (n == 'q') mapQ = atoi(optarg);    // mapping quality threshold
+		else if (n == 's') min_sum_q = atoi(optarg);
 		else if (n == 'd') depth_only = 1;
 	}
 	if (optind == argc) {
@@ -188,6 +189,13 @@ int main_pileup(int argc, char *argv[])
 				if (a[i].indel != a[i-1].indel || a[i].hash != a[i-1].hash)
 					++n_alleles;
 			if (n_alleles == 0) continue;
+			if (ref && pos - beg < l_ref && min_sum_q > 0) {
+				int r = seq_nt16_table[(int)ref[pos - beg]], sum = 0;
+				for (i = 0; i < m; ++i)
+					if (a[i].indel != 0 || a[i].b != r)
+						sum += a[i].q;
+				if (sum < min_sum_q) continue;
+			}
 			// print
 			fputs(h->target_name[tid], stdout); printf("\t%d", pos+1); // a customized printf() would be faster
 			if (ref == 0 || pos >= l_ref + beg) printf("\tN\t");
@@ -222,12 +230,7 @@ int main_pileup(int argc, char *argv[])
 				putchar('\t');
 				for (j = 0; j < n_alleles; ++j) {
 					if (j) putchar(',');
-					printf("%d", aux.cnt_b[m+j]);
-				}
-				putchar('\t');
-				for (j = 0; j < n_alleles; ++j) {
-					if (j) putchar(',');
-					printf("%d", aux.cnt_q[m+j]);
+					printf("%d:%d", aux.cnt_b[m+j], aux.cnt_q[m+j]);
 				}
 			}
 		}
