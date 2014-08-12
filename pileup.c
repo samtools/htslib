@@ -29,7 +29,7 @@ static int read_bam(void *data, bam1_t *b) // read level filters better go here 
 }
 
 typedef struct {
-	uint32_t is_skip:1, b:15, q:16;
+	uint32_t is_skip:1, is_rev:1, b:14, q:16;
 	int indel;
 	uint64_t hash;
 	uint64_t pos;
@@ -44,6 +44,7 @@ static inline allele_t pileup2allele(const bam_pileup1_t *p, int min_baseQ, uint
 	int i;
 	const uint8_t *seq = bam_get_seq(p->b);
 	a.q = bam_get_qual(p->b)[p->qpos];
+	a.is_rev = bam_is_rev(p->b);
 	a.is_skip = (p->is_del || p->is_refskip || a.q < min_baseQ);
 	a.indel = p->indel;
 	a.b = a.hash = bam_seqi(seq, p->qpos);
@@ -213,24 +214,24 @@ int main_pileup(int argc, char *argv[])
 			if (aux.n_cnt > aux.max_cnt) {
 				aux.max_cnt = aux.n_cnt;
 				kroundup32(aux.max_cnt);
-				aux.cnt_b = (int*)realloc(aux.cnt_b, aux.max_cnt * sizeof(int));
+				aux.cnt_b = (int*)realloc(aux.cnt_b, aux.max_cnt * 2 * sizeof(int));
 				aux.cnt_q = (int*)realloc(aux.cnt_q, aux.max_cnt * sizeof(int));
 			}
-			memset(aux.cnt_b, 0, aux.n_cnt * sizeof(int));
+			memset(aux.cnt_b, 0, aux.n_cnt * 2 * sizeof(int));
 			memset(aux.cnt_q, 0, aux.n_cnt * sizeof(int));
 			j = (a[0].pos>>32)*n_alleles;
 			++aux.cnt_b[j]; aux.cnt_q[j] += a[0].q;
 			for (i = 1, k = 0; i < m; ++i) {
 				if (a[i].indel != a[i-1].indel || a[i].hash != a[i-1].hash) ++k;
 				j = (a[i].pos>>32)*n_alleles + k;
-				++aux.cnt_b[j]; aux.cnt_q[j] += a[i].q;
+				++aux.cnt_b[j<<1|a[i].is_rev]; aux.cnt_q[j] += a[i].q;
 			}
 			// print counts
 			for (i = m = 0; i < n; ++i, m += n_alleles) {
 				putchar('\t');
 				for (j = 0; j < n_alleles; ++j) {
 					if (j) putchar(',');
-					printf("%d:%d", aux.cnt_b[m+j], aux.cnt_q[m+j]);
+					printf("%d:%d:%d", aux.cnt_b[(m+j)<<1], aux.cnt_b[(m+j)<<1|1], aux.cnt_q[m+j]);
 				}
 			}
 		}
