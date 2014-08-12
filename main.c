@@ -4,6 +4,8 @@
 #include <ctype.h>
 #include "vcf.h"
 
+#define HTSCMD_VERSION "r227"
+
 int main_samview(int argc, char *argv[]);
 int main_vcfview(int argc, char *argv[]);
 int main_bamidx(int argc, char *argv[]);
@@ -19,7 +21,7 @@ int main_razip(int argc, char *argv[]);
 
 static int usage()
 {
-	fprintf(stderr, "\nUsage:   htscmd <command> <argument>\n\n");
+	fprintf(stderr, "\nUsage:   htscmd-%s <command> <argument>\n\n", HTSCMD_VERSION);
 	fprintf(stderr, "Command: samview      SAM<->BAM conversion\n");
 	fprintf(stderr, "         vcfview      VCF<->BCF conversion\n");
 	fprintf(stderr, "         tabix        tabix for BGZF'd BED, GFF, SAM, VCF and more\n");
@@ -30,6 +32,7 @@ static int usage()
 	fprintf(stderr, "         bamshuf      shuffle BAM and group alignments by query name\n");
 	fprintf(stderr, "         bam2fq       convert name grouped BAM to interleaved fastq\n");
 	fprintf(stderr, "         bam2bed      BAM->BED conversion\n");
+	fprintf(stderr, "         pileup       summary pileup\n");
 	fprintf(stderr, "         abreak       summarize assembly break points\n");
 	fprintf(stderr, "\n");
 	return 1;

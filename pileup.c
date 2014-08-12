@@ -123,7 +123,7 @@ int main_pileup(int argc, char *argv[])
 	last_tid = -1;
 	for (i = 0; i < n; ++i) {
 		bam_hdr_t *htmp;
-		data[i] = calloc(1, sizeof(aux_t));
+		data[i] = (aux_t*)calloc(1, sizeof(aux_t));
 		data[i]->fp = bgzf_open(argv[optind+i], "r"); // open BAM
 		data[i]->min_mapQ = mapQ;                     // set the mapQ filter
 		data[i]->min_len  = min_len;                  // set the qlen filter

@@ -97,7 +97,7 @@ typedef struct RandomAccessZFile  {
 	int64_t block_pos, block_off, next_block_pos;
 	/* block_pos: the start postiion of current block  in compressed file */
 	/* block_off: tell how many bytes have been read from current block */
-	void *inbuf, *outbuf;
+	unsigned char *inbuf, *outbuf;
 	int header_size;
 	gz_header *header;
 	/* header is used to transfer inflate_state->mode from HEAD to TYPE after call inflateReset */

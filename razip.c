@@ -49,7 +49,7 @@ int main_razip(int argc, char **argv)
 {
 	int c, compress, pstdout, is_forced;
 	RAZF *rz;
-	void *buffer;
+	unsigned char *buffer;
 	long start, end, size;
 
 	compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0;
@@ -79,7 +79,7 @@ int main_razip(int argc, char **argv)
 			if(pstdout){
 				f_dst = fileno(stdout);
 			} else {
-				char *name = malloc(sizeof(strlen(argv[optind]) + 5));
+				char *name = (char*)malloc(sizeof(strlen(argv[optind]) + 5));
 				strcpy(name, argv[optind]);
 				strcat(name, ".rz");
 				f_dst = write_open(name, is_forced);
@@ -91,7 +91,7 @@ int main_razip(int argc, char **argv)
 			f_dst = fileno(stdout);
 		} else return razf_main_usage();
 		rz = razf_dopen(f_dst, "w");
-		buffer = malloc(WINDOW_SIZE);
+		buffer = (unsigned char*)malloc(WINDOW_SIZE);
 		while((c = read(f_src, buffer, WINDOW_SIZE)) > 0) razf_write(rz, buffer, c);
 		razf_close(rz); // f_dst will be closed here
 		if (argc > optind && !pstdout) unlink(argv[optind]);
@@ -121,7 +121,7 @@ int main_razip(int argc, char **argv)
 				free(name);
 			} else f_dst = fileno(stdout);
 			rz = razf_open(argv[optind], "r");
-			buffer = malloc(WINDOW_SIZE);
+			buffer = (unsigned char*)malloc(WINDOW_SIZE);
 			razf_seek(rz, start, SEEK_SET);
 			while(1){
 				if(end < 0) c = razf_read(rz, buffer, WINDOW_SIZE);
