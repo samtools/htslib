@@ -4,8 +4,6 @@
 #include <ctype.h>
 #include "vcf.h"
 
-#define HTSCMD_VERSION "r227"
-
 int main_samview(int argc, char *argv[]);
 int main_vcfview(int argc, char *argv[]);
 int main_bamidx(int argc, char *argv[]);
@@ -21,7 +19,8 @@ int main_razip(int argc, char *argv[]);
 
 static int usage()
 {
-	fprintf(stderr, "\nUsage:   htscmd-%s <command> <argument>\n\n", HTSCMD_VERSION);
+	fprintf(stderr, "\nVersion: %s\n", HTS_VERSION);
+	fprintf(stderr, "Usage:   htscmd <command> <argument>\n\n");
 	fprintf(stderr, "Command: samview      SAM<->BAM conversion\n");
 	fprintf(stderr, "         vcfview      VCF<->BCF conversion\n");
 	fprintf(stderr, "         tabix        tabix for BGZF'd BED, GFF, SAM, VCF and more\n");

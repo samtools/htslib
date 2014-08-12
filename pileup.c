@@ -105,8 +105,9 @@ int main_pileup(int argc, char *argv[])
 		fprintf(stderr, "         -l INT     minimum query length [%d]\n", min_len);
 		fprintf(stderr, "         -q INT     minimum mapping quality [%d]\n", mapQ);
 		fprintf(stderr, "         -Q INT     minimum base quality [%d]\n", baseQ);
+		fprintf(stderr, "         -s INT     mininum sum of alt quality to output [%d]\n", min_sum_q);
 		fprintf(stderr, "         -r STR     region [null]\n");
-        fprintf(stderr, "\n");
+		fprintf(stderr, "\n");
 		return 1;
 	}
 
@@ -151,11 +152,12 @@ int main_pileup(int argc, char *argv[])
 	while (bam_mplp_auto(mplp, &tid, &pos, n_plp, plp) > 0) { // come to the next covered position
 		if (pos < beg || pos >= end) continue; // out of range; skip
 		for (i = aux.tot_dp = 0; i < n; ++i) aux.tot_dp += n_plp[i];
-		if (aux.tot_dp == 0) continue; // well, this should not happen
 		if (last_tid != tid && fai) {
 			free(ref);
 			ref = fai_fetch(fai, h->target_name[tid], &l_ref);
+			last_tid = tid;
 		}
+		if (aux.tot_dp == 0) continue; // well, this should not happen
 		if (depth_only) { // only print read depth; no allele information
 			fputs(h->target_name[tid], stdout); printf("\t%d", pos+1); // a customized printf() would be faster
 			if (ref == 0 || pos >= l_ref + beg) printf("\tN");
@@ -184,6 +186,7 @@ int main_pileup(int argc, char *argv[])
 					a[m] = pileup2allele(&plp[i][j], baseQ, (uint64_t)i<<32 | j);
 					if (!a[m].is_skip) ++m;
 				}
+			if (m == 0) continue;
 			ks_introsort(allele, m, aux.a);
 			// count alleles
 			for (i = n_alleles = 1; i < m; ++i)
@@ -236,7 +239,6 @@ int main_pileup(int argc, char *argv[])
 			}
 		}
 		putchar('\n');
-		last_tid = tid;
 	}
 	free(n_plp); free(plp);
 	bam_mplp_destroy(mplp);
