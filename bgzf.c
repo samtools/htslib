@@ -825,7 +825,7 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
         return -1;
     }
     fp->block_length = 0;  // indicates current block has not been loaded
-    fp->block_address = block_address << 16;
+    fp->block_address = block_address;
     fp->block_offset = block_offset;
     return 0;
 }
