@@ -1,18 +1,17 @@
-HTSlib is an experimental implementation of a unified C library for accessing
-common file formats, such as [SAM][1] and [VCF][2], used for high-throughput
-sequencing data. The library is contained in the `htslib` subdirectory. Each
-command-line tool is implemented in one C source code file in the toplevel
-directory. HTSlib only depends on [zlib][3]. It is known to be compatible with
-gcc, g++ and clang.
+HTSlib is an implementation of a unified C library for accessing common file
+formats, such as [SAM, CRAM and VCF][1], used for high-throughput sequencing
+data, and is the core library used by [samtools][2] and [bcftools][3].
+HTSlib only depends on [zlib][4].
+It is known to be compatible with gcc, g++ and clang.
 
-HTSlib implements a generalized BAM index. The command-line tools `bamidx` and
-`tabix` write the old index by default, but can also write a new index with
-file extension `.csi` (coordinate-sorted index). The HTSlib file reader first
-looks for the new index and then for the old if the new index is absent.
+HTSlib implements a generalized BAM index, with file extension `.csi`
+(coordinate-sorted index). The HTSlib file reader first looks for the new index
+and then for the old if the new index is absent.
 
-HTSlib is unfinished. It has not been tested on large-scale real data. Some
-useful APIs are missing.
+This project also includes the popular tabix indexer, which indexes both `.tbi`
+and `.csi` formats, and the bgzip compression utility.
 
-[1]: http://samtools.sourceforge.net
-[2]: http://vcftools.sourceforge.net/specs.html
-[3]: http://zlib.net/
+[1]: http://samtools.github.io/hts-specs/
+[2]: http://samtools.github.io/bcftools/
+[3]: http://github.com/samtools/samtools
+[4]: http://zlib.net/
