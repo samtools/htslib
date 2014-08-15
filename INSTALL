@@ -1,0 +1,25 @@
+System Requirements
+===================
+
+HTSlib depends on the zlib library <http://zlib.net>.  Building HTSlib requires
+zlib development files to be installed on the build machine; you may need to
+ensure a package such as zlib1g-dev (on Debian or Ubuntu Linux) or zlib-devel
+(on RPM/yum-based distributions) is installed.
+
+
+Compilation
+===========
+
+'cd' to the htslib-1.x directory containing the package's source and type
+'make' to compile HTSlib.
+
+
+Installation
+============
+
+Type 'make install' to install the bgzip and tabix utilities, library headers,
+library archives, several manual pages, and a pkgconfig file to /usr/local.
+
+Type 'make prefix=/path/to/dir install' to install everything under your
+choice of installation directory.  The install target also understands
+DESTDIR and the other usual installation directory variables.
