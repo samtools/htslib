@@ -2913,27 +2913,40 @@ int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id)
 
 bcf_fmt_t *bcf_get_fmt(const bcf_hdr_t *hdr, bcf1_t *line, const char *key)
 {
-    int i, id = bcf_hdr_id2int(hdr, BCF_DT_ID, key);
+    int id = bcf_hdr_id2int(hdr, BCF_DT_ID, key);
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,id) ) return NULL;   // no such FMT field in the header
-    if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
-    for (i=0; i<line->n_fmt; i++)  
-    {
-        if ( line->d.fmt[i].id==id ) return &line->d.fmt[i];
-    }
-    return NULL;
+    return bcf_get_fmt_idx(line, id);
 }
 
 bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key)
 {
-    int i, id = bcf_hdr_id2int(hdr, BCF_DT_ID, key);
+    int id = bcf_hdr_id2int(hdr, BCF_DT_ID, key);
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_INFO,id) ) return NULL;   // no such INFO field in the header
-    if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
-    for (i=0; i<line->n_info; i++)  
+    return bcf_get_info_idx(line, id);
+}
+
+bcf_fmt_t *bcf_get_fmt_idx(bcf1_t *line, const int idx) 
+{
+    int i;
+    if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
+    for (i=0; i<line->n_fmt; i++)  
     {
-        if ( line->d.info[i].key==id ) return &line->d.info[i];
+        if ( line->d.fmt[i].id==idx ) return &line->d.fmt[i];
     }
     return NULL;
 }
+
+bcf_info_t *bcf_get_info_idx(bcf1_t *line, const int idx) 
+{
+    int i;
+    if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
+    for (i=0; i<line->n_info; i++)  
+    {
+        if ( line->d.info[i].key==idx ) return &line->d.info[i];
+    }
+    return NULL;
+}
+
 
 int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
 {
