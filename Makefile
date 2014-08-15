@@ -81,8 +81,8 @@ lib-shared: libhts.so
 endif
 
 
-PACKAGE_VERSION  = 0.0.1
-LIBHTS_SOVERSION = 0
+PACKAGE_VERSION  = 1.0
+LIBHTS_SOVERSION = 1
 
 
 # $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
