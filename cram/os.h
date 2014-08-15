@@ -88,8 +88,15 @@ extern "C" {
  * processor type too.
  */
 
-/* Set by autoconf */
-#define SP_LITTLE_ENDIAN
+#if !defined(SP_BIG_ENDIAN) && !defined(SP_LITTLE_ENDIAN)
+
+# if __BYTE_ORDER == __BIG_ENDIAN
+#   define SP_BIG_ENDIAN
+#elif __BYTE_ORDER == __LITTLE_ENDIAN
+#   define SP_LITTLE_ENDIAN
+#endif
+
+#endif
 
 /* Mac FAT binaries or unknown. Auto detect based on CPU type */
 #if !defined(SP_BIG_ENDIAN) && !defined(SP_LITTLE_ENDIAN)

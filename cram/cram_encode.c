@@ -1801,10 +1801,18 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
 
 	case 'B': {
 	    int type = aux[3], blen;
+
+#ifdef SP_LITTLE_ENDIAN
 	    uint32_t count = (uint32_t)((((unsigned char *)aux)[4]<< 0) +
 					(((unsigned char *)aux)[5]<< 8) +
 					(((unsigned char *)aux)[6]<<16) +
 					(((unsigned char *)aux)[7]<<24));
+#else
+	    uint32_t count = (uint32_t)((((unsigned char *)aux)[7]<< 0) +
+					(((unsigned char *)aux)[6]<< 8) +
+					(((unsigned char *)aux)[5]<<16) +
+					(((unsigned char *)aux)[4]<<24));
+#endif
 	    // skip TN field
 	    aux+=3; //*tmp++=*aux++; *tmp++=*aux++; *tmp++=*aux++;
 
@@ -1949,10 +1957,18 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 
 	case 'B': {
 	    int type = aux[3], blen;
+
+#ifdef SP_LITTLE_ENDIAN
 	    uint32_t count = (uint32_t)((((unsigned char *)aux)[4]<< 0) +
 					(((unsigned char *)aux)[5]<< 8) +
 					(((unsigned char *)aux)[6]<<16) +
 					(((unsigned char *)aux)[7]<<24));
+#else
+	    uint32_t count = (uint32_t)((((unsigned char *)aux)[7]<< 0) +
+					(((unsigned char *)aux)[6]<< 8) +
+					(((unsigned char *)aux)[5]<<16) +
+					(((unsigned char *)aux)[4]<<24));
+#endif
 	    // skip TN field
 	    aux+=3;
 
