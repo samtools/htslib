@@ -234,11 +234,13 @@ bgzip.o: bgzip.c $(htslib_bgzf_h) $(htslib_hts_h)
 tabix.o: tabix.c $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) htslib/kseq.h $(htslib_bgzf_h) $(htslib_hts_h)
 
 
+# For tests that might use it, set $REF_PATH explicitly to use only reference
+# areas within the test suite (or set it to ':' to use no reference areas).
 check test: $(BUILT_TEST_PROGRAMS)
 	test/fieldarith test/fieldarith.sam
 	test/hfile
 	test/sam
-	cd test && ./test_view.pl
+	cd test && REF_PATH=: ./test_view.pl
 	cd test && ./test.pl
 
 test/fieldarith: test/fieldarith.o libhts.a
