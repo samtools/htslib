@@ -1,8 +1,26 @@
 # Makefile rules useful for third-party code using htslib's public API.
 #
-#    Copyright (C) 2013 Genome Research Ltd.
+#    Copyright (C) 2013-2014 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
 
 # The makefile fragment included below provides variables that can be used
 # to express dependencies on headers supplied by an in-development htslib.
@@ -24,35 +42,41 @@ include $(HTSDIR)/htslib_vars.mk
 # will cause the library to be rebuilt as necessary:
 #
 #	foo: foo.o $(HTSDIR)/libhts.a
+#
+# or similarly if your target requires any of the tools supplied:
+#
+#	bar.bed.bgz.tbi: bar.bed.bgz $(HTSDIR)/tabix
+#		$(HTSDIR)/tabix -p bed bar.bed.bgz
 
-HTSLIB_ALL = \
+HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/bgzf.h \
 	$(HTSDIR)/htslib/faidx.h \
+	$(HTSDIR)/htslib/hfile.h \
 	$(HTSDIR)/htslib/hts.h \
+	$(HTSDIR)/htslib/hts_defs.h \
 	$(HTSDIR)/htslib/khash.h \
 	$(HTSDIR)/htslib/klist.h \
 	$(HTSDIR)/htslib/knetfile.h \
 	$(HTSDIR)/htslib/kseq.h \
 	$(HTSDIR)/htslib/ksort.h \
-	$(HTSDIR)/htslib/kstdint.h \
 	$(HTSDIR)/htslib/kstring.h \
-	$(HTSDIR)/htslib/razf.h \
 	$(HTSDIR)/htslib/sam.h \
 	$(HTSDIR)/htslib/synced_bcf_reader.h \
 	$(HTSDIR)/htslib/tbx.h \
 	$(HTSDIR)/htslib/vcf.h \
 	$(HTSDIR)/htslib/vcf_sweep.h \
-	$(HTSDIR)/htslib/vcfutils.h \
+	$(HTSDIR)/htslib/vcfutils.h
+
+HTSLIB_ALL = \
+	$(HTSLIB_PUBLIC_HEADERS) \
 	$(HTSDIR)/bgzf.c \
 	$(HTSDIR)/faidx.c \
-	$(HTSDIR)/hfile.h \
 	$(HTSDIR)/hfile_internal.h \
 	$(HTSDIR)/hfile.c \
 	$(HTSDIR)/hfile_net.c \
 	$(HTSDIR)/hts.c \
 	$(HTSDIR)/knetfile.c \
 	$(HTSDIR)/kstring.c \
-	$(HTSDIR)/razf.c \
 	$(HTSDIR)/sam.c \
 	$(HTSDIR)/synced_bcf_reader.c \
 	$(HTSDIR)/tbx.c \
@@ -102,6 +126,12 @@ $(HTSDIR)/libhts.a: $(HTSLIB_ALL)
 
 $(HTSDIR)/libhts.so $(HTSDIR)/libhts.dylib: $(HTSLIB_ALL)
 	+cd $(HTSDIR) && $(MAKE) lib-shared
+
+$(HTSDIR)/bgzip: $(HTSDIR)/bgzip.c $(HTSLIB_PUBLIC_HEADERS)
+	+cd $(HTSDIR) && $(MAKE) bgzip
+
+$(HTSDIR)/tabix: $(HTSDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS)
+	+cd $(HTSDIR) && $(MAKE) tabix
 
 # Rules for phony targets.  You may wish to have your corresponding phony
 # targets invoke these in addition to their own recipes:

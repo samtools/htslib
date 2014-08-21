@@ -1,4 +1,26 @@
 #! /usr/bin/env perl
+#
+#    Copyright (C) 2013 Genome Research Ltd.
+#
+#    Author: James Bonfield <jkb@sanger.ac.uk>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
 use strict;
 use warnings;
 
@@ -9,10 +31,10 @@ sub test {
     my ($cmd) = @_;
     print "  $cmd\n";
     if (system("$cmd || exit 1") != 0) {
-	print "FAIL $!\n";
-	$err_count++;
+        print "FAIL $!\n";
+        $err_count++;
     } else {
-	$suc_count++;
+        $suc_count++;
     }
 }
 
@@ -33,14 +55,14 @@ foreach my $sam (glob("*#*.sam")) {
     # SAM -> CRAM -> SAM
     test "./test_view -t $ref -S -C $sam > $cram";
     test "./test_view -D $cram > $cram.sam_";
-    test "./compare_sam.pl $sam $cram.sam_";
+    test "./compare_sam.pl -nomd $sam $cram.sam_";
 
     # BAM -> CRAM -> BAM -> SAM
     $cram = "$bam.cram";
     test "./test_view -t $ref -C $bam > $cram";
     test "./test_view -b -D $cram > $cram.bam";
     test "./test_view $cram.bam > $cram.bam.sam_";
-    test "./compare_sam.pl $sam $cram.bam.sam_";
+    test "./compare_sam.pl -nomd $sam $cram.bam.sam_";
 }
 
 print "\nSuccesses $suc_count\n";

@@ -87,7 +87,7 @@ static int socket_connect(const char *host, const char *port)
 {
 #define __err_connect(func) do { perror(func); freeaddrinfo(res); return -1; } while (0)
 
-	int on = 1, fd;
+	int ai_err, on = 1, fd;
 	struct linger lng = { 0, 0 };
 	struct addrinfo hints, *res = 0;
 	memset(&hints, 0, sizeof(struct addrinfo));
@@ -95,7 +95,7 @@ static int socket_connect(const char *host, const char *port)
 	hints.ai_socktype = SOCK_STREAM;
 	/* In Unix/Mac, getaddrinfo() is the most convenient way to get
 	 * server information. */
-	if (getaddrinfo(host, port, &hints, &res) != 0) __err_connect("getaddrinfo");
+	if ((ai_err = getaddrinfo(host, port, &hints, &res)) != 0) { fprintf(stderr, "can't resolve %s:%s: %s\n", host, port, gai_strerror(ai_err)); return -1; }
 	if ((fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1) __err_connect("socket");
 	/* The following two setsockopt() are used by ftplib
 	 * (http://nbpfaus.net/~pfau/ftplib/). I am not sure if they
@@ -434,9 +434,20 @@ int khttp_connect_file(knetFile *fp)
 			rest -= my_netread(fp->fd, buf, l);
 		}
 	} else if (ret != 206 && ret != 200) {
+		// failed to open file
 		free(buf);
-		fprintf(stderr, "[khttp_connect_file] fail to open file (HTTP code: %d).\n", ret);
 		netclose(fp->fd);
+		switch (ret) {
+		case 401: errno = EPERM; break;
+		case 403: errno = EACCES; break;
+		case 404: errno = ENOENT; break;
+		case 407: errno = EPERM; break;
+		case 408: errno = ETIMEDOUT; break;
+		case 410: errno = ENOENT; break;
+		case 503: errno = EAGAIN; break;
+		case 504: errno = ETIMEDOUT; break;
+		default:  errno = (ret >= 400 && ret < 500)? EINVAL : EIO; break;
+		}
 		fp->fd = -1;
 		return -1;
 	}

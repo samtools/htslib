@@ -1,8 +1,26 @@
 # Makefile for htslib, a C library for high-throughput sequencing data formats.
 #
-#    Copyright (C) 2013 Genome Research Ltd.
+#    Copyright (C) 2013-2014 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
 
 CC     = gcc
 AR     = ar
@@ -18,24 +36,33 @@ LDLIBS   =
 
 prefix      = /usr/local
 exec_prefix = $(prefix)
+bindir      = $(exec_prefix)/bin
 includedir  = $(prefix)/include
 libdir      = $(exec_prefix)/lib
 mandir      = $(prefix)/share/man
+man1dir     = $(mandir)/man1
 man5dir     = $(mandir)/man5
+pkgconfigdir= $(libdir)/pkgconfig
 
+MKDIR_P = mkdir -p
 INSTALL = install -p
 INSTALL_PROGRAM = $(INSTALL)
 INSTALL_DATA    = $(INSTALL) -m 644
+INSTALL_DIR     = $(MKDIR_P) -m 755
 
+BUILT_PROGRAMS = \
+	bgzip \
+	tabix
 
 BUILT_TEST_PROGRAMS = \
 	test/fieldarith \
 	test/hfile \
+	test/sam \
 	test/test_view \
 	test/test-vcf-api \
 	test/test-vcf-sweep
 
-all: lib-static lib-shared $(BUILT_TEST_PROGRAMS)
+all: lib-static lib-shared $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 
 HTSPREFIX =
 include htslib_vars.mk
@@ -54,8 +81,8 @@ lib-shared: libhts.so
 endif
 
 
-PACKAGE_VERSION  = 0.0.1
-LIBHTS_SOVERSION = 0
+PACKAGE_VERSION  = 1.0
+LIBHTS_SOVERSION = 1
 
 
 # $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
@@ -142,7 +169,7 @@ libhts.a: $(LIBHTS_OBJS)
 # file used at runtime (when $LD_LIBRARY_PATH includes the build directory).
 
 libhts.so: $(LIBHTS_OBJS:.o=.pico)
-	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LDLIBS) -lz
+	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) -pthread $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LDLIBS) -lz -lm
 	ln -sf $@ libhts.so.$(LIBHTS_SOVERSION)
 
 # Similarly this also creates libhts.NN.dylib as a byproduct, so that programs
@@ -161,18 +188,18 @@ cram_sam_header_h = cram/sam_header.h cram/string_alloc.h cram/pooled_alloc.h ht
 cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h) $(cram_sam_header_h)
 cram_structs_h = cram/cram_structs.h cram/thread_pool.h cram/string_alloc.h htslib/khash.h
 cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
+hfile_internal_h = hfile_internal.h $(htslib_hfile_h)
 
-bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) hfile.h htslib/khash.h
+bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) htslib/khash.h
 kstring.o kstring.pico: kstring.c htslib/kstring.h
 knetfile.o knetfile.pico: knetfile.c htslib/knetfile.h
-hfile.o hfile.pico: hfile.c hfile.h hfile_internal.h
-hfile_net.o hfile_net.pico: hfile_net.c hfile.h hfile_internal.h htslib/knetfile.h
-hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) hfile.h htslib/khash.h htslib/kseq.h htslib/ksort.h
-vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) hfile.h htslib/khash.h htslib/kseq.h htslib/kstring.h
-sam.o sam.pico: sam.c $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) hfile.h htslib/khash.h htslib/kseq.h htslib/kstring.h
+hfile.o hfile.pico: hfile.c $(htslib_hfile_h) $(hfile_internal_h)
+hfile_net.o hfile_net.pico: hfile_net.c $(hfile_internal_h) htslib/knetfile.h
+hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) htslib/khash.h htslib/kseq.h htslib/ksort.h
+vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) htslib/khash.h htslib/kseq.h htslib/kstring.h
+sam.o sam.pico: sam.c $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) htslib/khash.h htslib/kseq.h htslib/kstring.h
 tbx.o tbx.pico: tbx.c $(htslib_tbx_h) $(htslib_bgzf_h) htslib/khash.h
 faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) htslib/khash.h htslib/knetfile.h
-razf.o razf.pico: razf.c $(htslib_razf_h)
 synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_bcf_reader_h) htslib/kseq.h htslib/khash_str2int.h
 vcf_sweep.o vcf_sweep.pico: vcf_sweep.c $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
@@ -181,14 +208,14 @@ kfunc.o kfunc.pico: kfunc.c htslib/kfunc.h
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c $(cram_h) cram/os.h cram/md5.h
 cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c $(cram_h) cram/os.h cram/md5.h
-cram/cram_index.o cram/cram_index.pico: cram/cram_index.c $(cram_h) cram/os.h cram/zfio.h
-cram/cram_io.o cram/cram_io.pico: cram/cram_io.c $(cram_h) cram/os.h cram/md5.h $(cram_open_trace_file_h) hfile.h
+cram/cram_index.o cram/cram_index.pico: cram/cram_index.c $(htslib_hfile_h) $(cram_h) cram/os.h cram/zfio.h
+cram/cram_io.o cram/cram_io.pico: cram/cram_io.c $(cram_h) cram/os.h cram/md5.h $(cram_open_trace_file_h) $(htslib_hfile_h)
 cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c $(cram_h) $(htslib_sam_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c $(cram_h) cram/os.h
 cram/files.o cram/files.pico: cram/files.c $(cram_misc_h)
 cram/mFILE.o cram/mFILE.pico: cram/mFILE.c cram/os.h cram/mFILE.h cram/vlen.h
 cram/md5.o cram/md5.pico: cram/md5.c cram/md5.h
-cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c $(cram_open_trace_file_h) $(cram_misc_h)
+cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h)
 cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c cram/pooled_alloc.h
 cram/sam_header.o cram/sam_header.pico: cram/sam_header.c $(cram_sam_header_h) cram/string_alloc.h
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c cram/string_alloc.h
@@ -197,9 +224,20 @@ cram/vlen.o cram/vlen.pico: cram/vlen.c cram/vlen.h cram/os.h
 cram/zfio.o cram/zfio.pico: cram/zfio.c cram/os.h cram/zfio.h
 
 
+bgzip: bgzip.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ bgzip.o libhts.a $(LDLIBS) -lz
+
+tabix: tabix.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ tabix.o libhts.a $(LDLIBS) -lz
+
+bgzip.o: bgzip.c $(htslib_bgzf_h) $(htslib_hts_h)
+tabix.o: tabix.c $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) htslib/kseq.h $(htslib_bgzf_h) $(htslib_hts_h)
+
+
 check test: $(BUILT_TEST_PROGRAMS)
 	test/fieldarith test/fieldarith.sam
 	test/hfile
+	test/sam
 	cd test && ./test_view.pl
 	cd test && ./test.pl
 
@@ -208,6 +246,9 @@ test/fieldarith: test/fieldarith.o libhts.a
 
 test/hfile: test/hfile.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LDLIBS) -lz
+
+test/sam: test/sam.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/sam.o libhts.a $(LDLIBS) -lz
 
 test/test_view: test/test_view.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LDLIBS) -lz
@@ -219,19 +260,22 @@ test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LDLIBS) -lz
 
 test/fieldarith.o: test/fieldarith.c $(htslib_sam_h)
-test/hfile.o: test/hfile.c hfile.h
+test/hfile.o: test/hfile.c $(htslib_hfile_h) $(htslib_hts_defs_h)
+test/sam.o: test/sam.c $(htslib_sam_h) htslib/kstring.h
 test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
 
 
-install: installdirs install-$(SHLIB_FLAVOUR)
+install: installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig
+	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
+	$(INSTALL_DATA) *.1 $(DESTDIR)$(man1dir)
 	$(INSTALL_DATA) *.5 $(DESTDIR)$(man5dir)
 
 installdirs:
-	mkdir -p $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man5dir)
+	$(INSTALL_DIR) $(DESTDIR)$(bindir) $(DESTDIR)$(includedir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir) $(DESTDIR)$(pkgconfigdir)
 
 # After installation, the real file in $(libdir) will be libhts.so.X.Y.Z,
 # with symlinks libhts.so (used via -lhts during linking of client programs)
@@ -247,6 +291,17 @@ install-dylib: libhts.dylib installdirs
 	ln -sf libhts.$(PACKAGE_VERSION).dylib $(DESTDIR)$(libdir)/libhts.dylib
 	ln -sf libhts.$(PACKAGE_VERSION).dylib $(DESTDIR)$(libdir)/libhts.$(LIBHTS_SOVERSION).dylib
 
+# Substitute these pseudo-autoconf variables only at install time
+# so that "make install prefix=/prefix/path" etc continue to work.
+install-pkgconfig: installdirs
+	sed -e 's#@includedir@#$(includedir)#g;s#@libdir@#$(libdir)#g;s#@PACKAGE_VERSION@#$(PACKAGE_VERSION)#g' htslib.pc.in > $(DESTDIR)$(pkgconfigdir)/htslib.pc
+	chmod 644 $(DESTDIR)$(pkgconfigdir)/htslib.pc
+
+# A pkg-config file (suitable for copying to $PKG_CONFIG_PATH) that provides
+# flags for building against the uninstalled library in this build directory.
+htslib-uninstalled.pc: htslib.pc.in
+	sed -e 's#@includedir@#'`pwd`'#g;s#@libdir@#'`pwd`'#g' htslib.pc.in > $@
+
 
 testclean:
 	-rm -f test/*.tmp test/*.tmp.*
@@ -255,10 +310,10 @@ mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
-	-rm -f libhts.a $(BUILT_TEST_PROGRAMS)
+	-rm -f libhts.a $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 
 distclean: clean
-	-rm -f TAGS
+	-rm -f TAGS *-uninstalled.pc
 
 clean-so:
 	-rm -f libhts.so libhts.so.*
@@ -274,7 +329,7 @@ tags:
 force:
 
 
-.PHONY: all check clean distclean force install installdirs
+.PHONY: all check clean distclean force install install-pkgconfig installdirs
 .PHONY: lib-shared lib-static mostlyclean tags test testclean
 .PHONY: clean-so install-so
 .PHONY: clean-dylib install-dylib

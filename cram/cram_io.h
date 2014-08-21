@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2013 Genome Research Ltd.
+Copyright (c) 2012-2014 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without 
@@ -148,6 +148,14 @@ int cram_write_block(cram_fd *fd, cram_block *b);
 /*! Frees a CRAM block, deallocating internal data too.
  */
 void cram_free_block(cram_block *b);
+
+/*! Uncompress a memory block using Zlib.
+ *
+ * @return
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size);
 
 /*! Uncompresses a CRAM block, if compressed.
  *

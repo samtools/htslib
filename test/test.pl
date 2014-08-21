@@ -1,4 +1,26 @@
 #!/usr/bin/env perl
+#
+#    Copyright (C) 2012-2013 Genome Research Ltd.
+#
+#    Author: Petr Danecek <pd3@sanger.ac.uk>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
 
 use strict;
 use warnings;
@@ -27,7 +49,7 @@ sub error
 {
     my (@msg) = @_;
     if ( scalar @msg ) { confess @msg; }
-    print 
+    print
         "About: samtools/htslib consistency test script\n",
         "Usage: test.pl [OPTIONS]\n",
         "Options:\n",
@@ -43,8 +65,8 @@ sub parse_params
     my $help;
     Getopt::Long::Configure('bundling');
     my $ret = GetOptions (
-            't|temp-dir:s' => \$$opts{keep_files}, 
-            'r|redo-outputs' => \$$opts{redo_outputs}, 
+            't|temp-dir:s' => \$$opts{keep_files},
+            'r|redo-outputs' => \$$opts{redo_outputs},
             'h|?|help' => \$help
             );
     if ( !$ret or $help ) { error(); }
@@ -62,14 +84,14 @@ sub _cmd
     my @out;
     my $pid = open($kid_io, "-|");
     if ( !defined $pid ) { error("Cannot fork: $!"); }
-    if ($pid) 
+    if ($pid)
     {
         # parent
         @out = <$kid_io>;
         close($kid_io);
-    } 
-    else 
-    {      
+    }
+    else
+    {
         # child
         exec('/bin/bash', '-o','pipefail','-c', $cmd) or error("Cannot execute the command [/bin/sh -o pipefail -c $cmd]: $!");
     }
@@ -122,8 +144,8 @@ sub test_cmd
     }
     elsif ( !$$opts{redo_outputs} ) { failed($opts,$test,"$$opts{path}/$args{out}: $!"); return; }
 
-    if ( $exp ne $out ) 
-    { 
+    if ( $exp ne $out )
+    {
         open(my $fh,'>',"$$opts{path}/$args{out}.new") or error("$$opts{path}/$args{out}.new");
         print $fh $out;
         close($fh);
@@ -135,9 +157,9 @@ sub test_cmd
         }
         else
         {
-            failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new"); 
+            failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new");
         }
-        return; 
+        return;
     }
     passed($opts,$test);
 }

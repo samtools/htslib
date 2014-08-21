@@ -79,7 +79,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 #ifdef SAMTOOLS
-#include "hfile.h"
+#include "htslib/hfile.h"
 #define paranoid_hclose(fp) (hclose(fp))
 #else
 #define hclose_abruptly(fp) (fclose(fp))
@@ -527,7 +527,7 @@ int int32_put(cram_block *b, int32_t val) {
  * They're static here as they're only used within the cram_compress_block
  * and cram_uncompress_block functions, which are the external interface.
  */
-static char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
+char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
     z_stream s;
     unsigned char *data = NULL; /* Uncompressed output */
     int data_alloc = 0;
@@ -1119,6 +1119,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
     char fai_fn[PATH_MAX];
     char line[8192];
     refs_t *r = r_orig;
+    size_t fn_l = strlen(fn);
 
     RP("refs_load_fai %s\n", fn);
 
@@ -1139,15 +1140,19 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 
     if (!(r->fn = string_dup(r->pool, fn)))
 	goto err;
+	
+    if (fn_l > 4 && strcmp(&fn[fn_l-4], ".fai") == 0)
+	r->fn[fn_l-4] = 0;
 
-    if (!(r->fp = fopen(fn, "r"))) {
+    if (!(r->fp = fopen(r->fn, "r"))) {
 	if (is_err)
 	    perror(fn);
 	goto err;
     }
 
     /* Parse .fai file and load meta-data */
-    sprintf(fai_fn, "%.*s.fai", PATH_MAX-5, fn);
+    sprintf(fai_fn, "%.*s.fai", PATH_MAX-5, r->fn);
+
     if (stat(fai_fn, &sb) != 0) {
 	if (is_err)
 	    perror(fai_fn);
@@ -1428,8 +1433,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if (fd->verbose)
 	fprintf(stderr, "cram_populate_ref on fd %p, id %d\n", fd, id);
 
-    if (!ref_path)
-	ref_path = ".";
+    if (!ref_path || *ref_path == 0)
+	ref_path = "|http://www.ebi.ac.uk:80/ena/cram/md5/%s";
 
     if (!r->name)
 	return -1;
@@ -1659,6 +1664,11 @@ static char *load_ref_portion(FILE *fp, ref_entry *e, int start, int end) {
 	    fprintf(stderr, "Malformed reference file?\n");
 	    free(seq);
 	    return NULL;
+	}
+    } else {
+	int i;
+	for (i = 0; i < len; i++) {
+	    seq[i] = seq[i] & ~0x20; // uppercase in ASCII
 	}
     }
 
@@ -1958,7 +1968,7 @@ int cram_load_reference(cram_fd *fd, char *fn) {
     }
     fd->ref_fn = fn;
 
-    if (!fd->refs && fd->header) {
+    if ((!fd->refs || (fd->refs->nref == 0 && !fn)) && fd->header) {
 	if (!(fd->refs = refs_create()))
 	    return -1;
 	if (-1 == refs_from_header(fd->refs, fd, fd->header))
@@ -2201,6 +2211,11 @@ cram_container *cram_read_container(cram_fd *fd) {
 	c->multi_seq = 1;
 	fd->multi_seq = 1;
     }
+
+    fd->empty_container =
+	(c->num_records == 0 &&
+	 c->ref_seq_id == -1 &&
+	 c->ref_seq_start == 0x454f46 /* EOF */) ? 1 : 0;
 
     return c;
 }
@@ -3321,7 +3336,7 @@ cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode) {
 	fd->m[i] = cram_new_metrics();
 
     fd->range.refid = -2; // no ref.
-    fd->eof = 0;
+    fd->eof = 1;          // See samtools issue #150
     fd->ref_fn = NULL;
 
     fd->bl = NULL;
@@ -3570,8 +3585,7 @@ int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args) {
 
     case CRAM_OPT_RANGE:
 	fd->range = *va_arg(args, cram_range *);
-	cram_seek_to_refpos(fd, &fd->range);
-	break;
+	return cram_seek_to_refpos(fd, &fd->range);
 
     case CRAM_OPT_REFERENCE:
 	return cram_load_reference(fd, va_arg(args, char *));

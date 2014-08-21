@@ -1,3 +1,27 @@
+/*  test/hfile.c -- Test cases for low-level input/output streams.
+
+    Copyright (C) 2013-2014 Genome Research Ltd.
+
+    Author: John Marshall <jm18@sanger.ac.uk>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.  */
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -5,15 +29,8 @@
 
 #include <sys/stat.h>
 
-#include "hfile.h"
-
-#ifndef HTS_NORETURN
-#if __clang__major__ >= 2 || __GNUC__ >= 3
-#define HTS_NORETURN __attribute__ ((__noreturn__))
-#else
-#define HTS_NORETURN
-#endif
-#endif
+#include "htslib/hfile.h"
+#include "htslib/hts_defs.h"
 
 void HTS_NORETURN fail(const char *format, ...)
 {
@@ -73,7 +90,7 @@ void reopen(const char *infname, const char *outfname)
     if (fout == NULL) fail("hopen(\"%s\")", outfname);
 }
 
-int main()
+int main(void)
 {
     static const int size[] = { 1, 13, 403, 999, 30000 };
 

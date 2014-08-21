@@ -1,6 +1,8 @@
-/* The MIT License
+/* faidx.h -- FASTA random access.
 
-   Copyright (c) 2008 Genome Research Ltd (GRL).
+   Copyright (C) 2008, 2009, 2013, 2014 Genome Research Ltd.
+
+   Author: Heng Li <lh3@sanger.ac.uk>
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -23,10 +25,8 @@
    SOFTWARE.
 */
 
-/* Contact: Heng Li <lh3@sanger.ac.uk>, Petr Danecek <pd3@sanger> */
-
-#ifndef FAIDX_H
-#define FAIDX_H
+#ifndef HTSLIB_FAIDX_H
+#define HTSLIB_FAIDX_H
 
 /*!
   @header
@@ -52,58 +52,66 @@ typedef struct __faidx_t faidx_t;
 extern "C" {
 #endif
 
-	/*!
-	  @abstract   Build index for a FASTA or razip compressed FASTA file.
-	  @param  fn  FASTA file name
-	  @return     0 on success; or -1 on failure
-	  @discussion File "fn.fai" will be generated.
-	 */
-	int fai_build(const char *fn);
+    /*!
+      @abstract   Build index for a FASTA or bgzip-compressed FASTA file.
+      @param  fn  FASTA file name
+      @return     0 on success; or -1 on failure
+      @discussion File "fn.fai" will be generated.
+     */
+    int fai_build(const char *fn);
 
-	/*!
-	  @abstract    Distroy a faidx_t struct.
-	  @param  fai  Pointer to the struct to be destroyed
-	 */
-	void fai_destroy(faidx_t *fai);
+    /*!
+      @abstract    Distroy a faidx_t struct.
+      @param  fai  Pointer to the struct to be destroyed
+     */
+    void fai_destroy(faidx_t *fai);
 
-	/*!
-	  @abstract   Load index from "fn.fai".
-	  @param  fn  File name of the FASTA file
-	 */
-	faidx_t *fai_load(const char *fn);
+    /*!
+      @abstract   Load index from "fn.fai".
+      @param  fn  File name of the FASTA file
+     */
+    faidx_t *fai_load(const char *fn);
 
-	/*!
-	  @abstract    Fetch the sequence in a region.
-	  @param  fai  Pointer to the faidx_t struct
-	  @param  reg  Region in the format "chr2:20,000-30,000"
-	  @param  len  Length of the region
-	  @return      Pointer to the sequence; null on failure
+    /*!
+      @abstract    Fetch the sequence in a region.
+      @param  fai  Pointer to the faidx_t struct
+      @param  reg  Region in the format "chr2:20,000-30,000"
+      @param  len  Length of the region; -2 if seq not present, -1 general error
+      @return      Pointer to the sequence; null on failure
 
-	  @discussion The returned sequence is allocated by malloc family
-	  and should be destroyed by end users by calling free() on it.
-	 */
-	char *fai_fetch(const faidx_t *fai, const char *reg, int *len);
+      @discussion The returned sequence is allocated by malloc family
+      and should be destroyed by end users by calling free() on it.
+     */
+    char *fai_fetch(const faidx_t *fai, const char *reg, int *len);
 
-	/*!
-	  @abstract	   Fetch the number of sequences. 
-	  @param  fai  Pointer to the faidx_t struct
-	  @return	   The number of sequences
-	 */
-	int faidx_fetch_nseq(const faidx_t *fai);
+    /*!
+      @abstract    Fetch the number of sequences.
+      @param  fai  Pointer to the faidx_t struct
+      @return      The number of sequences
+     */
+    int faidx_fetch_nseq(const faidx_t *fai);
 
-	/*!
-	  @abstract    Fetch the sequence in a region.
-	  @param  fai  Pointer to the faidx_t struct
-	  @param  c_name Region name
-	  @param  p_beg_i  Beginning position number (zero-based)
-	  @param  p_end_i  End position number (zero-based)
-	  @param  len  Length of the region
-	  @return      Pointer to the sequence; null on failure
+    /*!
+      @abstract    Fetch the sequence in a region.
+      @param  fai  Pointer to the faidx_t struct
+      @param  c_name Region name
+      @param  p_beg_i  Beginning position number (zero-based)
+      @param  p_end_i  End position number (zero-based)
+      @param  len  Length of the region; -2 if c_name not present, -1 general error
+      @return      Pointer to the sequence; null on failure
 
-	  @discussion The returned sequence is allocated by malloc family
-	  and should be destroyed by end users by calling free() on it.
-	 */
-	char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p_end_i, int *len);
+      @discussion The returned sequence is allocated by malloc family
+      and should be destroyed by end users by calling free() on it.
+     */
+    char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p_end_i, int *len);
+
+    /*!
+      @abstract    Query if sequence is present
+      @param  fai  Pointer to the faidx_t struct
+      @param  seq  Sequence name
+      @return      1 if present or 0 if absent
+     */
+    int faidx_has_seq(const faidx_t *fai, const char *seq);
 
 #ifdef __cplusplus
 }
