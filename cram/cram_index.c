@@ -157,6 +157,7 @@ int cram_index_load(cram_fd *fd, const char *fn) {
 	kstr.l = l;
     }
 
+    kputc(0, &kstr); kstr.l--; // in order to make loop below work
 
     // Parse it line at a time
     do {
