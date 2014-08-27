@@ -1424,25 +1424,25 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
     }
     else
     {
-#define BRANCH(type_t, is_missing, is_vector_end, kprint) { \
-    type_t *p = (type_t *) data; \
-    for (j=0; j<n; j++) \
-    { \
-        if ( is_vector_end ) break; \
-        if ( j ) kputc(',', s); \
-        if ( is_missing ) kputc('.', s); \
-        else kprint; \
-    } \
-}
-    switch (type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  p[j]==bcf_int8_missing,  p[j]==bcf_int8_vector_end,  kputw(p[j], s)); break;
-        case BCF_BT_INT16: BRANCH(int16_t, p[j]==bcf_int16_missing, p[j]==bcf_int16_vector_end, kputw(p[j], s)); break;
-        case BCF_BT_INT32: BRANCH(int32_t, p[j]==bcf_int32_missing, p[j]==bcf_int32_vector_end, kputw(p[j], s)); break;
-        case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), ksprintf(s, "%g", p[j])); break;
-        default: fprintf(stderr,"todo: type %d\n", type); exit(1); break;
+        #define BRANCH(type_t, is_missing, is_vector_end, kprint) { \
+            type_t *p = (type_t *) data; \
+            for (j=0; j<n; j++) \
+            { \
+                if ( is_vector_end ) break; \
+                if ( j ) kputc(',', s); \
+                if ( is_missing ) kputc('.', s); \
+                else kprint; \
+            } \
+        }
+        switch (type) {
+            case BCF_BT_INT8:  BRANCH(int8_t,  p[j]==bcf_int8_missing,  p[j]==bcf_int8_vector_end,  kputw(p[j], s)); break;
+            case BCF_BT_INT16: BRANCH(int16_t, p[j]==bcf_int16_missing, p[j]==bcf_int16_vector_end, kputw(p[j], s)); break;
+            case BCF_BT_INT32: BRANCH(int32_t, p[j]==bcf_int32_missing, p[j]==bcf_int32_vector_end, kputw(p[j], s)); break;
+            case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), ksprintf(s, "%g", p[j])); break;
+            default: fprintf(stderr,"todo: type %d\n", type); exit(1); break;
+        }
+        #undef BRANCH
     }
-#undef BRANCH
-}
 }
 
 uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr)
@@ -2007,7 +2007,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
         }
     } else kputc('.', s);
     kputc('\t', s); // QUAL
-    if (memcmp(&v->qual, &bcf_float_missing, 4) == 0) kputc('.', s); // QUAL
+    if ( bcf_float_is_missing(v->qual) ) kputc('.', s); // QUAL
     else ksprintf(s, "%g", v->qual);
     kputc('\t', s); // FILTER
     if (v->d.n_flt) {
@@ -2026,11 +2026,19 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             kputs(h->id[BCF_DT_ID][z->key].key, s);
             if (z->len <= 0) continue;
             kputc('=', s);
-            if (z->len == 1) {
-                if (z->type == BCF_BT_FLOAT) ksprintf(s, "%g", z->v1.f);
-                else if (z->type != BCF_BT_CHAR) kputw(z->v1.i, s);
-                else kputc(z->v1.i, s);
-            } else bcf_fmt_array(s, z->len, z->type, z->vptr);
+            if (z->len == 1) 
+            {
+                switch (z->type) 
+                {
+                    case BCF_BT_INT8:  if ( z->v1.i==bcf_int8_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
+                    case BCF_BT_INT16: if ( z->v1.i==bcf_int16_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
+                    case BCF_BT_INT32: if ( z->v1.i==bcf_int32_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
+                    case BCF_BT_FLOAT: if ( bcf_float_is_missing(z->v1.f) ) kputc('.', s); else ksprintf(s, "%g", z->v1.f); break;
+                    case BCF_BT_CHAR:  kputc(z->v1.i, s); break;
+                    default: fprintf(stderr,"todo: type %d\n", z->type); exit(1); break;
+                }
+            }
+            else bcf_fmt_array(s, z->len, z->type, z->vptr);
         }
         if ( first ) kputc('.', s);
     } else kputc('.', s);
