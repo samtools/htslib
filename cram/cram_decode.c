@@ -1068,10 +1068,17 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 	BLOCK_APPEND_CHAR(s->aux_blk, '\0'); // null terminate MD:Z:
 	cr->aux_size += BLOCK_SIZE(s->aux_blk) - orig_aux;
 	buf[0] = 'N'; buf[1] = 'M'; buf[2] = 'I';
+#ifdef SP_LITTLE_ENDIAN
 	buf[3] = (nm>> 0) & 0xff;
 	buf[4] = (nm>> 8) & 0xff;
 	buf[5] = (nm>>16) & 0xff;
 	buf[6] = (nm>>24) & 0xff;
+#else
+	buf[6] = (nm>> 0) & 0xff;
+	buf[5] = (nm>> 8) & 0xff;
+	buf[4] = (nm>>16) & 0xff;
+	buf[3] = (nm>>24) & 0xff;
+#endif
 	BLOCK_APPEND(s->aux_blk, buf, 7);
 	cr->aux_size += 7;
     }
