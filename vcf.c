@@ -3019,31 +3019,44 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
     if ( info->len == 1 )
     {
         if ( info->type==BCF_BT_FLOAT ) *((float*)*dst) = info->v1.f;
-        else *((int32_t*)*dst) = info->v1.i;
+        else 
+        {
+            #define BRANCH(type_t, missing) { \
+                if ( info->v1.i==missing ) *((int32_t*)*dst) = bcf_int32_missing; \
+                else *((int32_t*)*dst) = info->v1.i; \
+            }
+            switch (info->type)
+            {
+                case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_missing ); break;
+                case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing); break;
+                case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing); break;
+            }
+            #undef BRANCH
+        }
         return 1;
     }
 
-#define BRANCH(type_t, is_missing, is_vector_end, set_missing, out_type_t) { \
-    out_type_t *tmp = (out_type_t *) *dst; \
-    type_t *p = (type_t *) info->vptr; \
-    for (j=0; j<info->len; j++) \
-    { \
-        if ( is_vector_end ) return j; \
-        if ( is_missing ) set_missing; \
-        else *tmp = p[j]; \
-        tmp++; \
-    } \
-    return j; \
-}
-switch (info->type) {
-    case BCF_BT_INT8:  BRANCH(int8_t,  p[j]==bcf_int8_missing,  p[j]==bcf_int8_vector_end,  *tmp=bcf_int32_missing, int32_t); break;
-    case BCF_BT_INT16: BRANCH(int16_t, p[j]==bcf_int16_missing, p[j]==bcf_int16_vector_end, *tmp=bcf_int32_missing, int32_t); break;
-    case BCF_BT_INT32: BRANCH(int32_t, p[j]==bcf_int32_missing, p[j]==bcf_int32_vector_end, *tmp=bcf_int32_missing, int32_t); break;
-    case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), bcf_float_set_missing(*tmp), float); break;
-    default: fprintf(stderr,"TODO: %s:%d .. info->type=%d\n", __FILE__,__LINE__, info->type); exit(1);
-}
-#undef BRANCH
-return -4;  // this can never happen
+    #define BRANCH(type_t, is_missing, is_vector_end, set_missing, out_type_t) { \
+        out_type_t *tmp = (out_type_t *) *dst; \
+        type_t *p = (type_t *) info->vptr; \
+        for (j=0; j<info->len; j++) \
+        { \
+            if ( is_vector_end ) return j; \
+            if ( is_missing ) set_missing; \
+            else *tmp = p[j]; \
+            tmp++; \
+        } \
+        return j; \
+    }
+    switch (info->type) {
+        case BCF_BT_INT8:  BRANCH(int8_t,  p[j]==bcf_int8_missing,  p[j]==bcf_int8_vector_end,  *tmp=bcf_int32_missing, int32_t); break;
+        case BCF_BT_INT16: BRANCH(int16_t, p[j]==bcf_int16_missing, p[j]==bcf_int16_vector_end, *tmp=bcf_int32_missing, int32_t); break;
+        case BCF_BT_INT32: BRANCH(int32_t, p[j]==bcf_int32_missing, p[j]==bcf_int32_vector_end, *tmp=bcf_int32_missing, int32_t); break;
+        case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), bcf_float_set_missing(*tmp), float); break;
+        default: fprintf(stderr,"TODO: %s:%d .. info->type=%d\n", __FILE__,__LINE__, info->type); exit(1);
+    }
+    #undef BRANCH
+    return -4;  // this can never happen
 }
 
 int bcf_get_format_string(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, char ***dst, int *ndst)
