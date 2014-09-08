@@ -432,7 +432,7 @@ int bam_index_build(const char *fn, int min_shift)
     int ret = 0;
 
     if ((fp = hts_open(fn, "r")) == 0) return -1;
-    if (fp->is_cram) {
+    if (fp->type==HTS_FT_CRAM) {
             ret = cram_index_build(fp->fp.cram, fn);
     } else {
             idx = bam_index(fp->fp.bgzf, min_shift);
@@ -475,7 +475,7 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
     htsFile *fp = fpv;
     bam1_t *b = bv;
     if (fp->is_bin) return bam_read1(bgzfp, b);
-    else if (fp->is_cram) return cram_get_bam_seq(fp->fp.cram, &b);
+    else if (fp->type==HTS_FT_CRAM) return cram_get_bam_seq(fp->fp.cram, &b);
     else {
         // TODO Need headers available to implement this for SAM files
         fprintf(stderr, "[sam_bam_cram_readrec] Not implemented for SAM files -- Exiting\n");
@@ -495,7 +495,7 @@ typedef struct hts_cram_idx_t {
 hts_idx_t *sam_index_load(samFile *fp, const char *fn)
 {
     if (fp->is_bin) return bam_index_load(fn);
-    else if (fp->is_cram) {
+    else if (fp->type==HTS_FT_CRAM) {
         if (cram_index_load(fp->fp.cram, fn) < 0) return NULL;
         // Cons up a fake "index" just pointing at the associated cram_fd:
         hts_cram_idx_t *idx = malloc(sizeof (hts_cram_idx_t));
@@ -622,7 +622,7 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
 {
     if (fp->is_bin) {
         return bam_hdr_read(fp->fp.bgzf);
-    } else if (fp->is_cram) {
+    } else if (fp->type==HTS_FT_CRAM) {
         return cram_header_to_bam(fp->fp.cram->header);
     } else {
         kstring_t str;
@@ -657,7 +657,7 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 {
     if (fp->is_bin) {
         bam_hdr_write(fp->fp.bgzf, h);
-    } else if (fp->is_cram) {
+    } else if (fp->type==HTS_FT_CRAM) {
         cram_fd *fd = fp->fp.cram;
         if (cram_set_header(fd, bam_header_to_cram((bam_hdr_t *)h)) < 0) return -1;
         if (fp->fn_aux)
@@ -881,7 +881,7 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
                 return -3;
         }
         return r;
-    } else if (fp->is_cram) {
+    } else if (fp->type==HTS_FT_CRAM) {
         return cram_get_bam_seq(fp->fp.cram, &b);
     } else {
         int ret;
@@ -1026,7 +1026,7 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
 {
     if (fp->is_bin) {
         return bam_write1(fp->fp.bgzf, b);
-    } else if (fp->is_cram) {
+    } else if (fp->type==HTS_FT_CRAM) {
         return cram_put_bam_seq(fp->fp.cram, (bam1_t *)b);
     } else {
         if (sam_format1(h, b, &fp->line) < 0) return -1;

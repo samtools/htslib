@@ -108,15 +108,15 @@ static inline void packInt32(uint8_t *buffer, uint32_t value)
 static BGZF *bgzf_read_init(hFILE *hfpr)
 {
     BGZF *fp;
-    uint8_t magic[2];
-    ssize_t n = hpeek(hfpr, magic, 2);
-    if (n < 0) return NULL;
+    uint8_t magic[18];
+    ssize_t n = hpeek(hfpr, magic, 18);
 
     fp = (BGZF*)calloc(1, sizeof(BGZF));
     if (fp == NULL) return NULL;
 
     fp->is_write = 0;
-    fp->is_compressed = (n==2 && magic[0]==0x1f && magic[1]==0x8b);
+    fp->is_compressed = (n==18 && magic[0]==0x1f && magic[1]==0x8b) ? 1 : 0;
+    fp->is_gzip = ( !fp->is_compressed || ((magic[3]&4) && memcmp(&magic[12], "BC\2\0",4)==0) ) ? 0 : 1;
     fp->uncompressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
     fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
 #ifdef BGZF_CACHE

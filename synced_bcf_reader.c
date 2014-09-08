@@ -119,53 +119,54 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 
     reader->file = hts_open(fname, "r");
     if ( !reader->file ) return 0;
-
-    reader->type = reader->file->is_bin? FT_BCF : FT_VCF;
-    if (reader->file->is_compressed) reader->type |= FT_GZ;
+    reader->type = hts_fd_type(reader->file);
 
     if ( files->require_index )
     {
-        if ( reader->type==FT_VCF_GZ )
+        if ( !(reader->type & HTS_GZ_BGZF) )
+        {
+            fprintf(stderr,"[%s:%d %s] Error: requested indexed access, but the file not compressed with bgzip: %s\n", __FILE__,__LINE__,__FUNCTION__,fname);
+            return 0;
+        }
+        if ( HTS_FT(reader->type) == HTS_FT_VCF )
         {
             reader->tbx_idx = tbx_index_load(fname);
             if ( !reader->tbx_idx )
             {
-                fprintf(stderr,"[add_reader] Could not load the index of %s\n", fname);
+                fprintf(stderr,"[%s:%d %s] Error: could not load index of %s\n", __FILE__,__LINE__,__FUNCTION__,fname);
                 return 0;
             }
-
             reader->header = bcf_hdr_read(reader->file);
         }
-        else if ( reader->type==FT_BCF_GZ )
+        else if ( HTS_FT(reader->type) == HTS_FT_BCF )
         {
             reader->header = bcf_hdr_read(reader->file);
-
             reader->bcf_idx = bcf_index_load(fname);
             if ( !reader->bcf_idx )
             {
-                fprintf(stderr,"[add_reader] Could not load the index of %s\n", fname);
-                return 0;   // not indexed..?
+                fprintf(stderr,"[%s:%d %s] Error: could not load index of %s\n", __FILE__,__LINE__,__FUNCTION__,fname);
+                return 0;
             }
         }
         else
         {
-            fprintf(stderr,"Index required, expected .vcf.gz or .bcf file: %s\n", fname);
+            fprintf(stderr,"[%s:%d %s] Error: file type not recognised: %s\n", __FILE__,__LINE__,__FUNCTION__,fname);
             return 0;
         }
     }
     else
     {
-        if ( reader->type & FT_BCF )
+        if ( HTS_FT(reader->type) == HTS_FT_BCF )
         {
             reader->header = bcf_hdr_read(reader->file);
         }
-        else if ( reader->type & FT_VCF )
+        else if ( HTS_FT(reader->type) == HTS_FT_VCF )
         {
             reader->header = bcf_hdr_read(reader->file);
         }
         else
         {
-            fprintf(stderr,"File type not recognised: %s\n", fname);
+            fprintf(stderr,"[%s:%d %s] Error: file type not recognised: %s\n", __FILE__,__LINE__,__FUNCTION__,fname);
             return 0;
         }
         files->streaming = 1;
@@ -423,13 +424,13 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         }
         if ( files->streaming )
         {
-            if ( reader->type & FT_VCF )
+            if ( reader->type & HTS_FT_VCF )
             {
                 if ( (ret=hts_getline(reader->file, KS_SEP_LINE, &files->tmps)) < 0 ) break;   // no more lines
                 int ret = vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
                 if ( ret<0 ) break;
             }
-            else if ( reader->type & FT_BCF )
+            else if ( reader->type & HTS_FT_BCF )
             {
                 if ( (ret=bcf_read1(reader->file, reader->header, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
             }
@@ -959,8 +960,8 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         int len = strlen(regions);
         int is_bed  = strcasecmp(".bed",regions+len-4) ? 0 : 1;
         if ( !is_bed && !strcasecmp(".bed.gz",regions+len-7) ) is_bed = 1;
-        int ft_type = hts_file_type(regions);
-        if ( ft_type & FT_VCF ) ito = 1;
+        int ftype = hts_file_type(regions);
+        if ( HTS_FT(ftype) == HTS_FT_VCF ) ito = 1;
 
         // read the whole file, tabix index is not present
         while ( hts_getline(reg->file, KS_SEP_LINE, &reg->line) > 0 )

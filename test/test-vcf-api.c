@@ -153,7 +153,12 @@ void write_bcf(char *fname)
     free(str.s);
     bcf_destroy1(rec);
     bcf_hdr_destroy(hdr);
-    hts_close(fp);
+    int ret;
+    if ( (ret=hts_close(fp)) )
+    {
+        fprintf(stderr,"hts_close(%s): non-zero status %d\n",fname,ret);
+        exit(ret);
+    }
 }
 
 void bcf_to_vcf(char *fname)
@@ -199,8 +204,17 @@ void bcf_to_vcf(char *fname)
     bcf_destroy1(rec);
     bcf_hdr_destroy(hdr);
     bcf_hdr_destroy(hdr_out);
-    hts_close(fp);
-    hts_close(out);
+    int ret;
+    if ( (ret=hts_close(fp)) )
+    {
+        fprintf(stderr,"hts_close(%s): non-zero status %d\n",fname,ret);
+        exit(ret);
+    }
+    if ( (ret=hts_close(out)) )
+    {
+        fprintf(stderr,"hts_close(-): non-zero status %d\n",ret);
+        exit(ret);
+    }
 }
 
 void iterator(const char *fname)
@@ -221,7 +235,12 @@ void iterator(const char *fname)
 
     hts_idx_destroy(idx);
     bcf_hdr_destroy(hdr);
-    hts_close(fp);
+    int ret;
+    if ( (ret=hts_close(fp)) )
+    {
+        fprintf(stderr,"hts_close(%s): non-zero status %d\n",fname,ret);
+        exit(ret);
+    }
 }
 
 int main(int argc, char **argv)

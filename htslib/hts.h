@@ -70,7 +70,7 @@ typedef struct __kstring_t {
  ************/
 
 typedef struct {
-    uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, is_compressed:2, is_kstream:1, dummy:25;
+    uint32_t is_bin:1, is_write:1, is_be:1, is_compressed:2, is_kstream:1, type:3, dummy:23;
     int64_t lineno;
     kstring_t line;
     char *fn, *fn_aux;
@@ -251,22 +251,24 @@ extern "C" {
 
     /**
      * hts_file_type() - Convenience function to determine file type
-     * @fname: the file name
-     *
-     * Returns one of the FT_* defines.
-     *
-     * This function was added in order to avoid the need for excessive command
-     * line switches.
+     * Returns one of the HTS_FT_*|HTS_GZ* defines.
      */
-    #define FT_UNKN   0
-    #define FT_GZ     1
-    #define FT_VCF    2
-    #define FT_VCF_GZ (FT_GZ|FT_VCF)
-    #define FT_BCF    (1<<2)
-    #define FT_BCF_GZ (FT_GZ|FT_BCF)
-    #define FT_STDIN  (1<<3)
-    int hts_file_type(const char *fname);
+    #define HTS_GZ_BGZF  (1<<3)
+    #define HTS_GZ_GZIP  (2<<3)
+    #define HTS_GZ       (HTS_GZ_BGZF|HTS_GZ_GZIP)
 
+    #define HTS_FT_VCF  1 
+    #define HTS_FT_BCF  2 
+    #define HTS_FT_BAM  3 
+    #define HTS_FT_CRAM 4 
+    #define HTS_FT_TXT  5       // unknown text, could be SAM
+    #define HTS_FT_BIN  6       // unknown binary
+    #define HTS_FT(ftype) ((ftype)&0x7)
+
+    int hts_file_type(const char *fname);
+    int hts_fd_type(htsFile *fd);
+    int hts_file_compressed(const char *fname);
+    int hts_fd_compressed(htsFile *fd);
 
 #ifdef __cplusplus
 }

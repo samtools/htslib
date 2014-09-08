@@ -40,7 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #define KS_BGZF 1
 #if KS_BGZF
-    // bgzf now supports gzip-compressed files
+    // bgzf now supports gzip-compressed files, the gzFile branch can be removed
     KSTREAM_INIT2(, BGZF*, bgzf_read, 65536)
 #else
     KSTREAM_INIT2(, gzFile, gzread, 16384)
@@ -136,53 +136,68 @@ htsFile *hts_open(const char *fn, const char *mode)
 
     if (strchr(mode, 'r')) {
         unsigned char s[18];
-        if (hpeek(hfile, s, 6) == 6 && memcmp(s, "CRAM", 4) == 0 &&
-            s[4] >= 1 && s[4] <= 2 && s[5] <= 1) {
-            fp->is_cram = 1;
+        int n = hpeek(hfile, s, 18);
+        if ( n>=6 && memcmp(s, "CRAM", 4) == 0 && s[4] >= 1 && s[4] <= 2 && s[5] <= 1) {
+            fp->type = HTS_FT_CRAM;
         }
-        else if (hpeek(hfile, s, 18) == 18 && s[0] == 0x1f && s[1] == 0x8b &&
+        else if ( n==18 && s[0] == 0x1f && s[1] == 0x8b &&
                  (s[3] & 4) && memcmp(&s[12], "BC\2\0", 4) == 0) {
             // The stream is BGZF-compressed.  Decompress a few bytes to see
             // whether it's in a binary format (e.g., BAM or BCF, starting
             // with four bytes of magic including a control character) or is
             // a bgzipped SAM or VCF text file.
             fp->is_compressed = 1;
-            if (is_binary(s, decompress_peek(hfile, s, 4))) fp->is_bin = 1;
+            if ( (n=decompress_peek(hfile, s, 17)) )
+            {
+                if ( n>=4 && !memcmp(s, "BCF\2",4) ) { fp->type = HTS_FT_BCF; fp->is_bin = 1; }
+                else if ( n>=4 && !memcmp(s, "BAM\1",4) ) { fp->type = HTS_FT_BAM; fp->is_bin = 1; }
+                else if ( n>=17 && !strncasecmp((char*)s, "##fileformat=VCFv",17) ) { fp->type = HTS_FT_VCF; fp->is_kstream = 1; }
+                else if ( is_binary(s,n) ) { fp->type = HTS_FT_BIN; fp->is_bin = 1; }
+                else { fp->type = HTS_FT_TXT; fp->is_kstream = 1; }
+            }
+            else fp->is_kstream = 1;    // the file too short?
+        }
+        else if ( n>=2 && s[0] == 0x1f && s[1] == 0x8b) {
+            // Plain GZIP header... so a gzipped file.
+            fp->is_compressed = 2;
+            if ( (n=decompress_peek(hfile, s, 17)) )
+            {
+                if ( n>=4 && !memcmp(s, "BCF\2",4) ) { fp->type = HTS_FT_BCF; fp->is_bin = 1; }
+                else if ( n>=4 && !memcmp(s, "BAM\1",4) ) { fp->type = HTS_FT_BAM; fp->is_bin = 1; }
+                else if ( n>=17 && !strncasecmp((char*)s, "##fileformat=VCFv",17) ) { fp->type = HTS_FT_VCF; fp->is_kstream = 1; }
+                else if ( is_binary(s,n) ) { fp->type = HTS_FT_BIN; fp->is_bin = 1; }
+                else { fp->type = HTS_FT_TXT; fp->is_kstream = 1; }
+            }
             else fp->is_kstream = 1;
         }
-        else if (hpeek(hfile, s, 2) == 2 && s[0] == 0x1f && s[1] == 0x8b) {
-            // Plain GZIP header... so a gzipped text file.
-            fp->is_compressed = 1;
-            fp->is_kstream = 1;
-        }
-        else if (hpeek(hfile, s, 4) == 4 && is_binary(s, 4)) {
-            // Binary format, but in a raw non-compressed form.
-            fp->is_bin = 1;
-        }
-        else {
-            fp->is_kstream = 1;
+        else 
+        {
+            // uncompressed data
+            if ( n>=4 && !memcmp(s, "BCF\2",4) ) { fp->type = HTS_FT_BCF; fp->is_bin = 1; }
+            else if ( n>=4 && !memcmp(s, "BAM\1",4) ) { fp->type = HTS_FT_BAM; fp->is_bin = 1; }
+            else if ( n>=17 && !strncasecmp((char*)s, "##fileformat=VCFv",17) ) { fp->type = HTS_FT_VCF; fp->is_kstream = 1; }
+            else if ( is_binary(s,n) ) { fp->type = HTS_FT_BIN; fp->is_bin = 1; }
+            else { fp->type = HTS_FT_TXT; fp->is_kstream = 1; }
         }
     }
     else if (strchr(mode, 'w') || strchr(mode, 'a')) {
         fp->is_write = 1;
         if (strchr(mode, 'b')) fp->is_bin = 1;
-        if (strchr(mode, 'c')) fp->is_cram = 1;
+        if (strchr(mode, 'c')) fp->type = HTS_FT_CRAM;
         if (strchr(mode, 'z')) fp->is_compressed = 1;
-        else if (strchr(mode, 'u')) fp->is_compressed = 0;
-        else fp->is_compressed = 2;    // not set, default behaviour
+        else fp->is_compressed = 0;
     }
     else goto error;
 
-    if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
+    if (fp->is_bin || (fp->is_write && fp->is_compressed)) {
         fp->fp.bgzf = bgzf_hopen(hfile, mode);
         if (fp->fp.bgzf == NULL) goto error;
     }
-    else if (fp->is_cram) {
+    else if ( fp->type==HTS_FT_CRAM ) {
         fp->fp.cram = cram_dopen(hfile, fn, mode);
         if (fp->fp.cram == NULL) goto error;
         if (!fp->is_write)
             cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, 1);
-
     }
     else if (fp->is_kstream) {
     #if KS_BGZF
@@ -198,7 +213,6 @@ htsFile *hts_open(const char *fn, const char *mode)
     else {
         fp->fp.hfile = hfile;
     }
-
     return fp;
 
 error:
@@ -219,10 +233,9 @@ error:
 int hts_close(htsFile *fp)
 {
     int ret, save;
-
-    if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
+    if (fp->is_bin || (fp->is_write && fp->is_compressed)) {
         ret = bgzf_close(fp->fp.bgzf);
-    } else if (fp->is_cram) {
+    } else if (fp->type==HTS_FT_CRAM) {
         if (!fp->is_write) {
             switch (cram_eof(fp->fp.cram)) {
             case 0:
@@ -256,6 +269,31 @@ int hts_close(htsFile *fp)
     free(fp);
     errno = save;
     return ret;
+}
+
+int hts_fd_type(htsFile *fd)
+{
+    return (fd->is_compressed<<3) | fd->type;
+}
+int hts_file_type(const char *fname)
+{
+    htsFile *fd = hts_open(fname,"r");
+    if ( !fd ) return 0;
+    int type = hts_fd_type(fd);
+    hts_close(fd);
+    return type;
+}
+int hts_fd_compressed(htsFile *fd)
+{
+    return fd->is_compressed<<3;
+}
+int hts_file_compressed(const char *fname)
+{
+    htsFile *fd = hts_open(fname,"r");
+    if ( !fd ) return 0;
+    int type = hts_fd_compressed(fd);
+    hts_close(fd);
+    return type;
 }
 
 int hts_set_threads(htsFile *fp, int n)
@@ -416,36 +454,6 @@ char **hts_readlines(const char *fn, int *_n)
     s = (char**)realloc(s, n * sizeof(char*));
     *_n = n;
     return s;
-}
-
-int hts_file_type(const char *fname)
-{
-    int len = strlen(fname);
-    if ( !strcasecmp(".vcf.gz",fname+len-7) ) return FT_VCF_GZ;
-    if ( !strcasecmp(".vcf",fname+len-4) ) return FT_VCF;
-    if ( !strcasecmp(".bcf",fname+len-4) ) return FT_BCF_GZ;
-    if ( !strcmp("-",fname) ) return FT_STDIN;
-    // ... etc
-
-    int fd = open(fname, O_RDONLY);
-    if ( !fd ) return 0;
-
-    uint8_t magic[5];
-    if ( read(fd,magic,2)!=2 ) { close(fd); return 0; }
-    if ( !strncmp((char*)magic,"##",2) ) { close(fd); return FT_VCF; }
-    if ( !strncmp((char*)magic,"BCF",3) ) { close(fd); return FT_BCF; }
-    close(fd);
-
-    if ( magic[0]==0x1f && magic[1]==0x8b ) // compressed
-    {
-        BGZF *fp = bgzf_open(fname, "r");
-        if ( !fp ) return 0;
-        if ( bgzf_read(fp, magic, 3)!=3 ) { bgzf_close(fp); return 0; }
-        bgzf_close(fp);
-        if ( !strncmp((char*)magic,"##",2) ) return FT_VCF_GZ;
-        if ( !strncmp((char*)magic,"BCF",3) ) return FT_BCF_GZ;
-    }
-    return 0;
 }
 
 /****************
