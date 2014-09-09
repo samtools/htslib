@@ -90,7 +90,8 @@ static inline int khash_str2int_get(void *_hash, const char *str, int *value)
 /*
  *  Add a new string to the dictionary, auto-incrementing the value.
  *  On success returns the newly inserted integer id, on error -1
- *  is returned.
+ *  is returned. Note that the key must continue to exist throughout
+ *  the whole life of _hash.
  */
 static inline int khash_str2int_inc(void *_hash, const char *str)
 {
@@ -106,7 +107,8 @@ static inline int khash_str2int_inc(void *_hash, const char *str)
 
 /*
  *  Set a new key,value pair. On success returns the bin index, on
- *  error -1 is returned.
+ *  error -1 is returned. Note that the key must contnue to exist
+ *  throughout the whole life of _hash.
  */
 static inline int khash_str2int_set(void *_hash, const char *str, int value)
 {
