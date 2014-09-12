@@ -146,7 +146,7 @@ cram_codec *cram_encoder_init(enum cram_encoding codec, cram_stats *st,
 
 //#define GET_BIT_MSB(b,v) (void)(v<<=1, v|=(b->data[b->byte] >> b->bit)&1, (--b->bit == -1) && (b->bit = 7, b->byte++))
 
-#define GET_BIT_MSB(b,v) (void)(v<<=1, v|=(b->data[b->byte] >> b->bit)&1, b->byte += (b->bit==0), b->bit+=(b->bit==0)*8-1)
+#define GET_BIT_MSB(b,v) (void)(v<<=1, v|=(b->data[b->byte] >> b->bit)&1, b->byte += (--b->bit<0), b->bit&=7)
 
 #ifdef __cplusplus
 }

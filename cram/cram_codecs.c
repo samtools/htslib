@@ -1555,25 +1555,20 @@ int cram_byte_array_stop_decode_block(cram_slice *slice, cram_codec *c,
 	return -1;
     cp = (char *)b->data + b->idx;
     cp_end = (char *)b->data + b->uncomp_size;
-    BLOCK_GROW(out, space);
     out_cp = (char *)BLOCK_END(out);
-    out_end = out_cp + space;
 
     stop = c->byte_array_stop.stop;
-    while ((ch = *cp) != stop) {
-	if (cp++ == cp_end)
-	    return -1;
-	*out_cp++ = ch;
-
-	if (out_cp == out_end) {
-	    BLOCK_SIZE(out) = out_cp - (char *)BLOCK_DATA(out);
-	    space *= 2;
-	    BLOCK_GROW(out, space);
-	    out_cp = (char *)BLOCK_END(out);
-	    out_end = out_cp + space;
-	}
+    if (cp_end - cp < out->alloc - out->byte) {
+	while (*cp != stop && cp != cp_end)
+	    *out_cp++ = *cp++;
+	BLOCK_SIZE(out) = out_cp - (char *)BLOCK_DATA(out);
+    } else {
+	char *cp_start;
+	for (cp_start = cp; *cp != stop && cp != cp_end; cp++)
+	    ;
+	BLOCK_APPEND(out, cp_start, cp - cp_start);
+	BLOCK_GROW(out, cp - cp_start);
     }
-    BLOCK_SIZE(out) = out_cp - (char *)BLOCK_DATA(out);
 
     *out_size = cp - (char *)(b->data + b->idx);
     b->idx = cp - (char *)b->data + 1;
