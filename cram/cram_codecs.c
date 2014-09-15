@@ -516,7 +516,7 @@ int cram_beta_decode_int(cram_slice *slice, cram_codec *c, cram_block *in, char 
 	    out_i[i] = get_bits_MSB(in, c->beta.nbits) - c->beta.offset;
     } else {
 	for (i = 0, n = *out_size; i < n; i++)
-	    out_i[i] = 0;
+	    out_i[i] = -c->beta.offset;
     }
 
     return 0;
@@ -530,7 +530,7 @@ int cram_beta_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, char
 	    out[i] = get_bits_MSB(in, c->beta.nbits) - c->beta.offset;
     } else {
 	for (i = 0, n = *out_size; i < n; i++)
-	    out[i] = 0;
+	    out[i] = -c->beta.offset;
     }
 
     return 0;
