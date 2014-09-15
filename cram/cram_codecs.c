@@ -1597,7 +1597,7 @@ cram_codec *cram_byte_array_stop_decode_init(char *data, int size,
     c->free   = cram_byte_array_stop_decode_free;
     
     c->byte_array_stop.stop = *cp++;
-    if (version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(version) == 1) {
 	c->byte_array_stop.content_id = cp[0] + (cp[1]<<8) + (cp[2]<<16)
 	    + (cp[3]<<24);
 	cp += 4;
@@ -1638,7 +1638,7 @@ int cram_byte_array_stop_encode_store(cram_codec *c, cram_block *b,
 
     cp += itf8_put(cp, c->codec);
 
-    if (version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(version) == 1) {
 	cp += itf8_put(cp, 5);
 	*cp++ = c->e_byte_array_stop.stop;
 	*cp++ = (c->e_byte_array_stop.content_id >>  0) & 0xff;

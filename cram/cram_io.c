@@ -2529,7 +2529,7 @@ cram_container *cram_read_container(cram_fd *fd) {
     fd->err = 0;
 
     memset(&c2, 0, sizeof(c2));
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	if ((s = itf8_decode(fd, &c2.length)) == -1) {
 	    fd->eof = fd->empty_container ? 1 : 2;
 	    return NULL;
@@ -2549,7 +2549,7 @@ cram_container *cram_read_container(cram_fd *fd) {
     if ((s = itf8_decode(fd, &c2.ref_seq_span)) == -1) return NULL; else rd+=s;
     if ((s = itf8_decode(fd, &c2.num_records))  == -1) return NULL; else rd+=s;
 
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	c2.record_counter = 0;
 	c2.num_bases = 0;
     } else {
@@ -2621,7 +2621,7 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
 	buf = malloc(50 + c->num_landmarks * 5);
     cp = buf;
 
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	cp += itf8_put(cp, c->length);
     } else {
 	*(int32_t *)cp = le_int4(c->length);
@@ -2637,7 +2637,7 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
 	cp += itf8_put(cp, c->ref_seq_span);
     }
     cp += itf8_put(cp, c->num_records);
-    if (fd->version != CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) != 1) {
 	cp += itf8_put(cp, c->record_counter);
 	cp += ltf8_put(cp, c->num_bases);
     }
@@ -3193,7 +3193,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
     SAM_hdr *hdr;
 
     /* 1.1 onwards stores the header in the first block of a container */
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	/* Length */
 	if (-1 == int32_decode(fd, &header_len))
 	    return NULL;
@@ -3324,7 +3324,7 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
     int header_len;
 
     /* 1.0 requires and UNKNOWN read-group */
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	if (!sam_hdr_find_rg(hdr, "UNKNOWN"))
 	    if (sam_hdr_add(hdr, "RG",
 			    "ID", "UNKNOWN", "SM", "UNKNOWN", NULL))
@@ -3383,7 +3383,7 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 
     /* Length */
     header_len = sam_hdr_length(hdr);
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	if (-1 == int32_encode(fd, header_len))
 	    return -1;
 
@@ -3527,7 +3527,7 @@ static void cram_init_tables(cram_fd *fd) {
     fd->L2['T'] = 3; fd->L2['t'] = 3;
     fd->L2['N'] = 4; fd->L2['n'] = 4;
 
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	for (i = 0; i < 0x200; i++) {
 	    int f = 0;
 
@@ -3658,7 +3658,7 @@ cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode) {
 	if (!(fd->file_def = cram_read_file_def(fd)))
 	    goto err;
 
-	fd->version = fd->file_def->major_version * 100 +
+	fd->version = fd->file_def->major_version * 256 +
 	    fd->file_def->minor_version;
 
 	if (!(fd->header = cram_read_SAM_hdr(fd)))
@@ -3679,7 +3679,7 @@ cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode) {
 	if (0 != cram_write_file_def(fd, &def))
 	    goto err;
 
-	fd->version = def.major_version * 100 + def.minor_version;
+	fd->version = def.major_version * 256 + def.minor_version;
 
 	/* SAM header written later */
     }
@@ -3828,16 +3828,25 @@ int cram_close(cram_fd *fd) {
 
     if (fd->mode == 'w') {
 	/* Write EOF block */
-	if (30 != hwrite(fd->fp, "\x0b\x00\x00\x00\xff\xff\xff\xff"
-			 "\xff\xe0\x45\x4f\x46\x00\x00\x00"
-			 "\x00\x01\x00\x00\x01\x00\x06\x06"
-			 "\x01\x00\x01\x00\x01\x00", 30))
-	    return -1;
-
-//	if (1 != fwrite("\x00\x00\x00\x00\xff\xff\xff\xff"
-//			"\xff\xe0\x45\x4f\x46\x00\x00\x00"
-//			"\x00\x00\x00", 19, 1, fd->fp))
-//	    return -1;
+	if (CRAM_MAJOR_VERS(fd->version) == 3) {
+	    if (38 != hwrite(fd->fp,
+			     "\x0f\x00\x00\x00\xff\xff\xff\xff" // Cont HDR
+			     "\x0f\xe0\x45\x4f\x46\x00\x00\x00" // Cont HDR
+			     "\x00\x01\x00"                     // Cont HDR
+			     "\x05\xbd\xd9\x4f"                 // CRC32
+			     "\x00\x01\x00\x06\x06"             // Comp.HDR blk
+			     "\x01\x00\x01\x00\x01\x00"         // Comp.HDR blk
+			     "\xee\x63\x01\x4b",                // CRC32
+			     38))
+		return -1;
+	} else {
+	    if (30 != hwrite(fd->fp,
+			     "\x0b\x00\x00\x00\xff\xff\xff\xff"
+			     "\xff\xe0\x45\x4f\x46\x00\x00\x00"
+			     "\x00\x01\x00\x00\x01\x00\x06\x06"
+			     "\x01\x00\x01\x00\x01\x00", 30))
+		return -1;
+	}
     }
 
     for (bl = fd->bl; bl; bl = next) {

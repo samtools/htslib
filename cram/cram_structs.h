@@ -139,8 +139,8 @@ typedef struct {
     char    file_id[20];      // Filename or SHA1 checksum
 } cram_file_def;
 
-#define CRAM_1_VERS 100 // 1.0
-#define CRAM_2_VERS 200 // 1.1, or 2.0?
+#define CRAM_MAJOR_VERS(v) ((v) >> 8)
+#define CRAM_MINOR_VERS(v) ((v) & 0xff)
 
 struct cram_slice;
 
@@ -159,7 +159,7 @@ enum cram_content_type {
     FILE_HEADER        = 0,
     COMPRESSION_HEADER = 1,
     MAPPED_SLICE       = 2,
-    UNMAPPED_SLICE     = 3, // CRAM_1_VERS only
+    UNMAPPED_SLICE     = 3, // CRAM V1.0 only
     EXTERNAL           = 4,
     CORE               = 5,
 };
@@ -261,9 +261,9 @@ typedef struct {
     struct cram_codec *NP_codec; // next frag pos
     struct cram_codec *TS_codec; // template size
     struct cram_codec *NF_codec; // next frag distance
-    struct cram_codec *TC_codec; // tag count      CRAM_1_VERS
-    struct cram_codec *TN_codec; // tag name/type  CRAM_1_VERS
-    struct cram_codec *TL_codec; // tag line       CRAM_2_VERS
+    struct cram_codec *TC_codec; // tag count      CRAM V1.0
+    struct cram_codec *TN_codec; // tag name/type  CRAM V1.0
+    struct cram_codec *TL_codec; // tag line       CRAM V2.x
     struct cram_codec *FN_codec; // no. features
     struct cram_codec *FC_codec; // feature code
     struct cram_codec *FP_codec; // feature pos

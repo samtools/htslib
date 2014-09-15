@@ -111,7 +111,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
      */
 
     // Duplicated from container itself, and removed in 1.1
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	itf8_put_blk(cb, h->ref_seq_id);
 	itf8_put_blk(cb, h->ref_seq_start);
 	itf8_put_blk(cb, h->ref_seq_span);
@@ -135,7 +135,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 	if (-1 == r) return NULL;
 	kh_val(h->preservation_map, k).i = 1;
 
-	if (fd->version == CRAM_1_VERS) {
+	if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	    k = kh_put(map, h->preservation_map, "PI", &r);
 	    if (-1 == r) return NULL;
 	    kh_val(h->preservation_map, k).i = 0;
@@ -394,7 +394,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 	    return NULL;
 	mc++;
     }
-    if (fd->version != CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) != 1) {
 	if (h->SC_codec) {
 	    if (-1 == h->SC_codec->store(h->SC_codec, map, "SC", fd->version))
 		return NULL;
@@ -469,7 +469,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 	    switch(kh_key(c->tags_used, k) & 0xff) {
 	    case 'Z': case 'H':
 		// string as byte_array_stop
-		if (fd->version == CRAM_1_VERS) {
+		if (CRAM_MAJOR_VERS(fd->version) == 1) {
 		    BLOCK_APPEND(map,
 				 "\005" // BYTE_ARRAY_STOP
 				 "\005" // len
@@ -603,7 +603,7 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s) {
     cp += itf8_put(cp, s->hdr->ref_seq_start);
     cp += itf8_put(cp, s->hdr->ref_seq_span);
     cp += itf8_put(cp, s->hdr->num_records);
-    if (fd->version != CRAM_1_VERS)
+    if (CRAM_MAJOR_VERS(fd->version) != 1)
 	cp += itf8_put(cp, s->hdr->record_counter);
     cp += itf8_put(cp, s->hdr->num_blocks);
     cp += itf8_put(cp, s->hdr->num_content_ids);
@@ -613,7 +613,7 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s) {
     if (s->hdr->content_type == MAPPED_SLICE)
 	cp += itf8_put(cp, s->hdr->ref_base_id);
 
-    if (fd->version != CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) != 1) {
 	memcpy(cp, s->hdr->md5, 16); cp += 16;
     }
     
@@ -651,20 +651,20 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
      * ID 3 => TS (insert size), NP (next frag)
      * ID 4 => tag values
      * ID 5 => BA, ifdef BA_external
-     * ID 6 => tag IDs (TN), ifdef TN_external and CRAM_1_VERS
-     * ID 7 => TD tag dictionary, if !CRAM_1_VERS
+     * ID 6 => tag IDs (TN), ifdef TN_external and CRAM_V1.0
+     * ID 7 => TD tag dictionary, if !CRAM_V1.0
      */
 
     /* Create cram slice header, num_blocks etc */
     s->hdr->ref_base_id = embed_ref ? CRAM_EXT_REF : -1;
     s->hdr->record_counter = c->num_records + c->record_counter;
     c->num_records += s->hdr->num_records;
-    nblk = (fd->version == CRAM_1_VERS) ? 5 : 6;
+    nblk = (CRAM_MAJOR_VERS(fd->version) == 1) ? 5 : 6;
 #ifdef BA_external
     nblk++;
 #endif
 #ifdef TN_external
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	nblk++;
     }
 #endif
@@ -684,12 +684,12 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     s->hdr->block_content_ids[3] = CRAM_EXT_TS_NP;
     s->hdr->block_content_ids[4] = CRAM_EXT_TAG;
     s->hdr->block_content_ids[5] = CRAM_EXT_SC;
-    nblk = (fd->version == CRAM_1_VERS) ? 5 : 6;
+    nblk = (CRAM_MAJOR_VERS(fd->version) == 1) ? 5 : 6;
 #ifdef BA_external
     s->hdr->block_content_ids[(s->ba_id = ++nblk)-1] = CRAM_EXT_BA;
 #endif
 #ifdef TN_external
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	s->hdr->block_content_ids[(s->tn_id = ++nblk)-1] = CRAM_EXT_TN;
     }
 #endif
@@ -702,7 +702,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     if (!(s->block[3] = cram_new_block(EXTERNAL, CRAM_EXT_NAME)))  return -1;
     if (!(s->block[4] = cram_new_block(EXTERNAL, CRAM_EXT_TS_NP))) return -1;
     if (!(s->block[5] = cram_new_block(EXTERNAL, CRAM_EXT_TAG)))   return -1;
-    if (fd->version != CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) != 1) {
 	if (!(s->block[6] = cram_new_block(EXTERNAL, CRAM_EXT_SC)))
 	    return -1;
     }
@@ -711,7 +711,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
 	return -1;
 #endif
 #ifdef TN_external
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	if (!(s->block[s->tn_id] = cram_new_block(EXTERNAL, CRAM_EXT_TN)))
 	    return -1;
     }
@@ -760,7 +760,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
 	r |= h->CF_codec->encode(s, h->CF_codec, core,
 				 (char *)&i32, 1);
 
-	if (fd->version != CRAM_1_VERS)
+	if (CRAM_MAJOR_VERS(fd->version) != 1)
 	    r |= h->RI_codec->encode(s, h->RI_codec, core,
 				     (char *)&cr->ref_id, 1);
 
@@ -820,7 +820,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
 	}
 
 	/* Aux tags */
-	if (fd->version == CRAM_1_VERS) {
+	if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	    uc = cr->ntags;
 	    r |= h->TC_codec->encode(s, h->TC_codec, core, (char *)&uc, 1);
 #ifndef TN_external
@@ -971,7 +971,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     cram_free_block(s->block[2]);
     cram_free_block(s->block[3]);
     cram_free_block(s->block[5]);
-    if (fd->version != CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) != 1) {
 	cram_free_block(s->block[6]);
 	BLOCK_UPLEN(s->soft_blk);
 	s->block[6] = s->soft_blk;
@@ -983,7 +983,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     BLOCK_UPLEN(s->aux_blk);  s->block[5] = s->aux_blk;  s->aux_blk  = NULL;
 
 #ifdef TN_external
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	cram_free_block(s->block[s->tn_id]);
 	BLOCK_UPLEN(s->tn_blk); s->block[s->tn_id] = s->tn_blk;
 	s->tn_blk = NULL;
@@ -1055,7 +1055,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     if (cram_compress_block(fd, s->block[4], fd->m[3], //TS, NP
 			    method, level))
 	return -1;
-    if (fd->version != CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) != 1) {
 	if (cram_compress_block(fd, s->block[6], fd->m[5], //SC (seq)
 				method, level))
 	    return -1;
@@ -1066,7 +1066,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
 	return -1;
 #endif
 #ifdef TN_external
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	if (cram_compress_block(fd, s->block[s->tn_id], NULL,
 				method, level))
 	    return -1;
@@ -1213,7 +1213,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     for (i = 0; i < c->curr_slice; i++) {
 	cram_slice *s = c->slices[i];
 	
-	if (fd->version != CRAM_1_VERS) {
+	if (CRAM_MAJOR_VERS(fd->version) != 1) {
 	    if (s->hdr->ref_seq_id >= 0 && c->multi_seq == 0 && !fd->no_ref) {
 		MD5_CTX md5;
 		MD5_Init(&md5);
@@ -1345,7 +1345,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 				    c->BS_stats, E_BYTE, NULL,
 				    fd->version);
 
-    if (fd->version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	h->TL_codec = NULL;
 	h->RI_codec = NULL;
 	h->RS_codec = NULL;
@@ -1631,7 +1631,7 @@ static int cram_add_softclip(cram_container *c, cram_slice *s, cram_record *r,
     f.S.pos = pos+1;
     f.S.code = 'S';
     f.S.len = len;
-    if (version == CRAM_1_VERS) {
+    if (CRAM_MAJOR_VERS(version) == 1) {
 	f.S.seq_idx = BLOCK_SIZE(s->base_blk);
 	BLOCK_APPEND(s->base_blk, base, len);
 	BLOCK_APPEND_CHAR(s->base_blk, '\0');
@@ -2154,7 +2154,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     //cr->mate_flags;   // MF
     //cr->ntags;        // TC
     cr->ntags      = 0; //cram_stats_add(c->TC_stats, cr->ntags);
-    if (fd->version == CRAM_1_VERS)
+    if (CRAM_MAJOR_VERS(fd->version) == 1)
 	rg = cram_encode_aux_1_0(fd, b, c, s, cr);
     else
 	rg = cram_encode_aux(fd, b, c, s, cr);
@@ -2167,7 +2167,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     if (rg) {
 	SAM_RG *brg = sam_hdr_find_rg(fd->header, rg);
 	cr->rg = brg ? brg->id : -1;
-    } else if (fd->version == CRAM_1_VERS) {
+    } else if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	SAM_RG *brg = sam_hdr_find_rg(fd->header, "UNKNOWN");
 	assert(brg);
     } else {
@@ -2553,7 +2553,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 	slice_rec = c->slice_rec;
 	curr_rec  = c->curr_rec;
 
-	if (fd->version == CRAM_1_VERS ||
+	if (CRAM_MAJOR_VERS(fd->version) == 1 ||
 	    c->curr_rec == c->max_rec || fd->multi_seq != 1 || !c->slice)
 	    if (NULL == (c = cram_next_container(fd, b)))
 		return -1;
