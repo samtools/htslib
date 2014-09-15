@@ -97,10 +97,12 @@ typedef struct {
 } cram_byte_array_stop_decoder;
 
 typedef struct {
-    uint32_t len_len;
-    unsigned char *len_dat;
-    uint32_t val_len;
-    unsigned char *val_dat;
+    enum cram_encoding len_encoding;
+    enum cram_encoding val_encoding;
+    void *len_dat;
+    void *val_dat;
+    struct cram_codec *len_codec;
+    struct cram_codec *val_codec;
 } cram_byte_array_len_encoder;
 
 /*

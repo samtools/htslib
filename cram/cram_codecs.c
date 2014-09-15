@@ -449,11 +449,17 @@ cram_codec *cram_external_decode_init(char *data, int size,
     return c;
 }
 
-int cram_external_encode(cram_slice *slice, cram_codec *c,
-			 cram_block *out, char *in, int in_size) {
+int cram_external_encode_int(cram_slice *slice, cram_codec *c,
+			     cram_block *out, char *in, int in_size) {
     uint32_t *i32 = (uint32_t *)in;
 
     itf8_put_blk(out, *i32);
+    return 0;
+}
+
+int cram_external_encode_char(cram_slice *slice, cram_codec *c,
+			      cram_block *out, char *in, int in_size) {
+    BLOCK_APPEND(out, in, in_size);
     return 0;
 }
 
@@ -494,7 +500,12 @@ cram_codec *cram_external_encode_init(cram_stats *st,
 	return NULL;
     c->codec = E_EXTERNAL;
     c->free = cram_external_encode_free;
-    c->encode = cram_external_encode;
+    if (option == E_INT || option == E_LONG)
+	c->encode = cram_external_encode_int;
+    else if (option == E_BYTE_ARRAY || option == E_BYTE)
+	c->encode = cram_external_encode_char;
+    else
+	abort();
     c->store = cram_external_encode_store;
 
     c->e_external.content_id = (size_t)dat;
@@ -1428,7 +1439,16 @@ cram_codec *cram_byte_array_len_decode_init(char *data, int size,
 
 int cram_byte_array_len_encode(cram_slice *slice, cram_codec *c,
 			       cram_block *out, char *in, int in_size) {
-    return -1; // not imp.
+    int32_t i32 = in_size;
+    int r = 0;
+
+    r |= c->e_byte_array_len.len_codec->encode(slice,
+					       c->e_byte_array_len.len_codec,
+					       out, (char *)&i32, 1);
+    r |= c->e_byte_array_len.val_codec->encode(slice,
+					       c->e_byte_array_len.val_codec,
+					       out, in, in_size);
+    return r;
 }
 
 void cram_byte_array_len_encode_free(cram_codec *c) {
@@ -1439,7 +1459,9 @@ void cram_byte_array_len_encode_free(cram_codec *c) {
 
 int cram_byte_array_len_encode_store(cram_codec *c, cram_block *b,
 				     char *prefix, int version) {
-    int len = 0;
+    int len = 0, len2, len3;
+    cram_codec *tc;
+    cram_block *b_len, *b_val;
 
     if (prefix) {
 	size_t l = strlen(prefix);
@@ -1447,16 +1469,23 @@ int cram_byte_array_len_encode_store(cram_codec *c, cram_block *b,
 	len += l;
     }
 
+    tc = c->e_byte_array_len.len_codec; 
+    b_len = cram_new_block(0, 0);
+    len2 = tc->store(tc, b_len, NULL, version);
+
+    tc = c->e_byte_array_len.val_codec;
+    b_val = cram_new_block(0, 0);
+    len3 = tc->store(tc, b_val, NULL, version);
+
     len += itf8_put_blk(b, c->codec);
-    len += itf8_put_blk(b, c->e_byte_array_len.len_len +
-			   c->e_byte_array_len.val_len);
-    BLOCK_APPEND(b, c->e_byte_array_len.len_dat, c->e_byte_array_len.len_len);
-    len += c->e_byte_array_len.len_len;
+    len += itf8_put_blk(b, len2+len3);
+    BLOCK_APPEND(b, BLOCK_DATA(b_len), BLOCK_SIZE(b_len));
+    BLOCK_APPEND(b, BLOCK_DATA(b_val), BLOCK_SIZE(b_val));
 
-    BLOCK_APPEND(b, c->e_byte_array_len.val_dat, c->e_byte_array_len.val_len);
-    len += c->e_byte_array_len.val_len;
+    cram_free_block(b_len);
+    cram_free_block(b_val);
 
-    return len;
+    return len + len2 + len3;
 }
 
 cram_codec *cram_byte_array_len_encode_init(cram_stats *st,
@@ -1474,10 +1503,14 @@ cram_codec *cram_byte_array_len_encode_init(cram_stats *st,
     c->encode = cram_byte_array_len_encode;
     c->store = cram_byte_array_len_encode_store;
 
-    c->e_byte_array_len.len_len = e->len_len;
-    c->e_byte_array_len.len_dat = e->len_dat;
-    c->e_byte_array_len.val_len = e->val_len;
-    c->e_byte_array_len.val_dat = e->val_dat;
+    c->e_byte_array_len.len_codec = cram_encoder_init(e->len_encoding,
+						      NULL, E_INT, 
+						      e->len_dat,
+						      version);
+    c->e_byte_array_len.val_codec = cram_encoder_init(e->val_encoding,
+						      NULL, E_BYTE_ARRAY, 
+						      e->val_dat,
+						      version);
 
     return c;
 }
@@ -1615,7 +1648,9 @@ cram_codec *cram_byte_array_stop_decode_init(char *data, int size,
 
 int cram_byte_array_stop_encode(cram_slice *slice, cram_codec *c,
 				cram_block *out, char *in, int in_size) {
-    return -1; // not imp.
+    BLOCK_APPEND(out, in, in_size);
+    BLOCK_APPEND_CHAR(out, c->e_byte_array_stop.stop);
+    return 0;
 }
 
 void cram_byte_array_stop_encode_free(cram_codec *c) {
