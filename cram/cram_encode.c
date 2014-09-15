@@ -638,6 +638,8 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     int rec, r = 0, last_pos;
     cram_block *core;
     int nblk, embed_ref;
+    int level = fd->level;
+    int method = 1<<GZIP | 1<<GZIP_RLE, methodF = method;
 
     embed_ref = fd->embed_ref && s->hdr->ref_seq_id != -1 ? 1 : 0;
 
@@ -995,83 +997,85 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
 #endif
 
     /* Compress the CORE Block too, with minimal zlib level */
-    if (fd->level > 5)
-	cram_compress_block(fd, s->block[0], NULL, 1, Z_CRAM_STRAT, -1, -1);
+    if (level > 5 && s->block[0]->uncomp_size > 500)
+	cram_compress_block(fd, s->block[0], NULL, GZIP, 1);
+ 
+    if (fd->use_bz2)
+	method |= 1<<BZIP2;
 
-#define USE_METRICS
+    if (fd->use_rans)
+	method |= (1<<RANS0) | (1<<RANS1);
 
-#ifdef USE_METRICS
-#  define LEVEL2 1
-#  define STRAT2 Z_RLE
-#else
-#  define LEVEL2 -1
-#  define STRAT2 -1
-#endif
+    if (fd->use_lzma)
+	method |= (1<<LZMA);
+
+    /* Faster method for data series we only need entropy encoding on */
+    methodF = method & ~(1<<GZIP | 1<<BZIP2 | 1<<LZMA);
+    if (level >= 6)
+	methodF = method;
+    
 
     /* Compress the other blocks */
-    if (cram_compress_block(fd, s->block[1], NULL, //IN (seq)
-			    fd->level, Z_CRAM_STRAT,
-			    -1, -1))
+    if (cram_compress_block(fd, s->block[1], fd->m[0], //IN (seq)
+			    method, level))
 	return -1;
 
     if (fd->level == 0) {
 	/* Do nothing */
     } else if (fd->level == 1) {
 	if (cram_compress_block(fd, s->block[2], fd->m[1], //qual
-				1, Z_RLE, -1, -1))
+				methodF, 1))
+
 	    return -1;
 	if (cram_compress_block(fd, s->block[5], fd->m[4], //Tags
-				1, Z_RLE, -1, -1))
+				method, 1))
 	    return -1;
     } else if (fd->level < 3) {
 	if (cram_compress_block(fd, s->block[2], fd->m[1], //qual
-				1, Z_RLE,
-				1, Z_HUFFMAN_ONLY))
+				method, 1))
 	    return -1;
 	if (cram_compress_block(fd, s->block[5], fd->m[4], //Tags
-				1, Z_RLE,
-				1, Z_HUFFMAN_ONLY))
+				method, level))
 	    return -1;
     } else {
 	if (cram_compress_block(fd, s->block[2], fd->m[1], //qual
-				fd->level, Z_CRAM_STRAT, 
-				LEVEL2, STRAT2))
+				method, level))
 	    return -1;
 	if (cram_compress_block(fd, s->block[5], fd->m[4], //Tags
-				fd->level, Z_CRAM_STRAT,
-				LEVEL2, STRAT2))
+				method, level))
 	    return -1;
     }
-    if (cram_compress_block(fd, s->block[3], NULL, //Name
-			    fd->level, Z_CRAM_STRAT,
-			    -1, -1))
+
+    // NAME: best is generally xz, bzip2, zlib then rans1
+    // It benefits well from a little bit extra compression level.
+    if (cram_compress_block(fd, s->block[3], fd->m[2], //Name
+			    method & ~(1<<RANS0 | 1<<GZIP_RLE),
+			    MIN(9,level)))
 	return -1;
-    if (cram_compress_block(fd, s->block[4], NULL, //TS, NP
-			    fd->level, Z_CRAM_STRAT,
-			    -1, -1))
+    if (cram_compress_block(fd, s->block[4], fd->m[3], //TS, NP
+			    method, level))
 	return -1;
     if (fd->version != CRAM_1_VERS) {
-	if (cram_compress_block(fd, s->block[6], NULL, //SC (seq)
-				fd->level, Z_CRAM_STRAT,
-				-1, -1))
+	if (cram_compress_block(fd, s->block[6], fd->m[5], //SC (seq)
+				method, level))
 	    return -1;
     }
 #ifdef BA_external
     if (cram_compress_block(fd, s->block[s->ba_id], NULL,
-			    fd->level, Z_CRAM_STRAT, -1, -1))
+			    method, level))
 	return -1;
 #endif
 #ifdef TN_external
     if (fd->version == CRAM_1_VERS) {
 	if (cram_compress_block(fd, s->block[s->tn_id], NULL,
-				fd->level, Z_DEFAULT_STRATEGY, -1, -1))
+				method, level))
 	    return -1;
     }
 #endif
     if (embed_ref) {
 	BLOCK_UPLEN(s->block[s->ref_id]);
 	if (cram_compress_block(fd, s->block[s->ref_id], NULL,
-				fd->level, Z_DEFAULT_STRATEGY, -1, -1))
+				method, level))
 	    return -1;
     }
 

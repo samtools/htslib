@@ -1529,10 +1529,9 @@ int cram_byte_array_stop_decode_char(cram_slice *slice, cram_codec *c,
 int cram_byte_array_stop_decode_block(cram_slice *slice, cram_codec *c,
 				      cram_block *in, char *out_,
 				      int *out_size) {
-    int space = 256;
     cram_block *b = NULL;
     cram_block *out = (cram_block *)out_;
-    char *cp, ch, *out_cp, *cp_end, *out_end;
+    char *cp, *out_cp, *cp_end;
     char stop;
 
     if (slice->block_by_id) {

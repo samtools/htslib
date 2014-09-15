@@ -145,10 +145,13 @@ typedef struct {
 struct cram_slice;
 
 enum cram_block_method {
-    BM_ERROR = -1,
     RAW   = 0,
     GZIP  = 1,
     BZIP2 = 2,
+    LZMA  = 3,
+    RANS0 = 4,
+    RANS1 = 10,    // Not externalised; stored as RANS (generic)
+    GZIP_RLE = 11, // NB: not externalised in CRAM
 };
 
 enum cram_content_type {
@@ -163,10 +166,37 @@ enum cram_content_type {
 
 /* Compression metrics */
 typedef struct {
-    int m1;
-    int m2;
+    // number of trials and time to next trial
     int trial;
     int next_trial;
+
+    // aggregate sizes during trials
+    int sz_gz_rle;
+    int sz_gz_def;
+    int sz_rans0;
+    int sz_rans1;
+    int sz_bzip2;
+    int sz_lzma;
+
+    // resultant method from trials
+    int method;
+    int strat;
+
+    // Revisions of method, to allow culling of continually failing ones.
+    int gz_rle_cnt;
+    int gz_def_cnt;
+    int rans0_cnt;
+    int rans1_cnt;
+    int bzip2_cnt;
+    int lzma_cnt;
+    int revised_method;
+
+    double gz_rle_extra;
+    double gz_def_extra;
+    double rans0_extra;
+    double rans1_extra;
+    double bzip2_extra;
+    double lzma_extra;
 } cram_metrics;
 
 /* Block */
@@ -651,7 +681,7 @@ typedef struct cram_fd {
 
     // compression level and metrics
     int level;
-    cram_metrics *m[7];
+    cram_metrics *m[10];
 
     // options
     int decode_md; // Whether to export MD and NM tags
@@ -662,6 +692,8 @@ typedef struct cram_fd {
     int no_ref;
     int ignore_md5;
     int use_bz2;
+    int use_rans;
+    int use_lzma;
     int shared_ref;
     cram_range range;
 
@@ -710,6 +742,8 @@ enum cram_option {
     CRAM_OPT_SHARED_REF,
     CRAM_OPT_NTHREADS,
     CRAM_OPT_THREAD_POOL,
+    CRAM_OPT_USE_LZMA,
+    CRAM_OPT_USE_RANS,
 };
 
 /* BF bitfields */
