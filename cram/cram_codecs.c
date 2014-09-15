@@ -271,8 +271,7 @@ static int store_bits_MSB(cram_block *block, unsigned int val, int nbits) {
 	}
     }
 
-    
-    
+    /* fits in current bit-field */
     if (nbits <= block->bit+1) {
 	block->data[block->byte] |= (val << (block->bit+1-nbits));
 	if ((block->bit-=nbits) == -1) {
@@ -330,11 +329,11 @@ int cram_external_decode_int(cram_slice *slice, cram_codec *c,
     /* Find the external block */
     if (slice->block_by_id) {
 	if (!(b = slice->block_by_id[c->external.content_id]))
-	    return -1;
+	    return *out_size?-1:0;
     } else {
 	for (i = 0; i < slice->hdr->num_blocks; i++) {
 	    b = slice->block[i];
-	    if (b->content_type == EXTERNAL &&
+	    if (b && b->content_type == EXTERNAL &&
 		b->content_id == c->external.content_id) {
 		break;
 	    }
@@ -361,11 +360,11 @@ int cram_external_decode_char(cram_slice *slice, cram_codec *c,
     /* Find the external block */
     if (slice->block_by_id) {
 	if (!(b = slice->block_by_id[c->external.content_id]))
-	    return -1;
+	    return *out_size?-1:0;
     } else {
 	for (i = 0; i < slice->hdr->num_blocks; i++) {
 	    b = slice->block[i];
-	    if (b->content_type == EXTERNAL &&
+	    if (b && b->content_type == EXTERNAL &&
 		b->content_id == c->external.content_id) {
 		break;
 	    }
@@ -393,11 +392,11 @@ int cram_external_decode_block(cram_slice *slice, cram_codec *c,
     /* Find the external block */
     if (slice->block_by_id) {
 	if (!(b = slice->block_by_id[c->external.content_id]))
-	    return -1;
+	    return *out_size?-1:0;
     } else {
 	for (i = 0; i < slice->hdr->num_blocks; i++) {
 	    b = slice->block[i];
-	    if (b->content_type == EXTERNAL &&
+	    if (b && b->content_type == EXTERNAL &&
 		b->content_id == c->external.content_id) {
 		break;
 	    }
@@ -451,7 +450,7 @@ cram_codec *cram_external_decode_init(char *data, int size,
 }
 
 int cram_external_encode(cram_slice *slice, cram_codec *c,
-			cram_block *out, char *in, int in_size) {
+			 cram_block *out, char *in, int in_size) {
     uint32_t *i32 = (uint32_t *)in;
 
     itf8_put_blk(out, *i32);
@@ -602,7 +601,7 @@ int cram_beta_encode_int(cram_slice *slice, cram_codec *c,
 }
 
 int cram_beta_encode_char(cram_slice *slice, cram_codec *c,
-			 cram_block *out, char *in, int in_size) {
+			  cram_block *out, char *in, int in_size) {
     unsigned char *syms = (unsigned char *)in;
     int i, r = 0;
 
@@ -859,9 +858,9 @@ int cram_huffman_decode_char(cram_slice *slice, cram_codec *c,
 
 	    //val <<= dlen;
 	    //val  |= get_bits_MSB(in, dlen);
-	    //last_len = (len  += dlen);
+	    //last_len = (len += dlen);
 
-	    last_len = (len  += dlen);
+	    last_len = (len += dlen);
 	    for (; dlen; dlen--) GET_BIT_MSB(in, val);
 
 	    idx = val - codes[idx].p;
@@ -909,9 +908,9 @@ int cram_huffman_decode_int(cram_slice *slice, cram_codec *c,
 	    
 	    //val <<= dlen;
 	    //val  |= get_bits_MSB(in, dlen);
-	    //last_len = (len  += dlen);
+	    //last_len = (len += dlen);
 
-	    last_len = (len  += dlen);
+	    last_len = (len += dlen);
 	    for (; dlen; dlen--) GET_BIT_MSB(in, val);
 
 	    idx = val - codes[idx].p;
@@ -1428,7 +1427,7 @@ cram_codec *cram_byte_array_len_decode_init(char *data, int size,
 }
 
 int cram_byte_array_len_encode(cram_slice *slice, cram_codec *c,
-			cram_block *out, char *in, int in_size) {
+			       cram_block *out, char *in, int in_size) {
     return -1; // not imp.
 }
 
@@ -1496,11 +1495,11 @@ int cram_byte_array_stop_decode_char(cram_slice *slice, cram_codec *c,
 
     if (slice->block_by_id) {
 	if (!(b = slice->block_by_id[c->byte_array_stop.content_id]))
-	    return -1;
+	    return *out_size?-1:0;
     } else {
 	for (i = 0; i < slice->hdr->num_blocks; i++) {
 	    b = slice->block[i];
-	    if (b->content_type == EXTERNAL &&
+	    if (b && b->content_type == EXTERNAL &&
 		b->content_id == c->byte_array_stop.content_id) {
 		break;
 	    }
@@ -1536,12 +1535,12 @@ int cram_byte_array_stop_decode_block(cram_slice *slice, cram_codec *c,
 
     if (slice->block_by_id) {
 	if (!(b = slice->block_by_id[c->byte_array_stop.content_id]))
-	    return -1;
+	    return *out_size?-1:0;
     } else {
 	int i;
 	for (i = 0; i < slice->hdr->num_blocks; i++) {
 	    b = slice->block[i];
-	    if (b->content_type == EXTERNAL &&
+	    if (b && b->content_type == EXTERNAL &&
 		b->content_id == c->byte_array_stop.content_id) {
 		break;
 	    }
