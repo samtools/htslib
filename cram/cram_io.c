@@ -867,7 +867,6 @@ int cram_uncompress_block(cram_block *b) {
 
     switch (b->method) {
     case RAW:
-	b->uncomp_size = b->comp_size;
 	return 0;
 
     case GZIP:
@@ -1533,7 +1532,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 
     if (!(r->fp = fopen(r->fn, "r"))) {
 	if (is_err)
-	    perror(fn);
+	    perror(r->fn);
 	goto err;
     }
 
@@ -2381,6 +2380,8 @@ int cram_load_reference(cram_fd *fd, char *fn) {
  */
 cram_container *cram_new_container(int nrec, int nslice) {
     cram_container *c = calloc(1, sizeof(*c));
+    enum cram_DS_ID id;
+
     if (!c)
 	return NULL;
 
@@ -2410,32 +2411,8 @@ cram_container *cram_new_container(int nrec, int nslice) {
 	goto err;
     c->comp_hdr_block = NULL;
 
-    if (!(c->BF_stats = cram_stats_create())) goto err;
-    if (!(c->CF_stats = cram_stats_create())) goto err;
-    if (!(c->RN_stats = cram_stats_create())) goto err;
-    if (!(c->AP_stats = cram_stats_create())) goto err;
-    if (!(c->RG_stats = cram_stats_create())) goto err;
-    if (!(c->MQ_stats = cram_stats_create())) goto err;
-    if (!(c->NS_stats = cram_stats_create())) goto err;
-    if (!(c->NP_stats = cram_stats_create())) goto err;
-    if (!(c->TS_stats = cram_stats_create())) goto err;
-    if (!(c->MF_stats = cram_stats_create())) goto err;
-    if (!(c->NF_stats = cram_stats_create())) goto err;
-    if (!(c->RL_stats = cram_stats_create())) goto err;
-    if (!(c->FN_stats = cram_stats_create())) goto err;
-    if (!(c->FC_stats = cram_stats_create())) goto err;
-    if (!(c->FP_stats = cram_stats_create())) goto err;
-    if (!(c->DL_stats = cram_stats_create())) goto err;
-    if (!(c->BA_stats = cram_stats_create())) goto err;
-    if (!(c->QS_stats = cram_stats_create())) goto err;
-    if (!(c->BS_stats = cram_stats_create())) goto err;
-    if (!(c->TC_stats = cram_stats_create())) goto err;
-    if (!(c->TN_stats = cram_stats_create())) goto err;
-    if (!(c->TL_stats = cram_stats_create())) goto err;
-    if (!(c->RI_stats = cram_stats_create())) goto err;
-    if (!(c->RS_stats = cram_stats_create())) goto err;
-    if (!(c->PD_stats = cram_stats_create())) goto err;
-    if (!(c->HC_stats = cram_stats_create())) goto err;
+    for (id = DS_RN; id < DS_TN; id++)
+	if (!(c->stats[id] = cram_stats_create())) goto err;
     
     //c->aux_B_stats = cram_stats_create();
 
@@ -2455,6 +2432,7 @@ cram_container *cram_new_container(int nrec, int nslice) {
 }
 
 void cram_free_container(cram_container *c) {
+    enum cram_DS_ID id;
     int i;
 
     if (!c)
@@ -2479,34 +2457,8 @@ void cram_free_container(cram_container *c) {
 	free(c->slices);
     }
 
-    if (c->TS_stats) cram_stats_free(c->TS_stats);
-    if (c->RG_stats) cram_stats_free(c->RG_stats);
-    if (c->FP_stats) cram_stats_free(c->FP_stats);
-    if (c->NS_stats) cram_stats_free(c->NS_stats);
-    if (c->RN_stats) cram_stats_free(c->RN_stats);
-    if (c->CF_stats) cram_stats_free(c->CF_stats);
-    if (c->TN_stats) cram_stats_free(c->TN_stats);
-    if (c->BA_stats) cram_stats_free(c->BA_stats);
-    if (c->TV_stats) cram_stats_free(c->TV_stats);
-    if (c->BS_stats) cram_stats_free(c->BS_stats);
-    if (c->FC_stats) cram_stats_free(c->FC_stats);
-    if (c->BF_stats) cram_stats_free(c->BF_stats);
-    if (c->AP_stats) cram_stats_free(c->AP_stats);
-    if (c->NF_stats) cram_stats_free(c->NF_stats);
-    if (c->MF_stats) cram_stats_free(c->MF_stats);
-    if (c->FN_stats) cram_stats_free(c->FN_stats);
-    if (c->RL_stats) cram_stats_free(c->RL_stats);
-    if (c->DL_stats) cram_stats_free(c->DL_stats);
-    if (c->TC_stats) cram_stats_free(c->TC_stats);
-    if (c->TL_stats) cram_stats_free(c->TL_stats);
-    if (c->MQ_stats) cram_stats_free(c->MQ_stats);
-    if (c->TM_stats) cram_stats_free(c->TM_stats);
-    if (c->QS_stats) cram_stats_free(c->QS_stats);
-    if (c->NP_stats) cram_stats_free(c->NP_stats);
-    if (c->RI_stats) cram_stats_free(c->RI_stats);
-    if (c->RS_stats) cram_stats_free(c->RS_stats);
-    if (c->PD_stats) cram_stats_free(c->PD_stats);
-    if (c->HC_stats) cram_stats_free(c->HC_stats);
+    for (id = DS_RN; id < DS_TN; id++)
+	if (c->stats[id]) cram_stats_free(c->stats[id]);
 
     //if (c->aux_B_stats) cram_stats_free(c->aux_B_stats);
     
@@ -2839,35 +2791,10 @@ void cram_free_compression_header(cram_block_compression_hdr *hdr) {
 	}
     }
 
-    if (hdr->BF_codec) hdr->BF_codec->free(hdr->BF_codec);
-    if (hdr->CF_codec) hdr->CF_codec->free(hdr->CF_codec);
-    if (hdr->RL_codec) hdr->RL_codec->free(hdr->RL_codec);
-    if (hdr->AP_codec) hdr->AP_codec->free(hdr->AP_codec);
-    if (hdr->RG_codec) hdr->RG_codec->free(hdr->RG_codec);
-    if (hdr->MF_codec) hdr->MF_codec->free(hdr->MF_codec);
-    if (hdr->NS_codec) hdr->NS_codec->free(hdr->NS_codec);
-    if (hdr->NP_codec) hdr->NP_codec->free(hdr->NP_codec);
-    if (hdr->TS_codec) hdr->TS_codec->free(hdr->TS_codec);
-    if (hdr->NF_codec) hdr->NF_codec->free(hdr->NF_codec);
-    if (hdr->TC_codec) hdr->TC_codec->free(hdr->TC_codec);
-    if (hdr->TN_codec) hdr->TN_codec->free(hdr->TN_codec);
-    if (hdr->TL_codec) hdr->TL_codec->free(hdr->TL_codec);
-    if (hdr->FN_codec) hdr->FN_codec->free(hdr->FN_codec);
-    if (hdr->FC_codec) hdr->FC_codec->free(hdr->FC_codec);
-    if (hdr->FP_codec) hdr->FP_codec->free(hdr->FP_codec);
-    if (hdr->BS_codec) hdr->BS_codec->free(hdr->BS_codec);
-    if (hdr->IN_codec) hdr->IN_codec->free(hdr->IN_codec);
-    if (hdr->SC_codec) hdr->SC_codec->free(hdr->SC_codec);
-    if (hdr->DL_codec) hdr->DL_codec->free(hdr->DL_codec);
-    if (hdr->BA_codec) hdr->BA_codec->free(hdr->BA_codec);
-    if (hdr->MQ_codec) hdr->MQ_codec->free(hdr->MQ_codec);
-    if (hdr->RN_codec) hdr->RN_codec->free(hdr->RN_codec);
-    if (hdr->QS_codec) hdr->QS_codec->free(hdr->QS_codec);
-    if (hdr->Qs_codec) hdr->Qs_codec->free(hdr->Qs_codec);
-    if (hdr->RI_codec) hdr->RI_codec->free(hdr->RI_codec);
-    if (hdr->RS_codec) hdr->RS_codec->free(hdr->RS_codec);
-    if (hdr->PD_codec) hdr->PD_codec->free(hdr->PD_codec);
-    if (hdr->HC_codec) hdr->HC_codec->free(hdr->HC_codec);
+    for (i = 0; i < DS_END; i++) {
+	if (hdr->codecs[i])
+	    hdr->codecs[i]->free(hdr->codecs[i]);
+    }
 
     if (hdr->TL)
 	free(hdr->TL);
@@ -2934,16 +2861,29 @@ void cram_free_slice(cram_slice *s) {
     if (s->aux_blk)
 	cram_free_block(s->aux_blk);
 
+    if (s->aux_OQ_blk)
+	cram_free_block(s->aux_OQ_blk);
+
+    if (s->aux_BQ_blk)
+	cram_free_block(s->aux_BQ_blk);
+
+    if (s->aux_FZ_blk)
+	cram_free_block(s->aux_FZ_blk);
+
+    if (s->aux_oq_blk)
+	cram_free_block(s->aux_oq_blk);
+
+    if (s->aux_os_blk)
+	cram_free_block(s->aux_os_blk);
+
+    if (s->aux_oz_blk)
+	cram_free_block(s->aux_oz_blk);
+
     if (s->base_blk)
 	cram_free_block(s->base_blk);
 
     if (s->soft_blk)
 	cram_free_block(s->soft_blk);
-
-#ifdef TN_external
-    if (s->tn_blk)
-	cram_free_block(s->tn_blk);
-#endif
 
     if (s->cigar)
 	free(s->cigar);
@@ -2954,11 +2894,9 @@ void cram_free_slice(cram_slice *s) {
     if (s->features)
 	free(s->features);
 
-#ifndef TN_external
     if (s->TN)
 	free(s->TN);
-#endif
-    
+
     if (s->pair_keys)
 	string_pool_destroy(s->pair_keys);
 
@@ -2989,20 +2927,17 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
     s->block_by_id = NULL;
     s->last_apos = 0;
     s->id = 0;
-    if (!(s->crecs = malloc(nrecs * sizeof(cram_record))))        goto err;
+    if (!(s->crecs = malloc(nrecs * sizeof(cram_record))))  goto err;
     s->cigar = NULL;
     s->cigar_alloc = 0;
     s->ncigar = 0;
 
-    if (!(s->seqs_blk = cram_new_block(EXTERNAL, 0)))             goto err;
-    if (!(s->qual_blk = cram_new_block(EXTERNAL, CRAM_EXT_QUAL))) goto err;
-    if (!(s->name_blk = cram_new_block(EXTERNAL, CRAM_EXT_NAME))) goto err;
-    if (!(s->aux_blk  = cram_new_block(EXTERNAL, CRAM_EXT_TAG)))  goto err;
-    if (!(s->base_blk = cram_new_block(EXTERNAL, CRAM_EXT_IN)))   goto err;
-    if (!(s->soft_blk = cram_new_block(EXTERNAL, CRAM_EXT_SC)))   goto err;
-#ifdef TN_external
-    if (!(s->tn_blk   = cram_new_block(EXTERNAL, CRAM_EXT_TN)))   goto err;
-#endif
+    if (!(s->seqs_blk = cram_new_block(EXTERNAL, 0)))       goto err;
+    if (!(s->qual_blk = cram_new_block(EXTERNAL, DS_QS)))   goto err;
+    if (!(s->name_blk = cram_new_block(EXTERNAL, DS_RN)))   goto err;
+    if (!(s->aux_blk  = cram_new_block(EXTERNAL, DS_aux)))  goto err;
+    if (!(s->base_blk = cram_new_block(EXTERNAL, DS_IN)))   goto err;
+    if (!(s->soft_blk = cram_new_block(EXTERNAL, DS_SC)))   goto err;
 
     s->features = NULL;
     s->nfeatures = s->afeatures = 0;
@@ -3093,16 +3028,12 @@ cram_slice *cram_read_slice(cram_fd *fd) {
     s->cigar_alloc = 0;
     s->ncigar = 0;
 
-    if (!(s->seqs_blk = cram_new_block(EXTERNAL, 0)))             goto err;
-    if (!(s->qual_blk = cram_new_block(EXTERNAL, CRAM_EXT_QUAL))) goto err;
-    if (!(s->name_blk = cram_new_block(EXTERNAL, CRAM_EXT_NAME))) goto err;
-    if (!(s->aux_blk  = cram_new_block(EXTERNAL, CRAM_EXT_TAG)))  goto err;
-    if (!(s->base_blk = cram_new_block(EXTERNAL, CRAM_EXT_IN)))   goto err;
-    if (!(s->soft_blk = cram_new_block(EXTERNAL, CRAM_EXT_SC)))   goto err;
-#ifdef TN_external
-    if (!(s->tn_blk   = cram_new_block(EXTERNAL, CRAM_EXT_TN)))   goto err;
-#endif
-
+    if (!(s->seqs_blk = cram_new_block(EXTERNAL, 0)))      goto err;
+    if (!(s->qual_blk = cram_new_block(EXTERNAL, DS_QS)))  goto err;
+    if (!(s->name_blk = cram_new_block(EXTERNAL, DS_RN)))  goto err;
+    if (!(s->aux_blk  = cram_new_block(EXTERNAL, DS_aux))) goto err;
+    if (!(s->base_blk = cram_new_block(EXTERNAL, DS_IN)))  goto err;
+    if (!(s->soft_blk = cram_new_block(EXTERNAL, DS_SC)))  goto err;
 
     s->crecs = NULL;
 
@@ -3720,8 +3651,9 @@ cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode) {
     fd->rqueue      = NULL;
     fd->job_pending = NULL;
     fd->ooc         = 0;
+    fd->required_fields = INT_MAX;
 
-    for (i = 0; i < 10; i++)
+    for (i = 0; i < DS_END; i++)
 	fd->m[i] = cram_new_metrics();
 
     fd->range.refid = -2; // no ref.
@@ -4049,6 +3981,10 @@ int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args) {
 	//fd->qsize = 1;
 	//fd->decoded = calloc(fd->qsize, sizeof(cram_container *));
 	//t_pool_dispatch(fd->pool, cram_decoder_thread, fd);
+	break;
+
+    case CRAM_OPT_REQUIRED_FIELDS:
+	fd->required_fields = va_arg(args, int);
 	break;
 
     default:

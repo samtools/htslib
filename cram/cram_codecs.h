@@ -150,6 +150,13 @@ cram_codec *cram_encoder_init(enum cram_encoding codec, cram_stats *st,
 
 #define GET_BIT_MSB(b,v) (void)(v<<=1, v|=(b->data[b->byte] >> b->bit)&1, b->byte += (--b->bit<0), b->bit&=7)
 
+/*
+ * Returns the content_id used by this codec, also in id2 if byte_array_len.
+ * Returns -1 for the CORE block and -2 for unneeded.
+ * id2 is only filled out for BYTE_ARRAY_LEN which uses 2 codecs.
+ */
+int cram_codec_to_id(cram_codec *c, int *id2);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1790,3 +1790,45 @@ cram_codec *cram_encoder_init(enum cram_encoding codec,
 	abort();
     }
 }
+
+/*
+ * Returns the content_id used by this codec, also in id2 if byte_array_len.
+ * Returns -1 for the CORE block and -2 for unneeded.
+ * id2 is only filled out for BYTE_ARRAY_LEN which uses 2 codecs.
+ */
+int cram_codec_to_id(cram_codec *c, int *id2) {
+    int bnum1, bnum2 = -2;
+
+    switch (c->codec) {
+    case E_HUFFMAN:
+	bnum1 = c->huffman.ncodes == 1 ? -2 : -1;
+	break;
+    case E_GOLOMB:
+    case E_BETA:
+    case E_SUBEXP:
+    case E_GOLOMB_RICE:
+    case E_GAMMA:
+	bnum1 = -1;
+	break;
+    case E_EXTERNAL:
+	bnum1 = c->external.content_id;
+	break;
+    case E_BYTE_ARRAY_LEN:
+	bnum1 = cram_codec_to_id(c->byte_array_len.len_codec, NULL);
+	bnum2 = cram_codec_to_id(c->byte_array_len.value_codec, NULL);
+	break;
+    case E_BYTE_ARRAY_STOP:
+	bnum1 = c->byte_array_stop.content_id;
+	break;
+    case E_NULL:
+	bnum1 = -2;
+	break;
+    default:
+	fprintf(stderr, "Unknown codec type %d\n", c->codec);
+	bnum1 = -1;
+    }
+
+    if (id2)
+	*id2 = bnum2;
+    return bnum1;
+}

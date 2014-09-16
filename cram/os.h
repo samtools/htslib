@@ -225,10 +225,12 @@ extern "C" {
  */
 #ifdef SP_BIG_ENDIAN
 #define le_int4(x) iswap_int4((x))
+#define le_int2(x) iswap_int2((x))
 #endif
 
 #ifdef SP_LITTLE_ENDIAN
 #define le_int4(x) (x)
+#define le_int2(x) (x)
 #endif
 
 /*-----------------------------------------------------------------------------
