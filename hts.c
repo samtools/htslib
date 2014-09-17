@@ -125,6 +125,7 @@ static int is_binary(unsigned char *s, size_t n)
 htsFile *hts_open(const char *fn, const char *mode)
 {
     htsFile *fp = NULL;
+    char *vers = NULL;
     hFILE *hfile = hopen(fn, mode);
     if (hfile == NULL) goto error;
 
@@ -166,7 +167,9 @@ htsFile *hts_open(const char *fn, const char *mode)
     else if (strchr(mode, 'w') || strchr(mode, 'a')) {
         fp->is_write = 1;
         if (strchr(mode, 'b')) fp->is_bin = 1;
-        if (strchr(mode, 'c')) fp->is_cram = 1;
+        if (strchr(mode, 'c')) fp->is_cram = 1, vers="2.1";
+        // "C" is a temporary mode for testing CRAM V3.0 prototypes
+        if (strchr(mode, 'C')) fp->is_cram = 1, vers="3.0";
         if (strchr(mode, 'z')) fp->is_compressed = 1;
         else if (strchr(mode, 'u')) fp->is_compressed = 0;
         else fp->is_compressed = 2;    // not set, default behaviour
@@ -178,11 +181,19 @@ htsFile *hts_open(const char *fn, const char *mode)
         if (fp->fp.bgzf == NULL) goto error;
     }
     else if (fp->is_cram) {
+        if (fp->is_write)
+            // FIXME: we should be able to set this after opening the
+            // file, but the act of opening for write also writes out
+            // the magic number including version number.
+            //
+            // Instead we currently use an ugly hack which sets
+            // global variables instead.
+            cram_set_option(NULL, CRAM_OPT_VERSION, vers);
+
         fp->fp.cram = cram_dopen(hfile, fn, mode);
         if (fp->fp.cram == NULL) goto error;
         if (!fp->is_write)
             cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, 1);
-
     }
     else if (fp->is_kstream) {
     #if KS_BGZF

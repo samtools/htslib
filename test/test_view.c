@@ -43,8 +43,9 @@ int main(int argc, char *argv[])
     htsFile *out;
     char modew[8];
     int r = 0, exit_code = 0;
+    int cram3 = 0;
 
-    while ((c = getopt(argc, argv, "IbDCSl:t:")) >= 0) {
+    while ((c = getopt(argc, argv, "IbDCSl:t:3")) >= 0) {
         switch (c) {
         case 'S': flag |= 1; break;
         case 'b': flag |= 2; break;
@@ -53,6 +54,7 @@ int main(int argc, char *argv[])
         case 'l': clevel = atoi(optarg); flag |= 2; break;
         case 't': fn_ref = optarg; break;
         case 'I': ignore_sam_err = 1; break;
+        case '3': cram3 = 1; break;       
         }
     }
     if (argc == optind) {
@@ -74,7 +76,7 @@ int main(int argc, char *argv[])
 
     strcpy(modew, "w");
     if (clevel >= 0 && clevel <= 9) sprintf(modew + 1, "%d", clevel);
-    if (flag&8) strcat(modew, "c");
+    if (flag&8) strcat(modew, cram3?"C":"c");
     else if (flag&2) strcat(modew, "b");
     out = hts_open("-", modew);
     if (out == NULL) {

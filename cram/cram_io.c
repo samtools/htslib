@@ -3759,7 +3759,7 @@ cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode) {
     fd->no_ref = 0;
     fd->ignore_md5 = 0;
     fd->use_bz2 = 0;
-    fd->use_rans = 0;
+    fd->use_rans = (CRAM_MAJOR_VERS(fd->version) >= 3);
     fd->use_lzma = 0;
     fd->multi_seq = 0;
     fd->unsorted   = 0;
