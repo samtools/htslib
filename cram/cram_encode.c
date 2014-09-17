@@ -1191,6 +1191,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     s->block[DS_aux_OQ]= s->aux_OQ_blk;  s->aux_OQ_blk  = NULL;
     s->block[DS_aux_BQ]= s->aux_BQ_blk;  s->aux_BQ_blk  = NULL;
     s->block[DS_aux_BD]= s->aux_BD_blk;  s->aux_BD_blk  = NULL;
+    s->block[DS_aux_BI]= s->aux_BI_blk;  s->aux_BI_blk  = NULL;
     s->block[DS_aux_FZ]= s->aux_FZ_blk;  s->aux_FZ_blk  = NULL;
     s->block[DS_aux_oq]= s->aux_oq_blk;  s->aux_oq_blk  = NULL;
     s->block[DS_aux_os]= s->aux_os_blk;  s->aux_os_blk  = NULL;
