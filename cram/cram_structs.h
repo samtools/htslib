@@ -737,22 +737,6 @@ typedef struct cram_fd {
     int ooc;                            // out of containers.
 } cram_fd;
 
-// REQUIRED_FIELDS
-enum sam_fields {
-    SAM_QNAME = 0x00000001,
-    SAM_FLAG  = 0x00000002,
-    SAM_RNAME = 0x00000004,
-    SAM_POS   = 0x00000008,
-    SAM_MAPQ  = 0x00000010,
-    SAM_CIGAR = 0x00000020,
-    SAM_RNEXT = 0x00000040,
-    SAM_PNEXT = 0x00000080,
-    SAM_TLEN  = 0x00000100,
-    SAM_SEQ   = 0x00000200,
-    SAM_QUAL  = 0x00000400,
-    SAM_AUX   = 0x00000800,
-};
-
 // Translation of required fields to cram data series
 enum cram_fields {
     CRAM_BF = 0x00000001,
@@ -798,28 +782,6 @@ enum cram_fields {
 
 #define CRAM_SEQ (CRAM_CIGAR | CRAM_BA | CRAM_QS | CRAM_BS | \
 		  CRAM_RL    | CRAM_AP | CRAM_BB | CRAM_QQ)
-
-enum cram_option {
-    CRAM_OPT_DECODE_MD,
-    CRAM_OPT_PREFIX,
-    CRAM_OPT_VERBOSITY,
-    CRAM_OPT_SEQS_PER_SLICE,
-    CRAM_OPT_SLICES_PER_CONTAINER,
-    CRAM_OPT_RANGE,
-    CRAM_OPT_VERSION,
-    CRAM_OPT_EMBED_REF,
-    CRAM_OPT_IGNORE_MD5,
-    CRAM_OPT_REFERENCE,
-    CRAM_OPT_MULTI_SEQ_PER_SLICE,
-    CRAM_OPT_NO_REF,
-    CRAM_OPT_USE_BZIP2,
-    CRAM_OPT_SHARED_REF,
-    CRAM_OPT_NTHREADS,
-    CRAM_OPT_THREAD_POOL,
-    CRAM_OPT_USE_LZMA,
-    CRAM_OPT_USE_RANS,
-    CRAM_OPT_REQUIRED_FIELDS,
-};
 
 /* BF bitfields */
 /* Corrected in 1.1. Use bam_flag_swap[bf] and BAM_* macros for 1.0 & 1.1 */

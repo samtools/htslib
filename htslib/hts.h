@@ -82,6 +82,44 @@ typedef struct {
     } fp;
 } htsFile;
 
+// REQUIRED_FIELDS
+enum sam_fields {
+    SAM_QNAME = 0x00000001,
+    SAM_FLAG  = 0x00000002,
+    SAM_RNAME = 0x00000004,
+    SAM_POS   = 0x00000008,
+    SAM_MAPQ  = 0x00000010,
+    SAM_CIGAR = 0x00000020,
+    SAM_RNEXT = 0x00000040,
+    SAM_PNEXT = 0x00000080,
+    SAM_TLEN  = 0x00000100,
+    SAM_SEQ   = 0x00000200,
+    SAM_QUAL  = 0x00000400,
+    SAM_AUX   = 0x00000800,
+};
+
+enum cram_option {
+    CRAM_OPT_DECODE_MD,
+    CRAM_OPT_PREFIX,
+    CRAM_OPT_VERBOSITY,
+    CRAM_OPT_SEQS_PER_SLICE,
+    CRAM_OPT_SLICES_PER_CONTAINER,
+    CRAM_OPT_RANGE,
+    CRAM_OPT_VERSION,
+    CRAM_OPT_EMBED_REF,
+    CRAM_OPT_IGNORE_MD5,
+    CRAM_OPT_REFERENCE,
+    CRAM_OPT_MULTI_SEQ_PER_SLICE,
+    CRAM_OPT_NO_REF,
+    CRAM_OPT_USE_BZIP2,
+    CRAM_OPT_SHARED_REF,
+    CRAM_OPT_NTHREADS,
+    CRAM_OPT_THREAD_POOL,
+    CRAM_OPT_USE_LZMA,
+    CRAM_OPT_USE_RANS,
+    CRAM_OPT_REQUIRED_FIELDS,
+};
+
 /**********************
  * Exported functions *
  **********************/
@@ -136,6 +174,15 @@ htsFile *hts_open(const char *fn, const char *mode);
   @return    0 for success, or negative if an error occurred.
 */
 int hts_close(htsFile *fp);
+
+/*!
+  @abstract  Sets a specified CRAM option on the open file handle.
+  @param fp  The file handle open the open file.
+  @param opt The CRAM_OPT_* option.
+  @param ... Optional arguments, dependent on the option used.
+  @return    0 for success, or negative if an error occurred.
+*/
+int hts_set_opt(htsFile *fp, enum cram_option opt, ...);
 
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
 char **hts_readlines(const char *fn, int *_n);

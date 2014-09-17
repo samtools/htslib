@@ -269,6 +269,20 @@ int hts_close(htsFile *fp)
     return ret;
 }
 
+int hts_set_opt(htsFile *fp, enum cram_option opt, ...) {
+    int r;
+    va_list args;
+
+    if (!fp->is_cram)
+	return 0;
+    
+    va_start(args, opt);
+    r = cram_set_voption(fp->fp.cram, opt, args);
+    va_end(args);
+
+    return r;
+}
+
 int hts_set_threads(htsFile *fp, int n)
 {
     // TODO Plug in CRAM and other threading
