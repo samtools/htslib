@@ -1507,6 +1507,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
     char line[8192];
     refs_t *r = r_orig;
     size_t fn_l = strlen(fn);
+    int id = 0, id_alloc = 0;
 
     RP("refs_load_fai %s\n", fn);
 
@@ -1611,6 +1612,18 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 		kh_val(r->h_meta, k) = e;
 	    }
 	}
+
+	if (id >= id_alloc) {
+	    int x;
+
+	    id_alloc = id_alloc ?id_alloc*2 : 16;
+	    r->ref_id = realloc(r->ref_id, id_alloc * sizeof(*r->ref_id));
+
+	    for (x = id; x < id_alloc; x++)
+		r->ref_id[x] = NULL;
+	}
+	r->ref_id[id] = e;
+	r->nref = ++id;
     }
 
     return r;
