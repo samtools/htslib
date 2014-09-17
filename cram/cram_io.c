@@ -3254,6 +3254,7 @@ static void full_path(char *out, char *in) {
 #define PADDED_BLOCK
 int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
     int header_len;
+    int blank_block = (CRAM_MAJOR_VERS(fd->version) >= 3);
 
     /* 1.0 requires and UNKNOWN read-group */
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
@@ -3323,11 +3324,12 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 	if (header_len != hwrite(fd->fp, sam_hdr_str(hdr), header_len))
 	    return -1;
     } else {
-	/* Create a block inside a container */
+	/* Create block(s) inside a container */
 	cram_block *b = cram_new_block(FILE_HEADER, 0);
 	cram_container *c = cram_new_container(0, 0);
 	int padded_length;
 	char *pads;
+	int is_cram_3 = (CRAM_MAJOR_VERS(fd->version) >= 3);
 
 	if (!b || !c) {
 	    if (b) cram_free_block(b);
@@ -3339,53 +3341,62 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 	BLOCK_APPEND(b, sam_hdr_str(hdr), header_len);
 	BLOCK_UPLEN(b);
 
-#ifndef BLANK_BLOCK
-	c->num_blocks = 1;
-	c->num_landmarks = 1;
-	if (!(c->landmark = malloc(sizeof(*c->landmark)))) {
-	    cram_free_block(b);
-	    cram_free_container(c);
-	    return -1;
+	// Compress header block if V3.0 and above
+	if (CRAM_MAJOR_VERS(fd->version) >= 3 && fd->level > 0) {
+	    int method = 1<<GZIP;
+	    if (fd->use_bz2)
+		method |= 1<<BZIP2;
+	    if (fd->use_lzma)
+		method |= 1<<LZMA;
+	    cram_compress_block(fd, b, NULL, method, fd->level);
+	} 
+
+	if (blank_block) {
+	    c->length = b->comp_size + 2 + 4*is_cram_3 +
+		itf8_size(b->content_id)   + 
+		itf8_size(b->uncomp_size)  +
+		itf8_size(b->comp_size);
+
+	    c->num_blocks = 2;
+	    c->num_landmarks = 2;
+	    if (!(c->landmark = malloc(2*sizeof(*c->landmark)))) {
+		cram_free_block(b);
+		cram_free_container(c);
+		return -1;
+	    }
+	    c->landmark[0] = 0;
+	    c->landmark[1] = c->length;
+
+	    // Plus extra storage for uncompressed secondary blank block
+	    padded_length = MIN(c->length*.5, 10000);
+	    c->length += padded_length + 2 + 4*is_cram_3 +
+		itf8_size(b->content_id) + 
+		itf8_size(padded_length)*2;
+	} else {
+	    // Pad the block instead.
+	    c->num_blocks = 1;
+	    c->num_landmarks = 1;
+	    if (!(c->landmark = malloc(sizeof(*c->landmark))))
+		return -1;
+	    c->landmark[0] = 0;
+
+	    padded_length = MAX(c->length*1.5, 10000) - c->length;
+
+	    c->length = b->comp_size + padded_length +
+		2 + 4*is_cram_3 +
+		itf8_size(b->content_id)   + 
+		itf8_size(b->uncomp_size)  +
+		itf8_size(b->comp_size);
+
+	    if (NULL == (pads = calloc(1, padded_length))) {
+		cram_free_block(b);
+		cram_free_container(c);
+		return -1;
+	    }
+	    BLOCK_APPEND(b, pads, padded_length);
+	    BLOCK_UPLEN(b);
+	    free(pads);
 	}
-	c->landmark[0] = 0;
-
-	c->length = b->uncomp_size + 2 +
-	    itf8_size(b->content_id)   + 
-	    itf8_size(b->uncomp_size)  +
-	    itf8_size(b->comp_size);
-#else
-	c->length = b->uncomp_size + 2 +
-	    itf8_size(b->content_id)   + 
-	    itf8_size(b->uncomp_size)  +
-	    itf8_size(b->comp_size);
-
-	c->num_blocks = 2;
-	c->num_landmarks = 2;
-	if (!(c->landmark = malloc(2*sizeof(*c->landmark))))
-	    return -1;
-	c->landmark[0] = 0;
-	c->landmark[1] = c->length;
-
-	c->length *= 2;
-#endif
-
-#ifdef PADDED_BLOCK
-	padded_length = MAX(c->length*1.5, 10000) - c->length;
-	c->length += padded_length;
-	if (NULL == (pads = calloc(1, padded_length))) {
-	    cram_free_block(b);
-	    cram_free_container(c);
-	    return -1;
-	}
-	BLOCK_APPEND(b, pads, padded_length);
-	BLOCK_UPLEN(b);
-	free(pads);
-#endif
-
-#ifdef PADDED_CONTAINER
-	padded_length = MAX(c->length*2, 10000) - c->length;
-	c->length += padded_length;
-#endif
 
 	if (-1 == cram_write_container(fd, c)) {
 	    cram_free_block(b);
@@ -3393,32 +3404,27 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 	    return -1;
 	}
 
-	// Keep it uncompressed
 	if (-1 == cram_write_block(fd, b)) {
 	    cram_free_block(b);
 	    cram_free_container(c);
 	    return -1;
 	}
 
-#ifdef BLANK_BLOCK
-	if (-1 == cram_write_block(fd, b)) {
-	    cram_free_block(b);
-	    cram_free_container(c);
-	    return -1;
+	if (blank_block) {
+	    BLOCK_RESIZE(b, padded_length);
+	    memset(BLOCK_DATA(b), 0, padded_length);
+	    BLOCK_SIZE(b) = padded_length;
+	    BLOCK_UPLEN(b);
+	    b->method = RAW;
+	    if (-1 == cram_write_block(fd, b)) {
+		cram_free_block(b);
+		cram_free_container(c);
+		return -1;
+	    }
 	}
-#endif
 
 	cram_free_block(b);
 	cram_free_container(c);
-
-#ifdef PADDED_CONTAINER
-	// Write out padding to allow for in-line SAM header editing
-	if (NULL == (pads = calloc(1, padded_length)))
-	    return -1;
-	if (padded_length != hwrite(fd->fp, pads, padded_length))
-	    return -1;
-	free(pads);
-#endif
     }
 
     if (-1 == refs_from_header(fd->refs, fd, fd->header))
@@ -3775,7 +3781,7 @@ int cram_close(cram_fd *fd) {
 	} else {
 	    if (30 != hwrite(fd->fp,
 			     "\x0b\x00\x00\x00\xff\xff\xff\xff"
-			     "\xff\xe0\x45\x4f\x46\x00\x00\x00"
+			     "\x0f\xe0\x45\x4f\x46\x00\x00\x00"
 			     "\x00\x01\x00\x00\x01\x00\x06\x06"
 			     "\x01\x00\x01\x00\x01\x00", 30))
 		return -1;
