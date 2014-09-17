@@ -892,6 +892,7 @@ int cram_uncompress_block(cram_block *b) {
 	    free(uncomp);
 	    return -1;
 	}
+	free(b->data);
 	b->data = (unsigned char *)uncomp;
 	b->alloc = usize;
 	b->method = RAW;
@@ -3812,7 +3813,7 @@ int cram_close(cram_fd *fd) {
     if (fd->ref_free)
         free(fd->ref_free);
 
-    for (i = 0; i < 10; i++)
+    for (i = 0; i < DS_END; i++)
 	if (fd->m[i])
 	    free(fd->m[i]);
 
