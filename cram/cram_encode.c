@@ -890,7 +890,8 @@ static int cram_encode_slice_read(cram_fd *fd,
 	    case 'b':
 		// string of bases
 		r |= h->codecs[DS_BB]->encode(s, h->codecs[DS_BB], 
-					      BLOCK_DATA(s->seqs_blk) + f->b.seq_idx,
+					      (char *)BLOCK_DATA(s->seqs_blk)
+					              + f->b.seq_idx,
 					      f->b.len);
 		break;
 
@@ -950,7 +951,7 @@ static int cram_compress_slice(cram_fd *fd, cram_slice *s) {
     int method = 1<<GZIP | 1<<GZIP_RLE, methodF = method;
 
     /* Compress the CORE Block too, with minimal zlib level */
-    if (level > 5)
+    if (level > 5 && s->block[0]->uncomp_size > 500)
 	cram_compress_block(fd, s->block[0], NULL, GZIP, 1);
  
     if (fd->use_bz2)
@@ -1159,6 +1160,8 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
 		}
 		break;
 	    }
+	    default:
+		break;
 	    }
 	} else {
 	    if (!(id == DS_BB && !h->codecs[DS_BB]))
@@ -1740,7 +1743,6 @@ static int cram_add_bases(cram_fd *fd, cram_container *c,
 			  cram_slice *s, cram_record *r,
 			  int pos, int len, char *base) {
     cram_feature f;
-    int i;
 
     f.b.pos = pos+1;
     f.b.code = 'b';
