@@ -137,7 +137,7 @@ htsFile *hts_open(const char *fn, const char *mode)
     if (strchr(mode, 'r')) {
         unsigned char s[18];
         if (hpeek(hfile, s, 6) == 6 && memcmp(s, "CRAM", 4) == 0 &&
-            s[4] >= 1 && s[4] <= 2 && s[5] <= 1) {
+            s[4] >= 1 && s[4] <= 3 && s[5] <= 1) {
             fp->is_cram = 1;
         }
         else if (hpeek(hfile, s, 18) == 18 && s[0] == 0x1f && s[1] == 0x8b &&
