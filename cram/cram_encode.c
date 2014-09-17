@@ -1624,7 +1624,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 	slice_offset = c_hdr->method == RAW
 	    ? c_hdr->uncomp_size
 	    : c_hdr->comp_size;
-	slice_offset += 2 +
+	slice_offset += 2 + 4*(CRAM_MAJOR_VERS(fd->version) >= 3) +
 	    itf8_size(c_hdr->content_id) +
 	    itf8_size(c_hdr->comp_size) +
 	    itf8_size(c_hdr->uncomp_size);
@@ -1649,13 +1649,13 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 	    ? s->hdr_block->uncomp_size
 	    : s->hdr_block->comp_size;
 
-	slice_offset += 2 +
+	slice_offset += 2 + 4*(CRAM_MAJOR_VERS(fd->version) >= 3) +
 	    itf8_size(s->hdr_block->content_id) +
 	    itf8_size(s->hdr_block->comp_size) +
 	    itf8_size(s->hdr_block->uncomp_size);
 
 	for (j = 0; j < s->hdr->num_blocks; j++) {
-	    slice_offset += 2 +
+	    slice_offset += 2 + 4*(CRAM_MAJOR_VERS(fd->version) >= 3) +
 		itf8_size(s->block[j]->content_id) +
 		itf8_size(s->block[j]->comp_size) +
 		itf8_size(s->block[j]->uncomp_size);

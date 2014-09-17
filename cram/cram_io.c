@@ -808,6 +808,32 @@ cram_block *cram_read_block(cram_fd *fd) {
 	}
     }
 
+    if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	unsigned char dat[100], *cp = dat;;
+	uint32_t crc;
+
+	
+	if (-1 == int32_decode(fd, (int32_t *)&b->crc32)) {
+	    free(b);
+	    return NULL;
+	}
+
+	*cp++ = b->method;
+	*cp++ = b->content_type;
+	cp += itf8_put(cp, b->content_id);
+	cp += itf8_put(cp, b->comp_size);
+	cp += itf8_put(cp, b->uncomp_size);
+	crc = crc32(0L, dat, cp-dat);
+	crc = crc32(crc, b->data ? b->data : (uc *)"", b->alloc);
+
+	if (crc != b->crc32) {
+	    fprintf(stderr, "Block CRC32 failure\n");
+	    free(b->data);
+	    free(b);
+	    return NULL;
+	}
+    }
+
     b->orig_method = b->method;
     b->idx = 0;
     b->byte = 0;
@@ -835,6 +861,27 @@ int cram_write_block(cram_fd *fd, cram_block *b) {
 	    return -1;
     } else {
 	if (b->comp_size != hwrite(fd->fp, b->data, b->comp_size))
+	    return -1;
+    }
+
+    if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	unsigned char dat[100], *cp = dat;;
+	uint32_t crc;
+
+	*cp++ = b->method;
+	*cp++ = b->content_type;
+	cp += itf8_put(cp, b->content_id);
+	cp += itf8_put(cp, b->comp_size);
+	cp += itf8_put(cp, b->uncomp_size);
+	crc = crc32(0L, dat, cp-dat);
+
+	if (b->method == RAW) {
+	    b->crc32 = crc32(crc, b->data ? b->data : (uc*)"", b->uncomp_size);
+	} else {
+	    b->crc32 = crc32(crc, b->data ? b->data : (uc*)"", b->comp_size);
+	}
+
+	if (-1 == int32_encode(fd, b->crc32))
 	    return -1;
     }
 
@@ -2493,6 +2540,7 @@ cram_container *cram_read_container(cram_fd *fd) {
     size_t rd = 0;
     
     fd->err = 0;
+    fd->eof = 0;
 
     memset(&c2, 0, sizeof(c2));
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
@@ -2551,8 +2599,52 @@ cram_container *cram_read_container(cram_fd *fd) {
 	    rd += s;
 	}
     }
-    c->offset = rd;
 
+    if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	uint32_t crc, i;
+	unsigned char *dat = malloc(50 + 5*(c->num_landmarks)), *cp = dat;
+	if (!dat) {
+	    cram_free_container(c);
+	    return NULL;
+	}
+	if (-1 == int32_decode(fd, (int32_t *)&c->crc32))
+	    return NULL;
+	else
+	    rd+=4;
+
+	/* Reencode first as we can't easily access the original byte stream.
+	 *
+	 * FIXME: Technically this means this may not be fool proof. We could
+	 * create a CRAM file using a 2 byte ITF8 value that can fit in a 
+	 * 1 byte field, meaning the encoding is different to the original
+	 * form and so has a different CRC.
+	 *
+	 * The correct implementation would be to have an alternative form
+	 * of itf8_decode which also squirrels away the raw byte stream
+	 * during decoding so we can then CRC that.
+	 */
+	*(unsigned int *)cp = le_int4(c->length); cp += 4;
+	cp += itf8_put(cp, c->ref_seq_id);
+	cp += itf8_put(cp, c->ref_seq_start);
+	cp += itf8_put(cp, c->ref_seq_span);
+	cp += itf8_put(cp, c->num_records);
+	cp += itf8_put(cp, c->record_counter);
+	cp += itf8_put(cp, c->num_bases);
+	cp += itf8_put(cp, c->num_blocks);
+	cp += itf8_put(cp, c->num_landmarks);
+	for (i = 0; i < c->num_landmarks; i++) {
+	    cp += itf8_put(cp, c->landmark[i]);
+	}
+
+	crc = crc32(0L, dat, cp-dat);
+	if (crc != c->crc32) {
+	    fprintf(stderr, "Container header CRC32 failure\n");
+	    cram_free_container(c);
+	    return NULL;
+	}
+    }
+
+    c->offset = rd;
     c->slices = NULL;
     c->curr_slice = 0;
     c->max_slice = c->num_landmarks;
@@ -2583,8 +2675,8 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
     char buf_a[1024], *buf = buf_a, *cp;
     int i;
 
-    if (50 + c->num_landmarks * 5 >= 1024)
-	buf = malloc(50 + c->num_landmarks * 5);
+    if (55 + c->num_landmarks * 5 >= 1024)
+	buf = malloc(55 + c->num_landmarks * 5);
     cp = buf;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
@@ -2611,6 +2703,16 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
     cp += itf8_put(cp, c->num_landmarks);
     for (i = 0; i < c->num_landmarks; i++)
 	cp += itf8_put(cp, c->landmark[i]);
+
+    if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	c->crc32 = crc32(0L, (uc *)buf, cp-buf);
+	cp[0] =  c->crc32        & 0xff;
+	cp[1] = (c->crc32 >>  8) & 0xff;
+	cp[2] = (c->crc32 >> 16) & 0xff;
+	cp[3] = (c->crc32 >> 24) & 0xff;
+	cp += 4;
+    }
+
     if (cp-buf != hwrite(fd->fp, buf, cp-buf)) {
 	if (buf != buf_a)
 	    free(buf);
@@ -3169,8 +3271,9 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 	    cram_free_container(c);
 	    return NULL;
 	}
+	cram_uncompress_block(b);
 
-	len = b->comp_size + 2 +
+	len = b->comp_size + 2 + 4*(CRAM_MAJOR_VERS(fd->version) >= 3) +
 	    itf8_size(b->content_id) + 
 	    itf8_size(b->uncomp_size) + 
 	    itf8_size(b->comp_size);
@@ -3196,7 +3299,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 		cram_free_container(c);
 		return NULL;
 	    }
-	    len += b->comp_size + 2 + 
+	    len += b->comp_size + 2 + 4*(CRAM_MAJOR_VERS(fd->version) >= 3) +
 		itf8_size(b->content_id) + 
 		itf8_size(b->uncomp_size) + 
 		itf8_size(b->comp_size);
@@ -3262,9 +3365,6 @@ static void full_path(char *out, char *in) {
  * Returns 0 on success
  *        -1 on failure
  */
-//#define BLANK_BLOCK
-//#define PADDED_CONTAINER
-#define PADDED_BLOCK
 int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
     int header_len;
     int blank_block = (CRAM_MAJOR_VERS(fd->version) >= 3);

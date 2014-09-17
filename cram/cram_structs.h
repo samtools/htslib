@@ -258,6 +258,7 @@ typedef struct {
     int32_t  content_id;
     int32_t  comp_size;
     int32_t  uncomp_size;
+    uint32_t crc32;
     int32_t  idx; /* offset into data */
     unsigned char    *data;
 
@@ -392,6 +393,8 @@ typedef struct {
 
     khash_t(s_i2i) *tags_used; // set of tag types in use, for tag encoding map
     int *refs_used;       // array of frequency of ref seq IDs
+
+    uint32_t crc32;       // CRC32
 } cram_container;
 
 /*
