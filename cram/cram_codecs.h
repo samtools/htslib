@@ -110,11 +110,12 @@ typedef struct {
  */
 typedef struct cram_codec {
     enum cram_encoding codec;
+    cram_block *out;
     void (*free)(struct cram_codec *codec);
     int (*decode)(cram_slice *slice, struct cram_codec *codec,
 		  cram_block *in, char *out, int *out_size);
     int (*encode)(cram_slice *slice, struct cram_codec *codec,
-		  cram_block *out, char *in, int in_size);
+		  char *in, int in_size);
     int (*store)(struct cram_codec *codec, cram_block *b, char *prefix,
 		 int version);
     union {

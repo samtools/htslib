@@ -179,7 +179,6 @@ enum cram_DS_ID {
     DS_TC, // CRAM v1.0 tags
     DS_TM, // test
     DS_TV, // test
-    DS_Qs, // BYTE_ARRAY version of QS
     
     DS_END,
 };
@@ -465,6 +464,12 @@ typedef struct {
 	    int base;    // actual base & qual
 	    int qual;
 	} B;
+	struct {
+	    int pos;
+	    int code;
+	    int seq_idx; // index to s->seqs_blk
+	    int len;
+	} b;
 	struct {
 	    int pos;
 	    int code;
