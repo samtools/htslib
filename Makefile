@@ -33,6 +33,25 @@ EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
 LDLIBS   =
 
+# For now these don't work too well as samtools also needs to know to
+# add -lbz2 and -llzma if linking against the static libhts.a library.
+# Basically it needs either a pkgconfig .pc file writing or creating a
+# htslib-config script that takes --libs and --cflags options.
+#
+# # Bzip2 support; optionally used by CRAM.
+# HAVE_LIBBZ2 := $(shell echo -e "\#include <bzlib.h>\012int main(void){return 0;}" > .test.c && $(CC) $(CFLAGS) $(CPPFLAGS) -o .test .test.c -lbz2 2>/dev/null && echo yes)
+# ifeq "$(HAVE_LIBBZ2)" "yes"
+# CPPFLAGS += -DHAVE_LIBBZ2
+# LDLIBS   += -lbz2
+# endif
+#  
+# # Lzma support; optionally used by CRAM.
+# HAVE_LIBLZMA := $(shell echo -e "\#include <lzma.h>\012int main(void){return 0;}" > .test.c && $(CC) $(CFLAGS) $(CPPFLAGS) -o .test .test.c -llzma 2>/dev/null && echo yes)
+# ifeq "$(HAVE_LIBLZMA)" "yes"
+# CPPFLAGS += -DHAVE_LIBLZMA
+# LDLIBS   += -llzma
+# endif
+
 prefix      = /usr/local
 exec_prefix = $(prefix)
 bindir      = $(exec_prefix)/bin
