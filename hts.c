@@ -262,12 +262,11 @@ int hts_set_opt(htsFile *fp, enum cram_option opt, ...) {
     int r;
     va_list args;
 
-    if (opt != CRAM_OPT_VERSION && !fp->is_cram)
+    if (!fp->is_cram)
 	return 0;
     
     va_start(args, opt);
-    r = cram_set_voption(opt == CRAM_OPT_VERSION ? NULL : fp->fp.cram,
-			 opt, args);
+    r = cram_set_voption(fp->fp.cram, opt, args);
     va_end(args);
 
     return r;

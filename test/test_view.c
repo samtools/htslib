@@ -80,18 +80,16 @@ int add_option(hts_opt **opts, char *arg) {
 	o->opt = CRAM_OPT_USE_LZMA, o->val.i = atoi(cp);
     else if (strcmp(arg, "REFERENCE") == 0)
 	o->opt = CRAM_OPT_REFERENCE, o->val.s = cp;
-    else if (strcmp(arg, "VERSION") == 0) {
-	// Do this prior to opening
-	free(o);
-	return hts_set_opt(NULL, CRAM_OPT_VERSION, cp);
-    } else if (strcmp(arg, "MULTI_SEQ_PER_SLICE") == 0)
+    else if (strcmp(arg, "VERSION") == 0)
+	o->opt = CRAM_OPT_VERSION, o->val.s =cp;
+    else if (strcmp(arg, "MULTI_SEQ_PER_SLICE") == 0)
 	o->opt = CRAM_OPT_MULTI_SEQ_PER_SLICE, o->val.i = atoi(cp);
     else if (strcmp(arg, "NTHREADS") == 0)
 	o->opt = CRAM_OPT_NTHREADS, o->val.i = atoi(cp);
     else if (strcmp(arg, "REQUIRED_FIELDS") == 0)
 	o->opt = CRAM_OPT_REQUIRED_FIELDS, o->val.i = atoi(cp);
     else {
-	fprintf(stderr, "Unknown opion '%s'\n", arg);
+	fprintf(stderr, "Unknown option '%s'\n", arg);
 	free(o);
 	return -1;
     }
@@ -132,8 +130,8 @@ int main(int argc, char *argv[])
         case 'l': clevel = atoi(optarg); flag |= 2; break;
         case 't': fn_ref = optarg; break;
         case 'I': ignore_sam_err = 1; break;
-        case 'i': add_option(&in_opts,  optarg); break;
-        case 'o': add_option(&out_opts, optarg); break;
+        case 'i': if (add_option(&in_opts,  optarg)) return 1; break;
+        case 'o': if (add_option(&out_opts, optarg)) return 1; break;
         }
     }
     if (argc == optind) {

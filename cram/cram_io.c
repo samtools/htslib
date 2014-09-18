@@ -3366,6 +3366,14 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
     int header_len;
     int blank_block = (CRAM_MAJOR_VERS(fd->version) >= 3);
 
+    /* Write CRAM MAGIC if not yet written. */
+    if (fd->file_def->major_version == 0) {
+	fd->file_def->major_version = CRAM_MAJOR_VERS(fd->version);
+	fd->file_def->minor_version = CRAM_MINOR_VERS(fd->version);
+	if (0 != cram_write_file_def(fd, fd->file_def))
+	    return -1;
+    }
+
     /* 1.0 requires and UNKNOWN read-group */
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	if (!sam_hdr_find_rg(hdr, "UNKNOWN"))
@@ -3706,22 +3714,24 @@ cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode) {
 
     } else {
 	/* Writer */
-	cram_file_def def;
+	cram_file_def *def = calloc(1, sizeof(*def));
+	if (!def)
+	    return NULL;
 
-	def.magic[0] = 'C';
-	def.magic[1] = 'R';
-	def.magic[2] = 'A';
-	def.magic[3] = 'M';
-	def.major_version = major_version;
-	def.minor_version = minor_version;
-	memset(def.file_id, 0, 20);
-	strncpy(def.file_id, filename, 20);
-	if (0 != cram_write_file_def(fd, &def))
-	    goto err;
+	fd->file_def = def;
 
-	fd->version = def.major_version * 256 + def.minor_version;
+	def->magic[0] = 'C';
+	def->magic[1] = 'R';
+	def->magic[2] = 'A';
+	def->magic[3] = 'M';
+	def->major_version = 0; // Indicator to write file def later.
+	def->minor_version = 0;
+	memset(def->file_id, 0, 20);
+	strncpy(def->file_id, filename, 20);
 
-	/* SAM header written later */
+	fd->version = major_version * 256 + minor_version;
+
+	/* SAM header written later along with this file_def */
     }
 
     cram_init_tables(fd);
@@ -3971,6 +3981,9 @@ int cram_set_option(cram_fd *fd, enum cram_option opt, ...) {
 int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args) {
     refs_t *refs;
 
+    if (!fd)
+	return -1;
+
     switch (opt) {
     case CRAM_OPT_DECODE_MD:
 	fd->decode_md = va_arg(args, int);
@@ -4051,8 +4064,10 @@ int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args) {
 		    "use 1.0, 2.0, 2.1 or 3.0\n");
 	    return -1;
 	}
-	major_version = major;
-	minor_version = minor;
+	fd->version = major*256 + minor;
+
+	if (CRAM_MAJOR_VERS(fd->version) >= 3)
+	    fd->use_rans = 1;
 	break;
     }
 
