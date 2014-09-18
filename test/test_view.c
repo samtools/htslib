@@ -177,8 +177,11 @@ int main(int argc, char *argv[])
     }
 
     // Process any options; currently cram only.
-    for (; in_opts;  in_opts = in_opts->next)
+    for (; in_opts;  in_opts = in_opts->next) {
 	hts_set_opt(in,  in_opts->opt,  in_opts->val);
+	if (in_opts->opt == CRAM_OPT_REFERENCE)
+	    hts_set_opt(out,  in_opts->opt,  in_opts->val);
+    }
     for (; out_opts;  out_opts = out_opts->next)
 	hts_set_opt(out, out_opts->opt,  out_opts->val);
 
