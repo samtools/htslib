@@ -1037,7 +1037,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     uint32_t cigar_alloc = s->cigar_alloc;
     uint32_t nm = 0, md_dist = 0;
     int orig_aux = 0;
-    int decode_md = fd->decode_md;
+    int decode_md = fd->decode_md && s->ref;
     char buf[20];
     uint32_t ds = c->comp_hdr->data_series;
 
