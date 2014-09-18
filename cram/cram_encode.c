@@ -2942,9 +2942,16 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 	curr_rec  = c->curr_rec;
 
 	if (CRAM_MAJOR_VERS(fd->version) == 1 ||
-	    c->curr_rec == c->max_rec || fd->multi_seq != 1 || !c->slice)
-	    if (NULL == (c = cram_next_container(fd, b)))
+	    c->curr_rec == c->max_rec || fd->multi_seq != 1 || !c->slice) {
+	    if (NULL == (c = cram_next_container(fd, b))) {
+		if (fd->ctr) {
+		    // prevent cram_close attempting to flush
+		    cram_free_container(fd->ctr);
+		    fd->ctr = NULL;
+		}
 		return -1;
+	    }
+	}
 
 	/*
 	 * Due to our processing order, some things we've already done we
