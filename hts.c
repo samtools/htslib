@@ -278,6 +278,8 @@ int hts_set_threads(htsFile *fp, int n)
     // TODO Plug in CRAM and other threading
     if (fp->is_bin) {
         return bgzf_mt(fp->fp.bgzf, n, 256);
+    } else if (fp->is_cram) {
+	return hts_set_opt(fp, CRAM_OPT_NTHREADS, n);
     }
     else return 0;
 }
