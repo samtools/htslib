@@ -47,25 +47,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/os.h"
 #include "cram/md5.h"
 
-#ifdef SAMTOOLS
-#    define bam_copy(dst, src) bam_copy1(*(dst), (src))
-#else
-void bam_copy(bam_seq_t **bt, bam_seq_t *bf) {
-    size_t a;
-
-    if (bf->alloc > (*bt)->alloc) {
-	a = ((int)((bf->alloc+15)/16))*16;
-	*bt = realloc(*bt, a);
-	memcpy(*bt, bf, bf->alloc);
-    } else {
-	a = (*bt)->alloc;
-	memcpy(*bt, bf, bf->alloc);
-    }
-
-    (*bt)->alloc = a;
-}
-#endif
-
 #define Z_CRAM_STRAT Z_FILTERED
 //#define Z_CRAM_STRAT Z_RLE
 //#define Z_CRAM_STRAT Z_HUFFMAN_ONLY
@@ -2025,12 +2006,7 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
 static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 			     cram_slice *s, cram_record *cr) {
     char *aux, *orig, *tmp, *rg = NULL;
-#ifdef SAMTOOLS
     int aux_size = bam_get_l_aux(b);
-#else
-    int aux_size = bam_blk_size(b) -
-	((char *)bam_aux(b) - (char *)&bam_ref(b));
-#endif
     cram_block *td_b = c->comp_hdr->TD_blk;
     int TD_blk_size = BLOCK_SIZE(td_b), new;
     char *key;
@@ -3017,7 +2993,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 
     /* Copy or alloc+copy the bam record, for later encoding */
     if (c->bams[c->curr_c_rec])
-	bam_copy(&c->bams[c->curr_c_rec], b);
+	bam_copy1(c->bams[c->curr_c_rec], b);
     else
 	c->bams[c->curr_c_rec] = bam_dup(b);
 

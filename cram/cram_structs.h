@@ -53,11 +53,8 @@ extern "C" {
 #include <stdint.h>
 
 #include "cram/thread_pool.h"
-
-#ifdef SAMTOOLS
-// From within samtools/HTSlib
-#  include "cram/string_alloc.h"
-#  include "htslib/khash.h"
+#include "cram/string_alloc.h"
+#include "htslib/khash.h"
 
 // Generic hash-map integer -> integer
 KHASH_MAP_INIT_INT(m_i2i, int)
@@ -83,12 +80,6 @@ KHASH_MAP_INIT_STR(map, pmap_t)
 
 struct hFILE;
 typedef struct hFILE cram_FILE;
-
-#else
-// From within io_lib
-#  include "cram/bam.h"              // For BAM header parsing
-typedef FILE cram_FILE;
-#endif
 
 #define SEQS_PER_SLICE 10000
 #define SLICE_PER_CNT  1

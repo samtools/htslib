@@ -82,19 +82,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define RP(...) 
 #endif
 
-#ifdef SAMTOOLS
 #include "htslib/hfile.h"
 #define paranoid_hclose(fp) (hclose(fp))
-#else
-#define hclose_abruptly(fp) (fclose(fp))
-#define hflush(fp)   (fflush(fp))
-#define hgetc(fp)    (getc(fp))
-#define hputc(c, fp) (putc((c), (fp)))
-#define hread(fp, buffer, nbytes)  (fread((buffer), 1, (nbytes), (fp)))
-#define hseek(fp, offset, whence)  (fseeko((fp), (offset), (whence)))
-#define hwrite(fp, buffer, nbytes) (fwrite((buffer), 1, (nbytes), (fp)))
-#define paranoid_hclose(fp)        (paranoid_fclose(fp))
-#endif
 
 #define TRIAL_SPAN 50
 #define NTRIALS 3
@@ -3337,11 +3326,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
     }
 
     /* Parse */
-#ifdef SAMTOOLS
     hdr = sam_hdr_parse_(header, header_len);
-#else
-    hdr = sam_hdr_parse(header, header_len);
-#endif
     free(header);
 
     return hdr;
@@ -3673,15 +3658,7 @@ cram_fd *cram_open(const char *filename, const char *mode) {
 	fmode[1] = 'b';
     }
 
-#ifdef SAMTOOLS
     fp = hopen(filename, fmode);
-#else
-    if (strcmp(filename, "-") == 0) {
-	fp = (*fmode == 'r') ? stdin : stdout;
-    } else {
-	fp = fopen(filename, fmode);
-    }
-#endif
     if (!fp)
 	return NULL;
 
