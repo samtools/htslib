@@ -96,6 +96,7 @@ enum sam_fields {
     SAM_SEQ   = 0x00000200,
     SAM_QUAL  = 0x00000400,
     SAM_AUX   = 0x00000800,
+    SAM_RGAUX = 0x00001000,
 };
 
 enum cram_option {
