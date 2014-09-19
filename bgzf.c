@@ -125,11 +125,22 @@ static BGZF *bgzf_read_init(hFILE *hfpr)
     return fp;
 }
 
-static BGZF *bgzf_write_init(int compress_level) // compress_level==-1 for the default level, -2 plain uncompressed
+// get the compress level from the mode string: compress_level==-1 for the default level, -2 plain uncompressed
+static int mode2level(const char *__restrict mode)
+{
+    int i, compress_level = -1;
+    for (i = 0; mode[i]; ++i)
+        if (mode[i] >= '0' && mode[i] <= '9') break;
+    if (mode[i]) compress_level = (int)mode[i] - '0';
+    if (strchr(mode, 'u')) compress_level = -2;
+    return compress_level;
+}
+static BGZF *bgzf_write_init(const char *mode)
 {
     BGZF *fp;
     fp = (BGZF*)calloc(1, sizeof(BGZF));
     fp->is_write = 1;
+    int compress_level = mode2level(mode);
     if ( compress_level==-2 )
     {
         fp->is_compressed = 0;
@@ -140,17 +151,16 @@ static BGZF *bgzf_write_init(int compress_level) // compress_level==-1 for the d
     fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
     fp->compress_level = compress_level < 0? Z_DEFAULT_COMPRESSION : compress_level; // Z_DEFAULT_COMPRESSION==-1
     if (fp->compress_level > 9) fp->compress_level = Z_DEFAULT_COMPRESSION;
+    if ( strchr(mode,'g') )
+    {
+        // gzip output
+        fp->is_gzip = 1;
+        fp->gz_stream = (z_stream*)calloc(1,sizeof(z_stream));
+        fp->gz_stream->zalloc = NULL;
+        fp->gz_stream->zfree  = NULL;
+        if ( deflateInit2(fp->gz_stream, fp->compress_level, Z_DEFLATED, 15|16, 8, Z_DEFAULT_STRATEGY)!=Z_OK ) return NULL;
+    }
     return fp;
-}
-// get the compress level from the mode string
-static int mode2level(const char *__restrict mode)
-{
-    int i, compress_level = -1;
-    for (i = 0; mode[i]; ++i)
-        if (mode[i] >= '0' && mode[i] <= '9') break;
-    if (mode[i]) compress_level = (int)mode[i] - '0';
-    if (strchr(mode, 'u')) compress_level = -2;
-    return compress_level;
 }
 
 BGZF *bgzf_open(const char *path, const char *mode)
@@ -166,7 +176,7 @@ BGZF *bgzf_open(const char *path, const char *mode)
     } else if (strchr(mode, 'w') || strchr(mode, 'a')) {
         hFILE *fpw;
         if ((fpw = hopen(path, mode)) == 0) return 0;
-        fp = bgzf_write_init(mode2level(mode));
+        fp = bgzf_write_init(mode);
         fp->fp = fpw;
     }
     else { errno = EINVAL; return 0; }
@@ -188,7 +198,7 @@ BGZF *bgzf_dopen(int fd, const char *mode)
     } else if (strchr(mode, 'w') || strchr(mode, 'a')) {
         hFILE *fpw;
         if ((fpw = hdopen(fd, mode)) == 0) return 0;
-        fp = bgzf_write_init(mode2level(mode));
+        fp = bgzf_write_init(mode);
         fp->fp = fpw;
     }
     else { errno = EINVAL; return 0; }
@@ -205,7 +215,7 @@ BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
         fp = bgzf_read_init(hfp);
         if (fp == NULL) return NULL;
     } else if (strchr(mode, 'w') || strchr(mode, 'a')) {
-        fp = bgzf_write_init(mode2level(mode));
+        fp = bgzf_write_init(mode);
     }
     else { errno = EINVAL; return 0; }
 
@@ -244,13 +254,6 @@ static int bgzf_gzip_compress(BGZF *fp, void *_dst, int *dlen, void *src, int sl
 {
     uint8_t *dst = (uint8_t*)_dst;
     z_stream *zs = fp->gz_stream;
-    if ( !zs )
-    {
-        zs = fp->gz_stream = (z_stream*)calloc(1,sizeof(z_stream));
-        zs->zalloc = NULL;
-        zs->zfree  = NULL;
-        if ( deflateInit2(zs, level, Z_DEFLATED, 15|16, 8, Z_DEFAULT_STRATEGY)!=Z_OK ) return -1;   // gzip output
-    }
     int flush = slen ? Z_NO_FLUSH : Z_FINISH;
     zs->next_in   = (Bytef*)src;
     zs->avail_in  = slen;

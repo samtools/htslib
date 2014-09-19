@@ -84,9 +84,10 @@ extern "C" {
      * Open an existing file descriptor for reading or writing.
      *
      * @param fd    file descriptor
-     * @param mode  mode matching /[rwa][u0-9]+/: 'r' for reading, 'w' for
-     *              writing, or 'a' for appending, while a digit specifies
-     *              the zlib compression level.
+     * @param mode  mode matching /[rwag][u0-9]+/: 'r' for reading, 'w' for
+     *              writing, 'a' for appending, 'g' for gzip rather than BGZF
+     *              compression (with 'w' only), and digit specifies the zlib
+     *              compression level. 
      *              Note that there is a distinction between 'u' and '0': the
      *              first yields plain uncompressed output whereas the latter
      *              outputs uncompressed data wrapped in the zlib format.
