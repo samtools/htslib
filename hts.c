@@ -167,7 +167,6 @@ htsFile *hts_open(const char *fn, const char *mode)
         fp->is_write = 1;
         if (strchr(mode, 'b')) fp->is_bin = 1;
         if (strchr(mode, 'c')) fp->is_cram = 1;
-        // "C" is a temporary mode for testing CRAM V3.0 prototypes
         if (strchr(mode, 'z')) fp->is_compressed = 1;
         else if (strchr(mode, 'u')) fp->is_compressed = 0;
         else fp->is_compressed = 2;    // not set, default behaviour
