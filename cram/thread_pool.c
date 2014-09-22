@@ -343,7 +343,6 @@ static void *t_pool_worker(void *arg) {
 #endif
 
 #ifdef IN_ORDER
-	    int i;
 	    // Push this thread to the top of the waiting stack
 	    if (p->t_stack_top == -1 || p->t_stack_top > w->idx)
 		p->t_stack_top = w->idx;
