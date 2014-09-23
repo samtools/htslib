@@ -240,11 +240,39 @@ static int bgzf_compress(void *_dst, int *dlen, void *src, int slen, int level)
     return 0;
 }
 
+static int bgzf_gzip_compress(BGZF *fp, void *_dst, int *dlen, void *src, int slen, int level)
+{
+    uint8_t *dst = (uint8_t*)_dst;
+    z_stream *zs = fp->gz_stream;
+    if ( !zs )
+    {
+        zs = fp->gz_stream = (z_stream*)calloc(1,sizeof(z_stream));
+        zs->zalloc = NULL;
+        zs->zfree  = NULL;
+        if ( deflateInit2(zs, level, Z_DEFLATED, 15|16, 8, Z_DEFAULT_STRATEGY)!=Z_OK ) return -1;   // gzip output
+    }
+    int flush = slen ? Z_NO_FLUSH : Z_FINISH;
+    zs->next_in   = (Bytef*)src;
+    zs->avail_in  = slen;
+    zs->next_out  = dst;
+    zs->avail_out = *dlen;
+    if ( deflate(zs, flush) == Z_STREAM_ERROR ) return -1;
+    *dlen = *dlen - zs->avail_out;
+    return 0;
+}
+
 // Deflate the block in fp->uncompressed_block into fp->compressed_block. Also adds an extra field that stores the compressed block length.
 static int deflate_block(BGZF *fp, int block_length)
 {
     int comp_size = BGZF_MAX_BLOCK_SIZE;
-    if (bgzf_compress(fp->compressed_block, &comp_size, fp->uncompressed_block, block_length, fp->compress_level) != 0) {
+    int ret;
+    if ( !fp->is_gzip )
+        ret = bgzf_compress(fp->compressed_block, &comp_size, fp->uncompressed_block, block_length, fp->compress_level);
+    else
+        ret = bgzf_gzip_compress(fp, fp->compressed_block, &comp_size, fp->uncompressed_block, block_length, fp->compress_level);
+
+    if ( ret != 0 )
+    {
         fp->errcode |= BGZF_ERR_ZLIB;
         return -1;
     }
@@ -778,7 +806,8 @@ int bgzf_close(BGZF* fp)
     }
     if ( fp->is_gzip )
     {
-        (void)inflateEnd(fp->gz_stream);
+        if (!fp->is_write) (void)inflateEnd(fp->gz_stream);
+        else (void)deflateEnd(fp->gz_stream);
         free(fp->gz_stream);
     }
     ret = hclose(fp->fp);

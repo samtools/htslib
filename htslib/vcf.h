@@ -591,6 +591,17 @@ extern "C" {
     bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key);
 
     /**
+     * bcf_get_*_id() - returns pointer to FORMAT/INFO field data given the header index instead of the string ID
+     * @line: VCF line obtained from vcf_parse1
+     * @id:  The header index for the tag, obtained from bcf_hdr_id2int()
+     * 
+     * Returns bcf_fmt_t* / bcf_info_t*. These functions do not check if the index is valid 
+     * as their goal is to avoid the header lookup.
+     */
+    bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id);
+    bcf_info_t *bcf_get_info_id(bcf1_t *line, const int id);
+
+    /**
      *  bcf_get_info_*() - get INFO values, integers or floats
      *  @hdr:       BCF header
      *  @line:      BCF record

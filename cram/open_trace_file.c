@@ -302,43 +302,37 @@ mFILE *open_path_mfile(char *file, char *path, char *relative_to) {
      * special, otherwise we treat the element as a directory.
      */
     for (ele = newsearch; *ele; ele += strlen(ele)+1) {
-	int i;
-	char *suffix[6] = {"", ".gz", ".bz2", ".sz", ".Z", ".bz2"};
-	for (i = 0; i < 6; i++) {
-	    char file2[1024];
-	    char *ele2;
-	    int valid = 1;
+	char *ele2;
 
-	    /*
-	     * '|' prefixing a path component indicates that we do not
-	     * wish to perform the compression extension searching in that
-	     * location.
-	     */
-	    if (*ele == '|') {
-		ele2 = ele+1;
-		valid = (i == 0);
-	    } else {
-		ele2 = ele;
-	    }
+	/*
+	 * '|' prefixing a path component indicates that we do not
+	 * wish to perform the compression extension searching in that
+	 * location.
+	 *
+	 * NB: this has been removed from the htslib implementation.
+	 */
+	if (*ele == '|') {
+	    ele2 = ele+1;
+	} else {
+	    ele2 = ele;
+	}
 
-	    sprintf(file2, "%s%s", file, suffix[i]);
-
-	    if (0 == strncmp(ele2, "URL=", 4)) {
-		if (valid && (fp = find_file_url(file2, ele2+4))) {
-		    free(newsearch);
-		    return fp;
-		}
-	    } else if (!strncmp(ele2, "http:", 5) || !strncmp(ele2, "ftp:", 4)) {
-		if (valid && (fp = find_file_url(file2, ele2))) {
-		    free(newsearch);
-		    return fp;
-		}
-	    } else if (valid && (fp = find_file_dir(file2, ele2))) {
+	if (0 == strncmp(ele2, "URL=", 4)) {
+	    if ((fp = find_file_url(file, ele2+4))) {
 		free(newsearch);
 		return fp;
 	    }
-	}
-    }
+	} else if (!strncmp(ele2, "http:", 5) ||
+		   !strncmp(ele2, "ftp:", 4)) {
+	    if ((fp = find_file_url(file, ele2))) {
+		free(newsearch);
+		return fp;
+	    }
+	} else if ((fp = find_file_dir(file, ele2))) {
+	    free(newsearch);
+	    return fp;
+	} 
+   }
 
     free(newsearch);
 

@@ -81,7 +81,7 @@ lib-shared: libhts.so
 endif
 
 
-PACKAGE_VERSION  = 1.0
+PACKAGE_VERSION  = 1.1
 LIBHTS_SOVERSION = 1
 
 
@@ -234,11 +234,13 @@ bgzip.o: bgzip.c $(htslib_bgzf_h) $(htslib_hts_h)
 tabix.o: tabix.c $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) htslib/kseq.h $(htslib_bgzf_h) $(htslib_hts_h)
 
 
+# For tests that might use it, set $REF_PATH explicitly to use only reference
+# areas within the test suite (or set it to ':' to use no reference areas).
 check test: $(BUILT_TEST_PROGRAMS)
 	test/fieldarith test/fieldarith.sam
 	test/hfile
 	test/sam
-	cd test && ./test_view.pl
+	cd test && REF_PATH=: ./test_view.pl
 	cd test && ./test.pl
 
 test/fieldarith: test/fieldarith.o libhts.a
@@ -267,12 +269,12 @@ test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
 
 
-install: installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig
+install: libhts.a $(BUILT_PROGRAMS) installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
-	$(INSTALL_DATA) *.1 $(DESTDIR)$(man1dir)
-	$(INSTALL_DATA) *.5 $(DESTDIR)$(man5dir)
+	$(INSTALL_DATA) tabix.1 $(DESTDIR)$(man1dir)
+	$(INSTALL_DATA) faidx.5 sam.5 vcf.5 $(DESTDIR)$(man5dir)
 
 installdirs:
 	$(INSTALL_DIR) $(DESTDIR)$(bindir) $(DESTDIR)$(includedir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir) $(DESTDIR)$(pkgconfigdir)
