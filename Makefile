@@ -81,7 +81,7 @@ lib-shared: libhts.so
 endif
 
 
-PACKAGE_VERSION  = 1.0
+PACKAGE_VERSION  = 1.1
 LIBHTS_SOVERSION = 1
 
 
@@ -273,8 +273,8 @@ install: libhts.a $(BUILT_PROGRAMS) installdirs install-$(SHLIB_FLAVOUR) install
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
-	$(INSTALL_DATA) *.1 $(DESTDIR)$(man1dir)
-	$(INSTALL_DATA) *.5 $(DESTDIR)$(man5dir)
+	$(INSTALL_DATA) tabix.1 $(DESTDIR)$(man1dir)
+	$(INSTALL_DATA) faidx.5 sam.5 vcf.5 $(DESTDIR)$(man5dir)
 
 installdirs:
 	$(INSTALL_DIR) $(DESTDIR)$(bindir) $(DESTDIR)$(includedir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir) $(DESTDIR)$(pkgconfigdir)
