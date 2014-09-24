@@ -422,55 +422,7 @@ t_pool *t_pool_init(int qsize, int tsize) {
  */
 int t_pool_dispatch(t_pool *p, t_results_queue *q,
 		    void *(*func)(void *arg), void *arg) {
-    t_pool_job *j = malloc(sizeof(*j));
-
-    if (!j)
-	return -1;
-    j->func = func;
-    j->arg = arg;
-    j->next = NULL;
-    j->p = p;
-    j->q = q;
-    if (q) {
-	pthread_mutex_lock(&q->result_m);
-	j->serial = q->curr_serial++;
-	q->pending++;
-	pthread_mutex_unlock(&q->result_m);
-    } else {
-	j->serial = 0;
-    }
-
-#ifdef DEBUG
-    fprintf(stderr, "Dispatching job %p for queue %p, serial %d\n", j, q, j->serial);
-#endif
-
-    pthread_mutex_lock(&p->pool_m);
-
-    // Check if queue is full
-    while (p->njobs == p->qsize)
-	pthread_cond_wait(&p->full_c, &p->pool_m);
-
-    p->njobs++;
-
-    if (p->tail) {
-	p->tail->next = j;
-	p->tail = j;
-    } else {
-	p->head = p->tail = j;
-    }
-
-    if (p->njobs == 1) {
-	// First job => tell all worker threads to start up
-	pthread_cond_broadcast(&p->pending_c);
-    }
-
-    pthread_mutex_unlock(&p->pool_m);
-
-#ifdef DEBUG
-    fprintf(stderr, "Dispatched (serial %d)\n", j->serial);
-#endif
-
-    return 0;
+    return t_pool_dispatch2(p, q, func, arg, 0);
 }
 
 /*
