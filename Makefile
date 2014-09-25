@@ -60,7 +60,8 @@ BUILT_TEST_PROGRAMS = \
 	test/sam \
 	test/test_view \
 	test/test-vcf-api \
-	test/test-vcf-sweep
+	test/test-vcf-sweep \
+	test/test-regidx
 
 all: lib-static lib-shared $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 
@@ -154,7 +155,8 @@ LIBHTS_OBJS = \
 	cram/string_alloc.o \
 	cram/thread_pool.o \
 	cram/vlen.o \
-	cram/zfio.o
+	cram/zfio.o \
+	regidx.o
 
 
 libhts.a: $(LIBHTS_OBJS)
@@ -204,6 +206,7 @@ synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_
 vcf_sweep.o vcf_sweep.pico: vcf_sweep.c $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
 kfunc.o kfunc.pico: kfunc.c htslib/kfunc.h
+regidx.o regidx.pico: regidx.c $(htslib_regidx_h)
 
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c $(cram_h) cram/os.h cram/md5.h
@@ -237,6 +240,7 @@ tabix.o: tabix.c $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) htslib/kseq.h $
 # For tests that might use it, set $REF_PATH explicitly to use only reference
 # areas within the test suite (or set it to ':' to use no reference areas).
 check test: $(BUILT_TEST_PROGRAMS)
+	test/test-regidx
 	test/fieldarith test/fieldarith.sam
 	test/hfile
 	test/sam
@@ -261,12 +265,16 @@ test/test-vcf-api: test/test-vcf-api.o libhts.a
 test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LDLIBS) -lz
 
+test/test-regidx: test/test-regidx.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/test-regidx.o libhts.a $(LDLIBS) -lz
+
 test/fieldarith.o: test/fieldarith.c $(htslib_sam_h)
 test/hfile.o: test/hfile.c $(htslib_hfile_h) $(htslib_hts_defs_h)
 test/sam.o: test/sam.c $(htslib_sam_h) htslib/kstring.h
 test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
+test/test-regidx.o: test/test-regidx.c $(htslib_regidx_h)
 
 
 install: libhts.a $(BUILT_PROGRAMS) installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig

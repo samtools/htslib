@@ -36,3 +36,4 @@ htslib_tbx_h = $(HTSPREFIX)htslib/tbx.h $(htslib_hts_h)
 htslib_vcf_h = $(HTSPREFIX)htslib/vcf.h $(htslib_hts_h) $(HTSPREFIX)htslib/kstring.h
 htslib_vcf_sweep_h = $(HTSPREFIX)htslib/vcf_sweep.h $(htslib_hts_h) $(htslib_vcf_h)
 htslib_vcfutils_h = $(HTSPREFIX)htslib/vcfutils.h $(htslib_vcf_h)
+htslib_regidx_h = $(HTSPREFIX)htslib/regidx.h $(HTSPREFIX)htslib/kstring.h $(HTSPREFIX)htslib/kseq.h  $(HTSPREFIX)htslib/khash_str2int.h
