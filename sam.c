@@ -40,7 +40,8 @@ KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 typedef khash_t(s2i) sdict_t;
 
 /** For 'sam_format1_core' */
-char *bam_flag2char_table = "pPuUrR12sfdS\0\0\0\0";
+char *bam_flag2char_table = "pPuUrR12sxdS\0\0\0\0"; // when the bit is set
+char *bam_not_flag2char_table = "\0\0mMfF\0\0\0\0\0\0\0\0\0\0"; // when the bit is not set
 
 /**********************
  *** BAM header I/O ***
@@ -922,9 +923,12 @@ int sam_format1_core(const bam_hdr_t *h, const bam1_t *b, kstring_t *str, int of
     if (of == BAM_OFDEC) { kputw(c->flag, str); kputc('\t', str); }
     else if (of == BAM_OFHEX) ksprintf(str, "0x%x\t", c->flag);
     else { // BAM_OFSTR
-        for (i = 0; i < 16; ++i)
-            if ((c->flag & 1<<i) && bam_flag2char_table[i])
-                kputc(bam_flag2char_table[i], str);
+        for (i = 0; i < 16; ++i) {
+            if ((c->flag & 1<<i)) {
+                if ('\0' != bam_flag2char_table[i]) kputc(bam_flag2char_table[i], str);
+            }
+            else if (bam_not_flag2char_table[i]) kputc(bam_not_flag2char_table[i], str);
+        }
         kputc('\t', str);
     }
     if (c->tid >= 0) { // chr
