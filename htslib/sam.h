@@ -326,6 +326,7 @@ extern "C" {
 
     int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b);
     int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str);
+    int sam_format1_core(const bam_hdr_t *h, const bam1_t *b, kstring_t *str, int of);
     int sam_read1(samFile *fp, bam_hdr_t *h, bam1_t *b);
     int sam_write1(samFile *fp, const bam_hdr_t *h, const bam1_t *b);
 
@@ -345,6 +346,19 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+
+/**************************
+ *** Auxiliary Definitions ***
+ **************************/
+/** 
+ * Defines the flag format to use when calling 'sam_format1_core'
+ * BAM_OFDEC - output normally
+ * BAM_OFHEX - output hexidecimal 
+ * BAM_OFSTR - output string
+ */
+#define BAM_OFDEC          0
+#define BAM_OFHEX          1
+#define BAM_OFSTR          2
 
 /**************************
  *** Pileup and Mpileup ***

@@ -39,6 +39,9 @@ KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 
 typedef khash_t(s2i) sdict_t;
 
+/** For 'sam_format1_core' */
+char *bam_flag2char_table = "pPuUrR12sfdS\0\0\0\0";
+
 /**********************
  *** BAM header I/O ***
  **********************/
@@ -901,7 +904,13 @@ err_recover:
     }
 }
 
+
 int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
+{
+    return sam_format1_core(h, b, str, BAM_OFDEC);
+}
+
+int sam_format1_core(const bam_hdr_t *h, const bam1_t *b, kstring_t *str, int of)
 {
     int i;
     uint8_t *s;
@@ -909,7 +918,15 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 
     str->l = 0;
     kputsn(bam_get_qname(b), c->l_qname-1, str); kputc('\t', str); // query name
-    kputw(c->flag, str); kputc('\t', str); // flag
+    //kputw(c->flag, str); kputc('\t', str); // flag
+    if (of == BAM_OFDEC) { kputw(c->flag, str); kputc('\t', str); }
+    else if (of == BAM_OFHEX) ksprintf(str, "0x%x\t", c->flag);
+    else { // BAM_OFSTR
+        for (i = 0; i < 16; ++i)
+            if ((c->flag & 1<<i) && bam_flag2char_table[i])
+                kputc(bam_flag2char_table[i], str);
+        kputc('\t', str);
+    }
     if (c->tid >= 0) { // chr
         kputs(h->target_name[c->tid] , str);
         kputc('\t', str);
@@ -1029,7 +1046,7 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
     } else if (fp->is_cram) {
         return cram_put_bam_seq(fp->fp.cram, (bam1_t *)b);
     } else {
-        if (sam_format1(h, b, &fp->line) < 0) return -1;
+        if (sam_format1_core(h, b, &fp->line, fp->flag_format) < 0) return -1;
         kputc('\n', &fp->line);
         if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
         return fp->line.l;
