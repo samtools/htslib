@@ -150,6 +150,21 @@ int regidx_insert(regidx_t *idx, char *line)
 
 regidx_t *regidx_init(const char *fname, regidx_parse_f parser, regidx_free_f free_f, ssize_t payload_size, void *usr_dat)
 {
+    if ( !parser )
+    {
+        if ( !fname ) parser = regidx_parse_tab;
+        else
+        {
+            int len = strlen(fname);
+            if ( len>=7 && !strcasecmp(".bed.gz",fname+len-7) )
+                parser = regidx_parse_bed;
+            else if ( len>=4 && !strcasecmp(".bed",fname+len-4) )
+                parser = regidx_parse_bed;
+            else
+                parser = regidx_parse_tab;
+        }
+    }
+
     regidx_t *idx = (regidx_t*) calloc(1,sizeof(regidx_t));
     idx->free  = free_f;
     idx->parse = parser;

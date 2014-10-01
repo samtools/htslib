@@ -93,7 +93,10 @@ int regidx_parse_tab(const char*,char**,char**,reg_t*,void*,void*);   // CHROM,P
 /*
  *  regidx_init() - creates new index
  *  @param fname:  input file name or NULL if regions will be added one-by-one via regidx_insert()
- *  @param parsef: regidx_parse_bed, regidx_parse_tab or see description of regidx_parse_f
+ *  @param parsef: regidx_parse_bed, regidx_parse_tab or see description of regidx_parse_f. If NULL,
+ *                 the format will be autodected, currently either regidx_parse_tab (the default) or
+ *                 regidx_parse_bed (file must be named 'bed' or 'bed.gz') will be used. Note that
+ *                 the exact autodetection algorithm will change.
  *  @param freef:  NULL or see description of regidx_parse_f
  *  @param payload_size: 0 with regidx_parse_bed, regidx_parse_tab or see regidx_parse_f
  *  @param usr:    optional user data passed to regidx_parse_f
