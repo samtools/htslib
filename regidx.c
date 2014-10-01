@@ -163,10 +163,11 @@ regidx_t *regidx_init(const char *fname, regidx_parse_f parser, regidx_free_f fr
 
     if ( !fname ) return idx;
     
-    htsFile *fp = hts_open(fname,"r");
-    if ( !fp ) return NULL;
-
     kstring_t str = {0,0,0};
+
+    htsFile *fp = hts_open(fname,"r");
+    if ( !fp ) goto error;
+
     while ( hts_getline(fp, KS_SEP_LINE, &str) > 0 )
     {
         if ( regidx_insert(idx, str.s) ) goto error;
@@ -179,7 +180,7 @@ regidx_t *regidx_init(const char *fname, regidx_parse_f parser, regidx_free_f fr
 
 error:
     free(str.s);
-    hts_close(fp);
+    if ( fp ) hts_close(fp);
     regidx_destroy(idx);
     return NULL;
 }

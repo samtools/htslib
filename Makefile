@@ -206,7 +206,7 @@ synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_
 vcf_sweep.o vcf_sweep.pico: vcf_sweep.c $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
 kfunc.o kfunc.pico: kfunc.c htslib/kfunc.h
-regidx.o regidx.pico: regidx.c $(htslib_regidx_h)
+regidx.o regidx.pico: regidx.c $(htslib_regidx_h) $(HTSPREFIX)htslib/kstring.h $(HTSPREFIX)htslib/kseq.h  $(HTSPREFIX)htslib/khash_str2int.h
 
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c $(cram_h) cram/os.h cram/md5.h
