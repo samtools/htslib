@@ -1034,7 +1034,11 @@ int bcf_sr_regions_seek(bcf_sr_regions_t *reg, const char *seq)
     if ( khash_str2int_get(reg->seq_hash, seq, &reg->iseq) < 0 ) return -1;  // sequence seq not in regions
 
     // using in-memory regions
-    if ( reg->regs ) return 0;
+    if ( reg->regs )
+    {
+        reg->regs[reg->iseq].creg = -1;
+        return 0;
+    }
 
     // reading regions from tabix
     if ( reg->itr ) tbx_itr_destroy(reg->itr);
