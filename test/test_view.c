@@ -119,7 +119,7 @@ int main(int argc, char *argv[])
     htsFile *out;
     char modew[8];
     int r = 0, exit_code = 0;
-    hts_opt *in_opts = NULL, *out_opts = NULL;
+    hts_opt *in_opts = NULL, *out_opts = NULL, *last = NULL;
 
     while ((c = getopt(argc, argv, "IbDCSl:t:i:o:")) >= 0) {
         switch (c) {
@@ -175,12 +175,12 @@ int main(int argc, char *argv[])
     }
 
     // Process any options; currently cram only.
-    for (; in_opts;  in_opts = in_opts->next) {
+    for (; in_opts;  in_opts = (last=in_opts)->next, free(last)) {
 	hts_set_opt(in,  in_opts->opt,  in_opts->val);
 	if (in_opts->opt == CRAM_OPT_REFERENCE)
 	    hts_set_opt(out,  in_opts->opt,  in_opts->val);
     }
-    for (; out_opts;  out_opts = out_opts->next)
+    for (; out_opts;  out_opts = (last=out_opts)->next, free(last))
 	hts_set_opt(out, out_opts->opt,  out_opts->val);
 
     sam_hdr_write(out, h);

@@ -133,9 +133,9 @@ enum cram_DS_ID {
     DS_RN, // name_blk
     DS_QS, // qual_blk
     DS_IN, // base_blk
+    DS_SC, // soft_blk
 
     DS_BF, // start loop
-    DS_SC, // soft_blk
     DS_CF,
     DS_AP,
     DS_RG,

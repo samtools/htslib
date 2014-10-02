@@ -1788,6 +1788,8 @@ static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
  * in).
  */
 int cram_set_header(cram_fd *fd, SAM_hdr *hdr) {
+    if (fd->header)
+	sam_hdr_free(fd->header);
     fd->header = hdr;
     return refs_from_header(fd->refs, fd, hdr);
 }
@@ -2418,6 +2420,8 @@ int cram_load_reference(cram_fd *fd, char *fn) {
     fd->ref_fn = fn;
 
     if ((!fd->refs || (fd->refs->nref == 0 && !fn)) && fd->header) {
+	if (fd->refs)
+	    refs_free(fd->refs);
 	if (!(fd->refs = refs_create()))
 	    return -1;
 	if (-1 == refs_from_header(fd->refs, fd, fd->header))
