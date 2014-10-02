@@ -1,9 +1,9 @@
 .TH tabix 1 "23 September 2014" "htslib-1.1" "Bioinformatics tools"
 .SH NAME
 .PP
-bgzip - Block compression/decompression utility
+bgzip \- Block compression/decompression utility
 .PP
-tabix - Generic indexer for TAB-delimited genome position files
+tabix \- Generic indexer for TAB-delimited genome position files
 .\"
 .\" Copyright (C) 2009-2011 Broad Institute.
 .\"
@@ -30,26 +30,26 @@ tabix - Generic indexer for TAB-delimited genome position files
 .SH SYNOPSIS
 .PP
 .B bgzip
-.RB [ \-cdhB ]
-.RB [ \-b
+.RB [ -cdhB ]
+.RB [ -b
 .IR virtualOffset ]
-.RB [ \-s
+.RB [ -s
 .IR size ]
 .RI [ file ]
 .PP
 .B tabix
-.RB [ \-0lf ]
-.RB [ \-p
-.R gff|bed|sam|vcf]
-.RB [ \-s
+.RB [ -0lf ]
+.RB [ -p
+gff|bed|sam|vcf]
+.RB [ -s
 .IR seqCol ]
-.RB [ \-b
+.RB [ -b
 .IR begCol ]
-.RB [ \-e
+.RB [ -e
 .IR endCol ]
-.RB [ \-S
+.RB [ -S
 .IR lineSkip ]
-.RB [ \-c
+.RB [ -c
 .IR metaChar ]
 .I in.tab.bgz
 .RI [ "region1 " [ "region2 " [ ... "]]]"
@@ -79,13 +79,13 @@ index file will be downloaded if it is not present locally.
 .BI "-p " STR
 Input format for indexing. Valid values are: gff, bed, sam, vcf and
 psltab. This option should not be applied together with any of
-.BR \-s ", " \-b ", " \-e ", " \-c " and " \-0 ;
+.BR -s ", " -b ", " -e ", " -c " and " -0 ;
 it is not used for data retrieval because this setting is stored in
 the index file. [gff]
 .TP
 .BI "-s " INT
 Column of sequence name. Option
-.BR \-s ", " \-b ", " \-e ", " \-S ", " \-c " and " \-0
+.BR -s ", " -b ", " -e ", " -S ", " -c " and " -0
 are all stored in the index file and thus not used in data retrieval. [1]
 .TP
 .BI "-b " INT
@@ -118,8 +118,7 @@ Force to overwrite the index file if it is present.
 .TP
 .B -l
 List the sequence names stored in the index file.
-.RE
-
+.PP
 .SH EXAMPLE
 (grep ^"#" in.gff; grep -v ^"#" in.gff | sort -k1,1 -k4,4n) | bgzip > sorted.gff.gz;
 
