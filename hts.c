@@ -35,7 +35,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts.h"
 #include "cram/cram.h"
 #include "htslib/hfile.h"
-#include "version.h"
+#include "config.h"
 
 #include "htslib/kseq.h"
 #define KS_BGZF 1
@@ -53,7 +53,7 @@ int hts_verbose = 3;
 
 const char *hts_version()
 {
-    return HTS_VERSION;
+    return PACKAGE_VERSION;
 }
 
 const unsigned char seq_nt16_table[256] = {

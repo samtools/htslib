@@ -55,10 +55,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 extern "C" {
 #endif
 
-#ifdef HAVE_CONFIG_H
-#include "io_lib_config.h"
-#endif
-
 #include <stdarg.h>
 
 #include "cram/string_alloc.h"

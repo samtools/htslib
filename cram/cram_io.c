@@ -44,10 +44,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * a way to return errors for when malloc fails.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "io_lib_config.h"
-#endif
-
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
