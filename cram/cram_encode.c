@@ -2769,6 +2769,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     {
 	int new;
 	khint_t k;
+	int sec = (cr->flags & BAM_FSECONDARY) ? 1 : 0;
 
 	//fprintf(stderr, "Checking %"PRId64"/%.*s\t", rnum,
 	//	cr->name_len, DSTRING_STR(s->name_ds)+cr->name);
@@ -2779,19 +2780,19 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	    if (!key)
 		return -1;
 
-	    k = kh_put(m_s2i, s->pair, key, &new);
+	    k = kh_put(m_s2i, s->pair[sec], key, &new);
 	    if (-1 == new)
 		return -1;
 	    else if (new > 0)
-		kh_val(s->pair, k) = rnum;
+		kh_val(s->pair[sec], k) = rnum;
 	} else {
 	    new = 1;
 	}
 
 	if (new == 0) {
-	    cram_record *p = &s->crecs[kh_val(s->pair, k)];
+	    cram_record *p = &s->crecs[kh_val(s->pair[sec], k)];
 	    
-	    //fprintf(stderr, "paired %"PRId64"\n", kh_val(s->pair, k));
+	    //fprintf(stderr, "paired %"PRId64"\n", kh_val(s->pair[sec], k));
 
 	    // copy from p to cr
 	    cr->mate_pos = p->apos;
@@ -2831,10 +2832,10 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	    p->cram_flags  |=  CRAM_FLAG_MATE_DOWNSTREAM;
 	    cram_stats_add(c->stats[DS_CF], p->cram_flags);
 
-	    p->mate_line = rnum - (kh_val(s->pair, k) + 1);
+	    p->mate_line = rnum - (kh_val(s->pair[sec], k) + 1);
 	    cram_stats_add(c->stats[DS_NF], p->mate_line);
 
-	    kh_val(s->pair, k) = rnum;
+	    kh_val(s->pair[sec], k) = rnum;
 	} else {
 	    //fprintf(stderr, "unpaired\n");
 

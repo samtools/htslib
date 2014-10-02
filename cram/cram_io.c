@@ -3018,8 +3018,10 @@ void cram_free_slice(cram_slice *s) {
     if (s->pair_keys)
 	string_pool_destroy(s->pair_keys);
 
-    if (s->pair)
-	kh_destroy(m_s2i, s->pair);
+    if (s->pair[0])
+	kh_destroy(m_s2i, s->pair[0]);
+    if (s->pair[1])
+	kh_destroy(m_s2i, s->pair[1]);
 
     free(s);
 }
@@ -3067,7 +3069,8 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
 
     // Volatile keys as we do realloc in dstring
     if (!(s->pair_keys = string_pool_create(8192))) goto err;
-    if (!(s->pair = kh_init(m_s2i)))                goto err;
+    if (!(s->pair[0] = kh_init(m_s2i)))             goto err;
+    if (!(s->pair[1] = kh_init(m_s2i)))             goto err;
     
 #ifdef BA_external
     s->BA_len = 0;

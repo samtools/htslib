@@ -567,7 +567,7 @@ typedef struct cram_slice {
     cram_block *aux_oz_blk;
 
     string_alloc_t *pair_keys; // Pooled keys for pair hash.
-    khash_t(m_s2i) *pair;      // for identifying read-pairs in this slice.
+    khash_t(m_s2i) *pair[2];   // for identifying read-pairs in this slice.
 
     char *ref;               // slice of current reference
     int ref_start;           // start position of current reference;
