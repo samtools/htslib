@@ -148,7 +148,7 @@ int regidx_insert(regidx_t *idx, char *line)
     return 0;
 }
 
-regidx_t *regidx_init(const char *fname, regidx_parse_f parser, regidx_free_f free_f, ssize_t payload_size, void *usr_dat)
+regidx_t *regidx_init(const char *fname, regidx_parse_f parser, regidx_free_f free_f, size_t payload_size, void *usr_dat)
 {
     if ( !parser )
     {

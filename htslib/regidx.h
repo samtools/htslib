@@ -51,6 +51,7 @@
 #ifndef __REGIDX_H__
 #define __REGIDX_H__
 
+#include <stdio.h>
 #include <inttypes.h>
 
 typedef struct _regidx_t regidx_t;
@@ -103,7 +104,7 @@ int regidx_parse_tab(const char*,char**,char**,reg_t*,void*,void*);   // CHROM,P
  *
  *  Returns index on success or NULL on error.
  */
-regidx_t *regidx_init(const char *fname, regidx_parse_f parsef, regidx_free_f freef, ssize_t payload_size, void *usr);
+regidx_t *regidx_init(const char *fname, regidx_parse_f parsef, regidx_free_f freef, size_t payload_size, void *usr);
 
 /*
  *  regidx_destroy() - free memory allocated by regidx_init
