@@ -708,10 +708,6 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
         idx->z.save_off = idx->z.last_off;
         idx->z.save_bin = idx->z.last_bin = bin;
         idx->z.save_tid = tid;
-        if (tid < 0) { // come to the end of the records having coordinates
-            hts_idx_finish(idx, offset);
-            return 0;
-        }
     }
     if (is_mapped) ++idx->z.n_mapped;
     else ++idx->z.n_unmapped;

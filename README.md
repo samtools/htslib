@@ -12,6 +12,6 @@ This project also includes the popular tabix indexer, which indexes both `.tbi`
 and `.csi` formats, and the bgzip compression utility.
 
 [1]: http://samtools.github.io/hts-specs/
-[2]: http://samtools.github.io/bcftools/
-[3]: http://github.com/samtools/samtools
+[2]: http://github.com/samtools/samtools
+[3]: http://samtools.github.io/bcftools/
 [4]: http://zlib.net/

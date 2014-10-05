@@ -155,6 +155,8 @@ int cram_index_load(cram_fd *fd, const char *fn) {
 	}
 	kstr.s = s;
 	kstr.l = l;
+	kstr.m = l; // conservative estimate of the size allocated
+	kputsn("", 0, &kstr); // ensure kstr.s is NUL-terminated
     }
 
 
