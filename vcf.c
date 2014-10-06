@@ -414,6 +414,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
             if ( !strcmp(hrec->vals[i], "Integer") ) type = BCF_HT_INT;
             else if ( !strcmp(hrec->vals[i], "Float") ) type = BCF_HT_REAL;
             else if ( !strcmp(hrec->vals[i], "String") ) type = BCF_HT_STR;
+            else if ( !strcmp(hrec->vals[i], "Character") ) type = BCF_HT_STR;
             else if ( !strcmp(hrec->vals[i], "Flag") ) type = BCF_HT_FLAG;
             else
             {
