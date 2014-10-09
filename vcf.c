@@ -2927,7 +2927,7 @@ int bcf_update_alleles_str(const bcf_hdr_t *hdr, bcf1_t *line, const char *allel
     char *t = line->d.als;
     while (*t)
     {
-        if ( *t==',' ) { *t = 0; nals++; }
+        if ( *t==',' || *t=='\t' ) { *t = 0; nals++; }
         t++;
     }
     return _bcf1_sync_alleles(hdr, line, nals);

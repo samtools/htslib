@@ -507,9 +507,9 @@ extern "C" {
      *  bcf_update_alleles() and bcf_update_alleles_str() - update REF and ALLT column
      *  @alleles:           Array of alleles
      *  @nals:              Number of alleles
-     *  @alleles_string:    Comma-separated alleles, starting with the REF allele
+     *  @alleles_string:    Comma- or tab-separated alleles, starting with the REF allele
      *
-     *  Not that in order for indexing to work correctly in presence of INFO/END tag,
+     *  Note that in order for indexing to work correctly in presence of INFO/END tag,
      *  the length of reference allele (line->rlen) must be set explicitly by the caller,
      *  or otherwise, if rlen is zero, strlen(line->d.allele[0]) is used to set the length
      *  on bcf_write().
