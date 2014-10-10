@@ -103,7 +103,7 @@ typedef struct {
     void *dict[3]; // ID dictionary, contig dict and sample dict
     char **samples;
     bcf_hrec_t **hrec;
-    int nhrec;
+    int nhrec, dirty;
     int ntransl, *transl[2];    // for bcf_translate()
     int nsamples_ori;           // for bcf_hdr_set_samples()
     uint8_t *keep_samples;
@@ -306,7 +306,7 @@ extern "C" {
 
 
     /** Writes VCF or BCF header */
-    int bcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
+    int bcf_hdr_write(htsFile *fp, bcf_hdr_t *h);
 
     /** Parse VCF line contained in kstring and populate the bcf1_t struct */
     int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v);
@@ -385,8 +385,7 @@ extern "C" {
 
     /**
      *  bcf_hdr_add_sample() - add a new sample.
-     *  @param sample:  Sample name to be added. After all samples have been added, NULL
-     *                  must be passed to update internal header structures.
+     *  @param sample:  sample name to be added
      */
     int bcf_hdr_add_sample(bcf_hdr_t *hdr, const char *sample);
 
