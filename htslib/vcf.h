@@ -348,6 +348,7 @@ extern "C" {
      *  internally to reflect any changes made by bcf_update_* functions.
      */
     bcf1_t *bcf_dup(bcf1_t *src);
+    bcf1_t *bcf_copy(bcf1_t *dst, bcf1_t *src);
 
     /**
      *  bcf_write() - write one VCF or BCF record. The type is determined at the open() call.
