@@ -193,6 +193,7 @@ enum cram_block_method {
     GZIP     = 1,
     BZIP2    = 2,
     LZMA     = 3,
+    RANS     = 4,  // Generic; either order
     RANS0    = 4,
     RANS1    = 10, // Not externalised; stored as RANS (generic)
     GZIP_RLE = 11, // NB: not externalised in CRAM

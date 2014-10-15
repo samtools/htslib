@@ -962,22 +962,9 @@ int cram_uncompress_block(cram_block *b) {
 	break;
 #endif
 
-    case RANS0: {
+    case RANS: {
 	unsigned int usize = b->uncomp_size, usize2;
-	uncomp = (char *)rans_uncompress(b->data, b->comp_size, &usize2, 0);
-	assert(usize == usize2);
-	free(b->data);
-	b->data = (unsigned char *)uncomp;
-	b->alloc = usize2;
-	b->method = RAW;
-	b->uncomp_size = usize2; // Just incase it differs
-	//fprintf(stderr, "Expanded %d to %d\n", b->comp_size, b->uncomp_size);
-	break;
-    }
-
-    case RANS1: {
-	unsigned int usize = b->uncomp_size, usize2;
-	uncomp = (char *)rans_uncompress(b->data, b->comp_size, &usize2, 1);
+	uncomp = (char *)rans_uncompress(b->data, b->comp_size, &usize2);
 	assert(usize == usize2);
 	free(b->data);
 	b->data = (unsigned char *)uncomp;
