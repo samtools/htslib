@@ -481,11 +481,8 @@ cram_fd *cram_open(const char *filename, const char *mode);
  * @return
  * Returns file handle on success;
  *         NULL on failure.
- *
- * cram_FILE is either htslib's hFILE or stdio's FILE, depending on how
- * cram_structs.h has been configured.
  */
-cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode);
+cram_fd *cram_dopen(struct hFILE *fp, const char *filename, const char *mode);
 
 /*! Closes a CRAM file.
  *

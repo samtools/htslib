@@ -83,7 +83,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 #include "htslib/hfile.h"
-#define paranoid_hclose(fp) (hclose(fp))
 
 #define TRIAL_SPAN 50
 #define NTRIALS 3
@@ -3653,7 +3652,7 @@ static int minor_version = 1;
  *         NULL on failure.
  */
 cram_fd *cram_open(const char *filename, const char *mode) {
-    cram_FILE *fp;
+    hFILE *fp;
     cram_fd *fd;
     char fmode[3]= { mode[0], '\0', '\0' };
 
@@ -3676,11 +3675,8 @@ cram_fd *cram_open(const char *filename, const char *mode) {
  *
  * Returns file handle on success;
  *         NULL on failure.
- *
- * cram_FILE is either htslib's hFILE or stdio's FILE, depending on how
- * cram_structs.h has been configured.
  */
-cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode) {
+cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     int i;
     char *cp;
     cram_fd *fd = calloc(1, sizeof(*fd));
@@ -3907,7 +3903,7 @@ int cram_close(cram_fd *fd) {
 	free(bl);
     }
 
-    if (paranoid_hclose(fd->fp) != 0)
+    if (hclose(fd->fp) != 0)
 	return -1;
 
     if (fd->file_def)

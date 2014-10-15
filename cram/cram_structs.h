@@ -79,7 +79,6 @@ typedef union {
 KHASH_MAP_INIT_STR(map, pmap_t)
 
 struct hFILE;
-typedef struct hFILE cram_FILE;
 
 #define SEQS_PER_SLICE 10000
 #define SLICE_PER_CNT  1
@@ -654,7 +653,7 @@ typedef struct spare_bams {
 } spare_bams;
 
 typedef struct cram_fd {
-    cram_FILE     *fp;
+    struct hFILE  *fp;
     int            mode;     // 'r' or 'w'
     int            version;
     cram_file_def *file_def;
