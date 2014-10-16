@@ -26,13 +26,30 @@ CC     = gcc
 AR     = ar
 RANLIB = ranlib
 
-# TODO: edit cram code to remove need for -DSAMTOOLS
-CPPFLAGS = -I. -DSAMTOOLS=1
+CPPFLAGS = -I.
 # TODO: probably update cram code to make it compile cleanly with -Wc++-compat
 CFLAGS   = -g -Wall -O2
 EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
 LDLIBS   =
+
+# For now these don't work too well as samtools also needs to know to
+# add -lbz2 and -llzma if linking against the static libhts.a library.
+# TODO This needs configury and adding to htslib.pc.in.
+#
+# # Bzip2 support; optionally used by CRAM.
+# HAVE_LIBBZ2 := $(shell echo -e "\#include <bzlib.h>\012int main(void){return 0;}" > .test.c && $(CC) $(CFLAGS) $(CPPFLAGS) -o .test .test.c -lbz2 2>/dev/null && echo yes)
+# ifeq "$(HAVE_LIBBZ2)" "yes"
+# CPPFLAGS += -DHAVE_LIBBZ2
+# LDLIBS   += -lbz2
+# endif
+#
+# # Lzma support; optionally used by CRAM.
+# HAVE_LIBLZMA := $(shell echo -e "\#include <lzma.h>\012int main(void){return 0;}" > .test.c && $(CC) $(CFLAGS) $(CPPFLAGS) -o .test .test.c -llzma 2>/dev/null && echo yes)
+# ifeq "$(HAVE_LIBLZMA)" "yes"
+# CPPFLAGS += -DHAVE_LIBLZMA
+# LDLIBS   += -llzma
+# endif
 
 prefix      = /usr/local
 exec_prefix = $(prefix)
@@ -152,6 +169,7 @@ LIBHTS_OBJS = \
 	cram/md5.o \
 	cram/open_trace_file.o \
 	cram/pooled_alloc.o \
+	cram/rANS_static.o \
 	cram/sam_header.o \
 	cram/string_alloc.o \
 	cram/thread_pool.o \
@@ -212,7 +230,7 @@ cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c $(cram_h) cram/os.h cram/md5.h
 cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c $(cram_h) cram/os.h cram/md5.h
 cram/cram_index.o cram/cram_index.pico: cram/cram_index.c $(htslib_hfile_h) $(cram_h) cram/os.h cram/zfio.h
-cram/cram_io.o cram/cram_io.pico: cram/cram_io.c $(cram_h) cram/os.h cram/md5.h $(cram_open_trace_file_h) $(htslib_hfile_h)
+cram/cram_io.o cram/cram_io.pico: cram/cram_io.c $(cram_h) cram/os.h cram/md5.h $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h)
 cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c $(cram_h) $(htslib_sam_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c $(cram_h) cram/os.h
 cram/files.o cram/files.pico: cram/files.c $(cram_misc_h)
@@ -220,6 +238,7 @@ cram/mFILE.o cram/mFILE.pico: cram/mFILE.c cram/os.h cram/mFILE.h cram/vlen.h
 cram/md5.o cram/md5.pico: cram/md5.c cram/md5.h
 cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h)
 cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c cram/pooled_alloc.h
+cram/rANS_static.o cram/rANS_static.pico: cram/rANS_static.c cram/rANS_static.h cram/rANS_byte.h
 cram/sam_header.o cram/sam_header.pico: cram/sam_header.c $(cram_sam_header_h) cram/string_alloc.h
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c cram/string_alloc.h
 cram/thread_pool.o cram/thread_pool.pico: cram/thread_pool.c cram/thread_pool.h

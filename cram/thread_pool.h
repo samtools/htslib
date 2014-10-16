@@ -68,6 +68,16 @@ typedef struct t_res {
     void *data; // result itself
 } t_pool_result;
 
+struct t_pool;
+
+typedef struct {
+    struct t_pool *p;
+    int idx;
+    pthread_t tid;
+    pthread_cond_t  pending_c;
+    long long wait_time;
+} t_pool_worker_t;
+
 typedef struct t_pool {
     int qsize;    // size of queue
     int njobs;    // pending job count
@@ -79,7 +89,7 @@ typedef struct t_pool {
 
     // threads
     int tsize;    // maximum number of jobs
-    pthread_t *t;
+    t_pool_worker_t *t;
 
     // Mutexes
     pthread_mutex_t pool_m; // used when updating head/tail
@@ -87,6 +97,9 @@ typedef struct t_pool {
     pthread_cond_t  empty_c;
     pthread_cond_t  pending_c; // not empty
     pthread_cond_t  full_c;
+
+    // array of worker IDs free
+    int *t_stack, t_stack_top;
 
     // Debugging to check wait time
     long long total_time, wait_time;
