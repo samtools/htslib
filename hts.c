@@ -170,6 +170,9 @@ htsFile *hts_open(const char *fn, const char *mode)
         if (strchr(mode, 'z')) fp->is_compressed = 1;
         else if (strchr(mode, 'u')) fp->is_compressed = 0;
         else fp->is_compressed = 2;    // not set, default behaviour
+        if (strchr(mode, 'X')) fp->flag_format = BAM_OFSTR;
+        else if (strchr(mode, 'x')) fp->flag_format = BAM_OFHEX;
+        else fp->flag_format = BAM_OFDEC;
     }
     else goto error;
 
