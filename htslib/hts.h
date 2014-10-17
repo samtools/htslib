@@ -69,6 +69,35 @@ typedef struct __kstring_t {
  * File I/O *
  ************/
 
+// Add new entries only at the end (but before the *_maximum entry)
+// of these enums, as their numbering is part of the htslib ABI.
+
+enum htsFormatCategory {
+    unknown_category,
+    sequence_data,    // Sequence data -- SAM, BAM, CRAM, etc
+    variant_data,     // Variant calling data -- VCF, BCF, etc
+    index_file,       // Index file associated with some data file
+    region_list,      // Coordinate intervals or regions -- BED, etc
+    category_maximum = 32767
+};
+
+enum htsExactFormat {
+    unknown_format,
+    sam, bam, bai, cram, crai, vcf, bcfv1, bcf, csi, gzi, tbi, bed,
+    format_maximum = 32767
+};
+
+enum htsCompression {
+    no_compression, gzip, bgzf, custom,
+    compression_maximum = 32767
+};
+
+typedef struct htsFormat {
+    enum htsFormatCategory category;
+    enum htsExactFormat format;
+    enum htsCompression compression;
+} htsFormat;
+
 typedef struct {
     uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, is_compressed:2, is_kstream:1, dummy:25;
     int64_t lineno;
@@ -145,6 +174,14 @@ extern "C" {
 const char *hts_version(void);
 
 /*!
+  @abstract    Determine format by peeking at the start of a file
+  @param fp    File opened for reading, positioned at the beginning
+  @param fmt   Format structure that will be filled out on return
+  @return      0 for success, or negative if an error occurred.
+*/
+int hts_detect_format(struct hFILE *fp, htsFormat *fmt);
+
+/*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
   @param fn       The file name or "-" for stdin/stdout
   @param mode     Mode matching /[rwa][bcuz0-9]+/
@@ -168,6 +205,13 @@ const char *hts_version(void);
       [rw]  .. uncompressed VCF
 */
 htsFile *hts_open(const char *fn, const char *mode);
+
+/*!
+  @abstract       Open an existing stream as a SAM/BAM/CRAM/VCF/BCF/etc file
+  @param fn       The already-open file handle
+  @param mode     Open mode, as per hts_open()
+*/
+htsFile *hts_hopen(struct hFILE *fp, const char *fn, const char *mode);
 
 /*!
   @abstract  Close a file handle, flushing buffered data for output streams

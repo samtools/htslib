@@ -122,13 +122,117 @@ static int is_binary(unsigned char *s, size_t n)
     return 0;
 }
 
+int hts_detect_format(hFILE *hfile, htsFormat *fmt)
+{
+    unsigned char s[18];
+    ssize_t len = hpeek(hfile, s, 18);
+    if (len < 0) return -1;
+
+    if (len >= 2 && s[0] == 0x1f && s[1] == 0x8b) {
+        // The stream is either gzip-compressed or BGZF-compressed.
+        // Determine which, and decompress the first few bytes.
+        fmt->compression = (len >= 18 && (s[3] & 4) &&
+                            memcmp(&s[12], "BC\2\0", 4) == 0)? bgzf : gzip;
+        len = decompress_peek(hfile, s, sizeof s);
+    }
+    else {
+        fmt->compression = no_compression;
+        len = hpeek(hfile, s, sizeof s);
+    }
+    if (len < 0) return -1;
+
+    if (len >= 6 && memcmp(s,"CRAM",4) == 0 && s[4]>=1 && s[4]<=3 && s[5]<=1) {
+        fmt->category = sequence_data;
+        fmt->format = cram;
+        fmt->compression = custom;
+        return 0;
+    }
+    else if (len >= 4 && s[3] <= '\4') {
+        if (memcmp(s, "BAM\1", 4) == 0) {
+            fmt->category = sequence_data;
+            fmt->format = bam;
+            return 0;
+        }
+        else if (memcmp(s, "BAI\1", 4) == 0) {
+            fmt->category = index_file;
+            fmt->format = bai;
+            return 0;
+        }
+        else if (memcmp(s, "BCF\4", 4) == 0) {
+            fmt->category = variant_data;
+            fmt->format = bcfv1;
+            return 0;
+        }
+        else if (memcmp(s, "BCF\2", 4) == 0) {
+            fmt->category = variant_data;
+            fmt->format = bcf;
+            return 0;
+        }
+        else if (memcmp(s, "CSI\1", 4) == 0) {
+            fmt->category = index_file;
+            fmt->format = csi;
+            return 0;
+        }
+        else if (memcmp(s, "TBI\1", 4) == 0) {
+            fmt->category = index_file;
+            fmt->format = tbi;
+            return 0;
+        }
+    }
+    else if (len >= 16 && memcmp(s, "##fileformat=VCF", 16) == 0) {
+        fmt->category = variant_data;
+        fmt->format = vcf;
+        return 0;
+    }
+    else if (len >= 4 && s[0] == '@' &&
+             (memcmp(s, "@HD\t", 4) == 0 || memcmp(s, "@SQ\t", 4) == 0 ||
+              memcmp(s, "@RG\t", 4) == 0 || memcmp(s, "@PG\t", 4) == 0)) {
+        fmt->category = sequence_data;
+        fmt->format = sam;
+        return 0;
+    }
+    else {
+        // Various possibilities for tab-delimited text:
+        // .crai   (gzipped tab-delimited six columns: seqid 5*number)
+        // .bed    ([3..12] tab-delimited columns)
+        // .bedpe  (>= 10 tab-delimited columns)
+        // .sam    (tab-delimited >= 11 columns: seqid number seqid...)
+        // FIXME For now, assume it's SAM
+        fmt->category = sequence_data;
+        fmt->format = sam;
+        return 0;
+    }
+
+    fmt->category = unknown_category;
+    fmt->format = unknown_format;
+    fmt->compression = no_compression;
+    return 0;
+}
+
 htsFile *hts_open(const char *fn, const char *mode)
 {
     htsFile *fp = NULL;
     hFILE *hfile = hopen(fn, mode);
     if (hfile == NULL) goto error;
 
-    fp = (htsFile*)calloc(1, sizeof(htsFile));
+    fp = hts_hopen(hfile, fn, mode);
+    if (fp == NULL) goto error;
+
+    return fp;
+
+error:
+    if (hts_verbose >= 2)
+        fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
+
+    if (hfile)
+        hclose_abruptly(hfile);
+
+    return NULL;
+}
+
+htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
+{
+    htsFile *fp = (htsFile*)calloc(1, sizeof(htsFile));
     if (fp == NULL) goto error;
 
     fp->fn = strdup(fn);
@@ -203,9 +307,6 @@ htsFile *hts_open(const char *fn, const char *mode)
 error:
     if (hts_verbose >= 2)
         fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
-
-    if (hfile)
-        hclose_abruptly(hfile);
 
     if (fp) {
         free(fp->fn);
