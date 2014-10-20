@@ -40,7 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #define KS_BGZF 1
 #if KS_BGZF
-    // bgzf now supports gzip-compressed files
+    // bgzf now supports gzip-compressed files, the gzFile branch can be removed
     KSTREAM_INIT2(, BGZF*, bgzf_read, 65536)
 #else
     KSTREAM_INIT2(, gzFile, gzread, 16384)
@@ -266,18 +266,24 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
         else {
             fp->is_kstream = 1;
         }
+        hts_detect_format(hfile, &fp->type);
     }
-    else if (strchr(mode, 'w') || strchr(mode, 'a')) {
+    else if (strchr(mode, 'w') || strchr(mode, 'a')) 
+    {
+        fp->type.category = unknown_category;
+        fp->type.format = unknown_format;
+        fp->type.compression = no_compression;
+
         fp->is_write = 1;
-        if (strchr(mode, 'b')) fp->is_bin = 1;
+        if (strchr(mode, 'b')) fp->is_bin = 1; 
         if (strchr(mode, 'c')) fp->is_cram = 1;
-        if (strchr(mode, 'z')) fp->is_compressed = 1;
-        else if (strchr(mode, 'u')) fp->is_compressed = 0;
-        else fp->is_compressed = 2;    // not set, default behaviour
+        if (strchr(mode, 'z')) { fp->is_compressed = 1; fp->type.compression = bgzf; }
+        else if (strchr(mode, 'g')) { fp->is_compressed = 1; fp->type.compression = gzip; }
+        else fp->is_compressed = 0;
     }
     else goto error;
 
-    if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
+    if (fp->is_bin || (fp->is_write && fp->is_compressed)) {
         fp->fp.bgzf = bgzf_hopen(hfile, mode);
         if (fp->fp.bgzf == NULL) goto error;
     }
@@ -320,7 +326,7 @@ int hts_close(htsFile *fp)
 {
     int ret, save;
 
-    if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
+    if (fp->is_bin || (fp->is_write && fp->is_compressed)) {
         ret = bgzf_close(fp->fp.bgzf);
     } else if (fp->is_cram) {
         if (!fp->is_write) {
@@ -531,36 +537,6 @@ char **hts_readlines(const char *fn, int *_n)
     s = (char**)realloc(s, n * sizeof(char*));
     *_n = n;
     return s;
-}
-
-int hts_file_type(const char *fname)
-{
-    int len = strlen(fname);
-    if ( !strcasecmp(".vcf.gz",fname+len-7) ) return FT_VCF_GZ;
-    if ( !strcasecmp(".vcf",fname+len-4) ) return FT_VCF;
-    if ( !strcasecmp(".bcf",fname+len-4) ) return FT_BCF_GZ;
-    if ( !strcmp("-",fname) ) return FT_STDIN;
-    // ... etc
-
-    int fd = open(fname, O_RDONLY);
-    if ( !fd ) return 0;
-
-    uint8_t magic[5];
-    if ( read(fd,magic,2)!=2 ) { close(fd); return 0; }
-    if ( !strncmp((char*)magic,"##",2) ) { close(fd); return FT_VCF; }
-    if ( !strncmp((char*)magic,"BCF",3) ) { close(fd); return FT_BCF; }
-    close(fd);
-
-    if ( magic[0]==0x1f && magic[1]==0x8b ) // compressed
-    {
-        BGZF *fp = bgzf_open(fname, "r");
-        if ( !fp ) return 0;
-        if ( bgzf_read(fp, magic, 3)!=3 ) { bgzf_close(fp); return 0; }
-        bgzf_close(fp);
-        if ( !strncmp((char*)magic,"##",2) ) return FT_VCF_GZ;
-        if ( !strncmp((char*)magic,"BCF",3) ) return FT_BCF_GZ;
-    }
-    return 0;
 }
 
 /****************

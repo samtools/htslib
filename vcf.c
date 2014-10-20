@@ -1353,7 +1353,7 @@ int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
     char *htxt = bcf_hdr_fmt_text(h, 0, &hlen);
     while (hlen && htxt[hlen-1] == 0) --hlen; // kill trailing zeros
     int ret;
-    if ( fp->is_compressed==1 )
+    if ( fp->type.compression!=no_compression )
         ret = bgzf_write(fp->fp.bgzf, htxt, hlen);
     else
         ret = hwrite(fp->fp.hfile, htxt, hlen);
@@ -2100,7 +2100,7 @@ int vcf_write_line(htsFile *fp, kstring_t *line)
 {
     int ret;
     if ( line->s[line->l-1]!='\n' ) kputc('\n',line);
-    if ( fp->is_compressed==1 )
+    if ( fp->type.compression!=no_compression )
         ret = bgzf_write(fp->fp.bgzf, line->s, line->l);
     else
         ret = hwrite(fp->fp.hfile, line->s, line->l);
@@ -2112,7 +2112,7 @@ int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
     int ret;
     fp->line.l = 0;
     vcf_format1(h, v, &fp->line);
-    if ( fp->is_compressed==1 )
+    if ( fp->type.compression!=no_compression )
         ret = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
     else
         ret = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
@@ -2178,7 +2178,7 @@ int bcf_index_build(const char *fn, int min_shift)
     htsFile *fp;
     hts_idx_t *idx;
     if ((fp = hts_open(fn, "rb")) == 0) return -1;
-    if ( !fp->fp.bgzf->is_compressed ) { hts_close(fp); return -1; }
+    if ( fp->type.compression!=bgzf ) { hts_close(fp); return -1; }
     idx = bcf_index(fp, min_shift);
     hts_close(fp);
     if ( !idx ) return -1;
