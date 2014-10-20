@@ -83,6 +83,7 @@ enum htsFormatCategory {
 
 enum htsExactFormat {
     unknown_format,
+    binary_format, text_format,
     sam, bam, bai, cram, crai, vcf, bcfv1, bcf, csi, gzi, tbi, bed,
     format_maximum = 32767
 };
@@ -98,8 +99,15 @@ typedef struct htsFormat {
     enum htsCompression compression;
 } htsFormat;
 
+// Maintainers note htsFile cannot be an opaque structure because some of its
+// fields are part of libhts.so's ABI (hence these fields must not be moved):
+//  - fp is used in the public sam_itr_next()/etc macros
+//  - is_bin is used directly in samtools <= 1.1 and bcftools <= 1.1
+//  - is_write and is_cram are used directly in samtools <= 1.1
+//  - fp is used directly in samtools (up to and including current develop)
+//  - line is used directly in bcftools (up to and including current develop)
 typedef struct {
-    uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, is_compressed:2, is_kstream:1, dummy:25;
+    uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, is_compressed:2, dummy:26;
     int64_t lineno;
     kstring_t line;
     char *fn, *fn_aux;
@@ -109,6 +117,7 @@ typedef struct {
         struct hFILE *hfile;
         void *voidp;
     } fp;
+    htsFormat format;
 } htsFile;
 
 // REQUIRED_FIELDS
@@ -219,6 +228,13 @@ htsFile *hts_hopen(struct hFILE *fp, const char *fn, const char *mode);
   @return    0 for success, or negative if an error occurred.
 */
 int hts_close(htsFile *fp);
+
+/*!
+  @abstract  Returns the file's format information
+  @param fp  The file handle
+  @return    Read-only pointer to the file's htsFormat.
+*/
+const htsFormat *hts_get_format(htsFile *fp);
 
 /*!
   @abstract  Sets a specified CRAM option on the open file handle.

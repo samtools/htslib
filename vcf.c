@@ -734,7 +734,7 @@ void bcf_hdr_destroy(bcf_hdr_t *h)
 
 bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
 {
-    if (!hfp->is_bin)
+    if (hfp->format.format == vcf)
         return vcf_hdr_read(hfp);
 
     BGZF *fp = hfp->fp.bgzf;
@@ -768,7 +768,8 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
 int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
 {
     if ( h->dirty ) bcf_hdr_sync(h);
-    if (!hfp->is_bin) return vcf_hdr_write(hfp, h);
+    if (hfp->format.format == vcf || hfp->format.format == text_format)
+        return vcf_hdr_write(hfp, h);
 
     int hlen;
     char *htxt = bcf_hdr_fmt_text(h, 1, &hlen);
@@ -916,7 +917,7 @@ int bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec)
 
 int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
-    if (!fp->is_bin) return vcf_read(fp,h,v);
+    if (fp->format.format == vcf) return vcf_read(fp,h,v);
     int ret = bcf_read1_core(fp->fp.bgzf, v);
     if ( ret!=0 || !h->keep_samples ) return ret;
     return bcf_subset_format(h,v);
@@ -1159,7 +1160,8 @@ int bcf_write(htsFile *hfp, const bcf_hdr_t *h, bcf1_t *v)
         return -1;
     }
 
-    if ( !hfp->is_bin ) return vcf_write(hfp,h,v);
+    if ( hfp->format.format == vcf || hfp->format.format == text_format )
+        return vcf_write(hfp,h,v);
 
     if ( v->errcode )
     {

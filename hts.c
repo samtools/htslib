@@ -82,6 +82,39 @@ const char seq_nt16_str[] = "=ACMGRSVTWYHKDBN";
  *** Basic file I/O ***
  **********************/
 
+static enum htsFormatCategory format_category(enum htsExactFormat fmt)
+{
+    switch (fmt) {
+    case bam:
+    case sam:
+    case cram:
+        return sequence_data;
+
+    case vcf:
+    case bcfv1:
+    case bcf:
+        return variant_data;
+
+    case bai:
+    case crai:
+    case csi:
+    case gzi:
+    case tbi:
+        return index_file;
+
+    case bed:
+        return region_list;
+
+    case unknown_format:
+    case binary_format:
+    case text_format:
+    case format_maximum:
+        break;
+    }
+
+    return unknown_category;
+}
+
 // Decompress up to ten or so bytes by peeking at the file, which must be
 // positioned at the start of a GZIP block.
 static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
@@ -110,16 +143,6 @@ static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
     inflateEnd(&zs);
 
     return destsize;
-}
-
-// Returns whether the block contains any control characters, i.e.,
-// characters less than SPACE other than whitespace etc (ASCII BEL..CR).
-static int is_binary(unsigned char *s, size_t n)
-{
-    size_t i;
-    for (i = 0; i < n; i++)
-        if (s[i] < 0x07 || (s[i] >= 0x0e && s[i] < 0x20)) return 1;
-    return 0;
 }
 
 int hts_detect_format(hFILE *hfile, htsFormat *fmt)
@@ -239,69 +262,77 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
     fp->is_be = ed_is_big();
 
     if (strchr(mode, 'r')) {
-        unsigned char s[18];
-        if (hpeek(hfile, s, 6) == 6 && memcmp(s, "CRAM", 4) == 0 &&
-            s[4] >= 1 && s[4] <= 3 && s[5] <= 1) {
-            fp->is_cram = 1;
-        }
-        else if (hpeek(hfile, s, 18) == 18 && s[0] == 0x1f && s[1] == 0x8b &&
-                 (s[3] & 4) && memcmp(&s[12], "BC\2\0", 4) == 0) {
-            // The stream is BGZF-compressed.  Decompress a few bytes to see
-            // whether it's in a binary format (e.g., BAM or BCF, starting
-            // with four bytes of magic including a control character) or is
-            // a bgzipped SAM or VCF text file.
-            fp->is_compressed = 1;
-            if (is_binary(s, decompress_peek(hfile, s, 4))) fp->is_bin = 1;
-            else fp->is_kstream = 1;
-        }
-        else if (hpeek(hfile, s, 2) == 2 && s[0] == 0x1f && s[1] == 0x8b) {
-            // Plain GZIP header... so a gzipped text file.
-            fp->is_compressed = 1;
-            fp->is_kstream = 1;
-        }
-        else if (hpeek(hfile, s, 4) == 4 && is_binary(s, 4)) {
-            // Binary format, but in a raw non-compressed form.
-            fp->is_bin = 1;
-        }
-        else {
-            fp->is_kstream = 1;
-        }
+        if (hts_detect_format(hfile, &fp->format) < 0) goto error;
     }
     else if (strchr(mode, 'w') || strchr(mode, 'a')) {
+        htsFormat *fmt = &fp->format;
         fp->is_write = 1;
-        if (strchr(mode, 'b')) fp->is_bin = 1;
-        if (strchr(mode, 'c')) fp->is_cram = 1;
-        if (strchr(mode, 'z')) fp->is_compressed = 1;
-        else if (strchr(mode, 'u')) fp->is_compressed = 0;
-        else fp->is_compressed = 2;    // not set, default behaviour
+
+        if (strchr(mode, 'b')) fmt->format = binary_format;
+        else if (strchr(mode, 'c')) fmt->format = cram;
+        else fmt->format = text_format;
+
+        if (strchr(mode, 'z')) fmt->compression = bgzf;
+        else if (strchr(mode, 'u')) fmt->compression = no_compression;
+        else {
+            // No compression mode specified, set to the default for the format
+            switch (fmt->format) {
+            case binary_format: fmt->compression = bgzf; break;
+            case cram: fmt->compression = custom; break;
+            case text_format: fmt->compression = no_compression; break;
+            default: abort();
+            }
+        }
+
+        // Fill in category (if determinable; e.g. 'b' could be BAM or BCF)
+        fmt->category = format_category(fmt->format);
     }
     else goto error;
 
-    if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
+    switch (fp->format.format) {
+    case binary_format:
+    case bam:
+    case bcf:
         fp->fp.bgzf = bgzf_hopen(hfile, mode);
         if (fp->fp.bgzf == NULL) goto error;
-    }
-    else if (fp->is_cram) {
+        fp->is_bin = 1;
+        break;
+
+    case cram:
         fp->fp.cram = cram_dopen(hfile, fn, mode);
         if (fp->fp.cram == NULL) goto error;
         if (!fp->is_write)
             cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, 1);
-    }
-    else if (fp->is_kstream) {
-    #if KS_BGZF
-        BGZF *gzfp = bgzf_hopen(hfile, mode);
-    #else
-        // TODO Implement gzip hFILE adaptor
-        hclose(hfile); // This won't work, especially for stdin
-        gzFile gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
-    #endif
-        if (gzfp) fp->fp.voidp = ks_init(gzfp);
-        else goto error;
-    }
-    else {
-        fp->fp.hfile = hfile;
+        fp->is_cram = 1;
+        break;
+
+    case text_format:
+    case sam:
+    case vcf:
+        if (!fp->is_write) {
+        #if KS_BGZF
+            BGZF *gzfp = bgzf_hopen(hfile, mode);
+        #else
+            // TODO Implement gzip hFILE adaptor
+            hclose(hfile); // This won't work, especially for stdin
+            gzFile gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
+        #endif
+            if (gzfp) fp->fp.voidp = ks_init(gzfp);
+            else goto error;
+        }
+        else if (fp->format.compression != no_compression) {
+            fp->fp.bgzf = bgzf_hopen(hfile, mode);
+            if (fp->fp.bgzf == NULL) goto error;
+        }
+        else
+            fp->fp.hfile = hfile;
+        break;
+
+    default:
+        goto error;
     }
 
+    fp->is_compressed = (fp->format.compression != no_compression);
     return fp;
 
 error:
@@ -320,9 +351,14 @@ int hts_close(htsFile *fp)
 {
     int ret, save;
 
-    if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
+    switch (fp->format.format) {
+    case binary_format:
+    case bam:
+    case bcf:
         ret = bgzf_close(fp->fp.bgzf);
-    } else if (fp->is_cram) {
+        break;
+
+    case cram:
         if (!fp->is_write) {
             switch (cram_eof(fp->fp.cram)) {
             case 0:
@@ -336,17 +372,30 @@ int hts_close(htsFile *fp)
             }
         }
         ret = cram_close(fp->fp.cram);
-    } else if (fp->is_kstream) {
-    #if KS_BGZF
-        BGZF *gzfp = ((kstream_t*)fp->fp.voidp)->f;
-        ret = bgzf_close(gzfp);
-    #else
-        gzFile gzfp = ((kstream_t*)fp->fp.voidp)->f;
-        ret = gzclose(gzfp);
-    #endif
-        ks_destroy((kstream_t*)fp->fp.voidp);
-    } else {
-        ret = hclose(fp->fp.hfile);
+        break;
+
+    case text_format:
+    case sam:
+    case vcf:
+        if (!fp->is_write) {
+        #if KS_BGZF
+            BGZF *gzfp = ((kstream_t*)fp->fp.voidp)->f;
+            ret = bgzf_close(gzfp);
+        #else
+            gzFile gzfp = ((kstream_t*)fp->fp.voidp)->f;
+            ret = gzclose(gzfp);
+        #endif
+            ks_destroy((kstream_t*)fp->fp.voidp);
+        }
+        else if (fp->format.compression != no_compression)
+            ret = bgzf_close(fp->fp.bgzf);
+        else
+            ret = hclose(fp->fp.hfile);
+        break;
+
+    default:
+        ret = -1;
+        break;
     }
 
     save = errno;
@@ -358,11 +407,16 @@ int hts_close(htsFile *fp)
     return ret;
 }
 
+const htsFormat *hts_get_format(htsFile *fp)
+{
+    return fp? &fp->format : NULL;
+}
+
 int hts_set_opt(htsFile *fp, enum cram_option opt, ...) {
     int r;
     va_list args;
 
-    if (!fp->is_cram)
+    if (fp->format.format != cram)
         return 0;
 
     va_start(args, opt);
@@ -374,9 +428,9 @@ int hts_set_opt(htsFile *fp, enum cram_option opt, ...) {
 
 int hts_set_threads(htsFile *fp, int n)
 {
-    if (fp->is_bin) {
+    if (fp->format.compression == bgzf) {
         return bgzf_mt(fp->fp.bgzf, n, 256);
-    } else if (fp->is_cram) {
+    } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_NTHREADS, n);
     }
     else return 0;
