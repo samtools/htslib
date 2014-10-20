@@ -69,6 +69,7 @@ INSTALL_DIR     = $(MKDIR_P) -m 755
 
 BUILT_PROGRAMS = \
 	bgzip \
+	htsfile \
 	tabix
 
 BUILT_TEST_PROGRAMS = \
@@ -249,10 +250,14 @@ cram/zfio.o cram/zfio.pico: cram/zfio.c cram/os.h cram/zfio.h
 bgzip: bgzip.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ bgzip.o libhts.a $(LDLIBS) -lz
 
+htsfile: htsfile.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ htsfile.o libhts.a $(LDLIBS) -lz
+
 tabix: tabix.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ tabix.o libhts.a $(LDLIBS) -lz
 
 bgzip.o: bgzip.c $(htslib_bgzf_h) $(htslib_hts_h)
+htsfile.o: htsfile.c $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
 tabix.o: tabix.c $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) htslib/kseq.h $(htslib_bgzf_h) $(htslib_hts_h)
 
 

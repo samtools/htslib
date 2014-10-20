@@ -191,6 +191,11 @@ const char *hts_version(void);
 int hts_detect_format(struct hFILE *fp, htsFormat *fmt);
 
 /*!
+  @abstract    Get a human-readable description of the file format
+*/
+const char *hts_format_description(const htsFormat *format);
+
+/*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
   @param fn       The file name or "-" for stdin/stdout
   @param mode     Mode matching /[rwa][bcuz0-9]+/

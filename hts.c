@@ -232,6 +232,23 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
     return 0;
 }
 
+const char *hts_format_description(const htsFormat *format)
+{
+    switch (format->format) {
+    case sam:   return "SAM-format sequence text";
+    case bam:   return "BAM-format compressed sequence data";
+    case cram:  return "CRAM-format compressed sequence data";
+    case vcf:   return "VCF-format variant calling text";
+    case bcf:   return "BCF-format compressed variant calling data";
+    case bcfv1: return "BCFv1-legacy-format compressed variant calling data";
+    case bai:   return "BAI sequence index data";
+    case crai:  return "CRAI compressed sequence index data";
+    case csi:   return "CSI compressed sequence index data";
+    case tbi:   return "Tabix compressed genomic region index data";
+    default:    return "unknown";
+    }
+}
+
 htsFile *hts_open(const char *fn, const char *mode)
 {
     htsFile *fp = NULL;

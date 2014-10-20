@@ -9,6 +9,7 @@ lib*.so
 lib*.so.*
 
 /bgzip
+/htsfile
 /tabix
 /test/fieldarith
 /test/hfile
