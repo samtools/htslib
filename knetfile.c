@@ -327,11 +327,9 @@ int kftp_connect_file(knetFile *fp)
 	kftp_pasv_prep(fp);
     kftp_send_cmd(fp, fp->size_cmd, 1);
 #ifndef _WIN32
-    if ( sscanf(fp->response,"%*d %lld", &file_size) != 1 )
-    {
-        fprintf(stderr,"[kftp_connect_file] %s\n", fp->response);
-        return -1;
-    }
+    // If the file does not exist, the response will be "550 Could not get file
+    // size". Be silent on failure, hts_idx_load can be trying the existence of .csi or .tbi.
+    if ( sscanf(fp->response,"%*d %lld", &file_size) != 1 ) return -1;
 #else
 	const char *p = fp->response;
 	while (*p != ' ') ++p;

@@ -1378,10 +1378,14 @@ static char *test_and_fetch(const char *fn)
         for (p = fn + strlen(fn) - 1; p >= fn; --p)
             if (*p == '/') break;
         ++p; // p now points to the local file name
-        if ((fp_remote = hopen(fn, "r")) == 0) {
-            if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open remote file '%s'\n", __func__, fn);
-            return 0;
+        // Attempt to open local file first
+        if ((fp = fopen((char*)p, "rb")) != 0)
+        {
+            fclose(fp);
+            return (char*)p;
         }
+        // Attempt to open remote file. Stay quiet on failure, it is OK to fail when trying first .csi then .tbi index.
+        if ((fp_remote = hopen(fn, "r")) == 0) return 0;
         if ((fp = fopen(p, "w")) == 0) {
             if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create file '%s' in the working directory\n", __func__, p);
             hclose_abruptly(fp_remote);

@@ -59,7 +59,7 @@ char *bcf_sr_strerror(int errnum)
         case open_failed: 
             return strerror(errno); break;
         case not_bgzf:
-            return "not BGZF compressed"; break;
+            return "not compressed with bgzip"; break;
         case idx_load_failed:
             return "could not load index"; break;
         case file_type_error:
