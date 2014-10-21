@@ -321,7 +321,7 @@ install: libhts.a $(BUILT_PROGRAMS) installdirs install-$(SHLIB_FLAVOUR) install
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
-	$(INSTALL_DATA) tabix.1 $(DESTDIR)$(man1dir)
+	$(INSTALL_DATA) htsfile.1 tabix.1 $(DESTDIR)$(man1dir)
 	$(INSTALL_DATA) faidx.5 sam.5 vcf.5 $(DESTDIR)$(man5dir)
 
 installdirs:
