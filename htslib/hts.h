@@ -99,7 +99,7 @@ typedef struct htsFormat {
 } htsFormat;
 
 typedef struct {
-    uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, is_compressed:2, is_kstream:1, dummy:25;
+    uint32_t is_bin:1, is_write:1, is_be:1, is_kstream:1, dummy:25;
     int64_t lineno;
     kstring_t line;
     char *fn, *fn_aux;

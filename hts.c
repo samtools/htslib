@@ -237,12 +237,15 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
 
     fp->fn = strdup(fn);
     fp->is_be = ed_is_big();
+    fp->type.category = unknown_category;
+    fp->type.format = unknown_format;
+    fp->type.compression = no_compression;
 
     if (strchr(mode, 'r')) {
         unsigned char s[18];
         if (hpeek(hfile, s, 6) == 6 && memcmp(s, "CRAM", 4) == 0 &&
             s[4] >= 1 && s[4] <= 3 && s[5] <= 1) {
-            fp->is_cram = 1;
+            fp->type.format = cram;
         }
         else if (hpeek(hfile, s, 18) == 18 && s[0] == 0x1f && s[1] == 0x8b &&
                  (s[3] & 4) && memcmp(&s[12], "BC\2\0", 4) == 0) {
@@ -250,13 +253,13 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
             // whether it's in a binary format (e.g., BAM or BCF, starting
             // with four bytes of magic including a control character) or is
             // a bgzipped SAM or VCF text file.
-            fp->is_compressed = 1;
+            fp->type.compression = bgzf;
             if (is_binary(s, decompress_peek(hfile, s, 4))) fp->is_bin = 1;
             else fp->is_kstream = 1;
         }
         else if (hpeek(hfile, s, 2) == 2 && s[0] == 0x1f && s[1] == 0x8b) {
             // Plain GZIP header... so a gzipped text file.
-            fp->is_compressed = 1;
+            fp->type.compression = gzip;
             fp->is_kstream = 1;
         }
         else if (hpeek(hfile, s, 4) == 4 && is_binary(s, 4)) {
@@ -270,24 +273,19 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
     }
     else if (strchr(mode, 'w') || strchr(mode, 'a')) 
     {
-        fp->type.category = unknown_category;
-        fp->type.format = unknown_format;
-        fp->type.compression = no_compression;
-
         fp->is_write = 1;
         if (strchr(mode, 'b')) fp->is_bin = 1; 
-        if (strchr(mode, 'c')) fp->is_cram = 1;
-        if (strchr(mode, 'z')) { fp->is_compressed = 1; fp->type.compression = bgzf; }
-        else if (strchr(mode, 'g')) { fp->is_compressed = 1; fp->type.compression = gzip; }
-        else fp->is_compressed = 0;
+        if (strchr(mode, 'c')) fp->type.format = cram;
+        if (strchr(mode, 'z')) fp->type.compression = bgzf;
+        else if (strchr(mode, 'g')) fp->type.compression = gzip;
     }
     else goto error;
 
-    if (fp->is_bin || (fp->is_write && fp->is_compressed)) {
+    if (fp->is_bin || (fp->is_write && fp->type.compression!=no_compression)) {
         fp->fp.bgzf = bgzf_hopen(hfile, mode);
         if (fp->fp.bgzf == NULL) goto error;
     }
-    else if (fp->is_cram) {
+    else if (fp->type.format==cram) {
         fp->fp.cram = cram_dopen(hfile, fn, mode);
         if (fp->fp.cram == NULL) goto error;
         if (!fp->is_write)
@@ -326,9 +324,9 @@ int hts_close(htsFile *fp)
 {
     int ret, save;
 
-    if (fp->is_bin || (fp->is_write && fp->is_compressed)) {
+    if (fp->is_bin || (fp->is_write && fp->type.compression!=no_compression)) {
         ret = bgzf_close(fp->fp.bgzf);
-    } else if (fp->is_cram) {
+    } else if (fp->type.format==cram) {
         if (!fp->is_write) {
             switch (cram_eof(fp->fp.cram)) {
             case 0:
@@ -368,7 +366,7 @@ int hts_set_opt(htsFile *fp, enum cram_option opt, ...) {
     int r;
     va_list args;
 
-    if (!fp->is_cram)
+    if (!fp->type.format==cram)
         return 0;
 
     va_start(args, opt);
@@ -382,7 +380,7 @@ int hts_set_threads(htsFile *fp, int n)
 {
     if (fp->is_bin) {
         return bgzf_mt(fp->fp.bgzf, n, 256);
-    } else if (fp->is_cram) {
+    } else if (fp->type.format==cram) {
         return hts_set_opt(fp, CRAM_OPT_NTHREADS, n);
     }
     else return 0;
