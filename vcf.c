@@ -1355,7 +1355,7 @@ int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
     char *htxt = bcf_hdr_fmt_text(h, 0, &hlen);
     while (hlen && htxt[hlen-1] == 0) --hlen; // kill trailing zeros
     int ret;
-    if ( fp->is_compressed==1 )
+    if ( fp->format.compression!=no_compression )
         ret = bgzf_write(fp->fp.bgzf, htxt, hlen);
     else
         ret = hwrite(fp->fp.hfile, htxt, hlen);
@@ -2102,7 +2102,7 @@ int vcf_write_line(htsFile *fp, kstring_t *line)
 {
     int ret;
     if ( line->s[line->l-1]!='\n' ) kputc('\n',line);
-    if ( fp->is_compressed==1 )
+    if ( fp->format.compression!=no_compression )
         ret = bgzf_write(fp->fp.bgzf, line->s, line->l);
     else
         ret = hwrite(fp->fp.hfile, line->s, line->l);
@@ -2114,7 +2114,7 @@ int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
     int ret;
     fp->line.l = 0;
     vcf_format1(h, v, &fp->line);
-    if ( fp->is_compressed==1 )
+    if ( fp->format.compression!=no_compression )
         ret = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
     else
         ret = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
@@ -2180,7 +2180,7 @@ int bcf_index_build(const char *fn, int min_shift)
     htsFile *fp;
     hts_idx_t *idx;
     if ((fp = hts_open(fn, "rb")) == 0) return -1;
-    if ( !fp->fp.bgzf->is_compressed ) { hts_close(fp); return -1; }
+    if ( fp->format.compression!=bgzf ) { hts_close(fp); return -1; }
     idx = bcf_index(fp, min_shift);
     hts_close(fp);
     if ( !idx ) return -1;
@@ -2268,7 +2268,9 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
             src_hdr->transl[dict] = (int*) malloc(src_hdr->n[dict]*sizeof(int));
             for (i=0; i<src_hdr->n[dict]; i++)
             {
-                if ( i>=dst_hdr->n[dict] || strcmp(src_hdr->id[dict][i].key,dst_hdr->id[dict][i].key) )
+                if ( !src_hdr->id[dict][i].key || !dst_hdr->id[dict][i].key )    // gap left after removed BCF header lines
+                    src_hdr->transl[dict][i] = -1;
+                else if ( i>=dst_hdr->n[dict] || strcmp(src_hdr->id[dict][i].key,dst_hdr->id[dict][i].key) )
                 {
                     src_hdr->transl[dict][i] = bcf_hdr_id2int(dst_hdr,dict,src_hdr->id[dict][i].key);
                     src_hdr->ntransl++;
@@ -3150,30 +3152,30 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
         if ( !dst ) return -4;     // could not alloc
     }
 
-#define BRANCH(type_t, is_missing, is_vector_end, set_missing, set_vector_end, out_type_t) { \
-    out_type_t *tmp = (out_type_t *) *dst; \
-    type_t *p = (type_t*) fmt->p; \
-    for (i=0; i<nsmpl; i++) \
-    { \
-        for (j=0; j<fmt->n; j++) \
+    #define BRANCH(type_t, is_missing, is_vector_end, set_missing, set_vector_end, out_type_t) { \
+        out_type_t *tmp = (out_type_t *) *dst; \
+        type_t *p = (type_t*) fmt->p; \
+        for (i=0; i<nsmpl; i++) \
         { \
-            if ( is_missing ) set_missing; \
-            else if ( is_vector_end ) { set_vector_end; break; } \
-            else *tmp = p[j]; \
-            tmp++; \
+            for (j=0; j<fmt->n; j++) \
+            { \
+                if ( is_missing ) set_missing; \
+                else if ( is_vector_end ) { set_vector_end; break; } \
+                else *tmp = p[j]; \
+                tmp++; \
+            } \
+            for (; j<fmt->n; j++) { set_vector_end; tmp++; } \
+            p = (type_t *)((char *)p + fmt->size); \
         } \
-        for (; j<fmt->n; j++) { set_vector_end; tmp++; } \
-        p = (type_t *)((char *)p + fmt->size); \
-    } \
-}
-switch (fmt->type) {
-    case BCF_BT_INT8:  BRANCH(int8_t,  p[j]==bcf_int8_missing,  p[j]==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
-    case BCF_BT_INT16: BRANCH(int16_t, p[j]==bcf_int16_missing, p[j]==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
-    case BCF_BT_INT32: BRANCH(int32_t, p[j]==bcf_int32_missing, p[j]==bcf_int32_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
-    case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), bcf_float_set_missing(*tmp), bcf_float_set_vector_end(*tmp), float); break;
-    default: fprintf(stderr,"TODO: %s:%d .. fmt->type=%d\n", __FILE__,__LINE__, fmt->type); exit(1);
-}
-#undef BRANCH
-return nsmpl*fmt->n;
+    }
+    switch (fmt->type) {
+        case BCF_BT_INT8:  BRANCH(int8_t,  p[j]==bcf_int8_missing,  p[j]==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
+        case BCF_BT_INT16: BRANCH(int16_t, p[j]==bcf_int16_missing, p[j]==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
+        case BCF_BT_INT32: BRANCH(int32_t, p[j]==bcf_int32_missing, p[j]==bcf_int32_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
+        case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), bcf_float_set_missing(*tmp), bcf_float_set_vector_end(*tmp), float); break;
+        default: fprintf(stderr,"TODO: %s:%d .. fmt->type=%d\n", __FILE__,__LINE__, fmt->type); exit(1);
+    }
+    #undef BRANCH
+    return nsmpl*fmt->n;
 }
 

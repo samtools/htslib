@@ -80,7 +80,7 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
         for (i=0; i<(int)line->n_fmt; i++)
             if ( line->d.fmt[i].id==gt_id ) { fmt_gt = &line->d.fmt[i]; break; }
         if ( !fmt_gt ) return 0;
-        #define BRANCH_INT(type_t,missing,vector_end) { \
+        #define BRANCH_INT(type_t,vector_end) { \
             for (i=0; i<line->n_sample; i++) \
             { \
                 type_t *p = (type_t*) (fmt_gt->p + i*fmt_gt->size); \
@@ -88,15 +88,15 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
                 for (ial=0; ial<fmt_gt->n; ial++) \
                 { \
                     if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
-                    if ( !(p[ial]>>1) || p[ial]==missing ) continue; /* missing allele */ \
+                    if ( bcf_gt_is_missing(p[ial]) ) continue; /* missing allele */ \
                     ac[(p[ial]>>1)-1]++; \
                 } \
             } \
         }
         switch (fmt_gt->type) {
-            case BCF_BT_INT8:  BRANCH_INT(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
-            case BCF_BT_INT16: BRANCH_INT(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
-            case BCF_BT_INT32: BRANCH_INT(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
+            case BCF_BT_INT8:  BRANCH_INT(int8_t,  bcf_int8_vector_end); break;
+            case BCF_BT_INT16: BRANCH_INT(int16_t, bcf_int16_vector_end); break;
+            case BCF_BT_INT32: BRANCH_INT(int32_t, bcf_int32_vector_end); break;
             default: fprintf(stderr, "[E::%s] todo: %d at %s:%d\n", __func__, fmt_gt->type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
         }
         #undef BRANCH_INT
@@ -108,12 +108,12 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial, int *_jal)
 {
     int i, nals = 0, has_ref = 0, has_alt = 0, ial = 0, jal = 0;
-    #define BRANCH_INT(type_t,missing,vector_end) { \
+    #define BRANCH_INT(type_t,vector_end) { \
         type_t *p = (type_t*) (fmt_ptr->p + isample*fmt_ptr->size); \
         for (i=0; i<fmt_ptr->n; i++) \
         { \
             if ( p[i] == vector_end ) break; /* smaller ploidy */ \
-            if ( !p[i] || p[i] == missing ) continue; /* missing allele */ \
+            if ( bcf_gt_is_missing(p[i]) ) continue; /* missing allele */ \
             int tmp = p[i]>>1; \
             if ( tmp>1 ) \
             { \
@@ -137,9 +137,9 @@ int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial, int *_jal)
         } \
     }
     switch (fmt_ptr->type) {
-        case BCF_BT_INT8:  BRANCH_INT(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
-        case BCF_BT_INT16: BRANCH_INT(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
-        case BCF_BT_INT32: BRANCH_INT(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
+        case BCF_BT_INT8:  BRANCH_INT(int8_t,  bcf_int8_vector_end); break;
+        case BCF_BT_INT16: BRANCH_INT(int16_t, bcf_int16_vector_end); break;
+        case BCF_BT_INT32: BRANCH_INT(int32_t, bcf_int32_vector_end); break;
         default: fprintf(stderr, "[E::%s] todo: fmt_type %d\n", __func__, fmt_ptr->type); exit(1); break;
     }
     #undef BRANCH_INT
@@ -165,7 +165,7 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
     int *ac = (int*) calloc(line->n_allele,sizeof(int));
 
     // check if all alleles are populated
-    #define BRANCH(type_t,missing,vector_end) { \
+    #define BRANCH(type_t,vector_end) { \
         for (i=0; i<line->n_sample; i++) \
         { \
             type_t *p = (type_t*) (gt->p + i*gt->size); \
@@ -173,16 +173,16 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
             for (ial=0; ial<gt->n; ial++) \
             { \
                 if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
-                if ( !(p[ial]>>1) || p[ial]==missing ) continue; /* missing allele */ \
+                if ( bcf_gt_is_missing(p[ial]) ) continue; /* missing allele */ \
                 if ( (p[ial]>>1)-1 >= line->n_allele ) return -1; \
                 ac[(p[ial]>>1)-1]++; \
             } \
         } \
     }
     switch (gt->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
-        case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
-        case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
+        case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_vector_end); break;
+        case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_vector_end); break;
+        case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_vector_end); break;
         default: fprintf(stderr, "[E::%s] todo: %d at %s:%d\n", __func__, gt->type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
     }
     #undef BRANCH
@@ -416,7 +416,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
             {
                 for (j=0; j<nret; j++)
                 {
-                    if ( ptr[j]==bcf_gt_missing ) continue;
+                    if ( bcf_gt_is_missing(ptr[j]) ) continue;
                     if ( ptr[j]==bcf_int32_vector_end ) break;
                     int al = bcf_gt_allele(ptr[j]);
                     assert( al<nR_ori && map[al]>=0 );

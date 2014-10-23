@@ -40,7 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #define KS_BGZF 1
 #if KS_BGZF
-    // bgzf now supports gzip-compressed files
+    // bgzf now supports gzip-compressed files, the gzFile branch can be removed
     KSTREAM_INIT2(, BGZF*, bgzf_read, 65536)
 #else
     KSTREAM_INIT2(, gzFile, gzread, 16384)
@@ -290,6 +290,7 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
         else fmt->format = text_format;
 
         if (strchr(mode, 'z')) fmt->compression = bgzf;
+        else if (strchr(mode, 'g')) fmt->compression = gzip;
         else if (strchr(mode, 'u')) fmt->compression = no_compression;
         else {
             // No compression mode specified, set to the default for the format
@@ -349,7 +350,6 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
         goto error;
     }
 
-    fp->is_compressed = (fp->format.compression != no_compression);
     return fp;
 
 error:
@@ -461,6 +461,9 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
         if (fp->fn_aux == NULL) return -1;
     }
     else fp->fn_aux = NULL;
+
+    if (fp->format.format == cram)
+        cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, fp->fn_aux);
 
     return 0;
 }
@@ -602,36 +605,6 @@ char **hts_readlines(const char *fn, int *_n)
     s = (char**)realloc(s, n * sizeof(char*));
     *_n = n;
     return s;
-}
-
-int hts_file_type(const char *fname)
-{
-    int len = strlen(fname);
-    if ( !strcasecmp(".vcf.gz",fname+len-7) ) return FT_VCF_GZ;
-    if ( !strcasecmp(".vcf",fname+len-4) ) return FT_VCF;
-    if ( !strcasecmp(".bcf",fname+len-4) ) return FT_BCF_GZ;
-    if ( !strcmp("-",fname) ) return FT_STDIN;
-    // ... etc
-
-    int fd = open(fname, O_RDONLY);
-    if ( !fd ) return 0;
-
-    uint8_t magic[5];
-    if ( read(fd,magic,2)!=2 ) { close(fd); return 0; }
-    if ( !strncmp((char*)magic,"##",2) ) { close(fd); return FT_VCF; }
-    if ( !strncmp((char*)magic,"BCF",3) ) { close(fd); return FT_BCF; }
-    close(fd);
-
-    if ( magic[0]==0x1f && magic[1]==0x8b ) // compressed
-    {
-        BGZF *fp = bgzf_open(fname, "r");
-        if ( !fp ) return 0;
-        if ( bgzf_read(fp, magic, 3)!=3 ) { bgzf_close(fp); return 0; }
-        bgzf_close(fp);
-        if ( !strncmp((char*)magic,"##",2) ) return FT_VCF_GZ;
-        if ( !strncmp((char*)magic,"BCF",3) ) return FT_BCF_GZ;
-    }
-    return 0;
 }
 
 /****************
@@ -1475,10 +1448,14 @@ static char *test_and_fetch(const char *fn)
         for (p = fn + strlen(fn) - 1; p >= fn; --p)
             if (*p == '/') break;
         ++p; // p now points to the local file name
-        if ((fp_remote = hopen(fn, "r")) == 0) {
-            if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open remote file '%s'\n", __func__, fn);
-            return 0;
+        // Attempt to open local file first
+        if ((fp = fopen((char*)p, "rb")) != 0)
+        {
+            fclose(fp);
+            return (char*)p;
         }
+        // Attempt to open remote file. Stay quiet on failure, it is OK to fail when trying first .csi then .tbi index.
+        if ((fp_remote = hopen(fn, "r")) == 0) return 0;
         if ((fp = fopen(p, "w")) == 0) {
             if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create file '%s' in the working directory\n", __func__, p);
             hclose_abruptly(fp_remote);

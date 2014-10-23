@@ -2396,8 +2396,6 @@ static int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
 	*aux++ = 0;
     }
     
-    *aux++ = 0;
-
     return bam_idx + (aux - aux_orig);
 }
 

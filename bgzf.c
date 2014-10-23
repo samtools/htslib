@@ -108,8 +108,8 @@ static inline void packInt32(uint8_t *buffer, uint32_t value)
 static BGZF *bgzf_read_init(hFILE *hfpr)
 {
     BGZF *fp;
-    uint8_t magic[2];
-    ssize_t n = hpeek(hfpr, magic, 2);
+    uint8_t magic[18];
+    ssize_t n = hpeek(hfpr, magic, 18);
     if (n < 0) return NULL;
 
     fp = (BGZF*)calloc(1, sizeof(BGZF));
@@ -119,6 +119,8 @@ static BGZF *bgzf_read_init(hFILE *hfpr)
     fp->is_compressed = (n==2 && magic[0]==0x1f && magic[1]==0x8b);
     fp->uncompressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
     fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
+    fp->is_compressed = (n==18 && magic[0]==0x1f && magic[1]==0x8b) ? 1 : 0;
+    fp->is_gzip = ( !fp->is_compressed || ((magic[3]&4) && memcmp(&magic[12], "BC\2\0",4)==0) ) ? 0 : 1;
 #ifdef BGZF_CACHE
     fp->cache = kh_init(cache);
 #endif
@@ -436,7 +438,7 @@ int bgzf_read_block(BGZF *fp)
     // Reading compressed file
     int64_t block_address;
     block_address = htell(fp->fp);
-    if ( fp->is_gzip )
+    if ( fp->is_gzip && fp->gz_stream ) // is this is a initialized gzip stream?
     {
         count = inflate_gzip_block(fp, 0);
         if ( count<0 )
