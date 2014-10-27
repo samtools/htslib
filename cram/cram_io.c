@@ -3684,8 +3684,12 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
 	return NULL;
 
     fd->level = 5;
-    if (strlen(mode) > 2 && mode[2] >= '0' && mode[2] <= '9')
-	fd->level = mode[2] - '0';
+    for (i = 0; mode[i]; i++) {
+	if (mode[i] >= '0' && mode[i] <= '9') {
+	    fd->level = mode[i] - '0';
+	    break;
+	}
+    }
 
     fd->fp = fp;
     fd->mode = *mode;
