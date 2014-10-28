@@ -844,9 +844,8 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             kputc_('A', &str);
             kputc_(*q, &str);
         } else if (type == 'i' || type == 'I') {
-            long x;
-            x = strtol(q, &q, 10);
-            if (x < 0) {
+            if (*q == '-') {
+                long x = strtol(q, &q, 10);
                 if (x >= INT8_MIN) {
                     kputc_('c', &str); kputc_(x, &str);
                 } else if (x >= INT16_MIN) {
@@ -857,6 +856,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
                     kputc_('i', &str); kputsn_(&y, 4, &str);
                 }
             } else {
+                unsigned long x = strtoul(q, &q, 10);
                 if (x <= UINT8_MAX) {
                     kputc_('C', &str); kputc_(x, &str);
                 } else if (x <= UINT16_MAX) {
