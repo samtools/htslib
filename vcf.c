@@ -2266,7 +2266,9 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
             src_hdr->transl[dict] = (int*) malloc(src_hdr->n[dict]*sizeof(int));
             for (i=0; i<src_hdr->n[dict]; i++)
             {
-                if ( i>=dst_hdr->n[dict] || strcmp(src_hdr->id[dict][i].key,dst_hdr->id[dict][i].key) )
+                if ( !src_hdr->id[dict][i].key || !dst_hdr->id[dict][i].key )    // gap left after removed BCF header lines
+                    src_hdr->transl[dict][i] = -1;
+                else if ( i>=dst_hdr->n[dict] || strcmp(src_hdr->id[dict][i].key,dst_hdr->id[dict][i].key) )
                 {
                     src_hdr->transl[dict][i] = bcf_hdr_id2int(dst_hdr,dict,src_hdr->id[dict][i].key);
                     src_hdr->ntransl++;
