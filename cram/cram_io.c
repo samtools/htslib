@@ -3311,12 +3311,13 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 	    cram_free_block(b);
 	    return NULL;
 	}
-	if (NULL == (header = malloc(header_len))) {
+	if (NULL == (header = malloc(header_len+1))) {
 	    cram_free_container(c);
 	    cram_free_block(b);
 	    return NULL;
 	}
 	memcpy(header, BLOCK_END(b), header_len);
+	header[header_len]='\0';
 	cram_free_block(b);
 
 	/* Consume any remaining blocks */
