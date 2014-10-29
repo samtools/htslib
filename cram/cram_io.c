@@ -83,6 +83,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 #include "htslib/hfile.h"
+#include "htslib/bgzf.h"
+#include "htslib/faidx.h"
 
 #define TRIAL_SPAN 50
 #define NTRIALS 3
@@ -1491,7 +1493,7 @@ void refs_free(refs_t *r) {
 	free(r->ref_id);
 
     if (r->fp)
-	fclose(r->fp);
+	bgzf_close(r->fp);
 
     pthread_mutex_destroy(&r->lock);
 
@@ -1527,6 +1529,34 @@ static refs_t *refs_create(void) {
 }
 
 /*
+ * Opens a reference fasta file as a BGZF stream, allowing for
+ * compressed files.  It automatically builds a .fai file if
+ * required and if compressed a .gzi bgzf index too.
+ *
+ * Returns a BGZF handle on success;
+ *         NULL on failure.
+ */
+static BGZF *bgzf_open_ref(char *fn, char *mode) {
+    BGZF *fp;
+
+    if (fai_build(fn) != 0)
+	return NULL;
+
+    if (!(fp = bgzf_open(fn, mode))) {
+	perror(fn);
+	return NULL;
+    }
+
+    if (fp->is_compressed == 1 && bgzf_index_load(fp, fn, ".gzi") < 0) {
+	fprintf(stderr, "Unable to load .gzi index '%s.gzi'\n", fn);
+	bgzf_close(fp);
+	return NULL;
+    }
+
+    return fp;
+}
+
+/*
  * Loads a FAI file for a reference.fasta.
  * "is_err" indicates whether failure to load is worthy of emitting an
  * error message. In some cases (eg with embedded references) we
@@ -1558,7 +1588,8 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
     }
 
     if (r->fp)
-	fclose(r->fp);
+	if (bgzf_close(r->fp) != 0)
+	    goto err;
     r->fp = NULL;
 
     if (!(r->fn = string_dup(r->pool, fn)))
@@ -1567,11 +1598,8 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
     if (fn_l > 4 && strcmp(&fn[fn_l-4], ".fai") == 0)
 	r->fn[fn_l-4] = 0;
 
-    if (!(r->fp = fopen(r->fn, "r"))) {
-	if (is_err)
-	    perror(r->fn);
+    if (!(r->fp = bgzf_open_ref(r->fn, "r")))
 	goto err;
-    }
 
     /* Parse .fai file and load meta-data */
     sprintf(fai_fn, "%.*s.fai", PATH_MAX-5, r->fn);
@@ -1888,18 +1916,19 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     /* Use cache if available */
     if (local_cache && *local_cache) {
 	struct stat sb;
-	FILE *fp;
+	BGZF *fp;
 
 	expand_cache_path(path, local_cache, tag->str+3);
 
-	if (0 == stat(path, &sb) && (fp = fopen(path, "r"))) {
+	if (0 == stat(path, &sb) && (fp = bgzf_open(path, "r"))) {
 	    r->length = sb.st_size;
 	    r->offset = r->line_length = r->bases_per_line = 0;
 
 	    r->fn = string_dup(fd->refs->pool, path);
 
 	    if (fd->refs->fp)
-		fclose(fd->refs->fp);
+		if (bgzf_close(fd->refs->fp) != 0)
+		    return -1;
 	    fd->refs->fp = fp;
 	    fd->refs->fn = r->fn;
 
@@ -1928,14 +1957,16 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	    : tag->str+3;
 
 	if (fd->refs->fp) {
-	    fclose(fd->refs->fp);
+	    if (bgzf_close(fd->refs->fp) != 0)
+		return -1;
 	    fd->refs->fp = NULL;
 	}
 	if (!(refs = refs_load_fai(fd->refs, fn, 0)))
 	    return -1;
 	fd->refs = refs;
 	if (fd->refs->fp) {
-	    fclose(fd->refs->fp);
+	    if (bgzf_close(fd->refs->fp) != 0)
+		return -1;
 	    fd->refs->fp = NULL;
 	}
 
@@ -2049,7 +2080,7 @@ void cram_ref_decr(refs_t *r, int id) {
  * Returns all or part of a reference sequence on success (malloced);
  *         NULL on failure.
  */
-static char *load_ref_portion(FILE *fp, ref_entry *e, int start, int end) {
+static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
     off_t offset, len;
     char *seq;
 
@@ -2070,8 +2101,8 @@ static char *load_ref_portion(FILE *fp, ref_entry *e, int start, int end) {
 	     (end-1) % e->bases_per_line
 	   : end-1) - offset + 1;
 
-    if (0 != fseeko(fp, offset, SEEK_SET)) {
-	perror("fseeko() on reference file");
+    if (bgzf_useek(fp, offset, SEEK_SET) < 0) {
+	perror("bgzf_useek() on reference file");
 	return NULL;
     }
 
@@ -2079,8 +2110,8 @@ static char *load_ref_portion(FILE *fp, ref_entry *e, int start, int end) {
 	return NULL;
     }
 
-    if (len != fread(seq, 1, len, fp)) {
-	perror("fread() on reference file");
+    if (len != bgzf_read(fp, seq, len)) {
+	perror("bgzf_read() on reference file");
 	free(seq);
 	return NULL;
     }
@@ -2151,12 +2182,11 @@ ref_entry *cram_ref_load(refs_t *r, int id) {
     /* Open file if it's not already the current open reference */
     if (strcmp(r->fn, e->fn) || r->fp == NULL) {
 	if (r->fp)
-	    fclose(r->fp);
+	    if (bgzf_close(r->fp) != 0)
+		return NULL;
 	r->fn = e->fn;
-	if (!(r->fp = fopen(r->fn, "r"))) {
-	    perror(r->fn);
+	if (!(r->fp = bgzf_open_ref(r->fn, "r")))
 	    return NULL;
-	}
     }
 
     RP("%d Loading ref %d (%d..%d)\n", gettid(), id, start, end);
@@ -2361,10 +2391,10 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
     /* Open file if it's not already the current open reference */
     if (strcmp(fd->refs->fn, r->fn) || fd->refs->fp == NULL) {
 	if (fd->refs->fp)
-	    fclose(fd->refs->fp);
+	    if (bgzf_close(fd->refs->fp) != 0)
+		return NULL;
 	fd->refs->fn = r->fn;
-	if (!(fd->refs->fp = fopen(fd->refs->fn, "r"))) {
-	    perror(fd->refs->fn);
+	if (!(fd->refs->fp = bgzf_open_ref(fd->refs->fn, "r"))) {
 	    pthread_mutex_unlock(&fd->refs->lock);
 	    pthread_mutex_unlock(&fd->ref_lock);
 	    return NULL;
@@ -2414,8 +2444,9 @@ int cram_load_reference(cram_fd *fd, char *fn) {
 	    return -1;
     }
 
-    if (-1 == refs2id(fd->refs, fd->header))
-	return -1;
+    if (fd->header)
+	if (-1 == refs2id(fd->refs, fd->header))
+	    return -1;
 
     return fn ? 0 : -1;
 }

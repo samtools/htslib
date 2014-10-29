@@ -395,6 +395,9 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
     }
     else fp->fn_aux = NULL;
 
+    if (fp->type.format == cram)
+        cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, fp->fn_aux);
+
     return 0;
 }
 

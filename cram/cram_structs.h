@@ -601,7 +601,7 @@ typedef struct {
     int nref;              // number of ref_entry
 
     char *fn;              // current file opened
-    FILE *fp;              // and the FILE* to go with it.
+    BGZF *fp;              // and the hFILE* to go with it.
 
     int count;             // how many cram_fd sharing this refs struct
 
