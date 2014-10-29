@@ -437,7 +437,7 @@ int bgzf_read_block(BGZF *fp)
     // Reading compressed file
     int64_t block_address;
     block_address = htell(fp->fp);
-    if ( fp->is_gzip )
+    if ( fp->is_gzip && fp->gz_stream ) // is this is a initialized gzip stream?
     {
         count = inflate_gzip_block(fp, 0);
         if ( count<0 )
