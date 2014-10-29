@@ -2362,7 +2362,7 @@ static int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
 	qual = NULL;
     }
 
-    bam_idx = bam_construct_seq(bam, cr->aux_size + rg_len,
+    bam_idx = bam_construct_seq(bam, cr->aux_size + rg_len + 1,
 				name, name_len,
 				cr->flags,
 				cr->ref_id,
