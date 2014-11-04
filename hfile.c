@@ -1,16 +1,33 @@
 /*  hfile.c -- buffered low-level input/output streams.
 
-    Copyright (C) 2013 Genome Research Ltd.
+    Copyright (C) 2013-2014 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
-*/
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 
-#include "hfile.h"
+#include "htslib/hfile.h"
 #include "hfile_internal.h"
 
 /* hFILE fields are used as follows:
@@ -50,6 +67,9 @@ hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity)
     if (fp == NULL) goto error;
 
     if (capacity == 0) capacity = 32768;
+    // FIXME For now, clamp input buffer sizes so mpileup doesn't eat memory
+    if (strchr(mode, 'r') && capacity > 32768) capacity = 32768;
+
     fp->buffer = (char *) malloc(capacity);
     if (fp->buffer == NULL) goto error;
 
@@ -109,7 +129,7 @@ static ssize_t refill_buffer(hFILE *fp)
 /* Called only from hgetc(), when our buffer is empty.  */
 int hgetc2(hFILE *fp)
 {
-    return (refill_buffer(fp) > 0)? *(fp->begin++) : EOF;
+    return (refill_buffer(fp) > 0)? (unsigned char) *(fp->begin++) : EOF;
 }
 
 ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes)
@@ -261,6 +281,14 @@ int hclose(hFILE *fp)
     else return 0;
 }
 
+void hclose_abruptly(hFILE *fp)
+{
+    int save = errno;
+    if (fp->backend->close(fp) < 0) { /* Ignore subsequent errors */ }
+    hfile_destroy(fp);
+    errno = save;
+}
+
 
 /***************************
  * File descriptor backend *
@@ -323,8 +351,9 @@ static int fd_flush(hFILE *fpv)
 #else
         ret = fsync(fp->fd);
 #endif
-        // Ignore invalid-for-fsync(2) errors due to being, e.g., a pipe
-        if (ret < 0 && errno == EINVAL) ret = 0;
+        // Ignore invalid-for-fsync(2) errors due to being, e.g., a pipe,
+        // and operation-not-supported errors (Mac OS X)
+        if (ret < 0 && (errno == EINVAL || errno == ENOTSUP)) ret = 0;
     } while (ret < 0 && errno == EINTR);
     return ret;
 }
@@ -414,6 +443,75 @@ int hfile_oflags(const char *mode)
 }
 
 
+/*********************
+ * In-memory backend *
+ *********************/
+
+typedef struct {
+    hFILE base;
+    const char *buffer;
+    size_t length, pos;
+} hFILE_mem;
+
+static ssize_t mem_read(hFILE *fpv, void *buffer, size_t nbytes)
+{
+    hFILE_mem *fp = (hFILE_mem *) fpv;
+    size_t avail = fp->length - fp->pos;
+    if (nbytes > avail) nbytes = avail;
+    memcpy(buffer, fp->buffer + fp->pos, nbytes);
+    fp->pos += nbytes;
+    return nbytes;
+}
+
+static off_t mem_seek(hFILE *fpv, off_t offset, int whence)
+{
+    hFILE_mem *fp = (hFILE_mem *) fpv;
+    size_t absoffset = (offset >= 0)? offset : -offset;
+    size_t origin;
+
+    switch (whence) {
+    case SEEK_SET: origin = 0; break;
+    case SEEK_CUR: origin = fp->pos; break;
+    case SEEK_END: origin = fp->length; break;
+    default: errno = EINVAL; return -1;
+    }
+
+    if ((offset  < 0 && absoffset > origin) ||
+        (offset >= 0 && absoffset > fp->length - origin)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    fp->pos = origin + offset;
+    return fp->pos;
+}
+
+static int mem_close(hFILE *fpv)
+{
+    return 0;
+}
+
+static const struct hFILE_backend mem_backend =
+{
+    mem_read, NULL, mem_seek, NULL, mem_close
+};
+
+static hFILE *hopen_mem(const char *data, const char *mode)
+{
+    // TODO Implement write modes, which will require memory allocation
+    if (strchr(mode, 'r') == NULL) { errno = EINVAL; return NULL; }
+
+    hFILE_mem *fp = (hFILE_mem *) hfile_init(sizeof (hFILE_mem), mode, 0);
+    if (fp == NULL) return NULL;
+
+    fp->buffer = data;
+    fp->length = strlen(data);
+    fp->pos = 0;
+    fp->base.backend = &mem_backend;
+    return &fp->base;
+}
+
+
 /******************************
  * hopen() backend dispatcher *
  ******************************/
@@ -423,6 +521,7 @@ hFILE *hopen(const char *fname, const char *mode)
     if (strncmp(fname, "http://", 7) == 0 ||
         strncmp(fname, "ftp://", 6) == 0) return hopen_net(fname, mode);
     else if (strncmp(fname, "irods:", 6) == 0) return hopen_irods(fname, mode);
+    else if (strncmp(fname, "data:", 5) == 0) return hopen_mem(fname + 5, mode);
     else if (strcmp(fname, "-") == 0) return hopen_fd_stdinout(mode);
     else return hopen_fd(fname, mode);
 }

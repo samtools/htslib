@@ -1,3 +1,27 @@
+/*  test/hfile.c -- Test cases for low-level input/output streams.
+
+    Copyright (C) 2013-2014 Genome Research Ltd.
+
+    Author: John Marshall <jm18@sanger.ac.uk>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.  */
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -5,16 +29,18 @@
 
 #include <sys/stat.h>
 
-#include "hfile.h"
+#include "htslib/hfile.h"
+#include "htslib/hts_defs.h"
 
-void fail(const char *format, ...)
+void HTS_NORETURN fail(const char *format, ...)
 {
     int err = errno;
     va_list args;
     va_start(args, format);
     vfprintf(stderr, format, args);
     va_end(args);
-    fprintf(stderr, ": %s\n", strerror(err));
+    if (err != 0) fprintf(stderr, ": %s", strerror(err));
+    fprintf(stderr, "\n");
     exit(EXIT_FAILURE);
 }
 
@@ -64,7 +90,7 @@ void reopen(const char *infname, const char *outfname)
     if (fout == NULL) fail("hopen(\"%s\")", outfname);
 }
 
-int main()
+int main(void)
 {
     static const int size[] = { 1, 13, 403, 999, 30000 };
 
@@ -151,6 +177,28 @@ int main()
 
     if (hclose(fin) != 0) fail("hclose(input)");
     if (hclose(fout) != 0) fail("hclose(output)");
+
+    fout = hopen("test/hfile_chars.tmp", "w");
+    if (fout == NULL) fail("hopen(\"test/hfile_chars.tmp\")");
+    for (i = 0; i < 256; i++)
+        if (hputc(i, fout) != i) fail("chars: hputc (%d)", i);
+    if (hclose(fout) != 0) fail("hclose(test/hfile_chars.tmp)");
+
+    fin = hopen("test/hfile_chars.tmp", "r");
+    if (fin == NULL) fail("hopen(\"test/hfile_chars.tmp\") for reading");
+    for (i = 0; i < 256; i++)
+        if ((c = hgetc(fin)) != i)
+            fail("chars: hgetc (%d = 0x%x) returned %d = 0x%x", i, i, c, c);
+    if ((c = hgetc(fin)) != EOF) fail("chars: hgetc (EOF) returned %d", c);
+    if (hclose(fin) != 0) fail("hclose(test/hfile_chars.tmp) for reading");
+
+    fin = hopen("data:hello, world!\n", "r");
+    if (fin == NULL) fail("hopen(\"data:...\")");
+    n = hread(fin, buffer, 300);
+    if (n < 0) fail("hread");
+    buffer[n] = '\0';
+    if (strcmp(buffer, "hello, world!\n") != 0) fail("hread result");
+    if (hclose(fin) != 0) fail("hclose(\"data:...\")");
 
     return EXIT_SUCCESS;
 }

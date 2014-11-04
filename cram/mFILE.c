@@ -1,3 +1,34 @@
+/*
+Copyright (c) 2005-2006, 2008-2009, 2013 Genome Research Ltd.
+Author: James Bonfield <jkb@sanger.ac.uk>
+
+Redistribution and use in source and binary forms, with or without 
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice, 
+this list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright notice, 
+this list of conditions and the following disclaimer in the documentation 
+and/or other materials provided with the distribution.
+
+   3. Neither the names Genome Research Ltd and Wellcome Trust Sanger
+Institute nor the names of its contributors may be used to endorse or promote
+products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY GENOME RESEARCH LTD AND CONTRIBUTORS "AS IS" AND 
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL GENOME RESEARCH LTD OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+
 #ifdef HAVE_CONFIG_H
 #include "io_lib_config.h"
 #endif
@@ -85,6 +116,7 @@ mFILE *mstdin(void) {
 	return m_channel[0];
 
     m_channel[0] = mfcreate(NULL, 0);
+    if (NULL == m_channel[0]) return NULL;
     m_channel[0]->fp = stdin;
     return m_channel[0];
 }
@@ -109,6 +141,7 @@ mFILE *mstdout(void) {
 	return m_channel[1];
 
     m_channel[1] = mfcreate(NULL, 0);
+    if (NULL == m_channel[1]) return NULL;
     m_channel[1]->fp = stdout;
     m_channel[1]->mode = MF_WRITE;
     return m_channel[1];
@@ -124,6 +157,7 @@ mFILE *mstderr(void) {
 	return m_channel[2];
 
     m_channel[2] = mfcreate(NULL, 0);
+    if (NULL == m_channel[2]) return NULL;
     m_channel[2]->fp = stderr;
     m_channel[2]->mode = MF_WRITE;
     return m_channel[2];
@@ -135,6 +169,7 @@ mFILE *mstderr(void) {
  */
 mFILE *mfcreate(char *data, int size) {
     mFILE *mf = (mFILE *)malloc(sizeof(*mf));
+    if (NULL == mf) return NULL;
     mf->fp = NULL;
     mf->data = data;
     mf->alloced = size;
@@ -197,7 +232,7 @@ mFILE *mfreopen(const char *path, const char *mode_str, FILE *fp) {
      * r = read file contents (if truncated => don't read)
      * w = write on close
      * a = position at end of buffer
-     * x = position at same location as the original fp
+     * x = position at same location as the original fp, don't seek on flush
      */
     if (strchr(mode_str, 'r'))
 	r = 1, mode |= MF_READ;
@@ -217,23 +252,26 @@ mFILE *mfreopen(const char *path, const char *mode_str, FILE *fp) {
 
     if (r) {
 	mf = mfcreate(NULL, 0);
+	if (NULL == mf) return NULL;
 	if (!(mode & MF_TRUNC)) {
 	    mf->data = mfload(fp, path, &mf->size, b);
 	    mf->alloced = mf->size;
 	    if (!a)
 		fseek(fp, 0, SEEK_SET);
 	}
-    } else {
+    } else if (w) {
 	/* Write - initialise the data structures */
 	mf = mfcreate(NULL, 0);
+	if (NULL == mf) return NULL;
+    } else {
+        fprintf(stderr, "Must specify either r, w or a for mode\n");
+        return NULL;
     }
     mf->fp = fp;
     mf->mode = mode;
 
     if (x) {
-	if (ftello(fp) != -1) {
-	    mf->mode |= MF_MODEX;
-	}
+	mf->mode |= MF_MODEX;
     }
     
     if (a) {
@@ -310,6 +348,29 @@ int mfdestroy(mFILE *mf) {
 }
 
 /*
+ * Steals that data out of an mFILE.  The mFILE itself will be closed.
+ * It is up to the caller to free the stolen buffer.  If size_out is
+ * not NULL, mf->size will be stored in it.
+ * This is more-or-less the opposite of mfcreate().
+ */
+
+void *mfsteal(mFILE *mf, size_t *size_out) {
+    void *data;
+
+    if (!mf) return NULL;
+
+    data = mf->data;
+    
+    if (NULL != size_out) *size_out = mf->size;
+
+    mfdetach(mf);
+    mf->data = NULL;
+    mfdestroy(mf);
+
+    return data;
+}
+
+/*
  * Seek/tell functions. Nothing more than updating and reporting an
  * in-memory index. NB we can seek on stdin or stdout even provided we
  * haven't been flushing.
@@ -382,7 +443,6 @@ size_t mfread(void *ptr, size_t size, size_t nmemb, mFILE *mf) {
 
     memcpy(cptr, &mf->data[mf->offset], len);
     mf->offset += len;
-    cptr += len;
     
     if (len != size * nmemb) {
 	mf->eof = 1;
@@ -401,8 +461,11 @@ size_t mfwrite(void *ptr, size_t size, size_t nmemb, mFILE *mf) {
 
     /* Make sure we have enough room */
     while (size * nmemb + mf->offset > mf->alloced) {
-	mf->alloced = mf->alloced ? mf->alloced * 2 : 1024;
-	mf->data = (void *)realloc(mf->data, mf->alloced);
+	size_t new_alloced = mf->alloced ? mf->alloced * 2 : 1024;
+	void * new_data = realloc(mf->data, new_alloced);
+	if (NULL == new_data) return 0;
+	mf->alloced = new_alloced;
+	mf->data    = new_data;
     }
 
     /* Record where we need to reflush from */
@@ -474,8 +537,13 @@ int mfflush(mFILE *mf) {
 
     /* FIXME: only do this when opened in write mode */
     if (mf == m_channel[1] || mf == m_channel[2]) {
-	fwrite(mf->data + mf->flush_pos, 1, mf->size - mf->flush_pos, mf->fp);
-	fflush(mf->fp);
+	if (mf->flush_pos < mf->size) {
+	    size_t bytes = mf->size - mf->flush_pos;
+	    if (fwrite(mf->data + mf->flush_pos, 1, bytes, mf->fp) < bytes)
+		return -1;
+	    if (0 != fflush(mf->fp))
+		return -1;
+	}
 
 	/* Stdout & stderr are non-seekable streams so throw away the data */
 	mf->offset = mf->size = mf->flush_pos = 0;
@@ -484,11 +552,14 @@ int mfflush(mFILE *mf) {
     /* only flush when opened in write mode */
     if (mf->mode & MF_WRITE) {
 	if (mf->flush_pos < mf->size) {
-	    if (!(mf->mode & MF_MODEX))
+	    size_t bytes = mf->size - mf->flush_pos;
+	    if (!(mf->mode & MF_MODEX)) {
 		fseek(mf->fp, mf->flush_pos, SEEK_SET);
-	    fwrite(mf->data + mf->flush_pos, 1,
-		   mf->size - mf->flush_pos, mf->fp);
-	    fflush(mf->fp);
+	    }
+	    if (fwrite(mf->data + mf->flush_pos, 1, bytes, mf->fp) < bytes)
+		return -1;
+	    if (0 != fflush(mf->fp))
+		return -1;
 	}
 	if (ftell(mf->fp) != -1 &&
 	    ftruncate(fileno(mf->fp), ftell(mf->fp)) == -1)
@@ -513,8 +584,11 @@ int mfprintf(mFILE *mf, char *fmt, ...) {
     est_length = vflen(fmt, args);
     va_end(args);
     while (est_length + mf->offset > mf->alloced) {
-	mf->alloced = mf->alloced ? mf->alloced * 2 : 1024;
-	mf->data = (void *)realloc(mf->data, mf->alloced);
+	size_t new_alloced = mf->alloced ? mf->alloced * 2 : 1024;
+	void * new_data    = realloc(mf->data, new_alloced);
+	if (NULL == new_data) return -1;
+	mf->alloced = new_alloced;
+	mf->data    = new_data;
     }
 
     va_start(args, fmt);
@@ -529,7 +603,7 @@ int mfprintf(mFILE *mf, char *fmt, ...) {
 
     if (mf->fp == stderr) {
 	/* Auto-flush for stderr */
-	mfflush(mf);
+	if (0 != mfflush(mf)) return -1;
     }
 
     return ret;

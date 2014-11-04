@@ -1,6 +1,32 @@
 /*
- * Author: James Bonfield, Wellcome Trust Sanger Institute. 2013
- */
+Copyright (c) 2013 Genome Research Ltd.
+Author: James Bonfield <jkb@sanger.ac.uk>
+
+Redistribution and use in source and binary forms, with or without 
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice, 
+this list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright notice, 
+this list of conditions and the following disclaimer in the documentation 
+and/or other materials provided with the distribution.
+
+   3. Neither the names Genome Research Ltd and Wellcome Trust Sanger
+Institute nor the names of its contributors may be used to endorse or promote
+products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY GENOME RESEARCH LTD AND CONTRIBUTORS "AS IS" AND 
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL GENOME RESEARCH LTD OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
 
 #ifdef HAVE_CONFIG_H
 #include "io_lib_config.h"
@@ -11,10 +37,6 @@
 
 #include "cram/sam_header.h"
 #include "cram/string_alloc.h"
-
-#ifdef SAMTOOLS
-#define sam_hdr_parse sam_hdr_parse_
-#endif
 
 static void sam_hdr_error(char *msg, char *line, int len, int lno) {
     int j;
@@ -862,7 +884,7 @@ SAM_hdr *sam_hdr_new() {
  * Returns a SAM_hdr struct on success (free with sam_hdr_free())
  *         NULL on failure
  */
-SAM_hdr *sam_hdr_parse(const char *hdr, int len) {
+SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
     /* Make an empty SAM_hdr */
     SAM_hdr *sh;
     
@@ -899,7 +921,7 @@ SAM_hdr *sam_hdr_dup(SAM_hdr *hdr) {
     if (-1 == sam_hdr_rebuild(hdr))
 	return NULL;
 
-    return sam_hdr_parse(sam_hdr_str(hdr), sam_hdr_length(hdr));
+    return sam_hdr_parse_(sam_hdr_str(hdr), sam_hdr_length(hdr));
 }
 
 /*! Increments a reference count on hdr.
@@ -1004,7 +1026,7 @@ char *sam_hdr_str(SAM_hdr *hdr) {
  * Looks up a reference sequence by name and returns the numerical ID.
  * Returns -1 if unknown reference.
  */
-int sam_hdr_name2ref(SAM_hdr *hdr, char *ref) {
+int sam_hdr_name2ref(SAM_hdr *hdr, const char *ref) {
     khint_t k = kh_get(m_s2i, hdr->ref_hash, ref);
     return k == kh_end(hdr->ref_hash) ? -1 : kh_val(hdr->ref_hash, k);
 }
@@ -1015,7 +1037,7 @@ int sam_hdr_name2ref(SAM_hdr *hdr, char *ref) {
  *
  * Returns NULL on failure
  */
-SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, char *rg) {
+SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, const char *rg) {
     khint_t k = kh_get(m_s2i, hdr->rg_hash, rg);
     return k == kh_end(hdr->rg_hash)
 	? NULL
@@ -1137,8 +1159,10 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
 				   "ID", sam_hdr_PG_ID(sh, name),
 				   "PN", name,
 				   "PP", sh->pg[end[i]].name,
-				   NULL))
+				   NULL)) {
+		free(end);
 		return  -1;
+	    }
 	}
 
 	free(end);
