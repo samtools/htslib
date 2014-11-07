@@ -2552,11 +2552,11 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	    cpi[i] = le_int2(code2base[from[i]]);
 	if ((i *= 2) < cr->len)
 	    cp[i] = seq_nt16_str[bam_seqi(bam_seq(b), i)];
-#else
-	for (i = 0; i < cr->len; i++)
-	    cp[i] = seq_nt16_str[bam_seqi(bam_seq(b), i)];
-#endif
     }
+#else
+    for (i = 0; i < cr->len; i++)
+	cp[i] = seq_nt16_str[bam_seqi(bam_seq(b), i)];
+#endif
     BLOCK_SIZE(s->seqs_blk) += cr->len;
 
     qual = cp = (char *)bam_qual(b);
