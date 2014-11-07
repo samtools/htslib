@@ -81,7 +81,7 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
     {
         if ( *tmp==',' || !*tmp )
         {
-            out = (int*) realloc(out, sizeof(int));
+            out = (int*) realloc(out, (nout+1)*sizeof(int));
             if ( tmp-prev==1 && *prev=='.' )
                 out[nout] = -1;
             else
