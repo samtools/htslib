@@ -26,6 +26,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <htslib/hts.h>
 #include <htslib/vcf.h>
 #include <htslib/kstring.h>
+#include <htslib/kseq.h>
 
 void write_bcf(char *fname)
 {
@@ -153,7 +154,12 @@ void write_bcf(char *fname)
     free(str.s);
     bcf_destroy1(rec);
     bcf_hdr_destroy(hdr);
-    hts_close(fp);
+    int ret;
+    if ( (ret=hts_close(fp)) )
+    {
+        fprintf(stderr,"hts_close(%s): non-zero status %d\n",fname,ret);
+        exit(ret);
+    }
 }
 
 void bcf_to_vcf(char *fname)
@@ -161,7 +167,10 @@ void bcf_to_vcf(char *fname)
     htsFile *fp    = hts_open(fname,"rb");
     bcf_hdr_t *hdr = bcf_hdr_read(fp);
     bcf1_t *rec    = bcf_init1();
-    htsFile *out   = hts_open("-","w");
+
+    char *gz_fname = (char*) malloc(strlen(fname)+4);
+    snprintf(gz_fname,strlen(fname)+4,"%s.gz",fname);
+    htsFile *out   = hts_open(gz_fname,"wg");
 
     bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr);
     bcf_hdr_remove(hdr_out,BCF_HL_STR,"unused");
@@ -199,8 +208,41 @@ void bcf_to_vcf(char *fname)
     bcf_destroy1(rec);
     bcf_hdr_destroy(hdr);
     bcf_hdr_destroy(hdr_out);
-    hts_close(fp);
-    hts_close(out);
+    int ret;
+    if ( (ret=hts_close(fp)) )
+    {
+        fprintf(stderr,"hts_close(%s): non-zero status %d\n",fname,ret);
+        exit(ret);
+    }
+    if ( (ret=hts_close(out)) )
+    {
+        fprintf(stderr,"hts_close(%s): non-zero status %d\n",gz_fname,ret);
+        exit(ret);
+    }
+
+
+    // read gzip, write stdout
+    htsFile *gz_in = hts_open(gz_fname, "r");
+    if ( !gz_in )
+    {
+        fprintf(stderr,"Could not read: %s\n", gz_fname);
+        exit(1);
+    }
+
+    kstring_t line = {0,0,0};
+    while ( hts_getline(gz_in, KS_SEP_LINE, &line)>0 )
+    {
+        kputc('\n',&line);
+        fwrite(line.s,1,line.l,stdout);
+    }
+
+    if ( (ret=hts_close(gz_in)) )
+    {
+        fprintf(stderr,"hts_close(%s): non-zero status %d\n",gz_fname,ret);
+        exit(ret);
+    }
+    free(line.s);
+    free(gz_fname);
 }
 
 void iterator(const char *fname)
@@ -221,7 +263,12 @@ void iterator(const char *fname)
 
     hts_idx_destroy(idx);
     bcf_hdr_destroy(hdr);
-    hts_close(fp);
+    int ret;
+    if ( (ret=hts_close(fp)) )
+    {
+        fprintf(stderr,"hts_close(%s): non-zero status %d\n",fname,ret);
+        exit(ret);
+    }
 }
 
 int main(int argc, char **argv)

@@ -74,7 +74,8 @@ static inline void fai_insert_index(faidx_t *idx, const char *name, int len, int
 
 faidx_t *fai_build_core(BGZF *bgzf)
 {
-    char c, *name;
+    char *name;
+    int c;
     int l_name, m_name;
     int line_len, line_blen, state;
     int l1, l2;
@@ -335,8 +336,8 @@ faidx_t *fai_load(const char *fn)
 
 char *fai_fetch(const faidx_t *fai, const char *str, int *len)
 {
-    char *s, c;
-    int i, l, k, name_end;
+    char *s;
+    int c, i, l, k, name_end;
     khiter_t iter;
     faidx1_t val;
     khash_t(s) *h;
@@ -426,8 +427,7 @@ int faidx_seq_len(const faidx_t *fai, const char *seq)
 
 char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p_end_i, int *len)
 {
-    int l;
-    char c;
+    int l, c;
     khiter_t iter;
     faidx1_t val;
     char *seq=NULL;

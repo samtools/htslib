@@ -77,6 +77,7 @@ int file_type(const char *fname)
 
 #define PRINT_HEADER 1
 #define HEADER_ONLY  2
+#define FILE_INFO    3
 static int query_regions(char **argv, int argc, int mode)
 {
     char *fname = argv[0];
@@ -180,6 +181,25 @@ static int query_chroms(char *fname)
         error("BAM: todo\n");
     return 0;
 }
+static int file_info(char *fname)
+{
+    htsFile *fp = hts_open(fname,"r");
+    const htsFormat *fmt = hts_get_format(fp);
+    printf("%s: ", fname);
+    if ( fmt->format==vcf ) printf("VCF");
+    else if ( fmt->format==bcf ) printf("BCF");
+    else if ( fmt->format==bam ) printf("BAM");
+    else if ( fmt->format==cram ) printf("CRAM");
+    else printf("Unknown"); // todo: SAM etc.
+    printf("; ");
+    if ( fmt->compression==bgzf ) printf("BGZF compressed");
+    else if ( fmt->compression==gzip ) printf("gzip compressed");
+    else if ( fmt->compression==no_compression ) printf("uncompressed");
+    else printf("unknown");
+    printf("\n");
+    hts_close(fp);
+    return 0;
+}
 
 int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *conf)
 {
@@ -267,6 +287,7 @@ static int usage(void)
     fprintf(stderr, "   -f, --force             overwrite existing index without asking\n");
     fprintf(stderr, "   -h, --print-header      print also the header lines\n");
     fprintf(stderr, "   -H, --only-header       print only the header lines\n");
+    fprintf(stderr, "   -i, --file-info         print file format info\n");
     fprintf(stderr, "   -l, --list-chroms       list chromosome names\n");
     fprintf(stderr, "   -m, --min-shift INT     set the minimal interval size to 1<<INT; 0 for the old tabix index [0]\n");
     fprintf(stderr, "   -p, --preset STR        gff, bed, sam, vcf, bcf, bam\n");
@@ -286,6 +307,7 @@ int main(int argc, char *argv[])
     static struct option loptions[] =
     {
         {"help",0,0,'h'},
+        {"file-info",0,0,'i'},
         {"zero-based",0,0,'0'},
         {"print-header",0,0,'h'},
         {"only-header",0,0,'H'},
@@ -301,10 +323,11 @@ int main(int argc, char *argv[])
         {0,0,0,0}
     };
 
-    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:", loptions,NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:i", loptions,NULL)) >= 0)
     {
         switch (c)
         {
+            case 'i': mode = FILE_INFO; break;
             case 'r': reheader = optarg; break;
             case 'h': mode = PRINT_HEADER; break;
             case 'H': mode = HEADER_ONLY; break;
@@ -335,6 +358,9 @@ int main(int argc, char *argv[])
 
     if ( argc > optind+1 || mode==HEADER_ONLY )
         return query_regions(&argv[optind], argc-optind, mode);
+
+    if ( argc > optind+1 || mode==FILE_INFO )
+        return file_info(argv[optind]);
 
     char *fname = argv[optind];
     int ftype = file_type(fname);

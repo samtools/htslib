@@ -60,6 +60,7 @@ HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/kseq.h \
 	$(HTSDIR)/htslib/ksort.h \
 	$(HTSDIR)/htslib/kstring.h \
+	$(HTSDIR)/htslib/regidx.h \
 	$(HTSDIR)/htslib/sam.h \
 	$(HTSDIR)/htslib/synced_bcf_reader.h \
 	$(HTSDIR)/htslib/tbx.h \
@@ -77,6 +78,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/hts.c \
 	$(HTSDIR)/knetfile.c \
 	$(HTSDIR)/kstring.c \
+	$(HTSDIR)/regidx.c \
 	$(HTSDIR)/sam.c \
 	$(HTSDIR)/synced_bcf_reader.c \
 	$(HTSDIR)/tbx.c \
@@ -129,6 +131,9 @@ $(HTSDIR)/libhts.so $(HTSDIR)/libhts.dylib: $(HTSLIB_ALL)
 
 $(HTSDIR)/bgzip: $(HTSDIR)/bgzip.c $(HTSLIB_PUBLIC_HEADERS)
 	+cd $(HTSDIR) && $(MAKE) bgzip
+
+$(HTSDIR)/htsfile: $(HTSDIR)/htsfile.c $(HTSLIB_PUBLIC_HEADERS)
+	+cd $(HTSDIR) && $(MAKE) htsfile
 
 $(HTSDIR)/tabix: $(HTSDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS)
 	+cd $(HTSDIR) && $(MAKE) tabix

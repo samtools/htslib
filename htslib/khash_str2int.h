@@ -121,4 +121,13 @@ static inline int khash_str2int_set(void *_hash, const char *str, int value)
     return k;
 }
 
+/*
+ *  Return the number of keys in the hash table.
+ */
+static inline int khash_str2int_size(void *_hash)
+{
+    khash_t(str2int) *hash = (khash_t(str2int)*)_hash;
+    return kh_size(hash);
+}
+
 #endif
