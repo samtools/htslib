@@ -1398,10 +1398,25 @@ void hts_idx_destroy(hts_idx_t *idx)
     free(idx);
 }
 
-static inline long idx_write(int is_bgzf, void *fp, const void *buf, long l)
+// The optimizer eliminates these ed_is_big() calls; still it would be good to
+// TODO Determine endianness at configure- or compile-time
+
+static inline ssize_t idx_write_int32(BGZF *fp, int32_t x)
 {
-    if (is_bgzf) return bgzf_write((BGZF*)fp, buf, l);
-    else return (long)fwrite(buf, 1, l, (FILE*)fp);
+    if (ed_is_big()) x = ed_swap_4(x);
+    return bgzf_write(fp, &x, sizeof x);
+}
+
+static inline ssize_t idx_write_uint32(BGZF *fp, uint32_t x)
+{
+    if (ed_is_big()) x = ed_swap_4(x);
+    return bgzf_write(fp, &x, sizeof x);
+}
+
+static inline ssize_t idx_write_uint64(BGZF *fp, uint64_t x)
+{
+    if (ed_is_big()) x = ed_swap_8(x);
+    return bgzf_write(fp, &x, sizeof x);
 }
 
 static inline void swap_bins(bins_t *p)
@@ -1413,68 +1428,41 @@ static inline void swap_bins(bins_t *p)
     }
 }
 
-static void hts_idx_save_core(const hts_idx_t *idx, void *fp, int fmt)
+static void hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
 {
-    int32_t i, size, is_be;
-    int is_bgzf = (fmt != HTS_FMT_BAI);
-    is_be = ed_is_big();
-    if (is_be) {
-        uint32_t x = idx->n;
-        idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-    } else idx_write(is_bgzf, fp, &idx->n, 4);
-    if (fmt == HTS_FMT_TBI && idx->l_meta) idx_write(is_bgzf, fp, idx->meta, idx->l_meta);
+    int32_t i, j, size;
+    idx_write_int32(fp, idx->n);
+    if (fmt == HTS_FMT_TBI && idx->l_meta) bgzf_write(fp, idx->meta, idx->l_meta);
     for (i = 0; i < idx->n; ++i) {
         khint_t k;
         bidx_t *bidx = idx->bidx[i];
         lidx_t *lidx = &idx->lidx[i];
         // write binning index
         size = bidx? kh_size(bidx) : 0;
-        if (is_be) { // big endian
-            uint32_t x = size;
-            idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-        } else idx_write(is_bgzf, fp, &size, 4);
+        idx_write_int32(fp, size);
         if (bidx == 0) goto write_lidx;
         for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
             bins_t *p;
             if (!kh_exist(bidx, k)) continue;
             p = &kh_value(bidx, k);
-            if (is_be) { // big endian
-                uint32_t x;
-                x = kh_key(bidx, k); idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-                if (fmt == HTS_FMT_CSI) {
-                    uint64_t y = kh_val(bidx, k).loff;
-                    idx_write(is_bgzf, fp, ed_swap_4p(&y), 8);
-                }
-                x = p->n; idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-                swap_bins(p);
-                idx_write(is_bgzf, fp, p->list, 16 * p->n);
-                swap_bins(p);
-            } else {
-                idx_write(is_bgzf, fp, &kh_key(bidx, k), 4);
-                if (fmt == HTS_FMT_CSI) idx_write(is_bgzf, fp, &kh_val(bidx, k).loff, 8);
-                //int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
-                idx_write(is_bgzf, fp, &p->n, 4);
-                idx_write(is_bgzf, fp, p->list, p->n << 4);
+            idx_write_uint32(fp, kh_key(bidx, k));
+            if (fmt == HTS_FMT_CSI) idx_write_uint64(fp, kh_val(bidx, k).loff);
+            //int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
+            idx_write_int32(fp, p->n);
+            for (j = 0; j < p->n; ++j) {
+                idx_write_uint64(fp, p->list[j].u);
+                idx_write_uint64(fp, p->list[j].v);
             }
         }
 write_lidx:
         if (fmt != HTS_FMT_CSI) {
-            if (is_be) {
-                int32_t x = lidx->n;
-                idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-                for (x = 0; x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
-                idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
-                for (x = 0; x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
-            } else {
-                idx_write(is_bgzf, fp, &lidx->n, 4);
-                idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
-            }
+            idx_write_int32(fp, lidx->n);
+            for (j = 0; j < lidx->n; ++j)
+                idx_write_uint64(fp, lidx->offset[j]);
         }
     }
-    if (is_be) { // write the number of reads without coordinates
-        uint64_t x = idx->n_no_coor;
-        idx_write(is_bgzf, fp, &x, 8);
-    } else idx_write(is_bgzf, fp, &idx->n_no_coor, 8);
+
+    idx_write_uint64(fp, idx->n_no_coor);
 }
 
 int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
@@ -1504,17 +1492,12 @@ int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int
 
     if (fmt == HTS_FMT_CSI) {
         BGZF *fp;
-        uint32_t x[3];
-        int is_be, i;
-        is_be = ed_is_big();
         fp = bgzf_open(fnidx, "w");
         if (fp == NULL) return -1;
         bgzf_write(fp, "CSI\1", 4);
-        x[0] = idx->min_shift; x[1] = idx->n_lvls; x[2] = idx->l_meta;
-        if (is_be) {
-            for (i = 0; i < 3; ++i)
-                bgzf_write(fp, ed_swap_4p(&x[i]), 4);
-        } else bgzf_write(fp, &x, 12);
+        idx_write_int32(fp, idx->min_shift);
+        idx_write_int32(fp, idx->n_lvls);
+        idx_write_uint32(fp, idx->l_meta);
         if (idx->l_meta) bgzf_write(fp, idx->meta, idx->l_meta);
         hts_idx_save_core(idx, fp, HTS_FMT_CSI);
         bgzf_close(fp);
@@ -1525,11 +1508,11 @@ int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int
         hts_idx_save_core(idx, fp, HTS_FMT_TBI);
         bgzf_close(fp);
     } else if (fmt == HTS_FMT_BAI) {
-        FILE *fp = fopen(fnidx, "w");
+        BGZF *fp = bgzf_open(fnidx, "wu");
         if (fp == NULL) return -1;
-        fwrite("BAI\1", 1, 4, fp);
+        bgzf_write(fp, "BAI\1", 4);
         hts_idx_save_core(idx, fp, HTS_FMT_BAI);
-        fclose(fp);
+        bgzf_close(fp);
     } else abort();
 
     return 0;
