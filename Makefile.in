@@ -51,17 +51,19 @@ LDLIBS   =
 # LDLIBS   += -llzma
 # endif
 
-prefix      = /usr/local
-exec_prefix = $(prefix)
-bindir      = $(exec_prefix)/bin
-includedir  = $(prefix)/include
-libdir      = $(exec_prefix)/lib
-mandir      = $(prefix)/share/man
-man1dir     = $(mandir)/man1
-man5dir     = $(mandir)/man5
-pkgconfigdir= $(libdir)/pkgconfig
+prefix       = @prefix@
+exec_prefix  = @exec_prefix@
+bindir       = @bindir@
+includedir   = @includedir@
+libdir       = @libdir@
+datarootdir  = @datarootdir@
+mandir       = @mandir@
+man1dir      = $(mandir)/man1
+man5dir      = $(mandir)/man5
+pkgconfigdir = $(libdir)/pkgconfig
 
-MKDIR_P = mkdir -p
+
+MKDIR_P = $(MKDIR_P)
 INSTALL = install -p
 INSTALL_PROGRAM = $(INSTALL)
 INSTALL_DATA    = $(INSTALL) -m 644
@@ -69,8 +71,21 @@ INSTALL_DIR     = $(MKDIR_P) -m 755
 
 BUILT_PROGRAMS = \
 	bgzip \
-	htsfile \
 	tabix
+
+# TODO: fix up iRODS configury
+IRODS_HOME        = @IRODS_HOME@
+HAVE_LIBRODSAPIS  = @HAVE_LIBRODSAPIS@
+LIBHTS_IRODS_OBJS =
+
+ifeq "$(HAVE_LIBRODSAPIS)" "yes"
+IRODS_CPPFLAGS = @IRODS_CPPFLAGS@
+LDFLAGS           += @IRODS_LDFLAGS@
+LDLIBS            += @IRODS_LDLIBS@
+LIBHTS_IRODS_OBJS += hfile_irods.o
+endif
+
+all: lib-static lib-shared test/hfile test/test_view test/test-vcf-api test/test-vcf-sweep
 
 BUILT_TEST_PROGRAMS = \
 	test/fieldarith \
@@ -100,8 +115,8 @@ lib-shared: libhts.so
 endif
 
 
-PACKAGE_VERSION  = 1.1
-LIBHTS_SOVERSION = 1
+PACKAGE_VERSION  = @PACKAGE_VERSION@
+LIBHTS_SOVERSION = @LIBHTS_SOVERSION@
 
 
 # $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
@@ -141,6 +156,7 @@ version.h:
 .c.pico:
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
 
+hfile_irods.o hfile_irods.pico: CPPFLAGS += @IRODS_CPPFLAGS@
 
 LIBHTS_OBJS = \
 	kfunc.o \
@@ -177,10 +193,9 @@ LIBHTS_OBJS = \
 	cram/vlen.o \
 	cram/zfio.o
 
-
-libhts.a: $(LIBHTS_OBJS)
+libhts.a: $(LIBHTS_OBJS) $(LIBHTS_IRODS_OBJS)
 	@-rm -f $@
-	$(AR) -rc $@ $(LIBHTS_OBJS)
+	$(AR) -rc $@ $^
 	-$(RANLIB) $@
 
 
@@ -189,16 +204,16 @@ libhts.a: $(LIBHTS_OBJS)
 # As a byproduct invisible to make, libhts.so.NN is also created, as it is the
 # file used at runtime (when $LD_LIBRARY_PATH includes the build directory).
 
-libhts.so: $(LIBHTS_OBJS:.o=.pico)
-	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) -pthread $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LDLIBS) -lz -lm
+libhts.so: $(LIBHTS_OBJS:.o=.pico) $(LIBHTS_IRODS_OBJS:.o=.pico)
+	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) -pthread $(LDFLAGS) -o $@ $^ $(LDLIBS) -lz -lm
 	ln -sf $@ libhts.so.$(LIBHTS_SOVERSION)
 
 # Similarly this also creates libhts.NN.dylib as a byproduct, so that programs
 # when run can find this uninstalled shared library (when $DYLD_LIBRARY_PATH
 # includes this project's build directory).
 
-libhts.dylib: $(LIBHTS_OBJS)
-	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) $(LDLIBS) -lz
+libhts.dylib: $(LIBHTS_OBJS) $(LIBHTS_IRODS_OBJS)
+	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $^ $(LDLIBS) -lz
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 
@@ -250,14 +265,10 @@ cram/zfio.o cram/zfio.pico: cram/zfio.c cram/os.h cram/zfio.h
 bgzip: bgzip.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ bgzip.o libhts.a $(LDLIBS) -lz
 
-htsfile: htsfile.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ htsfile.o libhts.a $(LDLIBS) -lz
-
 tabix: tabix.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ tabix.o libhts.a $(LDLIBS) -lz
 
 bgzip.o: bgzip.c $(htslib_bgzf_h) $(htslib_hts_h)
-htsfile.o: htsfile.c $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
 tabix.o: tabix.c $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) htslib/kseq.h $(htslib_bgzf_h) $(htslib_hts_h)
 
 
@@ -300,7 +311,6 @@ test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
 
-
 install: libhts.a $(BUILT_PROGRAMS) installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
@@ -336,6 +346,11 @@ install-pkgconfig: installdirs
 htslib-uninstalled.pc: htslib.pc.in
 	sed -e 's#@includedir@#'`pwd`'#g;s#@libdir@#'`pwd`'#g' htslib.pc.in > $@
 
+testirods:
+	cd test && REF_PATH=: ./test_view.pl irods
+
+irodsclean:
+	ils | sed -e 's#  ##' | grep -E '*.tmp.*' | xargs irm
 
 testclean:
 	-rm -f test/*.tmp test/*.tmp.*
@@ -355,15 +370,13 @@ clean-so:
 clean-dylib:
 	-rm -f libhts.dylib libhts.*.dylib
 
-
 tags:
 	ctags -f TAGS *.[ch] cram/*.[ch] htslib/*.h
-
 
 force:
 
 
 .PHONY: all check clean distclean force install install-pkgconfig installdirs
-.PHONY: lib-shared lib-static mostlyclean tags test testclean
+.PHONY: irodsclean lib-shared lib-static mostlyclean tags test testclean
 .PHONY: clean-so install-so
 .PHONY: clean-dylib install-dylib

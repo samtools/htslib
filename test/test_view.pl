@@ -24,6 +24,9 @@
 use strict;
 use warnings;
 
+my $IRODS_PROTOCOL = 'irods';
+my %PROTOCOL_SEP = ($IRODS_PROTOCOL => ':');
+
 my $err_count = 0;
 my $suc_count = 0;
 
@@ -38,6 +41,15 @@ sub test {
     }
 }
 
+my $target_protocol = shift;
+$target_protocol ||= '';
+$target_protocol = lc $target_protocol;
+
+my $prefix = '';
+if ($target_protocol && exists $PROTOCOL_SEP{$target_protocol}) {
+  $prefix = "$target_protocol" . $PROTOCOL_SEP{$target_protocol};
+}
+
 foreach my $sam (glob("*#*.sam")) {
     my ($base, $ref) = ($sam =~ /((.*)#.*)\.sam/);
     $ref .= ".fa";
@@ -48,20 +60,33 @@ foreach my $sam (glob("*#*.sam")) {
     print "\n=== Testing $sam, ref $ref ===\n";
 
     # SAM -> BAM -> SAM
-    test "./test_view -S -b $sam > $bam";
-    test "./test_view $bam > $bam.sam_";
+    test "./test_view -S -b -O $prefix$bam $sam";
+    test "./test_view -O $prefix$bam.sam_ $prefix$bam";
+    if ($target_protocol eq $IRODS_PROTOCOL) {
+      test "iget -f $bam";
+      test "iget -f $bam.sam_";
+    }
+
     test "./compare_sam.pl $sam $bam.sam_";
 
     # SAM -> CRAM -> SAM
-    test "./test_view -t $ref -S -C $sam > $cram";
-    test "./test_view -D $cram > $cram.sam_";
+    test "./test_view -t $ref -S -C -O $prefix$cram $sam";
+    test "./test_view -D -O $prefix$cram.sam_ $prefix$cram";
+    if ($target_protocol eq $IRODS_PROTOCOL) {
+      test "iget -f $cram.sam_";
+    }
+
     test "./compare_sam.pl -nomd $sam $cram.sam_";
 
     # BAM -> CRAM -> BAM -> SAM
     $cram = "$bam.cram";
-    test "./test_view -t $ref -C $bam > $cram";
-    test "./test_view -b -D $cram > $cram.bam";
-    test "./test_view $cram.bam > $cram.bam.sam_";
+    test "./test_view -t $ref -C -O $prefix$cram $bam";
+    test "./test_view -b -D -O $prefix$cram.bam $prefix$cram";
+    test "./test_view -O $prefix$cram.bam.sam_ $prefix$cram.bam";
+    if ($target_protocol eq $IRODS_PROTOCOL) {
+      test "iget -f $cram.bam.sam_";
+    }
+
     test "./compare_sam.pl -nomd $sam $cram.bam.sam_";
 }
 
