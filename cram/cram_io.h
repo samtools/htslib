@@ -1,6 +1,32 @@
 /*
- * Author: James Bonfield, Wellcome Trust Sanger Institute. 2013
- */
+Copyright (c) 2012-2014 Genome Research Ltd.
+Author: James Bonfield <jkb@sanger.ac.uk>
+
+Redistribution and use in source and binary forms, with or without 
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice, 
+this list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright notice, 
+this list of conditions and the following disclaimer in the documentation 
+and/or other materials provided with the distribution.
+
+   3. Neither the names Genome Research Ltd and Wellcome Trust Sanger
+Institute nor the names of its contributors may be used to endorse or promote
+products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY GENOME RESEARCH LTD AND CONTRIBUTORS "AS IS" AND 
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL GENOME RESEARCH LTD OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
 
 /*! \file
  * Include cram.h instead.
@@ -123,6 +149,14 @@ int cram_write_block(cram_fd *fd, cram_block *b);
  */
 void cram_free_block(cram_block *b);
 
+/*! Uncompress a memory block using Zlib.
+ *
+ * @return
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size);
+
 /*! Uncompresses a CRAM block, if compressed.
  *
  * @return
@@ -145,8 +179,7 @@ int cram_uncompress_block(cram_block *b);
  *        -1 on failure
  */
 int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
-			int level,  int strat,
-			int level2, int strat2);
+			int method, int level);
 
 cram_metrics *cram_new_metrics(void);
 char *cram_block_method2str(enum cram_block_method m);
@@ -188,19 +221,52 @@ char *cram_content_type2str(enum cram_content_type t);
 	(b)->data[(b)->byte++] = (c);	  \
     } while (0)
 
-/* Append via sprintf with 1 arg */
-#define BLOCK_APPENDF_1(b,buf,fmt, a1)			\
-    do {						\
-	int l = sprintf((buf), (fmt), (a1));		\
-	BLOCK_APPEND((b), (buf), l);			\
+/* Append a single unsigned integer */
+#define BLOCK_APPEND_UINT(b,i)		             \
+    do {					     \
+        unsigned char *cp;			     \
+        BLOCK_GROW((b),11);			     \
+	cp = &(b)->data[(b)->byte];		     \
+        (b)->byte += append_uint(cp, (i)) - cp;	\
     } while (0)
 
-/* Append via sprintf with 2 args */
-#define BLOCK_APPENDF_2(b,buf,fmt, a1,a2)		\
-    do {						\
-	int l = sprintf((buf), (fmt), (a1), (a2));	\
-	BLOCK_APPEND((b), (buf), l);			\
-    } while (0)
+static inline unsigned char *append_uint(unsigned char *cp, int32_t i) {
+    int32_t j;
+
+    if (i == 0) {
+	*cp++ = '0';
+	return cp;
+    }
+
+    if (i < 100)        goto b1;
+    if (i < 10000)      goto b3;
+    if (i < 1000000)    goto b5;
+    if (i < 100000000)  goto b7;
+
+    if ((j = i / 1000000000)) {*cp++ = j + '0'; i -= j*1000000000; goto x8;}
+    if ((j = i / 100000000))  {*cp++ = j + '0'; i -= j*100000000;  goto x7;}
+ b7:if ((j = i / 10000000))   {*cp++ = j + '0'; i -= j*10000000;   goto x6;}
+    if ((j = i / 1000000))    {*cp++ = j + '0', i -= j*1000000;    goto x5;}
+ b5:if ((j = i / 100000))     {*cp++ = j + '0', i -= j*100000;     goto x4;}
+    if ((j = i / 10000))      {*cp++ = j + '0', i -= j*10000;      goto x3;}
+ b3:if ((j = i / 1000))       {*cp++ = j + '0', i -= j*1000;       goto x2;}
+    if ((j = i / 100))        {*cp++ = j + '0', i -= j*100;        goto x1;}
+ b1:if ((j = i / 10))         {*cp++ = j + '0', i -= j*10;         goto x0;}
+    if (i)                     *cp++ = i + '0';
+    return cp;
+
+ x8: *cp++ = i / 100000000 + '0', i %= 100000000;
+ x7: *cp++ = i / 10000000  + '0', i %= 10000000;
+ x6: *cp++ = i / 1000000   + '0', i %= 1000000;
+ x5: *cp++ = i / 100000    + '0', i %= 100000;
+ x4: *cp++ = i / 10000     + '0', i %= 10000;
+ x3: *cp++ = i / 1000      + '0', i %= 1000;
+ x2: *cp++ = i / 100       + '0', i %= 100;
+ x1: *cp++ = i / 10        + '0', i %= 10;
+ x0: *cp++ = i             + '0';
+
+    return cp;
+}
 
 #define BLOCK_UPLEN(b) \
     (b)->comp_size = (b)->uncomp_size = BLOCK_SIZE((b))
@@ -410,6 +476,14 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr);
  */
 cram_fd *cram_open(const char *filename, const char *mode);
 
+/*! Opens an existing stream for reading or writing.
+ *
+ * @return
+ * Returns file handle on success;
+ *         NULL on failure.
+ */
+cram_fd *cram_dopen(struct hFILE *fp, const char *filename, const char *mode);
+
 /*! Closes a CRAM file.
  *
  * @return
@@ -417,6 +491,14 @@ cram_fd *cram_open(const char *filename, const char *mode);
  *        -1 on failure
  */
 int cram_close(cram_fd *fd);
+
+/*
+ * Seek within a CRAM file.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int cram_seek(cram_fd *fd, off_t offset, int whence);
 
 /*
  * Flushes a CRAM file.
@@ -430,7 +512,9 @@ int cram_flush(cram_fd *fd);
 /*! Checks for end of file on a cram_fd stream.
  *
  * @return
- * Returns 1 if we hit an EOF while reading.
+ * Returns 0 if not at end of file
+ *         1 if we hit an expected EOF (end of range or EOF block)
+ *         2 for other EOF (end of stream without EOF block)
  */
 int cram_eof(cram_fd *fd);
 
@@ -456,7 +540,19 @@ int cram_set_option(cram_fd *fd, enum cram_option opt, ...);
  */
 int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args);
 
-/**@}*/
+/*!
+ * Attaches a header to a cram_fd.
+ *
+ * This should be used when creating a new cram_fd for writing where
+ * we have an SAM_hdr already constructed (eg from a file we've read
+ * in).
+ *
+ * @return
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int cram_set_header(cram_fd *fd, SAM_hdr *hdr);
+
 
 #ifdef __cplusplus
 }

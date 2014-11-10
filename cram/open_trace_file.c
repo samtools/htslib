@@ -1,3 +1,66 @@
+/*
+Author: James Bonfield
+
+Copyright (c) 2000-2001 MEDICAL RESEARCH COUNCIL
+All rights reserved
+
+Redistribution and use in source and binary forms, with or without 
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice, 
+this list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright notice, 
+this list of conditions and the following disclaimer in the documentation 
+and/or other materials provided with the distribution.
+
+   3. Neither the name of the MEDICAL RESEARCH COUNCIL, THE LABORATORY OF 
+MOLECULAR BIOLOGY nor the names of its contributors may be used to endorse or 
+promote products derived from this software without specific prior written 
+permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR 
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES 
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON 
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+/*
+Copyright (c) 2008, 2009, 2013, 2014 Genome Research Ltd.
+Author: James Bonfield <jkb@sanger.ac.uk>
+
+Redistribution and use in source and binary forms, with or without 
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice, 
+this list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright notice, 
+this list of conditions and the following disclaimer in the documentation 
+and/or other materials provided with the distribution.
+
+   3. Neither the names Genome Research Ltd and Wellcome Trust Sanger
+Institute nor the names of its contributors may be used to endorse or promote
+products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY GENOME RESEARCH LTD AND CONTRIBUTORS "AS IS" AND 
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL GENOME RESEARCH LTD OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,12 +73,10 @@
 #ifndef PATH_MAX
 #  define PATH_MAX 1024
 #endif
-#ifdef HAVE_LIBCURL
-#  include <curl/curl.h>
-#endif
 
 #include "cram/open_trace_file.h"
 #include "cram/misc.h"
+#include "htslib/hfile.h"
 
 /*
  * Tokenises the search path splitting on colons (unix) or semicolons
@@ -54,6 +115,34 @@ char *tokenise_search_path(char *searchpath) {
 	    continue;
 	}
 
+	/* Handle http:// and ftp:// too without :: */
+	if (path_sep == ':') {
+	    if ((i == 0 || (i > 0 && searchpath[i-1] == ':')) &&
+		(!strncmp(&searchpath[i], "http:",     5) ||
+		 !strncmp(&searchpath[i], "ftp:",      4) ||
+		 !strncmp(&searchpath[i], "|http:",    6) ||
+		 !strncmp(&searchpath[i], "|ftp:",     5) ||
+		 !strncmp(&searchpath[i], "URL=http:", 9) ||
+		 !strncmp(&searchpath[i], "URL=ftp:",  8))) {
+		do {
+		    newsearch[j++] = searchpath[i];
+		} while (i<len && searchpath[i++] != ':');
+		if (searchpath[i] == ':')
+		    i++;
+		if (searchpath[i]=='/')
+		    newsearch[j++] = searchpath[i++];
+		if (searchpath[i]=='/')
+		    newsearch[j++] = searchpath[i++];
+		// Look for host:port
+		do {
+		    newsearch[j++] = searchpath[i++];
+		} while (i<len && searchpath[i] != ':' && searchpath[i] != '/');
+		newsearch[j++] = searchpath[i++];
+		if (searchpath[i] == ':')
+		    i++;
+	    }
+	}
+
 	if (searchpath[i] == path_sep) {
 	    /* Skip blank path components */
 	    if (j && newsearch[j-1] != 0)
@@ -73,26 +162,11 @@ char *tokenise_search_path(char *searchpath) {
     return newsearch;
 }
 
-#ifdef HAVE_LIBCURL
 mFILE *find_file_url(char *file, char *url) {
     char buf[8192], *cp;
-    mFILE *mf = NULL, *headers = NULL;
-    int maxlen = 8190 - strlen(file);
-    static CURL *handle = NULL;
-    static int curl_init = 0;
-    char errbuf[CURL_ERROR_SIZE];
-
-    *errbuf = 0;
-
-    if (!curl_init) {
-	if (curl_global_init(CURL_GLOBAL_ALL))
-	    return NULL;
-
-	if (NULL == (handle = curl_easy_init()))
-	    goto error;
-
-	curl_init = 1;
-    }
+    mFILE *mf = NULL;
+    int maxlen = 8190 - strlen(file), len;
+    hFILE *hf;
 
     /* Expand %s for the trace name */
     for (cp = buf; *url && cp - buf < maxlen; url++) {
@@ -105,68 +179,26 @@ mFILE *find_file_url(char *file, char *url) {
     }
     *cp++ = 0;
 
-    /* Setup the curl */
-    if (NULL == (mf = mfcreate(NULL, 0)) ||
-	NULL == (headers = mfcreate(NULL, 0)))
+    if (!(hf = hopen(buf, "r")))
 	return NULL;
 
-    if (0 != curl_easy_setopt(handle, CURLOPT_URL, buf))
-	goto error;
-    if (0 != curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 60L))
-	goto error;
-    if (0 != curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION,
-			      (curl_write_callback)mfwrite))
-	goto error;
-    if (0 != curl_easy_setopt(handle, CURLOPT_WRITEDATA, mf))
-	goto error;
-    if (0 != curl_easy_setopt(handle, CURLOPT_HEADERFUNCTION,
-			      (curl_write_callback)mfwrite))
-	goto error;
-    if (0 != curl_easy_setopt(handle, CURLOPT_WRITEHEADER, headers))
-	goto error;
-    if (0 != curl_easy_setopt(handle, CURLOPT_ERRORBUFFER, errbuf))
-	goto error;
-    
-    /* Fetch! */
-    if (0 != curl_easy_perform(handle))
-	goto error;
-    
-    /* Report errors is approproate. 404 is silent as it may have just been
-     * a search via RAWDATA path, everything else is worth reporting.
-     */
-    {
-	float version;
-	int response;
-	char nul = 0;
-	mfwrite(&nul, 1, 1, headers);
-	if (2 == sscanf(headers->data, "HTTP/%f %d", &version, &response)) {
-	    if (response != 200) {
-		if (response != 404)
-		    fprintf(stderr, "%.*s\n",
-			    (int)headers->size, headers->data);
-		goto error;
-	    }
+    if (NULL == (mf = mfcreate(NULL, 0)))
+	return NULL;
+    while ((len = hread(hf, buf, 8192)) > 0) {
+	if (mfwrite(buf, len, 1, mf) <= 0) {
+	    hclose_abruptly(hf);
+	    mfdestroy(mf);
+	    return NULL;
 	}
     }
-
-    if (mftell(mf) == 0)
-	goto error;
-
-    mfdestroy(headers);
+    if (hclose(hf) < 0) {
+	mfdestroy(mf);
+	return NULL;
+    }
 
     mrewind(mf);
     return mf;
-
- error:
-    if (mf)
-	mfdestroy(mf);
-    if (headers)
-	mfdestroy(headers);
-    if (*errbuf)
-	fprintf(stderr, "%s\n", errbuf);
-    return NULL;
 }
-#endif
 
 /*
  * Searches for file in the directory 'dirname'. If it finds it, it opens
@@ -270,41 +302,37 @@ mFILE *open_path_mfile(char *file, char *path, char *relative_to) {
      * special, otherwise we treat the element as a directory.
      */
     for (ele = newsearch; *ele; ele += strlen(ele)+1) {
-	int i;
-	char *suffix[6] = {"", ".gz", ".bz2", ".sz", ".Z", ".bz2"};
-	for (i = 0; i < 6; i++) {
-	    char file2[1024];
-	    char *ele2;
-	    int valid = 1;
+	char *ele2;
 
-	    /*
-	     * '|' prefixing a path component indicates that we do not
-	     * wish to perform the compression extension searching in that
-	     * location.
-	     */
-	    if (*ele == '|') {
-		ele2 = ele+1;
-		valid = (i == 0);
-	    } else {
-		ele2 = ele;
-	    }
+	/*
+	 * '|' prefixing a path component indicates that we do not
+	 * wish to perform the compression extension searching in that
+	 * location.
+	 *
+	 * NB: this has been removed from the htslib implementation.
+	 */
+	if (*ele == '|') {
+	    ele2 = ele+1;
+	} else {
+	    ele2 = ele;
+	}
 
-	    sprintf(file2, "%s%s", file, suffix[i]);
-
-#if defined(HAVE_LIBCURL)
-	    if (0 == strncmp(ele2, "URL=", 4)) {
-		if (valid && (fp = find_file_url(file2, ele2+4))) {
-		    free(newsearch);
-		    return fp;
-		}
-	    } else
-#endif
-	    if (valid && (fp = find_file_dir(file2, ele2))) {
+	if (0 == strncmp(ele2, "URL=", 4)) {
+	    if ((fp = find_file_url(file, ele2+4))) {
 		free(newsearch);
 		return fp;
 	    }
-	}
-    }
+	} else if (!strncmp(ele2, "http:", 5) ||
+		   !strncmp(ele2, "ftp:", 4)) {
+	    if ((fp = find_file_url(file, ele2))) {
+		free(newsearch);
+		return fp;
+	    }
+	} else if ((fp = find_file_dir(file, ele2))) {
+	    free(newsearch);
+	    return fp;
+	} 
+   }
 
     free(newsearch);
 

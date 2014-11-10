@@ -1,6 +1,32 @@
 /*
- * Author: James Bonfield, Wellcome Trust Sanger Institute. 2013
- */
+Copyright (c) 2013-2014 Genome Research Ltd.
+Author: James Bonfield <jkb@sanger.ac.uk>
+
+Redistribution and use in source and binary forms, with or without 
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice, 
+this list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright notice, 
+this list of conditions and the following disclaimer in the documentation 
+and/or other materials provided with the distribution.
+
+   3. Neither the names Genome Research Ltd and Wellcome Trust Sanger
+Institute nor the names of its contributors may be used to endorse or promote
+products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY GENOME RESEARCH LTD AND CONTRIBUTORS "AS IS" AND 
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL GENOME RESEARCH LTD OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
 
 /*! \file
  * SAM header parsing.
@@ -192,7 +218,7 @@ typedef struct {
  * Returns a SAM_hdr struct on success (free with sam_hdr_free())
  *         NULL on failure
  */
-SAM_hdr *sam_hdr_new();
+SAM_hdr *sam_hdr_new(void);
 
 /*! Tokenises a SAM header into a hash table.
  *
@@ -202,11 +228,7 @@ SAM_hdr *sam_hdr_new();
  * Returns a SAM_hdr struct on success (free with sam_hdr_free());
  *         NULL on failure
  */
-#ifdef SAMTOOLS
 SAM_hdr *sam_hdr_parse_(const char *hdr, int len);
-#else
-SAM_hdr *sam_hdr_parse(const char *hdr, int len);
-#endif
 
 
 /*! Produces a duplicate copy of hdr and returns it.
@@ -367,7 +389,7 @@ int sam_hdr_rebuild(SAM_hdr *hdr);
  * @return
  * Returns -1 if unknown reference.
  */
-int sam_hdr_name2ref(SAM_hdr *hdr, char *ref);
+int sam_hdr_name2ref(SAM_hdr *hdr, const char *ref);
 
 /*! Looks up a read-group by name and returns a pointer to the start of the
  * associated tag list.
@@ -375,7 +397,7 @@ int sam_hdr_name2ref(SAM_hdr *hdr, char *ref);
  * @return
  * Returns NULL on failure
  */
-SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, char *rg);
+SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, const char *rg);
 
 /*! Fixes any PP links in @PG headers.
  *
