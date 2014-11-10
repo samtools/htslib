@@ -5,4 +5,5 @@ compiler:
   - clang
   - gcc
 
-script: configure && make -e && make test
+
+script: autoreconf -fi && ./configure && make -e && make test
