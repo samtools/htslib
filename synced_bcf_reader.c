@@ -131,18 +131,19 @@ int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int
 
 int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 {
+    htsFile* file_ptr = hts_open(fname, "r");
+    if ( ! file_ptr ) {
+        files->errnum = open_failed;
+        return 0;
+    }
+
     files->has_line = (int*) realloc(files->has_line, sizeof(int)*(files->nreaders+1));
     files->has_line[files->nreaders] = 0;
     files->readers  = (bcf_sr_t*) realloc(files->readers, sizeof(bcf_sr_t)*(files->nreaders+1));
     bcf_sr_t *reader = &files->readers[files->nreaders++];
     memset(reader,0,sizeof(bcf_sr_t));
 
-    reader->file = hts_open(fname, "r");
-    if ( !reader->file )
-    {
-        files->errnum = open_failed;
-        return 0;
-    }
+    reader->file = file_ptr;
 
     files->errnum = 0;
 
