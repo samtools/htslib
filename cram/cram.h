@@ -31,8 +31,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*! \file
  * CRAM interface.
  *
- * Consider using the higher level scram_*() API for programs that wish to
- * be file format agnostic.
+ * Consider using the higher level hts_*() API for programs that wish to
+ * be file format agnostic (see htslib/hts.h).
  *
  * This API should be used for CRAM specific code. The specifics of the
  * public API are implemented in cram_io.h, cram_encode.h and cram_decode.h

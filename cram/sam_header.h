@@ -34,10 +34,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * These functions can be shared between SAM, BAM and CRAM file
  * formats as all three internally use the same string encoding for
  * header fields.
- *
- * Consider using the scram() generic API and calling
- * scram_get_header() to obtain the format-specific pointer to the
- * SAM_hdr struct.
  */ 
 
 /*
