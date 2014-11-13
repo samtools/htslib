@@ -391,19 +391,23 @@ int bam_write1(BGZF *fp, const bam1_t *b)
 
 static hts_idx_t *bam_index(BGZF *fp, int min_shift)
 {
-    int n_lvls, i, fmt;
+    int n_lvls, i;
     bam1_t *b;
     hts_idx_t *idx;
     bam_hdr_t *h;
     h = bam_hdr_read(fp);
+
+    enum htsExactFormat fmt = bai;
+    if ( min_shift>0 ) fmt = csi;
+    else if ( min_shift<0 ) { fmt = csiv1; min_shift *= -1; }
+
     if (min_shift > 0) {
         int64_t max_len = 0, s;
         for (i = 0; i < h->n_targets; ++i)
             if (max_len < h->target_len[i]) max_len = h->target_len[i];
         max_len += 256;
         for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
-        fmt = HTS_FMT_CSI;
-    } else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_BAI;
+    } else min_shift = 14, n_lvls = 5;
     idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp), min_shift, n_lvls);
     bam_hdr_destroy(h);
     b = bam_init1();
@@ -439,11 +443,16 @@ int bam_index_build(const char *fn, int min_shift)
 
     case bam:
         idx = bam_index(fp->fp.bgzf, min_shift);
-        if (idx) {
-            hts_idx_save(idx, fn, (min_shift > 0)? HTS_FMT_CSI : HTS_FMT_BAI);
-            hts_idx_destroy(idx);
+        if ( !idx )
+        {
+            hts_close(fp);
+            return -1;
         }
-        else ret = -1;
+        enum htsExactFormat fmt = bai;
+        if ( min_shift>0 ) fmt = csi;
+        else if ( min_shift<0 ) fmt = csiv1;
+        hts_idx_save(idx, fn, fmt);
+        hts_idx_destroy(idx);
         break;
 
     default:
@@ -491,10 +500,10 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
 
 // The CRAM implementation stores the loaded index within the cram_fd rather
 // than separately as is done elsewhere in htslib.  So if p is a pointer to
-// an hts_idx_t with p->fmt == HTS_FMT_CRAI, then it actually points to an
+// an hts_idx_t with p->fmt == crai , then it actually points to an
 // hts_cram_idx_t and should be cast accordingly.
 typedef struct hts_cram_idx_t {
-    int fmt;
+    enum htsExactFormat fmt;
     cram_fd *cram;
 } hts_cram_idx_t;
 
@@ -509,7 +518,7 @@ hts_idx_t *sam_index_load(samFile *fp, const char *fn)
         // Cons up a fake "index" just pointing at the associated cram_fd:
         hts_cram_idx_t *idx = malloc(sizeof (hts_cram_idx_t));
         if (idx == NULL) return NULL;
-        idx->fmt = HTS_FMT_CRAI;
+        idx->fmt = crai;
         idx->cram = fp->fp.cram;
         return (hts_idx_t *) idx;
         }
@@ -564,7 +573,7 @@ hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
     if (idx == NULL)
         return hts_itr_query(NULL, tid, beg, end, sam_bam_cram_readrec);
-    else if (cidx->fmt == HTS_FMT_CRAI)
+    else if (cidx->fmt == crai)
         return cram_itr_query(idx, tid, beg, end, cram_readrec);
     else
         return hts_itr_query(idx, tid, beg, end, bam_readrec);
@@ -579,7 +588,7 @@ static int cram_name2id(void *fdv, const char *ref)
 hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-    if (cidx->fmt == HTS_FMT_CRAI)
+    if (cidx->fmt == crai)
         return hts_itr_querys(idx, region, cram_name2id, cidx->cram, cram_itr_query, cram_readrec);
     else
         return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr, hts_itr_query, bam_readrec);
