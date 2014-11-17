@@ -36,6 +36,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/vcf.h"
 #include "htslib/tbx.h"
 #include "htslib/hfile.h"
+#include "htslib/khash_str2int.h"
 
 #include "htslib/khash.h"
 KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
@@ -2380,6 +2381,7 @@ bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr)
 bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap)
 {
     int hlen;
+    void *names_hash = khash_str2int_init();
     char *htxt = bcf_hdr_fmt_text(h0, 1, &hlen);
     kstring_t str;
     bcf_hdr_t *h;
@@ -2400,10 +2402,20 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
         }
         kputsn(htxt, p - htxt, &str);
         for (i = 0; i < n; ++i) {
+            if ( khash_str2int_has_key(names_hash,samples[i]) )
+            {
+                fprintf(stderr,"[E::bcf_hdr_subset] Duplicate sample name \"%s\".\n", samples[i]);
+                free(str.s);
+                free(htxt);
+                khash_str2int_destroy(names_hash);
+                bcf_hdr_destroy(h);
+                return NULL;
+            }
             imap[i] = bcf_hdr_id2int(h0, BCF_DT_SAMPLE, samples[i]);
             if (imap[i] < 0) continue;
             kputc('\t', &str);
             kputs(samples[i], &str);
+            khash_str2int_inc(names_hash,samples[i]);
         }
     } else kputsn(htxt, hlen, &str);
     while (str.l && (!str.s[str.l-1] || str.s[str.l-1]=='\n') ) str.l--; // kill trailing zeros and newlines
@@ -2411,6 +2423,7 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
     bcf_hdr_parse(h, str.s);
     free(str.s);
     free(htxt);
+    khash_str2int_destroy(names_hash);
     return h;
 }
 
