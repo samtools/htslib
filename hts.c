@@ -78,6 +78,8 @@ const unsigned char seq_nt16_table[256] = {
 
 const char seq_nt16_str[] = "=ACMGRSVTWYHKDBN";
 
+const int seq_nt16_int[] = { 4, 0, 1, 4, 2, 4, 4, 4, 3, 4, 4, 4, 4, 4, 4, 4 };
+
 /**********************
  *** Basic file I/O ***
  **********************/
