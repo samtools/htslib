@@ -89,6 +89,11 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
                 { \
                     if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
                     if ( bcf_gt_is_missing(p[ial]) ) continue; /* missing allele */ \
+                    if ( p[ial]>>1 > line->n_allele ) \
+                    { \
+                        fprintf(stderr,"[E::%s] Incorrect allele (\"%d\") in %s at %s:%d\n", __func__,(p[ial]>>1)-1, header->samples[i],header->id[BCF_DT_CTG][line->rid].key, line->pos+1); \
+                        exit(1); \
+                    } \
                     ac[(p[ial]>>1)-1]++; \
                 } \
             } \
