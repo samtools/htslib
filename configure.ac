@@ -1,4 +1,4 @@
-AC_INIT([htslib], [1.1], [jm18@sanger.ac.uk], [], [http://www.htslib.org])
+AC_INIT([htslib], [], [jm18@sanger.ac.uk], [], [http://www.htslib.org])
 
 AC_PREREQ(2.68)
 
@@ -6,9 +6,6 @@ AC_PROG_CC
 
 AC_CHECK_LIB([pthread], [pthread_kill])
 AC_CHECK_LIB([gssapi_krb5], [gss_acquire_cred])
-
-dnl Moved here from the hand-rolled Makefile
-AC_SUBST([LIBHTS_SOVERSION], [1])
 
 dnl Save the current values to restore later
 CPPFLAGS_RESTORE=$CPPFLAGS
@@ -60,17 +57,7 @@ dnl Restore the original values
 CPPFLAGS=$CPPFLAGS_RESTORE
 LDFLAGS=$LDFLAGS_RESTORE
 
-dnl Ensure that these defines from the original hand-rolled config.h
-dnl are maintained.
-AC_DEFINE([_USE_KNETFILE], [])
-AC_DEFINE([BGZF_CACHE],    [])
-AC_DEFINE([BGZF_MT],       [])
-
-AH_TEMPLATE([_USE_KNETFILE],    [Use KNETFILE])
-AH_TEMPLATE([BGZF_CACHE],       [Use BGZF cache])
-AH_TEMPLATE([BGZF_MT],          [Use BGZF MT])
-
-AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_SRCDIR([hts.c])
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_HEADERS([config_auto.h])
+AC_CONFIG_FILES([config_auto.mk])
 AC_OUTPUT

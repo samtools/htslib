@@ -51,13 +51,12 @@ LDLIBS   =
 # LDLIBS   += -llzma
 # endif
 
-prefix       = @prefix@
-exec_prefix  = @exec_prefix@
-bindir       = @bindir@
-includedir   = @includedir@
-libdir       = @libdir@
-datarootdir  = @datarootdir@
-mandir       = @mandir@
+prefix       = /usr/local
+exec_prefix  = $(prefix)
+bindir       = $(exec_prefix)/bin
+includedir   = $(prefix)/include
+libdir       = $(exec_prefix)/lib
+mandir       = $(prefix)/share/man
 man1dir      = $(mandir)/man1
 man5dir      = $(mandir)/man5
 pkgconfigdir = $(libdir)/pkgconfig
@@ -73,17 +72,42 @@ BUILT_PROGRAMS = \
 	bgzip \
 	tabix
 
-# TODO: fix up iRODS configury
-IRODS_HOME        = @IRODS_HOME@
-HAVE_LIBRODSAPIS  = @HAVE_LIBRODSAPIS@
-LIBHTS_IRODS_OBJS =
+LIBHTS_OBJS = \
+	kfunc.o \
+	knetfile.o \
+	kstring.o \
+	bgzf.o \
+	faidx.o \
+	hfile.o \
+	hfile_net.o \
+	hts.o \
+	regidx.o \
+	sam.o \
+	synced_bcf_reader.o \
+	vcf_sweep.o \
+	tbx.o \
+	vcf.o \
+	vcfutils.o \
+	cram/cram_codecs.o \
+	cram/cram_decode.o \
+	cram/cram_encode.o \
+	cram/cram_index.o \
+	cram/cram_io.o \
+	cram/cram_samtools.o \
+	cram/cram_stats.o \
+	cram/files.o \
+	cram/mFILE.o \
+	cram/md5.o \
+	cram/open_trace_file.o \
+	cram/pooled_alloc.o \
+	cram/rANS_static.o \
+	cram/sam_header.o \
+	cram/string_alloc.o \
+	cram/thread_pool.o \
+	cram/vlen.o \
+	cram/zfio.o
 
-ifeq "$(HAVE_LIBRODSAPIS)" "yes"
-IRODS_CPPFLAGS = @IRODS_CPPFLAGS@
-LDFLAGS           += @IRODS_LDFLAGS@
-LDLIBS            += @IRODS_LDLIBS@
-LIBHTS_IRODS_OBJS += hfile_irods.o
-endif
+-include config_auto.mk
 
 all: lib-static lib-shared test/hfile test/test_view test/test-vcf-api test/test-vcf-sweep
 
@@ -115,8 +139,8 @@ lib-shared: libhts.so
 endif
 
 
-PACKAGE_VERSION  = @PACKAGE_VERSION@
-LIBHTS_SOVERSION = @LIBHTS_SOVERSION@
+PACKAGE_VERSION  = 1.1
+LIBHTS_SOVERSION = 1
 
 
 # $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
@@ -156,44 +180,7 @@ version.h:
 .c.pico:
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
 
-hfile_irods.o hfile_irods.pico: CPPFLAGS += @IRODS_CPPFLAGS@
-
-LIBHTS_OBJS = \
-	kfunc.o \
-	knetfile.o \
-	kstring.o \
-	bgzf.o \
-	faidx.o \
-	hfile.o \
-	hfile_net.o \
-	hts.o \
-	regidx.o \
-	sam.o \
-	synced_bcf_reader.o \
-	vcf_sweep.o \
-	tbx.o \
-	vcf.o \
-	vcfutils.o \
-	cram/cram_codecs.o \
-	cram/cram_decode.o \
-	cram/cram_encode.o \
-	cram/cram_index.o \
-	cram/cram_io.o \
-	cram/cram_samtools.o \
-	cram/cram_stats.o \
-	cram/files.o \
-	cram/mFILE.o \
-	cram/md5.o \
-	cram/open_trace_file.o \
-	cram/pooled_alloc.o \
-	cram/rANS_static.o \
-	cram/sam_header.o \
-	cram/string_alloc.o \
-	cram/thread_pool.o \
-	cram/vlen.o \
-	cram/zfio.o
-
-libhts.a: $(LIBHTS_OBJS) $(LIBHTS_IRODS_OBJS)
+libhts.a: $(LIBHTS_OBJS)
 	@-rm -f $@
 	$(AR) -rc $@ $^
 	-$(RANLIB) $@
@@ -204,7 +191,7 @@ libhts.a: $(LIBHTS_OBJS) $(LIBHTS_IRODS_OBJS)
 # As a byproduct invisible to make, libhts.so.NN is also created, as it is the
 # file used at runtime (when $LD_LIBRARY_PATH includes the build directory).
 
-libhts.so: $(LIBHTS_OBJS:.o=.pico) $(LIBHTS_IRODS_OBJS:.o=.pico)
+libhts.so: $(LIBHTS_OBJS:.o=.pico)
 	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) -pthread $(LDFLAGS) -o $@ $^ $(LDLIBS) -lz -lm
 	ln -sf $@ libhts.so.$(LIBHTS_SOVERSION)
 
@@ -212,7 +199,7 @@ libhts.so: $(LIBHTS_OBJS:.o=.pico) $(LIBHTS_IRODS_OBJS:.o=.pico)
 # when run can find this uninstalled shared library (when $DYLD_LIBRARY_PATH
 # includes this project's build directory).
 
-libhts.dylib: $(LIBHTS_OBJS) $(LIBHTS_IRODS_OBJS)
+libhts.dylib: $(LIBHTS_OBJS)
 	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $^ $(LDLIBS) -lz
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
@@ -282,6 +269,9 @@ check test: $(BUILT_TEST_PROGRAMS)
 	cd test && REF_PATH=: ./test_view.pl
 	cd test && ./test.pl
 
+testirods:
+	cd test && REF_PATH=: ./test_view.pl irods
+
 test/fieldarith: test/fieldarith.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/fieldarith.o libhts.a $(LDLIBS) -lz
 
@@ -346,14 +336,12 @@ install-pkgconfig: installdirs
 htslib-uninstalled.pc: htslib.pc.in
 	sed -e 's#@includedir@#'`pwd`'#g;s#@libdir@#'`pwd`'#g' htslib.pc.in > $@
 
-testirods:
-	cd test && REF_PATH=: ./test_view.pl irods
-
-irodsclean:
-	ils | sed -e 's#  ##' | grep -E '*.tmp.*' | xargs irm
 
 testclean:
 	-rm -f test/*.tmp test/*.tmp.*
+
+irodsclean:
+	ils | sed -e 's#  ##' | grep -E '*.tmp.*' | xargs irm
 
 mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h
@@ -377,6 +365,7 @@ force:
 
 
 .PHONY: all check clean distclean force install install-pkgconfig installdirs
-.PHONY: irodsclean lib-shared lib-static mostlyclean tags test testclean
+.PHONY: lib-shared lib-static mostlyclean tags test testclean
 .PHONY: clean-so install-so
 .PHONY: clean-dylib install-dylib
+.PHONY: testirods irodsclean

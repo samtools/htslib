@@ -31,6 +31,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hfile.h"
 #include "hfile_internal.h"
 
+#ifdef HAVE_CONFIG_AUTO_H
+#include "config_auto.h"
+#endif
+
 /* hFILE fields are used as follows:
 
    char *buffer;     // Pointer to the start of the I/O buffer
