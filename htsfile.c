@@ -136,7 +136,7 @@ int main(int argc, char **argv)
         }
 
         if (mode == identify) {
-            printf("%s:\t%s\n", argv[i], hts_format_description(&fmt));
+            printf("%s:\t%s\t%s\n", argv[i], hts_format_description(&fmt),hts_compression_description(&fmt));
         }
         else
             switch (fmt.category) {

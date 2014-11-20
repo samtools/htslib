@@ -194,6 +194,10 @@ int hts_detect_format(struct hFILE *fp, htsFormat *fmt);
   @abstract    Get a human-readable description of the file format
 */
 const char *hts_format_description(const htsFormat *format);
+/*!
+  @abstract    Get a human-readable description of the file compression
+*/
+const char *hts_compression_description(const htsFormat *format);
 
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file

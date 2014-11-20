@@ -249,6 +249,17 @@ const char *hts_format_description(const htsFormat *format)
     }
 }
 
+const char *hts_compression_description(const htsFormat *format)
+{
+    switch (format->compression) {
+    case no_compression:   return "no compression";
+    case bgzf:   return "bgzf compression";
+    case gzip:  return "gzip compression";
+    case custom:   return "custom compression";
+    default:    return "unknown compression";
+    }
+}
+
 htsFile *hts_open(const char *fn, const char *mode)
 {
     htsFile *fp = NULL;
