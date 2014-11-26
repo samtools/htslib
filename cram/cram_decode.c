@@ -52,6 +52,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/os.h"
 #include "cram/md5.h"
 
+#include "htslib/kstring.h"
+
 //Whether CIGAR has just M or uses = and X to indicate match and mismatch
 //#define USE_X
 
@@ -2315,6 +2317,7 @@ int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
     int bam_idx, rg_len;
     char name_a[1024], *name;
     int name_len;
+    kstring_t name_s = { 0, 1024, name_a };
     char *aux, *aux_orig;
     char *seq, *qual;
 
@@ -2325,14 +2328,20 @@ int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
 	    name_len = cr->name_len;
 	} else {
 	    // FIXME: add prefix, container number, slice number, etc
-	    name = name_a;
+	    name_s.l = 0;
+	    kputs(fd->prefix, &name_s);
+	    kputc(':', &name_s);
+	    kputl(s->id, &name_s);
+	    kputc(':', &name_s);
 
 	    if (cr->mate_line >= 0 && cr->mate_line < rec)
-		name_len = sprintf(name_a, "%s:%"PRId64":%d",
-				   fd->prefix, s->id, cr->mate_line);
+	        kputw(cr->mate_line, &name_s);
 	    else
-		name_len = sprintf(name_a, "%s:%"PRId64":%d",
-				   fd->prefix, s->id, rec);
+	        kputw(rec, &name_s);
+
+        assert(name_a == name_s.s);
+        name = name_a;
+        name_len = name_s.l;
 	}
     } else {
 	name = "?";
@@ -2376,6 +2385,7 @@ int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
 				cr->len,
 				seq,
 				qual);
+
     if (bam_idx == -1)
 	return -1;
 
