@@ -177,7 +177,7 @@ bcf_hrec_t *bcf_hrec_dup(bcf_hrec_t *hrec)
         if ( hrec->vals[i] ) out->vals[j] = strdup(hrec->vals[i]);
         j++;
     }
-    if ( i!=j ) out->nkeys--;   // IDX was omitted
+    if ( i!=j ) out->nkeys -= i-j;   // IDX was omitted
     return out;
 }
 
@@ -449,7 +449,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         if ( kh_val(d, k).hrec[info&0xf] ) return 0;
         kh_val(d, k).info[info&0xf] = info;
         kh_val(d, k).hrec[info&0xf] = hrec;
-        hrec_add_idx(hrec, kh_val(d, k).id);
+        if ( idx==-1 ) hrec_add_idx(hrec, kh_val(d, k).id);
         return 1;
     }
     kh_val(d, k) = bcf_idinfo_def;
