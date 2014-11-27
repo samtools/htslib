@@ -2590,10 +2590,19 @@ cram_container *cram_read_container(cram_fd *fd) {
 	c2.record_counter = 0;
 	c2.num_bases = 0;
     } else {
-	if ((s = itf8_decode(fd, &c2.record_counter)) == -1)
-	    return NULL;
-	else
-	    rd += s;
+	if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	    if ((s = ltf8_decode(fd, &c2.record_counter)) == -1)
+		return NULL;
+	    else
+		rd += s;
+	} else {
+	    int32_t i32;
+	    if ((s = itf8_decode(fd, &i32)) == -1)
+		return NULL;
+	    else
+		rd += s;
+	    c2.record_counter = i32;
+	}
 
 	if ((s = ltf8_decode(fd, &c2.num_bases))== -1)
 	    return NULL;
@@ -2651,7 +2660,7 @@ cram_container *cram_read_container(cram_fd *fd) {
 	cp += itf8_put(cp, c->ref_seq_start);
 	cp += itf8_put(cp, c->ref_seq_span);
 	cp += itf8_put(cp, c->num_records);
-	cp += itf8_put(cp, c->record_counter);
+	cp += ltf8_put((char *)cp, c->record_counter);
 	cp += itf8_put(cp, c->num_bases);
 	cp += itf8_put(cp, c->num_blocks);
 	cp += itf8_put(cp, c->num_landmarks);
@@ -2718,10 +2727,14 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
 	cp += itf8_put(cp, c->ref_seq_span);
     }
     cp += itf8_put(cp, c->num_records);
-    if (CRAM_MAJOR_VERS(fd->version) != 1) {
+    if (CRAM_MAJOR_VERS(fd->version) == 2) {
 	cp += itf8_put(cp, c->record_counter);
 	cp += ltf8_put(cp, c->num_bases);
+    } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	cp += ltf8_put(cp, c->record_counter);
+	cp += ltf8_put(cp, c->num_bases);
     }
+
     cp += itf8_put(cp, c->num_blocks);
     cp += itf8_put(cp, c->num_landmarks);
     for (i = 0; i < c->num_landmarks; i++)
@@ -3067,7 +3080,6 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
     s->block = NULL;
     s->block_by_id = NULL;
     s->last_apos = 0;
-    s->id = 0;
     if (!(s->crecs = malloc(nrecs * sizeof(cram_record))))  goto err;
     s->cigar = NULL;
     s->cigar_alloc = 0;
@@ -3181,8 +3193,6 @@ cram_slice *cram_read_slice(cram_fd *fd) {
 
     s->last_apos = s->hdr->ref_seq_start;
     
-    s->id = fd->slice_num++;
-
     return s;
 
  err:
@@ -3766,7 +3776,6 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->prefix = strdup((cp = strrchr(filename, '/')) ? cp+1 : filename);
     if (!fd->prefix)
 	goto err;
-    fd->slice_num = 0;
     fd->first_base = fd->last_base = -1;
     fd->record_counter = 0;
 

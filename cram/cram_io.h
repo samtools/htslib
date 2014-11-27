@@ -100,6 +100,9 @@ int itf8_put(char *cp, int32_t val);
 
 #endif
 
+int ltf8_get(char *cp, int64_t *val_p);
+int ltf8_put(char *cp, int64_t val);
+
 /*! Pushes a value in ITF8 format onto the end of a block.
  *
  * This shouldn't be used for high-volume data as it is not the fastest

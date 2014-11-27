@@ -963,8 +963,15 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
 	cp += itf8_get(cp, &hdr->ref_seq_span);
     }
     cp += itf8_get(cp, &hdr->num_records);
-    if (CRAM_MAJOR_VERS(fd->version) != 1)
-	cp += itf8_get(cp, &hdr->record_counter);
+    hdr->record_counter = 0;
+    if (CRAM_MAJOR_VERS(fd->version) == 2) {
+	int32_t i32;
+	cp += itf8_get(cp, &i32);
+	hdr->record_counter = i32;
+    } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	cp += ltf8_get(cp, &hdr->record_counter);
+    }
+
     cp += itf8_get(cp, &hdr->num_blocks);
 
     cp += itf8_get(cp, &hdr->num_content_ids);
@@ -2324,15 +2331,16 @@ static int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
 	    name = (char *)BLOCK_DATA(s->name_blk) + cr->name;
 	    name_len = cr->name_len;
 	} else {
-	    // FIXME: add prefix, container number, slice number, etc
 	    name = name_a;
 
 	    if (cr->mate_line >= 0 && cr->mate_line < rec)
-		name_len = sprintf(name_a, "%s:%"PRId64":%d",
-				   fd->prefix, s->id, cr->mate_line);
+		name_len = sprintf(name_a, "%s:%"PRId64,
+				   fd->prefix,
+				   s->hdr->record_counter + cr->mate_line + 1);
 	    else
-		name_len = sprintf(name_a, "%s:%"PRId64":%d",
-				   fd->prefix, s->id, rec);
+		name_len = sprintf(name_a, "%s:%"PRId64,
+				   fd->prefix,
+				   s->hdr->record_counter + rec + 1);
 	}
     } else {
 	name = "?";
