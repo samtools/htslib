@@ -361,6 +361,9 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
 	    continue;
 	}
     }
+    // i==j or i==j-1. Check if j is better.
+    if (from->e[j].start < pos && from->e[j].refid == refid)
+	i = j;
 
     /* The above found *a* bin overlapping, but not necessarily the first */
     while (i > 0 && from->e[i-1].end >= pos)
