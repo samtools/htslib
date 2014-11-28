@@ -1824,6 +1824,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         for (end = val; *end != ';' && *end != 0; ++end);
                         c = *end; *end = 0;
                     } else end = r;
+                    if ( !*key ) { if (c==0) break; r = end; key = r + 1; continue; }  // faulty VCF, ";;" in the INFO
                     k = kh_get(vdict, d, key);
                     if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_INFO] == 15)
                     {
