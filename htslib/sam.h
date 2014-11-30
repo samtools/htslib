@@ -144,8 +144,11 @@ typedef struct {
 typedef struct {
     int32_t tid;
     int32_t pos;
-    uint32_t bin:16, qual:8, l_qname:8;
-    uint32_t flag:16, n_cigar:16;
+    uint16_t bin;
+    uint8_t qual;
+    uint8_t l_qname;
+    uint16_t flag;
+    uint16_t n_cigar;
     int32_t l_qseq;
     int32_t mtid;
     int32_t mpos;
