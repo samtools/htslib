@@ -64,7 +64,11 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
                 default: fprintf(stderr, "[E::%s] todo: %d at %s:%d\n", __func__, ac_type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
             }
             #undef BRANCH_INT
-            assert( an>=nac );  // sanity check for missing values
+            if ( an<nac )
+            {
+                fprintf(stderr,"[E::%s] Incorrect AN/AC counts at %s:%d\n", __func__,header->id[BCF_DT_CTG][line->rid].key, line->pos+1); 
+                exit(1); 
+            }
             ac[0] = an - nac;
             return 1;
         }
