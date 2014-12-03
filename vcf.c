@@ -1560,7 +1560,15 @@ int _vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char
                 if (fmt[j].max_l < l - 1) fmt[j].max_l = l - 1;
                 if (fmt[j].is_gt && fmt[j].max_g < g) fmt[j].max_g = g;
                 l = 0, m = g = 1;
-                if ( *r==':' ) j++;
+                if ( *r==':' ) 
+                {
+                    j++;
+                    if ( j>=v->n_fmt ) 
+                    { 
+                        fprintf(stderr,"Incorrect number of FORMAT fields at %s:%d\n", h->id[BCF_DT_CTG][v->rid].key,v->pos+1);
+                        exit(1); 
+                    }
+                }
                 else break;
             }
             else if ( *r== ',' ) m++;
