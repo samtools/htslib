@@ -88,8 +88,9 @@ int bcf_hdr_add_sample(bcf_hdr_t *h, const char *s)
     return 0;
 }
 
-void bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
+int bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
 {
+    int ret = 0;
     int i = 0;
     const char *p, *q;
     // add samples
@@ -99,13 +100,14 @@ void bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
             char *s = (char*)malloc(q - p + 1);
             strncpy(s, p, q - p);
             s[q - p] = 0;
-            bcf_hdr_add_sample(h,s);
+            if ( bcf_hdr_add_sample(h,s) < 0 ) ret = -1;
             free(s);
         }
         if (*q == 0 || *q == '\n') break;
         p = q + 1;
     }
     bcf_hdr_add_sample(h,NULL);
+    return ret;
 }
 
 int bcf_hdr_sync(bcf_hdr_t *h)
@@ -581,10 +583,10 @@ int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt)
         needs_sync += bcf_hdr_add_hrec(hdr, hrec);
         p += len;
     }
-    bcf_hdr_parse_sample_line(hdr,p);
+    int ret = bcf_hdr_parse_sample_line(hdr,p);
     bcf_hdr_sync(hdr);
     bcf_hdr_check_sanity(hdr);
-    return 0;
+    return ret;
 }
 
 int bcf_hdr_append(bcf_hdr_t *hdr, const char *line)
