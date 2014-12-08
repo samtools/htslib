@@ -308,16 +308,16 @@ struct __hts_idx_t;
 typedef struct __hts_idx_t hts_idx_t;
 
 typedef struct {
-    uint64_t u, v, n;   // u,v: file offset start and end, n:number of records (set only by CSIv2)
-} hts_chunk_t;
+    uint64_t u, v;
+} hts_pair64_t;
 
 typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, int *end);
 
 typedef struct {
     uint32_t read_rest:1, finished:1, dummy:29;
     int tid, beg, end, n_off, i;
-    uint64_t curr_off;
-    hts_chunk_t *off;
+    uint64_t curr_off, nrec_off, nrec_beg, nrec_end;
+    hts_pair64_t *off;
     hts_readrec_func *readrec;
     struct {
         int n, m;

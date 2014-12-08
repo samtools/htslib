@@ -49,6 +49,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/khash.h"
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
+#define MAX_CSI_COOR 0x7fffffff     // maximum indexable coordinate of .csi
+
 int hts_verbose = 3;
 
 const char *hts_version()
@@ -623,15 +625,15 @@ char **hts_readlines(const char *fn, int *_n)
 //  ((1<<(3 * n_lvls + 3)) - 1) / 7 + 1
 #define META_BIN(idx) ((idx)->n_bins + 1)
 
-#define chunk_lt(a,b) ((a).u < (b).u)
+#define pair64_lt(a,b) ((a).u < (b).u)
 
 #include "htslib/ksort.h"
-KSORT_INIT(_off, hts_chunk_t, chunk_lt)
+KSORT_INIT(_off, hts_pair64_t, pair64_lt)
 
 typedef struct {
-    int32_t m, n;
-    uint64_t loff;
-    hts_chunk_t *list;
+    int32_t m, n;           // number of chunks, m:allocated, n:used
+    uint64_t loff, nrec;    // loff:file offset, nrec:number of records
+    hts_pair64_t *list;
 } bins_t;
 
 #include "htslib/khash.h"
@@ -669,14 +671,14 @@ static inline void insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end, u
     k = kh_put(bin, b, bin, &absent);
     l = &kh_value(b, k);
     if (absent) {
-        l->m = 1; l->n = 0;
-        l->list = (hts_chunk_t*)calloc(l->m, sizeof(hts_chunk_t));
+        l->m = 1; l->n = 0; l->nrec = 0;
+        l->list = (hts_pair64_t*)calloc(l->m, sizeof(hts_pair64_t));
     }
     if (l->n == l->m) {
         l->m <<= 1;
-        l->list = (hts_chunk_t*)realloc(l->list, l->m * sizeof(hts_chunk_t));
+        l->list = (hts_pair64_t*)realloc(l->list, l->m * sizeof(hts_pair64_t));
     }
-    l->list[l->n].n = nrec;
+    l->nrec += nrec;
     l->list[l->n].u = beg;
     l->list[l->n++].v = end;
 }
@@ -783,9 +785,9 @@ static void compress_binning(hts_idx_t *idx, int i)
                 if (q->n + p->n > q->m) {
                     q->m = q->n + p->n;
                     kroundup32(q->m);
-                    q->list = (hts_chunk_t*)realloc(q->list, q->m * sizeof(hts_chunk_t));
+                    q->list = (hts_pair64_t*)realloc(q->list, q->m * sizeof(hts_pair64_t));
                 }
-                memcpy(q->list + q->n, p->list, p->n * sizeof(hts_chunk_t));
+                memcpy(q->list + q->n, p->list, p->n * sizeof(hts_pair64_t));
                 q->n += p->n;
                 free(p->list);
                 kh_del(bin, bidx, k);
@@ -801,17 +803,8 @@ static void compress_binning(hts_idx_t *idx, int i)
         p = &kh_value(bidx, k);
         for (l = 1, m = 0; l < p->n; ++l) {
             if (p->list[m].v>>16 >= p->list[l].u>>16) {
-                if (p->list[m].v < p->list[l].v) 
-                {
-                    p->list[m].v = p->list[l].v;
-                    if (l!=m) p->list[m].n += p->list[l].n;
-                }
-            } 
-            else
-            {
-                p->list[++m].u = p->list[l].u; p->list[m].v = p->list[l].v;
-                if (m!=l) { p->list[m].n += p->list[l].n; p->list[l].n = 0; }
-            }
+                if (p->list[m].v < p->list[l].v) p->list[m].v = p->list[l].v;
+            } else p->list[++m] = p->list[l];
         }
         p->n = m + 1;
     }
@@ -936,7 +929,6 @@ static inline void swap_bins(bins_t *p)
     for (i = 0; i < p->n; ++i) {
         ed_swap_8p(&p->list[i].u);
         ed_swap_8p(&p->list[i].v);
-        ed_swap_8p(&p->list[i].n);
     }
 }
 
@@ -971,37 +963,23 @@ static void hts_idx_save_core(const hts_idx_t *idx, void *fp, enum htsExactForma
                 if (fmt == csiv1 || fmt == csi ) {
                     uint64_t y = kh_val(bidx, k).loff;
                     idx_write(is_bgzf, fp, ed_swap_4p(&y), 8);
+                    y = kh_val(bidx, k).nrec;
+                    idx_write(is_bgzf, fp, ed_swap_4p(&y), 8);
                 }
                 x = p->n; idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
                 swap_bins(p);
-                if ( fmt==csi )
-                    idx_write(is_bgzf, fp, p->list, sizeof(hts_chunk_t) * p->n);
-                else
-                {
-                    int j;
-                    for (j=0; j<p->n; j++)
-                    {
-                        idx_write(is_bgzf, fp, &p->list[j].u, 8);
-                        idx_write(is_bgzf, fp, &p->list[j].v, 8);
-                    }
-                }
+                idx_write(is_bgzf, fp, p->list, sizeof(hts_pair64_t) * p->n);
                 swap_bins(p);
             } else {
                 idx_write(is_bgzf, fp, &kh_key(bidx, k), 4);
-                if (fmt == csiv1 || fmt == csi ) idx_write(is_bgzf, fp, &kh_val(bidx, k).loff, 8);
+                if (fmt == csiv1 || fmt == csi )
+                {
+                    idx_write(is_bgzf, fp, &kh_val(bidx, k).loff, 8);
+                    idx_write(is_bgzf, fp, &kh_val(bidx, k).nrec, 8);
+                }
                 //int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
                 idx_write(is_bgzf, fp, &p->n, 4);
-                if ( fmt==csi )
-                    idx_write(is_bgzf, fp, p->list,  sizeof(hts_chunk_t) * p->n);
-                else
-                {
-                    int j;
-                    for (j=0; j<p->n; j++)
-                    {
-                        idx_write(is_bgzf, fp, &p->list[j].u, 8);
-                        idx_write(is_bgzf, fp, &p->list[j].v, 8);
-                    }
-                }
+                idx_write(is_bgzf, fp, p->list,  sizeof(hts_pair64_t) * p->n);
             }
         }
 write_lidx:
@@ -1088,29 +1066,15 @@ static int hts_idx_load_core(hts_idx_t *idx, void *fp, enum htsExactFormat fmt)
             if (fmt == csi || fmt == csiv1) {
                 if (idx_read(is_bgzf, fp, &p->loff, 8) != 8) return -1;
                 if (is_be) ed_swap_8p(&p->loff);
+                if (idx_read(is_bgzf, fp, &p->nrec, 8) != 8) return -1;
+                if (is_be) ed_swap_8p(&p->nrec);
             } else p->loff = 0;
             if (idx_read(is_bgzf, fp, &p->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&p->n);
             p->m = p->n;
-            p->list = (hts_chunk_t*)malloc(p->m * sizeof(hts_chunk_t));
+            p->list = (hts_pair64_t*)malloc(p->m * sizeof(hts_pair64_t));
             if (p->list == NULL) return -2;
-            if (fmt==csi)
-            {
-                if (idx_read(is_bgzf, fp, p->list, p->n*sizeof(hts_chunk_t)) != p->n*sizeof(hts_chunk_t)) return -1;
-            }
-            else
-            {
-                uint64_t *ptr = (uint64_t*)p->list;
-                ptr += p->n;
-                if (idx_read(is_bgzf, fp, ptr, p->n<<4) != p->n<<4) return -1;
-                int j;
-                for (j=0; j<p->n; j++)
-                {
-                    p->list[j].u = ptr[2*j];
-                    p->list[j].v = ptr[2*j+1];
-                    p->list[j].n = 0;
-                }
-            }
+            if (idx_read(is_bgzf, fp, p->list, p->n*sizeof(hts_pair64_t)) != p->n*sizeof(hts_pair64_t)) return -1;
             if (is_be) swap_bins(p);
         }
         if (fmt!=csi && fmt!=csiv1) { // load linear index
@@ -1303,7 +1267,7 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
 hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
 {
     int i, n_off, l, bin;
-    hts_chunk_t *off;
+    hts_pair64_t *off;
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off;
@@ -1379,17 +1343,18 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
     min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
     // retrieve bins
     reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
+    uint64_t nrec = 0;
     for (i = n_off = 0; i < iter->bins.n; ++i)
-        if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
-            n_off += kh_value(bidx, k).n;
+        if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) n_off += kh_value(bidx, k).n;
     if (n_off == 0) return iter;
-    off = (hts_chunk_t*)calloc(n_off, sizeof(hts_chunk_t));
+    off = (hts_pair64_t*)calloc(n_off, sizeof(hts_pair64_t));
     for (i = n_off = 0; i < iter->bins.n; ++i) {
         if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
             int j;
             bins_t *p = &kh_value(bidx, k);
             for (j = 0; j < p->n; ++j)
                 if (p->list[j].v > min_off) off[n_off++] = p->list[j];
+            nrec += p->nrec;
         }
     }
     if (n_off == 0) {
@@ -1398,27 +1363,48 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
     ks_introsort(_off, n_off, off);
     // resolve completely contained adjacent blocks
     for (i = 1, l = 0; i < n_off; ++i)
-        if (off[l].v < off[i].v) 
-        { 
-            off[++l].u = off[i].u; off[l].v = off[i].v; 
-            if (l!=i) { off[l].n += off[i].n; off[i].n = 0; }
-        }
+        if (off[l].v < off[i].v) off[++l] = off[i];
     n_off = l + 1;
     // resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
     for (i = 1; i < n_off; ++i)
         if (off[i-1].v >= off[i].u) off[i-1].v = off[i].u;
     // merge adjacent blocks
     for (i = 1, l = 0; i < n_off; ++i) {
-        if (off[l].v>>16 == off[i].u>>16) { off[l].v = off[i].v; if(l!=i) off[l].n += off[i].n; }
-        else
-        {
-            off[++l].u = off[i].u; off[l].v = off[i].v; 
-            if (l!=i) { off[l].n += off[i].n; off[i].n = 0; }
-        }
+        if (off[l].v>>16 == off[i].u>>16) off[l].v = off[i].v;
+        else off[++l] = off[i];
     }
     n_off = l + 1;
     iter->n_off = n_off; iter->off = off;
     return iter;
+}
+
+hts_itr_t *hts_itr_nrec_query(const hts_idx_t *idx, int tid, int64_t beg, int64_t end, hts_readrec_func *readrec)
+{
+    bidx_t *bidx;
+    if (beg < 0) beg = 0;
+    if (end < beg) return NULL;
+    if ((bidx = idx->bidx[tid]) == 0) return NULL;
+
+    // neglecting higher bins, not sure how to count long events
+    int64_t beg_pos = -1, end_pos;
+    uint64_t nrec = 0, nrec_off = 0;
+    khint_t k = hts_reg2bin(0, 1, idx->min_shift, idx->n_lvls);
+    for (; k < kh_end(bidx); k++)
+    {
+        if ( !kh_exist(bidx,k) ) continue;
+        if ( nrec < beg ) nrec_off = nrec;
+        nrec += kh_val(bidx, k).nrec;
+        if ( nrec < beg ) continue;
+        if ( beg_pos<0 ) beg_pos = (k - ((1<<idx->n_lvls*3)-1)/7) << idx->min_shift;
+        end_pos = (k+1 - ((1<<idx->n_lvls*3)-1)/7) << idx->min_shift;
+        if ( nrec > end ) break;
+    }
+
+    hts_itr_t *itr = hts_itr_query(idx,tid,beg_pos,end_pos,readrec);
+    itr->nrec_off = nrec_off;
+    itr->nrec_beg = beg;
+    itr->nrec_end = end;
+    return itr;
 }
 
 void hts_itr_destroy(hts_itr_t *iter)
@@ -1426,7 +1412,7 @@ void hts_itr_destroy(hts_itr_t *iter)
     if (iter) { free(iter->off); free(iter->bins.a); free(iter); }
 }
 
-const char *hts_parse_reg(const char *s, int *beg, int *end)
+const char *hts_parse_reg64(const char *s, int64_t *beg, int64_t *end)
 {
     int i, k, l, name_end;
     *beg = *end = -1;
@@ -1450,27 +1436,38 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
             if (s[i] != ',') tmp[k++] = s[i];
         tmp[k] = 0;
         if ((*beg = strtol(tmp, &tmp, 10) - 1) < 0) *beg = 0;
-        *end = *tmp? strtol(tmp + 1, &tmp, 10) : 1<<29;
+        *end = *tmp? strtol(tmp + 1, &tmp, 10) : MAX_CSI_COOR;
         if (*beg > *end) name_end = l;
     }
-    if (name_end == l) *beg = 0, *end = 1<<29;
+    if (name_end == l) *beg = 0, *end = MAX_CSI_COOR;
     return s + name_end;
+}
+
+const char *hts_parse_reg(const char *s, int *beg, int *end)
+{
+    int64_t xbeg, xend;
+    const char *ret = hts_parse_reg64(s,&xbeg,&xend);
+    *beg = xbeg; *end = xend;
+    return ret;
 }
 
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
-    int tid, beg, end;
+    int64_t beg, end;
+    int tid, seek_nrec = 0;
     char *q, *tmp;
     if (strcmp(reg, ".") == 0)
-        return itr_query(idx, HTS_IDX_START, 0, 1<<29, readrec);
+        return itr_query(idx, HTS_IDX_START, 0, MAX_CSI_COOR, readrec);
     else if (strcmp(reg, "*") != 0) {
-        q = (char*)hts_parse_reg(reg, &beg, &end);
+        q = (char*)hts_parse_reg64(reg, &beg, &end);
         tmp = (char*)alloca(q - reg + 1);
         strncpy(tmp, reg, q - reg);
         tmp[q - reg] = 0;
+        if ( q>reg && tmp[q-reg-1]==':' ) { seek_nrec = 1; tmp[q-reg-1] = 0; }
         if ((tid = getid(hdr, tmp)) < 0)
             tid = getid(hdr, reg);
         if (tid < 0) return 0;
+        if ( seek_nrec ) return hts_itr_nrec_query(idx, tid, beg+1, end, readrec);
         return itr_query(idx, tid, beg, end, readrec);
     } else return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
 }
@@ -1500,9 +1497,18 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
         }
         if ((ret = iter->readrec(fp, data, r, &tid, &beg, &end)) >= 0) {
             iter->curr_off = bgzf_tell(fp);
-            if (tid != iter->tid || beg >= iter->end) { // no need to proceed
-                ret = -1; break;
-            } else if (end > iter->beg && iter->end > beg) return ret;
+            if ( tid != iter->tid ) { ret = -1; break; } // no need to proceed
+            if ( iter->nrec_end==0 )
+            {
+                if ( beg >= iter->end ) { ret = -1; break; }
+                if ( end > iter->beg && iter->end > beg ) return ret;
+            }
+            else
+            {
+                iter->nrec_off++;
+                if ( iter->nrec_off > iter->nrec_end ) { ret = -1; break; }
+                if ( iter->nrec_off >= iter->nrec_beg ) return ret;
+            }
         } else break; // end of file or error
     }
     iter->finished = 1;
