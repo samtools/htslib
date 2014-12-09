@@ -2575,7 +2575,11 @@ cram_container *cram_read_container(cram_fd *fd) {
 	}
     } else {
 	if ((s = int32_decode(fd, &c2.length)) == -1) {
-	    fd->eof = fd->empty_container ? 1 : 2;
+	    if (CRAM_MAJOR_VERS(fd->version) == 2 &&
+		CRAM_MINOR_VERS(fd->version) == 0)
+		fd->eof = 1; // EOF blocks arrived in v2.1
+	    else
+		fd->eof = fd->empty_container ? 1 : 2;
 	    return NULL;
 	} else {
 	    rd+=s;
