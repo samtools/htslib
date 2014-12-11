@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -1374,10 +1375,10 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
             if (s[i] != ',') tmp[k++] = s[i];
         tmp[k] = 0;
         if ((*beg = strtol(tmp, &tmp, 10) - 1) < 0) *beg = 0;
-        *end = *tmp? strtol(tmp + 1, &tmp, 10) : 1<<29;
+        *end = *tmp? strtol(tmp + 1, &tmp, 10) : INT_MAX;
         if (*beg > *end) name_end = l;
     }
-    if (name_end == l) *beg = 0, *end = 1<<29;
+    if (name_end == l) *beg = 0, *end = INT_MAX;
     return s + name_end;
 }
 
@@ -1386,7 +1387,7 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
     int tid, beg, end;
     char *q, *tmp;
     if (strcmp(reg, ".") == 0)
-        return itr_query(idx, HTS_IDX_START, 0, 1<<29, readrec);
+        return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
     else if (strcmp(reg, "*") != 0) {
         q = (char*)hts_parse_reg(reg, &beg, &end);
         tmp = (char*)alloca(q - reg + 1);
