@@ -183,7 +183,7 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
             { \
                 if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
                 if ( bcf_gt_is_missing(p[ial]) ) continue; /* missing allele */ \
-                if ( (p[ial]>>1)-1 >= line->n_allele ) return -1; \
+                if ( (p[ial]>>1)-1 >= line->n_allele ) { free(ac); return -1; } \
                 ac[(p[ial]>>1)-1]++; \
             } \
         } \

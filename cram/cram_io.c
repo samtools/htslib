@@ -910,8 +910,10 @@ int cram_uncompress_block(cram_block *b) {
 	uncomp = zlib_mem_inflate((char *)b->data, b->comp_size, &uncomp_size);
 	if (!uncomp)
 	    return -1;
-	if ((int)uncomp_size != b->uncomp_size)
+	if ((int)uncomp_size != b->uncomp_size) {
+	    free(uncomp);
 	    return -1;
+	}
 	free(b->data);
 	b->data = (unsigned char *)uncomp;
 	b->alloc = uncomp_size;

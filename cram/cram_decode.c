@@ -133,8 +133,10 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
 	return NULL;
 
     if (b->method != RAW) {
-	if (cram_uncompress_block(b))
+	if (cram_uncompress_block(b)) {
+	    free(hdr);
 	    return NULL;
+	}
     }
 
     cp = (char *)b->data;
