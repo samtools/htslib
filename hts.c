@@ -666,11 +666,11 @@ static inline void insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
     l = &kh_value(b, k);
     if (absent) {
         l->m = 1; l->n = 0;
-        l->list = (hts_pair64_t*)calloc(l->m, 16);
+        l->list = (hts_pair64_t*)calloc(l->m, sizeof(hts_pair64_t));
     }
     if (l->n == l->m) {
         l->m <<= 1;
-        l->list = (hts_pair64_t*)realloc(l->list, l->m * 16);
+        l->list = (hts_pair64_t*)realloc(l->list, l->m * sizeof(hts_pair64_t));
     }
     l->list[l->n].u = beg;
     l->list[l->n++].v = end;
@@ -685,7 +685,7 @@ static inline void insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t o
         int old_m = l->m;
         l->m = end + 1;
         kroundup32(l->m);
-        l->offset = (uint64_t*)realloc(l->offset, l->m * 8);
+        l->offset = (uint64_t*)realloc(l->offset, l->m * sizeof(uint64_t));
         memset(l->offset + old_m, 0xff, 8 * (l->m - old_m)); // fill l->offset with (uint64_t)-1
     }
     if (beg == end) { // to save a loop in this case
@@ -778,9 +778,9 @@ static void compress_binning(hts_idx_t *idx, int i)
                 if (q->n + p->n > q->m) {
                     q->m = q->n + p->n;
                     kroundup32(q->m);
-                    q->list = (hts_pair64_t*)realloc(q->list, q->m * 16);
+                    q->list = (hts_pair64_t*)realloc(q->list, q->m * sizeof(hts_pair64_t));
                 }
-                memcpy(q->list + q->n, p->list, p->n * 16);
+                memcpy(q->list + q->n, p->list, p->n * sizeof(hts_pair64_t));
                 q->n += p->n;
                 free(p->list);
                 kh_del(bin, bidx, k);
@@ -1049,7 +1049,7 @@ static int hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
             if (idx_read(is_bgzf, fp, &p->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&p->n);
             p->m = p->n;
-            p->list = (hts_pair64_t*)malloc(p->m * 16);
+            p->list = (hts_pair64_t*)malloc(p->m * sizeof(hts_pair64_t));
             if (p->list == NULL) return -2;
             if (idx_read(is_bgzf, fp, p->list, p->n<<4) != p->n<<4) return -1;
             if (is_be) swap_bins(p);
@@ -1059,7 +1059,7 @@ static int hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
             if (idx_read(is_bgzf, fp, &l->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&l->n);
             l->m = l->n;
-            l->offset = (uint64_t*)malloc(l->n << 3);
+            l->offset = (uint64_t*)malloc(l->n * sizeof(uint64_t));
             if (l->offset == NULL) return -2;
             if (idx_read(is_bgzf, fp, l->offset, l->n << 3) != l->n << 3) return -1;
             if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
@@ -1316,7 +1316,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
         if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
             n_off += kh_value(bidx, k).n;
     if (n_off == 0) return iter;
-    off = (hts_pair64_t*)calloc(n_off, 16);
+    off = (hts_pair64_t*)calloc(n_off, sizeof(hts_pair64_t));
     for (i = n_off = 0; i < iter->bins.n; ++i) {
         if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
             int j;

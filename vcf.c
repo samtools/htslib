@@ -1792,7 +1792,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                 if (*(q-1) == ';') *(q-1) = 0;
                 for (r = p; *r; ++r)
                     if (*r == ';') ++n_flt;
-                a = (int32_t*)alloca(n_flt * 4);
+                a = (int32_t*)alloca(n_flt * sizeof(int32_t));
                 // add filters
                 for (t = kstrtok(p, ";", &aux1), i = 0; t; t = kstrtok(0, 0, &aux1)) {
                     *(char*)aux1.p = 0;
@@ -1862,7 +1862,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                             if (*t == ',') ++n_val;
                         if ((y>>4&0xf) == BCF_HT_INT) {
                             int32_t *z;
-                            z = (int32_t*)alloca(n_val<<2);
+                            z = (int32_t*)alloca(n_val * sizeof(int32_t));
                             for (i = 0, t = val; i < n_val; ++i, ++t)
                             {
                                 z[i] = strtol(t, &te, 10);
@@ -1877,7 +1877,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                             if (strcmp(key, "END") == 0) v->rlen = z[0] - v->pos;
                         } else if ((y>>4&0xf) == BCF_HT_REAL) {
                             float *z;
-                            z = (float*)alloca(n_val<<2);
+                            z = (float*)alloca(n_val * sizeof(float));
                             for (i = 0, t = val; i < n_val; ++i, ++t)
                             {
                                 z[i] = strtod(t, &te);
