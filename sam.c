@@ -2450,8 +2450,8 @@ static inline int resolve_cigar2(bam_pileup1_t *p, int32_t pos, cstate_t *s)
             for (k = 0, s->x = c->pos, s->y = 0; k < c->n_cigar; ++k) {
                 int op = _cop(cigar[k]);
                 int l = _cln(cigar[k]);
-                if (op == BAM_CMATCH || op == BAM_CDEL || op == BAM_CEQUAL || op == BAM_CDIFF) break;
-                else if (op == BAM_CREF_SKIP) s->x += l;
+                if (op == BAM_CMATCH || op == BAM_CDEL || op == BAM_CREF_SKIP ||
+                    op == BAM_CEQUAL || op == BAM_CDIFF) break;
                 else if (op == BAM_CINS || op == BAM_CSOFT_CLIP) s->y += l;
             }
             assert(k < c->n_cigar);
@@ -2506,7 +2506,87 @@ static inline int resolve_cigar2(bam_pileup1_t *p, int32_t pos, cstate_t *s)
         } // cannot be other operations; otherwise a bug
         p->is_head = (pos == c->pos); p->is_tail = (pos == s->end);
     }
+    p->cigar_ind = s->k;
     return 1;
+}
+
+/*******************************
+ *** Expansion of insertions ***
+ *******************************/
+
+/*
+ * Fills out the kstring with the padded insertion sequence for the current
+ * location in 'p'.  If this is not an insertion site, the string is blank.
+ *
+ * Returns the length of insertion string on success;
+ *        -1 on failure.
+ */
+int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) {
+    int j, k, indel;
+    uint32_t *cigar;
+
+    if (p->indel <= 0) {
+        if (ks_resize(ins, 1) < 0)
+            return -1;
+        ins->l = 0;
+        ins->s[0] = '\0';
+        return 0;
+    }
+
+    if (del_len)
+        *del_len = 0;
+
+    // Measure indel length including pads
+    indel = 0;
+    k = p->cigar_ind+1;
+    cigar = bam_get_cigar(p->b);
+    while (k < p->b->core.n_cigar) {
+        switch (cigar[k] & BAM_CIGAR_MASK) {
+        case BAM_CPAD:
+        case BAM_CINS:
+            indel += (cigar[k] >> BAM_CIGAR_SHIFT);
+            break;
+        default:
+            k = p->b->core.n_cigar;
+            break;
+        }
+        k++;
+    }
+    ins->l = indel;
+
+    // Produce sequence
+    if (ks_resize(ins, indel+1) < 0)
+        return -1;
+    indel = 0;
+    k = p->cigar_ind+1;
+    j = 1;
+    while (k < p->b->core.n_cigar) {
+        int l, c;
+        switch (cigar[k] & BAM_CIGAR_MASK) {
+        case BAM_CPAD:
+            for (l = 0; l < (cigar[k]>>BAM_CIGAR_SHIFT); l++)
+                ins->s[indel++] = '*';
+            break;
+        case BAM_CINS:
+            for (l = 0; l < (cigar[k]>>BAM_CIGAR_SHIFT); l++, j++) {
+                c = seq_nt16_str[bam_seqi(bam_get_seq(p->b),
+                                          p->qpos + j - p->is_del)];
+                ins->s[indel++] = c;
+            }
+            break;
+        case BAM_CDEL:
+            // eg cigar 1M2I1D gives mpileup output in T+2AA-1C style
+            if (del_len)
+                *del_len = cigar[k]>>BAM_CIGAR_SHIFT;
+        default:
+            k = p->b->core.n_cigar;
+            break;
+        }
+        k++;
+    }
+    ins->s[indel] = '\0';
+
+    return indel;
 }
 
 /***********************

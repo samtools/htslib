@@ -37,6 +37,7 @@ lib*.so.*
 /test/fieldarith
 /test/hfile
 /test/hts_endian
+/test/pileup
 /test/sam
 /test/tabix/*.tmp.*
 /test/tabix/FAIL*

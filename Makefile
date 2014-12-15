@@ -70,6 +70,7 @@ BUILT_TEST_PROGRAMS = \
 	test/hts_endian \
 	test/fieldarith \
 	test/hfile \
+	test/pileup \
 	test/sam \
 	test/test_bgzf \
 	test/test_kstring \
@@ -381,6 +382,9 @@ test/fieldarith: test/fieldarith.o libhts.a
 test/hfile: test/hfile.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LIBS) -lpthread
 
+test/pileup: test/pileup.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/pileup.o libhts.a $(LIBS) -lpthread
+
 test/sam: test/sam.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/sam.o libhts.a $(LIBS) -lpthread
 
@@ -414,6 +418,7 @@ test/test-bcf-translate: test/test-bcf-translate.o libhts.a
 test/hts_endian.o: test/hts_endian.c config.h $(htslib_hts_endian_h)
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h)
+test/pileup.o: test/pileup.c $(htslib_sam_h) $(htslib_kstring_h)
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
 test/test_kstring.o: test/test_kstring.c $(htslib_kstring_h)
@@ -446,7 +451,6 @@ test/thrash_threads6: test/thrash_threads6.o libhts.a
 test/thrash_threads7: test/thrash_threads7.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/thrash_threads7.o libhts.a -lz $(LIBS) -lpthread
 test_thrash: $(BUILT_THRASH_PROGRAMS)
-
 
 install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
