@@ -21,6 +21,7 @@ lib*.so.*
 /tabix
 /test/fieldarith
 /test/hfile
+/test/pileup
 /test/sam
 /test/test-regidx
 /test/test-vcf-api

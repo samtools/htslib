@@ -76,6 +76,7 @@ BUILT_PROGRAMS = \
 BUILT_TEST_PROGRAMS = \
 	test/fieldarith \
 	test/hfile \
+	test/pileup \
 	test/sam \
 	test/test-regidx \
 	test/test_view \
@@ -298,6 +299,9 @@ test/fieldarith: test/fieldarith.o libhts.a
 test/hfile: test/hfile.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LDLIBS) -lz
 
+test/pileup: test/pileup.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/pileup.o libhts.a $(LDLIBS) -lz
+
 test/sam: test/sam.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/sam.o libhts.a $(LDLIBS) -lz
 
@@ -315,6 +319,7 @@ test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 
 test/fieldarith.o: test/fieldarith.c $(htslib_sam_h)
 test/hfile.o: test/hfile.c $(htslib_hfile_h) $(htslib_hts_defs_h)
+test/pileup.o: test/pileup.c $(htslib_sam_h)
 test/sam.o: test/sam.c $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
 test/test-regidx.o: test/test-regidx.c $(htslib_regidx_h)
 test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)

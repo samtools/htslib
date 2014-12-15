@@ -355,10 +355,11 @@ typedef struct {
  @field  indel      indel length; 0 for no indel, positive for ins and negative for del
  @field  level      the level of the read in the "viewer" mode
  @field  is_del     1 iff the base on the padded read is a deletion
- @field  is_head    ???
- @field  is_tail    ???
- @field  is_refskip ???
- @field  aux        ???
+ @field  is_head    1 iff this is the first base in the query sequence
+ @field  is_tail    1 iff this is the last base in the query sequence
+ @field  is_refskip 1 iff the base on the padded read is part of CIGAR N op
+ @field  aux        (used by bcf_call_gap_prep())
+ @field  cigar_ind  index of the CIGAR operator that has just been processed
 
  @discussion See also bam_plbuf_push() and bam_lplbuf_push(). The
  difference between the two functions is that the former does not
@@ -371,6 +372,7 @@ typedef struct {
     int32_t qpos;
     int indel, level;
     uint32_t is_del:1, is_head:1, is_tail:1, is_refskip:1, aux:28;
+    int cigar_ind;
 } bam_pileup1_t;
 
 typedef int (*bam_plp_auto_f)(void *data, bam1_t *b);
@@ -408,6 +410,15 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     void bam_mplp_destroy(bam_mplp_t iter);
     void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
     int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
+
+    /*
+     * Fills out the kstring with the padded insertion sequence for the current
+     * location in 'p'.  If this is not an insertion site, the string is blank.
+     *
+     * Returns the length of insertion string on success;
+     *        -1 on failure.
+     */
+    int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins);
 
 #endif // ~!defined(BAM_NO_PILEUP)
 
