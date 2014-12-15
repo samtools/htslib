@@ -222,6 +222,7 @@ int fai_build(const char *fn)
     if ( !fai )
     {
         if ( bgzf->is_compressed && bgzf->is_gzip ) fprintf(stderr,"Cannot index files compressed with gzip, please use bgzip\n");
+        free(str);
         return -1;
     }
     if ( bgzf->is_compressed ) bgzf_index_dump(bgzf, fn, ".gzi");

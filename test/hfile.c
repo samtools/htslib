@@ -141,7 +141,7 @@ int main(void)
     check_offset(fin, 200, "input/first200");
     check_offset(fout, 1000, "output/first200");
 
-    if (hseek(fin, 1000, SEEK_SET) < 0) fail("hseek");
+    if (hseek(fin, 800, SEEK_CUR) < 0) fail("hseek/cur");
     check_offset(fin, 1000, "input/seek");
     for (off = 1000; (n = hread(fin, buffer, sizeof buffer)) > 0; off += n)
         if (hwrite(fout, buffer, n) != n) fail("hwrite");
@@ -149,7 +149,7 @@ int main(void)
     check_offset(fin, off, "input/eof");
     check_offset(fout, off, "output/eof");
 
-    if (hseek(fin, 200, SEEK_SET) < 0) fail("hseek");
+    if (hseek(fin, 200, SEEK_SET) < 0) fail("hseek/set");
     if (hseek(fout, 200, SEEK_SET) < 0) fail("hseek(output)");
     check_offset(fin, 200, "input/backto200");
     check_offset(fout, 200, "output/backto200");

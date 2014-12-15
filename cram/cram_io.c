@@ -910,8 +910,10 @@ int cram_uncompress_block(cram_block *b) {
 	uncomp = zlib_mem_inflate((char *)b->data, b->comp_size, &uncomp_size);
 	if (!uncomp)
 	    return -1;
-	if ((int)uncomp_size != b->uncomp_size)
+	if ((int)uncomp_size != b->uncomp_size) {
+	    free(uncomp);
 	    return -1;
+	}
 	free(b->data);
 	b->data = (unsigned char *)uncomp;
 	b->alloc = uncomp_size;
@@ -2575,7 +2577,11 @@ cram_container *cram_read_container(cram_fd *fd) {
 	}
     } else {
 	if ((s = int32_decode(fd, &c2.length)) == -1) {
-	    fd->eof = fd->empty_container ? 1 : 2;
+	    if (CRAM_MAJOR_VERS(fd->version) == 2 &&
+		CRAM_MINOR_VERS(fd->version) == 0)
+		fd->eof = 1; // EOF blocks arrived in v2.1
+	    else
+		fd->eof = fd->empty_container ? 1 : 2;
 	    return NULL;
 	} else {
 	    rd+=s;
