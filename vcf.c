@@ -351,8 +351,8 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
         // Get the contig ID ($str) and length ($j)
         i = bcf_hrec_find_key(hrec,"length");
-        if ( i<0 ) return 0;
-        if ( sscanf(hrec->vals[i],"%d",&j)!=1 ) return 0;
+        if ( i<0 ) j = 0;
+        else if ( sscanf(hrec->vals[i],"%d",&j)!=1 ) return 0;
 
         i = bcf_hrec_find_key(hrec,"ID");
         if ( i<0 ) return 0;
@@ -1256,8 +1256,6 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
             hrec->key = strdup("contig");
             bcf_hrec_add_key(hrec, "ID", strlen("ID"));
             bcf_hrec_set_val(hrec, hrec->nkeys-1, (char*) names[i], strlen(names[i]), 0);
-            bcf_hrec_add_key(hrec, "length", strlen("length"));
-            bcf_hrec_set_val(hrec, hrec->nkeys-1, "2147483647", strlen("2147483647"), 0);
             bcf_hdr_add_hrec(h, hrec);
             need_sync = 1;
         }
@@ -1751,7 +1749,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                 fprintf(stderr, "[W::%s] contig '%s' is not defined in the header. (Quick workaround: index the file with tabix.)\n", __func__, p);
                 kstring_t tmp = {0,0,0};
                 int l;
-                ksprintf(&tmp, "##contig=<ID=%s,length=2147483647>", p);
+                ksprintf(&tmp, "##contig=<ID=%s>", p);
                 bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
                 free(tmp.s);
                 if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
