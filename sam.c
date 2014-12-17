@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <errno.h>
 #include <ctype.h>
 #include <zlib.h>
+#include <time.h>
 #include "htslib/sam.h"
 #include "htslib/bgzf.h"
 #include "cram/cram.h"
@@ -60,7 +61,62 @@ void bam_hdr_destroy(bam_hdr_t *h)
     }
     free(h->text); free(h->cigar_tab);
     if (h->sdict) kh_destroy(s2i, (sdict_t*)h->sdict);
+
+    // Free RG and PG structure entries (if populated)
+    if(h->rg != NULL){
+        struct bam_hdr_rg_entry *curr_rg = NULL;
+        struct bam_hdr_rg_entry *next_rg = NULL;
+        curr_rg = h->rg;
+        while(curr_rg != NULL){
+            // Free..
+            bam_hdr_rg_entry_destroy(curr_rg);
+            next_rg = curr_rg->next;
+            free(curr_rg);
+            curr_rg = next_rg;
+        }
+    }
+
+    if(h->pg != NULL){
+        struct bam_hdr_pg_entry *curr_pg = NULL;
+        struct bam_hdr_pg_entry *next_pg = NULL;
+        curr_pg = h->pg;
+        while(curr_pg != NULL){
+            // Free...
+            bam_hdr_pg_entry_destroy(curr_pg);
+            next_pg = curr_pg->next;
+            free(curr_pg);
+            curr_pg = next_pg;
+        }
+    }
+
     free(h);
+}
+
+void bam_hdr_rg_entry_destroy(bam_hdr_rg_entry *rg){
+
+    if(rg->cn != NULL){ free(rg->cn); }
+    if(rg->ds != NULL){ free(rg->ds); }
+    if(rg->fo != NULL){ free(rg->fo); }
+    if(rg->ks != NULL){ free(rg->ks); }
+    if(rg->lb != NULL){ free(rg->lb); }
+    if(rg->pg != NULL){ free(rg->pg); }
+    if(rg->pi != NULL){ free(rg->pi); }
+    if(rg->pl != NULL){ free(rg->pl); }
+    if(rg->pu != NULL){ free(rg->pu); }
+    if(rg->sm != NULL){ free(rg->sm); }
+
+    free(rg->text);
+}
+
+void bam_hdr_pg_entry_destroy(bam_hdr_pg_entry *pg){
+
+    if(pg->pn != NULL){ free(pg->pn); }
+    if(pg->cn != NULL){ free(pg->cn); }
+    if(pg->ds != NULL){ free(pg->ds); }
+    if(pg->pp != NULL){ free(pg->pp); }
+    if(pg->vn != NULL){ free(pg->vn); }
+
+    free(pg->text);
 }
 
 bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
@@ -84,6 +140,9 @@ bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
         h->target_len[i] = h0->target_len[i];
         h->target_name[i] = strdup(h0->target_name[i]);
     }
+
+    process_bam_hdr_entries(h);
+
     return h;
 }
 
@@ -144,7 +203,220 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
         bgzf_read(fp, &h->target_len[i], 4);
         if (fp->is_be) ed_swap_4p(&h->target_len[i]);
     }
+
+    process_bam_hdr_entries(h);
     return h;
+}
+
+void process_bam_hdr_entries(bam_hdr_t *h){
+    // Initialise
+    h->pg = NULL;
+    h->rg = NULL;
+
+    //TODO Ideally do this during reading, but let's allow h->text to be populated
+    //     for the moment to simpify things...
+    char *text_tok;
+    char *text_copy = malloc(sizeof(char*) * (strlen(h->text) + 1));
+    strcpy(text_copy, h->text);
+    text_tok = strtok(text_copy, "\n");
+
+    while(text_tok != NULL){
+        char *text_tok_inner;
+        char *strtok_state;
+        char* line = strdup(text_tok);
+        char* line_tok = strdup(text_tok);
+
+        int rg = strncmp(text_tok, "@RG", 3);
+        int pg = strncmp(text_tok, "@PG", 3);
+
+        if(rg == 0){
+            struct bam_hdr_rg_entry *bhe = (bam_hdr_rg_entry *) malloc(sizeof(bam_hdr_rg_entry));
+
+            kstring_t id = { 0,0,NULL };
+            char* cn;
+            char* ds;
+            struct tm dt;
+            char* fo;
+            char* ks;
+            char* lb;
+            char* pg;
+            char* pi;
+            char* pl;
+            char* pu;
+            char* sm;
+
+            bhe->cn = NULL;
+            bhe->ds = NULL;
+            bhe->fo = NULL;
+            bhe->ks = NULL;
+            bhe->lb = NULL;
+            bhe->pg = NULL;
+            bhe->pi = NULL;
+            bhe->pl = NULL;
+            bhe->pu = NULL;
+            bhe->sm = NULL;
+            bhe->transformed = 0;
+
+            text_tok_inner = strtok_r(line_tok, "\t", &strtok_state);
+            while(text_tok_inner != NULL){
+                if(strncmp(text_tok_inner, "ID:", 3) == 0){
+                    // Copy ID without ID: prefix
+                    kputsn(text_tok_inner+3, strlen(text_tok_inner)-3, &id);
+                }
+                else if(strncmp(text_tok_inner, "CN:", 3) == 0){
+                    cn = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(cn, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->cn = cn;
+                }
+                else if(strncmp(text_tok_inner, "DS:", 3) == 0){
+                    ds = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(ds, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->ds = ds;
+                }
+                else if(strncmp(text_tok_inner, "DT:", 3) == 0){
+                    strptime(text_tok_inner+3, "%FT%T%z", &dt);
+                }
+                else if(strncmp(text_tok_inner, "FO:", 3) == 0){
+                    fo = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(fo, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->fo = fo;
+                }
+                else if(strncmp(text_tok_inner, "KS:", 3) == 0){
+                    ks = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(ks, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->ks = ks;
+                }
+                else if(strncmp(text_tok_inner, "LB:", 3) == 0){
+                    lb = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(lb, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->lb = lb;
+                }
+                else if(strncmp(text_tok_inner, "PG:", 3) == 0){
+                    pg = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(pg, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->pg = pg;
+                }
+                else if(strncmp(text_tok_inner, "PI:", 3) == 0){
+                    pi = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(pi, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->pi = pi;
+                }
+                else if(strncmp(text_tok_inner, "PL:", 3) == 0){
+                    pl = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(pl, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->pl = pl;
+                }
+                else if(strncmp(text_tok_inner, "PU:", 3) == 0){
+                    pu = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(pu, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->pu = pu;
+                }
+                else if(strncmp(text_tok_inner, "SM:", 3) == 0){
+                    sm = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(sm, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->sm = sm;
+                }
+                text_tok_inner = strtok_r(NULL, "\t", &strtok_state);
+            }
+
+            // Insert RG to linked list
+            bhe->id = id;
+            bhe->dt = dt;
+
+            bhe->text = line;
+            bhe->next = NULL;
+
+            if(h->rg == NULL){
+                h->rg = bhe;
+            }
+            else{
+                struct bam_hdr_rg_entry *curr = NULL;
+                curr = h->rg;
+                while(curr->next != NULL){
+                    curr = curr->next;
+                }
+                curr->next = bhe;
+            }
+        }
+        else if(pg == 0){
+            struct bam_hdr_pg_entry *bhe = (bam_hdr_pg_entry *) malloc(sizeof(bam_hdr_pg_entry));
+
+            kstring_t id = { 0,0,NULL };
+            char* pn;
+            char* cn;
+            char* ds;
+            char* pp;
+            char* vn;
+
+            bhe->pn = NULL;
+            bhe->cn = NULL;
+            bhe->ds = NULL;
+            bhe->pp = NULL;
+            bhe->vn = NULL;
+            bhe->transformed = 0;
+
+            text_tok_inner = strtok_r(line_tok, "\t", &strtok_state);
+            while(text_tok_inner != NULL){
+                if(strncmp(text_tok_inner, "ID:", 3) == 0){
+                    // Copy ID without ID: prefix
+                    kputsn(text_tok_inner+3, strlen(text_tok_inner)-3, &id);
+                }
+                else if(strncmp(text_tok_inner, "PN:", 3) == 0){
+                    pn = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(pn, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->pn = pn;
+                }
+                else if(strncmp(text_tok_inner, "CN:", 3) == 0){
+                    cn = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(cn, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->cn = cn;
+                }
+                else if(strncmp(text_tok_inner, "DS:", 3) == 0){
+                    ds = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(ds, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->ds = ds;
+                }
+                else if(strncmp(text_tok_inner, "PP:", 3) == 0){
+                    pp = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(pp, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->pp = pp;
+                }
+                else if(strncmp(text_tok_inner, "VN:", 3) == 0){
+                    vn = malloc(sizeof(char) * (strlen(text_tok_inner) - 2));
+                    strncpy(vn, text_tok_inner+3, strlen(text_tok_inner)-2);
+                    bhe->vn = vn;
+                }
+                text_tok_inner = strtok_r(NULL, "\t", &strtok_state);
+            }
+
+            // Insert PG to linked list
+            bhe->id = id;
+
+            bhe->text = line;
+            bhe->next = NULL;
+
+            if(h->pg == NULL){
+                h->pg = bhe;
+            }
+            else{
+                struct bam_hdr_pg_entry *curr = NULL;
+                curr = h->pg;
+                while(curr->next != NULL){
+                    curr = curr->next;
+                }
+                curr->next = bhe;
+            }
+        }
+        else{
+            // If not passed to a RG or PG structure, free "line"
+            free(line);
+        }
+        free(line_tok);
+
+        // Next header line
+        text_tok = strtok(NULL, "\n");
+    }
+    free(text_copy);
 }
 
 int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
@@ -664,6 +936,7 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         if (str.l == 0) kputsn("", 0, &str);
         h = sam_hdr_parse(str.l, str.s);
         h->l_text = str.l; h->text = str.s;
+        process_bam_hdr_entries(h);
         return h;
         }
 

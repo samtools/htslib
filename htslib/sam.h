@@ -27,11 +27,79 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTSLIB_SAM_H
 
 #include <stdint.h>
+#include <time.h>
 #include "hts.h"
 
 /**********************
  *** SAM/BAM header ***
  **********************/
+
+/*! @typedef
+ @abstract Structure for read group lines in an alignment header
+ @field id		read group identifier
+ @field cn		sequencing center
+ @field ds		description
+ @field dt		read timestamp
+ @field fo		flow order
+ @field ks		key sequence
+ @field lb		library
+ @field pg		programs used to process read group
+ @field pi		predicted median insert size
+ @field pl		platform
+ @field pu		platform unit
+ @field sm		sample
+ @field text	entire record in text format
+ @field next	pointer to next RG structure in linked list
+ @field transformed	non-zero if the id field has been transformed for merging
+ */
+typedef struct bam_hdr_rg_entry {
+    kstring_t id;
+    char* cn;
+    char* ds;
+    struct tm dt;
+    char* fo;
+    char* ks;
+    char* lb;
+    char* pg;
+    char* pi;
+    //TODO Validate PL field?
+    char* pl;
+    char* pu;
+    char* sm;
+
+    char* text;
+
+    struct bam_hdr_rg_entry *next;
+    int transformed;
+
+} bam_hdr_rg_entry;
+
+/*! @typedef
+ @abstract Structure for program lines in an alignment header
+ @field id		read group identifier
+ @field pn		program name
+ @field cn		command line
+ @field ds		description
+ @field pp		previous RG PG ID
+ @field vn		program version number
+ @field text	entire record in text format
+ @field next	pointer to next PG structure in linked list
+ @field transformed	non-zero if the id field has been transformed for merging
+ */
+typedef struct bam_hdr_pg_entry {
+    kstring_t id;
+    char* pn;
+    char* cn;
+    char* ds;
+    char* pp;
+    char* vn;
+
+    char* text;
+
+    struct bam_hdr_pg_entry *next;
+    int transformed;
+
+} bam_hdr_pg_entry;
 
 /*! @typedef
  @abstract Structure for the alignment header.
@@ -41,8 +109,9 @@ DEALINGS IN THE SOFTWARE.  */
  @field target_name names of the reference sequences
  @field text        plain text
  @field sdict       header dictionary
+ @field rg          head to linked list of RG field entries
+ @field pg          head to linked list of PG field entries
  */
-
 typedef struct {
     int32_t n_targets, ignore_sam_err;
     uint32_t l_text;
@@ -51,6 +120,9 @@ typedef struct {
     char **target_name;
     char *text;
     void *sdict;
+
+    struct bam_hdr_rg_entry *rg;
+    struct bam_hdr_pg_entry *pg;
 } bam_hdr_t;
 
 /****************************
@@ -255,8 +327,11 @@ extern "C" {
 
     bam_hdr_t *bam_hdr_init(void);
     bam_hdr_t *bam_hdr_read(BGZF *fp);
+    void process_bam_hdr_entries(bam_hdr_t *h);
     int bam_hdr_write(BGZF *fp, const bam_hdr_t *h);
     void bam_hdr_destroy(bam_hdr_t *h);
+    void bam_hdr_rg_entry_destroy(bam_hdr_rg_entry *rg);
+    void bam_hdr_pg_entry_destroy(bam_hdr_pg_entry *pg);
     int bam_name2id(bam_hdr_t *h, const char *ref);
     bam_hdr_t* bam_hdr_dup(const bam_hdr_t *h0);
 
