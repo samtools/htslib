@@ -290,7 +290,7 @@ static int usage(void)
     fprintf(stderr, "   -i, --file-info         print file format info\n");
     fprintf(stderr, "   -l, --list-chroms       list chromosome names\n");
     fprintf(stderr, "   -m, --min-shift INT     set the minimal interval size to 1<<INT; 0 for the old tabix index [0]\n");
-    fprintf(stderr, "   -p, --preset STR        gff, bed, sam, vcf, bcf, bam\n");
+    fprintf(stderr, "   -p, --preset STR        gff, bed, sam, vcf\n");
     fprintf(stderr, "   -r, --reheader FILE     replace the header with the content of FILE\n");
     fprintf(stderr, "   -s, --sequence INT      column number for sequence names (suppressed by -p) [1]\n");
     fprintf(stderr, "   -S, --skip-lines INT    skip first INT lines [0]\n");
@@ -343,6 +343,8 @@ int main(int argc, char *argv[])
                       else if (strcmp(optarg, "bed") == 0) conf_ptr = &tbx_conf_bed;
                       else if (strcmp(optarg, "sam") == 0) conf_ptr = &tbx_conf_sam;
                       else if (strcmp(optarg, "vcf") == 0) conf_ptr = &tbx_conf_vcf;
+                      else if (strcmp(optarg, "bcf") == 0) ;    // bcf is autodetected, preset is not needed
+                      else if (strcmp(optarg, "bam") == 0) ;    // same as bcf
                       else error("The preset string not recognised: '%s'\n", optarg);
                       break;
             case 's': conf.sc = atoi(optarg); break;
