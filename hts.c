@@ -1411,6 +1411,9 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
         }
         ret = iter->readrec(fp, data, r, &tid, &beg, &end);
         if (ret < 0) iter->finished = 1;
+        iter->curr_tid = tid;
+        iter->curr_beg = beg;
+        iter->curr_end = end;
         return ret;
     }
     if (iter->off == 0) return -1;
@@ -1427,7 +1430,12 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
             iter->curr_off = bgzf_tell(fp);
             if (tid != iter->tid || beg >= iter->end) { // no need to proceed
                 ret = -1; break;
-            } else if (end > iter->beg && iter->end > beg) return ret;
+            } else if (end > iter->beg && iter->end > beg) {
+                iter->curr_tid = tid;
+                iter->curr_beg = beg;
+                iter->curr_end = end;
+                return ret;
+            }
         } else break; // end of file or error
     }
     iter->finished = 1;

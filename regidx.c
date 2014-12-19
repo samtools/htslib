@@ -58,6 +58,20 @@ struct _regidx_t
     void *payload;
 };
 
+int regidx_seq_nregs(regidx_t *idx, const char *seq)
+{
+    int iseq;
+    if ( khash_str2int_get(idx->seq2regs, seq, &iseq)!=0 ) return 0; // no such sequence
+    return idx->seq[iseq].nregs;
+}
+
+int regidx_nregs(regidx_t *idx)
+{
+    int i, nregs = 0;
+    for (i=0; i<idx->nseq; i++) nregs += idx->seq[i].nregs;
+    return nregs;
+}
+
 char **regidx_seq_names(regidx_t *idx, int *n)
 {
     *n = idx->nseq;
@@ -158,6 +172,8 @@ regidx_t *regidx_init(const char *fname, regidx_parse_f parser, regidx_free_f fr
             int len = strlen(fname);
             if ( len>=7 && !strcasecmp(".bed.gz",fname+len-7) )
                 parser = regidx_parse_bed;
+            else if ( len>=8 && !strcasecmp(".bed.bgz",fname+len-8) )
+                parser = regidx_parse_bed;
             else if ( len>=4 && !strcasecmp(".bed",fname+len-4) )
                 parser = regidx_parse_bed;
             else
@@ -223,7 +239,7 @@ void regidx_destroy(regidx_t *idx)
     free(idx);
 }
 
-int regidx_overlap(regidx_t *idx, char *chr, uint32_t from, uint32_t to, regitr_t *itr)
+int regidx_overlap(regidx_t *idx, const char *chr, uint32_t from, uint32_t to, regitr_t *itr)
 {
     if ( itr ) itr->i = itr->n = 0;
 

@@ -332,6 +332,7 @@ typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, 
 typedef struct {
     uint32_t read_rest:1, finished:1, dummy:29;
     int tid, beg, end, n_off, i;
+    int curr_tid, curr_beg, curr_end;
     uint64_t curr_off;
     hts_pair64_t *off;
     hts_readrec_func *readrec;
