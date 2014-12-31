@@ -28,7 +28,7 @@ RANLIB = ranlib
 
 CPPFLAGS = -I.
 # TODO: probably update cram code to make it compile cleanly with -Wc++-compat
-CFLAGS   = -g -Wall -O2
+CFLAGS   = -g -Wall -O2 -D_GNU_SOURCE
 EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
 LDLIBS   =
