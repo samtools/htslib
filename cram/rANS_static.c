@@ -356,7 +356,7 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 
 unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
 				unsigned int *out_size) {
-    unsigned char *out_buf = malloc(1.05*in_size + 257*257*3 + 9);
+    unsigned char *out_buf;
     unsigned char *cp = out_buf, *out_end;
     unsigned int last_i, tab_size, rle_i, rle_j;
     RansEncSymbol syms[256][256];
@@ -364,6 +364,7 @@ unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
     if (in_size < 4)
 	return rans_compress_O0(in, in_size, out_size);
 
+    out_buf = malloc(1.05*in_size + 257*257*3 + 9);
     if (!out_buf)
 	return NULL;
 
