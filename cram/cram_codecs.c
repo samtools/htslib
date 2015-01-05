@@ -1456,6 +1456,13 @@ int cram_byte_array_len_encode(cram_slice *slice, cram_codec *c,
 void cram_byte_array_len_encode_free(cram_codec *c) {
     if (!c)
 	return;
+
+    if (c->e_byte_array_len.len_codec)
+	c->e_byte_array_len.len_codec->free(c->e_byte_array_len.len_codec);
+
+    if (c->e_byte_array_len.val_codec)
+	c->e_byte_array_len.val_codec->free(c->e_byte_array_len.val_codec);
+
     free(c);
 }
 
