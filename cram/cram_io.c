@@ -3802,7 +3802,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->use_bz2 = 0;
     fd->use_rans = (CRAM_MAJOR_VERS(fd->version) >= 3);
     fd->use_lzma = 0;
-    fd->multi_seq = 0;
+    fd->multi_seq = -1;
     fd->unsorted   = 0;
     fd->shared_ref = 0;
 
