@@ -1233,10 +1233,11 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     nref = fd->refs->nref;
     pthread_mutex_unlock(&fd->ref_lock);
 
-    if (c->refs_used) {
+    if (!fd->no_ref && c->refs_used) {
 	for (i = 0; i < nref; i++) {
 	    if (c->refs_used[i]) {	
 		cram_get_ref(fd, i, 1, 0);
+		cram_ref_incr(fd->refs, i);
 	    }
 	}
     }
@@ -1657,7 +1658,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     }
 
     /* Cache references up-front if we have unsorted access patterns */
-    if (c->refs_used) {
+    if (!fd->no_ref && c->refs_used) {
 	for (i = 0; i < fd->refs->nref; i++) {
 	    if (c->refs_used[i])
 		cram_ref_decr(fd->refs, i);
