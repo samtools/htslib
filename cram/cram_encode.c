@@ -1199,8 +1199,11 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
 	for (i = j = 1; i < DS_END; i++) {
 	    if (!s->block[i] || s->block[i] == s->block[0])
 		continue;
-	    if (s->block[i]->uncomp_size == 0)
+	    if (s->block[i]->uncomp_size == 0) {
+		cram_free_block(s->block[i]);
+		s->block[i] = NULL;
 		continue;
+	    }
 	    s->block[j] = s->block[i];
 	    s->hdr->block_content_ids[j-1] = s->block[i]->content_id;
 	    j++;
