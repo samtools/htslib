@@ -385,7 +385,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
         kh_val(d, k) = bcf_idinfo_def;
         kh_val(d, k).id = idx;
-        kh_val(d, k).info[0] = i;
+        kh_val(d, k).info[0] = j;
         kh_val(d, k).hrec[0] = hrec;
 
         return 1;
