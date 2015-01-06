@@ -2060,10 +2060,8 @@ static void cram_ref_decr_locked(refs_t *r, int id) {
 		r->ref_id[r->last_id]->seq = NULL;
 		r->ref_id[r->last_id]->length = 0;
 	    }
-	    r->last_id = -1;
-	} else {
-	    r->last_id = id;
 	}
+	r->last_id = id;
     }
 }
 
