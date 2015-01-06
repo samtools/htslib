@@ -2301,6 +2301,8 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
 	    return NULL;
 	}
 	r = fd->refs->ref_id[id];
+	if (fd->unsorted)
+	    cram_ref_incr_locked(fd->refs, id);
     }
 
 
