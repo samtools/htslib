@@ -2060,10 +2060,8 @@ static void cram_ref_decr_locked(refs_t *r, int id) {
 		r->ref_id[r->last_id]->seq = NULL;
 		r->ref_id[r->last_id]->length = 0;
 	    }
-	    r->last_id = -1;
-	} else {
-	    r->last_id = id;
 	}
+	r->last_id = id;
     }
 }
 
@@ -2303,6 +2301,8 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
 	    return NULL;
 	}
 	r = fd->refs->ref_id[id];
+	if (fd->unsorted)
+	    cram_ref_incr_locked(fd->refs, id);
     }
 
 
@@ -3802,7 +3802,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->use_bz2 = 0;
     fd->use_rans = (CRAM_MAJOR_VERS(fd->version) >= 3);
     fd->use_lzma = 0;
-    fd->multi_seq = 0;
+    fd->multi_seq = -1;
     fd->unsorted   = 0;
     fd->shared_ref = 0;
 
