@@ -356,8 +356,7 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 
 unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
 				unsigned int *out_size) {
-    unsigned char *out_buf;
-    unsigned char *cp = out_buf, *out_end;
+    unsigned char *out_buf, *out_end, *cp;
     unsigned int last_i, tab_size, rle_i, rle_j;
     RansEncSymbol syms[256][256];
 
