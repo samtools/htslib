@@ -674,10 +674,10 @@ int cram_dependent_data_series(cram_fd *fd,
 	    hdr->data_series |= CRAM_BF;
 
 	if (fd->required_fields & SAM_RNAME)
-	    hdr->data_series |= CRAM_RI;
+	    hdr->data_series |= CRAM_RI | CRAM_BF;
 
 	if (fd->required_fields & SAM_POS)
-	    hdr->data_series |= CRAM_AP;
+	    hdr->data_series |= CRAM_AP | CRAM_BF;
 
 	if (fd->required_fields & SAM_MAPQ)
 	    hdr->data_series |= CRAM_MQ;
@@ -689,7 +689,7 @@ int cram_dependent_data_series(cram_fd *fd,
 	    hdr->data_series |= CRAM_CF | CRAM_NF | CRAM_RI | CRAM_NS |CRAM_BF;
 
 	if (fd->required_fields & SAM_PNEXT)
-	    hdr->data_series |= CRAM_CF | CRAM_NF | CRAM_AP | CRAM_NP;
+	    hdr->data_series |= CRAM_CF | CRAM_NF | CRAM_AP | CRAM_NP | CRAM_BF;
 
 	if (fd->required_fields & SAM_TLEN)
 	    hdr->data_series |= CRAM_CF | CRAM_NF | CRAM_AP | CRAM_TS |
@@ -698,6 +698,10 @@ int cram_dependent_data_series(cram_fd *fd,
 	if (fd->required_fields & SAM_SEQ)
 	    hdr->data_series |= CRAM_SEQ;
 
+	if (!(fd->required_fields & SAM_AUX))
+	    // No easy way to get MD/NM without other tags at present
+	    fd->decode_md = 0;
+
 	if (fd->required_fields & SAM_QUAL)
 	    hdr->data_series |= CRAM_SEQ;
 
@@ -705,7 +709,7 @@ int cram_dependent_data_series(cram_fd *fd,
 	    hdr->data_series |= CRAM_RG | CRAM_TL | CRAM_aux;
 
 	if (fd->required_fields & SAM_RGAUX)
-	    hdr->data_series |= CRAM_RG;
+	    hdr->data_series |= CRAM_RG | CRAM_BF;
 
 	// Always uncompress CORE block
 	if (cram_uncompress_block(s->block[0]))
@@ -734,8 +738,21 @@ int cram_dependent_data_series(cram_fd *fd,
 	 * It's not reciprocal though. We may be needing to decode FN
 	 * but have no need to decode FC, FP and cigar ops.
 	 */
-	if (hdr->data_series & CRAM_SEQ)   hdr->data_series |= CRAM_CIGAR;
-	if (hdr->data_series & CRAM_CIGAR) hdr->data_series |= CRAM_CIGAR;
+	if (hdr->data_series & CRAM_RS)    hdr->data_series |= CRAM_FC|CRAM_FP;
+	if (hdr->data_series & CRAM_PD)    hdr->data_series |= CRAM_FC|CRAM_FP;
+	if (hdr->data_series & CRAM_HC)    hdr->data_series |= CRAM_FC|CRAM_FP;
+	if (hdr->data_series & CRAM_QS)    hdr->data_series |= CRAM_FC|CRAM_FP;
+	if (hdr->data_series & CRAM_IN)    hdr->data_series |= CRAM_FC|CRAM_FP;
+	if (hdr->data_series & CRAM_SC)    hdr->data_series |= CRAM_FC|CRAM_FP;
+	if (hdr->data_series & CRAM_BS)    hdr->data_series |= CRAM_FC|CRAM_FP;
+	if (hdr->data_series & CRAM_DL)    hdr->data_series |= CRAM_FC|CRAM_FP;
+	if (hdr->data_series & CRAM_BA)    hdr->data_series |= CRAM_FC|CRAM_FP;
+	if (hdr->data_series & CRAM_BB)    hdr->data_series |= CRAM_FC|CRAM_FP;
+	if (hdr->data_series & CRAM_QQ)    hdr->data_series |= CRAM_FC|CRAM_FP;
+
+	// cram_decode_seq() needs seq[] array
+	if (hdr->data_series & (CRAM_SEQ|CRAM_CIGAR)) hdr->data_series |= CRAM_RL;
+
 	if (hdr->data_series & CRAM_FP)    hdr->data_series |= CRAM_FC;
 	if (hdr->data_series & CRAM_FC)    hdr->data_series |= CRAM_FN;
 	if (hdr->data_series & CRAM_aux)   hdr->data_series |= CRAM_TL;
@@ -1071,6 +1088,10 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
     ref_pos--; // count from 0
     cr->cigar = ncigar;
+
+    if (!(ds & (CRAM_FC | CRAM_FP)))
+	goto skip_cigar;
+
     for (f = 0; f < fn; f++) {
 	int32_t pos = 0;
 	char op;
@@ -1091,7 +1112,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 	}
 
 	if (!(ds & CRAM_FP))
-	    goto skip_cigar;
+	    continue;
 
 	if (!c->comp_hdr->codecs[DS_FP]) return -1;
 	r |= c->comp_hdr->codecs[DS_FP]->decode(s,
@@ -1136,6 +1157,12 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 	}
 
 	prev_pos = pos;
+
+	if (!(ds & CRAM_FC))
+	    goto skip_cigar;
+
+	if (!(ds & CRAM_FC))
+	    continue;
 
 	switch(op) {
 	case 'S': { // soft clip: IN
@@ -1446,6 +1473,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 	}
     }
 
+    if (!(ds & CRAM_FC))
+	goto skip_cigar;
+
     /* An implement match op for any unaccounted for bases */
     if ((ds & CRAM_FN) && cr->len >= seq_pos) {
 	if (s->ref) {
@@ -1663,8 +1693,20 @@ static int cram_decode_aux(cram_container *c, cram_slice *s,
 }
 
 /* Resolve mate pair cross-references between recs within this slice */
-static void cram_decode_slice_xref(cram_slice *s) {
+static void cram_decode_slice_xref(cram_slice *s, int required_fields) {
     int rec;
+
+    if (!(required_fields & (SAM_RNEXT | SAM_PNEXT | SAM_TLEN))) {
+	for (rec = 0; rec < s->hdr->num_records; rec++) {
+	    cram_record *cr = &s->crecs[rec];
+
+	    cr->tlen = 0;
+	    cr->mate_pos = 0;
+	    cr->mate_ref_id = -1;
+	}
+
+	return;
+    }
 
     for (rec = 0; rec < s->hdr->num_records; rec++) {
 	cram_record *cr = &s->crecs[rec];
@@ -1865,10 +1907,11 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    //s->ref = cram_get_ref(fd, s->hdr->ref_seq_id, 1, 0);
 	    //s->ref_start = 1;
 
-	    s->ref =
-	       cram_get_ref(fd, s->hdr->ref_seq_id,
-	                    s->hdr->ref_seq_start,
-			    s->hdr->ref_seq_start + s->hdr->ref_seq_span -1);
+	    if (fd->required_fields & SAM_SEQ)
+		s->ref =
+		cram_get_ref(fd, s->hdr->ref_seq_id,
+			     s->hdr->ref_seq_start,
+			     s->hdr->ref_seq_start + s->hdr->ref_seq_span -1);
 	    s->ref_start = s->hdr->ref_seq_start;
 	    s->ref_end   = s->hdr->ref_seq_start + s->hdr->ref_seq_span-1;
 
@@ -1879,7 +1922,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    }
 	    pthread_mutex_lock(&fd->ref_lock);
 	    pthread_mutex_lock(&fd->refs->lock);
-	    if (s->ref_end > fd->refs->ref_id[ref_id]->length) {
+	    if ((fd->required_fields & SAM_SEQ) &&
+		s->ref_end > fd->refs->ref_id[ref_id]->length) {
 		fprintf(stderr, "Slice ends beyond reference end.\n");
 		s->ref_end = fd->refs->ref_id[ref_id]->length;
 	    }
@@ -1888,14 +1932,17 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	}
     }
 
-    if (s->ref == NULL && s->hdr->ref_seq_id >= 0 && !fd->no_ref) {
+    if ((fd->required_fields & SAM_SEQ) &&
+	s->ref == NULL && s->hdr->ref_seq_id >= 0 && !fd->no_ref) {
 	fprintf(stderr, "Unable to fetch reference #%d %d..%d\n",
 		s->hdr->ref_seq_id, s->hdr->ref_seq_start,
 		s->hdr->ref_seq_start + s->hdr->ref_seq_span-1);
 	return -1;
     }
 
-    if (CRAM_MAJOR_VERS(fd->version) != 1 && s->hdr->ref_seq_id >= 0
+    if (CRAM_MAJOR_VERS(fd->version) != 1
+	&& (fd->required_fields & SAM_SEQ)
+	&& s->hdr->ref_seq_id >= 0
 	&& !fd->ignore_md5
 	&& memcmp(s->hdr->md5, "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 16)) {
 	MD5_CTX md5;
@@ -1972,6 +2019,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		return -1;
 	    bf = fd->bam_flag_swap[bf];
 	    cr->flags = bf;
+	} else {
+	    cr->flags = bf = 0x4; // unmapped
 	}
 
 	if (ds & CRAM_CF) {
@@ -1998,7 +2047,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_RI]
 		                ->decode(s, c->comp_hdr->codecs[DS_RI], blk,
 					 (char *)&cr->ref_id, &out_sz);
-		if (cr->ref_id >= 0) {
+		if ((fd->required_fields & (SAM_SEQ|SAM_TLEN))
+		    && cr->ref_id >= 0) {
 		    if (!fd->no_ref) {
 			if (!refs[cr->ref_id])
 			    refs[cr->ref_id] = cram_get_ref(fd, cr->ref_id,
@@ -2012,6 +2062,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		    pthread_mutex_unlock(&fd->refs->lock);
 		    pthread_mutex_unlock(&fd->ref_lock);
 		}
+	    } else {
+		cr->ref_id = 0;
 	    }
 	} else {
 	    cr->ref_id = ref_id; // Forced constant in CRAM 1.0
@@ -2064,6 +2116,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    }
 	}
 
+	cr->mate_pos = 0;
 	cr->mate_line = -1;
 	cr->mate_ref_id = -1;
 	if ((ds & CRAM_CF) && (cf & CRAM_FLAG_DETACHED)) {
@@ -2247,7 +2300,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     pthread_mutex_unlock(&fd->ref_lock);
 
     /* Resolve mate pair cross-references between recs within this slice */
-    cram_decode_slice_xref(s);
+    cram_decode_slice_xref(s, fd->required_fields);
 
     return r;
 }
