@@ -87,7 +87,7 @@ int add_option(hts_opt **opts, char *arg) {
     else if (strcmp(arg, "NTHREADS") == 0)
         o->opt = CRAM_OPT_NTHREADS, o->val.i = atoi(cp);
     else if (strcmp(arg, "REQUIRED_FIELDS") == 0)
-        o->opt = CRAM_OPT_REQUIRED_FIELDS, o->val.i = atoi(cp);
+        o->opt = CRAM_OPT_REQUIRED_FIELDS, o->val.i = strtol(cp, NULL, 0);
     else {
         fprintf(stderr, "Unknown option '%s'\n", arg);
         free(o);
