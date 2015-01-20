@@ -3,6 +3,13 @@
 *-uninstalled.pc
 /version.h
 
+autom4te.cache
+config.cache
+config.log
+config.mk
+config.status
+configure
+
 lib*.a
 lib*.dylib
 lib*.so
