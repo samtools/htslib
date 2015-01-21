@@ -411,6 +411,7 @@ int main(int argc, char *argv[])
         {0,0,0,0}
     };
 
+    char *tmp;
     while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:iCR:T:", loptions,NULL)) >= 0)
     {
         switch (c)
@@ -424,11 +425,20 @@ int main(int argc, char *argv[])
             case 'H': args.header_only = 1; break;
             case 'l': list_chroms = 1; break;
             case '0': conf.preset |= TBX_UCSC; break;
-            case 'b': conf.bc = atoi(optarg); break;
-            case 'e': conf.ec = atoi(optarg); break;
+            case 'b':
+                conf.bc = strtol(optarg,&tmp,10); 
+                if ( *tmp ) error("Could not parse argument: -b %s\n", optarg);
+                break;
+            case 'e':
+                conf.ec = strtol(optarg,&tmp,10);
+                if ( *tmp ) error("Could not parse argument: -e %s\n", optarg);
+                break;
             case 'c': conf.meta_char = *optarg; break;
             case 'f': is_force = 1; break;
-            case 'm': min_shift = atoi(optarg); break;
+            case 'm':
+                min_shift = strtol(optarg,&tmp,10);
+                if ( *tmp ) error("Could not parse argument: -m %s\n", optarg);
+                break;
             case 'p':
                       if (strcmp(optarg, "gff") == 0) conf_ptr = &tbx_conf_gff;
                       else if (strcmp(optarg, "bed") == 0) conf_ptr = &tbx_conf_bed;
@@ -438,8 +448,14 @@ int main(int argc, char *argv[])
                       else if (strcmp(optarg, "bam") == 0) ;    // same as bcf
                       else error("The preset string not recognised: '%s'\n", optarg);
                       break;
-            case 's': conf.sc = atoi(optarg); break;
-            case 'S': conf.line_skip = atoi(optarg); break;
+            case 's':
+                conf.sc = strtol(optarg,&tmp,10);
+                if ( *tmp ) error("Could not parse argument: -s %s\n", optarg);
+                break;
+            case 'S':
+                conf.line_skip = strtol(optarg,&tmp,10);
+                if ( *tmp ) error("Could not parse argument: -S %s\n", optarg);
+                break;
             default: return usage();
         }
     }

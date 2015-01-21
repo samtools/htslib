@@ -1363,7 +1363,7 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
         int n_hyphen = 0;
         for (i = name_end + 1; i < l; ++i) {
             if (s[i] == '-') ++n_hyphen;
-            else if (!isdigit(s[i]) && s[i] != ',') break;
+            else if (!isdigit(s[i]) && s[i] != ',' && s[i]!='.' && s[i]!='e' && s[i]!='E' ) break;
         }
         if (i < l || n_hyphen > 1) name_end = l; // malformated region string; then take str as the name
     }
@@ -1374,8 +1374,8 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
         for (i = name_end + 1, k = 0; i < l; ++i)
             if (s[i] != ',') tmp[k++] = s[i];
         tmp[k] = 0;
-        if ((*beg = strtol(tmp, &tmp, 10) - 1) < 0) *beg = 0;
-        *end = *tmp? strtol(tmp + 1, &tmp, 10) : INT_MAX;
+        if ((*beg = strtod(tmp, &tmp) - 1) < 0) *beg = 0;
+        *end = *tmp? strtod(tmp + 1, &tmp) : INT_MAX;
         if (*beg > *end) name_end = l;
     }
     if (name_end == l) *beg = 0, *end = INT_MAX;
