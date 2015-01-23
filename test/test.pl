@@ -34,6 +34,7 @@ my $opts = parse_params();
 
 test_vcf_api($opts,out=>'test-vcf-api.out');
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
+test_tabix($opts);
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -199,4 +200,116 @@ sub test_vcf_sweep
     my ($opts,%args) = @_;
     test_cmd($opts,%args,cmd=>"$$opts{path}/test-vcf-sweep $$opts{tmp}/test-vcf-api.bcf");
 }
+
+sub test_tabix
+{
+    my ($opts,%args) = @_;
+
+    my $vcf_fname = "$$opts{tmp}/test-tabix.vcf.gz";
+    my $bed_fname = "$$opts{tmp}/test-tabix.bed";
+
+    # Create test VCF
+    open(my $fh,"|$$opts{bin}/bgzip -c > $vcf_fname");
+    print $fh "##fileformat=VCFv4.2\n";
+    print $fh "##contig=<ID=seq,length=536739841>\n";
+    print $fh "##INFO=<ID=END,Number=1,Type=Integer>\n";
+    print $fh "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n";
+
+    my @sites = ();
+    for (my $i=0; $i<4096; $i++)
+    {
+        my $pos1 = 8*$i*(1<<14) + 1;
+        my $pos2 = $pos1 + 1;
+        print $fh "seq\t$pos1\t.\tA\tC\t.\t.\t.\n";
+        print $fh "seq\t$pos2\t.\tA\tC\t.\t.\t.\n";
+        push @sites, $pos1;
+        push @sites, $pos2;
+    }
+    close($fh);
+    cmd("$$opts{bin}/tabix --csi $vcf_fname");
+
+
+    # Test CSIv2 index
+    my $nerr = 0;
+    for (my $i=0; $i<20; $i++)
+    {
+        $nerr += test_CSIv2($opts,$vcf_fname,$sites[$i],$i+1);
+    }
+    for (my $i=0; $i<@sites; $i+=101)
+    {
+        $nerr += test_CSIv2($opts,$vcf_fname,$sites[$i],$i+1);
+    }
+    if ( !$nerr ) { passed($opts,"tabix CSIv2"); }
+
+
+    # Test -R/-T options
+    my @reg_sites = ();
+    open($fh,'>',$bed_fname);
+    for (my $i=0; $i+15<@sites; $i+=30)
+    {
+        my $j = $i+15;
+        printf $fh "seq\t%d\t%d\n", $sites[$i]-1,$sites[$j+1]-1;
+        push @reg_sites, @sites[$i .. $j];
+    }
+    close($fh);
+    $nerr = test_bed($opts,$vcf_fname,$bed_fname,\@reg_sites);
+    if ( !$nerr ) { passed($opts,"tabix -R/-T"); }
+}
+
+sub test_CSIv2
+{
+    my ($opts,$vcf,$pos,$i) = @_;
+
+    my $cmd1 = qq[$$opts{bin}/tabix $vcf seq:$pos-$pos];
+    my $cmd2 = qq[$$opts{bin}/tabix $vcf seq::$i-$i];
+
+    print STDERR "$cmd1\n";
+    print STDERR "$cmd2\n";
+
+    my $nerr = 0;
+    my @out1 = `$cmd1`;
+    if ( scalar @out1 != 1 ) { failed($opts,'test_tabix',$cmd1); $nerr++; }
+    my @out2 = `$cmd2`;
+    if ( scalar @out2 != 1 ) { failed($opts,'test_tabix',$cmd2); $nerr++; }
+
+    if ( $out1[0] ne $out2[0] ) { failed($opts,'test_tabix',"$cmd1\n$cmd2\n"); $nerr++; }
+    my @items = split(/\t/,$out1[0]);
+    if ( $items[1] ne $pos ) { failed($opts,'test_tabix',"$cmd1\n$cmd2\n"); $nerr++; }
+    return $nerr;
+}
+
+sub test_bed
+{
+    my ($opts,$vcf,$bed,$sites) = @_;
+
+    my $cmd1 = qq[$$opts{bin}/tabix -R $bed $vcf];
+    my $cmd2 = qq[$$opts{bin}/tabix -T $bed $vcf];
+
+    print STDERR "$cmd1\n";
+    print STDERR "$cmd2\n";
+
+    my $nerr = 0;
+    my @out1 = `$cmd1`;
+    if ( scalar @out1 != scalar @$sites )
+    {
+        failed($opts,'test_tabix',$cmd1.(sprintf "\n\tExpected %d sites, found %d\n", scalar @$sites,scalar @out1)); 
+        $nerr++;
+    }
+    my @out2 = `$cmd2`;
+    if ( scalar @out2 != scalar @$sites )
+    { 
+        failed($opts,'test_tabix',$cmd2.(sprintf "\n\tExpected %d sites, found %d\n", scalar @$sites,scalar @out2)); 
+        $nerr++;
+    }
+
+    for (my $i=0; $i<@$sites; $i++)
+    {
+        my @items1 = split(/\t/,$out1[$i]);
+        my @items2 = split(/\t/,$out2[$i]);
+        if ( $$sites[$i] ne $items1[1] )  { failed($opts,'test_tabix',$cmd1); $nerr++; last; }
+        if ( $$sites[$i] ne $items2[1] )  { failed($opts,'test_tabix',$cmd2); $nerr++; last; }
+    }
+    return $nerr;
+}
+
 

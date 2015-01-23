@@ -61,7 +61,7 @@ extern "C" {
     int fai_build(const char *fn);
 
     /*!
-      @abstract    Distroy a faidx_t struct.
+      @abstract    Destroy a faidx_t struct.
       @param  fai  Pointer to the struct to be destroyed
      */
     void fai_destroy(faidx_t *fai);

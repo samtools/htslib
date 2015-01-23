@@ -235,7 +235,7 @@ typedef struct {
 #define bam_get_l_aux(b) ((b)->l_data - ((b)->core.n_cigar<<2) - (b)->core.l_qname - (b)->core.l_qseq - (((b)->core.l_qseq + 1)>>1))
 /*! @function
  @abstract  Get a base on read
- @param  s  Query sequence returned by bam1_seq()
+ @param  s  Query sequence returned by bam_get_seq()
  @param  i  The i-th position, 0-based
  @return    4-bit integer representing the base.
  */

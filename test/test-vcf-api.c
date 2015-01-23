@@ -254,6 +254,11 @@ void iterator(const char *fname)
 
     bcf_index_build(fname, 0);
     idx = bcf_index_load(fname);
+    if ( !idx )
+    {
+        fprintf(stderr,"Could not load the index: %s\n", fname);
+        exit(1);
+    }
 
     iter = bcf_itr_queryi(idx, bcf_hdr_name2id(hdr, "20"), 1110600, 1110800);
     bcf_itr_destroy(iter);

@@ -87,7 +87,8 @@ typedef struct {
 } bcf_hrec_t;
 
 typedef struct {
-    uint32_t info[3];  // stores Number:20, var:4, Type:4, ColType:4 for BCF_HL_FLT,INFO,FMT
+    uint32_t info[3];  // stores Number:20, var:4, Type:4, ColType:4 in info[0..2]
+                       // for BCF_HL_FLT,INFO,FMT and contig length in info[0] for BCF_HL_CTG
     bcf_hrec_t *hrec[3];
     int id;
 } bcf_idinfo_t;
@@ -403,6 +404,7 @@ extern "C" {
     int bcf_hdr_append(bcf_hdr_t *h, const char *line);
     int bcf_hdr_printf(bcf_hdr_t *h, const char *format, ...);
 
+    /** VCF version, e.g. VCFv4.2 */
     const char *bcf_hdr_get_version(const bcf_hdr_t *hdr);
     void bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version);
 

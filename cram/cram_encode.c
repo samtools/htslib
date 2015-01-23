@@ -686,8 +686,10 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s) {
     cp += itf8_put(cp, s->hdr->ref_seq_start);
     cp += itf8_put(cp, s->hdr->ref_seq_span);
     cp += itf8_put(cp, s->hdr->num_records);
-    if (CRAM_MAJOR_VERS(fd->version) != 1)
+    if (CRAM_MAJOR_VERS(fd->version) == 2)
 	cp += itf8_put(cp, s->hdr->record_counter);
+    else if (CRAM_MAJOR_VERS(fd->version) >= 3)
+	cp += ltf8_put(cp, s->hdr->record_counter);
     cp += itf8_put(cp, s->hdr->num_blocks);
     cp += itf8_put(cp, s->hdr->num_content_ids);
     for (j = 0; j < s->hdr->num_content_ids; j++) {
@@ -1197,8 +1199,11 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
 	for (i = j = 1; i < DS_END; i++) {
 	    if (!s->block[i] || s->block[i] == s->block[0])
 		continue;
-	    if (s->block[i]->uncomp_size == 0)
+	    if (s->block[i]->uncomp_size == 0) {
+		cram_free_block(s->block[i]);
+		s->block[i] = NULL;
 		continue;
+	    }
 	    s->block[j] = s->block[i];
 	    s->hdr->block_content_ids[j-1] = s->block[i]->content_id;
 	    j++;
@@ -1231,11 +1236,10 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     nref = fd->refs->nref;
     pthread_mutex_unlock(&fd->ref_lock);
 
-    if (c->refs_used) {
+    if (!fd->no_ref && c->refs_used) {
 	for (i = 0; i < nref; i++) {
-	    if (c->refs_used[i]) {	
+	    if (c->refs_used[i])
 		cram_get_ref(fd, i, 1, 0);
-	    }
 	}
     }
 
@@ -1319,6 +1323,11 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 	    s->hdr->ref_seq_span  = last_base - first_base + 1;
 	}
 	s->hdr->num_records = r2;
+    }
+
+    if (c->multi_seq && !fd->no_ref) {
+	if (c->ref_seq_id >= 0)
+	    cram_ref_decr(fd->refs, c->ref_seq_id);
     }
 
     /* Link our bams[] array onto the spare bam list for reuse */
@@ -1655,7 +1664,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     }
 
     /* Cache references up-front if we have unsorted access patterns */
-    if (c->refs_used) {
+    if (!fd->no_ref && c->refs_used) {
 	for (i = 0; i < fd->refs->nref; i++) {
 	    if (c->refs_used[i])
 		cram_ref_decr(fd->refs, i);
@@ -2955,7 +2964,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 
 	// Have we seen this reference before?
 	if (bam_ref(b) >= 0 && bam_ref(b) != curr_ref && !fd->embed_ref &&
-	    !fd->unsorted) {
+	    !fd->unsorted && multi_seq) {
 	    
 	    if (!c->refs_used) {
 		pthread_mutex_lock(&fd->ref_lock);

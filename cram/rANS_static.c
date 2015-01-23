@@ -66,7 +66,7 @@
 
 unsigned char *rans_compress_O0(unsigned char *in, unsigned int in_size,
 				unsigned int *out_size) {
-    unsigned char *out_buf = malloc(1.05*in_size + 257*257*3 + 5);
+    unsigned char *out_buf = malloc(1.05*in_size + 257*257*3 + 9);
     unsigned char *cp, *out_end;
     RansEncSymbol syms[256];
     RansState rans0, rans1, rans2, rans3;
@@ -78,7 +78,7 @@ unsigned char *rans_compress_O0(unsigned char *in, unsigned int in_size,
     if (!out_buf)
 	return NULL;
 
-    ptr = out_end = out_buf + (int)(1.05*in_size) + 257*257*3 + 4;
+    ptr = out_end = out_buf + (int)(1.05*in_size) + 257*257*3 + 9;
 
     // Compute statistics
     for (i = 0; i < in_size; i++) {
@@ -109,7 +109,7 @@ unsigned char *rans_compress_O0(unsigned char *in, unsigned int in_size,
     assert(F[M]>0);
 
     // Encode statistics.
-    cp = out_buf+5;
+    cp = out_buf+9;
 
     for (x = rle = j = 0; j < 256; j++) {
 	if (F[j]) {
@@ -176,7 +176,13 @@ unsigned char *rans_compress_O0(unsigned char *in, unsigned int in_size,
     *out_size = (out_end - ptr) + tab_size;
 
     cp = out_buf;
+
     *cp++ = 0; // order
+    *cp++ = ((*out_size-9)>> 0) & 0xff;
+    *cp++ = ((*out_size-9)>> 8) & 0xff;
+    *cp++ = ((*out_size-9)>>16) & 0xff;
+    *cp++ = ((*out_size-9)>>24) & 0xff;
+
     *cp++ = (in_size>> 0) & 0xff;
     *cp++ = (in_size>> 8) & 0xff;
     *cp++ = (in_size>>16) & 0xff;
@@ -198,8 +204,8 @@ typedef struct {
 unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 				  unsigned int *out_size) {
     /* Load in the static tables */
-    unsigned char *cp = in + 5;
-    int i, j, x, out_sz, rle;
+    unsigned char *cp = in + 9;
+    int i, j, x, out_sz, in_sz, rle;
     char *out_buf;
     ari_decoder D;
     RansDecSymbol syms[256];
@@ -208,8 +214,12 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 
     if (*in++ != 0) // Order-0 check
 	return NULL;
+    
+    in_sz  = ((in[0])<<0) | ((in[1])<<8) | ((in[2])<<16) | ((in[3])<<24);
+    out_sz = ((in[4])<<0) | ((in[5])<<8) | ((in[6])<<16) | ((in[7])<<24);
+    if (in_sz != in_size-9)
+	return NULL;
 
-    out_sz = ((in[0])<<0) | ((in[1])<<8) | ((in[2])<<16) | ((in[3])<<24);
     out_buf = malloc(out_sz);
     if (!out_buf)
 	return NULL;
@@ -346,19 +356,19 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 
 unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
 				unsigned int *out_size) {
-    unsigned char *out_buf = malloc(1.05*in_size + 257*257*3 + 5);
-    unsigned char *cp = out_buf, *out_end;
+    unsigned char *out_buf, *out_end, *cp;
     unsigned int last_i, tab_size, rle_i, rle_j;
     RansEncSymbol syms[256][256];
 
     if (in_size < 4)
 	return rans_compress_O0(in, in_size, out_size);
 
+    out_buf = malloc(1.05*in_size + 257*257*3 + 9);
     if (!out_buf)
 	return NULL;
 
-    out_end = out_buf + (int)(1.05*in_size) + 257*257*3 + 5;
-    cp = out_buf+5;
+    out_end = out_buf + (int)(1.05*in_size) + 257*257*3 + 9;
+    cp = out_buf+9;
 
     int F[256][256], T[256], i, j;
     unsigned char c;
@@ -525,6 +535,12 @@ unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
 
     cp = out_buf;
     *cp++ = 1; // order
+
+    *cp++ = ((*out_size-9)>> 0) & 0xff;
+    *cp++ = ((*out_size-9)>> 8) & 0xff;
+    *cp++ = ((*out_size-9)>>16) & 0xff;
+    *cp++ = ((*out_size-9)>>24) & 0xff;
+
     *cp++ = (in_size>> 0) & 0xff;
     *cp++ = (in_size>> 8) & 0xff;
     *cp++ = (in_size>>16) & 0xff;
@@ -538,8 +554,8 @@ unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
 unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 				  unsigned int *out_size) {
     /* Load in the static tables */
-    unsigned char *cp = in + 5;
-    int i, j = -999, x, out_sz, rle_i, rle_j;
+    unsigned char *cp = in + 9;
+    int i, j = -999, x, out_sz, in_sz, rle_i, rle_j;
     char *out_buf;
     ari_decoder D[256];
     RansDecSymbol syms[256][256];
@@ -549,7 +565,11 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     if (*in++ != 1) // Order-1 check
 	return NULL;
 
-    out_sz = ((in[0])<<0) | ((in[1])<<8) | ((in[2])<<16) | ((in[3])<<24);
+    in_sz  = ((in[0])<<0) | ((in[1])<<8) | ((in[2])<<16) | ((in[3])<<24);
+    out_sz = ((in[4])<<0) | ((in[5])<<8) | ((in[6])<<16) | ((in[7])<<24);
+    if (in_sz != in_size-9)
+	return NULL;
+
     out_buf = malloc(out_sz);
     if (!out_buf)
 	return NULL;

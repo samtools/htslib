@@ -37,6 +37,14 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
+#include "htslib/regidx.h"
+
+typedef struct
+{
+    char *regions_fname, *targets_fname;
+    int print_header, header_only, file_info;
+}
+args_t;
 
 static void error(const char *format, ...)
 {
@@ -46,7 +54,6 @@ static void error(const char *format, ...)
     va_end(ap);
     exit(EXIT_FAILURE);
 }
-
 
 #define IS_GFF  (1<<0)
 #define IS_BED  (1<<1)
@@ -80,22 +87,105 @@ int file_type(const char *fname)
     return 0;
 }
 
-#define PRINT_HEADER 1
-#define HEADER_ONLY  2
-#define FILE_INFO    3
-static int query_regions(char **argv, int argc, int mode)
+static char **parse_regions(char *regions_fname, char **argv, int argc, int *nregs)
 {
-    char *fname = argv[0];
-    int i, ftype = file_type(fname);
+    kstring_t str = {0,0,0};
+    int iseq = 0, ireg = 0;
+    char **regs = NULL;
+    *nregs = argc;
 
-    if ( ftype & IS_TXT || !ftype )
+    if ( regions_fname )
     {
-        htsFile *fp = hts_open(fname,"r");
-        if ( !fp ) error("Could not read %s\n", fname);
+        // improve me: this is a too heavy machinery for parsing regions...
+
+        regidx_t *idx = regidx_init(regions_fname, NULL, NULL, 0, NULL);
+        if ( !idx ) error("Could not read %s\n", regions_fname);
+
+        (*nregs) += regidx_nregs(idx);
+        regs = (char**) malloc(sizeof(char*)*(*nregs));
+
+        int nseq;
+        char **seqs = regidx_seq_names(idx, &nseq);
+        for (iseq=0; iseq<nseq; iseq++)
+        {
+            regitr_t itr;
+            regidx_overlap(idx, seqs[iseq], 0, UINT32_MAX, &itr);
+            while ( itr.i < itr.n )
+            {
+                str.l = 0;
+                ksprintf(&str, "%s:%d-%d", seqs[iseq], REGITR_START(itr)+1, REGITR_END(itr)+1);
+                regs[ireg++] = strdup(str.s);
+                itr.i++;
+            }
+        }
+        regidx_destroy(idx);
+    }
+    free(str.s);
+
+    if ( !ireg )
+    {
+        if ( argc )
+            regs = (char**) malloc(sizeof(char*)*argc);
+        else
+        {
+            regs = (char**) malloc(sizeof(char*));
+            regs[0] = strdup(".");
+            *nregs = 1;
+        }
+    }
+
+    for (iseq=0; iseq<argc; iseq++) regs[ireg++] = strdup(argv[iseq]);
+    return regs;
+}
+static int query_regions(args_t *args, char *fname, char **regs, int nregs)
+{
+    int i;
+    htsFile *fp = hts_open(fname,"r");
+    if ( !fp ) error("Could not read %s\n", fname);
+    enum htsExactFormat format = hts_get_format(fp)->format;
+
+    regidx_t *reg_idx = NULL;
+    if ( args->targets_fname )
+    {
+        reg_idx = regidx_init(args->targets_fname, NULL, NULL, 0, NULL);
+        if ( !reg_idx ) error("Could not read %s\n", args->targets_fname);
+    }
+
+    if ( format == bcf )
+    {
+        htsFile *out = hts_open("-","w");
+        if ( !out ) error("Could not open stdout\n", fname);
+        hts_idx_t *idx = bcf_index_load(fname);
+        if ( !idx ) error("Could not load .csi index of %s\n", fname);
+        bcf_hdr_t *hdr = bcf_hdr_read(fp);
+        if ( !hdr ) error("Could not read the header: %s\n", fname);
+        if ( args->print_header )
+            bcf_hdr_write(out,hdr);
+        if ( !args->header_only )
+        {
+            bcf1_t *rec = bcf_init();
+            for (i=0; i<nregs; i++)
+            {
+                hts_itr_t *itr = bcf_itr_querys(idx,hdr,regs[i]);
+                while ( bcf_itr_next(fp, itr, rec) >=0 )
+                {
+                    if ( reg_idx && !regidx_overlap(reg_idx, bcf_seqname(hdr,rec),rec->pos,rec->pos+rec->rlen-1, NULL) ) continue; 
+                    bcf_write(out,hdr,rec);
+                }
+                tbx_itr_destroy(itr);
+            }
+            bcf_destroy(rec);
+        }
+        if ( hts_close(out) ) error("hts_close returned non-zero status for stdout\n");
+        bcf_hdr_destroy(hdr);
+        hts_idx_destroy(idx);
+    }
+    else if ( format==vcf || format==sam || format==unknown_format )
+    {
         tbx_t *tbx = tbx_index_load(fname);
         if ( !tbx ) error("Could not load .tbi/.csi index of %s\n", fname);
         kstring_t str = {0,0,0};
-        if ( mode )
+        if ( args->print_header )
         {
             while ( hts_getline(fp, KS_SEP_LINE, &str) >= 0 )
             {
@@ -103,53 +193,35 @@ static int query_regions(char **argv, int argc, int mode)
                 puts(str.s);
             }
         }
-        if ( mode!=HEADER_ONLY )
+        if ( !args->header_only )
         {
-            for (i=1; i<argc; i++)
+            int nseq;
+            const char **seq = NULL;
+            if ( reg_idx ) seq = tbx_seqnames(tbx, &nseq);
+            for (i=0; i<nregs; i++)
             {
-                hts_itr_t *itr = tbx_itr_querys(tbx, argv[i]);
+                hts_itr_t *itr = tbx_itr_querys(tbx, regs[i]);
                 if ( !itr ) continue;
-                while (tbx_itr_next(fp, tbx, itr, &str) >= 0) puts(str.s);
+                while (tbx_itr_next(fp, tbx, itr, &str) >= 0)
+                {
+                    if ( reg_idx && !regidx_overlap(reg_idx,seq[itr->curr_tid],itr->curr_beg,itr->curr_end, NULL) ) continue;
+                    puts(str.s);
+                }
                 tbx_itr_destroy(itr);
             }
+            free(seq);
         }
         free(str.s);
-        if ( hts_close(fp) ) error("hts_close returned non-zero status: %s\n", fname);
         tbx_destroy(tbx);
     }
-    else if ( ftype==IS_BCF )   // output uncompressed VCF
-    {
-        htsFile *fp = hts_open(fname,"r");
-        if ( !fp ) error("Could not read %s\n", fname);
-        htsFile *out = hts_open("-","w");
-        if ( !out ) error("Could not open stdout\n", fname);
-        hts_idx_t *idx = bcf_index_load(fname);
-        if ( !idx ) error("Could not load .csi index of %s\n", fname);
-        bcf_hdr_t *hdr = bcf_hdr_read(fp);
-        if ( !hdr ) error("Could not read the header: %s\n", fname);
-        if ( mode )
-        {
-            bcf_hdr_write(out,hdr);
-        }
-        if ( mode!=HEADER_ONLY )
-        {
-            bcf1_t *rec = bcf_init();
-            for (i=1; i<argc; i++)
-            {
-                hts_itr_t *itr = bcf_itr_querys(idx,hdr,argv[i]);
-                if ( !itr ) continue;
-                while ( bcf_itr_next(fp, itr, rec) >=0 ) bcf_write(out,hdr,rec);
-                tbx_itr_destroy(itr);
-            }
-            bcf_destroy(rec);
-        }
-        if ( hts_close(fp) ) error("hts_close returned non-zero status: %s\n", fname);
-        if ( hts_close(out) ) error("hts_close returned non-zero status for stdout\n");
-        bcf_hdr_destroy(hdr);
-        hts_idx_destroy(idx);
-    }
-    else if ( ftype==IS_BAM )   // todo: BAM
+    else if ( format==bam )
         error("Please use \"samtools view\" for querying BAM files.\n");
+
+    if ( reg_idx ) regidx_destroy(reg_idx);
+    if ( hts_close(fp) ) error("hts_close returned non-zero status: %s\n", fname);
+
+    for (i=0; i<nregs; i++) free(regs[i]);
+    free(regs);
     return 0;
 }
 static int query_chroms(char *fname)
@@ -189,6 +261,7 @@ static int query_chroms(char *fname)
 static int file_info(char *fname)
 {
     htsFile *fp = hts_open(fname,"r");
+    if ( !fp ) return -1;
     const htsFormat *fmt = hts_get_format(fp);
     printf("%s: ", fname);
     if ( fmt->format==vcf ) printf("VCF");
@@ -289,11 +362,11 @@ static int usage(void)
     fprintf(stderr, "   -b, --begin INT            column number for region start [4]\n");
     fprintf(stderr, "   -c, --comment CHAR         skip comment lines starting with CHAR [null]\n");
     fprintf(stderr, "   -C, --csi                  generate CSI index for VCF (default is TBI)\n");
-    fprintf(stderr, "       --csi-v1               same as --csi, but without storing the number of records\n");
+    fprintf(stderr, "       --csi-v1               same as --csi, but does not store per-bin record counts\n");
     fprintf(stderr, "   -e, --end INT              column number for region end (if no end, set INT to -b) [5]\n");
     fprintf(stderr, "   -f, --force                overwrite existing index without asking\n");
     fprintf(stderr, "   -m, --min-shift INT        set minimal interval size for CSI indices to 2^INT [14]\n");
-    fprintf(stderr, "   -p, --preset STR           gff, bed, sam, vcf, bcf, bam\n");
+    fprintf(stderr, "   -p, --preset STR           gff, bed, sam, vcf\n");
     fprintf(stderr, "   -s, --sequence INT         column number for sequence names (suppressed by -p) [1]\n");
     fprintf(stderr, "   -S, --skip-lines INT       skip first INT lines [0]\n");
     fprintf(stderr, "\n");
@@ -303,19 +376,25 @@ static int usage(void)
     fprintf(stderr, "   -i, --file-info            print file format info\n");
     fprintf(stderr, "   -l, --list-chroms          list chromosome names\n");
     fprintf(stderr, "   -r, --reheader FILE        replace the header with the content of FILE\n");
+    fprintf(stderr, "   -R, --regions FILE         restrict to regions listed in the file\n");
+    fprintf(stderr, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
     fprintf(stderr, "\n");
     return 1;
 }
 
 int main(int argc, char *argv[])
 {
-    int c, min_shift = 0, is_force = 0, list_chroms = 0, mode = 0, do_csi = 0;
+    int c, min_shift = 0, is_force = 0, list_chroms = 0, do_csi = 0;
     tbx_conf_t conf = tbx_conf_gff, *conf_ptr = NULL;
     char *reheader = NULL;
+    args_t args;
+    memset(&args,0,sizeof(args_t));
 
     static struct option loptions[] =
     {
         {"help",0,0,'h'},
+        {"regions",1,0,'R'},
+        {"targets",1,0,'T'},
         {"file-info",0,0,'i'},
         {"csi",0,0,'C'},
         {"csi-v1",0,0,1},
@@ -334,32 +413,52 @@ int main(int argc, char *argv[])
         {0,0,0,0}
     };
 
-    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:iC", loptions,NULL)) >= 0)
+    char *tmp;
+    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:iCR:T:", loptions,NULL)) >= 0)
     {
         switch (c)
         {
             case 'C': do_csi = 1; break;
             case  1 : do_csi = -1; break;
-            case 'i': mode = FILE_INFO; break;
+            case 'R': args.regions_fname = optarg; break;
+            case 'T': args.targets_fname = optarg; break;
+            case 'i': args.file_info = 1; break;
             case 'r': reheader = optarg; break;
-            case 'h': mode = PRINT_HEADER; break;
-            case 'H': mode = HEADER_ONLY; break;
+            case 'h': args.print_header = 1; break;
+            case 'H': args.header_only = 1; break;
             case 'l': list_chroms = 1; break;
             case '0': conf.preset |= TBX_UCSC; break;
-            case 'b': conf.bc = atoi(optarg); break;
-            case 'e': conf.ec = atoi(optarg); break;
+            case 'b':
+                conf.bc = strtol(optarg,&tmp,10); 
+                if ( *tmp ) error("Could not parse argument: -b %s\n", optarg);
+                break;
+            case 'e':
+                conf.ec = strtol(optarg,&tmp,10);
+                if ( *tmp ) error("Could not parse argument: -e %s\n", optarg);
+                break;
             case 'c': conf.meta_char = *optarg; break;
             case 'f': is_force = 1; break;
-            case 'm': min_shift = atoi(optarg); break;
+            case 'm':
+                min_shift = strtol(optarg,&tmp,10);
+                if ( *tmp ) error("Could not parse argument: -m %s\n", optarg);
+                break;
             case 'p':
                       if (strcmp(optarg, "gff") == 0) conf_ptr = &tbx_conf_gff;
                       else if (strcmp(optarg, "bed") == 0) conf_ptr = &tbx_conf_bed;
                       else if (strcmp(optarg, "sam") == 0) conf_ptr = &tbx_conf_sam;
                       else if (strcmp(optarg, "vcf") == 0) conf_ptr = &tbx_conf_vcf;
+                      else if (strcmp(optarg, "bcf") == 0) ;    // bcf is autodetected, preset is not needed
+                      else if (strcmp(optarg, "bam") == 0) ;    // same as bcf
                       else error("The preset string not recognised: '%s'\n", optarg);
                       break;
-            case 's': conf.sc = atoi(optarg); break;
-            case 'S': conf.line_skip = atoi(optarg); break;
+            case 's':
+                conf.sc = strtol(optarg,&tmp,10);
+                if ( *tmp ) error("Could not parse argument: -s %s\n", optarg);
+                break;
+            case 'S':
+                conf.line_skip = strtol(optarg,&tmp,10);
+                if ( *tmp ) error("Could not parse argument: -S %s\n", optarg);
+                break;
             default: return usage();
         }
     }
@@ -369,10 +468,16 @@ int main(int argc, char *argv[])
     if ( list_chroms )
         return query_chroms(argv[optind]);
 
-    if ( argc > optind+1 || mode==HEADER_ONLY )
-        return query_regions(&argv[optind], argc-optind, mode);
+    if ( argc > optind+1 || args.header_only || args.regions_fname || args.targets_fname )
+    {
+        int nregs = 0;
+        char **regs = NULL;
+        if ( !args.header_only )
+            regs = parse_regions(args.regions_fname, argv+optind+1, argc-optind-1, &nregs);
+        return query_regions(&args, argv[optind], regs, nregs);
+    }
 
-    if ( argc > optind+1 || mode==FILE_INFO )
+    if ( argc > optind+1 || args.file_info )
         return file_info(argv[optind]);
 
     char *fname = argv[optind];

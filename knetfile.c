@@ -411,7 +411,7 @@ int khttp_connect_file(knetFile *fp)
 	l += sprintf(buf + l, "GET %s HTTP/1.0\r\nHost: %s\r\n", fp->path, fp->http_host);
     l += sprintf(buf + l, "Range: bytes=%lld-\r\n", (long long)fp->offset);
 	l += sprintf(buf + l, "\r\n");
-	if ( netwrite(fp->fd, buf, l) != l ) return -1;
+	if ( netwrite(fp->fd, buf, l) != l ) { free(buf); return -1; }
 	l = 0;
 	while (netread(fp->fd, buf + l, 1)) { // read HTTP header; FIXME: bad efficiency
 		if (buf[l] == '\n' && l >= 3)
@@ -420,6 +420,7 @@ int khttp_connect_file(knetFile *fp)
 	}
 	buf[l] = 0;
 	if (l < 14) { // prematured header
+		free(buf);
 		netclose(fp->fd);
 		fp->fd = -1;
 		return -1;

@@ -64,7 +64,11 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
                 default: fprintf(stderr, "[E::%s] todo: %d at %s:%d\n", __func__, ac_type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
             }
             #undef BRANCH_INT
-            assert( an>=nac );  // sanity check for missing values
+            if ( an<nac )
+            {
+                fprintf(stderr,"[E::%s] Incorrect AN/AC counts at %s:%d\n", __func__,header->id[BCF_DT_CTG][line->rid].key, line->pos+1); 
+                exit(1); 
+            }
             ac[0] = an - nac;
             return 1;
         }
@@ -89,6 +93,11 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
                 { \
                     if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
                     if ( bcf_gt_is_missing(p[ial]) ) continue; /* missing allele */ \
+                    if ( p[ial]>>1 > line->n_allele ) \
+                    { \
+                        fprintf(stderr,"[E::%s] Incorrect allele (\"%d\") in %s at %s:%d\n", __func__,(p[ial]>>1)-1, header->samples[i],header->id[BCF_DT_CTG][line->rid].key, line->pos+1); \
+                        exit(1); \
+                    } \
                     ac[(p[ial]>>1)-1]++; \
                 } \
             } \
@@ -174,7 +183,7 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
             { \
                 if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
                 if ( bcf_gt_is_missing(p[ial]) ) continue; /* missing allele */ \
-                if ( (p[ial]>>1)-1 >= line->n_allele ) return -1; \
+                if ( (p[ial]>>1)-1 >= line->n_allele ) { free(ac); return -1; } \
                 ac[(p[ial]>>1)-1]++; \
             } \
         } \
@@ -563,19 +572,19 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
         int nori = nret / line->n_sample;
         if ( vlen==BCF_VL_A || vlen==BCF_VL_R || (vlen==BCF_VL_G && nori==nR_ori) ) // Number=A, R or haploid Number=G
         {
-            int ntop, inc = 0;
+            int inc = 0, nnew;
             if ( vlen==BCF_VL_A )
             {
                 assert( nori==nA_ori );     // todo: will fail if all values are missing
-                ntop = nA_ori;
                 ndat = nA_new*line->n_sample;
+                nnew = nA_new;
                 inc  = 1;
             }
             else
             {
                 assert( nori==nR_ori );     // todo: will fail if all values are missing
-                ntop = nR_ori;
                 ndat = nR_new*line->n_sample;
+                nnew = nR_new;
             }
 
             #define BRANCH(type_t,is_vector_end) \
@@ -583,14 +592,14 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                 for (j=0; j<line->n_sample; j++) \
                 { \
                     type_t *ptr_src = ((type_t*)dat) + j*nori; \
-                    type_t *ptr_dst = ((type_t*)dat) + j*nA_new; \
+                    type_t *ptr_dst = ((type_t*)dat) + j*nnew; \
                     int size = sizeof(type_t); \
                     int k_src, k_dst = 0; \
-                    for (k_src=0; k_src<ntop; k_src++) \
+                    for (k_src=0; k_src<nori; k_src++) \
                     { \
                         if ( is_vector_end ) { memcpy(ptr_dst+k_dst, ptr_src+k_src, size); break; } \
                         if ( rm_mask & 1<<(k_src+inc) ) continue; \
-                        if ( k_src!=k_dst ) memcpy(ptr_dst+k_dst, ptr_src+k_src, size); \
+                        memcpy(ptr_dst+k_dst, ptr_src+k_src, size); \
                         k_dst++; \
                     } \
                 } \
@@ -622,7 +631,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                         for (k_src=0; k_src<nR_ori; k_src++) \
                         { \
                             if ( rm_mask & 1<<k_src ) continue; \
-                            if ( k_src!=k_dst ) memcpy(ptr_dst+k_dst, ptr_src+k_src, size); \
+                            memcpy(ptr_dst+k_dst, ptr_src+k_src, size); \
                             k_dst++; \
                         } \
                         memcpy(ptr_dst+k_dst, ptr_src+k_src, size); \
@@ -635,9 +644,9 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                             for (ib=0; ib<=ia; ib++) \
                             { \
                                 k_src++; \
-                                if ( is_vector_end ) { memcpy(ptr_dst+k_dst, ptr_src+k_src, size); ia = nR_ori; break; } \
+                                if ( is_vector_end ) { memcpy(ptr_dst+k_dst, ptr_src+k_src, size); ia = nR_ori; break; }  \
                                 if ( rm_mask & 1<<ia || rm_mask & 1<<ib ) continue; \
-                                if ( k_src!=k_dst ) memcpy(ptr_dst+k_dst, ptr_src+k_src, size); \
+                                memcpy(ptr_dst+k_dst, ptr_src+k_src, size); \
                                 k_dst++; \
                             } \
                         } \

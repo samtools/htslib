@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -79,6 +80,8 @@ const unsigned char seq_nt16_table[256] = {
 };
 
 const char seq_nt16_str[] = "=ACMGRSVTWYHKDBN";
+
+const int seq_nt16_int[] = { 4, 0, 1, 4, 2, 4, 4, 4, 3, 4, 4, 4, 4, 4, 4, 4 };
 
 /**********************
  *** Basic file I/O ***
@@ -251,7 +254,8 @@ const char *hts_format_description(const htsFormat *format)
     case bcfv1: return "BCFv1-legacy-format compressed variant calling data";
     case bai:   return "BAI sequence index data";
     case crai:  return "CRAI compressed sequence index data";
-    case csi:   return "CSI compressed sequence index data";
+    case csi:   return "CSIv2 compressed index data";
+    case csiv1: return "CSIv1 compressed index data";
     case tbi:   return "Tabix compressed genomic region index data";
     default:    return "unknown";
     }
@@ -692,7 +696,7 @@ static inline void insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t o
         int old_m = l->m;
         l->m = end + 1;
         kroundup32(l->m);
-        l->offset = (uint64_t*)realloc(l->offset, l->m * 8);
+        l->offset = (uint64_t*)realloc(l->offset, l->m * sizeof(uint64_t));
         memset(l->offset + old_m, 0xff, 8 * (l->m - old_m)); // fill l->offset with (uint64_t)-1
     }
     if (beg == end) { // to save a loop in this case
@@ -975,7 +979,7 @@ static void hts_idx_save_core(const hts_idx_t *idx, void *fp, enum htsExactForma
                 if (fmt == csiv1 || fmt == csi )
                 {
                     idx_write(is_bgzf, fp, &kh_val(bidx, k).loff, 8);
-                    idx_write(is_bgzf, fp, &kh_val(bidx, k).nrec, 8);
+                    if ( fmt==csi ) idx_write(is_bgzf, fp, &kh_val(bidx, k).nrec, 8);
                 }
                 //int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
                 idx_write(is_bgzf, fp, &p->n, 4);
@@ -1066,8 +1070,11 @@ static int hts_idx_load_core(hts_idx_t *idx, void *fp, enum htsExactFormat fmt)
             if (fmt == csi || fmt == csiv1) {
                 if (idx_read(is_bgzf, fp, &p->loff, 8) != 8) return -1;
                 if (is_be) ed_swap_8p(&p->loff);
-                if (idx_read(is_bgzf, fp, &p->nrec, 8) != 8) return -1;
-                if (is_be) ed_swap_8p(&p->nrec);
+                if ( fmt == csi )
+                {
+                    if (idx_read(is_bgzf, fp, &p->nrec, 8) != 8) return -1;
+                    if (is_be) ed_swap_8p(&p->nrec);
+                }
             } else p->loff = 0;
             if (idx_read(is_bgzf, fp, &p->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&p->n);
@@ -1082,7 +1089,7 @@ static int hts_idx_load_core(hts_idx_t *idx, void *fp, enum htsExactFormat fmt)
             if (idx_read(is_bgzf, fp, &l->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&l->n);
             l->m = l->n;
-            l->offset = (uint64_t*)malloc(l->n << 3);
+            l->offset = (uint64_t*)malloc(l->n * sizeof(uint64_t));
             if (l->offset == NULL) return -2;
             if (idx_read(is_bgzf, fp, l->offset, l->n << 3) != l->n << 3) return -1;
             if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
@@ -1323,7 +1330,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
 
     if (beg < 0) beg = 0;
     if (end < beg) return 0;
-    if ((bidx = idx->bidx[tid]) == 0) return 0;
+    if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL) return 0;
 
     iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
     iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
@@ -1381,25 +1388,35 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
 hts_itr_t *hts_itr_nrec_query(const hts_idx_t *idx, int tid, int64_t beg, int64_t end, hts_readrec_func *readrec)
 {
     bidx_t *bidx;
-    if (beg < 0) beg = 0;
-    if (end < beg) return NULL;
+    if (beg < 1) beg = 1;
+    if (end < beg) end = beg;
     if ((bidx = idx->bidx[tid]) == 0) return NULL;
 
     // neglecting higher bins, not sure how to count long events
-    int64_t beg_pos = -1, end_pos;
+    int64_t beg_pos = -1, end_pos = -1;
     uint64_t nrec = 0, nrec_off = 0;
-    khint_t k = hts_reg2bin(0, 1, idx->min_shift, idx->n_lvls);
-    for (; k < kh_end(bidx); k++)
+    int level, s = idx->min_shift, t = ((1<<idx->n_lvls*3) - 1) / 7;
+    for (level=idx->n_lvls; level>0; level--)
     {
-        if ( !kh_exist(bidx,k) ) continue;
-        if ( nrec < beg ) nrec_off = nrec;
-        nrec += kh_val(bidx, k).nrec;
-        if ( nrec < beg ) continue;
-        if ( beg_pos<0 ) beg_pos = (k - ((1<<idx->n_lvls*3)-1)/7) << idx->min_shift;
-        end_pos = (k+1 - ((1<<idx->n_lvls*3)-1)/7) << idx->min_shift;
-        if ( nrec > end ) break;
+        int ibin, start = hts_bin_first(level);
+        for (ibin=start; ibin < idx->n_bins; ibin++)
+        {
+            khint_t k = kh_get(bin,bidx,ibin);
+            if ( k==kh_end(bidx) ) continue;    // ibin not present in the index
+            nrec += kh_val(bidx,k).nrec;
+            if ( nrec<beg ) 
+            {
+                nrec_off += kh_val(bidx,k).nrec;
+                continue;
+            }
+            if  ( beg_pos<0 ) beg_pos = 1 + ((ibin - t) << s);
+            end_pos = (ibin+1 - t) << s;
+            if ( nrec > end ) break;
+        }
+        if ( nrec!=0 ) break;
+        s += 3;
+        t -= 1<<level*3;
     }
-
     hts_itr_t *itr = hts_itr_query(idx,tid,beg_pos,end_pos,readrec);
     itr->nrec_off = nrec_off;
     itr->nrec_beg = beg;
@@ -1424,7 +1441,7 @@ const char *hts_parse_reg64(const char *s, int64_t *beg, int64_t *end)
         int n_hyphen = 0;
         for (i = name_end + 1; i < l; ++i) {
             if (s[i] == '-') ++n_hyphen;
-            else if (!isdigit(s[i]) && s[i] != ',') break;
+            else if (!isdigit(s[i]) && s[i] != ',' && s[i]!='.' && s[i]!='e' && s[i]!='E' ) break;
         }
         if (i < l || n_hyphen > 1) name_end = l; // malformated region string; then take str as the name
     }
@@ -1435,8 +1452,8 @@ const char *hts_parse_reg64(const char *s, int64_t *beg, int64_t *end)
         for (i = name_end + 1, k = 0; i < l; ++i)
             if (s[i] != ',') tmp[k++] = s[i];
         tmp[k] = 0;
-        if ((*beg = strtol(tmp, &tmp, 10) - 1) < 0) *beg = 0;
-        *end = *tmp? strtol(tmp + 1, &tmp, 10) : MAX_CSI_COOR;
+        if ((*beg = strtod(tmp, &tmp) - 1) < 0) *beg = 0;
+        *end = *tmp? strtod(tmp + 1, &tmp) : MAX_CSI_COOR;
         if (*beg > *end) name_end = l;
     }
     if (name_end == l) *beg = 0, *end = MAX_CSI_COOR;
@@ -1483,6 +1500,9 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
         }
         ret = iter->readrec(fp, data, r, &tid, &beg, &end);
         if (ret < 0) iter->finished = 1;
+        iter->curr_tid = tid;
+        iter->curr_beg = beg;
+        iter->curr_end = end;
         return ret;
     }
     if (iter->off == 0) return -1;
@@ -1501,7 +1521,13 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
             if ( iter->nrec_end==0 )
             {
                 if ( beg >= iter->end ) { ret = -1; break; }
-                if ( end > iter->beg && iter->end > beg ) return ret;
+                if ( end > iter->beg && iter->end > beg )
+                {
+                    iter->curr_tid = tid;
+                    iter->curr_beg = beg;
+                    iter->curr_end = end;
+                    return ret;
+                }
             }
             else
             {

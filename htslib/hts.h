@@ -165,11 +165,22 @@ enum cram_option {
 
 extern int hts_verbose;
 
-/*! @abstract Table for converting a nucleotide character to the 4-bit encoding. */
+/*! @abstract Table for converting a nucleotide character to 4-bit encoding.
+The input character may be either an IUPAC ambiguity code, '=' for 0, or
+'0'/'1'/'2'/'3' for a result of 1/2/4/8.  The result is encoded as 1/2/4/8
+for A/C/G/T or combinations of these bits for ambiguous bases.
+*/
 extern const unsigned char seq_nt16_table[256];
 
-/*! @abstract Table for converting a 4-bit encoded nucleotide to a letter. */
+/*! @abstract Table for converting a 4-bit encoded nucleotide to an IUPAC
+ambiguity code letter (or '=' when given 0).
+*/
 extern const char seq_nt16_str[];
+
+/*! @abstract Table for converting a 4-bit encoded nucleotide to about 2 bits.
+Returns 0/1/2/3 for 1/2/4/8 (i.e., A/C/G/T), or 4 otherwise (0 or ambiguous).
+*/
+extern const int seq_nt16_int[];
 
 #ifdef __cplusplus
 extern "C" {
@@ -317,6 +328,7 @@ typedef struct {
     uint32_t read_rest:1, finished:1, dummy:29;
     int tid, beg, end, n_off, i;
     uint64_t curr_off, nrec_off, nrec_beg, nrec_end;
+    int curr_tid, curr_beg, curr_end;
     hts_pair64_t *off;
     hts_readrec_func *readrec;
     struct {

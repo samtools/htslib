@@ -77,7 +77,7 @@ bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
     h->sdict = NULL;
     h->text = (char*)calloc(h->l_text + 1, 1);
     memcpy(h->text, h0->text, h->l_text);
-    h->target_len = (uint32_t*)calloc(h->n_targets, 4);
+    h->target_len = (uint32_t*)calloc(h->n_targets, sizeof(uint32_t));
     h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
     int i;
     for (i = 0; i < h->n_targets; ++i) {
@@ -95,7 +95,7 @@ static bam_hdr_t *hdr_from_dict(sdict_t *d)
     h = bam_hdr_init();
     h->sdict = d;
     h->n_targets = kh_size(d);
-    h->target_len = (uint32_t*)malloc(4 * h->n_targets);
+    h->target_len = (uint32_t*)malloc(sizeof(uint32_t) * h->n_targets);
     h->target_name = (char**)malloc(sizeof(char*) * h->n_targets);
     for (k = kh_begin(d); k != kh_end(d); ++k) {
         if (!kh_exist(d, k)) continue;
@@ -135,7 +135,7 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     if (fp->is_be) ed_swap_4p(&h->n_targets);
     // read reference sequence names and lengths
     h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
-    h->target_len = (uint32_t*)calloc(h->n_targets, 4);
+    h->target_len = (uint32_t*)calloc(h->n_targets, sizeof(uint32_t));
     for (i = 0; i != h->n_targets; ++i) {
         bgzf_read(fp, &name_len, 4);
         if (fp->is_be) ed_swap_4p(&name_len);
@@ -1828,7 +1828,7 @@ bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data)
     int i;
     bam_mplp_t iter;
     iter = (bam_mplp_t)calloc(1, sizeof(struct __bam_mplp_t));
-    iter->pos = (uint64_t*)calloc(n, 8);
+    iter->pos = (uint64_t*)calloc(n, sizeof(uint64_t));
     iter->n_plp = (int*)calloc(n, sizeof(int));
     iter->plp = (const bam_pileup1_t**)calloc(n, sizeof(bam_pileup1_t*));
     iter->iter = (bam_plp_t*)calloc(n, sizeof(bam_plp_t));

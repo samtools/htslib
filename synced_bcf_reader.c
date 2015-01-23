@@ -402,6 +402,7 @@ static int _reader_seek(bcf_sr_t *reader, const char *seq, int start, int end)
         if ( tid==-1 ) return -1;    // the sequence not present in this file
         reader->itr = bcf_itr_queryi(reader->bcf_idx,tid,start,end+1);
     }
+    if ( !reader->itr ) fprintf(stderr,"Could not seek: %s:%d-%d\n",seq,start+1,end+1);
     assert(reader->itr);
     return 0;
 }
@@ -872,7 +873,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
         if ( *ep==':' )
         {
             sp = ep+1;
-            from = strtol(sp,(char**)&ep,10);
+            from = strtod(sp,(char**)&ep);
             if ( sp==ep )
             {
                 fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
@@ -891,7 +892,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             }
             ep++;
             sp = ep;
-            to = strtol(sp,(char**)&ep,10);
+            to = strtod(sp,(char**)&ep);
             if ( *ep && *ep!=',' )
             {
                 fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
@@ -938,15 +939,15 @@ static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **ch
     if ( i<=k ) return -1;
     if ( k==l )
     {
-        *from = *to = strtol(ss, &tmp, 10);
+        *from = *to = strtod(ss, &tmp);
         if ( tmp==ss ) return -1;
     }
     else
     {
         if ( k==ifrom )
-            *from = strtol(ss, &tmp, 10);
+            *from = strtod(ss, &tmp);
         else
-            *to = strtol(ss, &tmp, 10);
+            *to = strtod(ss, &tmp);
         if ( ss==tmp ) return -1;
 
         for (i=k; i<l && *se; i++)
@@ -956,9 +957,9 @@ static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **ch
         }
         if ( i<l ) return -1;
         if ( k==ifrom )
-            *to = strtol(ss, &tmp, 10);
+            *to = strtod(ss, &tmp);
         else
-            *from = strtol(ss, &tmp, 10);
+            *from = strtod(ss, &tmp);
         if ( ss==tmp ) return -1;
     }
 
