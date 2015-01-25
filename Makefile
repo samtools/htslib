@@ -27,12 +27,12 @@ AR     = ar
 RANLIB = ranlib
 
 # TODO: edit cram code to remove need for -DSAMTOOLS
-CPPFLAGS = -I. -DSAMTOOLS=1
+CPPFLAGS = -I. -DSAMTOOLS=1 -D_USE_KURL
 # TODO: probably update cram code to make it compile cleanly with -Wc++-compat
-CFLAGS   = -g -Wall -O2
+CFLAGS   = -g -Wall -Wno-unused-function -O2
 EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
-LDLIBS   =
+LDLIBS   = -lcurl
 
 prefix      = /usr/local
 exec_prefix = $(prefix)
@@ -125,6 +125,7 @@ version.h:
 
 LIBHTS_OBJS = \
 	kfunc.o \
+	kurl.o \
 	knetfile.o \
 	kstring.o \
 	bgzf.o \

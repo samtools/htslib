@@ -518,8 +518,14 @@ static hFILE *hopen_mem(const char *data, const char *mode)
 
 hFILE *hopen(const char *fname, const char *mode)
 {
+#if defined(_USE_KURL)
+	char *p; 
+    if ((p = strstr(fname, "://")) != NULL && p > fname)
+		return hopen_net(fname, mode);
+#else
     if (strncmp(fname, "http://", 7) == 0 ||
         strncmp(fname, "ftp://", 6) == 0) return hopen_net(fname, mode);
+#endif
     else if (strncmp(fname, "data:", 5) == 0) return hopen_mem(fname + 5, mode);
     else if (strcmp(fname, "-") == 0) return hopen_fd_stdinout(mode);
     else return hopen_fd(fname, mode);

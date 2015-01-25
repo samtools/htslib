@@ -34,8 +34,11 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/bgzf.h"
 #include "htslib/faidx.h"
 #include "htslib/khash.h"
-#ifdef _USE_KNETFILE
-#include "htslib/knetfile.h"
+#ifdef _USE_KURL
+#	include "htslib/kurl.h"
+#	define _USE_KNETFILE
+#elif defined(_USE_KNETFILE)
+#	include "htslib/knetfile.h"
 #endif
 
 typedef struct {

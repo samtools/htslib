@@ -27,7 +27,12 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "hfile_internal.h"
 
-#include "htslib/knetfile.h"
+#ifdef _USE_KURL
+#	include "htslib/kurl.h"
+#	define _USE_KNETFILE
+#else
+#	include "htslib/knetfile.h"
+#endif
 
 typedef struct {
     hFILE base;
@@ -36,16 +41,23 @@ typedef struct {
 
 static int net_inited = 0;
 
-#ifdef _WIN32
+#if defined(_USE_KURL) || defined(_WIN32)
 static void net_exit(void)
 {
+#if defined(_USE_KURL)
+	kurl_destroy();
+#elif defined(_WIN32)
     knet_win32_destroy();
+#endif
 }
 #endif
 
 static int net_init(void)
 {
-#ifdef _WIN32
+#ifdef _USE_KURL
+	if (kurl_init() != 0) return -1;
+    (void) atexit(net_exit);
+#elif defined(_WIN32)
     if (knet_win32_init() != 0) return -1;
 
     // In the unlikely event atexit() fails, it's better to succeed here and
