@@ -2800,8 +2800,59 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
 	if (new == 0) {
 	    cram_record *p = &s->crecs[kh_val(s->pair[sec], k)];
+	    int aleft, aright, sign;
+
+	    aleft = MIN(cr->apos, p->apos);
+	    aright = MAX(cr->aend, p->aend);
+	    if (cr->apos < p->apos) {
+		sign = 1;
+	    } else if (cr->apos > p->apos) {
+		sign = -1;
+	    } else if (cr->flags & BAM_FREAD1) {
+		sign = 1;
+	    } else {
+		sign = -1;
+	    }
 	    
 	    //fprintf(stderr, "paired %"PRId64"\n", kh_val(s->pair[sec], k));
+
+	    // This vs p: tlen, matepos, flags
+	    //if (bam_ins_size(b) != -(cr->aend - p->apos + 1)) {
+	    if (bam_ins_size(b) != sign*(aright-aleft+1))
+		goto detached;
+
+	    if (MAX(bam_mate_pos(b)+1, 0) != p->apos)
+		goto detached;
+
+	    if (((bam_flag(b) & BAM_FMUNMAP) != 0) !=
+		((p->flags & BAM_FUNMAP) != 0))
+		goto detached;
+
+	    if (((bam_flag(b) & BAM_FMREVERSE) != 0) !=
+		((p->flags & BAM_FREVERSE) != 0))
+		goto detached;
+
+
+	    // p vs this: tlen, matepos, flags
+	    //if (p->tlen != cr->aend - p->apos + 1) {
+	    if (p->tlen != -sign*(aright-aleft+1))
+		goto detached;
+
+	    if (p->mate_pos != cr->apos)
+		goto detached;
+
+	    if (((p->flags & BAM_FMUNMAP) != 0) !=
+		((p->mate_flags & CRAM_M_UNMAP) != 0))
+		goto detached;
+
+	    if (((p->flags & BAM_FMREVERSE) != 0) !=
+		((p->mate_flags & CRAM_M_REVERSE) != 0))
+		goto detached;
+
+	    // Supplementary reads are just too ill defined
+	    if ((cr->flags & BAM_FSUPPLEMENTARY) ||
+		(p->flags & BAM_FSUPPLEMENTARY))
+		goto detached;
 
 	    // copy from p to cr
 	    cr->mate_pos = p->apos;
@@ -2827,8 +2878,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	    cram_stats_add(c->stats[DS_MF], p->mate_flags);
 
 	    cram_stats_del(c->stats[DS_TS], p->tlen);
-	    p->tlen = p->apos - cr->aend;
-	    cram_stats_add(c->stats[DS_TS], p->tlen);
+	    //p->tlen = p->apos - cr->aend;
+	    //cram_stats_add(c->stats[DS_TS], p->tlen);
 
 	    // Clear detached from cr flags
 	    //cram_stats_del(c->stats[DS_CF], cr->cram_flags);
@@ -2846,6 +2897,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
 	    kh_val(s->pair[sec], k) = rnum;
 	} else {
+	detached:
 	    //fprintf(stderr, "unpaired\n");
 
 	    /* Derive mate flags from this flag */

@@ -1689,10 +1689,13 @@ static void cram_decode_slice_xref(cram_slice *s) {
 		    int aleft = cr->apos, aright = cr->aend;
 		    int tlen;
 		    int ref = cr->ref_id;
+		    int left_cnt = 0;
 
 		    do {
 			if (aleft > s->crecs[id2].apos)
-			    aleft = s->crecs[id2].apos;
+			    aleft = s->crecs[id2].apos, left_cnt = 1;
+			else if (aleft == s->crecs[id2].apos)
+			    left_cnt++;
 			if (aright < s->crecs[id2].aend)
 			    aright = s->crecs[id2].aend;
 			if (s->crecs[id2].mate_line == -1) {
@@ -1716,9 +1719,8 @@ static void cram_decode_slice_xref(cram_slice *s) {
 			 * bit flags instead, as a tie breaker.
 			 */
 			if (s->crecs[id2].apos == aleft) {
-			    if (s->crecs[id2].aend != aright)
-				s->crecs[id2].tlen = tlen;
-			    else if (s->crecs[id2].flags & BAM_FREAD1)
+			    if (left_cnt == 1 || 
+				(s->crecs[id2].flags & BAM_FREAD1))
 				s->crecs[id2].tlen = tlen;
 			    else
 				s->crecs[id2].tlen = -tlen;
@@ -1729,9 +1731,8 @@ static void cram_decode_slice_xref(cram_slice *s) {
 			id2 = s->crecs[id2].mate_line;
 			while (id2 != id1) {
 			    if (s->crecs[id2].apos == aleft) {
-				if (s->crecs[id2].aend != aright)
-				    s->crecs[id2].tlen = tlen;
-				else if (s->crecs[id2].flags & BAM_FREAD1)
+				if (left_cnt == 1 || 
+				    (s->crecs[id2].flags & BAM_FREAD1))
 				    s->crecs[id2].tlen = tlen;
 				else
 				    s->crecs[id2].tlen = -tlen;
