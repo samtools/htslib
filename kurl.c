@@ -33,6 +33,7 @@ struct kurl_t {
 	int p_buf;    // file position in the buffer; p_buf <= l_buf
 	int done_reading; // true if we can read nothing from the file; buffer may not be empty even if done_reading is set
 	int err;      // error code
+	int64_t file_size;
 	struct curl_slist *hdr;
 };
 
@@ -96,6 +97,7 @@ static int fill_buffer(kurl_t *ku) // fill the buffer
 	} else {
 		int n_running, rc;
 		long http_code;
+		double file_size = 0.0;
 		fd_set fdr, fdw, fde;
 		do {
 			int maxfd = -1;
@@ -120,8 +122,12 @@ static int fill_buffer(kurl_t *ku) // fill the buffer
 			curl_easy_pause(ku->curl, CURLPAUSE_CONT);
 			rc = curl_multi_perform(ku->multi, &n_running); // FIXME: check return code
 		} while (n_running && ku->l_buf < ku->m_buf - CURL_MAX_WRITE_SIZE);
-		curl_easy_getinfo(ku->curl, CURLINFO_RESPONSE_CODE, &http_code);
+		rc = curl_easy_getinfo(ku->curl, CURLINFO_RESPONSE_CODE, &http_code);
 		if (http_code >= 400) return (ku->l_buf = 0);
+		if (ku->file_size == 0) {
+			rc = curl_easy_getinfo(ku->curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &file_size);
+			ku->file_size = file_size < 0.? -1 : (int64_t)(file_size + .499);
+		}
 		if (ku->l_buf < ku->m_buf - CURL_MAX_WRITE_SIZE) ku->done_reading = 1;
 	}
 	return ku->l_buf;
@@ -250,6 +256,7 @@ off_t kurl_seek(kurl_t *ku, off_t offset, int whence) // FIXME: sometimes when s
 	if (whence == SEEK_SET) new_off = offset;
 	else if (whence == SEEK_CUR) new_off += cur_off + offset;
 	else if (whence == SEEK_END && kurl_isfile(ku)) new_off = lseek(ku->fd, offset, SEEK_END), seek_end = 1;
+	else if (whence == SEEK_END && ku->file_size + offset >= 0) new_off = ku->file_size + offset, seek_end = 1;
 	else { // not supported whence
 		ku->err = KURL_INV_WHENCE;
 		return -1;
