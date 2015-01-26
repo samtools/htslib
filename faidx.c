@@ -291,7 +291,11 @@ faidx_t *fai_load(const char *fn)
     sprintf(str, "%s.fai", fn);
 
 #ifdef _USE_KNETFILE
+#ifdef _USE_KURL
+    if (strstr(fn, "://") != NULL)
+#else
     if (strstr(fn, "ftp://") == fn || strstr(fn, "http://") == fn)
+#endif
     {
         fp = download_and_open(str);
         if ( !fp )

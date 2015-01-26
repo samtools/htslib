@@ -95,6 +95,7 @@ static int fill_buffer(kurl_t *ku) // fill the buffer
 		if (ku->l_buf < ku->m_buf) ku->done_reading = 1;
 	} else {
 		int n_running, rc;
+		long http_code;
 		fd_set fdr, fdw, fde;
 		do {
 			int maxfd = -1;
@@ -119,6 +120,8 @@ static int fill_buffer(kurl_t *ku) // fill the buffer
 			curl_easy_pause(ku->curl, CURLPAUSE_CONT);
 			rc = curl_multi_perform(ku->multi, &n_running); // FIXME: check return code
 		} while (n_running && ku->l_buf < ku->m_buf - CURL_MAX_WRITE_SIZE);
+		curl_easy_getinfo(ku->curl, CURLINFO_RESPONSE_CODE, &http_code);
+		if (http_code >= 400) return (ku->l_buf = 0);
 		if (ku->l_buf < ku->m_buf - CURL_MAX_WRITE_SIZE) ku->done_reading = 1;
 	}
 	return ku->l_buf;

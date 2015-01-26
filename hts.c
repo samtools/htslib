@@ -1284,7 +1284,13 @@ static char *test_and_fetch(const char *fn)
 {
     FILE *fp;
     // FIXME Use is_remote_scheme() helper that's true for ftp/http/irods/etc
-    if (strstr(fn, "ftp://") == fn || strstr(fn, "http://") == fn) {
+#ifdef _USE_KURL
+	char *p;
+    if ((p = strstr(fn, "://")) != 0 && p > fn)
+#else
+    if (strstr(fn, "ftp://") == fn || strstr(fn, "http://") == fn)
+#endif
+	{
         const int buf_size = 1 * 1024 * 1024;
         hFILE *fp_remote;
         uint8_t *buf;
