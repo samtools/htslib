@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -40,7 +41,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #define KS_BGZF 1
 #if KS_BGZF
-    // bgzf now supports gzip-compressed files
+    // bgzf now supports gzip-compressed files, the gzFile branch can be removed
     KSTREAM_INIT2(, BGZF*, bgzf_read, 65536)
 #else
     KSTREAM_INIT2(, gzFile, gzread, 16384)
@@ -78,9 +79,44 @@ const unsigned char seq_nt16_table[256] = {
 
 const char seq_nt16_str[] = "=ACMGRSVTWYHKDBN";
 
+const int seq_nt16_int[] = { 4, 0, 1, 4, 2, 4, 4, 4, 3, 4, 4, 4, 4, 4, 4, 4 };
+
 /**********************
  *** Basic file I/O ***
  **********************/
+
+static enum htsFormatCategory format_category(enum htsExactFormat fmt)
+{
+    switch (fmt) {
+    case bam:
+    case sam:
+    case cram:
+        return sequence_data;
+
+    case vcf:
+    case bcfv1:
+    case bcf:
+        return variant_data;
+
+    case bai:
+    case crai:
+    case csi:
+    case gzi:
+    case tbi:
+        return index_file;
+
+    case bed:
+        return region_list;
+
+    case unknown_format:
+    case binary_format:
+    case text_format:
+    case format_maximum:
+        break;
+    }
+
+    return unknown_category;
+}
 
 // Decompress up to ten or so bytes by peeking at the file, which must be
 // positioned at the start of a GZIP block.
@@ -112,14 +148,108 @@ static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
     return destsize;
 }
 
-// Returns whether the block contains any control characters, i.e.,
-// characters less than SPACE other than whitespace etc (ASCII BEL..CR).
-static int is_binary(unsigned char *s, size_t n)
+int hts_detect_format(hFILE *hfile, htsFormat *fmt)
 {
-    size_t i;
-    for (i = 0; i < n; i++)
-        if (s[i] < 0x07 || (s[i] >= 0x0e && s[i] < 0x20)) return 1;
+    unsigned char s[18];
+    ssize_t len = hpeek(hfile, s, 18);
+    if (len < 0) return -1;
+
+    if (len >= 2 && s[0] == 0x1f && s[1] == 0x8b) {
+        // The stream is either gzip-compressed or BGZF-compressed.
+        // Determine which, and decompress the first few bytes.
+        fmt->compression = (len >= 18 && (s[3] & 4) &&
+                            memcmp(&s[12], "BC\2\0", 4) == 0)? bgzf : gzip;
+        len = decompress_peek(hfile, s, sizeof s);
+    }
+    else {
+        fmt->compression = no_compression;
+        len = hpeek(hfile, s, sizeof s);
+    }
+    if (len < 0) return -1;
+
+    if (len >= 6 && memcmp(s,"CRAM",4) == 0 && s[4]>=1 && s[4]<=3 && s[5]<=1) {
+        fmt->category = sequence_data;
+        fmt->format = cram;
+        fmt->compression = custom;
+        return 0;
+    }
+    else if (len >= 4 && s[3] <= '\4') {
+        if (memcmp(s, "BAM\1", 4) == 0) {
+            fmt->category = sequence_data;
+            fmt->format = bam;
+            return 0;
+        }
+        else if (memcmp(s, "BAI\1", 4) == 0) {
+            fmt->category = index_file;
+            fmt->format = bai;
+            return 0;
+        }
+        else if (memcmp(s, "BCF\4", 4) == 0) {
+            fmt->category = variant_data;
+            fmt->format = bcfv1;
+            return 0;
+        }
+        else if (memcmp(s, "BCF\2", 4) == 0) {
+            fmt->category = variant_data;
+            fmt->format = bcf;
+            return 0;
+        }
+        else if (memcmp(s, "CSI\1", 4) == 0) {
+            fmt->category = index_file;
+            fmt->format = csi;
+            return 0;
+        }
+        else if (memcmp(s, "TBI\1", 4) == 0) {
+            fmt->category = index_file;
+            fmt->format = tbi;
+            return 0;
+        }
+    }
+    else if (len >= 16 && memcmp(s, "##fileformat=VCF", 16) == 0) {
+        fmt->category = variant_data;
+        fmt->format = vcf;
+        return 0;
+    }
+    else if (len >= 4 && s[0] == '@' &&
+             (memcmp(s, "@HD\t", 4) == 0 || memcmp(s, "@SQ\t", 4) == 0 ||
+              memcmp(s, "@RG\t", 4) == 0 || memcmp(s, "@PG\t", 4) == 0)) {
+        fmt->category = sequence_data;
+        fmt->format = sam;
+        return 0;
+    }
+    else {
+        // Various possibilities for tab-delimited text:
+        // .crai   (gzipped tab-delimited six columns: seqid 5*number)
+        // .bed    ([3..12] tab-delimited columns)
+        // .bedpe  (>= 10 tab-delimited columns)
+        // .sam    (tab-delimited >= 11 columns: seqid number seqid...)
+        // FIXME For now, assume it's SAM
+        fmt->category = sequence_data;
+        fmt->format = sam;
+        return 0;
+    }
+
+    fmt->category = unknown_category;
+    fmt->format = unknown_format;
+    fmt->compression = no_compression;
     return 0;
+}
+
+const char *hts_format_description(const htsFormat *format)
+{
+    switch (format->format) {
+    case sam:   return "SAM-format sequence text";
+    case bam:   return "BAM-format compressed sequence data";
+    case cram:  return "CRAM-format compressed sequence data";
+    case vcf:   return "VCF-format variant calling text";
+    case bcf:   return "BCF-format compressed variant calling data";
+    case bcfv1: return "BCFv1-legacy-format compressed variant calling data";
+    case bai:   return "BAI sequence index data";
+    case crai:  return "CRAI compressed sequence index data";
+    case csi:   return "CSI compressed sequence index data";
+    case tbi:   return "Tabix compressed genomic region index data";
+    default:    return "unknown";
+    }
 }
 
 htsFile *hts_open(const char *fn, const char *mode)
@@ -128,76 +258,8 @@ htsFile *hts_open(const char *fn, const char *mode)
     hFILE *hfile = hopen(fn, mode);
     if (hfile == NULL) goto error;
 
-    fp = (htsFile*)calloc(1, sizeof(htsFile));
+    fp = hts_hopen(hfile, fn, mode);
     if (fp == NULL) goto error;
-
-    fp->fn = strdup(fn);
-    fp->is_be = ed_is_big();
-
-    if (strchr(mode, 'r')) {
-        unsigned char s[18];
-        if (hpeek(hfile, s, 6) == 6 && memcmp(s, "CRAM", 4) == 0 &&
-            s[4] >= 1 && s[4] <= 2 && s[5] <= 1) {
-            fp->is_cram = 1;
-        }
-        else if (hpeek(hfile, s, 18) == 18 && s[0] == 0x1f && s[1] == 0x8b &&
-                 (s[3] & 4) && memcmp(&s[12], "BC\2\0", 4) == 0) {
-            // The stream is BGZF-compressed.  Decompress a few bytes to see
-            // whether it's in a binary format (e.g., BAM or BCF, starting
-            // with four bytes of magic including a control character) or is
-            // a bgzipped SAM or VCF text file.
-            fp->is_compressed = 1;
-            if (is_binary(s, decompress_peek(hfile, s, 4))) fp->is_bin = 1;
-            else fp->is_kstream = 1;
-        }
-        else if (hpeek(hfile, s, 2) == 2 && s[0] == 0x1f && s[1] == 0x8b) {
-            // Plain GZIP header... so a gzipped text file.
-            fp->is_compressed = 1;
-            fp->is_kstream = 1;
-        }
-        else if (hpeek(hfile, s, 4) == 4 && is_binary(s, 4)) {
-            // Binary format, but in a raw non-compressed form.
-            fp->is_bin = 1;
-        }
-        else {
-            fp->is_kstream = 1;
-        }
-    }
-    else if (strchr(mode, 'w') || strchr(mode, 'a')) {
-        fp->is_write = 1;
-        if (strchr(mode, 'b')) fp->is_bin = 1;
-        if (strchr(mode, 'c')) fp->is_cram = 1;
-        if (strchr(mode, 'z')) fp->is_compressed = 1;
-        else if (strchr(mode, 'u')) fp->is_compressed = 0;
-        else fp->is_compressed = 2;    // not set, default behaviour
-    }
-    else goto error;
-
-    if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
-        fp->fp.bgzf = bgzf_hopen(hfile, mode);
-        if (fp->fp.bgzf == NULL) goto error;
-    }
-    else if (fp->is_cram) {
-        fp->fp.cram = cram_dopen(hfile, fn, mode);
-        if (fp->fp.cram == NULL) goto error;
-        if (!fp->is_write)
-            cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, 1);
-
-    }
-    else if (fp->is_kstream) {
-    #if KS_BGZF
-        BGZF *gzfp = bgzf_hopen(hfile, mode);
-    #else
-        // TODO Implement gzip hFILE adaptor
-        hclose(hfile); // This won't work, especially for stdin
-        gzFile gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
-    #endif
-        if (gzfp) fp->fp.voidp = ks_init(gzfp);
-        else goto error;
-    }
-    else {
-        fp->fp.hfile = hfile;
-    }
 
     return fp;
 
@@ -207,6 +269,95 @@ error:
 
     if (hfile)
         hclose_abruptly(hfile);
+
+    return NULL;
+}
+
+htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
+{
+    htsFile *fp = (htsFile*)calloc(1, sizeof(htsFile));
+    if (fp == NULL) goto error;
+
+    fp->fn = strdup(fn);
+    fp->is_be = ed_is_big();
+
+    if (strchr(mode, 'r')) {
+        if (hts_detect_format(hfile, &fp->format) < 0) goto error;
+    }
+    else if (strchr(mode, 'w') || strchr(mode, 'a')) {
+        htsFormat *fmt = &fp->format;
+        fp->is_write = 1;
+
+        if (strchr(mode, 'b')) fmt->format = binary_format;
+        else if (strchr(mode, 'c')) fmt->format = cram;
+        else fmt->format = text_format;
+
+        if (strchr(mode, 'z')) fmt->compression = bgzf;
+        else if (strchr(mode, 'g')) fmt->compression = gzip;
+        else if (strchr(mode, 'u')) fmt->compression = no_compression;
+        else {
+            // No compression mode specified, set to the default for the format
+            switch (fmt->format) {
+            case binary_format: fmt->compression = bgzf; break;
+            case cram: fmt->compression = custom; break;
+            case text_format: fmt->compression = no_compression; break;
+            default: abort();
+            }
+        }
+
+        // Fill in category (if determinable; e.g. 'b' could be BAM or BCF)
+        fmt->category = format_category(fmt->format);
+    }
+    else goto error;
+
+    switch (fp->format.format) {
+    case binary_format:
+    case bam:
+    case bcf:
+        fp->fp.bgzf = bgzf_hopen(hfile, mode);
+        if (fp->fp.bgzf == NULL) goto error;
+        fp->is_bin = 1;
+        break;
+
+    case cram:
+        fp->fp.cram = cram_dopen(hfile, fn, mode);
+        if (fp->fp.cram == NULL) goto error;
+        if (!fp->is_write)
+            cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, 1);
+        fp->is_cram = 1;
+        break;
+
+    case text_format:
+    case sam:
+    case vcf:
+        if (!fp->is_write) {
+        #if KS_BGZF
+            BGZF *gzfp = bgzf_hopen(hfile, mode);
+        #else
+            // TODO Implement gzip hFILE adaptor
+            hclose(hfile); // This won't work, especially for stdin
+            gzFile gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
+        #endif
+            if (gzfp) fp->fp.voidp = ks_init(gzfp);
+            else goto error;
+        }
+        else if (fp->format.compression != no_compression) {
+            fp->fp.bgzf = bgzf_hopen(hfile, mode);
+            if (fp->fp.bgzf == NULL) goto error;
+        }
+        else
+            fp->fp.hfile = hfile;
+        break;
+
+    default:
+        goto error;
+    }
+
+    return fp;
+
+error:
+    if (hts_verbose >= 2)
+        fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
 
     if (fp) {
         free(fp->fn);
@@ -220,9 +371,14 @@ int hts_close(htsFile *fp)
 {
     int ret, save;
 
-    if (fp->is_bin || (fp->is_write && fp->is_compressed==1)) {
+    switch (fp->format.format) {
+    case binary_format:
+    case bam:
+    case bcf:
         ret = bgzf_close(fp->fp.bgzf);
-    } else if (fp->is_cram) {
+        break;
+
+    case cram:
         if (!fp->is_write) {
             switch (cram_eof(fp->fp.cram)) {
             case 0:
@@ -236,17 +392,30 @@ int hts_close(htsFile *fp)
             }
         }
         ret = cram_close(fp->fp.cram);
-    } else if (fp->is_kstream) {
-    #if KS_BGZF
-        BGZF *gzfp = ((kstream_t*)fp->fp.voidp)->f;
-        ret = bgzf_close(gzfp);
-    #else
-        gzFile gzfp = ((kstream_t*)fp->fp.voidp)->f;
-        ret = gzclose(gzfp);
-    #endif
-        ks_destroy((kstream_t*)fp->fp.voidp);
-    } else {
-        ret = hclose(fp->fp.hfile);
+        break;
+
+    case text_format:
+    case sam:
+    case vcf:
+        if (!fp->is_write) {
+        #if KS_BGZF
+            BGZF *gzfp = ((kstream_t*)fp->fp.voidp)->f;
+            ret = bgzf_close(gzfp);
+        #else
+            gzFile gzfp = ((kstream_t*)fp->fp.voidp)->f;
+            ret = gzclose(gzfp);
+        #endif
+            ks_destroy((kstream_t*)fp->fp.voidp);
+        }
+        else if (fp->format.compression != no_compression)
+            ret = bgzf_close(fp->fp.bgzf);
+        else
+            ret = hclose(fp->fp.hfile);
+        break;
+
+    default:
+        ret = -1;
+        break;
     }
 
     save = errno;
@@ -258,11 +427,31 @@ int hts_close(htsFile *fp)
     return ret;
 }
 
+const htsFormat *hts_get_format(htsFile *fp)
+{
+    return fp? &fp->format : NULL;
+}
+
+int hts_set_opt(htsFile *fp, enum cram_option opt, ...) {
+    int r;
+    va_list args;
+
+    if (fp->format.format != cram)
+        return 0;
+
+    va_start(args, opt);
+    r = cram_set_voption(fp->fp.cram, opt, args);
+    va_end(args);
+
+    return r;
+}
+
 int hts_set_threads(htsFile *fp, int n)
 {
-    // TODO Plug in CRAM and other threading
-    if (fp->is_bin) {
+    if (fp->format.compression == bgzf) {
         return bgzf_mt(fp->fp.bgzf, n, 256);
+    } else if (fp->format.format == cram) {
+        return hts_set_opt(fp, CRAM_OPT_NTHREADS, n);
     }
     else return 0;
 }
@@ -275,6 +464,9 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
         if (fp->fn_aux == NULL) return -1;
     }
     else fp->fn_aux = NULL;
+
+    if (fp->format.format == cram)
+        cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, fp->fn_aux);
 
     return 0;
 }
@@ -418,36 +610,6 @@ char **hts_readlines(const char *fn, int *_n)
     return s;
 }
 
-int hts_file_type(const char *fname)
-{
-    int len = strlen(fname);
-    if ( !strcasecmp(".vcf.gz",fname+len-7) ) return FT_VCF_GZ;
-    if ( !strcasecmp(".vcf",fname+len-4) ) return FT_VCF;
-    if ( !strcasecmp(".bcf",fname+len-4) ) return FT_BCF_GZ;
-    if ( !strcmp("-",fname) ) return FT_STDIN;
-    // ... etc
-
-    int fd = open(fname, O_RDONLY);
-    if ( !fd ) return 0;
-
-    uint8_t magic[5];
-    if ( read(fd,magic,2)!=2 ) { close(fd); return 0; }
-    if ( !strncmp((char*)magic,"##",2) ) { close(fd); return FT_VCF; }
-    if ( !strncmp((char*)magic,"BCF",3) ) { close(fd); return FT_BCF; }
-    close(fd);
-
-    if ( magic[0]==0x1f && magic[1]==0x8b ) // compressed
-    {
-        BGZF *fp = bgzf_open(fname, "r");
-        if ( !fp ) return 0;
-        if ( bgzf_read(fp, magic, 3)!=3 ) { bgzf_close(fp); return 0; }
-        bgzf_close(fp);
-        if ( !strncmp((char*)magic,"##",2) ) return FT_VCF_GZ;
-        if ( !strncmp((char*)magic,"BCF",3) ) return FT_BCF_GZ;
-    }
-    return 0;
-}
-
 /****************
  *** Indexing ***
  ****************/
@@ -504,11 +666,11 @@ static inline void insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
     l = &kh_value(b, k);
     if (absent) {
         l->m = 1; l->n = 0;
-        l->list = (hts_pair64_t*)calloc(l->m, 16);
+        l->list = (hts_pair64_t*)calloc(l->m, sizeof(hts_pair64_t));
     }
     if (l->n == l->m) {
         l->m <<= 1;
-        l->list = (hts_pair64_t*)realloc(l->list, l->m * 16);
+        l->list = (hts_pair64_t*)realloc(l->list, l->m * sizeof(hts_pair64_t));
     }
     l->list[l->n].u = beg;
     l->list[l->n++].v = end;
@@ -523,7 +685,7 @@ static inline void insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t o
         int old_m = l->m;
         l->m = end + 1;
         kroundup32(l->m);
-        l->offset = (uint64_t*)realloc(l->offset, l->m * 8);
+        l->offset = (uint64_t*)realloc(l->offset, l->m * sizeof(uint64_t));
         memset(l->offset + old_m, 0xff, 8 * (l->m - old_m)); // fill l->offset with (uint64_t)-1
     }
     if (beg == end) { // to save a loop in this case
@@ -616,9 +778,9 @@ static void compress_binning(hts_idx_t *idx, int i)
                 if (q->n + p->n > q->m) {
                     q->m = q->n + p->n;
                     kroundup32(q->m);
-                    q->list = (hts_pair64_t*)realloc(q->list, q->m * 16);
+                    q->list = (hts_pair64_t*)realloc(q->list, q->m * sizeof(hts_pair64_t));
                 }
-                memcpy(q->list + q->n, p->list, p->n * 16);
+                memcpy(q->list + q->n, p->list, p->n * sizeof(hts_pair64_t));
                 q->n += p->n;
                 free(p->list);
                 kh_del(bin, bidx, k);
@@ -708,10 +870,6 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
         idx->z.save_off = idx->z.last_off;
         idx->z.save_bin = idx->z.last_bin = bin;
         idx->z.save_tid = tid;
-        if (tid < 0) { // come to the end of the records having coordinates
-            hts_idx_finish(idx, offset);
-            return 0;
-        }
     }
     if (is_mapped) ++idx->z.n_mapped;
     else ++idx->z.n_unmapped;
@@ -891,7 +1049,7 @@ static int hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
             if (idx_read(is_bgzf, fp, &p->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&p->n);
             p->m = p->n;
-            p->list = (hts_pair64_t*)malloc(p->m * 16);
+            p->list = (hts_pair64_t*)malloc(p->m * sizeof(hts_pair64_t));
             if (p->list == NULL) return -2;
             if (idx_read(is_bgzf, fp, p->list, p->n<<4) != p->n<<4) return -1;
             if (is_be) swap_bins(p);
@@ -901,7 +1059,7 @@ static int hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
             if (idx_read(is_bgzf, fp, &l->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&l->n);
             l->m = l->n;
-            l->offset = (uint64_t*)malloc(l->n << 3);
+            l->offset = (uint64_t*)malloc(l->n * sizeof(uint64_t));
             if (l->offset == NULL) return -2;
             if (idx_read(is_bgzf, fp, l->offset, l->n << 3) != l->n << 3) return -1;
             if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
@@ -1134,7 +1292,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
 
     if (beg < 0) beg = 0;
     if (end < beg) return 0;
-    if ((bidx = idx->bidx[tid]) == 0) return 0;
+    if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL) return 0;
 
     iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
     iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
@@ -1158,7 +1316,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
         if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
             n_off += kh_value(bidx, k).n;
     if (n_off == 0) return iter;
-    off = (hts_pair64_t*)calloc(n_off, 16);
+    off = (hts_pair64_t*)calloc(n_off, sizeof(hts_pair64_t));
     for (i = n_off = 0; i < iter->bins.n; ++i) {
         if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
             int j;
@@ -1217,10 +1375,10 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
             if (s[i] != ',') tmp[k++] = s[i];
         tmp[k] = 0;
         if ((*beg = strtol(tmp, &tmp, 10) - 1) < 0) *beg = 0;
-        *end = *tmp? strtol(tmp + 1, &tmp, 10) : 1<<29;
+        *end = *tmp? strtol(tmp + 1, &tmp, 10) : INT_MAX;
         if (*beg > *end) name_end = l;
     }
-    if (name_end == l) *beg = 0, *end = 1<<29;
+    if (name_end == l) *beg = 0, *end = INT_MAX;
     return s + name_end;
 }
 
@@ -1229,7 +1387,7 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
     int tid, beg, end;
     char *q, *tmp;
     if (strcmp(reg, ".") == 0)
-        return itr_query(idx, HTS_IDX_START, 0, 1<<29, readrec);
+        return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
     else if (strcmp(reg, "*") != 0) {
         q = (char*)hts_parse_reg(reg, &beg, &end);
         tmp = (char*)alloca(q - reg + 1);
@@ -1253,6 +1411,9 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
         }
         ret = iter->readrec(fp, data, r, &tid, &beg, &end);
         if (ret < 0) iter->finished = 1;
+        iter->curr_tid = tid;
+        iter->curr_beg = beg;
+        iter->curr_end = end;
         return ret;
     }
     if (iter->off == 0) return -1;
@@ -1269,7 +1430,12 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
             iter->curr_off = bgzf_tell(fp);
             if (tid != iter->tid || beg >= iter->end) { // no need to proceed
                 ret = -1; break;
-            } else if (end > iter->beg && iter->end > beg) return ret;
+            } else if (end > iter->beg && iter->end > beg) {
+                iter->curr_tid = tid;
+                iter->curr_beg = beg;
+                iter->curr_end = end;
+                return ret;
+            }
         } else break; // end of file or error
     }
     iter->finished = 1;
@@ -1299,10 +1465,14 @@ static char *test_and_fetch(const char *fn)
         for (p = fn + strlen(fn) - 1; p >= fn; --p)
             if (*p == '/') break;
         ++p; // p now points to the local file name
-        if ((fp_remote = hopen(fn, "r")) == 0) {
-            if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to open remote file '%s'\n", __func__, fn);
-            return 0;
+        // Attempt to open local file first
+        if ((fp = fopen((char*)p, "rb")) != 0)
+        {
+            fclose(fp);
+            return (char*)p;
         }
+        // Attempt to open remote file. Stay quiet on failure, it is OK to fail when trying first .csi then .tbi index.
+        if ((fp_remote = hopen(fn, "r")) == 0) return 0;
         if ((fp = fopen(p, "w")) == 0) {
             if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create file '%s' in the working directory\n", __func__, p);
             hclose_abruptly(fp_remote);

@@ -254,6 +254,12 @@ off_t hseek(hFILE *fp, off_t offset, int whence)
         int ret = flush_buffer(fp);
         if (ret < 0) return ret;
     }
+    else {
+        // Convert relative offsets from being relative to the hFILE's stream
+        // position (at begin) to being relative to the backend's physical
+        // stream position (at end, due to the buffering read-ahead).
+        if (whence == SEEK_CUR) offset -= fp->end - fp->begin;
+    }
 
     pos = fp->backend->seek(fp, offset, whence);
     if (pos < 0) { fp->has_errno = errno; return pos; }

@@ -238,7 +238,7 @@ int vflen(char *fmt, va_list ap)
 		 * Note that %10c and %.10c act differently.
 		 * Besides, I think precision is not really allowed for %c.
 		 */
-		len += MAX(conv_len1, 1);
+		len += MAX(conv_len1, i>=0x80 ?MB_CUR_MAX :1);
 		break;
 
 	    case 'f':

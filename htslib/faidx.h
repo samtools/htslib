@@ -61,7 +61,7 @@ extern "C" {
     int fai_build(const char *fn);
 
     /*!
-      @abstract    Distroy a faidx_t struct.
+      @abstract    Destroy a faidx_t struct.
       @param  fai  Pointer to the struct to be destroyed
      */
     void fai_destroy(faidx_t *fai);
@@ -112,6 +112,21 @@ extern "C" {
       @return      1 if present or 0 if absent
      */
     int faidx_has_seq(const faidx_t *fai, const char *seq);
+
+    /*!
+      @abstract    Return number of sequences in fai index
+     */
+    int faidx_nseq(const faidx_t *fai);
+
+    /*!
+      @abstract    Return name of i-th sequence
+     */
+    const char *faidx_iseq(const faidx_t *fai, int i);
+
+    /*!
+      @abstract    Return sequence length, -1 if not present
+     */
+    int faidx_seq_len(const faidx_t *fai, const char *seq);
 
 #ifdef __cplusplus
 }

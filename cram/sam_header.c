@@ -38,10 +38,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/sam_header.h"
 #include "cram/string_alloc.h"
 
-#ifdef SAMTOOLS
-#define sam_hdr_parse sam_hdr_parse_
-#endif
-
 static void sam_hdr_error(char *msg, char *line, int len, int lno) {
     int j;
     
@@ -888,7 +884,7 @@ SAM_hdr *sam_hdr_new() {
  * Returns a SAM_hdr struct on success (free with sam_hdr_free())
  *         NULL on failure
  */
-SAM_hdr *sam_hdr_parse(const char *hdr, int len) {
+SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
     /* Make an empty SAM_hdr */
     SAM_hdr *sh;
     
@@ -925,7 +921,7 @@ SAM_hdr *sam_hdr_dup(SAM_hdr *hdr) {
     if (-1 == sam_hdr_rebuild(hdr))
 	return NULL;
 
-    return sam_hdr_parse(sam_hdr_str(hdr), sam_hdr_length(hdr));
+    return sam_hdr_parse_(sam_hdr_str(hdr), sam_hdr_length(hdr));
 }
 
 /*! Increments a reference count on hdr.

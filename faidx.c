@@ -77,7 +77,8 @@ static inline void fai_insert_index(faidx_t *idx, const char *name, int len, int
 
 faidx_t *fai_build_core(BGZF *bgzf)
 {
-    char c, *name;
+    char *name;
+    int c;
     int l_name, m_name;
     int line_len, line_blen, state;
     int l1, l2;
@@ -224,6 +225,7 @@ int fai_build(const char *fn)
     if ( !fai )
     {
         if ( bgzf->is_compressed && bgzf->is_gzip ) fprintf(stderr,"Cannot index files compressed with gzip, please use bgzip\n");
+        free(str);
         return -1;
     }
     if ( bgzf->is_compressed ) bgzf_index_dump(bgzf, fn, ".gzi");
@@ -342,8 +344,8 @@ faidx_t *fai_load(const char *fn)
 
 char *fai_fetch(const faidx_t *fai, const char *str, int *len)
 {
-    char *s, c;
-    int i, l, k, name_end;
+    char *s;
+    int c, i, l, k, name_end;
     khiter_t iter;
     faidx1_t val;
     khash_t(s) *h;
@@ -416,15 +418,24 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
     return s;
 }
 
-int faidx_fetch_nseq(const faidx_t *fai)
+int faidx_nseq(const faidx_t *fai)
 {
     return fai->n;
+}
+const char *faidx_iseq(const faidx_t *fai, int i)
+{
+    return fai->name[i];
+}
+int faidx_seq_len(const faidx_t *fai, const char *seq)
+{
+    khint_t k = kh_get(s, fai->hash, seq);
+    if ( k == kh_end(fai->hash) ) return -1;
+    return kh_val(fai->hash, k).len;
 }
 
 char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p_end_i, int *len)
 {
-    int l;
-    char c;
+    int l, c;
     khiter_t iter;
     faidx1_t val;
     char *seq=NULL;

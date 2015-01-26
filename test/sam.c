@@ -71,10 +71,10 @@ static int aux_fields1(void)
     static const char sam[] = "data:"
 "@SQ\tSN:one\tLN:1000\n"
 "@SQ\tSN:two\tLN:500\n"
-"r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tZZ:i:1000000\n";
+"r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\n";
 
     // Canonical form of the alignment record above, as output by sam_format1()
-    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tZZ:i:1000000";
+    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295";
 
     samFile *in = sam_open(sam, "r");
     bam_hdr_t *header = sam_hdr_read(in);
@@ -108,6 +108,33 @@ static int aux_fields1(void)
 
         if ((p = check_bam_aux_get(aln, "ZZ", 'I')) && bam_aux2i(p) != 1000000)
             fail("ZZ field is %d, expected 1000000", bam_aux2i(p));
+
+        if ((p = bam_aux_get(aln, "Y1")) && bam_aux2i(p) != -2147483647-1)
+            fail("Y1 field is %d, expected -2^31", bam_aux2i(p));
+
+        if ((p = bam_aux_get(aln, "Y2")) && bam_aux2i(p) != -2147483647)
+            fail("Y2 field is %d, expected -2^31+1", bam_aux2i(p));
+
+        if ((p = bam_aux_get(aln, "Y3")) && bam_aux2i(p) != -1)
+            fail("Y3 field is %d, expected -1", bam_aux2i(p));
+
+        if ((p = bam_aux_get(aln, "Y4")) && bam_aux2i(p) != 0)
+            fail("Y4 field is %d, expected 0", bam_aux2i(p));
+
+        if ((p = bam_aux_get(aln, "Y5")) && bam_aux2i(p) != 1)
+            fail("Y5 field is %d, expected 1", bam_aux2i(p));
+
+        if ((p = bam_aux_get(aln, "Y6")) && bam_aux2i(p) != 2147483647)
+            fail("Y6 field is %d, expected 2^31-1", bam_aux2i(p));
+
+        // TODO Checking these perhaps requires inventing bam_aux2u() or so
+#if 0
+        if ((p = bam_aux_get(aln, "Y7")) && bam_aux2i(p) != 2147483648)
+            fail("Y7 field is %d, expected 2^31", bam_aux2i(p));
+
+        if ((p = bam_aux_get(aln, "Y8")) && bam_aux2i(p) != 4294967295)
+            fail("Y8 field is %d, expected 2^32-1", bam_aux2i(p));
+#endif
 
         if (sam_format1(header, aln, &ks) < 0)
             fail("can't format record");

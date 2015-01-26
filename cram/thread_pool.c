@@ -35,18 +35,21 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
+#include <assert.h>
 
 #include "cram/thread_pool.h"
 
 //#define DEBUG
-#define DEBUG_TIME
+//#define DEBUG_TIME
+
+#define IN_ORDER
 
 #ifdef DEBUG
 static int worker_id(t_pool *p) {
     int i;
     pthread_t s = pthread_self();
     for (i = 0; i < p->tsize; i++) {
-	if (pthread_equal(s, p->t[i]))
+	if (pthread_equal(s, p->t[i].tid))
 	    return i;
     }
     return -1;
@@ -103,7 +106,7 @@ static int t_pool_add_result(t_pool_job *j, void *data) {
     fprintf(stderr, "%d: Broadcasting result_avail (id %d)\n",
 	    worker_id(j->p), r->serial);
 #endif
-    pthread_cond_broadcast(&q->result_avail_c);
+    pthread_cond_signal(&q->result_avail_c);
 #ifdef DEBUG
     fprintf(stderr, "%d: Broadcast complete\n", worker_id(j->p));
 #endif
@@ -301,7 +304,8 @@ void t_results_queue_destroy(t_results_queue *q) {
  * and then executes the job.
  */
 static void *t_pool_worker(void *arg) {
-    t_pool *p = (t_pool *)arg;
+    t_pool_worker_t *w = (t_pool_worker_t *)arg;
+    t_pool *p = w->p;
     t_pool_job *j;
 #ifdef DEBUG_TIME
     struct timeval t1, t2, t3;
@@ -318,28 +322,62 @@ static void *t_pool_worker(void *arg) {
 #ifdef DEBUG_TIME
 	gettimeofday(&t2, NULL);
 	p->wait_time += TDIFF(t2,t1);
+	w->wait_time += TDIFF(t2,t1);
 #endif
 
-	p->nwaiting++;
+	// If there is something on the job list and a higher priority
+	// thread waiting, let it handle this instead.
+//	while (p->head && p->t_stack_top != -1 && p->t_stack_top < w->idx) {
+//	    pthread_mutex_unlock(&p->pool_m);
+//	    pthread_cond_signal(&p->t[p->t_stack_top].pending_c);
+//	    pthread_mutex_lock(&p->pool_m);
+//	}
+
 	while (!p->head && !p->shutdown) {
+	    p->nwaiting++;
+
 	    if (p->njobs == 0)
 		pthread_cond_signal(&p->empty_c);
 #ifdef DEBUG_TIME
 	    gettimeofday(&t2, NULL);
 #endif
 
+#ifdef IN_ORDER
+	    // Push this thread to the top of the waiting stack
+	    if (p->t_stack_top == -1 || p->t_stack_top > w->idx)
+		p->t_stack_top = w->idx;
+
+	    p->t_stack[w->idx] = 1;
+	    pthread_cond_wait(&w->pending_c, &p->pool_m);
+	    p->t_stack[w->idx] = 0;
+
+	    /* Find new t_stack_top */
+	    {
+		int i;
+		p->t_stack_top = -1;
+		for (i = 0; i < p->tsize; i++) {
+		    if (p->t_stack[i]) {
+			p->t_stack_top = i;
+			break;
+		    }
+		}
+	    }
+#else
 	    pthread_cond_wait(&p->pending_c, &p->pool_m);
+#endif
 
 #ifdef DEBUG_TIME
 	    gettimeofday(&t3, NULL);
 	    p->wait_time += TDIFF(t3,t2);
+	    w->wait_time += TDIFF(t3,t2);
 #endif
+	    p->nwaiting--;
 	}
 
-	p->nwaiting--;
-
 	if (p->shutdown) {
+#ifdef DEBUG_TIME
 	    p->total_time += TDIFF(t3,t1);
+#endif
 #ifdef DEBUG
 	    fprintf(stderr, "%d: Shutting down\n", worker_id(p));
 #endif
@@ -351,7 +389,7 @@ static void *t_pool_worker(void *arg) {
 	if (!(p->head = j->next))
 	    p->tail = NULL;
 
-	if (p->njobs-- == p->qsize)
+	if (p->njobs-- >= p->qsize)
 	    pthread_cond_signal(&p->full_c);
 
 	if (p->njobs == 0)
@@ -389,6 +427,7 @@ t_pool *t_pool_init(int qsize, int tsize) {
     p->nwaiting = 0;
     p->shutdown = 0;
     p->head = p->tail = NULL;
+    p->t_stack = NULL;
 #ifdef DEBUG_TIME
     p->total_time = p->wait_time = 0;
 #endif
@@ -397,14 +436,40 @@ t_pool *t_pool_init(int qsize, int tsize) {
 
     pthread_mutex_init(&p->pool_m, NULL);
     pthread_cond_init(&p->empty_c, NULL);
-    pthread_cond_init(&p->pending_c, NULL);
     pthread_cond_init(&p->full_c, NULL);
 
+    pthread_mutex_lock(&p->pool_m);
+
+#ifdef IN_ORDER
+    if (!(p->t_stack = malloc(tsize * sizeof(*p->t_stack))))
+	return NULL;
+    p->t_stack_top = -1;
+
     for (i = 0; i < tsize; i++) {
-	if (0 != pthread_create(&p->t[i], NULL, t_pool_worker, p))
+	t_pool_worker_t *w = &p->t[i];
+	p->t_stack[i] = 0;
+	w->p = p;
+	w->idx = i;
+	w->wait_time = 0;
+	pthread_cond_init(&w->pending_c, NULL);
+	if (0 != pthread_create(&w->tid, NULL, t_pool_worker, w))
 	    return NULL;
     }
- 
+#else
+    pthread_cond_init(&p->pending_c, NULL);
+
+    for (i = 0; i < tsize; i++) {
+	t_pool_worker_t *w = &p->t[i];
+	w->p = p;
+	w->idx = i;
+	pthread_cond_init(&w->pending_c, NULL);
+	if (0 != pthread_create(&w->tid, NULL, t_pool_worker, w))
+	    return NULL;
+    }
+#endif
+
+    pthread_mutex_unlock(&p->pool_m);
+
     return p;
 }
 
@@ -447,7 +512,7 @@ int t_pool_dispatch(t_pool *p, t_results_queue *q,
     pthread_mutex_lock(&p->pool_m);
 
     // Check if queue is full
-    while (p->njobs == p->qsize)
+    while (p->njobs >= p->qsize)
 	pthread_cond_wait(&p->full_c, &p->pool_m);
 
     p->njobs++;
@@ -459,11 +524,13 @@ int t_pool_dispatch(t_pool *p, t_results_queue *q,
 	p->head = p->tail = j;
     }
 
-    if (p->njobs == 1) {
-	// First job => tell all worker threads to start up
-	pthread_cond_broadcast(&p->pending_c);
-    }
-
+    // Let a worker know we have data.
+#ifdef IN_ORDER
+    if (p->t_stack_top >= 0 && p->njobs > p->tsize - p->nwaiting)
+	pthread_cond_signal(&p->t[p->t_stack_top].pending_c);
+#else
+    pthread_cond_signal(&p->pending_c);
+#endif
     pthread_mutex_unlock(&p->pool_m);
 
 #ifdef DEBUG
@@ -482,9 +549,21 @@ int t_pool_dispatch(t_pool *p, t_results_queue *q,
  */
 int t_pool_dispatch2(t_pool *p, t_results_queue *q,
 		     void *(*func)(void *arg), void *arg, int nonblock) {
-    t_pool_job *j = malloc(sizeof(*j));
+    t_pool_job *j;
 
-    if (!j)
+#ifdef DEBUG
+    fprintf(stderr, "Dispatching job for queue %p, serial %d\n", q, q->curr_serial);
+#endif
+
+    pthread_mutex_lock(&p->pool_m);
+
+    if (p->njobs >= p->qsize && nonblock == 1) {
+	pthread_mutex_unlock(&p->pool_m);
+	errno = EAGAIN;
+	return -1;
+    }
+
+    if (!(j = malloc(sizeof(*j))))
 	return -1;
     j->func = func;
     j->arg = arg;
@@ -499,19 +578,6 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
 	j->serial = 0;
     }
 
-#ifdef DEBUG
-    fprintf(stderr, "Dispatching job for queue %p, serial %d\n", q, j->serial);
-#endif
-
-    pthread_mutex_lock(&p->pool_m);
-
-    if (p->njobs == p->qsize && nonblock == 1) {
-	pthread_mutex_unlock(&p->pool_m);
-	errno = EAGAIN;
-	free(j);
-	return -1;
-    }
-
     if (q) {
 	pthread_mutex_lock(&q->result_m);
 	q->curr_serial++;
@@ -521,7 +587,7 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
 
     // Check if queue is full
     if (nonblock == 0)
-	while (p->njobs == p->qsize)
+	while (p->njobs >= p->qsize)
 	    pthread_cond_wait(&p->full_c, &p->pool_m);
 
     p->njobs++;
@@ -540,10 +606,18 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
     fprintf(stderr, "Dispatched (serial %d)\n", j->serial);
 #endif
 
-    if (p->njobs == 1) {
-	// First job => tell all worker threads to start up
-	pthread_cond_broadcast(&p->pending_c);
-    }
+    // Let a worker know we have data.
+#ifdef IN_ORDER
+    // Keep incoming queue at 1 per running thread, so there is always
+    // something waiting when they end their current task.  If we go above
+    // this signal to start more threads (if available). This has the effect
+    // of concentrating jobs to fewer cores when we are I/O bound, which in
+    // turn benefits systems with auto CPU frequency scaling.
+    if (p->t_stack_top >= 0 && p->njobs > p->tsize - p->nwaiting)
+	pthread_cond_signal(&p->t[p->t_stack_top].pending_c);
+#else
+    pthread_cond_signal(&p->pending_c);
+#endif
 
     pthread_mutex_unlock(&p->pool_m);
 
@@ -558,12 +632,20 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
  *        -1 on failure
  */
 int t_pool_flush(t_pool *p) {
+    int i;
+
 #ifdef DEBUG
     fprintf(stderr, "Flushing pool %p\n", p);
 #endif
 
     // Drains the queue
     pthread_mutex_lock(&p->pool_m);
+
+    // Wake up everything for the final sprint!
+    for (i = 0; i < p->tsize; i++)
+	if (p->t_stack[i])
+	    pthread_cond_signal(&p->t[i].pending_c);
+
     while (p->njobs || p->nwaiting != p->tsize)
 	pthread_cond_wait(&p->empty_c, &p->pool_m);
 
@@ -601,30 +683,46 @@ void t_pool_destroy(t_pool *p, int kill) {
 	fprintf(stderr, "Sending shutdown request\n");
 #endif
 
+#ifdef IN_ORDER
+	for (i = 0; i < p->tsize; i++)
+	    pthread_cond_signal(&p->t[i].pending_c);
+#else
 	pthread_cond_broadcast(&p->pending_c);
+#endif
 	pthread_mutex_unlock(&p->pool_m);
 
 #ifdef DEBUG
 	fprintf(stderr, "Shutdown complete\n");
 #endif
 	for (i = 0; i < p->tsize; i++)
-	    pthread_join(p->t[i], NULL);
+	    pthread_join(p->t[i].tid, NULL);
     } else {
 	for (i = 0; i < p->tsize; i++)
-	    pthread_kill(p->t[i], SIGINT);
+	    pthread_kill(p->t[i].tid, SIGINT);
     }
 
     pthread_mutex_destroy(&p->pool_m);
     pthread_cond_destroy(&p->empty_c);
-    pthread_cond_destroy(&p->pending_c);
     pthread_cond_destroy(&p->full_c);
+#ifdef IN_ORDER
+    for (i = 0; i < p->tsize; i++)
+	pthread_cond_destroy(&p->t[i].pending_c);
+#else
+    pthread_cond_destroy(&p->pending_c);
+#endif
 
 #ifdef DEBUG_TIME
     fprintf(stderr, "Total time=%f\n", p->total_time / 1000000.0);
     fprintf(stderr, "Wait  time=%f\n", p->wait_time  / 1000000.0);
     fprintf(stderr, "%d%% utilisation\n",
 	    (int)(100 - ((100.0 * p->wait_time) / p->total_time + 0.5)));
+    for (i = 0; i < p->tsize; i++)
+	fprintf(stderr, "%d: Wait time=%f\n", i,
+		p->t[i].wait_time / 1000000.0);
 #endif
+
+    if (p->t_stack)
+	free(p->t_stack);
 
     free(p->t);
     free(p);

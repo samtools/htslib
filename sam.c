@@ -77,7 +77,7 @@ bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
     h->sdict = NULL;
     h->text = (char*)calloc(h->l_text + 1, 1);
     memcpy(h->text, h0->text, h->l_text);
-    h->target_len = (uint32_t*)calloc(h->n_targets, 4);
+    h->target_len = (uint32_t*)calloc(h->n_targets, sizeof(uint32_t));
     h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
     int i;
     for (i = 0; i < h->n_targets; ++i) {
@@ -95,7 +95,7 @@ static bam_hdr_t *hdr_from_dict(sdict_t *d)
     h = bam_hdr_init();
     h->sdict = d;
     h->n_targets = kh_size(d);
-    h->target_len = (uint32_t*)malloc(4 * h->n_targets);
+    h->target_len = (uint32_t*)malloc(sizeof(uint32_t) * h->n_targets);
     h->target_name = (char**)malloc(sizeof(char*) * h->n_targets);
     for (k = kh_begin(d); k != kh_end(d); ++k) {
         if (!kh_exist(d, k)) continue;
@@ -135,7 +135,7 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     if (fp->is_be) ed_swap_4p(&h->n_targets);
     // read reference sequence names and lengths
     h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
-    h->target_len = (uint32_t*)calloc(h->n_targets, 4);
+    h->target_len = (uint32_t*)calloc(h->n_targets, sizeof(uint32_t));
     for (i = 0; i != h->n_targets; ++i) {
         bgzf_read(fp, &name_len, 4);
         if (fp->is_be) ed_swap_4p(&name_len);
@@ -432,18 +432,23 @@ int bam_index_build(const char *fn, int min_shift)
     int ret = 0;
 
     if ((fp = hts_open(fn, "r")) == 0) return -1;
-    if (fp->is_cram) {
-            ret = cram_index_build(fp->fp.cram, fn);
-    } else {
-            idx = bam_index(fp->fp.bgzf, min_shift);
-            if ( !idx )
-            {
-                hts_close(fp);
-                return -1;
-            }
-        hts_idx_save(idx, fn, min_shift > 0
-                 ? HTS_FMT_CSI : HTS_FMT_BAI);
-        hts_idx_destroy(idx);
+    switch (fp->format.format) {
+    case cram:
+        ret = cram_index_build(fp->fp.cram, fn);
+        break;
+
+    case bam:
+        idx = bam_index(fp->fp.bgzf, min_shift);
+        if (idx) {
+            hts_idx_save(idx, fn, (min_shift > 0)? HTS_FMT_CSI : HTS_FMT_BAI);
+            hts_idx_destroy(idx);
+        }
+        else ret = -1;
+        break;
+
+    default:
+        ret = -1;
+        break;
     }
     hts_close(fp);
 
@@ -474,9 +479,10 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
 {
     htsFile *fp = fpv;
     bam1_t *b = bv;
-    if (fp->is_bin) return bam_read1(bgzfp, b);
-    else if (fp->is_cram) return cram_get_bam_seq(fp->fp.cram, &b);
-    else {
+    switch (fp->format.format) {
+    case bam:   return bam_read1(bgzfp, b);
+    case cram:  return cram_get_bam_seq(fp->fp.cram, &b);
+    default:
         // TODO Need headers available to implement this for SAM files
         fprintf(stderr, "[sam_bam_cram_readrec] Not implemented for SAM files -- Exiting\n");
         abort();
@@ -494,8 +500,11 @@ typedef struct hts_cram_idx_t {
 
 hts_idx_t *sam_index_load(samFile *fp, const char *fn)
 {
-    if (fp->is_bin) return bam_index_load(fn);
-    else if (fp->is_cram) {
+    switch (fp->format.format) {
+    case bam:
+        return bam_index_load(fn);
+
+    case cram: {
         if (cram_index_load(fp->fp.cram, fn) < 0) return NULL;
         // Cons up a fake "index" just pointing at the associated cram_fd:
         hts_cram_idx_t *idx = malloc(sizeof (hts_cram_idx_t));
@@ -503,8 +512,11 @@ hts_idx_t *sam_index_load(samFile *fp, const char *fn)
         idx->fmt = HTS_FMT_CRAI;
         idx->cram = fp->fp.cram;
         return (hts_idx_t *) idx;
+        }
+
+    default:
+        return NULL; // TODO Would use tbx_index_load if it returned hts_idx_t
     }
-    else return NULL; // TODO Would use tbx_index_load if it returned hts_idx_t
 }
 
 static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
@@ -620,11 +632,14 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
 
 bam_hdr_t *sam_hdr_read(htsFile *fp)
 {
-    if (fp->is_bin) {
+    switch (fp->format.format) {
+    case bam:
         return bam_hdr_read(fp->fp.bgzf);
-    } else if (fp->is_cram) {
+
+    case cram:
         return cram_header_to_bam(fp->fp.cram->header);
-    } else {
+
+    case sam: {
         kstring_t str;
         bam_hdr_t *h;
         int has_SQ = 0;
@@ -650,20 +665,38 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         h = sam_hdr_parse(str.l, str.s);
         h->l_text = str.l; h->text = str.s;
         return h;
+        }
+
+    default:
+        abort();
     }
 }
 
 int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 {
-    if (fp->is_bin) {
+    switch (fp->format.format) {
+    case binary_format:
+        fp->format.category = sequence_data;
+        fp->format.format = bam;
+        /* fall-through */
+    case bam:
         bam_hdr_write(fp->fp.bgzf, h);
-    } else if (fp->is_cram) {
+        break;
+
+    case cram: {
         cram_fd *fd = fp->fp.cram;
         if (cram_set_header(fd, bam_header_to_cram((bam_hdr_t *)h)) < 0) return -1;
         if (fp->fn_aux)
             cram_load_reference(fd, fp->fn_aux);
         if (cram_write_SAM_hdr(fd, fd->header) < 0) return -1;
-    } else {
+        }
+        break;
+
+    case text_format:
+        fp->format.category = sequence_data;
+        fp->format.format = sam;
+        /* fall-through */
+    case sam: {
         char *p;
         hputs(h->text, fp->fp.hfile);
         p = strstr(h->text, "@SQ\t"); // FIXME: we need a loop to make sure "@SQ\t" does not match something unwanted!!!
@@ -677,6 +710,11 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
             }
         }
         if ( hflush(fp->fp.hfile) != 0 ) return -1;
+        }
+        break;
+
+    default:
+        abort();
     }
     return 0;
 }
@@ -806,9 +844,8 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             kputc_('A', &str);
             kputc_(*q, &str);
         } else if (type == 'i' || type == 'I') {
-            long x;
-            x = strtol(q, &q, 10);
-            if (x < 0) {
+            if (*q == '-') {
+                long x = strtol(q, &q, 10);
                 if (x >= INT8_MIN) {
                     kputc_('c', &str); kputc_(x, &str);
                 } else if (x >= INT16_MIN) {
@@ -819,6 +856,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
                     kputc_('i', &str); kputsn_(&y, 4, &str);
                 }
             } else {
+                unsigned long x = strtoul(q, &q, 10);
                 if (x <= UINT8_MAX) {
                     kputc_('C', &str); kputc_(x, &str);
                 } else if (x <= UINT16_MAX) {
@@ -873,7 +911,8 @@ err_ret:
 
 int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 {
-    if (fp->is_bin) {
+    switch (fp->format.format) {
+    case bam: {
         int r = bam_read1(fp->fp.bgzf, b);
         if (r >= 0) {
             if (b->core.tid  >= h->n_targets || b->core.tid  < -1 ||
@@ -881,9 +920,12 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
                 return -3;
         }
         return r;
-    } else if (fp->is_cram) {
+        }
+
+    case cram:
         return cram_get_bam_seq(fp->fp.cram, &b);
-    } else {
+
+    case sam: {
         int ret;
 err_recover:
         if (fp->line.l == 0) {
@@ -898,6 +940,10 @@ err_recover:
             if (h->ignore_sam_err) goto err_recover;
         }
         return ret;
+        }
+
+    default:
+        abort();
     }
 }
 
@@ -1024,15 +1070,29 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 
 int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
 {
-    if (fp->is_bin) {
+    switch (fp->format.format) {
+    case binary_format:
+        fp->format.category = sequence_data;
+        fp->format.format = bam;
+        /* fall-through */
+    case bam:
         return bam_write1(fp->fp.bgzf, b);
-    } else if (fp->is_cram) {
+
+    case cram:
         return cram_put_bam_seq(fp->fp.cram, (bam1_t *)b);
-    } else {
+
+    case text_format:
+        fp->format.category = sequence_data;
+        fp->format.format = sam;
+        /* fall-through */
+    case sam:
         if (sam_format1(h, b, &fp->line) < 0) return -1;
         kputc('\n', &fp->line);
         if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
         return fp->line.l;
+
+    default:
+        abort();
     }
 }
 
@@ -1759,7 +1819,7 @@ bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data)
     int i;
     bam_mplp_t iter;
     iter = (bam_mplp_t)calloc(1, sizeof(struct __bam_mplp_t));
-    iter->pos = (uint64_t*)calloc(n, 8);
+    iter->pos = (uint64_t*)calloc(n, sizeof(uint64_t));
     iter->n_plp = (int*)calloc(n, sizeof(int));
     iter->plp = (const bam_pileup1_t**)calloc(n, sizeof(bam_pileup1_t*));
     iter->iter = (bam_plp_t*)calloc(n, sizeof(bam_plp_t));
