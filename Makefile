@@ -37,8 +37,10 @@ ifeq ($(KURL),1)
 	CPPFLAGS += -D_USE_KURL
 	LDLIBS += -lcurl
 	kurl_o = kurl.o
+	knetfile_o =
 else
 	kurl_o =
+	knetfile_o = knetfile.o
 endif
 
 # For now these don't work too well as samtools also needs to know to
@@ -153,7 +155,7 @@ version.h:
 LIBHTS_OBJS = \
 	kfunc.o \
 	$(kurl_o) \
-	knetfile.o \
+	$(knetfile_o) \
 	kstring.o \
 	bgzf.o \
 	faidx.o \
