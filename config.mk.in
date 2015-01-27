@@ -42,3 +42,31 @@ RANLIB = @RANLIB@
 CFLAGS   = @CFLAGS@
 LDFLAGS  = @LDFLAGS@
 LDLIBS   = @LIBS@
+
+
+# ifeq/.../endif, +=, and target-specific variables are GNU Make-specific.
+# If you don't have GNU Make, comment out this conditional and note that
+# to enable iRODS you will need to implement the following elsewhere.
+ifeq "iRODS-@irods@" "iRODS-enabled"
+
+@define_IRODS_HOME@
+
+EXTRA_CPPFLAGS_IRODS = \
+	-I$(IRODS_HOME)/lib/api/include \
+	-I$(IRODS_HOME)/lib/core/include \
+	-I$(IRODS_HOME)/lib/md5/include \
+	-I$(IRODS_HOME)/lib/sha1/include \
+	-I$(IRODS_HOME)/server/core/include \
+	-I$(IRODS_HOME)/server/drivers/include \
+	-I$(IRODS_HOME)/server/icat/include
+
+LDFLAGS += -L$(IRODS_HOME)/lib/core/obj
+LDLIBS  += -lRodsAPIs -lgssapi_krb5
+
+LIBHTS_OBJS += hfile_irods.o
+
+hfile.o hfile.pico: CPPFLAGS += -DHAVE_IRODS
+
+hfile_irods.o hfile_irods.pico: CPPFLAGS += $(EXTRA_CPPFLAGS_IRODS)
+
+endif

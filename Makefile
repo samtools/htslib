@@ -230,6 +230,7 @@ bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfil
 kstring.o kstring.pico: kstring.c htslib/kstring.h
 knetfile.o knetfile.pico: knetfile.c htslib/knetfile.h
 hfile.o hfile.pico: hfile.c $(htslib_hfile_h) $(hfile_internal_h)
+hfile_irods.o hfile_irods.pico: hfile_irods.c $(hfile_internal_h)
 hfile_net.o hfile_net.pico: hfile_net.c $(hfile_internal_h) htslib/knetfile.h
 hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) htslib/khash.h htslib/kseq.h htslib/ksort.h
 vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) htslib/khash.h htslib/kseq.h htslib/kstring.h
