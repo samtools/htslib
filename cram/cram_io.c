@@ -1900,19 +1900,19 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if (fd->verbose)
 	fprintf(stderr, "cram_populate_ref on fd %p, id %d\n", fd, id);
 
-    if (!ref_path || *ref_path == 0) {
+    if (!ref_path || *ref_path == '\0') {
 	/*
 	 * If we have no ref path, we use the EBI server.
 	 * However to avoid spamming it we require a local ref cache too.
 	 */
 	ref_path = "http://www.ebi.ac.uk:80/ena/cram/md5/%s";
-	if (!local_cache || !*local_cache) {
+	if (!local_cache || *local_cache == '\0') {
 	    char *home = getenv("HOME");
-	    if (!home || !*home) {
+	    if (!home || *home == '\0') {
 		home = getenv("TMPDIR");
-		if (!home || !*home) {
+		if (!home || *home == '\0') {
 		    home = getenv("TEMP");
-		    if (!home || !*home)
+		    if (!home || *home == '\0')
 			home = "/tmp";
 		}
 	    }
