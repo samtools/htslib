@@ -1689,6 +1689,8 @@ static void cram_decode_slice_xref(cram_slice *s) {
 		    int aleft = cr->apos, aright = cr->aend;
 		    int tlen;
 		    int ref = cr->ref_id;
+
+		    // number of segments starting at the same point.
 		    int left_cnt = 0;
 
 		    do {
