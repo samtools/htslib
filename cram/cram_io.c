@@ -1907,16 +1907,21 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	 */
 	ref_path = "http://www.ebi.ac.uk:80/ena/cram/md5/%s";
 	if (!local_cache || *local_cache == '\0') {
-	    char *home = getenv("HOME");
+	    char *home = getenv("XDG_CACHE_HOME");
 	    if (!home || *home == '\0') {
-		home = getenv("TMPDIR");
+		home = getenv("HOME");
 		if (!home || *home == '\0') {
-		    home = getenv("TEMP");
-		    if (!home || *home == '\0')
-			home = "/tmp";
+		    home = getenv("TMPDIR");
+		    if (!home || *home == '\0') {
+			home = getenv("TEMP");
+			if (!home || *home == '\0')
+			    home = "/tmp";
+		    }
 		}
+		snprintf(cache, PATH_MAX, "%s/.cache/hts-ref/%%2s/%%2s/%%s", home);
+	    } else {
+		snprintf(cache, PATH_MAX, "%s/hts-ref/%%2s/%%2s/%%s", home);
 	    }
-	    snprintf(cache, PATH_MAX, "%s/.cache/genome-ref/%%2s/%%2s/%%s", home);
 	    local_cache = cache;
 	    if (fd->verbose)
 		fprintf(stderr, "Populating local cache: %s\n", local_cache);
