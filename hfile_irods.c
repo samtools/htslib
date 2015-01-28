@@ -1,6 +1,6 @@
 /*  hfile_irods.c -- iRODS backend for low-level file streams.
 
-    Copyright (C) 2013 Genome Research Ltd.
+    Copyright (C) 2013, 2015 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -219,7 +219,10 @@ hFILE *hopen_irods(const char *filename, const char *mode)
     memset(&args, 0, sizeof args);
     strcpy(args.objPath, path.outPath);
     args.openFlags = hfile_oflags(mode);
-    args.createMode = 0666;
+    if (args.openFlags & O_CREAT) {
+        args.createMode = 0666;
+        addKeyVal(&args.condInput, DEST_RESC_NAME_KW,irods.env.rodsDefResource);
+    }
 
     ret = rcDataObjOpen(irods.conn, &args);
     if (ret < 0) goto error;
