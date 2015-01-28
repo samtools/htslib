@@ -1540,9 +1540,12 @@ static refs_t *refs_create(void) {
  */
 static BGZF *bgzf_open_ref(char *fn, char *mode) {
     BGZF *fp;
+    char fai_file[PATH_MAX];
 
-    if (fai_build(fn) != 0)
-	return NULL;
+    snprintf(fai_file, PATH_MAX, "%s.fai", fn);
+    if (access(fai_file, R_OK) != 0)
+	if (fai_build(fn) != 0)
+	    return NULL;
 
     if (!(fp = bgzf_open(fn, mode))) {
 	perror(fn);
