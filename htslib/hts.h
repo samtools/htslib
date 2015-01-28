@@ -84,7 +84,7 @@ enum htsFormatCategory {
 enum htsExactFormat {
     unknown_format,
     binary_format, text_format,
-    sam, bam, bai, cram, crai, vcf, bcfv1, bcf, csi, gzi, tbi, bed,
+    sam, bam, bai, cram, crai, vcf, bcfv1, bcf, csiv1, csi, gzi, tbi, bed,
     format_maximum = 32767
 };
 
@@ -315,11 +315,6 @@ When REST or NONE is used, idx is also ignored and may be NULL.
 #define HTS_IDX_REST   (-4)
 #define HTS_IDX_NONE   (-5)
 
-#define HTS_FMT_CSI 0
-#define HTS_FMT_BAI 1
-#define HTS_FMT_TBI 2
-#define HTS_FMT_CRAI 3
-
 struct __hts_idx_t;
 typedef struct __hts_idx_t hts_idx_t;
 
@@ -332,8 +327,8 @@ typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, 
 typedef struct {
     uint32_t read_rest:1, finished:1, dummy:29;
     int tid, beg, end, n_off, i;
+    uint64_t curr_off, nrec_off, nrec_beg, nrec_end;
     int curr_tid, curr_beg, curr_end;
-    uint64_t curr_off;
     hts_pair64_t *off;
     hts_readrec_func *readrec;
     struct {
@@ -349,13 +344,19 @@ extern "C" {
     #define hts_bin_first(l) (((1<<(((l)<<1) + (l))) - 1) / 7)
     #define hts_bin_parent(l) (((l) - 1) >> 3)
 
-    hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_lvls);
+    hts_idx_t *hts_idx_init(int n, enum htsExactFormat fmt, uint64_t offset0, int min_shift, int n_lvls);
     void hts_idx_destroy(hts_idx_t *idx);
     int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped);
     void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
 
-    void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt);
-    hts_idx_t *hts_idx_load(const char *fn, int fmt);
+    void hts_idx_save(const hts_idx_t *idx, const char *fn, enum htsExactFormat fmt);
+    /*!
+        hts_idx_load() - load index
+        @param fn:  data file name
+        @param fmt: index format to load if csi not present (tbi,bai); use unknown_format to test all formats
+    */
+    hts_idx_t *hts_idx_load(const char *fn, enum htsExactFormat fmt);
+    enum htsExactFormat hts_idx_version(const hts_idx_t *idx);
 
     uint8_t *hts_idx_get_meta(hts_idx_t *idx, int *l_meta);
     void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy);

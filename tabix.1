@@ -89,7 +89,11 @@ Column of start chromosomal position. [4]
 Skip lines started with character CHAR. [#]
 .TP
 .BI "-C, --csi"
-Skip lines started with character CHAR. [#]
+generate CSIv2 index for VCF (default is TBI)
+.TP
+.BI "    --csi-v1"
+same as 
+.BR --csi ", but the index will not store per-bin record counts in the index
 .TP
 .BI "-e, --end " INT
 Column of end chromosomal position. The end column can be the same as the

@@ -65,6 +65,14 @@ extern "C" {
     BGZF *hts_get_bgzfp(htsFile *fp);
     int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end);
 
+    /*! 
+        tbx_index_build() - create .csi or .tbi index
+        @param fn:          data file name
+        @param min_shift:   minimum interval size for csi indexes. If zero, tbi index
+                            is created. If bigger than zero, latest csi version is created,
+                            if smaller than zero, csiv1 is created.
+        @param conf:        tabix index presets
+     */
     int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf);
     tbx_t *tbx_index_load(const char *fn);
     const char **tbx_seqnames(tbx_t *tbx, int *n);  // free the array but not the values

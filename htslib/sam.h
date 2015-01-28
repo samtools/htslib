@@ -298,8 +298,16 @@ extern "C" {
     #define bam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
 
     // Load .csi or .bai BAM index file.
-    #define bam_index_load(fn) hts_idx_load((fn), HTS_FMT_BAI)
+    #define bam_index_load(fn) hts_idx_load((fn), bai)
 
+    /*! 
+        bam_index_build() - create .csi or .bai index
+        @param fn:          data file name
+        @param min_shift:   minimum interval size for csi indexes. If zero, bai index
+                            is created. If bigger than zero, latest csi version is created,
+                            if smaller than zero, csiv1 is created.  The value is ignored
+                            for cram files.
+     */
     int bam_index_build(const char *fn, int min_shift);
 
     // Load BAM (.csi or .bai) or CRAM (.crai) index file.

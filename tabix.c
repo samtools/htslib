@@ -261,6 +261,7 @@ static int query_chroms(char *fname)
 static int file_info(char *fname)
 {
     htsFile *fp = hts_open(fname,"r");
+    if ( !fp ) return -1;
     const htsFormat *fmt = hts_get_format(fp);
     printf("%s: ", fname);
     if ( fmt->format==vcf ) printf("VCF");
@@ -277,7 +278,6 @@ static int file_info(char *fname)
     hts_close(fp);
     return 0;
 }
-
 int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *conf)
 {
     if ( ftype & IS_TXT || !ftype )
@@ -362,6 +362,7 @@ static int usage(void)
     fprintf(stderr, "   -b, --begin INT            column number for region start [4]\n");
     fprintf(stderr, "   -c, --comment CHAR         skip comment lines starting with CHAR [null]\n");
     fprintf(stderr, "   -C, --csi                  generate CSI index for VCF (default is TBI)\n");
+    fprintf(stderr, "       --csi-v1               same as --csi, but does not store per-bin record counts\n");
     fprintf(stderr, "   -e, --end INT              column number for region end (if no end, set INT to -b) [5]\n");
     fprintf(stderr, "   -f, --force                overwrite existing index without asking\n");
     fprintf(stderr, "   -m, --min-shift INT        set minimal interval size for CSI indices to 2^INT [14]\n");
@@ -396,6 +397,7 @@ int main(int argc, char *argv[])
         {"targets",1,0,'T'},
         {"file-info",0,0,'i'},
         {"csi",0,0,'C'},
+        {"csi-v1",0,0,1},
         {"zero-based",0,0,'0'},
         {"print-header",0,0,'h'},
         {"only-header",0,0,'H'},
@@ -411,24 +413,35 @@ int main(int argc, char *argv[])
         {0,0,0,0}
     };
 
+    char *tmp;
     while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:iCR:T:", loptions,NULL)) >= 0)
     {
         switch (c)
         {
+            case 'C': do_csi = 1; break;
+            case  1 : do_csi = -1; break;
             case 'R': args.regions_fname = optarg; break;
             case 'T': args.targets_fname = optarg; break;
-            case 'C': do_csi = 1; break;
             case 'i': args.file_info = 1; break;
             case 'r': reheader = optarg; break;
             case 'h': args.print_header = 1; break;
             case 'H': args.header_only = 1; break;
             case 'l': list_chroms = 1; break;
             case '0': conf.preset |= TBX_UCSC; break;
-            case 'b': conf.bc = atoi(optarg); break;
-            case 'e': conf.ec = atoi(optarg); break;
+            case 'b':
+                conf.bc = strtol(optarg,&tmp,10); 
+                if ( *tmp ) error("Could not parse argument: -b %s\n", optarg);
+                break;
+            case 'e':
+                conf.ec = strtol(optarg,&tmp,10);
+                if ( *tmp ) error("Could not parse argument: -e %s\n", optarg);
+                break;
             case 'c': conf.meta_char = *optarg; break;
             case 'f': is_force = 1; break;
-            case 'm': min_shift = atoi(optarg); break;
+            case 'm':
+                min_shift = strtol(optarg,&tmp,10);
+                if ( *tmp ) error("Could not parse argument: -m %s\n", optarg);
+                break;
             case 'p':
                       if (strcmp(optarg, "gff") == 0) conf_ptr = &tbx_conf_gff;
                       else if (strcmp(optarg, "bed") == 0) conf_ptr = &tbx_conf_bed;
@@ -438,8 +451,14 @@ int main(int argc, char *argv[])
                       else if (strcmp(optarg, "bam") == 0) ;    // same as bcf
                       else error("The preset string not recognised: '%s'\n", optarg);
                       break;
-            case 's': conf.sc = atoi(optarg); break;
-            case 'S': conf.line_skip = atoi(optarg); break;
+            case 's':
+                conf.sc = strtol(optarg,&tmp,10);
+                if ( *tmp ) error("Could not parse argument: -s %s\n", optarg);
+                break;
+            case 'S':
+                conf.line_skip = strtol(optarg,&tmp,10);
+                if ( *tmp ) error("Could not parse argument: -S %s\n", optarg);
+                break;
             default: return usage();
         }
     }

@@ -723,9 +723,15 @@ extern "C" {
     #define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query((idx), (tid), (beg), (end), bcf_readrec)
     #define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_hdr_name2id), (hdr), hts_itr_query, bcf_readrec)
     #define bcf_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
-    #define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
+    #define bcf_index_load(fn) hts_idx_load(fn, csi)
     #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
 
+    /** 
+     *  tbx_index_build() - create .csi or .tbi index
+     *  @param fn:          data file name
+     *  @param min_shift:   minimum interval size for csi indexes.  If bigger than zero, latest
+     *                      csi version is created; if smaller than zero, csiv1 is created.
+     */
     int bcf_index_build(const char *fn, int min_shift);
 
 #ifdef __cplusplus

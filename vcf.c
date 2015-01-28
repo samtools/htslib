@@ -2161,6 +2161,10 @@ hts_idx_t *bcf_index(htsFile *fp, int min_shift)
     int64_t max_len = 0, s;
     h = bcf_hdr_read(fp);
     if ( !h ) return NULL;
+
+    enum htsExactFormat fmt = csi;
+    if ( min_shift<0 ) { fmt = csiv1; min_shift *= -1; }
+
     int nids = 0;
     for (i = 0; i < h->n[BCF_DT_CTG]; ++i)
     {
@@ -2171,7 +2175,7 @@ hts_idx_t *bcf_index(htsFile *fp, int min_shift)
     if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
     max_len += 256;
     for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
-    idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
+    idx = hts_idx_init(nids, fmt, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     b = bcf_init1();
     while (bcf_read1(fp,h, b) >= 0) {
         int ret;
@@ -2198,7 +2202,7 @@ int bcf_index_build(const char *fn, int min_shift)
     idx = bcf_index(fp, min_shift);
     hts_close(fp);
     if ( !idx ) return -1;
-    hts_idx_save(idx, fn, HTS_FMT_CSI);
+    hts_idx_save(idx, fn, min_shift>0 ? csi : csiv1);
     hts_idx_destroy(idx);
     return 0;
 }

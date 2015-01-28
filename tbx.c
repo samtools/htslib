@@ -199,16 +199,20 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 {
     tbx_t *tbx;
     kstring_t str;
-    int ret, first = 0, n_lvls, fmt;
+    int ret, first = 0, n_lvls;
     int64_t lineno = 0;
     uint64_t last_off = 0;
     tbx_intv_t intv;
 
+    enum htsExactFormat fmt = tbi;
+    if ( min_shift>0 ) fmt = csi;
+    else if ( min_shift<0 ) { fmt = csiv1; min_shift *= -1; }
+
     str.s = 0; str.l = str.m = 0;
     tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
     tbx->conf = *conf;
-    if (min_shift > 0) n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3, fmt = HTS_FMT_CSI;
-    else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_TBI;
+    if (min_shift > 0) n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3;
+    else min_shift = 14, n_lvls = 5;
     while ((ret = bgzf_getline(fp, '\n', &str)) >= 0) {
         ++lineno;
         if (lineno <= tbx->conf.line_skip || str.s[0] == tbx->conf.meta_char) {
@@ -260,7 +264,12 @@ int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf)
     tbx = tbx_index(fp, min_shift, conf);
     bgzf_close(fp);
     if ( !tbx ) return -1;
-    hts_idx_save(tbx->idx, fn, min_shift > 0? HTS_FMT_CSI : HTS_FMT_TBI);
+
+    enum htsExactFormat fmt = tbi;
+    if ( min_shift>0 ) fmt = csi;
+    else if ( min_shift<0 ) fmt = csiv1;
+
+    hts_idx_save(tbx->idx, fn, fmt);
     tbx_destroy(tbx);
     return 0;
 }
@@ -273,7 +282,7 @@ tbx_t *tbx_index_load(const char *fn)
     uint32_t x[7];
     int l_meta, l_nm;
     tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
-    tbx->idx = hts_idx_load(fn, HTS_FMT_TBI);
+    tbx->idx = hts_idx_load(fn, tbi);
     if ( !tbx->idx )
     {
         free(tbx);
