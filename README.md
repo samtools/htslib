@@ -15,3 +15,19 @@ and `.csi` formats, and the bgzip compression utility.
 [2]: http://github.com/samtools/samtools
 [3]: http://samtools.github.io/bcftools/
 [4]: http://zlib.net/
+
+### Building HTSlib
+
+See [INSTALL](INSTALL) for complete details.
+[Release tarballs][download] contain generated files that have not been
+committed to this repository, so building the code from a Git repository
+requires an extra step:
+
+```sh
+autoconf       # Generate the configure script, if needed
+./configure    # Optional, needed for choosing optional functionality
+make
+make install
+```
+
+[download]: http://www.htslib.org/download/
