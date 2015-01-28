@@ -1,6 +1,6 @@
 /*  faidx.c -- FASTA random access.
 
-    Copyright (C) 2008, 2009, 2013, 2014 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2015 Genome Research Ltd.
     Portions copyright (C) 2011 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -23,8 +23,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
-#include "config.h"
-
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
@@ -33,10 +31,8 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/bgzf.h"
 #include "htslib/faidx.h"
+#include "htslib/hfile.h"
 #include "htslib/khash.h"
-#ifdef _USE_KNETFILE
-#include "htslib/knetfile.h"
-#endif
 
 typedef struct {
     int32_t line_len, line_blen;
@@ -240,13 +236,12 @@ int fai_build(const char *fn)
     return 0;
 }
 
-#ifdef _USE_KNETFILE
-FILE *download_and_open(const char *fn)
+static FILE *download_and_open(const char *fn)
 {
     const int buf_size = 1 * 1024 * 1024;
     uint8_t *buf;
     FILE *fp;
-    knetFile *fp_remote;
+    hFILE *fp_remote;
     const char *url = fn;
     const char *p;
     int l = strlen(fn);
@@ -260,26 +255,26 @@ FILE *download_and_open(const char *fn)
         return fp;
 
     // If failed, download from remote and open
-    fp_remote = knet_open(url, "rb");
+    fp_remote = hopen(url, "rb");
     if (fp_remote == 0) {
         fprintf(stderr, "[download_from_remote] fail to open remote file %s\n",url);
         return NULL;
     }
     if ((fp = fopen(fn, "wb")) == 0) {
         fprintf(stderr, "[download_from_remote] fail to create file in the working directory %s\n",fn);
-        knet_close(fp_remote);
+        hclose_abruptly(fp_remote);
         return NULL;
     }
     buf = (uint8_t*)calloc(buf_size, 1);
-    while ((l = knet_read(fp_remote, buf, buf_size)) != 0)
+    while ((l = hread(fp_remote, buf, buf_size)) > 0)
         fwrite(buf, 1, l, fp);
     free(buf);
     fclose(fp);
-    knet_close(fp_remote);
+    if (hclose(fp_remote) != 0)
+        fprintf(stderr, "[download_from_remote] fail to close remote file %s\n", url);
 
     return fopen(fn, "r");
 }
-#endif
 
 faidx_t *fai_load(const char *fn)
 {
@@ -289,8 +284,7 @@ faidx_t *fai_load(const char *fn)
     str = (char*)calloc(strlen(fn) + 5, 1);
     sprintf(str, "%s.fai", fn);
 
-#ifdef _USE_KNETFILE
-    if (strstr(fn, "ftp://") == fn || strstr(fn, "http://") == fn)
+    if (hisremote(str))
     {
         fp = download_and_open(str);
         if ( !fp )
@@ -301,8 +295,8 @@ faidx_t *fai_load(const char *fn)
         }
     }
     else
-#endif
         fp = fopen(str, "rb");
+
     if (fp == 0) {
         fprintf(stderr, "[fai_load] build FASTA index.\n");
         fai_build(fn);

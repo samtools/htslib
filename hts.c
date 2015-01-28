@@ -1449,8 +1449,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 static char *test_and_fetch(const char *fn)
 {
     FILE *fp;
-    // FIXME Use is_remote_scheme() helper that's true for ftp/http/irods/etc
-    if (strstr(fn, "ftp://") == fn || strstr(fn, "http://") == fn) {
+    if (hisremote(fn)) {
         const int buf_size = 1 * 1024 * 1024;
         hFILE *fp_remote;
         uint8_t *buf;

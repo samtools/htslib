@@ -1,6 +1,6 @@
 /*  hfile.h -- buffered low-level input/output streams.
 
-    Copyright (C) 2013-2014 Genome Research Ltd.
+    Copyright (C) 2013-2015 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -59,6 +59,14 @@ hFILE *hopen(const char *filename, const char *mode) HTS_RESULT_USED;
   @notes     For socket descriptors (on Windows), mode should contain 's'.
 */
 hFILE *hdopen(int fd, const char *mode) HTS_RESULT_USED;
+
+/*!
+  @abstract  Report whether the file name or URL denotes remote storage
+  @return    0 if local, 1 if remote.
+  @notes     "Remote" means involving e.g. explicit network access, with the
+    implication that callers may wish to cache such files' contents locally.
+*/
+int hisremote(const char *filename) HTS_RESULT_USED;
 
 /*!
   @abstract  Flush (for output streams) and close the stream

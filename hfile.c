@@ -533,3 +533,15 @@ hFILE *hopen(const char *fname, const char *mode)
     else if (strcmp(fname, "-") == 0) return hopen_fd_stdinout(mode);
     else return hopen_fd(fname, mode);
 }
+
+int hisremote(const char *fname)
+{
+    // FIXME Make a new backend entry to return this
+    if (strncmp(fname, "http://", 7) == 0 ||
+        strncmp(fname, "https://", 8) == 0 ||
+        strncmp(fname, "ftp://", 6) == 0) return 1;
+#ifdef HAVE_IRODS
+    else if (strncmp(fname, "irods:", 6) == 0) return 1;
+#endif
+    else return 0;
+}
