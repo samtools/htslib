@@ -28,6 +28,8 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stddef.h>
 #include <stdint.h>
+#include <limits.h>
+#include "hts_defs.h"
 
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;
@@ -81,11 +83,20 @@ enum htsFormatCategory {
     category_maximum = 32767
 };
 
-enum htsExactFormat {
-    unknown_format,
+// These are depricated
+#define HTS_FMT_CSI 0
+#define HTS_FMT_BAI 1
+#define HTS_FMT_TBI 2
+#define HTS_FMT_CRAI 3
+
+// This is packed and sized to MAX_INT to avoid breaking ABI compat
+enum HTS_PACKED htsExactFormat {
+    // legacy #defines, renumber these when we next break ABI
+    bai = HTS_FMT_BAI, crai = HTS_FMT_CRAI, csiv1 = HTS_FMT_CSI, tbi = HTS_FMT_TBI,
+    unknown_format = 4,
     binary_format, text_format,
-    sam, bam, bai, cram, crai, vcf, bcfv1, bcf, csiv1, csi, gzi, tbi, bed,
-    format_maximum = 32767
+    sam, bam, cram, vcf, bcfv1, bcf, csi, gzi, bed,
+    format_maximum = INT_MAX
 };
 
 enum htsCompression {
