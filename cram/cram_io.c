@@ -1923,7 +1923,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 		snprintf(cache, PATH_MAX, "%s/hts-ref/%%2s/%%2s/%%s", home);
 	    }
 	    local_cache = cache;
-	    if (fd->verbose || 1)
+	    if (fd->verbose)
 		fprintf(stderr, "Populating local cache: %s\n", local_cache);
 	}
     }
