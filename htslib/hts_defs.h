@@ -44,4 +44,10 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_UNUSED
 #endif
 
+#if defined __clang__ || defined __GNUC__
+#define HTS_PACKED __attribute__ ((__packed__))
+#else
+#define HTS_PACKED
+#endif
+
 #endif
