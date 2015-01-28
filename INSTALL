@@ -29,7 +29,20 @@ or via 'make prefix=DIR install' (see Installation Locations below).
 Configuration
 =============
 
-The configure script accepts the typical options and environment variables
+By default, './configure' examines your build environment, checking for
+requirements such as the zlib development files, and arranges for a plain
+HTSlib build.  The following configure options can be used to enable
+various features and specify further optional external requirements:
+
+--with-irods[=DIR]
+    Specifies the location of the iRODS client library to use to enable
+    access to data objects stored in iRODS (<http://irods.org/>) via file
+    paths like 'irods:DATAOBJ'.  DIR is the base of an iRODS source tree
+    such that the library is present as DIR/lib/core/obj/libRodsAPI.* and
+    headers are present under DIR/lib/api/include and so on.  If '=DIR' is
+    omitted, $IRODS_HOME will be used as a base directory.
+
+The configure script also accepts the usual options and environment variables
 for tuning installation locations and compilers: type './configure --help'
 for details.  For example,
 
