@@ -822,6 +822,7 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped)
 {
     int bin;
+    if (tid<0) beg = -1, end = 0;
     if (tid >= idx->m) { // enlarge the index
         int32_t oldm = idx->m;
         idx->m = idx->m? idx->m<<1 : 2;
