@@ -282,7 +282,7 @@ tabix.o: tabix.c $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) htslib/kseq.h $
 check test: $(BUILT_TEST_PROGRAMS)
 	test/fieldarith test/fieldarith.sam
 	test/hfile
-	test/sam
+	test/sam test/ce.fa
 	test/test-regidx
 	cd test && REF_PATH=: ./test_view.pl
 	cd test && ./test.pl
@@ -311,7 +311,7 @@ test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 test/fieldarith.o: test/fieldarith.c $(htslib_sam_h)
 test/hfile.o: test/hfile.c $(htslib_hfile_h) $(htslib_hts_defs_h)
 test/test-regidx.o: test/test-regidx.c $(htslib_regidx_h)
-test/sam.o: test/sam.c $(htslib_sam_h) htslib/kstring.h
+test/sam.o: test/sam.c $(htslib_sam_h) $(htslib_faidx_h) htslib/kstring.h
 test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)

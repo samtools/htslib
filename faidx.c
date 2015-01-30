@@ -405,14 +405,21 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
     return s;
 }
 
+int faidx_fetch_nseq(const faidx_t *fai)
+{
+    return fai->n;
+}
+
 int faidx_nseq(const faidx_t *fai)
 {
     return fai->n;
 }
+
 const char *faidx_iseq(const faidx_t *fai, int i)
 {
     return fai->name[i];
 }
+
 int faidx_seq_len(const faidx_t *fai, const char *seq)
 {
     khint_t k = kh_get(s, fai->hash, seq);
