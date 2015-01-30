@@ -84,7 +84,7 @@ enum htsFormatCategory {
 enum htsExactFormat {
     unknown_format,
     binary_format, text_format,
-    sam, bam, bai, cram, crai, vcf, bcfv1, bcf, csi, gzi, tbi, bed,
+    sam, bam, bai, cram, crai, vcf, bcf, csi, gzi, tbi, bed,
     format_maximum = 32767
 };
 
@@ -96,7 +96,10 @@ enum htsCompression {
 typedef struct htsFormat {
     enum htsFormatCategory category;
     enum htsExactFormat format;
+    struct { short major, minor; } version;
     enum htsCompression compression;
+    short compression_level;  // currently unused
+    void *specific;  // currently unused
 } htsFormat;
 
 // Maintainers note htsFile cannot be an opaque structure because some of its
@@ -203,8 +206,9 @@ int hts_detect_format(struct hFILE *fp, htsFormat *fmt);
 
 /*!
   @abstract    Get a human-readable description of the file format
+  @return      Description string, to be freed by the caller after use.
 */
-const char *hts_format_description(const htsFormat *format);
+char *hts_format_description(const htsFormat *format);
 
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file

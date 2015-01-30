@@ -1,6 +1,6 @@
 /*  htsfile.c -- file identifier and minimal viewer.
 
-    Copyright (C) 2014 Genome Research Ltd.
+    Copyright (C) 2014-2015 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -103,16 +103,24 @@ int main(int argc, char **argv)
         { "no-header", no_argument, NULL, 'H' },
         { "view", no_argument, NULL, 'c' },
         { "help", no_argument, NULL, '?' },
+        { "version", no_argument, NULL, 1 },
         { NULL, 0, NULL, 0 }
     };
 
     int status = EXIT_SUCCESS;
     int c, i;
-    while ((c = getopt_long(argc, argv, "chH", options, NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "chH?", options, NULL)) >= 0)
         switch (c) {
         case 'c': mode = view_all; break;
         case 'h': mode = view_headers; show_headers = 1; break;
         case 'H': show_headers = 0; break;
+        case 1:
+            printf(
+"htsfile (htslib) %s\n"
+"Copyright (C) 2015 Genome Research Ltd.\n",
+                   hts_version());
+            exit(EXIT_SUCCESS);
+            break;
         case '?': usage(stdout, EXIT_SUCCESS); break;
         default:  usage(stderr, EXIT_FAILURE); break;
         }
@@ -136,7 +144,9 @@ int main(int argc, char **argv)
         }
 
         if (mode == identify) {
-            printf("%s:\t%s\n", argv[i], hts_format_description(&fmt));
+            char *description = hts_format_description(&fmt);
+            printf("%s:\t%s\n", argv[i], description);
+            free(description);
         }
         else
             switch (fmt.category) {
