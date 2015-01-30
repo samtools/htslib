@@ -163,6 +163,9 @@ static off_t irods_seek(hFILE *fpv, off_t offset, int whence)
 
 static int irods_flush(hFILE *fpv)
 {
+// FIXME rcDataObjFsync() doesn't seem to function as expected.
+// For now, flush is a no-op: see https://github.com/samtools/htslib/issues/168
+#if 0
     hFILE_irods *fp = (hFILE_irods *) fpv;
     openedDataObjInp_t args;
     int ret;
@@ -173,6 +176,8 @@ static int irods_flush(hFILE *fpv)
     ret = rcDataObjFsync(irods.conn, &args);
     if (ret < 0) set_errno(ret);
     return ret;
+#endif
+    return 0;
 }
 
 static int irods_close(hFILE *fpv)
