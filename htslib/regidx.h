@@ -48,8 +48,8 @@
         regidx_destroy(regs);
 */
 
-#ifndef __REGIDX_H__
-#define __REGIDX_H__
+#ifndef HTSLIB_REGIDX_H
+#define HTSLIB_REGIDX_H
 
 #include <stdio.h>
 #include <inttypes.h>
