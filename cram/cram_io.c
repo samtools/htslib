@@ -1883,6 +1883,30 @@ void mkdir_prefix(char *path, int mode) {
 }
 
 /*
+ * Return the cache directory to use, based on the first of these
+ * environment variables to be set to a non-empty value.
+ */
+static const char *get_cache_basedir(const char **extra) {
+    char *base;
+
+    *extra = "";
+
+    base = getenv("XDG_CACHE_HOME");
+    if (base && *base) return base;
+
+    base = getenv("HOME");
+    if (base && *base) { *extra = "/.cache"; return base; }
+
+    base = getenv("TMPDIR");
+    if (base && *base) return base;
+
+    base = getenv("TEMP");
+    if (base && *base) return base;
+
+    return "/tmp";
+}
+
+/*
  * Queries the M5 string from the header and attempts to populate the
  * reference from this using the REF_PATH environment.
  *
@@ -1907,21 +1931,9 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	 */
 	ref_path = "http://www.ebi.ac.uk:80/ena/cram/md5/%s";
 	if (!local_cache || *local_cache == '\0') {
-	    char *home = getenv("XDG_CACHE_HOME");
-	    if (!home || *home == '\0') {
-		home = getenv("HOME");
-		if (!home || *home == '\0') {
-		    home = getenv("TMPDIR");
-		    if (!home || *home == '\0') {
-			home = getenv("TEMP");
-			if (!home || *home == '\0')
-			    home = "/tmp";
-		    }
-		}
-		snprintf(cache, PATH_MAX, "%s/.cache/hts-ref/%%2s/%%2s/%%s", home);
-	    } else {
-		snprintf(cache, PATH_MAX, "%s/hts-ref/%%2s/%%2s/%%s", home);
-	    }
+	    const char *extra;
+	    const char *base = get_cache_basedir(&extra);
+	    snprintf(cache,PATH_MAX, "%s%s/hts-ref/%%2s/%%2s/%%s", base, extra);
 	    local_cache = cache;
 	    if (fd->verbose)
 		fprintf(stderr, "Populating local cache: %s\n", local_cache);
