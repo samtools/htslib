@@ -30,10 +30,18 @@ DEALINGS IN THE SOFTWARE.  */
 
 typedef struct _bcf_sweep_t bcf_sweep_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 bcf_sweep_t *bcf_sweep_init(const char *fname);
 void bcf_sweep_destroy(bcf_sweep_t *sw);
 bcf_hdr_t *bcf_sweep_hdr(bcf_sweep_t *sw);
 bcf1_t *bcf_sweep_fwd(bcf_sweep_t *sw);
 bcf1_t *bcf_sweep_bwd(bcf_sweep_t *sw);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
