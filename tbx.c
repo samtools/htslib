@@ -280,6 +280,11 @@ tbx_t *tbx_index_load(const char *fn)
         return NULL;
     }
     meta = hts_idx_get_meta(tbx->idx, &l_meta);
+    if ( !meta )
+    {
+        free(tbx);
+        return NULL;
+    }
     memcpy(x, meta, 28);
     memcpy(&tbx->conf, x, 24);
     p = nm = (char*)meta + 28;

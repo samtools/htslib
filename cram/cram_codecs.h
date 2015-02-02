@@ -97,10 +97,12 @@ typedef struct {
 } cram_byte_array_stop_decoder;
 
 typedef struct {
-    uint32_t len_len;
-    unsigned char *len_dat;
-    uint32_t val_len;
-    unsigned char *val_dat;
+    enum cram_encoding len_encoding;
+    enum cram_encoding val_encoding;
+    void *len_dat;
+    void *val_dat;
+    struct cram_codec *len_codec;
+    struct cram_codec *val_codec;
 } cram_byte_array_len_encoder;
 
 /*
@@ -108,11 +110,12 @@ typedef struct {
  */
 typedef struct cram_codec {
     enum cram_encoding codec;
+    cram_block *out;
     void (*free)(struct cram_codec *codec);
     int (*decode)(cram_slice *slice, struct cram_codec *codec,
 		  cram_block *in, char *out, int *out_size);
     int (*encode)(cram_slice *slice, struct cram_codec *codec,
-		  cram_block *out, char *in, int in_size);
+		  char *in, int in_size);
     int (*store)(struct cram_codec *codec, cram_block *b, char *prefix,
 		 int version);
     union {
@@ -146,7 +149,14 @@ cram_codec *cram_encoder_init(enum cram_encoding codec, cram_stats *st,
 
 //#define GET_BIT_MSB(b,v) (void)(v<<=1, v|=(b->data[b->byte] >> b->bit)&1, (--b->bit == -1) && (b->bit = 7, b->byte++))
 
-#define GET_BIT_MSB(b,v) (void)(v<<=1, v|=(b->data[b->byte] >> b->bit)&1, b->byte += (b->bit==0), b->bit+=(b->bit==0)*8-1)
+#define GET_BIT_MSB(b,v) (void)(v<<=1, v|=(b->data[b->byte] >> b->bit)&1, b->byte += (--b->bit<0), b->bit&=7)
+
+/*
+ * Returns the content_id used by this codec, also in id2 if byte_array_len.
+ * Returns -1 for the CORE block and -2 for unneeded.
+ * id2 is only filled out for BYTE_ARRAY_LEN which uses 2 codecs.
+ */
+int cram_codec_to_id(cram_codec *c, int *id2);
 
 #ifdef __cplusplus
 }

@@ -100,6 +100,9 @@ int itf8_put(char *cp, int32_t val);
 
 #endif
 
+int ltf8_get(char *cp, int64_t *val_p);
+int ltf8_put(char *cp, int64_t val);
+
 /*! Pushes a value in ITF8 format onto the end of a block.
  *
  * This shouldn't be used for high-volume data as it is not the fastest
@@ -179,8 +182,7 @@ int cram_uncompress_block(cram_block *b);
  *        -1 on failure
  */
 int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
-			int level,  int strat,
-			int level2, int strat2);
+			int method, int level);
 
 cram_metrics *cram_new_metrics(void);
 char *cram_block_method2str(enum cram_block_method m);
@@ -222,19 +224,84 @@ char *cram_content_type2str(enum cram_content_type t);
 	(b)->data[(b)->byte++] = (c);	  \
     } while (0)
 
-/* Append via sprintf with 1 arg */
-#define BLOCK_APPENDF_1(b,buf,fmt, a1)			\
-    do {						\
-	int l = sprintf((buf), (fmt), (a1));		\
-	BLOCK_APPEND((b), (buf), l);			\
+/* Append a single unsigned integer */
+#define BLOCK_APPEND_UINT(b,i)		             \
+    do {					     \
+        unsigned char *cp;			     \
+        BLOCK_GROW((b),11);			     \
+	cp = &(b)->data[(b)->byte];		     \
+        (b)->byte += append_uint32(cp, (i)) - cp;	\
     } while (0)
 
-/* Append via sprintf with 2 args */
-#define BLOCK_APPENDF_2(b,buf,fmt, a1,a2)		\
-    do {						\
-	int l = sprintf((buf), (fmt), (a1), (a2));	\
-	BLOCK_APPEND((b), (buf), l);			\
-    } while (0)
+static inline unsigned char *append_uint32(unsigned char *cp, uint32_t i) {
+    uint32_t j;
+
+    if (i == 0) {
+	*cp++ = '0';
+	return cp;
+    }
+
+    if (i < 100)        goto b1;
+    if (i < 10000)      goto b3;
+    if (i < 1000000)    goto b5;
+    if (i < 100000000)  goto b7;
+
+    if ((j = i / 1000000000)) {*cp++ = j + '0'; i -= j*1000000000; goto x8;}
+    if ((j = i / 100000000))  {*cp++ = j + '0'; i -= j*100000000;  goto x7;}
+ b7:if ((j = i / 10000000))   {*cp++ = j + '0'; i -= j*10000000;   goto x6;}
+    if ((j = i / 1000000))    {*cp++ = j + '0', i -= j*1000000;    goto x5;}
+ b5:if ((j = i / 100000))     {*cp++ = j + '0', i -= j*100000;     goto x4;}
+    if ((j = i / 10000))      {*cp++ = j + '0', i -= j*10000;      goto x3;}
+ b3:if ((j = i / 1000))       {*cp++ = j + '0', i -= j*1000;       goto x2;}
+    if ((j = i / 100))        {*cp++ = j + '0', i -= j*100;        goto x1;}
+ b1:if ((j = i / 10))         {*cp++ = j + '0', i -= j*10;         goto x0;}
+    if (i)                     *cp++ = i + '0';
+    return cp;
+
+ x8: *cp++ = i / 100000000 + '0', i %= 100000000;
+ x7: *cp++ = i / 10000000  + '0', i %= 10000000;
+ x6: *cp++ = i / 1000000   + '0', i %= 1000000;
+ x5: *cp++ = i / 100000    + '0', i %= 100000;
+ x4: *cp++ = i / 10000     + '0', i %= 10000;
+ x3: *cp++ = i / 1000      + '0', i %= 1000;
+ x2: *cp++ = i / 100       + '0', i %= 100;
+ x1: *cp++ = i / 10        + '0', i %= 10;
+ x0: *cp++ = i             + '0';
+
+    return cp;
+}
+
+static inline unsigned char *append_sub32(unsigned char *cp, uint32_t i) {
+    *cp++ = i / 100000000 + '0', i %= 100000000;
+    *cp++ = i / 10000000  + '0', i %= 10000000;
+    *cp++ = i / 1000000   + '0', i %= 1000000;
+    *cp++ = i / 100000    + '0', i %= 100000;
+    *cp++ = i / 10000     + '0', i %= 10000;
+    *cp++ = i / 1000      + '0', i %= 1000;
+    *cp++ = i / 100       + '0', i %= 100;
+    *cp++ = i / 10        + '0', i %= 10;
+    *cp++ = i             + '0';
+
+    return cp;
+}
+
+static inline unsigned char *append_uint64(unsigned char *cp, uint64_t i) {
+    uint64_t j;
+
+    if (i <= 0xffffffff)
+	return append_uint32(cp, i);
+
+    if ((j = i/1000000000) > 1000000000) {
+	cp = append_uint32(cp, j/1000000000);
+	j %= 1000000000;
+	cp = append_sub32(cp, j);
+    } else {
+	cp = append_uint32(cp, i / 1000000000);
+    }
+    cp = append_sub32(cp, i % 1000000000);
+
+    return cp;
+}
 
 #define BLOCK_UPLEN(b) \
     (b)->comp_size = (b)->uncomp_size = BLOCK_SIZE((b))
@@ -449,11 +516,8 @@ cram_fd *cram_open(const char *filename, const char *mode);
  * @return
  * Returns file handle on success;
  *         NULL on failure.
- *
- * cram_FILE is either htslib's hFILE or stdio's FILE, depending on how
- * cram_structs.h has been configured.
  */
-cram_fd *cram_dopen(cram_FILE *fp, const char *filename, const char *mode);
+cram_fd *cram_dopen(struct hFILE *fp, const char *filename, const char *mode);
 
 /*! Closes a CRAM file.
  *
