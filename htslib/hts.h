@@ -363,6 +363,9 @@ extern "C" {
     int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped);
     uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
 
+    // strtol(str,end,10), or strtod(str,end) if scientific notation is present
+    int hts_parse_decimal(const char *str, char **end);
+
     const char *hts_parse_reg(const char *s, int *beg, int *end);
     hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
     void hts_itr_destroy(hts_itr_t *iter);
