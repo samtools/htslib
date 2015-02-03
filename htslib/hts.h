@@ -379,6 +379,21 @@ extern "C" {
     int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data);
     const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 
+    /**
+     * hts_file_type() - Convenience function to determine file type
+     * DEPRECATED:  This function has been replaced by hts_detect_format().
+     * It and these FT_* macros will be removed in a future HTSlib release.
+     */
+    #define FT_UNKN   0
+    #define FT_GZ     1
+    #define FT_VCF    2
+    #define FT_VCF_GZ (FT_GZ|FT_VCF)
+    #define FT_BCF    (1<<2)
+    #define FT_BCF_GZ (FT_GZ|FT_BCF)
+    #define FT_STDIN  (1<<3)
+    int hts_file_type(const char *fname);
+
+
 #ifdef __cplusplus
 }
 #endif
