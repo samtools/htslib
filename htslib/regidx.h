@@ -73,6 +73,10 @@ regitr_t;
 #define REGITR_PAYLOAD(itr,type_t) ((type_t*)(itr).payload)[(itr).i]
 #define REGITR_OVERLAP(itr,from,to) (itr.i < itr.n && REGITR_START(itr)<=to && REGITR_END(itr)>=from )
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  *  regidx_parse_f - Function to parse one input line, such as regidx_parse_bed
  *  or regidx_parse_tab below. The function is expected to set `chr_from` and
@@ -143,5 +147,8 @@ char **regidx_seq_names(regidx_t *idx, int *n);
 int regidx_seq_nregs(regidx_t *idx, const char *seq);
 int regidx_nregs(regidx_t *idx);
 
+#ifdef __cplusplus
+}
 #endif
 
+#endif
