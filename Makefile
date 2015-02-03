@@ -101,7 +101,7 @@ lib-shared: libhts.so
 endif
 
 
-PACKAGE_VERSION  = 1.2
+PACKAGE_VERSION  = 1.2.1
 LIBHTS_SOVERSION = 1
 
 

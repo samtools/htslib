@@ -722,6 +722,29 @@ char **hts_readlines(const char *fn, int *_n)
     return s;
 }
 
+// DEPRECATED: To be removed in a future HTSlib release
+int hts_file_type(const char *fname)
+{
+    int len = strlen(fname);
+    if ( !strcasecmp(".vcf.gz",fname+len-7) ) return FT_VCF_GZ;
+    if ( !strcasecmp(".vcf",fname+len-4) ) return FT_VCF;
+    if ( !strcasecmp(".bcf",fname+len-4) ) return FT_BCF_GZ;
+    if ( !strcmp("-",fname) ) return FT_STDIN;
+
+    hFILE *f = hopen(fname, "r");
+    if (f == NULL) return 0;
+
+    htsFormat fmt;
+    if (hts_detect_format(f, &fmt) < 0) { hclose_abruptly(f); return 0; }
+    if (hclose(f) < 0) return 0;
+
+    switch (fmt.format) {
+    case vcf: return (fmt.compression == no_compression)? FT_VCF : FT_VCF_GZ;
+    case bcf: return (fmt.compression == no_compression)? FT_BCF : FT_BCF_GZ;
+    default:  return 0;
+    }
+}
+
 /****************
  *** Indexing ***
  ****************/
