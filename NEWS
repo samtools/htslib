@@ -1,3 +1,10 @@
+Noteworthy changes in release 1.2.1  (3 February 2015)
+
+* Reinstated hts_file_type() and FT_* macros, which were available until 1.1
+  but briefly removed in 1.2.  This function is deprecated and will be removed
+  in a future release -- you should use hts_detect_format() etc instead
+
+
 Noteworthy changes in release 1.2  (2 February 2015)
 
 * HTSlib now has a configure script which checks your build environment
