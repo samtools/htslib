@@ -110,3 +110,14 @@ hFILE *hopen_net(const char *filename, const char *mode)
     fp->base.backend = &net_backend;
     return &fp->base;
 }
+
+int hisremote_net(const char *fname)
+{
+#if defined(_USE_KURL)
+	if (kurl_prot_supported(fname)) return 1;
+#else
+    if (strncmp(fname, "http://", 7) == 0 ||
+        strncmp(fname, "ftp://", 6) == 0) return 1;
+#endif
+	return 0;
+}

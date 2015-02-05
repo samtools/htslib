@@ -30,10 +30,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hfile.h"
 #include "hfile_internal.h"
 
-#ifdef _USE_KURL
-#include "htslib/kurl.h" // for kurl_prot_supported()
-#endif
-
 /* hFILE fields are used as follows:
 
    char *buffer;     // Pointer to the start of the I/O buffer
@@ -528,12 +524,7 @@ static hFILE *hopen_mem(const char *data, const char *mode)
 
 hFILE *hopen(const char *fname, const char *mode)
 {
-#if defined(_USE_KURL)
-	if (kurl_prot_supported(fname)) return hopen_net(fname, mode);
-#else
-    if (strncmp(fname, "http://", 7) == 0 ||
-        strncmp(fname, "ftp://", 6) == 0) return hopen_net(fname, mode);
-#endif
+	if (hisremote_net(fname)) return hopen_net(fname, mode);
 #ifdef HAVE_IRODS
     else if (strncmp(fname, "irods:", 6) == 0) return hopen_irods(fname, mode);
 #endif
@@ -545,12 +536,7 @@ hFILE *hopen(const char *fname, const char *mode)
 int hisremote(const char *fname)
 {
     // FIXME Make a new backend entry to return this
-#if defined(_USE_KURL)
-	if (kurl_prot_supported(fname)) return 1;
-#else
-    if (strncmp(fname, "http://", 7) == 0 ||
-        strncmp(fname, "ftp://", 6) == 0) return 1;
-#endif
+	if (hisremote_net(fname)) return 1;
 #ifdef HAVE_IRODS
     else if (strncmp(fname, "irods:", 6) == 0) return 1;
 #endif

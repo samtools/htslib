@@ -76,6 +76,6 @@ ifeq "curl-@curl@" "curl-enabled"
 LDFLAGS += -L$(CURL_PREFIX)/lib
 LDLIBS += -lcurl
 LIBHTS_OBJS += kurl.o
-hfile.o hfile.pico hfile_net.o hfile_net.pico: CPPFLAGS += -D_USE_KURL
+hfile_net.o hfile_net.pico: CPPFLAGS += -D_USE_KURL
 kurl.o kurl.pico: CPPFLAGS += -I$(CURL_PREFIX)/include
 endif

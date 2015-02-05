@@ -58,6 +58,7 @@ struct hFILE_backend {
    including setting base.backend to their own backend vector.  */
 hFILE *hopen_irods(const char *filename, const char *mode);
 hFILE *hopen_net(const char *filename, const char *mode);
+int hisremote_net(const char *fname);
 
 /* May be called by hopen_*() functions to decode a fopen()-style mode into
    open(2)-style flags.  */
