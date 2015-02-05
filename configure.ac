@@ -47,6 +47,16 @@ AC_ARG_WITH([irods],
    esac],
   [irods=disabled])
 
+AC_ARG_WITH([curl],
+  [AS_HELP_STRING([[--with-curl[=DIR]]],
+                  [use libcurl (in DIR) for network access [DIR=/usr]])],
+  [case $withval in
+     no)  curl=disabled ;;
+     yes) curl=enabled ;;
+     *)   curl=enabled; CURL_PREFIX=$withval ;;
+   esac],
+  [curl=disabled])
+
 save_LIBS=$LIBS
 zlib_devel=ok
 dnl Set a trivial non-empty INCLUDES to avoid excess default includes tests
@@ -88,6 +98,24 @@ else
 fi
 AC_SUBST([irods])
 AC_SUBST([define_IRODS_HOME])
+
+# set up libcurl
+if test $curl = enabled; then
+  save_LDFLAGS=$LDFLAGS
+  LDFLAGS="$LDFLAGS -L$CURL_PREFIX/lib"
+  AC_CHECK_LIB([curl], [curl_version],
+    [case $with_curl in
+       yes) define_CURL_PREFIX='CURL_PREFIX = /usr' ;;
+       *)   define_CURL_PREFIX="CURL_PREFIX = $with_curl" ;;
+     esac],
+    [AC_MSG_ERROR([libcurl not found])],
+    [])
+  LDFLAGS=$save_LDFLAGS
+else
+  define_CURL_PREFIX='CURL_PREFIX ?= /disabled'
+fi
+AC_SUBST([curl])
+AC_SUBST([define_CURL_PREFIX])
 
 AC_CONFIG_FILES(config.mk)
 AC_OUTPUT
