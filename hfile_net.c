@@ -41,14 +41,15 @@ typedef struct {
 
 static int net_inited = 0;
 
-#if defined(_USE_KURL) || defined(_WIN32)
+#ifdef _USE_KURL
 static void net_exit(void)
 {
-#if defined(_USE_KURL)
 	kurl_destroy();
+}
 #elif defined(_WIN32)
-    knet_win32_destroy();
-#endif
+static void net_exit(void)
+{
+	knet_win32_destroy();
 }
 #endif
 

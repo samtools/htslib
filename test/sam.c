@@ -1,6 +1,6 @@
 /*  test/sam.c -- SAM/BAM/CRAM API test cases.
 
-    Copyright (C) 2014 Genome Research Ltd.
+    Copyright (C) 2014-2015 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <math.h>
 
 #include "htslib/sam.h"
+#include "htslib/faidx.h"
 #include "htslib/kstring.h"
 
 int status;
@@ -159,12 +160,28 @@ static void iterators1(void)
     hts_itr_destroy(sam_itr_queryi(NULL, HTS_IDX_NONE, 0, 0));
 }
 
-int main(void)
+static void faidx1(const char *filename)
+{
+    int n;
+    faidx_t *fai = fai_load(filename);
+    if (fai == NULL) fail("can't load faidx file");
+
+    n = faidx_fetch_nseq(fai);
+    if (n != 7) fail("faidx_fetch_nseq returned %d, expected 7", n);
+
+    n = faidx_nseq(fai);
+    if (n != 7) fail("faidx_nseq returned %d, expected 7", n);
+
+    fai_destroy(fai);
+}
+
+int main(int argc, char **argv)
 {
     status = EXIT_SUCCESS;
 
     aux_fields1();
     iterators1();
+    if (argc >= 2) faidx1(argv[1]);
 
     return status;
 }

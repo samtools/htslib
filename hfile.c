@@ -1,6 +1,6 @@
 /*  hfile.c -- buffered low-level input/output streams.
 
-    Copyright (C) 2013-2014 Genome Research Ltd.
+    Copyright (C) 2013-2015 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -29,6 +29,10 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/hfile.h"
 #include "hfile_internal.h"
+
+#ifdef _USE_KURL
+#include "htslib/kurl.h" // for kurl_prot_supported()
+#endif
 
 /* hFILE fields are used as follows:
 
@@ -525,14 +529,30 @@ static hFILE *hopen_mem(const char *data, const char *mode)
 hFILE *hopen(const char *fname, const char *mode)
 {
 #if defined(_USE_KURL)
-	char *p; 
-    if ((p = strstr(fname, "://")) != NULL && p > fname)
-		return hopen_net(fname, mode);
+	if (kurl_prot_supported(fname)) return hopen_net(fname, mode);
 #else
     if (strncmp(fname, "http://", 7) == 0 ||
         strncmp(fname, "ftp://", 6) == 0) return hopen_net(fname, mode);
 #endif
+#ifdef HAVE_IRODS
+    else if (strncmp(fname, "irods:", 6) == 0) return hopen_irods(fname, mode);
+#endif
     else if (strncmp(fname, "data:", 5) == 0) return hopen_mem(fname + 5, mode);
     else if (strcmp(fname, "-") == 0) return hopen_fd_stdinout(mode);
     else return hopen_fd(fname, mode);
+}
+
+int hisremote(const char *fname)
+{
+    // FIXME Make a new backend entry to return this
+#if defined(_USE_KURL)
+	if (kurl_prot_supported(fname)) return 1;
+#else
+    if (strncmp(fname, "http://", 7) == 0 ||
+        strncmp(fname, "ftp://", 6) == 0) return 1;
+#endif
+#ifdef HAVE_IRODS
+    else if (strncmp(fname, "irods:", 6) == 0) return 1;
+#endif
+    else return 0;
 }

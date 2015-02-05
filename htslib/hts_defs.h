@@ -1,6 +1,6 @@
 /*  hts_defs.h -- Miscellaneous definitions.
 
-    Copyright (C) 2013-2014 Genome Research Ltd.
+    Copyright (C) 2013-2015 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -38,10 +38,18 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_RESULT_USED
 #endif
 
-#if defined __clang__ || defined __GNUC__
+#if defined __clang__ || \
+    (defined __GNUC__ && (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 95)))
 #define HTS_UNUSED __attribute__ ((__unused__))
 #else
 #define HTS_UNUSED
+#endif
+
+#if (defined __clang__ && (__clang_major__ > 3 || (__clang_major__ == 3 && __clang_minor__ >= 1))) || \
+    (defined __GNUC__ && (__GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 1)))
+#define HTS_DEPRECATED(x) __attribute__ ((__deprecated__(x))) 
+#else
+#define HTS_DEPRECATED(x)
 #endif
 
 #endif

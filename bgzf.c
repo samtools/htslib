@@ -23,8 +23,6 @@
    THE SOFTWARE.
 */
 
-#include "config.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,6 +36,9 @@
 #include "htslib/hts.h"
 #include "htslib/bgzf.h"
 #include "htslib/hfile.h"
+
+#define BGZF_CACHE
+#define BGZF_MT
 
 #define BLOCK_HEADER_LENGTH 18
 #define BLOCK_FOOTER_LENGTH 8

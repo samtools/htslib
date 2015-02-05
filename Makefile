@@ -1,6 +1,6 @@
 # Makefile for htslib, a C library for high-throughput sequencing data formats.
 #
-#    Copyright (C) 2013-2014 Genome Research Ltd.
+#    Copyright (C) 2013-2015 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -66,7 +66,8 @@ exec_prefix = $(prefix)
 bindir      = $(exec_prefix)/bin
 includedir  = $(prefix)/include
 libdir      = $(exec_prefix)/lib
-mandir      = $(prefix)/share/man
+datarootdir = $(prefix)/share
+mandir      = $(datarootdir)/man
 man1dir     = $(mandir)/man1
 man5dir     = $(mandir)/man5
 pkgconfigdir= $(libdir)/pkgconfig
@@ -110,7 +111,7 @@ lib-shared: libhts.so
 endif
 
 
-PACKAGE_VERSION  = 1.1
+PACKAGE_VERSION  = 1.2.1
 LIBHTS_SOVERSION = 1
 
 
@@ -141,6 +142,9 @@ endif
 
 version.h:
 	echo '#define HTS_VERSION "$(PACKAGE_VERSION)"' > $@
+
+print-version:
+	@echo $(PACKAGE_VERSION)
 
 
 .SUFFIXES: .c .o .pico
@@ -188,6 +192,26 @@ LIBHTS_OBJS = \
 	cram/vlen.o \
 	cram/zfio.o
 
+cram_h = cram/cram.h $(cram_samtools_h) $(cram_sam_header_h) $(cram_structs_h) $(cram_io_h) cram/cram_encode.h cram/cram_decode.h cram/cram_stats.h cram/cram_codecs.h cram/cram_index.h
+cram_io_h = cram/cram_io.h $(cram_misc_h)
+cram_misc_h = cram/misc.h cram/os.h
+cram_sam_header_h = cram/sam_header.h cram/string_alloc.h cram/pooled_alloc.h htslib/khash.h htslib/kstring.h
+cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h) $(cram_sam_header_h)
+cram_structs_h = cram/cram_structs.h cram/thread_pool.h cram/string_alloc.h htslib/khash.h
+cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
+hfile_internal_h = hfile_internal.h $(htslib_hfile_h)
+
+
+# To be effective, config.mk needs to appear after most Makefile variables are
+# set but before most rules appear, so that it can both use previously-set
+# variables in its own rules' prerequisites and also update variables for use
+# in later rules' prerequisites.
+
+# sinclude is GNU Make-specific.  If you don't have GNU Make or another make
+# that understands sinclude, change this to 'include' if you are using the
+# configure script or just comment the line out if you are not.
+sinclude config.mk
+
 
 libhts.a: $(LIBHTS_OBJS)
 	@-rm -f $@
@@ -213,25 +237,17 @@ libhts.dylib: $(LIBHTS_OBJS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 
-cram_h = cram/cram.h $(cram_samtools_h) $(cram_sam_header_h) $(cram_structs_h) $(cram_io_h) cram/cram_encode.h cram/cram_decode.h cram/cram_stats.h cram/cram_codecs.h cram/cram_index.h
-cram_io_h = cram/cram_io.h $(cram_misc_h)
-cram_misc_h = cram/misc.h cram/os.h
-cram_sam_header_h = cram/sam_header.h cram/string_alloc.h cram/pooled_alloc.h htslib/khash.h htslib/kstring.h
-cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h) $(cram_sam_header_h)
-cram_structs_h = cram/cram_structs.h cram/thread_pool.h cram/string_alloc.h htslib/khash.h
-cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
-hfile_internal_h = hfile_internal.h $(htslib_hfile_h)
-
-bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) htslib/khash.h
+bgzf.o bgzf.pico: bgzf.c $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) htslib/khash.h
 kstring.o kstring.pico: kstring.c htslib/kstring.h
 knetfile.o knetfile.pico: knetfile.c htslib/knetfile.h
 hfile.o hfile.pico: hfile.c $(htslib_hfile_h) $(hfile_internal_h)
+hfile_irods.o hfile_irods.pico: hfile_irods.c $(hfile_internal_h)
 hfile_net.o hfile_net.pico: hfile_net.c $(hfile_internal_h) htslib/knetfile.h
 hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) htslib/khash.h htslib/kseq.h htslib/ksort.h
 vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) htslib/khash.h htslib/kseq.h htslib/kstring.h
 sam.o sam.pico: sam.c $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) htslib/khash.h htslib/kseq.h htslib/kstring.h
 tbx.o tbx.pico: tbx.c $(htslib_tbx_h) $(htslib_bgzf_h) htslib/khash.h
-faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) htslib/khash.h htslib/knetfile.h
+faidx.o faidx.pico: faidx.c $(htslib_bgzf_h) $(htslib_faidx_h) $(htslib_hfile_h) htslib/khash.h
 synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c $(htslib_synced_bcf_reader_h) htslib/kseq.h htslib/khash_str2int.h
 vcf_sweep.o vcf_sweep.pico: vcf_sweep.c $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
@@ -277,7 +293,7 @@ tabix.o: tabix.c $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) htslib/kseq.h $
 check test: $(BUILT_TEST_PROGRAMS)
 	test/fieldarith test/fieldarith.sam
 	test/hfile
-	test/sam
+	test/sam test/ce.fa
 	test/test-regidx
 	cd test && REF_PATH=: ./test_view.pl
 	cd test && ./test.pl
@@ -306,7 +322,7 @@ test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 test/fieldarith.o: test/fieldarith.c $(htslib_sam_h)
 test/hfile.o: test/hfile.c $(htslib_hfile_h) $(htslib_hts_defs_h)
 test/test-regidx.o: test/test-regidx.c $(htslib_regidx_h)
-test/sam.o: test/sam.c $(htslib_sam_h) htslib/kstring.h
+test/sam.o: test/sam.c $(htslib_sam_h) $(htslib_faidx_h) htslib/kstring.h
 test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) htslib/kstring.h
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
@@ -316,7 +332,7 @@ install: libhts.a $(BUILT_PROGRAMS) installdirs install-$(SHLIB_FLAVOUR) install
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
-	$(INSTALL_DATA) tabix.1 $(DESTDIR)$(man1dir)
+	$(INSTALL_DATA) htsfile.1 tabix.1 $(DESTDIR)$(man1dir)
 	$(INSTALL_DATA) faidx.5 sam.5 vcf.5 $(DESTDIR)$(man5dir)
 
 installdirs:
@@ -358,6 +374,7 @@ clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 	-rm -f libhts.a $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 
 distclean: clean
+	-rm -f config.cache config.log config.mk config.status
 	-rm -f TAGS *-uninstalled.pc
 
 clean-so:
@@ -375,6 +392,6 @@ force:
 
 
 .PHONY: all check clean distclean force install install-pkgconfig installdirs
-.PHONY: lib-shared lib-static mostlyclean tags test testclean
+.PHONY: lib-shared lib-static mostlyclean print-version tags test testclean
 .PHONY: clean-so install-so
 .PHONY: clean-dylib install-dylib

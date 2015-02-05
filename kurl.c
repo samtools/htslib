@@ -306,6 +306,19 @@ int kurl_error(const kurl_t *ku)
 	return ku->err;
 }
 
+int kurl_prot_supported(const char *url)
+{
+	int i;
+	char *p;
+	curl_version_info_data *v;
+	if ((p = strstr(url, "://")) == 0) return 0;
+	v = curl_version_info(CURLVERSION_NOW);
+	for (i = 0; v->protocols[i]; ++i)
+		if (strncmp(v->protocols[i], url, p - url) == 0)
+			return 1;
+	return 0;
+}
+
 /*****************
  *** HMAC-SHA1 ***
  *****************/

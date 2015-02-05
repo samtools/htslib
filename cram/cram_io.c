@@ -1540,9 +1540,12 @@ static refs_t *refs_create(void) {
  */
 static BGZF *bgzf_open_ref(char *fn, char *mode) {
     BGZF *fp;
+    char fai_file[PATH_MAX];
 
-    if (fai_build(fn) != 0)
-	return NULL;
+    snprintf(fai_file, PATH_MAX, "%s.fai", fn);
+    if (access(fai_file, R_OK) != 0)
+	if (fai_build(fn) != 0)
+	    return NULL;
 
     if (!(fp = bgzf_open(fn, mode))) {
 	perror(fn);
@@ -1742,7 +1745,7 @@ int refs2id(refs_t *r, SAM_hdr *h) {
  *         -1 on failure
  */
 static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
-    int i;
+    int i, j;
 
     if (!h || h->nref == 0)
 	return 0;
@@ -1750,48 +1753,46 @@ static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
     //fprintf(stderr, "refs_from_header for %p mode %c\n", fd, fd->mode);
 
     /* Existing refs are fine, as long as they're compatible with the hdr. */
-    i = r->nref;
-    if (r->nref < h->nref)
-	r->nref = h->nref;
-
-    if (!(r->ref_id = realloc(r->ref_id, r->nref * sizeof(*r->ref_id))))
+    if (!(r->ref_id = realloc(r->ref_id, (r->nref + h->nref) * sizeof(*r->ref_id))))
 	return -1;
 
-    for (; i < r->nref; i++)
-	r->ref_id[i] = NULL;
-
     /* Copy info from h->ref[i] over to r */
-    for (i = 0; i < h->nref; i++) {
+    for (i = 0, j = r->nref; i < h->nref; i++) {
 	SAM_hdr_type *ty;
 	SAM_hdr_tag *tag;
 	khint_t k;
 	int n;
 
-	if (r->ref_id[i] && 0 == strcmp(r->ref_id[i]->name, h->ref[i].name))
+	k = kh_get(refs, r->h_meta, h->ref[i].name);
+	if (k != kh_end(r->h_meta))
+	    // Ref already known about
 	    continue;
 
-	if (!(r->ref_id[i] = calloc(1, sizeof(ref_entry))))
+	if (!(r->ref_id[j] = calloc(1, sizeof(ref_entry))))
 	    return -1;
 
-	if (!h->ref[i].name)
+	if (!h->ref[j].name)
 	    return -1;
 
-	r->ref_id[i]->name = string_dup(r->pool, h->ref[i].name);
-	r->ref_id[i]->length = 0; // marker for not yet loaded
+	r->ref_id[j]->name = string_dup(r->pool, h->ref[i].name);
+	r->ref_id[j]->length = 0; // marker for not yet loaded
 
 	/* Initialise likely filename if known */
 	if ((ty = sam_hdr_find(h, "SQ", "SN", h->ref[i].name))) {
 	    if ((tag = sam_hdr_find_key(h, ty, "M5", NULL))) {
-		r->ref_id[i]->fn = string_dup(r->pool, tag->str+3);
-		//fprintf(stderr, "Tagging @SQ %s / %s\n", r->ref_id[i]->name, r->ref_id[i]->fn);
+		r->ref_id[j]->fn = string_dup(r->pool, tag->str+3);
+		//fprintf(stderr, "Tagging @SQ %s / %s\n", r->ref_id[h]->name, r->ref_id[h]->fn);
 	    }
 	}
 
-	k = kh_put(refs, r->h_meta, r->ref_id[i]->name, &n);
+	k = kh_put(refs, r->h_meta, r->ref_id[j]->name, &n);
 	if (n <= 0) // already exists or error
 	    return -1;
-	kh_val(r->h_meta, k) = r->ref_id[i];
+	kh_val(r->h_meta, k) = r->ref_id[j];
+
+	j++;
     }
+    r->nref = j;
 
     return 0;
 }
@@ -1883,6 +1884,30 @@ void mkdir_prefix(char *path, int mode) {
 }
 
 /*
+ * Return the cache directory to use, based on the first of these
+ * environment variables to be set to a non-empty value.
+ */
+static const char *get_cache_basedir(const char **extra) {
+    char *base;
+
+    *extra = "";
+
+    base = getenv("XDG_CACHE_HOME");
+    if (base && *base) return base;
+
+    base = getenv("HOME");
+    if (base && *base) { *extra = "/.cache"; return base; }
+
+    base = getenv("TMPDIR");
+    if (base && *base) return base;
+
+    base = getenv("TEMP");
+    if (base && *base) return base;
+
+    return "/tmp";
+}
+
+/*
  * Queries the M5 string from the header and attempts to populate the
  * reference from this using the REF_PATH environment.
  *
@@ -1893,15 +1918,28 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     char *ref_path = getenv("REF_PATH");
     SAM_hdr_type *ty;
     SAM_hdr_tag *tag;
-    char path[PATH_MAX], path_tmp[PATH_MAX];
+    char path[PATH_MAX], path_tmp[PATH_MAX], cache[PATH_MAX];
     char *local_cache = getenv("REF_CACHE");
     mFILE *mf;
 
     if (fd->verbose)
 	fprintf(stderr, "cram_populate_ref on fd %p, id %d\n", fd, id);
 
-    if (!ref_path || *ref_path == 0)
+    if (!ref_path || *ref_path == '\0') {
+	/*
+	 * If we have no ref path, we use the EBI server.
+	 * However to avoid spamming it we require a local ref cache too.
+	 */
 	ref_path = "http://www.ebi.ac.uk:80/ena/cram/md5/%s";
+	if (!local_cache || *local_cache == '\0') {
+	    const char *extra;
+	    const char *base = get_cache_basedir(&extra);
+	    snprintf(cache,PATH_MAX, "%s%s/hts-ref/%%2s/%%2s/%%s", base, extra);
+	    local_cache = cache;
+	    if (fd->verbose)
+		fprintf(stderr, "Populating local cache: %s\n", local_cache);
+	}
+    }
 
     if (!r->name)
 	return -1;

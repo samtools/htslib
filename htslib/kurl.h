@@ -23,6 +23,7 @@ extern "C" {
 
 int kurl_init(void);
 void kurl_destroy(void);
+int kurl_prot_supported(const char *url);
 
 kurl_t *kurl_open(const char *url, kurl_opt_t *opt);
 kurl_t *kurl_dopen(int fd);
