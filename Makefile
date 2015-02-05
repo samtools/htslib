@@ -33,8 +33,9 @@ EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
 LDLIBS   =
 
-ifeq ($(KURL),1)
-	CPPFLAGS += -D_USE_KURL
+ifneq ($(CURL_PREFIX),)
+	CPPFLAGS += -D_USE_KURL -I$(CURL_PREFIX)/include
+	LDFLAGS += -L$(CURL_PREFIX)/lib
 	LDLIBS += -lcurl
 	kurl_o = kurl.o
 	knetfile_o =
