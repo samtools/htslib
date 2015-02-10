@@ -30,9 +30,7 @@
 #	HTSDIR = <path to htslib top-level directory>
 #	include $(HTSDIR)/htslib.mk
 #
-#	foo.o: foo.c $(htslib_hts_h) $(HTSDIR)/htslib/kstring.h
-#
-# Variables are not provided for k*.h, as those never include other headers.
+#	foo.o: foo.c $(htslib_hts_h) $(htslib_kstring_h)
 
 HTSPREFIX = $(HTSDIR)/
 include $(HTSDIR)/htslib_vars.mk
