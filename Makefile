@@ -233,7 +233,7 @@ hfile.o hfile.pico: hfile.c $(htslib_hfile_h) $(hfile_internal_h)
 hfile_irods.o hfile_irods.pico: hfile_irods.c $(hfile_internal_h)
 hfile_net.o hfile_net.pico: hfile_net.c $(hfile_internal_h) $(htslib_knetfile_h)
 hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h)
-vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
+vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h) $(htslib_khash_str2int_h)
 sam.o sam.pico: sam.c $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
 tbx.o tbx.pico: tbx.c $(htslib_tbx_h) $(htslib_bgzf_h) $(htslib_khash_h)
 faidx.o faidx.pico: faidx.c $(htslib_bgzf_h) $(htslib_faidx_h) $(htslib_hfile_h) $(htslib_khash_h)
@@ -247,7 +247,7 @@ cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c $(cram_h) cram/os.h cram/md5.h
 cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c $(cram_h) cram/os.h cram/md5.h
 cram/cram_index.o cram/cram_index.pico: cram/cram_index.c $(htslib_hfile_h) $(cram_h) cram/os.h cram/zfio.h
-cram/cram_io.o cram/cram_io.pico: cram/cram_io.c $(cram_h) cram/os.h cram/md5.h $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h)
+cram/cram_io.o cram/cram_io.pico: cram/cram_io.c $(cram_h) cram/os.h cram/md5.h $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h)
 cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c $(cram_h) $(htslib_sam_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c $(cram_h) cram/os.h
 cram/files.o cram/files.pico: cram/files.c $(cram_misc_h)
@@ -274,7 +274,7 @@ tabix: tabix.o libhts.a
 
 bgzip.o: bgzip.c $(htslib_bgzf_h) $(htslib_hts_h)
 htsfile.o: htsfile.c $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
-tabix.o: tabix.c $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h)
+tabix.o: tabix.c $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_regidx_h)
 
 
 # For tests that might use it, set $REF_PATH explicitly to use only reference
@@ -310,10 +310,10 @@ test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 
 test/fieldarith.o: test/fieldarith.c $(htslib_sam_h)
 test/hfile.o: test/hfile.c $(htslib_hfile_h) $(htslib_hts_defs_h)
-test/test-regidx.o: test/test-regidx.c $(htslib_regidx_h)
 test/sam.o: test/sam.c $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
+test/test-regidx.o: test/test-regidx.c $(htslib_regidx_h)
 test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)
-test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h)
+test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
 
 
