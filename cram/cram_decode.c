@@ -1428,7 +1428,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 					 (char *)&i32, &out_sz);
 		cig_op = BAM_CHARD_CLIP;
 		cig_len += i32;
-		nm      += i32;
 	    }
 	    break;
 	}
