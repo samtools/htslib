@@ -1064,7 +1064,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     uint32_t *cigar = s->cigar;
     uint32_t ncigar = s->ncigar;
     uint32_t cigar_alloc = s->cigar_alloc;
-    uint32_t nm = 0, md_dist = 0;
+    uint32_t nm = 0;
+    int32_t md_dist = 0;
     int orig_aux = 0;
     int decode_md = fd->decode_md && s->ref;
     uint32_t ds = c->comp_hdr->data_series;
@@ -1152,7 +1153,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 #endif
 	    cig_len += pos - seq_pos;
 	    ref_pos += pos - seq_pos;
-	    md_dist += pos - seq_pos;
+	    if (md_dist >= 0)
+		md_dist += pos - seq_pos;
 	    seq_pos = pos;
 	}
 
@@ -1233,6 +1235,14 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 					 (char *)&base, &out_sz);
 		if (ref_pos >= bfd->ref[cr->ref_id].len || !s->ref) {
 		    seq[pos-1] = 'N';
+		    if (decode_md) {
+			if (md_dist >= 0)
+			    BLOCK_APPEND_UINT(s->aux_blk, md_dist);
+			md_dist = -1;
+                        //BLOCK_APPEND_CHAR(s->aux_blk, 'N');
+			//md_dist = 0;
+			nm--;
+		    }
 		} else {
 		    ref_base = fd->L1[(uc)s->ref[ref_pos - s->ref_start +1]];
 		    seq[pos-1] = c->comp_hdr->
@@ -1265,17 +1275,35 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		                ->decode(s, c->comp_hdr->codecs[DS_DL], blk,
 					 (char *)&i32, &out_sz);
 		if (decode_md) {
-		    BLOCK_APPEND_UINT(s->aux_blk, md_dist);
-		    BLOCK_APPEND_CHAR(s->aux_blk, '^');
-		    BLOCK_APPEND(s->aux_blk,
-				 &s->ref[ref_pos - s->ref_start +1],
-				 i32);
-		    md_dist = 0;
+		    if (md_dist >= 0)
+			BLOCK_APPEND_UINT(s->aux_blk, md_dist);
+		    if (ref_pos + i32 <= bfd->ref[cr->ref_id].len) {
+			BLOCK_APPEND_CHAR(s->aux_blk, '^');
+			BLOCK_APPEND(s->aux_blk,
+				     &s->ref[ref_pos - s->ref_start +1],
+				     i32);
+			nm += i32;
+			md_dist = 0;
+		    } else {
+			uint32_t dlen;
+			if (bfd->ref[cr->ref_id].len >= ref_pos) {
+			    BLOCK_APPEND_CHAR(s->aux_blk, '^');
+			    BLOCK_APPEND(s->aux_blk,
+					 &s->ref[ref_pos - s->ref_start +1],
+					 bfd->ref[cr->ref_id].len - ref_pos);
+			    dlen = i32 - (bfd->ref[cr->ref_id].len - ref_pos);
+			    nm += i32 - dlen;
+			    BLOCK_APPEND_UINT(s->aux_blk, 0);
+			} else {
+			    dlen = i32;
+			}
+
+			md_dist = -1;
+		    }
 		}
 		cig_op = BAM_CDEL;
 		cig_len += i32;
 		ref_pos += i32;
-		nm      += i32;
 		//printf("  %d: DL = %d (ret %d)\n", f, i32, r);
 	    }
 	    break;
@@ -1334,6 +1362,26 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_BB]
 		    ->decode(s, c->comp_hdr->codecs[DS_BB], blk,
 			     (char *)&seq[pos-1], &len);
+
+		if (decode_md) {
+		    int x;
+		    if (md_dist >= 0)
+			BLOCK_APPEND_UINT(s->aux_blk, md_dist);
+
+		    for (x = 0; x < len; x++) {
+			if (x)
+			    BLOCK_APPEND_UINT(s->aux_blk, 0);
+			if (ref_pos + x >= bfd->ref[cr->ref_id].len || !s->ref) {
+			    //BLOCK_APPEND_CHAR(s->aux_blk, 'N');
+			    md_dist = -1;
+			    break;
+			} else {
+			    BLOCK_APPEND_CHAR(s->aux_blk, s->ref[ref_pos+x-s->ref_start +1]);
+			}
+		    }
+
+		    nm += x;
+		}
 	    }
 
 	    cig_op = BAM_CMATCH;
@@ -1386,6 +1434,19 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_BA]
 		                ->decode(s, c->comp_hdr->codecs[DS_BA], blk,
 					 (char *)&seq[pos-1], &out_sz);
+
+		if (decode_md) {
+		    if (md_dist >= 0)
+			BLOCK_APPEND_UINT(s->aux_blk, md_dist);
+		    if (ref_pos >= bfd->ref[cr->ref_id].len || !s->ref) {
+                        //BLOCK_APPEND_CHAR(s->aux_blk, 'N');
+			md_dist = -1;
+		    } else {
+                        BLOCK_APPEND_CHAR(s->aux_blk, s->ref[ref_pos-s->ref_start +1]);
+			nm++;
+			md_dist = 0;
+		    }
+		}
 	    }
 	    if (ds & CRAM_QS) {
 		if (!c->comp_hdr->codecs[DS_QS]) return -1;
@@ -1487,7 +1548,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		memcpy(&seq[seq_pos-1], &s->ref[ref_pos - s->ref_start +1],
 		       cr->len - seq_pos + 1);
 		ref_pos += cr->len - seq_pos + 1;
-		md_dist += cr->len - seq_pos + 1;
+		if (md_dist >= 0)
+		    md_dist += cr->len - seq_pos + 1;
 	    }
 	}
 
@@ -1516,7 +1578,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
  skip_cigar:
 
     if ((ds & CRAM_FN) && decode_md) {
-	BLOCK_APPEND_UINT(s->aux_blk, md_dist);
+	if (md_dist >= 0)
+	    BLOCK_APPEND_UINT(s->aux_blk, md_dist);
     }
 
     if (cig_len) {
