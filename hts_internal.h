@@ -1,5 +1,4 @@
-char *hts_idx_getfn(const char *fn, const char *ext);
-/*  hts_int.h -- internal functions; not part of the public API.
+/*  hts_internal.h -- internal functions; not part of the public API.
 
     Copyright (C) 2015 Genome Research Ltd.
 
