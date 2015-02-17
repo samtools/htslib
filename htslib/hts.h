@@ -366,7 +366,6 @@ extern "C" {
 
     int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped);
     uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
-    char *hts_idx_getfn(const char *fn, const char *ext);
 
     const char *hts_parse_reg(const char *s, int *beg, int *end);
     hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);

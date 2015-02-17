@@ -64,6 +64,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ctype.h>
 
 #include "htslib/hfile.h"
+#include "hts_internal.h"
 #include "cram/cram.h"
 #include "cram/os.h"
 #include "cram/zfio.h"
