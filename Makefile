@@ -189,7 +189,7 @@ cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h) $(cram_sam_header_h)
 cram_structs_h = cram/cram_structs.h cram/thread_pool.h cram/string_alloc.h $(htslib_khash_h)
 cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
 hfile_internal_h = hfile_internal.h $(htslib_hfile_h)
-
+hts_internal_h = hts_internal.h $(htslib_hts_h)
 
 # To be effective, config.mk needs to appear after most Makefile variables are
 # set but before most rules appear, so that it can both use previously-set
@@ -232,7 +232,7 @@ knetfile.o knetfile.pico: knetfile.c $(htslib_knetfile_h)
 hfile.o hfile.pico: hfile.c $(htslib_hfile_h) $(hfile_internal_h)
 hfile_irods.o hfile_irods.pico: hfile_irods.c $(hfile_internal_h)
 hfile_net.o hfile_net.pico: hfile_net.c $(hfile_internal_h) $(htslib_knetfile_h)
-hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h)
+hts.o hts.pico: hts.c version.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(hts_internal_h)
 vcf.o vcf.pico: vcf.c $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h) $(htslib_khash_str2int_h)
 sam.o sam.pico: sam.c $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
 tbx.o tbx.pico: tbx.c $(htslib_tbx_h) $(htslib_bgzf_h) $(htslib_khash_h)
@@ -246,7 +246,7 @@ regidx.o regidx.pico: regidx.c $(htslib_hts_h) $(htslib_kstring_h) $(htslib_kseq
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c $(cram_h) cram/os.h cram/md5.h
 cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c $(cram_h) cram/os.h cram/md5.h
-cram/cram_index.o cram/cram_index.pico: cram/cram_index.c $(htslib_hfile_h) $(cram_h) cram/os.h cram/zfio.h
+cram/cram_index.o cram/cram_index.pico: cram/cram_index.c $(htslib_hfile_h) $(cram_h) cram/os.h cram/zfio.h $(hts_internal_h)
 cram/cram_io.o cram/cram_io.pico: cram/cram_io.c $(cram_h) cram/os.h cram/md5.h $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h)
 cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c $(cram_h) $(htslib_sam_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c $(cram_h) cram/os.h

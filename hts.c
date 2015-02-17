@@ -37,6 +37,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "cram/cram.h"
 #include "htslib/hfile.h"
 #include "version.h"
+#include "hts_internal.h"
 
 #include "htslib/kseq.h"
 #define KS_BGZF 1
