@@ -45,7 +45,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/cram.h"
 #include "cram/os.h"
-#include "cram/md5.h"
+#include "htslib/hts.h"
 
 #define Z_CRAM_STRAT Z_FILTERED
 //#define Z_CRAM_STRAT Z_RLE
@@ -1358,12 +1358,12 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 	
 	if (CRAM_MAJOR_VERS(fd->version) != 1) {
 	    if (s->hdr->ref_seq_id >= 0 && c->multi_seq == 0 && !fd->no_ref) {
-		MD5_CTX md5;
-		MD5_Init(&md5);
-		MD5_Update(&md5,
+		hts_md5_ctx md5;
+		hts_md5_init(&md5);
+		hts_md5_update(&md5,
 			   c->ref + s->hdr->ref_seq_start - c->ref_start,
 			   s->hdr->ref_seq_span);
-		MD5_Final(s->hdr->md5, &md5);
+		hts_md5_final(s->hdr->md5, &md5);
 	    } else {
 		memset(s->hdr->md5, 0, 16);
 	    }
