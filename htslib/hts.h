@@ -385,6 +385,29 @@ typedef struct {
     #define FT_STDIN  (1<<3)
     int hts_file_type(const char *fname);
 
+
+    /**********************
+     * MD5 implementation *
+     **********************/
+
+    /* Any 32-bit or wider unsigned integer data type will do */
+    typedef unsigned int hts_md5_u32plus;
+ 
+    typedef struct {
+        hts_md5_u32plus lo, hi;
+        hts_md5_u32plus a, b, c, d;
+        unsigned char buffer[64];
+        hts_md5_u32plus block[16];
+    } hts_md5_ctx;
+ 
+    void hts_md5_init(hts_md5_ctx *ctx);
+    void hts_md5_update(hts_md5_ctx *ctx, void *data, unsigned long size);
+    void hts_md5_final(unsigned char *result, hts_md5_ctx *ctx);
+
+#ifdef __cplusplus
+}
+#endif
+
 static inline int hts_reg2bin(int64_t beg, int64_t end, int min_shift, int n_lvls)
 {
     int l, s = min_shift, t = ((1<<((n_lvls<<1) + n_lvls)) - 1) / 7;

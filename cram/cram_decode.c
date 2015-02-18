@@ -50,7 +50,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/cram.h"
 #include "cram/os.h"
-#include "cram/md5.h"
+#include "htslib/hts.h"
 
 //Whether CIGAR has just M or uses = and X to indicate match and mismatch
 //#define USE_X
@@ -2042,7 +2042,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	&& s->hdr->ref_seq_id >= 0
 	&& !fd->ignore_md5
 	&& memcmp(s->hdr->md5, "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 16)) {
-	MD5_CTX md5;
+	hts_md5_ctx md5;
 	unsigned char digest[16];
 
 	if (s->ref && s->hdr->ref_seq_id >= 0) {
@@ -2062,18 +2062,18 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		len = s->ref_end - s->ref_start + 1;
 	    }
 
-	    MD5_Init(&md5);
+	    hts_md5_init(&md5);
 	    if (start + len > s->ref_end - s->ref_start + 1)
 		len = s->ref_end - s->ref_start + 1 - start;
 	    if (len >= 0)
-		MD5_Update(&md5, s->ref + start, len);
-	    MD5_Final(digest, &md5);
+		hts_md5_update(&md5, s->ref + start, len);
+	    hts_md5_final(digest, &md5);
 	} else if (!s->ref && s->hdr->ref_base_id >= 0) {
 	    cram_block *b;
 	    if (s->block_by_id && (b = s->block_by_id[s->hdr->ref_base_id])) {
-		MD5_Init(&md5);
-		MD5_Update(&md5, b->data, b->uncomp_size);
-		MD5_Final(digest, &md5);
+		hts_md5_init(&md5);
+		hts_md5_update(&md5, b->data, b->uncomp_size);
+		hts_md5_final(digest, &md5);
 	    }
 	}
 

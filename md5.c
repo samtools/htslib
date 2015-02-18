@@ -1,4 +1,9 @@
 /*
+ * Trivial amendments by James Bonfield <jkb@sanger.ac.uk> to provide an
+ * HTSlib interface. 2015.
+ */
+
+/*
  * This is an OpenSSL-compatible implementation of the RSA Data Security, Inc.
  * MD5 Message-Digest Algorithm (RFC 1321).
  *
@@ -35,11 +40,10 @@
  * compile-time configuration.
  */
  
+#include "htslib/hts.h"
+
 #ifndef HAVE_OPENSSL
- 
 #include <string.h>
- 
-#include "md5.h"
  
 /*
  * The basic MD5 functions.
@@ -71,16 +75,16 @@
  */
 #if defined(__i386__) || defined(__x86_64__) || defined(__vax__)
 #define SET(n) \
-	(*(MD5_u32plus *)&ptr[(n) * 4])
+	(*(hts_md5_u32plus *)&ptr[(n) * 4])
 #define GET(n) \
 	SET(n)
 #else
 #define SET(n) \
 	(ctx->block[(n)] = \
-	(MD5_u32plus)ptr[(n) * 4] | \
-	((MD5_u32plus)ptr[(n) * 4 + 1] << 8) | \
-	((MD5_u32plus)ptr[(n) * 4 + 2] << 16) | \
-	((MD5_u32plus)ptr[(n) * 4 + 3] << 24))
+	(hts_md5_u32plus)ptr[(n) * 4] | \
+	((hts_md5_u32plus)ptr[(n) * 4 + 1] << 8) | \
+	((hts_md5_u32plus)ptr[(n) * 4 + 2] << 16) | \
+	((hts_md5_u32plus)ptr[(n) * 4 + 3] << 24))
 #define GET(n) \
 	(ctx->block[(n)])
 #endif
@@ -89,11 +93,11 @@
  * This processes one or more 64-byte data blocks, but does NOT update
  * the bit counters.  There are no alignment requirements.
  */
-static void *body(MD5_CTX *ctx, void *data, unsigned long size)
+static void *body(hts_md5_ctx *ctx, void *data, unsigned long size)
 {
 	unsigned char *ptr;
-	MD5_u32plus a, b, c, d;
-	MD5_u32plus saved_a, saved_b, saved_c, saved_d;
+	hts_md5_u32plus a, b, c, d;
+	hts_md5_u32plus saved_a, saved_b, saved_c, saved_d;
  
 	ptr = data;
  
@@ -196,7 +200,7 @@ static void *body(MD5_CTX *ctx, void *data, unsigned long size)
 	return ptr;
 }
  
-void MD5_Init(MD5_CTX *ctx)
+void hts_md5_init(hts_md5_ctx *ctx)
 {
 	ctx->a = 0x67452301;
 	ctx->b = 0xefcdab89;
@@ -207,9 +211,9 @@ void MD5_Init(MD5_CTX *ctx)
 	ctx->hi = 0;
 }
  
-void MD5_Update(MD5_CTX *ctx, void *data, unsigned long size)
+void hts_md5_update(hts_md5_ctx *ctx, void *data, unsigned long size)
 {
-	MD5_u32plus saved_lo;
+	hts_md5_u32plus saved_lo;
 	unsigned long used, free;
  
 	saved_lo = ctx->lo;
@@ -241,7 +245,7 @@ void MD5_Update(MD5_CTX *ctx, void *data, unsigned long size)
 	memcpy(ctx->buffer, data, size);
 }
  
-void MD5_Final(unsigned char *result, MD5_CTX *ctx)
+void hts_md5_final(unsigned char *result, hts_md5_ctx *ctx)
 {
 	unsigned long used, free;
  
@@ -291,5 +295,31 @@ void MD5_Final(unsigned char *result, MD5_CTX *ctx)
  
 	memset(ctx, 0, sizeof(*ctx));
 }
- 
+
+#else
+
+#include <openssl/md5.h>
+#include <assert.h>
+
+/*
+ * Wrappers around the OpenSSL libcrypto.so MD5 implementation.
+ *
+ * These are here to ensure they end up in the symbol table of the
+ * library regardless of the static inline in the headers.
+ */
+void hts_md5_init(hts_md5_ctx *ctx) {
+    assert(sizeof(*ctx) >= sizeof(MD5_CTX));
+    MD5_Init((MD5_CTX *)ctx);
+}
+
+void hts_md5_update(hts_md5_ctx *ctx, void *data, unsigned long size) {
+    assert(sizeof(*ctx) >= sizeof(MD5_CTX));
+    MD5_Update((MD5_CTX *)ctx, data, size);
+}
+
+void hts_md5_final(unsigned char *result, hts_md5_ctx *ctx) {
+    assert(sizeof(*ctx) >= sizeof(MD5_CTX));
+    MD5_Final(result, (MD5_CTX *)ctx);
+}
+
 #endif
