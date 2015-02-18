@@ -1239,8 +1239,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 			if (md_dist >= 0)
 			    BLOCK_APPEND_UINT(s->aux_blk, md_dist);
 			md_dist = -1;
-                        //BLOCK_APPEND_CHAR(s->aux_blk, 'N');
-			//md_dist = 0;
 			nm--;
 		    }
 		} else {
@@ -1372,7 +1370,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 			if (x)
 			    BLOCK_APPEND_UINT(s->aux_blk, 0);
 			if (ref_pos + x >= bfd->ref[cr->ref_id].len || !s->ref) {
-			    //BLOCK_APPEND_CHAR(s->aux_blk, 'N');
 			    md_dist = -1;
 			    break;
 			} else {
@@ -1439,7 +1436,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		    if (md_dist >= 0)
 			BLOCK_APPEND_UINT(s->aux_blk, md_dist);
 		    if (ref_pos >= bfd->ref[cr->ref_id].len || !s->ref) {
-                        //BLOCK_APPEND_CHAR(s->aux_blk, 'N');
 			md_dist = -1;
 		    } else {
                         BLOCK_APPEND_CHAR(s->aux_blk, s->ref[ref_pos-s->ref_start +1]);
