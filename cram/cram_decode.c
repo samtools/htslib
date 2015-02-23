@@ -1947,7 +1947,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	&& s->hdr->ref_seq_id >= 0
 	&& !fd->ignore_md5
 	&& memcmp(s->hdr->md5, "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 16)) {
-	hts_md5_ctx md5;
+	hts_md5_context *md5;
 	unsigned char digest[16];
 
 	if (s->ref && s->hdr->ref_seq_id >= 0) {
@@ -1967,18 +1967,22 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		len = s->ref_end - s->ref_start + 1;
 	    }
 
-	    hts_md5_init(&md5);
+	    if (!(md5 = hts_md5_init()))
+		return -1;
 	    if (start + len > s->ref_end - s->ref_start + 1)
 		len = s->ref_end - s->ref_start + 1 - start;
 	    if (len >= 0)
-		hts_md5_update(&md5, s->ref + start, len);
-	    hts_md5_final(digest, &md5);
+		hts_md5_update(md5, s->ref + start, len);
+	    hts_md5_final(digest, md5);
+	    hts_md5_destroy(md5);
 	} else if (!s->ref && s->hdr->ref_base_id >= 0) {
 	    cram_block *b;
 	    if (s->block_by_id && (b = s->block_by_id[s->hdr->ref_base_id])) {
-		hts_md5_init(&md5);
-		hts_md5_update(&md5, b->data, b->uncomp_size);
-		hts_md5_final(digest, &md5);
+		if (!(md5 = hts_md5_init()))
+		    return -1;
+		hts_md5_update(md5, b->data, b->uncomp_size);
+		hts_md5_final(digest, md5);
+		hts_md5_destroy(md5);
 	    }
 	}
 
