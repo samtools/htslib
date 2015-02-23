@@ -75,6 +75,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/hfile_irods.c \
 	$(HTSDIR)/hfile_net.c \
 	$(HTSDIR)/hts.c \
+	$(HTSDIR)/hts_internal.h \
 	$(HTSDIR)/knetfile.c \
 	$(HTSDIR)/kstring.c \
 	$(HTSDIR)/regidx.c \
