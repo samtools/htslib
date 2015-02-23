@@ -187,17 +187,17 @@ int main(int argc, char *argv[])
     if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
         int i;
         hts_idx_t *idx;
-        if ((idx = bam_index_load(argv[optind])) == 0) {
+        if ((idx = sam_index_load(in, argv[optind])) == 0) {
             fprintf(stderr, "[E::%s] fail to load the BAM index\n", __func__);
             return 1;
         }
         for (i = optind + 1; i < argc; ++i) {
             hts_itr_t *iter;
-            if ((iter = bam_itr_querys(idx, h, argv[i])) == 0) {
+            if ((iter = sam_itr_querys(idx, h, argv[i])) == 0) {
                 fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
                 continue;
             }
-            while ((r = bam_itr_next(in, iter, b)) >= 0) {
+            while ((r = sam_itr_next(in, iter, b)) >= 0) {
                 if (sam_write1(out, h, b) < 0) {
                     fprintf(stderr, "Error writing output.\n");
                     exit_code = 1;
