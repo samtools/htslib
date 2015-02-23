@@ -1359,12 +1359,14 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 	
 	if (CRAM_MAJOR_VERS(fd->version) != 1) {
 	    if (s->hdr->ref_seq_id >= 0 && c->multi_seq == 0 && !fd->no_ref) {
-		hts_md5_ctx md5;
-		hts_md5_init(&md5);
-		hts_md5_update(&md5,
+		hts_md5_context *md5 = hts_md5_init();
+		if (!md5)
+		    return -1;
+		hts_md5_update(md5,
 			   c->ref + s->hdr->ref_seq_start - c->ref_start,
 			   s->hdr->ref_seq_span);
-		hts_md5_final(s->hdr->md5, &md5);
+		hts_md5_final(s->hdr->md5, md5);
+		hts_md5_destroy(md5);
 	    } else {
 		memset(s->hdr->md5, 0, 16);
 	    }
