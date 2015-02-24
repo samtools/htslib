@@ -1813,7 +1813,7 @@ static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
 	if (!(r->ref_id[j] = calloc(1, sizeof(ref_entry))))
 	    return -1;
 
-	if (!h->ref[j].name)
+	if (!h->ref[i].name)
 	    return -1;
 
 	r->ref_id[j]->name = string_dup(r->pool, h->ref[i].name);
