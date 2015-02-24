@@ -80,7 +80,8 @@ BUILT_TEST_PROGRAMS = \
 	test/test-regidx \
 	test/test_view \
 	test/test-vcf-api \
-	test/test-vcf-sweep
+	test/test-vcf-sweep \
+	test/pileup
 
 all: lib-static lib-shared $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 
@@ -308,6 +309,9 @@ test/test-vcf-api: test/test-vcf-api.o libhts.a
 
 test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LDLIBS) -lz
+
+test/pileup: test/pileup.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/pileup.o libhts.a $(LDLIBS) -lz
 
 test/fieldarith.o: test/fieldarith.c $(htslib_sam_h)
 test/hfile.o: test/hfile.c $(htslib_hfile_h) $(htslib_hts_defs_h)
