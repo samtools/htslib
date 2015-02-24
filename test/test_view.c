@@ -163,25 +163,32 @@ int main(int argc, char *argv[])
 
     /* CRAM output */
     if (flag & 8) {
+        int ret;
+
         // Parse input header and use for CRAM output
         out->fp.cram->header = sam_hdr_parse_(h->text, h->l_text);
 
         // Create CRAM references arrays
         if (fn_ref)
-            cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, fn_ref);
+            ret = cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, fn_ref);
         else
             // Attempt to fill out a cram->refs[] array from @SQ headers
-            cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, NULL);
+            ret = cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, NULL);
+
+        if (ret != 0)
+            return EXIT_FAILURE;
     }
 
     // Process any options; currently cram only.
     for (; in_opts;  in_opts = (last=in_opts)->next, free(last)) {
         hts_set_opt(in,  in_opts->opt,  in_opts->val);
         if (in_opts->opt == CRAM_OPT_REFERENCE)
-            hts_set_opt(out,  in_opts->opt,  in_opts->val);
+            if (hts_set_opt(out,  in_opts->opt,  in_opts->val) != 0)
+                return EXIT_FAILURE;
     }
     for (; out_opts;  out_opts = (last=out_opts)->next, free(last))
-        hts_set_opt(out, out_opts->opt,  out_opts->val);
+        if (hts_set_opt(out, out_opts->opt,  out_opts->val) != 0)
+            return EXIT_FAILURE;
 
     sam_hdr_write(out, h);
     if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
