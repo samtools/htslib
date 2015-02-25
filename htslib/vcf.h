@@ -728,10 +728,6 @@ extern "C" {
 
     int bcf_index_build(const char *fn, int min_shift);
 
-#ifdef __cplusplus
-}
-#endif
-
 /*******************
  * Typed value I/O *
  *******************/
@@ -879,5 +875,9 @@ static inline int32_t bcf_dec_size(const uint8_t *p, uint8_t **q, int *type)
         return *p>>4;
     } else return bcf_dec_typed_int1(p + 1, q);
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

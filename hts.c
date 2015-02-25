@@ -1,6 +1,6 @@
 /*  hts.c -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2008, 2009, 2012-2014 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2012-2015 Genome Research Ltd.
     Copyright (C) 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -37,6 +37,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "cram/cram.h"
 #include "htslib/hfile.h"
 #include "version.h"
+#include "hts_internal.h"
 
 #include "htslib/kseq.h"
 #define KS_BGZF 1
@@ -94,7 +95,6 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
         return sequence_data;
 
     case vcf:
-    case bcfv1:
     case bcf:
         return variant_data;
 
@@ -148,9 +148,35 @@ static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
     return destsize;
 }
 
+// Parse "x.y" text, taking care because the string is not NUL-terminated
+// and filling in major/minor only when the digits are followed by a delimiter,
+// so we don't misread "1.10" as "1.1" due to reaching the end of the buffer.
+static void
+parse_version(htsFormat *fmt, const unsigned char *u, const unsigned char *ulim)
+{
+    const char *str  = (const char *) u;
+    const char *slim = (const char *) ulim;
+    const char *s;
+
+    fmt->version.major = fmt->version.minor = -1;
+
+    for (s = str; s < slim; s++) if (!isdigit(*s)) break;
+    if (s < slim) {
+        fmt->version.major = atoi(str);
+        if (*s == '.') {
+            str = &s[1];
+            for (s = str; s < slim; s++) if (!isdigit(*s)) break;
+            if (s < slim)
+                fmt->version.minor = atoi(str);
+        }
+        else
+            fmt->version.minor = 0;
+    }
+}
+
 int hts_detect_format(hFILE *hfile, htsFormat *fmt)
 {
-    unsigned char s[18];
+    unsigned char s[21];
     ssize_t len = hpeek(hfile, s, 18);
     if (len < 0) return -1;
 
@@ -167,9 +193,13 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
     }
     if (len < 0) return -1;
 
+    fmt->compression_level = -1;
+    fmt->specific = NULL;
+
     if (len >= 6 && memcmp(s,"CRAM",4) == 0 && s[4]>=1 && s[4]<=3 && s[5]<=1) {
         fmt->category = sequence_data;
         fmt->format = cram;
+        fmt->version.major = s[4], fmt->version.minor = s[5];
         fmt->compression = custom;
         return 0;
     }
@@ -177,37 +207,49 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         if (memcmp(s, "BAM\1", 4) == 0) {
             fmt->category = sequence_data;
             fmt->format = bam;
+            // TODO Decompress enough to pick version from @HD-VN header
+            fmt->version.major = 1, fmt->version.minor = -1;
             return 0;
         }
         else if (memcmp(s, "BAI\1", 4) == 0) {
             fmt->category = index_file;
             fmt->format = bai;
+            fmt->version.major = -1, fmt->version.minor = -1;
             return 0;
         }
         else if (memcmp(s, "BCF\4", 4) == 0) {
             fmt->category = variant_data;
-            fmt->format = bcfv1;
+            fmt->format = bcf;
+            fmt->version.major = 1, fmt->version.minor = -1;
             return 0;
         }
         else if (memcmp(s, "BCF\2", 4) == 0) {
             fmt->category = variant_data;
             fmt->format = bcf;
+            fmt->version.major = s[3];
+            fmt->version.minor = (len >= 5 && s[4] <= 2)? s[4] : 0;
             return 0;
         }
         else if (memcmp(s, "CSI\1", 4) == 0) {
             fmt->category = index_file;
             fmt->format = csi;
+            fmt->version.major = 1, fmt->version.minor = -1;
             return 0;
         }
         else if (memcmp(s, "TBI\1", 4) == 0) {
             fmt->category = index_file;
             fmt->format = tbi;
+            fmt->version.major = -1, fmt->version.minor = -1;
             return 0;
         }
     }
     else if (len >= 16 && memcmp(s, "##fileformat=VCF", 16) == 0) {
         fmt->category = variant_data;
         fmt->format = vcf;
+        if (len >= 21 && s[16] == 'v')
+            parse_version(fmt, &s[17], &s[len]);
+        else
+            fmt->version.major = fmt->version.minor = -1;
         return 0;
     }
     else if (len >= 4 && s[0] == '@' &&
@@ -215,6 +257,12 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
               memcmp(s, "@RG\t", 4) == 0 || memcmp(s, "@PG\t", 4) == 0)) {
         fmt->category = sequence_data;
         fmt->format = sam;
+        // @HD-VN is not guaranteed to be the first tag, but then @HD is
+        // not guaranteed to be present at all...
+        if (len >= 9 && memcmp(s, "@HD\tVN:", 7) == 0)
+            parse_version(fmt, &s[7], &s[len]);
+        else
+            fmt->version.major = 1, fmt->version.minor = -1;
         return 0;
     }
     else {
@@ -226,30 +274,91 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         // FIXME For now, assume it's SAM
         fmt->category = sequence_data;
         fmt->format = sam;
+        fmt->version.major = 1, fmt->version.minor = -1;
         return 0;
     }
 
     fmt->category = unknown_category;
     fmt->format = unknown_format;
+    fmt->version.major = fmt->version.minor = -1;
     fmt->compression = no_compression;
     return 0;
 }
 
-const char *hts_format_description(const htsFormat *format)
+char *hts_format_description(const htsFormat *format)
 {
+    kstring_t str = { 0, 0, NULL };
+
     switch (format->format) {
-    case sam:   return "SAM-format sequence text";
-    case bam:   return "BAM-format compressed sequence data";
-    case cram:  return "CRAM-format compressed sequence data";
-    case vcf:   return "VCF-format variant calling text";
-    case bcf:   return "BCF-format compressed variant calling data";
-    case bcfv1: return "BCFv1-legacy-format compressed variant calling data";
-    case bai:   return "BAI sequence index data";
-    case crai:  return "CRAI compressed sequence index data";
-    case csi:   return "CSI compressed sequence index data";
-    case tbi:   return "Tabix compressed genomic region index data";
-    default:    return "unknown";
+    case sam:   kputs("SAM", &str); break;
+    case bam:   kputs("BAM", &str); break;
+    case cram:  kputs("CRAM", &str); break;
+    case vcf:   kputs("VCF", &str); break;
+    case bcf:
+        if (format->version.major == 1) kputs("Legacy BCF", &str);
+        else kputs("BCF", &str);
+        break;
+    case bai:   kputs("BAI", &str); break;
+    case crai:  kputs("CRAI", &str); break;
+    case csi:   kputs("CSI", &str); break;
+    case tbi:   kputs("Tabix", &str); break;
+    default:    kputs("unknown", &str); break;
     }
+
+    if (format->version.major >= 0) {
+        kputs(" version ", &str);
+        kputw(format->version.major, &str);
+        if (format->version.minor >= 0) {
+            kputc('.', &str);
+            kputw(format->version.minor, &str);
+        }
+    }
+
+    switch (format->compression) {
+    case custom: kputs(" compressed", &str); break;
+    case gzip:   kputs(" gzip-compressed", &str); break;
+    case bgzf:
+        switch (format->format) {
+        case bam:
+        case bcf:
+        case csi:
+        case tbi:
+            // These are by definition BGZF, so just use the generic term
+            kputs(" compressed", &str);
+            break;
+        default:
+            kputs(" BGZF-compressed", &str);
+            break;
+        }
+        break;
+    default: break;
+    }
+
+    switch (format->category) {
+    case sequence_data: kputs(" sequence", &str); break;
+    case variant_data:  kputs(" variant calling", &str); break;
+    case index_file:    kputs(" index", &str); break;
+    case region_list:   kputs(" genomic region", &str); break;
+    default: break;
+    }
+
+    if (format->compression == no_compression)
+        switch (format->format) {
+        case sam:
+        case crai:
+        case vcf:
+        case bed:
+            kputs(" text", &str);
+            break;
+
+        default:
+            kputs(" data", &str);
+            break;
+        }
+    else
+        kputs(" data", &str);
+
+    return ks_release(&str);
 }
 
 htsFile *hts_open(const char *fn, const char *mode)
@@ -307,6 +416,10 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
 
         // Fill in category (if determinable; e.g. 'b' could be BAM or BCF)
         fmt->category = format_category(fmt->format);
+
+        fmt->version.major = fmt->version.minor = -1;
+        fmt->compression_level = -1;
+        fmt->specific = NULL;
     }
     else goto error;
 
@@ -466,7 +579,8 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
     else fp->fn_aux = NULL;
 
     if (fp->format.format == cram)
-        cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, fp->fn_aux);
+        if (cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, fp->fn_aux))
+            return -1;
 
     return 0;
 }
@@ -608,6 +722,29 @@ char **hts_readlines(const char *fn, int *_n)
     s = (char**)realloc(s, n * sizeof(char*));
     *_n = n;
     return s;
+}
+
+// DEPRECATED: To be removed in a future HTSlib release
+int hts_file_type(const char *fname)
+{
+    int len = strlen(fname);
+    if ( !strcasecmp(".vcf.gz",fname+len-7) ) return FT_VCF_GZ;
+    if ( !strcasecmp(".vcf",fname+len-4) ) return FT_VCF;
+    if ( !strcasecmp(".bcf",fname+len-4) ) return FT_BCF_GZ;
+    if ( !strcmp("-",fname) ) return FT_STDIN;
+
+    hFILE *f = hopen(fname, "r");
+    if (f == NULL) return 0;
+
+    htsFormat fmt;
+    if (hts_detect_format(f, &fmt) < 0) { hclose_abruptly(f); return 0; }
+    if (hclose(f) < 0) return 0;
+
+    switch (fmt.format) {
+    case vcf: return (fmt.compression == no_compression)? FT_VCF : FT_VCF_GZ;
+    case bcf: return (fmt.compression == no_compression)? FT_BCF : FT_BCF_GZ;
+    default:  return 0;
+    }
 }
 
 /****************
@@ -822,6 +959,7 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped)
 {
     int bin;
+    if (tid<0) beg = -1, end = 0;
     if (tid >= idx->m) { // enlarge the index
         int32_t oldm = idx->m;
         idx->m = idx->m? idx->m<<1 : 2;
@@ -1449,8 +1587,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 static char *test_and_fetch(const char *fn)
 {
     FILE *fp;
-    // FIXME Use is_remote_scheme() helper that's true for ftp/http/irods/etc
-    if (strstr(fn, "ftp://") == fn || strstr(fn, "http://") == fn) {
+    if (hisremote(fn)) {
         const int buf_size = 1 * 1024 * 1024;
         hFILE *fp_remote;
         uint8_t *buf;

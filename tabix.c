@@ -42,7 +42,7 @@ DEALINGS IN THE SOFTWARE.  */
 typedef struct
 {
     char *regions_fname, *targets_fname;
-    int print_header, header_only, file_info;
+    int print_header, header_only;
 }
 args_t;
 
@@ -258,25 +258,6 @@ static int query_chroms(char *fname)
         error("BAM: todo\n");
     return 0;
 }
-static int file_info(char *fname)
-{
-    htsFile *fp = hts_open(fname,"r");
-    const htsFormat *fmt = hts_get_format(fp);
-    printf("%s: ", fname);
-    if ( fmt->format==vcf ) printf("VCF");
-    else if ( fmt->format==bcf ) printf("BCF");
-    else if ( fmt->format==bam ) printf("BAM");
-    else if ( fmt->format==cram ) printf("CRAM");
-    else printf("Unknown"); // todo: SAM etc.
-    printf("; ");
-    if ( fmt->compression==bgzf ) printf("BGZF compressed");
-    else if ( fmt->compression==gzip ) printf("gzip compressed");
-    else if ( fmt->compression==no_compression ) printf("uncompressed");
-    else printf("unknown");
-    printf("\n");
-    hts_close(fp);
-    return 0;
-}
 
 int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *conf)
 {
@@ -372,7 +353,6 @@ static int usage(void)
     fprintf(stderr, "Querying and other options:\n");
     fprintf(stderr, "   -h, --print-header         print also the header lines\n");
     fprintf(stderr, "   -H, --only-header          print only the header lines\n");
-    fprintf(stderr, "   -i, --file-info            print file format info\n");
     fprintf(stderr, "   -l, --list-chroms          list chromosome names\n");
     fprintf(stderr, "   -r, --reheader FILE        replace the header with the content of FILE\n");
     fprintf(stderr, "   -R, --regions FILE         restrict to regions listed in the file\n");
@@ -394,7 +374,6 @@ int main(int argc, char *argv[])
         {"help",0,0,'h'},
         {"regions",1,0,'R'},
         {"targets",1,0,'T'},
-        {"file-info",0,0,'i'},
         {"csi",0,0,'C'},
         {"zero-based",0,0,'0'},
         {"print-header",0,0,'h'},
@@ -411,14 +390,13 @@ int main(int argc, char *argv[])
         {0,0,0,0}
     };
 
-    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:iCR:T:", loptions,NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:", loptions,NULL)) >= 0)
     {
         switch (c)
         {
             case 'R': args.regions_fname = optarg; break;
             case 'T': args.targets_fname = optarg; break;
             case 'C': do_csi = 1; break;
-            case 'i': args.file_info = 1; break;
             case 'r': reheader = optarg; break;
             case 'h': args.print_header = 1; break;
             case 'H': args.header_only = 1; break;
@@ -457,9 +435,6 @@ int main(int argc, char *argv[])
             regs = parse_regions(args.regions_fname, argv+optind+1, argc-optind-1, &nregs);
         return query_regions(&args, argv[optind], regs, nregs);
     }
-
-    if ( argc > optind+1 || args.file_info )
-        return file_info(argv[optind]);
 
     char *fname = argv[optind];
     int ftype = file_type(fname);
