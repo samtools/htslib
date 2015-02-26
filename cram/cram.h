@@ -39,10 +39,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * although these should not be included directly (use this file instead).
  */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef _CRAM_H_
 #define _CRAM_H_
 
@@ -56,8 +52,4 @@ extern "C" {
 #include "cram_codecs.h"
 #include "cram_index.h"
 
-#endif
-
-#ifdef __cplusplus
-}
 #endif

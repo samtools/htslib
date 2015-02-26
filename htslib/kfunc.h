@@ -27,6 +27,10 @@
 #ifndef HTSLIB_KFUNC_H
 #define HTSLIB_KFUNC_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Log gamma function
  * \log{\Gamma(z)}
  * AS245, 2nd algorithm, http://lib.stat.cmu.edu/apstat/245
@@ -71,5 +75,9 @@ double kf_betai(double a, double b, double x);
  *    n_1  n_2  | n
  */
 double kt_fisher_exact(int n11, int n12, int n21, int n22, double *_left, double *_right, double *two);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

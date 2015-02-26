@@ -28,11 +28,11 @@ DEALINGS IN THE SOFTWARE.  */
 #include "hts.h"
 #include "vcf.h"
 
-typedef struct _bcf_sweep_t bcf_sweep_t;
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct _bcf_sweep_t bcf_sweep_t;
 
 bcf_sweep_t *bcf_sweep_init(const char *fname);
 void bcf_sweep_destroy(bcf_sweep_t *sw);

@@ -54,6 +54,10 @@
 #include <stdio.h>
 #include <inttypes.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct _regidx_t regidx_t;
 typedef struct
 {
@@ -72,10 +76,6 @@ regitr_t;
 #define REGITR_END(itr)   (itr).reg[(itr).i].end
 #define REGITR_PAYLOAD(itr,type_t) ((type_t*)(itr).payload)[(itr).i]
 #define REGITR_OVERLAP(itr,from,to) (itr.i < itr.n && REGITR_START(itr)<=to && REGITR_END(itr)>=from )
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /*
  *  regidx_parse_f - Function to parse one input line, such as regidx_parse_bed

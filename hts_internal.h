@@ -25,6 +25,14 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/hts.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 char *hts_idx_getfn(const char *fn, const char *ext);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

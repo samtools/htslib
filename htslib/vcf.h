@@ -38,6 +38,9 @@ DEALINGS IN THE SOFTWARE.  */
 #include "hts.h"
 #include "kstring.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*****************
  * Header struct *
@@ -210,10 +213,6 @@ typedef struct {
 /*******
  * API *
  *******/
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
     /***********************************************************************
      *  BCF and VCF I/O

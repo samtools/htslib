@@ -105,10 +105,6 @@ static inline int bcf_acgt2int(char c)
 
 #define bcf_int2acgt(i) "ACGT"[i]
 
-#ifdef __cplusplus
-}
-#endif
-
 /**
   * bcf_ij2G() - common task: allele indexes to Number=G index (diploid)
   * @i,j:  allele indexes, 0-based, i<=j
@@ -116,5 +112,9 @@ static inline int bcf_acgt2int(char c)
   * Returns index to the Number=G diploid array
   */
 #define bcf_ij2G(i, j) ((j)*((j)+1)/2+(i))
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

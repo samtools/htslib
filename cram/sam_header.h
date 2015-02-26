@@ -47,10 +47,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _SAM_HDR_H_
 #define _SAM_HDR_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifdef HAVE_CONFIG_H
 #include "io_lib_config.h"
 #endif
@@ -62,6 +58,10 @@ extern "C" {
 
 #include "htslib/khash.h"
 #include "htslib/kstring.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // For structure assignment. Eg kstring_t s = KS_INITIALIZER;
 #define KS_INITIALIZER {0,0,0}

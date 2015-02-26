@@ -31,10 +31,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _CRAM_STRUCTS_H_
 #define _CRAM_STRUCTS_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /*
  * Defines in-memory structs for the basic file-format objects in the
  * CRAM format.
@@ -55,6 +51,10 @@ extern "C" {
 #include "cram/thread_pool.h"
 #include "cram/string_alloc.h"
 #include "htslib/khash.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Generic hash-map integer -> integer
 KHASH_MAP_INIT_INT(m_i2i, int)

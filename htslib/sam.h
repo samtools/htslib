@@ -29,6 +29,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 #include "hts.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**********************
  *** SAM/BAM header ***
  **********************/
@@ -245,10 +249,6 @@ typedef struct {
  *** Exported functions ***
  **************************/
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
     /***************
      *** BAM I/O ***
      ***************/
@@ -342,10 +342,6 @@ extern "C" {
     void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, uint8_t *data);
     int bam_aux_del(bam1_t *b, uint8_t *s);
 
-#ifdef __cplusplus
-}
-#endif
-
 /**************************
  *** Pileup and Mpileup ***
  **************************/
@@ -385,10 +381,6 @@ typedef struct __bam_plp_t *bam_plp_t;
 struct __bam_mplp_t;
 typedef struct __bam_mplp_t *bam_mplp_t;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
     /**
      *  bam_plp_init() - sets an iterator over multiple
      *  @func:      see mplp_func in bam_plcmd.c in samtools for an example. Expected return
@@ -417,10 +409,10 @@ extern "C" {
     void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
     int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
 
+#endif // ~!defined(BAM_NO_PILEUP)
+
 #ifdef __cplusplus
 }
 #endif
-
-#endif // ~!defined(BAM_NO_PILEUP)
 
 #endif

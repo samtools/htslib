@@ -42,14 +42,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _CRAM_IO_H_
 #define _CRAM_IO_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define ITF8_MACROS
 
 #include <stdint.h>
 #include <cram/misc.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**@{ ----------------------------------------------------------------------
  * ITF8 encoding and decoding.

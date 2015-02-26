@@ -29,6 +29,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;
 #define HTS_BGZF_TYPEDEF
@@ -185,10 +189,6 @@ Returns 0/1/2/3 for 1/2/4/8 (i.e., A/C/G/T), or 4 otherwise (0 or ambiguous).
 */
 extern const int seq_nt16_int[];
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /*!
   @abstract  Get the htslib version number
   @return    For released versions, a string like "N.N[.N]"; or git describe
@@ -296,10 +296,6 @@ int hts_set_threads(htsFile *fp, int n);
 */
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
 
-#ifdef __cplusplus
-}
-#endif
-
 /************
  * Indexing *
  ************/
@@ -346,10 +342,6 @@ typedef struct {
     } bins;
 } hts_itr_t;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
     #define hts_bin_first(l) (((1<<(((l)<<1) + (l))) - 1) / 7)
     #define hts_bin_parent(l) (((l) - 1) >> 3)
 
@@ -392,11 +384,6 @@ extern "C" {
     #define FT_BCF_GZ (FT_GZ|FT_BCF)
     #define FT_STDIN  (1<<3)
     int hts_file_type(const char *fname);
-
-
-#ifdef __cplusplus
-}
-#endif
 
 static inline int hts_reg2bin(int64_t beg, int64_t end, int min_shift, int n_lvls)
 {
@@ -452,5 +439,9 @@ static inline void *ed_swap_8p(void *x)
     *(uint64_t*)x = ed_swap_8(*(uint64_t*)x);
     return x;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

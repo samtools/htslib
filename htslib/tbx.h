@@ -28,6 +28,10 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "hts.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define TBX_MAX_SHIFT 31
 
 #define TBX_GENERIC 0
@@ -48,10 +52,6 @@ typedef struct {
 } tbx_t;
 
 extern tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sam, tbx_conf_vcf;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
     #define tbx_itr_destroy(iter) hts_itr_destroy(iter)
     #define tbx_itr_queryi(tbx, tid, beg, end) hts_itr_query((tbx)->idx, (tid), (beg), (end), tbx_readrec)

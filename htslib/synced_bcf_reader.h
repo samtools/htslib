@@ -56,6 +56,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include "vcf.h"
 #include "tbx.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // How should be treated sites with the same position but different alleles
 #define COLLAPSE_NONE   0   // require the exact same set of alleles in all files
 #define COLLAPSE_SNPS   1   // allow different alleles, as long as they all are SNPs
@@ -144,10 +148,6 @@ typedef struct
     int n_smpl;
 }
 bcf_srs_t;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /** Init bcf_srs_t struct */
 bcf_srs_t *bcf_sr_init(void);

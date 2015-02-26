@@ -30,6 +30,10 @@
 
 #include "hts_defs.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*!
   @header
 
@@ -49,10 +53,6 @@
 
 struct __faidx_t;
 typedef struct __faidx_t faidx_t;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
     /*!
       @abstract   Build index for a FASTA or bgzip-compressed FASTA file.

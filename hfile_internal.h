@@ -27,6 +27,10 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/hfile.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct hFILE_backend {
     /* As per read(2), returning the number of bytes read (possibly 0) or
        negative (and setting errno) on errors.  Front-end code will call this
@@ -72,5 +76,9 @@ hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity);
    in the event opening the stream subsequently fails.  (This is safe to use
    even if fp is NULL.  This takes care to preserve errno.)  */
 void hfile_destroy(hFILE *fp);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
