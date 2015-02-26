@@ -39,9 +39,17 @@ mandir       = @mandir@
 CC     = @CC@
 RANLIB = @RANLIB@
 
+CPPFLAGS = @CPPFLAGS@
 CFLAGS   = @CFLAGS@
 LDFLAGS  = @LDFLAGS@
 LDLIBS   = @LIBS@
+
+# When rerunning configure, if the globals above are changed you will want
+# to 'make clean' before rerunning make.  For rerunning configure with only
+# more-localised option changes, these dependencies will ensure objects that
+# depend on such options are remade as appropriate.
+
+hfile.o hfile.pico hfile_irods.o hfile_irods.pico: config.mk
 
 
 # ifeq/.../endif, +=, and target-specific variables are GNU Make-specific.

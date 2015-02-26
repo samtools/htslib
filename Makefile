@@ -26,7 +26,7 @@ CC     = gcc
 AR     = ar
 RANLIB = ranlib
 
-CPPFLAGS = -I.
+CPPFLAGS =
 # TODO: probably update cram code to make it compile cleanly with -Wc++-compat
 CFLAGS   = -g -Wall -O2
 EXTRA_CFLAGS_PIC = -fpic
@@ -140,10 +140,10 @@ print-version:
 .SUFFIXES: .c .o .pico
 
 .c.o:
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -I. $(CPPFLAGS) -c -o $@ $<
 
 .c.pico:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
+	$(CC) $(CFLAGS) -I. $(CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
 
 
 LIBHTS_OBJS = \
