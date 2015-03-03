@@ -161,6 +161,15 @@ typedef struct {
     int prev_id;      // -1 if none
 } SAM_PG;
 
+/*! Sort order parsed from @HD line */
+enum sam_sort_order {
+    ORDER_UNKNOWN  =-1,
+    ORDER_UNSORTED = 0,
+    ORDER_NAME     = 1,
+    ORDER_COORD    = 2,
+  //ORDER_COLLATE  = 3 // maybe one day!
+};
+
 KHASH_MAP_INIT_INT(sam_hdr, SAM_hdr_type*)
 KHASH_MAP_INIT_STR(m_s2i, int)
 
@@ -200,6 +209,9 @@ typedef struct {
     SAM_PG *pg;		      //!< Array of parsed \@PG lines
     khash_t(m_s2i) *pg_hash;  //!< Maps PG ID field to pg[] index
     int *pg_end;              //!< \@PG chain termination IDs
+
+    // @HD data
+    enum sam_sort_order sort_order; //!< @HD SO: field
 
     // @cond internal
     char ID_buf[1024];  // temporary buffer
@@ -373,6 +385,9 @@ SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
  *        -1 on failure
  */
 int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...);
+
+/*! Returns the sort order from the @HD SO: field */
+enum sam_sort_order sam_hdr_sort_order(SAM_hdr *hdr);
 
 /*! Reconstructs the kstring from the header hash table.
  * @return

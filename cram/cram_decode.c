@@ -2062,6 +2062,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    return -1;
     }
 
+    int last_ref_id = -9; // Arbitrary -ve marker for not-yet-set
     for (rec = 0; rec < s->hdr->num_records; rec++) {
 	cram_record *cr = &s->crecs[rec];
 
@@ -2109,12 +2110,18 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		                ->decode(s, c->comp_hdr->codecs[DS_RI], blk,
 					 (char *)&cr->ref_id, &out_sz);
 		if ((fd->required_fields & (SAM_SEQ|SAM_TLEN))
-		    && cr->ref_id >= 0) {
+		    && cr->ref_id >= 0
+		    && cr->ref_id != last_ref_id) {
 		    if (!fd->no_ref) {
 			if (!refs[cr->ref_id])
 			    refs[cr->ref_id] = cram_get_ref(fd, cr->ref_id,
 							    1, 0);
 			s->ref = refs[cr->ref_id];
+
+			if (!fd->unsorted && last_ref_id >= 0 && refs[last_ref_id]) {
+			    cram_ref_decr(fd->refs, last_ref_id);
+			    refs[last_ref_id] = NULL;
+			}
 		    }
 		    s->ref_start = 1;
 		    pthread_mutex_lock(&fd->ref_lock);
@@ -2122,6 +2129,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		    s->ref_end = fd->refs->ref_id[cr->ref_id]->length;
 		    pthread_mutex_unlock(&fd->refs->lock);
 		    pthread_mutex_unlock(&fd->ref_lock);
+
+		    last_ref_id = cr->ref_id;
 		}
 	    } else {
 		cr->ref_id = 0;
@@ -2572,7 +2581,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	c->comp_hdr = cram_decode_compression_header(fd, c->comp_hdr_block);
 	if (!c->comp_hdr)
 	    return NULL;
-	if (!c->comp_hdr->AP_delta) {
+	if (!c->comp_hdr->AP_delta &&
+	    sam_hdr_sort_order(fd->header) != ORDER_COORD) {
 	    pthread_mutex_lock(&fd->ref_lock);
 	    fd->unsorted = 1;
 	    pthread_mutex_unlock(&fd->ref_lock);
@@ -2656,7 +2666,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		if (!c->comp_hdr)
 		    return NULL;
 
-		if (!c->comp_hdr->AP_delta) {
+		if (!c->comp_hdr->AP_delta &&
+		    sam_hdr_sort_order(fd->header) != ORDER_COORD) {
 		    pthread_mutex_lock(&fd->ref_lock);
 		    fd->unsorted = 1;
 		    pthread_mutex_unlock(&fd->ref_lock);
