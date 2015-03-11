@@ -109,9 +109,9 @@ typedef struct {
  * This processes one or more 64-byte data blocks, but does NOT update
  * the bit counters.  There are no alignment requirements.
  */
-static void *body(hts_md5_ctx *ctx, void *data, unsigned long size)
+static const void *body(hts_md5_ctx *ctx, const void *data, unsigned long size)
 {
-	unsigned char *ptr;
+	const unsigned char *ptr;
 	hts_md5_u32plus a, b, c, d;
 	hts_md5_u32plus saved_a, saved_b, saved_c, saved_d;
  
@@ -237,7 +237,7 @@ hts_md5_context *hts_md5_init(void)
 	return (hts_md5_context *)ctx;
 }
  
-void hts_md5_update(hts_md5_context *ctx_, void *data, unsigned long size)
+void hts_md5_update(hts_md5_context *ctx_, const void *data, unsigned long size)
 {
 	hts_md5_u32plus saved_lo;
 	unsigned long used, free;
@@ -368,7 +368,7 @@ void hts_md5_destroy(hts_md5_context *ctx)
     free(ctx);
 }
 
-void hts_md5_hex(unsigned char *digest, char *hex) {
+void hts_md5_hex(char *hex, const unsigned char *digest) {
     int i;
     for (i = 0; i < 16; i++) {
         hex[i*2+0] = "0123456789abcdef"[(digest[i]>>4)&0xf];

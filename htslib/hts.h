@@ -418,7 +418,7 @@ extern "C" {
     hts_md5_context *hts_md5_init(void);
 
     /*! @abstract Updates the context with the MD5 of the data. */
-    void hts_md5_update(hts_md5_context *ctx, void *data, unsigned long size);
+    void hts_md5_update(hts_md5_context *ctx, const void *data, unsigned long size);
 
     /*! @abstract Computes the final 128-bit MD5 hash from the given context */
     void hts_md5_final(unsigned char *digest, hts_md5_context *ctx);
@@ -431,7 +431,7 @@ extern "C" {
     /*! @abstract Converts a 128-bit MD5 hash into a 33-byte nul-termninated
      *            hex string.
      */
-    void hts_md5_hex(unsigned char *digest, char *hex);
+    void hts_md5_hex(char *hex, const unsigned char *digest);
 
     /*! @abstract Deallocates any memory allocated by hts_md5_init. */
     void hts_md5_destroy(hts_md5_context *ctx);

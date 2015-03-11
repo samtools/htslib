@@ -3495,7 +3495,7 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 		hts_md5_destroy(md5);
 		cram_ref_decr(fd->refs, i);
 
-		hts_md5_hex(buf, buf2);
+		hts_md5_hex(buf2, buf);
 		if (sam_hdr_update(hdr, ty, "M5", buf2, NULL))
 		    return -1;
 	    }
