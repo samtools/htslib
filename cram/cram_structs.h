@@ -50,6 +50,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/thread_pool.h"
 #include "cram/string_alloc.h"
+#include "cram/mFILE.h"
 #include "htslib/khash.h"
 
 #ifdef __cplusplus
@@ -585,6 +586,7 @@ typedef struct ref_entry {
     int line_length;
     int64_t count;	   // for shared references so we know to dealloc seq
     char *seq;
+    mFILE *mf;
 } ref_entry;
 
 KHASH_MAP_INIT_STR(refs, ref_entry*)

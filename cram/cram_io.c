@@ -1462,6 +1462,19 @@ int paranoid_fclose(FILE *fp) {
  * track the number of callers interested in any specific reference.
  */
 
+/*
+ * Frees/unmaps a reference sequence and associated file handles.
+ */
+static void ref_entry_free_seq(ref_entry *e) {
+    if (e->mf)
+	mfclose(e->mf);
+    if (e->seq && !e->mf)
+	free(e->seq);
+
+    e->seq = NULL;
+    e->mf = NULL;
+}
+
 void refs_free(refs_t *r) {
     RP("refs_free()\n");
 
@@ -1484,8 +1497,7 @@ void refs_free(refs_t *r) {
 		continue;
 	    if (!(e = kh_val(r->h_meta, k)))
 		continue;
-	    if (e->seq)
-		free(e->seq);
+	    ref_entry_free_seq(e);
 	    free(e);
 	}
 
@@ -1660,6 +1672,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 
 	e->count = 0;
 	e->seq = NULL;
+	e->mf = NULL;
 
 	k = kh_put(refs, r->h_meta, e->name, &n);
 	if (-1 == n)  {
@@ -2027,6 +2040,13 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if ((mf = open_path_mfile(tag->str+3, ref_path, NULL))) {
 	size_t sz;
 	r->seq = mfsteal(mf, &sz);
+	if (r->seq) {
+	    r->mf = NULL;
+	} else {
+	    // keep mf around as we couldn't detach
+	    r->seq = mf->data;
+	    r->mf = mf;
+	}
 	r->length = sz;
     } else {
 	refs_t *refs;
@@ -2141,8 +2161,7 @@ static void cram_ref_decr_locked(refs_t *r, int id) {
 		r->ref_id[r->last_id]->seq) {
 		RP("%d FREE REF %d (%p)\n", gettid(),
 		   r->last_id, r->ref_id[r->last_id]->seq);
-		free(r->ref_id[r->last_id]->seq);
-		r->ref_id[r->last_id]->seq = NULL;
+		ref_entry_free_seq(r->ref_id[r->last_id]);
 		r->ref_id[r->last_id]->length = 0;
 	    }
 	}
@@ -2257,10 +2276,8 @@ ref_entry *cram_ref_load(refs_t *r, int id) {
 	assert(r->last->count > 0);
 	if (--r->last->count <= 0) {
 	    RP("%d FREE REF %d (%p)\n", gettid(), id, r->ref_id[id]->seq);
-	    if (r->last->seq) {
-		free(r->last->seq);
-		r->last->seq = NULL;
-	    }
+	    if (r->last->seq)
+		ref_entry_free_seq(r->last);
 	}
     }
 
@@ -2284,6 +2301,7 @@ ref_entry *cram_ref_load(refs_t *r, int id) {
 
     RP("%d INC REF %d, %d\n", gettid(), id, (int)(e->count+1));
     e->seq = seq;
+    e->mf = NULL;
     e->count++;
 
     /*

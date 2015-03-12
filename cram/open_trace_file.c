@@ -259,7 +259,7 @@ static mFILE *find_file_dir(char *file, char *dirname) {
     }
 
     if (is_file(path)) {
-	return mfopen(path, "rb");
+	return mfopen(path, "rbm");
     }
 
     return NULL;
