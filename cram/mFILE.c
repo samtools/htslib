@@ -30,7 +30,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #ifdef HAVE_CONFIG_H
-#include "io_lib_config.h"
+#include "htslib_config.h"
+#else
+// Guess-work
+#define HAVE_MMAP
 #endif
 
 #include <stdio.h>
@@ -47,7 +50,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/mFILE.h"
 #include "cram/vlen.h"
 
+#ifdef HAVE_MMAP
 #include <sys/mman.h>
+#endif
 
 /*
  * This file contains memory-based versions of the most commonly used

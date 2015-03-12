@@ -25,6 +25,7 @@
 dnl Process this file with autoconf to produce a configure script
 AC_INIT([HTSlib], m4_esyscmd_s([make print-version]),
         [samtools-help@lists.sourceforge.net], [], [http://www.htslib.org/])
+AC_CONFIG_HEADERS(htslib_config.h)
 AC_PREREQ(2.63)  dnl This version introduced 4-argument AC_CHECK_HEADER
 AC_CONFIG_SRCDIR(hts.c)
 
@@ -88,6 +89,10 @@ else
 fi
 AC_SUBST([irods])
 AC_SUBST([define_IRODS_HOME])
+
+dnl Mmap is used within CRAM reference caching.
+dnl FIXME: get autoconf working properly so this works.
+AC_FUNC_MMAP
 
 AC_CONFIG_FILES(config.mk)
 AC_OUTPUT

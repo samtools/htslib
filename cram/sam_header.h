@@ -48,7 +48,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define _SAM_HDR_H_
 
 #ifdef HAVE_CONFIG_H
-#include "io_lib_config.h"
+#include "htslib_config.h"
 #endif
 
 #include <stdarg.h>
