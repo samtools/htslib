@@ -407,7 +407,8 @@ static hts_idx_t *bam_index(BGZF *fp, int min_shift)
     idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp), min_shift, n_lvls);
     bam_hdr_destroy(h);
     b = bam_init1();
-    while (bam_read1(fp, b) >= 0) {
+    int r;
+    while ((r = bam_read1(fp, b)) >= 0) {
         int l, ret;
         l = bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
         if (l == 0) l = 1; // no zero-length records
@@ -419,6 +420,12 @@ static hts_idx_t *bam_index(BGZF *fp, int min_shift)
             hts_idx_destroy(idx);
             return NULL;
         }
+    }
+    if (r < -1) {
+      fprintf(stderr, "[bam_index] corrupted BAM file.\n");
+      bam_destroy1(b);
+      hts_idx_destroy(idx);
+      return NULL;
     }
     hts_idx_finish(idx, bgzf_tell(fp));
     bam_destroy1(b);
