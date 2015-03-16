@@ -85,6 +85,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/vcf.c \
 	$(HTSDIR)/vcf_sweep.c \
 	$(HTSDIR)/vcfutils.c \
+	$(HTSDIR)/md5.c \
 	$(HTSDIR)/cram/cram.h \
 	$(HTSDIR)/cram/cram_codecs.c \
 	$(HTSDIR)/cram/cram_codecs.h \
@@ -104,8 +105,6 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/files.c \
 	$(HTSDIR)/cram/mFILE.c \
 	$(HTSDIR)/cram/mFILE.h \
-	$(HTSDIR)/cram/md5.c \
-	$(HTSDIR)/cram/md5.h \
 	$(HTSDIR)/cram/misc.h \
 	$(HTSDIR)/cram/open_trace_file.c \
 	$(HTSDIR)/cram/open_trace_file.h \

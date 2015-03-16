@@ -1,4 +1,14 @@
 /*
+ * Trivial amendments by James Bonfield <jkb@sanger.ac.uk> to provide an
+ * HTSlib interface. 2015.
+ *
+ * Externally our API uses an opaque hts_md5_context structure.
+ *
+ * Internally this gets cast to either hts_md5_ctx or the OpenSSL MD5_CTX
+ * structures.
+ */
+
+/*
  * This is an OpenSSL-compatible implementation of the RSA Data Security, Inc.
  * MD5 Message-Digest Algorithm (RFC 1321).
  *
@@ -35,12 +45,22 @@
  * compile-time configuration.
  */
  
+#include <stdlib.h>
+#include "htslib/hts.h"
+
 #ifndef HAVE_OPENSSL
- 
 #include <string.h>
  
-#include "md5.h"
+/* Any 32-bit or wider unsigned integer data type will do */
+typedef unsigned int hts_md5_u32plus;
  
+typedef struct {
+        hts_md5_u32plus lo, hi;
+        hts_md5_u32plus a, b, c, d;
+        unsigned char buffer[64];
+        hts_md5_u32plus block[16];
+} hts_md5_ctx;
+
 /*
  * The basic MD5 functions.
  *
@@ -71,16 +91,16 @@
  */
 #if defined(__i386__) || defined(__x86_64__) || defined(__vax__)
 #define SET(n) \
-	(*(MD5_u32plus *)&ptr[(n) * 4])
+	(*(hts_md5_u32plus *)&ptr[(n) * 4])
 #define GET(n) \
 	SET(n)
 #else
 #define SET(n) \
 	(ctx->block[(n)] = \
-	(MD5_u32plus)ptr[(n) * 4] | \
-	((MD5_u32plus)ptr[(n) * 4 + 1] << 8) | \
-	((MD5_u32plus)ptr[(n) * 4 + 2] << 16) | \
-	((MD5_u32plus)ptr[(n) * 4 + 3] << 24))
+	(hts_md5_u32plus)ptr[(n) * 4] | \
+	((hts_md5_u32plus)ptr[(n) * 4 + 1] << 8) | \
+	((hts_md5_u32plus)ptr[(n) * 4 + 2] << 16) | \
+	((hts_md5_u32plus)ptr[(n) * 4 + 3] << 24))
 #define GET(n) \
 	(ctx->block[(n)])
 #endif
@@ -89,11 +109,11 @@
  * This processes one or more 64-byte data blocks, but does NOT update
  * the bit counters.  There are no alignment requirements.
  */
-static void *body(MD5_CTX *ctx, void *data, unsigned long size)
+static const void *body(hts_md5_ctx *ctx, const void *data, unsigned long size)
 {
-	unsigned char *ptr;
-	MD5_u32plus a, b, c, d;
-	MD5_u32plus saved_a, saved_b, saved_c, saved_d;
+	const unsigned char *ptr;
+	hts_md5_u32plus a, b, c, d;
+	hts_md5_u32plus saved_a, saved_b, saved_c, saved_d;
  
 	ptr = data;
  
@@ -196,8 +216,8 @@ static void *body(MD5_CTX *ctx, void *data, unsigned long size)
 	return ptr;
 }
  
-void MD5_Init(MD5_CTX *ctx)
-{
+void hts_md5_reset(hts_md5_context *ctx_) {
+	hts_md5_ctx *ctx = (hts_md5_ctx *)ctx_;
 	ctx->a = 0x67452301;
 	ctx->b = 0xefcdab89;
 	ctx->c = 0x98badcfe;
@@ -206,11 +226,22 @@ void MD5_Init(MD5_CTX *ctx)
 	ctx->lo = 0;
 	ctx->hi = 0;
 }
- 
-void MD5_Update(MD5_CTX *ctx, void *data, unsigned long size)
+
+hts_md5_context *hts_md5_init(void)
 {
-	MD5_u32plus saved_lo;
+	hts_md5_ctx *ctx = malloc(sizeof(*ctx));
+	if (!ctx)
+		return NULL;
+
+	hts_md5_reset((hts_md5_context *)ctx);
+	return (hts_md5_context *)ctx;
+}
+ 
+void hts_md5_update(hts_md5_context *ctx_, const void *data, unsigned long size)
+{
+	hts_md5_u32plus saved_lo;
 	unsigned long used, free;
+	hts_md5_ctx *ctx = (hts_md5_ctx *)ctx_;
  
 	saved_lo = ctx->lo;
 	if ((ctx->lo = (saved_lo + size) & 0x1fffffff) < saved_lo)
@@ -241,9 +272,10 @@ void MD5_Update(MD5_CTX *ctx, void *data, unsigned long size)
 	memcpy(ctx->buffer, data, size);
 }
  
-void MD5_Final(unsigned char *result, MD5_CTX *ctx)
+void hts_md5_final(unsigned char *result, hts_md5_context *ctx_)
 {
 	unsigned long used, free;
+	hts_md5_ctx *ctx = (hts_md5_ctx *)ctx_;
  
 	used = ctx->lo & 0x3f;
  
@@ -291,5 +323,56 @@ void MD5_Final(unsigned char *result, MD5_CTX *ctx)
  
 	memset(ctx, 0, sizeof(*ctx));
 }
- 
+
+#else
+
+#include <openssl/md5.h>
+#include <assert.h>
+
+/*
+ * Wrappers around the OpenSSL libcrypto.so MD5 implementation.
+ *
+ * These are here to ensure they end up in the symbol table of the
+ * library regardless of the static inline in the headers.
+ */
+hts_md5_context *hts_md5_init(void)
+{
+    MD5_CTX *ctx = malloc(sizeof(*ctx));
+    if (!ctx)
+	return NULL;
+
+    MD5_Init(ctx);
+
+    return (hts_md5_context *)ctx;
+}
+
+void hts_md5_reset(hts_md5_context *ctx) {
+    MD5_Init((MD5_CTX *)ctx);
+}
+
+void hts_md5_update(hts_md5_context *ctx, void *data, unsigned long size) {
+    MD5_Update((MD5_CTX *)ctx, data, size);
+}
+
+void hts_md5_final(unsigned char *result, hts_md5_context *ctx) {
+    MD5_Final(result, (MD5_CTX *)ctx);
+}
+
 #endif
+
+void hts_md5_destroy(hts_md5_context *ctx)
+{
+    if (!ctx)
+        return;
+
+    free(ctx);
+}
+
+void hts_md5_hex(char *hex, const unsigned char *digest) {
+    int i;
+    for (i = 0; i < 16; i++) {
+        hex[i*2+0] = "0123456789abcdef"[(digest[i]>>4)&0xf];
+        hex[i*2+1] = "0123456789abcdef"[digest[i]&0xf];
+    }
+    hex[32] = 0;
+}
