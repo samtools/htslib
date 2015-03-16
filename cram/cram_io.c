@@ -68,7 +68,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/cram.h"
 #include "cram/os.h"
-#include "cram/md5.h"
+#include "htslib/hts.h"
 #include "cram/open_trace_file.h"
 #include "cram/rANS_static.h"
 
@@ -3521,9 +3521,10 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 		return -1;
 
 	    if (!sam_hdr_find_key(hdr, ty, "M5", NULL)) {
-		char unsigned buf[16], buf2[33];
-		int j, rlen;
-		MD5_CTX md5;
+		char unsigned buf[16];
+		char buf2[33];
+		int rlen;
+		hts_md5_context *md5;
 
 		if (!fd->refs ||
 		    !fd->refs->ref_id ||
@@ -3531,19 +3532,17 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 		    return -1;
 		}
 		rlen = fd->refs->ref_id[i]->length;
-		MD5_Init(&md5);
+		if (!(md5 = hts_md5_init()))
+		    return -1;
 		ref = cram_get_ref(fd, i, 1, rlen);
 		if (NULL == ref) return -1;
 		rlen = fd->refs->ref_id[i]->length; /* In case it just loaded */
-		MD5_Update(&md5, ref, rlen);
-		MD5_Final(buf, &md5);
+		hts_md5_update(md5, ref, rlen);
+		hts_md5_final(buf, md5);
+		hts_md5_destroy(md5);
 		cram_ref_decr(fd->refs, i);
 
-		for (j = 0; j < 16; j++) {
-		    buf2[j*2+0] = "0123456789abcdef"[buf[j]>>4];
-		    buf2[j*2+1] = "0123456789abcdef"[buf[j]&15];
-		}
-		buf2[32] = 0;
+		hts_md5_hex(buf2, buf);
 		if (sam_hdr_update(hdr, ty, "M5", buf2, NULL))
 		    return -1;
 	    }

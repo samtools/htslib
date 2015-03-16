@@ -155,6 +155,7 @@ LIBHTS_OBJS = \
 	hfile.o \
 	hfile_net.o \
 	hts.o \
+	md5.o \
 	regidx.o \
 	sam.o \
 	synced_bcf_reader.o \
@@ -171,7 +172,6 @@ LIBHTS_OBJS = \
 	cram/cram_stats.o \
 	cram/files.o \
 	cram/mFILE.o \
-	cram/md5.o \
 	cram/open_trace_file.o \
 	cram/pooled_alloc.o \
 	cram/rANS_static.o \
@@ -243,17 +243,17 @@ vcf_sweep.o vcf_sweep.pico: vcf_sweep.c $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
 vcfutils.o vcfutils.pico: vcfutils.c $(htslib_vcfutils_h)
 kfunc.o kfunc.pico: kfunc.c $(htslib_kfunc_h)
 regidx.o regidx.pico: regidx.c $(htslib_hts_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_regidx_h)
+md5.o md5.pico: md5.c $(htslib_hts_h)
 
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c $(cram_h)
-cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c $(cram_h) cram/os.h cram/md5.h
-cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c $(cram_h) cram/os.h cram/md5.h
+cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c $(cram_h) cram/os.h $(htslib_hts_h)
+cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c $(cram_h) cram/os.h $(htslib_hts_h)
 cram/cram_index.o cram/cram_index.pico: cram/cram_index.c $(htslib_hfile_h) $(cram_h) cram/os.h cram/zfio.h $(hts_internal_h)
-cram/cram_io.o cram/cram_io.pico: cram/cram_io.c $(cram_h) cram/os.h cram/md5.h $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h)
+cram/cram_io.o cram/cram_io.pico: cram/cram_io.c $(cram_h) cram/os.h $(htslib_hts_h) $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h)
 cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c $(cram_h) $(htslib_sam_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c $(cram_h) cram/os.h
 cram/files.o cram/files.pico: cram/files.c $(cram_misc_h)
 cram/mFILE.o cram/mFILE.pico: cram/mFILE.c cram/os.h cram/mFILE.h cram/vlen.h
-cram/md5.o cram/md5.pico: cram/md5.c cram/md5.h
 cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h)
 cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c cram/pooled_alloc.h
 cram/rANS_static.o cram/rANS_static.pico: cram/rANS_static.c cram/rANS_static.h cram/rANS_byte.h
