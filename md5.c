@@ -4,8 +4,9 @@
  *
  * Externally our API uses an opaque hts_md5_context structure.
  *
- * Internally this gets cast to either hts_md5_ctx or the OpenSSL MD5_CTX
- * structures.
+ * Internally either this gets defined and used with the routines here
+ * or it remains incomplete and is cast to the OpenSSL MD5_CTX structure
+ * and used by routines from OpenSSL.
  */
 
 /*
@@ -55,12 +56,12 @@
 /* Any 32-bit or wider unsigned integer data type will do */
 typedef unsigned int hts_md5_u32plus;
 
-typedef struct {
+struct hts_md5_context {
 	hts_md5_u32plus lo, hi;
 	hts_md5_u32plus a, b, c, d;
 	unsigned char buffer[64];
 	hts_md5_u32plus block[16];
-} hts_md5_ctx;
+};
 
 /*
  * The basic MD5 functions.
@@ -110,7 +111,7 @@ typedef struct {
  * This processes one or more 64-byte data blocks, but does NOT update
  * the bit counters.  There are no alignment requirements.
  */
-static const void *body(hts_md5_ctx *ctx, const void *data, unsigned long size)
+static const void *body(hts_md5_context *ctx, const void *data, unsigned long size)
 {
 	const unsigned char *ptr;
 	hts_md5_u32plus a, b, c, d;
@@ -217,9 +218,8 @@ static const void *body(hts_md5_ctx *ctx, const void *data, unsigned long size)
 	return ptr;
 }
 
-void hts_md5_reset(hts_md5_context *ctx_)
+void hts_md5_reset(hts_md5_context *ctx)
 {
-	hts_md5_ctx *ctx = (hts_md5_ctx *)ctx_;
 	ctx->a = 0x67452301;
 	ctx->b = 0xefcdab89;
 	ctx->c = 0x98badcfe;
@@ -229,11 +229,10 @@ void hts_md5_reset(hts_md5_context *ctx_)
 	ctx->hi = 0;
 }
 
-void hts_md5_update(hts_md5_context *ctx_, const void *data, unsigned long size)
+void hts_md5_update(hts_md5_context *ctx, const void *data, unsigned long size)
 {
 	hts_md5_u32plus saved_lo;
 	unsigned long used, free;
-	hts_md5_ctx *ctx = (hts_md5_ctx *)ctx_;
 
 	saved_lo = ctx->lo;
 	if ((ctx->lo = (saved_lo + size) & 0x1fffffff) < saved_lo)
@@ -251,7 +250,7 @@ void hts_md5_update(hts_md5_context *ctx_, const void *data, unsigned long size)
 		}
 
 		memcpy(&ctx->buffer[used], data, free);
-		data = (unsigned char *)data + free;
+		data = (const unsigned char *)data + free;
 		size -= free;
 		body(ctx, ctx->buffer, 64);
 	}
@@ -264,10 +263,9 @@ void hts_md5_update(hts_md5_context *ctx_, const void *data, unsigned long size)
 	memcpy(ctx->buffer, data, size);
 }
 
-void hts_md5_final(unsigned char *result, hts_md5_context *ctx_)
+void hts_md5_final(unsigned char *result, hts_md5_context *ctx)
 {
 	unsigned long used, free;
-	hts_md5_ctx *ctx = (hts_md5_ctx *)ctx_;
 
 	used = ctx->lo & 0x3f;
 
@@ -319,12 +317,12 @@ void hts_md5_final(unsigned char *result, hts_md5_context *ctx_)
 
 hts_md5_context *hts_md5_init(void)
 {
-    hts_md5_ctx *ctx = malloc(sizeof(*ctx));
+    hts_md5_context *ctx = malloc(sizeof(*ctx));
     if (!ctx)
         return NULL;
 
-    hts_md5_reset((hts_md5_context *)ctx);
-    return (hts_md5_context *)ctx;
+    hts_md5_reset(ctx);
+    return ctx;
 }
 
 #else
@@ -354,7 +352,7 @@ void hts_md5_reset(hts_md5_context *ctx)
     MD5_Init((MD5_CTX *)ctx);
 }
 
-void hts_md5_update(hts_md5_context *ctx, void *data, unsigned long size)
+void hts_md5_update(hts_md5_context *ctx, const void *data, unsigned long size)
 {
     MD5_Update((MD5_CTX *)ctx, data, size);
 }
