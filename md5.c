@@ -72,7 +72,8 @@ struct hts_md5_context {
  */
 #define F(x, y, z)			((z) ^ ((x) & ((y) ^ (z))))
 #define G(x, y, z)			((y) ^ ((z) & ((x) ^ (y))))
-#define H(x, y, z)			((x) ^ (y) ^ (z))
+#define H(x, y, z)			(((x) ^ (y)) ^ (z))
+#define H2(x, y, z)			((x) ^ ((y) ^ (z)))
 #define I(x, y, z)			((y) ^ ((x) | ~(z)))
 
 /*
@@ -117,7 +118,7 @@ static const void *body(hts_md5_context *ctx, const void *data, unsigned long si
 	hts_md5_u32plus a, b, c, d;
 	hts_md5_u32plus saved_a, saved_b, saved_c, saved_d;
 
-	ptr = data;
+	ptr = (const unsigned char *)data;
 
 	a = ctx->a;
 	b = ctx->b;
@@ -168,21 +169,21 @@ static const void *body(hts_md5_context *ctx, const void *data, unsigned long si
 
 /* Round 3 */
 		STEP(H, a, b, c, d, GET(5), 0xfffa3942, 4)
-		STEP(H, d, a, b, c, GET(8), 0x8771f681, 11)
+		STEP(H2, d, a, b, c, GET(8), 0x8771f681, 11)
 		STEP(H, c, d, a, b, GET(11), 0x6d9d6122, 16)
-		STEP(H, b, c, d, a, GET(14), 0xfde5380c, 23)
+		STEP(H2, b, c, d, a, GET(14), 0xfde5380c, 23)
 		STEP(H, a, b, c, d, GET(1), 0xa4beea44, 4)
-		STEP(H, d, a, b, c, GET(4), 0x4bdecfa9, 11)
+		STEP(H2, d, a, b, c, GET(4), 0x4bdecfa9, 11)
 		STEP(H, c, d, a, b, GET(7), 0xf6bb4b60, 16)
-		STEP(H, b, c, d, a, GET(10), 0xbebfbc70, 23)
+		STEP(H2, b, c, d, a, GET(10), 0xbebfbc70, 23)
 		STEP(H, a, b, c, d, GET(13), 0x289b7ec6, 4)
-		STEP(H, d, a, b, c, GET(0), 0xeaa127fa, 11)
+		STEP(H2, d, a, b, c, GET(0), 0xeaa127fa, 11)
 		STEP(H, c, d, a, b, GET(3), 0xd4ef3085, 16)
-		STEP(H, b, c, d, a, GET(6), 0x04881d05, 23)
+		STEP(H2, b, c, d, a, GET(6), 0x04881d05, 23)
 		STEP(H, a, b, c, d, GET(9), 0xd9d4d039, 4)
-		STEP(H, d, a, b, c, GET(12), 0xe6db99e5, 11)
+		STEP(H2, d, a, b, c, GET(12), 0xe6db99e5, 11)
 		STEP(H, c, d, a, b, GET(15), 0x1fa27cf8, 16)
-		STEP(H, b, c, d, a, GET(2), 0xc4ac5665, 23)
+		STEP(H2, b, c, d, a, GET(2), 0xc4ac5665, 23)
 
 /* Round 4 */
 		STEP(I, a, b, c, d, GET(0), 0xf4292244, 6)
@@ -232,7 +233,7 @@ void hts_md5_reset(hts_md5_context *ctx)
 void hts_md5_update(hts_md5_context *ctx, const void *data, unsigned long size)
 {
 	hts_md5_u32plus saved_lo;
-	unsigned long used, free;
+	unsigned long used, available;
 
 	saved_lo = ctx->lo;
 	if ((ctx->lo = (saved_lo + size) & 0x1fffffff) < saved_lo)
@@ -242,16 +243,16 @@ void hts_md5_update(hts_md5_context *ctx, const void *data, unsigned long size)
 	used = saved_lo & 0x3f;
 
 	if (used) {
-		free = 64 - used;
+		available = 64 - used;
 
-		if (size < free) {
+		if (size < available) {
 			memcpy(&ctx->buffer[used], data, size);
 			return;
 		}
 
-		memcpy(&ctx->buffer[used], data, free);
-		data = (const unsigned char *)data + free;
-		size -= free;
+		memcpy(&ctx->buffer[used], data, available);
+		data = (const unsigned char *)data + available;
+		size -= available;
 		body(ctx, ctx->buffer, 64);
 	}
 
@@ -265,22 +266,22 @@ void hts_md5_update(hts_md5_context *ctx, const void *data, unsigned long size)
 
 void hts_md5_final(unsigned char *result, hts_md5_context *ctx)
 {
-	unsigned long used, free;
+	unsigned long used, available;
 
 	used = ctx->lo & 0x3f;
 
 	ctx->buffer[used++] = 0x80;
 
-	free = 64 - used;
+	available = 64 - used;
 
-	if (free < 8) {
-		memset(&ctx->buffer[used], 0, free);
+	if (available < 8) {
+		memset(&ctx->buffer[used], 0, available);
 		body(ctx, ctx->buffer, 64);
 		used = 0;
-		free = 64;
+		available = 64;
 	}
 
-	memset(&ctx->buffer[used], 0, free - 8);
+	memset(&ctx->buffer[used], 0, available - 8);
 
 	ctx->lo <<= 3;
 	ctx->buffer[56] = ctx->lo;
