@@ -44,21 +44,22 @@
  * optimizations are not included to reduce source code size and avoid
  * compile-time configuration.
  */
- 
+
 #include <stdlib.h>
 #include "htslib/hts.h"
 
 #ifndef HAVE_OPENSSL
+
 #include <string.h>
- 
+
 /* Any 32-bit or wider unsigned integer data type will do */
 typedef unsigned int hts_md5_u32plus;
- 
+
 typedef struct {
-        hts_md5_u32plus lo, hi;
-        hts_md5_u32plus a, b, c, d;
-        unsigned char buffer[64];
-        hts_md5_u32plus block[16];
+	hts_md5_u32plus lo, hi;
+	hts_md5_u32plus a, b, c, d;
+	unsigned char buffer[64];
+	hts_md5_u32plus block[16];
 } hts_md5_ctx;
 
 /*
@@ -72,7 +73,7 @@ typedef struct {
 #define G(x, y, z)			((y) ^ ((z) & ((x) ^ (y))))
 #define H(x, y, z)			((x) ^ (y) ^ (z))
 #define I(x, y, z)			((y) ^ ((x) | ~(z)))
- 
+
 /*
  * The MD5 transformation for all four rounds.
  */
@@ -80,7 +81,7 @@ typedef struct {
 	(a) += f((b), (c), (d)) + (x) + (t); \
 	(a) = (((a) << (s)) | (((a) & 0xffffffff) >> (32 - (s)))); \
 	(a) += (b);
- 
+
 /*
  * SET reads 4 input bytes in little-endian byte order and stores them
  * in a properly aligned word in host byte order.
@@ -104,7 +105,7 @@ typedef struct {
 #define GET(n) \
 	(ctx->block[(n)])
 #endif
- 
+
 /*
  * This processes one or more 64-byte data blocks, but does NOT update
  * the bit counters.  There are no alignment requirements.
@@ -114,20 +115,20 @@ static const void *body(hts_md5_ctx *ctx, const void *data, unsigned long size)
 	const unsigned char *ptr;
 	hts_md5_u32plus a, b, c, d;
 	hts_md5_u32plus saved_a, saved_b, saved_c, saved_d;
- 
+
 	ptr = data;
- 
+
 	a = ctx->a;
 	b = ctx->b;
 	c = ctx->c;
 	d = ctx->d;
- 
+
 	do {
 		saved_a = a;
 		saved_b = b;
 		saved_c = c;
 		saved_d = d;
- 
+
 /* Round 1 */
 		STEP(F, a, b, c, d, SET(0), 0xd76aa478, 7)
 		STEP(F, d, a, b, c, SET(1), 0xe8c7b756, 12)
@@ -145,7 +146,7 @@ static const void *body(hts_md5_ctx *ctx, const void *data, unsigned long size)
 		STEP(F, d, a, b, c, SET(13), 0xfd987193, 12)
 		STEP(F, c, d, a, b, SET(14), 0xa679438e, 17)
 		STEP(F, b, c, d, a, SET(15), 0x49b40821, 22)
- 
+
 /* Round 2 */
 		STEP(G, a, b, c, d, GET(1), 0xf61e2562, 5)
 		STEP(G, d, a, b, c, GET(6), 0xc040b340, 9)
@@ -163,7 +164,7 @@ static const void *body(hts_md5_ctx *ctx, const void *data, unsigned long size)
 		STEP(G, d, a, b, c, GET(2), 0xfcefa3f8, 9)
 		STEP(G, c, d, a, b, GET(7), 0x676f02d9, 14)
 		STEP(G, b, c, d, a, GET(12), 0x8d2a4c8a, 20)
- 
+
 /* Round 3 */
 		STEP(H, a, b, c, d, GET(5), 0xfffa3942, 4)
 		STEP(H, d, a, b, c, GET(8), 0x8771f681, 11)
@@ -181,7 +182,7 @@ static const void *body(hts_md5_ctx *ctx, const void *data, unsigned long size)
 		STEP(H, d, a, b, c, GET(12), 0xe6db99e5, 11)
 		STEP(H, c, d, a, b, GET(15), 0x1fa27cf8, 16)
 		STEP(H, b, c, d, a, GET(2), 0xc4ac5665, 23)
- 
+
 /* Round 4 */
 		STEP(I, a, b, c, d, GET(0), 0xf4292244, 6)
 		STEP(I, d, a, b, c, GET(7), 0x432aff97, 10)
@@ -199,99 +200,90 @@ static const void *body(hts_md5_ctx *ctx, const void *data, unsigned long size)
 		STEP(I, d, a, b, c, GET(11), 0xbd3af235, 10)
 		STEP(I, c, d, a, b, GET(2), 0x2ad7d2bb, 15)
 		STEP(I, b, c, d, a, GET(9), 0xeb86d391, 21)
- 
+
 		a += saved_a;
 		b += saved_b;
 		c += saved_c;
 		d += saved_d;
- 
+
 		ptr += 64;
 	} while (size -= 64);
- 
+
 	ctx->a = a;
 	ctx->b = b;
 	ctx->c = c;
 	ctx->d = d;
- 
+
 	return ptr;
 }
- 
-void hts_md5_reset(hts_md5_context *ctx_) {
+
+void hts_md5_reset(hts_md5_context *ctx_)
+{
 	hts_md5_ctx *ctx = (hts_md5_ctx *)ctx_;
 	ctx->a = 0x67452301;
 	ctx->b = 0xefcdab89;
 	ctx->c = 0x98badcfe;
 	ctx->d = 0x10325476;
- 
+
 	ctx->lo = 0;
 	ctx->hi = 0;
 }
 
-hts_md5_context *hts_md5_init(void)
-{
-	hts_md5_ctx *ctx = malloc(sizeof(*ctx));
-	if (!ctx)
-		return NULL;
-
-	hts_md5_reset((hts_md5_context *)ctx);
-	return (hts_md5_context *)ctx;
-}
- 
 void hts_md5_update(hts_md5_context *ctx_, const void *data, unsigned long size)
 {
 	hts_md5_u32plus saved_lo;
 	unsigned long used, free;
 	hts_md5_ctx *ctx = (hts_md5_ctx *)ctx_;
- 
+
 	saved_lo = ctx->lo;
 	if ((ctx->lo = (saved_lo + size) & 0x1fffffff) < saved_lo)
 		ctx->hi++;
 	ctx->hi += size >> 29;
- 
+
 	used = saved_lo & 0x3f;
- 
+
 	if (used) {
 		free = 64 - used;
- 
+
 		if (size < free) {
 			memcpy(&ctx->buffer[used], data, size);
 			return;
 		}
- 
+
 		memcpy(&ctx->buffer[used], data, free);
 		data = (unsigned char *)data + free;
 		size -= free;
 		body(ctx, ctx->buffer, 64);
 	}
- 
+
 	if (size >= 64) {
 		data = body(ctx, data, size & ~(unsigned long)0x3f);
 		size &= 0x3f;
 	}
- 
+
 	memcpy(ctx->buffer, data, size);
 }
- 
+
 void hts_md5_final(unsigned char *result, hts_md5_context *ctx_)
 {
 	unsigned long used, free;
 	hts_md5_ctx *ctx = (hts_md5_ctx *)ctx_;
- 
+
 	used = ctx->lo & 0x3f;
- 
+
 	ctx->buffer[used++] = 0x80;
- 
+
 	free = 64 - used;
- 
+
 	if (free < 8) {
 		memset(&ctx->buffer[used], 0, free);
 		body(ctx, ctx->buffer, 64);
 		used = 0;
 		free = 64;
 	}
- 
+
 	memset(&ctx->buffer[used], 0, free - 8);
- 
+
 	ctx->lo <<= 3;
 	ctx->buffer[56] = ctx->lo;
 	ctx->buffer[57] = ctx->lo >> 8;
@@ -301,9 +293,9 @@ void hts_md5_final(unsigned char *result, hts_md5_context *ctx_)
 	ctx->buffer[61] = ctx->hi >> 8;
 	ctx->buffer[62] = ctx->hi >> 16;
 	ctx->buffer[63] = ctx->hi >> 24;
- 
+
 	body(ctx, ctx->buffer, 64);
- 
+
 	result[0] = ctx->a;
 	result[1] = ctx->a >> 8;
 	result[2] = ctx->a >> 16;
@@ -320,8 +312,19 @@ void hts_md5_final(unsigned char *result, hts_md5_context *ctx_)
 	result[13] = ctx->d >> 8;
 	result[14] = ctx->d >> 16;
 	result[15] = ctx->d >> 24;
- 
+
 	memset(ctx, 0, sizeof(*ctx));
+}
+
+
+hts_md5_context *hts_md5_init(void)
+{
+    hts_md5_ctx *ctx = malloc(sizeof(*ctx));
+    if (!ctx)
+        return NULL;
+
+    hts_md5_reset((hts_md5_context *)ctx);
+    return (hts_md5_context *)ctx;
 }
 
 #else
@@ -339,22 +342,25 @@ hts_md5_context *hts_md5_init(void)
 {
     MD5_CTX *ctx = malloc(sizeof(*ctx));
     if (!ctx)
-	return NULL;
+        return NULL;
 
     MD5_Init(ctx);
 
     return (hts_md5_context *)ctx;
 }
 
-void hts_md5_reset(hts_md5_context *ctx) {
+void hts_md5_reset(hts_md5_context *ctx)
+{
     MD5_Init((MD5_CTX *)ctx);
 }
 
-void hts_md5_update(hts_md5_context *ctx, void *data, unsigned long size) {
+void hts_md5_update(hts_md5_context *ctx, void *data, unsigned long size)
+{
     MD5_Update((MD5_CTX *)ctx, data, size);
 }
 
-void hts_md5_final(unsigned char *result, hts_md5_context *ctx) {
+void hts_md5_final(unsigned char *result, hts_md5_context *ctx)
+{
     MD5_Final(result, (MD5_CTX *)ctx);
 }
 
@@ -368,7 +374,8 @@ void hts_md5_destroy(hts_md5_context *ctx)
     free(ctx);
 }
 
-void hts_md5_hex(char *hex, const unsigned char *digest) {
+void hts_md5_hex(char *hex, const unsigned char *digest)
+{
     int i;
     for (i = 0; i < 16; i++) {
         hex[i*2+0] = "0123456789abcdef"[(digest[i]>>4)&0xf];
