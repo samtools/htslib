@@ -517,7 +517,13 @@ typedef struct {
      */
     int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals);
     int bcf_update_alleles_str(const bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string);
+
+    /**
+      *  bcf_update_id() - sets new ID string
+      *  bcf_add_id() - adds to the ID string checking for duplicates
+      */
     int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id);
+    int bcf_add_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id);
 
     /*
      *  bcf_update_info_*() - functions for updating INFO fields
