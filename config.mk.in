@@ -78,3 +78,12 @@ hfile.o hfile.pico: CPPFLAGS += -DHAVE_IRODS
 hfile_irods.o hfile_irods.pico: CPPFLAGS += $(EXTRA_CPPFLAGS_IRODS)
 
 endif
+
+ifeq "curl-@curl@" "curl-enabled"
+@define_CURL_PREFIX@
+LDFLAGS += -L$(CURL_PREFIX)/lib
+LDLIBS += -lcurl
+LIBHTS_OBJS += kurl.o
+hfile_net.o hfile_net.pico: CPPFLAGS += -D_USE_KURL
+kurl.o kurl.pico: CPPFLAGS += -I$(CURL_PREFIX)/include
+endif

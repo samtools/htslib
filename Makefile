@@ -28,10 +28,21 @@ RANLIB = ranlib
 
 CPPFLAGS =
 # TODO: probably update cram code to make it compile cleanly with -Wc++-compat
-CFLAGS   = -g -Wall -O2
+CFLAGS   = -g -Wall -Wno-unused-function -O2
 EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
 LDLIBS   =
+
+ifneq ($(CURL_PREFIX),)
+	CPPFLAGS += -D_USE_KURL -I$(CURL_PREFIX)/include
+	LDFLAGS += -L$(CURL_PREFIX)/lib
+	LDLIBS += -lcurl
+	kurl_o = kurl.o
+	knetfile_o =
+else
+	kurl_o =
+	knetfile_o = knetfile.o
+endif
 
 # For now these don't work too well as samtools also needs to know to
 # add -lbz2 and -llzma if linking against the static libhts.a library.
@@ -148,7 +159,8 @@ print-version:
 
 LIBHTS_OBJS = \
 	kfunc.o \
-	knetfile.o \
+	$(kurl_o) \
+	$(knetfile_o) \
 	kstring.o \
 	bgzf.o \
 	faidx.o \
