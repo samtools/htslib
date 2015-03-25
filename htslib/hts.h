@@ -350,6 +350,8 @@ typedef struct {
     int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped);
     void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
 
+	void hts_idx_replace_address(const hts_idx_t *idx, const int no_address_cushion, const int64_t no_address_cushion_value, const unsigned int address_capacity, const int64_t *address);
+
     void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt);
     hts_idx_t *hts_idx_load(const char *fn, int fmt);
 
