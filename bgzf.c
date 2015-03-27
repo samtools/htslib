@@ -701,20 +701,19 @@ static int mt_flush_queue(BGZF *fp)
     while (mt->proc_cnt < mt->n_threads);
     // dump data to disk
     for (i = 0; i < mt->n_threads; ++i) fp->errcode |= mt->w[i].errcode;
-	for (i = 0; i < mt->curr; ++i) {
+    for (i = 0; i < mt->curr; ++i) {
         if (hwrite(fp->fp, mt->blk[i], mt->len[i]) != mt->len[i]) {
             fp->errcode |= BGZF_ERR_IO;
             break;
         }
 
-		if(fp->close == 0 && fp->address_count < fp->address_capacity)
-		{	
-			fp->address[fp->address_count] = htell(fp->fp);
-			fp->address_count++;
-		}		
-	}
+        if(fp->close == 1 && fp->address_count < fp->address_capacity) {	
+            fp->address[fp->address_count] = htell(fp->fp);
+            fp->address_count++;
+        }		
+    }
 
-	mt->curr = 0;
+    mt->curr = 0;
     return (fp->errcode == 0)? 0 : -1;
 }
 
@@ -765,13 +764,12 @@ int bgzf_flush(BGZF *fp)
         fp->block_address += block_length;
     }
 
-	if(fp->close == 0 && fp->address_count < fp->address_capacity)
-	{
-		fp->address[fp->address_count] = htell(fp->fp);
-		fp->address_count++;
-	}
+    if(fp->close == 1 && fp->address_count < fp->address_capacity) {
+        fp->address[fp->address_count] = htell(fp->fp);
+        fp->address_count++;
+    }
 
-	return 0;
+    return 0;
 }
 
 int bgzf_flush_try(BGZF *fp, ssize_t size)
@@ -810,7 +808,7 @@ ssize_t bgzf_raw_write(BGZF *fp, const void *data, size_t length)
 
 int bgzf_close(BGZF* fp)
 {
-	fp->close = 1;
+    fp->close = 0;
 
     int ret, block_length;
     if (fp == 0) return -1;
