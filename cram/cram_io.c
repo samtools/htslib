@@ -1732,7 +1732,7 @@ static void sanitise_SQ_lines(cram_fd *fd) {
 	if (!(r = (ref_entry *)kh_val(fd->refs->h_meta, k)))
 	    continue;
 
-	if (r->length != fd->header->ref[i].len) {
+	if (r->length && r->length != fd->header->ref[i].len) {
 	    assert(strcmp(r->name, fd->header->ref[i].name) == 0);
 
 	    // Should we also check MD5sums here to ensure the correct
