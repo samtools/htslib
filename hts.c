@@ -1564,24 +1564,27 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
 {
     int tid, beg, end;
     const char *q;
+
     if (strcmp(reg, ".") == 0)
         return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
-    else if (strcmp(reg, "*") != 0) {
-        q = hts_parse_reg(reg, &beg, &end);
-        if (q) {
-            char *tmp = (char*)alloca(q - reg + 1);
-            strncpy(tmp, reg, q - reg);
-            tmp[q - reg] = 0;
-            tid = getid(hdr, tmp);
-        }
-        else {
-            // not parsable as a region, but possibly a sequence named "foo:a"
-            tid = getid(hdr, reg);
-            beg = 0; end = INT_MAX;
-        }
-        if (tid < 0) return 0;
-        return itr_query(idx, tid, beg, end, readrec);
-    } else return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
+    else if (strcmp(reg, "*") == 0)
+        return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
+
+    q = hts_parse_reg(reg, &beg, &end);
+    if (q) {
+        char *tmp = (char*)alloca(q - reg + 1);
+        strncpy(tmp, reg, q - reg);
+        tmp[q - reg] = 0;
+        tid = getid(hdr, tmp);
+    }
+    else {
+        // not parsable as a region, but possibly a sequence named "foo:a"
+        tid = getid(hdr, reg);
+        beg = 0; end = INT_MAX;
+    }
+
+    if (tid < 0) return NULL;
+    return itr_query(idx, tid, beg, end, readrec);
 }
 
 int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
