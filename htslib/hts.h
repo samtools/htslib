@@ -1,6 +1,6 @@
 /*  hts.h -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2012-2014 Genome Research Ltd.
+    Copyright (C) 2012-2015 Genome Research Ltd.
     Copyright (C) 2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -359,7 +359,28 @@ typedef struct {
     int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped);
     uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
 
-    const char *hts_parse_reg(const char *s, int *beg, int *end);
+/// Parse a numeric string
+/** The number may be expressed in scientific notation, and may contain commas
+    in the integer part (before any decimal point or E notation).
+    @param str  String to be parsed
+    @param end  If non-NULL, set on return to point to the first character
+                in @a str after those forming the parsed number
+    @return  Converted value of the parsed number.
+
+    When @a end is NULL, a warning will be printed (if hts_verbose is 2
+    or more) if there are any trailing characters after the number.
+*/
+long long hts_parse_decimal(const char *str, char **end);
+
+/// Parse a "CHR:START-END"-style region string
+/** @param str  String to be parsed
+    @param beg  Set on return to the 0-based start of the region
+    @param end  Set on return to the 1-based end of the region
+    @return  Pointer to the colon or '\0' after the reference sequence name,
+             or NULL if @a str could not be parsed.
+*/
+const char *hts_parse_reg(const char *str, int *beg, int *end);
+
     hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
     void hts_itr_destroy(hts_itr_t *iter);
 

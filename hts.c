@@ -1489,50 +1489,96 @@ void hts_itr_destroy(hts_itr_t *iter)
     if (iter) { free(iter->off); free(iter->bins.a); free(iter); }
 }
 
+static inline long long push_digit(long long i, char c)
+{
+    // ensure subtraction occurs first, avoiding overflow for >= MAX-48 or so
+    int digit = c - '0';
+    return 10 * i + digit;
+}
+
+long long hts_parse_decimal(const char *str, char **end)
+{
+    long long n = 0;
+    int decimals = 0, e = 0, lost = 0;
+    char sign = '+', esign = '+';
+    const char *s;
+
+    while (isspace(*str)) str++;
+    s = str;
+
+    if (*s == '+' || *s == '-') sign = *s++;
+    while (*s)
+        if (isdigit(*s)) n = push_digit(n, *s++);
+        else if (*s == ',') s++;
+        else break;
+
+    if (*s == '.') {
+        s++;
+        while (isdigit(*s)) decimals++, n = push_digit(n, *s++);
+    }
+
+    if (*s == 'E' || *s == 'e') {
+        s++;
+        if (*s == '+' || *s == '-') esign = *s++;
+        while (isdigit(*s)) e = push_digit(e, *s++);
+        if (esign == '-') e = -e;
+    }
+
+    e -= decimals;
+    while (e > 0) n *= 10, e--;
+    while (e < 0) lost += n % 10, n /= 10, e++;
+
+    if (lost > 0 && hts_verbose >= 3)
+        fprintf(stderr, "[W::%s] discarding fractional part of %.*s\n",
+                __func__, (int)(s - str), str);
+
+    if (end) *end = (char *) s;
+    else if (*s && hts_verbose >= 2)
+        fprintf(stderr, "[W::%s] ignoring unknown characters after %.*s[%s]\n",
+                __func__, (int)(s - str), str, s);
+
+    return (sign == '+')? n : -n;
+}
+
 const char *hts_parse_reg(const char *s, int *beg, int *end)
 {
-    int i, k, l, name_end;
-    *beg = *end = -1;
-    name_end = l = strlen(s);
-    // determine the sequence name
-    for (i = l - 1; i >= 0; --i) if (s[i] == ':') break; // look for colon from the end
-    if (i >= 0) name_end = i;
-    if (name_end < l) { // check if this is really the end
-        int n_hyphen = 0;
-        for (i = name_end + 1; i < l; ++i) {
-            if (s[i] == '-') ++n_hyphen;
-            else if (!isdigit(s[i]) && s[i] != ',') break;
-        }
-        if (i < l || n_hyphen > 1) name_end = l; // malformated region string; then take str as the name
+    char *hyphen;
+    const char *colon = strrchr(s, ':');
+    if (colon == NULL) {
+        *beg = 0; *end = INT_MAX;
+        return s + strlen(s);
     }
-    // parse the interval
-    if (name_end < l) {
-        char *tmp;
-        tmp = (char*)alloca(l - name_end + 1);
-        for (i = name_end + 1, k = 0; i < l; ++i)
-            if (s[i] != ',') tmp[k++] = s[i];
-        tmp[k] = 0;
-        if ((*beg = strtol(tmp, &tmp, 10) - 1) < 0) *beg = 0;
-        *end = *tmp? strtol(tmp + 1, &tmp, 10) : INT_MAX;
-        if (*beg > *end) name_end = l;
-    }
-    if (name_end == l) *beg = 0, *end = INT_MAX;
-    return s + name_end;
+
+    *beg = hts_parse_decimal(colon+1, &hyphen) - 1;
+    if (*beg < 0) *beg = 0;
+
+    if (*hyphen == '\0') *end = INT_MAX;
+    else if (*hyphen == '-') *end = hts_parse_decimal(hyphen+1, NULL);
+    else return NULL;
+
+    if (*beg >= *end) return NULL;
+    return colon;
 }
 
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
     int tid, beg, end;
-    char *q, *tmp;
+    const char *q;
     if (strcmp(reg, ".") == 0)
         return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
     else if (strcmp(reg, "*") != 0) {
-        q = (char*)hts_parse_reg(reg, &beg, &end);
-        tmp = (char*)alloca(q - reg + 1);
-        strncpy(tmp, reg, q - reg);
-        tmp[q - reg] = 0;
-        if ((tid = getid(hdr, tmp)) < 0)
+        q = hts_parse_reg(reg, &beg, &end);
+        if (q) {
+            char *tmp = (char*)alloca(q - reg + 1);
+            strncpy(tmp, reg, q - reg);
+            tmp[q - reg] = 0;
+            tid = getid(hdr, tmp);
+        }
+        else {
+            // not parsable as a region, but possibly a sequence named "foo:a"
             tid = getid(hdr, reg);
+            beg = 0; end = INT_MAX;
+        }
         if (tid < 0) return 0;
         return itr_query(idx, tid, beg, end, readrec);
     } else return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
