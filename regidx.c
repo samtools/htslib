@@ -22,6 +22,8 @@
     THE SOFTWARE.
 */
 
+#include <config.h>
+
 #include "htslib/hts.h"
 #include "htslib/kstring.h"
 #include "htslib/kseq.h"

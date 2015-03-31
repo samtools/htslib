@@ -44,13 +44,6 @@ CFLAGS   = @CFLAGS@
 LDFLAGS  = @LDFLAGS@
 LDLIBS   = @LIBS@
 
-# When rerunning configure, if the globals above are changed you will want
-# to 'make clean' before rerunning make.  For rerunning configure with only
-# more-localised option changes, these dependencies will ensure objects that
-# depend on such options are remade as appropriate.
-
-hfile.o hfile.pico hfile_irods.o hfile_irods.pico: config.mk
-
 
 # ifeq/.../endif, +=, and target-specific variables are GNU Make-specific.
 # If you don't have GNU Make, comment out this conditional and note that
@@ -72,8 +65,6 @@ LDFLAGS += -L$(IRODS_HOME)/lib/core/obj
 LDLIBS  += -lRodsAPIs -lgssapi_krb5
 
 LIBHTS_OBJS += hfile_irods.o
-
-hfile.o hfile.pico: CPPFLAGS += -DHAVE_IRODS
 
 hfile_irods.o hfile_irods.pico: CPPFLAGS += $(EXTRA_CPPFLAGS_IRODS)
 

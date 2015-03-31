@@ -46,6 +46,8 @@
  * compile-time configuration.
  */
 
+#include <config.h>
+
 #include <stdlib.h>
 #include "htslib/hts.h"
 

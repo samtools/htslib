@@ -36,6 +36,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
    Andrew Whitwham, September 2010.
 */
 
+#include <config.h>
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>

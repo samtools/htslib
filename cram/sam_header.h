@@ -47,10 +47,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _SAM_HDR_H_
 #define _SAM_HDR_H_
 
-#ifdef HAVE_CONFIG_H
-#include "io_lib_config.h"
-#endif
-
 #include <stdarg.h>
 
 #include "cram/string_alloc.h"

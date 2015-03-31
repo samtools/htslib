@@ -5,6 +5,7 @@
 
 autom4te.cache
 config.cache
+config.h
 config.log
 config.mk
 config.status

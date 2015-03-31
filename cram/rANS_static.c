@@ -35,6 +35,8 @@
  * Author: James Bonfield, Wellcome Trust Sanger Institute. 2014
  */
 
+#include <config.h>
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
