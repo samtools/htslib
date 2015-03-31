@@ -48,6 +48,9 @@ AC_ARG_WITH([irods],
    esac],
   [irods=disabled])
 
+dnl FIXME This pulls in dozens of standard header checks
+AC_FUNC_MMAP
+
 save_LIBS=$LIBS
 zlib_devel=ok
 dnl Set a trivial non-empty INCLUDES to avoid excess default includes tests

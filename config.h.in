@@ -7,3 +7,6 @@
 
 /* Define to 1 if iRODS file access is enabled. */
 #undef HAVE_IRODS
+
+/* Define to 1 if you have a working `mmap' system call. */
+#undef HAVE_MMAP
