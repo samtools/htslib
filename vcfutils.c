@@ -124,7 +124,7 @@ int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial, int *_jal)
         for (i=0; i<fmt_ptr->n; i++) \
         { \
             if ( p[i] == vector_end ) break; /* smaller ploidy */ \
-            if ( bcf_gt_is_missing(p[i]) ) continue; /* missing allele */ \
+            if ( bcf_gt_is_missing(p[i]) ) return GT_UNKN; /* missing allele */ \
             int tmp = p[i]>>1; \
             if ( tmp>1 ) \
             { \
