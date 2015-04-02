@@ -2490,7 +2490,6 @@ int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
     int bam_idx, rg_len;
     char name_a[1024], *name;
     int name_len;
-    kstring_t name_s = { 0, 1024, name_a };
     char *aux, *aux_orig;
     char *seq, *qual;
 
