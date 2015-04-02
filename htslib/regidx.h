@@ -48,11 +48,15 @@
         regidx_destroy(regs);
 */
 
-#ifndef __REGIDX_H__
-#define __REGIDX_H__
+#ifndef HTSLIB_REGIDX_H
+#define HTSLIB_REGIDX_H
 
 #include <stdio.h>
 #include <inttypes.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct _regidx_t regidx_t;
 typedef struct
@@ -119,7 +123,7 @@ void regidx_destroy(regidx_t *idx);
  *  Returns 0 if there is no overlap or 1 if overlap is found. The overlapping
  *  regions can be iterated as shown in the example above.
  */
-int regidx_overlap(regidx_t *idx, char *chr, uint32_t start, uint32_t end, regitr_t *itr);
+int regidx_overlap(regidx_t *idx, const char *chr, uint32_t start, uint32_t end, regitr_t *itr);
 
 /*
  *  regidx_insert() - add a new region. 
@@ -136,5 +140,15 @@ int regidx_insert(regidx_t *idx, char *line);
  */
 char **regidx_seq_names(regidx_t *idx, int *n);
 
+/*
+ *  regidx_seq_nregs() - number of regions
+ *  regidx_nregs()  - total number of regions
+ */
+int regidx_seq_nregs(regidx_t *idx, const char *seq);
+int regidx_nregs(regidx_t *idx);
+
+#ifdef __cplusplus
+}
 #endif
 
+#endif

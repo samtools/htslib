@@ -28,9 +28,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifdef HAVE_CONFIG_H
-#include "io_lib_config.h"
-#endif
+#include <config.h>
 
 #include <stdio.h>
 #include <errno.h>
@@ -45,7 +43,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/cram.h"
 #include "cram/os.h"
-#include "cram/md5.h"
+#include "htslib/hts.h"
 
 #define Z_CRAM_STRAT Z_FILTERED
 //#define Z_CRAM_STRAT Z_RLE
@@ -686,8 +684,10 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s) {
     cp += itf8_put(cp, s->hdr->ref_seq_start);
     cp += itf8_put(cp, s->hdr->ref_seq_span);
     cp += itf8_put(cp, s->hdr->num_records);
-    if (CRAM_MAJOR_VERS(fd->version) != 1)
+    if (CRAM_MAJOR_VERS(fd->version) == 2)
 	cp += itf8_put(cp, s->hdr->record_counter);
+    else if (CRAM_MAJOR_VERS(fd->version) >= 3)
+	cp += ltf8_put(cp, s->hdr->record_counter);
     cp += itf8_put(cp, s->hdr->num_blocks);
     cp += itf8_put(cp, s->hdr->num_content_ids);
     for (j = 0; j < s->hdr->num_content_ids; j++) {
@@ -1197,8 +1197,11 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
 	for (i = j = 1; i < DS_END; i++) {
 	    if (!s->block[i] || s->block[i] == s->block[0])
 		continue;
-	    if (s->block[i]->uncomp_size == 0)
+	    if (s->block[i]->uncomp_size == 0) {
+		cram_free_block(s->block[i]);
+		s->block[i] = NULL;
 		continue;
+	    }
 	    s->block[j] = s->block[i];
 	    s->hdr->block_content_ids[j-1] = s->block[i]->content_id;
 	    j++;
@@ -1231,11 +1234,10 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     nref = fd->refs->nref;
     pthread_mutex_unlock(&fd->ref_lock);
 
-    if (c->refs_used) {
+    if (!fd->no_ref && c->refs_used) {
 	for (i = 0; i < nref; i++) {
-	    if (c->refs_used[i]) {	
+	    if (c->refs_used[i])
 		cram_get_ref(fd, i, 1, 0);
-	    }
 	}
     }
 
@@ -1300,7 +1302,8 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 		}
 	    }
 
-	    process_one_read(fd, c, s, cr, b, r2);
+	    if (process_one_read(fd, c, s, cr, b, r2) != 0)
+		return -1;
 
 	    if (first_base > cr->apos)
 		first_base = cr->apos;
@@ -1319,6 +1322,11 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 	    s->hdr->ref_seq_span  = last_base - first_base + 1;
 	}
 	s->hdr->num_records = r2;
+    }
+
+    if (c->multi_seq && !fd->no_ref) {
+	if (c->ref_seq_id >= 0)
+	    cram_ref_decr(fd->refs, c->ref_seq_id);
     }
 
     /* Link our bams[] array onto the spare bam list for reuse */
@@ -1349,12 +1357,14 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 	
 	if (CRAM_MAJOR_VERS(fd->version) != 1) {
 	    if (s->hdr->ref_seq_id >= 0 && c->multi_seq == 0 && !fd->no_ref) {
-		MD5_CTX md5;
-		MD5_Init(&md5);
-		MD5_Update(&md5,
+		hts_md5_context *md5 = hts_md5_init();
+		if (!md5)
+		    return -1;
+		hts_md5_update(md5,
 			   c->ref + s->hdr->ref_seq_start - c->ref_start,
 			   s->hdr->ref_seq_span);
-		MD5_Final(s->hdr->md5, &md5);
+		hts_md5_final(s->hdr->md5, md5);
+		hts_md5_destroy(md5);
 	    } else {
 		memset(s->hdr->md5, 0, 16);
 	    }
@@ -1655,7 +1665,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     }
 
     /* Cache references up-front if we have unsorted access patterns */
-    if (c->refs_used) {
+    if (!fd->no_ref && c->refs_used) {
 	for (i = 0; i < fd->refs->nref; i++) {
 	    if (c->refs_used[i])
 		cram_ref_decr(fd->refs, i);
@@ -2025,25 +2035,34 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 	uint32_t i32;
 	int r;
 
+	// RG:Z
 	if (aux[0] == 'R' && aux[1] == 'G' && aux[2] == 'Z') {
 	    rg = &aux[3];
 	    while (*aux++);
 	    continue;
 	}
+
+	// MD:Z
 	if (aux[0] == 'M' && aux[1] == 'D' && aux[2] == 'Z') {
-	    while (*aux++);
-	    continue;
-	}
-	if (aux[0] == 'N' && aux[1] == 'M') {
-	    switch(aux[2]) {
-	    case 'A': case 'C': case 'c': aux+=4; break;
-	    case 'S': case 's':           aux+=5; break;
-	    case 'I': case 'i': case 'f': aux+=7; break;
-	    default:
-		fprintf(stderr, "Unhandled type code for NM tag\n");
-		return NULL;
+	    if (cr->len && !fd->no_ref && !(cr->flags & BAM_FUNMAP)) {
+		while (*aux++);
+		continue;
 	    }
-	    continue;
+	}
+
+	// NM:i
+	if (aux[0] == 'N' && aux[1] == 'M') {
+	    if (cr->len && !fd->no_ref && !(cr->flags & BAM_FUNMAP)) {
+		switch(aux[2]) {
+		case 'A': case 'C': case 'c': aux+=4; break;
+		case 'S': case 's':           aux+=5; break;
+		case 'I': case 'i': case 'f': aux+=7; break;
+		default:
+		    fprintf(stderr, "Unhandled type code for NM tag\n");
+		    return NULL;
+		}
+		continue;
+	    }
 	}
 
 	BLOCK_APPEND(td_b, aux, 3);
@@ -2428,6 +2447,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     // FIXME: multi-ref containers
 
     ref = c->ref;
+    cr->flags       = bam_flag(b);
     cr->len         = bam_seq_len(b); cram_stats_add(c->stats[DS_RL], cr->len);
 
     //fprintf(stderr, "%s => %d\n", rg ? rg : "\"\"", cr->rg);
@@ -2460,7 +2480,6 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     
     cr->ref_id      = bam_ref(b);  cram_stats_add(c->stats[DS_RI], cr->ref_id);
-    cr->flags       = bam_flag(b);
     if (bam_cigar_len(b) == 0)
 	cr->flags |= BAM_FUNMAP;
     cram_stats_add(c->stats[DS_BF], fd->cram_flag_swap[cr->flags & 0xfff]);
@@ -2603,6 +2622,11 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 		    char *sp = &seq[spos];
 		    char *rp = &ref[apos];
 		    char *qp = &qual[spos];
+		    if (end > cr->len) {
+			fprintf(stderr, "CIGAR and query sequence are of "
+				"different length\n");
+			return -1;
+		    }
 		    for (l = 0; l < end; l++) {
 			if (rp[l] != sp[l]) {
 			    if (!sp[l])
@@ -2723,6 +2747,11 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 		break;
 	    }
 	}
+	if (cr->len && spos != cr->len) {
+	    fprintf(stderr, "CIGAR and query sequence are of different "
+		    "length\n");
+	    return -1;
+	}
 	fake_qual = spos;
 	cr->aend = MIN(apos, c->ref_end);
 	cram_stats_add(c->stats[DS_FN], cr->nfeature);
@@ -2735,6 +2764,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	cr->aend = cr->apos;
 	for (i = 0; i < cr->len; i++)
 	    cram_stats_add(c->stats[DS_BA], seq[i]);
+	fake_qual = 0;
     }
 
     /*
@@ -2791,38 +2821,90 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
 	if (new == 0) {
 	    cram_record *p = &s->crecs[kh_val(s->pair[sec], k)];
+	    int aleft, aright, sign;
+
+	    aleft = MIN(cr->apos, p->apos);
+	    aright = MAX(cr->aend, p->aend);
+	    if (cr->apos < p->apos) {
+		sign = 1;
+	    } else if (cr->apos > p->apos) {
+		sign = -1;
+	    } else if (cr->flags & BAM_FREAD1) {
+		sign = 1;
+	    } else {
+		sign = -1;
+	    }
 	    
 	    //fprintf(stderr, "paired %"PRId64"\n", kh_val(s->pair[sec], k));
 
-	    // copy from p to cr
+	    // This vs p: tlen, matepos, flags
+	    if (bam_ins_size(b) != sign*(aright-aleft+1))
+		goto detached;
+
+	    if (MAX(bam_mate_pos(b)+1, 0) != p->apos)
+		goto detached;
+
+	    if (((bam_flag(b) & BAM_FMUNMAP) != 0) !=
+		((p->flags & BAM_FUNMAP) != 0))
+		goto detached;
+
+	    if (((bam_flag(b) & BAM_FMREVERSE) != 0) !=
+		((p->flags & BAM_FREVERSE) != 0))
+		goto detached;
+
+
+	    // p vs this: tlen, matepos, flags
+	    if (p->tlen != -sign*(aright-aleft+1))
+		goto detached;
+
+	    if (p->mate_pos != cr->apos)
+		goto detached;
+
+	    if (((p->flags & BAM_FMUNMAP) != 0) !=
+		((p->mate_flags & CRAM_M_UNMAP) != 0))
+		goto detached;
+
+	    if (((p->flags & BAM_FMREVERSE) != 0) !=
+		((p->mate_flags & CRAM_M_REVERSE) != 0))
+		goto detached;
+
+	    // Supplementary reads are just too ill defined
+	    if ((cr->flags & BAM_FSUPPLEMENTARY) ||
+		(p->flags & BAM_FSUPPLEMENTARY))
+		goto detached;
+
+	    /*
+	     * The fields below are unused when encoding this read as it is
+	     * no longer detached.  In theory they may get referred to when
+	     * processing a 3rd or 4th read in this template?, so we set them
+	     * here just to be sure.
+	     *
+	     * They do not need cram_stats_add() calls those as they are
+	     * not emitted.
+	     */
 	    cr->mate_pos = p->apos;
-	    cram_stats_add(c->stats[DS_NP], cr->mate_pos);
-
-	    cr->tlen = cr->aend - p->apos;
-	    cram_stats_add(c->stats[DS_TS], cr->tlen);
-
+	    cr->tlen = sign*(aright-aleft+1);
 	    cr->mate_flags =
-		((p->flags & BAM_FMUNMAP)   == BAM_FMUNMAP)   * CRAM_M_UNMAP +
-		((p->flags & BAM_FMREVERSE) == BAM_FMREVERSE) * CRAM_M_REVERSE;
-	    cram_stats_add(c->stats[DS_MF], cr->mate_flags);
+	    	((p->flags & BAM_FMUNMAP)   == BAM_FMUNMAP)   * CRAM_M_UNMAP +
+	    	((p->flags & BAM_FMREVERSE) == BAM_FMREVERSE) * CRAM_M_REVERSE;
 
-	    // copy from cr to p
+	    // Decrement statistics aggregated earlier
 	    cram_stats_del(c->stats[DS_NP], p->mate_pos);
-	    p->mate_pos = cr->apos;
-	    cram_stats_add(c->stats[DS_NP], p->mate_pos);
-
 	    cram_stats_del(c->stats[DS_MF], p->mate_flags);
-	    p->mate_flags =
-		((cr->flags & BAM_FMUNMAP)   == BAM_FMUNMAP)  * CRAM_M_UNMAP +
-		((cr->flags & BAM_FMREVERSE) == BAM_FMREVERSE)* CRAM_M_REVERSE;
-	    cram_stats_add(c->stats[DS_MF], p->mate_flags);
-
 	    cram_stats_del(c->stats[DS_TS], p->tlen);
-	    p->tlen = p->apos - cr->aend;
-	    cram_stats_add(c->stats[DS_TS], p->tlen);
+	    cram_stats_del(c->stats[DS_NS], p->mate_ref_id);
+
+	    /* Similarly we could correct the p-> values too, but these will no
+	     * longer have any code that refers back to them as the new 'p'
+	     * for this template is our current 'cr'.
+	     */
+	    //p->mate_pos = cr->apos;
+	    //p->mate_flags =
+	    //	((cr->flags & BAM_FMUNMAP)   == BAM_FMUNMAP)  * CRAM_M_UNMAP +
+	    //	((cr->flags & BAM_FMREVERSE) == BAM_FMREVERSE)* CRAM_M_REVERSE;
+	    //p->tlen = p->apos - cr->aend;
 
 	    // Clear detached from cr flags
-	    //cram_stats_del(c->stats[DS_CF], cr->cram_flags);
 	    cr->cram_flags &= ~CRAM_FLAG_DETACHED;
 	    cram_stats_add(c->stats[DS_CF], cr->cram_flags);
 
@@ -2837,6 +2919,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
 	    kh_val(s->pair[sec], k) = rnum;
 	} else {
+	detached:
 	    //fprintf(stderr, "unpaired\n");
 
 	    /* Derive mate flags from this flag */
@@ -2856,6 +2939,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
 	    cr->cram_flags |= CRAM_FLAG_DETACHED;
 	    cram_stats_add(c->stats[DS_CF], cr->cram_flags);
+	    cram_stats_add(c->stats[DS_NS], bam_mate_ref(b));
 	}
     }
 
@@ -2863,7 +2947,6 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     cram_stats_add(c->stats[DS_MQ], cr->mqual);
 
     cr->mate_ref_id = bam_mate_ref(b);
-    cram_stats_add(c->stats[DS_NS], cr->mate_ref_id);
 
     if (!(bam_flag(b) & BAM_FUNMAP)) {
 	if (c->first_base > cr->apos)
@@ -2955,7 +3038,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 
 	// Have we seen this reference before?
 	if (bam_ref(b) >= 0 && bam_ref(b) != curr_ref && !fd->embed_ref &&
-	    !fd->unsorted) {
+	    !fd->unsorted && multi_seq) {
 	    
 	    if (!c->refs_used) {
 		pthread_mutex_lock(&fd->ref_lock);

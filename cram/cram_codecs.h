@@ -31,11 +31,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _CRAM_ENCODINGS_H_
 #define _CRAM_ENCODINGS_H_
 
+#include <inttypes.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <inttypes.h>
 
 struct cram_codec;
 

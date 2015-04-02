@@ -31,17 +31,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*! \file
  * CRAM interface.
  *
- * Consider using the higher level scram_*() API for programs that wish to
- * be file format agnostic.
+ * Consider using the higher level hts_*() API for programs that wish to
+ * be file format agnostic (see htslib/hts.h).
  *
  * This API should be used for CRAM specific code. The specifics of the
  * public API are implemented in cram_io.h, cram_encode.h and cram_decode.h
  * although these should not be included directly (use this file instead).
  */
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #ifndef _CRAM_H_
 #define _CRAM_H_
@@ -56,8 +52,4 @@ extern "C" {
 #include "cram_codecs.h"
 #include "cram_index.h"
 
-#endif
-
-#ifdef __cplusplus
-}
 #endif

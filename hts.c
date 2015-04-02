@@ -1,6 +1,6 @@
 /*  hts.c -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2008, 2009, 2012-2014 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2012-2015 Genome Research Ltd.
     Copyright (C) 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -23,11 +23,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#include <config.h>
+
 #include <zlib.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -36,6 +39,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "cram/cram.h"
 #include "htslib/hfile.h"
 #include "version.h"
+#include "hts_internal.h"
 
 #include "htslib/kseq.h"
 #define KS_BGZF 1
@@ -78,6 +82,8 @@ const unsigned char seq_nt16_table[256] = {
 
 const char seq_nt16_str[] = "=ACMGRSVTWYHKDBN";
 
+const int seq_nt16_int[] = { 4, 0, 1, 4, 2, 4, 4, 4, 3, 4, 4, 4, 4, 4, 4, 4 };
+
 /**********************
  *** Basic file I/O ***
  **********************/
@@ -91,7 +97,6 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
         return sequence_data;
 
     case vcf:
-    case bcfv1:
     case bcf:
         return variant_data;
 
@@ -145,9 +150,35 @@ static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
     return destsize;
 }
 
+// Parse "x.y" text, taking care because the string is not NUL-terminated
+// and filling in major/minor only when the digits are followed by a delimiter,
+// so we don't misread "1.10" as "1.1" due to reaching the end of the buffer.
+static void
+parse_version(htsFormat *fmt, const unsigned char *u, const unsigned char *ulim)
+{
+    const char *str  = (const char *) u;
+    const char *slim = (const char *) ulim;
+    const char *s;
+
+    fmt->version.major = fmt->version.minor = -1;
+
+    for (s = str; s < slim; s++) if (!isdigit(*s)) break;
+    if (s < slim) {
+        fmt->version.major = atoi(str);
+        if (*s == '.') {
+            str = &s[1];
+            for (s = str; s < slim; s++) if (!isdigit(*s)) break;
+            if (s < slim)
+                fmt->version.minor = atoi(str);
+        }
+        else
+            fmt->version.minor = 0;
+    }
+}
+
 int hts_detect_format(hFILE *hfile, htsFormat *fmt)
 {
-    unsigned char s[18];
+    unsigned char s[21];
     ssize_t len = hpeek(hfile, s, 18);
     if (len < 0) return -1;
 
@@ -164,9 +195,13 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
     }
     if (len < 0) return -1;
 
+    fmt->compression_level = -1;
+    fmt->specific = NULL;
+
     if (len >= 6 && memcmp(s,"CRAM",4) == 0 && s[4]>=1 && s[4]<=3 && s[5]<=1) {
         fmt->category = sequence_data;
         fmt->format = cram;
+        fmt->version.major = s[4], fmt->version.minor = s[5];
         fmt->compression = custom;
         return 0;
     }
@@ -174,37 +209,49 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         if (memcmp(s, "BAM\1", 4) == 0) {
             fmt->category = sequence_data;
             fmt->format = bam;
+            // TODO Decompress enough to pick version from @HD-VN header
+            fmt->version.major = 1, fmt->version.minor = -1;
             return 0;
         }
         else if (memcmp(s, "BAI\1", 4) == 0) {
             fmt->category = index_file;
             fmt->format = bai;
+            fmt->version.major = -1, fmt->version.minor = -1;
             return 0;
         }
         else if (memcmp(s, "BCF\4", 4) == 0) {
             fmt->category = variant_data;
-            fmt->format = bcfv1;
+            fmt->format = bcf;
+            fmt->version.major = 1, fmt->version.minor = -1;
             return 0;
         }
         else if (memcmp(s, "BCF\2", 4) == 0) {
             fmt->category = variant_data;
             fmt->format = bcf;
+            fmt->version.major = s[3];
+            fmt->version.minor = (len >= 5 && s[4] <= 2)? s[4] : 0;
             return 0;
         }
         else if (memcmp(s, "CSI\1", 4) == 0) {
             fmt->category = index_file;
             fmt->format = csi;
+            fmt->version.major = 1, fmt->version.minor = -1;
             return 0;
         }
         else if (memcmp(s, "TBI\1", 4) == 0) {
             fmt->category = index_file;
             fmt->format = tbi;
+            fmt->version.major = -1, fmt->version.minor = -1;
             return 0;
         }
     }
     else if (len >= 16 && memcmp(s, "##fileformat=VCF", 16) == 0) {
         fmt->category = variant_data;
         fmt->format = vcf;
+        if (len >= 21 && s[16] == 'v')
+            parse_version(fmt, &s[17], &s[len]);
+        else
+            fmt->version.major = fmt->version.minor = -1;
         return 0;
     }
     else if (len >= 4 && s[0] == '@' &&
@@ -212,6 +259,12 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
               memcmp(s, "@RG\t", 4) == 0 || memcmp(s, "@PG\t", 4) == 0)) {
         fmt->category = sequence_data;
         fmt->format = sam;
+        // @HD-VN is not guaranteed to be the first tag, but then @HD is
+        // not guaranteed to be present at all...
+        if (len >= 9 && memcmp(s, "@HD\tVN:", 7) == 0)
+            parse_version(fmt, &s[7], &s[len]);
+        else
+            fmt->version.major = 1, fmt->version.minor = -1;
         return 0;
     }
     else {
@@ -223,30 +276,91 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         // FIXME For now, assume it's SAM
         fmt->category = sequence_data;
         fmt->format = sam;
+        fmt->version.major = 1, fmt->version.minor = -1;
         return 0;
     }
 
     fmt->category = unknown_category;
     fmt->format = unknown_format;
+    fmt->version.major = fmt->version.minor = -1;
     fmt->compression = no_compression;
     return 0;
 }
 
-const char *hts_format_description(const htsFormat *format)
+char *hts_format_description(const htsFormat *format)
 {
+    kstring_t str = { 0, 0, NULL };
+
     switch (format->format) {
-    case sam:   return "SAM-format sequence text";
-    case bam:   return "BAM-format compressed sequence data";
-    case cram:  return "CRAM-format compressed sequence data";
-    case vcf:   return "VCF-format variant calling text";
-    case bcf:   return "BCF-format compressed variant calling data";
-    case bcfv1: return "BCFv1-legacy-format compressed variant calling data";
-    case bai:   return "BAI sequence index data";
-    case crai:  return "CRAI compressed sequence index data";
-    case csi:   return "CSI compressed sequence index data";
-    case tbi:   return "Tabix compressed genomic region index data";
-    default:    return "unknown";
+    case sam:   kputs("SAM", &str); break;
+    case bam:   kputs("BAM", &str); break;
+    case cram:  kputs("CRAM", &str); break;
+    case vcf:   kputs("VCF", &str); break;
+    case bcf:
+        if (format->version.major == 1) kputs("Legacy BCF", &str);
+        else kputs("BCF", &str);
+        break;
+    case bai:   kputs("BAI", &str); break;
+    case crai:  kputs("CRAI", &str); break;
+    case csi:   kputs("CSI", &str); break;
+    case tbi:   kputs("Tabix", &str); break;
+    default:    kputs("unknown", &str); break;
     }
+
+    if (format->version.major >= 0) {
+        kputs(" version ", &str);
+        kputw(format->version.major, &str);
+        if (format->version.minor >= 0) {
+            kputc('.', &str);
+            kputw(format->version.minor, &str);
+        }
+    }
+
+    switch (format->compression) {
+    case custom: kputs(" compressed", &str); break;
+    case gzip:   kputs(" gzip-compressed", &str); break;
+    case bgzf:
+        switch (format->format) {
+        case bam:
+        case bcf:
+        case csi:
+        case tbi:
+            // These are by definition BGZF, so just use the generic term
+            kputs(" compressed", &str);
+            break;
+        default:
+            kputs(" BGZF-compressed", &str);
+            break;
+        }
+        break;
+    default: break;
+    }
+
+    switch (format->category) {
+    case sequence_data: kputs(" sequence", &str); break;
+    case variant_data:  kputs(" variant calling", &str); break;
+    case index_file:    kputs(" index", &str); break;
+    case region_list:   kputs(" genomic region", &str); break;
+    default: break;
+    }
+
+    if (format->compression == no_compression)
+        switch (format->format) {
+        case sam:
+        case crai:
+        case vcf:
+        case bed:
+            kputs(" text", &str);
+            break;
+
+        default:
+            kputs(" data", &str);
+            break;
+        }
+    else
+        kputs(" data", &str);
+
+    return ks_release(&str);
 }
 
 htsFile *hts_open(const char *fn, const char *mode)
@@ -304,6 +418,10 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
 
         // Fill in category (if determinable; e.g. 'b' could be BAM or BCF)
         fmt->category = format_category(fmt->format);
+
+        fmt->version.major = fmt->version.minor = -1;
+        fmt->compression_level = -1;
+        fmt->specific = NULL;
     }
     else goto error;
 
@@ -463,7 +581,8 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
     else fp->fn_aux = NULL;
 
     if (fp->format.format == cram)
-        cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, fp->fn_aux);
+        if (cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, fp->fn_aux))
+            return -1;
 
     return 0;
 }
@@ -607,6 +726,29 @@ char **hts_readlines(const char *fn, int *_n)
     return s;
 }
 
+// DEPRECATED: To be removed in a future HTSlib release
+int hts_file_type(const char *fname)
+{
+    int len = strlen(fname);
+    if ( !strcasecmp(".vcf.gz",fname+len-7) ) return FT_VCF_GZ;
+    if ( !strcasecmp(".vcf",fname+len-4) ) return FT_VCF;
+    if ( !strcasecmp(".bcf",fname+len-4) ) return FT_BCF_GZ;
+    if ( !strcmp("-",fname) ) return FT_STDIN;
+
+    hFILE *f = hopen(fname, "r");
+    if (f == NULL) return 0;
+
+    htsFormat fmt;
+    if (hts_detect_format(f, &fmt) < 0) { hclose_abruptly(f); return 0; }
+    if (hclose(f) < 0) return 0;
+
+    switch (fmt.format) {
+    case vcf: return (fmt.compression == no_compression)? FT_VCF : FT_VCF_GZ;
+    case bcf: return (fmt.compression == no_compression)? FT_BCF : FT_BCF_GZ;
+    default:  return 0;
+    }
+}
+
 /****************
  *** Indexing ***
  ****************/
@@ -663,11 +805,11 @@ static inline void insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
     l = &kh_value(b, k);
     if (absent) {
         l->m = 1; l->n = 0;
-        l->list = (hts_pair64_t*)calloc(l->m, 16);
+        l->list = (hts_pair64_t*)calloc(l->m, sizeof(hts_pair64_t));
     }
     if (l->n == l->m) {
         l->m <<= 1;
-        l->list = (hts_pair64_t*)realloc(l->list, l->m * 16);
+        l->list = (hts_pair64_t*)realloc(l->list, l->m * sizeof(hts_pair64_t));
     }
     l->list[l->n].u = beg;
     l->list[l->n++].v = end;
@@ -682,7 +824,7 @@ static inline void insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t o
         int old_m = l->m;
         l->m = end + 1;
         kroundup32(l->m);
-        l->offset = (uint64_t*)realloc(l->offset, l->m * 8);
+        l->offset = (uint64_t*)realloc(l->offset, l->m * sizeof(uint64_t));
         memset(l->offset + old_m, 0xff, 8 * (l->m - old_m)); // fill l->offset with (uint64_t)-1
     }
     if (beg == end) { // to save a loop in this case
@@ -775,9 +917,9 @@ static void compress_binning(hts_idx_t *idx, int i)
                 if (q->n + p->n > q->m) {
                     q->m = q->n + p->n;
                     kroundup32(q->m);
-                    q->list = (hts_pair64_t*)realloc(q->list, q->m * 16);
+                    q->list = (hts_pair64_t*)realloc(q->list, q->m * sizeof(hts_pair64_t));
                 }
-                memcpy(q->list + q->n, p->list, p->n * 16);
+                memcpy(q->list + q->n, p->list, p->n * sizeof(hts_pair64_t));
                 q->n += p->n;
                 free(p->list);
                 kh_del(bin, bidx, k);
@@ -819,6 +961,7 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped)
 {
     int bin;
+    if (tid<0) beg = -1, end = 0;
     if (tid >= idx->m) { // enlarge the index
         int32_t oldm = idx->m;
         idx->m = idx->m? idx->m<<1 : 2;
@@ -1046,7 +1189,7 @@ static int hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
             if (idx_read(is_bgzf, fp, &p->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&p->n);
             p->m = p->n;
-            p->list = (hts_pair64_t*)malloc(p->m * 16);
+            p->list = (hts_pair64_t*)malloc(p->m * sizeof(hts_pair64_t));
             if (p->list == NULL) return -2;
             if (idx_read(is_bgzf, fp, p->list, p->n<<4) != p->n<<4) return -1;
             if (is_be) swap_bins(p);
@@ -1056,7 +1199,7 @@ static int hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
             if (idx_read(is_bgzf, fp, &l->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&l->n);
             l->m = l->n;
-            l->offset = (uint64_t*)malloc(l->n << 3);
+            l->offset = (uint64_t*)malloc(l->n * sizeof(uint64_t));
             if (l->offset == NULL) return -2;
             if (idx_read(is_bgzf, fp, l->offset, l->n << 3) != l->n << 3) return -1;
             if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
@@ -1289,7 +1432,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
 
     if (beg < 0) beg = 0;
     if (end < beg) return 0;
-    if ((bidx = idx->bidx[tid]) == 0) return 0;
+    if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL) return 0;
 
     iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
     iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
@@ -1313,7 +1456,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
         if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
             n_off += kh_value(bidx, k).n;
     if (n_off == 0) return iter;
-    off = (hts_pair64_t*)calloc(n_off, 16);
+    off = (hts_pair64_t*)calloc(n_off, sizeof(hts_pair64_t));
     for (i = n_off = 0; i < iter->bins.n; ++i) {
         if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
             int j;
@@ -1348,53 +1491,102 @@ void hts_itr_destroy(hts_itr_t *iter)
     if (iter) { free(iter->off); free(iter->bins.a); free(iter); }
 }
 
+static inline long long push_digit(long long i, char c)
+{
+    // ensure subtraction occurs first, avoiding overflow for >= MAX-48 or so
+    int digit = c - '0';
+    return 10 * i + digit;
+}
+
+long long hts_parse_decimal(const char *str, char **end)
+{
+    long long n = 0;
+    int decimals = 0, e = 0, lost = 0;
+    char sign = '+', esign = '+';
+    const char *s;
+
+    while (isspace(*str)) str++;
+    s = str;
+
+    if (*s == '+' || *s == '-') sign = *s++;
+    while (*s)
+        if (isdigit(*s)) n = push_digit(n, *s++);
+        else if (*s == ',') s++;
+        else break;
+
+    if (*s == '.') {
+        s++;
+        while (isdigit(*s)) decimals++, n = push_digit(n, *s++);
+    }
+
+    if (*s == 'E' || *s == 'e') {
+        s++;
+        if (*s == '+' || *s == '-') esign = *s++;
+        while (isdigit(*s)) e = push_digit(e, *s++);
+        if (esign == '-') e = -e;
+    }
+
+    e -= decimals;
+    while (e > 0) n *= 10, e--;
+    while (e < 0) lost += n % 10, n /= 10, e++;
+
+    if (lost > 0 && hts_verbose >= 3)
+        fprintf(stderr, "[W::%s] discarding fractional part of %.*s\n",
+                __func__, (int)(s - str), str);
+
+    if (end) *end = (char *) s;
+    else if (*s && hts_verbose >= 2)
+        fprintf(stderr, "[W::%s] ignoring unknown characters after %.*s[%s]\n",
+                __func__, (int)(s - str), str, s);
+
+    return (sign == '+')? n : -n;
+}
+
 const char *hts_parse_reg(const char *s, int *beg, int *end)
 {
-    int i, k, l, name_end;
-    *beg = *end = -1;
-    name_end = l = strlen(s);
-    // determine the sequence name
-    for (i = l - 1; i >= 0; --i) if (s[i] == ':') break; // look for colon from the end
-    if (i >= 0) name_end = i;
-    if (name_end < l) { // check if this is really the end
-        int n_hyphen = 0;
-        for (i = name_end + 1; i < l; ++i) {
-            if (s[i] == '-') ++n_hyphen;
-            else if (!isdigit(s[i]) && s[i] != ',') break;
-        }
-        if (i < l || n_hyphen > 1) name_end = l; // malformated region string; then take str as the name
+    char *hyphen;
+    const char *colon = strrchr(s, ':');
+    if (colon == NULL) {
+        *beg = 0; *end = INT_MAX;
+        return s + strlen(s);
     }
-    // parse the interval
-    if (name_end < l) {
-        char *tmp;
-        tmp = (char*)alloca(l - name_end + 1);
-        for (i = name_end + 1, k = 0; i < l; ++i)
-            if (s[i] != ',') tmp[k++] = s[i];
-        tmp[k] = 0;
-        if ((*beg = strtol(tmp, &tmp, 10) - 1) < 0) *beg = 0;
-        *end = *tmp? strtol(tmp + 1, &tmp, 10) : 1<<29;
-        if (*beg > *end) name_end = l;
-    }
-    if (name_end == l) *beg = 0, *end = 1<<29;
-    return s + name_end;
+
+    *beg = hts_parse_decimal(colon+1, &hyphen) - 1;
+    if (*beg < 0) *beg = 0;
+
+    if (*hyphen == '\0') *end = INT_MAX;
+    else if (*hyphen == '-') *end = hts_parse_decimal(hyphen+1, NULL);
+    else return NULL;
+
+    if (*beg >= *end) return NULL;
+    return colon;
 }
 
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
     int tid, beg, end;
-    char *q, *tmp;
+    const char *q;
+
     if (strcmp(reg, ".") == 0)
-        return itr_query(idx, HTS_IDX_START, 0, 1<<29, readrec);
-    else if (strcmp(reg, "*") != 0) {
-        q = (char*)hts_parse_reg(reg, &beg, &end);
-        tmp = (char*)alloca(q - reg + 1);
+        return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
+    else if (strcmp(reg, "*") == 0)
+        return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
+
+    q = hts_parse_reg(reg, &beg, &end);
+    if (q) {
+        char *tmp = (char*)alloca(q - reg + 1);
         strncpy(tmp, reg, q - reg);
         tmp[q - reg] = 0;
-        if ((tid = getid(hdr, tmp)) < 0)
-            tid = getid(hdr, reg);
-        if (tid < 0) return 0;
-        return itr_query(idx, tid, beg, end, readrec);
-    } else return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
+        tid = getid(hdr, tmp);
+    }
+    else {
+        // not parsable as a region, but possibly a sequence named "foo:a"
+        tid = getid(hdr, reg);
+        beg = 0; end = INT_MAX;
+    }
+
+    if (tid < 0) return NULL;
+    return itr_query(idx, tid, beg, end, readrec);
 }
 
 int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
@@ -1408,6 +1600,9 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
         }
         ret = iter->readrec(fp, data, r, &tid, &beg, &end);
         if (ret < 0) iter->finished = 1;
+        iter->curr_tid = tid;
+        iter->curr_beg = beg;
+        iter->curr_end = end;
         return ret;
     }
     if (iter->off == 0) return -1;
@@ -1424,7 +1619,12 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
             iter->curr_off = bgzf_tell(fp);
             if (tid != iter->tid || beg >= iter->end) { // no need to proceed
                 ret = -1; break;
-            } else if (end > iter->beg && iter->end > beg) return ret;
+            } else if (end > iter->beg && iter->end > beg) {
+                iter->curr_tid = tid;
+                iter->curr_beg = beg;
+                iter->curr_end = end;
+                return ret;
+            }
         } else break; // end of file or error
     }
     iter->finished = 1;
@@ -1438,8 +1638,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 static char *test_and_fetch(const char *fn)
 {
     FILE *fp;
-    // FIXME Use is_remote_scheme() helper that's true for ftp/http/irods/etc
-    if (strstr(fn, "ftp://") == fn || strstr(fn, "http://") == fn) {
+    if (hisremote(fn)) {
         const int buf_size = 1 * 1024 * 1024;
         hFILE *fp_remote;
         uint8_t *buf;

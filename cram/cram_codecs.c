@@ -33,9 +33,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * {codec,type} tuples.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "io_lib_config.h"
-#endif
+#include <config.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -1072,7 +1070,7 @@ int cram_huffman_encode_char(cram_slice *slice, cram_codec *c,
     int i, code, len, r = 0;
     unsigned char *syms = (unsigned char *)in;
 
-    do {
+    while (in_size--) {
 	int sym = *syms++;
 	if (sym >= -1 && sym < MAX_HUFF) {
 	    i = c->e_huffman.val2code[sym+1];
@@ -1093,7 +1091,7 @@ int cram_huffman_encode_char(cram_slice *slice, cram_codec *c,
 	}
 
 	r |= store_bits_MSB(c->out, code, len);
-    } while (--in_size);
+    }
 
     return r;
 }
@@ -1108,7 +1106,7 @@ int cram_huffman_encode_int(cram_slice *slice, cram_codec *c,
     int i, code, len, r = 0;
     int *syms = (int *)in;
 
-    do {
+    while (in_size--) {
 	int sym = *syms++;
 
 	if (sym >= -1 && sym < MAX_HUFF) {
@@ -1130,7 +1128,7 @@ int cram_huffman_encode_int(cram_slice *slice, cram_codec *c,
 	}
 
 	r |= store_bits_MSB(c->out, code, len);
-    } while (--in_size);
+    }
 
     return r;
 }
@@ -1456,6 +1454,13 @@ int cram_byte_array_len_encode(cram_slice *slice, cram_codec *c,
 void cram_byte_array_len_encode_free(cram_codec *c) {
     if (!c)
 	return;
+
+    if (c->e_byte_array_len.len_codec)
+	c->e_byte_array_len.len_codec->free(c->e_byte_array_len.len_codec);
+
+    if (c->e_byte_array_len.val_codec)
+	c->e_byte_array_len.val_codec->free(c->e_byte_array_len.val_codec);
+
     free(c);
 }
 

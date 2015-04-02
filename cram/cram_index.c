@@ -48,9 +48,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * binary search to find the first range which overlaps any given coordinate.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "io_lib_config.h"
-#endif
+#include <config.h>
 
 #include <stdio.h>
 #include <errno.h>
@@ -64,6 +62,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ctype.h>
 
 #include "htslib/hfile.h"
+#include "hts_internal.h"
 #include "cram/cram.h"
 #include "cram/os.h"
 #include "cram/zfio.h"
@@ -139,11 +138,11 @@ static int kget_int64(kstring_t *k, size_t *pos, int64_t *val_p) {
  *        -1 for failure
  */
 int cram_index_load(cram_fd *fd, const char *fn) {
-    char fn2[PATH_MAX];
+    char *fn2;
     char buf[65536];
     ssize_t len;
     kstring_t kstr = {0};
-    hFILE *fp;
+    FILE *fp;
     cram_index *idx;
     cram_index **idx_stack = NULL, *ep, e;
     int idx_stack_alloc = 0, idx_stack_ptr = 0;
@@ -165,27 +164,36 @@ int cram_index_load(cram_fd *fd, const char *fn) {
     idx_stack = calloc(++idx_stack_alloc, sizeof(*idx_stack));
     idx_stack[idx_stack_ptr] = idx;
 
-    sprintf(fn2, "%s.crai", fn);
-    if (!(fp = hopen(fn2, "r"))) {
+    fn2 = hts_idx_getfn(fn, ".crai");
+    if (!fn2) {
 	perror(fn2);
 	free(idx_stack);
 	return -1; 
     }
 
+    if (!(fp = fopen(fn2, "r"))) {
+	perror(fn2);
+	free(idx_stack);
+	free(fn2);
+	return -1;
+    }
+
     // Load the file into memory
-    while ((len = hread(fp, buf, 65536)) > 0)
+    while ((len = fread(buf, 1, 65536, fp)) > 0)
 	kputsn(buf, len, &kstr);
     if (len < 0 || kstr.l < 2) {
 	if (kstr.s)
 	    free(kstr.s);
 	free(idx_stack);
+	free(fn2);
 	return -1;
     }
 
-    if (hclose(fp)) {
+    if (fclose(fp)) {
 	if (kstr.s)
 	    free(kstr.s);
 	free(idx_stack);
+	free(fn2);
 	return -1;
     }
 	
@@ -197,6 +205,7 @@ int cram_index_load(cram_fd *fd, const char *fn) {
 	free(kstr.s);
 	if (!s) {
 	    free(idx_stack);
+	    free(fn2);
 	    return -1;
 	}
 	kstr.s = s;
@@ -210,22 +219,22 @@ int cram_index_load(cram_fd *fd, const char *fn) {
     do {
 	/* 1.1 layout */
 	if (kget_int32(&kstr, &pos, &e.refid) == -1) {
-	    free(kstr.s); free(idx_stack); return -1;
+	    free(kstr.s); free(idx_stack); free(fn2); return -1;
 	}
 	if (kget_int32(&kstr, &pos, &e.start) == -1) {
-	    free(kstr.s); free(idx_stack); return -1;
+	    free(kstr.s); free(idx_stack); free(fn2); return -1;
 	}
 	if (kget_int32(&kstr, &pos, &e.end) == -1) {
-	    free(kstr.s); free(idx_stack); return -1;
+	    free(kstr.s); free(idx_stack); free(fn2); return -1;
 	}
 	if (kget_int64(&kstr, &pos, &e.offset) == -1) {
-	    free(kstr.s); free(idx_stack); return -1;
+	    free(kstr.s); free(idx_stack); free(fn2); return -1;
 	}
 	if (kget_int32(&kstr, &pos, &e.slice) == -1) {
-	    free(kstr.s); free(idx_stack); return -1;
+	    free(kstr.s); free(idx_stack); free(fn2); return -1;
 	}
 	if (kget_int32(&kstr, &pos, &e.len) == -1) {
-	    free(kstr.s); free(idx_stack); return -1;
+	    free(kstr.s); free(idx_stack); free(fn2); return -1;
 	}
 
 	e.end += e.start-1;
@@ -234,6 +243,7 @@ int cram_index_load(cram_fd *fd, const char *fn) {
 	if (e.refid < -1) {
 	    free(kstr.s);
 	    free(idx_stack);
+	    free(fn2);
 	    fprintf(stderr, "Malformed index file, refid %d\n", e.refid);
 	    return -1;
 	}
@@ -283,6 +293,7 @@ int cram_index_load(cram_fd *fd, const char *fn) {
 
     free(idx_stack);
     free(kstr.s);
+    free(fn2);
 
     // dump_index(fd);
 
@@ -361,15 +372,18 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
 	    continue;
 	}
     }
+    // i==j or i==j-1. Check if j is better.
+    if (from->e[j].start < pos && from->e[j].refid == refid)
+	i = j;
 
     /* The above found *a* bin overlapping, but not necessarily the first */
     while (i > 0 && from->e[i-1].end >= pos)
 	i--;
 
-    /* Special case for matching a start pos */
-    if (i+1 < from->nslice &&
-	from->e[i+1].start == pos &&
-	from->e[i+1].refid == refid)
+    /* We may be one bin before the optimum, so check */
+    while (i+1 < from->nslice &&
+	   (from->e[i].refid < refid ||
+	    from->e[i].end < pos))
 	i++;
 
     e = &from->e[i];

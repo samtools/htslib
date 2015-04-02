@@ -1,6 +1,6 @@
 /*  hfile_internal.h -- internal parts of low-level input/output streams.
 
-    Copyright (C) 2013-2014 Genome Research Ltd.
+    Copyright (C) 2013-2015 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -26,6 +26,10 @@ DEALINGS IN THE SOFTWARE.  */
 #define HFILE_INTERNAL_H
 
 #include "htslib/hfile.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct hFILE_backend {
     /* As per read(2), returning the number of bytes read (possibly 0) or
@@ -56,6 +60,7 @@ struct hFILE_backend {
 /* These are called from the hopen() dispatcher, and should call hfile_init()
    to malloc a struct "derived" from hFILE and initialise it appropriately,
    including setting base.backend to their own backend vector.  */
+hFILE *hopen_irods(const char *filename, const char *mode);
 hFILE *hopen_net(const char *filename, const char *mode);
 
 /* May be called by hopen_*() functions to decode a fopen()-style mode into
@@ -71,5 +76,9 @@ hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity);
    in the event opening the stream subsequently fails.  (This is safe to use
    even if fp is NULL.  This takes care to preserve errno.)  */
 void hfile_destroy(hFILE *fp);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

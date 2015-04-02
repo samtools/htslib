@@ -34,6 +34,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 #include <zlib.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Either a gzFile or a FILE.
  */
@@ -50,5 +54,9 @@ zfp *zfopen(const char *path, const char *mode);
 int zfclose(zfp *zf);
 int zfpeek(zfp *zf);
 int zfeof(zfp *zf);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _ZFIO_H_ */

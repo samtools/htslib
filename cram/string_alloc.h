@@ -31,11 +31,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _STRING_ALLOC_H_
 #define _STRING_ALLOC_H_
 
+#include <stdlib.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <stdlib.h>
 
 /* 
  * A pooled string allocator intended to cut down on the
@@ -61,9 +61,8 @@ char *string_alloc(string_alloc_t *a_str, size_t length);
 char *string_dup(string_alloc_t *a_str, char *instr);
 char *string_ndup(string_alloc_t *a_str, char *instr, size_t len);
 
-#endif
-
 #ifdef __cplusplus
 }
 #endif
 
+#endif

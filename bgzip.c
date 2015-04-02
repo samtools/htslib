@@ -22,6 +22,8 @@
    THE SOFTWARE.
 */
 
+#include <config.h>
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -156,8 +158,8 @@ int main(int argc, char **argv)
                 strcpy(name, argv[optind]);
                 strcat(name, ".gz");
                 f_dst = write_open(name, is_forced);
-                if (f_dst < 0) return 1;
                 free(name);
+                if (f_dst < 0) return 1;
             }
         }
         else if (!pstdout && isatty(fileno((FILE *)stdout)) )

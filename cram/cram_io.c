@@ -44,15 +44,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * a way to return errors for when malloc fails.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "io_lib_config.h"
-#endif
+#include <config.h>
 
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <zlib.h>
 #ifdef HAVE_LIBBZ2
 #include <bzlib.h>
@@ -67,7 +66,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/cram.h"
 #include "cram/os.h"
-#include "cram/md5.h"
+#include "htslib/hts.h"
 #include "cram/open_trace_file.h"
 #include "cram/rANS_static.h"
 
@@ -910,8 +909,10 @@ int cram_uncompress_block(cram_block *b) {
 	uncomp = zlib_mem_inflate((char *)b->data, b->comp_size, &uncomp_size);
 	if (!uncomp)
 	    return -1;
-	if ((int)uncomp_size != b->uncomp_size)
+	if ((int)uncomp_size != b->uncomp_size) {
+	    free(uncomp);
 	    return -1;
+	}
 	free(b->data);
 	b->data = (unsigned char *)uncomp;
 	b->alloc = uncomp_size;
@@ -1459,6 +1460,19 @@ int paranoid_fclose(FILE *fp) {
  * track the number of callers interested in any specific reference.
  */
 
+/*
+ * Frees/unmaps a reference sequence and associated file handles.
+ */
+static void ref_entry_free_seq(ref_entry *e) {
+    if (e->mf)
+	mfclose(e->mf);
+    if (e->seq && !e->mf)
+	free(e->seq);
+
+    e->seq = NULL;
+    e->mf = NULL;
+}
+
 void refs_free(refs_t *r) {
     RP("refs_free()\n");
 
@@ -1481,8 +1495,7 @@ void refs_free(refs_t *r) {
 		continue;
 	    if (!(e = kh_val(r->h_meta, k)))
 		continue;
-	    if (e->seq)
-		free(e->seq);
+	    ref_entry_free_seq(e);
 	    free(e);
 	}
 
@@ -1538,9 +1551,12 @@ static refs_t *refs_create(void) {
  */
 static BGZF *bgzf_open_ref(char *fn, char *mode) {
     BGZF *fp;
+    char fai_file[PATH_MAX];
 
-    if (fai_build(fn) != 0)
-	return NULL;
+    snprintf(fai_file, PATH_MAX, "%s.fai", fn);
+    if (access(fai_file, R_OK) != 0)
+	if (fai_build(fn) != 0)
+	    return NULL;
 
     if (!(fp = bgzf_open(fn, mode))) {
 	perror(fn);
@@ -1654,6 +1670,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 
 	e->count = 0;
 	e->seq = NULL;
+	e->mf = NULL;
 
 	k = kh_put(refs, r->h_meta, e->name, &n);
 	if (-1 == n)  {
@@ -1702,6 +1719,47 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 }
 
 /*
+ * Verifies that the CRAM @SQ lines and .fai files match.
+ */
+static void sanitise_SQ_lines(cram_fd *fd) {
+    int i;
+
+    if (!fd->header)
+	return;
+
+    if (!fd->refs || !fd->refs->h_meta)
+	return;
+
+    for (i = 0; i < fd->header->nref; i++) {
+	char *name = fd->header->ref[i].name;
+	khint_t k = kh_get(refs, fd->refs->h_meta, name);
+	ref_entry *r;
+
+	// We may have @SQ lines which have no known .fai, but do not
+	// in themselves pose a problem because they are unused in the file.
+	if (k == kh_end(fd->refs->h_meta))
+	    continue;
+
+	if (!(r = (ref_entry *)kh_val(fd->refs->h_meta, k)))
+	    continue;
+
+	if (r->length && r->length != fd->header->ref[i].len) {
+	    assert(strcmp(r->name, fd->header->ref[i].name) == 0);
+
+	    // Should we also check MD5sums here to ensure the correct
+	    // reference was given?
+	    fprintf(stderr, "WARNING: Header @SQ length mismatch for "
+		    "ref %s, %d vs %d\n",
+		    r->name, fd->header->ref[i].len, (int)r->length);
+
+	    // Fixing the parsed @SQ header will make MD:Z: strings work
+	    // and also stop it producing N for the sequence.
+	    fd->header->ref[i].len = r->length;
+	}
+    }
+}
+
+/*
  * Indexes references by the order they appear in a BAM file. This may not
  * necessarily be the same order they appear in the fasta reference file.
  *
@@ -1740,7 +1798,10 @@ int refs2id(refs_t *r, SAM_hdr *h) {
  *         -1 on failure
  */
 static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
-    int i;
+    int i, j;
+
+    if (!r)
+	return -1;
 
     if (!h || h->nref == 0)
 	return 0;
@@ -1748,48 +1809,46 @@ static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
     //fprintf(stderr, "refs_from_header for %p mode %c\n", fd, fd->mode);
 
     /* Existing refs are fine, as long as they're compatible with the hdr. */
-    i = r->nref;
-    if (r->nref < h->nref)
-	r->nref = h->nref;
-
-    if (!(r->ref_id = realloc(r->ref_id, r->nref * sizeof(*r->ref_id))))
+    if (!(r->ref_id = realloc(r->ref_id, (r->nref + h->nref) * sizeof(*r->ref_id))))
 	return -1;
 
-    for (; i < r->nref; i++)
-	r->ref_id[i] = NULL;
-
     /* Copy info from h->ref[i] over to r */
-    for (i = 0; i < h->nref; i++) {
+    for (i = 0, j = r->nref; i < h->nref; i++) {
 	SAM_hdr_type *ty;
 	SAM_hdr_tag *tag;
 	khint_t k;
 	int n;
 
-	if (r->ref_id[i] && 0 == strcmp(r->ref_id[i]->name, h->ref[i].name))
+	k = kh_get(refs, r->h_meta, h->ref[i].name);
+	if (k != kh_end(r->h_meta))
+	    // Ref already known about
 	    continue;
 
-	if (!(r->ref_id[i] = calloc(1, sizeof(ref_entry))))
+	if (!(r->ref_id[j] = calloc(1, sizeof(ref_entry))))
 	    return -1;
 
 	if (!h->ref[i].name)
 	    return -1;
 
-	r->ref_id[i]->name = string_dup(r->pool, h->ref[i].name);
-	r->ref_id[i]->length = 0; // marker for not yet loaded
+	r->ref_id[j]->name = string_dup(r->pool, h->ref[i].name);
+	r->ref_id[j]->length = 0; // marker for not yet loaded
 
 	/* Initialise likely filename if known */
 	if ((ty = sam_hdr_find(h, "SQ", "SN", h->ref[i].name))) {
 	    if ((tag = sam_hdr_find_key(h, ty, "M5", NULL))) {
-		r->ref_id[i]->fn = string_dup(r->pool, tag->str+3);
-		//fprintf(stderr, "Tagging @SQ %s / %s\n", r->ref_id[i]->name, r->ref_id[i]->fn);
+		r->ref_id[j]->fn = string_dup(r->pool, tag->str+3);
+		//fprintf(stderr, "Tagging @SQ %s / %s\n", r->ref_id[h]->name, r->ref_id[h]->fn);
 	    }
 	}
 
-	k = kh_put(refs, r->h_meta, r->ref_id[i]->name, &n);
+	k = kh_put(refs, r->h_meta, r->ref_id[j]->name, &n);
 	if (n <= 0) // already exists or error
 	    return -1;
-	kh_val(r->h_meta, k) = r->ref_id[i];
+	kh_val(r->h_meta, k) = r->ref_id[j];
+
+	j++;
     }
+    r->nref = j;
 
     return 0;
 }
@@ -1881,6 +1940,30 @@ void mkdir_prefix(char *path, int mode) {
 }
 
 /*
+ * Return the cache directory to use, based on the first of these
+ * environment variables to be set to a non-empty value.
+ */
+static const char *get_cache_basedir(const char **extra) {
+    char *base;
+
+    *extra = "";
+
+    base = getenv("XDG_CACHE_HOME");
+    if (base && *base) return base;
+
+    base = getenv("HOME");
+    if (base && *base) { *extra = "/.cache"; return base; }
+
+    base = getenv("TMPDIR");
+    if (base && *base) return base;
+
+    base = getenv("TEMP");
+    if (base && *base) return base;
+
+    return "/tmp";
+}
+
+/*
  * Queries the M5 string from the header and attempts to populate the
  * reference from this using the REF_PATH environment.
  *
@@ -1891,15 +1974,28 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     char *ref_path = getenv("REF_PATH");
     SAM_hdr_type *ty;
     SAM_hdr_tag *tag;
-    char path[PATH_MAX], path_tmp[PATH_MAX];
+    char path[PATH_MAX], path_tmp[PATH_MAX], cache[PATH_MAX];
     char *local_cache = getenv("REF_CACHE");
     mFILE *mf;
 
     if (fd->verbose)
 	fprintf(stderr, "cram_populate_ref on fd %p, id %d\n", fd, id);
 
-    if (!ref_path || *ref_path == 0)
+    if (!ref_path || *ref_path == '\0') {
+	/*
+	 * If we have no ref path, we use the EBI server.
+	 * However to avoid spamming it we require a local ref cache too.
+	 */
 	ref_path = "http://www.ebi.ac.uk:80/ena/cram/md5/%s";
+	if (!local_cache || *local_cache == '\0') {
+	    const char *extra;
+	    const char *base = get_cache_basedir(&extra);
+	    snprintf(cache,PATH_MAX, "%s%s/hts-ref/%%2s/%%2s/%%s", base, extra);
+	    local_cache = cache;
+	    if (fd->verbose)
+		fprintf(stderr, "Populating local cache: %s\n", local_cache);
+	}
+    }
 
     if (!r->name)
 	return -1;
@@ -1942,6 +2038,13 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if ((mf = open_path_mfile(tag->str+3, ref_path, NULL))) {
 	size_t sz;
 	r->seq = mfsteal(mf, &sz);
+	if (r->seq) {
+	    r->mf = NULL;
+	} else {
+	    // keep mf around as we couldn't detach
+	    r->seq = mf->data;
+	    r->mf = mf;
+	}
 	r->length = sz;
     } else {
 	refs_t *refs;
@@ -1963,6 +2066,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	}
 	if (!(refs = refs_load_fai(fd->refs, fn, 0)))
 	    return -1;
+	sanitise_SQ_lines(fd);
+
 	fd->refs = refs;
 	if (fd->refs->fp) {
 	    if (bgzf_close(fd->refs->fp) != 0)
@@ -2054,14 +2159,11 @@ static void cram_ref_decr_locked(refs_t *r, int id) {
 		r->ref_id[r->last_id]->seq) {
 		RP("%d FREE REF %d (%p)\n", gettid(),
 		   r->last_id, r->ref_id[r->last_id]->seq);
-		free(r->ref_id[r->last_id]->seq);
-		r->ref_id[r->last_id]->seq = NULL;
+		ref_entry_free_seq(r->ref_id[r->last_id]);
 		r->ref_id[r->last_id]->length = 0;
 	    }
-	    r->last_id = -1;
-	} else {
-	    r->last_id = id;
 	}
+	r->last_id = id;
     }
 }
 
@@ -2172,10 +2274,8 @@ ref_entry *cram_ref_load(refs_t *r, int id) {
 	assert(r->last->count > 0);
 	if (--r->last->count <= 0) {
 	    RP("%d FREE REF %d (%p)\n", gettid(), id, r->ref_id[id]->seq);
-	    if (r->last->seq) {
-		free(r->last->seq);
-		r->last->seq = NULL;
-	    }
+	    if (r->last->seq)
+		ref_entry_free_seq(r->last);
 	}
     }
 
@@ -2199,6 +2299,7 @@ ref_entry *cram_ref_load(refs_t *r, int id) {
 
     RP("%d INC REF %d, %d\n", gettid(), id, (int)(e->count+1));
     e->seq = seq;
+    e->mf = NULL;
     e->count++;
 
     /*
@@ -2301,6 +2402,8 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
 	    return NULL;
 	}
 	r = fd->refs->ref_id[id];
+	if (fd->unsorted)
+	    cram_ref_incr_locked(fd->refs, id);
     }
 
 
@@ -2432,6 +2535,7 @@ int cram_load_reference(cram_fd *fd, char *fn) {
 	fd->refs = refs_load_fai(fd->refs, fn,
 				 !(fd->embed_ref && fd->mode == 'r'));
 	fn = fd->refs ? fd->refs->fn : NULL;
+	sanitise_SQ_lines(fd);
     }
     fd->ref_fn = fn;
 
@@ -2575,7 +2679,11 @@ cram_container *cram_read_container(cram_fd *fd) {
 	}
     } else {
 	if ((s = int32_decode(fd, &c2.length)) == -1) {
-	    fd->eof = fd->empty_container ? 1 : 2;
+	    if (CRAM_MAJOR_VERS(fd->version) == 2 &&
+		CRAM_MINOR_VERS(fd->version) == 0)
+		fd->eof = 1; // EOF blocks arrived in v2.1
+	    else
+		fd->eof = fd->empty_container ? 1 : 2;
 	    return NULL;
 	} else {
 	    rd+=s;
@@ -2590,10 +2698,19 @@ cram_container *cram_read_container(cram_fd *fd) {
 	c2.record_counter = 0;
 	c2.num_bases = 0;
     } else {
-	if ((s = itf8_decode(fd, &c2.record_counter)) == -1)
-	    return NULL;
-	else
-	    rd += s;
+	if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	    if ((s = ltf8_decode(fd, &c2.record_counter)) == -1)
+		return NULL;
+	    else
+		rd += s;
+	} else {
+	    int32_t i32;
+	    if ((s = itf8_decode(fd, &i32)) == -1)
+		return NULL;
+	    else
+		rd += s;
+	    c2.record_counter = i32;
+	}
 
 	if ((s = ltf8_decode(fd, &c2.num_bases))== -1)
 	    return NULL;
@@ -2651,7 +2768,7 @@ cram_container *cram_read_container(cram_fd *fd) {
 	cp += itf8_put(cp, c->ref_seq_start);
 	cp += itf8_put(cp, c->ref_seq_span);
 	cp += itf8_put(cp, c->num_records);
-	cp += itf8_put(cp, c->record_counter);
+	cp += ltf8_put((char *)cp, c->record_counter);
 	cp += itf8_put(cp, c->num_bases);
 	cp += itf8_put(cp, c->num_blocks);
 	cp += itf8_put(cp, c->num_landmarks);
@@ -2718,10 +2835,14 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
 	cp += itf8_put(cp, c->ref_seq_span);
     }
     cp += itf8_put(cp, c->num_records);
-    if (CRAM_MAJOR_VERS(fd->version) != 1) {
+    if (CRAM_MAJOR_VERS(fd->version) == 2) {
 	cp += itf8_put(cp, c->record_counter);
 	cp += ltf8_put(cp, c->num_bases);
+    } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	cp += ltf8_put(cp, c->record_counter);
+	cp += ltf8_put(cp, c->num_bases);
     }
+
     cp += itf8_put(cp, c->num_blocks);
     cp += itf8_put(cp, c->num_landmarks);
     for (i = 0; i < c->num_landmarks; i++)
@@ -3067,7 +3188,6 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
     s->block = NULL;
     s->block_by_id = NULL;
     s->last_apos = 0;
-    s->id = 0;
     if (!(s->crecs = malloc(nrecs * sizeof(cram_record))))  goto err;
     s->cigar = NULL;
     s->cigar_alloc = 0;
@@ -3181,8 +3301,6 @@ cram_slice *cram_read_slice(cram_fd *fd) {
 
     s->last_apos = s->hdr->ref_seq_start;
     
-    s->id = fd->slice_num++;
-
     return s;
 
  err:
@@ -3419,9 +3537,10 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 		return -1;
 
 	    if (!sam_hdr_find_key(hdr, ty, "M5", NULL)) {
-		char unsigned buf[16], buf2[33];
-		int j, rlen;
-		MD5_CTX md5;
+		char unsigned buf[16];
+		char buf2[33];
+		int rlen;
+		hts_md5_context *md5;
 
 		if (!fd->refs ||
 		    !fd->refs->ref_id ||
@@ -3429,19 +3548,17 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 		    return -1;
 		}
 		rlen = fd->refs->ref_id[i]->length;
-		MD5_Init(&md5);
+		if (!(md5 = hts_md5_init()))
+		    return -1;
 		ref = cram_get_ref(fd, i, 1, rlen);
 		if (NULL == ref) return -1;
 		rlen = fd->refs->ref_id[i]->length; /* In case it just loaded */
-		MD5_Update(&md5, ref, rlen);
-		MD5_Final(buf, &md5);
+		hts_md5_update(md5, ref, rlen);
+		hts_md5_final(buf, md5);
+		hts_md5_destroy(md5);
 		cram_ref_decr(fd->refs, i);
 
-		for (j = 0; j < 16; j++) {
-		    buf2[j*2+0] = "0123456789abcdef"[buf[j]>>4];
-		    buf2[j*2+1] = "0123456789abcdef"[buf[j]&15];
-		}
-		buf2[32] = 0;
+		hts_md5_hex(buf2, buf);
 		if (sam_hdr_update(hdr, ty, "M5", buf2, NULL))
 		    return -1;
 	    }
@@ -3766,7 +3883,6 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->prefix = strdup((cp = strrchr(filename, '/')) ? cp+1 : filename);
     if (!fd->prefix)
 	goto err;
-    fd->slice_num = 0;
     fd->first_base = fd->last_base = -1;
     fd->record_counter = 0;
 
@@ -3787,7 +3903,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->use_bz2 = 0;
     fd->use_rans = (CRAM_MAJOR_VERS(fd->version) >= 3);
     fd->use_lzma = 0;
-    fd->multi_seq = 0;
+    fd->multi_seq = -1;
     fd->unsorted   = 0;
     fd->shared_ref = 0;
 

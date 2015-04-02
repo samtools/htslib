@@ -61,6 +61,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <config.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -259,7 +261,7 @@ static mFILE *find_file_dir(char *file, char *dirname) {
     }
 
     if (is_file(path)) {
-	return mfopen(path, "rb");
+	return mfopen(path, "rbm");
     }
 
     return NULL;

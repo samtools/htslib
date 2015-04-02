@@ -1,4 +1,4 @@
-@SQ	SN:c1	LN:16
+@SQ	SN:c1	LN:10
 @RG	ID:p.sam	SM:unknown	LB:p.sam
 s0a	0	c1	6	0	5I6P5M	*	0	0	AACCGCGGTT	*	RG:Z:p.sam
 s0b	0	c1	6	0	5I6P5M	*	0	0	AACCGCGGTT	*	RG:Z:p.sam

@@ -42,14 +42,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _CRAM_IO_H_
 #define _CRAM_IO_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define ITF8_MACROS
 
 #include <stdint.h>
 #include <cram/misc.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**@{ ----------------------------------------------------------------------
  * ITF8 encoding and decoding.
@@ -99,6 +99,9 @@ int itf8_put(char *cp, int32_t val);
 #define itf8_size(v) ((!((v)&~0x7f))?1:(!((v)&~0x3fff))?2:(!((v)&~0x1fffff))?3:(!((v)&~0xfffffff))?4:5)
 
 #endif
+
+int ltf8_get(char *cp, int64_t *val_p);
+int ltf8_put(char *cp, int64_t val);
 
 /*! Pushes a value in ITF8 format onto the end of a block.
  *
@@ -227,11 +230,11 @@ char *cram_content_type2str(enum cram_content_type t);
         unsigned char *cp;			     \
         BLOCK_GROW((b),11);			     \
 	cp = &(b)->data[(b)->byte];		     \
-        (b)->byte += append_uint(cp, (i)) - cp;	\
+        (b)->byte += append_uint32(cp, (i)) - cp;	\
     } while (0)
 
-static inline unsigned char *append_uint(unsigned char *cp, int32_t i) {
-    int32_t j;
+static inline unsigned char *append_uint32(unsigned char *cp, uint32_t i) {
+    uint32_t j;
 
     if (i == 0) {
 	*cp++ = '0';
@@ -264,6 +267,38 @@ static inline unsigned char *append_uint(unsigned char *cp, int32_t i) {
  x2: *cp++ = i / 100       + '0', i %= 100;
  x1: *cp++ = i / 10        + '0', i %= 10;
  x0: *cp++ = i             + '0';
+
+    return cp;
+}
+
+static inline unsigned char *append_sub32(unsigned char *cp, uint32_t i) {
+    *cp++ = i / 100000000 + '0', i %= 100000000;
+    *cp++ = i / 10000000  + '0', i %= 10000000;
+    *cp++ = i / 1000000   + '0', i %= 1000000;
+    *cp++ = i / 100000    + '0', i %= 100000;
+    *cp++ = i / 10000     + '0', i %= 10000;
+    *cp++ = i / 1000      + '0', i %= 1000;
+    *cp++ = i / 100       + '0', i %= 100;
+    *cp++ = i / 10        + '0', i %= 10;
+    *cp++ = i             + '0';
+
+    return cp;
+}
+
+static inline unsigned char *append_uint64(unsigned char *cp, uint64_t i) {
+    uint64_t j;
+
+    if (i <= 0xffffffff)
+	return append_uint32(cp, i);
+
+    if ((j = i/1000000000) > 1000000000) {
+	cp = append_uint32(cp, j/1000000000);
+	j %= 1000000000;
+	cp = append_sub32(cp, j);
+    } else {
+	cp = append_uint32(cp, i / 1000000000);
+    }
+    cp = append_sub32(cp, i % 1000000000);
 
     return cp;
 }

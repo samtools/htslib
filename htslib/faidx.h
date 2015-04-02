@@ -28,6 +28,12 @@
 #ifndef HTSLIB_FAIDX_H
 #define HTSLIB_FAIDX_H
 
+#include "hts_defs.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*!
   @header
 
@@ -48,10 +54,6 @@
 struct __faidx_t;
 typedef struct __faidx_t faidx_t;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
     /*!
       @abstract   Build index for a FASTA or bgzip-compressed FASTA file.
       @param  fn  FASTA file name
@@ -61,7 +63,7 @@ extern "C" {
     int fai_build(const char *fn);
 
     /*!
-      @abstract    Distroy a faidx_t struct.
+      @abstract    Destroy a faidx_t struct.
       @param  fai  Pointer to the struct to be destroyed
      */
     void fai_destroy(faidx_t *fai);
@@ -89,7 +91,7 @@ extern "C" {
       @param  fai  Pointer to the faidx_t struct
       @return      The number of sequences
      */
-    int faidx_fetch_nseq(const faidx_t *fai);
+    int faidx_fetch_nseq(const faidx_t *fai) HTS_DEPRECATED("Please use faidx_nseq instead");
 
     /*!
       @abstract    Fetch the sequence in a region.

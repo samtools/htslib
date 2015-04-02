@@ -22,6 +22,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#include <config.h>
+
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
@@ -131,18 +133,19 @@ int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int
 
 int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 {
+    htsFile* file_ptr = hts_open(fname, "r");
+    if ( ! file_ptr ) {
+        files->errnum = open_failed;
+        return 0;
+    }
+
     files->has_line = (int*) realloc(files->has_line, sizeof(int)*(files->nreaders+1));
     files->has_line[files->nreaders] = 0;
     files->readers  = (bcf_sr_t*) realloc(files->readers, sizeof(bcf_sr_t)*(files->nreaders+1));
     bcf_sr_t *reader = &files->readers[files->nreaders++];
     memset(reader,0,sizeof(bcf_sr_t));
 
-    reader->file = hts_open(fname, "r");
-    if ( !reader->file )
-    {
-        files->errnum = open_failed;
-        return 0;
-    }
+    reader->file = file_ptr;
 
     files->errnum = 0;
 
@@ -401,6 +404,7 @@ static int _reader_seek(bcf_sr_t *reader, const char *seq, int start, int end)
         if ( tid==-1 ) return -1;    // the sequence not present in this file
         reader->itr = bcf_itr_queryi(reader->bcf_idx,tid,start,end+1);
     }
+    if ( !reader->itr ) fprintf(stderr,"Could not seek: %s:%d-%d\n",seq,start+1,end+1);
     assert(reader->itr);
     return 0;
 }
@@ -871,7 +875,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
         if ( *ep==':' )
         {
             sp = ep+1;
-            from = strtol(sp,(char**)&ep,10);
+            from = hts_parse_decimal(sp,(char**)&ep);
             if ( sp==ep )
             {
                 fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
@@ -890,7 +894,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             }
             ep++;
             sp = ep;
-            to = strtol(sp,(char**)&ep,10);
+            to = hts_parse_decimal(sp,(char**)&ep);
             if ( *ep && *ep!=',' )
             {
                 fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
@@ -937,15 +941,15 @@ static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **ch
     if ( i<=k ) return -1;
     if ( k==l )
     {
-        *from = *to = strtol(ss, &tmp, 10);
+        *from = *to = hts_parse_decimal(ss, &tmp);
         if ( tmp==ss ) return -1;
     }
     else
     {
         if ( k==ifrom )
-            *from = strtol(ss, &tmp, 10);
+            *from = hts_parse_decimal(ss, &tmp);
         else
-            *to = strtol(ss, &tmp, 10);
+            *to = hts_parse_decimal(ss, &tmp);
         if ( ss==tmp ) return -1;
 
         for (i=k; i<l && *se; i++)
@@ -955,9 +959,9 @@ static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **ch
         }
         if ( i<l ) return -1;
         if ( k==ifrom )
-            *to = strtol(ss, &tmp, 10);
+            *to = hts_parse_decimal(ss, &tmp);
         else
-            *from = strtol(ss, &tmp, 10);
+            *from = hts_parse_decimal(ss, &tmp);
         if ( ss==tmp ) return -1;
     }
 

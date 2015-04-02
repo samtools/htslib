@@ -27,6 +27,9 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "vcf.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**
  *  bcf_trim_alleles() - remove ALT alleles unused in genotype fields
@@ -99,6 +102,7 @@ static inline int bcf_acgt2int(char c)
     if ( c=='T' ) return 3;
     return -1;
 }
+
 #define bcf_int2acgt(i) "ACGT"[i]
 
 /**
@@ -108,5 +112,9 @@ static inline int bcf_acgt2int(char c)
   * Returns index to the Number=G diploid array
   */
 #define bcf_ij2G(i, j) ((j)*((j)+1)/2+(i))
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

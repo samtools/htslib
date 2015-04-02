@@ -31,6 +31,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _POOLED_ALLOC_H_
 #define _POOLED_ALLOC_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Implements a pooled block allocator where all items are the same size,
  * but we need many of them.
@@ -52,5 +56,8 @@ void pool_destroy(pool_alloc_t *p);
 void *pool_alloc(pool_alloc_t *p);
 void pool_free(pool_alloc_t *p, void *ptr);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif /*_POOLED_ALLOC_H_*/

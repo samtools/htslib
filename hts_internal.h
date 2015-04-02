@@ -1,8 +1,6 @@
-/*  vcf_sweep.h -- forward/reverse sweep API.
+/*  hts_internal.h -- internal functions; not part of the public API.
 
-    Copyright (C) 2013 Genome Research Ltd.
-
-    Author: Petr Danecek <pd3@sanger.ac.uk>
+    Copyright (C) 2015 Genome Research Ltd.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,23 +20,16 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
-#ifndef HTSLIB_VCF_SWEEP_H
-#define HTSLIB_VCF_SWEEP_H
+#ifndef HTSLIB_HTS_INTERNAL_H
+#define HTSLIB_HTS_INTERNAL_H
 
-#include "hts.h"
-#include "vcf.h"
+#include "htslib/hts.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct _bcf_sweep_t bcf_sweep_t;
-
-bcf_sweep_t *bcf_sweep_init(const char *fname);
-void bcf_sweep_destroy(bcf_sweep_t *sw);
-bcf_hdr_t *bcf_sweep_hdr(bcf_sweep_t *sw);
-bcf1_t *bcf_sweep_fwd(bcf_sweep_t *sw);
-bcf1_t *bcf_sweep_bwd(bcf_sweep_t *sw);
+char *hts_idx_getfn(const char *fn, const char *ext);
 
 #ifdef __cplusplus
 }

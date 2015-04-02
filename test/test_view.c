@@ -87,7 +87,7 @@ int add_option(hts_opt **opts, char *arg) {
     else if (strcmp(arg, "NTHREADS") == 0)
         o->opt = CRAM_OPT_NTHREADS, o->val.i = atoi(cp);
     else if (strcmp(arg, "REQUIRED_FIELDS") == 0)
-        o->opt = CRAM_OPT_REQUIRED_FIELDS, o->val.i = atoi(cp);
+        o->opt = CRAM_OPT_REQUIRED_FIELDS, o->val.i = strtol(cp, NULL, 0);
     else {
         fprintf(stderr, "Unknown option '%s'\n", arg);
         free(o);
@@ -163,41 +163,48 @@ int main(int argc, char *argv[])
 
     /* CRAM output */
     if (flag & 8) {
+        int ret;
+
         // Parse input header and use for CRAM output
         out->fp.cram->header = sam_hdr_parse_(h->text, h->l_text);
 
         // Create CRAM references arrays
         if (fn_ref)
-            cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, fn_ref);
+            ret = cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, fn_ref);
         else
             // Attempt to fill out a cram->refs[] array from @SQ headers
-            cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, NULL);
+            ret = cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, NULL);
+
+        if (ret != 0)
+            return EXIT_FAILURE;
     }
 
     // Process any options; currently cram only.
     for (; in_opts;  in_opts = (last=in_opts)->next, free(last)) {
         hts_set_opt(in,  in_opts->opt,  in_opts->val);
         if (in_opts->opt == CRAM_OPT_REFERENCE)
-            hts_set_opt(out,  in_opts->opt,  in_opts->val);
+            if (hts_set_opt(out,  in_opts->opt,  in_opts->val) != 0)
+                return EXIT_FAILURE;
     }
     for (; out_opts;  out_opts = (last=out_opts)->next, free(last))
-        hts_set_opt(out, out_opts->opt,  out_opts->val);
+        if (hts_set_opt(out, out_opts->opt,  out_opts->val) != 0)
+            return EXIT_FAILURE;
 
     sam_hdr_write(out, h);
     if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
         int i;
         hts_idx_t *idx;
-        if ((idx = bam_index_load(argv[optind])) == 0) {
+        if ((idx = sam_index_load(in, argv[optind])) == 0) {
             fprintf(stderr, "[E::%s] fail to load the BAM index\n", __func__);
             return 1;
         }
         for (i = optind + 1; i < argc; ++i) {
             hts_itr_t *iter;
-            if ((iter = bam_itr_querys(idx, h, argv[i])) == 0) {
+            if ((iter = sam_itr_querys(idx, h, argv[i])) == 0) {
                 fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
                 continue;
             }
-            while ((r = bam_itr_next(in, iter, b)) >= 0) {
+            while ((r = sam_itr_next(in, iter, b)) >= 0) {
                 if (sam_write1(out, h, b) < 0) {
                     fprintf(stderr, "Error writing output.\n");
                     exit_code = 1;

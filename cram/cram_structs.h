@@ -31,10 +31,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _CRAM_STRUCTS_H_
 #define _CRAM_STRUCTS_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /*
  * Defines in-memory structs for the basic file-format objects in the
  * CRAM format.
@@ -54,7 +50,12 @@ extern "C" {
 
 #include "cram/thread_pool.h"
 #include "cram/string_alloc.h"
+#include "cram/mFILE.h"
 #include "htslib/khash.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Generic hash-map integer -> integer
 KHASH_MAP_INIT_INT(m_i2i, int)
@@ -320,7 +321,7 @@ typedef struct {
     int32_t ref_seq_start;  /* if content_type == MAPPED_SLICE */
     int32_t ref_seq_span;   /* if content_type == MAPPED_SLICE */
     int32_t num_records;
-    int32_t record_counter;
+    int64_t record_counter;
     int32_t num_blocks;
     int32_t num_content_ids;
     int32_t *block_content_ids;
@@ -344,7 +345,7 @@ typedef struct {
     int32_t  ref_seq_id;
     int32_t  ref_seq_start;
     int32_t  ref_seq_span;
-    int32_t  record_counter;
+    int64_t  record_counter;
     int64_t  num_bases;
     int32_t  num_records;
     int32_t  num_blocks;
@@ -524,9 +525,6 @@ typedef struct cram_slice {
     /* State used during encoding/decoding */
     int last_apos, max_apos;
 
-    /* Identifier used for auto-assigning read names */
-    uint64_t id;
-
     /* Array of decoded cram records */
     cram_record *crecs;
 
@@ -588,6 +586,7 @@ typedef struct ref_entry {
     int line_length;
     int64_t count;	   // for shared references so we know to dealloc seq
     char *seq;
+    mFILE *mf;
 } ref_entry;
 
 KHASH_MAP_INIT_STR(refs, ref_entry*)
@@ -660,8 +659,7 @@ typedef struct cram_fd {
     SAM_hdr       *header;
 
     char          *prefix;
-    int            record_counter;
-    int            slice_num;
+    int64_t        record_counter;
     int            err;
 
     // Most recent compression header decoded

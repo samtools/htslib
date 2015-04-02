@@ -1,6 +1,6 @@
 /*  hts.h -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2012-2014 Genome Research Ltd.
+    Copyright (C) 2012-2015 Genome Research Ltd.
     Copyright (C) 2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -28,6 +28,10 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stddef.h>
 #include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;
@@ -84,7 +88,7 @@ enum htsFormatCategory {
 enum htsExactFormat {
     unknown_format,
     binary_format, text_format,
-    sam, bam, bai, cram, crai, vcf, bcfv1, bcf, csi, gzi, tbi, bed,
+    sam, bam, bai, cram, crai, vcf, bcf, csi, gzi, tbi, bed,
     format_maximum = 32767
 };
 
@@ -96,7 +100,10 @@ enum htsCompression {
 typedef struct htsFormat {
     enum htsFormatCategory category;
     enum htsExactFormat format;
+    struct { short major, minor; } version;
     enum htsCompression compression;
+    short compression_level;  // currently unused
+    void *specific;  // currently unused
 } htsFormat;
 
 // Maintainers note htsFile cannot be an opaque structure because some of its
@@ -165,15 +172,22 @@ enum cram_option {
 
 extern int hts_verbose;
 
-/*! @abstract Table for converting a nucleotide character to the 4-bit encoding. */
+/*! @abstract Table for converting a nucleotide character to 4-bit encoding.
+The input character may be either an IUPAC ambiguity code, '=' for 0, or
+'0'/'1'/'2'/'3' for a result of 1/2/4/8.  The result is encoded as 1/2/4/8
+for A/C/G/T or combinations of these bits for ambiguous bases.
+*/
 extern const unsigned char seq_nt16_table[256];
 
-/*! @abstract Table for converting a 4-bit encoded nucleotide to a letter. */
+/*! @abstract Table for converting a 4-bit encoded nucleotide to an IUPAC
+ambiguity code letter (or '=' when given 0).
+*/
 extern const char seq_nt16_str[];
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/*! @abstract Table for converting a 4-bit encoded nucleotide to about 2 bits.
+Returns 0/1/2/3 for 1/2/4/8 (i.e., A/C/G/T), or 4 otherwise (0 or ambiguous).
+*/
+extern const int seq_nt16_int[];
 
 /*!
   @abstract  Get the htslib version number
@@ -192,8 +206,9 @@ int hts_detect_format(struct hFILE *fp, htsFormat *fmt);
 
 /*!
   @abstract    Get a human-readable description of the file format
+  @return      Description string, to be freed by the caller after use.
 */
-const char *hts_format_description(const htsFormat *format);
+char *hts_format_description(const htsFormat *format);
 
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
@@ -281,10 +296,6 @@ int hts_set_threads(htsFile *fp, int n);
 */
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
 
-#ifdef __cplusplus
-}
-#endif
-
 /************
  * Indexing *
  ************/
@@ -321,6 +332,7 @@ typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, 
 typedef struct {
     uint32_t read_rest:1, finished:1, dummy:29;
     int tid, beg, end, n_off, i;
+    int curr_tid, curr_beg, curr_end;
     uint64_t curr_off;
     hts_pair64_t *off;
     hts_readrec_func *readrec;
@@ -329,10 +341,6 @@ typedef struct {
         int *a;
     } bins;
 } hts_itr_t;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
     #define hts_bin_first(l) (((1<<(((l)<<1) + (l))) - 1) / 7)
     #define hts_bin_parent(l) (((l) - 1) >> 3)
@@ -351,7 +359,28 @@ extern "C" {
     int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped);
     uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
 
-    const char *hts_parse_reg(const char *s, int *beg, int *end);
+/// Parse a numeric string
+/** The number may be expressed in scientific notation, and may contain commas
+    in the integer part (before any decimal point or E notation).
+    @param str  String to be parsed
+    @param end  If non-NULL, set on return to point to the first character
+                in @a str after those forming the parsed number
+    @return  Converted value of the parsed number.
+
+    When @a end is NULL, a warning will be printed (if hts_verbose is 2
+    or more) if there are any trailing characters after the number.
+*/
+long long hts_parse_decimal(const char *str, char **end);
+
+/// Parse a "CHR:START-END"-style region string
+/** @param str  String to be parsed
+    @param beg  Set on return to the 0-based start of the region
+    @param end  Set on return to the 1-based end of the region
+    @return  Pointer to the colon or '\0' after the reference sequence name,
+             or NULL if @a str could not be parsed.
+*/
+const char *hts_parse_reg(const char *str, int *beg, int *end);
+
     hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
     void hts_itr_destroy(hts_itr_t *iter);
 
@@ -363,9 +392,63 @@ extern "C" {
     int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data);
     const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 
-#ifdef __cplusplus
-}
-#endif
+    /**
+     * hts_file_type() - Convenience function to determine file type
+     * DEPRECATED:  This function has been replaced by hts_detect_format().
+     * It and these FT_* macros will be removed in a future HTSlib release.
+     */
+    #define FT_UNKN   0
+    #define FT_GZ     1
+    #define FT_VCF    2
+    #define FT_VCF_GZ (FT_GZ|FT_VCF)
+    #define FT_BCF    (1<<2)
+    #define FT_BCF_GZ (FT_GZ|FT_BCF)
+    #define FT_STDIN  (1<<3)
+    int hts_file_type(const char *fname);
+
+
+    /**********************
+     * MD5 implementation *
+     **********************/
+
+    struct hts_md5_context;
+    typedef struct hts_md5_context hts_md5_context;
+
+    /*! @abstract   Intialises an MD5 context.
+     *  @discussion
+     *    The expected use is to allocate an hts_md5_context using
+     *    hts_md5_init().  This pointer is then passed into one or more calls
+     *    of hts_md5_update() to compute successive internal portions of the
+     *    MD5 sum, which can then be externalised as a full 16-byte MD5sum
+     *    calculation by calling hts_md5_final().  This can then be turned
+     *    into ASCII via hts_md5_hex().
+     *
+     *    To dealloate any resources created by hts_md5_init() call the
+     *    hts_md5_destroy() function.
+     *
+     *  @return     hts_md5_context pointer on success, NULL otherwise.
+     */
+    hts_md5_context *hts_md5_init(void);
+
+    /*! @abstract Updates the context with the MD5 of the data. */
+    void hts_md5_update(hts_md5_context *ctx, const void *data, unsigned long size);
+
+    /*! @abstract Computes the final 128-bit MD5 hash from the given context */
+    void hts_md5_final(unsigned char *digest, hts_md5_context *ctx);
+
+    /*! @abstract Resets an md5_context to the initial state, as returned
+     *            by hts_md5_init().
+     */
+    void hts_md5_reset(hts_md5_context *ctx);
+
+    /*! @abstract Converts a 128-bit MD5 hash into a 33-byte nul-termninated
+     *            hex string.
+     */
+    void hts_md5_hex(char *hex, const unsigned char *digest);
+
+    /*! @abstract Deallocates any memory allocated by hts_md5_init. */
+    void hts_md5_destroy(hts_md5_context *ctx);
+
 
 static inline int hts_reg2bin(int64_t beg, int64_t end, int min_shift, int n_lvls)
 {
@@ -421,5 +504,9 @@ static inline void *ed_swap_8p(void *x)
     *(uint64_t*)x = ed_swap_8(*(uint64_t*)x);
     return x;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

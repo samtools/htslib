@@ -49,6 +49,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <pthread.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct t_pool;
 struct t_results_queue;
 
@@ -206,5 +210,9 @@ int t_pool_results_queue_len(t_results_queue *q);
  * Returns the number of completed jobs plus the number queued up to run.
  */
 int t_pool_results_queue_sz(t_results_queue *q);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _THREAD_POOL_H_ */

@@ -28,9 +28,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifdef HAVE_CONFIG_H
-#include "io_lib_config.h"
-#endif
+#include <config.h>
 
 #include <string.h>
 #include <assert.h>
@@ -742,6 +740,41 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
 #define K(a) (((a)[0]<<8)|((a)[1]))
 
 /*
+ * Returns the sort order:
+ */
+enum sam_sort_order sam_hdr_sort_order(SAM_hdr *hdr) {
+    return hdr->sort_order;
+}
+
+static enum sam_sort_order sam_hdr_parse_sort_order(SAM_hdr *hdr) {
+    khint_t k;
+    enum sam_sort_order so;
+
+    so = ORDER_UNKNOWN;
+    k = kh_get(sam_hdr, hdr->h, K("HD"));
+    if (k != kh_end(hdr->h)) {
+	SAM_hdr_type *ty = kh_val(hdr->h, k);
+	SAM_hdr_tag *tag;
+        for (tag = ty->tag; tag; tag = tag->next) {
+	    if (tag->str[0] == 'S' && tag->str[1] == 'O') {
+		if (strcmp(tag->str+3, "unsorted") == 0)
+		    so = ORDER_UNSORTED;
+		else if (strcmp(tag->str+3, "queryname") == 0)
+		    so = ORDER_NAME;
+		else if (strcmp(tag->str+3, "coordinate") == 0)
+		    so = ORDER_COORD;
+		else
+		    fprintf(stderr, "Unknown sort order field: %s\n",
+			    tag->str+3);
+	    }
+	}
+    }
+
+    return so;
+}
+
+
+/*
  * Reconstructs the kstring from the header hash table.
  * Returns 0 on success
  *        -1 on failure
@@ -898,6 +931,9 @@ SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
 	sam_hdr_free(sh);
 	return NULL;
     }
+
+    /* Obtain sort order */
+    sh->sort_order = sam_hdr_parse_sort_order(sh);
 
     //sam_hdr_dump(sh);
     //sam_hdr_add(sh, "RG", "ID", "foo", "SM", "bar", NULL);
