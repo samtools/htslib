@@ -300,8 +300,8 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
         // Output the new header
         FILE *hdr  = fopen(header,"r");
         if ( !hdr ) error("%s: %s", header,strerror(errno));
-        int page_size = getpagesize();
-        char *buf = valloc(page_size);
+        const size_t page_size = 32768;
+        char *buf = malloc(page_size);
         BGZF *bgzf_out = bgzf_dopen(fileno(stdout), "w");
         ssize_t nread;
         while ( (nread=fread(buf,1,page_size-1,hdr))>0 )
@@ -328,6 +328,7 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
         }
         if (bgzf_close(bgzf_out) < 0) error("Error: %d\n",bgzf_out->errcode);
         if (bgzf_close(fp) < 0) error("Error: %d\n",fp->errcode);
+        free(buf);
     }
     else
         error("todo: reheader BCF, BAM\n");  // BCF is difficult, records contain pointers to the header.
