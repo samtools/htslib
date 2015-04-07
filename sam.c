@@ -117,7 +117,7 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     // check EOF
     has_EOF = bgzf_check_EOF(fp);
     if (has_EOF < 0) {
-        perror("[W::sam_hdr_read] bgzf_check_EOF");
+        perror("[W::bam_hdr_read] bgzf_check_EOF");
     } else if (has_EOF == 0 && hts_verbose >= 2)
         fprintf(stderr, "[W::%s] EOF marker is absent. The input is probably truncated.\n", __func__);
     // read "BAM1"
@@ -393,7 +393,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
 
 static hts_idx_t *bam_index(BGZF *fp, int min_shift)
 {
-    int n_lvls, i, fmt;
+    int n_lvls, i, fmt, ret;
     bam1_t *b;
     hts_idx_t *idx;
     bam_hdr_t *h;
@@ -409,22 +409,22 @@ static hts_idx_t *bam_index(BGZF *fp, int min_shift)
     idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp), min_shift, n_lvls);
     bam_hdr_destroy(h);
     b = bam_init1();
-    while (bam_read1(fp, b) >= 0) {
-        int l, ret;
-        l = bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
+    while ((ret = bam_read1(fp, b)) >= 0) {
+        int l = bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
         if (l == 0) l = 1; // no zero-length records
         ret = hts_idx_push(idx, b->core.tid, b->core.pos, b->core.pos + l, bgzf_tell(fp), !(b->core.flag&BAM_FUNMAP));
-        if (ret < 0)
-        {
-            // unsorted
-            bam_destroy1(b);
-            hts_idx_destroy(idx);
-            return NULL;
-        }
+        if (ret < 0) goto err; // unsorted
     }
+    if (ret < -1) goto err; // corrupted BAM file
+
     hts_idx_finish(idx, bgzf_tell(fp));
     bam_destroy1(b);
     return idx;
+
+err:
+    bam_destroy1(b);
+    hts_idx_destroy(idx);
+    return NULL;
 }
 
 int bam_index_build(const char *fn, int min_shift)
