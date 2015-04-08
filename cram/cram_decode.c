@@ -1643,6 +1643,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     s->cigar_alloc = cigar_alloc;
     s->ncigar = ncigar;
 
+    if (cr->cram_flags & CRAM_FLAG_NO_SEQ)
+	cr->len = 0;
+
     if (decode_md) {
 	BLOCK_APPEND_CHAR(s->aux_blk, '\0'); // null terminate MD:Z:
 	cr->aux_size += BLOCK_SIZE(s->aux_blk) - orig_aux;
