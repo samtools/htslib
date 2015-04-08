@@ -63,6 +63,19 @@ foreach my $sam (glob("*#*.sam")) {
     test "./test_view -b -D $cram > $cram.bam";
     test "./test_view $cram.bam > $cram.bam.sam_";
     test "./compare_sam.pl -nomd $sam $cram.bam.sam_";
+
+    # SAM -> CRAM3 -> SAM
+    $cram = "$base.tmp.cram";
+    test "./test_view -t $ref -S -C -o VERSION=3.0 $sam > $cram";
+    test "./test_view -D $cram > $cram.sam_";
+    test "./compare_sam.pl -nomd $sam $cram.sam_";
+
+    # BAM -> CRAM3 -> BAM -> SAM
+    $cram = "$bam.cram";
+    test "./test_view -t $ref -C -o VERSION=3.0 $bam > $cram";
+    test "./test_view -b -D $cram > $cram.bam";
+    test "./test_view $cram.bam > $cram.bam.sam_";
+    test "./compare_sam.pl -nomd $sam $cram.bam.sam_";
 }
 
 print "\nSuccesses $suc_count\n";
