@@ -52,6 +52,26 @@ static void _regions_add(bcf_sr_regions_t *reg, const char *chr, int start, int 
 static bcf_sr_regions_t *_regions_init_string(const char *str);
 static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *rec);
 
+char *bcf_sr_strerror(int errnum)
+{
+    switch (errnum)
+    {
+        case open_failed: 
+            return strerror(errno); break;
+        case not_bgzf:
+            return "not compressed with bgzip"; break;
+        case idx_load_failed:
+            return "could not load index"; break;
+        case file_type_error:
+            return "unknown file type"; break;
+        case api_usage_error:
+            return "API usage error"; break;
+        case header_error:
+            return "could not parse header"; break;
+        default: return ""; 
+    }
+}
+
 static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
 {
     kstring_t str = {0,0,0};
@@ -61,7 +81,7 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
     {
         if ( *tmp==',' || !*tmp )
         {
-            out = (int*) realloc(out, sizeof(int));
+            out = (int*) realloc(out, (nout+1)*sizeof(int));
             if ( tmp-prev==1 && *prev=='.' )
                 out[nout] = -1;
             else
@@ -111,76 +131,94 @@ int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int
 
 int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 {
+    htsFile* file_ptr = hts_open(fname, "r");
+    if ( ! file_ptr ) {
+        files->errnum = open_failed;
+        return 0;
+    }
+
     files->has_line = (int*) realloc(files->has_line, sizeof(int)*(files->nreaders+1));
     files->has_line[files->nreaders] = 0;
     files->readers  = (bcf_sr_t*) realloc(files->readers, sizeof(bcf_sr_t)*(files->nreaders+1));
     bcf_sr_t *reader = &files->readers[files->nreaders++];
     memset(reader,0,sizeof(bcf_sr_t));
 
-    reader->file = hts_open(fname, "r");
-    if ( !reader->file ) return 0;
+    reader->file = file_ptr;
 
-    reader->type = reader->file->is_bin? FT_BCF : FT_VCF;
-    if (reader->file->is_compressed) reader->type |= FT_GZ;
+    files->errnum = 0;
 
     if ( files->require_index )
     {
-        if ( reader->type==FT_VCF_GZ )
+        if ( reader->file->format.format==vcf )
         {
+            if ( reader->file->format.compression!=bgzf )
+            {
+                files->errnum = not_bgzf;
+                return 0;
+            }
+
             reader->tbx_idx = tbx_index_load(fname);
             if ( !reader->tbx_idx )
             {
-                fprintf(stderr,"[add_reader] Could not load the index of %s\n", fname);
+                files->errnum = idx_load_failed;
                 return 0;
             }
 
             reader->header = bcf_hdr_read(reader->file);
         }
-        else if ( reader->type==FT_BCF_GZ )
+        else if ( reader->file->format.format==bcf )
         {
+            if ( reader->file->format.compression!=bgzf )
+            {
+                files->errnum = not_bgzf;
+                return 0;
+            }
+
             reader->header = bcf_hdr_read(reader->file);
 
             reader->bcf_idx = bcf_index_load(fname);
             if ( !reader->bcf_idx )
             {
-                fprintf(stderr,"[add_reader] Could not load the index of %s\n", fname);
-                return 0;   // not indexed..?
+                files->errnum = idx_load_failed;
+                return 0;
             }
         }
         else
         {
-            fprintf(stderr,"Index required, expected .vcf.gz or .bcf file: %s\n", fname);
+            files->errnum = file_type_error;
             return 0;
         }
     }
     else
     {
-        if ( reader->type & FT_BCF )
-        {
-            reader->header = bcf_hdr_read(reader->file);
-        }
-        else if ( reader->type & FT_VCF )
+        if ( reader->file->format.format==bcf || reader->file->format.format==vcf )
         {
             reader->header = bcf_hdr_read(reader->file);
         }
         else
         {
-            fprintf(stderr,"File type not recognised: %s\n", fname);
+            files->errnum = file_type_error;
             return 0;
         }
         files->streaming = 1;
     }
     if ( files->streaming && files->nreaders>1 )
     {
+        files->errnum = api_usage_error;
         fprintf(stderr,"[%s:%d %s] Error: %d readers, yet require_index not set\n", __FILE__,__LINE__,__FUNCTION__,files->nreaders);
         return 0;
     }
     if ( files->streaming && files->regions )
     {
+        files->errnum = api_usage_error;
         fprintf(stderr,"[%s:%d %s] Error: cannot tabix-jump in streaming mode\n", __FILE__,__LINE__,__FUNCTION__);
         return 0;
     }
-    if ( !reader->header ) return 0;
+    if ( !reader->header )
+    {
+        files->errnum = header_error;
+        return 0;
+    }
 
     reader->fname = fname;
     if ( files->apply_filters )
@@ -423,13 +461,13 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         }
         if ( files->streaming )
         {
-            if ( reader->type & FT_VCF )
+            if ( reader->file->format.format==vcf )
             {
                 if ( (ret=hts_getline(reader->file, KS_SEP_LINE, &files->tmps)) < 0 ) break;   // no more lines
                 int ret = vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
                 if ( ret<0 ) break;
             }
-            else if ( reader->type & FT_BCF )
+            else if ( reader->file->format.format==bcf )
             {
                 if ( (ret=bcf_read1(reader->file, reader->header, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
             }
@@ -959,8 +997,8 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         int len = strlen(regions);
         int is_bed  = strcasecmp(".bed",regions+len-4) ? 0 : 1;
         if ( !is_bed && !strcasecmp(".bed.gz",regions+len-7) ) is_bed = 1;
-        int ft_type = hts_file_type(regions);
-        if ( ft_type & FT_VCF ) ito = 1;
+
+        if ( reg->file->format.format==vcf ) ito = 1;
 
         // read the whole file, tabix index is not present
         while ( hts_getline(reg->file, KS_SEP_LINE, &reg->line) > 0 )
@@ -1034,7 +1072,11 @@ int bcf_sr_regions_seek(bcf_sr_regions_t *reg, const char *seq)
     if ( khash_str2int_get(reg->seq_hash, seq, &reg->iseq) < 0 ) return -1;  // sequence seq not in regions
 
     // using in-memory regions
-    if ( reg->regs ) return 0;
+    if ( reg->regs )
+    {
+        reg->regs[reg->iseq].creg = -1;
+        return 0;
+    }
 
     // reading regions from tabix
     if ( reg->itr ) tbx_itr_destroy(reg->itr);

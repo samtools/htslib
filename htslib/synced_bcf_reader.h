@@ -106,10 +106,16 @@ typedef struct
     bcf1_t **buffer;                // cached VCF records. First is the current record synced across the reader
     int nbuffer, mbuffer;           // number of cached records (including the current record); number of allocated records
     int nfilter_ids, *filter_ids;   // -1 for ".", otherwise filter id as returned by bcf_id2int
-    int type;
     int *samples, n_smpl;   // list of columns in the order consistent with bcf_srs_t.samples
 }
 bcf_sr_t;
+
+typedef enum
+{
+    open_failed, not_bgzf, idx_load_failed, file_type_error, api_usage_error,
+    header_error
+}
+bcf_sr_error;
 
 typedef struct
 {
@@ -123,6 +129,7 @@ typedef struct
     int require_index;  // Some tools do not need random access
     int max_unpack;     // When reading VCFs and knowing some fields will not be needed, boost performance of vcf_parse1
     int *has_line;      // Corresponds to return value of bcf_sr_next_line but is not limited by sizeof(int). Use bcf_sr_has_line macro to query.
+    bcf_sr_error errnum;
 
     // Auxiliary data
     bcf_sr_t *readers;
@@ -148,6 +155,9 @@ bcf_srs_t *bcf_sr_init(void);
 /** Destroy  bcf_srs_t struct */
 void bcf_sr_destroy(bcf_srs_t *readers);
 
+char *bcf_sr_strerror(int errnum);
+
+
 /**
  *  bcf_sr_add_reader() - open new reader
  *  @readers: holder of the open readers
@@ -161,7 +171,6 @@ void bcf_sr_destroy(bcf_srs_t *readers);
 int bcf_sr_add_reader(bcf_srs_t *readers, const char *fname);
 void bcf_sr_remove_reader(bcf_srs_t *files, int i);
 
-
 /**
  * bcf_sr_next_line() - the iterator
  * @readers:    holder of the open readers
@@ -174,6 +183,8 @@ int bcf_sr_next_line(bcf_srs_t *readers);
 #define bcf_sr_has_line(readers, i) (readers)->has_line[i]
 #define bcf_sr_get_line(_readers, i) ((_readers)->has_line[i] ? ((_readers)->readers[i].buffer[0]) : NULL)
 #define bcf_sr_region_done(_readers,i) (!(_readers)->has_line[i] && !(_readers)->readers[i].nbuffer ? 1 : 0)
+#define bcf_sr_get_header(_readers, i) (_readers)->readers[i].header
+#define bcf_sr_get_reader(_readers, i) &((_readers)->readers[i])
 
 /**
  *  bcf_sr_seek() - set all readers to selected position

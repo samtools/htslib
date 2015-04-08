@@ -87,7 +87,8 @@ typedef struct {
 } bcf_hrec_t;
 
 typedef struct {
-    uint32_t info[3];  // stores Number:20, var:4, Type:4, ColType:4 for BCF_HL_FLT,INFO,FMT
+    uint32_t info[3];  // stores Number:20, var:4, Type:4, ColType:4 in info[0..2]
+                       // for BCF_HL_FLT,INFO,FMT and contig length in info[0] for BCF_HL_CTG
     bcf_hrec_t *hrec[3];
     int id;
 } bcf_idinfo_t;
@@ -103,7 +104,7 @@ typedef struct {
     void *dict[3]; // ID dictionary, contig dict and sample dict
     char **samples;
     bcf_hrec_t **hrec;
-    int nhrec;
+    int nhrec, dirty;
     int ntransl, *transl[2];    // for bcf_translate()
     int nsamples_ori;           // for bcf_hdr_set_samples()
     uint8_t *keep_samples;
@@ -306,7 +307,7 @@ extern "C" {
 
 
     /** Writes VCF or BCF header */
-    int bcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
+    int bcf_hdr_write(htsFile *fp, bcf_hdr_t *h);
 
     /** Parse VCF line contained in kstring and populate the bcf1_t struct */
     int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v);
@@ -348,6 +349,7 @@ extern "C" {
      *  internally to reflect any changes made by bcf_update_* functions.
      */
     bcf1_t *bcf_dup(bcf1_t *src);
+    bcf1_t *bcf_copy(bcf1_t *dst, bcf1_t *src);
 
     /**
      *  bcf_write() - write one VCF or BCF record. The type is determined at the open() call.
@@ -385,8 +387,7 @@ extern "C" {
 
     /**
      *  bcf_hdr_add_sample() - add a new sample.
-     *  @param sample:  Sample name to be added. After all samples have been added, NULL
-     *                  must be passed to update internal header structures.
+     *  @param sample:  sample name to be added
      */
     int bcf_hdr_add_sample(bcf_hdr_t *hdr, const char *sample);
 
@@ -403,6 +404,7 @@ extern "C" {
     int bcf_hdr_append(bcf_hdr_t *h, const char *line);
     int bcf_hdr_printf(bcf_hdr_t *h, const char *format, ...);
 
+    /** VCF version, e.g. VCFv4.2 */
     const char *bcf_hdr_get_version(const bcf_hdr_t *hdr);
     void bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version);
 
@@ -565,7 +567,8 @@ extern "C" {
     // from bcf_get_genotypes() below.
     #define bcf_gt_phased(idx)      ((idx+1)<<1|1)
     #define bcf_gt_unphased(idx)    ((idx+1)<<1)
-    #define bcf_gt_missing          0
+    #define bcf_gt_missing          0 
+    #define bcf_gt_is_missing(val)  ((val)>>1 ? 0 : 1)
     #define bcf_gt_is_phased(idx)   ((idx)&1)
     #define bcf_gt_allele(val)      (((val)>>1)-1)
 

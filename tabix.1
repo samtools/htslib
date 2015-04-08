@@ -1,9 +1,9 @@
-.TH tabix 1 "23 September 2014" "htslib-1.1" "Bioinformatics tools"
+.TH tabix 1 "3 February 2015" "htslib-1.2.1" "Bioinformatics tools"
 .SH NAME
 .PP
-bgzip - Block compression/decompression utility
+bgzip \- Block compression/decompression utility
 .PP
-tabix - Generic indexer for TAB-delimited genome position files
+tabix \- Generic indexer for TAB-delimited genome position files
 .\"
 .\" Copyright (C) 2009-2011 Broad Institute.
 .\"
@@ -30,26 +30,26 @@ tabix - Generic indexer for TAB-delimited genome position files
 .SH SYNOPSIS
 .PP
 .B bgzip
-.RB [ \-cdhB ]
-.RB [ \-b
+.RB [ -cdhB ]
+.RB [ -b
 .IR virtualOffset ]
-.RB [ \-s
+.RB [ -s
 .IR size ]
 .RI [ file ]
 .PP
 .B tabix
-.RB [ \-0lf ]
-.RB [ \-p
-.R gff|bed|sam|vcf]
-.RB [ \-s
+.RB [ -0lf ]
+.RB [ -p
+gff|bed|sam|vcf]
+.RB [ -s
 .IR seqCol ]
-.RB [ \-b
+.RB [ -b
 .IR begCol ]
-.RB [ \-e
+.RB [ -e
 .IR endCol ]
-.RB [ \-S
+.RB [ -S
 .IR lineSkip ]
-.RB [ \-c
+.RB [ -c
 .IR metaChar ]
 .I in.tab.bgz
 .RI [ "region1 " [ "region2 " [ ... "]]]"
@@ -58,9 +58,11 @@ tabix - Generic indexer for TAB-delimited genome position files
 .PP
 Tabix indexes a TAB-delimited genome position file
 .I in.tab.bgz
-and creates an index file
+and creates an index file (
 .I in.tab.bgz.tbi
-when
+or 
+.I in.tab.bgz.csi
+) when
 .I region
 is absent from the command-line. The input data file must be position
 sorted and compressed by
@@ -74,52 +76,75 @@ specified in the format "chr:beginPos-endPos". Fast data retrieval also
 works over network if URI is given as a file name and in this case the
 index file will be downloaded if it is not present locally.
 
-.SH OPTIONS OF TABIX
+.SH INDEXING OPTIONS
 .TP 10
-.BI "-p " STR
-Input format for indexing. Valid values are: gff, bed, sam, vcf and
-psltab. This option should not be applied together with any of
-.BR \-s ", " \-b ", " \-e ", " \-c " and " \-0 ;
-it is not used for data retrieval because this setting is stored in
-the index file. [gff]
-.TP
-.BI "-s " INT
-Column of sequence name. Option
-.BR \-s ", " \-b ", " \-e ", " \-S ", " \-c " and " \-0
-are all stored in the index file and thus not used in data retrieval. [1]
-.TP
-.BI "-b " INT
-Column of start chromosomal position. [4]
-.TP
-.BI "-e " INT
-Column of end chromosomal position. The end column can be the same as the
-start column. [5]
-.TP
-.BI "-S " INT
-Skip first INT lines in the data file. [0]
-.TP
-.BI "-c " CHAR
-Skip lines started with character CHAR. [#]
-.TP
-.B -0
+.B -0, --zero-based
 Specify that the position in the data file is 0-based (e.g. UCSC files)
 rather than 1-based.
 .TP
-.B -h
-Print the header/meta lines.
+.BI "-b, --begin " INT
+Column of start chromosomal position. [4]
 .TP
-.B -B
-The second argument is a BED file. When this option is in use, the input
-file may not be sorted or indexed. The entire input will be read sequentially. Nonetheless,
-with this option, the format of the input must be specificed correctly on the command line.
+.BI "-c, --comment " CHAR
+Skip lines started with character CHAR. [#]
 .TP
-.B -f
+.BI "-C, --csi"
+Skip lines started with character CHAR. [#]
+.TP
+.BI "-e, --end " INT
+Column of end chromosomal position. The end column can be the same as the
+start column. [5]
+.TP
+.B "-f, --force "
 Force to overwrite the index file if it is present.
 .TP
-.B -l
-List the sequence names stored in the index file.
-.RE
+.BI "-m, --min-shift" INT
+set minimal interval size for CSI indices to 2^INT [14]
+.TP
+.BI "-p, --preset " STR
+Input format for indexing. Valid values are: gff, bed, sam, vcf.
+This option should not be applied together with any of
+.BR -s ", " -b ", " -e ", " -c " and " -0 ;
+it is not used for data retrieval because this setting is stored in
+the index file. [gff]
+.TP
+.BI "-s, --sequence " INT
+Column of sequence name. Option
+.BR -s ", " -b ", " -e ", " -S ", " -c " and " -0
+are all stored in the index file and thus not used in data retrieval. [1]
+.TP
+.BI "-S, --skip-lines " INT
+Skip first INT lines in the data file. [0]
 
+.SH QUERYING AND OTHER OPTIONS
+.TP
+.B "-h, --print-header "
+Print also the header/meta lines.
+.TP
+.B "-H, --only-header "
+Print only the header/meta lines.
+.TP
+.B "-i, --file-info "
+Print file format info.
+.TP
+.B "-l, --list-chroms "
+List the sequence names stored in the index file.
+.TP
+.B "-r, --reheader " FILE
+Replace the header with the content of FILE
+.TP
+.B "-R, --regions " FILE
+Restrict to regions listed in the FILE. The FILE can be BED file (requires .bed, .bed.gz, .bed.bgz 
+file name extension) or a TAB-delimited file with CHROM, POS, and,  optionally,
+POS_TO columns, where positions are 1-based and inclusive.  When this option is in use, the input
+file may not be sorted. 
+regions.
+.TP
+.B "-T, --targets" FILE
+Similar to 
+.B -R
+but the entire input will be read sequentially and regions not listed in FILE will be skipped.
+.PP
 .SH EXAMPLE
 (grep ^"#" in.gff; grep -v ^"#" in.gff | sort -k1,1 -k4,4n) | bgzip > sorted.gff.gz;
 

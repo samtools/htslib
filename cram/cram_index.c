@@ -86,6 +86,52 @@ static void dump_index(cram_fd *fd) {
 }
 #endif
 
+static int kget_int32(kstring_t *k, size_t *pos, int32_t *val_p) {
+    int sign = 1;
+    int32_t val = 0;
+    size_t p = *pos;
+
+    while (p < k->l && (k->s[p] == ' ' || k->s[p] == '\t'))
+	   p++;
+
+    if (p < k->l && k->s[p] == '-')
+	sign = -1, p++;
+
+    if (p >= k->l || !(k->s[p] >= '0' && k->s[p] <= '9'))
+	return -1;
+
+    while (p < k->l && k->s[p] >= '0' && k->s[p] <= '9')
+	val = val*10 + k->s[p++]-'0';
+    
+    *pos = p;
+    *val_p = sign*val;
+
+    return 0;
+}
+
+static int kget_int64(kstring_t *k, size_t *pos, int64_t *val_p) {
+    int sign = 1;
+    int64_t val = 0;
+    size_t p = *pos;
+
+    while (p < k->l && (k->s[p] == ' ' || k->s[p] == '\t'))
+	   p++;
+
+    if (p < k->l && k->s[p] == '-')
+	sign = -1, p++;
+
+    if (p >= k->l || !(k->s[p] >= '0' && k->s[p] <= '9'))
+	return -1;
+
+    while (p < k->l && k->s[p] >= '0' && k->s[p] <= '9')
+	val = val*10 + k->s[p++]-'0';
+    
+    *pos = p;
+    *val_p = sign*val;
+
+    return 0;
+}
+
 /*
  * Loads a CRAM .crai index into memory.
  *
@@ -162,21 +208,24 @@ int cram_index_load(cram_fd *fd, const char *fn) {
 
     // Parse it line at a time
     do {
-	int nchars;
-	char *line = &kstr.s[pos];
-
 	/* 1.1 layout */
-	if (sscanf(line, "%d\t%d\t%d\t%"PRId64"\t%d\t%d%n",
-		   &e.refid,
-		   &e.start,
-		   &e.end,
-		   &e.offset,
-		   &e.slice,
-		   &e.len,
-		   &nchars) != 6) {
-	    free(kstr.s);
-	    free(idx_stack);
-	    return -1;
+	if (kget_int32(&kstr, &pos, &e.refid) == -1) {
+	    free(kstr.s); free(idx_stack); return -1;
+	}
+	if (kget_int32(&kstr, &pos, &e.start) == -1) {
+	    free(kstr.s); free(idx_stack); return -1;
+	}
+	if (kget_int32(&kstr, &pos, &e.end) == -1) {
+	    free(kstr.s); free(idx_stack); return -1;
+	}
+	if (kget_int64(&kstr, &pos, &e.offset) == -1) {
+	    free(kstr.s); free(idx_stack); return -1;
+	}
+	if (kget_int32(&kstr, &pos, &e.slice) == -1) {
+	    free(kstr.s); free(idx_stack); return -1;
+	}
+	if (kget_int32(&kstr, &pos, &e.len) == -1) {
+	    free(kstr.s); free(idx_stack); return -1;
 	}
 
 	e.end += e.start-1;
@@ -227,7 +276,6 @@ int cram_index_load(cram_fd *fd, const char *fn) {
 	}
 	idx_stack[idx_stack_ptr] = idx;
 
-	pos += nchars;
 	while (pos < kstr.l && kstr.s[pos] != '\n')
 	    pos++;
 	pos++;
@@ -313,6 +361,9 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
 	    continue;
 	}
     }
+    // i==j or i==j-1. Check if j is better.
+    if (from->e[j].start < pos && from->e[j].refid == refid)
+	i = j;
 
     /* The above found *a* bin overlapping, but not necessarily the first */
     while (i > 0 && from->e[i-1].end >= pos)
@@ -359,6 +410,7 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
     if (fd->ctr) {
 	cram_free_container(fd->ctr);
 	fd->ctr = NULL;
+	fd->ooc = 0;
     }
 
     return 0;

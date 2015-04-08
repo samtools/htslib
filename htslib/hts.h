@@ -69,8 +69,48 @@ typedef struct __kstring_t {
  * File I/O *
  ************/
 
+// Add new entries only at the end (but before the *_maximum entry)
+// of these enums, as their numbering is part of the htslib ABI.
+
+enum htsFormatCategory {
+    unknown_category,
+    sequence_data,    // Sequence data -- SAM, BAM, CRAM, etc
+    variant_data,     // Variant calling data -- VCF, BCF, etc
+    index_file,       // Index file associated with some data file
+    region_list,      // Coordinate intervals or regions -- BED, etc
+    category_maximum = 32767
+};
+
+enum htsExactFormat {
+    unknown_format,
+    binary_format, text_format,
+    sam, bam, bai, cram, crai, vcf, bcf, csi, gzi, tbi, bed,
+    format_maximum = 32767
+};
+
+enum htsCompression {
+    no_compression, gzip, bgzf, custom,
+    compression_maximum = 32767
+};
+
+typedef struct htsFormat {
+    enum htsFormatCategory category;
+    enum htsExactFormat format;
+    struct { short major, minor; } version;
+    enum htsCompression compression;
+    short compression_level;  // currently unused
+    void *specific;  // currently unused
+} htsFormat;
+
+// Maintainers note htsFile cannot be an opaque structure because some of its
+// fields are part of libhts.so's ABI (hence these fields must not be moved):
+//  - fp is used in the public sam_itr_next()/etc macros
+//  - is_bin is used directly in samtools <= 1.1 and bcftools <= 1.1
+//  - is_write and is_cram are used directly in samtools <= 1.1
+//  - fp is used directly in samtools (up to and including current develop)
+//  - line is used directly in bcftools (up to and including current develop)
 typedef struct {
-    uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, is_compressed:2, is_kstream:1, dummy:25;
+    uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, dummy:28;
     int64_t lineno;
     kstring_t line;
     char *fn, *fn_aux;
@@ -80,7 +120,47 @@ typedef struct {
         struct hFILE *hfile;
         void *voidp;
     } fp;
+    htsFormat format;
 } htsFile;
+
+// REQUIRED_FIELDS
+enum sam_fields {
+    SAM_QNAME = 0x00000001,
+    SAM_FLAG  = 0x00000002,
+    SAM_RNAME = 0x00000004,
+    SAM_POS   = 0x00000008,
+    SAM_MAPQ  = 0x00000010,
+    SAM_CIGAR = 0x00000020,
+    SAM_RNEXT = 0x00000040,
+    SAM_PNEXT = 0x00000080,
+    SAM_TLEN  = 0x00000100,
+    SAM_SEQ   = 0x00000200,
+    SAM_QUAL  = 0x00000400,
+    SAM_AUX   = 0x00000800,
+    SAM_RGAUX = 0x00001000,
+};
+
+enum cram_option {
+    CRAM_OPT_DECODE_MD,
+    CRAM_OPT_PREFIX,
+    CRAM_OPT_VERBOSITY,
+    CRAM_OPT_SEQS_PER_SLICE,
+    CRAM_OPT_SLICES_PER_CONTAINER,
+    CRAM_OPT_RANGE,
+    CRAM_OPT_VERSION,
+    CRAM_OPT_EMBED_REF,
+    CRAM_OPT_IGNORE_MD5,
+    CRAM_OPT_REFERENCE,
+    CRAM_OPT_MULTI_SEQ_PER_SLICE,
+    CRAM_OPT_NO_REF,
+    CRAM_OPT_USE_BZIP2,
+    CRAM_OPT_SHARED_REF,
+    CRAM_OPT_NTHREADS,
+    CRAM_OPT_THREAD_POOL,
+    CRAM_OPT_USE_LZMA,
+    CRAM_OPT_USE_RANS,
+    CRAM_OPT_REQUIRED_FIELDS,
+};
 
 /**********************
  * Exported functions *
@@ -88,11 +168,22 @@ typedef struct {
 
 extern int hts_verbose;
 
-/*! @abstract Table for converting a nucleotide character to the 4-bit encoding. */
+/*! @abstract Table for converting a nucleotide character to 4-bit encoding.
+The input character may be either an IUPAC ambiguity code, '=' for 0, or
+'0'/'1'/'2'/'3' for a result of 1/2/4/8.  The result is encoded as 1/2/4/8
+for A/C/G/T or combinations of these bits for ambiguous bases.
+*/
 extern const unsigned char seq_nt16_table[256];
 
-/*! @abstract Table for converting a 4-bit encoded nucleotide to a letter. */
+/*! @abstract Table for converting a 4-bit encoded nucleotide to an IUPAC
+ambiguity code letter (or '=' when given 0).
+*/
 extern const char seq_nt16_str[];
+
+/*! @abstract Table for converting a 4-bit encoded nucleotide to about 2 bits.
+Returns 0/1/2/3 for 1/2/4/8 (i.e., A/C/G/T), or 4 otherwise (0 or ambiguous).
+*/
+extern const int seq_nt16_int[];
 
 #ifdef __cplusplus
 extern "C" {
@@ -106,6 +197,20 @@ extern "C" {
 const char *hts_version(void);
 
 /*!
+  @abstract    Determine format by peeking at the start of a file
+  @param fp    File opened for reading, positioned at the beginning
+  @param fmt   Format structure that will be filled out on return
+  @return      0 for success, or negative if an error occurred.
+*/
+int hts_detect_format(struct hFILE *fp, htsFormat *fmt);
+
+/*!
+  @abstract    Get a human-readable description of the file format
+  @return      Description string, to be freed by the caller after use.
+*/
+char *hts_format_description(const htsFormat *format);
+
+/*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
   @param fn       The file name or "-" for stdin/stdout
   @param mode     Mode matching /[rwa][bcuz0-9]+/
@@ -116,8 +221,9 @@ const char *hts_version(void);
       specifier letters:
         b  binary format (BAM, BCF, etc) rather than text (SAM, VCF, etc)
         c  CRAM format
+        g  gzip compressed
         u  uncompressed
-        z  compressed
+        z  bgzf compressed
         [0-9]  zlib compression level
       Note that there is a distinction between 'u' and '0': the first yields
       plain uncompressed output whereas the latter outputs uncompressed data
@@ -131,11 +237,34 @@ const char *hts_version(void);
 htsFile *hts_open(const char *fn, const char *mode);
 
 /*!
+  @abstract       Open an existing stream as a SAM/BAM/CRAM/VCF/BCF/etc file
+  @param fn       The already-open file handle
+  @param mode     Open mode, as per hts_open()
+*/
+htsFile *hts_hopen(struct hFILE *fp, const char *fn, const char *mode);
+
+/*!
   @abstract  Close a file handle, flushing buffered data for output streams
   @param fp  The file handle to be closed
   @return    0 for success, or negative if an error occurred.
 */
 int hts_close(htsFile *fp);
+
+/*!
+  @abstract  Returns the file's format information
+  @param fp  The file handle
+  @return    Read-only pointer to the file's htsFormat.
+*/
+const htsFormat *hts_get_format(htsFile *fp);
+
+/*!
+  @abstract  Sets a specified CRAM option on the open file handle.
+  @param fp  The file handle open the open file.
+  @param opt The CRAM_OPT_* option.
+  @param ... Optional arguments, dependent on the option used.
+  @return    0 for success, or negative if an error occurred.
+*/
+int hts_set_opt(htsFile *fp, enum cram_option opt, ...);
 
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
 char **hts_readlines(const char *fn, int *_n);
@@ -207,6 +336,7 @@ typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, 
 typedef struct {
     uint32_t read_rest:1, finished:1, dummy:29;
     int tid, beg, end, n_off, i;
+    int curr_tid, curr_beg, curr_end;
     uint64_t curr_off;
     hts_pair64_t *off;
     hts_readrec_func *readrec;
@@ -251,12 +381,8 @@ extern "C" {
 
     /**
      * hts_file_type() - Convenience function to determine file type
-     * @fname: the file name
-     *
-     * Returns one of the FT_* defines.
-     *
-     * This function was added in order to avoid the need for excessive command
-     * line switches.
+     * DEPRECATED:  This function has been replaced by hts_detect_format().
+     * It and these FT_* macros will be removed in a future HTSlib release.
      */
     #define FT_UNKN   0
     #define FT_GZ     1
