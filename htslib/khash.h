@@ -152,7 +152,7 @@ typedef unsigned long long khint64_t;
 #endif /* kh_inline */
 
 #ifndef klib_unused
-#if __clang_major__ >= 3 || __GNUC__ >= 3
+#if (defined __clang__ && __clang_major__ >= 3) || (defined __GNUC__ && __GNUC__ >= 3)
 #define klib_unused __attribute__ ((__unused__))
 #else
 #define klib_unused
