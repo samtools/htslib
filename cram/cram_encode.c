@@ -913,7 +913,8 @@ static int cram_encode_slice_read(cram_fd *fd,
 				      (char *)&cr->mqual, 1);
     } else {
 	char *seq = (char *)BLOCK_DATA(s->seqs_blk) + cr->seq;
-	r |= h->codecs[DS_BA]->encode(s, h->codecs[DS_BA], seq, cr->len);
+	if (cr->len)
+	    r |= h->codecs[DS_BA]->encode(s, h->codecs[DS_BA], seq, cr->len);
     }
 
     return r ? -1 : 0;
@@ -2480,8 +2481,6 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     
     cr->ref_id      = bam_ref(b);  cram_stats_add(c->stats[DS_RI], cr->ref_id);
-    if (bam_cigar_len(b) == 0)
-	cr->flags |= BAM_FUNMAP;
     cram_stats_add(c->stats[DS_BF], fd->cram_flag_swap[cr->flags & 0xfff]);
 
     // Non reference based encoding means storing the bases verbatim as features, which in
