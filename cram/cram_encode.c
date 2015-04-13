@@ -675,7 +675,7 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s) {
     if (!b)
 	return NULL;
 
-    if (NULL == (cp = buf = malloc(16+5*(8+s->hdr->num_blocks)))) {
+    if (NULL == (cp = buf = malloc(22+16+5*(8+s->hdr->num_blocks)))) {
 	cram_free_block(b);
 	return NULL;
     }
@@ -700,7 +700,25 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s) {
 	memcpy(cp, s->hdr->md5, 16); cp += 16;
     }
     
-    assert(cp-buf <= 16+5*(8+s->hdr->num_blocks));
+    if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	if (s->BD_crc || s->SD_crc) {
+	    *cp++ = 'B'; *cp++ = 'D'; *cp++ = 'B'; *cp++ = 'c';
+	    *cp++ = 4; *cp++ = 0; *cp++ = 0; *cp++ = 0;
+	    *cp++ = (s->BD_crc >>  0) & 0xff;
+	    *cp++ = (s->BD_crc >>  8) & 0xff;
+	    *cp++ = (s->BD_crc >> 16) & 0xff;
+	    *cp++ = (s->BD_crc >> 24) & 0xff;
+
+	    *cp++ = 'S'; *cp++ = 'D'; *cp++ = 'B'; *cp++ = 'c';
+	    *cp++ = 4; *cp++ = 0; *cp++ = 0; *cp++ = 0;
+	    *cp++ = (s->SD_crc >>  0) & 0xff;
+	    *cp++ = (s->SD_crc >>  8) & 0xff;
+	    *cp++ = (s->SD_crc >> 16) & 0xff;
+	    *cp++ = (s->SD_crc >> 24) & 0xff;
+	}
+    }
+
+    assert(cp-buf <= 22+16+5*(8+s->hdr->num_blocks));
 
     b->data = (unsigned char *)buf;
     b->comp_size = b->uncomp_size = cp-buf;
@@ -2582,6 +2600,9 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     qual = cp = (char *)bam_qual(b);
 
+    if (CRAM_MAJOR_VERS(fd->version) >= 3 && !fd->ignore_chksum)
+	s->BD_crc += crc32(0L, (unsigned char *)seq,  cr->len);
+
     /* Copy and parse */
     if (!(cr->flags & BAM_FUNMAP)) {
 	int32_t *cig_to, *cig_from;
@@ -2787,6 +2808,10 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	    char *from = (char *)&bam_qual(b)[0];
 	    char *to = &cp[0];
 	    memcpy(to, from, cr->len);
+
+	    if (CRAM_MAJOR_VERS(fd->version) >= 3 && !fd->ignore_chksum)
+		s->SD_crc += crc32(0L, (unsigned char *)to, cr->len);
+
 	    //for (i = 0; i < cr->len; i++) cp[i] = from[i];
 	}
 	BLOCK_SIZE(s->qual_blk) += cr->len;

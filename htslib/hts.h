@@ -164,6 +164,7 @@ enum cram_option {
     CRAM_OPT_USE_LZMA,
     CRAM_OPT_USE_RANS,
     CRAM_OPT_REQUIRED_FIELDS,
+    CRAM_OPT_IGNORE_CHKSUM,
 };
 
 /**********************

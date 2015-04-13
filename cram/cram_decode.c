@@ -962,7 +962,8 @@ int cram_dependent_data_series(cram_fd *fd,
  */
 cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     cram_block_slice_hdr *hdr;
-    char *cp = (char *)b->data;
+    unsigned char *cp = (unsigned char *)BLOCK_DATA(b);
+    unsigned char *cp_end = cp + b->uncomp_size;
     int i;
 
     if (b->content_type != MAPPED_SLICE &&
@@ -975,23 +976,23 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     hdr->content_type = b->content_type;
 
     if (b->content_type == MAPPED_SLICE) {
-	cp += itf8_get(cp, &hdr->ref_seq_id);
-	cp += itf8_get(cp, &hdr->ref_seq_start);
-	cp += itf8_get(cp, &hdr->ref_seq_span);
+	cp += itf8_get((char *)cp, &hdr->ref_seq_id);
+	cp += itf8_get((char *)cp, &hdr->ref_seq_start);
+	cp += itf8_get((char *)cp, &hdr->ref_seq_span);
     }
-    cp += itf8_get(cp, &hdr->num_records);
+    cp += itf8_get((char *)cp, &hdr->num_records);
     hdr->record_counter = 0;
     if (CRAM_MAJOR_VERS(fd->version) == 2) {
 	int32_t i32;
-	cp += itf8_get(cp, &i32);
+	cp += itf8_get((char *)cp, &i32);
 	hdr->record_counter = i32;
     } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-	cp += ltf8_get(cp, &hdr->record_counter);
+	cp += ltf8_get((char *)cp, &hdr->record_counter);
     }
 
-    cp += itf8_get(cp, &hdr->num_blocks);
+    cp += itf8_get((char *)cp, &hdr->num_blocks);
 
-    cp += itf8_get(cp, &hdr->num_content_ids);
+    cp += itf8_get((char *)cp, &hdr->num_content_ids);
     hdr->block_content_ids = malloc(hdr->num_content_ids * sizeof(int32_t));
     if (!hdr->block_content_ids) {
 	free(hdr);
@@ -999,18 +1000,84 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     }
 
     for (i = 0; i < hdr->num_content_ids; i++) {
-	cp += itf8_get(cp, &hdr->block_content_ids[i]);
+	cp += itf8_get((char *)cp, &hdr->block_content_ids[i]);
     }
 
     if (b->content_type == MAPPED_SLICE) {
-	cp += itf8_get(cp, &hdr->ref_base_id);
+	cp += itf8_get((char *)cp, &hdr->ref_base_id);
     }
 
     if (CRAM_MAJOR_VERS(fd->version) != 1) {
 	memcpy(hdr->md5, cp, 16);
+	cp += 16;
     } else {
 	memset(hdr->md5, 0, 16);
     }
+
+    // Decode any optional tag:type:value fields
+    if (cp == cp_end)
+	return hdr;
+
+    while (cp <= cp_end) {
+	unsigned int sub_len;
+
+	if (cp_end - cp < 3)
+	    return hdr;
+
+	// We only care about decoding BD:B: and SD:B: for now
+	if (cp[0] == 'B' && cp[1] == 'D' && cp[2] == 'B') {
+	    unsigned char *p = &cp[3];
+	    if (cp_end - cp < 8)
+		return hdr;
+	    hdr->BD_crc =  p[5] | (p[6]<<8) | (p[7]<<16) | (p[8]<<24);
+	}
+
+	if (cp[0] == 'S' && cp[1] == 'D' && cp[2] == 'B') {
+	    unsigned char *p = &cp[3];
+	    if (cp_end - cp < 8)
+		return hdr;
+	    hdr->SD_crc =  p[5] | (p[6]<<8) | (p[7]<<16) | (p[8]<<24);
+	}
+
+	// Skip the tag.  We could index it here and add to a khash,
+	// but for now we don't need to support other aux types.
+	switch (cp[2]) {
+	case 'c': cp += 4; break;
+	case 'C': cp += 4; break;
+	case 's': cp += 4; break;
+	case 'S': cp += 5; break;
+	case 'i': cp += 7; break;
+	case 'I': cp += 7; break;
+	case 'f': cp += 7; break;
+	case 'A': cp += 4; break;
+
+	case 'Z': case 'H': cp += strlen((char *)cp)+1; break;
+
+	case 'B':
+	    // <type>B<code><4-len><...>
+	    sub_len = cp[4] + (cp[5]<<8) + (cp[6]<<16) + (cp[7]<<24);
+	    switch (cp[3]) {
+	    case 'c': case 'C':
+		cp += 8 + sub_len;
+		break;
+	    case 's': case 'S':
+		cp += 8 + 2*sub_len;
+		break;
+	    case 'i': case 'I': case 'f':
+		cp += 8 + 4*sub_len;
+		break;
+	    default:
+		fprintf(stderr, "Unknown aux type 'B' sub-code.\n");
+		cp = cp_end;
+	    }
+	    break;
+
+        default:
+	    fprintf(stderr, "Unknown aux type.\n");
+	    return hdr;
+	}
+    }
+
 
     return hdr;
 }
@@ -2398,6 +2465,14 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		    memset(qual, 30, cr->len);
 	    }
 	}
+
+	if (!fd->ignore_chksum) {
+	    if (s->hdr->BD_crc && ds & CRAM_BA && s->ref)
+		s->BD_crc += crc32(0L, (unsigned char *)seq, cr->len);
+	    
+	    if (s->hdr->SD_crc & ds & CRAM_QS)
+		s->SD_crc += crc32(0L, (unsigned char *)qual, cr->len);
+	}
     }
 
     pthread_mutex_lock(&fd->ref_lock);
@@ -2415,6 +2490,25 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
     /* Resolve mate pair cross-references between recs within this slice */
     cram_decode_slice_xref(s, fd->required_fields);
+
+    /* Checksum */
+    if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	if (ds & CRAM_BA && s->BD_crc && s->hdr->BD_crc) {
+	    if (s->BD_crc != s->hdr->BD_crc) {
+		fprintf(stderr, "BD checksum failure: %08x vs %08x\n",
+			(uint32_t)s->BD_crc, (uint32_t)s->hdr->BD_crc);
+		r |= -1;
+	    }
+	}
+
+	if (ds & CRAM_QS && s->SD_crc && s->hdr->SD_crc) {
+	    if (s->SD_crc != s->hdr->SD_crc) {
+		fprintf(stderr, "SD checksum failure: %08x vs %08x\n",
+			(uint32_t)s->SD_crc, (uint32_t)s->hdr->SD_crc);
+		r |= -1;
+	    }
+	}
+    }
 
     return r;
 }
@@ -2768,6 +2862,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	    fprintf(stderr, "Failure to decode slice\n");
 	    cram_free_slice(s);
 	    c->slice = NULL;
+	    fd->eof = 0;
 	    return NULL;
 	}
 
@@ -2795,12 +2890,19 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 
 	if (!res || !res->data) {
 	    fprintf(stderr, "t_pool_next_result failure\n");
+	    fd->eof = 0;
 	    return NULL;
 	}
 
 	j = (cram_decode_job *)res->data;
 	c = j->c;
 	s = j->s;
+
+	if (j->exit_code != 0) {
+	    fprintf(stderr, "Slice decode failure\n");
+	    fd->eof = 0;
+	    return NULL;
+	}
 
 	fd->ctr = c;
 

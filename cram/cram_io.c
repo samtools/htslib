@@ -2802,6 +2802,8 @@ cram_container *cram_read_container(cram_fd *fd) {
 	 c->ref_seq_id == -1 &&
 	 c->ref_seq_start == 0x454f46 /* EOF */) ? 1 : 0;
 
+    c->crc32 = 0;
+
     return c;
 }
 
@@ -3216,6 +3218,9 @@ cram_slice *cram_new_slice(enum cram_content_type type, int nrecs) {
 #ifdef BA_external
     s->BA_len = 0;
 #endif
+
+    s->BD_crc = 0;
+    s->SD_crc = 0;
 
     return s;
 
@@ -3900,6 +3905,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->embed_ref = 0;
     fd->no_ref = 0;
     fd->ignore_md5 = 0;
+    fd->ignore_chksum = 0;
     fd->use_bz2 = 0;
     fd->use_rans = (CRAM_MAJOR_VERS(fd->version) >= 3);
     fd->use_lzma = 0;
@@ -4163,6 +4169,10 @@ int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args) {
 
     case CRAM_OPT_IGNORE_MD5:
 	fd->ignore_md5 = va_arg(args, int);
+	break;
+
+    case CRAM_OPT_IGNORE_CHKSUM:
+	fd->ignore_chksum = va_arg(args, int);
 	break;
 
     case CRAM_OPT_USE_BZIP2:

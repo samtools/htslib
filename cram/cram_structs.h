@@ -327,6 +327,8 @@ typedef struct {
     int32_t *block_content_ids;
     int32_t ref_base_id;    /* if content_type == MAPPED_SLICE */
     unsigned char md5[16];
+    uint32_t BD_crc;        /* base call digest */
+    uint32_t SD_crc;        /* quality score digest */
 } cram_block_slice_hdr;
 
 struct ref_entry;
@@ -571,6 +573,9 @@ typedef struct cram_slice {
     int ref_start;           // start position of current reference;
     int ref_end;             // end position of current reference;
     int ref_id;
+
+    uint32_t BD_crc;         // base call digest
+    uint32_t SD_crc;         // quality score digest
 } cram_slice;
 
 /*-----------------------------------------------------------------------------
@@ -725,6 +730,7 @@ typedef struct cram_fd {
     pthread_mutex_t bam_list_lock;
     void *job_pending;
     int ooc;                            // out of containers.
+    int ignore_chksum;
 } cram_fd;
 
 // Translation of required fields to cram data series
