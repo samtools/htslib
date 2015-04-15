@@ -250,18 +250,31 @@ int hputs2(const char *text, size_t totalbytes, size_t ncopied, hFILE *fp)
 
 off_t hseek(hFILE *fp, off_t offset, int whence)
 {
-    off_t pos;
+    off_t curpos, pos;
 
     if (writebuffer_is_nonempty(fp)) {
         int ret = flush_buffer(fp);
         if (ret < 0) return ret;
     }
-    else {
-        // Convert relative offsets from being relative to the hFILE's stream
-        // position (at begin) to being relative to the backend's physical
-        // stream position (at end, due to the buffering read-ahead).
-        if (whence == SEEK_CUR) offset -= fp->end - fp->begin;
+
+    curpos = htell(fp);
+
+    // Relative offsets are given relative to the hFILE's stream position,
+    // which may differ from the backend's physical position due to buffering
+    // read-ahead.  Correct for this by converting to an absolute position.
+    if (whence == SEEK_CUR) {
+        if (curpos + offset < 0) {
+            // Either a negative offset resulted in a position before the
+            // start of the file, or we overflowed when given a positive offset
+            fp->has_errno = errno = (offset < 0)? EINVAL : EOVERFLOW;
+            return -1;
+        }
+
+        whence = SEEK_SET;
+        offset = curpos + offset;
     }
+
+    // TODO Avoid seeking if the desired position is within our read buffer
 
     pos = fp->backend->seek(fp, offset, whence);
     if (pos < 0) { fp->has_errno = errno; return pos; }
