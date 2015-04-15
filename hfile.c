@@ -436,6 +436,15 @@ hFILE *hdopen(int fd, const char *mode)
     return &fp->base;
 }
 
+static hFILE *hopen_fd_fileuri(const char *url, const char *mode)
+{
+    if (strncmp(url, "file://localhost/", 17) == 0) url += 16;
+    else if (strncmp(url, "file:///", 8) == 0) url += 7;
+    else { errno = EPROTONOSUPPORT; return NULL; }
+
+    return hopen_fd(url, mode);
+}
+
 static hFILE *hopen_fd_stdinout(const char *mode)
 {
     int fd = (strchr(mode, 'r') != NULL)? STDIN_FILENO : STDOUT_FILENO;
@@ -539,8 +548,9 @@ static hFILE *hopen_mem(const char *data, const char *mode)
 
 hFILE *hopen(const char *fname, const char *mode)
 {
-    if (strncmp(fname, "http://", 7) == 0 ||
-        strncmp(fname, "ftp://", 6) == 0) return hopen_net(fname, mode);
+    if (strncmp(fname, "file://", 7) == 0) return hopen_fd_fileuri(fname, mode);
+    else if (strncmp(fname, "http://", 7) == 0 ||
+             strncmp(fname, "ftp://", 6) == 0) return hopen_net(fname, mode);
 #ifdef HAVE_IRODS
     else if (strncmp(fname, "irods:", 6) == 0) return hopen_irods(fname, mode);
 #endif
