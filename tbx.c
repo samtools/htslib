@@ -230,6 +230,13 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
             return NULL;
         }
     }
+    // Check we didn't exit loop due to VCF file IO error
+    if (ret < 0 )
+    {
+        free(str.s);
+        tbx_destroy(tbx);
+        return NULL;
+    }
     if ( !tbx->idx ) tbx->idx = hts_idx_init(0, fmt, last_off, min_shift, n_lvls);   // empty file
     if ( !tbx->dict ) tbx->dict = kh_init(s2i);
     hts_idx_finish(tbx->idx, bgzf_tell(fp));
