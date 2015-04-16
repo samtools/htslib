@@ -1025,6 +1025,7 @@ void hts_idx_replace_address(const hts_idx_t *idx, const int no_address_cushion,
     for (i = 0; i < idx->n; ++i) {
         bidx_t *bidx = idx->bidx[i];
         lidx_t *lidx = idx->lidx + i;
+		if(bidx) {
         for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
             if (kh_exist(bidx, k)) {
                 bins_t *p = &kh_value(bidx, k);
@@ -1055,6 +1056,7 @@ void hts_idx_replace_address(const hts_idx_t *idx, const int no_address_cushion,
                 } // ~for(j)
             } // ~if(kh_exist)
         } // ~for(k)
+		}
 		
         for (j = 0; j < lidx->n; ++j) {
             if(lidx->offset[j] >= no_address_cushion_value) {
