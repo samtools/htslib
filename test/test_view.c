@@ -117,16 +117,18 @@ int main(int argc, char *argv[])
     bam_hdr_t *h;
     bam1_t *b;
     htsFile *out;
+    char *ofile = NULL;
     char modew[8];
     int r = 0, exit_code = 0;
     hts_opt *in_opts = NULL, *out_opts = NULL, *last = NULL;
 
-    while ((c = getopt(argc, argv, "IbDCSl:t:i:o:")) >= 0) {
+    while ((c = getopt(argc, argv, "IbDCSO:l:t:i:o:")) >= 0) {
         switch (c) {
         case 'S': flag |= 1; break;
         case 'b': flag |= 2; break;
         case 'D': flag |= 4; break;
         case 'C': flag |= 8; break;
+        case 'O': ofile = optarg; break; // Temporary until opts refactored
         case 'l': clevel = atoi(optarg); flag |= 2; break;
         case 't': fn_ref = optarg; break;
         case 'I': ignore_sam_err = 1; break;
@@ -155,9 +157,16 @@ int main(int argc, char *argv[])
     if (clevel >= 0 && clevel <= 9) sprintf(modew + 1, "%d", clevel);
     if (flag&8) strcat(modew, "c");
     else if (flag&2) strcat(modew, "b");
-    out = hts_open("-", modew);
+
+    if (ofile == NULL) {
+        out = hts_open("-", modew);
+    }
+    else {
+        out = hts_open(ofile, modew);
+    }
+    
     if (out == NULL) {
-        fprintf(stderr, "Error opening standard output\n");
+        fprintf(stderr, "Error opening output\n");
         return EXIT_FAILURE;
     }
 
@@ -202,6 +211,7 @@ int main(int argc, char *argv[])
             hts_itr_t *iter;
             if ((iter = sam_itr_querys(idx, h, argv[i])) == 0) {
                 fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
+                exit_code = 1;
                 continue;
             }
             while ((r = sam_itr_next(in, iter, b)) >= 0) {

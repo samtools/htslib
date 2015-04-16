@@ -79,6 +79,7 @@ BUILT_TEST_PROGRAMS = \
 	test/sam \
 	test/test-regidx \
 	test/test_view \
+	test/test_index \
 	test/test-vcf-api \
 	test/test-vcf-sweep
 
@@ -290,6 +291,7 @@ check test: $(BUILT_TEST_PROGRAMS)
 	test/sam test/ce.fa
 	test/test-regidx
 	cd test && REF_PATH=: ./test_view.pl
+	cd test && REF_PATH=: ./test_index.pl
 	cd test && ./test.pl
 
 test/fieldarith: test/fieldarith.o libhts.a
@@ -307,6 +309,9 @@ test/test-regidx: test/test-regidx.o libhts.a
 test/test_view: test/test_view.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LDLIBS) -lz
 
+test/test_index: test/test_index.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/test_index.o libhts.a $(LDLIBS) -lz
+
 test/test-vcf-api: test/test-vcf-api.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-api.o libhts.a $(LDLIBS) -lz
 
@@ -318,6 +323,7 @@ test/hfile.o: test/hfile.c $(htslib_hfile_h) $(htslib_hts_defs_h)
 test/sam.o: test/sam.c $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
 test/test-regidx.o: test/test-regidx.c $(htslib_regidx_h)
 test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)
+test/test_index.o: test/test_index.c $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
 
