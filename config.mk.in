@@ -69,3 +69,10 @@ LIBHTS_OBJS += hfile_irods.o
 hfile_irods.o hfile_irods.pico: CPPFLAGS += $(EXTRA_CPPFLAGS_IRODS)
 
 endif
+
+ifeq "libcurl-@libcurl@" "libcurl-enabled"
+
+LDLIBS += -lcurl
+LIBHTS_OBJS += hfile_libcurl.o
+
+endif

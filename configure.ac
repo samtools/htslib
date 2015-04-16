@@ -48,6 +48,11 @@ AC_ARG_WITH([irods],
    esac],
   [irods=disabled])
 
+AC_ARG_ENABLE([libcurl],
+  [AS_HELP_STRING([--enable-libcurl],
+                  [enable libcurl-based support for http/https/etc URLs])],
+  [], [enable_libcurl=no])
+
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
 
@@ -93,6 +98,31 @@ else
 fi
 AC_SUBST([irods])
 AC_SUBST([define_IRODS_HOME])
+
+libcurl=disabled
+if test "$enable_libcurl" != no; then
+  AC_CHECK_LIB([curl], [curl_easy_pause],
+    [AC_DEFINE([HAVE_LIBCURL], 1, [Define if libcurl file access is enabled.])
+     libcurl=enabled],
+    [AC_CHECK_LIB([curl], [curl_easy_init],
+       [message="library is too old (7.18+ required)"],
+       [message="library not found"])
+     case "$enable_libcurl" in
+       check) AC_MSG_WARN([libcurl not enabled: $message]) ;;
+       *) AC_MSG_ERROR([libcurl $message
+
+Support for HTTPS and other SSL-based URLs requires routines from the libcurl
+library <http://curl.haxx.se/libcurl/>.  Building HTSlib with libcurl enabled
+requires libcurl development files to be installed on the build machine; you
+may need to ensure a package such as libcurl4-{gnutls,nss,openssl}-dev (on
+Debian or Ubuntu Linux) or libcurl-devel (on RPM-based Linux distributions)
+is installed.
+
+Either configure with --disable-libcurl or resolve this error to build HTSlib.])
+       ;;
+     esac])
+fi
+AC_SUBST([libcurl])
 
 AC_CONFIG_FILES(config.mk)
 AC_OUTPUT

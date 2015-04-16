@@ -8,5 +8,8 @@
 /* Define to 1 if iRODS file access is enabled. */
 #undef HAVE_IRODS
 
+/* Define if libcurl file access is enabled. */
+#undef HAVE_LIBCURL
+
 /* Define to 1 if you have a working `mmap' system call. */
 #undef HAVE_MMAP

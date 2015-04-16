@@ -549,6 +549,11 @@ static hFILE *hopen_mem(const char *data, const char *mode)
 hFILE *hopen(const char *fname, const char *mode)
 {
     if (strncmp(fname, "file://", 7) == 0) return hopen_fd_fileuri(fname, mode);
+#ifdef HAVE_LIBCURL
+    else if (strncmp(fname, "http://", 7) == 0 ||
+             strncmp(fname, "https://", 8) == 0 ||
+             strncmp(fname, "ftp://", 6) == 0) return hopen_libcurl(fname,mode);
+#endif
     else if (strncmp(fname, "http://", 7) == 0 ||
              strncmp(fname, "ftp://", 6) == 0) return hopen_net(fname, mode);
 #ifdef HAVE_IRODS
