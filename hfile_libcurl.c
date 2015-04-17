@@ -36,6 +36,7 @@ DEALINGS IN THE SOFTWARE.  */
 typedef struct {
     hFILE base;
     CURL *easy;
+    struct curl_slist *headers;
     off_t file_size;
     struct {
         union { char *rd; const char *wr; } ptr;
@@ -44,6 +45,7 @@ typedef struct {
     CURLcode final_result;  // easy result code for finished transfers
     // Flags for communicating with libcurl callbacks:
     unsigned paused : 1;    // callback tells us that it has paused transfer
+    unsigned closing : 1;   // informs callback that hclose() has been invoked
     unsigned finished : 1;  // wait_perform() tells us transfer is complete
 } hFILE_libcurl;
 
@@ -61,6 +63,7 @@ static int http_status_errno(int status)
         case 401: return EPERM;
         case 403: return EACCES;
         case 404: return ENOENT;
+        case 405: return EROFS;
         case 407: return EPERM;
         case 408: return ETIMEDOUT;
         case 410: return ENOENT;
@@ -293,6 +296,51 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
     return nbytes;
 }
 
+static size_t send_callback(char *ptr, size_t size, size_t nmemb, void *fpv)
+{
+    hFILE_libcurl *fp = (hFILE_libcurl *) fpv;
+    size_t n = size * nmemb;
+
+    if (fp->buffer.len == 0) {
+        // Send buffer is empty; normally pause, or signal EOF if we're closing
+        if (fp->closing) return 0;
+        else { fp->paused = 1; return CURL_READFUNC_PAUSE; }
+    }
+
+    if (n > fp->buffer.len) n = fp->buffer.len;
+    memcpy(ptr, fp->buffer.ptr.wr, n);
+    fp->buffer.ptr.wr += n;
+    fp->buffer.len -= n;
+    return n;
+}
+
+static ssize_t libcurl_write(hFILE *fpv, const void *bufferv, size_t nbytes)
+{
+    hFILE_libcurl *fp = (hFILE_libcurl *) fpv;
+    const char *buffer = (const char *) bufferv;
+    CURLcode err;
+
+    fp->buffer.ptr.wr = buffer;
+    fp->buffer.len = nbytes;
+    fp->paused = 0;
+    err = curl_easy_pause(fp->easy, CURLPAUSE_CONT);
+    if (err != CURLE_OK) { errno = easy_errno(fp->easy, err); return -1; }
+
+    while (! fp->paused && ! fp->finished)
+        if (wait_perform() < 0) return -1;
+
+    nbytes = fp->buffer.ptr.wr - buffer;
+    fp->buffer.ptr.wr = NULL;
+    fp->buffer.len = 0;
+
+    if (fp->finished && fp->final_result != CURLE_OK) {
+        errno = easy_errno(fp->easy, fp->final_result);
+        return -1;
+    }
+
+    return nbytes;
+}
+
 static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
 {
     hFILE_libcurl *fp = (hFILE_libcurl *) fpv;
@@ -367,11 +415,27 @@ static int libcurl_flush(hFILE *fpv)
 static int libcurl_close(hFILE *fpv)
 {
     hFILE_libcurl *fp = (hFILE_libcurl *) fpv;
+    CURLcode err;
     CURLMcode errm;
     int save_errno = 0;
 
+    // Before closing the file, unpause it and perform on it so that uploads
+    // have the opportunity to signal EOF to the server -- see send_callback().
+
+    fp->buffer.len = 0;
+    fp->closing = 1;
+    fp->paused = 0;
+    err = curl_easy_pause(fp->easy, CURLPAUSE_CONT);
+    if (err != CURLE_OK) save_errno = easy_errno(fp->easy, err);
+
+    while (save_errno == 0 && ! fp->paused && ! fp->finished)
+        if (wait_perform() < 0) save_errno = errno;
+
+    if (fp->finished && fp->final_result != CURLE_OK)
+        save_errno = easy_errno(fp->easy, fp->final_result);
+
     errm = curl_multi_remove_handle(curl.multi, fp->easy);
-    if (errm != CURLM_OK) save_errno = multi_errno(errm);
+    if (errm != CURLM_OK && save_errno == 0) save_errno = multi_errno(errm);
     curl.nrunning--;
 
     curl_easy_cleanup(fp->easy);
@@ -382,8 +446,16 @@ static int libcurl_close(hFILE *fpv)
 
 static const struct hFILE_backend libcurl_backend =
 {
-    libcurl_read, NULL, libcurl_seek, libcurl_flush, libcurl_close
+    libcurl_read, libcurl_write, libcurl_seek, libcurl_flush, libcurl_close
 };
+
+static int add_header(hFILE_libcurl *fp, const char *header)
+{
+    struct curl_slist *list = curl_slist_append(fp->headers, header);
+    if (list == NULL) { errno = ENOMEM; return -1; }
+    fp->headers = list;
+    return 0;
+}
 
 hFILE *hopen_libcurl(const char *url, const char *modes)
 {
@@ -411,11 +483,12 @@ hFILE *hopen_libcurl(const char *url, const char *modes)
     fp->easy = curl_easy_init();
     if (fp->easy == NULL) { errno = ENOMEM; goto error; }
 
+    fp->headers = NULL;
     fp->file_size = -1;
     fp->buffer.ptr.rd = NULL;
     fp->buffer.len = 0;
     fp->final_result = (CURLcode) -1;
-    fp->paused = fp->finished = 0;
+    fp->paused = fp->closing = fp->finished = 0;
 
     // Make a route to the hFILE_libcurl* given just a CURL* easy handle
     err = curl_easy_setopt(fp->easy, CURLOPT_PRIVATE, fp);
@@ -425,11 +498,16 @@ hFILE *hopen_libcurl(const char *url, const char *modes)
         err |= curl_easy_setopt(fp->easy, CURLOPT_WRITEDATA, fp);
     }
     else {
-        abort(); // TODO Implement writing/uploading
+        err |= curl_easy_setopt(fp->easy, CURLOPT_READFUNCTION, send_callback);
+        err |= curl_easy_setopt(fp->easy, CURLOPT_READDATA, fp);
+        err |= curl_easy_setopt(fp->easy, CURLOPT_UPLOAD, 1L);
+        if (add_header(fp, "Transfer-Encoding: chunked") < 0) goto error;
     }
 
     err |= curl_easy_setopt(fp->easy, CURLOPT_URL, url);
 
+    if (fp->headers)
+        err |= curl_easy_setopt(fp->easy, CURLOPT_HTTPHEADER, fp->headers);
     err |= curl_easy_setopt(fp->easy, CURLOPT_FOLLOWLOCATION, 1L);
     err |= curl_easy_setopt(fp->easy, CURLOPT_FAILONERROR, 1L);
 
@@ -466,6 +544,7 @@ error_remove:
 error:
     save = errno;
     curl_easy_cleanup(fp->easy);
+    if (fp->headers) curl_slist_free_all(fp->headers);
     hfile_destroy((hFILE *) fp);
     errno = save;
     return NULL;
