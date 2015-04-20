@@ -232,10 +232,15 @@ static int wait_perform()
     FD_ZERO(&wr);
     FD_ZERO(&ex);
     if (curl_multi_fdset(curl.multi, &rd, &wr, &ex, &maxfd) != CURLM_OK)
-        maxfd = -1;
-
-    if (curl_multi_timeout(curl.multi, &timeout) != CURLM_OK || timeout < 0)
-        timeout = (maxfd >= 0)? 120000 : 200;
+        maxfd = -1, timeout = 1000;
+    else if (maxfd < 0)
+        timeout = 100;  // as recommended by curl_multi_fdset(3)
+    else {
+        if (curl_multi_timeout(curl.multi, &timeout) != CURLM_OK)
+            timeout = 1000;
+        else if (timeout < 0)
+            timeout = 10000;  // as recommended by curl_multi_timeout(3)
+    }
 
     if (timeout > 0 && ! curl.perform_again) {
         struct timeval tval;
