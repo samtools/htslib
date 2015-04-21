@@ -124,6 +124,9 @@ static int easy_errno(CURL *easy, CURLcode err)
     case CURLE_OPERATION_TIMEDOUT:
         return ETIMEDOUT;
 
+    case CURLE_RANGE_ERROR:
+        return ESPIPE;
+
     case CURLE_SSL_CONNECT_ERROR:
         // TODO return SSL error buffer messages
         return ECONNABORTED;
