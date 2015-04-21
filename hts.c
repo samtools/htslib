@@ -1025,38 +1025,38 @@ void hts_idx_replace_address(const hts_idx_t *idx, const int no_address_cushion,
     for (i = 0; i < idx->n; ++i) {
         bidx_t *bidx = idx->bidx[i];
         lidx_t *lidx = idx->lidx + i;
-        if(bidx) {
-            for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
-                if (kh_exist(bidx, k)) {
-                    bins_t *p = &kh_value(bidx, k);
-                    for (j = 0; j < p->n; ++j) {
-                        if(p->list[j].u >= no_address_cushion_value) {
-                            block_offset = p->list[j].u & 0xFFFF;
-                            address_index = (p->list[j].u >> 16) - no_address_cushion;
-                            if(address_index >= 0) {
-                                if(address_index >= address_capacity) {
-                                    fprintf(stderr, "[W::%s] uaddress_index = %d, is over address_capacity = %d\n", __func__, address_index, address_capacity);
-                                    address_index = address_capacity - 1;
-                                }
-                                p->list[j].u = ((address[address_index] << 16) | block_offset);
+		if(bidx) {
+        for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
+            if (kh_exist(bidx, k)) {
+                bins_t *p = &kh_value(bidx, k);
+                for (j = 0; j < p->n; ++j) {
+                    if(p->list[j].u >= no_address_cushion_value) {
+                        block_offset = p->list[j].u & 0xFFFF;
+                        address_index = (p->list[j].u >> 16) - no_address_cushion;
+                        if(address_index >= 0) {
+                            if(address_index >= address_capacity) {
+                                fprintf(stderr, "[W::%s] uaddress_index = %d, is over address_capacity = %d\n", __func__, address_index, address_capacity);
+                                address_index = address_capacity - 1;
                             }
+                            p->list[j].u = ((address[address_index] << 16) | block_offset);
                         }
+                    }
 
-                        if(p->list[j].v >= no_address_cushion_value) {
-                            block_offset = p->list[j].v & 0xFFFF;
-                            address_index = (p->list[j].v >> 16) - no_address_cushion;
-                            if(address_index >= 0) {
-                                if(address_index >= address_capacity) {
-                                    fprintf(stderr, "[W::%s] vaddress_index = %d, is over address_capacity = %d\n", __func__, address_index, address_capacity);
-                                    address_index = address_capacity - 1;
-                                }
-                                p->list[j].v = ((address[address_index] << 16) | block_offset);
+                    if(p->list[j].v >= no_address_cushion_value) {
+                        block_offset = p->list[j].v & 0xFFFF;
+                        address_index = (p->list[j].v >> 16) - no_address_cushion;
+                        if(address_index >= 0) {
+                            if(address_index >= address_capacity) {
+                                fprintf(stderr, "[W::%s] vaddress_index = %d, is over address_capacity = %d\n", __func__, address_index, address_capacity);
+                                address_index = address_capacity - 1;
                             }
+                            p->list[j].v = ((address[address_index] << 16) | block_offset);
                         }
-                    } // ~for(j)
-                } // ~if(kh_exist)
-            } // ~for(k)
-        }
+                    }
+                } // ~for(j)
+            } // ~if(kh_exist)
+        } // ~for(k)
+		}
 		
         for (j = 0; j < lidx->n; ++j) {
             if(lidx->offset[j] >= no_address_cushion_value) {
@@ -1207,11 +1207,17 @@ void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
         hts_idx_save_core(idx, fp, HTS_FMT_TBI);
         bgzf_close(fp);
     } else if (fmt == HTS_FMT_BAI) {
-        FILE *fp;
-        fp = fopen(strcat(fnidx, ".bai"), "w");
-        fwrite("BAI\1", 1, 4, fp);
-        hts_idx_save_core(idx, fp, HTS_FMT_BAI);
-        fclose(fp);
+        if(strcmp("/dev/stdout", fnidx) == 0) {
+            fwrite("BAI\1", 1, 4, stdout);
+            hts_idx_save_core(idx, stdout, HTS_FMT_BAI);
+        }
+        else {
+            FILE *fp;
+            fp = fopen(strcat(fnidx, ".bai"), "w");
+            fwrite("BAI\1", 1, 4, fp);
+            hts_idx_save_core(idx, fp, HTS_FMT_BAI);
+            fclose(fp);
+        }
     } else abort();
     free(fnidx);
 }
