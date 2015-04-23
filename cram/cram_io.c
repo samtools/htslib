@@ -96,6 +96,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 /*
+ * LEGACY: consider using itf8_decode_crc.
+ *
  * Reads an integer in ITF-8 encoding from 'cp' and stores it in
  * *val.
  *
@@ -155,6 +157,72 @@ int itf8_decode(cram_fd *fd, int32_t *val_p) {
 	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	val = (val<<4) | (((unsigned char)hgetc(fd->fp)) & 0x0f);
 	*val_p = val;
+    }
+
+    return 5;
+}
+
+int itf8_decode_crc(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
+    static int nbytes[16] = {
+	0,0,0,0, 0,0,0,0,                               // 0000xxxx - 0111xxxx
+	1,1,1,1,                                        // 1000xxxx - 1011xxxx
+	2,2,                                            // 1100xxxx - 1101xxxx
+	3,                                              // 1110xxxx
+	4,                                              // 1111xxxx
+    };
+
+    static int nbits[16] = {
+	0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, // 0000xxxx - 0111xxxx
+	0x3f, 0x3f, 0x3f, 0x3f,                         // 1000xxxx - 1011xxxx
+	0x1f, 0x1f,                                     // 1100xxxx - 1101xxxx
+	0x0f,                                           // 1110xxxx
+	0x0f,                                           // 1111xxxx
+    };
+    unsigned char c[5];
+
+    int32_t val = hgetc(fd->fp);
+    if (val == -1)
+	return -1;
+
+    c[0]=val;
+
+    int i = nbytes[val>>4];
+    val &= nbits[val>>4];
+
+    switch(i) {
+    case 0:
+	*val_p = val;
+	*crc = crc32(*crc, c, 1);
+	return 1;
+
+    case 1:
+	val = (val<<8) | (c[1]=hgetc(fd->fp));
+	*val_p = val;
+	*crc = crc32(*crc, c, 2);
+	return 2;
+
+    case 2:
+	val = (val<<8) | (c[1]=hgetc(fd->fp));
+	val = (val<<8) | (c[2]=hgetc(fd->fp));
+	*val_p = val;
+	*crc = crc32(*crc, c, 3);
+	return 3;
+
+    case 3:
+	val = (val<<8) | (c[1]=hgetc(fd->fp));
+	val = (val<<8) | (c[2]=hgetc(fd->fp));
+	val = (val<<8) | (c[3]=hgetc(fd->fp));
+	*val_p = val;
+	*crc = crc32(*crc, c, 4);
+	return 4;
+
+    case 4: // really 3.5 more, why make it different?
+	val = (val<<8) |   (c[1]=hgetc(fd->fp));
+	val = (val<<8) |   (c[2]=hgetc(fd->fp));
+	val = (val<<8) |   (c[3]=hgetc(fd->fp));
+	val = (val<<4) | (((c[4]=hgetc(fd->fp))) & 0x0f);
+	*val_p = val;
+	*crc = crc32(*crc, c, 5);
     }
 
     return 5;
@@ -367,6 +435,9 @@ int ltf8_get(char *cp, int64_t *val_p) {
     }
 }
 
+/*
+ * LEGACY: consider using ltf8_decode_crc.
+ */
 int ltf8_decode(cram_fd *fd, int64_t *val_p) {
     int c = hgetc(fd->fp);
     int64_t val = (unsigned char)c;
@@ -442,6 +513,98 @@ int ltf8_decode(cram_fd *fd, int64_t *val_p) {
 	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	val = (val<<8) | (unsigned char)hgetc(fd->fp);
 	val = (val<<8) | (unsigned char)hgetc(fd->fp);
+	*val_p = val;
+    }
+
+    return 9;
+}
+
+int ltf8_decode_crc(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
+    unsigned char c[9];
+    int64_t val = (unsigned char)hgetc(fd->fp);
+    if (val == -1)
+	return -1;
+
+    c[0] = val;
+
+    if (val < 0x80) {
+	*val_p =   val;
+	*crc = crc32(*crc, c, 1);
+	return 1;
+
+    } else if (val < 0xc0) {
+	val = (val<<8) | (c[1]=hgetc(fd->fp));;
+	*val_p = val & (((1LL<<(6+8)))-1);
+	*crc = crc32(*crc, c, 2);
+	return 2;
+
+    } else if (val < 0xe0) {
+	val = (val<<8) | (c[1]=hgetc(fd->fp));;
+	val = (val<<8) | (c[2]=hgetc(fd->fp));;
+	*val_p = val & ((1LL<<(5+2*8))-1);
+	*crc = crc32(*crc, c, 3);
+	return 3;
+
+    } else if (val < 0xf0) {
+	val = (val<<8) | (c[1]=hgetc(fd->fp));;
+	val = (val<<8) | (c[2]=hgetc(fd->fp));;
+	val = (val<<8) | (c[3]=hgetc(fd->fp));;
+	*val_p = val & ((1LL<<(4+3*8))-1);
+	*crc = crc32(*crc, c, 4);
+	return 4;
+
+    } else if (val < 0xf8) {
+	val = (val<<8) | (c[1]=hgetc(fd->fp));;
+	val = (val<<8) | (c[2]=hgetc(fd->fp));;
+	val = (val<<8) | (c[3]=hgetc(fd->fp));;
+	val = (val<<8) | (c[4]=hgetc(fd->fp));;
+	*val_p = val & ((1LL<<(3+4*8))-1);
+	*crc = crc32(*crc, c, 5);
+	return 5;
+
+    } else if (val < 0xfc) {
+	val = (val<<8) | (c[1]=hgetc(fd->fp));;
+	val = (val<<8) | (c[2]=hgetc(fd->fp));;
+	val = (val<<8) | (c[3]=hgetc(fd->fp));;
+	val = (val<<8) | (c[4]=hgetc(fd->fp));;
+	val = (val<<8) | (c[5]=hgetc(fd->fp));;
+	*val_p = val & ((1LL<<(2+5*8))-1);
+	*crc = crc32(*crc, c, 6);
+	return 6;
+
+    } else if (val < 0xfe) {
+	val = (val<<8) | (c[1]=hgetc(fd->fp));;
+	val = (val<<8) | (c[2]=hgetc(fd->fp));;
+	val = (val<<8) | (c[3]=hgetc(fd->fp));;
+	val = (val<<8) | (c[4]=hgetc(fd->fp));;
+	val = (val<<8) | (c[5]=hgetc(fd->fp));;
+	val = (val<<8) | (c[6]=hgetc(fd->fp));;
+	*val_p = val & ((1LL<<(1+6*8))-1);
+	*crc = crc32(*crc, c, 7);
+	return 7;
+
+    } else if (val < 0xff) {
+	val = (val<<8) | (c[1]=hgetc(fd->fp));;
+	val = (val<<8) | (c[2]=hgetc(fd->fp));;
+	val = (val<<8) | (c[3]=hgetc(fd->fp));;
+	val = (val<<8) | (c[4]=hgetc(fd->fp));;
+	val = (val<<8) | (c[5]=hgetc(fd->fp));;
+	val = (val<<8) | (c[6]=hgetc(fd->fp));;
+	val = (val<<8) | (c[7]=hgetc(fd->fp));;
+	*val_p = val & ((1LL<<(7*8))-1);
+	*crc = crc32(*crc, c, 8);
+	return 8;
+
+    } else {
+	val = (val<<8) | (c[1]=hgetc(fd->fp));;
+	val = (val<<8) | (c[2]=hgetc(fd->fp));;
+	val = (val<<8) | (c[3]=hgetc(fd->fp));;
+	val = (val<<8) | (c[4]=hgetc(fd->fp));;
+	val = (val<<8) | (c[5]=hgetc(fd->fp));;
+	val = (val<<8) | (c[6]=hgetc(fd->fp));;
+	val = (val<<8) | (c[7]=hgetc(fd->fp));;
+	val = (val<<8) | (c[8]=hgetc(fd->fp));;
+	*crc = crc32(*crc, c, 9);
 	*val_p = val;
     }
 
@@ -765,16 +928,20 @@ cram_block *cram_new_block(enum cram_content_type content_type,
  */
 cram_block *cram_read_block(cram_fd *fd) {
     cram_block *b = malloc(sizeof(*b));
+    unsigned char c;
+    uint32_t crc = 0;
     if (!b)
 	return NULL;
 
     //fprintf(stderr, "Block at %d\n", (int)ftell(fd->fp));
 
     if (-1 == (b->method      = hgetc(fd->fp))) { free(b); return NULL; }
+    c = b->method; crc = crc32(crc, &c, 1);
     if (-1 == (b->content_type= hgetc(fd->fp))) { free(b); return NULL; }
-    if (-1 == itf8_decode(fd, &b->content_id))  { free(b); return NULL; }
-    if (-1 == itf8_decode(fd, &b->comp_size))   { free(b); return NULL; }
-    if (-1 == itf8_decode(fd, &b->uncomp_size)) { free(b); return NULL; }
+    c = b->content_type; crc = crc32(crc, &c, 1);
+    if (-1 == itf8_decode_crc(fd, &b->content_id, &crc))  { free(b); return NULL; }
+    if (-1 == itf8_decode_crc(fd, &b->comp_size, &crc))   { free(b); return NULL; }
+    if (-1 == itf8_decode_crc(fd, &b->uncomp_size, &crc)) { free(b); return NULL; }
 
     //    fprintf(stderr, "  method %d, ctype %d, cid %d, csize %d, ucsize %d\n",
     //	    b->method, b->content_type, b->content_id, b->comp_size, b->uncomp_size);
@@ -798,23 +965,12 @@ cram_block *cram_read_block(cram_fd *fd) {
     }
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-	unsigned char dat[100], *cp = dat;;
-	uint32_t crc;
-
-	
 	if (-1 == int32_decode(fd, (int32_t *)&b->crc32)) {
 	    free(b);
 	    return NULL;
 	}
 
-	*cp++ = b->method;
-	*cp++ = b->content_type;
-	cp += itf8_put(cp, b->content_id);
-	cp += itf8_put(cp, b->comp_size);
-	cp += itf8_put(cp, b->uncomp_size);
-	crc = crc32(0L, dat, cp-dat);
 	crc = crc32(crc, b->data ? b->data : (uc *)"", b->alloc);
-
 	if (crc != b->crc32) {
 	    fprintf(stderr, "Block CRC32 failure\n");
 	    free(b->data);
@@ -2665,19 +2821,21 @@ cram_container *cram_read_container(cram_fd *fd) {
     cram_container c2, *c;
     int i, s;
     size_t rd = 0;
+    uint32_t crc = 0;
     
     fd->err = 0;
     fd->eof = 0;
 
     memset(&c2, 0, sizeof(c2));
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
-	if ((s = itf8_decode(fd, &c2.length)) == -1) {
+	if ((s = itf8_decode_crc(fd, &c2.length, &crc)) == -1) {
 	    fd->eof = fd->empty_container ? 1 : 2;
 	    return NULL;
 	} else {
 	    rd+=s;
 	}
     } else {
+	uint32_t len;
 	if ((s = int32_decode(fd, &c2.length)) == -1) {
 	    if (CRAM_MAJOR_VERS(fd->version) == 2 &&
 		CRAM_MINOR_VERS(fd->version) == 0)
@@ -2688,37 +2846,39 @@ cram_container *cram_read_container(cram_fd *fd) {
 	} else {
 	    rd+=s;
 	}
+	len = le_int4(c2.length);
+	crc = crc32(0L, (unsigned char *)&len, 4);
     }
-    if ((s = itf8_decode(fd, &c2.ref_seq_id))   == -1) return NULL; else rd+=s;
-    if ((s = itf8_decode(fd, &c2.ref_seq_start))== -1) return NULL; else rd+=s;
-    if ((s = itf8_decode(fd, &c2.ref_seq_span)) == -1) return NULL; else rd+=s;
-    if ((s = itf8_decode(fd, &c2.num_records))  == -1) return NULL; else rd+=s;
+    if ((s = itf8_decode_crc(fd, &c2.ref_seq_id, &crc))   == -1) return NULL; else rd+=s;
+    if ((s = itf8_decode_crc(fd, &c2.ref_seq_start, &crc))== -1) return NULL; else rd+=s;
+    if ((s = itf8_decode_crc(fd, &c2.ref_seq_span, &crc)) == -1) return NULL; else rd+=s;
+    if ((s = itf8_decode_crc(fd, &c2.num_records, &crc))  == -1) return NULL; else rd+=s;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	c2.record_counter = 0;
 	c2.num_bases = 0;
     } else {
 	if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-	    if ((s = ltf8_decode(fd, &c2.record_counter)) == -1)
+	    if ((s = ltf8_decode_crc(fd, &c2.record_counter, &crc)) == -1)
 		return NULL;
 	    else
 		rd += s;
 	} else {
 	    int32_t i32;
-	    if ((s = itf8_decode(fd, &i32)) == -1)
+	    if ((s = itf8_decode_crc(fd, &i32, &crc)) == -1)
 		return NULL;
 	    else
 		rd += s;
 	    c2.record_counter = i32;
 	}
 
-	if ((s = ltf8_decode(fd, &c2.num_bases))== -1)
+	if ((s = ltf8_decode_crc(fd, &c2.num_bases, &crc))== -1)
 	    return NULL;
 	else
 	    rd += s;
     }
-    if ((s = itf8_decode(fd, &c2.num_blocks))   == -1) return NULL; else rd+=s;
-    if ((s = itf8_decode(fd, &c2.num_landmarks))== -1) return NULL; else rd+=s;
+    if ((s = itf8_decode_crc(fd, &c2.num_blocks, &crc))   == -1) return NULL; else rd+=s;
+    if ((s = itf8_decode_crc(fd, &c2.num_landmarks, &crc))== -1) return NULL; else rd+=s;
 
     if (!(c = calloc(1, sizeof(*c))))
 	return NULL;
@@ -2732,7 +2892,7 @@ cram_container *cram_read_container(cram_fd *fd) {
 	return NULL;
     }  
     for (i = 0; i < c->num_landmarks; i++) {
-	if ((s = itf8_decode(fd, &c->landmark[i])) == -1) {
+	if ((s = itf8_decode_crc(fd, &c->landmark[i], &crc)) == -1) {
 	    cram_free_container(c);
 	    return NULL;
 	} else {
@@ -2741,42 +2901,11 @@ cram_container *cram_read_container(cram_fd *fd) {
     }
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-	uint32_t crc, i;
-	unsigned char *dat = malloc(50 + 5*(c->num_landmarks)), *cp = dat;
-	if (!dat) {
-	    cram_free_container(c);
-	    return NULL;
-	}
 	if (-1 == int32_decode(fd, (int32_t *)&c->crc32))
 	    return NULL;
 	else
 	    rd+=4;
 
-	/* Reencode first as we can't easily access the original byte stream.
-	 *
-	 * FIXME: Technically this means this may not be fool proof. We could
-	 * create a CRAM file using a 2 byte ITF8 value that can fit in a 
-	 * 1 byte field, meaning the encoding is different to the original
-	 * form and so has a different CRC.
-	 *
-	 * The correct implementation would be to have an alternative form
-	 * of itf8_decode which also squirrels away the raw byte stream
-	 * during decoding so we can then CRC that.
-	 */
-	*(unsigned int *)cp = le_int4(c->length); cp += 4;
-	cp += itf8_put(cp, c->ref_seq_id);
-	cp += itf8_put(cp, c->ref_seq_start);
-	cp += itf8_put(cp, c->ref_seq_span);
-	cp += itf8_put(cp, c->num_records);
-	cp += ltf8_put((char *)cp, c->record_counter);
-	cp += itf8_put(cp, c->num_bases);
-	cp += itf8_put(cp, c->num_blocks);
-	cp += itf8_put(cp, c->num_landmarks);
-	for (i = 0; i < c->num_landmarks; i++) {
-	    cp += itf8_put(cp, c->landmark[i]);
-	}
-
-	crc = crc32(0L, dat, cp-dat);
 	if (crc != c->crc32) {
 	    fprintf(stderr, "Container header CRC32 failure\n");
 	    cram_free_container(c);
