@@ -1242,7 +1242,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		                ->decode(s, c->comp_hdr->codecs[DS_BS], blk,
 					 (char *)&base, &out_sz);
 		if (ref_pos >= bfd->ref[cr->ref_id].len || !s->ref) {
-		    seq[pos-1] = 'N';
+		    seq[pos-1] = c->comp_hdr->
+			substitution_matrix[fd->L1['N']][base];
 		    if (decode_md || decode_nm) {
 			if (md_dist >= 0 && decode_md)
 			    BLOCK_APPEND_UINT(s->aux_blk, md_dist);
@@ -2022,7 +2023,6 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    pthread_mutex_lock(&fd->refs->lock);
 	    if ((fd->required_fields & SAM_SEQ) &&
 		s->ref_end > fd->refs->ref_id[ref_id]->length) {
-		fprintf(stderr, "Slice ends beyond reference end.\n");
 		s->ref_end = fd->refs->ref_id[ref_id]->length;
 	    }
 	    pthread_mutex_unlock(&fd->refs->lock);
