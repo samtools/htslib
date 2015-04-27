@@ -552,6 +552,9 @@ hFILE *hopen(const char *fname, const char *mode)
 #ifdef HAVE_LIBCURL
     else if (strncmp(fname, "http://", 7) == 0 ||
              strncmp(fname, "https://", 8) == 0 ||
+             strncmp(fname, "s3://", 5) == 0 ||
+             strncmp(fname, "s3+http://", 10) == 0 ||
+             strncmp(fname, "s3+https://", 11) == 0 ||
              strncmp(fname, "ftp://", 6) == 0) return hopen_libcurl(fname,mode);
 #endif
     else if (strncmp(fname, "http://", 7) == 0 ||

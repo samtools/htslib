@@ -38,6 +38,8 @@ redistribute it.  There is NO WARRANTY, to the extent permitted by law.])
 AC_PROG_CC
 AC_PROG_RANLIB
 
+need_crypto=no
+
 AC_ARG_WITH([irods],
   [AS_HELP_STRING([[--with-irods[=DIR]]],
                   [use RodsAPIs library (in DIR) to support iRODS URLs])],
@@ -55,6 +57,7 @@ AC_ARG_ENABLE([libcurl],
 
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
+AC_CHECK_FUNCS(gmtime_r)
 
 save_LIBS=$LIBS
 zlib_devel=ok
@@ -121,8 +124,15 @@ is installed.
 Either configure with --disable-libcurl or resolve this error to build HTSlib.])
        ;;
      esac])
+  need_crypto=yes
 fi
 AC_SUBST([libcurl])
+
+if test $need_crypto != no; then
+  AC_CHECK_LIB([crypto], [HMAC])
+  AC_CHECK_FUNC([CCHmac], [AC_DEFINE([HAVE_COMMONCRYPTO], 1,
+        [Define if you have the Common Crypto library.])])
+fi
 
 AC_CONFIG_FILES(config.mk)
 AC_OUTPUT
