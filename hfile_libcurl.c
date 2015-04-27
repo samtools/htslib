@@ -24,12 +24,15 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <errno.h>
 #include <sys/select.h>
 
 #include "hfile_internal.h"
+#include "htslib/kstring.h"
 
 #include <curl/curl.h>
 
@@ -465,6 +468,9 @@ static int add_header(hFILE_libcurl *fp, const char *header)
     return 0;
 }
 
+static int
+add_s3_settings(hFILE_libcurl *fp, const char *url, kstring_t *message);
+
 hFILE *hopen_libcurl(const char *url, const char *modes)
 {
     hFILE_libcurl *fp;
@@ -512,7 +518,17 @@ hFILE *hopen_libcurl(const char *url, const char *modes)
         if (add_header(fp, "Transfer-Encoding: chunked") < 0) goto error;
     }
 
-    err |= curl_easy_setopt(fp->easy, CURLOPT_URL, url);
+    if (tolower(url[0]) == 's' && url[1] == '3') {
+        // Construct the HTTP-Method/Content-MD5/Content-Type part of the
+        // message to be signed.  This will be destroyed by add_s3_settings().
+        kstring_t message = { 0, 0, NULL };
+        kputs((mode == 'r')? "GET\n" : "PUT\n", &message);
+        kputc('\n', &message);
+        kputc('\n', &message);
+        if (add_s3_settings(fp, url, &message) < 0) goto error;
+    }
+    else
+        err |= curl_easy_setopt(fp->easy, CURLOPT_URL, url);
 
     if (fp->headers)
         err |= curl_easy_setopt(fp->easy, CURLOPT_HTTPHEADER, fp->headers);
@@ -556,4 +572,174 @@ error:
     hfile_destroy((hFILE *) fp);
     errno = save;
     return NULL;
+}
+
+
+/*******************
+ * Rewrite S3 URLs *
+ *******************/
+
+#if defined HAVE_COMMONCRYPTO
+
+#include <CommonCrypto/CommonHMAC.h>
+
+#define DIGEST_BUFSIZ CC_SHA1_DIGEST_LENGTH
+
+static size_t
+s3_sign(unsigned char *digest, kstring_t *key, kstring_t *message)
+{
+    CCHmac(kCCHmacAlgSHA1, key->s, key->l, message->s, message->l, digest);
+    return CC_SHA1_DIGEST_LENGTH;
+}
+
+#elif defined HAVE_LIBCRYPTO
+
+#include <openssl/hmac.h>
+
+#define DIGEST_BUFSIZ EVP_MAX_MD_SIZE
+
+static size_t
+s3_sign(unsigned char *digest, kstring_t *key, kstring_t *message)
+{
+    unsigned int len;
+    HMAC(EVP_sha1(), key->s, key->l,
+         (unsigned char *) message->s, message->l, digest, &len);
+    return len;
+}
+
+#endif
+
+static void
+urldecode_kput(const char *s, int len, hFILE_libcurl *fp, kstring_t *str)
+{
+    if (memchr(s, '%', len) != NULL) {
+        int len2;
+        char *s2 = curl_easy_unescape(fp->easy, s, len, &len2);
+        if (s2 == NULL) abort();
+        kputsn(s2, len2, str);
+        curl_free(s2);
+    }
+    else kputsn(s, len, str);
+}
+
+static void base64_kput(const unsigned char *data, size_t len, kstring_t *str)
+{
+    static const char base64[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    size_t i = 0;
+    unsigned x = 0;
+    int bits = 0, pad = 0;
+
+    while (bits || i < len) {
+        if (bits < 6) {
+            x <<= 8, bits += 8;
+            if (i < len) x |= data[i++];
+            else pad++;
+        }
+
+        bits -= 6;
+        kputc(base64[(x >> bits) & 63], str);
+    }
+
+    str->l -= pad;
+    kputsn("==", pad, str);
+}
+
+static int
+add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
+{
+    int ret, save;
+    const char *bucket, *path;
+    char date_hdr[40];
+    CURLcode err;
+
+    kstring_t url = { 0, 0, NULL };
+    kstring_t id = { 0, 0, NULL };
+    kstring_t secret = { 0, 0, NULL };
+    kstring_t auth_hdr = { 0, 0, NULL };
+
+    time_t now = time(NULL);
+#ifdef HAVE_GMTIME_R
+    struct tm tm_buffer;
+    struct tm *tm = gmtime_r(&now, &tm_buffer);
+#else
+    struct tm *tm = gmtime(&now);
+#endif
+
+    strftime(date_hdr, sizeof date_hdr, "Date: %a, %d %b %Y %H:%M:%S GMT", tm);
+    if (add_header(fp, date_hdr) < 0) goto error;
+    kputs(&date_hdr[6], message);
+    kputc('\n', message);
+
+    // Our S3 URL format is s3[+SCHEME]://[ID[:SECRET]@]BUCKET/PATH
+
+    if (s3url[2] == '+') {
+        bucket = strchr(s3url, ':') + 1;
+        kputsn(&s3url[3], bucket - &s3url[3], &url);
+    }
+    else {
+        kputs("https:", &url);
+        bucket = &s3url[3];
+    }
+    while (*bucket == '/') kputc(*bucket++, &url);
+
+    path = bucket + strcspn(bucket, "/?#@");
+    if (*path == '@') {
+        const char *colon = bucket + strcspn(bucket, ":@");
+        urldecode_kput(bucket, colon - bucket, fp, &id);
+        if (*colon == ':')
+            urldecode_kput(&colon[1], path - &colon[1], fp, &secret);
+
+        bucket = &path[1];
+        path = bucket + strcspn(bucket, "/?#");
+    }
+    else {
+        // If the URL has no ID[:SECRET]@, consider environment variables.
+        const char *v;
+        if ((v = getenv("AWS_ACCESS_KEY_ID")) != NULL) kputs(v, &id);
+        if ((v = getenv("AWS_SECRET_ACCESS_KEY")) != NULL) kputs(v, &secret);
+    }
+
+    kputsn(bucket, path - bucket, &url);
+    kputs(".s3.amazonaws.com", &url);
+    kputs(path, &url);
+
+    kputc('/', message);
+    kputs(bucket, message); // CanonicalizedResource is '/' + bucket + path
+
+    err = curl_easy_setopt(fp->easy, CURLOPT_URL, url.s);
+    if (err != CURLE_OK) { errno = easy_errno(fp->easy, err); goto error; }
+
+    // TODO Read id and secret from config files
+
+    // If we have no id/secret, we can't sign the request but will
+    // still be able to access public data sets.
+    if (id.l > 0 && secret.l > 0) {
+        unsigned char digest[DIGEST_BUFSIZ];
+        size_t digest_len = s3_sign(digest, &secret, message);
+
+        kputs("Authorization: AWS ", &auth_hdr);
+        kputs(id.s, &auth_hdr);
+        kputc(':', &auth_hdr);
+        base64_kput(digest, digest_len, &auth_hdr);
+
+        if (add_header(fp, auth_hdr.s) < 0) goto error;
+    }
+
+    ret = 0;
+    goto free_and_return;
+
+error:
+    ret = -1;
+
+free_and_return:
+    save = errno;
+    free(url.s);
+    free(id.s);
+    free(secret.s);
+    free(auth_hdr.s);
+    free(message->s);
+    errno = save;
+    return ret;
 }
