@@ -300,12 +300,19 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         return hrec;
     }
 
-    // structured line, e.g. ##INFO=<ID=PV1,Number=1,Type=Float,Description="P-value for baseQ bias">
+    // structured line, e.g.
+    // ##INFO=<ID=PV1,Number=1,Type=Float,Description="P-value for baseQ bias">
+    // ##PEDIGREE=<Name_0=G0-ID,Name_1=G1-ID,Name_3=GN-ID>
     int nopen = 1;
     while ( *q && *q!='\n' && nopen )
     {
         p = ++q;
-        while ( *q && isalnum(*q) ) q++;
+        // ^[A-Za-z_][0-9A-Za-z_.]*$
+        if (p==q && *q && (isalpha(*q) || *q=='_'))
+        {
+            q++;
+            while ( *q && (isalnum(*q) || *q=='_' || *q=='.') ) q++;
+        }
         n = q-p;
         if ( *q!='=' || !n )
         {
