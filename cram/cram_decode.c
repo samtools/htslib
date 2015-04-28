@@ -1071,7 +1071,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     uint32_t ds = c->comp_hdr->data_series;
 
     if ((ds & CRAM_QS) && !(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES)) {
-	memset(qual, 30, cr->len);
+	memset(qual, 255, cr->len);
     }
 
     if (decode_md) {
@@ -2395,7 +2395,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		}
 	    } else {
 		if (ds & CRAM_RL)
-		    memset(qual, 30, cr->len);
+		    memset(qual, 255, cr->len);
 	    }
 	}
     }
