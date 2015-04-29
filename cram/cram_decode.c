@@ -1251,13 +1251,15 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 			nm--;
 		    }
 		} else {
-		    ref_base = fd->L1[(uc)s->ref[ref_pos - s->ref_start +1]];
+		    char ref_call = ref_pos <= s->ref_end 
+			? (uc)s->ref[ref_pos - s->ref_start +1]
+			: 'N';
+		    ref_base = fd->L1[ref_call];
 		    seq[pos-1] = c->comp_hdr->
 			substitution_matrix[ref_base][base];
 		    if (decode_md) {
 			BLOCK_APPEND_UINT(s->aux_blk, md_dist);
-			BLOCK_APPEND_CHAR(s->aux_blk,
-					  s->ref[ref_pos-s->ref_start +1]);
+			BLOCK_APPEND_CHAR(s->aux_blk, ref_call);
 			md_dist = 0;
 		    }
 		}
