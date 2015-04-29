@@ -1074,6 +1074,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 	memset(qual, 255, cr->len);
     }
 
+    if (cr->cram_flags & CRAM_FLAG_NO_SEQ)
+	decode_md = decode_nm = 0;
+
     if (decode_md) {
 	orig_aux = BLOCK_SIZE(s->aux_blk);
 	BLOCK_APPEND(s->aux_blk, "MDZ", 3);
