@@ -1254,7 +1254,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 			nm--;
 		    }
 		} else {
-		    char ref_call = ref_pos <= s->ref_end 
+		    unsigned char ref_call = ref_pos <= s->ref_end 
 			? (uc)s->ref[ref_pos - s->ref_start +1]
 			: 'N';
 		    ref_base = fd->L1[ref_call];
