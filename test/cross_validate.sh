@@ -39,6 +39,7 @@ run() {
 
 sam_to_Ccram() {
     run_out _tmp.cram $test_view -C -t $1 $2
+    #run_out _tmp.cram $HOME/io_lib/trunk/build.seq3/progs/scramble -r $1 -O CRAM $2
     if [ $? != 0 ]
     then
         crash=`expr $crash + 1`
@@ -47,10 +48,8 @@ sam_to_Ccram() {
 }
 
 Ccram_to_sam() {
-    #run_out _tmp.sam $test_view -t $1 _tmp.cram
     run_out _tmp.sam $test_view -i REFERENCE=$1 _tmp.cram
-
-    #run_out _tmp.sam $HOME/io_lib/trunk/build.seq3/progs/scramble -r $1 _tmp.cram _tmp.sam
+    #run_out _tmp.sam $HOME/io_lib/trunk/build.seq3/progs/scramble -r $1 _tmp.cram
 
     if [ $? != 0 ]
     then
@@ -79,7 +78,8 @@ Jcram_to_sam() {
 }
 
 compare_sam() {
-    run ./compare_sam.pl $i _tmp.sam -nomd -notemplate -unknownrg -Baux
+    #run ./compare_sam.pl $i _tmp.sam -nomd -notemplate -unknownrg -Baux
+    run ./compare_sam.pl $i _tmp.sam -nomd -Baux
     if [ $? != 0 ]
     then
         fails=`expr $fails + 1`
@@ -94,7 +94,7 @@ crash=0
 files=`ls -1 *#*.sam`
 
 # Restrict to known workers from SAM->CRAM->CRAM in cramtools
-files="auxf#values.sam c1#bounds.sam c1#noseq.sam c1#pad1.sam c1#pad2.sam c1#pad3.sam c1#unknown.sam ce#1.sam ce#2.sam ce#5b.sam ce#large_seq.sam ce#tag_depadded.sam ce#tag_padded.sam ce#unmap.sam ce#unmap1.sam ce#unmap2.sam xx#large_aux.sam xx#large_aux2.sam xx#pair.sam xx#rg.sam xx#unsorted.sam"
+#files="auxf#values.sam c1#bounds.sam c1#noseq.sam c1#pad1.sam c1#pad2.sam c1#pad3.sam c1#unknown.sam ce#1.sam ce#2.sam ce#5b.sam ce#large_seq.sam ce#tag_depadded.sam ce#tag_padded.sam ce#unmap.sam ce#unmap1.sam ce#unmap2.sam xx#large_aux.sam xx#large_aux2.sam xx#pair.sam xx#rg.sam xx#unsorted.sam"
 
 for i in $files
 do
