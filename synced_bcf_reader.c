@@ -206,9 +206,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     }
     if ( files->streaming && files->nreaders>1 )
     {
-        files->errnum = api_usage_error;
-        fprintf(stderr,"[%s:%d %s] Error: %d readers, yet require_index not set\n", __FILE__,__LINE__,__FUNCTION__,files->nreaders);
-        return 0;
+        fprintf(stderr,"Warning: %d readers, yet require_index not set\n", files->nreaders);
     }
     if ( files->streaming && files->regions )
     {
