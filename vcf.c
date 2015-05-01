@@ -1514,7 +1514,7 @@ uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr)
 
 typedef struct {
     int key, max_m, size, offset;
-    uint32_t is_gt:1, max_g:15, max_l:16;
+    uint64_t is_gt:1, max_g:31, max_l:32;
     uint32_t y;
     uint8_t *buf;
 } fmt_aux_t;
@@ -1760,6 +1760,16 @@ int _vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char
         fprintf(stderr,"[%s:%d %s] Number of columns at %s:%d does not match the number of samples (%d vs %d).\n",
                 __FILE__,__LINE__,__FUNCTION__,bcf_seqname(h,v),v->pos+1, v->n_sample,bcf_hdr_nsamples(h));
         v->errcode |= BCF_ERR_NCOLS;
+        return -1;
+    }
+    if ( v->indiv.l > 0xffffffff )
+    {
+        fprintf(stderr,"[%s:%d %s] The FORMAT at %s:%d is too long...\n",
+                __FILE__,__LINE__,__FUNCTION__,bcf_seqname(h,v),v->pos+1);
+        v->errcode |= BCF_ERR_LIMITS;
+
+        // Error recovery: return -1 if this is a critical error or 0 if we want to ignore the FORMAT and proceed
+        v->n_fmt = 0;
         return -1;
     }
 
