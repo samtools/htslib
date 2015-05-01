@@ -4234,7 +4234,7 @@ int cram_eof(cram_fd *fd) {
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_set_option(cram_fd *fd, enum cram_option opt, ...) {
+int cram_set_option(cram_fd *fd, enum hts_fmt_option opt, ...) {
     int r;
     va_list args;
 
@@ -4252,7 +4252,7 @@ int cram_set_option(cram_fd *fd, enum cram_option opt, ...) {
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args) {
+int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     refs_t *refs;
 
     if (!fd)
@@ -4383,6 +4383,10 @@ int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args) {
 
     case CRAM_OPT_REQUIRED_FIELDS:
 	fd->required_fields = va_arg(args, int);
+	break;
+
+    case HTS_OPT_COMPRESSION_LEVEL:
+	fd->level = va_arg(args, int);
 	break;
 
     default:

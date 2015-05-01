@@ -1217,6 +1217,67 @@ int sam_open_mode(char *mode, const char *fn, const char *format)
     return 0;
 }
 
+// A version of sam_open_mode that can handle ,key=value options.
+// The format string is allocated and returned, to be freed by the caller.
+// Prefix should be "r" or "w",
+char *sam_open_mode_opts(const char *fn,
+                         const char *mode,
+                         const char *format)
+{
+    char *mode_opts = malloc((format ? strlen(format) : 1) +
+                             (mode   ? strlen(mode)   : 1) + 12);
+    char *opts, *cp;
+    int format_len;
+
+    if (!mode_opts)
+        return NULL;
+
+    strcpy(mode_opts, mode ? mode : "r");
+    cp = mode_opts + strlen(mode_opts);
+
+    if (format == NULL) {
+        // Try to pick a format based on the filename extension
+        const char *ext = fn? strrchr(fn, '.') : NULL;
+        if (ext == NULL || strchr(ext, '/')) {
+            free(mode_opts);
+            return NULL;
+        }
+        return sam_open_mode(cp, fn, ext+1)
+            ? (free(mode_opts), NULL)
+            : mode_opts;
+    }
+
+    if ((opts = strchr(format, ','))) {
+        format_len = opts-format;
+    } else {
+        opts="";
+        format_len = strlen(format);
+    }
+
+    if (strncmp(format, "bam", format_len) == 0) {
+        *cp++ = 'b';
+    } else if (strncmp(format, "cram", format_len) == 0) {
+        *cp++ = 'c';
+    } else if (strncmp(format, "cram2", format_len) == 0) {
+        *cp++ = 'c';
+        strcpy(cp, ",VERSION=2.1");
+        cp += 12;
+    } else if (strncmp(format, "cram3", format_len) == 0) {
+        *cp++ = 'c';
+        strcpy(cp, ",VERSION=3.0");
+        cp += 12;
+    } else if (strncmp(format, "sam", format_len) == 0) {
+        ; // format mode=""
+    } else {
+        free(mode_opts);
+        return NULL;
+    }
+
+    strcpy(cp, opts);
+
+    return mode_opts;
+}
+
 #define STRNCMP(a,b,n) (strncasecmp((a),(b),(n)) || strlen(a)!=(n))
 int bam_str2flag(const char *str)
 {

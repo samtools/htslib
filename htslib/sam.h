@@ -319,6 +319,13 @@ typedef struct {
 
     int sam_open_mode(char *mode, const char *fn, const char *format);
 
+    // A version of sam_open_mode that can handle ,key=value options.
+    // The format string is allocated and returned, to be freed by the caller.
+    // Prefix should be "r" or "w",
+    char *sam_open_mode_opts(const char *fn,
+                             const char *mode,
+                             const char *format);
+
     typedef htsFile samFile;
     bam_hdr_t *sam_hdr_parse(int l_text, const char *text);
     bam_hdr_t *sam_hdr_read(samFile *fp);

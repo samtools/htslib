@@ -365,8 +365,16 @@ char *hts_format_description(const htsFormat *format)
 
 htsFile *hts_open(const char *fn, const char *mode)
 {
+    char smode[101], *cp;
     htsFile *fp = NULL;
-    hFILE *hfile = hopen(fn, mode);
+    hFILE *hfile;
+
+    strncpy(smode, mode, 100);
+    smode[100]=0;
+    if ((cp = strchr(smode, ',')))
+        *cp = 0;
+
+    hfile = hopen(fn, smode);
     if (hfile == NULL) goto error;
 
     fp = hts_hopen(hfile, fn, mode);
@@ -384,28 +392,217 @@ error:
     return NULL;
 }
 
+/*
+ * Parses arg and appends it to the option list.
+ *
+ * Returns 0 on success;
+ *        -1 on failure.
+ */
+int hts_opt_add(hts_opt **opts, const char *c_arg) {
+    hts_opt *o, *t;
+    char *val;
+
+    if (!c_arg)
+        return -1;
+
+    if (!(o =  malloc(sizeof(*o))))
+        return -1;
+
+    if (!(o->arg = strdup(c_arg))) {
+        free(o);
+        return -1;
+    }
+
+    if (!(val = strchr(o->arg, '=')))
+        val = "1"; // assume boolean
+    else
+        *val++ = 0;
+
+    if (strcmp(o->arg, "decode_md") == 0 ||
+        strcmp(o->arg, "DECODE_MD") == 0)
+        o->opt = CRAM_OPT_DECODE_MD, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "verbosity") == 0 ||
+             strcmp(o->arg, "VERBOSITY") == 0)
+        o->opt = CRAM_OPT_VERBOSITY, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "seqs_per_slice") == 0 ||
+             strcmp(o->arg, "SEQS_PER_SLICE") == 0)
+        o->opt = CRAM_OPT_SEQS_PER_SLICE, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "slices_per_container") == 0 ||
+             strcmp(o->arg, "SLICES_PER_CONTAINER") == 0)
+        o->opt = CRAM_OPT_SLICES_PER_CONTAINER, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "embed_ref") == 0 ||
+             strcmp(o->arg, "EMBED_REF") == 0)
+        o->opt = CRAM_OPT_EMBED_REF, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "no_ref") == 0 ||
+             strcmp(o->arg, "NO_REF") == 0)
+        o->opt = CRAM_OPT_NO_REF, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "ignore_md5") == 0 ||
+             strcmp(o->arg, "IGNORE_MD5") == 0)
+        o->opt = CRAM_OPT_IGNORE_MD5, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "use_bzip2") == 0 ||
+             strcmp(o->arg, "USE_BZIP2") == 0)
+        o->opt = CRAM_OPT_USE_BZIP2, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "use_rans") == 0 ||
+             strcmp(o->arg, "USE_RANS") == 0)
+        o->opt = CRAM_OPT_USE_RANS, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "use_lzma") == 0 ||
+             strcmp(o->arg, "USE_LZMA") == 0)
+        o->opt = CRAM_OPT_USE_LZMA, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "reference") == 0 ||
+             strcmp(o->arg, "REFERENCE") == 0)
+        o->opt = CRAM_OPT_REFERENCE, o->val.s = val;
+
+    else if (strcmp(o->arg, "version") == 0 ||
+             strcmp(o->arg, "VERSION") == 0)
+        o->opt = CRAM_OPT_VERSION, o->val.s =val;
+
+    else if (strcmp(o->arg, "multi_seq_per_slice") == 0 ||
+             strcmp(o->arg, "MULTI_SEQ_PER_SLICE") == 0)
+        o->opt = CRAM_OPT_MULTI_SEQ_PER_SLICE, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "nthreads") == 0 ||
+             strcmp(o->arg, "NTHREADS") == 0)
+        o->opt = CRAM_OPT_NTHREADS, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "required_fields") == 0 ||
+             strcmp(o->arg, "REQUIRED_FIELDS") == 0)
+        o->opt = CRAM_OPT_REQUIRED_FIELDS, o->val.i = strtol(val, NULL, 0);
+
+    else {
+        fprintf(stderr, "Unknown option '%s'\n", o->arg);
+        free(o->arg);
+        free(o);
+        return -1;
+    }
+
+    o->next = NULL;
+
+    // Append; assumes small list.
+    if (*opts) {
+        t = *opts;
+        while (t->next)
+            t = t->next;
+        t->next = o;
+    } else {
+        *opts = o;
+    }
+
+    return 0;
+}
+
+/*
+ * Applies an hts_opt option list to a given htsFile.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int hts_opt_apply(htsFile *fp, hts_opt *opts) {
+    hts_opt *last = NULL;
+
+    for (; opts;  opts = (last=opts)->next)
+        if (hts_set_opt(fp,  opts->opt,  opts->val) != 0)
+            return -1;
+    
+    return 0;
+}
+
+/*
+ * Frees an hts_opt list.
+ */
+void hts_opt_free(hts_opt *opts) {
+    hts_opt *last = NULL;
+    while (opts) {
+        opts = (last=opts)->next;
+        free(last->arg);
+        free(last);
+    }
+}
+
+
+/*
+ * Tokenise options as (key(=value)?,)*(key(=value)?)?
+ * NB: No provision for ',' appearing in the value!
+ * Add backslashing rules?
+ *
+ * This could be used as part of a general command line option parser or
+ * as a string concatenated onto the file open mode.
+ *
+ * Returns 0 on success
+ *        -1 on failure.
+ */
+static int hts_process_opts(htsFile *fp, const char *opts) {
+    hts_opt *h_opt = NULL;
+
+    while (*opts) {
+        char arg[8001];
+        const char *opt_start;
+        int len;
+
+        for (opt_start = opts; *opts && *opts != ','; opts++);
+        len = opts - opt_start;
+
+        // Produce a nul terminated copy of the option
+        strncpy(arg, opt_start, len < 8000 ? len : 8000);
+        arg[len < 8000 ? len : 8000]=0;
+
+        hts_opt_add(&h_opt, arg);
+
+        if (*opts)
+            opts++;
+    }
+
+    hts_opt_apply(fp, h_opt);
+    hts_opt_free(h_opt);
+
+    return 0;
+}
+
+
 htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
 {
     htsFile *fp = (htsFile*)calloc(1, sizeof(htsFile));
+    char simple_mode[101], *cp, *opts;
+    simple_mode[100] = '\0';
+
     if (fp == NULL) goto error;
 
     fp->fn = strdup(fn);
     fp->is_be = ed_is_big();
 
-    if (strchr(mode, 'r')) {
+    // Split mode into simple_mode,opts strings
+    if ((cp = strchr(mode, ','))) {
+        strncpy(simple_mode, mode, cp-mode <= 100 ? cp-mode : 100);
+        simple_mode[cp-mode] = '\0';
+        opts = cp+1;
+    } else {
+        strncpy(simple_mode, mode, 100);
+        opts = NULL;
+    }
+
+    if (strchr(simple_mode, 'r')) {
         if (hts_detect_format(hfile, &fp->format) < 0) goto error;
     }
-    else if (strchr(mode, 'w') || strchr(mode, 'a')) {
+    else if (strchr(simple_mode, 'w') || strchr(simple_mode, 'a')) {
         htsFormat *fmt = &fp->format;
         fp->is_write = 1;
 
-        if (strchr(mode, 'b')) fmt->format = binary_format;
-        else if (strchr(mode, 'c')) fmt->format = cram;
+        if (strchr(simple_mode, 'b')) fmt->format = binary_format;
+        else if (strchr(simple_mode, 'c')) fmt->format = cram;
         else fmt->format = text_format;
 
-        if (strchr(mode, 'z')) fmt->compression = bgzf;
-        else if (strchr(mode, 'g')) fmt->compression = gzip;
-        else if (strchr(mode, 'u')) fmt->compression = no_compression;
+        if (strchr(simple_mode, 'z')) fmt->compression = bgzf;
+        else if (strchr(simple_mode, 'g')) fmt->compression = gzip;
+        else if (strchr(simple_mode, 'u')) fmt->compression = no_compression;
         else {
             // No compression mode specified, set to the default for the format
             switch (fmt->format) {
@@ -429,13 +626,13 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
     case binary_format:
     case bam:
     case bcf:
-        fp->fp.bgzf = bgzf_hopen(hfile, mode);
+        fp->fp.bgzf = bgzf_hopen(hfile, simple_mode);
         if (fp->fp.bgzf == NULL) goto error;
         fp->is_bin = 1;
         break;
 
     case cram:
-        fp->fp.cram = cram_dopen(hfile, fn, mode);
+        fp->fp.cram = cram_dopen(hfile, fn, simple_mode);
         if (fp->fp.cram == NULL) goto error;
         if (!fp->is_write)
             cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, 1);
@@ -447,7 +644,7 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
     case vcf:
         if (!fp->is_write) {
         #if KS_BGZF
-            BGZF *gzfp = bgzf_hopen(hfile, mode);
+            BGZF *gzfp = bgzf_hopen(hfile, simple_mode);
         #else
             // TODO Implement gzip hFILE adaptor
             hclose(hfile); // This won't work, especially for stdin
@@ -457,7 +654,7 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
             else goto error;
         }
         else if (fp->format.compression != no_compression) {
-            fp->fp.bgzf = bgzf_hopen(hfile, mode);
+            fp->fp.bgzf = bgzf_hopen(hfile, simple_mode);
             if (fp->fp.bgzf == NULL) goto error;
         }
         else
@@ -467,6 +664,9 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
     default:
         goto error;
     }
+
+    if (opts)
+        hts_process_opts(fp, opts);
 
     return fp;
 
@@ -547,7 +747,7 @@ const htsFormat *hts_get_format(htsFile *fp)
     return fp? &fp->format : NULL;
 }
 
-int hts_set_opt(htsFile *fp, enum cram_option opt, ...) {
+int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
     int r;
     va_list args;
 

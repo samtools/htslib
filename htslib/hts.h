@@ -144,31 +144,67 @@ enum sam_fields {
     SAM_RGAUX = 0x00001000,
 };
 
-enum cram_option {
+// Mostly CRAM only, but this could also include other format options
+enum hts_fmt_option {
+    // General purpose
+    HTS_OPT_COMPRESSION_LEVEL,
+
+    // CRAM specific
     CRAM_OPT_DECODE_MD,
     CRAM_OPT_PREFIX,
-    CRAM_OPT_VERBOSITY,
+    CRAM_OPT_VERBOSITY,  // make general
     CRAM_OPT_SEQS_PER_SLICE,
     CRAM_OPT_SLICES_PER_CONTAINER,
     CRAM_OPT_RANGE,
-    CRAM_OPT_VERSION,
+    CRAM_OPT_VERSION,    // rename to cram_version?
     CRAM_OPT_EMBED_REF,
     CRAM_OPT_IGNORE_MD5,
-    CRAM_OPT_REFERENCE,
+    CRAM_OPT_REFERENCE,  // make general
     CRAM_OPT_MULTI_SEQ_PER_SLICE,
     CRAM_OPT_NO_REF,
     CRAM_OPT_USE_BZIP2,
     CRAM_OPT_SHARED_REF,
-    CRAM_OPT_NTHREADS,
-    CRAM_OPT_THREAD_POOL,
+    CRAM_OPT_NTHREADS,   // make general
+    CRAM_OPT_THREAD_POOL,// make general
     CRAM_OPT_USE_LZMA,
     CRAM_OPT_USE_RANS,
     CRAM_OPT_REQUIRED_FIELDS,
 };
 
+typedef struct hts_opt {
+    char *arg;                // string form, strdup()ed
+    enum hts_fmt_option opt;  // tokenised key
+    union {                   // ... and value
+        int i;
+        char *s;
+    } val;
+    struct hts_opt *next;
+} hts_opt;
+
 /**********************
  * Exported functions *
  **********************/
+
+/*
+ * Parses arg and appends it to the option list.
+ *
+ * Returns 0 on success;
+ *        -1 on failure.
+ */
+int hts_opt_add(hts_opt **opts, const char *c_arg);
+
+/*
+ * Applies an hts_opt option list to a given htsFile.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int hts_opt_apply(htsFile *fp, hts_opt *opts);
+
+/*
+ * Frees an hts_opt list.
+ */
+void hts_opt_free(hts_opt *opts);
 
 extern int hts_verbose;
 
@@ -264,7 +300,7 @@ const htsFormat *hts_get_format(htsFile *fp);
   @param ... Optional arguments, dependent on the option used.
   @return    0 for success, or negative if an error occurred.
 */
-int hts_set_opt(htsFile *fp, enum cram_option opt, ...);
+int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...);
 
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
 char **hts_readlines(const char *fn, int *_n);
