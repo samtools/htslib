@@ -181,6 +181,13 @@ typedef struct hts_opt {
     struct hts_opt *next;
 } hts_opt;
 
+typedef struct {
+    htsFormat format;
+    hts_opt *opts;
+} htsFileOpts;
+
+#define HTS_FILE_OPTS_INIT {{0},0}
+
 /**********************
  * Exported functions *
  **********************/
@@ -205,6 +212,29 @@ int hts_opt_apply(htsFile *fp, hts_opt *opts);
  * Frees an hts_opt list.
  */
 void hts_opt_free(hts_opt *opts);
+
+/*
+ * Accepts a string file format (sam, bam, cram, vcf, bam) optionally
+ * followed by a comma separated list of key=value options and splits
+ * these up into the files of htsFileOpts struct.
+ *
+ * Returns 0 on success
+ *        -1 on failure.
+ */
+int hts_parse_opt_format(htsFileOpts *opt, const char *str);
+
+/*
+ * Tokenise options as (key(=value)?,)*(key(=value)?)?
+ * NB: No provision for ',' appearing in the value!
+ * Add backslashing rules?
+ *
+ * This could be used as part of a general command line option parser or
+ * as a string concatenated onto the file open mode.
+ *
+ * Returns 0 on success
+ *        -1 on failure.
+ */
+int hts_parse_opt_list(htsFileOpts *opt, const char *str);
 
 extern int hts_verbose;
 
@@ -271,6 +301,21 @@ char *hts_format_description(const htsFormat *format);
       [rw]  .. uncompressed VCF
 */
 htsFile *hts_open(const char *fn, const char *mode);
+
+/*!
+  @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
+  @param fn       The file name or "-" for stdin/stdout
+  @param mode     Mode matching /[rwa][bcuz0-9]+/
+  @param opts     Optional parameters for opening the file.
+  @discussion
+      See hts_open() for description of fn and mode.
+      Opts contains a format string (sam, bam, cram, vcf, bcf) which will,
+      if defined, override mode.  Opts also contains a linked list of hts_opt
+      structures to apply to the open file handle.  These can contain things
+      like pointers to the reference or information on compression levels,
+      block sizes, etc.
+*/
+htsFile *hts_open_opts(const char *fn, const char *mode, htsFileOpts *opts);
 
 /*!
   @abstract       Open an existing stream as a SAM/BAM/CRAM/VCF/BCF/etc file

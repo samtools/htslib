@@ -363,22 +363,44 @@ char *hts_format_description(const htsFormat *format)
     return ks_release(&str);
 }
 
-htsFile *hts_open(const char *fn, const char *mode)
+htsFile *hts_open_opts(const char *fn, const char *mode, htsFileOpts *opts)
 {
-    char smode[101], *cp;
+    char smode[102], *cp, *cp2, *mode_c;
     htsFile *fp = NULL;
     hFILE *hfile;
+    char fmt_code = '\0';
 
     strncpy(smode, mode, 100);
     smode[100]=0;
     if ((cp = strchr(smode, ',')))
         *cp = 0;
 
+    // Migrate format code (b or c) to the end of the smode buffer.
+    for (cp2 = cp = smode; *cp; cp++) {
+        if (*cp == 'b')
+            fmt_code = 'b';
+        else if (*cp == 'c')
+            fmt_code = 'c';
+        else
+            *cp2++ = *cp;
+    }
+    mode_c = cp2;
+    *cp2++ = fmt_code;
+    *cp2++ = 0;
+    *cp2++ = 0;
+
+    // Set or reset the format code if opts->format is used
+    if (opts && opts->format.compression)
+        *mode_c = "\0gbc"[opts->format.compression];
+
     hfile = hopen(fn, smode);
     if (hfile == NULL) goto error;
 
-    fp = hts_hopen(hfile, fn, mode);
+    fp = hts_hopen(hfile, fn, smode);
     if (fp == NULL) goto error;
+
+    if (opts)
+        hts_opt_apply(fp, opts->opts);
 
     return fp;
 
@@ -390,6 +412,10 @@ error:
         hclose_abruptly(hfile);
 
     return NULL;
+}
+
+htsFile *hts_open(const char *fn, const char *mode) {
+    return hts_open_opts(fn, mode, NULL);
 }
 
 /*
@@ -540,29 +566,103 @@ void hts_opt_free(hts_opt *opts) {
  * Returns 0 on success
  *        -1 on failure.
  */
-static int hts_process_opts(htsFile *fp, const char *opts) {
-    hts_opt *h_opt = NULL;
-
-    while (*opts) {
-        char arg[8001];
-        const char *opt_start;
+int hts_parse_opt_list(htsFileOpts *opt, const char *str) {
+    while (str && *str) {
+        const char *str_start;
         int len;
+        char arg[8001];
 
-        for (opt_start = opts; *opts && *opts != ','; opts++);
-        len = opts - opt_start;
+        while (*str && *str == ',')
+            str++;
+
+        for (str_start = str; *str && *str != ','; str++);
+        len = str - str_start;
 
         // Produce a nul terminated copy of the option
-        strncpy(arg, opt_start, len < 8000 ? len : 8000);
+        strncpy(arg, str_start, len < 8000 ? len : 8000);
         arg[len < 8000 ? len : 8000]=0;
 
-        hts_opt_add(&h_opt, arg);
+        if (hts_opt_add(&opt->opts, arg) != 0)
+            return -1;
 
-        if (*opts)
-            opts++;
+        if (*str)
+            str++;
     }
 
-    hts_opt_apply(fp, h_opt);
-    hts_opt_free(h_opt);
+    return 0;
+}
+
+/*
+ * Accepts a string file format (sam, bam, cram, vcf, bam) optionally
+ * followed by a comma separated list of key=value options and splits
+ * these up into the files of htsFileOpts struct.
+ *
+ * Returns 0 on success
+ *        -1 on failure.
+ */
+int hts_parse_opt_format(htsFileOpts *opt, const char *str) {
+    const char *cp;
+    
+    if (!(cp = strchr(str, ',')))
+        cp = str+strlen(str);
+
+    opt->format.version.minor = 0; // unknown
+    opt->format.version.major = 0; // unknown
+    opt->format.specific = NULL;
+
+    if (strncmp(str, "sam", cp-str) == 0) {
+        opt->format.category          = sequence_data;
+        opt->format.format            = sam;
+        opt->format.compression       = no_compression;;
+        opt->format.compression_level = 0;
+    } else if (strncmp(str, "bam", cp-str) == 0) {
+        opt->format.category          = sequence_data;
+        opt->format.format            = bam;
+        opt->format.compression       = bgzf;
+        opt->format.compression_level = -1;
+    } else if (strncmp(str, "cram", cp-str) == 0) {
+        opt->format.category          = sequence_data;
+        opt->format.format            = cram;
+        opt->format.compression       = custom;
+        opt->format.compression_level = -1;
+    } else if (strncmp(str, "vcf", cp-str) == 0) {
+        opt->format.category          = variant_data;
+        opt->format.format            = vcf;
+        opt->format.compression       = no_compression;;
+        opt->format.compression_level = 0;
+    } else if (strncmp(str, "bcf", cp-str) == 0) {
+        opt->format.category          = variant_data;
+        opt->format.format            = bcf;
+        opt->format.compression       = bgzf;
+        opt->format.compression_level = -1;
+    } else {
+        return -1;
+    }
+
+    return hts_parse_opt_list(opt, cp);
+}
+
+
+/*
+ * Tokenise options as (key(=value)?,)*(key(=value)?)?
+ * NB: No provision for ',' appearing in the value!
+ * Add backslashing rules?
+ *
+ * This could be used as part of a general command line option parser or
+ * as a string concatenated onto the file open mode.
+ *
+ * Returns 0 on success
+ *        -1 on failure.
+ */
+static int hts_process_opts(htsFile *fp, const char *opts) {
+    htsFileOpts ho;
+
+    ho.opts = NULL;
+    if (hts_parse_opt_list(&ho, opts) != 0)
+        return -1;
+
+    hts_opt_apply(fp, ho.opts);
+    hts_opt_free(ho.opts);
 
     return 0;
 }

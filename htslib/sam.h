@@ -315,6 +315,7 @@ typedef struct {
      ***************/
 
     #define sam_open(fn, mode) (hts_open((fn), (mode)))
+    #define sam_open_opts(fn, mode, opts) (hts_open_opts((fn), (mode), (opts)))
     #define sam_close(fp) hts_close(fp)
 
     int sam_open_mode(char *mode, const char *fn, const char *format);
