@@ -92,6 +92,23 @@ enum htsExactFormat {
     format_maximum = 32767
 };
 
+static inline const char *htsExactFormatString(enum htsExactFormat f) {
+    switch (f) {
+    case sam:  return "sam";
+    case bam:  return "bam";
+    case bai:  return "bai";
+    case cram: return "cram";
+    case crai: return "crai";
+    case vcf:  return "vcf";
+    case bcf:  return "bcf";
+    case csi:  return "csi";
+    case gzi:  return "gzi";
+    case tbi:  return "tbi";
+    case bed:  return "bed";
+    default:   return "?";
+    }
+}
+
 enum htsCompression {
     no_compression, gzip, bgzf, custom,
     compression_maximum = 32767
