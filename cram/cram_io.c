@@ -3569,6 +3569,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 
 	/* Extract header from 1st block */
 	if (-1 == int32_get(b, &header_len) ||
+            header_len < 0 || /* Spec. says signed...  why? */
 	    b->uncomp_size - 4 < header_len) {
 	    cram_free_container(c);
 	    cram_free_block(b);
