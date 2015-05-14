@@ -1130,7 +1130,8 @@ int cram_uncompress_block(cram_block *b) {
     case RANS: {
 	unsigned int usize = b->uncomp_size, usize2;
 	uncomp = (char *)rans_uncompress(b->data, b->comp_size, &usize2);
-	assert(usize == usize2);
+	if (!uncomp || usize != usize2)
+ 	    return -1;
 	free(b->data);
 	b->data = (unsigned char *)uncomp;
 	b->alloc = usize2;
