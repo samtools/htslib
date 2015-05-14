@@ -1182,6 +1182,12 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 	if (r) return r;
 	pos += prev_pos;
 
+	if (pos <= 0) {
+	    fprintf(stderr, "Error: feature position %d before start of read.\n",
+		    pos);
+	    return -1;
+	}
+
 	if (pos > seq_pos) {
 	    if (pos > cr->len+1)
 		return -1;
@@ -1240,29 +1246,34 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 	switch(op) {
 	case 'S': { // soft clip: IN
 	    int32_t out_sz2 = 1;
+	    int have_sc = 0;
 
 	    if (cig_len) {
 		cigar[ncigar++] = (cig_len<<4) + cig_op;
 		cig_len = 0;
 	    }
-	    if (ds & CRAM_IN) {
-		switch (CRAM_MAJOR_VERS(fd->version)) {
-		case 1:
+	    switch (CRAM_MAJOR_VERS(fd->version)) {
+	    case 1:
+	        if (ds & CRAM_IN) {
 		    r |= c->comp_hdr->codecs[DS_IN]
 			? c->comp_hdr->codecs[DS_IN]
 			             ->decode(s, c->comp_hdr->codecs[DS_IN],
 					      blk, &seq[pos-1], &out_sz2)
 			: (seq[pos-1] = 'N', out_sz2 = 1, 0);
-		    break;
-
-		case 2:
-		default:
+		    have_sc = 1;
+		}
+		break;
+	    case 2:
+	    default:
+	        if (ds & CRAM_SC) {
 		    r |= c->comp_hdr->codecs[DS_SC]
 			? c->comp_hdr->codecs[DS_SC]
 			             ->decode(s, c->comp_hdr->codecs[DS_SC],
 					      blk, &seq[pos-1], &out_sz2)
 			: (seq[pos-1] = 'N', out_sz2 = 1, 0);
-		    break;
+		    have_sc = 1;
+		}
+		break;
 
 //		default:
 //		    r |= c->comp_hdr->codecs[DS_BB]
@@ -1270,7 +1281,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 //			             ->decode(s, c->comp_hdr->codecs[DS_BB],
 //					      blk, &seq[pos-1], &out_sz2)
 //			: (seq[pos-1] = 'N', out_sz2 = 1, 0);
-		}
+	    }
+	    if (have_sc) {
 		if (r) return r;
 		cigar[ncigar++] = (out_sz2<<4) + BAM_CSOFT_CLIP;
 		cig_op = BAM_CSOFT_CLIP;
@@ -1618,7 +1630,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 	}
 
 	default:
-	    abort();
+            fprintf(stderr, "Error: Unknown feature code '%c'\n", op);
+	    return -1;
 	}
     }
 
