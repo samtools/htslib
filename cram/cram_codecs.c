@@ -54,9 +54,9 @@ static char *codec2str(enum cram_encoding codec) {
     case E_SUBEXP:          return "SUBEXP";
     case E_GOLOMB_RICE:     return "GOLOMB_RICE";
     case E_GAMMA:           return "GAMMA";
+    case E_NUM_CODECS:
+    default:                return "(unknown)";
     }
-
-    return "(unknown)";
 }
 
 /*
@@ -105,11 +105,15 @@ static int get_one_bits_MSB(cram_block *block) {
 
 static int get_zero_bits_MSB(cram_block *block) {
     int n = 0, b;
+    if (block->byte >= block->uncomp_size)
+        return -1;
     do {
 	b = block->data[block->byte] >> block->bit;
 	if (--block->bit == -1) {
 	    block->bit = 7;
 	    block->byte++;
+	    if (block->byte == block->uncomp_size && !(b&1))
+	        return -1;
 	}
 	n++;
     } while (!(b&1));
@@ -777,6 +781,8 @@ int cram_gamma_decode(cram_slice *slice, cram_codec *c, cram_block *in, char *ou
 	int val;
 	//while (get_bit_MSB(in) == 0) nz++;
 	nz = get_zero_bits_MSB(in);
+        if (nz < 0 || (in->uncomp_size - in->byte)*8 + in->bit < nz + 7)
+            return -1;
 	val = 1;
 	while (nz > 0) {
 	    //val <<= 1; val |= get_bit_MSB(in);
@@ -843,6 +849,11 @@ void cram_huffman_decode_free(cram_codec *c) {
     free(c);
 }
 
+int cram_huffman_decode_null(cram_slice *slice, cram_codec *c,
+			     cram_block *in, char *out, int *out_size) {
+    return -1;
+}
+
 int cram_huffman_decode_char0(cram_slice *slice, cram_codec *c,
 			      cram_block *in, char *out, int *out_size) {
     int i, n;
@@ -865,7 +876,7 @@ int cram_huffman_decode_char(cram_slice *slice, cram_codec *c,
 
 	for (;;) {
 	    int dlen = codes[idx].len - last_len;
-	    if (dlen <= 0 || (in->alloc - in->byte)*8 + in->bit + 7 < dlen)
+	    if (dlen <= 0 || (in->uncomp_size - in->byte)*8 + in->bit < dlen + 7)
 		return -1;
 
 	    //val <<= dlen;
@@ -915,7 +926,7 @@ int cram_huffman_decode_int(cram_slice *slice, cram_codec *c,
 	// Now one bit at a time for remaining checks
 	for (;;) {
 	    int dlen = codes[idx].len - last_len;
-	    if (dlen <= 0 || (in->alloc - in->byte)*8 + in->bit + 7 < dlen)
+	    if (dlen <= 0 || (in->uncomp_size - in->byte)*8 + in->bit < dlen + 7)
 		return -1;
 	    
 	    //val <<= dlen;
@@ -985,8 +996,10 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
     }
 
     if (ncodes == 0) {
-	/* NULL huffman stream */
-	return h;
+	/* NULL huffman stream.  Ensure it returns an error if
+           anything tries to use it. */
+        h->decode = cram_huffman_decode_null;
+        return h;
     }
 
     for (i = 0, l = 1; i < ncodes; i++, cp += l) {
@@ -1375,7 +1388,7 @@ int cram_byte_array_len_decode(cram_slice *slice, cram_codec *c,
 			       cram_block *in, char *out,
 			       int *out_size) {
     /* Fetch length */
-    int32_t len, one = 1;
+    int32_t len = 0, one = 1;
 
     c->byte_array_len.len_codec->decode(slice, c->byte_array_len.len_codec, in, (char *)&len, &one);
     //printf("ByteArray Len=%d\n", len);
@@ -1646,6 +1659,18 @@ cram_codec *cram_byte_array_stop_decode_init(char *data, int size,
 	return NULL;
 
     c->codec  = E_BYTE_ARRAY_STOP;
+    switch (option) {
+    case E_BYTE_ARRAY_BLOCK:
+        c->decode = cram_byte_array_stop_decode_block;
+	break;
+    case E_BYTE_ARRAY:
+        c->decode = cram_byte_array_stop_decode_char;
+	break;
+    default:
+        fprintf(stderr, "byte_array_stop codec only supports BYTE_ARRAYs.\n");
+        free(c);
+        return NULL;
+    }
     c->decode = (option == E_BYTE_ARRAY_BLOCK)
 	? cram_byte_array_stop_decode_block
 	: cram_byte_array_stop_decode_char;
@@ -1750,8 +1775,9 @@ char *cram_encoding2str(enum cram_encoding t) {
     case E_SUBEXP:          return "SUBEXP";
     case E_GOLOMB_RICE:     return "GOLOMB_RICE";
     case E_GAMMA:           return "GAMMA";
+    case E_NUM_CODECS:
+    default:                return "?";
     }
-    return "?";
 }
 
 static cram_codec *(*decode_init[])(char *data,
@@ -1774,7 +1800,7 @@ cram_codec *cram_decoder_init(enum cram_encoding codec,
 			      char *data, int size,
 			      enum cram_external_type option,
 			      int version) {
-    if (decode_init[codec]) {
+    if (codec >= E_NULL && codec < E_NUM_CODECS && decode_init[codec]) {
 	return decode_init[codec](data, size, option, version);
     } else {
 	fprintf(stderr, "Unimplemented codec of type %s\n", codec2str(codec));
