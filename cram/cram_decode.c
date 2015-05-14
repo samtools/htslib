@@ -1126,6 +1126,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 	if (!c->comp_hdr->codecs[DS_FN]) return -1;
 	r |= c->comp_hdr->codecs[DS_FN]->decode(s,c->comp_hdr->codecs[DS_FN],
 						blk, (char *)&fn, &out_sz);
+        if (r) return r;
     } else {
 	fn = 0;
     }
@@ -1153,6 +1154,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 						    c->comp_hdr->codecs[DS_FC],
 						    blk,
 						    &op,  &out_sz);
+	    if (r) return r;
 	}
 
 	if (!(ds & CRAM_FP))
@@ -1163,6 +1165,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 						c->comp_hdr->codecs[DS_FP],
 						blk,
 						(char *)&pos, &out_sz);
+	if (r) return r;
 	pos += prev_pos;
 
 	if (pos > seq_pos) {
@@ -1251,6 +1254,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 //					      blk, &seq[pos-1], &out_sz2)
 //			: (seq[pos-1] = 'N', out_sz2 = 1, 0);
 		}
+		if (r) return r;
 		cigar[ncigar++] = (out_sz2<<4) + BAM_CSOFT_CLIP;
 		cig_op = BAM_CSOFT_CLIP;
 		seq_pos += out_sz2;
@@ -1284,6 +1288,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_BS]
 		                ->decode(s, c->comp_hdr->codecs[DS_BS], blk,
 					 (char *)&base, &out_sz);
+		if (r) return -1;
 		if (ref_pos >= bfd->ref[cr->ref_id].len || !s->ref) {
 		    seq[pos-1] = c->comp_hdr->
 			substitution_matrix[fd->L1['N']][base];
@@ -1326,6 +1331,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_DL]
 		                ->decode(s, c->comp_hdr->codecs[DS_DL], blk,
 					 (char *)&i32, &out_sz);
+		if (r) return r;
 		if (decode_md || decode_nm) {
 		    if (md_dist >= 0 && decode_md)
 			BLOCK_APPEND_UINT(s->aux_blk, md_dist);
@@ -1378,6 +1384,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_IN]
 		                ->decode(s, c->comp_hdr->codecs[DS_IN], blk,
 					 &seq[pos-1], &out_sz2);
+		if (r) return r;
 		cig_op = BAM_CINS;
 		cig_len += out_sz2;
 		seq_pos += out_sz2;
@@ -1397,6 +1404,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_BA]
 		                ->decode(s, c->comp_hdr->codecs[DS_BA], blk,
 					 (char *)&seq[pos-1], &out_sz);
+		if (r) return r;
 	    }
 	    cig_op = BAM_CINS;
 	    cig_len++;
@@ -1418,6 +1426,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_BB]
 		    ->decode(s, c->comp_hdr->codecs[DS_BB], blk,
 			     (char *)&seq[pos-1], &len);
+		if (r) return r;
 
 		if (decode_md || decode_nm) {
 		    int x;
@@ -1464,6 +1473,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_QQ]
 		    ->decode(s, c->comp_hdr->codecs[DS_QQ], blk,
 			     (char *)&qual[pos-1], &len);
+		if (r) return r;
 	    }
 
 	    cig_op = BAM_CMATCH;
@@ -1546,6 +1556,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_HC]
 		                ->decode(s, c->comp_hdr->codecs[DS_HC], blk,
 					 (char *)&i32, &out_sz);
+		if (r) return r;
 		cig_op = BAM_CHARD_CLIP;
 		cig_len += i32;
 	    }
@@ -1562,6 +1573,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_PD]
 		                ->decode(s, c->comp_hdr->codecs[DS_PD], blk,
 					 (char *)&i32, &out_sz);
+		if (r) return r;
 		cig_op = BAM_CPAD;
 		cig_len += i32;
 		nm      += i32;
@@ -1579,6 +1591,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_RS]
 		                ->decode(s, c->comp_hdr->codecs[DS_RS], blk,
 					 (char *)&i32, &out_sz);
+		if (r) return r;
 		cig_op = BAM_CREF_SKIP;
 		cig_len += i32;
 		ref_pos += i32;
@@ -1827,6 +1840,7 @@ static int cram_decode_aux(cram_container *c, cram_slice *s,
 
 	if (!m->codec) return -1;
 	r |= m->codec->decode(s, m->codec, blk, (char *)s->aux_blk, &out_sz);
+	if (r) break;
 	cr->aux_size += out_sz + 3;
     }
     
@@ -2164,7 +2178,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    r |= c->comp_hdr->codecs[DS_BF]
 		            ->decode(s, c->comp_hdr->codecs[DS_BF], blk,
 				     (char *)&bf, &out_sz);
-	    if (bf < 0 ||
+	    if (r || bf < 0 ||
 		bf >= sizeof(fd->bam_flag_swap)/sizeof(*fd->bam_flag_swap))
 		return -1;
 	    bf = fd->bam_flag_swap[bf];
@@ -2179,14 +2193,15 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		if (!c->comp_hdr->codecs[DS_CF]) return -1;
 		r |= c->comp_hdr->codecs[DS_CF]
 		                ->decode(s, c->comp_hdr->codecs[DS_CF], blk,
-					 (char *)&cf, &out_sz);
+				 	 (char *)&cf, &out_sz);
+		if (r) return -1;
 		cr->cram_flags = cf;
 	    } else {
 		if (!c->comp_hdr->codecs[DS_CF]) return -1;
 		r |= c->comp_hdr->codecs[DS_CF]
 		                ->decode(s, c->comp_hdr->codecs[DS_CF], blk,
-					 (char *)&cr->cram_flags,
-					 &out_sz);
+					 (char *)&cr->cram_flags, &out_sz);
+		if (r) return -1;
 		cf = cr->cram_flags;
 	    }
 	}
@@ -2197,6 +2212,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_RI]
 		                ->decode(s, c->comp_hdr->codecs[DS_RI], blk,
 					 (char *)&cr->ref_id, &out_sz);
+		if (r) return -1;
 		if ((fd->required_fields & (SAM_SEQ|SAM_TLEN))
 		    && cr->ref_id >= 0
 		    && cr->ref_id != last_ref_id) {
@@ -2233,6 +2249,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    r |= c->comp_hdr->codecs[DS_RL]
 		            ->decode(s, c->comp_hdr->codecs[DS_RL], blk,
 				     (char *)&cr->len, &out_sz);
+	    if (r) return r;
 	}
 
 	if (ds & CRAM_AP) {
@@ -2240,6 +2257,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    r |= c->comp_hdr->codecs[DS_AP]
 		            ->decode(s, c->comp_hdr->codecs[DS_AP], blk,
 				     (char *)&cr->apos, &out_sz);
+	    if (r) return r;
 	    if (c->comp_hdr->AP_delta)
 		cr->apos += s->last_apos;
 	    s->last_apos=  cr->apos;
@@ -2252,6 +2270,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    r |= c->comp_hdr->codecs[DS_RG]
 		           ->decode(s, c->comp_hdr->codecs[DS_RG], blk,
 				    (char *)&cr->rg, &out_sz);
+	    if (r) return r;
 	    if (cr->rg == unknown_rg)
 		cr->rg = -1;
 	} else {
@@ -2270,6 +2289,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_RN]
 		                ->decode(s, c->comp_hdr->codecs[DS_RN], blk,
 					 (char *)s->name_blk, &out_sz2);
+		if (r) return r;
 		cr->name_len = out_sz2;
 	    }
 	}
@@ -2286,6 +2306,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		    r |= c->comp_hdr->codecs[DS_MF]
 			            ->decode(s, c->comp_hdr->codecs[DS_MF],
 					     blk, (char *)&mf, &out_sz);
+		    if (r) return r;
 		    cr->mate_flags = mf;
 		} else {
 		    if (!c->comp_hdr->codecs[DS_MF]) return -1;
@@ -2294,6 +2315,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 					     blk,
 					     (char *)&cr->mate_flags,
 					     &out_sz);
+		    if (r) return r;
 		}
 	    } else {
 		cr->mate_flags = 0;
@@ -2310,6 +2332,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 			            ->decode(s, c->comp_hdr->codecs[DS_RN],
 					     blk, (char *)s->name_blk,
 					     &out_sz2);
+		    if (r) return r;
 		    cr->name_len = out_sz2;
 		}
 	    }
@@ -2319,6 +2342,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_NS]
 		                ->decode(s, c->comp_hdr->codecs[DS_NS], blk,
 					 (char *)&cr->mate_ref_id, &out_sz);
+		if (r) return r;
 	    }
 
 // Skip as mate_ref of "*" is legit. It doesn't mean unmapped, just unknown.
@@ -2332,6 +2356,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_NP]
 		                ->decode(s, c->comp_hdr->codecs[DS_NP], blk,
 					 (char *)&cr->mate_pos, &out_sz);
+		if (r) return r;
 	    }
 
 	    if (ds & CRAM_TS) {
@@ -2339,6 +2364,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_TS]
 		                ->decode(s, c->comp_hdr->codecs[DS_TS], blk,
 					 (char *)&cr->tlen, &out_sz);
+		if (r) return r;
 	    } else {
 		cr->tlen = INT_MIN;
 	    }
@@ -2348,6 +2374,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_NF]
 		                ->decode(s, c->comp_hdr->codecs[DS_NF], blk,
 					 (char *)&cr->mate_line, &out_sz);
+		if (r) return r;
 		cr->mate_line += rec + 1;
 
 		//cr->name_len = sprintf(name, "%d", name_id++);
@@ -2384,6 +2411,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    r |= cram_decode_aux_1_0(c, s, blk, cr);
 	else
 	    r |= cram_decode_aux(c, s, blk, cr, &has_MD, &has_NM);
+	if (r) return r;
 
 	/* Fake up dynamic string growth and appending */
 	if (ds & CRAM_RL) {
@@ -2409,6 +2437,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    if (ds & (CRAM_SEQ | CRAM_MQ)) {
 		r |= cram_decode_seq(fd, c, s, blk, cr, bfd, cf, seq, qual,
 				     has_MD, has_NM);
+		if (r) return r;
 	    } else {
 		cr->cigar = 0;
 		cr->ncigar = 0;
@@ -2429,6 +2458,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_BA]
 		                ->decode(s, c->comp_hdr->codecs[DS_BA], blk,
 					 (char *)seq, &out_sz2);
+		if (r) return r;
 	    }
 
 	    if ((ds & CRAM_CF) && (cf & CRAM_FLAG_PRESERVE_QUAL_SCORES)) {
@@ -2438,6 +2468,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		    r |= c->comp_hdr->codecs[DS_QS]
 			            ->decode(s, c->comp_hdr->codecs[DS_QS],
 					     blk, qual, &out_sz2);
+		    if (r) return r;
 		}
 	    } else {
 		if (ds & CRAM_RL)
