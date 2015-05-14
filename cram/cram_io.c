@@ -238,6 +238,11 @@ int itf8_encode(cram_fd *fd, int32_t val) {
     int len = itf8_put(buf, val);
     return hwrite(fd->fp, buf, len) == len ? 0 : -1;
 }
+ 
+const int itf8_bytes[16] = {
+    1, 1, 1, 1, 1, 1, 1, 1,
+    2, 2, 2, 2, 3, 3, 4, 5
+};
 
 #ifndef ITF8_MACROS
 /*
