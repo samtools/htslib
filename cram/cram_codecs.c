@@ -1389,21 +1389,23 @@ int cram_byte_array_len_decode(cram_slice *slice, cram_codec *c,
 			       int *out_size) {
     /* Fetch length */
     int32_t len = 0, one = 1;
+    int r;
 
-    c->byte_array_len.len_codec->decode(slice, c->byte_array_len.len_codec, in, (char *)&len, &one);
+    r = c->byte_array_len.len_codec->decode(slice, c->byte_array_len.len_codec,
+                                            in, (char *)&len, &one);
     //printf("ByteArray Len=%d\n", len);
 
-    if (c->byte_array_len.value_codec) {
-	c->byte_array_len.value_codec->decode(slice,
-					      c->byte_array_len.value_codec,
-					      in, out, &len);
+    if (!r && c->byte_array_len.value_codec) {
+	r = c->byte_array_len.value_codec->decode(slice,
+						  c->byte_array_len.value_codec,
+						  in, out, &len);
     } else {
 	return -1;
     }
 
     *out_size = len;
 
-    return 0;
+    return r;
 }
 
 void cram_byte_array_len_decode_free(cram_codec *c) {
