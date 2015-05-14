@@ -2031,6 +2031,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
     /* Look for unknown RG, added as last by Java CRAM? */
     if (bfd->nrg > 0 &&
+	bfd->rg[bfd->nrg-1].name != NULL &&
 	!strcmp(bfd->rg[bfd->nrg-1].name, "UNKNOWN"))
 	unknown_rg = bfd->nrg-1;
 
