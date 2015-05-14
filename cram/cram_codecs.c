@@ -1395,7 +1395,7 @@ int cram_byte_array_len_decode(cram_slice *slice, cram_codec *c,
                                             in, (char *)&len, &one);
     //printf("ByteArray Len=%d\n", len);
 
-    if (!r && c->byte_array_len.value_codec) {
+    if (!r && c->byte_array_len.value_codec && len >= 0) {
 	r = c->byte_array_len.value_codec->decode(slice,
 						  c->byte_array_len.value_codec,
 						  in, out, &len);
