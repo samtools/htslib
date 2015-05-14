@@ -1181,12 +1181,15 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 				"sequence boundary\n");
 		    whinged = 1;
 		    rlen = bfd->ref[cr->ref_id].len - ref_pos;
-		    if (rlen > 0)
+		    if (rlen > 0) {
 			memcpy(&seq[seq_pos-1],
 			       &s->ref[ref_pos - s->ref_start +1], rlen);
-		    if ((pos - seq_pos) - rlen > 0)
-			memset(&seq[seq_pos-1+rlen], 'N',
-			       (pos - seq_pos) - rlen);
+			if ((pos - seq_pos) - rlen > 0)
+			    memset(&seq[seq_pos-1+rlen], 'N',
+				   (pos - seq_pos) - rlen);
+		    } else {
+		        memset(&seq[seq_pos-1], 'N', cr->len - seq_pos + 1);
+		    }
 		} else {
 		    memcpy(&seq[seq_pos-1], &s->ref[ref_pos - s->ref_start +1],
 			   pos - seq_pos);
@@ -1618,12 +1621,15 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		    fprintf(stderr, "Ref pos outside of ref sequence boundary\n");
 		whinged = 1;
 		rlen = bfd->ref[cr->ref_id].len - ref_pos;
-		if (rlen > 0)
+		if (rlen > 0) {
 		    memcpy(&seq[seq_pos-1],
 			   &s->ref[ref_pos - s->ref_start +1], rlen);
-		if ((cr->len - seq_pos + 1) - rlen > 0)
-		    memset(&seq[seq_pos-1+rlen], 'N',
-			   (cr->len - seq_pos + 1) - rlen);
+		    if ((cr->len - seq_pos + 1) - rlen > 0)
+		        memset(&seq[seq_pos-1+rlen], 'N',
+                               (cr->len - seq_pos + 1) - rlen);
+		} else {
+		    memset(&seq[seq_pos-1], 'N', cr->len - seq_pos + 1);
+		}
 	    } else {
 		memcpy(&seq[seq_pos-1], &s->ref[ref_pos - s->ref_start +1],
 		       cr->len - seq_pos + 1);
