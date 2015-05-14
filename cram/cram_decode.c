@@ -2280,7 +2280,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    cr->ref_id = ref_id; // Forced constant in CRAM 1.0
 	}
 	if (cr->ref_id >= bfd->nref) {
-	  fprintf(stderr, "Requested unknown reference ID %d\n", cr->ref_id);
+	    fprintf(stderr, "Requested unknown reference ID %d\n", cr->ref_id);
             return -1;
 	}
 
@@ -2290,6 +2290,10 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		            ->decode(s, c->comp_hdr->codecs[DS_RL], blk,
 				     (char *)&cr->len, &out_sz);
 	    if (r) return r;
+	    if (cr->len < 0) {
+	        fprintf(stderr, "Read has negative length\n");
+		return -1;
+	    }
 	}
 
 	if (ds & CRAM_AP) {
@@ -2473,6 +2477,12 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	}
 
 	if (!(bf & BAM_FUNMAP)) {
+            if (cr->apos <= 0) {
+                fprintf(stderr,
+			"Read has alignment position %d but no unmapped flag\n",
+			cr->apos);
+		return -1;
+	    }
 	    /* Decode sequence and generate CIGAR */
 	    if (ds & (CRAM_SEQ | CRAM_MQ)) {
 		r |= cram_decode_seq(fd, c, s, blk, cr, bfd, cf, seq, qual,
