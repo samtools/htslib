@@ -2908,6 +2908,7 @@ cram_record *cram_get_seq(cram_fd *fd) {
 	} else {
 	    if (!(s = cram_next_slice(fd, &c)))
 		return NULL;
+	    continue; /* In case slice contains no records */
 	}
 
 	if (fd->range.refid != -2) {
