@@ -91,11 +91,15 @@ static signed int get_bit_MSB(cram_block *block) {
  */
 static int get_one_bits_MSB(cram_block *block) {
     int n = 0, b;
+    if (block->byte >= block->uncomp_size)
+        return -1;
     do {
 	b = block->data[block->byte] >> block->bit;
 	if (--block->bit == -1) {
 	    block->bit = 7;
 	    block->byte++;
+	    if (block->byte == block->uncomp_size && (b&1))
+	        return -1;
 	}
 	n++;
     } while (b&1);
@@ -489,6 +493,9 @@ int cram_beta_decode_int(cram_slice *slice, cram_codec *c, cram_block *in, char 
     int32_t *out_i = (int32_t *)out;
     int i, n;
 
+    if (cram_not_enough_bits(in, c->beta.nbits))
+        return -1;
+
     if (c->beta.nbits) {
 	for (i = 0, n = *out_size; i < n; i++)
 	    out_i[i] = get_bits_MSB(in, c->beta.nbits) - c->beta.offset;
@@ -672,7 +679,8 @@ int cram_subexp_decode(cram_slice *slice, cram_codec *c, cram_block *in, char *o
 	/* Get number of 1s */
 	//while (get_bit_MSB(in) == 1) i++;
 	i = get_one_bits_MSB(in);
-
+        if (i < 0 || cram_not_enough_bits(in, i > 0 ? i + k - 1 : k))
+            return -1;
 	/*
 	 * Val is
 	 * i > 0:  2^(k+i-1) + k+i-1 bits
@@ -720,11 +728,12 @@ cram_codec *cram_subexp_decode_init(char *data, int size,
     c->codec  = E_SUBEXP;
     c->decode = cram_subexp_decode;
     c->free   = cram_subexp_decode_free;
-    
+    c->subexp.k = -1;
+
     cp += itf8_get(cp, &c->subexp.offset);
     cp += itf8_get(cp, &c->subexp.k);
 
-    if (cp - data != size) {
+    if (cp - data != size || c->subexp.k < 0) {
 	fprintf(stderr, "Malformed subexp header stream\n");
 	free(c);
 	return NULL;
@@ -746,7 +755,7 @@ int cram_gamma_decode(cram_slice *slice, cram_codec *c, cram_block *in, char *ou
 	int val;
 	//while (get_bit_MSB(in) == 0) nz++;
 	nz = get_zero_bits_MSB(in);
-        if (nz < 0 || (in->uncomp_size - in->byte)*8 + in->bit < nz + 7)
+        if (cram_not_enough_bits(in, nz))
             return -1;
 	val = 1;
 	while (nz > 0) {
@@ -841,7 +850,7 @@ int cram_huffman_decode_char(cram_slice *slice, cram_codec *c,
 
 	for (;;) {
 	    int dlen = codes[idx].len - last_len;
-	    if (dlen <= 0 || (in->uncomp_size - in->byte)*8 + in->bit < dlen + 7)
+	    if (cram_not_enough_bits(in, dlen))
 		return -1;
 
 	    //val <<= dlen;
@@ -891,7 +900,7 @@ int cram_huffman_decode_int(cram_slice *slice, cram_codec *c,
 	// Now one bit at a time for remaining checks
 	for (;;) {
 	    int dlen = codes[idx].len - last_len;
-	    if (dlen <= 0 || (in->uncomp_size - in->byte)*8 + in->bit < dlen + 7)
+	    if (cram_not_enough_bits(in, dlen))
 		return -1;
 	    
 	    //val <<= dlen;
