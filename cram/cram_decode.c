@@ -2053,7 +2053,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 			"no embedded reference is available.\n");
 		return -1;
 	    }
-	    if (!s->block_by_id ||
+	    /* FIXME should search for the block if this fails */
+	    if (!s->block_by_id || s->hdr->ref_base_id >= 1024 ||
 		!(b = s->block_by_id[s->hdr->ref_base_id]))
 		return -1;
 	    if (cram_uncompress_block(b) != 0)
@@ -2237,12 +2238,15 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		    last_ref_id = cr->ref_id;
 		}
 	    } else {
-		cr->ref_id = 0;
+		cr->ref_id = -1;
 	    }
 	} else {
 	    cr->ref_id = ref_id; // Forced constant in CRAM 1.0
 	}
-
+	if (cr->ref_id >= bfd->nref) {
+	  fprintf(stderr, "Requested unknown reference ID %d\n", cr->ref_id);
+            return -1;
+	}
 
 	if (ds & CRAM_RL) {
 	    if (!c->comp_hdr->codecs[DS_RL]) return -1;
@@ -2485,7 +2489,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		cram_ref_decr(fd->refs, i);
 	}
 	free(refs);
-    } else if (ref_id >= 0 && s->ref != fd->ref_free) {
+    } else if (ref_id >= 0 && s->ref != fd->ref_free && !embed_ref) {
 	cram_ref_decr(fd->refs, ref_id);
     }
     pthread_mutex_unlock(&fd->ref_lock);
