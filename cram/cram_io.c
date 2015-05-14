@@ -3396,6 +3396,11 @@ cram_slice *cram_read_slice(cram_fd *fd) {
 	goto err;
     }
 
+    if (s->hdr->num_blocks < 1) {
+        fprintf(stderr, "Slice does not include any data blocks.\n");
+	goto err;
+    }
+
     s->block = calloc(n = s->hdr->num_blocks, sizeof(*s->block));
     if (!s->block)
 	goto err;
