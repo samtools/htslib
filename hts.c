@@ -390,8 +390,8 @@ htsFile *hts_open_opts(const char *fn, const char *mode, htsFileOpts *opts)
     *cp2++ = 0;
 
     // Set or reset the format code if opts->format is used
-    if (opts && opts->format.compression)
-        *mode_c = "\0gbc"[opts->format.compression];
+    if (opts && opts->format.format != unknown_format)
+        *mode_c = "\0g\0\0b\0c\0\0b\0g\0\0"[opts->format.format];
 
     hfile = hopen(fn, smode);
     if (hfile == NULL) goto error;
