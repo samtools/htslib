@@ -2063,9 +2063,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 			"no embedded reference is available.\n");
 		return -1;
 	    }
-	    /* FIXME should search for the block if this fails */
-	    if (!s->block_by_id || s->hdr->ref_base_id >= 1024 ||
-		!(b = s->block_by_id[s->hdr->ref_base_id]))
+	    b = cram_get_block_by_id(s, s->hdr->ref_base_id);
+	    if (!b)
 		return -1;
 	    if (cram_uncompress_block(b) != 0)
 		return -1;
@@ -2143,8 +2142,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    hts_md5_final(digest, md5);
 	    hts_md5_destroy(md5);
 	} else if (!s->ref && s->hdr->ref_base_id >= 0) {
-	    cram_block *b;
-	    if (s->block_by_id && (b = s->block_by_id[s->hdr->ref_base_id])) {
+	    cram_block *b = cram_get_block_by_id(s, s->hdr->ref_base_id);
+	    if (b) {
 		if (!(md5 = hts_md5_init()))
 		    return -1;
 		hts_md5_update(md5, b->data, b->uncomp_size);
