@@ -498,7 +498,7 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
 
     else if (strcmp(o->arg, "nthreads") == 0 ||
              strcmp(o->arg, "NTHREADS") == 0)
-        o->opt = CRAM_OPT_NTHREADS, o->val.i = atoi(val);
+        o->opt = HTS_OPT_NTHREADS, o->val.i = atoi(val);
 
     else if (strcmp(o->arg, "required_fields") == 0 ||
              strcmp(o->arg, "REQUIRED_FIELDS") == 0)
@@ -850,6 +850,13 @@ const htsFormat *hts_get_format(htsFile *fp)
 int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
     int r;
     va_list args;
+
+    if (opt == HTS_OPT_NTHREADS) {
+        va_start(args, opt);
+        int nthreads = va_arg(args, int);
+        va_end(args);
+        return hts_set_threads(fp, nthreads);
+    }
 
     if (fp->format.format != cram)
         return 0;

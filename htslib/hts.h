@@ -165,6 +165,7 @@ enum sam_fields {
 enum hts_fmt_option {
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL,
+    HTS_OPT_NTHREADS,
 
     // CRAM specific
     CRAM_OPT_DECODE_MD,
@@ -181,7 +182,7 @@ enum hts_fmt_option {
     CRAM_OPT_NO_REF,
     CRAM_OPT_USE_BZIP2,
     CRAM_OPT_SHARED_REF,
-    CRAM_OPT_NTHREADS,   // make general
+    CRAM_OPT_NTHREADS,   // synonym for HTS_OPT_NTHREADS
     CRAM_OPT_THREAD_POOL,// make general
     CRAM_OPT_USE_LZMA,
     CRAM_OPT_USE_RANS,
