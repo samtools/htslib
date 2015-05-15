@@ -729,7 +729,9 @@ char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
 
 	if (err != Z_OK) {
 	    fprintf(stderr, "zlib inflate error: %s\n", s.msg);
-	    break;
+	    if (data)
+		free(data);
+	    return NULL;
 	}
 
 	/* More to come, so realloc based on growth so far */
@@ -3544,7 +3546,10 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 	    cram_free_container(c);
 	    return NULL;
 	}
-	cram_uncompress_block(b);
+	if (cram_uncompress_block(b) != 0) {
+	    cram_free_container(c);
+	    return NULL;
+	}
 
 	len = b->comp_size + 2 + 4*(CRAM_MAJOR_VERS(fd->version) >= 3) +
 	    itf8_size(b->content_id) + 
