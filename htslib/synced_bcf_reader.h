@@ -106,7 +106,7 @@ typedef struct
     hts_idx_t *bcf_idx;
     bcf_hdr_t *header;
     hts_itr_t *itr;
-    const char *fname;
+    char *fname;
     bcf1_t **buffer;                // cached VCF records. First is the current record synced across the reader
     int nbuffer, mbuffer;           // number of cached records (including the current record); number of allocated records
     int nfilter_ids, *filter_ids;   // -1 for ".", otherwise filter id as returned by bcf_hdr_id2int
@@ -182,6 +182,7 @@ void bcf_sr_remove_reader(bcf_srs_t *files, int i);
 int bcf_sr_next_line(bcf_srs_t *readers);
 #define bcf_sr_has_line(readers, i) (readers)->has_line[i]
 #define bcf_sr_get_line(_readers, i) ((_readers)->has_line[i] ? ((_readers)->readers[i].buffer[0]) : NULL)
+#define bcf_sr_swap_line(_readers, i, lieu) { bcf1_t *tmp = lieu; lieu = (_readers)->readers[i].buffer[0]; (_readers)->readers[i].buffer[0] = tmp; }
 #define bcf_sr_region_done(_readers,i) (!(_readers)->has_line[i] && !(_readers)->readers[i].nbuffer ? 1 : 0)
 #define bcf_sr_get_header(_readers, i) (_readers)->readers[i].header
 #define bcf_sr_get_reader(_readers, i) &((_readers)->readers[i])
