@@ -44,8 +44,9 @@ int main(int argc, char *argv[])
     char modew[800];
     int r = 0, exit_code = 0;
     hts_opt *in_opts = NULL, *out_opts = NULL, *last = NULL;
+    int nreads = 0;
 
-    while ((c = getopt(argc, argv, "IbDCSl:t:i:o:")) >= 0) {
+    while ((c = getopt(argc, argv, "IbDCSl:t:i:o:N:")) >= 0) {
         switch (c) {
         case 'S': flag |= 1; break;
         case 'b': flag |= 2; break;
@@ -56,10 +57,11 @@ int main(int argc, char *argv[])
         case 'I': ignore_sam_err = 1; break;
         case 'i': if (hts_opt_add(&in_opts,  optarg)) return 1; break;
         case 'o': if (hts_opt_add(&out_opts, optarg)) return 1; break;
+        case 'N': nreads = atoi(optarg);
         }
     }
     if (argc == optind) {
-        fprintf(stderr, "Usage: samview [-bSCSI] [-l level] [-o option=value] <in.bam>|<in.sam>|<in.cram> [region]\n");
+        fprintf(stderr, "Usage: samview [-bSCSI] [-N num_reads] [-l level] [-o option=value] <in.bam>|<in.sam>|<in.cram> [region]\n");
         return 1;
     }
     strcpy(moder, "r");
@@ -132,6 +134,8 @@ int main(int argc, char *argv[])
                     exit_code = 1;
                     break;
                 }
+                if (nreads && --nreads == 0)
+                    break;
             }
             hts_itr_destroy(iter);
         }
@@ -142,6 +146,8 @@ int main(int argc, char *argv[])
             exit_code = 1;
             break;
         }
+        if (nreads && --nreads == 0)
+            break;
     }
 
     if (r < -1) {

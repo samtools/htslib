@@ -924,8 +924,12 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
         return r;
         }
 
-    case cram:
-        return cram_get_bam_seq(fp->fp.cram, &b);
+    case cram: {
+        int ret = cram_get_bam_seq(fp->fp.cram, &b);
+        return ret >= 0
+            ? ret
+            : (cram_eof(fp->fp.cram) ? -1 : -2);
+    }
 
     case sam: {
         int ret;

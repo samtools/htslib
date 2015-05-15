@@ -300,12 +300,19 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         return hrec;
     }
 
-    // structured line, e.g. ##INFO=<ID=PV1,Number=1,Type=Float,Description="P-value for baseQ bias">
+    // structured line, e.g.
+    // ##INFO=<ID=PV1,Number=1,Type=Float,Description="P-value for baseQ bias">
+    // ##PEDIGREE=<Name_0=G0-ID,Name_1=G1-ID,Name_3=GN-ID>
     int nopen = 1;
     while ( *q && *q!='\n' && nopen )
     {
         p = ++q;
-        while ( *q && isalnum(*q) ) q++;
+        // ^[A-Za-z_][0-9A-Za-z_.]*$
+        if (p==q && *q && (isalpha(*q) || *q=='_'))
+        {
+            q++;
+            while ( *q && (isalnum(*q) || *q=='_' || *q=='.') ) q++;
+        }
         n = q-p;
         if ( *q!='=' || !n )
         {
@@ -2990,6 +2997,34 @@ int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id)
     line->d.id = tmp.s; line->d.m_id = tmp.m;
     line->d.shared_dirty |= BCF1_DIRTY_ID;
     return 0;
+}
+
+int bcf_add_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id)
+{
+    if ( !id ) return 0;
+
+    kstring_t tmp;
+    tmp.l = 0; tmp.s = line->d.id; tmp.m = line->d.m_id;
+
+    int len = strlen(id);
+    char *dst = line->d.id;
+    while ( *dst && (dst=strstr(dst,id)) )
+    {
+        if ( dst[len]!=0 && dst[len]!=';' ) dst++;              // a prefix, not a match
+        else if ( dst==line->d.id || dst[-1]==';' ) return 0;   // already present
+        dst++;  // a suffix, not a match
+    }
+    if ( line->d.id && (line->d.id[0]!='.' || line->d.id[1]) )
+    {
+        tmp.l = strlen(line->d.id);
+        kputc(';',&tmp);
+    }
+    kputs(id,&tmp);
+
+    line->d.id = tmp.s; line->d.m_id = tmp.m;
+    line->d.shared_dirty |= BCF1_DIRTY_ID;
+    return 0;
+
 }
 
 bcf_fmt_t *bcf_get_fmt(const bcf_hdr_t *hdr, bcf1_t *line, const char *key)
