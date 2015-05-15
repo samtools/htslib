@@ -1048,11 +1048,12 @@ static int bcf1_sync(bcf1_t *line)
     }
     else if ( line->d.shared_dirty )
     {
-        // The line was edited, update the BCF data block, ptr_ori points
-        // to the original unchanged BCF data.
+        // The line was edited, update the BCF data block.
+        
+        if ( !(line->unpacked & BCF_UN_STR) ) bcf_unpack(line,BCF_UN_STR);
+        
+        // ptr_ori points to the original unchanged BCF data.
         uint8_t *ptr_ori = (uint8_t *) line->shared.s;
-
-        assert( line->unpacked & BCF_UN_STR );
 
         // ID: single typed string
         if ( line->d.shared_dirty & BCF1_DIRTY_ID )
