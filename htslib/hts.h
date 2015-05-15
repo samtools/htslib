@@ -92,23 +92,6 @@ enum htsExactFormat {
     format_maximum = 32767
 };
 
-static inline const char *htsExactFormatString(enum htsExactFormat f) {
-    switch (f) {
-    case sam:  return "sam";
-    case bam:  return "bam";
-    case bai:  return "bai";
-    case cram: return "cram";
-    case crai: return "crai";
-    case vcf:  return "vcf";
-    case bcf:  return "bcf";
-    case csi:  return "csi";
-    case gzi:  return "gzi";
-    case tbi:  return "tbi";
-    case bed:  return "bed";
-    default:   return "?";
-    }
-}
-
 enum htsCompression {
     no_compression, gzip, bgzf, custom,
     compression_maximum = 32767
@@ -120,7 +103,7 @@ typedef struct htsFormat {
     struct { short major, minor; } version;
     enum htsCompression compression;
     short compression_level;  // currently unused
-    void *specific;  // currently unused
+    void *specific;  // format specific options; see struct hts_opt.
 } htsFormat;
 
 // Maintainers note htsFile cannot be an opaque structure because some of its
@@ -199,11 +182,6 @@ typedef struct hts_opt {
     struct hts_opt *next;
 } hts_opt;
 
-typedef struct {
-    htsFormat format;
-    hts_opt *opts;
-} htsFileOpts;
-
 #define HTS_FILE_OPTS_INIT {{0},0}
 
 /**********************
@@ -234,12 +212,12 @@ void hts_opt_free(hts_opt *opts);
 /*
  * Accepts a string file format (sam, bam, cram, vcf, bam) optionally
  * followed by a comma separated list of key=value options and splits
- * these up into the files of htsFileOpts struct.
+ * these up into the fields of htsFormat struct.
  *
  * Returns 0 on success
  *        -1 on failure.
  */
-int hts_parse_opt_format(htsFileOpts *opt, const char *str);
+int hts_parse_format(htsFormat *opt, const char *str);
 
 /*
  * Tokenise options as (key(=value)?,)*(key(=value)?)?
@@ -252,7 +230,7 @@ int hts_parse_opt_format(htsFileOpts *opt, const char *str);
  * Returns 0 on success
  *        -1 on failure.
  */
-int hts_parse_opt_list(htsFileOpts *opt, const char *str);
+int hts_parse_opt_list(htsFormat *opt, const char *str);
 
 extern int hts_verbose;
 
@@ -324,7 +302,7 @@ htsFile *hts_open(const char *fn, const char *mode);
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
   @param fn       The file name or "-" for stdin/stdout
   @param mode     Mode matching /[rwa][bcuz0-9]+/
-  @param opts     Optional parameters for opening the file.
+  @param fmt      Optional format specific parameters
   @discussion
       See hts_open() for description of fn and mode.
       Opts contains a format string (sam, bam, cram, vcf, bcf) which will,
@@ -333,7 +311,7 @@ htsFile *hts_open(const char *fn, const char *mode);
       like pointers to the reference or information on compression levels,
       block sizes, etc.
 */
-htsFile *hts_open_opts(const char *fn, const char *mode, htsFileOpts *opts);
+htsFile *hts_open_format(const char *fn, const char *mode, htsFormat *fmt);
 
 /*!
   @abstract       Open an existing stream as a SAM/BAM/CRAM/VCF/BCF/etc file
@@ -355,6 +333,13 @@ int hts_close(htsFile *fp);
   @return    Read-only pointer to the file's htsFormat.
 */
 const htsFormat *hts_get_format(htsFile *fp);
+
+/*!
+  @ abstract      Returns a string containing the file format extension.
+  @ param format  An htsFormat containing the format enumerated type.
+  @ return        A string ("sam", "bam", etc) or "?" for unknown formats.
+ */
+const char *hts_format_file_extension(const htsFormat *format);
 
 /*!
   @abstract  Sets a specified CRAM option on the open file handle.

@@ -363,7 +363,7 @@ char *hts_format_description(const htsFormat *format)
     return ks_release(&str);
 }
 
-htsFile *hts_open_opts(const char *fn, const char *mode, htsFileOpts *opts)
+htsFile *hts_open_format(const char *fn, const char *mode, htsFormat *fmt)
 {
     char smode[102], *cp, *cp2, *mode_c;
     htsFile *fp = NULL;
@@ -390,8 +390,8 @@ htsFile *hts_open_opts(const char *fn, const char *mode, htsFileOpts *opts)
     *cp2++ = 0;
 
     // Set or reset the format code if opts->format is used
-    if (opts && opts->format.format != unknown_format)
-        *mode_c = "\0g\0\0b\0c\0\0b\0g\0\0"[opts->format.format];
+    if (fmt && fmt->format != unknown_format)
+        *mode_c = "\0g\0\0b\0c\0\0b\0g\0\0"[fmt->format];
 
     hfile = hopen(fn, smode);
     if (hfile == NULL) goto error;
@@ -399,8 +399,8 @@ htsFile *hts_open_opts(const char *fn, const char *mode, htsFileOpts *opts)
     fp = hts_hopen(hfile, fn, smode);
     if (fp == NULL) goto error;
 
-    if (opts)
-        hts_opt_apply(fp, opts->opts);
+    if (fmt && fmt->specific)
+        hts_opt_apply(fp, fmt->specific);
 
     return fp;
 
@@ -415,7 +415,7 @@ error:
 }
 
 htsFile *hts_open(const char *fn, const char *mode) {
-    return hts_open_opts(fn, mode, NULL);
+    return hts_open_format(fn, mode, NULL);
 }
 
 /*
@@ -566,7 +566,7 @@ void hts_opt_free(hts_opt *opts) {
  * Returns 0 on success
  *        -1 on failure.
  */
-int hts_parse_opt_list(htsFileOpts *opt, const char *str) {
+int hts_parse_opt_list(htsFormat *fmt, const char *str) {
     while (str && *str) {
         const char *str_start;
         int len;
@@ -582,7 +582,7 @@ int hts_parse_opt_list(htsFileOpts *opt, const char *str) {
         strncpy(arg, str_start, len < 8000 ? len : 8000);
         arg[len < 8000 ? len : 8000]=0;
 
-        if (hts_opt_add(&opt->opts, arg) != 0)
+        if (hts_opt_add((hts_opt **)&fmt->specific, arg) != 0)
             return -1;
 
         if (*str)
@@ -595,51 +595,51 @@ int hts_parse_opt_list(htsFileOpts *opt, const char *str) {
 /*
  * Accepts a string file format (sam, bam, cram, vcf, bam) optionally
  * followed by a comma separated list of key=value options and splits
- * these up into the files of htsFileOpts struct.
+ * these up into the fields of htsFormat struct.
  *
  * Returns 0 on success
  *        -1 on failure.
  */
-int hts_parse_opt_format(htsFileOpts *opt, const char *str) {
+int hts_parse_format(htsFormat *format, const char *str) {
     const char *cp;
     
     if (!(cp = strchr(str, ',')))
         cp = str+strlen(str);
 
-    opt->format.version.minor = 0; // unknown
-    opt->format.version.major = 0; // unknown
-    opt->format.specific = NULL;
+    format->version.minor = 0; // unknown
+    format->version.major = 0; // unknown
+    format->specific = NULL;
 
     if (strncmp(str, "sam", cp-str) == 0) {
-        opt->format.category          = sequence_data;
-        opt->format.format            = sam;
-        opt->format.compression       = no_compression;;
-        opt->format.compression_level = 0;
+        format->category          = sequence_data;
+        format->format            = sam;
+        format->compression       = no_compression;;
+        format->compression_level = 0;
     } else if (strncmp(str, "bam", cp-str) == 0) {
-        opt->format.category          = sequence_data;
-        opt->format.format            = bam;
-        opt->format.compression       = bgzf;
-        opt->format.compression_level = -1;
+        format->category          = sequence_data;
+        format->format            = bam;
+        format->compression       = bgzf;
+        format->compression_level = -1;
     } else if (strncmp(str, "cram", cp-str) == 0) {
-        opt->format.category          = sequence_data;
-        opt->format.format            = cram;
-        opt->format.compression       = custom;
-        opt->format.compression_level = -1;
+        format->category          = sequence_data;
+        format->format            = cram;
+        format->compression       = custom;
+        format->compression_level = -1;
     } else if (strncmp(str, "vcf", cp-str) == 0) {
-        opt->format.category          = variant_data;
-        opt->format.format            = vcf;
-        opt->format.compression       = no_compression;;
-        opt->format.compression_level = 0;
+        format->category          = variant_data;
+        format->format            = vcf;
+        format->compression       = no_compression;;
+        format->compression_level = 0;
     } else if (strncmp(str, "bcf", cp-str) == 0) {
-        opt->format.category          = variant_data;
-        opt->format.format            = bcf;
-        opt->format.compression       = bgzf;
-        opt->format.compression_level = -1;
+        format->category          = variant_data;
+        format->format            = bcf;
+        format->compression       = bgzf;
+        format->compression_level = -1;
     } else {
         return -1;
     }
 
-    return hts_parse_opt_list(opt, cp);
+    return hts_parse_opt_list(format, cp);
 }
 
 
@@ -655,14 +655,14 @@ int hts_parse_opt_format(htsFileOpts *opt, const char *str) {
  *        -1 on failure.
  */
 static int hts_process_opts(htsFile *fp, const char *opts) {
-    htsFileOpts ho;
+    htsFormat fmt;
 
-    ho.opts = NULL;
-    if (hts_parse_opt_list(&ho, opts) != 0)
+    fmt.specific = NULL;
+    if (hts_parse_opt_list(&fmt, opts) != 0)
         return -1;
 
-    hts_opt_apply(fp, ho.opts);
-    hts_opt_free(ho.opts);
+    hts_opt_apply(fp, fmt.specific);
+    hts_opt_free(fmt.specific);
 
     return 0;
 }
@@ -843,6 +843,26 @@ int hts_close(htsFile *fp)
 const htsFormat *hts_get_format(htsFile *fp)
 {
     return fp? &fp->format : NULL;
+}
+
+const char *hts_format_file_extension(const htsFormat *format) {
+    if (!format)
+        return "?";
+
+    switch (format->format) {
+    case sam:  return "sam";
+    case bam:  return "bam";
+    case bai:  return "bai";
+    case cram: return "cram";
+    case crai: return "crai";
+    case vcf:  return "vcf";
+    case bcf:  return "bcf";
+    case csi:  return "csi";
+    case gzi:  return "gzi";
+    case tbi:  return "tbi";
+    case bed:  return "bed";
+    default:   return "?";
+    }
 }
 
 int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
