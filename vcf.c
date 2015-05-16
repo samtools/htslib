@@ -908,7 +908,6 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
     v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
     v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
     v->shared.l = x[0], v->indiv.l = x[1];
-
     // silent fix of broken BCFs produced by earlier versions of bcf_subset, prior to and including bd6ed8b4
     if ( (!v->indiv.l || !v->n_sample) && v->n_fmt ) v->n_fmt = 0;
 
@@ -2794,6 +2793,8 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
 
     if ( !n || (type==BCF_HT_STR && !values) )
     {
+        if ( n==0 && !strcmp("END",key) )
+            line->rlen = line->n_allele ? strlen(line->d.allele[0]) : 0;
         if ( inf )
         {
             // Mark the tag for removal, free existing memory if necessary
@@ -2861,6 +2862,8 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
         line->d.shared_dirty |= BCF1_DIRTY_INF;
     }
     line->unpacked |= BCF_UN_INFO;
+
+    if ( n==1 && !strcmp("END",key) ) line->rlen = ((int32_t*)values)[0] - line->pos;
     return 0;
 }
 
@@ -3069,6 +3072,11 @@ static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nal
         als++;
         n++;
     }
+
+    // Update REF length
+    bcf_info_t *end_info = bcf_get_info(hdr,line,"END");
+    line->rlen = end_info ? end_info->v1.i : strlen(line->d.allele[0]);
+
     return 0;
 }
 int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals)

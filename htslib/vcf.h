@@ -528,11 +528,6 @@ typedef struct {
      *  @alleles:           Array of alleles
      *  @nals:              Number of alleles
      *  @alleles_string:    Comma-separated alleles, starting with the REF allele
-     *
-     *  Not that in order for indexing to work correctly in presence of INFO/END tag,
-     *  the length of reference allele (line->rlen) must be set explicitly by the caller,
-     *  or otherwise, if rlen is zero, strlen(line->d.allele[0]) is used to set the length
-     *  on bcf_write().
      */
     int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals);
     int bcf_update_alleles_str(const bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string);
