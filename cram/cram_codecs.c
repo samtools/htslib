@@ -1401,7 +1401,7 @@ cram_codec *cram_byte_array_len_decode_init(char *data, int size,
     char *cp   = data;
     char *endp = data + size;
     int32_t encoding = 0;
-    int32_t sub_size = 0;
+    int32_t sub_size = -1;
 
     if (!(c = malloc(sizeof(*c))))
 	return NULL;
@@ -1420,6 +1420,7 @@ cram_codec *cram_byte_array_len_decode_init(char *data, int size,
         goto no_codec;
     cp += sub_size;
 
+    sub_size = -1;
     cp += safe_itf8_get(cp, endp, &encoding);
     cp += safe_itf8_get(cp, endp, &sub_size);
     if (sub_size < 0 || endp - cp < sub_size)
