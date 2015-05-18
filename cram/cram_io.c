@@ -238,6 +238,11 @@ int itf8_encode(cram_fd *fd, int32_t val) {
     int len = itf8_put(buf, val);
     return hwrite(fd->fp, buf, len) == len ? 0 : -1;
 }
+ 
+const int itf8_bytes[16] = {
+    1, 1, 1, 1, 1, 1, 1, 1,
+    2, 2, 2, 2, 3, 3, 4, 5
+};
 
 #ifndef ITF8_MACROS
 /*
@@ -1125,7 +1130,8 @@ int cram_uncompress_block(cram_block *b) {
     case RANS: {
 	unsigned int usize = b->uncomp_size, usize2;
 	uncomp = (char *)rans_uncompress(b->data, b->comp_size, &usize2);
-	assert(usize == usize2);
+	if (!uncomp || usize != usize2)
+ 	    return -1;
 	free(b->data);
 	b->data = (unsigned char *)uncomp;
 	b->alloc = usize2;
@@ -3390,6 +3396,11 @@ cram_slice *cram_read_slice(cram_fd *fd) {
 	goto err;
     }
 
+    if (s->hdr->num_blocks < 1) {
+        fprintf(stderr, "Slice does not include any data blocks.\n");
+	goto err;
+    }
+
     s->block = calloc(n = s->hdr->num_blocks, sizeof(*s->block));
     if (!s->block)
 	goto err;
@@ -3521,12 +3532,12 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 	    return NULL;
 
 	/* Alloc and read */
-	if (NULL == (header = malloc(header_len+1)))
+	if (header_len < 0 || NULL == (header = malloc((size_t) header_len+1)))
 	    return NULL;
 
-	*header = 0;
 	if (header_len != hread(fd->fp, header, header_len))
 	    return NULL;
+	header[header_len] = '\0';
 
 	fd->first_container += 4 + header_len;
     } else {
@@ -3558,12 +3569,13 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 
 	/* Extract header from 1st block */
 	if (-1 == int32_get(b, &header_len) ||
+            header_len < 0 || /* Spec. says signed...  why? */
 	    b->uncomp_size - 4 < header_len) {
 	    cram_free_container(c);
 	    cram_free_block(b);
 	    return NULL;
 	}
-	if (NULL == (header = malloc(header_len+1))) {
+	if (NULL == (header = malloc((size_t) header_len+1))) {
 	    cram_free_container(c);
 	    cram_free_block(b);
 	    return NULL;
@@ -3585,7 +3597,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 	    cram_free_block(b);
 	}
 
-	if (c->length && c->length > len) {
+	if (c->length > 0 && len > 0 && c->length > len) {
 	    // Consume padding
 	    char *pads = malloc(c->length - len);
 	    if (!pads) {

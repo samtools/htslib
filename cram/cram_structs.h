@@ -106,7 +106,8 @@ enum cram_encoding {
     E_BETA               = 6,
     E_SUBEXP             = 7,
     E_GOLOMB_RICE        = 8,
-    E_GAMMA              = 9
+    E_GAMMA              = 9,
+    E_NUM_CODECS         = 10, /* Number of codecs, not a real one. */
 };
 
 enum cram_external_type {
