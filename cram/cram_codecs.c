@@ -1624,9 +1624,6 @@ cram_codec *cram_byte_array_stop_decode_init(char *data, int size,
         free(c);
         return NULL;
     }
-    c->decode = (option == E_BYTE_ARRAY_BLOCK)
-	? cram_byte_array_stop_decode_block
-	: cram_byte_array_stop_decode_char;
     c->free   = cram_byte_array_stop_decode_free;
     
     c->byte_array_stop.stop = *cp++;
