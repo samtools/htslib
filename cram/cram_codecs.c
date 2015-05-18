@@ -730,8 +730,8 @@ cram_codec *cram_subexp_decode_init(char *data, int size,
     c->free   = cram_subexp_decode_free;
     c->subexp.k = -1;
 
-    cp += itf8_get(cp, &c->subexp.offset);
-    cp += itf8_get(cp, &c->subexp.k);
+    cp += safe_itf8_get(cp, data + size, &c->subexp.offset);
+    cp += safe_itf8_get(cp, data + size, &c->subexp.k);
 
     if (cp - data != size || c->subexp.k < 0) {
 	fprintf(stderr, "Malformed subexp header stream\n");
