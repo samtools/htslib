@@ -770,8 +770,10 @@ enum cram_fields {
 #define CRAM_CIGAR (CRAM_FN | CRAM_FP | CRAM_FC | CRAM_DL | CRAM_IN | \
 		    CRAM_SC | CRAM_HC | CRAM_PD | CRAM_RS | CRAM_RL | CRAM_BF)
 
-#define CRAM_SEQ (CRAM_CIGAR | CRAM_BA | CRAM_QS | CRAM_BS | \
-		  CRAM_RL    | CRAM_AP | CRAM_BB | CRAM_QQ)
+#define CRAM_SEQ (CRAM_CIGAR | CRAM_BA | CRAM_BS | \
+		  CRAM_RL    | CRAM_AP | CRAM_BB)
+
+#define CRAM_QUAL (CRAM_CIGAR | CRAM_RL | CRAM_AP | CRAM_QS | CRAM_QQ)
 
 /* BF bitfields */
 /* Corrected in 1.1. Use bam_flag_swap[bf] and BAM_* macros for 1.0 & 1.1 */
