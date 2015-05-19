@@ -3004,6 +3004,9 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
 static int cram_flush_container2(cram_fd *fd, cram_container *c) {
     int i, j;
 
+    if (c->curr_slice > 0 && !c->slices)
+	return -1;
+
     //fprintf(stderr, "Writing container %d, sum %u\n", c->record_counter, sum);
 
     /* Write the container struct itself */
