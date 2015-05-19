@@ -31,7 +31,7 @@ CPPFLAGS =
 CFLAGS   = -g -Wall -O2
 EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
-LDLIBS   =
+LDLIBS   = -lcurl
 
 # For now these don't work too well as samtools also needs to know to
 # add -lbz2 and -llzma if linking against the static libhts.a library.
@@ -149,11 +149,13 @@ print-version:
 LIBHTS_OBJS = \
 	kfunc.o \
 	knetfile.o \
+	ks3file.o \
 	kstring.o \
 	bgzf.o \
 	faidx.o \
 	hfile.o \
 	hfile_net.o \
+	hfile_s3.o \
 	hts.o \
 	md5.o \
 	regidx.o \
@@ -234,9 +236,11 @@ libhts.dylib: $(LIBHTS_OBJS)
 bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_khash_h)
 kstring.o kstring.pico: kstring.c $(htslib_kstring_h)
 knetfile.o knetfile.pico: knetfile.c $(htslib_knetfile_h)
+ks3file.o ks3file.pico: ks3file.c $(htslib_knetfile_h)
 hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h)
 hfile_irods.o hfile_irods.pico: hfile_irods.c config.h $(hfile_internal_h)
 hfile_net.o hfile_net.pico: hfile_net.c config.h $(hfile_internal_h) $(htslib_knetfile_h)
+hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_knetfile_h)
 hts.o hts.pico: hts.c config.h version.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(hts_internal_h)
 vcf.o vcf.pico: vcf.c config.h $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h) $(htslib_khash_str2int_h)
 sam.o sam.pico: sam.c config.h $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)

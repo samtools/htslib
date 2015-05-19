@@ -74,6 +74,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/hfile.c \
 	$(HTSDIR)/hfile_irods.c \
 	$(HTSDIR)/hfile_net.c \
+	$(HTSDIR)/hfile_s3.c \
 	$(HTSDIR)/hts.c \
 	$(HTSDIR)/hts_internal.h \
 	$(HTSDIR)/knetfile.c \
