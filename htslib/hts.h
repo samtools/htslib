@@ -268,6 +268,7 @@ int hts_detect_format(struct hFILE *fp, htsFormat *fmt);
 
 /*!
   @abstract    Get a human-readable description of the file format
+  @param fmt   Format structure holding type, version, compression, etc.
   @return      Description string, to be freed by the caller after use.
 */
 char *hts_format_description(const htsFormat *format);
@@ -336,7 +337,7 @@ const htsFormat *hts_get_format(htsFile *fp);
 
 /*!
   @ abstract      Returns a string containing the file format extension.
-  @ param format  An htsFormat containing the format enumerated type.
+  @ param format  Format structure containing the file type.
   @ return        A string ("sam", "bam", etc) or "?" for unknown formats.
  */
 const char *hts_format_file_extension(const htsFormat *format);
