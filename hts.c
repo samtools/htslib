@@ -389,6 +389,24 @@ htsFile *hts_open_format(const char *fn, const char *mode, htsFormat *fmt)
     *cp2++ = 0;
     *cp2++ = 0;
 
+    // Attempt to auto-detect based on filename
+    if (fmt && fmt->format == unknown_format) {
+        const char *ext = strrchr(fn, '.');
+        if (ext) {
+            ext++;
+            if (strcmp(ext, "sam") == 0)
+                fmt->format = sam;
+            else if (strcmp(ext, "bam") == 0)
+                fmt->format = bam;
+            else if (strcmp(ext, "cram") == 0)
+                fmt->format = cram;
+            else if (strcmp(ext, "vcf") == 0)
+                fmt->format = vcf;
+            else if (strcmp(ext, "bcf") == 0)
+                fmt->format = bcf;
+        }
+    }
+
     // Set or reset the format code if opts->format is used
     if (fmt && fmt->format != unknown_format)
         *mode_c = "\0g\0\0b\0c\0\0b\0g\0\0"[fmt->format];
@@ -597,6 +615,9 @@ int hts_parse_opt_list(htsFormat *fmt, const char *str) {
  * followed by a comma separated list of key=value options and splits
  * these up into the fields of htsFormat struct.
  *
+ * format is assumed to be already initialised, either to blank
+ * "unknown" values or via previous hts_opt_add calls.
+ *
  * Returns 0 on success
  *        -1 on failure.
  */
@@ -608,7 +629,6 @@ int hts_parse_format(htsFormat *format, const char *str) {
 
     format->version.minor = 0; // unknown
     format->version.major = 0; // unknown
-    format->specific = NULL;
 
     if (strncmp(str, "sam", cp-str) == 0) {
         format->category          = sequence_data;
