@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
     htsFile *out;
     char modew[800];
     int r = 0, exit_code = 0;
-    hts_opt *in_opts = NULL, *out_opts = NULL, *last = NULL;
+    hts_opt *in_opts = NULL, *out_opts = NULL;
     int nreads = 0;
 
     while ((c = getopt(argc, argv, "IbDCSl:t:i:o:N:")) >= 0) {
