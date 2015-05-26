@@ -367,7 +367,7 @@ mostlyclean: testclean
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 	-rm -f libhts.a $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 
-distclean: clean
+distclean maintainer-clean: clean
 	-rm -f config.cache config.h config.log config.mk config.status
 	-rm -f TAGS *-uninstalled.pc
 
@@ -386,6 +386,7 @@ force:
 
 
 .PHONY: all check clean distclean force install install-pkgconfig installdirs
-.PHONY: lib-shared lib-static mostlyclean print-version tags test testclean
+.PHONY: lib-shared lib-static maintainer-clean mostlyclean print-version
+.PHONY: tags test testclean
 .PHONY: clean-so install-so
 .PHONY: clean-dylib install-dylib
