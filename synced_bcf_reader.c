@@ -88,14 +88,17 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
         {
             out = (int*) realloc(out, (nout+1)*sizeof(int));
             if ( tmp-prev==1 && *prev=='.' )
+            {
                 out[nout] = -1;
+                nout++;
+            }
             else
             {
                 str.l = 0;
                 kputsn(prev, tmp-prev, &str);
                 out[nout] = bcf_hdr_id2int(hdr, BCF_DT_ID, str.s);
+                if ( out[nout]>=0 ) nout++;
             }
-            nout++;
             if ( !*tmp ) break;
             prev = tmp+1;
         }
