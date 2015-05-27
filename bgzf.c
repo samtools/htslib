@@ -108,6 +108,41 @@ static inline void packInt32(uint8_t *buffer, uint32_t value)
     buffer[3] = value >> 24;
 }
 
+int bgzf_zerr(int errnum, FILE *fpOutput)
+{
+    // gzerror OF((gzFile file, int *errnum)
+    switch (errnum) {
+    case Z_ERRNO:
+        if (ferror(stdin))
+            fputs("zlib: error reading stdin", fpOutput);
+        else if (ferror(stdout))
+            fputs("zlib: error writing stdout", fpOutput);
+        else
+            fputs("zlib: file system error", fpOutput);
+        break;
+    case Z_STREAM_ERROR:
+        fputs("zlib error: invalid parameter/compression level, or inconsistent stream state", fpOutput);
+        break;
+    case Z_DATA_ERROR:
+        fputs("zlib error: invalid or incomplete IO", fpOutput);
+        break;
+    case Z_MEM_ERROR:
+        fputs("zlib error: out of memory", fpOutput);
+        break;
+    case Z_BUF_ERROR:
+        fputs("progress temporarily not possible, or in() / out() returned an error", fpOutput);
+        break;
+    case Z_VERSION_ERROR:
+        fputs("zlib version mismatch!", fpOutput);
+        break;
+    case Z_OK: // 0: maybe gzgets error Z_NULL
+    default:
+        fprintf(fpOutput, "zlib error: [%d] unknown", errnum);
+        return -1;
+    }
+    return 0;
+}
+
 static BGZF *bgzf_read_init(hFILE *hfpr)
 {
     BGZF *fp;
@@ -161,9 +196,19 @@ static BGZF *bgzf_write_init(const char *mode)
         // gzip output
         fp->is_gzip = 1;
         fp->gz_stream = (z_stream*)calloc(1,sizeof(z_stream));
+        if (fp->gz_stream == NULL) {
+            if ( hts_verbose >= 1 ) fprintf(stderr, "[E::%s] calloc error initializing zlib output stream\n", __func__);
+            fp->errcode |= BGZF_ERR_ZLIB;
+            return NULL;
+        }
         fp->gz_stream->zalloc = NULL;
         fp->gz_stream->zfree  = NULL;
-        if ( deflateInit2(fp->gz_stream, fp->compress_level, Z_DEFLATED, 15|16, 8, Z_DEFAULT_STRATEGY)!=Z_OK ) return NULL;
+        int ret = deflateInit2(fp->gz_stream, fp->compress_level, Z_DEFLATED, 15|16, 8, Z_DEFAULT_STRATEGY);
+        if ( ret!=Z_OK ) {
+            if ( hts_verbose >= 1 ) { fprintf(stderr, "[E::%s] deflateInit2 ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
+            fp->errcode |= BGZF_ERR_ZLIB;
+            return NULL;
+        }
     }
     return fp;
 }
@@ -182,6 +227,10 @@ BGZF *bgzf_open(const char *path, const char *mode)
         hFILE *fpw;
         if ((fpw = hopen(path, mode)) == 0) return 0;
         fp = bgzf_write_init(mode);
+        if (fp == NULL) {
+            if ( hts_verbose >= 2 ) fprintf(stderr, "[E::%s] bgzf_write_init error initializing zlib stream\n", __func__);
+            return 0;
+        }
         fp->fp = fpw;
     }
     else { errno = EINVAL; return 0; }
@@ -204,6 +253,10 @@ BGZF *bgzf_dopen(int fd, const char *mode)
         hFILE *fpw;
         if ((fpw = hdopen(fd, mode)) == 0) return 0;
         fp = bgzf_write_init(mode);
+        if (fp == NULL) {
+            if ( hts_verbose >= 2 ) fprintf(stderr, "[E::%s] bgzf_write_init error initializing zlib output stream\n", __func__);
+            return 0;
+        }
         fp->fp = fpw;
     }
     else { errno = EINVAL; return 0; }
@@ -221,6 +274,10 @@ BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
         if (fp == NULL) return NULL;
     } else if (strchr(mode, 'w') || strchr(mode, 'a')) {
         fp = bgzf_write_init(mode);
+        if (fp == NULL) {
+            if ( hts_verbose >= 2 ) { fprintf(stderr, "[E::%s] bgzf_write_init error initializing zlib stream\n", __func__); }
+            return 0;
+        }
     }
     else { errno = EINVAL; return 0; }
 
@@ -241,9 +298,19 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
     zs.avail_in = slen;
     zs.next_out = dst + BLOCK_HEADER_LENGTH;
     zs.avail_out = *dlen - BLOCK_HEADER_LENGTH - BLOCK_FOOTER_LENGTH;
-    if (deflateInit2(&zs, level, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY) != Z_OK) return -1; // -15 to disable zlib header/footer
-    if (deflate(&zs, Z_FINISH) != Z_STREAM_END) return -1;
-    if (deflateEnd(&zs) != Z_OK) return -1;
+    int ret = deflateInit2(&zs, level, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY); // -15 to disable zlib header/footer
+    if ( ret!=Z_OK ) {
+        if ( hts_verbose >= 1 ) { fprintf(stderr, "[E::%s] deflateInit2 ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
+        return -1;
+    }
+    if ((ret = deflate(&zs, Z_FINISH)) != Z_STREAM_END) {
+        if ( hts_verbose >= 1 ) { fprintf(stderr, "[E::%s] deflate ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
+        return -1;
+    }
+    if ((ret = deflateEnd(&zs)) != Z_OK) {
+        if ( hts_verbose >= 1 ) { fprintf(stderr, "[E::%s] deflateEnd ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
+        return -1;
+    }
     *dlen = zs.total_out + BLOCK_HEADER_LENGTH + BLOCK_FOOTER_LENGTH;
     // write the header
     memcpy(dst, g_magic, BLOCK_HEADER_LENGTH); // the last two bytes are a place holder for the length of the block
@@ -264,7 +331,11 @@ static int bgzf_gzip_compress(BGZF *fp, void *_dst, size_t *dlen, const void *sr
     zs->avail_in  = slen;
     zs->next_out  = dst;
     zs->avail_out = *dlen;
-    if ( deflate(zs, flush) == Z_STREAM_ERROR ) return -1;
+    int ret = deflate(zs, flush);
+    if (ret == Z_STREAM_ERROR) {
+        if ( hts_verbose >= 1 ) { fprintf(stderr, "[E::%s] deflate ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
+        return -1;
+    }
     *dlen = *dlen - zs->avail_out;
     return 0;
 }
@@ -281,6 +352,7 @@ static int deflate_block(BGZF *fp, int block_length)
 
     if ( ret != 0 )
     {
+        if ( hts_verbose >= 3 ) fprintf(stderr, "[E::%s] compression error %d\n", __func__, ret);
         fp->errcode |= BGZF_ERR_ZLIB;
         return -1;
     }
@@ -299,16 +371,22 @@ static int inflate_block(BGZF* fp, int block_length)
     zs.next_out = (Bytef*)fp->uncompressed_block;
     zs.avail_out = BGZF_MAX_BLOCK_SIZE;
 
-    if (inflateInit2(&zs, -15) != Z_OK) {
+    int ret = inflateInit2(&zs, -15);
+    if (ret != Z_OK) {
+        if ( hts_verbose >= 1 ) { fprintf(stderr, "[E::%s] inflateInit2 ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
         fp->errcode |= BGZF_ERR_ZLIB;
         return -1;
     }
-    if (inflate(&zs, Z_FINISH) != Z_STREAM_END) {
-        inflateEnd(&zs);
+    if ((ret = inflate(&zs, Z_FINISH)) != Z_STREAM_END) {
+        if ( hts_verbose >= 1 ) { fprintf(stderr, "[E::%s] inflate ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
+        if ((ret = inflateEnd(&zs)) != Z_OK) {
+            if ( hts_verbose >= 2 ) { fprintf(stderr, "[E::%s] inflateEnd ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
+        }
         fp->errcode |= BGZF_ERR_ZLIB;
         return -1;
     }
-    if (inflateEnd(&zs) != Z_OK) {
+    if ((ret = inflateEnd(&zs)) != Z_OK) {
+        if ( hts_verbose >= 1 ) { fprintf(stderr, "[E::%s] inflateEnd ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
         fp->errcode |= BGZF_ERR_ZLIB;
         return -1;
     }
@@ -334,7 +412,11 @@ static int inflate_gzip_block(BGZF *fp, int cached)
             fp->gz_stream->avail_out = BGZF_MAX_BLOCK_SIZE - fp->block_offset;
             ret = inflate(fp->gz_stream, Z_NO_FLUSH);
             if ( ret==Z_BUF_ERROR ) continue;   // non-critical error
-            if ( ret<0 ) return -1;
+            if ( ret<0 ) {
+                if ( hts_verbose >= 1 ) { fprintf(stderr, "[E::%s] inflate ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
+                fp->errcode |= BGZF_ERR_ZLIB;
+                return -1;
+            }
             unsigned int have = BGZF_MAX_BLOCK_SIZE - fp->gz_stream->avail_out;
             if ( have ) return have;
         }
@@ -505,6 +587,7 @@ int bgzf_read_block(BGZF *fp)
         int ret = inflateInit2(fp->gz_stream, -15);
         if (ret != Z_OK)
         {
+            if ( hts_verbose >= 1 ) { fprintf(stderr, "[E::%s] inflateInit2 ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
             fp->errcode |= BGZF_ERR_ZLIB;
             return -1;
         }
@@ -532,7 +615,11 @@ int bgzf_read_block(BGZF *fp)
         return -1;
     }
     size += count;
-    if ((count = inflate_block(fp, block_length)) < 0) return -1;
+    if ((count = inflate_block(fp, block_length)) < 0) {
+        if ( hts_verbose >= 2 ) fprintf(stderr, "[E::%s] inflate_block error %d\n", __func__, count);
+        fp->errcode |= BGZF_ERR_ZLIB;
+        return -1;
+    }
     if (fp->block_length != 0) fp->block_offset = 0; // Do not reset offset if this read follows a seek.
     fp->block_address = block_address;
     fp->block_length = count;
@@ -555,7 +642,12 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
         int copy_length, available = fp->block_length - fp->block_offset;
         uint8_t *buffer;
         if (available <= 0) {
-            if (bgzf_read_block(fp) != 0) return -1;
+            int ret = bgzf_read_block(fp);
+            if (ret != 0) {
+                if ( hts_verbose >= 2 ) fprintf(stderr, "[E::%s] bgzf_read_block error %d after %d of %d bytes\n", __func__, ret, bytes_read, length);
+                fp->errcode |= BGZF_ERR_ZLIB;
+                return -1;
+            }
             available = fp->block_length - fp->block_offset;
             if (available <= 0) break;
         }
@@ -612,8 +704,12 @@ static int worker_aux(worker_t *w)
     w->errcode = 0;
     for (i = w->i; i < w->mt->curr; i += w->mt->n_threads) {
         size_t clen = BGZF_MAX_BLOCK_SIZE;
-        if (bgzf_compress(w->buf, &clen, w->mt->blk[i], w->mt->len[i], w->compress_level) != 0)
+        int ret = bgzf_compress(w->buf, &clen, w->mt->blk[i], w->mt->len[i], w->compress_level);
+        if (ret != 0) {
+            if ( hts_verbose >= 2 ) fprintf(stderr, "[E::%s] bgzf_compress error %d\n", __func__, ret);
             w->errcode |= BGZF_ERR_ZLIB;
+            abort(); // return -1; // FIXME: mt_worker() and mt_flush_queue() don't test return value
+        }
         memcpy(w->mt->blk[i], w->buf, clen);
         w->mt->len[i] = clen;
     }
@@ -750,8 +846,12 @@ int bgzf_flush(BGZF *fp)
             fp->idx->ublock_addr += fp->block_offset;
         }
         int block_length = deflate_block(fp, fp->block_offset);
-        if (block_length < 0) return -1;
+        if (block_length < 0) {
+            if ( hts_verbose >= 3 ) fprintf(stderr, "[E::%s] deflate_block error %d\n", __func__, block_length);
+            abort(); // return -1; // FIXME: lazy_flush() does not check return value
+        }
         if (hwrite(fp->fp, fp->compressed_block, block_length) != block_length) {
+            if ( hts_verbose >= 1 ) fprintf(stderr, "[E::%s] hwrite error (wrong size)\n", __func__);
             fp->errcode |= BGZF_ERR_IO; // possibly truncated file
             return -1;
         }
@@ -802,8 +902,13 @@ int bgzf_close(BGZF* fp)
         if (bgzf_flush(fp) != 0) return -1;
         fp->compress_level = -1;
         block_length = deflate_block(fp, 0); // write an empty block
+        if (block_length < 0) {
+            if ( hts_verbose >= 3 ) fprintf(stderr, "[E::%s] deflate_block error %d\n", __func__, block_length);
+            abort(); // return -1; FIXME: hts_close() does not test return value)
+        }
         if (hwrite(fp->fp, fp->compressed_block, block_length) < 0
             || hflush(fp->fp) != 0) {
+            if ( hts_verbose >= 1 ) fprintf(stderr, "[E::%s] file write error\n", __func__);
             fp->errcode |= BGZF_ERR_IO;
             return -1;
         }
@@ -813,8 +918,21 @@ int bgzf_close(BGZF* fp)
     }
     if ( fp->is_gzip )
     {
-        if (!fp->is_write) (void)inflateEnd(fp->gz_stream);
-        else (void)deflateEnd(fp->gz_stream);
+        if (!fp->is_write) {
+            ret = inflateEnd(fp->gz_stream);
+            if (ret != Z_OK) {
+                if ( hts_verbose >= 1 ) { fprintf(stderr, "[E::%s] inflateEnd ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
+                fp->errcode |= BGZF_ERR_ZLIB;
+                // return -1; // don't bother, closing anyway
+            }
+        } else {
+            ret = deflateEnd(fp->gz_stream);
+            if (ret != Z_OK) {
+                if ( hts_verbose >= 1 ) { fprintf(stderr, "[E::%s] deflateEnd ", __func__); bgzf_zerr(ret, stderr); fputc('\n', stderr); }
+                fp->errcode |= BGZF_ERR_ZLIB;
+                // return -1; // don't bother, closing anyway
+            }
+        }
         free(fp->gz_stream);
     }
     ret = hclose(fp->fp);
@@ -1122,4 +1240,3 @@ long bgzf_utell(BGZF *fp)
 {
     return fp->uncompressed_address;    // currently maintained only when reading
 }
-
