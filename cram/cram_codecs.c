@@ -510,6 +510,9 @@ int cram_beta_decode_int(cram_slice *slice, cram_codec *c, cram_block *in, char 
 int cram_beta_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, char *out, int *out_size) {
     int i, n;
 
+    if (cram_not_enough_bits(in, c->beta.nbits))
+        return -1;
+
     if (c->beta.nbits) {
 	for (i = 0, n = *out_size; i < n; i++)
 	    out[i] = get_bits_MSB(in, c->beta.nbits) - c->beta.offset;
@@ -547,7 +550,8 @@ cram_codec *cram_beta_decode_init(char *data, int size,
     cp += itf8_get(cp, &c->beta.offset);
     cp += itf8_get(cp, &c->beta.nbits);
 
-    if (cp - data != size) {
+    if (cp - data != size
+        || c->beta.nbits < 0 || c->beta.nbits > 8 * sizeof(int)) {
 	fprintf(stderr, "Malformed beta header stream\n");
 	free(c);
 	return NULL;
