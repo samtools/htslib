@@ -310,6 +310,16 @@ typedef struct __kstring_t {
      */
     int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix);
 
+    /**
+     * Append zlib or i/o error details to a file.
+     *
+     * @param errnum      zlib return value
+     * @param fpOutput    output file handle, typically stderr 
+     *
+     * Returns 0 on success and -1 for unknown ret value.
+     */
+    int bgzf_zerr(int errnum, FILE *fpOutput);
+
 #ifdef __cplusplus
 }
 #endif
