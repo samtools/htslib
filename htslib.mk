@@ -52,7 +52,9 @@ HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/hfile.h \
 	$(HTSDIR)/htslib/hts.h \
 	$(HTSDIR)/htslib/hts_defs.h \
+	$(HTSDIR)/htslib/kfunc.h \
 	$(HTSDIR)/htslib/khash.h \
+	$(HTSDIR)/htslib/khash_str2int.h \
 	$(HTSDIR)/htslib/klist.h \
 	$(HTSDIR)/htslib/knetfile.h \
 	$(HTSDIR)/htslib/kseq.h \
@@ -69,6 +71,7 @@ HTSLIB_PUBLIC_HEADERS = \
 HTSLIB_ALL = \
 	$(HTSLIB_PUBLIC_HEADERS) \
 	$(HTSDIR)/bgzf.c \
+	$(HTSDIR)/config.h \
 	$(HTSDIR)/faidx.c \
 	$(HTSDIR)/hfile_internal.h \
 	$(HTSDIR)/hfile.c \
@@ -76,6 +79,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/hfile_net.c \
 	$(HTSDIR)/hts.c \
 	$(HTSDIR)/hts_internal.h \
+	$(HTSDIR)/kfunc.c \
 	$(HTSDIR)/knetfile.c \
 	$(HTSDIR)/kstring.c \
 	$(HTSDIR)/md5.c \
@@ -111,6 +115,9 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/os.h \
 	$(HTSDIR)/cram/pooled_alloc.c \
 	$(HTSDIR)/cram/pooled_alloc.h \
+	$(HTSDIR)/cram/rANS_byte.h \
+	$(HTSDIR)/cram/rANS_static.c \
+	$(HTSDIR)/cram/rANS_static.h \
 	$(HTSDIR)/cram/sam_header.c \
 	$(HTSDIR)/cram/sam_header.h \
 	$(HTSDIR)/cram/string_alloc.c \
