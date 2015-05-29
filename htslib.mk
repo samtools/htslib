@@ -129,6 +129,9 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/zfio.c \
 	$(HTSDIR)/cram/zfio.h
 
+$(HTSDIR)/config.h:
+	+cd $(HTSDIR) && $(MAKE) config.h
+
 $(HTSDIR)/libhts.a: $(HTSLIB_ALL)
 	+cd $(HTSDIR) && $(MAKE) lib-static
 
