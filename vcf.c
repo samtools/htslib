@@ -293,6 +293,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     while ( *q && *q!='\n' && nopen )
     {
         p = ++q;
+        while ( *q && *q==' ' ) { p++; q++; }
         // ^[A-Za-z_][0-9A-Za-z_.]*$
         if (p==q && *q && (isalpha(*q) || *q=='_'))
         {
@@ -300,6 +301,8 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
             while ( *q && (isalnum(*q) || *q=='_' || *q=='.') ) q++;
         }
         n = q-p;
+        int m = 0;
+        while ( *q && *q==' ' ) { q++; m++; }
         if ( *q!='=' || !n )
         {
             // wrong format
@@ -312,8 +315,9 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
             bcf_hrec_destroy(hrec);
             return NULL;
         }
-        bcf_hrec_add_key(hrec, p, q-p);
+        bcf_hrec_add_key(hrec, p, q-p-m);
         p = ++q;
+        while ( *q && *q==' ' ) { p++; q++; }
         int quoted = *p=='"' ? 1 : 0;
         if ( quoted ) p++, q++;
         while (1)
@@ -329,7 +333,9 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
             }
             q++;
         }
-        bcf_hrec_set_val(hrec, hrec->nkeys-1, p, q-p, quoted);
+        const char *r = q-1;
+        while ( *r && (*r==' ') ) r--;
+        bcf_hrec_set_val(hrec, hrec->nkeys-1, p, r-p+1, quoted);
         if ( quoted ) q++;
         if ( *q=='>' ) { nopen--; q++; }
     }
