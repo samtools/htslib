@@ -99,6 +99,7 @@ faidx_t *fai_build_core(BGZF *bgzf)
                 offset = bgzf_utell(bgzf);
                 continue;
             } else if ((state == 0 && len < 0) || state == 2) continue;
+            else if (state == 0) { state = 2; continue; }
         }
         if (c == '>') { // fasta header
             if (len >= 0)
