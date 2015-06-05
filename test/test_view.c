@@ -152,6 +152,10 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
     h = sam_hdr_read(in);
+    if (h == NULL) {
+        fprintf(stderr, "Couldn't read header for \"%s\"\n", argv[optind]);
+        return EXIT_FAILURE;
+    }
     h->ignore_sam_err = ignore_sam_err;
     b = bam_init1();
 
