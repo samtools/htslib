@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdint.h>
 #include "hts.h"
+#include "hts_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -254,7 +255,7 @@ typedef struct {
      ***************/
 
     bam_hdr_t *bam_hdr_init(void);
-    bam_hdr_t *bam_hdr_read(BGZF *fp);
+    bam_hdr_t *bam_hdr_read(BGZF *fp) HTS_RESULT_USED;
     int bam_hdr_write(BGZF *fp, const bam_hdr_t *h);
     void bam_hdr_destroy(bam_hdr_t *h);
     int bam_name2id(bam_hdr_t *h, const char *ref);
@@ -321,7 +322,7 @@ typedef struct {
 
     typedef htsFile samFile;
     bam_hdr_t *sam_hdr_parse(int l_text, const char *text);
-    bam_hdr_t *sam_hdr_read(samFile *fp);
+    bam_hdr_t *sam_hdr_read(samFile *fp) HTS_RESULT_USED;
     int sam_hdr_write(samFile *fp, const bam_hdr_t *h);
 
     int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b);
