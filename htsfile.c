@@ -41,27 +41,53 @@ int show_headers = 1;
 static htsFile *dup_stdout(const char *mode)
 {
     int fd = dup(STDOUT_FILENO);
-    hFILE *hfp = (fd >= 0)? hdopen(fd, mode) : NULL;
+    if (fd < 0) {
+        perror("htsfile: Couldn't duplicate stdout");
+        return NULL;
+    }
+    hFILE *hfp = hdopen(fd, mode);
     return hfp? hts_hopen(hfp, "-", mode) : NULL;
 }
 
-static int view_sam(hFILE *hfp, const char *filename)
+static int view_sam(hFILE *hfp, const char *filename, int *status)
 {
     samFile *in = hts_hopen(hfp, filename, "r");
-    if (in == NULL) return 0;
-    samFile *out = dup_stdout("w");
-    bam_hdr_t *hdr = sam_hdr_read(in);
+    bam_hdr_t *hdr = NULL;
+    samFile *out = NULL;
+    if (in == NULL) {
+        *status = EXIT_FAILURE;
+        return 0;
+    }
+    hdr = sam_hdr_read(in);
+    if (hdr == NULL) {
+        *status = EXIT_FAILURE;
+        goto clean;
+    }
+    out = dup_stdout("w");
+    if (out == NULL) {
+        *status = EXIT_FAILURE;
+        goto clean;
+    }
 
-    if (show_headers) sam_hdr_write(out, hdr);
+    if (show_headers) {
+        if (sam_hdr_write(out, hdr) != 0) {
+            *status = EXIT_FAILURE;
+            goto clean;
+        }
+    }
     if (mode == view_all) {
         bam1_t *b = bam_init1();
         while (sam_read1(in, hdr, b) >= 0)
-            sam_write1(out, hdr, b);
+            if (sam_write1(out, hdr, b) != 0) {
+                *status = EXIT_FAILURE;
+                goto clean;
+            }
         bam_destroy1(b);
     }
 
-    bam_hdr_destroy(hdr);
-    hts_close(out);
+ clean:
+    if (hdr != NULL) bam_hdr_destroy(hdr);
+    if (out != NULL) hts_close(out);
     hts_close(in);
     return 1;
 }
@@ -129,6 +155,8 @@ int main(int argc, char **argv)
 
     if (optind == argc) usage(stderr, EXIT_FAILURE);
 
+    if (mode != identify) hts_verbose = 2;  /* So we get some error messages */
+
     for (i = optind; i < argc; i++) {
         htsFormat fmt;
         hFILE *fp = hopen(argv[i], "r");
@@ -152,7 +180,9 @@ int main(int argc, char **argv)
         }
         else
             switch (fmt.category) {
-            case sequence_data: if (view_sam(fp, argv[i])) fp = NULL; break;
+            case sequence_data:
+                if (view_sam(fp, argv[i], &status)) fp = NULL;
+                break;
             case variant_data:  if (view_vcf(fp, argv[i])) fp = NULL; break;
             default:
                 fprintf(stderr, "htsfile: can't view %s: unknown format\n", argv[i]);
