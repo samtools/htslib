@@ -468,6 +468,7 @@ static hts_idx_t *bam_index(BGZF *fp, int min_shift)
     hts_idx_t *idx;
     bam_hdr_t *h;
     h = bam_hdr_read(fp);
+    if (h == NULL) return NULL;
     if (min_shift > 0) {
         int64_t max_len = 0, s;
         for (i = 0; i < h->n_targets; ++i)
