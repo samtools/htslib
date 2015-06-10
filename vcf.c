@@ -355,7 +355,8 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
 int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 {
     // contig
-    int i,j,k, ret;
+    int i,j, ret;
+    khint_t k;
     char *str;
     if ( !strcmp(hrec->key, "contig") )
     {
@@ -372,8 +373,9 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
         // Register in the dictionary
         vdict_t *d = (vdict_t*)hdr->dict[BCF_DT_CTG];
+        khint_t k = kh_get(vdict, d, str);
+        if ( k != kh_end(d) ) { free(str); return 0; }    // already present
         k = kh_put(vdict, d, str, &ret);
-        if ( !ret ) { free(str); return 0; }    // already present
 
         int idx = bcf_hrec_find_key(hrec,"IDX");
         if ( idx!=-1 )
@@ -455,8 +457,8 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     str = strdup(id);
 
     vdict_t *d = (vdict_t*)hdr->dict[BCF_DT_ID];
-    k = kh_put(vdict, d, str, &ret);
-    if ( !ret )
+    k = kh_get(vdict, d, str);
+    if ( k != kh_end(d) ) 
     {
         // already present
         free(str);
@@ -466,6 +468,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         if ( idx==-1 ) hrec_add_idx(hrec, kh_val(d, k).id);
         return 1;
     }
+    k = kh_put(vdict, d, str, &ret);
     kh_val(d, k) = bcf_idinfo_def;
     kh_val(d, k).info[info&0xf] = info;
     kh_val(d, k).hrec[info&0xf] = hrec;
