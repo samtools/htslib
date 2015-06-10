@@ -326,7 +326,7 @@ void cram_index_free(cram_fd *fd) {
 
 /*
  * Searches the index for the first slice overlapping a reference ID
- * and position, or one immediately preceeding it if none is found in
+ * and position, or one immediately preceding it if none is found in
  * the index to overlap this position. (Our index may have missing
  * entries, but we require at least one per reference.)
  *
