@@ -183,6 +183,7 @@ typedef struct {
 #define BCF_ERR_CTG_UNDEF 1
 #define BCF_ERR_TAG_UNDEF 2
 #define BCF_ERR_NCOLS     4
+#define BCF_ERR_LIMITS    8
 
 /*
     The bcf1_t structure corresponds to one VCF/BCF line. Reading from VCF file
