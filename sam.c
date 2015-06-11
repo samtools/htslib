@@ -599,20 +599,20 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
     khash_t(s2i) *d;
     d = kh_init(s2i);
     for (p = text; *p; ++p) {
-        if (strncmp(p, "@SQ", 3) == 0) {
+        if (strncmp(p, "@SQ\t", 4) == 0) {
             char *sn = 0;
             int ln = -1;
             for (q = p + 4;; ++q) {
                 if (strncmp(q, "SN:", 3) == 0) {
                     q += 3;
-                    for (r = q; *r != '\t' && *r != '\n'; ++r);
+                    for (r = q; *r != '\t' && *r != '\n' && *r != '\0'; ++r);
                     sn = (char*)calloc(r - q + 1, 1);
                     strncpy(sn, q, r - q);
                     q = r;
                 } else if (strncmp(q, "LN:", 3) == 0)
                     ln = strtol(q + 3, (char**)&q, 10);
-                while (*q != '\t' && *q != '\n') ++q;
-                if (*q == '\n') break;
+                while (*q != '\t' && *q != '\n' && *q != '\0') ++q;
+                if (*q == '\0' || *q == '\n') break;
             }
             p = q;
             if (sn && ln >= 0) {
@@ -626,7 +626,7 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
                 } else kh_val(d, k) = (int64_t)(kh_size(d) - 1)<<32 | ln;
             }
         }
-        while (*p != '\n') ++p;
+        while (*p != '\0' && *p != '\n') ++p;
     }
     return hdr_from_dict(d);
 }
