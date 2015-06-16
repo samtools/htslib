@@ -77,11 +77,12 @@ static int view_sam(hFILE *hfp, const char *filename, int *status)
     }
     if (mode == view_all) {
         bam1_t *b = bam_init1();
-        while (sam_read1(in, hdr, b) >= 0)
-            if (sam_write1(out, hdr, b) != 0) {
+        while (sam_read1(in, hdr, b) >= 0) {
+            if (sam_write1(out, hdr, b) < 0) {
                 *status = EXIT_FAILURE;
                 goto clean;
             }
+        }
         bam_destroy1(b);
     }
 
