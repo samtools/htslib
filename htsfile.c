@@ -93,23 +93,46 @@ static int view_sam(hFILE *hfp, const char *filename, int *status)
     return 1;
 }
 
-static int view_vcf(hFILE *hfp, const char *filename)
+static int view_vcf(hFILE *hfp, const char *filename, int *status)
 {
     vcfFile *in = hts_hopen(hfp, filename, "r");
-    if (in == NULL) return 0;
-    vcfFile *out = dup_stdout("w");
-    bcf_hdr_t *hdr = bcf_hdr_read(in);
+    bcf_hdr_t *hdr = NULL;
+    vcfFile *out = NULL;
+    if (in == NULL) {
+        *status = EXIT_FAILURE;
+        return 0;
+    }
+    hdr = bcf_hdr_read(in);
+    if (hdr == NULL) {
+        *status = EXIT_FAILURE;
+        goto clean;
+    }
+    out = dup_stdout("w");
+    if (out == NULL) {
+        *status = EXIT_FAILURE;
+        goto clean;
+    }
 
-    if (show_headers) bcf_hdr_write(out, hdr);
+    if (show_headers) {
+        if (bcf_hdr_write(out, hdr) != 0) {
+            *status = EXIT_FAILURE;
+            goto clean;
+        }
+    }
     if (mode == view_all) {
         bcf1_t *rec = bcf_init();
-        while (bcf_read(in, hdr, rec) >= 0)
-            bcf_write(out, hdr, rec);
+        while (bcf_read(in, hdr, rec) >= 0) {
+            if (bcf_write(out, hdr, rec) < 0) {
+                *status = EXIT_FAILURE;
+                goto clean;
+            }
+        }
         bcf_destroy(rec);
     }
 
-    bcf_hdr_destroy(hdr);
-    hts_close(out);
+ clean:
+    if (hdr != NULL) bcf_hdr_destroy(hdr);
+    if (out != NULL) hts_close(out);
     hts_close(in);
     return 1;
 }
@@ -184,7 +207,9 @@ int main(int argc, char **argv)
             case sequence_data:
                 if (view_sam(fp, argv[i], &status)) fp = NULL;
                 break;
-            case variant_data:  if (view_vcf(fp, argv[i])) fp = NULL; break;
+            case variant_data:
+                if (view_vcf(fp, argv[i], &status)) fp = NULL;
+                break;
             default:
                 fprintf(stderr, "htsfile: can't view %s: unknown format\n", argv[i]);
                 status = EXIT_FAILURE;
