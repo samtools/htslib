@@ -481,25 +481,24 @@ int bgzf_read_block(BGZF *fp)
         }
         if ( header[3] & 0x8 ) // FLG.FNAME
         {
-            while ( nskip<BGZF_BLOCK_SIZE && cblock[nskip] ) nskip++;
-            if ( nskip==BGZF_BLOCK_SIZE )
-            {
-                fp->errcode |= BGZF_ERR_HEADER;
-                return -1;
-            }
+            while ( nskip<count && cblock[nskip] ) nskip++;
             nskip++;
         }
         if ( header[3] & 0x10 ) // FLG.FCOMMENT
         {
-            while ( nskip<BGZF_BLOCK_SIZE && cblock[nskip] ) nskip++;
-            if ( nskip==BGZF_BLOCK_SIZE )
-            {
-                fp->errcode |= BGZF_ERR_HEADER;
-                return -1;
-            }
+            while ( nskip<count && cblock[nskip] ) nskip++;
             nskip++;
         }
         if ( header[3] & 0x2 ) nskip += 2;  //  FLG.FHCRC
+
+        /* FIXME: Should handle this better.  There's no reason why
+           someone shouldn't include a massively long comment in their
+           gzip stream. */
+        if ( nskip >= count )
+        {
+            fp->errcode |= BGZF_ERR_HEADER;
+            return -1;
+        }
 
         fp->is_gzip = 1;
         fp->gz_stream = (z_stream*) calloc(1,sizeof(z_stream));
