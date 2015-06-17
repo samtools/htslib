@@ -37,6 +37,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 enum { identify, view_headers, view_all } mode = identify;
 int show_headers = 1;
+int status = EXIT_SUCCESS;  /* Exit status from main */
 
 static htsFile *dup_stdout(const char *mode)
 {
@@ -49,29 +50,29 @@ static htsFile *dup_stdout(const char *mode)
     return hfp? hts_hopen(hfp, "-", mode) : NULL;
 }
 
-static int view_sam(hFILE *hfp, const char *filename, int *status)
+static int view_sam(hFILE *hfp, const char *filename)
 {
     samFile *in = hts_hopen(hfp, filename, "r");
     bam_hdr_t *hdr = NULL;
     samFile *out = NULL;
     if (in == NULL) {
-        *status = EXIT_FAILURE;
+        status = EXIT_FAILURE;
         return 0;
     }
     hdr = sam_hdr_read(in);
     if (hdr == NULL) {
-        *status = EXIT_FAILURE;
+        status = EXIT_FAILURE;
         goto clean;
     }
     out = dup_stdout("w");
     if (out == NULL) {
-        *status = EXIT_FAILURE;
+        status = EXIT_FAILURE;
         goto clean;
     }
 
     if (show_headers) {
         if (sam_hdr_write(out, hdr) != 0) {
-            *status = EXIT_FAILURE;
+            status = EXIT_FAILURE;
             goto clean;
         }
     }
@@ -79,7 +80,7 @@ static int view_sam(hFILE *hfp, const char *filename, int *status)
         bam1_t *b = bam_init1();
         while (sam_read1(in, hdr, b) >= 0) {
             if (sam_write1(out, hdr, b) < 0) {
-                *status = EXIT_FAILURE;
+                status = EXIT_FAILURE;
                 goto clean;
             }
         }
@@ -93,29 +94,29 @@ static int view_sam(hFILE *hfp, const char *filename, int *status)
     return 1;
 }
 
-static int view_vcf(hFILE *hfp, const char *filename, int *status)
+static int view_vcf(hFILE *hfp, const char *filename)
 {
     vcfFile *in = hts_hopen(hfp, filename, "r");
     bcf_hdr_t *hdr = NULL;
     vcfFile *out = NULL;
     if (in == NULL) {
-        *status = EXIT_FAILURE;
+        status = EXIT_FAILURE;
         return 0;
     }
     hdr = bcf_hdr_read(in);
     if (hdr == NULL) {
-        *status = EXIT_FAILURE;
+        status = EXIT_FAILURE;
         goto clean;
     }
     out = dup_stdout("w");
     if (out == NULL) {
-        *status = EXIT_FAILURE;
+        status = EXIT_FAILURE;
         goto clean;
     }
 
     if (show_headers) {
         if (bcf_hdr_write(out, hdr) != 0) {
-            *status = EXIT_FAILURE;
+            status = EXIT_FAILURE;
             goto clean;
         }
     }
@@ -123,7 +124,7 @@ static int view_vcf(hFILE *hfp, const char *filename, int *status)
         bcf1_t *rec = bcf_init();
         while (bcf_read(in, hdr, rec) >= 0) {
             if (bcf_write(out, hdr, rec) < 0) {
-                *status = EXIT_FAILURE;
+                status = EXIT_FAILURE;
                 goto clean;
             }
         }
@@ -159,8 +160,9 @@ int main(int argc, char **argv)
         { NULL, 0, NULL, 0 }
     };
 
-    int status = EXIT_SUCCESS;
     int c, i;
+
+    status = EXIT_SUCCESS;
     while ((c = getopt_long(argc, argv, "chH?", options, NULL)) >= 0)
         switch (c) {
         case 'c': mode = view_all; break;
@@ -205,10 +207,10 @@ int main(int argc, char **argv)
         else
             switch (fmt.category) {
             case sequence_data:
-                if (view_sam(fp, argv[i], &status)) fp = NULL;
+                if (view_sam(fp, argv[i])) fp = NULL;
                 break;
             case variant_data:
-                if (view_vcf(fp, argv[i], &status)) fp = NULL;
+                if (view_vcf(fp, argv[i])) fp = NULL;
                 break;
             default:
                 fprintf(stderr, "htsfile: can't view %s: unknown format\n", argv[i]);
