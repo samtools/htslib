@@ -100,11 +100,13 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
     /* Add to reference hash? */
     if ((type>>8) == 'S' && (type&0xff) == 'Q') {
 	SAM_hdr_tag *tag;
+	SAM_SQ *new_ref;
 	int nref = sh->nref;
 
-	sh->ref = realloc(sh->ref, (sh->nref+1)*sizeof(*sh->ref));
-	if (!sh->ref)
+	new_ref = realloc(sh->ref, (sh->nref+1)*sizeof(*sh->ref));
+	if (!new_ref)
 	    return -1;
+	sh->ref = new_ref;
 
 	tag = h_type->tag;
 	sh->ref[nref].name = NULL;
@@ -130,6 +132,8 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 	    k = kh_put(m_s2i, sh->ref_hash, sh->ref[nref].name, &r);
 	    if (-1 == r) return -1;
 	    kh_val(sh->ref_hash, k) = nref;
+	} else {
+	    return -1; // SN should be present, according to spec.
 	}
 
 	sh->nref++;
@@ -138,11 +142,13 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
     /* Add to read-group hash? */
     if ((type>>8) == 'R' && (type&0xff) == 'G') {
 	SAM_hdr_tag *tag;
+	SAM_RG *new_rg;
 	int nrg = sh->nrg;
 
-	sh->rg = realloc(sh->rg, (sh->nrg+1)*sizeof(*sh->rg));
-	if (!sh->rg)
+	new_rg = realloc(sh->rg, (sh->nrg+1)*sizeof(*sh->rg));
+	if (!new_rg)
 	    return -1;
+	sh->rg = new_rg;
 
 	tag = h_type->tag;
 	sh->rg[nrg].name = NULL;
@@ -168,6 +174,8 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 	    k = kh_put(m_s2i, sh->rg_hash, sh->rg[nrg].name, &r);
 	    if (-1 == r) return -1;
 	    kh_val(sh->rg_hash, k) = nrg;
+	} else {
+	    return -1; // ID should be present, according to spec.
 	}
 
 	sh->nrg++;
@@ -176,11 +184,13 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
     /* Add to program hash? */
     if ((type>>8) == 'P' && (type&0xff) == 'G') {
 	SAM_hdr_tag *tag;
+	SAM_PG *new_pg;
 	int npg = sh->npg;
 
-	sh->pg = realloc(sh->pg, (sh->npg+1)*sizeof(*sh->pg));
-	if (!sh->pg)
+	new_pg = realloc(sh->pg, (sh->npg+1)*sizeof(*sh->pg));
+	if (!new_pg)
 	    return -1;
+	sh->pg = new_pg;
 
 	tag = h_type->tag;
 	sh->pg[npg].name = NULL;
@@ -235,17 +245,20 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 	    k = kh_put(m_s2i, sh->pg_hash, sh->pg[npg].name, &r);
 	    if (-1 == r) return -1;
 	    kh_val(sh->pg_hash, k) = npg;
+	} else {
+	    return -1; // ID should be present, according to spec.
 	}
 
 	/* Add to npg_end[] array. Remove later if we find a PP line */
 	if (sh->npg_end >= sh->npg_end_alloc) {
-	    sh->npg_end_alloc = sh->npg_end_alloc
-		? sh->npg_end_alloc*2
-		: 4;
-	    sh->pg_end = realloc(sh->pg_end,
-				 sh->npg_end_alloc * sizeof(int));
-	    if (!sh->pg_end)
+	    int *new_pg_end;
+	    int  new_alloc = sh->npg_end_alloc ? sh->npg_end_alloc*2 : 4;
+
+	    new_pg_end = realloc(sh->pg_end, new_alloc * sizeof(int));
+	    if (!new_pg_end)
 		return -1;
+	    sh->npg_end_alloc = new_alloc;
+	    sh->pg_end = new_pg_end;
 	}
 	sh->pg_end[sh->npg_end++] = npg;
 
