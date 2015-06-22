@@ -142,6 +142,22 @@ static inline int safe_itf8_get(const char *cp, const char *endp,
  */
 int itf8_put_blk(cram_block *blk, int val);
 
+/*! Pulls a literal 32-bit value from a block.
+ *
+ * @returns the number of bytes decoded;
+ *         -1 on failure.
+ */
+int int32_get_blk(cram_block *b, int32_t *val);
+
+/*! Pushes a literal 32-bit value onto the end of a block.
+ *
+ * @return
+ * Returns 0 on success;
+ *        -1 on failure.
+ */
+int int32_put_blk(cram_block *blk, int32_t val);
+
+
 /**@}*/
 /**@{ ----------------------------------------------------------------------
  * CRAM blocks - the dynamically growable data block. We have code to
