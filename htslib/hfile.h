@@ -43,7 +43,7 @@ typedef struct hFILE {
     char *buffer, *begin, *end, *limit;
     const struct hFILE_backend *backend;
     off_t offset;
-    int at_eof:1;
+    unsigned at_eof:1;
     int has_errno;
 } hFILE;
 
