@@ -333,7 +333,7 @@ int cram_eof(cram_fd *fd);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_set_option(cram_fd *fd, enum cram_option opt, ...);
+int cram_set_option(cram_fd *fd, enum hts_fmt_option opt, ...);
 
 /*! Sets options on the cram_fd.
  *
@@ -344,7 +344,7 @@ int cram_set_option(cram_fd *fd, enum cram_option opt, ...);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args);
+int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
 
 /*!
  * Attaches a header to a cram_fd.
