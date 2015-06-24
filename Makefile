@@ -179,7 +179,8 @@ LIBHTS_OBJS = \
 	cram/string_alloc.o \
 	cram/thread_pool.o \
 	cram/vlen.o \
-	cram/zfio.o
+	cram/zfio.o \
+	cram/cram_external.o
 
 cram_h = cram/cram.h $(cram_samtools_h) $(cram_sam_header_h) $(cram_structs_h) $(cram_io_h) cram/cram_encode.h cram/cram_decode.h cram/cram_stats.h cram/cram_codecs.h cram/cram_index.h
 cram_io_h = cram/cram_io.h $(cram_misc_h)

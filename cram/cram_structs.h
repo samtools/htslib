@@ -88,7 +88,7 @@ struct hFILE;
 
 #define MAX_STAT_VAL 1024
 //#define MAX_STAT_VAL 16
-typedef struct {
+typedef struct cram_stats {
     int freqs[MAX_STAT_VAL];
     khash_t(m_i2i) *h;
     int nsamp; // total number of values added
@@ -176,7 +176,7 @@ enum cram_DS_ID {
 };
 
 /* "File Definition Structure" */
-typedef struct {
+typedef struct cram_file_def {
     char    magic[4];
     uint8_t major_version;
     uint8_t minor_version;
@@ -246,7 +246,7 @@ typedef struct {
 } cram_metrics;
 
 /* Block */
-typedef struct {
+typedef struct cram_block {
     enum cram_block_method  method, orig_method;
     enum cram_content_type  content_type;
     int32_t  content_id;
@@ -316,7 +316,7 @@ typedef struct cram_map {
 } cram_map;
 
 /* Mapped or unmapped slice header block */
-typedef struct {
+typedef struct cram_block_slice_hdr {
     enum cram_content_type content_type;
     int32_t ref_seq_id;     /* if content_type == MAPPED_SLICE */
     int32_t ref_seq_start;  /* if content_type == MAPPED_SLICE */
@@ -341,7 +341,7 @@ struct ref_entry;
  *
  * OR... are landmarks the start/end points of slices?
  */
-typedef struct {
+typedef struct cram_container {
     int32_t  length;
     int32_t  ref_seq_id;
     int32_t  ref_seq_start;
@@ -394,7 +394,7 @@ typedef struct {
 /*
  * A single cram record
  */
-typedef struct {
+typedef struct cram_record {
     struct cram_slice *s; // Filled out by cram_decode only
 
     int32_t ref_id;       // fixed for all recs in slice?
@@ -448,7 +448,7 @@ typedef struct {
  * A feature is a base difference, used for the sequence reference encoding.
  * (We generate these internally when writing CRAM.)
  */
-typedef struct {
+typedef struct cram_feature {
     union {
 	struct {
 	    int pos;
