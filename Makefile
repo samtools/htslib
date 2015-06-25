@@ -298,7 +298,7 @@ test/fieldarith: test/fieldarith.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/fieldarith.o libhts.a $(LDLIBS) -lz
 
 test/hfile: test/hfile.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LDLIBS) -lz
+	$(CC) -pthread $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LDLIBS) -lz
 
 test/sam: test/sam.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/sam.o libhts.a $(LDLIBS) -lz
