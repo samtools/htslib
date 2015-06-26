@@ -570,9 +570,17 @@ hFILE *hopen(const char *fname, const char *mode)
 int hisremote(const char *fname)
 {
     // FIXME Make a new backend entry to return this
-    if (strncmp(fname, "http://", 7) == 0 ||
-        strncmp(fname, "https://", 8) == 0 ||
-        strncmp(fname, "ftp://", 6) == 0) return 1;
+    if (strncmp(fname, "file://", 7) == 0) return 0;
+#ifdef HAVE_LIBCURL
+    else if (strncmp(fname, "http://", 7) == 0 ||
+             strncmp(fname, "https://", 8) == 0 ||
+             strncmp(fname, "s3://", 5) == 0 ||
+             strncmp(fname, "s3+http://", 10) == 0 ||
+             strncmp(fname, "s3+https://", 11) == 0 ||
+             strncmp(fname, "ftp://", 6) == 0) return 1;
+#endif
+    else if (strncmp(fname, "http://", 7) == 0 ||
+             strncmp(fname, "ftp://", 6) == 0) return 1;
 #ifdef HAVE_IRODS
     else if (strncmp(fname, "irods:", 6) == 0) return 1;
 #endif
