@@ -1116,17 +1116,38 @@ write_lidx:
     } else idx_write(is_bgzf, fp, &idx->n_no_coor, 8);
 }
 
-void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
+int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
 {
-    char *fnidx;
-    fnidx = (char*)calloc(1, strlen(fn) + 5);
+    int ret, save;
+    char *fnidx = (char*)calloc(1, strlen(fn) + 5);
+    if (fnidx == NULL) return -1;
+
     strcpy(fnidx, fn);
+    switch (fmt) {
+    case HTS_FMT_BAI: strcat(fnidx, ".bai"); break;
+    case HTS_FMT_CSI: strcat(fnidx, ".csi"); break;
+    case HTS_FMT_TBI: strcat(fnidx, ".tbi"); break;
+    default: abort();
+    }
+
+    ret = hts_idx_save_as(idx, fn, fnidx, fmt);
+    save = errno;
+    free(fnidx);
+    errno = save;
+    return ret;
+}
+
+int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int fmt)
+{
+    if (fnidx == NULL) return hts_idx_save(idx, fn, fmt);
+
     if (fmt == HTS_FMT_CSI) {
         BGZF *fp;
         uint32_t x[3];
         int is_be, i;
         is_be = ed_is_big();
-        fp = bgzf_open(strcat(fnidx, ".csi"), "w");
+        fp = bgzf_open(fnidx, "w");
+        if (fp == NULL) return -1;
         bgzf_write(fp, "CSI\1", 4);
         x[0] = idx->min_shift; x[1] = idx->n_lvls; x[2] = idx->l_meta;
         if (is_be) {
@@ -1137,19 +1158,20 @@ void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
         hts_idx_save_core(idx, fp, HTS_FMT_CSI);
         bgzf_close(fp);
     } else if (fmt == HTS_FMT_TBI) {
-        BGZF *fp;
-        fp = bgzf_open(strcat(fnidx, ".tbi"), "w");
+        BGZF *fp = bgzf_open(fnidx, "w");
+        if (fp == NULL) return -1;
         bgzf_write(fp, "TBI\1", 4);
         hts_idx_save_core(idx, fp, HTS_FMT_TBI);
         bgzf_close(fp);
     } else if (fmt == HTS_FMT_BAI) {
-        FILE *fp;
-        fp = fopen(strcat(fnidx, ".bai"), "w");
+        FILE *fp = fopen(fnidx, "w");
+        if (fp == NULL) return -1;
         fwrite("BAI\1", 1, 4, fp);
         hts_idx_save_core(idx, fp, HTS_FMT_BAI);
         fclose(fp);
     } else abort();
-    free(fnidx);
+
+    return 0;
 }
 
 static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
@@ -1671,10 +1693,16 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt)
     char *fnidx;
     hts_idx_t *idx;
     fnidx = hts_idx_getfn(fn, ".csi");
-    if (fnidx) fmt = HTS_FMT_CSI;
-    else fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
+    if (! fnidx) fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
     if (fnidx == 0) return 0;
 
+    idx = hts_idx_load2(fn, fnidx);
+    free(fnidx);
+    return idx;
+}
+
+hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx)
+{
     // Check that the index file is up to date, the main file might have changed
     struct stat stat_idx,stat_main;
     if ( !stat(fn, &stat_main) && !stat(fnidx, &stat_idx) )
@@ -1682,7 +1710,6 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt)
         if ( stat_idx.st_mtime < stat_main.st_mtime )
             fprintf(stderr, "Warning: The index file is older than the data file: %s\n", fnidx);
     }
-    idx = hts_idx_load_local(fnidx);
-    free(fnidx);
-    return idx;
+
+    return hts_idx_load_local(fnidx);
 }

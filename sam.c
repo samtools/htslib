@@ -425,7 +425,7 @@ err:
     return NULL;
 }
 
-int bam_index_build(const char *fn, int min_shift)
+int sam_index_build2(const char *fn, const char *fnidx, int min_shift)
 {
     hts_idx_t *idx;
     htsFile *fp;
@@ -434,13 +434,13 @@ int bam_index_build(const char *fn, int min_shift)
     if ((fp = hts_open(fn, "r")) == 0) return -1;
     switch (fp->format.format) {
     case cram:
-        ret = cram_index_build(fp->fp.cram, fn);
+        ret = cram_index_build(fp->fp.cram, fn, fnidx);
         break;
 
     case bam:
         idx = bam_index(fp->fp.bgzf, min_shift);
         if (idx) {
-            hts_idx_save(idx, fn, (min_shift > 0)? HTS_FMT_CSI : HTS_FMT_BAI);
+            ret = hts_idx_save_as(idx, fn, fnidx, (min_shift > 0)? HTS_FMT_CSI : HTS_FMT_BAI);
             hts_idx_destroy(idx);
         }
         else ret = -1;
@@ -453,6 +453,18 @@ int bam_index_build(const char *fn, int min_shift)
     hts_close(fp);
 
     return ret;
+}
+
+int sam_index_build(const char *fn, int min_shift)
+{
+    return sam_index_build2(fn, NULL, min_shift);
+}
+
+// Provide bam_index_build() symbol for binary compability with earlier HTSlib
+#undef bam_index_build
+int bam_index_build(const char *fn, int min_shift)
+{
+    return sam_index_build2(fn, NULL, min_shift);
 }
 
 static int bam_readrec(BGZF *fp, void *ignored, void *bv, int *tid, int *beg, int *end)
@@ -499,14 +511,14 @@ typedef struct hts_cram_idx_t {
     cram_fd *cram;
 } hts_cram_idx_t;
 
-hts_idx_t *sam_index_load(samFile *fp, const char *fn)
+hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx)
 {
     switch (fp->format.format) {
     case bam:
-        return bam_index_load(fn);
+        return fnidx? hts_idx_load2(fn, fnidx) : hts_idx_load(fn, HTS_FMT_BAI);
 
     case cram: {
-        if (cram_index_load(fp->fp.cram, fn) < 0) return NULL;
+        if (cram_index_load(fp->fp.cram, fn, fnidx) < 0) return NULL;
         // Cons up a fake "index" just pointing at the associated cram_fd:
         hts_cram_idx_t *idx = malloc(sizeof (hts_cram_idx_t));
         if (idx == NULL) return NULL;
@@ -518,6 +530,11 @@ hts_idx_t *sam_index_load(samFile *fp, const char *fn)
     default:
         return NULL; // TODO Would use tbx_index_load if it returned hts_idx_t
     }
+}
+
+hts_idx_t *sam_index_load(htsFile *fp, const char *fn)
+{
+    return sam_index_load2(fp, fn, NULL);
 }
 
 static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
