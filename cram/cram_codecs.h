@@ -88,7 +88,7 @@ typedef struct {
 
 typedef struct {
     struct cram_codec *len_codec;
-    struct cram_codec *value_codec;
+    struct cram_codec *val_codec;
 } cram_byte_array_len_decoder;
 
 typedef struct {
@@ -173,6 +173,19 @@ static inline int cram_not_enough_bits(cram_block *blk, int nbits) {
  * id2 is only filled out for BYTE_ARRAY_LEN which uses 2 codecs.
  */
 int cram_codec_to_id(cram_codec *c, int *id2);
+
+/*
+ * cram_codec structures are specialised for decoding or encoding.
+ * Unfortunately this makes turning a decoder into an encoder (such as
+ * when transcoding files) problematic.
+ *
+ * This function converts a cram decoder codec into an encoder version
+ * in-place (ie it modifiers the codec itself).
+ *
+ * Returns 0 on success;
+ *        -1 on failure.
+ */
+int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c);
 
 #ifdef __cplusplus
 }

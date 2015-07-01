@@ -87,7 +87,7 @@ int cram_fd_get_version(cram_fd *fd);
 void cram_fd_set_version(cram_fd *fd, int vers);
 
 int cram_major_vers(cram_fd *fd);
-int cram_mINOR_vers(cram_fd *fd);
+int cram_minor_vers(cram_fd *fd);
 
 struct hFILE *cram_fd_get_fp(cram_fd *fd);
 void cram_fd_set_fp(cram_fd *fd, struct hFILE *fp);
@@ -105,6 +105,9 @@ int32_t *cram_container_get_landmarks(cram_container *c, int32_t *num_landmarks)
 void cram_container_set_landmarks(cram_container *c, int32_t num_landmarks,
                                   int32_t *landmarks);
 
+/* Returns true if the container is empty (EOF marker) */
+int cram_container_is_empty(cram_fd *fd);
+
 
 /*
  *-----------------------------------------------------------------------------
@@ -115,6 +118,8 @@ int32_t cram_block_get_comp_size(cram_block *b);
 int32_t cram_block_get_uncomp_size(cram_block *b);
 int32_t cram_block_get_crc32(cram_block *b);
 void *  cram_block_get_data(cram_block *b);
+
+enum cram_content_type cram_block_get_content_type(cram_block *b);
 
 void cram_block_set_content_id(cram_block *b, int32_t id);
 void cram_block_set_comp_size(cram_block *b, int32_t size);
@@ -134,6 +139,51 @@ void cram_block_set_offset(cram_block *b, size_t offset);
  * header itself.
  */
 uint32_t cram_block_size(cram_block *b);
+
+/*
+ * Renumbers RG numbers in a cram compression header.
+ *
+ * CRAM stores RG as the Nth number in the header, rather than a
+ * string holding the ID: tag.  This is smaller in space, but means
+ * "samtools cat" to join files together that contain single but
+ * different RG lines needs a way of renumbering them.
+ *
+ * The file descriptor is expected to be immediately after the
+ * cram_container structure (ie before the cram compression header).
+ * Due to the nature of the CRAM format, this needs to read and write
+ * the blocks itself.  Note that there may be multiple slices within
+ * the container, meaning multiple compression headers to manipulate.
+ * Changing RG may change the size of the compression header and
+ * therefore the length field in the container.  Hence we rewrite all
+ * blocks just incase and also emit the adjusted container.
+ *
+ * The current implementation can only cope with renumbering a single
+ * RG (and only then if it is using HUFFMAN or BETA codecs).  In
+ * theory it *may* be possible to renumber multiple RGs if they use
+ * HUFFMAN to the CORE block or use an external block unshared by any
+ * other data series.  So we have an API that can be upgraded to
+ * support this, but do not implement it for now.  An example
+ * implementation of RG as an EXTERNAL block would be to find that
+ * block and rewrite it, returning the number of blocks consumed.
+ *
+ * Returns 0 on success;
+ *        -1 if unable to edit;
+ *        -2 on other errors (eg I/O).
+ */
+int cram_transcode_rg(cram_fd *in, cram_fd *out,
+		      cram_container *c,
+		      int nrg, int *in_rg, int *out_rg);
+
+/*
+ * Copies the blocks representing the next num_slice slices from a
+ * container from 'in' to 'out'.  It is expected that the file pointer
+ * is just after the read of the cram_container and cram compression
+ * header.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int cram_copy_slice(cram_fd *in, cram_fd *out, int32_t num_slice);
 
 /*
  *-----------------------------------------------------------------------------

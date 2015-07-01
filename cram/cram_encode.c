@@ -101,6 +101,9 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 	}
     }
 
+    if (h->preservation_map)
+	kh_destroy(map, h->preservation_map);
+
     /* Create in-memory preservation map */
     /* FIXME: should create this when we create the container */
     {
@@ -139,7 +142,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 
 	    k = kh_put(map, h->preservation_map, "AP", &r);
 	    if (-1 == r) return NULL;
-	    kh_val(h->preservation_map, k).i = c->pos_sorted;
+	    kh_val(h->preservation_map, k).i = h->AP_delta;
 
 	    if (fd->no_ref || fd->embed_ref) {
 		// Reference Required == No
@@ -1594,6 +1597,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 	
 	h->mapped_qs_included = 0;   // fixme
 	h->unmapped_qs_included = 0; // fixme
+	h->AP_delta = c->pos_sorted;
 	// h->...  fixme
 	memcpy(h->substitution_matrix, CRAM_SUBST_MATRIX, 20);
 

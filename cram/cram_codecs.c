@@ -1374,10 +1374,10 @@ int cram_byte_array_len_decode(cram_slice *slice, cram_codec *c,
                                             in, (char *)&len, &one);
     //printf("ByteArray Len=%d\n", len);
 
-    if (!r && c->byte_array_len.value_codec && len >= 0) {
-	r = c->byte_array_len.value_codec->decode(slice,
-						  c->byte_array_len.value_codec,
-						  in, out, &len);
+    if (!r && c->byte_array_len.val_codec && len >= 0) {
+	r = c->byte_array_len.val_codec->decode(slice,
+						c->byte_array_len.val_codec,
+						in, out, &len);
     } else {
 	return -1;
     }
@@ -1393,8 +1393,8 @@ void cram_byte_array_len_decode_free(cram_codec *c) {
     if (c->byte_array_len.len_codec)
 	c->byte_array_len.len_codec->free(c->byte_array_len.len_codec);
 
-    if (c->byte_array_len.value_codec)
-	c->byte_array_len.value_codec->free(c->byte_array_len.value_codec);
+    if (c->byte_array_len.val_codec)
+	c->byte_array_len.val_codec->free(c->byte_array_len.val_codec);
 
     free(c);
 }
@@ -1430,9 +1430,9 @@ cram_codec *cram_byte_array_len_decode_init(char *data, int size,
     cp += safe_itf8_get(cp, endp, &sub_size);
     if (sub_size < 0 || endp - cp < sub_size)
         goto malformed;
-    c->byte_array_len.value_codec = cram_decoder_init(encoding, cp, sub_size,
-						      option, version);
-    if (c->byte_array_len.value_codec == NULL)
+    c->byte_array_len.val_codec = cram_decoder_init(encoding, cp, sub_size,
+						    option, version);
+    if (c->byte_array_len.val_codec == NULL)
         goto no_codec;
     cp += sub_size;
 
@@ -1822,7 +1822,7 @@ int cram_codec_to_id(cram_codec *c, int *id2) {
 	break;
     case E_BYTE_ARRAY_LEN:
 	bnum1 = cram_codec_to_id(c->byte_array_len.len_codec, NULL);
-	bnum2 = cram_codec_to_id(c->byte_array_len.value_codec, NULL);
+	bnum2 = cram_codec_to_id(c->byte_array_len.val_codec, NULL);
 	break;
     case E_BYTE_ARRAY_STOP:
 	bnum1 = c->byte_array_stop.content_id;
@@ -1839,3 +1839,112 @@ int cram_codec_to_id(cram_codec *c, int *id2) {
 	*id2 = bnum2;
     return bnum1;
 }
+
+
+/*
+ * cram_codec structures are specialised for decoding or encoding.
+ * Unfortunately this makes turning a decoder into an encoder (such as
+ * when transcoding files) problematic.
+ *
+ * This function converts a cram decoder codec into an encoder version
+ * in-place (ie it modifiers the codec itself).
+ *
+ * Returns 0 on success;
+ *        -1 on failure.
+ */
+int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
+    int j;
+
+    switch (c->codec) {
+    case E_EXTERNAL:
+	// shares struct with decode
+	c->free = cram_external_encode_free;
+	c->store = cram_external_encode_store;
+	if (c->decode == cram_external_decode_int)
+	    c->encode = cram_external_encode_int;
+	else if (c->decode == cram_external_decode_char)
+	    c->encode = cram_external_encode_char;
+	else
+	    return -1;
+	break;
+
+    case E_HUFFMAN: {
+	// New structure, so switch.
+	// FIXME: we huffman and e_huffman structs amended, we could
+	// unify this.
+	cram_codec *t = malloc(sizeof(*t));
+	t->codec = E_HUFFMAN;
+	t->free = cram_huffman_encode_free;
+	t->store = cram_huffman_encode_store;
+	t->e_huffman.codes = c->huffman.codes;
+	t->e_huffman.nvals = c->huffman.ncodes;
+	for (j = 0; j < t->e_huffman.nvals; j++) {
+	    int32_t sym = t->e_huffman.codes[j].symbol;
+	    if (sym >= -1 && sym < MAX_HUFF)
+		t->e_huffman.val2code[sym+1] = j;
+	}
+
+	if (c->decode == cram_huffman_decode_char0)
+	    t->encode = cram_huffman_encode_char0;
+	else if (c->decode == cram_huffman_decode_char)
+	    t->encode = cram_huffman_encode_char;
+	else if (c->decode == cram_huffman_decode_int0)
+	    t->encode = cram_huffman_encode_int0;
+	else if (c->decode == cram_huffman_decode_int)
+	    t->encode = cram_huffman_encode_int;
+	else {
+	    free(t);
+	    return -1;
+	}
+	*c = *t;
+	free(t);
+	break;
+    }
+
+    case E_BETA:
+	// shares struct with decode
+	c->free = cram_beta_encode_free;
+	c->store = cram_beta_encode_store;
+	if (c->decode == cram_beta_decode_int)
+	    c->encode = cram_beta_encode_int;
+	else if (c->decode == cram_beta_decode_char)
+	    c->encode = cram_beta_encode_char;
+	else
+	    return -1;
+	break;
+
+    case E_BYTE_ARRAY_LEN: {
+	cram_codec *t = malloc(sizeof(*t));
+	t->codec = E_BYTE_ARRAY_LEN;
+	t->free   = cram_byte_array_len_encode_free;
+	t->store  = cram_byte_array_len_encode_store;
+	t->encode = cram_byte_array_len_encode;
+	t->e_byte_array_len.len_codec = c->byte_array_len.len_codec;
+	t->e_byte_array_len.val_codec = c->byte_array_len.val_codec;
+	if (cram_codec_decoder2encoder(fd, t->e_byte_array_len.len_codec) == -1 ||
+	    cram_codec_decoder2encoder(fd, t->e_byte_array_len.val_codec) == -1) {
+	    t->free(t);
+	    return -1;
+	}
+
+	// {len,val}_{encoding,dat} are undefined, but unused.
+	// Leaving them unset here means we can test that assertion.
+	*c = *t;
+	free(t);
+	break;
+    }
+
+    case E_BYTE_ARRAY_STOP:
+	// shares struct with decode
+	c->free   = cram_byte_array_stop_encode_free;
+	c->store  = cram_byte_array_stop_encode_store;
+	c->encode = cram_byte_array_stop_encode;
+	break;
+
+    default:
+	return -1;
+    }
+
+    return 0;
+}
+

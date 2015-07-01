@@ -269,7 +269,7 @@ struct cram_map;
 #define CRAM_MAP(a,b) (((a)*3+(b))&(CRAM_MAP_HASH-1))
 
 /* Compression header block */
-typedef struct {
+typedef struct cram_block_compression_hdr {
     int32_t ref_seq_id;
     int32_t ref_seq_start;
     int32_t ref_seq_span;
