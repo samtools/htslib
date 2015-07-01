@@ -646,6 +646,23 @@ static void base64_kput(const unsigned char *data, size_t len, kstring_t *str)
     kputsn("==", pad, str);
 }
 
+static int is_dns_compliant(const char *s0, const char *slim)
+{
+    int has_nondigit = 0, len = 0;
+    const char *s;
+
+    for (s = s0; s < slim; len++, s++)
+        if (islower(*s) || *s == '-') has_nondigit = 1;
+        else if (isdigit(*s)) ;
+        else if (*s == '.') {
+            if (s == s0 || ! isalnum(s[-1])) return 0;
+            if (s+1 == slim || ! isalnum(s[1])) return 0;
+        }
+        else return 0;
+
+    return has_nondigit && len >= 3 && len <= 63;
+}
+
 static int
 add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
 {
@@ -701,8 +718,15 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
         if ((v = getenv("AWS_SECRET_ACCESS_KEY")) != NULL) kputs(v, &secret);
     }
 
-    kputsn(bucket, path - bucket, &url);
-    kputs(".s3.amazonaws.com", &url);
+    // Use virtual hosted-style access if possible, otherwise path-style.
+    if (is_dns_compliant(bucket, path)) {
+        kputsn(bucket, path - bucket, &url);
+        kputs(".s3.amazonaws.com", &url);
+    }
+    else {
+        kputs("s3.amazonaws.com/", &url);
+        kputsn(bucket, path - bucket, &url);
+    }
     kputs(path, &url);
 
     kputc('/', message);
