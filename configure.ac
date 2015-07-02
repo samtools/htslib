@@ -55,9 +55,45 @@ AC_ARG_ENABLE([libcurl],
                   [enable libcurl-based support for http/https/etc URLs])],
   [], [enable_libcurl=no])
 
+AC_ARG_ENABLE([plugins],
+  [AS_HELP_STRING([--enable-plugins],
+                  [enable separately-compiled plugins for file access])],
+  [], [enable_plugins=no])
+AC_SUBST(enable_plugins)
+
+AC_ARG_WITH([plugin-dir],
+  [AS_HELP_STRING([--with-plugin-dir=DIR],
+                  [plugin installation location [LIBEXECDIR/htslib]])],
+  [case $withval in
+     yes|no) AC_MSG_ERROR([no directory specified for --with-plugin-dir]) ;;
+   esac],
+   [with_plugin_dir='$(libexecdir)/htslib'])
+AC_SUBST([plugindir], $with_plugin_dir)
+
+AC_ARG_WITH([plugin-path],
+  [AS_HELP_STRING([--with-plugin-path=PATH],
+                  [default HTS_PATH plugin search path [PLUGINDIR]])],
+  [case $withval in
+     yes) AC_MSG_ERROR([no path specified for --with-plugin-path]) ;;
+     no)  with_plugin_path= ;;
+   esac],
+  [with_plugin_path=$with_plugin_dir])
+AC_SUBST([pluginpath], $with_plugin_path)
+
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
 AC_CHECK_FUNCS(gmtime_r)
+
+if test $enable_plugins != no; then
+  AC_SEARCH_LIBS([dlopen], [dl], [],
+    [AC_MSG_ERROR([dlopen() not found
+
+Plugin support requires dynamic linking facilities from the operating system.
+Either configure with --disable-plugins or resolve this error to build HTSlib.])])
+  # TODO Test whether this is required and/or needs tweaking per-platform
+  LDFLAGS="$LDFLAGS -rdynamic"
+  AC_DEFINE([ENABLE_PLUGINS], 1, [Define if HTSlib should enable plugins.])
+fi
 
 save_LIBS=$LIBS
 zlib_devel=ok

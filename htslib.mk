@@ -80,6 +80,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/knetfile.c \
 	$(HTSDIR)/kstring.c \
 	$(HTSDIR)/md5.c \
+	$(HTSDIR)/plugin.c \
 	$(HTSDIR)/regidx.c \
 	$(HTSDIR)/sam.c \
 	$(HTSDIR)/synced_bcf_reader.c \

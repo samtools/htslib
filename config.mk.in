@@ -33,6 +33,7 @@ exec_prefix  = @exec_prefix@
 bindir       = @bindir@
 includedir   = @includedir@
 libdir       = @libdir@
+libexecdir   = @libexecdir@
 datarootdir  = @datarootdir@
 mandir       = @mandir@
 
@@ -44,6 +45,10 @@ CFLAGS   = @CFLAGS@
 LDFLAGS  = @LDFLAGS@
 LDLIBS   = @LIBS@
 
+# Lowercase here indicates these are "local" to config.mk
+plugin_OBJS =
+noplugin_LDFLAGS =
+noplugin_LIBS =
 
 # ifeq/.../endif, +=, and target-specific variables are GNU Make-specific.
 # If you don't have GNU Make, comment out this conditional and note that
@@ -74,5 +79,23 @@ ifeq "libcurl-@libcurl@" "libcurl-enabled"
 
 LDLIBS += -lcurl
 LIBHTS_OBJS += hfile_libcurl.o
+
+endif
+
+ifeq "plugins-@enable_plugins@" "plugins-yes"
+
+plugindir  = @plugindir@
+pluginpath = @pluginpath@
+
+LIBHTS_OBJS += plugin.o
+PLUGIN_OBJS += $(plugin_OBJS)
+
+plugin.o plugin.pico: CPPFLAGS += -DPLUGINPATH=\"$(pluginpath)\"
+
+else
+
+LIBHTS_OBJS += $(plugin_OBJS)
+LDFLAGS += $(noplugin_LDFLAGS)
+LDLIBS += $(noplugin_LIBS)
 
 endif

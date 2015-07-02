@@ -5,6 +5,9 @@
    This template file can be updated with autoheader, but do so carefully
    as autoheader adds #defines such as PACKAGE_* that we don't want.  */
 
+/* Define if HTSlib should enable plugins. */
+#undef ENABLE_PLUGINS
+
 /* Define if you have the Common Crypto library. */
 #undef HAVE_COMMONCRYPTO
 
