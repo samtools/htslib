@@ -410,7 +410,7 @@ typedef struct {
     /**
      *  bcf_hdr_remove() - remove VCF header tag
      *  @param type:      one of BCF_HL_*
-     *  @param key:       tag name
+     *  @param key:       tag name or NULL to remove all tags of the given type
      */
     void bcf_hdr_remove(bcf_hdr_t *h, int type, const char *key);
 

@@ -615,8 +615,34 @@ int bcf_hdr_append(bcf_hdr_t *hdr, const char *line)
 
 void bcf_hdr_remove(bcf_hdr_t *hdr, int type, const char *key)
 {
-    int i;
+    int i = 0;
     bcf_hrec_t *hrec;
+    if ( !key )
+    {
+        while ( i<hdr->nhrec )
+        {
+            if ( hdr->hrec[i]->type!=type ) { i++; continue; }
+            hrec = hdr->hrec[i];
+
+            if ( type==BCF_HL_FLT || type==BCF_HL_INFO || type==BCF_HL_FMT || type== BCF_HL_CTG )
+            {
+                int j = bcf_hrec_find_key(hdr->hrec[i], "ID");
+                if ( j>0 )
+                {
+                    vdict_t *d = type==BCF_HL_CTG ? (vdict_t*)hdr->dict[BCF_DT_CTG] : (vdict_t*)hdr->dict[BCF_DT_ID];
+                    khint_t k = kh_get(vdict, d, hdr->hrec[i]->vals[j]);
+                    kh_val(d, k).hrec[type==BCF_HL_CTG?0:type] = NULL;
+                }
+            }
+
+            hdr->dirty = 1;
+            hdr->nhrec--;
+            if ( i < hdr->nhrec )
+                memmove(&hdr->hrec[i],&hdr->hrec[i+1],(hdr->nhrec-i)*sizeof(bcf_hrec_t*));
+            bcf_hrec_destroy(hrec);
+        }
+        return;
+    }
     while (1)
     {
         if ( type==BCF_HL_FLT || type==BCF_HL_INFO || type==BCF_HL_FMT || type== BCF_HL_CTG )
