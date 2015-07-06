@@ -70,6 +70,8 @@ char *bcf_sr_strerror(int errnum)
             return "API usage error"; break;
         case header_error:
             return "could not parse header"; break;
+        case no_eof:
+            return "no BGZF EOF marker; file may be truncated"; break;
         default: return ""; 
     }
 }
@@ -148,6 +150,15 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     reader->file = file_ptr;
 
     files->errnum = 0;
+
+    if ( reader->file->format.compression==bgzf )
+    {
+        BGZF *bgzf = hts_get_bgzfp(reader->file);
+        if ( bgzf && bgzf_check_EOF(bgzf) == 0 ) {
+            files->errnum = no_eof;
+            fprintf(stderr,"[%s] Warning: no BGZF EOF marker; file may be truncated.\n", fname);
+        }
+    }
 
     if ( files->require_index )
     {
