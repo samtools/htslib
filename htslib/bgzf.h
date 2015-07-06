@@ -64,6 +64,9 @@ struct BGZF {
     bgzidx_t *idx;      // BGZF index
     int idx_build_otf;  // build index on the fly, set by bgzf_index_build_init()
     z_stream *gz_stream;// for gzip-compressed files
+    unsigned int address_count, address_capacity;
+    int64_t *address;
+    int close;
 };
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;
