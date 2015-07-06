@@ -350,8 +350,37 @@ typedef struct {
     int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped);
     void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
 
-    void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt);
-    hts_idx_t *hts_idx_load(const char *fn, int fmt);
+/// Save an index to a file
+/** @param idx  Index to be written
+    @param fn   Input BAM/BCF/etc filename, to which .bai/.csi/etc will be added
+    @param fmt  One of the HTS_FMT_* index formats
+    @return  0 if successful, or negative if an error occurred.
+*/
+int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt);
+
+/// Save an index to a specific file
+/** @param idx    Index to be written
+    @param fn     Input BAM/BCF/etc filename
+    @param fnidx  Output filename, or NULL to add .bai/.csi/etc to @a fn
+    @param fmt    One of the HTS_FMT_* index formats
+    @return  0 if successful, or negative if an error occurred.
+*/
+int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int fmt);
+
+/// Load an index file
+/** @param fn   BAM/BCF/etc filename, to which .bai/.csi/etc will be added or
+                the extension substituted, to search for an existing index file
+    @param fmt  One of the HTS_FMT_* index formats
+    @return  The index, or NULL if an error occurred.
+*/
+hts_idx_t *hts_idx_load(const char *fn, int fmt);
+
+/// Load a specific index file
+/** @param fn     Input BAM/BCF/etc filename
+    @param fnidx  The input index filename
+    @return  The index, or NULL if an error occurred.
+*/
+hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx);
 
     uint8_t *hts_idx_get_meta(hts_idx_t *idx, int *l_meta);
     void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy);

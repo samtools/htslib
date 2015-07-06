@@ -2237,18 +2237,29 @@ hts_idx_t *bcf_index(htsFile *fp, int min_shift)
     return idx;
 }
 
-int bcf_index_build(const char *fn, int min_shift)
+hts_idx_t *bcf_index_load2(const char *fn, const char *fnidx)
+{
+    return fnidx? hts_idx_load2(fn, fnidx) : bcf_index_load(fn);
+}
+
+int bcf_index_build2(const char *fn, const char *fnidx, int min_shift)
 {
     htsFile *fp;
     hts_idx_t *idx;
+    int ret;
     if ((fp = hts_open(fn, "rb")) == 0) return -1;
     if ( fp->format.compression!=bgzf ) { hts_close(fp); return -1; }
     idx = bcf_index(fp, min_shift);
     hts_close(fp);
     if ( !idx ) return -1;
-    hts_idx_save(idx, fn, HTS_FMT_CSI);
+    ret = hts_idx_save_as(idx, fn, fnidx, HTS_FMT_CSI);
     hts_idx_destroy(idx);
-    return 0;
+    return ret;
+}
+
+int bcf_index_build(const char *fn, int min_shift)
+{
+    return bcf_index_build2(fn, NULL, min_shift);
 }
 
 /*****************

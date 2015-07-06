@@ -732,7 +732,9 @@ typedef struct {
     #define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
     #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
 
+    hts_idx_t *bcf_index_load2(const char *fn, const char *fnidx);
     int bcf_index_build(const char *fn, int min_shift);
+    int bcf_index_build2(const char *fn, const char *fnidx, int min_shift);
 
 /*******************
  * Typed value I/O *
