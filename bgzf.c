@@ -673,11 +673,14 @@ static int worker_aux(worker_t *w)
         int ret = bgzf_compress(w->buf, &clen, w->mt->blk[i], w->mt->len[i], w->compress_level);
         if (ret != 0) {
             if ( hts_verbose >= 2 ) fprintf(stderr, "[E::%s] bgzf_compress error %d\n", __func__, ret);
-            w->errcode |= BGZF_ERR_ZLIB;
-            abort(); // return -1; // FIXME: mt_worker() and mt_flush_queue() don't test return value
+            w->errcode |= BGZF_ERR_ZLIB; // Report error
+            // We're not going to do any more, so set remaining lengths to 0
+            for (; i < w->mt->curr; i += w->mt->n_threads) w->mt->len[i] = 0;
+            break; // Give up
+        } else {
+            memcpy(w->mt->blk[i], w->buf, clen);
+            w->mt->len[i] = clen;
         }
-        memcpy(w->mt->blk[i], w->buf, clen);
-        w->mt->len[i] = clen;
     }
     __sync_fetch_and_add(&w->mt->proc_cnt, 1);
     return 0;
@@ -764,11 +767,16 @@ static int mt_flush_queue(BGZF *fp)
     while (mt->proc_cnt < mt->n_threads);
     // dump data to disk
     for (i = 0; i < mt->n_threads; ++i) fp->errcode |= mt->w[i].errcode;
-    for (i = 0; i < mt->curr; ++i)
-        if (hwrite(fp->fp, mt->blk[i], mt->len[i]) != mt->len[i]) {
-            fp->errcode |= BGZF_ERR_IO;
-            break;
+    if (fp->errcode == 0) {
+        /* Only try to write if all the threads worked, as otherwise we
+           could get a file with holes in it */
+        for (i = 0; i < mt->curr; ++i) {
+            if (hwrite(fp->fp, mt->blk[i], mt->len[i]) != mt->len[i]) {
+                fp->errcode |= BGZF_ERR_IO;
+                break;
+            }
         }
+    }
     mt->curr = 0;
     return (fp->errcode == 0)? 0 : -1;
 }
@@ -806,15 +814,16 @@ int bgzf_flush(BGZF *fp)
     }
 #endif
     while (fp->block_offset > 0) {
+        int block_length;
         if ( fp->idx_build_otf )
         {
             bgzf_index_add_block(fp);
             fp->idx->ublock_addr += fp->block_offset;
         }
-        int block_length = deflate_block(fp, fp->block_offset);
+        block_length = deflate_block(fp, fp->block_offset);
         if (block_length < 0) {
             if ( hts_verbose >= 3 ) fprintf(stderr, "[E::%s] deflate_block error %d\n", __func__, block_length);
-            abort(); // return -1; // FIXME: lazy_flush() does not check return value
+            return -1;
         }
         if (hwrite(fp->fp, fp->compressed_block, block_length) != block_length) {
             if ( hts_verbose >= 1 ) fprintf(stderr, "[E::%s] hwrite error (wrong size)\n", __func__);
@@ -870,7 +879,7 @@ int bgzf_close(BGZF* fp)
         block_length = deflate_block(fp, 0); // write an empty block
         if (block_length < 0) {
             if ( hts_verbose >= 3 ) fprintf(stderr, "[E::%s] deflate_block error %d\n", __func__, block_length);
-            abort(); // return -1; FIXME: hts_close() does not test return value)
+            return -1;
         }
         if (hwrite(fp->fp, fp->compressed_block, block_length) < 0
             || hflush(fp->fp) != 0) {
