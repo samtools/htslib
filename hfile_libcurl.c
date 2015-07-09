@@ -651,6 +651,8 @@ static int is_dns_compliant(const char *s0, const char *slim)
     int has_nondigit = 0, len = 0;
     const char *s;
 
+    if (*s0 == '-' || slim[-1] == '-') return 0;
+
     for (s = s0; s < slim; len++, s++)
         if (islower(*s) || *s == '-') has_nondigit = 1;
         else if (isdigit(*s)) ;
