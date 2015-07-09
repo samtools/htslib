@@ -56,6 +56,27 @@ static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, N
 
 int bcf_hdr_sync(bcf_hdr_t *h);
 
+// Read [nbytes] from file [fp] into [buffer]. This works on compressed
+// and uncompressed files.
+ssize_t vcf_read_buffer(htsFile *hfp, void *buffer, size_t nbytes)
+{
+    if ( hfp->format.compression == no_compression ) {
+        printf("read %u bytes, no compression\n", (unsigned int)nbytes);
+        return hread(hfp->fp.hfile, buffer, nbytes);
+    } else {
+        return bgzf_read(hfp->fp.bgzf, buffer, nbytes);
+    }
+}
+
+ssize_t vcf_write_buffer(htsFile *hfp, void *buffer, size_t nbytes)
+{
+    if ( hfp->format.compression == no_compression ) {
+        return hwrite(hfp->fp.hfile, buffer, nbytes);
+    } else {
+        return bgzf_write(hfp->fp.bgzf, buffer, nbytes);
+    }
+}
+
 int bcf_hdr_add_sample(bcf_hdr_t *h, const char *s)
 {
     if ( !s ) return 0;
@@ -744,11 +765,11 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     if (hfp->format.format == vcf)
         return vcf_hdr_read(hfp);
 
-    BGZF *fp = hfp->fp.bgzf;
+    printf("BCF format  bcf_hdr_read [\n");
     uint8_t magic[5];
     bcf_hdr_t *h;
     h = bcf_hdr_init("r");
-    if ( bgzf_read(fp, magic, 5)<0 )
+    if ( vcf_read_buffer(hfp, magic, 5)<0 )
     {
         fprintf(stderr,"[%s:%d %s] Failed to read the header (reading BCF in text mode?)\n", __FILE__,__LINE__,__FUNCTION__);
         return NULL;
@@ -764,9 +785,9 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     }
     int hlen;
     char *htxt;
-    bgzf_read(fp, &hlen, 4);
+    vcf_read_buffer(hfp, &hlen, 4);
     htxt = (char*)malloc(hlen);
-    bgzf_read(fp, htxt, hlen);
+    vcf_read_buffer(hfp, htxt, hlen);
     bcf_hdr_parse(h, htxt);
     free(htxt);
     return h;
@@ -782,10 +803,10 @@ int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
     char *htxt = bcf_hdr_fmt_text(h, 1, &hlen);
     hlen++; // include the \0 byte
 
-    BGZF *fp = hfp->fp.bgzf;
-    if ( bgzf_write(fp, "BCF\2\2", 5) !=5 ) return -1;
-    if ( bgzf_write(fp, &hlen, 4) !=4 ) return -1;
-    if ( bgzf_write(fp, htxt, hlen) != hlen ) return -1;
+    // FIXME: these should use vcf_buffer_write()
+    if ( vcf_write_buffer(hfp, "BCF\2\2", 5) !=5 ) return -1;
+    if ( vcf_write_buffer(hfp, &hlen, 4) !=4 ) return -1;
+    if ( vcf_write_buffer(hfp, htxt, hlen) != hlen ) return -1;
 
     free(htxt);
     return 0;
@@ -850,7 +871,32 @@ void bcf_destroy1(bcf1_t *v)
     free(v);
 }
 
-static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
+static inline int bcf_read1_core(htsFile *hfp, bcf1_t *v)
+{
+    uint32_t x[8];
+    int ret;
+    if ((ret = vcf_read_buffer(hfp, x, 32)) != 32) {
+        if (ret == 0) return -1;
+        return -2;
+    }
+    bcf_clear1(v);
+    x[0] -= 24; // to exclude six 32-bit integers
+    ks_resize(&v->shared, x[0]);
+    ks_resize(&v->indiv, x[1]);
+    memcpy(v, x + 2, 16);
+    v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
+    v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
+    v->shared.l = x[0], v->indiv.l = x[1];
+
+    // silent fix of broken BCFs produced by earlier versions of bcf_subset, prior to and including bd6ed8b4
+    if ( (!v->indiv.l || !v->n_sample) && v->n_fmt ) v->n_fmt = 0;
+
+    vcf_read_buffer(hfp, v->shared.s, v->shared.l);
+    vcf_read_buffer(hfp, v->indiv.s, v->indiv.l);
+    return 0;
+}
+
+static inline int bcf_read1_core_bgzf(BGZF *fp, bcf1_t *v)
 {
     uint32_t x[8];
     int ret;
@@ -925,16 +971,17 @@ int bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec)
 int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
     if (fp->format.format == vcf) return vcf_read(fp,h,v);
-    int ret = bcf_read1_core(fp->fp.bgzf, v);
+    int ret = bcf_read1_core(fp, v);
     if ( ret!=0 || !h->keep_samples ) return ret;
     return bcf_subset_format(h,v);
 }
 
+// fp has to change type to htsFile
 int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, int *beg, int *end)
 {
     bcf1_t *v = (bcf1_t *) vv;
     int ret;
-    if ((ret = bcf_read1_core(fp, v)) >= 0)
+    if ((ret = bcf_read1_core_bgzf(fp, v)) >= 0)
         *tid = v->rid, *beg = v->pos, *end = v->pos + v->rlen;
     return ret;
 }
@@ -1181,16 +1228,15 @@ int bcf_write(htsFile *hfp, const bcf_hdr_t *h, bcf1_t *v)
     }
     bcf1_sync(v);   // check if the BCF record was modified
 
-    BGZF *fp = hfp->fp.bgzf;
     uint32_t x[8];
     x[0] = v->shared.l + 24; // to include six 32-bit integers
     x[1] = v->indiv.l;
     memcpy(x + 2, v, 16);
     x[6] = (uint32_t)v->n_allele<<16 | v->n_info;
     x[7] = (uint32_t)v->n_fmt<<24 | v->n_sample;
-    if ( bgzf_write(fp, x, 32) != 32 ) return -1;
-    if ( bgzf_write(fp, v->shared.s, v->shared.l) != v->shared.l ) return -1;
-    if ( bgzf_write(fp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;
+    if ( vcf_write_buffer(hfp, x, 32) != 32 ) return -1;
+    if ( vcf_write_buffer(hfp, v->shared.s, v->shared.l) != v->shared.l ) return -1;
+    if ( vcf_write_buffer(hfp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;
     return 0;
 }
 
@@ -1563,13 +1609,13 @@ int _vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char
                 if (fmt[j].max_l < l - 1) fmt[j].max_l = l - 1;
                 if (fmt[j].is_gt && fmt[j].max_g < g) fmt[j].max_g = g;
                 l = 0, m = g = 1;
-                if ( *r==':' ) 
+                if ( *r==':' )
                 {
                     j++;
-                    if ( j>=v->n_fmt ) 
-                    { 
+                    if ( j>=v->n_fmt )
+                    {
                         fprintf(stderr,"Incorrect number of FORMAT fields at %s:%d\n", h->id[BCF_DT_CTG][v->rid].key,v->pos+1);
-                        exit(1); 
+                        exit(1);
                     }
                 }
                 else break;
@@ -2052,9 +2098,9 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             kputs(h->id[BCF_DT_ID][z->key].key, s);
             if (z->len <= 0) continue;
             kputc('=', s);
-            if (z->len == 1) 
+            if (z->len == 1)
             {
-                switch (z->type) 
+                switch (z->type)
                 {
                     case BCF_BT_INT8:  if ( z->v1.i==bcf_int8_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
                     case BCF_BT_INT16: if ( z->v1.i==bcf_int16_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
@@ -3004,7 +3050,7 @@ bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key)
     return bcf_get_info_id(line, id);
 }
 
-bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id) 
+bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id)
 {
     int i;
     if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
@@ -3015,7 +3061,7 @@ bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id)
     return NULL;
 }
 
-bcf_info_t *bcf_get_info_id(bcf1_t *line, const int id) 
+bcf_info_t *bcf_get_info_id(bcf1_t *line, const int id)
 {
     int i;
     if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
@@ -3064,7 +3110,7 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
     if ( info->len == 1 )
     {
         if ( info->type==BCF_BT_FLOAT ) *((float*)*dst) = info->v1.f;
-        else 
+        else
         {
             #define BRANCH(type_t, missing) { \
                 if ( info->v1.i==missing ) *((int32_t*)*dst) = bcf_int32_missing; \
@@ -3209,4 +3255,3 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
     #undef BRANCH
     return nsmpl*fmt->n;
 }
-

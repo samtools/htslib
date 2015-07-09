@@ -426,8 +426,12 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
     case binary_format:
     case bam:
     case bcf:
-        fp->fp.bgzf = bgzf_hopen(hfile, mode);
-        if (fp->fp.bgzf == NULL) goto error;
+        if (fp->format.compression == no_compression) {
+            fp->fp.hfile = hfile;
+        } else {
+            fp->fp.bgzf = bgzf_hopen(hfile, mode);
+            if (fp->fp.bgzf == NULL) goto error;
+        }
         fp->is_bin = 1;
         break;
 
@@ -486,8 +490,14 @@ int hts_close(htsFile *fp)
     switch (fp->format.format) {
     case binary_format:
     case bam:
-    case bcf:
         ret = bgzf_close(fp->fp.bgzf);
+        break;
+
+    case bcf:
+        if (fp->format.compression == no_compression)
+            ret = hclose(fp->fp.hfile);
+        else
+            ret = bgzf_close(fp->fp.bgzf);
         break;
 
     case cram:

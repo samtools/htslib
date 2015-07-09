@@ -30,8 +30,9 @@ DEALINGS IN THE SOFTWARE.  */
 
 void write_bcf(char *fname)
 {
+    printf("write_bcf [\n");
     // Init
-    htsFile *fp    = hts_open(fname,"wb");
+    htsFile *fp    = hts_open(fname,"wbu");
     bcf_hdr_t *hdr = bcf_hdr_init("w");
     bcf1_t *rec    = bcf_init1();
 
@@ -160,10 +161,14 @@ void write_bcf(char *fname)
         fprintf(stderr,"hts_close(%s): non-zero status %d\n",fname,ret);
         exit(ret);
     }
+
+    printf("]\n");
 }
 
 void bcf_to_vcf(char *fname)
 {
+    printf("bcf_to_vcf [\n");
+
     htsFile *fp    = hts_open(fname,"rb");
     bcf_hdr_t *hdr = bcf_hdr_read(fp);
     bcf1_t *rec    = bcf_init1();
@@ -243,6 +248,8 @@ void bcf_to_vcf(char *fname)
     }
     free(line.s);
     free(gz_fname);
+
+    printf("]\n");
 }
 
 void iterator(const char *fname)
@@ -279,4 +286,3 @@ int main(int argc, char **argv)
     iterator(fname);
     return 0;
 }
-
