@@ -651,6 +651,8 @@ static int is_dns_compliant(const char *s0, const char *slim)
     int has_nondigit = 0, len = 0;
     const char *s;
 
+    if (*s0 == '-' || slim[-1] == '-') return 0;
+
     for (s = s0; s < slim; len++, s++)
         if (islower(*s) || *s == '-') has_nondigit = 1;
         else if (isdigit(*s)) ;
@@ -674,7 +676,9 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
     kstring_t url = { 0, 0, NULL };
     kstring_t id = { 0, 0, NULL };
     kstring_t secret = { 0, 0, NULL };
+    kstring_t token = { 0, 0, NULL };
     kstring_t auth_hdr = { 0, 0, NULL };
+    kstring_t token_hdr = { 0, 0, NULL };
 
     time_t now = time(NULL);
 #ifdef HAVE_GMTIME_R
@@ -716,8 +720,16 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
         const char *v;
         if ((v = getenv("AWS_ACCESS_KEY_ID")) != NULL) kputs(v, &id);
         if ((v = getenv("AWS_SECRET_ACCESS_KEY")) != NULL) kputs(v, &secret);
+        if ((v = getenv("AWS_SESSION_TOKEN")) != NULL) kputs(v, &token);
     }
 
+    // Add token to message as CanonicalizedAmzHeader
+    if (token.l > 0) {
+        kputs("x-amz-security-token:", message);
+        kputs(token.s, message);
+        kputc('\n', message);
+    }
+    
     // Use virtual hosted-style access if possible, otherwise path-style.
     if (is_dns_compliant(bucket, path)) {
         kputsn(bucket, path - bucket, &url);
@@ -749,6 +761,11 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
         base64_kput(digest, digest_len, &auth_hdr);
 
         if (add_header(fp, auth_hdr.s) < 0) goto error;
+        if (token.l > 0) {
+            kputs("X-Amz-Security-Token: ", &token_hdr);
+            kputs(token.s, &token_hdr);
+            if (add_header(fp, token_hdr.s) < 0) goto error;
+        }
     }
 
     ret = 0;
@@ -762,7 +779,9 @@ free_and_return:
     free(url.s);
     free(id.s);
     free(secret.s);
+    free(token.s);
     free(auth_hdr.s);
+    free(token_hdr.s);
     free(message->s);
     errno = save;
     return ret;
