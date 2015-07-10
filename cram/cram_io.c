@@ -2390,7 +2390,7 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
 
 	for (i = j = 0; i < len; i++) {
 	    if (cp[i] >= '!' && cp[i] <= '~')
-		cp[j++] = cp[i] & ~0x20;
+		cp[j++] = toupper(cp[i]);
 	}
 	cp_to = cp+j;
 
@@ -2402,7 +2402,7 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
     } else {
 	int i;
 	for (i = 0; i < len; i++) {
-	    seq[i] = seq[i] & ~0x20; // uppercase in ASCII
+	    seq[i] = toupper(seq[i]);
 	}
     }
 
@@ -2695,10 +2695,14 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
  * SAM header @SQ lines.
  */
 int cram_load_reference(cram_fd *fd, char *fn) {
+    int ret = 0;
+
     if (fn) {
 	fd->refs = refs_load_fai(fd->refs, fn,
 				 !(fd->embed_ref && fd->mode == 'r'));
 	fn = fd->refs ? fd->refs->fn : NULL;
+	if (!fn)
+	    ret = -1;
 	sanitise_SQ_lines(fd);
     }
     fd->ref_fn = fn;
@@ -2716,7 +2720,7 @@ int cram_load_reference(cram_fd *fd, char *fn) {
 	if (-1 == refs2id(fd->refs, fd->header))
 	    return -1;
 
-    return fn ? 0 : -1;
+    return ret;
 }
 
 /* ----------------------------------------------------------------------
@@ -3936,8 +3940,8 @@ static void cram_init_tables(cram_fd *fd) {
 }
 
 // Default version numbers for CRAM
-static int major_version = 2;
-static int minor_version = 1;
+static int major_version = 3;
+static int minor_version = 0;
 
 /*
  * Opens a CRAM file for read (mode "rb") or write ("wb").

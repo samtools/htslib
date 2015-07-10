@@ -297,13 +297,40 @@ typedef struct {
     #define bam_itr_querys(idx, hdr, region) sam_itr_querys(idx, hdr, region)
     #define bam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
 
-    // Load .csi or .bai BAM index file.
-    #define bam_index_load(fn) hts_idx_load((fn), HTS_FMT_BAI)
+// Load/build .csi or .bai BAM index file.  Does not work with CRAM.
+// It is recommended to use the sam_index_* functions below instead.
+#define bam_index_load(fn) hts_idx_load((fn), HTS_FMT_BAI)
+#define bam_index_build(fn, min_shift) (sam_index_build((fn), (min_shift)))
 
-    int bam_index_build(const char *fn, int min_shift);
+/// Load a BAM (.csi or .bai) or CRAM (.crai) index file
+/** @param fp  File handle of the data file whose index is being opened
+    @param fn  BAM/CRAM/etc filename to search alongside for the index file
+    @return  The index, or NULL if an error occurred.
+*/
+hts_idx_t *sam_index_load(htsFile *fp, const char *fn);
 
-    // Load BAM (.csi or .bai) or CRAM (.crai) index file.
-    hts_idx_t *sam_index_load(htsFile *fp, const char *fn);
+/// Load a specific BAM (.csi or .bai) or CRAM (.crai) index file
+/** @param fp     File handle of the data file whose index is being opened
+    @param fn     BAM/CRAM/etc data file filename
+    @param fnidx  Index filename, or NULL to search alongside @a fn
+    @return  The index, or NULL if an error occurred.
+*/
+hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx);
+
+/// Generate and save an index file
+/** @param fn        Input BAM/etc filename, to which .csi/etc will be added
+    @param min_shift Positive to generate CSI, or 0 to generate BAI
+    @return  0 if successful, or negative if an error occurred.
+*/
+int sam_index_build(const char *fn, int min_shift);
+
+/// Generate and save an index to a specific file
+/** @param fn        Input BAM/CRAM/etc filename
+    @param fnidx     Output filename, or NULL to add .bai/.csi/etc to @a fn
+    @param min_shift Positive to generate CSI, or 0 to generate BAI
+    @return  0 if successful, or negative if an error occurred.
+*/
+int sam_index_build2(const char *fn, const char *fnidx, int min_shift);
 
     #define sam_itr_destroy(iter) hts_itr_destroy(iter)
     hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);

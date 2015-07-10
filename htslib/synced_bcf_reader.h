@@ -117,7 +117,7 @@ bcf_sr_t;
 typedef enum
 {
     open_failed, not_bgzf, idx_load_failed, file_type_error, api_usage_error,
-    header_error
+    header_error, no_eof
 }
 bcf_sr_error;
 

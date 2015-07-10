@@ -355,7 +355,8 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
 int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 {
     // contig
-    int i,j,k, ret;
+    int i,j, ret;
+    khint_t k;
     char *str;
     if ( !strcmp(hrec->key, "contig") )
     {
@@ -372,8 +373,9 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
         // Register in the dictionary
         vdict_t *d = (vdict_t*)hdr->dict[BCF_DT_CTG];
+        khint_t k = kh_get(vdict, d, str);
+        if ( k != kh_end(d) ) { free(str); return 0; }    // already present
         k = kh_put(vdict, d, str, &ret);
-        if ( !ret ) { free(str); return 0; }    // already present
 
         int idx = bcf_hrec_find_key(hrec,"IDX");
         if ( idx!=-1 )
@@ -455,8 +457,8 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     str = strdup(id);
 
     vdict_t *d = (vdict_t*)hdr->dict[BCF_DT_ID];
-    k = kh_put(vdict, d, str, &ret);
-    if ( !ret )
+    k = kh_get(vdict, d, str);
+    if ( k != kh_end(d) ) 
     {
         // already present
         free(str);
@@ -466,6 +468,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         if ( idx==-1 ) hrec_add_idx(hrec, kh_val(d, k).id);
         return 1;
     }
+    k = kh_put(vdict, d, str, &ret);
     kh_val(d, k) = bcf_idinfo_def;
     kh_val(d, k).info[info&0xf] = info;
     kh_val(d, k).hrec[info&0xf] = hrec;
@@ -612,8 +615,34 @@ int bcf_hdr_append(bcf_hdr_t *hdr, const char *line)
 
 void bcf_hdr_remove(bcf_hdr_t *hdr, int type, const char *key)
 {
-    int i;
+    int i = 0;
     bcf_hrec_t *hrec;
+    if ( !key )
+    {
+        while ( i<hdr->nhrec )
+        {
+            if ( hdr->hrec[i]->type!=type ) { i++; continue; }
+            hrec = hdr->hrec[i];
+
+            if ( type==BCF_HL_FLT || type==BCF_HL_INFO || type==BCF_HL_FMT || type== BCF_HL_CTG )
+            {
+                int j = bcf_hrec_find_key(hdr->hrec[i], "ID");
+                if ( j>0 )
+                {
+                    vdict_t *d = type==BCF_HL_CTG ? (vdict_t*)hdr->dict[BCF_DT_CTG] : (vdict_t*)hdr->dict[BCF_DT_ID];
+                    khint_t k = kh_get(vdict, d, hdr->hrec[i]->vals[j]);
+                    kh_val(d, k).hrec[type==BCF_HL_CTG?0:type] = NULL;
+                }
+            }
+
+            hdr->dirty = 1;
+            hdr->nhrec--;
+            if ( i < hdr->nhrec )
+                memmove(&hdr->hrec[i],&hdr->hrec[i+1],(hdr->nhrec-i)*sizeof(bcf_hrec_t*));
+            bcf_hrec_destroy(hrec);
+        }
+        return;
+    }
     while (1)
     {
         if ( type==BCF_HL_FLT || type==BCF_HL_INFO || type==BCF_HL_FMT || type== BCF_HL_CTG )
@@ -1485,7 +1514,7 @@ uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr)
 
 typedef struct {
     int key, max_m, size, offset;
-    uint32_t is_gt:1, max_g:15, max_l:16;
+    uint64_t is_gt:1, max_g:31, max_l:32;
     uint32_t y;
     uint8_t *buf;
 } fmt_aux_t;
@@ -1731,6 +1760,16 @@ int _vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char
         fprintf(stderr,"[%s:%d %s] Number of columns at %s:%d does not match the number of samples (%d vs %d).\n",
                 __FILE__,__LINE__,__FUNCTION__,bcf_seqname(h,v),v->pos+1, v->n_sample,bcf_hdr_nsamples(h));
         v->errcode |= BCF_ERR_NCOLS;
+        return -1;
+    }
+    if ( v->indiv.l > 0xffffffff )
+    {
+        fprintf(stderr,"[%s:%d %s] The FORMAT at %s:%d is too long...\n",
+                __FILE__,__LINE__,__FUNCTION__,bcf_seqname(h,v),v->pos+1);
+        v->errcode |= BCF_ERR_LIMITS;
+
+        // Error recovery: return -1 if this is a critical error or 0 if we want to ignore the FORMAT and proceed
+        v->n_fmt = 0;
         return -1;
     }
 
@@ -2198,18 +2237,29 @@ hts_idx_t *bcf_index(htsFile *fp, int min_shift)
     return idx;
 }
 
-int bcf_index_build(const char *fn, int min_shift)
+hts_idx_t *bcf_index_load2(const char *fn, const char *fnidx)
+{
+    return fnidx? hts_idx_load2(fn, fnidx) : bcf_index_load(fn);
+}
+
+int bcf_index_build2(const char *fn, const char *fnidx, int min_shift)
 {
     htsFile *fp;
     hts_idx_t *idx;
+    int ret;
     if ((fp = hts_open(fn, "rb")) == 0) return -1;
     if ( fp->format.compression!=bgzf ) { hts_close(fp); return -1; }
     idx = bcf_index(fp, min_shift);
     hts_close(fp);
     if ( !idx ) return -1;
-    hts_idx_save(idx, fn, HTS_FMT_CSI);
+    ret = hts_idx_save_as(idx, fn, fnidx, HTS_FMT_CSI);
     hts_idx_destroy(idx);
-    return 0;
+    return ret;
+}
+
+int bcf_index_build(const char *fn, int min_shift)
+{
+    return bcf_index_build2(fn, NULL, min_shift);
 }
 
 /*****************

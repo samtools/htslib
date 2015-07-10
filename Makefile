@@ -296,7 +296,7 @@ test/fieldarith: test/fieldarith.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/fieldarith.o libhts.a $(LDLIBS) -lz
 
 test/hfile: test/hfile.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LDLIBS) -lz
+	$(CC) -pthread $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LDLIBS) -lz
 
 test/sam: test/sam.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/sam.o libhts.a $(LDLIBS) -lz
@@ -378,15 +378,27 @@ clean-dylib:
 	-rm -f libhts.dylib libhts.*.dylib
 
 
-tags:
+TAGS:
 	ctags -f TAGS *.[ch] cram/*.[ch] htslib/*.h
 
+tags: TAGS
+
+# We recommend libhts-using programs be built against a separate htslib
+# installation.  However if you feel that you must bundle htslib source
+# code with your program, this hook enables Automake-style "make dist"
+# for this subdirectory.  If you do bundle an htslib snapshot, please
+# add identifying information to $(PACKAGE_VERSION) as appropriate.
+# (The wildcards attempt to omit non-exported files (.git*, README.md,
+# etc) and other detritus that might be in the top-level directory.)
+distdir:
+	tar -c *.[ch15] [ILMNRcht]*[ELSbcekmnt] | (cd $(distdir) && tar -x)
+	+cd $(distdir) && $(MAKE) distclean
 
 force:
 
 
-.PHONY: all check clean distclean force install install-pkgconfig installdirs
-.PHONY: lib-shared lib-static maintainer-clean mostlyclean print-version
-.PHONY: tags test testclean
+.PHONY: all check clean distclean distdir force
+.PHONY: install install-pkgconfig installdirs lib-shared lib-static
+.PHONY: maintainer-clean mostlyclean print-version tags test testclean
 .PHONY: clean-so install-so
 .PHONY: clean-dylib install-dylib

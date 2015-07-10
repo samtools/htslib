@@ -42,7 +42,7 @@ DEALINGS IN THE SOFTWARE.  */
    const hFILE_backend *backend;  // Methods to refill/flush I/O buffer
 
    off_t offset;     // Offset within the stream of buffer position 0
-   int at_eof:1;     // For reading, whether EOF has been seen
+   unsigned at_eof:1;// For reading, whether EOF has been seen
    int has_errno;    // Error number from the last failure on this stream
 
 For reading, begin is the first unread character in the buffer and end is the
@@ -318,7 +318,7 @@ void hclose_abruptly(hFILE *fp)
 typedef struct {
     hFILE base;
     int fd;
-    int is_socket:1;
+    unsigned is_socket:1;
 } hFILE_fd;
 
 static ssize_t fd_read(hFILE *fpv, void *buffer, size_t nbytes)

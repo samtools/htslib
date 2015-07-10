@@ -51,7 +51,9 @@ struct bgzf_mtaux_t;
 typedef struct __bgzidx_t bgzidx_t;
 
 struct BGZF {
-    int errcode:16, is_write:2, is_be:2, compress_level:9, is_compressed:2, is_gzip:1;
+    unsigned errcode:16, is_write:2, is_be:2;
+    signed compress_level:9;
+    unsigned is_compressed:2, is_gzip:1;
     int cache_size;
     int block_length, block_offset;
     int64_t block_address, uncompressed_address;

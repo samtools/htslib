@@ -137,8 +137,8 @@ static int kget_int64(kstring_t *k, size_t *pos, int64_t *val_p) {
  * Returns 0 for success
  *        -1 for failure
  */
-int cram_index_load(cram_fd *fd, const char *fn) {
-    char *fn2;
+int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
+    char *fn2 = NULL;
     char buf[65536];
     ssize_t len;
     kstring_t kstr = {0};
@@ -164,15 +164,17 @@ int cram_index_load(cram_fd *fd, const char *fn) {
     idx_stack = calloc(++idx_stack_alloc, sizeof(*idx_stack));
     idx_stack[idx_stack_ptr] = idx;
 
-    fn2 = hts_idx_getfn(fn, ".crai");
-    if (!fn2) {
-	perror(fn2);
-	free(idx_stack);
-	return -1; 
+    if (!fn_idx) {
+	fn2 = hts_idx_getfn(fn, ".crai");
+	if (!fn2) {
+	    free(idx_stack);
+	    return -1;
+	}
+	fn_idx = fn2;
     }
 
-    if (!(fp = fopen(fn2, "r"))) {
-	perror(fn2);
+    if (!(fp = fopen(fn_idx, "r"))) {
+	perror(fn_idx);
 	free(idx_stack);
 	free(fn2);
 	return -1;
@@ -326,7 +328,7 @@ void cram_index_free(cram_fd *fd) {
 
 /*
  * Searches the index for the first slice overlapping a reference ID
- * and position, or one immediately preceeding it if none is found in
+ * and position, or one immediately preceding it if none is found in
  * the index to overlap this position. (Our index may have missing
  * entries, but we require at least one per reference.)
  *
@@ -483,26 +485,32 @@ static int cram_index_build_multiref(cram_fd *fd,
  * Builds an index file.
  *
  * fd is a newly opened cram file that we wish to index.
- * fn_base is the filename of the associated CRAM file. Internally we
- * add ".crai" to this to get the index filename.
+ * fn_base is the filename of the associated CRAM file.
+ * fn_idx is the filename of the index file to be written;
+ * if NULL, we add ".crai" to fn_base to get the index filename.
  *
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_index_build(cram_fd *fd, const char *fn_base) {
+int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     cram_container *c;
     off_t cpos, spos, hpos;
     zfp *fp;
-    char fn_idx[PATH_MAX];
+    kstring_t fn_idx_str = {0};
 
-    if (strlen(fn_base) > PATH_MAX-6)
-	return -1;
+    if (! fn_idx) {
+        kputs(fn_base, &fn_idx_str);
+        kputs(".crai", &fn_idx_str);
+        fn_idx = fn_idx_str.s;
+    }
 
-    sprintf(fn_idx, "%s.crai", fn_base);
     if (!(fp = zfopen(fn_idx, "wz"))) {
         perror(fn_idx);
+        free(fn_idx_str.s);
         return -1;
     }
+
+    free(fn_idx_str.s);
 
     cpos = htell(fd->fp);
     while ((c = cram_read_container(fd))) {
