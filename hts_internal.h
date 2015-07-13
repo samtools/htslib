@@ -47,7 +47,7 @@ void hts_path_itr_setup(struct hts_path_itr *itr, const char *path,
 
 const char *hts_path_itr_next(struct hts_path_itr *itr);
 
-void *open_plugin(const char *filename, const char **errmsg);
+void *load_plugin(void **pluginp, const char *filename, const char *symbol);
 void *plugin_sym(void *plugin, const char *name, const char **errmsg);
 void close_plugin(void *plugin);
 

@@ -135,11 +135,23 @@ const char *hts_path_itr_next(struct hts_path_itr *itr)
     return NULL;
 }
 
-void *open_plugin(const char *filename, const char **errmsg)
+void *load_plugin(void **pluginp, const char *filename, const char *symbol)
 {
     void *lib = dlopen(filename, RTLD_NOW | RTLD_LOCAL);
-    if (lib == NULL) *errmsg = dlerror();
-    return lib;
+    if (lib == NULL) goto error;
+
+    void *sym = dlsym(lib, symbol);
+    if (sym == NULL) goto error;
+
+    *pluginp = lib;
+    return sym;
+
+error:
+    if (hts_verbose >= 4)
+        fprintf(stderr, "[W::%s] can't load plugin \"%s\": %s\n",
+                __func__, filename, dlerror());
+    if (lib) dlclose(lib);
+    return NULL;
 }
 
 void *plugin_sym(void *plugin, const char *name, const char **errmsg)
