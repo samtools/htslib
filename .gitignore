@@ -1,9 +1,6 @@
 *.o
 *.pico
 *-uninstalled.pc
-*~
-*.orig
-*.rej
 /version.h
 
 autom4te.cache
