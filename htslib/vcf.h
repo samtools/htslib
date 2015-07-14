@@ -367,7 +367,7 @@ extern "C" {
     int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
 
     /** Helper function for the bcf_itr_next() macro; internal use, ignore it */
-    int bcf_readrec(BGZF *fp, void *null, void *v, int *tid, int *beg, int *end);
+    int bcf_readrec(htsFile *fp, void *null, void *v, int *tid, int *beg, int *end);
 
 
 
@@ -722,7 +722,7 @@ extern "C" {
     #define bcf_itr_destroy(iter) hts_itr_destroy(iter)
     #define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query((idx), (tid), (beg), (end), bcf_readrec)
     #define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_hdr_name2id), (hdr), hts_itr_query, bcf_readrec)
-    #define bcf_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
+    #define bcf_itr_next(htsfp, itr, r) hts_itr_next(htsfp, (itr), (r), 0)
     #define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
     #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
 

@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/types.h>
 
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;
@@ -223,16 +224,17 @@ char *hts_format_description(const htsFormat *format);
         c  CRAM format
         g  gzip compressed
         u  uncompressed
+        v  variant data (BCF or VCF)
         z  bgzf compressed
         [0-9]  zlib compression level
       Note that there is a distinction between 'u' and '0': the first yields
       plain uncompressed output whereas the latter outputs uncompressed data
       wrapped in the zlib format.
   @example
-      [rw]b .. compressed BCF, BAM, FAI
-      [rw]u .. uncompressed BCF
-      [rw]z .. compressed VCF
-      [rw]  .. uncompressed VCF
+      [rw]b   ..  compressed BCF, BAM, FAI
+      [rw]uv  .. uncompressed BCF
+      [rw]zv  ..  compressed VCF
+      [rw]v   ..  uncompressed VCF
 */
 htsFile *hts_open(const char *fn, const char *mode);
 
@@ -331,7 +333,7 @@ typedef struct {
     uint64_t u, v;
 } hts_pair64_t;
 
-typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, int *end);
+typedef int hts_readrec_func(htsFile *fp, void *data, void *r, int *tid, int *beg, int *end);
 
 typedef struct {
     uint32_t read_rest:1, finished:1, dummy:29;
@@ -376,7 +378,7 @@ extern "C" {
     typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
 
     hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec);
-    int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data);
+    int hts_itr_next(htsFile *fp, hts_itr_t *iter, void *r, void *data);
     const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 
     /**
@@ -393,10 +395,32 @@ extern "C" {
     #define FT_STDIN  (1<<3)
     int hts_file_type(const char *fname);
 
+    // basic file operations on htsFiles
+    ssize_t hts_raw_read_buffer(htsFile *hfp, void *buffer, size_t nbytes);
+    ssize_t hts_raw_write_buffer(htsFile *hfp, void *buffer, size_t nbytes);    
+    int64_t hts_raw_seek(htsFile* hfp, int64_t pos, int where);
+    off_t   hts_raw_tell(htsFile *hfp);
 
 #ifdef __cplusplus
 }
 #endif
+
+/*!
+  @abstract  Convert format enumerated type to a descriptive string
+  @return    string name of format
+  
+  Note: this must match the definition of the enumerated type [htsExactFormat]
+ */
+static inline char *string_from_exactFormat(enum htsExactFormat fmt)
+{
+    static char *names[] = {
+        "unknown_format",
+        "binary_format", "text_format",
+        "sam", "bam", "bai", "cram", "crai", "vcf", "bcf", "csi", "gzi", "tbi", "bed",
+    };
+
+    return names[fmt];
+}
 
 static inline int hts_reg2bin(int64_t beg, int64_t end, int min_shift, int n_lvls)
 {

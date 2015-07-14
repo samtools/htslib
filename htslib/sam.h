@@ -295,7 +295,7 @@ extern "C" {
     #define bam_itr_destroy(iter) hts_itr_destroy(iter)
     #define bam_itr_queryi(idx, tid, beg, end) sam_itr_queryi(idx, tid, beg, end)
     #define bam_itr_querys(idx, hdr, region) sam_itr_querys(idx, hdr, region)
-    #define bam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
+    #define bam_itr_next(htsfp, itr, r) hts_itr_next(htsfp, (itr), (r), 0)
 
     // Load .csi or .bai BAM index file.
     #define bam_index_load(fn) hts_idx_load((fn), HTS_FMT_BAI)
@@ -308,7 +308,7 @@ extern "C" {
     #define sam_itr_destroy(iter) hts_itr_destroy(iter)
     hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
     hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
-    #define sam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (htsfp))
+    #define sam_itr_next(htsfp, itr, r) hts_itr_next(htsfp, (itr), (r), (htsfp))
 
     /***************
      *** SAM I/O ***

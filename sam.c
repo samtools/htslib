@@ -455,7 +455,7 @@ int bam_index_build(const char *fn, int min_shift)
     return ret;
 }
 
-static int bam_readrec(BGZF *fp, void *ignored, void *bv, int *tid, int *beg, int *end)
+static int bam_readrec(htsFile *ignored, void *fp, void *bv, int *tid, int *beg, int *end)
 {
     bam1_t *b = bv;
     int ret;
@@ -467,7 +467,7 @@ static int bam_readrec(BGZF *fp, void *ignored, void *bv, int *tid, int *beg, in
 }
 
 // This is used only with read_rest=1 iterators, so need not set tid/beg/end.
-static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
+static int cram_readrec(htsFile *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
 {
     htsFile *fp = fpv;
     bam1_t *b = bv;
@@ -475,9 +475,10 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, 
 }
 
 // This is used only with read_rest=1 iterators, so need not set tid/beg/end.
-static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int *beg, int *end)
+static int sam_bam_cram_readrec(htsFile *fp, void *fpv, void *bv, int *tid, int *beg, int *end)
 {
-    htsFile *fp = fpv;
+    BGZF *bgzfp = fp->fp.bgzf;
+    //htsFile *fp = fpv;
     bam1_t *b = bv;
     switch (fp->format.format) {
     case bam:   return bam_read1(bgzfp, b);

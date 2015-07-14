@@ -56,27 +56,6 @@ static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, N
 
 int bcf_hdr_sync(bcf_hdr_t *h);
 
-// Read [nbytes] from file [fp] into [buffer]. This works on compressed
-// and uncompressed files.
-ssize_t vcf_read_buffer(htsFile *hfp, void *buffer, size_t nbytes)
-{
-    if ( hfp->format.compression == no_compression ) {
-        printf("read %u bytes, no compression\n", (unsigned int)nbytes);
-        return hread(hfp->fp.hfile, buffer, nbytes);
-    } else {
-        return bgzf_read(hfp->fp.bgzf, buffer, nbytes);
-    }
-}
-
-ssize_t vcf_write_buffer(htsFile *hfp, void *buffer, size_t nbytes)
-{
-    if ( hfp->format.compression == no_compression ) {
-        return hwrite(hfp->fp.hfile, buffer, nbytes);
-    } else {
-        return bgzf_write(hfp->fp.bgzf, buffer, nbytes);
-    }
-}
-
 int bcf_hdr_add_sample(bcf_hdr_t *h, const char *s)
 {
     if ( !s ) return 0;
@@ -765,11 +744,12 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     if (hfp->format.format == vcf)
         return vcf_hdr_read(hfp);
 
-    printf("BCF format  bcf_hdr_read [\n");
+    //printf("vcf::bcf_hdr_read  format=%s [\n", 
+    //       string_from_exactFormat(hfp->format.format)); fflush(stdout);
     uint8_t magic[5];
     bcf_hdr_t *h;
     h = bcf_hdr_init("r");
-    if ( vcf_read_buffer(hfp, magic, 5)<0 )
+    if ( hts_raw_read_buffer(hfp, magic, 5)<0 )
     {
         fprintf(stderr,"[%s:%d %s] Failed to read the header (reading BCF in text mode?)\n", __FILE__,__LINE__,__FUNCTION__);
         return NULL;
@@ -785,11 +765,12 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     }
     int hlen;
     char *htxt;
-    vcf_read_buffer(hfp, &hlen, 4);
+    hts_raw_read_buffer(hfp, &hlen, 4);
     htxt = (char*)malloc(hlen);
-    vcf_read_buffer(hfp, htxt, hlen);
+    hts_raw_read_buffer(hfp, htxt, hlen);
     bcf_hdr_parse(h, htxt);
     free(htxt);
+    //printf("]\n"); fflush(stdout);
     return h;
 }
 
@@ -804,9 +785,9 @@ int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
     hlen++; // include the \0 byte
 
     // FIXME: these should use vcf_buffer_write()
-    if ( vcf_write_buffer(hfp, "BCF\2\2", 5) !=5 ) return -1;
-    if ( vcf_write_buffer(hfp, &hlen, 4) !=4 ) return -1;
-    if ( vcf_write_buffer(hfp, htxt, hlen) != hlen ) return -1;
+    if ( hts_raw_write_buffer(hfp, "BCF\2\2", 5) !=5 ) return -1;
+    if ( hts_raw_write_buffer(hfp, &hlen, 4) !=4 ) return -1;
+    if ( hts_raw_write_buffer(hfp, htxt, hlen) != hlen ) return -1;
 
     free(htxt);
     return 0;
@@ -875,7 +856,7 @@ static inline int bcf_read1_core(htsFile *hfp, bcf1_t *v)
 {
     uint32_t x[8];
     int ret;
-    if ((ret = vcf_read_buffer(hfp, x, 32)) != 32) {
+    if ((ret = hts_raw_read_buffer(hfp, x, 32)) != 32) {
         if (ret == 0) return -1;
         return -2;
     }
@@ -891,33 +872,8 @@ static inline int bcf_read1_core(htsFile *hfp, bcf1_t *v)
     // silent fix of broken BCFs produced by earlier versions of bcf_subset, prior to and including bd6ed8b4
     if ( (!v->indiv.l || !v->n_sample) && v->n_fmt ) v->n_fmt = 0;
 
-    vcf_read_buffer(hfp, v->shared.s, v->shared.l);
-    vcf_read_buffer(hfp, v->indiv.s, v->indiv.l);
-    return 0;
-}
-
-static inline int bcf_read1_core_bgzf(BGZF *fp, bcf1_t *v)
-{
-    uint32_t x[8];
-    int ret;
-    if ((ret = bgzf_read(fp, x, 32)) != 32) {
-        if (ret == 0) return -1;
-        return -2;
-    }
-    bcf_clear1(v);
-    x[0] -= 24; // to exclude six 32-bit integers
-    ks_resize(&v->shared, x[0]);
-    ks_resize(&v->indiv, x[1]);
-    memcpy(v, x + 2, 16);
-    v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
-    v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
-    v->shared.l = x[0], v->indiv.l = x[1];
-
-    // silent fix of broken BCFs produced by earlier versions of bcf_subset, prior to and including bd6ed8b4
-    if ( (!v->indiv.l || !v->n_sample) && v->n_fmt ) v->n_fmt = 0;
-
-    bgzf_read(fp, v->shared.s, v->shared.l);
-    bgzf_read(fp, v->indiv.s, v->indiv.l);
+    hts_raw_read_buffer(hfp, v->shared.s, v->shared.l);
+    hts_raw_read_buffer(hfp, v->indiv.s, v->indiv.l);
     return 0;
 }
 
@@ -977,11 +933,11 @@ int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 }
 
 // fp has to change type to htsFile
-int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, int *beg, int *end)
+int bcf_readrec(htsFile *fp, void *null, void *vv, int *tid, int *beg, int *end)
 {
     bcf1_t *v = (bcf1_t *) vv;
     int ret;
-    if ((ret = bcf_read1_core_bgzf(fp, v)) >= 0)
+    if ((ret = bcf_read1_core(fp, v)) >= 0)
         *tid = v->rid, *beg = v->pos, *end = v->pos + v->rlen;
     return ret;
 }
@@ -1234,9 +1190,9 @@ int bcf_write(htsFile *hfp, const bcf_hdr_t *h, bcf1_t *v)
     memcpy(x + 2, v, 16);
     x[6] = (uint32_t)v->n_allele<<16 | v->n_info;
     x[7] = (uint32_t)v->n_fmt<<24 | v->n_sample;
-    if ( vcf_write_buffer(hfp, x, 32) != 32 ) return -1;
-    if ( vcf_write_buffer(hfp, v->shared.s, v->shared.l) != v->shared.l ) return -1;
-    if ( vcf_write_buffer(hfp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;
+    if ( hts_raw_write_buffer(hfp, x, 32) != 32 ) return -1;
+    if ( hts_raw_write_buffer(hfp, v->shared.s, v->shared.l) != v->shared.l ) return -1;
+    if ( hts_raw_write_buffer(hfp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;
     return 0;
 }
 

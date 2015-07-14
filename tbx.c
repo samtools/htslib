@@ -151,8 +151,9 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
     }
 }
 
-int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end)
+int tbx_readrec(htsFile *hfp, void *tbxv, void *sv, int *tid, int *beg, int *end)
 {
+    BGZF *fp = hts_get_bgzfp(hfp);
     tbx_t *tbx = (tbx_t *) tbxv;
     kstring_t *s = (kstring_t *) sv;
     int ret;
@@ -195,7 +196,8 @@ void tbx_set_meta(tbx_t *tbx)
     hts_idx_set_meta(tbx->idx, l, meta, 0);
 }
 
-tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
+
+tbx_t *tbx_index_bgzf(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 {
     tbx_t *tbx;
     kstring_t str;
@@ -236,6 +238,13 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
     return tbx;
 }
 
+// convert the file type from htsFile to BGZF
+tbx_t *tbx_index(htsFile *hfp, int min_shift, const tbx_conf_t *conf)
+{
+        BGZF *fp = hts_get_bgzfp(hfp);
+        return tbx_index_bgzf(fp, min_shift, conf);
+}
+
 void tbx_destroy(tbx_t *tbx)
 {
     khash_t(s2i) *d = (khash_t(s2i)*)tbx->dict;
@@ -257,7 +266,7 @@ int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf)
     if ( bgzf_is_bgzf(fn)!=1 ) { fprintf(stderr,"Not a BGZF file: %s\n", fn); return -1; }
     if ((fp = bgzf_open(fn, "r")) == 0) return -1;
     if ( !fp->is_compressed ) { bgzf_close(fp); return -1; }
-    tbx = tbx_index(fp, min_shift, conf);
+    tbx = tbx_index_bgzf(fp, min_shift, conf);
     bgzf_close(fp);
     if ( !tbx ) return -1;
     hts_idx_save(tbx->idx, fn, min_shift > 0? HTS_FMT_CSI : HTS_FMT_TBI);

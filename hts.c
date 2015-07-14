@@ -396,26 +396,47 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
         htsFormat *fmt = &fp->format;
         fp->is_write = 1;
 
-        if (strchr(mode, 'b')) fmt->format = binary_format;
-        else if (strchr(mode, 'c')) fmt->format = cram;
-        else fmt->format = text_format;
-
-        if (strchr(mode, 'z')) fmt->compression = bgzf;
-        else if (strchr(mode, 'g')) fmt->compression = gzip;
-        else if (strchr(mode, 'u')) fmt->compression = no_compression;
-        else {
-            // No compression mode specified, set to the default for the format
-            switch (fmt->format) {
-            case binary_format: fmt->compression = bgzf; break;
-            case cram: fmt->compression = custom; break;
-            case text_format: fmt->compression = no_compression; break;
-            default: abort();
+        if (strchr(mode, 'v')) {
+            // variant data, binary (BCF) or textual (VCF)
+            if (strchr(mode, 'b')) {
+                fmt->format = bcf;
             }
+            else {
+                fmt->format = vcf;
+            }
+
+            if (strchr(mode, 'z')) fmt->compression = bgzf;
+            else if (strchr(mode, 'u')) fmt->compression = no_compression;            
+            else if (strchr(mode, 'g')) {
+                fprintf(stderr, "Error: gzip compression is not supported for variant data\n");
+                goto error;
+            }
+            else
+                fmt->compression = no_compression;            
+        }
+        else {
+            // older code 
+            if (strchr(mode, 'b')) fmt->format = binary_format;
+            else if (strchr(mode, 'c')) fmt->format = cram;
+            else fmt->format = text_format;
+
+            if (strchr(mode, 'z')) fmt->compression = bgzf;
+            else if (strchr(mode, 'g')) fmt->compression = gzip;
+            else if (strchr(mode, 'u')) fmt->compression = no_compression;
+            else {
+                // No compression mode specified, set to the default for the format
+                switch (fmt->format) {
+                case binary_format: fmt->compression = bgzf; break;
+                case cram: fmt->compression = custom; break;
+                case text_format: fmt->compression = no_compression; break;
+                default: abort();
+                }
+            }
+
         }
 
         // Fill in category (if determinable; e.g. 'b' could be BAM or BCF)
         fmt->category = format_category(fmt->format);
-
         fmt->version.major = fmt->version.minor = -1;
         fmt->compression_level = -1;
         fmt->specific = NULL;
@@ -485,7 +506,8 @@ error:
 
 int hts_close(htsFile *fp)
 {
-    printf("hts:hts_close[\n"); fflush(stdout);
+    //printf("hts:hts_close< format=%s\n",
+    //       string_from_exactFormat(fp->format.format)); fflush(stdout);
     int ret, save;
 
     switch (fp->format.format) {
@@ -495,7 +517,6 @@ int hts_close(htsFile *fp)
         break;
 
     case bcf:
-        printf("hts:bcf format\n"); fflush(stdout);
         if (fp->format.compression == no_compression)
             ret = hclose(fp->fp.hfile);
         else
@@ -548,6 +569,8 @@ int hts_close(htsFile *fp)
     free(fp->line.s);
     free(fp);
     errno = save;
+
+    //printf(">\n"); fflush(stdout);
     return ret;
 }
 
@@ -1548,13 +1571,13 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
     } else return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
 }
 
-int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
+int hts_itr_next(htsFile *fp, hts_itr_t *iter, void *r, void *data)
 {
     int ret, tid, beg, end;
     if (iter == NULL || iter->finished) return -1;
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
-            bgzf_seek(fp, iter->curr_off, SEEK_SET);
+            hts_raw_seek(fp, iter->curr_off, SEEK_SET);
             iter->curr_off = 0; // only seek once
         }
         ret = iter->readrec(fp, data, r, &tid, &beg, &end);
@@ -1569,13 +1592,13 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
         if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
             if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
             if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-                bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET);
-                iter->curr_off = bgzf_tell(fp);
+                hts_raw_seek(fp, iter->off[iter->i+1].u, SEEK_SET);
+                iter->curr_off = hts_raw_tell(fp);
             }
             ++iter->i;
         }
         if ((ret = iter->readrec(fp, data, r, &tid, &beg, &end)) >= 0) {
-            iter->curr_off = bgzf_tell(fp);
+            iter->curr_off = hts_raw_tell(fp);
             if (tid != iter->tid || beg >= iter->end) { // no need to proceed
                 ret = -1; break;
             } else if (end > iter->beg && iter->end > beg) {
@@ -1674,4 +1697,49 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt)
     idx = hts_idx_load_local(fnidx, fmt);
     free(fnidx);
     return idx;
+}
+
+// Raw operations 
+
+// Read [nbytes] from file [fp] into [buffer]. This works on compressed
+// and uncompressed files.
+ssize_t hts_raw_read_buffer(htsFile *hfp, void *buffer, size_t nbytes)
+{
+    if ( hfp->format.compression == no_compression ) {
+        // printf("read %u bytes, no compression\n", (unsigned int)nbytes);
+        return hread(hfp->fp.hfile, buffer, nbytes);
+    } else {
+        return bgzf_read(hfp->fp.bgzf, buffer, nbytes);
+    }
+}
+
+// What about other file formats?
+//  gzip 
+ssize_t hts_raw_write_buffer(htsFile *hfp, void *buffer, size_t nbytes)
+{
+    if ( hfp->format.compression == no_compression ) {
+        return hwrite(hfp->fp.hfile, buffer, nbytes);
+    } else {
+        return bgzf_write(hfp->fp.bgzf, buffer, nbytes);
+    }
+}
+
+int64_t hts_raw_seek(htsFile* hfp, int64_t pos, int where)
+{
+    if ( hfp->format.compression == no_compression ) {
+        return hseek(hfp->fp.hfile, pos, where);
+    }
+    else {
+        return bgzf_seek(hfp->fp.bgzf, pos, where);
+    }
+}
+
+off_t hts_raw_tell(htsFile *hfp)
+{
+    if ( hfp->format.compression == no_compression ) {
+        return htell(hfp->fp.hfile);
+    }
+    else {
+        return bgzf_tell(hfp->fp.bgzf);
+    }    
 }
