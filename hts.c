@@ -485,6 +485,7 @@ error:
 
 int hts_close(htsFile *fp)
 {
+    printf("hts:hts_close[\n"); fflush(stdout);
     int ret, save;
 
     switch (fp->format.format) {
@@ -494,6 +495,7 @@ int hts_close(htsFile *fp)
         break;
 
     case bcf:
+        printf("hts:bcf format\n"); fflush(stdout);
         if (fp->format.compression == no_compression)
             ret = hclose(fp->fp.hfile);
         else

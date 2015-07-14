@@ -30,12 +30,13 @@ DEALINGS IN THE SOFTWARE.  */
 
 void write_bcf(char *fname)
 {
-    printf("write_bcf [\n");
+    printf("test-vcf-api:write_bcf  [\n"); fflush(stdout);
     // Init
     htsFile *fp    = hts_open(fname,"wbu");
     bcf_hdr_t *hdr = bcf_hdr_init("w");
     bcf1_t *rec    = bcf_init1();
-
+    printf("AAA\n"); fflush(stdout);
+    
     // Create VCF header
     kstring_t str = {0,0,0};
     bcf_hdr_append(hdr, "##fileDate=20090805");
@@ -69,7 +70,7 @@ void write_bcf(char *fname)
     bcf_hdr_add_sample(hdr, "NA00003");
     bcf_hdr_add_sample(hdr, NULL);      // to update internal structures
     bcf_hdr_write(fp, hdr);
-
+    printf("BBB\n"); fflush(stdout);
 
     // Add a record
     // 20     14370   rs6054257 G      A       29   PASS   NS=3;DP=14;AF=0.5;DB;H2           GT:GQ:DP:HQ 0|0:48:1:51,51 1|0:48:8:51,51 1/1:43:5:.,.
@@ -151,7 +152,8 @@ void write_bcf(char *fname)
     free(tmpia);
     free(tmpfa);
 
-    // Clean
+   // Clean
+    printf("cleanup\n"); fflush(stdout);
     free(str.s);
     bcf_destroy1(rec);
     bcf_hdr_destroy(hdr);
@@ -162,7 +164,7 @@ void write_bcf(char *fname)
         exit(ret);
     }
 
-    printf("]\n");
+    printf("test-vcf-api  ]\n"); fflush(stdout);
 }
 
 void bcf_to_vcf(char *fname)
