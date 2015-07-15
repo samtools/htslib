@@ -474,7 +474,12 @@ int bgzf_read_block(BGZF *fp)
     if ( !fp->is_compressed )
     {
         count = hread(fp->fp, fp->uncompressed_block, BGZF_MAX_BLOCK_SIZE);
-        if ( count==0 )
+        if ( count < 0 )  // Error
+        {
+            fp->errcode |= BGZF_ERR_IO;
+            return -1;
+        }
+        if ( count==0 )   // EOF
         {
             fp->block_length = 0;
             return 0;
@@ -1076,7 +1081,14 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
 
     FILE *idx = fopen(tmp?tmp:bname,"wb");
     if ( tmp ) free(tmp);
-    if ( !idx ) return -1;
+    if ( !idx ) {
+        if (hts_verbose > 1)
+        {
+            fprintf(stderr, "[E::%s] Error opening %s%s : %s\n",
+                    __func__, bname, suffix ? suffix : "", strerror(errno));
+        }
+        return -1;
+    }
 
     // Note that the index contains one extra record when indexing files opened
     // for reading. The terminating record is not present when opened for writing.
@@ -1086,25 +1098,41 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
     if ( fp->is_be )
     {
         uint64_t x = fp->idx->noffs - 1;
-        fwrite(ed_swap_8p(&x), 1, sizeof(x), idx);
+        if (fwrite(ed_swap_8p(&x), 1, sizeof(x), idx) < sizeof(x)) goto fail;
         for (i=1; i<fp->idx->noffs; i++)
         {
-            x = fp->idx->offs[i].caddr; fwrite(ed_swap_8p(&x), 1, sizeof(x), idx);
-            x = fp->idx->offs[i].uaddr; fwrite(ed_swap_8p(&x), 1, sizeof(x), idx);
+            x = fp->idx->offs[i].caddr;
+            if (fwrite(ed_swap_8p(&x), 1, sizeof(x), idx) < sizeof(x)) goto fail;
+            x = fp->idx->offs[i].uaddr;
+            if (fwrite(ed_swap_8p(&x), 1, sizeof(x), idx) < sizeof(x)) goto fail;
         }
     }
     else
     {
         uint64_t x = fp->idx->noffs - 1;
-        fwrite(&x, 1, sizeof(x), idx);
+        if (fwrite(&x, 1, sizeof(x), idx) < sizeof(x)) goto fail;
         for (i=1; i<fp->idx->noffs; i++)
         {
-            fwrite(&fp->idx->offs[i].caddr, 1, sizeof(fp->idx->offs[i].caddr), idx);
-            fwrite(&fp->idx->offs[i].uaddr, 1, sizeof(fp->idx->offs[i].uaddr), idx);
+            if (fwrite(&fp->idx->offs[i].caddr, 1, sizeof(fp->idx->offs[i].caddr), idx) < sizeof(fp->idx->offs[i].caddr)) goto fail;
+            if (fwrite(&fp->idx->offs[i].uaddr, 1, sizeof(fp->idx->offs[i].uaddr), idx) < sizeof(fp->idx->offs[i].uaddr)) goto fail;
         }
     }
-    fclose(idx);
+    if (fclose(idx) < 0)
+    {
+        fprintf(stderr, "[E::%s] Error on closing %s%s : %s\n",
+                __func__, bname, suffix ? suffix : "", strerror(errno));
+        return -1;
+    }
     return 0;
+
+ fail:
+    if (hts_verbose > 1)
+    {
+        fprintf(stderr, "[E::%s] Error writing to %s%s : %s\n",
+                __func__, bname, suffix ? suffix : "", strerror(errno));
+    }
+    fclose(idx);
+    return -1;
 }
 
 
@@ -1171,7 +1199,10 @@ int bgzf_useek(BGZF *fp, long uoffset, int where)
         fp->block_length = 0;  // indicates current block has not been loaded
         fp->block_address = uoffset;
         fp->block_offset = 0;
-        bgzf_read_block(fp);
+        if (bgzf_read_block(fp) < 0) {
+            fp->errcode |= BGZF_ERR_IO;
+            return -1;
+        }
         fp->uncompressed_address = uoffset;
         return 0;
     }
@@ -1200,7 +1231,10 @@ int bgzf_useek(BGZF *fp, long uoffset, int where)
     fp->block_length = 0;  // indicates current block has not been loaded
     fp->block_address = fp->idx->offs[i].caddr;
     fp->block_offset = 0;
-    if ( bgzf_read_block(fp) < 0 ) return -1;
+    if ( bgzf_read_block(fp) < 0 ) {
+        fp->errcode |= BGZF_ERR_IO;
+        return -1;
+    }
     if ( uoffset - fp->idx->offs[i].uaddr > 0 )
     {
         fp->block_offset = uoffset - fp->idx->offs[i].uaddr;

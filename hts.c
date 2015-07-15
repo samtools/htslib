@@ -1139,39 +1139,45 @@ int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
 
 int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int fmt)
 {
+    BGZF *fp = NULL;
+    FILE *f = NULL;
     if (fnidx == NULL) return hts_idx_save(idx, fn, fmt);
 
     if (fmt == HTS_FMT_CSI) {
-        BGZF *fp;
         uint32_t x[3];
         int is_be, i;
         is_be = ed_is_big();
         fp = bgzf_open(fnidx, "w");
         if (fp == NULL) return -1;
-        bgzf_write(fp, "CSI\1", 4);
+        if (bgzf_write(fp, "CSI\1", 4) < 0) goto fail;
         x[0] = idx->min_shift; x[1] = idx->n_lvls; x[2] = idx->l_meta;
         if (is_be) {
             for (i = 0; i < 3; ++i)
-                bgzf_write(fp, ed_swap_4p(&x[i]), 4);
-        } else bgzf_write(fp, &x, 12);
-        if (idx->l_meta) bgzf_write(fp, idx->meta, idx->l_meta);
+                if (bgzf_write(fp, ed_swap_4p(&x[i]), 4) < 0) goto fail;
+        } else {
+            if (bgzf_write(fp, &x, 12) < 0) goto fail;
+        }
+        if (idx->l_meta) {
+            if (bgzf_write(fp, idx->meta, idx->l_meta) < 0) goto fail;
+        }
         hts_idx_save_core(idx, fp, HTS_FMT_CSI);
-        bgzf_close(fp);
     } else if (fmt == HTS_FMT_TBI) {
-        BGZF *fp = bgzf_open(fnidx, "w");
+        fp = bgzf_open(fnidx, "w");
         if (fp == NULL) return -1;
-        bgzf_write(fp, "TBI\1", 4);
+        if (bgzf_write(fp, "TBI\1", 4) < 0) goto fail;
         hts_idx_save_core(idx, fp, HTS_FMT_TBI);
-        bgzf_close(fp);
     } else if (fmt == HTS_FMT_BAI) {
-        FILE *fp = fopen(fnidx, "w");
-        if (fp == NULL) return -1;
-        fwrite("BAI\1", 1, 4, fp);
-        hts_idx_save_core(idx, fp, HTS_FMT_BAI);
-        fclose(fp);
+        f = fopen(fnidx, "w");
+        if (f == NULL) return -1;
+        if (fwrite("BAI\1", 1, 4, f) != 4) goto fail;
+        hts_idx_save_core(idx, f, HTS_FMT_BAI);
     } else abort();
 
-    return 0;
+    return fp ? bgzf_close(fp) : fclose(f);
+ fail:
+    if (fp) bgzf_close(fp);
+    if (f)  fclose(f);
+    return -1;
 }
 
 static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
@@ -1587,7 +1593,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
     if (iter == NULL || iter->finished) return -1;
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
-            bgzf_seek(fp, iter->curr_off, SEEK_SET);
+            if (bgzf_seek(fp, iter->curr_off, SEEK_SET) < 0) return -1;
             iter->curr_off = 0; // only seek once
         }
         ret = iter->readrec(fp, data, r, &tid, &beg, &end);
@@ -1602,7 +1608,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
         if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
             if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
             if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-                bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET);
+                if (bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) return -1;
                 iter->curr_off = bgzf_tell(fp);
             }
             ++iter->i;
