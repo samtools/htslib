@@ -230,8 +230,18 @@ int fai_build(const char *fn)
         free(str);
         return -1;
     }
-    if ( bgzf->is_compressed ) bgzf_index_dump(bgzf, fn, ".gzi");
-    bgzf_close(bgzf);
+    if ( bgzf->is_compressed ) {
+        if (bgzf_index_dump(bgzf, fn, ".gzi") < 0) {
+            fprintf(stderr, "[fai_build] fail to make bgzf index %s.gzi\n", fn);
+            fai_destroy(fai); free(str);
+            return -1;
+        }
+    }
+    if (bgzf_close(bgzf) < 0) {
+        fprintf(stderr, "[fai_build] Error on closing %s\n", fn);
+        fai_destroy(fai); free(str);
+        return -1;
+    }
     fp = fopen(str, "wb");
     if ( !fp ) {
         fprintf(stderr, "[fai_build] fail to write FASTA index %s\n",str);
@@ -308,7 +318,11 @@ faidx_t *fai_load(const char *fn)
 
     if (fp == 0) {
         fprintf(stderr, "[fai_load] build FASTA index.\n");
-        fai_build(fn);
+        if (fai_build(fn) != 0) {
+            fprintf(stderr, "[fai_load] Failed to build index.\n");
+            free(str);
+            return 0;
+        }
         fp = fopen(str, "rb");
         if (fp == 0) {
             fprintf(stderr, "[fai_load] fail to open FASTA index.\n");

@@ -220,18 +220,22 @@ int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
     int32_t i, name_len, x;
     // write "BAM1"
     strncpy(buf, "BAM\1", 4);
-    bgzf_write(fp, buf, 4);
+    if (bgzf_write(fp, buf, 4) < 0) return -1;
     // write plain text and the number of reference sequences
     if (fp->is_be) {
         x = ed_swap_4(h->l_text);
-        bgzf_write(fp, &x, 4);
-        if (h->l_text) bgzf_write(fp, h->text, h->l_text);
+        if (bgzf_write(fp, &x, 4) < 0) return -1;
+        if (h->l_text) {
+            if (bgzf_write(fp, h->text, h->l_text) < 0) return -1;
+        }
         x = ed_swap_4(h->n_targets);
-        bgzf_write(fp, &x, 4);
+        if (bgzf_write(fp, &x, 4) < 0) return -1;
     } else {
-        bgzf_write(fp, &h->l_text, 4);
-        if (h->l_text) bgzf_write(fp, h->text, h->l_text);
-        bgzf_write(fp, &h->n_targets, 4);
+        if (bgzf_write(fp, &h->l_text, 4) < 0) return -1;
+        if (h->l_text) {
+            if (bgzf_write(fp, h->text, h->l_text) < 0) return -1;
+        }
+        if (bgzf_write(fp, &h->n_targets, 4) < 0) return -1;
     }
     // write sequence names and lengths
     for (i = 0; i != h->n_targets; ++i) {
@@ -239,15 +243,19 @@ int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
         name_len = strlen(p) + 1;
         if (fp->is_be) {
             x = ed_swap_4(name_len);
-            bgzf_write(fp, &x, 4);
-        } else bgzf_write(fp, &name_len, 4);
-        bgzf_write(fp, p, name_len);
+            if (bgzf_write(fp, &x, 4) < 0) return -1;
+        } else {
+            if (bgzf_write(fp, &name_len, 4) < 0) return -1;
+        }
+        if (bgzf_write(fp, p, name_len) < 0) return -1;
         if (fp->is_be) {
             x = ed_swap_4(h->target_len[i]);
-            bgzf_write(fp, &x, 4);
-        } else bgzf_write(fp, &h->target_len[i], 4);
+            if (bgzf_write(fp, &x, 4) < 0) return -1;
+        } else {
+            if (bgzf_write(fp, &h->target_len[i], 4) < 0) return -1;
+        }
     }
-    bgzf_flush(fp);
+    if (bgzf_flush(fp) < 0) return -1;
     return 0;
 }
 
