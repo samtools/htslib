@@ -232,9 +232,9 @@ char *hts_format_description(const htsFormat *format);
       wrapped in the zlib format.
   @example
       [rw]b   ..  compressed BCF, BAM, FAI
-      [rw]uv  .. uncompressed BCF
-      [rw]zv  ..  compressed VCF
-      [rw]v   ..  uncompressed VCF
+      [rw]uv  ..  uncompressed BCF
+      [rw]z   ..  compressed VCF
+      [rw]    ..  uncompressed VCF
 */
 htsFile *hts_open(const char *fn, const char *mode);
 
