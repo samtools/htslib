@@ -37,6 +37,9 @@ int main(int argc, char **argv)
     // something and verify that all sites are read in both passes - fwd and
     // bwd.
     bcf_sweep_t *sw = bcf_sweep_init(argv[1]);
+    if (sw == NULL)
+        return;
+
     bcf_hdr_t *hdr  = bcf_sweep_hdr(sw);
     int chksum = 0;
 

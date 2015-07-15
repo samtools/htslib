@@ -254,9 +254,9 @@ void iterator(const char *fname)
 
     int rc = bcf_index_build(fname, 0);
     if (rc < 0) {
-        fprintf(stderr,
+        /*        fprintf(stderr,
                 "Could not build an index for file %s, not running iterator test\n",
-                fname);
+                fname);*/
         return;
     }
     idx = bcf_index_load(fname);

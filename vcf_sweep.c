@@ -106,6 +106,11 @@ bcf_sweep_t *bcf_sweep_init(const char *fname)
 {
     bcf_sweep_t *sw = (bcf_sweep_t*) calloc(1,sizeof(bcf_sweep_t));
     sw->file = hts_open(fname, "r");
+    if (sw->file->format.compression == no_compression) {
+        // sweeping assumes the file is compressed in bgzf format
+        return NULL;
+    }
+
     sw->fp   = hts_get_bgzfp(sw->file);
     bgzf_index_build_init(sw->fp);
     sw->hdr  = bcf_hdr_read(sw->file);
