@@ -28,11 +28,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include <htslib/kstring.h>
 #include <htslib/kseq.h>
 
-void write_bcf(char *fname)
+void write_bcf(char *fname, char *mode)
 {
     // Init
-    htsFile *fp    = hts_open(fname,"wbuv");
-    //htsFile *fp    = hts_open(fname,"wb");
+    htsFile *fp    = hts_open(fname, mode);
     bcf_hdr_t *hdr = bcf_hdr_init("w");
     bcf1_t *rec    = bcf_init1();
     
@@ -280,8 +279,13 @@ void iterator(const char *fname)
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
-    write_bcf(fname);
+
+    write_bcf(fname, "wb");
     bcf_to_vcf(fname);
     iterator(fname);
+
+    //write_bcf(fname, "wbuv");
+    //bcf_to_vcf(fname);
+
     return 0;
 }

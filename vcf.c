@@ -1565,13 +1565,13 @@ int _vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char
                 if (fmt[j].max_l < l - 1) fmt[j].max_l = l - 1;
                 if (fmt[j].is_gt && fmt[j].max_g < g) fmt[j].max_g = g;
                 l = 0, m = g = 1;
-                if ( *r==':' )
+                if ( *r==':' ) 
                 {
                     j++;
-                    if ( j>=v->n_fmt )
-                    {
+                    if ( j>=v->n_fmt ) 
+                    { 
                         fprintf(stderr,"Incorrect number of FORMAT fields at %s:%d\n", h->id[BCF_DT_CTG][v->rid].key,v->pos+1);
-                        exit(1);
+                        exit(1); 
                     }
                 }
                 else break;
@@ -2054,9 +2054,9 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             kputs(h->id[BCF_DT_ID][z->key].key, s);
             if (z->len <= 0) continue;
             kputc('=', s);
-            if (z->len == 1)
+            if (z->len == 1) 
             {
-                switch (z->type)
+                switch (z->type) 
                 {
                     case BCF_BT_INT8:  if ( z->v1.i==bcf_int8_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
                     case BCF_BT_INT16: if ( z->v1.i==bcf_int16_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
@@ -3006,7 +3006,7 @@ bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key)
     return bcf_get_info_id(line, id);
 }
 
-bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id)
+bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id) 
 {
     int i;
     if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
@@ -3017,7 +3017,7 @@ bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id)
     return NULL;
 }
 
-bcf_info_t *bcf_get_info_id(bcf1_t *line, const int id)
+bcf_info_t *bcf_get_info_id(bcf1_t *line, const int id) 
 {
     int i;
     if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
@@ -3066,7 +3066,7 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
     if ( info->len == 1 )
     {
         if ( info->type==BCF_BT_FLOAT ) *((float*)*dst) = info->v1.f;
-        else
+        else 
         {
             #define BRANCH(type_t, missing) { \
                 if ( info->v1.i==missing ) *((int32_t*)*dst) = bcf_int32_missing; \
@@ -3211,3 +3211,4 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
     #undef BRANCH
     return nsmpl*fmt->n;
 }
+
