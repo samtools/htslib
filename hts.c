@@ -1401,19 +1401,19 @@ void hts_idx_destroy(hts_idx_t *idx)
 // The optimizer eliminates these ed_is_big() calls; still it would be good to
 // TODO Determine endianness at configure- or compile-time
 
-static inline ssize_t idx_write_int32(BGZF *fp, int32_t x)
+static inline ssize_t HTS_RESULT_USED idx_write_int32(BGZF *fp, int32_t x)
 {
     if (ed_is_big()) x = ed_swap_4(x);
     return bgzf_write(fp, &x, sizeof x);
 }
 
-static inline ssize_t idx_write_uint32(BGZF *fp, uint32_t x)
+static inline ssize_t HTS_RESULT_USED idx_write_uint32(BGZF *fp, uint32_t x)
 {
     if (ed_is_big()) x = ed_swap_4(x);
     return bgzf_write(fp, &x, sizeof x);
 }
 
-static inline ssize_t idx_write_uint64(BGZF *fp, uint64_t x)
+static inline ssize_t HTS_RESULT_USED idx_write_uint64(BGZF *fp, uint64_t x)
 {
     if (ed_is_big()) x = ed_swap_8(x);
     return bgzf_write(fp, &x, sizeof x);
@@ -1428,43 +1428,47 @@ static inline void swap_bins(bins_t *p)
     }
 }
 
-static void hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
+static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
 {
     int32_t i, j;
 
-    idx_write_int32(fp, idx->n);
+    #define check(ret) if ((ret) < 0) return -1
+
+    check(idx_write_int32(fp, idx->n));
     if (fmt == HTS_FMT_TBI && idx->l_meta)
-        bgzf_write(fp, idx->meta, idx->l_meta);
+        check(bgzf_write(fp, idx->meta, idx->l_meta));
 
     for (i = 0; i < idx->n; ++i) {
         khint_t k;
         bidx_t *bidx = idx->bidx[i];
         lidx_t *lidx = &idx->lidx[i];
         // write binning index
-        idx_write_int32(fp, bidx? kh_size(bidx) : 0);
+        check(idx_write_int32(fp, bidx? kh_size(bidx) : 0));
         if (bidx)
             for (k = kh_begin(bidx); k != kh_end(bidx); ++k)
                 if (kh_exist(bidx, k)) {
                     bins_t *p = &kh_value(bidx, k);
-                    idx_write_uint32(fp, kh_key(bidx, k));
-                    if (fmt == HTS_FMT_CSI) idx_write_uint64(fp, p->loff);
+                    check(idx_write_uint32(fp, kh_key(bidx, k)));
+                    if (fmt == HTS_FMT_CSI) check(idx_write_uint64(fp, p->loff));
                     //int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
-                    idx_write_int32(fp, p->n);
+                    check(idx_write_int32(fp, p->n));
                     for (j = 0; j < p->n; ++j) {
-                        idx_write_uint64(fp, p->list[j].u);
-                        idx_write_uint64(fp, p->list[j].v);
+                        check(idx_write_uint64(fp, p->list[j].u));
+                        check(idx_write_uint64(fp, p->list[j].v));
                     }
                 }
 
         // write linear index
         if (fmt != HTS_FMT_CSI) {
-            idx_write_int32(fp, lidx->n);
+            check(idx_write_int32(fp, lidx->n));
             for (j = 0; j < lidx->n; ++j)
-                idx_write_uint64(fp, lidx->offset[j]);
+                check(idx_write_uint64(fp, lidx->offset[j]));
         }
     }
 
-    idx_write_uint64(fp, idx->n_no_coor);
+    check(idx_write_uint64(fp, idx->n_no_coor));
+    return 0;
+    #undef check
 }
 
 int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
@@ -1492,27 +1496,33 @@ int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int
 {
     BGZF *fp;
 
+    #define check(ret) if ((ret) < 0) goto fail
+
     if (fnidx == NULL) return hts_idx_save(idx, fn, fmt);
 
     fp = bgzf_open(fnidx, (fmt == HTS_FMT_BAI)? "wu" : "w");
     if (fp == NULL) return -1;
 
     if (fmt == HTS_FMT_CSI) {
-        bgzf_write(fp, "CSI\1", 4);
-        idx_write_int32(fp, idx->min_shift);
-        idx_write_int32(fp, idx->n_lvls);
-        idx_write_uint32(fp, idx->l_meta);
-        if (idx->l_meta) bgzf_write(fp, idx->meta, idx->l_meta);
+        check(bgzf_write(fp, "CSI\1", 4));
+        check(idx_write_int32(fp, idx->min_shift));
+        check(idx_write_int32(fp, idx->n_lvls));
+        check(idx_write_uint32(fp, idx->l_meta));
+        if (idx->l_meta) check(bgzf_write(fp, idx->meta, idx->l_meta));
     } else if (fmt == HTS_FMT_TBI) {
-        bgzf_write(fp, "TBI\1", 4);
+        check(bgzf_write(fp, "TBI\1", 4));
     } else if (fmt == HTS_FMT_BAI) {
-        bgzf_write(fp, "BAI\1", 4);
+        check(bgzf_write(fp, "BAI\1", 4));
     } else abort();
 
-    hts_idx_save_core(idx, fp, fmt);
-    bgzf_close(fp);
+    check(hts_idx_save_core(idx, fp, fmt));
 
-    return 0;
+    return bgzf_close(fp);
+    #undef check
+
+fail:
+    bgzf_close(fp);
+    return -1;
 }
 
 static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
@@ -1928,7 +1938,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
     if (iter == NULL || iter->finished) return -1;
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
-            bgzf_seek(fp, iter->curr_off, SEEK_SET);
+            if (bgzf_seek(fp, iter->curr_off, SEEK_SET) < 0) return -1;
             iter->curr_off = 0; // only seek once
         }
         ret = iter->readrec(fp, data, r, &tid, &beg, &end);
@@ -1943,7 +1953,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
         if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
             if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
             if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-                bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET);
+                if (bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) return -1;
                 iter->curr_off = bgzf_tell(fp);
             }
             ++iter->i;
