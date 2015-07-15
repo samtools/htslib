@@ -267,7 +267,6 @@ void iterator(const char *fname)
     iter = bcf_itr_querys(idx, hdr, "20:1110600-1110800");
     bcf_itr_destroy(iter);
 
-    //printf("B\n"); fflush(stdout);    
     hts_idx_destroy(idx);
     bcf_hdr_destroy(hdr);
     int ret;
