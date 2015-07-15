@@ -1619,7 +1619,6 @@ int hts_itr_next(htsFile *fp, hts_itr_t *iter, void *r, void *data)
 
 static char *test_and_fetch(const char *fn)
 {
-    printf("test_and_fetch %s\n", fn);
     FILE *fp;
     if (hisremote(fn)) {
         const int buf_size = 1 * 1024 * 1024;
@@ -1681,11 +1680,9 @@ char *hts_idx_getfn(const char *fn, const char *ext)
 
 hts_idx_t *hts_idx_load(const char *fn, int fmt)
 {
-    //printf("hts_idx_load fn=%s\n", fn); fflush(stdout);
     char *fnidx;
     hts_idx_t *idx;
     fnidx = hts_idx_getfn(fn, ".csi");
-    printf("hts_idx_genfn=%s\n", fnidx); fflush(stdout);
     if (fnidx) fmt = HTS_FMT_CSI;
     else fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
     if (fnidx == 0) return 0;

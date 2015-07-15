@@ -252,7 +252,13 @@ void iterator(const char *fname)
     hts_idx_t *idx;
     hts_itr_t *iter;
 
-    bcf_index_build(fname, 0);
+    int rc = bcf_index_build(fname, 0);
+    if (rc < 0) {
+        fprintf(stderr,
+                "Could not build an index for file %s, not running iterator test\n",
+                fname);
+        return;
+    }
     idx = bcf_index_load(fname);
 
     iter = bcf_itr_queryi(idx, bcf_hdr_name2id(hdr, "20"), 1110600, 1110800);
