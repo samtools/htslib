@@ -2631,7 +2631,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
     }
 
     const char *r = ref, *a = alt;
-    while (*r && *a && *r==*a ) { r++; a++; }
+    while (*r && *a && toupper(*r)==toupper(*a) ) { r++; a++; }     // unfortunately, matching REF,ALT case is not guaranteed
 
     if ( *a && !*r )
     {
@@ -2651,18 +2651,18 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
     const char *re = r, *ae = a;
     while ( re[1] ) re++;
     while ( ae[1] ) ae++;
-    while ( *re==*ae && re>r && ae>a ) { re--; ae--; }
+    while ( re>r && ae>a && toupper(*re)==toupper(*ae) ) { re--; ae--; }
     if ( ae==a )
     {
         if ( re==r ) { var->n = 1; var->type = VCF_SNP; return; }
         var->n = -(re-r);
-        if ( *re==*ae ) { var->type = VCF_INDEL; return; }
+        if ( toupper(*re)==toupper(*ae) ) { var->type = VCF_INDEL; return; }
         var->type = VCF_OTHER; return;
     }
     else if ( re==r )
     {
         var->n = ae-a;
-        if ( *re==*ae ) { var->type = VCF_INDEL; return; }
+        if ( toupper(*re)==toupper(*ae) ) { var->type = VCF_INDEL; return; }
         var->type = VCF_OTHER; return;
     }
 
