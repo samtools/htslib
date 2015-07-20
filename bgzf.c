@@ -1168,8 +1168,11 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
     }
     if (fclose(idx) < 0)
     {
-        fprintf(stderr, "[E::%s] Error on closing %s%s : %s\n",
-                __func__, bname, suffix ? suffix : "", strerror(errno));
+        if (hts_verbose > 1)
+        {
+            fprintf(stderr, "[E::%s] Error on closing %s%s : %s\n",
+                    __func__, bname, suffix ? suffix : "", strerror(errno));
+        }
         return -1;
     }
     return 0;
