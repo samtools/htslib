@@ -128,7 +128,7 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
         return 0;
     }
     h = bam_hdr_init();
-    if (!h) return 0;
+    if (!h) goto nomem;
 
     // read plain text and the number of reference sequences
     bytes = bgzf_read(fp, &h->l_text, 4);
@@ -214,8 +214,10 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     }
 
  clean:
-    h->n_targets = num_names; // ensure we free only allocated target_names
-    bam_hdr_destroy(h);
+    if (h != NULL) {
+        h->n_targets = num_names; // ensure we free only allocated target_names
+        bam_hdr_destroy(h);
+    }
     return NULL;
 }
 
