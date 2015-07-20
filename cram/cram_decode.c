@@ -726,7 +726,7 @@ int cram_dependent_data_series(cram_fd *fd,
 	    fd->decode_md = 0;
 
 	if (fd->required_fields & SAM_QUAL)
-	    hdr->data_series |= CRAM_SEQ;
+	    hdr->data_series |= CRAM_QUAL;
 
 	if (fd->required_fields & SAM_AUX)
 	    hdr->data_series |= CRAM_RG | CRAM_TL | CRAM_aux;

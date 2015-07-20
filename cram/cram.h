@@ -52,4 +52,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram_codecs.h"
 #include "cram_index.h"
 
+// Validate against the external cram.h,
+//
+// This contains duplicated portions from cram_io.h and cram_structs.h,
+// so we want to ensure that the prototypes match.
+#include "htslib/cram.h"
+
 #endif

@@ -342,9 +342,17 @@ int sam_index_build2(const char *fn, const char *fnidx, int min_shift);
      ***************/
 
     #define sam_open(fn, mode) (hts_open((fn), (mode)))
+    #define sam_open_format(fn, mode, opts) (hts_open_format((fn), (mode), (opts)))
     #define sam_close(fp) hts_close(fp)
 
     int sam_open_mode(char *mode, const char *fn, const char *format);
+
+    // A version of sam_open_mode that can handle ,key=value options.
+    // The format string is allocated and returned, to be freed by the caller.
+    // Prefix should be "r" or "w",
+    char *sam_open_mode_opts(const char *fn,
+                             const char *mode,
+                             const char *format);
 
     typedef htsFile samFile;
     bam_hdr_t *sam_hdr_parse(int l_text, const char *text);

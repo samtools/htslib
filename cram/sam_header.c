@@ -446,14 +446,13 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 	return -1;
     if (-1 == (k = kh_put(sam_hdr, sh->h, type_i, &new)))
 	return -1;
-    kh_val(sh->h, k) = h_type;
 
     // Form the ring, either with self or other lines of this type
     if (!new) {
 	SAM_hdr_type *t = kh_val(sh->h, k), *p;
 	p = t->prev;
 	    
-	assert(p->next = t);
+	assert(p->next == t);
 	p->next = h_type;
 	h_type->prev = p;
 
@@ -461,6 +460,7 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 	h_type->next = t;
 	h_type->order = p->order + 1;
     } else {
+	kh_val(sh->h, k) = h_type;
 	h_type->prev = h_type->next = h_type;
 	h_type->order = 0;
     }
@@ -1168,7 +1168,7 @@ const char *sam_hdr_PG_ID(SAM_hdr *sh, const char *name) {
     do {
 	sprintf(sh->ID_buf, "%.1000s.%d", name, sh->ID_cnt++);
 	k = kh_get(m_s2i, sh->pg_hash, sh->ID_buf);
-    } while (k == kh_end(sh->pg_hash));
+    } while (k != kh_end(sh->pg_hash));
 
     return sh->ID_buf;
 }
