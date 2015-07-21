@@ -78,19 +78,24 @@ static int view_sam(hFILE *hfp, const char *filename)
     }
     if (mode == view_all) {
         bam1_t *b = bam_init1();
-        while (sam_read1(in, hdr, b) >= 0) {
+        int ret;
+        while ((ret = sam_read1(in, hdr, b)) >= 0) {
             if (sam_write1(out, hdr, b) < 0) {
                 status = EXIT_FAILURE;
                 goto clean;
             }
         }
         bam_destroy1(b);
+        if (ret != -1) // eof
+            status = EXIT_FAILURE;
     }
 
  clean:
     if (hdr != NULL) bam_hdr_destroy(hdr);
-    if (out != NULL) hts_close(out);
-    hts_close(in);
+    if (out != NULL && hts_close(out) != 0)
+        status = EXIT_FAILURE;
+    if (hts_close(in) != 0)
+        status = EXIT_FAILURE;
     return 1;
 }
 
