@@ -574,6 +574,29 @@ error:
     return NULL;
 }
 
+int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
+{
+    static const struct hFILE_scheme_handler handler =
+        { hopen_libcurl, hfile_always_remote, "libcurl", 50 };
+
+    self->name = "libcurl";
+
+    // FIXME Theoretically need to call curl_global_init() first
+    const curl_version_info_data *info = curl_version_info(CURLVERSION_NOW);
+    const char * const *protocol;
+
+    for (protocol = info->protocols; *protocol; protocol++)
+        hfile_add_scheme_handler(*protocol, &handler);
+
+    // TODO Check for the unlikely case that HTTP is disabled
+    hfile_add_scheme_handler("s3", &handler);
+    hfile_add_scheme_handler("s3+http", &handler);
+    if (info->features & CURL_VERSION_SSL)
+        hfile_add_scheme_handler("s3+https", &handler);
+
+    return 0;
+}
+
 
 /*******************
  * Rewrite S3 URLs *

@@ -69,7 +69,7 @@ static struct {
 
 static void irods_exit()
 {
-    (void) rcDisconnect(irods.conn);
+    if (irods.conn) { (void) rcDisconnect(irods.conn); }
     irods.conn = NULL;
 }
 
@@ -90,11 +90,6 @@ static int irods_init()
         ret = clientLogin(irods.conn);
         if (ret != 0) goto error;
     }
-
-    // In the unlikely event atexit() fails, it's better to succeed here and
-    // carry on and do the I/O; then eventually when the program exits, we'll
-    // merely disconnect from the server uncleanly, as if we had aborted.
-    (void) atexit(irods_exit);
 
     return 0;
 
@@ -242,4 +237,15 @@ error:
     hfile_destroy((hFILE *) fp);
     set_errno(ret);
     return NULL;
+}
+
+int PLUGIN_GLOBAL(hfile_plugin_init,_irods)(struct hFILE_plugin *self)
+{
+    static const struct hFILE_scheme_handler handler =
+        { hopen_irods, hfile_always_remote, "iRODS", 50 };
+
+    self->name = "iRODS";
+    hfile_add_scheme_handler("irods", &handler);
+    self->destroy = irods_exit;
+    return 0;
 }

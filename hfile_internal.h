@@ -57,13 +57,6 @@ struct hFILE_backend {
     int (*close)(hFILE *fp) HTS_RESULT_USED;
 };
 
-/* These are called from the hopen() dispatcher, and should call hfile_init()
-   to malloc a struct "derived" from hFILE and initialise it appropriately,
-   including setting base.backend to their own backend vector.  */
-hFILE *hopen_irods(const char *filename, const char *mode);
-hFILE *hopen_libcurl(const char *filename, const char *mode);
-hFILE *hopen_net(const char *filename, const char *mode);
-
 /* May be called by hopen_*() functions to decode a fopen()-style mode into
    open(2)-style flags.  */
 int hfile_oflags(const char *mode);
@@ -77,6 +70,67 @@ hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity);
    in the event opening the stream subsequently fails.  (This is safe to use
    even if fp is NULL.  This takes care to preserve errno.)  */
 void hfile_destroy(hFILE *fp);
+
+
+struct hFILE_scheme_handler {
+    /* Opens a stream when dispatched by hopen(); should call hfile_init()
+       to malloc a struct "derived" from hFILE and initialise it appropriately,
+       including setting base.backend to its own backend vector.  */
+    hFILE *(*open)(const char *filename, const char *mode) HTS_RESULT_USED;
+
+    /* Returns whether the URL denotes remote storage when dispatched by
+       hisremote().  For simple cases, use one of hfile_always_*() below.  */
+    int (*isremote)(const char *filename) HTS_RESULT_USED;
+
+    /* The name of the plugin or other code providing this handler.  */
+    const char *provider;
+
+    /* If multiple handlers are registered for the same scheme, the one with
+       the highest priority is used; range is 0 (lowest) to 100 (highest).  */
+    int priority;
+};
+
+/* May be used as an isremote() function in simple cases.  */
+extern int hfile_always_local (const char *fname);
+extern int hfile_always_remote(const char *fname);
+
+/* Should be called by plugins for each URL scheme they wish to handle.  */
+void hfile_add_scheme_handler(const char *scheme,
+                              const struct hFILE_scheme_handler *handler);
+
+struct hFILE_plugin {
+    /* On entry, HTSlib's plugin API version (currently 1).  */
+    int api_version;
+
+    /* On entry, the plugin's handle as returned by dlopen() etc.  */
+    void *obj;
+
+    /* The plugin should fill this in with its (human-readable) name.  */
+    const char *name;
+
+    /* The plugin may wish to fill in a function to be called on closing.  */
+    void (*destroy)(void);
+};
+
+#ifdef ENABLE_PLUGINS
+#define PLUGIN_GLOBAL(identifier,suffix) identifier
+
+/* Plugins must define an entry point with this signature.  */
+extern int hfile_plugin_init(struct hFILE_plugin *self);
+
+#else
+#define PLUGIN_GLOBAL(identifier,suffix) identifier##suffix
+
+/* Only plugins distributed within the HTSlib source that might be built
+   even with --disable-plugins need to use PLUGIN_GLOBAL and be listed here;
+   others can simply define hfile_plugin_init().  */
+
+extern int hfile_plugin_init_irods(struct hFILE_plugin *self);
+extern int hfile_plugin_init_libcurl(struct hFILE_plugin *self);
+#endif
+
+/* This one is never built as a separate plugin.  */
+extern int hfile_plugin_init_net(struct hFILE_plugin *self);
 
 #ifdef __cplusplus
 }

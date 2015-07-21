@@ -164,11 +164,17 @@ Either configure with --disable-libcurl or resolve this error to build HTSlib.])
 fi
 AC_SUBST([libcurl])
 
+CRYPTO_LIBS=
 if test $need_crypto != no; then
-  AC_CHECK_LIB([crypto], [HMAC])
-  AC_CHECK_FUNC([CCHmac], [AC_DEFINE([HAVE_COMMONCRYPTO], 1,
-        [Define if you have the Common Crypto library.])])
+  AC_CHECK_FUNC([CCHmac],
+    [AC_DEFINE([HAVE_COMMONCRYPTO], 1,
+               [Define if you have the Common Crypto library.])],
+    [save_LIBS=$LIBS
+     AC_CHECK_LIB([crypto], [HMAC])
+     LIBS=$save_LIBS
+     test "$ac_cv_lib_crypto_HMAC" = yes && CRYPTO_LIBS=-lcrypto])
 fi
+AC_SUBST([CRYPTO_LIBS])
 
 AC_CONFIG_FILES(config.mk)
 AC_OUTPUT

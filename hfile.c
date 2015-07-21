@@ -528,6 +528,8 @@ static const struct hFILE_backend mem_backend =
 
 static hFILE *hopen_mem(const char *data, const char *mode)
 {
+    if (strncmp(data, "data:", 5) == 0) data += 5;
+
     // TODO Implement write modes, which will require memory allocation
     if (strchr(mode, 'r') == NULL) { errno = EINVAL; return NULL; }
 
@@ -542,39 +544,174 @@ static hFILE *hopen_mem(const char *data, const char *mode)
 }
 
 
-/******************************
- * hopen() backend dispatcher *
- ******************************/
+/*****************************************
+ * Plugin and hopen() backend dispatcher *
+ *****************************************/
+
+#include <ctype.h>
+
+#include "hts_internal.h"
+#include "htslib/khash.h"
+
+KHASH_MAP_INIT_STR(scheme_string, const struct hFILE_scheme_handler *);
+static khash_t(scheme_string) *schemes = NULL;
+
+struct hFILE_plugin_list {
+    struct hFILE_plugin plugin;
+    struct hFILE_plugin_list *next;
+};
+
+static struct hFILE_plugin_list *plugins = NULL;
+
+static void hfile_exit()
+{
+    kh_destroy(scheme_string, schemes);
+
+    while (plugins != NULL) {
+        struct hFILE_plugin_list *p = plugins;
+        if (p->plugin.destroy) p->plugin.destroy();
+#ifdef ENABLE_PLUGINS
+        if (p->plugin.obj) close_plugin(p->plugin.obj);
+#endif
+        plugins = p->next;
+        free(p);
+    }
+}
+
+void hfile_add_scheme_handler(const char *scheme,
+                              const struct hFILE_scheme_handler *handler)
+{
+    int absent;
+    khint_t k = kh_put(scheme_string, schemes, scheme, &absent);
+    if (absent || handler->priority > kh_value(schemes, k)->priority) {
+        kh_value(schemes, k) = handler;
+    }
+}
+
+static int init_add_plugin(void *obj, int (*init)(struct hFILE_plugin *),
+                           const char *pluginname)
+{
+    struct hFILE_plugin_list *p = malloc (sizeof (struct hFILE_plugin_list));
+    if (p == NULL) abort();
+
+    p->plugin.api_version = 1;
+    p->plugin.obj = obj;
+    p->plugin.name = NULL;
+    p->plugin.destroy = NULL;
+
+    int ret = (*init)(&p->plugin);
+
+    if (ret != 0) {
+        if (hts_verbose >= 4)
+            fprintf(stderr, "[W::load_hfile_plugins] "
+                    "initialisation failed for plugin \"%s\": %d\n",
+                    pluginname, ret);
+        free(p);
+        return ret;
+    }
+
+    if (hts_verbose >= 5)
+        fprintf(stderr, "[M::load_hfile_plugins] loaded \"%s\"\n", pluginname);
+
+    p->next = plugins, plugins = p;
+    return 0;
+}
+
+static void load_hfile_plugins()
+{
+    static const struct hFILE_scheme_handler
+        data = { hopen_mem, hfile_always_local, "built-in", 80 },
+        file = { hopen_fd_fileuri, hfile_always_local, "built-in", 80 };
+
+    schemes = kh_init(scheme_string);
+    if (schemes == NULL) abort();
+
+    hfile_add_scheme_handler("data", &data);
+    hfile_add_scheme_handler("file", &file);
+    init_add_plugin(NULL, hfile_plugin_init_net, "knetfile");
+
+#ifdef ENABLE_PLUGINS
+    struct hts_path_itr path;
+    const char *pluginname;
+    hts_path_itr_setup(&path, NULL, NULL, "hfile_", 6, NULL, 0);
+    while ((pluginname = hts_path_itr_next(&path)) != NULL) {
+        void *obj;
+        int (*init)(struct hFILE_plugin *) = (int (*)(struct hFILE_plugin *))
+            load_plugin(&obj, pluginname, "hfile_plugin_init");
+
+        if (init) {
+            if (init_add_plugin(obj, init, pluginname) != 0)
+                close_plugin(obj);
+        }
+    }
+#else
+
+#ifdef HAVE_IRODS
+    init_add_plugin(NULL, hfile_plugin_init_irods, "iRODS");
+#endif
+#ifdef HAVE_LIBCURL
+    init_add_plugin(NULL, hfile_plugin_init_libcurl, "libcurl");
+#endif
+
+#endif
+
+    // In the unlikely event atexit() fails, it's better to succeed here and
+    // carry on; then eventually when the program exits, we'll merely close
+    // down the plugins uncleanly, as if we had aborted.
+    (void) atexit(hfile_exit);
+}
+
+/* A filename like "foo:bar" in which we don't recognise the scheme is
+   either an ordinary file or an indication of a missing or broken plugin.
+   Try to open it as an ordinary file; but if there's no such file, set
+   errno distinctively to make the plugin issue apparent.  */
+static hFILE *hopen_unknown_scheme(const char *fname, const char *mode)
+{
+    hFILE *fp = hopen_fd(fname, mode);
+    if (fp == NULL && errno == ENOENT) errno = EPROTONOSUPPORT;
+    return fp;
+}
+
+/* Returns the appropriate handler, or NULL if the string isn't an URL.  */
+static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
+{
+    static const struct hFILE_scheme_handler unknown_scheme =
+        { hopen_unknown_scheme, hfile_always_local, "built-in", 0 };
+
+    char scheme[12];
+    int i;
+
+    for (i = 0; i < sizeof scheme; i++)
+        if (isalnum(s[i]) || s[i] == '+' || s[i] == '-' || s[i] == '.')
+            scheme[i] = tolower(s[i]);
+        else if (s[i] == ':') break;
+        else return NULL;
+
+    if (i == 0 || i >= sizeof scheme) return NULL;
+    scheme[i] = '\0';
+
+    if (! schemes) {
+        // TODO Wrap this in a critical section for multi-threading
+        load_hfile_plugins();
+    }
+
+    khint_t k = kh_get(scheme_string, schemes, scheme);
+    return (k != kh_end(schemes))? kh_value(schemes, k) : &unknown_scheme;
+}
 
 hFILE *hopen(const char *fname, const char *mode)
 {
-    if (strncmp(fname, "file://", 7) == 0) return hopen_fd_fileuri(fname, mode);
-#ifdef HAVE_LIBCURL
-    else if (strncmp(fname, "http://", 7) == 0 ||
-             strncmp(fname, "https://", 8) == 0 ||
-             strncmp(fname, "s3://", 5) == 0 ||
-             strncmp(fname, "s3+http://", 10) == 0 ||
-             strncmp(fname, "s3+https://", 11) == 0 ||
-             strncmp(fname, "ftp://", 6) == 0) return hopen_libcurl(fname,mode);
-#endif
-    else if (strncmp(fname, "http://", 7) == 0 ||
-             strncmp(fname, "ftp://", 6) == 0) return hopen_net(fname, mode);
-#ifdef HAVE_IRODS
-    else if (strncmp(fname, "irods:", 6) == 0) return hopen_irods(fname, mode);
-#endif
-    else if (strncmp(fname, "data:", 5) == 0) return hopen_mem(fname + 5, mode);
+    const struct hFILE_scheme_handler *handler = find_scheme_handler(fname);
+    if (handler) return handler->open(fname, mode);
     else if (strcmp(fname, "-") == 0) return hopen_fd_stdinout(mode);
     else return hopen_fd(fname, mode);
 }
 
+int hfile_always_local (const char *fname) { return 0; }
+int hfile_always_remote(const char *fname) { return 1; }
+
 int hisremote(const char *fname)
 {
-    // FIXME Make a new backend entry to return this
-    if (strncmp(fname, "http://", 7) == 0 ||
-        strncmp(fname, "https://", 8) == 0 ||
-        strncmp(fname, "ftp://", 6) == 0) return 1;
-#ifdef HAVE_IRODS
-    else if (strncmp(fname, "irods:", 6) == 0) return 1;
-#endif
-    else return 0;
+    const struct hFILE_scheme_handler *handler = find_scheme_handler(fname);
+    return handler? handler->isremote(fname) : 0;
 }

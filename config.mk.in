@@ -57,7 +57,7 @@ ifeq "iRODS-@irods@" "iRODS-enabled"
 
 @define_IRODS_HOME@
 
-EXTRA_CPPFLAGS_IRODS = \
+IRODS_CPPFLAGS = \
 	-I$(IRODS_HOME)/lib/api/include \
 	-I$(IRODS_HOME)/lib/core/include \
 	-I$(IRODS_HOME)/lib/md5/include \
@@ -66,19 +66,29 @@ EXTRA_CPPFLAGS_IRODS = \
 	-I$(IRODS_HOME)/server/drivers/include \
 	-I$(IRODS_HOME)/server/icat/include
 
-LDFLAGS += -L$(IRODS_HOME)/lib/core/obj
-LDLIBS  += -lRodsAPIs -lgssapi_krb5
+IRODS_LDFLAGS = -L$(IRODS_HOME)/lib/core/obj
+IRODS_LIBS = -lRodsAPIs -lgssapi_krb5
 
-LIBHTS_OBJS += hfile_irods.o
+plugin_OBJS += hfile_irods.o
 
-hfile_irods.o hfile_irods.pico: CPPFLAGS += $(EXTRA_CPPFLAGS_IRODS)
+hfile_irods.o hfile_irods.pico: CPPFLAGS += $(IRODS_CPPFLAGS)
+hfile_irods.so hfile_irods.bundle: LDFLAGS += $(IRODS_LDFLAGS)
+hfile_irods.so hfile_irods.bundle: LDLIBS += $(IRODS_LIBS)
+
+noplugin_LDFLAGS += $(IRODS_LDFLAGS)
+noplugin_LIBS += $(IRODS_LIBS)
 
 endif
 
 ifeq "libcurl-@libcurl@" "libcurl-enabled"
 
-LDLIBS += -lcurl
-LIBHTS_OBJS += hfile_libcurl.o
+LIBCURL_LIBS = -lcurl @CRYPTO_LIBS@
+
+plugin_OBJS += hfile_libcurl.o
+
+hfile_libcurl.so hfile_libcurl.bundle: LDLIBS += $(LIBCURL_LIBS)
+
+noplugin_LIBS += $(LIBCURL_LIBS)
 
 endif
 
