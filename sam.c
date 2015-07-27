@@ -114,6 +114,7 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     char buf[4];
     int magic_len, has_EOF;
     int32_t i, name_len, num_names = 0;
+    size_t bufsize;
     ssize_t bytes;
     // check EOF
     has_EOF = bgzf_check_EOF(fp);
@@ -135,8 +136,9 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     if (bytes != 4) goto read_err;
     if (fp->is_be) ed_swap_4p(&h->l_text);
 
-    h->text = (h->l_text < SIZE_MAX - 1
-               ? (char*)malloc((size_t) h->l_text + 1) : NULL);
+    bufsize = ((size_t) h->l_text) + 1;
+    if (bufsize < h->l_text) goto nomem; // so large that adding 1 overflowed
+    h->text = (char*)malloc(bufsize);
     if (!h->text) goto nomem;
     h->text[h->l_text] = 0; // make sure it is NULL terminated
     bytes = bgzf_read(fp, h->text, h->l_text);
@@ -148,20 +150,10 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
 
     if (h->n_targets < 0) goto invalid;
 
-    // Ensure no wrap-around problems for the next two mallocs.
-    // If the test below isn't true, one of the mallocs will fail anyway.
-    // Only matters on 32-bit platforms.
-    if (h->n_targets >= (ssize_t) (SIZE_MAX
-                                   / (sizeof(char *) + sizeof(uint32_t)) - 1)) {
-        goto nomem;
-    }
-
     // read reference sequence names and lengths
-    h->target_name = (char**)malloc((h->n_targets > 0 ? h->n_targets : 1)
-                                    * sizeof(char *));
+    h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
     if (!h->target_name) goto nomem;
-    h->target_len = (uint32_t*)malloc((h->n_targets > 0 ? h->n_targets : 1)
-                                      * sizeof(uint32_t));
+    h->target_len = (uint32_t*)calloc(h->n_targets, sizeof(uint32_t));
     if (!h->target_len) goto nomem;
 
     for (i = 0; i != h->n_targets; ++i) {
