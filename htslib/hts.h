@@ -103,7 +103,7 @@ typedef struct htsFormat {
     struct { short major, minor; } version;
     enum htsCompression compression;
     short compression_level;  // currently unused
-    void *specific;  // currently unused
+    void *specific;  // format specific options; see struct hts_opt.
 } htsFormat;
 
 // Maintainers note htsFile cannot be an opaque structure because some of its
@@ -144,31 +144,93 @@ enum sam_fields {
     SAM_RGAUX = 0x00001000,
 };
 
-enum cram_option {
+// Mostly CRAM only, but this could also include other format options
+enum hts_fmt_option {
+    // General purpose
+    HTS_OPT_COMPRESSION_LEVEL,
+    HTS_OPT_NTHREADS,
+
+    // CRAM specific
     CRAM_OPT_DECODE_MD,
     CRAM_OPT_PREFIX,
-    CRAM_OPT_VERBOSITY,
+    CRAM_OPT_VERBOSITY,  // make general
     CRAM_OPT_SEQS_PER_SLICE,
     CRAM_OPT_SLICES_PER_CONTAINER,
     CRAM_OPT_RANGE,
-    CRAM_OPT_VERSION,
+    CRAM_OPT_VERSION,    // rename to cram_version?
     CRAM_OPT_EMBED_REF,
     CRAM_OPT_IGNORE_MD5,
-    CRAM_OPT_REFERENCE,
+    CRAM_OPT_REFERENCE,  // make general
     CRAM_OPT_MULTI_SEQ_PER_SLICE,
     CRAM_OPT_NO_REF,
     CRAM_OPT_USE_BZIP2,
     CRAM_OPT_SHARED_REF,
-    CRAM_OPT_NTHREADS,
-    CRAM_OPT_THREAD_POOL,
+    CRAM_OPT_NTHREADS,   // synonym for HTS_OPT_NTHREADS
+    CRAM_OPT_THREAD_POOL,// make general
     CRAM_OPT_USE_LZMA,
     CRAM_OPT_USE_RANS,
     CRAM_OPT_REQUIRED_FIELDS,
 };
 
+typedef struct hts_opt {
+    char *arg;                // string form, strdup()ed
+    enum hts_fmt_option opt;  // tokenised key
+    union {                   // ... and value
+        int i;
+        char *s;
+    } val;
+    struct hts_opt *next;
+} hts_opt;
+
+#define HTS_FILE_OPTS_INIT {{0},0}
+
 /**********************
  * Exported functions *
  **********************/
+
+/*
+ * Parses arg and appends it to the option list.
+ *
+ * Returns 0 on success;
+ *        -1 on failure.
+ */
+int hts_opt_add(hts_opt **opts, const char *c_arg);
+
+/*
+ * Applies an hts_opt option list to a given htsFile.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int hts_opt_apply(htsFile *fp, hts_opt *opts);
+
+/*
+ * Frees an hts_opt list.
+ */
+void hts_opt_free(hts_opt *opts);
+
+/*
+ * Accepts a string file format (sam, bam, cram, vcf, bam) optionally
+ * followed by a comma separated list of key=value options and splits
+ * these up into the fields of htsFormat struct.
+ *
+ * Returns 0 on success
+ *        -1 on failure.
+ */
+int hts_parse_format(htsFormat *opt, const char *str);
+
+/*
+ * Tokenise options as (key(=value)?,)*(key(=value)?)?
+ * NB: No provision for ',' appearing in the value!
+ * Add backslashing rules?
+ *
+ * This could be used as part of a general command line option parser or
+ * as a string concatenated onto the file open mode.
+ *
+ * Returns 0 on success
+ *        -1 on failure.
+ */
+int hts_parse_opt_list(htsFormat *opt, const char *str);
 
 extern int hts_verbose;
 
@@ -206,6 +268,7 @@ int hts_detect_format(struct hFILE *fp, htsFormat *fmt);
 
 /*!
   @abstract    Get a human-readable description of the file format
+  @param fmt   Format structure holding type, version, compression, etc.
   @return      Description string, to be freed by the caller after use.
 */
 char *hts_format_description(const htsFormat *format);
@@ -237,6 +300,21 @@ char *hts_format_description(const htsFormat *format);
 htsFile *hts_open(const char *fn, const char *mode);
 
 /*!
+  @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
+  @param fn       The file name or "-" for stdin/stdout
+  @param mode     Mode matching /[rwa][bcuz0-9]+/
+  @param fmt      Optional format specific parameters
+  @discussion
+      See hts_open() for description of fn and mode.
+      Opts contains a format string (sam, bam, cram, vcf, bcf) which will,
+      if defined, override mode.  Opts also contains a linked list of hts_opt
+      structures to apply to the open file handle.  These can contain things
+      like pointers to the reference or information on compression levels,
+      block sizes, etc.
+*/
+htsFile *hts_open_format(const char *fn, const char *mode, htsFormat *fmt);
+
+/*!
   @abstract       Open an existing stream as a SAM/BAM/CRAM/VCF/BCF/etc file
   @param fn       The already-open file handle
   @param mode     Open mode, as per hts_open()
@@ -258,13 +336,20 @@ int hts_close(htsFile *fp);
 const htsFormat *hts_get_format(htsFile *fp);
 
 /*!
+  @ abstract      Returns a string containing the file format extension.
+  @ param format  Format structure containing the file type.
+  @ return        A string ("sam", "bam", etc) or "?" for unknown formats.
+ */
+const char *hts_format_file_extension(const htsFormat *format);
+
+/*!
   @abstract  Sets a specified CRAM option on the open file handle.
   @param fp  The file handle open the open file.
   @param opt The CRAM_OPT_* option.
   @param ... Optional arguments, dependent on the option used.
   @return    0 for success, or negative if an error occurred.
 */
-int hts_set_opt(htsFile *fp, enum cram_option opt, ...);
+int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...);
 
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
 char **hts_readlines(const char *fn, int *_n);
