@@ -3014,6 +3014,9 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
 static int cram_flush_container2(cram_fd *fd, cram_container *c) {
     int i, j;
 
+    if (c->curr_slice > 0 && !c->slices)
+	return -1;
+
     //fprintf(stderr, "Writing container %d, sum %u\n", c->record_counter, sum);
 
     /* Write the container struct itself */
@@ -4255,7 +4258,7 @@ int cram_eof(cram_fd *fd) {
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_set_option(cram_fd *fd, enum cram_option opt, ...) {
+int cram_set_option(cram_fd *fd, enum hts_fmt_option opt, ...) {
     int r;
     va_list args;
 
@@ -4273,7 +4276,7 @@ int cram_set_option(cram_fd *fd, enum cram_option opt, ...) {
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args) {
+int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     refs_t *refs;
 
     if (!fd)
@@ -4404,6 +4407,10 @@ int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args) {
 
     case CRAM_OPT_REQUIRED_FIELDS:
 	fd->required_fields = va_arg(args, int);
+	break;
+
+    case HTS_OPT_COMPRESSION_LEVEL:
+	fd->level = va_arg(args, int);
 	break;
 
     default:
