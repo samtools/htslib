@@ -48,6 +48,7 @@ include $(HTSDIR)/htslib_vars.mk
 
 HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/bgzf.h \
+	$(HTSDIR)/htslib/cram.h \
 	$(HTSDIR)/htslib/faidx.h \
 	$(HTSDIR)/htslib/hfile.h \
 	$(HTSDIR)/htslib/hts.h \
@@ -97,6 +98,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/cram_decode.h \
 	$(HTSDIR)/cram/cram_encode.c \
 	$(HTSDIR)/cram/cram_encode.h \
+	$(HTSDIR)/cram/cram_external.c \
 	$(HTSDIR)/cram/cram_index.c \
 	$(HTSDIR)/cram/cram_index.h \
 	$(HTSDIR)/cram/cram_io.c \
