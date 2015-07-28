@@ -662,7 +662,7 @@ int int32_encode(cram_fd *fd, int32_t val) {
 }
 
 /* As int32_decoded/encode, but from/to blocks instead of cram_fd */
-int int32_get(cram_block *b, int32_t *val) {
+int int32_get_blk(cram_block *b, int32_t *val) {
     if (b->uncomp_size - BLOCK_SIZE(b) < 4)
 	return -1;
 
@@ -676,7 +676,7 @@ int int32_get(cram_block *b, int32_t *val) {
 }
 
 /* As int32_decoded/encode, but from/to blocks instead of cram_fd */
-int int32_put(cram_block *b, int32_t val) {
+int int32_put_blk(cram_block *b, int32_t val) {
     unsigned char cp[4];
     cp[0] = ( val      & 0xff);
     cp[1] = ((val>>8)  & 0xff);
@@ -994,6 +994,27 @@ cram_block *cram_read_block(cram_fd *fd) {
     return b;
 }
 
+
+/*
+ * Computes the size of a cram block, including the block
+ * header itself.
+ */
+uint32_t cram_block_size(cram_block *b) {
+    unsigned char dat[100], *cp = dat;;
+    uint32_t sz;
+
+    *cp++ = b->method;
+    *cp++ = b->content_type;
+    cp += itf8_put(cp, b->content_id);
+    cp += itf8_put(cp, b->comp_size);
+    cp += itf8_put(cp, b->uncomp_size);
+
+    sz = cp-dat + 4;
+    sz += b->method == RAW ? b->uncomp_size : b->comp_size;
+
+    return sz;
+}
+
 /*
  * Writes a CRAM block.
  * Returns 0 on success
@@ -1218,6 +1239,8 @@ static char *cram_compress_by_method(char *in, size_t in_size,
  * The logic here is that sometimes Z_RLE does a better job than Z_FILTERED
  * or Z_DEFAULT_STRATEGY on quality data. If so, we'd rather use it as it is
  * significantly faster.
+ *
+ * Method and level -1 implies defaults, as specified in cram_fd.
  */
 int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 			int method, int level) {
@@ -1225,6 +1248,17 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
     char *comp = NULL;
     size_t comp_size = 0;
     int strat;
+
+    if (method == -1) {
+	method = 1<<GZIP;
+	if (fd->use_bz2)
+	    method |= 1<<BZIP2;
+	if (fd->use_lzma)
+	    method |= 1<<LZMA;
+    }
+
+    if (level == -1)
+	level = fd->level;
 
     //fprintf(stderr, "IN: block %d, sz %d\n", b->content_id, b->uncomp_size);
 
@@ -2946,6 +2980,75 @@ cram_container *cram_read_container(cram_fd *fd) {
     return c;
 }
 
+
+/* MAXIMUM storage size needed for the container. */
+int cram_container_size(cram_container *c) {
+    return 55 + 5*c->num_landmarks;
+}
+
+
+/*
+ * Stores the container structure in dat and returns *size as the
+ * number of bytes written to dat[].  The input size of dat is also
+ * held in *size and should be initialised to cram_container_size(c).
+ *
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
+{
+    char *cp = dat;
+    int i;
+
+    // Check the input buffer is large enough according to our stated
+    // requirements. (NOTE: it may actually take less.)
+    if (cram_container_size(c) > *size)
+        return -1;
+
+    if (CRAM_MAJOR_VERS(fd->version) == 1) {
+	cp += itf8_put(cp, c->length);
+    } else {
+	*(int32_t *)cp = le_int4(c->length);
+	cp += 4;
+    }
+    if (c->multi_seq) {
+	cp += itf8_put(cp, -2);
+	cp += itf8_put(cp, 0);
+	cp += itf8_put(cp, 0);
+    } else {
+	cp += itf8_put(cp, c->ref_seq_id);
+	cp += itf8_put(cp, c->ref_seq_start);
+	cp += itf8_put(cp, c->ref_seq_span);
+    }
+    cp += itf8_put(cp, c->num_records);
+    if (CRAM_MAJOR_VERS(fd->version) == 2) {
+	cp += itf8_put(cp, c->record_counter);
+	cp += ltf8_put(cp, c->num_bases);
+    } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	cp += ltf8_put(cp, c->record_counter);
+	cp += ltf8_put(cp, c->num_bases);
+    }
+
+    cp += itf8_put(cp, c->num_blocks);
+    cp += itf8_put(cp, c->num_landmarks);
+    for (i = 0; i < c->num_landmarks; i++)
+	cp += itf8_put(cp, c->landmark[i]);
+
+    if (CRAM_MAJOR_VERS(fd->version) >= 3) {
+	c->crc32 = crc32(0L, (uc *)dat, cp-dat);
+	cp[0] =  c->crc32        & 0xff;
+	cp[1] = (c->crc32 >>  8) & 0xff;
+	cp[2] = (c->crc32 >> 16) & 0xff;
+	cp[3] = (c->crc32 >> 24) & 0xff;
+	cp += 4;
+    }
+
+    *size = cp-dat; // actual used size
+
+    return 0;
+}
+
+
 /*
  * Writes a container structure.
  *
@@ -3575,7 +3678,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 	    itf8_size(b->comp_size);
 
 	/* Extract header from 1st block */
-	if (-1 == int32_get(b, &header_len) ||
+	if (-1 == int32_get_blk(b, &header_len) ||
             header_len < 0 || /* Spec. says signed...  why? */
 	    b->uncomp_size - 4 < header_len) {
 	    cram_free_container(c);
@@ -3671,7 +3774,7 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 	    return -1;
     }
 
-    /* 1.0 requires and UNKNOWN read-group */
+    /* 1.0 requires an UNKNOWN read-group */
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	if (!sam_hdr_find_rg(hdr, "UNKNOWN"))
 	    if (sam_hdr_add(hdr, "RG",
@@ -3751,19 +3854,13 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 	    return -1;
 	}
 
-	int32_put(b, header_len);
+	int32_put_blk(b, header_len);
 	BLOCK_APPEND(b, sam_hdr_str(hdr), header_len);
 	BLOCK_UPLEN(b);
 
 	// Compress header block if V3.0 and above
-	if (CRAM_MAJOR_VERS(fd->version) >= 3 && fd->level > 0) {
-	    int method = 1<<GZIP;
-	    if (fd->use_bz2)
-		method |= 1<<BZIP2;
-	    if (fd->use_lzma)
-		method |= 1<<LZMA;
-	    cram_compress_block(fd, b, NULL, method, fd->level);
-	} 
+	if (CRAM_MAJOR_VERS(fd->version) >= 3)
+	    cram_compress_block(fd, b, NULL, -1, -1);
 
 	if (blank_block) {
 	    c->length = b->comp_size + 2 + 4*is_cram_3 +
