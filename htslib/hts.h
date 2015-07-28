@@ -146,10 +146,6 @@ enum sam_fields {
 
 // Mostly CRAM only, but this could also include other format options
 enum hts_fmt_option {
-    // General purpose
-    HTS_OPT_COMPRESSION_LEVEL,
-    HTS_OPT_NTHREADS,
-
     // CRAM specific
     CRAM_OPT_DECODE_MD,
     CRAM_OPT_PREFIX,
@@ -165,12 +161,19 @@ enum hts_fmt_option {
     CRAM_OPT_NO_REF,
     CRAM_OPT_USE_BZIP2,
     CRAM_OPT_SHARED_REF,
-    CRAM_OPT_NTHREADS,   // synonym for HTS_OPT_NTHREADS
+    CRAM_OPT_NTHREADS,   // deprecated, use HTS_OPT_NTHREADS
     CRAM_OPT_THREAD_POOL,// make general
     CRAM_OPT_USE_LZMA,
     CRAM_OPT_USE_RANS,
     CRAM_OPT_REQUIRED_FIELDS,
+
+    // General purpose
+    HTS_OPT_COMPRESSION_LEVEL = 100,
+    HTS_OPT_NTHREADS,
 };
+
+// For backwards compatibility
+#define cram_option hts_fmt_option
 
 typedef struct hts_opt {
     char *arg;                // string form, strdup()ed
