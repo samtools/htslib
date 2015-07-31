@@ -404,7 +404,8 @@ int hts_detect_format(struct hFILE *fp, htsFormat *fmt);
 char *hts_format_description(const htsFormat *format);
 
 /*!
-  @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
+  @abstract       Open a sequence data (SAM/BAM/CRAM) or variant data (VCF/BCF)
+                  or possibly-compressed textual line-orientated file
   @param fn       The file name or "-" for stdin/stdout. For indexed files
                   with a non-standard naming, the file name can include the
                   name of the index file delimited with HTS_IDX_DELIM
