@@ -130,14 +130,11 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
     return unknown_category;
 }
 
-// Decompress up to ten or so bytes by peeking at the file, which must be
+// Decompress several hundred bytes by peeking at the file, which must be
 // positioned at the start of a GZIP block.
 static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
 {
-    // Typically at most a couple of hundred bytes of input are required
-    // to get a few bytes of output from inflate(), so hopefully this buffer
-    // size suffices in general.
-    unsigned char buffer[512];
+    unsigned char buffer[2048];
     z_stream zs;
     ssize_t npeek = hpeek(fp, buffer, sizeof buffer);
 
@@ -203,9 +200,86 @@ cmp_nonblank(const char *key, const unsigned char *u, const unsigned char *ulim)
     return 0;
 }
 
+static int is_text_only(const unsigned char *u, const unsigned char *ulim)
+{
+    for (; u < ulim; u++)
+        if (! (*u >= ' ' || *u == '\t' || *u == '\r' || *u == '\n'))
+            return 0;
+
+    return 1;
+}
+
+// Parse tab-delimited text, filling in a string of column types and returning
+// the number of columns spotted (within [u,ulim), and up to column_len) or -1
+// if non-printable characters were seen.  Column types:
+//     i: integer, s: strand sign, C: CIGAR, O: SAM optional field, Z: anything
+static int
+parse_tabbed_text(char *columns, int column_len,
+                  const unsigned char *u, const unsigned char *ulim)
+{
+    const char *str  = (const char *) u;
+    const char *slim = (const char *) ulim;
+    const char *s;
+    int ncolumns = 0;
+
+    enum { digit = 1, leading_sign = 2, cigar_operator = 4, other = 8 };
+    unsigned seen = 0;
+
+    for (s = str; s < slim; s++)
+        if (*s >= ' ') {
+            if (isdigit_c(*s))
+                seen |= digit;
+            else if ((*s == '+' || *s == '-') && s == str)
+                seen |= leading_sign;
+            else if (strchr(BAM_CIGAR_STR, *s) && s > str && isdigit_c(s[-1]))
+                seen |= cigar_operator;
+            else
+                seen |= other;
+        }
+        else if (*s == '\t' || *s == '\r' || *s == '\n') {
+            size_t len = s - str;
+            char type;
+
+            if (seen == digit || seen == (leading_sign|digit)) type = 'i';
+            else if (seen == (digit|cigar_operator)) type = 'C';
+            else if (len == 1)
+                switch (str[0]) {
+                case '*': type = 'C'; break;
+                case '+': case '-': case '.': type = 's'; break;
+                default: type = 'Z'; break;
+                }
+            else if (len >= 5 && str[2] == ':' && str[4] == ':') type = 'O';
+            else type = 'Z';
+
+            columns[ncolumns++] = type;
+            if (*s != '\t' || ncolumns >= column_len - 1) break;
+
+            str = s + 1;
+            seen = 0;
+        }
+        else return -1;
+
+    columns[ncolumns] = '\0';
+    return ncolumns;
+}
+
+// Match COLUMNS as a prefix against PATTERN (so COLUMNS may run out first).
+// Returns len(COLUMNS) (modulo '+'), or 0 if there is a mismatched entry.
+static int colmatch(const char *columns, const char *pattern)
+{
+    int i;
+    for (i = 0; columns[i] != '\0'; i++) {
+        if (pattern[i] == '+') return i;
+        if (! (columns[i] == pattern[i] || pattern[i] == 'Z')) return 0;
+    }
+
+    return i;
+}
+
 int hts_detect_format(hFILE *hfile, htsFormat *fmt)
 {
-    unsigned char s[32];
+    char columns[24];
+    unsigned char s[1024];
     ssize_t len = hpeek(hfile, s, 18);
     if (len < 0) return -1;
 
@@ -218,7 +292,7 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
 
     if (len >= 2 && s[0] == 0x1f && s[1] == 0x8b) {
         // The stream is either gzip-compressed or BGZF-compressed.
-        // Determine which, and decompress the first few bytes.
+        // Determine which, and decompress the first few records or lines.
         fmt->compression = (len >= 18 && (s[3] & 4) &&
                             memcmp(&s[12], "BC\2\0", 4) == 0)? bgzf : gzip;
         if (len >= 9 && s[2] == 8)
@@ -303,7 +377,8 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
     }
     else if (len >= 4 && s[0] == '@' &&
              (memcmp(s, "@HD\t", 4) == 0 || memcmp(s, "@SQ\t", 4) == 0 ||
-              memcmp(s, "@RG\t", 4) == 0 || memcmp(s, "@PG\t", 4) == 0)) {
+              memcmp(s, "@RG\t", 4) == 0 || memcmp(s, "@PG\t", 4) == 0 ||
+              memcmp(s, "@CO\t", 4) == 0)) {
         fmt->category = sequence_data;
         fmt->format = sam;
         // @HD-VN is not guaranteed to be the first tag, but then @HD is
@@ -319,18 +394,27 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         fmt->format = htsget;
         return 0;
     }
-    else {
-        // Various possibilities for tab-delimited text:
-        // .crai   (gzipped tab-delimited six columns: seqid 5*number)
-        // .bed    ([3..12] tab-delimited columns)
-        // .bedpe  (>= 10 tab-delimited columns)
-        // .sam    (tab-delimited >= 11 columns: seqid number seqid...)
-        // FIXME For now, assume it's SAM
-        fmt->category = sequence_data;
-        fmt->format = sam;
-        fmt->version.major = 1, fmt->version.minor = -1;
-        return 0;
+    else if (parse_tabbed_text(columns, sizeof columns, s, &s[len]) > 0) {
+        if (colmatch(columns, "ZiZiiCZiiZZOOOOOOOOOOOOOOOOOOOO+") >= 11) {
+            fmt->category = sequence_data;
+            fmt->format = sam;
+            fmt->version.major = 1, fmt->version.minor = -1;
+            return 0;
+        }
+        else if (fmt->compression == gzip && colmatch(columns, "iiiiii") == 6) {
+            fmt->category = index_file;
+            fmt->format = crai;
+            return 0;
+        }
+        else if (colmatch(columns, "Zii+") >= 3) {
+            fmt->category = region_list;
+            fmt->format = bed;
+            return 0;
+        }
     }
+
+    // Arbitrary text files can be read using hts_getline().
+    if (is_text_only(s, &s[len])) fmt->format = text_format;
 
     // Nothing recognised: leave unset fmt-> fields as unknown.
     return 0;
@@ -352,7 +436,9 @@ char *hts_format_description(const htsFormat *format)
     case bai:   kputs("BAI", &str); break;
     case crai:  kputs("CRAI", &str); break;
     case csi:   kputs("CSI", &str); break;
+    case gzi:   kputs("GZI", &str); break;
     case tbi:   kputs("Tabix", &str); break;
+    case bed:   kputs("BED", &str); break;
     case htsget: kputs("htsget", &str); break;
     case empty_format:  kputs("empty", &str); break;
     default:    kputs("unknown", &str); break;
@@ -398,6 +484,7 @@ char *hts_format_description(const htsFormat *format)
 
     if (format->compression == no_compression)
         switch (format->format) {
+        case text_format:
         case sam:
         case crai:
         case vcf:
@@ -930,6 +1017,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
 
     case empty_format:
     case text_format:
+    case bed:
     case sam:
     case vcf:
         if (fp->format.compression != no_compression) {
@@ -996,6 +1084,7 @@ int hts_close(htsFile *fp)
 
     case empty_format:
     case text_format:
+    case bed:
     case sam:
     case vcf:
         ret = sam_state_destroy(fp);

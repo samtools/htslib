@@ -191,7 +191,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
         bcf_hdr_destroy(hdr);
         hts_idx_destroy(idx);
     }
-    else if ( format==vcf || format==sam || format==unknown_format )
+    else if ( format==vcf || format==sam || format==bed || format==text_format || format==unknown_format )
     {
         tbx_t *tbx = tbx_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !tbx ) error("Could not load .tbi/.csi index of %s\n", fname);
