@@ -37,6 +37,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <assert.h>
 #include "hts.h"
 #include "kstring.h"
+#include "hts_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -377,13 +378,30 @@ typedef struct {
 
     /** Create a new header using the supplied template */
     bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr);
+
     /**
      *  Copy header lines from src to dst if not already present in dst. See also bcf_translate().
      *  Returns 0 on success or sets a bit on error:
      *      1 .. conflicting definitions of tag length
      *      // todo
      */
-    int bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src);
+    int bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src) HTS_DEPRECATED("Please use bcf_hdr_merge instead");
+
+    /**
+     *  bcf_hdr_merge() - copy header lines from src to dst, see also bcf_translate()
+     *  @param dst: the destination header to be merged into, NULL on the first pass
+     *  @param src: the source header
+     *
+     *  Notes:
+     *      - use as:
+     *          bcf_hdr_t *dst = NULL;
+     *          for (i=0; i<nsrc; i++) dst = bcf_hdr_merge(dst,src[i]);
+     *
+     *      - bcf_hdr_merge() replaces bcf_hdr_combine() which had a problem when
+     *      combining multiple BCF headers. The current bcf_hdr_combine()
+     *      does not have this problem, but became slow when used for many files.
+     */
+    bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src);
 
     /**
      *  bcf_hdr_add_sample() - add a new sample.
