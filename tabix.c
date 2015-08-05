@@ -403,7 +403,7 @@ int main(int argc, char *argv[])
             case 'C': do_csi = 1; break;
             case 'r': reheader = optarg; break;
             case 'h': args.print_header = 1; break;
-            case 'H': args.header_only = 1; break;
+            case 'H': args.print_header = 1; args.header_only = 1; break;
             case 'l': list_chroms = 1; break;
             case '0': conf.preset |= TBX_UCSC; break;
             case 'b':
