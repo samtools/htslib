@@ -41,6 +41,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/thread_pool.h"
 
+#define MIN_THREAD_STACK 4194304  /* Require at least 4Mb stack per thread */
+
 //#define DEBUG
 //#define DEBUG_TIME
 
@@ -422,7 +424,20 @@ static void *t_pool_worker(void *arg) {
  */
 t_pool *t_pool_init(int qsize, int tsize) {
     int i;
-    t_pool *p = malloc(sizeof(*p));
+    pthread_attr_t stack_size_attr;
+    size_t stack_size;
+    enum {
+        none = 0,
+        pool_m,
+        empty_c,
+        full_c,
+        pool_m_lock,
+        attr,
+        pending_c
+    } init_state = none;
+    int num_started = 0;
+    t_pool *p = calloc(1, sizeof(*p));
+    if (!p) return NULL;
     p->qsize = qsize;
     p->tsize = tsize;
     p->njobs = 0;
@@ -434,17 +449,33 @@ t_pool *t_pool_init(int qsize, int tsize) {
     p->total_time = p->wait_time = 0;
 #endif
 
-    p->t = malloc(tsize * sizeof(p->t[0]));
+    if (!(p->t = malloc(tsize * sizeof(p->t[0]))))
+        goto fail;
 
-    pthread_mutex_init(&p->pool_m, NULL);
-    pthread_cond_init(&p->empty_c, NULL);
-    pthread_cond_init(&p->full_c, NULL);
+    if (0 != pthread_mutex_init(&p->pool_m, NULL)) goto fail;
+    init_state = pool_m;
+    if (0 != pthread_cond_init(&p->empty_c, NULL)) goto fail;
+    init_state = empty_c;
+    if (0 != pthread_cond_init(&p->full_c, NULL)) goto fail;
+    init_state = full_c;
 
-    pthread_mutex_lock(&p->pool_m);
+    if (0 != pthread_mutex_lock(&p->pool_m)) goto fail;
+    init_state = pool_m_lock;
+
+    /* Deal with measly 512K per-thread stack allocation on MacOS X */
+    if (0 != pthread_attr_init(&stack_size_attr)) goto fail;
+    init_state = attr;
+
+    if (0 != pthread_attr_getstacksize(&stack_size_attr, &stack_size))
+        goto fail;
+    if (stack_size < MIN_THREAD_STACK) {
+        if (0 != pthread_attr_setstacksize(&stack_size_attr, MIN_THREAD_STACK))
+            goto fail;
+    }
 
 #ifdef IN_ORDER
     if (!(p->t_stack = malloc(tsize * sizeof(*p->t_stack))))
-	return NULL;
+        goto fail;
     p->t_stack_top = -1;
 
     for (i = 0; i < tsize; i++) {
@@ -453,26 +484,54 @@ t_pool *t_pool_init(int qsize, int tsize) {
 	w->p = p;
 	w->idx = i;
 	w->wait_time = 0;
-	pthread_cond_init(&w->pending_c, NULL);
-	if (0 != pthread_create(&w->tid, NULL, t_pool_worker, w))
-	    return NULL;
+	if (0 != pthread_cond_init(&w->pending_c, NULL)) goto fail;
+	if (0 != pthread_create(&w->tid, &stack_size_attr, t_pool_worker, w)) {
+            pthread_cond_destroy(&w->pending_c);
+	    goto fail;
+        }
+        num_started++;
     }
 #else
-    pthread_cond_init(&p->pending_c, NULL);
+    if (0 != pthread_cond_init(&p->pending_c, NULL)) goto fail;
+    init_state = pending_c;
 
     for (i = 0; i < tsize; i++) {
 	t_pool_worker_t *w = &p->t[i];
 	w->p = p;
 	w->idx = i;
-	pthread_cond_init(&w->pending_c, NULL);
-	if (0 != pthread_create(&w->tid, NULL, t_pool_worker, w))
-	    return NULL;
+	if (0 != pthread_cond_init(&w->pending_c, NULL)) goto fail;
+	if (0 != pthread_create(&w->tid, &stack_size_attr, t_pool_worker, w)) {
+            pthread_cond_destroy(&w->pending_c);
+	    goto fail;
+        }
+        num_started++;
     }
 #endif
 
     pthread_mutex_unlock(&p->pool_m);
-
+    pthread_attr_destroy(&stack_size_attr);
     return p;
+
+ fail:
+    if (num_started > 0) {
+        p->tsize = num_started;
+        t_pool_destroy(p, 1);
+        return NULL;
+    }
+
+    switch (init_state) {
+    case pending_c:   pthread_cond_destroy(&p->pending_c);
+    case attr:        pthread_attr_destroy(&stack_size_attr);
+    case pool_m_lock: pthread_mutex_unlock(&p->pool_m);
+    case full_c:      pthread_cond_destroy(&p->full_c);
+    case empty_c:     pthread_cond_destroy(&p->empty_c);
+    case pool_m:      pthread_mutex_destroy(&p->pool_m);
+    case none:        break;
+    }
+    free(p->t);
+    free(p->t_stack);
+    free(p);
+    return NULL;
 }
 
 /*
