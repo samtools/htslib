@@ -342,7 +342,7 @@ int sam_index_build2(const char *fn, const char *fnidx, int min_shift);
      ***************/
 
     #define sam_open(fn, mode) (hts_open((fn), (mode)))
-    #define sam_open_format(fn, mode, opts) (hts_open_format((fn), (mode), (opts)))
+    #define sam_open_format(fn, mode, fmt) (hts_open_format((fn), (mode), (fmt)))
     #define sam_close(fp) hts_close(fp)
 
     int sam_open_mode(char *mode, const char *fn, const char *format);

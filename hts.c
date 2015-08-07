@@ -363,7 +363,7 @@ char *hts_format_description(const htsFormat *format)
     return ks_release(&str);
 }
 
-htsFile *hts_open_format(const char *fn, const char *mode, htsFormat *fmt)
+htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
 {
     char smode[102], *cp, *cp2, *mode_c;
     htsFile *fp = NULL;
@@ -388,24 +388,6 @@ htsFile *hts_open_format(const char *fn, const char *mode, htsFormat *fmt)
     *cp2++ = fmt_code;
     *cp2++ = 0;
     *cp2++ = 0;
-
-    // Attempt to auto-detect based on filename
-    if (fmt && fmt->format == unknown_format) {
-        const char *ext = strrchr(fn, '.');
-        if (ext) {
-            ext++;
-            if (strcmp(ext, "sam") == 0)
-                fmt->format = sam;
-            else if (strcmp(ext, "bam") == 0)
-                fmt->format = bam;
-            else if (strcmp(ext, "cram") == 0)
-                fmt->format = cram;
-            else if (strcmp(ext, "vcf") == 0)
-                fmt->format = vcf;
-            else if (strcmp(ext, "bcf") == 0)
-                fmt->format = bcf;
-        }
-    }
 
     // Set or reset the format code if opts->format is used
     if (fmt && fmt->format != unknown_format)

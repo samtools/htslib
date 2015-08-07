@@ -309,13 +309,14 @@ htsFile *hts_open(const char *fn, const char *mode);
   @param fmt      Optional format specific parameters
   @discussion
       See hts_open() for description of fn and mode.
+      // TODO Update documentation for s/opts/fmt/
       Opts contains a format string (sam, bam, cram, vcf, bcf) which will,
       if defined, override mode.  Opts also contains a linked list of hts_opt
       structures to apply to the open file handle.  These can contain things
       like pointers to the reference or information on compression levels,
       block sizes, etc.
 */
-htsFile *hts_open_format(const char *fn, const char *mode, htsFormat *fmt);
+htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt);
 
 /*!
   @abstract       Open an existing stream as a SAM/BAM/CRAM/VCF/BCF/etc file
