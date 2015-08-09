@@ -229,7 +229,7 @@ BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
     return fp;
 }
 
-static int bgzf_compress(void *_dst, int *dlen, void *src, int slen, int level)
+int bgzf_compress(void *_dst, int *dlen, void *src, int slen, int level)
 {
     uint32_t crc;
     z_stream zs;
