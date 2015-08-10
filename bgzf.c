@@ -108,6 +108,11 @@ static inline void packInt32(uint8_t *buffer, uint32_t value)
     buffer[3] = value >> 24;
 }
 
+static size_t bgzf_compressBound(size_t srclen)
+{
+    return compressBound(srclen) + 6; // bgzf adds six bytes to the header
+}
+
 static BGZF *bgzf_read_init(hFILE *hfpr)
 {
     BGZF *fp;
@@ -171,7 +176,7 @@ static BGZF *bgzf_write_init(const char *mode)
 BGZF *bgzf_open(const char *path, const char *mode)
 {
     BGZF *fp = 0;
-    assert(compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
+    assert(bgzf_compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
     if (strchr(mode, 'r')) {
         hFILE *fpr;
         if ((fpr = hopen(path, mode)) == 0) return 0;
@@ -193,7 +198,7 @@ BGZF *bgzf_open(const char *path, const char *mode)
 BGZF *bgzf_dopen(int fd, const char *mode)
 {
     BGZF *fp = 0;
-    assert(compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
+    assert(bgzf_compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
     if (strchr(mode, 'r')) {
         hFILE *fpr;
         if ((fpr = hdopen(fd, mode)) == 0) return 0;
@@ -215,7 +220,7 @@ BGZF *bgzf_dopen(int fd, const char *mode)
 BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
 {
     BGZF *fp = NULL;
-    assert(compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
+    assert(bgzf_compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE);
     if (strchr(mode, 'r')) {
         fp = bgzf_read_init(hfp);
         if (fp == NULL) return NULL;
