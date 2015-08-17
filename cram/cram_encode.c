@@ -3053,7 +3053,6 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 		if (!c->refs_used)
 		    return -1;
 	    } else if (c->refs_used && c->refs_used[bam_ref(b)]) {
-		fprintf(stderr, "Unsorted mode enabled\n");
 		pthread_mutex_lock(&fd->ref_lock);
 		fd->unsorted = 1;
 		pthread_mutex_unlock(&fd->ref_lock);
