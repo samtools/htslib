@@ -264,7 +264,7 @@ typedef struct __kstring_t {
      * @param level  compression level used by deflate()
      * @return       zero on success, non-zero on error
      */
-    int bgzf_compress(void *dst, int *dlen, void *src, int slen, int level);
+    int bgzf_compress(void *dst, unsigned int *dlen, void *src, unsigned int slen, int level);
 
     /*******************
      * bgzidx routines *
