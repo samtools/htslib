@@ -615,8 +615,8 @@ static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end
     iter->bins.a = NULL;
     iter->readrec = readrec;
 
-    if (tid >= 0) {
-        cram_range r = { tid, beg+1, end };
+    if (tid >= 0 || tid == HTS_IDX_NOCOOR) {
+        cram_range r = { tid == HTS_IDX_NOCOOR ? -1 : tid, beg+1, end };
         if (cram_set_option(cidx->cram, CRAM_OPT_RANGE, &r) != 0) { free(iter); return NULL; }
         iter->curr_off = 0;
         // The following fields are not required by hts_itr_next(), but are

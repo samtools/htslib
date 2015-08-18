@@ -2962,7 +2962,17 @@ cram_record *cram_get_seq(cram_fd *fd) {
 	}
 
 	if (fd->range.refid != -2) {
-	    if (s->crecs[c->curr_rec].ref_id < fd->range.refid) {
+	    if (fd->range.refid == -1 && s->crecs[c->curr_rec].ref_id != -1) {
+		// Special case when looking for unmapped blocks at end.
+		// If these are mixed in with mapped data (c->ref_id == -2)
+		// then we need skip until we find the unmapped data, if at all
+		c->curr_rec++;
+		continue;
+	    }
+	    if (s->crecs[c->curr_rec].ref_id < fd->range.refid &&
+		s->crecs[c->curr_rec].ref_id != -1) {
+		// Looking for a mapped read, but not there yet.  Special case
+		// as -1 (unmapped) shouldn't be considered < refid.
 		c->curr_rec++;
 		continue;
 	    }
@@ -2974,14 +2984,14 @@ cram_record *cram_get_seq(cram_fd *fd) {
 		return NULL;
 	    }
 
-	    if (s->crecs[c->curr_rec].apos > fd->range.end) {
+	    if (fd->range.refid != -1 && s->crecs[c->curr_rec].apos > fd->range.end) {
 		fd->eof = 1;
 		cram_free_slice(s);
 		c->slice = NULL;
 		return NULL;
 	    }
 
-	    if (s->crecs[c->curr_rec].aend < fd->range.start) {
+	    if (fd->range.refid != -1 && s->crecs[c->curr_rec].aend < fd->range.start) {
 		c->curr_rec++;
 		continue;
 	    }

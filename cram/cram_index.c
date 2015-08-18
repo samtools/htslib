@@ -353,6 +353,13 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
     if (!from)
 	from = &fd->index[refid+1];
 
+    // If no entries for this seq, keep backtracking.
+    // This is because the index may be sparse and omit this
+    // container.
+    while (!from->e && refid > 0) {
+	from = &fd->index[--refid+1];
+    }
+
     for (k = j/2; k != i; k = (j-i)/2 + i) {
 	if (from->e[k].refid > refid) {
 	    j = k;
@@ -375,7 +382,7 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
 	}
     }
     // i==j or i==j-1. Check if j is better.
-    if (from->e[j].start < pos && from->e[j].refid == refid)
+    if (j >= 0 && from->e[j].start < pos && from->e[j].refid == refid)
 	i = j;
 
     /* The above found *a* bin overlapping, but not necessarily the first */
@@ -416,8 +423,8 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
 	    if (0 != cram_seek(fd, e->offset - fd->first_container, SEEK_CUR))
 		return -1;
     } else {
-	fprintf(stderr, "Unknown reference ID. Missing from index?\n");
-	return -1;
+	// Absent from index, but this most likely means it simply has no data.
+	return 0;
     }
 
     if (fd->ctr) {
