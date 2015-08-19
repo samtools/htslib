@@ -1747,14 +1747,17 @@ static refs_t *refs_create(void) {
  * Returns a BGZF handle on success;
  *         NULL on failure.
  */
-static BGZF *bgzf_open_ref(char *fn, char *mode) {
+static BGZF *bgzf_open_ref(char *fn, char *mode, int is_md5) {
     BGZF *fp;
-    char fai_file[PATH_MAX];
 
-    snprintf(fai_file, PATH_MAX, "%s.fai", fn);
-    if (access(fai_file, R_OK) != 0)
-	if (fai_build(fn) != 0)
-	    return NULL;
+    if (!is_md5) {
+	char fai_file[PATH_MAX];
+
+	snprintf(fai_file, PATH_MAX, "%s.fai", fn);
+	if (access(fai_file, R_OK) != 0)
+	    if (fai_build(fn) != 0)
+		return NULL;
+    }
 
     if (!(fp = bgzf_open(fn, mode))) {
 	perror(fn);
@@ -1812,7 +1815,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
     if (fn_l > 4 && strcmp(&fn[fn_l-4], ".fai") == 0)
 	r->fn[fn_l-4] = 0;
 
-    if (!(r->fp = bgzf_open_ref(r->fn, "r")))
+    if (!(r->fp = bgzf_open_ref(r->fn, "r", 0)))
 	goto err;
 
     /* Parse .fai file and load meta-data */
@@ -1869,6 +1872,7 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 	e->count = 0;
 	e->seq = NULL;
 	e->mf = NULL;
+	e->is_md5 = 0;
 
 	k = kh_put(refs, r->h_meta, e->name, &n);
 	if (-1 == n)  {
@@ -2172,9 +2176,10 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     char *ref_path = getenv("REF_PATH");
     SAM_hdr_type *ty;
     SAM_hdr_tag *tag;
-    char path[PATH_MAX], path_tmp[PATH_MAX], cache[PATH_MAX];
+    char path[PATH_MAX], path_tmp[PATH_MAX], cache[PATH_MAX], *path2;
     char *local_cache = getenv("REF_CACHE");
     mFILE *mf;
+    int local_path = 0;
 
     if (fd->verbose)
 	fprintf(stderr, "cram_populate_ref on fd %p, id %d\n", fd, id);
@@ -2209,10 +2214,22 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     /* Use cache if available */
     if (local_cache && *local_cache) {
+	expand_cache_path(path, local_cache, tag->str+3);
+	local_path = 1;
+    }
+
+    /* Search local files in REF_PATH; we can open them and return as above */
+    if (!local_path && (path2 = find_path(tag->str+3, ref_path))) {
+	strncpy(path, path2, PATH_MAX);
+	free(path2);
+	if (is_file(path)) // incase it's too long
+	    local_path = 1;
+    }
+
+    /* Found via REF_CACHE or local REF_PATH file */
+    if (local_path) {
 	struct stat sb;
 	BGZF *fp;
-
-	expand_cache_path(path, local_cache, tag->str+3);
 
 	if (0 == stat(path, &sb) && (fp = bgzf_open(path, "r"))) {
 	    r->length = sb.st_size;
@@ -2225,6 +2242,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 		    return -1;
 	    fd->refs->fp = fp;
 	    fd->refs->fn = r->fn;
+	    r->is_md5 = 1;
 
 	    // Fall back to cram_get_ref() where it'll do the actual
 	    // reading of the file.
@@ -2232,7 +2250,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	}
     }
 
-    /* Otherwise search */
+
+    /* Otherwise search full REF_PATH; slower as loads entire file */
     if ((mf = open_path_mfile(tag->str+3, ref_path, NULL))) {
 	size_t sz;
 	r->seq = mfsteal(mf, &sz);
@@ -2244,6 +2263,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	    r->mf = mf;
 	}
 	r->length = sz;
+	r->is_md5 = 1;
     } else {
 	refs_t *refs;
 	char *fn;
@@ -2450,7 +2470,7 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
  * Returns ref_entry on success;
  *         NULL on failure
  */
-ref_entry *cram_ref_load(refs_t *r, int id) {
+ref_entry *cram_ref_load(refs_t *r, int id, int is_md5) {
     ref_entry *e = r->ref_id[id];
     int start = 1, end = e->length;
     char *seq;
@@ -2483,7 +2503,7 @@ ref_entry *cram_ref_load(refs_t *r, int id) {
 	    if (bgzf_close(r->fp) != 0)
 		return NULL;
 	r->fn = e->fn;
-	if (!(r->fp = bgzf_open_ref(r->fn, "r")))
+	if (!(r->fp = bgzf_open_ref(r->fn, "r", is_md5)))
 	    return NULL;
     }
 
@@ -2637,7 +2657,7 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
 		cram_ref_incr_locked(fd->refs, id);
 	    } else {
 		ref_entry *e;
-		if (!(e = cram_ref_load(fd->refs, id))) {
+		if (!(e = cram_ref_load(fd->refs, id, r->is_md5))) {
 		    pthread_mutex_unlock(&fd->refs->lock);
 		    pthread_mutex_unlock(&fd->ref_lock);
 		    return NULL;
@@ -2695,7 +2715,7 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
 	    if (bgzf_close(fd->refs->fp) != 0)
 		return NULL;
 	fd->refs->fn = r->fn;
-	if (!(fd->refs->fp = bgzf_open_ref(fd->refs->fn, "r"))) {
+	if (!(fd->refs->fp = bgzf_open_ref(fd->refs->fn, "r", r->is_md5))) {
 	    pthread_mutex_unlock(&fd->refs->lock);
 	    pthread_mutex_unlock(&fd->ref_lock);
 	    return NULL;
