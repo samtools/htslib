@@ -38,6 +38,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * containers and blocks in a robust manner.
  */
 
+#include <config.h>
+
 #include "htslib/hfile.h"
 #include "cram/cram.h"
 
