@@ -348,18 +348,16 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
     if (refid+1 < 0 || refid+1 >= fd->index_sz)
 	return NULL;
 
-    i = 0, j = fd->index[refid+1].nslice-1;
-
     if (!from)
 	from = &fd->index[refid+1];
 
-    // If no entries for this seq, keep backtracking.
-    // This is because the index may be sparse and omit this
-    // container.
-    while (!from->e && refid > 0) {
-	from = &fd->index[--refid+1];
-    }
+    // Ref with nothing aligned against it.
+    if (!from->e)
+	return NULL;
 
+    // This sequence is covered by the index, so binary search to find
+    // the optimal starting block.
+    i = 0, j = fd->index[refid+1].nslice-1;
     for (k = j/2; k != i; k = (j-i)/2 + i) {
 	if (from->e[k].refid > refid) {
 	    j = k;
@@ -412,7 +410,8 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
  * whole containers when they don't overlap the specified cram_range.
  *
  * Returns 0 on success
- *        -1 on failure
+ *        -1 on general failure
+ *        -2 on no-data (empty chromosome)
  */
 int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
     cram_index *e;
@@ -424,7 +423,7 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
 		return -1;
     } else {
 	// Absent from index, but this most likely means it simply has no data.
-	return 0;
+	return -2;
     }
 
     if (fd->ctr) {
