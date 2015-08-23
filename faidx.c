@@ -90,8 +90,9 @@ faidx_t *fai_build_core(BGZF *bgzf)
     int64_t len;
 
     idx = (faidx_t*)calloc(1, sizeof(faidx_t));
+    name = (char *)calloc(1, sizeof(char));
     idx->hash = kh_init(s);
-    name = 0; l_name = m_name = 0;
+    l_name = m_name = 0;
     len = line_len = line_blen = -1; state = 0; l1 = l2 = -1; offset = 0;
     while ( (c=bgzf_getc(bgzf))>=0 ) {
         if (c == '\n') { // an empty line
