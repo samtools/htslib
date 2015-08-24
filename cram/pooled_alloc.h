@@ -46,6 +46,7 @@ typedef struct {
 
 typedef struct {
     size_t dsize;
+    size_t psize;
     size_t npools;
     pool_t *pools;
     void *free;

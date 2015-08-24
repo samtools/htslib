@@ -976,6 +976,78 @@ int cram_dependent_data_series(cram_fd *fd,
     return 0;
 }
 
+/*
+ * Checks whether an external block is used solely by a single data series.
+ * Returns the codec type if so (EXTERNAL, BYTE_ARRAY_LEN, BYTE_ARRAY_STOP)
+ *         or 0 if not (E_NULL).
+ */
+static int cram_ds_unique(cram_block_compression_hdr *hdr, cram_codec *c,
+			  int id) {
+    int i, n_id = 0;
+    enum cram_encoding e_type = 0;
+
+    for (i = 0; i < DS_END; i++) {
+	cram_codec *c;
+	int bnum1, bnum2, old_n_id;
+
+	if (!(c = hdr->codecs[i]))
+	    continue;
+
+	bnum1 = cram_codec_to_id(c, &bnum2);
+
+	old_n_id = n_id;
+	if (bnum1 == id) {
+	    n_id++;
+	    e_type = c->codec;
+	}
+	if (bnum2 == id) {
+	    n_id++;
+	    e_type = c->codec;
+	}
+
+	if (n_id == old_n_id+2)
+	    n_id--; // len/val in same place counts once only.
+    }
+
+    return n_id == 1 ? e_type : 0;
+}
+
+/*
+ * Attempts to estimate the size of some blocks so we can preallocate them
+ * before decoding.  Although decoding will automatically grow the blocks,
+ * it is typically more efficient to preallocate.
+ */
+void cram_decode_estimate_sizes(cram_block_compression_hdr *hdr, cram_slice *s,
+				int *qual_size, int *name_size,
+				int *q_id) {
+    int bnum1, bnum2;
+    cram_codec *cd;
+
+    *qual_size = 0;
+    *name_size = 0;
+
+    /* Qual */
+    cd = hdr->codecs[DS_QS];
+    bnum1 = cram_codec_to_id(cd, &bnum2);
+    if (bnum1 < 0 && bnum2 >= 0) bnum1 = bnum2;
+    if (cram_ds_unique(hdr, cd, bnum1)) {
+	cram_block *b = cram_get_block_by_id(s, bnum1);
+	if (b) *qual_size = b->uncomp_size;
+	if (q_id && cd->codec == E_EXTERNAL)
+	    *q_id = bnum1;
+    }
+
+    /* Name */
+    cd = hdr->codecs[DS_RN];
+    bnum1 = cram_codec_to_id(cd, &bnum2);
+    if (bnum1 < 0 && bnum2 >= 0) bnum1 = bnum2;
+    if (cram_ds_unique(hdr, cd, bnum1)) {
+	cram_block *b = cram_get_block_by_id(s, bnum1);
+	if (b) *name_size = b->uncomp_size;
+    }
+}
+
+
 /* ----------------------------------------------------------------------
  * CRAM slices
  */
@@ -2065,6 +2137,27 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
     blk->bit = 7; // MSB first
 
+    // Study the blocks and estimate approx sizes to preallocate.
+    // This looks to speed up decoding by around 8-9%.
+    // We can always shrink back down at the end if we overestimated.
+    // However it's likely that this also saves memory as own growth
+    // factor (*=1.5) is never applied.
+    {
+	int qsize, nsize, q_id;
+	cram_decode_estimate_sizes(c->comp_hdr, s, &qsize, &nsize, &q_id);
+	//fprintf(stderr, "qsize=%d nsize=%d\n", qsize, nsize);
+	
+	if (qsize && (ds & CRAM_RL)) BLOCK_RESIZE_EXACT(s->seqs_blk, qsize+1);
+	if (qsize && (ds & CRAM_RL)) BLOCK_RESIZE_EXACT(s->qual_blk, qsize+1);
+	if (nsize && (ds & CRAM_NS)) BLOCK_RESIZE_EXACT(s->name_blk, nsize+1);
+
+	// To do - consider using q_id here to usurp the quality block and
+	// avoid a memcpy during decode.
+	// Specifically when quality is an external block uniquely used by
+	// DS_QS only, then we can set s->qual_blk directly to this
+	// block and save the codec->decode() calls. (Approx 3% cpu saving)
+    }
+
     /* Look for unknown RG, added as last by Java CRAM? */
     if (bfd->nrg > 0 &&
 	bfd->rg[bfd->nrg-1].name != NULL &&
@@ -2542,6 +2635,30 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
     /* Resolve mate pair cross-references between recs within this slice */
     r |= cram_decode_slice_xref(s, fd->required_fields);
+
+    // Free the original blocks as we no longer need these.
+    {
+	int i;
+	for (i = 0; i < s->hdr->num_blocks; i++) {
+	    cram_block *b = s->block[i];
+	    cram_free_block(b);
+	    s->block[i] = NULL;
+	}
+    }
+
+    // Also see initial BLOCK_RESIZE_EXACT at top of function.
+    // As we grow blocks we overallocate by up to 50%. So shrink
+    // back to their final sizes here.
+    //
+//    fprintf(stderr, "%d %d // %d %d // %d %d // %d %d\n",
+//    	    (int)s->seqs_blk->byte, (int)s->seqs_blk->alloc, 
+//    	    (int)s->qual_blk->byte, (int)s->qual_blk->alloc, 
+//    	    (int)s->name_blk->byte, (int)s->name_blk->alloc, 
+//    	    (int)s->aux_blk->byte,  (int)s->aux_blk->alloc);
+    BLOCK_RESIZE_EXACT(s->seqs_blk, BLOCK_SIZE(s->seqs_blk)+1);
+    BLOCK_RESIZE_EXACT(s->qual_blk, BLOCK_SIZE(s->qual_blk)+1);
+    BLOCK_RESIZE_EXACT(s->name_blk, BLOCK_SIZE(s->name_blk)+1);
+    BLOCK_RESIZE_EXACT(s->aux_blk,  BLOCK_SIZE(s->aux_blk)+1);
 
     return r;
 }

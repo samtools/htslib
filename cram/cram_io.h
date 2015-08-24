@@ -272,6 +272,13 @@ static inline cram_block *cram_get_block_by_id(cram_slice *slice, int id) {
 	}							\
      } while(0)
 
+/* Make block exactly 'l' bytes long */
+#define BLOCK_RESIZE_EXACT(b,l)					\
+    do {							\
+        (b)->alloc = (l);                                       \
+        (b)->data = realloc((b)->data, (b)->alloc);		\
+     } while(0)
+
 /* Ensure the block can hold at least another 'l' bytes */
 #define BLOCK_GROW(b,l) BLOCK_RESIZE((b), BLOCK_SIZE((b)) + (l))
 
