@@ -35,6 +35,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/faidx.h"
 #include "htslib/hfile.h"
 #include "htslib/khash.h"
+#include "htslib/kstring.h"
 
 typedef struct {
     int32_t line_len, line_blen;
@@ -80,10 +81,9 @@ static inline void fai_insert_index(faidx_t *idx, const char *name, int len, int
 
 faidx_t *fai_build_core(BGZF *bgzf)
 {
-    char *name;
+    kstring_t name = {0, 0, NULL};
     int c;
-    int l_name, m_name;
-    int line_len, line_blen, state;
+    int line_len, line_blen, state, header_state;
     int l1, l2;
     faidx_t *idx;
     uint64_t offset;
@@ -91,7 +91,6 @@ faidx_t *fai_build_core(BGZF *bgzf)
 
     idx = (faidx_t*)calloc(1, sizeof(faidx_t));
     idx->hash = kh_init(s);
-    name = 0; l_name = m_name = 0;
     len = line_len = line_blen = -1; state = 0; l1 = l2 = -1; offset = 0;
     while ( (c=bgzf_getc(bgzf))>=0 ) {
         if (c == '\n') { // an empty line
@@ -103,29 +102,32 @@ faidx_t *fai_build_core(BGZF *bgzf)
         }
         if (c == '>') { // fasta header
             if (len >= 0)
-                fai_insert_index(idx, name, len, line_len, line_blen, offset);
-            l_name = 0;
-            while ( (c=bgzf_getc(bgzf))>=0 && !isspace(c)) {
-                if (m_name < l_name + 2) {
-                    m_name = l_name + 2;
-                    kroundup32(m_name);
-                    name = (char*)realloc(name, m_name);
+                fai_insert_index(idx, name.s, len, line_len, line_blen, offset);
+            name.l = 0;
+            header_state = 0;
+            while ( (c=bgzf_getc(bgzf))>=0 && c != '\n') {
+                if (isspace(c)) {
+                    if (header_state == 0)
+                        continue;
+                    else
+                        break;
                 }
-                name[l_name++] = c;
+                header_state = 1;
+                kputc(c, &name);
             }
-            name[l_name] = '\0';
             if ( c<0 ) {
                 fprintf(stderr, "[fai_build_core] the last entry has no sequence\n");
-                free(name); fai_destroy(idx);
+                free(name.s); fai_destroy(idx);
                 return 0;
             }
             if (c != '\n') while ( (c=bgzf_getc(bgzf))>=0 && c != '\n');
+            if (name.l == 0) kputc('\0', &name);
             state = 1; len = 0;
             offset = bgzf_utell(bgzf);
         } else {
             if (state == 3) {
-                fprintf(stderr, "[fai_build_core] inlined empty line is not allowed in sequence '%s'.\n", name);
-                free(name); fai_destroy(idx);
+                fprintf(stderr, "[fai_build_core] inlined empty line is not allowed in sequence '%s'.\n", name.s);
+                free(name.s); fai_destroy(idx);
                 return 0;
             }
             if (state == 2) state = 3;
@@ -135,8 +137,8 @@ faidx_t *fai_build_core(BGZF *bgzf)
                 if (isgraph(c)) ++l2;
             } while ( (c=bgzf_getc(bgzf))>=0 && c != '\n');
             if (state == 3 && l2) {
-                fprintf(stderr, "[fai_build_core] different line length in sequence '%s'.\n", name);
-                free(name); fai_destroy(idx);
+                fprintf(stderr, "[fai_build_core] different line length in sequence '%s'.\n", name.s);
+                free(name.s); fai_destroy(idx);
                 return 0;
             }
             ++l1; len += l2;
@@ -146,14 +148,9 @@ faidx_t *fai_build_core(BGZF *bgzf)
             }
         }
     }
-    if ( name )
-        fai_insert_index(idx, name, len, line_len, line_blen, offset);
-    else
-    {
-        free(idx);
-        return NULL;
-    }
-    free(name);
+    if ( len>=0 )
+        fai_insert_index(idx, name.s, len, line_len, line_blen, offset);
+    free(name.s);
     return idx;
 }
 
