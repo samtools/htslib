@@ -162,26 +162,47 @@ static void iterators1(void)
 
 static void faidx1(const char *filename)
 {
-    int n;
-    faidx_t *fai = fai_load(filename);
-    if (fai == NULL) fail("can't load faidx file");
+    int n, n_exp = 0;
+    char tmpfilename[FILENAME_MAX], line[500];
+    FILE *fin, *fout;
+    faidx_t *fai;
+
+    fin = fopen(filename, "r");
+    if (fin == NULL) fail("can't open %s\n", filename);
+    sprintf(tmpfilename, "%s.tmp", filename);
+    fout = fopen(tmpfilename, "w");
+    if (fout == NULL) fail("can't create temporary %s\n", tmpfilename);
+    while (fgets(line, sizeof line, fin)) {
+        if (line[0] == '>') n_exp++;
+        fputs(line, fout);
+    }
+    fclose(fin);
+    fclose(fout);
+
+    if (fai_build(tmpfilename) < 0) fail("can't index %s", tmpfilename);
+    fai = fai_load(tmpfilename);
+    if (fai == NULL) fail("can't load faidx file %s", tmpfilename);
 
     n = faidx_fetch_nseq(fai);
-    if (n != 7) fail("faidx_fetch_nseq returned %d, expected 7", n);
+    if (n != n_exp)
+        fail("%s: faidx_fetch_nseq returned %d, expected %d", filename, n, n_exp);
 
     n = faidx_nseq(fai);
-    if (n != 7) fail("faidx_nseq returned %d, expected 7", n);
+    if (n != n_exp)
+        fail("%s: faidx_nseq returned %d, expected %d", filename, n, n_exp);
 
     fai_destroy(fai);
 }
 
 int main(int argc, char **argv)
 {
+    int i;
+
     status = EXIT_SUCCESS;
 
     aux_fields1();
     iterators1();
-    if (argc >= 2) faidx1(argv[1]);
+    for (i = 1; i < argc; i++) faidx1(argv[i]);
 
     return status;
 }
