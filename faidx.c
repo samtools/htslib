@@ -121,6 +121,7 @@ faidx_t *fai_build_core(BGZF *bgzf)
                 return 0;
             }
             if (c != '\n') while ( (c=bgzf_getc(bgzf))>=0 && c != '\n');
+            if (name.l == 0) kputc('\0', &name);
             state = 1; len = 0;
             offset = bgzf_utell(bgzf);
         } else {
@@ -147,7 +148,7 @@ faidx_t *fai_build_core(BGZF *bgzf)
             }
         }
     }
-    if ( name.l )
+    if ( len>=0 )
         fai_insert_index(idx, name.s, len, line_len, line_blen, offset);
     free(name.s);
     return idx;
