@@ -402,7 +402,6 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     if (fmt && fmt->specific)
         if (hts_opt_apply(fp, fmt->specific) != 0)
             goto error;
-            
 
     return fp;
 
