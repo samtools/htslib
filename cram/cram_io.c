@@ -4399,8 +4399,10 @@ int cram_set_option(cram_fd *fd, enum hts_fmt_option opt, ...) {
 int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     refs_t *refs;
 
-    if (!fd)
+    if (!fd) {
+	errno = EBADF;
 	return -1;
+    }
 
     switch (opt) {
     case CRAM_OPT_DECODE_MD:
@@ -4480,6 +4482,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 	      (major == 3 &&  minor == 0))) {
 	    fprintf(stderr, "Unknown version string; "
 		    "use 1.0, 2.0, 2.1 or 3.0\n");
+	    errno = EINVAL;
 	    return -1;
 	}
 	fd->version = major*256 + minor;
@@ -4535,6 +4538,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     default:
 	fprintf(stderr, "Unknown CRAM option code %d\n", opt);
+	errno = EINVAL;
 	return -1;
     }
 

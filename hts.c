@@ -400,7 +400,9 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     if (fp == NULL) goto error;
 
     if (fmt && fmt->specific)
-        hts_opt_apply(fp, fmt->specific);
+        if (hts_opt_apply(fp, fmt->specific) != 0)
+            goto error;
+            
 
     return fp;
 
@@ -663,7 +665,11 @@ static int hts_process_opts(htsFile *fp, const char *opts) {
     if (hts_parse_opt_list(&fmt, opts) != 0)
         return -1;
 
-    hts_opt_apply(fp, fmt.specific);
+    if (hts_opt_apply(fp, fmt.specific) != 0) {
+        hts_opt_free(fmt.specific);
+        return -1;
+    }
+
     hts_opt_free(fmt.specific);
 
     return 0;
