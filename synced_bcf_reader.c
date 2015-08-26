@@ -887,7 +887,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
         if ( *ep==':' )
         {
             sp = ep+1;
-            from = hts_parse_decimal(sp,(char**)&ep);
+            from = hts_parse_decimal(sp,(char**)&ep,0);
             if ( sp==ep )
             {
                 fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
@@ -906,7 +906,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             }
             ep++;
             sp = ep;
-            to = hts_parse_decimal(sp,(char**)&ep);
+            to = hts_parse_decimal(sp,(char**)&ep,0);
             if ( *ep && *ep!=',' )
             {
                 fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
@@ -953,15 +953,15 @@ static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **ch
     if ( i<=k ) return -1;
     if ( k==l )
     {
-        *from = *to = hts_parse_decimal(ss, &tmp);
+        *from = *to = hts_parse_decimal(ss, &tmp, 0);
         if ( tmp==ss ) return -1;
     }
     else
     {
         if ( k==ifrom )
-            *from = hts_parse_decimal(ss, &tmp);
+            *from = hts_parse_decimal(ss, &tmp, 0);
         else
-            *to = hts_parse_decimal(ss, &tmp);
+            *to = hts_parse_decimal(ss, &tmp, 0);
         if ( ss==tmp ) return -1;
 
         for (i=k; i<l && *se; i++)
@@ -971,9 +971,9 @@ static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **ch
         }
         if ( i<l ) return -1;
         if ( k==ifrom )
-            *to = hts_parse_decimal(ss, &tmp);
+            *to = hts_parse_decimal(ss, &tmp, 0);
         else
-            *from = hts_parse_decimal(ss, &tmp);
+            *from = hts_parse_decimal(ss, &tmp, 0);
         if ( ss==tmp ) return -1;
     }
 

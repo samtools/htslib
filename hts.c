@@ -1824,7 +1824,7 @@ static inline long long push_digit(long long i, char c)
     return 10 * i + digit;
 }
 
-long long hts_parse_decimal(const char *str, char **end)
+long long hts_parse_decimal(const char *str, char **strend, int flags)
 {
     long long n = 0;
     int decimals = 0, e = 0, lost = 0;
@@ -1837,7 +1837,7 @@ long long hts_parse_decimal(const char *str, char **end)
     if (*s == '+' || *s == '-') sign = *s++;
     while (*s)
         if (isdigit(*s)) n = push_digit(n, *s++);
-        else if (*s == ',') s++;
+        else if (*s == ',' && (flags & HTS_PARSE_THOUSANDS_SEP)) s++;
         else break;
 
     if (*s == '.') {
@@ -1860,7 +1860,7 @@ long long hts_parse_decimal(const char *str, char **end)
         fprintf(stderr, "[W::%s] discarding fractional part of %.*s\n",
                 __func__, (int)(s - str), str);
 
-    if (end) *end = (char *) s;
+    if (strend) *strend = (char *) s;
     else if (*s && hts_verbose >= 2)
         fprintf(stderr, "[W::%s] ignoring unknown characters after %.*s[%s]\n",
                 __func__, (int)(s - str), str, s);
@@ -1877,11 +1877,11 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
         return s + strlen(s);
     }
 
-    *beg = hts_parse_decimal(colon+1, &hyphen) - 1;
+    *beg = hts_parse_decimal(colon+1, &hyphen, HTS_PARSE_THOUSANDS_SEP) - 1;
     if (*beg < 0) *beg = 0;
 
     if (*hyphen == '\0') *end = INT_MAX;
-    else if (*hyphen == '-') *end = hts_parse_decimal(hyphen+1, NULL);
+    else if (*hyphen == '-') *end = hts_parse_decimal(hyphen+1, NULL, HTS_PARSE_THOUSANDS_SEP);
     else return NULL;
 
     if (*beg >= *end) return NULL;

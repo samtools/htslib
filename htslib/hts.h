@@ -477,18 +477,22 @@ hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx);
     int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped);
     uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
 
+
+#define HTS_PARSE_THOUSANDS_SEP 1  ///< Ignore ',' separators within numbers
+
 /// Parse a numeric string
-/** The number may be expressed in scientific notation, and may contain commas
-    in the integer part (before any decimal point or E notation).
-    @param str  String to be parsed
-    @param end  If non-NULL, set on return to point to the first character
-                in @a str after those forming the parsed number
+/** The number may be expressed in scientific notation, and optionally may
+    contain commas in the integer part (before any decimal point or E notation).
+    @param str     String to be parsed
+    @param strend  If non-NULL, set on return to point to the first character
+                   in @a str after those forming the parsed number
+    @param flags   Or'ed-together combination of HTS_PARSE_* flags
     @return  Converted value of the parsed number.
 
-    When @a end is NULL, a warning will be printed (if hts_verbose is 2
+    When @a strend is NULL, a warning will be printed (if hts_verbose is 2
     or more) if there are any trailing characters after the number.
 */
-long long hts_parse_decimal(const char *str, char **end);
+long long hts_parse_decimal(const char *str, char **strend, int flags);
 
 /// Parse a "CHR:START-END"-style region string
 /** @param str  String to be parsed
