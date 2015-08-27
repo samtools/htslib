@@ -154,7 +154,7 @@ $(HTSDIR)/tabix: $(HTSDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS)
 #
 #	clean: clean-htslib
 
-clean-htslib install-htslib:
+all-htslib clean-htslib install-htslib:
 	+cd $(HTSDIR) && $(MAKE) $(@:-htslib=)
 
-.PHONY: clean-htslib install-htslib
+.PHONY: all-htslib clean-htslib install-htslib
