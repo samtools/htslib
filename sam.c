@@ -848,6 +848,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     }
     // qname
     q = _read_token(p);
+    _parse_warn(p - q <= 1, "empty query name");
     _parse_err(p - q > 255, "query name too long");
     kputsn_(q, p - q, &str);
     c->l_qname = p - q;
