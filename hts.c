@@ -1355,8 +1355,14 @@ void hts_idx_destroy(hts_idx_t *idx)
     khint_t k;
     int i;
     if (idx == 0) return;
+
     // For HTS_FMT_CRAI, idx actually points to a different type -- see sam.c
-    if (idx->fmt == HTS_FMT_CRAI) { free(idx); return; }
+    if (idx->fmt == HTS_FMT_CRAI) {
+        hts_cram_idx_t *cidx = (hts_cram_idx_t *) idx;
+        cram_index_free(cidx->cram);
+        free(cidx);
+        return;
+    }
 
     for (i = 0; i < idx->m; ++i) {
         bidx_t *bidx = idx->bidx[i];

@@ -34,6 +34,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/sam.h"
 #include "htslib/bgzf.h"
 #include "cram/cram.h"
+#include "hts_internal.h"
 #include "htslib/hfile.h"
 
 #include "htslib/khash.h"
@@ -566,15 +567,6 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
         abort();
     }
 }
-
-// The CRAM implementation stores the loaded index within the cram_fd rather
-// than separately as is done elsewhere in htslib.  So if p is a pointer to
-// an hts_idx_t with p->fmt == HTS_FMT_CRAI, then it actually points to an
-// hts_cram_idx_t and should be cast accordingly.
-typedef struct hts_cram_idx_t {
-    int fmt;
-    cram_fd *cram;
-} hts_cram_idx_t;
 
 hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx)
 {

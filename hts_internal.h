@@ -29,7 +29,18 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
+struct cram_fd;
+
 char *hts_idx_getfn(const char *fn, const char *ext);
+
+// The CRAM implementation stores the loaded index within the cram_fd rather
+// than separately as is done elsewhere in htslib.  So if p is a pointer to
+// an hts_idx_t with p->fmt == HTS_FMT_CRAI, then it actually points to an
+// hts_cram_idx_t and should be cast accordingly.
+typedef struct hts_cram_idx_t {
+    int fmt;
+    struct cram_fd *cram;
+} hts_cram_idx_t;
 
 #ifdef __cplusplus
 }
