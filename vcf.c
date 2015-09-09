@@ -56,8 +56,6 @@ static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, N
  *** VCF header parser ***
  *************************/
 
-int bcf_hdr_sync(bcf_hdr_t *h);
-
 int bcf_hdr_add_sample(bcf_hdr_t *h, const char *s)
 {
     if ( !s ) return 0;
@@ -122,23 +120,11 @@ int bcf_hdr_sync(bcf_hdr_t *h)
     {
         vdict_t *d = (vdict_t*)h->dict[i];
         khint_t k;
-
-        // find out the largest id, there may be holes because of IDX
-        int max_id = -1;
-        for (k=kh_begin(d); k<kh_end(d); k++)
+        if ( h->n[i] < kh_size(d) )
         {
-            if (!kh_exist(d,k)) continue;
-            if ( max_id < kh_val(d,k).id ) max_id = kh_val(d,k).id;
-        }
-        if ( max_id >= h->n[i] )
-        {
-            h->id[i] = (bcf_idpair_t*)realloc(h->id[i], (max_id+1)*sizeof(bcf_idpair_t));
-            for (k=h->n[i]; k<=max_id; k++)
-            {
-                h->id[i][k].key = NULL;
-                h->id[i][k].val = NULL;
-            }
-            h->n[i] = max_id+1;
+            // this should be true only for i=2, BCF_DT_SAMPLE
+            h->n[i] = kh_size(d);
+            h->id[i] = (bcf_idpair_t*) realloc(h->id[i], kh_size(d)*sizeof(bcf_idpair_t));
         }
         for (k=kh_begin(d); k<kh_end(d); k++)
         {
@@ -355,6 +341,27 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     return hrec;
 }
 
+static int bcf_hdr_set_idx(bcf_hdr_t *hdr, int dict_type, const char *tag, bcf_idinfo_t *idinfo)
+{
+    // If available, preserve existing IDX
+    if ( idinfo->id==-1 )
+        idinfo->id = hdr->n[dict_type]++;
+    else if ( idinfo->id < hdr->n[dict_type] && hdr->id[dict_type][idinfo->id].key )
+    {
+        fprintf(stderr,"[%s:%d %s] Conflicting IDX=%d lines in the header dictionary, the new tag is %s\n", __FILE__,__LINE__,__FUNCTION__, idinfo->id, tag);
+        exit(1);
+    }
+
+    if ( idinfo->id >= hdr->n[dict_type] ) hdr->n[dict_type] = idinfo->id+1;
+    hts_expand0(bcf_idpair_t,hdr->n[dict_type],hdr->m[dict_type],hdr->id[dict_type]);
+
+    // NB: the next kh_put call can invalidate the idinfo pointer, therefore
+    // we leave it unassigned here. It myst be set explicitly in bcf_hdr_sync.
+    hdr->id[dict_type][idinfo->id].key = tag;
+
+    return 0;
+}
+
 // returns: 1 when hdr needs to be synced, 0 otherwise
 int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 {
@@ -392,16 +399,13 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
                 return 0;
             }
         }
-        else
-        {
-            idx = kh_size(d) - 1;
-            hrec_add_idx(hrec, idx);
-        }
 
         kh_val(d, k) = bcf_idinfo_def;
         kh_val(d, k).id = idx;
         kh_val(d, k).info[0] = j;
         kh_val(d, k).hrec[0] = hrec;
+        bcf_hdr_set_idx(hdr, BCF_DT_CTG, kh_key(d,k), &kh_val(d,k));
+        if ( idx==-1 ) hrec_add_idx(hrec, kh_val(d,k).id);
 
         return 1;
     }
@@ -476,9 +480,9 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     kh_val(d, k) = bcf_idinfo_def;
     kh_val(d, k).info[info&0xf] = info;
     kh_val(d, k).hrec[info&0xf] = hrec;
-    kh_val(d, k).id = idx==-1 ? kh_size(d) - 1 : idx;
-
-    if ( idx==-1 ) hrec_add_idx(hrec, kh_val(d, k).id);
+    kh_val(d, k).id = idx;
+    bcf_hdr_set_idx(hdr, BCF_DT_ID, kh_key(d,k), &kh_val(d,k));
+    if ( idx==-1 ) hrec_add_idx(hrec, kh_val(d,k).id);
 
     return 1;
 }
