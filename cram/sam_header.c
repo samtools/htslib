@@ -281,7 +281,7 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
  *        -1 on failure
  */
 int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
-    int i, lno = 1, text_offset;
+    int i, lno, text_offset;
     char *hdr;
 
     if (!len)
@@ -292,7 +292,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	return -1;
     hdr = ks_str(&sh->text) + text_offset;
 
-    for (i = 0; i < len; i++) {
+    for (i = 0, lno = 1; i < len; i++, lno++) {
 	khint32_t type;
 	khint_t k;
 
