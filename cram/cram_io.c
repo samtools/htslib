@@ -4278,7 +4278,7 @@ int cram_close(cram_fd *fd) {
 	    return -1;
     }
 
-    if (fd->pool) {
+    if (fd->pool && fd->eof >= 0) {
 	t_pool_flush(fd->pool);
 
 	if (0 != cram_flush_result(fd))
