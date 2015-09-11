@@ -80,6 +80,7 @@ BUILT_TEST_PROGRAMS = \
 	test/test-regidx \
 	test/test_view \
 	test/test-vcf-api \
+	test/test-vcf-hdr \
 	test/test-vcf-sweep
 
 all: lib-static lib-shared $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
@@ -312,6 +313,9 @@ test/test_view: test/test_view.o libhts.a
 test/test-vcf-api: test/test-vcf-api.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-api.o libhts.a $(LDLIBS) -lz
 
+test/test-vcf-hdr: test/test-vcf-hdr.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-hdr.o libhts.a $(LDLIBS) -lz
+
 test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LDLIBS) -lz
 
@@ -321,6 +325,7 @@ test/sam.o: test/sam.c $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
 test/test-regidx.o: test/test-regidx.c $(htslib_regidx_h)
 test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
+test/test-vcf-hdr.o: test/test-vcf-hdr.c $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
 test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
 
 
