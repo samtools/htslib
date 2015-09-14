@@ -289,8 +289,8 @@ char *sam_hdr_str(SAM_hdr *hdr);
  * optional new-line. If it contains more than 1 line then multiple lines
  * will be added in order.
  *
- * Len is the length of the text data, or 0 if unknown (in which case
- * it should be null terminated).
+ * Input text is of maximum length len or as terminated earlier by a NUL.
+ * Len may be 0 if unknown, in which case lines must be NUL-terminated.
  *
  * @return
  * Returns 0 on success;

@@ -292,7 +292,7 @@ check test: $(BUILT_TEST_PROGRAMS)
 	test/sam test/ce.fa test/faidx.fa
 	test/test-regidx
 	cd test && REF_PATH=: ./test_view.pl
-	cd test && ./test.pl
+	cd test && REF_PATH=: ./test.pl
 
 test/fieldarith: test/fieldarith.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/fieldarith.o libhts.a $(LDLIBS) -lz
