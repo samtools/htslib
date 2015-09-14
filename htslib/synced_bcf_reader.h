@@ -109,7 +109,7 @@ typedef struct
     const char *fname;
     bcf1_t **buffer;                // cached VCF records. First is the current record synced across the reader
     int nbuffer, mbuffer;           // number of cached records (including the current record); number of allocated records
-    int nfilter_ids, *filter_ids;   // -1 for ".", otherwise filter id as returned by bcf_id2int
+    int nfilter_ids, *filter_ids;   // -1 for ".", otherwise filter id as returned by bcf_hdr_id2int
     int *samples, n_smpl;   // list of columns in the order consistent with bcf_srs_t.samples
 }
 bcf_sr_t;

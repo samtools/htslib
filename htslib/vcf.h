@@ -502,20 +502,20 @@ typedef struct {
 
     /**
      *  bcf_update_filter() - sets the FILTER column
-     *  @flt_ids:  The filter IDs to set, numeric IDs returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @flt_ids:  The filter IDs to set, numeric IDs returned by bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS")
      *  @n:        Number of filters. If n==0, all filters are removed
      */
     int bcf_update_filter(const bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n);
     /**
      *  bcf_add_filter() - adds to the FILTER column
-     *  @flt_id:   filter ID to add, numeric ID returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @flt_id:   filter ID to add, numeric ID returned by bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS")
      *
      *  If flt_id is PASS, all existing filters are removed first. If other than PASS, existing PASS is removed.
      */
     int bcf_add_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id);
     /**
      *  bcf_remove_filter() - removes from the FILTER column
-     *  @flt_id:   filter ID to remove, numeric ID returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @flt_id:   filter ID to remove, numeric ID returned by bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS")
      *  @pass:     when set to 1 and no filters are present, set to PASS
      */
     int bcf_remove_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id, int pass);
@@ -709,7 +709,7 @@ typedef struct {
     /**
      *  bcf_hdr_id2*() - Macros for accessing bcf_idinfo_t
      *  @type:      one of BCF_HL_FLT, BCF_HL_INFO, BCF_HL_FMT
-     *  @int_id:    return value of bcf_id2int, must be >=0
+     *  @int_id:    return value of bcf_hdr_id2int, must be >=0
      *
      *  The returned values are:
      *     bcf_hdr_id2length   ..  whether the number of values is fixed or variable, one of BCF_VL_*
