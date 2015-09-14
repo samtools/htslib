@@ -776,7 +776,9 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 
     case cram: {
         cram_fd *fd = fp->fp.cram;
-        if (cram_set_header(fd, bam_header_to_cram((bam_hdr_t *)h)) < 0) return -1;
+        SAM_hdr *hdr = bam_header_to_cram((bam_hdr_t *)h);
+        if (! hdr) return -1;
+        if (cram_set_header(fd, hdr) < 0) return -1;
         if (fp->fn_aux)
             cram_load_reference(fd, fp->fn_aux);
         if (cram_write_SAM_hdr(fd, fd->header) < 0) return -1;
