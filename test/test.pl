@@ -34,6 +34,7 @@ my $opts = parse_params();
 
 test_vcf_api($opts,out=>'test-vcf-api.out');
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
+test_vcf_various($opts);
 test_convert_padded_header($opts);
 
 print "\nNumber of tests:\n";
@@ -199,6 +200,15 @@ sub test_vcf_sweep
 {
     my ($opts,%args) = @_;
     test_cmd($opts,%args,cmd=>"$$opts{path}/test-vcf-sweep $$opts{tmp}/test-vcf-api.bcf");
+}
+
+sub test_vcf_various
+{
+    my ($opts, %args) = @_;
+
+    # Trailing spaces on header lines
+    test_cmd($opts, %args, out => "test-vcf-hdr.out",
+        cmd => "$$opts{path}/../htsfile -ch $$opts{path}/test-vcf-hdr-in.vcf");
 }
 
 sub test_convert_padded_header
