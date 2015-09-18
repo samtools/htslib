@@ -77,6 +77,7 @@ static int bgzip_main_usage(void)
     fprintf(stderr, "   -I, --index-name FILE   name of BGZF index file [file.gz.gzi]\n");
     fprintf(stderr, "   -r, --reindex           (re)index compressed file\n");
     fprintf(stderr, "   -s, --size INT          decompress INT bytes (uncompressed size)\n");
+    fprintf(stderr, "   -@, --threads INT       number of compression threads to use [1]\n");
     fprintf(stderr, "\n");
     return 1;
 }
@@ -88,6 +89,7 @@ int main(int argc, char **argv)
     void *buffer;
     long start, end, size;
     char *index_fname = NULL;
+    int threads = 1;
 
     static struct option loptions[] =
     {
@@ -100,11 +102,12 @@ int main(int argc, char **argv)
         {"index-name",1,0,'I'},
         {"reindex",0,0,'r'},
         {"size",1,0,'s'},
+        {"threads",1,0,'@'},
         {0,0,0,0}
     };
 
     compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0;
-    while((c  = getopt_long(argc, argv, "cdh?fb:s:iI:r",loptions,NULL)) >= 0){
+    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:r",loptions,NULL)) >= 0){
         switch(c){
         case 'd': compress = 0; break;
         case 'c': pstdout = 1; break;
@@ -114,6 +117,7 @@ int main(int argc, char **argv)
         case 'i': index = 1; break;
         case 'I': index_fname = optarg; break;
         case 'r': reindex = 1; compress = 0; break;
+        case '@': threads = atoi(optarg); break;
         case 'h':
         case '?': return bgzip_main_usage();
         }
@@ -167,6 +171,9 @@ int main(int argc, char **argv)
         }
         else
             fp = bgzf_open("-", "w");
+
+        if (threads > 1)
+            bgzf_mt(fp, threads, 256);
 
         if ( index ) bgzf_index_build_init(fp);
         buffer = malloc(WINDOW_SIZE);
