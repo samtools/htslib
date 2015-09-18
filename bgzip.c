@@ -79,6 +79,7 @@ static int bgzip_main_usage(void)
     fprintf(stderr, "   -b, --offset INT        decompress at virtual file pointer (0-based uncompressed offset)\n");
     fprintf(stderr, "   -c, --stdout            write on standard output, keep original files unchanged\n");
     fprintf(stderr, "   -d, --decompress        decompress\n");
+    fprintf(stderr, "   -@, --threads           number of compression threads to use\n");
     fprintf(stderr, "   -f, --force             overwrite files without asking\n");
     fprintf(stderr, "   -h, --help              give this help\n");
     fprintf(stderr, "   -i, --index             compress and create BGZF index\n");
@@ -96,12 +97,14 @@ int main(int argc, char **argv)
     void *buffer;
     long start, end, size;
     char *index_fname = NULL;
+    int threads = 1;
 
     static struct option loptions[] =
     {
         {"help",0,0,'h'},
         {"offset",1,0,'b'},
         {"stdout",0,0,'c'},
+        {"threads",0,0,'@'},
         {"decompress",0,0,'d'},
         {"force",0,0,'f'},
         {"index",0,0,'i'},
@@ -112,13 +115,14 @@ int main(int argc, char **argv)
     };
 
     compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0;
-    while((c  = getopt_long(argc, argv, "cdh?fb:s:iI:r",loptions,NULL)) >= 0){
+    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:r",loptions,NULL)) >= 0){
         switch(c){
         case 'd': compress = 0; break;
         case 'c': pstdout = 1; break;
         case 'b': start = atol(optarg); compress = 0; pstdout = 1; break;
         case 's': size = atol(optarg); pstdout = 1; break;
         case 'f': is_forced = 1; break;
+        case '@': threads = atoi(optarg); break;
         case 'i': index = 1; break;
         case 'I': index_fname = optarg; break;
         case 'r': reindex = 1; compress = 0; break;
@@ -170,6 +174,11 @@ int main(int argc, char **argv)
         }
 
         fp = bgzf_fdopen(f_dst, "w");
+        if (threads > 1)
+        {
+            bgzf_mt(fp, threads, 256);
+        }
+        
         if ( index ) bgzf_index_build_init(fp);
         buffer = malloc(WINDOW_SIZE);
         while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
