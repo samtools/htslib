@@ -104,7 +104,7 @@ int main(int argc, char **argv)
         {"help",0,0,'h'},
         {"offset",1,0,'b'},
         {"stdout",0,0,'c'},
-        {"threads",0,0,'@'},
+        {"threads",1,0,'@'},
         {"decompress",0,0,'d'},
         {"force",0,0,'f'},
         {"index",0,0,'i'},
