@@ -874,7 +874,7 @@ static inline void bcf_enc_int1(kstring_t *s, int32_t x)
     }
 }
 
-static inline int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
+static inline int32_t bcf_dec_int1(uint8_t *p, int type, uint8_t **q)
 {
     if (type == BCF_BT_INT8) {
         *q = (uint8_t*)p + 1;
@@ -888,12 +888,12 @@ static inline int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
     }
 }
 
-static inline int32_t bcf_dec_typed_int1(const uint8_t *p, uint8_t **q)
+static inline int32_t bcf_dec_typed_int1(uint8_t *p, uint8_t **q)
 {
     return bcf_dec_int1(p + 1, *p&0xf, q);
 }
 
-static inline int32_t bcf_dec_size(const uint8_t *p, uint8_t **q, int *type)
+static inline int32_t bcf_dec_size(uint8_t *p, uint8_t **q, int *type)
 {
     *type = *p & 0xf;
     if (*p>>4 != 15) {
