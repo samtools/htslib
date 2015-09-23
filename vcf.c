@@ -3375,3 +3375,27 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
     return nsmpl*fmt->n;
 }
 
+
+int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
+{
+    if (type == BCF_BT_INT8) {
+        *q = (uint8_t*)p + 1;
+        return *(int8_t*)p;
+    } else if (type == BCF_BT_INT16) {
+        *q = (uint8_t*)p + 2;
+        return *(int16_t*)p;
+    } else {
+        *q = (uint8_t*)p + 4;
+        return *(int32_t*)p;
+    }
+}
+
+int32_t bcf_dec_size(const uint8_t *p, uint8_t **q, int *type)
+{
+    *type = *p & 0xf;
+    if (*p>>4 != 15) {
+        *q = (uint8_t*)p + 1;
+        return *p>>4;
+    } else return bcf_dec_typed_int1(p + 1, q);
+}
+
