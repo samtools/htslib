@@ -78,7 +78,7 @@ typedef struct cram_slice cram_slice;
 typedef struct cram_metrics cram_metrics;
 typedef struct cram_block_slice_hdr cram_block_slice_hdr;
 typedef struct cram_block_compression_hdr cram_block_compression_hdr;
-typedef struct refs_t refs_t; // need this?
+typedef struct refs_t refs_t;
 
 struct hFILE;
 #endif
@@ -493,6 +493,19 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...);
  *         NULL on failure
  */
 char *stringify_argv(int argc, char *argv[]);
+
+
+/*!
+ * Returns the refs_t structure used by a cram file handle.
+ *
+ * This may be used in conjunction with option CRAM_OPT_SHARED_REF to
+ * share reference memory between multiple file handles.
+ *
+ * @return
+ * Returns NULL if none exists or the file handle is not a CRAM file.
+ */
+refs_t *cram_get_refs(htsFile *fd);
+
 /**@}*/
 
 #ifdef __cplusplus

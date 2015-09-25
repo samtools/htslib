@@ -375,3 +375,19 @@ int cram_transcode_rg(cram_fd *in, cram_fd *out,
     // Instead we iterate in slice context instead.
     return cram_copy_slice(in, out, num_landmarks);
 }
+
+
+/*!
+ * Returns the refs_t structure used by a cram file handle.
+ *
+ * This may be used in conjunction with option CRAM_OPT_SHARED_REF to
+ * share reference memory between multiple file handles.
+ *
+ * @return
+ * Returns NULL if none exists or the file handle is not a CRAM file.
+ */
+refs_t *cram_get_refs(htsFile *fd) {
+    return fd->format.format == cram
+        ? fd->fp.cram->refs
+        : NULL;
+}
