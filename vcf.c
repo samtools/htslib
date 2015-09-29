@@ -837,7 +837,7 @@ int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
  *** BCF site I/O ***
  ********************/
 
-bcf1_t *bcf_init1()
+bcf1_t *bcf_init()
 {
     bcf1_t *v;
     v = (bcf1_t*)calloc(1, sizeof(bcf1_t));
@@ -876,7 +876,7 @@ void bcf_clear(bcf1_t *v)
     if (v->d.m_id) v->d.id[0] = 0;
 }
 
-void bcf_empty1(bcf1_t *v)
+void bcf_empty(bcf1_t *v)
 {
     bcf_clear1(v);
     free(v->d.id);
@@ -886,7 +886,7 @@ void bcf_empty1(bcf1_t *v)
     free(v->shared.s); free(v->indiv.s);
 }
 
-void bcf_destroy1(bcf1_t *v)
+void bcf_destroy(bcf1_t *v)
 {
     bcf_empty1(v);
     free(v);

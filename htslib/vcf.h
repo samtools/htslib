@@ -235,6 +235,7 @@ typedef struct {
     #define bcf_write1(fp,h,v)  bcf_write((fp),(h),(v))
     #define vcf_write1(fp,h,v)  vcf_write((fp),(h),(v))
     #define bcf_destroy1(v)     bcf_destroy(v)
+    #define bcf_empty1(v)       bcf_empty(v)
     #define vcf_parse1(s,h,v)   vcf_parse((s),(h),(v))
     #define bcf_clear1(v)       bcf_clear(v)
     #define vcf_format1(h,v,s)  vcf_format((h),(v),(s))
