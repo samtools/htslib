@@ -118,11 +118,10 @@ bcf_sweep_t *bcf_sweep_init(const char *fname)
     return sw;
 }
 
-void bcf_empty1(bcf1_t *v);
 void bcf_sweep_destroy(bcf_sweep_t *sw)
 {
     int i;
-    for (i=0; i<sw->mrec; i++) bcf_empty1(&sw->rec[i]);
+    for (i=0; i<sw->mrec; i++) bcf_empty(&sw->rec[i]);
     free(sw->idx);
     free(sw->rec);
     free(sw->lals);
