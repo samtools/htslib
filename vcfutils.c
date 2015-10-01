@@ -323,7 +323,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
                     }
                     if ( !*se ) break;
                 }
-                assert( n=nG_ori );
+                assert( n==nG_ori );
             }
 
             nret = bcf_update_info(header, line, bcf_hdr_int2id(header,BCF_DT_ID,info->key), (void*)str.s, str.l, type);
