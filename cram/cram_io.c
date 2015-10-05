@@ -1249,6 +1249,15 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
     size_t comp_size = 0;
     int strat;
 
+    if (b->method != RAW) {
+        // Maybe already compressed if s->block[0] was compressed and
+        // we have e.g. s->block[DS_BA] set to s->block[0] due to only
+        // one base type present and hence using E_HUFFMAN on block 0.
+        // A second explicit attempt to compress the same block then
+        // occurs.
+        return 0;
+    }
+
     if (method == -1) {
 	method = 1<<GZIP;
 	if (fd->use_bz2)
