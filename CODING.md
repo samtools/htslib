@@ -6,7 +6,7 @@ There are a few things which, although far from guaranteeing a swift merge of yo
 ## Coding Practice
  - check system calls for errors
  - use ```kstring``` utilities for string manipulations rather than homebrewing or adding another dependancy
- - avoid using yoda expressions to avoid accidental assignment (e.g. avoid ```if ( some_func() == some_var)``` and ```if ( 0 == some_var)``` rather than  ```if (some_var == some_func())``` and ```if (some_var == 0)```) as we have warnings turned on to help prevent that 
+ - avoid using yoda expressions to avoid accidental assignment (e.g. avoid ```if ( 0 == some_var)``` rather than ```if (some_var == 0)```) as we have warnings turned on to help prevent accidental assignment
  - avoid introducing regular expressions (even though they get functionality quickly they often cause problems later)
  - use ```const``` appropriately for read-only data, especially in an API
 
