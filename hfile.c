@@ -417,6 +417,10 @@ hFILE *hdopen(int fd, const char *mode)
     hFILE_fd *fp = (hFILE_fd*) hfile_init(sizeof (hFILE_fd), mode, blksize(fd));
     if (fp == NULL) return NULL;
 
+#ifdef _WIN32
+    /* htslib policy is to open everything in binary mode */
+    _setmode(fd, _O_BINARY);
+#endif
     fp->fd = fd;
     fp->is_socket = (strchr(mode, 's') != NULL);
     fp->base.backend = &fd_backend;
@@ -426,7 +430,6 @@ hFILE *hdopen(int fd, const char *mode)
 static hFILE *hopen_fd_stdinout(const char *mode)
 {
     int fd = (strchr(mode, 'r') != NULL)? STDIN_FILENO : STDOUT_FILENO;
-    // TODO Set binary mode (for Windows)
     return hdopen(fd, mode);
 }
 
