@@ -279,7 +279,7 @@ char *hts_format_description(const htsFormat *format);
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
   @param fn       The file name or "-" for stdin/stdout
-  @param mode     Mode matching /[rwa][bcuz0-9]+/
+  @param mode     Mode matching / [rwa][bceguxz0-9]* /
   @discussion
       With 'r' opens for reading; any further format mode letters are ignored
       as the format is detected by checking the first few bytes or BGZF blocks
@@ -291,6 +291,9 @@ char *hts_format_description(const htsFormat *format);
         u  uncompressed
         z  bgzf compressed
         [0-9]  zlib compression level
+      and with non-format option letters (for any of 'r'/'w'/'a'):
+        e  close the file on exec(2) (opens with O_CLOEXEC, where supported)
+        x  create the file exclusively (opens with O_EXCL, where supported)
       Note that there is a distinction between 'u' and '0': the first yields
       plain uncompressed output whereas the latter outputs uncompressed data
       wrapped in the zlib format.
@@ -305,7 +308,7 @@ htsFile *hts_open(const char *fn, const char *mode);
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
   @param fn       The file name or "-" for stdin/stdout
-  @param mode     Mode matching /[rwa][bcuz0-9]+/
+  @param mode     Open mode, as per hts_open()
   @param fmt      Optional format specific parameters
   @discussion
       See hts_open() for description of fn and mode.
