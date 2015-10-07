@@ -31,6 +31,7 @@ htslib_faidx_h = $(HTSPREFIX)htslib/faidx.h $(htslib_hts_defs_h)
 htslib_hfile_h = $(HTSPREFIX)htslib/hfile.h $(htslib_hts_defs_h)
 htslib_hts_h = $(HTSPREFIX)htslib/hts.h
 htslib_hts_defs_h = $(HTSPREFIX)htslib/hts_defs.h
+htslib_kbitset_h = $(HTSPREFIX)htslib/kbitset.h
 htslib_kfunc_h = $(HTSPREFIX)htslib/kfunc.h
 htslib_khash_h = $(HTSPREFIX)htslib/khash.h
 htslib_khash_str2int_h = $(HTSPREFIX)htslib/khash_str2int.h $(htslib_khash_h)

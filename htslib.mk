@@ -53,6 +53,7 @@ HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/hfile.h \
 	$(HTSDIR)/htslib/hts.h \
 	$(HTSDIR)/htslib/hts_defs.h \
+	$(HTSDIR)/htslib/kbitset.h \
 	$(HTSDIR)/htslib/kfunc.h \
 	$(HTSDIR)/htslib/khash.h \
 	$(HTSDIR)/htslib/khash_str2int.h \
