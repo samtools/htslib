@@ -380,10 +380,8 @@ clean-dylib:
 	-rm -f libhts.dylib libhts.*.dylib
 
 
-TAGS:
+tags TAGS:
 	ctags -f TAGS *.[ch] cram/*.[ch] htslib/*.h
-
-tags: TAGS
 
 # We recommend libhts-using programs be built against a separate htslib
 # installation.  However if you feel that you must bundle htslib source
