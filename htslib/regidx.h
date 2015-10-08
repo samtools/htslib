@@ -92,8 +92,14 @@ regitr_t;
 typedef int  (*regidx_parse_f)(const char *line, char **chr_beg, char **chr_end, reg_t *reg, void *payload, void *usr);
 typedef void (*regidx_free_f)(void *payload);
 
-int regidx_parse_bed(const char*,char**,char**,reg_t*,void*,void*);   // CHROM,FROM,TO (0-based,right-open)
-int regidx_parse_tab(const char*,char**,char**,reg_t*,void*,void*);   // CHROM,POS (1-based, inclusive)
+/*
+ *  A note about the parsers: 
+ *      - leading spaces are ignored
+ *      - lines starting with "#" are ignored
+ */
+int regidx_parse_bed(const char*,char**,char**,reg_t*,void*,void*);   // whitespace-sepatated CHROM,FROM,TO (0-based,right-open)
+int regidx_parse_tab(const char*,char**,char**,reg_t*,void*,void*);   // whitespace-separated CHROM,POS (1-based, inclusive)
+int regidx_parse_reg(const char*,char**,char**,reg_t*,void*,void*);   // CHROM:POS, CHROM:FROM-TO, CHROM:FROM- (1-based, inclusive)
 
 /*
  *  regidx_init() - creates new index
@@ -127,6 +133,7 @@ int regidx_overlap(regidx_t *idx, const char *chr, uint32_t start, uint32_t end,
 
 /*
  *  regidx_insert() - add a new region. 
+ *  regidx_insert_list() - add new regions from a list
  *
  *  After last region has been added, call regidx_insert(idx,NULL) to
  *  build the index.
@@ -134,6 +141,7 @@ int regidx_overlap(regidx_t *idx, const char *chr, uint32_t start, uint32_t end,
  *  Returns 0 on success or -1 on error.
  */
 int regidx_insert(regidx_t *idx, char *line);
+int regidx_insert_list(regidx_t *idx, char *line, char delim);
 
 /*
  *  regidx_seq_names() - return list of all sequence names
