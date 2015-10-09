@@ -358,7 +358,7 @@ typedef struct {
     /**
      *  bcf_write() - write one VCF or BCF record. The type is determined at the open() call.
      */
-    int bcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
+    int bcf_write(htsFile *fp, bcf_hdr_t *h, bcf1_t *v);
 
     /**
      *  The following functions work only with VCFs and should rarely be called
