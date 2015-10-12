@@ -1198,14 +1198,9 @@ bcf1_t *bcf_dup(bcf1_t *src)
     return bcf_copy(out, src);
 }
 
-int bcf_write(htsFile *hfp, const bcf_hdr_t *h, bcf1_t *v)
+int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
 {
-    if ( h->dirty )
-    {
-        // we could as well call bcf_hdr_sync here, not sure
-        fprintf(stderr,"FIXME: dirty header not synced\n");
-        exit(1);
-    }
+    if ( h->dirty ) bcf_hdr_sync(h);
     if ( bcf_hdr_nsamples(h)!=v->n_sample )
     {
         fprintf(stderr,"[%s:%d %s] Broken VCF record, the number of columns at %s:%d does not match the number of samples (%d vs %d).\n",
