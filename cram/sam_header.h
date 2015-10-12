@@ -321,6 +321,10 @@ int sam_hdr_add(SAM_hdr *sh, const char *type, ...);
  * varargs functions to call this while including their own additional
  * parameters; an example is in sam_hdr_add_PG().
  *
+ * Note: this function invokes va_arg at least once, making the value
+ * of ap indeterminate after the return.  The caller should call
+ * va_start/va_end before/after calling this function or use va_copy.
+ *
  * @return
  * Returns 0 on success;
  *        -1 on failure
