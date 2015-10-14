@@ -57,23 +57,29 @@ static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *re
 
 char *bcf_sr_strerror(int errnum)
 {
+    char *errstr = malloc(1024*sizeof(char));
+
     switch (errnum)
     {
         case open_failed: 
-            return strerror(errno); break;
+	    sprintf(errstr, "could not load file - %s", strerror(errno));
+            return strerr;
         case not_bgzf:
-            return "not compressed with bgzip"; break;
+            return "not compressed with bgzip";
         case idx_load_failed:
-            return "could not load index"; break;
+	    sprint(errstr, "could not load index - %s", strerror(errno));
+	    return errstr;
         case file_type_error:
-            return "unknown file type"; break;
+            return "unknown file type";
         case api_usage_error:
-            return "API usage error"; break;
+            return "API usage error";
         case header_error:
-            return "could not parse header"; break;
+            return "could not parse header";
         case no_eof:
-            return "no BGZF EOF marker; file may be truncated"; break;
-        default: return ""; 
+            return "no BGZF EOF marker; file may be truncated";
+        default:
+	    sprint(errstr, "unknown error - %s", strerror(errno));
+	    return errstr;
     }
 }
 
