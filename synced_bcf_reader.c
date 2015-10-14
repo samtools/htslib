@@ -63,11 +63,11 @@ char *bcf_sr_strerror(int errnum)
     {
         case open_failed: 
 	    sprintf(errstr, "could not load file - %s", strerror(errno));
-            return strerr;
+            return errstr;
         case not_bgzf:
             return "not compressed with bgzip";
         case idx_load_failed:
-	    sprint(errstr, "could not load index - %s", strerror(errno));
+	    sprintf(errstr, "could not load index - %s", strerror(errno));
 	    return errstr;
         case file_type_error:
             return "unknown file type";
@@ -78,7 +78,7 @@ char *bcf_sr_strerror(int errnum)
         case no_eof:
             return "no BGZF EOF marker; file may be truncated";
         default:
-	    sprint(errstr, "unknown error - %s", strerror(errno));
+	    sprintf(errstr, "unknown error - %s", strerror(errno));
 	    return errstr;
     }
 }
