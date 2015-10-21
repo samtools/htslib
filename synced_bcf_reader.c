@@ -733,13 +733,13 @@ static void bcf_sr_seek_start(bcf_srs_t *readers)
 
 int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos)
 {
+    if ( !readers->regions ) return 0;
     if ( !seq && !pos )
     {
         // seek to start
         bcf_sr_seek_start(readers);
         return 0;
     }
-
     bcf_sr_regions_overlap(readers->regions, seq, pos, pos);
     int i, nret = 0;
     for (i=0; i<readers->nreaders; i++)
