@@ -32,6 +32,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <sys/select.h>
 
 #include "hfile_internal.h"
+#include "htslib/hts.h"  // for hts_version() and hts_verbose
 #include "htslib/kstring.h"
 
 #include <curl/curl.h>
@@ -474,6 +475,7 @@ hFILE *hopen_libcurl(const char *url, const char *modes)
     CURLcode err;
     CURLMcode errm;
     int save;
+    kstring_t useragent = { 0, 0, NULL };
 
     // Initialise libcurl if this is the first use.
     if (curl.multi == NULL) { if (libcurl_init() < 0) return NULL; }
@@ -498,6 +500,9 @@ hFILE *hopen_libcurl(const char *url, const char *modes)
     fp->buffer.len = 0;
     fp->final_result = (CURLcode) -1;
     fp->paused = fp->closing = fp->finished = 0;
+
+    kputs("htslib/", &useragent);
+    kputs(hts_version(), &useragent);
 
     // Make a route to the hFILE_libcurl* given just a CURL* easy handle
     err = curl_easy_setopt(fp->easy, CURLOPT_PRIVATE, fp);
@@ -525,10 +530,13 @@ hFILE *hopen_libcurl(const char *url, const char *modes)
     else
         err |= curl_easy_setopt(fp->easy, CURLOPT_URL, url);
 
+    err |= curl_easy_setopt(fp->easy, CURLOPT_USERAGENT, useragent.s);
     if (fp->headers)
         err |= curl_easy_setopt(fp->easy, CURLOPT_HTTPHEADER, fp->headers);
     err |= curl_easy_setopt(fp->easy, CURLOPT_FOLLOWLOCATION, 1L);
     err |= curl_easy_setopt(fp->easy, CURLOPT_FAILONERROR, 1L);
+    if (hts_verbose >= 8)
+        err |= curl_easy_setopt(fp->easy, CURLOPT_VERBOSE, 1L);
 
     if (err != 0) { errno = ENOSYS; goto error; }
 
@@ -551,6 +559,7 @@ hFILE *hopen_libcurl(const char *url, const char *modes)
             fp->file_size = (off_t) (dval + 0.1);
     }
 
+    free(useragent.s);
     fp->base.backend = &libcurl_backend;
     return &fp->base;
 
@@ -564,6 +573,7 @@ error:
     save = errno;
     curl_easy_cleanup(fp->easy);
     if (fp->headers) curl_slist_free_all(fp->headers);
+    free(useragent.s);
     hfile_destroy((hFILE *) fp);
     errno = save;
     return NULL;
