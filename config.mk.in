@@ -43,7 +43,7 @@ RANLIB = @RANLIB@
 CPPFLAGS = @CPPFLAGS@
 CFLAGS   = @CFLAGS@
 LDFLAGS  = @LDFLAGS@
-LDLIBS   = @LIBS@
+LIBS     = @LIBS@
 
 # Lowercase here indicates these are "local" to config.mk
 plugin_OBJS =
@@ -73,7 +73,7 @@ plugin_OBJS += hfile_irods.o
 
 hfile_irods.o hfile_irods.pico: CPPFLAGS += $(IRODS_CPPFLAGS)
 hfile_irods.so hfile_irods.bundle: LDFLAGS += $(IRODS_LDFLAGS)
-hfile_irods.so hfile_irods.bundle: LDLIBS += $(IRODS_LIBS)
+hfile_irods.so hfile_irods.bundle: LIBS += $(IRODS_LIBS)
 
 noplugin_LDFLAGS += $(IRODS_LDFLAGS)
 noplugin_LIBS += $(IRODS_LIBS)
@@ -86,7 +86,7 @@ LIBCURL_LIBS = -lcurl @CRYPTO_LIBS@
 
 plugin_OBJS += hfile_libcurl.o
 
-hfile_libcurl.so hfile_libcurl.bundle: LDLIBS += $(LIBCURL_LIBS)
+hfile_libcurl.so hfile_libcurl.bundle: LIBS += $(LIBCURL_LIBS)
 
 noplugin_LIBS += $(LIBCURL_LIBS)
 
@@ -106,6 +106,6 @@ else
 
 LIBHTS_OBJS += $(plugin_OBJS)
 LDFLAGS += $(noplugin_LDFLAGS)
-LDLIBS += $(noplugin_LIBS)
+LIBS += $(noplugin_LIBS)
 
 endif
