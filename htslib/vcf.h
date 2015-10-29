@@ -587,8 +587,8 @@ typedef struct {
     // Macros for setting genotypes correctly, for use with bcf_update_genotypes only; idx corresponds
     // to VCF's GT (1-based index to ALT or 0 for the reference allele) and val is the opposite, obtained
     // from bcf_get_genotypes() below.
-    #define bcf_gt_phased(idx)      ((idx+1)<<1|1)
-    #define bcf_gt_unphased(idx)    ((idx+1)<<1)
+    #define bcf_gt_phased(idx)      (((idx)+1)<<1|1)
+    #define bcf_gt_unphased(idx)    (((idx)+1)<<1)
     #define bcf_gt_missing          0 
     #define bcf_gt_is_missing(val)  ((val)>>1 ? 0 : 1)
     #define bcf_gt_is_phased(idx)   ((idx)&1)
