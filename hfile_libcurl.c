@@ -418,11 +418,6 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
     return pos;
 }
 
-static int libcurl_flush(hFILE *fpv)
-{
-    return 0;
-}
-
 static int libcurl_close(hFILE *fpv)
 {
     hFILE_libcurl *fp = (hFILE_libcurl *) fpv;
@@ -457,7 +452,7 @@ static int libcurl_close(hFILE *fpv)
 
 static const struct hFILE_backend libcurl_backend =
 {
-    libcurl_read, libcurl_write, libcurl_seek, libcurl_flush, libcurl_close
+    libcurl_read, libcurl_write, libcurl_seek, NULL, libcurl_close
 };
 
 static int add_header(hFILE_libcurl *fp, const char *header)

@@ -34,7 +34,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include <dataObjOpen.h>
 #include <dataObjRead.h>
 #include <dataObjWrite.h>
-#include <dataObjFsync.h>
 #include <dataObjLseek.h>
 #include <dataObjClose.h>
 
@@ -158,25 +157,6 @@ static off_t irods_seek(hFILE *fpv, off_t offset, int whence)
     return offset;
 }
 
-static int irods_flush(hFILE *fpv)
-{
-// FIXME rcDataObjFsync() doesn't seem to function as expected.
-// For now, flush is a no-op: see https://github.com/samtools/htslib/issues/168
-#if 0
-    hFILE_irods *fp = (hFILE_irods *) fpv;
-    openedDataObjInp_t args;
-    int ret;
-
-    memset(&args, 0, sizeof args);
-    args.l1descInx = fp->descriptor;
-
-    ret = rcDataObjFsync(irods.conn, &args);
-    if (ret < 0) set_errno(ret);
-    return ret;
-#endif
-    return 0;
-}
-
 static int irods_close(hFILE *fpv)
 {
     hFILE_irods *fp = (hFILE_irods *) fpv;
@@ -193,7 +173,7 @@ static int irods_close(hFILE *fpv)
 
 static const struct hFILE_backend irods_backend =
 {
-    irods_read, irods_write, irods_seek, irods_flush, irods_close
+    irods_read, irods_write, irods_seek, NULL, irods_close
 };
 
 hFILE *hopen_irods(const char *filename, const char *mode)

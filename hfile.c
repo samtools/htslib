@@ -202,7 +202,9 @@ static ssize_t flush_buffer(hFILE *fp)
 int hflush(hFILE *fp)
 {
     if (flush_buffer(fp) < 0) return EOF;
-    if (fp->backend->flush(fp) < 0) { fp->has_errno = errno; return EOF; }
+    if (fp->backend->flush) {
+        if (fp->backend->flush(fp) < 0) { fp->has_errno = errno; return EOF; }
+    }
     return 0;
 }
 
