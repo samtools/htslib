@@ -11,6 +11,9 @@ config.mk
 config.status
 configure
 
+hfile_*.bundle
+hfile_*.so
+
 lib*.a
 lib*.dylib
 lib*.so

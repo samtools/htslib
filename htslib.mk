@@ -78,6 +78,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/hfile_internal.h \
 	$(HTSDIR)/hfile.c \
 	$(HTSDIR)/hfile_irods.c \
+	$(HTSDIR)/hfile_libcurl.c \
 	$(HTSDIR)/hfile_net.c \
 	$(HTSDIR)/hts.c \
 	$(HTSDIR)/hts_internal.h \
@@ -85,6 +86,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/knetfile.c \
 	$(HTSDIR)/kstring.c \
 	$(HTSDIR)/md5.c \
+	$(HTSDIR)/plugin.c \
 	$(HTSDIR)/regidx.c \
 	$(HTSDIR)/sam.c \
 	$(HTSDIR)/synced_bcf_reader.c \

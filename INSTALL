@@ -34,6 +34,24 @@ requirements such as the zlib development files, and arranges for a plain
 HTSlib build.  The following configure options can be used to enable
 various features and specify further optional external requirements:
 
+--enable-plugins
+    Use plugins to implement exotic file access protocols and other
+    specialised facilities.  This enables such facilities to be developed
+    and packaged outwith HTSlib, and somewhat isolates HTSlib-using programs
+    from their library dependencies.  By default, any enabled pluggable
+    facilities (such as iRODS and libcurl file access) are built directly
+    within HTSlib.
+
+--with-plugin-dir=DIR
+    Specifies the directory into which plugins built while building HTSlib
+    should be installed; by default, LIBEXECDIR/htslib.
+
+--with-plugin-path=DIR:DIR:DIR...
+    Specifies the list of directories that HTSlib will search for plugins.
+    By default, only the directory specified via --with-plugin-dir will be
+    searched; you can use --with-plugin-path='DIR:$(plugindir):DIR' and so
+    on to cause additional directories to be searched.
+
 --with-irods[=DIR]
     Specifies the location of the iRODS client library to use to enable
     access to data objects stored in iRODS (<http://irods.org/>) via file
@@ -41,6 +59,11 @@ various features and specify further optional external requirements:
     such that the library is present as DIR/lib/core/obj/libRodsAPI.* and
     headers are present under DIR/lib/api/include and so on.  If '=DIR' is
     omitted, $IRODS_HOME will be used as a base directory.
+
+--enable-libcurl
+    Use libcurl (<http://curl.haxx.se/>) to implement network access to
+    remote files via FTP, HTTP, HTTPS, S3, etc.  By default, HTSlib uses
+    its own simple networking code to provide access via FTP and HTTP only.
 
 The configure script also accepts the usual options and environment variables
 for tuning installation locations and compilers: type './configure --help'
