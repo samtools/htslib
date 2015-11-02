@@ -1195,6 +1195,13 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
 
 static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *rec)
 {
+    if ( reg->regs )
+    {
+        // payload is not supported for in-memory regions, switch to regidx instead in future
+        fprintf(stderr,"Error: Compressed and indexed targets file is required\n");
+        exit(1);
+    }
+
     int i = 0, max_len = 0;
     if ( !reg->nals )
     {
