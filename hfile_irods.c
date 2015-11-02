@@ -24,6 +24,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -74,15 +75,24 @@ static void irods_exit()
 
 static int irods_init()
 {
+    struct sigaction pipehandler;
     rErrMsg_t err;
-    int ret;
+    int ret, pipehandler_ret;
 
     ret = getRodsEnv(&irods.env);
     if (ret < 0) goto error;
 
+    // Prior to iRODS 4.1, rcConnect() (even if it fails) installs its own
+    // SIGPIPE handler, which just prints a message and otherwise ignores the
+    // signal.  Most actual SIGPIPEs encountered will pertain to e.g. stdout
+    // rather than iRODS's connection, so we save and restore the existing
+    // state (by default, termination; or as already set by our caller).
+    pipehandler_ret = sigaction(SIGPIPE, NULL, &pipehandler);
+
     irods.conn = rcConnect(irods.env.rodsHost, irods.env.rodsPort,
                            irods.env.rodsUserName, irods.env.rodsZone,
                            NO_RECONN, &err);
+    if (pipehandler_ret == 0) sigaction(SIGPIPE, &pipehandler, NULL);
     if (irods.conn == NULL) { ret = err.status; goto error; }
 
     if (strcmp(irods.env.rodsUserName, PUBLIC_USER_NAME) != 0) {
