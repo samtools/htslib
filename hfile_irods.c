@@ -30,8 +30,11 @@ DEALINGS IN THE SOFTWARE.  */
 #include <errno.h>
 
 #include "hfile_internal.h"
+#include "htslib/hts.h"  // for hts_version() and hts_verbose
+#include "htslib/kstring.h"
 
 #include <rcConnect.h>
+#include <rcMisc.h>
 #include <dataObjOpen.h>
 #include <dataObjRead.h>
 #include <dataObjWrite.h>
@@ -50,6 +53,8 @@ static int status_errno(int status)
     case SYS_MALLOC_ERR: return ENOMEM;
     case SYS_OUT_OF_FILE_DESC: return ENFILE;
     case SYS_BAD_FILE_DESCRIPTOR: return EBADF;
+    case CAT_NO_ACCESS_PERMISSION: return EACCES;
+    case CAT_INVALID_AUTHENTICATION: return EACCES;
     case CAT_NO_ROWS_FOUND: return ENOENT;
     case CATALOG_ALREADY_HAS_ITEM_BY_THAT_NAME: return EEXIST;
     default: return EIO;
@@ -75,12 +80,21 @@ static void irods_exit()
 
 static int irods_init()
 {
+    kstring_t useragent = { 0, 0, NULL };
     struct sigaction pipehandler;
     rErrMsg_t err;
     int ret, pipehandler_ret;
 
+    if (hts_verbose >= 5) rodsLogLevel(hts_verbose);
+
     ret = getRodsEnv(&irods.env);
     if (ret < 0) goto error;
+
+    // Set iRODS User-Agent, if our caller hasn't already done so.
+    kputs("htslib/", &useragent);
+    kputs(hts_version(), &useragent);
+    (void) setenv(SP_OPTION, useragent.s, 0);
+    free(useragent.s);
 
     // Prior to iRODS 4.1, rcConnect() (even if it fails) installs its own
     // SIGPIPE handler, which just prints a message and otherwise ignores the
@@ -96,7 +110,11 @@ static int irods_init()
     if (irods.conn == NULL) { ret = err.status; goto error; }
 
     if (strcmp(irods.env.rodsUserName, PUBLIC_USER_NAME) != 0) {
+#if defined IRODS_VERSION_INTEGER && IRODS_VERSION_INTEGER >= 4000000
+        ret = clientLogin(irods.conn, NULL, NULL);
+#else
         ret = clientLogin(irods.conn);
+#endif
         if (ret != 0) goto error;
     }
 
