@@ -1584,7 +1584,7 @@ typedef khash_t(olap_hash) olap_hash_t;
 
 struct __bam_plp_t {
     mempool_t *mp;
-    lbnode_t *head, *tail, *dummy;
+    lbnode_t *head, *tail;
     int32_t tid, pos, max_tid, max_pos;
     int is_eof, max_plp, error, maxcnt;
     uint64_t id;
@@ -1602,7 +1602,6 @@ bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data)
     iter = (bam_plp_t)calloc(1, sizeof(struct __bam_plp_t));
     iter->mp = mp_init();
     iter->head = iter->tail = mp_alloc(iter->mp);
-    iter->dummy = mp_alloc(iter->mp);
     iter->max_tid = iter->max_pos = -1;
     iter->maxcnt = 8000;
     if (func) {
@@ -1620,8 +1619,8 @@ void bam_plp_init_overlaps(bam_plp_t iter)
 
 void bam_plp_destroy(bam_plp_t iter)
 {
+    bam_plp_reset(iter);
     if ( iter->overlaps ) kh_destroy(olap_hash, iter->overlaps);
-    mp_free(iter->mp, iter->dummy);
     mp_free(iter->mp, iter->head);
     if (iter->mp->cnt != 0)
         fprintf(stderr, "[bam_plp_destroy] memory leak: %d. Continue anyway.\n", iter->mp->cnt);
@@ -1837,6 +1836,8 @@ static void overlap_remove(bam_plp_t iter, const bam1_t *b)
 // buffer yet (the current position is still the maximum position across all buffered reads).
 const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp)
 {
+    lbnode_t dummy_, *dummy = &dummy_;
+
     if (iter->error) { *_n_plp = -1; return 0; }
     *_n_plp = 0;
     if (iter->is_eof && iter->head->next == 0) return 0;
@@ -1844,8 +1845,8 @@ const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_
         int n_plp = 0;
         lbnode_t *p, *q;
         // write iter->plp at iter->pos
-        iter->dummy->next = iter->head;
-        for (p = iter->head, q = iter->dummy; p->next; q = p, p = p->next) {
+        dummy->next = iter->head;
+        for (p = iter->head, q = dummy; p->next; q = p, p = p->next) {
             if (p->b.core.tid < iter->tid || (p->b.core.tid == iter->tid && p->end <= iter->pos)) { // then remove
                 overlap_remove(iter, &p->b);
                 q->next = p->next; mp_free(iter->mp, p); p = q;
@@ -1858,7 +1859,7 @@ const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_
                 if (resolve_cigar2(iter->plp + n_plp, iter->pos, &p->s)) ++n_plp; // actually always true...
             }
         }
-        iter->head = iter->dummy->next; // dummy->next may be changed
+        iter->head = dummy->next; // dummy->next may be changed
         *_n_plp = n_plp; *_tid = iter->tid; *_pos = iter->pos;
         // update iter->tid and iter->pos
         if (iter->head->next) {
@@ -1950,8 +1951,8 @@ void bam_plp_reset(bam_plp_t iter)
     iter->max_tid = iter->max_pos = -1;
     iter->tid = iter->pos = 0;
     iter->is_eof = 0;
+    overlap_remove(iter, NULL);
     for (p = iter->head; p->next;) {
-        overlap_remove(iter, NULL);
         q = p->next;
         mp_free(iter->mp, p);
         p = q;
