@@ -243,7 +243,7 @@ typedef struct {
  @param  i  The i-th position, 0-based
  @return    4-bit integer representing the base.
  */
-#define bam_seqi(s, i) ((s)[(i)>>1] >> ((~(i)&1)<<2) & 0xf)
+#define bam_seqi(s, i) ((s)[(i)>>1] >> (~(i)&1)<<2)
 
 /**************************
  *** Exported functions ***
