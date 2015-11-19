@@ -36,6 +36,16 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTSLIB_CRAM_H
 #define HTSLIB_CRAM_H
 
+#include <stdarg.h>
+#include <stdint.h>
+#include <sys/types.h>
+
+#include "hts.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef _CRAM_STRUCTS_H_
 enum cram_block_method {
     ERROR    = -1,
@@ -474,4 +484,9 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...);
  */
 char *stringify_argv(int argc, char *argv[]);
 /**@}*/
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif
