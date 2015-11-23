@@ -26,7 +26,7 @@ htsfile \- identify high-throughput sequencing data files
 .\"
 .SH SYNOPSIS
 .B htsfile
-.RB [ -chH ]
+.RB [ -chHv ]
 .IR FILE ...
 .SH DESCRIPTION
 The \fBhtsfile\fR utility attempts to identify what kind of high-throughput
@@ -64,6 +64,10 @@ Implies \fB--view\fR.
 .TP
 .BR -H ", " --no-header
 When viewing files, display data records only.
+.TP
+.BR -v ", " --verbose
+Display additional warnings and diagnostic messages.
+Using \fB--verbose\fR repeatedly further raises the verbosity.
 .PP
 .SH SEE ALSO
 .IR bcftools (1),

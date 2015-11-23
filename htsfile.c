@@ -146,11 +146,12 @@ static int view_vcf(hFILE *hfp, const char *filename)
 static void usage(FILE *fp, int status)
 {
     fprintf(fp,
-"Usage: htsfile [-chH] FILE...\n"
+"Usage: htsfile [-chHv] FILE...\n"
 "Options:\n"
 "  -c, --view         Write textual form of FILEs to standard output\n"
 "  -h, --header-only  Display only headers in view mode, not records\n"
-"  -H, --no-header    Suppress header display in view mode\n");
+"  -H, --no-header    Suppress header display in view mode\n"
+"  -v, --verbose      Increase verbosity of warnings and diagnostics\n");
     exit(status);
 }
 
@@ -160,6 +161,7 @@ int main(int argc, char **argv)
         { "header-only", no_argument, NULL, 'h' },
         { "no-header", no_argument, NULL, 'H' },
         { "view", no_argument, NULL, 'c' },
+        { "verbose", no_argument, NULL, 'v' },
         { "help", no_argument, NULL, '?' },
         { "version", no_argument, NULL, 1 },
         { NULL, 0, NULL, 0 }
@@ -168,11 +170,12 @@ int main(int argc, char **argv)
     int c, i;
 
     status = EXIT_SUCCESS;
-    while ((c = getopt_long(argc, argv, "chH?", options, NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "chHv?", options, NULL)) >= 0)
         switch (c) {
         case 'c': mode = view_all; break;
         case 'h': mode = view_headers; show_headers = 1; break;
         case 'H': show_headers = 0; break;
+        case 'v': hts_verbose++; break;
         case 1:
             printf(
 "htsfile (htslib) %s\n"
@@ -185,8 +188,6 @@ int main(int argc, char **argv)
         }
 
     if (optind == argc) usage(stderr, EXIT_FAILURE);
-
-    if (mode != identify) hts_verbose = 2;  /* So we get some error messages */
 
     for (i = optind; i < argc; i++) {
         htsFormat fmt;
