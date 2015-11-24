@@ -25,6 +25,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <config.h>
 
 #include <ctype.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -697,6 +699,89 @@ static int is_dns_compliant(const char *s0, const char *slim)
     return has_nondigit && len >= 3 && len <= 63;
 }
 
+static FILE *expand_tilde_open(const char *fname, const char *mode)
+{
+    FILE *fp;
+
+    if (strncmp(fname, "~/", 2) == 0) {
+        kstring_t full_fname = { 0, 0, NULL };
+        const char *home = getenv("HOME");
+        if (! home) return NULL;
+
+        kputs(home, &full_fname);
+        kputs(&fname[1], &full_fname);
+
+        fp = fopen(full_fname.s, mode);
+        free(full_fname.s);
+    }
+    else
+        fp = fopen(fname, mode);
+
+    return fp;
+}
+
+static void parse_ini(const char *fname, const char *section, ...)
+{
+    kstring_t line = { 0, 0, NULL };
+    int active = 1;  // Start active, so global properties are accepted
+    char *s;
+
+    FILE *fp = expand_tilde_open(fname, "r");
+    if (fp == NULL) return;
+
+    while (line.l = 0, kgetline(&line, (kgets_func *) fgets, fp) >= 0)
+        if (line.s[0] == '[' && (s = strchr(line.s, ']')) != NULL) {
+            *s = '\0';
+            active = (strcmp(&line.s[1], section) == 0);
+        }
+        else if (active && (s = strpbrk(line.s, ":=")) != NULL) {
+            const char *key = line.s, *value = &s[1], *akey;
+            va_list args;
+
+            while (isspace(*key)) key++;
+            while (s > key && isspace(s[-1])) s--;
+            *s = '\0';
+
+            while (isspace(*value)) value++;
+            while (line.l > 0 && isspace(line.s[line.l-1]))
+                line.s[--line.l] = '\0';
+
+            va_start(args, section);
+            while ((akey = va_arg(args, const char *)) != NULL) {
+                kstring_t *avar = va_arg(args, kstring_t *);
+                if (strcmp(key, akey) == 0) { kputs(value, avar); break; }
+            }
+            va_end(args);
+        }
+
+    fclose(fp);
+    free(line.s);
+}
+
+static void parse_simple(const char *fname, kstring_t *id, kstring_t *secret)
+{
+    kstring_t text = { 0, 0, NULL };
+    char *s;
+    size_t len;
+
+    FILE *fp = expand_tilde_open(fname, "r");
+    if (fp == NULL) return;
+
+    while (kgetline(&text, (kgets_func *) fgets, fp) >= 0)
+        kputc(' ', &text);
+    fclose(fp);
+
+    s = text.s;
+    while (isspace(*s)) s++;
+    kputsn(s, len = strcspn(s, " \t"), id);
+
+    s += len;
+    while (isspace(*s)) s++;
+    kputsn(s, strcspn(s, " \t"), secret);
+
+    free(text.s);
+}
+
 static int
 add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
 {
@@ -706,8 +791,11 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
     CURLcode err;
 
     kstring_t url = { 0, 0, NULL };
+    kstring_t profile = { 0, 0, NULL };
     kstring_t id = { 0, 0, NULL };
     kstring_t secret = { 0, 0, NULL };
+    kstring_t token = { 0, 0, NULL };
+    kstring_t token_hdr = { 0, 0, NULL };
     kstring_t auth_hdr = { 0, 0, NULL };
 
     time_t now = time(NULL);
@@ -723,7 +811,7 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
     kputs(&date_hdr[6], message);
     kputc('\n', message);
 
-    // Our S3 URL format is s3[+SCHEME]://[ID[:SECRET]@]BUCKET/PATH
+    // Our S3 URL format is s3[+SCHEME]://[ID[:SECRET[:TOKEN]]@]BUCKET/PATH
 
     if (s3url[2] == '+') {
         bucket = strchr(s3url, ':') + 1;
@@ -737,10 +825,17 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
 
     path = bucket + strcspn(bucket, "/?#@");
     if (*path == '@') {
-        const char *colon = bucket + strcspn(bucket, ":@");
-        urldecode_kput(bucket, colon - bucket, fp, &id);
-        if (*colon == ':')
-            urldecode_kput(&colon[1], path - &colon[1], fp, &secret);
+        const char *colon = strpbrk(bucket, ":@");
+        if (*colon != ':') {
+            urldecode_kput(bucket, colon - bucket, fp, &profile);
+        }
+        else {
+            const char *colon2 = strpbrk(&colon[1], ":@");
+            urldecode_kput(bucket, colon - bucket, fp, &id);
+            urldecode_kput(&colon[1], colon2 - &colon[1], fp, &secret);
+            if (*colon2 == ':')
+                urldecode_kput(&colon2[1], path - &colon2[1], fp, &token);
+        }
 
         bucket = &path[1];
         path = bucket + strcspn(bucket, "/?#");
@@ -750,6 +845,11 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
         const char *v;
         if ((v = getenv("AWS_ACCESS_KEY_ID")) != NULL) kputs(v, &id);
         if ((v = getenv("AWS_SECRET_ACCESS_KEY")) != NULL) kputs(v, &secret);
+        if ((v = getenv("AWS_SESSION_TOKEN")) != NULL) kputs(v, &token);
+
+        if ((v = getenv("AWS_DEFAULT_PROFILE")) != NULL) kputs(v, &profile);
+        else if ((v = getenv("AWS_PROFILE")) != NULL) kputs(v, &profile);
+        else kputs("default", &profile);
     }
 
     // Use virtual hosted-style access if possible, otherwise path-style.
@@ -763,13 +863,33 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
     }
     kputs(path, &url);
 
+    if (id.l == 0) {
+        const char *v = getenv("AWS_SHARED_CREDENTIALS_FILE");
+        parse_ini(v? v : "~/.aws/credentials", profile.s,
+                  "aws_access_key_id", &id, "aws_secret_access_key", &secret,
+                  "aws_session_token", &token, NULL);
+    }
+    if (id.l == 0)
+        parse_ini("~/.s3cfg", profile.s, "access_key", &id,
+                  "secret_key", &secret, "access_token", &token, NULL);
+    if (id.l == 0)
+        parse_simple("~/.awssecret", &id, &secret);
+
+    if (token.l > 0) {
+        kputs("x-amz-security-token:", message);
+        kputs(token.s, message);
+        kputc('\n', message);
+
+        kputs("X-Amz-Security-Token: ", &token_hdr);
+        kputs(token.s, &token_hdr);
+        if (add_header(fp, token_hdr.s) < 0) goto error;
+    }
+
     kputc('/', message);
     kputs(bucket, message); // CanonicalizedResource is '/' + bucket + path
 
     err = curl_easy_setopt(fp->easy, CURLOPT_URL, url.s);
     if (err != CURLE_OK) { errno = easy_errno(fp->easy, err); goto error; }
-
-    // TODO Read id and secret from config files
 
     // If we have no id/secret, we can't sign the request but will
     // still be able to access public data sets.
@@ -794,8 +914,11 @@ error:
 free_and_return:
     save = errno;
     free(url.s);
+    free(profile.s);
     free(id.s);
     free(secret.s);
+    free(token.s);
+    free(token_hdr.s);
     free(auth_hdr.s);
     free(message->s);
     errno = save;
