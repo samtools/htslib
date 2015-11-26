@@ -524,13 +524,13 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
 
         if (fd->err) {
             perror("Cram container read");
-            return 1;
+            return -1;
         }
 
         hpos = htell(fd->fp);
 
         if (!(c->comp_hdr_block = cram_read_block(fd)))
-            return 1;
+            return -1;
         assert(c->comp_hdr_block->content_type == COMPRESSION_HEADER);
 
         c->comp_hdr = cram_decode_compression_header(fd, c->comp_hdr_block);
@@ -578,5 +578,5 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     }
 	
 
-    return zfclose(fp);
+    return (zfclose(fp) >= 0)? 0 : -1;
 }

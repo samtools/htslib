@@ -253,7 +253,7 @@ int cram_copy_slice(cram_fd *in, cram_fd *out, int32_t num_slice) {
 	    blk = cram_read_block(in);
 	    if (!blk || cram_write_block(out, blk) != 0) {
 		if (blk) cram_free_block(blk);
-		return 1;
+		return -1;
 	    }
 	    cram_free_block(blk);
 	}
