@@ -497,7 +497,7 @@ int sam_index_build2(const char *fn, const char *fnidx, int min_shift)
     htsFile *fp;
     int ret = 0;
 
-    if ((fp = hts_open(fn, "r")) == 0) return -1;
+    if ((fp = hts_open(fn, "r")) == 0) return -2;
     switch (fp->format.format) {
     case cram:
         ret = cram_index_build(fp->fp.cram, fn, fnidx);
@@ -513,7 +513,7 @@ int sam_index_build2(const char *fn, const char *fnidx, int min_shift)
         break;
 
     default:
-        ret = -1;
+        ret = -3;
         break;
     }
     hts_close(fp);

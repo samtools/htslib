@@ -320,7 +320,8 @@ hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx);
 /// Generate and save an index file
 /** @param fn        Input BAM/etc filename, to which .csi/etc will be added
     @param min_shift Positive to generate CSI, or 0 to generate BAI
-    @return  0 if successful, or negative if an error occurred.
+    @return  0 if successful, or negative if an error occurred (usually -1; or
+             -2: opening fn failed; -3: format not indexable)
 */
 int sam_index_build(const char *fn, int min_shift);
 
