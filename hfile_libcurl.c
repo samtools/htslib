@@ -181,32 +181,20 @@ static int multi_errno(CURLMcode errm)
 
 static struct {
     CURLM *multi;
+    kstring_t useragent;
     int nrunning;
     unsigned perform_again : 1;
-} curl = { NULL, 0, 0 };
+} curl = { NULL, { 0, 0, NULL }, 0, 0 };
 
 static void libcurl_exit()
 {
     (void) curl_multi_cleanup(curl.multi);
     curl.multi = NULL;
 
+    free(curl.useragent.s);
+    curl.useragent.l = curl.useragent.m = 0; curl.useragent.s = NULL;
+
     curl_global_cleanup();
-}
-
-static int libcurl_init()
-{
-    CURLcode err = curl_global_init(CURL_GLOBAL_ALL);
-    if (err != CURLE_OK) { errno = easy_errno(NULL, err); return -1; }
-
-    curl.multi = curl_multi_init();
-    if (curl.multi == NULL) { curl_global_cleanup(); errno = EIO; return -1; }
-
-    curl.nrunning = 0;
-    curl.perform_again = 0;
-
-    (void) atexit(libcurl_exit);
-
-    return 0;
 }
 
 
@@ -477,10 +465,6 @@ hFILE *hopen_libcurl(const char *url, const char *modes)
     CURLcode err;
     CURLMcode errm;
     int save;
-    kstring_t useragent = { 0, 0, NULL };
-
-    // Initialise libcurl if this is the first use.
-    if (curl.multi == NULL) { if (libcurl_init() < 0) return NULL; }
 
     if ((s = strpbrk(modes, "rwa+")) != NULL) {
         mode = *s;
@@ -502,9 +486,6 @@ hFILE *hopen_libcurl(const char *url, const char *modes)
     fp->buffer.len = 0;
     fp->final_result = (CURLcode) -1;
     fp->paused = fp->closing = fp->finished = 0;
-
-    kputs("htslib/", &useragent);
-    kputs(hts_version(), &useragent);
 
     // Make a route to the hFILE_libcurl* given just a CURL* easy handle
     err = curl_easy_setopt(fp->easy, CURLOPT_PRIVATE, fp);
@@ -532,7 +513,7 @@ hFILE *hopen_libcurl(const char *url, const char *modes)
     else
         err |= curl_easy_setopt(fp->easy, CURLOPT_URL, url);
 
-    err |= curl_easy_setopt(fp->easy, CURLOPT_USERAGENT, useragent.s);
+    err |= curl_easy_setopt(fp->easy, CURLOPT_USERAGENT, curl.useragent.s);
     if (fp->headers)
         err |= curl_easy_setopt(fp->easy, CURLOPT_HTTPHEADER, fp->headers);
     err |= curl_easy_setopt(fp->easy, CURLOPT_FOLLOWLOCATION, 1L);
@@ -561,7 +542,6 @@ hFILE *hopen_libcurl(const char *url, const char *modes)
             fp->file_size = (off_t) (dval + 0.1);
     }
 
-    free(useragent.s);
     fp->base.backend = &libcurl_backend;
     return &fp->base;
 
@@ -575,7 +555,6 @@ error:
     save = errno;
     curl_easy_cleanup(fp->easy);
     if (fp->headers) curl_slist_free_all(fp->headers);
-    free(useragent.s);
     hfile_destroy((hFILE *) fp);
     errno = save;
     return NULL;
@@ -586,16 +565,28 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
     static const struct hFILE_scheme_handler handler =
         { hopen_libcurl, hfile_always_remote, "libcurl", 50 };
 
-    self->name = "libcurl";
-
-    // FIXME Theoretically need to call curl_global_init() first
-    const curl_version_info_data *info = curl_version_info(CURLVERSION_NOW);
+    const curl_version_info_data *info;
     const char * const *protocol;
+    CURLcode err;
+
+    err = curl_global_init(CURL_GLOBAL_ALL);
+    if (err != CURLE_OK) { errno = easy_errno(NULL, err); return -1; }
+
+    curl.multi = curl_multi_init();
+    if (curl.multi == NULL) { curl_global_cleanup(); errno = EIO; return -1; }
+
+    info = curl_version_info(CURLVERSION_NOW);
+    ksprintf(&curl.useragent, "htslib/%s libcurl/%s",
+             hts_version(), info->version);
+
+    curl.nrunning = 0;
+    curl.perform_again = 0;
+    self->name = "libcurl";
+    self->destroy = libcurl_exit;
 
     for (protocol = info->protocols; *protocol; protocol++)
         hfile_add_scheme_handler(*protocol, &handler);
 
-    // TODO Check for the unlikely case that HTTP is disabled
     hfile_add_scheme_handler("s3", &handler);
     hfile_add_scheme_handler("s3+http", &handler);
     if (info->features & CURL_VERSION_SSL)
