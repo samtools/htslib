@@ -254,6 +254,17 @@ typedef struct __kstring_t {
      */
     int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks);
 
+    /**
+     * Generate a bgzf block
+     *
+     * @param dst    output buffer, must be at least BGZF_MAX_BLOCK_SIZE bytes
+     * @param dstlen pointer to address to store number of bytes in dst
+     * @param src    buffer to compress
+     * @param srclen number of bytes to compress, must be <= BGZF_BLOCK_SIZE
+     * @param level  compression level used by deflate()
+     * @return       zero on success, non-zero on error
+     */
+    int bgzf_compress(void *dst, unsigned int *dlen, void *src, unsigned int slen, int level);
 
     /*******************
      * bgzidx routines *
