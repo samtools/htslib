@@ -1,7 +1,7 @@
 /*  tabix.c -- Generic indexer for TAB-delimited genome position files.
 
     Copyright (C) 2009-2011 Broad Institute.
-    Copyright (C) 2010-2012, 2014 Genome Research Ltd.
+    Copyright (C) 2010-2012, 2014, 2015 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -302,7 +302,7 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
         if ( !hdr ) error("%s: %s", header,strerror(errno));
         const size_t page_size = 32768;
         char *buf = malloc(page_size);
-        BGZF *bgzf_out = bgzf_dopen(fileno(stdout), "w");
+        BGZF *bgzf_out = bgzf_open("-", "w");
         ssize_t nread;
         while ( (nread=fread(buf,1,page_size-1,hdr))>0 )
         {

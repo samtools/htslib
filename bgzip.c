@@ -1,7 +1,7 @@
 /* bgzip.c -- Block compression/decompression utility.
 
    Copyright (C) 2008, 2009 Broad Institute / Massachusetts Institute of Technology
-   Copyright (C) 2010, 2013, 2014 Genome Research Ltd.
+   Copyright (C) 2010, 2013-2015 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -47,27 +47,19 @@ static void error(const char *format, ...)
     exit(EXIT_FAILURE);
 }
 
-static int write_open(const char *fn, int is_forced)
+static int confirm_overwrite(const char *fn)
 {
-    int fd = -1;
-    char c;
-    if (!is_forced) {
-        if ((fd = open(fn, O_WRONLY | O_CREAT | O_TRUNC | O_EXCL, 0666)) < 0 && errno == EEXIST) {
-            fprintf(stderr, "[bgzip] %s already exists; do you wish to overwrite (y or n)? ", fn);
-            if ( scanf("%c", &c) != 1 ) c = 'n';
-            if (c != 'Y' && c != 'y') {
-                fprintf(stderr, "[bgzip] not overwritten\n");
-                exit(EXIT_FAILURE);
-            }
-        }
+    int save_errno = errno;
+    int ret = 0;
+
+    if (isatty(STDIN_FILENO)) {
+        char c;
+        fprintf(stderr, "[bgzip] %s already exists; do you wish to overwrite (y or n)? ", fn);
+        if (scanf("%c", &c) == 1 && (c == 'Y' || c == 'y')) ret = 1;
     }
-    if (fd < 0) {
-        if ((fd = open(fn, O_WRONLY | O_CREAT | O_TRUNC, 0666)) < 0) {
-            fprintf(stderr, "[bgzip] %s: Fail to write\n", fn);
-            exit(EXIT_FAILURE);
-        }
-    }
-    return fd;
+
+    errno = save_errno;
+    return ret;
 }
 
 static int bgzip_main_usage(void)
@@ -134,7 +126,6 @@ int main(int argc, char **argv)
     if (compress == 1) {
         struct stat sbuf;
         int f_src = fileno(stdin);
-        int f_dst = fileno(stdout);
 
         if ( argc>optind )
         {
@@ -150,15 +141,21 @@ int main(int argc, char **argv)
             }
 
             if (pstdout)
-                f_dst = fileno(stdout);
+                fp = bgzf_open("-", "w");
             else
             {
                 char *name = malloc(strlen(argv[optind]) + 5);
                 strcpy(name, argv[optind]);
                 strcat(name, ".gz");
-                f_dst = write_open(name, is_forced);
+                fp = bgzf_open(name, is_forced? "w" : "wx");
+                if (fp == NULL && errno == EEXIST && confirm_overwrite(name))
+                    fp = bgzf_open(name, "w");
+                if (fp == NULL) {
+                    fprintf(stderr, "[bgzip] can't create %s: %s\n", name, strerror(errno));
+                    free(name);
+                    return 1;
+                }
                 free(name);
-                if (f_dst < 0) return 1;
             }
         }
         else if (!pstdout && isatty(fileno((FILE *)stdout)) )
@@ -168,13 +165,13 @@ int main(int argc, char **argv)
             fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
             return 1;
         }
+        else
+            fp = bgzf_open("-", "w");
 
-        fp = bgzf_fdopen(f_dst, "w");
         if ( index ) bgzf_index_build_init(fp);
         buffer = malloc(WINDOW_SIZE);
         while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
             if (bgzf_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
-        // f_dst will be closed here
         if ( index )
         {
             if ( index_fname ) bgzf_index_dump(fp, index_fname, NULL);
@@ -196,7 +193,7 @@ int main(int argc, char **argv)
         else
         {
             if ( !index_fname ) error("[bgzip] Index file name expected when reading from stdin\n");
-            fp = bgzf_fdopen(fileno(stdin), "r");
+            fp = bgzf_open("-", "r");
             if ( !fp ) error("[bgzip] Could not read from stdin: %s\n", strerror(errno));
         }
 
@@ -244,9 +241,17 @@ int main(int argc, char **argv)
                 f_dst = fileno(stdout);
             }
             else {
+                const int wrflags = O_WRONLY | O_CREAT | O_TRUNC;
                 name = strdup(argv[optind]);
                 name[strlen(name) - 3] = '\0';
-                f_dst = write_open(name, is_forced);
+                f_dst = open(name, is_forced? wrflags : (wrflags | O_EXCL));
+                if (f_dst < 0 && errno == EEXIST && confirm_overwrite(name))
+                    f_dst = open(name, wrflags);
+                if (f_dst < 0) {
+                    fprintf(stderr, "[bgzip] can't create %s: %s\n", name, strerror(errno));
+                    free(name);
+                    return 1;
+                }
                 free(name);
             }
         }
@@ -255,7 +260,7 @@ int main(int argc, char **argv)
         else
         {
             f_dst = fileno(stdout);
-            fp = bgzf_fdopen(fileno(stdin), "r");
+            fp = bgzf_open("-", "r");
             if (fp == NULL) {
                 fprintf(stderr, "[bgzip] Could not read from stdin: %s\n", strerror(errno));
                 return 1;
