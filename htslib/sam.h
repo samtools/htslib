@@ -255,15 +255,15 @@ typedef struct {
 
     bam_hdr_t *bam_hdr_init(void);
     bam_hdr_t *bam_hdr_read(BGZF *fp);
-    int bam_hdr_write(BGZF *fp, const bam_hdr_t *h);
+    int bam_hdr_write(BGZF *fp, const bam_hdr_t *h) HTS_RESULT_USED;
     void bam_hdr_destroy(bam_hdr_t *h);
     int bam_name2id(bam_hdr_t *h, const char *ref);
     bam_hdr_t* bam_hdr_dup(const bam_hdr_t *h0);
 
     bam1_t *bam_init1(void);
     void bam_destroy1(bam1_t *b);
-    int bam_read1(BGZF *fp, bam1_t *b);
-    int bam_write1(BGZF *fp, const bam1_t *b);
+    int bam_read1(BGZF *fp, bam1_t *b) HTS_RESULT_USED;
+    int bam_write1(BGZF *fp, const bam1_t *b) HTS_RESULT_USED;
     bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc);
     bam1_t *bam_dup1(const bam1_t *bsrc);
 
@@ -323,7 +323,7 @@ hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx);
     @return  0 if successful, or negative if an error occurred (usually -1; or
              -2: opening fn failed; -3: format not indexable)
 */
-int sam_index_build(const char *fn, int min_shift);
+int sam_index_build(const char *fn, int min_shift) HTS_RESULT_USED;
 
 /// Generate and save an index to a specific file
 /** @param fn        Input BAM/CRAM/etc filename
@@ -331,7 +331,7 @@ int sam_index_build(const char *fn, int min_shift);
     @param min_shift Positive to generate CSI, or 0 to generate BAI
     @return  0 if successful, or negative if an error occurred.
 */
-int sam_index_build2(const char *fn, const char *fnidx, int min_shift);
+int sam_index_build2(const char *fn, const char *fnidx, int min_shift) HTS_RESULT_USED;
 
     #define sam_itr_destroy(iter) hts_itr_destroy(iter)
     hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
@@ -358,12 +358,12 @@ int sam_index_build2(const char *fn, const char *fnidx, int min_shift);
     typedef htsFile samFile;
     bam_hdr_t *sam_hdr_parse(int l_text, const char *text);
     bam_hdr_t *sam_hdr_read(samFile *fp);
-    int sam_hdr_write(samFile *fp, const bam_hdr_t *h);
+    int sam_hdr_write(samFile *fp, const bam_hdr_t *h) HTS_RESULT_USED;
 
-    int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b);
-    int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str);
-    int sam_read1(samFile *fp, bam_hdr_t *h, bam1_t *b);
-    int sam_write1(samFile *fp, const bam_hdr_t *h, const bam1_t *b);
+    int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b) HTS_RESULT_USED;
+    int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str) HTS_RESULT_USED;
+    int sam_read1(samFile *fp, bam_hdr_t *h, bam1_t *b) HTS_RESULT_USED;
+    int sam_write1(samFile *fp, const bam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
 
     /*************************************
      *** Manipulating auxiliary fields ***

@@ -177,8 +177,13 @@ int main(int argc, char **argv)
         // f_dst will be closed here
         if ( index )
         {
-            if ( index_fname ) bgzf_index_dump(fp, index_fname, NULL);
-            else bgzf_index_dump(fp, argv[optind], ".gz.gzi");
+            if (index_fname) {
+                if (bgzf_index_dump(fp, index_fname, NULL) < 0)
+                    error("Could not write index to '%s'\n", index_fname);
+            } else {
+                if (bgzf_index_dump(fp, argv[optind], ".gz.gzi") < 0)
+                    error("Could not write index to '%s.gz.gzi'", argv[optind]);
+            }
         }
         if (bgzf_close(fp) < 0) error("Close failed: Error %d", fp->errcode);
         if (argc > optind && !pstdout) unlink(argv[optind]);
@@ -207,10 +212,13 @@ int main(int argc, char **argv)
         free(buffer);
         if ( ret<0 ) error("Is the file gzipped or bgzipped? The latter is required for indexing.\n");
 
-        if ( index_fname )
-            bgzf_index_dump(fp, index_fname, NULL);
-        else
-            bgzf_index_dump(fp, argv[optind], ".gzi");
+        if ( index_fname ) {
+            if (bgzf_index_dump(fp, index_fname, NULL) < 0)
+                error("Could not write index to '%s'\n", index_fname);
+        } else {
+            if (bgzf_index_dump(fp, argv[optind], ".gzi") < 0)
+                error("Could not write index to '%s.gzi'\n", argv[optind]);
+        }
 
         if ( bgzf_close(fp)<0 ) error("Close failed: Error %d\n",fp->errcode);
         return 0;
