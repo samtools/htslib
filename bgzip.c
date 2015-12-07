@@ -244,9 +244,9 @@ int main(int argc, char **argv)
                 const int wrflags = O_WRONLY | O_CREAT | O_TRUNC;
                 name = strdup(argv[optind]);
                 name[strlen(name) - 3] = '\0';
-                f_dst = open(name, is_forced? wrflags : (wrflags | O_EXCL));
+                f_dst = open(name, is_forced? wrflags : wrflags|O_EXCL, 0666);
                 if (f_dst < 0 && errno == EEXIST && confirm_overwrite(name))
-                    f_dst = open(name, wrflags);
+                    f_dst = open(name, wrflags, 0666);
                 if (f_dst < 0) {
                     fprintf(stderr, "[bgzip] can't create %s: %s\n", name, strerror(errno));
                     free(name);
