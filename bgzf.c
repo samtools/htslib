@@ -88,7 +88,7 @@ struct __bgzidx_t
 
 void bgzf_index_destroy(BGZF *fp);
 int bgzf_index_add_block(BGZF *fp);
-static const char * bgzf_zerr(int errnum);
+static const char * bgzf_zerr(int errnum, z_stream *zs);
 
 static inline void packInt16(uint8_t *buffer, uint16_t value)
 {
@@ -170,12 +170,13 @@ static BGZF *bgzf_write_init(const char *mode)
         if (fp->gz_stream == NULL) goto mem_fail;
         fp->gz_stream->zalloc = NULL;
         fp->gz_stream->zfree  = NULL;
+        fp->gz_stream->msg    = NULL;
 
         int ret = deflateInit2(fp->gz_stream, fp->compress_level, Z_DEFLATED, 15|16, 8, Z_DEFAULT_STRATEGY);
         if ( ret!=Z_OK ) {
             if ( hts_verbose >= 1 ) {
                 fprintf(stderr, "[E::%s] deflateInit2 failed: %s\n",
-                        __func__, bgzf_zerr(ret));
+                        __func__, bgzf_zerr(ret, fp->gz_stream));
             }
             goto fail;
         }
@@ -268,6 +269,7 @@ static int bgzf_compress(void *_dst, int *dlen, void *src, int slen, int level)
 
     // compress the body
     zs.zalloc = NULL; zs.zfree = NULL;
+    zs.msg = NULL;
     zs.next_in  = (Bytef*)src;
     zs.avail_in = slen;
     zs.next_out = dst + BLOCK_HEADER_LENGTH;
@@ -276,21 +278,21 @@ static int bgzf_compress(void *_dst, int *dlen, void *src, int slen, int level)
     if ( ret!=Z_OK ) {
         if ( hts_verbose >= 1 ) {
             fprintf(stderr, "[E::%s] deflateInit2 failed: %s\n",
-                    __func__, bgzf_zerr(ret));
+                    __func__, bgzf_zerr(ret, &zs));
         }
         return -1;
     }
     if ((ret = deflate(&zs, Z_FINISH)) != Z_STREAM_END) {
         if ( hts_verbose >= 1 ) {
             fprintf(stderr, "[E::%s] deflate failed: %s\n",
-                    __func__, bgzf_zerr(ret));
+                    __func__, bgzf_zerr(ret, ret == Z_DATA_ERROR ? &zs : NULL));
         }
         return -1;
     }
     if ((ret = deflateEnd(&zs)) != Z_OK) {
         if ( hts_verbose >= 1 ) {
             fprintf(stderr, "[E::%s] deflateEnd failed: %s\n",
-                    __func__, bgzf_zerr(ret));
+                    __func__, bgzf_zerr(ret, NULL));
         }
         return -1;
     }
@@ -318,7 +320,7 @@ static int bgzf_gzip_compress(BGZF *fp, void *_dst, int *dlen, void *src, int sl
     if (ret == Z_STREAM_ERROR) {
         if ( hts_verbose >= 1 ) {
             fprintf(stderr, "[E::%s] deflate failed: %s\n",
-                    __func__, bgzf_zerr(ret));
+                    __func__, bgzf_zerr(ret, NULL));
         }
         return -1;
     }
@@ -354,6 +356,7 @@ static int inflate_block(BGZF* fp, int block_length)
     z_stream zs;
     zs.zalloc = NULL;
     zs.zfree = NULL;
+    zs.msg = NULL;
     zs.next_in = (Bytef*)fp->compressed_block + 18;
     zs.avail_in = block_length - 16;
     zs.next_out = (Bytef*)fp->uncompressed_block;
@@ -363,7 +366,7 @@ static int inflate_block(BGZF* fp, int block_length)
     if (ret != Z_OK) {
         if ( hts_verbose >= 1 ) {
             fprintf(stderr, "[E::%s] inflateInit2 failed: %s\n",
-                    __func__, bgzf_zerr(ret));
+                    __func__, bgzf_zerr(ret, &zs));
         }
         fp->errcode |= BGZF_ERR_ZLIB;
         return -1;
@@ -371,12 +374,12 @@ static int inflate_block(BGZF* fp, int block_length)
     if ((ret = inflate(&zs, Z_FINISH)) != Z_STREAM_END) {
         if ( hts_verbose >= 1 ) {
             fprintf(stderr, "[E::%s] inflate failed: %s\n",
-                    __func__, bgzf_zerr(ret));
+                    __func__, bgzf_zerr(ret, ret == Z_DATA_ERROR ? &zs : NULL));
         }
         if ((ret = inflateEnd(&zs)) != Z_OK) {
             if ( hts_verbose >= 2 ) {
                 fprintf(stderr, "[E::%s] inflateEnd failed: %s\n",
-                        __func__, bgzf_zerr(ret));
+                        __func__, bgzf_zerr(ret, NULL));
             }
         }
         fp->errcode |= BGZF_ERR_ZLIB;
@@ -385,7 +388,7 @@ static int inflate_block(BGZF* fp, int block_length)
     if ((ret = inflateEnd(&zs)) != Z_OK) {
         if ( hts_verbose >= 1 ) {
             fprintf(stderr, "[E::%s] inflateEnd failed: %s\n",
-                    __func__, bgzf_zerr(ret));
+                    __func__, bgzf_zerr(ret, NULL));
         }
         fp->errcode |= BGZF_ERR_ZLIB;
         return -1;
@@ -410,12 +413,14 @@ static int inflate_gzip_block(BGZF *fp, int cached)
         {
             fp->gz_stream->next_out = (Bytef*)fp->uncompressed_block + fp->block_offset;
             fp->gz_stream->avail_out = BGZF_MAX_BLOCK_SIZE - fp->block_offset;
+            fp->gz_stream->msg = NULL;
             ret = inflate(fp->gz_stream, Z_NO_FLUSH);
             if ( ret==Z_BUF_ERROR ) continue;   // non-critical error
             if ( ret<0 ) {
                 if ( hts_verbose >= 1 ) {
                     fprintf(stderr, "[E::%s] inflate failed: %s\n",
-                            __func__, bgzf_zerr(ret));
+                            __func__,
+                            bgzf_zerr(ret, ret == Z_DATA_ERROR ? fp->gz_stream : NULL));
                 }
                 fp->errcode |= BGZF_ERR_ZLIB;
                 return -1;
@@ -598,7 +603,7 @@ int bgzf_read_block(BGZF *fp)
         {
             if ( hts_verbose >= 1 ) {
                 fprintf(stderr, "[E::%s] inflateInit2 failed: %s",
-                        __func__, bgzf_zerr(ret));
+                        __func__, bgzf_zerr(ret, fp->gz_stream));
             }
             fp->errcode |= BGZF_ERR_ZLIB;
             return -1;
@@ -946,7 +951,7 @@ int bgzf_close(BGZF* fp)
             if (ret != Z_OK) {
                 if ( hts_verbose >= 1 ) {
                     fprintf(stderr, "[E::%s] inflateEnd failed: %s\n",
-                            __func__, bgzf_zerr(ret));
+                            __func__, bgzf_zerr(ret, NULL));
                 }
                 fp->errcode |= BGZF_ERR_ZLIB;
                 // return -1; // don't bother, closing anyway
@@ -956,7 +961,7 @@ int bgzf_close(BGZF* fp)
             if (ret != Z_OK) {
                 if ( hts_verbose >= 1 ) {
                     fprintf(stderr, "[E::%s] deflateEnd failed: %s\n",
-                            __func__, bgzf_zerr(ret));
+                            __func__, bgzf_zerr(ret, NULL));
                 }
                 fp->errcode |= BGZF_ERR_ZLIB;
                 // return -1; // don't bother, closing anyway
@@ -1323,9 +1328,20 @@ long bgzf_utell(BGZF *fp)
     return fp->uncompressed_address;    // currently maintained only when reading
 }
 
-static const char * bgzf_zerr(int errnum)
+static const char * bgzf_zerr(int errnum, z_stream *zs)
 {
     static char buffer[32];
+
+    /* Return zs->msg if available.
+       zlib doesn't set this very reliably.  Looking at the source suggests
+       that it may get set to a useful message for deflateInit2, inflateInit2
+       and inflate when it returns Z_DATA_ERROR. For inflate with other
+       return codes, deflate, deflateEnd and inflateEnd it doesn't appear
+       to be useful.  For the likely non-useful cases, the caller should 
+       pass NULL into zs. */
+
+    if (zs && zs->msg) return zs->msg;
+
     // gzerror OF((gzFile file, int *errnum)
     switch (errnum) {
     case Z_ERRNO:
