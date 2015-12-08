@@ -32,6 +32,16 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hfile.h"
 #include "hfile_internal.h"
 
+#ifndef ENOTSUP
+#define ENOTSUP EINVAL
+#endif
+#ifndef EOVERFLOW
+#define EOVERFLOW ERANGE
+#endif
+#ifndef EPROTONOSUPPORT
+#define EPROTONOSUPPORT ENOSYS
+#endif
+
 /* hFILE fields are used as follows:
 
    char *buffer;     // Pointer to the start of the I/O buffer
@@ -317,14 +327,17 @@ void hclose_abruptly(hFILE *fp)
  * File descriptor backend *
  ***************************/
 
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <sys/stat.h>
+#define HAVE_STRUCT_STAT_ST_BLKSIZE
+#else
+#include <winsock2.h>
+#define HAVE_CLOSESOCKET
+#define HAVE_SETMODE
+#endif
 #include <fcntl.h>
 #include <unistd.h>
-
-#ifdef _WIN32
-#define HAVE_CLOSESOCKET
-#endif
 
 /* For Unix, it doesn't matter whether a file descriptor is a socket.
    However Windows insists on send()/recv() and its own closesocket()
@@ -402,9 +415,13 @@ static const struct hFILE_backend fd_backend =
 
 static size_t blksize(int fd)
 {
+#ifdef HAVE_STRUCT_STAT_ST_BLKSIZE
     struct stat sbuf;
     if (fstat(fd, &sbuf) != 0) return 0;
     return sbuf.st_blksize;
+#else
+    return 0;
+#endif
 }
 
 static hFILE *hopen_fd(const char *filename, const char *mode)
@@ -450,7 +467,9 @@ static hFILE *hopen_fd_fileuri(const char *url, const char *mode)
 static hFILE *hopen_fd_stdinout(const char *mode)
 {
     int fd = (strchr(mode, 'r') != NULL)? STDIN_FILENO : STDOUT_FILENO;
-    // TODO Set binary mode (for Windows)
+#if defined HAVE_SETMODE && defined O_BINARY
+    if (setmode(fd, O_BINARY) < 0) return NULL;
+#endif
     return hdopen(fd, mode);
 }
 
