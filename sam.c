@@ -359,6 +359,21 @@ static inline int aux_type2size(uint8_t type)
     }
 }
 
+static inline int aux_sub_type2size(uint8_t type)
+{
+    switch (type) {
+    case 'c': case 'C':
+        return 1;
+    case 's': case 'S':
+        return 2;
+    case 'i': case 'I': case 'f':
+        return 4;
+    default:
+        return 0;
+    }
+}
+
+
 static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data, int is_host)
 {
     uint8_t *s;
@@ -381,7 +396,7 @@ static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data, int is_ho
             ++s;
             break;
         case 'B':
-            size = aux_type2size(*s); ++s;
+            size = aux_sub_type2size(*s); ++s;
             if (is_host) memcpy(&n, s, 4), ed_swap_4p(s);
             else ed_swap_4p(s), memcpy(&n, s, 4);
             s += 4;
@@ -416,7 +431,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
     c->l_qseq = x[4];
     c->mtid = x[5]; c->mpos = x[6]; c->isize = x[7];
     b->l_data = block_len - 32;
-    if (b->l_data < 0 || c->l_qseq < 0) return -4;
+    if (b->l_data < 0 || c->l_qseq < 0 || c->l_qname < 1) return -4;
     if ((char *)bam_get_aux(b) - (char *)b->data > b->l_data)
         return -4;
     if (b->m_data < b->l_data) {
@@ -1156,10 +1171,15 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
             ++s;
         } else if (type == 'B') {
             uint8_t sub_type = *(s++);
+            int     sub_type_size = aux_sub_type2size(sub_type);
             int32_t n;
+            if (sub_type_size < 1)
+                return -1;
+            if (b->data + b->l_data - s < 4)
+                return -1;
             memcpy(&n, s, 4);
             s += 4; // no point to the start of the array
-            if (s + n >= b->data + b->l_data)
+            if (n < 0 || (b->data + b->l_data - s) / sub_type_size < n)
                 return -1;
             kputsn("B:", 2, str); kputc(sub_type, str); // write the typing
             for (i = 0; i < n; ++i) { // FIXME: for better performance, put the loop after "if"
