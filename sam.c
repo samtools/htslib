@@ -78,6 +78,7 @@ bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
     // Then the pointery stuff
     h->cigar_tab = NULL;
     h->sdict = NULL;
+    // TODO Check for memory allocation failures
     h->text = (char*)calloc(h->l_text + 1, 1);
     memcpy(h->text, h0->text, h->l_text);
     h->target_len = (uint32_t*)calloc(h->n_targets, sizeof(uint32_t));
@@ -98,6 +99,7 @@ static bam_hdr_t *hdr_from_dict(sdict_t *d)
     h = bam_hdr_init();
     h->sdict = d;
     h->n_targets = kh_size(d);
+    // TODO Check for memory allocation failures
     h->target_len = (uint32_t*)malloc(sizeof(uint32_t) * h->n_targets);
     h->target_name = (char**)malloc(sizeof(char*) * h->n_targets);
     for (k = kh_begin(d); k != kh_end(d); ++k) {
@@ -152,10 +154,16 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     if (h->n_targets < 0) goto invalid;
 
     // read reference sequence names and lengths
-    h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
-    if (!h->target_name) goto nomem;
-    h->target_len = (uint32_t*)calloc(h->n_targets, sizeof(uint32_t));
-    if (!h->target_len) goto nomem;
+    if (h->n_targets > 0) {
+        h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
+        if (!h->target_name) goto nomem;
+        h->target_len = (uint32_t*)calloc(h->n_targets, sizeof(uint32_t));
+        if (!h->target_len) goto nomem;
+    }
+    else {
+        h->target_name = NULL;
+        h->target_len = NULL;
+    }
 
     for (i = 0; i != h->n_targets; ++i) {
         bytes = bgzf_read(fp, &name_len, 4);
