@@ -170,9 +170,20 @@ if test $need_crypto != no; then
     [AC_DEFINE([HAVE_COMMONCRYPTO], 1,
                [Define if you have the Common Crypto library.])],
     [save_LIBS=$LIBS
-     AC_CHECK_LIB([crypto], [HMAC])
-     LIBS=$save_LIBS
-     test "$ac_cv_lib_crypto_HMAC" = yes && CRYPTO_LIBS=-lcrypto])
+     AC_SEARCH_LIBS([HMAC], [crypto],
+       [case "$ac_cv_search_HMAC" in
+          -l*) CRYPTO_LIBS=$ac_cv_search_HMAC ;;
+        esac],
+     [AC_MSG_ERROR([SSL development files not found
+
+Support for AWS S3 URLs requires routines from an SSL library.  Building
+HTSlib with libcurl enabled requires SSL development files to be installed
+on the build machine; you may need to ensure a package such as libgnutls-dev,
+libnss3-dev, or libssl-dev (on Debian or Ubuntu Linux, corresponding to the
+libcurl4-*-dev package installed) or similar on RPM-based Linux distributions.
+
+Either configure with --disable-libcurl or resolve this error to build HTSlib.])])
+     LIBS=$save_LIBS])
 fi
 AC_SUBST([CRYPTO_LIBS])
 
