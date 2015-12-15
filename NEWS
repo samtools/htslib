@@ -1,3 +1,27 @@
+Noteworthy changes in release 1.3  (15 December 2015)
+
+* Files can now be accessed via HTTPS and Amazon S3 in addition to HTTP
+  and FTP, when HTSlib is configured to use libcurl for network file access
+  rather than the included basic knetfile networking.
+
+* HTSlib can be built to use remote access hFILE backends (such as iRODS
+  and libcurl) via a plugin mechanism.  This allows other backends to be
+  easily added and facilitates building tools that use HTSlib, as they
+  don't need to be linked with the backends' various required libraries.
+
+* fai_build() and samtools faidx now accept initial whitespace in ">"
+  headers (e.g., "> chr1 description" is taken to refer to "chr1").
+
+* tabix --only-header works again (was broken in 1.2.x; #249).
+
+* HTSlib's configure script and Makefile now fully support the standard
+  convention of allowing CC/CPPFLAGS/CFLAGS/LDFLAGS/LIBS to be overridden
+  as needed.  Previously the Makefile listened to $(LDLIBS) instead; if you
+  were overriding that, you should now override LIBS rather than LDLIBS.
+
+* Fixed bugs #168, #172, #176, #197, #206, #225, #245, #265, #295, and #296.
+
+
 Noteworthy changes in release 1.2.1  (3 February 2015)
 
 * Reinstated hts_file_type() and FT_* macros, which were available until 1.1
