@@ -43,13 +43,16 @@ typedef struct hFILE {
     char *buffer, *begin, *end, *limit;
     const struct hFILE_backend *backend;
     off_t offset;
-    int at_eof:1;
+    unsigned at_eof:1;
     int has_errno;
 } hFILE;
 
 /*!
   @abstract  Open the named file or URL as a stream
   @return    An hFILE pointer, or NULL (with errno set) if an error occurred.
+  @notes     The usual @c fopen(3) @a mode letters are supported: one of
+    @e r (read), @e w (write), @e a (append), optionally followed by any of
+    @e + (update), @e e (close on @c exec(2)), @e x (create exclusively).
 */
 hFILE *hopen(const char *filename, const char *mode) HTS_RESULT_USED;
 

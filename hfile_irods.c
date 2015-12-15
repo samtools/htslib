@@ -22,17 +22,22 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#include <config.h>
+
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 
 #include "hfile_internal.h"
+#include "htslib/hts.h"  // for hts_version() and hts_verbose
+#include "htslib/kstring.h"
 
 #include <rcConnect.h>
+#include <rcMisc.h>
 #include <dataObjOpen.h>
 #include <dataObjRead.h>
 #include <dataObjWrite.h>
-#include <dataObjFsync.h>
 #include <dataObjLseek.h>
 #include <dataObjClose.h>
 
@@ -48,6 +53,8 @@ static int status_errno(int status)
     case SYS_MALLOC_ERR: return ENOMEM;
     case SYS_OUT_OF_FILE_DESC: return ENFILE;
     case SYS_BAD_FILE_DESCRIPTOR: return EBADF;
+    case CAT_NO_ACCESS_PERMISSION: return EACCES;
+    case CAT_INVALID_AUTHENTICATION: return EACCES;
     case CAT_NO_ROWS_FOUND: return ENOENT;
     case CATALOG_ALREADY_HAS_ITEM_BY_THAT_NAME: return EEXIST;
     default: return EIO;
@@ -67,32 +74,49 @@ static struct {
 
 static void irods_exit()
 {
-    (void) rcDisconnect(irods.conn);
+    if (irods.conn) { (void) rcDisconnect(irods.conn); }
     irods.conn = NULL;
 }
 
 static int irods_init()
 {
+    kstring_t useragent = { 0, 0, NULL };
+    struct sigaction pipehandler;
     rErrMsg_t err;
-    int ret;
+    int ret, pipehandler_ret;
+
+    if (hts_verbose >= 5) rodsLogLevel(hts_verbose);
 
     ret = getRodsEnv(&irods.env);
     if (ret < 0) goto error;
 
+    // Set iRODS User-Agent, if our caller hasn't already done so.
+    kputs("htslib/", &useragent);
+    kputs(hts_version(), &useragent);
+    (void) setenv(SP_OPTION, useragent.s, 0);
+    free(useragent.s);
+
+    // Prior to iRODS 4.1, rcConnect() (even if it fails) installs its own
+    // SIGPIPE handler, which just prints a message and otherwise ignores the
+    // signal.  Most actual SIGPIPEs encountered will pertain to e.g. stdout
+    // rather than iRODS's connection, so we save and restore the existing
+    // state (by default, termination; or as already set by our caller).
+    pipehandler_ret = sigaction(SIGPIPE, NULL, &pipehandler);
+
     irods.conn = rcConnect(irods.env.rodsHost, irods.env.rodsPort,
                            irods.env.rodsUserName, irods.env.rodsZone,
                            NO_RECONN, &err);
+    if (pipehandler_ret == 0) sigaction(SIGPIPE, &pipehandler, NULL);
     if (irods.conn == NULL) { ret = err.status; goto error; }
 
     if (strcmp(irods.env.rodsUserName, PUBLIC_USER_NAME) != 0) {
+#if defined IRODS_VERSION_INTEGER && IRODS_VERSION_INTEGER >= 4000000
+        ret = clientLogin(irods.conn, NULL, NULL);
+#else
         ret = clientLogin(irods.conn);
+#endif
         if (ret != 0) goto error;
     }
-
-    // In the unlikely event atexit() fails, it's better to succeed here and
-    // carry on and do the I/O; then eventually when the program exits, we'll
-    // merely disconnect from the server uncleanly, as if we had aborted.
-    (void) atexit(irods_exit);
 
     return 0;
 
@@ -161,25 +185,6 @@ static off_t irods_seek(hFILE *fpv, off_t offset, int whence)
     return offset;
 }
 
-static int irods_flush(hFILE *fpv)
-{
-// FIXME rcDataObjFsync() doesn't seem to function as expected.
-// For now, flush is a no-op: see https://github.com/samtools/htslib/issues/168
-#if 0
-    hFILE_irods *fp = (hFILE_irods *) fpv;
-    openedDataObjInp_t args;
-    int ret;
-
-    memset(&args, 0, sizeof args);
-    args.l1descInx = fp->descriptor;
-
-    ret = rcDataObjFsync(irods.conn, &args);
-    if (ret < 0) set_errno(ret);
-    return ret;
-#endif
-    return 0;
-}
-
 static int irods_close(hFILE *fpv)
 {
     hFILE_irods *fp = (hFILE_irods *) fpv;
@@ -196,7 +201,7 @@ static int irods_close(hFILE *fpv)
 
 static const struct hFILE_backend irods_backend =
 {
-    irods_read, irods_write, irods_seek, irods_flush, irods_close
+    irods_read, irods_write, irods_seek, NULL, irods_close
 };
 
 hFILE *hopen_irods(const char *filename, const char *mode)
@@ -240,4 +245,15 @@ error:
     hfile_destroy((hFILE *) fp);
     set_errno(ret);
     return NULL;
+}
+
+int PLUGIN_GLOBAL(hfile_plugin_init,_irods)(struct hFILE_plugin *self)
+{
+    static const struct hFILE_scheme_handler handler =
+        { hopen_irods, hfile_always_remote, "iRODS", 50 };
+
+    self->name = "iRODS";
+    hfile_add_scheme_handler("irods", &handler);
+    self->destroy = irods_exit;
+    return 0;
 }

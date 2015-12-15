@@ -39,10 +39,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * although these should not be included directly (use this file instead).
  */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef _CRAM_H_
 #define _CRAM_H_
 
@@ -56,8 +52,10 @@ extern "C" {
 #include "cram_codecs.h"
 #include "cram_index.h"
 
-#endif
+// Validate against the external cram.h,
+//
+// This contains duplicated portions from cram_io.h and cram_structs.h,
+// so we want to ensure that the prototypes match.
+#include "htslib/cram.h"
 
-#ifdef __cplusplus
-}
 #endif

@@ -28,9 +28,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifdef HAVE_CONFIG_H
-#include "io_lib_config.h"
-#endif
+#include <config.h>
 
 #include <string.h>
 #include <assert.h>
@@ -102,11 +100,13 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
     /* Add to reference hash? */
     if ((type>>8) == 'S' && (type&0xff) == 'Q') {
 	SAM_hdr_tag *tag;
+	SAM_SQ *new_ref;
 	int nref = sh->nref;
 
-	sh->ref = realloc(sh->ref, (sh->nref+1)*sizeof(*sh->ref));
-	if (!sh->ref)
+	new_ref = realloc(sh->ref, (sh->nref+1)*sizeof(*sh->ref));
+	if (!new_ref)
 	    return -1;
+	sh->ref = new_ref;
 
 	tag = h_type->tag;
 	sh->ref[nref].name = NULL;
@@ -132,6 +132,8 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 	    k = kh_put(m_s2i, sh->ref_hash, sh->ref[nref].name, &r);
 	    if (-1 == r) return -1;
 	    kh_val(sh->ref_hash, k) = nref;
+	} else {
+	    return -1; // SN should be present, according to spec.
 	}
 
 	sh->nref++;
@@ -140,11 +142,13 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
     /* Add to read-group hash? */
     if ((type>>8) == 'R' && (type&0xff) == 'G') {
 	SAM_hdr_tag *tag;
+	SAM_RG *new_rg;
 	int nrg = sh->nrg;
 
-	sh->rg = realloc(sh->rg, (sh->nrg+1)*sizeof(*sh->rg));
-	if (!sh->rg)
+	new_rg = realloc(sh->rg, (sh->nrg+1)*sizeof(*sh->rg));
+	if (!new_rg)
 	    return -1;
+	sh->rg = new_rg;
 
 	tag = h_type->tag;
 	sh->rg[nrg].name = NULL;
@@ -170,6 +174,8 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 	    k = kh_put(m_s2i, sh->rg_hash, sh->rg[nrg].name, &r);
 	    if (-1 == r) return -1;
 	    kh_val(sh->rg_hash, k) = nrg;
+	} else {
+	    return -1; // ID should be present, according to spec.
 	}
 
 	sh->nrg++;
@@ -178,11 +184,13 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
     /* Add to program hash? */
     if ((type>>8) == 'P' && (type&0xff) == 'G') {
 	SAM_hdr_tag *tag;
+	SAM_PG *new_pg;
 	int npg = sh->npg;
 
-	sh->pg = realloc(sh->pg, (sh->npg+1)*sizeof(*sh->pg));
-	if (!sh->pg)
+	new_pg = realloc(sh->pg, (sh->npg+1)*sizeof(*sh->pg));
+	if (!new_pg)
 	    return -1;
+	sh->pg = new_pg;
 
 	tag = h_type->tag;
 	sh->pg[npg].name = NULL;
@@ -237,17 +245,20 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 	    k = kh_put(m_s2i, sh->pg_hash, sh->pg[npg].name, &r);
 	    if (-1 == r) return -1;
 	    kh_val(sh->pg_hash, k) = npg;
+	} else {
+	    return -1; // ID should be present, according to spec.
 	}
 
 	/* Add to npg_end[] array. Remove later if we find a PP line */
 	if (sh->npg_end >= sh->npg_end_alloc) {
-	    sh->npg_end_alloc = sh->npg_end_alloc
-		? sh->npg_end_alloc*2
-		: 4;
-	    sh->pg_end = realloc(sh->pg_end,
-				 sh->npg_end_alloc * sizeof(int));
-	    if (!sh->pg_end)
+	    int *new_pg_end;
+	    int  new_alloc = sh->npg_end_alloc ? sh->npg_end_alloc*2 : 4;
+
+	    new_pg_end = realloc(sh->pg_end, new_alloc * sizeof(int));
+	    if (!new_pg_end)
 		return -1;
+	    sh->npg_end_alloc = new_alloc;
+	    sh->pg_end = new_pg_end;
 	}
 	sh->pg_end[sh->npg_end++] = npg;
 
@@ -263,14 +274,14 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
  * optional new-line. If it contains more than 1 line then multiple lines
  * will be added in order.
  *
- * Len is the length of the text data, or 0 if unknown (in which case
- * it should be null terminated).
+ * Input text is of maximum length len or as terminated earlier by a NUL.
+ * Len may be 0 if unknown, in which case lines must be NUL-terminated.
  *
  * Returns 0 on success
  *        -1 on failure
  */
 int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
-    int i, lno = 1, text_offset;
+    int i, lno, text_offset;
     char *hdr;
 
     if (!len)
@@ -281,7 +292,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	return -1;
     hdr = ks_str(&sh->text) + text_offset;
 
-    for (i = 0; i < len; i++) {
+    for (i = 0, lno = 1; i < len && hdr[i] != '\0'; i++, lno++) {
 	khint32_t type;
 	khint_t k;
 
@@ -291,7 +302,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 
 	if (hdr[i] != '@') {
 	    int j;
-	    for (j = i; j < len && hdr[j] != '\n'; j++)
+	    for (j = i; j < len && hdr[j] != '\0' && hdr[j] != '\n'; j++)
 		;
 	    sam_hdr_error("Header line does not start with '@'",
 			  &hdr[l_start], len - l_start, lno);
@@ -321,7 +332,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	    SAM_hdr_type *t = kh_val(sh->h, k), *p;
 	    p = t->prev;
 	    
-	    assert(p->next = t);
+	    assert(p->next == t);
 	    p->next = h_type;
 	    h_type->prev = p;
 
@@ -344,7 +355,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 		return -1;
 	    }
 
-	    for (j = ++i; j < len && hdr[j] != '\n'; j++)
+	    for (j = ++i; j < len && hdr[j] != '\0' && hdr[j] != '\n'; j++)
 		;
 
 	    if (!(h_type->tag = h_tag = pool_alloc(sh->tag_pool)))
@@ -366,7 +377,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 		    return -1;
 		}
 
-		for (j = ++i; j < len && hdr[j] != '\n' && hdr[j] != '\t'; j++)
+		for (j = ++i; j < len && hdr[j] != '\0' && hdr[j] != '\n' && hdr[j] != '\t'; j++)
 		    ;
 	    
 		if (!(h_tag = pool_alloc(sh->tag_pool)))
@@ -390,7 +401,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 
 		last = h_tag;
 		i = j;
-	    } while (i < len && hdr[i] != '\n');
+	    } while (i < len && hdr[i] != '\0' && hdr[i] != '\n');
 	}
 
 	/* Update RG/SQ hashes */
@@ -415,16 +426,19 @@ int sam_hdr_add(SAM_hdr *sh, const char *type, ...) {
     return sam_hdr_vadd(sh, type, args, NULL);
 }
 
+/* 
+ * sam_hdr_add with a va_list interface.
+ *
+ * Note: this function invokes va_arg at least once, making the value
+ * of ap indeterminate after the return.  The caller should call
+ * va_start/va_end before/after calling this function or use va_copy.
+ */
 int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
     va_list args;
     SAM_hdr_type *h_type;
     SAM_hdr_tag *h_tag, *last;
     int new;
     khint32_t type_i = (type[0]<<8) | type[1], k;
-
-#if defined(HAVE_VA_COPY)
-    va_list ap_local;
-#endif
 
     if (EOF == kputc_('@', &sh->text))
 	return -1;
@@ -435,14 +449,13 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 	return -1;
     if (-1 == (k = kh_put(sam_hdr, sh->h, type_i, &new)))
 	return -1;
-    kh_val(sh->h, k) = h_type;
 
     // Form the ring, either with self or other lines of this type
     if (!new) {
 	SAM_hdr_type *t = kh_val(sh->h, k), *p;
 	p = t->prev;
 	    
-	assert(p->next = t);
+	assert(p->next == t);
 	p->next = h_type;
 	h_type->prev = p;
 
@@ -450,6 +463,7 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 	h_type->next = t;
 	h_type->order = p->order + 1;
     } else {
+	kh_val(sh->h, k) = h_type;
 	h_type->prev = h_type->next = h_type;
 	h_type->order = 0;
     }
@@ -496,11 +510,6 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 	last = h_tag;
     }
     va_end(args);
-
-#if defined(HAVE_VA_COPY)
-    va_copy(ap_local, ap);
-#   define ap ap_local
-#endif
 
     // Plus the specified va_list params
     for (;;) {
@@ -742,6 +751,41 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
 #define K(a) (((a)[0]<<8)|((a)[1]))
 
 /*
+ * Returns the sort order:
+ */
+enum sam_sort_order sam_hdr_sort_order(SAM_hdr *hdr) {
+    return hdr->sort_order;
+}
+
+static enum sam_sort_order sam_hdr_parse_sort_order(SAM_hdr *hdr) {
+    khint_t k;
+    enum sam_sort_order so;
+
+    so = ORDER_UNKNOWN;
+    k = kh_get(sam_hdr, hdr->h, K("HD"));
+    if (k != kh_end(hdr->h)) {
+	SAM_hdr_type *ty = kh_val(hdr->h, k);
+	SAM_hdr_tag *tag;
+        for (tag = ty->tag; tag; tag = tag->next) {
+	    if (tag->str[0] == 'S' && tag->str[1] == 'O') {
+		if (strcmp(tag->str+3, "unsorted") == 0)
+		    so = ORDER_UNSORTED;
+		else if (strcmp(tag->str+3, "queryname") == 0)
+		    so = ORDER_NAME;
+		else if (strcmp(tag->str+3, "coordinate") == 0)
+		    so = ORDER_COORD;
+		else
+		    fprintf(stderr, "Unknown sort order field: %s\n",
+			    tag->str+3);
+	    }
+	}
+    }
+
+    return so;
+}
+
+
+/*
  * Reconstructs the kstring from the header hash table.
  * Returns 0 on success
  *        -1 on failure
@@ -898,6 +942,9 @@ SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
 	sam_hdr_free(sh);
 	return NULL;
     }
+
+    /* Obtain sort order */
+    sh->sort_order = sam_hdr_parse_sort_order(sh);
 
     //sam_hdr_dump(sh);
     //sam_hdr_add(sh, "RG", "ID", "foo", "SM", "bar", NULL);
@@ -1119,7 +1166,7 @@ const char *sam_hdr_PG_ID(SAM_hdr *sh, const char *name) {
     do {
 	sprintf(sh->ID_buf, "%.1000s.%d", name, sh->ID_cnt++);
 	k = kh_get(m_s2i, sh->pg_hash, sh->ID_buf);
-    } while (k == kh_end(sh->pg_hash));
+    } while (k != kh_end(sh->pg_hash));
 
     return sh->ID_buf;
 }
@@ -1142,7 +1189,6 @@ const char *sam_hdr_PG_ID(SAM_hdr *sh, const char *name) {
  */
 int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
     va_list args;
-    va_start(args, name);
 
     if (sh->npg_end) {
 	/* Copy ends array to avoid us looping while modifying it */
@@ -1155,6 +1201,7 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
 	memcpy(end, sh->pg_end, nends * sizeof(*end));
 
 	for (i = 0; i < nends; i++) {
+	    va_start(args, name);
 	    if (-1 == sam_hdr_vadd(sh, "PG", args,
 				   "ID", sam_hdr_PG_ID(sh, name),
 				   "PN", name,
@@ -1163,15 +1210,18 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
 		free(end);
 		return  -1;
 	    }
+	    va_end(args);
 	}
 
 	free(end);
     } else {
+	va_start(args, name);
 	if (-1 == sam_hdr_vadd(sh, "PG", args,
 			       "ID", sam_hdr_PG_ID(sh, name),
 			       "PN", name,
 			       NULL))
 	    return -1;
+	va_end(args);
     }
 
     //sam_hdr_dump(sh);

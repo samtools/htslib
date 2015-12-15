@@ -33,16 +33,22 @@ exec_prefix  = @exec_prefix@
 bindir       = @bindir@
 includedir   = @includedir@
 libdir       = @libdir@
+libexecdir   = @libexecdir@
 datarootdir  = @datarootdir@
 mandir       = @mandir@
 
 CC     = @CC@
 RANLIB = @RANLIB@
 
+CPPFLAGS = @CPPFLAGS@
 CFLAGS   = @CFLAGS@
 LDFLAGS  = @LDFLAGS@
-LDLIBS   = @LIBS@
+LIBS     = @LIBS@
 
+# Lowercase here indicates these are "local" to config.mk
+plugin_OBJS =
+noplugin_LDFLAGS =
+noplugin_LIBS =
 
 # ifeq/.../endif, +=, and target-specific variables are GNU Make-specific.
 # If you don't have GNU Make, comment out this conditional and note that
@@ -51,7 +57,7 @@ ifeq "iRODS-@irods@" "iRODS-enabled"
 
 @define_IRODS_HOME@
 
-EXTRA_CPPFLAGS_IRODS = \
+IRODS_CPPFLAGS = \
 	-I$(IRODS_HOME)/lib/api/include \
 	-I$(IRODS_HOME)/lib/core/include \
 	-I$(IRODS_HOME)/lib/md5/include \
@@ -60,13 +66,46 @@ EXTRA_CPPFLAGS_IRODS = \
 	-I$(IRODS_HOME)/server/drivers/include \
 	-I$(IRODS_HOME)/server/icat/include
 
-LDFLAGS += -L$(IRODS_HOME)/lib/core/obj
-LDLIBS  += -lRodsAPIs -lgssapi_krb5
+IRODS_LDFLAGS = -L$(IRODS_HOME)/lib/core/obj
+IRODS_LIBS = -lRodsAPIs -lgssapi_krb5
 
-LIBHTS_OBJS += hfile_irods.o
+plugin_OBJS += hfile_irods.o
 
-hfile.o hfile.pico: CPPFLAGS += -DHAVE_IRODS
+hfile_irods.o hfile_irods.pico: CPPFLAGS += $(IRODS_CPPFLAGS)
+hfile_irods.so hfile_irods.bundle: LDFLAGS += $(IRODS_LDFLAGS)
+hfile_irods.so hfile_irods.bundle: LIBS += $(IRODS_LIBS)
 
-hfile_irods.o hfile_irods.pico: CPPFLAGS += $(EXTRA_CPPFLAGS_IRODS)
+noplugin_LDFLAGS += $(IRODS_LDFLAGS)
+noplugin_LIBS += $(IRODS_LIBS)
+
+endif
+
+ifeq "libcurl-@libcurl@" "libcurl-enabled"
+
+LIBCURL_LIBS = -lcurl @CRYPTO_LIBS@
+
+plugin_OBJS += hfile_libcurl.o
+
+hfile_libcurl.so hfile_libcurl.bundle: LIBS += $(LIBCURL_LIBS)
+
+noplugin_LIBS += $(LIBCURL_LIBS)
+
+endif
+
+ifeq "plugins-@enable_plugins@" "plugins-yes"
+
+plugindir  = @plugindir@
+pluginpath = @pluginpath@
+
+LIBHTS_OBJS += plugin.o
+PLUGIN_OBJS += $(plugin_OBJS)
+
+plugin.o plugin.pico: CPPFLAGS += -DPLUGINPATH=\"$(pluginpath)\"
+
+else
+
+LIBHTS_OBJS += $(plugin_OBJS)
+LDFLAGS += $(noplugin_LDFLAGS)
+LIBS += $(noplugin_LIBS)
 
 endif

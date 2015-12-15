@@ -56,6 +56,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include "vcf.h"
 #include "tbx.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // How should be treated sites with the same position but different alleles
 #define COLLAPSE_NONE   0   // require the exact same set of alleles in all files
 #define COLLAPSE_SNPS   1   // allow different alleles, as long as they all are SNPs
@@ -102,10 +106,10 @@ typedef struct
     hts_idx_t *bcf_idx;
     bcf_hdr_t *header;
     hts_itr_t *itr;
-    const char *fname;
+    char *fname;
     bcf1_t **buffer;                // cached VCF records. First is the current record synced across the reader
     int nbuffer, mbuffer;           // number of cached records (including the current record); number of allocated records
-    int nfilter_ids, *filter_ids;   // -1 for ".", otherwise filter id as returned by bcf_id2int
+    int nfilter_ids, *filter_ids;   // -1 for ".", otherwise filter id as returned by bcf_hdr_id2int
     int *samples, n_smpl;   // list of columns in the order consistent with bcf_srs_t.samples
 }
 bcf_sr_t;
@@ -113,7 +117,7 @@ bcf_sr_t;
 typedef enum
 {
     open_failed, not_bgzf, idx_load_failed, file_type_error, api_usage_error,
-    header_error
+    header_error, no_eof
 }
 bcf_sr_error;
 
@@ -144,10 +148,6 @@ typedef struct
     int n_smpl;
 }
 bcf_srs_t;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /** Init bcf_srs_t struct */
 bcf_srs_t *bcf_sr_init(void);
@@ -182,6 +182,7 @@ void bcf_sr_remove_reader(bcf_srs_t *files, int i);
 int bcf_sr_next_line(bcf_srs_t *readers);
 #define bcf_sr_has_line(readers, i) (readers)->has_line[i]
 #define bcf_sr_get_line(_readers, i) ((_readers)->has_line[i] ? ((_readers)->readers[i].buffer[0]) : NULL)
+#define bcf_sr_swap_line(_readers, i, lieu) { bcf1_t *tmp = lieu; lieu = (_readers)->readers[i].buffer[0]; (_readers)->readers[i].buffer[0] = tmp; }
 #define bcf_sr_region_done(_readers,i) (!(_readers)->has_line[i] && !(_readers)->readers[i].nbuffer ? 1 : 0)
 #define bcf_sr_get_header(_readers, i) (_readers)->readers[i].header
 #define bcf_sr_get_reader(_readers, i) &((_readers)->readers[i])

@@ -22,6 +22,8 @@
     THE SOFTWARE.
 */
 
+#include <config.h>
+
 #include "htslib/hts.h"
 #include "htslib/kstring.h"
 #include "htslib/kseq.h"
@@ -295,11 +297,11 @@ int regidx_parse_bed(const char *line, char **chr_beg, char **chr_end, reg_t *re
     *chr_end = se-1;
 
     ss = se+1;
-    reg->start = strtol(ss, &se, 10);
+    reg->start = hts_parse_decimal(ss, &se, 0);
     if ( ss==se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
 
     ss = se+1;
-    reg->end = strtol(ss, &se, 10) - 1;
+    reg->end = hts_parse_decimal(ss, &se, 0) - 1;
     if ( ss==se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
     
     return 0;
@@ -320,7 +322,7 @@ int regidx_parse_tab(const char *line, char **chr_beg, char **chr_end, reg_t *re
     *chr_end = se-1;
 
     ss = se+1;
-    reg->start = strtol(ss, &se, 10) - 1;
+    reg->start = hts_parse_decimal(ss, &se, 0) - 1;
     if ( ss==se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
 
     if ( !se[0] || !se[1] )
@@ -328,7 +330,7 @@ int regidx_parse_tab(const char *line, char **chr_beg, char **chr_end, reg_t *re
     else
     {
         ss = se+1;
-        reg->end = strtol(ss, &se, 10);
+        reg->end = hts_parse_decimal(ss, &se, 0);
         if ( ss==se ) reg->end = reg->start;
         else reg->end--;
     }

@@ -34,6 +34,8 @@ my $opts = parse_params();
 
 test_vcf_api($opts,out=>'test-vcf-api.out');
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
+test_vcf_various($opts);
+test_convert_padded_header($opts);
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -93,7 +95,7 @@ sub _cmd
     else
     {
         # child
-        exec('/bin/bash', '-o','pipefail','-c', $cmd) or error("Cannot execute the command [/bin/sh -o pipefail -c $cmd]: $!");
+        exec('bash', '-o','pipefail','-c', $cmd) or error("Cannot execute the command [/bin/sh -o pipefail -c $cmd]: $!");
     }
     return ($? >> 8, join('',@out));
 }
@@ -200,3 +202,26 @@ sub test_vcf_sweep
     test_cmd($opts,%args,cmd=>"$$opts{path}/test-vcf-sweep $$opts{tmp}/test-vcf-api.bcf");
 }
 
+sub test_vcf_various
+{
+    my ($opts, %args) = @_;
+
+    # Trailing spaces on header lines
+    test_cmd($opts, %args, out => "test-vcf-hdr.out",
+        cmd => "$$opts{path}/../htsfile -ch $$opts{path}/test-vcf-hdr-in.vcf");
+}
+
+sub test_convert_padded_header
+{
+    my ($opts, %args) = @_;
+
+    $args{out} = "headernul.tmp.cram";
+    cmd("$$opts{path}/test_view -t ce.fa -C ce#1.sam > $args{out}");
+
+    foreach my $nuls (0, 1, 678) {
+        my $nulsbam = "$$opts{tmp}/headernul$nuls.bam";
+        cmd("$$opts{path}/test_view -b -Z $nuls ce#1.sam > $nulsbam");
+        test_cmd($opts, %args,
+            cmd => "$$opts{path}/test_view -t ce.fa -C $nulsbam");
+    }
+}

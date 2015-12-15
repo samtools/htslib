@@ -1,6 +1,6 @@
 /*  hts.h -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2012-2014 Genome Research Ltd.
+    Copyright (C) 2012-2015 Genome Research Ltd.
     Copyright (C) 2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -28,6 +28,10 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stddef.h>
 #include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;
@@ -99,7 +103,7 @@ typedef struct htsFormat {
     struct { short major, minor; } version;
     enum htsCompression compression;
     short compression_level;  // currently unused
-    void *specific;  // currently unused
+    void *specific;  // format specific options; see struct hts_opt.
 } htsFormat;
 
 // Maintainers note htsFile cannot be an opaque structure because some of its
@@ -140,31 +144,96 @@ enum sam_fields {
     SAM_RGAUX = 0x00001000,
 };
 
-enum cram_option {
+// Mostly CRAM only, but this could also include other format options
+enum hts_fmt_option {
+    // CRAM specific
     CRAM_OPT_DECODE_MD,
     CRAM_OPT_PREFIX,
-    CRAM_OPT_VERBOSITY,
+    CRAM_OPT_VERBOSITY,  // make general
     CRAM_OPT_SEQS_PER_SLICE,
     CRAM_OPT_SLICES_PER_CONTAINER,
     CRAM_OPT_RANGE,
-    CRAM_OPT_VERSION,
+    CRAM_OPT_VERSION,    // rename to cram_version?
     CRAM_OPT_EMBED_REF,
     CRAM_OPT_IGNORE_MD5,
-    CRAM_OPT_REFERENCE,
+    CRAM_OPT_REFERENCE,  // make general
     CRAM_OPT_MULTI_SEQ_PER_SLICE,
     CRAM_OPT_NO_REF,
     CRAM_OPT_USE_BZIP2,
     CRAM_OPT_SHARED_REF,
-    CRAM_OPT_NTHREADS,
-    CRAM_OPT_THREAD_POOL,
+    CRAM_OPT_NTHREADS,   // deprecated, use HTS_OPT_NTHREADS
+    CRAM_OPT_THREAD_POOL,// make general
     CRAM_OPT_USE_LZMA,
     CRAM_OPT_USE_RANS,
     CRAM_OPT_REQUIRED_FIELDS,
+
+    // General purpose
+    HTS_OPT_COMPRESSION_LEVEL = 100,
+    HTS_OPT_NTHREADS,
 };
+
+// For backwards compatibility
+#define cram_option hts_fmt_option
+
+typedef struct hts_opt {
+    char *arg;                // string form, strdup()ed
+    enum hts_fmt_option opt;  // tokenised key
+    union {                   // ... and value
+        int i;
+        char *s;
+    } val;
+    struct hts_opt *next;
+} hts_opt;
+
+#define HTS_FILE_OPTS_INIT {{0},0}
 
 /**********************
  * Exported functions *
  **********************/
+
+/*
+ * Parses arg and appends it to the option list.
+ *
+ * Returns 0 on success;
+ *        -1 on failure.
+ */
+int hts_opt_add(hts_opt **opts, const char *c_arg);
+
+/*
+ * Applies an hts_opt option list to a given htsFile.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int hts_opt_apply(htsFile *fp, hts_opt *opts);
+
+/*
+ * Frees an hts_opt list.
+ */
+void hts_opt_free(hts_opt *opts);
+
+/*
+ * Accepts a string file format (sam, bam, cram, vcf, bam) optionally
+ * followed by a comma separated list of key=value options and splits
+ * these up into the fields of htsFormat struct.
+ *
+ * Returns 0 on success
+ *        -1 on failure.
+ */
+int hts_parse_format(htsFormat *opt, const char *str);
+
+/*
+ * Tokenise options as (key(=value)?,)*(key(=value)?)?
+ * NB: No provision for ',' appearing in the value!
+ * Add backslashing rules?
+ *
+ * This could be used as part of a general command line option parser or
+ * as a string concatenated onto the file open mode.
+ *
+ * Returns 0 on success
+ *        -1 on failure.
+ */
+int hts_parse_opt_list(htsFormat *opt, const char *str);
 
 extern int hts_verbose;
 
@@ -185,10 +254,6 @@ Returns 0/1/2/3 for 1/2/4/8 (i.e., A/C/G/T), or 4 otherwise (0 or ambiguous).
 */
 extern const int seq_nt16_int[];
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /*!
   @abstract  Get the htslib version number
   @return    For released versions, a string like "N.N[.N]"; or git describe
@@ -206,6 +271,7 @@ int hts_detect_format(struct hFILE *fp, htsFormat *fmt);
 
 /*!
   @abstract    Get a human-readable description of the file format
+  @param fmt   Format structure holding type, version, compression, etc.
   @return      Description string, to be freed by the caller after use.
 */
 char *hts_format_description(const htsFormat *format);
@@ -213,7 +279,7 @@ char *hts_format_description(const htsFormat *format);
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
   @param fn       The file name or "-" for stdin/stdout
-  @param mode     Mode matching /[rwa][bcuz0-9]+/
+  @param mode     Mode matching / [rwa][bceguxz0-9]* /
   @discussion
       With 'r' opens for reading; any further format mode letters are ignored
       as the format is detected by checking the first few bytes or BGZF blocks
@@ -225,16 +291,35 @@ char *hts_format_description(const htsFormat *format);
         u  uncompressed
         z  bgzf compressed
         [0-9]  zlib compression level
+      and with non-format option letters (for any of 'r'/'w'/'a'):
+        e  close the file on exec(2) (opens with O_CLOEXEC, where supported)
+        x  create the file exclusively (opens with O_EXCL, where supported)
       Note that there is a distinction between 'u' and '0': the first yields
       plain uncompressed output whereas the latter outputs uncompressed data
       wrapped in the zlib format.
   @example
-      [rw]b .. compressed BCF, BAM, FAI
-      [rw]u .. uncompressed BCF
-      [rw]z .. compressed VCF
-      [rw]  .. uncompressed VCF
+      [rw]b  .. compressed BCF, BAM, FAI
+      [rw]bu .. uncompressed BCF
+      [rw]z  .. compressed VCF
+      [rw]   .. uncompressed VCF
 */
 htsFile *hts_open(const char *fn, const char *mode);
+
+/*!
+  @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
+  @param fn       The file name or "-" for stdin/stdout
+  @param mode     Open mode, as per hts_open()
+  @param fmt      Optional format specific parameters
+  @discussion
+      See hts_open() for description of fn and mode.
+      // TODO Update documentation for s/opts/fmt/
+      Opts contains a format string (sam, bam, cram, vcf, bcf) which will,
+      if defined, override mode.  Opts also contains a linked list of hts_opt
+      structures to apply to the open file handle.  These can contain things
+      like pointers to the reference or information on compression levels,
+      block sizes, etc.
+*/
+htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt);
 
 /*!
   @abstract       Open an existing stream as a SAM/BAM/CRAM/VCF/BCF/etc file
@@ -258,13 +343,20 @@ int hts_close(htsFile *fp);
 const htsFormat *hts_get_format(htsFile *fp);
 
 /*!
+  @ abstract      Returns a string containing the file format extension.
+  @ param format  Format structure containing the file type.
+  @ return        A string ("sam", "bam", etc) or "?" for unknown formats.
+ */
+const char *hts_format_file_extension(const htsFormat *format);
+
+/*!
   @abstract  Sets a specified CRAM option on the open file handle.
   @param fp  The file handle open the open file.
   @param opt The CRAM_OPT_* option.
   @param ... Optional arguments, dependent on the option used.
   @return    0 for success, or negative if an error occurred.
 */
-int hts_set_opt(htsFile *fp, enum cram_option opt, ...);
+int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...);
 
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
 char **hts_readlines(const char *fn, int *_n);
@@ -295,10 +387,6 @@ int hts_set_threads(htsFile *fp, int n);
       used to provide a reference list if the htsFile contains no @SQ headers.
 */
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
-
-#ifdef __cplusplus
-}
-#endif
 
 /************
  * Indexing *
@@ -346,10 +434,6 @@ typedef struct {
     } bins;
 } hts_itr_t;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
     #define hts_bin_first(l) (((1<<(((l)<<1) + (l))) - 1) / 7)
     #define hts_bin_parent(l) (((l) - 1) >> 3)
 
@@ -358,8 +442,37 @@ extern "C" {
     int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped);
     void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
 
-    void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt);
-    hts_idx_t *hts_idx_load(const char *fn, int fmt);
+/// Save an index to a file
+/** @param idx  Index to be written
+    @param fn   Input BAM/BCF/etc filename, to which .bai/.csi/etc will be added
+    @param fmt  One of the HTS_FMT_* index formats
+    @return  0 if successful, or negative if an error occurred.
+*/
+int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt);
+
+/// Save an index to a specific file
+/** @param idx    Index to be written
+    @param fn     Input BAM/BCF/etc filename
+    @param fnidx  Output filename, or NULL to add .bai/.csi/etc to @a fn
+    @param fmt    One of the HTS_FMT_* index formats
+    @return  0 if successful, or negative if an error occurred.
+*/
+int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int fmt);
+
+/// Load an index file
+/** @param fn   BAM/BCF/etc filename, to which .bai/.csi/etc will be added or
+                the extension substituted, to search for an existing index file
+    @param fmt  One of the HTS_FMT_* index formats
+    @return  The index, or NULL if an error occurred.
+*/
+hts_idx_t *hts_idx_load(const char *fn, int fmt);
+
+/// Load a specific index file
+/** @param fn     Input BAM/BCF/etc filename
+    @param fnidx  The input index filename
+    @return  The index, or NULL if an error occurred.
+*/
+hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx);
 
     uint8_t *hts_idx_get_meta(hts_idx_t *idx, int *l_meta);
     void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy);
@@ -367,7 +480,32 @@ extern "C" {
     int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped);
     uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
 
-    const char *hts_parse_reg(const char *s, int *beg, int *end);
+
+#define HTS_PARSE_THOUSANDS_SEP 1  ///< Ignore ',' separators within numbers
+
+/// Parse a numeric string
+/** The number may be expressed in scientific notation, and optionally may
+    contain commas in the integer part (before any decimal point or E notation).
+    @param str     String to be parsed
+    @param strend  If non-NULL, set on return to point to the first character
+                   in @a str after those forming the parsed number
+    @param flags   Or'ed-together combination of HTS_PARSE_* flags
+    @return  Converted value of the parsed number.
+
+    When @a strend is NULL, a warning will be printed (if hts_verbose is 2
+    or more) if there are any trailing characters after the number.
+*/
+long long hts_parse_decimal(const char *str, char **strend, int flags);
+
+/// Parse a "CHR:START-END"-style region string
+/** @param str  String to be parsed
+    @param beg  Set on return to the 0-based start of the region
+    @param end  Set on return to the 1-based end of the region
+    @return  Pointer to the colon or '\0' after the reference sequence name,
+             or NULL if @a str could not be parsed.
+*/
+const char *hts_parse_reg(const char *str, int *beg, int *end);
+
     hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
     void hts_itr_destroy(hts_itr_t *iter);
 
@@ -394,9 +532,48 @@ extern "C" {
     int hts_file_type(const char *fname);
 
 
-#ifdef __cplusplus
-}
-#endif
+    /**********************
+     * MD5 implementation *
+     **********************/
+
+    struct hts_md5_context;
+    typedef struct hts_md5_context hts_md5_context;
+
+    /*! @abstract   Intialises an MD5 context.
+     *  @discussion
+     *    The expected use is to allocate an hts_md5_context using
+     *    hts_md5_init().  This pointer is then passed into one or more calls
+     *    of hts_md5_update() to compute successive internal portions of the
+     *    MD5 sum, which can then be externalised as a full 16-byte MD5sum
+     *    calculation by calling hts_md5_final().  This can then be turned
+     *    into ASCII via hts_md5_hex().
+     *
+     *    To dealloate any resources created by hts_md5_init() call the
+     *    hts_md5_destroy() function.
+     *
+     *  @return     hts_md5_context pointer on success, NULL otherwise.
+     */
+    hts_md5_context *hts_md5_init(void);
+
+    /*! @abstract Updates the context with the MD5 of the data. */
+    void hts_md5_update(hts_md5_context *ctx, const void *data, unsigned long size);
+
+    /*! @abstract Computes the final 128-bit MD5 hash from the given context */
+    void hts_md5_final(unsigned char *digest, hts_md5_context *ctx);
+
+    /*! @abstract Resets an md5_context to the initial state, as returned
+     *            by hts_md5_init().
+     */
+    void hts_md5_reset(hts_md5_context *ctx);
+
+    /*! @abstract Converts a 128-bit MD5 hash into a 33-byte nul-termninated
+     *            hex string.
+     */
+    void hts_md5_hex(char *hex, const unsigned char *digest);
+
+    /*! @abstract Deallocates any memory allocated by hts_md5_init. */
+    void hts_md5_destroy(hts_md5_context *ctx);
+
 
 static inline int hts_reg2bin(int64_t beg, int64_t end, int min_shift, int n_lvls)
 {
@@ -452,5 +629,9 @@ static inline void *ed_swap_8p(void *x)
     *(uint64_t*)x = ed_swap_8(*(uint64_t*)x);
     return x;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

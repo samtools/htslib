@@ -1,6 +1,6 @@
 /*  tbx.h -- tabix API functions.
 
-    Copyright (C) 2009, 2012-2014 Genome Research Ltd.
+    Copyright (C) 2009, 2012-2015 Genome Research Ltd.
     Copyright (C) 2010, 2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -28,6 +28,10 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "hts.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define TBX_MAX_SHIFT 31
 
 #define TBX_GENERIC 0
@@ -49,10 +53,6 @@ typedef struct {
 
 extern tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sam, tbx_conf_vcf;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
     #define tbx_itr_destroy(iter) hts_itr_destroy(iter)
     #define tbx_itr_queryi(tbx, tid, beg, end) hts_itr_query((tbx)->idx, (tid), (beg), (end), tbx_readrec)
     #define tbx_itr_querys(tbx, s) hts_itr_querys((tbx)->idx, (s), (hts_name2id_f)(tbx_name2id), (tbx), hts_itr_query, tbx_readrec)
@@ -66,7 +66,9 @@ extern "C" {
     int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end);
 
     int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf);
+    int tbx_index_build2(const char *fn, const char *fnidx, int min_shift, const tbx_conf_t *conf);
     tbx_t *tbx_index_load(const char *fn);
+    tbx_t *tbx_index_load2(const char *fn, const char *fnidx);
     const char **tbx_seqnames(tbx_t *tbx, int *n);  // free the array but not the values
     void tbx_destroy(tbx_t *tbx);
 

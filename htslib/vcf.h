@@ -37,7 +37,11 @@ DEALINGS IN THE SOFTWARE.  */
 #include <assert.h>
 #include "hts.h"
 #include "kstring.h"
+#include "hts_defs.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*****************
  * Header struct *
@@ -98,10 +102,11 @@ typedef struct {
     const bcf_idinfo_t *val;
 } bcf_idpair_t;
 
+// Note that bcf_hdr_t structs must always be created via bcf_hdr_init()
 typedef struct {
-    int32_t n[3];
+    int32_t n[3];           // n:the size of the dictionary block in use, (allocated size, m, is below to preserve ABI)
     bcf_idpair_t *id[3];
-    void *dict[3]; // ID dictionary, contig dict and sample dict
+    void *dict[3];          // ID dictionary, contig dict and sample dict
     char **samples;
     bcf_hrec_t **hrec;
     int nhrec, dirty;
@@ -109,6 +114,7 @@ typedef struct {
     int nsamples_ori;           // for bcf_hdr_set_samples()
     uint8_t *keep_samples;
     kstring_t mem;
+    int32_t m[3];          // m: allocated size of the dictionary block in use (see n above)
 } bcf_hdr_t;
 
 extern uint8_t bcf_type_shift[];
@@ -180,6 +186,7 @@ typedef struct {
 #define BCF_ERR_CTG_UNDEF 1
 #define BCF_ERR_TAG_UNDEF 2
 #define BCF_ERR_NCOLS     4
+#define BCF_ERR_LIMITS    8
 
 /*
     The bcf1_t structure corresponds to one VCF/BCF line. Reading from VCF file
@@ -211,10 +218,6 @@ typedef struct {
  * API *
  *******/
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
     /***********************************************************************
      *  BCF and VCF I/O
      *
@@ -234,6 +237,7 @@ extern "C" {
     #define bcf_write1(fp,h,v)  bcf_write((fp),(h),(v))
     #define vcf_write1(fp,h,v)  vcf_write((fp),(h),(v))
     #define bcf_destroy1(v)     bcf_destroy(v)
+    #define bcf_empty1(v)       bcf_empty(v)
     #define vcf_parse1(s,h,v)   vcf_parse((s),(h),(v))
     #define bcf_clear1(v)       bcf_clear(v)
     #define vcf_format1(h,v,s)  vcf_format((h),(v),(s))
@@ -287,7 +291,7 @@ extern "C" {
      *              ^LIST|FILE  .. exclude samples from list/file
      *              -           .. include all samples
      *              NULL        .. exclude all samples
-     *  @is_file: @samples is a file (1) or a comma-separated list (1)
+     *  @is_file: @samples is a file (1) or a comma-separated list (0)
      *
      *  The bottleneck of VCF reading is parsing of genotype fields. If the
      *  reader knows in advance that only subset of samples is needed (possibly
@@ -354,7 +358,7 @@ extern "C" {
     /**
      *  bcf_write() - write one VCF or BCF record. The type is determined at the open() call.
      */
-    int bcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
+    int bcf_write(htsFile *fp, bcf_hdr_t *h, bcf1_t *v);
 
     /**
      *  The following functions work only with VCFs and should rarely be called
@@ -377,13 +381,30 @@ extern "C" {
 
     /** Create a new header using the supplied template */
     bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr);
+
     /**
      *  Copy header lines from src to dst if not already present in dst. See also bcf_translate().
      *  Returns 0 on success or sets a bit on error:
      *      1 .. conflicting definitions of tag length
      *      // todo
      */
-    int bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src);
+    int bcf_hdr_combine(bcf_hdr_t *dst, const bcf_hdr_t *src) HTS_DEPRECATED("Please use bcf_hdr_merge instead");
+
+    /**
+     *  bcf_hdr_merge() - copy header lines from src to dst, see also bcf_translate()
+     *  @param dst: the destination header to be merged into, NULL on the first pass
+     *  @param src: the source header
+     *
+     *  Notes:
+     *      - use as:
+     *          bcf_hdr_t *dst = NULL;
+     *          for (i=0; i<nsrc; i++) dst = bcf_hdr_merge(dst,src[i]);
+     *
+     *      - bcf_hdr_merge() replaces bcf_hdr_combine() which had a problem when
+     *      combining multiple BCF headers. The current bcf_hdr_combine()
+     *      does not have this problem, but became slow when used for many files.
+     */
+    bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src);
 
     /**
      *  bcf_hdr_add_sample() - add a new sample.
@@ -411,7 +432,7 @@ extern "C" {
     /**
      *  bcf_hdr_remove() - remove VCF header tag
      *  @param type:      one of BCF_HL_*
-     *  @param key:       tag name
+     *  @param key:       tag name or NULL to remove all tags of the given type
      */
     void bcf_hdr_remove(bcf_hdr_t *h, int type, const char *key);
 
@@ -484,20 +505,20 @@ extern "C" {
 
     /**
      *  bcf_update_filter() - sets the FILTER column
-     *  @flt_ids:  The filter IDs to set, numeric IDs returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @flt_ids:  The filter IDs to set, numeric IDs returned by bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS")
      *  @n:        Number of filters. If n==0, all filters are removed
      */
     int bcf_update_filter(const bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n);
     /**
      *  bcf_add_filter() - adds to the FILTER column
-     *  @flt_id:   filter ID to add, numeric ID returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @flt_id:   filter ID to add, numeric ID returned by bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS")
      *
      *  If flt_id is PASS, all existing filters are removed first. If other than PASS, existing PASS is removed.
      */
     int bcf_add_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id);
     /**
      *  bcf_remove_filter() - removes from the FILTER column
-     *  @flt_id:   filter ID to remove, numeric ID returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @flt_id:   filter ID to remove, numeric ID returned by bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS")
      *  @pass:     when set to 1 and no filters are present, set to PASS
      */
     int bcf_remove_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id, int pass);
@@ -510,15 +531,16 @@ extern "C" {
      *  @alleles:           Array of alleles
      *  @nals:              Number of alleles
      *  @alleles_string:    Comma-separated alleles, starting with the REF allele
-     *
-     *  Not that in order for indexing to work correctly in presence of INFO/END tag,
-     *  the length of reference allele (line->rlen) must be set explicitly by the caller,
-     *  or otherwise, if rlen is zero, strlen(line->d.allele[0]) is used to set the length
-     *  on bcf_write().
      */
     int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals);
     int bcf_update_alleles_str(const bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string);
+
+    /**
+      *  bcf_update_id() - sets new ID string
+      *  bcf_add_id() - adds to the ID string checking for duplicates
+      */
     int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id);
+    int bcf_add_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id);
 
     /*
      *  bcf_update_info_*() - functions for updating INFO fields
@@ -565,8 +587,8 @@ extern "C" {
     // Macros for setting genotypes correctly, for use with bcf_update_genotypes only; idx corresponds
     // to VCF's GT (1-based index to ALT or 0 for the reference allele) and val is the opposite, obtained
     // from bcf_get_genotypes() below.
-    #define bcf_gt_phased(idx)      ((idx+1)<<1|1)
-    #define bcf_gt_unphased(idx)    ((idx+1)<<1)
+    #define bcf_gt_phased(idx)      (((idx)+1)<<1|1)
+    #define bcf_gt_unphased(idx)    (((idx)+1)<<1)
     #define bcf_gt_missing          0 
     #define bcf_gt_is_missing(val)  ((val)>>1 ? 0 : 1)
     #define bcf_gt_is_phased(idx)   ((idx)&1)
@@ -685,7 +707,7 @@ extern "C" {
     /**
      *  bcf_hdr_id2*() - Macros for accessing bcf_idinfo_t
      *  @type:      one of BCF_HL_FLT, BCF_HL_INFO, BCF_HL_FMT
-     *  @int_id:    return value of bcf_id2int, must be >=0
+     *  @int_id:    return value of bcf_hdr_id2int, must be >=0
      *
      *  The returned values are:
      *     bcf_hdr_id2length   ..  whether the number of values is fixed or variable, one of BCF_VL_*
@@ -726,11 +748,9 @@ extern "C" {
     #define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
     #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
 
+    hts_idx_t *bcf_index_load2(const char *fn, const char *fnidx);
     int bcf_index_build(const char *fn, int min_shift);
-
-#ifdef __cplusplus
-}
-#endif
+    int bcf_index_build2(const char *fn, const char *fnidx, int min_shift);
 
 /*******************
  * Typed value I/O *
@@ -879,5 +899,9 @@ static inline int32_t bcf_dec_size(const uint8_t *p, uint8_t **q, int *type)
         return *p>>4;
     } else return bcf_dec_typed_int1(p + 1, q);
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

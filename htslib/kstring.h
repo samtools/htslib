@@ -36,7 +36,7 @@
 #define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
 #endif
 
-#if __GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ > 4)
+#if defined __GNUC__ && (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ > 4))
 #define KS_ATTR_PRINTF(fmt, arg) __attribute__((__format__ (__printf__, fmt, arg)))
 #else
 #define KS_ATTR_PRINTF(fmt, arg)
@@ -81,6 +81,13 @@ extern "C" {
 	 * actually recommended to set both to NULL in the subsequent calls
 	 * if sep is not changed. */
 	char *kstrtok(const char *str, const char *sep, ks_tokaux_t *aux);
+
+	/* kgetline() uses the supplied fgets()-like function to read a "\n"-
+	 * or "\r\n"-terminated line from fp.  The line read is appended to the
+	 * kstring without its terminator and 0 is returned; EOF is returned at
+	 * EOF or on error (determined by querying fp, as per fgets()). */
+	typedef char *kgets_func(char *, int, void *);
+	int kgetline(kstring_t *s, kgets_func *fgets, void *fp);
 
 #ifdef __cplusplus
 }

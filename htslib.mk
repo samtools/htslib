@@ -30,9 +30,7 @@
 #	HTSDIR = <path to htslib top-level directory>
 #	include $(HTSDIR)/htslib.mk
 #
-#	foo.o: foo.c $(htslib_hts_h) $(HTSDIR)/htslib/kstring.h
-#
-# Variables are not provided for k*.h, as those never include other headers.
+#	foo.o: foo.c $(htslib_hts_h) $(htslib_kstring_h)
 
 HTSPREFIX = $(HTSDIR)/
 include $(HTSDIR)/htslib_vars.mk
@@ -50,11 +48,15 @@ include $(HTSDIR)/htslib_vars.mk
 
 HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/bgzf.h \
+	$(HTSDIR)/htslib/cram.h \
 	$(HTSDIR)/htslib/faidx.h \
 	$(HTSDIR)/htslib/hfile.h \
 	$(HTSDIR)/htslib/hts.h \
 	$(HTSDIR)/htslib/hts_defs.h \
+	$(HTSDIR)/htslib/kbitset.h \
+	$(HTSDIR)/htslib/kfunc.h \
 	$(HTSDIR)/htslib/khash.h \
+	$(HTSDIR)/htslib/khash_str2int.h \
 	$(HTSDIR)/htslib/klist.h \
 	$(HTSDIR)/htslib/knetfile.h \
 	$(HTSDIR)/htslib/kseq.h \
@@ -71,14 +73,20 @@ HTSLIB_PUBLIC_HEADERS = \
 HTSLIB_ALL = \
 	$(HTSLIB_PUBLIC_HEADERS) \
 	$(HTSDIR)/bgzf.c \
+	$(HTSDIR)/config.h \
 	$(HTSDIR)/faidx.c \
 	$(HTSDIR)/hfile_internal.h \
 	$(HTSDIR)/hfile.c \
 	$(HTSDIR)/hfile_irods.c \
+	$(HTSDIR)/hfile_libcurl.c \
 	$(HTSDIR)/hfile_net.c \
 	$(HTSDIR)/hts.c \
+	$(HTSDIR)/hts_internal.h \
+	$(HTSDIR)/kfunc.c \
 	$(HTSDIR)/knetfile.c \
 	$(HTSDIR)/kstring.c \
+	$(HTSDIR)/md5.c \
+	$(HTSDIR)/plugin.c \
 	$(HTSDIR)/regidx.c \
 	$(HTSDIR)/sam.c \
 	$(HTSDIR)/synced_bcf_reader.c \
@@ -93,6 +101,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/cram_decode.h \
 	$(HTSDIR)/cram/cram_encode.c \
 	$(HTSDIR)/cram/cram_encode.h \
+	$(HTSDIR)/cram/cram_external.c \
 	$(HTSDIR)/cram/cram_index.c \
 	$(HTSDIR)/cram/cram_index.h \
 	$(HTSDIR)/cram/cram_io.c \
@@ -105,14 +114,15 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/files.c \
 	$(HTSDIR)/cram/mFILE.c \
 	$(HTSDIR)/cram/mFILE.h \
-	$(HTSDIR)/cram/md5.c \
-	$(HTSDIR)/cram/md5.h \
 	$(HTSDIR)/cram/misc.h \
 	$(HTSDIR)/cram/open_trace_file.c \
 	$(HTSDIR)/cram/open_trace_file.h \
 	$(HTSDIR)/cram/os.h \
 	$(HTSDIR)/cram/pooled_alloc.c \
 	$(HTSDIR)/cram/pooled_alloc.h \
+	$(HTSDIR)/cram/rANS_byte.h \
+	$(HTSDIR)/cram/rANS_static.c \
+	$(HTSDIR)/cram/rANS_static.h \
 	$(HTSDIR)/cram/sam_header.c \
 	$(HTSDIR)/cram/sam_header.h \
 	$(HTSDIR)/cram/string_alloc.c \
@@ -123,6 +133,9 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/vlen.h \
 	$(HTSDIR)/cram/zfio.c \
 	$(HTSDIR)/cram/zfio.h
+
+$(HTSDIR)/config.h:
+	+cd $(HTSDIR) && $(MAKE) config.h
 
 $(HTSDIR)/libhts.a: $(HTSLIB_ALL)
 	+cd $(HTSDIR) && $(MAKE) lib-static
@@ -144,7 +157,7 @@ $(HTSDIR)/tabix: $(HTSDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS)
 #
 #	clean: clean-htslib
 
-clean-htslib install-htslib:
+all-htslib clean-htslib install-htslib plugins-htslib:
 	+cd $(HTSDIR) && $(MAKE) $(@:-htslib=)
 
-.PHONY: clean-htslib install-htslib
+.PHONY: all-htslib clean-htslib install-htslib plugins-htslib

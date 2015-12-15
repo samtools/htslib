@@ -29,7 +29,7 @@ use strict;
 use Getopt::Long;
 
 my %opts;
-GetOptions(\%opts, 'noqual', 'noaux', 'notemplate', 'unknownrg', 'nomd', 'template-1', 'noflag');
+GetOptions(\%opts, 'noqual', 'noaux', 'notemplate', 'unknownrg', 'nomd', 'template-1', 'noflag', 'Baux');
 
 my ($fn1, $fn2) = @ARGV;
 open(my $fd1, "<", $fn1) || die $!;
@@ -86,6 +86,28 @@ while ($ln1 && $ln2) {
     # Fix BWA bug: unmapped data should have no alignments
     if ($ln1[1] & 4) { $ln1[4] = 0; $ln1[5] = "*"; }
     if ($ln2[1] & 4) { $ln2[4] = 0; $ln2[5] = "*"; }
+
+    # Canonicalise floating point numbers
+    map {s/^(..):f:(.*)/{"$1:f:".($2+0)}/e} @ln1[11..$#ln1];
+    map {s/^(..):f:(.*)/{"$1:f:".($2+0)}/e} @ln2[11..$#ln2];
+
+
+    if (exists $opts{Baux}) {
+	# Turn ??:H:<hex> into ??:B:c,<vals> so we can compare
+	# Cramtools.jar vs htslib encodings.  Probably doable with (un)pack
+	map {s/^(..):H:(.*)/{"$1:B:C,".join(",",map {$_=hex $_} $2=~m:..:g)}/e} @ln1[11..$#ln1];
+	map {s/^(..):H:(.*)/{"$1:B:C,".join(",",map {$_=hex $_} $2=~m:..:g)}/e} @ln2[11..$#ln2];
+
+	# Canonicalise ??:B:? data series to be unsigned
+	map {s/^(..):B:c,(.*)/{"$1:B:C,".join(",",map {$_=($_+256)&255} split(",",$2))}/e} @ln1[11..$#ln1];
+	map {s/^(..):B:c,(.*)/{"$1:B:C,".join(",",map {$_=($_+256)&255} split(",",$2))}/e} @ln2[11..$#ln2];
+
+	map {s/^(..):B:s,(.*)/{"$1:B:S,".join(",",map {$_=($_+65536)&65535} split(",",$2))}/e} @ln1[11..$#ln1];
+	map {s/^(..):B:s,(.*)/{"$1:B:S,".join(",",map {$_=($_+65536)&65535} split(",",$2))}/e} @ln2[11..$#ln2];
+
+	map {s/^(..):B:i,(.*)/{"$1:B:I,".join(",",map {$_=($_+4294967296)&4294967295} split(",",$2))}/e} @ln1[11..$#ln1];
+	map {s/^(..):B:i,(.*)/{"$1:B:I,".join(",",map {$_=($_+4294967296)&4294967295} split(",",$2))}/e} @ln2[11..$#ln2];
+    }
 
     # Rationalise order of auxiliary fields
     if (exists $opts{noaux}) {

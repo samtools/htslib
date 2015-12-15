@@ -23,6 +23,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#include <config.h>
+
 #include <zlib.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -37,6 +39,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "cram/cram.h"
 #include "htslib/hfile.h"
 #include "version.h"
+#include "hts_internal.h"
 
 #include "htslib/kseq.h"
 #define KS_BGZF 1
@@ -360,14 +363,45 @@ char *hts_format_description(const htsFormat *format)
     return ks_release(&str);
 }
 
-htsFile *hts_open(const char *fn, const char *mode)
+htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
 {
+    char smode[102], *cp, *cp2, *mode_c;
     htsFile *fp = NULL;
-    hFILE *hfile = hopen(fn, mode);
+    hFILE *hfile;
+    char fmt_code = '\0';
+
+    strncpy(smode, mode, 100);
+    smode[100]=0;
+    if ((cp = strchr(smode, ',')))
+        *cp = '\0';
+
+    // Migrate format code (b or c) to the end of the smode buffer.
+    for (cp2 = cp = smode; *cp; cp++) {
+        if (*cp == 'b')
+            fmt_code = 'b';
+        else if (*cp == 'c')
+            fmt_code = 'c';
+        else
+            *cp2++ = *cp;
+    }
+    mode_c = cp2;
+    *cp2++ = fmt_code;
+    *cp2++ = 0;
+    *cp2++ = 0;
+
+    // Set or reset the format code if opts->format is used
+    if (fmt && fmt->format != unknown_format)
+        *mode_c = "\0g\0\0b\0c\0\0b\0g\0\0"[fmt->format];
+
+    hfile = hopen(fn, smode);
     if (hfile == NULL) goto error;
 
-    fp = hts_hopen(hfile, fn, mode);
+    fp = hts_hopen(hfile, fn, smode);
     if (fp == NULL) goto error;
+
+    if (fmt && fmt->specific)
+        if (hts_opt_apply(fp, fmt->specific) != 0)
+            goto error;
 
     return fp;
 
@@ -381,28 +415,301 @@ error:
     return NULL;
 }
 
+htsFile *hts_open(const char *fn, const char *mode) {
+    return hts_open_format(fn, mode, NULL);
+}
+
+/*
+ * Parses arg and appends it to the option list.
+ *
+ * Returns 0 on success;
+ *        -1 on failure.
+ */
+int hts_opt_add(hts_opt **opts, const char *c_arg) {
+    hts_opt *o, *t;
+    char *val;
+
+    if (!c_arg)
+        return -1;
+
+    if (!(o =  malloc(sizeof(*o))))
+        return -1;
+
+    if (!(o->arg = strdup(c_arg))) {
+        free(o);
+        return -1;
+    }
+
+    if (!(val = strchr(o->arg, '=')))
+        val = "1"; // assume boolean
+    else
+        *val++ = '\0';
+
+    if (strcmp(o->arg, "decode_md") == 0 ||
+        strcmp(o->arg, "DECODE_MD") == 0)
+        o->opt = CRAM_OPT_DECODE_MD, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "verbosity") == 0 ||
+             strcmp(o->arg, "VERBOSITY") == 0)
+        o->opt = CRAM_OPT_VERBOSITY, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "seqs_per_slice") == 0 ||
+             strcmp(o->arg, "SEQS_PER_SLICE") == 0)
+        o->opt = CRAM_OPT_SEQS_PER_SLICE, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "slices_per_container") == 0 ||
+             strcmp(o->arg, "SLICES_PER_CONTAINER") == 0)
+        o->opt = CRAM_OPT_SLICES_PER_CONTAINER, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "embed_ref") == 0 ||
+             strcmp(o->arg, "EMBED_REF") == 0)
+        o->opt = CRAM_OPT_EMBED_REF, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "no_ref") == 0 ||
+             strcmp(o->arg, "NO_REF") == 0)
+        o->opt = CRAM_OPT_NO_REF, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "ignore_md5") == 0 ||
+             strcmp(o->arg, "IGNORE_MD5") == 0)
+        o->opt = CRAM_OPT_IGNORE_MD5, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "use_bzip2") == 0 ||
+             strcmp(o->arg, "USE_BZIP2") == 0)
+        o->opt = CRAM_OPT_USE_BZIP2, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "use_rans") == 0 ||
+             strcmp(o->arg, "USE_RANS") == 0)
+        o->opt = CRAM_OPT_USE_RANS, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "use_lzma") == 0 ||
+             strcmp(o->arg, "USE_LZMA") == 0)
+        o->opt = CRAM_OPT_USE_LZMA, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "reference") == 0 ||
+             strcmp(o->arg, "REFERENCE") == 0)
+        o->opt = CRAM_OPT_REFERENCE, o->val.s = val;
+
+    else if (strcmp(o->arg, "version") == 0 ||
+             strcmp(o->arg, "VERSION") == 0)
+        o->opt = CRAM_OPT_VERSION, o->val.s =val;
+
+    else if (strcmp(o->arg, "multi_seq_per_slice") == 0 ||
+             strcmp(o->arg, "MULTI_SEQ_PER_SLICE") == 0)
+        o->opt = CRAM_OPT_MULTI_SEQ_PER_SLICE, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "nthreads") == 0 ||
+             strcmp(o->arg, "NTHREADS") == 0)
+        o->opt = HTS_OPT_NTHREADS, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "required_fields") == 0 ||
+             strcmp(o->arg, "REQUIRED_FIELDS") == 0)
+        o->opt = CRAM_OPT_REQUIRED_FIELDS, o->val.i = strtol(val, NULL, 0);
+
+    else {
+        fprintf(stderr, "Unknown option '%s'\n", o->arg);
+        free(o->arg);
+        free(o);
+        return -1;
+    }
+
+    o->next = NULL;
+
+    // Append; assumes small list.
+    if (*opts) {
+        t = *opts;
+        while (t->next)
+            t = t->next;
+        t->next = o;
+    } else {
+        *opts = o;
+    }
+
+    return 0;
+}
+
+/*
+ * Applies an hts_opt option list to a given htsFile.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int hts_opt_apply(htsFile *fp, hts_opt *opts) {
+    hts_opt *last = NULL;
+
+    for (; opts;  opts = (last=opts)->next)
+        if (hts_set_opt(fp,  opts->opt,  opts->val) != 0)
+            return -1;
+
+    return 0;
+}
+
+/*
+ * Frees an hts_opt list.
+ */
+void hts_opt_free(hts_opt *opts) {
+    hts_opt *last = NULL;
+    while (opts) {
+        opts = (last=opts)->next;
+        free(last->arg);
+        free(last);
+    }
+}
+
+
+/*
+ * Tokenise options as (key(=value)?,)*(key(=value)?)?
+ * NB: No provision for ',' appearing in the value!
+ * Add backslashing rules?
+ *
+ * This could be used as part of a general command line option parser or
+ * as a string concatenated onto the file open mode.
+ *
+ * Returns 0 on success
+ *        -1 on failure.
+ */
+int hts_parse_opt_list(htsFormat *fmt, const char *str) {
+    while (str && *str) {
+        const char *str_start;
+        int len;
+        char arg[8001];
+
+        while (*str && *str == ',')
+            str++;
+
+        for (str_start = str; *str && *str != ','; str++);
+        len = str - str_start;
+
+        // Produce a nul terminated copy of the option
+        strncpy(arg, str_start, len < 8000 ? len : 8000);
+        arg[len < 8000 ? len : 8000] = '\0';
+
+        if (hts_opt_add((hts_opt **)&fmt->specific, arg) != 0)
+            return -1;
+
+        if (*str)
+            str++;
+    }
+
+    return 0;
+}
+
+/*
+ * Accepts a string file format (sam, bam, cram, vcf, bam) optionally
+ * followed by a comma separated list of key=value options and splits
+ * these up into the fields of htsFormat struct.
+ *
+ * format is assumed to be already initialised, either to blank
+ * "unknown" values or via previous hts_opt_add calls.
+ *
+ * Returns 0 on success
+ *        -1 on failure.
+ */
+int hts_parse_format(htsFormat *format, const char *str) {
+    const char *cp;
+
+    if (!(cp = strchr(str, ',')))
+        cp = str+strlen(str);
+
+    format->version.minor = 0; // unknown
+    format->version.major = 0; // unknown
+
+    if (strncmp(str, "sam", cp-str) == 0) {
+        format->category          = sequence_data;
+        format->format            = sam;
+        format->compression       = no_compression;;
+        format->compression_level = 0;
+    } else if (strncmp(str, "bam", cp-str) == 0) {
+        format->category          = sequence_data;
+        format->format            = bam;
+        format->compression       = bgzf;
+        format->compression_level = -1;
+    } else if (strncmp(str, "cram", cp-str) == 0) {
+        format->category          = sequence_data;
+        format->format            = cram;
+        format->compression       = custom;
+        format->compression_level = -1;
+    } else if (strncmp(str, "vcf", cp-str) == 0) {
+        format->category          = variant_data;
+        format->format            = vcf;
+        format->compression       = no_compression;;
+        format->compression_level = 0;
+    } else if (strncmp(str, "bcf", cp-str) == 0) {
+        format->category          = variant_data;
+        format->format            = bcf;
+        format->compression       = bgzf;
+        format->compression_level = -1;
+    } else {
+        return -1;
+    }
+
+    return hts_parse_opt_list(format, cp);
+}
+
+
+/*
+ * Tokenise options as (key(=value)?,)*(key(=value)?)?
+ * NB: No provision for ',' appearing in the value!
+ * Add backslashing rules?
+ *
+ * This could be used as part of a general command line option parser or
+ * as a string concatenated onto the file open mode.
+ *
+ * Returns 0 on success
+ *        -1 on failure.
+ */
+static int hts_process_opts(htsFile *fp, const char *opts) {
+    htsFormat fmt;
+
+    fmt.specific = NULL;
+    if (hts_parse_opt_list(&fmt, opts) != 0)
+        return -1;
+
+    if (hts_opt_apply(fp, fmt.specific) != 0) {
+        hts_opt_free(fmt.specific);
+        return -1;
+    }
+
+    hts_opt_free(fmt.specific);
+
+    return 0;
+}
+
+
 htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
 {
     htsFile *fp = (htsFile*)calloc(1, sizeof(htsFile));
+    char simple_mode[101], *cp, *opts;
+    simple_mode[100] = '\0';
+
     if (fp == NULL) goto error;
 
     fp->fn = strdup(fn);
     fp->is_be = ed_is_big();
 
-    if (strchr(mode, 'r')) {
+    // Split mode into simple_mode,opts strings
+    if ((cp = strchr(mode, ','))) {
+        strncpy(simple_mode, mode, cp-mode <= 100 ? cp-mode : 100);
+        simple_mode[cp-mode] = '\0';
+        opts = cp+1;
+    } else {
+        strncpy(simple_mode, mode, 100);
+        opts = NULL;
+    }
+
+    if (strchr(simple_mode, 'r')) {
         if (hts_detect_format(hfile, &fp->format) < 0) goto error;
     }
-    else if (strchr(mode, 'w') || strchr(mode, 'a')) {
+    else if (strchr(simple_mode, 'w') || strchr(simple_mode, 'a')) {
         htsFormat *fmt = &fp->format;
         fp->is_write = 1;
 
-        if (strchr(mode, 'b')) fmt->format = binary_format;
-        else if (strchr(mode, 'c')) fmt->format = cram;
+        if (strchr(simple_mode, 'b')) fmt->format = binary_format;
+        else if (strchr(simple_mode, 'c')) fmt->format = cram;
         else fmt->format = text_format;
 
-        if (strchr(mode, 'z')) fmt->compression = bgzf;
-        else if (strchr(mode, 'g')) fmt->compression = gzip;
-        else if (strchr(mode, 'u')) fmt->compression = no_compression;
+        if (strchr(simple_mode, 'z')) fmt->compression = bgzf;
+        else if (strchr(simple_mode, 'g')) fmt->compression = gzip;
+        else if (strchr(simple_mode, 'u')) fmt->compression = no_compression;
         else {
             // No compression mode specified, set to the default for the format
             switch (fmt->format) {
@@ -426,13 +733,13 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
     case binary_format:
     case bam:
     case bcf:
-        fp->fp.bgzf = bgzf_hopen(hfile, mode);
+        fp->fp.bgzf = bgzf_hopen(hfile, simple_mode);
         if (fp->fp.bgzf == NULL) goto error;
         fp->is_bin = 1;
         break;
 
     case cram:
-        fp->fp.cram = cram_dopen(hfile, fn, mode);
+        fp->fp.cram = cram_dopen(hfile, fn, simple_mode);
         if (fp->fp.cram == NULL) goto error;
         if (!fp->is_write)
             cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, 1);
@@ -444,7 +751,7 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
     case vcf:
         if (!fp->is_write) {
         #if KS_BGZF
-            BGZF *gzfp = bgzf_hopen(hfile, mode);
+            BGZF *gzfp = bgzf_hopen(hfile, simple_mode);
         #else
             // TODO Implement gzip hFILE adaptor
             hclose(hfile); // This won't work, especially for stdin
@@ -454,7 +761,7 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
             else goto error;
         }
         else if (fp->format.compression != no_compression) {
-            fp->fp.bgzf = bgzf_hopen(hfile, mode);
+            fp->fp.bgzf = bgzf_hopen(hfile, simple_mode);
             if (fp->fp.bgzf == NULL) goto error;
         }
         else
@@ -464,6 +771,9 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
     default:
         goto error;
     }
+
+    if (opts)
+        hts_process_opts(fp, opts);
 
     return fp;
 
@@ -493,12 +803,10 @@ int hts_close(htsFile *fp)
     case cram:
         if (!fp->is_write) {
             switch (cram_eof(fp->fp.cram)) {
-            case 0:
-                fprintf(stderr, "[E::%s] Failed to decode sequence.\n", __func__);
-                return -1;
             case 2:
                 fprintf(stderr, "[W::%s] EOF marker is absent. The input is probably truncated.\n", __func__);
                 break;
+            case 0:  /* not at EOF, but may not have wanted all seqs */
             default: /* case 1, expected EOF */
                 break;
             }
@@ -544,9 +852,36 @@ const htsFormat *hts_get_format(htsFile *fp)
     return fp? &fp->format : NULL;
 }
 
-int hts_set_opt(htsFile *fp, enum cram_option opt, ...) {
+const char *hts_format_file_extension(const htsFormat *format) {
+    if (!format)
+        return "?";
+
+    switch (format->format) {
+    case sam:  return "sam";
+    case bam:  return "bam";
+    case bai:  return "bai";
+    case cram: return "cram";
+    case crai: return "crai";
+    case vcf:  return "vcf";
+    case bcf:  return "bcf";
+    case csi:  return "csi";
+    case gzi:  return "gzi";
+    case tbi:  return "tbi";
+    case bed:  return "bed";
+    default:   return "?";
+    }
+}
+
+int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
     int r;
     va_list args;
+
+    if (opt == HTS_OPT_NTHREADS) {
+        va_start(args, opt);
+        int nthreads = va_arg(args, int);
+        va_end(args);
+        return hts_set_threads(fp, nthreads);
+    }
 
     if (fp->format.format != cram)
         return 0;
@@ -578,7 +913,8 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
     else fp->fn_aux = NULL;
 
     if (fp->format.format == cram)
-        cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, fp->fn_aux);
+        if (cram_set_option(fp->fp.cram, CRAM_OPT_REFERENCE, fp->fn_aux))
+            return -1;
 
     return 0;
 }
@@ -1019,8 +1355,14 @@ void hts_idx_destroy(hts_idx_t *idx)
     khint_t k;
     int i;
     if (idx == 0) return;
+
     // For HTS_FMT_CRAI, idx actually points to a different type -- see sam.c
-    if (idx->fmt == HTS_FMT_CRAI) { free(idx); return; }
+    if (idx->fmt == HTS_FMT_CRAI) {
+        hts_cram_idx_t *cidx = (hts_cram_idx_t *) idx;
+        cram_index_free(cidx->cram);
+        free(cidx);
+        return;
+    }
 
     for (i = 0; i < idx->m; ++i) {
         bidx_t *bidx = idx->bidx[i];
@@ -1033,12 +1375,6 @@ void hts_idx_destroy(hts_idx_t *idx)
     }
     free(idx->bidx); free(idx->lidx); free(idx->meta);
     free(idx);
-}
-
-static inline long idx_read(int is_bgzf, void *fp, void *buf, long l)
-{
-    if (is_bgzf) return bgzf_read((BGZF*)fp, buf, l);
-    else return (long)fread(buf, 1, l, (FILE*)fp);
 }
 
 static inline long idx_write(int is_bgzf, void *fp, const void *buf, long l)
@@ -1120,17 +1456,38 @@ write_lidx:
     } else idx_write(is_bgzf, fp, &idx->n_no_coor, 8);
 }
 
-void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
+int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
 {
-    char *fnidx;
-    fnidx = (char*)calloc(1, strlen(fn) + 5);
+    int ret, save;
+    char *fnidx = (char*)calloc(1, strlen(fn) + 5);
+    if (fnidx == NULL) return -1;
+
     strcpy(fnidx, fn);
+    switch (fmt) {
+    case HTS_FMT_BAI: strcat(fnidx, ".bai"); break;
+    case HTS_FMT_CSI: strcat(fnidx, ".csi"); break;
+    case HTS_FMT_TBI: strcat(fnidx, ".tbi"); break;
+    default: abort();
+    }
+
+    ret = hts_idx_save_as(idx, fn, fnidx, fmt);
+    save = errno;
+    free(fnidx);
+    errno = save;
+    return ret;
+}
+
+int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int fmt)
+{
+    if (fnidx == NULL) return hts_idx_save(idx, fn, fmt);
+
     if (fmt == HTS_FMT_CSI) {
         BGZF *fp;
         uint32_t x[3];
         int is_be, i;
         is_be = ed_is_big();
-        fp = bgzf_open(strcat(fnidx, ".csi"), "w");
+        fp = bgzf_open(fnidx, "w");
+        if (fp == NULL) return -1;
         bgzf_write(fp, "CSI\1", 4);
         x[0] = idx->min_shift; x[1] = idx->n_lvls; x[2] = idx->l_meta;
         if (is_be) {
@@ -1141,25 +1498,25 @@ void hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
         hts_idx_save_core(idx, fp, HTS_FMT_CSI);
         bgzf_close(fp);
     } else if (fmt == HTS_FMT_TBI) {
-        BGZF *fp;
-        fp = bgzf_open(strcat(fnidx, ".tbi"), "w");
+        BGZF *fp = bgzf_open(fnidx, "w");
+        if (fp == NULL) return -1;
         bgzf_write(fp, "TBI\1", 4);
         hts_idx_save_core(idx, fp, HTS_FMT_TBI);
         bgzf_close(fp);
     } else if (fmt == HTS_FMT_BAI) {
-        FILE *fp;
-        fp = fopen(strcat(fnidx, ".bai"), "w");
+        FILE *fp = fopen(fnidx, "w");
+        if (fp == NULL) return -1;
         fwrite("BAI\1", 1, 4, fp);
         hts_idx_save_core(idx, fp, HTS_FMT_BAI);
         fclose(fp);
     } else abort();
-    free(fnidx);
+
+    return 0;
 }
 
-static int hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
+static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
 {
     int32_t i, n, is_be;
-    int is_bgzf = (fmt != HTS_FMT_BAI);
     is_be = ed_is_big();
     if (idx == NULL) return -4;
     for (i = 0; i < idx->n; ++i) {
@@ -1169,122 +1526,101 @@ static int hts_idx_load_core(hts_idx_t *idx, void *fp, int fmt)
         int j, absent;
         bins_t *p;
         h = idx->bidx[i] = kh_init(bin);
-        if (idx_read(is_bgzf, fp, &n, 4) != 4) return -1;
+        if (bgzf_read(fp, &n, 4) != 4) return -1;
         if (is_be) ed_swap_4p(&n);
         for (j = 0; j < n; ++j) {
             khint_t k;
-            if (idx_read(is_bgzf, fp, &key, 4) != 4) return -1;
+            if (bgzf_read(fp, &key, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&key);
             k = kh_put(bin, h, key, &absent);
             if (absent <= 0) return -3; // Duplicate bin number
             p = &kh_val(h, k);
             if (fmt == HTS_FMT_CSI) {
-                if (idx_read(is_bgzf, fp, &p->loff, 8) != 8) return -1;
+                if (bgzf_read(fp, &p->loff, 8) != 8) return -1;
                 if (is_be) ed_swap_8p(&p->loff);
             } else p->loff = 0;
-            if (idx_read(is_bgzf, fp, &p->n, 4) != 4) return -1;
+            if (bgzf_read(fp, &p->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&p->n);
             p->m = p->n;
             p->list = (hts_pair64_t*)malloc(p->m * sizeof(hts_pair64_t));
             if (p->list == NULL) return -2;
-            if (idx_read(is_bgzf, fp, p->list, p->n<<4) != p->n<<4) return -1;
+            if (bgzf_read(fp, p->list, p->n<<4) != p->n<<4) return -1;
             if (is_be) swap_bins(p);
         }
         if (fmt != HTS_FMT_CSI) { // load linear index
             int j;
-            if (idx_read(is_bgzf, fp, &l->n, 4) != 4) return -1;
+            if (bgzf_read(fp, &l->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&l->n);
             l->m = l->n;
             l->offset = (uint64_t*)malloc(l->n * sizeof(uint64_t));
             if (l->offset == NULL) return -2;
-            if (idx_read(is_bgzf, fp, l->offset, l->n << 3) != l->n << 3) return -1;
+            if (bgzf_read(fp, l->offset, l->n << 3) != l->n << 3) return -1;
             if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
             for (j = 1; j < l->n; ++j) // fill missing values; may happen given older samtools and tabix
                 if (l->offset[j] == 0) l->offset[j] = l->offset[j-1];
             update_loff(idx, i, 1);
         }
     }
-    if (idx_read(is_bgzf, fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
+    if (bgzf_read(fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
     if (is_be) ed_swap_8p(&idx->n_no_coor);
     return 0;
 }
 
-hts_idx_t *hts_idx_load_local(const char *fn, int fmt)
+static hts_idx_t *hts_idx_load_local(const char *fn)
 {
     uint8_t magic[4];
     int i, is_be;
     hts_idx_t *idx = NULL;
+    uint8_t *meta = NULL;
+    BGZF *fp = bgzf_open(fn, "r");
+    if (fp == NULL) return NULL;
     is_be = ed_is_big();
-    if (fmt == HTS_FMT_CSI) {
-        BGZF *fp;
+    if (bgzf_read(fp, magic, 4) != 4) goto fail;
+
+    if (memcmp(magic, "CSI\1", 4) == 0) {
         uint32_t x[3], n;
-        uint8_t *meta = 0;
-        if ((fp = bgzf_open(fn, "r")) == 0) return NULL;
-        if (bgzf_read(fp, magic, 4) != 4) goto csi_fail;
-        if (memcmp(magic, "CSI\1", 4) != 0) goto csi_fail;
-        if (bgzf_read(fp, x, 12) != 12) goto csi_fail;
+        if (bgzf_read(fp, x, 12) != 12) goto fail;
         if (is_be) for (i = 0; i < 3; ++i) ed_swap_4p(&x[i]);
         if (x[2]) {
-            if ((meta = (uint8_t*)malloc(x[2])) == NULL) goto csi_fail;
-            if (bgzf_read(fp, meta, x[2]) != x[2]) goto csi_fail;
+            if ((meta = (uint8_t*)malloc(x[2])) == NULL) goto fail;
+            if (bgzf_read(fp, meta, x[2]) != x[2]) goto fail;
         }
-        if (bgzf_read(fp, &n, 4) != 4) goto csi_fail;
+        if (bgzf_read(fp, &n, 4) != 4) goto fail;
         if (is_be) ed_swap_4p(&n);
-        if ((idx = hts_idx_init(n, fmt, 0, x[0], x[1])) == NULL) goto csi_fail;
+        if ((idx = hts_idx_init(n, HTS_FMT_CSI, 0, x[0], x[1])) == NULL) goto fail;
         idx->l_meta = x[2];
         idx->meta = meta;
         meta = NULL;
-        if (hts_idx_load_core(idx, fp, HTS_FMT_CSI) < 0) goto csi_fail;
-        bgzf_close(fp);
-        return idx;
-
-    csi_fail:
-        bgzf_close(fp);
-        hts_idx_destroy(idx);
-        free(meta);
-        return NULL;
-
-    } else if (fmt == HTS_FMT_TBI) {
-        BGZF *fp;
+        if (hts_idx_load_core(idx, fp, HTS_FMT_CSI) < 0) goto fail;
+    }
+    else if (memcmp(magic, "TBI\1", 4) == 0) {
         uint32_t x[8];
-        if ((fp = bgzf_open(fn, "r")) == 0) return NULL;
-        if (bgzf_read(fp, magic, 4) != 4) goto tbi_fail;
-        if (memcmp(magic, "TBI\1", 4) != 0) goto tbi_fail;
-        if (bgzf_read(fp, x, 32) != 32) goto tbi_fail;
+        if (bgzf_read(fp, x, 32) != 32) goto fail;
         if (is_be) for (i = 0; i < 8; ++i) ed_swap_4p(&x[i]);
-        if ((idx = hts_idx_init(x[0], fmt, 0, 14, 5)) == NULL) goto tbi_fail;
+        if ((idx = hts_idx_init(x[0], HTS_FMT_TBI, 0, 14, 5)) == NULL) goto fail;
         idx->l_meta = 28 + x[7];
-        if ((idx->meta = (uint8_t*)malloc(idx->l_meta)) == NULL) goto tbi_fail;
+        if ((idx->meta = (uint8_t*)malloc(idx->l_meta)) == NULL) goto fail;
         memcpy(idx->meta, &x[1], 28);
-        if (bgzf_read(fp, idx->meta + 28, x[7]) != x[7]) goto tbi_fail;
-        if (hts_idx_load_core(idx, fp, HTS_FMT_TBI) < 0) goto tbi_fail;
-        bgzf_close(fp);
-        return idx;
-
-    tbi_fail:
-        bgzf_close(fp);
-        hts_idx_destroy(idx);
-        return NULL;
-
-    } else if (fmt == HTS_FMT_BAI) {
+        if (bgzf_read(fp, idx->meta + 28, x[7]) != x[7]) goto fail;
+        if (hts_idx_load_core(idx, fp, HTS_FMT_TBI) < 0) goto fail;
+    }
+    else if (memcmp(magic, "BAI\1", 4) == 0) {
         uint32_t n;
-        FILE *fp;
-        if ((fp = fopen(fn, "rb")) == 0) return NULL;
-        if (fread(magic, 1, 4, fp) != 4) goto bai_fail;
-        if (memcmp(magic, "BAI\1", 4) != 0) goto bai_fail;
-        if (fread(&n, 4, 1, fp) != 1) goto bai_fail;
+        if (bgzf_read(fp, &n, 4) != 4) goto fail;
         if (is_be) ed_swap_4p(&n);
-        idx = hts_idx_init(n, fmt, 0, 14, 5);
-        if (hts_idx_load_core(idx, fp, HTS_FMT_BAI) < 0) goto bai_fail;
-        fclose(fp);
-        return idx;
+        idx = hts_idx_init(n, HTS_FMT_BAI, 0, 14, 5);
+        if (hts_idx_load_core(idx, fp, HTS_FMT_BAI) < 0) goto fail;
+    }
+    else { errno = EINVAL; goto fail; }
 
-    bai_fail:
-        fclose(fp);
-        hts_idx_destroy(idx);
-        return NULL;
+    bgzf_close(fp);
+    return idx;
 
-    } else abort();
+fail:
+    bgzf_close(fp);
+    hts_idx_destroy(idx);
+    free(meta);
+    return NULL;
 }
 
 void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy)
@@ -1487,53 +1823,102 @@ void hts_itr_destroy(hts_itr_t *iter)
     if (iter) { free(iter->off); free(iter->bins.a); free(iter); }
 }
 
+static inline long long push_digit(long long i, char c)
+{
+    // ensure subtraction occurs first, avoiding overflow for >= MAX-48 or so
+    int digit = c - '0';
+    return 10 * i + digit;
+}
+
+long long hts_parse_decimal(const char *str, char **strend, int flags)
+{
+    long long n = 0;
+    int decimals = 0, e = 0, lost = 0;
+    char sign = '+', esign = '+';
+    const char *s;
+
+    while (isspace(*str)) str++;
+    s = str;
+
+    if (*s == '+' || *s == '-') sign = *s++;
+    while (*s)
+        if (isdigit(*s)) n = push_digit(n, *s++);
+        else if (*s == ',' && (flags & HTS_PARSE_THOUSANDS_SEP)) s++;
+        else break;
+
+    if (*s == '.') {
+        s++;
+        while (isdigit(*s)) decimals++, n = push_digit(n, *s++);
+    }
+
+    if (*s == 'E' || *s == 'e') {
+        s++;
+        if (*s == '+' || *s == '-') esign = *s++;
+        while (isdigit(*s)) e = push_digit(e, *s++);
+        if (esign == '-') e = -e;
+    }
+
+    e -= decimals;
+    while (e > 0) n *= 10, e--;
+    while (e < 0) lost += n % 10, n /= 10, e++;
+
+    if (lost > 0 && hts_verbose >= 3)
+        fprintf(stderr, "[W::%s] discarding fractional part of %.*s\n",
+                __func__, (int)(s - str), str);
+
+    if (strend) *strend = (char *) s;
+    else if (*s && hts_verbose >= 2)
+        fprintf(stderr, "[W::%s] ignoring unknown characters after %.*s[%s]\n",
+                __func__, (int)(s - str), str, s);
+
+    return (sign == '+')? n : -n;
+}
+
 const char *hts_parse_reg(const char *s, int *beg, int *end)
 {
-    int i, k, l, name_end;
-    *beg = *end = -1;
-    name_end = l = strlen(s);
-    // determine the sequence name
-    for (i = l - 1; i >= 0; --i) if (s[i] == ':') break; // look for colon from the end
-    if (i >= 0) name_end = i;
-    if (name_end < l) { // check if this is really the end
-        int n_hyphen = 0;
-        for (i = name_end + 1; i < l; ++i) {
-            if (s[i] == '-') ++n_hyphen;
-            else if (!isdigit(s[i]) && s[i] != ',') break;
-        }
-        if (i < l || n_hyphen > 1) name_end = l; // malformated region string; then take str as the name
+    char *hyphen;
+    const char *colon = strrchr(s, ':');
+    if (colon == NULL) {
+        *beg = 0; *end = INT_MAX;
+        return s + strlen(s);
     }
-    // parse the interval
-    if (name_end < l) {
-        char *tmp;
-        tmp = (char*)alloca(l - name_end + 1);
-        for (i = name_end + 1, k = 0; i < l; ++i)
-            if (s[i] != ',') tmp[k++] = s[i];
-        tmp[k] = 0;
-        if ((*beg = strtol(tmp, &tmp, 10) - 1) < 0) *beg = 0;
-        *end = *tmp? strtol(tmp + 1, &tmp, 10) : INT_MAX;
-        if (*beg > *end) name_end = l;
-    }
-    if (name_end == l) *beg = 0, *end = INT_MAX;
-    return s + name_end;
+
+    *beg = hts_parse_decimal(colon+1, &hyphen, HTS_PARSE_THOUSANDS_SEP) - 1;
+    if (*beg < 0) *beg = 0;
+
+    if (*hyphen == '\0') *end = INT_MAX;
+    else if (*hyphen == '-') *end = hts_parse_decimal(hyphen+1, NULL, HTS_PARSE_THOUSANDS_SEP);
+    else return NULL;
+
+    if (*beg >= *end) return NULL;
+    return colon;
 }
 
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
     int tid, beg, end;
-    char *q, *tmp;
+    const char *q;
+
     if (strcmp(reg, ".") == 0)
         return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
-    else if (strcmp(reg, "*") != 0) {
-        q = (char*)hts_parse_reg(reg, &beg, &end);
-        tmp = (char*)alloca(q - reg + 1);
+    else if (strcmp(reg, "*") == 0)
+        return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
+
+    q = hts_parse_reg(reg, &beg, &end);
+    if (q) {
+        char *tmp = (char*)alloca(q - reg + 1);
         strncpy(tmp, reg, q - reg);
         tmp[q - reg] = 0;
-        if ((tid = getid(hdr, tmp)) < 0)
-            tid = getid(hdr, reg);
-        if (tid < 0) return 0;
-        return itr_query(idx, tid, beg, end, readrec);
-    } else return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
+        tid = getid(hdr, tmp);
+    }
+    else {
+        // not parsable as a region, but possibly a sequence named "foo:a"
+        tid = getid(hdr, reg);
+        beg = 0; end = INT_MAX;
+    }
+
+    if (tid < 0) return NULL;
+    return itr_query(idx, tid, beg, end, readrec);
 }
 
 int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
@@ -1648,10 +2033,16 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt)
     char *fnidx;
     hts_idx_t *idx;
     fnidx = hts_idx_getfn(fn, ".csi");
-    if (fnidx) fmt = HTS_FMT_CSI;
-    else fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
+    if (! fnidx) fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
     if (fnidx == 0) return 0;
 
+    idx = hts_idx_load2(fn, fnidx);
+    free(fnidx);
+    return idx;
+}
+
+hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx)
+{
     // Check that the index file is up to date, the main file might have changed
     struct stat stat_idx,stat_main;
     if ( !stat(fn, &stat_main) && !stat(fnidx, &stat_idx) )
@@ -1659,7 +2050,6 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt)
         if ( stat_idx.st_mtime < stat_main.st_mtime )
             fprintf(stderr, "Warning: The index file is older than the data file: %s\n", fnidx);
     }
-    idx = hts_idx_load_local(fnidx, fmt);
-    free(fnidx);
-    return idx;
+
+    return hts_idx_load_local(fnidx);
 }

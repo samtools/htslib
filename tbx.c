@@ -1,6 +1,6 @@
 /*  tbx.c -- tabix API functions.
 
-    Copyright (C) 2009, 2010, 2012-2014 Genome Research Ltd.
+    Copyright (C) 2009, 2010, 2012-2015 Genome Research Ltd.
     Copyright (C) 2010-2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -22,6 +22,8 @@ THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
+
+#include <config.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -250,22 +252,28 @@ void tbx_destroy(tbx_t *tbx)
     free(tbx);
 }
 
-int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf)
+int tbx_index_build2(const char *fn, const char *fnidx, int min_shift, const tbx_conf_t *conf)
 {
     tbx_t *tbx;
     BGZF *fp;
+    int ret;
     if ( bgzf_is_bgzf(fn)!=1 ) { fprintf(stderr,"Not a BGZF file: %s\n", fn); return -1; }
     if ((fp = bgzf_open(fn, "r")) == 0) return -1;
     if ( !fp->is_compressed ) { bgzf_close(fp); return -1; }
     tbx = tbx_index(fp, min_shift, conf);
     bgzf_close(fp);
     if ( !tbx ) return -1;
-    hts_idx_save(tbx->idx, fn, min_shift > 0? HTS_FMT_CSI : HTS_FMT_TBI);
+    ret = hts_idx_save_as(tbx->idx, fn, fnidx, min_shift > 0? HTS_FMT_CSI : HTS_FMT_TBI);
     tbx_destroy(tbx);
-    return 0;
+    return ret;
 }
 
-tbx_t *tbx_index_load(const char *fn)
+int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf)
+{
+    return tbx_index_build2(fn, NULL, min_shift, conf);
+}
+
+tbx_t *tbx_index_load2(const char *fn, const char *fnidx)
 {
     tbx_t *tbx;
     uint8_t *meta;
@@ -273,7 +281,7 @@ tbx_t *tbx_index_load(const char *fn)
     uint32_t x[7];
     int l_meta, l_nm;
     tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
-    tbx->idx = hts_idx_load(fn, HTS_FMT_TBI);
+    tbx->idx = fnidx? hts_idx_load2(fn, fnidx) : hts_idx_load(fn, HTS_FMT_TBI);
     if ( !tbx->idx )
     {
         free(tbx);
@@ -291,6 +299,11 @@ tbx_t *tbx_index_load(const char *fn)
     l_nm = x[6];
     for (; p - nm < l_nm; p += strlen(p) + 1) get_tid(tbx, p, 1);
     return tbx;
+}
+
+tbx_t *tbx_index_load(const char *fn)
+{
+    return tbx_index_load2(fn, NULL);
 }
 
 const char **tbx_seqnames(tbx_t *tbx, int *n)

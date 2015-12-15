@@ -76,6 +76,10 @@ typedef bam1_t bam_seq_t;
 
 #include "cram/sam_header.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 bam_hdr_t *cram_header_to_bam(SAM_hdr *h);
 SAM_hdr *bam_header_to_cram(bam_hdr_t *h);
 
@@ -93,5 +97,9 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
 		      int len,
 		      const char *seq,
 		      const char *qual);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _CRAM_SAMTOOLS_H_ */

@@ -35,6 +35,8 @@
  * Author: James Bonfield, Wellcome Trust Sanger Institute. 2014
  */
 
+#include <config.h>
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -356,25 +358,29 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 
 unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
 				unsigned int *out_size) {
-    unsigned char *out_buf, *out_end, *cp;
+    unsigned char *out_buf = NULL, *out_end, *cp;
     unsigned int last_i, tab_size, rle_i, rle_j;
-    RansEncSymbol syms[256][256];
+    RansEncSymbol (*syms)[256] = NULL;  /* syms[256][256] */
+    int (*F)[256] = NULL;               /* F[256][256]    */
+    int *T = NULL;                      /* T[256]         */
+    int i, j;
+    unsigned char c;
 
     if (in_size < 4)
 	return rans_compress_O0(in, in_size, out_size);
 
+    syms = malloc(256 * sizeof(*syms));
+    if (!syms) goto cleanup;
+    F = calloc(256, sizeof(*F));
+    if (!F) goto cleanup;
+    T = calloc(256, sizeof(*T));
+    if (!T) goto cleanup;
     out_buf = malloc(1.05*in_size + 257*257*3 + 9);
-    if (!out_buf)
-	return NULL;
+    if (!out_buf) goto cleanup;
 
     out_end = out_buf + (int)(1.05*in_size) + 257*257*3 + 9;
     cp = out_buf+9;
 
-    int F[256][256], T[256], i, j;
-    unsigned char c;
-
-    memset(F, 0, 256*256*sizeof(int));
-    memset(T, 0, 256*sizeof(int));
     //for (last = 0, i=in_size-1; i>=0; i--) {
     //	F[last][c = in[i]]++;
     //	T[last]++;
@@ -548,6 +554,11 @@ unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
 
     memmove(out_buf + tab_size, ptr, out_end-ptr);
 
+ cleanup:
+    free(syms);
+    free(F);
+    free(T);
+
     return out_buf;
 }
 
@@ -556,11 +567,9 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     /* Load in the static tables */
     unsigned char *cp = in + 9;
     int i, j = -999, x, out_sz, in_sz, rle_i, rle_j;
-    char *out_buf;
-    ari_decoder D[256];
-    RansDecSymbol syms[256][256];
-
-    memset(D, 0, 256*sizeof(*D));
+    char *out_buf = NULL;
+    ari_decoder *D = NULL;              /* D[256] */
+    RansDecSymbol (*syms)[256] = NULL;  /* syms[256][256] */
 
     if (*in++ != 1) // Order-1 check
 	return NULL;
@@ -570,9 +579,10 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     if (in_sz != in_size-9)
 	return NULL;
 
-    out_buf = malloc(out_sz);
-    if (!out_buf)
-	return NULL;
+    D = calloc(256, sizeof(*D));
+    if (!D) goto cleanup;
+    syms = malloc(256 * sizeof(*syms));
+    if (!syms) goto cleanup;
 
     //fprintf(stderr, "out_sz=%d\n", out_sz);
 
@@ -597,7 +607,11 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 	    RansDecSymbolInit(&syms[i][j], D[i].fc[j].C, D[i].fc[j].F);
 
 	    /* Build reverse lookup table */
-	    if (!D[i].R) D[i].R = (unsigned char *)malloc(TOTFREQ);
+	    if (!D[i].R) {
+                D[i].R = (unsigned char *)malloc(TOTFREQ);
+                if (!D[i].R)
+                    goto cleanup;
+            }
 	    memset(&D[i].R[x], j, D[i].fc[j].F);
 
 	    x += D[i].fc[j].F;
@@ -646,6 +660,10 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     R[1] = rans1;
     R[2] = rans2;
     R[3] = rans3;
+
+    /* Allocate output buffer */
+    out_buf = malloc(out_sz);
+    if (!out_buf) goto cleanup;
 
     for (; i4[0] < isz4; i4[0]++, i4[1]++, i4[2]++, i4[3]++) {
 	uint32_t m[4] = {R[0] & ((1u << TF_SHIFT)-1),
@@ -704,8 +722,13 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 
     *out_size = out_sz;
 
-    for (i = 0; i < 256; i++)
-	if (D[i].R) free(D[i].R);
+ cleanup:
+    if (D) {
+        for (i = 0; i < 256; i++)
+            if (D[i].R) free(D[i].R);
+        free(D);
+    }
+    free(syms);
 
     return (unsigned char *)out_buf;
 }
@@ -722,6 +745,10 @@ unsigned char *rans_compress(unsigned char *in, unsigned int in_size,
 
 unsigned char *rans_uncompress(unsigned char *in, unsigned int in_size,
 			       unsigned int *out_size) {
+    /* Both rans_uncompress functions need to be able to read at least 9
+       bytes. */
+    if (in_size < 9)
+        return NULL;
     return in[0]
 	? rans_uncompress_O1(in, in_size, out_size)
 	: rans_uncompress_O0(in, in_size, out_size);

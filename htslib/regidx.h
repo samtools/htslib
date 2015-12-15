@@ -54,6 +54,10 @@
 #include <stdio.h>
 #include <inttypes.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct _regidx_t regidx_t;
 typedef struct
 {
@@ -143,5 +147,8 @@ char **regidx_seq_names(regidx_t *idx, int *n);
 int regidx_seq_nregs(regidx_t *idx, const char *seq);
 int regidx_nregs(regidx_t *idx);
 
+#ifdef __cplusplus
+}
 #endif
 
+#endif

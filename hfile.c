@@ -22,6 +22,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#include <config.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +31,16 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/hfile.h"
 #include "hfile_internal.h"
+
+#ifndef ENOTSUP
+#define ENOTSUP EINVAL
+#endif
+#ifndef EOVERFLOW
+#define EOVERFLOW ERANGE
+#endif
+#ifndef EPROTONOSUPPORT
+#define EPROTONOSUPPORT ENOSYS
+#endif
 
 /* hFILE fields are used as follows:
 
@@ -40,7 +52,7 @@ DEALINGS IN THE SOFTWARE.  */
    const hFILE_backend *backend;  // Methods to refill/flush I/O buffer
 
    off_t offset;     // Offset within the stream of buffer position 0
-   int at_eof:1;     // For reading, whether EOF has been seen
+   unsigned at_eof:1;// For reading, whether EOF has been seen
    int has_errno;    // Error number from the last failure on this stream
 
 For reading, begin is the first unread character in the buffer and end is the
@@ -200,7 +212,9 @@ static ssize_t flush_buffer(hFILE *fp)
 int hflush(hFILE *fp)
 {
     if (flush_buffer(fp) < 0) return EOF;
-    if (fp->backend->flush(fp) < 0) { fp->has_errno = errno; return EOF; }
+    if (fp->backend->flush) {
+        if (fp->backend->flush(fp) < 0) { fp->has_errno = errno; return EOF; }
+    }
     return 0;
 }
 
@@ -248,18 +262,31 @@ int hputs2(const char *text, size_t totalbytes, size_t ncopied, hFILE *fp)
 
 off_t hseek(hFILE *fp, off_t offset, int whence)
 {
-    off_t pos;
+    off_t curpos, pos;
 
     if (writebuffer_is_nonempty(fp)) {
         int ret = flush_buffer(fp);
         if (ret < 0) return ret;
     }
-    else {
-        // Convert relative offsets from being relative to the hFILE's stream
-        // position (at begin) to being relative to the backend's physical
-        // stream position (at end, due to the buffering read-ahead).
-        if (whence == SEEK_CUR) offset -= fp->end - fp->begin;
+
+    curpos = htell(fp);
+
+    // Relative offsets are given relative to the hFILE's stream position,
+    // which may differ from the backend's physical position due to buffering
+    // read-ahead.  Correct for this by converting to an absolute position.
+    if (whence == SEEK_CUR) {
+        if (curpos + offset < 0) {
+            // Either a negative offset resulted in a position before the
+            // start of the file, or we overflowed when given a positive offset
+            fp->has_errno = errno = (offset < 0)? EINVAL : EOVERFLOW;
+            return -1;
+        }
+
+        whence = SEEK_SET;
+        offset = curpos + offset;
     }
+
+    // TODO Avoid seeking if the desired position is within our read buffer
 
     pos = fp->backend->seek(fp, offset, whence);
     if (pos < 0) { fp->has_errno = errno; return pos; }
@@ -300,14 +327,17 @@ void hclose_abruptly(hFILE *fp)
  * File descriptor backend *
  ***************************/
 
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <sys/stat.h>
+#define HAVE_STRUCT_STAT_ST_BLKSIZE
+#else
+#include <winsock2.h>
+#define HAVE_CLOSESOCKET
+#define HAVE_SETMODE
+#endif
 #include <fcntl.h>
 #include <unistd.h>
-
-#ifdef _WIN32
-#define HAVE_CLOSESOCKET
-#endif
 
 /* For Unix, it doesn't matter whether a file descriptor is a socket.
    However Windows insists on send()/recv() and its own closesocket()
@@ -316,7 +346,7 @@ void hclose_abruptly(hFILE *fp)
 typedef struct {
     hFILE base;
     int fd;
-    int is_socket:1;
+    unsigned is_socket:1;
 } hFILE_fd;
 
 static ssize_t fd_read(hFILE *fpv, void *buffer, size_t nbytes)
@@ -385,9 +415,13 @@ static const struct hFILE_backend fd_backend =
 
 static size_t blksize(int fd)
 {
+#ifdef HAVE_STRUCT_STAT_ST_BLKSIZE
     struct stat sbuf;
     if (fstat(fd, &sbuf) != 0) return 0;
     return sbuf.st_blksize;
+#else
+    return 0;
+#endif
 }
 
 static hFILE *hopen_fd(const char *filename, const char *mode)
@@ -421,10 +455,21 @@ hFILE *hdopen(int fd, const char *mode)
     return &fp->base;
 }
 
+static hFILE *hopen_fd_fileuri(const char *url, const char *mode)
+{
+    if (strncmp(url, "file://localhost/", 17) == 0) url += 16;
+    else if (strncmp(url, "file:///", 8) == 0) url += 7;
+    else { errno = EPROTONOSUPPORT; return NULL; }
+
+    return hopen_fd(url, mode);
+}
+
 static hFILE *hopen_fd_stdinout(const char *mode)
 {
     int fd = (strchr(mode, 'r') != NULL)? STDIN_FILENO : STDOUT_FILENO;
-    // TODO Set binary mode (for Windows)
+#if defined HAVE_SETMODE && defined O_BINARY
+    if (setmode(fd, O_BINARY) < 0) return NULL;
+#endif
     return hdopen(fd, mode);
 }
 
@@ -438,6 +483,12 @@ int hfile_oflags(const char *mode)
         case 'w': rdwr = O_WRONLY; flags |= O_CREAT | O_TRUNC;  break;
         case 'a': rdwr = O_WRONLY; flags |= O_CREAT | O_APPEND;  break;
         case '+': rdwr = O_RDWR;  break;
+#ifdef O_CLOEXEC
+        case 'e': flags |= O_CLOEXEC;  break;
+#endif
+#ifdef O_EXCL
+        case 'x': flags |= O_EXCL;  break;
+#endif
         default:  break;
         }
 
@@ -504,6 +555,8 @@ static const struct hFILE_backend mem_backend =
 
 static hFILE *hopen_mem(const char *data, const char *mode)
 {
+    if (strncmp(data, "data:", 5) == 0) data += 5;
+
     // TODO Implement write modes, which will require memory allocation
     if (strchr(mode, 'r') == NULL) { errno = EINVAL; return NULL; }
 
@@ -518,30 +571,174 @@ static hFILE *hopen_mem(const char *data, const char *mode)
 }
 
 
-/******************************
- * hopen() backend dispatcher *
- ******************************/
+/*****************************************
+ * Plugin and hopen() backend dispatcher *
+ *****************************************/
+
+#include <ctype.h>
+
+#include "hts_internal.h"
+#include "htslib/khash.h"
+
+KHASH_MAP_INIT_STR(scheme_string, const struct hFILE_scheme_handler *);
+static khash_t(scheme_string) *schemes = NULL;
+
+struct hFILE_plugin_list {
+    struct hFILE_plugin plugin;
+    struct hFILE_plugin_list *next;
+};
+
+static struct hFILE_plugin_list *plugins = NULL;
+
+static void hfile_exit()
+{
+    kh_destroy(scheme_string, schemes);
+
+    while (plugins != NULL) {
+        struct hFILE_plugin_list *p = plugins;
+        if (p->plugin.destroy) p->plugin.destroy();
+#ifdef ENABLE_PLUGINS
+        if (p->plugin.obj) close_plugin(p->plugin.obj);
+#endif
+        plugins = p->next;
+        free(p);
+    }
+}
+
+void hfile_add_scheme_handler(const char *scheme,
+                              const struct hFILE_scheme_handler *handler)
+{
+    int absent;
+    khint_t k = kh_put(scheme_string, schemes, scheme, &absent);
+    if (absent || handler->priority > kh_value(schemes, k)->priority) {
+        kh_value(schemes, k) = handler;
+    }
+}
+
+static int init_add_plugin(void *obj, int (*init)(struct hFILE_plugin *),
+                           const char *pluginname)
+{
+    struct hFILE_plugin_list *p = malloc (sizeof (struct hFILE_plugin_list));
+    if (p == NULL) abort();
+
+    p->plugin.api_version = 1;
+    p->plugin.obj = obj;
+    p->plugin.name = NULL;
+    p->plugin.destroy = NULL;
+
+    int ret = (*init)(&p->plugin);
+
+    if (ret != 0) {
+        if (hts_verbose >= 4)
+            fprintf(stderr, "[W::load_hfile_plugins] "
+                    "initialisation failed for plugin \"%s\": %d\n",
+                    pluginname, ret);
+        free(p);
+        return ret;
+    }
+
+    if (hts_verbose >= 5)
+        fprintf(stderr, "[M::load_hfile_plugins] loaded \"%s\"\n", pluginname);
+
+    p->next = plugins, plugins = p;
+    return 0;
+}
+
+static void load_hfile_plugins()
+{
+    static const struct hFILE_scheme_handler
+        data = { hopen_mem, hfile_always_local, "built-in", 80 },
+        file = { hopen_fd_fileuri, hfile_always_local, "built-in", 80 };
+
+    schemes = kh_init(scheme_string);
+    if (schemes == NULL) abort();
+
+    hfile_add_scheme_handler("data", &data);
+    hfile_add_scheme_handler("file", &file);
+    init_add_plugin(NULL, hfile_plugin_init_net, "knetfile");
+
+#ifdef ENABLE_PLUGINS
+    struct hts_path_itr path;
+    const char *pluginname;
+    hts_path_itr_setup(&path, NULL, NULL, "hfile_", 6, NULL, 0);
+    while ((pluginname = hts_path_itr_next(&path)) != NULL) {
+        void *obj;
+        int (*init)(struct hFILE_plugin *) = (int (*)(struct hFILE_plugin *))
+            load_plugin(&obj, pluginname, "hfile_plugin_init");
+
+        if (init) {
+            if (init_add_plugin(obj, init, pluginname) != 0)
+                close_plugin(obj);
+        }
+    }
+#else
+
+#ifdef HAVE_IRODS
+    init_add_plugin(NULL, hfile_plugin_init_irods, "iRODS");
+#endif
+#ifdef HAVE_LIBCURL
+    init_add_plugin(NULL, hfile_plugin_init_libcurl, "libcurl");
+#endif
+
+#endif
+
+    // In the unlikely event atexit() fails, it's better to succeed here and
+    // carry on; then eventually when the program exits, we'll merely close
+    // down the plugins uncleanly, as if we had aborted.
+    (void) atexit(hfile_exit);
+}
+
+/* A filename like "foo:bar" in which we don't recognise the scheme is
+   either an ordinary file or an indication of a missing or broken plugin.
+   Try to open it as an ordinary file; but if there's no such file, set
+   errno distinctively to make the plugin issue apparent.  */
+static hFILE *hopen_unknown_scheme(const char *fname, const char *mode)
+{
+    hFILE *fp = hopen_fd(fname, mode);
+    if (fp == NULL && errno == ENOENT) errno = EPROTONOSUPPORT;
+    return fp;
+}
+
+/* Returns the appropriate handler, or NULL if the string isn't an URL.  */
+static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
+{
+    static const struct hFILE_scheme_handler unknown_scheme =
+        { hopen_unknown_scheme, hfile_always_local, "built-in", 0 };
+
+    char scheme[12];
+    int i;
+
+    for (i = 0; i < sizeof scheme; i++)
+        if (isalnum(s[i]) || s[i] == '+' || s[i] == '-' || s[i] == '.')
+            scheme[i] = tolower(s[i]);
+        else if (s[i] == ':') break;
+        else return NULL;
+
+    if (i == 0 || i >= sizeof scheme) return NULL;
+    scheme[i] = '\0';
+
+    if (! schemes) {
+        // TODO Wrap this in a critical section for multi-threading
+        load_hfile_plugins();
+    }
+
+    khint_t k = kh_get(scheme_string, schemes, scheme);
+    return (k != kh_end(schemes))? kh_value(schemes, k) : &unknown_scheme;
+}
 
 hFILE *hopen(const char *fname, const char *mode)
 {
-    if (strncmp(fname, "http://", 7) == 0 ||
-        strncmp(fname, "ftp://", 6) == 0) return hopen_net(fname, mode);
-#ifdef HAVE_IRODS
-    else if (strncmp(fname, "irods:", 6) == 0) return hopen_irods(fname, mode);
-#endif
-    else if (strncmp(fname, "data:", 5) == 0) return hopen_mem(fname + 5, mode);
+    const struct hFILE_scheme_handler *handler = find_scheme_handler(fname);
+    if (handler) return handler->open(fname, mode);
     else if (strcmp(fname, "-") == 0) return hopen_fd_stdinout(mode);
     else return hopen_fd(fname, mode);
 }
 
+int hfile_always_local (const char *fname) { return 0; }
+int hfile_always_remote(const char *fname) { return 1; }
+
 int hisremote(const char *fname)
 {
-    // FIXME Make a new backend entry to return this
-    if (strncmp(fname, "http://", 7) == 0 ||
-        strncmp(fname, "https://", 8) == 0 ||
-        strncmp(fname, "ftp://", 6) == 0) return 1;
-#ifdef HAVE_IRODS
-    else if (strncmp(fname, "irods:", 6) == 0) return 1;
-#endif
-    else return 0;
+    const struct hFILE_scheme_handler *handler = find_scheme_handler(fname);
+    return handler? handler->isremote(fname) : 0;
 }

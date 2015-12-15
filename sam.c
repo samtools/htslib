@@ -23,6 +23,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#include <config.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +34,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/sam.h"
 #include "htslib/bgzf.h"
 #include "cram/cram.h"
+#include "hts_internal.h"
 #include "htslib/hfile.h"
 
 #include "htslib/khash.h"
@@ -75,6 +78,7 @@ bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
     // Then the pointery stuff
     h->cigar_tab = NULL;
     h->sdict = NULL;
+    // TODO Check for memory allocation failures
     h->text = (char*)calloc(h->l_text + 1, 1);
     memcpy(h->text, h0->text, h->l_text);
     h->target_len = (uint32_t*)calloc(h->n_targets, sizeof(uint32_t));
@@ -95,6 +99,7 @@ static bam_hdr_t *hdr_from_dict(sdict_t *d)
     h = bam_hdr_init();
     h->sdict = d;
     h->n_targets = kh_size(d);
+    // TODO Check for memory allocation failures
     h->target_len = (uint32_t*)malloc(sizeof(uint32_t) * h->n_targets);
     h->target_name = (char**)malloc(sizeof(char*) * h->n_targets);
     for (k = kh_begin(d); k != kh_end(d); ++k) {
@@ -111,11 +116,13 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     bam_hdr_t *h;
     char buf[4];
     int magic_len, has_EOF;
-    int32_t i = 1, name_len;
+    int32_t i, name_len, num_names = 0;
+    size_t bufsize;
+    ssize_t bytes;
     // check EOF
     has_EOF = bgzf_check_EOF(fp);
     if (has_EOF < 0) {
-        perror("[W::sam_hdr_read] bgzf_check_EOF");
+        perror("[W::bam_hdr_read] bgzf_check_EOF");
     } else if (has_EOF == 0 && hts_verbose >= 2)
         fprintf(stderr, "[W::%s] EOF marker is absent. The input is probably truncated.\n", __func__);
     // read "BAM1"
@@ -125,26 +132,94 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
         return 0;
     }
     h = bam_hdr_init();
+    if (!h) goto nomem;
+
     // read plain text and the number of reference sequences
-    bgzf_read(fp, &h->l_text, 4);
+    bytes = bgzf_read(fp, &h->l_text, 4);
+    if (bytes != 4) goto read_err;
     if (fp->is_be) ed_swap_4p(&h->l_text);
-    h->text = (char*)malloc(h->l_text + 1);
+
+    bufsize = ((size_t) h->l_text) + 1;
+    if (bufsize < h->l_text) goto nomem; // so large that adding 1 overflowed
+    h->text = (char*)malloc(bufsize);
+    if (!h->text) goto nomem;
     h->text[h->l_text] = 0; // make sure it is NULL terminated
-    bgzf_read(fp, h->text, h->l_text);
-    bgzf_read(fp, &h->n_targets, 4);
+    bytes = bgzf_read(fp, h->text, h->l_text);
+    if (bytes != h->l_text) goto read_err;
+
+    bytes = bgzf_read(fp, &h->n_targets, 4);
+    if (bytes != 4) goto read_err;
     if (fp->is_be) ed_swap_4p(&h->n_targets);
+
+    if (h->n_targets < 0) goto invalid;
+
     // read reference sequence names and lengths
-    h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
-    h->target_len = (uint32_t*)calloc(h->n_targets, sizeof(uint32_t));
+    if (h->n_targets > 0) {
+        h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
+        if (!h->target_name) goto nomem;
+        h->target_len = (uint32_t*)calloc(h->n_targets, sizeof(uint32_t));
+        if (!h->target_len) goto nomem;
+    }
+    else {
+        h->target_name = NULL;
+        h->target_len = NULL;
+    }
+
     for (i = 0; i != h->n_targets; ++i) {
-        bgzf_read(fp, &name_len, 4);
+        bytes = bgzf_read(fp, &name_len, 4);
+        if (bytes != 4) goto read_err;
         if (fp->is_be) ed_swap_4p(&name_len);
-        h->target_name[i] = (char*)calloc(name_len, 1);
-        bgzf_read(fp, h->target_name[i], name_len);
-        bgzf_read(fp, &h->target_len[i], 4);
+        if (name_len <= 0) goto invalid;
+
+        h->target_name[i] = (char*)malloc(name_len);
+        if (!h->target_name[i]) goto nomem;
+        num_names++;
+
+        bytes = bgzf_read(fp, h->target_name[i], name_len);
+        if (bytes != name_len) goto read_err;
+
+        if (h->target_name[i][name_len - 1] != '\0') {
+            /* Fix missing NUL-termination.  Is this being too nice?
+               We could alternatively bail out with an error. */
+            char *new_name;
+            if (name_len == INT32_MAX) goto invalid;
+            new_name = realloc(h->target_name[i], name_len + 1);
+            if (new_name == NULL) goto nomem;
+            h->target_name[i] = new_name;
+            h->target_name[i][name_len] = '\0';
+        }
+
+        bytes = bgzf_read(fp, &h->target_len[i], 4);
+        if (bytes != 4) goto read_err;
         if (fp->is_be) ed_swap_4p(&h->target_len[i]);
     }
     return h;
+
+ nomem:
+    if (hts_verbose >= 1) fprintf(stderr, "[E::%s] out of memory\n", __func__);
+    goto clean;
+
+ read_err:
+    if (hts_verbose >= 1) {
+        if (bytes < 0) {
+            fprintf(stderr, "[E::%s] error reading BGZF stream\n", __func__);
+        } else {
+            fprintf(stderr, "[E::%s] truncated bam header\n", __func__);
+        }
+    }
+    goto clean;
+
+ invalid:
+    if (hts_verbose >= 1) {
+        fprintf(stderr, "[E::%s] invalid BAM binary header\n", __func__);
+    }
+
+ clean:
+    if (h != NULL) {
+        h->n_targets = num_names; // ensure we free only allocated target_names
+        bam_hdr_destroy(h);
+    }
+    return NULL;
 }
 
 int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
@@ -341,7 +416,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
     c->l_qseq = x[4];
     c->mtid = x[5]; c->mpos = x[6]; c->isize = x[7];
     b->l_data = block_len - 32;
-    if (b->l_data < 0 || c->l_qseq < 0) return -4;
+    if (b->l_data < 0 || c->l_qseq < 0 || c->l_qname < 1) return -4;
     if ((char *)bam_get_aux(b) - (char *)b->data > b->l_data)
         return -4;
     if (b->m_data < b->l_data) {
@@ -391,11 +466,12 @@ int bam_write1(BGZF *fp, const bam1_t *b)
 
 static hts_idx_t *bam_index(BGZF *fp, int min_shift)
 {
-    int n_lvls, i, fmt;
+    int n_lvls, i, fmt, ret;
     bam1_t *b;
     hts_idx_t *idx;
     bam_hdr_t *h;
     h = bam_hdr_read(fp);
+    if (h == NULL) return NULL;
     if (min_shift > 0) {
         int64_t max_len = 0, s;
         for (i = 0; i < h->n_targets; ++i)
@@ -407,47 +483,45 @@ static hts_idx_t *bam_index(BGZF *fp, int min_shift)
     idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp), min_shift, n_lvls);
     bam_hdr_destroy(h);
     b = bam_init1();
-    while (bam_read1(fp, b) >= 0) {
-        int l, ret;
-        l = bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
-        if (l == 0) l = 1; // no zero-length records
-        ret = hts_idx_push(idx, b->core.tid, b->core.pos, b->core.pos + l, bgzf_tell(fp), !(b->core.flag&BAM_FUNMAP));
-        if (ret < 0)
-        {
-            // unsorted
-            bam_destroy1(b);
-            hts_idx_destroy(idx);
-            return NULL;
-        }
+    while ((ret = bam_read1(fp, b)) >= 0) {
+        ret = hts_idx_push(idx, b->core.tid, b->core.pos, bam_endpos(b), bgzf_tell(fp), !(b->core.flag&BAM_FUNMAP));
+        if (ret < 0) goto err; // unsorted
     }
+    if (ret < -1) goto err; // corrupted BAM file
+
     hts_idx_finish(idx, bgzf_tell(fp));
     bam_destroy1(b);
     return idx;
+
+err:
+    bam_destroy1(b);
+    hts_idx_destroy(idx);
+    return NULL;
 }
 
-int bam_index_build(const char *fn, int min_shift)
+int sam_index_build2(const char *fn, const char *fnidx, int min_shift)
 {
     hts_idx_t *idx;
     htsFile *fp;
     int ret = 0;
 
-    if ((fp = hts_open(fn, "r")) == 0) return -1;
+    if ((fp = hts_open(fn, "r")) == 0) return -2;
     switch (fp->format.format) {
     case cram:
-        ret = cram_index_build(fp->fp.cram, fn);
+        ret = cram_index_build(fp->fp.cram, fn, fnidx);
         break;
 
     case bam:
         idx = bam_index(fp->fp.bgzf, min_shift);
         if (idx) {
-            hts_idx_save(idx, fn, (min_shift > 0)? HTS_FMT_CSI : HTS_FMT_BAI);
+            ret = hts_idx_save_as(idx, fn, fnidx, (min_shift > 0)? HTS_FMT_CSI : HTS_FMT_BAI);
             hts_idx_destroy(idx);
         }
         else ret = -1;
         break;
 
     default:
-        ret = -1;
+        ret = -3;
         break;
     }
     hts_close(fp);
@@ -455,13 +529,26 @@ int bam_index_build(const char *fn, int min_shift)
     return ret;
 }
 
+int sam_index_build(const char *fn, int min_shift)
+{
+    return sam_index_build2(fn, NULL, min_shift);
+}
+
+// Provide bam_index_build() symbol for binary compability with earlier HTSlib
+#undef bam_index_build
+int bam_index_build(const char *fn, int min_shift)
+{
+    return sam_index_build2(fn, NULL, min_shift);
+}
+
 static int bam_readrec(BGZF *fp, void *ignored, void *bv, int *tid, int *beg, int *end)
 {
     bam1_t *b = bv;
     int ret;
     if ((ret = bam_read1(fp, b)) >= 0) {
-        *tid = b->core.tid; *beg = b->core.pos;
-        *end = b->core.pos + (b->core.n_cigar? bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)) : 1);
+        *tid = b->core.tid;
+        *beg = b->core.pos;
+        *end = bam_endpos(b);
     }
     return ret;
 }
@@ -489,23 +576,14 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
     }
 }
 
-// The CRAM implementation stores the loaded index within the cram_fd rather
-// than separately as is done elsewhere in htslib.  So if p is a pointer to
-// an hts_idx_t with p->fmt == HTS_FMT_CRAI, then it actually points to an
-// hts_cram_idx_t and should be cast accordingly.
-typedef struct hts_cram_idx_t {
-    int fmt;
-    cram_fd *cram;
-} hts_cram_idx_t;
-
-hts_idx_t *sam_index_load(samFile *fp, const char *fn)
+hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx)
 {
     switch (fp->format.format) {
     case bam:
-        return bam_index_load(fn);
+        return fnidx? hts_idx_load2(fn, fnidx) : hts_idx_load(fn, HTS_FMT_BAI);
 
     case cram: {
-        if (cram_index_load(fp->fp.cram, fn) < 0) return NULL;
+        if (cram_index_load(fp->fp.cram, fn, fnidx) < 0) return NULL;
         // Cons up a fake "index" just pointing at the associated cram_fd:
         hts_cram_idx_t *idx = malloc(sizeof (hts_cram_idx_t));
         if (idx == NULL) return NULL;
@@ -517,6 +595,11 @@ hts_idx_t *sam_index_load(samFile *fp, const char *fn)
     default:
         return NULL; // TODO Would use tbx_index_load if it returned hts_idx_t
     }
+}
+
+hts_idx_t *sam_index_load(htsFile *fp, const char *fn)
+{
+    return sam_index_load2(fp, fn, NULL);
 }
 
 static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
@@ -532,15 +615,31 @@ static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end
     iter->bins.a = NULL;
     iter->readrec = readrec;
 
-    if (tid >= 0) {
-        cram_range r = { tid, beg+1, end };
-        if (cram_set_option(cidx->cram, CRAM_OPT_RANGE, &r) != 0) { free(iter); return NULL; }
+    if (tid >= 0 || tid == HTS_IDX_NOCOOR) {
+        cram_range r = { tid == HTS_IDX_NOCOOR ? -1 : tid, beg+1, end };
+        int ret = cram_set_option(cidx->cram, CRAM_OPT_RANGE, &r);
+
         iter->curr_off = 0;
         // The following fields are not required by hts_itr_next(), but are
         // filled in in case user code wants to look at them.
         iter->tid = tid;
         iter->beg = beg;
         iter->end = end;
+
+        switch (ret) {
+        case 0:
+            break;
+
+        case -2:
+            // No data vs this ref, so mark iterator as completed.
+            // Same as HTS_IDX_NONE.
+            iter->finished = 1;
+            break;
+
+        default:
+            free(iter);
+            return NULL;
+        }
     }
     else switch (tid) {
     case HTS_IDX_REST:
@@ -598,20 +697,20 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
     khash_t(s2i) *d;
     d = kh_init(s2i);
     for (p = text; *p; ++p) {
-        if (strncmp(p, "@SQ", 3) == 0) {
+        if (strncmp(p, "@SQ\t", 4) == 0) {
             char *sn = 0;
             int ln = -1;
             for (q = p + 4;; ++q) {
                 if (strncmp(q, "SN:", 3) == 0) {
                     q += 3;
-                    for (r = q; *r != '\t' && *r != '\n'; ++r);
+                    for (r = q; *r != '\t' && *r != '\n' && *r != '\0'; ++r);
                     sn = (char*)calloc(r - q + 1, 1);
                     strncpy(sn, q, r - q);
                     q = r;
                 } else if (strncmp(q, "LN:", 3) == 0)
                     ln = strtol(q + 3, (char**)&q, 10);
-                while (*q != '\t' && *q != '\n') ++q;
-                if (*q == '\n') break;
+                while (*q != '\t' && *q != '\n' && *q != '\0') ++q;
+                if (*q == '\0' || *q == '\n') break;
             }
             p = q;
             if (sn && ln >= 0) {
@@ -625,7 +724,7 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
                 } else kh_val(d, k) = (int64_t)(kh_size(d) - 1)<<32 | ln;
             }
         }
-        while (*p != '\n') ++p;
+        while (*p != '\0' && *p != '\n') ++p;
     }
     return hdr_from_dict(d);
 }
@@ -685,7 +784,9 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 
     case cram: {
         cram_fd *fd = fp->fp.cram;
-        if (cram_set_header(fd, bam_header_to_cram((bam_hdr_t *)h)) < 0) return -1;
+        SAM_hdr *hdr = bam_header_to_cram((bam_hdr_t *)h);
+        if (! hdr) return -1;
+        if (cram_set_header(fd, hdr) < 0) return -1;
         if (fp->fn_aux)
             cram_load_reference(fd, fp->fn_aux);
         if (cram_write_SAM_hdr(fd, fd->header) < 0) return -1;
@@ -749,6 +850,8 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     }
     // qname
     q = _read_token(p);
+    _parse_warn(p - q <= 1, "empty query name");
+    _parse_err(p - q > 255, "query name too long");
     kputsn_(q, p - q, &str);
     c->l_qname = p - q;
     // flag
@@ -779,9 +882,10 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         for (q = p; *p && *p != '\t'; ++p)
             if (!isdigit(*p)) ++n_cigar;
         if (*p++ != '\t') goto err_ret;
+        _parse_err(n_cigar == 0, "no CIGAR operations");
         _parse_err(n_cigar >= 65536, "too many CIGAR operations");
         c->n_cigar = n_cigar;
-        _get_mem(uint32_t, &cigar, &str, c->n_cigar<<2);
+        _get_mem(uint32_t, &cigar, &str, c->n_cigar * sizeof(uint32_t));
         for (i = 0; i < c->n_cigar; ++i, ++q) {
             int op;
             cigar[i] = strtol(q, &q, 10)<<BAM_CIGAR_SHIFT;
@@ -789,7 +893,8 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             _parse_err(op < 0, "unrecognized CIGAR operator");
             cigar[i] |= op;
         }
-        i = bam_cigar2rlen(c->n_cigar, cigar);
+        // can't use bam_endpos() directly as some fields not yet set up
+        i = (!(c->flag&BAM_FUNMAP))? bam_cigar2rlen(c->n_cigar, cigar) : 1;
     } else {
         _parse_warn(!(c->flag&BAM_FUNMAP), "mapped query must have a CIGAR; treated as unmapped");
         c->flag |= BAM_FUNMAP;
@@ -922,8 +1027,12 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
         return r;
         }
 
-    case cram:
-        return cram_get_bam_seq(fp->fp.cram, &b);
+    case cram: {
+        int ret = cram_get_bam_seq(fp->fp.cram, &b);
+        return ret >= 0
+            ? ret
+            : (cram_eof(fp->fp.cram) ? -1 : -2);
+    }
 
     case sam: {
         int ret;
@@ -986,6 +1095,9 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
         if (s[0] == 0xff) kputc('*', str);
         else for (i = 0; i < c->l_qseq; ++i) kputc(s[i] + 33, str);
     } else kputsn("*\t*", 3, str);
+
+    // FIXME change "s+N <= b->data+b->l_data" to "b->data+b->l_data - s >= N"
+    // (or equivalent) everywhere to avoid looking past the end of the array
     s = bam_get_aux(b); // aux
     while (s+4 <= b->data + b->l_data) {
         uint8_t type, key[2];
@@ -1047,10 +1159,13 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
             ++s;
         } else if (type == 'B') {
             uint8_t sub_type = *(s++);
-            int32_t n;
+            int sub_type_size = aux_type2size(sub_type);
+            uint32_t n;
+            if (sub_type_size == 0 || b->data + b->l_data - s < 4)
+                return -1;
             memcpy(&n, s, 4);
-            s += 4; // no point to the start of the array
-            if (s + n >= b->data + b->l_data)
+            s += 4; // now points to the start of the array
+            if ((b->data + b->l_data - s) / sub_type_size < n)
                 return -1;
             kputsn("B:", 2, str); kputc(sub_type, str); // write the typing
             for (i = 0; i < n; ++i) { // FIXME: for better performance, put the loop after "if"
@@ -1062,6 +1177,7 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
                 else if ('i' == sub_type) { kputw(*(int32_t*)s, str); s += 4; }
                 else if ('I' == sub_type) { kputuw(*(uint32_t*)s, str); s += 4; }
                 else if ('f' == sub_type) { ksprintf(str, "%g", *(float*)s); s += 4; }
+                else return -1;
             }
         }
     }
@@ -1213,6 +1329,67 @@ int sam_open_mode(char *mode, const char *fn, const char *format)
     else return -1;
 
     return 0;
+}
+
+// A version of sam_open_mode that can handle ,key=value options.
+// The format string is allocated and returned, to be freed by the caller.
+// Prefix should be "r" or "w",
+char *sam_open_mode_opts(const char *fn,
+                         const char *mode,
+                         const char *format)
+{
+    char *mode_opts = malloc((format ? strlen(format) : 1) +
+                             (mode   ? strlen(mode)   : 1) + 12);
+    char *opts, *cp;
+    int format_len;
+
+    if (!mode_opts)
+        return NULL;
+
+    strcpy(mode_opts, mode ? mode : "r");
+    cp = mode_opts + strlen(mode_opts);
+
+    if (format == NULL) {
+        // Try to pick a format based on the filename extension
+        const char *ext = fn? strrchr(fn, '.') : NULL;
+        if (ext == NULL || strchr(ext, '/')) {
+            free(mode_opts);
+            return NULL;
+        }
+        return sam_open_mode(cp, fn, ext+1)
+            ? (free(mode_opts), NULL)
+            : mode_opts;
+    }
+
+    if ((opts = strchr(format, ','))) {
+        format_len = opts-format;
+    } else {
+        opts="";
+        format_len = strlen(format);
+    }
+
+    if (strncmp(format, "bam", format_len) == 0) {
+        *cp++ = 'b';
+    } else if (strncmp(format, "cram", format_len) == 0) {
+        *cp++ = 'c';
+    } else if (strncmp(format, "cram2", format_len) == 0) {
+        *cp++ = 'c';
+        strcpy(cp, ",VERSION=2.1");
+        cp += 12;
+    } else if (strncmp(format, "cram3", format_len) == 0) {
+        *cp++ = 'c';
+        strcpy(cp, ",VERSION=3.0");
+        cp += 12;
+    } else if (strncmp(format, "sam", format_len) == 0) {
+        ; // format mode=""
+    } else {
+        free(mode_opts);
+        return NULL;
+    }
+
+    strcpy(cp, opts);
+
+    return mode_opts;
 }
 
 #define STRNCMP(a,b,n) (strncasecmp((a),(b),(n)) || strlen(a)!=(n))
@@ -1644,7 +1821,7 @@ static void overlap_push(bam_plp_t iter, lbnode_t *node)
         tweak_overlap_quality(&a->b, &node->b);
         kh_del(olap_hash, iter->overlaps, kitr);
         assert(a->end-1 == a->s.end);
-        a->end = a->b.core.pos + bam_cigar2rlen(a->b.core.n_cigar, bam_get_cigar(&a->b));
+        a->end = bam_endpos(&a->b);
         a->s.end = a->end - 1;
     }
 }
@@ -1737,7 +1914,7 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
         iter->tail->b.id = iter->id++;
 #endif
         iter->tail->beg = b->core.pos;
-        iter->tail->end = b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
+        iter->tail->end = bam_endpos(b);
         iter->tail->s = g_cstate_null; iter->tail->s.end = iter->tail->end - 1; // initialize cstate_t
         if (b->core.tid < iter->max_tid) {
             fprintf(stderr, "[bam_pileup_core] the input is not sorted (chromosomes out of order)\n");

@@ -42,14 +42,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _CRAM_IO_H_
 #define _CRAM_IO_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define ITF8_MACROS
 
 #include <stdint.h>
 #include <cram/misc.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**@{ ----------------------------------------------------------------------
  * ITF8 encoding and decoding.
@@ -103,6 +103,38 @@ int itf8_put(char *cp, int32_t val);
 int ltf8_get(char *cp, int64_t *val_p);
 int ltf8_put(char *cp, int64_t val);
 
+  /* Version of itf8_get that checks it hasn't run out of input */
+
+extern const int itf8_bytes[16];
+
+static inline int safe_itf8_get(const char *cp, const char *endp,
+                                int32_t *val_p) {
+    const unsigned char *up = (unsigned char *)cp;
+
+    if (endp - cp < 5 &&
+        (cp >= endp || endp - cp < itf8_bytes[up[0]>>4])) {
+        *val_p = 0;
+        return 0;
+    }
+
+    if (up[0] < 0x80) {
+        *val_p =   up[0];
+        return 1;
+    } else if (up[0] < 0xc0) {
+        *val_p = ((up[0] <<8) |  up[1])                           & 0x3fff;
+        return 2;
+    } else if (up[0] < 0xe0) {
+        *val_p = ((up[0]<<16) | (up[1]<< 8) |  up[2])             & 0x1fffff;
+        return 3;
+    } else if (up[0] < 0xf0) {
+        *val_p = ((up[0]<<24) | (up[1]<<16) | (up[2]<<8) | up[3]) & 0x0fffffff;
+        return 4;
+    } else {
+        *val_p = ((up[0] & 0x0f)<<28) | (up[1]<<20) | (up[2]<<12) | (up[3]<<4) | (up[4] & 0x0f);
+        return 5;
+    }
+}
+
 /*! Pushes a value in ITF8 format onto the end of a block.
  *
  * This shouldn't be used for high-volume data as it is not the fastest
@@ -112,6 +144,22 @@ int ltf8_put(char *cp, int64_t val);
  * Returns the number of bytes written
  */
 int itf8_put_blk(cram_block *blk, int val);
+
+/*! Pulls a literal 32-bit value from a block.
+ *
+ * @returns the number of bytes decoded;
+ *         -1 on failure.
+ */
+int int32_get_blk(cram_block *b, int32_t *val);
+
+/*! Pushes a literal 32-bit value onto the end of a block.
+ *
+ * @return
+ * Returns 0 on success;
+ *        -1 on failure.
+ */
+int int32_put_blk(cram_block *blk, int32_t val);
+
 
 /**@}*/
 /**@{ ----------------------------------------------------------------------
@@ -188,6 +236,24 @@ cram_metrics *cram_new_metrics(void);
 char *cram_block_method2str(enum cram_block_method m);
 char *cram_content_type2str(enum cram_content_type t);
 
+/*
+ * Find an external block by its content_id
+ */
+
+static inline cram_block *cram_get_block_by_id(cram_slice *slice, int id) {
+    if (slice->block_by_id && id >= 0 && id < 1024) {
+        return slice->block_by_id[id];
+    } else {
+        int i;
+        for (i = 0; i < slice->hdr->num_blocks; i++) {
+	    cram_block *b = slice->block[i];
+	    if (b && b->content_type == EXTERNAL && b->content_id == id)
+	        return b;
+	}
+    }
+    return NULL;
+}
+
 /* --- Accessor macros for manipulating blocks on a byte by byte basis --- */
 
 /* Block size and data pointer. */
@@ -204,6 +270,13 @@ char *cram_content_type2str(enum cram_content_type t);
 	    (b)->alloc = (b)->alloc ? (b)->alloc*1.5 : 1024;	\
 	    (b)->data = realloc((b)->data, (b)->alloc);		\
 	}							\
+     } while(0)
+
+/* Make block exactly 'l' bytes long */
+#define BLOCK_RESIZE_EXACT(b,l)					\
+    do {							\
+        (b)->alloc = (l);                                       \
+        (b)->data = realloc((b)->data, (b)->alloc);		\
      } while(0)
 
 /* Ensure the block can hold at least another 'l' bytes */
@@ -562,7 +635,7 @@ int cram_eof(cram_fd *fd);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_set_option(cram_fd *fd, enum cram_option opt, ...);
+int cram_set_option(cram_fd *fd, enum hts_fmt_option opt, ...);
 
 /*! Sets options on the cram_fd.
  *
@@ -573,7 +646,7 @@ int cram_set_option(cram_fd *fd, enum cram_option opt, ...);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_set_voption(cram_fd *fd, enum cram_option opt, va_list args);
+int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
 
 /*!
  * Attaches a header to a cram_fd.

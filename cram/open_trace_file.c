@@ -61,6 +61,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <config.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -201,17 +203,19 @@ mFILE *find_file_url(char *file, char *url) {
 }
 
 /*
- * Searches for file in the directory 'dirname'. If it finds it, it opens
- * it. This also searches for compressed versions of the file in dirname
- * too.
+ * Takes a dirname possibly including % rules and appends the filename
+ * to it.
  *
- * Returns mFILE pointer if found
- *         NULL if not
+ * Returns expanded pathname or NULL for malloc failure.
  */
-static mFILE *find_file_dir(char *file, char *dirname) {
-    char path[PATH_MAX+1];
+static char *expand_path(char *file, char *dirname) {
     size_t len = strlen(dirname);
-    char *cp;
+    size_t lenf = strlen(file);
+    char *cp, *path;
+
+    path = malloc(len+lenf+2); // worst expansion DIR/FILE
+    if (!path)
+	return NULL;
 
     if (dirname[len-1] == '/')
 	len--;
@@ -254,15 +258,31 @@ static mFILE *find_file_dir(char *file, char *dirname) {
 	    *path_end++ = '/';
 	    strcpy(path_end, file);
 	}
-
-	//fprintf(stderr, "*PATH=\"%s\"\n", path);
     }
 
-    if (is_file(path)) {
-	return mfopen(path, "rb");
-    }
+    //fprintf(stderr, "*PATH=\"%s\"\n", path);
+    return path;
+}
 
-    return NULL;
+/*
+ * Searches for file in the directory 'dirname'. If it finds it, it opens
+ * it. This also searches for compressed versions of the file in dirname
+ * too.
+ *
+ * Returns mFILE pointer if found
+ *         NULL if not
+ */
+static mFILE *find_file_dir(char *file, char *dirname) {
+    char *path;
+    mFILE *mf = NULL;
+
+    path = expand_path(file, dirname);
+
+    if (is_file(path))
+	mf = mfopen(path, "rbm");
+
+    free(path);
+    return mf;
 }
 
 /*
@@ -332,7 +352,7 @@ mFILE *open_path_mfile(char *file, char *path, char *relative_to) {
 	    free(newsearch);
 	    return fp;
 	} 
-   }
+    }
 
     free(newsearch);
 
@@ -346,6 +366,49 @@ mFILE *open_path_mfile(char *file, char *path, char *relative_to) {
 	if ((fp = find_file_dir(file, relative_path)))
 	    return fp;
     }
+
+    return NULL;
+}
+
+
+/*
+ * As per open_path_mfile, but searching only for local filenames.
+ * This is useful as we may avoid doing a full mfopen and loading
+ * the entire file into memory.
+ *
+ * Returns the expanded pathname if found.
+ *         NULL if not
+ */
+char *find_path(char *file, char *path) {
+    char *newsearch;
+    char *ele;
+    char *outpath = NULL;
+
+    /* Use path first */
+    if (!path)
+	path = getenv("RAWDATA");
+    if (NULL == (newsearch = tokenise_search_path(path)))
+	return NULL;
+    
+    for (ele = newsearch; *ele; ele += strlen(ele)+1) {
+	char *ele2 = (*ele == '|') ? ele+1 : ele;
+
+	if (!strncmp(ele2, "URL=", 4) ||
+	    !strncmp(ele2, "http:", 5) ||
+	    !strncmp(ele2, "ftp:", 4)) {
+	    continue;
+	} else {
+	    outpath = expand_path(file, ele2);
+	    if (is_file(outpath)) {
+		free(newsearch);
+		return outpath;
+	    } else {
+		free(outpath);
+	    }
+	} 
+    }
+
+    free(newsearch);
 
     return NULL;
 }

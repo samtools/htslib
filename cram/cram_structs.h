@@ -31,10 +31,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _CRAM_STRUCTS_H_
 #define _CRAM_STRUCTS_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /*
  * Defines in-memory structs for the basic file-format objects in the
  * CRAM format.
@@ -54,7 +50,12 @@ extern "C" {
 
 #include "cram/thread_pool.h"
 #include "cram/string_alloc.h"
+#include "cram/mFILE.h"
 #include "htslib/khash.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Generic hash-map integer -> integer
 KHASH_MAP_INIT_INT(m_i2i, int)
@@ -87,7 +88,7 @@ struct hFILE;
 
 #define MAX_STAT_VAL 1024
 //#define MAX_STAT_VAL 16
-typedef struct {
+typedef struct cram_stats {
     int freqs[MAX_STAT_VAL];
     khash_t(m_i2i) *h;
     int nsamp; // total number of values added
@@ -105,7 +106,8 @@ enum cram_encoding {
     E_BETA               = 6,
     E_SUBEXP             = 7,
     E_GOLOMB_RICE        = 8,
-    E_GAMMA              = 9
+    E_GAMMA              = 9,
+    E_NUM_CODECS         = 10, /* Number of codecs, not a real one. */
 };
 
 enum cram_external_type {
@@ -174,7 +176,7 @@ enum cram_DS_ID {
 };
 
 /* "File Definition Structure" */
-typedef struct {
+typedef struct cram_file_def {
     char    magic[4];
     uint8_t major_version;
     uint8_t minor_version;
@@ -244,7 +246,7 @@ typedef struct {
 } cram_metrics;
 
 /* Block */
-typedef struct {
+typedef struct cram_block {
     enum cram_block_method  method, orig_method;
     enum cram_content_type  content_type;
     int32_t  content_id;
@@ -267,7 +269,7 @@ struct cram_map;
 #define CRAM_MAP(a,b) (((a)*3+(b))&(CRAM_MAP_HASH-1))
 
 /* Compression header block */
-typedef struct {
+typedef struct cram_block_compression_hdr {
     int32_t ref_seq_id;
     int32_t ref_seq_start;
     int32_t ref_seq_span;
@@ -314,7 +316,7 @@ typedef struct cram_map {
 } cram_map;
 
 /* Mapped or unmapped slice header block */
-typedef struct {
+typedef struct cram_block_slice_hdr {
     enum cram_content_type content_type;
     int32_t ref_seq_id;     /* if content_type == MAPPED_SLICE */
     int32_t ref_seq_start;  /* if content_type == MAPPED_SLICE */
@@ -339,7 +341,7 @@ struct ref_entry;
  *
  * OR... are landmarks the start/end points of slices?
  */
-typedef struct {
+typedef struct cram_container {
     int32_t  length;
     int32_t  ref_seq_id;
     int32_t  ref_seq_start;
@@ -392,7 +394,7 @@ typedef struct {
 /*
  * A single cram record
  */
-typedef struct {
+typedef struct cram_record {
     struct cram_slice *s; // Filled out by cram_decode only
 
     int32_t ref_id;       // fixed for all recs in slice?
@@ -446,7 +448,7 @@ typedef struct {
  * A feature is a base difference, used for the sequence reference encoding.
  * (We generate these internally when writing CRAM.)
  */
-typedef struct {
+typedef struct cram_feature {
     union {
 	struct {
 	    int pos;
@@ -585,6 +587,8 @@ typedef struct ref_entry {
     int line_length;
     int64_t count;	   // for shared references so we know to dealloc seq
     char *seq;
+    mFILE *mf;
+    int is_md5;            // Reference comes from a raw seq found by MD5
 } ref_entry;
 
 KHASH_MAP_INIT_STR(refs, ref_entry*)
@@ -768,8 +772,10 @@ enum cram_fields {
 #define CRAM_CIGAR (CRAM_FN | CRAM_FP | CRAM_FC | CRAM_DL | CRAM_IN | \
 		    CRAM_SC | CRAM_HC | CRAM_PD | CRAM_RS | CRAM_RL | CRAM_BF)
 
-#define CRAM_SEQ (CRAM_CIGAR | CRAM_BA | CRAM_QS | CRAM_BS | \
-		  CRAM_RL    | CRAM_AP | CRAM_BB | CRAM_QQ)
+#define CRAM_SEQ (CRAM_CIGAR | CRAM_BA | CRAM_BS | \
+		  CRAM_RL    | CRAM_AP | CRAM_BB)
+
+#define CRAM_QUAL (CRAM_CIGAR | CRAM_RL | CRAM_AP | CRAM_QS | CRAM_QQ)
 
 /* BF bitfields */
 /* Corrected in 1.1. Use bam_flag_swap[bf] and BAM_* macros for 1.0 & 1.1 */
@@ -801,6 +807,7 @@ enum cram_fields {
 #define CRAM_FLAG_PRESERVE_QUAL_SCORES (1<<0)
 #define CRAM_FLAG_DETACHED             (1<<1)
 #define CRAM_FLAG_MATE_DOWNSTREAM      (1<<2)
+#define CRAM_FLAG_NO_SEQ               (1<<3)
 
 #ifdef __cplusplus
 }

@@ -1,4 +1,4 @@
-.TH htsfile 1 "3 February 2015" "htslib-1.2.1" "Bioinformatics tools"
+.TH htsfile 1 "15 December 2015" "htslib-1.3" "Bioinformatics tools"
 .SH NAME
 htsfile \- identify high-throughput sequencing data files
 .\"
@@ -26,7 +26,7 @@ htsfile \- identify high-throughput sequencing data files
 .\"
 .SH SYNOPSIS
 .B htsfile
-.RB [ -chH ]
+.RB [ -chHv ]
 .IR FILE ...
 .SH DESCRIPTION
 The \fBhtsfile\fR utility attempts to identify what kind of high-throughput
@@ -64,6 +64,10 @@ Implies \fB--view\fR.
 .TP
 .BR -H ", " --no-header
 When viewing files, display data records only.
+.TP
+.BR -v ", " --verbose
+Display additional warnings and diagnostic messages.
+Using \fB--verbose\fR repeatedly further raises the verbosity.
 .PP
 .SH SEE ALSO
 .IR bcftools (1),

@@ -34,6 +34,10 @@
 #include <zlib.h>
 #include <sys/types.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define BGZF_BLOCK_SIZE     0xff00 // make sure compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE
 #define BGZF_MAX_BLOCK_SIZE 0x10000
 
@@ -47,7 +51,9 @@ struct bgzf_mtaux_t;
 typedef struct __bgzidx_t bgzidx_t;
 
 struct BGZF {
-    int errcode:16, is_write:2, is_be:2, compress_level:9, is_compressed:2, is_gzip:1;
+    unsigned errcode:16, is_write:2, is_be:2;
+    signed compress_level:9;
+    unsigned is_compressed:2, is_gzip:1;
     int cache_size;
     int block_length, block_offset;
     int64_t block_address, uncompressed_address;
@@ -72,10 +78,6 @@ typedef struct __kstring_t {
 } kstring_t;
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
     /******************
      * Basic routines *
      ******************/
@@ -87,7 +89,7 @@ extern "C" {
      * @param mode  mode matching /[rwag][u0-9]+/: 'r' for reading, 'w' for
      *              writing, 'a' for appending, 'g' for gzip rather than BGZF
      *              compression (with 'w' only), and digit specifies the zlib
-     *              compression level. 
+     *              compression level.
      *              Note that there is a distinction between 'u' and '0': the
      *              first yields plain uncompressed output whereas the latter
      *              outputs uncompressed data wrapped in the zlib format.
@@ -252,6 +254,18 @@ extern "C" {
      */
     int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks);
 
+    /**
+     * Compress a single BGZF block.
+     *
+     * @param dst    output buffer (must have size >= BGZF_MAX_BLOCK_SIZE)
+     * @param dlen   size of output buffer; updated on return to the number
+     *               of bytes actually written to dst
+     * @param src    buffer to be compressed
+     * @param slen   size of data to compress (must be <= BGZF_BLOCK_SIZE)
+     * @param level  compression level
+     * @return       0 on success and negative on error
+     */
+    int bgzf_compress(void *dst, size_t *dlen, const void *src, size_t slen, int level);
 
     /*******************
      * bgzidx routines *

@@ -40,7 +40,7 @@ extern "C" {
  * Returns 0 for success
  *        -1 for failure
  */
-int cram_index_load(cram_fd *fd, const char *fn);
+int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx);
 
 void cram_index_free(cram_fd *fd);
 
@@ -83,13 +83,14 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r);
  * Builds an index file.
  *
  * fd is a newly opened cram file that we wish to index.
- * fn_base is the filename of the associated CRAM file. Internally we
- * add ".crai" to this to get the index filename.
+ * fn_base is the filename of the associated CRAM file.
+ * fn_idx is the filename of the index file to be written;
+ * if NULL, we add ".crai" to fn_base to get the index filename.
  *
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_index_build(cram_fd *fd, const char *fn_base);
+int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx);
 
 #ifdef __cplusplus
 }

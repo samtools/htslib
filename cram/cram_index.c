@@ -48,9 +48,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * binary search to find the first range which overlaps any given coordinate.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "io_lib_config.h"
-#endif
+#include <config.h>
 
 #include <stdio.h>
 #include <errno.h>
@@ -64,6 +62,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ctype.h>
 
 #include "htslib/hfile.h"
+#include "hts_internal.h"
 #include "cram/cram.h"
 #include "cram/os.h"
 #include "cram/zfio.h"
@@ -138,12 +137,12 @@ static int kget_int64(kstring_t *k, size_t *pos, int64_t *val_p) {
  * Returns 0 for success
  *        -1 for failure
  */
-int cram_index_load(cram_fd *fd, const char *fn) {
-    char fn2[PATH_MAX];
+int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
+    char *fn2 = NULL;
     char buf[65536];
     ssize_t len;
     kstring_t kstr = {0};
-    hFILE *fp;
+    FILE *fp;
     cram_index *idx;
     cram_index **idx_stack = NULL, *ep, e;
     int idx_stack_alloc = 0, idx_stack_ptr = 0;
@@ -165,27 +164,38 @@ int cram_index_load(cram_fd *fd, const char *fn) {
     idx_stack = calloc(++idx_stack_alloc, sizeof(*idx_stack));
     idx_stack[idx_stack_ptr] = idx;
 
-    sprintf(fn2, "%s.crai", fn);
-    if (!(fp = hopen(fn2, "r"))) {
-	perror(fn2);
+    if (!fn_idx) {
+	fn2 = hts_idx_getfn(fn, ".crai");
+	if (!fn2) {
+	    free(idx_stack);
+	    return -1;
+	}
+	fn_idx = fn2;
+    }
+
+    if (!(fp = fopen(fn_idx, "r"))) {
+	perror(fn_idx);
 	free(idx_stack);
-	return -1; 
+	free(fn2);
+	return -1;
     }
 
     // Load the file into memory
-    while ((len = hread(fp, buf, 65536)) > 0)
+    while ((len = fread(buf, 1, 65536, fp)) > 0)
 	kputsn(buf, len, &kstr);
     if (len < 0 || kstr.l < 2) {
 	if (kstr.s)
 	    free(kstr.s);
 	free(idx_stack);
+	free(fn2);
 	return -1;
     }
 
-    if (hclose(fp)) {
+    if (fclose(fp)) {
 	if (kstr.s)
 	    free(kstr.s);
 	free(idx_stack);
+	free(fn2);
 	return -1;
     }
 	
@@ -197,6 +207,7 @@ int cram_index_load(cram_fd *fd, const char *fn) {
 	free(kstr.s);
 	if (!s) {
 	    free(idx_stack);
+	    free(fn2);
 	    return -1;
 	}
 	kstr.s = s;
@@ -210,22 +221,22 @@ int cram_index_load(cram_fd *fd, const char *fn) {
     do {
 	/* 1.1 layout */
 	if (kget_int32(&kstr, &pos, &e.refid) == -1) {
-	    free(kstr.s); free(idx_stack); return -1;
+	    free(kstr.s); free(idx_stack); free(fn2); return -1;
 	}
 	if (kget_int32(&kstr, &pos, &e.start) == -1) {
-	    free(kstr.s); free(idx_stack); return -1;
+	    free(kstr.s); free(idx_stack); free(fn2); return -1;
 	}
 	if (kget_int32(&kstr, &pos, &e.end) == -1) {
-	    free(kstr.s); free(idx_stack); return -1;
+	    free(kstr.s); free(idx_stack); free(fn2); return -1;
 	}
 	if (kget_int64(&kstr, &pos, &e.offset) == -1) {
-	    free(kstr.s); free(idx_stack); return -1;
+	    free(kstr.s); free(idx_stack); free(fn2); return -1;
 	}
 	if (kget_int32(&kstr, &pos, &e.slice) == -1) {
-	    free(kstr.s); free(idx_stack); return -1;
+	    free(kstr.s); free(idx_stack); free(fn2); return -1;
 	}
 	if (kget_int32(&kstr, &pos, &e.len) == -1) {
-	    free(kstr.s); free(idx_stack); return -1;
+	    free(kstr.s); free(idx_stack); free(fn2); return -1;
 	}
 
 	e.end += e.start-1;
@@ -234,6 +245,7 @@ int cram_index_load(cram_fd *fd, const char *fn) {
 	if (e.refid < -1) {
 	    free(kstr.s);
 	    free(idx_stack);
+	    free(fn2);
 	    fprintf(stderr, "Malformed index file, refid %d\n", e.refid);
 	    return -1;
 	}
@@ -283,6 +295,7 @@ int cram_index_load(cram_fd *fd, const char *fn) {
 
     free(idx_stack);
     free(kstr.s);
+    free(fn2);
 
     // dump_index(fd);
 
@@ -315,7 +328,7 @@ void cram_index_free(cram_fd *fd) {
 
 /*
  * Searches the index for the first slice overlapping a reference ID
- * and position, or one immediately preceeding it if none is found in
+ * and position, or one immediately preceding it if none is found in
  * the index to overlap this position. (Our index may have missing
  * entries, but we require at least one per reference.)
  *
@@ -335,11 +348,16 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
     if (refid+1 < 0 || refid+1 >= fd->index_sz)
 	return NULL;
 
-    i = 0, j = fd->index[refid+1].nslice-1;
-
     if (!from)
 	from = &fd->index[refid+1];
 
+    // Ref with nothing aligned against it.
+    if (!from->e)
+	return NULL;
+
+    // This sequence is covered by the index, so binary search to find
+    // the optimal starting block.
+    i = 0, j = fd->index[refid+1].nslice-1;
     for (k = j/2; k != i; k = (j-i)/2 + i) {
 	if (from->e[k].refid > refid) {
 	    j = k;
@@ -362,17 +380,17 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
 	}
     }
     // i==j or i==j-1. Check if j is better.
-    if (from->e[j].start < pos && from->e[j].refid == refid)
+    if (j >= 0 && from->e[j].start < pos && from->e[j].refid == refid)
 	i = j;
 
     /* The above found *a* bin overlapping, but not necessarily the first */
     while (i > 0 && from->e[i-1].end >= pos)
 	i--;
 
-    /* Special case for matching a start pos */
-    if (i+1 < from->nslice &&
-	from->e[i+1].start == pos &&
-	from->e[i+1].refid == refid)
+    /* We may be one bin before the optimum, so check */
+    while (i+1 < from->nslice &&
+	   (from->e[i].refid < refid ||
+	    from->e[i].end < pos))
 	i++;
 
     e = &from->e[i];
@@ -392,7 +410,8 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
  * whole containers when they don't overlap the specified cram_range.
  *
  * Returns 0 on success
- *        -1 on failure
+ *        -1 on general failure
+ *        -2 on no-data (empty chromosome)
  */
 int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
     cram_index *e;
@@ -403,8 +422,8 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
 	    if (0 != cram_seek(fd, e->offset - fd->first_container, SEEK_CUR))
 		return -1;
     } else {
-	fprintf(stderr, "Unknown reference ID. Missing from index?\n");
-	return -1;
+	// Absent from index, but this most likely means it simply has no data.
+	return -2;
     }
 
     if (fd->ctr) {
@@ -472,26 +491,32 @@ static int cram_index_build_multiref(cram_fd *fd,
  * Builds an index file.
  *
  * fd is a newly opened cram file that we wish to index.
- * fn_base is the filename of the associated CRAM file. Internally we
- * add ".crai" to this to get the index filename.
+ * fn_base is the filename of the associated CRAM file.
+ * fn_idx is the filename of the index file to be written;
+ * if NULL, we add ".crai" to fn_base to get the index filename.
  *
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_index_build(cram_fd *fd, const char *fn_base) {
+int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     cram_container *c;
     off_t cpos, spos, hpos;
     zfp *fp;
-    char fn_idx[PATH_MAX];
+    kstring_t fn_idx_str = {0};
 
-    if (strlen(fn_base) > PATH_MAX-6)
-	return -1;
+    if (! fn_idx) {
+        kputs(fn_base, &fn_idx_str);
+        kputs(".crai", &fn_idx_str);
+        fn_idx = fn_idx_str.s;
+    }
 
-    sprintf(fn_idx, "%s.crai", fn_base);
     if (!(fp = zfopen(fn_idx, "wz"))) {
         perror(fn_idx);
+        free(fn_idx_str.s);
         return -1;
     }
+
+    free(fn_idx_str.s);
 
     cpos = htell(fd->fp);
     while ((c = cram_read_container(fd))) {
@@ -499,13 +524,13 @@ int cram_index_build(cram_fd *fd, const char *fn_base) {
 
         if (fd->err) {
             perror("Cram container read");
-            return 1;
+            return -1;
         }
 
         hpos = htell(fd->fp);
 
         if (!(c->comp_hdr_block = cram_read_block(fd)))
-            return 1;
+            return -1;
         assert(c->comp_hdr_block->content_type == COMPRESSION_HEADER);
 
         c->comp_hdr = cram_decode_compression_header(fd, c->comp_hdr_block);
@@ -553,5 +578,5 @@ int cram_index_build(cram_fd *fd, const char *fn_base) {
     }
 	
 
-    return zfclose(fp);
+    return (zfclose(fp) >= 0)? 0 : -1;
 }

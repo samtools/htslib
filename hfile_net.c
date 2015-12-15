@@ -1,6 +1,6 @@
 /*  hfile_net.c -- network backend for low-level input/output streams.
 
-    Copyright (C) 2013-2014 Genome Research Ltd.
+    Copyright (C) 2013-2015 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -21,6 +21,8 @@ THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
+
+#include <config.h>
 
 #include <stdlib.h>
 #include <errno.h>
@@ -96,4 +98,15 @@ hFILE *hopen_net(const char *filename, const char *mode)
 
     fp->base.backend = &net_backend;
     return &fp->base;
+}
+
+int hfile_plugin_init_net(struct hFILE_plugin *self)
+{
+    static const struct hFILE_scheme_handler handler =
+        { hopen_net, hfile_always_remote, "knetfile", 0 };
+
+    self->name = "knetfile";
+    hfile_add_scheme_handler("http", &handler);
+    hfile_add_scheme_handler("ftp",  &handler);
+    return 0;
 }

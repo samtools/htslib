@@ -23,6 +23,8 @@
    THE SOFTWARE.
 */
 
+#include <config.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -227,7 +229,7 @@ BGZF *bgzf_hopen(hFILE *hfp, const char *mode)
     return fp;
 }
 
-static int bgzf_compress(void *_dst, int *dlen, void *src, int slen, int level)
+int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int level)
 {
     uint32_t crc;
     z_stream zs;
@@ -253,7 +255,7 @@ static int bgzf_compress(void *_dst, int *dlen, void *src, int slen, int level)
     return 0;
 }
 
-static int bgzf_gzip_compress(BGZF *fp, void *_dst, int *dlen, void *src, int slen, int level)
+static int bgzf_gzip_compress(BGZF *fp, void *_dst, size_t *dlen, const void *src, size_t slen, int level)
 {
     uint8_t *dst = (uint8_t*)_dst;
     z_stream *zs = fp->gz_stream;
@@ -270,7 +272,7 @@ static int bgzf_gzip_compress(BGZF *fp, void *_dst, int *dlen, void *src, int sl
 // Deflate the block in fp->uncompressed_block into fp->compressed_block. Also adds an extra field that stores the compressed block length.
 static int deflate_block(BGZF *fp, int block_length)
 {
-    int comp_size = BGZF_MAX_BLOCK_SIZE;
+    size_t comp_size = BGZF_MAX_BLOCK_SIZE;
     int ret;
     if ( !fp->is_gzip )
         ret = bgzf_compress(fp->compressed_block, &comp_size, fp->uncompressed_block, block_length, fp->compress_level);
@@ -479,25 +481,24 @@ int bgzf_read_block(BGZF *fp)
         }
         if ( header[3] & 0x8 ) // FLG.FNAME
         {
-            while ( nskip<BGZF_BLOCK_SIZE && cblock[nskip] ) nskip++;
-            if ( nskip==BGZF_BLOCK_SIZE )
-            {
-                fp->errcode |= BGZF_ERR_HEADER;
-                return -1;
-            }
+            while ( nskip<count && cblock[nskip] ) nskip++;
             nskip++;
         }
         if ( header[3] & 0x10 ) // FLG.FCOMMENT
         {
-            while ( nskip<BGZF_BLOCK_SIZE && cblock[nskip] ) nskip++;
-            if ( nskip==BGZF_BLOCK_SIZE )
-            {
-                fp->errcode |= BGZF_ERR_HEADER;
-                return -1;
-            }
+            while ( nskip<count && cblock[nskip] ) nskip++;
             nskip++;
         }
         if ( header[3] & 0x2 ) nskip += 2;  //  FLG.FHCRC
+
+        /* FIXME: Should handle this better.  There's no reason why
+           someone shouldn't include a massively long comment in their
+           gzip stream. */
+        if ( nskip >= count )
+        {
+            fp->errcode |= BGZF_ERR_HEADER;
+            return -1;
+        }
 
         fp->is_gzip = 1;
         fp->gz_stream = (z_stream*) calloc(1,sizeof(z_stream));
@@ -610,7 +611,7 @@ static int worker_aux(worker_t *w)
     if (stop) return 1; // to quit the thread
     w->errcode = 0;
     for (i = w->i; i < w->mt->curr; i += w->mt->n_threads) {
-        int clen = BGZF_MAX_BLOCK_SIZE;
+        size_t clen = BGZF_MAX_BLOCK_SIZE;
         if (bgzf_compress(w->buf, &clen, w->mt->blk[i], w->mt->len[i], w->compress_level) != 0)
             w->errcode |= BGZF_ERR_ZLIB;
         memcpy(w->mt->blk[i], w->buf, clen);
