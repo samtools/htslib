@@ -613,7 +613,7 @@ s3_sign(unsigned char *digest, kstring_t *key, kstring_t *message)
     return CC_SHA1_DIGEST_LENGTH;
 }
 
-#elif defined HAVE_LIBCRYPTO
+#elif defined HAVE_HMAC
 
 #include <openssl/hmac.h>
 
@@ -628,6 +628,8 @@ s3_sign(unsigned char *digest, kstring_t *key, kstring_t *message)
     return len;
 }
 
+#else
+#error No HMAC() routine found by configure
 #endif
 
 static void

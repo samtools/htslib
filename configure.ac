@@ -171,7 +171,8 @@ if test $need_crypto != no; then
                [Define if you have the Common Crypto library.])],
     [save_LIBS=$LIBS
      AC_SEARCH_LIBS([HMAC], [crypto],
-       [case "$ac_cv_search_HMAC" in
+       [AC_DEFINE([HAVE_HMAC], 1, [Define if you have libcrypto-style HMAC().])
+        case "$ac_cv_search_HMAC" in
           -l*) CRYPTO_LIBS=$ac_cv_search_HMAC ;;
         esac],
      [AC_MSG_ERROR([SSL development files not found

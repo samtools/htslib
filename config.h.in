@@ -14,11 +14,11 @@
 /* Define to 1 if you have the `gmtime_r' function. */
 #undef HAVE_GMTIME_R
 
+/* Define if you have libcrypto-style HMAC(). */
+#undef HAVE_HMAC
+
 /* Define to 1 if iRODS file access is enabled. */
 #undef HAVE_IRODS
-
-/* Define to 1 if you have the `crypto' library (-lcrypto). */
-#undef HAVE_LIBCRYPTO
 
 /* Define if libcurl file access is enabled. */
 #undef HAVE_LIBCURL
