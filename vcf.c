@@ -3350,10 +3350,10 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
         return n;
     }
 
-    // Make sure the buffer is big enough
+    // Make sure the buffer has the right size
     int nsmpl = bcf_hdr_nsamples(hdr);
     int size1 = type==BCF_HT_INT ? sizeof(int32_t) : sizeof(float);
-    if ( *ndst < fmt->n*nsmpl )
+    if ( *ndst != fmt->n*nsmpl )
     {
         *ndst = fmt->n*nsmpl;
         *dst  = realloc(*dst, *ndst*size1);
