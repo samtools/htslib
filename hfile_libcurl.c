@@ -120,10 +120,6 @@ static int easy_errno(CURL *easy, CURLcode err)
         else
             return EIO;
 
-    case CURLE_WRITE_ERROR:
-    case CURLE_READ_ERROR:
-        return ENOTRECOVERABLE; // Indicates bugs in our callback routines
-
     case CURLE_OUT_OF_MEMORY:
         return ENOMEM;
 
