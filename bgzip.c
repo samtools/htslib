@@ -91,19 +91,19 @@ int main(int argc, char **argv)
     char *index_fname = NULL;
     int threads = 1;
 
-    static struct option loptions[] =
+    static const struct option loptions[] =
     {
-        {"help",0,0,'h'},
-        {"offset",1,0,'b'},
-        {"stdout",0,0,'c'},
-        {"decompress",0,0,'d'},
-        {"force",0,0,'f'},
-        {"index",0,0,'i'},
-        {"index-name",1,0,'I'},
-        {"reindex",0,0,'r'},
-        {"size",1,0,'s'},
-        {"threads",1,0,'@'},
-        {0,0,0,0}
+        {"help", no_argument, NULL, 'h'},
+        {"offset", required_argument, NULL, 'b'},
+        {"stdout", no_argument, NULL, 'c'},
+        {"decompress", no_argument, NULL, 'd'},
+        {"force", no_argument, NULL, 'f'},
+        {"index", no_argument, NULL, 'i'},
+        {"index-name", required_argument, NULL, 'I'},
+        {"reindex", no_argument, NULL, 'r'},
+        {"size", required_argument, NULL, 's'},
+        {"threads", required_argument, NULL, '@'},
+        {NULL, 0, NULL, 0}
     };
 
     compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0;
