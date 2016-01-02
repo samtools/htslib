@@ -1,7 +1,7 @@
 /*  tabix.c -- Generic indexer for TAB-delimited genome position files.
 
     Copyright (C) 2009-2011 Broad Institute.
-    Copyright (C) 2010-2012, 2014, 2015 Genome Research Ltd.
+    Copyright (C) 2010-2012, 2014-2016 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -390,6 +390,7 @@ int main(int argc, char *argv[])
         {"skip-lines", required_argument, NULL, 'S'},
         {"list-chroms", no_argument, NULL, 'l'},
         {"reheader", required_argument, NULL, 'r'},
+        {"version", no_argument, NULL, 1},
         {NULL, 0, NULL, 0}
     };
 
@@ -437,6 +438,11 @@ int main(int argc, char *argv[])
                 conf.line_skip = strtol(optarg,&tmp,10);
                 if ( *tmp ) error("Could not parse argument: -S %s\n", optarg);
                 break;
+            case 1:
+                printf(
+"tabix (htslib) %s\n"
+"Copyright (C) 2016 Genome Research Ltd.\n", hts_version());
+                return EXIT_SUCCESS;
             default: return usage();
         }
     }

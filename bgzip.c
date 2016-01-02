@@ -1,7 +1,7 @@
 /* bgzip.c -- Block compression/decompression utility.
 
    Copyright (C) 2008, 2009 Broad Institute / Massachusetts Institute of Technology
-   Copyright (C) 2010, 2013-2015 Genome Research Ltd.
+   Copyright (C) 2010, 2013-2016 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -103,6 +103,7 @@ int main(int argc, char **argv)
         {"reindex", no_argument, NULL, 'r'},
         {"size", required_argument, NULL, 's'},
         {"threads", required_argument, NULL, '@'},
+        {"version", no_argument, NULL, 1},
         {NULL, 0, NULL, 0}
     };
 
@@ -118,6 +119,11 @@ int main(int argc, char **argv)
         case 'I': index_fname = optarg; break;
         case 'r': reindex = 1; compress = 0; break;
         case '@': threads = atoi(optarg); break;
+        case 1:
+            printf(
+"bgzip (htslib) %s\n"
+"Copyright (C) 2016 Genome Research Ltd.\n", hts_version());
+            return EXIT_SUCCESS;
         case 'h':
         case '?': return bgzip_main_usage();
         }
