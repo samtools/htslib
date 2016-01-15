@@ -530,6 +530,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "REQUIRED_FIELDS") == 0)
         o->opt = CRAM_OPT_REQUIRED_FIELDS, o->val.i = strtol(val, NULL, 0);
 
+    else if (strcmp(o->arg, "lossy_names") == 0 ||
+             strcmp(o->arg, "LOSSY_NAMES") == 0)
+        o->opt = CRAM_OPT_LOSSY_NAMES, o->val.i = strtol(val, NULL, 0);
+
     else {
         fprintf(stderr, "Unknown option '%s'\n", o->arg);
         free(o->arg);
