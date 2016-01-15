@@ -444,6 +444,7 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     void bam_mplp_destroy(bam_mplp_t iter);
     void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
     int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
+    void bam_mplp_reset(bam_mplp_t iter);
 
 #endif // ~!defined(BAM_NO_PILEUP)
 
