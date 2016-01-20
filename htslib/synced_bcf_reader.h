@@ -47,6 +47,7 @@ DEALINGS IN THE SOFTWARE.  */
                 ...
             }
         }
+        if ( sr->errnum ) error("Error: %s\n", bcf_sr_strerror(sr->errnum));
         bcf_sr_destroy(sr);
 */
 
@@ -118,7 +119,7 @@ bcf_sr_t;
 typedef enum
 {
     open_failed, not_bgzf, idx_load_failed, file_type_error, api_usage_error,
-    header_error, no_eof, no_memory
+    header_error, no_eof, no_memory, vcf_parse_error, bcf_read_error
 }
 bcf_sr_error;
 

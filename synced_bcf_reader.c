@@ -75,6 +75,10 @@ char *bcf_sr_strerror(int errnum)
             return "no BGZF EOF marker; file may be truncated"; break;
         case no_memory:
             return "Out of memory"; break;
+        case vcf_parse_error:
+            return "VCF parse error"; break;
+        case bcf_read_error:
+            return "BCF read error"; break;
         default: return "";
     }
 }
@@ -514,12 +518,14 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             if ( reader->file->format.format==vcf )
             {
                 if ( (ret=hts_getline(reader->file, KS_SEP_LINE, &files->tmps)) < 0 ) break;   // no more lines
-                int ret = vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
-                if ( ret<0 ) break;
+                ret = vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
+                if ( ret<0 ) { files->errnum = vcf_parse_error; break; }
             }
             else if ( reader->file->format.format==bcf )
             {
-                if ( (ret=bcf_read1(reader->file, reader->header, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
+                ret = bcf_read1(reader->file, reader->header, reader->buffer[reader->nbuffer+1]);
+                if ( ret < -1 ) files->errnum = bcf_read_error;
+                if ( ret < 0 ) break; // no more lines or an error
             }
             else
             {
@@ -530,11 +536,14 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         else if ( reader->tbx_idx )
         {
             if ( (ret=tbx_itr_next(reader->file, reader->tbx_idx, reader->itr, &files->tmps)) < 0 ) break;  // no more lines
-            vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
+            ret = vcf_parse1(&files->tmps, reader->header, reader->buffer[reader->nbuffer+1]);
+            if ( ret<0 ) { files->errnum = vcf_parse_error; break; }
         }
         else
         {
-            if ( (ret=bcf_itr_next(reader->file, reader->itr, reader->buffer[reader->nbuffer+1])) < 0 ) break; // no more lines
+            ret = bcf_itr_next(reader->file, reader->itr, reader->buffer[reader->nbuffer+1]);
+            if ( ret < -1 ) files->errnum = bcf_read_error;
+            if ( ret < 0 ) break; // no more lines or an error
             bcf_subset_format(reader->header,reader->buffer[reader->nbuffer+1]);
         }
 
