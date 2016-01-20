@@ -63,6 +63,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <math.h>
 #include <ctype.h>
+#include <sys/time.h>
 
 #include "cram/cram.h"
 #include "cram/os.h"
@@ -2319,18 +2320,42 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     /* Populate the local disk cache if required */
     if (local_cache && *local_cache) {
+	// NB: executed in one thread only
+	static int rand_init = 0;
 	FILE *fp;
-	int i;
+
+	// Make sure the data we've fetched matches the @SQ M5 sum.
+	hts_md5_context *md5;
+	unsigned char md5buf[16];
+	char md5buf2[33];
+	if (!(md5 = hts_md5_init()))
+	    return -1;
+	hts_md5_update(md5, r->seq, r->length);
+	hts_md5_final(md5buf, md5);
+	hts_md5_destroy(md5);
+	hts_md5_hex(md5buf2, md5buf);
+
+	if (strncmp(md5buf2, tag->str+3, 32) != 0) {
+	    fprintf(stderr, "Reference md5sum mismatch:\nGot  %s\nNeed %s",
+		    md5buf2, tag->str+3);
+	    return -1;
+	}
 
 	expand_cache_path(path, local_cache, tag->str+3);
 	if (fd->verbose)
 	    fprintf(stderr, "Path='%s'\n", path);
 	mkdir_prefix(path, 01777);
 
-	i = 0;
+	if (!rand_init) {
+	    // consider just time(NULL) ^ clock() if non _BSD_SOURCE
+	    struct timeval tv;
+	    gettimeofday(&tv, NULL);
+	    srandom(getpid() ^ tv.tv_usec);
+	    rand_init = 1;
+	}
+
 	do {
-	    sprintf(path_tmp, "%s.tmp_%d", path, /*getpid(),*/ i);
-	    i++;
+	    sprintf(path_tmp, "%s.tmp_%d_%ld", path, (int)getpid(), random());
 	    fp = fopen(path_tmp, "wx");
 	} while (fp == NULL && errno == EEXIST);
 	if (!fp) {
