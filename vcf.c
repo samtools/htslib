@@ -2099,7 +2099,8 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
         for (i = 0; i < v->n_info; ++i) {
             bcf_info_t *z = &v->d.info[i];
             if ( !z->vptr ) continue;
-            if ( !first ) kputc(';', s); first = 0;
+            if ( !first ) kputc(';', s);
+            first = 0;
             kputs(h->id[BCF_DT_ID][z->key].key, s);
             if (z->len <= 0) continue;
             kputc('=', s);
@@ -2146,7 +2147,8 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                 for (i = 0; i < (int)v->n_fmt; ++i) {
                     bcf_fmt_t *f = &fmt[i];
                     if ( !f->p ) continue;
-                    if (!first) kputc(':', s); first = 0;
+                    if (!first) kputc(':', s);
+                    first = 0;
                     if (gt_i == i)
                         bcf_format_gt(f,j,s);
                     else
