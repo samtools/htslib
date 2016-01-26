@@ -2588,7 +2588,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     /* Copy and parse */
     if (!(cr->flags & BAM_FUNMAP)) {
-	int32_t *cig_to, *cig_from;
+	uint32_t *cig_to, *cig_from;
 	int apos = cr->apos-1, spos = 0;
 
 	cr->cigar       = s->ncigar;
@@ -2600,14 +2600,14 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 		return -1;
 	}
 
-	cig_to = (int32_t *)s->cigar;
-	cig_from = (int32_t *)bam_cigar(b);
+	cig_to = (uint32_t *)s->cigar;
+	cig_from = (uint32_t *)bam_cigar(b);
 
 	cr->feature = 0;
 	cr->nfeature = 0;
 	for (i = 0; i < cr->ncigar; i++) {
 	    enum cigar_op cig_op = cig_from[i] & BAM_CIGAR_MASK;
-	    int cig_len = cig_from[i] >> BAM_CIGAR_SHIFT;
+	    uint32_t cig_len = cig_from[i] >> BAM_CIGAR_SHIFT;
 	    cig_to[i] = cig_from[i];
 
 	    /* Can also generate events from here for CRAM diffs */
