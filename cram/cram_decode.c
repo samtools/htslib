@@ -50,6 +50,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/os.h"
 #include "htslib/hts.h"
 
+#include "htslib/kstring.h"
+
 //Whether CIGAR has just M or uses = and X to indicate match and mismatch
 //#define USE_X
 
@@ -2730,7 +2732,7 @@ int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
  * Returns the used size of the bam record on success
  *         -1 on failure.
  */
-static int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
+int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
 		       cram_record *cr, int rec, bam_seq_t **bam) {
     int bam_idx, rg_len;
     char name_a[1024], *name;
@@ -2802,6 +2804,7 @@ static int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
 				cr->len,
 				seq,
 				qual);
+
     if (bam_idx == -1)
 	return -1;
 

@@ -105,6 +105,9 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		      SAM_hdr *hdr);
 
 
+int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
+                cram_record *cr, int rec, bam_seq_t **bam);
+
 #ifdef __cplusplus
 }
 #endif
