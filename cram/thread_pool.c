@@ -524,17 +524,11 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
     j->q = q;
     if (q) {
 	pthread_mutex_lock(&q->result_m);
-	j->serial = q->curr_serial;
+	j->serial = q->curr_serial++;
+	q->pending++;
 	pthread_mutex_unlock(&q->result_m);
     } else {
 	j->serial = 0;
-    }
-
-    if (q) {
-	pthread_mutex_lock(&q->result_m);
-	q->curr_serial++;
-	q->pending++;
-	pthread_mutex_unlock(&q->result_m);
     }
 
     // Check if queue is full
