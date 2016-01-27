@@ -251,8 +251,8 @@ libhts.dylib: $(LIBHTS_OBJS)
 
 
 bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_khash_h)
-kstring.o kstring.pico: kstring.c $(htslib_kstring_h)
-knetfile.o knetfile.pico: knetfile.c $(htslib_knetfile_h)
+kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
+knetfile.o knetfile.pico: knetfile.c config.h $(htslib_knetfile_h)
 hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(hts_internal_h) $(htslib_khash_h)
 hfile_irods.o hfile_irods.pico: hfile_irods.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
@@ -265,7 +265,7 @@ faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) $(htslib
 synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c config.h $(htslib_synced_bcf_reader_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_bgzf_h)
 vcf_sweep.o vcf_sweep.pico: vcf_sweep.c config.h $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
 vcfutils.o vcfutils.pico: vcfutils.c config.h $(htslib_vcfutils_h) $(htslib_kbitset_h)
-kfunc.o kfunc.pico: kfunc.c $(htslib_kfunc_h)
+kfunc.o kfunc.pico: kfunc.c config.h $(htslib_kfunc_h)
 regidx.o regidx.pico: regidx.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_regidx_h)
 md5.o md5.pico: md5.c config.h $(htslib_hts_h)
 plugin.o plugin.pico: plugin.c config.h $(hts_internal_h) $(htslib_kstring_h)
@@ -335,13 +335,13 @@ test/test-vcf-api: test/test-vcf-api.o libhts.a
 test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a -lz $(LIBS)
 
-test/fieldarith.o: test/fieldarith.c $(htslib_sam_h)
-test/hfile.o: test/hfile.c $(htslib_hfile_h) $(htslib_hts_defs_h)
-test/sam.o: test/sam.c $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
-test/test-regidx.o: test/test-regidx.c $(htslib_regidx_h)
-test/test_view.o: test/test_view.c $(cram_h) $(htslib_sam_h)
-test/test-vcf-api.o: test/test-vcf-api.c $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
-test/test-vcf-sweep.o: test/test-vcf-sweep.c $(htslib_vcf_sweep_h)
+test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
+test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h)
+test/sam.o: test/sam.c config.h $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
+test/test-regidx.o: test/test-regidx.c config.h $(htslib_regidx_h)
+test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h)
+test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
+test/test-vcf-sweep.o: test/test-vcf-sweep.c config.h $(htslib_vcf_sweep_h)
 
 
 install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig

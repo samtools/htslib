@@ -38,6 +38,8 @@ redistribute it.  There is NO WARRANTY, to the extent permitted by law.])
 AC_PROG_CC
 AC_PROG_RANLIB
 
+AC_SYS_LARGEFILE
+
 need_crypto=no
 
 AC_ARG_WITH([irods],
