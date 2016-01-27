@@ -2860,6 +2860,9 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
 
 	    // p vs this: tlen, matepos, flags
+	    if (p->ref_id != cr->ref_id)
+		goto detached;
+
 	    if (p->tlen != -sign*(aright-aleft+1))
 		goto detached;
 
