@@ -34,6 +34,7 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <inttypes.h>
+#include <limits.h>
 
 #include "htslib/hts.h"
 #include "htslib/bgzf.h"
@@ -86,6 +87,13 @@ struct __bgzidx_t
     uint64_t ublock_addr;   // offset of the current block (uncompressed data)
 };
 
+/* Work out the limit for the number of offsets in an index.  On 64 bit
+   platforms it should come out as INT_MAX; on 32 bit the maximum
+   number that we could attempt to malloc without integer overflow */
+#define MAX_BGZIDX_OFFS (INT_MAX < SIZE_MAX / sizeof(bgzidx1_t) ? \
+                         INT_MAX :                                \
+                         SIZE_MAX / sizeof(bgzidx1_t))
+
 void bgzf_index_destroy(BGZF *fp);
 int bgzf_index_add_block(BGZF *fp);
 
@@ -121,13 +129,22 @@ static BGZF *bgzf_read_init(hFILE *hfpr)
     fp->is_write = 0;
     fp->is_compressed = (n==2 && magic[0]==0x1f && magic[1]==0x8b);
     fp->uncompressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
+    if (fp->uncompressed_block == NULL) goto fail;
     fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
+    if (fp->compressed_block == NULL) goto fail;
     fp->is_compressed = (n==18 && magic[0]==0x1f && magic[1]==0x8b) ? 1 : 0;
     fp->is_gzip = ( !fp->is_compressed || ((magic[3]&4) && memcmp(&magic[12], "BC\2\0",4)==0) ) ? 0 : 1;
 #ifdef BGZF_CACHE
     fp->cache = kh_init(cache);
+    if (!fp->cache) goto fail;
 #endif
     return fp;
+
+ fail:
+    free(fp->uncompressed_block);
+    free(fp->compressed_block);
+    free(fp);
+    return NULL;
 }
 
 // get the compress level from the mode string: compress_level==-1 for the default level, -2 plain uncompressed
@@ -144,6 +161,7 @@ static BGZF *bgzf_write_init(const char *mode)
 {
     BGZF *fp;
     fp = (BGZF*)calloc(1, sizeof(BGZF));
+    if (!fp) return NULL;
     fp->is_write = 1;
     int compress_level = mode2level(mode);
     if ( compress_level==-2 )
@@ -153,7 +171,9 @@ static BGZF *bgzf_write_init(const char *mode)
     }
     fp->is_compressed = 1;
     fp->uncompressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
+    if (!fp->uncompressed_block) goto fail;
     fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
+    if (!fp->compressed_block) goto fail;
     fp->compress_level = compress_level < 0? Z_DEFAULT_COMPRESSION : compress_level; // Z_DEFAULT_COMPRESSION==-1
     if (fp->compress_level > 9) fp->compress_level = Z_DEFAULT_COMPRESSION;
     if ( strchr(mode,'g') )
@@ -161,11 +181,19 @@ static BGZF *bgzf_write_init(const char *mode)
         // gzip output
         fp->is_gzip = 1;
         fp->gz_stream = (z_stream*)calloc(1,sizeof(z_stream));
+        if (!fp->gz_stream) goto fail;
         fp->gz_stream->zalloc = NULL;
         fp->gz_stream->zfree  = NULL;
-        if ( deflateInit2(fp->gz_stream, fp->compress_level, Z_DEFLATED, 15|16, 8, Z_DEFAULT_STRATEGY)!=Z_OK ) return NULL;
+        if ( deflateInit2(fp->gz_stream, fp->compress_level, Z_DEFLATED, 15|16, 8, Z_DEFAULT_STRATEGY)!=Z_OK ) goto fail;
     }
     return fp;
+
+ fail:
+    free(fp->gz_stream);
+    free(fp->compressed_block);
+    free(fp->uncompressed_block);
+    free(fp);
+    return NULL;
 }
 
 BGZF *bgzf_open(const char *path, const char *mode)
@@ -405,11 +433,15 @@ static void cache_block(BGZF *fp, int size)
         }
     }
     k = kh_put(cache, h, fp->block_address, &ret);
-    if (ret == 0) return; // if this happens, a bug!
+    if (ret <= 0) return; // if get -1, out of memory; 0, a bug!
     p = &kh_val(h, k);
     p->size = fp->block_length;
     p->end_offset = fp->block_address + size;
     p->block = (uint8_t*)malloc(BGZF_MAX_BLOCK_SIZE);
+    if (p->block == NULL) {
+        kh_del(cache, h, k); // Undo kh_put
+        return;
+    }
     memcpy(kh_val(h, k).block, fp->uncompressed_block, BGZF_MAX_BLOCK_SIZE);
 }
 #else
@@ -502,6 +534,11 @@ int bgzf_read_block(BGZF *fp)
 
         fp->is_gzip = 1;
         fp->gz_stream = (z_stream*) calloc(1,sizeof(z_stream));
+        if (!fp->gz_stream)
+        {
+            fp->errcode |= BGZF_ERR_ZLIB;
+            return -1;
+        }
         int ret = inflateInit2(fp->gz_stream, -15);
         if (ret != Z_OK)
         {
@@ -1034,37 +1071,55 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
     if ( !idx ) return -1;
 
     fp->idx = (bgzidx_t*) calloc(1,sizeof(bgzidx_t));
+    if (!fp->idx) goto fail;
     uint64_t x;
-    if ( fread(&x, 1, sizeof(x), idx) != sizeof(x) ) return -1;
-
-    fp->idx->noffs = fp->idx->moffs = 1 + (fp->is_be ? ed_swap_8(x) : x);
+    if ( fread(&x, 1, sizeof(x), idx) != sizeof(x) ) goto fail;
+    if (fp->is_be) x = ed_swap_8(x);
+    if (x > MAX_BGZIDX_OFFS - 1) { // -1 due to + 1 below
+        errno = ENOMEM; // Only really true on 32-bit platforms
+        goto fail;
+    }
+    fp->idx->noffs = fp->idx->moffs = 1 + x;
     fp->idx->offs  = (bgzidx1_t*) malloc(fp->idx->moffs*sizeof(bgzidx1_t));
+    if (!fp->idx->offs) goto fail;
     fp->idx->offs[0].caddr = fp->idx->offs[0].uaddr = 0;
 
     int i;
     if ( fp->is_be )
     {
-        int ret = 0;
+        int ret;
         for (i=1; i<fp->idx->noffs; i++)
         {
-            ret += fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].caddr = ed_swap_8(x);
+            ret = fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].caddr = ed_swap_8(x);
             ret += fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].uaddr = ed_swap_8(x);
+            if ( ret != sizeof(x)*2) goto fail;
         }
-        if ( ret != sizeof(x)*2*(fp->idx->noffs-1) ) return -1;
     }
     else
     {
-        int ret = 0;
+        int ret;
         for (i=1; i<fp->idx->noffs; i++)
         {
-            ret += fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].caddr = x;
+            ret = fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].caddr = x;
             ret += fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].uaddr = x;
+            if ( ret != sizeof(x)*2) goto fail;
         }
-        if ( ret != sizeof(x)*2*(fp->idx->noffs-1) ) return -1;
     }
     fclose(idx);
     return 0;
 
+ fail:
+    {
+        int tmp_err = errno; // In case trashed by fclose
+        fclose(idx);
+        if (fp->idx) {
+            free(fp->idx->offs);
+            free(fp->idx);
+            fp->idx = NULL;
+        }
+        errno = tmp_err;
+        return -1;
+    }
 }
 
 int bgzf_useek(BGZF *fp, long uoffset, int where)
