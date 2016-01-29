@@ -285,11 +285,10 @@ void t_results_queue_destroy(t_results_queue *q) {
     pthread_cond_destroy(&q->result_avail_c);
 
     memset(q, 0xbb, sizeof(*q));
-    free(q);
-
 #ifdef DEBUG
     fprintf(stderr, "Destroyed results queue %p\n", q);
 #endif
+    free(q);
 }
 
 /* ----------------------------------------------------------------------------
@@ -671,11 +670,10 @@ void t_pool_destroy(t_pool *p, int kill) {
 	free(p->t_stack);
 
     free(p->t);
-    free(p);
-
 #ifdef DEBUG
     fprintf(stderr, "Destroyed pool %p\n", p);
 #endif
+    free(p);
 }
 
 

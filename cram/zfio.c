@@ -154,7 +154,7 @@ zfp *zfopen(const char *path, const char *mode) {
 	printf("Failed on %s\n", path);
     } else {
 	sprintf(path2, "gzip > %.*s", 1000, path);
-	if (NULL != (zf->fp = popen(path2, "w")))
+	if (NULL != (zf->fp = popen(path2, "w"))) {
 	    return zf;
 	}
 	
