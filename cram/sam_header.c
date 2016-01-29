@@ -422,8 +422,11 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
  */
 int sam_hdr_add(SAM_hdr *sh, const char *type, ...) {
     va_list args;
+    int res;
     va_start(args, type);
-    return sam_hdr_vadd(sh, type, args, NULL);
+    res = sam_hdr_vadd(sh, type, args, NULL);
+    va_end(args);
+    return res;
 }
 
 /* 
@@ -549,7 +552,6 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 	
 	last = h_tag;
     }
-    va_end(ap);
 
     if (EOF == kputc('\n', &sh->text))
 	return -1;
@@ -707,6 +709,7 @@ SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
  *        -1 on failure
  */
 int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
+    int res = -1;
     va_list ap;
 
     va_start(ap, type);
@@ -716,14 +719,16 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
 	int idx;
 	SAM_hdr_tag *tag, *prev;
 
-	if (!(k = (char *)va_arg(ap, char *)))
-	    break;
+	if (!(k = (char *)va_arg(ap, char *))) {
+            res = 0;
+	    break; // will return 0
+        }
 	v = va_arg(ap, char *);
 
 	tag = sam_hdr_find_key(hdr, type, k, &prev);
 	if (!tag) {
 	    if (!(tag = pool_alloc(hdr->tag_pool)))
-		return -1;
+		break; // will return -1
 	    if (prev)
 		prev->next = tag;
 	    else
@@ -734,18 +739,18 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
 
 	idx = ks_len(&hdr->text);
 	if (ksprintf(&hdr->text, "%2.2s:%s", k, v) < 0)
-	    return -1;
+	    break; // will return -1
 	tag->len = ks_len(&hdr->text) - idx;
 	tag->str = string_ndup(hdr->str_pool,
 			       ks_str(&hdr->text) + idx,
 			       tag->len);
 	if (!tag->str)
-	    return -1;
+	    break; // will return -1
     }
 
     va_end(ap);
 
-    return 0;
+    return res;
 }
 
 #define K(a) (((a)[0]<<8)|((a)[1]))

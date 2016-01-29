@@ -106,9 +106,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 int flen(char *fmt, ...)
 {
     va_list args;
+    int res;
 
     va_start(args, fmt);
-    return vflen(fmt, args);
+    res = vflen(fmt, args);
+    va_end(args);
+    return res;
 }
 
 int vflen(char *fmt, va_list ap)
@@ -315,7 +318,9 @@ int vflen(char *fmt, va_list ap)
 	}
     }
 
+#if defined(HAVE_VA_COPY)
     va_end(ap);
+#endif
 
     return len+1; /* one for the null character */
 }
