@@ -806,6 +806,7 @@ int main(int argc, char **argv) {
     if (optind < argc) {
 	if (!(outfp = fopen(argv[optind], "wb"))) {
 	    perror(argv[optind]);
+            fclose(infp);
 	    return 1;
 	}
 	optind++;
@@ -856,6 +857,8 @@ int main(int argc, char **argv) {
 	}
     }
 
+    if (infp  != stdin)  fclose(infp);
+    if (outfp != stdout) fclose(outfp);
     gettimeofday(&tv2, NULL);
 
     fprintf(stderr, "Took %ld microseconds, %5.1f MB/s\n",

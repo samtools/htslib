@@ -1191,7 +1191,7 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 				     enum cram_external_type option,
 				     void *dat,
 				     int version) {
-    int *vals = NULL, *freqs = NULL, vals_alloc = 0, *lens, code, len;
+    int *vals = NULL, *freqs = NULL, vals_alloc = 0, *lens = NULL, *tmp, code, len;
     int nvals, i, ntot = 0, max_val = 0, min_val = INT_MAX, k;
     cram_codec *c;
     cram_huffman_code *codes;
@@ -1207,14 +1207,12 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 	    continue;
 	if (nvals >= vals_alloc) {
 	    vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-	    vals  = realloc(vals,  vals_alloc * sizeof(int));
-	    freqs = realloc(freqs, vals_alloc * sizeof(int));
-	    if (!vals || !freqs) {
-		if (vals)  free(vals);
-		if (freqs) free(freqs);
-		free(c);
-		return NULL;
-	    }
+            tmp = realloc(vals,  vals_alloc * sizeof(int));
+            if (!tmp) goto fail;
+            vals = tmp;
+            tmp = realloc(freqs, vals_alloc * sizeof(int));
+            if (!tmp) goto fail;
+            freqs = tmp;
 	}
 	vals[nvals] = i;
 	freqs[nvals] = st->freqs[i];
@@ -1232,10 +1230,12 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 		continue;
 	    if (nvals >= vals_alloc) {
 		vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-		vals  = realloc(vals,  vals_alloc * sizeof(int));
-		freqs = realloc(freqs, vals_alloc * sizeof(int));
-		if (!vals || !freqs)
-		    return NULL;
+                tmp = realloc(vals,  vals_alloc * sizeof(int));
+                if (!tmp) goto fail;
+                vals = tmp;
+                tmp = realloc(freqs, vals_alloc * sizeof(int));
+                if (!tmp) goto fail;
+                freqs = tmp;
 	    }
 	    vals[nvals]= kh_key(st->h, k);
 	    freqs[nvals] = kh_val(st->h, k);
@@ -1249,10 +1249,11 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 
     assert(nvals > 0);
 
-    freqs = realloc(freqs, 2*nvals*sizeof(*freqs));
+    tmp = realloc(freqs, 2*nvals*sizeof(*freqs));
+    if (!tmp) goto fail;
+    freqs = tmp;
     lens = calloc(2*nvals, sizeof(*lens));
-    if (!lens || !freqs)
-	return NULL;
+    if (!lens) goto fail;
 
     /* Inefficient, use pointers to form chain so we can insert and maintain
      * a sorted list? This is currently O(nvals^2) complexity.
@@ -1293,7 +1294,7 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 
     /* Sort, need in a struct */
     if (!(codes = malloc(nvals * sizeof(*codes))))
-	return NULL;
+	goto fail;
     for (i = 0; i < nvals; i++) {
 	codes[i].symbol = vals[i];
 	codes[i].len = lens[i];
@@ -1357,6 +1358,13 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
     c->store = cram_huffman_encode_store;
 
     return c;
+
+ fail:
+    free(lens);
+    free(vals);
+    free(freqs);
+    free(c);
+    return NULL;
 }
 
 /*

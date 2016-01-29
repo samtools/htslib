@@ -847,7 +847,7 @@ static char *lzma_mem_deflate(char *data, size_t size, size_t *cdata_size,
 static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
     lzma_stream strm = LZMA_STREAM_INIT;
     size_t out_size = 0, out_pos = 0;
-    char *out = NULL;
+    char *out = NULL, *new_out;
     int r;
 
     /* Initiate the decoder */
@@ -861,7 +861,9 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
     for (;strm.avail_in;) {
 	if (strm.avail_in > out_size - out_pos) {
 	    out_size += strm.avail_in * 4 + 32768;
-	    out = realloc(out, out_size);
+	    new_out = realloc(out, out_size);
+            if (!new_out) goto fail;
+            out = new_out;
 	}
 	strm.avail_out = out_size - out_pos;
 	strm.next_out = (uint8_t *)&out[out_pos];
@@ -870,7 +872,7 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
 	if (LZMA_OK != r && LZMA_STREAM_END != r) {
 	    fprintf(stderr, "r=%d\n", r);
 	    fprintf(stderr, "mem=%"PRId64"d\n", (int64_t)lzma_memusage(&strm));
-	    return NULL;
+	    goto fail;
 	}
 
 	out_pos = strm.total_out;
@@ -883,15 +885,21 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
     r = lzma_code(&strm, LZMA_FINISH);
     if (r != LZMA_OK && r != LZMA_STREAM_END) {
 	fprintf(stderr, "r=%d\n", r);
-	return NULL;
+	goto fail;
     }
 
-    out = realloc(out, strm.total_out);
+    new_out = realloc(out, strm.total_out > 0 ? strm.total_out : 1);
+    if (new_out) out = new_out;
     *size = strm.total_out;
 
     lzma_end(&strm);
 
     return out;
+
+ fail:
+    free(out);
+    lzma_end(&strm);
+    return NULL;
 }
 #endif
 

@@ -85,7 +85,9 @@ static char *mfload(FILE *fp, const char *fn, size_t *size, int binary) {
 #endif
 
     if (fn && -1 != stat(fn, &sb)) {
+        if (sb.st_size < bufsize) sb.st_size = bufsize;
 	data = malloc(allocated = sb.st_size);
+        if (!data) return NULL;
 	bufsize = sb.st_size;
     } else {
 	fn = NULL;
@@ -94,8 +96,14 @@ static char *mfload(FILE *fp, const char *fn, size_t *size, int binary) {
     do {
 	size_t len;
 	if (used + bufsize > allocated) {
+            char *new_data;
 	    allocated += bufsize;
-	    data = realloc(data, allocated);
+	    new_data = realloc(data, allocated);
+            if (!new_data) {
+                free(data);
+                return NULL;
+            }
+            data = new_data;
 	}
 	len = fread(data + used, 1, allocated - used, fp);
 	if (len > 0)

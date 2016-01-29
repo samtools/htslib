@@ -183,6 +183,8 @@ int main(void) {
 	pool_free(p, item);
     }
 
+    free(items);
+
     return 0;
 }
 #endif

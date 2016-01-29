@@ -148,7 +148,7 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
     enum cram_encoding best_encoding = E_NULL;
     int best_size = INT_MAX, bits;
     int nvals, i, ntot = 0, max_val = 0, min_val = INT_MAX, k;
-    int *vals = NULL, *freqs = NULL, vals_alloc = 0, *codes;
+    int *vals = NULL, *freqs = NULL, vals_alloc = 0, *codes, *tmp;
 
     //cram_stats_dump(st);
 
@@ -158,13 +158,12 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
 	    continue;
 	if (nvals >= vals_alloc) {
 	    vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-	    vals  = realloc(vals,  vals_alloc * sizeof(int));
-	    freqs = realloc(freqs, vals_alloc * sizeof(int));
-	    if (!vals || !freqs) {
-		if (vals)  free(vals);
-		if (freqs) free(freqs);
-		return E_HUFFMAN; // Cannot do much else atm
-	    }
+	    tmp = realloc(vals,  vals_alloc * sizeof(int));
+            if (!tmp) goto give_up_return_huffman; // Cannot do much else atm
+            vals = tmp;
+	    tmp = realloc(freqs, vals_alloc * sizeof(int));
+            if (!tmp) goto give_up_return_huffman; // Cannot do much else atm
+            freqs = tmp;
 	}
 	vals[nvals] = i;
 	freqs[nvals] = st->freqs[i];
@@ -183,10 +182,12 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
 
 	    if (nvals >= vals_alloc) {
 		vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-		vals  = realloc(vals,  vals_alloc * sizeof(int));
-		freqs = realloc(freqs, vals_alloc * sizeof(int));
-		if (!vals || !freqs)
-		    return E_HUFFMAN; // Cannot do much else atm
+		tmp = realloc(vals,  vals_alloc * sizeof(int));
+                if (!tmp) goto give_up_return_huffman;
+                vals = tmp;
+                tmp = realloc(freqs, vals_alloc * sizeof(int));
+                if (!tmp) goto give_up_return_huffman;
+                freqs = tmp;
 	    }
 	    i = kh_key(st->h, k);
 	    vals[nvals]=i;
@@ -439,6 +440,11 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
     free(freqs);
 
     return best_encoding;
+
+ give_up_return_huffman:
+    free(vals);
+    free(freqs);
+    return E_HUFFMAN;
 }
 
 void cram_stats_free(cram_stats *st) {
