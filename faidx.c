@@ -55,28 +55,45 @@ struct __faidx_t {
 #define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
 #endif
 
-static inline void fai_insert_index(faidx_t *idx, const char *name, int len, int line_len, int line_blen, uint64_t offset)
+static inline int fai_insert_index(faidx_t *idx, const char *name, int len, int line_len, int line_blen, uint64_t offset)
 {
     char *name_key = strdup(name);
     int absent;
-    khint_t k = kh_put(s, idx->hash, name_key, &absent);
-    faidx1_t *v = &kh_value(idx->hash, k);
+    khint_t k;
+    faidx1_t *v;
 
+    if (!name_key) return -1;
+
+    if (idx->n == idx->m) {
+        char **new_names;
+        idx->m = idx->m? idx->m<<1 : 16;
+        new_names = (char**)realloc(idx->name, sizeof(char*) * idx->m);
+        if (!new_names) {
+            free(name_key);
+            return -1;
+        }
+        idx->name = new_names;
+    }
+
+    k = kh_put(s, idx->hash, name_key, &absent);
+    if (absent < 0) {
+        free(name_key);
+        return -1;
+    }
     if (! absent) {
         fprintf(stderr, "[fai_build_core] ignoring duplicate sequence \"%s\" at byte offset %"PRIu64"\n", name, offset);
         free(name_key);
-        return;
+        return 0;
     }
 
-    if (idx->n == idx->m) {
-        idx->m = idx->m? idx->m<<1 : 16;
-        idx->name = (char**)realloc(idx->name, sizeof(char*) * idx->m);
-    }
+    v = &kh_value(idx->hash, k);
+
     idx->name[idx->n++] = name_key;
     v->len = len;
     v->line_len = line_len;
     v->line_blen = line_blen;
     v->offset = offset;
+    return 0;
 }
 
 faidx_t *fai_build_core(BGZF *bgzf)
@@ -173,7 +190,7 @@ void fai_save(const faidx_t *fai, FILE *fp)
 faidx_t *fai_read(FILE *fp)
 {
     faidx_t *fai;
-    char *buf, *p;
+    char *buf = NULL, *p;
     int len, line_len, line_blen;
 #ifdef _WIN32
     long offset;
@@ -181,9 +198,12 @@ faidx_t *fai_read(FILE *fp)
     long long offset;
 #endif
     fai = (faidx_t*)calloc(1, sizeof(faidx_t));
+    if (!fai) return NULL;
     fai->hash = kh_init(s);
+    if (!fai->hash) goto fail;
     buf = (char*)calloc(0x10000, 1);
-    while (!feof(fp) && fgets(buf, 0x10000, fp)) {
+    if (!buf) goto fail;
+    while (!feof(fp) && !ferror(fp) && fgets(buf, 0x10000, fp)) {
         for (p = buf; *p && isgraph(*p); ++p);
         *p = 0; ++p;
 #ifdef _WIN32
@@ -191,10 +211,18 @@ faidx_t *fai_read(FILE *fp)
 #else
         sscanf(p, "%d%lld%d%d", &len, &offset, &line_blen, &line_len);
 #endif
-        fai_insert_index(fai, buf, len, line_len, line_blen, offset);
+        if (fai_insert_index(fai, buf, len, line_len, line_blen, offset) != 0)
+            goto fail;
     }
+    if (ferror(fp)) goto fail;
+
     free(buf);
     return fai;
+
+ fail:
+    fai_destroy(fai);
+    free(buf);
+    return NULL;
 }
 
 void fai_destroy(faidx_t *fai)
@@ -291,6 +319,7 @@ faidx_t *fai_load(const char *fn)
     FILE *fp;
     faidx_t *fai;
     str = (char*)calloc(strlen(fn) + 5, 1);
+    if (!str) return NULL;
     sprintf(str, "%s.fai", fn);
 
     if (hisremote(str))
@@ -300,7 +329,7 @@ faidx_t *fai_load(const char *fn)
         {
             fprintf(stderr, "[fai_load] failed to open remote FASTA index %s\n", str);
             free(str);
-            return 0;
+            return NULL;
         }
     }
     else
@@ -313,18 +342,24 @@ faidx_t *fai_load(const char *fn)
         if (fp == 0) {
             fprintf(stderr, "[fai_load] fail to open FASTA index.\n");
             free(str);
-            return 0;
+            return NULL;
         }
     }
 
     fai = fai_read(fp);
     fclose(fp);
+    if (!fai) {
+        fprintf(stderr, "[fai_load] failed to read FASTA index.\n");
+        free(str);
+        return NULL;
+    }
 
     fai->bgzf = bgzf_open(fn, "rb");
     free(str);
     if (fai->bgzf == 0) {
         fprintf(stderr, "[fai_load] fail to open FASTA file.\n");
-        return 0;
+        fai_destroy(fai);
+        return NULL;
     }
     if ( fai->bgzf->is_compressed==1 )
     {
