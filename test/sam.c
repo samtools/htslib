@@ -30,6 +30,11 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 #include <math.h>
 
+// Suppress message for faidx_fetch_nseq(), which we're intentionally testing
+#include "htslib/hts_defs.h"
+#undef HTS_DEPRECATED
+#define HTS_DEPRECATED(message)
+
 #include "htslib/sam.h"
 #include "htslib/faidx.h"
 #include "htslib/kstring.h"

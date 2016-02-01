@@ -337,7 +337,7 @@ test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h)
-test/sam.o: test/sam.c config.h $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
+test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_regidx_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
