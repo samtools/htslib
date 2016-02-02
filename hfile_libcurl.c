@@ -90,8 +90,10 @@ static int easy_errno(CURL *easy, CURLcode err)
     case CURLE_URL_MALFORMAT:
         return EINVAL;
 
+#if LIBCURL_VERSION_NUM >= 0x071505
     case CURLE_NOT_BUILT_IN:
         return ENOSYS;
+#endif
 
     case CURLE_COULDNT_RESOLVE_PROXY:
     case CURLE_COULDNT_RESOLVE_HOST:
