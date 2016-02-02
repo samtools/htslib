@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <limits.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <assert.h>
 #include <sys/stat.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
@@ -955,10 +956,99 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
     return ret;
 }
 
+/* Common code for hts_readlines and hts_readlist when reading from
+   a kstream. */
+
+static inline char **hts_readlist_from_kstream(kstream_t *ks, int *n_out) {
+    kstring_t str = { 0, 0, NULL };
+    char **s = 0, **new_s;
+    int m = 0, n = 0, dret;
+
+    while (ks_getuntil(ks, KS_SEP_LINE, &str, &dret) >= 0) {
+        if (str.l == 0) continue;  // Ignore empty lines
+        if (m == n) {
+            m = m? m<<1 : 16;
+            new_s = (char**)realloc(s, m * sizeof(char*));
+            if (!new_s) goto fail;
+            s = new_s;
+        }
+        s[n] = strdup(str.s);
+        if (!s[n]) goto fail;
+        n++;
+    }
+
+    free(str.s);
+
+    if (n > 0) {
+        new_s = (char**)realloc(s, n * sizeof(char*));
+        if (new_s) s = new_s;
+    }
+
+    *n_out = n;
+    return s;
+
+ fail:
+    free(str.s);
+    if (s) {
+        while (n > 0) {
+            --n;
+            free(s[n]);
+        }
+        free(s);
+    }
+    return NULL;
+}
+
+/*
+   Common code for hts_readlines and hts_readlist when reading from
+   a string.  Note that unlike the kstream version above, this allows
+   empty entries, e.g. "foo,,bar" will produce "foo", "", "bar".
+   This matches historical behaviour of both hts_readlines and hts_readlist.
+*/
+
+static inline char **hts_readlist_from_string(const char *str, int *n_out) {
+    const char *q, *p = str;
+    char **s;
+    int m, n = 0;
+
+    // Count number of strings
+    do {
+        if (*p == ',' || *p == 0) n++;
+    } while (*p++ != 0);
+    m = n;
+
+    s = malloc(m * sizeof(char *));
+    if (!s) return NULL;
+
+    n = 0;
+    p = q = str;
+    do {
+        if (*p == ',' || *p == 0) {  // Copy string
+            assert(n < m);
+            s[n] = malloc(p - q + 1);
+            if (!s[n]) goto fail;
+            memcpy(s[n], q, p - q);
+            s[n++][p - q] = '\0'; // Ensure NUL-termination
+            q = p + 1;
+        }
+    } while (*p++ != 0);
+
+    assert(n == m);
+    *n_out = n;
+    return s;
+
+ fail:
+    while (n > 0) {
+        --n;
+        free(s[n]);
+    }
+    free(s);
+    return NULL;
+}
+
 char **hts_readlist(const char *string, int is_file, int *_n)
 {
-    int m = 0, n = 0, dret;
-    char **s = 0;
+    char **s;
     if ( is_file )
     {
 #if KS_BGZF
@@ -966,95 +1056,52 @@ char **hts_readlist(const char *string, int is_file, int *_n)
 #else
         gzFile fp = gzopen(string, "r");
 #endif
+        kstream_t *ks;
+
         if ( !fp ) return NULL;
 
-        kstream_t *ks;
-        kstring_t str;
-        str.s = 0; str.l = str.m = 0;
         ks = ks_init(fp);
-        while (ks_getuntil(ks, KS_SEP_LINE, &str, &dret) >= 0)
-        {
-            if (str.l == 0) continue;
-            n++;
-            hts_expand(char*,n,m,s);
-            s[n-1] = strdup(str.s);
-        }
+        s = hts_readlist_from_kstream(ks, _n);
         ks_destroy(ks);
 #if KS_BGZF
         bgzf_close(fp);
 #else
         gzclose(fp);
 #endif
-        free(str.s);
     }
     else
     {
-        const char *q = string, *p = string;
-        while ( 1 )
-        {
-            if (*p == ',' || *p == 0)
-            {
-                n++;
-                hts_expand(char*,n,m,s);
-                s[n-1] = (char*)calloc(p - q + 1, 1);
-                strncpy(s[n-1], q, p - q);
-                q = p + 1;
-            }
-            if ( !*p ) break;
-            p++;
-        }
+        s = hts_readlist_from_string(string, _n);
     }
-    s = (char**)realloc(s, n * sizeof(char*));
-    *_n = n;
+
     return s;
 }
 
 char **hts_readlines(const char *fn, int *_n)
 {
-    int m = 0, n = 0, dret;
     char **s = 0;
 #if KS_BGZF
     BGZF *fp = bgzf_open(fn, "r");
 #else
     gzFile fp = gzopen(fn, "r");
 #endif
+
     if ( fp ) { // read from file
-        kstream_t *ks;
-        kstring_t str;
-        str.s = 0; str.l = str.m = 0;
-        ks = ks_init(fp);
-        while (ks_getuntil(ks, KS_SEP_LINE, &str, &dret) >= 0) {
-            if (str.l == 0) continue;
-            if (m == n) {
-                m = m? m<<1 : 16;
-                s = (char**)realloc(s, m * sizeof(char*));
-            }
-            s[n++] = strdup(str.s);
-        }
+        kstream_t *ks = ks = ks_init(fp);
+        s = hts_readlist_from_kstream(ks, _n);
         ks_destroy(ks);
-        #if KS_BGZF
-            bgzf_close(fp);
-        #else
-            gzclose(fp);
-        #endif
-        s = (char**)realloc(s, n * sizeof(char*));
-        free(str.s);
+#if KS_BGZF
+        bgzf_close(fp);
+#else
+        gzclose(fp);
+#endif
+
     } else if (*fn == ':') { // read from string
-        const char *q, *p;
-        for (q = p = fn + 1;; ++p)
-            if (*p == ',' || *p == 0) {
-                if (m == n) {
-                    m = m? m<<1 : 16;
-                    s = (char**)realloc(s, m * sizeof(char*));
-                }
-                s[n] = (char*)calloc(p - q + 1, 1);
-                strncpy(s[n++], q, p - q);
-                q = p + 1;
-                if (*p == 0) break;
-            }
-    } else return 0;
-    s = (char**)realloc(s, n * sizeof(char*));
-    *_n = n;
+
+        s = hts_readlist_from_string(fn + 1, _n);
+
+    } else return NULL;
+
     return s;
 }
 
