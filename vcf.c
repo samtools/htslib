@@ -803,6 +803,7 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     if ( bgzf_read(fp, magic, 5)<0 )
     {
         fprintf(stderr,"[%s:%d %s] Failed to read the header (reading BCF in text mode?)\n", __FILE__,__LINE__,__FUNCTION__);
+        bcf_hdr_destroy(h);
         return NULL;
     }
     if (strncmp((char*)magic, "BCF\2\2", 5) != 0)
@@ -1288,6 +1289,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
     if ( !txt.s )
     {
         fprintf(stderr,"[%s:%d %s] Could not read the header\n", __FILE__,__LINE__,__FUNCTION__);
+        bcf_hdr_destroy(h);
         return NULL;
     }
     bcf_hdr_parse(h, txt.s);
