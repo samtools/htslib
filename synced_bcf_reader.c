@@ -81,12 +81,27 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
 {
     kstring_t str = {0,0,0};
     const char *tmp = filters, *prev = filters;
-    int nout = 0, *out = NULL;
+    int nout = 0, count = 0, *out = NULL;
+
+    while (1)
+    {
+        if ( *tmp==',' || !*tmp )
+        {
+            count++;
+            if ( !*tmp ) break;
+        }
+        tmp++;
+    }
+
+    out = (int*) malloc(count * sizeof(int));
+    if (!out) return NULL;
+
+    tmp = filters;
     while ( 1 )
     {
         if ( *tmp==',' || !*tmp )
         {
-            out = (int*) realloc(out, (nout+1)*sizeof(int));
+            assert(nout < count);
             if ( tmp-prev==1 && *prev=='.' )
             {
                 out[nout] = -1;
@@ -95,7 +110,7 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
             else
             {
                 str.l = 0;
-                kputsn(prev, tmp-prev, &str);
+                if (kputsn(prev, tmp-prev, &str) == EOF) goto fail;
                 out[nout] = bcf_hdr_id2int(hdr, BCF_DT_ID, str.s);
                 if ( out[nout]>=0 ) nout++;
             }
@@ -105,8 +120,18 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
         tmp++;
     }
     if ( str.m ) free(str.s);
+    if (nout < count)
+    {
+        int *tmp = realloc(out, (nout ? nout : 1) * sizeof(int));
+        if (tmp) out = tmp;
+    }
     *nfilters = nout;
     return out;
+
+ fail:
+    free(str.s);
+    free(out);
+    return NULL;
 }
 
 int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
@@ -239,7 +264,14 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 
     reader->fname = strdup(fname);
     if ( files->apply_filters )
+    {
         reader->filter_ids = init_filters(reader->header, files->apply_filters, &reader->nfilter_ids);
+        if (!reader->filter_ids)
+        {
+            files->errnum = open_failed;
+            return 0;
+        }
+    }
 
     // Update list of chromosomes
     if ( !files->explicit_regs && !files->streaming )
