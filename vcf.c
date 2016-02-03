@@ -1538,7 +1538,7 @@ static inline void align_mem(kstring_t *s)
 }
 
 // p,q is the start and the end of the FORMAT field
-int _vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char *q)
+static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char *q)
 {
     if ( !bcf_hdr_nsamples(h) ) return 0;
 
@@ -1956,7 +1956,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             }
             if ( v->max_unpack && !(v->max_unpack>>3) ) return 0;
         } else if (i == 8) // FORMAT
-            return _vcf_parse_format(s, h, v, p, q);
+            return vcf_parse_format(s, h, v, p, q);
     }
     return 0;
 }
