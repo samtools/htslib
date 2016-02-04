@@ -209,6 +209,10 @@ sub test_vcf_various
     # Trailing spaces on header lines
     test_cmd($opts, %args, out => "test-vcf-hdr.out",
         cmd => "$$opts{path}/../htsfile -ch $$opts{path}/test-vcf-hdr-in.vcf");
+
+    # Various VCF parsing issues
+    test_cmd($opts, %args, out => "formatcols.vcf",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatcols.vcf");
 }
 
 sub test_convert_padded_header

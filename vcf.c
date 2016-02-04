@@ -1584,7 +1584,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
     // compute max
     int n_sample_ori = -1;
     r = q + 1;  // r: position in the format string
-    m = l = g = 1, v->n_sample = 0;  // m: max vector size, l: max field len, g: max number of alleles
+    l = 0, m = g = 1, v->n_sample = 0;  // m: max vector size, l: max field len, g: max number of alleles
     while ( r<end )
     {
         // can we skip some samples?
@@ -1607,7 +1607,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             if ( *r == ':' || !*r )  // end of field or end of sample
             {
                 if (fmt[j].max_m < m) fmt[j].max_m = m;
-                if (fmt[j].max_l < l - 1) fmt[j].max_l = l - 1;
+                if (fmt[j].max_l < l) fmt[j].max_l = l;
                 if (fmt[j].is_gt && fmt[j].max_g < g) fmt[j].max_g = g;
                 l = 0, m = g = 1;
                 if ( *r==':' ) 
