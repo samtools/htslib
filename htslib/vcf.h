@@ -765,7 +765,34 @@ typedef struct {
     #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
 
     hts_idx_t *bcf_index_load2(const char *fn, const char *fnidx);
+
+    /**
+     *  bcf_index_build() - Generate and save an index file
+     *  @fn:         Input VCF/BCF filename
+     *  @min_shift:  Positive to generate CSI, or 0 to generate TBI
+     *
+     *  Returns 0 if successful, or negative if an error occurred.
+     *
+     *  List of error codes:
+     *      -1 .. indexing failed
+     *      -2 .. opening @fn failed
+     *      -3 .. format not indexable
+     */
     int bcf_index_build(const char *fn, int min_shift);
+
+    /**
+     *  bcf_index_build2() - Generate and save an index to a specific file
+     *  @fn:         Input VCF/BCF filename
+     *  @fnidx:      Output filename, or NULL to add .csi/.tbi to @fn
+     *  @min_shift:  Positive to generate CSI, or 0 to generate TBI
+     *
+     *  Returns 0 if successful, or negative if an error occurred.
+     *
+     *  List of error codes:
+     *      -1 .. indexing failed
+     *      -2 .. opening @fn failed
+     *      -3 .. format not indexable
+     */
     int bcf_index_build2(const char *fn, const char *fnidx, int min_shift);
 
 /*******************

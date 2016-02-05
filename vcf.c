@@ -2349,14 +2349,34 @@ int bcf_index_build2(const char *fn, const char *fnidx, int min_shift)
 {
     htsFile *fp;
     hts_idx_t *idx;
+    tbx_t *tbx;
     int ret;
-    if ((fp = hts_open(fn, "rb")) == 0) return -1;
-    if ( fp->format.compression!=bgzf ) { hts_close(fp); return -1; }
-    idx = bcf_index(fp, min_shift);
+    if ((fp = hts_open(fn, "rb")) == 0) return -2;
+    if ( fp->format.compression!=bgzf ) { hts_close(fp); return -3; }
+    switch (fp->format.format) {
+        case bcf:
+            idx = bcf_index(fp, min_shift);
+            if (idx) {
+                ret = hts_idx_save_as(idx, fn, fnidx, HTS_FMT_CSI);
+                hts_idx_destroy(idx);
+            }
+            else ret = -1;
+            break;
+
+        case vcf:
+            tbx = tbx_index(hts_get_bgzfp(fp), min_shift, &tbx_conf_vcf);
+            if (tbx) {
+                ret = hts_idx_save_as(tbx->idx, fn, fnidx, min_shift > 0 ? HTS_FMT_CSI : HTS_FMT_TBI);
+                tbx_destroy(tbx);
+            }
+            else ret = -1;
+            break;
+
+        default:
+            ret = -3;
+            break;
+    }
     hts_close(fp);
-    if ( !idx ) return -1;
-    ret = hts_idx_save_as(idx, fn, fnidx, HTS_FMT_CSI);
-    hts_idx_destroy(idx);
     return ret;
 }
 
