@@ -19,12 +19,26 @@
 #
 # LICENSE
 #
-#   Copyright (c) 2010,2015 James Bonfield <jkb@sanger.ac.uk>
+#   Copyright (C) 2010,2016 Genome Research Ltd.
+#   Author: James Bonfield <jkb@sanger.ac.uk>
 #
-#   Copying and distribution of this file, with or without
-#   modification, are permitted in any medium without royalty
-#   provided the copyright notice and this notice are preserved.
-#   This file is offered as-is, without any warranty.
+#   Permission is hereby granted, free of charge, to any person obtaining a copy
+#   of this software and associated documentation files (the "Software"), to deal
+#   in the Software without restriction, including without limitation the rights
+#   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+#   copies of the Software, and to permit persons to whom the Software is
+#   furnished to do so, subject to the following conditions:
+#
+#   The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
+#
+#   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+#   THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+#   DEALINGS IN THE SOFTWARE.
 
 
 AC_DEFUN([AX_LIB_LZMA],
@@ -58,7 +72,7 @@ AC_DEFUN([AX_LIB_LZMA],
           # Backout and whinge
           CPPFLAGS=$_cppflags
           LDFLAGS=$_ldflags
-          AC_MSG_ERROR(["--with-lzma specified, but non functioning"])
+          AC_MSG_WARN(["--with-lzma specified, but non functioning"])
       fi
   
     else
@@ -115,7 +129,7 @@ AC_DEFUN([AX_LIB_LZMA],
             LIBS="-llzma $LIBS"
         fi
     else
-      AC_MSG_ERROR("No functioning lzma found")
+      AC_MSG_WARN("No functioning lzma found")
     fi
   
     # Not sure how many of these are needed, but it's belt-and-braces mode

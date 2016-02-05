@@ -405,7 +405,7 @@ tags TAGS:
 distdir:
 	@[ "$(distdir)" != "" ] || (echo "Set distdir variable first.";false)
 	-mkdir -p $(distdir)
-	tar -c *.[ch15] [ILMNRcht]*[ELSbcekmnt] | (cd $(distdir) && tar -x)
+	tar -c *.[ch15] [ILMNRchtm]*[ELSbcekmnt4] | (cd $(distdir) && tar -x)
 	+cd $(distdir) && $(MAKE) distclean
 
 dist: version.h
