@@ -1,7 +1,7 @@
 /*  vcf.c -- VCF/BCF API functions.
 
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2015 Genome Research Ltd.
+    Copyright (C) 2012-2016 Genome Research Ltd.
     Portions copyright (C) 2014 Intel Corporation.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -1683,7 +1683,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                         assert( 0 );    // success of strtol,strtod not checked
 #endif
                         is_phased = (*t == '|');
-                        if (*t == ':' || *t == 0) break;
+                        if (*t != '|' && *t != '/') break;
                     }
                     if ( !l ) x[l++] = 0;   // An empty field, insert missing value
                     for (; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
@@ -1697,7 +1697,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 for (l = 0;; ++t) {
                     if (*t == '.') x[l++] = bcf_int32_missing, ++t; // ++t to skip "."
                     else x[l++] = strtol(t, &t, 10);
-                    if (*t == ':' || *t == 0) break;
+                    if (*t != ',') break;
                 }
                 if ( !l ) x[l++] = bcf_int32_missing;
                 for (; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
@@ -1706,12 +1706,12 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 for (l = 0;; ++t) {
                     if (*t == '.' && !isdigit(t[1])) bcf_float_set_missing(x[l++]), ++t; // ++t to skip "."
                     else x[l++] = strtod(t, &t);
-                    if (*t == ':' || *t == 0) break;
+                    if (*t != ',') break;
                 }
                 if ( !l ) bcf_float_set_missing(x[l++]);    // An empty field, insert missing value
                 for (; l < z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
             } else abort();
-            if (*t == 0) {
+            if (*t == '\0') {
                 for (++j; j < v->n_fmt; ++j) { // fill end-of-vector values
                     z = &fmt[j];
                     if ((z->y>>4&0xf) == BCF_HT_STR) {
@@ -1736,10 +1736,14 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 }
                 break;
             }
-            else
-            {
-                if (*t == ':') ++j;
+            else if (*t == ':') {
+                j++;
                 t++;
+            }
+            else {
+                fprintf(stderr,"[E::%s] Invalid character '%c' in '%s' FORMAT field at %s:%d\n", __FUNCTION__, isprint((unsigned char) *t)? *t : '?', h->id[BCF_DT_ID][z->key].key, bcf_seqname(h,v), v->pos+1);
+                // TODO Set v->errcode appropriately
+                return -1;
             }
         }
         m++; t++;
