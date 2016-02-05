@@ -33,23 +33,13 @@ EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
 LIBS     =
 
-# For now these don't work too well as samtools also needs to know to
-# add -lbz2 and -llzma if linking against the static libhts.a library.
-# TODO This needs configury and adding to htslib.pc.in.
-#
 # # Bzip2 support; optionally used by CRAM.
-# HAVE_LIBBZ2 := $(shell echo -e "\#include <bzlib.h>\012int main(void){return 0;}" > .test.c && $(CC) $(CFLAGS) $(CPPFLAGS) -o .test .test.c -lbz2 2>/dev/null && echo yes)
-# ifeq "$(HAVE_LIBBZ2)" "yes"
-# CPPFLAGS += -DHAVE_LIBBZ2
-# LIBS     += -lbz2
-# endif
-#
-# # Lzma support; optionally used by CRAM.
-# HAVE_LIBLZMA := $(shell echo -e "\#include <lzma.h>\012int main(void){return 0;}" > .test.c && $(CC) $(CFLAGS) $(CPPFLAGS) -o .test .test.c -llzma 2>/dev/null && echo yes)
-# ifeq "$(HAVE_LIBLZMA)" "yes"
-# CPPFLAGS += -DHAVE_LIBLZMA
-# LIBS     += -llzma
-# endif
+CPPFLAGS += -DHAVE_LIBBZ2
+LIBS     += -lbz2
+
+# Lzma support; optionally used by CRAM.
+CPPFLAGS += -DHAVE_LIBLZMA
+LIBS     += -llzma
 
 prefix      = /usr/local
 exec_prefix = $(prefix)
@@ -413,8 +403,15 @@ tags TAGS:
 # (The wildcards attempt to omit non-exported files (.git*, README.md,
 # etc) and other detritus that might be in the top-level directory.)
 distdir:
+	@[ "$(distdir)" != "" ] || (echo "Set distdir variable first.";false)
+	-mkdir -p $(distdir)
 	tar -c *.[ch15] [ILMNRcht]*[ELSbcekmnt] | (cd $(distdir) && tar -x)
 	+cd $(distdir) && $(MAKE) distclean
+
+dist: version.h
+	vers=`sed 's/.*"\(.*\).*"/\1/' version.h`;\
+	make distdir distdir=htslib-$$vers;\
+	tar cfz htslib-$$vers.tar.gz htslib-$$vers
 
 force:
 
