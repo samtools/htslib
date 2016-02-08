@@ -1,5 +1,6 @@
 includedir=@includedir@
 libdir=@libdir@
+prefix: ${libdir}
 
 Name: htslib
 Description: C library for high-throughput sequencing data formats
