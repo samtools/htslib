@@ -904,9 +904,14 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     c->bin = hts_reg2bin(c->pos, c->pos + i, 14, 5);
     // mate chr
     q = _read_token(p);
-    if (strcmp(q, "=") == 0) c->mtid = c->tid;
-    else if (strcmp(q, "*") == 0) c->mtid = -1;
-    else c->mtid = bam_name2id(h, q);
+    if (strcmp(q, "=") == 0) {
+        c->mtid = c->tid;
+    } else if (strcmp(q, "*") == 0) {
+        c->mtid = -1;
+    } else {
+        c->mtid = bam_name2id(h, q);
+        _parse_warn(c->mtid < 0, "urecognized mate reference name; treated as unmapped");
+    }
     // mpos
     c->mpos = strtol(p, &p, 10) - 1;
     if (*p++ != '\t') goto err_ret;
