@@ -613,27 +613,27 @@ int hts_parse_format(htsFormat *format, const char *str) {
     format->version.minor = 0; // unknown
     format->version.major = 0; // unknown
 
-    if (strncmp(str, "sam", cp-str) == 0) {
+    if (strncmp(str, "sam", cp-str) == 0 || strncmp(str, "SAM", cp-str) == 0) {
         format->category          = sequence_data;
         format->format            = sam;
         format->compression       = no_compression;;
         format->compression_level = 0;
-    } else if (strncmp(str, "bam", cp-str) == 0) {
+    } else if (strncmp(str, "bam", cp-str) == 0 || strncmp(str, "BAM", cp-str) == 0) {
         format->category          = sequence_data;
         format->format            = bam;
         format->compression       = bgzf;
         format->compression_level = -1;
-    } else if (strncmp(str, "cram", cp-str) == 0) {
+    } else if (strncmp(str, "cram", cp-str) == 0 || strncmp(str, "CRAM", cp-str) == 0) {
         format->category          = sequence_data;
         format->format            = cram;
         format->compression       = custom;
         format->compression_level = -1;
-    } else if (strncmp(str, "vcf", cp-str) == 0) {
+    } else if (strncmp(str, "vcf", cp-str) == 0 || strncmp(str, "VCF", cp-str) == 0) {
         format->category          = variant_data;
         format->format            = vcf;
         format->compression       = no_compression;;
         format->compression_level = 0;
-    } else if (strncmp(str, "bcf", cp-str) == 0) {
+    } else if (strncmp(str, "bcf", cp-str) == 0 || strncmp(str, "BCF", cp-str) == 0) {
         format->category          = variant_data;
         format->format            = bcf;
         format->compression       = bgzf;
