@@ -851,7 +851,7 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
     int r;
 
     /* Initiate the decoder */
-    if (LZMA_OK != lzma_stream_decoder(&strm, 50000000, 0))
+    if (LZMA_OK != lzma_stream_decoder(&strm, lzma_easy_decoder_memusage(9), 0))
 	return NULL;
 
     /* Decode loop */
@@ -868,8 +868,7 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
 
 	r = lzma_code(&strm, LZMA_RUN);
 	if (LZMA_OK != r && LZMA_STREAM_END != r) {
-	    fprintf(stderr, "r=%d\n", r);
-	    fprintf(stderr, "mem=%"PRId64"d\n", (int64_t)lzma_memusage(&strm));
+	    fprintf(stderr, "[E::%s] LZMA decode failure, exit code %d\n", __func__, r);
 	    return NULL;
 	}
 
