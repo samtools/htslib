@@ -43,6 +43,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts_endian.h"
 #include "version.h"
 #include "hts_internal.h"
+#include "hfile_internal.h"
 
 #include "htslib/khash.h"
 #include "htslib/kseq.h"
@@ -587,6 +588,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "NAME_PREFIX") == 0)
         o->opt = CRAM_OPT_PREFIX, o->val.s = val;
 
+    else if (strcmp(o->arg, "block_size") == 0 ||
+             strcmp(o->arg, "BLOCK_SIZE") == 0)
+        o->opt = HTS_OPT_BLOCK_SIZE, o->val.i = strtol(val, NULL, 0);
+
     else {
         fprintf(stderr, "Unknown option '%s'\n", o->arg);
         free(o->arg);
@@ -960,6 +965,17 @@ const char *hts_format_file_extension(const htsFormat *format) {
     }
 }
 
+static hFILE *hts_hfile(htsFile *fp) {
+    switch (fp->format.format) {
+    case binary_format: // fall through; still valid if bcf?
+    case bam:          return bgzf_hfile(fp->fp.bgzf);
+    case cram:         return cram_hfile(fp->fp.cram);
+    case text_format:  return fp->fp.hfile;
+    case sam:          return fp->fp.hfile;
+    default:           return NULL;
+    }
+}
+
 int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
     int r;
     va_list args;
@@ -970,6 +986,22 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         int nthreads = va_arg(args, int);
         va_end(args);
         return hts_set_threads(fp, nthreads);
+    }
+
+    case HTS_OPT_BLOCK_SIZE: {
+        hFILE *hf = hts_hfile(fp);
+
+        if (hf) {
+            va_start(args, opt);
+            if (hfile_set_blksize(hf, va_arg(args, int)) != 0 && hts_verbose >= 2)
+                fprintf(stderr, "[W::%s] Failed to change block size\n", __func__);
+            va_end(args);
+        } else if (hts_verbose >= 2)
+            // To do - implement for vcf/bcf.
+            fprintf(stderr, "[W::%s] cannot change block size for this format\n", __func__);
+
+
+        return 0;
     }
 
     case HTS_OPT_THREAD_POOL: {

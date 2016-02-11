@@ -235,6 +235,7 @@ enum hts_fmt_option {
     HTS_OPT_NTHREADS,
     HTS_OPT_THREAD_POOL,
     HTS_OPT_CACHE_SIZE,
+    HTS_OPT_BLOCK_SIZE,
 };
 
 // For backwards compatibility
