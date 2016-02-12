@@ -2340,6 +2340,28 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	    return 0;
 	}
 
+	// Check md5sum
+	hts_md5_context *md5;
+	char unsigned md5_buf1[16];
+	char md5_buf2[33];
+
+	if (!(md5 = hts_md5_init())) {
+	    unlink(path_tmp);
+	    fclose(fp);
+	    return -1;
+	}
+	hts_md5_update(md5, r->seq, r->length);
+	hts_md5_final(md5_buf1, md5);
+	hts_md5_destroy(md5);
+	hts_md5_hex(md5_buf2, md5_buf1);
+
+	if (strncmp(tag->str+3, md5_buf2, 32) != 0) {
+	    fprintf(stderr, "[E::%s] mismatching md5sum for downloaded reference.\n", __func__);
+	    unlink(path_tmp);
+	    fclose(fp);
+	    return -1;
+	}
+
 	if (r->length != fwrite(r->seq, 1, r->length, fp)) {
 	    perror(path);
 	}

@@ -193,7 +193,7 @@ mFILE *find_file_url(char *file, char *url) {
 	    return NULL;
 	}
     }
-    if (hclose(hf) < 0) {
+    if (hclose(hf) < 0 || len < 0) {
 	mfdestroy(mf);
 	return NULL;
     }
