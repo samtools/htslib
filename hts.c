@@ -431,7 +431,7 @@ scan_keyword(const char *str, char delim, char *buf, size_t buflen)
 {
     size_t i = 0;
     while (*str && *str != delim) {
-        if (i < buflen-1) buf[i++] = tolower((unsigned char) *str);
+        if (i < buflen-1) buf[i++] = tolower_c(*str);
         str++;
     }
 

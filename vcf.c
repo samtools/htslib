@@ -39,6 +39,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/tbx.h"
 #include "htslib/hfile.h"
 #include "htslib/khash_str2int.h"
+#include "hts_internal.h"
 
 #include "htslib/khash.h"
 KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
@@ -1741,7 +1742,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 t++;
             }
             else {
-                fprintf(stderr,"[E::%s] Invalid character '%c' in '%s' FORMAT field at %s:%d\n", __FUNCTION__, isprint((unsigned char) *t)? *t : '?', h->id[BCF_DT_ID][z->key].key, bcf_seqname(h,v), v->pos+1);
+                fprintf(stderr,"[E::%s] Invalid character '%c' in '%s' FORMAT field at %s:%d\n", __FUNCTION__, isprint_c(*t)? *t : '?', h->id[BCF_DT_ID][z->key].key, bcf_seqname(h,v), v->pos+1);
                 // TODO Set v->errcode appropriately
                 return -1;
             }
