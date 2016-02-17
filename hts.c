@@ -156,20 +156,23 @@ static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
 static void
 parse_version(htsFormat *fmt, const unsigned char *u, const unsigned char *ulim)
 {
-    const char *str  = (const char *) u;
+    const char *s    = (const char *) u;
     const char *slim = (const char *) ulim;
-    const char *s;
+    short v;
 
     fmt->version.major = fmt->version.minor = -1;
 
-    for (s = str; s < slim; s++) if (!isdigit(*s)) break;
+    for (v = 0; s < slim && isdigit_c(*s); s++)
+        v = 10 * v + *s - '0';
+
     if (s < slim) {
-        fmt->version.major = atoi(str);
+        fmt->version.major = v;
         if (*s == '.') {
-            str = &s[1];
-            for (s = str; s < slim; s++) if (!isdigit(*s)) break;
+            s++;
+            for (v = 0; s < slim && isdigit_c(*s); s++)
+                v = 10 * v + *s - '0';
             if (s < slim)
-                fmt->version.minor = atoi(str);
+                fmt->version.minor = v;
         }
         else
             fmt->version.minor = 0;
