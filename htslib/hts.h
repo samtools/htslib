@@ -1,6 +1,6 @@
 /*  hts.h -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2012-2015 Genome Research Ltd.
+    Copyright (C) 2012-2016 Genome Research Ltd.
     Copyright (C) 2010, 2012 Broad Institute.
     Portions copyright (C) 2003-2006, 2008-2010 by Heng Li <lh3@live.co.uk>
 
@@ -390,6 +390,19 @@ int hts_set_threads(htsFile *fp, int n);
       used to provide a reference list if the htsFile contains no @SQ headers.
 */
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
+
+
+/*!
+  @abstract  Determine whether a given htsFile contains a valid EOF block
+  @return    3 for a non-EOF checkable filetype;
+             2 for an unseekable file type where EOF cannot be checked;
+             1 for a valid EOF block;
+             0 for if the EOF marker is absent when it should be present;
+            -1 (with errno set) on failure
+  @discussion
+      Check if the BGZF end-of-file (EOF) marker is present
+*/
+int hts_check_EOF(htsFile *fp);
 
 /************
  * Indexing *

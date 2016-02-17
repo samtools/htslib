@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2014 Genome Research Ltd.
+Copyright (c) 2012-2016 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without 
@@ -4601,4 +4601,55 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     }
 
     return 0;
+}
+
+int cram_check_EOF(cram_fd *fd)
+{
+    // Byte 9 in these templates is & with 0x0f to resolve differences
+    // between ITF-8 interpretations between early Java and C
+    // implementations of CRAM
+    static const unsigned char TEMPLATE_2_1[30] = {
+        0x0b, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x0f, 0xe0,
+        0x45, 0x4f, 0x46, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+        0x01, 0x00, 0x06, 0x06, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00
+    };
+    static const unsigned char TEMPLATE_3[38] = {
+        0x0f, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x0f, 0xe0,
+        0x45, 0x4f, 0x46, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x05,
+        0xbd, 0xd9, 0x4f, 0x00, 0x01, 0x00, 0x06, 0x06, 0x01, 0x00,
+        0x01, 0x00, 0x01, 0x00, 0xee, 0x63, 0x01, 0x4b
+    };
+
+    unsigned char buf[38]; // max(sizeof TEMPLATE_*)
+
+    uint8_t major = CRAM_MAJOR_VERS(fd->version);
+    uint8_t minor = CRAM_MINOR_VERS(fd->version);
+
+    const unsigned char *template;
+    ssize_t template_len;
+    if ((major < 2) ||
+        (major == 2 && minor == 0)) {
+        return 3; // No EOF support in cram versions less than 2.1
+    } else if (major == 2 && minor == 1) {
+        template = TEMPLATE_2_1;
+        template_len = sizeof TEMPLATE_2_1;
+    } else {
+        template = TEMPLATE_3;
+        template_len = sizeof TEMPLATE_3;
+    }
+
+    off_t offset = htell(fd->fp);
+    if (hseek(fd->fp, -template_len, SEEK_END) < 0) {
+        if (errno == ESPIPE) {
+            hclearerr(fd->fp);
+            return 2;
+        }
+        else {
+            return -1;
+        }
+    }
+    if (hread(fd->fp, buf, template_len) != template_len) return -1;
+    if (hseek(fd->fp, offset, SEEK_SET) < 0) return -1;
+    buf[8] &= 0x0f;
+    return (memcmp(template, buf, template_len) == 0)? 1 : 0;
 }

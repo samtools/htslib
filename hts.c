@@ -1101,6 +1101,17 @@ int hts_file_type(const char *fname)
     }
 }
 
+int hts_check_EOF(htsFile *fp)
+{
+    if (fp->format.compression == bgzf)
+        return bgzf_check_EOF(fp->fp.bgzf);
+    else if (fp->format.format == cram)
+        return cram_check_EOF(fp->fp.cram);
+    else
+        return 3;
+}
+
+
 /****************
  *** Indexing ***
  ****************/
