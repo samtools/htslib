@@ -413,6 +413,17 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
  */
 int cram_set_header(cram_fd *fd, SAM_hdr *hdr);
 
+/*! Check if this file has a proper EOF block
+ *
+ * @return
+ * Returns 3 if the file is a version of CRAM that does not contain EOF blocks
+ *         2 if the file is a stream and thus unseekable
+ *         1 if the file contains an EOF block
+ *         0 if the file does not contain an EOF block
+ *        -1 if an error occured whilst reading the file or we could not seek back to where we were
+ *
+ */
+int cram_check_EOF(cram_fd *fd);
 
 /* As int32_decoded/encode, but from/to blocks instead of cram_fd */
 int int32_put_blk(cram_block *b, int32_t val);

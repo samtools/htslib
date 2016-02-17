@@ -1099,6 +1099,26 @@ int hts_file_type(const char *fname)
     }
 }
 
+int hts_check_EOF(htsFile *fp)
+{
+    // Because you can co
+    if (fp->format.compression == bgzf) {
+        return bgzf_check_EOF(fp->fp.bgzf);
+    }
+    // Catch
+    switch (fp->format.format) {
+        case cram:
+            return cram_check_EOF(fp->fp.cram);
+        case bcf: // Here to explicitly note that if we're here then
+        case bam: // it's probably an uncompressed form of bam, bcf, vcf or bed
+        case vcf:
+        case bed:
+        default:
+            return 3;
+    }
+}
+
+
 /****************
  *** Indexing ***
  ****************/
