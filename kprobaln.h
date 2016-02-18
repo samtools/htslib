@@ -29,16 +29,16 @@
 #include <stdint.h>
 
 typedef struct {
-	float d, e;
-	int bw;
+    float d, e;
+    int bw;
 } kpa_par_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-	int kpa_glocal(const uint8_t *_ref, int l_ref, const uint8_t *_query, int l_query, const uint8_t *iqual,
-				   const kpa_par_t *c, int *state, uint8_t *q);
+int kpa_glocal(const uint8_t *_ref, int l_ref, const uint8_t *_query, int l_query, const uint8_t *iqual,
+               const kpa_par_t *c, int *state, uint8_t *q);
 
 #ifdef __cplusplus
 }
