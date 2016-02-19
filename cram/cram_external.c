@@ -125,7 +125,7 @@ int cram_container_is_empty(cram_fd *fd) {
 
 static int cram_block_compression_hdr_set_DS(cram_block_compression_hdr *ch,
 					     int ds, int new_rg) {
-    if (!ch || !ch->codecs || !ch->codecs[ds])
+    if (!ch || !ch->codecs[ds])
 	return -1;
 
     switch (ch->codecs[ds]->codec) {
@@ -164,7 +164,7 @@ int cram_block_compression_hdr_decoder2encoder(cram_fd *fd,
 					       cram_block_compression_hdr *ch) {
     int i;
 
-    if (!ch || !ch->codecs)
+    if (!ch)
 	return -1;
 
     for (i = 0; i < DS_END; i++) {
