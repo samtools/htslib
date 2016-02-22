@@ -1,7 +1,7 @@
 /*  errmod.c -- revised MAQ error model.
 
     Copyright (C) 2010 Broad Institute.
-    Copyright (C) 2012, 2013 Genome Research Ltd.
+    Copyright (C) 2012, 2013, 2016 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -26,14 +26,15 @@ DEALINGS IN THE SOFTWARE.  */
 #include <config.h>
 
 #include <math.h>
-#include "errmod.h"
+#include "htslib/hts.h"
 #include "htslib/ksort.h"
 KSORT_INIT_GENERIC(uint16_t)
 
-/* table of constants generated for given depcorr and eta */
-typedef struct __errmod_coef_t {
+struct errmod_t {
+    double depcorr;
+    /* table of constants generated for given depcorr and eta */
     double *fk, *beta, *lhet;
-} errmod_coef_t;
+};
 
 typedef struct {
     double fsum[16], bsum[16];
@@ -58,21 +59,20 @@ static double* logbinomial_table( const int n_size )
     return logbinom;
 }
 
-static errmod_coef_t *cal_coef(double depcorr, double eta)
+static void cal_coef(errmod_t *em, double depcorr, double eta)
 {
     int k, n, q;
     long double sum, sum1;
     double *lC;
-    errmod_coef_t *ec;
 
-    ec = calloc(1, sizeof(errmod_coef_t));
     // initialize ->fk
-    ec->fk = (double*)calloc(256, sizeof(double));
-    ec->fk[0] = 1.0;
+    em->fk = (double*)calloc(256, sizeof(double));
+    em->fk[0] = 1.0;
     for (n = 1; n < 256; ++n)
-        ec->fk[n] = pow(1. - depcorr, n) * (1.0 - eta) + eta;
-    // initialize ->coef
-    ec->beta = (double*)calloc(256 * 256 * 64, sizeof(double));
+        em->fk[n] = pow(1. - depcorr, n) * (1.0 - eta) + eta;
+
+    // initialize ->beta
+    em->beta = (double*)calloc(256 * 256 * 64, sizeof(double));
 
     lC = logbinomial_table( 256 );
 
@@ -81,7 +81,7 @@ static errmod_coef_t *cal_coef(double depcorr, double eta)
         double le = log(e);
         double le1 = log(1.0 - e);
         for (n = 1; n <= 255; ++n) {
-            double *beta = ec->beta + (q<<16|n<<8);
+            double *beta = em->beta + (q<<16|n<<8);
             sum1 = sum = 0.0;
             for (k = n; k >= 0; --k, sum1 = sum) {
                 sum = sum1 + expl(lC[n<<8|k] + k*le + (n-k)*le1);
@@ -89,13 +89,13 @@ static errmod_coef_t *cal_coef(double depcorr, double eta)
             }
         }
     }
+
     // initialize ->lhet
-    ec->lhet = (double*)calloc(256 * 256, sizeof(double));
+    em->lhet = (double*)calloc(256 * 256, sizeof(double));
     for (n = 0; n < 256; ++n)
         for (k = 0; k < 256; ++k)
-            ec->lhet[n<<8|k] = lC[n<<8|k] - M_LN2 * n;
+            em->lhet[n<<8|k] = lC[n<<8|k] - M_LN2 * n;
     free(lC);
-    return ec;
 }
 
 /**
@@ -106,7 +106,7 @@ errmod_t *errmod_init(double depcorr)
     errmod_t *em;
     em = (errmod_t*)calloc(1, sizeof(errmod_t));
     em->depcorr = depcorr;
-    em->coef = cal_coef(depcorr, 0.03);
+    cal_coef(em, depcorr, 0.03);
     return em;
 }
 
@@ -116,8 +116,8 @@ errmod_t *errmod_init(double depcorr)
 void errmod_destroy(errmod_t *em)
 {
     if (em == 0) return;
-    free(em->coef->lhet); free(em->coef->fk); free(em->coef->beta);
-    free(em->coef); free(em);
+    free(em->lhet); free(em->fk); free(em->beta);
+    free(em);
 }
 
 //
@@ -157,8 +157,8 @@ int errmod_cal(const errmod_t *em, int n, int m, uint16_t *bases, float *q)
         int basestrand = b&0x1f;
         /* extract base */
         int base = b&0xf;
-        aux.fsum[base] += em->coef->fk[w[basestrand]];
-        aux.bsum[base] += em->coef->fk[w[basestrand]] * em->coef->beta[qual<<16|n<<8|aux.c[base]];
+        aux.fsum[base] += em->fk[w[basestrand]];
+        aux.bsum[base] += em->fk[w[basestrand]] * em->beta[qual<<16|n<<8|aux.c[base]];
         ++aux.c[base];
         ++w[basestrand];
     }
@@ -183,8 +183,8 @@ int errmod_cal(const errmod_t *em, int n, int m, uint16_t *bases, float *q)
                 tmp1 += aux.bsum[i]; tmp2 += aux.c[i]; tmp3 += aux.fsum[i];
             }
             if (tmp2) {
-                q[j*m+k] = q[k*m+j] = -4.343 * em->coef->lhet[cjk<<8|aux.c[k]] + tmp1;
-            } else q[j*m+k] = q[k*m+j] = -4.343 * em->coef->lhet[cjk<<8|aux.c[k]]; // all the bases are either j or k
+                q[j*m+k] = q[k*m+j] = -4.343 * em->lhet[cjk<<8|aux.c[k]] + tmp1;
+            } else q[j*m+k] = q[k*m+j] = -4.343 * em->lhet[cjk<<8|aux.c[k]]; // all the bases are either j or k
         }
         /* clamp to greater than 0 */
         for (k = 0; k < m; ++k) if (q[j*m+k] < 0.0) q[j*m+k] = 0.0;

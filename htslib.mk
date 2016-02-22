@@ -74,6 +74,7 @@ HTSLIB_ALL = \
 	$(HTSLIB_PUBLIC_HEADERS) \
 	$(HTSDIR)/bgzf.c \
 	$(HTSDIR)/config.h \
+	$(HTSDIR)/errmod.c \
 	$(HTSDIR)/faidx.c \
 	$(HTSDIR)/hfile_internal.h \
 	$(HTSDIR)/hfile.c \
