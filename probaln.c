@@ -30,7 +30,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
-#include "kprobaln.h"
+#include "htslib/hts.h"
 
 /*****************************************
  * Probabilistic banded glocal alignment *
@@ -43,8 +43,8 @@ static float g_qual2prob[256];
 
 #define set_u(u, b, i, k) { int x=(i)-(b); x=x>0?x:0; (u)=((k)-x+1)*3; }
 
-kpa_par_t kpa_par_def = { 0.001, 0.1, 10 };
-kpa_par_t kpa_par_alt = { 0.0001, 0.01, 10 };
+const probaln_par_t probaln_par_def = { 0.001, 0.1, 10 };
+const probaln_par_t probaln_par_alt = { 0.0001, 0.01, 10 };
 
 /*
   The topology of the profile HMM:
@@ -58,7 +58,7 @@ kpa_par_t kpa_par_alt = { 0.0001, 0.01, 10 };
                  \     /\        /\      /\     /
                        -> D[k-1] -> D[k] ->
 
-   M[0] points to every {M,I}[k] and every {M,I}[k] points M[L+1].
+   M[0] points to every {M,I}[k] and every {M,I}[k] points to M[L+1].
 
    On input, _ref is the reference sequence and _query is the query
    sequence. Both are sequences of 0/1/2/3/4 where 4 stands for an
@@ -71,8 +71,8 @@ kpa_par_t kpa_par_alt = { 0.0001, 0.01, 10 };
    insertion). q[i] gives the phred scaled posterior probability of
    state[i] being wrong.
  */
-int kpa_glocal(const uint8_t *_ref, int l_ref, const uint8_t *_query, int l_query, const uint8_t *iqual,
-               const kpa_par_t *c, int *state, uint8_t *q)
+int probaln_glocal(const uint8_t *_ref, int l_ref, const uint8_t *_query, int l_query,
+                   const uint8_t *iqual, const probaln_par_t *c, int *state, uint8_t *q)
 {
     double **f, **b = 0, *s, m[9], sI, sM, bI, bM, pb;
     float *qual, *_qual;
@@ -253,6 +253,7 @@ int kpa_glocal(const uint8_t *_ref, int l_ref, const uint8_t *_query, int l_quer
 int main(int argc, char *argv[])
 {
     uint8_t conv[256], *iqual, *ref, *query;
+    probaln_par_t par = probaln_par_def;
     int c, l_ref, l_query, i, q = 30, b = 10, P;
     while ((c = getopt(argc, argv, "b:q:")) >= 0) {
         switch (c) {
@@ -273,8 +274,8 @@ int main(int argc, char *argv[])
     for (i = 0; i < l_query; ++i) query[i] = conv[query[i]];
     iqual = malloc(l_query);
     memset(iqual, q, l_query);
-    kpa_par_def.bw = b;
-    P = kpa_glocal(ref, l_ref, query, l_query, iqual, &kpa_par_alt, 0, 0);
+    par.bw = b;
+    P = probaln_glocal(ref, l_ref, query, l_query, iqual, &par, 0, 0);
     fprintf(stderr, "%d\n", P);
     free(iqual);
     return 0;

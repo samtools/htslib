@@ -2,6 +2,7 @@
 
     Copyright (C) 2012-2015 Genome Research Ltd.
     Copyright (C) 2010, 2012 Broad Institute.
+    Portions copyright (C) 2003-2006, 2008-2010 by Heng Li <lh3@live.co.uk>
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -551,6 +552,20 @@ void errmod_destroy(errmod_t *em);
     q[i*m+j]: phred-scaled likelihood of (i,j)
  */
 int errmod_cal(const errmod_t *em, int n, int m, uint16_t *bases, float *q);
+
+
+/*****************************************
+ * Probabilistic banded glocal alignment *
+ *****************************************/
+
+typedef struct probaln_par_t {
+    float d, e;
+    int bw;
+} probaln_par_t;
+
+extern const probaln_par_t probaln_par_def, probaln_par_alt;
+
+int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_query, const uint8_t *iqual, const probaln_par_t *c, int *state, uint8_t *q);
 
 
     /**********************

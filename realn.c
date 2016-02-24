@@ -29,8 +29,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 #include <limits.h>
 #include <math.h>
+#include "htslib/hts.h"
 #include "htslib/sam.h"
-#include "kprobaln.h"
 
 int bam_cap_mapQ(bam1_t *b, char *ref, int ref_len, int thres)
 {
@@ -88,7 +88,7 @@ int bam_prob_realn_core(bam1_t *b, const char *ref, int ref_len, int flag)
     int k, i, bw, x, y, yb, ye, xb, xe, apply_baq = flag&1, extend_baq = flag>>1&1, redo_baq = flag&4;
     uint32_t *cigar = bam_get_cigar(b);
     bam1_core_t *c = &b->core;
-    kpa_par_t conf = kpa_par_def;
+    probaln_par_t conf = probaln_par_def;
     uint8_t *bq = 0, *zq = 0, *qual = bam_get_qual(b);
     if ((c->flag & BAM_FUNMAP) || b->core.l_qseq == 0 || qual[0] == (uint8_t)-1)
         return -1; // do nothing
@@ -155,7 +155,7 @@ int bam_prob_realn_core(bam1_t *b, const char *ref, int ref_len, int flag)
         }
         state = calloc(c->l_qseq, sizeof(int));
         q = calloc(c->l_qseq, 1);
-        kpa_glocal(r, xe-xb, s, c->l_qseq, qual, &conf, state, q);
+        probaln_glocal(r, xe-xb, s, c->l_qseq, qual, &conf, state, q);
         if (!extend_baq) { // in this block, bq[] is capped by base quality qual[]
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;

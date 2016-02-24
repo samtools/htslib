@@ -148,6 +148,7 @@ LIBHTS_OBJS = \
 	hfile_net.o \
 	hts.o \
 	md5.o \
+	probaln.o \
 	regidx.o \
 	sam.o \
 	synced_bcf_reader.o \
@@ -271,6 +272,7 @@ kfunc.o kfunc.pico: kfunc.c config.h $(htslib_kfunc_h)
 regidx.o regidx.pico: regidx.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_regidx_h)
 md5.o md5.pico: md5.c config.h $(htslib_hts_h)
 plugin.o plugin.pico: plugin.c config.h $(hts_internal_h) $(htslib_kstring_h)
+probaln.o probaln.pico: probaln.c config.h $(htslib_hts_h)
 
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) cram/os.h $(htslib_hts_h)
