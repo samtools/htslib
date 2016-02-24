@@ -1,6 +1,6 @@
 /*  hfile.c -- buffered low-level input/output streams.
 
-    Copyright (C) 2013-2015 Genome Research Ltd.
+    Copyright (C) 2013-2016 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -28,6 +28,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+
+#include <pthread.h>
 
 #include "htslib/hfile.h"
 #include "hfile_internal.h"
@@ -589,9 +591,12 @@ struct hFILE_plugin_list {
 };
 
 static struct hFILE_plugin_list *plugins = NULL;
+static pthread_mutex_t plugins_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void hfile_exit()
 {
+    pthread_mutex_lock(&plugins_lock);
+
     kh_destroy(scheme_string, schemes);
 
     while (plugins != NULL) {
@@ -603,6 +608,9 @@ static void hfile_exit()
         plugins = p->next;
         free(p);
     }
+
+    pthread_mutex_unlock(&plugins_lock);
+    pthread_mutex_destroy(&plugins_lock);
 }
 
 void hfile_add_scheme_handler(const char *scheme,
@@ -717,10 +725,9 @@ static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
     if (i == 0 || i >= sizeof scheme) return NULL;
     scheme[i] = '\0';
 
-    if (! schemes) {
-        // TODO Wrap this in a critical section for multi-threading
-        load_hfile_plugins();
-    }
+    pthread_mutex_lock(&plugins_lock);
+    if (! schemes) load_hfile_plugins();
+    pthread_mutex_unlock(&plugins_lock);
 
     khint_t k = kh_get(scheme_string, schemes, scheme);
     return (k != kh_end(schemes))? kh_value(schemes, k) : &unknown_scheme;
