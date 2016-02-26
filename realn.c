@@ -27,12 +27,11 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
 #include <math.h>
 #include "htslib/hts.h"
 #include "htslib/sam.h"
 
-int bam_cap_mapQ(bam1_t *b, char *ref, int ref_len, int thres)
+int sam_cap_mapq(bam1_t *b, const char *ref, int ref_len, int thres)
 {
     uint8_t *seq = bam_get_seq(b), *qual = bam_get_qual(b);
     uint32_t *cigar = bam_get_cigar(b);
@@ -83,7 +82,7 @@ int bam_cap_mapQ(bam1_t *b, char *ref, int ref_len, int thres)
     return (int)(t + .499);
 }
 
-int bam_prob_realn_core(bam1_t *b, const char *ref, int ref_len, int flag)
+int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
 {
     int k, i, bw, x, y, yb, ye, xb, xe, apply_baq = flag&1, extend_baq = flag>>1&1, redo_baq = flag&4;
     uint32_t *cigar = bam_get_cigar(b);
@@ -197,9 +196,4 @@ int bam_prob_realn_core(bam1_t *b, const char *ref, int ref_len, int flag)
         free(bq); free(s); free(r); free(q); free(state);
     }
     return 0;
-}
-
-int bam_prob_realn(bam1_t *b, const char *ref)
-{
-    return bam_prob_realn_core(b, ref, INT_MAX, 1);
 }

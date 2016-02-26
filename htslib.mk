@@ -89,6 +89,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/md5.c \
 	$(HTSDIR)/plugin.c \
 	$(HTSDIR)/probaln.c \
+	$(HTSDIR)/realn.c \
 	$(HTSDIR)/regidx.c \
 	$(HTSDIR)/sam.c \
 	$(HTSDIR)/synced_bcf_reader.c \
