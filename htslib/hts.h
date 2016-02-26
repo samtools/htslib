@@ -563,8 +563,6 @@ typedef struct probaln_par_t {
     int bw;
 } probaln_par_t;
 
-extern const probaln_par_t probaln_par_def, probaln_par_alt;
-
 int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_query, const uint8_t *iqual, const probaln_par_t *c, int *state, uint8_t *q);
 
 

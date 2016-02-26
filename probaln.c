@@ -43,9 +43,6 @@ static float g_qual2prob[256];
 
 #define set_u(u, b, i, k) { int x=(i)-(b); x=x>0?x:0; (u)=((k)-x+1)*3; }
 
-const probaln_par_t probaln_par_def = { 0.001, 0.1, 10 };
-const probaln_par_t probaln_par_alt = { 0.0001, 0.01, 10 };
-
 /*
   The topology of the profile HMM:
 
@@ -253,7 +250,7 @@ int probaln_glocal(const uint8_t *_ref, int l_ref, const uint8_t *_query, int l_
 int main(int argc, char *argv[])
 {
     uint8_t conv[256], *iqual, *ref, *query;
-    probaln_par_t par = probaln_par_def;
+    probaln_par_t par = { 0.001, 0.1, 10 };
     int c, l_ref, l_query, i, q = 30, b = 10, P;
     while ((c = getopt(argc, argv, "b:q:")) >= 0) {
         switch (c) {

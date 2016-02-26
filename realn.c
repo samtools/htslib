@@ -87,7 +87,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
     int k, i, bw, x, y, yb, ye, xb, xe, apply_baq = flag&1, extend_baq = flag>>1&1, redo_baq = flag&4;
     uint32_t *cigar = bam_get_cigar(b);
     bam1_core_t *c = &b->core;
-    probaln_par_t conf = probaln_par_def;
+    probaln_par_t conf = { 0.001, 0.1, 10 };
     uint8_t *bq = 0, *zq = 0, *qual = bam_get_qual(b);
     if ((c->flag & BAM_FUNMAP) || b->core.l_qseq == 0 || qual[0] == (uint8_t)-1)
         return -1; // do nothing
