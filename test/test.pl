@@ -32,6 +32,7 @@ use File::Temp qw/ tempfile tempdir /;
 
 my $opts = parse_params();
 
+test_view($opts);
 test_vcf_api($opts,out=>'test-vcf-api.out');
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
 test_vcf_various($opts);
@@ -189,6 +190,81 @@ sub is_file_newer
 
 
 # The tests --------------------------
+
+my $test_view_failures;
+sub testv {
+    my ($cmd) = @_;
+    print "  $cmd\n";
+    my ($ret, $out) = _cmd($cmd);
+    if ($ret != 0) {
+        print "FAILED\n\n";
+        $test_view_failures++;
+    }
+}
+
+sub test_view
+{
+    my ($opts, %args) = @_;
+
+    foreach my $sam (glob("*#*.sam")) {
+        my ($base, $ref) = ($sam =~ /((.*)#.*)\.sam/);
+        $ref .= ".fa";
+
+        my $bam  = "$base.tmp.bam";
+        my $cram = "$base.tmp.cram";
+
+        print "test_view testing $sam, ref $ref:\n";
+        $test_view_failures = 0;
+
+        # SAM -> BAM -> SAM
+        testv "./test_view -S -b $sam > $bam";
+        testv "./test_view $bam > $bam.sam_";
+        testv "./compare_sam.pl $sam $bam.sam_";
+
+        # SAM -> CRAM -> SAM
+        testv "./test_view -t $ref -S -C $sam > $cram";
+        testv "./test_view -D $cram > $cram.sam_";
+        testv "./compare_sam.pl -nomd $sam $cram.sam_";
+
+        # BAM -> CRAM -> BAM -> SAM
+        $cram = "$bam.cram";
+        testv "./test_view -t $ref -C $bam > $cram";
+        testv "./test_view -b -D $cram > $cram.bam";
+        testv "./test_view $cram.bam > $cram.bam.sam_";
+        testv "./compare_sam.pl -nomd $sam $cram.bam.sam_";
+
+        # SAM -> CRAM3 -> SAM
+        $cram = "$base.tmp.cram";
+        testv "./test_view -t $ref -S -C -o VERSION=3.0 $sam > $cram";
+        testv "./test_view -D $cram > $cram.sam_";
+        testv "./compare_sam.pl -nomd $sam $cram.sam_";
+
+        # BAM -> CRAM3 -> BAM -> SAM
+        $cram = "$bam.cram";
+        testv "./test_view -t $ref -C -o VERSION=3.0 $bam > $cram";
+        testv "./test_view -b -D $cram > $cram.bam";
+        testv "./test_view $cram.bam > $cram.bam.sam_";
+        testv "./compare_sam.pl -nomd $sam $cram.bam.sam_";
+
+        # CRAM3 -> CRAM2
+        $cram = "$base.tmp.cram";
+        testv "./test_view -t $ref -C -o VERSION=2.1 $cram > $cram.cram";
+
+        # CRAM2 -> CRAM3
+        testv "./test_view -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
+        testv "./test_view $cram > $cram.sam_";
+        testv "./compare_sam.pl -nomd $sam $cram.sam_";
+
+        if ($test_view_failures == 0)
+        {
+            passed($opts, "$sam conversions");
+        }
+        else
+        {
+            failed($opts, "$sam conversions", "$test_view_failures subtests failed");
+        }
+    }
+}
 
 sub test_vcf_api
 {
