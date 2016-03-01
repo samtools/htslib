@@ -65,6 +65,23 @@ various features and specify further optional external requirements:
     remote files via FTP, HTTP, HTTPS, S3, etc.  By default, HTSlib uses
     its own simple networking code to provide access via FTP and HTTP only.
 
+--with-lzma=DIR
+    Specifies the root location of the liblzma library and lzma.h
+    include file.  LZMA is an optional compression codec for CRAM, but
+    is not used by default.  It can be disabled with --without-lzma, but
+    be aware that not all CRAM files may be possible to decode.
+
+    Note the system package providing lzma varies per operating system.
+    On Debian derived systems it is liblzma-dev, on RedHat derived
+    systems it is in xz-devel, and on MacOS X it can be found in the
+    homebrew xz package.
+
+--with-bz2=DIR
+    Specifies the root location of the bzip2 library and include files.
+    Bzip2 is an optional compression codec format for CRAM, but not used
+    by default.  It can be disabled with --without-bz2, but be aware
+    that not all CRAM files may be possible to decode.
+
 The configure script also accepts the usual options and environment variables
 for tuning installation locations and compilers: type './configure --help'
 for details.  For example,
