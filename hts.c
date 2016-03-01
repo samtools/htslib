@@ -534,6 +534,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "LOSSY_NAMES") == 0)
         o->opt = CRAM_OPT_LOSSY_NAMES, o->val.i = strtol(val, NULL, 0);
 
+    else if (strcmp(o->arg, "name_prefix") == 0 ||
+             strcmp(o->arg, "NAME_PREFIX") == 0)
+        o->opt = CRAM_OPT_PREFIX, o->val.s = val;
+
     else {
         fprintf(stderr, "Unknown option '%s'\n", o->arg);
         free(o->arg);
