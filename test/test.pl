@@ -29,6 +29,7 @@ use FindBin;
 use lib "$FindBin::Bin";
 use Getopt::Long;
 use File::Temp qw/ tempfile tempdir /;
+use IO::Handle;
 
 my $opts = parse_params();
 
@@ -170,8 +171,11 @@ sub failed
 {
     my ($opts,$test,$reason) = @_;
     $$opts{nfailed}++;
-    if ( defined $reason ) { print "\n\t$reason"; }
-    print "\n.. failed ...\n\n";
+    print "\n";
+    STDOUT->flush();
+    if ( defined $reason ) { print STDERR "\t$reason\n"; }
+    print STDERR ".. failed ...\n\n";
+    STDERR->flush();
 }
 sub passed
 {
@@ -197,7 +201,9 @@ sub testv {
     print "  $cmd\n";
     my ($ret, $out) = _cmd($cmd);
     if ($ret != 0) {
-        print "FAILED\n\n";
+        STDOUT->flush();
+        print STDERR "FAILED\n\n";
+        STDERR->flush();
         $test_view_failures++;
     }
 }
