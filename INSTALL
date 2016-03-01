@@ -69,6 +69,16 @@ various features and specify further optional external requirements:
     Implement network access to Amazon AWS S3.  By default or with
     --enable-s3=check, this is enabled when libcurl is enabled.
 
+--disable-bz2
+    Bzip2 is an optional compression codec format for CRAM, included
+    in HTSlib by default.  It can be disabled with --disable-bz2, but
+    be aware that not all CRAM files may be possible to decode.
+
+--disable-lzma
+    LZMA is an optional compression codec for CRAM, included in HTSlib
+    by default.  It can be disabled with --disable-lzma, but be aware
+    that not all CRAM files may be possible to decode.
+
 The configure script also accepts the usual options and environment variables
 for tuning installation locations and compilers: type './configure --help'
 for details.  For example,
