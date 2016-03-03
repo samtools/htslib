@@ -1430,31 +1430,33 @@ static inline void swap_bins(bins_t *p)
 
 static void hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
 {
-    int32_t i, j, size;
+    int32_t i, j;
+
     idx_write_int32(fp, idx->n);
-    if (fmt == HTS_FMT_TBI && idx->l_meta) bgzf_write(fp, idx->meta, idx->l_meta);
+    if (fmt == HTS_FMT_TBI && idx->l_meta)
+        bgzf_write(fp, idx->meta, idx->l_meta);
+
     for (i = 0; i < idx->n; ++i) {
         khint_t k;
         bidx_t *bidx = idx->bidx[i];
         lidx_t *lidx = &idx->lidx[i];
         // write binning index
-        size = bidx? kh_size(bidx) : 0;
-        idx_write_int32(fp, size);
-        if (bidx == 0) goto write_lidx;
-        for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
-            bins_t *p;
-            if (!kh_exist(bidx, k)) continue;
-            p = &kh_value(bidx, k);
-            idx_write_uint32(fp, kh_key(bidx, k));
-            if (fmt == HTS_FMT_CSI) idx_write_uint64(fp, kh_val(bidx, k).loff);
-            //int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
-            idx_write_int32(fp, p->n);
-            for (j = 0; j < p->n; ++j) {
-                idx_write_uint64(fp, p->list[j].u);
-                idx_write_uint64(fp, p->list[j].v);
-            }
-        }
-write_lidx:
+        idx_write_int32(fp, bidx? kh_size(bidx) : 0);
+        if (bidx)
+            for (k = kh_begin(bidx); k != kh_end(bidx); ++k)
+                if (kh_exist(bidx, k)) {
+                    bins_t *p = &kh_value(bidx, k);
+                    idx_write_uint32(fp, kh_key(bidx, k));
+                    if (fmt == HTS_FMT_CSI) idx_write_uint64(fp, p->loff);
+                    //int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
+                    idx_write_int32(fp, p->n);
+                    for (j = 0; j < p->n; ++j) {
+                        idx_write_uint64(fp, p->list[j].u);
+                        idx_write_uint64(fp, p->list[j].v);
+                    }
+                }
+
+        // write linear index
         if (fmt != HTS_FMT_CSI) {
             idx_write_int32(fp, lidx->n);
             for (j = 0; j < lidx->n; ++j)
@@ -1488,32 +1490,27 @@ int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
 
 int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int fmt)
 {
+    BGZF *fp;
+
     if (fnidx == NULL) return hts_idx_save(idx, fn, fmt);
 
+    fp = bgzf_open(fnidx, (fmt == HTS_FMT_BAI)? "wu" : "w");
+    if (fp == NULL) return -1;
+
     if (fmt == HTS_FMT_CSI) {
-        BGZF *fp;
-        fp = bgzf_open(fnidx, "w");
-        if (fp == NULL) return -1;
         bgzf_write(fp, "CSI\1", 4);
         idx_write_int32(fp, idx->min_shift);
         idx_write_int32(fp, idx->n_lvls);
         idx_write_uint32(fp, idx->l_meta);
         if (idx->l_meta) bgzf_write(fp, idx->meta, idx->l_meta);
-        hts_idx_save_core(idx, fp, HTS_FMT_CSI);
-        bgzf_close(fp);
     } else if (fmt == HTS_FMT_TBI) {
-        BGZF *fp = bgzf_open(fnidx, "w");
-        if (fp == NULL) return -1;
         bgzf_write(fp, "TBI\1", 4);
-        hts_idx_save_core(idx, fp, HTS_FMT_TBI);
-        bgzf_close(fp);
     } else if (fmt == HTS_FMT_BAI) {
-        BGZF *fp = bgzf_open(fnidx, "wu");
-        if (fp == NULL) return -1;
         bgzf_write(fp, "BAI\1", 4);
-        hts_idx_save_core(idx, fp, HTS_FMT_BAI);
-        bgzf_close(fp);
     } else abort();
+
+    hts_idx_save_core(idx, fp, fmt);
+    bgzf_close(fp);
 
     return 0;
 }
