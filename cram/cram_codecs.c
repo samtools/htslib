@@ -42,23 +42,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/cram.h"
 
-static char *codec2str(enum cram_encoding codec) {
-    switch (codec) {
-    case E_NULL:            return "NULL";
-    case E_EXTERNAL:        return "EXTERNAL";
-    case E_GOLOMB:          return "GOLOMB";
-    case E_HUFFMAN:         return "HUFFMAN";
-    case E_BYTE_ARRAY_LEN:  return "BYTE_ARRAY_LEN";
-    case E_BYTE_ARRAY_STOP: return "BYTE_ARRAY_STOP";
-    case E_BETA:            return "BETA";
-    case E_SUBEXP:          return "SUBEXP";
-    case E_GOLOMB_RICE:     return "GOLOMB_RICE";
-    case E_GAMMA:           return "GAMMA";
-    case E_NUM_CODECS:
-    default:                return "(unknown)";
-    }
-}
-
 /*
  * ---------------------------------------------------------------------------
  * Block bit-level I/O functions.
@@ -1718,7 +1701,7 @@ cram_codec *cram_byte_array_stop_encode_init(cram_stats *st,
  * ---------------------------------------------------------------------------
  */
 
-char *cram_encoding2str(enum cram_encoding t) {
+const char *cram_encoding2str(enum cram_encoding t) {
     switch (t) {
     case E_NULL:            return "NULL";
     case E_EXTERNAL:        return "EXTERNAL";
@@ -1758,7 +1741,7 @@ cram_codec *cram_decoder_init(enum cram_encoding codec,
     if (codec >= E_NULL && codec < E_NUM_CODECS && decode_init[codec]) {
 	return decode_init[codec](data, size, option, version);
     } else {
-	fprintf(stderr, "Unimplemented codec of type %s\n", codec2str(codec));
+	fprintf(stderr, "Unimplemented codec of type %s\n", cram_encoding2str(codec));
 	return NULL;
     }
 }
@@ -1793,7 +1776,7 @@ cram_codec *cram_encoder_init(enum cram_encoding codec,
 	    r->out = NULL;
 	return r;
     } else {
-	fprintf(stderr, "Unimplemented codec of type %s\n", codec2str(codec));
+	fprintf(stderr, "Unimplemented codec of type %s\n", cram_encoding2str(codec));
 	abort();
     }
 }
