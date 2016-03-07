@@ -38,7 +38,7 @@
 extern "C" {
 #endif
 
-#define BGZF_BLOCK_SIZE     0xff00 // make sure compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE
+#define BGZF_BLOCK_SIZE     0xff00 // make sure bgzf_compressBound(BGZF_BLOCK_SIZE) < BGZF_MAX_BLOCK_SIZE
 #define BGZF_MAX_BLOCK_SIZE 0x10000
 
 #define BGZF_ERR_ZLIB   1
