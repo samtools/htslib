@@ -377,8 +377,9 @@ int sam_index_build2(const char *fn, const char *fnidx, int min_shift) HTS_RESUL
     char bam_aux2A(const uint8_t *s);
     char *bam_aux2Z(const uint8_t *s);
 
-    void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, uint8_t *data);
+    void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8_t *data);
     int bam_aux_del(bam1_t *b, uint8_t *s);
+    int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data);
 
 /**************************
  *** Pileup and Mpileup ***
