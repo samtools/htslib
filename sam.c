@@ -787,7 +787,7 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
         fp->format.format = bam;
         /* fall-through */
     case bam:
-        bam_hdr_write(fp->fp.bgzf, h);
+        if (bam_hdr_write(fp->fp.bgzf, h) < 0) return -1;
         break;
 
     case cram: {

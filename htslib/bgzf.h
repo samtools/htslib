@@ -257,7 +257,7 @@ typedef struct __kstring_t {
      * @param n_threads   #threads used for writing
      * @param n_sub_blks  #blocks processed by each thread; a value 64-256 is recommended
      */
-    int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks) HTS_RESULT_USED;
+    int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks);
 
     /**
      * Compress a single BGZF block.
