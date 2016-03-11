@@ -1151,6 +1151,13 @@ int bgzf_index_add_block(BGZF *fp)
     return 0;
 }
 
+static inline int fwrite_uint64(uint64_t x, FILE *f)
+{
+    if (ed_is_big()) x = ed_swap_8(x);
+    if (fwrite(&x, sizeof x, 1, f) != 1) return -1;
+    return 0;
+}
+
 int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
 {
     if (bgzf_flush(fp) != 0) return -1;
@@ -1183,28 +1190,13 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
     // This is not a bug.
 
     int i;
-    if ( fp->is_be )
+    if (fwrite_uint64(fp->idx->noffs - 1, idx) < 0) goto fail;
+    for (i=1; i<fp->idx->noffs; i++)
     {
-        uint64_t x = fp->idx->noffs - 1;
-        if (fwrite(ed_swap_8p(&x), 1, sizeof(x), idx) < sizeof(x)) goto fail;
-        for (i=1; i<fp->idx->noffs; i++)
-        {
-            x = fp->idx->offs[i].caddr;
-            if (fwrite(ed_swap_8p(&x), 1, sizeof(x), idx) < sizeof(x)) goto fail;
-            x = fp->idx->offs[i].uaddr;
-            if (fwrite(ed_swap_8p(&x), 1, sizeof(x), idx) < sizeof(x)) goto fail;
-        }
+        if (fwrite_uint64(fp->idx->offs[i].caddr, idx) < 0) goto fail;
+        if (fwrite_uint64(fp->idx->offs[i].uaddr, idx) < 0) goto fail;
     }
-    else
-    {
-        uint64_t x = fp->idx->noffs - 1;
-        if (fwrite(&x, 1, sizeof(x), idx) < sizeof(x)) goto fail;
-        for (i=1; i<fp->idx->noffs; i++)
-        {
-            if (fwrite(&fp->idx->offs[i].caddr, 1, sizeof(fp->idx->offs[i].caddr), idx) < sizeof(fp->idx->offs[i].caddr)) goto fail;
-            if (fwrite(&fp->idx->offs[i].uaddr, 1, sizeof(fp->idx->offs[i].uaddr), idx) < sizeof(fp->idx->offs[i].uaddr)) goto fail;
-        }
-    }
+
     if (fclose(idx) < 0)
     {
         if (hts_verbose > 1)
@@ -1226,6 +1218,12 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
     return -1;
 }
 
+static inline int fread_uint64(uint64_t *xptr, FILE *f)
+{
+    if (fread(xptr, sizeof *xptr, 1, f) != 1) return -1;
+    if (ed_is_big()) ed_swap_8p(xptr);
+    return 0;
+}
 
 int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
 {
@@ -1253,34 +1251,20 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
     fp->idx = (bgzidx_t*) calloc(1,sizeof(bgzidx_t));
     if (fp->idx == NULL) goto fail;
     uint64_t x;
-    if ( fread(&x, 1, sizeof(x), idx) != sizeof(x) ) goto fail;
+    if (fread_uint64(&x, idx) < 0) goto fail;
 
-    fp->idx->noffs = fp->idx->moffs = 1 + (fp->is_be ? ed_swap_8(x) : x);
+    fp->idx->noffs = fp->idx->moffs = x + 1;
     fp->idx->offs  = (bgzidx1_t*) malloc(fp->idx->moffs*sizeof(bgzidx1_t));
     if (fp->idx->offs == NULL) goto fail;
     fp->idx->offs[0].caddr = fp->idx->offs[0].uaddr = 0;
 
     int i;
-    if ( fp->is_be )
+    for (i=1; i<fp->idx->noffs; i++)
     {
-        int ret = 0;
-        for (i=1; i<fp->idx->noffs; i++)
-        {
-            ret += fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].caddr = ed_swap_8(x);
-            ret += fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].uaddr = ed_swap_8(x);
-        }
-        if ( ret != sizeof(x)*2*(fp->idx->noffs-1) ) goto fail;
+        if (fread_uint64(&fp->idx->offs[i].caddr, idx) < 0) goto fail;
+        if (fread_uint64(&fp->idx->offs[i].uaddr, idx) < 0) goto fail;
     }
-    else
-    {
-        int ret = 0;
-        for (i=1; i<fp->idx->noffs; i++)
-        {
-            ret += fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].caddr = x;
-            ret += fread(&x, 1, sizeof(x), idx); fp->idx->offs[i].uaddr = x;
-        }
-        if ( ret != sizeof(x)*2*(fp->idx->noffs-1) ) goto fail;
-    }
+
     if (fclose(idx) != 0) goto fail;
     return 0;
 
