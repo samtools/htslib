@@ -112,7 +112,7 @@ static int aux_fields1(void)
         if ((p = check_bam_aux_get(aln, "XZ", 'Z')) && strcmp(bam_aux2Z(p), HELLO) != 0)
             fail("XZ field is \"%s\", expected \"%s\"", bam_aux2Z(p), HELLO);
 
-        bam_aux_update(aln,"XZ",strlen(NEW_HELLO)+1,NEW_HELLO);
+        bam_aux_update_str(aln,"XZ",strlen(NEW_HELLO)+1,NEW_HELLO);
         if ((p = check_bam_aux_get(aln, "XZ", 'Z')) && strcmp(bam_aux2Z(p), NEW_HELLO) != 0)
             fail("XZ field is \"%s\", expected \"%s\"", bam_aux2Z(p), NEW_HELLO);
 

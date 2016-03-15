@@ -1282,11 +1282,12 @@ int bam_aux_del(bam1_t *b, uint8_t *s)
     return 0;
 }
 
-int bam_aux_update(bam1_t *b, const char tag[2], int len, uint8_t *data)
+int bam_aux_update_str(bam1_t *b, const char tag[2], int len, uint8_t *data)
 {
     uint8_t *s = bam_aux_get(b,tag);
     if (!s) return -1;
     char type = *s;
+    if (type != 'Z') { fprintf(stderr,"bam_aux_update_str() called for type '%c' instead of 'Z'\n", type); abort(); }
     bam_aux_del(b,s);
     s -= 2;
     int l_aux = bam_get_l_aux(b);
@@ -1302,7 +1303,7 @@ int bam_aux_update(bam1_t *b, const char tag[2], int len, uint8_t *data)
     s[0] = tag[0];
     s[1] = tag[1];
     s[2] = type;
-    memcpy(s+3,data,len);
+    memmove(s+3,data,len);
     return 0;
 }
 
