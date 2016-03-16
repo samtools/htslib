@@ -3740,6 +3740,8 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 	if (!c)
 	    return NULL;
 
+	fd->first_container += c->length + c->offset;
+
 	if (c->num_blocks < 1) {
 	    cram_free_container(c);
 	    return NULL;
