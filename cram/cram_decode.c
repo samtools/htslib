@@ -1093,7 +1093,7 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
 	cp += safe_itf8_get(cp, cp_end, &i32);
 	hdr->record_counter = i32;
     } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-	cp += ltf8_get(cp, &hdr->record_counter);
+	cp += safe_ltf8_get(cp, cp_end, &hdr->record_counter);
     }
 
     cp += safe_itf8_get(cp, cp_end, &hdr->num_blocks);

@@ -240,8 +240,32 @@ int itf8_encode(cram_fd *fd, int32_t val) {
 }
  
 const int itf8_bytes[16] = {
-    1, 1, 1, 1, 1, 1, 1, 1,
-    2, 2, 2, 2, 3, 3, 4, 5
+    1, 1, 1, 1,  1, 1, 1, 1,
+    2, 2, 2, 2,  3, 3, 4, 5
+};
+
+const int ltf8_bytes[256] = {
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+
+    2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,
+    2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,
+    2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,
+    2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,
+
+    3, 3, 3, 3,  3, 3, 3, 3,  3, 3, 3, 3,  3, 3, 3, 3,
+    3, 3, 3, 3,  3, 3, 3, 3,  3, 3, 3, 3,  3, 3, 3, 3,
+
+    4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+
+    5, 5, 5, 5,  5, 5, 5, 5,  6, 6, 6, 6,  7, 7, 8, 9
 };
 
 #ifndef ITF8_MACROS
@@ -1152,7 +1176,7 @@ int cram_uncompress_block(cram_block *b) {
 	unsigned int usize = b->uncomp_size, usize2;
 	uncomp = (char *)rans_uncompress(b->data, b->comp_size, &usize2);
 	if (!uncomp || usize != usize2)
- 	    return -1;
+	    return -1;
 	free(b->data);
 	b->data = (unsigned char *)uncomp;
 	b->alloc = usize2;
@@ -1296,7 +1320,7 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 	    else
 		metrics->revised_method = method;
 
-	    if (metrics->next_trial == 0) {
+	    if (metrics->next_trial <= 0) {
 		metrics->next_trial = TRIAL_SPAN;
 		metrics->trial = NTRIALS;
 		metrics->sz_gz_rle /= 2;
@@ -2381,7 +2405,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 static void cram_ref_incr_locked(refs_t *r, int id) {
     RP("%d INC REF %d, %d %p\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count+1:-999), id>=0?r->ref_id[id]->seq:(char *)1);
 
-    if (id < 0 || !r->ref_id[id]->seq)
+    if (id < 0 || !r->ref_id[id] || !r->ref_id[id]->seq)
 	return;
 
     if (r->last_id == id)
@@ -2399,7 +2423,7 @@ void cram_ref_incr(refs_t *r, int id) {
 static void cram_ref_decr_locked(refs_t *r, int id) {
     RP("%d DEC REF %d, %d %p\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count-1:-999), id>=0?r->ref_id[id]->seq:(char *)1);
 
-    if (id < 0 || !r->ref_id[id]->seq) {
+    if (id < 0 || !r->ref_id[id] || !r->ref_id[id]->seq) {
 	assert(r->ref_id[id]->count >= 0);
 	return;
     }
@@ -2668,7 +2692,8 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
 	end = r->length;
     if (end >= r->length)
 	end  = r->length; 
-    assert(start >= 1);
+    if (start < 1)
+	return NULL;
 
     if (end - start >= 0.5*r->length || fd->shared_ref) {
 	start = 1;
