@@ -868,8 +868,8 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
 
 	r = lzma_code(&strm, LZMA_RUN);
 	if (LZMA_OK != r && LZMA_STREAM_END != r) {
-	    fprintf(stderr, "r=%d\n", r);
-	    fprintf(stderr, "mem=%"PRId64"d\n", (int64_t)lzma_memusage(&strm));
+	    fprintf(stderr, "Lzma decode error %d, mem=%"PRId64"\n",
+		    r, (int64_t)lzma_memusage(&strm));
 	    return NULL;
 	}
 
