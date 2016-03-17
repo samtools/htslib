@@ -84,6 +84,7 @@ typedef struct {
 typedef struct {
     int32_t content_id;
     enum cram_external_type type;
+    cram_block *b;
 } cram_external_decoder;
 
 typedef struct {
@@ -94,6 +95,7 @@ typedef struct {
 typedef struct {
     unsigned char stop;
     int32_t content_id;
+    cram_block *b;
 } cram_byte_array_stop_decoder;
 
 typedef struct {
@@ -118,6 +120,8 @@ typedef struct cram_codec {
 		  char *in, int in_size);
     int (*store)(struct cram_codec *codec, cram_block *b, char *prefix,
 		 int version);
+    void (*reset)(struct cram_codec *codec); // used between slices in a container
+
     union {
 	cram_huffman_decoder         huffman;
 	cram_external_decoder        external;
