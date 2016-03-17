@@ -754,17 +754,9 @@ static int cram_encode_slice_read(cram_fd *fd,
 
     r |= h->codecs[DS_RG]->encode(s, h->codecs[DS_RG], (char *)&cr->rg, 1);
 
-    if (c->comp_hdr->read_names_included) {
-	// RN codec: Already stored in block[3].
-    }
-
     if (cr->cram_flags & CRAM_FLAG_DETACHED) {
 	i32 = cr->mate_flags;
 	r |= h->codecs[DS_MF]->encode(s, h->codecs[DS_MF], (char *)&i32, 1);
-
-	if (!c->comp_hdr->read_names_included) {
-	    // RN codec: Already stored in block[3].
-	}
 
 	r |= h->codecs[DS_NS]->encode(s, h->codecs[DS_NS],
 				      (char *)&cr->mate_ref_id, 1);
@@ -937,7 +929,7 @@ static int cram_compress_slice(cram_fd *fd, cram_slice *s) {
 
     /* Compress the CORE Block too, with minimal zlib level */
     if (level > 5 && s->block[0]->uncomp_size > 500)
-	cram_compress_block(fd, s->block[0], NULL, GZIP, 1);
+	cram_compress_block(fd, s->block[0], NULL, 1<<GZIP, 1);
  
     if (fd->use_bz2)
 	method |= 1<<BZIP2;
@@ -1299,7 +1291,8 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 		    }
 
 		    c->ref_seq_id = bam_ref(b); // overwritten later by -2
-		    assert(fd->refs->ref_id[c->ref_seq_id]->seq);
+		    if (!fd->refs->ref_id[c->ref_seq_id]->seq)
+			return -1;
 		    c->ref       = fd->refs->ref_id[c->ref_seq_id]->seq;
 		    c->ref_start = 1;
 		    c->ref_end   = fd->refs->ref_id[c->ref_seq_id]->length;
@@ -1584,6 +1577,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     for (i = 0; i < c->curr_slice; i++) {
 	if (fd->verbose)
 	    fprintf(stderr, "Encode slice %d\n", i);
+
 	if (cram_encode_slice(fd, c, h, c->slices[i]) != 0)
 	    return -1;
     }
@@ -1632,7 +1626,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     for (i = 0; i < c->curr_slice; i++) {
 	cram_slice *s = c->slices[i];
 	
-        c->num_blocks += s->hdr->num_blocks + 1; // slice header
+	c->num_blocks += s->hdr->num_blocks + 1; // slice header
 	c->landmark[i] = slice_offset;
 
 	if (s->hdr->ref_seq_start + s->hdr->ref_seq_span >
@@ -2331,6 +2325,34 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
     return rg;
 }
 
+/*
+ * During cram_next_container or before the final flush at end of
+ * file, we update the current slice headers and increment the slice
+ * number to the next slice.
+ *
+ * See cram_next_container() and cram_close().
+ */
+void cram_update_curr_slice(cram_container *c) {
+    cram_slice *s = c->slice;
+    if (c->multi_seq) {
+	s->hdr->ref_seq_id    = -2;
+	s->hdr->ref_seq_start = 0;
+	s->hdr->ref_seq_span  = 0;
+    } else {
+	s->hdr->ref_seq_id    = c->curr_ref;
+	s->hdr->ref_seq_start = c->first_base;
+	s->hdr->ref_seq_span  = c->last_base - c->first_base + 1;
+    }
+    s->hdr->num_records   = c->curr_rec;
+
+    if (c->curr_slice == 0) {
+	if (c->ref_seq_id != s->hdr->ref_seq_id)
+	    c->ref_seq_id  = s->hdr->ref_seq_id;
+	c->ref_seq_start = c->first_base;
+    }
+
+    c->curr_slice++;
+}
 
 /*
  * Handles creation of a new container or new slice, flushing any
@@ -2343,34 +2365,14 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
  */
 static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
     cram_container *c = fd->ctr;
-    cram_slice *s;
     int i;
 
     /* First occurence */
     if (c->curr_ref == -2)
 	c->curr_ref = bam_ref(b);
 
-    if (c->slice) {
-	s = c->slice;
-	if (c->multi_seq) {
-	    s->hdr->ref_seq_id    = -2;
-	    s->hdr->ref_seq_start = 0;
-	    s->hdr->ref_seq_span  = 0;
-	} else {
-	    s->hdr->ref_seq_id    = c->curr_ref;
-	    s->hdr->ref_seq_start = c->first_base;
-	    s->hdr->ref_seq_span  = c->last_base - c->first_base + 1;
-	}
-	s->hdr->num_records   = c->curr_rec;
-
-	if (c->curr_slice == 0) {
-	    if (c->ref_seq_id != s->hdr->ref_seq_id)
-		c->ref_seq_id  = s->hdr->ref_seq_id;
-	    c->ref_seq_start = c->first_base;
-	}
-
-	c->curr_slice++;
-    }
+    if (c->slice)
+	cram_update_curr_slice(c);
 
     /* Flush container */
     if (c->curr_slice == c->max_slice ||
@@ -2531,8 +2533,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     seq = cp = (char *)BLOCK_END(s->seqs_blk);
 
     *seq = 0;
-#ifdef ALLOW_UAC
     {
+#ifdef ALLOW_UAC
 	// Convert seq 2 bases at a time for speed.
 	static const uint16_t code2base[256] = {
 	    15677, 16701, 17213, 19773, 18237, 21053, 21309, 22077,
@@ -2726,6 +2728,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 				      cr->len ? &seq[spos] : NULL,
 				      fd->version))
 		    return -1;
+
 		if (fd->no_ref &&
 		    !(cr->cram_flags & CRAM_FLAG_PRESERVE_QUAL_SCORES)) {
 		    if (cr->len) {
@@ -2751,6 +2754,10 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 		if (cram_add_pad(c, s, cr, spos, cig_len, &seq[spos]))
 		    return -1;
 		break;
+
+	    default:
+		fprintf(stderr, "Unknown CIGAR op code %d\n", cig_op);
+		return -1;
 	    }
 	}
 	if (cr->len && spos != cr->len) {
@@ -2840,8 +2847,6 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	    } else {
 		sign = -1;
 	    }
-	    
-	    //fprintf(stderr, "paired %"PRId64"\n", kh_val(s->pair[sec], k));
 
 	    // This vs p: tlen, matepos, flags
 	    if (bam_ins_size(b) != sign*(aright-aleft+1))
@@ -3000,7 +3005,6 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 	int slice_rec, curr_rec, multi_seq = fd->multi_seq == 1;
 	int curr_ref = c->slice ? c->curr_ref : bam_ref(b);
 
-
 	/*
 	 * Start packing slices when we routinely have under 1/4tr full.
 	 *
@@ -3054,7 +3058,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 	c->slice_rec = c->curr_rec;
 
 	// Have we seen this reference before?
-	if (bam_ref(b) >= 0 && bam_ref(b) != curr_ref && !fd->embed_ref &&
+	if (bam_ref(b) >= 0 && curr_ref >= 0 && bam_ref(b) != curr_ref && !fd->embed_ref &&
 	    !fd->unsorted && multi_seq) {
 	    
 	    if (!c->refs_used) {
