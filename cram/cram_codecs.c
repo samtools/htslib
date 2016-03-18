@@ -344,7 +344,8 @@ int cram_external_decode_char(cram_slice *slice, cram_codec *c,
     if (!cp)
 	return -1;
 
-    memcpy(out, cp, *out_size);
+    if (out)
+	memcpy(out, cp, *out_size);
     return 0;
 }
 
@@ -498,11 +499,16 @@ int cram_beta_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, char
         if (cram_not_enough_bits(in, c->beta.nbits))
             return -1;
 
-	for (i = 0, n = *out_size; i < n; i++)
-	    out[i] = get_bits_MSB(in, c->beta.nbits) - c->beta.offset;
+	if (out)
+	    for (i = 0, n = *out_size; i < n; i++)
+		out[i] = get_bits_MSB(in, c->beta.nbits) - c->beta.offset;
+	else
+	    for (i = 0, n = *out_size; i < n; i++)
+		get_bits_MSB(in, c->beta.nbits);
     } else {
-	for (i = 0, n = *out_size; i < n; i++)
-	    out[i] = -c->beta.offset;
+	if (out)
+	    for (i = 0, n = *out_size; i < n; i++)
+		out[i] = -c->beta.offset;
     }
 
     return 0;
@@ -819,6 +825,9 @@ int cram_huffman_decode_null(cram_slice *slice, cram_codec *c,
 int cram_huffman_decode_char0(cram_slice *slice, cram_codec *c,
 			      cram_block *in, char *out, int *out_size) {
     int i, n;
+
+    if (!out)
+	return 0;
 
     /* Special case of 0 length codes */
     for (i = 0, n = *out_size; i < n; i++) {
@@ -1534,13 +1543,22 @@ static int cram_byte_array_stop_decode_char(cram_slice *slice, cram_codec *c,
 	return -1;
 
     cp = (char *)b->data + b->idx;
-    while ((ch = *cp) != (char)c->byte_array_stop.stop) {
-	if (cp - (char *)b->data >= b->uncomp_size)
-	    return -1;
-	*out++ = ch;
-	cp++;
+    if (out) {
+	while ((ch = *cp) != (char)c->byte_array_stop.stop) {
+	    if (cp - (char *)b->data >= b->uncomp_size)
+		return -1;
+	    *out++ = ch;
+	    cp++;
+	}
+    } else {
+	// Consume input, but produce no output
+	while ((ch = *cp) != (char)c->byte_array_stop.stop) {
+	    if (cp - (char *)b->data >= b->uncomp_size)
+		return -1;
+	    cp++;
+	}
     }
-
+    
     *out_size = cp - (char *)(b->data + b->idx);
     b->idx = cp - (char *)b->data + 1;
 
