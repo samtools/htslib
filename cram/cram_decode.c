@@ -843,8 +843,10 @@ int cram_dependent_data_series(cram_fd *fd,
 
 		while (m) {
 		    cram_codec *c = m->codec;
-		    if (!c)
+		    if (!c) {
+			m = m->next;
 			continue;
+		    }
 
 		    bnum1 = cram_codec_to_id(c, &bnum2);
 
@@ -932,8 +934,10 @@ int cram_dependent_data_series(cram_fd *fd,
 
 	    while (m) {
 		cram_codec *c = m->codec;
-		if (!c)
+		if (!c) {
+		    m = m->next;
 		    continue;
+		}
 
 		bnum1 = cram_codec_to_id(c, &bnum2);
 		
@@ -949,7 +953,7 @@ int cram_dependent_data_series(cram_fd *fd,
 
 		    default:
 			for (j = 0; j < s->hdr->num_blocks; j++) {
-			    if (s->block[j]->content_type &&
+			    if (s->block[j]->content_type == EXTERNAL &&
 				s->block[j]->content_id == bnum1) {
 				if (block_used[j]) {
 				    //printf(" + data series %08x:\n",
@@ -1059,8 +1063,8 @@ void cram_decode_estimate_sizes(cram_block_compression_hdr *hdr, cram_slice *s,
  */
 cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     cram_block_slice_hdr *hdr;
-    char *cp;
-    char *cp_end;
+    unsigned char *cp;
+    unsigned char *cp_end;
     int i;
 
     if (b->method != RAW) {
@@ -1069,7 +1073,7 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
         if (cram_uncompress_block(b) < 0)
             return NULL;
     }
-    cp =  (char *)b->data;
+    cp =  (unsigned char *)BLOCK_DATA(b);
     cp_end = cp + b->uncomp_size;
 
     if (b->content_type != MAPPED_SLICE &&
@@ -1082,23 +1086,23 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     hdr->content_type = b->content_type;
 
     if (b->content_type == MAPPED_SLICE) {
-        cp += safe_itf8_get(cp,  cp_end, &hdr->ref_seq_id);
-        cp += safe_itf8_get(cp,  cp_end, &hdr->ref_seq_start);
-        cp += safe_itf8_get(cp,  cp_end, &hdr->ref_seq_span);
+        cp += safe_itf8_get((char *)cp,  (char *)cp_end, &hdr->ref_seq_id);
+        cp += safe_itf8_get((char *)cp,  (char *)cp_end, &hdr->ref_seq_start);
+        cp += safe_itf8_get((char *)cp,  (char *)cp_end, &hdr->ref_seq_span);
     }
-    cp += safe_itf8_get(cp,  cp_end, &hdr->num_records);
+    cp += safe_itf8_get((char *)cp,  (char *)cp_end, &hdr->num_records);
     hdr->record_counter = 0;
     if (CRAM_MAJOR_VERS(fd->version) == 2) {
 	int32_t i32 = 0;
-	cp += safe_itf8_get(cp, cp_end, &i32);
+	cp += safe_itf8_get((char *)cp, (char *)cp_end, &i32);
 	hdr->record_counter = i32;
     } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-	cp += safe_ltf8_get(cp, cp_end, &hdr->record_counter);
+	cp += safe_ltf8_get((char *)cp, (char *)cp_end, &hdr->record_counter);
     }
 
-    cp += safe_itf8_get(cp, cp_end, &hdr->num_blocks);
+    cp += safe_itf8_get((char *)cp, (char *)cp_end, &hdr->num_blocks);
 
-    cp += safe_itf8_get(cp, cp_end, &hdr->num_content_ids);
+    cp += safe_itf8_get((char *)cp, (char *)cp_end, &hdr->num_content_ids);
     if (hdr->num_content_ids < 1 ||
 	hdr->num_content_ids >= SIZE_MAX / sizeof(int32_t)) {
         /* Slice must have at least one data block,
@@ -1113,7 +1117,7 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     }
 
     for (i = 0; i < hdr->num_content_ids; i++) {
-	int l = safe_itf8_get(cp, cp_end,
+	int l = safe_itf8_get((char *)cp, (char *)cp_end,
 			      &hdr->block_content_ids[i]);
 	if (l <= 0) {
 	    free(hdr->block_content_ids);
@@ -1124,7 +1128,7 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     }
 
     if (b->content_type == MAPPED_SLICE) {
-        cp += safe_itf8_get(cp,  cp_end, &hdr->ref_base_id);
+        cp += safe_itf8_get((char *)cp, (char *) cp_end, &hdr->ref_base_id);
     }
 
     if (CRAM_MAJOR_VERS(fd->version) != 1) {
@@ -1311,9 +1315,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
 	if (!(ds & CRAM_FC))
 	    goto skip_cigar;
-
-	if (!(ds & CRAM_FC))
-	    continue;
 
 	switch(op) {
 	case 'S': { // soft clip: IN
@@ -3071,6 +3072,13 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	j = (cram_decode_job *)res->data;
 	c = j->c;
 	s = j->s;
+
+	if (j->exit_code != 0) {
+	    fprintf(stderr, "Slice decode failure\n");
+	    fd->eof = 0;
+	    t_pool_delete_result(res, 1);
+	    return NULL;
+	}
 
 	fd->ctr = c;
 
