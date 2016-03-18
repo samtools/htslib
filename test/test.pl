@@ -261,6 +261,13 @@ sub test_view
         testv "./test_view $cram > $cram.sam_";
         testv "./compare_sam.pl -nomd $sam $cram.sam_";
 
+        # Java pre-made CRAM -> SAM
+        my $jcram = "${base}_java.cram";
+        if (-e $jcram) {
+            testv "./test_view -i reference=$ref $jcram > $jcram.sam_";
+            testv "./compare_sam.pl -nomd $sam $jcram.sam_";
+        }
+
         if ($test_view_failures == 0)
         {
             passed($opts, "$sam conversions");
