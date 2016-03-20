@@ -313,7 +313,10 @@ typedef struct {
     /** Writes VCF or BCF header */
     int bcf_hdr_write(htsFile *fp, bcf_hdr_t *h);
 
-    /** Parse VCF line contained in kstring and populate the bcf1_t struct */
+    /**
+     * Parse VCF line contained in kstring and populate the bcf1_t struct
+     * The line must not end with \n or \r characters.
+     */
     int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v);
 
     /** The opposite of vcf_parse. It should rarely be called directly, see vcf_write */
