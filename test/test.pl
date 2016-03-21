@@ -264,7 +264,7 @@ sub test_view
         # Java pre-made CRAM -> SAM
         my $jcram = "${base}_java.cram";
         if (-e $jcram) {
-            my $jsam = "${base}_java.tmp.sam";
+            my $jsam = "${base}_java.tmp.sam_";
             testv "./test_view -i reference=$ref $jcram > $jsam";
             testv "./compare_sam.pl -nomd $sam $jsam";
         }
