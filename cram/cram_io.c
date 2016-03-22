@@ -2862,6 +2862,7 @@ cram_container *cram_new_container(int nrec, int nslice) {
     c->max_rec = nrec;
     c->record_counter = 0;
     c->num_bases = 0;
+    c->s_num_bases = 0;
 
     c->max_slice = nslice;
     c->curr_slice = 0;
@@ -4230,6 +4231,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->decode_md = 0;
     fd->verbose = 0;
     fd->seqs_per_slice = SEQS_PER_SLICE;
+    fd->bases_per_slice = BASES_PER_SLICE;
     fd->slices_per_container = SLICE_PER_CNT;
     fd->embed_ref = 0;
     fd->no_ref = 0;
@@ -4485,6 +4487,10 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_SEQS_PER_SLICE:
 	fd->seqs_per_slice = va_arg(args, int);
+	break;
+
+    case CRAM_OPT_BASES_PER_SLICE:
+	fd->bases_per_slice = va_arg(args, int);
 	break;
 
     case CRAM_OPT_SLICES_PER_CONTAINER:

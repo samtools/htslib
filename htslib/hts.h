@@ -166,6 +166,7 @@ enum hts_fmt_option {
     CRAM_OPT_USE_LZMA,
     CRAM_OPT_USE_RANS,
     CRAM_OPT_REQUIRED_FIELDS,
+    CRAM_OPT_BASES_PER_SLICE,
 
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,

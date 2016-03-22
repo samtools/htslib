@@ -82,6 +82,7 @@ KHASH_MAP_INIT_STR(map, pmap_t)
 struct hFILE;
 
 #define SEQS_PER_SLICE 10000
+#define BASES_PER_SLICE (SEQS_PER_SLICE*500)
 #define SLICE_PER_CNT  1
 
 #define CRAM_SUBST_MATRIX "CGTNAGTNACTNACGNACGT"
@@ -389,6 +390,8 @@ typedef struct cram_container {
     int *refs_used;       // array of frequency of ref seq IDs
 
     uint32_t crc32;       // CRC32
+
+    uint64_t s_num_bases; // number of bases in this slice
 } cram_container;
 
 /*
@@ -690,6 +693,7 @@ typedef struct cram_fd {
     int decode_md; // Whether to export MD and NM tags
     int verbose;
     int seqs_per_slice;
+    int bases_per_slice;
     int slices_per_container;
     int embed_ref;
     int no_ref;

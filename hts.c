@@ -480,6 +480,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "SEQS_PER_SLICE") == 0)
         o->opt = CRAM_OPT_SEQS_PER_SLICE, o->val.i = atoi(val);
 
+    else if (strcmp(o->arg, "bases_per_slice") == 0 ||
+             strcmp(o->arg, "BASES_PER_SLICE") == 0)
+        o->opt = CRAM_OPT_BASES_PER_SLICE, o->val.i = atoi(val);
+
     else if (strcmp(o->arg, "slices_per_container") == 0 ||
              strcmp(o->arg, "SLICES_PER_CONTAINER") == 0)
         o->opt = CRAM_OPT_SLICES_PER_CONTAINER, o->val.i = atoi(val);
