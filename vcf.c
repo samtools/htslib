@@ -1590,6 +1590,11 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
             k = kh_get(vdict, d, t);
             v->errcode = BCF_ERR_TAG_UNDEF;
+            if (k == kh_end(d)) {
+                fprintf(stderr, "[E::%s] Could not add dummy header for FORMAT '%s'\n", __func__, t);
+                v->errcode |= BCF_ERR_TAG_INVALID;
+                return -1;
+            }
         }
         fmt[j].max_l = fmt[j].max_m = fmt[j].max_g = 0;
         fmt[j].key = kh_val(d, k).id;
@@ -1835,6 +1840,11 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                 if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
                 k = kh_get(vdict, d, p);
                 v->errcode = BCF_ERR_CTG_UNDEF;
+                if (k == kh_end(d)) {
+                    fprintf(stderr, "[E::%s] Could not add dummy header for contig '%s'\n", __func__, p);
+                    v->errcode |= BCF_ERR_CTG_INVALID;
+                    return -1;
+                }
             }
             v->rid = kh_val(d, k).id;
         } else if (i == 1) { // POS
@@ -1888,6 +1898,11 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
                         k = kh_get(vdict, d, t);
                         v->errcode = BCF_ERR_TAG_UNDEF;
+                        if (k == kh_end(d)) {
+                            fprintf(stderr, "[E::%s] Could not add dummy header for FILTER '%s'\n", __func__, t);
+                            v->errcode |= BCF_ERR_TAG_INVALID;
+                            return -1;
+                        }
                     }
                     a[i++] = kh_val(d, k).id;
                 }
@@ -1925,6 +1940,11 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         if ( bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) ) bcf_hdr_sync((bcf_hdr_t*)h);
                         k = kh_get(vdict, d, key);
                         v->errcode = BCF_ERR_TAG_UNDEF;
+                        if (k == kh_end(d)) {
+                            fprintf(stderr, "[E::%s] Could not add dummy header for INFO '%s'\n", __func__, key);
+                            v->errcode |= BCF_ERR_TAG_INVALID;
+                            return -1;
+                        }
                     }
                     uint32_t y = kh_val(d, k).info[BCF_HL_INFO];
                     ++v->n_info;
