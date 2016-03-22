@@ -53,6 +53,20 @@ uint32_t bcf_float_vector_end = 0x7F800002;
 uint8_t bcf_type_shift[] = { 0, 0, 1, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, NULL, NULL}, .id = -1 };
 
+static const char *dump_char(char *buffer, char c)
+{
+    switch (c) {
+    case '\n': strcpy(buffer, "\\n"); break;
+    case '\r': strcpy(buffer, "\\r"); break;
+    case '\t': strcpy(buffer, "\\t"); break;
+    default:
+        if (isprint_c(c)) sprintf(buffer, "%c", c);
+        else sprintf(buffer, "\\x%02X", (unsigned char) c);
+        break;
+    }
+    return buffer;
+}
+
 /*************************
  *** VCF header parser ***
  *************************/
@@ -1742,8 +1756,9 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 t++;
             }
             else {
-                fprintf(stderr,"[E::%s] Invalid character '%c' in '%s' FORMAT field at %s:%d\n", __FUNCTION__, isprint_c(*t)? *t : '?', h->id[BCF_DT_ID][z->key].key, bcf_seqname(h,v), v->pos+1);
-                // TODO Set v->errcode appropriately
+                char buffer[8];
+                fprintf(stderr,"[E::%s] Invalid character '%s' in '%s' FORMAT field at %s:%d\n", __FUNCTION__, dump_char(buffer, *t), h->id[BCF_DT_ID][z->key].key, bcf_seqname(h,v), v->pos+1);
+                v->errcode |= BCF_ERR_CHAR;
                 return -1;
             }
         }
