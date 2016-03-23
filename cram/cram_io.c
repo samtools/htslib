@@ -2886,7 +2886,7 @@ cram_container *cram_new_container(int nrec, int nslice) {
     
     //c->aux_B_stats = cram_stats_create();
 
-    if (!(c->tags_used = kh_init(s_i2i)))
+    if (!(c->tags_used = kh_init(m_tagmap)))
 	goto err;
     c->refs_used = 0;
 
@@ -2932,7 +2932,22 @@ void cram_free_container(cram_container *c) {
 
     //if (c->aux_B_stats) cram_stats_free(c->aux_B_stats);
     
-    if (c->tags_used) kh_destroy(s_i2i, c->tags_used);
+    if (c->tags_used) {
+	khint_t k;
+
+	for (k = kh_begin(c->tags_used); k != kh_end(c->tags_used); k++) {
+	    if (!kh_exist(c->tags_used, k))
+		continue;
+
+	    cram_tag_map *tm = (cram_tag_map *)kh_val(c->tags_used, k);
+	    cram_codec *c = tm->codec;
+	    
+	    if (c) c->free(c);
+	    free(tm);
+	}
+
+	kh_destroy(m_tagmap, c->tags_used);
+    }
 
     free(c);
 }
@@ -3451,24 +3466,6 @@ void cram_free_slice(cram_slice *s) {
     if (s->aux_blk)
 	cram_free_block(s->aux_blk);
 
-    if (s->aux_OQ_blk)
-	cram_free_block(s->aux_OQ_blk);
-
-    if (s->aux_BQ_blk)
-	cram_free_block(s->aux_BQ_blk);
-
-    if (s->aux_FZ_blk)
-	cram_free_block(s->aux_FZ_blk);
-
-    if (s->aux_oq_blk)
-	cram_free_block(s->aux_oq_blk);
-
-    if (s->aux_os_blk)
-	cram_free_block(s->aux_os_blk);
-
-    if (s->aux_oz_blk)
-	cram_free_block(s->aux_oz_blk);
-
     if (s->base_blk)
 	cram_free_block(s->base_blk);
 
@@ -3494,6 +3491,9 @@ void cram_free_slice(cram_slice *s) {
 	kh_destroy(m_s2i, s->pair[0]);
     if (s->pair[1])
 	kh_destroy(m_s2i, s->pair[1]);
+
+    if (s->aux_block)
+	free(s->aux_block);
 
     free(s);
 }
@@ -4254,6 +4254,9 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     for (i = 0; i < DS_END; i++)
 	fd->m[i] = cram_new_metrics();
 
+    if (!(fd->tags_used = kh_init(m_metrics)))
+	goto err;
+
     fd->range.refid = -2; // no ref.
     fd->eof = 1;          // See samtools issue #150
     fd->ref_fn = NULL;
@@ -4417,6 +4420,17 @@ int cram_close(cram_fd *fd) {
     for (i = 0; i < DS_END; i++)
 	if (fd->m[i])
 	    free(fd->m[i]);
+
+    if (fd->tags_used) {
+	khint_t k;
+
+	for (k = kh_begin(fd->tags_used); k != kh_end(fd->tags_used); k++) {
+	    if (kh_exist(fd->tags_used, k))
+		free(kh_val(fd->tags_used, k));
+	}
+
+	kh_destroy(m_metrics, fd->tags_used);
+    }
 
     if (fd->index)
 	cram_index_free(fd);
