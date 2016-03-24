@@ -305,7 +305,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     // ##INFO=<ID=PV1,Number=1,Type=Float,Description="P-value for baseQ bias">
     // ##PEDIGREE=<Name_0=G0-ID,Name_1=G1-ID,Name_3=GN-ID>
     int nopen = 1;
-    while ( *q && *q!='\n' && nopen )
+    while ( *q && *q!='\n' && nopen>0 )
     {
         p = ++q;
         while ( *q && *q==' ' ) { p++; q++; }
@@ -335,9 +335,8 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         while ( *q && *q==' ' ) { p++; q++; }
         int quoted = *p=='"' ? 1 : 0;
         if ( quoted ) p++, q++;
-        while (1)
+        while ( *q && *q != '\n' )
         {
-            if ( !*q ) break;
             if ( quoted ) { if ( *q=='"' && !is_escaped(p,q) ) break; }
             else
             {
@@ -348,10 +347,10 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
             }
             q++;
         }
-        const char *r = q-1;
-        while ( *r && (*r==' ') ) r--;
-        bcf_hrec_set_val(hrec, hrec->nkeys-1, p, r-p+1, quoted);
-        if ( quoted ) q++;
+        const char *r = q;
+        while ( r > p && r[-1] == ' ' ) r--;
+        bcf_hrec_set_val(hrec, hrec->nkeys-1, p, r-p, quoted);
+        if ( quoted && *q=='"' ) q++;
         if ( *q=='>' ) { nopen--; q++; }
     }
 
@@ -1690,7 +1689,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         if ( m == bcf_hdr_nsamples(h) ) break;
 
         j = 0; // j-th format field, m-th sample
-        while ( *t )
+        while ( t < end )
         {
             fmt_aux_t *z = &fmt[j];
             if ((z->y>>4&0xf) == BCF_HT_STR) {
