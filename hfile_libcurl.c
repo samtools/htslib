@@ -38,6 +38,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kstring.h"
 
 #include <curl/curl.h>
+#include <regex.h>
 
 typedef struct {
     hFILE base;
@@ -558,6 +559,100 @@ error:
     return NULL;
 }
 
+
+struct MemoryStruct {
+  char *memory;
+  size_t size;
+};
+ 
+static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
+{
+  size_t realsize = size * nmemb;
+  struct MemoryStruct *mem = (struct MemoryStruct *)userp;
+ 
+  mem->memory = realloc(mem->memory, mem->size + realsize + 1);
+  if(mem->memory == NULL)
+  {
+    return (size_t) NULL;
+  }
+ 
+  memcpy(&(mem->memory[mem->size]), contents, realsize);
+  mem->size += realsize;
+  mem->memory[mem->size] = 0;
+ 
+  return realsize;
+}
+
+char * curl_as_string(char * url)
+{
+    // Very simple function that given a URL, will return the response as a string, or NULL
+
+    struct MemoryStruct chunk;
+    chunk.memory = malloc(1);
+    chunk.size = 0;
+    CURL* curl = curl_easy_init();
+
+    if (!curl)
+    {
+        free(chunk.memory);
+        return NULL;
+    }
+    
+    char * role_name;
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+    CURLcode res = curl_easy_perform(curl);
+    if(res != CURLE_OK)
+    {
+        free(chunk.memory);
+        curl_easy_cleanup(curl);
+        return NULL;
+    }
+    else
+    {
+        char * r_str = strdup(chunk.memory);
+        int http_code = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+        free(chunk.memory);
+        curl_easy_cleanup(curl);
+        if (http_code == 200)
+        {
+            return r_str;
+        }
+        else
+        {
+            return NULL;
+        }
+    }
+}
+
+
+char * get_regex_group(char * regex_string, char * haystack)
+{
+    regex_t regex_obj;
+
+    regmatch_t secret_key_groups[2];
+    regmatch_t groups[2];
+
+    regcomp(&regex_obj, regex_string, REG_NEWLINE|REG_EXTENDED);
+    
+    if (regexec(&regex_obj, haystack, 2, groups, 0) == 0)
+    {
+        int g = 1;
+          char sourceCopy[strlen(haystack) + 1];
+          strcpy(sourceCopy, haystack);
+          sourceCopy[groups[g].rm_eo] = 0;
+          return strdup(sourceCopy + groups[g].rm_so);
+    }
+    else
+    {
+        return NULL;
+    }
+}
+
+
+
 int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
 {
     static const struct hFILE_scheme_handler handler =
@@ -865,6 +960,45 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
                   "secret_key", &secret, "access_token", &token, NULL);
     if (id.l == 0)
         parse_simple("~/.awssecret", &id, &secret);
+
+    // If we fail to get credentials from all the above, then we attempt
+    // to get the credential via IAM
+    if (id.l == 0)
+    {
+        char * aws_meta_url = "http://169.254.169.254/latest/meta-data/iam/security-credentials/";
+        char * role_name = curl_as_string(aws_meta_url);
+        if (role_name)
+        {
+            // Append the IAM role name to the end of the aws_meta_url name
+            char info_url[128];
+            strcpy(info_url, aws_meta_url);
+            strcat(info_url, role_name);
+
+            // Try and get the JSON object with the Metadata
+            char * security_creds = curl_as_string(info_url);
+
+            if (security_creds)
+            {
+                // Here are three Regexes to pull out the tokens from the AWS APU
+                char * access_key_id_regex_string = "\"AccessKeyId\".+?:.+?\"(.+?)\"";
+                char * secret_access_key_regex_string = "\"SecretAccessKey\".+?:.+?\"(.+?)\"";
+                char * token_regex_string = "\"Token\".+?:.+?\"(.+?)\"";
+
+                // Pull out the access key, secret, and token
+                char * iam_key = get_regex_group(access_key_id_regex_string, security_creds);
+                char * iam_secret = get_regex_group(secret_access_key_regex_string, security_creds);
+                char * iam_token = get_regex_group(token_regex_string, security_creds);
+
+                // Only bother setting if all three exist
+                if(iam_key && iam_secret && iam_token)
+                {
+                    kputs(iam_key, &id);
+                    kputs(iam_secret, &secret);
+                    kputs(iam_token, &token);
+                }
+            }
+        }
+    }
 
     if (token.l > 0) {
         kputs("x-amz-security-token:", message);
