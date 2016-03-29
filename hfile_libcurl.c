@@ -598,6 +598,41 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
  * Rewrite S3 URLs *
  *******************/
 
+static size_t kput_callback(char *ptr, size_t size, size_t nmemb, void *strv)
+{
+    kstring_t *str = (kstring_t *) strv;
+    size_t len = size * nmemb;
+    return (kputsn(ptr, len, str) >= 0)? len : 0;
+}
+
+static int curl_kput(const char *url, kstring_t *str)
+{
+    CURLcode err;
+    CURL *easy = curl_easy_init();
+    if (easy == NULL) { errno = ENOMEM; return -1; }
+
+    err  = curl_easy_setopt(easy, CURLOPT_URL, url);
+    err |= curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, kput_callback);
+    err |= curl_easy_setopt(easy, CURLOPT_WRITEDATA, str);
+    err |= curl_easy_setopt(easy, CURLOPT_USERAGENT, curl.useragent.s);
+    err |= curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 1L);
+    err |= curl_easy_setopt(easy, CURLOPT_FAILONERROR, 1L);
+    if (hts_verbose >= 8) err |= curl_easy_setopt(easy, CURLOPT_VERBOSE, 1L);
+    if (err != 0) { curl_easy_cleanup(easy); errno = ENOSYS; return -1; }
+
+    err = curl_easy_perform(easy);
+    if (err != CURLE_OK) {
+        int save_errno = easy_errno(easy, err);
+        curl_easy_cleanup(easy);
+        errno = save_errno;
+        return -1;
+    }
+
+    curl_easy_cleanup(easy);
+    return 0;
+}
+
+
 #if defined HAVE_COMMONCRYPTO
 
 #include <CommonCrypto/CommonHMAC.h>
