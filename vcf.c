@@ -59,6 +59,11 @@ static const char *dump_char(char *buffer, char c)
     case '\n': strcpy(buffer, "\\n"); break;
     case '\r': strcpy(buffer, "\\r"); break;
     case '\t': strcpy(buffer, "\\t"); break;
+    case '\'':
+    case '\"':
+    case '\\':
+        sprintf(buffer, "\\%c", c);
+        break;
     default:
         if (isprint_c(c)) sprintf(buffer, "%c", c);
         else sprintf(buffer, "\\x%02X", (unsigned char) c);
