@@ -1741,7 +1741,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                     if ((z->y>>4&0xf) == BCF_HT_STR) {
                         if (z->is_gt) {
                             int32_t *x = (int32_t*)(z->buf + z->size * m);
-                            x[0] = bcf_int32_missing;
+                            if (z->size) x[0] = bcf_int32_missing;
                             for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
                         } else {
                             char *x = (char*)z->buf + z->size * m;

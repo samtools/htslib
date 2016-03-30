@@ -303,6 +303,8 @@ sub test_vcf_various
     # Various VCF parsing issues
     test_cmd($opts, %args, out => "formatcols.vcf",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatcols.vcf");
+    test_cmd($opts, %args, out => "noroundtrip-out.vcf",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/noroundtrip.vcf");
 }
 
 sub test_convert_padded_header
