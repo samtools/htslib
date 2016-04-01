@@ -341,6 +341,17 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...);
 SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
 			   char *ID_key, char *ID_value);
 
+/*! Delete a single line from a SAM header
+ *
+ * Deleted the first header line matching 'type'. If ID is non-NULL it checks
+ * for the tag ID: and compares against the specified ID.
+ *
+ * @return
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int sam_hdr_del(SAM_hdr *hdr, char *type, char *ID_key, char *ID_value);
+
 /*!
  *
  * As per SAM_hdr_type, but returns a complete line of formatted text
