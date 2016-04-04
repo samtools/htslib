@@ -418,7 +418,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         {
             char *tmp = hrec->vals[idx];
             idx = strtol(hrec->vals[idx], &tmp, 10);
-            if ( *tmp )
+            if ( *tmp || idx < 0 )
             {
                 fprintf(stderr,"[%s:%d %s] Error parsing the IDX tag, skipping.\n", __FILE__,__LINE__,__FUNCTION__);
                 return 0;
@@ -451,7 +451,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         {
             char *tmp = hrec->vals[i];
             idx = strtol(hrec->vals[i], &tmp, 10);
-            if ( *tmp )
+            if ( *tmp || idx < 0 )
             {
                 fprintf(stderr,"[%s:%d %s] Error parsing the IDX tag, skipping.\n", __FILE__,__LINE__,__FUNCTION__);
                 return 0;
