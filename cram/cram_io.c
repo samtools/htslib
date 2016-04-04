@@ -192,20 +192,20 @@ int itf8_decode_crc(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
     switch(i) {
     case 0:
 	*val_p = val;
-	*crc = crc32(*crc, c, 1);
+	*crc = hts_crc32(*crc, c, 1);
 	return 1;
 
     case 1:
 	val = (val<<8) | (c[1]=hgetc(fd->fp));
 	*val_p = val;
-	*crc = crc32(*crc, c, 2);
+	*crc = hts_crc32(*crc, c, 2);
 	return 2;
 
     case 2:
 	val = (val<<8) | (c[1]=hgetc(fd->fp));
 	val = (val<<8) | (c[2]=hgetc(fd->fp));
 	*val_p = val;
-	*crc = crc32(*crc, c, 3);
+	*crc = hts_crc32(*crc, c, 3);
 	return 3;
 
     case 3:
@@ -213,7 +213,7 @@ int itf8_decode_crc(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
 	val = (val<<8) | (c[2]=hgetc(fd->fp));
 	val = (val<<8) | (c[3]=hgetc(fd->fp));
 	*val_p = val;
-	*crc = crc32(*crc, c, 4);
+	*crc = hts_crc32(*crc, c, 4);
 	return 4;
 
     case 4: // really 3.5 more, why make it different?
@@ -222,7 +222,7 @@ int itf8_decode_crc(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
 	val = (val<<8) |   (c[3]=hgetc(fd->fp));
 	val = (val<<4) | (((c[4]=hgetc(fd->fp))) & 0x0f);
 	*val_p = val;
-	*crc = crc32(*crc, c, 5);
+	*crc = hts_crc32(*crc, c, 5);
     }
 
     return 5;
@@ -558,20 +558,20 @@ int ltf8_decode_crc(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
 
     if (val < 0x80) {
 	*val_p =   val;
-	*crc = crc32(*crc, c, 1);
+	*crc = hts_crc32(*crc, c, 1);
 	return 1;
 
     } else if (val < 0xc0) {
 	val = (val<<8) | (c[1]=hgetc(fd->fp));;
 	*val_p = val & (((1LL<<(6+8)))-1);
-	*crc = crc32(*crc, c, 2);
+	*crc = hts_crc32(*crc, c, 2);
 	return 2;
 
     } else if (val < 0xe0) {
 	val = (val<<8) | (c[1]=hgetc(fd->fp));;
 	val = (val<<8) | (c[2]=hgetc(fd->fp));;
 	*val_p = val & ((1LL<<(5+2*8))-1);
-	*crc = crc32(*crc, c, 3);
+	*crc = hts_crc32(*crc, c, 3);
 	return 3;
 
     } else if (val < 0xf0) {
@@ -579,7 +579,7 @@ int ltf8_decode_crc(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
 	val = (val<<8) | (c[2]=hgetc(fd->fp));;
 	val = (val<<8) | (c[3]=hgetc(fd->fp));;
 	*val_p = val & ((1LL<<(4+3*8))-1);
-	*crc = crc32(*crc, c, 4);
+	*crc = hts_crc32(*crc, c, 4);
 	return 4;
 
     } else if (val < 0xf8) {
@@ -588,7 +588,7 @@ int ltf8_decode_crc(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
 	val = (val<<8) | (c[3]=hgetc(fd->fp));;
 	val = (val<<8) | (c[4]=hgetc(fd->fp));;
 	*val_p = val & ((1LL<<(3+4*8))-1);
-	*crc = crc32(*crc, c, 5);
+	*crc = hts_crc32(*crc, c, 5);
 	return 5;
 
     } else if (val < 0xfc) {
@@ -598,7 +598,7 @@ int ltf8_decode_crc(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
 	val = (val<<8) | (c[4]=hgetc(fd->fp));;
 	val = (val<<8) | (c[5]=hgetc(fd->fp));;
 	*val_p = val & ((1LL<<(2+5*8))-1);
-	*crc = crc32(*crc, c, 6);
+	*crc = hts_crc32(*crc, c, 6);
 	return 6;
 
     } else if (val < 0xfe) {
@@ -609,7 +609,7 @@ int ltf8_decode_crc(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
 	val = (val<<8) | (c[5]=hgetc(fd->fp));;
 	val = (val<<8) | (c[6]=hgetc(fd->fp));;
 	*val_p = val & ((1LL<<(1+6*8))-1);
-	*crc = crc32(*crc, c, 7);
+	*crc = hts_crc32(*crc, c, 7);
 	return 7;
 
     } else if (val < 0xff) {
@@ -621,7 +621,7 @@ int ltf8_decode_crc(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
 	val = (val<<8) | (c[6]=hgetc(fd->fp));;
 	val = (val<<8) | (c[7]=hgetc(fd->fp));;
 	*val_p = val & ((1LL<<(7*8))-1);
-	*crc = crc32(*crc, c, 8);
+	*crc = hts_crc32(*crc, c, 8);
 	return 8;
 
     } else {
@@ -633,7 +633,7 @@ int ltf8_decode_crc(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
 	val = (val<<8) | (c[6]=hgetc(fd->fp));;
 	val = (val<<8) | (c[7]=hgetc(fd->fp));;
 	val = (val<<8) | (c[8]=hgetc(fd->fp));;
-	*crc = crc32(*crc, c, 9);
+	*crc = hts_crc32(*crc, c, 9);
 	*val_p = val;
     }
 
@@ -967,9 +967,9 @@ cram_block *cram_read_block(cram_fd *fd) {
     //fprintf(stderr, "Block at %d\n", (int)ftell(fd->fp));
 
     if (-1 == (b->method      = hgetc(fd->fp))) { free(b); return NULL; }
-    c = b->method; crc = crc32(crc, &c, 1);
+    c = b->method; crc = hts_crc32(crc, &c, 1);
     if (-1 == (b->content_type= hgetc(fd->fp))) { free(b); return NULL; }
-    c = b->content_type; crc = crc32(crc, &c, 1);
+    c = b->content_type; crc = hts_crc32(crc, &c, 1);
     if (-1 == itf8_decode_crc(fd, &b->content_id, &crc))  { free(b); return NULL; }
     if (-1 == itf8_decode_crc(fd, &b->comp_size, &crc))   { free(b); return NULL; }
     if (-1 == itf8_decode_crc(fd, &b->uncomp_size, &crc)) { free(b); return NULL; }
@@ -1001,7 +1001,7 @@ cram_block *cram_read_block(cram_fd *fd) {
 	    return NULL;
 	}
 
-	crc = crc32(crc, b->data ? b->data : (uc *)"", b->alloc);
+	crc = hts_crc32(crc, b->data ? b->data : (uc *)"", b->alloc);
 	if (crc != b->crc32) {
 	    fprintf(stderr, "Block CRC32 failure\n");
 	    free(b->data);
@@ -1070,12 +1070,12 @@ int cram_write_block(cram_fd *fd, cram_block *b) {
 	cp += itf8_put(cp, b->content_id);
 	cp += itf8_put(cp, b->comp_size);
 	cp += itf8_put(cp, b->uncomp_size);
-	crc = crc32(0L, dat, cp-dat);
+	crc = hts_crc32(0L, dat, cp-dat);
 
 	if (b->method == RAW) {
-	    b->crc32 = crc32(crc, b->data ? b->data : (uc*)"", b->uncomp_size);
+	    b->crc32 = hts_crc32(crc, b->data ? b->data : (uc*)"", b->uncomp_size);
 	} else {
-	    b->crc32 = crc32(crc, b->data ? b->data : (uc*)"", b->comp_size);
+	    b->crc32 = hts_crc32(crc, b->data ? b->data : (uc*)"", b->comp_size);
 	}
 
 	if (-1 == int32_encode(fd, b->crc32))
@@ -2988,7 +2988,7 @@ cram_container *cram_read_container(cram_fd *fd) {
 	    rd+=s;
 	}
 	len = le_int4(c2.length);
-	crc = crc32(0L, (unsigned char *)&len, 4);
+	crc = hts_crc32(0L, (unsigned char *)&len, 4);
     }
     if ((s = itf8_decode_crc(fd, &c2.ref_seq_id, &crc))   == -1) return NULL; else rd+=s;
     if ((s = itf8_decode_crc(fd, &c2.ref_seq_start, &crc))== -1) return NULL; else rd+=s;
@@ -3130,7 +3130,7 @@ int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
 	cp += itf8_put(cp, c->landmark[i]);
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-	c->crc32 = crc32(0L, (uc *)dat, cp-dat);
+	c->crc32 = hts_crc32(0L, (uc *)dat, cp-dat);
 	cp[0] =  c->crc32        & 0xff;
 	cp[1] = (c->crc32 >>  8) & 0xff;
 	cp[2] = (c->crc32 >> 16) & 0xff;
@@ -3188,7 +3188,7 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
 	cp += itf8_put(cp, c->landmark[i]);
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-	c->crc32 = crc32(0L, (uc *)buf, cp-buf);
+	c->crc32 = hts_crc32(0L, (uc *)buf, cp-buf);
 	cp[0] =  c->crc32        & 0xff;
 	cp[1] = (c->crc32 >>  8) & 0xff;
 	cp[2] = (c->crc32 >> 16) & 0xff;

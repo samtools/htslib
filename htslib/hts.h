@@ -576,6 +576,11 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
     void hts_md5_destroy(hts_md5_context *ctx);
 
 
+    /**********************
+     * CRC32 implementation *
+     **********************/
+    uint32_t hts_crc32(uint32_t previousCrc32, unsigned char *buf, unsigned int len);
+
 static inline int hts_reg2bin(int64_t beg, int64_t end, int min_shift, int n_lvls)
 {
     int l, s = min_shift, t = ((1<<((n_lvls<<1) + n_lvls)) - 1) / 7;
