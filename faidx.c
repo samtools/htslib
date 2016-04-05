@@ -337,8 +337,7 @@ faidx_t *fai_load(const char *fn)
 
     if (fp == 0) {
         fprintf(stderr, "[fai_load] build FASTA index.\n");
-        if (fai_build(fn) != 0) {
-            fprintf(stderr, "[fai_load] Failed to build index.\n");
+        if (fai_build(fn) < 0) {
             free(str);
             return 0;
         }

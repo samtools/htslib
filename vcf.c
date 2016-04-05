@@ -810,9 +810,9 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     h = bcf_hdr_init("r");
     if (!h) {
         fprintf(stderr, "[E::%s] failed to allocate bcf header\n", __func__);
-        return 0;
+        return NULL;
     }
-    if ( bgzf_read(fp, magic, 5)<0 )
+    if (bgzf_read(fp, magic, 5) != 5)
     {
         fprintf(stderr,"[%s:%d %s] Failed to read the header (reading BCF in text mode?)\n", __FILE__,__LINE__,__FUNCTION__);
         bcf_hdr_destroy(h);
@@ -825,14 +825,14 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
         else if (hts_verbose >= 2)
             fprintf(stderr, "[E::%s] invalid BCF2 magic string\n", __func__);
         bcf_hdr_destroy(h);
-        return 0;
+        return NULL;
     }
     int hlen;
     char *htxt = NULL;
-    if (bgzf_read(fp, &hlen, 4) < 0) goto fail;
+    if (bgzf_read(fp, &hlen, 4) != 4) goto fail;
     htxt = (char*)malloc(hlen);
     if (!htxt) goto fail;
-    if (bgzf_read(fp, htxt, hlen) < 0) goto fail;
+    if (bgzf_read(fp, htxt, hlen) != hlen) goto fail;
     bcf_hdr_parse(h, htxt);  // FIXME: Does this return anything meaningful?
     free(htxt);
     return h;
@@ -942,8 +942,8 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
     // silent fix of broken BCFs produced by earlier versions of bcf_subset, prior to and including bd6ed8b4
     if ( (!v->indiv.l || !v->n_sample) && v->n_fmt ) v->n_fmt = 0;
 
-    if (bgzf_read(fp, v->shared.s, v->shared.l) < 0) return -1;
-    if (bgzf_read(fp, v->indiv.s, v->indiv.l) < 0) return -1;
+    if (bgzf_read(fp, v->shared.s, v->shared.l) != v->shared.l) return -1;
+    if (bgzf_read(fp, v->indiv.s, v->indiv.l) != v->indiv.l) return -1;
     return 0;
 }
 
@@ -1273,7 +1273,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
     h = bcf_hdr_init("r");
     if (!h) {
         fprintf(stderr, "[E::%s] failed to allocate bcf header\n", __func__);
-        return 0;
+        return NULL;
     }
     txt.l = txt.m = 0; txt.s = 0;
     while (hts_getline(fp, KS_SEP_LINE, s) >= 0) {
@@ -1283,7 +1283,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
                 fprintf(stderr, "[E::%s] no sample line\n", __func__);
             free(txt.s);
             bcf_hdr_destroy(h);
-            return 0;
+            return NULL;
         }
         if (s->s[1] != '#' && fp->fn_aux) { // insert contigs here
             int dret;

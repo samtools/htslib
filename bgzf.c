@@ -979,27 +979,11 @@ int bgzf_close(BGZF* fp)
     }
     if ( fp->is_gzip )
     {
-        if (!fp->is_write) {
-            ret = inflateEnd(fp->gz_stream);
-            if (ret != Z_OK) {
-                if ( hts_verbose >= 1 ) {
-                    fprintf(stderr, "[E::%s] inflateEnd failed: %s\n",
-                            __func__, bgzf_zerr(ret, NULL));
-                }
-                fp->errcode |= BGZF_ERR_ZLIB;
-                // return -1; // don't bother, closing anyway
-            }
-        } else {
-            ret = deflateEnd(fp->gz_stream);
-            if (ret != Z_OK) {
-                if ( hts_verbose >= 1 ) {
-                    fprintf(stderr, "[E::%s] deflateEnd failed: %s\n",
-                            __func__, bgzf_zerr(ret, NULL));
-                }
-                fp->errcode |= BGZF_ERR_ZLIB;
-                // return -1; // don't bother, closing anyway
-            }
-        }
+        if (!fp->is_write) ret = inflateEnd(fp->gz_stream);
+        else ret = deflateEnd(fp->gz_stream);
+        if (ret != Z_OK && hts_verbose >= 1)
+            fprintf(stderr, "[E::%s] inflateEnd/deflateEnd failed: %s\n",
+                    __func__, bgzf_zerr(ret, NULL));
         free(fp->gz_stream);
     }
     ret = hclose(fp->fp);
