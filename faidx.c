@@ -30,6 +30,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <errno.h>
 
 #include "htslib/bgzf.h"
 #include "htslib/faidx.h"
@@ -199,7 +200,7 @@ faidx_t *fai_read(FILE *fp)
     fai = (faidx_t*)calloc(1, sizeof(faidx_t));
     fai->hash = kh_init(s);
     buf = (char*)calloc(0x10000, 1);
-    while (!feof(fp) && fgets(buf, 0x10000, fp)) {
+    while (!ferror(fp) && !feof(fp) && fgets(buf, 0x10000, fp)) {
         for (p = buf; *p && isgraph(*p); ++p);
         *p = 0; ++p;
 #ifdef _WIN32
@@ -213,6 +214,10 @@ faidx_t *fai_read(FILE *fp)
         }
     }
     free(buf);
+    if (ferror(fp)) {
+        fai_destroy(fai);
+        return NULL;
+    }
     return fai;
 }
 
@@ -323,24 +328,31 @@ faidx_t *fai_load(const char *fn)
         }
     }
     else
+    {
         fp = fopen(str, "rb");
+    }
 
     if (fp == 0) {
-        fprintf(stderr, "[fai_load] build FASTA index.\n");
+        fprintf(stderr, "[fai_load] build FASTA index : %s\n", strerror(errno));
         fai_build(fn);
         fp = fopen(str, "rb");
         if (fp == 0) {
-            fprintf(stderr, "[fai_load] fail to open FASTA index.\n");
+            fprintf(stderr, "[fai_load] failed to open FASTA index : %s\n", strerror(errno));
             free(str);
             return 0;
         }
     }
+    free(str);
 
     fai = fai_read(fp);
+    if (fai == NULL) {
+        fprintf(stderr, "[fai_load] failed to read FASTA index : %s\n", strerror(errno));
+        fclose(fp);
+        return NULL;
+    }
     fclose(fp);
 
     fai->bgzf = bgzf_open(fn, "rb");
-    free(str);
     if (fai->bgzf == 0) {
         fprintf(stderr, "[fai_load] fail to open FASTA file.\n");
         return 0;
