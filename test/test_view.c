@@ -135,8 +135,10 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     hts_opt_free(out_opts);
 
-    if (!benchmark)
-        sam_hdr_write(out, h);
+    if (!benchmark && sam_hdr_write(out, h) < 0) {
+        fprintf(stderr, "Error writing output header.\n");
+        exit_code = 1;
+    }
     if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
         int i;
         hts_idx_t *idx;
