@@ -1766,33 +1766,11 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 for (; l < z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
             } else abort();
             if (*t == '\0') {
-                for (++j; j < v->n_fmt; ++j) { // fill end-of-vector values
-                    z = &fmt[j];
-                    if ((z->y>>4&0xf) == BCF_HT_STR) {
-                        if (z->is_gt) {
-                            int32_t *x = (int32_t*)(z->buf + z->size * m);
-                            if (z->size) x[0] = bcf_int32_missing;
-                            for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
-                        } else {
-                            char *x = (char*)z->buf + z->size * m;
-                            if ( z->size ) x[0] = '.';
-                            for (l = 1; l < z->size; ++l) x[l] = 0;
-                        }
-                    } else if ((z->y>>4&0xf) == BCF_HT_INT) {
-                        int32_t *x = (int32_t*)(z->buf + z->size * m);
-                        x[0] = bcf_int32_missing;
-                        for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
-                    } else if ((z->y>>4&0xf) == BCF_HT_REAL) {
-                        float *x = (float*)(z->buf + z->size * m);
-                        bcf_float_set_missing(x[0]);
-                        for (l = 1; l < z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
-                    }
-                }
                 break;
             }
             else if (*t == ':') {
-                j++;
                 t++;
+                if (t < end) j++;
             }
             else {
                 char buffer[8];
@@ -1801,6 +1779,30 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 return -1;
             }
         }
+
+        for (++j; j < v->n_fmt; ++j) { // fill end-of-vector values
+            fmt_aux_t *z = &fmt[j];
+            if ((z->y>>4&0xf) == BCF_HT_STR) {
+                if (z->is_gt) {
+                    int32_t *x = (int32_t*)(z->buf + z->size * m);
+                    if (z->size) x[0] = bcf_int32_missing;
+                    for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
+                } else {
+                    char *x = (char*)z->buf + z->size * m;
+                    if ( z->size ) x[0] = '.';
+                    for (l = 1; l < z->size; ++l) x[l] = 0;
+                }
+            } else if ((z->y>>4&0xf) == BCF_HT_INT) {
+                int32_t *x = (int32_t*)(z->buf + z->size * m);
+                x[0] = bcf_int32_missing;
+                for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
+            } else if ((z->y>>4&0xf) == BCF_HT_REAL) {
+                float *x = (float*)(z->buf + z->size * m);
+                bcf_float_set_missing(x[0]);
+                for (l = 1; l < z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
+            }
+        }
+
         m++; t++;
     }
 
