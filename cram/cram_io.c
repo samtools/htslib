@@ -2324,23 +2324,6 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	static int rand_init = 0;
 	FILE *fp;
 
-	// Make sure the data we've fetched matches the @SQ M5 sum.
-	hts_md5_context *md5;
-	unsigned char md5buf[16];
-	char md5buf2[33];
-	if (!(md5 = hts_md5_init()))
-	    return -1;
-	hts_md5_update(md5, r->seq, r->length);
-	hts_md5_final(md5buf, md5);
-	hts_md5_destroy(md5);
-	hts_md5_hex(md5buf2, md5buf);
-
-	if (strncmp(md5buf2, tag->str+3, 32) != 0) {
-	    fprintf(stderr, "Reference md5sum mismatch:\nGot  %s\nNeed %s",
-		    md5buf2, tag->str+3);
-	    return -1;
-	}
-
 	expand_cache_path(path, local_cache, tag->str+3);
 	if (fd->verbose)
 	    fprintf(stderr, "Path='%s'\n", path);
