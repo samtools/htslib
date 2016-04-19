@@ -696,7 +696,7 @@ SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
 
 /*
 */
-int sam_hdr_del(SAM_hdr *hdr, char *type, char *ID_key, char *ID_value) {
+SAM_hdr *sam_hdr_del(SAM_hdr *hdr, char *type, char *ID_key, char *ID_value) {
     int i,n;
     int *lines;
     char *newtext = malloc(sam_hdr_length(hdr)+1);
@@ -718,7 +718,7 @@ int sam_hdr_del(SAM_hdr *hdr, char *type, char *ID_key, char *ID_value) {
     sam_hdr_free(hdr);
     hdr = sam_hdr_parse_(newtext,strlen(newtext));
     free(newtext);
-    return 0;
+    return hdr;
 }
 
 
