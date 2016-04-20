@@ -2185,13 +2185,16 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     char *ref_path = getenv("REF_PATH");
     SAM_hdr_type *ty;
     SAM_hdr_tag *tag;
-    char path[PATH_MAX], path_tmp[PATH_MAX], cache[PATH_MAX];
+    char path[PATH_MAX], path_tmp[PATH_MAX];
+    char cache[PATH_MAX], cache_root[PATH_MAX];
     char *local_cache = getenv("REF_CACHE");
     mFILE *mf;
     int local_path = 0;
 
     if (fd->verbose)
 	fprintf(stderr, "cram_populate_ref on fd %p, id %d\n", fd, id);
+
+    cache_root[0] = '\0';
 
     if (!ref_path || *ref_path == '\0') {
 	/*
@@ -2202,6 +2205,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	if (!local_cache || *local_cache == '\0') {
 	    const char *extra;
 	    const char *base = get_cache_basedir(&extra);
+	    snprintf(cache_root, PATH_MAX, "%s%s/hts-ref", base, extra);
 	    snprintf(cache,PATH_MAX, "%s%s/hts-ref/%%2s/%%2s/%%s", base, extra);
 	    local_cache = cache;
 	    if (fd->verbose)
@@ -2322,9 +2326,15 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	FILE *fp;
 	int i;
 
+	if (*cache_root && !is_directory(cache_root) && hts_verbose >= 1)
+	    fprintf(stderr,
+"Creating reference cache directory %s\n"
+"This may become large; see the samtools(1) manual page REF_CACHE discussion\n",
+		    cache_root);
+
 	expand_cache_path(path, local_cache, tag->str+3);
 	if (fd->verbose)
-	    fprintf(stderr, "Path='%s'\n", path);
+	    fprintf(stderr, "Writing cache file '%s'\n", path);
 	mkdir_prefix(path, 01777);
 
 	i = 0;
