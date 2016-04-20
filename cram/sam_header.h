@@ -350,7 +350,7 @@ SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
  * Returns 0 on success;
  *        -1 on failure
  */
-int sam_hdr_del(SAM_hdr *hdr, char *type, char *ID_key, char *ID_value);
+SAM_hdr *sam_hdr_del(SAM_hdr *hdr, char *type, char *ID_key, char *ID_value);
 
 /*!
  *
