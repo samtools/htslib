@@ -63,7 +63,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <math.h>
 #include <ctype.h>
-#include <sys/time.h>
+#include <time.h>
 
 #include "cram/cram.h"
 #include "cram/os.h"
@@ -2176,6 +2176,19 @@ static const char *get_cache_basedir(const char **extra) {
 }
 
 /*
+ * Return an integer representation of pthread_self().
+ */
+static unsigned get_int_threadid() {
+    pthread_t pt = pthread_self();
+    unsigned char *s = (unsigned char *) &pt;
+    size_t i;
+    unsigned h = 0;
+    for (i = 0; i < sizeof(pthread_t); i++)
+	h = (h << 5) - h + s[i];
+    return h;
+}
+
+/*
  * Queries the M5 string from the header and attempts to populate the
  * reference from this using the REF_PATH environment.
  *
@@ -2320,8 +2333,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     /* Populate the local disk cache if required */
     if (local_cache && *local_cache) {
-	// NB: executed in one thread only
-	static int rand_init = 0;
+	int pid = (int) getpid();
+	unsigned thrid = get_int_threadid();
 	FILE *fp;
 
 	expand_cache_path(path, local_cache, tag->str+3);
@@ -2329,16 +2342,12 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	    fprintf(stderr, "Path='%s'\n", path);
 	mkdir_prefix(path, 01777);
 
-	if (!rand_init) {
-	    // consider just time(NULL) ^ clock() if non _BSD_SOURCE
-	    struct timeval tv;
-	    gettimeofday(&tv, NULL);
-	    srandom(getpid() ^ tv.tv_usec);
-	    rand_init = 1;
-	}
-
 	do {
-	    sprintf(path_tmp, "%s.tmp_%d_%ld", path, (int)getpid(), random());
+	    // Attempt to further uniquify the temporary filename
+	    unsigned t = ((unsigned) time(NULL)) ^ ((unsigned) clock());
+	    thrid += (unsigned) local_cache;
+
+	    sprintf(path_tmp, "%s.tmp_%d_%u_%u", path, pid, thrid, t);
 	    fp = fopen(path_tmp, "wx");
 	} while (fp == NULL && errno == EEXIST);
 	if (!fp) {
