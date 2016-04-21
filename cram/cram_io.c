@@ -2355,7 +2355,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	do {
 	    // Attempt to further uniquify the temporary filename
 	    unsigned t = ((unsigned) time(NULL)) ^ ((unsigned) clock());
-	    thrid += (unsigned) local_cache;
+	    thrid++; // Ensure filename changes even if time/clock haven't
 
 	    sprintf(path_tmp, "%s.tmp_%d_%u_%u", path, pid, thrid, t);
 	    fp = fopen(path_tmp, "wx");
