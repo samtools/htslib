@@ -1330,7 +1330,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		    r |= c->comp_hdr->codecs[DS_IN]
 			? c->comp_hdr->codecs[DS_IN]
 			             ->decode(s, c->comp_hdr->codecs[DS_IN],
-					      blk, &seq[pos-1], &out_sz2)
+					      blk,
+					      cr->len ? &seq[pos-1] : NULL,
+					      &out_sz2)
 			: (seq[pos-1] = 'N', out_sz2 = 1, 0);
 		    have_sc = 1;
 		}
@@ -1341,7 +1343,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		    r |= c->comp_hdr->codecs[DS_SC]
 			? c->comp_hdr->codecs[DS_SC]
 			             ->decode(s, c->comp_hdr->codecs[DS_SC],
-					      blk, &seq[pos-1], &out_sz2)
+					      blk,
+					      cr->len ? &seq[pos-1] : NULL,
+					      &out_sz2)
 			: (seq[pos-1] = 'N', out_sz2 = 1, 0);
 		    have_sc = 1;
 		}
@@ -1375,7 +1379,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		r |= c->comp_hdr->codecs[DS_BS]
 		                ->decode(s, c->comp_hdr->codecs[DS_BS], blk,
 					 (char *)&base, &out_sz);
-		seq[pos-1] = 'N'; // FIXME look up BS=base value
+		if (pos-1 < cr->len)
+		    seq[pos-1] = 'N'; // FIXME look up BS=base value
 	    }
 	    cig_op = BAM_CBASE_MISMATCH;
 #else
@@ -1391,8 +1396,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 					 (char *)&base, &out_sz);
 		if (r) return -1;
 		if (ref_pos >= bfd->ref[cr->ref_id].len || !s->ref) {
-		    seq[pos-1] = c->comp_hdr->
-			substitution_matrix[fd->L1['N']][base];
+		    if (pos-1 < cr->len)
+			seq[pos-1] = c->comp_hdr->
+			    substitution_matrix[fd->L1['N']][base];
 		    if (decode_md || decode_nm) {
 			if (md_dist >= 0 && decode_md)
 			    BLOCK_APPEND_UINT(s->aux_blk, md_dist);
@@ -1404,8 +1410,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 			? (uc)s->ref[ref_pos - s->ref_start +1]
 			: 'N';
 		    ref_base = fd->L1[ref_call];
-		    seq[pos-1] = c->comp_hdr->
-			substitution_matrix[ref_base][base];
+		    if (pos-1 < cr->len)
+			seq[pos-1] = c->comp_hdr->
+			    substitution_matrix[ref_base][base];
 		    if (decode_md) {
 			BLOCK_APPEND_UINT(s->aux_blk, md_dist);
 			BLOCK_APPEND_CHAR(s->aux_blk, ref_call);
@@ -1484,7 +1491,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		if (!c->comp_hdr->codecs[DS_IN]) return -1;
 		r |= c->comp_hdr->codecs[DS_IN]
 		                ->decode(s, c->comp_hdr->codecs[DS_IN], blk,
-					 &seq[pos-1], &out_sz2);
+					 cr->len ? &seq[pos-1] : NULL,
+					 &out_sz2);
 		if (r) return r;
 		cig_op = BAM_CINS;
 		cig_len += out_sz2;
@@ -1504,7 +1512,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		if (!c->comp_hdr->codecs[DS_BA]) return -1;
 		r |= c->comp_hdr->codecs[DS_BA]
 		                ->decode(s, c->comp_hdr->codecs[DS_BA], blk,
-					 (char *)&seq[pos-1], &out_sz);
+					 cr->len ? &seq[pos-1] : NULL,
+					 &out_sz);
 		if (r) return r;
 	    }
 	    cig_op = BAM_CINS;
@@ -1526,7 +1535,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		if (!c->comp_hdr->codecs[DS_BB]) return -1;
 		r |= c->comp_hdr->codecs[DS_BB]
 		    ->decode(s, c->comp_hdr->codecs[DS_BB], blk,
-			     (char *)&seq[pos-1], &len);
+			     cr->len ? &seq[pos-1] : NULL,
+			     &len);
 		if (r) return r;
 
 		if (decode_md || decode_nm) {
@@ -1602,7 +1612,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		if (!c->comp_hdr->codecs[DS_BA]) return -1;
 		r |= c->comp_hdr->codecs[DS_BA]
 		                ->decode(s, c->comp_hdr->codecs[DS_BA], blk,
-					 (char *)&seq[pos-1], &out_sz);
+					 cr->len ? &seq[pos-1] : NULL,
+					 &out_sz);
 
 		if (decode_md || decode_nm) {
 		    if (md_dist >= 0 && decode_md)
@@ -1721,17 +1732,20 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		whinged = 1;
 		rlen = bfd->ref[cr->ref_id].len - ref_pos;
 		if (rlen > 0) {
-		    memcpy(&seq[seq_pos-1],
-			   &s->ref[ref_pos - s->ref_start +1], rlen);
+		    if (seq_pos-1 + rlen < cr->len)
+			memcpy(&seq[seq_pos-1],
+			       &s->ref[ref_pos - s->ref_start +1], rlen);
 		    if ((cr->len - seq_pos + 1) - rlen > 0)
 		        memset(&seq[seq_pos-1+rlen], 'N',
                                (cr->len - seq_pos + 1) - rlen);
 		} else {
-		    memset(&seq[seq_pos-1], 'N', cr->len - seq_pos + 1);
+		    if (cr->len - seq_pos + 1 > 0)
+			memset(&seq[seq_pos-1], 'N', cr->len - seq_pos + 1);
 		}
 	    } else {
-		memcpy(&seq[seq_pos-1], &s->ref[ref_pos - s->ref_start +1],
-		       cr->len - seq_pos + 1);
+		if (cr->len - seq_pos + 1 > 0)
+		    memcpy(&seq[seq_pos-1], &s->ref[ref_pos - s->ref_start +1],
+			   cr->len - seq_pos + 1);
 		ref_pos += cr->len - seq_pos + 1;
 		if (md_dist >= 0)
 		    md_dist += cr->len - seq_pos + 1;
@@ -2334,6 +2348,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		if (r) return -1;
 		cf = cr->cram_flags;
 	    }
+	} else {
+	    cf = cr->cram_flags = 0;
 	}
 
 	if (CRAM_MAJOR_VERS(fd->version) != 1 && ref_id == -2) {
@@ -2776,7 +2792,7 @@ static int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
 	seq = (char *)BLOCK_DATA(s->seqs_blk) + cr->seq;
     } else {
 	seq = "*";
-	cr->len = 1;
+	cr->len = 0;
     }
 
 

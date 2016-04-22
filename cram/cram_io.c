@@ -63,6 +63,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <math.h>
 #include <ctype.h>
+#include <time.h>
 
 #include "cram/cram.h"
 #include "cram/os.h"
@@ -2175,6 +2176,19 @@ static const char *get_cache_basedir(const char **extra) {
 }
 
 /*
+ * Return an integer representation of pthread_self().
+ */
+static unsigned get_int_threadid() {
+    pthread_t pt = pthread_self();
+    unsigned char *s = (unsigned char *) &pt;
+    size_t i;
+    unsigned h = 0;
+    for (i = 0; i < sizeof(pthread_t); i++)
+	h = (h << 5) - h + s[i];
+    return h;
+}
+
+/*
  * Queries the M5 string from the header and attempts to populate the
  * reference from this using the REF_PATH environment.
  *
@@ -2185,13 +2199,16 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     char *ref_path = getenv("REF_PATH");
     SAM_hdr_type *ty;
     SAM_hdr_tag *tag;
-    char path[PATH_MAX], path_tmp[PATH_MAX], cache[PATH_MAX];
+    char path[PATH_MAX], path_tmp[PATH_MAX];
+    char cache[PATH_MAX], cache_root[PATH_MAX];
     char *local_cache = getenv("REF_CACHE");
     mFILE *mf;
     int local_path = 0;
 
     if (fd->verbose)
 	fprintf(stderr, "cram_populate_ref on fd %p, id %d\n", fd, id);
+
+    cache_root[0] = '\0';
 
     if (!ref_path || *ref_path == '\0') {
 	/*
@@ -2202,6 +2219,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	if (!local_cache || *local_cache == '\0') {
 	    const char *extra;
 	    const char *base = get_cache_basedir(&extra);
+	    snprintf(cache_root, PATH_MAX, "%s%s/hts-ref", base, extra);
 	    snprintf(cache,PATH_MAX, "%s%s/hts-ref/%%2s/%%2s/%%s", base, extra);
 	    local_cache = cache;
 	    if (fd->verbose)
@@ -2319,18 +2337,27 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     /* Populate the local disk cache if required */
     if (local_cache && *local_cache) {
+	int pid = (int) getpid();
+	unsigned thrid = get_int_threadid();
 	FILE *fp;
-	int i;
+
+	if (*cache_root && !is_directory(cache_root) && hts_verbose >= 1)
+	    fprintf(stderr,
+"Creating reference cache directory %s\n"
+"This may become large; see the samtools(1) manual page REF_CACHE discussion\n",
+		    cache_root);
 
 	expand_cache_path(path, local_cache, tag->str+3);
 	if (fd->verbose)
-	    fprintf(stderr, "Path='%s'\n", path);
+	    fprintf(stderr, "Writing cache file '%s'\n", path);
 	mkdir_prefix(path, 01777);
 
-	i = 0;
 	do {
-	    sprintf(path_tmp, "%s.tmp_%d", path, /*getpid(),*/ i);
-	    i++;
+	    // Attempt to further uniquify the temporary filename
+	    unsigned t = ((unsigned) time(NULL)) ^ ((unsigned) clock());
+	    thrid++; // Ensure filename changes even if time/clock haven't
+
+	    sprintf(path_tmp, "%s.tmp_%d_%u_%u", path, pid, thrid, t);
 	    fp = fopen(path_tmp, "wx");
 	} while (fp == NULL && errno == EEXIST);
 	if (!fp) {
@@ -2338,6 +2365,28 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
 	    // Not fatal - we have the data already so keep going.
 	    return 0;
+	}
+
+	// Check md5sum
+	hts_md5_context *md5;
+	char unsigned md5_buf1[16];
+	char md5_buf2[33];
+
+	if (!(md5 = hts_md5_init())) {
+	    unlink(path_tmp);
+	    fclose(fp);
+	    return -1;
+	}
+	hts_md5_update(md5, r->seq, r->length);
+	hts_md5_final(md5_buf1, md5);
+	hts_md5_destroy(md5);
+	hts_md5_hex(md5_buf2, md5_buf1);
+
+	if (strncmp(tag->str+3, md5_buf2, 32) != 0) {
+	    fprintf(stderr, "[E::%s] mismatching md5sum for downloaded reference.\n", __func__);
+	    unlink(path_tmp);
+	    fclose(fp);
+	    return -1;
 	}
 
 	if (r->length != fwrite(r->seq, 1, r->length, fp)) {

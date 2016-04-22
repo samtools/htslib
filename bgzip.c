@@ -1,7 +1,7 @@
 /* bgzip.c -- Block compression/decompression utility.
 
    Copyright (C) 2008, 2009 Broad Institute / Massachusetts Institute of Technology
-   Copyright (C) 2010, 2013-2015 Genome Research Ltd.
+   Copyright (C) 2010, 2013-2016 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -91,19 +91,20 @@ int main(int argc, char **argv)
     char *index_fname = NULL;
     int threads = 1;
 
-    static struct option loptions[] =
+    static const struct option loptions[] =
     {
-        {"help",0,0,'h'},
-        {"offset",1,0,'b'},
-        {"stdout",0,0,'c'},
-        {"decompress",0,0,'d'},
-        {"force",0,0,'f'},
-        {"index",0,0,'i'},
-        {"index-name",1,0,'I'},
-        {"reindex",0,0,'r'},
-        {"size",1,0,'s'},
-        {"threads",1,0,'@'},
-        {0,0,0,0}
+        {"help", no_argument, NULL, 'h'},
+        {"offset", required_argument, NULL, 'b'},
+        {"stdout", no_argument, NULL, 'c'},
+        {"decompress", no_argument, NULL, 'd'},
+        {"force", no_argument, NULL, 'f'},
+        {"index", no_argument, NULL, 'i'},
+        {"index-name", required_argument, NULL, 'I'},
+        {"reindex", no_argument, NULL, 'r'},
+        {"size", required_argument, NULL, 's'},
+        {"threads", required_argument, NULL, '@'},
+        {"version", no_argument, NULL, 1},
+        {NULL, 0, NULL, 0}
     };
 
     compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0;
@@ -118,6 +119,11 @@ int main(int argc, char **argv)
         case 'I': index_fname = optarg; break;
         case 'r': reindex = 1; compress = 0; break;
         case '@': threads = atoi(optarg); break;
+        case 1:
+            printf(
+"bgzip (htslib) %s\n"
+"Copyright (C) 2016 Genome Research Ltd.\n", hts_version());
+            return EXIT_SUCCESS;
         case 'h':
         case '?': return bgzip_main_usage();
         }
@@ -181,8 +187,13 @@ int main(int argc, char **argv)
             if (bgzf_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
         if ( index )
         {
-            if ( index_fname ) bgzf_index_dump(fp, index_fname, NULL);
-            else bgzf_index_dump(fp, argv[optind], ".gz.gzi");
+            if (index_fname) {
+                if (bgzf_index_dump(fp, index_fname, NULL) < 0)
+                    error("Could not write index to '%s'\n", index_fname);
+            } else {
+                if (bgzf_index_dump(fp, argv[optind], ".gz.gzi") < 0)
+                    error("Could not write index to '%s.gz.gzi'", argv[optind]);
+            }
         }
         if (bgzf_close(fp) < 0) error("Close failed: Error %d", fp->errcode);
         if (argc > optind && !pstdout) unlink(argv[optind]);
@@ -211,10 +222,13 @@ int main(int argc, char **argv)
         free(buffer);
         if ( ret<0 ) error("Is the file gzipped or bgzipped? The latter is required for indexing.\n");
 
-        if ( index_fname )
-            bgzf_index_dump(fp, index_fname, NULL);
-        else
-            bgzf_index_dump(fp, argv[optind], ".gzi");
+        if ( index_fname ) {
+            if (bgzf_index_dump(fp, index_fname, NULL) < 0)
+                error("Could not write index to '%s'\n", index_fname);
+        } else {
+            if (bgzf_index_dump(fp, argv[optind], ".gzi") < 0)
+                error("Could not write index to '%s.gzi'\n", argv[optind]);
+        }
 
         if ( bgzf_close(fp)<0 ) error("Close failed: Error %d\n",fp->errcode);
         return 0;

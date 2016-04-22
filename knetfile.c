@@ -28,6 +28,8 @@
    therefore I decide to heavily annotate this file, for Linux and
    Windows as well.  -ac */
 
+#include <config.h>
+
 #include <time.h>
 #include <stdio.h>
 #include <ctype.h>

@@ -187,6 +187,9 @@ typedef struct {
 #define BCF_ERR_TAG_UNDEF 2
 #define BCF_ERR_NCOLS     4
 #define BCF_ERR_LIMITS    8
+#define BCF_ERR_CHAR     16
+#define BCF_ERR_CTG_INVALID   32
+#define BCF_ERR_TAG_INVALID   64
 
 /*
     The bcf1_t structure corresponds to one VCF/BCF line. Reading from VCF file
@@ -313,7 +316,10 @@ typedef struct {
     /** Writes VCF or BCF header */
     int bcf_hdr_write(htsFile *fp, bcf_hdr_t *h);
 
-    /** Parse VCF line contained in kstring and populate the bcf1_t struct */
+    /**
+     * Parse VCF line contained in kstring and populate the bcf1_t struct
+     * The line must not end with \n or \r characters.
+     */
     int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v);
 
     /** The opposite of vcf_parse. It should rarely be called directly, see vcf_write */
@@ -817,6 +823,7 @@ static inline void bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
         case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
         case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
         case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
+        case BCF_BT_NULL:  kputc('.', str); break;
         default: fprintf(stderr,"FIXME: type %d in bcf_format_gt?\n", fmt->type); abort(); break;
     }
     #undef BRANCH

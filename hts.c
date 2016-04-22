@@ -1,6 +1,6 @@
 /*  hts.c -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2008, 2009, 2012-2015 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2012-2016 Genome Research Ltd.
     Copyright (C) 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -156,20 +156,23 @@ static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
 static void
 parse_version(htsFormat *fmt, const unsigned char *u, const unsigned char *ulim)
 {
-    const char *str  = (const char *) u;
+    const char *s    = (const char *) u;
     const char *slim = (const char *) ulim;
-    const char *s;
+    short v;
 
     fmt->version.major = fmt->version.minor = -1;
 
-    for (s = str; s < slim; s++) if (!isdigit(*s)) break;
+    for (v = 0; s < slim && isdigit_c(*s); s++)
+        v = 10 * v + *s - '0';
+
     if (s < slim) {
-        fmt->version.major = atoi(str);
+        fmt->version.major = v;
         if (*s == '.') {
-            str = &s[1];
-            for (s = str; s < slim; s++) if (!isdigit(*s)) break;
+            s++;
+            for (v = 0; s < slim && isdigit_c(*s); s++)
+                v = 10 * v + *s - '0';
             if (s < slim)
-                fmt->version.minor = atoi(str);
+                fmt->version.minor = v;
         }
         else
             fmt->version.minor = 0;
@@ -420,6 +423,26 @@ htsFile *hts_open(const char *fn, const char *mode) {
 }
 
 /*
+ * Splits str into a prefix, delimiter ('\0' or delim), and suffix, writing
+ * the prefix in lowercase into buf and returning a pointer to the suffix.
+ * On return, buf is always NUL-terminated; thus assumes that the "keyword"
+ * prefix should be one of several known values of maximum length buflen-2.
+ * (If delim is not found, returns a pointer to the '\0'.)
+ */
+static const char *
+scan_keyword(const char *str, char delim, char *buf, size_t buflen)
+{
+    size_t i = 0;
+    while (*str && *str != delim) {
+        if (i < buflen-1) buf[i++] = tolower_c(*str);
+        str++;
+    }
+
+    buf[i] = '\0';
+    return *str? str+1 : str;
+}
+
+/*
  * Parses arg and appends it to the option list.
  *
  * Returns 0 on success;
@@ -605,35 +628,33 @@ int hts_parse_opt_list(htsFormat *fmt, const char *str) {
  *        -1 on failure.
  */
 int hts_parse_format(htsFormat *format, const char *str) {
-    const char *cp;
-
-    if (!(cp = strchr(str, ',')))
-        cp = str+strlen(str);
+    char fmt[8];
+    const char *cp = scan_keyword(str, ',', fmt, sizeof fmt);
 
     format->version.minor = 0; // unknown
     format->version.major = 0; // unknown
 
-    if (strncmp(str, "sam", cp-str) == 0) {
+    if (strcmp(fmt, "sam") == 0) {
         format->category          = sequence_data;
         format->format            = sam;
         format->compression       = no_compression;;
         format->compression_level = 0;
-    } else if (strncmp(str, "bam", cp-str) == 0) {
+    } else if (strcmp(fmt, "bam") == 0) {
         format->category          = sequence_data;
         format->format            = bam;
         format->compression       = bgzf;
         format->compression_level = -1;
-    } else if (strncmp(str, "cram", cp-str) == 0) {
+    } else if (strcmp(fmt, "cram") == 0) {
         format->category          = sequence_data;
         format->format            = cram;
         format->compression       = custom;
         format->compression_level = -1;
-    } else if (strncmp(str, "vcf", cp-str) == 0) {
+    } else if (strcmp(fmt, "vcf") == 0) {
         format->category          = variant_data;
         format->format            = vcf;
         format->compression       = no_compression;;
         format->compression_level = 0;
-    } else if (strncmp(str, "bcf", cp-str) == 0) {
+    } else if (strcmp(fmt, "bcf") == 0) {
         format->category          = variant_data;
         format->format            = bcf;
         format->compression       = bgzf;
@@ -1377,10 +1398,25 @@ void hts_idx_destroy(hts_idx_t *idx)
     free(idx);
 }
 
-static inline long idx_write(int is_bgzf, void *fp, const void *buf, long l)
+// The optimizer eliminates these ed_is_big() calls; still it would be good to
+// TODO Determine endianness at configure- or compile-time
+
+static inline ssize_t HTS_RESULT_USED idx_write_int32(BGZF *fp, int32_t x)
 {
-    if (is_bgzf) return bgzf_write((BGZF*)fp, buf, l);
-    else return (long)fwrite(buf, 1, l, (FILE*)fp);
+    if (ed_is_big()) x = ed_swap_4(x);
+    return bgzf_write(fp, &x, sizeof x);
+}
+
+static inline ssize_t HTS_RESULT_USED idx_write_uint32(BGZF *fp, uint32_t x)
+{
+    if (ed_is_big()) x = ed_swap_4(x);
+    return bgzf_write(fp, &x, sizeof x);
+}
+
+static inline ssize_t HTS_RESULT_USED idx_write_uint64(BGZF *fp, uint64_t x)
+{
+    if (ed_is_big()) x = ed_swap_8(x);
+    return bgzf_write(fp, &x, sizeof x);
 }
 
 static inline void swap_bins(bins_t *p)
@@ -1392,68 +1428,47 @@ static inline void swap_bins(bins_t *p)
     }
 }
 
-static void hts_idx_save_core(const hts_idx_t *idx, void *fp, int fmt)
+static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
 {
-    int32_t i, size, is_be;
-    int is_bgzf = (fmt != HTS_FMT_BAI);
-    is_be = ed_is_big();
-    if (is_be) {
-        uint32_t x = idx->n;
-        idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-    } else idx_write(is_bgzf, fp, &idx->n, 4);
-    if (fmt == HTS_FMT_TBI && idx->l_meta) idx_write(is_bgzf, fp, idx->meta, idx->l_meta);
+    int32_t i, j;
+
+    #define check(ret) if ((ret) < 0) return -1
+
+    check(idx_write_int32(fp, idx->n));
+    if (fmt == HTS_FMT_TBI && idx->l_meta)
+        check(bgzf_write(fp, idx->meta, idx->l_meta));
+
     for (i = 0; i < idx->n; ++i) {
         khint_t k;
         bidx_t *bidx = idx->bidx[i];
         lidx_t *lidx = &idx->lidx[i];
         // write binning index
-        size = bidx? kh_size(bidx) : 0;
-        if (is_be) { // big endian
-            uint32_t x = size;
-            idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-        } else idx_write(is_bgzf, fp, &size, 4);
-        if (bidx == 0) goto write_lidx;
-        for (k = kh_begin(bidx); k != kh_end(bidx); ++k) {
-            bins_t *p;
-            if (!kh_exist(bidx, k)) continue;
-            p = &kh_value(bidx, k);
-            if (is_be) { // big endian
-                uint32_t x;
-                x = kh_key(bidx, k); idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-                if (fmt == HTS_FMT_CSI) {
-                    uint64_t y = kh_val(bidx, k).loff;
-                    idx_write(is_bgzf, fp, ed_swap_4p(&y), 8);
+        check(idx_write_int32(fp, bidx? kh_size(bidx) : 0));
+        if (bidx)
+            for (k = kh_begin(bidx); k != kh_end(bidx); ++k)
+                if (kh_exist(bidx, k)) {
+                    bins_t *p = &kh_value(bidx, k);
+                    check(idx_write_uint32(fp, kh_key(bidx, k)));
+                    if (fmt == HTS_FMT_CSI) check(idx_write_uint64(fp, p->loff));
+                    //int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
+                    check(idx_write_int32(fp, p->n));
+                    for (j = 0; j < p->n; ++j) {
+                        check(idx_write_uint64(fp, p->list[j].u));
+                        check(idx_write_uint64(fp, p->list[j].v));
+                    }
                 }
-                x = p->n; idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-                swap_bins(p);
-                idx_write(is_bgzf, fp, p->list, 16 * p->n);
-                swap_bins(p);
-            } else {
-                idx_write(is_bgzf, fp, &kh_key(bidx, k), 4);
-                if (fmt == HTS_FMT_CSI) idx_write(is_bgzf, fp, &kh_val(bidx, k).loff, 8);
-                //int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
-                idx_write(is_bgzf, fp, &p->n, 4);
-                idx_write(is_bgzf, fp, p->list, p->n << 4);
-            }
-        }
-write_lidx:
+
+        // write linear index
         if (fmt != HTS_FMT_CSI) {
-            if (is_be) {
-                int32_t x = lidx->n;
-                idx_write(is_bgzf, fp, ed_swap_4p(&x), 4);
-                for (x = 0; x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
-                idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
-                for (x = 0; x < lidx->n; ++x) ed_swap_8p(&lidx->offset[x]);
-            } else {
-                idx_write(is_bgzf, fp, &lidx->n, 4);
-                idx_write(is_bgzf, fp, lidx->offset, lidx->n << 3);
-            }
+            check(idx_write_int32(fp, lidx->n));
+            for (j = 0; j < lidx->n; ++j)
+                check(idx_write_uint64(fp, lidx->offset[j]));
         }
     }
-    if (is_be) { // write the number of reads without coordinates
-        uint64_t x = idx->n_no_coor;
-        idx_write(is_bgzf, fp, &x, 8);
-    } else idx_write(is_bgzf, fp, &idx->n_no_coor, 8);
+
+    check(idx_write_uint64(fp, idx->n_no_coor));
+    return 0;
+    #undef check
 }
 
 int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
@@ -1479,39 +1494,35 @@ int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
 
 int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int fmt)
 {
+    BGZF *fp;
+
+    #define check(ret) if ((ret) < 0) goto fail
+
     if (fnidx == NULL) return hts_idx_save(idx, fn, fmt);
 
+    fp = bgzf_open(fnidx, (fmt == HTS_FMT_BAI)? "wu" : "w");
+    if (fp == NULL) return -1;
+
     if (fmt == HTS_FMT_CSI) {
-        BGZF *fp;
-        uint32_t x[3];
-        int is_be, i;
-        is_be = ed_is_big();
-        fp = bgzf_open(fnidx, "w");
-        if (fp == NULL) return -1;
-        bgzf_write(fp, "CSI\1", 4);
-        x[0] = idx->min_shift; x[1] = idx->n_lvls; x[2] = idx->l_meta;
-        if (is_be) {
-            for (i = 0; i < 3; ++i)
-                bgzf_write(fp, ed_swap_4p(&x[i]), 4);
-        } else bgzf_write(fp, &x, 12);
-        if (idx->l_meta) bgzf_write(fp, idx->meta, idx->l_meta);
-        hts_idx_save_core(idx, fp, HTS_FMT_CSI);
-        bgzf_close(fp);
+        check(bgzf_write(fp, "CSI\1", 4));
+        check(idx_write_int32(fp, idx->min_shift));
+        check(idx_write_int32(fp, idx->n_lvls));
+        check(idx_write_uint32(fp, idx->l_meta));
+        if (idx->l_meta) check(bgzf_write(fp, idx->meta, idx->l_meta));
     } else if (fmt == HTS_FMT_TBI) {
-        BGZF *fp = bgzf_open(fnidx, "w");
-        if (fp == NULL) return -1;
-        bgzf_write(fp, "TBI\1", 4);
-        hts_idx_save_core(idx, fp, HTS_FMT_TBI);
-        bgzf_close(fp);
+        check(bgzf_write(fp, "TBI\1", 4));
     } else if (fmt == HTS_FMT_BAI) {
-        FILE *fp = fopen(fnidx, "w");
-        if (fp == NULL) return -1;
-        fwrite("BAI\1", 1, 4, fp);
-        hts_idx_save_core(idx, fp, HTS_FMT_BAI);
-        fclose(fp);
+        check(bgzf_write(fp, "BAI\1", 4));
     } else abort();
 
-    return 0;
+    check(hts_idx_save_core(idx, fp, fmt));
+
+    return bgzf_close(fp);
+    #undef check
+
+fail:
+    bgzf_close(fp);
+    return -1;
 }
 
 static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
@@ -1927,7 +1938,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
     if (iter == NULL || iter->finished) return -1;
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
-            bgzf_seek(fp, iter->curr_off, SEEK_SET);
+            if (bgzf_seek(fp, iter->curr_off, SEEK_SET) < 0) return -1;
             iter->curr_off = 0; // only seek once
         }
         ret = iter->readrec(fp, data, r, &tid, &beg, &end);
@@ -1942,7 +1953,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
         if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
             if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
             if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-                bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET);
+                if (bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) return -1;
                 iter->curr_off = bgzf_tell(fp);
             }
             ++iter->i;

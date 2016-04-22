@@ -1,3 +1,35 @@
+Noteworthy changes in release 1.3.1 (22 April 2016)
+
+* Improved error checking and reporting, especially of I/O errors when
+  writing output files (#17, #315, PR #271, PR #317).
+
+* Build fixes for 32-bit systems; be sure to run configure to enable
+  large file support and access to 2GiB+ files.
+
+* Numerous VCF parsing fixes (#321, #322, #323, #324, #325; PR #370).
+  Particular thanks to Kostya Kortchinsky of the Google Security Team
+  for testing and numerous input parsing bug reports.
+
+* HTSlib now prints an informational message when initially creating a
+  CRAM reference cache in the default location under your $HOME directory.
+  (No message is printed if you are using $REF_CACHE to specify a location.)
+
+* Avoided rare race condition when caching downloaded CRAM reference sequence
+  files, by using distinctive names for temporary files (in addition to O_EXCL,
+  which has always been used).  Occasional corruption would previously occur
+  when multiple tools were simultaneously caching the same reference sequences
+  on an NFS filesystem that did not support O_EXCL (PR #320).
+
+* Prevented race condition in file access plugin loading (PR #341).
+
+* Fixed mpileup memory leak, so no more "[bam_plp_destroy] memory leak [...]
+  Continue anyway" warning messages (#299).
+
+* Various minor CRAM fixes.
+
+* Fixed documentation problems #348 and #358.
+
+
 Noteworthy changes in release 1.3  (15 December 2015)
 
 * Files can now be accessed via HTTPS and Amazon S3 in addition to HTTP
@@ -8,6 +40,9 @@ Noteworthy changes in release 1.3  (15 December 2015)
   and libcurl) via a plugin mechanism.  This allows other backends to be
   easily added and facilitates building tools that use HTSlib, as they
   don't need to be linked with the backends' various required libraries.
+
+* When writing CRAM output, sam_open() etc now default to writing CRAM v3.0
+  rather than v2.1.
 
 * fai_build() and samtools faidx now accept initial whitespace in ">"
   headers (e.g., "> chr1 description" is taken to refer to "chr1").

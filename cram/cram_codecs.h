@@ -135,7 +135,7 @@ typedef struct cram_codec {
     };
 } cram_codec;
 
-char *cram_encoding2str(enum cram_encoding t);
+const char *cram_encoding2str(enum cram_encoding t);
 
 cram_codec *cram_decoder_init(enum cram_encoding codec, char *data, int size,
 			      enum cram_external_type option,

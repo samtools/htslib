@@ -22,11 +22,18 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#include <config.h>
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+
+// Suppress message for faidx_fetch_nseq(), which we're intentionally testing
+#include "htslib/hts_defs.h"
+#undef HTS_DEPRECATED
+#define HTS_DEPRECATED(message)
 
 #include "htslib/sam.h"
 #include "htslib/faidx.h"

@@ -822,13 +822,14 @@ int main(int argc, char **argv) {
 	    uint32_t in_size, out_size;
 	    unsigned char *out;
 
-	    if (4 != fread(&in_size, 1, 4, infp))
+	    if (9 != fread(in_buf, 1, 9, infp))
 		break;
-	    if (in_size != fread(in_buf, 1, in_size, infp)) {
+	    in_size = *(int *)&in_buf[1];
+	    if (in_size != fread(in_buf+9, 1, in_size, infp)) {
 		fprintf(stderr, "Truncated input\n");
 		exit(1);
 	    }
-	    out = rans_uncompress(in_buf, in_size, &out_size);
+	    out = rans_uncompress(in_buf, in_size+9, &out_size);
 	    if (!out)
 		abort();
 
@@ -848,7 +849,6 @@ int main(int argc, char **argv) {
 
 	    out = rans_compress(in_buf, in_size, &out_size, order);
 
-	    fwrite(&out_size, 1, 4, outfp);
 	    fwrite(out, 1, out_size, outfp);
 	    free(out);
 

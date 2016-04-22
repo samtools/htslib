@@ -29,9 +29,11 @@ use FindBin;
 use lib "$FindBin::Bin";
 use Getopt::Long;
 use File::Temp qw/ tempfile tempdir /;
+use IO::Handle;
 
 my $opts = parse_params();
 
+test_view($opts);
 test_vcf_api($opts,out=>'test-vcf-api.out');
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
 test_vcf_various($opts);
@@ -169,8 +171,11 @@ sub failed
 {
     my ($opts,$test,$reason) = @_;
     $$opts{nfailed}++;
-    if ( defined $reason ) { print "\n\t$reason"; }
-    print "\n.. failed ...\n\n";
+    print "\n";
+    STDOUT->flush();
+    if ( defined $reason ) { print STDERR "\t$reason\n"; }
+    print STDERR ".. failed ...\n\n";
+    STDERR->flush();
 }
 sub passed
 {
@@ -190,6 +195,91 @@ sub is_file_newer
 
 # The tests --------------------------
 
+my $test_view_failures;
+sub testv {
+    my ($cmd) = @_;
+    print "  $cmd\n";
+    my ($ret, $out) = _cmd($cmd);
+    if ($ret != 0) {
+        STDOUT->flush();
+        print STDERR "FAILED\n\n";
+        STDERR->flush();
+        $test_view_failures++;
+    }
+}
+
+sub test_view
+{
+    my ($opts, %args) = @_;
+
+    foreach my $sam (glob("*#*.sam")) {
+        my ($base, $ref) = ($sam =~ /((.*)#.*)\.sam/);
+        $ref .= ".fa";
+
+        my $bam  = "$base.tmp.bam";
+        my $cram = "$base.tmp.cram";
+
+        print "test_view testing $sam, ref $ref:\n";
+        $test_view_failures = 0;
+
+        # SAM -> BAM -> SAM
+        testv "./test_view -S -b $sam > $bam";
+        testv "./test_view $bam > $bam.sam_";
+        testv "./compare_sam.pl $sam $bam.sam_";
+
+        # SAM -> CRAM -> SAM
+        testv "./test_view -t $ref -S -C $sam > $cram";
+        testv "./test_view -D $cram > $cram.sam_";
+        testv "./compare_sam.pl -nomd $sam $cram.sam_";
+
+        # BAM -> CRAM -> BAM -> SAM
+        $cram = "$bam.cram";
+        testv "./test_view -t $ref -C $bam > $cram";
+        testv "./test_view -b -D $cram > $cram.bam";
+        testv "./test_view $cram.bam > $cram.bam.sam_";
+        testv "./compare_sam.pl -nomd $sam $cram.bam.sam_";
+
+        # SAM -> CRAM3 -> SAM
+        $cram = "$base.tmp.cram";
+        testv "./test_view -t $ref -S -C -o VERSION=3.0 $sam > $cram";
+        testv "./test_view -D $cram > $cram.sam_";
+        testv "./compare_sam.pl -nomd $sam $cram.sam_";
+
+        # BAM -> CRAM3 -> BAM -> SAM
+        $cram = "$bam.cram";
+        testv "./test_view -t $ref -C -o VERSION=3.0 $bam > $cram";
+        testv "./test_view -b -D $cram > $cram.bam";
+        testv "./test_view $cram.bam > $cram.bam.sam_";
+        testv "./compare_sam.pl -nomd $sam $cram.bam.sam_";
+
+        # CRAM3 -> CRAM2
+        $cram = "$base.tmp.cram";
+        testv "./test_view -t $ref -C -o VERSION=2.1 $cram > $cram.cram";
+
+        # CRAM2 -> CRAM3
+        testv "./test_view -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
+        testv "./test_view $cram > $cram.sam_";
+        testv "./compare_sam.pl -nomd $sam $cram.sam_";
+
+        # Java pre-made CRAM -> SAM
+        my $jcram = "${base}_java.cram";
+        if (-e $jcram) {
+            my $jsam = "${base}_java.tmp.sam_";
+            testv "./test_view -i reference=$ref $jcram > $jsam";
+            testv "./compare_sam.pl -nomd $sam $jsam";
+        }
+
+        if ($test_view_failures == 0)
+        {
+            passed($opts, "$sam conversions");
+        }
+        else
+        {
+            failed($opts, "$sam conversions", "$test_view_failures subtests failed");
+        }
+    }
+}
+
 sub test_vcf_api
 {
     my ($opts,%args) = @_;
@@ -206,9 +296,15 @@ sub test_vcf_various
 {
     my ($opts, %args) = @_;
 
-    # Trailing spaces on header lines
+    # Excess spaces in header lines
     test_cmd($opts, %args, out => "test-vcf-hdr.out",
-        cmd => "$$opts{path}/../htsfile -ch $$opts{path}/test-vcf-hdr-in.vcf");
+        cmd => "$$opts{bin}/htsfile -ch $$opts{path}/test-vcf-hdr-in.vcf");
+
+    # Various VCF parsing issues
+    test_cmd($opts, %args, out => "formatcols.vcf",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatcols.vcf");
+    test_cmd($opts, %args, out => "noroundtrip-out.vcf",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/noroundtrip.vcf");
 }
 
 sub test_convert_padded_header

@@ -1,6 +1,6 @@
 /*  faidx.c -- FASTA random access.
 
-    Copyright (C) 2008, 2009, 2013-2015 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2016 Genome Research Ltd.
     Portions copyright (C) 2011 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -30,6 +30,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <errno.h>
 
 #include "htslib/bgzf.h"
 #include "htslib/faidx.h"
@@ -55,8 +56,13 @@ struct __faidx_t {
 #define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
 #endif
 
-static inline void fai_insert_index(faidx_t *idx, const char *name, int len, int line_len, int line_blen, uint64_t offset)
+static inline int fai_insert_index(faidx_t *idx, const char *name, int len, int line_len, int line_blen, uint64_t offset)
 {
+    if (!name) {
+        fprintf(stderr, "[fai_build_core] malformed line\n");
+        return -1;
+    }
+
     char *name_key = strdup(name);
     int absent;
     khint_t k = kh_put(s, idx->hash, name_key, &absent);
@@ -65,18 +71,25 @@ static inline void fai_insert_index(faidx_t *idx, const char *name, int len, int
     if (! absent) {
         fprintf(stderr, "[fai_build_core] ignoring duplicate sequence \"%s\" at byte offset %"PRIu64"\n", name, offset);
         free(name_key);
-        return;
+        return 0;
     }
 
     if (idx->n == idx->m) {
+        char **tmp;
         idx->m = idx->m? idx->m<<1 : 16;
-        idx->name = (char**)realloc(idx->name, sizeof(char*) * idx->m);
+        if (!(tmp = (char**)realloc(idx->name, sizeof(char*) * idx->m))) {
+            fprintf(stderr, "[fai_build_core] out of memory\n");
+            return -1;
+        }
+        idx->name = tmp;
     }
     idx->name[idx->n++] = name_key;
     v->len = len;
     v->line_len = line_len;
     v->line_blen = line_blen;
     v->offset = offset;
+
+    return 0;
 }
 
 faidx_t *fai_build_core(BGZF *bgzf)
@@ -101,8 +114,10 @@ faidx_t *fai_build_core(BGZF *bgzf)
             else if (state == 0) { state = 2; continue; }
         }
         if (c == '>') { // fasta header
-            if (len >= 0)
-                fai_insert_index(idx, name.s, len, line_len, line_blen, offset);
+            if (len >= 0) {
+                if (fai_insert_index(idx, name.s, len, line_len, line_blen, offset) != 0)
+                    goto fail;
+            }
 
             name.l = 0;
             while ((c = bgzf_getc(bgzf)) >= 0)
@@ -140,10 +155,12 @@ faidx_t *fai_build_core(BGZF *bgzf)
         }
     }
 
-    if (len >= 0)
-        fai_insert_index(idx, name.s, len, line_len, line_blen, offset);
-    else
+    if (len >= 0) {
+        if (fai_insert_index(idx, name.s, len, line_len, line_blen, offset) != 0)
+            goto fail;
+    } else {
         goto fail;
+    }
 
     free(name.s);
     return idx;
@@ -170,7 +187,7 @@ void fai_save(const faidx_t *fai, FILE *fp)
     }
 }
 
-faidx_t *fai_read(FILE *fp)
+static faidx_t *fai_read(FILE *fp, const char *fname)
 {
     faidx_t *fai;
     char *buf, *p;
@@ -183,7 +200,7 @@ faidx_t *fai_read(FILE *fp)
     fai = (faidx_t*)calloc(1, sizeof(faidx_t));
     fai->hash = kh_init(s);
     buf = (char*)calloc(0x10000, 1);
-    while (!feof(fp) && fgets(buf, 0x10000, fp)) {
+    while (fgets(buf, 0x10000, fp)) {
         for (p = buf; *p && isgraph(*p); ++p);
         *p = 0; ++p;
 #ifdef _WIN32
@@ -191,9 +208,17 @@ faidx_t *fai_read(FILE *fp)
 #else
         sscanf(p, "%d%lld%d%d", &len, &offset, &line_blen, &line_len);
 #endif
-        fai_insert_index(fai, buf, len, line_len, line_blen, offset);
+        if (fai_insert_index(fai, buf, len, line_len, line_blen, offset) != 0) {
+            free(buf);
+            return NULL;
+        }
     }
     free(buf);
+    if (ferror(fp)) {
+        fprintf(stderr, "[fai_load] error while reading \"%s\": %s\n", fname, strerror(errno));
+        fai_destroy(fai);
+        return NULL;
+    }
     return fai;
 }
 
@@ -230,8 +255,18 @@ int fai_build(const char *fn)
         free(str);
         return -1;
     }
-    if ( bgzf->is_compressed ) bgzf_index_dump(bgzf, fn, ".gzi");
-    bgzf_close(bgzf);
+    if ( bgzf->is_compressed ) {
+        if (bgzf_index_dump(bgzf, fn, ".gzi") < 0) {
+            fprintf(stderr, "[fai_build] fail to make bgzf index %s.gzi\n", fn);
+            fai_destroy(fai); free(str);
+            return -1;
+        }
+    }
+    if (bgzf_close(bgzf) < 0) {
+        fprintf(stderr, "[fai_build] Error on closing %s\n", fn);
+        fai_destroy(fai); free(str);
+        return -1;
+    }
     fp = fopen(str, "wb");
     if ( !fp ) {
         fprintf(stderr, "[fai_build] fail to write FASTA index %s\n",str);
@@ -308,20 +343,26 @@ faidx_t *fai_load(const char *fn)
 
     if (fp == 0) {
         fprintf(stderr, "[fai_load] build FASTA index.\n");
-        fai_build(fn);
+        if (fai_build(fn) < 0) {
+            free(str);
+            return 0;
+        }
         fp = fopen(str, "rb");
         if (fp == 0) {
-            fprintf(stderr, "[fai_load] fail to open FASTA index.\n");
+            fprintf(stderr, "[fai_load] failed to open FASTA index: %s\n", strerror(errno));
             free(str);
             return 0;
         }
     }
 
-    fai = fai_read(fp);
+    fai = fai_read(fp, str);
     fclose(fp);
+    free(str);
+    if (fai == NULL) {
+        return NULL;
+    }
 
     fai->bgzf = bgzf_open(fn, "rb");
-    free(str);
     if (fai->bgzf == 0) {
         fprintf(stderr, "[fai_load] fail to open FASTA file.\n");
         return 0;

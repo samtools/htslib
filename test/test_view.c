@@ -23,6 +23,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#include <config.h>
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -133,8 +135,10 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     hts_opt_free(out_opts);
 
-    if (!benchmark)
-        sam_hdr_write(out, h);
+    if (!benchmark && sam_hdr_write(out, h) < 0) {
+        fprintf(stderr, "Error writing output header.\n");
+        exit_code = 1;
+    }
     if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
         int i;
         hts_idx_t *idx;

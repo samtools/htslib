@@ -808,6 +808,11 @@ enum cram_fields {
 #define CRAM_FLAG_DETACHED             (1<<1)
 #define CRAM_FLAG_MATE_DOWNSTREAM      (1<<2)
 #define CRAM_FLAG_NO_SEQ               (1<<3)
+#define CRAM_FLAG_MASK                 ((1<<4)-1)
+
+/* Internal only */
+#define CRAM_FLAG_STATS_ADDED          (1<<30)
+
 
 #ifdef __cplusplus
 }
