@@ -29,6 +29,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stddef.h>
 #include <stdint.h>
 
+#include "hts_defs.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -448,7 +450,7 @@ typedef struct {
     @param fmt  One of the HTS_FMT_* index formats
     @return  0 if successful, or negative if an error occurred.
 */
-int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt);
+int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt) HTS_RESULT_USED;
 
 /// Save an index to a specific file
 /** @param idx    Index to be written
@@ -457,7 +459,7 @@ int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt);
     @param fmt    One of the HTS_FMT_* index formats
     @return  0 if successful, or negative if an error occurred.
 */
-int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int fmt);
+int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int fmt) HTS_RESULT_USED;
 
 /// Load an index file
 /** @param fn   BAM/BCF/etc filename, to which .bai/.csi/etc will be added or
@@ -514,7 +516,7 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
     typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
 
     hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec);
-    int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data);
+    int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data) HTS_RESULT_USED;
     const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 
     /**

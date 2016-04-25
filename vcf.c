@@ -418,7 +418,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         {
             char *tmp = hrec->vals[idx];
             idx = strtol(hrec->vals[idx], &tmp, 10);
-            if ( *tmp )
+            if ( *tmp || idx < 0 )
             {
                 fprintf(stderr,"[%s:%d %s] Error parsing the IDX tag, skipping.\n", __FILE__,__LINE__,__FUNCTION__);
                 return 0;
@@ -451,7 +451,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         {
             char *tmp = hrec->vals[i];
             idx = strtol(hrec->vals[i], &tmp, 10);
-            if ( *tmp )
+            if ( *tmp || idx < 0 )
             {
                 fprintf(stderr,"[%s:%d %s] Error parsing the IDX tag, skipping.\n", __FILE__,__LINE__,__FUNCTION__);
                 return 0;
@@ -601,7 +601,7 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
     }
     if ( !GL_warned )
     {
-        int id = bcf_hdr_id2int(hdr, BCF_HL_FMT, "GL");
+        int id = bcf_hdr_id2int(hdr, BCF_DT_ID, "GL");
         if ( bcf_hdr_idinfo_exists(hdr,BCF_HL_FMT,id) && bcf_hdr_id2length(hdr,BCF_HL_FMT,id)!=BCF_VL_G )
         {
             if (hts_verbose >= 2) fprintf(stderr,"[W::%s] GL should be declared as Number=G\n", __func__);
@@ -777,8 +777,9 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
     int i;
     bcf_hdr_t *h;
     h = (bcf_hdr_t*)calloc(1, sizeof(bcf_hdr_t));
+    if (!h) return NULL;
     for (i = 0; i < 3; ++i)
-        h->dict[i] = kh_init(vdict);
+        if ((h->dict[i] = kh_init(vdict)) == NULL) goto fail;
     if ( strchr(mode,'w') )
     {
         bcf_hdr_append(h, "##fileformat=VCFv4.2");
@@ -786,6 +787,12 @@ bcf_hdr_t *bcf_hdr_init(const char *mode)
         bcf_hdr_append(h, "##FILTER=<ID=PASS,Description=\"All filters passed\">");
     }
     return h;
+
+ fail:
+    for (i = 0; i < 3; ++i)
+        kh_destroy(vdict, h->dict[i]);
+    free(h);
+    return NULL;
 }
 
 void bcf_hdr_destroy(bcf_hdr_t *h)
@@ -819,9 +826,14 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     uint8_t magic[5];
     bcf_hdr_t *h;
     h = bcf_hdr_init("r");
-    if ( bgzf_read(fp, magic, 5)<0 )
+    if (!h) {
+        fprintf(stderr, "[E::%s] failed to allocate bcf header\n", __func__);
+        return NULL;
+    }
+    if (bgzf_read(fp, magic, 5) != 5)
     {
         fprintf(stderr,"[%s:%d %s] Failed to read the header (reading BCF in text mode?)\n", __FILE__,__LINE__,__FUNCTION__);
+        bcf_hdr_destroy(h);
         return NULL;
     }
     if (strncmp((char*)magic, "BCF\2\2", 5) != 0)
@@ -831,16 +843,24 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
         else if (hts_verbose >= 2)
             fprintf(stderr, "[E::%s] invalid BCF2 magic string\n", __func__);
         bcf_hdr_destroy(h);
-        return 0;
+        return NULL;
     }
     int hlen;
-    char *htxt;
-    bgzf_read(fp, &hlen, 4);
+    char *htxt = NULL;
+    if (bgzf_read(fp, &hlen, 4) != 4) goto fail;
     htxt = (char*)malloc(hlen);
-    bgzf_read(fp, htxt, hlen);
-    bcf_hdr_parse(h, htxt);
+    if (!htxt) goto fail;
+    if (bgzf_read(fp, htxt, hlen) != hlen) goto fail;
+    bcf_hdr_parse(h, htxt);  // FIXME: Does this return anything meaningful?
     free(htxt);
     return h;
+ fail:
+    if (hts_verbose >= 2) {
+        fprintf(stderr, "[E::%s] failed to read BCF header\n", __func__);
+    }
+    free(htxt);
+    bcf_hdr_destroy(h);
+    return NULL;
 }
 
 int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
@@ -940,8 +960,8 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
     // silent fix of broken BCFs produced by earlier versions of bcf_subset, prior to and including bd6ed8b4
     if ( (!v->indiv.l || !v->n_sample) && v->n_fmt ) v->n_fmt = 0;
 
-    bgzf_read(fp, v->shared.s, v->shared.l);
-    bgzf_read(fp, v->indiv.s, v->indiv.l);
+    if (bgzf_read(fp, v->shared.s, v->shared.l) != v->shared.l) return -1;
+    if (bgzf_read(fp, v->indiv.s, v->indiv.l) != v->indiv.l) return -1;
     return 0;
 }
 
@@ -1269,6 +1289,10 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
     kstring_t txt, *s = &fp->line;
     bcf_hdr_t *h;
     h = bcf_hdr_init("r");
+    if (!h) {
+        fprintf(stderr, "[E::%s] failed to allocate bcf header\n", __func__);
+        return NULL;
+    }
     txt.l = txt.m = 0; txt.s = 0;
     while (hts_getline(fp, KS_SEP_LINE, s) >= 0) {
         if (s->l == 0) continue;
@@ -1277,7 +1301,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
                 fprintf(stderr, "[E::%s] no sample line\n", __func__);
             free(txt.s);
             bcf_hdr_destroy(h);
-            return 0;
+            return NULL;
         }
         if (s->s[1] != '#' && fp->fn_aux) { // insert contigs here
             int dret;
@@ -1557,6 +1581,7 @@ static inline void align_mem(kstring_t *s)
 }
 
 // p,q is the start and the end of the FORMAT field
+#define MAX_N_FMT 255   /* Limited by size of bcf1_t n_fmt field */
 static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p, char *q)
 {
     if ( !bcf_hdr_nsamples(h) ) return 0;
@@ -1567,11 +1592,9 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
     ks_tokaux_t aux1;
     vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
     kstring_t *mem = (kstring_t*)&h->mem;
+    fmt_aux_t fmt[MAX_N_FMT];
     mem->l = 0;
 
-    // count the number of format fields
-    for (r = p, v->n_fmt = 1; *r; ++r)
-        if (*r == ':') ++v->n_fmt;
     char *end = s->s + s->l;
     if ( q>=end )
     {
@@ -1579,9 +1602,15 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         return -1;
     }
 
-    fmt_aux_t *fmt = (fmt_aux_t*)alloca(v->n_fmt * sizeof(fmt_aux_t));
     // get format information from the dictionary
+    v->n_fmt = 0;
     for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
+        if (j >= MAX_N_FMT) {
+            v->errcode |= BCF_ERR_LIMITS;
+            fprintf(stderr,"[E::%s] Error: FORMAT column at %s:%d lists more identifiers than htslib can handle.\n", __func__, bcf_seqname(h,v), v->pos+1);
+            return -1;
+        }
+
         *(char*)aux1.p = 0;
         k = kh_get(vdict, d, t);
         if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_FMT] == 15) {
@@ -1604,6 +1633,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         fmt[j].key = kh_val(d, k).id;
         fmt[j].is_gt = !strcmp(t, "GT");
         fmt[j].y = h->id[0][fmt[j].key].val->info[BCF_HL_FMT];
+        v->n_fmt++;
     }
     // compute max
     int n_sample_ori = -1;
@@ -1696,7 +1726,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         j = 0; // j-th format field, m-th sample
         while ( t < end )
         {
-            fmt_aux_t *z = &fmt[j];
+            fmt_aux_t *z = &fmt[j++];
             if ((z->y>>4&0xf) == BCF_HT_STR) {
                 if (z->is_gt) { // genotypes
                     int32_t is_phased = 0, *x = (int32_t*)(z->buf + z->size * m);
@@ -1735,33 +1765,11 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 if ( !l ) bcf_float_set_missing(x[l++]);    // An empty field, insert missing value
                 for (; l < z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
             } else abort();
+
             if (*t == '\0') {
-                for (++j; j < v->n_fmt; ++j) { // fill end-of-vector values
-                    z = &fmt[j];
-                    if ((z->y>>4&0xf) == BCF_HT_STR) {
-                        if (z->is_gt) {
-                            int32_t *x = (int32_t*)(z->buf + z->size * m);
-                            x[0] = bcf_int32_missing;
-                            for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
-                        } else {
-                            char *x = (char*)z->buf + z->size * m;
-                            if ( z->size ) x[0] = '.';
-                            for (l = 1; l < z->size; ++l) x[l] = 0;
-                        }
-                    } else if ((z->y>>4&0xf) == BCF_HT_INT) {
-                        int32_t *x = (int32_t*)(z->buf + z->size * m);
-                        x[0] = bcf_int32_missing;
-                        for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
-                    } else if ((z->y>>4&0xf) == BCF_HT_REAL) {
-                        float *x = (float*)(z->buf + z->size * m);
-                        bcf_float_set_missing(x[0]);
-                        for (l = 1; l < z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
-                    }
-                }
                 break;
             }
             else if (*t == ':') {
-                j++;
                 t++;
             }
             else {
@@ -1771,6 +1779,30 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 return -1;
             }
         }
+
+        for (; j < v->n_fmt; ++j) { // fill end-of-vector values
+            fmt_aux_t *z = &fmt[j];
+            if ((z->y>>4&0xf) == BCF_HT_STR) {
+                if (z->is_gt) {
+                    int32_t *x = (int32_t*)(z->buf + z->size * m);
+                    if (z->size) x[0] = bcf_int32_missing;
+                    for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
+                } else {
+                    char *x = (char*)z->buf + z->size * m;
+                    if ( z->size ) x[0] = '.';
+                    for (l = 1; l < z->size; ++l) x[l] = 0;
+                }
+            } else if ((z->y>>4&0xf) == BCF_HT_INT) {
+                int32_t *x = (int32_t*)(z->buf + z->size * m);
+                x[0] = bcf_int32_missing;
+                for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
+            } else if ((z->y>>4&0xf) == BCF_HT_REAL) {
+                float *x = (float*)(z->buf + z->size * m);
+                bcf_float_set_missing(x[0]);
+                for (l = 1; l < z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
+            }
+        }
+
         m++; t++;
     }
 
@@ -2576,6 +2608,11 @@ bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr)
 {
     bcf_hdr_t *hout = bcf_hdr_init("r");
     char *htxt = bcf_hdr_fmt_text(hdr, 1, NULL);
+    if (!hout) {
+        fprintf(stderr, "[E::%s] failed to allocate bcf header\n", __func__);
+        free(htxt);
+        return NULL;
+    }
     bcf_hdr_parse(hout, htxt);
     free(htxt);
     return hout;
@@ -2590,6 +2627,11 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
     bcf_hdr_t *h;
     str.l = str.m = 0; str.s = 0;
     h = bcf_hdr_init("w");
+    if (!h) {
+        fprintf(stderr, "[E::%s] failed to allocate bcf header\n", __func__);
+        free(htxt);
+        return NULL;
+    }
     bcf_hdr_set_version(h,bcf_hdr_get_version(h0));
     int j;
     for (j=0; j<n; j++) imap[j] = -1;

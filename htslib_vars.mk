@@ -1,6 +1,6 @@
 # Makefile variables useful for third-party code using htslib's public API.
 #
-#    Copyright (C) 2013-2015 Genome Research Ltd.
+#    Copyright (C) 2013-2016 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -25,11 +25,11 @@
 # These variables can be used to express dependencies on htslib headers.
 # See htslib.mk for details.
 
-htslib_bgzf_h = $(HTSPREFIX)htslib/bgzf.h
+htslib_bgzf_h = $(HTSPREFIX)htslib/bgzf.h $(htslib_hts_defs_h)
 htslib_cram_h = $(HTSPREFIX)htslib/cram.h $(htslib_hts_h)
 htslib_faidx_h = $(HTSPREFIX)htslib/faidx.h $(htslib_hts_defs_h)
 htslib_hfile_h = $(HTSPREFIX)htslib/hfile.h $(htslib_hts_defs_h)
-htslib_hts_h = $(HTSPREFIX)htslib/hts.h
+htslib_hts_h = $(HTSPREFIX)htslib/hts.h $(htslib_hts_defs_h)
 htslib_hts_defs_h = $(HTSPREFIX)htslib/hts_defs.h
 htslib_kbitset_h = $(HTSPREFIX)htslib/kbitset.h
 htslib_kfunc_h = $(HTSPREFIX)htslib/kfunc.h
