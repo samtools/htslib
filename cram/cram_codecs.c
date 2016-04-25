@@ -42,23 +42,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/cram.h"
 
-static char *codec2str(enum cram_encoding codec) {
-    switch (codec) {
-    case E_NULL:            return "NULL";
-    case E_EXTERNAL:        return "EXTERNAL";
-    case E_GOLOMB:          return "GOLOMB";
-    case E_HUFFMAN:         return "HUFFMAN";
-    case E_BYTE_ARRAY_LEN:  return "BYTE_ARRAY_LEN";
-    case E_BYTE_ARRAY_STOP: return "BYTE_ARRAY_STOP";
-    case E_BETA:            return "BETA";
-    case E_SUBEXP:          return "SUBEXP";
-    case E_GOLOMB_RICE:     return "GOLOMB_RICE";
-    case E_GAMMA:           return "GAMMA";
-    case E_NUM_CODECS:
-    default:                return "(unknown)";
-    }
-}
-
 /*
  * ---------------------------------------------------------------------------
  * Block bit-level I/O functions.
@@ -361,7 +344,8 @@ int cram_external_decode_char(cram_slice *slice, cram_codec *c,
     if (!cp)
 	return -1;
 
-    memcpy(out, cp, *out_size);
+    if (out)
+	memcpy(out, cp, *out_size);
     return 0;
 }
 
@@ -515,11 +499,16 @@ int cram_beta_decode_char(cram_slice *slice, cram_codec *c, cram_block *in, char
         if (cram_not_enough_bits(in, c->beta.nbits))
             return -1;
 
-	for (i = 0, n = *out_size; i < n; i++)
-	    out[i] = get_bits_MSB(in, c->beta.nbits) - c->beta.offset;
+	if (out)
+	    for (i = 0, n = *out_size; i < n; i++)
+		out[i] = get_bits_MSB(in, c->beta.nbits) - c->beta.offset;
+	else
+	    for (i = 0, n = *out_size; i < n; i++)
+		get_bits_MSB(in, c->beta.nbits);
     } else {
-	for (i = 0, n = *out_size; i < n; i++)
-	    out[i] = -c->beta.offset;
+	if (out)
+	    for (i = 0, n = *out_size; i < n; i++)
+		out[i] = -c->beta.offset;
     }
 
     return 0;
@@ -836,6 +825,9 @@ int cram_huffman_decode_null(cram_slice *slice, cram_codec *c,
 int cram_huffman_decode_char0(cram_slice *slice, cram_codec *c,
 			      cram_block *in, char *out, int *out_size) {
     int i, n;
+
+    if (!out)
+	return 0;
 
     /* Special case of 0 length codes */
     for (i = 0, n = *out_size; i < n; i++) {
@@ -1551,11 +1543,20 @@ static int cram_byte_array_stop_decode_char(cram_slice *slice, cram_codec *c,
 	return -1;
 
     cp = (char *)b->data + b->idx;
-    while ((ch = *cp) != (char)c->byte_array_stop.stop) {
-	if (cp - (char *)b->data >= b->uncomp_size)
-	    return -1;
-	*out++ = ch;
-	cp++;
+    if (out) {
+	while ((ch = *cp) != (char)c->byte_array_stop.stop) {
+	    if (cp - (char *)b->data >= b->uncomp_size)
+		return -1;
+	    *out++ = ch;
+	    cp++;
+	}
+    } else {
+	// Consume input, but produce no output
+	while ((ch = *cp) != (char)c->byte_array_stop.stop) {
+	    if (cp - (char *)b->data >= b->uncomp_size)
+		return -1;
+	    cp++;
+	}
     }
 
     *out_size = cp - (char *)(b->data + b->idx);
@@ -1718,7 +1719,7 @@ cram_codec *cram_byte_array_stop_encode_init(cram_stats *st,
  * ---------------------------------------------------------------------------
  */
 
-char *cram_encoding2str(enum cram_encoding t) {
+const char *cram_encoding2str(enum cram_encoding t) {
     switch (t) {
     case E_NULL:            return "NULL";
     case E_EXTERNAL:        return "EXTERNAL";
@@ -1758,7 +1759,7 @@ cram_codec *cram_decoder_init(enum cram_encoding codec,
     if (codec >= E_NULL && codec < E_NUM_CODECS && decode_init[codec]) {
 	return decode_init[codec](data, size, option, version);
     } else {
-	fprintf(stderr, "Unimplemented codec of type %s\n", codec2str(codec));
+	fprintf(stderr, "Unimplemented codec of type %s\n", cram_encoding2str(codec));
 	return NULL;
     }
 }
@@ -1793,7 +1794,7 @@ cram_codec *cram_encoder_init(enum cram_encoding codec,
 	    r->out = NULL;
 	return r;
     } else {
-	fprintf(stderr, "Unimplemented codec of type %s\n", codec2str(codec));
+	fprintf(stderr, "Unimplemented codec of type %s\n", cram_encoding2str(codec));
 	abort();
     }
 }

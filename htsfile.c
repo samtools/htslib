@@ -1,6 +1,6 @@
 /*  htsfile.c -- file identifier and minimal viewer.
 
-    Copyright (C) 2014-2015 Genome Research Ltd.
+    Copyright (C) 2014-2016 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -179,7 +179,7 @@ int main(int argc, char **argv)
         case 1:
             printf(
 "htsfile (htslib) %s\n"
-"Copyright (C) 2015 Genome Research Ltd.\n",
+"Copyright (C) 2016 Genome Research Ltd.\n",
                    hts_version());
             exit(EXIT_SUCCESS);
             break;

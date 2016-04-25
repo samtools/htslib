@@ -1,6 +1,6 @@
 /*  hts.c -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2008, 2009, 2012-2015 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2012-2016 Genome Research Ltd.
     Copyright (C) 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -156,20 +156,23 @@ static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
 static void
 parse_version(htsFormat *fmt, const unsigned char *u, const unsigned char *ulim)
 {
-    const char *str  = (const char *) u;
+    const char *s    = (const char *) u;
     const char *slim = (const char *) ulim;
-    const char *s;
+    short v;
 
     fmt->version.major = fmt->version.minor = -1;
 
-    for (s = str; s < slim; s++) if (!isdigit(*s)) break;
+    for (v = 0; s < slim && isdigit_c(*s); s++)
+        v = 10 * v + *s - '0';
+
     if (s < slim) {
-        fmt->version.major = atoi(str);
+        fmt->version.major = v;
         if (*s == '.') {
-            str = &s[1];
-            for (s = str; s < slim; s++) if (!isdigit(*s)) break;
+            s++;
+            for (v = 0; s < slim && isdigit_c(*s); s++)
+                v = 10 * v + *s - '0';
             if (s < slim)
-                fmt->version.minor = atoi(str);
+                fmt->version.minor = v;
         }
         else
             fmt->version.minor = 0;
@@ -420,6 +423,26 @@ htsFile *hts_open(const char *fn, const char *mode) {
 }
 
 /*
+ * Splits str into a prefix, delimiter ('\0' or delim), and suffix, writing
+ * the prefix in lowercase into buf and returning a pointer to the suffix.
+ * On return, buf is always NUL-terminated; thus assumes that the "keyword"
+ * prefix should be one of several known values of maximum length buflen-2.
+ * (If delim is not found, returns a pointer to the '\0'.)
+ */
+static const char *
+scan_keyword(const char *str, char delim, char *buf, size_t buflen)
+{
+    size_t i = 0;
+    while (*str && *str != delim) {
+        if (i < buflen-1) buf[i++] = tolower_c(*str);
+        str++;
+    }
+
+    buf[i] = '\0';
+    return *str? str+1 : str;
+}
+
+/*
  * Parses arg and appends it to the option list.
  *
  * Returns 0 on success;
@@ -605,35 +628,33 @@ int hts_parse_opt_list(htsFormat *fmt, const char *str) {
  *        -1 on failure.
  */
 int hts_parse_format(htsFormat *format, const char *str) {
-    const char *cp;
-
-    if (!(cp = strchr(str, ',')))
-        cp = str+strlen(str);
+    char fmt[8];
+    const char *cp = scan_keyword(str, ',', fmt, sizeof fmt);
 
     format->version.minor = 0; // unknown
     format->version.major = 0; // unknown
 
-    if (strncmp(str, "sam", cp-str) == 0) {
+    if (strcmp(fmt, "sam") == 0) {
         format->category          = sequence_data;
         format->format            = sam;
         format->compression       = no_compression;;
         format->compression_level = 0;
-    } else if (strncmp(str, "bam", cp-str) == 0) {
+    } else if (strcmp(fmt, "bam") == 0) {
         format->category          = sequence_data;
         format->format            = bam;
         format->compression       = bgzf;
         format->compression_level = -1;
-    } else if (strncmp(str, "cram", cp-str) == 0) {
+    } else if (strcmp(fmt, "cram") == 0) {
         format->category          = sequence_data;
         format->format            = cram;
         format->compression       = custom;
         format->compression_level = -1;
-    } else if (strncmp(str, "vcf", cp-str) == 0) {
+    } else if (strcmp(fmt, "vcf") == 0) {
         format->category          = variant_data;
         format->format            = vcf;
         format->compression       = no_compression;;
         format->compression_level = 0;
-    } else if (strncmp(str, "bcf", cp-str) == 0) {
+    } else if (strcmp(fmt, "bcf") == 0) {
         format->category          = variant_data;
         format->format            = bcf;
         format->compression       = bgzf;

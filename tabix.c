@@ -1,7 +1,7 @@
 /*  tabix.c -- Generic indexer for TAB-delimited genome position files.
 
     Copyright (C) 2009-2011 Broad Institute.
-    Copyright (C) 2010-2012, 2014, 2015 Genome Research Ltd.
+    Copyright (C) 2010-2012, 2014-2016 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -372,25 +372,26 @@ int main(int argc, char *argv[])
     args_t args;
     memset(&args,0,sizeof(args_t));
 
-    static struct option loptions[] =
+    static const struct option loptions[] =
     {
-        {"help",0,0,'h'},
-        {"regions",1,0,'R'},
-        {"targets",1,0,'T'},
-        {"csi",0,0,'C'},
-        {"zero-based",0,0,'0'},
-        {"print-header",0,0,'h'},
-        {"only-header",0,0,'H'},
-        {"begin",1,0,'b'},
-        {"comment",1,0,'c'},
-        {"end",1,0,'e'},
-        {"force",0,0,'f'},
-        {"preset",1,0,'p'},
-        {"sequence",1,0,'s'},
-        {"skip-lines",1,0,'S'},
-        {"list-chroms",0,0,'l'},
-        {"reheader",1,0,'r'},
-        {0,0,0,0}
+        {"help", no_argument, NULL, 'h'},
+        {"regions", required_argument, NULL, 'R'},
+        {"targets", required_argument, NULL, 'T'},
+        {"csi", no_argument, NULL, 'C'},
+        {"zero-based", no_argument, NULL, '0'},
+        {"print-header", no_argument, NULL, 'h'},
+        {"only-header", no_argument, NULL, 'H'},
+        {"begin", required_argument, NULL, 'b'},
+        {"comment", required_argument, NULL, 'c'},
+        {"end", required_argument, NULL, 'e'},
+        {"force", no_argument, NULL, 'f'},
+        {"preset", required_argument, NULL, 'p'},
+        {"sequence", required_argument, NULL, 's'},
+        {"skip-lines", required_argument, NULL, 'S'},
+        {"list-chroms", no_argument, NULL, 'l'},
+        {"reheader", required_argument, NULL, 'r'},
+        {"version", no_argument, NULL, 1},
+        {NULL, 0, NULL, 0}
     };
 
     char *tmp;
@@ -437,6 +438,11 @@ int main(int argc, char *argv[])
                 conf.line_skip = strtol(optarg,&tmp,10);
                 if ( *tmp ) error("Could not parse argument: -S %s\n", optarg);
                 break;
+            case 1:
+                printf(
+"tabix (htslib) %s\n"
+"Copyright (C) 2016 Genome Research Ltd.\n", hts_version());
+                return EXIT_SUCCESS;
             default: return usage();
         }
     }

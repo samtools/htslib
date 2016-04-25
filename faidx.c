@@ -55,8 +55,13 @@ struct __faidx_t {
 #define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
 #endif
 
-static inline void fai_insert_index(faidx_t *idx, const char *name, int len, int line_len, int line_blen, uint64_t offset)
+static inline int fai_insert_index(faidx_t *idx, const char *name, int len, int line_len, int line_blen, uint64_t offset)
 {
+    if (!name) {
+        fprintf(stderr, "[fai_build_core] malformed line\n");
+        return -1;
+    }
+
     char *name_key = strdup(name);
     int absent;
     khint_t k = kh_put(s, idx->hash, name_key, &absent);
@@ -65,18 +70,25 @@ static inline void fai_insert_index(faidx_t *idx, const char *name, int len, int
     if (! absent) {
         fprintf(stderr, "[fai_build_core] ignoring duplicate sequence \"%s\" at byte offset %"PRIu64"\n", name, offset);
         free(name_key);
-        return;
+        return 0;
     }
 
     if (idx->n == idx->m) {
+        char **tmp;
         idx->m = idx->m? idx->m<<1 : 16;
-        idx->name = (char**)realloc(idx->name, sizeof(char*) * idx->m);
+        if (!(tmp = (char**)realloc(idx->name, sizeof(char*) * idx->m))) {
+            fprintf(stderr, "[fai_build_core] out of memory\n");
+            return -1;
+        }
+        idx->name = tmp;
     }
     idx->name[idx->n++] = name_key;
     v->len = len;
     v->line_len = line_len;
     v->line_blen = line_blen;
     v->offset = offset;
+
+    return 0;
 }
 
 faidx_t *fai_build_core(BGZF *bgzf)
@@ -101,8 +113,10 @@ faidx_t *fai_build_core(BGZF *bgzf)
             else if (state == 0) { state = 2; continue; }
         }
         if (c == '>') { // fasta header
-            if (len >= 0)
-                fai_insert_index(idx, name.s, len, line_len, line_blen, offset);
+            if (len >= 0) {
+                if (fai_insert_index(idx, name.s, len, line_len, line_blen, offset) != 0)
+                    goto fail;
+            }
 
             name.l = 0;
             while ((c = bgzf_getc(bgzf)) >= 0)
@@ -140,10 +154,12 @@ faidx_t *fai_build_core(BGZF *bgzf)
         }
     }
 
-    if (len >= 0)
-        fai_insert_index(idx, name.s, len, line_len, line_blen, offset);
-    else
+    if (len >= 0) {
+        if (fai_insert_index(idx, name.s, len, line_len, line_blen, offset) != 0)
+            goto fail;
+    } else {
         goto fail;
+    }
 
     free(name.s);
     return idx;
@@ -191,7 +207,10 @@ faidx_t *fai_read(FILE *fp)
 #else
         sscanf(p, "%d%lld%d%d", &len, &offset, &line_blen, &line_len);
 #endif
-        fai_insert_index(fai, buf, len, line_len, line_blen, offset);
+        if (fai_insert_index(fai, buf, len, line_len, line_blen, offset) != 0) {
+            free(buf);
+            return NULL;
+        }
     }
     free(buf);
     return fai;
