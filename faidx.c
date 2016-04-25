@@ -1,6 +1,6 @@
 /*  faidx.c -- FASTA random access.
 
-    Copyright (C) 2008, 2009, 2013-2015 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2016 Genome Research Ltd.
     Portions copyright (C) 2011 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -30,6 +30,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <errno.h>
 
 #include "htslib/bgzf.h"
 #include "htslib/faidx.h"
@@ -186,7 +187,7 @@ void fai_save(const faidx_t *fai, FILE *fp)
     }
 }
 
-faidx_t *fai_read(FILE *fp)
+static faidx_t *fai_read(FILE *fp, const char *fname)
 {
     faidx_t *fai;
     char *buf, *p;
@@ -199,7 +200,7 @@ faidx_t *fai_read(FILE *fp)
     fai = (faidx_t*)calloc(1, sizeof(faidx_t));
     fai->hash = kh_init(s);
     buf = (char*)calloc(0x10000, 1);
-    while (!feof(fp) && fgets(buf, 0x10000, fp)) {
+    while (fgets(buf, 0x10000, fp)) {
         for (p = buf; *p && isgraph(*p); ++p);
         *p = 0; ++p;
 #ifdef _WIN32
@@ -213,6 +214,11 @@ faidx_t *fai_read(FILE *fp)
         }
     }
     free(buf);
+    if (ferror(fp)) {
+        fprintf(stderr, "[fai_load] error while reading \"%s\": %s\n", fname, strerror(errno));
+        fai_destroy(fai);
+        return NULL;
+    }
     return fai;
 }
 
@@ -249,8 +255,18 @@ int fai_build(const char *fn)
         free(str);
         return -1;
     }
-    if ( bgzf->is_compressed ) bgzf_index_dump(bgzf, fn, ".gzi");
-    bgzf_close(bgzf);
+    if ( bgzf->is_compressed ) {
+        if (bgzf_index_dump(bgzf, fn, ".gzi") < 0) {
+            fprintf(stderr, "[fai_build] fail to make bgzf index %s.gzi\n", fn);
+            fai_destroy(fai); free(str);
+            return -1;
+        }
+    }
+    if (bgzf_close(bgzf) < 0) {
+        fprintf(stderr, "[fai_build] Error on closing %s\n", fn);
+        fai_destroy(fai); free(str);
+        return -1;
+    }
     fp = fopen(str, "wb");
     if ( !fp ) {
         fprintf(stderr, "[fai_build] fail to write FASTA index %s\n",str);
@@ -327,20 +343,26 @@ faidx_t *fai_load(const char *fn)
 
     if (fp == 0) {
         fprintf(stderr, "[fai_load] build FASTA index.\n");
-        fai_build(fn);
+        if (fai_build(fn) < 0) {
+            free(str);
+            return 0;
+        }
         fp = fopen(str, "rb");
         if (fp == 0) {
-            fprintf(stderr, "[fai_load] fail to open FASTA index.\n");
+            fprintf(stderr, "[fai_load] failed to open FASTA index: %s\n", strerror(errno));
             free(str);
             return 0;
         }
     }
 
-    fai = fai_read(fp);
+    fai = fai_read(fp, str);
     fclose(fp);
+    free(str);
+    if (fai == NULL) {
+        return NULL;
+    }
 
     fai->bgzf = bgzf_open(fn, "rb");
-    free(str);
     if (fai->bgzf == 0) {
         fprintf(stderr, "[fai_load] fail to open FASTA file.\n");
         return 0;
