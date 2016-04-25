@@ -447,6 +447,14 @@ typedef struct __bam_mplp_t *bam_mplp_t;
 
 #endif // ~!defined(BAM_NO_PILEUP)
 
+
+/***********************************
+ * BAQ calculation and realignment *
+ ***********************************/
+
+int sam_cap_mapq(bam1_t *b, const char *ref, int ref_len, int thres);
+int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag);
+
 #ifdef __cplusplus
 }
 #endif

@@ -74,6 +74,7 @@ HTSLIB_ALL = \
 	$(HTSLIB_PUBLIC_HEADERS) \
 	$(HTSDIR)/bgzf.c \
 	$(HTSDIR)/config.h \
+	$(HTSDIR)/errmod.c \
 	$(HTSDIR)/faidx.c \
 	$(HTSDIR)/hfile_internal.h \
 	$(HTSDIR)/hfile.c \
@@ -87,6 +88,8 @@ HTSLIB_ALL = \
 	$(HTSDIR)/kstring.c \
 	$(HTSDIR)/md5.c \
 	$(HTSDIR)/plugin.c \
+	$(HTSDIR)/probaln.c \
+	$(HTSDIR)/realn.c \
 	$(HTSDIR)/regidx.c \
 	$(HTSDIR)/sam.c \
 	$(HTSDIR)/synced_bcf_reader.c \

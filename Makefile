@@ -142,11 +142,14 @@ LIBHTS_OBJS = \
 	knetfile.o \
 	kstring.o \
 	bgzf.o \
+	errmod.o \
 	faidx.o \
 	hfile.o \
 	hfile_net.o \
 	hts.o \
 	md5.o \
+	probaln.o \
+	realn.o \
 	regidx.o \
 	sam.o \
 	synced_bcf_reader.o \
@@ -251,6 +254,7 @@ libhts.dylib: $(LIBHTS_OBJS)
 
 
 bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_khash_h)
+errmod.o errmod.pico: errmod.c config.h $(htslib_hts_h) $(htslib_ksort_h)
 kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
 knetfile.o knetfile.pico: knetfile.c config.h $(htslib_knetfile_h)
 hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(hts_internal_h) $(htslib_khash_h)
@@ -269,6 +273,8 @@ kfunc.o kfunc.pico: kfunc.c config.h $(htslib_kfunc_h)
 regidx.o regidx.pico: regidx.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_regidx_h)
 md5.o md5.pico: md5.c config.h $(htslib_hts_h)
 plugin.o plugin.pico: plugin.c config.h $(hts_internal_h) $(htslib_kstring_h)
+probaln.o probaln.pico: probaln.c config.h $(htslib_hts_h)
+realn.o realn.pico: realn.c config.h $(htslib_hts_h) $(htslib_sam_h)
 
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) cram/os.h $(htslib_hts_h)
