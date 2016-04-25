@@ -26,7 +26,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include <config.h>
 
 #include <zlib.h>
-#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -1848,24 +1847,24 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
     char sign = '+', esign = '+';
     const char *s;
 
-    while (isspace(*str)) str++;
+    while (isspace_c(*str)) str++;
     s = str;
 
     if (*s == '+' || *s == '-') sign = *s++;
     while (*s)
-        if (isdigit(*s)) n = push_digit(n, *s++);
+        if (isdigit_c(*s)) n = push_digit(n, *s++);
         else if (*s == ',' && (flags & HTS_PARSE_THOUSANDS_SEP)) s++;
         else break;
 
     if (*s == '.') {
         s++;
-        while (isdigit(*s)) decimals++, n = push_digit(n, *s++);
+        while (isdigit_c(*s)) decimals++, n = push_digit(n, *s++);
     }
 
     if (*s == 'E' || *s == 'e') {
         s++;
         if (*s == '+' || *s == '-') esign = *s++;
-        while (isdigit(*s)) e = push_digit(e, *s++);
+        while (isdigit_c(*s)) e = push_digit(e, *s++);
         if (esign == '-') e = -e;
     }
 
