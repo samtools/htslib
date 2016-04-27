@@ -38,6 +38,8 @@
 #include "htslib/hts.h"
 #include "htslib/bgzf.h"
 #include "htslib/hfile.h"
+#include "htslib/thread_pool.h"
+#include "cram/pooled_alloc.h"
 
 #define BGZF_CACHE
 #define BGZF_MT
@@ -725,155 +727,134 @@ ssize_t bgzf_raw_read(BGZF *fp, void *data, size_t length)
 
 #ifdef BGZF_MT
 
-typedef struct {
-    struct bgzf_mtaux_t *mt;
-    void *buf;
-    int i, errcode, toproc, compress_level;
-} worker_t;
-
 typedef struct bgzf_mtaux_t {
-    int n_threads, n_blks, curr, done;
-    volatile int proc_cnt;
-    void **blk;
-    int *len;
-    worker_t *w;
-    pthread_t *tid;
-    pthread_mutex_t lock;
-    pthread_cond_t cv;
+    // Memory pool for bgzf_job structs, to avoid many malloc/free
+    pool_alloc_t *job_pool;
+
+    // Thread pool
+    int n_threads;
+    t_pool *pool;
+
+    // Output queue holding completed bgzf_jobs
+    t_results_queue *out_queue;
+    //void *job_pending; // FIXME: need this (did in Scramble)?
 } mtaux_t;
 
-static int worker_aux(worker_t *w)
-{
-    int i, stop = 0;
-    // wait for condition: to process or all done
-    pthread_mutex_lock(&w->mt->lock);
-    while (!w->toproc && !w->mt->done)
-        pthread_cond_wait(&w->mt->cv, &w->mt->lock);
-    if (w->mt->done) stop = 1;
-    w->toproc = 0;
-    pthread_mutex_unlock(&w->mt->lock);
-    if (stop) return 1; // to quit the thread
-    w->errcode = 0;
-    for (i = w->i; i < w->mt->curr; i += w->mt->n_threads) {
-        size_t clen = BGZF_MAX_BLOCK_SIZE;
-        int ret = bgzf_compress(w->buf, &clen, w->mt->blk[i], w->mt->len[i], w->compress_level);
-        if (ret != 0) {
-            if (hts_verbose >= 2) fprintf(stderr, "[E::%s] bgzf_compress error %d\n", __func__, ret);
-            w->errcode |= BGZF_ERR_ZLIB; // Report error
-            // We're not going to do any more, so set remaining lengths to 0
-            for (; i < w->mt->curr; i += w->mt->n_threads) w->mt->len[i] = 0;
-            break; // Give up
-        } else {
-            memcpy(w->mt->blk[i], w->buf, clen);
-            w->mt->len[i] = clen;
-        }
-    }
-    __sync_fetch_and_add(&w->mt->proc_cnt, 1);
-    return 0;
-}
+typedef struct bgzf_job {
+    BGZF *fp;
+    unsigned char comp_data[BGZF_MAX_BLOCK_SIZE];
+    size_t comp_len;
+    unsigned char uncomp_data[BGZF_MAX_BLOCK_SIZE];
+    size_t uncomp_len;
+    int errcode;
+} bgzf_job;
 
-static void *mt_worker(void *data)
-{
-    while (worker_aux((worker_t*)data) == 0);
-    return 0;
+void *bgzf_encode_func(void *arg) {
+    bgzf_job *j = (bgzf_job *)arg;
+
+    j->comp_len = BGZF_MAX_BLOCK_SIZE;
+    int ret = bgzf_compress(j->comp_data, &j->comp_len,
+                            j->uncomp_data, j->uncomp_len,
+                            j->fp->compress_level);
+    if (ret != 0)
+        j->errcode |= BGZF_ERR_ZLIB;
+
+    //fprintf(stderr, "Encode %d to %d, ret %d\n", (int)j->uncomp_len, (int)j->comp_len, ret);
+
+    return arg;
 }
 
 int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 {
-    int i;
     mtaux_t *mt;
-    pthread_attr_t attr;
     if (!fp->is_write || fp->mt || n_threads <= 1) return -1;
     mt = (mtaux_t*)calloc(1, sizeof(mtaux_t));
-    mt->n_threads = n_threads;
-    mt->n_blks = n_threads * n_sub_blks;
-    mt->len = (int*)calloc(mt->n_blks, sizeof(int));
-    mt->blk = (void**)calloc(mt->n_blks, sizeof(void*));
-    for (i = 0; i < mt->n_blks; ++i)
-        mt->blk[i] = malloc(BGZF_MAX_BLOCK_SIZE);
-    mt->tid = (pthread_t*)calloc(mt->n_threads, sizeof(pthread_t)); // tid[0] is not used, as the worker 0 is launched by the master
-    mt->w = (worker_t*)calloc(mt->n_threads, sizeof(worker_t));
-    for (i = 0; i < mt->n_threads; ++i) {
-        mt->w[i].i = i;
-        mt->w[i].mt = mt;
-        mt->w[i].compress_level = fp->compress_level;
-        mt->w[i].buf = malloc(BGZF_MAX_BLOCK_SIZE);
-    }
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-    pthread_mutex_init(&mt->lock, 0);
-    pthread_cond_init(&mt->cv, 0);
-    for (i = 1; i < mt->n_threads; ++i) // worker 0 is effectively launched by the master thread
-        pthread_create(&mt->tid[i], &attr, mt_worker, &mt->w[i]);
     fp->mt = mt;
+
+    mt->n_threads = n_threads;
+    if (!(mt->pool = t_pool_init(mt->n_threads*2, mt->n_threads))) {
+        free(mt);
+        return -1;
+    }
+    if (!(mt->out_queue = t_results_queue_init())) {
+        t_pool_destroy(mt->pool, 0);
+        free(mt);
+        return -1;
+    }
+
+    mt->job_pool = pool_create(sizeof(bgzf_job));
+
+    //mt->job_pending = NULL;
+
     return 0;
 }
 
 static void mt_destroy(mtaux_t *mt)
 {
-    int i;
-    // signal all workers to quit
-    pthread_mutex_lock(&mt->lock);
-    mt->done = 1; mt->proc_cnt = 0;
-    pthread_cond_broadcast(&mt->cv);
-    pthread_mutex_unlock(&mt->lock);
-    for (i = 1; i < mt->n_threads; ++i) pthread_join(mt->tid[i], 0); // worker 0 is effectively launched by the master thread
-    // free other data allocated on heap
-    for (i = 0; i < mt->n_blks; ++i) free(mt->blk[i]);
-    for (i = 0; i < mt->n_threads; ++i) free(mt->w[i].buf);
-    free(mt->blk); free(mt->len); free(mt->w); free(mt->tid);
-    pthread_cond_destroy(&mt->cv);
-    pthread_mutex_destroy(&mt->lock);
+    pool_destroy(mt->job_pool);
+    t_pool_destroy(mt->pool, 0);
+    t_results_queue_destroy(mt->out_queue);
     free(mt);
 }
 
-static void mt_queue(BGZF *fp)
+// Drain any output jobs now too.  FIXME: Put this in its own thread.
+static int mt_drain(BGZF *fp) {
+    t_pool_result *r;
+    mtaux_t *mt = fp->mt;
+
+    while ((r = t_pool_next_result(mt->out_queue))) {
+        bgzf_job *j = (bgzf_job *)r->data;
+        assert(j);
+
+        if (hwrite(fp->fp, j->comp_data, j->comp_len) != j->comp_len) {
+            fp->errcode |= BGZF_ERR_IO;
+            return -1;
+        }
+
+        t_pool_delete_result(r, 0);
+        pool_free(mt->job_pool, j);
+    }
+    return 0;
+}
+
+static int mt_queue(BGZF *fp)
 {
     mtaux_t *mt = fp->mt;
-    assert(mt->curr < mt->n_blks); // guaranteed by the caller
-    memcpy(mt->blk[mt->curr], fp->uncompressed_block, fp->block_offset);
-    mt->len[mt->curr] = fp->block_offset;
+    bgzf_job *j = pool_alloc(mt->job_pool);
+
+    j->fp = fp;
+    j->errcode = 0;
+    j->uncomp_len  = fp->block_offset;
+    memcpy(j->uncomp_data, fp->uncompressed_block, j->uncomp_len);
+
+    // Need non-block vers & job_pending?
+    t_pool_dispatch(mt->pool, mt->out_queue, bgzf_encode_func, j);
+    if (mt_drain(fp))
+        return -1;
+
     fp->block_offset = 0;
-    ++mt->curr;
+    return 0;
 }
 
 static int mt_flush_queue(BGZF *fp)
 {
-    int i;
+    // FIXME: same as above. Factor out
+
+    // New code
     mtaux_t *mt = fp->mt;
-    // signal all the workers to compress
-    pthread_mutex_lock(&mt->lock);
-    for (i = 0; i < mt->n_threads; ++i) mt->w[i].toproc = 1;
-    mt->proc_cnt = 0;
-    pthread_cond_broadcast(&mt->cv);
-    pthread_mutex_unlock(&mt->lock);
-    // worker 0 is doing things here
-    worker_aux(&mt->w[0]);
-    // wait for all the threads to complete
-    while (mt->proc_cnt < mt->n_threads);
-    // dump data to disk
-    for (i = 0; i < mt->n_threads; ++i) fp->errcode |= mt->w[i].errcode;
-    if (fp->errcode == 0) {
-        /* Only try to write if all the threads worked, as otherwise we
-           could get a file with holes in it */
-        for (i = 0; i < mt->curr; ++i) {
-            if (hwrite(fp->fp, mt->blk[i], mt->len[i]) != mt->len[i]) {
-                fp->errcode |= BGZF_ERR_IO;
-                break;
-            }
-        }
-    }
-    mt->curr = 0;
+    t_pool_flush(mt->pool);
+    if (mt_drain(fp))
+        return -1;
+
     return (fp->errcode == 0)? 0 : -1;
 }
 
 static int lazy_flush(BGZF *fp)
 {
-    if (fp->mt) {
-        if (fp->block_offset) mt_queue(fp);
-        return (fp->mt->curr < fp->mt->n_blks)? 0 : mt_flush_queue(fp);
-    }
-    else return bgzf_flush(fp);
+    if (fp->mt)
+        return fp->block_offset ? mt_queue(fp) : 0;
+    else
+        return bgzf_flush(fp);
 }
 
 #else  // ~ #ifdef BGZF_MT
@@ -895,8 +876,9 @@ int bgzf_flush(BGZF *fp)
     if (!fp->is_write) return 0;
 #ifdef BGZF_MT
     if (fp->mt) {
-        if (fp->block_offset) mt_queue(fp); // guaranteed that assertion does not fail
-        return mt_flush_queue(fp);
+        int ret = 0;
+        if (fp->block_offset) ret = mt_queue(fp);
+        return ret ? ret : mt_flush_queue(fp);
     }
 #endif
     while (fp->block_offset > 0) {

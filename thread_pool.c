@@ -39,7 +39,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/time.h>
 #include <assert.h>
 
-#include "cram/thread_pool.h"
+#include "htslib/thread_pool.h"
 
 //#define DEBUG
 //#define DEBUG_TIME
