@@ -72,6 +72,14 @@ static const char *dump_char(char *buffer, char c)
     return buffer;
 }
 
+static char *find_chrom_header_line(char *s)
+{
+    char *nl;
+    if (strncmp(s, "#CHROM\t", 7) == 0) return s;
+    else if ((nl = strstr(s, "\n#CHROM\t")) != NULL) return nl+1;
+    else return NULL;
+}
+
 /*************************
  *** VCF header parser ***
  *************************/
@@ -2636,10 +2644,8 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
     int j;
     for (j=0; j<n; j++) imap[j] = -1;
     if ( bcf_hdr_nsamples(h0) > 0) {
-        char *p;
+        char *p = find_chrom_header_line(htxt);
         int i = 0, end = n? 8 : 7;
-        while ((p = strstr(htxt, "#CHROM\t")) != 0)
-            if (p > htxt && *(p-1) == '\n') break;
         while ((p = strchr(p, '\t')) != 0 && i < end) ++i, ++p;
         if (i != end) {
             free(h); free(str.s);
