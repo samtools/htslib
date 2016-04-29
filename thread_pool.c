@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013 Genome Research Ltd.
+Copyright (c) 2013,2016 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without 
@@ -44,8 +44,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //#define DEBUG
 //#define DEBUG_TIME
 
-#define IN_ORDER
-
 #ifdef DEBUG
 static int worker_id(t_pool *p) {
     int i;
@@ -56,6 +54,14 @@ static int worker_id(t_pool *p) {
     }
     return -1;
 }
+
+int DBG_OUT(FILE *fp, char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    return vfprintf(fp, fmt, args);
+}
+#else
+#define DBG_OUT(...) do{}while(0)
 #endif
 
 /* ----------------------------------------------------------------------------
@@ -78,10 +84,8 @@ static int t_pool_add_result(t_pool_job *j, void *data) {
     t_results_queue *q = j->q;
     t_pool_result *r;
 
-#ifdef DEBUG
-    fprintf(stderr, "%d: Adding resulting to queue %p, serial %d\n",
+    DBG_OUT(stderr, "%d: Adding result to queue %p, serial %d\n",
 	    worker_id(j->p), q, j->serial);
-#endif
 
     /* No results queue is fine if we don't want any results back */
     if (!q)
@@ -104,14 +108,10 @@ static int t_pool_add_result(t_pool_job *j, void *data) {
     q->queue_len++;
     q->pending--;
 
-#ifdef DEBUG
-    fprintf(stderr, "%d: Broadcasting result_avail (id %d)\n",
+    DBG_OUT(stderr, "%d: Broadcasting result_avail (id %d)\n",
 	    worker_id(j->p), r->serial);
-#endif
     pthread_cond_signal(&q->result_avail_c);
-#ifdef DEBUG
-    fprintf(stderr, "%d: Broadcast complete\n", worker_id(j->p));
-#endif
+    DBG_OUT(stderr, "%d: Broadcast complete\n", worker_id(j->p));
 
     pthread_mutex_unlock(&q->result_m);
 
@@ -159,17 +159,13 @@ static t_pool_result *t_pool_next_result_locked(t_results_queue *q) {
 t_pool_result *t_pool_next_result(t_results_queue *q) {
     t_pool_result *r;
 
-#ifdef DEBUG
-    fprintf(stderr, "Requesting next result on queue %p\n", q);
-#endif
+    DBG_OUT(stderr, "Requesting next result on queue %p\n", q);
 
     pthread_mutex_lock(&q->result_m);
     r = t_pool_next_result_locked(q);
     pthread_mutex_unlock(&q->result_m);
 
-#ifdef DEBUG
-    fprintf(stderr, "(q=%p) Found %p\n", q, r);
-#endif
+    DBG_OUT(stderr, "(q=%p) Found %p\n", q, r);
 
     return r;
 }
@@ -177,9 +173,7 @@ t_pool_result *t_pool_next_result(t_results_queue *q) {
 t_pool_result *t_pool_next_result_wait(t_results_queue *q) {
     t_pool_result *r;
 
-#ifdef DEBUG
-    fprintf(stderr, "Waiting for result %d...\n", q->next_serial);
-#endif
+    DBG_OUT(stderr, "Waiting for result %d...\n", q->next_serial);
 
     pthread_mutex_lock(&q->result_m);
     while (!(r = t_pool_next_result_locked(q))) {
@@ -274,9 +268,7 @@ t_results_queue *t_results_queue_init(void) {
 
 /* Deallocates memory for a results queue */
 void t_results_queue_destroy(t_results_queue *q) {
-#ifdef DEBUG
-    fprintf(stderr, "Destroying results queue %p\n", q);
-#endif
+    DBG_OUT(stderr, "Destroying results queue %p\n", q);
 
     if (!q)
 	return;
@@ -287,9 +279,7 @@ void t_results_queue_destroy(t_results_queue *q) {
     memset(q, 0xbb, sizeof(*q));
     free(q);
 
-#ifdef DEBUG
-    fprintf(stderr, "Destroyed results queue %p\n", q);
-#endif
+    DBG_OUT(stderr, "Destroyed results queue %p\n", q);
 }
 
 /* ----------------------------------------------------------------------------
@@ -344,7 +334,6 @@ static void *t_pool_worker(void *arg) {
 	    gettimeofday(&t2, NULL);
 #endif
 
-#ifdef IN_ORDER
 	    // Push this thread to the top of the waiting stack
 	    if (p->t_stack_top == -1 || p->t_stack_top > w->idx)
 		p->t_stack_top = w->idx;
@@ -364,9 +353,6 @@ static void *t_pool_worker(void *arg) {
 		    }
 		}
 	    }
-#else
-	    pthread_cond_wait(&p->pending_c, &p->pool_m);
-#endif
 
 #ifdef DEBUG_TIME
 	    gettimeofday(&t3, NULL);
@@ -442,7 +428,6 @@ t_pool *t_pool_init(int qsize, int tsize) {
 
     pthread_mutex_lock(&p->pool_m);
 
-#ifdef IN_ORDER
     if (!(p->t_stack = malloc(tsize * sizeof(*p->t_stack))))
 	return NULL;
     p->t_stack_top = -1;
@@ -457,18 +442,6 @@ t_pool *t_pool_init(int qsize, int tsize) {
 	if (0 != pthread_create(&w->tid, NULL, t_pool_worker, w))
 	    return NULL;
     }
-#else
-    pthread_cond_init(&p->pending_c, NULL);
-
-    for (i = 0; i < tsize; i++) {
-	t_pool_worker_t *w = &p->t[i];
-	w->p = p;
-	w->idx = i;
-	pthread_cond_init(&w->pending_c, NULL);
-	if (0 != pthread_create(&w->tid, NULL, t_pool_worker, w))
-	    return NULL;
-    }
-#endif
 
     pthread_mutex_unlock(&p->pool_m);
 
@@ -503,9 +476,7 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
 		     void *(*func)(void *arg), void *arg, int nonblock) {
     t_pool_job *j;
 
-#ifdef DEBUG
-    fprintf(stderr, "Dispatching job for queue %p, serial %d\n", q, q->curr_serial);
-#endif
+    DBG_OUT(stderr, "Dispatching job for queue %p, serial %d\n", q, q->curr_serial);
 
     pthread_mutex_lock(&p->pool_m);
 
@@ -548,12 +519,9 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
 	p->head = p->tail = j;
     }
 
-#ifdef DEBUG
-    fprintf(stderr, "Dispatched (serial %d)\n", j->serial);
-#endif
+    DBG_OUT(stderr, "Dispatched (serial %d)\n", j->serial);
 
     // Let a worker know we have data.
-#ifdef IN_ORDER
     // Keep incoming queue at 1 per running thread, so there is always
     // something waiting when they end their current task.  If we go above
     // this signal to start more threads (if available). This has the effect
@@ -561,9 +529,6 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
     // turn benefits systems with auto CPU frequency scaling.
     if (p->t_stack_top >= 0 && p->njobs > p->tsize - p->nwaiting)
 	pthread_cond_signal(&p->t[p->t_stack_top].pending_c);
-#else
-    pthread_cond_signal(&p->pending_c);
-#endif
 
     pthread_mutex_unlock(&p->pool_m);
 
@@ -580,9 +545,7 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
 int t_pool_flush(t_pool *p) {
     int i;
 
-#ifdef DEBUG
-    fprintf(stderr, "Flushing pool %p\n", p);
-#endif
+    DBG_OUT(stderr, "Flushing pool %p\n", p);
 
     // Drains the queue
     pthread_mutex_lock(&p->pool_m);
@@ -597,10 +560,8 @@ int t_pool_flush(t_pool *p) {
 
     pthread_mutex_unlock(&p->pool_m);
 
-#ifdef DEBUG
-    fprintf(stderr, "Flushed complete for pool %p, njobs=%d, nwaiting=%d\n",
+    DBG_OUT(stderr, "Flushed complete for pool %p, njobs=%d, nwaiting=%d\n",
 	    p, p->njobs, p->nwaiting);
-#endif
 
     return 0;
 }
@@ -616,30 +577,22 @@ int t_pool_flush(t_pool *p) {
 void t_pool_destroy(t_pool *p, int kill) {
     int i;
     
-#ifdef DEBUG
-    fprintf(stderr, "Destroying pool %p, kill=%d\n", p, kill);
-#endif
+    DBG_OUT(stderr, "Destroying pool %p, kill=%d\n", p, kill);
 
     /* Send shutdown message to worker threads */
     if (!kill) {
 	pthread_mutex_lock(&p->pool_m);
 	p->shutdown = 1;
 
-#ifdef DEBUG
-	fprintf(stderr, "Sending shutdown request\n");
-#endif
+	DBG_OUT(stderr, "Sending shutdown request\n");
 
-#ifdef IN_ORDER
 	for (i = 0; i < p->tsize; i++)
 	    pthread_cond_signal(&p->t[i].pending_c);
-#else
-	pthread_cond_broadcast(&p->pending_c);
-#endif
+
 	pthread_mutex_unlock(&p->pool_m);
 
-#ifdef DEBUG
-	fprintf(stderr, "Shutdown complete\n");
-#endif
+	DBG_OUT(stderr, "Shutdown complete\n");
+
 	for (i = 0; i < p->tsize; i++)
 	    pthread_join(p->t[i].tid, NULL);
     } else {
@@ -650,12 +603,8 @@ void t_pool_destroy(t_pool *p, int kill) {
     pthread_mutex_destroy(&p->pool_m);
     pthread_cond_destroy(&p->empty_c);
     pthread_cond_destroy(&p->full_c);
-#ifdef IN_ORDER
     for (i = 0; i < p->tsize; i++)
 	pthread_cond_destroy(&p->t[i].pending_c);
-#else
-    pthread_cond_destroy(&p->pending_c);
-#endif
 
 #ifdef DEBUG_TIME
     fprintf(stderr, "Total time=%f\n", p->total_time / 1000000.0);
@@ -673,9 +622,7 @@ void t_pool_destroy(t_pool *p, int kill) {
     free(p->t);
     free(p);
 
-#ifdef DEBUG
-    fprintf(stderr, "Destroyed pool %p\n", p);
-#endif
+    DBG_OUT(stderr, "Destroyed pool %p\n", p);
 }
 
 
