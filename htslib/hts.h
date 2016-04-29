@@ -391,6 +391,19 @@ int hts_set_threads(htsFile *fp, int n);
 */
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
 
+
+/*!
+  @abstract  Determine whether a given htsFile contains a valid EOF block
+  @return    3 for a non-EOF checkable filetype;
+             2 for an unseekable file type where EOF cannot be checked;
+             1 for a valid EOF block;
+             0 for if the EOF marker is absent when it should be present;
+            -1 (with errno set) on failure
+  @discussion
+      Check if the BGZF end-of-file (EOF) marker is present
+*/
+int hts_check_EOF(htsFile *fp);
+
 /************
  * Indexing *
  ************/

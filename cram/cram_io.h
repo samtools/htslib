@@ -661,7 +661,6 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
  */
 int cram_set_header(cram_fd *fd, SAM_hdr *hdr);
 
-
 #ifdef __cplusplus
 }
 #endif
