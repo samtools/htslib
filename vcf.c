@@ -853,7 +853,7 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
         bcf_hdr_destroy(h);
         return NULL;
     }
-    int hlen;
+    uint32_t hlen;
     char *htxt = NULL;
     if (bgzf_read(fp, &hlen, 4) != 4) goto fail;
     htxt = (char*)malloc(hlen);
