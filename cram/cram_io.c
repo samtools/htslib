@@ -4560,7 +4560,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
             if (!(fd->pool = t_pool_init(nthreads*2, nthreads)))
                 return -1;
 
-	    fd->rqueue = t_results_queue_init();
+	    fd->rqueue = t_results_queue_init(fd->pool, nthreads*2);
 	    pthread_mutex_init(&fd->metrics_lock, NULL);
 	    pthread_mutex_init(&fd->ref_lock, NULL);
 	    pthread_mutex_init(&fd->bam_list_lock, NULL);
@@ -4573,7 +4573,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     case CRAM_OPT_THREAD_POOL:
 	fd->pool = va_arg(args, t_pool *);
 	if (fd->pool) {
-	    fd->rqueue = t_results_queue_init();
+	    fd->rqueue = t_results_queue_init(fd->pool, fd->pool->qsize);
 	    pthread_mutex_init(&fd->metrics_lock, NULL);
 	    pthread_mutex_init(&fd->ref_lock, NULL);
 	    pthread_mutex_init(&fd->bam_list_lock, NULL);

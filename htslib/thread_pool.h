@@ -99,7 +99,6 @@ typedef struct t_pool {
     pthread_mutex_t pool_m; // used when updating head/tail
 
     pthread_cond_t  empty_c;
-    pthread_cond_t  pending_c; // not empty
     pthread_cond_t  full_c;
 
     // array of worker IDs free
@@ -110,14 +109,16 @@ typedef struct t_pool {
 } t_pool;
 
 typedef struct t_results_queue {
+    t_pool *p;
     t_pool_result *result_head;
     t_pool_result *result_tail;
+    int qsize;      // max size of queue
     int next_serial;
     int curr_serial;
     int queue_len;  // number of items in queue
     int pending;    // number of pending items (in progress or in pool list)
-    pthread_mutex_t result_m;
     pthread_cond_t result_avail_c;
+    int shutdown; // true if pool is being destroyed
 } t_results_queue;
 
 
@@ -190,7 +191,8 @@ void t_pool_delete_result(t_pool_result *r, int free_data);
  * Results queue pointer on success;
  *         NULL on failure
  */
-t_results_queue *t_results_queue_init(void);
+t_results_queue *t_results_queue_init(t_pool *p, int qsize);
+
 
 /* Deallocates memory for a results queue */
 void t_results_queue_destroy(t_results_queue *q);
@@ -210,6 +212,12 @@ int t_pool_results_queue_len(t_results_queue *q);
  * Returns the number of completed jobs plus the number queued up to run.
  */
 int t_pool_results_queue_sz(t_results_queue *q);
+
+/*
+ * Shuts down the results queue, causing any functions waiting on a result
+ * to immediately return NULL.
+ */
+void t_results_queue_shutdown(t_results_queue *q);
 
 #ifdef __cplusplus
 }

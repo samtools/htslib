@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013,2016 Genome Research Ltd.
+Copyright (c) 2013 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without 
@@ -38,6 +38,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <sys/time.h>
 #include <assert.h>
+#include <stdarg.h>
 
 #include "htslib/thread_pool.h"
 
@@ -84,8 +85,8 @@ static int t_pool_add_result(t_pool_job *j, void *data) {
     t_results_queue *q = j->q;
     t_pool_result *r;
 
-    DBG_OUT(stderr, "%d: Adding result to queue %p, serial %d\n",
-	    worker_id(j->p), q, j->serial);
+    DBG_OUT(stderr, "%d: Adding result to queue %p, serial %d, %d of %d\n",
+	    worker_id(j->p), q, j->serial, q->queue_len+1, q->qsize);
 
     /* No results queue is fine if we don't want any results back */
     if (!q)
@@ -98,7 +99,8 @@ static int t_pool_add_result(t_pool_job *j, void *data) {
     r->data = data;
     r->serial = j->serial;
 
-    pthread_mutex_lock(&q->result_m);
+    pthread_mutex_lock(&q->p->pool_m);
+
     if (q->result_tail) {
 	q->result_tail->next = r;
 	q->result_tail = r;
@@ -113,10 +115,24 @@ static int t_pool_add_result(t_pool_job *j, void *data) {
     pthread_cond_signal(&q->result_avail_c);
     DBG_OUT(stderr, "%d: Broadcast complete\n", worker_id(j->p));
 
-    pthread_mutex_unlock(&q->result_m);
+    pthread_mutex_unlock(&q->p->pool_m);
 
     return 0;
 }
+
+/*
+ * Returns true or false depending on whether the results queue is full.
+ */
+int t_pool_results_queue_full(t_results_queue *q) {
+    int full;
+
+    pthread_mutex_lock(&q->p->pool_m);
+    full = (q->qsize && q->queue_len >= q->qsize);
+    pthread_mutex_unlock(&q->p->pool_m);
+    return full;
+}
+
+static void wake_next_worker(t_pool *p, int locked);
 
 /* Core of t_pool_next_result() */
 static t_pool_result *t_pool_next_result_locked(t_results_queue *q) {
@@ -141,6 +157,11 @@ static t_pool_result *t_pool_next_result_locked(t_results_queue *q) {
 
 	q->next_serial++;
 	q->queue_len--;
+
+	if (q->qsize && q->queue_len < q->qsize) {
+	    pthread_cond_signal(&q->p->full_c);
+	    wake_next_worker(q->p, 1);
+	}
     }
 
     return r;
@@ -161,9 +182,9 @@ t_pool_result *t_pool_next_result(t_results_queue *q) {
 
     DBG_OUT(stderr, "Requesting next result on queue %p\n", q);
 
-    pthread_mutex_lock(&q->result_m);
+    pthread_mutex_lock(&q->p->pool_m);
     r = t_pool_next_result_locked(q);
-    pthread_mutex_unlock(&q->result_m);
+    pthread_mutex_unlock(&q->p->pool_m);
 
     DBG_OUT(stderr, "(q=%p) Found %p\n", q, r);
 
@@ -173,21 +194,25 @@ t_pool_result *t_pool_next_result(t_results_queue *q) {
 t_pool_result *t_pool_next_result_wait(t_results_queue *q) {
     t_pool_result *r;
 
-    DBG_OUT(stderr, "Waiting for result %d...\n", q->next_serial);
-
-    pthread_mutex_lock(&q->result_m);
+    pthread_mutex_lock(&q->p->pool_m);
     while (!(r = t_pool_next_result_locked(q))) {
 	/* Possible race here now avoided via _locked() call, but incase... */
 	struct timeval now;
 	struct timespec timeout;
 
+	if (q->shutdown)
+	    return NULL;
+
 	gettimeofday(&now, NULL);
 	timeout.tv_sec = now.tv_sec + 10;
 	timeout.tv_nsec = now.tv_usec * 1000;
 
-	pthread_cond_timedwait(&q->result_avail_c, &q->result_m, &timeout);
+	pthread_cond_timedwait(&q->result_avail_c, &q->p->pool_m, &timeout);
+
+	if (q->shutdown)
+	    return NULL;
     }
-    pthread_mutex_unlock(&q->result_m);
+    pthread_mutex_unlock(&q->p->pool_m);
 
     return r;
 }
@@ -199,13 +224,12 @@ t_pool_result *t_pool_next_result_wait(t_results_queue *q) {
 int t_pool_results_queue_empty(t_results_queue *q) {
     int empty;
 
-    pthread_mutex_lock(&q->result_m);
+    pthread_mutex_lock(&q->p->pool_m);
     empty = q->queue_len == 0 && q->pending == 0;
-    pthread_mutex_unlock(&q->result_m);
+    pthread_mutex_unlock(&q->p->pool_m);
 
     return empty;
 }
-
 
 /*
  * Returns the number of completed jobs on the results queue.
@@ -213,9 +237,9 @@ int t_pool_results_queue_empty(t_results_queue *q) {
 int t_pool_results_queue_len(t_results_queue *q) {
     int len;
 
-    pthread_mutex_lock(&q->result_m);
+    pthread_mutex_lock(&q->p->pool_m);
     len = q->queue_len;
-    pthread_mutex_unlock(&q->result_m);
+    pthread_mutex_unlock(&q->p->pool_m);
 
     return len;
 }
@@ -223,9 +247,9 @@ int t_pool_results_queue_len(t_results_queue *q) {
 int t_pool_results_queue_sz(t_results_queue *q) {
     int len;
 
-    pthread_mutex_lock(&q->result_m);
+    pthread_mutex_lock(&q->p->pool_m);
     len = q->queue_len + q->pending;
-    pthread_mutex_unlock(&q->result_m);
+    pthread_mutex_unlock(&q->p->pool_m);
 
     return len;
 }
@@ -250,20 +274,28 @@ void t_pool_delete_result(t_pool_result *r, int free_data) {
  * Results queue pointer on success;
  *         NULL on failure
  */
-t_results_queue *t_results_queue_init(void) {
+t_results_queue *t_results_queue_init(t_pool *p, int qsize) {
     t_results_queue *q = malloc(sizeof(*q));
 
-    pthread_mutex_init(&q->result_m, NULL);
     pthread_cond_init(&q->result_avail_c, NULL);
 
+    q->p           = p;
     q->result_head = NULL;
     q->result_tail = NULL;
     q->next_serial = 0;
     q->curr_serial = 0;
     q->queue_len   = 0;
     q->pending     = 0;
+    q->qsize       = qsize;
 
     return q;
+}
+
+void t_results_queue_shutdown(t_results_queue *q) {
+    pthread_mutex_lock(&q->p->pool_m);
+    pthread_cond_signal(&q->result_avail_c);
+    q->shutdown = 1;
+    pthread_mutex_unlock(&q->p->pool_m);
 }
 
 /* Deallocates memory for a results queue */
@@ -273,7 +305,6 @@ void t_results_queue_destroy(t_results_queue *q) {
     if (!q)
 	return;
 
-    pthread_mutex_destroy(&q->result_m);
     pthread_cond_destroy(&q->result_avail_c);
 
     memset(q, 0xbb, sizeof(*q));
@@ -325,7 +356,16 @@ static void *t_pool_worker(void *arg) {
 //	    pthread_mutex_lock(&p->pool_m);
 //	}
 
-	while (!p->head && !p->shutdown) {
+	while ((!p->head && !p->shutdown)
+	       || (p->head && t_pool_results_queue_full(p->head->q))) {
+
+	    // Push beyond the queue somewhat as it's been shown that once we
+	    // start running it's benefifical to keep running, so a different queue
+	    // size for stopping vs starting works well.  Needed? Sufficient?
+	    if (p->head && p->head->q->qsize &&
+		p->head->serial < p->head->q->next_serial + p->head->q->qsize*2)
+		break;
+
 	    p->nwaiting++;
 
 	    if (p->njobs == 0)
@@ -400,6 +440,18 @@ static void *t_pool_worker(void *arg) {
     return NULL;
 }
 
+static void wake_next_worker(t_pool *p, int locked) {
+    if (!locked)
+	pthread_mutex_lock(&p->pool_m);
+
+    if (p->t_stack_top >= 0 && p->njobs > p->tsize - p->nwaiting
+	&& p->head->q->qsize - p->head->q->queue_len >= p->njobs)
+	pthread_cond_signal(&p->t[p->t_stack_top].pending_c);
+
+    if (!locked)
+	pthread_mutex_unlock(&p->pool_m);
+}
+
 /*
  * Creates a worker pool of length qsize with tsize worker threads.
  *
@@ -422,9 +474,15 @@ t_pool *t_pool_init(int qsize, int tsize) {
 
     p->t = malloc(tsize * sizeof(p->t[0]));
 
-    pthread_mutex_init(&p->pool_m, NULL);
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE_NP);
+    
+    pthread_mutex_init(&p->pool_m, &attr);
     pthread_cond_init(&p->empty_c, NULL);
     pthread_cond_init(&p->full_c, NULL);
+
+    pthread_mutexattr_destroy(&attr);
 
     pthread_mutex_lock(&p->pool_m);
 
@@ -494,18 +552,19 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
     j->p = p;
     j->q = q;
     if (q) {
-	pthread_mutex_lock(&q->result_m);
 	j->serial = q->curr_serial++;
 	q->pending++;
-	pthread_mutex_unlock(&q->result_m);
     } else {
 	j->serial = 0;
     }
 
-    // Check if queue is full
-    if (nonblock == 0)
-	while (p->njobs >= p->qsize)
-	    pthread_cond_wait(&p->full_c, &p->pool_m);
+    if (nonblock == 0) {
+	while (p->njobs >= p->qsize) {
+	    // Check if input queue is full
+	    if (p->njobs >= p->qsize)
+		pthread_cond_wait(&p->full_c, &p->pool_m);
+	}
+    }
 
     p->njobs++;
     
@@ -527,8 +586,7 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
     // this signal to start more threads (if available). This has the effect
     // of concentrating jobs to fewer cores when we are I/O bound, which in
     // turn benefits systems with auto CPU frequency scaling.
-    if (p->t_stack_top >= 0 && p->njobs > p->tsize - p->nwaiting)
-	pthread_cond_signal(&p->t[p->t_stack_top].pending_c);
+    wake_next_worker(p, 1);
 
     pthread_mutex_unlock(&p->pool_m);
 
