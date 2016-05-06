@@ -285,7 +285,7 @@ cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c config.h cram/po
 cram/rANS_static.o cram/rANS_static.pico: cram/rANS_static.c config.h cram/rANS_static.h cram/rANS_byte.h
 cram/sam_header.o cram/sam_header.pico: cram/sam_header.c config.h $(cram_sam_header_h) cram/string_alloc.h
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
-cram/thread_pool.o cram/thread_pool.pico: cram/thread_pool.c config.h htslib/thread_pool.h
+thread_pool.o thread_pool.pico: thread_pool.c config.h htslib/thread_pool.h
 cram/vlen.o cram/vlen.pico: cram/vlen.c config.h cram/vlen.h cram/os.h
 cram/zfio.o cram/zfio.pico: cram/zfio.c config.h cram/os.h cram/zfio.h
 
