@@ -287,6 +287,7 @@ t_results_queue *t_results_queue_init(t_pool *p, int qsize) {
     q->queue_len   = 0;
     q->pending     = 0;
     q->qsize       = qsize;
+    q->shutdown    = 0;
 
     return q;
 }
