@@ -560,11 +560,8 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
     }
 
     if (nonblock == 0) {
-	while (p->njobs >= p->qsize) {
-	    // Check if input queue is full
-	    if (p->njobs >= p->qsize)
-		pthread_cond_wait(&p->full_c, &p->pool_m);
-	}
+	while (p->njobs >= p->qsize)
+	    pthread_cond_wait(&p->full_c, &p->pool_m);
     }
 
     p->njobs++;
