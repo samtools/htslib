@@ -1752,11 +1752,20 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
             break;
 
         case HTS_IDX_NOCOOR:
-            if ( idx->n>0 )
-            {
-                bidx = idx->bidx[idx->n - 1];
+            /* No-coor reads sort after all of the mapped reads.  The position
+               is not stored in the index itself, so need to find the end
+               offset for the last mapped read.  A loop is needed here in
+               case references at the end of the file have no mapped reads,
+               or sequence ids are not ordered sequentially.
+               See issue samtools#568 and commits b2aab8, 60c22d and cc207d. */
+            for (i = 0; i < idx->n; i++) {
+                bidx = idx->bidx[i];
                 k = kh_get(bin, bidx, META_BIN(idx));
-                if (k != kh_end(bidx)) off0 = kh_val(bidx, k).list[0].v;
+                if (k != kh_end(bidx)) {
+                    if (off0==(uint64_t)-1 || off0 < kh_val(bidx, k).list[0].v) {
+                        off0 = kh_val(bidx, k).list[0].v;
+                    }
+                }
             }
             if ( off0==(uint64_t)-1 && idx->n_no_coor ) off0 = 0; // only no-coor reads in this bam
             break;
