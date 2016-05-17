@@ -90,7 +90,7 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
 
     b->core.tid     = rname;
     b->core.pos     = pos-1;
-    b->core.bin     = bam_reg2bin(pos, end);
+    b->core.bin     = bam_reg2bin(pos-1, end);
     b->core.qual    = mapq;
     b->core.l_qname = qname_len+1;
     b->core.flag    = flag;
