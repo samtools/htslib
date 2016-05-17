@@ -33,13 +33,14 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
-#include "htslib/kstring.h"
-#include "htslib/bgzf.h"
+
 #include "htslib/vcf.h"
+#include "htslib/bgzf.h"
 #include "htslib/tbx.h"
 #include "htslib/hfile.h"
-#include "htslib/khash_str2int.h"
 #include "hts_internal.h"
+#include "htslib/khash_str2int.h"
+#include "htslib/kstring.h"
 
 #include "htslib/khash.h"
 KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)

@@ -33,14 +33,18 @@ DEALINGS IN THE SOFTWARE.  */
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
-#include "htslib/bgzf.h"
+
 #include "htslib/hts.h"
+#include "htslib/bgzf.h"
 #include "cram/cram.h"
 #include "htslib/hfile.h"
 #include "version.h"
 #include "hts_internal.h"
 
+#include "htslib/khash.h"
 #include "htslib/kseq.h"
+#include "htslib/ksort.h"
+
 #define KS_BGZF 1
 #if KS_BGZF
     // bgzf now supports gzip-compressed files, the gzFile branch can be removed
@@ -49,7 +53,6 @@ DEALINGS IN THE SOFTWARE.  */
     KSTREAM_INIT2(, gzFile, gzread, 16384)
 #endif
 
-#include "htslib/khash.h"
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
 int hts_verbose = 3;
@@ -1124,7 +1127,6 @@ int hts_check_EOF(htsFile *fp)
 
 #define pair64_lt(a,b) ((a).u < (b).u)
 
-#include "htslib/ksort.h"
 KSORT_INIT(_off, hts_pair64_t, pair64_lt)
 
 typedef struct {
@@ -1133,7 +1135,6 @@ typedef struct {
     hts_pair64_t *list;
 } bins_t;
 
-#include "htslib/khash.h"
 KHASH_MAP_INIT_INT(bin, bins_t)
 typedef khash_t(bin) bidx_t;
 
