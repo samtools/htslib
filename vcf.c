@@ -28,7 +28,6 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <zlib.h>
 #include <stdio.h>
-#include <ctype.h>
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
@@ -90,7 +89,7 @@ int bcf_hdr_add_sample(bcf_hdr_t *h, const char *s)
     if ( !s ) return 0;
 
     const char *ss = s;
-    while ( !*ss && isspace(*ss) ) ss++;
+    while ( !*ss && isspace_c(*ss) ) ss++;
     if ( !*ss )
     {
         fprintf(stderr,"[E::%s] Empty sample name: trailing spaces/tabs in the header line?\n", __func__);
@@ -324,10 +323,10 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         p = ++q;
         while ( *q && *q==' ' ) { p++; q++; }
         // ^[A-Za-z_][0-9A-Za-z_.]*$
-        if (p==q && *q && (isalpha(*q) || *q=='_'))
+        if (p==q && *q && (isalpha_c(*q) || *q=='_'))
         {
             q++;
-            while ( *q && (isalnum(*q) || *q=='_' || *q=='.') ) q++;
+            while ( *q && (isalnum_c(*q) || *q=='_' || *q=='.') ) q++;
         }
         n = q-p;
         int m = 0;
@@ -1775,7 +1774,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             } else if ((z->y>>4&0xf) == BCF_HT_REAL) {
                 float *x = (float*)(z->buf + z->size * m);
                 for (l = 0;; ++t) {
-                    if (*t == '.' && !isdigit(t[1])) bcf_float_set_missing(x[l++]), ++t; // ++t to skip "."
+                    if (*t == '.' && !isdigit_c(t[1])) bcf_float_set_missing(x[l++]), ++t; // ++t to skip "."
                     else x[l++] = strtod(t, &t);
                     if (*t != ',') break;
                 }
@@ -2816,7 +2815,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
     }
 
     const char *r = ref, *a = alt;
-    while (*r && *a && toupper(*r)==toupper(*a) ) { r++; a++; }     // unfortunately, matching REF,ALT case is not guaranteed
+    while (*r && *a && toupper_c(*r)==toupper_c(*a) ) { r++; a++; }     // unfortunately, matching REF,ALT case is not guaranteed
 
     if ( *a && !*r )
     {
@@ -2836,18 +2835,18 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
     const char *re = r, *ae = a;
     while ( re[1] ) re++;
     while ( ae[1] ) ae++;
-    while ( re>r && ae>a && toupper(*re)==toupper(*ae) ) { re--; ae--; }
+    while ( re>r && ae>a && toupper_c(*re)==toupper_c(*ae) ) { re--; ae--; }
     if ( ae==a )
     {
         if ( re==r ) { var->n = 1; var->type = VCF_SNP; return; }
         var->n = -(re-r);
-        if ( toupper(*re)==toupper(*ae) ) { var->type = VCF_INDEL; return; }
+        if ( toupper_c(*re)==toupper_c(*ae) ) { var->type = VCF_INDEL; return; }
         var->type = VCF_OTHER; return;
     }
     else if ( re==r )
     {
         var->n = ae-a;
-        if ( toupper(*re)==toupper(*ae) ) { var->type = VCF_INDEL; return; }
+        if ( toupper_c(*re)==toupper_c(*ae) ) { var->type = VCF_INDEL; return; }
         var->type = VCF_OTHER; return;
     }
 

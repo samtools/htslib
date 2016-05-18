@@ -27,11 +27,11 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 #include <stdio.h>
 #include <assert.h>
 #include "htslib/tbx.h"
 #include "htslib/bgzf.h"
+#include "hts_internal.h"
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
@@ -97,11 +97,11 @@ int tbx_parse1(const tbx_conf_t *conf, int len, char *line, tbx_intv_t *intv)
                     }
                 } else if ((conf->preset&0xffff) == TBX_SAM) {
                     if (id == 6) { // CIGAR
-                        int l = 0, op;
+                        int l = 0;
                         char *t;
                         for (s = line + b; s < line + i;) {
                             long x = strtol(s, &t, 10);
-                            op = toupper(*t);
+                            char op = toupper_c(*t);
                             if (op == 'M' || op == 'D' || op == 'N') l += x;
                             s = t + 1;
                         }

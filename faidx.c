@@ -37,6 +37,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hfile.h"
 #include "htslib/khash.h"
 #include "htslib/kstring.h"
+#include "hts_internal.h"
 
 typedef struct {
     int32_t line_len, line_blen;
@@ -201,7 +202,7 @@ static faidx_t *fai_read(FILE *fp, const char *fname)
     fai->hash = kh_init(s);
     buf = (char*)calloc(0x10000, 1);
     while (fgets(buf, 0x10000, fp)) {
-        for (p = buf; *p && isgraph(*p); ++p);
+        for (p = buf; *p && isgraph_c(*p); ++p);
         *p = 0; ++p;
 #ifdef _WIN32
         sscanf(p, "%d%ld%d%d", &len, &offset, &line_blen, &line_len);
@@ -394,7 +395,7 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
     s = (char*)malloc(l+1);
     // remove space
     for (i = k = 0; i < l; ++i)
-        if (!isspace(str[i])) s[k++] = str[i];
+        if (!isspace_c(str[i])) s[k++] = str[i];
     s[k] = 0; l = k;
     // determine the sequence name
     for (i = l - 1; i >= 0; --i) if (s[i] == ':') break; // look for colon from the end
@@ -403,7 +404,7 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
         int n_hyphen = 0;
         for (i = name_end + 1; i < l; ++i) {
             if (s[i] == '-') ++n_hyphen;
-            else if (!isdigit(s[i]) && s[i] != ',') break;
+            else if (!isdigit_c(s[i]) && s[i] != ',') break;
         }
         if (i < l || n_hyphen > 1) name_end = l; // malformated region string; then take str as the name
         s[name_end] = 0;

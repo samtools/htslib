@@ -29,7 +29,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 #include <limits.h>
 #include <errno.h>
-#include <ctype.h>
 #include <sys/stat.h>
 #include "htslib/synced_bcf_reader.h"
 #include "htslib/kseq.h"

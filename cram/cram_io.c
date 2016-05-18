@@ -62,7 +62,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <math.h>
-#include <ctype.h>
 #include <time.h>
 
 #include "cram/cram.h"
@@ -85,6 +84,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "htslib/hfile.h"
 #include "htslib/bgzf.h"
 #include "htslib/faidx.h"
+#include "hts_internal.h"
 
 #define TRIAL_SPAN 50
 #define NTRIALS 3
@@ -1851,28 +1851,28 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 	    return NULL;
 
 	// id
-	for (cp = line; *cp && !isspace(*cp); cp++)
+	for (cp = line; *cp && !isspace_c(*cp); cp++)
 	    ;
 	*cp++ = 0;
 	e->name = string_dup(r->pool, line);
 	
 	// length
-	while (*cp && isspace(*cp))
+	while (*cp && isspace_c(*cp))
 	    cp++;
 	e->length = strtoll(cp, &cp, 10);
 
 	// offset
-	while (*cp && isspace(*cp))
+	while (*cp && isspace_c(*cp))
 	    cp++;
 	e->offset = strtoll(cp, &cp, 10);
 
 	// bases per line
-	while (*cp && isspace(*cp))
+	while (*cp && isspace_c(*cp))
 	    cp++;
 	e->bases_per_line = strtol(cp, &cp, 10);
 
 	// line length
-	while (*cp && isspace(*cp))
+	while (*cp && isspace_c(*cp))
 	    cp++;
 	e->line_length = strtol(cp, &cp, 10);
 
@@ -2505,7 +2505,7 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
 
 	for (i = j = 0; i < len; i++) {
 	    if (cp[i] >= '!' && cp[i] <= '~')
-		cp[j++] = toupper(cp[i]);
+		cp[j++] = toupper_c(cp[i]);
 	}
 	cp_to = cp+j;
 
@@ -2517,7 +2517,7 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
     } else {
 	int i;
 	for (i = 0; i < len; i++) {
-	    seq[i] = toupper(seq[i]);
+	    seq[i] = toupper_c(seq[i]);
 	}
     }
 
