@@ -494,8 +494,8 @@ static int cram_index_build_multiref(cram_fd *fd,
  * fn_idx is the filename of the index file to be written;
  * if NULL, we add ".crai" to fn_base to get the index filename.
  *
- * Returns 0 on success
- *        -1 on failure
+ * Returns 0 on success,
+ *         negative on failure (-1 for read failure, -4 for write failure)
  */
 int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     cram_container *c;
@@ -512,7 +512,7 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     if (!(fp = zfopen(fn_idx, "wz"))) {
         perror(fn_idx);
         free(fn_idx_str.s);
-        return -1;
+        return -4;
     }
 
     free(fn_idx_str.s);
@@ -577,5 +577,5 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     }
 	
 
-    return (zfclose(fp) >= 0)? 0 : -1;
+    return (zfclose(fp) >= 0)? 0 : -4;
 }

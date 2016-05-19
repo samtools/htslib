@@ -522,6 +522,7 @@ int sam_index_build2(const char *fn, const char *fnidx, int min_shift)
         idx = bam_index(fp->fp.bgzf, min_shift);
         if (idx) {
             ret = hts_idx_save_as(idx, fn, fnidx, (min_shift > 0)? HTS_FMT_CSI : HTS_FMT_BAI);
+            ret = ret ? -4 : 0;
             hts_idx_destroy(idx);
         }
         else ret = -1;
