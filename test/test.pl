@@ -219,6 +219,11 @@ sub test_view
         my $bam  = "$base.tmp.bam";
         my $cram = "$base.tmp.cram";
 
+	my $md = "-nomd";
+	if ($sam =~ /^md/) {
+	    $md = "";
+	}
+
         print "test_view testing $sam, ref $ref:\n";
         $test_view_failures = 0;
 
@@ -230,27 +235,27 @@ sub test_view
         # SAM -> CRAM -> SAM
         testv "./test_view -t $ref -S -C $sam > $cram";
         testv "./test_view -D $cram > $cram.sam_";
-        testv "./compare_sam.pl -nomd $sam $cram.sam_";
+        testv "./compare_sam.pl $md $sam $cram.sam_";
 
         # BAM -> CRAM -> BAM -> SAM
         $cram = "$bam.cram";
         testv "./test_view -t $ref -C $bam > $cram";
         testv "./test_view -b -D $cram > $cram.bam";
         testv "./test_view $cram.bam > $cram.bam.sam_";
-        testv "./compare_sam.pl -nomd $sam $cram.bam.sam_";
+        testv "./compare_sam.pl $md $sam $cram.bam.sam_";
 
         # SAM -> CRAM3 -> SAM
         $cram = "$base.tmp.cram";
         testv "./test_view -t $ref -S -C -o VERSION=3.0 $sam > $cram";
         testv "./test_view -D $cram > $cram.sam_";
-        testv "./compare_sam.pl -nomd $sam $cram.sam_";
+        testv "./compare_sam.pl $md $sam $cram.sam_";
 
         # BAM -> CRAM3 -> BAM -> SAM
         $cram = "$bam.cram";
         testv "./test_view -t $ref -C -o VERSION=3.0 $bam > $cram";
         testv "./test_view -b -D $cram > $cram.bam";
         testv "./test_view $cram.bam > $cram.bam.sam_";
-        testv "./compare_sam.pl -nomd $sam $cram.bam.sam_";
+        testv "./compare_sam.pl $md $sam $cram.bam.sam_";
 
         # CRAM3 -> CRAM2
         $cram = "$base.tmp.cram";
@@ -259,14 +264,14 @@ sub test_view
         # CRAM2 -> CRAM3
         testv "./test_view -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
         testv "./test_view $cram > $cram.sam_";
-        testv "./compare_sam.pl -nomd $sam $cram.sam_";
+        testv "./compare_sam.pl $md $sam $cram.sam_";
 
         # Java pre-made CRAM -> SAM
         my $jcram = "${base}_java.cram";
         if (-e $jcram) {
             my $jsam = "${base}_java.tmp.sam_";
             testv "./test_view -i reference=$ref $jcram > $jsam";
-            testv "./compare_sam.pl -nomd $sam $jsam";
+            testv "./compare_sam.pl $md $sam $jsam";
         }
 
         if ($test_view_failures == 0)
