@@ -1,5 +1,6 @@
-/*  vcf.h -- VCF/BCF API functions.
-
+/// @file htslib/vcf.h
+/// High-level VCF/BCF variant calling file operations.
+/*
     Copyright (C) 2012, 2013 Broad Institute.
     Copyright (C) 2012-2014 Genome Research Ltd.
 

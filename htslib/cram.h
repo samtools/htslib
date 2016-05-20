@@ -1,5 +1,6 @@
-/*  cram.h -- public CRAM-specific API functions.
-
+/// @file htslib/cram.h
+/// CRAM format-specific API functions.
+/*
     Copyright (C) 2015, 2016 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
@@ -22,9 +23,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
-/*! \file
- * CRAM interface.
- *
+/** @file
  * Consider using the higher level hts_*() API for programs that wish to
  * be file format agnostic (see htslib/hts.h).
  *

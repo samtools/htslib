@@ -1,5 +1,6 @@
-/*  hfile.h -- buffered low-level input/output streams.
-
+/// @file htslib/hfile.h
+/// Buffered low-level input/output streams.
+/*
     Copyright (C) 2013-2015 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
