@@ -1172,6 +1172,14 @@ static int sort_freqs(const void *vp1, const void *vp2) {
  * Primary CRAM sequence decoder
  */
 
+static inline void add_md_char(cram_slice *s, int decode_md, char c, int32_t *md_dist) {
+    if (decode_md) {
+	BLOCK_APPEND_UINT(s->aux_blk, *md_dist);
+	BLOCK_APPEND_CHAR(s->aux_blk, c);
+	*md_dist = 0;
+    }
+}
+
 /*
  * Internal part of cram_decode_slice().
  * Generates the sequence, quality and cigar components.
@@ -1272,6 +1280,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 				"sequence boundary\n");
 		    whinged = 1;
 		    rlen = bfd->ref[cr->ref_id].len - ref_pos;
+		    // May miss MD/NM cases where both seq/ref are N, but this is a
+		    // malformed cram file anyway.
 		    if (rlen > 0) {
 			memcpy(&seq[seq_pos-1],
 			       &s->ref[ref_pos - s->ref_start +1], rlen);
@@ -1281,9 +1291,29 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		    } else {
 		        memset(&seq[seq_pos-1], 'N', cr->len - seq_pos + 1);
 		    }
+		    if (md_dist >= 0)
+			md_dist += pos - seq_pos;
 		} else {
-		    memcpy(&seq[seq_pos-1], &s->ref[ref_pos - s->ref_start +1],
-			   pos - seq_pos);
+		    // 'N' in both ref and seq is also mismatch for NM/MD
+		    if (decode_md || decode_nm) {
+			int i;
+			for (i = 0; i < pos - seq_pos; i++) {
+			    // FIXME: not N, but nt16 lookup == 15?
+			    char base = s->ref[ref_pos - s->ref_start + 1 + i];
+			    if (base == 'N') {
+				add_md_char(s, decode_md,
+					    s->ref[ref_pos - s->ref_start + 1 + i],
+					    &md_dist);
+				nm++;
+			    } else {
+				md_dist++;
+			    }
+			    seq[seq_pos-1+i] = base;
+			}
+		    } else {
+			memcpy(&seq[seq_pos-1], &s->ref[ref_pos - s->ref_start +1],
+			       pos - seq_pos);
+		    }
 		}
 	    }
 #ifdef USE_X
@@ -1301,8 +1331,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 #endif
 	    cig_len += pos - seq_pos;
 	    ref_pos += pos - seq_pos;
-	    if (md_dist >= 0)
-		md_dist += pos - seq_pos;
 	    seq_pos = pos;
 	}
 
@@ -1412,11 +1440,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		    if (pos-1 < cr->len)
 			seq[pos-1] = c->comp_hdr->
 			    substitution_matrix[ref_base][base];
-		    if (decode_md) {
-			BLOCK_APPEND_UINT(s->aux_blk, md_dist);
-			BLOCK_APPEND_CHAR(s->aux_blk, ref_call);
-			md_dist = 0;
-		    }
+		    add_md_char(s, decode_md, ref_call, &md_dist);
 		}
 	    }
 	    cig_op = BAM_CMATCH;
@@ -1687,7 +1711,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		if (r) return r;
 		cig_op = BAM_CPAD;
 		cig_len += i32;
-		nm      += i32;
 	    }
 	    break;
 	}
@@ -1706,7 +1729,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		cig_op = BAM_CREF_SKIP;
 		cig_len += i32;
 		ref_pos += i32;
-		nm      += i32;
 	    }
 	    break;
 	}
@@ -1730,6 +1752,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		    fprintf(stderr, "Ref pos outside of ref sequence boundary\n");
 		whinged = 1;
 		rlen = bfd->ref[cr->ref_id].len - ref_pos;
+		// May miss MD/NM cases where both seq/ref are N, but this is a
+		// malformed cram file anyway.
 		if (rlen > 0) {
 		    if (seq_pos-1 + rlen < cr->len)
 			memcpy(&seq[seq_pos-1],
@@ -1741,13 +1765,31 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		    if (cr->len - seq_pos + 1 > 0)
 			memset(&seq[seq_pos-1], 'N', cr->len - seq_pos + 1);
 		}
-	    } else {
-		if (cr->len - seq_pos + 1 > 0)
-		    memcpy(&seq[seq_pos-1], &s->ref[ref_pos - s->ref_start +1],
-			   cr->len - seq_pos + 1);
-		ref_pos += cr->len - seq_pos + 1;
 		if (md_dist >= 0)
 		    md_dist += cr->len - seq_pos + 1;
+	    } else {
+		if (cr->len - seq_pos + 1 > 0) {
+		    if (decode_md || decode_nm) {
+			int i;
+			for (i = 0; i < cr->len - seq_pos + 1; i++) {
+			    // FIXME: not N, but nt16 lookup == 15?
+			    char base = s->ref[ref_pos - s->ref_start + 1 + i];
+			    if (base == 'N') {
+				add_md_char(s, decode_md,
+					    s->ref[ref_pos - s->ref_start + 1 + i],
+					    &md_dist);
+				nm++;
+			    } else {
+				md_dist++;
+			    }
+			    seq[seq_pos-1+i] = base;
+			}
+		    } else {
+			memcpy(&seq[seq_pos-1], &s->ref[ref_pos - s->ref_start +1],
+			       cr->len - seq_pos + 1);
+		    }
+		}
+		ref_pos += cr->len - seq_pos + 1;
 	    }
 	}
 
