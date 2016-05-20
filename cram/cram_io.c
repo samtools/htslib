@@ -1622,29 +1622,6 @@ char *cram_content_type2str(enum cram_content_type t) {
     return "?";
 }
 
-/*
- * Extra error checking on fclose to really ensure data is written.
- * Care needs to be taken to handle pipes vs real files.
- *
- * Returns 0 on success
- *        -1 on failure.
- */
-int paranoid_fclose(FILE *fp) {
-    if (-1 == fflush(fp) && errno != EBADF) {
-	fclose(fp);
-	return -1;
-    }
-
-    errno = 0;
-    if (-1 == fsync(fileno(fp))) {
-	if (errno != EINVAL) { // eg pipe
-	    fclose(fp);
-	    return -1;
-	}
-    }
-    return fclose(fp);
-}
-
 /* ----------------------------------------------------------------------
  * Reference sequence handling
  *
@@ -2339,7 +2316,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if (local_cache && *local_cache) {
 	int pid = (int) getpid();
 	unsigned thrid = get_int_threadid();
-	FILE *fp;
+	hFILE *fp;
 
 	if (*cache_root && !is_directory(cache_root) && hts_verbose >= 1)
 	    fprintf(stderr,
@@ -2358,7 +2335,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	    thrid++; // Ensure filename changes even if time/clock haven't
 
 	    sprintf(path_tmp, "%s.tmp_%d_%u_%u", path, pid, thrid, t);
-	    fp = fopen(path_tmp, "wx");
+	    fp = hopen(path_tmp, "wx");
 	} while (fp == NULL && errno == EEXIST);
 	if (!fp) {
 	    perror(path_tmp);
@@ -2373,8 +2350,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	char md5_buf2[33];
 
 	if (!(md5 = hts_md5_init())) {
+	    hclose_abruptly(fp);
 	    unlink(path_tmp);
-	    fclose(fp);
 	    return -1;
 	}
 	hts_md5_update(md5, r->seq, r->length);
@@ -2384,15 +2361,15 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
 	if (strncmp(tag->str+3, md5_buf2, 32) != 0) {
 	    fprintf(stderr, "[E::%s] mismatching md5sum for downloaded reference.\n", __func__);
+	    hclose_abruptly(fp);
 	    unlink(path_tmp);
-	    fclose(fp);
 	    return -1;
 	}
 
-	if (r->length != fwrite(r->seq, 1, r->length, fp)) {
+	if (hwrite(fp, r->seq, r->length) != r->length) {
 	    perror(path);
 	}
-	if (-1 == paranoid_fclose(fp)) {
+	if (hclose(fp) < 0) {
 	    unlink(path_tmp);
 	} else {
 	    if (0 == chmod(path_tmp, 0444))
