@@ -916,10 +916,12 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
     return r;
 }
 
+BGZF *hts_get_bgzfp(htsFile *fp);
+
 int hts_set_threads(htsFile *fp, int n)
 {
     if (fp->format.compression == bgzf) {
-        return bgzf_mt(fp->fp.bgzf, n, 256);
+        return bgzf_mt(hts_get_bgzfp(fp), n, 256);
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_NTHREADS, n);
     }
@@ -1107,7 +1109,7 @@ int hts_file_type(const char *fname)
 int hts_check_EOF(htsFile *fp)
 {
     if (fp->format.compression == bgzf)
-        return bgzf_check_EOF(fp->fp.bgzf);
+        return bgzf_check_EOF(hts_get_bgzfp(fp));
     else if (fp->format.format == cram)
         return cram_check_EOF(fp->fp.cram);
     else
