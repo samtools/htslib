@@ -219,10 +219,10 @@ sub test_view
         my $bam  = "$base.tmp.bam";
         my $cram = "$base.tmp.cram";
 
-	my $md = "-nomd";
-	if ($sam =~ /^md/) {
-	    $md = "";
-	}
+        my $md = "-nomd";
+        if ($sam =~ /^md/) {
+            $md = "";
+        }
 
         print "test_view testing $sam, ref $ref:\n";
         $test_view_failures = 0;
