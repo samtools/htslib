@@ -40,9 +40,8 @@ int kvsprintf(kstring_t *s, const char *fmt, va_list ap)
 	l = vsnprintf(s->s + s->l, s->m - s->l, fmt, args); // This line does not work with glibc 2.0. See `man snprintf'.
 	va_end(args);
 	if (l + 1 > s->m - s->l) {
-		s->m = s->l + l + 2;
-		kroundup32(s->m);
-		s->s = (char*)realloc(s->s, s->m);
+        if (ks_resize(s, s->l + l + 2) < 0)
+            return -1;
 		va_copy(args, ap);
 		l = vsnprintf(s->s + s->l, s->m - s->l, fmt, args);
 		va_end(args);
@@ -137,7 +136,10 @@ int kgetline(kstring_t *s, kgets_func *fgets_fn, void *fp)
 	size_t l0 = s->l;
 
 	while (s->l == l0 || s->s[s->l-1] != '\n') {
-		if (s->m - s->l < 200) ks_resize(s, s->m + 200);
+		if (s->m - s->l < 200) {
+            if (ks_resize(s, s->m + 200) < 0)
+                return EOF;
+        }
 		if (fgets_fn(s->s + s->l, s->m - s->l, fp) == NULL) break;
 		s->l += strlen(s->s + s->l);
 	}
