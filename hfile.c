@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 
 #include <pthread.h>
 
@@ -42,6 +43,10 @@ DEALINGS IN THE SOFTWARE.  */
 #endif
 #ifndef EPROTONOSUPPORT
 #define EPROTONOSUPPORT ENOSYS
+#endif
+
+#ifndef SSIZE_MAX /* SSIZE_MAX is POSIX 1 */
+#define SSIZE_MAX LONG_MAX
 #endif
 
 /* hFILE fields are used as follows:
@@ -144,6 +149,65 @@ static ssize_t refill_buffer(hFILE *fp)
 int hgetc2(hFILE *fp)
 {
     return (refill_buffer(fp) > 0)? (unsigned char) *(fp->begin++) : EOF;
+}
+
+ssize_t hgetdelim(char *buffer, size_t size, int delim, hFILE *fp)
+{
+    char *found;
+    size_t n, copied = 0;
+    ssize_t got;
+
+    if (size < 1 || size > SSIZE_MAX) {
+        fp->has_errno = errno = EINVAL;
+        return -1;
+    }
+    if (writebuffer_is_nonempty(fp)) {
+        fp->has_errno = errno = EBADF;
+        return -1;
+    }
+
+    --size; /* to allow space for the NUL terminator */
+
+    do {
+        n = fp->end - fp->begin;
+        if (n > size - copied) n = size - copied;
+
+        /* Look in the hFILE buffer for the delimiter */
+        found = memchr(fp->begin, delim, n);
+        if (found != NULL) {
+            n = found - fp->begin + 1;
+            memcpy(buffer + copied, fp->begin, n);
+            buffer[n + copied] = '\0';
+            fp->begin += n;
+            return n + copied;
+        }
+
+        /* No delimiter yet, copy as much as we can and refill if necessary */
+        memcpy(buffer + copied, fp->begin, n);
+        fp->begin += n;
+        copied += n;
+
+        if (copied == size) { /* Output buffer full */
+            buffer[copied] = '\0';
+            return copied;
+        }
+
+        got = refill_buffer(fp);
+    } while (got > 0);
+
+    if (got < 0) return -1; /* Error on refill. */
+
+    buffer[copied] = '\0';  /* EOF, return anything that was copied. */
+    return copied;
+}
+
+char *hgets(char *buffer, int size, hFILE *fp)
+{
+    if (size < 1) {
+        fp->has_errno = errno = EINVAL;
+        return NULL;
+    }
+    return hgetln(buffer, size, fp) > 0 ? buffer : NULL;
 }
 
 ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes)

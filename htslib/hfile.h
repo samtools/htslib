@@ -127,6 +127,48 @@ static inline int hgetc(hFILE *fp)
     return (fp->end > fp->begin)? (unsigned char) *(fp->begin++) : hgetc2(fp);
 }
 
+/// Read from the stream until the delimiter, up to a maximum length
+/** @param buffer  The buffer into which bytes will be written
+    @param size    The size of the buffer
+    @param delim   The delimiter (interpreted as an `unsigned char`)
+    @param fp      The file stream
+    @return  The number of bytes read, or negative on error.
+    @since   1.4
+
+Bytes will be read into the buffer up to and including a delimiter, until
+EOF is reached, or _size-1_ bytes have been written, whichever comes first.
+The string will then be terminated with a NUL byte (`\0`).
+*/
+ssize_t hgetdelim(char *buffer, size_t size, int delim, hFILE *fp)
+    HTS_RESULT_USED;
+
+/// Read a line from the stream, up to a maximum length
+/** @param buffer  The buffer into which bytes will be written
+    @param size    The size of the buffer
+    @param fp      The file stream
+    @return  The number of bytes read, or negative on error.
+    @since   1.4
+
+Specialization of hgetdelim() for a `\n` delimiter.
+*/
+static inline ssize_t HTS_RESULT_USED
+hgetln(char *buffer, size_t size, hFILE *fp)
+{
+    return hgetdelim(buffer, size, '\n', fp);
+}
+
+/// Read a line from the stream, up to a maximum length
+/** @param buffer  The buffer into which bytes will be written
+    @param size    The size of the buffer (must be > 1 to be useful)
+    @param fp      The file stream
+    @return  _buffer_ on success, or `NULL` if an error occurred.
+    @since   1.4
+
+This function can be used as a replacement for `fgets(3)`, or together with
+kstring's `kgetline()` to read arbitrarily-long lines into a _kstring_t_.
+*/
+char *hgets(char *buffer, int size, hFILE *fp) HTS_RESULT_USED;
+
 /// Peek at characters to be read without removing them from buffers
 /** @param fp      The file stream
     @param buffer  The buffer to which the peeked bytes will be written
