@@ -1352,7 +1352,7 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
         idx->z.last_tid = tid;
         idx->z.last_bin = 0xffffffffu;
     } else if (tid >= 0 && idx->z.last_coor > beg) { // test if positions are out of order
-        if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted positions\n", __func__);
+        if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted positions on sequence #%d: %d followed by %d\n", __func__, tid+1, idx->z.last_coor+1, beg+1);
         return -1;
     }
     if ( tid>=0 )
