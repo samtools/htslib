@@ -78,23 +78,6 @@ KHASH_MAP_INIT_INT64(cache, cache_t)
 
 #ifdef BGZF_MT
 
-typedef struct bgzf_mtaux_t {
-    // Memory pool for bgzf_job structs, to avoid many malloc/free
-    pool_alloc_t *job_pool;
-
-    // Thread pool
-    int n_threads;
-    t_pool *pool;
-
-    // Output queue holding completed bgzf_jobs
-    t_results_queue *out_queue;
-
-    // Writer thread.
-    pthread_t writer;
-    pthread_mutex_t job_pool_m;
-    int flush_pending;
-} mtaux_t;
-
 typedef struct bgzf_job {
     BGZF *fp;
     unsigned char comp_data[BGZF_MAX_BLOCK_SIZE];
@@ -104,6 +87,24 @@ typedef struct bgzf_job {
     int errcode;
     int64_t block_address;
 } bgzf_job;
+
+typedef struct bgzf_mtaux_t {
+    // Memory pool for bgzf_job structs, to avoid many malloc/free
+    pool_alloc_t *job_pool;
+    bgzf_job *curr_job;
+
+    // Thread pool
+    int n_threads;
+    t_pool *pool;
+
+    // Output queue holding completed bgzf_jobs
+    t_results_queue *out_queue;
+
+    // I/O thread.
+    pthread_t io_task;
+    pthread_mutex_t job_pool_m;
+    int flush_pending;
+} mtaux_t;
 #endif
 
 typedef struct
@@ -633,23 +634,34 @@ int bgzf_read_block(BGZF *fp)
         //fprintf(stderr, "Fetching result\n");
         r = t_pool_next_result_wait(fp->mt->out_queue);
         bgzf_job *j = (bgzf_job *)r->data;
+        if (!j) {
+            fprintf(stderr, "OUT OF DATA\n");
+        }
         assert(j);
 
-        //fprintf(stderr, "Fetched %p; serial %d, ulen %d\n", r, r->serial, (int)j->uncomp_len);
+        //fprintf(stderr, "Fetched %p; serial %d, ulen %d, md5 %s\n", r, r->serial, (int)j->uncomp_len);
+
         fp->block_offset = 0;
         fp->block_address = j->block_address;
         fp->block_length = j->uncomp_len;
-        // FIXME: pointless data copy; should read direct out of j
-        memcpy(fp->uncompressed_block, j->uncomp_data, j->uncomp_len);
 
-        pthread_mutex_lock(&fp->mt->job_pool_m);
-        pool_free(fp->mt->job_pool, j);
-        pthread_mutex_unlock(&fp->mt->job_pool_m);
+        // Steal the data block as it's quicker than a memcpy.
+        // We just need to make sure we delay the pool free.
+        if (fp->mt->curr_job) {
+            pthread_mutex_lock(&fp->mt->job_pool_m);
+            pool_free(fp->mt->job_pool, fp->mt->curr_job);
+            pthread_mutex_unlock(&fp->mt->job_pool_m);
+        }
+        fp->uncompressed_block = j->uncomp_data;
+        fp->mt->curr_job = j;
+
         //dump_block(fp,0);
         //fprintf(stderr, "addr=%d, len=%d, blk={%x...%x}\n", (int)fp->block_address,fp->block_length, ((uint8_t *)fp->uncompressed_block)[0], ((uint8_t *)fp->uncompressed_block)[fp->block_length-1]);
                 
         return 0;
     }
+
+    fprintf(stderr, "non-mt read block\n");
 
     uint8_t header[BLOCK_HEADER_LENGTH], *compressed_block;
     int count, size = 0, block_length, remaining;
@@ -794,6 +806,8 @@ int bgzf_read_block(BGZF *fp)
 
 ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
 {
+    hts_verbose=3;
+
     ssize_t bytes_read = 0;
     uint8_t *output = (uint8_t*)data;
     if (length <= 0) return 0;
@@ -822,12 +836,13 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
         output += copy_length;
         bytes_read += copy_length;
     }
-    if (fp->block_offset == fp->block_length) {
-        //fprintf(stderr, "offset=length %d\n", (int)fp->block_length);
-        fp->block_address = htell(fp->fp); // FIXME!
-        fp->block_offset = fp->block_length = 0;
-    }
+//    if (fp->block_offset == fp->block_length) {
+//        //fprintf(stderr, "offset=length %d\n", (int)fp->block_length);
+//        fp->block_address = htell(fp->fp); // FIXME!
+//        fp->block_offset = fp->block_length = 0;
+//    }
     fp->uncompressed_address += bytes_read;
+
 //    fprintf(stderr, "off=%d/%d, cadd=%d, uaddr=%d, read %d/%d,",
 //            fp->block_offset, fp->block_length,
 //            (int)fp->block_address, (int)fp->uncompressed_address,
@@ -983,13 +998,14 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
     if (fp->cache_size && load_block_from_cache(fp, block_address)) return 0;
     count = hread(fp->fp, header, sizeof(header));
     if (count == 0) { // no data read
-        fp->block_length = 0;
-        return 0;
+        fprintf(stderr, "mt_reader read 0 bytes\n");
+        return -1;
     }
     int ret;
     if ( count != sizeof(header) || (ret=check_header(header))==-2 )
     {
         j->errcode |= BGZF_ERR_HEADER;
+        fprintf(stderr, "mt_reader fail header\n");
         return -1;
     }
 //    if ( ret==-1 )
@@ -1060,6 +1076,7 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
     count = hread(fp->fp, &compressed_block[BLOCK_HEADER_LENGTH], remaining);
     if (count != remaining) {
         j->errcode |= BGZF_ERR_IO;
+        fprintf(stderr, "mt_reader fail io\n");
         return -1;
     }
     size += count;
@@ -1068,16 +1085,6 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
     j->block_address = block_address;
     j->fp = fp;
     j->errcode = 0;
-//    if (bgzf_uncompress(j->uncomp_data, &j->uncomp_len,
-//                        j->comp_data + 18, j->comp_len - 18) < 0) {
-//        if (hts_verbose >= 2)
-//            fprintf(stderr, "[E::%s] inflate_block error %d\n", __func__, count);
-//        j->errcode |= BGZF_ERR_ZLIB;
-//        return -1;
-//    }
-
-    // FIXME: what is this?
-    //if (fp->block_length != 0) fp->block_offset = 0; // Do not reset offset if this read follows a seek.
 
 //    // FIXME: to move to bgzf_read_block instead?
 //    if ( fp->idx_build_otf )
@@ -1098,6 +1105,7 @@ static void *bgzf_mt_reader(void *vp) {
     pthread_mutex_lock(&mt->job_pool_m);
     bgzf_job *j = pool_alloc(mt->job_pool);
     pthread_mutex_unlock(&mt->job_pool_m);
+    j->errcode = 0;
 
     fprintf(stderr, "Reader starting\n");
     while (bgzf_mt_read_block(fp, j) == 0) {
@@ -1108,8 +1116,10 @@ static void *bgzf_mt_reader(void *vp) {
         pthread_mutex_lock(&mt->job_pool_m);
         j = pool_alloc(mt->job_pool);
         pthread_mutex_unlock(&mt->job_pool_m);
+        j->errcode = 0;
     }
-    fprintf(stderr, "Reader ending\n");
+    // FIXME: Check j->errcode == 0
+    fprintf(stderr, "Reader ending, code=%d\n", j->errcode);
     return 0;
 }
 
@@ -1117,7 +1127,7 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 {
     mtaux_t *mt;
     //if (fp->mt || n_threads <= 1) return -1;
-    if (fp->mt || n_threads < 1) return -1;
+    if (fp->mt || n_threads < 1) return -1; // FIXME: include the I/O thread too?
     mt = (mtaux_t*)calloc(1, sizeof(mtaux_t));
     fp->mt = mt;
 
@@ -1139,9 +1149,10 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
     mt->job_pool = pool_create(sizeof(bgzf_job));
 
 #ifdef IO_THREAD
+    free(fp->uncompressed_block);
     pthread_mutex_init(&mt->job_pool_m, NULL);
     mt->flush_pending = 0;
-    pthread_create(&mt->writer, NULL,
+    pthread_create(&mt->io_task, NULL,
                    fp->is_write ? bgzf_mt_writer : bgzf_mt_reader, fp);
 #endif
 
@@ -1156,7 +1167,7 @@ static void mt_destroy(mtaux_t *mt)
     t_results_queue_destroy(mt->out_queue);
 #ifdef IO_THREAD
     pthread_mutex_destroy(&mt->job_pool_m);
-    pthread_join(mt->writer, NULL);
+    pthread_join(mt->io_task, NULL);
 #endif
     free(mt);
 }
@@ -1322,6 +1333,7 @@ int bgzf_close(BGZF* fp)
 {
     int ret, block_length;
     if (fp == 0) return -1;
+    fprintf(stderr, "Closing\n");
     if (fp->is_write && fp->is_compressed) {
         if (bgzf_flush(fp) != 0) return -1;
         fp->compress_level = -1;
@@ -1352,7 +1364,7 @@ int bgzf_close(BGZF* fp)
     ret = hclose(fp->fp);
     if (ret != 0) return -1;
     bgzf_index_destroy(fp);
-    free(fp->uncompressed_block);
+    //free(fp->uncompressed_block);
     free(fp->compressed_block);
     free_cache(fp);
     free(fp);
