@@ -200,8 +200,10 @@ t_pool_result *t_pool_next_result_wait(t_results_queue *q) {
 	struct timeval now;
 	struct timespec timeout;
 
-	if (q->shutdown)
+	if (q->shutdown) {
+	    pthread_mutex_unlock(&q->p->pool_m);
 	    return NULL;
+	}
 
 	gettimeofday(&now, NULL);
 	timeout.tv_sec = now.tv_sec + 10;
@@ -209,8 +211,10 @@ t_pool_result *t_pool_next_result_wait(t_results_queue *q) {
 
 	pthread_cond_timedwait(&q->result_avail_c, &q->p->pool_m, &timeout);
 
-	if (q->shutdown)
+	if (q->shutdown) {
+	    pthread_mutex_unlock(&q->p->pool_m);
 	    return NULL;
+	}
     }
     pthread_mutex_unlock(&q->p->pool_m);
 
@@ -292,6 +296,9 @@ t_results_queue *t_results_queue_init(t_pool *p, int qsize) {
     return q;
 }
 
+/* Sends a shutdown signal to the results queue, preventing
+ * new data from appearing and permitting draining of results.
+ */
 void t_results_queue_shutdown(t_results_queue *q) {
     pthread_mutex_lock(&q->p->pool_m);
     pthread_cond_signal(&q->result_avail_c);
@@ -299,7 +306,9 @@ void t_results_queue_shutdown(t_results_queue *q) {
     pthread_mutex_unlock(&q->p->pool_m);
 }
 
-/* Deallocates memory for a results queue */
+/* Deallocates memory for a results queue.
+ * Must be called before the thread pool is destroyed.
+ */
 void t_results_queue_destroy(t_results_queue *q) {
     DBG_OUT(stderr, "Destroying results queue %p\n", q);
 
@@ -444,6 +453,23 @@ static void *t_pool_worker(void *arg) {
 static void wake_next_worker(t_pool *p, int locked) {
     if (!locked)
 	pthread_mutex_lock(&p->pool_m);
+
+    /*
+    ERR!
+
+    && p->head->q->qsize - p->head->q->queue_len >= p->njobs
+       64 - 128 >= 8
+
+    Why is queue_len so large? That's -64 >= 8
+
+Basically we've got a lot of data in the output queue, too much to
+process (64 per encoder / decoder) so aren't going to wake up anything
+more.
+
+However nothing is reading from the decode output queue; the main
+thread is stuck trying to dispatch an encode job.
+    */
+
 
     if (p->t_stack_top >= 0 && p->njobs > p->tsize - p->nwaiting
 	&& p->head->q->qsize - p->head->q->queue_len >= p->njobs)
@@ -595,6 +621,12 @@ int t_pool_dispatch2(t_pool *p, t_results_queue *q,
  * Flushes the pool, but doesn't exit. This simply drains the queue and
  * ensures all worker threads have finished their current task.
  *
+ * NOTE: we may need to have one input queue per type of job, meaning we
+ * keep track of the total number of jobs per queue and flush is a wait on the
+ * output number matching the input number (with none left in the input).
+ * (Currently we cannot flush, say, BAM encode jobs without also flushing
+ * BAM decode jobs.)
+ *
  * Returns 0 on success;
  *        -1 on failure
  */
@@ -621,6 +653,7 @@ int t_pool_flush(t_pool *p) {
 
     return 0;
 }
+
 
 /*
  * Destroys a thread pool. If 'kill' is true the threads are terminated now,

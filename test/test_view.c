@@ -49,8 +49,9 @@ int main(int argc, char *argv[])
     int nreads = 0;
     int extra_hdr_nuls = 0;
     int benchmark = 0;
+    int nthreads = 0; // shared pool
 
-    while ((c = getopt(argc, argv, "IbDCSl:t:i:o:N:BZ:")) >= 0) {
+    while ((c = getopt(argc, argv, "IbDCSl:t:i:o:N:BZ:@:")) >= 0) {
         switch (c) {
         case 'S': flag |= 1; break;
         case 'b': flag |= 2; break;
@@ -64,6 +65,7 @@ int main(int argc, char *argv[])
         case 'o': if (hts_opt_add(&out_opts, optarg)) return 1; break;
         case 'N': nreads = atoi(optarg); break;
         case 'Z': extra_hdr_nuls = atoi(optarg); break;
+        case '@': nthreads = atoi(optarg); break;
         }
     }
     if (argc == optind) {
@@ -135,6 +137,19 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     hts_opt_free(out_opts);
 
+    // Create and share the thread pool
+    t_pool *pool = NULL;
+    if (nthreads > 0) {
+        pool = hts_create_threads(nthreads);
+        if (!pool) {
+            fprintf(stderr, "Error creating thread pool\n");
+            exit_code = 1;
+        } else {
+            hts_set_opt(in,  HTS_OPT_THREAD_POOL, pool);
+            hts_set_opt(out, HTS_OPT_THREAD_POOL, pool);
+        }
+    }
+
     if (!benchmark && sam_hdr_write(out, h) < 0) {
         fprintf(stderr, "Error writing output header.\n");
         exit_code = 1;
@@ -193,6 +208,9 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error closing input.\n");
         exit_code = 1;
     }
+
+    if (pool)
+        hts_destroy_threads(pool);
 
     return exit_code;
 }

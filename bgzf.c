@@ -103,7 +103,9 @@ typedef struct bgzf_mtaux_t {
     // I/O thread.
     pthread_t io_task;
     pthread_mutex_t job_pool_m;
+    int jobs_pending; // number of jobs waiting
     int flush_pending;
+    void *free_block;
 } mtaux_t;
 #endif
 
@@ -630,8 +632,8 @@ int bgzf_read_block(BGZF *fp)
 {
     t_pool_result *r;
 
+        fprintf(stderr, "Fetching decoded result\n");
     if (fp->mt) {
-        //fprintf(stderr, "Fetching result\n");
         r = t_pool_next_result_wait(fp->mt->out_queue);
         bgzf_job *j = (bgzf_job *)r->data;
         if (!j) {
@@ -654,14 +656,16 @@ int bgzf_read_block(BGZF *fp)
         }
         fp->uncompressed_block = j->uncomp_data;
         fp->mt->curr_job = j;
+        if (fp->mt->free_block) {
+            free(fp->mt->free_block); // clear up last non-mt block
+            fp->mt->free_block = NULL;
+        }
 
         //dump_block(fp,0);
         //fprintf(stderr, "addr=%d, len=%d, blk={%x...%x}\n", (int)fp->block_address,fp->block_length, ((uint8_t *)fp->uncompressed_block)[0], ((uint8_t *)fp->uncompressed_block)[fp->block_length-1]);
                 
         return 0;
     }
-
-    fprintf(stderr, "non-mt read block\n");
 
     uint8_t header[BLOCK_HEADER_LENGTH], *compressed_block;
     int count, size = 0, block_length, remaining;
@@ -910,6 +914,8 @@ static void *bgzf_mt_writer(void *vp) {
     while ((r = t_pool_next_result_wait(mt->out_queue))) {
         bgzf_job *j = (bgzf_job *)r->data;
         assert(j);
+        
+        fprintf(stderr, "Got encoded block\n");
 
         if (hwrite(fp->fp, j->comp_data, j->comp_len) != j->comp_len) {
             fp->errcode |= BGZF_ERR_IO;
@@ -935,10 +941,11 @@ static void *bgzf_mt_writer(void *vp) {
         // Also updated by main thread
         pthread_mutex_lock(&mt->job_pool_m);
         pool_free(mt->job_pool, j);
+        mt->jobs_pending--;
         pthread_mutex_unlock(&mt->job_pool_m);
     }
 
-    //fprintf(stderr, "bgzf_mt_writer complete\n");
+    fprintf(stderr, "bgzf_mt_writer complete\n");
     return 0;
 }
 #endif
@@ -1109,9 +1116,7 @@ static void *bgzf_mt_reader(void *vp) {
 
     fprintf(stderr, "Reader starting\n");
     while (bgzf_mt_read_block(fp, j) == 0) {
-        //fprintf(stderr, "Got block, len %d / %d\n", (int)j->comp_len, (int)j->uncomp_len);
-        // Submit fake decode job.  It's already been decoded by
-        // bgzf_mt_read_block() above.
+        fprintf(stderr, "Dispatch decode block, len %d / %d\n", (int)j->comp_len, (int)j->uncomp_len);
         t_pool_dispatch(mt->pool, mt->out_queue, bgzf_decode_func, j);
         pthread_mutex_lock(&mt->job_pool_m);
         j = pool_alloc(mt->job_pool);
@@ -1123,25 +1128,19 @@ static void *bgzf_mt_reader(void *vp) {
     return 0;
 }
 
-int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
-{
+int bgzf_thread_pool(BGZF *fp, t_pool *pool) {
     mtaux_t *mt;
-    //if (fp->mt || n_threads <= 1) return -1;
-    if (fp->mt || n_threads < 1) return -1; // FIXME: include the I/O thread too?
     mt = (mtaux_t*)calloc(1, sizeof(mtaux_t));
+    if (!mt) return -1;
     fp->mt = mt;
 
-    mt->n_threads = n_threads;
-    if (!(mt->pool = t_pool_init(mt->n_threads*2, mt->n_threads))) {
-        free(mt);
-        return -1;
-    }
+    mt->pool = pool;
+    mt->n_threads = pool->tsize;
 #ifdef IO_THREAD
     if (!(mt->out_queue = t_results_queue_init(mt->pool, mt->n_threads*16))) {
 #else
     if (!(mt->out_queue = t_results_queue_init(mt->pool, mt->n_threads*0))) {
 #endif
-        t_pool_destroy(mt->pool, 0);
         free(mt);
         return -1;
     }
@@ -1149,9 +1148,10 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
     mt->job_pool = pool_create(sizeof(bgzf_job));
 
 #ifdef IO_THREAD
-    free(fp->uncompressed_block);
     pthread_mutex_init(&mt->job_pool_m, NULL);
     mt->flush_pending = 0;
+    mt->jobs_pending = 0;
+    mt->free_block = fp->uncompressed_block;
     pthread_create(&mt->io_task, NULL,
                    fp->is_write ? bgzf_mt_writer : bgzf_mt_reader, fp);
 #endif
@@ -1159,15 +1159,31 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
     return 0;
 }
 
+int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
+{
+    if (n_threads < 1) return -1; // FIXME: include the I/O thread too?
+    t_pool *p = t_pool_init(n_threads*2, n_threads);
+    if (!p)
+        return -1;
+
+    if (bgzf_thread_pool(fp, p) != 0) {
+        t_pool_destroy(p, 0);
+        return -1;
+    }
+
+    return 0;
+}
+
 static void mt_destroy(mtaux_t *mt)
 {
-    pool_destroy(mt->job_pool);
-    t_pool_destroy(mt->pool, 0);
     t_results_queue_shutdown(mt->out_queue);
     t_results_queue_destroy(mt->out_queue);
+    pool_destroy(mt->job_pool);
+    t_pool_destroy(mt->pool, 0);
 #ifdef IO_THREAD
     pthread_mutex_destroy(&mt->job_pool_m);
     pthread_join(mt->io_task, NULL);
+    fprintf(stderr, "joined\n");
 #endif
     free(mt);
 }
@@ -1204,6 +1220,7 @@ static int mt_queue(BGZF *fp)
 #endif
     bgzf_job *j = pool_alloc(mt->job_pool);
 #ifdef IO_THREAD
+    mt->jobs_pending++;
     pthread_mutex_unlock(&mt->job_pool_m);
 #endif
 
@@ -1213,7 +1230,9 @@ static int mt_queue(BGZF *fp)
     memcpy(j->uncomp_data, fp->uncompressed_block, j->uncomp_len);
 
     // Need non-block vers & job_pending?
+    fprintf(stderr, "Dispatching encode block %p\n", j);
     t_pool_dispatch(mt->pool, mt->out_queue, bgzf_encode_func, j);
+    fprintf(stderr, "Dispatched encode block %p\n", j);
 #ifndef IO_THREAD
     if (mt_drain(fp))
         return -1;
@@ -1227,15 +1246,30 @@ static int mt_flush_queue(BGZF *fp)
 {
     mtaux_t *mt = fp->mt;
 
-    t_pool_flush(mt->pool);
+    // Drain the encoder jobs.
+    // We cannot use t_pool_flush here as it can cause deadlock if
+    // the queue is full up of decoder tasks.  The best solution would
+    // be to have one input queue per type of job, but we don't right now.
+    //t_pool_flush(mt->pool);
+    pthread_mutex_lock(&mt->job_pool_m);
+    while (mt->jobs_pending != 0) {
+        pthread_mutex_unlock(&mt->job_pool_m);
+        usleep(10000); // FIXME: replace by condition variable
+        pthread_mutex_lock(&mt->job_pool_m);
+    }
+    pthread_mutex_unlock(&mt->job_pool_m);
+
 #ifndef IO_THREAD
     if (mt_drain(fp))
         return -1;
 #else
 
     // Wait on bgzf_mt_writer to drain the queue
-    while (!t_pool_results_queue_empty(mt->out_queue))
+    fprintf(stderr, "Flush queue\n");
+    while (!t_pool_results_queue_empty(mt->out_queue)) {
+        fprintf(stderr, "timeout\n");
         usleep(10000);
+    }
 #endif
 
     return (fp->errcode == 0)? 0 : -1;
@@ -1333,7 +1367,6 @@ int bgzf_close(BGZF* fp)
 {
     int ret, block_length;
     if (fp == 0) return -1;
-    fprintf(stderr, "Closing\n");
     if (fp->is_write && fp->is_compressed) {
         if (bgzf_flush(fp) != 0) return -1;
         fp->compress_level = -1;
@@ -1348,10 +1381,10 @@ int bgzf_close(BGZF* fp)
             fp->errcode |= BGZF_ERR_IO;
             return -1;
         }
-#ifdef BGZF_MT
-        if (fp->mt) mt_destroy(fp->mt);
-#endif
     }
+#ifdef BGZF_MT
+    if (fp->mt) mt_destroy(fp->mt);
+#endif
     if ( fp->is_gzip )
     {
         if (!fp->is_write) ret = inflateEnd(fp->gz_stream);

@@ -30,6 +30,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 
 #include "hts_defs.h"
+#include "thread_pool.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -172,6 +173,7 @@ enum hts_fmt_option {
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,
     HTS_OPT_NTHREADS,
+    HTS_OPT_THREAD_POOL,
 };
 
 // For backwards compatibility
@@ -377,9 +379,31 @@ char **hts_readlist(const char *fn, int is_file, int *_n);
   @param fp  The file handle
   @param n   The number of worker threads to create
   @return    0 for success, or negative if an error occurred.
-  @notes     THIS THREADING API IS LIKELY TO CHANGE IN FUTURE.
+  @notes     This function creates non-shared threads for use solely by fp.
+             The hts_set_thread_pool function is the recommended alternative.
 */
 int hts_set_threads(htsFile *fp, int n);
+
+/*!
+  @abstract  Create extra threads to aid compress/decompression for this file
+  @param fp  The file handle
+  @param p   A pool of worker threads, previously allocated by hts_create_threads().
+  @return    0 for success, or negative if an error occurred.
+*/
+int hts_set_thread_pool(htsFile *fp, t_pool *p);
+
+/*!
+  @abstract  Allocates a pool of shared worker threads.
+  @param n   The number of worker threads to create
+  @return    Pointer for success, or NULL if an error occurred.
+*/
+t_pool *hts_create_threads(int n);
+
+/*!
+  @abstract  Destroys a pool of shared worker threads.
+  @param p   A pointer to the thread pool.
+*/
+void hts_destroy_threads(t_pool *p);
 
 /*!
   @abstract  Set .fai filename for a file opened for reading

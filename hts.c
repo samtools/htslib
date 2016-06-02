@@ -903,6 +903,13 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         return hts_set_threads(fp, nthreads);
     }
 
+    if (opt == HTS_OPT_THREAD_POOL) {
+        va_start(args, opt);
+        t_pool *p = va_arg(args, t_pool *);
+        va_end(args);
+        return hts_set_thread_pool(fp, p);
+    }
+
     if (fp->format.format != cram)
         return 0;
 
@@ -916,11 +923,29 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
 int hts_set_threads(htsFile *fp, int n)
 {
     if (fp->format.compression == bgzf) {
-        return bgzf_mt(fp->fp.bgzf, n, 256);
+        return bgzf_mt(fp->fp.bgzf, n, 256/*unused*/);
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_NTHREADS, n);
     }
     else return 0;
+}
+
+int hts_set_thread_pool(htsFile *fp, t_pool *p) {
+    if (fp->format.compression == bgzf) {
+        return bgzf_thread_pool(fp->fp.bgzf, p);
+    } else if (fp->format.format == cram) {
+        return hts_set_opt(fp, CRAM_OPT_THREAD_POOL, p);
+    }
+    else return 0;
+}
+
+t_pool *hts_create_threads(int n) {
+    return t_pool_init(n*2, n);
+}
+
+void hts_destroy_threads(t_pool *p) {
+    if (p)
+        t_pool_destroy(p, 0);
 }
 
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
