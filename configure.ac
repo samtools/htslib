@@ -190,5 +190,13 @@ Either configure with --disable-libcurl or resolve this error to build HTSlib.])
 fi
 AC_SUBST([CRYPTO_LIBS])
 
+AX_LIB_LZMA(,[have_lzma=yes], [AC_MSG_ERROR([No liblzma detected. Samtools will not be able to read some CRAM files.
+To fix this please install liblzma and rerun configure using the --with-lzma=DIR option if appropriate.
+If you really need to compile without lzma support, use --without-lzma.])])
+
+AX_LIB_BZ2(,[have_bz2=yes], [AC_MSG_ERROR([No libbz2 detected. Samtools will not be able to read some CRAM files.
+To fix this please install libbz2 and rerun configure using the --with-bz2=DIR option if appropriate.
+If you really need to compile without bzip2 support, use --without-bz2.])])
+
 AC_CONFIG_FILES(config.mk)
 AC_OUTPUT

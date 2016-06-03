@@ -1,9 +1,4 @@
-/* config.h.in -- template for config.h.  If you use configure, this file
-   provides #defines reflecting your configuration choices.  If you don't
-   run configure, suitable conservative defaults will be used.
-
-   This template file can be updated with autoheader, but do so carefully
-   as autoheader adds #defines such as PACKAGE_* that we don't want.  */
+/* config.h.in.  Generated from configure.ac by autoheader.  */
 
 /* Define if HTSlib should enable plugins. */
 #undef ENABLE_PLUGINS
@@ -11,25 +6,83 @@
 /* Define if you have the Common Crypto library. */
 #undef HAVE_COMMONCRYPTO
 
+/* Define to 1 if you have the `getpagesize' function. */
+#undef HAVE_GETPAGESIZE
+
 /* Define to 1 if you have the `gmtime_r' function. */
 #undef HAVE_GMTIME_R
 
 /* Define if you have libcrypto-style HMAC(). */
 #undef HAVE_HMAC
 
+/* Define to 1 if you have the <inttypes.h> header file. */
+#undef HAVE_INTTYPES_H
+
 /* Define to 1 if iRODS file access is enabled. */
 #undef HAVE_IRODS
+
+/* Define if libbz2 is installed */
+#undef HAVE_LIBBZ2
 
 /* Define if libcurl file access is enabled. */
 #undef HAVE_LIBCURL
 
+/* Define if liblzma is installed */
+#undef HAVE_LIBLZMA
+
+/* Define to 1 if you have the `z' library (-lz). */
+#undef HAVE_LIBZ
+
+/* Define to 1 if you have the <memory.h> header file. */
+#undef HAVE_MEMORY_H
+
 /* Define to 1 if you have a working `mmap' system call. */
 #undef HAVE_MMAP
 
-/* Enable large inode numbers on Mac OS X 10.5.  */
-#ifndef _DARWIN_USE_64_BIT_INODE
-# define _DARWIN_USE_64_BIT_INODE 1
-#endif
+/* Define to 1 if you have the <stdint.h> header file. */
+#undef HAVE_STDINT_H
+
+/* Define to 1 if you have the <stdlib.h> header file. */
+#undef HAVE_STDLIB_H
+
+/* Define to 1 if you have the <strings.h> header file. */
+#undef HAVE_STRINGS_H
+
+/* Define to 1 if you have the <string.h> header file. */
+#undef HAVE_STRING_H
+
+/* Define to 1 if you have the <sys/param.h> header file. */
+#undef HAVE_SYS_PARAM_H
+
+/* Define to 1 if you have the <sys/stat.h> header file. */
+#undef HAVE_SYS_STAT_H
+
+/* Define to 1 if you have the <sys/types.h> header file. */
+#undef HAVE_SYS_TYPES_H
+
+/* Define to 1 if you have the <unistd.h> header file. */
+#undef HAVE_UNISTD_H
+
+/* Define to the address where bug reports for this package should be sent. */
+#undef PACKAGE_BUGREPORT
+
+/* Define to the full name of this package. */
+#undef PACKAGE_NAME
+
+/* Define to the full name and version of this package. */
+#undef PACKAGE_STRING
+
+/* Define to the one symbol short name of this package. */
+#undef PACKAGE_TARNAME
+
+/* Define to the home page for this package. */
+#undef PACKAGE_URL
+
+/* Define to the version of this package. */
+#undef PACKAGE_VERSION
+
+/* Define to 1 if you have the ANSI C header files. */
+#undef STDC_HEADERS
 
 /* Number of bits in a file offset, on hosts where this is settable. */
 #undef _FILE_OFFSET_BITS
