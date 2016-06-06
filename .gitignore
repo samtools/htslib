@@ -20,6 +20,7 @@ lib*.a
 lib*.dylib
 lib*.so
 lib*.so.*
+cyghtsdll.dll*
 
 /bgzip
 /htsfile
