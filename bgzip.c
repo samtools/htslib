@@ -173,18 +173,19 @@ int main(int argc, char **argv)
         }
         else if (!pstdout && isatty(fileno((FILE *)stdout)) )
             return bgzip_main_usage();
-        else if ( index && !index_fname )
-        {
-            fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
-            return 1;
-        }
-	else if ( rebgzip && !index_fname )
+        else if ( (index || rebgzip)  && !index_fname )
         {
             fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
             return 1;
         }
         else
             fp = bgzf_open("-", "w");
+
+	if ( index && rebgzip )
+	  {
+            fprintf(stderr, "[bgzip] Can't produce a index and rebgzip simultaneously\n");
+            return 1;
+	  }
 
         if (threads > 1)
             bgzf_mt(fp, threads, 256);
