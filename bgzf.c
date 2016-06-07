@@ -950,6 +950,35 @@ ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
     return length - remaining;
 }
 
+ssize_t bgzf_block_write(BGZF *fp, const void *data, size_t length)
+{ 
+    if ( !fp->is_compressed )
+        return hwrite(fp->fp, data, length);  
+    const uint8_t *input = (const uint8_t*)data;
+    ssize_t remaining = length;
+    assert(fp->is_write);
+    uint64_t current_block; //keep track of current block
+    uint64_t ublock_size; // amount of uncompressed data to be fed into next block
+    while (remaining > 0) {
+        current_block = fp->idx->moffs - fp->idx->noffs;
+	ublock_size = fp->idx->offs[current_block+1].uaddr-fp->idx->offs[current_block].uaddr;
+        uint8_t* buffer = (uint8_t*)fp->uncompressed_block;
+        int copy_length = ublock_size - fp->block_offset;         
+	if (copy_length > remaining) copy_length = remaining; 
+	memcpy(buffer + fp->block_offset, input, copy_length);
+        fp->block_offset += copy_length;
+        input += copy_length; 
+        remaining -= copy_length; 
+        if (fp->block_offset == ublock_size) { 
+	    fprintf(stderr,"block_address: %d\n", fp->block_address);
+            if (lazy_flush(fp) != 0) return -1;
+	    fp->idx->noffs--;  // decrement noffs to track the blocks
+        }
+    }
+    return length - remaining;
+}
+
+
 ssize_t bgzf_raw_write(BGZF *fp, const void *data, size_t length)
 {
     return hwrite(fp->fp, data, length);
