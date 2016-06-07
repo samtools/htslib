@@ -720,7 +720,7 @@ typedef struct cram_fd {
     // thread pool
     int own_pool;
     t_pool *pool;
-    t_results_queue *rqueue;
+    t_pool_queue *rqueue;
     pthread_mutex_t metrics_lock;
     pthread_mutex_t ref_lock;
     spare_bams *bl;

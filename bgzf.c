@@ -1,5 +1,3 @@
-#define IO_THREAD
-
 /* The MIT License
 
    Copyright (c) 2008 Broad Institute / Massachusetts Institute of Technology
@@ -98,7 +96,7 @@ typedef struct bgzf_mtaux_t {
     t_pool *pool;
 
     // Output queue holding completed bgzf_jobs
-    t_results_queue *out_queue;
+    t_pool_queue *out_queue;
 
     // I/O thread.
     pthread_t io_task;
@@ -632,7 +630,6 @@ int bgzf_read_block(BGZF *fp)
 {
     t_pool_result *r;
 
-        fprintf(stderr, "Fetching decoded result\n");
     if (fp->mt) {
         r = t_pool_next_result_wait(fp->mt->out_queue);
         bgzf_job *j = (bgzf_job *)r->data;
@@ -898,7 +895,6 @@ void *bgzf_decode_func(void *arg) {
     return arg;
 }
 
-#ifdef IO_THREAD
 /*
  * Takes compressed blocks off the results queue and calls hwrite to
  * punt them to the output stream.
@@ -948,7 +944,6 @@ static void *bgzf_mt_writer(void *vp) {
     fprintf(stderr, "bgzf_mt_writer complete\n");
     return 0;
 }
-#endif
 
 
 /*
@@ -1136,25 +1131,19 @@ int bgzf_thread_pool(BGZF *fp, t_pool *pool) {
 
     mt->pool = pool;
     mt->n_threads = pool->tsize;
-#ifdef IO_THREAD
-    if (!(mt->out_queue = t_results_queue_init(mt->pool, mt->n_threads*16))) {
-#else
-    if (!(mt->out_queue = t_results_queue_init(mt->pool, mt->n_threads*0))) {
-#endif
+    if (!(mt->out_queue = t_pool_queue_init(mt->pool, mt->n_threads*16, 0))) {
         free(mt);
         return -1;
     }
 
     mt->job_pool = pool_create(sizeof(bgzf_job));
 
-#ifdef IO_THREAD
     pthread_mutex_init(&mt->job_pool_m, NULL);
     mt->flush_pending = 0;
     mt->jobs_pending = 0;
     mt->free_block = fp->uncompressed_block;
     pthread_create(&mt->io_task, NULL,
                    fp->is_write ? bgzf_mt_writer : bgzf_mt_reader, fp);
-#endif
 
     return 0;
 }
@@ -1162,7 +1151,7 @@ int bgzf_thread_pool(BGZF *fp, t_pool *pool) {
 int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 {
     if (n_threads < 1) return -1; // FIXME: include the I/O thread too?
-    t_pool *p = t_pool_init(n_threads*2, n_threads);
+    t_pool *p = t_pool_init(n_threads);
     if (!p)
         return -1;
 
@@ -1176,53 +1165,25 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 
 static void mt_destroy(mtaux_t *mt)
 {
-    t_results_queue_shutdown(mt->out_queue);
-    t_results_queue_destroy(mt->out_queue);
     pool_destroy(mt->job_pool);
-    t_pool_destroy(mt->pool, 0);
-#ifdef IO_THREAD
+    //t_pool_destroy(mt->pool, 0);
     pthread_mutex_destroy(&mt->job_pool_m);
+    t_pool_queue_shutdown(mt->out_queue);
     pthread_join(mt->io_task, NULL);
     fprintf(stderr, "joined\n");
-#endif
+    t_pool_queue_destroy(mt->out_queue);
     free(mt);
 }
-
-#ifndef IO_THREAD
-// Drain any output jobs now too.  FIXME: Put this in its own thread.
-static int mt_drain(BGZF *fp) {
-    t_pool_result *r;
-    mtaux_t *mt = fp->mt;
-
-    while ((r = t_pool_next_result(mt->out_queue))) {
-        bgzf_job *j = (bgzf_job *)r->data;
-        assert(j);
-
-        if (hwrite(fp->fp, j->comp_data, j->comp_len) != j->comp_len) {
-            fp->errcode |= BGZF_ERR_IO;
-            return -1;
-        }
-
-        t_pool_delete_result(r, 0);
-        pool_free(mt->job_pool, j);
-    }
-    return 0;
-}
-#endif
 
 static int mt_queue(BGZF *fp)
 {
     mtaux_t *mt = fp->mt;
 
     // Also updated by writer thread
-#ifdef IO_THREAD
     pthread_mutex_lock(&mt->job_pool_m);
-#endif
     bgzf_job *j = pool_alloc(mt->job_pool);
-#ifdef IO_THREAD
     mt->jobs_pending++;
     pthread_mutex_unlock(&mt->job_pool_m);
-#endif
 
     j->fp = fp;
     j->errcode = 0;
@@ -1233,10 +1194,6 @@ static int mt_queue(BGZF *fp)
     fprintf(stderr, "Dispatching encode block %p\n", j);
     t_pool_dispatch(mt->pool, mt->out_queue, bgzf_encode_func, j);
     fprintf(stderr, "Dispatched encode block %p\n", j);
-#ifndef IO_THREAD
-    if (mt_drain(fp))
-        return -1;
-#endif
 
     fp->block_offset = 0;
     return 0;
@@ -1259,18 +1216,10 @@ static int mt_flush_queue(BGZF *fp)
     }
     pthread_mutex_unlock(&mt->job_pool_m);
 
-#ifndef IO_THREAD
-    if (mt_drain(fp))
-        return -1;
-#else
-
     // Wait on bgzf_mt_writer to drain the queue
     fprintf(stderr, "Flush queue\n");
-    while (!t_pool_results_queue_empty(mt->out_queue)) {
-        fprintf(stderr, "timeout\n");
-        usleep(10000);
-    }
-#endif
+    if (t_pool_queue_flush(mt->out_queue) != 0)
+        return -1;
 
     return (fp->errcode == 0)? 0 : -1;
 }

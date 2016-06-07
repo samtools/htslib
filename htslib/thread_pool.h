@@ -266,8 +266,10 @@ int t_pool_queue_len(t_pool_queue *q);
 int t_pool_queue_sz(t_pool_queue *q);
 
 /*
- * Shuts down the results queue, causing any functions waiting on a result
- * to immediately return NULL.
+ * Shutdown a queue.
+ *
+ * This sets the shutdown flag and wakes any threads waiting on queue
+ * condition variables.
  */
 void t_pool_queue_shutdown(t_pool_queue *q);
 

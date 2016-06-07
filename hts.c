@@ -939,8 +939,19 @@ int hts_set_thread_pool(htsFile *fp, t_pool *p) {
     else return 0;
 }
 
+/*
+ * Creates a thread pool.
+ *
+ * Note this does not create an associated queue.  The thread pool is
+ * expected to be allocated up front and shared by multiple
+ * algorithms, but the algorithms themselves will be responsible for
+ * creating and destroying their queues when utilising the pool.
+ *
+ * Returns thread  pool on success,
+ *         NULL on failure.
+ */
 t_pool *hts_create_threads(int n) {
-    return t_pool_init(n*2, n);
+    return t_pool_init(n);
 }
 
 void hts_destroy_threads(t_pool *p) {

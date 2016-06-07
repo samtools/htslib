@@ -2714,7 +2714,7 @@ int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
     j->s  = s;
     j->h  = bfd;
     
-    nonblock = t_pool_results_queue_sz(fd->rqueue) ? 1 : 0;
+    nonblock = t_pool_queue_sz(fd->rqueue) ? 1 : 0;
 
     if (-1 == t_pool_dispatch2(fd->pool, fd->rqueue, cram_decode_slice_thread,
 			       j, nonblock)) {
@@ -3036,7 +3036,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 
 	// Push it a bit far, to qsize in queue rather than pending arrival,
 	// as cram tends to be a bit bursty in decode timings.
-	if (t_pool_results_queue_len(fd->rqueue) > fd->pool->qsize)
+	if (t_pool_queue_len(fd->rqueue) > fd->rqueue->qsize)
 	    break;
     }
 
@@ -3048,7 +3048,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 //		t_pool_results_queue_len(fd->rqueue),
 //		t_pool_results_queue_sz(fd->rqueue));
 
-	if (fd->ooc && t_pool_results_queue_empty(fd->rqueue))
+	if (fd->ooc && t_pool_queue_empty(fd->rqueue))
 	    return NULL;
 
 	res = t_pool_next_result_wait(fd->rqueue);

@@ -215,6 +215,7 @@ t_pool_result *t_pool_next_result_wait(t_pool_queue *q) {
         timeout.tv_nsec = now.tv_usec * 1000;
 
         pthread_cond_timedwait(&q->output_avail_c, &q->p->pool_m, &timeout);
+        if (q->shutdown) break;
     }
     pthread_mutex_unlock(&q->p->pool_m);
 
@@ -225,7 +226,7 @@ t_pool_result *t_pool_next_result_wait(t_pool_queue *q) {
  * Returns true if there are no items on the finished results queue and
  * also none still pending.
  */
-int t_pool_results_queue_empty(t_pool_queue *q) {
+int t_pool_queue_empty(t_pool_queue *q) {
     int empty;
 
     pthread_mutex_lock(&q->p->pool_m);
@@ -238,7 +239,7 @@ int t_pool_results_queue_empty(t_pool_queue *q) {
 /*
  * Returns the number of completed jobs on the results queue.
  */
-int t_pool_results_queue_len(t_pool_queue *q) {
+int t_pool_queue_len(t_pool_queue *q) {
     int len;
 
     pthread_mutex_lock(&q->p->pool_m);
@@ -251,7 +252,7 @@ int t_pool_results_queue_len(t_pool_queue *q) {
 /*
  * Returns the number of jobs in any state within the queue.
  */
-int t_pool_results_queue_sz(t_pool_queue *q) {
+int t_pool_queue_sz(t_pool_queue *q) {
     int len;
 
     pthread_mutex_lock(&q->p->pool_m);
@@ -259,6 +260,22 @@ int t_pool_results_queue_sz(t_pool_queue *q) {
     pthread_mutex_unlock(&q->p->pool_m);
 
     return len;
+}
+
+/*
+ * Shutdown a queue.
+ *
+ * This sets the shutdown flag and wakes any threads waiting on queue
+ * condition variables.
+ */
+void t_pool_queue_shutdown(t_pool_queue *q) {
+    pthread_mutex_lock(&q->p->pool_m);
+    q->shutdown = 1;
+    pthread_cond_broadcast(&q->output_avail_c);
+    pthread_cond_broadcast(&q->input_not_full_c);
+    pthread_cond_broadcast(&q->input_empty_c);
+    pthread_cond_broadcast(&q->none_processing_c);
+    pthread_mutex_unlock(&q->p->pool_m);
 }
 
 /*
@@ -287,6 +304,7 @@ t_pool_queue *t_pool_queue_init(t_pool *p, int qsize, int in_only) {
     pthread_cond_init(&q->output_avail_c,   NULL);
     pthread_cond_init(&q->input_not_full_c, NULL);
     pthread_cond_init(&q->input_empty_c,    NULL);
+    pthread_cond_init(&q->none_processing_c,NULL);
 
     q->p           = p;
     q->input_head  = NULL;
@@ -300,6 +318,7 @@ t_pool_queue *t_pool_queue_init(t_pool *p, int qsize, int in_only) {
     q->n_processing= 0;
     q->qsize       = qsize;
     q->in_only     = in_only;
+    q->shutdown    = 0;
 
     q->next        = NULL;
     q->prev        = NULL;
@@ -318,9 +337,12 @@ void t_pool_queue_destroy(t_pool_queue *q) {
     if (!q)
         return;
 
+    t_pool_queue_detach(q->p, q);
+
     pthread_cond_destroy(&q->output_avail_c);
     pthread_cond_destroy(&q->input_not_full_c);
     pthread_cond_destroy(&q->input_empty_c);
+    pthread_cond_destroy(&q->none_processing_c);
 
     //memset(q, 0xbb, sizeof(*q));
     free(q);
@@ -657,8 +679,12 @@ int t_pool_dispatch2(t_pool *p, t_pool_queue *q,
     j->serial = q->curr_serial++;
 
     if (nonblock == 0) {
-        while (q->n_input >= q->qsize)
+        while (q->n_input >= q->qsize && !q->shutdown)
             pthread_cond_wait(&q->input_not_full_c, &q->p->pool_m);
+        if (q->shutdown) {
+            pthread_mutex_unlock(&p->pool_m);
+            return -1;
+        }
     }
 
     p->njobs++;    // total across all queues
@@ -720,9 +746,11 @@ int t_pool_queue_flush(t_pool_queue *q) {
      while (q->n_input || q->n_processing) {
          while (q->n_input)
              pthread_cond_wait(&q->input_empty_c, &p->pool_m);
+         if (q->shutdown) break;
          while (q->n_processing)
-             pthread_cond_wait(&q->none_processing_c, &p->pool_m);
-     }
+             pthread_cond_wait(&q->none_processing_c, &p->pool_m); 
+         if (q->shutdown) break;
+    }
 
      pthread_mutex_unlock(&p->pool_m);
  
@@ -801,7 +829,9 @@ void t_pool_destroy(t_pool *p, int kill) {
 
 #include <stdio.h>
 
+#ifndef TASK_SIZE
 #define TASK_SIZE 1000
+#endif
 
 /*-----------------------------------------------------------------------------
  * Unordered x -> x*x test.  

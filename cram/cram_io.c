@@ -4337,7 +4337,7 @@ int cram_close(cram_fd *fd) {
     }
 
     if (fd->pool && fd->eof >= 0) {
-	t_pool_flush(fd->pool);
+	t_pool_queue_flush(fd->rqueue);
 
 	if (0 != cram_flush_result(fd))
 	    return -1;
@@ -4350,7 +4350,7 @@ int cram_close(cram_fd *fd) {
 
 	//fprintf(stderr, "CRAM: destroy queue %p\n", fd->rqueue);
 
-	t_results_queue_destroy(fd->rqueue);
+	t_pool_queue_destroy(fd->rqueue);
     }
 
     if (fd->mode == 'w') {
@@ -4557,10 +4557,10 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     case CRAM_OPT_NTHREADS: {
 	int nthreads =  va_arg(args, int);
         if (nthreads > 1) {
-            if (!(fd->pool = t_pool_init(nthreads*2, nthreads)))
+            if (!(fd->pool = t_pool_init(nthreads)))
                 return -1;
 
-	    fd->rqueue = t_results_queue_init(fd->pool, nthreads*2);
+	    fd->rqueue = t_pool_queue_init(fd->pool, nthreads*2, 0);
 	    pthread_mutex_init(&fd->metrics_lock, NULL);
 	    pthread_mutex_init(&fd->ref_lock, NULL);
 	    pthread_mutex_init(&fd->bam_list_lock, NULL);
@@ -4573,7 +4573,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     case CRAM_OPT_THREAD_POOL:
 	fd->pool = va_arg(args, t_pool *);
 	if (fd->pool) {
-	    fd->rqueue = t_results_queue_init(fd->pool, fd->pool->qsize);
+	    fd->rqueue = t_pool_queue_init(fd->pool, fd->pool->tsize*2, 0);
 	    pthread_mutex_init(&fd->metrics_lock, NULL);
 	    pthread_mutex_init(&fd->ref_lock, NULL);
 	    pthread_mutex_init(&fd->bam_list_lock, NULL);
