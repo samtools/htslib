@@ -834,6 +834,8 @@ void t_pool_destroy(t_pool *p, int kill) {
 
 #include <stdio.h>
 
+#define TASK_SIZE 1000
+
 /*-----------------------------------------------------------------------------
  * Unordered x -> x*x test.  
  * Results arrive in order of completion.
@@ -855,7 +857,7 @@ int test_square_u(int n) {
     int i;
 
     // Dispatch jobs
-    for (i = 0; i < 100; i++) {
+    for (i = 0; i < TASK_SIZE; i++) {
 	int *ip = malloc(sizeof(*ip));
 	*ip = i;
 	t_pool_dispatch(p, q, doit_square_u, ip);
@@ -898,7 +900,7 @@ int test_square(int n) {
     t_pool_result *r;
 
     // Dispatch jobs
-    for (i = 0; i < 100; i++) {
+    for (i = 0; i < TASK_SIZE; i++) {
 	int *ip = malloc(sizeof(*ip));
 	*ip = i;
 	int blk;
@@ -980,7 +982,7 @@ static void *test_squareB_dispatcher(void *arg) {
 int test_squareB(int n) {
     t_pool *p = t_pool_init(n);
     t_pool_queue *q = t_pool_queue_init(p, n*2, 0);
-    struct squareB_opt o = {p, q, 100};
+    struct squareB_opt o = {p, q, TASK_SIZE};
     pthread_t tid;
 
     // Launch our job creation thread.
@@ -1157,7 +1159,7 @@ int test_pipe(int n) {
     t_pool_queue *q1 = t_pool_queue_init(p, n*2, 0);
     t_pool_queue *q2 = t_pool_queue_init(p, n*2, 0);
     t_pool_queue *q3 = t_pool_queue_init(p, n*2, 0);
-    pipe_opt o = {p, q1, q2, q3, 100};
+    pipe_opt o = {p, q1, q2, q3, TASK_SIZE};
     pthread_t tidIto1, tid1to2, tid2to3, tid3toO;
     void *retv;
     int ret;
