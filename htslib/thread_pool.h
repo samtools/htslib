@@ -152,6 +152,11 @@ typedef struct t_pool {
     // A single mutex used when updating this and any associated structure.
     pthread_mutex_t pool_m;
 
+    // Tracking of average number of running jobs.
+    // This can be used to dampen any hysteresis caused by bursty
+    // input availability.
+    int n_count, n_running;
+
     // Debugging to check wait time.
     // FIXME: should we just delete these and cull the associated code?
     long long total_time, wait_time;
