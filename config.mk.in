@@ -105,6 +105,9 @@ PLUGIN_OBJS += $(plugin_OBJS)
 
 plugin.o plugin.pico: CPPFLAGS += -DPLUGINPATH=\"$(pluginpath)\"
 
+# Windows DLL plugins depend on the import library, built as a byproduct.
+$(plugin_OBJS:.o=.cygdll): cyghts-$(LIBHTS_SOVERSION).dll
+
 else
 
 LIBHTS_OBJS += $(plugin_OBJS)

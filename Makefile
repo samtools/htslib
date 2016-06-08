@@ -128,7 +128,7 @@ print-version:
 	@echo $(PACKAGE_VERSION)
 
 
-.SUFFIXES: .bundle .c .o .pico .so
+.SUFFIXES: .bundle .c .cygdll .dll .o .pico .so
 
 .c.o:
 	$(CC) $(CFLAGS) -I. $(CPPFLAGS) -c -o $@ $<
@@ -215,6 +215,9 @@ endif
 ifeq "$(PLATFORM)" "Darwin"
 SHLIB_FLAVOUR = dylib
 lib-shared: libhts.dylib
+else ifeq "$(findstring CYGWIN,$(PLATFORM))" "CYGWIN"
+SHLIB_FLAVOUR = cygdll
+lib-shared: cyghts-$(LIBHTS_SOVERSION).dll
 else
 SHLIB_FLAVOUR = so
 lib-shared: libhts.so
@@ -248,12 +251,18 @@ libhts.dylib: $(LIBHTS_OBJS)
 	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) -lz $(LIBS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
+cyghts-$(LIBHTS_SOVERSION).dll: $(LIBHTS_OBJS)
+	$(CC) -shared -Wl,--out-implib=libhts.dll.a -Wl,--export-all-symbols -Wl,--enable-auto-import -pthread $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive -lz -lm $(LIBS)
+
 
 .pico.so:
 	$(CC) -shared -Wl,-E -pthread $(LDFLAGS) -o $@ $< $(LIBS)
 
 .o.bundle:
 	$(CC) -bundle -Wl,-undefined,dynamic_lookup $(LDFLAGS) -o $@ $< $(LIBS)
+
+.o.cygdll:
+	$(CC) -shared $(LDFLAGS) -o $@ $< libhts.dll.a $(LIBS)
 
 
 bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_khash_h)
@@ -373,6 +382,10 @@ install-so: libhts.so installdirs
 	ln -sf libhts.so.$(PACKAGE_VERSION) $(DESTDIR)$(libdir)/libhts.so
 	ln -sf libhts.so.$(PACKAGE_VERSION) $(DESTDIR)$(libdir)/libhts.so.$(LIBHTS_SOVERSION)
 
+install-cygdll: cyghts-$(LIBHTS_SOVERSION).dll installdirs
+	$(INSTALL_PROGRAM) cyghts-$(LIBHTS_SOVERSION).dll $(DESTDIR)$(bindir)/cyghts-$(LIBHTS_SOVERSION).dll
+	$(INSTALL_PROGRAM) libhts.dll.a $(DESTDIR)$(libdir)/libhts.dll.a
+
 install-dylib: libhts.dylib installdirs
 	$(INSTALL_PROGRAM) libhts.dylib $(DESTDIR)$(libdir)/libhts.$(PACKAGE_VERSION).dylib
 	ln -sf libhts.$(PACKAGE_VERSION).dylib $(DESTDIR)$(libdir)/libhts.dylib
@@ -406,6 +419,9 @@ distclean maintainer-clean: clean
 clean-so:
 	-rm -f libhts.so libhts.so.*
 
+clean-cygdll:
+	-rm -f cyghts-*.dll libhts.dll.a
+
 clean-dylib:
 	-rm -f libhts.dylib libhts.*.dylib
 
@@ -431,4 +447,5 @@ force:
 .PHONY: install install-pkgconfig installdirs lib-shared lib-static
 .PHONY: maintainer-clean mostlyclean plugins print-version tags test testclean
 .PHONY: clean-so install-so
+.PHONY: clean-cygdll install-cygdll
 .PHONY: clean-dylib install-dylib

@@ -14,9 +14,13 @@ config.status
 configure
 
 hfile_*.bundle
+hfile_*.cygdll
+hfile_*.dll
 hfile_*.so
 
+cyg*.dll
 lib*.a
+lib*.dll
 lib*.dylib
 lib*.so
 lib*.so.*

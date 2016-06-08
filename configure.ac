@@ -85,6 +85,11 @@ AC_SUBST([pluginpath], $with_plugin_path)
 AC_MSG_CHECKING([shared library type])
 test -n "$host_alias" || host_alias=unknown-`uname -s`
 case $host_alias in
+  *-cygwin* | *-CYGWIN*)
+    host_result="Cygwin DLL"
+    PLATFORM=CYGWIN
+    PLUGIN_EXT=.cygdll
+    ;;
   *-darwin* | *-Darwin*)
     host_result="Darwin dylib"
     PLATFORM=Darwin
