@@ -617,9 +617,6 @@ int bgzf_read_block(BGZF *fp)
     if (fp->mt) {
         r = t_pool_next_result_wait(fp->mt->out_queue);
         bgzf_job *j = (bgzf_job *)r->data;
-        if (!j) {
-            fprintf(stderr, "OUT OF DATA\n");
-        }
         assert(j);
 
         //fprintf(stderr, "Fetched %p; serial %d, ulen %d, md5 %s\n", r, r->serial, (int)j->uncomp_len);
@@ -645,6 +642,7 @@ int bgzf_read_block(BGZF *fp)
         //dump_block(fp,0);
         //fprintf(stderr, "addr=%d, len=%d, blk={%x...%x}\n", (int)fp->block_address,fp->block_length, ((uint8_t *)fp->uncompressed_block)[0], ((uint8_t *)fp->uncompressed_block)[fp->block_length-1]);
                 
+        t_pool_delete_result(r, 0);
         return 0;
     }
 
@@ -1100,6 +1098,10 @@ static void *bgzf_mt_reader(void *vp) {
 }
 
 int bgzf_thread_pool(BGZF *fp, t_pool *pool) {
+    // No gain from multi-threading when not compressed
+    if (!fp->is_compressed)
+        return 0;
+
     mtaux_t *mt;
     mt = (mtaux_t*)calloc(1, sizeof(mtaux_t));
     if (!mt) return -1;
@@ -1126,6 +1128,10 @@ int bgzf_thread_pool(BGZF *fp, t_pool *pool) {
 
 int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 {
+    // No gain from multi-threading when not compressed
+    if (!fp->is_compressed)
+        return 0;
+
     if (n_threads < 1) return -1; // FIXME: include the I/O thread too?
     t_pool *p = t_pool_init(n_threads);
     if (!p)
@@ -1141,12 +1147,13 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 
 static void mt_destroy(mtaux_t *mt)
 {
-    pool_destroy(mt->job_pool);
-    //t_pool_destroy(mt->pool, 0);
     pthread_mutex_destroy(&mt->job_pool_m);
     t_pool_queue_shutdown(mt->out_queue);
     pthread_join(mt->io_task, NULL);
     t_pool_queue_destroy(mt->out_queue);
+    if (mt->curr_job)
+        pool_free(mt->job_pool, mt->curr_job);
+    pool_destroy(mt->job_pool);
     free(mt);
 }
 
@@ -1304,7 +1311,11 @@ int bgzf_close(BGZF* fp)
         }
     }
 #ifdef BGZF_MT
-    if (fp->mt) mt_destroy(fp->mt);
+    if (fp->mt) {
+        mt_destroy(fp->mt);
+        if (!fp->is_write)
+            fp->uncompressed_block = NULL;
+    }
 #endif
     if ( fp->is_gzip )
     {
@@ -1318,7 +1329,7 @@ int bgzf_close(BGZF* fp)
     ret = hclose(fp->fp);
     if (ret != 0) return -1;
     bgzf_index_destroy(fp);
-    //free(fp->uncompressed_block);
+    free(fp->uncompressed_block);
     free(fp->compressed_block);
     free_cache(fp);
     free(fp);
