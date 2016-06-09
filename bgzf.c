@@ -189,10 +189,9 @@ static BGZF *bgzf_read_init(hFILE *hfpr)
     if (fp == NULL) return NULL;
 
     fp->is_write = 0;
-    fp->is_compressed = (n==2 && magic[0]==0x1f && magic[1]==0x8b);
     fp->uncompressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
     fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
-    fp->is_compressed = (n==18 && magic[0]==0x1f && magic[1]==0x8b) ? 1 : 0;
+    fp->is_compressed = (n==18 && magic[0]==0x1f && magic[1]==0x8b);
     fp->is_gzip = ( !fp->is_compressed || ((magic[3]&4) && memcmp(&magic[12], "BC\2\0",4)==0) ) ? 0 : 1;
 #ifdef BGZF_CACHE
     fp->cache = kh_init(cache);
