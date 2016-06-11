@@ -44,6 +44,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/os.h"
 #include "htslib/hts.h"
 
+KHASH_MAP_INIT_STR(m_s2u64, uint64_t)
+
 #define Z_CRAM_STRAT Z_FILTERED
 //#define Z_CRAM_STRAT Z_RLE
 //#define Z_CRAM_STRAT Z_HUFFMAN_ONLY
@@ -114,7 +116,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 
 	k = kh_put(map, h->preservation_map, "RN", &r);
 	if (-1 == r) return NULL;
-	kh_val(h->preservation_map, k).i = 1;
+	kh_val(h->preservation_map, k).i = !fd->lossy_read_names;
 
 	if (CRAM_MAJOR_VERS(fd->version) == 1) {
 	    k = kh_put(map, h->preservation_map, "PI", &r);
@@ -753,17 +755,9 @@ static int cram_encode_slice_read(cram_fd *fd,
 
     r |= h->codecs[DS_RG]->encode(s, h->codecs[DS_RG], (char *)&cr->rg, 1);
 
-    if (c->comp_hdr->read_names_included) {
-	// RN codec: Already stored in block[3].
-    }
-
     if (cr->cram_flags & CRAM_FLAG_DETACHED) {
 	i32 = cr->mate_flags;
 	r |= h->codecs[DS_MF]->encode(s, h->codecs[DS_MF], (char *)&i32, 1);
-
-	if (!c->comp_hdr->read_names_included) {
-	    // RN codec: Already stored in block[3].
-	}
 
 	r |= h->codecs[DS_NS]->encode(s, h->codecs[DS_NS],
 				      (char *)&cr->mate_ref_id, 1);
@@ -1219,6 +1213,164 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     return r ? -1 : 0;
 }
 
+ /*
+ * Returns the number of expected read names for this record.
+ */
+static int expected_template_count(bam_seq_t *b) {
+    int expected = bam_flag(b) & BAM_FPAIRED ? 2 : 1;
+
+    uint8_t *TC = (uint8_t *)bam_aux_get(b, "TC");
+    if (TC) {
+	int n = bam_aux2i(TC);
+	if (expected < n)
+	    expected = n;
+    }
+
+    if (!TC && bam_aux_get(b, "SA")) {
+	// We could count the semicolons, but we'd have to do this for
+	// read1, read2 and read(not-1-or-2) combining the results
+	// together.  This is a cheap and safe alternative for now.
+	expected = INT_MAX;
+    }
+
+    return expected;
+}
+
+/*
+ * Lossily reject read names.
+ *
+ * The rule here is that if all reads for this template reside in the
+ * same slice then we can lose the name.  Otherwise we keep them as we
+ * do not know when (or if) the other reads will turn up.
+ *
+ * Note there may be only 1 read (non-paired library) or more than 2
+ * reads (paired library with supplementary reads), or other weird
+ * setups.  We need to know how many are expected.  Ways to guess:
+ *
+ * - Flags (0x1 - has > 1 read)
+ * - TC aux field (not mandatory)
+ * - SA tags (count semicolons, NB per fragment so sum - hard)
+ * - RNEXT/PNEXT uniqueness count. (not implemented, tricky)
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+static int lossy_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
+			    int bam_start) {
+    int r1, r2, ret = -1;
+
+    // Initialise cram_flags
+    for (r2 = 0; r2 < s->hdr->num_records; r2++)
+	s->crecs[r2].cram_flags = 0;
+
+    if (!fd->lossy_read_names)
+	return 0;
+
+    khash_t(m_s2u64) *names = kh_init(m_s2u64);
+    if (!names)
+	goto fail;
+
+    // 1: Iterate through names to count frequency
+    for (r1 = bam_start, r2 = 0; r2 < s->hdr->num_records; r1++, r2++) {
+	//cram_record *cr = &s->crecs[r2];
+	bam_seq_t *b = c->bams[r1];
+	khint_t k;
+	int n;
+	uint64_t e;
+	union {
+	    uint64_t i64;
+	    struct {
+		int32_t e,c; // expected & observed counts.
+	    };
+	} u;
+
+	e = expected_template_count(b);
+	u.e = e; u.c = 1;
+
+	k = kh_put(m_s2u64, names, bam_name(b), &n);
+	if (n == -1)
+	    goto fail;
+
+	if (n == 0) {
+	    // not a new name
+	    u.i64 = kh_val(names, k);
+	    if (u.e != e) {
+		// different expectation or already hit the max
+		//fprintf(stderr, "Err computing no. %s recs\n", bam_name(b));
+		kh_val(names, k) = 0;
+	    } else {
+		u.c++;
+		if (u.e == u.c) {
+		    // Reached expected count.
+		    kh_val(names, k) = -1;
+		} else {
+		    kh_val(names, k) = u.i64;
+		}
+	    }
+	} else {
+	    // new name
+	    kh_val(names, k) = u.i64;
+	}
+    }
+
+    // 2: Remove names if all present (hd.i == -1)
+    for (r1 = bam_start, r2 = 0; r2 < s->hdr->num_records; r1++, r2++) {
+	cram_record *cr = &s->crecs[r2];
+	bam_seq_t *b = c->bams[r1];
+	khint_t k;
+
+	k = kh_get(m_s2u64, names, bam_name(b));
+
+	if (k == kh_end(names))
+	    goto fail;
+
+	if (kh_val(names, k) == -1)
+	    cr->cram_flags = CRAM_FLAG_DISCARD_NAME;
+    }
+
+    ret = 0;
+ fail: // ret==-1
+
+    if (names)
+	kh_destroy(m_s2u64, names);
+
+    return ret;
+}
+
+/*
+ * Adds the reading names.  We do this here as a separate pass rather
+ * than per record in the process_one_read calls as that function can
+ * go back and change the CRAM_FLAG_DETACHED status of a previously
+ * processed read if it subsequently determines the TLEN field is
+ * incorrect.  Given DETACHED reads always try to decode read names,
+ * we need to know their status before generating the read-name block.
+ *
+ * Output is an update s->name_blk, and cr->name / cr->name_len
+ * fields.
+ */
+static void add_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
+			   int bam_start) {
+    int r1, r2;
+    int keep_names = !fd->lossy_read_names;
+
+    for (r1 = bam_start, r2 = 0;
+	 r1 < c->curr_c_rec && r2 < s->hdr->num_records;
+	 r1++, r2++) {
+	cram_record *cr = &s->crecs[r2];
+	bam_seq_t *b = c->bams[r1];
+
+	cr->name        = BLOCK_SIZE(s->name_blk);
+	if ((cr->cram_flags & CRAM_FLAG_DETACHED) || keep_names) {
+	    BLOCK_APPEND(s->name_blk, bam_name(b), bam_name_len(b));
+	    cr->name_len    = bam_name_len(b);
+	} else {
+	    // Can only discard duplicate names if not detached
+	    cr->name_len = 0;
+	}
+	cram_stats_add(c->stats[DS_RN], cr->name_len);
+    }
+}
+
 /*
  * Encodes all slices in a container into blocks.
  * Returns 0 on success
@@ -1274,13 +1426,17 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 	cram_slice *s = c->slices[sn];
 	int first_base = INT_MAX, last_base = INT_MIN;
 
+	int r1_start = r1;
+
 	assert(sn < c->curr_slice);
 
-	/* FIXME: we could create our slice objects here too instead of
-	 * in cram_put_bam_seq. It's more natural here and also this is
-	 * bit is threaded so it's less work in the main thread.
-	 */
+	// Discover which read names *may* be safely removed.
+	// Ie which ones have all their records in this slice.
+	if (lossy_read_names(fd, c, s, r1_start) != 0)
+	    return -1;
 
+	// Iterate through records creating the cram blocks for some
+	// fields and just gathering stats for others.
 	for (r2 = 0; r1 < c->curr_c_rec && r2 < c->max_rec; r1++, r2++) {
 	    cram_record *cr = &s->crecs[r2];
 	    bam_seq_t *b = c->bams[r1];
@@ -1314,6 +1470,13 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 	    if (last_base < cr->aend)
 		last_base = cr->aend;
 	}
+
+	// Process_one_read doesn't add read names as it can change
+	// its mind during the loop on the CRAM_FLAG_DETACHED setting
+	// of earlier records (if it detects the auto-generation of
+	// TLEN is incorrect).  This affects which read-names can be
+	// lossily compressed, so we do these in another pass.
+	add_read_names(fd, c, s, r1_start);
 
 	if (c->multi_seq) {
 	    s->hdr->ref_seq_id    = -2;
@@ -2332,6 +2495,35 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 
 
 /*
+ * During cram_next_container or before the final flush at end of
+ * file, we update the current slice headers and increment the slice
+ * number to the next slice.
+ *
+ * See cram_next_container() and cram_close().
+ */
+void cram_update_curr_slice(cram_container *c) {
+    cram_slice *s = c->slice;
+    if (c->multi_seq) {
+	s->hdr->ref_seq_id    = -2;
+	s->hdr->ref_seq_start = 0;
+	s->hdr->ref_seq_span  = 0;
+    } else {
+	s->hdr->ref_seq_id    = c->curr_ref;
+	s->hdr->ref_seq_start = c->first_base;
+	s->hdr->ref_seq_span  = c->last_base - c->first_base + 1;
+    }
+    s->hdr->num_records   = c->curr_rec;
+
+    if (c->curr_slice == 0) {
+	if (c->ref_seq_id != s->hdr->ref_seq_id)
+	    c->ref_seq_id  = s->hdr->ref_seq_id;
+	c->ref_seq_start = c->first_base;
+    }
+
+    c->curr_slice++;
+}
+
+/*
  * Handles creation of a new container or new slice, flushing any
  * existing containers when appropriate. 
  *
@@ -2342,34 +2534,14 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
  */
 static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
     cram_container *c = fd->ctr;
-    cram_slice *s;
     int i;
 
     /* First occurence */
     if (c->curr_ref == -2)
 	c->curr_ref = bam_ref(b);
 
-    if (c->slice) {
-	s = c->slice;
-	if (c->multi_seq) {
-	    s->hdr->ref_seq_id    = -2;
-	    s->hdr->ref_seq_start = 0;
-	    s->hdr->ref_seq_span  = 0;
-	} else {
-	    s->hdr->ref_seq_id    = c->curr_ref;
-	    s->hdr->ref_seq_start = c->first_base;
-	    s->hdr->ref_seq_span  = c->last_base - c->first_base + 1;
-	}
-	s->hdr->num_records   = c->curr_rec;
-
-	if (c->curr_slice == 0) {
-	    if (c->ref_seq_id != s->hdr->ref_seq_id)
-		c->ref_seq_id  = s->hdr->ref_seq_id;
-	    c->ref_seq_start = c->first_base;
-	}
-
-	c->curr_slice++;
-    }
+    if (c->slice)
+	cram_update_curr_slice(c);
 
     /* Flush container */
     if (c->curr_slice == c->max_slice ||
@@ -2489,9 +2661,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     // Non reference based encoding means storing the bases verbatim as features, which in
     // turn means every base also has a quality already stored.
     if (!fd->no_ref || CRAM_MAJOR_VERS(fd->version) >= 3)
-	cr->cram_flags = CRAM_FLAG_PRESERVE_QUAL_SCORES;
-    else
-	cr->cram_flags = 0;
+	cr->cram_flags |= CRAM_FLAG_PRESERVE_QUAL_SCORES;
 
     if (cr->len <= 0 && CRAM_MAJOR_VERS(fd->version) >= 3)
 	cr->cram_flags |= CRAM_FLAG_NO_SEQ;
@@ -2510,13 +2680,6 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	//cram_stats_add(c->stats[DS_AP], cr->apos);
     }
     c->max_apos += (cr->apos > c->max_apos) * (cr->apos - c->max_apos);
-
-    cr->name        = BLOCK_SIZE(s->name_blk);
-    cr->name_len    = bam_name_len(b);
-    cram_stats_add(c->stats[DS_RN], cr->name_len);
-
-    BLOCK_APPEND(s->name_blk, bam_name(b), bam_name_len(b));
-
 
     /*
      * This seqs_ds is largely pointless and it could reuse the same memory
@@ -2809,9 +2972,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	//fprintf(stderr, "Checking %"PRId64"/%.*s\t", rnum,
 	//	cr->name_len, DSTRING_STR(s->name_ds)+cr->name);
 	if (cr->flags & BAM_FPAIRED) {
-	    char *key = string_ndup(s->pair_keys,
-				    (char *)BLOCK_DATA(s->name_blk)+cr->name,
-				    cr->name_len);
+	    char *key = string_ndup(s->pair_keys, bam_name(b), bam_name_len(b));
 	    if (!key)
 		return -1;
 
@@ -2879,6 +3040,14 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	    // Supplementary reads are just too ill defined
 	    if ((cr->flags & BAM_FSUPPLEMENTARY) ||
 		(p->flags & BAM_FSUPPLEMENTARY))
+		goto detached;
+
+	    // When in lossy name mode, if a read isn't detached we
+	    // cannot store the name.  The corollary is that when we
+	    // must store the name, it must be detached (inefficient).
+	    if (fd->lossy_read_names &&
+		(!(cr->cram_flags & CRAM_FLAG_DISCARD_NAME) ||
+		 !((p->cram_flags & CRAM_FLAG_DISCARD_NAME))))
 		goto detached;
 
 	    /*

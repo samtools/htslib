@@ -176,6 +176,7 @@ LIBHTS_OBJS = \
 	cram/vlen.o \
 	cram/zfio.o
 
+PLUGIN_EXT  =
 PLUGIN_OBJS =
 
 cram_h = cram/cram.h $(cram_samtools_h) $(cram_sam_header_h) $(cram_structs_h) $(cram_io_h) cram/cram_encode.h cram/cram_decode.h cram/cram_stats.h cram/cram_codecs.h cram/cram_index.h $(htslib_cram_h)
@@ -207,21 +208,22 @@ config.h:
 lib-static: libhts.a
 
 # $(shell), :=, and ifeq/.../endif are GNU Make-specific.  If you don't have
-# GNU Make, comment out the parts of this conditional that don't apply.
+# GNU Make, comment out the parts of these conditionals that don't apply.
+ifneq "$(origin PLATFORM)" "file"
 PLATFORM := $(shell uname -s)
+endif
 ifeq "$(PLATFORM)" "Darwin"
 SHLIB_FLAVOUR = dylib
 lib-shared: libhts.dylib
-BUILT_PLUGINS = $(PLUGIN_OBJS:.o=.bundle)
 else ifeq "$(findstring CYGWIN, $(PLATFORM))" "CYGWIN"
 SHLIB_FLAVOUR = cygdll
 lib-shared: cyghtsdll.dll
-BUILT_PLUGINS = $(PLUGIN_OBJS:.o=.dll)
 else
 SHLIB_FLAVOUR = so
 lib-shared: libhts.so
-BUILT_PLUGINS = $(PLUGIN_OBJS:.o=.so)
 endif
+
+BUILT_PLUGINS = $(PLUGIN_OBJS:.o=$(PLUGIN_EXT))
 
 plugins: $(BUILT_PLUGINS)
 

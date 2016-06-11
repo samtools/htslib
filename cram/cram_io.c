@@ -4208,6 +4208,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->embed_ref = 0;
     fd->no_ref = 0;
     fd->ignore_md5 = 0;
+    fd->lossy_read_names = 0;
     fd->use_bz2 = 0;
     fd->use_rans = (CRAM_MAJOR_VERS(fd->version) >= 3);
     fd->use_lzma = 0;
@@ -4286,7 +4287,8 @@ int cram_flush(cram_fd *fd) {
 
     if (fd->mode == 'w' && fd->ctr) {
 	if(fd->ctr->slice)
-	    fd->ctr->curr_slice++;
+	    cram_update_curr_slice(fd->ctr);
+
 	if (-1 == cram_flush_container_mt(fd, fd->ctr))
 	    return -1;
     }
@@ -4308,7 +4310,8 @@ int cram_close(cram_fd *fd) {
 
     if (fd->mode == 'w' && fd->ctr) {
 	if(fd->ctr->slice)
-	    fd->ctr->curr_slice++;
+	    cram_update_curr_slice(fd->ctr);
+
 	if (-1 == cram_flush_container_mt(fd, fd->ctr))
 	    return -1;
     }
@@ -4473,6 +4476,10 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_IGNORE_MD5:
 	fd->ignore_md5 = va_arg(args, int);
+	break;
+
+    case CRAM_OPT_LOSSY_NAMES:
+	fd->lossy_read_names = va_arg(args, int);
 	break;
 
     case CRAM_OPT_USE_BZIP2:

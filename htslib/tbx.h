@@ -66,6 +66,7 @@ extern tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sam, tbx
     BGZF *hts_get_bgzfp(htsFile *fp);
     int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end);
 
+    tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf);
     int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf);
     int tbx_index_build2(const char *fn, const char *fnidx, int min_shift, const tbx_conf_t *conf);
     tbx_t *tbx_index_load(const char *fn);
