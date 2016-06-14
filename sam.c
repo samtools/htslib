@@ -1303,9 +1303,11 @@ int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data)
 
     b->l_data += 3 + len;
     if (b->m_data < b->l_data) {
+        ptrdiff_t s_offset = (ptrdiff_t) (s - b->m_data);
         b->m_data = b->l_data;
         kroundup32(b->m_data);
         b->data = (uint8_t*)realloc(b->data, b->m_data);
+        s = (uint8_t *) (b->m_data + s_offset);
     }
     memmove(s+3+len, s, l_aux - (s - aux));
     s[0] = tag[0];
