@@ -128,7 +128,7 @@ print-version:
 	@echo $(PACKAGE_VERSION)
 
 
-.SUFFIXES: .bundle .c .o .pico .so
+.SUFFIXES: .bundle .c .o .pico .so .dll
 
 .c.o:
 	$(CC) $(CFLAGS) -I. $(CPPFLAGS) -c -o $@ $<
@@ -215,6 +215,9 @@ endif
 ifeq "$(PLATFORM)" "Darwin"
 SHLIB_FLAVOUR = dylib
 lib-shared: libhts.dylib
+else ifeq "$(findstring CYGWIN, $(PLATFORM))" "CYGWIN"
+SHLIB_FLAVOUR = cygdll
+lib-shared: cyghtsdll.dll
 else
 SHLIB_FLAVOUR = so
 lib-shared: libhts.so
@@ -248,6 +251,15 @@ libhts.dylib: $(LIBHTS_OBJS)
 	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) -lz $(LIBS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
+cyghtsdll.dll: libhts.a
+	$(CC) -shared -pthread $(LDFLAGS) \
+    -o cyghtsdll.dll \
+    -Wl,--out-implib=libhts.dll.a \
+    -Wl,--export-all-symbols \
+    -Wl,--enable-auto-import \
+    -Wl,--whole-archive libhts.a \
+    -Wl,--no-whole-archive -lz -lm $(LIBS)
+	ln -sf cyghtsdll.dll cyghtsdll.dll.$(LIBHTS_SOVERSION)
 
 .pico.so:
 	$(CC) -shared -Wl,-E -pthread $(LDFLAGS) -o $@ $< $(LIBS)
@@ -378,6 +390,12 @@ install-dylib: libhts.dylib installdirs
 	ln -sf libhts.$(PACKAGE_VERSION).dylib $(DESTDIR)$(libdir)/libhts.dylib
 	ln -sf libhts.$(PACKAGE_VERSION).dylib $(DESTDIR)$(libdir)/libhts.$(LIBHTS_SOVERSION).dylib
 
+install-cygdll: cyghtsdll.dll installdirs
+	$(INSTALL_DATA) cyghtsdll.dll $(DESTDIR)$(libdir)/cyghtsdll.dll.$(PACKAGE_VERSION)
+	ln -sf cyghtsdll.dll.$(PACKAGE_VERSION) $(DESTDIR)$(libdir)/cyghtsdll.dll
+	ln -sf cyghtsdll.dll.$(PACKAGE_VERSION) $(DESTDIR)$(libdir)/cyghtsdll.dll.$(LIBHTS_SOVERSION)
+
+
 # Substitute these pseudo-autoconf variables only at install time
 # so that "make install prefix=/prefix/path" etc continue to work.
 install-pkgconfig: installdirs
@@ -409,6 +427,8 @@ clean-so:
 clean-dylib:
 	-rm -f libhts.dylib libhts.*.dylib
 
+clean-cygdll:
+	-rm -f cyghtsdll.dll cyghtsdll.dll.*
 
 tags TAGS:
 	ctags -f TAGS *.[ch] cram/*.[ch] htslib/*.h
@@ -432,3 +452,4 @@ force:
 .PHONY: maintainer-clean mostlyclean plugins print-version tags test testclean
 .PHONY: clean-so install-so
 .PHONY: clean-dylib install-dylib
+.PHONY: clean-cygdll install-cygdll
