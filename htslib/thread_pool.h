@@ -109,8 +109,8 @@ typedef struct t_pool_queue {
     t_pool_result *output_head;      // output list
     t_pool_result *output_tail;
     int qsize;                       // max size of i/o queues
-    int next_serial;                 // next serial for input
-    int curr_serial;                 // current serial (next output)
+    int next_serial;                 // next serial for output
+    int curr_serial;                 // current serial (next input)
 
     int n_input;                     // no. items in input queue; was njobs
     int n_output;                    // no. items in output queue
@@ -118,6 +118,10 @@ typedef struct t_pool_queue {
 
     int shutdown;                    // true if pool is being destroyed
     int in_only;                     // if true, don't queue result up.
+    int wake_dispatch;               // unblocks waiting dispatchers
+
+    int ref_count;                   // used to track safe destruction
+
     pthread_cond_t output_avail_c;   // Signalled on each new output
     pthread_cond_t input_not_full_c; // Input queue is no longer full
     pthread_cond_t input_empty_c;    // Input queue has become empty
@@ -181,10 +185,18 @@ t_pool *t_pool_init(int n);
  * Returns 0 on success
  *        -1 on failure
  */
+
+// FIXME: should this drop the t_pool*p argument? It's just q->p
 int t_pool_dispatch(t_pool *p, t_pool_queue *q,
                     void *(*func)(void *arg), void *arg);
 int t_pool_dispatch2(t_pool *p, t_pool_queue *q,
                      void *(*func)(void *arg), void *arg, int nonblock);
+
+/*
+ * Wakes up a single thread stuck in dispatch and make it return with
+ * errno EAGAIN.
+ */
+void t_pool_wake_dispatch(t_pool_queue *q);
 
 /*
  * Flushes the queue, but doesn't exit. This simply drains the queue and
@@ -198,6 +210,20 @@ int t_pool_dispatch2(t_pool *p, t_pool_queue *q,
  *        -1 on failure
  */
 int t_pool_queue_flush(t_pool_queue *q);
+
+/*
+ * Resets a queue to the intial state.
+ *
+ * This removes any queued up input jobs, disables any notification of
+ * new results/output, flushes what is left and then discards any
+ * queued output.  Anything consumer stuck in a wait on results to
+ * appear should stay stuck and will only wake up when new data is
+ * pushed through the queue.
+ *
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int t_pool_queue_reset(t_pool_queue *q, int free_results);
 
 /*
  * Destroys a thread pool. If 'kill' is true the threads are terminated now,

@@ -42,6 +42,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <assert.h>
 #include <stdarg.h>
 #include <unistd.h>
+#include <limits.h>
 
 #include "htslib/thread_pool.h"
 
@@ -88,10 +89,11 @@ static int t_pool_add_result(t_pool_job *j, void *data) {
     t_pool_queue *q = j->q;
     t_pool_result *r;
 
+    pthread_mutex_lock(&q->p->pool_m);
+
     DBG_OUT(stderr, "%d: Adding result to queue %p, serial %d, %d of %d\n",
             worker_id(j->p), q, j->serial, q->n_output+1, q->qsize);
 
-    pthread_mutex_lock(&q->p->pool_m);
     if (--q->n_processing == 0)
         pthread_cond_signal(&q->none_processing_c);
 
@@ -319,6 +321,8 @@ t_pool_queue *t_pool_queue_init(t_pool *p, int qsize, int in_only) {
     q->qsize       = qsize;
     q->in_only     = in_only;
     q->shutdown    = 0;
+    q->wake_dispatch = 0;
+    q->ref_count   = 1;
 
     q->next        = NULL;
     q->prev        = NULL;
@@ -337,14 +341,21 @@ void t_pool_queue_destroy(t_pool_queue *q) {
     if (!q)
         return;
 
+    // Ensure it's fully drained before destroying the queue
     t_pool_queue_detach(q->p, q);
+    t_pool_queue_reset(q, 0);
+
+    // Maybe a worker is scanning this queue, so delay destruction
+    if (--q->ref_count > 0)
+        return;
 
     pthread_cond_destroy(&q->output_avail_c);
     pthread_cond_destroy(&q->input_not_full_c);
     pthread_cond_destroy(&q->input_empty_c);
     pthread_cond_destroy(&q->none_processing_c);
 
-    //memset(q, 0xbb, sizeof(*q));
+
+    memset(q, 0xbb, sizeof(*q));
     free(q);
 
     DBG_OUT(stderr, "Destroyed results queue %p\n", q);
@@ -460,10 +471,6 @@ static void *t_pool_worker(void *arg) {
                 work_to_do = 1;
                 break;
             }
-//            if (q && q->input_head) {
-//                printf("No work: %d-%d > %d-%d\n", 
-//                       q->qsize, q->n_output, p->tsize, p->nwaiting);
-//            }
 
             if (q) q = q->next;
         } while (q && q != first);
@@ -521,6 +528,7 @@ static void *t_pool_worker(void *arg) {
         // Otherwise work_to_do, so process as many items in this queue as
         // possible before switching to another queue.  This means threads
         // often end up being dedicated to one type of work.
+        q->ref_count++;
         while (q->input_head && q->qsize - q->n_output > q->n_processing) {
             if (p->shutdown)
                 goto shutdown;
@@ -548,6 +556,9 @@ static void *t_pool_worker(void *arg) {
 
             pthread_mutex_unlock(&p->pool_m);
 
+            DBG_OUT(stderr, "%d: Processing queue %p, serial %d\n",
+                    worker_id(j->p), q, j->serial);
+
             t_pool_add_result(j, j->func(j->arg));
             //memset(j, 0xbb, sizeof(*j));
             free(j);
@@ -558,11 +569,13 @@ static void *t_pool_worker(void *arg) {
             p->total_time += TDIFF(t3,t1);
 #endif
         }
+        if (--q->ref_count == 0) // we were the last user
+            t_pool_queue_destroy(q);
+        else
+            // Out of jobs on this queue, so restart search from next one.
+            // This is equivalent to "work-stealing".
+            p->q_head = q->next;
 
-        // Out of jobs on this queue, so restart search from next one.
-        // This is equivalent to "work-stealing".
-        p->q_head = q->next;
-        assert(p->q_head);
         pthread_mutex_unlock(&p->pool_m);
     }
     
@@ -706,9 +719,9 @@ int t_pool_dispatch2(t_pool *p, t_pool_queue *q,
                      void *(*func)(void *arg), void *arg, int nonblock) {
     t_pool_job *j;
 
-    DBG_OUT(stderr, "Dispatching job for queue %p, serial %d\n", q, q->curr_serial);
-
     pthread_mutex_lock(&p->pool_m);
+
+    DBG_OUT(stderr, "Dispatching job for queue %p, serial %d\n", q, q->curr_serial);
 
     if (q->n_input >= q->qsize && nonblock == 1) {
         pthread_mutex_unlock(&p->pool_m);
@@ -726,11 +739,15 @@ int t_pool_dispatch2(t_pool *p, t_pool_queue *q,
     j->serial = q->curr_serial++;
 
     if (nonblock == 0) {
-        while (q->n_input >= q->qsize && !q->shutdown)
+        while (q->n_input >= q->qsize && !q->shutdown && !q->wake_dispatch)
             pthread_cond_wait(&q->input_not_full_c, &q->p->pool_m);
         if (q->shutdown) {
             pthread_mutex_unlock(&p->pool_m);
             return -1;
+        }
+        if (q->wake_dispatch) {
+            //fprintf(stderr, "Wake => non-block for this operation\n");
+            q->wake_dispatch = 0;
         }
     }
 
@@ -757,6 +774,17 @@ int t_pool_dispatch2(t_pool *p, t_pool_queue *q,
     pthread_mutex_unlock(&p->pool_m);
 
     return 0;
+}
+
+/*
+ * Wakes up a single thread stuck in dispatch and make it return with
+ * errno EAGAIN.
+ */
+void t_pool_wake_dispatch(t_pool_queue *q) {
+    pthread_mutex_lock(&q->p->pool_m);
+    q->wake_dispatch = 1;
+    pthread_cond_signal(&q->input_not_full_c);
+    pthread_mutex_unlock(&q->p->pool_m);
 }
 
 /*
@@ -804,6 +832,68 @@ int t_pool_queue_flush(t_pool_queue *q) {
      DBG_OUT(stderr, "Flushed complete for pool %p, queue %p\n", p, q);
  
      return 0;
+}
+
+/*
+ * Resets a queue to the intial state.
+ *
+ * This removes any queued up input jobs, disables any notification of
+ * new results/output, flushes what is left and then discards any
+ * queued output.  Anything consumer stuck in a wait on results to
+ * appear should stay stuck and will only wake up when new data is
+ * pushed through the queue.
+ *
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int t_pool_queue_reset(t_pool_queue *q, int free_results) {
+    pthread_mutex_lock(&q->p->pool_m);
+    // prevent next_result from returning data during our flush
+    q->next_serial = INT_MAX;
+
+    // Purge any queued input not yet being acted upon
+    t_pool_job *j, *jn;
+    for (j = q->input_head; j; j = jn) {
+        //fprintf(stderr, "Discard input %d\n", j->serial);
+        jn = j->next;
+        free(j);
+    }
+    q->input_head = q->input_tail = NULL;
+    q->n_input = 0;
+
+    // Purge any queued output, thus ensuring we have room to flush.
+    t_pool_result *r, *rn;
+    for (r = q->output_head; r; r = rn) {
+        //fprintf(stderr, "Discard output %d\n", r->serial);
+        rn = r->next;
+        t_pool_delete_result(r, free_results);
+    }
+    q->output_head = q->output_tail = NULL;
+    q->n_output = 0;
+    pthread_mutex_unlock(&q->p->pool_m);
+
+    // Wait for any jobs being processed to complete.
+    // (TODO: consider how to cancel any currently processing jobs.
+    // Probably this is too hard.)
+    if (t_pool_queue_flush(q) != 0)
+        return -1;
+
+    // Discard any new output.
+    pthread_mutex_lock(&q->p->pool_m);
+    for (r = q->output_head; r; r = rn) {
+        //fprintf(stderr, "Discard output %d\n", r->serial);
+        rn = r->next;
+        t_pool_delete_result(r, free_results);
+    }
+    q->output_head = q->output_tail = NULL;
+    q->n_output = 0;
+
+    // Finally reset the serial back to the starting point.
+    q->next_serial = q->curr_serial = 0;
+    pthread_cond_signal(&q->input_not_full_c);
+    pthread_mutex_unlock(&q->p->pool_m);
+
+    return 0;
 }
 
 /*
@@ -908,8 +998,8 @@ int test_square_u(int n) {
     }
 
     t_pool_queue_flush(q);
-    t_pool_destroy(p, 0);
     t_pool_queue_destroy(q);
+    t_pool_destroy(p, 0);
 
     return 0;
 }
@@ -987,8 +1077,8 @@ int test_square(int n) {
         t_pool_delete_result(r, 1);
     }
 
-    t_pool_destroy(p, 0);
     t_pool_queue_destroy(q);
+    t_pool_destroy(p, 0);
 
     return 0;
 }
@@ -1048,8 +1138,8 @@ int test_squareB(int n) {
     t_pool_queue_flush(q);
     assert(t_pool_next_result(q) == NULL);
 
-    t_pool_destroy(p, 0);
     t_pool_queue_destroy(q);
+    t_pool_destroy(p, 0);
     pthread_join(tid, NULL);
 
     return 0;
@@ -1221,10 +1311,10 @@ int test_pipe(int n) {
     pthread_join(tid3toO, &retv); ret |= (retv != NULL);
     printf("Return value %d\n", ret);
 
-    t_pool_destroy(p, 0);
     t_pool_queue_destroy(q1);
     t_pool_queue_destroy(q2);
     t_pool_queue_destroy(q3);
+    t_pool_destroy(p, 0);
 
     return 0;
 }

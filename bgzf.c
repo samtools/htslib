@@ -86,6 +86,12 @@ typedef struct bgzf_job {
     int64_t block_address;
 } bgzf_job;
 
+enum mtaux_cmd {
+    NONE = 0,
+    SEEK,
+    CLOSE,
+};
+
 typedef struct bgzf_mtaux_t {
     // Memory pool for bgzf_job structs, to avoid many malloc/free
     pool_alloc_t *job_pool;
@@ -104,6 +110,14 @@ typedef struct bgzf_mtaux_t {
     int jobs_pending; // number of jobs waiting
     int flush_pending;
     void *free_block;
+
+    // Message passing to the reader thread; eg seek requests
+    int errcode;
+    uint64_t block_address;
+    pthread_mutex_t command_m; // Set whenever fp is being updated
+    pthread_cond_t command_c;
+    enum mtaux_cmd command;
+    int read_eof;
 } mtaux_t;
 #endif
 
@@ -615,13 +629,15 @@ int bgzf_read_block(BGZF *fp)
     t_pool_result *r;
 
     if (fp->mt) {
+        //fprintf(stderr, "M: Waiting for next result\n");
         r = t_pool_next_result_wait(fp->mt->out_queue);
         bgzf_job *j = (bgzf_job *)r->data;
         assert(j);
 
-        //fprintf(stderr, "Fetched %p; serial %d, ulen %d, md5 %s\n", r, r->serial, (int)j->uncomp_len);
+        //fprintf(stderr, "M: Fetched %p, serial %d\n", j, r->serial);
 
-        fp->block_offset = 0;
+        // block_length=0 and block_offset set by bgzf_seek.
+        if (fp->block_length != 0) fp->block_offset = 0;
         fp->block_address = j->block_address;
         fp->block_length = j->uncomp_len;
 
@@ -789,8 +805,6 @@ int bgzf_read_block(BGZF *fp)
 
 ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
 {
-    hts_verbose=3;
-
     ssize_t bytes_read = 0;
     uint8_t *output = (uint8_t*)data;
     if (length <= 0) return 0;
@@ -868,11 +882,16 @@ void *bgzf_encode_func(void *arg) {
 void *bgzf_decode_func(void *arg) {
     bgzf_job *j = (bgzf_job *)arg;
 
+    //fprintf(stderr, "W: Start decoding of block %p\n", j);
+
     j->uncomp_len = BGZF_MAX_BLOCK_SIZE;
     int ret = bgzf_uncompress(j->uncomp_data, &j->uncomp_len,
                               j->comp_data+18, j->comp_len-18);
     if (ret != 0)
         j->errcode |= BGZF_ERR_ZLIB;
+
+    //sleep(5);
+    //fprintf(stderr, "W: Decoded block %p\n", j);
 
     return arg;
 }
@@ -939,26 +958,9 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
     uint8_t header[BLOCK_HEADER_LENGTH], *compressed_block;
     int count, size = 0, block_length, remaining;
 
-//    // Reading an uncompressed file
-//    if ( !fp->is_compressed )
-//    {
-//        count = hread(fp->fp, fp->uncompressed_block, BGZF_MAX_BLOCK_SIZE);
-//        if (count < 0)  // Error
-//        {
-//            fp->errcode |= BGZF_ERR_IO;
-//            return -1;
-//        }
-//        else if (count == 0)  // EOF
-//        {
-//            fp->block_length = 0;
-//            return 0;
-//        }
-//        if (fp->block_length != 0) fp->block_offset = 0;
-//        fp->block_address += count;
-//        fp->block_length = count;
-//        dump_block(fp, 1);
-//        return 0;
-//    }
+    // NOTE: Guaranteed to be compressed as we block multi-threading in
+    // uncompressed mode.  However it may be gzip compression instead
+    // of bgzf.
 
     // Reading compressed file
     int64_t block_address;
@@ -1076,25 +1078,86 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
 }
 
 
+static void bgzf_mt_seek(BGZF *fp) {
+    mtaux_t *mt = fp->mt;
+
+    t_pool_queue_reset(mt->out_queue, 0);
+    pthread_mutex_lock(&mt->job_pool_m);
+    mt->command = NONE;
+    mt->errcode = 0;
+
+    if (hseek(fp->fp, mt->block_address, SEEK_SET) < 0)
+        mt->errcode = BGZF_ERR_IO;
+
+    pthread_mutex_unlock(&mt->job_pool_m);
+    pthread_cond_signal(&mt->command_c);
+}
+
 
 static void *bgzf_mt_reader(void *vp) {
     BGZF *fp = (BGZF *)vp;
     mtaux_t *mt = fp->mt;
-
+ 
+restart:
     pthread_mutex_lock(&mt->job_pool_m);
     bgzf_job *j = pool_alloc(mt->job_pool);
     pthread_mutex_unlock(&mt->job_pool_m);
     j->errcode = 0;
 
+    mt->read_eof = 0;
     while (bgzf_mt_read_block(fp, j) == 0) {
+
+        // Check for command
+        pthread_mutex_lock(&mt->command_m);
+        switch (mt->command) {
+        case SEEK:
+            bgzf_mt_seek(fp);
+            pthread_mutex_unlock(&mt->command_m);
+            goto restart;
+
+        case CLOSE:
+            pthread_cond_signal(&mt->command_c);
+            pthread_mutex_unlock(&mt->command_m);
+            pthread_exit(NULL);
+        }
+        pthread_mutex_unlock(&mt->command_m);
+
+        // Dispatch
         t_pool_dispatch(mt->pool, mt->out_queue, bgzf_decode_func, j);
+
+        // Allocate buffer for next block
         pthread_mutex_lock(&mt->job_pool_m);
         j = pool_alloc(mt->job_pool);
         pthread_mutex_unlock(&mt->job_pool_m);
         j->errcode = 0;
     }
-    // FIXME: Check j->errcode == 0
-    return 0;
+    mt->read_eof = 1;
+
+    // We hit EOF so can stop reading, but we may get a subsequent
+    // seek request.  In this case we need to restart the reader.
+    //
+    // To handle this we wait on a condition variable and then
+    // monitor the command. (This could be either seek or close.)
+    for (;;) {
+        pthread_mutex_lock(&mt->command_m);
+        if (mt->command == NONE)
+            pthread_cond_wait(&mt->command_c, &mt->command_m);
+        switch(mt->command) {
+        default:
+            pthread_mutex_unlock(&mt->command_m);
+            break;
+
+        case SEEK:
+            bgzf_mt_seek(fp);
+            pthread_mutex_unlock(&mt->command_m);
+            goto restart;
+
+        case CLOSE:
+            pthread_cond_signal(&mt->command_c);
+            pthread_mutex_unlock(&mt->command_m);
+            pthread_exit(NULL);
+        }
+    }
 }
 
 int bgzf_thread_pool(BGZF *fp, t_pool *pool) {
@@ -1117,6 +1180,9 @@ int bgzf_thread_pool(BGZF *fp, t_pool *pool) {
     mt->job_pool = pool_create(sizeof(bgzf_job));
 
     pthread_mutex_init(&mt->job_pool_m, NULL);
+    pthread_mutex_init(&mt->command_m, NULL);
+    pthread_cond_init(&mt->command_c, NULL);
+    mt->read_eof = 0;
     mt->flush_pending = 0;
     mt->jobs_pending = 0;
     mt->free_block = fp->uncompressed_block;
@@ -1147,14 +1213,28 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 
 static void mt_destroy(mtaux_t *mt)
 {
-    pthread_mutex_destroy(&mt->job_pool_m);
-    t_pool_queue_shutdown(mt->out_queue);
+    //fprintf(stderr, "\n\nXXX destroy\n\n");
+    // Notify the reader to shutdown.  FIXME: need this for reader only, not writer.
+    pthread_mutex_lock(&mt->command_m);
+    mt->command = CLOSE;
+    //fprintf(stderr, "XXX signal reader_command=CLOSE\n");
+    pthread_cond_signal(&mt->command_c);
+    //fprintf(stderr, "XXX wake dispatcher\n");
+    t_pool_wake_dispatch(mt->out_queue); // unstick the reader
+    pthread_mutex_unlock(&mt->command_m);
+    //fprintf(stderr, "XXX join io_task\n");
     pthread_join(mt->io_task, NULL);
+
+    pthread_mutex_destroy(&mt->job_pool_m);
+    pthread_mutex_destroy(&mt->command_m);
+    pthread_cond_destroy(&mt->command_c);
     t_pool_queue_destroy(mt->out_queue);
     if (mt->curr_job)
         pool_free(mt->job_pool, mt->curr_job);
     pool_destroy(mt->job_pool);
     free(mt);
+    //fprintf(stderr, "\n\nYYY destroyed\n\n");
+    fflush(stderr);
 }
 
 static int mt_queue(BGZF *fp)
@@ -1365,13 +1445,44 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
     }
     block_offset = pos & 0xFFFF;
     block_address = pos >> 16;
-    if (hseek(fp->fp, block_address, SEEK_SET) < 0) {
-        fp->errcode |= BGZF_ERR_IO;
-        return -1;
+
+    if (fp->mt) {
+        // The reader runs asynchronous and does loops of:
+        //    Read block
+        //    Check & process command
+        //    Dispatch decode job
+        // 
+        // Once at EOF it then switches to loops of
+        //    Wait for command
+        //    Process command (possibly switching back to above loop).
+        //
+        // To seek we therefore send the reader thread a SEEK command, 
+        // waking it up if blocked in dispatch and signalling if
+        // waiting for a command.  We then wait for the response so we
+        // know the seek succeeded.
+        pthread_mutex_lock(&fp->mt->command_m);
+        fp->mt->command = SEEK;
+        fp->mt->block_address = block_address;
+        pthread_cond_signal(&fp->mt->command_c);
+        t_pool_wake_dispatch(fp->mt->out_queue);
+        pthread_cond_wait(&fp->mt->command_c, &fp->mt->command_m);
+        //fprintf(stderr, "Seek return = %d\n", fp->mt->errcode);
+
+        fp->block_length = 0;  // indicates current block has not been loaded
+        fp->block_address = block_address;
+        fp->block_offset = block_offset;
+
+        pthread_mutex_unlock(&fp->mt->command_m);
+    } else {
+        if (hseek(fp->fp, block_address, SEEK_SET) < 0) {
+            fp->errcode |= BGZF_ERR_IO;
+            return -1;
+        }
+        fp->block_length = 0;  // indicates current block has not been loaded
+        fp->block_address = block_address;
+        fp->block_offset = block_offset;
     }
-    fp->block_length = 0;  // indicates current block has not been loaded
-    fp->block_address = block_address;
-    fp->block_offset = block_offset;
+
     return 0;
 }
 
