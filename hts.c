@@ -523,6 +523,26 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "NTHREADS") == 0)
         o->opt = HTS_OPT_NTHREADS, o->val.i = atoi(val);
 
+    else if (strcmp(o->arg, "cache_size") == 0 ||
+             strcmp(o->arg, "CACHE_SIZE") == 0) {
+        char *endp;
+        o->opt = HTS_OPT_CACHE_SIZE;
+        o->val.i = strtol(val, &endp, 0);
+        // NB: Doesn't support floats, eg 1.5g
+        // TODO: extend hts_parse_decimal? See also samtools sort.
+        switch (*endp) {
+        case 'g': case 'G': o->val.i *= 1024;
+        case 'm': case 'M': o->val.i *= 1024;
+        case 'k': case 'K': o->val.i *= 1024; break;
+        case '\0': break;
+        default:
+            fprintf(stderr, "Unrecognised cache size suffix '%c'\n", *endp);
+            free(o->arg);
+            free(o);
+            return -1;
+        }
+    }
+
     else if (strcmp(o->arg, "required_fields") == 0 ||
              strcmp(o->arg, "REQUIRED_FIELDS") == 0)
         o->opt = CRAM_OPT_REQUIRED_FIELDS, o->val.i = strtol(val, NULL, 0);
@@ -899,15 +919,23 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
     if (opt == HTS_OPT_NTHREADS) {
         va_start(args, opt);
         int nthreads = va_arg(args, int);
-        va_end(args);
+        va_end(args); 
         return hts_set_threads(fp, nthreads);
-    }
+   }
 
     if (opt == HTS_OPT_THREAD_POOL) {
         va_start(args, opt);
         t_pool *p = va_arg(args, t_pool *);
         va_end(args);
         return hts_set_thread_pool(fp, p);
+    }
+
+    if (opt == HTS_OPT_CACHE_SIZE) {
+        va_start(args, opt);
+        int cache_size = va_arg(args, int);
+        va_end(args);
+        hts_set_cache_size(fp, cache_size);
+        return 0;
     }
 
     if (fp->format.format != cram)
@@ -937,6 +965,12 @@ int hts_set_thread_pool(htsFile *fp, t_pool *p) {
         return hts_set_opt(fp, CRAM_OPT_THREAD_POOL, p);
     }
     else return 0;
+}
+
+void hts_set_cache_size(htsFile *fp, int n)
+{
+    if (fp->format.compression == bgzf)
+        bgzf_set_cache_size(fp->fp.bgzf, n);
 }
 
 /*

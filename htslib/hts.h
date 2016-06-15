@@ -174,6 +174,7 @@ enum hts_fmt_option {
     HTS_OPT_COMPRESSION_LEVEL = 100,
     HTS_OPT_NTHREADS,
     HTS_OPT_THREAD_POOL,
+    HTS_OPT_CACHE_SIZE,
 };
 
 // For backwards compatibility
@@ -391,6 +392,14 @@ int hts_set_threads(htsFile *fp, int n);
   @return    0 for success, or negative if an error occurred.
 */
 int hts_set_thread_pool(htsFile *fp, t_pool *p);
+
+/*!
+  @abstract  Adds a cache of decompressed blocks, potentially speeding up seeks.
+             This may not work for all file types (currently it is bgzf only).
+  @param fp  The file handle
+  @param n   The size of cache, in bytes
+*/
+void hts_set_cache_size(htsFile *fp, int n);
 
 /*!
   @abstract  Allocates a pool of shared worker threads.
