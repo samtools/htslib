@@ -91,7 +91,7 @@ static int t_pool_add_result(t_pool_job *j, void *data) {
 
     pthread_mutex_lock(&q->p->pool_m);
 
-    DBG_OUT(stderr, "%d: Adding result to queue %p, serial %d, %d of %d\n",
+    DBG_OUT(stderr, "%d: Adding result to queue %p, serial %"PRId64", %d of %d\n",
             worker_id(j->p), q, j->serial, q->n_output+1, q->qsize);
 
     if (--q->n_processing == 0)
@@ -118,7 +118,7 @@ static int t_pool_add_result(t_pool_job *j, void *data) {
         q->output_head = q->output_tail = r;
     }
 
-    DBG_OUT(stderr, "%d: Broadcasting result_avail (id %d)\n",
+    DBG_OUT(stderr, "%d: Broadcasting result_avail (id %"PRId64")\n",
             worker_id(j->p), r->serial);
     pthread_cond_broadcast(&q->output_avail_c);
     DBG_OUT(stderr, "%d: Broadcast complete\n", worker_id(j->p));
@@ -556,7 +556,7 @@ static void *t_pool_worker(void *arg) {
 
             pthread_mutex_unlock(&p->pool_m);
 
-            DBG_OUT(stderr, "%d: Processing queue %p, serial %d\n",
+            DBG_OUT(stderr, "%d: Processing queue %p, serial %"PRId64"\n",
                     worker_id(j->p), q, j->serial);
 
             t_pool_add_result(j, j->func(j->arg));
@@ -721,7 +721,8 @@ int t_pool_dispatch2(t_pool *p, t_pool_queue *q,
 
     pthread_mutex_lock(&p->pool_m);
 
-    DBG_OUT(stderr, "Dispatching job for queue %p, serial %d\n", q, q->curr_serial);
+    DBG_OUT(stderr, "Dispatching job for queue %p, serial %"PRId64"\n",
+            q, q->curr_serial);
 
     if (q->n_input >= q->qsize && nonblock == 1) {
         pthread_mutex_unlock(&p->pool_m);
@@ -761,7 +762,7 @@ int t_pool_dispatch2(t_pool *p, t_pool_queue *q,
         q->input_head = q->input_tail = j;
     }
 
-    DBG_OUT(stderr, "Dispatched (serial %d)\n", j->serial);
+    DBG_OUT(stderr, "Dispatched (serial %"PRId64")\n", j->serial);
 
     // Let a worker know we have data.
     // Keep incoming queue at 1 per running thread, so there is always

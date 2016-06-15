@@ -49,6 +49,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define _THREAD_POOL_H_
 
 #include <pthread.h>
+#include <inttypes.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -67,7 +68,7 @@ typedef struct t_pool_job {
 
     struct t_pool *p;
     struct t_pool_queue *q;
-    int serial;
+    uint64_t serial;
 } t_pool_job;
 
 /*
@@ -75,7 +76,7 @@ typedef struct t_pool_job {
  */
 typedef struct t_res {
     struct t_res *next;
-    int serial; // sequential number for ordering
+    uint64_t serial; // sequential number for ordering
     void *data; // result itself
 } t_pool_result;
 
@@ -109,8 +110,8 @@ typedef struct t_pool_queue {
     t_pool_result *output_head;      // output list
     t_pool_result *output_tail;
     int qsize;                       // max size of i/o queues
-    int next_serial;                 // next serial for output
-    int curr_serial;                 // current serial (next input)
+    uint64_t next_serial;            // next serial for output
+    uint64_t curr_serial;            // current serial (next input)
 
     int n_input;                     // no. items in input queue; was njobs
     int n_output;                    // no. items in output queue
