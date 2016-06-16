@@ -89,6 +89,7 @@ typedef struct bgzf_job {
 enum mtaux_cmd {
     NONE = 0,
     SEEK,
+    HAS_EOF,
     CLOSE,
 };
 
@@ -114,6 +115,7 @@ typedef struct bgzf_mtaux_t {
     // Message passing to the reader thread; eg seek requests
     int errcode;
     uint64_t block_address;
+    int eof;
     pthread_mutex_t command_m; // Set whenever fp is being updated
     pthread_cond_t command_c;
     enum mtaux_cmd command;
@@ -1061,6 +1063,32 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
 }
 
 
+static int bgzf_check_EOF_common(BGZF *fp)
+{
+    uint8_t buf[28];
+    off_t offset = htell(fp->fp);
+    if (hseek(fp->fp, -28, SEEK_END) < 0) {
+        if (errno == ESPIPE) { hclearerr(fp->fp); return 2; }
+        else return -1;
+    }
+    if ( hread(fp->fp, buf, 28) != 28 ) return -1;
+    if ( hseek(fp->fp, offset, SEEK_SET) < 0 ) return -1;
+    return (memcmp("\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0", buf, 28) == 0)? 1 : 0;
+}
+
+/*
+ * Checks EOF from the reader thread.
+ */
+static void bgzf_mt_eof(BGZF *fp) {
+    mtaux_t *mt = fp->mt;
+
+    pthread_mutex_lock(&mt->job_pool_m);
+    mt->eof = bgzf_check_EOF_common(fp);
+    pthread_mutex_unlock(&mt->job_pool_m);
+    pthread_cond_signal(&mt->command_c);
+}
+
+
 /*
  * Performs the seek (called by reader thread).
  *
@@ -1282,6 +1310,11 @@ restart:
             pthread_mutex_unlock(&mt->command_m);
             goto restart;
 
+        case HAS_EOF:
+            bgzf_mt_eof(fp);
+            pthread_mutex_unlock(&mt->command_m);
+            goto restart;
+
         case CLOSE:
             pthread_cond_signal(&mt->command_c);
             pthread_mutex_unlock(&mt->command_m);
@@ -1321,6 +1354,11 @@ restart:
             bgzf_mt_seek(fp);
             pthread_mutex_unlock(&mt->command_m);
             goto restart;
+
+        case HAS_EOF:
+            bgzf_mt_eof(fp);
+            pthread_mutex_unlock(&mt->command_m);
+            continue;
 
         case CLOSE:
             pthread_cond_signal(&mt->command_c);
@@ -1595,17 +1633,22 @@ void bgzf_set_cache_size(BGZF *fp, int cache_size)
     if (fp) fp->cache_size = cache_size;
 }
 
-int bgzf_check_EOF(BGZF *fp)
-{
-    uint8_t buf[28];
-    off_t offset = htell(fp->fp);
-    if (hseek(fp->fp, -28, SEEK_END) < 0) {
-        if (errno == ESPIPE) { hclearerr(fp->fp); return 2; }
-        else return -1;
+int bgzf_check_EOF(BGZF *fp) {
+    int has_eof;
+
+    if (fp->mt) {
+        pthread_mutex_lock(&fp->mt->command_m);
+        fp->mt->command = HAS_EOF;
+        pthread_cond_signal(&fp->mt->command_c);
+        t_pool_wake_dispatch(fp->mt->out_queue);
+        pthread_cond_wait(&fp->mt->command_c, &fp->mt->command_m);
+        has_eof = fp->mt->eof;
+        pthread_mutex_unlock(&fp->mt->command_m);
+    } else {
+        has_eof = bgzf_check_EOF_common(fp);
     }
-    if ( hread(fp->fp, buf, 28) != 28 ) return -1;
-    if ( hseek(fp->fp, offset, SEEK_SET) < 0 ) return -1;
-    return (memcmp("\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0\033\0\3\0\0\0\0\0\0\0\0\0", buf, 28) == 0)? 1 : 0;
+
+    return has_eof;
 }
 
 int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
