@@ -172,7 +172,8 @@ static t_pool_result *t_pool_next_result_locked(t_pool_queue *q) {
             // room for the input to go somewhere so we still signal.
             // The waiting code will then check the condition again.
             pthread_cond_signal(&q->input_not_full_c);
-            wake_next_worker(q, 1);
+            if (!q->shutdown)
+                wake_next_worker(q, 1);
         }
     }
 
@@ -216,8 +217,17 @@ t_pool_result *t_pool_next_result_wait(t_pool_queue *q) {
         timeout.tv_sec = now.tv_sec + 10;
         timeout.tv_nsec = now.tv_usec * 1000;
 
+        q->ref_count++;
         pthread_cond_timedwait(&q->output_avail_c, &q->p->pool_m, &timeout);
-        if (q->shutdown) break;
+        if (q->shutdown) {
+            int rc = --q->ref_count;
+            pthread_mutex_unlock(&q->p->pool_m);
+            if (rc == 0)
+                t_pool_queue_destroy(q);
+            return NULL;
+        }
+
+        q->ref_count--;
     }
     pthread_mutex_unlock(&q->p->pool_m);
 
@@ -342,20 +352,23 @@ void t_pool_queue_destroy(t_pool_queue *q) {
         return;
 
     // Ensure it's fully drained before destroying the queue
-    t_pool_queue_detach(q->p, q);
     t_pool_queue_reset(q, 0);
+    pthread_mutex_lock(&q->p->pool_m);
+    t_pool_queue_detach(q->p, q);
+    t_pool_queue_shutdown(q);
 
     // Maybe a worker is scanning this queue, so delay destruction
-    if (--q->ref_count > 0)
+    if (--q->ref_count > 0) {
+        pthread_mutex_unlock(&q->p->pool_m);
         return;
+    }
 
     pthread_cond_destroy(&q->output_avail_c);
     pthread_cond_destroy(&q->input_not_full_c);
     pthread_cond_destroy(&q->input_empty_c);
     pthread_cond_destroy(&q->none_processing_c);
+    pthread_mutex_unlock(&q->p->pool_m);
 
-
-    memset(q, 0xbb, sizeof(*q));
     free(q);
 
     DBG_OUT(stderr, "Destroyed results queue %p\n", q);
@@ -589,6 +602,7 @@ static void wake_next_worker(t_pool_queue *q, int locked) {
 
     // Update the q_head to be this queue so we'll start processing
     // the queue we know to have results.
+    assert(q->prev && q->next); // attached
     p->q_head = q;
 
     // Wake up if we have more jobs waiting than CPUs. This partially combats
@@ -770,7 +784,8 @@ int t_pool_dispatch2(t_pool *p, t_pool_queue *q,
     // this signal to start more threads (if available). This has the effect
     // of concentrating jobs to fewer cores when we are I/O bound, which in
     // turn benefits systems with auto CPU frequency scaling.
-    wake_next_worker(q, 1);
+    if (!q->shutdown)
+        wake_next_worker(q, 1);
 
     pthread_mutex_unlock(&p->pool_m);
 

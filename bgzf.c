@@ -551,31 +551,10 @@ static int load_block_from_cache(BGZF *fp, int64_t block_address)
 {
     khint_t k;
     cache_t *p;
-    khash_t(cache) *h = (khash_t(cache)*)fp->cache;
-    k = kh_get(cache, h, block_address);
-    if (k == kh_end(h)) return 0;
-    p = &kh_val(h, k);
-    if (fp->block_length != 0) fp->block_offset = 0;
-    fp->block_address = block_address;
-    fp->block_length = p->size;
-    // FIXME: why BGZF_MAX_BLOCK_SIZE and not p->size?
-    memcpy(fp->uncompressed_block, p->block, BGZF_MAX_BLOCK_SIZE);
-    if ( hseek(fp->fp, p->end_offset, SEEK_SET) < 0 )
-    {
-        // todo: move the error up
-        fprintf(stderr,"Could not hseek to %"PRId64"\n", p->end_offset);
-        exit(1);
-    }
-    return p->size;
-}
 
-static int load_block_from_cache2(BGZF *fp, int64_t block_address,
-                                  int *block_length)
-{
-    khint_t k;
-    cache_t *p;
     khash_t(cache) *h = (khash_t(cache)*)fp->cache;
     k = kh_get(cache, h, block_address);
+    //fprintf(stderr, "Load from cache, addr=%llx, k=%d/%d\n", (long long)block_address, k, kh_end(h));
     if (k == kh_end(h)) return 0;
     p = &kh_val(h, k);
     if (fp->block_length != 0) fp->block_offset = 0;
@@ -597,6 +576,7 @@ static void cache_block(BGZF *fp, int size)
     int ret;
     khint_t k;
     cache_t *p;
+    //fprintf(stderr, "Cache block at %llx\n", (int)fp->block_address);
     khash_t(cache) *h = (khash_t(cache)*)fp->cache;
     if (BGZF_MAX_BLOCK_SIZE >= fp->cache_size) return;
     if ((kh_size(h) + 1) * BGZF_MAX_BLOCK_SIZE > (uint32_t)fp->cache_size) {
@@ -634,7 +614,7 @@ int bgzf_read_block(BGZF *fp)
         bgzf_job *j = (bgzf_job *)r->data;
         assert(j);
 
-        //fprintf(stderr, "M: Fetched %p, serial %d\n", j, r->serial);
+        //fprintf(stderr, "M: Fetched %p, serial %d, len %d/%d\n", j, r->serial, j->uncomp_len, j->comp_len);
 
         // block_length=0 and block_offset set by bgzf_seek.
         if (fp->block_length != 0) fp->block_offset = 0;
@@ -940,7 +920,10 @@ static void *bgzf_mt_writer(void *vp) {
         pthread_mutex_unlock(&mt->job_pool_m);
     }
 
-    return 0;
+    if (hflush(fp->fp) != 0)
+        return (void *)-1;
+
+    return NULL;
 }
 
 
@@ -1078,6 +1061,12 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
 }
 
 
+/*
+ * Performs the seek (called by reader thread).
+ *
+ * This simply drains the entire queue, throwing away blocks, seeks,
+ * and starts it up again.  Brute force, but maybe sufficient.
+ */
 static void bgzf_mt_seek(BGZF *fp) {
     mtaux_t *mt = fp->mt;
 
@@ -1092,6 +1081,184 @@ static void bgzf_mt_seek(BGZF *fp) {
     pthread_mutex_unlock(&mt->job_pool_m);
     pthread_cond_signal(&mt->command_c);
 }
+
+
+#if 0
+/*
+ * A more powerful version of bgzf_mt_seek, but using internals of the 
+ * thread pool (these components need to be migrated to there) to
+ * figure out what is in our decoded output queue and keep it if our new
+ * seek is before that location.
+ *
+ * It sounds good, but is complex and in practice doesn't seem to help much as
+ * we typically seek a long way forward or slightly back (same block or 1-2
+ * before).
+ *
+ * Left as it does actually work, but needs more thought.
+ */
+static void wake_next_worker(t_pool_queue *q, int locked) {
+    t_pool *p = q->p;
+    if (!locked)
+        pthread_mutex_lock(&p->pool_m);
+
+    // Update the q_head to be this queue so we'll start processing
+    // the queue we know to have results.
+    p->q_head = q;
+
+    // Wake up if we have more jobs waiting than CPUs. This partially combats
+    // CPU frequency scaling effects.  Starting too many threads and then
+    // running out of jobs can cause each thread to have lots of start/stop
+    // cycles, which then translates often to CPU frequency scaling
+    // adjustments.  Instead it is better to only start as many threads as we
+    // need to keep the throughput up, meaning some threads run flat out and
+    // others are idle.
+    //
+    // This isn't perfect as we need to know how many can actually start,
+    // rather than how many are waiting.  A limit on output queue size makes
+    // these two figures different.
+    assert(p->njobs >= q->n_input);
+
+    int running = p->tsize - p->nwaiting;
+    int sig = p->t_stack_top >= 0 && p->njobs > p->tsize - p->nwaiting
+        && (!q || q->n_processing < q->qsize - q->n_output);
+
+//#define AVG_USAGE
+#ifdef AVG_USAGE
+    // Track average number of running threads and try to keep close.
+    // We permit this to change, but slowly.  This avoids "boom and bust" cycles
+    // where we read a lot of data, start a lot of jobs, then become idle again.
+    // This way some threads run steadily and others dormant, which is better
+    // for throughput.
+    //
+    // It's 50:50 if this is a good thing.  It helps some tasks quite significantly
+    // while slightly hindering other (perhaps more usual) jobs.
+
+    if (++p->n_count == 256) {
+        p->n_count >>= 1;
+        p->n_running >>= 1;
+    }
+    p->n_running += running;
+    // Built in lag to avoid see-sawing.  Is this safe in all cases?
+    if (sig && p->n_count >= 128 && running*p->n_count > p->n_running+1) sig=0;
+#endif
+
+    if (0) {
+        printf("%d waiting, %d running, %d output, %d, arun %d => %d\t", p->njobs,
+               running, q->n_output, q->qsize - q->n_output,
+               p->n_running/p->n_count, sig);
+        int i;
+        for (i = 0; i < p->tsize; i++)
+            putchar("x "[p->t_stack[i]]);
+        putchar('\n');
+    }
+
+    if (sig)
+        pthread_cond_signal(&p->t[p->t_stack_top].pending_c);
+
+    if (!locked)
+        pthread_mutex_unlock(&p->pool_m);
+}
+
+static void bgzf_mt_seek_(BGZF *fp) {
+    mtaux_t *mt = fp->mt;
+
+    // If our seek location is somewhere we've already decoded,
+    // shuffle the output queue so this block is next.  This makes
+    // small forward seeks efficient (irrespective of whether the
+    // caching layer is enabled).
+    //
+    // t_pool_reset may need an optional arg, callback?, indicating
+    // what to keep and what to discard.  If we keep things we need to
+    // also track serials.  Is the optional arg simply a serial
+    // number?  If so, we need an additional result_search function
+    // that can do block_address to serial mapping.
+    
+    // t_pool_purge_input
+    {
+        t_pool_queue *q = mt->out_queue;
+        pthread_mutex_lock(&q->p->pool_m);
+        t_pool_queue q_tmp = *q;
+
+        // prevent next_result from returning data while waiting
+        q->next_serial = INT_MAX;
+        
+        // Also prevent any existing queued up input from being processed.
+        q->input_head = q->input_tail = NULL;
+        q->n_input = 0;
+        
+        // Wait for any jobs being processed to complete.
+        // Hack the queue size temporarily so they all fit as our
+        // output queue may already be full.
+        q->qsize = INT_MAX;
+        while (q->n_processing)
+            pthread_cond_wait(&q->none_processing_c, &q->p->pool_m);
+
+        // Scan the existing output, mapping block address to serial.
+        t_pool_result *r;
+        int serial = -1;
+        for (r = q->output_head; r; r = r->next) {
+            bgzf_job *j = (bgzf_job *)r->data;
+            if (mt->block_address == j->block_address) {
+                serial = r->serial;
+                break;
+            }
+        }
+
+        if (serial != -1) {
+            // Our next serial is already present, so simply skip to it
+            t_pool_result *r, *rn, *rl = NULL, *rf = NULL;
+            fprintf(stderr, "Filtering %d", q->n_output);
+            q->n_output = 0;
+            for (r = q->output_head; r; r = rn) {
+                rn = r->next;
+                if (r->serial < serial) {
+                    if (rl)
+                        rl->next = r->next;
+                    t_pool_delete_result(r, 0);
+                } else {
+                    rl = r;
+                    if (!rf)
+                        rf = r;
+                    q->n_output++;
+                }
+            }
+            q->output_head = rf;
+            q->output_tail = rl;
+            q->next_serial = serial;
+
+            q->qsize = q_tmp.qsize;
+            q->input_head = q_tmp.input_head;
+            q->input_tail = q_tmp.input_tail;
+            q->n_input = q_tmp.n_input;
+
+            wake_next_worker(q, 1);
+            pthread_mutex_unlock(&q->p->pool_m);
+
+            mt->command = NONE;
+            mt->errcode = 0;
+        } else {
+            q->qsize = q_tmp.qsize;
+            q->input_head = q_tmp.input_head;
+            q->input_tail = q_tmp.input_tail;
+            q->n_input = q_tmp.n_input;
+
+            //*q = q_tmp;
+            pthread_mutex_unlock(&q->p->pool_m);
+            // Not present, so do a full drain, seek and restart
+            t_pool_queue_reset(q, 0);
+            pthread_mutex_lock(&mt->job_pool_m);
+            mt->command = NONE;
+            mt->errcode = 0;
+
+            if (hseek(fp->fp, mt->block_address, SEEK_SET) < 0)
+                mt->errcode = BGZF_ERR_IO;
+            pthread_mutex_unlock(&mt->job_pool_m);
+        }
+    }
+        
+    pthread_cond_signal(&mt->command_c);
+}
+#endif
 
 
 static void *bgzf_mt_reader(void *vp) {
@@ -1119,6 +1286,9 @@ restart:
             pthread_cond_signal(&mt->command_c);
             pthread_mutex_unlock(&mt->command_m);
             pthread_exit(NULL);
+
+        default:
+            break;
         }
         pthread_mutex_unlock(&mt->command_m);
 
@@ -1172,7 +1342,8 @@ int bgzf_thread_pool(BGZF *fp, t_pool *pool) {
 
     mt->pool = pool;
     mt->n_threads = pool->tsize;
-    if (!(mt->out_queue = t_pool_queue_init(mt->pool, mt->n_threads*2, 0))) {
+    int qsize = mt->n_threads*2;
+    if (!(mt->out_queue = t_pool_queue_init(mt->pool, qsize, 0))) {
         free(mt);
         return -1;
     }
@@ -1223,12 +1394,14 @@ static void mt_destroy(mtaux_t *mt)
     t_pool_wake_dispatch(mt->out_queue); // unstick the reader
     pthread_mutex_unlock(&mt->command_m);
     //fprintf(stderr, "XXX join io_task\n");
+
+    // Destroying the queue first forces the writer to exit.
+    t_pool_queue_destroy(mt->out_queue);
     pthread_join(mt->io_task, NULL);
 
     pthread_mutex_destroy(&mt->job_pool_m);
     pthread_mutex_destroy(&mt->command_m);
     pthread_cond_destroy(&mt->command_c);
-    t_pool_queue_destroy(mt->out_queue);
     if (mt->curr_job)
         pool_free(mt->job_pool, mt->curr_job);
     pool_destroy(mt->job_pool);
@@ -1445,6 +1618,14 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
     }
     block_offset = pos & 0xFFFF;
     block_address = pos >> 16;
+    
+    if (0 && fp->block_address == block_address) {
+        // Elsewhere in current block
+        fprintf(stderr, "Curr block\n");
+        fp->block_length = 0;  // indicates current block has not been loaded
+        fp->block_offset = block_offset;
+        return 0;
+    }
 
     if (fp->mt) {
         // The reader runs asynchronous and does loops of:
