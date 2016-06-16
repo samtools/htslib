@@ -138,15 +138,15 @@ int main(int argc, char *argv[])
     hts_opt_free(out_opts);
 
     // Create and share the thread pool
-    t_pool *pool = NULL;
+    htsThreadPool p = {NULL, 0};
     if (nthreads > 0) {
-        pool = hts_create_threads(nthreads);
-        if (!pool) {
+        p.pool = hts_create_threads(nthreads);
+        if (!p.pool) {
             fprintf(stderr, "Error creating thread pool\n");
             exit_code = 1;
         } else {
-            hts_set_opt(in,  HTS_OPT_THREAD_POOL, pool);
-            hts_set_opt(out, HTS_OPT_THREAD_POOL, pool);
+            hts_set_opt(in,  HTS_OPT_THREAD_POOL, &p);
+            hts_set_opt(out, HTS_OPT_THREAD_POOL, &p);
         }
     }
 
@@ -209,8 +209,8 @@ int main(int argc, char *argv[])
         exit_code = 1;
     }
 
-    if (pool)
-        hts_destroy_threads(pool);
+    if (p.pool)
+        hts_destroy_threads(p.pool);
 
     return exit_code;
 }

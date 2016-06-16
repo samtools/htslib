@@ -130,6 +130,18 @@ typedef struct {
     htsFormat format;
 } htsFile;
 
+// A combined thread pool and queue allocation size.
+// The pool should already be defined, but qsize may be zero to
+// indicate an appropriate queue size is taken from the pool.
+//
+// Reasons for explicitly setting it could be where many more file
+// descriptors are in use than threads, so keeping memory low is
+// important.
+typedef struct {
+    t_pool *pool; // The shared thread pool itself
+    int qsize;    // Size of I/O queue to use for this fp
+} htsThreadPool;
+
 // REQUIRED_FIELDS
 enum sam_fields {
     SAM_QNAME = 0x00000001,
@@ -391,7 +403,7 @@ int hts_set_threads(htsFile *fp, int n);
   @param p   A pool of worker threads, previously allocated by hts_create_threads().
   @return    0 for success, or negative if an error occurred.
 */
-int hts_set_thread_pool(htsFile *fp, t_pool *p);
+int hts_set_thread_pool(htsFile *fp, htsThreadPool *p);
 
 /*!
   @abstract  Adds a cache of decompressed blocks, potentially speeding up seeks.

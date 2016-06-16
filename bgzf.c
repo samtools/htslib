@@ -1330,7 +1330,7 @@ restart:
     }
 }
 
-int bgzf_thread_pool(BGZF *fp, t_pool *pool) {
+int bgzf_thread_pool(BGZF *fp, t_pool *pool, int qsize) {
     // No gain from multi-threading when not compressed
     if (!fp->is_compressed)
         return 0;
@@ -1342,7 +1342,8 @@ int bgzf_thread_pool(BGZF *fp, t_pool *pool) {
 
     mt->pool = pool;
     mt->n_threads = pool->tsize;
-    int qsize = mt->n_threads*2;
+    if (!qsize)
+        qsize = mt->n_threads*2;
     if (!(mt->out_queue = t_pool_queue_init(mt->pool, qsize, 0))) {
         free(mt);
         return -1;
@@ -1374,7 +1375,7 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
     if (!p)
         return -1;
 
-    if (bgzf_thread_pool(fp, p) != 0) {
+    if (bgzf_thread_pool(fp, p, 0) != 0) {
         t_pool_destroy(p, 0);
         return -1;
     }

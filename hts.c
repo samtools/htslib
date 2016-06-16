@@ -916,26 +916,31 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
     int r;
     va_list args;
 
-    if (opt == HTS_OPT_NTHREADS) {
+    switch (opt) {
+    case HTS_OPT_NTHREADS: {
         va_start(args, opt);
         int nthreads = va_arg(args, int);
         va_end(args); 
         return hts_set_threads(fp, nthreads);
-   }
+    }
 
-    if (opt == HTS_OPT_THREAD_POOL) {
+    case HTS_OPT_THREAD_POOL: {
         va_start(args, opt);
-        t_pool *p = va_arg(args, t_pool *);
+        htsThreadPool *p = va_arg(args, htsThreadPool *);
         va_end(args);
         return hts_set_thread_pool(fp, p);
     }
 
-    if (opt == HTS_OPT_CACHE_SIZE) {
+    case HTS_OPT_CACHE_SIZE: {
         va_start(args, opt);
         int cache_size = va_arg(args, int);
         va_end(args);
         hts_set_cache_size(fp, cache_size);
         return 0;
+    }
+
+    default:
+        break;
     }
 
     if (fp->format.format != cram)
@@ -958,9 +963,9 @@ int hts_set_threads(htsFile *fp, int n)
     else return 0;
 }
 
-int hts_set_thread_pool(htsFile *fp, t_pool *p) {
+int hts_set_thread_pool(htsFile *fp, htsThreadPool *p) {
     if (fp->format.compression == bgzf) {
-        return bgzf_thread_pool(fp->fp.bgzf, p);
+        return bgzf_thread_pool(fp->fp.bgzf, p->pool, p->qsize);
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_THREAD_POOL, p);
     }
