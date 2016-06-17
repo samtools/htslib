@@ -119,7 +119,6 @@ typedef struct bgzf_mtaux_t {
     pthread_mutex_t command_m; // Set whenever fp is being updated
     pthread_cond_t command_c;
     enum mtaux_cmd command;
-    int read_eof;
 } mtaux_t;
 #endif
 
@@ -885,14 +884,9 @@ void *bgzf_decode_func(void *arg) {
 
 /*
  * Nul function so we can dispatch a job with the correct serial
- * to mark failure.
+ * to mark failure or to indicate an empty read (EOF).
  */
-void *bgzf_error_func(void *arg) {
-    bgzf_job *j = (bgzf_job *)arg;
-    if (!j->errcode)
-        j->errcode = BGZF_ERR_IO;
-    return arg;
-}
+void *bgzf_nul_func(void *arg) { return arg; }
 
 /*
  * Takes compressed blocks off the results queue and calls hwrite to
@@ -1312,8 +1306,8 @@ restart:
     bgzf_job *j = pool_alloc(mt->job_pool);
     pthread_mutex_unlock(&mt->job_pool_m);
     j->errcode = 0;
+    j->uncomp_len = 0;
 
-    mt->read_eof = 0;
     while (bgzf_mt_read_block(fp, j) == 0) {
 
         // Check for command
@@ -1347,13 +1341,16 @@ restart:
         j = pool_alloc(mt->job_pool);
         pthread_mutex_unlock(&mt->job_pool_m);
         j->errcode = 0;
+        j->uncomp_len = 0;
     }
-    mt->read_eof = 1;
 
-    if (j->errcode != 0) {
-        t_pool_dispatch(mt->pool, mt->out_queue, bgzf_error_func, j);
-        pthread_exit(&j->errcode);
-    }
+    // Dispatch an empty block so EOF is spotted.
+    // We also use this mechanism for returning errors, in which case
+    // j->errcode is set already.
+
+    t_pool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
+     if (j->errcode != 0)
+         pthread_exit(&j->errcode);
 
     // We hit EOF so can stop reading, but we may get a subsequent
     // seek request.  In this case we need to restart the reader.
@@ -1411,7 +1408,6 @@ int bgzf_thread_pool(BGZF *fp, t_pool *pool, int qsize) {
     pthread_mutex_init(&mt->job_pool_m, NULL);
     pthread_mutex_init(&mt->command_m, NULL);
     pthread_cond_init(&mt->command_c, NULL);
-    mt->read_eof = 0;
     mt->flush_pending = 0;
     mt->jobs_pending = 0;
     mt->free_block = fp->uncompressed_block;
