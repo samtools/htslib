@@ -955,9 +955,11 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     while (p < s->s + s->l) {
         uint8_t type;
         q = _read_token_aux(p); // FIXME: can be accelerated for long 'B' arrays
-        _parse_err(p - q - 1 < 6, "incomplete aux field");
+        _parse_err(p - q - 1 < 5, "incomplete aux field");
         kputsn_(q, 2, &str);
         q += 3; type = *q++; ++q; // q points to value
+        if (type != 'Z' && type != 'H') // the only zero length acceptable fields
+            _parse_err(p - q - 1 < 1, "incomplete aux field");
         if (type == 'A' || type == 'a' || type == 'c' || type == 'C') {
             kputc_('A', &str);
             kputc_(*q, &str);
@@ -994,6 +996,8 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             x = strtod(q, &q);
             kputc_('d', &str); kputsn_(&x, 8, &str);
         } else if (type == 'Z' || type == 'H') {
+            _parse_err(type == 'H' && !((p-q)&1),
+                       "hex field does not have an even number of digits");
             kputc_(type, &str);kputsn_(q, p - q, &str); // note that this include the trailing NULL
         } else if (type == 'B') {
             int32_t n;
