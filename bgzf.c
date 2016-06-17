@@ -616,6 +616,11 @@ int bgzf_read_block(BGZF *fp)
         bgzf_job *j = (bgzf_job *)r->data;
         assert(j);
 
+        if (j->errcode) {
+            fp->errcode = j->errcode;
+            return -1;
+        }
+
         //fprintf(stderr, "M: Fetched %p, serial %d, len %d/%d\n", j, r->serial, j->uncomp_len, j->comp_len);
 
         // block_length=0 and block_offset set by bgzf_seek.
@@ -879,6 +884,17 @@ void *bgzf_decode_func(void *arg) {
 }
 
 /*
+ * Nul function so we can dispatch a job with the correct serial
+ * to mark failure.
+ */
+void *bgzf_error_func(void *arg) {
+    bgzf_job *j = (bgzf_job *)arg;
+    if (!j->errcode)
+        j->errcode = BGZF_ERR_IO;
+    return arg;
+}
+
+/*
  * Takes compressed blocks off the results queue and calls hwrite to
  * punt them to the output stream.
  *
@@ -971,7 +987,6 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
     if ( count != sizeof(header) || (ret=check_header(header))==-2 )
     {
         j->errcode |= BGZF_ERR_HEADER;
-        fprintf(stderr, "mt_reader fail header\n");
         return -1;
     }
 //    if ( ret==-1 )
@@ -1042,7 +1057,6 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
     count = hread(fp->fp, &compressed_block[BLOCK_HEADER_LENGTH], remaining);
     if (count != remaining) {
         j->errcode |= BGZF_ERR_IO;
-        fprintf(stderr, "mt_reader fail io\n");
         return -1;
     }
     size += count;
@@ -1335,6 +1349,11 @@ restart:
         j->errcode = 0;
     }
     mt->read_eof = 1;
+
+    if (j->errcode != 0) {
+        t_pool_dispatch(mt->pool, mt->out_queue, bgzf_error_func, j);
+        pthread_exit(&j->errcode);
+    }
 
     // We hit EOF so can stop reading, but we may get a subsequent
     // seek request.  In this case we need to restart the reader.
