@@ -605,6 +605,23 @@ static int load_block_from_cache(BGZF *fp, int64_t block_address) {return 0;}
 static void cache_block(BGZF *fp, int size) {}
 #endif
 
+/*
+ * Absolute htell in this compressed file.
+ *
+ * Do not confuse with the external bgzf_tell macro which returns the virtual
+ * offset.
+ */
+static off_t bgzf_htell(BGZF *fp) {
+    if (fp->mt) {
+        pthread_mutex_lock(&fp->mt->job_pool_m);
+        off_t pos = fp->block_address + fp->block_clength;
+        pthread_mutex_unlock(&fp->mt->job_pool_m);
+        return pos;
+    } else {
+        return htell(fp->fp);
+    }
+}
+
 int bgzf_read_block(BGZF *fp)
 {
     t_pool_result *r;
@@ -625,8 +642,15 @@ int bgzf_read_block(BGZF *fp)
         // block_length=0 and block_offset set by bgzf_seek.
         if (fp->block_length != 0) fp->block_offset = 0;
         fp->block_address = j->block_address;
+        fp->block_clength = j->comp_len;
         fp->block_length = j->uncomp_len;
 
+        if ( j->fp->idx_build_otf )
+        {
+            bgzf_index_add_block(j->fp);
+            j->fp->idx->ublock_addr += j->uncomp_len;
+        }
+    
         // Steal the data block as it's quicker than a memcpy.
         // We just need to make sure we delay the pool free.
         if (fp->mt->curr_job) {
@@ -674,7 +698,7 @@ int bgzf_read_block(BGZF *fp)
 
     // Reading compressed file
     int64_t block_address;
-    block_address = htell(fp->fp);
+    block_address = bgzf_htell(fp);
     if ( fp->is_gzip && fp->gz_stream ) // is this is a initialized gzip stream?
     {
         count = inflate_gzip_block(fp, 0);
@@ -1060,12 +1084,6 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
     j->fp = fp;
     j->errcode = 0;
 
-//    // FIXME: to move to bgzf_read_block instead?
-//    if ( fp->idx_build_otf )
-//    {
-//        bgzf_index_add_block(fp);
-//        fp->idx->ublock_addr += count;
-//    }
     //cache_block(fp, size);
     return 0;
 }
@@ -1740,6 +1758,11 @@ int bgzf_is_bgzf(const char *fn)
 
 int bgzf_getc(BGZF *fp)
 {
+    if (fp->block_offset+1 < fp->block_length) {
+        fp->uncompressed_address++;
+        return ((unsigned char*)fp->uncompressed_block)[fp->block_offset++];
+    }
+
     int c;
     if (fp->block_offset >= fp->block_length) {
         if (bgzf_read_block(fp) != 0) return -2; /* error */
@@ -1747,7 +1770,7 @@ int bgzf_getc(BGZF *fp)
     }
     c = ((unsigned char*)fp->uncompressed_block)[fp->block_offset++];
     if (fp->block_offset == fp->block_length) {
-        fp->block_address = htell(fp->fp);
+        fp->block_address = bgzf_htell(fp);
         fp->block_offset = 0;
         fp->block_length = 0;
     }
@@ -1762,13 +1785,13 @@ int bgzf_getc(BGZF *fp)
 int bgzf_getline(BGZF *fp, int delim, kstring_t *str)
 {
     int l, state = 0;
-    unsigned char *buf = (unsigned char*)fp->uncompressed_block;
     str->l = 0;
     do {
         if (fp->block_offset >= fp->block_length) {
             if (bgzf_read_block(fp) != 0) { state = -2; break; }
             if (fp->block_length == 0) { state = -1; break; }
         }
+        unsigned char *buf = fp->uncompressed_block;
         for (l = fp->block_offset; l < fp->block_length && buf[l] != delim; ++l);
         if (l < fp->block_length) state = 1;
         l -= fp->block_offset;
@@ -1781,7 +1804,7 @@ int bgzf_getline(BGZF *fp, int delim, kstring_t *str)
         str->l += l;
         fp->block_offset += l + 1;
         if (fp->block_offset >= fp->block_length) {
-            fp->block_address = htell(fp->fp);
+            fp->block_address = bgzf_htell(fp);
             fp->block_offset = 0;
             fp->block_length = 0;
         }

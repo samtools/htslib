@@ -260,6 +260,7 @@ int tbx_index_build2(const char *fn, const char *fnidx, int min_shift, const tbx
     if ( bgzf_is_bgzf(fn)!=1 ) { fprintf(stderr,"Not a BGZF file: %s\n", fn); return -1; }
     if ((fp = bgzf_open(fn, "r")) == 0) return -1;
     if ( !fp->is_compressed ) { bgzf_close(fp); return -1; }
+    //bgzf_mt(fp, 2, 256); // any more doesn't help
     tbx = tbx_index(fp, min_shift, conf);
     bgzf_close(fp);
     if ( !tbx ) return -1;

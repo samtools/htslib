@@ -58,7 +58,7 @@ struct BGZF {
     signed compress_level:9;
     unsigned is_compressed:2, is_gzip:1;
     int cache_size;
-    int block_length, block_offset;
+    int block_length, block_clength, block_offset;
     int64_t block_address, uncompressed_address;
     void *uncompressed_block, *compressed_block;
     void *cache; // a pointer to a hash table
