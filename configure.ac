@@ -1,6 +1,6 @@
 # Configure script for htslib, a C library for high-throughput sequencing data.
 #
-#    Copyright (C) 2015 Genome Research Ltd.
+#    Copyright (C) 2015-2016 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -82,6 +82,28 @@ AC_ARG_WITH([plugin-path],
   [with_plugin_path=$with_plugin_dir])
 AC_SUBST([pluginpath], $with_plugin_path)
 
+AC_MSG_CHECKING([shared library type])
+test -n "$host_alias" || host_alias=unknown-`uname -s`
+case $host_alias in
+  *-cygwin* | *-CYGWIN*)
+    host_result="Cygwin DLL"
+    PLATFORM=CYGWIN
+    PLUGIN_EXT=.cygdll
+    ;;
+  *-darwin* | *-Darwin*)
+    host_result="Darwin dylib"
+    PLATFORM=Darwin
+    PLUGIN_EXT=.bundle
+    ;;
+  *)
+    host_result="plain .so"
+    PLATFORM=default
+    PLUGIN_EXT=.so
+    ;;
+esac
+AC_MSG_RESULT([$host_result])
+AC_SUBST([PLATFORM])
+
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
 AC_CHECK_FUNCS(gmtime_r)
@@ -95,6 +117,9 @@ Either configure with --disable-plugins or resolve this error to build HTSlib.])
   # TODO Test whether this is required and/or needs tweaking per-platform
   LDFLAGS="$LDFLAGS -rdynamic"
   AC_DEFINE([ENABLE_PLUGINS], 1, [Define if HTSlib should enable plugins.])
+  AC_SUBST([PLUGIN_EXT])
+  AC_DEFINE_UNQUOTED([PLUGIN_EXT], ["$PLUGIN_EXT"],
+                     [Platform-dependent plugin filename extension.])
 fi
 
 save_LIBS=$LIBS

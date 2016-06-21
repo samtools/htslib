@@ -33,14 +33,18 @@ DEALINGS IN THE SOFTWARE.  */
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
-#include "htslib/bgzf.h"
+
 #include "htslib/hts.h"
+#include "htslib/bgzf.h"
 #include "cram/cram.h"
 #include "htslib/hfile.h"
 #include "version.h"
 #include "hts_internal.h"
 
+#include "htslib/khash.h"
 #include "htslib/kseq.h"
+#include "htslib/ksort.h"
+
 #define KS_BGZF 1
 #if KS_BGZF
     // bgzf now supports gzip-compressed files, the gzFile branch can be removed
@@ -49,7 +53,6 @@ DEALINGS IN THE SOFTWARE.  */
     KSTREAM_INIT2(, gzFile, gzread, 16384)
 #endif
 
-#include "htslib/khash.h"
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
 int hts_verbose = 3;
@@ -547,6 +550,14 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "REQUIRED_FIELDS") == 0)
         o->opt = CRAM_OPT_REQUIRED_FIELDS, o->val.i = strtol(val, NULL, 0);
 
+    else if (strcmp(o->arg, "lossy_names") == 0 ||
+             strcmp(o->arg, "LOSSY_NAMES") == 0)
+        o->opt = CRAM_OPT_LOSSY_NAMES, o->val.i = strtol(val, NULL, 0);
+
+    else if (strcmp(o->arg, "name_prefix") == 0 ||
+             strcmp(o->arg, "NAME_PREFIX") == 0)
+        o->opt = CRAM_OPT_PREFIX, o->val.s = val;
+
     else {
         fprintf(stderr, "Unknown option '%s'\n", o->arg);
         free(o->arg);
@@ -953,25 +964,12 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
     return r;
 }
 
+BGZF *hts_get_bgzfp(htsFile *fp);
+
 int hts_set_threads(htsFile *fp, int n)
 {
     if (fp->format.compression == bgzf) {
-#if KS_BGZF        
-        // Messy.  Is there any other way of knowing whether voidp or
-        // bgzf is the correct pointer to use?
-        return bgzf_mt((fp->format.format == sam ||
-                        fp->format.format == vcf ||
-                        fp->format.format == text_format)
-                       ? ((kstream_t *)fp->fp.voidp)->f
-                       : fp->fp.bgzf,
-                       n, 256/*unused*/);
-#else
-        if (fp->format.format == sam ||
-            fp->format.format == vcf ||
-            fp->format.format == text_format)
-            return 0;
-        return bgzf_mt(fp->fp.bgzf, n, 256/*unused*/);
-#endif
+        return bgzf_mt(hts_get_bgzfp(fp), n, 256/*unused*/);
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_NTHREADS, n);
     }
@@ -980,20 +978,7 @@ int hts_set_threads(htsFile *fp, int n)
 
 int hts_set_thread_pool(htsFile *fp, htsThreadPool *p) {
     if (fp->format.compression == bgzf) {
-#if KS_BGZF        
-        return bgzf_thread_pool((fp->format.format == sam ||
-                                 fp->format.format == vcf ||
-                                 fp->format.format == text_format)
-                                ? ((kstream_t *)fp->fp.voidp)->f
-                                : fp->fp.bgzf,
-                                p->pool, p->qsize);
-#else
-        if (fp->format.format == sam ||
-            fp->format.format == vcf ||
-            fp->format.format == text_format)
-            return 0;
-        return bgzf_thread_pool(fp->fp.bgzf, p->pool, p->qsize);
-#endif
+        return bgzf_thread_pool(hts_get_bgzfp(fp), p->pool, p->qsize);
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_THREAD_POOL, p);
     }
@@ -1003,7 +988,7 @@ int hts_set_thread_pool(htsFile *fp, htsThreadPool *p) {
 void hts_set_cache_size(htsFile *fp, int n)
 {
     if (fp->format.compression == bgzf)
-        bgzf_set_cache_size(fp->fp.bgzf, n);
+        bgzf_set_cache_size(hts_get_bgzfp(fp), n);
 }
 
 /*
@@ -1204,6 +1189,17 @@ int hts_file_type(const char *fname)
     }
 }
 
+int hts_check_EOF(htsFile *fp)
+{
+    if (fp->format.compression == bgzf)
+        return bgzf_check_EOF(hts_get_bgzfp(fp));
+    else if (fp->format.format == cram)
+        return cram_check_EOF(fp->fp.cram);
+    else
+        return 3;
+}
+
+
 /****************
  *** Indexing ***
  ****************/
@@ -1216,7 +1212,6 @@ int hts_file_type(const char *fname)
 
 #define pair64_lt(a,b) ((a).u < (b).u)
 
-#include "htslib/ksort.h"
 KSORT_INIT(_off, hts_pair64_t, pair64_lt)
 
 typedef struct {
@@ -1225,7 +1220,6 @@ typedef struct {
     hts_pair64_t *list;
 } bins_t;
 
-#include "htslib/khash.h"
 KHASH_MAP_INIT_INT(bin, bins_t)
 typedef khash_t(bin) bidx_t;
 
@@ -1441,7 +1435,7 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
         idx->z.last_tid = tid;
         idx->z.last_bin = 0xffffffffu;
     } else if (tid >= 0 && idx->z.last_coor > beg) { // test if positions are out of order
-        if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted positions\n", __func__);
+        if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted positions on sequence #%d: %d followed by %d\n", __func__, tid+1, idx->z.last_coor+1, beg+1);
         return -1;
     }
     if ( tid>=0 )
@@ -1844,11 +1838,20 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
             break;
 
         case HTS_IDX_NOCOOR:
-            if ( idx->n>0 )
-            {
-                bidx = idx->bidx[idx->n - 1];
+            /* No-coor reads sort after all of the mapped reads.  The position
+               is not stored in the index itself, so need to find the end
+               offset for the last mapped read.  A loop is needed here in
+               case references at the end of the file have no mapped reads,
+               or sequence ids are not ordered sequentially.
+               See issue samtools#568 and commits b2aab8, 60c22d and cc207d. */
+            for (i = 0; i < idx->n; i++) {
+                bidx = idx->bidx[i];
                 k = kh_get(bin, bidx, META_BIN(idx));
-                if (k != kh_end(bidx)) off0 = kh_val(bidx, k).list[0].v;
+                if (k != kh_end(bidx)) {
+                    if (off0==(uint64_t)-1 || off0 < kh_val(bidx, k).list[0].v) {
+                        off0 = kh_val(bidx, k).list[0].v;
+                    }
+                }
             }
             if ( off0==(uint64_t)-1 && idx->n_no_coor ) off0 = 0; // only no-coor reads in this bam
             break;
@@ -2082,10 +2085,10 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 
 static char *test_and_fetch(const char *fn)
 {
-    FILE *fp;
     if (hisremote(fn)) {
         const int buf_size = 1 * 1024 * 1024;
         hFILE *fp_remote;
+        FILE *fp;
         uint8_t *buf;
         int l;
         const char *p;
@@ -2113,8 +2116,9 @@ static char *test_and_fetch(const char *fn)
         if (hclose(fp_remote) != 0) fprintf(stderr, "[E::%s] fail to close remote file '%s'\n", __func__, fn);
         return (char*)p;
     } else {
-        if ((fp = fopen(fn, "rb")) == 0) return 0;
-        fclose(fp);
+        hFILE *fp;
+        if ((fp = hopen(fn, "r")) == 0) return 0;
+        hclose_abruptly(fp);
         return (char*)fn;
     }
 }

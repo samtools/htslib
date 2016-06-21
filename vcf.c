@@ -28,18 +28,18 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <zlib.h>
 #include <stdio.h>
-#include <ctype.h>
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
-#include "htslib/kstring.h"
-#include "htslib/bgzf.h"
+
 #include "htslib/vcf.h"
+#include "htslib/bgzf.h"
 #include "htslib/tbx.h"
 #include "htslib/hfile.h"
-#include "htslib/khash_str2int.h"
 #include "hts_internal.h"
+#include "htslib/khash_str2int.h"
+#include "htslib/kstring.h"
 
 #include "htslib/khash.h"
 KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
@@ -72,6 +72,14 @@ static const char *dump_char(char *buffer, char c)
     return buffer;
 }
 
+static char *find_chrom_header_line(char *s)
+{
+    char *nl;
+    if (strncmp(s, "#CHROM\t", 7) == 0) return s;
+    else if ((nl = strstr(s, "\n#CHROM\t")) != NULL) return nl+1;
+    else return NULL;
+}
+
 /*************************
  *** VCF header parser ***
  *************************/
@@ -81,7 +89,7 @@ int bcf_hdr_add_sample(bcf_hdr_t *h, const char *s)
     if ( !s ) return 0;
 
     const char *ss = s;
-    while ( !*ss && isspace(*ss) ) ss++;
+    while ( !*ss && isspace_c(*ss) ) ss++;
     if ( !*ss )
     {
         fprintf(stderr,"[E::%s] Empty sample name: trailing spaces/tabs in the header line?\n", __func__);
@@ -315,10 +323,10 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         p = ++q;
         while ( *q && *q==' ' ) { p++; q++; }
         // ^[A-Za-z_][0-9A-Za-z_.]*$
-        if (p==q && *q && (isalpha(*q) || *q=='_'))
+        if (p==q && *q && (isalpha_c(*q) || *q=='_'))
         {
             q++;
-            while ( *q && (isalnum(*q) || *q=='_' || *q=='.') ) q++;
+            while ( *q && (isalnum_c(*q) || *q=='_' || *q=='.') ) q++;
         }
         n = q-p;
         int m = 0;
@@ -845,7 +853,7 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
         bcf_hdr_destroy(h);
         return NULL;
     }
-    int hlen;
+    uint32_t hlen;
     char *htxt = NULL;
     if (bgzf_read(fp, &hlen, 4) != 4) goto fail;
     htxt = (char*)malloc(hlen);
@@ -869,16 +877,17 @@ int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
     if (hfp->format.format == vcf || hfp->format.format == text_format)
         return vcf_hdr_write(hfp, h);
 
-    int hlen;
-    char *htxt = bcf_hdr_fmt_text(h, 1, &hlen);
-    hlen++; // include the \0 byte
+    kstring_t htxt = {0,0,0};
+    bcf_hdr_format(h, 1, &htxt);
+    kputc('\0', &htxt); // include the \0 byte
 
     BGZF *fp = hfp->fp.bgzf;
     if ( bgzf_write(fp, "BCF\2\2", 5) !=5 ) return -1;
+    uint32_t hlen = htxt.l;
     if ( bgzf_write(fp, &hlen, 4) !=4 ) return -1;
-    if ( bgzf_write(fp, htxt, hlen) != hlen ) return -1;
+    if ( bgzf_write(fp, htxt.s, htxt.l) != htxt.l ) return -1;
 
-    free(htxt);
+    free(htxt.s);
     return 0;
 }
 
@@ -1404,22 +1413,29 @@ void bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str)
 {
     _bcf_hrec_format(hrec,0,str);
 }
-char *bcf_hdr_fmt_text(const bcf_hdr_t *hdr, int is_bcf, int *len)
+
+int bcf_hdr_format(const bcf_hdr_t *hdr, int is_bcf, kstring_t *str)
 {
     int i;
-    kstring_t txt = {0,0,0};
     for (i=0; i<hdr->nhrec; i++)
-        _bcf_hrec_format(hdr->hrec[i], is_bcf, &txt);
+        _bcf_hrec_format(hdr->hrec[i], is_bcf, str);
 
-    ksprintf(&txt,"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO");
+    ksprintf(str, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO");
     if ( bcf_hdr_nsamples(hdr) )
     {
-        ksprintf(&txt,"\tFORMAT");
+        ksprintf(str, "\tFORMAT");
         for (i=0; i<bcf_hdr_nsamples(hdr); i++)
-            ksprintf(&txt,"\t%s", hdr->samples[i]);
+            ksprintf(str, "\t%s", hdr->samples[i]);
     }
-    ksprintf(&txt,"\n");
+    ksprintf(str, "\n");
 
+    return 0;
+}
+
+char *bcf_hdr_fmt_text(const bcf_hdr_t *hdr, int is_bcf, int *len)
+{
+    kstring_t txt = {0,0,0};
+    bcf_hdr_format(hdr, is_bcf, &txt);
     if ( len ) *len = txt.l;
     return txt.s;
 }
@@ -1446,15 +1462,15 @@ const char **bcf_hdr_seqnames(const bcf_hdr_t *h, int *n)
 
 int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
 {
-    int hlen;
-    char *htxt = bcf_hdr_fmt_text(h, 0, &hlen);
-    while (hlen && htxt[hlen-1] == 0) --hlen; // kill trailing zeros
+    kstring_t htxt = {0,0,0};
+    bcf_hdr_format(h, 0, &htxt);
+    while (htxt.l && htxt.s[htxt.l-1] == '\0') --htxt.l; // kill trailing zeros
     int ret;
     if ( fp->format.compression!=no_compression )
-        ret = bgzf_write(fp->fp.bgzf, htxt, hlen);
+        ret = bgzf_write(fp->fp.bgzf, htxt.s, htxt.l);
     else
-        ret = hwrite(fp->fp.hfile, htxt, hlen);
-    free(htxt);
+        ret = hwrite(fp->fp.hfile, htxt.s, htxt.l);
+    free(htxt.s);
     return ret<0 ? -1 : 0;
 }
 
@@ -1758,7 +1774,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             } else if ((z->y>>4&0xf) == BCF_HT_REAL) {
                 float *x = (float*)(z->buf + z->size * m);
                 for (l = 0;; ++t) {
-                    if (*t == '.' && !isdigit(t[1])) bcf_float_set_missing(x[l++]), ++t; // ++t to skip "."
+                    if (*t == '.' && !isdigit_c(t[1])) bcf_float_set_missing(x[l++]), ++t; // ++t to skip "."
                     else x[l++] = strtod(t, &t);
                     if (*t != ',') break;
                 }
@@ -2333,14 +2349,34 @@ int bcf_index_build2(const char *fn, const char *fnidx, int min_shift)
 {
     htsFile *fp;
     hts_idx_t *idx;
+    tbx_t *tbx;
     int ret;
-    if ((fp = hts_open(fn, "rb")) == 0) return -1;
-    if ( fp->format.compression!=bgzf ) { hts_close(fp); return -1; }
-    idx = bcf_index(fp, min_shift);
+    if ((fp = hts_open(fn, "rb")) == 0) return -2;
+    if ( fp->format.compression!=bgzf ) { hts_close(fp); return -3; }
+    switch (fp->format.format) {
+        case bcf:
+            idx = bcf_index(fp, min_shift);
+            if (idx) {
+                ret = hts_idx_save_as(idx, fn, fnidx, HTS_FMT_CSI);
+                hts_idx_destroy(idx);
+            }
+            else ret = -1;
+            break;
+
+        case vcf:
+            tbx = tbx_index(hts_get_bgzfp(fp), min_shift, &tbx_conf_vcf);
+            if (tbx) {
+                ret = hts_idx_save_as(tbx->idx, fn, fnidx, min_shift > 0 ? HTS_FMT_CSI : HTS_FMT_TBI);
+                tbx_destroy(tbx);
+            }
+            else ret = -1;
+            break;
+
+        default:
+            ret = -3;
+            break;
+    }
     hts_close(fp);
-    if ( !idx ) return -1;
-    ret = hts_idx_save_as(idx, fn, fnidx, HTS_FMT_CSI);
-    hts_idx_destroy(idx);
     return ret;
 }
 
@@ -2423,9 +2459,10 @@ bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src)
     {
         // this will effectively strip existing IDX attributes from src to become dst
         dst = bcf_hdr_init("r");
-        char *htxt = bcf_hdr_fmt_text(src, 0, NULL);
-        bcf_hdr_parse(dst, htxt);
-        free(htxt);
+        kstring_t htxt = {0,0,0};
+        bcf_hdr_format(src, 0, &htxt);
+        bcf_hdr_parse(dst, htxt.s);
+        free(htxt.s);
         return dst;
     }
 
@@ -2607,51 +2644,46 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
 bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr)
 {
     bcf_hdr_t *hout = bcf_hdr_init("r");
-    char *htxt = bcf_hdr_fmt_text(hdr, 1, NULL);
     if (!hout) {
         fprintf(stderr, "[E::%s] failed to allocate bcf header\n", __func__);
-        free(htxt);
         return NULL;
     }
-    bcf_hdr_parse(hout, htxt);
-    free(htxt);
+    kstring_t htxt = {0,0,0};
+    bcf_hdr_format(hdr, 1, &htxt);
+    bcf_hdr_parse(hout, htxt.s);
+    free(htxt.s);
     return hout;
 }
 
 bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap)
 {
-    int hlen;
     void *names_hash = khash_str2int_init();
-    char *htxt = bcf_hdr_fmt_text(h0, 1, &hlen);
-    kstring_t str;
-    bcf_hdr_t *h;
-    str.l = str.m = 0; str.s = 0;
-    h = bcf_hdr_init("w");
+    kstring_t htxt = {0,0,0};
+    kstring_t str = {0,0,0};
+    bcf_hdr_t *h = bcf_hdr_init("w");
     if (!h) {
         fprintf(stderr, "[E::%s] failed to allocate bcf header\n", __func__);
-        free(htxt);
         return NULL;
     }
+    bcf_hdr_format(h0, 1, &htxt);
     bcf_hdr_set_version(h,bcf_hdr_get_version(h0));
     int j;
     for (j=0; j<n; j++) imap[j] = -1;
     if ( bcf_hdr_nsamples(h0) > 0) {
-        char *p;
+        char *p = find_chrom_header_line(htxt.s);
         int i = 0, end = n? 8 : 7;
-        while ((p = strstr(htxt, "#CHROM\t")) != 0)
-            if (p > htxt && *(p-1) == '\n') break;
         while ((p = strchr(p, '\t')) != 0 && i < end) ++i, ++p;
         if (i != end) {
             free(h); free(str.s);
             return 0; // malformated header
         }
-        kputsn(htxt, p - htxt, &str);
+        kputsn(htxt.s, p - htxt.s, &str);
         for (i = 0; i < n; ++i) {
             if ( khash_str2int_has_key(names_hash,samples[i]) )
             {
                 fprintf(stderr,"[E::bcf_hdr_subset] Duplicate sample name \"%s\".\n", samples[i]);
                 free(str.s);
-                free(htxt);
+                free(htxt.s);
                 khash_str2int_destroy(names_hash);
                 bcf_hdr_destroy(h);
                 return NULL;
@@ -2662,12 +2694,12 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
             kputs(samples[i], &str);
             khash_str2int_inc(names_hash,samples[i]);
         }
-    } else kputsn(htxt, hlen, &str);
+    } else kputsn(htxt.s, htxt.l, &str);
     while (str.l && (!str.s[str.l-1] || str.s[str.l-1]=='\n') ) str.l--; // kill trailing zeros and newlines
     kputc('\n',&str);
     bcf_hdr_parse(h, str.s);
     free(str.s);
-    free(htxt);
+    free(htxt.s);
     khash_str2int_destroy(names_hash);
     return h;
 }
@@ -2803,7 +2835,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
     }
 
     const char *r = ref, *a = alt;
-    while (*r && *a && toupper(*r)==toupper(*a) ) { r++; a++; }     // unfortunately, matching REF,ALT case is not guaranteed
+    while (*r && *a && toupper_c(*r)==toupper_c(*a) ) { r++; a++; }     // unfortunately, matching REF,ALT case is not guaranteed
 
     if ( *a && !*r )
     {
@@ -2823,18 +2855,18 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
     const char *re = r, *ae = a;
     while ( re[1] ) re++;
     while ( ae[1] ) ae++;
-    while ( re>r && ae>a && toupper(*re)==toupper(*ae) ) { re--; ae--; }
+    while ( re>r && ae>a && toupper_c(*re)==toupper_c(*ae) ) { re--; ae--; }
     if ( ae==a )
     {
         if ( re==r ) { var->n = 1; var->type = VCF_SNP; return; }
         var->n = -(re-r);
-        if ( toupper(*re)==toupper(*ae) ) { var->type = VCF_INDEL; return; }
+        if ( toupper_c(*re)==toupper_c(*ae) ) { var->type = VCF_INDEL; return; }
         var->type = VCF_OTHER; return;
     }
     else if ( re==r )
     {
         var->n = ae-a;
-        if ( toupper(*re)==toupper(*ae) ) { var->type = VCF_INDEL; return; }
+        if ( toupper_c(*re)==toupper_c(*ae) ) { var->type = VCF_INDEL; return; }
         var->type = VCF_OTHER; return;
     }
 

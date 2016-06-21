@@ -1,5 +1,6 @@
-/*  vcfutils.h -- allele-related utility functions.
-
+/// @file htslib/vcfutils.h
+/// Allele-related utility functions.
+/*
     Copyright (C) 2012, 2013, 2015 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>

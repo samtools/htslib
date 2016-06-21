@@ -1,5 +1,6 @@
-/*  synced_bcf_reader.h -- stream through multiple VCF files.
-
+/// @file htslib/synced_bcf_reader.h
+/// Stream through multiple VCF files.
+/*
     Copyright (C) 2012-2014 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>

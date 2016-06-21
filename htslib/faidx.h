@@ -1,5 +1,6 @@
-/* faidx.h -- FASTA random access.
-
+/// @file htslib/faidx.h
+/// FASTA random access.
+/*
    Copyright (C) 2008, 2009, 2013, 2014 Genome Research Ltd.
 
    Author: Heng Li <lh3@sanger.ac.uk>

@@ -1,5 +1,6 @@
-/*  vcf.h -- VCF/BCF API functions.
-
+/// @file htslib/vcf.h
+/// High-level VCF/BCF variant calling file operations.
+/*
     Copyright (C) 2012, 2013 Broad Institute.
     Copyright (C) 2012-2014 Genome Research Ltd.
 
@@ -421,11 +422,20 @@ typedef struct {
     /** Read VCF header from a file and update the header */
     int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname);
 
+    /// Appends formatted header text to _str_.
+    /** If _is_bcf_ is zero, `IDX` fields are discarded.
+     *  @return 0 if successful, or negative if an error occurred
+     *  @since 1.4
+     */
+    int bcf_hdr_format(const bcf_hdr_t *hdr, int is_bcf, kstring_t *str);
+
     /** Returns formatted header (newly allocated string) and its length,
      *  excluding the terminating \0. If is_bcf parameter is unset, IDX
      *  fields are discarded.
+     *  @deprecated Use bcf_hdr_format() instead as it can handle huge headers.
      */
-    char *bcf_hdr_fmt_text(const bcf_hdr_t *hdr, int is_bcf, int *len);
+    char *bcf_hdr_fmt_text(const bcf_hdr_t *hdr, int is_bcf, int *len)
+        HTS_DEPRECATED("use bcf_hdr_format() instead");
 
     /** Append new VCF header line, returns 0 on success */
     int bcf_hdr_append(bcf_hdr_t *h, const char *line);
@@ -755,7 +765,34 @@ typedef struct {
     #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
 
     hts_idx_t *bcf_index_load2(const char *fn, const char *fnidx);
+
+    /**
+     *  bcf_index_build() - Generate and save an index file
+     *  @fn:         Input VCF/BCF filename
+     *  @min_shift:  Positive to generate CSI, or 0 to generate TBI
+     *
+     *  Returns 0 if successful, or negative if an error occurred.
+     *
+     *  List of error codes:
+     *      -1 .. indexing failed
+     *      -2 .. opening @fn failed
+     *      -3 .. format not indexable
+     */
     int bcf_index_build(const char *fn, int min_shift);
+
+    /**
+     *  bcf_index_build2() - Generate and save an index to a specific file
+     *  @fn:         Input VCF/BCF filename
+     *  @fnidx:      Output filename, or NULL to add .csi/.tbi to @fn
+     *  @min_shift:  Positive to generate CSI, or 0 to generate TBI
+     *
+     *  Returns 0 if successful, or negative if an error occurred.
+     *
+     *  List of error codes:
+     *      -1 .. indexing failed
+     *      -2 .. opening @fn failed
+     *      -3 .. format not indexable
+     */
     int bcf_index_build2(const char *fn, const char *fnidx, int min_shift);
 
 /*******************

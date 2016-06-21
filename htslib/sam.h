@@ -1,5 +1,6 @@
-/*  sam.h -- SAM and BAM file I/O and manipulation.
-
+/// @file htslib/sam.h
+/// High-level SAM/BAM/CRAM sequence file operations.
+/*
     Copyright (C) 2008, 2009, 2013-2014 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
@@ -321,7 +322,8 @@ hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx);
 /** @param fn        Input BAM/etc filename, to which .csi/etc will be added
     @param min_shift Positive to generate CSI, or 0 to generate BAI
     @return  0 if successful, or negative if an error occurred (usually -1; or
-             -2: opening fn failed; -3: format not indexable)
+             -2: opening fn failed; -3: format not indexable; -4:
+             failed to create and/or save the index)
 */
 int sam_index_build(const char *fn, int min_shift) HTS_RESULT_USED;
 
@@ -329,7 +331,8 @@ int sam_index_build(const char *fn, int min_shift) HTS_RESULT_USED;
 /** @param fn        Input BAM/CRAM/etc filename
     @param fnidx     Output filename, or NULL to add .bai/.csi/etc to @a fn
     @param min_shift Positive to generate CSI, or 0 to generate BAI
-    @return  0 if successful, or negative if an error occurred.
+    @return  0 if successful, or negative if an error occurred (see
+             sam_index_build for error codes)
 */
 int sam_index_build2(const char *fn, const char *fnidx, int min_shift) HTS_RESULT_USED;
 int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthreads) HTS_RESULT_USED;
@@ -376,8 +379,9 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
     char bam_aux2A(const uint8_t *s);
     char *bam_aux2Z(const uint8_t *s);
 
-    void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, uint8_t *data);
+    void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8_t *data);
     int bam_aux_del(bam1_t *b, uint8_t *s);
+    int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data);
 
 /**************************
  *** Pileup and Mpileup ***
@@ -445,8 +449,17 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     void bam_mplp_destroy(bam_mplp_t iter);
     void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
     int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
+    void bam_mplp_reset(bam_mplp_t iter);
 
 #endif // ~!defined(BAM_NO_PILEUP)
+
+
+/***********************************
+ * BAQ calculation and realignment *
+ ***********************************/
+
+int sam_cap_mapq(bam1_t *b, const char *ref, int ref_len, int thres);
+int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag);
 
 #ifdef __cplusplus
 }

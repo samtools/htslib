@@ -1,5 +1,6 @@
-/* The MIT License
-
+/// @file htslib/bgzf.h
+/// Low-level routines for direct BGZF operations.
+/*
    Copyright (c) 2008 Broad Institute / Massachusetts Institute of Technology
                  2011, 2012 Attractive Chaos <attractor@live.co.uk>
    Copyright (C) 2009, 2013, 2014 Genome Research Ltd

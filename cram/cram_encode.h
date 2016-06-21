@@ -98,6 +98,16 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s);
  */
 int cram_encode_container(cram_fd *fd, cram_container *c);
 
+/*! INTERNAL:
+ *
+ * During cram_next_container or before the final flush at end of
+ * file, we update the current slice headers and increment the slice
+ * number to the next slice.
+ *
+ * See cram_next_container() and cram_close().
+ */
+void cram_update_curr_slice(cram_container *c);
+
 #ifdef __cplusplus
 }
 #endif

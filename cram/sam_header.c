@@ -1244,7 +1244,8 @@ char *stringify_argv(int argc, char *argv[]) {
 
     /* Allocate */
     for (i = 0; i < argc; i++) {
-	nbytes += strlen(argv[i]) + 1;
+	if (i > 0) nbytes += 1;
+	nbytes += strlen(argv[i]);
     }
     if (!(str = malloc(nbytes)))
 	return NULL;
@@ -1252,6 +1253,7 @@ char *stringify_argv(int argc, char *argv[]) {
     /* Copy */
     cp = str;
     for (i = 0; i < argc; i++) {
+	if (i > 0) *cp++ = ' ';
 	j = 0;
 	while (argv[i][j]) {
 	    if (argv[i][j] == '\t')
@@ -1260,7 +1262,6 @@ char *stringify_argv(int argc, char *argv[]) {
 		*cp++ = argv[i][j];
 	    j++;
 	}
-	*cp++ = ' ';
     }
     *cp++ = 0;
 

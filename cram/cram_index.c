@@ -59,7 +59,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <math.h>
-#include <ctype.h>
 
 #include "htslib/hfile.h"
 #include "hts_internal.h"
@@ -142,7 +141,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
     char buf[65536];
     ssize_t len;
     kstring_t kstr = {0};
-    FILE *fp;
+    hFILE *fp;
     cram_index *idx;
     cram_index **idx_stack = NULL, *ep, e;
     int idx_stack_alloc = 0, idx_stack_ptr = 0;
@@ -173,7 +172,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 	fn_idx = fn2;
     }
 
-    if (!(fp = fopen(fn_idx, "r"))) {
+    if (!(fp = hopen(fn_idx, "r"))) {
 	perror(fn_idx);
 	free(idx_stack);
 	free(fn2);
@@ -181,7 +180,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
     }
 
     // Load the file into memory
-    while ((len = fread(buf, 1, 65536, fp)) > 0)
+    while ((len = hread(fp, buf, 65536)) > 0)
 	kputsn(buf, len, &kstr);
     if (len < 0 || kstr.l < 2) {
 	if (kstr.s)
@@ -191,7 +190,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 	return -1;
     }
 
-    if (fclose(fp)) {
+    if (hclose(fp) < 0) {
 	if (kstr.s)
 	    free(kstr.s);
 	free(idx_stack);
@@ -495,8 +494,8 @@ static int cram_index_build_multiref(cram_fd *fd,
  * fn_idx is the filename of the index file to be written;
  * if NULL, we add ".crai" to fn_base to get the index filename.
  *
- * Returns 0 on success
- *        -1 on failure
+ * Returns 0 on success,
+ *         negative on failure (-1 for read failure, -4 for write failure)
  */
 int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     cram_container *c;
@@ -513,7 +512,7 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     if (!(fp = zfopen(fn_idx, "wz"))) {
         perror(fn_idx);
         free(fn_idx_str.s);
-        return -1;
+        return -4;
     }
 
     free(fn_idx_str.s);
@@ -578,5 +577,5 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     }
 	
 
-    return (zfclose(fp) >= 0)? 0 : -1;
+    return (zfclose(fp) >= 0)? 0 : -4;
 }
