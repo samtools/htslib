@@ -645,7 +645,7 @@ int bgzf_read_block(BGZF *fp)
         fp->block_clength = j->comp_len;
         fp->block_length = j->uncomp_len;
 
-        if ( j->fp->idx_build_otf )
+        if ( j->uncomp_len && j->fp->idx_build_otf )
         {
             bgzf_index_add_block(j->fp);
             j->fp->idx->ublock_addr += j->uncomp_len;
@@ -1327,7 +1327,6 @@ restart:
     j->uncomp_len = 0;
 
     while (bgzf_mt_read_block(fp, j) == 0) {
-
         // Check for command
         pthread_mutex_lock(&mt->command_m);
         switch (mt->command) {
@@ -1339,7 +1338,7 @@ restart:
         case HAS_EOF:
             bgzf_mt_eof(fp);
             pthread_mutex_unlock(&mt->command_m);
-            goto restart;
+            break;
 
         case CLOSE:
             pthread_cond_signal(&mt->command_c);

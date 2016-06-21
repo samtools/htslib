@@ -956,7 +956,22 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
 int hts_set_threads(htsFile *fp, int n)
 {
     if (fp->format.compression == bgzf) {
+#if KS_BGZF        
+        // Messy.  Is there any other way of knowing whether voidp or
+        // bgzf is the correct pointer to use?
+        return bgzf_mt((fp->format.format == sam ||
+                        fp->format.format == vcf ||
+                        fp->format.format == text_format)
+                       ? ((kstream_t *)fp->fp.voidp)->f
+                       : fp->fp.bgzf,
+                       n, 256/*unused*/);
+#else
+        if (fp->format.format == sam ||
+            fp->format.format == vcf ||
+            fp->format.format == text_format)
+            return 0;
         return bgzf_mt(fp->fp.bgzf, n, 256/*unused*/);
+#endif
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_NTHREADS, n);
     }
@@ -965,7 +980,20 @@ int hts_set_threads(htsFile *fp, int n)
 
 int hts_set_thread_pool(htsFile *fp, htsThreadPool *p) {
     if (fp->format.compression == bgzf) {
+#if KS_BGZF        
+        return bgzf_thread_pool((fp->format.format == sam ||
+                                 fp->format.format == vcf ||
+                                 fp->format.format == text_format)
+                                ? ((kstream_t *)fp->fp.voidp)->f
+                                : fp->fp.bgzf,
+                                p->pool, p->qsize);
+#else
+        if (fp->format.format == sam ||
+            fp->format.format == vcf ||
+            fp->format.format == text_format)
+            return 0;
         return bgzf_thread_pool(fp->fp.bgzf, p->pool, p->qsize);
+#endif
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_THREAD_POOL, p);
     }
