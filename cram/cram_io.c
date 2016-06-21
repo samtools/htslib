@@ -3308,7 +3308,7 @@ int cram_flush_container_mt(cram_fd *fd, cram_container *c) {
 	return -1;
     j->fd = fd;
     j->c = c;
-    
+
     t_pool_dispatch(fd->pool, fd->rqueue, cram_flush_thread, j);
 
     return cram_flush_result(fd);
@@ -4570,10 +4570,13 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 	break;
     }
 
-    case CRAM_OPT_THREAD_POOL:
-	fd->pool = va_arg(args, t_pool *);
+    case CRAM_OPT_THREAD_POOL: {
+	htsThreadPool *p = va_arg(args, htsThreadPool *);
+	fd->pool = p ? p->pool : NULL;
 	if (fd->pool) {
-	    fd->rqueue = t_pool_queue_init(fd->pool, fd->pool->tsize*2, 0);
+	    fd->rqueue = t_pool_queue_init(fd->pool,
+					   p->qsize ? p->qsize : fd->pool->tsize*2,
+					   0);
 	    pthread_mutex_init(&fd->metrics_lock, NULL);
 	    pthread_mutex_init(&fd->ref_lock, NULL);
 	    pthread_mutex_init(&fd->bam_list_lock, NULL);
@@ -4585,6 +4588,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 	//fd->decoded = calloc(fd->qsize, sizeof(cram_container *));
 	//t_pool_dispatch(fd->pool, cram_decoder_thread, fd);
 	break;
+    }
 
     case CRAM_OPT_REQUIRED_FIELDS:
 	fd->required_fields = va_arg(args, int);
