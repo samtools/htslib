@@ -2010,10 +2010,10 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 
 static char *test_and_fetch(const char *fn)
 {
-    FILE *fp;
     if (hisremote(fn)) {
         const int buf_size = 1 * 1024 * 1024;
         hFILE *fp_remote;
+        FILE *fp;
         uint8_t *buf;
         int l;
         const char *p;
@@ -2041,8 +2041,9 @@ static char *test_and_fetch(const char *fn)
         if (hclose(fp_remote) != 0) fprintf(stderr, "[E::%s] fail to close remote file '%s'\n", __func__, fn);
         return (char*)p;
     } else {
-        if ((fp = fopen(fn, "rb")) == 0) return 0;
-        fclose(fp);
+        hFILE *fp;
+        if ((fp = hopen(fn, "r")) == 0) return 0;
+        hclose_abruptly(fp);
         return (char*)fn;
     }
 }

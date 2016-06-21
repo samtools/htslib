@@ -141,7 +141,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
     char buf[65536];
     ssize_t len;
     kstring_t kstr = {0};
-    FILE *fp;
+    hFILE *fp;
     cram_index *idx;
     cram_index **idx_stack = NULL, *ep, e;
     int idx_stack_alloc = 0, idx_stack_ptr = 0;
@@ -172,7 +172,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 	fn_idx = fn2;
     }
 
-    if (!(fp = fopen(fn_idx, "r"))) {
+    if (!(fp = hopen(fn_idx, "r"))) {
 	perror(fn_idx);
 	free(idx_stack);
 	free(fn2);
@@ -180,7 +180,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
     }
 
     // Load the file into memory
-    while ((len = fread(buf, 1, 65536, fp)) > 0)
+    while ((len = hread(fp, buf, 65536)) > 0)
 	kputsn(buf, len, &kstr);
     if (len < 0 || kstr.l < 2) {
 	if (kstr.s)
@@ -190,7 +190,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 	return -1;
     }
 
-    if (fclose(fp)) {
+    if (hclose(fp) < 0) {
 	if (kstr.s)
 	    free(kstr.s);
 	free(idx_stack);
