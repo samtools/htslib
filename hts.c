@@ -1031,7 +1031,7 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
 // future is uncertain. Things will probably have to change with hFILE...
 BGZF *hts_get_bgzfp(htsFile *fp)
 {
-    if ( fp->is_bin )
+    if ( fp->is_bin  || fp->is_write )
         return fp->fp.bgzf;
     else
         return ((kstream_t*)fp->fp.voidp)->f;
