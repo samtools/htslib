@@ -30,13 +30,127 @@
 #include <ctype.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h>
 #include "htslib/kstring.h"
+
+int kputd(kstring_t *s, double d) {
+	int len = 0;
+	char buf[21], *cp = buf+20, *ep;
+	if (d == 0) {
+		if (signbit(d)) {
+			kputsn("-0",2,s);
+			return 2;
+		} else {
+			kputsn("0",1,s);
+			return 1;
+		}
+	}
+
+	if (d < 0) {
+		kputc('-',s);
+		len = 1;
+		d=-d;
+	}
+	if (d < 0.0001 || d > 999999) {
+		if (ks_resize(s, s->l + 50) < 0)
+			return EOF;
+		// We let stdio handle the exponent cases
+		int s2 = sprintf(s->s + s->l, "%g", d);
+		len += s2;
+		s->l += len;
+		return len;
+	}
+
+	uint64_t i = d*10000000000;
+	// Correction for rounding - rather ugly
+
+	// Optimised for small numbers.
+	// Better still would be __builtin_clz on hi/lo 32 and get the
+	// starting point very rapidly.
+	if (d<.0001)
+		i+=0;
+	else if (d<0.001)
+		i+=5;
+	else if (d < 0.01)
+		i+=50;
+	else if (d < 0.1)
+		i+=500;
+	else if (d < 1)
+		i+=5000;
+	else if (d < 10)
+		i+=50000;
+	else if (d < 100)
+		i+=500000;
+	else if (d < 1000)
+		i+=5000000;
+	else if (d < 10000)
+		i+=50000000;
+	else if (d < 100000)
+		i+=500000000;
+	else
+		i+=5000000000;
+
+	do {
+		*--cp = '0' + i%10;
+		i /= 10;
+	} while (i >= 1);
+	buf[20] = 0;
+	int p = buf+20-cp;
+	if (p <= 10) { // d < 1
+		//assert(d/1);
+		cp[6] = 0; ep = cp+5;// 6 precision
+		while (p < 10) {
+			*--cp = '0';
+			p++;
+		}
+		*--cp = '.';
+		*--cp = '0';
+	} else {
+		char *xp = --cp;
+		while (p > 10) {
+			xp[0] = xp[1];
+			p--;
+			xp++;
+		}
+		xp[0] = '.';
+		cp[7] = 0; ep=cp+6;
+		if (cp[6] == '.') cp[6] = 0;
+	}
+
+	// Cull trailing zeros
+	while (*ep == '0' && ep > cp)
+		ep--;
+	char *z = ep+1;
+	while (ep > cp) {
+		if (*ep == '.') {
+			if (z[-1] == '.')
+				z[-1] = 0;
+			else
+				z[0] = 0;
+			break;
+		}
+		ep--;
+	}
+
+	int sl = strlen(cp);
+	len += sl;
+	kputsn(cp, sl, s);
+	return len;
+}
 
 int kvsprintf(kstring_t *s, const char *fmt, va_list ap)
 {
 	va_list args;
 	int l;
 	va_copy(args, ap);
+
+	if (fmt[0] == '%' && fmt[1] == 'g' && fmt[2] == 0) {
+		double d = va_arg(args, double);
+		l = kputd(s, d);
+		va_end(args);
+		return l;
+	}
+
 	l = vsnprintf(s->s + s->l, s->m - s->l, fmt, args); // This line does not work with glibc 2.0. See `man snprintf'.
 	va_end(args);
 	if (l + 1 > s->m - s->l) {
