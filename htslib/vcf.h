@@ -795,6 +795,22 @@ typedef struct {
      */
     int bcf_index_build2(const char *fn, const char *fnidx, int min_shift);
 
+    /**
+     *  bcf_index_build2() - Generate and save an index to a specific file
+     *  @fn:         Input VCF/BCF filename
+     *  @fnidx:      Output filename, or NULL to add .csi/.tbi to @fn
+     *  @min_shift:  Positive to generate CSI, or 0 to generate TBI
+     *  @n_threads:  Number of VCF/BCF decoder threads
+     *
+     *  Returns 0 if successful, or negative if an error occurred.
+     *
+     *  List of error codes:
+     *      -1 .. indexing failed
+     *      -2 .. opening @fn failed
+     *      -3 .. format not indexable
+     */
+     int bcf_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads);
+
 /*******************
  * Typed value I/O *
  *******************/

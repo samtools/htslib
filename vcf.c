@@ -2345,13 +2345,15 @@ hts_idx_t *bcf_index_load2(const char *fn, const char *fnidx)
     return fnidx? hts_idx_load2(fn, fnidx) : bcf_index_load(fn);
 }
 
-int bcf_index_build2(const char *fn, const char *fnidx, int min_shift)
+int bcf_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads)
 {
     htsFile *fp;
     hts_idx_t *idx;
     tbx_t *tbx;
     int ret;
     if ((fp = hts_open(fn, "rb")) == 0) return -2;
+    if (n_threads)
+        hts_set_threads(fp, n_threads);
     if ( fp->format.compression!=bgzf ) { hts_close(fp); return -3; }
     switch (fp->format.format) {
         case bcf:
@@ -2380,9 +2382,14 @@ int bcf_index_build2(const char *fn, const char *fnidx, int min_shift)
     return ret;
 }
 
+int bcf_index_build2(const char *fn, const char *fnidx, int min_shift)
+{
+    return bcf_index_build3(fn, fnidx, min_shift, 0);
+}
+
 int bcf_index_build(const char *fn, int min_shift)
 {
-    return bcf_index_build2(fn, NULL, min_shift);
+    return bcf_index_build3(fn, NULL, min_shift, 0);
 }
 
 /*****************
