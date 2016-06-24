@@ -100,6 +100,7 @@ typedef struct bgzf_mtaux_t {
 
     // Thread pool
     int n_threads;
+    int own_pool;
     t_pool *pool;
 
     // Output queue holding completed bgzf_jobs
@@ -1450,6 +1451,8 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
         return -1;
     }
 
+    fp->mt->own_pool = 1;
+
     return 0;
 }
 
@@ -1476,6 +1479,10 @@ static void mt_destroy(mtaux_t *mt)
     if (mt->curr_job)
         pool_free(mt->job_pool, mt->curr_job);
     pool_destroy(mt->job_pool);
+
+    if (mt->own_pool)
+        t_pool_destroy(mt->pool, 0);
+
     free(mt);
     //fprintf(stderr, "\n\nYYY destroyed\n\n");
     fflush(stderr);
