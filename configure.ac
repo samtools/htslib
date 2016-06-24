@@ -135,7 +135,8 @@ if test $zlib_devel != ok; then
 HTSlib uses compression routines from the zlib library <http://zlib.net>.
 Building HTSlib requires zlib development files to be installed on the build
 machine; you may need to ensure a package such as zlib1g-dev (on Debian or
-Ubuntu Linux) or zlib-devel (on RPM-based Linux distributions) is installed.
+Ubuntu Linux) or zlib-devel (on RPM-based Linux distributions or Cygwin)
+is installed.
 
 FAILED.  This error must be resolved in order to build HTSlib successfully.])
 fi
@@ -181,8 +182,8 @@ Support for HTTPS and other SSL-based URLs requires routines from the libcurl
 library <http://curl.haxx.se/libcurl/>.  Building HTSlib with libcurl enabled
 requires libcurl development files to be installed on the build machine; you
 may need to ensure a package such as libcurl4-{gnutls,nss,openssl}-dev (on
-Debian or Ubuntu Linux) or libcurl-devel (on RPM-based Linux distributions)
-is installed.
+Debian or Ubuntu Linux) or libcurl-devel (on RPM-based Linux distributions
+or Cygwin) is installed.
 
 Either configure with --disable-libcurl or resolve this error to build HTSlib.])
        ;;
@@ -208,7 +209,8 @@ Support for AWS S3 URLs requires routines from an SSL library.  Building
 HTSlib with libcurl enabled requires SSL development files to be installed
 on the build machine; you may need to ensure a package such as libgnutls-dev,
 libnss3-dev, or libssl-dev (on Debian or Ubuntu Linux, corresponding to the
-libcurl4-*-dev package installed) or similar on RPM-based Linux distributions.
+libcurl4-*-dev package installed), or openssl-devel (on RPM-based Linux
+distributions or Cygwin) is installed.
 
 Either configure with --disable-libcurl or resolve this error to build HTSlib.])])
      LIBS=$save_LIBS])
