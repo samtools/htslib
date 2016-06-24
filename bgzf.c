@@ -844,11 +844,10 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
         output += copy_length;
         bytes_read += copy_length;
     }
-//    if (fp->block_offset == fp->block_length) {
-//        //fprintf(stderr, "offset=length %d\n", (int)fp->block_length);
-//        fp->block_address = htell(fp->fp); // FIXME!
-//        fp->block_offset = fp->block_length = 0;
-//    }
+    if (fp->block_offset == fp->block_length) {
+        fp->block_address = bgzf_htell(fp);
+        fp->block_offset = fp->block_length = 0;
+    }
     fp->uncompressed_address += bytes_read;
 
 //    fprintf(stderr, "off=%d/%d, cadd=%d, uaddr=%d, read %d/%d,",
