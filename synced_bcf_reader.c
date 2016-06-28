@@ -143,8 +143,6 @@ int bcf_sr_set_threads(bcf_srs_t *files, int n_threads)
     if (!(files->n_threads = n_threads))
         return 0;
 
-    fprintf(stderr, "Creating thread pool\n");
-
     files->p = calloc(1, sizeof(*files->p));
     if (!files->p) {
         files->errnum = no_memory;
@@ -159,8 +157,6 @@ int bcf_sr_set_threads(bcf_srs_t *files, int n_threads)
 void bcf_sr_destroy_threads(bcf_srs_t *files) {
     if (!files->p)
         return;
-
-    fprintf(stderr, "Destroying thread pool\n");
 
     if (files->p->pool)
         hts_destroy_threads(files->p->pool);
@@ -192,10 +188,8 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
             files->errnum = no_eof;
             fprintf(stderr,"[%s] Warning: no BGZF EOF marker; file may be truncated.\n", fname);
         }
-        if (files->p) {
-            fprintf(stderr, "setting thread pool\n");
+        if (files->p)
             bgzf_thread_pool(bgzf, files->p->pool, files->p->qsize);
-        }
     }
 
     if ( files->require_index )
