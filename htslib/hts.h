@@ -440,7 +440,7 @@ typedef struct {
 typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, int *end);
 
 typedef struct {
-    uint32_t read_rest:1, finished:1, dummy:29;
+    uint32_t read_rest:1, finished:1, is_cram:1, dummy:29;
     int tid, beg, end, n_off, i;
     int curr_tid, curr_beg, curr_end;
     uint64_t curr_off;

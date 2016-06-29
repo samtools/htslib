@@ -618,6 +618,7 @@ static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end
 
     // Cons up a dummy iterator for which hts_itr_next() will simply invoke
     // the readrec function:
+    iter->is_cram = 1;
     iter->read_rest = 1;
     iter->off = NULL;
     iter->bins.a = NULL;
