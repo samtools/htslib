@@ -30,10 +30,21 @@ AC_CONFIG_SRCDIR(hts.c)
 AC_CONFIG_HEADERS(config.h)
 
 dnl Copyright notice to be copied into the generated configure script
-AC_COPYRIGHT([Portions copyright (C) 2015 Genome Research Ltd.
+AC_COPYRIGHT([Portions copyright (C) 2016 Genome Research Ltd.
 
 This configure script is free software: you are free to change and
 redistribute it.  There is NO WARRANTY, to the extent permitted by law.])
+
+dnl Notes to be copied (by autoheader) into the generated config.h.in
+AH_TOP([/* If you use configure, this file provides @%:@defines reflecting your
+   configuration choices.  If you have not run configure, suitable
+   conservative defaults will be used.
+
+   Autoheader adds a number of items to this template file that are not
+   used by HTSlib: STDC_HEADERS and most HAVE_*_H header file defines
+   are immaterial, as we assume standard ISO C headers and facilities;
+   the PACKAGE_* defines are unused and are overridden by the more
+   accurate PACKAGE_VERSION as computed by the Makefile.  */])
 
 AC_PROG_CC
 AC_PROG_RANLIB
