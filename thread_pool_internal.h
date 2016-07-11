@@ -59,35 +59,35 @@ extern "C" {
 /*
  * An input job, before execution.
  */
-typedef struct t_pool_job {
+typedef struct hts_tpool_job {
     void *(*func)(void *arg);
     void *arg;
-    struct t_pool_job *next;
+    struct hts_tpool_job *next;
 
-    struct t_pool *p;
-    struct t_pool_queue *q;
+    struct hts_tpool *p;
+    struct hts_tpool_process *q;
     uint64_t serial;
-} t_pool_job;
+} hts_tpool_job;
 
 /*
  * An output, after job has executed.
  */
-typedef struct t_pool_result {
-    struct t_pool_result *next;
+typedef struct hts_tpool_result {
+    struct hts_tpool_result *next;
     uint64_t serial; // sequential number for ordering
-    void *data; // result itself
-} t_pool_result;
+    void *data;      // result itself
+} hts_tpool_result;
 
 /*
  * A per-thread worker struct.
  */
 typedef struct {
-    struct t_pool *p;
+    struct hts_tpool *p;
     int idx;
     pthread_t tid;
     pthread_cond_t  pending_c; // when waiting for a job
     long long wait_time;
-} t_pool_worker_t;
+} hts_tpool_worker;
 
 /*
  * An IO queue consists of a queue of jobs to execute
@@ -101,12 +101,12 @@ typedef struct {
  * The thread pool may have many hetergeneous tasks, each
  * using its own io_queue mixed into the same thread pool.
  */
-typedef struct t_pool_queue {
-    struct t_pool *p;                // thread pool
-    t_pool_job    *input_head;       // input list
-    t_pool_job    *input_tail;
-    t_pool_result *output_head;      // output list
-    t_pool_result *output_tail;
+typedef struct hts_tpool_process {
+    struct hts_tpool *p;             // thread pool
+    hts_tpool_job    *input_head;    // input list
+    hts_tpool_job    *input_tail;
+    hts_tpool_result *output_head;   // output list
+    hts_tpool_result *output_tail;
     int qsize;                       // max size of i/o queues
     uint64_t next_serial;            // next serial for output
     uint64_t curr_serial;            // current serial (next input)
@@ -126,8 +126,8 @@ typedef struct t_pool_queue {
     pthread_cond_t input_empty_c;    // Input queue has become empty
     pthread_cond_t none_processing_c;// n_processing has hit zero
 
-    struct t_pool_queue *next, *prev;// to form circular linked list.
-} t_pool_queue;
+    struct hts_tpool_process *next, *prev;// to form circular linked list.
+} hts_tpool_process;
 
 /*
  * The single pool structure itself.
@@ -136,7 +136,7 @@ typedef struct t_pool_queue {
  * output is going, but it maintains a list of queues associated with
  * this pool from which the jobs are taken.
  */
-typedef struct t_pool {
+typedef struct hts_tpool {
     int nwaiting; // how many workers waiting for new jobs
     int njobs;    // how many total jobs are waiting in all queues
     int shutdown; // true if pool is being destroyed
@@ -144,11 +144,11 @@ typedef struct t_pool {
     // I/O queues to check for jobs in and to put results.
     // Forms a circular linked list.  (q_head may be amended
     // to point to the most recently updated.)
-    t_pool_queue *q_head;
+    hts_tpool_process *q_head;
 
     // threads
     int tsize;    // maximum number of jobs
-    t_pool_worker_t *t;
+    hts_tpool_worker *t;
     // array of worker IDs free
     int *t_stack, t_stack_top;
 
@@ -163,7 +163,7 @@ typedef struct t_pool {
     // Debugging to check wait time.
     // FIXME: should we just delete these and cull the associated code?
     long long total_time, wait_time;
-} t_pool;
+} hts_tpool;
 
 #ifdef __cplusplus
 }

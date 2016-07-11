@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
     // Create and share the thread pool
     htsThreadPool p = {NULL, 0};
     if (nthreads > 0) {
-        p.pool = hts_create_threads(nthreads);
+        p.pool = hts_tpool_init(nthreads);
         if (!p.pool) {
             fprintf(stderr, "Error creating thread pool\n");
             exit_code = 1;
@@ -210,7 +210,7 @@ int main(int argc, char *argv[])
     }
 
     if (p.pool)
-        hts_destroy_threads(p.pool);
+        hts_tpool_destroy(p.pool);
 
     return exit_code;
 }

@@ -991,26 +991,6 @@ void hts_set_cache_size(htsFile *fp, int n)
         bgzf_set_cache_size(hts_get_bgzfp(fp), n);
 }
 
-/*
- * Creates a thread pool.
- *
- * Note this does not create an associated queue.  The thread pool is
- * expected to be allocated up front and shared by multiple
- * algorithms, but the algorithms themselves will be responsible for
- * creating and destroying their queues when utilising the pool.
- *
- * Returns thread  pool on success,
- *         NULL on failure.
- */
-t_pool *hts_create_threads(int n) {
-    return t_pool_init(n);
-}
-
-void hts_destroy_threads(t_pool *p) {
-    if (p)
-        t_pool_destroy(p, 0);
-}
-
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
 {
     free(fp->fn_aux);

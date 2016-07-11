@@ -2755,9 +2755,9 @@ int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
     j->s  = s;
     j->h  = bfd;
     
-    nonblock = t_pool_queue_sz(fd->rqueue) ? 1 : 0;
+    nonblock = hts_tpool_process_sz(fd->rqueue) ? 1 : 0;
 
-    if (-1 == t_pool_dispatch2(fd->pool, fd->rqueue, cram_decode_slice_thread,
+    if (-1 == hts_tpool_dispatch2(fd->pool, fd->rqueue, cram_decode_slice_thread,
 			       j, nonblock)) {
 	/* Would block */
 	fd->job_pending = j;
@@ -3077,35 +3077,35 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 
 	// Push it a bit far, to qsize in queue rather than pending arrival,
 	// as cram tends to be a bit bursty in decode timings.
-	if (t_pool_queue_len(fd->rqueue) > t_pool_queue_size(fd->rqueue))
+	if (hts_tpool_process_len(fd->rqueue) > hts_tpool_process_qsize(fd->rqueue))
 	    break;
     }
 
     if (fd->pool) {
-	t_pool_result *res;
+	hts_tpool_result *res;
 	cram_decode_job *j;
 	
 //	fprintf(stderr, "Thread pool len = %d, %d\n",
-//		t_pool_results_queue_len(fd->rqueue),
-//		t_pool_results_queue_sz(fd->rqueue));
+//		hts_tpool_results_queue_len(fd->rqueue),
+//		hts_tpool_results_queue_sz(fd->rqueue));
 
-	if (fd->ooc && t_pool_queue_empty(fd->rqueue))
+	if (fd->ooc && hts_tpool_process_empty(fd->rqueue))
 	    return NULL;
 
-	res = t_pool_next_result_wait(fd->rqueue);
+	res = hts_tpool_next_result_wait(fd->rqueue);
 
-	if (!res || !t_pool_result_data(res)) {
-	    fprintf(stderr, "t_pool_next_result failure\n");
+	if (!res || !hts_tpool_result_data(res)) {
+	    fprintf(stderr, "hts_tpool_next_result failure\n");
 	    return NULL;
 	}
 
-	j = (cram_decode_job *)t_pool_result_data(res);
+	j = (cram_decode_job *)hts_tpool_result_data(res);
 	c = j->c;
 	s = j->s;
 
 	fd->ctr = c;
 
-	t_pool_delete_result(res, 1);
+	hts_tpool_delete_result(res, 1);
     }
 
     *cp = c;

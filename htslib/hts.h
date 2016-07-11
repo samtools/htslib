@@ -140,7 +140,7 @@ typedef struct {
 // descriptors are in use than threads, so keeping memory low is
 // important.
 typedef struct {
-    t_pool *pool; // The shared thread pool itself
+    hts_tpool *pool; // The shared thread pool itself
     int qsize;    // Size of I/O queue to use for this fp
 } htsThreadPool;
 
@@ -415,19 +415,6 @@ int hts_set_thread_pool(htsFile *fp, htsThreadPool *p);
   @param n   The size of cache, in bytes
 */
 void hts_set_cache_size(htsFile *fp, int n);
-
-/*!
-  @abstract  Allocates a pool of shared worker threads.
-  @param n   The number of worker threads to create
-  @return    Pointer for success, or NULL if an error occurred.
-*/
-t_pool *hts_create_threads(int n);
-
-/*!
-  @abstract  Destroys a pool of shared worker threads.
-  @param p   A pointer to the thread pool.
-*/
-void hts_destroy_threads(t_pool *p);
 
 /*!
   @abstract  Set .fai filename for a file opened for reading

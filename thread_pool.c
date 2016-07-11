@@ -85,9 +85,9 @@ int DBG_OUT(FILE *fp, char *fmt, ...) {
  * Returns 0 on success;
  *        -1 on failure
  */
-static int t_pool_add_result(t_pool_job *j, void *data) {
-    t_pool_queue *q = j->q;
-    t_pool_result *r;
+static int hts_tpool_add_result(hts_tpool_job *j, void *data) {
+    hts_tpool_process *q = j->q;
+    hts_tpool_result *r;
 
     pthread_mutex_lock(&q->p->pool_m);
 
@@ -131,7 +131,7 @@ static int t_pool_add_result(t_pool_job *j, void *data) {
 // /*
 //  * Returns true or false depending on whether the output queue is full.
 //  */
-// static int t_pool_queue_output_full(t_pool_queue *q) {
+// static int hts_tpool_process_output_full(hts_tpool_process *q) {
 //     int full;
 // 
 //     pthread_mutex_lock(&q->p->pool_m);
@@ -140,11 +140,11 @@ static int t_pool_add_result(t_pool_job *j, void *data) {
 //     return full;
 // }
 
-static void wake_next_worker(t_pool_queue *q, int locked);
+static void wake_next_worker(hts_tpool_process *q, int locked);
 
-/* Core of t_pool_next_result() */
-static t_pool_result *t_pool_next_result_locked(t_pool_queue *q) {
-    t_pool_result *r, *last;
+/* Core of hts_tpool_next_result() */
+static hts_tpool_result *hts_tpool_next_result_locked(hts_tpool_process *q) {
+    hts_tpool_result *r, *last;
 
     for (last = NULL, r = q->output_head; r; last = r, r = r->next) {
         if (r->serial == q->next_serial)
@@ -187,16 +187,16 @@ static t_pool_result *t_pool_next_result_locked(t_pool_queue *q) {
  *
  * Results will be returned in strict order.
  * 
- * Returns t_pool_result pointer if a result is ready.
+ * Returns hts_tpool_result pointer if a result is ready.
  *         NULL if not.
  */
-t_pool_result *t_pool_next_result(t_pool_queue *q) {
-    t_pool_result *r;
+hts_tpool_result *hts_tpool_next_result(hts_tpool_process *q) {
+    hts_tpool_result *r;
 
     DBG_OUT(stderr, "Requesting next result on queue %p\n", q);
 
     pthread_mutex_lock(&q->p->pool_m);
-    r = t_pool_next_result_locked(q);
+    r = hts_tpool_next_result_locked(q);
     pthread_mutex_unlock(&q->p->pool_m);
 
     DBG_OUT(stderr, "(q=%p) Found %p\n", q, r);
@@ -204,11 +204,11 @@ t_pool_result *t_pool_next_result(t_pool_queue *q) {
     return r;
 }
 
-t_pool_result *t_pool_next_result_wait(t_pool_queue *q) {
-    t_pool_result *r;
+hts_tpool_result *hts_tpool_next_result_wait(hts_tpool_process *q) {
+    hts_tpool_result *r;
 
     pthread_mutex_lock(&q->p->pool_m);
-    while (!(r = t_pool_next_result_locked(q))) {
+    while (!(r = hts_tpool_next_result_locked(q))) {
         /* Possible race here now avoided via _locked() call, but incase... */
         struct timeval now;
         struct timespec timeout;
@@ -223,7 +223,7 @@ t_pool_result *t_pool_next_result_wait(t_pool_queue *q) {
             int rc = --q->ref_count;
             pthread_mutex_unlock(&q->p->pool_m);
             if (rc == 0)
-                t_pool_queue_destroy(q);
+                hts_tpool_process_destroy(q);
             return NULL;
         }
 
@@ -238,7 +238,7 @@ t_pool_result *t_pool_next_result_wait(t_pool_queue *q) {
  * Returns true if there are no items on the finished results queue and
  * also none still pending.
  */
-int t_pool_queue_empty(t_pool_queue *q) {
+int hts_tpool_process_empty(hts_tpool_process *q) {
     int empty;
 
     pthread_mutex_lock(&q->p->pool_m);
@@ -251,7 +251,7 @@ int t_pool_queue_empty(t_pool_queue *q) {
 /*
  * Returns the number of completed jobs on the results queue.
  */
-int t_pool_queue_len(t_pool_queue *q) {
+int hts_tpool_process_len(hts_tpool_process *q) {
     int len;
 
     pthread_mutex_lock(&q->p->pool_m);
@@ -264,7 +264,7 @@ int t_pool_queue_len(t_pool_queue *q) {
 /*
  * Returns the number of jobs in any state within the queue.
  */
-int t_pool_queue_sz(t_pool_queue *q) {
+int hts_tpool_process_sz(hts_tpool_process *q) {
     int len;
 
     pthread_mutex_lock(&q->p->pool_m);
@@ -280,7 +280,7 @@ int t_pool_queue_sz(t_pool_queue *q) {
  * This sets the shutdown flag and wakes any threads waiting on queue
  * condition variables.
  */
-void t_pool_queue_shutdown(t_pool_queue *q) {
+void hts_tpool_process_shutdown(hts_tpool_process *q) {
     pthread_mutex_lock(&q->p->pool_m);
     q->shutdown = 1;
     pthread_cond_broadcast(&q->output_avail_c);
@@ -294,7 +294,7 @@ void t_pool_queue_shutdown(t_pool_queue *q) {
  * Frees a result 'r' and if free_data is true also frees
  * the internal r->data result too.
  */
-void t_pool_delete_result(t_pool_result *r, int free_data) {
+void hts_tpool_delete_result(hts_tpool_result *r, int free_data) {
     if (!r)
         return;
 
@@ -305,10 +305,10 @@ void t_pool_delete_result(t_pool_result *r, int free_data) {
 }
 
 /*
- * Returns the data portion of a t_pool_result, corresponding
+ * Returns the data portion of a hts_tpool_result, corresponding
  * to the actual "result" itself.
  */
-void *t_pool_result_data(t_pool_result *r) {
+void *hts_tpool_result_data(hts_tpool_result *r) {
     return r->data;
 }
 
@@ -318,8 +318,8 @@ void *t_pool_result_data(t_pool_result *r) {
  * Results queue pointer on success;
  *         NULL on failure
  */
-t_pool_queue *t_pool_queue_init(t_pool *p, int qsize, int in_only) {
-    t_pool_queue *q = malloc(sizeof(*q));
+hts_tpool_process *hts_tpool_process_init(hts_tpool *p, int qsize, int in_only) {
+    hts_tpool_process *q = malloc(sizeof(*q));
 
     pthread_cond_init(&q->output_avail_c,   NULL);
     pthread_cond_init(&q->input_not_full_c, NULL);
@@ -345,7 +345,7 @@ t_pool_queue *t_pool_queue_init(t_pool *p, int qsize, int in_only) {
     q->next        = NULL;
     q->prev        = NULL;
 
-    t_pool_queue_attach(p, q);
+    hts_tpool_process_attach(p, q);
 
     return q;
 }
@@ -353,17 +353,17 @@ t_pool_queue *t_pool_queue_init(t_pool *p, int qsize, int in_only) {
 /* Deallocates memory for a results queue.
  * Must be called before the thread pool is destroyed.
  */
-void t_pool_queue_destroy(t_pool_queue *q) {
+void hts_tpool_process_destroy(hts_tpool_process *q) {
     DBG_OUT(stderr, "Destroying results queue %p\n", q);
 
     if (!q)
         return;
 
     // Ensure it's fully drained before destroying the queue
-    t_pool_queue_reset(q, 0);
+    hts_tpool_process_reset(q, 0);
     pthread_mutex_lock(&q->p->pool_m);
-    t_pool_queue_detach(q->p, q);
-    t_pool_queue_shutdown(q);
+    hts_tpool_process_detach(q->p, q);
+    hts_tpool_process_shutdown(q);
 
     // Maybe a worker is scanning this queue, so delay destruction
     if (--q->ref_count > 0) {
@@ -391,7 +391,7 @@ void t_pool_queue_destroy(t_pool_queue *q) {
  * to temporarily detach if we wish to stop processing jobs on a specific
  * queue while permitting other queues to continue.
  */
-void t_pool_queue_attach(t_pool *p, t_pool_queue *q) {
+void hts_tpool_process_attach(hts_tpool *p, hts_tpool_process *q) {
     pthread_mutex_lock(&p->pool_m);
     if (p->q_head) {
         q->next = p->q_head;
@@ -407,12 +407,12 @@ void t_pool_queue_attach(t_pool *p, t_pool_queue *q) {
     pthread_mutex_unlock(&p->pool_m);
 }
 
-void t_pool_queue_detach(t_pool *p, t_pool_queue *q) {
+void hts_tpool_process_detach(hts_tpool *p, hts_tpool_process *q) {
     pthread_mutex_lock(&p->pool_m);
     if (!p->q_head || !q->prev || !q->next)
         goto done;
 
-    t_pool_queue *curr = p->q_head, *first = curr;
+    hts_tpool_process *curr = p->q_head, *first = curr;
     do {
         if (curr == q) {
             q->next->prev = q->prev;
@@ -453,10 +453,10 @@ void t_pool_queue_detach(t_pool *p, t_pool_queue *q) {
  * If we checked all input queues and find no such job, then we wait until we
  * are signalled to check again.
  */
-static void *t_pool_worker(void *arg) {
-    t_pool_worker_t *w = (t_pool_worker_t *)arg;
-    t_pool *p = w->p;
-    t_pool_job *j;
+static void *tpool_worker(void *arg) {
+    hts_tpool_worker *w = (hts_tpool_worker *)arg;
+    hts_tpool *p = w->p;
+    hts_tpool_job *j;
 
 #ifdef DEBUG_TIME
     struct timeval t1, t2, t3;
@@ -479,14 +479,14 @@ static void *t_pool_worker(void *arg) {
         assert(p->q_head == 0 || (p->q_head->prev && p->q_head->next));
 
         int work_to_do = 0;
-        t_pool_queue *first = p->q_head, *q = first;
+        hts_tpool_process *first = p->q_head, *q = first;
         do {
             if (p->shutdown)
                 break;
 
             // Iterate over queues, finding one with jobs and also
             // room to put the result.
-            //if (q && q->input_head && !t_pool_queue_output_full(q)) {
+            //if (q && q->input_head && !hts_tpool_process_output_full(q)) {
             if (q && q->input_head && q->qsize - q->n_output > p->tsize - p->nwaiting) {
                 //printf("Work\n");
                 work_to_do = 1;
@@ -522,7 +522,7 @@ static void *t_pool_worker(void *arg) {
             p->t_stack[w->idx] = 1;
 //            printf("%2d: no work.  In=%d Proc=%d Out=%d  full=%d\n",
 //                   w->idx, p->q_head->n_input, p->q_head->n_processing, p->q_head->n_output,
-//                   t_pool_queue_output_full(p->q_head));
+//                   hts_tpool_process_output_full(p->q_head));
             pthread_cond_wait(&w->pending_c, &p->pool_m);
             p->t_stack[w->idx] = 0;
 
@@ -580,7 +580,7 @@ static void *t_pool_worker(void *arg) {
             DBG_OUT(stderr, "%d: Processing queue %p, serial %"PRId64"\n",
                     worker_id(j->p), q, j->serial);
 
-            t_pool_add_result(j, j->func(j->arg));
+            hts_tpool_add_result(j, j->func(j->arg));
             //memset(j, 0xbb, sizeof(*j));
             free(j);
 
@@ -591,7 +591,7 @@ static void *t_pool_worker(void *arg) {
 #endif
         }
         if (--q->ref_count == 0) // we were the last user
-            t_pool_queue_destroy(q);
+            hts_tpool_process_destroy(q);
         else
             // Out of jobs on this queue, so restart search from next one.
             // This is equivalent to "work-stealing".
@@ -603,8 +603,8 @@ static void *t_pool_worker(void *arg) {
     return NULL;
 }
 
-static void wake_next_worker(t_pool_queue *q, int locked) {
-    t_pool *p = q->p;
+static void wake_next_worker(hts_tpool_process *q, int locked) {
+    hts_tpool *p = q->p;
     if (!locked)
         pthread_mutex_lock(&p->pool_m);
 
@@ -673,9 +673,9 @@ static void wake_next_worker(t_pool_queue *q, int locked) {
  * Returns pool pointer on success;
  *         NULL on failure
  */
-t_pool *t_pool_init(int n) {
+hts_tpool *hts_tpool_init(int n) {
     int i;
-    t_pool *p = malloc(sizeof(*p));
+    hts_tpool *p = malloc(sizeof(*p));
     p->tsize = n;
     p->njobs = 0;
     p->nwaiting = 0;
@@ -704,13 +704,13 @@ t_pool *t_pool_init(int n) {
     pthread_mutex_lock(&p->pool_m);
 
     for (i = 0; i < n; i++) {
-        t_pool_worker_t *w = &p->t[i];
+        hts_tpool_worker *w = &p->t[i];
         p->t_stack[i] = 0;
         w->p = p;
         w->idx = i;
         w->wait_time = 0;
         pthread_cond_init(&w->pending_c, NULL);
-        if (0 != pthread_create(&w->tid, NULL, t_pool_worker, w))
+        if (0 != pthread_create(&w->tid, NULL, tpool_worker, w))
             return NULL;
     }
 
@@ -722,7 +722,7 @@ t_pool *t_pool_init(int n) {
 /*
  * Returns the number of requested threads for a pool.
  */
-int t_pool_size(t_pool *p) {
+int hts_tpool_size(hts_tpool *p) {
     return p->tsize;
 }
 
@@ -732,9 +732,9 @@ int t_pool_size(t_pool *p) {
  * Returns 0 on success
  *        -1 on failure
  */
-int t_pool_dispatch(t_pool *p, t_pool_queue *q,
+int hts_tpool_dispatch(hts_tpool *p, hts_tpool_process *q,
                     void *(*func)(void *arg), void *arg) {
-    return t_pool_dispatch2(p, q, func, arg, 0);
+    return hts_tpool_dispatch2(p, q, func, arg, 0);
 }
 
 /*
@@ -744,9 +744,9 @@ int t_pool_dispatch(t_pool *p, t_pool_queue *q,
  * nonblock +1 => don't block if input queue is full, but do not add task
  * nonblock -1 => add task regardless of whether queue is full (over-size)
  */
-int t_pool_dispatch2(t_pool *p, t_pool_queue *q,
+int hts_tpool_dispatch2(hts_tpool *p, hts_tpool_process *q,
                      void *(*func)(void *arg), void *arg, int nonblock) {
-    t_pool_job *j;
+    hts_tpool_job *j;
 
     pthread_mutex_lock(&p->pool_m);
 
@@ -811,7 +811,7 @@ int t_pool_dispatch2(t_pool *p, t_pool_queue *q,
  * Wakes up a single thread stuck in dispatch and make it return with
  * errno EAGAIN.
  */
-void t_pool_wake_dispatch(t_pool_queue *q) {
+void hts_tpool_wake_dispatch(hts_tpool_process *q) {
     pthread_mutex_lock(&q->p->pool_m);
     q->wake_dispatch = 1;
     pthread_cond_signal(&q->input_not_full_c);
@@ -829,9 +829,9 @@ void t_pool_wake_dispatch(t_pool_queue *q) {
  * Returns 0 on success;
  *        -1 on failure
  */
-int t_pool_queue_flush(t_pool_queue *q) {
+int hts_tpool_process_flush(hts_tpool_process *q) {
      int i;
-     t_pool *p = q->p;
+     hts_tpool *p = q->p;
  
      DBG_OUT(stderr, "Flushing pool %p\n", p);
  
@@ -877,13 +877,13 @@ int t_pool_queue_flush(t_pool_queue *q) {
  * Returns 0 on success;
  *        -1 on failure
  */
-int t_pool_queue_reset(t_pool_queue *q, int free_results) {
+int hts_tpool_process_reset(hts_tpool_process *q, int free_results) {
     pthread_mutex_lock(&q->p->pool_m);
     // prevent next_result from returning data during our flush
     q->next_serial = INT_MAX;
 
     // Purge any queued input not yet being acted upon
-    t_pool_job *j, *jn;
+    hts_tpool_job *j, *jn;
     for (j = q->input_head; j; j = jn) {
         //fprintf(stderr, "Discard input %d\n", j->serial);
         jn = j->next;
@@ -893,11 +893,11 @@ int t_pool_queue_reset(t_pool_queue *q, int free_results) {
     q->n_input = 0;
 
     // Purge any queued output, thus ensuring we have room to flush.
-    t_pool_result *r, *rn;
+    hts_tpool_result *r, *rn;
     for (r = q->output_head; r; r = rn) {
         //fprintf(stderr, "Discard output %d\n", r->serial);
         rn = r->next;
-        t_pool_delete_result(r, free_results);
+        hts_tpool_delete_result(r, free_results);
     }
     q->output_head = q->output_tail = NULL;
     q->n_output = 0;
@@ -906,7 +906,7 @@ int t_pool_queue_reset(t_pool_queue *q, int free_results) {
     // Wait for any jobs being processed to complete.
     // (TODO: consider how to cancel any currently processing jobs.
     // Probably this is too hard.)
-    if (t_pool_queue_flush(q) != 0)
+    if (hts_tpool_process_flush(q) != 0)
         return -1;
 
     // Discard any new output.
@@ -914,7 +914,7 @@ int t_pool_queue_reset(t_pool_queue *q, int free_results) {
     for (r = q->output_head; r; r = rn) {
         //fprintf(stderr, "Discard output %d\n", r->serial);
         rn = r->next;
-        t_pool_delete_result(r, free_results);
+        hts_tpool_delete_result(r, free_results);
     }
     q->output_head = q->output_tail = NULL;
     q->n_output = 0;
@@ -928,43 +928,70 @@ int t_pool_queue_reset(t_pool_queue *q, int free_results) {
 }
 
 /* Returns the queue size */
-int t_pool_queue_size(t_pool_queue *q) {
+int hts_tpool_process_qsize(hts_tpool_process *q) {
     return q->qsize;
 }
 
 /*
- * Destroys a thread pool. If 'kill' is true the threads are terminated now,
- * otherwise they are joined into the main thread so they will finish their
- * current work load.
- *
- * Use t_pool_destroy(p,0) after a t_pool_flush(p) on a normal shutdown or
- * t_pool_destroy(p,1) to quickly exit after a fatal error.
+ * Destroys a thread pool.  The threads are joined into the main
+ * thread so they will finish their current work load. 
  */
-void t_pool_destroy(t_pool *p, int kill) {
+void hts_tpool_destroy(hts_tpool *p) {
+    int i;
+    
+    DBG_OUT(stderr, "Destroying pool %p\n", p);
+
+    /* Send shutdown message to worker threads */
+    pthread_mutex_lock(&p->pool_m);
+    p->shutdown = 1;
+
+    DBG_OUT(stderr, "Sending shutdown request\n");
+
+    for (i = 0; i < p->tsize; i++)
+        pthread_cond_signal(&p->t[i].pending_c);
+
+    pthread_mutex_unlock(&p->pool_m);
+
+    DBG_OUT(stderr, "Shutdown complete\n");
+
+    for (i = 0; i < p->tsize; i++)
+        pthread_join(p->t[i].tid, NULL);
+
+    pthread_mutex_destroy(&p->pool_m);
+    for (i = 0; i < p->tsize; i++)
+        pthread_cond_destroy(&p->t[i].pending_c);
+
+#ifdef DEBUG_TIME
+    fprintf(stderr, "Total time=%f\n", p->total_time / 1000000.0);
+    fprintf(stderr, "Wait  time=%f\n", p->wait_time  / 1000000.0);
+    fprintf(stderr, "%d%% utilisation\n",
+            (int)(100 - ((100.0 * p->wait_time) / p->total_time + 0.5)));
+    for (i = 0; i < p->tsize; i++)
+        fprintf(stderr, "%d: Wait time=%f\n", i,
+                p->t[i].wait_time / 1000000.0);
+#endif
+
+    if (p->t_stack)
+        free(p->t_stack);
+
+    free(p->t);
+    free(p);
+
+    DBG_OUT(stderr, "Destroyed pool %p\n", p);
+}
+
+
+/*
+ * Destroys a thread pool without waiting on jobs to complete.
+ * Use hts_tpool_kill(p) to quickly exit after a fatal error.
+ */
+void hts_tpool_kill(hts_tpool *p) {
     int i;
     
     DBG_OUT(stderr, "Destroying pool %p, kill=%d\n", p, kill);
 
-    /* Send shutdown message to worker threads */
-    if (!kill) {
-        pthread_mutex_lock(&p->pool_m);
-        p->shutdown = 1;
-
-        DBG_OUT(stderr, "Sending shutdown request\n");
-
-        for (i = 0; i < p->tsize; i++)
-            pthread_cond_signal(&p->t[i].pending_c);
-
-        pthread_mutex_unlock(&p->pool_m);
-
-        DBG_OUT(stderr, "Shutdown complete\n");
-
-        for (i = 0; i < p->tsize; i++)
-            pthread_join(p->t[i].tid, NULL);
-    } else {
-        for (i = 0; i < p->tsize; i++)
-            pthread_kill(p->t[i].tid, SIGINT);
-    }
+    for (i = 0; i < p->tsize; i++)
+        pthread_kill(p->t[i].tid, SIGINT);
 
     pthread_mutex_destroy(&p->pool_m);
     for (i = 0; i < p->tsize; i++)
@@ -1022,20 +1049,20 @@ void *doit_square_u(void *arg) {
 }
 
 int test_square_u(int n) {
-    t_pool *p = t_pool_init(n);
-    t_pool_queue *q = t_pool_queue_init(p, n*2, 1);
+    hts_tpool *p = hts_tpool_init(n);
+    hts_tpool_process *q = hts_tpool_process_init(p, n*2, 1);
     int i;
 
     // Dispatch jobs
     for (i = 0; i < TASK_SIZE; i++) {
         int *ip = malloc(sizeof(*ip));
         *ip = i;
-        t_pool_dispatch(p, q, doit_square_u, ip);
+        hts_tpool_dispatch(p, q, doit_square_u, ip);
     }
 
-    t_pool_queue_flush(q);
-    t_pool_queue_destroy(q);
-    t_pool_destroy(p, 0);
+    hts_tpool_process_flush(q);
+    hts_tpool_process_destroy(q);
+    hts_tpool_destroy(p);
 
     return 0;
 }
@@ -1064,10 +1091,10 @@ void *doit_square(void *arg) {
 }
 
 int test_square(int n) {
-    t_pool *p = t_pool_init(n);
-    t_pool_queue *q = t_pool_queue_init(p, n*2, 0);
+    hts_tpool *p = hts_tpool_init(n);
+    hts_tpool_process *q = hts_tpool_process_init(p, n*2, 0);
     int i;
-    t_pool_result *r;
+    hts_tpool_result *r;
 
     // Dispatch jobs
     for (i = 0; i < TASK_SIZE; i++) {
@@ -1089,12 +1116,12 @@ int test_square(int n) {
 
             // Our solution is to dispatch in non-blocking mode so we are
             // always to either dispatch or consume a result.
-            blk = t_pool_dispatch2(p, q, doit_square, ip, 1);
+            blk = hts_tpool_dispatch2(p, q, doit_square, ip, 1);
 
             // Check for results.
-            if ((r = t_pool_next_result(q))) {
+            if ((r = hts_tpool_next_result(q))) {
                 printf("RESULT: %d\n", *(int *)r->data);
-                t_pool_delete_result(r, 1);
+                hts_tpool_delete_result(r, 1);
             }
             if (blk == -1) {
                 // The alternative is a separate thread for dispatching and/or
@@ -1106,15 +1133,15 @@ int test_square(int n) {
     }
 
     // Wait for any input-queued up jobs or in-progress jobs to complete.
-    t_pool_queue_flush(q);
+    hts_tpool_process_flush(q);
 
-    while ((r = t_pool_next_result(q))) {
+    while ((r = hts_tpool_next_result(q))) {
         printf("RESULT: %d\n", *(int *)r->data);
-        t_pool_delete_result(r, 1);
+        hts_tpool_delete_result(r, 1);
     }
 
-    t_pool_queue_destroy(q);
-    t_pool_destroy(p, 0);
+    hts_tpool_process_destroy(q);
+    hts_tpool_destroy(p);
 
     return 0;
 }
@@ -1128,8 +1155,8 @@ int test_square(int n) {
  * simplicity elsewhere.
  */
 struct squareB_opt {
-    t_pool *p;
-    t_pool_queue *q;
+    hts_tpool *p;
+    hts_tpool_process *q;
     int n;
 };
 static void *test_squareB_dispatcher(void *arg) {
@@ -1140,18 +1167,18 @@ static void *test_squareB_dispatcher(void *arg) {
         ip = malloc(sizeof(*ip));
         *ip = i;
 
-        t_pool_dispatch(o->p, o->q, doit_square, ip);
+        hts_tpool_dispatch(o->p, o->q, doit_square, ip);
     }
 
     // Dispatch an sentinel job to mark the end
     *(ip = malloc(sizeof(*ip))) = -1;
-    t_pool_dispatch(o->p, o->q, doit_square, ip);
+    hts_tpool_dispatch(o->p, o->q, doit_square, ip);
     pthread_exit(NULL);
 }
 
 int test_squareB(int n) {
-    t_pool *p = t_pool_init(n);
-    t_pool_queue *q = t_pool_queue_init(p, n*2, 0);
+    hts_tpool *p = hts_tpool_init(n);
+    hts_tpool_process *q = hts_tpool_process_init(p, n*2, 0);
     struct squareB_opt o = {p, q, TASK_SIZE};
     pthread_t tid;
 
@@ -1160,9 +1187,9 @@ int test_squareB(int n) {
 
     // Consume all results until we find the end-of-job marker.
     for(;;) {
-        t_pool_result *r = t_pool_next_result_wait(q);
+        hts_tpool_result *r = hts_tpool_next_result_wait(q);
         int x = *(int *)r->data;
-        t_pool_delete_result(r, 1);
+        hts_tpool_delete_result(r, 1);
         if (x == -1)
             break;
         printf("RESULT: %d\n", x);
@@ -1171,11 +1198,11 @@ int test_squareB(int n) {
     // Wait for any input-queued up jobs or in-progress jobs to complete.
     // This should do nothing as we've been executing until the termination
     // marker of -1.
-    t_pool_queue_flush(q);
-    assert(t_pool_next_result(q) == NULL);
+    hts_tpool_process_flush(q);
+    assert(hts_tpool_next_result(q) == NULL);
 
-    t_pool_queue_destroy(q);
-    t_pool_destroy(p, 0);
+    hts_tpool_process_destroy(q);
+    hts_tpool_destroy(p);
     pthread_join(tid, NULL);
 
     return 0;
@@ -1213,10 +1240,10 @@ static void *pipe_stage3(void *arg);
 static void *pipe_output_thread(void *arg);
 
 typedef struct {
-    t_pool *p;
-    t_pool_queue *q1;
-    t_pool_queue *q2;
-    t_pool_queue *q3;
+    hts_tpool *p;
+    hts_tpool_process *q1;
+    hts_tpool_process *q2;
+    hts_tpool_process *q3;
     int n;
 } pipe_opt;
 
@@ -1238,7 +1265,7 @@ static void *pipe_input_thread(void *arg) {
 
         printf("I  %08x\n", j->x);
 
-        if (t_pool_dispatch(o->p, o->q1, pipe_stage1, j) != 0) {
+        if (hts_tpool_dispatch(o->p, o->q1, pipe_stage1, j) != 0) {
             free(j);
             pthread_exit((void *)1);
         }
@@ -1259,12 +1286,12 @@ static void *pipe_stage1(void *arg) {
 
 static void *pipe_stage1to2(void *arg) {
     pipe_opt *o = (pipe_opt *)arg;
-    t_pool_result *r;
+    hts_tpool_result *r;
 
-    while ((r = t_pool_next_result_wait(o->q1))) {
+    while ((r = hts_tpool_next_result_wait(o->q1))) {
         pipe_job *j = (pipe_job *)r->data;
-        t_pool_delete_result(r, 0);
-        if (t_pool_dispatch(j->o->p, j->o->q2, pipe_stage2, j) != 0)
+        hts_tpool_delete_result(r, 0);
+        if (hts_tpool_dispatch(j->o->p, j->o->q2, pipe_stage2, j) != 0)
             pthread_exit((void *)1);
         if (j->eof)
             break;
@@ -1285,12 +1312,12 @@ static void *pipe_stage2(void *arg) {
 
 static void *pipe_stage2to3(void *arg) {
     pipe_opt *o = (pipe_opt *)arg;
-    t_pool_result *r;
+    hts_tpool_result *r;
 
-    while ((r = t_pool_next_result_wait(o->q2))) {
+    while ((r = hts_tpool_next_result_wait(o->q2))) {
         pipe_job *j = (pipe_job *)r->data;
-        t_pool_delete_result(r, 0);
-        if (t_pool_dispatch(j->o->p, j->o->q3, pipe_stage3, j) != 0)
+        hts_tpool_delete_result(r, 0);
+        if (hts_tpool_dispatch(j->o->p, j->o->q3, pipe_stage3, j) != 0)
             pthread_exit((void *)1);
         if (j->eof)
             break;
@@ -1309,13 +1336,13 @@ static void *pipe_stage3(void *arg) {
 
 static void *pipe_output_thread(void *arg) {
     pipe_opt *o = (pipe_opt *)arg;
-    t_pool_result *r;
+    hts_tpool_result *r;
 
-    while ((r = t_pool_next_result_wait(o->q3))) {
+    while ((r = hts_tpool_next_result_wait(o->q3))) {
         pipe_job *j = (pipe_job *)r->data;
         int eof = j->eof;
         printf("O  %08x\n", j->x);
-        t_pool_delete_result(r, 1);
+        hts_tpool_delete_result(r, 1);
         if (eof)
             break;
     }
@@ -1324,10 +1351,10 @@ static void *pipe_output_thread(void *arg) {
 }
 
 int test_pipe(int n) {
-    t_pool *p = t_pool_init(n);
-    t_pool_queue *q1 = t_pool_queue_init(p, n*2, 0);
-    t_pool_queue *q2 = t_pool_queue_init(p, n*2, 0);
-    t_pool_queue *q3 = t_pool_queue_init(p, n*2, 0);
+    hts_tpool *p = hts_tpool_init(n);
+    hts_tpool_process *q1 = hts_tpool_process_init(p, n*2, 0);
+    hts_tpool_process *q2 = hts_tpool_process_init(p, n*2, 0);
+    hts_tpool_process *q3 = hts_tpool_process_init(p, n*2, 0);
     pipe_opt o = {p, q1, q2, q3, TASK_SIZE};
     pthread_t tidIto1, tid1to2, tid2to3, tid3toO;
     void *retv;
@@ -1347,10 +1374,10 @@ int test_pipe(int n) {
     pthread_join(tid3toO, &retv); ret |= (retv != NULL);
     printf("Return value %d\n", ret);
 
-    t_pool_queue_destroy(q1);
-    t_pool_queue_destroy(q2);
-    t_pool_queue_destroy(q3);
-    t_pool_destroy(p, 0);
+    hts_tpool_process_destroy(q1);
+    hts_tpool_process_destroy(q2);
+    hts_tpool_process_destroy(q3);
+    hts_tpool_destroy(p);
 
     return 0;
 }

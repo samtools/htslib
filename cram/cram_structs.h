@@ -719,8 +719,8 @@ typedef struct cram_fd {
     
     // thread pool
     int own_pool;
-    t_pool *pool;
-    t_pool_queue *rqueue;
+    hts_tpool *pool;
+    hts_tpool_process *rqueue;
     pthread_mutex_t metrics_lock;
     pthread_mutex_t ref_lock;
     spare_bams *bl;

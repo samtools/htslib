@@ -101,10 +101,10 @@ typedef struct bgzf_mtaux_t {
     // Thread pool
     int n_threads;
     int own_pool;
-    t_pool *pool;
+    hts_tpool *pool;
 
     // Output queue holding completed bgzf_jobs
-    t_pool_queue *out_queue;
+    hts_tpool_process *out_queue;
 
     // I/O thread.
     pthread_t io_task;
@@ -624,11 +624,11 @@ static off_t bgzf_htell(BGZF *fp) {
 
 int bgzf_read_block(BGZF *fp)
 {
-    t_pool_result *r;
+    hts_tpool_result *r;
 
     if (fp->mt) {
-        r = t_pool_next_result_wait(fp->mt->out_queue);
-        bgzf_job *j = (bgzf_job *)t_pool_result_data(r);
+        r = hts_tpool_next_result_wait(fp->mt->out_queue);
+        bgzf_job *j = (bgzf_job *)hts_tpool_result_data(r);
         assert(j);
 
         if (j->errcode) {
@@ -662,7 +662,7 @@ int bgzf_read_block(BGZF *fp)
             fp->mt->free_block = NULL;
         }
 
-        t_pool_delete_result(r, 0);
+        hts_tpool_delete_result(r, 0);
         return 0;
     }
 
@@ -891,11 +891,11 @@ void *bgzf_nul_func(void *arg) { return arg; }
 static void *bgzf_mt_writer(void *vp) {
     BGZF *fp = (BGZF *)vp;
     mtaux_t *mt = fp->mt;
-    t_pool_result *r;
+    hts_tpool_result *r;
 
     // Iterates until result queue is shutdown, where it returns NULL.
-    while ((r = t_pool_next_result_wait(mt->out_queue))) {
-        bgzf_job *j = (bgzf_job *)t_pool_result_data(r);
+    while ((r = hts_tpool_next_result_wait(mt->out_queue))) {
+        bgzf_job *j = (bgzf_job *)hts_tpool_result_data(r);
         assert(j);
         
         if (hwrite(fp->fp, j->comp_data, j->comp_len) != j->comp_len) {
@@ -917,7 +917,7 @@ static void *bgzf_mt_writer(void *vp) {
                 return (void *)-1;
 
 
-        t_pool_delete_result(r, 0);
+        hts_tpool_delete_result(r, 0);
 
         // Also updated by main thread
         pthread_mutex_lock(&mt->job_pool_m);
@@ -1021,7 +1021,7 @@ static void bgzf_mt_eof(BGZF *fp) {
 static void bgzf_mt_seek(BGZF *fp) {
     mtaux_t *mt = fp->mt;
 
-    t_pool_queue_reset(mt->out_queue, 0);
+    hts_tpool_process_reset(mt->out_queue, 0);
     pthread_mutex_lock(&mt->job_pool_m);
     mt->command = NONE;
     mt->errcode = 0;
@@ -1069,7 +1069,7 @@ restart:
         pthread_mutex_unlock(&mt->command_m);
 
         // Dispatch
-        t_pool_dispatch(mt->pool, mt->out_queue, bgzf_decode_func, j);
+        hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_decode_func, j);
 
         // Allocate buffer for next block
         pthread_mutex_lock(&mt->job_pool_m);
@@ -1083,7 +1083,7 @@ restart:
     // We also use this mechanism for returning errors, in which case
     // j->errcode is set already.
 
-    t_pool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
+    hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
      if (j->errcode != 0)
          pthread_exit(&j->errcode);
 
@@ -1119,7 +1119,7 @@ restart:
     }
 }
 
-int bgzf_thread_pool(BGZF *fp, t_pool *pool, int qsize) {
+int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
     // No gain from multi-threading when not compressed
     if (!fp->is_compressed)
         return 0;
@@ -1130,10 +1130,10 @@ int bgzf_thread_pool(BGZF *fp, t_pool *pool, int qsize) {
     fp->mt = mt;
 
     mt->pool = pool;
-    mt->n_threads = t_pool_size(pool);
+    mt->n_threads = hts_tpool_size(pool);
     if (!qsize)
         qsize = mt->n_threads*2;
-    if (!(mt->out_queue = t_pool_queue_init(mt->pool, qsize, 0))) {
+    if (!(mt->out_queue = hts_tpool_process_init(mt->pool, qsize, 0))) {
         free(mt);
         return -1;
     }
@@ -1159,12 +1159,12 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
         return 0;
 
     if (n_threads < 1) return -1;
-    t_pool *p = t_pool_init(n_threads);
+    hts_tpool *p = hts_tpool_init(n_threads);
     if (!p)
         return -1;
 
     if (bgzf_thread_pool(fp, p, 0) != 0) {
-        t_pool_destroy(p, 0);
+        hts_tpool_destroy(p, 0);
         return -1;
     }
 
@@ -1178,11 +1178,11 @@ static void mt_destroy(mtaux_t *mt)
     pthread_mutex_lock(&mt->command_m);
     mt->command = CLOSE;
     pthread_cond_signal(&mt->command_c);
-    t_pool_wake_dispatch(mt->out_queue); // unstick the reader
+    hts_tpool_wake_dispatch(mt->out_queue); // unstick the reader
     pthread_mutex_unlock(&mt->command_m);
 
     // Destroying the queue first forces the writer to exit.
-    t_pool_queue_destroy(mt->out_queue);
+    hts_tpool_process_destroy(mt->out_queue);
     pthread_join(mt->io_task, NULL);
 
     pthread_mutex_destroy(&mt->job_pool_m);
@@ -1193,7 +1193,7 @@ static void mt_destroy(mtaux_t *mt)
     pool_destroy(mt->job_pool);
 
     if (mt->own_pool)
-        t_pool_destroy(mt->pool, 0);
+        hts_tpool_destroy(mt->pool, 0);
 
     free(mt);
     fflush(stderr);
@@ -1215,7 +1215,7 @@ static int mt_queue(BGZF *fp)
     memcpy(j->uncomp_data, fp->uncompressed_block, j->uncomp_len);
 
     // Need non-block vers & job_pending?
-    t_pool_dispatch(mt->pool, mt->out_queue, bgzf_encode_func, j);
+    hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_encode_func, j);
 
     fp->block_offset = 0;
     return 0;
@@ -1226,10 +1226,10 @@ static int mt_flush_queue(BGZF *fp)
     mtaux_t *mt = fp->mt;
 
     // Drain the encoder jobs.
-    // We cannot use t_pool_flush here as it can cause deadlock if
+    // We cannot use hts_tpool_flush here as it can cause deadlock if
     // the queue is full up of decoder tasks.  The best solution would
     // be to have one input queue per type of job, but we don't right now.
-    //t_pool_flush(mt->pool);
+    //hts_tpool_flush(mt->pool);
     pthread_mutex_lock(&mt->job_pool_m);
     while (mt->jobs_pending != 0) {
         pthread_mutex_unlock(&mt->job_pool_m);
@@ -1239,7 +1239,7 @@ static int mt_flush_queue(BGZF *fp)
     pthread_mutex_unlock(&mt->job_pool_m);
 
     // Wait on bgzf_mt_writer to drain the queue
-    if (t_pool_queue_flush(mt->out_queue) != 0)
+    if (hts_tpool_process_flush(mt->out_queue) != 0)
         return -1;
 
     return (fp->errcode == 0)? 0 : -1;
@@ -1390,7 +1390,7 @@ int bgzf_check_EOF(BGZF *fp) {
         pthread_mutex_lock(&fp->mt->command_m);
         fp->mt->command = HAS_EOF;
         pthread_cond_signal(&fp->mt->command_c);
-        t_pool_wake_dispatch(fp->mt->out_queue);
+        hts_tpool_wake_dispatch(fp->mt->out_queue);
         pthread_cond_wait(&fp->mt->command_c, &fp->mt->command_m);
         has_eof = fp->mt->eof;
         pthread_mutex_unlock(&fp->mt->command_m);
@@ -1431,7 +1431,7 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
         fp->mt->command = SEEK;
         fp->mt->block_address = block_address;
         pthread_cond_signal(&fp->mt->command_c);
-        t_pool_wake_dispatch(fp->mt->out_queue);
+        hts_tpool_wake_dispatch(fp->mt->out_queue);
         pthread_cond_wait(&fp->mt->command_c, &fp->mt->command_m);
 
         fp->block_length = 0;  // indicates current block has not been loaded

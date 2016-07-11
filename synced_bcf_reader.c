@@ -148,7 +148,7 @@ int bcf_sr_set_threads(bcf_srs_t *files, int n_threads)
         files->errnum = no_memory;
         return -1;
     }
-    if (!(files->p->pool = hts_create_threads(n_threads)))
+    if (!(files->p->pool = hts_tpool_init(n_threads)))
         return -1;
 
     return 0;
@@ -159,7 +159,7 @@ void bcf_sr_destroy_threads(bcf_srs_t *files) {
         return;
 
     if (files->p->pool)
-        hts_destroy_threads(files->p->pool);
+        hts_tpool_destroy(files->p->pool);
     free(files->p);
 }
 
