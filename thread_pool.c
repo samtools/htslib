@@ -47,7 +47,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "thread_pool_internal.h"
 
 //#define DEBUG
-//#define DEBUG_TIME
 
 #ifdef DEBUG
 static int worker_id(t_pool *p) {
@@ -458,23 +457,9 @@ static void *tpool_worker(void *arg) {
     hts_tpool *p = w->p;
     hts_tpool_job *j;
 
-#ifdef DEBUG_TIME
-    struct timeval t1, t2, t3;
-#endif
-
     for (;;) {
         // Pop an item off the pool queue
-#ifdef DEBUG_TIME
-        gettimeofday(&t1, NULL);
-#endif
-
         pthread_mutex_lock(&p->pool_m);
-
-#ifdef DEBUG_TIME
-        gettimeofday(&t2, NULL);
-        p->wait_time += TDIFF(t2,t1);
-        w->wait_time += TDIFF(t2,t1);
-#endif
 
         assert(p->q_head == 0 || (p->q_head->prev && p->q_head->next));
 
@@ -498,9 +483,6 @@ static void *tpool_worker(void *arg) {
 
         if (p->shutdown) {
         shutdown:
-#ifdef DEBUG_TIME
-            p->total_time += TDIFF(t3,t1);
-#endif
 #ifdef DEBUG
             fprintf(stderr, "%d: Shutting down\n", worker_id(p));
 #endif
@@ -511,9 +493,6 @@ static void *tpool_worker(void *arg) {
         if (!work_to_do) {
             // We scanned all queues and cannot process any, so we wait.
             p->nwaiting++;
-#ifdef DEBUG_TIME
-            gettimeofday(&t2, NULL);
-#endif
 
             // Push this thread to the top of the waiting stack
             if (p->t_stack_top == -1 || p->t_stack_top > w->idx)
@@ -536,11 +515,6 @@ static void *tpool_worker(void *arg) {
                 }
             }
 
-#ifdef DEBUG_TIME
-            gettimeofday(&t3, NULL);
-            p->wait_time += TDIFF(t3,t2);
-            w->wait_time += TDIFF(t3,t2);
-#endif
             p->nwaiting--;
             pthread_mutex_unlock(&p->pool_m);
             continue; // To outer for(;;) loop.
@@ -585,10 +559,6 @@ static void *tpool_worker(void *arg) {
             free(j);
 
             pthread_mutex_lock(&p->pool_m);
-#ifdef DEBUG_TIME
-            gettimeofday(&t3, NULL);
-            p->total_time += TDIFF(t3,t1);
-#endif
         }
         if (--q->ref_count == 0) // we were the last user
             hts_tpool_process_destroy(q);
@@ -684,11 +654,6 @@ hts_tpool *hts_tpool_init(int n) {
     p->t_stack = NULL;
     p->n_count = 0;
     p->n_running = 0;
-#ifdef DEBUG_TIME
-    p->total_time = p->wait_time = 0;
-#endif
-    
-
     p->t = malloc(n * sizeof(p->t[0]));
 
     pthread_mutexattr_t attr;
@@ -708,7 +673,6 @@ hts_tpool *hts_tpool_init(int n) {
         p->t_stack[i] = 0;
         w->p = p;
         w->idx = i;
-        w->wait_time = 0;
         pthread_cond_init(&w->pending_c, NULL);
         if (0 != pthread_create(&w->tid, NULL, tpool_worker, w))
             return NULL;
@@ -961,16 +925,6 @@ void hts_tpool_destroy(hts_tpool *p) {
     for (i = 0; i < p->tsize; i++)
         pthread_cond_destroy(&p->t[i].pending_c);
 
-#ifdef DEBUG_TIME
-    fprintf(stderr, "Total time=%f\n", p->total_time / 1000000.0);
-    fprintf(stderr, "Wait  time=%f\n", p->wait_time  / 1000000.0);
-    fprintf(stderr, "%d%% utilisation\n",
-            (int)(100 - ((100.0 * p->wait_time) / p->total_time + 0.5)));
-    for (i = 0; i < p->tsize; i++)
-        fprintf(stderr, "%d: Wait time=%f\n", i,
-                p->t[i].wait_time / 1000000.0);
-#endif
-
     if (p->t_stack)
         free(p->t_stack);
 
@@ -996,16 +950,6 @@ void hts_tpool_kill(hts_tpool *p) {
     pthread_mutex_destroy(&p->pool_m);
     for (i = 0; i < p->tsize; i++)
         pthread_cond_destroy(&p->t[i].pending_c);
-
-#ifdef DEBUG_TIME
-    fprintf(stderr, "Total time=%f\n", p->total_time / 1000000.0);
-    fprintf(stderr, "Wait  time=%f\n", p->wait_time  / 1000000.0);
-    fprintf(stderr, "%d%% utilisation\n",
-            (int)(100 - ((100.0 * p->wait_time) / p->total_time + 0.5)));
-    for (i = 0; i < p->tsize; i++)
-        fprintf(stderr, "%d: Wait time=%f\n", i,
-                p->t[i].wait_time / 1000000.0);
-#endif
 
     if (p->t_stack)
         free(p->t_stack);

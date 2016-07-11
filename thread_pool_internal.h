@@ -86,7 +86,6 @@ typedef struct {
     int idx;
     pthread_t tid;
     pthread_cond_t  pending_c; // when waiting for a job
-    long long wait_time;
 } hts_tpool_worker;
 
 /*
