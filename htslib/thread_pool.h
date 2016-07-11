@@ -29,17 +29,21 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 /*
- * This file implements a thread pool for multi-threading applications.
- * It consists of two distinct interfaces: thread pools an thread job queues.
+ * This file implements a thread pool for multi-threading applications.  It
+ * consists of two distinct interfaces: thread pools and thread process
+ * queues (a queue of both jobs to-do and of the results of completed jobs).
+ * Do not confuse "process" here with a unix PID; rather it is analogous to a
+ * program reading a stream of data blocks, processing them in some manner,
+ * and outputting a stream of new data blocks.
  *
  * The pool of threads is given a function pointer and void* data to pass in.
  * This means the pool can run jobs of multiple types, albeit first come
- * first served with no job scheduling except to pick tasks from
- * queues that have room to store the result.
+ * first served with no job scheduling except to pick tasks for the
+ * processes that have room to store the result.
  *
  * Upon completion, the return value from the function pointer is
- * added to back to the queue if the result is required.  We may have
- * multiple queues in use for the one pool.
+ * added to back to the process result queue if required.  We may have
+ * multiple "processes" in use for the one pool.
  *
  * To see example usage, please look at the #ifdef TEST_MAIN code in
  * thread_pool.c.
@@ -63,9 +67,9 @@ extern "C" {
  */
 
 /*
- * An hts_tpool_process implements a job queue with both input ("to do") and
- * output ("done") sides buffered.  Internally this is iimplemented as a pair
- * of queues analogous to the pipes in a unix pipeline:
+ * An hts_tpool_process implements a queue of input jobs to process and a
+ * queue of resulting output  post-processing.  Internally it consists of two
+ * buffered queues, analogous to the pipes in a unix pipeline:
  *    ...input | process |  output...
  *
  * Both input and output queues have size limits to prevent either queue from
@@ -80,9 +84,9 @@ typedef struct hts_tpool_process hts_tpool_process;
 /*
  * The single pool structure itself.
  *
- * This knows nothing about the nature of the jobs or where their
- * output is going, but it maintains a list of queues associated with
- * this pool from which the jobs are taken.
+ * This knows nothing about the nature of the jobs or where their output is
+ * going, but it maintains a list of process-queues associated with this pool
+ * from which the jobs are taken.
  */
 typedef struct hts_tpool hts_tpool;
 
@@ -136,12 +140,12 @@ int hts_tpool_dispatch2(hts_tpool *p, hts_tpool_process *q,
 void hts_tpool_wake_dispatch(hts_tpool_process *q);
 
 /*
- * Flushes the queue, but doesn't exit. This simply drains the queue and
- * ensures all worker threads have finished their current tasks associated
- * with this queue.
+ * Flushes the process-queue, but doesn't exit. This simply drains the queue
+ * and ensures all worker threads have finished their current tasks
+ * associated with this process.
  *
  * NOT: This does not mean the worker threads are not executing jobs in
- * another queue.
+ * another process-queue.
  *
  * Returns 0 on success;
  *        -1 on failure
@@ -149,7 +153,7 @@ void hts_tpool_wake_dispatch(hts_tpool_process *q);
 int hts_tpool_process_flush(hts_tpool_process *q);
 
 /*
- * Resets a queue to the intial state.
+ * Resets a process to the intial state.
  *
  * This removes any queued up input jobs, disables any notification of
  * new results/output, flushes what is left and then discards any
@@ -162,7 +166,7 @@ int hts_tpool_process_flush(hts_tpool_process *q);
  */
 int hts_tpool_process_reset(hts_tpool_process *q, int free_results);
 
-/* Returns the queue size */
+/* Returns the process queue size */
 int hts_tpool_process_qsize(hts_tpool_process *q);
 
 
@@ -179,9 +183,9 @@ void hts_tpool_destroy(hts_tpool *p);
 void hts_tpool_kill(hts_tpool *p);
 
 /*
- * Pulls a result off the head of the result queue. Caller should
- * free it (and any internals as appropriate) after use. This doesn't
- * wait for a result to be present.
+ * Pulls the next item off the process result queue.  The caller should free
+ * it (and any internals as appropriate) after use.  This doesn't wait for a
+ * result to be present.
  *
  * Results will be returned in strict order.
  * 
@@ -189,6 +193,17 @@ void hts_tpool_kill(hts_tpool *p);
  *         NULL if not.
  */
 hts_tpool_result *hts_tpool_next_result(hts_tpool_process *q);
+
+/*
+ * Pulls the next item off the process result queue.  The caller should free
+ * it (and any internals as appropriate) after use.  This will wait for 
+ * a result to be present if none are currently available.
+ *
+ * Results will be returned in strict order.
+ * 
+ * Returns hts_tpool_result pointer if a result is ready.
+ *         NULL on error or during shutdown.
+ */
 hts_tpool_result *hts_tpool_next_result_wait(hts_tpool_process *q);
 
 /*
@@ -204,25 +219,27 @@ void hts_tpool_delete_result(hts_tpool_result *r, int free_data);
 void *hts_tpool_result_data(hts_tpool_result *r);
 
 /*
- * Initialises a thread job queue.
+ * Initialises a thread process-queue.
  *
- * In_only, if true, indicates that the queue does not need to hold
- * any output.  Otherwise an output queue is used to store the results
+ * In_only, if true, indicates that the process generates does not need to
+ * hold any output.  Otherwise an output queue is used to store the results
  * of processing each input job.
  *
- * Results queue pointer on success;
+ * Results hts_tpool_process pointer on success;
  *         NULL on failure
  */
 hts_tpool_process *hts_tpool_process_init(hts_tpool *p, int qsize, int in_only);
 
 
-/* Deallocates memory for a thread queue */
+/* Deallocates memory for a thread process-queue.
+ * Must be called before the thread pool is destroyed.
+ */
 void hts_tpool_process_destroy(hts_tpool_process *q);
 
 /*
  * Flushes the thread pool, but doesn't exit. This simply drains the
- * queue and ensures all worker threads have finished their current
- * task if associated with this queue.
+ * process-queue and ensures all worker threads have finished their current
+ * task if associated with this process.
  *
  * Returns 0 on success;
  *        -1 on failure
@@ -230,36 +247,37 @@ void hts_tpool_process_destroy(hts_tpool_process *q);
 int hts_tpool_process_flush(hts_tpool_process *q);
 
 /*
- * Returns true if there are no items on the finished thread queue and
+ * Returns true if there are no items in the process results queue and
  * also none still pending.
  */
 int hts_tpool_process_empty(hts_tpool_process *q);
 
 /*
- * Returns the number of completed jobs on the thread queue.
+ * Returns the number of completed jobs in the process results queue.
  */
 int hts_tpool_process_len(hts_tpool_process *q);
 
 /*
- * Returns the number of completed jobs plus the number queued up to run.
+ * Returns the number of completed jobs in the process results queue plus the
+ * number running and queued up to run.
  */
 int hts_tpool_process_sz(hts_tpool_process *q);
 
 /*
- * Shutdown a queue.
+ * Shutdown a process.
  *
- * This sets the shutdown flag and wakes any threads waiting on queue
+ * This sets the shutdown flag and wakes any threads waiting on process
  * condition variables.
  */
 void hts_tpool_process_shutdown(hts_tpool_process *q);
 
 /*
- * Attach and detach a thread pool queue with / from the thread pool
+ * Attach and detach a thread process-queue with / from the thread pool
  * scheduler.
  *
- * We need to do attach after making a thread queue, but may also wish
- * to temporarily detach if we wish to stop processing jobs on a specific
- * queue while permitting other queues to continue.
+ * We need to do attach after making a thread process, but may also wish
+ * to temporarily detach if we wish to stop running jobs on a specific
+ * process while permitting other process to continue.
  */
 void hts_tpool_process_attach(hts_tpool *p, hts_tpool_process *q);
 void hts_tpool_process_detach(hts_tpool *p, hts_tpool_process *q);

@@ -1164,7 +1164,7 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
         return -1;
 
     if (bgzf_thread_pool(fp, p, 0) != 0) {
-        hts_tpool_destroy(p, 0);
+        hts_tpool_destroy(p);
         return -1;
     }
 
@@ -1193,7 +1193,7 @@ static void mt_destroy(mtaux_t *mt)
     pool_destroy(mt->job_pool);
 
     if (mt->own_pool)
-        hts_tpool_destroy(mt->pool, 0);
+        hts_tpool_destroy(mt->pool);
 
     free(mt);
     fflush(stderr);
