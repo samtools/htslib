@@ -44,7 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <unistd.h>
 #include <limits.h>
 
-#include "htslib/thread_pool.h"
+#include "thread_pool_internal.h"
 
 //#define DEBUG
 //#define DEBUG_TIME
@@ -302,6 +302,14 @@ void t_pool_delete_result(t_pool_result *r, int free_data) {
         free(r->data);
 
     free(r);
+}
+
+/*
+ * Returns the data portion of a t_pool_result, corresponding
+ * to the actual "result" itself.
+ */
+void *t_pool_result_data(t_pool_result *r) {
+    return r->data;
 }
 
 /*
@@ -712,6 +720,13 @@ t_pool *t_pool_init(int n) {
 }
 
 /*
+ * Returns the number of requested threads for a pool.
+ */
+int t_pool_size(t_pool *p) {
+    return p->tsize;
+}
+
+/*
  * Adds an item to the work pool.
  *
  * Returns 0 on success
@@ -910,6 +925,11 @@ int t_pool_queue_reset(t_pool_queue *q, int free_results) {
     pthread_mutex_unlock(&q->p->pool_m);
 
     return 0;
+}
+
+/* Returns the queue size */
+int t_pool_queue_size(t_pool_queue *q) {
+    return q->qsize;
 }
 
 /*

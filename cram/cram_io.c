@@ -3243,7 +3243,7 @@ static int cram_flush_result(cram_fd *fd) {
     t_pool_result *r;
 
     while ((r = t_pool_next_result(fd->rqueue))) {
-	cram_job *j = (cram_job *)r->data;
+	cram_job *j = (cram_job *)t_pool_result_data(r);
 	cram_container *c;
 
 	if (!j) {
@@ -4560,7 +4560,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 	fd->pool = p ? p->pool : NULL;
 	if (fd->pool) {
 	    fd->rqueue = t_pool_queue_init(fd->pool,
-					   p->qsize ? p->qsize : fd->pool->tsize*2,
+					   p->qsize ? p->qsize : t_pool_size(fd->pool)*2,
 					   0);
 	    pthread_mutex_init(&fd->metrics_lock, NULL);
 	    pthread_mutex_init(&fd->ref_lock, NULL);

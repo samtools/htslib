@@ -628,7 +628,7 @@ int bgzf_read_block(BGZF *fp)
 
     if (fp->mt) {
         r = t_pool_next_result_wait(fp->mt->out_queue);
-        bgzf_job *j = (bgzf_job *)r->data;
+        bgzf_job *j = (bgzf_job *)t_pool_result_data(r);
         assert(j);
 
         if (j->errcode) {
@@ -895,7 +895,7 @@ static void *bgzf_mt_writer(void *vp) {
 
     // Iterates until result queue is shutdown, where it returns NULL.
     while ((r = t_pool_next_result_wait(mt->out_queue))) {
-        bgzf_job *j = (bgzf_job *)r->data;
+        bgzf_job *j = (bgzf_job *)t_pool_result_data(r);
         assert(j);
         
         if (hwrite(fp->fp, j->comp_data, j->comp_len) != j->comp_len) {
@@ -1130,7 +1130,7 @@ int bgzf_thread_pool(BGZF *fp, t_pool *pool, int qsize) {
     fp->mt = mt;
 
     mt->pool = pool;
-    mt->n_threads = pool->tsize;
+    mt->n_threads = t_pool_size(pool);
     if (!qsize)
         qsize = mt->n_threads*2;
     if (!(mt->out_queue = t_pool_queue_init(mt->pool, qsize, 0))) {

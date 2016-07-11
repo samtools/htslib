@@ -3077,7 +3077,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 
 	// Push it a bit far, to qsize in queue rather than pending arrival,
 	// as cram tends to be a bit bursty in decode timings.
-	if (t_pool_queue_len(fd->rqueue) > fd->rqueue->qsize)
+	if (t_pool_queue_len(fd->rqueue) > t_pool_queue_size(fd->rqueue))
 	    break;
     }
 
@@ -3094,12 +3094,12 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 
 	res = t_pool_next_result_wait(fd->rqueue);
 
-	if (!res || !res->data) {
+	if (!res || !t_pool_result_data(res)) {
 	    fprintf(stderr, "t_pool_next_result failure\n");
 	    return NULL;
 	}
 
-	j = (cram_decode_job *)res->data;
+	j = (cram_decode_job *)t_pool_result_data(res);
 	c = j->c;
 	s = j->s;
 

@@ -55,41 +55,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 extern "C" {
 #endif
 
-struct t_pool;
-struct t_pool_queue;
-
-/*
- * An input job, before execution.
+/*-----------------------------------------------------------------------------
+ * Opaque data types.
+ * 
+ * Actual definitions are in thread_pool_internal.h, but these should only
+ * be used by thread_pool.c itself.
  */
-typedef struct t_pool_job {
-    void *(*func)(void *arg);
-    void *arg;
-    struct t_pool_job *next;
-
-    struct t_pool *p;
-    struct t_pool_queue *q;
-    uint64_t serial;
-} t_pool_job;
-
-/*
- * An output, after job has executed.
- */
-typedef struct t_res {
-    struct t_res *next;
-    uint64_t serial; // sequential number for ordering
-    void *data; // result itself
-} t_pool_result;
-
-/*
- * A per-thread worker struct.
- */
-typedef struct {
-    struct t_pool *p;
-    int idx;
-    pthread_t tid;
-    pthread_cond_t  pending_c; // when waiting for a job
-    long long wait_time;
-} t_pool_worker_t;
 
 /*
  * An IO queue consists of a queue of jobs to execute
@@ -103,33 +74,7 @@ typedef struct {
  * The thread pool may have many hetergeneous tasks, each
  * using its own io_queue mixed into the same thread pool.
  */
-typedef struct t_pool_queue {
-    struct t_pool *p;                // thread pool
-    t_pool_job    *input_head;       // input list
-    t_pool_job    *input_tail;
-    t_pool_result *output_head;      // output list
-    t_pool_result *output_tail;
-    int qsize;                       // max size of i/o queues
-    uint64_t next_serial;            // next serial for output
-    uint64_t curr_serial;            // current serial (next input)
-
-    int n_input;                     // no. items in input queue; was njobs
-    int n_output;                    // no. items in output queue
-    int n_processing;                // no. items being processed (executing)
-
-    int shutdown;                    // true if pool is being destroyed
-    int in_only;                     // if true, don't queue result up.
-    int wake_dispatch;               // unblocks waiting dispatchers
-
-    int ref_count;                   // used to track safe destruction
-
-    pthread_cond_t output_avail_c;   // Signalled on each new output
-    pthread_cond_t input_not_full_c; // Input queue is no longer full
-    pthread_cond_t input_empty_c;    // Input queue has become empty
-    pthread_cond_t none_processing_c;// n_processing has hit zero
-
-    struct t_pool_queue *next, *prev;// to form circular linked list.
-} t_pool_queue;
+typedef struct t_pool_queue t_pool_queue;
 
 /*
  * The single pool structure itself.
@@ -138,34 +83,17 @@ typedef struct t_pool_queue {
  * output is going, but it maintains a list of queues associated with
  * this pool from which the jobs are taken.
  */
-typedef struct t_pool {
-    int nwaiting; // how many workers waiting for new jobs
-    int njobs;    // how many total jobs are waiting in all queues
-    int shutdown; // true if pool is being destroyed
+typedef struct t_pool t_pool;
 
-    // I/O queues to check for jobs in and to put results.
-    // Forms a circular linked list.  (q_head may be amended
-    // to point to the most recently updated.)
-    t_pool_queue *q_head;
+/*
+ * An output, after job has executed.
+ */
+typedef struct t_pool_result t_pool_result;
 
-    // threads
-    int tsize;    // maximum number of jobs
-    t_pool_worker_t *t;
-    // array of worker IDs free
-    int *t_stack, t_stack_top;
 
-    // A single mutex used when updating this and any associated structure.
-    pthread_mutex_t pool_m;
-
-    // Tracking of average number of running jobs.
-    // This can be used to dampen any hysteresis caused by bursty
-    // input availability.
-    int n_count, n_running;
-
-    // Debugging to check wait time.
-    // FIXME: should we just delete these and cull the associated code?
-    long long total_time, wait_time;
-} t_pool;
+/*-----------------------------------------------------------------------------
+ * Thread pool external functions
+ */
 
 
 /*
@@ -175,6 +103,13 @@ typedef struct t_pool {
  *         NULL on failure
  */
 t_pool *t_pool_init(int n);
+
+
+/*
+ * Returns the number of requested threads for a pool.
+ */
+int t_pool_size(t_pool *p);
+
 
 /*
  * Adds an item to the work pool.
@@ -226,6 +161,10 @@ int t_pool_queue_flush(t_pool_queue *q);
  */
 int t_pool_queue_reset(t_pool_queue *q, int free_results);
 
+/* Returns the queue size */
+int t_pool_queue_size(t_pool_queue *q);
+
+
 /*
  * Destroys a thread pool. If 'kill' is true the threads are terminated now,
  * otherwise they are joined into the main thread so they will finish their
@@ -254,6 +193,12 @@ t_pool_result *t_pool_next_result_wait(t_pool_queue *q);
  * the internal r->data result too.
  */
 void t_pool_delete_result(t_pool_result *r, int free_data);
+
+/*
+ * Returns the data portion of a t_pool_result, corresponding
+ * to the actual "result" itself.
+ */
+void *t_pool_result_data(t_pool_result *r);
 
 /*
  * Initialises a thread job queue.
