@@ -119,6 +119,9 @@ dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
 AC_CHECK_FUNCS(gmtime_r)
 
+# Darwin has a dubious fdatasync() symbol, but no declaration in <unistd.h>
+AC_CHECK_DECL([fdatasync(int)], [AC_CHECK_FUNCS(fdatasync)])
+
 if test $enable_plugins != no; then
   AC_SEARCH_LIBS([dlopen], [dl], [],
     [AC_MSG_ERROR([dlopen() not found
