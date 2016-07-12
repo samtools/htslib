@@ -92,7 +92,7 @@ int probaln_glocal(const uint8_t *_ref, int l_ref, const uint8_t *_query, int l_
     if (is_backward) b = calloc((l_query+1)*i_dim, sizeof(double));
     s = malloc((l_query+2)* sizeof(double)); // s[] is the scaling factor to avoid underflow
     // initialize qual
-    _qual = malloc(l_query* sizeof(float));
+    _qual = malloc(l_query * sizeof(float));
     if (g_qual2prob[0] == 0)
         for (i = 0; i < 256; ++i)
             g_qual2prob[i] = pow(10, -i/10.);
@@ -242,7 +242,7 @@ int probaln_glocal(const uint8_t *_ref, int l_ref, const uint8_t *_query, int l_
         if (state) state[i-1] = max_k;
         if (q) k = (int)(-4.343 * log(1. - max) + .499), q[i-1] = k > 100? 99 : k;
 #ifdef _MAIN
-        fprintf(stderr, "(%.10lg,%.10lg) (%d,%d:%c,%c:%d) %lg\n", 0.0/*pb*/, sum, i-1, max_k>>2,
+        fprintf(stderr, "(%.10lg,%.10lg) (%d,%d:%c,%c:%d) %lg\n", pb, sum, i-1, max_k>>2,
                 "ACGT"[query[i]], "ACGT"[ref[(max_k>>2)+1]], max_k&3, max); // DEBUG
 #endif
     }
