@@ -1912,9 +1912,9 @@ static void overlap_remove(bam_plp_t iter, const bam1_t *b)
 // buffer yet (the current position is still the maximum position across all buffered reads).
 const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp)
 {
-    if (iter->error) { *_n_plp = -1; return 0; }
+    if (iter->error) { *_n_plp = -1; return NULL; }
     *_n_plp = 0;
-    if (iter->is_eof && iter->head == iter->tail) return 0;
+    if (iter->is_eof && iter->head == iter->tail) return NULL;
     while (iter->is_eof || iter->max_tid > iter->tid || (iter->max_tid == iter->tid && iter->max_pos > iter->pos)) {
         int n_plp = 0;
         // write iter->plp at iter->pos
@@ -1947,7 +1947,7 @@ const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_
                 fprintf(stderr, "[%s] unsorted input. Pileup aborts.\n", __func__);
                 iter->error = 1;
                 *_n_plp = -1;
-                return 0;
+                return NULL;
             }
         }
         if (iter->tid < iter->head->b.core.tid) { // come to a new reference sequence
@@ -1959,7 +1959,7 @@ const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_
         if (n_plp) return iter->plp;
         if (iter->is_eof && iter->head == iter->tail) break;
     }
-    return 0;
+    return NULL;
 }
 
 int bam_plp_push(bam_plp_t iter, const bam1_t *b)
