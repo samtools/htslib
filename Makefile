@@ -65,9 +65,11 @@ pkgconfigdir= $(libdir)/pkgconfig
 
 MKDIR_P = mkdir -p
 INSTALL = install -p
-INSTALL_PROGRAM = $(INSTALL)
 INSTALL_DATA    = $(INSTALL) -m 644
 INSTALL_DIR     = $(MKDIR_P) -m 755
+INSTALL_LIB     = $(INSTALL_DATA)
+INSTALL_MAN     = $(INSTALL_DATA)
+INSTALL_PROGRAM = $(INSTALL)
 
 # Set by config.mk if plugins are enabled
 plugindir =
@@ -371,8 +373,8 @@ install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB
 	if test -n "$(BUILT_PLUGINS)"; then $(INSTALL_PROGRAM) $(BUILT_PLUGINS) $(DESTDIR)$(plugindir); fi
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
-	$(INSTALL_DATA) htsfile.1 tabix.1 $(DESTDIR)$(man1dir)
-	$(INSTALL_DATA) faidx.5 sam.5 vcf.5 $(DESTDIR)$(man5dir)
+	$(INSTALL_MAN) htsfile.1 tabix.1 $(DESTDIR)$(man1dir)
+	$(INSTALL_MAN) faidx.5 sam.5 vcf.5 $(DESTDIR)$(man5dir)
 
 installdirs:
 	$(INSTALL_DIR) $(DESTDIR)$(bindir) $(DESTDIR)$(includedir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir) $(DESTDIR)$(pkgconfigdir)
@@ -383,7 +385,7 @@ installdirs:
 # and libhts.so.NN (used by client executables at runtime).
 
 install-so: libhts.so installdirs
-	$(INSTALL_DATA) libhts.so $(DESTDIR)$(libdir)/libhts.so.$(PACKAGE_VERSION)
+	$(INSTALL_LIB) libhts.so $(DESTDIR)$(libdir)/libhts.so.$(PACKAGE_VERSION)
 	ln -sf libhts.so.$(PACKAGE_VERSION) $(DESTDIR)$(libdir)/libhts.so
 	ln -sf libhts.so.$(PACKAGE_VERSION) $(DESTDIR)$(libdir)/libhts.so.$(LIBHTS_SOVERSION)
 
