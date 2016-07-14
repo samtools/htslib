@@ -110,7 +110,7 @@ int probaln_glocal(const uint8_t *_ref, int l_ref, const uint8_t *_query, int l_
     f[0*i_dim+k] = s[0] = 1.;
     { // f[1]
         double *fi = &f[1*i_dim], sum;
-        int beg = 1, end = l_ref < bw + 1? l_ref : bw + 1, _beg, _end;
+        int beg = 1, end = l_ref < bw + 1? l_ref : bw + 1;
         for (k = beg, sum = 0.; k <= end; ++k) {
             int u;
             double e = (ref[k] > 3 || query[1] > 3)? 1. : ref[k] == query[1]? 1. - qual[1] : qual[1] * EM;
@@ -118,15 +118,12 @@ int probaln_glocal(const uint8_t *_ref, int l_ref, const uint8_t *_query, int l_
             fi[u+0] = e * bM; fi[u+1] = EI * bI;
             sum += fi[u] + fi[u+1];
         }
-        // rescale
         s[1] = sum;
-        set_u(_beg, bw, 1, beg); set_u(_end, bw, 1, end); _end += 2;
-        for (k = _beg; k <= _end; ++k) fi[k] /= sum;
     }
     // f[2..l_query]
     for (i = 2; i <= l_query; ++i) {
         double *fi = &f[i*i_dim], *fi1 = &f[(i-1)*i_dim], sum, qli = qual[i];
-        int beg = 1, end = l_ref, x, _beg, _end;
+        int beg = 1, end = l_ref, x;
         uint8_t qyi = query[i];
         x = i - bw; beg = beg > x? beg : x; // band start
         x = i + bw; end = end < x? end : x; // band end
@@ -136,29 +133,28 @@ int probaln_glocal(const uint8_t *_ref, int l_ref, const uint8_t *_query, int l_
             1.,       // 10
             1.,       // 11
         };
+        double M = 1./s[i-1];
         for (k = beg, sum = 0.; k <= end; ++k) {
             int u, v11, v01, v10;
             double e;
             e = E[(ref[k] > 3 || qyi > 3)*2 + (ref[k] == qyi)];
             set_u(u, bw, i, k); set_u(v11, bw, i-1, k-1); set_u(v10, bw, i-1, k); set_u(v01, bw, i, k-1);
-            fi[u+0] = e * (m[0] * fi1[v11+0] + m[3] * fi1[v11+1] + m[6] * fi1[v11+2]);
-            fi[u+1] = EI * (m[1] * fi1[v10+0] + m[4] * fi1[v10+1]);
+            fi[u+0] = e * (m[0] * M*fi1[v11+0] + m[3] * M*fi1[v11+1] + m[6] * M*fi1[v11+2]);
+            fi[u+1] = EI * (m[1] * M*fi1[v10+0] + m[4] * M*fi1[v10+1]);
             fi[u+2] = m[2] * fi[v01+0] + m[8] * fi[v01+2];
             sum += fi[u] + fi[u+1] + fi[u+2];
 //          fprintf(stderr, "F (%d,%d;%d): %lg,%lg,%lg\n", i, k, u, fi[u], fi[u+1], fi[u+2]); // DEBUG
         }
-        // rescale
         s[i] = sum;
-        set_u(_beg, bw, i, beg); set_u(_end, bw, i, end); _end += 2;
-        for (k = _beg, sum = 1./sum; k <= _end; ++k) fi[k] *= sum;
     }
     { // f[l_query+1]
         double sum;
+        double M = 1./s[l_query];
         for (k = 1, sum = 0.; k <= l_ref; ++k) {
             int u;
             set_u(u, bw, l_query, k);
             if (u < 3 || u >= bw2*3+3) continue;
-            sum += f[l_query*i_dim + u+0] * sM + f[l_query*i_dim + u+1] * sI;
+            sum += M*f[l_query*i_dim + u+0] * sM + M*f[l_query*i_dim + u+1] * sI;
         }
         s[l_query+1] = sum; // the last scaling factor
     }
@@ -231,12 +227,13 @@ int probaln_glocal(const uint8_t *_ref, int l_ref, const uint8_t *_query, int l_
         int beg = 1, end = l_ref, x, max_k = -1;
         x = i - bw; beg = beg > x? beg : x;
         x = i + bw; end = end < x? end : x;
+        double M = 1./s[i];
         for (k = beg; k <= end; ++k) {
             int u;
             double z;
             set_u(u, bw, i, k);
-            z = fi[u+0] * bi[u+0]; if (z > max) max = z, max_k = (k-1)<<2 | 0; sum += z;
-            z = fi[u+1] * bi[u+1]; if (z > max) max = z, max_k = (k-1)<<2 | 1; sum += z;
+            z = M*fi[u+0] * bi[u+0]; if (z > max) max = z, max_k = (k-1)<<2 | 0; sum += z;
+            z = M*fi[u+1] * bi[u+1]; if (z > max) max = z, max_k = (k-1)<<2 | 1; sum += z;
         }
         max /= sum; sum *= s[i]; // if everything works as is expected, sum == 1.0
         if (state) state[i-1] = max_k;
