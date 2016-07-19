@@ -1739,11 +1739,11 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
 
 hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
 {
-    int i, n_off, l, bin;
+    int i, n_off, l, bin, bot_bin;
     hts_pair64_t *off;
     khint_t k;
     bidx_t *bidx;
-    uint64_t min_off;
+    uint64_t min_off, max_off;
     hts_itr_t *iter = 0;
     if (tid < 0) {
         int finished0 = 0;
@@ -1823,6 +1823,26 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
     } while (bin);
     if (bin == 0) k = kh_get(bin, bidx, bin);
     min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
+
+    // compute max_off: a virtual offset from a bin to the right of end
+    bot_bin = ((end-1) >> idx->min_shift) + 1;
+    if (idx->lidx && bot_bin < idx->lidx[tid].n)
+        max_off = idx->lidx[tid].offset[bot_bin];
+    else {
+        bin = hts_bin_first(idx->n_lvls) + bot_bin;
+        // search for an extant bin by moving right, but moving up to the
+        // parent whenever we get to a first child (which also covers falling
+        // off the RHS, which wraps around and immediately goes up to bin 0)
+        while (1) {
+            while (bin % 8 == 1) bin = hts_bin_parent(bin);
+            if (bin == 0) { max_off = (uint64_t)-1; break; }
+            k = kh_get(bin, bidx, bin);
+            if (k != kh_end(bidx)) { max_off = kh_val(bidx, k).loff; break; }
+            bin++;
+        }
+    }
+    if (max_off == 0) max_off = (uint64_t)-1;
+
     // retrieve bins
     reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
     for (i = n_off = 0; i < iter->bins.n; ++i)
@@ -1835,7 +1855,8 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
             int j;
             bins_t *p = &kh_value(bidx, k);
             for (j = 0; j < p->n; ++j)
-                if (p->list[j].v > min_off) off[n_off++] = p->list[j];
+                if (p->list[j].v > min_off && p->list[j].u < max_off)
+                    off[n_off++] = p->list[j];
         }
     }
     if (n_off == 0) {
