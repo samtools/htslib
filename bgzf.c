@@ -970,7 +970,6 @@ ssize_t bgzf_block_write(BGZF *fp, const void *data, size_t length)
         input += copy_length; 
         remaining -= copy_length; 
         if (fp->block_offset == ublock_size) { 
-	    fprintf(stderr,"block_address: %d\n", fp->block_address);
             if (lazy_flush(fp) != 0) return -1;
 	    fp->idx->noffs--;  // decrement noffs to track the blocks
         }
