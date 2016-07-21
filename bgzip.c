@@ -173,7 +173,7 @@ int main(int argc, char **argv)
         }
         else if (!pstdout && isatty(fileno((FILE *)stdout)) )
             return bgzip_main_usage();
-        else if ( (index || rebgzip)  && !index_fname )
+        else if ( index && !index_fname )
         {
             fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
             return 1;
@@ -187,18 +187,19 @@ int main(int argc, char **argv)
             return 1;
 	  }
 
+	if ( rebgzip && !index_fname )
+	  {
+            fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
+            return 1;
+	  }
+
         if (threads > 1)
             bgzf_mt(fp, threads, 256);
 
         if ( index ) bgzf_index_build_init(fp);
         buffer = malloc(WINDOW_SIZE);
 	if (rebgzip){
-	  if ( index_fname ){
-	    if ( bgzf_index_load(fp, index_fname, NULL) < 0 ) error("Could not load index: %s.gzi\n", argv[optind]);
-	  }
-	  else {
-	    if ( bgzf_index_load(fp, argv[optind], ".gzi") < 0 ) error("Could not load index: %s.gzi\n", argv[optind]);
-	  }
+	  if ( bgzf_index_load(fp, index_fname, NULL) < 0 ) error("Could not load index: %s.gzi\n", argv[optind]);
 	  
 	  while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
 	    if (bgzf_block_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
