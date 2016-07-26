@@ -155,8 +155,9 @@ static BGZF *bgzf_read_init(hFILE *hfpr)
 
     fp->is_write = 0;
     fp->is_compressed = (n==2 && magic[0]==0x1f && magic[1]==0x8b);
-    fp->uncompressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
-    fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
+    fp->uncompressed_block = malloc(2 * BGZF_MAX_BLOCK_SIZE);
+    if (fp->uncompressed_block == NULL) { free(fp); return NULL; }
+    fp->compressed_block = (char *)fp->uncompressed_block + BGZF_MAX_BLOCK_SIZE;
     fp->is_compressed = (n==18 && magic[0]==0x1f && magic[1]==0x8b) ? 1 : 0;
     fp->is_gzip = ( !fp->is_compressed || ((magic[3]&4) && memcmp(&magic[12], "BC\2\0",4)==0) ) ? 0 : 1;
 #ifdef BGZF_CACHE
@@ -189,10 +190,9 @@ static BGZF *bgzf_write_init(const char *mode)
     }
     fp->is_compressed = 1;
 
-    fp->uncompressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
+    fp->uncompressed_block = malloc(2 * BGZF_MAX_BLOCK_SIZE);
     if (fp->uncompressed_block == NULL) goto mem_fail;
-    fp->compressed_block = malloc(BGZF_MAX_BLOCK_SIZE);
-    if (fp->compressed_block == NULL) goto mem_fail;
+    fp->compressed_block = (char *)fp->uncompressed_block + BGZF_MAX_BLOCK_SIZE;
 
     fp->compress_level = compress_level < 0? Z_DEFAULT_COMPRESSION : compress_level; // Z_DEFAULT_COMPRESSION==-1
     if (fp->compress_level > 9) fp->compress_level = Z_DEFAULT_COMPRESSION;
@@ -224,7 +224,6 @@ static BGZF *bgzf_write_init(const char *mode)
  fail:
     if (fp != NULL) {
         free(fp->uncompressed_block);
-        free(fp->compressed_block);
         free(fp->gz_stream);
         free(fp);
     }
@@ -720,7 +719,9 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
 
 ssize_t bgzf_raw_read(BGZF *fp, void *data, size_t length)
 {
-    return hread(fp->fp, data, length);
+    ssize_t ret = hread(fp->fp, data, length);
+    if (ret < 0) fp->errcode |= BGZF_ERR_IO;
+    return ret;
 }
 
 #ifdef BGZF_MT
@@ -952,7 +953,9 @@ ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
 
 ssize_t bgzf_raw_write(BGZF *fp, const void *data, size_t length)
 {
-    return hwrite(fp->fp, data, length);
+    ssize_t ret = hwrite(fp->fp, data, length);
+    if (ret < 0) fp->errcode |= BGZF_ERR_IO;
+    return ret;
 }
 
 int bgzf_close(BGZF* fp)
@@ -990,7 +993,6 @@ int bgzf_close(BGZF* fp)
     if (ret != 0) return -1;
     bgzf_index_destroy(fp);
     free(fp->uncompressed_block);
-    free(fp->compressed_block);
     free_cache(fp);
     free(fp);
     return 0;
