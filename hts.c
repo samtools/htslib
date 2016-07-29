@@ -2023,6 +2023,22 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
     return ret;
 }
 
+int hts_itr_next_chunk(hts_itr_t *iter, uint64_t *beg_off, uint64_t *end_off)
+{
+    if (iter->is_cram) return -1; // TODO return cram_itr_next_chunk(iter, beg_off, end_off);
+
+    if (++iter->i >= iter->n_off) return -1;
+    *beg_off = iter->off[iter->i].u;
+    *end_off = iter->off[iter->i].v;
+    return 0;
+}
+
+int hts_send_chunk(htsFile *outfp, htsFile *fp, uint64_t beg, uint64_t end)
+{
+    // TODO CRAM?
+    return bgzf_write_chunk(hts_get_bgzfp(outfp), hts_get_bgzfp(fp), beg, end);
+}
+
 /**********************
  *** Retrieve index ***
  **********************/

@@ -1358,3 +1358,67 @@ long bgzf_utell(BGZF *fp)
 {
     return fp->uncompressed_address;    // currently maintained only when reading
 }
+
+static int write_partial_block(BGZF *outfp, BGZF *fp, int ubeg, int uend)
+{
+    if (bgzf_read_block(fp) < 0) return -1;
+
+    if (uend > fp->block_length) uend = fp->block_length;
+    int length = uend - ubeg;
+
+    const char *buffer = (char *) fp->uncompressed_block;
+    if (bgzf_write(outfp, buffer + ubeg, length) != length) return -1;
+
+    fp->block_offset += length;
+    if (fp->block_offset == fp->block_length) {
+        fp->block_address = htell(fp->fp);
+        fp->block_offset = fp->block_length = 0;
+    }
+
+    return 0;
+}
+
+int bgzf_write_chunk(BGZF *outfp, BGZF *fp, uint64_t beg, uint64_t end)
+{
+    if (bgzf_seek(fp, beg, SEEK_SET) < 0) return -1;
+
+    // If there is only one block, decompress it and copy the relevant part
+    if ((beg >> 16) == (end >> 16)) {
+        if (write_partial_block(outfp, fp, beg & 0xFFFF, end & 0xFFFF) < 0)
+            return -1;
+        return 0;
+    }
+
+    // Otherwise, decompress and copy partial first block...
+    if ((beg & 0xFFFF) != 0) {
+        if (write_partial_block(outfp, fp, beg & 0xFFFF, INT_MAX) < 0)
+            return -1;
+    }
+
+    // ...raw copy all complete blocks...
+    if ((end >> 16) > fp->block_address) {
+        // Write out the partial first block and any other pending cooked data
+        if (bgzf_flush(outfp) < 0) return -1;
+
+        size_t length = (end >> 16) - fp->block_address;
+        char *buffer = (char *) fp->uncompressed_block;
+        size_t buflen = 2 * BGZF_MAX_BLOCK_SIZE;
+        while (length > 0) {
+            if (buflen > length) buflen = length;
+            ssize_t nread = bgzf_raw_read(fp, buffer, buflen);
+            if (nread < 0) return -1;
+            length -= nread;
+            fp->block_address += nread;
+            if (bgzf_raw_write(outfp, buffer, nread) != nread) return -1;
+        }
+
+        fp->block_offset = fp->block_length = 0;
+    }
+
+    // ...and decompress and copy partial final block
+    if ((end & 0xFFFF) != 0) {
+        if (write_partial_block(outfp, fp, 0, end & 0xFFFF) < 0) return -1;
+    }
+
+    return 0;
+}

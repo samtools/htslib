@@ -177,6 +177,8 @@ typedef struct __kstring_t {
      */
     ssize_t bgzf_raw_write(BGZF *fp, const void *data, size_t length) HTS_RESULT_USED;
 
+    int bgzf_write_chunk(BGZF *outfp, BGZF *fp, uint64_t beg, uint64_t end) HTS_RESULT_USED;
+
     /**
      * Write the data in the buffer to the file.
      *

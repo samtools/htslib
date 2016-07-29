@@ -535,6 +535,10 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
     int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data) HTS_RESULT_USED;
     const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 
+int hts_itr_next_chunk(hts_itr_t *iter, uint64_t *beg_off, uint64_t *end_off);
+
+int hts_send_chunk(htsFile *outfp, htsFile *infp, uint64_t beg_off, uint64_t end_off) HTS_RESULT_USED;
+
     /**
      * hts_file_type() - Convenience function to determine file type
      * DEPRECATED:  This function has been replaced by hts_detect_format().
