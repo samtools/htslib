@@ -1485,7 +1485,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 	} else {
 	    s->hdr->ref_seq_id    = c->ref_id;
 	    s->hdr->ref_seq_start = first_base;
-	    s->hdr->ref_seq_span  = last_base - first_base + 1;
+	    s->hdr->ref_seq_span  = MAX(0, last_base - first_base + 1);
 	}
 	s->hdr->num_records = r2;
     }
@@ -2510,7 +2510,7 @@ void cram_update_curr_slice(cram_container *c) {
     } else {
 	s->hdr->ref_seq_id    = c->curr_ref;
 	s->hdr->ref_seq_start = c->first_base;
-	s->hdr->ref_seq_span  = c->last_base - c->first_base + 1;
+	s->hdr->ref_seq_span  = MAX(0, c->last_base - c->first_base + 1);
     }
     s->hdr->num_records   = c->curr_rec;
 
