@@ -40,10 +40,13 @@ DEALINGS IN THE SOFTWARE.  */
 #include <dataObjWrite.h>
 #include <dataObjLseek.h>
 #include <dataObjClose.h>
+#include <dataObjChksum.h>
 
 typedef struct {
     hFILE base;
     int descriptor;
+    char name[MAX_NAME_LEN];
+    int flags;
 } hFILE_irods;
 
 static int status_errno(int status)
@@ -191,6 +194,27 @@ static int irods_close(hFILE *fpv)
     openedDataObjInp_t args;
     int ret;
 
+    if (fp->flags & (O_WRONLY|O_RDWR)) {
+        // Tested on iRODS 3.3.  iRODS doesn't automatically update
+        // the checksum before attempting to perform replication.
+        // This in turn causes the replication to fail repeatedly,
+        // making rcDataObjClose take an excessively long time.
+        //
+        // This is a workaround - we hope the data is auto-flushed(!)
+        // and forcibly request the checksum to be updated before
+        // closing.
+        dataObjInp_t chk_arg;
+        char *chksum = NULL;
+        memset(&chk_arg, 0, sizeof(chk_arg));
+        memcpy(chk_arg.objPath, fp->name, MAX_NAME_LEN);
+        addKeyVal(&chk_arg.condInput, FORCE_CHKSUM_KW, "");
+
+        ret = rcDataObjChksum(irods.conn, &chk_arg, &chksum);
+        if (ret < 0) set_errno(ret);
+        rmKeyVal(&chk_arg.condInput, FORCE_CHKSUM_KW);
+        free(chksum);
+    }
+
     memset(&args, 0, sizeof args);
     args.l1descInx = fp->descriptor;
 
@@ -226,9 +250,12 @@ hFILE *hopen_irods(const char *filename, const char *mode)
     ret = parseRodsPath(&path, &irods.env);
     if (ret < 0) goto error;
 
+    strncpy(fp->name, path.outPath, MAX_NAME_LEN-1);
+    fp->name[MAX_NAME_LEN-1] = '\0';
+
     memset(&args, 0, sizeof args);
     strcpy(args.objPath, path.outPath);
-    args.openFlags = hfile_oflags(mode);
+    fp->flags = args.openFlags = hfile_oflags(mode);
     if (args.openFlags & O_CREAT) {
         args.createMode = 0666;
         addKeyVal(&args.condInput, DEST_RESC_NAME_KW,irods.env.rodsDefResource);
