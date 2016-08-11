@@ -743,9 +743,6 @@ static void load_hfile_plugins()
     }
 #else
 
-#ifdef HAVE_IRODS
-    init_add_plugin(NULL, hfile_plugin_init_irods, "iRODS");
-#endif
 #ifdef HAVE_LIBCURL
     init_add_plugin(NULL, hfile_plugin_init_libcurl, "libcurl");
 #endif

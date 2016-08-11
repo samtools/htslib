@@ -78,7 +78,6 @@ HTSLIB_ALL = \
 	$(HTSDIR)/faidx.c \
 	$(HTSDIR)/hfile_internal.h \
 	$(HTSDIR)/hfile.c \
-	$(HTSDIR)/hfile_irods.c \
 	$(HTSDIR)/hfile_libcurl.c \
 	$(HTSDIR)/hfile_net.c \
 	$(HTSDIR)/hts.c \

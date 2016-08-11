@@ -53,16 +53,6 @@ AC_SYS_LARGEFILE
 
 need_crypto=no
 
-AC_ARG_WITH([irods],
-  [AS_HELP_STRING([[--with-irods[=DIR]]],
-                  [use RodsAPIs library (in DIR) to support iRODS URLs])],
-  [case $withval in
-     no)  irods=disabled ;;
-     yes) irods=enabled ;;
-     *)   irods=enabled; IRODS_HOME=$withval ;;
-   esac],
-  [irods=disabled])
-
 AC_ARG_ENABLE([libcurl],
   [AS_HELP_STRING([--enable-libcurl],
                   [enable libcurl-based support for http/https/etc URLs])],
@@ -154,31 +144,6 @@ is installed.
 
 FAILED.  This error must be resolved in order to build HTSlib successfully.])
 fi
-
-if test $irods = enabled; then
-  # TODO Also test whether we require libgssapi_krb5 and AC_CHECK_LIB it
-  save_LDFLAGS=$LDFLAGS
-  LDFLAGS="$LDFLAGS -L$IRODS_HOME/lib/core/obj"
-  AC_CHECK_LIB([RodsAPIs], [getRodsEnvFileName],
-    [case $with_irods in
-       yes) define_IRODS_HOME='# Uses $(IRODS_HOME) from the environment' ;;
-       *)   define_IRODS_HOME="IRODS_HOME = $with_irods" ;;
-     esac],
-    [AC_MSG_ERROR([iRODS development files not found
-
-Support for iRODS URLs requires the libRodsAPI client library and headers.
-Configure with --with-irods=DIR (or just --with-irods if \$IRODS_HOME has
-been exported with a suitable value), where DIR is the base of an iRODS tree
-such that the library is present as DIR/lib/core/obj/libRodsAPI.* and headers
-are present under DIR/lib/api/include and so on.])],
-    [-lgssapi_krb5 -lpthread])
-  LDFLAGS=$save_LDFLAGS
-  AC_DEFINE([HAVE_IRODS], 1, [Define to 1 if iRODS file access is enabled.])
-else
-  define_IRODS_HOME='IRODS_HOME ?= /disabled'
-fi
-AC_SUBST([irods])
-AC_SUBST([define_IRODS_HOME])
 
 libcurl=disabled
 if test "$enable_libcurl" != no; then

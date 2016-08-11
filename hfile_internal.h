@@ -125,7 +125,6 @@ extern int hfile_plugin_init(struct hFILE_plugin *self);
    even with --disable-plugins need to use PLUGIN_GLOBAL and be listed here;
    others can simply define hfile_plugin_init().  */
 
-extern int hfile_plugin_init_irods(struct hFILE_plugin *self);
 extern int hfile_plugin_init_libcurl(struct hFILE_plugin *self);
 #endif
 

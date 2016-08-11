@@ -38,9 +38,13 @@ various features and specify further optional external requirements:
     Use plugins to implement exotic file access protocols and other
     specialised facilities.  This enables such facilities to be developed
     and packaged outwith HTSlib, and somewhat isolates HTSlib-using programs
-    from their library dependencies.  By default, any enabled pluggable
-    facilities (such as iRODS and libcurl file access) are built directly
-    within HTSlib.
+    from their library dependencies.  By default (or with --disable-plugins),
+    any enabled pluggable facilities (such as libcurl file access) are built
+    directly within HTSlib.
+
+    The <https://github.com/samtools/htslib-plugins> repository contains
+    several additional plugins, including the iRODS (<http://irods.org/>)
+    file access plugin previously distributed with HTSlib.
 
 --with-plugin-dir=DIR
     Specifies the directory into which plugins built while building HTSlib
@@ -51,14 +55,6 @@ various features and specify further optional external requirements:
     By default, only the directory specified via --with-plugin-dir will be
     searched; you can use --with-plugin-path='DIR:$(plugindir):DIR' and so
     on to cause additional directories to be searched.
-
---with-irods[=DIR]
-    Specifies the location of the iRODS client library to use to enable
-    access to data objects stored in iRODS (<http://irods.org/>) via file
-    paths like 'irods:DATAOBJ'.  DIR is the base of an iRODS source tree
-    such that the library is present as DIR/lib/core/obj/libRodsAPI.* and
-    headers are present under DIR/lib/api/include and so on.  If '=DIR' is
-    omitted, $IRODS_HOME will be used as a base directory.
 
 --enable-libcurl
     Use libcurl (<http://curl.haxx.se/>) to implement network access to
