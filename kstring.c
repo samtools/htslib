@@ -48,13 +48,15 @@ int ksprintf_g(kstring_t *s, double d) {
 
 	if (d < 0) {
 		kputc('-',s);
+		len = 1;
 		d=-d;
 	}
 	if (d < 0.0001 || d > 999999) {
 		if (ks_resize(s, s->l + 50) < 0)
 			return EOF;
 		// We let stdio handle the exponent cases
-		len = sprintf(s->s + s->l, "%g", d);
+		int s2 = sprintf(s->s + s->l, "%g", d);
+		len += s2;
 		s->l += len;
 		return len;
 	}
@@ -68,7 +70,7 @@ int ksprintf_g(kstring_t *s, double d) {
 	if (d<.0001)
 		i+=0;
 	else if (d<0.001)
-		 i+=5;
+		i+=5;
 	else if (d < 0.01)
 		i+=50;
 	else if (d < 0.1)
@@ -130,8 +132,9 @@ int ksprintf_g(kstring_t *s, double d) {
 		ep--;
 	}
 
-	len = strlen(cp);
-	kputsn(cp, len, s);
+	int sl = strlen(cp);
+	len += sl;
+	kputsn(cp, sl, s);
 	return len;
 }
 
