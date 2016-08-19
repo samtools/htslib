@@ -1,6 +1,6 @@
 /*  hfile_libcurl.c -- libcurl backend for low-level file streams.
 
-    Copyright (C) 2015 Genome Research Ltd.
+    Copyright (C) 2015, 2016 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -34,6 +34,9 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "hts_internal.h"
 #include "hfile_internal.h"
+#ifdef ENABLE_PLUGINS
+#include "version.h"
+#endif
 #include "htslib/hts.h"  // for hts_version() and hts_verbose
 #include "htslib/kstring.h"
 
@@ -563,6 +566,13 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
     static const struct hFILE_scheme_handler handler =
         { hopen_libcurl, hfile_always_remote, "libcurl", 50 };
 
+#ifdef ENABLE_PLUGINS
+    // Embed version string for examination via strings(1) or what(1)
+    static const char id[] = "@(#)hfile_libcurl plugin (htslib)\t" HTS_VERSION;
+    const char *version = strchr(id, '\t')+1;
+#else
+    const char *version = hts_version();
+#endif
     const curl_version_info_data *info;
     const char * const *protocol;
     CURLcode err;
@@ -574,8 +584,7 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
     if (curl.multi == NULL) { curl_global_cleanup(); errno = EIO; return -1; }
 
     info = curl_version_info(CURLVERSION_NOW);
-    ksprintf(&curl.useragent, "htslib/%s libcurl/%s",
-             hts_version(), info->version);
+    ksprintf(&curl.useragent, "htslib/%s libcurl/%s", version, info->version);
 
     curl.nrunning = 0;
     curl.perform_again = 0;

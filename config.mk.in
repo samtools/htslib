@@ -1,6 +1,6 @@
 #  Optional configure Makefile overrides for htslib.
 #
-#    Copyright (C) 2015 Genome Research Ltd.
+#    Copyright (C) 2015, 2016 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -77,6 +77,9 @@ LIBHTS_OBJS += plugin.o
 PLUGIN_OBJS += $(plugin_OBJS)
 
 plugin.o plugin.pico: CPPFLAGS += -DPLUGINPATH=\"$(pluginpath)\"
+
+# When built as separate plugins, these record their version themselves.
+hfile_libcurl.o hfile_libcurl.pico: version.h
 
 # Windows DLL plugins depend on the import library, built as a byproduct.
 $(plugin_OBJS:.o=.cygdll): cyghts-$(LIBHTS_SOVERSION).dll
