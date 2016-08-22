@@ -590,7 +590,7 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
 
     hfile_add_scheme_handler("s3", &handler);
     hfile_add_scheme_handler("s3+http", &handler);
-    hfile_add_scheme_handler("gcs", &handler);
+    hfile_add_scheme_handler("gs", &handler);
     if (info->features & CURL_VERSION_SSL)
         hfile_add_scheme_handler("s3+https", &handler);
 
@@ -825,7 +825,7 @@ static void parse_simple(const char *fname, kstring_t *id, kstring_t *secret)
 // where PATH is url-escaped.
 // We get the token for the OAuth header from the environment variable
 // GCS_OAUTH_TOKEN, which you can set using the gcloud tool, e.g.
-//  > gcloud auth beta application-default login
+//  > gcloud beta auth application-default login
 //  > export GCS_OAUTH_TOKEN=`gcloud beta auth application-default print-access-token`
 // For production environments, set up a service account and use its credentials, e.g.
 //  > gcloud beta auth application-default activate-service-account --key-file FILE
@@ -837,7 +837,7 @@ static int add_gcs_settings(hFILE_libcurl* fp, const char* gcs_url) {
 
   const char* bucket = &gcs_url[3];
   while (*bucket == '/') bucket++;
-  const char* path = bucket + strcspn(bucket, ",");
+  const char* path = bucket + strcspn(bucket, "/");
 
   kputs("https://www.googleapis.com/storage/v1/b/", &url);
   kputsn(bucket, path - bucket, &url);
