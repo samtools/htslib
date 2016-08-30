@@ -1739,7 +1739,7 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
 
 hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
 {
-    int i, n_off, l, bin, bot_bin;
+    int i, n_off, l, bin;
     hts_pair64_t *off;
     khint_t k;
     bidx_t *bidx;
@@ -1825,23 +1825,17 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
     min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
 
     // compute max_off: a virtual offset from a bin to the right of end
-    bot_bin = ((end-1) >> idx->min_shift) + 1;
-    if (idx->lidx && bot_bin < idx->lidx[tid].n)
-        max_off = idx->lidx[tid].offset[bot_bin];
-    else {
-        bin = hts_bin_first(idx->n_lvls) + bot_bin;
+    bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
+    while (1) {
         // search for an extant bin by moving right, but moving up to the
         // parent whenever we get to a first child (which also covers falling
         // off the RHS, which wraps around and immediately goes up to bin 0)
-        while (1) {
-            while (bin % 8 == 1) bin = hts_bin_parent(bin);
-            if (bin == 0) { max_off = (uint64_t)-1; break; }
-            k = kh_get(bin, bidx, bin);
-            if (k != kh_end(bidx)) { max_off = kh_val(bidx, k).loff; break; }
-            bin++;
-        }
+        while (bin % 8 == 1) bin = hts_bin_parent(bin);
+        if (bin == 0) { max_off = (uint64_t)-1; break; }
+        k = kh_get(bin, bidx, bin);
+        if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) { max_off = kh_val(bidx, k).list[0].u; break; }
+        bin++;
     }
-    if (max_off == 0) max_off = (uint64_t)-1;
 
     // retrieve bins
     reg2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
