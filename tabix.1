@@ -69,10 +69,14 @@ sorted and compressed by
 .B bgzip
 which has a
 .BR gzip (1)
-like interface. After indexing, tabix is able to quickly retrieve data
-lines overlapping
+like interface.
+
+After indexing, tabix is able to quickly retrieve data lines overlapping
 .I regions
-specified in the format "chr:beginPos-endPos". Fast data retrieval also
+specified in the format "chr:beginPos-endPos".
+(Coordinates specified in this region format are 1-based and inclusive.)
+
+Fast data retrieval also
 works over network if URI is given as a file name and in this case the
 index file will be downloaded if it is not present locally.
 
@@ -98,7 +102,7 @@ start column. [5]
 .B "-f, --force "
 Force to overwrite the index file if it is present.
 .TP
-.BI "-m, --min-shift" INT
+.BI "-m, --min-shift " INT
 set minimal interval size for CSI indices to 2^INT [14]
 .TP
 .BI "-p, --preset " STR
