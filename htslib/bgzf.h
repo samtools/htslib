@@ -142,6 +142,18 @@ typedef struct __kstring_t {
     ssize_t bgzf_write(BGZF *fp, const void *data, size_t length) HTS_RESULT_USED;
 
     /**
+     * Write _length_ bytes from _data_ to the file, the index will be used to                    
+     * decide the amount of uncompressed data to be writen to each bgzip block.                    
+     * If no I/O errors occur, the complete _length_ bytes will be written (or                     
+     * queued for writing).
+     * @param fp     BGZF file handler
+     * @param data   data array to write
+     * @param length size of data to write
+     * @return       number of bytes written (i.e., _length_); negative on error
+     */
+    ssize_t bgzf_block_write(BGZF *fp, const void *data, size_t length);
+    
+    /**
      * Read up to _length_ bytes directly from the underlying stream without
      * decompressing.  Bypasses BGZF blocking, so must be used with care in
      * specialised circumstances only.

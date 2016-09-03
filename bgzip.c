@@ -76,6 +76,7 @@ static int bgzip_main_usage(void)
     fprintf(stderr, "   -i, --index             compress and create BGZF index\n");
     fprintf(stderr, "   -I, --index-name FILE   name of BGZF index file [file.gz.gzi]\n");
     fprintf(stderr, "   -r, --reindex           (re)index compressed file\n");
+    fprintf(stderr, "   -g, --rebgzip           use an index file to bgzip a file\n");
     fprintf(stderr, "   -s, --size INT          decompress INT bytes (uncompressed size)\n");
     fprintf(stderr, "   -@, --threads INT       number of compression threads to use [1]\n");
     fprintf(stderr, "\n");
@@ -84,7 +85,7 @@ static int bgzip_main_usage(void)
 
 int main(int argc, char **argv)
 {
-    int c, compress, pstdout, is_forced, index = 0, reindex = 0;
+    int c, compress, pstdout, is_forced, index = 0, rebgzip = 0, reindex = 0;
     BGZF *fp;
     void *buffer;
     long start, end, size;
@@ -101,14 +102,15 @@ int main(int argc, char **argv)
         {"index", no_argument, NULL, 'i'},
         {"index-name", required_argument, NULL, 'I'},
         {"reindex", no_argument, NULL, 'r'},
-        {"size", required_argument, NULL, 's'},
+        {"rebgzip",no_argument,NULL,'g'},
+	{"size", required_argument, NULL, 's'},
         {"threads", required_argument, NULL, '@'},
         {"version", no_argument, NULL, 1},
         {NULL, 0, NULL, 0}
     };
 
     compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0;
-    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:r",loptions,NULL)) >= 0){
+    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:gr",loptions,NULL)) >= 0){
         switch(c){
         case 'd': compress = 0; break;
         case 'c': pstdout = 1; break;
@@ -117,6 +119,7 @@ int main(int argc, char **argv)
         case 'f': is_forced = 1; break;
         case 'i': index = 1; break;
         case 'I': index_fname = optarg; break;
+	case 'g': rebgzip = 1; break;
         case 'r': reindex = 1; compress = 0; break;
         case '@': threads = atoi(optarg); break;
         case 1:
@@ -178,13 +181,34 @@ int main(int argc, char **argv)
         else
             fp = bgzf_open("-", "w");
 
+	if ( index && rebgzip )
+	  {
+            fprintf(stderr, "[bgzip] Can't produce a index and rebgzip simultaneously\n");
+            return 1;
+	  }
+
+	if ( rebgzip && !index_fname )
+	  {
+            fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
+            return 1;
+	  }
+
         if (threads > 1)
             bgzf_mt(fp, threads, 256);
 
         if ( index ) bgzf_index_build_init(fp);
         buffer = malloc(WINDOW_SIZE);
-        while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
-            if (bgzf_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
+	if (rebgzip){
+	  if ( bgzf_index_load(fp, index_fname, NULL) < 0 ) error("Could not load index: %s.gzi\n", argv[optind]);
+	  
+	  while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
+	    if (bgzf_block_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
+	  
+	}
+	else {
+	  while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
+	    if (bgzf_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
+	}
         if ( index )
         {
             if (index_fname) {

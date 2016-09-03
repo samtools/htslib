@@ -38,6 +38,7 @@ test_vcf_api($opts,out=>'test-vcf-api.out');
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
 test_vcf_various($opts);
 test_convert_padded_header($opts);
+test_rebgzip($opts);
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -310,6 +311,14 @@ sub test_vcf_various
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatcols.vcf");
     test_cmd($opts, %args, out => "noroundtrip-out.vcf",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/noroundtrip.vcf");
+}
+
+sub test_rebgzip
+{
+    my ($opts, %args) = @_;
+
+    test_cmd($opts, %args, out => "bgziptest.txt.gz",
+        cmd => "$$opts{bin}/bgzip -I $$opts{path}/bgziptest.txt.gz.gzi -c -g $$opts{path}/bgziptest.txt");
 }
 
 sub test_convert_padded_header
