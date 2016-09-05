@@ -103,7 +103,7 @@ int main(int argc, char **argv)
         {"index-name", required_argument, NULL, 'I'},
         {"reindex", no_argument, NULL, 'r'},
         {"rebgzip",no_argument,NULL,'g'},
-	{"size", required_argument, NULL, 's'},
+        {"size", required_argument, NULL, 's'},
         {"threads", required_argument, NULL, '@'},
         {"version", no_argument, NULL, 1},
         {NULL, 0, NULL, 0}
@@ -119,7 +119,7 @@ int main(int argc, char **argv)
         case 'f': is_forced = 1; break;
         case 'i': index = 1; break;
         case 'I': index_fname = optarg; break;
-	case 'g': rebgzip = 1; break;
+        case 'g': rebgzip = 1; break;
         case 'r': reindex = 1; compress = 0; break;
         case '@': threads = atoi(optarg); break;
         case 1:
@@ -181,34 +181,33 @@ int main(int argc, char **argv)
         else
             fp = bgzf_open("-", "w");
 
-	if ( index && rebgzip )
-	  {
+        if ( index && rebgzip )
+        {
             fprintf(stderr, "[bgzip] Can't produce a index and rebgzip simultaneously\n");
             return 1;
-	  }
+        }
 
-	if ( rebgzip && !index_fname )
-	  {
+        if ( rebgzip && !index_fname )
+        {
             fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
             return 1;
-	  }
+        }
 
         if (threads > 1)
             bgzf_mt(fp, threads, 256);
 
         if ( index ) bgzf_index_build_init(fp);
         buffer = malloc(WINDOW_SIZE);
-	if (rebgzip){
-	  if ( bgzf_index_load(fp, index_fname, NULL) < 0 ) error("Could not load index: %s.gzi\n", argv[optind]);
-	  
-	  while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
-	    if (bgzf_block_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
-	  
-	}
-	else {
-	  while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
-	    if (bgzf_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
-	}
+        if (rebgzip){
+            if ( bgzf_index_load(fp, index_fname, NULL) < 0 ) error("Could not load index: %s.gzi\n", argv[optind]);
+
+            while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
+                if (bgzf_block_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
+        }
+        else {
+            while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
+                if (bgzf_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
+        }
         if ( index )
         {
             if (index_fname) {
