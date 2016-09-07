@@ -1366,8 +1366,12 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
     if ( tid>=0 )
     {
         if (idx->bidx[tid] == 0) idx->bidx[tid] = kh_init(bin);
-        if ( is_mapped)
+        if (is_mapped) {
+            // shoehorn [-1,0) (VCF POS=0) into the leftmost bottom-level bin
+            if (beg < 0)  beg = 0;
+            if (end <= 0) end = 1;
             insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off, idx->min_shift); // last_off points to the start of the current record
+        }
     }
     else idx->n_no_coor++;
     bin = hts_reg2bin(beg, end, idx->min_shift, idx->n_lvls);
