@@ -1618,8 +1618,14 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         return -1;
     }
 
-    // get format information from the dictionary
     v->n_fmt = 0;
+    if ( p[0]=='.' && p[1]==0 ) // FORMAT field is empty "."
+    {
+        v->n_sample = bcf_hdr_nsamples(h);
+        return 0;
+    }
+
+    // get format information from the dictionary
     for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
         if (j >= MAX_N_FMT) {
             v->errcode |= BCF_ERR_LIMITS;
@@ -1632,9 +1638,9 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_FMT] == 15) {
             if ( t[0]=='.' && t[1]==0 )
             {
-                // FORMAT field is empty "."
-                v->n_sample = bcf_hdr_nsamples(h);
-                return 0;
+                fprintf(stderr, "[E::%s] Invalid FORMAT tag name '.'\n", __func__);
+                v->errcode |= BCF_ERR_TAG_INVALID;
+                return -1;
             }
             if (hts_verbose >= 2) fprintf(stderr, "[W::%s] FORMAT '%s' is not defined in the header, assuming Type=String\n", __func__, t);
             kstring_t tmp = {0,0,0};
