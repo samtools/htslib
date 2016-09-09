@@ -1630,6 +1630,12 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         *(char*)aux1.p = 0;
         k = kh_get(vdict, d, t);
         if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_FMT] == 15) {
+            if ( t[0]=='.' && t[1]==0 )
+            {
+                // FORMAT field is empty "."
+                v->n_sample = bcf_hdr_nsamples(h);
+                return 0;
+            }
             if (hts_verbose >= 2) fprintf(stderr, "[W::%s] FORMAT '%s' is not defined in the header, assuming Type=String\n", __func__, t);
             kstring_t tmp = {0,0,0};
             int l;
