@@ -311,6 +311,8 @@ sub test_vcf_various
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatcols.vcf");
     test_cmd($opts, %args, out => "noroundtrip-out.vcf",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/noroundtrip.vcf");
+    test_cmd($opts, %args, out => "formatmissing-out.vcf",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatmissing.vcf");
 }
 
 sub test_rebgzip
