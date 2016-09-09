@@ -2941,6 +2941,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
     }
 
     if (c->curr_slice == c->max_slice) {
+	if (fd->ctr == c)
+	    fd->ctr = NULL;
 	cram_free_container(c);
 	c = NULL;
     }
