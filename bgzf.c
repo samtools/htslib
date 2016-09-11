@@ -1239,6 +1239,41 @@ static inline int fread_uint64(uint64_t *xptr, FILE *f)
     return 0;
 }
 
+int bgzf_index_load_fh(BGZF *fp, FILE *idx)
+{
+    fp->idx = (bgzidx_t*) calloc(1,sizeof(bgzidx_t));
+    if (fp->idx == NULL) goto fail;
+    uint64_t x;
+    if (fread_uint64(&x, idx) < 0) goto fail;
+
+    fp->idx->noffs = fp->idx->moffs = x + 1;
+    fp->idx->offs  = (bgzidx1_t*) malloc(fp->idx->moffs*sizeof(bgzidx1_t));
+    if (fp->idx->offs == NULL) goto fail;
+    fp->idx->offs[0].caddr = fp->idx->offs[0].uaddr = 0;
+
+    int i;
+    for (i=1; i<fp->idx->noffs; i++)
+    {
+        if (fread_uint64(&fp->idx->offs[i].caddr, idx) < 0) goto fail;
+        if (fread_uint64(&fp->idx->offs[i].uaddr, idx) < 0) goto fail;
+    }
+
+    return 0;
+
+ fail:
+    if (hts_verbose > 1)
+    {
+        fprintf(stderr, "[E::%s] Error reading from fh : %s\n",
+                __func__, strerror(errno));
+    }
+    if (fp->idx) {
+        free(fp->idx->offs);
+        free(fp->idx);
+        fp->idx = NULL;
+    }
+    return -1;
+}
+
 int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
 {
     char *tmp = NULL;
@@ -1262,39 +1297,16 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
         return -1;
     }
 
-    fp->idx = (bgzidx_t*) calloc(1,sizeof(bgzidx_t));
-    if (fp->idx == NULL) goto fail;
-    uint64_t x;
-    if (fread_uint64(&x, idx) < 0) goto fail;
-
-    fp->idx->noffs = fp->idx->moffs = x + 1;
-    fp->idx->offs  = (bgzidx1_t*) malloc(fp->idx->moffs*sizeof(bgzidx1_t));
-    if (fp->idx->offs == NULL) goto fail;
-    fp->idx->offs[0].caddr = fp->idx->offs[0].uaddr = 0;
-
-    int i;
-    for (i=1; i<fp->idx->noffs; i++)
-    {
-        if (fread_uint64(&fp->idx->offs[i].caddr, idx) < 0) goto fail;
-        if (fread_uint64(&fp->idx->offs[i].uaddr, idx) < 0) goto fail;
-    }
-
-    if (fclose(idx) != 0) goto fail;
-    return 0;
-
- fail:
-    if (hts_verbose > 1)
+    int ret;
+    ret = bgzf_index_load_fh(fp, idx);
+    if (ret && hts_verbose > 1)
     {
         fprintf(stderr, "[E::%s] Error reading %s%s : %s\n",
                 __func__, bname, suffix ? suffix : "", strerror(errno));
     }
+
     fclose(idx);
-    if (fp->idx) {
-        free(fp->idx->offs);
-        free(fp->idx);
-        fp->idx = NULL;
-    }
-    return -1;
+    return ret;
 }
 
 int bgzf_useek(BGZF *fp, long uoffset, int where)
