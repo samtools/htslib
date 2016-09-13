@@ -8,7 +8,18 @@ Noteworthy changes in release 1.4
   found at <https://github.com/samtools/htslib-plugins>.
 
 
-Noteworthy changes in release 1.3.1 (22 April 2016)
+Noteworthy changes in release 1.3.2  (13 September 2016)
+
+* Corrected bin calculation when converting directly from CRAM to BAM.
+  Previously a small fraction of converted reads would fail Picard's
+  validation with "bin field of BAM record does not equal value computed"
+  (SAMtools issue #574).
+
+* Plugins can now signal to HTSlib which of RTLD_LOCAL and RTLD_GLOBAL
+  they wish to be opened with -- previously they were always RTLD_LOCAL.
+
+
+Noteworthy changes in release 1.3.1  (22 April 2016)
 
 * Improved error checking and reporting, especially of I/O errors when
   writing output files (#17, #315, PR #271, PR #317).
