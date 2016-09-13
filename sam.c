@@ -29,7 +29,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <ctype.h>
 #include <zlib.h>
 #include "htslib/sam.h"
 #include "htslib/bgzf.h"
@@ -888,7 +887,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         uint32_t *cigar;
         size_t n_cigar = 0;
         for (q = p; *p && *p != '\t'; ++p)
-            if (!isdigit(*p)) ++n_cigar;
+            if (!isdigit_c(*p)) ++n_cigar;
         if (*p++ != '\t') goto err_ret;
         _parse_err(n_cigar == 0, "no CIGAR operations");
         _parse_err(n_cigar >= 65536, "too many CIGAR operations");

@@ -577,8 +577,6 @@ static hFILE *hopen_mem(const char *data, const char *mode)
  * Plugin and hopen() backend dispatcher *
  *****************************************/
 
-#include <ctype.h>
-
 #include "hts_internal.h"
 #include "htslib/khash.h"
 
@@ -717,8 +715,8 @@ static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
     int i;
 
     for (i = 0; i < sizeof scheme; i++)
-        if (isalnum(s[i]) || s[i] == '+' || s[i] == '-' || s[i] == '.')
-            scheme[i] = tolower(s[i]);
+        if (isalnum_c(s[i]) || s[i] == '+' || s[i] == '-' || s[i] == '.')
+            scheme[i] = tolower_c(s[i]);
         else if (s[i] == ':') break;
         else return NULL;
 

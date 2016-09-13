@@ -86,6 +86,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "htslib/bgzf.h"
 #include "htslib/faidx.h"
 
+#ifndef PATH_MAX
+#define PATH_MAX FILENAME_MAX
+#endif
+
 #define TRIAL_SPAN 50
 #define NTRIALS 3
 
