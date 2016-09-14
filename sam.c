@@ -1510,6 +1510,7 @@ typedef struct __linkbuf_t {
     int32_t beg, end;
     cstate_t s;
     struct __linkbuf_t *next;
+    bam_pileup_cd cd;
 } lbnode_t;
 
 typedef struct {
@@ -1654,6 +1655,11 @@ struct __bam_plp_t {
     bam_plp_auto_f func;
     void *data;
     olap_hash_t *overlaps;
+
+    // For notification of creation and destruction events
+    // and associated client-owned pointer.
+    int (*plp_construct)(void *data, const bam1_t *b, bam_pileup_cd *cd);
+    int (*plp_destruct )(void *data, const bam1_t *b, bam_pileup_cd *cd);
 };
 
 bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data)
@@ -1691,6 +1697,15 @@ void bam_plp_destroy(bam_plp_t iter)
     free(iter);
 }
 
+void bam_plp_constructor(bam_plp_t plp,
+                         int (*func)(void *data, const bam1_t *b, bam_pileup_cd *cd)) {
+    plp->plp_construct = func;
+}
+
+void bam_plp_destructor(bam_plp_t plp,
+                        int (*func)(void *data, const bam1_t *b, bam_pileup_cd *cd)) {
+    plp->plp_destruct = func;
+}
 
 //---------------------------------
 //---  Tweak overlapping reads
@@ -1897,9 +1912,9 @@ static void overlap_remove(bam_plp_t iter, const bam1_t *b)
 // buffer yet (the current position is still the maximum position across all buffered reads).
 const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp)
 {
-    if (iter->error) { *_n_plp = -1; return 0; }
+    if (iter->error) { *_n_plp = -1; return NULL; }
     *_n_plp = 0;
-    if (iter->is_eof && iter->head == iter->tail) return 0;
+    if (iter->is_eof && iter->head == iter->tail) return NULL;
     while (iter->is_eof || iter->max_tid > iter->tid || (iter->max_tid == iter->tid && iter->max_pos > iter->pos)) {
         int n_plp = 0;
         // write iter->plp at iter->pos
@@ -1908,6 +1923,8 @@ const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_
             lbnode_t *p = *pptr;
             if (p->b.core.tid < iter->tid || (p->b.core.tid == iter->tid && p->end <= iter->pos)) { // then remove
                 overlap_remove(iter, &p->b);
+                if (iter->plp_destruct)
+                    iter->plp_destruct(iter->data, &p->b, &p->cd);
                 *pptr = p->next; mp_free(iter->mp, p);
             }
             else {
@@ -1917,6 +1934,7 @@ const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_
                         iter->plp = (bam_pileup1_t*)realloc(iter->plp, sizeof(bam_pileup1_t) * iter->max_plp);
                     }
                     iter->plp[n_plp].b = &p->b;
+                    iter->plp[n_plp].cd = p->cd;
                     if (resolve_cigar2(iter->plp + n_plp, iter->pos, &p->s)) ++n_plp; // actually always true...
                 }
                 pptr = &(*pptr)->next;
@@ -1929,7 +1947,7 @@ const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_
                 fprintf(stderr, "[%s] unsorted input. Pileup aborts.\n", __func__);
                 iter->error = 1;
                 *_n_plp = -1;
-                return 0;
+                return NULL;
             }
         }
         if (iter->tid < iter->head->b.core.tid) { // come to a new reference sequence
@@ -1941,7 +1959,7 @@ const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_
         if (n_plp) return iter->plp;
         if (iter->is_eof && iter->head == iter->tail) break;
     }
-    return 0;
+    return NULL;
 }
 
 int bam_plp_push(bam_plp_t iter, const bam1_t *b)
@@ -1976,6 +1994,8 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
         }
         iter->max_tid = b->core.tid; iter->max_pos = iter->tail->beg;
         if (iter->tail->end > iter->pos || iter->tail->b.core.tid > iter->tid) {
+            if (iter->plp_construct)
+                iter->plp_construct(iter->data, b, &iter->tail->cd);
             iter->tail->next = mp_alloc(iter->mp);
             iter->tail = iter->tail->next;
         }
@@ -2112,6 +2132,20 @@ void bam_mplp_reset(bam_mplp_t iter)
         iter->n_plp[i] = 0;
         iter->plp[i] = NULL;
     }
+}
+
+void bam_mplp_constructor(bam_mplp_t iter,
+                          int (*func)(void *arg, const bam1_t *b, bam_pileup_cd *cd)) {
+    int i;
+    for (i = 0; i < iter->n; ++i)
+        bam_plp_constructor(iter->iter[i], func);
+}
+
+void bam_mplp_destructor(bam_mplp_t iter,
+                         int (*func)(void *arg, const bam1_t *b, bam_pileup_cd *cd)) {
+    int i;
+    for (i = 0; i < iter->n; ++i)
+        bam_plp_destructor(iter->iter[i], func);
 }
 
 #endif // ~!defined(BAM_NO_PILEUP)

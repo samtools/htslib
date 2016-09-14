@@ -389,6 +389,21 @@ int sam_index_build2(const char *fn, const char *fnidx, int min_shift) HTS_RESUL
 #if !defined(BAM_NO_PILEUP)
 
 /*! @typedef
+ @abstract Generic pileup 'client data'.
+
+ @discussion The pileup iterator allows setting a constructor and
+ destructor function, which will be called every time a sequence is
+ fetched and discarded.  This permits caching of per-sequence data in
+ a tidy manner during the pileup process.  This union is the cached
+ data to be manipulated by the "client" (the caller of pileup).
+*/
+typedef union {
+    void *p;
+    int64_t i;
+    double f;
+} bam_pileup_cd;
+
+/*! @typedef
  @abstract Structure for one alignment covering the pileup position.
  @field  b          pointer to the alignment
  @field  qpos       position of the read base at the pileup site, 0-based
@@ -411,6 +426,7 @@ typedef struct {
     int32_t qpos;
     int indel, level;
     uint32_t is_del:1, is_head:1, is_tail:1, is_refskip:1, aux:28;
+    bam_pileup_cd cd; // generic per-struct data, owned by caller.
 } bam_pileup1_t;
 
 typedef int (*bam_plp_auto_f)(void *data, bam1_t *b);
@@ -435,6 +451,19 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt);
     void bam_plp_reset(bam_plp_t iter);
 
+    /**
+     *  bam_plp_constructor() - sets a callback to initialise any per-pileup1_t fields.
+     *  @plp:       The bam_plp_t initialised using bam_plp_init.
+     *  @func:      The callback function itself.  When called, it is given the
+     *              data argument (specified in bam_plp_init), the bam structure and
+     *              a pointer to a locally allocated bam_pileup_cd union.  This union
+     *              will also be present in each bam_pileup1_t created.
+     */
+    void bam_plp_constructor(bam_plp_t plp,
+                             int (*func)(void *data, const bam1_t *b, bam_pileup_cd *cd));
+    void bam_plp_destructor(bam_plp_t plp,
+                            int (*func)(void *data, const bam1_t *b, bam_pileup_cd *cd));
+
     bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data);
     /**
      *  bam_mplp_init_overlaps() - if called, mpileup will detect overlapping
@@ -449,6 +478,10 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
     int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
     void bam_mplp_reset(bam_mplp_t iter);
+    void bam_mplp_constructor(bam_mplp_t iter,
+                              int (*func)(void *data, const bam1_t *b, bam_pileup_cd *cd));
+    void bam_mplp_destructor(bam_mplp_t iter,
+                             int (*func)(void *data, const bam1_t *b, bam_pileup_cd *cd));
 
 #endif // ~!defined(BAM_NO_PILEUP)
 
