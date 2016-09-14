@@ -93,7 +93,7 @@ include htslib_vars.mk
 
 
 PACKAGE_VERSION  = 1.3.1
-LIBHTS_SOVERSION = 1
+LIBHTS_SOVERSION = 2
 
 
 # $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
