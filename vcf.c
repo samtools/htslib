@@ -668,7 +668,7 @@ void bcf_hdr_remove(bcf_hdr_t *hdr, int type, const char *key)
             if ( type==BCF_HL_FLT || type==BCF_HL_INFO || type==BCF_HL_FMT || type== BCF_HL_CTG )
             {
                 int j = bcf_hrec_find_key(hdr->hrec[i], "ID");
-                if ( j>0 )
+                if ( j>=0 )
                 {
                     vdict_t *d = type==BCF_HL_CTG ? (vdict_t*)hdr->dict[BCF_DT_CTG] : (vdict_t*)hdr->dict[BCF_DT_ID];
                     khint_t k = kh_get(vdict, d, hdr->hrec[i]->vals[j]);
