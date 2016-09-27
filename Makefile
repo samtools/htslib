@@ -148,6 +148,7 @@ LIBHTS_OBJS = \
 	faidx.o \
 	hfile.o \
 	hfile_net.o \
+	hfile_mem.o \
 	hts.o \
 	md5.o \
 	probaln.o \
@@ -280,6 +281,7 @@ knetfile.o knetfile.pico: knetfile.c config.h $(htslib_knetfile_h)
 hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(hts_internal_h) $(htslib_khash_h)
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hts_internal_h) $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
 hfile_net.o hfile_net.pico: hfile_net.c config.h $(hfile_internal_h) $(htslib_knetfile_h)
+hfile_mem.o hfile_mem.pico: hfile_mem.c config.h $(hfile_internal_h) $(htslib_knetfile_h)
 hts.o hts.pico: hts.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) version.h $(hts_internal_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h)
 vcf.o vcf.pico: vcf.c config.h $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_khash_h) $(htslib_kseq_h)
 sam.o sam.pico: sam.c config.h $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(hts_internal_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)

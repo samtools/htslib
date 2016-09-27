@@ -714,6 +714,8 @@ static int init_add_plugin(void *obj, int (*init)(struct hFILE_plugin *),
     return 0;
 }
 
+extern int hfile_plugin_init_mem(struct hFILE_plugin *self);
+
 static void load_hfile_plugins()
 {
     static const struct hFILE_scheme_handler
@@ -726,6 +728,7 @@ static void load_hfile_plugins()
     hfile_add_scheme_handler("data", &data);
     hfile_add_scheme_handler("file", &file);
     init_add_plugin(NULL, hfile_plugin_init_net, "knetfile");
+    init_add_plugin(NULL, hfile_plugin_init_mem, "mem");
 
 #ifdef ENABLE_PLUGINS
     struct hts_path_itr path;
