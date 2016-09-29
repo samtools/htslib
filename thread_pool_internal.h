@@ -39,11 +39,11 @@ DEALINGS IN THE SOFTWARE.  */
  * thread_pool.c.
  */
 
-#ifndef _THREAD_POOL_INTERNAL_H_
-#define _THREAD_POOL_INTERNAL_H_
+#ifndef THREAD_POOL_INTERNAL_H
+#define THREAD_POOL_INTERNAL_H
 
 #include <pthread.h>
-#include <inttypes.h>
+#include <stdint.h>
 #include "htslib/thread_pool.h"
 
 #ifdef __cplusplus
@@ -162,4 +162,4 @@ typedef struct hts_tpool {
 }
 #endif
 
-#endif /* _THREAD_POOL_INTERNAL_H_ */
+#endif

@@ -34,6 +34,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/bgzf.h"
+#include "htslib/thread_pool.h"
 
 #define MAX_CSI_COOR 0x7fffffff     // maximum indexable coordinate of .csi
 

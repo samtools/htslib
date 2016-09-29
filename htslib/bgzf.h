@@ -36,7 +36,6 @@
 #include <sys/types.h>
 
 #include "hts_defs.h"
-#include "thread_pool.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,6 +50,7 @@ extern "C" {
 #define BGZF_ERR_MISUSE 8
 
 struct hFILE;
+struct hts_tpool;
 struct bgzf_mtaux_t;
 typedef struct __bgzidx_t bgzidx_t;
 
@@ -259,7 +259,7 @@ typedef struct __kstring_t {
      * @param fp          BGZF file handler; must be opened for writing
      * @param pool        The thread pool (see hts_create_threads)
      */
-    int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize);
+    int bgzf_thread_pool(BGZF *fp, struct hts_tpool *pool, int qsize);
 
     /**
      * Enable multi-threading (only effective when the library was compiled

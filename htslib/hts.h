@@ -32,7 +32,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 
 #include "hts_defs.h"
-#include "thread_pool.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,6 +43,7 @@ typedef struct BGZF BGZF;
 #endif
 struct cram_fd;
 struct hFILE;
+struct hts_tpool;
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
@@ -140,7 +140,7 @@ typedef struct {
 // descriptors are in use than threads, so keeping memory low is
 // important.
 typedef struct {
-    hts_tpool *pool; // The shared thread pool itself
+    struct hts_tpool *pool; // The shared thread pool itself
     int qsize;    // Size of I/O queue to use for this fp
 } htsThreadPool;
 

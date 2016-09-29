@@ -46,6 +46,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 
+#include <pthread.h>
 #include <stdint.h>
 
 #include "htslib/thread_pool.h"

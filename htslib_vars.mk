@@ -44,6 +44,7 @@ htslib_regidx_h = $(HTSPREFIX)htslib/regidx.h
 htslib_sam_h = $(HTSPREFIX)htslib/sam.h $(htslib_hts_h)
 htslib_synced_bcf_reader_h = $(HTSPREFIX)htslib/synced_bcf_reader.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_tbx_h)
 htslib_tbx_h = $(HTSPREFIX)htslib/tbx.h $(htslib_hts_h)
+htslib_thread_pool_h = $(HTSPREFIX)htslib/thread_pool.h
 htslib_vcf_h = $(HTSPREFIX)htslib/vcf.h $(htslib_hts_h) $(htslib_kstring_h) $(htslib_hts_defs_h)
 htslib_vcf_sweep_h = $(HTSPREFIX)htslib/vcf_sweep.h $(htslib_hts_h) $(htslib_vcf_h)
 htslib_vcfutils_h = $(HTSPREFIX)htslib/vcfutils.h $(htslib_vcf_h)

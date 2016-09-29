@@ -1,5 +1,6 @@
-/*  thread_pool.h -- The public API to the thread pool.
-
+/// @file htslib/thread_pool.h
+/// Thread pool for multi-threading applications.
+/*
     Copyright (c) 2013-2016 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
@@ -43,11 +44,8 @@ DEALINGS IN THE SOFTWARE.  */
  * thread_pool.c.
  */
 
-#ifndef _THREAD_POOL_H_
-#define _THREAD_POOL_H_
-
-#include <pthread.h>
-#include <inttypes.h>
+#ifndef HTSLIB_THREAD_POOL_H
+#define HTSLIB_THREAD_POOL_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -280,4 +278,4 @@ void hts_tpool_process_detach(hts_tpool *p, hts_tpool_process *q);
 }
 #endif
 
-#endif /* _THREAD_POOL_H_ */
+#endif

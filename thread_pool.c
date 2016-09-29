@@ -27,7 +27,7 @@ DEALINGS IN THE SOFTWARE.  */
 #endif
 
 #include <stdlib.h>
-
+#include <inttypes.h>
 #include <signal.h>
 #include <errno.h>
 #include <stdio.h>
