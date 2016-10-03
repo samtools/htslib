@@ -33,16 +33,16 @@
 #include <math.h>
 #include "htslib/kstring.h"
 
-int ksprintf_g(kstring_t *s, double d) {
+int kputd(kstring_t *s, double d) {
 	int len = 0;
 	char buf[21], *cp = buf+20, *ep;
 	if (d == 0) {
 		if (signbit(d)) {
-			kputsn("-0",2,s);
-			return 2;
+			kputsn("-0.",3,s);
+			return 3;
 		} else {
-			kputsn("0",1,s);
-			return 1;
+			kputsn("0.",2,s);
+			return 2;
 		}
 	}
 
@@ -123,13 +123,20 @@ int ksprintf_g(kstring_t *s, double d) {
 	char *z = ep+1;
 	while (ep > cp) {
 		if (*ep == '.') {
-			if (z[-1] == '.')
-				z[-1] = 0;
-			else
-				z[0] = 0;
+			z[0] = 0;
 			break;
 		}
 		ep--;
+	}
+
+	if (ep == cp) {
+		// 6 digit whole number or truncated to 6 digits.
+		// Misleading as "123456.7" becomes "123457." implying
+		// 123457.something and >= 123457.  However it forces
+		// the number to be interpreted as floating point by buggy
+		// software.
+		cp[6] = '.';
+		cp[7] = 0;
 	}
 
 	int sl = strlen(cp);
@@ -146,7 +153,7 @@ int kvsprintf(kstring_t *s, const char *fmt, va_list ap)
 
 	if (fmt[0] == '%' && fmt[1] == 'g' && fmt[2] == 0) {
 		double d = va_arg(args, double);
-		l = ksprintf_g(s, d);
+		l = kputd(s, d);
 		va_end(args);
 		return l;
 	}

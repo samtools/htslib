@@ -1561,7 +1561,7 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
             case BCF_BT_INT8:  BRANCH(int8_t,  p[j]==bcf_int8_missing,  p[j]==bcf_int8_vector_end,  kputw(p[j], s)); break;
             case BCF_BT_INT16: BRANCH(int16_t, p[j]==bcf_int16_missing, p[j]==bcf_int16_vector_end, kputw(p[j], s)); break;
             case BCF_BT_INT32: BRANCH(int32_t, p[j]==bcf_int32_missing, p[j]==bcf_int32_vector_end, kputw(p[j], s)); break;
-            case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), ksprintf_g(s, p[j])); break;
+            case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), kputd(s, p[j])); break;
             default: fprintf(stderr,"todo: type %d\n", type); exit(1); break;
         }
         #undef BRANCH
@@ -2183,7 +2183,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
     } else kputc('.', s);
     kputc('\t', s); // QUAL
     if ( bcf_float_is_missing(v->qual) ) kputc('.', s); // QUAL
-    else ksprintf_g(s, v->qual);
+    else kputd(s, v->qual);
     kputc('\t', s); // FILTER
     if (v->d.n_flt) {
         for (i = 0; i < v->d.n_flt; ++i) {
@@ -2209,7 +2209,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                     case BCF_BT_INT8:  if ( z->v1.i==bcf_int8_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
                     case BCF_BT_INT16: if ( z->v1.i==bcf_int16_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
                     case BCF_BT_INT32: if ( z->v1.i==bcf_int32_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
-                    case BCF_BT_FLOAT: if ( bcf_float_is_missing(z->v1.f) ) kputc('.', s); else ksprintf_g(s, z->v1.f); break;
+                    case BCF_BT_FLOAT: if ( bcf_float_is_missing(z->v1.f) ) kputc('.', s); else kputd(s, z->v1.f); break;
                     case BCF_BT_CHAR:  kputc(z->v1.i, s); break;
                     default: fprintf(stderr,"todo: type %d\n", z->type); exit(1); break;
                 }

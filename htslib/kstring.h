@@ -82,7 +82,7 @@ extern "C" {
 
 	int kvsprintf(kstring_t *s, const char *fmt, va_list ap) KS_ATTR_PRINTF(2,0);
 	int ksprintf(kstring_t *s, const char *fmt, ...) KS_ATTR_PRINTF(2,3);
-    int ksprintf_g(kstring_t *s, double d); // custom %g only handler
+    int kputd(kstring_t *s, double d); // custom %g only handler
 	int ksplit_core(char *s, int delimiter, int *_max, int **_offsets);
 	char *kstrstr(const char *str, const char *pat, int **_prep);
 	char *kstrnstr(const char *str, const char *pat, int n, int **_prep);
