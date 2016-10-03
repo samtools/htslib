@@ -335,6 +335,7 @@ int sam_index_build(const char *fn, int min_shift) HTS_RESULT_USED;
              sam_index_build for error codes)
 */
 int sam_index_build2(const char *fn, const char *fnidx, int min_shift) HTS_RESULT_USED;
+int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthreads) HTS_RESULT_USED;
 
     #define sam_itr_destroy(iter) hts_itr_destroy(iter)
     hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);

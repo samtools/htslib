@@ -66,6 +66,7 @@ HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/sam.h \
 	$(HTSDIR)/htslib/synced_bcf_reader.h \
 	$(HTSDIR)/htslib/tbx.h \
+	$(HTSDIR)/htslib/thread_pool.h \
 	$(HTSDIR)/htslib/vcf.h \
 	$(HTSDIR)/htslib/vcf_sweep.h \
 	$(HTSDIR)/htslib/vcfutils.h
@@ -93,6 +94,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/sam.c \
 	$(HTSDIR)/synced_bcf_reader.c \
 	$(HTSDIR)/tbx.c \
+	$(HTSDIR)/thread_pool.c \
 	$(HTSDIR)/vcf.c \
 	$(HTSDIR)/vcf_sweep.c \
 	$(HTSDIR)/vcfutils.c \
@@ -129,8 +131,6 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/sam_header.h \
 	$(HTSDIR)/cram/string_alloc.c \
 	$(HTSDIR)/cram/string_alloc.h \
-	$(HTSDIR)/cram/thread_pool.c \
-	$(HTSDIR)/cram/thread_pool.h \
 	$(HTSDIR)/cram/vlen.c \
 	$(HTSDIR)/cram/vlen.h \
 	$(HTSDIR)/cram/zfio.c \

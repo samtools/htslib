@@ -157,6 +157,7 @@ LIBHTS_OBJS = \
 	synced_bcf_reader.o \
 	vcf_sweep.o \
 	tbx.o \
+	thread_pool.o \
 	vcf.o \
 	vcfutils.o \
 	cram/cram_codecs.o \
@@ -174,7 +175,6 @@ LIBHTS_OBJS = \
 	cram/rANS_static.o \
 	cram/sam_header.o \
 	cram/string_alloc.o \
-	cram/thread_pool.o \
 	cram/vlen.o \
 	cram/zfio.o
 
@@ -186,10 +186,11 @@ cram_io_h = cram/cram_io.h $(cram_misc_h)
 cram_misc_h = cram/misc.h cram/os.h
 cram_sam_header_h = cram/sam_header.h cram/string_alloc.h cram/pooled_alloc.h $(htslib_khash_h) $(htslib_kstring_h)
 cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h) $(cram_sam_header_h)
-cram_structs_h = cram/cram_structs.h cram/thread_pool.h cram/string_alloc.h $(htslib_khash_h)
+cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) cram/string_alloc.h $(htslib_khash_h)
 cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
 hfile_internal_h = hfile_internal.h $(htslib_hfile_h)
 hts_internal_h = hts_internal.h $(htslib_hts_h)
+thread_pool_internal_h = thread_pool_internal.h $(htslib_thread_pool_h)
 
 
 # To be effective, config.mk needs to appear after most Makefile variables are
@@ -272,7 +273,7 @@ cyghts-$(LIBHTS_SOVERSION).dll: $(LIBHTS_OBJS)
 	$(CC) -shared $(LDFLAGS) -o $@ $< libhts.dll.a $(LIBS)
 
 
-bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_khash_h)
+bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) cram/pooled_alloc.h $(htslib_khash_h)
 errmod.o errmod.pico: errmod.c config.h $(htslib_hts_h) $(htslib_ksort_h)
 kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
 knetfile.o knetfile.pico: knetfile.c config.h $(htslib_knetfile_h)
@@ -284,7 +285,7 @@ vcf.o vcf.pico: vcf.c config.h $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) 
 sam.o sam.pico: sam.c config.h $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(hts_internal_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
 tbx.o tbx.pico: tbx.c config.h $(htslib_tbx_h) $(htslib_bgzf_h) $(hts_internal_h) $(htslib_khash_h)
 faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kstring_h) $(hts_internal_h)
-synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c config.h $(htslib_synced_bcf_reader_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_bgzf_h)
+synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c config.h $(htslib_synced_bcf_reader_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_bgzf_h) $(htslib_thread_pool_h)
 vcf_sweep.o vcf_sweep.pico: vcf_sweep.c config.h $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
 vcfutils.o vcfutils.pico: vcfutils.c config.h $(htslib_vcfutils_h) $(htslib_kbitset_h)
 kfunc.o kfunc.pico: kfunc.c config.h $(htslib_kfunc_h)
@@ -309,7 +310,7 @@ cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c config.h cram/po
 cram/rANS_static.o cram/rANS_static.pico: cram/rANS_static.c config.h cram/rANS_static.h cram/rANS_byte.h
 cram/sam_header.o cram/sam_header.pico: cram/sam_header.c config.h $(cram_sam_header_h) cram/string_alloc.h
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
-cram/thread_pool.o cram/thread_pool.pico: cram/thread_pool.c config.h cram/thread_pool.h
+thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h)
 cram/vlen.o cram/vlen.pico: cram/vlen.c config.h cram/vlen.h cram/os.h
 cram/zfio.o cram/zfio.pico: cram/zfio.c config.h cram/os.h cram/zfio.h
 

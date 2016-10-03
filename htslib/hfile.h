@@ -244,6 +244,8 @@ hwrite(hFILE *fp, const void *buffer, size_t nbytes)
 
 /// For writing streams, flush buffered output to the underlying stream
 /** @return  0 if successful, or `EOF` if an error occurred.
+
+This includes low-level flushing such as via `fdatasync(2)`.
 */
 int hflush(hFILE *fp) HTS_RESULT_USED;
 

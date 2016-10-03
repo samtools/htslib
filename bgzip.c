@@ -310,6 +310,9 @@ int main(int argc, char **argv)
                 return 1;
             }
         }
+        if (threads > 1)
+            bgzf_mt(fp, threads, 256);
+
         buffer = malloc(WINDOW_SIZE);
         if ( start>0 )
         {

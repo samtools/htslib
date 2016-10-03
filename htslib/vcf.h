@@ -605,7 +605,7 @@ typedef struct {
     // from bcf_get_genotypes() below.
     #define bcf_gt_phased(idx)      (((idx)+1)<<1|1)
     #define bcf_gt_unphased(idx)    (((idx)+1)<<1)
-    #define bcf_gt_missing          0 
+    #define bcf_gt_missing          0
     #define bcf_gt_is_missing(val)  ((val)>>1 ? 0 : 1)
     #define bcf_gt_is_phased(idx)   ((idx)&1)
     #define bcf_gt_allele(val)      (((val)>>1)-1)
@@ -635,8 +635,8 @@ typedef struct {
      * bcf_get_*_id() - returns pointer to FORMAT/INFO field data given the header index instead of the string ID
      * @line: VCF line obtained from vcf_parse1
      * @id:  The header index for the tag, obtained from bcf_hdr_id2int()
-     * 
-     * Returns bcf_fmt_t* / bcf_info_t*. These functions do not check if the index is valid 
+     *
+     * Returns bcf_fmt_t* / bcf_info_t*. These functions do not check if the index is valid
      * as their goal is to avoid the header lookup.
      */
     bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id);
@@ -794,6 +794,22 @@ typedef struct {
      *      -3 .. format not indexable
      */
     int bcf_index_build2(const char *fn, const char *fnidx, int min_shift);
+
+    /**
+     *  bcf_index_build3() - Generate and save an index to a specific file
+     *  @fn:         Input VCF/BCF filename
+     *  @fnidx:      Output filename, or NULL to add .csi/.tbi to @fn
+     *  @min_shift:  Positive to generate CSI, or 0 to generate TBI
+     *  @n_threads:  Number of VCF/BCF decoder threads
+     *
+     *  Returns 0 if successful, or negative if an error occurred.
+     *
+     *  List of error codes:
+     *      -1 .. indexing failed
+     *      -2 .. opening @fn failed
+     *      -3 .. format not indexable
+     */
+     int bcf_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads);
 
 /*******************
  * Typed value I/O *

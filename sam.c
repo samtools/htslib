@@ -506,13 +506,16 @@ err:
     return NULL;
 }
 
-int sam_index_build2(const char *fn, const char *fnidx, int min_shift)
+int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthreads)
 {
     hts_idx_t *idx;
     htsFile *fp;
     int ret = 0;
 
     if ((fp = hts_open(fn, "r")) == 0) return -2;
+    if (nthreads)
+        hts_set_threads(fp, nthreads);
+
     switch (fp->format.format) {
     case cram:
         ret = cram_index_build(fp->fp.cram, fn, fnidx);
@@ -537,9 +540,14 @@ int sam_index_build2(const char *fn, const char *fnidx, int min_shift)
     return ret;
 }
 
+int sam_index_build2(const char *fn, const char *fnidx, int min_shift)
+{
+    return sam_index_build3(fn, fnidx, min_shift, 0);
+}
+
 int sam_index_build(const char *fn, int min_shift)
 {
-    return sam_index_build2(fn, NULL, min_shift);
+    return sam_index_build3(fn, NULL, min_shift, 0);
 }
 
 // Provide bam_index_build() symbol for binary compability with earlier HTSlib

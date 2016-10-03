@@ -43,6 +43,7 @@ typedef struct BGZF BGZF;
 #endif
 struct cram_fd;
 struct hFILE;
+struct hts_tpool;
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
@@ -131,6 +132,18 @@ typedef struct {
     htsFormat format;
 } htsFile;
 
+// A combined thread pool and queue allocation size.
+// The pool should already be defined, but qsize may be zero to
+// indicate an appropriate queue size is taken from the pool.
+//
+// Reasons for explicitly setting it could be where many more file
+// descriptors are in use than threads, so keeping memory low is
+// important.
+typedef struct {
+    struct hts_tpool *pool; // The shared thread pool itself
+    int qsize;    // Size of I/O queue to use for this fp
+} htsThreadPool;
+
 // REQUIRED_FIELDS
 enum sam_fields {
     SAM_QNAME = 0x00000001,
@@ -175,6 +188,8 @@ enum hts_fmt_option {
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,
     HTS_OPT_NTHREADS,
+    HTS_OPT_THREAD_POOL,
+    HTS_OPT_CACHE_SIZE,
 };
 
 // For backwards compatibility
@@ -380,9 +395,26 @@ char **hts_readlist(const char *fn, int is_file, int *_n);
   @param fp  The file handle
   @param n   The number of worker threads to create
   @return    0 for success, or negative if an error occurred.
-  @notes     THIS THREADING API IS LIKELY TO CHANGE IN FUTURE.
+  @notes     This function creates non-shared threads for use solely by fp.
+             The hts_set_thread_pool function is the recommended alternative.
 */
 int hts_set_threads(htsFile *fp, int n);
+
+/*!
+  @abstract  Create extra threads to aid compress/decompression for this file
+  @param fp  The file handle
+  @param p   A pool of worker threads, previously allocated by hts_create_threads().
+  @return    0 for success, or negative if an error occurred.
+*/
+int hts_set_thread_pool(htsFile *fp, htsThreadPool *p);
+
+/*!
+  @abstract  Adds a cache of decompressed blocks, potentially speeding up seeks.
+             This may not work for all file types (currently it is bgzf only).
+  @param fp  The file handle
+  @param n   The size of cache, in bytes
+*/
+void hts_set_cache_size(htsFile *fp, int n);
 
 /*!
   @abstract  Set .fai filename for a file opened for reading

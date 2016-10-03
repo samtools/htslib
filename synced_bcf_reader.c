@@ -34,6 +34,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/bgzf.h"
+#include "htslib/thread_pool.h"
 
 #define MAX_CSI_COOR 0x7fffffff     // maximum indexable coordinate of .csi
 
@@ -58,7 +59,7 @@ char *bcf_sr_strerror(int errnum)
 {
     switch (errnum)
     {
-        case open_failed: 
+        case open_failed:
             return strerror(errno); break;
         case not_bgzf:
             return "not compressed with bgzip"; break;
@@ -72,7 +73,9 @@ char *bcf_sr_strerror(int errnum)
             return "could not parse header"; break;
         case no_eof:
             return "no BGZF EOF marker; file may be truncated"; break;
-        default: return ""; 
+        case no_memory:
+            return "Out of memory"; break;
+        default: return "";
     }
 }
 
@@ -136,6 +139,31 @@ int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int
     return 0;
 }
 
+int bcf_sr_set_threads(bcf_srs_t *files, int n_threads)
+{
+    if (!(files->n_threads = n_threads))
+        return 0;
+
+    files->p = calloc(1, sizeof(*files->p));
+    if (!files->p) {
+        files->errnum = no_memory;
+        return -1;
+    }
+    if (!(files->p->pool = hts_tpool_init(n_threads)))
+        return -1;
+
+    return 0;
+}
+
+void bcf_sr_destroy_threads(bcf_srs_t *files) {
+    if (!files->p)
+        return;
+
+    if (files->p->pool)
+        hts_tpool_destroy(files->p->pool);
+    free(files->p);
+}
+
 int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 {
     htsFile* file_ptr = hts_open(fname, "r");
@@ -161,6 +189,8 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
             files->errnum = no_eof;
             fprintf(stderr,"[%s] Warning: no BGZF EOF marker; file may be truncated.\n", fname);
         }
+        if (files->p)
+            bgzf_thread_pool(bgzf, files->p->pool, files->p->qsize);
     }
 
     if ( files->require_index )
@@ -279,6 +309,7 @@ static void bcf_sr_destroy1(bcf_sr_t *reader)
     free(reader->samples);
     free(reader->filter_ids);
 }
+
 void bcf_sr_destroy(bcf_srs_t *files)
 {
     int i;
@@ -290,7 +321,8 @@ void bcf_sr_destroy(bcf_srs_t *files)
     free(files->samples);
     if (files->targets) bcf_sr_regions_destroy(files->targets);
     if (files->regions) bcf_sr_regions_destroy(files->regions);
-    if ( files->tmps.m ) free(files->tmps.s);
+    if (files->tmps.m) free(files->tmps.s);
+    if (files->n_threads) bcf_sr_destroy_threads(files);
     free(files);
 }
 

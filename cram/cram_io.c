@@ -3244,14 +3244,14 @@ void *cram_flush_thread(void *arg) {
 
 static int cram_flush_result(cram_fd *fd) {
     int i, ret = 0;
-    t_pool_result *r;
+    hts_tpool_result *r;
 
-    while ((r = t_pool_next_result(fd->rqueue))) {
-	cram_job *j = (cram_job *)r->data;
+    while ((r = hts_tpool_next_result(fd->rqueue))) {
+	cram_job *j = (cram_job *)hts_tpool_result_data(r);
 	cram_container *c;
 
 	if (!j) {
-	    t_pool_delete_result(r, 0);
+	    hts_tpool_delete_result(r, 0);
 	    return -1;
 	}
 
@@ -3274,7 +3274,7 @@ static int cram_flush_result(cram_fd *fd) {
 
 	ret |= hflush(fd->fp) == 0 ? 0 : -1;
 
-	t_pool_delete_result(r, 1);
+	hts_tpool_delete_result(r, 1);
     }
 
     return ret;
@@ -3290,10 +3290,23 @@ int cram_flush_container_mt(cram_fd *fd, cram_container *c) {
 	return -1;
     j->fd = fd;
     j->c = c;
-    
-    t_pool_dispatch(fd->pool, fd->rqueue, cram_flush_thread, j);
 
-    return cram_flush_result(fd);
+    // Flush the job.  Note our encoder queue may be full, so we
+    // either have to keep trying in non-blocking mode (what we do) or
+    // use a dedicated separate thread for draining the queue.
+    for (;;) {
+	errno = 0;
+	hts_tpool_dispatch2(fd->pool, fd->rqueue, cram_flush_thread, j, 1);
+	int pending = (errno == EAGAIN);
+	if (cram_flush_result(fd) != 0)
+	    return -1;
+	if (!pending)
+	    break;
+
+	usleep(1000);
+    }
+
+    return 0;
 }
 
 /* ----------------------------------------------------------------------
@@ -4322,7 +4335,7 @@ int cram_close(cram_fd *fd) {
     }
 
     if (fd->pool && fd->eof >= 0) {
-	t_pool_flush(fd->pool);
+	hts_tpool_process_flush(fd->rqueue);
 
 	if (0 != cram_flush_result(fd))
 	    return -1;
@@ -4335,7 +4348,7 @@ int cram_close(cram_fd *fd) {
 
 	//fprintf(stderr, "CRAM: destroy queue %p\n", fd->rqueue);
 
-	t_results_queue_destroy(fd->rqueue);
+	hts_tpool_process_destroy(fd->rqueue);
     }
 
     if (fd->mode == 'w') {
@@ -4400,7 +4413,7 @@ int cram_close(cram_fd *fd) {
 	cram_index_free(fd);
 
     if (fd->own_pool && fd->pool)
-	t_pool_destroy(fd->pool, 0);
+	hts_tpool_destroy(fd->pool);
 
     free(fd);
     return 0;
@@ -4546,10 +4559,10 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     case CRAM_OPT_NTHREADS: {
 	int nthreads =  va_arg(args, int);
         if (nthreads > 1) {
-            if (!(fd->pool = t_pool_init(nthreads*2, nthreads)))
+            if (!(fd->pool = hts_tpool_init(nthreads)))
                 return -1;
 
-	    fd->rqueue = t_results_queue_init();
+	    fd->rqueue = hts_tpool_process_init(fd->pool, nthreads*2, 0);
 	    pthread_mutex_init(&fd->metrics_lock, NULL);
 	    pthread_mutex_init(&fd->ref_lock, NULL);
 	    pthread_mutex_init(&fd->bam_list_lock, NULL);
@@ -4559,10 +4572,13 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 	break;
     }
 
-    case CRAM_OPT_THREAD_POOL:
-	fd->pool = va_arg(args, t_pool *);
+    case CRAM_OPT_THREAD_POOL: {
+	htsThreadPool *p = va_arg(args, htsThreadPool *);
+	fd->pool = p ? p->pool : NULL;
 	if (fd->pool) {
-	    fd->rqueue = t_results_queue_init();
+	    fd->rqueue = hts_tpool_process_init(fd->pool,
+						p->qsize ? p->qsize : hts_tpool_size(fd->pool)*2,
+						0);
 	    pthread_mutex_init(&fd->metrics_lock, NULL);
 	    pthread_mutex_init(&fd->ref_lock, NULL);
 	    pthread_mutex_init(&fd->bam_list_lock, NULL);
@@ -4572,8 +4588,9 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
 	//fd->qsize = 1;
 	//fd->decoded = calloc(fd->qsize, sizeof(cram_container *));
-	//t_pool_dispatch(fd->pool, cram_decoder_thread, fd);
+	//hts_tpool_dispatch(fd->pool, cram_decoder_thread, fd);
 	break;
+    }
 
     case CRAM_OPT_REQUIRED_FIELDS:
 	fd->required_fields = va_arg(args, int);

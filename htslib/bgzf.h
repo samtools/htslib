@@ -50,6 +50,7 @@ extern "C" {
 #define BGZF_ERR_MISUSE 8
 
 struct hFILE;
+struct hts_tpool;
 struct bgzf_mtaux_t;
 typedef struct __bgzidx_t bgzidx_t;
 
@@ -58,7 +59,7 @@ struct BGZF {
     signed compress_level:9;
     unsigned is_compressed:2, is_gzip:1;
     int cache_size;
-    int block_length, block_offset;
+    int block_length, block_clength, block_offset;
     int64_t block_address, uncompressed_address;
     void *uncompressed_block, *compressed_block;
     void *cache; // a pointer to a hash table
@@ -263,8 +264,18 @@ typedef struct __kstring_t {
     int bgzf_read_block(BGZF *fp) HTS_RESULT_USED;
 
     /**
-     * Enable multi-threading (only effective on writing and when the
-     * library was compiled with -DBGZF_MT)
+     * Enable multi-threading (when compiled with -DBGZF_MT) via a shared
+     * thread pool.  This means both encoder and decoder can balance
+     * usage across a single pool of worker jobs.
+     *
+     * @param fp          BGZF file handler; must be opened for writing
+     * @param pool        The thread pool (see hts_create_threads)
+     */
+    int bgzf_thread_pool(BGZF *fp, struct hts_tpool *pool, int qsize);
+
+    /**
+     * Enable multi-threading (only effective when the library was compiled
+     * with -DBGZF_MT)
      *
      * @param fp          BGZF file handler; must be opened for writing
      * @param n_threads   #threads used for writing

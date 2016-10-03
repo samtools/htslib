@@ -526,6 +526,26 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "NTHREADS") == 0)
         o->opt = HTS_OPT_NTHREADS, o->val.i = atoi(val);
 
+    else if (strcmp(o->arg, "cache_size") == 0 ||
+             strcmp(o->arg, "CACHE_SIZE") == 0) {
+        char *endp;
+        o->opt = HTS_OPT_CACHE_SIZE;
+        o->val.i = strtol(val, &endp, 0);
+        // NB: Doesn't support floats, eg 1.5g
+        // TODO: extend hts_parse_decimal? See also samtools sort.
+        switch (*endp) {
+        case 'g': case 'G': o->val.i *= 1024;
+        case 'm': case 'M': o->val.i *= 1024;
+        case 'k': case 'K': o->val.i *= 1024; break;
+        case '\0': break;
+        default:
+            fprintf(stderr, "Unrecognised cache size suffix '%c'\n", *endp);
+            free(o->arg);
+            free(o);
+            return -1;
+        }
+    }
+
     else if (strcmp(o->arg, "required_fields") == 0 ||
              strcmp(o->arg, "REQUIRED_FIELDS") == 0)
         o->opt = CRAM_OPT_REQUIRED_FIELDS, o->val.i = strtol(val, NULL, 0);
@@ -907,11 +927,31 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
     int r;
     va_list args;
 
-    if (opt == HTS_OPT_NTHREADS) {
+    switch (opt) {
+    case HTS_OPT_NTHREADS: {
         va_start(args, opt);
         int nthreads = va_arg(args, int);
         va_end(args);
         return hts_set_threads(fp, nthreads);
+    }
+
+    case HTS_OPT_THREAD_POOL: {
+        va_start(args, opt);
+        htsThreadPool *p = va_arg(args, htsThreadPool *);
+        va_end(args);
+        return hts_set_thread_pool(fp, p);
+    }
+
+    case HTS_OPT_CACHE_SIZE: {
+        va_start(args, opt);
+        int cache_size = va_arg(args, int);
+        va_end(args);
+        hts_set_cache_size(fp, cache_size);
+        return 0;
+    }
+
+    default:
+        break;
     }
 
     if (fp->format.format != cram)
@@ -929,11 +969,26 @@ BGZF *hts_get_bgzfp(htsFile *fp);
 int hts_set_threads(htsFile *fp, int n)
 {
     if (fp->format.compression == bgzf) {
-        return bgzf_mt(hts_get_bgzfp(fp), n, 256);
+        return bgzf_mt(hts_get_bgzfp(fp), n, 256/*unused*/);
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_NTHREADS, n);
     }
     else return 0;
+}
+
+int hts_set_thread_pool(htsFile *fp, htsThreadPool *p) {
+    if (fp->format.compression == bgzf) {
+        return bgzf_thread_pool(hts_get_bgzfp(fp), p->pool, p->qsize);
+    } else if (fp->format.format == cram) {
+        return hts_set_opt(fp, CRAM_OPT_THREAD_POOL, p);
+    }
+    else return 0;
+}
+
+void hts_set_cache_size(htsFile *fp, int n)
+{
+    if (fp->format.compression == bgzf)
+        bgzf_set_cache_size(hts_get_bgzfp(fp), n);
 }
 
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
@@ -956,7 +1011,7 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
 // future is uncertain. Things will probably have to change with hFILE...
 BGZF *hts_get_bgzfp(htsFile *fp)
 {
-    if ( fp->is_bin )
+    if ( fp->is_bin  || fp->is_write )
         return fp->fp.bgzf;
     else
         return ((kstream_t*)fp->fp.voidp)->f;

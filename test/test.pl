@@ -33,7 +33,9 @@ use IO::Handle;
 
 my $opts = parse_params();
 
-test_view($opts);
+test_view($opts,0);
+test_view($opts,4);
+
 test_vcf_api($opts,out=>'test-vcf-api.out');
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
 test_vcf_various($opts);
@@ -211,7 +213,8 @@ sub testv {
 
 sub test_view
 {
-    my ($opts, %args) = @_;
+    my ($opts, $nthreads) = @_;
+    my $tv_args = $nthreads ? "-\@$nthreads" : "";
 
     foreach my $sam (glob("*#*.sam")) {
         my ($base, $ref) = ($sam =~ /((.*)#.*)\.sam/);
@@ -229,49 +232,49 @@ sub test_view
         $test_view_failures = 0;
 
         # SAM -> BAM -> SAM
-        testv "./test_view -S -b $sam > $bam";
-        testv "./test_view $bam > $bam.sam_";
+        testv "./test_view $tv_args -S -b $sam > $bam";
+        testv "./test_view $tv_args $bam > $bam.sam_";
         testv "./compare_sam.pl $sam $bam.sam_";
 
         # SAM -> CRAM -> SAM
-        testv "./test_view -t $ref -S -C $sam > $cram";
-        testv "./test_view -D $cram > $cram.sam_";
+        testv "./test_view $tv_args -t $ref -S -C $sam > $cram";
+        testv "./test_view $tv_args -D $cram > $cram.sam_";
         testv "./compare_sam.pl $md $sam $cram.sam_";
 
         # BAM -> CRAM -> BAM -> SAM
         $cram = "$bam.cram";
-        testv "./test_view -t $ref -C $bam > $cram";
-        testv "./test_view -b -D $cram > $cram.bam";
-        testv "./test_view $cram.bam > $cram.bam.sam_";
+        testv "./test_view $tv_args -t $ref -C $bam > $cram";
+        testv "./test_view $tv_args -b -D $cram > $cram.bam";
+        testv "./test_view $tv_args $cram.bam > $cram.bam.sam_";
         testv "./compare_sam.pl $md $sam $cram.bam.sam_";
 
         # SAM -> CRAM3 -> SAM
         $cram = "$base.tmp.cram";
-        testv "./test_view -t $ref -S -C -o VERSION=3.0 $sam > $cram";
-        testv "./test_view -D $cram > $cram.sam_";
+        testv "./test_view $tv_args -t $ref -S -C -o VERSION=3.0 $sam > $cram";
+        testv "./test_view $tv_args -D $cram > $cram.sam_";
         testv "./compare_sam.pl $md $sam $cram.sam_";
 
         # BAM -> CRAM3 -> BAM -> SAM
         $cram = "$bam.cram";
-        testv "./test_view -t $ref -C -o VERSION=3.0 $bam > $cram";
-        testv "./test_view -b -D $cram > $cram.bam";
-        testv "./test_view $cram.bam > $cram.bam.sam_";
+        testv "./test_view $tv_args -t $ref -C -o VERSION=3.0 $bam > $cram";
+        testv "./test_view $tv_args -b -D $cram > $cram.bam";
+        testv "./test_view $tv_args $cram.bam > $cram.bam.sam_";
         testv "./compare_sam.pl $md $sam $cram.bam.sam_";
 
         # CRAM3 -> CRAM2
         $cram = "$base.tmp.cram";
-        testv "./test_view -t $ref -C -o VERSION=2.1 $cram > $cram.cram";
+        testv "./test_view $tv_args -t $ref -C -o VERSION=2.1 $cram > $cram.cram";
 
         # CRAM2 -> CRAM3
-        testv "./test_view -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
-        testv "./test_view $cram > $cram.sam_";
+        testv "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
+        testv "./test_view $tv_args $cram > $cram.sam_";
         testv "./compare_sam.pl $md $sam $cram.sam_";
 
         # Java pre-made CRAM -> SAM
         my $jcram = "${base}_java.cram";
         if (-e $jcram) {
             my $jsam = "${base}_java.tmp.sam_";
-            testv "./test_view -i reference=$ref $jcram > $jsam";
+            testv "./test_view $tv_args -i reference=$ref $jcram > $jsam";
             testv "./compare_sam.pl $md $sam $jsam";
         }
 
