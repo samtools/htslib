@@ -825,11 +825,11 @@ static void parse_simple(const char *fname, kstring_t *id, kstring_t *secret)
 // where PATH is url-escaped.
 // We get the token for the OAuth header from the environment variable
 // GCS_OAUTH_TOKEN, which you can set using the gcloud tool, e.g.
-//  > gcloud beta auth application-default login
-//  > export GCS_OAUTH_TOKEN=`gcloud beta auth application-default print-access-token`
+//  > gcloud auth application-default login
+//  > export GCS_OAUTH_TOKEN=`gcloud auth application-default print-access-token`
 // For production environments, set up a service account and use its credentials, e.g.
-//  > gcloud beta auth application-default activate-service-account --key-file FILE
-//  > export GCS_OAUTH_TOKEN=`gcloud beta auth application-default print-access-token`
+//  > export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"
+//  > export GCS_OAUTH_TOKEN=`gcloud auth application-default print-access-token`
 static int add_gcs_settings(hFILE_libcurl* fp, const char* gcs_url) {
   int ret, save;
   kstring_t url = { 0, 0, NULL };
