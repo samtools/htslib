@@ -161,100 +161,93 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
     idx->end   = INT_MAX;
 
     idx_stack = calloc(++idx_stack_alloc, sizeof(*idx_stack));
+    if (!idx_stack)
+        goto fail;
+
     idx_stack[idx_stack_ptr] = idx;
 
     if (!fn_idx) {
 	fn2 = hts_idx_getfn(fn, ".crai");
-	if (!fn2) {
-	    free(idx_stack);
-	    return -1;
-	}
+	if (!fn2)
+            goto fail;
+
 	fn_idx = fn2;
     }
 
     if (!(fp = hopen(fn_idx, "r"))) {
 	perror(fn_idx);
-	free(idx_stack);
-	free(fn2);
-	return -1;
+        goto fail;
     }
 
     // Load the file into memory
-    while ((len = hread(fp, buf, 65536)) > 0)
-	kputsn(buf, len, &kstr);
-    if (len < 0 || kstr.l < 2) {
-	if (kstr.s)
-	    free(kstr.s);
-	free(idx_stack);
-	free(fn2);
-	return -1;
+    while ((len = hread(fp, buf, sizeof(buf))) > 0) {
+	if (kputsn(buf, len, &kstr) < 0)
+            goto fail;
     }
 
-    if (hclose(fp) < 0) {
-	if (kstr.s)
-	    free(kstr.s);
-	free(idx_stack);
-	free(fn2);
-	return -1;
-    }
-	
+    if (len < 0 || kstr.l < 2)
+        goto fail;
+
+    if (hclose(fp) < 0)
+        goto fail;
 
     // Uncompress if required
     if (kstr.s[0] == 31 && (uc)kstr.s[1] == 139) {
 	size_t l;
 	char *s = zlib_mem_inflate(kstr.s, kstr.l, &l);
+	if (!s)
+            goto fail;
+
 	free(kstr.s);
-	if (!s) {
-	    free(idx_stack);
-	    free(fn2);
-	    return -1;
-	}
 	kstr.s = s;
 	kstr.l = l;
 	kstr.m = l; // conservative estimate of the size allocated
-	kputsn("", 0, &kstr); // ensure kstr.s is NUL-terminated
+	if (kputsn("", 0, &kstr) < 0) // ensure kstr.s is NUL-terminated
+            goto fail;
     }
 
 
     // Parse it line at a time
     do {
 	/* 1.1 layout */
-	if (kget_int32(&kstr, &pos, &e.refid) == -1) {
-	    free(kstr.s); free(idx_stack); free(fn2); return -1;
-	}
-	if (kget_int32(&kstr, &pos, &e.start) == -1) {
-	    free(kstr.s); free(idx_stack); free(fn2); return -1;
-	}
-	if (kget_int32(&kstr, &pos, &e.end) == -1) {
-	    free(kstr.s); free(idx_stack); free(fn2); return -1;
-	}
-	if (kget_int64(&kstr, &pos, &e.offset) == -1) {
-	    free(kstr.s); free(idx_stack); free(fn2); return -1;
-	}
-	if (kget_int32(&kstr, &pos, &e.slice) == -1) {
-	    free(kstr.s); free(idx_stack); free(fn2); return -1;
-	}
-	if (kget_int32(&kstr, &pos, &e.len) == -1) {
-	    free(kstr.s); free(idx_stack); free(fn2); return -1;
-	}
+	if (kget_int32(&kstr, &pos, &e.refid) == -1)
+            goto fail;
+
+	if (kget_int32(&kstr, &pos, &e.start) == -1)
+            goto fail;
+
+	if (kget_int32(&kstr, &pos, &e.end) == -1)
+            goto fail;
+
+	if (kget_int64(&kstr, &pos, &e.offset) == -1)
+            goto fail;
+
+	if (kget_int32(&kstr, &pos, &e.slice) == -1)
+            goto fail;
+
+	if (kget_int32(&kstr, &pos, &e.len) == -1)
+            goto fail;
 
 	e.end += e.start-1;
 	//printf("%d/%d..%d\n", e.refid, e.start, e.end);
 
 	if (e.refid < -1) {
-	    free(kstr.s);
-	    free(idx_stack);
-	    free(fn2);
 	    fprintf(stderr, "Malformed index file, refid %d\n", e.refid);
-	    return -1;
+            goto fail;
 	}
 
 	if (e.refid != idx->refid) {
 	    if (fd->index_sz < e.refid+2) {
+                cram_index *new_idx;
+                int new_sz = e.refid+2;
 		size_t index_end = fd->index_sz * sizeof(*fd->index);
-		fd->index_sz = e.refid+2;
-		fd->index = realloc(fd->index,
-				    fd->index_sz * sizeof(*fd->index));
+                new_idx = realloc(fd->index,
+                                  new_sz * sizeof(*fd->index));
+                if (!new_idx)
+                    goto fail;
+
+                fd->index = new_idx;
+                fd->index_sz = new_sz;
 		memset(((char *)fd->index) + index_end, 0,
 		       fd->index_sz * sizeof(*fd->index) - index_end);
 	    }
@@ -273,8 +266,13 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 
 	// Now contains, so append
 	if (idx->nslice+1 >= idx->nalloc) {
+            cram_index *new_e;
 	    idx->nalloc = idx->nalloc ? idx->nalloc*2 : 16;
-	    idx->e = realloc(idx->e, idx->nalloc * sizeof(*idx->e));
+	    new_e = realloc(idx->e, idx->nalloc * sizeof(*idx->e));
+            if (!new_e)
+                goto fail;
+
+            idx->e = new_e;
 	}
 
 	e.nalloc = e.nslice = 0; e.e = NULL;
@@ -282,8 +280,12 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 	idx = ep;
 
 	if (++idx_stack_ptr >= idx_stack_alloc) {
+            cram_index **new_stack;
 	    idx_stack_alloc *= 2;
-	    idx_stack = realloc(idx_stack, idx_stack_alloc*sizeof(*idx_stack));
+	    new_stack = realloc(idx_stack, idx_stack_alloc*sizeof(*idx_stack));
+            if (!new_stack)
+                goto fail;
+            idx_stack = new_stack;
 	}
 	idx_stack[idx_stack_ptr] = idx;
 
@@ -299,6 +301,13 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
     // dump_index(fd);
 
     return 0;
+
+ fail:
+    free(kstr.s);
+    free(idx_stack);
+    free(fn2);
+    cram_index_free(fd); // Also sets fd->index = NULL
+    return -1;
 }
 
 static void cram_index_free_recurse(cram_index *e) {
