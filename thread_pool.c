@@ -26,6 +26,9 @@ DEALINGS IN THE SOFTWARE.  */
 #include <config.h>
 #endif
 
+// Needed on some platforms to make PTHREAD_MUTEX_RECURSIVE available
+#define _XOPEN_SOURCE 700
+
 #include <stdlib.h>
 #include <inttypes.h>
 #include <signal.h>
