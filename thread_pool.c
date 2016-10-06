@@ -26,6 +26,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <config.h>
 #endif
 
+#define _XOPEN_SOURCE 700 // for PTHREAD_MUTEX_RECURSIVE
 #include <stdlib.h>
 #include <inttypes.h>
 #include <signal.h>
