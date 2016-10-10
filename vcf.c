@@ -2950,6 +2950,7 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
             }
             line->d.shared_dirty |= BCF1_DIRTY_INF;
             inf->vptr = NULL;
+            inf->vptr_off = inf->vptr_len = 0;
         }
         return 0;
     }
