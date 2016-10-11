@@ -1,4 +1,4 @@
-/*  thread_pool_internal.h -- Intertnal API for the thread pool.
+/*  thread_pool_internal.h -- Internal API for the thread pool.
 
     Copyright (c) 2013-2016 Genome Research Ltd.
 
@@ -66,11 +66,11 @@ typedef struct hts_tpool_job {
 /*
  * An output, after job has executed.
  */
-typedef struct hts_tpool_result {
+struct hts_tpool_result {
     struct hts_tpool_result *next;
     uint64_t serial; // sequential number for ordering
     void *data;      // result itself
-} hts_tpool_result;
+};
 
 /*
  * A per-thread worker struct.
@@ -94,7 +94,7 @@ typedef struct {
  * The thread pool may have many hetergeneous tasks, each
  * using its own io_queue mixed into the same thread pool.
  */
-typedef struct hts_tpool_process {
+struct hts_tpool_process {
     struct hts_tpool *p;             // thread pool
     hts_tpool_job    *input_head;    // input list
     hts_tpool_job    *input_tail;
@@ -120,7 +120,7 @@ typedef struct hts_tpool_process {
     pthread_cond_t none_processing_c;// n_processing has hit zero
 
     struct hts_tpool_process *next, *prev;// to form circular linked list.
-} hts_tpool_process;
+};
 
 /*
  * The single pool structure itself.
@@ -129,7 +129,7 @@ typedef struct hts_tpool_process {
  * output is going, but it maintains a list of queues associated with
  * this pool from which the jobs are taken.
  */
-typedef struct hts_tpool {
+struct hts_tpool {
     int nwaiting; // how many workers waiting for new jobs
     int njobs;    // how many total jobs are waiting in all queues
     int shutdown; // true if pool is being destroyed
@@ -156,7 +156,7 @@ typedef struct hts_tpool {
     // Debugging to check wait time.
     // FIXME: should we just delete these and cull the associated code?
     long long total_time, wait_time;
-} hts_tpool;
+};
 
 #ifdef __cplusplus
 }
