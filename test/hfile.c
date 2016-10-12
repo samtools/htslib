@@ -1,6 +1,6 @@
 /*  test/hfile.c -- Test cases for low-level input/output streams.
 
-    Copyright (C) 2013-2014 Genome Research Ltd.
+    Copyright (C) 2013-2014, 2016 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -209,6 +209,16 @@ int main(void)
     buffer[n] = '\0';
     if (strcmp(buffer, "hello, world!\n") != 0) fail("hread result");
     if (hclose(fin) != 0) fail("hclose(\"data:...\")");
+
+    fin = hopen("test/xx#blank.sam", "r");
+    if (fin == NULL) fail("hopen(\"test/xx#blank.sam\") for reading");
+    if (hread(fin, buffer, 100) != 0) fail("test/xx#blank.sam is non-empty");
+    if (hclose(fin) != 0) fail("hclose(\"test/xx#blank.sam\") for reading");
+
+    fin = hopen("data:", "r");
+    if (fin == NULL) fail("hopen(\"data:\") for reading");
+    if (hread(fin, buffer, 100) != 0) fail("empty data: URL is non-empty");
+    if (hclose(fin) != 0) fail("hclose(\"data:\") for reading");
 
     return EXIT_SUCCESS;
 }

@@ -60,6 +60,7 @@ DEALINGS IN THE SOFTWARE.  */
 
    off_t offset;     // Offset within the stream of buffer position 0
    unsigned at_eof:1;// For reading, whether EOF has been seen
+   unsigned mobile:1;// Buffer is a mobile window or fixed full contents
    int has_errno;    // Error number from the last failure on this stream
 
 For reading, begin is the first unread character in the buffer and end is the
@@ -78,7 +79,17 @@ equal to buffer:
 Thus if begin > end then there is a non-empty write buffer, if begin < end
 then there is a non-empty read buffer, and if begin == end then both buffers
 are empty.  In all cases, the stream's file position indicator corresponds
-to the position pointed to by begin.  */
+to the position pointed to by begin.
+
+The above is the normal scenario of a mobile window.  For in-memory streams,
+a fixed (immobile) buffer can be used as the full contents without any separate
+backend behind it.  These always have at_eof set, offset set to 0, need no
+read() method, and should just return EINVAL for seek():
+
+   abcdefghijkLMNOPQRSTUVWXYZ------
+   ^buffer    ^begin         ^end  ^limit
+
+Use hfile_init_fixed() to create one of these.  */
 
 hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity)
 {
@@ -97,12 +108,30 @@ hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity)
 
     fp->offset = 0;
     fp->at_eof = 0;
+    fp->mobile = 1;
     fp->has_errno = 0;
     return fp;
 
 error:
     hfile_destroy(fp);
     return NULL;
+}
+
+hFILE *hfile_init_fixed(size_t struct_size, const char *mode,
+                        char *buffer, size_t buf_filled, size_t buf_size)
+{
+    hFILE *fp = (hFILE *) malloc(struct_size);
+    if (fp == NULL) return NULL;
+
+    fp->buffer = fp->begin = buffer;
+    fp->end = &fp->buffer[buf_filled];
+    fp->limit = &fp->buffer[buf_size];
+
+    fp->offset = 0;
+    fp->at_eof = 1;
+    fp->mobile = 0;
+    fp->has_errno = 0;
+    return fp;
 }
 
 void hfile_destroy(hFILE *fp)
@@ -126,7 +155,7 @@ static ssize_t refill_buffer(hFILE *fp)
     ssize_t n;
 
     // Move any unread characters to the start of the buffer
-    if (fp->begin > fp->buffer) {
+    if (fp->mobile && fp->begin > fp->buffer) {
         fp->offset += fp->begin - fp->buffer;
         memmove(fp->buffer, fp->begin, fp->end - fp->begin);
         fp->end = &fp->buffer[fp->end - fp->begin];
@@ -351,8 +380,25 @@ off_t hseek(hFILE *fp, off_t offset, int whence)
         whence = SEEK_SET;
         offset = curpos + offset;
     }
+    // For fixed immobile buffers, convert everything else to SEEK_SET too
+    // so that seeking can be avoided for all (within range) requests.
+    else if (! fp->mobile && whence == SEEK_END) {
+        size_t length = fp->end - fp->buffer;
+        if (offset > 0 || -offset > length) {
+            fp->has_errno = errno = EINVAL;
+            return -1;
+        }
 
-    // TODO Avoid seeking if the desired position is within our read buffer
+        whence = SEEK_SET;
+        offset = length + offset;
+    }
+
+    // Avoid seeking if the desired position is within our read buffer.
+    if (whence == SEEK_SET && offset >= fp->offset &&
+        offset - fp->offset <= fp->end - fp->buffer) {
+        fp->begin = &fp->buffer[offset - fp->offset];
+        return offset;
+    }
 
     pos = fp->backend->seek(fp, offset, whence);
     if (pos < 0) { fp->has_errno = errno; return pos; }
@@ -572,41 +618,12 @@ int hfile_oflags(const char *mode)
 
 typedef struct {
     hFILE base;
-    const char *buffer;
-    size_t length, pos;
 } hFILE_mem;
-
-static ssize_t mem_read(hFILE *fpv, void *buffer, size_t nbytes)
-{
-    hFILE_mem *fp = (hFILE_mem *) fpv;
-    size_t avail = fp->length - fp->pos;
-    if (nbytes > avail) nbytes = avail;
-    memcpy(buffer, fp->buffer + fp->pos, nbytes);
-    fp->pos += nbytes;
-    return nbytes;
-}
 
 static off_t mem_seek(hFILE *fpv, off_t offset, int whence)
 {
-    hFILE_mem *fp = (hFILE_mem *) fpv;
-    size_t absoffset = (offset >= 0)? offset : -offset;
-    size_t origin;
-
-    switch (whence) {
-    case SEEK_SET: origin = 0; break;
-    case SEEK_CUR: origin = fp->pos; break;
-    case SEEK_END: origin = fp->length; break;
-    default: errno = EINVAL; return -1;
-    }
-
-    if ((offset  < 0 && absoffset > origin) ||
-        (offset >= 0 && absoffset > fp->length - origin)) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    fp->pos = origin + offset;
-    return fp->pos;
+    errno = EINVAL;
+    return -1;
 }
 
 static int mem_close(hFILE *fpv)
@@ -616,22 +633,28 @@ static int mem_close(hFILE *fpv)
 
 static const struct hFILE_backend mem_backend =
 {
-    mem_read, NULL, mem_seek, NULL, mem_close
+    NULL, NULL, mem_seek, NULL, mem_close
 };
 
 static hFILE *hopen_mem(const char *data, const char *mode)
 {
+    size_t length;
+    char *buffer;
+
     if (strncmp(data, "data:", 5) == 0) data += 5;
 
-    // TODO Implement write modes, which will require memory allocation
-    if (strchr(mode, 'r') == NULL) { errno = EINVAL; return NULL; }
+    // TODO Implement write modes
+    if (strchr(mode, 'r') == NULL) { errno = EROFS; return NULL; }
 
-    hFILE_mem *fp = (hFILE_mem *) hfile_init(sizeof (hFILE_mem), mode, 0);
-    if (fp == NULL) return NULL;
+    length = strlen(data);
+    buffer = malloc(length);
+    if (buffer == NULL) return NULL;
+    memcpy(buffer, data, length);
 
-    fp->buffer = data;
-    fp->length = strlen(data);
-    fp->pos = 0;
+    hFILE_mem *fp = (hFILE_mem *)
+        hfile_init_fixed(sizeof (hFILE_mem), mode, buffer, length, length);
+    if (fp == NULL) { free(buffer); return NULL; }
+
     fp->base.backend = &mem_backend;
     return &fp->base;
 }

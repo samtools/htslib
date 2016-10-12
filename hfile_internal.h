@@ -1,6 +1,6 @@
 /*  hfile_internal.h -- internal parts of low-level input/output streams.
 
-    Copyright (C) 2013-2015 Genome Research Ltd.
+    Copyright (C) 2013-2016 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -65,6 +65,13 @@ int hfile_oflags(const char *mode);
    up its base.  Capacity is a suggested buffer size (e.g., via fstat(2))
    or 0 for a default-sized buffer.  */
 hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity);
+
+/* Alternative to hfile_init() for in-memory backends for which the base
+   buffer is the only storage.  Buffer is already allocated via malloc(2)
+   of size buf_size and with buf_filled bytes already filled.  Ownership
+   of the buffer is transferred to the resulting hFILE.  */
+hFILE *hfile_init_fixed(size_t struct_size, const char *mode,
+                        char *buffer, size_t buf_filled, size_t buf_size);
 
 /* May be called by hopen_*() functions to undo the effects of hfile_init()
    in the event opening the stream subsequently fails.  (This is safe to use
