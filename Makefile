@@ -157,6 +157,7 @@ LIBHTS_OBJS = \
 	synced_bcf_reader.o \
 	vcf_sweep.o \
 	tbx.o \
+	textutils.o \
 	thread_pool.o \
 	vcf.o \
 	vcfutils.o \
@@ -294,6 +295,7 @@ md5.o md5.pico: md5.c config.h $(htslib_hts_h)
 plugin.o plugin.pico: plugin.c config.h $(hts_internal_h) $(htslib_kstring_h)
 probaln.o probaln.pico: probaln.c config.h $(htslib_hts_h)
 realn.o realn.pico: realn.c config.h $(htslib_hts_h) $(htslib_sam_h)
+textutils.o textutils.pico: textutils.c config.h $(hts_internal_h)
 
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) cram/os.h $(htslib_hts_h)

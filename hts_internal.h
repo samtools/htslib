@@ -32,6 +32,28 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
+/// Decode percent-encoded (URL-encoded) text
+/** On input, _dest_ should be a buffer at least the same size as _s_,
+    and may be equal to _s_ to decode in place.  On output, _dest_ will be
+    NUL-terminated and the number of characters written (not including the
+    NUL) is stored in _destlen_.
+*/
+int hts_decode_percent(char *dest, size_t *destlen, const char *s);
+
+/// Return decoded data length given length of base64-encoded text
+/** This gives an upper bound, as it overestimates by a byte or two when
+    the encoded text ends with (possibly omitted) `=` padding characters.
+*/
+size_t hts_base64_decoded_length(size_t len);
+
+/// Decode base64-encoded data
+/** On input, _dest_ should be a sufficient buffer (see `hts_base64_length()`),
+    and may be equal to _s_ to decode in place.  On output, the number of
+    bytes writen is stored in _destlen_.
+*/
+int hts_decode_base64(char *dest, size_t *destlen, const char *s);
+
+
 // The <ctype.h> functions operate on ints such as are returned by fgetc(),
 // i.e., characters represented as unsigned-char-valued ints, or EOF.
 // To operate on plain chars (and to avoid warnings on some platforms),

@@ -616,6 +616,8 @@ int hfile_oflags(const char *mode)
  * In-memory backend *
  *********************/
 
+#include "hts_internal.h"
+
 typedef struct {
     hFILE base;
 } hFILE_mem;
@@ -636,23 +638,41 @@ static const struct hFILE_backend mem_backend =
     NULL, NULL, mem_seek, NULL, mem_close
 };
 
-static hFILE *hopen_mem(const char *data, const char *mode)
+static int cmp_prefix(const char *key, const char *s)
 {
-    size_t length;
-    char *buffer;
+    while (*key)
+        if (tolower_c(*s) != *key) return +1;
+        else s++, key++;
 
-    if (strncmp(data, "data:", 5) == 0) data += 5;
+    return 0;
+}
+
+static hFILE *hopen_mem(const char *url, const char *mode)
+{
+    size_t length, size;
+    char *buffer;
+    const char *data, *comma = strchr(url, ',');
+    if (comma == NULL) { errno = EINVAL; return NULL; }
+    data = comma+1;
 
     // TODO Implement write modes
     if (strchr(mode, 'r') == NULL) { errno = EROFS; return NULL; }
 
-    length = strlen(data);
-    buffer = malloc(length);
-    if (buffer == NULL) return NULL;
-    memcpy(buffer, data, length);
+    if (comma - url >= 7 && cmp_prefix(";base64", &comma[-7]) == 0) {
+        size = hts_base64_decoded_length(strlen(data));
+        buffer = malloc(size);
+        if (buffer == NULL) return NULL;
+        hts_decode_base64(buffer, &length, data);
+    }
+    else {
+        size = strlen(data) + 1;
+        buffer = malloc(size);
+        if (buffer == NULL) return NULL;
+        hts_decode_percent(buffer, &length, data);
+    }
 
     hFILE_mem *fp = (hFILE_mem *)
-        hfile_init_fixed(sizeof (hFILE_mem), mode, buffer, length, length);
+        hfile_init_fixed(sizeof (hFILE_mem), mode, buffer, length, size);
     if (fp == NULL) { free(buffer); return NULL; }
 
     fp->base.backend = &mem_backend;
@@ -664,7 +684,6 @@ static hFILE *hopen_mem(const char *data, const char *mode)
  * Plugin and hopen() backend dispatcher *
  *****************************************/
 
-#include "hts_internal.h"
 #include "htslib/khash.h"
 
 KHASH_MAP_INIT_STR(scheme_string, const struct hFILE_scheme_handler *);
