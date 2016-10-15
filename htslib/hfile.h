@@ -58,9 +58,10 @@ typedef struct hFILE {
 
 The usual `fopen(3)` _mode_ letters are supported: one of
 `r` (read), `w` (write), `a` (append), optionally followed by any of
-`+` (update), `e` (close on `exec(2)`), `x` (create exclusively).
+`+` (update), `e` (close on `exec(2)`), `x` (create exclusively),
+`:` (indicates scheme-specific variable arguments follow).
 */
-hFILE *hopen(const char *filename, const char *mode) HTS_RESULT_USED;
+hFILE *hopen(const char *filename, const char *mode, ...) HTS_RESULT_USED;
 
 /// Associate a stream with an existing open file descriptor
 /** @return An hFILE pointer, or `NULL` (with _errno_ set) if an error occurred.

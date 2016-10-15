@@ -717,12 +717,17 @@ static void hfile_exit()
     pthread_mutex_destroy(&plugins_lock);
 }
 
+static inline int priority(const struct hFILE_scheme_handler *handler)
+{
+    return handler->priority % 1000;
+}
+
 void hfile_add_scheme_handler(const char *scheme,
                               const struct hFILE_scheme_handler *handler)
 {
     int absent;
     khint_t k = kh_put(scheme_string, schemes, scheme, &absent);
-    if (absent || handler->priority > kh_value(schemes, k)->priority) {
+    if (absent || priority(handler) > priority(kh_value(schemes, k))) {
         kh_value(schemes, k) = handler;
     }
 }
@@ -834,10 +839,21 @@ static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
     return (k != kh_end(schemes))? kh_value(schemes, k) : &unknown_scheme;
 }
 
-hFILE *hopen(const char *fname, const char *mode)
+hFILE *hopen(const char *fname, const char *mode, ...)
 {
     const struct hFILE_scheme_handler *handler = find_scheme_handler(fname);
-    if (handler) return handler->open(fname, mode);
+    if (handler) {
+        if (strchr(mode, ':') == NULL) return handler->open(fname, mode);
+        else if (handler->priority >= 2000 && handler->vopen) {
+            hFILE *fp;
+            va_list arg;
+            va_start(arg, mode);
+            fp = handler->vopen(fname, mode, arg);
+            va_end(arg);
+            return fp;
+        }
+        else { errno = ENOTSUP; return NULL; }
+    }
     else if (strcmp(fname, "-") == 0) return hopen_fd_stdinout(mode);
     else return hopen_fd(fname, mode);
 }

@@ -25,6 +25,8 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HFILE_INTERNAL_H
 #define HFILE_INTERNAL_H
 
+#include <stdarg.h>
+
 #include "htslib/hfile.h"
 
 #ifdef __cplusplus
@@ -93,8 +95,17 @@ struct hFILE_scheme_handler {
     const char *provider;
 
     /* If multiple handlers are registered for the same scheme, the one with
-       the highest priority is used; range is 0 (lowest) to 100 (highest).  */
+       the highest priority is used; range is 0 (lowest) to 100 (highest).
+       This field is used modulo 1000 as a priority; thousands indicate
+       later revisions to this structure, as noted below.  */
     int priority;
+
+    /* Fields below are present when priority >= 2000.  */
+
+    /* Same as the open() method, used when extra arguments have been given
+       to hopen().  */
+    hFILE *(*vopen)(const char *filename, const char *mode, va_list args)
+        HTS_RESULT_USED;
 };
 
 /* May be used as an isremote() function in simple cases.  */
