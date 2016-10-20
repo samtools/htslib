@@ -6,7 +6,7 @@
 #
 # This cross validation script is designed to run the htslib test_view
 # and cramtools.jar CRAM implementations to test compatibility between
-# implementations.  
+# implementations.
 #
 # The test set may contain many dubious and ambiguous SAM cases, such as
 # single base reads (is that quality "*" really meaning Q9 or no quality?).
@@ -112,7 +112,7 @@ do
     # C to Java
     trials=`expr $trials + 1`
     sam_to_Ccram $r $i && Jcram_to_sam $r && compare_sam $i _tmp.sam
-    
+
     # Java to C
     trials=`expr $trials + 1`
     sam_to_Jcram $r $i && Ccram_to_sam $r && compare_sam $i _tmp.sam

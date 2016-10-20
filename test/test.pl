@@ -205,7 +205,7 @@ sub testv {
     my ($ret, $out) = _cmd($cmd);
     if ($ret != 0) {
         STDOUT->flush();
-        print STDERR "FAILED\n\n";
+        print STDERR "FAILED\n$out\n";
         STDERR->flush();
         $test_view_failures++;
     }
@@ -275,7 +275,7 @@ sub test_view
         if (-e $jcram) {
             my $jsam = "${base}_java.tmp.sam_";
             testv "./test_view $tv_args -i reference=$ref $jcram > $jsam";
-            testv "./compare_sam.pl $md $sam $jsam";
+            testv "./compare_sam.pl -Baux $md $sam $jsam";
         }
 
         if ($test_view_failures == 0)
