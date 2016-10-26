@@ -29,6 +29,7 @@
 
 #include <stdint.h>
 #include <fcntl.h>
+#include <sys/types.h>
 
 #ifndef _WIN32
 #define netread(fd, ptr, len) read(fd, ptr, len)
