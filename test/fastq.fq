@@ -1,0 +1,12 @@
+@read1
+ATGC
++
+abcd
+@read2/1
+AATTGGCC
++read2/1
+abcdefgh
+@read3 2:Y:0:ATGC
+AAATTTGGGCCC
++
+abcdefghijkl

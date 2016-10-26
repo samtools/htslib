@@ -1575,6 +1575,18 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
         errno = EPIPE;
         return NULL;
 
+    case fastq_format: {
+        kstring_t str = { 0, 0, NULL };
+        bam_hdr_t *h;
+        ksprintf(&str, "@HD\tVN:%s\tSO:unsorted\n", SAM_FORMAT_VERSION);
+        if (fp->fn_aux) {
+            // ..fill as above
+        }
+        h = sam_hdr_parse(str.l, str.s);
+        h->l_text = str.l; h->text = str.s;
+        return h;
+        }
+
     default:
         errno = EFTYPE;
         return NULL;
@@ -1672,6 +1684,10 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
             if (hflush(fp->fp.hfile) != 0) return -1;
         }
         }
+        break;
+
+    case fastq_format:
+        // Nothing to output; FASTQ has no file headers.
         break;
 
     default:
@@ -2927,6 +2943,102 @@ int sam_set_threads(htsFile *fp, int nthreads) {
     return 0;
 }
 
+static inline unsigned char seq_nt16_table_c(char c)
+{
+    return seq_nt16_table[(unsigned char) c];
+}
+
+static int fastq_parse1(htsFile *fp, bam1_t *b)
+{
+    bam1_core_t *c = &b->core;
+    kstring_t str = { 0, b->m_data, (char *) b->data };
+    char *s = fp->line.s;
+    char *s2, *qname;
+    size_t len;
+    int carry;
+
+    // Header line is @readname[ d:[NY]:dd:d][\t<auxtags>]
+
+    if (*s++ != '@') return -2;
+    while (isspace_c(*s)) s++;
+    if (*s == '\0') return -2;
+
+    memset(c, 0, sizeof(bam1_core_t));
+    c->tid = c->mtid = -1;
+    c->pos = c->mpos = -1;
+    c->bin = hts_reg2bin(-1, -1, 14, 5);
+    c->flag = BAM_FUNMAP;
+
+    qname = s;
+    while (*s && !isspace_c(*s)) s++;
+    len = s - qname;
+    while (isspace_c(*s)) s++;
+    s2 = s;
+    while (isdigit_c(*s2)) s2++;
+    if (s2[0] == ':' && (s2[1] == 'Y' || s2[1] == 'N') && s2[2] == ':') {
+        switch (strtol(s, NULL, 10)) {
+        case 1: c->flag |= BAM_FPAIRED | BAM_FMUNMAP | BAM_FREAD1; break;
+        case 2: c->flag |= BAM_FPAIRED | BAM_FMUNMAP | BAM_FREAD2; break;
+        }
+        if (s2[1] == 'Y') c->flag |= BAM_FQCFAIL;
+    }
+    else {
+        if (len >= 3 && qname[len-2] == '/' && isdigit_c(qname[len-1])) {
+            c->flag |= BAM_FPAIRED | BAM_FMUNMAP;
+            switch (qname[len-1]) {
+            case '1': c->flag |= BAM_FREAD1; break;
+            case '2': c->flag |= BAM_FREAD2; break;
+            }
+            len -= 2;
+        }
+    }
+
+    if (kputsn_(qname, len, &str) == EOF ||
+        kputc_('\0', &str) == EOF) return -2;
+    c->l_qname = len + 1;
+
+    // FIXME decode aux
+
+    len = 0;
+    carry = 0;
+    for (;;) {
+        if (hts_getline(fp, KS_SEP_LINE, &fp->line) < 0) return -2;
+        if (fp->line.s[0] == '+') break;
+
+        len += fp->line.l;
+        s = fp->line.s;
+        if (carry && fp->line.l > 0) {
+            str.s[str.l-1] |= seq_nt16_table_c(*s++);
+            carry = 0;
+        }
+
+        while (s[0] && s[1]) {
+            char b = seq_nt16_table_c(s[0]) << 4 | seq_nt16_table_c(s[1]);
+            if (kputc_(b, &str) == EOF) return -2;
+            s += 2;
+        }
+
+        if (*s) {
+            if (kputc_(seq_nt16_table_c(*s) << 4, &str) == EOF) return -2;
+            carry = 1;
+        }
+    }
+
+    c->l_qseq = len;
+
+    while (len > 0) {
+        if (hts_getline(fp, KS_SEP_LINE, &fp->line) < 0) return -2;
+        for (s = fp->line.s; *s; s++)
+            if (kputc_(*s - 33, &str) == EOF) return -2;
+        len -= fp->line.l;
+    }
+
+    b->data = (uint8_t *) str.s;
+    b->l_data = str.l;
+    b->m_data = str.m;
+    return 0;
+}
+
 // Returns 0 on success,
 //        -1 on EOF,
 //       <-1 on error
@@ -3045,6 +3157,10 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
         }
     }
 
+    case fastq_format:
+        if (hts_getline(fp, KS_SEP_LINE, &fp->line) < 0) return -1;
+        return fastq_parse1(fp, b);
+
     case empty_format:
         errno = EPIPE;
         return -3;
@@ -3144,6 +3260,64 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 {
     str->l = 0;
     return sam_format1_append(h, b, str);
+}
+
+int fastq_format1(const bam1_t *b, kstring_t *str)
+{
+    unsigned flag = b->core.flag;
+    int i, len = b->core.l_qseq;
+    uint8_t *seq, *qual;
+    int mode_slashes = 1, mode_colons = 1, mode_aux = 0;
+
+    str->l = 0;
+
+    if (len == 0) return 0;
+
+    if (kputc('@', str) == EOF || kputs(bam_get_qname(b), str) == EOF)
+        return -1;
+
+    if (mode_slashes && (flag & BAM_FPAIRED)) {
+        const char *suffix = (flag & BAM_FREAD1)? "/1" : (flag & BAM_FREAD2)? "/2" : "";
+        if (kputs(suffix, str) == EOF) return -1;
+    }
+
+    if (mode_colons) {
+        int rnum = (flag & BAM_FREAD1)? 1 : (flag & BAM_FREAD2)? 2 : 0;
+        char filtered = (flag & BAM_FQCFAIL)? 'Y' : 'N';
+        if (ksprintf(str, " %d:%c:0:0", rnum, filtered) < 0) return -1;
+    }
+
+    if (mode_aux) {
+        // ... FIXME
+    }
+
+    if (ks_resize(str, str->l + 1 + len+1 + 2 + len+1 + 1) < 0) return -1;
+
+    kputc_('\n', str);
+
+    seq = bam_get_seq(b);
+    if (flag & BAM_FREVERSE)
+        for (i = len-1; i >= 0; i--)
+            kputc_("!TGKCYSBAWRDMHVN"[bam_seqi(seq, i)], str);
+    else
+        for (i = 0; i < len; i++)
+            kputc_(seq_nt16_str[bam_seqi(seq, i)], str);
+
+    kputsn("\n+\n", 3, str);
+
+    qual = bam_get_qual(b);
+    if (qual[0] == 0xff)
+        for (i = 0; i < len; i++)
+            kputc_('B', str);
+    else if (flag & BAM_FREVERSE)
+        for (i = len-1; i >= 0; i--)
+            kputc_(33 + qual[i], str);
+    else
+        for (i = 0; i < len; i++)
+            kputc_(33 + qual[i], str);
+
+    kputc('\n', str);
+    return str->l;
 }
 
 // Sadly we need to be able to modify the bam_hdr here so we can
@@ -3271,6 +3445,12 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
 
             return fp->line.l;
         }
+
+    case fastq_format:
+        if (fastq_format1(b, &fp->line) < 0 ||
+            hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l)
+            return -1;
+        return fp->line.l;
 
     default:
         errno = EBADF;
@@ -3738,6 +3918,8 @@ int sam_open_mode(char *mode, const char *fn, const char *format)
     else if (strcasecmp(format, "cram") == 0) strcpy(mode, "c");
     else if (strcasecmp(format, "sam") == 0) strcpy(mode, "");
     else if (strcasecmp(format, "sam.gz") == 0) strcpy(mode, "z");
+    else if (strcmp(format, "fastq") == 0 ||
+             strcmp(format, "fq") == 0) strcpy(mode, "f");
     else return -1;
 
     return 0;
