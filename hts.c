@@ -2163,7 +2163,7 @@ hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx)
     struct stat stat_idx,stat_main;
     if ( !stat(fn, &stat_main) && !stat(fnidx, &stat_idx) )
     {
-        if ( stat_idx.st_mtime < stat_main.st_mtime )
+        if ( hts_verbose >= 1 && stat_idx.st_mtime < stat_main.st_mtime )
             fprintf(stderr, "Warning: The index file is older than the data file: %s\n", fnidx);
     }
 
