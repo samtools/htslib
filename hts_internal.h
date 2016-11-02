@@ -32,6 +32,8 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
+struct hFILE;
+
 /// Decode percent-encoded (URL-encoded) text
 /** On input, _dest_ should be a buffer at least the same size as _s_,
     and may be equal to _s_ to decode in place.  On output, _dest_ will be
@@ -52,6 +54,74 @@ size_t hts_base64_decoded_length(size_t len);
     bytes writen is stored in _destlen_.
 */
 int hts_decode_base64(char *dest, size_t *destlen, const char *s);
+
+
+/// Token structure returned by JSON lexing functions
+/** Token types correspond to scalar JSON values and selected punctuation
+as follows:
+  - `s` string
+  - `n` number
+  - `b` boolean literal
+  - `.` null literal
+  - `{`, `}`, `[`, `]` object and array delimiters
+  - `?` lexing error
+  - `\0` terminator at end of input
+*/
+typedef struct hts_json_token {
+    char type;    ///< Token type
+    char *str;    ///< Value as a C string (filled in for all token types)
+    // TODO Add other fields to fill in for particular data types, e.g.
+    // int inum;
+    // float fnum;
+} hts_json_token;
+
+/// Read one JSON token from a file
+/** @param str    The input C string
+    @param state  The input string state
+    @param token  On return, filled in with the token read
+    @return  The type of the token read
+
+On return, `token->str` points into the supplied input string, which
+is modified by having token-terminating characters overwritten as NULs.
+The `state` argument records the current position within `str` after each
+`hts_json_snext()` call, and should be set to 0 before the first call.
+*/
+char hts_json_snext(char *str, size_t *state, hts_json_token *token);
+
+/// Read and discard a complete JSON value from a string
+/** @param str    The input C string
+    @param state  The input string state, as per `hts_json_snext()`
+    @param type   If the first token of the value to be discarded has already
+                  been read, provide its type; otherwise `'\0'`
+    @return  One of `v` (success), `\0` (end of string), and `?` (lexing error)
+
+Skips a complete JSON value, which may be a single token or an entire object
+or array.
+*/
+char hts_json_sskip_value(char *str, size_t *state, char type);
+
+/// Read one JSON token from a file
+/** @param fp     The file stream
+    @param token  On return, filled in with the token read
+    @param kstr   Buffer used to store the token string returned
+    @return  The type of the token read
+
+The `kstr` buffer is used to store the string value of the token read,
+so `token->str` is only valid until the next time `hts_json_fnext()` is
+called with the same `kstr` argument.
+*/
+char hts_json_fnext(struct hFILE *fp, hts_json_token *token, kstring_t *kstr);
+
+/// Read and discard a complete JSON value from a file
+/** @param fp    The file stream
+    @param type  If the first token of the value to be discarded has already
+                 been read, provide its type; otherwise `'\0'`
+    @return  One of `v` (success), `\0` (EOF), and `?` (lexing error)
+
+Skips a complete JSON value, which may be a single token or an entire object
+or array.
+*/
+char hts_json_fskip_value(struct hFILE *fp, char type);
 
 
 // The <ctype.h> functions operate on ints such as are returned by fgetc(),
