@@ -751,8 +751,9 @@ static int hts_process_opts(htsFile *fp, const char *opts) {
 }
 
 
-htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
+htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
 {
+    hFILE *hfile_orig = hfile;
     htsFile *fp = (htsFile*)calloc(1, sizeof(htsFile));
     char simple_mode[101], *cp, *opts;
     simple_mode[100] = '\0';
@@ -774,6 +775,15 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
 
     if (strchr(simple_mode, 'r')) {
         if (hts_detect_format(hfile, &fp->format) < 0) goto error;
+
+        if (fp->format.format == json) {
+            hFILE *hfile2 = hopen_json_redirect(hfile, simple_mode);
+            if (hfile2 == NULL) goto error;
+
+            // Build fp against the result of the redirection
+            hfile = hfile2;
+            if (hts_detect_format(hfile, &fp->format) < 0) goto error;
+        }
     }
     else if (strchr(simple_mode, 'w') || strchr(simple_mode, 'a')) {
         htsFormat *fmt = &fp->format;
@@ -803,7 +813,7 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
         fmt->compression_level = -1;
         fmt->specific = NULL;
     }
-    else goto error;
+    else { errno = EINVAL; goto error; }
 
     switch (fp->format.format) {
     case binary_format:
@@ -845,17 +855,25 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
         break;
 
     default:
+        errno = ENOEXEC;
         goto error;
     }
 
     if (opts)
         hts_process_opts(fp, opts);
 
+    // If redirecting, close the original hFILE now (pedantically we would
+    // instead close it in hts_close(), but this a simplifying optimisation)
+    if (hfile != hfile_orig) hclose_abruptly(hfile_orig);
+
     return fp;
 
 error:
     if (hts_verbose >= 2)
         fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
+
+    // If redirecting, close the failed redirection hFILE that we have opened
+    if (hfile != hfile_orig) hclose_abruptly(hfile);
 
     if (fp) {
         free(fp->fn);

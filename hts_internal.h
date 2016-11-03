@@ -158,6 +158,10 @@ typedef struct hts_cram_idx_t {
 } hts_cram_idx_t;
 
 
+// Entry point to hFILE_multipart backend.
+struct hFILE *hopen_json_redirect(struct hFILE *hfile, const char *mode);
+
+
 struct hts_path_itr {
     kstring_t path, entry;
     void *dirv;  // DIR * privately
