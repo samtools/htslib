@@ -54,18 +54,55 @@ struct __faidx_t;
 typedef struct __faidx_t faidx_t;
 
 /// Build index for a FASTA or bgzip-compressed FASTA file.
+/**  @param  fn  FASTA file name
+     @param  fnfai Name of .fai file to build.
+     @param  fngzi Name of .gzi file to build (if fn is bgzip-compressed).
+     @return     0 on success; or -1 on failure
+
+If fnfai is NULL, ".fai" will be appended to fn to make the FAI file name.
+If fngzi is NULL, ".gzi" will be appended to fn for the GZI file.  The GZI
+file will only be built if fn is bgzip-compressed.
+*/
+int fai_build3(const char *fn, const char *fnfai, const char *fngzi) HTS_RESULT_USED;
+
+/// Build index for a FASTA or bgzip-compressed FASTA file.
 /** @param  fn  FASTA file name
     @return     0 on success; or -1 on failure
 
-File "fn.fai" will be generated.
+File "fn.fai" will be generated.  This function is equivalent to
+fai_build3(fn, NULL, NULL);
 */
 int fai_build(const char *fn) HTS_RESULT_USED;
 
 /// Destroy a faidx_t struct
 void fai_destroy(faidx_t *fai);
 
+enum fai_load_options {
+    FAI_CREATE = 0x01,
+};
+
+/// Load FASTA indexes.
+/** @param  fn  File name of the FASTA file (can be compressed with bgzip).
+    @param  fnfai File name of the FASTA index.
+    @param  fngzi File name of the bgzip index.
+    @param  flags Option flags to control index file caching and creation.
+    @return Pointer to a faidx_t struct on success, NULL on failure.
+
+If fnfai is NULL, ".fai" will be appended to fn to make the FAI file name.
+If fngzi is NULL, ".gzi" will be appended to fn for the bgzip index name.
+The bgzip index is only needed if fn is compressed.
+
+If (flags & FAI_CREATE) is true, the index files will be built using
+fai_build3() if they are not already present.
+*/
+faidx_t *fai_load3(const char *fn, const char *fnfai, const char *fngzi,
+                   int flags);
+
 /// Load index from "fn.fai".
 /** @param  fn  File name of the FASTA file
+    @return Pointer to a faidx_t struct on success, NULL on failure.
+
+This function is equivalent to fai_load3(fn, NULL, NULL, FAI_CREATE|FAI_CACHE);
 */
 faidx_t *fai_load(const char *fn);
 
