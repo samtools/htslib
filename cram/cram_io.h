@@ -103,9 +103,10 @@ int itf8_put(char *cp, int32_t val);
 int ltf8_get(char *cp, int64_t *val_p);
 int ltf8_put(char *cp, int64_t val);
 
-  /* Version of itf8_get that checks it hasn't run out of input */
+/* Version of itf8_get that checks it hasn't run out of input */
 
 extern const int itf8_bytes[16];
+extern const int ltf8_bytes[256];
 
 static inline int safe_itf8_get(const char *cp, const char *endp,
                                 int32_t *val_p) {
@@ -132,6 +133,77 @@ static inline int safe_itf8_get(const char *cp, const char *endp,
     } else {
         *val_p = ((up[0] & 0x0f)<<28) | (up[1]<<20) | (up[2]<<12) | (up[3]<<4) | (up[4] & 0x0f);
         return 5;
+    }
+}
+
+static inline int safe_ltf8_get(const char *cp, const char *endp,
+                                int64_t *val_p) {
+    unsigned char *up = (unsigned char *)cp;
+
+    if (endp - cp < 9 &&
+	(cp >= endp || endp - cp < ltf8_bytes[up[0]])) return 0;
+
+    if (up[0] < 0x80) {
+	*val_p =   up[0];
+	return 1;
+    } else if (up[0] < 0xc0) {
+	*val_p = (((uint64_t)up[0]<< 8) |
+		   (uint64_t)up[1]) & (((1LL<<(6+8)))-1);
+	return 2;
+    } else if (up[0] < 0xe0) {
+	*val_p = (((uint64_t)up[0]<<16) |
+		  ((uint64_t)up[1]<< 8) |
+		   (uint64_t)up[2]) & ((1LL<<(5+2*8))-1);
+	return 3;
+    } else if (up[0] < 0xf0) {
+	*val_p = (((uint64_t)up[0]<<24) |
+		  ((uint64_t)up[1]<<16) |
+		  ((uint64_t)up[2]<< 8) |
+		   (uint64_t)up[3]) & ((1LL<<(4+3*8))-1);
+	return 4;
+    } else if (up[0] < 0xf8) {
+	*val_p = (((uint64_t)up[0]<<32) |
+		  ((uint64_t)up[1]<<24) |
+		  ((uint64_t)up[2]<<16) |
+		  ((uint64_t)up[3]<< 8) |
+		   (uint64_t)up[4]) & ((1LL<<(3+4*8))-1);
+	return 5;
+    } else if (up[0] < 0xfc) {
+	*val_p = (((uint64_t)up[0]<<40) |
+		  ((uint64_t)up[1]<<32) |
+		  ((uint64_t)up[2]<<24) |
+		  ((uint64_t)up[3]<<16) |
+		  ((uint64_t)up[4]<< 8) |
+		   (uint64_t)up[5]) & ((1LL<<(2+5*8))-1);
+	return 6;
+    } else if (up[0] < 0xfe) {
+	*val_p = (((uint64_t)up[0]<<48) |
+		  ((uint64_t)up[1]<<40) |
+		  ((uint64_t)up[2]<<32) |
+		  ((uint64_t)up[3]<<24) |
+		  ((uint64_t)up[4]<<16) |
+		  ((uint64_t)up[5]<< 8) |
+		   (uint64_t)up[6]) & ((1LL<<(1+6*8))-1);
+	return 7;
+    } else if (up[0] < 0xff) {
+	*val_p = (((uint64_t)up[1]<<48) |
+		  ((uint64_t)up[2]<<40) |
+		  ((uint64_t)up[3]<<32) |
+		  ((uint64_t)up[4]<<24) |
+		  ((uint64_t)up[5]<<16) |
+		  ((uint64_t)up[6]<< 8) |
+		   (uint64_t)up[7]) & ((1LL<<(7*8))-1);
+	return 8;
+    } else {
+	*val_p = (((uint64_t)up[1]<<56) |
+		  ((uint64_t)up[2]<<48) |
+		  ((uint64_t)up[3]<<40) |
+		  ((uint64_t)up[4]<<32) |
+		  ((uint64_t)up[5]<<24) |
+		  ((uint64_t)up[6]<<16) |
+		  ((uint64_t)up[7]<< 8) |
+		   (uint64_t)up[8]);
+	return 9;
     }
 }
 

@@ -245,8 +245,32 @@ int itf8_encode(cram_fd *fd, int32_t val) {
 }
  
 const int itf8_bytes[16] = {
-    1, 1, 1, 1, 1, 1, 1, 1,
-    2, 2, 2, 2, 3, 3, 4, 5
+    1, 1, 1, 1,  1, 1, 1, 1,
+    2, 2, 2, 2,  3, 3, 4, 5
+};
+
+const int ltf8_bytes[256] = {
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+    1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
+
+    2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,
+    2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,
+    2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,
+    2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,  2, 2, 2, 2,
+
+    3, 3, 3, 3,  3, 3, 3, 3,  3, 3, 3, 3,  3, 3, 3, 3,
+    3, 3, 3, 3,  3, 3, 3, 3,  3, 3, 3, 3,  3, 3, 3, 3,
+
+    4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+
+    5, 5, 5, 5,  5, 5, 5, 5,  6, 6, 6, 6,  7, 7, 8, 9
 };
 
 #ifndef ITF8_MACROS
@@ -873,8 +897,8 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
 
 	r = lzma_code(&strm, LZMA_RUN);
 	if (LZMA_OK != r && LZMA_STREAM_END != r) {
-	    fprintf(stderr, "r=%d\n", r);
-	    fprintf(stderr, "mem=%"PRId64"d\n", (int64_t)lzma_memusage(&strm));
+	    fprintf(stderr, "Lzma decode error %d, mem=%"PRId64"\n",
+		    r, (int64_t)lzma_memusage(&strm));
 	    return NULL;
 	}
 
@@ -1157,7 +1181,7 @@ int cram_uncompress_block(cram_block *b) {
 	unsigned int usize = b->uncomp_size, usize2;
 	uncomp = (char *)rans_uncompress(b->data, b->comp_size, &usize2);
 	if (!uncomp || usize != usize2)
- 	    return -1;
+	    return -1;
 	free(b->data);
 	b->data = (unsigned char *)uncomp;
 	b->alloc = usize2;
@@ -1301,7 +1325,7 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 	    else
 		metrics->revised_method = method;
 
-	    if (metrics->next_trial == 0) {
+	    if (metrics->next_trial <= 0) {
 		metrics->next_trial = TRIAL_SPAN;
 		metrics->trial = NTRIALS;
 		metrics->sz_gz_rle /= 2;
@@ -2390,7 +2414,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 static void cram_ref_incr_locked(refs_t *r, int id) {
     RP("%d INC REF %d, %d %p\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count+1:-999), id>=0?r->ref_id[id]->seq:(char *)1);
 
-    if (id < 0 || !r->ref_id[id]->seq)
+    if (id < 0 || !r->ref_id[id] || !r->ref_id[id]->seq)
 	return;
 
     if (r->last_id == id)
@@ -2408,7 +2432,7 @@ void cram_ref_incr(refs_t *r, int id) {
 static void cram_ref_decr_locked(refs_t *r, int id) {
     RP("%d DEC REF %d, %d %p\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count-1:-999), id>=0?r->ref_id[id]->seq:(char *)1);
 
-    if (id < 0 || !r->ref_id[id]->seq) {
+    if (id < 0 || !r->ref_id[id] || !r->ref_id[id]->seq) {
 	assert(r->ref_id[id]->count >= 0);
 	return;
     }
@@ -2677,7 +2701,8 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
 	end = r->length;
     if (end >= r->length)
 	end  = r->length; 
-    assert(start >= 1);
+    if (start < 1)
+	return NULL;
 
     if (end - start >= 0.5*r->length || fd->shared_ref) {
 	start = 1;
@@ -2846,6 +2871,7 @@ cram_container *cram_new_container(int nrec, int nslice) {
     c->max_rec = nrec;
     c->record_counter = 0;
     c->num_bases = 0;
+    c->s_num_bases = 0;
 
     c->max_slice = nslice;
     c->curr_slice = 0;
@@ -2869,7 +2895,7 @@ cram_container *cram_new_container(int nrec, int nslice) {
     
     //c->aux_B_stats = cram_stats_create();
 
-    if (!(c->tags_used = kh_init(s_i2i)))
+    if (!(c->tags_used = kh_init(m_tagmap)))
 	goto err;
     c->refs_used = 0;
 
@@ -2915,7 +2941,22 @@ void cram_free_container(cram_container *c) {
 
     //if (c->aux_B_stats) cram_stats_free(c->aux_B_stats);
     
-    if (c->tags_used) kh_destroy(s_i2i, c->tags_used);
+    if (c->tags_used) {
+	khint_t k;
+
+	for (k = kh_begin(c->tags_used); k != kh_end(c->tags_used); k++) {
+	    if (!kh_exist(c->tags_used, k))
+		continue;
+
+	    cram_tag_map *tm = (cram_tag_map *)kh_val(c->tags_used, k);
+	    cram_codec *c = tm->codec;
+
+	    if (c) c->free(c);
+	    free(tm);
+	}
+
+	kh_destroy(m_tagmap, c->tags_used);
+    }
 
     free(c);
 }
@@ -3258,13 +3299,16 @@ static int cram_flush_result(cram_fd *fd) {
 	fd = j->fd;
 	c = j->c;
 
-	if (0 != cram_flush_container2(fd, c))
-	    return -1;
+	if (fd->mode == 'w')
+	    if (0 != cram_flush_container2(fd, c))
+		return -1;
 
 	/* Free the container */
 	for (i = 0; i < c->max_slice; i++) {
-	    cram_free_slice(c->slices[i]);
-	    c->slices[i] = NULL;
+	    if (c->slices && c->slices[i]) {
+		cram_free_slice(c->slices[i]);
+		c->slices[i] = NULL;
+	    }
 	}
 
 	c->slice = NULL;
@@ -3444,24 +3488,6 @@ void cram_free_slice(cram_slice *s) {
     if (s->aux_blk)
 	cram_free_block(s->aux_blk);
 
-    if (s->aux_OQ_blk)
-	cram_free_block(s->aux_OQ_blk);
-
-    if (s->aux_BQ_blk)
-	cram_free_block(s->aux_BQ_blk);
-
-    if (s->aux_FZ_blk)
-	cram_free_block(s->aux_FZ_blk);
-
-    if (s->aux_oq_blk)
-	cram_free_block(s->aux_oq_blk);
-
-    if (s->aux_os_blk)
-	cram_free_block(s->aux_os_blk);
-
-    if (s->aux_oz_blk)
-	cram_free_block(s->aux_oz_blk);
-
     if (s->base_blk)
 	cram_free_block(s->base_blk);
 
@@ -3487,6 +3513,9 @@ void cram_free_slice(cram_slice *s) {
 	kh_destroy(m_s2i, s->pair[0]);
     if (s->pair[1])
 	kh_destroy(m_s2i, s->pair[1]);
+
+    if (s->aux_block)
+	free(s->aux_block);
 
     free(s);
 }
@@ -3734,6 +3763,8 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 	if (!c)
 	    return NULL;
 
+	fd->first_container += c->length + c->offset;
+
 	if (c->num_blocks < 1) {
 	    cram_free_container(c);
 	    return NULL;
@@ -3767,7 +3798,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 	    return NULL;
 	}
 	memcpy(header, BLOCK_END(b), header_len);
-	header[header_len]='\0';
+	header[header_len] = '\0';
 	cram_free_block(b);
 
 	/* Consume any remaining blocks */
@@ -4222,6 +4253,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->decode_md = 0;
     fd->verbose = 0;
     fd->seqs_per_slice = SEQS_PER_SLICE;
+    fd->bases_per_slice = BASES_PER_SLICE;
     fd->slices_per_container = SLICE_PER_CNT;
     fd->embed_ref = 0;
     fd->no_ref = 0;
@@ -4244,6 +4276,9 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
 
     for (i = 0; i < DS_END; i++)
 	fd->m[i] = cram_new_metrics();
+
+    if (!(fd->tags_used = kh_init(m_metrics)))
+	goto err;
 
     fd->range.refid = -2; // no ref.
     fd->eof = 1;          // See samtools issue #150
@@ -4409,6 +4444,17 @@ int cram_close(cram_fd *fd) {
 	if (fd->m[i])
 	    free(fd->m[i]);
 
+    if (fd->tags_used) {
+	khint_t k;
+
+	for (k = kh_begin(fd->tags_used); k != kh_end(fd->tags_used); k++) {
+	    if (kh_exist(fd->tags_used, k))
+		free(kh_val(fd->tags_used, k));
+	}
+
+	kh_destroy(m_metrics, fd->tags_used);
+    }
+
     if (fd->index)
 	cram_index_free(fd);
 
@@ -4478,6 +4524,10 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_SEQS_PER_SLICE:
 	fd->seqs_per_slice = va_arg(args, int);
+	break;
+
+    case CRAM_OPT_BASES_PER_SLICE:
+	fd->bases_per_slice = va_arg(args, int);
 	break;
 
     case CRAM_OPT_SLICES_PER_CONTAINER:
