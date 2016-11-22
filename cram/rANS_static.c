@@ -203,10 +203,14 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 				  unsigned int *out_size) {
     /* Load in the static tables */
     unsigned char *cp = in + 9;
+    unsigned char *cp_end = in + in_size;
     int i, j, x, out_sz, in_sz, rle;
     char *out_buf;
     ari_decoder D;
     RansDecSymbol syms[256];
+
+    if (in_size < 26) // Need at least this many bytes just to start
+        return NULL;
 
     if (*in++ != 0) // Order-0 check
 	return NULL;
@@ -216,17 +220,12 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
     if (in_sz != in_size-9)
 	return NULL;
 
-    out_buf = malloc(out_sz);
-    if (!out_buf)
-	return NULL;
-
-    //fprintf(stderr, "out_sz=%d\n", out_sz);
-
     // Precompute reverse lookup of frequency.
     rle = x = 0;
     j = *cp++;
     do {
 	int F, C;
+        if (cp > cp_end - 16) return NULL; // Not enough input bytes left
 	if ((F = *cp++) >= 128) {
 	    F &= ~128;
 	    F = ((F & 127) << 8) | *cp++;
@@ -253,12 +252,18 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 
     assert(x < TOTFREQ);
 
+    if (cp > cp_end - 16) return NULL; // Not enough input bytes left
+
     RansState rans0, rans1, rans2, rans3;
     uint8_t *ptr = cp;
     RansDecInit(&rans0, &ptr);
     RansDecInit(&rans1, &ptr);
     RansDecInit(&rans2, &ptr);
     RansDecInit(&rans3, &ptr);
+
+    out_buf = malloc(out_sz);
+    if (!out_buf)
+	return NULL;
 
     int out_end = (out_sz&~3);
 
@@ -296,50 +301,28 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 	R[3] = syms[c[3]].freq * (R[3]>>TF_SHIFT);
 	R[3] += m[3] - syms[c[3]].start;
 
-	RansDecRenorm(&R[0], &ptr);
-	RansDecRenorm(&R[1], &ptr);
-	RansDecRenorm(&R[2], &ptr);
-	RansDecRenorm(&R[3], &ptr);
+        if (ptr < cp_end - 8) { // Each renorm reads no more than 2 bytes
+            RansDecRenorm(&R[0], &ptr);
+            RansDecRenorm(&R[1], &ptr);
+            RansDecRenorm(&R[2], &ptr);
+            RansDecRenorm(&R[3], &ptr);
+        } else {
+            RansDecRenormSafe(&R[0], &ptr, cp_end);
+            RansDecRenormSafe(&R[1], &ptr, cp_end);
+            RansDecRenormSafe(&R[2], &ptr, cp_end);
+            RansDecRenormSafe(&R[3], &ptr, cp_end);
+        }
     }
 
-    rans0 = R[0];
-    rans1 = R[1];
-    rans2 = R[2];
-    rans3 = R[3];
-
     switch(out_sz&3) {
-	unsigned char c;
-    case 0:
-	break;
-    case 1:
-	c = D.R[RansDecGet(&rans0, TF_SHIFT)];
-	RansDecAdvanceSymbol(&rans0, &ptr, &syms[c], TF_SHIFT);
-	out_buf[out_end] = c;
-	break;
-
-    case 2:
-	c = D.R[RansDecGet(&rans0, TF_SHIFT)];
-	RansDecAdvanceSymbol(&rans0, &ptr, &syms[c], TF_SHIFT);
-	out_buf[out_end] = c;
-
-	c = D.R[RansDecGet(&rans1, TF_SHIFT)];
-	RansDecAdvanceSymbol(&rans1, &ptr, &syms[c], TF_SHIFT);
-	out_buf[out_end+1] = c;
-	break;
-
     case 3:
-	c = D.R[RansDecGet(&rans0, TF_SHIFT)];
-	RansDecAdvanceSymbol(&rans0, &ptr, &syms[c], TF_SHIFT);
-	out_buf[out_end] = c;
-
-	c = D.R[RansDecGet(&rans1, TF_SHIFT)];
-	RansDecAdvanceSymbol(&rans1, &ptr, &syms[c], TF_SHIFT);
-	out_buf[out_end+1] = c;
-
-	c = D.R[RansDecGet(&rans2, TF_SHIFT)];
-	RansDecAdvanceSymbol(&rans2, &ptr, &syms[c], TF_SHIFT);
-	out_buf[out_end+2] = c;
-	break;
+        out_buf[out_end+2] = D.R[RansDecGet(&R[2], TF_SHIFT)];
+    case 2:
+        out_buf[out_end+1] = D.R[RansDecGet(&R[1], TF_SHIFT)];
+    case 1:
+        out_buf[out_end] = D.R[RansDecGet(&R[0], TF_SHIFT)];
+    default:
+        break;
     }
 
     *out_size = out_sz;
@@ -557,10 +540,14 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 				  unsigned int *out_size) {
     /* Load in the static tables */
     unsigned char *cp = in + 9;
+    unsigned char *ptr_end = in + in_size;
     int i, j = -999, x, out_sz, in_sz, rle_i, rle_j;
     char *out_buf = NULL;
     ari_decoder *D = NULL;              /* D[256] */
     RansDecSymbol (*syms)[256] = NULL;  /* syms[256][256] */
+
+    if (in_size < 27) // Need at least this many bytes to start
+        return NULL;
 
     if (*in++ != 1) // Order-1 check
 	return NULL;
@@ -585,6 +572,7 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 	j = *cp++;
 	do {
 	    int F, C;
+            if (cp > ptr_end - 16) goto cleanup; // Not enough input bytes left
 	    if ((F = *cp++) >= 128) {
 		F &= ~128;
 		F = ((F & 127) << 8) | *cp++;
@@ -630,6 +618,7 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 
     RansState rans0, rans1, rans2, rans3;
     uint8_t *ptr = cp;
+    if (ptr > ptr_end - 16) goto cleanup; // Not enough input bytes left
     RansDecInit(&rans0, &ptr);
     RansDecInit(&rans1, &ptr);
     RansDecInit(&rans2, &ptr);
@@ -682,10 +671,17 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 	R[3] = syms[l3][c[3]].freq * (R[3]>>TF_SHIFT);
 	R[3] += m[3] - syms[l3][c[3]].start;
 
-	RansDecRenorm(&R[0], &ptr);
-	RansDecRenorm(&R[1], &ptr);
-	RansDecRenorm(&R[2], &ptr);
-	RansDecRenorm(&R[3], &ptr);
+        if (ptr < ptr_end - 8) { // Each renorm reads no more than 2 bytes
+            RansDecRenorm(&R[0], &ptr);
+            RansDecRenorm(&R[1], &ptr);
+            RansDecRenorm(&R[2], &ptr);
+            RansDecRenorm(&R[3], &ptr);
+        } else {
+            RansDecRenormSafe(&R[0], &ptr, ptr_end);
+            RansDecRenormSafe(&R[1], &ptr, ptr_end);
+            RansDecRenormSafe(&R[2], &ptr, ptr_end);
+            RansDecRenormSafe(&R[3], &ptr, ptr_end);
+        }
 
 	l0 = c[0];
 	l1 = c[1];
@@ -693,16 +689,14 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 	l3 = c[3];
     }
 
-    rans0 = R[0];
-    rans1 = R[1];
-    rans2 = R[2];
-    rans3 = R[3];
-
     // Remainder
     for (; i4[3] < out_sz; i4[3]++) {
-	unsigned char c3 = D[l3].R[RansDecGet(&rans3, TF_SHIFT)];
+	unsigned char c3 = D[l3].R[RansDecGet(&R[3], TF_SHIFT)];
 	out_buf[i4[3]] = c3;
-	RansDecAdvanceSymbol(&rans3, &ptr, &syms[l3][c3], TF_SHIFT);
+
+        uint32_t m = R[3] & ((1u << TF_SHIFT)-1);
+        R[3] = syms[l3][c3].freq * (R[3]>>TF_SHIFT) + m - syms[l3][c3].start;
+        RansDecRenormSafe(&R[3], &ptr, ptr_end);
 	l3 = c3;
     }
 
