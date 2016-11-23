@@ -259,6 +259,7 @@ ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes)
 ssize_t hread2(hFILE *fp, void *destv, size_t nbytes, size_t nread)
 {
     const size_t capacity = fp->limit - fp->buffer;
+    int buffer_invalidated = 0;
     char *dest = (char *) destv;
     dest += nread, nbytes -= nread;
 
@@ -267,9 +268,19 @@ ssize_t hread2(hFILE *fp, void *destv, size_t nbytes, size_t nread)
         ssize_t n = fp->backend->read(fp, dest, nbytes);
         if (n < 0) { fp->has_errno = errno; return n; }
         else if (n == 0) fp->at_eof = 1;
+        else buffer_invalidated = 1;
         fp->offset += n;
         dest += n, nbytes -= n;
         nread += n;
+    }
+
+    if (buffer_invalidated) {
+        // Our unread buffer is empty, so begin == end, but our already-read
+        // buffer [buffer,begin) is likely non-empty and is no longer valid as
+        // its contents are no longer adjacent to the file position indicator.
+        // Discard it so that hseek() can't try to take advantage of it.
+        fp->offset += fp->begin - fp->buffer;
+        fp->begin = fp->end = fp->buffer;
     }
 
     while (nbytes > 0 && !fp->at_eof) {
