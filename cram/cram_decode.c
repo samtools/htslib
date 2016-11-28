@@ -1031,6 +1031,7 @@ void cram_decode_estimate_sizes(cram_block_compression_hdr *hdr, cram_slice *s,
 
     /* Qual */
     cd = hdr->codecs[DS_QS];
+    if (cd == NULL) return;
     bnum1 = cram_codec_to_id(cd, &bnum2);
     if (bnum1 < 0 && bnum2 >= 0) bnum1 = bnum2;
     if (cram_ds_unique(hdr, cd, bnum1)) {
@@ -1042,6 +1043,7 @@ void cram_decode_estimate_sizes(cram_block_compression_hdr *hdr, cram_slice *s,
 
     /* Name */
     cd = hdr->codecs[DS_RN];
+    if (cd == NULL) return;
     bnum1 = cram_codec_to_id(cd, &bnum2);
     if (bnum1 < 0 && bnum2 >= 0) bnum1 = bnum2;
     if (cram_ds_unique(hdr, cd, bnum1)) {
