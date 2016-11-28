@@ -26,7 +26,6 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
-#include <zlib.h>
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
@@ -46,7 +45,6 @@ KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
 typedef khash_t(vdict) vdict_t;
 
 #include "htslib/kseq.h"
-KSTREAM_DECLARE(gzFile, gzread)
 
 uint32_t bcf_float_missing    = 0x7F800001;
 uint32_t bcf_float_vector_end = 0x7F800002;
@@ -1313,25 +1311,18 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
             return NULL;
         }
         if (s->s[1] != '#' && fp->fn_aux) { // insert contigs here
-            int dret;
-            gzFile f;
-            kstream_t *ks;
+            FILE *f;
             kstring_t tmp;
             tmp.l = tmp.m = 0; tmp.s = 0;
-            f = gzopen(fp->fn_aux, "r");
-            ks = ks_init(f);
-            while (ks_getuntil(ks, 0, &tmp, &dret) >= 0) {
-                int c;
-                kputs("##contig=<ID=", &txt); kputs(tmp.s, &txt);
-                ks_getuntil(ks, 0, &tmp, &dret);
-                kputs(",length=", &txt); kputw(atol(tmp.s), &txt);
+            f = fopen(fp->fn_aux, "r");
+            while (tmp.l = 0, kgetline(&tmp, (kgets_func *) fgets, f) >= 0) {
+                char *tab = strchr(tmp.s, '\t');
+                kputs("##contig=<ID=", &txt); kputsn(tmp.s, tab - tmp.s, &txt);
+                kputs(",length=", &txt); kputw(atol(tab), &txt);
                 kputsn(">\n", 2, &txt);
-                if (dret != '\n')
-                    while ((c = ks_getc(ks)) != '\n' && c != -1); // skip the rest of the line
             }
             free(tmp.s);
-            ks_destroy(ks);
-            gzclose(f);
+            fclose(f);
         }
         kputsn(s->s, s->l, &txt);
         kputc('\n', &txt);

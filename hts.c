@@ -1049,34 +1049,23 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
 
 char **hts_readlist(const char *string, int is_file, int *_n)
 {
-    int m = 0, n = 0, dret;
+    int m = 0, n = 0;
     char **s = 0;
     if ( is_file )
     {
-#if KS_BGZF
         BGZF *fp = bgzf_open(string, "r");
-#else
-        gzFile fp = gzopen(string, "r");
-#endif
         if ( !fp ) return NULL;
 
-        kstream_t *ks;
         kstring_t str;
         str.s = 0; str.l = str.m = 0;
-        ks = ks_init(fp);
-        while (ks_getuntil(ks, KS_SEP_LINE, &str, &dret) >= 0)
+        while (bgzf_getline(fp, '\n', &str) >= 0)
         {
             if (str.l == 0) continue;
             n++;
             hts_expand(char*,n,m,s);
             s[n-1] = strdup(str.s);
         }
-        ks_destroy(ks);
-#if KS_BGZF
         bgzf_close(fp);
-#else
-        gzclose(fp);
-#endif
         free(str.s);
     }
     else
@@ -1103,19 +1092,13 @@ char **hts_readlist(const char *string, int is_file, int *_n)
 
 char **hts_readlines(const char *fn, int *_n)
 {
-    int m = 0, n = 0, dret;
+    int m = 0, n = 0;
     char **s = 0;
-#if KS_BGZF
     BGZF *fp = bgzf_open(fn, "r");
-#else
-    gzFile fp = gzopen(fn, "r");
-#endif
     if ( fp ) { // read from file
-        kstream_t *ks;
         kstring_t str;
         str.s = 0; str.l = str.m = 0;
-        ks = ks_init(fp);
-        while (ks_getuntil(ks, KS_SEP_LINE, &str, &dret) >= 0) {
+        while (bgzf_getline(fp, '\n', &str) >= 0) {
             if (str.l == 0) continue;
             if (m == n) {
                 m = m? m<<1 : 16;
@@ -1123,12 +1106,7 @@ char **hts_readlines(const char *fn, int *_n)
             }
             s[n++] = strdup(str.s);
         }
-        ks_destroy(ks);
-        #if KS_BGZF
-            bgzf_close(fp);
-        #else
-            gzclose(fp);
-        #endif
+        bgzf_close(fp);
         s = (char**)realloc(s, n * sizeof(char*));
         free(str.s);
     } else if (*fn == ':') { // read from string
