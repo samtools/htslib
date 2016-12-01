@@ -127,7 +127,6 @@ typedef struct {
         BGZF *bgzf;
         struct cram_fd *cram;
         struct hFILE *hfile;
-        void *voidp;
     } fp;
     htsFormat format;
 } htsFile;

@@ -45,14 +45,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kseq.h"
 #include "htslib/ksort.h"
 
-#define KS_BGZF 1
-#if KS_BGZF
-    // bgzf now supports gzip-compressed files, the gzFile branch can be removed
-    KSTREAM_INIT2(, BGZF*, bgzf_read, 65536)
-#else
-    KSTREAM_INIT2(, gzFile, gzread, 16384)
-#endif
-
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
 int hts_verbose = 3;
@@ -804,18 +796,7 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
     case text_format:
     case sam:
     case vcf:
-        if (!fp->is_write) {
-        #if KS_BGZF
-            BGZF *gzfp = bgzf_hopen(hfile, simple_mode);
-        #else
-            // TODO Implement gzip hFILE adaptor
-            hclose(hfile); // This won't work, especially for stdin
-            gzFile gzfp = strcmp(fn, "-")? gzopen(fn, "rb") : gzdopen(fileno(stdin), "rb");
-        #endif
-            if (gzfp) fp->fp.voidp = ks_init(gzfp);
-            else goto error;
-        }
-        else if (fp->format.compression != no_compression) {
+        if (fp->format.compression != no_compression) {
             fp->fp.bgzf = bgzf_hopen(hfile, simple_mode);
             if (fp->fp.bgzf == NULL) goto error;
         }
@@ -872,17 +853,7 @@ int hts_close(htsFile *fp)
     case text_format:
     case sam:
     case vcf:
-        if (!fp->is_write) {
-        #if KS_BGZF
-            BGZF *gzfp = ((kstream_t*)fp->fp.voidp)->f;
-            ret = bgzf_close(gzfp);
-        #else
-            gzFile gzfp = ((kstream_t*)fp->fp.voidp)->f;
-            ret = gzclose(gzfp);
-        #endif
-            ks_destroy((kstream_t*)fp->fp.voidp);
-        }
-        else if (fp->format.compression != no_compression)
+        if (fp->format.compression != no_compression)
             ret = bgzf_close(fp->fp.bgzf);
         else
             ret = hclose(fp->fp.hfile);
@@ -1015,34 +986,50 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
 // future is uncertain. Things will probably have to change with hFILE...
 BGZF *hts_get_bgzfp(htsFile *fp)
 {
-    if ( fp->is_bin  || fp->is_write )
+    if (fp->format.compression == bgzf || fp->format.compression == gzip)
         return fp->fp.bgzf;
     else
-        return ((kstream_t*)fp->fp.voidp)->f;
+        return NULL;
 }
 int hts_useek(htsFile *fp, long uoffset, int where)
 {
-    if ( fp->is_bin )
+    if (fp->format.compression == bgzf || fp->format.compression == gzip)
         return bgzf_useek(fp->fp.bgzf, uoffset, where);
     else
-    {
-        ks_rewind((kstream_t*)fp->fp.voidp);
-        ((kstream_t*)fp->fp.voidp)->seek_pos = uoffset;
-        return bgzf_useek(((kstream_t*)fp->fp.voidp)->f, uoffset, where);
-    }
+        return (hseek(fp->fp.hfile, uoffset, SEEK_SET) >= 0)? 0 : -1;
 }
 long hts_utell(htsFile *fp)
 {
-    if ( fp->is_bin )
+    if (fp->format.compression == bgzf || fp->format.compression == gzip)
         return bgzf_utell(fp->fp.bgzf);
     else
-        return ((kstream_t*)fp->fp.voidp)->seek_pos;
+        return htell(fp->fp.hfile);
 }
 
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
 {
-    int ret, dret;
-    ret = ks_getuntil((kstream_t*)fp->fp.voidp, delimiter, str, &dret);
+    int ret;
+    if (! (delimiter == KS_SEP_LINE || delimiter == '\n')) {
+        fprintf(stderr, "[hts_getline] unexpected delimiter %d\n", delimiter);
+        abort();
+    }
+
+    switch (fp->format.compression) {
+    case no_compression:
+        str->l = 0;
+        ret = kgetline(str, (kgets_func *) hgets, fp->fp.hfile);
+        if (ret >= 0) ret = str->l;
+        break;
+
+    case gzip:
+    case bgzf:
+        ret = bgzf_getline(fp->fp.bgzf, '\n', str);
+        break;
+
+    default:
+        abort();
+    }
+
     ++fp->lineno;
     return ret;
 }

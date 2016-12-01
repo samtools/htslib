@@ -254,7 +254,7 @@ typedef struct __kstring_t {
      * @param fp     BGZF file handler
      * @param delim  delimitor
      * @param str    string to write to; must be initialized
-     * @return       length of the string; 0 on end-of-file; negative on error
+     * @return       length of the string; -1 on end-of-file; <= -2 on error
      */
     int bgzf_getline(BGZF *fp, int delim, kstring_t *str);
 
