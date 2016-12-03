@@ -35,7 +35,7 @@ void write_bcf(char *fname)
     // Init
     htsFile *fp    = hts_open(fname,"wb");
     bcf_hdr_t *hdr = bcf_hdr_init("w");
-    bcf1_t *rec    = bcf_init1();
+    bcf1_t *rec    = bcf_init();
 
     // Create VCF header
     kstring_t str = {0,0,0};
@@ -154,7 +154,7 @@ void write_bcf(char *fname)
 
     // Clean
     free(str.s);
-    bcf_destroy1(rec);
+    bcf_destroy(rec);
     bcf_hdr_destroy(hdr);
     int ret;
     if ( (ret=hts_close(fp)) )
@@ -168,7 +168,7 @@ void bcf_to_vcf(char *fname)
 {
     htsFile *fp    = hts_open(fname,"rb");
     bcf_hdr_t *hdr = bcf_hdr_read(fp);
-    bcf1_t *rec    = bcf_init1();
+    bcf1_t *rec    = bcf_init();
 
     char *gz_fname = (char*) malloc(strlen(fname)+4);
     snprintf(gz_fname,strlen(fname)+4,"%s.gz",fname);
@@ -196,7 +196,7 @@ void bcf_to_vcf(char *fname)
 
         bcf1_t *dup = bcf_dup(rec);     // force bcf1_sync call
         bcf_write1(out, hdr_out, dup);
-        bcf_destroy1(dup);
+        bcf_destroy(dup);
 
         bcf_update_alleles_str(hdr_out, rec, "G,A");
         int32_t tmpi = 99;
@@ -207,7 +207,7 @@ void bcf_to_vcf(char *fname)
         bcf_write1(out, hdr_out, rec);
     }
 
-    bcf_destroy1(rec);
+    bcf_destroy(rec);
     bcf_hdr_destroy(hdr);
     bcf_hdr_destroy(hdr_out);
     int ret;

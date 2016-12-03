@@ -946,7 +946,7 @@ void bcf_empty(bcf1_t *v)
 
 void bcf_destroy(bcf1_t *v)
 {
-    bcf_empty1(v);
+    bcf_empty(v);
     free(v);
 }
 
@@ -1248,7 +1248,7 @@ bcf1_t *bcf_copy(bcf1_t *dst, bcf1_t *src)
 }
 bcf1_t *bcf_dup(bcf1_t *src)
 {
-    bcf1_t *out = bcf_init1();
+    bcf1_t *out = bcf_init();
     return bcf_copy(out, src);
 }
 
@@ -2335,19 +2335,19 @@ hts_idx_t *bcf_index(htsFile *fp, int min_shift)
     max_len += 256;
     for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
     idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
-    b = bcf_init1();
+    b = bcf_init();
     while (bcf_read1(fp,h, b) >= 0) {
         int ret;
         ret = hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp->fp.bgzf), 1);
         if (ret < 0)
         {
-            bcf_destroy1(b);
+            bcf_destroy(b);
             hts_idx_destroy(idx);
             return NULL;
         }
     }
     hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
-    bcf_destroy1(b);
+    bcf_destroy(b);
     bcf_hdr_destroy(h);
     return idx;
 }

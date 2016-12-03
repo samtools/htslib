@@ -245,6 +245,7 @@ typedef struct {
     #define vcf_parse1(s,h,v)   vcf_parse((s),(h),(v))
     #define bcf_clear1(v)       bcf_clear(v)
     #define vcf_format1(h,v,s)  vcf_format((h),(v),(s))
+    #define bcf_empty1(v)       bcf_empty(v)
 
     /**
      *  bcf_hdr_init() - create an empty BCF header.

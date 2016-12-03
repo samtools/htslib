@@ -304,7 +304,7 @@ static void bcf_sr_destroy1(bcf_sr_t *reader)
     if ( reader->itr ) tbx_itr_destroy(reader->itr);
     int j;
     for (j=0; j<reader->mbuffer; j++)
-        bcf_destroy1(reader->buffer[j]);
+        bcf_destroy(reader->buffer[j]);
     free(reader->buffer);
     free(reader->samples);
     free(reader->filter_ids);
@@ -504,7 +504,7 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             reader->buffer = (bcf1_t**) realloc(reader->buffer, sizeof(bcf1_t*)*reader->mbuffer);
             for (i=8; i>0; i--)     // initialize
             {
-                reader->buffer[reader->mbuffer-i] = bcf_init1();
+                reader->buffer[reader->mbuffer-i] = bcf_init();
                 reader->buffer[reader->mbuffer-i]->max_unpack = files->max_unpack;
                 reader->buffer[reader->mbuffer-i]->pos = -1;    // for rare cases when VCF starts from 1
             }
