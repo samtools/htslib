@@ -458,7 +458,8 @@ static int add_header(hFILE_libcurl *fp, const char *header)
 static int
 add_s3_settings(hFILE_libcurl *fp, const char *url, kstring_t *message);
 
-hFILE *hopen_libcurl(const char *url, const char *modes)
+static hFILE *
+libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
 {
     hFILE_libcurl *fp;
     char mode;
@@ -473,20 +474,20 @@ hFILE *hopen_libcurl(const char *url, const char *modes)
     }
     else mode = '\0';
 
-    if (mode != 'r' && mode != 'w') { errno = EINVAL; return NULL; }
+    if (mode != 'r' && mode != 'w') { errno = EINVAL; goto early_error; }
 
     fp = (hFILE_libcurl *) hfile_init(sizeof (hFILE_libcurl), modes, 0);
-    if (fp == NULL) return NULL;
+    if (fp == NULL) goto early_error;
 
-    fp->easy = curl_easy_init();
-    if (fp->easy == NULL) { errno = ENOMEM; goto error; }
-
-    fp->headers = NULL;
+    fp->headers = headers;
     fp->file_size = -1;
     fp->buffer.ptr.rd = NULL;
     fp->buffer.len = 0;
     fp->final_result = (CURLcode) -1;
     fp->paused = fp->closing = fp->finished = 0;
+
+    fp->easy = curl_easy_init();
+    if (fp->easy == NULL) { errno = ENOMEM; goto error; }
 
     // Make a route to the hFILE_libcurl* given just a CURL* easy handle
     err = curl_easy_setopt(fp->easy, CURLOPT_PRIVATE, fp);
@@ -554,17 +555,53 @@ error_remove:
 
 error:
     save = errno;
-    curl_easy_cleanup(fp->easy);
+    if (fp->easy) curl_easy_cleanup(fp->easy);
     if (fp->headers) curl_slist_free_all(fp->headers);
     hfile_destroy((hFILE *) fp);
     errno = save;
+    return NULL;
+
+early_error:
+    save = errno;
+    if (headers) curl_slist_free_all(headers);
+    errno = save;
+    return NULL;
+}
+
+static hFILE *hopen_libcurl(const char *url, const char *modes)
+{
+    return libcurl_open(url, modes, NULL);
+}
+
+static hFILE *vhopen_libcurl(const char *url, const char *modes, va_list args)
+{
+    struct curl_slist *headers = NULL;
+    const char *argtype;
+
+    while ((argtype = va_arg(args, const char *)) != NULL)
+        if (strcmp(argtype, "httphdr:v") == 0) {
+            const char **hdr;
+            for (hdr = va_arg(args, const char **); *hdr; hdr++) {
+                struct curl_slist *list = curl_slist_append(headers, *hdr);
+                if (list) headers = list; else goto slist_error;
+            }
+        }
+        else { errno = EINVAL; return NULL; }
+
+    return libcurl_open(url, modes, headers);
+
+slist_error:
+    if (headers) curl_slist_free_all(headers);
+    errno = ENOMEM;
     return NULL;
 }
 
 int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
 {
     static const struct hFILE_scheme_handler handler =
-        { hopen_libcurl, hfile_always_remote, "libcurl", 50 };
+        { hopen_libcurl, hfile_always_remote, "libcurl",
+          2000 + 50,
+          vhopen_libcurl };
 
 #ifdef ENABLE_PLUGINS
     // Embed version string for examination via strings(1) or what(1)

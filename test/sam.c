@@ -77,7 +77,7 @@ uint8_t *check_bam_aux_get(const bam1_t *aln, const char *tag, char type)
 
 static int aux_fields1(void)
 {
-    static const char sam[] = "data:"
+    static const char sam[] = "data:,"
 "@SQ\tSN:one\tLN:1000\n"
 "@SQ\tSN:two\tLN:500\n"
 "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\n";

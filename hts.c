@@ -104,6 +104,9 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
     case bed:
         return region_list;
 
+    case json:
+        return unknown_category;
+
     case unknown_format:
     case binary_format:
     case text_format:
@@ -171,6 +174,20 @@ parse_version(htsFormat *fmt, const unsigned char *u, const unsigned char *ulim)
         else
             fmt->version.minor = 0;
     }
+}
+
+static int
+cmp_nonblank(const char *key, const unsigned char *u, const unsigned char *ulim)
+{
+    const unsigned char *ukey = (const unsigned char *) key;
+
+    while (*ukey)
+        if (u >= ulim) return +1;
+        else if (isspace_c(*u)) u++;
+        else if (*u != *ukey) return (*ukey < *u)? -1 : +1;
+        else u++, ukey++;
+
+    return 0;
 }
 
 int hts_detect_format(hFILE *hfile, htsFormat *fmt)
@@ -264,6 +281,12 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
             fmt->version.major = 1, fmt->version.minor = -1;
         return 0;
     }
+    else if (cmp_nonblank("{\"", s, &s[len]) == 0) {
+        fmt->category = unknown_category;
+        fmt->format = json;
+        fmt->version.major = fmt->version.minor = -1;
+        return 0;
+    }
     else {
         // Various possibilities for tab-delimited text:
         // .crai   (gzipped tab-delimited six columns: seqid 5*number)
@@ -301,6 +324,7 @@ char *hts_format_description(const htsFormat *format)
     case crai:  kputs("CRAI", &str); break;
     case csi:   kputs("CSI", &str); break;
     case tbi:   kputs("Tabix", &str); break;
+    case json:  kputs("JSON", &str); break;
     default:    kputs("unknown", &str); break;
     }
 
@@ -347,6 +371,7 @@ char *hts_format_description(const htsFormat *format)
         case crai:
         case vcf:
         case bed:
+        case json:
             kputs(" text", &str);
             break;
 
@@ -722,8 +747,9 @@ static int hts_process_opts(htsFile *fp, const char *opts) {
 }
 
 
-htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
+htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
 {
+    hFILE *hfile_orig = hfile;
     htsFile *fp = (htsFile*)calloc(1, sizeof(htsFile));
     char simple_mode[101], *cp, *opts;
     simple_mode[100] = '\0';
@@ -745,6 +771,15 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
 
     if (strchr(simple_mode, 'r')) {
         if (hts_detect_format(hfile, &fp->format) < 0) goto error;
+
+        if (fp->format.format == json) {
+            hFILE *hfile2 = hopen_json_redirect(hfile, simple_mode);
+            if (hfile2 == NULL) goto error;
+
+            // Build fp against the result of the redirection
+            hfile = hfile2;
+            if (hts_detect_format(hfile, &fp->format) < 0) goto error;
+        }
     }
     else if (strchr(simple_mode, 'w') || strchr(simple_mode, 'a')) {
         htsFormat *fmt = &fp->format;
@@ -774,7 +809,7 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
         fmt->compression_level = -1;
         fmt->specific = NULL;
     }
-    else goto error;
+    else { errno = EINVAL; goto error; }
 
     switch (fp->format.format) {
     case binary_format:
@@ -805,17 +840,25 @@ htsFile *hts_hopen(struct hFILE *hfile, const char *fn, const char *mode)
         break;
 
     default:
+        errno = ENOEXEC;
         goto error;
     }
 
     if (opts)
         hts_process_opts(fp, opts);
 
+    // If redirecting, close the original hFILE now (pedantically we would
+    // instead close it in hts_close(), but this a simplifying optimisation)
+    if (hfile != hfile_orig) hclose_abruptly(hfile_orig);
+
     return fp;
 
 error:
     if (hts_verbose >= 2)
         fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
+
+    // If redirecting, close the failed redirection hFILE that we have opened
+    if (hfile != hfile_orig) hclose_abruptly(hfile);
 
     if (fp) {
         free(fp->fn);
