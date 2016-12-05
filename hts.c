@@ -817,7 +817,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
     case bcf:
         fp->fp.bgzf = bgzf_hopen(hfile, simple_mode);
         if (fp->fp.bgzf == NULL) goto error;
-        fp->is_bin = 1;
+        fp->is_bin = fp->is_bgzf = 1;
         break;
 
     case cram:
@@ -834,6 +834,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
         if (fp->format.compression != no_compression) {
             fp->fp.bgzf = bgzf_hopen(hfile, simple_mode);
             if (fp->fp.bgzf == NULL) goto error;
+            fp->is_bgzf = 1;
         }
         else
             fp->fp.hfile = hfile;
@@ -1029,21 +1030,21 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
 // future is uncertain. Things will probably have to change with hFILE...
 BGZF *hts_get_bgzfp(htsFile *fp)
 {
-    if (fp->format.compression == bgzf || fp->format.compression == gzip)
+    if (fp->is_bgzf)
         return fp->fp.bgzf;
     else
         return NULL;
 }
 int hts_useek(htsFile *fp, long uoffset, int where)
 {
-    if (fp->format.compression == bgzf || fp->format.compression == gzip)
+    if (fp->is_bgzf)
         return bgzf_useek(fp->fp.bgzf, uoffset, where);
     else
         return (hseek(fp->fp.hfile, uoffset, SEEK_SET) >= 0)? 0 : -1;
 }
 long hts_utell(htsFile *fp)
 {
-    if (fp->format.compression == bgzf || fp->format.compression == gzip)
+    if (fp->is_bgzf)
         return bgzf_utell(fp->fp.bgzf);
     else
         return htell(fp->fp.hfile);
