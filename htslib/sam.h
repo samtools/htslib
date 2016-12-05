@@ -174,7 +174,8 @@ typedef struct {
  */
 typedef struct {
     bam1_core_t core;
-    int l_data, m_data;
+    int l_data;
+    uint32_t m_data;
     uint8_t *data;
 #ifndef BAM_NO_ID
     uint64_t id;

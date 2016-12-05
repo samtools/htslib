@@ -63,6 +63,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <math.h>
 #include <time.h>
+#include <stdint.h>
 
 #include "cram/cram.h"
 #include "cram/os.h"
@@ -983,6 +984,7 @@ cram_block *cram_read_block(cram_fd *fd) {
     //	    b->method, b->content_type, b->content_id, b->comp_size, b->uncomp_size);
 
     if (b->method == RAW) {
+        if (b->uncomp_size < 0) { free(b); return NULL; }
 	b->alloc = b->uncomp_size;
 	if (!(b->data = malloc(b->uncomp_size))){ free(b); return NULL; }
 	if (b->uncomp_size != hread(fd->fp, b->data, b->uncomp_size)) {
@@ -991,6 +993,7 @@ cram_block *cram_read_block(cram_fd *fd) {
 	    return NULL;
 	}
     } else {
+        if (b->comp_size < 0) { free(b); return NULL; }
 	b->alloc = b->comp_size;
 	if (!(b->data = malloc(b->comp_size)))  { free(b); return NULL; }
 	if (b->comp_size != hread(fd->fp, b->data, b->comp_size)) {
@@ -3029,6 +3032,9 @@ cram_container *cram_read_container(cram_fd *fd) {
     }
     if ((s = itf8_decode_crc(fd, &c2.num_blocks, &crc))   == -1) return NULL; else rd+=s;
     if ((s = itf8_decode_crc(fd, &c2.num_landmarks, &crc))== -1) return NULL; else rd+=s;
+
+    if (c2.num_landmarks < 0 || c2.num_landmarks >= SIZE_MAX / sizeof(int32_t))
+        return NULL;
 
     if (!(c = calloc(1, sizeof(*c))))
 	return NULL;
