@@ -390,8 +390,11 @@ void cram_external_decode_free(cram_codec *c) {
 cram_codec *cram_external_decode_init(char *data, int size,
 				      enum cram_external_type option,
 				      int version) {
-    cram_codec *c;
+    cram_codec *c = NULL;
     char *cp = data;
+
+    if (size < 1)
+        goto malformed;
 
     if (!(c = malloc(sizeof(*c))))
 	return NULL;
@@ -405,19 +408,22 @@ cram_codec *cram_external_decode_init(char *data, int size,
 	c->decode = cram_external_decode_block;
     c->free   = cram_external_decode_free;
     
-    cp += itf8_get(cp, &c->external.content_id);
+    cp += safe_itf8_get(cp, data + size, &c->external.content_id);
 
-    if (cp - data != size) {
-	fprintf(stderr, "Malformed external header stream\n");
-	free(c);
-	return NULL;
-    }
+    if (cp - data != size)
+        goto malformed;
 
     c->external.type = option;
     c->external.b = NULL;
     c->reset = cram_external_decode_reset;
 
     return c;
+
+ malformed:
+    if (hts_verbose >= 1)
+        fprintf(stderr, "Malformed external header stream\n");
+    free(c);
+    return NULL;
 }
 
 int cram_external_encode_int(cram_slice *slice, cram_codec *c,
@@ -557,12 +563,14 @@ cram_codec *cram_beta_decode_init(char *data, int size,
     c->free   = cram_beta_decode_free;
     
     c->beta.nbits = -1;
-    cp += itf8_get(cp, &c->beta.offset);
-    cp += itf8_get(cp, &c->beta.nbits);
+    cp += safe_itf8_get(cp, data + size, &c->beta.offset);
+    if (cp < data + size) // Ensure test below works
+        cp += safe_itf8_get(cp, data + size, &c->beta.nbits);
 
     if (cp - data != size
         || c->beta.nbits < 0 || c->beta.nbits > 8 * sizeof(int)) {
-	fprintf(stderr, "Malformed beta header stream\n");
+        if (hts_verbose >= 1)
+            fprintf(stderr, "Malformed beta header stream\n");
 	free(c);
 	return NULL;
     }
@@ -802,13 +810,16 @@ void cram_gamma_decode_free(cram_codec *c) {
 cram_codec *cram_gamma_decode_init(char *data, int size,
 				   enum cram_external_type option,
 				   int version) {
-    cram_codec *c;
+    cram_codec *c = NULL;
     char *cp = data;
 
     if (option == E_BYTE_ARRAY_BLOCK) {
 	fprintf(stderr, "BYTE_ARRAYs not supported by this codec\n");
 	return NULL;
     }
+
+    if (size < 1)
+        goto malformed;
 
     if (!(c = malloc(sizeof(*c))))
 	return NULL;
@@ -817,17 +828,20 @@ cram_codec *cram_gamma_decode_init(char *data, int size,
     c->decode = cram_gamma_decode;
     c->free   = cram_gamma_decode_free;
     
-    cp += itf8_get(cp, &c->gamma.offset);
+    cp += safe_itf8_get(cp, data + size, &c->gamma.offset);
 
-    if (cp - data != size) {
-	fprintf(stderr, "Malformed gamma header stream\n");
-	free(c);
-	return NULL;
-    }
+    if (cp - data != size)
+        goto malformed;
 
     c->reset = cram_nop_decode_reset;
 
     return c;
+
+ malformed:
+    if (hts_verbose >= 1)
+        fprintf(stderr, "Malformed gamma header stream\n");
+    free(c);
+    return NULL;
 }
 
 /*
@@ -1672,8 +1686,11 @@ void cram_byte_array_stop_decode_free(cram_codec *c) {
 cram_codec *cram_byte_array_stop_decode_init(char *data, int size,
 					     enum cram_external_type option,
 					     int version) {
-    cram_codec *c;
+    cram_codec *c = NULL;
     unsigned char *cp = (unsigned char *)data;
+
+    if (size < (CRAM_MAJOR_VERS(version) == 1 ? 5 : 2))
+        goto malformed;
 
     if (!(c = malloc(sizeof(*c))))
 	return NULL;
@@ -1687,7 +1704,8 @@ cram_codec *cram_byte_array_stop_decode_init(char *data, int size,
         c->decode = cram_byte_array_stop_decode_char;
 	break;
     default:
-        fprintf(stderr, "byte_array_stop codec only supports BYTE_ARRAYs.\n");
+        if (hts_verbose >= 1)
+            fprintf(stderr, "byte_array_stop codec only supports BYTE_ARRAYs.\n");
         free(c);
         return NULL;
     }
@@ -1699,19 +1717,23 @@ cram_codec *cram_byte_array_stop_decode_init(char *data, int size,
 	    + (cp[3]<<24);
 	cp += 4;
     } else {
-	cp += itf8_get(cp, &c->byte_array_stop.content_id);
+	cp += safe_itf8_get((char *) cp, data + size,
+                            &c->byte_array_stop.content_id);
     }
 
-    if ((char *)cp - data != size) {
-	fprintf(stderr, "Malformed byte_array_stop header stream\n");
-	free(c);
-	return NULL;
-    }
+    if ((char *)cp - data != size)
+        goto malformed;
 
     c->byte_array_stop.b = NULL;
     c->reset = cram_byte_array_stop_decode_reset;
 
     return c;
+
+ malformed:
+    if (hts_verbose >= 1)
+        fprintf(stderr, "Malformed byte_array_stop header stream\n");
+    free(c);
+    return NULL;
 }
 
 int cram_byte_array_stop_encode(cram_slice *slice, cram_codec *c,
