@@ -189,7 +189,7 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
 	khint_t k;
 	int r;
 
-	if (endp - cp < 2) {
+	if (endp - cp < 3) {
 	    cram_free_compression_header(hdr);
 	    return NULL;
 	}
