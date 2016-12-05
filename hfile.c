@@ -61,6 +61,7 @@ DEALINGS IN THE SOFTWARE.  */
    off_t offset;     // Offset within the stream of buffer position 0
    unsigned at_eof:1;// For reading, whether EOF has been seen
    unsigned mobile:1;// Buffer is a mobile window or fixed full contents
+   unsigned readonly:1;// Whether opened as "r" rather than "r+"/"w"/"a"
    int has_errno;    // Error number from the last failure on this stream
 
 For reading, begin is the first unread character in the buffer and end is the
@@ -109,6 +110,7 @@ hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity)
     fp->offset = 0;
     fp->at_eof = 0;
     fp->mobile = 1;
+    fp->readonly = (strchr(mode, 'r') && ! strchr(mode, '+'));
     fp->has_errno = 0;
     return fp;
 
@@ -130,6 +132,7 @@ hFILE *hfile_init_fixed(size_t struct_size, const char *mode,
     fp->offset = 0;
     fp->at_eof = 1;
     fp->mobile = 0;
+    fp->readonly = (strchr(mode, 'r') && ! strchr(mode, '+'));
     fp->has_errno = 0;
     return fp;
 }
@@ -405,8 +408,9 @@ off_t hseek(hFILE *fp, off_t offset, int whence)
     }
 
     // Avoid seeking if the desired position is within our read buffer.
-    if (whence == SEEK_SET && offset >= fp->offset &&
-        offset - fp->offset <= fp->end - fp->buffer) {
+    // (But not when the next operation may be a write on a mobile buffer.)
+    if (whence == SEEK_SET && (! fp->mobile || fp->readonly) &&
+        offset >= fp->offset && offset - fp->offset <= fp->end - fp->buffer) {
         fp->begin = &fp->buffer[offset - fp->offset];
         return offset;
     }
