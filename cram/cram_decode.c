@@ -2294,6 +2294,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 	    pthread_mutex_lock(&fd->ref_lock);
 	    pthread_mutex_lock(&fd->refs->lock);
 	    if ((fd->required_fields & SAM_SEQ) &&
+                ref_id < fd->refs->nref &&
 		s->ref_end > fd->refs->ref_id[ref_id]->length) {
 		s->ref_end = fd->refs->ref_id[ref_id]->length;
 	    }
