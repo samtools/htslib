@@ -1294,6 +1294,7 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
 bcf_hdr_t *vcf_hdr_read(htsFile *fp)
 {
     kstring_t txt, *s = &fp->line;
+    int ret;
     bcf_hdr_t *h;
     h = bcf_hdr_init("r");
     if (!h) {
@@ -1301,7 +1302,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
         return NULL;
     }
     txt.l = txt.m = 0; txt.s = 0;
-    while (hts_getline(fp, KS_SEP_LINE, s) >= 0) {
+    while ((ret = hts_getline(fp, KS_SEP_LINE, s)) >= 0) {
         if (s->l == 0) continue;
         if (s->s[0] != '#') {
             if (hts_verbose >= 2)
@@ -1328,6 +1329,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
         kputc('\n', &txt);
         if (s->s[1] != '#') break;
     }
+    if ( ret < -1 ) { free(txt.s); bcf_hdr_destroy(h); return NULL; }
     if ( !txt.s )
     {
         fprintf(stderr,"[%s:%d %s] Could not read the header\n", __FILE__,__LINE__,__FUNCTION__);
@@ -2060,7 +2062,7 @@ int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
     int ret;
     ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
-    if (ret < 0) return -1;
+    if (ret < 0) return ret;
     return vcf_parse1(&fp->line, h, v);
 }
 

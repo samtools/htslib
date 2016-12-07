@@ -756,20 +756,20 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         return cram_header_to_bam(fp->fp.cram->header);
 
     case sam: {
-        kstring_t str;
-        bam_hdr_t *h;
-        int has_SQ = 0;
-        str.l = str.m = 0; str.s = 0;
-        while (hts_getline(fp, KS_SEP_LINE, &fp->line) >= 0) {
+        kstring_t str = { 0, 0, NULL };
+        bam_hdr_t *h = NULL;
+        int ret, has_SQ = 0;
+        while ((ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) >= 0) {
             if (fp->line.s[0] != '@') break;
             if (fp->line.l > 3 && strncmp(fp->line.s,"@SQ",3) == 0) has_SQ = 1;
             kputsn(fp->line.s, fp->line.l, &str);
             kputc('\n', &str);
         }
+        if (ret < -1) goto error;
         if (! has_SQ && fp->fn_aux) {
             char line[2048];
             FILE *f = fopen(fp->fn_aux, "r");
-            if (f == NULL) return NULL;
+            if (f == NULL) goto error;
             while (fgets(line, sizeof line, f)) {
                 const char *name = strtok(line, "\t");
                 const char *length = strtok(NULL, "\t");
@@ -781,6 +781,11 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         h = sam_hdr_parse(str.l, str.s);
         h->l_text = str.l; h->text = str.s;
         return h;
+
+     error:
+        bam_hdr_destroy(h);
+        free(str.s);
+        return NULL;
         }
 
     default:
@@ -1065,7 +1070,7 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 err_recover:
         if (fp->line.l == 0) {
             ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
-            if (ret < 0) return -1;
+            if (ret < 0) return ret;
         }
         ret = sam_parse1(&fp->line, h, b);
         fp->line.l = 0;

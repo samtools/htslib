@@ -1063,6 +1063,8 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
         str->l = 0;
         ret = kgetline(str, (kgets_func *) hgets, fp->fp.hfile);
         if (ret >= 0) ret = str->l;
+        else if (herrno(fp->fp.hfile)) ret = -2, errno = herrno(fp->fp.hfile);
+        else ret = -1;
         break;
 
     case gzip:
