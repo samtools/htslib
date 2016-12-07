@@ -1307,33 +1307,37 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
         if (s->s[0] != '#') {
             if (hts_verbose >= 2)
                 fprintf(stderr, "[E::%s] no sample line\n", __func__);
-            free(txt.s);
-            bcf_hdr_destroy(h);
-            return NULL;
+            goto error;
         }
         if (s->s[1] != '#' && fp->fn_aux) { // insert contigs here
-            FILE *f;
-            kstring_t tmp;
-            tmp.l = tmp.m = 0; tmp.s = 0;
-            f = fopen(fp->fn_aux, "r");
-            while (tmp.l = 0, kgetline(&tmp, (kgets_func *) fgets, f) >= 0) {
+            kstring_t tmp = { 0, 0, NULL };
+            hFILE *f = hopen(fp->fn_aux, "r");
+            if (f == NULL) {
+                fprintf(stderr, "[E::%s] couldn't open \"%s\"\n", __func__, fp->fn_aux);
+                goto error;
+            }
+            while (tmp.l = 0, kgetline(&tmp, (kgets_func *) hgets, f) >= 0) {
                 char *tab = strchr(tmp.s, '\t');
+                if (tab == NULL) continue;
                 kputs("##contig=<ID=", &txt); kputsn(tmp.s, tab - tmp.s, &txt);
-                kputs(",length=", &txt); kputw(atol(tab), &txt);
+                kputs(",length=", &txt); kputl(atol(tab), &txt);
                 kputsn(">\n", 2, &txt);
             }
             free(tmp.s);
-            fclose(f);
+            if (hclose(f) != 0) {
+                if (hts_verbose >= 2)
+                    fprintf(stderr, "[W::%s] closing \"%s\" failed\n", __func__, fp->fn_aux);
+            }
         }
         kputsn(s->s, s->l, &txt);
         kputc('\n', &txt);
         if (s->s[1] != '#') break;
     }
-    if ( ret < -1 ) { free(txt.s); bcf_hdr_destroy(h); return NULL; }
+    if ( ret < -1 ) goto error;
     if ( !txt.s )
     {
         fprintf(stderr,"[%s:%d %s] Could not read the header\n", __FILE__,__LINE__,__FUNCTION__);
-        return NULL;
+        goto error;
     }
     bcf_hdr_parse(h, txt.s);
 
@@ -1361,6 +1365,11 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
     }
     free(txt.s);
     return h;
+
+ error:
+    free(txt.s);
+    if (h) bcf_hdr_destroy(h);
+    return NULL;
 }
 
 int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname)

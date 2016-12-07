@@ -767,15 +767,23 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         }
         if (ret < -1) goto error;
         if (! has_SQ && fp->fn_aux) {
-            char line[2048];
-            FILE *f = fopen(fp->fn_aux, "r");
+            kstring_t line = { 0, 0, NULL };
+            hFILE *f = hopen(fp->fn_aux, "r");
             if (f == NULL) goto error;
-            while (fgets(line, sizeof line, f)) {
-                const char *name = strtok(line, "\t");
-                const char *length = strtok(NULL, "\t");
-                ksprintf(&str, "@SQ\tSN:%s\tLN:%s\n", name, length);
+            while (line.l = 0, kgetline(&line, (kgets_func *) hgets, f) >= 0) {
+                char *tab = strchr(line.s, '\t');
+                if (tab == NULL) continue;
+                kputs("@SQ\tSN:", &str);
+                kputsn(line.s, tab - line.s, &str);
+                kputs("\tLN:", &str);
+                kputl(atol(tab), &str);
+                kputc('\n', &str);
             }
-            fclose(f);
+            free(line.s);
+            if (hclose(f) != 0) {
+                if (hts_verbose >= 2)
+                    fprintf(stderr, "[W::%s] closing \"%s\" failed\n", __func__, fp->fn_aux);
+            }
         }
         if (str.l == 0) kputsn("", 0, &str);
         h = sam_hdr_parse(str.l, str.s);
