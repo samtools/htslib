@@ -1,6 +1,6 @@
 /*  vcfutils.c -- allele-related utility functions.
 
-    Copyright (C) 2012-2015 Genome Research Ltd.
+    Copyright (C) 2012-2016 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -170,7 +170,8 @@ int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial, int *_jal)
 
 int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
 {
-    int i;
+    int i, ret = 0, nrm = 0;
+    kbitset_t *rm_set = NULL;
     bcf_fmt_t *gt = bcf_get_fmt(header, line, "GT");
     if ( !gt ) return 0;
 
@@ -186,7 +187,11 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
             { \
                 if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
                 if ( bcf_gt_is_missing(p[ial]) ) continue; /* missing allele */ \
-                if ( (p[ial]>>1)-1 >= line->n_allele ) { free(ac); return -1; } \
+                if ( (p[ial]>>1)-1 >= line->n_allele ) { \
+                    if (hts_verbose>1) { fprintf(stderr, "[E::%s] allele index is out of bounds at %s:%d\n", __func__, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); } \
+                    ret = -1; \
+                    goto clean; \
+                } \
                 ac[(p[ial]>>1)-1]++; \
             } \
         } \
@@ -195,21 +200,24 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
         case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_vector_end); break;
         case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_vector_end); break;
         case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_vector_end); break;
-        default: fprintf(stderr, "[E::%s] todo: %d at %s:%d\n", __func__, gt->type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
+        default: if (hts_verbose>1) { fprintf(stderr, "[E::%s] todo: %d at %s:%d\n", __func__, gt->type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); } goto clean; break;
     }
     #undef BRANCH
 
-    int nrm = 0;
-    kbitset_t *rm_set = kbs_init(line->n_allele);
+    rm_set = kbs_init(line->n_allele);
     for (i=1; i<line->n_allele; i++)
     {
         if ( !ac[i] ) { kbs_insert(rm_set, i); nrm++; }
     }
-    free(ac);
 
-    if ( nrm ) bcf_remove_allele_set(header, line, rm_set);
-    kbs_destroy(rm_set);
-    return nrm;
+    if ( nrm )
+        if ( bcf_remove_allele_set(header, line, rm_set) )
+            ret = -2;
+
+clean:
+    free(ac);
+    if (rm_set) kbs_destroy(rm_set);
+    return ret ? ret : nrm;
 }
 
 void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
@@ -223,9 +231,10 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
     kbs_destroy(rm_set);
 }
 
-void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kbitset_t *rm_set)
+int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kbitset_t *rm_set)
 {
     int *map = (int*) calloc(line->n_allele, sizeof(int));
+    uint8_t *dat = NULL;
 
     // create map of indexes from old to new ALT numbering and modify ALT
     kstring_t str = {0,0,0};
@@ -246,11 +255,16 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
         map[i] = j;
         j++;
     }
-    if ( !nrm ) { free(map); free(str.s); return; }
+    if ( !nrm ) goto clean;
 
     int nR_ori = line->n_allele;
     int nR_new = line->n_allele-nrm;
-    assert(nR_new > 0); // should not be able to remove reference allele
+    if ( nR_new<=0 ) // should not be able to remove reference allele
+    {
+        if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Cannot remove reference allele at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
+            bcf_seqname(header,line), line->pos+1, nR_new);
+        goto err;
+    }
     int nA_ori = nR_ori-1;
     int nA_new = nR_new-1;
 
@@ -260,7 +274,6 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
     bcf_update_alleles_str(header, line, str.s);
 
     // remove from Number=G, Number=R and Number=A INFO fields.
-    uint8_t *dat = NULL;
     int mdat = 0, ndat = 0, mdat_bytes = 0, nret;
     for (i=0; i<line->n_info; i++)
     {
@@ -279,9 +292,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
         mdat_bytes = mdat * size;
         if ( nret<0 )
         {
-            fprintf(stderr,"[%s:%d %s] Could not access INFO/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
+            if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Could not access INFO/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
                 bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nret);
-            exit(1);
+            goto err;
         }
         if ( nret==0 ) continue; // no data for this tag
 
@@ -317,9 +330,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
                 if ( j==1 && s == '.' ) continue; // missing
                 if ( j!=nexp )
                 {
-                    fprintf(stderr,"[%s:%d %s] Unexpected number of values in INFO/%s at %s:%d; expected Number=%c=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
+                    if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Unexpected number of values in INFO/%s at %s:%d; expected Number=%c=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
                         bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, vlen==BCF_VL_A ? 'A' : 'R', nexp, j);
-                    exit(1);
+                    goto err;
                 }
             }
             else    // Number=G, assuming diploid genotype
@@ -348,18 +361,18 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
                 if ( n==1 && s == '.' ) continue; // missing
                 if ( n!=nG_ori )
                 {
-                    fprintf(stderr,"[%s:%d %s] Unexpected number of values in INFO/%s at %s:%d; expected Number=G=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
+                    if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Unexpected number of values in INFO/%s at %s:%d; expected Number=G=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
                         bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nG_ori, n);
-                    exit(1);
+                    goto err;
                 }
             }
 
             nret = bcf_update_info(header, line, bcf_hdr_int2id(header,BCF_DT_ID,info->key), (void*)str.s, str.l, type);
             if ( nret<0 )
             {
-                fprintf(stderr,"[%s:%d %s] Could not update INFO/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
+                if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Could not update INFO/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
                         bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nret);
-                exit(1);
+                goto err;
             }
             continue;
         }
@@ -376,7 +389,7 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
                 case BCF_BT_INT16: BRANCH(int16_t, p[0]==bcf_int16_missing); break;
                 case BCF_BT_INT32: BRANCH(int32_t, p[0]==bcf_int32_missing); break;
                 case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[0])); break;
-                default: fprintf(stderr,"todo: type %d\n", info->type); exit(1); break;
+                default: if (hts_verbose>1) { fprintf(stderr,"todo: type %d\n", info->type); } goto err;; break;
             }
             #undef BRANCH
             if (missing) continue; // could remove this INFO tag?
@@ -389,9 +402,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
             {
                 if ( nret!=nA_ori )
                 {
-                    fprintf(stderr,"[%s:%d %s] Unexpected number of values in INFO/%s at %s:%d; expected Number=A=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
+                    if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Unexpected number of values in INFO/%s at %s:%d; expected Number=A=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
                         bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nA_ori, nret);
-                    exit(1);
+                    goto err;
                 }
                 ntop = nA_ori;
                 ndat = nA_new;
@@ -401,9 +414,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
             {
                 if ( nret!=nR_ori )
                 {
-                    fprintf(stderr,"[%s:%d %s] Unexpected number of values in INFO/%s at %s:%d; expected Number=R=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
+                    if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Unexpected number of values in INFO/%s at %s:%d; expected Number=R=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
                         bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nR_ori, nret);
-                    exit(1);
+                    goto err;
                 }
                 ntop = nR_ori;
                 ndat = nR_new;
@@ -433,9 +446,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
         {
             if ( nret!=nG_ori )
             {
-                fprintf(stderr,"[%s:%d %s] Unexpected number of values in INFO/%s at %s:%d; expected Number=R=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
+                if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Unexpected number of values in INFO/%s at %s:%d; expected Number=R=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
                     bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nG_ori, nret);
-                exit(1);
+                goto err;
             }
             int k, l_ori = -1, l_new = 0;
             ndat = nG_new;
@@ -467,9 +480,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
         nret = bcf_update_info(header, line, bcf_hdr_int2id(header,BCF_DT_ID,info->key), (void*)dat, ndat, type);
         if ( nret<0 )
         {
-            fprintf(stderr,"[%s:%d %s] Could not update INFO/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
+            if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Could not update INFO/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
                     bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nret);
-            exit(1);
+            goto err;
         }
     }
 
@@ -491,12 +504,23 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
                     if ( bcf_gt_is_missing(ptr[j]) ) continue;
                     if ( ptr[j]==bcf_int32_vector_end ) break;
                     int al = bcf_gt_allele(ptr[j]);
-                    assert( al<nR_ori && map[al]>=0 );
+                    if ( !( al<nR_ori && map[al]>=0 ) )
+                    {
+                        if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Problem updating genotypes at %s:%d [ al<nR_ori && map[al]>=0 :: al=%d,nR_ori=%d,map[al]=%d ]\n", __FILE__,__LINE__,__FUNCTION__,
+                            bcf_seqname(header,line), line->pos+1, al, nR_ori, map[al]);
+                        goto err;
+                    }
                     ptr[j] = (map[al]+1)<<1 | (ptr[j]&1);
                 }
                 ptr += nret;
             }
-            bcf_update_genotypes(header, line, (void*)dat, nret*line->n_sample);
+            nret = bcf_update_genotypes(header, line, (void*)dat, nret*line->n_sample);
+            if ( nret<0 )
+            {
+                if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Could not update FORMAT/GT at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
+                        bcf_seqname(header,line), line->pos+1, nret);
+                goto err;
+            }
         }
     }
 
@@ -520,9 +544,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
         mdat_bytes = mdat * size;
         if ( nret<0 )
         {
-            fprintf(stderr,"[%s:%d %s] Could not access FORMAT/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
+            if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Could not access FORMAT/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
                     bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nret);
-            exit(1);
+            goto err;
         }
         if ( nret == 0 ) continue; // no data for this tag
 
@@ -561,9 +585,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
                     if ( k_src==1 && s == '.' ) continue; // missing
                     if ( k_src!=nexp )
                     {
-                        fprintf(stderr,"[%s:%d %s] Unexpected number of values in FORMAT/%s at %s:%d; expected Number=%c=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
+                        if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Unexpected number of values in FORMAT/%s at %s:%d; expected Number=%c=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
                             bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, vlen==BCF_VL_A ? 'A' : 'R', nexp, k_src);
-                        exit(1);
+                        goto err;
                     }
                     l = str.l - l;
                     for (; l<size; l++) kputc(0, &str);
@@ -586,9 +610,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
                     if ( nexp==1 && s == '.' ) continue; // missing
                     if ( nexp!=nG_ori && nexp!=nR_ori )
                     {
-                        fprintf(stderr,"[%s:%d %s] Unexpected number of values in FORMAT/%s at %s:%d; expected Number=G=%d(diploid) or %d(haploid), but found %d\n", __FILE__,__LINE__,__FUNCTION__,
+                        if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Unexpected number of values in FORMAT/%s at %s:%d; expected Number=G=%d(diploid) or %d(haploid), but found %d\n", __FILE__,__LINE__,__FUNCTION__,
                             bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nG_ori, nR_ori, nexp);
-                        exit(1);
+                        goto err;
                     }
                     ptr = ss;
                     if ( nexp==nG_ori ) // diploid
@@ -631,9 +655,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
                         }
                         if ( k_src!=nR_ori )
                         {
-                            fprintf(stderr,"[%s:%d %s] Unexpected number of values in FORMAT/%s at %s:%d; expected Number=G=%d(haploid), but found %d\n", __FILE__,__LINE__,__FUNCTION__,
+                            if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Unexpected number of values in FORMAT/%s at %s:%d; expected Number=G=%d(haploid), but found %d\n", __FILE__,__LINE__,__FUNCTION__,
                                 bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nR_ori, k_src);
-                            exit(1);
+                            goto err;
                         }
                         l = str.l - l;
                         for (; l<size; l++) kputc(0, &str);
@@ -643,9 +667,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
             nret = bcf_update_format(header, line, bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), (void*)str.s, str.l, type);
             if ( nret<0 )
             {
-                fprintf(stderr,"[%s:%d %s] Could not update FORMAT/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
+                if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Could not update FORMAT/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
                         bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nret);
-                exit(1);
+                goto err;
             }
             continue;
         }
@@ -666,7 +690,7 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
                 case BCF_BT_INT16: BRANCH(int16_t, p[0]==bcf_int16_missing); break;
                 case BCF_BT_INT32: BRANCH(int32_t, p[0]==bcf_int32_missing); break;
                 case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[0])); break;
-                default: fprintf(stderr,"todo: type %d\n", fmt->type); exit(1); break;
+                default: if (hts_verbose>1) { fprintf(stderr,"todo: type %d\n", fmt->type); } goto err; break;
             }
             #undef BRANCH
             if (all_missing) continue; // could remove this FORMAT tag?
@@ -679,9 +703,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
             {
                 if ( nori!=nA_ori )
                 {
-                    fprintf(stderr,"[%s:%d %s] Unexpected number of values in FORMAT/%s at %s:%d; expected Number=A=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
+                    if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Unexpected number of values in FORMAT/%s at %s:%d; expected Number=A=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
                         bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nA_ori, nori);
-                    exit(1);
+                    goto err;
                 }
                 ndat = nA_new*line->n_sample;
                 nnew = nA_new;
@@ -691,9 +715,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
             {
                 if ( nori!=nR_ori )
                 {
-                    fprintf(stderr,"[%s:%d %s] Unexpected number of values in FORMAT/%s at %s:%d; expected Number=R=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
+                    if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Unexpected number of values in FORMAT/%s at %s:%d; expected Number=R=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
                         bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nR_ori, nori);
-                    exit(1);
+                    goto err;
                 }
                 ndat = nR_new*line->n_sample;
                 nnew = nR_new;
@@ -727,9 +751,9 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
         {
             if ( nori!=nG_ori )
             {
-                fprintf(stderr,"[%s:%d %s] Unexpected number of values in FORMAT/%s at %s:%d; expected Number=G=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
+                if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Unexpected number of values in FORMAT/%s at %s:%d; expected Number=G=%d, but found %d\n", __FILE__,__LINE__,__FUNCTION__,
                     bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nG_ori, nori);
-                exit(1);
+                goto err;
             }
             ndat = nG_new*line->n_sample;
 
@@ -780,13 +804,22 @@ void bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct k
         nret = bcf_update_format(header, line, bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), (void*)dat, ndat, type);
         if ( nret<0 )
         {
-            fprintf(stderr,"[%s:%d %s] Could not update FORMAT/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
+            if (hts_verbose>1) fprintf(stderr,"[%s:%d %s] Could not update FORMAT/%s at %s:%d [%d]\n", __FILE__,__LINE__,__FUNCTION__,
                     bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nret);
-            exit(1);
+            goto err;
         }
     }
-    free(dat);
+
+clean:
     free(str.s);
     free(map);
+    free(dat);
+    return 0;
+
+err:
+    free(str.s);
+    free(map);
+    free(dat);
+    return -1;
 }
 
