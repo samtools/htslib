@@ -58,21 +58,64 @@ typedef struct __kstring_t {
 #endif
 
 /**
- * hts_expand()  - expands memory block pointed to by $ptr;
- * hts_expand0()   the latter sets the newly allocated part to 0.
+ * @hideinitializer
+ * Macro to expand a dynamic array of a given type
  *
- * @param n     requested number of elements of type type_t
- * @param m     size of memory allocated
+ * @param         type_t The type of the array elements
+ * @param[in]     n      Requested number of elements of type type_t
+ * @param[in,out] m      Size of memory allocated
+ * @param[in,out] ptr    Pointer to the array
+ *
+ * @discussion
+ * The array *ptr will be expanded if necessary so that it can hold @p n
+ * or more elements.  If the array is expanded then the new size will be
+ * written to @p m and the value in @ptr may change.
+ *
+ * It must be possible to take the address of @p ptr and @p m must be usable
+ * as an lvalue.
+ *
+ * @bug
+ * If the memory allocation fails, this will call exit(1).  This is
+ * not ideal behaviour in a library.
  */
-#define hts_expand(type_t, n, m, ptr) if ((n) > (m)) { \
-        (m) = (n); kroundup32(m); \
-        (ptr) = (type_t*)realloc((ptr), (m) * sizeof(type_t)); \
-    }
-#define hts_expand0(type_t, n, m, ptr) if ((n) > (m)) { \
-        int t = (m); (m) = (n); kroundup32(m); \
-        (ptr) = (type_t*)realloc((ptr), (m) * sizeof(type_t)); \
-        memset(((type_t*)ptr)+t,0,sizeof(type_t)*((m)-t)); \
-    }
+#define hts_expand(type_t, n, m, ptr) do {                              \
+        if ((n) > (m)) {                                                \
+            size_t hts_realloc_or_die(size_t, size_t, size_t, size_t,   \
+                                      int, void **, const char *);      \
+            (m) = hts_realloc_or_die((n) >= 1 ? (n) : 1, (m), sizeof(m), \
+                                     sizeof(type_t),  0,                \
+                                     (void **)&(ptr), __func__);        \
+        }                                                               \
+    } while (0)
+
+/**
+ * @hideinitializer
+ * Macro to expand a dynamic array, zeroing any newly-allocated memory
+ *
+ * @param         type_t The type of the array elements
+ * @param[in]     n      Requested number of elements of type type_t
+ * @param[in,out] m      Size of memory allocated
+ * @param[in,out] ptr    Pointer to the array
+ *
+ * @discussion
+ * As for hts_expand(), except the bytes that make up the array elements
+ * between the old and new values of @p m are set to zero using memset().
+ *
+ * @bug
+ * If the memory allocation fails, this will call exit(1).  This is
+ * not ideal behaviour in a library.
+ */
+
+
+#define hts_expand0(type_t, n, m, ptr) do {                             \
+        if ((n) > (m)) {                                                \
+            size_t hts_realloc_or_die(size_t, size_t, size_t, size_t,   \
+                                      int, void **, const char *);      \
+            (m) = hts_realloc_or_die((n) >= 1 ? (n) : 1, (m), sizeof(m), \
+                                     sizeof(type_t), 1,                 \
+                                     (void **)&(ptr), __func__);        \
+        }                                                               \
+    } while (0)
 
 /************
  * File I/O *
