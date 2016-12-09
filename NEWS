@@ -8,6 +8,10 @@ Noteworthy changes in release 1.4
 * New errmod_cal(), probaln_glocal(), sam_cap_mapq(), and sam_prob_realn()
   functions, previously internal to SAMtools, have been added to HTSlib.
 
+* Files can now be accessed via Google Cloud Storage using gs: URLs, when
+  HTSlib is configured to use libcurl for network file access rather than
+  the included basic knetfile networking.
+
 * Data URLs ("data:,text") now follow the standard RFC 2397 format and may
   be base64-encoded (when written as "data:;base64,text") or may include
   percent-encoded characters.  HTSlib's previous over-simplified "data:text"
