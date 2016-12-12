@@ -87,7 +87,7 @@ unsigned char *rans_compress_O0(unsigned char *in, unsigned int in_size,
 	F[in[i]]++;
     }
     tr = ((uint64_t)TOTFREQ<<31)/in_size + (1<<30)/in_size;
-
+ normalise_harder:
     // Normalise so T[i] == TOTFREQ
     for (m = M = j = 0; j < 256; j++) {
 	if (!F[j])
@@ -102,10 +102,14 @@ unsigned char *rans_compress_O0(unsigned char *in, unsigned int in_size,
     }
 
     fsum++;
-    if (fsum < TOTFREQ)
+    if (fsum < TOTFREQ) {
 	F[M] += TOTFREQ-fsum;
-    else
+    } else if (fsum-TOTFREQ > F[M]/2) {
+	// Corner case to avoid excessive frequency reduction
+	tr = 2104533975; goto normalise_harder; // equiv to *0.98.
+    } else {
 	F[M] -= fsum-TOTFREQ;
+    }
 
     //printf("F[%d]=%d\n", M, F[M]);
     assert(F[M]>0);
@@ -381,6 +385,7 @@ unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
 
 	//uint64_t p = (TOTFREQ * TOTFREQ) / t;
 	double p = ((double)TOTFREQ)/T[i];
+    normalise_harder:
 	for (t2 = m = M = j = 0; j < 256; j++) {
 	    if (!F[i][j])
 		continue;
@@ -395,10 +400,14 @@ unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
 	}
 
 	t2++;
-	if (t2 < TOTFREQ)
+	if (t2 < TOTFREQ) {
 	    F[i][M] += TOTFREQ-t2;
-	else
+	} else if (t2-TOTFREQ >= F[i][M]/2) {
+	    // Corner case to avoid excessive frequency reduction
+	    p = .98; goto normalise_harder;
+	} else {
 	    F[i][M] -= t2-TOTFREQ;
+	}
 
 	// Store frequency table
 	// i
