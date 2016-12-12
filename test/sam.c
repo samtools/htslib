@@ -69,6 +69,7 @@ uint8_t *check_bam_aux_get(const bam1_t *aln, const char *tag, char type)
 #define PI 3.141592653589793
 #define E  2.718281828459045
 #define HELLO "Hello, world!"
+#define NEW_HELLO "Yo, dude"
 #define BEEF "DEADBEEF"
 
 #define str(x) #x
@@ -82,7 +83,7 @@ static int aux_fields1(void)
 "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\n";
 
     // Canonical form of the alignment record above, as output by sam_format1()
-    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295";
+    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" NEW_HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295";
 
     samFile *in = sam_open(sam, "r");
     bam_hdr_t *header = sam_hdr_read(in);
@@ -95,6 +96,10 @@ static int aux_fields1(void)
         if ((p = check_bam_aux_get(aln, "XA", 'A')) && bam_aux2A(p) != 'k')
             fail("XA field is '%c', expected 'k'", bam_aux2A(p));
 
+        bam_aux_del(aln,p);
+        if (bam_aux_get(aln,"XA"))
+            fail("XA field was not deleted");
+
         if ((p = check_bam_aux_get(aln, "Xi", 'C')) && bam_aux2i(p) != 37)
             fail("Xi field is %d, expected 37", bam_aux2i(p));
 
@@ -106,6 +111,11 @@ static int aux_fields1(void)
 
         if ((p = check_bam_aux_get(aln, "XZ", 'Z')) && strcmp(bam_aux2Z(p), HELLO) != 0)
             fail("XZ field is \"%s\", expected \"%s\"", bam_aux2Z(p), HELLO);
+
+        bam_aux_update_str(aln,"XZ",strlen(NEW_HELLO)+1,(uint8_t*)NEW_HELLO);
+        if ((p = check_bam_aux_get(aln, "XZ", 'Z')) && strcmp(bam_aux2Z(p), NEW_HELLO) != 0)
+            fail("XZ field is \"%s\", expected \"%s\"", bam_aux2Z(p), NEW_HELLO);
+
 
         if ((p = check_bam_aux_get(aln, "XH", 'H')) && strcmp(bam_aux2Z(p), BEEF) != 0)
             fail("XH field is \"%s\", expected \"%s\"", bam_aux2Z(p), BEEF);

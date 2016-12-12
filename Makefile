@@ -347,12 +347,13 @@ install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	if test -n "$(BUILT_PLUGINS)"; then $(INSTALL_PROGRAM) $(BUILT_PLUGINS) $(DESTDIR)$(plugindir); fi
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
+	$(INSTALL_DATA) cram/*.h $(DESTDIR)$(includedir)/cram
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
 	$(INSTALL_DATA) htsfile.1 tabix.1 $(DESTDIR)$(man1dir)
 	$(INSTALL_DATA) faidx.5 sam.5 vcf.5 $(DESTDIR)$(man5dir)
 
 installdirs:
-	$(INSTALL_DIR) $(DESTDIR)$(bindir) $(DESTDIR)$(includedir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir) $(DESTDIR)$(pkgconfigdir)
+	$(INSTALL_DIR) $(DESTDIR)$(bindir) $(DESTDIR)$(includedir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(includedir)/cram $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir) $(DESTDIR)$(pkgconfigdir)
 	if test -n "$(plugindir)"; then $(INSTALL_DIR) $(DESTDIR)$(plugindir); fi
 
 # After installation, the real file in $(libdir) will be libhts.so.X.Y.Z,

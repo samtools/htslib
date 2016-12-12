@@ -694,6 +694,33 @@ SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
     return NULL;
 }
 
+/*
+*/
+SAM_hdr *sam_hdr_del(SAM_hdr *hdr, char *type, char *ID_key, char *ID_value) {
+    int i,n;
+    int *lines;
+    char *newtext = malloc(sam_hdr_length(hdr)+1);
+
+    lines = ksplit(&hdr->text,'\n',&n);
+    *newtext = 0;
+    for (i=0; i<n; i++) {
+        char * ln = hdr->text.s + lines[i];
+        if (strstr(ln,type) == ln+1) {
+            if (!ID_key) continue;
+            char *tag = malloc(strlen(ID_key)+2+strlen(ID_value));
+            strcpy(tag,ID_key); strcat(tag,":"); strcat(tag,ID_value);
+            if (strstr(ln,tag)) { free(tag); continue; }
+            free(tag);
+        } 
+        strcat(newtext,ln); strcat(newtext,"\n");
+    }
+    free(lines);
+    sam_hdr_free(hdr);
+    hdr = sam_hdr_parse_(newtext,strlen(newtext));
+    free(newtext);
+    return hdr;
+}
+
 
 /*
  * Adds or updates tag key,value pairs in a header line.
