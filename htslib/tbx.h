@@ -52,7 +52,7 @@ typedef struct {
     void *dict;
 } tbx_t;
 
-extern tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sam, tbx_conf_vcf;
+extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sam, tbx_conf_vcf;
 
     #define tbx_itr_destroy(iter) hts_itr_destroy(iter)
     #define tbx_itr_queryi(tbx, tid, beg, end) hts_itr_query((tbx)->idx, (tid), (beg), (end), tbx_readrec)

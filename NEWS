@@ -4,6 +4,7 @@ Noteworthy changes in release 1.4
   in this release, and the shared library soversion has been bumped to 2.
   - bam_pileup1_t has an additional field (which holds user data)
   - hopen() has vararg arguments for setting URL scheme-dependent options
+  - the various tbx_conf_* presets are now const
 
 * New errmod_cal(), probaln_glocal(), sam_cap_mapq(), and sam_prob_realn()
   functions, previously internal to SAMtools, have been added to HTSlib.
