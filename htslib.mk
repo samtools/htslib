@@ -1,6 +1,6 @@
 # Makefile rules useful for third-party code using htslib's public API.
 #
-#    Copyright (C) 2013-2015 Genome Research Ltd.
+#    Copyright (C) 2013-2016 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -87,6 +87,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/knetfile.c \
 	$(HTSDIR)/kstring.c \
 	$(HTSDIR)/md5.c \
+	$(HTSDIR)/multipart.c \
 	$(HTSDIR)/plugin.c \
 	$(HTSDIR)/probaln.c \
 	$(HTSDIR)/realn.c \
@@ -94,7 +95,9 @@ HTSLIB_ALL = \
 	$(HTSDIR)/sam.c \
 	$(HTSDIR)/synced_bcf_reader.c \
 	$(HTSDIR)/tbx.c \
+	$(HTSDIR)/textutils.c \
 	$(HTSDIR)/thread_pool.c \
+	$(HTSDIR)/thread_pool_internal.h \
 	$(HTSDIR)/vcf.c \
 	$(HTSDIR)/vcf_sweep.c \
 	$(HTSDIR)/vcfutils.c \
