@@ -1,6 +1,6 @@
 /*  test/sam.c -- SAM/BAM/CRAM API test cases.
 
-    Copyright (C) 2014-2015 Genome Research Ltd.
+    Copyright (C) 2014-2016 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -177,6 +177,12 @@ static void iterators1(void)
     hts_itr_destroy(sam_itr_queryi(NULL, HTS_IDX_NONE, 0, 0));
 }
 
+static void samrecord_sizeof(void)
+{
+    if (sizeof (bam1_core_t) != 36)
+        fail("sizeof bam1_core_t is %zu, expected 36", sizeof (bam1_core_t));
+}
+
 static void faidx1(const char *filename)
 {
     int n, n_exp = 0;
@@ -219,6 +225,7 @@ int main(int argc, char **argv)
 
     aux_fields1();
     iterators1();
+    samrecord_sizeof();
     for (i = 1; i < argc; i++) faidx1(argv[i]);
 
     return status;

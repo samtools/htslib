@@ -41,6 +41,10 @@ KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 
 typedef khash_t(s2i) sdict_t;
 
+#ifndef EOVERFLOW
+#define EOVERFLOW ERANGE
+#endif
+
 /**********************
  *** BAM header I/O ***
  **********************/
@@ -444,6 +448,12 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     const bam1_core_t *c = &b->core;
     uint32_t x[8], block_len = b->l_data + 32, y;
     int i, ok;
+    if (c->n_cigar >= 65536) {
+        if (hts_verbose >= 1)
+            fprintf(stderr, "[E::%s] too many CIGAR operations (%d >= 64K for QNAME \"%s\")\n", __func__, c->n_cigar, bam_get_qname(b));
+        errno = EOVERFLOW;
+        return -1;
+    }
     x[0] = c->tid;
     x[1] = c->pos;
     x[2] = (uint32_t)c->bin<<16 | c->qual<<8 | c->l_qname;
@@ -913,7 +923,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             if (!isdigit_c(*p)) ++n_cigar;
         if (*p++ != '\t') goto err_ret;
         _parse_err(n_cigar == 0, "no CIGAR operations");
-        _parse_err(n_cigar >= 65536, "too many CIGAR operations");
+        _parse_err(n_cigar >= 2147483647, "too many CIGAR operations");
         c->n_cigar = n_cigar;
         _get_mem(uint32_t, &cigar, &str, c->n_cigar * sizeof(uint32_t));
         for (i = 0; i < c->n_cigar; ++i, ++q) {

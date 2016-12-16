@@ -3,6 +3,7 @@ Noteworthy changes in release 1.4
 * Incompatible changes: several functions and data types have been changed
   in this release, and the shared library soversion has been bumped to 2.
   - bam_pileup1_t has an additional field (which holds user data)
+  - bam1_core_t has been modified to allow for >64K CIGAR operations
   - hopen() has vararg arguments for setting URL scheme-dependent options
   - the various tbx_conf_* presets are now const
 
