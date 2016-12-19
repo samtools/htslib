@@ -807,6 +807,7 @@ void bcf_hdr_destroy(bcf_hdr_t *h)
 {
     int i;
     khint_t k;
+    if (!h) return;
     for (i = 0; i < 3; ++i) {
         vdict_t *d = (vdict_t*)h->dict[i];
         if (d == 0) continue;
@@ -950,6 +951,7 @@ void bcf_empty(bcf1_t *v)
 
 void bcf_destroy(bcf1_t *v)
 {
+    if (!v) return;
     bcf_empty1(v);
     free(v);
 }
@@ -964,8 +966,8 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
     }
     bcf_clear1(v);
     x[0] -= 24; // to exclude six 32-bit integers
-    ks_resize(&v->shared, x[0]);
-    ks_resize(&v->indiv, x[1]);
+    if (ks_resize(&v->shared, x[0]) != 0) return -2;
+    if (ks_resize(&v->indiv, x[1]) != 0) return -2;
     memcpy(v, x + 2, 16);
     v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
     v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
@@ -973,8 +975,8 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
     // silent fix of broken BCFs produced by earlier versions of bcf_subset, prior to and including bd6ed8b4
     if ( (!v->indiv.l || !v->n_sample) && v->n_fmt ) v->n_fmt = 0;
 
-    if (bgzf_read(fp, v->shared.s, v->shared.l) != v->shared.l) return -1;
-    if (bgzf_read(fp, v->indiv.s, v->indiv.l) != v->indiv.l) return -1;
+    if (bgzf_read(fp, v->shared.s, v->shared.l) != v->shared.l) return -2;
+    if (bgzf_read(fp, v->indiv.s, v->indiv.l) != v->indiv.l) return -2;
     return 0;
 }
 
@@ -2326,10 +2328,11 @@ int bcf_hdr_id2int(const bcf_hdr_t *h, int which, const char *id)
 hts_idx_t *bcf_index(htsFile *fp, int min_shift)
 {
     int n_lvls, i;
-    bcf1_t *b;
-    hts_idx_t *idx;
+    bcf1_t *b = NULL;
+    hts_idx_t *idx = NULL;
     bcf_hdr_t *h;
     int64_t max_len = 0, s;
+    int r;
     h = bcf_hdr_read(fp);
     if ( !h ) return NULL;
     int nids = 0;
@@ -2343,21 +2346,25 @@ hts_idx_t *bcf_index(htsFile *fp, int min_shift)
     max_len += 256;
     for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
     idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
+    if (!idx) goto fail;
     b = bcf_init1();
-    while (bcf_read1(fp,h, b) >= 0) {
+    if (!b) goto fail;
+    while ((r = bcf_read1(fp,h, b)) >= 0) {
         int ret;
         ret = hts_idx_push(idx, b->rid, b->pos, b->pos + b->rlen, bgzf_tell(fp->fp.bgzf), 1);
-        if (ret < 0)
-        {
-            bcf_destroy1(b);
-            hts_idx_destroy(idx);
-            return NULL;
-        }
+        if (ret < 0) goto fail;
     }
+    if (r < -1) goto fail;
     hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
     bcf_destroy1(b);
     bcf_hdr_destroy(h);
     return idx;
+
+ fail:
+    hts_idx_destroy(idx);
+    bcf_destroy1(b);
+    bcf_hdr_destroy(h);
+    return NULL;
 }
 
 hts_idx_t *bcf_index_load2(const char *fn, const char *fnidx)
