@@ -31,6 +31,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <stdint.h>
+#include <errno.h>
 
 #include "htslib/vcf.h"
 #include "htslib/bgzf.h"
@@ -308,7 +310,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         hrec->value = (char*) malloc((q-p+1)*sizeof(char));
         memcpy(hrec->value, p, q-p);
         hrec->value[q-p] = 0;
-        *len = q-line+1;
+        *len = q - line + (*q ? 1 : 0); // Skip \n but not \0
         return hrec;
     }
 
@@ -337,7 +339,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
             kputsn(line,q-line,&tmp);
             fprintf(stderr,"Could not parse the header line: \"%s\"\n", tmp.s);
             free(tmp.s);
-            *len = q-line+1;
+            *len = q - line + (*q ? 1 : 0);
             bcf_hrec_destroy(hrec);
             return NULL;
         }
@@ -368,7 +370,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     // Skip trailing spaces
     while ( *q && *q==' ' ) { q++; }
 
-    *len = q-line+1;
+    *len = q - line + (*q ? 1 : 0);
     return hrec;
 }
 
@@ -851,12 +853,16 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
         bcf_hdr_destroy(h);
         return NULL;
     }
-    uint32_t hlen;
+    uint8_t buf[4];
+    size_t hlen;
     char *htxt = NULL;
-    if (bgzf_read(fp, &hlen, 4) != 4) goto fail;
-    htxt = (char*)malloc(hlen);
+    if (bgzf_read(fp, buf, 4) != 4) goto fail;
+    hlen = buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24);
+    if (hlen >= SIZE_MAX) { errno = ENOMEM; goto fail; }
+    htxt = (char*)malloc(hlen + 1);
     if (!htxt) goto fail;
     if (bgzf_read(fp, htxt, hlen) != hlen) goto fail;
+    htxt[hlen] = '\0'; // Ensure htxt is terminated
     bcf_hdr_parse(h, htxt);  // FIXME: Does this return anything meaningful?
     free(htxt);
     return h;
