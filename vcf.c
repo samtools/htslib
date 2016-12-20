@@ -985,6 +985,198 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 #define bit_array_clear(a,i) ((a)[(i)/8] &= ~(1 << ((i)%8)))
 #define bit_array_test(a,i)  ((a)[(i)/8] &   (1 << ((i)%8)))
 
+static int bcf_dec_typed_int1_safe(uint8_t *p, uint8_t *end, uint8_t **q,
+                                   int32_t *val) {
+    uint32_t v;
+    uint32_t t;
+    if (end - p < 2) return -1;
+    t = *p++ & 0xf;
+    /* Use if .. else if ... else instead of switch to force order.  Assumption
+       is that small integers are more frequent than big ones. */
+    if (t == BCF_BT_INT8) {
+        *q = p + 1;
+        *val = *(int8_t *) p;
+    } else if (t == BCF_BT_INT16) {
+        if (end - p < 2) return -1;
+        *q = p + 2;
+        v = p[0] | (p[1] << 8);
+        *val = v < 0x8000 ? v : -((int32_t) (0xffff - v)) - 1;
+    } else if (t == BCF_BT_INT32) {
+        if (end - p < 4) return -1;
+        *q = p + 4;
+        v = p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
+        *val = v < 0x80000000UL ? v : -((int32_t) (0xffffffffUL - v)) - 1;
+    } else {
+        return -1;
+    }
+    return 0;
+}
+
+static int bcf_dec_size_safe(uint8_t *p, uint8_t *end, uint8_t **q,
+                             int *num, int *type) {
+    int r;
+    if (p >= end) return -1;
+    *type = *p & 0xf;
+    if (*p>>4 != 15) {
+        *q = p + 1;
+        *num = *p >> 4;
+        return 0;
+    }
+    r = bcf_dec_typed_int1_safe(p + 1, end, q, num);
+    if (r) return r;
+    return *num >= 0 ? 0 : -1;
+}
+
+static void report_bad_id(const char *func, const char *rectype, int badval) {
+    if (hts_verbose > 1) {
+        fprintf(stderr, "[W::%s] Bad BCF record: Invalid %s id %d\n",
+                func, rectype, badval);
+    }
+}
+
+static void report_bad_type(const char *func, const char *rectype, int type) {
+    const char *types[9] = {
+        "null", "int (8-bit)", "int (16 bit)", "int (32 bit)",
+        "unknown", "float", "unknown", "char", "unknown"
+    };
+    int t = (type >= 0 && type < 8) ? type : 8;
+    if (hts_verbose > 1) {
+        fprintf(stderr, "[W::%s] Bad BCF record: Invalid %s type %d (%s)\n",
+                func, rectype, type, types[t]);
+    }
+}
+
+static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
+    uint8_t *ptr, *end;
+    size_t bytes;
+    uint32_t err = 0;
+    int type = 0;
+    int num  = 0;
+    uint32_t i, reports;
+    const uint32_t is_integer = ((1 << BCF_BT_INT8)  |
+                                 (1 << BCF_BT_INT16) |
+                                 (1 << BCF_BT_INT32));
+    const uint32_t is_valid_type = (is_integer          |
+                                    (1 << BCF_BT_NULL)  |
+                                    (1 << BCF_BT_FLOAT) |
+                                    (1 << BCF_BT_CHAR));
+
+
+    // Check for valid contig ID
+    if (rec->rid < 0 || rec->rid >= hdr->n[BCF_DT_CTG]) {
+        report_bad_id(__func__, "CONTIG", rec->rid);
+        err |= BCF_ERR_CTG_INVALID;
+    }
+
+    // Check ID
+    ptr = (uint8_t *) rec->shared.s;
+    end = ptr + rec->shared.l;
+    if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
+    if (type != BCF_BT_CHAR) {
+        report_bad_type(__func__, "ID", type);
+        err |= BCF_ERR_TAG_INVALID;
+    }
+    bytes = (size_t) num << bcf_type_shift[type];
+    if (end - ptr < bytes) goto bad_shared;
+    ptr += bytes;
+
+    // Check REF and ALT
+    reports = 0;
+    for (i = 0; i < rec->n_allele; i++) {
+        if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
+        if (type != BCF_BT_CHAR) {
+            if (!reports++ || hts_verbose > 5)
+                report_bad_type(__func__, "REF/ALT", type);
+            err |= BCF_ERR_CHAR;
+        }
+        bytes = (size_t) num << bcf_type_shift[type];
+        if (end - ptr < bytes) goto bad_shared;
+        ptr += bytes;
+    }
+
+    // Check FILTER
+    if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
+    if (num > 0) {
+        if (((1 << type) & is_integer) == 0) {
+            report_bad_type(__func__, "FILTER", type);
+            err |= BCF_ERR_TAG_INVALID;
+        }
+        bytes = (size_t) num << bcf_type_shift[type];
+        if (end - ptr < bytes) goto bad_shared;
+        reports = 0;
+        for (i = 0; i < num; i++) {
+            int32_t key = bcf_dec_int1(ptr, type, &ptr);
+            if (key < 0 || key >= hdr->n[BCF_DT_ID]) {
+                if (!reports++ || hts_verbose > 5)
+                    report_bad_id(__func__, "FILTER", key);
+                err |= BCF_ERR_TAG_UNDEF;
+            }
+        }
+    }
+
+    // Check INFO
+    reports = 0;
+    for (i = 0; i < rec->n_info; i++) {
+        int32_t key = -1;
+        if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) goto bad_shared;
+        if (key < 0 || key >= hdr->n[BCF_DT_ID]) {
+            if (!reports++ || hts_verbose > 5)
+                report_bad_id(__func__, "INFO", key);
+            err |= BCF_ERR_TAG_UNDEF;
+        }
+        if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
+        if (((1 << type) & is_valid_type) == 0) {
+            if (!reports++ || hts_verbose > 5)
+                report_bad_type(__func__, "INFO", type);
+            err |= BCF_ERR_TAG_INVALID;
+        }
+        bytes = (size_t) num << bcf_type_shift[type];
+        if (end - ptr < bytes) goto bad_shared;
+        ptr += bytes;
+    }
+
+    // Check FORMAT and individual information
+    ptr = (uint8_t *) rec->indiv.s;
+    end = ptr + rec->indiv.l;
+    reports = 0;
+    for (i = 0; i < rec->n_fmt; i++) {
+        int32_t key = -1;
+        if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) goto bad_indiv;
+        if (key < 0 || key >= hdr->n[BCF_DT_ID]) {
+            if (!reports++ || hts_verbose > 5)
+                report_bad_id(__func__, "FORMAT", key);
+            err |= BCF_ERR_TAG_UNDEF;
+        }
+        if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_indiv;
+        if (((1 << type) & is_valid_type) == 0) {
+            if (!reports++ || hts_verbose > 5)
+                report_bad_type(__func__, "FORMAT", type);
+            err |= BCF_ERR_TAG_INVALID;
+        }
+        bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
+        if (end - ptr < bytes) goto bad_indiv;
+        ptr += bytes;
+    }
+
+    rec->errcode |= err;
+
+    return err ? -1 : 0;
+
+ bad_shared:
+    if (hts_verbose > 1) {
+        fprintf(stderr, "[E::%s] Bad BCF record - shared section malformed or too short\n",
+                __func__);
+    }
+    return -1;
+
+ bad_indiv:
+    if (hts_verbose > 1) {
+        fprintf(stderr, "[E::%s] Bad BCF record - individuals section malformed or too short\n",
+                __func__);
+    }
+    return -1;
+}
+
 static inline uint8_t *bcf_unpack_fmt_core1(uint8_t *ptr, int n_sample, bcf_fmt_t *fmt);
 int bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec)
 {
@@ -1031,6 +1223,7 @@ int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
     if (fp->format.format == vcf) return vcf_read(fp,h,v);
     int ret = bcf_read1_core(fp->fp.bgzf, v);
+    if (ret == 0) ret = bcf_record_check(h, v);
     if ( ret!=0 || !h->keep_samples ) return ret;
     return bcf_subset_format(h,v);
 }
