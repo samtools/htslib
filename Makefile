@@ -338,7 +338,7 @@ tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htsl
 check test: bgzip htsfile $(BUILT_TEST_PROGRAMS)
 	test/fieldarith test/fieldarith.sam
 	test/hfile
-	test/sam test/ce.fa test/faidx.fa
+	REF_PATH=: test/sam test/ce.fa test/faidx.fa
 	test/test-regidx
 	cd test && REF_PATH=: ./test.pl
 

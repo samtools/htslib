@@ -1,6 +1,6 @@
 /*  test/sam.c -- SAM/BAM/CRAM API test cases.
 
-    Copyright (C) 2014-2016 Genome Research Ltd.
+    Copyright (C) 2014-2017 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -177,10 +177,68 @@ static void iterators1(void)
     hts_itr_destroy(sam_itr_queryi(NULL, HTS_IDX_NONE, 0, 0));
 }
 
-static void samrecord_sizeof(void)
+static void copy_check_alignment(const char *infname, const char *informat,
+    const char *outfname, const char *outmode, const char *outref)
 {
+    samFile *in = sam_open(infname, "r");
+    samFile *out = sam_open(outfname, outmode);
+    bam1_t *aln = bam_init1();
+    bam_hdr_t *header;
+
+    if (outref) {
+        if (hts_set_opt(out, CRAM_OPT_REFERENCE, outref) < 0)
+            fail("setting reference %s for %s", outref, outfname);
+    }
+
+    header = sam_hdr_read(in);
+    if (sam_hdr_write(out, header) < 0) fail("writing headers to %s", outfname);
+
+    while (sam_read1(in, header, aln) >= 0) {
+        int mod4 = ((intptr_t) bam_get_cigar(aln)) % 4;
+        if (mod4 != 0)
+            fail("%s CIGAR not 4-byte aligned; offset is 4k+%d for \"%s\"",
+                 informat, mod4, bam_get_qname(aln));
+
+        if (sam_write1(out, header, aln) < 0) fail("writing to %s", outfname);
+    }
+
+    bam_destroy1(aln);
+    bam_hdr_destroy(header);
+    sam_close(in);
+    sam_close(out);
+}
+
+static void samrecord_layout(void)
+{
+    static const char qnames[] = "data:,"
+"@SQ\tSN:CHROMOSOME_II\tLN:5000\n"
+    "a\t0\tCHROMOSOME_II\t100\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+   "bc\t0\tCHROMOSOME_II\t200\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+  "def\t0\tCHROMOSOME_II\t300\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+ "ghij\t0\tCHROMOSOME_II\t400\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+"klmno\t0\tCHROMOSOME_II\t500\t10\t4M\t*\t0\t0\tATGC\tqqqq\n";
+
+    size_t bam1_t_size, bam1_t_size2;
+
+    bam1_t_size = 36 + sizeof (int) + 4 + sizeof (char *);
+#ifndef BAM_NO_ID
+    bam1_t_size += 8;
+#endif
+    bam1_t_size2 = bam1_t_size + 4;  // Account for padding on some platforms
+
     if (sizeof (bam1_core_t) != 36)
         fail("sizeof bam1_core_t is %zu, expected 36", sizeof (bam1_core_t));
+
+    if (sizeof (bam1_t) != bam1_t_size && sizeof (bam1_t) != bam1_t_size2)
+        fail("sizeof bam1_t is %zu, expected either %zu or %zu",
+             sizeof(bam1_t), bam1_t_size, bam1_t_size2);
+
+    copy_check_alignment(qnames, "SAM",
+                         "test/sam_alignment.tmp.bam", "wb", NULL);
+    copy_check_alignment("test/sam_alignment.tmp.bam", "BAM",
+                         "test/sam_alignment.tmp.cram", "wc", "test/ce.fa");
+    copy_check_alignment("test/sam_alignment.tmp.cram", "CRAM",
+                         "test/sam_alignment.tmp.sam_", "w", NULL);
 }
 
 static void faidx1(const char *filename)
@@ -225,7 +283,7 @@ int main(int argc, char **argv)
 
     aux_fields1();
     iterators1();
-    samrecord_sizeof();
+    samrecord_layout();
     for (i = 1; i < argc; i++) faidx1(argv[i]);
 
     return status;

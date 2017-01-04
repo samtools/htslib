@@ -1,7 +1,7 @@
 /// @file htslib/sam.h
 /// High-level SAM/BAM/CRAM sequence file operations.
 /*
-    Copyright (C) 2008, 2009, 2013-2016 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2017 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -141,6 +141,7 @@ typedef struct {
  @field  qual    mapping quality
  @field  l_qname length of the query name
  @field  flag    bitwise flag
+ @field  l_extranul length of extra NULs between qname & cigar (for alignment)
  @field  n_cigar number of CIGAR operations
  @field  l_qseq  length of the query sequence (read)
  @field  mtid    chromosome ID of next read in template, defined by bam_hdr_t
@@ -153,7 +154,8 @@ typedef struct {
     uint8_t qual;
     uint8_t l_qname;
     uint16_t flag;
-    uint16_t unused1;
+    uint8_t unused1;
+    uint8_t l_extranul;
     uint32_t n_cigar;
     int32_t l_qseq;
     int32_t mtid;
@@ -170,7 +172,9 @@ typedef struct {
 
  @discussion Notes:
 
- 1. qname is zero tailing and core.l_qname includes the tailing '\0'.
+ 1. qname is terminated by one to four NULs, so that the following
+ cigar data is 32-bit aligned; core.l_qname includes these trailing NULs,
+ while core.l_extranul counts the excess NULs (so 0 <= l_extranul <= 3).
  2. l_qseq is calculated from the total length of an alignment block
  on reading or from CIGAR.
  3. cigar data is encoded 4 bytes per CIGAR operation.
