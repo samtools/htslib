@@ -125,7 +125,7 @@ sub test_cmd
     print "$test:\n";
     print "\t$args{cmd}\n";
 
-    my ($ret,$out) = _cmd("$args{cmd} 2>&1");
+    my ($ret,$out) = _cmd("$args{cmd}");
     if ( $ret ) { failed($opts,$test); return; }
     if ( $$opts{redo_outputs} && -e "$$opts{path}/$args{out}" )
     {
