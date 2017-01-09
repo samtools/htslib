@@ -1,6 +1,6 @@
 /*  hfile_libcurl.c -- libcurl backend for low-level file streams.
 
-    Copyright (C) 2015, 2016 Genome Research Ltd.
+    Copyright (C) 2015-2017 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -866,6 +866,7 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
     kstring_t profile = { 0, 0, NULL };
     kstring_t id = { 0, 0, NULL };
     kstring_t secret = { 0, 0, NULL };
+    kstring_t host_base = { 0, 0, NULL };
     kstring_t token = { 0, 0, NULL };
     kstring_t token_hdr = { 0, 0, NULL };
     kstring_t auth_hdr = { 0, 0, NULL };
@@ -924,17 +925,6 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
         else kputs("default", &profile);
     }
 
-    // Use virtual hosted-style access if possible, otherwise path-style.
-    if (is_dns_compliant(bucket, path)) {
-        kputsn(bucket, path - bucket, &url);
-        kputs(".s3.amazonaws.com", &url);
-    }
-    else {
-        kputs("s3.amazonaws.com/", &url);
-        kputsn(bucket, path - bucket, &url);
-    }
-    kputs(path, &url);
-
     if (id.l == 0) {
         const char *v = getenv("AWS_SHARED_CREDENTIALS_FILE");
         parse_ini(v? v : "~/.aws/credentials", profile.s,
@@ -943,9 +933,25 @@ add_s3_settings(hFILE_libcurl *fp, const char *s3url, kstring_t *message)
     }
     if (id.l == 0)
         parse_ini("~/.s3cfg", profile.s, "access_key", &id,
-                  "secret_key", &secret, "access_token", &token, NULL);
+                  "secret_key", &secret, "access_token", &token,
+                  "host_base", &host_base, NULL);
     if (id.l == 0)
         parse_simple("~/.awssecret", &id, &secret);
+
+    if (host_base.l == 0)
+        kputs("s3.amazonaws.com", &host_base);
+    // Use virtual hosted-style access if possible, otherwise path-style.
+    if (is_dns_compliant(bucket, path)) {
+        kputsn(bucket, path - bucket, &url);
+        kputc('.', &url);
+        kputs(host_base.s, &url);
+    }
+    else {
+        kputs(host_base.s, &url);
+        kputc('/', &url);
+        kputsn(bucket, path - bucket, &url);
+    }
+    kputs(path, &url);
 
     if (token.l > 0) {
         kputs("x-amz-security-token:", message);
@@ -989,6 +995,7 @@ free_and_return:
     free(profile.s);
     free(id.s);
     free(secret.s);
+    free(host_base.s);
     free(token.s);
     free(token_hdr.s);
     free(auth_hdr.s);

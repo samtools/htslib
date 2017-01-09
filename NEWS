@@ -11,6 +11,9 @@ Noteworthy changes in release 1.4
 * New errmod_cal(), probaln_glocal(), sam_cap_mapq(), and sam_prob_realn()
   functions, previously internal to SAMtools, have been added to HTSlib.
 
+* S3 file access now also supports the "host_base" setting in the
+  $HOME/.s3cfg configuration file.
+
 * Data URLs ("data:,text") now follow the standard RFC 2397 format and may
   be base64-encoded (when written as "data:;base64,text") or may include
   percent-encoded characters.  HTSlib's previous over-simplified "data:text"
