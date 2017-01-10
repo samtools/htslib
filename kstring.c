@@ -57,7 +57,7 @@ int kputd(kstring_t *s, double d) {
 		// We let stdio handle the exponent cases
 		int s2 = sprintf(s->s + s->l, "%g", d);
 		len += s2;
-		s->l += len;
+		s->l += s2;
 		return len;
 	}
 
