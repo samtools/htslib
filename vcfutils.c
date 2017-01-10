@@ -234,6 +234,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
 int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kbitset_t *rm_set)
 {
     int *map = (int*) calloc(line->n_allele, sizeof(int));
+    uint8_t *dat = NULL;
 
     // create map of indexes from old to new ALT numbering and modify ALT
     kstring_t str = {0,0,0};
@@ -273,7 +274,6 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     bcf_update_alleles_str(header, line, str.s);
 
     // remove from Number=G, Number=R and Number=A INFO fields.
-    uint8_t *dat = NULL;
     int mdat = 0, ndat = 0, mdat_bytes = 0, nret;
     for (i=0; i<line->n_info; i++)
     {
@@ -813,13 +813,13 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
 clean:
     free(str.s);
     free(map);
-    if (dat) free(dat);
+    free(dat);
     return 0;
 
 err:
     free(str.s);
     free(map);
-    if (dat) free(dat);
+    free(dat);
     return -1;
 }
 
