@@ -573,27 +573,52 @@ static hFILE *hopen_libcurl(const char *url, const char *modes)
     return libcurl_open(url, modes, NULL);
 }
 
-static hFILE *vhopen_libcurl(const char *url, const char *modes, va_list args)
+static int parse_va_list(struct curl_slist **headers, va_list args)
 {
-    struct curl_slist *headers = NULL;
     const char *argtype;
 
     while ((argtype = va_arg(args, const char *)) != NULL)
         if (strcmp(argtype, "httphdr:v") == 0) {
             const char **hdr;
             for (hdr = va_arg(args, const char **); *hdr; hdr++) {
-                struct curl_slist *list = curl_slist_append(headers, *hdr);
-                if (list) headers = list; else goto slist_error;
+                struct curl_slist *list = curl_slist_append(*headers, *hdr);
+                if (list) *headers = list; else return -1;
             }
         }
-        else { errno = EINVAL; return NULL; }
+        else if (strcmp(argtype, "httphdr:l") == 0) {
+            const char *hdr;
+            while ((hdr = va_arg(args, const char *)) != NULL) {
+                struct curl_slist *list = curl_slist_append(*headers, hdr);
+                if (list) *headers = list; else return -1;
+            }
+        }
+        else if (strcmp(argtype, "httphdr") == 0) {
+            const char *hdr = va_arg(args, const char *);
+            if (hdr) {
+                struct curl_slist *list = curl_slist_append(*headers, hdr);
+                if (list) *headers = list; else return -1;
+            }
+        }
+        else if (strcmp(argtype, "va_list") == 0) {
+            va_list *args2 = va_arg(args, va_list *);
+            if (args2) {
+                if (parse_va_list(headers, *args2) < 0) return -1;
+            }
+        }
+        else { errno = EINVAL; return -1; }
+
+    return 0;
+}
+
+static hFILE *vhopen_libcurl(const char *url, const char *modes, va_list args)
+{
+    struct curl_slist *headers = NULL;
+    if (parse_va_list(&headers, args) < 0) {
+        if (headers) curl_slist_free_all(headers);
+        return NULL;
+    }
 
     return libcurl_open(url, modes, headers);
-
-slist_error:
-    if (headers) curl_slist_free_all(headers);
-    errno = ENOMEM;
-    return NULL;
 }
 
 int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)

@@ -11,6 +11,10 @@ Noteworthy changes in release 1.4
 * New errmod_cal(), probaln_glocal(), sam_cap_mapq(), and sam_prob_realn()
   functions, previously internal to SAMtools, have been added to HTSlib.
 
+* Files can now be accessed via Google Cloud Storage using gs: URLs, when
+  HTSlib is configured to use libcurl for network file access rather than
+  the included basic knetfile networking.
+
 * S3 file access now also supports the "host_base" setting in the
   $HOME/.s3cfg configuration file.
 

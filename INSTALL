@@ -61,6 +61,10 @@ various features and specify further optional external requirements:
     remote files via FTP, HTTP, HTTPS, S3, etc.  By default, HTSlib uses
     its own simple networking code to provide access via FTP and HTTP only.
 
+--enable-gcs
+    Implement network access to Google Cloud Storage.  By default or with
+    --enable-gcs=check, this is enabled when libcurl is enabled.
+
 The configure script also accepts the usual options and environment variables
 for tuning installation locations and compilers: type './configure --help'
 for details.  For example,

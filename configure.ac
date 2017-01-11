@@ -49,9 +49,14 @@ AH_TOP([/* If you use configure, this file provides @%:@defines reflecting your
 AC_PROG_CC
 AC_PROG_RANLIB
 
-AC_SYS_LARGEFILE
-
 need_crypto=no
+
+AC_ARG_ENABLE([gcs],
+  [AS_HELP_STRING([--enable-gcs],
+		  [enable support for Google Cloud Storage URLs])],
+  [], [enable_gcs=check])
+
+AC_SYS_LARGEFILE
 
 AC_ARG_ENABLE([libcurl],
   [AS_HELP_STRING([--enable-libcurl],
@@ -170,6 +175,24 @@ Either configure with --disable-libcurl or resolve this error to build HTSlib.])
   need_crypto=yes
 fi
 AC_SUBST([libcurl])
+
+gcs=disabled
+if test "$enable_gcs" != no; then
+  if test $libcurl = enabled; then
+    AC_DEFINE([ENABLE_GCS], 1, [Define if HTSlib should enable GCS support.])
+    gcs=enabled
+  else
+    case "$enable_gcs" in
+      check) AC_MSG_WARN([GCS support not enabled: requires libcurl support]) ;;
+      *) AC_MSG_ERROR([GCS support not enabled
+
+Support for Google Cloud Storage URLs requires libcurl support to be enabled
+in HTSlib.  Configure with --enable-libcurl in order to use GCS URLs.])
+      ;;
+    esac
+  fi
+fi
+AC_SUBST([gcs])
 
 CRYPTO_LIBS=
 if test $need_crypto != no; then
