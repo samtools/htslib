@@ -1,6 +1,6 @@
 # Configure script for htslib, a C library for high-throughput sequencing data.
 #
-#    Copyright (C) 2015-2016 Genome Research Ltd.
+#    Copyright (C) 2015-2017 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -88,6 +88,11 @@ AC_ARG_WITH([plugin-path],
   [with_plugin_path=$with_plugin_dir])
 AC_SUBST([pluginpath], $with_plugin_path)
 
+AC_ARG_ENABLE([s3],
+  [AS_HELP_STRING([--enable-s3],
+                  [support Amazon AWS S3 URLs])],
+  [], [enable_s3=check])
+
 AC_MSG_CHECKING([shared library type])
 test -n "$host_alias" || host_alias=unknown-`uname -s`
 case $host_alias in
@@ -172,7 +177,6 @@ or Cygwin) is installed.
 Either configure with --disable-libcurl or resolve this error to build HTSlib.])
        ;;
      esac])
-  need_crypto=yes
 fi
 AC_SUBST([libcurl])
 
@@ -193,6 +197,25 @@ in HTSlib.  Configure with --enable-libcurl in order to use GCS URLs.])
   fi
 fi
 AC_SUBST([gcs])
+
+s3=disabled
+if test "$enable_s3" != no; then
+  if test $libcurl = enabled; then
+    AC_DEFINE([ENABLE_S3], 1, [Define if HTSlib should enable S3 support.])
+    s3=enabled
+    need_crypto=yes
+  else
+    case "$enable_s3" in
+      check) AC_MSG_WARN([S3 support not enabled: requires libcurl support]) ;;
+      *) AC_MSG_ERROR([S3 support not enabled
+
+Support for Amazon AWS S3 URLs requires libcurl support to be enabled
+in HTSlib.  Configure with --enable-libcurl in order to use S3 URLs.])
+      ;;
+    esac
+  fi
+fi
+AC_SUBST([s3])
 
 CRYPTO_LIBS=
 if test $need_crypto != no; then

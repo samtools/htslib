@@ -145,6 +145,7 @@ extern int hfile_plugin_init(struct hFILE_plugin *self);
 
 extern int hfile_plugin_init_gcs(struct hFILE_plugin *self);
 extern int hfile_plugin_init_libcurl(struct hFILE_plugin *self);
+extern int hfile_plugin_init_s3(struct hFILE_plugin *self);
 #endif
 
 /* This one is never built as a separate plugin.  */

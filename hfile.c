@@ -811,6 +811,9 @@ static void load_hfile_plugins()
 #ifdef ENABLE_GCS
     init_add_plugin(NULL, hfile_plugin_init_gcs, "gcs");
 #endif
+#ifdef ENABLE_S3
+    init_add_plugin(NULL, hfile_plugin_init_s3, "s3");
+#endif
 
 #endif
 
