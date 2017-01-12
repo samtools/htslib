@@ -2911,11 +2911,15 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 		sign = -1;
 	    }
 
-	    // This vs p: tlen, matepos, flags
-	    if (bam_ins_size(b) != sign*(aright-aleft+1))
+	    // This vs p: tlen, matepos, flags. Permit TLEN 0 and/or TLEN +/-
+	    // a small amount, if appropriate options set.
+	    if ((bam_ins_size(b) &&
+		 abs(bam_ins_size(b) - sign*(aright-aleft+1)) > fd->tlen_approx) ||
+		(!bam_ins_size(b) && !fd->tlen_zero))
 		goto detached;
 
-	    if (MAX(bam_mate_pos(b)+1, 0) != p->apos)
+	    if ((!fd->tlen_zero && MAX(bam_mate_pos(b)+1, 0) != p->apos) &&
+		!(fd->tlen_zero && bam_mate_pos(b) == 0))
 		goto detached;
 
 	    if (((bam_flag(b) & BAM_FMUNMAP) != 0) !=
@@ -2928,13 +2932,16 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
 
 	    // p vs this: tlen, matepos, flags
-	    if (p->ref_id != cr->ref_id)
+	    if (p->ref_id != cr->ref_id &&
+		!(fd->tlen_zero && p->ref_id == -1))
 		goto detached;
 
-	    if (p->tlen != -sign*(aright-aleft+1))
+	    if ((p->tlen && abs(p->tlen - -sign*(aright-aleft+1)) > fd->tlen_approx) ||
+		(!p->tlen && !fd->tlen_zero))
 		goto detached;
 
-	    if (p->mate_pos != cr->apos)
+	    if (p->mate_pos != cr->apos &&
+		!(fd->tlen_zero && p->mate_pos == 0))
 		goto detached;
 
 	    if (((p->flags & BAM_FMUNMAP) != 0) !=

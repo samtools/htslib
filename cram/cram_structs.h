@@ -745,7 +745,10 @@ typedef struct cram_fd {
     pthread_mutex_t bam_list_lock;
     void *job_pending;
     int ooc;                            // out of containers.
-    int lossy_read_names;
+
+    int lossy_read_names;               // boolean
+    int tlen_approx;                    // max TLEN calculation offset.
+    int tlen_zero;                      // If true, permit tlen 0 (=> tlen calculated)
 } cram_fd;
 
 // Translation of required fields to cram data series

@@ -4554,6 +4554,12 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_LOSSY_NAMES:
 	fd->lossy_read_names = va_arg(args, int);
+	// Currently lossy read names required paired (attached) reads.
+	// TLEN 0 or being 1 out causes read pairs to be detached, breaking
+	// the lossy read name compression, so we have extra options to
+	// slacken the exact TLEN round-trip checks.
+	fd->tlen_approx = fd->lossy_read_names;
+	fd->tlen_zero = fd->lossy_read_names;
 	break;
 
     case CRAM_OPT_USE_BZIP2:
