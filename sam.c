@@ -1046,6 +1046,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 
 #undef _parse_warn
 #undef _parse_err
+#undef _parse_err_param
 #undef _get_mem
 #undef _read_token_aux
 #undef _read_token
