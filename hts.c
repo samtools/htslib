@@ -1900,6 +1900,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
 
     // compute max_off: a virtual offset from a bin to the right of end
     bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
+    if (bin >= idx->n_bins) bin = 0;
     while (1) {
         // search for an extant bin by moving right, but moving up to the
         // parent whenever we get to a first child (which also covers falling
