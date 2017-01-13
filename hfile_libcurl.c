@@ -382,8 +382,7 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
     // limited reads (e.g. about a BAM block!) so seeking can reuse the
     // existing connection more often.
 
-    if (pos <= 2147483647) err = curl_easy_setopt(fp->easy, CURLOPT_RESUME_FROM, (long) pos);
-    else err = curl_easy_setopt(fp->easy, CURLOPT_RESUME_FROM_LARGE, (curl_off_t) pos);
+    err = curl_easy_setopt(fp->easy, CURLOPT_RESUME_FROM_LARGE,(curl_off_t)pos);
     if (err != CURLE_OK) { errno = easy_errno(fp->easy, err); return -1; }
 
     fp->buffer.len = 0;
@@ -444,14 +443,6 @@ static const struct hFILE_backend libcurl_backend =
     libcurl_read, libcurl_write, libcurl_seek, NULL, libcurl_close
 };
 
-static int add_header(hFILE_libcurl *fp, const char *header)
-{
-    struct curl_slist *list = curl_slist_append(fp->headers, header);
-    if (list == NULL) { errno = ENOMEM; return -1; }
-    fp->headers = list;
-    return 0;
-}
-
 static hFILE *
 libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
 {
@@ -491,10 +482,14 @@ libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
         err |= curl_easy_setopt(fp->easy, CURLOPT_WRITEDATA, fp);
     }
     else {
+        struct curl_slist *list;
+
         err |= curl_easy_setopt(fp->easy, CURLOPT_READFUNCTION, send_callback);
         err |= curl_easy_setopt(fp->easy, CURLOPT_READDATA, fp);
         err |= curl_easy_setopt(fp->easy, CURLOPT_UPLOAD, 1L);
-        if (add_header(fp, "Transfer-Encoding: chunked") < 0) goto error;
+
+        list = curl_slist_append(fp->headers, "Transfer-Encoding: chunked");
+        if (list) fp->headers = list; else goto error;
     }
 
     err |= curl_easy_setopt(fp->easy, CURLOPT_URL, url);
@@ -502,7 +497,8 @@ libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
     if (fp->headers)
         err |= curl_easy_setopt(fp->easy, CURLOPT_HTTPHEADER, fp->headers);
     err |= curl_easy_setopt(fp->easy, CURLOPT_FOLLOWLOCATION, 1L);
-    err |= curl_easy_setopt(fp->easy, CURLOPT_FAILONERROR, 1L);
+    if (hts_verbose <= 8)
+        err |= curl_easy_setopt(fp->easy, CURLOPT_FAILONERROR, 1L);
     if (hts_verbose >= 8)
         err |= curl_easy_setopt(fp->easy, CURLOPT_VERBOSE, 1L);
 
