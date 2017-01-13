@@ -275,6 +275,14 @@ static void faidx1(const char *filename)
     fai_destroy(fai);
 }
 
+static void check_enum1(void)
+{
+    // bgzf_compression() returns int, but enjoys this correspondence
+    if (no_compression != 0) fail("no_compression is %d", no_compression);
+    if (gzip != 1) fail("gzip is %d", gzip);
+    if (bgzf != 2) fail("bgzf is %d", bgzf);
+}
+
 int main(int argc, char **argv)
 {
     int i;
@@ -284,6 +292,7 @@ int main(int argc, char **argv)
     aux_fields1();
     iterators1();
     samrecord_layout();
+    check_enum1();
     for (i = 1; i < argc; i++) faidx1(argv[i]);
 
     return status;

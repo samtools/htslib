@@ -215,13 +215,25 @@ typedef struct __kstring_t {
      */
     int bgzf_check_EOF(BGZF *fp);
 
+    /** Return the file's compression format
+     *
+     * @param fp  BGZF file handle
+     * @return    A small integer matching the corresponding
+     *            `enum htsCompression` value:
+     *   - 0 / `no_compression` if the file is uncompressed
+     *   - 1 / `gzip` if the file is plain GZIP-compressed
+     *   - 2 / `bgzf` if the file is BGZF-compressed
+     * @since 1.4
+     */
+    int bgzf_compression(BGZF *fp);
+
     /**
      * Check if a file is in the BGZF format
      *
      * @param fn    file name
      * @return      1 if _fn_ is BGZF; 0 if not or on I/O error
      */
-     int bgzf_is_bgzf(const char *fn);
+    int bgzf_is_bgzf(const char *fn) HTS_DEPRECATED("Use bgzf_compression() or hts_detect_format() instead");
 
     /*********************
      * Advanced routines *

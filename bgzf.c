@@ -1392,7 +1392,8 @@ int bgzf_close(BGZF* fp)
 #endif
     if ( fp->is_gzip )
     {
-        if (!fp->is_write) ret = inflateEnd(fp->gz_stream);
+        if (fp->gz_stream == NULL) ret = Z_OK;
+        else if (!fp->is_write) ret = inflateEnd(fp->gz_stream);
         else ret = deflateEnd(fp->gz_stream);
         if (ret != Z_OK && hts_verbose >= 1)
             fprintf(stderr, "[E::%s] inflateEnd/deflateEnd failed: %s\n",
@@ -1489,9 +1490,14 @@ int bgzf_is_bgzf(const char *fn)
     hFILE *fp;
     if ((fp = hopen(fn, "r")) == 0) return 0;
     n = hread(fp, buf, 16);
-    if ( hclose(fp) < 0 ) return -1;
+    if (hclose(fp) < 0) return 0;
     if (n != 16) return 0;
-    return memcmp(g_magic, buf, 16) == 0? 1 : 0;
+    return check_header(buf) == 0? 1 : 0;
+}
+
+int bgzf_compression(BGZF *fp)
+{
+    return (!fp->is_compressed)? no_compression : (fp->is_gzip)? gzip : bgzf;
 }
 
 int bgzf_getc(BGZF *fp)

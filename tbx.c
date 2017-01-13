@@ -257,10 +257,9 @@ int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_thr
     tbx_t *tbx;
     BGZF *fp;
     int ret;
-    if ( bgzf_is_bgzf(fn)!=1 ) { fprintf(stderr,"Not a BGZF file: %s\n", fn); return -1; }
     if ((fp = bgzf_open(fn, "r")) == 0) return -1;
     if ( n_threads ) bgzf_mt(fp, n_threads, 256);
-    if ( !fp->is_compressed ) { bgzf_close(fp); return -1; }
+    if ( bgzf_compression(fp) != bgzf ) { bgzf_close(fp); return -1; }
     tbx = tbx_index(fp, min_shift, conf);
     bgzf_close(fp);
     if ( !tbx ) return -1;
