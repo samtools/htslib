@@ -677,6 +677,10 @@ typedef struct {
      *
      *  Returns negative value on error or the number of written values on success.
      *
+     *  Use the returned number of written values for accessing valid entries of dst, as ndst is only a
+     *  watermark that can be higher than the returned value. I.e. the end of dst can contain carry-over
+     *  values from previous calls to bcf_get_format_*() on lines with more values per sample.
+     *
      *  Example:
      *      int ndst = 0; char **dst = NULL;
      *      if ( bcf_get_format_string(hdr, line, "XX", &dst, &ndst) > 0 )
@@ -684,8 +688,17 @@ typedef struct {
      *      free(dst[0]); free(dst);
      *
      *  Example:
-     *      int ngt, *gt_arr = NULL, ngt_arr = 0;
-     *      ngt = bcf_get_genotypes(hdr, line, &gt_arr, &ngt_arr);
+     *      int i, j, ngt, *gt_arr = NULL, ngt_arr = 0;
+     *      if ( (ngt = bcf_get_genotypes(hdr, line, &gt_arr, &ngt_arr)) > 0 ) {
+     *      	for (i=0; i<bcf_hdr_nsamples(hdr); i++) {
+     *      		for (j=0; j<(ngt/bcf_hdr_nsamples(hdr)); j++) {
+     *      			int *gt_ptr = gt_arr + i*(ngt/bcf_hdr_nsamples(hdr)) + j;
+     *      			printf("sample: %i, allele position: %i, allele: %i\n", i, j, gt_ptr);
+     *      		}
+     *      	}
+     *      }
+     *      free(gt_arr);
+     *
      */
     #define bcf_get_format_int32(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
     #define bcf_get_format_float(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)
