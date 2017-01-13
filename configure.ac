@@ -53,7 +53,7 @@ need_crypto=no
 
 AC_ARG_ENABLE([gcs],
   [AS_HELP_STRING([--enable-gcs],
-		  [enable support for Google Cloud Storage URLs])],
+                  [support Google Cloud Storage URLs])],
   [], [enable_gcs=check])
 
 AC_SYS_LARGEFILE

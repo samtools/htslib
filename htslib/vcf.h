@@ -695,10 +695,10 @@ typedef struct {
      *      if ( ngt<=0 ) return; // GT not present
      *
      *      int max_ploidy = ngt/nsmpl;
-     *      for (i=0; i<nsmpl; i++) 
+     *      for (i=0; i<nsmpl; i++)
      *      {
      *        int32_t *ptr = gt + i*max_ploidy;
-     *        for (j=0; j<max_ploidy; j++) 
+     *        for (j=0; j<max_ploidy; j++)
      *        {
      *           // if true, the sample has smaller ploidy
      *           if ( ptr[j]==bcf_int32_vector_end ) break;
