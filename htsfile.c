@@ -24,6 +24,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
+#include <ctype.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -39,6 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 enum { identify, view_headers, view_all } mode = identify;
 int show_headers = 1;
+int verbose = 0;
 int status = EXIT_SUCCESS;  /* Exit status from main */
 
 void error(const char *format, ...)
@@ -151,6 +153,23 @@ static void view_vcf(vcfFile *in, const char *filename)
     if (out) hts_close(out);
 }
 
+static void view_raw(hFILE *fp, const char *filename)
+{
+    int c, prev;
+    for (prev = '\n'; (c = hgetc(fp)) != EOF; prev = c)
+        if (isprint(c) || c == '\n' || c == '\t') putchar(c);
+        else if (c == '\r') fputs("\\r", stdout);
+        else if (c == '\0') fputs("\\0", stdout);
+        else printf("\\x%02x", c);
+
+    if (prev != '\n') putchar('\n');
+
+    if (herrno(fp)) {
+        errno = herrno(fp);
+        error("reading \"%s\" failed", filename);
+    }
+}
+
 static void usage(FILE *fp, int status)
 {
     fprintf(fp,
@@ -183,7 +202,7 @@ int main(int argc, char **argv)
         case 'c': mode = view_all; break;
         case 'h': mode = view_headers; show_headers = 1; break;
         case 'H': show_headers = 0; break;
-        case 'v': hts_verbose++; break;
+        case 'v': hts_verbose++; verbose++; break;
         case 1:
             printf(
 "htsfile (htslib) %s\n"
@@ -227,14 +246,20 @@ int main(int argc, char **argv)
                     view_vcf(hts, argv[i]);
                     break;
                 default:
-                    errno = 0;
-                    error("can't view \"%s\": unknown format", argv[i]);
+                    if (verbose)
+                        view_raw(fp, argv[i]);
+                    else {
+                        errno = 0;
+                        error("can't view \"%s\": unknown format", argv[i]);
+                    }
                     break;
                 }
 
                 if (hts_close(hts) < 0) error("closing \"%s\" failed", argv[i]);
                 fp = NULL;
             }
+            else if (errno == ENOEXEC && verbose)
+                view_raw(fp, argv[i]);
             else
                 error("can't view \"%s\"", argv[i]);
         }

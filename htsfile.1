@@ -2,7 +2,7 @@
 .SH NAME
 htsfile \- identify high-throughput sequencing data files
 .\"
-.\" Copyright (C) 2015 Genome Research Ltd.
+.\" Copyright (C) 2015, 2017 Genome Research Ltd.
 .\"
 .\" Author: John Marshall <jm18@sanger.ac.uk>
 .\"
@@ -57,6 +57,11 @@ The following options are accepted:
 .BR -c ", " --view
 Instead of identifying the specified files, display a textual representation
 of their contents on standard output.
+.IP
+By default, \fB--view\fR refuses to display files in unknown formats.
+When \fB--verbose\fR is also given, the raw contents of such files are
+displayed, with non-printable characters shown via C-style "\\x" hexadecimal
+escape sequences.
 .TP
 .BR -h ", " --header-only
 Display data file headers only.
