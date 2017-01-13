@@ -23,6 +23,12 @@ Noteworthy changes in release 1.4
   percent-encoded characters.  HTSlib's previous over-simplified "data:text"
   format is no longer supported -- you will need to add an initial comma.
 
+* When plugins are enabled, S3 support is now provided by a separate
+  hfile_s3 plugin rather than by hfile_libcurl itself as previously.
+  When --enable-libcurl is used, by default both GCS and S3 support
+  and plugins will also be built; they can be individually disabled
+  via --disable-gcs and --disable-s3.
+
 * The iRODS file access plugin has been moved to a separate repository.
   Configure no longer has a --with-irods option; instead build the plugin
   found at <https://github.com/samtools/htslib-plugins>.
