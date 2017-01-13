@@ -457,6 +457,8 @@ static int add_header(hFILE_libcurl *fp, const char *header)
 
 static int
 add_s3_settings(hFILE_libcurl *fp, const char *url, kstring_t *message);
+static int
+add_gcs_settings(hFILE_libcurl *fp, const char *gcs_url);
 
 static hFILE *
 libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
@@ -511,8 +513,9 @@ libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
         kputc('\n', &message);
         kputc('\n', &message);
         if (add_s3_settings(fp, url, &message) < 0) goto error;
-    }
-    else
+    } else if (tolower(url[0]) == 'g' && tolower(url[1]) == 's') {
+      if (add_gcs_settings(fp, url) < 0) goto error;
+    } else
         err |= curl_easy_setopt(fp->easy, CURLOPT_URL, url);
 
     err |= curl_easy_setopt(fp->easy, CURLOPT_USERAGENT, curl.useragent.s);
@@ -658,6 +661,7 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
 
     hfile_add_scheme_handler("s3", &handler);
     hfile_add_scheme_handler("s3+http", &handler);
+    hfile_add_scheme_handler("gs", &handler);
     if (info->features & CURL_VERSION_SSL)
         hfile_add_scheme_handler("s3+https", &handler);
 
@@ -747,6 +751,13 @@ urldecode_kput(const char *s, int len, hFILE_libcurl *fp, kstring_t *str)
         curl_free(s2);
     }
     else kputsn(s, len, str);
+}
+
+static void urlencode_kput(const char* to_escape, hFILE_libcurl* fp, kstring_t* output) {
+  char* result = curl_easy_escape(fp->easy, to_escape, 0 /*len*/);
+  if (result == NULL) abort();
+  kputs(result, output);
+  curl_free(result);
 }
 
 static void base64_kput(const unsigned char *data, size_t len, kstring_t *str)
@@ -877,6 +888,56 @@ static void parse_simple(const char *fname, kstring_t *id, kstring_t *secret)
     kputsn(s, strcspn(s, " \t"), secret);
 
     free(text.s);
+}
+
+// Reformat the url for the GCS API, and add an OAuth header.
+// GCS URL format is gs://BUCKET/PATH. We convert this to
+// https://www.googleapis.com/storage/v1/b/BUCKET/o/PATH?alt=media,
+// where PATH is url-escaped.
+// We get the token for the OAuth header from the environment variable
+// GCS_OAUTH_TOKEN, which you can set using the gcloud tool, e.g.
+//  > gcloud auth application-default login
+//  > export GCS_OAUTH_TOKEN=`gcloud auth application-default print-access-token`
+// For production environments, set up a service account and use its credentials, e.g.
+//  > export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"
+//  > export GCS_OAUTH_TOKEN=`gcloud auth application-default print-access-token`
+static int add_gcs_settings(hFILE_libcurl* fp, const char* gcs_url) {
+  int ret, save;
+  kstring_t url = { 0, 0, NULL };
+  kstring_t auth_hdr = { 0, 0, NULL };
+
+  const char* bucket = &gcs_url[3];
+  while (*bucket == '/') bucket++;
+  const char* path = bucket + strcspn(bucket, "/");
+
+  kputs("https://www.googleapis.com/storage/v1/b/", &url);
+  kputsn(bucket, path - bucket, &url);
+  kputs("/o/", &url);
+  // Exclude the leading '/' in path.
+  urlencode_kput(path+1, fp, &url);
+  kputs("?alt=media", &url);
+  CURLcode err = curl_easy_setopt(fp->easy, CURLOPT_URL, url.s);
+  if (err != CURLE_OK) { errno = easy_errno(fp->easy, err); goto error; }
+
+  const char* oauth_token = getenv("GCS_OAUTH_TOKEN");
+  if (oauth_token != NULL) {
+    kputs("Authorization: Bearer ", &auth_hdr);
+    kputs(oauth_token, &auth_hdr);
+    if (add_header(fp, auth_hdr.s) < 0) goto error;
+  }
+
+  ret = 0;
+  goto free_and_return;
+
+error:
+  ret = -1;
+
+free_and_return:
+  save = errno;
+  free(url.s);
+  free(auth_hdr.s);
+  errno = save;
+  return ret;
 }
 
 static int
