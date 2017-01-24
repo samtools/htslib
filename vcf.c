@@ -1,7 +1,7 @@
 /*  vcf.c -- VCF/BCF API functions.
 
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2016 Genome Research Ltd.
+    Copyright (C) 2012-2017 Genome Research Ltd.
     Portions copyright (C) 2014 Intel Corporation.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -39,6 +39,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/tbx.h"
 #include "htslib/hfile.h"
 #include "hts_internal.h"
+#include "htslib/hts_endian.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/kstring.h"
 
@@ -451,7 +452,8 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
     // INFO/FILTER/FORMAT
     char *id = NULL;
-    int type = -1, num = -1, var = -1, idx = -1;
+    uint32_t type = -1, var = -1;
+    int num = -1, idx = -1;
     for (i=0; i<hrec->nkeys; i++)
     {
         if ( !strcmp(hrec->keys[i], "ID") ) id = hrec->vals[i];
@@ -492,7 +494,10 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
             if (var != BCF_VL_FIXED) num = 0xfffff;
         }
     }
-    uint32_t info = (uint32_t)num<<12 | var<<8 | type<<4 | hrec->type;
+    uint32_t info = ((((uint32_t)num) & 0xfffff)<<12 |
+                     (var & 0xf) << 8 |
+                     (type & 0xf) << 4 |
+                     (((uint32_t) hrec->type) & 0xf));
 
     if ( !id ) return 0;
     str = strdup(id);
@@ -888,8 +893,9 @@ int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
 
     BGZF *fp = hfp->fp.bgzf;
     if ( bgzf_write(fp, "BCF\2\2", 5) !=5 ) return -1;
-    uint32_t hlen = htxt.l;
-    if ( bgzf_write(fp, &hlen, 4) !=4 ) return -1;
+    uint8_t hlen[4];
+    u32_to_le(htxt.l, hlen);
+    if ( bgzf_write(fp, hlen, 4) !=4 ) return -1;
     if ( bgzf_write(fp, htxt.s, htxt.l) != htxt.l ) return -1;
 
     free(htxt.s);
@@ -1685,7 +1691,7 @@ void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
 {
     int32_t max = INT32_MIN + 1, min = INT32_MAX;
     int i;
-    if (n == 0) bcf_enc_size(s, 0, BCF_BT_NULL);
+    if (n <= 0) bcf_enc_size(s, 0, BCF_BT_NULL);
     else if (n == 1) bcf_enc_int1(s, a[0]);
     else {
         if (wsize <= 0) wsize = n;
@@ -1701,29 +1707,57 @@ void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
                 else if ( a[i]==bcf_int32_missing ) kputc(bcf_int8_missing, s);
                 else kputc(a[i], s);
         } else if (max <= INT16_MAX && min > bcf_int16_vector_end) {
+            uint8_t *p;
             bcf_enc_size(s, wsize, BCF_BT_INT16);
+            ks_resize(s, s->l + n * sizeof(int16_t));
+            p = (uint8_t *) s->s + s->l;
             for (i = 0; i < n; ++i)
             {
                 int16_t x;
                 if ( a[i]==bcf_int32_vector_end ) x = bcf_int16_vector_end;
                 else if ( a[i]==bcf_int32_missing ) x = bcf_int16_missing;
                 else x = a[i];
-                kputsn((char*)&x, 2, s);
+                i16_to_le(x, p);
+                p += sizeof(int16_t);
             }
+            s->l += n * sizeof(int16_t);
         } else {
+            uint8_t *p;
             bcf_enc_size(s, wsize, BCF_BT_INT32);
+            ks_resize(s, s->l + n * sizeof(int32_t));
+            p = (uint8_t *) s->s + s->l;
             for (i = 0; i < n; ++i) {
-                int32_t x = a[i];
-                kputsn((char*)&x, 4, s);
+                i32_to_le(a[i], p);
+                p += sizeof(int32_t);
             }
+            s->l += n * sizeof(int32_t);
         }
     }
 }
 
+static inline int serialize_float_array(kstring_t *s, size_t n, const float *a) {
+    uint8_t *p;
+    size_t i;
+    size_t bytes = n * sizeof(float);
+
+    if (bytes / sizeof(float) != n) return -1;
+    if (ks_resize(s, s->l + bytes) < 0) return -1;
+
+    p = (uint8_t *) s->s + s->l;
+    for (i = 0; i < n; i++) {
+        float_to_le(a[i], p);
+        p += sizeof(float);
+    }
+    s->l += bytes;
+
+    return 0;
+}
+
 void bcf_enc_vfloat(kstring_t *s, int n, float *a)
 {
+    assert(n >= 0);
     bcf_enc_size(s, n, BCF_BT_FLOAT);
-    kputsn((char*)a, n << 2, s);
+    serialize_float_array(s, n, a);
 }
 
 void bcf_enc_vchar(kstring_t *s, int l, const char *a)
@@ -1750,10 +1784,11 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
     }
     else
     {
-        #define BRANCH(type_t, is_missing, is_vector_end, kprint) { \
-            type_t *p = (type_t *) data; \
-            for (j=0; j<n; j++) \
+        #define BRANCH(type_t, convert, is_missing, is_vector_end, kprint) { \
+            uint8_t *p = (uint8_t *) data; \
+            for (j=0; j<n; j++, p += sizeof(type_t))    \
             { \
+                type_t v = convert(p); \
                 if ( is_vector_end ) break; \
                 if ( j ) kputc(',', s); \
                 if ( is_missing ) kputc('.', s); \
@@ -1761,10 +1796,10 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
             } \
         }
         switch (type) {
-            case BCF_BT_INT8:  BRANCH(int8_t,  p[j]==bcf_int8_missing,  p[j]==bcf_int8_vector_end,  kputw(p[j], s)); break;
-            case BCF_BT_INT16: BRANCH(int16_t, p[j]==bcf_int16_missing, p[j]==bcf_int16_vector_end, kputw(p[j], s)); break;
-            case BCF_BT_INT32: BRANCH(int32_t, p[j]==bcf_int32_missing, p[j]==bcf_int32_vector_end, kputw(p[j], s)); break;
-            case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), ksprintf(s, "%g", p[j])); break;
+            case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8, v==bcf_int8_missing,  v==bcf_int8_vector_end,  kputw(v, s)); break;
+            case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, v==bcf_int16_missing, v==bcf_int16_vector_end, kputw(v, s)); break;
+            case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, v==bcf_int32_missing, v==bcf_int32_vector_end, kputw(v, s)); break;
+            case BCF_BT_FLOAT: BRANCH(float,   le_to_float, bcf_float_is_missing(v), bcf_float_is_vector_end(v), ksprintf(s, "%g", v)); break;
             default: fprintf(stderr,"todo: type %d\n", type); exit(1); break;
         }
         #undef BRANCH
@@ -2051,7 +2086,15 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 bcf_enc_vint(str, (z->size>>2) * v->n_sample, (int32_t*)z->buf, z->size>>2);
             } else {
                 bcf_enc_size(str, z->size>>2, BCF_BT_FLOAT);
-                kputsn((char*)z->buf, z->size * v->n_sample, str);
+                if (serialize_float_array(str, (z->size>>2) * v->n_sample,
+                                          (float *) z->buf) != 0) {
+                    v->errcode |= BCF_ERR_LIMITS;
+                    if (hts_verbose > 1) {
+                        fprintf(stderr,"[%s:%d %s] Out of memory\n",
+                                __FILE__,__LINE__,__FUNCTION__);
+                    }
+                    return -1;
+                }
             }
         }
     }
@@ -2301,9 +2344,9 @@ static inline uint8_t *bcf_unpack_info_core1(uint8_t *ptr, bcf_info_t *info)
     info->v1.i = 0;
     if (info->len == 1) {
         if (info->type == BCF_BT_INT8 || info->type == BCF_BT_CHAR) info->v1.i = *(int8_t*)ptr;
-        else if (info->type == BCF_BT_INT32) info->v1.i = *(int32_t*)ptr;
-        else if (info->type == BCF_BT_FLOAT) info->v1.f = *(float*)ptr;
-        else if (info->type == BCF_BT_INT16) info->v1.i = *(int16_t*)ptr;
+        else if (info->type == BCF_BT_INT32) info->v1.i = le_to_i32(ptr);
+        else if (info->type == BCF_BT_FLOAT) info->v1.f = le_to_float(ptr);
+        else if (info->type == BCF_BT_INT16) info->v1.i = le_to_i16(ptr);
     }
     ptr += info->len << bcf_type_shift[info->type];
     info->vptr_len = ptr - info->vptr;
@@ -3291,7 +3334,7 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
     else if ( type==BCF_HT_REAL )
     {
         bcf_enc_size(&str, nps, BCF_BT_FLOAT);
-        kputsn((char*)values, nps*line->n_sample*sizeof(float), &str);
+        serialize_float_array(&str, nps*line->n_sample, (float *) values);
     }
     else if ( type==BCF_HT_STR )
     {
@@ -3610,23 +3653,23 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
         return 1;
     }
 
-    #define BRANCH(type_t, is_missing, is_vector_end, set_missing, out_type_t) { \
+#define BRANCH(type_t, convert, is_missing, is_vector_end, set_missing, out_type_t) { \
         out_type_t *tmp = (out_type_t *) *dst; \
-        type_t *p = (type_t *) info->vptr; \
         for (j=0; j<info->len; j++) \
         { \
+            type_t p = convert(info->vptr + j * sizeof(type_t)); \
             if ( is_vector_end ) return j; \
             if ( is_missing ) set_missing; \
-            else *tmp = p[j]; \
+            else *tmp = p; \
             tmp++; \
         } \
         return j; \
     }
     switch (info->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  p[j]==bcf_int8_missing,  p[j]==bcf_int8_vector_end,  *tmp=bcf_int32_missing, int32_t); break;
-        case BCF_BT_INT16: BRANCH(int16_t, p[j]==bcf_int16_missing, p[j]==bcf_int16_vector_end, *tmp=bcf_int32_missing, int32_t); break;
-        case BCF_BT_INT32: BRANCH(int32_t, p[j]==bcf_int32_missing, p[j]==bcf_int32_vector_end, *tmp=bcf_int32_missing, int32_t); break;
-        case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), bcf_float_set_missing(*tmp), float); break;
+        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int32_missing, int32_t); break;
+        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int32_missing, int32_t); break;
+        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, p==bcf_int32_missing, p==bcf_int32_vector_end, *tmp=bcf_int32_missing, int32_t); break;
+        case BCF_BT_FLOAT: BRANCH(float, le_to_float, bcf_float_is_missing(p), bcf_float_is_vector_end(p), bcf_float_set_missing(*tmp), float); break;
         default: fprintf(stderr,"TODO: %s:%d .. info->type=%d\n", __FILE__,__LINE__, info->type); exit(1);
     }
     #undef BRANCH
@@ -3714,27 +3757,28 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
         if ( !dst ) return -4;     // could not alloc
     }
 
-    #define BRANCH(type_t, is_missing, is_vector_end, set_missing, set_vector_end, out_type_t) { \
+    #define BRANCH(type_t, convert, is_missing, is_vector_end, set_missing, set_vector_end, out_type_t) { \
         out_type_t *tmp = (out_type_t *) *dst; \
-        type_t *p = (type_t*) fmt->p; \
+        uint8_t *fmt_p = fmt->p; \
         for (i=0; i<nsmpl; i++) \
         { \
             for (j=0; j<fmt->n; j++) \
             { \
+                type_t p = convert(fmt_p + j * sizeof(type_t)); \
                 if ( is_missing ) set_missing; \
                 else if ( is_vector_end ) { set_vector_end; break; } \
-                else *tmp = p[j]; \
+                else *tmp = p; \
                 tmp++; \
             } \
             for (; j<fmt->n; j++) { set_vector_end; tmp++; } \
-            p = (type_t *)((char *)p + fmt->size); \
+            fmt_p += fmt->size; \
         } \
     }
     switch (fmt->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  p[j]==bcf_int8_missing,  p[j]==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
-        case BCF_BT_INT16: BRANCH(int16_t, p[j]==bcf_int16_missing, p[j]==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
-        case BCF_BT_INT32: BRANCH(int32_t, p[j]==bcf_int32_missing, p[j]==bcf_int32_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
-        case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[j]), bcf_float_is_vector_end(p[j]), bcf_float_set_missing(*tmp), bcf_float_set_vector_end(*tmp), float); break;
+        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8, p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
+        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
+        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, p==bcf_int32_missing, p==bcf_int32_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
+        case BCF_BT_FLOAT: BRANCH(float,   le_to_float, bcf_float_is_missing(p), bcf_float_is_vector_end(p), bcf_float_set_missing(*tmp), bcf_float_set_vector_end(*tmp), float); break;
         default: fprintf(stderr,"TODO: %s:%d .. fmt->type=%d\n", __FILE__,__LINE__, fmt->type); exit(1);
     }
     #undef BRANCH

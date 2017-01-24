@@ -30,11 +30,13 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 #include <errno.h>
 #include <zlib.h>
+#include <assert.h>
 #include "htslib/sam.h"
 #include "htslib/bgzf.h"
 #include "cram/cram.h"
 #include "hts_internal.h"
 #include "htslib/hfile.h"
+#include "htslib/hts_endian.h"
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
@@ -108,7 +110,7 @@ static bam_hdr_t *hdr_from_dict(sdict_t *d)
     for (k = kh_begin(d); k != kh_end(d); ++k) {
         if (!kh_exist(d, k)) continue;
         h->target_name[kh_val(d, k)>>32] = (char*)kh_key(d, k);
-        h->target_len[kh_val(d, k)>>32]  = kh_val(d, k)<<32>>32;
+        h->target_len[kh_val(d, k)>>32]  = kh_val(d, k) & 0xffffffffUL;
         kh_val(d, k) >>= 32;
     }
     return h;
@@ -372,39 +374,9 @@ static inline int aux_type2size(uint8_t type)
 
 static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data, int is_host)
 {
-    uint8_t *s;
     uint32_t *cigar = (uint32_t*)(data + c->l_qname);
-    uint32_t i, n;
-    s = data + c->n_cigar*4 + c->l_qname + c->l_qseq + (c->l_qseq + 1)/2;
+    uint32_t i;
     for (i = 0; i < c->n_cigar; ++i) ed_swap_4p(&cigar[i]);
-    while (s < data + l_data) {
-        int size;
-        s += 2; // skip key
-        size = aux_type2size(*s); ++s; // skip type
-        switch (size) {
-        case 1: ++s; break;
-        case 2: ed_swap_2p(s); s += 2; break;
-        case 4: ed_swap_4p(s); s += 4; break;
-        case 8: ed_swap_8p(s); s += 8; break;
-        case 'Z':
-        case 'H':
-            while (*s) ++s;
-            ++s;
-            break;
-        case 'B':
-            size = aux_type2size(*s); ++s;
-            if (is_host) memcpy(&n, s, 4), ed_swap_4p(s);
-            else ed_swap_4p(s), memcpy(&n, s, 4);
-            s += 4;
-            switch (size) {
-            case 1: s += n; break;
-            case 2: for (i = 0; i < n; ++i, s += 2) ed_swap_2p(s); break;
-            case 4: for (i = 0; i < n; ++i, s += 4) ed_swap_4p(s); break;
-            case 8: for (i = 0; i < n; ++i, s += 8) ed_swap_8p(s); break;
-            }
-            break;
-        }
-    }
 }
 
 int bam_read1(BGZF *fp, bam1_t *b)
@@ -988,8 +960,6 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         for (i = 0; i < c->l_qseq; ++i) t[i] = q[i] - 33;
     } else memset(t, 0xff, c->l_qseq);
     // aux
-    // Note that (like the bam1_core_t fields) this aux data in b->data is
-    // stored in host endianness; so there is no byte swapping needed here.
     while (p < s->s + s->l) {
         uint8_t type;
         q = _read_token_aux(p); // FIXME: can be accelerated for long 'B' arrays
@@ -998,6 +968,12 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         q += 3; type = *q++; ++q; // q points to value
         if (type != 'Z' && type != 'H') // the only zero length acceptable fields
             _parse_err(p - q - 1 < 1, "incomplete aux field");
+
+        // Ensure str has enough space for a double + type allocated.
+        // This is so we can stuff bigger integers and floats directly into
+        // the kstring.  Sorry.
+        _parse_err(ks_resize(&str, str.l + 16), "out of memory");
+
         if (type == 'A' || type == 'a' || type == 'c' || type == 'C') {
             kputc_('A', &str);
             kputc_(*q, &str);
@@ -1007,53 +983,79 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
                 if (x >= INT8_MIN) {
                     kputc_('c', &str); kputc_(x, &str);
                 } else if (x >= INT16_MIN) {
-                    int16_t y = x;
-                    kputc_('s', &str); kputsn_((char*)&y, 2, &str);
+                    str.s[str.l++] = 's';
+                    i16_to_le(x, (uint8_t *) str.s + str.l);
+                    str.l += 2;
                 } else {
-                    int32_t y = x;
-                    kputc_('i', &str); kputsn_(&y, 4, &str);
+                    str.s[str.l++] = 'i';
+                    i32_to_le(x, (uint8_t *) str.s + str.l);
+                    str.l += 4;
                 }
             } else {
                 unsigned long x = strtoul(q, &q, 10);
                 if (x <= UINT8_MAX) {
                     kputc_('C', &str); kputc_(x, &str);
                 } else if (x <= UINT16_MAX) {
-                    uint16_t y = x;
-                    kputc_('S', &str); kputsn_(&y, 2, &str);
+                    str.s[str.l++] = 'S';
+                    u16_to_le(x, (uint8_t *) str.s + str.l);
+                    str.l += 2;
                 } else {
-                    uint32_t y = x;
-                    kputc_('I', &str); kputsn_(&y, 4, &str);
+                    str.s[str.l++] = 'I';
+                    u32_to_le(x, (uint8_t *) str.s + str.l);
+                    str.l += 4;
                 }
             }
         } else if (type == 'f') {
-            float x;
-            x = strtod(q, &q);
-            kputc_('f', &str); kputsn_(&x, 4, &str);
+            str.s[str.l++] = 'f';
+            float_to_le(strtod(q, &q), (uint8_t *) str.s + str.l);
+            str.l += sizeof(float);
         } else if (type == 'd') {
-            double x;
-            x = strtod(q, &q);
-            kputc_('d', &str); kputsn_(&x, 8, &str);
+            str.s[str.l++] = 'd';
+            double_to_le(strtod(q, &q), (uint8_t *) str.s + str.l);
+            str.l += sizeof(double);
         } else if (type == 'Z' || type == 'H') {
             _parse_err(type == 'H' && !((p-q)&1),
                        "hex field does not have an even number of digits");
             kputc_(type, &str);kputsn_(q, p - q, &str); // note that this include the trailing NULL
         } else if (type == 'B') {
-            int32_t n;
+            int32_t n, size;
+            size_t bytes;
             char *r;
             _parse_err(p - q - 1 < 3, "incomplete B-typed aux field");
             type = *q++; // q points to the first ',' following the typing byte
+
+            size = aux_type2size(type);
+            _parse_err(size <= 0 || size > 4, "unrecognized B type");
+
             for (r = q, n = 0; *r; ++r)
                 if (*r == ',') ++n;
-            kputc_('B', &str); kputc_(type, &str); kputsn_(&n, 4, &str);
-            // FIXME: to evaluate which is faster: a) aligned array and then memmove(); b) unaligned array; c) kputsn_()
+
+            // Ensure space for type + values
+            bytes = (size_t) n * (size_t) size;
+            _parse_err(bytes / size != n
+                       || ks_resize(&str, str.l + bytes + 2 + sizeof(uint32_t)),
+                       "out of memory");
+            str.s[str.l++] = 'B';
+            str.s[str.l++] = type;
+            i32_to_le(n, (uint8_t *) str.s + str.l);
+            str.l += sizeof(uint32_t);
+
+            // This ensures that q always ends up at the next comma after
+            // reading a number even if it's followed by junk.  It
+            // prevents the possibility of trying to read more than n items.
+#define _skip_to_comma(q, p) do { while ((q) < (p) && *(q) != ',') (q)++; } while (0)
+
             if (type == 'c')      while (q + 1 < p) { int8_t   x = strtol(q + 1, &q, 0); kputc_(x, &str); }
             else if (type == 'C') while (q + 1 < p) { uint8_t  x = strtoul(q + 1, &q, 0); kputc_(x, &str); }
-            else if (type == 's') while (q + 1 < p) { int16_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 2, &str); }
-            else if (type == 'S') while (q + 1 < p) { uint16_t x = strtoul(q + 1, &q, 0); kputsn_(&x, 2, &str); }
-            else if (type == 'i') while (q + 1 < p) { int32_t  x = strtol(q + 1, &q, 0); kputsn_(&x, 4, &str); }
-            else if (type == 'I') while (q + 1 < p) { uint32_t x = strtoul(q + 1, &q, 0); kputsn_(&x, 4, &str); }
-            else if (type == 'f') while (q + 1 < p) { float    x = strtod(q + 1, &q);    kputsn_(&x, 4, &str); }
+            else if (type == 's') while (q + 1 < p) { i16_to_le(strtol(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 2; _skip_to_comma(q, p); }
+            else if (type == 'S') while (q + 1 < p) { u16_to_le(strtoul(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 2; _skip_to_comma(q, p); }
+            else if (type == 'i') while (q + 1 < p) { i32_to_le(strtol(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
+            else if (type == 'I') while (q + 1 < p) { u32_to_le(strtoul(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
+            else if (type == 'f') while (q + 1 < p) { float_to_le(strtod(q + 1, &q), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
             else _parse_err(1, "unrecognized type");
+
+#undef _skip_to_comma
+
         } else _parse_err(1, "unrecognized type");
     }
     b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
@@ -1174,36 +1176,36 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
         } else if (type == 'S') {
             if (s+2 <= b->data + b->l_data) {
                 kputsn("i:", 2, str);
-                kputw(*(uint16_t*)s, str);
+                kputuw(le_to_u16(s), str);
                 s += 2;
             } else return -1;
         } else if (type == 's') {
             if (s+2 <= b->data + b->l_data) {
                 kputsn("i:", 2, str);
-                kputw(*(int16_t*)s, str);
+                kputw(le_to_i16(s), str);
                 s += 2;
             } else return -1;
         } else if (type == 'I') {
             if (s+4 <= b->data + b->l_data) {
                 kputsn("i:", 2, str);
-                kputuw(*(uint32_t*)s, str);
+                kputuw(le_to_u32(s), str);
                 s += 4;
             } else return -1;
         } else if (type == 'i') {
             if (s+4 <= b->data + b->l_data) {
                 kputsn("i:", 2, str);
-                kputw(*(int32_t*)s, str);
+                kputw(le_to_i32(s), str);
                 s += 4;
             } else return -1;
         } else if (type == 'f') {
             if (s+4 <= b->data + b->l_data) {
-                ksprintf(str, "f:%g", *(float*)s);
+                ksprintf(str, "f:%g", le_to_float(s));
                 s += 4;
             } else return -1;
 
         } else if (type == 'd') {
             if (s+8 <= b->data + b->l_data) {
-                ksprintf(str, "d:%g", *(double*)s);
+                ksprintf(str, "d:%g", le_to_double(s));
                 s += 8;
             } else return -1;
         } else if (type == 'Z' || type == 'H') {
@@ -1218,7 +1220,7 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
             uint32_t n;
             if (sub_type_size == 0 || b->data + b->l_data - s < 4)
                 return -1;
-            memcpy(&n, s, 4);
+            n = le_to_u32(s);
             s += 4; // now points to the start of the array
             if ((b->data + b->l_data - s) / sub_type_size < n)
                 return -1;
@@ -1227,11 +1229,11 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
                 kputc(',', str);
                 if ('c' == sub_type)      { kputw(*(int8_t*)s, str); ++s; }
                 else if ('C' == sub_type) { kputw(*(uint8_t*)s, str); ++s; }
-                else if ('s' == sub_type) { kputw(*(int16_t*)s, str); s += 2; }
-                else if ('S' == sub_type) { kputw(*(uint16_t*)s, str); s += 2; }
-                else if ('i' == sub_type) { kputw(*(int32_t*)s, str); s += 4; }
-                else if ('I' == sub_type) { kputuw(*(uint32_t*)s, str); s += 4; }
-                else if ('f' == sub_type) { ksprintf(str, "%g", *(float*)s); s += 4; }
+                else if ('s' == sub_type) { kputw(le_to_i16(s), str); s += 2; }
+                else if ('S' == sub_type) { kputw(le_to_u16(s), str); s += 2; }
+                else if ('i' == sub_type) { kputw(le_to_i32(s), str); s += 4; }
+                else if ('I' == sub_type) { kputuw(le_to_u32(s), str); s += 4; }
+                else if ('f' == sub_type) { ksprintf(str, "%g", le_to_float(s)); s += 4; }
                 else return -1;
             }
         }
@@ -1270,19 +1272,89 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
 /************************
  *** Auxiliary fields ***
  ************************/
+#ifndef HTS_LITTLE_ENDIAN
+static int aux_to_le(char type, uint8_t *out, const uint8_t *in, size_t len) {
+    int tsz = aux_type2size(type);
 
-void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8_t *data)
-{
-    int ori_len = b->l_data;
-    b->l_data += 3 + len;
-    if (b->m_data < b->l_data) {
-        b->m_data = b->l_data;
-        kroundup32(b->m_data);
-        b->data = (uint8_t*)realloc(b->data, b->m_data);
+    if (tsz >= 2 && tsz <= 8 && (len & (tsz - 1)) != 0) return -1;
+
+    switch (tsz) {
+        case 'H': case 'Z': case 1:  // Trivial
+            memcpy(out, in, len);
+            break;
+
+#define aux_val_to_le(type_t, store_le) do {                            \
+        type_t v;                                                       \
+        size_t i;                                                       \
+        for (i = 0; i < len; i += sizeof(type_t), out += sizeof(type_t)) { \
+            memcpy(&v, in + i, sizeof(type_t));                         \
+            store_le(v, out);                                           \
+        }                                                               \
+    } while (0)
+
+        case 2: aux_val_to_le(uint16_t, u16_to_le); break;
+        case 4: aux_val_to_le(uint32_t, u32_to_le); break;
+        case 8: aux_val_to_le(uint64_t, u64_to_le); break;
+
+#undef aux_val_to_le
+
+        case 'B': { // Recurse!
+            uint32_t n;
+            if (len < 5) return -1;
+            memcpy(&n, in + 1, 4);
+            out[0] = in[0];
+            u32_to_le(n, out + 1);
+            return aux_to_le(in[0], out + 5, in + 5, len - 5);
+        }
+
+        default: // Unknown type code
+            return -1;
     }
-    b->data[ori_len] = tag[0]; b->data[ori_len + 1] = tag[1];
-    b->data[ori_len + 2] = type;
-    memcpy(b->data + ori_len + 3, data, len);
+
+
+
+    return 0;
+}
+#endif
+
+int bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8_t *data)
+{
+    uint32_t new_len;
+
+    assert(b->l_data >= 0);
+    new_len = b->l_data + 3 + len;
+    if (new_len > INT32_MAX || new_len < b->l_data) goto nomem;
+
+    if (b->m_data < new_len) {
+        uint32_t new_size = new_len;
+        uint8_t *new_data;
+        kroundup32(new_size);
+        new_data = realloc(b->data, new_size);
+        if (new_data == NULL) goto nomem;
+        b->m_data = new_size;
+        b->data = new_data;
+    }
+
+    b->data[b->l_data] = tag[0];
+    b->data[b->l_data + 1] = tag[1];
+    b->data[b->l_data + 2] = type;
+
+#ifdef HTS_LITTLE_ENDIAN
+    memcpy(b->data + b->l_data + 3, data, len);
+#else
+    if (aux_to_le(type, b->data + b->l_data + 3, data, len) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+#endif
+
+    b->l_data = new_len;
+
+    return 0;
+
+ nomem:
+    errno = ENOMEM;
+    return -1;
 }
 
 static inline uint8_t *skip_aux(uint8_t *s)
@@ -1296,7 +1368,8 @@ static inline uint8_t *skip_aux(uint8_t *s)
         return s + 1;
     case 'B':
         size = aux_type2size(*s); ++s;
-        memcpy(&n, s, 4); s += 4;
+        n = le_to_u32(s);
+        s += 4;
         return s + size * n;
     case 0:
         abort();
@@ -1334,10 +1407,18 @@ int bam_aux_del(bam1_t *b, uint8_t *s)
 
 int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data)
 {
+    // FIXME: This is not at all efficient!
     uint8_t *s = bam_aux_get(b,tag);
-    if (!s) return -1;
+    if (!s) return bam_aux_append(b, tag, 'Z', len, (const uint8_t *) data);
     char type = *s;
-    if (type != 'Z') { fprintf(stderr,"bam_aux_update_str() called for type '%c' instead of 'Z'\n", type); abort(); }
+    if (type != 'Z') {
+        if (hts_verbose > 1) {
+            fprintf(stderr,"bam_aux_update_str() called for type '%c' instead of 'Z'\n", type);
+        }
+        errno = EINVAL;
+        return -1;
+    }
+
     bam_aux_del(b,s);
     s -= 2;
     int l_aux = bam_get_l_aux(b);
@@ -1358,25 +1439,36 @@ int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data)
     return 0;
 }
 
-int32_t bam_aux2i(const uint8_t *s)
+static inline int64_t get_int_aux_val(uint8_t type, const uint8_t *s,
+                                      uint32_t idx)
+{
+    switch (type) {
+        case 'c': return le_to_i8(s + idx);
+        case 'C': return s[idx];
+        case 's': return le_to_i16(s + 2 * idx);
+        case 'S': return le_to_u16(s + 2 * idx);
+        case 'i': return le_to_i32(s + 4 * idx);
+        case 'I': return le_to_u32(s + 4 * idx);
+        default:
+            errno = EINVAL;
+            return 0;
+    }
+}
+
+int64_t bam_aux2i(const uint8_t *s)
 {
     int type;
     type = *s++;
-    if (type == 'c') return (int32_t)*(int8_t*)s;
-    else if (type == 'C') return (int32_t)*(uint8_t*)s;
-    else if (type == 's') return (int32_t)*(int16_t*)s;
-    else if (type == 'S') return (int32_t)*(uint16_t*)s;
-    else if (type == 'i' || type == 'I') return *(int32_t*)s;
-    else return 0;
+    return get_int_aux_val(type, s, 0);
 }
 
 double bam_aux2f(const uint8_t *s)
 {
     int type;
     type = *s++;
-    if (type == 'd') return *(double*)s;
-    else if (type == 'f') return *(float*)s;
-    else return 0.0;
+    if (type == 'd') return le_to_double(s);
+    else if (type == 'f') return le_to_float(s);
+    else return get_int_aux_val(type, s, 0);
 }
 
 char bam_aux2A(const uint8_t *s)
@@ -1384,7 +1476,8 @@ char bam_aux2A(const uint8_t *s)
     int type;
     type = *s++;
     if (type == 'A') return *(char*)s;
-    else return 0;
+    errno = EINVAL;
+    return 0;
 }
 
 char *bam_aux2Z(const uint8_t *s)
@@ -1392,7 +1485,38 @@ char *bam_aux2Z(const uint8_t *s)
     int type;
     type = *s++;
     if (type == 'Z' || type == 'H') return (char*)s;
-    else return 0;
+    errno = EINVAL;
+    return 0;
+}
+
+uint32_t bam_auxB_len(const uint8_t *s)
+{
+    if (s[0] != 'B') {
+        errno = EINVAL;
+        return 0;
+    }
+    return le_to_u32(s + 2);
+}
+
+int64_t bam_auxB2i(const uint8_t *s, uint32_t idx)
+{
+    uint32_t len = bam_auxB_len(s);
+    if (idx >= len) {
+        errno = ERANGE;
+        return 0;
+    }
+    return get_int_aux_val(s[1], s + 6, idx);
+}
+
+double bam_auxB2f(const uint8_t *s, uint32_t idx)
+{
+    uint32_t len = bam_auxB_len(s);
+    if (idx >= len) {
+        errno = ERANGE;
+        return 0.0;
+    }
+    if (s[1] == 'f') return le_to_float(s + 6 + 4 * idx);
+    else return get_int_aux_val(s[1], s + 6, idx);
 }
 
 int sam_open_mode(char *mode, const char *fn, const char *format)

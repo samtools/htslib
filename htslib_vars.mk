@@ -1,6 +1,6 @@
 # Makefile variables useful for third-party code using htslib's public API.
 #
-#    Copyright (C) 2013-2016 Genome Research Ltd.
+#    Copyright (C) 2013-2017 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -46,6 +46,6 @@ htslib_sam_h = $(HTSPREFIX)htslib/sam.h $(htslib_hts_h)
 htslib_synced_bcf_reader_h = $(HTSPREFIX)htslib/synced_bcf_reader.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_tbx_h)
 htslib_tbx_h = $(HTSPREFIX)htslib/tbx.h $(htslib_hts_h)
 htslib_thread_pool_h = $(HTSPREFIX)htslib/thread_pool.h
-htslib_vcf_h = $(HTSPREFIX)htslib/vcf.h $(htslib_hts_h) $(htslib_kstring_h) $(htslib_hts_defs_h)
+htslib_vcf_h = $(HTSPREFIX)htslib/vcf.h $(htslib_hts_h) $(htslib_kstring_h) $(htslib_hts_defs_h) $(htslib_hts_endian_h)
 htslib_vcf_sweep_h = $(HTSPREFIX)htslib/vcf_sweep.h $(htslib_hts_h) $(htslib_vcf_h)
 htslib_vcfutils_h = $(HTSPREFIX)htslib/vcfutils.h $(htslib_vcf_h)

@@ -382,15 +382,98 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
      *** Manipulating auxiliary fields ***
      *************************************/
 
-    uint8_t *bam_aux_get(const bam1_t *b, const char tag[2]);
-    int32_t bam_aux2i(const uint8_t *s);
-    double bam_aux2f(const uint8_t *s);
-    char bam_aux2A(const uint8_t *s);
-    char *bam_aux2Z(const uint8_t *s);
+/// Return a pointer to an aux record
+/** @param b   Pointer to the bam record
+    @param tag Desired aux tag
+    @return Pointer to the tag data, or NULL if tag is not present
+ */
+uint8_t *bam_aux_get(const bam1_t *b, const char tag[2]);
 
-    void bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8_t *data);
-    int bam_aux_del(bam1_t *b, uint8_t *s);
-    int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data);
+/// Get an integer aux value
+/** @param s Pointer to the tag data, as returned by bam_aux_get()
+    @return The value, or 0 if the tag was not an integer type
+    If the tag is not an integer type, errno is set to EINVAL.  This function
+    will not return the value of floating-point tags.
+*/
+int64_t bam_aux2i(const uint8_t *s);
+
+/// Get an integer aux value
+/** @param s Pointer to the tag data, as returned by bam_aux_get()
+    @return The value, or 0 if the tag was not an integer type
+    If the tag is not an numeric type, errno is set to EINVAL.  The value of
+    integer flags will be returned cast to a double.
+*/
+double bam_aux2f(const uint8_t *s);
+
+/// Get a character aux value
+/** @param s Pointer to the tag data, as returned by bam_aux_get().
+    @return The value, or 0 if the tag was not a character ('A') type
+    If the tag is not a character type, errno is set to EINVAL.
+*/
+char bam_aux2A(const uint8_t *s);
+
+/// Get a string aux value
+/** @param s Pointer to the tag data, as returned by bam_aux_get().
+    @return Pointer to the string, or NULL if the tag was not a string type
+    If the tag is not a string type ('Z' or 'H'), errno is set to EINVAL.
+*/
+char *bam_aux2Z(const uint8_t *s);
+
+/// Get the length of an array-type ('B') tag
+/** @param s Pointer to the tag data, as returned by bam_aux_get().
+    @return The length of the array, or 0 if the tag is not an array type.
+    If the tag is not an array type, errno is set to EINVAL.
+ */
+uint32_t bam_auxB_len(const uint8_t *s);
+
+/// Get an integer value from an array-type tag
+/** @param s   Pointer to the tag data, as returned by bam_aux_get().
+    @param idx 0-based Index into the array
+    @return The idx'th value, or 0 on error.
+    If the array is not an integer type, errno is set to EINVAL.  If idx
+    is greater than or equal to  the value returned by bam_auxB_len(s),
+    errno is set to ERANGE.  In both cases, 0 will be returned.    
+ */
+int64_t bam_auxB2i(const uint8_t *s, uint32_t idx);
+
+/// Get a floating-point value from an array-type tag
+/** @param s   Pointer to the tag data, as returned by bam_aux_get().
+    @param idx 0-based Index into the array
+    @return The idx'th value, or 0.0 on error.
+    If the array is not a numeric type, errno is set to EINVAL.  This can
+    only actually happen if the input record has an invalid type field.  If
+    idx is greater than or equal to  the value returned by bam_auxB_len(s),
+    errno is set to ERANGE.  In both cases, 0.0 will be returned.
+ */
+double bam_auxB2f(const uint8_t *s, uint32_t idx);
+
+/// Append tag data to a bam record
+/* @param b    The bam record to append to.
+   @param tag  Tag identifier
+   @param type Tag data type
+   @param len  Length of the data in bytes
+   @param data The data to append
+   @return 0 on success; -1 on failure.
+If there is not enough space to store the additional tag, errno is set to
+ENOMEM.  If the type is invalid, errno may be set to EINVAL.
+*/
+int bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8_t *data);
+
+/// Delete tag data from a bam record
+/* @param b The bam record to update
+   @param s Pointer to the tag to delete, as returned by bam_aux_get().
+   @return 0
+*/
+int bam_aux_del(bam1_t *b, uint8_t *s);
+
+/// Update a string-type tag
+/* @param b    The bam record to update
+   @param tag  Tag identifier
+   @param len  The length of the new string
+   @param data The new string
+   @return 0 on success, -1 on failure
+*/
+int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data);
 
 /**************************
  *** Pileup and Mpileup ***

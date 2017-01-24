@@ -7,6 +7,9 @@ Noteworthy changes in release 1.4
     and (along with bam1_t) so that CIGAR entries are aligned in memory
   - hopen() has vararg arguments for setting URL scheme-dependent options
   - the various tbx_conf_* presets are now const
+  - auxiliary fields in bam1_t are now always stored in little-endian byte
+    order (previously this depended on if you read a bam, sam or cram file)
+  - bam_aux2i() now returns an int64_t value
 
 * New errmod_cal(), probaln_glocal(), sam_cap_mapq(), and sam_prob_realn()
   functions, previously internal to SAMtools, have been added to HTSlib.
@@ -35,6 +38,14 @@ Noteworthy changes in release 1.4
 
 * APIs to portably read and write (possibly unaligned) data in little-endian
   byte order have been added.
+
+* New functions bam_auxB_len(), bam_auxB2i() and bam_auxB2f() have been
+  added to make accessing array-type auxiliary data easier.  bam_aux2i()
+  can now return the full range of values that can be stored in an integer
+  tag (including unsigned 32 bit tags).  bam_aux2f() will return the value
+  of integer tags (as a double) as well as floating-point ones.  All of
+  the bam_aux2 and bam_auxB2 functions will set errno if the requested
+  conversion is not valid.
 
 Noteworthy changes in release 1.3.2  (13 September 2016)
 

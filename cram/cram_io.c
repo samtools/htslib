@@ -223,12 +223,15 @@ int itf8_decode_crc(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
 	return 4;
 
     case 4: // really 3.5 more, why make it different?
-	val = (val<<8) |   (c[1]=hgetc(fd->fp));
-	val = (val<<8) |   (c[2]=hgetc(fd->fp));
-	val = (val<<8) |   (c[3]=hgetc(fd->fp));
-	val = (val<<4) | (((c[4]=hgetc(fd->fp))) & 0x0f);
-	*val_p = val;
-	*crc = crc32(*crc, c, 5);
+        {
+            uint32_t uv = val;
+            uv = (uv<<8) |   (c[1]=hgetc(fd->fp));
+            uv = (uv<<8) |   (c[2]=hgetc(fd->fp));
+            uv = (uv<<8) |   (c[3]=hgetc(fd->fp));
+            uv = (uv<<4) | (((c[4]=hgetc(fd->fp))) & 0x0f);
+            *val_p = uv < 0x80000000UL ? uv : -((int32_t) (0xffffffffUL - uv)) - 1;
+            *crc = crc32(*crc, c, 5);
+        }
     }
 
     return 5;
@@ -1061,12 +1064,17 @@ int cram_write_block(cram_fd *fd, cram_block *b) {
     if (itf8_encode(fd, b->comp_size)   ==  -1) return -1;
     if (itf8_encode(fd, b->uncomp_size) ==  -1) return -1;
 
-    if (b->method == RAW) {
-	if (b->uncomp_size != hwrite(fd->fp, b->data, b->uncomp_size))
-	    return -1;
+    if (b->data) {
+        if (b->method == RAW) {
+            if (b->uncomp_size != hwrite(fd->fp, b->data, b->uncomp_size))
+                return -1;
+        } else {
+            if (b->comp_size != hwrite(fd->fp, b->data, b->comp_size))
+                return -1;
+        }
     } else {
-	if (b->comp_size != hwrite(fd->fp, b->data, b->comp_size))
-	    return -1;
+        // Absent blocks should be size 0
+        assert(b->method == RAW && b->uncomp_size == 0);
     }
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
@@ -3968,7 +3976,8 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 	}
 
 	int32_put_blk(b, header_len);
-	BLOCK_APPEND(b, sam_hdr_str(hdr), header_len);
+	if (header_len)
+            BLOCK_APPEND(b, sam_hdr_str(hdr), header_len);
 	BLOCK_UPLEN(b);
 
 	// Compress header block if V3.0 and above
