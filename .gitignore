@@ -2,6 +2,7 @@
 *.pico
 *.dSYM
 *.exe
+*.pc.tmp
 *-uninstalled.pc
 /version.h
 

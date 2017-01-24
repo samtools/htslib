@@ -50,6 +50,14 @@ AC_PROG_CC
 AC_PROG_RANLIB
 
 need_crypto=no
+pc_requires=
+static_LDFLAGS=
+static_LIBS=
+
+AC_ARG_ENABLE([bz2],
+  [AS_HELP_STRING([--disable-bz2],
+                  [omit support for BZ2-compressed CRAM files])],
+  [], [enable_bz2=yes])
 
 AC_ARG_ENABLE([gcs],
   [AS_HELP_STRING([--enable-gcs],
@@ -62,6 +70,11 @@ AC_ARG_ENABLE([libcurl],
   [AS_HELP_STRING([--enable-libcurl],
                   [enable libcurl-based support for http/https/etc URLs])],
   [], [enable_libcurl=no])
+
+AC_ARG_ENABLE([lzma],
+  [AS_HELP_STRING([--disable-lzma],
+                  [omit support for LZMA-compressed CRAM files])],
+  [], [enable_lzma=yes])
 
 AC_ARG_ENABLE([plugins],
   [AS_HELP_STRING([--enable-plugins],
@@ -155,6 +168,50 @@ is installed.
 FAILED.  This error must be resolved in order to build HTSlib successfully.])
 fi
 
+if test "$enable_bz2" != no; then
+  bz2_devel=ok
+  AC_CHECK_HEADER([bzlib.h], [], [bz2_devel=missing], [;])
+  AC_CHECK_LIB([bz2], [BZ2_bzBuffToBuffCompress], [], [bz2_devel=missing])
+  if test $bz2_devel != ok; then
+    AC_MSG_ERROR([libbzip2 development files not found
+
+The CRAM format may use bzip2 compression, which is implemented in HTSlib
+by using compression routines from libbzip2 <http://www.bzip.org/>.
+
+Building HTSlib requires libbzip2 development files to be installed on the
+build machine; you may need to ensure a package such as libbz2-dev (on Debian
+or Ubuntu Linux) or bzip2-devel (on RPM-based Linux distributions or Cygwin)
+is installed.
+
+Either configure with --disable-bz2 (which will make some CRAM files
+produced elsewhere unreadable) or resolve this error to build HTSlib.])
+  fi
+  pc_requires="$pc_requires bzip2"
+  static_LIBS="$static_LIBS -lbz2"
+fi
+
+if test "$enable_lzma" != no; then
+  lzma_devel=ok
+  AC_CHECK_HEADER([lzma.h], [], [lzma_devel=missing], [;])
+  AC_CHECK_LIB([lzma], [lzma_easy_buffer_encode], [], [lzma_devel=missing])
+  if test $lzma_devel != ok; then
+    AC_MSG_ERROR([liblzma development files not found
+
+The CRAM format may use LZMA2 compression, which is implemented in HTSlib
+by using compression routines from liblzma <http://tukaani.org/xz/>.
+
+Building HTSlib requires liblzma development files to be installed on the
+build machine; you may need to ensure a package such as liblzma-dev (on Debian
+or Ubuntu Linux), xz-devel (on RPM-based Linux distributions or Cygwin), or
+xz (via Homebrew on macOS) is installed; or build XZ Utils from source.
+
+Either configure with --disable-lzma (which will make some CRAM files
+produced elsewhere unreadable) or resolve this error to build HTSlib.])
+  fi
+  pc_requires="$pc_requires liblzma"
+  static_LIBS="$static_LIBS -llzma"
+fi
+
 libcurl=disabled
 if test "$enable_libcurl" != no; then
   AC_CHECK_LIB([curl], [curl_easy_pause],
@@ -242,5 +299,9 @@ Either configure with --disable-libcurl or resolve this error to build HTSlib.])
 fi
 AC_SUBST([CRYPTO_LIBS])
 
-AC_CONFIG_FILES(config.mk)
+AC_SUBST([pc_requires])
+AC_SUBST([static_LDFLAGS])
+AC_SUBST([static_LIBS])
+
+AC_CONFIG_FILES([config.mk htslib.pc.tmp:htslib.pc.in])
 AC_OUTPUT
