@@ -80,6 +80,7 @@ BUILT_PROGRAMS = \
 	tabix
 
 BUILT_TEST_PROGRAMS = \
+	test/hts_endian \
 	test/fieldarith \
 	test/hfile \
 	test/sam \
@@ -185,7 +186,8 @@ PLUGIN_OBJS =
 
 cram_h = cram/cram.h $(cram_samtools_h) $(cram_sam_header_h) $(cram_structs_h) $(cram_io_h) cram/cram_encode.h cram/cram_decode.h cram/cram_stats.h cram/cram_codecs.h cram/cram_index.h $(htslib_cram_h)
 cram_io_h = cram/cram_io.h $(cram_misc_h)
-cram_misc_h = cram/misc.h cram/os.h
+cram_misc_h = cram/misc.h $(cram_os_h)
+cram_os_h = cram/os.h $(htslib_hts_endian_h)
 cram_sam_header_h = cram/sam_header.h cram/string_alloc.h cram/pooled_alloc.h $(htslib_khash_h) $(htslib_kstring_h)
 cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h) $(cram_sam_header_h)
 cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) cram/string_alloc.h $(htslib_khash_h)
@@ -302,23 +304,23 @@ realn.o realn.pico: realn.c config.h $(htslib_hts_h) $(htslib_sam_h)
 textutils.o textutils.pico: textutils.c config.h $(htslib_hfile_h) $(htslib_kstring_h) $(hts_internal_h)
 
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(cram_h)
-cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) cram/os.h $(htslib_hts_h)
-cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) cram/os.h $(htslib_hts_h)
+cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h)
+cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(htslib_hts_endian_h)
 cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htslib_hfile_h) $(cram_h)
-cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_hfile_h) $(hts_internal_h) $(cram_h) cram/os.h cram/zfio.h
-cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h $(cram_h) cram/os.h $(htslib_hts_h) $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
+cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h) cram/zfio.h
+cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
 cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c config.h $(cram_h) $(htslib_sam_h)
-cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c config.h $(cram_h) cram/os.h
+cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c config.h $(cram_h) $(cram_os_h)
 cram/files.o cram/files.pico: cram/files.c config.h $(cram_misc_h)
-cram/mFILE.o cram/mFILE.pico: cram/mFILE.c config.h cram/os.h cram/mFILE.h cram/vlen.h
-cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c config.h cram/os.h $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h)
+cram/mFILE.o cram/mFILE.pico: cram/mFILE.c config.h $(cram_os_h) cram/mFILE.h cram/vlen.h
+cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c config.h $(cram_os_h) $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h)
 cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c config.h cram/pooled_alloc.h $(cram_misc_h)
 cram/rANS_static.o cram/rANS_static.pico: cram/rANS_static.c config.h cram/rANS_static.h cram/rANS_byte.h
 cram/sam_header.o cram/sam_header.pico: cram/sam_header.c config.h $(cram_sam_header_h) cram/string_alloc.h
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
 thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h)
-cram/vlen.o cram/vlen.pico: cram/vlen.c config.h cram/vlen.h cram/os.h
-cram/zfio.o cram/zfio.pico: cram/zfio.c config.h cram/os.h cram/zfio.h
+cram/vlen.o cram/vlen.pico: cram/vlen.c config.h cram/vlen.h $(cram_os_h)
+cram/zfio.o cram/zfio.pico: cram/zfio.c config.h $(cram_os_h) cram/zfio.h
 
 
 bgzip: bgzip.o libhts.a
@@ -338,11 +340,15 @@ tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htsl
 # For tests that might use it, set $REF_PATH explicitly to use only reference
 # areas within the test suite (or set it to ':' to use no reference areas).
 check test: bgzip htsfile $(BUILT_TEST_PROGRAMS)
+	test/hts_endian
 	test/fieldarith test/fieldarith.sam
 	test/hfile
 	REF_PATH=: test/sam test/ce.fa test/faidx.fa
 	test/test-regidx
 	cd test && REF_PATH=: ./test.pl
+
+test/hts_endian: test/hts_endian.o
+	$(CC) $(LDFLAGS) -o $@ test/hts_endian.o $(LIBS)
 
 test/fieldarith: test/fieldarith.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/fieldarith.o libhts.a -lz $(LIBS)
@@ -365,6 +371,7 @@ test/test-vcf-api: test/test-vcf-api.o libhts.a
 test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a -lz $(LIBS)
 
+test/hts_endian.o: test/hts_endian.c $(htslib_hts_endian_h)
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h)
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
