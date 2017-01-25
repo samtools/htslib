@@ -143,6 +143,10 @@ Plugin support requires dynamic linking facilities from the operating system.
 Either configure with --disable-plugins or resolve this error to build HTSlib.])])
   # TODO Test whether this is required and/or needs tweaking per-platform
   LDFLAGS="$LDFLAGS -rdynamic"
+  static_LDFLAGS="$static_LDFLAGS -rdynamic"
+  case "$ac_cv_search_dlopen" in
+    -l*) static_LIBS="$static_LIBS $ac_cv_search_dlopen" ;;
+  esac
   AC_DEFINE([ENABLE_PLUGINS], 1, [Define if HTSlib should enable plugins.])
   AC_SUBST([PLUGIN_EXT])
   AC_DEFINE_UNQUOTED([PLUGIN_EXT], ["$PLUGIN_EXT"],
