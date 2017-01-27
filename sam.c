@@ -1231,7 +1231,7 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
                 else if ('S' == sub_type) { kputw(*(uint16_t*)s, str); s += 2; }
                 else if ('i' == sub_type) { kputw(*(int32_t*)s, str); s += 4; }
                 else if ('I' == sub_type) { kputuw(*(uint32_t*)s, str); s += 4; }
-                else if ('f' == sub_type) { ksprintf(str, "%g", *(float*)s); s += 4; }
+                else if ('f' == sub_type) { kputd(str, *(float*)s); s += 4; }
                 else return -1;
             }
         }
