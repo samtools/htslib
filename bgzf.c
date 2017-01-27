@@ -1046,6 +1046,9 @@ restart:
     j->uncomp_len = 0;
 
     while (bgzf_mt_read_block(fp, j) == 0) {
+        // Dispatch
+        hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_decode_func, j);
+
         // Check for command
         pthread_mutex_lock(&mt->command_m);
         switch (mt->command) {
@@ -1068,9 +1071,6 @@ restart:
             break;
         }
         pthread_mutex_unlock(&mt->command_m);
-
-        // Dispatch
-        hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_decode_func, j);
 
         // Allocate buffer for next block
         pthread_mutex_lock(&mt->job_pool_m);
