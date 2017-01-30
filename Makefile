@@ -86,7 +86,11 @@ BUILT_TEST_PROGRAMS = \
 	test/test-regidx \
 	test/test_view \
 	test/test-vcf-api \
-	test/test-vcf-sweep
+	test/test-vcf-sweep \
+	test/thrash_threads1 \
+	test/thrash_threads2 \
+	test/thrash_threads3 \
+	test/thrash_threads4
 
 all: lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS)
 
@@ -372,6 +376,18 @@ test/test-regidx.o: test/test-regidx.c config.h $(htslib_regidx_h) $(hts_interna
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
 test/test-vcf-sweep.o: test/test-vcf-sweep.c config.h $(htslib_vcf_sweep_h)
+
+test/thrash_threads1: test/thrash_threads1.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads1.o libhts.a -lz $(LIBS)
+
+test/thrash_threads2: test/thrash_threads2.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads2.o libhts.a -lz $(LIBS)
+
+test/thrash_threads3: test/thrash_threads3.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads3.o libhts.a -lz $(LIBS)
+
+test/thrash_threads4: test/thrash_threads4.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads4.o libhts.a -lz $(LIBS)
 
 
 install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig

@@ -122,6 +122,8 @@ typedef struct bgzf_mtaux_t {
     pthread_mutex_t command_m; // Set whenever fp is being updated
     pthread_cond_t command_c;
     enum mtaux_cmd command;
+    int is_reader;  // 0 for write, 1 for read
+    int io_running; // 1 for yes, 0 for not started yet, -1 for exited.
 } mtaux_t;
 #endif
 
@@ -951,9 +953,13 @@ static void *bgzf_mt_writer(void *vp) {
         bgzf_job *j = (bgzf_job *)hts_tpool_result_data(r);
         assert(j);
 
+        pthread_mutex_lock(&mt->command_m);
+        mt->io_running = 1;
+        pthread_mutex_unlock(&mt->command_m);
+
         if (hwrite(fp->fp, j->comp_data, j->comp_len) != j->comp_len) {
             fp->errcode |= BGZF_ERR_IO;
-            return (void *)-1;
+            goto err;
         }
 
         /*
@@ -967,7 +973,7 @@ static void *bgzf_mt_writer(void *vp) {
          */
         if (++mt->flush_pending % 512 == 0)
             if (hflush(fp->fp) != 0)
-                return (void *)-1;
+                goto err;
 
 
         hts_tpool_delete_result(r, 0);
@@ -980,9 +986,20 @@ static void *bgzf_mt_writer(void *vp) {
     }
 
     if (hflush(fp->fp) != 0)
-        return (void *)-1;
+        goto err;
+
+    pthread_mutex_lock(&mt->command_m);
+    mt->io_running = -1;
+    pthread_mutex_unlock(&mt->command_m);
 
     return NULL;
+
+ err:
+    pthread_mutex_lock(&mt->command_m);
+    mt->io_running = -1;
+    pthread_mutex_unlock(&mt->command_m);
+
+    return (void *)-1;
 }
 
 
@@ -1100,9 +1117,10 @@ static void *bgzf_mt_reader(void *vp) {
     mtaux_t *mt = fp->mt;
 
 restart:
-    pthread_mutex_lock(&mt->job_pool_m);
+    pthread_mutex_lock(&mt->command_m);
     bgzf_job *j = pool_alloc(mt->job_pool);
-    pthread_mutex_unlock(&mt->job_pool_m);
+    mt->io_running = 1;
+    pthread_mutex_unlock(&mt->command_m);
     j->errcode = 0;
     j->uncomp_len = 0;
     j->hit_eof = 0;
@@ -1125,6 +1143,7 @@ restart:
             break;
 
         case CLOSE:
+            mt->io_running = -1;
             pthread_cond_signal(&mt->command_c);
             pthread_mutex_unlock(&mt->command_m);
             pthread_exit(NULL);
@@ -1147,6 +1166,10 @@ restart:
         // Attempt to multi-thread decode a raw gzip stream cannot be done.
         // We tear down the multi-threaded decoder and revert to the old code.
         hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
+        pthread_mutex_lock(&mt->command_m);
+        mt->io_running = -1;
+        pthread_cond_signal(&mt->command_c);
+        pthread_mutex_unlock(&mt->command_m);
         pthread_exit(&j->errcode);
     }
 
@@ -1156,8 +1179,13 @@ restart:
 
     j->hit_eof = 1;
     hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
-    if (j->errcode != 0)
+    if (j->errcode != 0) {
+        pthread_mutex_lock(&mt->command_m);
+        mt->io_running = -1;
+        pthread_cond_signal(&mt->command_c);
+        pthread_mutex_unlock(&mt->command_m);
         pthread_exit(&j->errcode);
+    }
 
     // We hit EOF so can stop reading, but we may get a subsequent
     // seek request.  In this case we need to restart the reader.
@@ -1185,10 +1213,17 @@ restart:
 
         case CLOSE:
             pthread_cond_signal(&mt->command_c);
+            mt->io_running = -1;
+            pthread_cond_signal(&mt->command_c);
             pthread_mutex_unlock(&mt->command_m);
             pthread_exit(NULL);
         }
     }
+
+    pthread_mutex_lock(&mt->command_m);
+    mt->io_running = -1;
+    pthread_cond_signal(&mt->command_c);
+    pthread_mutex_unlock(&mt->command_m);
 }
 
 int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
@@ -1218,6 +1253,8 @@ int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
     mt->flush_pending = 0;
     mt->jobs_pending = 0;
     mt->free_block = fp->uncompressed_block;
+    mt->is_reader = !fp->is_write;
+    mt->io_running = 0;
     pthread_create(&mt->io_task, NULL,
                    fp->is_write ? bgzf_mt_writer : bgzf_mt_reader, fp);
 
@@ -1248,14 +1285,37 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 static void mt_destroy(mtaux_t *mt)
 {
     pthread_mutex_lock(&mt->command_m);
-    mt->command = CLOSE;
-    pthread_cond_signal(&mt->command_c);
-    hts_tpool_wake_dispatch(mt->out_queue); // unstick the reader
-    pthread_mutex_unlock(&mt->command_m);
+    int running = mt->io_running;
+
+    if (running >= 0) {
+        if (mt->is_reader > 0) {
+            mt->command = CLOSE;
+            pthread_cond_signal(&mt->command_c);
+            hts_tpool_wake_dispatch(mt->out_queue); // unstick the reader
+            pthread_cond_wait(&mt->command_c, &mt->command_m);
+        } else {
+            // Race condition with close(open(fn,"w"));
+            // Need to ensure bgzf_mt_writer has got as far as the loop
+            // before shutting it down.
+            for (;;) {
+                running = mt->io_running;
+                pthread_mutex_unlock(&mt->command_m);
+                if (running != 0) // started or exited
+                    break;
+                hts_tpool_process_shutdown(mt->out_queue);
+                usleep(10000);
+                pthread_mutex_lock(&mt->command_m);
+            }
+        }
+    }
 
     // Destroying the queue first forces the writer to exit.
     hts_tpool_process_destroy(mt->out_queue);
-    pthread_join(mt->io_task, NULL);
+
+    running = mt->io_running;
+    pthread_mutex_unlock(&mt->command_m);
+    if (running)
+        pthread_join(mt->io_task, NULL);
 
     pthread_mutex_destroy(&mt->job_pool_m);
     pthread_mutex_destroy(&mt->command_m);
@@ -1510,7 +1570,7 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
     int block_offset;
     int64_t block_address;
 
-    if (fp->is_write || where != SEEK_SET) {
+    if (fp->is_write || where != SEEK_SET || fp->is_gzip) {
         fp->errcode |= BGZF_ERR_MISUSE;
         return -1;
     }
@@ -1532,18 +1592,27 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
         // waiting for a command.  We then wait for the response so we
         // know the seek succeeded.
         pthread_mutex_lock(&fp->mt->command_m);
-        fp->mt->hit_eof = 0;
-        fp->mt->command = SEEK;
-        fp->mt->block_address = block_address;
-        pthread_cond_signal(&fp->mt->command_c);
-        hts_tpool_wake_dispatch(fp->mt->out_queue);
-        pthread_cond_wait(&fp->mt->command_c, &fp->mt->command_m);
+        if (fp->mt->io_running >= 0) {
+            fp->mt->hit_eof = 0;
+            fp->mt->command = SEEK;
+            fp->mt->block_address = block_address;
+            pthread_cond_signal(&fp->mt->command_c);
+            hts_tpool_wake_dispatch(fp->mt->out_queue);
+            pthread_cond_wait(&fp->mt->command_c, &fp->mt->command_m);
+        }
 
         fp->block_length = 0;  // indicates current block has not been loaded
         fp->block_address = block_address;
         fp->block_offset = block_offset;
 
-        pthread_mutex_unlock(&fp->mt->command_m);
+        if (fp->mt && fp->mt->io_running == -1) {
+            // reader shut itself down (eg we gave it a raw gz stream).
+            pthread_mutex_unlock(&fp->mt->command_m);
+            mt_destroy(fp->mt);
+            fp->mt = NULL;
+        } else {
+            pthread_mutex_unlock(&fp->mt->command_m);
+        }
     } else {
         if (hseek(fp->fp, block_address, SEEK_SET) < 0) {
             fp->errcode |= BGZF_ERR_IO;
