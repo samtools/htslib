@@ -33,6 +33,7 @@ lib*.so.*
 /test/hfile
 /test/hts_endian
 /test/sam
+/test/test_bgzf
 /test/test-regidx
 /test/test-vcf-api
 /test/test-vcf-sweep
