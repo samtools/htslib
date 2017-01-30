@@ -33,7 +33,7 @@
 #include <math.h>
 #include "htslib/kstring.h"
 
-int kputd(kstring_t *s, double d) {
+int kputd(double d, kstring_t *s) {
 	int len = 0;
 	char buf[21], *cp = buf+20, *ep;
 	if (d == 0) {
@@ -146,7 +146,7 @@ int kvsprintf(kstring_t *s, const char *fmt, va_list ap)
 
 	if (fmt[0] == '%' && fmt[1] == 'g' && fmt[2] == 0) {
 		double d = va_arg(args, double);
-		l = kputd(s, d);
+		l = kputd(d, s);
 		va_end(args);
 		return l;
 	}
