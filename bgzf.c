@@ -729,92 +729,98 @@ int bgzf_read_block(BGZF *fp)
         return 0;
     }
     if (fp->cache_size && load_block_from_cache(fp, block_address)) return 0;
-    count = hread(fp->fp, header, sizeof(header));
-    if (count == 0) { // no data read
-        fp->block_length = 0;
-        return 0;
-    }
-    int ret;
-    if ( count != sizeof(header) || (ret=check_header(header))==-2 )
-    {
-        fp->errcode |= BGZF_ERR_HEADER;
-        return -1;
-    }
-    if ( ret==-1 )
-    {
-        // GZIP, not BGZF
-        uint8_t *cblock = (uint8_t*)fp->compressed_block;
-        memcpy(cblock, header, sizeof(header));
-        count = hread(fp->fp, cblock+sizeof(header), BGZF_BLOCK_SIZE - sizeof(header)) + sizeof(header);
-        int nskip = 10;
 
-        // Check optional fields to skip: FLG.FNAME,FLG.FCOMMENT,FLG.FHCRC,FLG.FEXTRA
-        // Note: Some of these fields are untested, I did not have appropriate data available
-        if ( header[3] & 0x4 ) // FLG.FEXTRA
-        {
-            nskip += unpackInt16(&cblock[nskip]) + 2;
+    // loop to skip empty bgzf blocks
+    while (1)
+    {
+        count = hread(fp->fp, header, sizeof(header));
+        if (count == 0) { // no data read
+            fp->block_length = 0;
+            return 0;
         }
-        if ( header[3] & 0x8 ) // FLG.FNAME
-        {
-            while ( nskip<count && cblock[nskip] ) nskip++;
-            nskip++;
-        }
-        if ( header[3] & 0x10 ) // FLG.FCOMMENT
-        {
-            while ( nskip<count && cblock[nskip] ) nskip++;
-            nskip++;
-        }
-        if ( header[3] & 0x2 ) nskip += 2;  //  FLG.FHCRC
-
-        /* FIXME: Should handle this better.  There's no reason why
-           someone shouldn't include a massively long comment in their
-           gzip stream. */
-        if ( nskip >= count )
+        int ret;
+        if ( count != sizeof(header) || (ret=check_header(header))==-2 )
         {
             fp->errcode |= BGZF_ERR_HEADER;
             return -1;
         }
+        if ( ret==-1 )
+        {
+            // GZIP, not BGZF
+            uint8_t *cblock = (uint8_t*)fp->compressed_block;
+            memcpy(cblock, header, sizeof(header));
+            count = hread(fp->fp, cblock+sizeof(header), BGZF_BLOCK_SIZE - sizeof(header)) + sizeof(header);
+            int nskip = 10;
 
-        fp->is_gzip = 1;
-        fp->gz_stream = (z_stream*) calloc(1,sizeof(z_stream));
-        int ret = inflateInit2(fp->gz_stream, -15);
-        if (ret != Z_OK)
-        {
-            if (hts_verbose >= 1) {
-                fprintf(stderr, "[E::%s] inflateInit2 failed: %s",
-                        __func__, bgzf_zerr(ret, fp->gz_stream));
+            // Check optional fields to skip: FLG.FNAME,FLG.FCOMMENT,FLG.FHCRC,FLG.FEXTRA
+            // Note: Some of these fields are untested, I did not have appropriate data available
+            if ( header[3] & 0x4 ) // FLG.FEXTRA
+            {
+                nskip += unpackInt16(&cblock[nskip]) + 2;
             }
+            if ( header[3] & 0x8 ) // FLG.FNAME
+            {
+                while ( nskip<count && cblock[nskip] ) nskip++;
+                nskip++;
+            }
+            if ( header[3] & 0x10 ) // FLG.FCOMMENT
+            {
+                while ( nskip<count && cblock[nskip] ) nskip++;
+                nskip++;
+            }
+            if ( header[3] & 0x2 ) nskip += 2;  //  FLG.FHCRC
+
+            /* FIXME: Should handle this better.  There's no reason why
+               someone shouldn't include a massively long comment in their
+               gzip stream. */
+            if ( nskip >= count )
+            {
+                fp->errcode |= BGZF_ERR_HEADER;
+                return -1;
+            }
+
+            fp->is_gzip = 1;
+            fp->gz_stream = (z_stream*) calloc(1,sizeof(z_stream));
+            int ret = inflateInit2(fp->gz_stream, -15);
+            if (ret != Z_OK)
+            {
+                if (hts_verbose >= 1) {
+                    fprintf(stderr, "[E::%s] inflateInit2 failed: %s",
+                            __func__, bgzf_zerr(ret, fp->gz_stream));
+                }
+                fp->errcode |= BGZF_ERR_ZLIB;
+                return -1;
+            }
+            fp->gz_stream->avail_in = count - nskip;
+            fp->gz_stream->next_in  = cblock + nskip;
+            count = inflate_gzip_block(fp, 1);
+            if ( count<0 )
+            {
+                fp->errcode |= BGZF_ERR_ZLIB;
+                return -1;
+            }
+            fp->block_length = count;
+            fp->block_address = block_address;
+            if ( fp->idx_build_otf ) return -1; // cannot build index for gzip
+            return 0;
+        }
+        size = count;
+        block_length = unpackInt16((uint8_t*)&header[16]) + 1; // +1 because when writing this number, we used "-1"
+        compressed_block = (uint8_t*)fp->compressed_block;
+        memcpy(compressed_block, header, BLOCK_HEADER_LENGTH);
+        remaining = block_length - BLOCK_HEADER_LENGTH;
+        count = hread(fp->fp, &compressed_block[BLOCK_HEADER_LENGTH], remaining);
+        if (count != remaining) {
+            fp->errcode |= BGZF_ERR_IO;
+            return -1;
+        }
+        size += count;
+        if ((count = inflate_block(fp, block_length)) < 0) {
+            if (hts_verbose >= 2) fprintf(stderr, "[E::%s] inflate_block error %d\n", __func__, count);
             fp->errcode |= BGZF_ERR_ZLIB;
             return -1;
         }
-        fp->gz_stream->avail_in = count - nskip;
-        fp->gz_stream->next_in  = cblock + nskip;
-        count = inflate_gzip_block(fp, 1);
-        if ( count<0 )
-        {
-            fp->errcode |= BGZF_ERR_ZLIB;
-            return -1;
-        }
-        fp->block_length = count;
-        fp->block_address = block_address;
-        if ( fp->idx_build_otf ) return -1; // cannot build index for gzip
-        return 0;
-    }
-    size = count;
-    block_length = unpackInt16((uint8_t*)&header[16]) + 1; // +1 because when writing this number, we used "-1"
-    compressed_block = (uint8_t*)fp->compressed_block;
-    memcpy(compressed_block, header, BLOCK_HEADER_LENGTH);
-    remaining = block_length - BLOCK_HEADER_LENGTH;
-    count = hread(fp->fp, &compressed_block[BLOCK_HEADER_LENGTH], remaining);
-    if (count != remaining) {
-        fp->errcode |= BGZF_ERR_IO;
-        return -1;
-    }
-    size += count;
-    if ((count = inflate_block(fp, block_length)) < 0) {
-        if (hts_verbose >= 2) fprintf(stderr, "[E::%s] inflate_block error %d\n", __func__, count);
-        fp->errcode |= BGZF_ERR_ZLIB;
-        return -1;
+        if ( count ) break;     // otherwise an empty bgzf block
     }
     if (fp->block_length != 0) fp->block_offset = 0; // Do not reset offset if this read follows a seek.
     fp->block_address = block_address;
