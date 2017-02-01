@@ -114,7 +114,6 @@ typedef struct bgzf_mtaux_t {
     int flush_pending;
     void *free_block;
     int hit_eof;  // r/w entirely within main thread
-    int last_block_length;
 
     // Message passing to the reader thread; eg seek requests
     int errcode;
@@ -645,8 +644,11 @@ int bgzf_read_block(BGZF *fp)
         }
 
         if (j->hit_eof) {
-            if (fp->mt->last_block_length != 0 && hts_verbose>1)
-                fprintf(stderr, "[W::%s] EOF marker is absent. The input is probably truncated.\n", __func__);
+            if (!fp->last_block_eof && !fp->no_eof_block) {
+                fp->no_eof_block = 1;
+                if (hts_verbose>1)
+                    fprintf(stderr, "[W::%s] EOF marker is absent. The input is probably truncated.\n", __func__);
+            }
             fp->mt->hit_eof = 1;
         }
 
@@ -654,7 +656,7 @@ int bgzf_read_block(BGZF *fp)
         // considered as EOF by many callers.  We work around this by
         // trying again to see if we hit a genuine EOF.
         if (!j->hit_eof && j->uncomp_len == 0) {
-            fp->mt->last_block_length = 0;
+            fp->last_block_eof = 1;
             goto again;
         }
 
@@ -664,7 +666,7 @@ int bgzf_read_block(BGZF *fp)
         fp->block_clength = j->comp_len;
         fp->block_length = j->uncomp_len;
         // bgzf_read() can change fp->block_length
-        fp->mt->last_block_length = fp->block_length;
+        fp->last_block_eof = (fp->block_length == 0);
 
         if ( j->uncomp_len && j->fp->idx_build_otf )
         {
@@ -735,6 +737,12 @@ int bgzf_read_block(BGZF *fp)
     {
         count = hread(fp->fp, header, sizeof(header));
         if (count == 0) { // no data read
+            if (!fp->last_block_eof && !fp->no_eof_block && !fp->is_gzip) {
+                fp->no_eof_block = 1;
+                if (hts_verbose > 1) {
+                    fprintf(stderr, "[W::%s] EOF marker is absent. The input is probably truncated.\n", __func__);
+                }
+            }
             fp->block_length = 0;
             return 0;
         }
@@ -820,6 +828,7 @@ int bgzf_read_block(BGZF *fp)
             fp->errcode |= BGZF_ERR_ZLIB;
             return -1;
         }
+        fp->last_block_eof = (count == 0);
         if ( count ) break;     // otherwise an empty bgzf block
     }
     if (fp->block_length != 0) fp->block_offset = 0; // Do not reset offset if this read follows a seek.
@@ -1462,6 +1471,8 @@ int bgzf_check_EOF(BGZF *fp) {
     } else {
         has_eof = bgzf_check_EOF_common(fp);
     }
+
+    fp->no_eof_block = (has_eof == 0);
 
     return has_eof;
 }
