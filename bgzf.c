@@ -84,6 +84,7 @@ typedef struct bgzf_job {
     size_t uncomp_len;
     int errcode;
     int64_t block_address;
+    int hit_eof;
 } bgzf_job;
 
 enum mtaux_cmd {
@@ -112,6 +113,8 @@ typedef struct bgzf_mtaux_t {
     int jobs_pending; // number of jobs waiting
     int flush_pending;
     void *free_block;
+    int hit_eof;  // r/w entirely within main thread
+    int last_block_length;
 
     // Message passing to the reader thread; eg seek requests
     int errcode;
@@ -626,6 +629,12 @@ int bgzf_read_block(BGZF *fp)
     hts_tpool_result *r;
 
     if (fp->mt) {
+    again:
+        if (fp->mt->hit_eof) {
+            // Further reading at EOF will always return 0
+            fp->block_length = 0;
+            return 0;
+        }
         r = hts_tpool_next_result_wait(fp->mt->out_queue);
         bgzf_job *j = (bgzf_job *)hts_tpool_result_data(r);
         assert(j);
@@ -635,11 +644,27 @@ int bgzf_read_block(BGZF *fp)
             return -1;
         }
 
+        if (j->hit_eof) {
+            if (fp->mt->last_block_length != 0 && hts_verbose>1)
+                fprintf(stderr, "[W::%s] EOF marker is absent. The input is probably truncated.\n", __func__);
+            fp->mt->hit_eof = 1;
+        }
+
+        // Zero length blocks in the middle of a file are (wrongly)
+        // considered as EOF by many callers.  We work around this by
+        // trying again to see if we hit a genuine EOF.
+        if (!j->hit_eof && j->uncomp_len == 0) {
+            fp->mt->last_block_length = 0;
+            goto again;
+        }
+
         // block_length=0 and block_offset set by bgzf_seek.
         if (fp->block_length != 0) fp->block_offset = 0;
         fp->block_address = j->block_address;
         fp->block_clength = j->comp_len;
         fp->block_length = j->uncomp_len;
+        // bgzf_read() can change fp->block_length
+        fp->mt->last_block_length = fp->block_length;
 
         if ( j->uncomp_len && j->fp->idx_build_otf )
         {
@@ -1044,6 +1069,7 @@ restart:
     pthread_mutex_unlock(&mt->job_pool_m);
     j->errcode = 0;
     j->uncomp_len = 0;
+    j->hit_eof = 0;
 
     while (bgzf_mt_read_block(fp, j) == 0) {
         // Dispatch
@@ -1078,12 +1104,14 @@ restart:
         pthread_mutex_unlock(&mt->job_pool_m);
         j->errcode = 0;
         j->uncomp_len = 0;
+        j->hit_eof = 0;
     }
 
     // Dispatch an empty block so EOF is spotted.
     // We also use this mechanism for returning errors, in which case
     // j->errcode is set already.
 
+    j->hit_eof = 1;
     hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
      if (j->errcode != 0)
          pthread_exit(&j->errcode);
@@ -1459,6 +1487,7 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
         // waiting for a command.  We then wait for the response so we
         // know the seek succeeded.
         pthread_mutex_lock(&fp->mt->command_m);
+        fp->mt->hit_eof = 0;
         fp->mt->command = SEEK;
         fp->mt->block_address = block_address;
         pthread_cond_signal(&fp->mt->command_c);
