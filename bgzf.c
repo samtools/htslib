@@ -141,6 +141,7 @@ struct __bgzidx_t
 
 void bgzf_index_destroy(BGZF *fp);
 int bgzf_index_add_block(BGZF *fp);
+static void mt_destroy(mtaux_t *mt);
 
 static inline void packInt16(uint8_t *buffer, uint16_t value)
 {
@@ -510,8 +511,7 @@ static int inflate_gzip_block(BGZF *fp, int cached)
             fp->gz_stream->avail_out = BGZF_MAX_BLOCK_SIZE - fp->block_offset;
             fp->gz_stream->msg = NULL;
             ret = inflate(fp->gz_stream, Z_NO_FLUSH);
-            if ( ret==Z_BUF_ERROR ) continue;   // non-critical error
-            if ( ret<0 ) {
+            if (ret < 0 && ret != Z_BUF_ERROR) {
                 if (hts_verbose >= 1) {
                     fprintf(stderr, "[E::%s] inflate failed: %s\n",
                             __func__,
@@ -638,6 +638,12 @@ int bgzf_read_block(BGZF *fp)
         bgzf_job *j = (bgzf_job *)hts_tpool_result_data(r);
         assert(j);
 
+        if (j->errcode == BGZF_ERR_MT) {
+            mt_destroy(fp->mt);
+            fp->mt = NULL;
+            goto single_threaded;
+        }
+
         if (j->errcode) {
             fp->errcode = j->errcode;
             return -1;
@@ -693,7 +699,10 @@ int bgzf_read_block(BGZF *fp)
     }
 
     uint8_t header[BLOCK_HEADER_LENGTH], *compressed_block;
-    int count, size = 0, block_length, remaining;
+    int count, size, block_length, remaining;
+
+ single_threaded:
+    size = 0;
 
     // Reading an uncompressed file
     if ( !fp->is_compressed )
@@ -718,7 +727,7 @@ int bgzf_read_block(BGZF *fp)
     // Reading compressed file
     int64_t block_address;
     block_address = bgzf_htell(fp);
-    if ( fp->is_gzip && fp->gz_stream ) // is this is a initialized gzip stream?
+    if ( fp->is_gzip && fp->gz_stream ) // is this is an initialized gzip stream?
     {
         count = inflate_gzip_block(fp, 0);
         if ( count<0 )
@@ -870,11 +879,14 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
         fp->block_offset += copy_length;
         output += copy_length;
         bytes_read += copy_length;
+
+        // For raw gzip streams this avoids short reads.
+        if (fp->block_offset == fp->block_length) {
+            fp->block_address = bgzf_htell(fp);
+            fp->block_offset = fp->block_length = 0;
+        }
     }
-    if (fp->block_offset == fp->block_length) {
-        fp->block_address = bgzf_htell(fp);
-        fp->block_offset = fp->block_length = 0;
-    }
+
     fp->uncompressed_address += bytes_read;
 
     return bytes_read;
@@ -997,7 +1009,7 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
     block_address = htell(fp->fp);
 
     if (fp->cache_size && load_block_from_cache(fp, block_address)) return 0;
-    count = hread(fp->fp, header, sizeof(header));
+    count = hpeek(fp->fp, header, sizeof(header));
     if (count == 0) // no data read
         return -1;
     int ret;
@@ -1006,6 +1018,15 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
         j->errcode |= BGZF_ERR_HEADER;
         return -1;
     }
+    if (ret == -1) {
+        j->errcode |= BGZF_ERR_MT;
+        return -1;
+    }
+
+    count = hread(fp->fp, header, sizeof(header));
+    if (count != sizeof(header)) // no data read
+        return -1;
+
     size = count;
     block_length = unpackInt16((uint8_t*)&header[16]) + 1; // +1 because when writing this number, we used "-1"
     compressed_block = (uint8_t*)j->comp_data;
@@ -1122,14 +1143,21 @@ restart:
         j->hit_eof = 0;
     }
 
+    if (j->errcode == BGZF_ERR_MT) {
+        // Attempt to multi-thread decode a raw gzip stream cannot be done.
+        // We tear down the multi-threaded decoder and revert to the old code.
+        hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
+        pthread_exit(&j->errcode);
+    }
+
     // Dispatch an empty block so EOF is spotted.
     // We also use this mechanism for returning errors, in which case
     // j->errcode is set already.
 
     j->hit_eof = 1;
     hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
-     if (j->errcode != 0)
-         pthread_exit(&j->errcode);
+    if (j->errcode != 0)
+        pthread_exit(&j->errcode);
 
     // We hit EOF so can stop reading, but we may get a subsequent
     // seek request.  In this case we need to restart the reader.
