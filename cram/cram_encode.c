@@ -43,6 +43,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/cram.h"
 #include "cram/os.h"
 #include "htslib/hts.h"
+#include "htslib/hts_endian.h"
 
 KHASH_MAP_INIT_STR(m_s2u64, uint64_t)
 
@@ -2598,8 +2599,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     seq = cp = (char *)BLOCK_END(s->seqs_blk);
 
     *seq = 0;
+#if HTS_ALLOW_UNALIGNED != 0
     {
-#ifdef ALLOW_UAC
 	// Convert seq 2 bases at a time for speed.
 	static const uint16_t code2base[256] = {
 	    15677, 16701, 17213, 19773, 18237, 21053, 21309, 22077,

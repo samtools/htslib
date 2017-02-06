@@ -108,7 +108,7 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
     for (i = 0; i < qname_nuls; i++)
 	cp[qname_len+i] = '\0';
     cp += qname_len+qname_nuls;
-    memcpy(cp, cigar, ncigar*4);
+    if (ncigar > 0) memcpy(cp, cigar, ncigar*4);
     cp += ncigar*4;
 
     for (i = 0; i+1 < len; i+=2) {

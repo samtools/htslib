@@ -1,6 +1,6 @@
 /*  hts.c -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2008, 2009, 2012-2016 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2012-2017 Genome Research Ltd.
     Copyright (C) 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -471,6 +471,12 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
     hts_opt *o, *t;
     char *val;
 
+    /*
+     * IMPORTANT!!!
+     * If you add another string option here, don't forget to also add
+     * it to the case statement in hts_opt_apply.
+     */
+
     if (!c_arg)
         return -1;
 
@@ -610,9 +616,20 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
 int hts_opt_apply(htsFile *fp, hts_opt *opts) {
     hts_opt *last = NULL;
 
-    for (; opts;  opts = (last=opts)->next)
-        if (hts_set_opt(fp,  opts->opt,  opts->val) != 0)
-            return -1;
+    for (; opts;  opts = (last=opts)->next) {
+        switch (opts->opt) {
+            case CRAM_OPT_REFERENCE:
+            case CRAM_OPT_VERSION:
+            case CRAM_OPT_PREFIX:
+                if (hts_set_opt(fp,  opts->opt,  opts->val.s) != 0)
+                    return -1;
+                break;
+            default:
+                if (hts_set_opt(fp,  opts->opt,  opts->val.i) != 0)
+                    return -1;
+                break;
+        }
+    }
 
     return 0;
 }
@@ -2209,7 +2226,7 @@ size_t hts_realloc_or_die(size_t n, size_t m, size_t m_sz, size_t size,
     /* Check for overflow.  Both ensure that new_m will fit in m (we make the
        pessimistic assumption that m is signed), and that bytes has not
        wrapped around. */
-    if (new_m > ((1 << (m_sz * 8 - 1)) - 1)
+    if (new_m > (((size_t) 1 << (m_sz * 8 - 1)) - 1)
         || ((size > safe || new_m > safe)
             && bytes / new_m != size)) {
         errno = ENOMEM;

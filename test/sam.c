@@ -28,6 +28,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <inttypes.h>
 #include <math.h>
 
 // Suppress message for faidx_fetch_nseq(), which we're intentionally testing
@@ -41,7 +43,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 int status;
 
-static void fail(const char *fmt, ...)
+static void HTS_FORMAT(printf, 1, 2) fail(const char *fmt, ...)
 {
     va_list args;
 
@@ -66,6 +68,31 @@ uint8_t *check_bam_aux_get(const bam1_t *aln, const char *tag, char type)
     return NULL;
 }
 
+static void check_int_B_array(bam1_t *aln, char *tag,
+                             uint32_t nvals, int64_t *vals) {
+    uint8_t *p;
+    if ((p = check_bam_aux_get(aln, tag, 'B')) != NULL) {
+        uint32_t i;
+
+        if (bam_auxB_len(p) != nvals)
+            fail("Wrong length reported for %s field, got %u, expected %u\n",
+                 tag, bam_auxB_len(p), nvals);
+
+        for (i = 0; i < nvals; i++) {
+            if (bam_auxB2i(p, i) != vals[i]) {
+                fail("Wrong value from bam_auxB2i for %s field index %u, "
+                     "got %"PRId64" expected %"PRId64"\n",
+                     tag, i, bam_auxB2i(p, i), vals[i]);
+            }
+            if (bam_auxB2f(p, i) != (double) vals[i]) {
+                fail("Wrong value from bam_auxB2f for %s field index %u, "
+                     "got %f expected %f\n",
+                     tag, i, bam_auxB2f(p, i), (double) vals[i]);
+            }
+        }
+    }
+}
+
 #define PI 3.141592653589793
 #define E  2.718281828459045
 #define HELLO "Hello, world!"
@@ -80,17 +107,30 @@ static int aux_fields1(void)
     static const char sam[] = "data:,"
 "@SQ\tSN:one\tLN:1000\n"
 "@SQ\tSN:two\tLN:500\n"
-"r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\n";
+"r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\n";
 
     // Canonical form of the alignment record above, as output by sam_format1()
-    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" NEW_HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295";
+    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" NEW_HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\tN0:i:-1234\tN1:i:1234";
 
     samFile *in = sam_open(sam, "r");
     bam_hdr_t *header = sam_hdr_read(in);
     bam1_t *aln = bam_init1();
     uint8_t *p;
-    uint32_t n;
     kstring_t ks = { 0, 0, NULL };
+    int64_t b0vals[5] = { -2147483648LL,-1,0,1,2147483647LL }; // i
+    int64_t b1vals[4] = { 0,1,2147483648LL,4294967295LL };     // I
+    int64_t b2vals[5] = { -32768,-1,0,1,32767 };           // s
+    int64_t b3vals[4] = { 0,1,32768,65535 };               // S
+    int64_t b4vals[5] = { -128,-1,0,1,127 };               // c
+    int64_t b5vals[4] = { 0,1,127,255 };                   // C
+    // NB: Floats not doubles below!
+    // See https://randomascii.wordpress.com/2012/06/26/doubles-are-not-floats-so-dont-compare-them/
+    float bfvals[2] = { -3.14159f, 2.71828f };
+
+    int32_t ival = -1234;
+    uint32_t uval = 1234;
+
+    size_t nvals, i;
 
     if (sam_read1(in, header, aln) >= 0) {
         if ((p = check_bam_aux_get(aln, "XA", 'A')) && bam_aux2A(p) != 'k')
@@ -101,7 +141,7 @@ static int aux_fields1(void)
             fail("XA field was not deleted");
 
         if ((p = check_bam_aux_get(aln, "Xi", 'C')) && bam_aux2i(p) != 37)
-            fail("Xi field is %d, expected 37", bam_aux2i(p));
+            fail("Xi field is %"PRId64", expected 37", bam_aux2i(p));
 
         if ((p = check_bam_aux_get(aln, "Xf", 'f')) && fabs(bam_aux2f(p) - PI) > 1E-6)
             fail("Xf field is %.12f, expected pi", bam_aux2f(p));
@@ -120,39 +160,78 @@ static int aux_fields1(void)
         if ((p = check_bam_aux_get(aln, "XH", 'H')) && strcmp(bam_aux2Z(p), BEEF) != 0)
             fail("XH field is \"%s\", expected \"%s\"", bam_aux2Z(p), BEEF);
 
-        // TODO Invent and use bam_aux2B()
-        if ((p = check_bam_aux_get(aln, "XB", 'B')) && ! (memcmp(p, "Bc", 2) == 0 && (memcpy(&n, p+2, 4), n) == 3 && memcmp(p+6, "\xfe\x00\x02", 3) == 0))
+        if ((p = check_bam_aux_get(aln, "XB", 'B'))
+            && ! (memcmp(p, "Bc", 2) == 0
+                  && memcmp(p + 2, "\x03\x00\x00\x00\xfe\x00\x02", 7) == 0))
             fail("XB field is %c,..., expected c,-2,0,+2", p[1]);
 
+        check_int_B_array(aln, "B0",
+                          sizeof(b0vals) / sizeof(b0vals[0]), b0vals);
+        check_int_B_array(aln, "B1",
+                          sizeof(b1vals) / sizeof(b1vals[0]), b1vals);
+        check_int_B_array(aln, "B2",
+                          sizeof(b2vals) / sizeof(b2vals[0]), b2vals);
+        check_int_B_array(aln, "B3",
+                          sizeof(b3vals) / sizeof(b3vals[0]), b3vals);
+        check_int_B_array(aln, "B4",
+                          sizeof(b4vals) / sizeof(b4vals[0]), b4vals);
+        check_int_B_array(aln, "B5",
+                          sizeof(b5vals) / sizeof(b5vals[0]), b5vals);
+
+        nvals = sizeof(bfvals) / sizeof(bfvals[0]);
+        if ((p = check_bam_aux_get(aln, "Bf", 'B')) != NULL) {
+            if (bam_auxB_len(p) != nvals)
+                fail("Wrong length reported for Bf field, got %d, expected %zd\n",
+                     bam_auxB_len(p), nvals);
+
+            for (i = 0; i < nvals; i++) {
+                if (bam_auxB2f(p, i) != bfvals[i]) {
+                    fail("Wrong value from bam_auxB2f for Bf field index %zd, "
+                         "got %f expected %f\n",
+                         i, bam_auxB2f(p, i), bfvals[i]);
+                }
+            }
+        }
+
         if ((p = check_bam_aux_get(aln, "ZZ", 'I')) && bam_aux2i(p) != 1000000)
-            fail("ZZ field is %d, expected 1000000", bam_aux2i(p));
+            fail("ZZ field is %"PRId64", expected 1000000", bam_aux2i(p));
 
         if ((p = bam_aux_get(aln, "Y1")) && bam_aux2i(p) != -2147483647-1)
-            fail("Y1 field is %d, expected -2^31", bam_aux2i(p));
+            fail("Y1 field is %"PRId64", expected -2^31", bam_aux2i(p));
 
         if ((p = bam_aux_get(aln, "Y2")) && bam_aux2i(p) != -2147483647)
-            fail("Y2 field is %d, expected -2^31+1", bam_aux2i(p));
+            fail("Y2 field is %"PRId64", expected -2^31+1", bam_aux2i(p));
 
         if ((p = bam_aux_get(aln, "Y3")) && bam_aux2i(p) != -1)
-            fail("Y3 field is %d, expected -1", bam_aux2i(p));
+            fail("Y3 field is %"PRId64", expected -1", bam_aux2i(p));
 
         if ((p = bam_aux_get(aln, "Y4")) && bam_aux2i(p) != 0)
-            fail("Y4 field is %d, expected 0", bam_aux2i(p));
+            fail("Y4 field is %"PRId64", expected 0", bam_aux2i(p));
 
         if ((p = bam_aux_get(aln, "Y5")) && bam_aux2i(p) != 1)
-            fail("Y5 field is %d, expected 1", bam_aux2i(p));
+            fail("Y5 field is %"PRId64", expected 1", bam_aux2i(p));
 
         if ((p = bam_aux_get(aln, "Y6")) && bam_aux2i(p) != 2147483647)
-            fail("Y6 field is %d, expected 2^31-1", bam_aux2i(p));
+            fail("Y6 field is %"PRId64", expected 2^31-1", bam_aux2i(p));
 
-        // TODO Checking these perhaps requires inventing bam_aux2u() or so
-#if 0
-        if ((p = bam_aux_get(aln, "Y7")) && bam_aux2i(p) != 2147483648)
-            fail("Y7 field is %d, expected 2^31", bam_aux2i(p));
+        if ((p = bam_aux_get(aln, "Y7")) && bam_aux2i(p) != 2147483648LL)
+            fail("Y7 field is %"PRId64", expected 2^31", bam_aux2i(p));
 
-        if ((p = bam_aux_get(aln, "Y8")) && bam_aux2i(p) != 4294967295)
-            fail("Y8 field is %d, expected 2^32-1", bam_aux2i(p));
-#endif
+        if ((p = bam_aux_get(aln, "Y8")) && bam_aux2i(p) != 4294967295LL)
+            fail("Y8 field is %"PRId64", expected 2^32-1", bam_aux2i(p));
+
+        // Try appending some new tags
+        if (bam_aux_append(aln, "N0", 'i', sizeof(ival), (uint8_t *) &ival) != 0)
+            fail("Failed to append N0:i tag");
+
+        if ((p = bam_aux_get(aln, "N0")) && bam_aux2i(p) != ival)
+            fail("N0 field is %"PRId64", expected %d", bam_aux2i(p), ival);
+
+        if (bam_aux_append(aln, "N1", 'I', sizeof(uval), (uint8_t *) &uval) != 0)
+            fail("failed to append N1:I tag");
+
+        if ((p = bam_aux_get(aln, "N1")) && bam_aux2i(p) != uval)
+            fail("N1 field is %"PRId64", expected %u", bam_aux2i(p), uval);
 
         if (sam_format1(header, aln, &ks) < 0)
             fail("can't format record");

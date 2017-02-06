@@ -39,6 +39,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "hts.h"
 #include "kstring.h"
 #include "hts_defs.h"
+#include "hts_endian.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -967,13 +968,13 @@ static inline int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
 {
     if (type == BCF_BT_INT8) {
         *q = (uint8_t*)p + 1;
-        return *(int8_t*)p;
+        return le_to_i8(p);
     } else if (type == BCF_BT_INT16) {
         *q = (uint8_t*)p + 2;
-        return *(int16_t*)p;
+        return le_to_i16(p);
     } else {
         *q = (uint8_t*)p + 4;
-        return *(int32_t*)p;
+        return le_to_i32(p);
     }
 }
 
