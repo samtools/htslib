@@ -46,7 +46,7 @@ DEALINGS IN THE SOFTWARE.  */
 //#define DEBUG
 
 #ifdef DEBUG
-static int worker_id(t_pool *p) {
+static int worker_id(hts_tpool *p) {
     int i;
     pthread_t s = pthread_self();
     for (i = 0; i < p->tsize; i++) {
@@ -130,6 +130,9 @@ static void wake_next_worker(hts_tpool_process *q, int locked);
 static hts_tpool_result *hts_tpool_next_result_locked(hts_tpool_process *q) {
     hts_tpool_result *r, *last;
 
+    if (q->shutdown)
+        return NULL;
+
     for (last = NULL, r = q->output_head; r; last = r, r = r->next) {
         if (r->serial == q->next_serial)
             break;
@@ -212,7 +215,6 @@ hts_tpool_result *hts_tpool_next_result_wait(hts_tpool_process *q) {
         timeout.tv_nsec = now.tv_usec * 1000;
 
         q->ref_count++;
-        pthread_cond_timedwait(&q->output_avail_c, &q->p->pool_m, &timeout);
         if (q->shutdown) {
             int rc = --q->ref_count;
             pthread_mutex_unlock(&q->p->pool_m);
@@ -220,6 +222,7 @@ hts_tpool_result *hts_tpool_next_result_wait(hts_tpool_process *q) {
                 hts_tpool_process_destroy(q);
             return NULL;
         }
+        pthread_cond_timedwait(&q->output_avail_c, &q->p->pool_m, &timeout);
 
         q->ref_count--;
     }
@@ -240,6 +243,24 @@ int hts_tpool_process_empty(hts_tpool_process *q) {
     pthread_mutex_unlock(&q->p->pool_m);
 
     return empty;
+}
+
+void hts_tpool_process_ref_incr(hts_tpool_process *q) {
+    pthread_mutex_lock(&q->p->pool_m);
+    q->ref_count++;
+    pthread_mutex_unlock(&q->p->pool_m);
+}
+
+void hts_tpool_process_ref_decr(hts_tpool_process *q) {
+    pthread_mutex_lock(&q->p->pool_m);
+    if (--q->ref_count <= 0) {
+        pthread_mutex_unlock(&q->p->pool_m);
+        hts_tpool_process_destroy(q);
+        return;
+    }
+
+    // maybe also call destroy here if needed?
+    pthread_mutex_unlock(&q->p->pool_m);
 }
 
 /*
@@ -674,8 +695,10 @@ hts_tpool *hts_tpool_init(int n) {
         w->p = p;
         w->idx = i;
         pthread_cond_init(&w->pending_c, NULL);
-        if (0 != pthread_create(&w->tid, NULL, tpool_worker, w))
+        if (0 != pthread_create(&w->tid, NULL, tpool_worker, w)) {
+            pthread_mutex_unlock(&p->pool_m);
             return NULL;
+        }
     }
 
     pthread_mutex_unlock(&p->pool_m);
@@ -723,8 +746,10 @@ int hts_tpool_dispatch2(hts_tpool *p, hts_tpool_process *q,
         return -1;
     }
 
-    if (!(j = malloc(sizeof(*j))))
+    if (!(j = malloc(sizeof(*j)))) {
+        pthread_mutex_unlock(&p->pool_m);
         return -1;
+    }
     j->func = func;
     j->arg = arg;
     j->next = NULL;
@@ -736,6 +761,7 @@ int hts_tpool_dispatch2(hts_tpool *p, hts_tpool_process *q,
         while (q->n_input >= q->qsize && !q->shutdown && !q->wake_dispatch)
             pthread_cond_wait(&q->input_not_full_c, &q->p->pool_m);
         if (q->shutdown) {
+            free(j);
             pthread_mutex_unlock(&p->pool_m);
             return -1;
         }

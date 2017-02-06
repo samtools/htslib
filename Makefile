@@ -88,6 +88,14 @@ BUILT_TEST_PROGRAMS = \
 	test/test-vcf-api \
 	test/test-vcf-sweep
 
+BUILT_THRASH_PROGRAMS = \
+	test/thrash_threads1 \
+	test/thrash_threads2 \
+	test/thrash_threads3 \
+	test/thrash_threads4 \
+	test/thrash_threads5 \
+	test/thrash_threads6
+
 all: lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS)
 
 HTSPREFIX =
@@ -374,6 +382,27 @@ test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h
 test/test-vcf-sweep.o: test/test-vcf-sweep.c config.h $(htslib_vcf_sweep_h)
 
 
+test/thrash_threads1: test/thrash_threads1.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads1.o libhts.a -lz $(LIBS)
+
+test/thrash_threads2: test/thrash_threads2.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads2.o libhts.a -lz $(LIBS)
+
+test/thrash_threads3: test/thrash_threads3.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads3.o libhts.a -lz $(LIBS)
+
+test/thrash_threads4: test/thrash_threads4.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads4.o libhts.a -lz $(LIBS)
+
+test/thrash_threads5: test/thrash_threads5.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads5.o libhts.a -lz $(LIBS)
+
+test/thrash_threads6: test/thrash_threads6.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads6.o libhts.a -lz $(LIBS)
+
+test_thrash: $(BUILT_THRASH_PROGRAMS)
+
+
 install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	if test -n "$(BUILT_PLUGINS)"; then $(INSTALL_PROGRAM) $(BUILT_PLUGINS) $(DESTDIR)$(plugindir); fi
@@ -423,7 +452,7 @@ mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
-	-rm -f libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) $(BUILT_TEST_PROGRAMS)
+	-rm -f libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) $(BUILT_TEST_PROGRAMS) $(BUILT_THRASH_PROGRAMS)
 
 distclean maintainer-clean: clean
 	-rm -f config.cache config.h config.log config.mk config.status

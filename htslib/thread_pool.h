@@ -274,6 +274,15 @@ void hts_tpool_process_shutdown(hts_tpool_process *q);
 void hts_tpool_process_attach(hts_tpool *p, hts_tpool_process *q);
 void hts_tpool_process_detach(hts_tpool *p, hts_tpool_process *q);
 
+/*
+ * Increment and decrement the reference count in a process-queue.
+ * If the queue is being driven from two external (non thread-pool)
+ * threads, eg "main" and a "reader", this permits each end to
+ * decrement its use of the process-queue independently.
+ */
+void hts_tpool_process_ref_incr(hts_tpool_process *q);
+void hts_tpool_process_ref_decr(hts_tpool_process *q);
+
 #ifdef __cplusplus
 }
 #endif
