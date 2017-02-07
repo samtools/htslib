@@ -55,6 +55,12 @@ Noteworthy changes in release 1.4
   allow bgzf index files (.gzi) to be written to / read from an existing
   hFILE handle.
 
+* hts_idx_push() will report when trying to add a range to an index that
+  is beyond the limits that the given index can handle.  This means trying
+  to index chromosomes longer than 2^29 bases with a .bai or .tbi index
+  will report an error instead of apparantly working but creating an invalid
+  index entry.
+
 Noteworthy changes in release 1.3.2  (13 September 2016)
 
 * Corrected bin calculation when converting directly from CRAM to BAM.

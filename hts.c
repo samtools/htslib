@@ -1257,44 +1257,65 @@ struct __hts_idx_t {
     } z; // keep internal states
 };
 
-static inline void insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
+static char * idx_format_name(int fmt) {
+    switch (fmt) {
+        case HTS_FMT_CSI: return "csi";
+        case HTS_FMT_BAI: return "bai";
+        case HTS_FMT_TBI: return "tbi";
+        case HTS_FMT_CRAI: return "crai";
+        default: return "unknown";
+    }
+}
+
+static inline int insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
 {
     khint_t k;
     bins_t *l;
     int absent;
     k = kh_put(bin, b, bin, &absent);
+    if (absent < 0) return -1; // Out of memory
     l = &kh_value(b, k);
     if (absent) {
         l->m = 1; l->n = 0;
         l->list = (hts_pair64_t*)calloc(l->m, sizeof(hts_pair64_t));
-    }
-    if (l->n == l->m) {
-        l->m <<= 1;
-        l->list = (hts_pair64_t*)realloc(l->list, l->m * sizeof(hts_pair64_t));
+        if (!l->list) {
+            kh_del(bin, b, k);
+            return -1;
+        }
+    } else if (l->n == l->m) {
+        uint32_t new_m = l->m ? l->m << 1 : 1;
+        hts_pair64_t *new_list = realloc(l->list, new_m * sizeof(hts_pair64_t));
+        if (!new_list) return -1;
+        l->list = new_list;
+        l->m = new_m;
     }
     l->list[l->n].u = beg;
     l->list[l->n++].v = end;
+    return 0;
 }
 
-static inline void insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t offset, int min_shift)
+static inline int insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t offset, int min_shift)
 {
     int i, beg, end;
     beg = _beg >> min_shift;
     end = (_end - 1) >> min_shift;
     if (l->m < end + 1) {
-        int old_m = l->m;
-        l->m = end + 1;
-        kroundup32(l->m);
-        l->offset = (uint64_t*)realloc(l->offset, l->m * sizeof(uint64_t));
-        memset(l->offset + old_m, 0xff, 8 * (l->m - old_m)); // fill l->offset with (uint64_t)-1
+        size_t new_m = l->m * 2 > end + 1 ? l->m * 2 : end + 1;
+        uint64_t *new_offset;
+
+        new_offset = (uint64_t*)realloc(l->offset, new_m * sizeof(uint64_t));
+        if (!new_offset) return -1;
+
+        // fill unused memory with (uint64_t)-1
+        memset(new_offset + l->m, 0xff, sizeof(uint64_t) * (new_m - l->m));
+        l->m = new_m;
+        l->offset = new_offset;
     }
-    if (beg == end) { // to save a loop in this case
-        if (l->offset[beg] == (uint64_t)-1) l->offset[beg] = offset;
-    } else {
-        for (i = beg; i <= end; ++i)
-            if (l->offset[i] == (uint64_t)-1) l->offset[i] = offset;
+    for (i = beg; i <= end; ++i) {
+        if (l->offset[i] == (uint64_t)-1) l->offset[i] = offset;
     }
     if (l->n < end + 1) l->n = end + 1;
+    return 0;
 }
 
 hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_lvls)
@@ -1422,14 +1443,27 @@ void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped)
 {
     int bin;
+    int64_t maxpos = (int64_t) 1 << (idx->min_shift + idx->n_lvls * 3);
     if (tid<0) beg = -1, end = 0;
+    if (tid >= 0 && (beg > maxpos || end > maxpos)) {
+        goto pos_too_big;
+    }
     if (tid >= idx->m) { // enlarge the index
-        int32_t oldm = idx->m;
-        idx->m = idx->m? idx->m<<1 : 2;
-        idx->bidx = (bidx_t**)realloc(idx->bidx, idx->m * sizeof(bidx_t*));
-        idx->lidx = (lidx_t*) realloc(idx->lidx, idx->m * sizeof(lidx_t));
-        memset(&idx->bidx[oldm], 0, (idx->m - oldm) * sizeof(bidx_t*));
-        memset(&idx->lidx[oldm], 0, (idx->m - oldm) * sizeof(lidx_t));
+        uint32_t new_m = idx->m * 2 > tid + 1 ? idx->m * 2 : tid + 1;
+        bidx_t **new_bidx;
+        lidx_t *new_lidx;
+
+        new_bidx = (bidx_t**)realloc(idx->bidx, new_m * sizeof(bidx_t*));
+        if (!new_bidx) return -1;
+        idx->bidx = new_bidx;
+
+        new_lidx = (lidx_t*) realloc(idx->lidx, new_m * sizeof(lidx_t));
+        if (!new_lidx) return -1;
+        idx->lidx = new_lidx;
+
+        memset(&idx->bidx[idx->m], 0, (new_m - idx->m) * sizeof(bidx_t*));
+        memset(&idx->lidx[idx->m], 0, (new_m - idx->m) * sizeof(lidx_t));
+        idx->m = new_m;
     }
     if (idx->n < tid + 1) idx->n = tid + 1;
     if (idx->z.finished) return 0;
@@ -1457,18 +1491,24 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
             // shoehorn [-1,0) (VCF POS=0) into the leftmost bottom-level bin
             if (beg < 0)  beg = 0;
             if (end <= 0) end = 1;
-            insert_to_l(&idx->lidx[tid], beg, end, idx->z.last_off, idx->min_shift); // last_off points to the start of the current record
+            // idx->z.last_off points to the start of the current record
+            if (insert_to_l(&idx->lidx[tid], beg, end,
+                            idx->z.last_off, idx->min_shift) < 0) return -1;
         }
     }
     else idx->n_no_coor++;
     bin = hts_reg2bin(beg, end, idx->min_shift, idx->n_lvls);
     if ((int)idx->z.last_bin != bin) { // then possibly write the binning index
-        if (idx->z.save_bin != 0xffffffffu) // save_bin==0xffffffffu only happens to the first record
-            insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, idx->z.last_off);
+        if (idx->z.save_bin != 0xffffffffu) { // save_bin==0xffffffffu only happens to the first record
+            if (insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin,
+                            idx->z.save_off, idx->z.last_off) < 0) return -1;
+        }
         if (idx->z.last_bin == 0xffffffffu && idx->z.save_bin != 0xffffffffu) { // change of chr; keep meta information
             idx->z.off_end = idx->z.last_off;
-            insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.off_beg, idx->z.off_end);
-            insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.n_mapped, idx->z.n_unmapped);
+            if (insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx),
+                            idx->z.off_beg, idx->z.off_end) < 0) return -1;
+            if (insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx),
+                            idx->z.n_mapped, idx->z.n_unmapped) < 0) return -1;
             idx->z.n_mapped = idx->z.n_unmapped = 0;
             idx->z.off_beg = idx->z.off_end;
         }
@@ -1481,6 +1521,34 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
     idx->z.last_off = offset;
     idx->z.last_coor = beg;
     return 0;
+
+ pos_too_big: {
+        int64_t max = end > beg ? end : beg, s = 1 << 14;
+        int n_lvls = 0;
+        while (max > s) {
+            n_lvls++;
+            s <<= 3;
+        }
+
+        if (hts_verbose >= 1) {
+            if (idx->fmt == HTS_FMT_CSI) {
+                fprintf(stderr,
+                        "[E::%s] Region %d..%d cannot be stored in a csi index "
+                        "with min_shift = %d, n_lvls = %d.  Try using "
+                        " min_shift = 14, n_lvls >= %d\n",
+                        __func__, beg, end,
+                        idx->min_shift, idx->n_lvls, n_lvls);
+            } else {
+                fprintf(stderr,
+                        "[E::%s] Region %d..%d cannot be stored in a %s index. "
+                        "Try using a csi index with min_shift = 14, "
+                        "n_lvls >= %d\n",
+                        __func__, beg, end, idx_format_name(idx->fmt), n_lvls);
+            }
+        }
+        errno = ERANGE;
+        return -1;
+    }
 }
 
 void hts_idx_destroy(hts_idx_t *idx)
