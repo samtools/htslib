@@ -1,6 +1,6 @@
 /*  faidx.c -- FASTA random access.
 
-    Copyright (C) 2008, 2009, 2013-2016 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2017 Genome Research Ltd.
     Portions copyright (C) 2011 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -31,6 +31,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdio.h>
 #include <inttypes.h>
 #include <errno.h>
+#include <unistd.h>
+#include <assert.h>
 
 #include "htslib/bgzf.h"
 #include "htslib/faidx.h"
@@ -172,49 +174,78 @@ fail:
     return NULL;
 }
 
-void fai_save(const faidx_t *fai, FILE *fp)
-{
+static int fai_save(const faidx_t *fai, hFILE *fp) {
     khint_t k;
     int i;
+    char buf[96]; // Must be big enough for format below.
+
     for (i = 0; i < fai->n; ++i) {
         faidx1_t x;
         k = kh_get(s, fai->hash, fai->name[i]);
+        assert(k < kh_end(fai->hash));
         x = kh_value(fai->hash, k);
-        fprintf(fp, "%s\t%"PRId64"\t%"PRIu64"\t%"PRId32"\t%"PRId32"\n", fai->name[i], x.len, x.offset, x.line_blen, x.line_len);
+        snprintf(buf, sizeof(buf),
+                 "\t%"PRId64"\t%"PRIu64"\t%"PRId32"\t%"PRId32"\n",
+                 x.len, x.offset, x.line_blen, x.line_len);
+        if (hputs(fai->name[i], fp) != 0) return -1;
+        if (hputs(buf, fp) != 0) return -1;
     }
+    return 0;
 }
 
-static faidx_t *fai_read(FILE *fp, const char *fname)
+static faidx_t *fai_read(hFILE *fp, const char *fname)
 {
     faidx_t *fai;
-    char *buf, *p;
-    int line_len, line_blen;
+    char *buf = NULL, *p;
+    int line_len, line_blen, n;
     int64_t len;
     uint64_t offset;
+    ssize_t l, lnum = 1;
+
     fai = (faidx_t*)calloc(1, sizeof(faidx_t));
+    if (!fai) return NULL;
+
     fai->hash = kh_init(s);
+    if (!fai->hash) goto fail;
+
     buf = (char*)calloc(0x10000, 1);
-    while (fgets(buf, 0x10000, fp)) {
+    if (!buf) goto fail;
+
+    while ((l = hgetln(buf, 0x10000, fp)) > 0) {
         for (p = buf; *p && isgraph_c(*p); ++p);
         *p = 0; ++p;
-        sscanf(p, "%"SCNd64"%"SCNu64"%d%d", &len, &offset, &line_blen, &line_len);
-        if (fai_insert_index(fai, buf, len, line_len, line_blen, offset) != 0) {
-            free(buf);
-            return NULL;
+        n = sscanf(p, "%"SCNd64"%"SCNu64"%d%d", &len, &offset, &line_blen, &line_len);
+        if (n != 4) {
+            if (hts_verbose > 1)
+                fprintf(stderr, "[fai_load] couldn't understand FAI %s line %zd\n",
+                        fname, lnum);
+            goto fail;
         }
+        if (fai_insert_index(fai, buf, len, line_len, line_blen, offset) != 0) {
+            goto fail;
+        }
+        if (buf[l - 1] == '\n') ++lnum;
+    }
+
+    if (l < 0) {
+        if (hts_verbose > 1)
+            fprintf(stderr, "[fai_load] error while reading \"%s\": %s\n",
+                    fname, strerror(errno));
+        goto fail;
     }
     free(buf);
-    if (ferror(fp)) {
-        fprintf(stderr, "[fai_load] error while reading \"%s\": %s\n", fname, strerror(errno));
-        fai_destroy(fai);
-        return NULL;
-    }
     return fai;
+
+ fail:
+    free(buf);
+    fai_destroy(fai);
+    return NULL;
 }
 
 void fai_destroy(faidx_t *fai)
 {
     int i;
+    if (!fai) return;
     for (i = 0; i < fai->n; ++i) free(fai->name[i]);
     free(fai->name);
     kh_destroy(s, fai->hash);
@@ -222,151 +253,194 @@ void fai_destroy(faidx_t *fai)
     free(fai);
 }
 
-int fai_build(const char *fn)
+int fai_build3(const char *fn, const char *fnfai, const char *fngzi)
 {
-    char *str;
-    BGZF *bgzf;
-    FILE *fp;
-    faidx_t *fai;
-    str = (char*)calloc(strlen(fn) + 5, 1);
-    sprintf(str, "%s.fai", fn);
+    kstring_t fai_kstr = { 0, 0, NULL };
+    kstring_t gzi_kstr = { 0, 0, NULL };
+    BGZF *bgzf = NULL;
+    hFILE *fp = NULL;
+    faidx_t *fai = NULL;
+    int save_errno, res;
+
+    if (!fnfai) {
+        if (ksprintf(&fai_kstr, "%s.fai", fn) < 0) goto fail;
+        fnfai = fai_kstr.s;
+    }
+    if (!fngzi) {
+        if (ksprintf(&gzi_kstr, "%s.gzi", fn) < 0) goto fail;
+        fngzi = gzi_kstr.s;
+    }
+
     bgzf = bgzf_open(fn, "r");
     if ( !bgzf ) {
-        fprintf(stderr, "[fai_build] fail to open the FASTA file %s\n",fn);
-        free(str);
-        return -1;
+        if (hts_verbose > 1)
+            fprintf(stderr, "[fai_build] fail to open the FASTA file %s\n",fn);
+        goto fail;
     }
-    if ( bgzf->is_compressed ) bgzf_index_build_init(bgzf);
+    if ( bgzf->is_compressed ) {
+        if (bgzf_index_build_init(bgzf) != 0) {
+            if (hts_verbose > 1)
+                fprintf(stderr, "[fai_build] fail to allocate bgzf index");
+            goto fail;
+        }
+    }
     fai = fai_build_core(bgzf);
     if ( !fai )
     {
-        if ( bgzf->is_compressed && bgzf->is_gzip ) fprintf(stderr,"Cannot index files compressed with gzip, please use bgzip\n");
-        bgzf_close(bgzf);
-        free(str);
-        return -1;
+        if ( bgzf->is_compressed && bgzf->is_gzip && hts_verbose > 1)
+            fprintf(stderr, "Cannot index files compressed with gzip, please use bgzip\n");
+        goto fail;
     }
     if ( bgzf->is_compressed ) {
-        if (bgzf_index_dump(bgzf, fn, ".gzi") < 0) {
-            fprintf(stderr, "[fai_build] fail to make bgzf index %s.gzi\n", fn);
-            fai_destroy(fai); free(str);
-            return -1;
+        if (bgzf_index_dump(bgzf, fngzi, NULL) < 0) {
+            if (hts_verbose > 1)
+                fprintf(stderr, "[fai_build] fail to make bgzf index %s\n",
+                        fngzi);
+            goto fail;
         }
     }
-    if (bgzf_close(bgzf) < 0) {
-        fprintf(stderr, "[fai_build] Error on closing %s\n", fn);
-        fai_destroy(fai); free(str);
-        return -1;
+    res = bgzf_close(bgzf);
+    bgzf = NULL;
+    if (res < 0) {
+        if (hts_verbose > 1)
+            fprintf(stderr, "[fai_build] Error on closing %s : %s\n",
+                    fn, strerror(errno));
+        goto fail;
     }
-    fp = fopen(str, "wb");
+    fp = hopen(fnfai, "wb");
     if ( !fp ) {
-        fprintf(stderr, "[fai_build] fail to write FASTA index %s\n",str);
-        fai_destroy(fai); free(str);
-        return -1;
+        if (hts_verbose > 1)
+            fprintf(stderr, "[fai_build] fail to open FASTA index %s : %s\n",
+                    fnfai, strerror(errno));
+        goto fail;
     }
-    fai_save(fai, fp);
-    fclose(fp);
-    free(str);
+    if (fai_save(fai, fp) != 0) {
+        if (hts_verbose > 1)
+            fprintf(stderr, "[fai_build] fail to write FASTA index %s : %s\n",
+                    fnfai, strerror(errno));
+        goto fail;
+    }
+    if (hclose(fp) != 0) {
+        if (hts_verbose > 1)
+            fprintf(stderr, "[fai_build] fail on closing FASTA index %s : %s\n",
+                    fnfai, strerror(errno));
+        goto fail;
+    }
+
+    free(fai_kstr.s);
+    free(gzi_kstr.s);
     fai_destroy(fai);
     return 0;
+
+ fail:
+    save_errno = errno;
+    free(fai_kstr.s);
+    free(gzi_kstr.s);
+    bgzf_close(bgzf);
+    fai_destroy(fai);
+    errno = save_errno;
+    return -1;
 }
 
-static FILE *download_and_open(const char *fn)
-{
-    const int buf_size = 1 * 1024 * 1024;
-    uint8_t *buf;
-    FILE *fp;
-    hFILE *fp_remote;
-    const char *url = fn;
-    const char *p;
-    int l = strlen(fn);
-    for (p = fn + l - 1; p >= fn; --p)
-        if (*p == '/') break;
-    fn = p + 1;
-
-    // First try to open a local copy
-    fp = fopen(fn, "r");
-    if (fp)
-        return fp;
-
-    // If failed, download from remote and open
-    fp_remote = hopen(url, "rb");
-    if (fp_remote == 0) {
-        fprintf(stderr, "[download_from_remote] fail to open remote file %s\n",url);
-        return NULL;
-    }
-    if ((fp = fopen(fn, "wb")) == 0) {
-        fprintf(stderr, "[download_from_remote] fail to create file in the working directory %s\n",fn);
-        hclose_abruptly(fp_remote);
-        return NULL;
-    }
-    buf = (uint8_t*)calloc(buf_size, 1);
-    while ((l = hread(fp_remote, buf, buf_size)) > 0)
-        fwrite(buf, 1, l, fp);
-    free(buf);
-    fclose(fp);
-    if (hclose(fp_remote) != 0)
-        fprintf(stderr, "[download_from_remote] fail to close remote file %s\n", url);
-
-    return fopen(fn, "r");
+int fai_build(const char *fn) {
+    return fai_build3(fn, NULL, NULL);
 }
 
-faidx_t *fai_load(const char *fn)
+faidx_t *fai_load3(const char *fn, const char *fnfai, const char *fngzi,
+                   int flags)
 {
-    char *str;
-    FILE *fp;
-    faidx_t *fai;
-    str = (char*)calloc(strlen(fn) + 5, 1);
-    sprintf(str, "%s.fai", fn);
+    kstring_t fai_kstr = { 0, 0, NULL };
+    kstring_t gzi_kstr = { 0, 0, NULL };
+    hFILE *fp = NULL;
+    faidx_t *fai = NULL;
+    int res;
 
-    if (hisremote(str))
-    {
-        fp = download_and_open(str);
-        if ( !fp )
-        {
-            fprintf(stderr, "[fai_load] failed to open remote FASTA index %s\n", str);
-            free(str);
-            return 0;
-        }
+    if (fn == NULL)
+        return NULL;
+
+    if (fnfai == NULL) {
+        if (ksprintf(&fai_kstr, "%s.fai", fn) < 0) goto fail;
+        fnfai = fai_kstr.s;
     }
-    else
-        fp = fopen(str, "rb");
+    if (fngzi == NULL) {
+        if (ksprintf(&gzi_kstr, "%s.gzi", fn) < 0) goto fail;
+        fngzi = gzi_kstr.s;
+    }
+
+    fp = hopen(fnfai, "rb");
 
     if (fp == 0) {
-        fprintf(stderr, "[fai_load] build FASTA index.\n");
-        if (fai_build(fn) < 0) {
-            free(str);
-            return 0;
+        if (!(flags & FAI_CREATE) || errno != ENOENT) {
+            if (hts_verbose >= 1) {
+                fprintf(stderr, "[fai_load] failed to open FASTA index %s: %s\n",
+                        fnfai, strerror(errno));
+            }
+            goto fail;
         }
-        fp = fopen(str, "rb");
+
+        if (hts_verbose >= 1) {
+            fprintf(stderr, "[fai_load] build FASTA index.\n");
+        }
+        if (fai_build3(fn, fnfai, fngzi) < 0) {
+            goto fail;
+        }
+
+        fp = hopen(fnfai, "rb");
         if (fp == 0) {
-            fprintf(stderr, "[fai_load] failed to open FASTA index: %s\n", strerror(errno));
-            free(str);
-            return 0;
+            if (hts_verbose >= 1) {
+                fprintf(stderr, "[fai_load] failed to open FASTA index %s: %s\n",
+                        fnfai, strerror(errno));
+            }
+            goto fail;
         }
     }
 
-    fai = fai_read(fp, str);
-    fclose(fp);
-    free(str);
+    fai = fai_read(fp, fnfai);
     if (fai == NULL) {
-        return NULL;
+        if (hts_verbose >= 1)
+            fprintf(stderr, "[fai_load] failed to read FASTA index %s\n",
+                    fnfai);
+        goto fail;
+    }
+
+    res = hclose(fp);
+    fp = NULL;
+    if (res < 0) {
+        if (hts_verbose >= 1)
+            fprintf(stderr, "[fai_load] fail on closing FASTA index %s : %s\n",
+                    fnfai, strerror(errno));
+        goto fail;
     }
 
     fai->bgzf = bgzf_open(fn, "rb");
     if (fai->bgzf == 0) {
-        fprintf(stderr, "[fai_load] fail to open FASTA file.\n");
-        return 0;
+        if (hts_verbose >= 1)
+            fprintf(stderr, "[fai_load] fail to open FASTA file %s.\n", fn);
+        goto fail;
     }
     if ( fai->bgzf->is_compressed==1 )
     {
-        if ( bgzf_index_load(fai->bgzf, fn, ".gzi") < 0 )
+        if ( bgzf_index_load(fai->bgzf, fngzi, NULL) < 0 )
         {
-            fprintf(stderr, "[fai_load] failed to load .gzi index: %s[.gzi]\n", fn);
-            fai_destroy(fai);
-            return NULL;
+            if (hts_verbose >= 1)
+                fprintf(stderr, "[fai_load] failed to load .gzi index: %s\n",
+                        fngzi);
+            goto fail;
         }
     }
     return fai;
+
+ fail:
+    if (fai) fai_destroy(fai);
+    if (fp) hclose_abruptly(fp);
+    free(fai_kstr.s);
+    free(gzi_kstr.s);
+    return NULL;
+}
+
+faidx_t *fai_load(const char *fn)
+{
+    return fai_load3(fn, NULL, NULL, FAI_CREATE);
 }
 
 char *fai_fetch(const faidx_t *fai, const char *str, int *len)

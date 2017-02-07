@@ -1698,10 +1698,10 @@ int bgzf_index_add_block(BGZF *fp)
     return 0;
 }
 
-static inline int fwrite_uint64(uint64_t x, FILE *f)
+static inline int hwrite_uint64(uint64_t x, hFILE *f)
 {
     if (ed_is_big()) x = ed_swap_8(x);
-    if (fwrite(&x, sizeof x, 1, f) != 1) return -1;
+    if (hwrite(f, &x, sizeof(x)) != sizeof(x)) return -1;
     return 0;
 }
 
@@ -1721,12 +1721,12 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
         memcpy(tmp+blen,suffix,slen+1);
     }
 
-    FILE *idx = fopen(tmp?tmp:bname,"wb");
+    hFILE *idx = hopen(tmp?tmp:bname,"wb");
     if ( tmp ) free(tmp);
     if ( !idx ) {
         if (hts_verbose > 1)
         {
-            fprintf(stderr, "[E::%s] Error opening %s%s : %s\n",
+            fprintf(stderr, "[E::%s] Error opening %s%s for writing: %s\n",
                     __func__, bname, suffix ? suffix : "", strerror(errno));
         }
         return -1;
@@ -1737,14 +1737,14 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
     // This is not a bug.
 
     int i;
-    if (fwrite_uint64(fp->idx->noffs - 1, idx) < 0) goto fail;
+    if (hwrite_uint64(fp->idx->noffs - 1, idx) < 0) goto fail;
     for (i=1; i<fp->idx->noffs; i++)
     {
-        if (fwrite_uint64(fp->idx->offs[i].caddr, idx) < 0) goto fail;
-        if (fwrite_uint64(fp->idx->offs[i].uaddr, idx) < 0) goto fail;
+        if (hwrite_uint64(fp->idx->offs[i].caddr, idx) < 0) goto fail;
+        if (hwrite_uint64(fp->idx->offs[i].uaddr, idx) < 0) goto fail;
     }
 
-    if (fclose(idx) < 0)
+    if (hclose(idx) < 0)
     {
         if (hts_verbose > 1)
         {
@@ -1761,13 +1761,13 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
         fprintf(stderr, "[E::%s] Error writing to %s%s : %s\n",
                 __func__, bname, suffix ? suffix : "", strerror(errno));
     }
-    fclose(idx);
+    hclose_abruptly(idx);
     return -1;
 }
 
-static inline int fread_uint64(uint64_t *xptr, FILE *f)
+static inline int hread_uint64(uint64_t *xptr, hFILE *f)
 {
-    if (fread(xptr, sizeof *xptr, 1, f) != 1) return -1;
+    if (hread(f, xptr, sizeof(*xptr)) != sizeof(*xptr)) return -1;
     if (ed_is_big()) ed_swap_8p(xptr);
     return 0;
 }
@@ -1785,7 +1785,7 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
         memcpy(tmp+blen,suffix,slen+1);
     }
 
-    FILE *idx = fopen(tmp?tmp:bname,"rb");
+    hFILE *idx = hopen(tmp?tmp:bname,"rb");
     if ( tmp ) free(tmp);
     if ( !idx ) {
         if (hts_verbose > 1) {
@@ -1798,7 +1798,7 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
     fp->idx = (bgzidx_t*) calloc(1,sizeof(bgzidx_t));
     if (fp->idx == NULL) goto fail;
     uint64_t x;
-    if (fread_uint64(&x, idx) < 0) goto fail;
+    if (hread_uint64(&x, idx) < 0) goto fail;
 
     fp->idx->noffs = fp->idx->moffs = x + 1;
     fp->idx->offs  = (bgzidx1_t*) malloc(fp->idx->moffs*sizeof(bgzidx1_t));
@@ -1808,11 +1808,14 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
     int i;
     for (i=1; i<fp->idx->noffs; i++)
     {
-        if (fread_uint64(&fp->idx->offs[i].caddr, idx) < 0) goto fail;
-        if (fread_uint64(&fp->idx->offs[i].uaddr, idx) < 0) goto fail;
+        if (hread_uint64(&fp->idx->offs[i].caddr, idx) < 0) goto fail;
+        if (hread_uint64(&fp->idx->offs[i].uaddr, idx) < 0) goto fail;
     }
 
-    if (fclose(idx) != 0) goto fail;
+    if (hclose(idx) != 0) {
+        idx = NULL;
+        goto fail;
+    }
     return 0;
 
  fail:
@@ -1821,7 +1824,7 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
         fprintf(stderr, "[E::%s] Error reading %s%s : %s\n",
                 __func__, bname, suffix ? suffix : "", strerror(errno));
     }
-    fclose(idx);
+    if (idx) hclose_abruptly(idx);
     if (fp->idx) {
         free(fp->idx->offs);
         free(fp->idx);
