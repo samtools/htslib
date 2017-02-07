@@ -37,6 +37,7 @@ lib*.so.*
 /test/test-vcf-api
 /test/test-vcf-sweep
 /test/test_view
+/test/thrash_threads[1-6]
 /test/*.tmp
 /test/*.tmp.*
 

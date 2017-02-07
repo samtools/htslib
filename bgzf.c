@@ -2,7 +2,7 @@
 
    Copyright (c) 2008 Broad Institute / Massachusetts Institute of Technology
                  2011, 2012 Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2009, 2013-2016 Genome Research Ltd
+   Copyright (C) 2009, 2013-2017 Genome Research Ltd
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -635,12 +635,16 @@ int bgzf_read_block(BGZF *fp)
             return 0;
         }
         r = hts_tpool_next_result_wait(fp->mt->out_queue);
-        bgzf_job *j = (bgzf_job *)hts_tpool_result_data(r);
-        assert(j);
+        bgzf_job *j = r ? (bgzf_job *)hts_tpool_result_data(r) : NULL;
 
-        if (j->errcode == BGZF_ERR_MT) {
+        if (!j || j->errcode == BGZF_ERR_MT) {
             mt_destroy(fp->mt);
             fp->mt = NULL;
+            fp->uncompressed_block = malloc(2 * BGZF_MAX_BLOCK_SIZE);
+            if (fp->uncompressed_block == NULL) return -1;
+            fp->compressed_block = (char *)fp->uncompressed_block + BGZF_MAX_BLOCK_SIZE;
+            hts_tpool_delete_result(r, 0);
+
             goto single_threaded;
         }
 
@@ -663,6 +667,7 @@ int bgzf_read_block(BGZF *fp)
         // trying again to see if we hit a genuine EOF.
         if (!j->hit_eof && j->uncomp_len == 0) {
             fp->last_block_eof = 1;
+            hts_tpool_delete_result(r, 0);
             goto again;
         }
 
@@ -953,7 +958,7 @@ static void *bgzf_mt_writer(void *vp) {
 
         if (hwrite(fp->fp, j->comp_data, j->comp_len) != j->comp_len) {
             fp->errcode |= BGZF_ERR_IO;
-            return (void *)-1;
+            goto err;
         }
 
         /*
@@ -967,7 +972,7 @@ static void *bgzf_mt_writer(void *vp) {
          */
         if (++mt->flush_pending % 512 == 0)
             if (hflush(fp->fp) != 0)
-                return (void *)-1;
+                goto err;
 
 
         hts_tpool_delete_result(r, 0);
@@ -980,9 +985,15 @@ static void *bgzf_mt_writer(void *vp) {
     }
 
     if (hflush(fp->fp) != 0)
-        return (void *)-1;
+        goto err;
+
+    hts_tpool_process_destroy(mt->out_queue);
 
     return NULL;
+
+ err:
+    hts_tpool_process_destroy(mt->out_queue);
+    return (void *)-1;
 }
 
 
@@ -1127,6 +1138,7 @@ restart:
         case CLOSE:
             pthread_cond_signal(&mt->command_c);
             pthread_mutex_unlock(&mt->command_m);
+            hts_tpool_process_destroy(mt->out_queue);
             pthread_exit(NULL);
 
         default:
@@ -1147,6 +1159,7 @@ restart:
         // Attempt to multi-thread decode a raw gzip stream cannot be done.
         // We tear down the multi-threaded decoder and revert to the old code.
         hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
+        hts_tpool_process_ref_decr(mt->out_queue);
         pthread_exit(&j->errcode);
     }
 
@@ -1156,8 +1169,10 @@ restart:
 
     j->hit_eof = 1;
     hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
-    if (j->errcode != 0)
+    if (j->errcode != 0) {
+        hts_tpool_process_destroy(mt->out_queue);
         pthread_exit(&j->errcode);
+    }
 
     // We hit EOF so can stop reading, but we may get a subsequent
     // seek request.  In this case we need to restart the reader.
@@ -1186,6 +1201,7 @@ restart:
         case CLOSE:
             pthread_cond_signal(&mt->command_c);
             pthread_mutex_unlock(&mt->command_m);
+            hts_tpool_process_destroy(mt->out_queue);
             pthread_exit(NULL);
         }
     }
@@ -1209,6 +1225,7 @@ int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
         free(mt);
         return -1;
     }
+    hts_tpool_process_ref_incr(mt->out_queue);
 
     mt->job_pool = pool_create(sizeof(bgzf_job));
 
@@ -1234,6 +1251,12 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
     hts_tpool *p = hts_tpool_init(n_threads);
     if (!p)
         return -1;
+
+    if (!fp->is_write) {
+        free(fp->uncompressed_block);
+        fp->uncompressed_block = NULL;
+        fp->compressed_block = NULL;
+    }
 
     if (bgzf_thread_pool(fp, p, 0) != 0) {
         hts_tpool_destroy(p);
@@ -1262,10 +1285,11 @@ static void mt_destroy(mtaux_t *mt)
     pthread_cond_destroy(&mt->command_c);
     if (mt->curr_job)
         pool_free(mt->job_pool, mt->curr_job);
-    pool_destroy(mt->job_pool);
 
     if (mt->own_pool)
         hts_tpool_destroy(mt->pool);
+
+    pool_destroy(mt->job_pool);
 
     free(mt);
     fflush(stderr);
@@ -1510,7 +1534,7 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
     int block_offset;
     int64_t block_address;
 
-    if (fp->is_write || where != SEEK_SET) {
+    if (fp->is_write || where != SEEK_SET || fp->is_gzip) {
         fp->errcode |= BGZF_ERR_MISUSE;
         return -1;
     }
