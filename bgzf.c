@@ -397,7 +397,7 @@ static int bgzf_gzip_compress(BGZF *fp, void *_dst, size_t *dlen, const void *sr
 {
     uint8_t *dst = (uint8_t*)_dst;
     z_stream *zs = fp->gz_stream;
-    int flush = slen ? Z_NO_FLUSH : Z_FINISH;
+    int flush = slen ? Z_PARTIAL_FLUSH : Z_FINISH;
     zs->next_in   = (Bytef*)src;
     zs->avail_in  = slen;
     zs->next_out  = dst;
@@ -407,6 +407,13 @@ static int bgzf_gzip_compress(BGZF *fp, void *_dst, size_t *dlen, const void *sr
         if (hts_verbose >= 1) {
             fprintf(stderr, "[E::%s] deflate failed: %s\n",
                     __func__, bgzf_zerr(ret, NULL));
+        }
+        return -1;
+    }
+    if (zs->avail_in != 0) {
+        if (hts_verbose >= 1) {
+            fprintf(stderr, "[E::%s] deflate block too large for output buffer:\n",
+                    __func__);
         }
         return -1;
     }
