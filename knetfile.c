@@ -466,7 +466,8 @@ knetFile *knet_open(const char *fn, const char *mode)
 {
 	knetFile *fp = 0;
 	if (mode[0] != 'r') {
-		fprintf(stderr, "[kftp_open] only mode \"r\" is supported.\n");
+		fprintf(stderr, "[knet_open] only mode \"r\" is supported.\n");
+		errno = ENOTSUP;
 		return 0;
 	}
 	if (strstr(fn, "ftp://") == fn) {
