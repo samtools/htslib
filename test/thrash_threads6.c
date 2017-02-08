@@ -67,10 +67,9 @@ int main(int argc, char *argv[]) {
     for (i = 0; i < 1000; i++) {
         printf("i=%d\t", i);
         fpin  = bgzf_open(argv[1], "r");
-        bgzf_mt(fpin, 8, 256);
-        int j, eof = 0;
+        int j, eof = 0, mt = 0;
         for (j = 0; j < 80; j++) {
-            int n = rand() % 6;
+            int n = rand() % 7;
             putchar('0'+n); fflush(stdout);
             switch (n) {
             case 0: // start
@@ -92,6 +91,11 @@ int main(int argc, char *argv[]) {
             }
             case 5:
                 usleep(N);
+                break;
+            case 6:
+                if (!mt)
+                    bgzf_mt(fpin, 8, 256);
+                mt = 1;
                 break;
             }
         }

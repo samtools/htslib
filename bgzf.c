@@ -645,11 +645,13 @@ int bgzf_read_block(BGZF *fp)
         bgzf_job *j = r ? (bgzf_job *)hts_tpool_result_data(r) : NULL;
 
         if (!j || j->errcode == BGZF_ERR_MT) {
+            if (!fp->mt->free_block) {
+                fp->uncompressed_block = malloc(2 * BGZF_MAX_BLOCK_SIZE);
+                if (fp->uncompressed_block == NULL) return -1;
+                fp->compressed_block = (char *)fp->uncompressed_block + BGZF_MAX_BLOCK_SIZE;
+            } // else it's already allocated with malloc, maybe even in-use.
             mt_destroy(fp->mt);
             fp->mt = NULL;
-            fp->uncompressed_block = malloc(2 * BGZF_MAX_BLOCK_SIZE);
-            if (fp->uncompressed_block == NULL) return -1;
-            fp->compressed_block = (char *)fp->uncompressed_block + BGZF_MAX_BLOCK_SIZE;
             hts_tpool_delete_result(r, 0);
 
             goto single_threaded;
@@ -1241,7 +1243,7 @@ int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
     pthread_cond_init(&mt->command_c, NULL);
     mt->flush_pending = 0;
     mt->jobs_pending = 0;
-    mt->free_block = fp->uncompressed_block;
+    mt->free_block = fp->uncompressed_block; // currently in-use block
     pthread_create(&mt->io_task, NULL,
                    fp->is_write ? bgzf_mt_writer : bgzf_mt_reader, fp);
 
@@ -1251,19 +1253,13 @@ int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
 int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
 {
     // No gain from multi-threading when not compressed
-    if (!fp->is_compressed)
+    if (!fp->is_compressed || fp->is_gzip)
         return 0;
 
     if (n_threads < 1) return -1;
     hts_tpool *p = hts_tpool_init(n_threads);
     if (!p)
         return -1;
-
-    if (!fp->is_write) {
-        free(fp->uncompressed_block);
-        fp->uncompressed_block = NULL;
-        fp->compressed_block = NULL;
-    }
 
     if (bgzf_thread_pool(fp, p, 0) != 0) {
         hts_tpool_destroy(p);
@@ -1487,9 +1483,9 @@ int bgzf_close(BGZF* fp)
     }
 #ifdef BGZF_MT
     if (fp->mt) {
-        mt_destroy(fp->mt);
-        if (!fp->is_write)
+        if (!fp->mt->free_block)
             fp->uncompressed_block = NULL;
+        mt_destroy(fp->mt);
     }
 #endif
     if ( fp->is_gzip )

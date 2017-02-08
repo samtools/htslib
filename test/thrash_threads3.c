@@ -30,7 +30,7 @@ DEALINGS IN THE SOFTWARE.
 #include "htslib/bgzf.h"
 
 int main(int argc, char *argv[]) {
-    char buf[1000];
+    char buf[1000000];
     int i;
 
     if (argc <= 1) {
@@ -41,8 +41,9 @@ int main(int argc, char *argv[]) {
     for (i = 0; i < 10000; i++) {
         printf("i=%d\n", i);
         BGZF *fpin  = bgzf_open(argv[1], "r");
+        if (bgzf_read(fpin, buf, i*10) < 0) abort();
         bgzf_mt(fpin, 8, 256);
-        if (bgzf_read(fpin, buf, 1000) < 0) abort();
+        if (bgzf_read(fpin, buf, i*10) < 0) abort();
         if (bgzf_close(fpin) < 0) abort();
     }
     return 0;
