@@ -355,6 +355,16 @@ typedef struct __kstring_t {
     int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix);
 
     /**
+     * Load BGZF index from a file handle
+     *
+     * @param fp          BGZF file handler
+     * @param idx         Filehandle for index file
+     *
+     * Returns 0 on success and -1 on error.
+     */
+    int bgzf_index_load_fh(BGZF *fp, FILE *idx);
+
+    /**
      * Save BGZF index
      *
      * @param fp          BGZF file handler
