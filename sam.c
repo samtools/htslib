@@ -1372,6 +1372,7 @@ static inline uint8_t *skip_aux(uint8_t *s)
         s += 4;
         return s + size * n;
     case 0:
+        fprintf(stderr, "[E::%s] Invalid aux section in BAM record.\n", __func__);
         abort();
         break;
     default:
