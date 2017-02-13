@@ -33,6 +33,8 @@ lib*.so.*
 /test/hfile
 /test/hts_endian
 /test/sam
+/test/tabix/*.tmp.*
+/test/tabix/FAIL*
 /test/test_bgzf
 /test/test-regidx
 /test/test-vcf-api

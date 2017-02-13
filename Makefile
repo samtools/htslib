@@ -353,6 +353,7 @@ check test: bgzip htsfile $(BUILT_TEST_PROGRAMS)
 	test/fieldarith test/fieldarith.sam
 	test/hfile
 	test/test_bgzf test/bgziptest.txt
+	cd test/tabix && ./test-tabix.sh tabix.tst
 	REF_PATH=: test/sam test/ce.fa test/faidx.fa
 	test/test-regidx
 	cd test && REF_PATH=: ./test.pl
@@ -459,7 +460,7 @@ htslib-uninstalled.pc: htslib.pc.in
 
 
 testclean:
-	-rm -f test/*.tmp test/*.tmp.*
+	-rm -f test/*.tmp test/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL*
 
 mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h
