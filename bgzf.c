@@ -1141,7 +1141,6 @@ restart:
 
         case HAS_EOF:
             bgzf_mt_eof(fp);
-            pthread_mutex_unlock(&mt->command_m);
             break;
 
         case CLOSE:
