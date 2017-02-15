@@ -385,7 +385,11 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
 /// Return a pointer to an aux record
 /** @param b   Pointer to the bam record
     @param tag Desired aux tag
-    @return Pointer to the tag data, or NULL if tag is not present
+    @return Pointer to the tag data, or NULL if tag is not present or on error
+    If the tag is not present, this function returns NULL and sets errno to
+    ENOENT.  If the bam record's aux data is corrupt (either a tag has an
+    invalid type, or the last record is incomplete) then errno is set to
+    EINVAL and NULL is returned.
  */
 uint8_t *bam_aux_get(const bam1_t *b, const char tag[2]);
 
@@ -455,14 +459,17 @@ double bam_auxB2f(const uint8_t *s, uint32_t idx);
    @param data The data to append
    @return 0 on success; -1 on failure.
 If there is not enough space to store the additional tag, errno is set to
-ENOMEM.  If the type is invalid, errno may be set to EINVAL.
+ENOMEM.  If the type is invalid, errno may be set to EINVAL.  errno is
+also set to EINVAL if the bam record's aux data is corrupt.
 */
 int bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8_t *data);
 
 /// Delete tag data from a bam record
 /* @param b The bam record to update
    @param s Pointer to the tag to delete, as returned by bam_aux_get().
-   @return 0
+   @return 0 on success; -1 on failure
+   If the bam record's aux data is corrupt, errno is set to EINVAL and this
+   function returns -1;
 */
 int bam_aux_del(bam1_t *b, uint8_t *s);
 

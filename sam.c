@@ -1357,40 +1357,66 @@ int bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8
     return -1;
 }
 
-static inline uint8_t *skip_aux(uint8_t *s)
+static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end)
 {
-    int size = aux_type2size(*s); ++s; // skip type
+    int size;
     uint32_t n;
+    if (s >= end) return end;
+    size = aux_type2size(*s); ++s; // skip type
     switch (size) {
     case 'Z':
     case 'H':
-        while (*s) ++s;
-        return s + 1;
+        while (*s && s < end) ++s;
+        return s < end ? s + 1 : end;
     case 'B':
+        if (end - s < 5) return NULL;
         size = aux_type2size(*s); ++s;
         n = le_to_u32(s);
         s += 4;
+        if (size == 0 || end - s < size * n) return NULL;
         return s + size * n;
     case 0:
-        abort();
-        break;
+        return NULL;
     default:
+        if (end - s < size) return NULL;
         return s + size;
     }
 }
 
 uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
 {
-    uint8_t *s;
-    int y = tag[0]<<8 | tag[1];
+    uint8_t *s, *end, *t = (uint8_t *) tag;
+    uint16_t y = (uint16_t) t[0]<<8 | t[1];
     s = bam_get_aux(b);
-    while (s < b->data + b->l_data) {
-        int x = (int)s[0]<<8 | s[1];
+    end = b->data + b->l_data;
+    while (s != NULL && end - s >= 3) {
+        uint16_t x = (uint16_t) s[0]<<8 | s[1];
         s += 2;
-        if (x == y) return s;
-        s = skip_aux(s);
+        if (x == y) {
+            // Check the tag value is valid and complete
+            uint8_t *e = skip_aux(s, end);
+            if ((*s == 'Z' || *s == 'H') && *(e - 1) != '\0') {
+                goto bad_aux;  // Unterminated string
+            }
+            if (e != NULL) {
+                return s;
+            } else {
+                goto bad_aux;
+            }
+        }
+        s = skip_aux(s, end);
     }
-    return 0;
+    if (s == NULL) goto bad_aux;
+    errno = ENOENT;
+    return NULL;
+
+ bad_aux:
+    if (hts_verbose >= 1) {
+        fprintf(stderr, "[E::%s] Corrupted aux data for read %s\n",
+                __func__, bam_get_qname(b));
+    }
+    errno = EINVAL;
+    return NULL;
 }
 // s MUST BE returned by bam_aux_get()
 int bam_aux_del(bam1_t *b, uint8_t *s)
@@ -1399,17 +1425,32 @@ int bam_aux_del(bam1_t *b, uint8_t *s)
     int l_aux = bam_get_l_aux(b);
     aux = bam_get_aux(b);
     p = s - 2;
-    s = skip_aux(s);
+    s = skip_aux(s, aux + l_aux);
+    if (s == NULL) goto bad_aux;
     memmove(p, s, l_aux - (s - aux));
     b->l_data -= s - p;
     return 0;
+
+ bad_aux:
+    if (hts_verbose >= 1) {
+        fprintf(stderr, "[E::%s] Corrupted aux data for read %s\n",
+                __func__, bam_get_qname(b));
+    }
+    errno = EINVAL;
+    return -1;
 }
 
 int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data)
 {
     // FIXME: This is not at all efficient!
     uint8_t *s = bam_aux_get(b,tag);
-    if (!s) return bam_aux_append(b, tag, 'Z', len, (const uint8_t *) data);
+    if (!s) {
+        if (errno == ENOENT) {  // Tag doesn't exist - add a new one
+            return bam_aux_append(b, tag, 'Z', len, (const uint8_t *) data);
+        } else { // Invalid aux data, give up.
+            return -1;
+        }
+    }
     char type = *s;
     if (type != 'Z') {
         if (hts_verbose > 1) {
