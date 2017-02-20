@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <assert.h>
 
 #include "htslib/hts.h"
 #include "htslib/bgzf.h"
@@ -2002,7 +2003,11 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
     for (i = n_off = 0; i < iter->bins.n; ++i)
         if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx))
             n_off += kh_value(bidx, k).n;
-    if (n_off == 0) return iter;
+    if (n_off == 0) {
+        // No overlapping bins means the iterator has already finished.
+        iter->finished = 1;
+        return iter;
+    }
     off = (hts_pair64_t*)calloc(n_off, sizeof(hts_pair64_t));
     for (i = n_off = 0; i < iter->bins.n; ++i) {
         if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
@@ -2014,7 +2019,9 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
         }
     }
     if (n_off == 0) {
-        free(off); return iter;
+        free(off);
+        iter->finished = 1;
+        return iter;
     }
     ks_introsort(_off, n_off, off);
     // resolve completely contained adjacent blocks
@@ -2153,7 +2160,8 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
         iter->curr_end = end;
         return ret;
     }
-    if (iter->off == 0) return -1;
+    // A NULL iter->off should always be accompanied by iter->finished.
+    assert(iter->off != NULL);
     for (;;) {
         if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
             if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
