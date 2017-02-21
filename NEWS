@@ -9,8 +9,12 @@ Noteworthy changes in release 1.4
   - the various tbx_conf_* presets are now const
   - auxiliary fields in bam1_t are now always stored in little-endian byte
     order (previously this depended on if you read a bam, sam or cram file)
+  - index metadata (accessible via hts_idx_get_meta()) is now always
+    stored in little-endian byte order (previously this depended on if
+    the index was in tbi or csi format)
   - bam_aux2i() now returns an int64_t value
   - fai_load() will no longer save local copies of remote fasta indexes
+  - hts_idx_get_meta() now takes a uint32_t * for l_meta (was int32_t *)
 
 * New errmod_cal(), probaln_glocal(), sam_cap_mapq(), and sam_prob_realn()
   functions, previously internal to SAMtools, have been added to HTSlib.

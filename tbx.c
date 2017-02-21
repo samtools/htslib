@@ -1,6 +1,6 @@
 /*  tbx.c -- tabix API functions.
 
-    Copyright (C) 2009, 2010, 2012-2015 Genome Research Ltd.
+    Copyright (C) 2009, 2010, 2012-2015, 2017 Genome Research Ltd.
     Copyright (C) 2010-2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -29,8 +29,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+#include <errno.h>
 #include "htslib/tbx.h"
 #include "htslib/bgzf.h"
+#include "htslib/hts_endian.h"
 #include "hts_internal.h"
 
 #include "htslib/khash.h"
@@ -57,9 +59,17 @@ static inline int get_tid(tbx_t *tbx, const char *ss, int is_add)
     if (is_add) {
         int absent;
         k = kh_put(s2i, d, ss, &absent);
-        if (absent) {
-            kh_key(d, k) = strdup(ss);
-            kh_val(d, k) = kh_size(d) - 1;
+        if (absent < 0) {
+            return -1; // Out of memory
+        } else if (absent) {
+            char *ss_dup = strdup(ss);
+            if (ss_dup) {
+                kh_key(d, k) = ss_dup;
+                kh_val(d, k) = kh_size(d) - 1;
+            } else {
+                kh_del(s2i, d, k);
+                return -1; // Out of memory
+            }
         }
     } else k = kh_get(s2i, d, ss);
     return k == kh_end(d)? -1 : kh_val(d, k);
@@ -283,8 +293,7 @@ tbx_t *tbx_index_load2(const char *fn, const char *fnidx)
     tbx_t *tbx;
     uint8_t *meta;
     char *nm, *p;
-    uint32_t x[7];
-    int l_meta, l_nm;
+    uint32_t l_meta, l_nm;
     tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
     tbx->idx = fnidx? hts_idx_load2(fn, fnidx) : hts_idx_load(fn, HTS_FMT_TBI);
     if ( !tbx->idx )
@@ -293,17 +302,37 @@ tbx_t *tbx_index_load2(const char *fn, const char *fnidx)
         return NULL;
     }
     meta = hts_idx_get_meta(tbx->idx, &l_meta);
-    if ( !meta )
-    {
-        free(tbx);
-        return NULL;
-    }
-    memcpy(x, meta, 28);
-    memcpy(&tbx->conf, x, 24);
+    if ( !meta || l_meta < 28) goto invalid;
+
+    tbx->conf.preset = le_to_i32(&meta[0]);
+    tbx->conf.sc = le_to_i32(&meta[4]);
+    tbx->conf.bc = le_to_i32(&meta[8]);
+    tbx->conf.ec = le_to_i32(&meta[12]);
+    tbx->conf.meta_char = le_to_i32(&meta[16]);
+    tbx->conf.line_skip = le_to_i32(&meta[20]);
+    l_nm = le_to_u32(&meta[24]);
+    if (l_nm > l_meta - 28) goto invalid;
+
     p = nm = (char*)meta + 28;
-    l_nm = x[6];
-    for (; p - nm < l_nm; p += strlen(p) + 1) get_tid(tbx, p, 1);
+    // This assumes meta is NUL-terminated, so we can merrily strlen away.
+    // hts_idx_load_local() assures this for us by adding a NUL on the end
+    // of whatever it reads.
+    for (; p - nm < l_nm; p += strlen(p) + 1) {
+        if (get_tid(tbx, p, 1) < 0) {
+            fprintf(stderr, "[E::%s] %s\n", __func__, strerror(errno));
+            goto fail;
+        }
+    }
     return tbx;
+
+ invalid:
+    if (hts_verbose >= 1) {
+        fprintf(stderr, "[E::%s] Invalid index header for %s\n",
+                __func__, fnidx ? fnidx : fn);
+    }
+ fail:
+    tbx_destroy(tbx);
+    return NULL;
 }
 
 tbx_t *tbx_index_load(const char *fn)
