@@ -2623,6 +2623,7 @@ int bcf_index_build3(const char *fn, const char *fnidx, int min_shift, int n_thr
             idx = bcf_index(fp, min_shift);
             if (idx) {
                 ret = hts_idx_save_as(idx, fn, fnidx, HTS_FMT_CSI);
+                if (ret < 0) ret = -4;
                 hts_idx_destroy(idx);
             }
             else ret = -1;
@@ -2632,6 +2633,7 @@ int bcf_index_build3(const char *fn, const char *fnidx, int min_shift, int n_thr
             tbx = tbx_index(hts_get_bgzfp(fp), min_shift, &tbx_conf_vcf);
             if (tbx) {
                 ret = hts_idx_save_as(tbx->idx, fn, fnidx, min_shift > 0 ? HTS_FMT_CSI : HTS_FMT_TBI);
+                if (ret < 0) ret = -4;
                 tbx_destroy(tbx);
             }
             else ret = -1;

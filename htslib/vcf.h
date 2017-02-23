@@ -809,6 +809,7 @@ typedef struct {
      *      -1 .. indexing failed
      *      -2 .. opening @fn failed
      *      -3 .. format not indexable
+     *      -4 .. failed to create and/or save the index
      */
     int bcf_index_build(const char *fn, int min_shift);
 
@@ -824,6 +825,7 @@ typedef struct {
      *      -1 .. indexing failed
      *      -2 .. opening @fn failed
      *      -3 .. format not indexable
+     *      -4 .. failed to create and/or save the index
      */
     int bcf_index_build2(const char *fn, const char *fnidx, int min_shift);
 
@@ -840,6 +842,7 @@ typedef struct {
      *      -1 .. indexing failed
      *      -2 .. opening @fn failed
      *      -3 .. format not indexable
+     *      -4 .. failed to create and/or save the index
      */
      int bcf_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads);
 
