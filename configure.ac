@@ -159,12 +159,16 @@ Either configure with --disable-plugins or resolve this error to build HTSlib.])
                      [Platform-dependent plugin filename extension.])
 fi
 
-save_LIBS=$LIBS
+AC_SEARCH_LIBS([log], [m], [],
+  [AC_MSG_ERROR([log() not found
+
+HTSLIB requires a working floating-point math library.
+FAILED.  This error must be resolved in order to build HTSlib successfully.])])
+
 zlib_devel=ok
 dnl Set a trivial non-empty INCLUDES to avoid excess default includes tests
 AC_CHECK_HEADER([zlib.h], [], [zlib_devel=missing], [;])
 AC_CHECK_LIB(z, inflate,  [], [zlib_devel=missing])
-LIBS=$save_LIBS
 
 if test $zlib_devel != ok; then
   AC_MSG_ERROR([zlib development files not found

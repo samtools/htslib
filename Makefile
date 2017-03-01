@@ -34,7 +34,7 @@ CPPFLAGS =
 CFLAGS   = -g -Wall -O2
 EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
-LIBS     =
+LIBS     = $(htslib_default_libs)
 
 prefix      = /usr/local
 exec_prefix = $(prefix)
@@ -247,7 +247,7 @@ print-config:
 # file used at runtime (when $LD_LIBRARY_PATH includes the build directory).
 
 libhts.so: $(LIBHTS_OBJS:.o=.pico)
-	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) -pthread $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) -lz -lm $(LIBS)
+	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) -pthread $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LIBS)
 	ln -sf $@ libhts.so.$(LIBHTS_SOVERSION)
 
 # Similarly this also creates libhts.NN.dylib as a byproduct, so that programs
@@ -255,11 +255,11 @@ libhts.so: $(LIBHTS_OBJS:.o=.pico)
 # includes this project's build directory).
 
 libhts.dylib: $(LIBHTS_OBJS)
-	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) -lz $(LIBS)
+	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) $(LIBS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 cyghts-$(LIBHTS_SOVERSION).dll: $(LIBHTS_OBJS)
-	$(CC) -shared -Wl,--out-implib=libhts.dll.a -Wl,--export-all-symbols -Wl,--enable-auto-import -pthread $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive -lz -lm $(LIBS)
+	$(CC) -shared -Wl,--out-implib=libhts.dll.a -Wl,--export-all-symbols -Wl,--enable-auto-import -pthread $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS)
 
 
 .pico.so:
@@ -319,13 +319,13 @@ cram/zfio.o cram/zfio.pico: cram/zfio.c config.h cram/os.h cram/zfio.h
 
 
 bgzip: bgzip.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ bgzip.o libhts.a -lz $(LIBS)
+	$(CC) -pthread $(LDFLAGS) -o $@ bgzip.o libhts.a $(LIBS)
 
 htsfile: htsfile.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ htsfile.o libhts.a -lz $(LIBS)
+	$(CC) -pthread $(LDFLAGS) -o $@ htsfile.o libhts.a $(LIBS)
 
 tabix: tabix.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ tabix.o libhts.a -lz $(LIBS)
+	$(CC) -pthread $(LDFLAGS) -o $@ tabix.o libhts.a $(LIBS)
 
 bgzip.o: bgzip.c config.h $(htslib_bgzf_h) $(htslib_hts_h)
 htsfile.o: htsfile.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
@@ -342,25 +342,25 @@ check test: bgzip htsfile $(BUILT_TEST_PROGRAMS)
 	cd test && REF_PATH=: ./test.pl
 
 test/fieldarith: test/fieldarith.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/fieldarith.o libhts.a -lz $(LIBS)
+	$(CC) -pthread $(LDFLAGS) -o $@ test/fieldarith.o libhts.a $(LIBS)
 
 test/hfile: test/hfile.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/hfile.o libhts.a -lz $(LIBS)
+	$(CC) -pthread $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LIBS)
 
 test/sam: test/sam.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/sam.o libhts.a -lz $(LIBS)
+	$(CC) -pthread $(LDFLAGS) -o $@ test/sam.o libhts.a $(LIBS)
 
 test/test-regidx: test/test-regidx.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/test-regidx.o libhts.a -lz $(LIBS)
+	$(CC) -pthread $(LDFLAGS) -o $@ test/test-regidx.o libhts.a $(LIBS)
 
 test/test_view: test/test_view.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/test_view.o libhts.a -lz $(LIBS)
+	$(CC) -pthread $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LIBS)
 
 test/test-vcf-api: test/test-vcf-api.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-api.o libhts.a -lz $(LIBS)
+	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-api.o libhts.a $(LIBS)
 
 test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a -lz $(LIBS)
+	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LIBS)
 
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h)
