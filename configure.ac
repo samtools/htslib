@@ -57,7 +57,7 @@ m4_ifdef([PKG_PROG_PKG_CONFIG], [PKG_PROG_PKG_CONFIG], [PKG_CONFIG=""])
 need_crypto=no
 pc_requires=
 static_LDFLAGS=
-static_LIBS=
+static_LIBS='-lz -lm'
 private_LIBS=
 
 AC_ARG_ENABLE([bz2],
@@ -250,6 +250,12 @@ or Cygwin) is installed.
 Either configure with --disable-libcurl or resolve this error to build HTSlib.])
        ;;
      esac])
+dnl -lcurl is only needed for static linking if hfile_libcurl is not a plugin
+  if test "$libcurl" = enabled ; then
+    if test "$enable_plugins" != yes ; then
+      static_LIBS="$static_LIBS -lcurl"
+    fi
+  fi
 fi
 AC_SUBST([libcurl])
 
@@ -312,6 +318,10 @@ distributions or Cygwin) is installed.
 
 Either configure with --disable-libcurl or resolve this error to build HTSlib.])])
      LIBS=$save_LIBS])
+dnl Only need to add to static_LIBS if not building as a plugin
+  if test "$enable_plugins" != yes ; then
+     static_LIBS="$static_LIBS $CRYPTO_LIBS"
+  fi
 fi
 AC_SUBST([CRYPTO_LIBS])
 
