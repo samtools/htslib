@@ -26,6 +26,9 @@ CC     = gcc
 AR     = ar
 RANLIB = ranlib
 
+# Default libraries to link if configure is not used
+htslib_default_libs = -lz -lm
+
 CPPFLAGS =
 # TODO: probably update cram code to make it compile cleanly with -Wc++-compat
 CFLAGS   = -g -Wall -O2
@@ -195,7 +198,13 @@ config.h:
 # on htslib.pc.in listed, as if that file is newer the usual way to regenerate
 # this target is via configure or config.status rather than this rule.
 htslib.pc.tmp:
-	sed -e 's#@[^-][^@]*@##g' htslib.pc.in > $@
+	sed -e '/^static_libs=/s/@static_LIBS@/$(htslib_default_libs)/;s#@[^-][^@]*@##g' htslib.pc.in > $@
+
+# Create a makefile fragment listing the libraries and LDFLAGS needed for
+# static linking.  This can be included by projects that want to build
+# and link against the htslib source tree instead of an installed library.
+htslib_static.mk: htslib.pc.tmp
+	sed -n '/^static_libs=/s/[^=]*=/HTSLIB_static_LIBS = /p;/^static_ldflags=/s/[^=]*=/HTSLIB_static_LDFLAGS = /p' ../htslib/htslib.pc.tmp > $@
 
 
 lib-static: libhts.a
@@ -415,7 +424,7 @@ clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 
 distclean maintainer-clean: clean
 	-rm -f config.cache config.h config.log config.mk config.status
-	-rm -f TAGS *.pc.tmp *-uninstalled.pc
+	-rm -f TAGS *.pc.tmp *-uninstalled.pc htslib_static.mk
 
 clean-so:
 	-rm -f libhts.so libhts.so.*
