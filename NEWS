@@ -16,6 +16,11 @@ Noteworthy changes in release 1.4
   - fai_load() will no longer save local copies of remote fasta indexes
   - hts_idx_get_meta() now takes a uint32_t * for l_meta (was int32_t *)
 
+* Added a thread pool interface and replaced the bgzf multi-threading
+  code to use this pool.  BAM and CRAM decoding is now multi-threaded
+  too, using the pool to automatically balance the number of threads
+  between decode, encode and any data processing jobs.
+
 * New errmod_cal(), probaln_glocal(), sam_cap_mapq(), and sam_prob_realn()
   functions, previously internal to SAMtools, have been added to HTSlib.
 
