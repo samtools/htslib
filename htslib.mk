@@ -160,6 +160,12 @@ $(HTSDIR)/htsfile: $(HTSDIR)/htsfile.c $(HTSLIB_PUBLIC_HEADERS)
 $(HTSDIR)/tabix: $(HTSDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS)
 	+cd $(HTSDIR) && $(MAKE) tabix
 
+$(HTSDIR)/htslib_static.mk: $(HTSDIR)/htslib.pc.tmp
+	+cd $(HTSDIR) && $(MAKE) htslib_static.mk
+
+$(HTSDIR)/htslib.pc.tmp:
+	+cd $(HTSDIR) && $(MAKE) htslib.pc.tmp
+
 # Rules for phony targets.  You may wish to have your corresponding phony
 # targets invoke these in addition to their own recipes:
 #

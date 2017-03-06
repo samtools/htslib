@@ -2,6 +2,7 @@
 *.pico
 *.dSYM
 *.exe
+*.pc.tmp
 *-uninstalled.pc
 /version.h
 
@@ -18,6 +19,8 @@ hfile_*.bundle
 hfile_*.cygdll
 hfile_*.dll
 hfile_*.so
+
+htslib_static.mk
 
 cyg*.dll
 lib*.a
