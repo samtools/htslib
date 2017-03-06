@@ -2,6 +2,7 @@ Noteworthy changes in release 1.4
 
 * Incompatible changes: several functions and data types have been changed
   in this release, and the shared library soversion has been bumped to 2.
+
   - bam_pileup1_t has an additional field (which holds user data)
   - bam1_core_t has been modified to allow for >64K CIGAR operations
     and (along with bam1_t) so that CIGAR entries are aligned in memory
@@ -69,6 +70,18 @@ Noteworthy changes in release 1.4
   to index chromosomes longer than 2^29 bases with a .bai or .tbi index
   will report an error instead of apparantly working but creating an invalid
   index entry.
+
+* VCF formatting is now approximately 4x faster.  (Whether this is
+  noticable depends on what was creating the VCF.)
+
+* CRAM lossy_names mode now works with TLEN of 0 or TLEN within +/- 1
+  of the computed value.  Note in these situations TLEN will be
+  generated / fixed during CRAM decode.
+
+* CRAM now supports bzip2 and lzma codecs.  Within htslib these are
+  disabled by default, but can be enabled by specifying "use_bzip2" or
+  "use_lzma" in an hts_opt_add() call or via the mode string of the
+  hts_open_format() function.
 
 Noteworthy changes in release 1.3.2  (13 September 2016)
 
