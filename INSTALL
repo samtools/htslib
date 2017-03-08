@@ -1,3 +1,67 @@
+                    Building and Installing HTSlib
+                    ==============================
+
+Requirements
+============
+
+Building HTSlib requires a few programs and libraries to be present.
+At least the following are required:
+
+    GNU make
+    C compiler (e.g. gcc or clang)
+
+In addition, building the configure script requires:
+
+    autoheader
+    autoconf
+
+Running the configure script uses awk, along with a number of
+standard UNIX tools (cat, cp, grep, mv, rm, sed, among others).  Almost
+all installations will have these already.  
+
+Running the test harness (make test) uses:
+
+    bash
+    perl
+
+HTSlib uses the following external libraries.  Building requires both the
+library itself, and include files needed to compile code that uses functions
+from the library.  Note that some Linux distributions put include files in
+a development ('-dev' or '-devel') package separate from the main library.
+
+    libz       (required)
+    libbz2     (required, unless configured with --disable-bz2)
+    liblzma    (required, unless configured with --disable-lzma)
+    libcurl    (optional, but strongly recommended)
+    libcrypto  (optional for Amazon S3 support; not needed on MacOS)
+
+Disabling libbzip2 and liblzma will make some CRAM files unreadable, so
+is not recommended.
+
+Using libcurl provides HTSlib with better network protocol support, for
+example it enables the use of https:// URLs.  It is also required if
+direct access to Amazon S3 or Google Cloud Storage is enabled.
+
+Amazon S3 support requires an HMAC function to calculate a message
+authentication code.  On MacOS, the CCHmac function from the standard
+library is used.  Systems that do not have CChmac will get this from
+libcrypto.  libcrypto is part of OpenSSL or one of its derivatives (LibreSSL
+or BoringSSL).
+
+Building Configure
+==================
+
+This step is only needed if configure.ac has been changed, or if configure
+does not exist (for example, when building from a git clone).  The
+configure script and config.h.in can be built by running:
+
+    autoheader
+    autoconf
+
+If you have a full GNU autotools install, you can alternatively run:
+
+    autoreconf
+
 Basic Installation
 ==================
 
