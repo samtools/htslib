@@ -39,6 +39,7 @@ test_view($opts,4);
 test_vcf_api($opts,out=>'test-vcf-api.out');
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
 test_vcf_various($opts);
+test_bcf_sr_sort($opts);
 test_convert_padded_header($opts);
 test_rebgzip($opts);
 
@@ -340,3 +341,20 @@ sub test_convert_padded_header
             cmd => "$$opts{path}/test_view -t ce.fa -C $nulsbam");
     }
 }
+
+sub test_bcf_sr_sort
+{
+    my ($opts, %args) = @_;
+    for (my $i=0; $i<10; $i++)
+    {
+        my $seed = int(rand(time));
+        my $test = 'test-bcf-sr';
+        my $cmd  = "$$opts{path}/test-bcf-sr.pl -t $$opts{tmp} -s $seed";
+        print "$test:\n";
+        print "\t$cmd\n";
+        my ($ret,$out) = _cmd($cmd);
+        if ( $ret ) { failed($opts,$test); }
+        else { passed($opts,$test); }
+    }
+}
+

@@ -73,7 +73,8 @@ BUILT_TEST_PROGRAMS = \
 	test/test-regidx \
 	test/test_view \
 	test/test-vcf-api \
-	test/test-vcf-sweep
+	test/test-vcf-sweep \
+	test/test-bcf-sr
 
 BUILT_THRASH_PROGRAMS = \
 	test/thrash_threads1 \
@@ -138,6 +139,7 @@ LIBHTS_OBJS = \
 	kfunc.o \
 	knetfile.o \
 	kstring.o \
+	bcf_sr_sort.o \
 	bgzf.o \
 	errmod.o \
 	faidx.o \
@@ -297,7 +299,8 @@ vcf.o vcf.pico: vcf.c config.h $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) 
 sam.o sam.pico: sam.c config.h $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(hts_internal_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h) $(htslib_hts_endian_h)
 tbx.o tbx.pico: tbx.c config.h $(htslib_tbx_h) $(htslib_bgzf_h) $(hts_internal_h) $(htslib_khash_h)
 faidx.o faidx.pico: faidx.c config.h $(htslib_bgzf_h) $(htslib_faidx_h) $(htslib_hfile_h) $(htslib_khash_h) $(htslib_kstring_h) $(hts_internal_h)
-synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c config.h $(htslib_synced_bcf_reader_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_bgzf_h) $(htslib_thread_pool_h)
+bcf_sr_sort.o bcf_sr_sort.pico: bcf_sr_sort.c config.h bcf_sr_sort.h $(htslib_kseq_h) $(htslib_khash_str2int_h)
+synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c config.h bcf_sr_sort.h $(htslib_synced_bcf_reader_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_bgzf_h) $(htslib_thread_pool_h)
 vcf_sweep.o vcf_sweep.pico: vcf_sweep.c config.h $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
 vcfutils.o vcfutils.pico: vcfutils.c config.h $(htslib_vcfutils_h) $(htslib_kbitset_h)
 kfunc.o kfunc.pico: kfunc.c config.h $(htslib_kfunc_h)
@@ -382,6 +385,9 @@ test/test-vcf-api: test/test-vcf-api.o libhts.a
 test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
 	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LIBS)
 
+test/test-bcf-sr: test/test-bcf-sr.o libhts.a
+	$(CC) -pthread $(LDFLAGS) -o $@ test/test-bcf-sr.o libhts.a -lz $(LIBS)
+
 test/hts_endian.o: test/hts_endian.c $(htslib_hts_endian_h)
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h)
@@ -391,6 +397,7 @@ test/test-regidx.o: test/test-regidx.c config.h $(htslib_regidx_h) $(hts_interna
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
 test/test-vcf-sweep.o: test/test-vcf-sweep.c config.h $(htslib_vcf_sweep_h)
+test/test-bcf-sr.o: test/test-bcf-sr.c config.h $(htslib_vcf_sweep_h) bcf_sr_sort.h
 
 
 test/thrash_threads1: test/thrash_threads1.o libhts.a
