@@ -24,12 +24,21 @@
 
 #include "bcf_sr_sort.h"
 #include "htslib/khash_str2int.h"
+#include <errno.h>
 
 #define SR_REF   1
 #define SR_SNP   2
 #define SR_INDEL 4
 #define SR_OTHER 8
 #define SR_SCORE(srt,a,b) (srt)->score[((a)<<4)|(b)]
+
+static inline void *die_if_null(void *ptr)
+{
+    if ( ptr ) return ptr;
+    errno = ENOMEM;
+    fprintf(stderr, "[E::%s] %s\n", __func__,strerror(errno));
+    exit(1);
+}
 
 // Resize a bit set.
 static inline kbitset_t *kbs_resize(kbitset_t *bs, size_t ni)
@@ -38,7 +47,7 @@ static inline kbitset_t *kbs_resize(kbitset_t *bs, size_t ni)
     size_t n = (ni + KBS_ELTBITS-1) / KBS_ELTBITS;
     if ( n==bs->n ) return bs;
 
-    bs = (kbitset_t *) realloc(bs, sizeof(kbitset_t) + n * sizeof(unsigned long));
+    bs = (kbitset_t *) die_if_null(realloc(bs, sizeof(kbitset_t) + n * sizeof(unsigned long)));
     if ( bs==NULL ) return NULL;
     if ( n > bs->n )
         memset(bs->b + bs->n, 0, (n - bs->n) * sizeof (unsigned long));
@@ -190,8 +199,6 @@ int32_t pairing_score(sr_sort_t *srt, int ivset, int jvset)
     }
     if ( srt->pair & BCF_SR_PAIR_EXACT ) return 0;
 
-    assert( min!=UINT32_MAX );
-
     uint32_t cnt = 0;
     for (i=0; i<iv->nvar; i++) cnt += srt->var[iv->var[i]].nvcf;
     for (j=0; j<jv->nvar; j++) cnt += srt->var[jv->var[j]].nvcf;
@@ -299,7 +306,7 @@ void debug_vbuf(sr_sort_t *srt)
 }
 char *grp_create_key(sr_sort_t *srt)
 {
-    if ( !srt->str.l ) return strdup("");
+    if ( !srt->str.l ) return die_if_null(strdup(""));
     int i;
     hts_expand(char*,srt->noff,srt->mcharp,srt->charp);
     for (i=0; i<srt->noff; i++)
@@ -308,7 +315,7 @@ char *grp_create_key(sr_sort_t *srt)
         if ( i>0 ) srt->charp[i][-1] = 0;
     }
     qsort(srt->charp, srt->noff, sizeof(*srt->charp), cmpstringp);
-    char *ret = (char*) malloc(srt->str.l + 1), *ptr = ret;
+    char *ret = (char*) die_if_null(malloc(srt->str.l + 1)), *ptr = ret;
     for (i=0; i<srt->noff; i++)
     {
         int len = strlen(srt->charp[i]);
@@ -402,7 +409,7 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
                 ivar = srt->nvar++;
                 hts_expand0(var_t,srt->nvar,srt->mvar,srt->var);
                 srt->var[ivar].nvcf = 0;
-                khash_str2int_set(srt->var_str2int, strdup(var_str), ivar);
+                khash_str2int_set(srt->var_str2int, die_if_null(strdup(var_str)), ivar);
                 free(srt->var[ivar].str);   // possible left-over from the previous position
             }
             var_t *var = &srt->var[ivar];
@@ -410,12 +417,12 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
             var->type = bcf_get_variant_types(line);
             srt->str.s[var_end] = 0;
             if ( ret==-1 )
-                var->str = strdup(var_str);
+                var->str = die_if_null(strdup(var_str));
 
             int mvcf = var->mvcf;
             var->nvcf++;
             hts_expand0(int*, var->nvcf, var->mvcf, var->vcf);
-            if ( mvcf != var->mvcf ) var->rec = (bcf1_t **) realloc(var->rec,sizeof(bcf1_t*)*var->mvcf);
+            if ( mvcf != var->mvcf ) var->rec = (bcf1_t **) die_if_null(realloc(var->rec,sizeof(bcf1_t*)*var->mvcf));
             var->vcf[var->nvcf-1] = ireader;
             var->rec[var->nvcf-1] = line;
 
@@ -537,7 +544,7 @@ int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int mi
         srt->nsr = 1;
         if ( !srt->msr )
         {
-            srt->vcf_buf = (vcf_buf_t*) calloc(1,sizeof(vcf_buf_t));   // first time here
+            srt->vcf_buf = (vcf_buf_t*) die_if_null(calloc(1,sizeof(vcf_buf_t)));   // first time here
             srt->msr = 1;
         }
         bcf_sr_t *reader = &readers->readers[0];
@@ -554,7 +561,7 @@ int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int mi
         srt->sr = readers;
         if ( srt->nsr < readers->nreaders )
         {
-            srt->vcf_buf = (vcf_buf_t*) realloc(srt->vcf_buf,readers->nreaders*sizeof(vcf_buf_t));
+            srt->vcf_buf = (vcf_buf_t*) die_if_null(realloc(srt->vcf_buf,readers->nreaders*sizeof(vcf_buf_t)));
             memset(srt->vcf_buf + srt->nsr, 0, sizeof(vcf_buf_t)*(readers->nreaders - srt->nsr));
             if ( srt->msr < srt->nsr ) srt->msr = srt->nsr;
         }
@@ -607,7 +614,7 @@ void bcf_sr_sort_remove_reader(bcf_srs_t *readers, sr_sort_t *srt, int i)
 }
 sr_sort_t *bcf_sr_sort_init(sr_sort_t *srt)
 {
-    if ( !srt ) return calloc(1,sizeof(sr_sort_t));
+    if ( !srt ) return die_if_null(calloc(1,sizeof(sr_sort_t)));
     memset(srt,0,sizeof(sr_sort_t));
     return srt;
 }
