@@ -88,7 +88,7 @@ sub cmd
 sub save_vcf
 {
     my ($opts,$vars,$fname) = @_;
-    open(my $fh,"| bgzip -c > $fname") or error("bgzip -c > $fname: !");
+    open(my $fh,"| $FindBin::Bin/../bgzip -c > $fname") or error("$FindBin::Bin/../bgzip -c > $fname: !");
     print $fh qq[##fileformat=VCFv4.3\n];
     print $fh qq[##FILTER=<ID=PASS,Description="All filters passed">\n];
     print $fh qq[##contig=<ID=1>\n];
