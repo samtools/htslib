@@ -74,6 +74,8 @@ HTSLIB_PUBLIC_HEADERS = \
 
 HTSLIB_ALL = \
 	$(HTSLIB_PUBLIC_HEADERS) \
+	$(HTSDIR)/bcf_sr_sort.c \
+	$(HTSDIR)/bcf_sr_sort.h \
 	$(HTSDIR)/bgzf.c \
 	$(HTSDIR)/config.h \
 	$(HTSDIR)/errmod.c \

@@ -37,6 +37,8 @@ DEALINGS IN THE SOFTWARE.  */
     Example of usage:
 
         bcf_srs_t *sr = bcf_sr_init();
+        bcf_sr_set_opt(sr, BCF_SR_PAIR_LOGIC, BCF_SR_PAIR_BOTH_REF);
+        bcf_sr_set_opt(sr, BCF_SR_REQUIRE_IDX);
         for (i=0; i<nfiles; i++)
             bcf_sr_add_reader(sr,files[i]);
         while ( bcf_sr_next_line(sr) )
@@ -62,13 +64,40 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
-// How should be treated sites with the same position but different alleles
+/*
+    When reading multiple files in paralel, duplicate records within each
+    file will be reordered and offered in intuitive order. For example,
+    when reading two files, each with unsorted SNP and indel record, the
+    reader should return the SNP records together and the indel records
+    together. The logic of compatible records can vary depending on the
+    application and can be set using the PAIR_* defined below.
+
+    The COLLAPSE_* definitions will be deprecated in future versions, please
+    use the PAIR_* definitions instead.
+*/
 #define COLLAPSE_NONE   0   // require the exact same set of alleles in all files
 #define COLLAPSE_SNPS   1   // allow different alleles, as long as they all are SNPs
 #define COLLAPSE_INDELS 2   // the same as above, but with indels
 #define COLLAPSE_ANY    4   // any combination of alleles can be returned by bcf_sr_next_line()
 #define COLLAPSE_SOME   8   // at least some of the ALTs must match
 #define COLLAPSE_BOTH  (COLLAPSE_SNPS|COLLAPSE_INDELS)
+
+#define BCF_SR_PAIR_SNPS       (1<<0)  // allow different alleles, as long as they all are SNPs
+#define BCF_SR_PAIR_INDELS     (1<<1)  // the same as above, but with indels
+#define BCF_SR_PAIR_ANY        (1<<2)  // any combination of alleles can be returned by bcf_sr_next_line()
+#define BCF_SR_PAIR_SOME       (1<<3)  // at least some of multiallelic ALTs must match. Implied by all the others with the exception of EXACT
+#define BCF_SR_PAIR_SNP_REF    (1<<4)  // allow REF-only records with SNPs
+#define BCF_SR_PAIR_INDEL_REF  (1<<5)  // allow REF-only records with indels
+#define BCF_SR_PAIR_EXACT      (1<<6)  // require the exact same set of alleles in all files
+#define BCF_SR_PAIR_BOTH       (BCF_SR_PAIR_SNPS|BCF_SR_PAIR_INDELS)
+#define BCF_SR_PAIR_BOTH_REF   (BCF_SR_PAIR_SNPS|BCF_SR_PAIR_INDELS|BCF_SR_PAIR_SNP_REF|BCF_SR_PAIR_INDEL_REF)
+
+typedef enum
+{
+    BCF_SR_REQUIRE_IDX,
+    BCF_SR_PAIR_LOGIC       // combination of the PAIR_* values above
+}
+bcf_sr_opt_t;
 
 typedef struct _bcf_sr_regions_t
 {
@@ -126,7 +155,7 @@ bcf_sr_error;
 typedef struct
 {
     // Parameters controlling the logic
-    int collapse;       // How should the duplicate sites be treated. One of the COLLAPSE_* types above.
+    int collapse;           // Do not access directly, use bcf_sr_set_pairing_logic() instead
     char *apply_filters;    // If set, sites where none of the FILTER strings is listed
                             // will be skipped. Active only at the time of
                             // initialization, that is during the add_reader()
@@ -151,6 +180,7 @@ typedef struct
 
     int n_threads;      // Simple multi-threaded decoding / encoding.
     htsThreadPool *p;   // Our pool, but it can be used by others if needed.
+    void *aux;          // Opaque auxiliary data
 }
 bcf_srs_t;
 
@@ -161,6 +191,8 @@ bcf_srs_t *bcf_sr_init(void);
 void bcf_sr_destroy(bcf_srs_t *readers);
 
 char *bcf_sr_strerror(int errnum);
+
+int bcf_sr_set_opt(bcf_srs_t *readers, bcf_sr_opt_t opt, ...);
 
 
 /**
@@ -202,6 +234,7 @@ int bcf_sr_next_line(bcf_srs_t *readers);
 #define bcf_sr_region_done(_readers,i) (!(_readers)->has_line[i] && !(_readers)->readers[i].nbuffer ? 1 : 0)
 #define bcf_sr_get_header(_readers, i) (_readers)->readers[i].header
 #define bcf_sr_get_reader(_readers, i) &((_readers)->readers[i])
+
 
 /**
  *  bcf_sr_seek() - set all readers to selected position
