@@ -134,7 +134,7 @@ sub save_vcf
         print $fh join("\t", (2,100,'.',$ref,join(',',@alts),'.','.','.'))."\n";
     }
     close($fh) or error("close failed: bgzip -c > $fname");
-    cmd("tabix -f $fname");
+    cmd("$FindBin::Bin/../tabix -f $fname");
 }
 
 sub random_alt
