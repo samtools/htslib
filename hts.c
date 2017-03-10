@@ -1996,6 +1996,8 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
     iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
     iter->readrec = readrec;
 
+    if ( !kh_size(bidx) ) { iter->finished = 1; return iter; }
+
     // compute min_off
     bin = hts_bin_first(idx->n_lvls) + (beg>>idx->min_shift);
     do {
