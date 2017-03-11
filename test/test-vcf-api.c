@@ -273,12 +273,53 @@ void iterator(const char *fname)
     }
 }
 
+void info_values(const char *fname)
+{
+    htsFile *fp = hts_open(fname, "r");
+    bcf_hdr_t *hdr = bcf_hdr_read(fp);
+    bcf1_t *line = bcf_init();
+
+    while (bcf_read(fp, hdr, line) == 0)
+    {
+        float *afs = 0;
+        int count = 0;
+        int ret = bcf_get_info_float(hdr, line, "AF", &afs, &count);
+        if (ret < 1)
+        {
+            fprintf(stderr, "bcf_get_info_float failed\n");
+        }
+
+        if (line->pos == 14369)
+        {
+            if (count != 1 || afs[0] != 0.5f)
+            {
+                fprintf(stderr, "AF on position 14370 should be 0.5\n");
+                exit(-1);
+            }
+        }
+        else
+        {
+            if (count != 2 || afs[0] != 0.333f || !bcf_float_is_missing(afs[1]))
+            {
+                fprintf(stderr, "AF on position 1110696 should be 0.333, missing\n");
+                exit(-1);
+            }
+        }
+
+        free(afs);
+    }
+
+    bcf_destroy(line);
+    bcf_hdr_destroy(hdr);
+    hts_close(fp);
+}
+
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
     write_bcf(fname);
     bcf_to_vcf(fname);
     iterator(fname);
+    info_values(fname);
     return 0;
 }
-
