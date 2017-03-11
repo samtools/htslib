@@ -53,23 +53,39 @@ int main(int argc, char *argv[])
 
     while ((c = getopt(argc, argv, "IbDCSl:t:i:o:N:BZ:@:")) >= 0) {
         switch (c) {
-        case 'S': flag |= 1; break;
+        case 'I': ignore_sam_err = 1; break;
         case 'b': flag |= 2; break;
         case 'D': flag |= 4; break;
         case 'C': flag |= 8; break;
-        case 'B': benchmark = 1; break;
+        case 'S': flag |= 1; break;
         case 'l': clevel = atoi(optarg); flag |= 2; break;
         case 't': fn_ref = optarg; break;
-        case 'I': ignore_sam_err = 1; break;
         case 'i': if (hts_opt_add(&in_opts,  optarg)) return 1; break;
         case 'o': if (hts_opt_add(&out_opts, optarg)) return 1; break;
         case 'N': nreads = atoi(optarg); break;
+        case 'B': benchmark = 1; break;
         case 'Z': extra_hdr_nuls = atoi(optarg); break;
         case '@': nthreads = atoi(optarg); break;
         }
     }
     if (argc == optind) {
-        fprintf(stderr, "Usage: samview [-bSCSIB] [-N num_reads] [-l level] [-o option=value] [-Z hdr_nuls] <in.bam>|<in.sam>|<in.cram> [region]\n");
+        fprintf(stderr, "Usage: test_view [-IbDCS] [-l level] [-t fn_ref] [-i option=value] [-o option=value] [-N num_reads] [-B] [-Z hdr_nuls] [-@ num_threads] <in.bam>|<in.sam>|<in.cram> [region]\n");
+        fprintf(stderr, "\n");
+        fprintf(stderr, "-D: read CRAM format (mode 'c')\n");
+        fprintf(stderr, "-S: read compressed BCF, BAM, FAI (mode 'b')\n");
+        fprintf(stderr, "-I: ignore SAM parsing errors\n");
+        fprintf(stderr, "-t: fn_ref: load CRAM references from the specificed fasta file instead of @SQ headers when writing a CRAM file\n");
+        fprintf(stderr, "-i: option=value: set an option for CRAM input\n");
+        fprintf(stderr, "\n");
+        fprintf(stderr, "-b: write compressed BCF, BAM, FAI (mode 'b')\n");
+        fprintf(stderr, "-C: write CRAM format (mode 'c')\n");
+        fprintf(stderr, "-l 0-9: set zlib compression level\n");
+        fprintf(stderr, "-o option=value: set an option for CRAM output\n");
+        fprintf(stderr, "-N: num_reads: limit the output to the first num_reads reads\n");
+        fprintf(stderr, "\n");
+        fprintf(stderr, "-B: enable benchmarking\n");
+        fprintf(stderr, "-Z hdr_nuls: append specified number of null bytes to the SAM header\n");
+        fprintf(stderr, "-@ num_threads: use thread pool with specified number of threads\n");
         return 1;
     }
     strcpy(moder, "r");
