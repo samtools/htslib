@@ -357,8 +357,8 @@ void check_format_values(const char *fname)
 
         // NOTE the return value from bcf_get_format_float is different from
         // bcf_get_info_float in the sense that vector-end markers also count.
-        if (ret != 4 || 
-            count < ret || 
+        if (ret != 4 ||
+            count < ret ||
             !bcf_float_is_missing(values[0]) ||
             values[1] != 47.11f ||
             !bcf_float_is_vector_end(values[2]) ||
@@ -386,14 +386,16 @@ int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
 
+    // format test. quiet unless there's a failure
+    test_get_format_values(fname);
+
     // main test. writes to stdout
     write_bcf(fname);
     bcf_to_vcf(fname);
+    iterator(fname);
 
     // additional tests. quiet unless there's a failure.
-    iterator(fname);
     test_get_info_values(fname);
-    test_get_format_values(fname);
 
     return 0;
 }
