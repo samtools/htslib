@@ -2178,7 +2178,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             }
         } else if (i == 5) { // QUAL
             if (strcmp(p, ".")) v->qual = atof(p);
-            else memcpy(&v->qual, &bcf_float_missing, 4);
+            else bcf_float_set_missing(v->qual);
             if ( v->max_unpack && !(v->max_unpack>>1) ) return 0; // BCF_UN_STR
         } else if (i == 6) { // FILTER
             if (strcmp(p, ".")) {
