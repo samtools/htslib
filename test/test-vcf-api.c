@@ -310,7 +310,7 @@ void test_get_info_values(const char *fname)
     hts_close(fp);
 }
 
-void write_format_values(char *fname)
+void write_format_values(const char *fname)
 {
     // Init
     htsFile *fp = hts_open(fname, "wb");
@@ -318,7 +318,6 @@ void write_format_values(char *fname)
     bcf1_t *rec = bcf_init1();
 
     // Create VCF header
-    kstring_t str = { 0,0,0 };
     bcf_hdr_append(hdr, "##contig=<ID=1>");
     bcf_hdr_append(hdr, "##FORMAT=<ID=TF,Number=1,Type=Float,Description=\"Test Float\">");
     bcf_hdr_add_sample(hdr, "S");
