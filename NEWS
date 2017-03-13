@@ -1,4 +1,4 @@
-Noteworthy changes in release 1.4
+Release 1.4 (13 March 2017)
 
 * Incompatible changes: several functions and data types have been changed
   in this release, and the shared library soversion has been bumped to 2.
