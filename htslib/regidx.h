@@ -1,3 +1,5 @@
+/// @file htslib/regidx.h
+/// Region indexing.
 /* 
     Copyright (C) 2014 Genome Research Ltd.
 

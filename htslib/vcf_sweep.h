@@ -1,5 +1,6 @@
-/*  vcf_sweep.h -- forward/reverse sweep API.
-
+/// @file htslib/vcf_sweep.h
+/// Forward/reverse sweep API.
+/*
     Copyright (C) 2013 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>

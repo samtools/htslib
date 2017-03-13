@@ -1,6 +1,7 @@
-/*  hfile.h -- buffered low-level input/output streams.
-
-    Copyright (C) 2013-2015 Genome Research Ltd.
+/// @file htslib/hfile.h
+/// Buffered low-level input/output streams.
+/*
+    Copyright (C) 2013-2016 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -35,91 +36,91 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
-/* These fields are declared here solely for the benefit of the inline functions
-   below.  They may change in future releases.  User code should not use them
-   directly; you should imagine that hFILE is an opaque incomplete type.  */
 struct hFILE_backend;
+/// Low-level input/output stream handle
+/** The fields of this structure are declared here solely for the benefit
+of the hFILE-related inline functions.  They may change in future releases.
+User code should not use them directly; you should imagine that hFILE is an
+opaque incomplete type.
+*/
 typedef struct hFILE {
+    // @cond internal
     char *buffer, *begin, *end, *limit;
     const struct hFILE_backend *backend;
     off_t offset;
-    unsigned at_eof:1;
+    unsigned at_eof:1, mobile:1, readonly:1;
     int has_errno;
+    // @endcond
 } hFILE;
 
-/*!
-  @abstract  Open the named file or URL as a stream
-  @return    An hFILE pointer, or NULL (with errno set) if an error occurred.
-  @notes     The usual @c fopen(3) @a mode letters are supported: one of
-    @e r (read), @e w (write), @e a (append), optionally followed by any of
-    @e + (update), @e e (close on @c exec(2)), @e x (create exclusively).
-*/
-hFILE *hopen(const char *filename, const char *mode) HTS_RESULT_USED;
+/// Open the named file or URL as a stream
+/** @return An hFILE pointer, or `NULL` (with _errno_ set) if an error occurred.
 
-/*!
-  @abstract  Associate a stream with an existing open file descriptor
-  @return    An hFILE pointer, or NULL (with errno set) if an error occurred.
-  @notes     For socket descriptors (on Windows), mode should contain 's'.
+The usual `fopen(3)` _mode_ letters are supported: one of
+`r` (read), `w` (write), `a` (append), optionally followed by any of
+`+` (update), `e` (close on `exec(2)`), `x` (create exclusively),
+`:` (indicates scheme-specific variable arguments follow).
+*/
+hFILE *hopen(const char *filename, const char *mode, ...) HTS_RESULT_USED;
+
+/// Associate a stream with an existing open file descriptor
+/** @return An hFILE pointer, or `NULL` (with _errno_ set) if an error occurred.
+
+For socket descriptors (on Windows), _mode_ should contain `s`.
 */
 hFILE *hdopen(int fd, const char *mode) HTS_RESULT_USED;
 
-/*!
-  @abstract  Report whether the file name or URL denotes remote storage
-  @return    0 if local, 1 if remote.
-  @notes     "Remote" means involving e.g. explicit network access, with the
-    implication that callers may wish to cache such files' contents locally.
+/// Report whether the file name or URL denotes remote storage
+/** @return  0 if local, 1 if remote.
+
+"Remote" means involving e.g. explicit network access, with the implication
+that callers may wish to cache such files' contents locally.
 */
 int hisremote(const char *filename) HTS_RESULT_USED;
 
-/*!
-  @abstract  Flush (for output streams) and close the stream
-  @return    0 if successful, or EOF (with errno set) if an error occurred.
+/// Flush (for output streams) and close the stream
+/** @return  0 if successful, or `EOF` (with _errno_ set) if an error occurred.
 */
 int hclose(hFILE *fp) HTS_RESULT_USED;
 
-/*!
-  @abstract  Close the stream, without flushing or propagating errors
-  @notes     For use while cleaning up after an error only.  Preserves errno.
+/// Close the stream, without flushing or propagating errors
+/** For use while cleaning up after an error only.  Preserves _errno_.
 */
 void hclose_abruptly(hFILE *fp);
 
-/*!
-  @abstract  Return the stream's error indicator
-  @return    Non-zero (in fact, an errno value) if an error has occurred.
-  @notes     This would be called herror() and return true/false to parallel
-    ferror(3), but a networking-related herror(3) function already exists.  */
+/// Return the stream's error indicator
+/** @return  Non-zero (in fact, an _errno_ value) if an error has occurred.
+
+This would be called `herror()` and return true/false to parallel `ferror(3)`,
+but a networking-related `herror(3)` function already exists.
+*/
 static inline int herrno(hFILE *fp)
 {
     return fp->has_errno;
 }
 
-/*!
-  @abstract  Clear the stream's error indicator
-*/
+/// Clear the stream's error indicator
 static inline void hclearerr(hFILE *fp)
 {
     fp->has_errno = 0;
 }
 
-/*!
-  @abstract  Reposition the read/write stream offset
-  @return    The resulting offset within the stream (as per lseek(2)),
+/// Reposition the read/write stream offset
+/** @return  The resulting offset within the stream (as per `lseek(2)`),
     or negative if an error occurred.
 */
 off_t hseek(hFILE *fp, off_t offset, int whence) HTS_RESULT_USED;
 
-/*!
-  @abstract  Report the current stream offset
-  @return    The offset within the stream, starting from zero.
+/// Report the current stream offset
+/** @return  The offset within the stream, starting from zero.
 */
 static inline off_t htell(hFILE *fp)
 {
     return fp->offset + (fp->begin - fp->buffer);
 }
 
-/*!
-  @abstract  Read one character from the stream
-  @return    The character read, or EOF on end-of-file or error
+/// Read one character from the stream
+/** @return  The character read, or `EOF` on end-of-file or error.
 */
 static inline int hgetc(hFILE *fp)
 {
@@ -127,24 +128,66 @@ static inline int hgetc(hFILE *fp)
     return (fp->end > fp->begin)? (unsigned char) *(fp->begin++) : hgetc2(fp);
 }
 
-/*!
-  @abstract  Peek at characters to be read without removing them from buffers
-  @param fp      The file stream
-  @param buffer  The buffer to which the peeked bytes will be written
-  @param nbytes  The number of bytes to peek at; limited by the size of the
-    internal buffer, which could be as small as 4K.
-  @return    The number of bytes peeked, which may be less than nbytes if EOF
-    is encountered; or negative, if there was an I/O error.
-  @notes  The characters peeked at remain in the stream's internal buffer,
-    and will be returned by later hread() etc calls.
+/// Read from the stream until the delimiter, up to a maximum length
+/** @param buffer  The buffer into which bytes will be written
+    @param size    The size of the buffer
+    @param delim   The delimiter (interpreted as an `unsigned char`)
+    @param fp      The file stream
+    @return  The number of bytes read, or negative on error.
+    @since   1.4
+
+Bytes will be read into the buffer up to and including a delimiter, until
+EOF is reached, or _size-1_ bytes have been written, whichever comes first.
+The string will then be terminated with a NUL byte (`\0`).
+*/
+ssize_t hgetdelim(char *buffer, size_t size, int delim, hFILE *fp)
+    HTS_RESULT_USED;
+
+/// Read a line from the stream, up to a maximum length
+/** @param buffer  The buffer into which bytes will be written
+    @param size    The size of the buffer
+    @param fp      The file stream
+    @return  The number of bytes read, or negative on error.
+    @since   1.4
+
+Specialization of hgetdelim() for a `\n` delimiter.
+*/
+static inline ssize_t HTS_RESULT_USED
+hgetln(char *buffer, size_t size, hFILE *fp)
+{
+    return hgetdelim(buffer, size, '\n', fp);
+}
+
+/// Read a line from the stream, up to a maximum length
+/** @param buffer  The buffer into which bytes will be written
+    @param size    The size of the buffer (must be > 1 to be useful)
+    @param fp      The file stream
+    @return  _buffer_ on success, or `NULL` if an error occurred.
+    @since   1.4
+
+This function can be used as a replacement for `fgets(3)`, or together with
+kstring's `kgetline()` to read arbitrarily-long lines into a _kstring_t_.
+*/
+char *hgets(char *buffer, int size, hFILE *fp) HTS_RESULT_USED;
+
+/// Peek at characters to be read without removing them from buffers
+/** @param fp      The file stream
+    @param buffer  The buffer to which the peeked bytes will be written
+    @param nbytes  The number of bytes to peek at; limited by the size of the
+                   internal buffer, which could be as small as 4K.
+    @return  The number of bytes peeked, which may be less than _nbytes_
+             if EOF is encountered; or negative, if there was an I/O error.
+
+The characters peeked at remain in the stream's internal buffer, and will be
+returned by later hread() etc calls.
 */
 ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes) HTS_RESULT_USED;
 
-/*!
-  @abstract  Read a block of characters from the file
-  @return    The number of bytes read, or negative if an error occurred.
-  @notes     The full nbytes requested will be returned, except as limited
-    by EOF or I/O errors.
+/// Read a block of characters from the file
+/** @return  The number of bytes read, or negative if an error occurred.
+
+The full _nbytes_ requested will be returned, except as limited by EOF
+or I/O errors.
 */
 static inline ssize_t HTS_RESULT_USED
 hread(hFILE *fp, void *buffer, size_t nbytes)
@@ -158,9 +201,8 @@ hread(hFILE *fp, void *buffer, size_t nbytes)
     return (n == nbytes)? (ssize_t) n : hread2(fp, buffer, nbytes, n);
 }
 
-/*!
-  @abstract  Write a character to the stream
-  @return    The character written, or EOF if an error occurred.
+/// Write a character to the stream
+/** @return  The character written, or `EOF` if an error occurred.
 */
 static inline int hputc(int c, hFILE *fp)
 {
@@ -170,9 +212,8 @@ static inline int hputc(int c, hFILE *fp)
     return c;
 }
 
-/*!
-  @abstract  Write a string to the stream
-  @return    0 if successful, or EOF if an error occurred.
+/// Write a string to the stream
+/** @return  0 if successful, or `EOF` if an error occurred.
 */
 static inline int hputs(const char *text, hFILE *fp)
 {
@@ -185,10 +226,10 @@ static inline int hputs(const char *text, hFILE *fp)
     return (n == nbytes)? 0 : hputs2(text, nbytes, n, fp);
 }
 
-/*!
-  @abstract  Write a block of characters to the file
-  @return    Either nbytes, or negative if an error occurred.
-  @notes     In the absence of I/O errors, the full nbytes will be written.
+/// Write a block of characters to the file
+/** @return  Either _nbytes_, or negative if an error occurred.
+
+In the absence of I/O errors, the full _nbytes_ will be written.
 */
 static inline ssize_t HTS_RESULT_USED
 hwrite(hFILE *fp, const void *buffer, size_t nbytes)
@@ -202,9 +243,10 @@ hwrite(hFILE *fp, const void *buffer, size_t nbytes)
     return (n==nbytes)? (ssize_t) n : hwrite2(fp, buffer, nbytes, n);
 }
 
-/*!
-  @abstract  For writing streams, flush buffered output to the underlying stream
-  @return    0 if successful, or EOF if an error occurred.
+/// For writing streams, flush buffered output to the underlying stream
+/** @return  0 if successful, or `EOF` if an error occurred.
+
+This includes low-level flushing such as via `fdatasync(2)`.
 */
 int hflush(hFILE *fp) HTS_RESULT_USED;
 

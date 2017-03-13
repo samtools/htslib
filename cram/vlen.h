@@ -34,6 +34,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _VLEN_H_
 #define _VLEN_H_
 
+#include <stdarg.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

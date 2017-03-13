@@ -1,3 +1,92 @@
+Noteworthy changes in release 1.4
+
+* Incompatible changes: several functions and data types have been changed
+  in this release, and the shared library soversion has been bumped to 2.
+
+  - bam_pileup1_t has an additional field (which holds user data)
+  - bam1_core_t has been modified to allow for >64K CIGAR operations
+    and (along with bam1_t) so that CIGAR entries are aligned in memory
+  - hopen() has vararg arguments for setting URL scheme-dependent options
+  - the various tbx_conf_* presets are now const
+  - auxiliary fields in bam1_t are now always stored in little-endian byte
+    order (previously this depended on if you read a bam, sam or cram file)
+  - index metadata (accessible via hts_idx_get_meta()) is now always
+    stored in little-endian byte order (previously this depended on if
+    the index was in tbi or csi format)
+  - bam_aux2i() now returns an int64_t value
+  - fai_load() will no longer save local copies of remote fasta indexes
+  - hts_idx_get_meta() now takes a uint32_t * for l_meta (was int32_t *)
+
+* HTSlib now links against libbz2 and liblzma by default.  To remove these
+  dependencies, run configure with options --disable-bz2 and --disable-lzma,
+  but note that this may make some CRAM files produced elsewhere unreadable. 
+
+* Added a thread pool interface and replaced the bgzf multi-threading
+  code to use this pool.  BAM and CRAM decoding is now multi-threaded
+  too, using the pool to automatically balance the number of threads
+  between decode, encode and any data processing jobs.
+
+* New errmod_cal(), probaln_glocal(), sam_cap_mapq(), and sam_prob_realn()
+  functions, previously internal to SAMtools, have been added to HTSlib.
+
+* Files can now be accessed via Google Cloud Storage using gs: URLs, when
+  HTSlib is configured to use libcurl for network file access rather than
+  the included basic knetfile networking.
+
+* S3 file access now also supports the "host_base" setting in the
+  $HOME/.s3cfg configuration file.
+
+* Data URLs ("data:,text") now follow the standard RFC 2397 format and may
+  be base64-encoded (when written as "data:;base64,text") or may include
+  percent-encoded characters.  HTSlib's previous over-simplified "data:text"
+  format is no longer supported -- you will need to add an initial comma.
+
+* When plugins are enabled, S3 support is now provided by a separate
+  hfile_s3 plugin rather than by hfile_libcurl itself as previously.
+  When --enable-libcurl is used, by default both GCS and S3 support
+  and plugins will also be built; they can be individually disabled
+  via --disable-gcs and --disable-s3.
+
+* The iRODS file access plugin has been moved to a separate repository.
+  Configure no longer has a --with-irods option; instead build the plugin
+  found at <https://github.com/samtools/htslib-plugins>.
+
+* APIs to portably read and write (possibly unaligned) data in little-endian
+  byte order have been added.
+
+* New functions bam_auxB_len(), bam_auxB2i() and bam_auxB2f() have been
+  added to make accessing array-type auxiliary data easier.  bam_aux2i()
+  can now return the full range of values that can be stored in an integer
+  tag (including unsigned 32 bit tags).  bam_aux2f() will return the value
+  of integer tags (as a double) as well as floating-point ones.  All of
+  the bam_aux2 and bam_auxB2 functions will set errno if the requested
+  conversion is not valid.
+
+* New functions fai_load3() and fai_build3() allow fasta indexes to be
+  stored in a different location to the indexed fasta file.
+
+* New functions bgzf_index_dump_hfile() and bgzf_index_load_hfile()
+  allow bgzf index files (.gzi) to be written to / read from an existing
+  hFILE handle.
+
+* hts_idx_push() will report when trying to add a range to an index that
+  is beyond the limits that the given index can handle.  This means trying
+  to index chromosomes longer than 2^29 bases with a .bai or .tbi index
+  will report an error instead of apparantly working but creating an invalid
+  index entry.
+
+* VCF formatting is now approximately 4x faster.  (Whether this is
+  noticable depends on what was creating the VCF.)
+
+* CRAM lossy_names mode now works with TLEN of 0 or TLEN within +/- 1
+  of the computed value.  Note in these situations TLEN will be
+  generated / fixed during CRAM decode.
+
+* CRAM now supports bzip2 and lzma codecs.  Within htslib these are
+  disabled by default, but can be enabled by specifying "use_bzip2" or
+  "use_lzma" in an hts_opt_add() call or via the mode string of the
+  hts_open_format() function.
+
 Noteworthy changes in release 1.3.2  (13 September 2016)
 
 * Corrected bin calculation when converting directly from CRAM to BAM.

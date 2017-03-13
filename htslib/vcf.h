@@ -1,5 +1,6 @@
-/*  vcf.h -- VCF/BCF API functions.
-
+/// @file htslib/vcf.h
+/// High-level VCF/BCF variant calling file operations.
+/*
     Copyright (C) 2012, 2013 Broad Institute.
     Copyright (C) 2012-2014 Genome Research Ltd.
 
@@ -38,6 +39,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "hts.h"
 #include "kstring.h"
 #include "hts_defs.h"
+#include "hts_endian.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -421,11 +423,20 @@ typedef struct {
     /** Read VCF header from a file and update the header */
     int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname);
 
+    /// Appends formatted header text to _str_.
+    /** If _is_bcf_ is zero, `IDX` fields are discarded.
+     *  @return 0 if successful, or negative if an error occurred
+     *  @since 1.4
+     */
+    int bcf_hdr_format(const bcf_hdr_t *hdr, int is_bcf, kstring_t *str);
+
     /** Returns formatted header (newly allocated string) and its length,
      *  excluding the terminating \0. If is_bcf parameter is unset, IDX
      *  fields are discarded.
+     *  @deprecated Use bcf_hdr_format() instead as it can handle huge headers.
      */
-    char *bcf_hdr_fmt_text(const bcf_hdr_t *hdr, int is_bcf, int *len);
+    char *bcf_hdr_fmt_text(const bcf_hdr_t *hdr, int is_bcf, int *len)
+        HTS_DEPRECATED("use bcf_hdr_format() instead");
 
     /** Append new VCF header line, returns 0 on success */
     int bcf_hdr_append(bcf_hdr_t *h, const char *line);
@@ -595,7 +606,7 @@ typedef struct {
     // from bcf_get_genotypes() below.
     #define bcf_gt_phased(idx)      (((idx)+1)<<1|1)
     #define bcf_gt_unphased(idx)    (((idx)+1)<<1)
-    #define bcf_gt_missing          0 
+    #define bcf_gt_missing          0
     #define bcf_gt_is_missing(val)  ((val)>>1 ? 0 : 1)
     #define bcf_gt_is_phased(idx)   ((idx)&1)
     #define bcf_gt_allele(val)      (((val)>>1)-1)
@@ -625,8 +636,8 @@ typedef struct {
      * bcf_get_*_id() - returns pointer to FORMAT/INFO field data given the header index instead of the string ID
      * @line: VCF line obtained from vcf_parse1
      * @id:  The header index for the tag, obtained from bcf_hdr_id2int()
-     * 
-     * Returns bcf_fmt_t* / bcf_info_t*. These functions do not check if the index is valid 
+     *
+     * Returns bcf_fmt_t* / bcf_info_t*. These functions do not check if the index is valid
      * as their goal is to avoid the header lookup.
      */
     bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id);
@@ -667,6 +678,10 @@ typedef struct {
      *
      *  Returns negative value on error or the number of written values on success.
      *
+     *  Use the returned number of written values for accessing valid entries of dst, as ndst is only a
+     *  watermark that can be higher than the returned value, i.e. the end of dst can contain carry-over
+     *  values from previous calls to bcf_get_format_*() on lines with more values per sample.
+     *
      *  Example:
      *      int ndst = 0; char **dst = NULL;
      *      if ( bcf_get_format_string(hdr, line, "XX", &dst, &ndst) > 0 )
@@ -674,8 +689,35 @@ typedef struct {
      *      free(dst[0]); free(dst);
      *
      *  Example:
-     *      int ngt, *gt_arr = NULL, ngt_arr = 0;
+     *      int i, j, ngt, nsmpl = bcf_hdr_nsamples(hdr);
+     *      int32_t *gt_arr = NULL, ngt_arr = 0;
+     *
      *      ngt = bcf_get_genotypes(hdr, line, &gt_arr, &ngt_arr);
+     *      if ( ngt<=0 ) return; // GT not present
+     *
+     *      int max_ploidy = ngt/nsmpl;
+     *      for (i=0; i<nsmpl; i++)
+     *      {
+     *        int32_t *ptr = gt + i*max_ploidy;
+     *        for (j=0; j<max_ploidy; j++)
+     *        {
+     *           // if true, the sample has smaller ploidy
+     *           if ( ptr[j]==bcf_int32_vector_end ) break;
+     *
+     *           // missing allele
+     *           if ( bcf_gt_is_missing(ptr[j]) ) continue;
+     *
+     *           // the VCF 0-based allele index
+     *           int allele_index = bcf_gt_allele(ptr[j]);
+     *
+     *           // is phased?
+     *           int is_phased = bcf_gt_is_phased(ptr[j]);
+     *
+     *           // .. do something ..
+     *         }
+     *      }
+     *      free(gt_arr);
+     *
      */
     #define bcf_get_format_int32(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
     #define bcf_get_format_float(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)
@@ -755,8 +797,54 @@ typedef struct {
     #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
 
     hts_idx_t *bcf_index_load2(const char *fn, const char *fnidx);
+
+    /**
+     *  bcf_index_build() - Generate and save an index file
+     *  @fn:         Input VCF/BCF filename
+     *  @min_shift:  Positive to generate CSI, or 0 to generate TBI
+     *
+     *  Returns 0 if successful, or negative if an error occurred.
+     *
+     *  List of error codes:
+     *      -1 .. indexing failed
+     *      -2 .. opening @fn failed
+     *      -3 .. format not indexable
+     *      -4 .. failed to create and/or save the index
+     */
     int bcf_index_build(const char *fn, int min_shift);
+
+    /**
+     *  bcf_index_build2() - Generate and save an index to a specific file
+     *  @fn:         Input VCF/BCF filename
+     *  @fnidx:      Output filename, or NULL to add .csi/.tbi to @fn
+     *  @min_shift:  Positive to generate CSI, or 0 to generate TBI
+     *
+     *  Returns 0 if successful, or negative if an error occurred.
+     *
+     *  List of error codes:
+     *      -1 .. indexing failed
+     *      -2 .. opening @fn failed
+     *      -3 .. format not indexable
+     *      -4 .. failed to create and/or save the index
+     */
     int bcf_index_build2(const char *fn, const char *fnidx, int min_shift);
+
+    /**
+     *  bcf_index_build3() - Generate and save an index to a specific file
+     *  @fn:         Input VCF/BCF filename
+     *  @fnidx:      Output filename, or NULL to add .csi/.tbi to @fn
+     *  @min_shift:  Positive to generate CSI, or 0 to generate TBI
+     *  @n_threads:  Number of VCF/BCF decoder threads
+     *
+     *  Returns 0 if successful, or negative if an error occurred.
+     *
+     *  List of error codes:
+     *      -1 .. indexing failed
+     *      -2 .. opening @fn failed
+     *      -3 .. format not indexable
+     *      -4 .. failed to create and/or save the index
+     */
+     int bcf_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads);
 
 /*******************
  * Typed value I/O *
@@ -883,13 +971,13 @@ static inline int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
 {
     if (type == BCF_BT_INT8) {
         *q = (uint8_t*)p + 1;
-        return *(int8_t*)p;
+        return le_to_i8(p);
     } else if (type == BCF_BT_INT16) {
         *q = (uint8_t*)p + 2;
-        return *(int16_t*)p;
+        return le_to_i16(p);
     } else {
         *q = (uint8_t*)p + 4;
-        return *(int32_t*)p;
+        return le_to_i32(p);
     }
 }
 

@@ -33,11 +33,15 @@ use IO::Handle;
 
 my $opts = parse_params();
 
-test_view($opts);
+test_view($opts,0);
+test_view($opts,4);
+
 test_vcf_api($opts,out=>'test-vcf-api.out');
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
 test_vcf_various($opts);
+test_bcf_sr_sort($opts);
 test_convert_padded_header($opts);
+test_rebgzip($opts);
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -122,7 +126,7 @@ sub test_cmd
     print "$test:\n";
     print "\t$args{cmd}\n";
 
-    my ($ret,$out) = _cmd("$args{cmd} 2>&1");
+    my ($ret,$out) = _cmd("$args{cmd}");
     if ( $ret ) { failed($opts,$test); return; }
     if ( $$opts{redo_outputs} && -e "$$opts{path}/$args{out}" )
     {
@@ -202,7 +206,7 @@ sub testv {
     my ($ret, $out) = _cmd($cmd);
     if ($ret != 0) {
         STDOUT->flush();
-        print STDERR "FAILED\n\n";
+        print STDERR "FAILED\n$out\n";
         STDERR->flush();
         $test_view_failures++;
     }
@@ -210,7 +214,8 @@ sub testv {
 
 sub test_view
 {
-    my ($opts, %args) = @_;
+    my ($opts, $nthreads) = @_;
+    my $tv_args = $nthreads ? "-\@$nthreads" : "";
 
     foreach my $sam (glob("*#*.sam")) {
         my ($base, $ref) = ($sam =~ /((.*)#.*)\.sam/);
@@ -219,54 +224,59 @@ sub test_view
         my $bam  = "$base.tmp.bam";
         my $cram = "$base.tmp.cram";
 
+        my $md = "-nomd";
+        if ($sam =~ /^md/) {
+            $md = "";
+        }
+
         print "test_view testing $sam, ref $ref:\n";
         $test_view_failures = 0;
 
         # SAM -> BAM -> SAM
-        testv "./test_view -S -b $sam > $bam";
-        testv "./test_view $bam > $bam.sam_";
+        testv "./test_view $tv_args -S -b $sam > $bam";
+        testv "./test_view $tv_args $bam > $bam.sam_";
         testv "./compare_sam.pl $sam $bam.sam_";
 
         # SAM -> CRAM -> SAM
-        testv "./test_view -t $ref -S -C $sam > $cram";
-        testv "./test_view -D $cram > $cram.sam_";
-        testv "./compare_sam.pl -nomd $sam $cram.sam_";
+        testv "./test_view $tv_args -t $ref -S -C $sam > $cram";
+        testv "./test_view $tv_args -D $cram > $cram.sam_";
+        testv "./compare_sam.pl $md $sam $cram.sam_";
 
         # BAM -> CRAM -> BAM -> SAM
         $cram = "$bam.cram";
-        testv "./test_view -t $ref -C $bam > $cram";
-        testv "./test_view -b -D $cram > $cram.bam";
-        testv "./test_view $cram.bam > $cram.bam.sam_";
-        testv "./compare_sam.pl -nomd $sam $cram.bam.sam_";
+        testv "./test_view $tv_args -t $ref -C $bam > $cram";
+        testv "./test_view $tv_args -b -D $cram > $cram.bam";
+        testv "./test_view $tv_args $cram.bam > $cram.bam.sam_";
+        testv "./compare_sam.pl $md $sam $cram.bam.sam_";
 
         # SAM -> CRAM3 -> SAM
         $cram = "$base.tmp.cram";
-        testv "./test_view -t $ref -S -C -o VERSION=3.0 $sam > $cram";
-        testv "./test_view -D $cram > $cram.sam_";
-        testv "./compare_sam.pl -nomd $sam $cram.sam_";
+        testv "./test_view $tv_args -t $ref -S -C -o VERSION=3.0 $sam > $cram";
+        testv "./test_view $tv_args -D $cram > $cram.sam_";
+        testv "./compare_sam.pl $md $sam $cram.sam_";
 
         # BAM -> CRAM3 -> BAM -> SAM
         $cram = "$bam.cram";
-        testv "./test_view -t $ref -C -o VERSION=3.0 $bam > $cram";
-        testv "./test_view -b -D $cram > $cram.bam";
-        testv "./test_view $cram.bam > $cram.bam.sam_";
-        testv "./compare_sam.pl -nomd $sam $cram.bam.sam_";
+        testv "./test_view $tv_args -t $ref -C -o VERSION=3.0 $bam > $cram";
+        testv "./test_view $tv_args -b -D $cram > $cram.bam";
+        testv "./test_view $tv_args $cram.bam > $cram.bam.sam_";
+        testv "./compare_sam.pl $md $sam $cram.bam.sam_";
 
         # CRAM3 -> CRAM2
         $cram = "$base.tmp.cram";
-        testv "./test_view -t $ref -C -o VERSION=2.1 $cram > $cram.cram";
+        testv "./test_view $tv_args -t $ref -C -o VERSION=2.1 $cram > $cram.cram";
 
         # CRAM2 -> CRAM3
-        testv "./test_view -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
-        testv "./test_view $cram > $cram.sam_";
-        testv "./compare_sam.pl -nomd $sam $cram.sam_";
+        testv "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
+        testv "./test_view $tv_args $cram > $cram.sam_";
+        testv "./compare_sam.pl $md $sam $cram.sam_";
 
         # Java pre-made CRAM -> SAM
         my $jcram = "${base}_java.cram";
         if (-e $jcram) {
             my $jsam = "${base}_java.tmp.sam_";
-            testv "./test_view -i reference=$ref $jcram > $jsam";
-            testv "./compare_sam.pl -nomd $sam $jsam";
+            testv "./test_view $tv_args -i reference=$ref $jcram > $jsam";
+            testv "./compare_sam.pl -Baux $md $sam $jsam";
         }
 
         if ($test_view_failures == 0)
@@ -305,6 +315,16 @@ sub test_vcf_various
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatcols.vcf");
     test_cmd($opts, %args, out => "noroundtrip-out.vcf",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/noroundtrip.vcf");
+    test_cmd($opts, %args, out => "formatmissing-out.vcf",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatmissing.vcf");
+}
+
+sub test_rebgzip
+{
+    my ($opts, %args) = @_;
+
+    test_cmd($opts, %args, out => "bgziptest.txt.gz",
+        cmd => "$$opts{bin}/bgzip -I $$opts{path}/bgziptest.txt.gz.gzi -c -g $$opts{path}/bgziptest.txt");
 }
 
 sub test_convert_padded_header
@@ -321,3 +341,20 @@ sub test_convert_padded_header
             cmd => "$$opts{path}/test_view -t ce.fa -C $nulsbam");
     }
 }
+
+sub test_bcf_sr_sort
+{
+    my ($opts, %args) = @_;
+    for (my $i=0; $i<10; $i++)
+    {
+        my $seed = int(rand(time));
+        my $test = 'test-bcf-sr';
+        my $cmd  = "$$opts{path}/test-bcf-sr.pl -t $$opts{tmp} -s $seed";
+        print "$test:\n";
+        print "\t$cmd\n";
+        my ($ret,$out) = _cmd($cmd);
+        if ( $ret ) { failed($opts,$test); }
+        else { passed($opts,$test); }
+    }
+}
+

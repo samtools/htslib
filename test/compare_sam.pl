@@ -93,20 +93,20 @@ while ($ln1 && $ln2) {
 
 
     if (exists $opts{Baux}) {
-	# Turn ??:H:<hex> into ??:B:c,<vals> so we can compare
-	# Cramtools.jar vs htslib encodings.  Probably doable with (un)pack
-	map {s/^(..):H:(.*)/{"$1:B:C,".join(",",map {$_=hex $_} $2=~m:..:g)}/e} @ln1[11..$#ln1];
-	map {s/^(..):H:(.*)/{"$1:B:C,".join(",",map {$_=hex $_} $2=~m:..:g)}/e} @ln2[11..$#ln2];
+        # Turn ??:H:<hex> into ??:B:c,<vals> so we can compare
+        # Cramtools.jar vs htslib encodings.  Probably doable with (un)pack
+        map {s/^(..):H:(.*)/{join(",", "$1:B:C", map {hex $_} $2=~m:..:g)}/e} @ln1[11..$#ln1];
+        map {s/^(..):H:(.*)/{join(",", "$1:B:C", map {hex $_} $2=~m:..:g)}/e} @ln2[11..$#ln2];
 
-	# Canonicalise ??:B:? data series to be unsigned
-	map {s/^(..):B:c,(.*)/{"$1:B:C,".join(",",map {$_=($_+256)&255} split(",",$2))}/e} @ln1[11..$#ln1];
-	map {s/^(..):B:c,(.*)/{"$1:B:C,".join(",",map {$_=($_+256)&255} split(",",$2))}/e} @ln2[11..$#ln2];
+        # Canonicalise ??:B:? data series to be unsigned
+        map {s/^(..):B:c(,?)(.*)/{"$1:B:C$2".join(",",map {($_+256)&255} split(",",$3))}/e} @ln1[11..$#ln1];
+        map {s/^(..):B:c(,?)(.*)/{"$1:B:C$2".join(",",map {($_+256)&255} split(",",$3))}/e} @ln2[11..$#ln2];
 
-	map {s/^(..):B:s,(.*)/{"$1:B:S,".join(",",map {$_=($_+65536)&65535} split(",",$2))}/e} @ln1[11..$#ln1];
-	map {s/^(..):B:s,(.*)/{"$1:B:S,".join(",",map {$_=($_+65536)&65535} split(",",$2))}/e} @ln2[11..$#ln2];
+        map {s/^(..):B:s(,?)(.*)/{"$1:B:S$2".join(",",map {($_+65536)&65535} split(",",$3))}/e} @ln1[11..$#ln1];
+        map {s/^(..):B:s(,?)(.*)/{"$1:B:S$2".join(",",map {($_+65536)&65535} split(",",$3))}/e} @ln2[11..$#ln2];
 
-	map {s/^(..):B:i,(.*)/{"$1:B:I,".join(",",map {$_=($_+4294967296)&4294967295} split(",",$2))}/e} @ln1[11..$#ln1];
-	map {s/^(..):B:i,(.*)/{"$1:B:I,".join(",",map {$_=($_+4294967296)&4294967295} split(",",$2))}/e} @ln2[11..$#ln2];
+        map {s/^(..):B:i(,?)(.*)/{"$1:B:I$2".join(",",map {$_<0? ($_+4294967296) : $_} split(",",$3))}/e} @ln1[11..$#ln1];
+        map {s/^(..):B:i(,?)(.*)/{"$1:B:I$2".join(",",map {$_<0? ($_+4294967296) : $_} split(",",$3))}/e} @ln2[11..$#ln2];
     }
 
     # Rationalise order of auxiliary fields

@@ -109,7 +109,7 @@ bcf_sweep_t *bcf_sweep_init(const char *fname)
     bcf_sweep_t *sw = (bcf_sweep_t*) calloc(1,sizeof(bcf_sweep_t));
     sw->file = hts_open(fname, "r");
     sw->fp   = hts_get_bgzfp(sw->file);
-    bgzf_index_build_init(sw->fp);
+    if (sw->fp) bgzf_index_build_init(sw->fp);
     sw->hdr  = bcf_hdr_read(sw->file);
     sw->mrec = 1;
     sw->rec  = (bcf1_t*) calloc(sw->mrec,(sizeof(bcf1_t)));
@@ -154,7 +154,7 @@ bcf1_t *bcf_sweep_fwd(bcf_sweep_t *sw)
     if ( ret!=0 )   // last record, get ready for sweeping backwards
     {
         sw->idx_done = 1;
-        sw->fp->idx_build_otf = 0;
+        if (sw->fp) sw->fp->idx_build_otf = 0;
         sw_seek(sw, SW_BWD);
         return NULL;
     }

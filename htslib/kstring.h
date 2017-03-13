@@ -36,6 +36,17 @@
 #define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
 #endif
 
+#ifndef kroundup_size_t
+#define kroundup_size_t(x) (--(x),                                       \
+                            (x)|=(x)>>(sizeof(size_t)/8), /*  0 or  1 */ \
+                            (x)|=(x)>>(sizeof(size_t)/4), /*  1 or  2 */ \
+                            (x)|=(x)>>(sizeof(size_t)/2), /*  2 or  4 */ \
+                            (x)|=(x)>>(sizeof(size_t)),   /*  4 or  8 */ \
+                            (x)|=(x)>>(sizeof(size_t)*2), /*  8 or 16 */ \
+                            (x)|=(x)>>(sizeof(size_t)*4), /* 16 or 32 */ \
+                            ++(x))
+#endif
+
 #if defined __GNUC__ && (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ > 4))
 #define KS_ATTR_PRINTF(fmt, arg) __attribute__((__format__ (__printf__, fmt, arg)))
 #else
@@ -71,6 +82,7 @@ extern "C" {
 
 	int kvsprintf(kstring_t *s, const char *fmt, va_list ap) KS_ATTR_PRINTF(2,0);
 	int ksprintf(kstring_t *s, const char *fmt, ...) KS_ATTR_PRINTF(2,3);
+    int kputd(double d, kstring_t *s); // custom %g only handler
 	int ksplit_core(char *s, int delimiter, int *_max, int **_offsets);
 	char *kstrstr(const char *str, const char *pat, int **_prep);
 	char *kstrnstr(const char *str, const char *pat, int n, int **_prep);
@@ -97,12 +109,12 @@ static inline int ks_resize(kstring_t *s, size_t size)
 {
 	if (s->m < size) {
 		char *tmp;
-		s->m = size;
-		kroundup32(s->m);
-		if ((tmp = (char*)realloc(s->s, s->m)))
-			s->s = tmp;
-		else
+		kroundup_size_t(size);
+		tmp = (char*)realloc(s->s, size);
+		if (!tmp)
 			return -1;
+		s->s = tmp;
+		s->m = size;
 	}
 	return 0;
 }
@@ -131,15 +143,8 @@ static inline char *ks_release(kstring_t *s)
 
 static inline int kputsn(const char *p, int l, kstring_t *s)
 {
-	if (s->l + l + 1 >= s->m) {
-		char *tmp;
-		s->m = s->l + l + 2;
-		kroundup32(s->m);
-		if ((tmp = (char*)realloc(s->s, s->m)))
-			s->s = tmp;
-		else
-			return EOF;
-	}
+	if (ks_resize(s, s->l + l + 2) < 0)
+		return EOF;
 	memcpy(s->s + s->l, p, l);
 	s->l += l;
 	s->s[s->l] = 0;
@@ -153,15 +158,8 @@ static inline int kputs(const char *p, kstring_t *s)
 
 static inline int kputc(int c, kstring_t *s)
 {
-	if (s->l + 1 >= s->m) {
-		char *tmp;
-		s->m = s->l + 2;
-		kroundup32(s->m);
-		if ((tmp = (char*)realloc(s->s, s->m)))
-			s->s = tmp;
-		else
-			return EOF;
-	}
+	if (ks_resize(s, s->l + 2) < 0)
+		return EOF;
 	s->s[s->l++] = c;
 	s->s[s->l] = 0;
 	return c;
@@ -169,30 +167,16 @@ static inline int kputc(int c, kstring_t *s)
 
 static inline int kputc_(int c, kstring_t *s)
 {
-	if (s->l + 1 > s->m) {
-		char *tmp;
-		s->m = s->l + 1;
-		kroundup32(s->m);
-		if ((tmp = (char*)realloc(s->s, s->m)))
-			s->s = tmp;
-		else
-			return EOF;
-	}
+	if (ks_resize(s, s->l + 1) < 0)
+		return EOF;
 	s->s[s->l++] = c;
 	return 1;
 }
 
 static inline int kputsn_(const void *p, int l, kstring_t *s)
 {
-	if (s->l + l > s->m) {
-		char *tmp;
-		s->m = s->l + l;
-		kroundup32(s->m);
-		if ((tmp = (char*)realloc(s->s, s->m)))
-			s->s = tmp;
-		else
-			return EOF;
-	}
+	if (ks_resize(s, s->l + l) < 0)
+		return EOF;
 	memcpy(s->s + s->l, p, l);
 	s->l += l;
 	return l;
@@ -206,15 +190,8 @@ static inline int kputw(int c, kstring_t *s)
 	if (c < 0) x = -x;
 	do { buf[l++] = x%10 + '0'; x /= 10; } while (x > 0);
 	if (c < 0) buf[l++] = '-';
-	if (s->l + l + 1 >= s->m) {
-		char *tmp;
-		s->m = s->l + l + 2;
-		kroundup32(s->m);
-		if ((tmp = (char*)realloc(s->s, s->m)))
-			s->s = tmp;
-		else
-			return EOF;
-	}
+	if (ks_resize(s, s->l + l + 2) < 0)
+		return EOF;
 	for (i = l - 1; i >= 0; --i) s->s[s->l++] = buf[i];
 	s->s[s->l] = 0;
 	return 0;
@@ -227,15 +204,8 @@ static inline int kputuw(unsigned c, kstring_t *s)
 	unsigned x;
 	if (c == 0) return kputc('0', s);
 	for (l = 0, x = c; x > 0; x /= 10) buf[l++] = x%10 + '0';
-	if (s->l + l + 1 >= s->m) {
-		char *tmp;
-		s->m = s->l + l + 2;
-		kroundup32(s->m);
-		if ((tmp = (char*)realloc(s->s, s->m)))
-			s->s = tmp;
-		else
-			return EOF;
-	}
+	if (ks_resize(s, s->l + l + 2) < 0)
+		return EOF;
 	for (i = l - 1; i >= 0; --i) s->s[s->l++] = buf[i];
 	s->s[s->l] = 0;
 	return 0;
@@ -249,15 +219,8 @@ static inline int kputl(long c, kstring_t *s)
 	if (c < 0) x = -x;
 	do { buf[l++] = x%10 + '0'; x /= 10; } while (x > 0);
 	if (c < 0) buf[l++] = '-';
-	if (s->l + l + 1 >= s->m) {
-		char *tmp;
-		s->m = s->l + l + 2;
-		kroundup32(s->m);
-		if ((tmp = (char*)realloc(s->s, s->m)))
-			s->s = tmp;
-		else
-			return EOF;
-	}
+	if (ks_resize(s, s->l + l + 2) < 0)
+		return EOF;
 	for (i = l - 1; i >= 0; --i) s->s[s->l++] = buf[i];
 	s->s[s->l] = 0;
 	return 0;

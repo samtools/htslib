@@ -46,9 +46,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 
+#include <pthread.h>
 #include <stdint.h>
+#include <sys/types.h>
 
-#include "cram/thread_pool.h"
+#include "htslib/thread_pool.h"
 #include "cram/string_alloc.h"
 #include "cram/mFILE.h"
 #include "htslib/khash.h"
@@ -82,6 +84,7 @@ KHASH_MAP_INIT_STR(map, pmap_t)
 struct hFILE;
 
 #define SEQS_PER_SLICE 10000
+#define BASES_PER_SLICE (SEQS_PER_SLICE*500)
 #define SLICE_PER_CNT  1
 
 #define CRAM_SUBST_MATRIX "CGTNAGTNACTNACGNACGT"
@@ -245,6 +248,10 @@ typedef struct {
     double lzma_extra;
 } cram_metrics;
 
+// Hash aux key (XX:i) to cram_metrics
+KHASH_MAP_INIT_INT(m_metrics, cram_metrics*)
+
+
 /* Block */
 typedef struct cram_block {
     enum cram_block_method  method, orig_method;
@@ -260,6 +267,9 @@ typedef struct cram_block {
     size_t alloc;
     size_t byte;
     int bit;
+
+    // To aid compression
+    cram_metrics *m; // used to track aux block compression only
 } cram_block;
 
 struct cram_codec; /* defined in cram_codecs.h */
@@ -314,6 +324,15 @@ typedef struct cram_map {
     struct cram_codec *codec;
     struct cram_map *next; // for noddy internal hash
 } cram_map;
+
+typedef struct cram_tag_map {
+    struct cram_codec *codec;
+    cram_block *blk;
+    cram_metrics *m;
+} cram_tag_map;
+
+// Hash aux key (XX:i) to cram_tag_map
+KHASH_MAP_INIT_INT(m_tagmap, cram_tag_map*)
 
 /* Mapped or unmapped slice header block */
 typedef struct cram_block_slice_hdr {
@@ -385,10 +404,12 @@ typedef struct cram_container {
     /* Statistics for encoding */
     cram_stats *stats[DS_END];
 
-    khash_t(s_i2i) *tags_used; // set of tag types in use, for tag encoding map
+    khash_t(m_tagmap) *tags_used; // set of tag types in use, for tag encoding map
     int *refs_used;       // array of frequency of ref seq IDs
 
     uint32_t crc32;       // CRC32
+
+    uint64_t s_num_bases; // number of bases in this slice
 } cram_container;
 
 /*
@@ -555,23 +576,19 @@ typedef struct cram_slice {
     cram_block *qual_blk;
     cram_block *base_blk;
     cram_block *soft_blk;
-    cram_block *aux_blk;
-    cram_block *aux_OQ_blk;
-    cram_block *aux_BQ_blk;
-    cram_block *aux_BD_blk;
-    cram_block *aux_BI_blk;
-    cram_block *aux_FZ_blk;
-    cram_block *aux_oq_blk;
-    cram_block *aux_os_blk;
-    cram_block *aux_oz_blk;
+    cram_block *aux_blk;       // BAM aux block, created while decoding CRAM
 
     string_alloc_t *pair_keys; // Pooled keys for pair hash.
     khash_t(m_s2i) *pair[2];   // for identifying read-pairs in this slice.
 
-    char *ref;               // slice of current reference
-    int ref_start;           // start position of current reference;
-    int ref_end;             // end position of current reference;
+    char *ref;                 // slice of current reference
+    int ref_start;             // start position of current reference;
+    int ref_end;               // end position of current reference;
     int ref_id;
+
+    // For going from BAM to CRAM; an array of auxiliary blocks per type
+    int naux_block;
+    cram_block **aux_block;
 } cram_slice;
 
 /*-----------------------------------------------------------------------------
@@ -685,11 +702,13 @@ typedef struct cram_fd {
     // compression level and metrics
     int level;
     cram_metrics *m[DS_END];
+    khash_t(m_metrics) *tags_used; // cram_metrics[], per tag types in use.
 
     // options
     int decode_md; // Whether to export MD and NM tags
     int verbose;
     int seqs_per_slice;
+    int bases_per_slice;
     int slices_per_container;
     int embed_ref;
     int no_ref;
@@ -719,14 +738,18 @@ typedef struct cram_fd {
     
     // thread pool
     int own_pool;
-    t_pool *pool;
-    t_results_queue *rqueue;
+    hts_tpool *pool;
+    hts_tpool_process *rqueue;
     pthread_mutex_t metrics_lock;
     pthread_mutex_t ref_lock;
     spare_bams *bl;
     pthread_mutex_t bam_list_lock;
     void *job_pending;
     int ooc;                            // out of containers.
+
+    int lossy_read_names;               // boolean
+    int tlen_approx;                    // max TLEN calculation offset.
+    int tlen_zero;                      // If true, permit tlen 0 (=> tlen calculated)
 } cram_fd;
 
 // Translation of required fields to cram data series
@@ -812,7 +835,7 @@ enum cram_fields {
 
 /* Internal only */
 #define CRAM_FLAG_STATS_ADDED          (1<<30)
-
+#define CRAM_FLAG_DISCARD_NAME         (1<<31)
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,6 @@
 /*  htsfile.c -- file identifier and minimal viewer.
 
-    Copyright (C) 2014-2016 Genome Research Ltd.
+    Copyright (C) 2014-2017 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -24,9 +24,12 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
+#include <ctype.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <getopt.h>
 #include <unistd.h>
 
@@ -37,110 +40,134 @@ DEALINGS IN THE SOFTWARE.  */
 
 enum { identify, view_headers, view_all } mode = identify;
 int show_headers = 1;
+int verbose = 0;
 int status = EXIT_SUCCESS;  /* Exit status from main */
+
+void error(const char *format, ...)
+{
+    int err = errno;
+    va_list args;
+    va_start(args, format);
+    fflush(stdout);
+    fprintf(stderr, "htsfile: ");
+    vfprintf(stderr, format, args);
+    if (err) fprintf(stderr, ": %s\n", strerror(err));
+    else fprintf(stderr, "\n");
+    fflush(stderr);
+    va_end(args);
+    status = EXIT_FAILURE;
+}
 
 static htsFile *dup_stdout(const char *mode)
 {
     int fd = dup(STDOUT_FILENO);
-    if (fd < 0) {
-        perror("htsfile: Couldn't duplicate stdout");
-        return NULL;
-    }
-    hFILE *hfp = hdopen(fd, mode);
+    hFILE *hfp = (fd >= 0)? hdopen(fd, mode) : NULL;
     return hfp? hts_hopen(hfp, "-", mode) : NULL;
 }
 
-static int view_sam(hFILE *hfp, const char *filename)
+static void view_sam(samFile *in, const char *filename)
 {
-    samFile *in = hts_hopen(hfp, filename, "r");
+    bam1_t *b = NULL;
     bam_hdr_t *hdr = NULL;
     samFile *out = NULL;
-    if (in == NULL) {
-        status = EXIT_FAILURE;
-        return 0;
-    }
+
     hdr = sam_hdr_read(in);
     if (hdr == NULL) {
-        status = EXIT_FAILURE;
+        errno = 0; error("reading headers from \"%s\" failed", filename);
         goto clean;
     }
+
     out = dup_stdout("w");
-    if (out == NULL) {
-        status = EXIT_FAILURE;
-        goto clean;
-    }
+    if (out == NULL) { error("reopening standard output failed"); goto clean; }
 
     if (show_headers) {
         if (sam_hdr_write(out, hdr) != 0) {
-            status = EXIT_FAILURE;
+            error("writing headers to standard output failed");
             goto clean;
         }
     }
+
     if (mode == view_all) {
-        bam1_t *b = bam_init1();
         int ret;
+
+        b = bam_init1();
+        if (b == NULL) { error("can't create record"); goto clean; }
+
         while ((ret = sam_read1(in, hdr, b)) >= 0) {
             if (sam_write1(out, hdr, b) < 0) {
-                status = EXIT_FAILURE;
+                error("writing to standard output failed");
                 goto clean;
             }
         }
-        bam_destroy1(b);
-        if (ret != -1) // eof
-            status = EXIT_FAILURE;
+
+        if (ret < -1) { error("reading \"%s\" failed", filename); goto clean; }
     }
 
  clean:
-    if (hdr != NULL) bam_hdr_destroy(hdr);
-    if (out != NULL && hts_close(out) != 0)
-        status = EXIT_FAILURE;
-    if (hts_close(in) != 0)
-        status = EXIT_FAILURE;
-    return 1;
+    bam_hdr_destroy(hdr);
+    bam_destroy1(b);
+    if (out) hts_close(out);
 }
 
-static int view_vcf(hFILE *hfp, const char *filename)
+static void view_vcf(vcfFile *in, const char *filename)
 {
-    vcfFile *in = hts_hopen(hfp, filename, "r");
+    bcf1_t *rec = NULL;
     bcf_hdr_t *hdr = NULL;
     vcfFile *out = NULL;
-    if (in == NULL) {
-        status = EXIT_FAILURE;
-        return 0;
-    }
+
     hdr = bcf_hdr_read(in);
     if (hdr == NULL) {
-        status = EXIT_FAILURE;
+        errno = 0; error("reading headers from \"%s\" failed", filename);
         goto clean;
     }
+
     out = dup_stdout("w");
-    if (out == NULL) {
-        status = EXIT_FAILURE;
-        goto clean;
-    }
+    if (out == NULL) { error("reopening standard output failed"); goto clean; }
 
     if (show_headers) {
         if (bcf_hdr_write(out, hdr) != 0) {
-            status = EXIT_FAILURE;
+            error("writing headers to standard output failed");
             goto clean;
         }
     }
+
     if (mode == view_all) {
-        bcf1_t *rec = bcf_init();
-        while (bcf_read(in, hdr, rec) >= 0) {
+        int ret;
+
+        rec = bcf_init();
+        if (rec == NULL) { error("can't create record"); goto clean; }
+
+        while ((ret = bcf_read(in, hdr, rec)) >= 0) {
             if (bcf_write(out, hdr, rec) < 0) {
-                status = EXIT_FAILURE;
+                error("writing to standard output failed");
                 goto clean;
             }
         }
-        bcf_destroy(rec);
+
+        if (ret < -1) { error("reading \"%s\" failed", filename); goto clean; }
     }
 
  clean:
-    if (hdr != NULL) bcf_hdr_destroy(hdr);
-    if (out != NULL) hts_close(out);
-    hts_close(in);
-    return 1;
+    if (hdr) bcf_hdr_destroy(hdr);
+    if (rec) bcf_destroy(rec);
+    if (out) hts_close(out);
+}
+
+static void view_raw(hFILE *fp, const char *filename)
+{
+    int c, prev;
+    for (prev = '\n'; (c = hgetc(fp)) != EOF; prev = c)
+        if (isprint(c) || c == '\n' || c == '\t') putchar(c);
+        else if (c == '\r') fputs("\\r", stdout);
+        else if (c == '\0') fputs("\\0", stdout);
+        else printf("\\x%02x", c);
+
+    if (prev != '\n') putchar('\n');
+
+    if (herrno(fp)) {
+        errno = herrno(fp);
+        error("reading \"%s\" failed", filename);
+    }
 }
 
 static void usage(FILE *fp, int status)
@@ -175,11 +202,11 @@ int main(int argc, char **argv)
         case 'c': mode = view_all; break;
         case 'h': mode = view_headers; show_headers = 1; break;
         case 'H': show_headers = 0; break;
-        case 'v': hts_verbose++; break;
+        case 'v': hts_verbose++; verbose++; break;
         case 1:
             printf(
 "htsfile (htslib) %s\n"
-"Copyright (C) 2016 Genome Research Ltd.\n",
+"Copyright (C) 2017 Genome Research Ltd.\n",
                    hts_version());
             exit(EXIT_SUCCESS);
             break;
@@ -190,44 +217,54 @@ int main(int argc, char **argv)
     if (optind == argc) usage(stderr, EXIT_FAILURE);
 
     for (i = optind; i < argc; i++) {
-        htsFormat fmt;
         hFILE *fp = hopen(argv[i], "r");
         if (fp == NULL) {
-            fprintf(stderr, "htsfile: can't open \"%s\": %s\n", argv[i], strerror(errno));
-            status = EXIT_FAILURE;
-            continue;
-        }
-
-        if (hts_detect_format(fp, &fmt) < 0) {
-            fprintf(stderr, "htsfile: detecting \"%s\" format failed: %s\n", argv[i], strerror(errno));
-            hclose_abruptly(fp);
-            status = EXIT_FAILURE;
+            error("can't open \"%s\"", argv[i]);
             continue;
         }
 
         if (mode == identify) {
+            htsFormat fmt;
+            if (hts_detect_format(fp, &fmt) < 0) {
+                error("detecting \"%s\" format failed", argv[i]);
+                hclose_abruptly(fp);
+                continue;
+            }
+
             char *description = hts_format_description(&fmt);
             printf("%s:\t%s\n", argv[i], description);
             free(description);
         }
-        else
-            switch (fmt.category) {
-            case sequence_data:
-                if (view_sam(fp, argv[i])) fp = NULL;
-                break;
-            case variant_data:
-                if (view_vcf(fp, argv[i])) fp = NULL;
-                break;
-            default:
-                fprintf(stderr, "htsfile: can't view %s: unknown format\n", argv[i]);
-                status = EXIT_FAILURE;
-                break;
-            }
+        else {
+            htsFile *hts = hts_hopen(fp, argv[i], "r");
+            if (hts) {
+                switch (hts_get_format(hts)->category) {
+                case sequence_data:
+                    view_sam(hts, argv[i]);
+                    break;
+                case variant_data:
+                    view_vcf(hts, argv[i]);
+                    break;
+                default:
+                    if (verbose)
+                        view_raw(fp, argv[i]);
+                    else {
+                        errno = 0;
+                        error("can't view \"%s\": unknown format", argv[i]);
+                    }
+                    break;
+                }
 
-        if (fp && hclose(fp) < 0) {
-            fprintf(stderr, "htsfile: closing %s failed\n", argv[i]);
-            status = EXIT_FAILURE;
+                if (hts_close(hts) < 0) error("closing \"%s\" failed", argv[i]);
+                fp = NULL;
+            }
+            else if (errno == ENOEXEC && verbose)
+                view_raw(fp, argv[i]);
+            else
+                error("can't view \"%s\"", argv[i]);
         }
+
+        if (fp && hclose(fp) < 0) error("closing \"%s\" failed", argv[i]);
     }
 
     return status;

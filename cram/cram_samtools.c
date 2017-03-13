@@ -74,11 +74,12 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
     };
     bam1_t *b = (bam1_t *)*bp;
     uint8_t *cp;
-    int i, bam_len;
+    int i, qname_nuls, bam_len;
 
     //b->l_aux = extra_len; // we fill this out later
 
-    bam_len = qname_len + 1 + ncigar*4 + (len+1)/2 + len + extra_len;
+    qname_nuls = 4 - qname_len%4;
+    bam_len = qname_len + qname_nuls + ncigar*4 + (len+1)/2 + len + extra_len;
     if (b->m_data < bam_len) {
 	b->m_data = bam_len;
 	kroundup32(b->m_data);
@@ -92,7 +93,8 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
     b->core.pos     = pos-1;
     b->core.bin     = bam_reg2bin(pos-1, end);
     b->core.qual    = mapq;
-    b->core.l_qname = qname_len+1;
+    b->core.l_qname = qname_len+qname_nuls;
+    b->core.l_extranul = qname_nuls-1;
     b->core.flag    = flag;
     b->core.n_cigar = ncigar;
     b->core.l_qseq  = len;
@@ -103,9 +105,10 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
     cp = b->data;
 
     strncpy((char *)cp, qname, qname_len);
-    cp[qname_len] = 0;
-    cp += qname_len+1;
-    memcpy(cp, cigar, ncigar*4);
+    for (i = 0; i < qname_nuls; i++)
+	cp[qname_len+i] = '\0';
+    cp += qname_len+qname_nuls;
+    if (ncigar > 0) memcpy(cp, cigar, ncigar*4);
     cp += ncigar*4;
 
     for (i = 0; i+1 < len; i+=2) {

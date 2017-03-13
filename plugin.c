@@ -39,14 +39,6 @@ DEALINGS IN THE SOFTWARE.  */
 #define PLUGINPATH ""
 #endif
 
-#ifdef __APPLE__
-#define PLUGIN_EXT ".bundle"
-#define PLUGIN_EXT_LEN 7
-#else
-#define PLUGIN_EXT ".so"
-#define PLUGIN_EXT_LEN 3
-#endif
-
 static DIR *open_nextdir(struct hts_path_itr *itr)
 {
     DIR *dir;
@@ -82,7 +74,7 @@ void hts_path_itr_setup(struct hts_path_itr *itr, const char *path,
     itr->prefix_len = prefix_len;
 
     if (suffix) itr->suffix = suffix, itr->suffix_len = suffix_len;
-    else itr->suffix = PLUGIN_EXT, itr->suffix_len = PLUGIN_EXT_LEN;
+    else itr->suffix = PLUGIN_EXT, itr->suffix_len = strlen(PLUGIN_EXT);
 
     itr->path.l = itr->path.m = 0; itr->path.s = NULL;
     itr->entry.l = itr->entry.m = 0; itr->entry.s = NULL;

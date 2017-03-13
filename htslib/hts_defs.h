@@ -1,6 +1,6 @@
 /*  hts_defs.h -- Miscellaneous definitions.
 
-    Copyright (C) 2013-2015 Genome Research Ltd.
+    Copyright (C) 2013-2015,2017 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -67,6 +67,12 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_DEPRECATED(message) __attribute__ ((__deprecated__))
 #else
 #define HTS_DEPRECATED(message)
+#endif
+
+#if HTS_COMPILER_HAS(__format__) || HTS_GCC_AT_LEAST(3,0)
+#define HTS_FORMAT(type, idx, first) __attribute__((__format__ (type, idx, first)))
+#else
+#define HTS_FORMAT(type, idx, first)
 #endif
 
 #endif
