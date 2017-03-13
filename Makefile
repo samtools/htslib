@@ -219,7 +219,7 @@ htslib.pc.tmp:
 # static linking.  This can be included by projects that want to build
 # and link against the htslib source tree instead of an installed library.
 htslib_static.mk: htslib.pc.tmp
-	sed -n '/^static_libs=/s/[^=]*=/HTSLIB_static_LIBS = /p;/^static_ldflags=/s/[^=]*=/HTSLIB_static_LDFLAGS = /p' ../htslib/htslib.pc.tmp > $@
+	sed -n '/^static_libs=/s/[^=]*=/HTSLIB_static_LIBS = /p;/^static_ldflags=/s/[^=]*=/HTSLIB_static_LDFLAGS = /p' $< > $@
 
 
 lib-static: libhts.a
