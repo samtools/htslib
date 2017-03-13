@@ -134,6 +134,9 @@ esac
 AC_MSG_RESULT([$host_result])
 AC_SUBST([PLATFORM])
 
+dnl alloca.h should be included on platforms that supply it
+AC_FUNC_ALLOCA
+
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
 AC_CHECK_FUNCS(gmtime_r)
