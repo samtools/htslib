@@ -27,7 +27,14 @@ DEALINGS IN THE SOFTWARE.  */
 #endif
 
 // Needed on some platforms to make PTHREAD_MUTEX_RECURSIVE available
+// See: https://github.com/samtools/htslib/pull/423
+// However, strictly conforming sytems (e.g. illumos) will complain
+// about definition of _XOPEN_SOURCE 700 in a C89 context:
+// "Compiler or options invalid; UNIX 03 and POSIX.1-2001 applications
+// require the use of c99" (source: sys/feature_tests.h)
+#ifdef ADD_XOPEN_700
 #define _XOPEN_SOURCE 700
+#endif
 
 #include <stdlib.h>
 #include <inttypes.h>
