@@ -23,12 +23,14 @@
     THE SOFTWARE.
 */
 
+#include <config.h>
+
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <ctype.h>
 #include <string.h>
 #include <htslib/regidx.h>
+#include "hts_internal.h"
 
 void error(const char *format, ...)
 {
@@ -47,18 +49,18 @@ int custom_parse(const char *line, char **chr_beg, char **chr_end, reg_t *reg, v
 
     // Skip the fields that were parsed above
     char *ss = (char*) line;
-    while ( *ss && isspace(*ss) ) ss++;
+    while ( *ss && isspace_c(*ss) ) ss++;
     for (i=0; i<3; i++)
     {
-        while ( *ss && !isspace(*ss) ) ss++;
+        while ( *ss && !isspace_c(*ss) ) ss++;
         if ( !*ss ) return -2;  // wrong number of fields
-        while ( *ss && isspace(*ss) ) ss++;
+        while ( *ss && isspace_c(*ss) ) ss++;
     }
     if ( !*ss ) return -2;
 
     // Parse the payload
     char *se = ss;
-    while ( *se && !isspace(*se) ) se++;
+    while ( *se && !isspace_c(*se) ) se++;
     char **dat = (char**) payload;
     *dat = (char*) malloc(se-ss+1);
     memcpy(*dat,ss,se-ss+1);

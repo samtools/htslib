@@ -21,10 +21,11 @@ and `.csi` formats, and the bgzip compression utility.
 See [INSTALL](INSTALL) for complete details.
 [Release tarballs][download] contain generated files that have not been
 committed to this repository, so building the code from a Git repository
-requires an extra step:
+requires extra steps:
 
 ```sh
-autoconf       # Generate the configure script, if needed
+autoheader     # If using configure, generate the header template...
+autoconf       # ...and configure script (or use autoreconf to do both)
 ./configure    # Optional, needed for choosing optional functionality
 make
 make install

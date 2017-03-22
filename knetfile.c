@@ -28,6 +28,8 @@
    therefore I decide to heavily annotate this file, for Linux and
    Windows as well.  -ac */
 
+#include <config.h>
+
 #include <time.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -41,6 +43,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #endif
 
 #include "htslib/knetfile.h"
@@ -409,7 +412,7 @@ int khttp_connect_file(knetFile *fp)
 	fp->fd = socket_connect(fp->host, fp->port);
 	buf = (char*)calloc(0x10000, 1); // FIXME: I am lazy... But in principle, 64KB should be large enough.
 	l += sprintf(buf + l, "GET %s HTTP/1.0\r\nHost: %s\r\n", fp->path, fp->http_host);
-    l += sprintf(buf + l, "Range: bytes=%lld-\r\n", (long long)fp->offset);
+	if (fp->offset != 0) l += sprintf(buf + l, "Range: bytes=%lld-\r\n", (long long)fp->offset);
 	l += sprintf(buf + l, "\r\n");
 	if ( netwrite(fp->fd, buf, l) != l ) { free(buf); return -1; }
 	l = 0;
@@ -463,7 +466,8 @@ knetFile *knet_open(const char *fn, const char *mode)
 {
 	knetFile *fp = 0;
 	if (mode[0] != 'r') {
-		fprintf(stderr, "[kftp_open] only mode \"r\" is supported.\n");
+		fprintf(stderr, "[knet_open] only mode \"r\" is supported.\n");
+		errno = ENOTSUP;
 		return 0;
 	}
 	if (strstr(fn, "ftp://") == fn) {

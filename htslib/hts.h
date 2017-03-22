@@ -1,7 +1,9 @@
-/*  hts.h -- format-neutral I/O, indexing, and iterator API functions.
-
-    Copyright (C) 2012-2015 Genome Research Ltd.
-    Copyright (C) 2012 Broad Institute.
+/// @file htslib/hts.h
+/// Format-neutral I/O, indexing, and iterator API functions.
+/*
+    Copyright (C) 2012-2016 Genome Research Ltd.
+    Copyright (C) 2010, 2012 Broad Institute.
+    Portions copyright (C) 2003-2006, 2008-2010 by Heng Li <lh3@live.co.uk>
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -29,6 +31,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stddef.h>
 #include <stdint.h>
 
+#include "hts_defs.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,6 +43,7 @@ typedef struct BGZF BGZF;
 #endif
 struct cram_fd;
 struct hFILE;
+struct hts_tpool;
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
@@ -53,21 +58,64 @@ typedef struct __kstring_t {
 #endif
 
 /**
- * hts_expand()  - expands memory block pointed to by $ptr;
- * hts_expand0()   the latter sets the newly allocated part to 0.
+ * @hideinitializer
+ * Macro to expand a dynamic array of a given type
  *
- * @param n     requested number of elements of type type_t
- * @param m     size of memory allocated
+ * @param         type_t The type of the array elements
+ * @param[in]     n      Requested number of elements of type type_t
+ * @param[in,out] m      Size of memory allocated
+ * @param[in,out] ptr    Pointer to the array
+ *
+ * @discussion
+ * The array *ptr will be expanded if necessary so that it can hold @p n
+ * or more elements.  If the array is expanded then the new size will be
+ * written to @p m and the value in @ptr may change.
+ *
+ * It must be possible to take the address of @p ptr and @p m must be usable
+ * as an lvalue.
+ *
+ * @bug
+ * If the memory allocation fails, this will call exit(1).  This is
+ * not ideal behaviour in a library.
  */
-#define hts_expand(type_t, n, m, ptr) if ((n) > (m)) { \
-        (m) = (n); kroundup32(m); \
-        (ptr) = (type_t*)realloc((ptr), (m) * sizeof(type_t)); \
-    }
-#define hts_expand0(type_t, n, m, ptr) if ((n) > (m)) { \
-        int t = (m); (m) = (n); kroundup32(m); \
-        (ptr) = (type_t*)realloc((ptr), (m) * sizeof(type_t)); \
-        memset(((type_t*)ptr)+t,0,sizeof(type_t)*((m)-t)); \
-    }
+#define hts_expand(type_t, n, m, ptr) do {                              \
+        if ((n) > (m)) {                                                \
+            size_t hts_realloc_or_die(size_t, size_t, size_t, size_t,   \
+                                      int, void **, const char *);      \
+            (m) = hts_realloc_or_die((n) >= 1 ? (n) : 1, (m), sizeof(m), \
+                                     sizeof(type_t),  0,                \
+                                     (void **)&(ptr), __func__);        \
+        }                                                               \
+    } while (0)
+
+/**
+ * @hideinitializer
+ * Macro to expand a dynamic array, zeroing any newly-allocated memory
+ *
+ * @param         type_t The type of the array elements
+ * @param[in]     n      Requested number of elements of type type_t
+ * @param[in,out] m      Size of memory allocated
+ * @param[in,out] ptr    Pointer to the array
+ *
+ * @discussion
+ * As for hts_expand(), except the bytes that make up the array elements
+ * between the old and new values of @p m are set to zero using memset().
+ *
+ * @bug
+ * If the memory allocation fails, this will call exit(1).  This is
+ * not ideal behaviour in a library.
+ */
+
+
+#define hts_expand0(type_t, n, m, ptr) do {                             \
+        if ((n) > (m)) {                                                \
+            size_t hts_realloc_or_die(size_t, size_t, size_t, size_t,   \
+                                      int, void **, const char *);      \
+            (m) = hts_realloc_or_die((n) >= 1 ? (n) : 1, (m), sizeof(m), \
+                                     sizeof(type_t), 1,                 \
+                                     (void **)&(ptr), __func__);        \
+        }                                                               \
+    } while (0)
 
 /************
  * File I/O *
@@ -89,6 +137,7 @@ enum htsExactFormat {
     unknown_format,
     binary_format, text_format,
     sam, bam, bai, cram, crai, vcf, bcf, csi, gzi, tbi, bed,
+    json,
     format_maximum = 32767
 };
 
@@ -114,7 +163,7 @@ typedef struct htsFormat {
 //  - fp is used directly in samtools (up to and including current develop)
 //  - line is used directly in bcftools (up to and including current develop)
 typedef struct {
-    uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, dummy:28;
+    uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, is_bgzf:1, dummy:27;
     int64_t lineno;
     kstring_t line;
     char *fn, *fn_aux;
@@ -122,10 +171,21 @@ typedef struct {
         BGZF *bgzf;
         struct cram_fd *cram;
         struct hFILE *hfile;
-        void *voidp;
     } fp;
     htsFormat format;
 } htsFile;
+
+// A combined thread pool and queue allocation size.
+// The pool should already be defined, but qsize may be zero to
+// indicate an appropriate queue size is taken from the pool.
+//
+// Reasons for explicitly setting it could be where many more file
+// descriptors are in use than threads, so keeping memory low is
+// important.
+typedef struct {
+    struct hts_tpool *pool; // The shared thread pool itself
+    int qsize;    // Size of I/O queue to use for this fp
+} htsThreadPool;
 
 // REQUIRED_FIELDS
 enum sam_fields {
@@ -166,10 +226,14 @@ enum hts_fmt_option {
     CRAM_OPT_USE_LZMA,
     CRAM_OPT_USE_RANS,
     CRAM_OPT_REQUIRED_FIELDS,
+    CRAM_OPT_LOSSY_NAMES,
+    CRAM_OPT_BASES_PER_SLICE,
 
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,
     HTS_OPT_NTHREADS,
+    HTS_OPT_THREAD_POOL,
+    HTS_OPT_CACHE_SIZE,
 };
 
 // For backwards compatibility
@@ -279,7 +343,7 @@ char *hts_format_description(const htsFormat *format);
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
   @param fn       The file name or "-" for stdin/stdout
-  @param mode     Mode matching /[rwa][bcuz0-9]+/
+  @param mode     Mode matching / [rwa][bceguxz0-9]* /
   @discussion
       With 'r' opens for reading; any further format mode letters are ignored
       as the format is detected by checking the first few bytes or BGZF blocks
@@ -291,6 +355,9 @@ char *hts_format_description(const htsFormat *format);
         u  uncompressed
         z  bgzf compressed
         [0-9]  zlib compression level
+      and with non-format option letters (for any of 'r'/'w'/'a'):
+        e  close the file on exec(2) (opens with O_CLOEXEC, where supported)
+        x  create the file exclusively (opens with O_EXCL, where supported)
       Note that there is a distinction between 'u' and '0': the first yields
       plain uncompressed output whereas the latter outputs uncompressed data
       wrapped in the zlib format.
@@ -305,7 +372,7 @@ htsFile *hts_open(const char *fn, const char *mode);
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
   @param fn       The file name or "-" for stdin/stdout
-  @param mode     Mode matching /[rwa][bcuz0-9]+/
+  @param mode     Open mode, as per hts_open()
   @param fmt      Optional format specific parameters
   @discussion
       See hts_open() for description of fn and mode.
@@ -372,9 +439,26 @@ char **hts_readlist(const char *fn, int is_file, int *_n);
   @param fp  The file handle
   @param n   The number of worker threads to create
   @return    0 for success, or negative if an error occurred.
-  @notes     THIS THREADING API IS LIKELY TO CHANGE IN FUTURE.
+  @notes     This function creates non-shared threads for use solely by fp.
+             The hts_set_thread_pool function is the recommended alternative.
 */
 int hts_set_threads(htsFile *fp, int n);
+
+/*!
+  @abstract  Create extra threads to aid compress/decompression for this file
+  @param fp  The file handle
+  @param p   A pool of worker threads, previously allocated by hts_create_threads().
+  @return    0 for success, or negative if an error occurred.
+*/
+int hts_set_thread_pool(htsFile *fp, htsThreadPool *p);
+
+/*!
+  @abstract  Adds a cache of decompressed blocks, potentially speeding up seeks.
+             This may not work for all file types (currently it is bgzf only).
+  @param fp  The file handle
+  @param n   The size of cache, in bytes
+*/
+void hts_set_cache_size(htsFile *fp, int n);
 
 /*!
   @abstract  Set .fai filename for a file opened for reading
@@ -384,6 +468,19 @@ int hts_set_threads(htsFile *fp, int n);
       used to provide a reference list if the htsFile contains no @SQ headers.
 */
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
+
+
+/*!
+  @abstract  Determine whether a given htsFile contains a valid EOF block
+  @return    3 for a non-EOF checkable filetype;
+             2 for an unseekable file type where EOF cannot be checked;
+             1 for a valid EOF block;
+             0 for if the EOF marker is absent when it should be present;
+            -1 (with errno set) on failure
+  @discussion
+      Check if the BGZF end-of-file (EOF) marker is present
+*/
+int hts_check_EOF(htsFile *fp);
 
 /************
  * Indexing *
@@ -419,7 +516,7 @@ typedef struct {
 typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, int *end);
 
 typedef struct {
-    uint32_t read_rest:1, finished:1, dummy:29;
+    uint32_t read_rest:1, finished:1, is_cram:1, dummy:29;
     int tid, beg, end, n_off, i;
     int curr_tid, curr_beg, curr_end;
     uint64_t curr_off;
@@ -445,7 +542,7 @@ typedef struct {
     @param fmt  One of the HTS_FMT_* index formats
     @return  0 if successful, or negative if an error occurred.
 */
-int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt);
+int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt) HTS_RESULT_USED;
 
 /// Save an index to a specific file
 /** @param idx    Index to be written
@@ -454,7 +551,7 @@ int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt);
     @param fmt    One of the HTS_FMT_* index formats
     @return  0 if successful, or negative if an error occurred.
 */
-int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int fmt);
+int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int fmt) HTS_RESULT_USED;
 
 /// Load an index file
 /** @param fn   BAM/BCF/etc filename, to which .bai/.csi/etc will be added or
@@ -471,24 +568,53 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt);
 */
 hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx);
 
-    uint8_t *hts_idx_get_meta(hts_idx_t *idx, int *l_meta);
-    void hts_idx_set_meta(hts_idx_t *idx, int l_meta, uint8_t *meta, int is_copy);
+
+/// Get extra index meta-data
+/** @param idx    The index
+    @param l_meta Pointer to where the length of the extra data is stored
+    @return Pointer to the extra data if present; NULL otherwise
+
+    Indexes (both .tbi and .csi) made by tabix include extra data about
+    the indexed file.  The returns a pointer to this data.  Note that the
+    data is stored exactly as it is in the index.  Callers need to interpret
+    the results themselves, including knowing what sort of data to expect;
+    byte swapping etc.
+*/
+uint8_t *hts_idx_get_meta(hts_idx_t *idx, uint32_t *l_meta);
+
+/// Set extra index meta-data
+/** @param idx     The index
+    @param l_meta  Length of data
+    @param meta    Pointer to the extra data
+    @param is_copy If not zero, a copy of the data is taken
+    @return 0 on success; -1 on failure (out of memory).
+
+    Sets the data that is returned by hts_idx_get_meta().
+
+    If is_copy != 0, a copy of the input data is taken.  If not, ownership of
+    the data pointed to by *meta passes to the index.
+*/
+int hts_idx_set_meta(hts_idx_t *idx, uint32_t l_meta, uint8_t *meta, int is_copy);
 
     int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped);
     uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
 
+
+#define HTS_PARSE_THOUSANDS_SEP 1  ///< Ignore ',' separators within numbers
+
 /// Parse a numeric string
-/** The number may be expressed in scientific notation, and may contain commas
-    in the integer part (before any decimal point or E notation).
-    @param str  String to be parsed
-    @param end  If non-NULL, set on return to point to the first character
-                in @a str after those forming the parsed number
+/** The number may be expressed in scientific notation, and optionally may
+    contain commas in the integer part (before any decimal point or E notation).
+    @param str     String to be parsed
+    @param strend  If non-NULL, set on return to point to the first character
+                   in @a str after those forming the parsed number
+    @param flags   Or'ed-together combination of HTS_PARSE_* flags
     @return  Converted value of the parsed number.
 
-    When @a end is NULL, a warning will be printed (if hts_verbose is 2
+    When @a strend is NULL, a warning will be printed (if hts_verbose is 2
     or more) if there are any trailing characters after the number.
 */
-long long hts_parse_decimal(const char *str, char **end);
+long long hts_parse_decimal(const char *str, char **strend, int flags);
 
 /// Parse a "CHR:START-END"-style region string
 /** @param str  String to be parsed
@@ -507,7 +633,7 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
     typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
 
     hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec);
-    int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data);
+    int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data) HTS_RESULT_USED;
     const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 
     /**
@@ -523,6 +649,37 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
     #define FT_BCF_GZ (FT_GZ|FT_BCF)
     #define FT_STDIN  (1<<3)
     int hts_file_type(const char *fname);
+
+
+/***************************
+ * Revised MAQ error model *
+ ***************************/
+
+struct errmod_t;
+typedef struct errmod_t errmod_t;
+
+errmod_t *errmod_init(double depcorr);
+void errmod_destroy(errmod_t *em);
+
+/*
+    n: number of bases
+    m: maximum base
+    bases[i]: qual:6, strand:1, base:4
+    q[i*m+j]: phred-scaled likelihood of (i,j)
+ */
+int errmod_cal(const errmod_t *em, int n, int m, uint16_t *bases, float *q);
+
+
+/*****************************************
+ * Probabilistic banded glocal alignment *
+ *****************************************/
+
+typedef struct probaln_par_t {
+    float d, e;
+    int bw;
+} probaln_par_t;
+
+int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_query, const uint8_t *iqual, const probaln_par_t *c, int *state, uint8_t *q);
 
 
     /**********************

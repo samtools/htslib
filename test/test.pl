@@ -29,11 +29,19 @@ use FindBin;
 use lib "$FindBin::Bin";
 use Getopt::Long;
 use File::Temp qw/ tempfile tempdir /;
+use IO::Handle;
 
 my $opts = parse_params();
 
+test_view($opts,0);
+test_view($opts,4);
+
 test_vcf_api($opts,out=>'test-vcf-api.out');
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
+test_vcf_various($opts);
+test_bcf_sr_sort($opts);
+test_convert_padded_header($opts);
+test_rebgzip($opts);
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -118,7 +126,7 @@ sub test_cmd
     print "$test:\n";
     print "\t$args{cmd}\n";
 
-    my ($ret,$out) = _cmd("$args{cmd} 2>&1");
+    my ($ret,$out) = _cmd("$args{cmd}");
     if ( $ret ) { failed($opts,$test); return; }
     if ( $$opts{redo_outputs} && -e "$$opts{path}/$args{out}" )
     {
@@ -167,8 +175,11 @@ sub failed
 {
     my ($opts,$test,$reason) = @_;
     $$opts{nfailed}++;
-    if ( defined $reason ) { print "\n\t$reason"; }
-    print "\n.. failed ...\n\n";
+    print "\n";
+    STDOUT->flush();
+    if ( defined $reason ) { print STDERR "\t$reason\n"; }
+    print STDERR ".. failed ...\n\n";
+    STDERR->flush();
 }
 sub passed
 {
@@ -188,6 +199,97 @@ sub is_file_newer
 
 # The tests --------------------------
 
+my $test_view_failures;
+sub testv {
+    my ($cmd) = @_;
+    print "  $cmd\n";
+    my ($ret, $out) = _cmd($cmd);
+    if ($ret != 0) {
+        STDOUT->flush();
+        print STDERR "FAILED\n$out\n";
+        STDERR->flush();
+        $test_view_failures++;
+    }
+}
+
+sub test_view
+{
+    my ($opts, $nthreads) = @_;
+    my $tv_args = $nthreads ? "-\@$nthreads" : "";
+
+    foreach my $sam (glob("*#*.sam")) {
+        my ($base, $ref) = ($sam =~ /((.*)#.*)\.sam/);
+        $ref .= ".fa";
+
+        my $bam  = "$base.tmp.bam";
+        my $cram = "$base.tmp.cram";
+
+        my $md = "-nomd";
+        if ($sam =~ /^md/) {
+            $md = "";
+        }
+
+        print "test_view testing $sam, ref $ref:\n";
+        $test_view_failures = 0;
+
+        # SAM -> BAM -> SAM
+        testv "./test_view $tv_args -S -b $sam > $bam";
+        testv "./test_view $tv_args $bam > $bam.sam_";
+        testv "./compare_sam.pl $sam $bam.sam_";
+
+        # SAM -> CRAM -> SAM
+        testv "./test_view $tv_args -t $ref -S -C $sam > $cram";
+        testv "./test_view $tv_args -D $cram > $cram.sam_";
+        testv "./compare_sam.pl $md $sam $cram.sam_";
+
+        # BAM -> CRAM -> BAM -> SAM
+        $cram = "$bam.cram";
+        testv "./test_view $tv_args -t $ref -C $bam > $cram";
+        testv "./test_view $tv_args -b -D $cram > $cram.bam";
+        testv "./test_view $tv_args $cram.bam > $cram.bam.sam_";
+        testv "./compare_sam.pl $md $sam $cram.bam.sam_";
+
+        # SAM -> CRAM3 -> SAM
+        $cram = "$base.tmp.cram";
+        testv "./test_view $tv_args -t $ref -S -C -o VERSION=3.0 $sam > $cram";
+        testv "./test_view $tv_args -D $cram > $cram.sam_";
+        testv "./compare_sam.pl $md $sam $cram.sam_";
+
+        # BAM -> CRAM3 -> BAM -> SAM
+        $cram = "$bam.cram";
+        testv "./test_view $tv_args -t $ref -C -o VERSION=3.0 $bam > $cram";
+        testv "./test_view $tv_args -b -D $cram > $cram.bam";
+        testv "./test_view $tv_args $cram.bam > $cram.bam.sam_";
+        testv "./compare_sam.pl $md $sam $cram.bam.sam_";
+
+        # CRAM3 -> CRAM2
+        $cram = "$base.tmp.cram";
+        testv "./test_view $tv_args -t $ref -C -o VERSION=2.1 $cram > $cram.cram";
+
+        # CRAM2 -> CRAM3
+        testv "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
+        testv "./test_view $tv_args $cram > $cram.sam_";
+        testv "./compare_sam.pl $md $sam $cram.sam_";
+
+        # Java pre-made CRAM -> SAM
+        my $jcram = "${base}_java.cram";
+        if (-e $jcram) {
+            my $jsam = "${base}_java.tmp.sam_";
+            testv "./test_view $tv_args -i reference=$ref $jcram > $jsam";
+            testv "./compare_sam.pl -Baux $md $sam $jsam";
+        }
+
+        if ($test_view_failures == 0)
+        {
+            passed($opts, "$sam conversions");
+        }
+        else
+        {
+            failed($opts, "$sam conversions", "$test_view_failures subtests failed");
+        }
+    }
+}
+
 sub test_vcf_api
 {
     my ($opts,%args) = @_;
@@ -198,5 +300,61 @@ sub test_vcf_sweep
 {
     my ($opts,%args) = @_;
     test_cmd($opts,%args,cmd=>"$$opts{path}/test-vcf-sweep $$opts{tmp}/test-vcf-api.bcf");
+}
+
+sub test_vcf_various
+{
+    my ($opts, %args) = @_;
+
+    # Excess spaces in header lines
+    test_cmd($opts, %args, out => "test-vcf-hdr.out",
+        cmd => "$$opts{bin}/htsfile -ch $$opts{path}/test-vcf-hdr-in.vcf");
+
+    # Various VCF parsing issues
+    test_cmd($opts, %args, out => "formatcols.vcf",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatcols.vcf");
+    test_cmd($opts, %args, out => "noroundtrip-out.vcf",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/noroundtrip.vcf");
+    test_cmd($opts, %args, out => "formatmissing-out.vcf",
+        cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatmissing.vcf");
+}
+
+sub test_rebgzip
+{
+    my ($opts, %args) = @_;
+
+    test_cmd($opts, %args, out => "bgziptest.txt.gz",
+        cmd => "$$opts{bin}/bgzip -I $$opts{path}/bgziptest.txt.gz.gzi -c -g $$opts{path}/bgziptest.txt");
+}
+
+sub test_convert_padded_header
+{
+    my ($opts, %args) = @_;
+
+    $args{out} = "headernul.tmp.cram";
+    cmd("$$opts{path}/test_view -t ce.fa -C ce#1.sam > $args{out}");
+
+    foreach my $nuls (0, 1, 678) {
+        my $nulsbam = "$$opts{tmp}/headernul$nuls.bam";
+        cmd("$$opts{path}/test_view -b -Z $nuls ce#1.sam > $nulsbam");
+        test_cmd($opts, %args,
+            cmd => "$$opts{path}/test_view -t ce.fa -C $nulsbam");
+    }
+}
+
+sub test_bcf_sr_sort
+{
+    my ($opts, %args) = @_;
+    for (my $i=0; $i<10; $i++)
+    {
+        my $seed = int(rand(time));
+        my $test = 'test-bcf-sr';
+        my $cmd  = "$$opts{path}/test-bcf-sr.pl -t $$opts{tmp} -s $seed";
+        print "$test:\n";
+        print "\t$cmd\n";
+        my ($ret,$out) = _cmd($cmd);
+        if ( $ret ) { failed($opts,$test); }
+        else { passed($opts,$test); }
+    }
 }
 

@@ -1,9 +1,9 @@
 '\" t
-.TH faidx 5 "August 2013" "htslib" "Bioinformatics formats"
+.TH faidx 5 "August 2015" "htslib" "Bioinformatics formats"
 .SH NAME
 faidx \- an index enabling random access to FASTA files
 .\"
-.\" Copyright (C) 2013 Genome Research Ltd.
+.\" Copyright (C) 2013, 2015 Genome Research Ltd.
 .\"
 .\" Author: John Marshall <jm18@sanger.ac.uk>
 .\"
@@ -98,9 +98,8 @@ or other line termination, the newline characters present must be consistent,
 at least within each reference sequence.
 .P
 The \fBsamtools\fP implementation uses the first word of the "\fB>\fP" header
-line text (i.e., up to the first whitespace character) as the \fBNAME\fP column.
-At present, there may be no whitespace between the
-">" character and the \fIname\fP.
+line text (i.e., up to the first whitespace character, having skipped any
+initial whitespace after the ">") as the \fBNAME\fP column.
 .SH EXAMPLE
 For example, given this FASTA file
 .LP

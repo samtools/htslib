@@ -1,6 +1,6 @@
 #  Optional configure Makefile overrides for htslib.
 #
-#    Copyright (C) 2015 Genome Research Ltd.
+#    Copyright (C) 2015-2017 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -33,6 +33,7 @@ exec_prefix  = @exec_prefix@
 bindir       = @bindir@
 includedir   = @includedir@
 libdir       = @libdir@
+libexecdir   = @libexecdir@
 datarootdir  = @datarootdir@
 mandir       = @mandir@
 
@@ -42,30 +43,65 @@ RANLIB = @RANLIB@
 CPPFLAGS = @CPPFLAGS@
 CFLAGS   = @CFLAGS@
 LDFLAGS  = @LDFLAGS@
-LDLIBS   = @LIBS@
+LIBS     = @LIBS@
 
+PLATFORM   = @PLATFORM@
+PLUGIN_EXT = @PLUGIN_EXT@
+
+# Lowercase here indicates these are "local" to config.mk
+plugin_OBJS =
+noplugin_LDFLAGS =
+noplugin_LIBS =
 
 # ifeq/.../endif, +=, and target-specific variables are GNU Make-specific.
 # If you don't have GNU Make, comment out this conditional and note that
-# to enable iRODS you will need to implement the following elsewhere.
-ifeq "iRODS-@irods@" "iRODS-enabled"
+# to enable libcurl you will need to implement the following elsewhere.
+ifeq "libcurl-@libcurl@" "libcurl-enabled"
 
-@define_IRODS_HOME@
+LIBCURL_LIBS = -lcurl
 
-EXTRA_CPPFLAGS_IRODS = \
-	-I$(IRODS_HOME)/lib/api/include \
-	-I$(IRODS_HOME)/lib/core/include \
-	-I$(IRODS_HOME)/lib/md5/include \
-	-I$(IRODS_HOME)/lib/sha1/include \
-	-I$(IRODS_HOME)/server/core/include \
-	-I$(IRODS_HOME)/server/drivers/include \
-	-I$(IRODS_HOME)/server/icat/include
+plugin_OBJS += hfile_libcurl.o
 
-LDFLAGS += -L$(IRODS_HOME)/lib/core/obj
-LDLIBS  += -lRodsAPIs -lgssapi_krb5
+hfile_libcurl$(PLUGIN_EXT): LIBS += $(LIBCURL_LIBS)
 
-LIBHTS_OBJS += hfile_irods.o
+noplugin_LIBS += $(LIBCURL_LIBS)
 
-hfile_irods.o hfile_irods.pico: CPPFLAGS += $(EXTRA_CPPFLAGS_IRODS)
+endif
+
+ifeq "gcs-@gcs@" "gcs-enabled"
+plugin_OBJS += hfile_gcs.o
+endif
+
+ifeq "s3-@s3@" "s3-enabled"
+plugin_OBJS += hfile_s3.o
+
+CRYPTO_LIBS = @CRYPTO_LIBS@
+noplugin_LIBS += $(CRYPTO_LIBS)
+hfile_s3$(PLUGIN_EXT): LIBS += $(CRYPTO_LIBS)
+endif
+
+ifeq "plugins-@enable_plugins@" "plugins-yes"
+
+plugindir  = @plugindir@
+pluginpath = @pluginpath@
+
+LIBHTS_OBJS += plugin.o
+PLUGIN_OBJS += $(plugin_OBJS)
+
+plugin.o plugin.pico: CPPFLAGS += -DPLUGINPATH=\"$(pluginpath)\"
+
+# When built as separate plugins, these record their version themselves.
+hfile_gcs.o hfile_gcs.pico: version.h
+hfile_libcurl.o hfile_libcurl.pico: version.h
+hfile_s3.o hfile_s3.pico: version.h
+
+# Windows DLL plugins depend on the import library, built as a byproduct.
+$(plugin_OBJS:.o=.cygdll): cyghts-$(LIBHTS_SOVERSION).dll
+
+else
+
+LIBHTS_OBJS += $(plugin_OBJS)
+LDFLAGS += $(noplugin_LDFLAGS)
+LIBS += $(noplugin_LIBS)
 
 endif

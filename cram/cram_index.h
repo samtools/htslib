@@ -87,8 +87,8 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r);
  * fn_idx is the filename of the index file to be written;
  * if NULL, we add ".crai" to fn_base to get the index filename.
  *
- * Returns 0 on success
- *        -1 on failure
+ * Returns 0 on success,
+ *         negative on failure (-1 for read failure, -4 for write failure)
  */
 int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx);
 

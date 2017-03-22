@@ -108,6 +108,16 @@ mFILE *open_path_mfile(char *file, char *path, char *relative_to);
 mFILE *find_file_url(char *file, char *url);
 
 
+/*
+ * As per open_path_mfile, but searching only for local filenames.
+ * This is useful as we may avoid doing a full mfopen and loading
+ * the entire file into memory.
+ *
+ * Returns the expanded pathname if found.
+ *         NULL if not
+ */
+char *find_path(char *file, char *path);
+
 #ifdef __cplusplus
 }
 #endif

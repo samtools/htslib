@@ -23,10 +23,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#include <config.h>
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <getopt.h>
 
 #include "cram/cram.h"
 
@@ -45,9 +48,11 @@ int main(int argc, char *argv[])
     int r = 0, exit_code = 0;
     hts_opt *in_opts = NULL, *out_opts = NULL;
     int nreads = 0;
+    int extra_hdr_nuls = 0;
     int benchmark = 0;
+    int nthreads = 0; // shared pool
 
-    while ((c = getopt(argc, argv, "IbDCSl:t:i:o:N:B")) >= 0) {
+    while ((c = getopt(argc, argv, "IbDCSl:t:i:o:N:BZ:@:")) >= 0) {
         switch (c) {
         case 'S': flag |= 1; break;
         case 'b': flag |= 2; break;
@@ -60,10 +65,12 @@ int main(int argc, char *argv[])
         case 'i': if (hts_opt_add(&in_opts,  optarg)) return 1; break;
         case 'o': if (hts_opt_add(&out_opts, optarg)) return 1; break;
         case 'N': nreads = atoi(optarg); break;
+        case 'Z': extra_hdr_nuls = atoi(optarg); break;
+        case '@': nthreads = atoi(optarg); break;
         }
     }
     if (argc == optind) {
-        fprintf(stderr, "Usage: samview [-bSCSIB] [-N num_reads] [-l level] [-o option=value] <in.bam>|<in.sam>|<in.cram> [region]\n");
+        fprintf(stderr, "Usage: samview [-bSCSIB] [-N num_reads] [-l level] [-o option=value] [-Z hdr_nuls] <in.bam>|<in.sam>|<in.cram> [region]\n");
         return 1;
     }
     strcpy(moder, "r");
@@ -81,6 +88,17 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
     h->ignore_sam_err = ignore_sam_err;
+    if (extra_hdr_nuls) {
+        char *new_text = realloc(h->text, h->l_text + extra_hdr_nuls);
+        if (new_text == NULL) {
+            fprintf(stderr, "Error reallocing header text\n");
+            return EXIT_FAILURE;
+        }
+        h->text = new_text;
+        memset(&h->text[h->l_text], 0, extra_hdr_nuls);
+        h->l_text += extra_hdr_nuls;
+    }
+
     b = bam_init1();
 
     strcpy(modew, "w");
@@ -120,8 +138,23 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     hts_opt_free(out_opts);
 
-    if (!benchmark)
-        sam_hdr_write(out, h);
+    // Create and share the thread pool
+    htsThreadPool p = {NULL, 0};
+    if (nthreads > 0) {
+        p.pool = hts_tpool_init(nthreads);
+        if (!p.pool) {
+            fprintf(stderr, "Error creating thread pool\n");
+            exit_code = 1;
+        } else {
+            hts_set_opt(in,  HTS_OPT_THREAD_POOL, &p);
+            hts_set_opt(out, HTS_OPT_THREAD_POOL, &p);
+        }
+    }
+
+    if (!benchmark && sam_hdr_write(out, h) < 0) {
+        fprintf(stderr, "Error writing output header.\n");
+        exit_code = 1;
+    }
     if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
         int i;
         hts_idx_t *idx;
@@ -176,6 +209,9 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error closing input.\n");
         exit_code = 1;
     }
+
+    if (p.pool)
+        hts_tpool_destroy(p.pool);
 
     return exit_code;
 }

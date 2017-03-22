@@ -84,16 +84,18 @@ typedef struct {
 typedef struct {
     int32_t content_id;
     enum cram_external_type type;
+    cram_block *b;
 } cram_external_decoder;
 
 typedef struct {
     struct cram_codec *len_codec;
-    struct cram_codec *value_codec;
+    struct cram_codec *val_codec;
 } cram_byte_array_len_decoder;
 
 typedef struct {
     unsigned char stop;
     int32_t content_id;
+    cram_block *b;
 } cram_byte_array_stop_decoder;
 
 typedef struct {
@@ -118,6 +120,8 @@ typedef struct cram_codec {
 		  char *in, int in_size);
     int (*store)(struct cram_codec *codec, cram_block *b, char *prefix,
 		 int version);
+    void (*reset)(struct cram_codec *codec); // used between slices in a container
+
     union {
 	cram_huffman_decoder         huffman;
 	cram_external_decoder        external;
@@ -135,7 +139,7 @@ typedef struct cram_codec {
     };
 } cram_codec;
 
-char *cram_encoding2str(enum cram_encoding t);
+const char *cram_encoding2str(enum cram_encoding t);
 
 cram_codec *cram_decoder_init(enum cram_encoding codec, char *data, int size,
 			      enum cram_external_type option,
@@ -173,6 +177,19 @@ static inline int cram_not_enough_bits(cram_block *blk, int nbits) {
  * id2 is only filled out for BYTE_ARRAY_LEN which uses 2 codecs.
  */
 int cram_codec_to_id(cram_codec *c, int *id2);
+
+/*
+ * cram_codec structures are specialised for decoding or encoding.
+ * Unfortunately this makes turning a decoder into an encoder (such as
+ * when transcoding files) problematic.
+ *
+ * This function converts a cram decoder codec into an encoder version
+ * in-place (ie it modifiers the codec itself).
+ *
+ * Returns 0 on success;
+ *        -1 on failure.
+ */
+int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c);
 
 #ifdef __cplusplus
 }

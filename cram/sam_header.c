@@ -274,14 +274,14 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
  * optional new-line. If it contains more than 1 line then multiple lines
  * will be added in order.
  *
- * Len is the length of the text data, or 0 if unknown (in which case
- * it should be null terminated).
+ * Input text is of maximum length len or as terminated earlier by a NUL.
+ * Len may be 0 if unknown, in which case lines must be NUL-terminated.
  *
  * Returns 0 on success
  *        -1 on failure
  */
 int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
-    int i, lno = 1, text_offset;
+    int i, lno, text_offset;
     char *hdr;
 
     if (!len)
@@ -292,7 +292,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	return -1;
     hdr = ks_str(&sh->text) + text_offset;
 
-    for (i = 0; i < len; i++) {
+    for (i = 0, lno = 1; i < len && hdr[i] != '\0'; i++, lno++) {
 	khint32_t type;
 	khint_t k;
 
@@ -302,7 +302,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 
 	if (hdr[i] != '@') {
 	    int j;
-	    for (j = i; j < len && hdr[j] != '\n'; j++)
+	    for (j = i; j < len && hdr[j] != '\0' && hdr[j] != '\n'; j++)
 		;
 	    sam_hdr_error("Header line does not start with '@'",
 			  &hdr[l_start], len - l_start, lno);
@@ -332,7 +332,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	    SAM_hdr_type *t = kh_val(sh->h, k), *p;
 	    p = t->prev;
 	    
-	    assert(p->next = t);
+	    assert(p->next == t);
 	    p->next = h_type;
 	    h_type->prev = p;
 
@@ -355,7 +355,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 		return -1;
 	    }
 
-	    for (j = ++i; j < len && hdr[j] != '\n'; j++)
+	    for (j = ++i; j < len && hdr[j] != '\0' && hdr[j] != '\n'; j++)
 		;
 
 	    if (!(h_type->tag = h_tag = pool_alloc(sh->tag_pool)))
@@ -377,7 +377,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 		    return -1;
 		}
 
-		for (j = ++i; j < len && hdr[j] != '\n' && hdr[j] != '\t'; j++)
+		for (j = ++i; j < len && hdr[j] != '\0' && hdr[j] != '\n' && hdr[j] != '\t'; j++)
 		    ;
 	    
 		if (!(h_tag = pool_alloc(sh->tag_pool)))
@@ -401,7 +401,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 
 		last = h_tag;
 		i = j;
-	    } while (i < len && hdr[i] != '\n');
+	    } while (i < len && hdr[i] != '\0' && hdr[i] != '\n');
 	}
 
 	/* Update RG/SQ hashes */
@@ -426,16 +426,19 @@ int sam_hdr_add(SAM_hdr *sh, const char *type, ...) {
     return sam_hdr_vadd(sh, type, args, NULL);
 }
 
+/* 
+ * sam_hdr_add with a va_list interface.
+ *
+ * Note: this function invokes va_arg at least once, making the value
+ * of ap indeterminate after the return.  The caller should call
+ * va_start/va_end before/after calling this function or use va_copy.
+ */
 int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
     va_list args;
     SAM_hdr_type *h_type;
     SAM_hdr_tag *h_tag, *last;
     int new;
     khint32_t type_i = (type[0]<<8) | type[1], k;
-
-#if defined(HAVE_VA_COPY)
-    va_list ap_local;
-#endif
 
     if (EOF == kputc_('@', &sh->text))
 	return -1;
@@ -507,11 +510,6 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 	last = h_tag;
     }
     va_end(args);
-
-#if defined(HAVE_VA_COPY)
-    va_copy(ap_local, ap);
-#   define ap ap_local
-#endif
 
     // Plus the specified va_list params
     for (;;) {
@@ -776,7 +774,7 @@ static enum sam_sort_order sam_hdr_parse_sort_order(SAM_hdr *hdr) {
 		    so = ORDER_NAME;
 		else if (strcmp(tag->str+3, "coordinate") == 0)
 		    so = ORDER_COORD;
-		else
+		else if (strcmp(tag->str+3, "unknown") != 0)
 		    fprintf(stderr, "Unknown sort order field: %s\n",
 			    tag->str+3);
 	    }
@@ -1191,7 +1189,6 @@ const char *sam_hdr_PG_ID(SAM_hdr *sh, const char *name) {
  */
 int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
     va_list args;
-    va_start(args, name);
 
     if (sh->npg_end) {
 	/* Copy ends array to avoid us looping while modifying it */
@@ -1204,6 +1201,7 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
 	memcpy(end, sh->pg_end, nends * sizeof(*end));
 
 	for (i = 0; i < nends; i++) {
+	    va_start(args, name);
 	    if (-1 == sam_hdr_vadd(sh, "PG", args,
 				   "ID", sam_hdr_PG_ID(sh, name),
 				   "PN", name,
@@ -1212,15 +1210,18 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
 		free(end);
 		return  -1;
 	    }
+	    va_end(args);
 	}
 
 	free(end);
     } else {
+	va_start(args, name);
 	if (-1 == sam_hdr_vadd(sh, "PG", args,
 			       "ID", sam_hdr_PG_ID(sh, name),
 			       "PN", name,
 			       NULL))
 	    return -1;
+	va_end(args);
     }
 
     //sam_hdr_dump(sh);
@@ -1243,7 +1244,8 @@ char *stringify_argv(int argc, char *argv[]) {
 
     /* Allocate */
     for (i = 0; i < argc; i++) {
-	nbytes += strlen(argv[i]) + 1;
+	if (i > 0) nbytes += 1;
+	nbytes += strlen(argv[i]);
     }
     if (!(str = malloc(nbytes)))
 	return NULL;
@@ -1251,6 +1253,7 @@ char *stringify_argv(int argc, char *argv[]) {
     /* Copy */
     cp = str;
     for (i = 0; i < argc; i++) {
+	if (i > 0) *cp++ = ' ';
 	j = 0;
 	while (argv[i][j]) {
 	    if (argv[i][j] == '\t')
@@ -1259,7 +1262,6 @@ char *stringify_argv(int argc, char *argv[]) {
 		*cp++ = argv[i][j];
 	    j++;
 	}
-	*cp++ = ' ';
     }
     *cp++ = 0;
 

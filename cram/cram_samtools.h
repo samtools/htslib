@@ -45,7 +45,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define bam_flag(b)      (b)->core.flag
 #define bam_bin(b)       (b)->core.bin
 #define bam_map_qual(b)  (b)->core.qual
-#define bam_name_len(b)  (b)->core.l_qname
+#define bam_name_len(b)  ((b)->core.l_qname - (b)->core.l_extranul)
 #define bam_name(b)      bam_get_qname((b))
 #define bam_qual(b)      bam_get_qual((b))
 #define bam_seq(b)       bam_get_seq((b))

@@ -1,5 +1,6 @@
-/*  vcf.h -- VCF/BCF API functions.
-
+/// @file htslib/vcf.h
+/// High-level VCF/BCF variant calling file operations.
+/*
     Copyright (C) 2012, 2013 Broad Institute.
     Copyright (C) 2012-2014 Genome Research Ltd.
 
@@ -38,6 +39,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "hts.h"
 #include "kstring.h"
 #include "hts_defs.h"
+#include "hts_endian.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -102,10 +104,11 @@ typedef struct {
     const bcf_idinfo_t *val;
 } bcf_idpair_t;
 
+// Note that bcf_hdr_t structs must always be created via bcf_hdr_init()
 typedef struct {
-    int32_t n[3];
+    int32_t n[3];           // n:the size of the dictionary block in use, (allocated size, m, is below to preserve ABI)
     bcf_idpair_t *id[3];
-    void *dict[3]; // ID dictionary, contig dict and sample dict
+    void *dict[3];          // ID dictionary, contig dict and sample dict
     char **samples;
     bcf_hrec_t **hrec;
     int nhrec, dirty;
@@ -113,6 +116,7 @@ typedef struct {
     int nsamples_ori;           // for bcf_hdr_set_samples()
     uint8_t *keep_samples;
     kstring_t mem;
+    int32_t m[3];          // m: allocated size of the dictionary block in use (see n above)
 } bcf_hdr_t;
 
 extern uint8_t bcf_type_shift[];
@@ -185,6 +189,9 @@ typedef struct {
 #define BCF_ERR_TAG_UNDEF 2
 #define BCF_ERR_NCOLS     4
 #define BCF_ERR_LIMITS    8
+#define BCF_ERR_CHAR     16
+#define BCF_ERR_CTG_INVALID   32
+#define BCF_ERR_TAG_INVALID   64
 
 /*
     The bcf1_t structure corresponds to one VCF/BCF line. Reading from VCF file
@@ -235,6 +242,7 @@ typedef struct {
     #define bcf_write1(fp,h,v)  bcf_write((fp),(h),(v))
     #define vcf_write1(fp,h,v)  vcf_write((fp),(h),(v))
     #define bcf_destroy1(v)     bcf_destroy(v)
+    #define bcf_empty1(v)       bcf_empty(v)
     #define vcf_parse1(s,h,v)   vcf_parse((s),(h),(v))
     #define bcf_clear1(v)       bcf_clear(v)
     #define vcf_format1(h,v,s)  vcf_format((h),(v),(s))
@@ -288,7 +296,7 @@ typedef struct {
      *              ^LIST|FILE  .. exclude samples from list/file
      *              -           .. include all samples
      *              NULL        .. exclude all samples
-     *  @is_file: @samples is a file (1) or a comma-separated list (1)
+     *  @is_file: @samples is a file (1) or a comma-separated list (0)
      *
      *  The bottleneck of VCF reading is parsing of genotype fields. If the
      *  reader knows in advance that only subset of samples is needed (possibly
@@ -310,7 +318,10 @@ typedef struct {
     /** Writes VCF or BCF header */
     int bcf_hdr_write(htsFile *fp, bcf_hdr_t *h);
 
-    /** Parse VCF line contained in kstring and populate the bcf1_t struct */
+    /**
+     * Parse VCF line contained in kstring and populate the bcf1_t struct
+     * The line must not end with \n or \r characters.
+     */
     int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v);
 
     /** The opposite of vcf_parse. It should rarely be called directly, see vcf_write */
@@ -355,7 +366,7 @@ typedef struct {
     /**
      *  bcf_write() - write one VCF or BCF record. The type is determined at the open() call.
      */
-    int bcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
+    int bcf_write(htsFile *fp, bcf_hdr_t *h, bcf1_t *v);
 
     /**
      *  The following functions work only with VCFs and should rarely be called
@@ -412,11 +423,20 @@ typedef struct {
     /** Read VCF header from a file and update the header */
     int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname);
 
+    /// Appends formatted header text to _str_.
+    /** If _is_bcf_ is zero, `IDX` fields are discarded.
+     *  @return 0 if successful, or negative if an error occurred
+     *  @since 1.4
+     */
+    int bcf_hdr_format(const bcf_hdr_t *hdr, int is_bcf, kstring_t *str);
+
     /** Returns formatted header (newly allocated string) and its length,
      *  excluding the terminating \0. If is_bcf parameter is unset, IDX
      *  fields are discarded.
+     *  @deprecated Use bcf_hdr_format() instead as it can handle huge headers.
      */
-    char *bcf_hdr_fmt_text(const bcf_hdr_t *hdr, int is_bcf, int *len);
+    char *bcf_hdr_fmt_text(const bcf_hdr_t *hdr, int is_bcf, int *len)
+        HTS_DEPRECATED("use bcf_hdr_format() instead");
 
     /** Append new VCF header line, returns 0 on success */
     int bcf_hdr_append(bcf_hdr_t *h, const char *line);
@@ -502,20 +522,20 @@ typedef struct {
 
     /**
      *  bcf_update_filter() - sets the FILTER column
-     *  @flt_ids:  The filter IDs to set, numeric IDs returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @flt_ids:  The filter IDs to set, numeric IDs returned by bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS")
      *  @n:        Number of filters. If n==0, all filters are removed
      */
     int bcf_update_filter(const bcf_hdr_t *hdr, bcf1_t *line, int *flt_ids, int n);
     /**
      *  bcf_add_filter() - adds to the FILTER column
-     *  @flt_id:   filter ID to add, numeric ID returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @flt_id:   filter ID to add, numeric ID returned by bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS")
      *
      *  If flt_id is PASS, all existing filters are removed first. If other than PASS, existing PASS is removed.
      */
     int bcf_add_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id);
     /**
      *  bcf_remove_filter() - removes from the FILTER column
-     *  @flt_id:   filter ID to remove, numeric ID returned by bcf_id2int(hdr, BCF_DT_ID, "PASS")
+     *  @flt_id:   filter ID to remove, numeric ID returned by bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS")
      *  @pass:     when set to 1 and no filters are present, set to PASS
      */
     int bcf_remove_filter(const bcf_hdr_t *hdr, bcf1_t *line, int flt_id, int pass);
@@ -528,11 +548,6 @@ typedef struct {
      *  @alleles:           Array of alleles
      *  @nals:              Number of alleles
      *  @alleles_string:    Comma-separated alleles, starting with the REF allele
-     *
-     *  Not that in order for indexing to work correctly in presence of INFO/END tag,
-     *  the length of reference allele (line->rlen) must be set explicitly by the caller,
-     *  or otherwise, if rlen is zero, strlen(line->d.allele[0]) is used to set the length
-     *  on bcf_write().
      */
     int bcf_update_alleles(const bcf_hdr_t *hdr, bcf1_t *line, const char **alleles, int nals);
     int bcf_update_alleles_str(const bcf_hdr_t *hdr, bcf1_t *line, const char *alleles_string);
@@ -589,9 +604,9 @@ typedef struct {
     // Macros for setting genotypes correctly, for use with bcf_update_genotypes only; idx corresponds
     // to VCF's GT (1-based index to ALT or 0 for the reference allele) and val is the opposite, obtained
     // from bcf_get_genotypes() below.
-    #define bcf_gt_phased(idx)      ((idx+1)<<1|1)
-    #define bcf_gt_unphased(idx)    ((idx+1)<<1)
-    #define bcf_gt_missing          0 
+    #define bcf_gt_phased(idx)      (((idx)+1)<<1|1)
+    #define bcf_gt_unphased(idx)    (((idx)+1)<<1)
+    #define bcf_gt_missing          0
     #define bcf_gt_is_missing(val)  ((val)>>1 ? 0 : 1)
     #define bcf_gt_is_phased(idx)   ((idx)&1)
     #define bcf_gt_allele(val)      (((val)>>1)-1)
@@ -621,8 +636,8 @@ typedef struct {
      * bcf_get_*_id() - returns pointer to FORMAT/INFO field data given the header index instead of the string ID
      * @line: VCF line obtained from vcf_parse1
      * @id:  The header index for the tag, obtained from bcf_hdr_id2int()
-     * 
-     * Returns bcf_fmt_t* / bcf_info_t*. These functions do not check if the index is valid 
+     *
+     * Returns bcf_fmt_t* / bcf_info_t*. These functions do not check if the index is valid
      * as their goal is to avoid the header lookup.
      */
     bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id);
@@ -663,6 +678,10 @@ typedef struct {
      *
      *  Returns negative value on error or the number of written values on success.
      *
+     *  Use the returned number of written values for accessing valid entries of dst, as ndst is only a
+     *  watermark that can be higher than the returned value, i.e. the end of dst can contain carry-over
+     *  values from previous calls to bcf_get_format_*() on lines with more values per sample.
+     *
      *  Example:
      *      int ndst = 0; char **dst = NULL;
      *      if ( bcf_get_format_string(hdr, line, "XX", &dst, &ndst) > 0 )
@@ -670,8 +689,35 @@ typedef struct {
      *      free(dst[0]); free(dst);
      *
      *  Example:
-     *      int ngt, *gt_arr = NULL, ngt_arr = 0;
+     *      int i, j, ngt, nsmpl = bcf_hdr_nsamples(hdr);
+     *      int32_t *gt_arr = NULL, ngt_arr = 0;
+     *
      *      ngt = bcf_get_genotypes(hdr, line, &gt_arr, &ngt_arr);
+     *      if ( ngt<=0 ) return; // GT not present
+     *
+     *      int max_ploidy = ngt/nsmpl;
+     *      for (i=0; i<nsmpl; i++)
+     *      {
+     *        int32_t *ptr = gt + i*max_ploidy;
+     *        for (j=0; j<max_ploidy; j++)
+     *        {
+     *           // if true, the sample has smaller ploidy
+     *           if ( ptr[j]==bcf_int32_vector_end ) break;
+     *
+     *           // missing allele
+     *           if ( bcf_gt_is_missing(ptr[j]) ) continue;
+     *
+     *           // the VCF 0-based allele index
+     *           int allele_index = bcf_gt_allele(ptr[j]);
+     *
+     *           // is phased?
+     *           int is_phased = bcf_gt_is_phased(ptr[j]);
+     *
+     *           // .. do something ..
+     *         }
+     *      }
+     *      free(gt_arr);
+     *
      */
     #define bcf_get_format_int32(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
     #define bcf_get_format_float(hdr,line,tag,dst,ndst)  bcf_get_format_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)
@@ -709,7 +755,7 @@ typedef struct {
     /**
      *  bcf_hdr_id2*() - Macros for accessing bcf_idinfo_t
      *  @type:      one of BCF_HL_FLT, BCF_HL_INFO, BCF_HL_FMT
-     *  @int_id:    return value of bcf_id2int, must be >=0
+     *  @int_id:    return value of bcf_hdr_id2int, must be >=0
      *
      *  The returned values are:
      *     bcf_hdr_id2length   ..  whether the number of values is fixed or variable, one of BCF_VL_*
@@ -751,8 +797,54 @@ typedef struct {
     #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
 
     hts_idx_t *bcf_index_load2(const char *fn, const char *fnidx);
+
+    /**
+     *  bcf_index_build() - Generate and save an index file
+     *  @fn:         Input VCF/BCF filename
+     *  @min_shift:  Positive to generate CSI, or 0 to generate TBI
+     *
+     *  Returns 0 if successful, or negative if an error occurred.
+     *
+     *  List of error codes:
+     *      -1 .. indexing failed
+     *      -2 .. opening @fn failed
+     *      -3 .. format not indexable
+     *      -4 .. failed to create and/or save the index
+     */
     int bcf_index_build(const char *fn, int min_shift);
+
+    /**
+     *  bcf_index_build2() - Generate and save an index to a specific file
+     *  @fn:         Input VCF/BCF filename
+     *  @fnidx:      Output filename, or NULL to add .csi/.tbi to @fn
+     *  @min_shift:  Positive to generate CSI, or 0 to generate TBI
+     *
+     *  Returns 0 if successful, or negative if an error occurred.
+     *
+     *  List of error codes:
+     *      -1 .. indexing failed
+     *      -2 .. opening @fn failed
+     *      -3 .. format not indexable
+     *      -4 .. failed to create and/or save the index
+     */
     int bcf_index_build2(const char *fn, const char *fnidx, int min_shift);
+
+    /**
+     *  bcf_index_build3() - Generate and save an index to a specific file
+     *  @fn:         Input VCF/BCF filename
+     *  @fnidx:      Output filename, or NULL to add .csi/.tbi to @fn
+     *  @min_shift:  Positive to generate CSI, or 0 to generate TBI
+     *  @n_threads:  Number of VCF/BCF decoder threads
+     *
+     *  Returns 0 if successful, or negative if an error occurred.
+     *
+     *  List of error codes:
+     *      -1 .. indexing failed
+     *      -2 .. opening @fn failed
+     *      -3 .. format not indexable
+     *      -4 .. failed to create and/or save the index
+     */
+     int bcf_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads);
 
 /*******************
  * Typed value I/O *
@@ -819,6 +911,7 @@ static inline void bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
         case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
         case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
         case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
+        case BCF_BT_NULL:  kputc('.', str); break;
         default: fprintf(stderr,"FIXME: type %d in bcf_format_gt?\n", fmt->type); abort(); break;
     }
     #undef BRANCH
@@ -878,13 +971,13 @@ static inline int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
 {
     if (type == BCF_BT_INT8) {
         *q = (uint8_t*)p + 1;
-        return *(int8_t*)p;
+        return le_to_i8(p);
     } else if (type == BCF_BT_INT16) {
         *q = (uint8_t*)p + 2;
-        return *(int16_t*)p;
+        return le_to_i16(p);
     } else {
         *q = (uint8_t*)p + 4;
-        return *(int32_t*)p;
+        return le_to_i32(p);
     }
 }
 

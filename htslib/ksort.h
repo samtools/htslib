@@ -43,7 +43,8 @@
   2008-09-15 (0.1.2):
 
 	* Accelerated introsort. On my Mac (not on another Linux machine),
-	  my implementation is as fast as std::sort on random input.
+	  my implementation is as fast as the C++ standard library's sort()
+	  on random input.
 
 	* Added combsort and in introsort, switch to combsort if the
 	  recursion is too deep.

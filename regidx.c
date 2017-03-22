@@ -29,6 +29,7 @@
 #include "htslib/kseq.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/regidx.h"
+#include "hts_internal.h"
 
 #define LIDX_SHIFT 13   // number of insignificant index bits
 
@@ -146,7 +147,7 @@ int regidx_insert(regidx_t *idx, char *line)
     if ( idx->payload_size )
     {
         if ( m_prev < list->mregs ) list->payload = realloc(list->payload,idx->payload_size*list->mregs);
-        memcpy(list->payload + idx->payload_size*(list->nregs-1), idx->payload, idx->payload_size);
+        memcpy((char*)list->payload + idx->payload_size*(list->nregs-1), idx->payload, idx->payload_size);
     }
 
     if ( idx->rid_prev==rid )
@@ -227,7 +228,7 @@ void regidx_destroy(regidx_t *idx)
         if ( idx->free )
         {
             for (j=0; j<list->nregs; j++)
-                idx->free(list->payload + idx->payload_size*j);
+                idx->free((char*)list->payload + idx->payload_size*j);
         }
         free(list->payload);
         free(list->regs);
@@ -275,7 +276,7 @@ int regidx_overlap(regidx_t *idx, const char *chr, uint32_t from, uint32_t to, r
     itr->n = list->nregs - i;
     itr->reg = &idx->seq[iseq].regs[i];
     if ( idx->payload_size )
-        itr->payload = idx->seq[iseq].payload + i*idx->payload_size;
+        itr->payload = (char*)idx->seq[iseq].payload + i*idx->payload_size;
     else
         itr->payload = NULL;
 
@@ -285,23 +286,23 @@ int regidx_overlap(regidx_t *idx, const char *chr, uint32_t from, uint32_t to, r
 int regidx_parse_bed(const char *line, char **chr_beg, char **chr_end, reg_t *reg, void *payload, void *usr)
 {
     char *ss = (char*) line;
-    while ( *ss && isspace(*ss) ) ss++;
+    while ( *ss && isspace_c(*ss) ) ss++;
     if ( !*ss ) return -1;      // skip blank lines
     if ( *ss=='#' ) return -1;  // skip comments
     
     char *se = ss;
-    while ( *se && !isspace(*se) ) se++;
+    while ( *se && !isspace_c(*se) ) se++;
     if ( !*se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
 
     *chr_beg = ss;
     *chr_end = se-1;
 
     ss = se+1;
-    reg->start = hts_parse_decimal(ss, &se);
+    reg->start = hts_parse_decimal(ss, &se, 0);
     if ( ss==se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
 
     ss = se+1;
-    reg->end = hts_parse_decimal(ss, &se) - 1;
+    reg->end = hts_parse_decimal(ss, &se, 0) - 1;
     if ( ss==se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
     
     return 0;
@@ -310,19 +311,19 @@ int regidx_parse_bed(const char *line, char **chr_beg, char **chr_end, reg_t *re
 int regidx_parse_tab(const char *line, char **chr_beg, char **chr_end, reg_t *reg, void *payload, void *usr)
 {
     char *ss = (char*) line;
-    while ( *ss && isspace(*ss) ) ss++;
+    while ( *ss && isspace_c(*ss) ) ss++;
     if ( !*ss ) return -1;      // skip blank lines
     if ( *ss=='#' ) return -1;  // skip comments
     
     char *se = ss;
-    while ( *se && !isspace(*se) ) se++;
+    while ( *se && !isspace_c(*se) ) se++;
     if ( !*se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
 
     *chr_beg = ss;
     *chr_end = se-1;
 
     ss = se+1;
-    reg->start = hts_parse_decimal(ss, &se) - 1;
+    reg->start = hts_parse_decimal(ss, &se, 0) - 1;
     if ( ss==se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
 
     if ( !se[0] || !se[1] )
@@ -330,7 +331,7 @@ int regidx_parse_tab(const char *line, char **chr_beg, char **chr_end, reg_t *re
     else
     {
         ss = se+1;
-        reg->end = hts_parse_decimal(ss, &se);
+        reg->end = hts_parse_decimal(ss, &se, 0);
         if ( ss==se ) reg->end = reg->start;
         else reg->end--;
     }

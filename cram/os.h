@@ -30,7 +30,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 /*
-Copyright (c) 2004, 2006, 2009-2011, 2013 Genome Research Ltd.
+Copyright (c) 2004, 2006, 2009-2011, 2013, 2017 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without 
@@ -77,91 +77,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <limits.h>
 #include <inttypes.h>
+#include "htslib/hts_endian.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/*-----------------------------------------------------------------------------
- * Detection of endianness. The main part of this is done in autoconf, but
- * for the case of MacOS FAT binaries we fall back on auto-sensing based on
- * processor type too.
- */
-
-/* Set by autoconf */
-#define SP_LITTLE_ENDIAN
-
-/* Mac FAT binaries or unknown. Auto detect based on CPU type */
-#if !defined(SP_BIG_ENDIAN) && !defined(SP_LITTLE_ENDIAN)
-
-/*
- * x86 equivalents
- */
-#if defined(__i386__) || defined(__i386) || defined(__amd64__) || defined(__amd64) || defined(__x86_64__) || defined(__x86_64) || defined(__i686__) || defined(__i686)
-#  if defined(SP_BIG_ENDIAN)
-#    undef SP_BIG_ENDIAN
-#  endif
-#  define SP_LITTLE_ENDIAN
-#endif
-
-/*
- * DEC Alpha
- */
-#if defined(__alpha__) || defined(__alpha)
-#  if defined(SP_LITTLE_ENDIAN)
-#    undef SP_LITTLE_ENDIAN
-#  endif
-#  define SP_BIG_ENDIAN
-#endif
-
-/*
- * SUN Sparc
- */
-#if defined(__sparc__) || defined(__sparc)
-#  if defined(SP_LITTLE_ENDIAN)
-#    undef SP_LITTLE_ENDIAN
-#  endif
-#  define SP_BIG_ENDIAN
-#endif
-
-/*
- * PowerPC
- */
-#if defined(__ppc__) || defined(__ppc)
-#  if defined(SP_LITTLE_ENDIAN)
-#    undef SP_LITTLE_ENDIAN
-#  endif
-#  define SP_BIG_ENDIAN
-#endif
-
-/* Some catch-alls */
-#if defined(__LITTLE_ENDIAN__) || defined(__LITTLEENDIAN__)
-#    define SP_LITTLE_ENDIAN
-#endif
-
-#if defined(__BIG_ENDIAN__) || defined(__BIGENDIAN__)
-#    define SP_BIG_ENDIAN
-#endif
-
-#if defined(SP_BIG_ENDIAN) && defined(SP_LITTLE_ENDIAN)
-#    error Both BIG and LITTLE endian defined. Fix os.h and/or Makefile
-#endif
-
-#if !defined(SP_BIG_ENDIAN) && !defined(SP_LITTLE_ENDIAN)
-#    error Neither BIG nor LITTLE endian defined. Fix os.h and/or Makefile
-#endif
-
-#endif
-
-/*-----------------------------------------------------------------------------
- * Allow for unaligned memory access. This is used in BAM code as the packed
- * structure has 4-byte cigar ints after the variable length name.
- *
- * Consider using AX_CHECK_ALIGNED_ACCESS_REQUIRED in autoconf.
- */
-#if defined(__i386__) || defined(__i386) || defined(__amd64__) || defined(__amd64) || defined(__x86_64__) || defined(__x86_64) || defined(__i686__) || defined(__i686)
-#  define ALLOW_UAC
-#endif
 
 /*-----------------------------------------------------------------------------
  * Byte swapping macros
@@ -223,14 +144,19 @@ extern "C" {
  * This leads to efficient code as most of the time these macros are
  * trivial.
  */
-#ifdef SP_BIG_ENDIAN
+#if defined(HTS_BIG_ENDIAN)
 #define le_int4(x) iswap_int4((x))
 #define le_int2(x) iswap_int2((x))
-#endif
-
-#ifdef SP_LITTLE_ENDIAN
+#elif defined(HTS_LITTLE_ENDIAN)
 #define le_int4(x) (x)
 #define le_int2(x) (x)
+#else
+static inline uint32_t le_int4(uint32_t x) {
+    return le_to_u32((uint8_t *) &x);
+}
+static inline uint16_t le_int2(uint16_t x) {
+    return le_to_u16((uint8_t *) &x);
+}
 #endif
 
 /*-----------------------------------------------------------------------------

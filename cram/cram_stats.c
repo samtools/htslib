@@ -39,7 +39,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <math.h>
-#include <ctype.h>
 
 #include "cram/cram.h"
 #include "cram/os.h"
@@ -116,25 +115,6 @@ void cram_stats_dump(cram_stats *st) {
     }
 }
 
-#if 1
-/* Returns the number of bits set in val; it the highest bit used */
-static int nbits(int v) {
-    static const int MultiplyDeBruijnBitPosition[32] = {
-	1, 10, 2, 11, 14, 22, 3, 30, 12, 15, 17, 19, 23, 26, 4, 31,
-	9, 13, 21, 29, 16, 18, 25, 8, 20, 28, 24, 7, 27, 6, 5, 32
-    };
-
-    v |= v >> 1; // first up to set all bits 1 after the first 1 */
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-
-    // DeBruijn magic to find top bit
-    return MultiplyDeBruijnBitPosition[(uint32_t)(v * 0x07C4ACDDU) >> 27];
-}
-#endif
-
 /*
  * Computes entropy from integer frequencies for various encoding methods and
  * picks the best encoding.
@@ -145,10 +125,8 @@ static int nbits(int v) {
  * Returns the best codec to use.
  */
 enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
-    enum cram_encoding best_encoding = E_NULL;
-    int best_size = INT_MAX, bits;
-    int nvals, i, ntot = 0, max_val = 0, min_val = INT_MAX, k;
-    int *vals = NULL, *freqs = NULL, vals_alloc = 0, *codes;
+    int nvals, i, ntot = 0, max_val = 0, min_val = INT_MAX;
+    int *vals = NULL, *freqs = NULL, vals_alloc = 0;
 
     //cram_stats_dump(st);
 
@@ -201,244 +179,14 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
     st->nvals = nvals;
     assert(ntot == st->nsamp);
 
-    if (nvals <= 1) {
-	free(vals);
-	free(freqs);
-	return E_HUFFMAN;
-    }
-
-    if (fd->verbose > 1)
-	fprintf(stderr, "Range = %d..%d, nvals=%d, ntot=%d\n",
-		min_val, max_val, nvals, ntot);
-
-    /* Theoretical entropy */
-//    if (fd->verbose > 1) {
-//	double dbits = 0;
-//	for (i = 0; i < nvals; i++) {
-//	    dbits += freqs[i] * log((double)freqs[i]/ntot);
-//	}
-//	dbits /= -log(2);
-//	if (fd->verbose > 1)
-//	    fprintf(stderr, "Entropy = %f\n", dbits);
-//    }
-
-    if (nvals > 1 && ntot > 256) {
-#if 0
-	/*
-	 * CRUDE huffman estimator. Round to closest and round up from 0
-	 * to 1 bit.
-	 *
-	 * With and without ITF8 incase we have a few discrete values but with
-	 * large magnitude.
-	 *
-	 * Note rans0/arith0 and Z_HUFFMAN_ONLY vs internal huffman can be
-	 * compared in this way, but order-1 (eg rans1) or maybe LZ77 modes
-	 * may detect the correlation of high bytes to low bytes in multi-
-	 * byte values. So this predictor breaks down.
-	 */
-	double dbits = 0;  // entropy + ~huffman
-	double dbitsH = 0;
-	double dbitsE = 0; // external entropy + ~huffman
-	double dbitsEH = 0;
-	int F[256] = {0}, n = 0;
-	double e = 0; // accumulated error bits
-	for (i = 0; i < nvals; i++) {
-	    double x; int X;
-	    unsigned int v = vals[i];
-
-	    //Better encoding would cope with sign.
-	    //v = ABS(vals[i])*2+(vals[i]<0);
-
-	    if (!(v & ~0x7f)) {
-		F[v]             += freqs[i], n+=freqs[i];
-	    } else if (!(v & ~0x3fff)) {
-		F[(v>>8) |0x80] += freqs[i];
-		F[ v     &0xff] += freqs[i], n+=2*freqs[i];
-	    } else if (!(v & ~0x1fffff)) {
-		F[(v>>16)|0xc0] += freqs[i];
-		F[(v>>8 )&0xff] += freqs[i];
-		F[ v     &0xff] += freqs[i], n+=3*freqs[i];
-	    } else if (!(v & ~0x0fffffff)) {
-		F[(v>>24)|0xe0] += freqs[i];
-		F[(v>>16)&0xff] += freqs[i];
-		F[(v>>8 )&0xff] += freqs[i];
-		F[ v     &0xff] += freqs[i], n+=4*freqs[i];
-	    } else {
-		F[(v>>28)|0xf0] += freqs[i];
-		F[(v>>20)&0xff] += freqs[i];
-		F[(v>>12)&0xff] += freqs[i];
-		F[(v>>4 )&0xff] += freqs[i];
-		F[ v     &0x0f] += freqs[i], n+=5*freqs[i];
-	    }
-
-	    x = -log((double)freqs[i]/ntot)/.69314718055994530941;
-	    X = x+0.5;
-	    if ((int)(x+((double)e/freqs[i])+.5)>X) {
-		X++;
-	    } else if ((int)(x+((double)e/freqs[i])+.5)<X) {
-		X--;
-	    }
-	    e-=freqs[i]*(X-x);
-	    X += (X==0);
-
-	    //fprintf(stderr, "Val %d = %d x %d (ent %f, %d) e %f\n", i, v, freqs[i], x, X, e);
-
-	    dbits  += freqs[i] * x;
-	    dbitsH += freqs[i] * X;
-	}
-
-	for (i = 0; i < 256; i++) {
-	    if (F[i]) {
-		double x = -log((double)F[i]/n)/.69314718055994530941;
-		int X = x+0.5;
-		X += (X==0);
-		dbitsE  += F[i] * x;
-		dbitsEH += F[i] * X;
-
-		//fprintf(stderr, "Val %d = %d x %d (e %f, %d)\n", i, i, F[i], x, X);
-	    }
-	}
-
-	//fprintf(stderr, "CORE Entropy = %f, %f\n", dbits/8, dbitsH/8);
-	//fprintf(stderr, "Ext. Entropy = %f, %f\n", dbitsE/8, dbitsEH/8);
-
-	if (dbitsE < 1000 || dbitsE / dbits > 1.1) {
-	    //fprintf(stderr, "=> %d < 200 ? E_HUFFMAN : E_BETA\n", nvals);
-	    free(vals); free(freqs);
-	    return nvals < 200 ? E_HUFFMAN : E_BETA;
-	}
-#endif
-	free(vals); free(freqs);
-	return E_EXTERNAL;
-    }
-
-    /*
-     * Avoid complex stats for now, just do heuristic of HUFFMAN for small
-     * alphabets and BETA for anything large.
-     */
-    free(vals); free(freqs);
-    return nvals < 200 ? E_HUFFMAN : E_BETA;
-    //return E_HUFFMAN;
-    //return E_EXTERNAL;
-
-
-    /* We only support huffman now anyway... */
-    //free(vals); free(freqs); return E_HUFFMAN;
-
-    /* Beta */
-    bits = nbits(max_val - min_val) * ntot;
-    if (fd->verbose > 1)
-	fprintf(stderr, "BETA    = %d\n", bits);
-    if (best_size > bits)
-	best_size = bits, best_encoding = E_BETA;
-
-#if 0
-    /* Unary */
-    if (min_val >= 0) {
-	for (bits = i = 0; i < nvals; i++)
-	    bits += freqs[i]*(vals[i]+1);
-	if (fd->verbose > 1)
-	    fprintf(stderr, "UNARY   = %d\n", bits);
-	if (best_size > bits)
-	    best_size = bits, best_encoding = E_NULL; //E_UNARY;
-    }
-
-    /* Gamma */
-    for (bits = i = 0; i < nvals; i++)
-	bits += ((nbits(vals[i]-min_val+1)-1) + nbits(vals[i]-min_val+1)) * freqs[i];
-    if (fd->verbose > 1)
-	fprintf(stderr, "GAMMA   = %d\n", bits);
-    if (best_size > bits)
-	best_size = bits, best_encoding = E_GAMMA;
-
-    /* Subexponential */
-    for (k = 0; k < 10; k++) {
-	for (bits = i = 0; i < nvals; i++) {
-	    if (vals[i]-min_val < (1<<k))
-		bits += (1 + k)*freqs[i];
-	    else
-		bits += (nbits(vals[i]-min_val)*2-k)*freqs[i];
-	}
-
-	if (fd->verbose > 1)
-	    fprintf(stderr, "SUBEXP%d = %d\n", k, bits);
-	if (best_size > bits)
-	    best_size = bits, best_encoding = E_SUBEXP;
-    }
-#endif
-
-    /* byte array len */
-
-    /* byte array stop */
-
-    /* External? Guesswork! */
-
-    /* Huffman */
-//    qsort(freqs, nvals, sizeof(freqs[0]), sort_freqs);
-//    for (i = 0; i < nvals; i++) {
-//	fprintf(stderr, "%d = %d\n", i, freqs[i]);
-//	vals[i] = 0;
-//    }
-
-    /* Grow freqs to 2*freqs, to store sums */
-    /* Vals holds link data */
-    freqs = realloc(freqs, 2*nvals*sizeof(*freqs));
-    codes = calloc(2*nvals, sizeof(*codes));
-    if (!freqs || !codes)
-	return E_HUFFMAN; // Cannot do much else atm
-
-    /* Inefficient, use pointers to form chain so we can insert and maintain
-     * a sorted list? This is currently O(nvals^2) complexity.
-     */
-    for (;;) {
-	int low1 = INT_MAX, low2 = INT_MAX;
-	int ind1 = 0, ind2 = 0;
-	for (i = 0; i < nvals; i++) {
-	    if (freqs[i] < 0)
-		continue;
-	    if (low1 > freqs[i]) 
-		low2 = low1, ind2 = ind1, low1 = freqs[i], ind1 = i;
-	    else if (low2 > freqs[i])
-		low2 = freqs[i], ind2 = i;
-	}
-	if (low2 == INT_MAX)
-	    break;
-
-	//fprintf(stderr, "Merge ind %d (%d), %d (%d) = %d+%d, => %d=%d\n",
-	//	ind1, vals[ind1], ind2, vals[ind2], low1, low2,
-	//	nvals, low1+low2);
-
-	freqs[nvals] = low1 + low2;
-	codes[ind1] = nvals;
-	codes[ind2] = nvals;
-	freqs[ind1] *= -1;
-	freqs[ind2] *= -1;
-	nvals++;
-    }
-    nvals = nvals/2+1;
-
-    for (i = 0; i < nvals; i++) {
-	int code_len = 0;
-	for (k = codes[i]; k; k = codes[k])
-	    code_len++;
-	codes[i] = code_len;
-	freqs[i] *= -1;
-	//fprintf(stderr, "%d / %d => %d\n", vals[i], freqs[i], codes[i]);
-    }
-
-    for (bits = i = 0; i < nvals; i++) {
-	bits += freqs[i] * codes[i];
-    }
-    if (fd->verbose > 1)
-	fprintf(stderr, "HUFFMAN = %d\n", bits);
-    if (best_size >= bits)
-	best_size = bits, best_encoding = E_HUFFMAN;
-    free(codes);
-
     free(vals);
     free(freqs);
 
-    return best_encoding;
+    /*
+     * Simple policy that everything is external unless it can be
+     * encoded using zero bits as a unary item huffman table.
+     */
+    return nvals <= 1 ? E_HUFFMAN : E_EXTERNAL;
 }
 
 void cram_stats_free(cram_stats *st) {

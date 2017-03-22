@@ -289,8 +289,8 @@ char *sam_hdr_str(SAM_hdr *hdr);
  * optional new-line. If it contains more than 1 line then multiple lines
  * will be added in order.
  *
- * Len is the length of the text data, or 0 if unknown (in which case
- * it should be null terminated).
+ * Input text is of maximum length len or as terminated earlier by a NUL.
+ * Len may be 0 if unknown, in which case lines must be NUL-terminated.
  *
  * @return
  * Returns 0 on success;
@@ -320,6 +320,10 @@ int sam_hdr_add(SAM_hdr *sh, const char *type, ...);
  * The purpose of the additional va_list parameter is to permit other
  * varargs functions to call this while including their own additional
  * parameters; an example is in sam_hdr_add_PG().
+ *
+ * Note: this function invokes va_arg at least once, making the value
+ * of ap indeterminate after the return.  The caller should call
+ * va_start/va_end before/after calling this function or use va_copy.
  *
  * @return
  * Returns 0 on success;

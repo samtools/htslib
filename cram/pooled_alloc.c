@@ -35,11 +35,30 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h>
 
 #include "cram/pooled_alloc.h"
+#include "cram/misc.h"
 
 //#define TEST_MAIN
 
 #define PSIZE 1024*1024
 
+// credit to http://graphics.stanford.edu/~seander/bithacks.html
+static int next_power_2(unsigned int v) {
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v++;
+
+    return v;
+}
+
+/*
+ * Creates a pool.
+ * Pool allocations are approx minimum of 1024*dsize or PSIZE.
+ * (Assumes we're not trying to use pools for >= 2Gb or more)
+ */
 pool_alloc_t *pool_create(size_t dsize) {
     pool_alloc_t *p;
 
@@ -51,6 +70,7 @@ pool_alloc_t *pool_create(size_t dsize) {
     if (dsize < sizeof(void *))
 	dsize = sizeof(void *);
     p->dsize = dsize;
+    p->psize = MIN(PSIZE, next_power_2(p->dsize*1024));
 
     p->npools = 0;
     p->pools = NULL;
@@ -60,7 +80,7 @@ pool_alloc_t *pool_create(size_t dsize) {
 }
 
 static pool_t *new_pool(pool_alloc_t *p) {
-    size_t n = PSIZE / p->dsize;
+    size_t n = p->psize / p->dsize;
     pool_t *pool;
     
     pool = realloc(p->pools, (p->npools + 1) * sizeof(*p->pools));
@@ -102,7 +122,7 @@ void *pool_alloc(pool_alloc_t *p) {
     /* Look for space in the last pool */
     if (p->npools) {
         pool = &p->pools[p->npools - 1];
-        if (pool->used + p->dsize < PSIZE) {
+        if (pool->used + p->dsize < p->psize) {
 	    ret = ((char *) pool->pool) + pool->used;
 	    pool->used += p->dsize;
 	    return ret;

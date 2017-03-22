@@ -31,6 +31,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _POOLED_ALLOC_H_
 #define _POOLED_ALLOC_H_
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -46,6 +48,7 @@ typedef struct {
 
 typedef struct {
     size_t dsize;
+    size_t psize;
     size_t npools;
     pool_t *pools;
     void *free;
