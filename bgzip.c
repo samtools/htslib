@@ -333,5 +333,4 @@ int main(int argc, char **argv)
         if (!pstdout) unlink(argv[optind]);
         return 0;
     }
-    return 0;
 }
