@@ -70,8 +70,7 @@ char *slurp(const char *filename)
     text = (char *) malloc(filesize + 1);
     if (text == NULL) fail("malloc(text)");
 
-    readsize = fread(text, 1, filesize, f);
-    if (readsize != filesize) fail("fread");
+    if (fread(text, 1, filesize, f) != filesize) fail("fread");
     fclose(f);
 
     text[filesize] = '\0';
