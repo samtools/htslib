@@ -148,11 +148,13 @@ sub test_cmd
     {
         my @exp = <$fh>;
         $exp = join('',@exp);
+        $exp =~ s/\015?\012/\n/g;
         close($fh);
     }
     elsif ( !$$opts{redo_outputs} ) { failed($opts,$test,"$$opts{path}/$args{out}: $!"); return; }
 
-    if ( $exp ne $out )
+    (my $out_lf = $out) =~ s/\015?\012/\n/g;
+    if ( $exp ne $out_lf )
     {
         open(my $fh,'>',"$$opts{path}/$args{out}.new") or error("$$opts{path}/$args{out}.new");
         print $fh $out;

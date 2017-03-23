@@ -61,16 +61,17 @@ char *slurp(const char *filename)
 {
     char *text;
     struct stat sbuf;
-    size_t filesize;
-    FILE *f = fopen(filename, "r");
-    if (f == NULL) fail("fopen(\"%s\", \"r\")", filename);
+    size_t filesize, readsize;
+    FILE *f = fopen(filename, "rb");
+    if (f == NULL) fail("fopen(\"%s\", \"rb\")", filename);
     if (fstat(fileno(f), &sbuf) != 0) fail("fstat(\"%s\")", filename);
     filesize = sbuf.st_size;
 
     text = (char *) malloc(filesize + 1);
     if (text == NULL) fail("malloc(text)");
 
-    if (fread(text, 1, filesize, f) != filesize) fail("fread");
+    readsize = fread(text, 1, filesize, f);
+    if (readsize != filesize) fail("fread");
     fclose(f);
 
     text[filesize] = '\0';

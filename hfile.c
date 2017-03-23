@@ -573,6 +573,9 @@ error:
 
 hFILE *hdopen(int fd, const char *mode)
 {
+#if defined HAVE_SETMODE && defined O_BINARY
+    if (setmode(fd, O_BINARY) < 0) return NULL;
+#endif
     hFILE_fd *fp = (hFILE_fd*) hfile_init(sizeof (hFILE_fd), mode, blksize(fd));
     if (fp == NULL) return NULL;
 
@@ -594,9 +597,6 @@ static hFILE *hopen_fd_fileuri(const char *url, const char *mode)
 static hFILE *hopen_fd_stdinout(const char *mode)
 {
     int fd = (strchr(mode, 'r') != NULL)? STDIN_FILENO : STDOUT_FILENO;
-#if defined HAVE_SETMODE && defined O_BINARY
-    if (setmode(fd, O_BINARY) < 0) return NULL;
-#endif
     return hdopen(fd, mode);
 }
 

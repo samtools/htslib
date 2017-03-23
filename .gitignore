@@ -2,6 +2,8 @@
 *.pico
 *.dSYM
 *.exe
+*.dll
+*.obj
 *.pc.tmp
 *-uninstalled.pc
 /version.h
@@ -47,5 +49,6 @@ lib*.so.*
 /test/thrash_threads[1-6]
 /test/*.tmp
 /test/*.tmp.*
+/test/*.new
 
 /TAGS
