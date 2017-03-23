@@ -63,6 +63,7 @@ sub error
         "Options:\n",
         "   -r, --redo-outputs              Recreate expected output files.\n",
         "   -t, --temp-dir <path>           When given, temporary files will not be removed.\n",
+        "   -f, --fail-fast                 Fail-fast mode: exit as soon as a test fails.\n",
         "   -h, -?, --help                  This help message.\n",
         "\n";
     exit 1;
@@ -75,6 +76,7 @@ sub parse_params
     my $ret = GetOptions (
             't|temp-dir:s' => \$$opts{keep_files},
             'r|redo-outputs' => \$$opts{redo_outputs},
+            'f|fail-fast' => \$$opts{fail_fast},
             'h|?|help' => \$help
             );
     if ( !$ret or $help ) { error(); }
@@ -182,6 +184,9 @@ sub failed
     if ( defined $reason ) { print STDERR "\t$reason\n"; }
     print STDERR ".. failed ...\n\n";
     STDERR->flush();
+    if ($$opts{fail_fast}) {
+      die "\n";
+    }
 }
 sub passed
 {
@@ -203,7 +208,7 @@ sub is_file_newer
 
 my $test_view_failures;
 sub testv {
-    my ($cmd) = @_;
+    my ($opts, $cmd) = @_;
     print "  $cmd\n";
     my ($ret, $out) = _cmd($cmd);
     if ($ret != 0) {
@@ -211,6 +216,9 @@ sub testv {
         print STDERR "FAILED\n$out\n";
         STDERR->flush();
         $test_view_failures++;
+        if ($$opts{fail_fast}) {
+          die "\n";
+        }
     }
 }
 
@@ -235,50 +243,50 @@ sub test_view
         $test_view_failures = 0;
 
         # SAM -> BAM -> SAM
-        testv "./test_view $tv_args -S -b $sam > $bam";
-        testv "./test_view $tv_args $bam > $bam.sam_";
-        testv "./compare_sam.pl $sam $bam.sam_";
+        testv $opts, "./test_view $tv_args -S -b $sam > $bam";
+        testv $opts, "./test_view $tv_args $bam > $bam.sam_";
+        testv $opts, "./compare_sam.pl $sam $bam.sam_";
 
         # SAM -> CRAM -> SAM
-        testv "./test_view $tv_args -t $ref -S -C $sam > $cram";
-        testv "./test_view $tv_args -D $cram > $cram.sam_";
-        testv "./compare_sam.pl $md $sam $cram.sam_";
+        testv $opts, "./test_view $tv_args -t $ref -S -C $sam > $cram";
+        testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
+        testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
 
         # BAM -> CRAM -> BAM -> SAM
         $cram = "$bam.cram";
-        testv "./test_view $tv_args -t $ref -C $bam > $cram";
-        testv "./test_view $tv_args -b -D $cram > $cram.bam";
-        testv "./test_view $tv_args $cram.bam > $cram.bam.sam_";
-        testv "./compare_sam.pl $md $sam $cram.bam.sam_";
+        testv $opts, "./test_view $tv_args -t $ref -C $bam > $cram";
+        testv $opts, "./test_view $tv_args -b -D $cram > $cram.bam";
+        testv $opts, "./test_view $tv_args $cram.bam > $cram.bam.sam_";
+        testv $opts, "./compare_sam.pl $md $sam $cram.bam.sam_";
 
         # SAM -> CRAM3 -> SAM
         $cram = "$base.tmp.cram";
-        testv "./test_view $tv_args -t $ref -S -C -o VERSION=3.0 $sam > $cram";
-        testv "./test_view $tv_args -D $cram > $cram.sam_";
-        testv "./compare_sam.pl $md $sam $cram.sam_";
+        testv $opts, "./test_view $tv_args -t $ref -S -C -o VERSION=3.0 $sam > $cram";
+        testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
+        testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
 
         # BAM -> CRAM3 -> BAM -> SAM
         $cram = "$bam.cram";
-        testv "./test_view $tv_args -t $ref -C -o VERSION=3.0 $bam > $cram";
-        testv "./test_view $tv_args -b -D $cram > $cram.bam";
-        testv "./test_view $tv_args $cram.bam > $cram.bam.sam_";
-        testv "./compare_sam.pl $md $sam $cram.bam.sam_";
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 $bam > $cram";
+        testv $opts, "./test_view $tv_args -b -D $cram > $cram.bam";
+        testv $opts, "./test_view $tv_args $cram.bam > $cram.bam.sam_";
+        testv $opts, "./compare_sam.pl $md $sam $cram.bam.sam_";
 
         # CRAM3 -> CRAM2
         $cram = "$base.tmp.cram";
-        testv "./test_view $tv_args -t $ref -C -o VERSION=2.1 $cram > $cram.cram";
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=2.1 $cram > $cram.cram";
 
         # CRAM2 -> CRAM3
-        testv "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
-        testv "./test_view $tv_args $cram > $cram.sam_";
-        testv "./compare_sam.pl $md $sam $cram.sam_";
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
+        testv $opts, "./test_view $tv_args $cram > $cram.sam_";
+        testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
 
         # Java pre-made CRAM -> SAM
         my $jcram = "${base}_java.cram";
         if (-e $jcram) {
             my $jsam = "${base}_java.tmp.sam_";
-            testv "./test_view $tv_args -i reference=$ref $jcram > $jsam";
-            testv "./compare_sam.pl -Baux $md $sam $jsam";
+            testv $opts, "./test_view $tv_args -i reference=$ref $jcram > $jsam";
+            testv $opts, "./compare_sam.pl -Baux $md $sam $jsam";
         }
 
         if ($test_view_failures == 0)
