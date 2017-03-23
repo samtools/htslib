@@ -10,3 +10,8 @@
 .git*           export-ignore
 /.travis.yml    export-ignore
 README.md       export-ignore
+
+# Remove the text attribute from reference files, so that git doesn't convert
+# line separators on Windows machines. It causes the index files to become out
+# of sync with the fasta files.
+*.fa* -text

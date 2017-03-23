@@ -64,6 +64,8 @@ while (<$fd2>) {
 
 # Compare lines
 while ($ln1 && $ln2) {
+    $ln1 =~ s/\015?\012/\n/;
+    $ln2 =~ s/\015?\012/\n/;
     chomp($ln1);
     chomp($ln2);
 
