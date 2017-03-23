@@ -35,6 +35,13 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/sam.h"
 
+enum test_op {
+    READ_COMPRESSED  = 1,
+    WRITE_COMPRESSED = 2,
+    READ_CRAM        = 4,
+    WRITE_CRAM       = 8
+};
+
 int main(int argc, char *argv[])
 {
     samFile *in;
@@ -52,16 +59,16 @@ int main(int argc, char *argv[])
     int benchmark = 0;
     int nthreads = 0; // shared pool
 
-    while ((c = getopt(argc, argv, "IbDCSl:t:i:o:N:BZ:@:")) >= 0) {
+    while ((c = getopt(argc, argv, "DSIt:i:bCl:o:N:BZ:@:")) >= 0) {
         switch (c) {
+        case 'D': flag |= READ_CRAM; break;
+        case 'S': flag |= READ_COMPRESSED; break;
         case 'I': ignore_sam_err = 1; break;
-        case 'b': flag |= 2; break;
-        case 'D': flag |= 4; break;
-        case 'C': flag |= 8; break;
-        case 'S': flag |= 1; break;
-        case 'l': clevel = atoi(optarg); flag |= 2; break;
         case 't': fn_ref = optarg; break;
-        case 'i': if (hts_opt_add(&in_opts,  optarg)) return 1; break;
+        case 'i': if (hts_opt_add(&in_opts, optarg)) return 1; break;
+        case 'b': flag |= WRITE_COMPRESSED; break;
+        case 'C': flag |= WRITE_CRAM; break;
+        case 'l': clevel = atoi(optarg); flag |= WRITE_COMPRESSED; break;
         case 'o': if (hts_opt_add(&out_opts, optarg)) return 1; break;
         case 'N': nreads = atoi(optarg); break;
         case 'B': benchmark = 1; break;
@@ -70,7 +77,7 @@ int main(int argc, char *argv[])
         }
     }
     if (argc == optind) {
-        fprintf(stderr, "Usage: test_view [-IbDCS] [-l level] [-t fn_ref] [-i option=value] [-o option=value] [-N num_reads] [-B] [-Z hdr_nuls] [-@ num_threads] <in.bam>|<in.sam>|<in.cram> [region]\n");
+        fprintf(stderr, "Usage: test_view [-DSI] [-t fn_ref] [-i option=value] [-bC] [-l level] [-o option=value] [-N num_reads] [-B] [-Z hdr_nuls] [-@ num_threads] <in.bam>|<in.sam>|<in.cram> [region]\n");
         fprintf(stderr, "\n");
         fprintf(stderr, "-D: read CRAM format (mode 'c')\n");
         fprintf(stderr, "-S: read compressed BCF, BAM, FAI (mode 'b')\n");
@@ -90,8 +97,8 @@ int main(int argc, char *argv[])
         return 1;
     }
     strcpy(moder, "r");
-    if (flag&4) strcat(moder, "c");
-    else if ((flag&1) == 0) strcat(moder, "b");
+    if (flag & READ_CRAM) strcat(moder, "c");
+    else if ((flag & READ_COMPRESSED) == 0) strcat(moder, "b");
 
     in = sam_open(argv[optind], moder);
     if (in == NULL) {
@@ -119,8 +126,8 @@ int main(int argc, char *argv[])
 
     strcpy(modew, "w");
     if (clevel >= 0 && clevel <= 9) sprintf(modew + 1, "%d", clevel);
-    if (flag&8) strcat(modew, "c");
-    else if (flag&2) strcat(modew, "b");
+    if (flag & WRITE_CRAM) strcat(modew, "c");
+    else if (flag & WRITE_COMPRESSED) strcat(modew, "b");
     out = hts_open("-", modew);
     if (out == NULL) {
         fprintf(stderr, "Error opening standard output\n");
@@ -128,7 +135,7 @@ int main(int argc, char *argv[])
     }
 
     /* CRAM output */
-    if (flag & 8) {
+    if (flag & WRITE_CRAM) {
         int ret;
 
         // Parse input header and use for CRAM output
@@ -171,7 +178,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error writing output header.\n");
         exit_code = 1;
     }
-    if (optind + 1 < argc && !(flag&1)) { // BAM input and has a region
+    if (optind + 1 < argc && !(flag & READ_COMPRESSED)) { // BAM input and has a region
         int i;
         hts_idx_t *idx;
         if ((idx = sam_index_load(in, argv[optind])) == 0) {
