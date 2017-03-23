@@ -179,6 +179,17 @@ void *load_plugin(void **pluginp, const char *filename, const char *symbol);
 void *plugin_sym(void *plugin, const char *name, const char **errmsg);
 void close_plugin(void *plugin);
 
+/*! Logs an event.
+ * \param severity      Severity of the event:
+ *                      - HTS_LOG_ERROR means that something went wrong so that a task could not be completed.
+ *                      - HTS_LOG_WARNING means that something unexpected happened, but that execution can continue, perhaps in a degraded mode.
+ *                      - HTS_LOG_INFO means that something normal but significant happened.
+ *                      - HTS_LOG_DEBUG means that something normal and insignificant happened.
+ * \param context       Context where the event occurred. Typically set to "__func__".
+ * \param format        Format string with placeholders, like printf.
+ */
+void hts_log(enum htsLogLevel severity, const char *context, const char *format, ...);
+
 #ifdef __cplusplus
 }
 #endif

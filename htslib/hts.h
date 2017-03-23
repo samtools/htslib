@@ -32,6 +32,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 
 #include "hts_defs.h"
+#include "hts_log.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -298,8 +299,6 @@ int hts_parse_format(htsFormat *opt, const char *str);
  *        -1 on failure.
  */
 int hts_parse_opt_list(htsFormat *opt, const char *str);
-
-extern int hts_verbose;
 
 /*! @abstract Table for converting a nucleotide character to 4-bit encoding.
 The input character may be either an IUPAC ambiguity code, '=' for 0, or

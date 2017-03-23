@@ -2354,3 +2354,42 @@ size_t hts_realloc_or_die(size_t n, size_t m, size_t m_sz, size_t size,
         fprintf(stderr, "[E::%s] %s\n", func, strerror(errno));
     exit(1);
 }
+
+void hts_set_log_level(enum htsLogLevel level)
+{
+    hts_verbose = level;
+}
+
+enum htsLogLevel hts_get_log_level()
+{
+    return hts_verbose;
+}
+
+static char get_severity_tag(enum htsLogLevel severity)
+{
+    switch (severity) {
+    case HTS_LOG_ERROR:
+        return 'E';
+    case HTS_LOG_WARNING:
+        return 'W';
+    case HTS_LOG_INFO:
+        return 'I';
+    case HTS_LOG_DEBUG:
+        return 'D';
+    }
+
+    return '*';
+}
+
+void hts_log(enum htsLogLevel severity, const char *context, const char *format, ...)
+{
+    if (severity <= hts_verbose) {
+        va_list argptr;
+
+        fprintf(stderr, "[%c::%s] ", get_severity_tag(severity), context);
+
+        va_start(argptr, format);
+        vfprintf(stderr, format, argptr);
+        va_end(argptr);
+    }
+}
