@@ -1935,7 +1935,7 @@ static int cram_add_insertion(cram_container *c, cram_slice *s, cram_record *r,
 }
 
 /*
- * Encodes auxiliary data.
+ * Encodes auxiliary data, CRAM 1.0 format.
  * Returns the read-group parsed out of the BAM aux fields on success
  *         NULL on failure or no rg present (FIXME)
  */
