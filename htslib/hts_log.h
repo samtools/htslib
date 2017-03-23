@@ -56,6 +56,30 @@ enum htsLogLevel hts_get_log_level();
  */
 extern int hts_verbose;
 
+/*! Logs an event.
+* \param severity      Severity of the event:
+*                      - HTS_LOG_ERROR means that something went wrong so that a task could not be completed.
+*                      - HTS_LOG_WARNING means that something unexpected happened, but that execution can continue, perhaps in a degraded mode.
+*                      - HTS_LOG_INFO means that something normal but significant happened.
+*                      - HTS_LOG_DEBUG means that something normal and insignificant happened.
+* \param context       Context where the event occurred. Typically set to "__func__".
+* \param format        Format string with placeholders, like printf.
+*/
+void hts_log(enum htsLogLevel severity, const char *context, const char *format, ...)
+HTS_FORMAT(printf, 3, 4);
+
+/*! Logs an event with severity HTS_LOG_ERROR and default context. Parameters: format, ... */
+#define hts_log_error(...) hts_log(HTS_LOG_ERROR, __func__, __VA_ARGS__)
+
+/*! Logs an event with severity HTS_LOG_WARNING and default context. Parameters: format, ... */
+#define hts_log_warning(...) hts_log(HTS_LOG_WARNING, __func__, __VA_ARGS__)
+
+/*! Logs an event with severity HTS_LOG_INFO and default context. Parameters: format, ... */
+#define hts_log_info(...) hts_log(HTS_LOG_INFO, __func__, __VA_ARGS__)
+
+/*! Logs an event with severity HTS_LOG_DEBUG and default context. Parameters: format, ... */
+#define hts_log_debug(...) hts_log(HTS_LOG_DEBUG, __func__, __VA_ARGS__)
+
 #ifdef __cplusplus
 }
 #endif

@@ -49,7 +49,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
-int hts_verbose = 3;
+int hts_verbose = HTS_LOG_INFO;
 
 const char *hts_version()
 {
@@ -2393,5 +2393,7 @@ void hts_log(enum htsLogLevel severity, const char *context, const char *format,
         va_start(argptr, format);
         vfprintf(stderr, format, argptr);
         va_end(argptr);
+
+        fprintf(stderr, "\n");
     }
 }

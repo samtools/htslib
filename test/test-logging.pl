@@ -24,34 +24,26 @@
 
 use strict;
 
-my $log_statement_count = 0;
+my $log_message_count = 0;
 my $file_count = 0;
 my $failure_count = 0;
 
-sub check_log_statement
+sub check_log_message
 {
-  my ($argsstr, $filename) = @_;
-  $log_statement_count++;
+  my ($message, $filename, $line_num) = @_;
+  $log_message_count++;
 
-  # collapse function calls to get rid of extra commas
-  my $collapsed_argsstr = $argsstr;
-  $collapsed_argsstr =~ s/\([^\)]*\)/()/g;
-
-  my @args = split(/\s*,\s*/, $collapsed_argsstr);
-  my $format = @args[0];
-
-  unless ($format =~ /\\n\"$/)
+  if ($message =~ /\\n\"$/)
   {
-    print "$filename:\n";
-    print "Missing newline in format string: $format.\n";
+    print "$filename line $line_num:\n";
+    print "Log message should NOT end with a newline: $message.\n";
     $failure_count++;
   }
 
-  my @placeholders = $format =~ /%[^%]/g;
-  unless (scalar(@placeholders) == scalar(@args) - 1)
+  if ($message =~ /\.\"$/)
   {
-    print "$filename:\n";
-    print "Number of placeholders in the format string doesn't match the number of arguments: $argsstr\n";
+    print "$filename line $line_num:\n";
+    print "Log message should NOT end with a full stop: $message.\n";
     $failure_count++;
   }
 }
@@ -62,22 +54,17 @@ sub check_file
   $file_count++;
 
   open(my $fh, '<', $filename) or die "Could not open $filename.";
-  my @lines = <$fh>;
-
-  # strip line comments
-  foreach my $line (@lines)
+  my $line_num = 1;
+  my $line = <$fh>;
+  while ($line)
   {
-    $line =~ s/\/\/.*$//;
-  }
+    if ($line =~ /hts_log_\w+\s*\(\s*(\"[^\"]*\")/)
+    {
+      check_log_message($1, $filename, $line_num);
+    }
 
-  my $text = join(' ', @lines);
-
-  # strip /* */ comments
-  $text =~ s/\/\*([^\*]|\*[^\/])*\*\// /g;
-
-  while ($text =~ /log_\w+\(\s*([^;]+)\s*\)\s*;/g)
-  {
-    check_log_statement($1, $filename);
+    $line_num++;
+    $line = <$fh>;
   }
 }
 
@@ -94,6 +81,6 @@ check_dir("..");
 check_dir("../cram");
 
 print "$file_count files scanned\n";
-print "$log_statement_count log statements checked\n";
+print "$log_message_count log messages checked\n";
 print "$failure_count errors found\n";
 exit($failure_count > 0);
