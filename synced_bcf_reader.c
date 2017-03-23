@@ -27,6 +27,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <strings.h>
 #include <limits.h>
 #include <errno.h>
 #include <sys/stat.h>

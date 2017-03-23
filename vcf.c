@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <stdint.h>
@@ -2127,6 +2128,12 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     kstring_t *str;
     khint_t k;
     ks_tokaux_t aux;
+    int max_n_flt = 0, max_n_val = 0;
+    int32_t *flt_a = NULL, *val_a = NULL;
+    int ret = -1;
+
+    // Assumed in lots of places, but we may as well spot this early
+    assert(sizeof(float) == sizeof(int32_t));
 
     bcf_clear1(v);
     str = &v->shared;
@@ -2153,7 +2160,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                 if (k == kh_end(d)) {
                     fprintf(stderr, "[E::%s] Could not add dummy header for contig '%s'\n", __func__, p);
                     v->errcode |= BCF_ERR_CTG_INVALID;
-                    return -1;
+                    goto err;
                 }
             }
             v->rid = kh_val(d, k).id;
@@ -2179,10 +2186,9 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
         } else if (i == 5) { // QUAL
             if (strcmp(p, ".")) v->qual = atof(p);
             else memcpy(&v->qual, &bcf_float_missing, 4);
-            if ( v->max_unpack && !(v->max_unpack>>1) ) return 0; // BCF_UN_STR
+            if ( v->max_unpack && !(v->max_unpack>>1) ) goto end; // BCF_UN_STR
         } else if (i == 6) { // FILTER
             if (strcmp(p, ".")) {
-                int32_t *a;
                 int n_flt = 1, i;
                 ks_tokaux_t aux1;
                 vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
@@ -2190,7 +2196,16 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                 if (*(q-1) == ';') *(q-1) = 0;
                 for (r = p; *r; ++r)
                     if (*r == ';') ++n_flt;
-                a = (int32_t*)alloca(n_flt * sizeof(int32_t));
+                if (n_flt > max_n_flt) {
+                    int32_t *a = realloc(flt_a, n_flt * sizeof(int32_t));
+                    if (!a) {
+                        fprintf(stderr, "[E::%s] Could not allocate memory\n", __func__);
+                        v->errcode |= BCF_ERR_LIMITS; // No appropriate code?
+                        goto err;
+                    }
+                    max_n_flt = n_flt;
+                    flt_a = a;
+                }
                 // add filters
                 for (t = kstrtok(p, ";", &aux1), i = 0; t; t = kstrtok(0, 0, &aux1)) {
                     *(char*)aux1.p = 0;
@@ -2211,15 +2226,15 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         if (k == kh_end(d)) {
                             fprintf(stderr, "[E::%s] Could not add dummy header for FILTER '%s'\n", __func__, t);
                             v->errcode |= BCF_ERR_TAG_INVALID;
-                            return -1;
+                            goto err;
                         }
                     }
-                    a[i++] = kh_val(d, k).id;
+                    flt_a[i++] = kh_val(d, k).id;
                 }
                 n_flt = i;
-                bcf_enc_vint(str, n_flt, a, -1);
+                bcf_enc_vint(str, n_flt, flt_a, -1);
             } else bcf_enc_vint(str, 0, 0, -1);
-            if ( v->max_unpack && !(v->max_unpack>>2) ) return 0;    // BCF_UN_FLT
+            if ( v->max_unpack && !(v->max_unpack>>2) ) goto end;    // BCF_UN_FLT
         } else if (i == 7) { // INFO
             char *key;
             vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
@@ -2253,7 +2268,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         if (k == kh_end(d)) {
                             fprintf(stderr, "[E::%s] Could not add dummy header for INFO '%s'\n", __func__, key);
                             v->errcode |= BCF_ERR_TAG_INVALID;
-                            return -1;
+                            goto err;
                         }
                     }
                     uint32_t y = kh_val(d, k).info[BCF_HL_INFO];
@@ -2268,35 +2283,44 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         char *t, *te;
                         for (t = val, n_val = 1; *t; ++t) // count the number of values
                             if (*t == ',') ++n_val;
-                        if ((y>>4&0xf) == BCF_HT_INT) {
+                        // Check both int and float size in one step for simplicity
+                        if (n_val > max_n_val) {
                             int32_t *z;
-                            z = (int32_t*)alloca(n_val * sizeof(int32_t));
+                            z = (int32_t *)realloc((void *)val_a, n_val * sizeof(*z));
+                            if (!z) {
+                                fprintf(stderr, "[E::%s] Could not allocate memory\n", __func__);
+                                v->errcode |= BCF_ERR_LIMITS; // No appropriate code?
+                                goto err;
+                            }
+                            max_n_val = n_val;
+                            val_a = z;
+                        }
+                        if ((y>>4&0xf) == BCF_HT_INT) {
                             for (i = 0, t = val; i < n_val; ++i, ++t)
                             {
-                                z[i] = strtol(t, &te, 10);
+                                val_a[i] = strtol(t, &te, 10);
                                 if ( te==t ) // conversion failed
                                 {
-                                    z[i] = bcf_int32_missing;
+                                    val_a[i] = bcf_int32_missing;
                                     while ( *te && *te!=',' ) te++;
                                 }
                                 t = te;
                             }
-                            bcf_enc_vint(str, n_val, z, -1);
-                            if (strcmp(key, "END") == 0) v->rlen = z[0] - v->pos;
+                            bcf_enc_vint(str, n_val, val_a, -1);
+                            if (strcmp(key, "END") == 0) v->rlen = val_a[0] - v->pos;
                         } else if ((y>>4&0xf) == BCF_HT_REAL) {
-                            float *z;
-                            z = (float*)alloca(n_val * sizeof(float));
+                            float *val_f = (float *)val_a;
                             for (i = 0, t = val; i < n_val; ++i, ++t)
                             {
-                                z[i] = strtod(t, &te);
+                                val_f[i] = strtod(t, &te);
                                 if ( te==t ) // conversion failed
                                 {
-                                    bcf_float_set_missing(z[i]);
+                                    bcf_float_set_missing(val_f[i]);
                                     while ( *te && *te!=',' ) te++;
                                 }
                                 t = te;
                             }
-                            bcf_enc_vfloat(str, n_val, z);
+                            bcf_enc_vfloat(str, n_val, val_f);
                         }
                     }
                     if (c == 0) break;
@@ -2304,11 +2328,21 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                     key = r + 1;
                 }
             }
-            if ( v->max_unpack && !(v->max_unpack>>3) ) return 0;
-        } else if (i == 8) // FORMAT
+            if ( v->max_unpack && !(v->max_unpack>>3) ) goto end;
+        } else if (i == 8) {// FORMAT
+            free(flt_a);
+            free(val_a);
             return vcf_parse_format(s, h, v, p, q);
+        }
     }
-    return 0;
+
+ end:
+    ret = 0;
+
+ err:
+    free(flt_a);
+    free(val_a);
+    return ret;
 }
 
 int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
@@ -2357,7 +2391,7 @@ int bcf_unpack(bcf1_t *b, int which)
 {
     if ( !b->shared.l ) return 0; // Building a new BCF record from scratch
     uint8_t *ptr = (uint8_t*)b->shared.s, *ptr_ori;
-    int *offset, i;
+    int i;
     bcf_dec_t *d = &b->d;
     if (which & BCF_UN_FLT) which |= BCF_UN_STR;
     if (which & BCF_UN_INFO) which |= BCF_UN_SHR;
@@ -2374,20 +2408,20 @@ int bcf_unpack(bcf1_t *b, int which)
         d->id = tmp.s; d->m_id = tmp.m;
 
         // REF and ALT are in a single block (d->als) and d->alleles are pointers into this block
+        hts_expand(char*, b->n_allele, d->m_allele, d->allele); // NM: hts_expand() is a macro
         tmp.l = 0; tmp.s = d->als; tmp.m = d->m_als;
-        offset = (int*)alloca(b->n_allele * sizeof(int));
         ptr_ori = ptr;
+        char *o = "";
         for (i = 0; i < b->n_allele; ++i) {
-            offset[i] = tmp.l;
+            d->allele[i] = o + tmp.l;
             ptr = bcf_fmt_sized_array(&tmp, ptr);
             kputc('\0', &tmp);
         }
         b->unpack_size[1] = ptr - ptr_ori;
         d->als = tmp.s; d->m_als = tmp.m;
 
-        hts_expand(char*, b->n_allele, d->m_allele, d->allele); // NM: hts_expand() is a macro
         for (i = 0; i < b->n_allele; ++i)
-            d->allele[i] = d->als + offset[i];
+            d->allele[i] = d->als + (d->allele[i]-o);
         b->unpacked |= BCF_UN_STR;
     }
     if ((which&BCF_UN_FLT) && !(b->unpacked&BCF_UN_FLT)) { // FILTER
@@ -3047,9 +3081,8 @@ int bcf_subset(const bcf_hdr_t *h, bcf1_t *v, int n, int *imap)
     kstring_t ind;
     ind.s = 0; ind.l = ind.m = 0;
     if (n) {
-        bcf_fmt_t *fmt;
+        bcf_fmt_t fmt[MAX_N_FMT];
         int i, j;
-        fmt = (bcf_fmt_t*)alloca(v->n_fmt * sizeof(bcf_fmt_t));
         uint8_t *ptr = (uint8_t*)v->indiv.s;
         for (i = 0; i < v->n_fmt; ++i)
             ptr = bcf_unpack_fmt_core1(ptr, v->n_sample, &fmt[i]);
