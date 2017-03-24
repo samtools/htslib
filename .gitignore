@@ -42,6 +42,7 @@ lib*.so.*
 /test/test-regidx
 /test/test-vcf-api
 /test/test-vcf-sweep
+/test/test-bcf-sr
 /test/test_view
 /test/thrash_threads[1-6]
 /test/*.tmp
