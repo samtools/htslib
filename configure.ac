@@ -134,6 +134,9 @@ esac
 AC_MSG_RESULT([$host_result])
 AC_SUBST([PLATFORM])
 
+dnl alloca.h should be included on platforms that supply it
+AC_FUNC_ALLOCA
+
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
 AC_CHECK_FUNCS(gmtime_r)
@@ -180,6 +183,21 @@ Ubuntu Linux) or zlib-devel (on RPM-based Linux distributions or Cygwin)
 is installed.
 
 FAILED.  This error must be resolved in order to build HTSlib successfully.])
+fi
+
+dnl connect() etc. fns are in libc on linux, but libsocket on illumos/Solaris
+libsocket=unneeded
+AC_SEARCH_LIBS(connect, socket, [libsocket=needed], [])
+
+AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+#include <pthreads.h>
+#ifndef PTHREAD_MUTEX_RECURSIVE
+# error macro not defined, probably a broken Linux, see https://github.com/samtools/htslib/pull/423
+#endif
+]])], [add_xopen="yes"], [add_xopen="no"])
+if test $add_xopen == yes; then
+  AC_DEFINE([ADD_XOPEN_700], 1,
+    [Define _XOPEN_SOURCE 700 for pthread on broken systems])
 fi
 
 if test "$enable_bz2" != no; then
