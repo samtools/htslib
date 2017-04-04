@@ -1799,7 +1799,7 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
             case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8, v==bcf_int8_missing,  v==bcf_int8_vector_end,  kputw(v, s)); break;
             case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, v==bcf_int16_missing, v==bcf_int16_vector_end, kputw(v, s)); break;
             case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, v==bcf_int32_missing, v==bcf_int32_vector_end, kputw(v, s)); break;
-            case BCF_BT_FLOAT: BRANCH(float,   le_to_float, bcf_float_is_missing(v), bcf_float_is_vector_end(v), kputd(v, s)); break;
+            case BCF_BT_FLOAT: BRANCH(uint32_t, le_to_u32, v==bcf_float_missing, v==bcf_float_vector_end, kputd(le_to_float(p), s)); break;
             default: fprintf(stderr,"todo: type %d\n", type); exit(1); break;
         }
         #undef BRANCH
@@ -2178,7 +2178,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             }
         } else if (i == 5) { // QUAL
             if (strcmp(p, ".")) v->qual = atof(p);
-            else memcpy(&v->qual, &bcf_float_missing, 4);
+            else bcf_float_set_missing(v->qual);
             if ( v->max_unpack && !(v->max_unpack>>1) ) return 0; // BCF_UN_STR
         } else if (i == 6) { // FILTER
             if (strcmp(p, ".")) {
@@ -3635,43 +3635,23 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
         *dst  = realloc(*dst, *ndst * size1);
     }
 
-    if ( info->len == 1 )
-    {
-        if ( info->type==BCF_BT_FLOAT ) *((float*)*dst) = info->v1.f;
-        else 
-        {
-            #define BRANCH(type_t, missing) { \
-                if ( info->v1.i==missing ) *((int32_t*)*dst) = bcf_int32_missing; \
-                else *((int32_t*)*dst) = info->v1.i; \
-            }
-            switch (info->type)
-            {
-                case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_missing ); break;
-                case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing); break;
-                case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing); break;
-            }
-            #undef BRANCH
-        }
-        return 1;
-    }
-
-#define BRANCH(type_t, convert, is_missing, is_vector_end, set_missing, out_type_t) { \
+    #define BRANCH(type_t, convert, is_missing, is_vector_end, set_missing, set_regular, out_type_t) { \
         out_type_t *tmp = (out_type_t *) *dst; \
         for (j=0; j<info->len; j++) \
         { \
             type_t p = convert(info->vptr + j * sizeof(type_t)); \
             if ( is_vector_end ) return j; \
             if ( is_missing ) set_missing; \
-            else *tmp = p; \
+            else set_regular; \
             tmp++; \
         } \
         return j; \
     }
     switch (info->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int32_missing, int32_t); break;
-        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int32_missing, int32_t); break;
-        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, p==bcf_int32_missing, p==bcf_int32_vector_end, *tmp=bcf_int32_missing, int32_t); break;
-        case BCF_BT_FLOAT: BRANCH(float, le_to_float, bcf_float_is_missing(p), bcf_float_is_vector_end(p), bcf_float_set_missing(*tmp), float); break;
+        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
+        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
+        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, p==bcf_int32_missing, p==bcf_int32_vector_end, *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
+        case BCF_BT_FLOAT: BRANCH(uint32_t, le_to_u32, p==bcf_float_missing, p==bcf_float_vector_end, bcf_float_set_missing(*tmp), bcf_float_set(tmp, p), float); break;
         default: fprintf(stderr,"TODO: %s:%d .. info->type=%d\n", __FILE__,__LINE__, info->type); exit(1);
     }
     #undef BRANCH
@@ -3759,7 +3739,7 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
         if ( !dst ) return -4;     // could not alloc
     }
 
-    #define BRANCH(type_t, convert, is_missing, is_vector_end, set_missing, set_vector_end, out_type_t) { \
+    #define BRANCH(type_t, convert, is_missing, is_vector_end, set_missing, set_vector_end, set_regular, out_type_t) { \
         out_type_t *tmp = (out_type_t *) *dst; \
         uint8_t *fmt_p = fmt->p; \
         for (i=0; i<nsmpl; i++) \
@@ -3769,7 +3749,7 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
                 type_t p = convert(fmt_p + j * sizeof(type_t)); \
                 if ( is_missing ) set_missing; \
                 else if ( is_vector_end ) { set_vector_end; break; } \
-                else *tmp = p; \
+                else set_regular; \
                 tmp++; \
             } \
             for (; j<fmt->n; j++) { set_vector_end; tmp++; } \
@@ -3777,13 +3757,12 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
         } \
     }
     switch (fmt->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8, p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
-        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
-        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, p==bcf_int32_missing, p==bcf_int32_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, int32_t); break;
-        case BCF_BT_FLOAT: BRANCH(float,   le_to_float, bcf_float_is_missing(p), bcf_float_is_vector_end(p), bcf_float_set_missing(*tmp), bcf_float_set_vector_end(*tmp), float); break;
+        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8, p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, *tmp=p, int32_t); break;
+        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, *tmp=p, int32_t); break;
+        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, p==bcf_int32_missing, p==bcf_int32_vector_end, *tmp=bcf_int32_missing, *tmp=bcf_int32_vector_end, *tmp=p, int32_t); break;
+        case BCF_BT_FLOAT: BRANCH(uint32_t, le_to_u32, p==bcf_float_missing, p==bcf_float_vector_end, bcf_float_set_missing(*tmp), bcf_float_set_vector_end(*tmp), bcf_float_set(tmp, p), float); break;
         default: fprintf(stderr,"TODO: %s:%d .. fmt->type=%d\n", __FILE__,__LINE__, fmt->type); exit(1);
     }
     #undef BRANCH
     return nsmpl*fmt->n;
 }
-
