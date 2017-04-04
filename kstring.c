@@ -51,7 +51,7 @@ int kputd(double d, kstring_t *s) {
 		len = 1;
 		d=-d;
 	}
-	if (d < 0.0001 || d > 999999) {
+	if (!(d >= 0.0001 && d <= 999999)) {
 		if (ks_resize(s, s->l + 50) < 0)
 			return EOF;
 		// We let stdio handle the exponent cases
