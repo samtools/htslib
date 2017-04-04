@@ -182,6 +182,11 @@ is installed.
 FAILED.  This error must be resolved in order to build HTSlib successfully.])
 fi
 
+dnl connect() etc. fns are in libc on linux, but libsocket on illumos/Solaris
+libsocket=unneeded
+AC_SEARCH_LIBS(connect, socket, [libsocket=needed], [])
+
+
 if test "$enable_bz2" != no; then
   bz2_devel=ok
   AC_CHECK_HEADER([bzlib.h], [], [bz2_devel=missing], [;])
