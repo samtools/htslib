@@ -2376,6 +2376,8 @@ static char get_severity_tag(enum htsLogLevel severity)
         return 'I';
     case HTS_LOG_DEBUG:
         return 'D';
+    default:
+        break;
     }
 
     return '*';

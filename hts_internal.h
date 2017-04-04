@@ -191,16 +191,16 @@ void close_plugin(void *plugin);
 void hts_log(enum htsLogLevel severity, const char *context, const char *format, ...);
 
 /*! Logs an event with severity HTS_LOG_ERROR and default context. */
-#define log_error(format, ...) hts_log(HTS_LOG_ERROR, __func__, format, __VA_ARGS__)
+#define log_error(format, ...) hts_log(HTS_LOG_ERROR, __func__, format, ##__VA_ARGS__)
 
 /*! Logs an event with severity HTS_LOG_WARNING and default context. */
-#define log_warning(format, ...) hts_log(HTS_LOG_WARNING, __func__, format, __VA_ARGS__)
+#define log_warning(format, ...) hts_log(HTS_LOG_WARNING, __func__, format, ##__VA_ARGS__)
 
 /*! Logs an event with severity HTS_LOG_INFO and default context. */
-#define log_info(format, ...) hts_log(HTS_LOG_INFO, __func__, format, __VA_ARGS__)
+#define log_info(format, ...) hts_log(HTS_LOG_INFO, __func__, format, ##__VA_ARGS__)
 
 /*! Logs an event with severity HTS_LOG_DEBUG and default context. */
-#define log_debug(format, ...) hts_log(HTS_LOG_DEBUG, __func__, format, __VA_ARGS__)
+#define log_debug(format, ...) hts_log(HTS_LOG_DEBUG, __func__, format, ##__VA_ARGS__)
 
 #ifdef __cplusplus
 }
