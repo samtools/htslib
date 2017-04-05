@@ -428,6 +428,8 @@ faidx_t *fai_load3(const char *fn, const char *fnfai, const char *fngzi,
             goto fail;
         }
     }
+    free(fai_kstr.s);
+    free(gzi_kstr.s);
     return fai;
 
  fail:
