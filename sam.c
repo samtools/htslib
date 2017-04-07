@@ -1029,6 +1029,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             size = aux_type2size(type);
             _parse_err_param(size <= 0 || size > 4,
                              "unrecognized type B:%c", type);
+            _parse_err(*q && *q != ',', "B aux field type not followed by ','");
 
             for (r = q, n = 0; *r; ++r)
                 if (*r == ',') ++n;
