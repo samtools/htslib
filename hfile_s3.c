@@ -227,10 +227,15 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
     kstring_t id = { 0, 0, NULL };
     kstring_t secret = { 0, 0, NULL };
     kstring_t host_base = { 0, 0, NULL };
+    kstring_t host_bucket = { 0, 0, NULL };
     kstring_t token = { 0, 0, NULL };
     kstring_t token_hdr = { 0, 0, NULL };
     kstring_t auth_hdr = { 0, 0, NULL };
-
+    kstring_t id_secondary = { 0, 0, NULL };
+    kstring_t secret_secondary = { 0, 0, NULL };
+    kstring_t token_secondary = { 0, 0, NULL };
+    int force_path_style = 0; // assume boolean
+    
     time_t now = time(NULL);
 #ifdef HAVE_GMTIME_R
     struct tm tm_buffer;
@@ -287,24 +292,39 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
         else if ((v = getenv("AWS_PROFILE")) != NULL) kputs(v, &profile);
         else kputs("default", &profile);
     }
-
+    
     if (id.l == 0) {
         const char *v = getenv("AWS_SHARED_CREDENTIALS_FILE");
         parse_ini(v? v : "~/.aws/credentials", profile.s,
                   "aws_access_key_id", &id, "aws_secret_access_key", &secret,
                   "aws_session_token", &token, NULL);
     }
-    if (id.l == 0)
-        parse_ini("~/.s3cfg", profile.s, "access_key", &id,
-                  "secret_key", &secret, "access_token", &token,
-                  "host_base", &host_base, NULL);
+    
+    parse_ini("~/.s3cfg", profile.s, "access_key", &id_secondary,
+              "secret_key", &secret_secondary, "access_token", &token_secondary,
+              "host_base", &host_base, "host_bucket", &host_bucket, NULL);
+    
+    // set id/secret/token to *_secondary supplied from s3cfg
+    if (id.l == 0) {
+        kputs(id_secondary.s, &id);
+        kputs(secret_secondary.s, &secret);
+        kputs(token_secondary.s, &token);
+    }
+  
     if (id.l == 0)
         parse_simple("~/.awssecret", &id, &secret);
-
+    
     if (host_base.l == 0)
         kputs("s3.amazonaws.com", &host_base);
+    
+    if ((host_base.s != NULL) && (host_bucket.s != NULL) && (strcmp(host_base.s,host_bucket.s) == 0)) {
+        force_path_style = 1;
+    }
+     
     // Use virtual hosted-style access if possible, otherwise path-style.
-    if (is_dns_compliant(bucket, path)) {
+    // https://github.com/s3tools/s3cmd/pull/416
+    // if host_base == host_bucket, force path style
+    if ((is_dns_compliant(bucket, path)) && (force_path_style == 0)) {
         kputsn(bucket, path - bucket, &url);
         kputc('.', &url);
         kputs(host_base.s, &url);
@@ -314,8 +334,9 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
         kputc('/', &url);
         kputsn(bucket, path - bucket, &url);
     }
+    
     kputs(path, &url);
-
+    
     if (token.l > 0) {
         kputs("x-amz-security-token:", &message);
         kputs(token.s, &message);
@@ -344,6 +365,7 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
     }
 
     *header = NULL;
+    
     hFILE *fp = hopen(url.s, mode, "va_list", argsp, "httphdr:v", header_list,
                       NULL);
     free(message.s);
@@ -352,9 +374,14 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
     free(id.s);
     free(secret.s);
     free(host_base.s);
+    free(host_bucket.s);
     free(token.s);
     free(token_hdr.s);
     free(auth_hdr.s);
+    free(id_secondary.s);
+    free(secret_secondary.s);
+    free(token_secondary.s);
+    
     return fp;
 }
 
