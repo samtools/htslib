@@ -414,7 +414,9 @@ int bam_read1(BGZF *fp, bam1_t *b)
     if (bgzf_read(fp, b->data, c->l_qname) != c->l_qname) return -4;
     for (i = 0; i < c->l_extranul; ++i) b->data[c->l_qname+i] = '\0';
     c->l_qname += c->l_extranul;
-    if (bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname) return -4;
+    if (b->l_data < c->l_qname ||
+        bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
+        return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
     return 4 + block_len;
 }
