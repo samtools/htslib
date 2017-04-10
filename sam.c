@@ -737,14 +737,76 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
     return hdr_from_dict(d);
 }
 
+// Minimal sanitisation of a header to ensure.
+// - null terminated string.
+// - all lines start with @ (also implies no blank lines).
+//
+// Much more could be done, but currently is not, including:
+// - checking header types are known (HD, SQ, etc).
+// - syntax (eg checking tab separated fields).
+// - validating n_targets matches @SQ records.
+// - validating target lengths against @SQ records.
+static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
+    if (!h)
+        return NULL;
+
+    // Special case for empty headers.
+    if (h->l_text == 0)
+        return h;
+
+    uint32_t i, j;
+    char *cp = h->text, last = 0;
+    for (i = j = 0; i < h->l_text; i++) {
+        // NB: l_text excludes terminating nul.  This finds early ones.
+        if (cp[i] == 0)
+            break;
+
+        // Error on \n[^@], including duplicate newlines
+        if (last == '\n') {
+            if (cp[i] != '@') {
+                if (hts_verbose >= 1)
+                    fprintf(stderr, "[E::%s] Malformed SAM header.\n", __func__);
+                bam_hdr_destroy(h);
+                return NULL;
+            }
+        }
+
+        last = cp[j++] = cp[i];
+    }
+
+    // Add trailing newline and/or trailing nul if required.
+    if (j + (last != '\n') + (i < h->l_text) > h->l_text) {
+        char *np = realloc(cp, h->l_text+2);
+        if (!np) {
+            bam_hdr_destroy(h);
+            return NULL;
+        }
+        h->text = cp = np;
+    }
+
+    if (last != '\n') {
+        if (hts_verbose >= 2)
+            fprintf(stderr, "[W::%s] Missing trailing newline on SAM header.  "
+                    "Possibly truncated.\n", __func__);
+        cp[j++] = '\n';
+    }
+
+    // l_text may be larger already due to multiple nul padding
+    if (h->l_text < j)
+        h->l_text = j;
+    cp[h->l_text] = '\0';
+
+    return h;
+}
+
 bam_hdr_t *sam_hdr_read(htsFile *fp)
 {
     switch (fp->format.format) {
     case bam:
-        return bam_hdr_read(fp->fp.bgzf);
+        return sam_hdr_sanitise(bam_hdr_read(fp->fp.bgzf));
 
     case cram:
-        return cram_header_to_bam(fp->fp.cram->header);
+        return sam_hdr_sanitise(cram_header_to_bam(fp->fp.cram->header));
 
     case sam: {
         kstring_t str = { 0, 0, NULL };
@@ -779,7 +841,7 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         if (str.l == 0) kputsn("", 0, &str);
         h = sam_hdr_parse(str.l, str.s);
         h->l_text = str.l; h->text = str.s;
-        return h;
+        return sam_hdr_sanitise(h);
 
      error:
         bam_hdr_destroy(h);
