@@ -326,7 +326,9 @@ static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
 
     if (x < RANS_BYTE_L) {
         uint8_t* ptr = *pptr;
-        do x = (x << 8) | *ptr++; while (x < RANS_BYTE_L);
+        x = (x << 8) | *ptr++;
+        if (x < RANS_BYTE_L)
+            x = (x << 8) | *ptr++;
         *pptr = ptr;
     }
 

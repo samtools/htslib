@@ -3594,6 +3594,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 	}
 	if (cram_uncompress_block(b) != 0) {
 	    cram_free_container(c);
+	    cram_free_block(b);
 	    return NULL;
 	}
 
@@ -4029,8 +4030,10 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
 	fd->version = fd->file_def->major_version * 256 +
 	    fd->file_def->minor_version;
 
-	if (!(fd->header = cram_read_SAM_hdr(fd)))
+	if (!(fd->header = cram_read_SAM_hdr(fd))) {
+	    cram_free_file_def(fd->file_def);
 	    goto err;
+	}
 
     } else {
 	/* Writer */
