@@ -39,6 +39,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <assert.h>
 #include <limits.h>
+#include <stdint.h>
+#include <errno.h>
 
 #include "cram/cram.h"
 
@@ -991,6 +993,15 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
     }
 
     cp += safe_itf8_get(cp, data_end, &ncodes);
+    if (ncodes < 0) {
+        fprintf(stderr, "Invalid number of symbols in huffman stream\n");
+        return NULL;
+    }
+    if (ncodes >= SIZE_MAX / sizeof(*codes)) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
     h = calloc(1, sizeof(*h));
     if (!h)
 	return NULL;
@@ -999,10 +1010,14 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
     h->free   = cram_huffman_decode_free;
 
     h->huffman.ncodes = ncodes;
-    codes = h->huffman.codes = malloc(ncodes * sizeof(*codes));
-    if (!codes) {
-	free(h);
-	return NULL;
+    if (ncodes) {
+        codes = h->huffman.codes = malloc(ncodes * sizeof(*codes));
+        if (!codes) {
+            free(h);
+            return NULL;
+        }
+    } else {
+        codes = h->huffman.codes = NULL;
     }
 
     /* Read symbols and bit-lengths */
