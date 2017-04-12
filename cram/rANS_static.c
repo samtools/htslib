@@ -260,6 +260,8 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 
     if (x < TOTFREQ-1 || x > TOTFREQ)
 	return NULL;
+    if (x < TOTFREQ) // historically we fill 4095, not 4096
+	D.R[x] = D.R[x-1];
 
     if (cp > cp_end - 16) return NULL; // Not enough input bytes left
 
@@ -583,10 +585,12 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     if (in_sz != in_size-9)
 	return NULL;
 
-    D = malloc(256 * sizeof(*D));
+    // calloc may add 2% overhead to CRAM decode, but on linux with glibc it's
+    // often the same thing due to using mmap.
+    D = calloc(256, sizeof(*D));
     if (!D) goto cleanup;
     syms = malloc(256 * sizeof(*syms));
-    if (!syms) goto cleanup;
+    memset(&syms[0], 0, sizeof(syms[0]));
 
     //fprintf(stderr, "out_sz=%d\n", out_sz);
 
@@ -634,6 +638,8 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 
 	if (x < TOTFREQ-1 || x > TOTFREQ)
 	    goto cleanup;
+	if (x < TOTFREQ) // historically we fill 4095, not 4096
+	    D[i].R[x] = D[i].R[x-1];
 
 	if (!rle_i && i+1 == *cp) {
 	    i = *cp++;
