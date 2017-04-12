@@ -837,6 +837,11 @@ int bgzf_read_block(BGZF *fp)
         }
         size = count;
         block_length = unpackInt16((uint8_t*)&header[16]) + 1; // +1 because when writing this number, we used "-1"
+        if (block_length < BLOCK_HEADER_LENGTH)
+        {
+            fp->errcode |= BGZF_ERR_HEADER;
+            return -1;
+        }
         compressed_block = (uint8_t*)fp->compressed_block;
         memcpy(compressed_block, header, BLOCK_HEADER_LENGTH);
         remaining = block_length - BLOCK_HEADER_LENGTH;
@@ -1049,6 +1054,10 @@ int bgzf_mt_read_block(BGZF *fp, bgzf_job *j)
 
     size = count;
     block_length = unpackInt16((uint8_t*)&header[16]) + 1; // +1 because when writing this number, we used "-1"
+    if (block_length < BLOCK_HEADER_LENGTH) {
+        j->errcode |= BGZF_ERR_HEADER;
+        return -1;
+    }
     compressed_block = (uint8_t*)j->comp_data;
     memcpy(compressed_block, header, BLOCK_HEADER_LENGTH);
     remaining = block_length - BLOCK_HEADER_LENGTH;
