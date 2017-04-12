@@ -22,6 +22,8 @@
     THE SOFTWARE.
 */
 
+#include <strings.h>
+
 #include "bcf_sr_sort.h"
 #include "htslib/khash_str2int.h"
 

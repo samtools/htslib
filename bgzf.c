@@ -220,7 +220,7 @@ static BGZF *bgzf_read_init(hFILE *hfpr)
 }
 
 // get the compress level from the mode string: compress_level==-1 for the default level, -2 plain uncompressed
-static int mode2level(const char *__restrict mode)
+static int mode2level(const char *mode)
 {
     int i, compress_level = -1;
     for (i = 0; mode[i]; ++i)

@@ -25,6 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
+#include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -413,7 +414,9 @@ int bam_read1(BGZF *fp, bam1_t *b)
     if (bgzf_read(fp, b->data, c->l_qname) != c->l_qname) return -4;
     for (i = 0; i < c->l_extranul; ++i) b->data[c->l_qname+i] = '\0';
     c->l_qname += c->l_extranul;
-    if (bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname) return -4;
+    if (b->l_data < c->l_qname ||
+        bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
+        return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
     return 4 + block_len;
 }
@@ -1028,6 +1031,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             size = aux_type2size(type);
             _parse_err_param(size <= 0 || size > 4,
                              "unrecognized type B:%c", type);
+            _parse_err(*q && *q != ',', "B aux field type not followed by ','");
 
             for (r = q, n = 0; *r; ++r)
                 if (*r == ',') ++n;
