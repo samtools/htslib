@@ -137,6 +137,7 @@ extern uint8_t bcf_type_shift[];
 #define VCF_MNP   2
 #define VCF_INDEL 4
 #define VCF_OTHER 8
+#define VCF_BND   16    // breakend
 
 typedef struct {
     int type, n;    // variant type and the number of bases affected, negative for deletions

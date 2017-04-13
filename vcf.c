@@ -3144,6 +3144,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
 
     if ( *a && !*r )
     {
+        if ( *a==']' || *a=='[' ) { var->type = VCF_BND; return; }
         while ( *a ) a++;
         var->n = (a-alt)-(r-ref); var->type = VCF_INDEL; return;
     }
