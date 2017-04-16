@@ -923,6 +923,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         q = _read_token(p);
         i = 1;
     }
+    if(c->flag & BAM_FUNMAP) i = 1;
     c->bin = hts_reg2bin(c->pos, c->pos + i, 14, 5);
     // mate chr
     q = _read_token(p);
