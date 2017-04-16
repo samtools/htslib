@@ -2927,6 +2927,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
     cram_container *c;
     cram_slice *s = NULL;
 
+    fd->eof = 0;
+
     if (!(c = fd->ctr)) {
 	// Load first container.
 	do {
