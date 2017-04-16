@@ -511,6 +511,10 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
         break;
 
     case bam:
+        if (bgzf_check_EOF(fp->fp.bgzf) <= 0) {
+            // return -1 if EOF check fails (but try to build index anyway)
+            ret = -1;
+        } 
         idx = bam_index(fp->fp.bgzf, min_shift);
         if (idx) {
             ret = hts_idx_save_as(idx, fn, fnidx, (min_shift > 0)? HTS_FMT_CSI : HTS_FMT_BAI);
