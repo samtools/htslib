@@ -236,6 +236,8 @@ int bcf_sr_next_line(bcf_srs_t *readers);
 #define bcf_sr_get_reader(_readers, i) &((_readers)->readers[i])
 
 
+#define bcf_sr_get_header(_readers,i) ((_readers)->has_line[i] ? ((_readers)->readers[i].header) : NULL)
+
 /**
  *  bcf_sr_seek() - set all readers to selected position
  *  @seq:  sequence name; NULL to seek to start
