@@ -33,6 +33,12 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTSLIB_VCF_H
 #define HTSLIB_VCF_H
 
+// inclusion of stdint.h needs the c++ macro __STDC_LIMIT_MACROS to be set because
+// some macros defined in c99 and made available in stdint.h are not part of c++11
+#ifdef __cplusplus
+#define __STDC_LIMIT_MACROS 1
+#endif
+
 #include <stdint.h>
 #include <limits.h>
 #include <assert.h>
