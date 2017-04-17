@@ -269,7 +269,7 @@ typedef struct {
      *  Same as bcf_destroy() but frees only the memory allocated by bcf1_t,
      *  not the bcf1_t object itself.
      */
-    void bcf_empty(bcf1_t *v);
+    void bcf_empty1(bcf1_t *v);
 
     /**
      *  Make the bcf1_t object ready for next read. Intended mostly for
