@@ -22,9 +22,9 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-CC     = gcc
-AR     = ar
-RANLIB = ranlib
+CC     ?= gcc
+AR     ?= ar
+RANLIB ?= ranlib
 
 # Default libraries to link if configure is not used
 htslib_default_libs = -lz -lm -lbz2 -llzma
