@@ -35,12 +35,12 @@ extern "C" {
 
 /// Log levels.
 enum htsLogLevel {
-    HTS_LOG_OFF,        ///< All logging disabled.
-    HTS_LOG_ERROR,      ///< Logging of errors only.
-    HTS_LOG_WARNING,    ///< Logging of errors and warnings.
-    HTS_LOG_INFO,       ///< Logging of errors, warnings, and normal but significant events.
-    HTS_LOG_DEBUG,      ///< Detailed logging enabled. Intended for troubleshooting.
-    HTS_LOG_ALL = 100   ///< All logging enabled.
+    HTS_LOG_OFF,            ///< All logging disabled.
+    HTS_LOG_ERROR,          ///< Logging of errors only.
+    HTS_LOG_WARNING = 3,    ///< Logging of errors and warnings.
+    HTS_LOG_INFO,           ///< Logging of errors, warnings, and normal but significant events.
+    HTS_LOG_DEBUG,          ///< Logging of all except the most detailed debug events.
+    HTS_LOG_TRACE           ///< All logging enabled.
 };
 
 /// Sets the selected log level.
@@ -51,8 +51,8 @@ enum htsLogLevel hts_get_log_level();
 
 /// Selected log level.
 /*!
- * One of the HTS_LOG_* values. The default is HTS_LOG_INFO.
- * \note Avoid direct use of this variable, use hts_set_log_level and hts_get_log_level instead.
+ * One of the HTS_LOG_* values. The default is HTS_LOG_WARNING.
+ * \note Avoid direct use of this variable. Use hts_set_log_level and hts_get_log_level instead.
  */
 extern int hts_verbose;
 
@@ -62,6 +62,7 @@ extern int hts_verbose;
 *                      - HTS_LOG_WARNING means that something unexpected happened, but that execution can continue, perhaps in a degraded mode.
 *                      - HTS_LOG_INFO means that something normal but significant happened.
 *                      - HTS_LOG_DEBUG means that something normal and insignificant happened.
+*                      - HTS_LOG_TRACE means that something happened that might be of interest when troubleshooting.
 * \param context       Context where the event occurred. Typically set to "__func__".
 * \param format        Format string with placeholders, like printf.
 */
@@ -79,6 +80,9 @@ HTS_FORMAT(printf, 3, 4);
 
 /*! Logs an event with severity HTS_LOG_DEBUG and default context. Parameters: format, ... */
 #define hts_log_debug(...) hts_log(HTS_LOG_DEBUG, __func__, __VA_ARGS__)
+
+/*! Logs an event with severity HTS_LOG_TRACE and default context. Parameters: format, ... */
+#define hts_log_trace(...) hts_log(HTS_LOG_TRACE, __func__, __VA_ARGS__)
 
 #ifdef __cplusplus
 }

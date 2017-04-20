@@ -49,7 +49,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
-int hts_verbose = HTS_LOG_INFO;
+int hts_verbose = HTS_LOG_WARNING;
 
 const char *hts_version()
 {
