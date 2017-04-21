@@ -837,6 +837,12 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     if (hfp->format.format == vcf)
         return vcf_hdr_read(hfp);
 
+    if (!hfp->is_bin)
+    {
+        fprintf(stderr,"[%s:%d %s] Failed to read the header\n", __FILE__,__LINE__,__FUNCTION__);
+        return NULL;
+    }
+
     BGZF *fp = hfp->fp.bgzf;
     uint8_t magic[5];
     bcf_hdr_t *h;
