@@ -383,6 +383,7 @@ static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data, int is_ho
 int bam_read1(BGZF *fp, bam1_t *b)
 {
     bam1_core_t *c = &b->core;
+    uint16_t l_extranul;
     int32_t block_len, ret, i;
     uint32_t x[8];
     if ((ret = bgzf_read(fp, &block_len, 4)) != 4) {
@@ -396,11 +397,11 @@ int bam_read1(BGZF *fp, bam1_t *b)
     }
     c->tid = x[0]; c->pos = x[1];
     c->bin = x[2]>>16; c->qual = x[2]>>8&0xff; c->l_qname = x[2]&0xff;
-    c->l_extranul = (c->l_qname%4 != 0)? (4 - c->l_qname%4) : 0;
+    l_extranul = (c->l_qname%4 != 0)? (4 - c->l_qname%4) : 0;
     c->flag = x[3]>>16; c->n_cigar = x[3]&0xffff;
     c->l_qseq = x[4];
     c->mtid = x[5]; c->mpos = x[6]; c->isize = x[7];
-    b->l_data = block_len - 32 + c->l_extranul;
+    b->l_data = block_len - 32 + l_extranul;
     if (b->l_data < 0 || c->l_qseq < 0 || c->l_qname < 1) return -4;
     if ((char *)bam_get_aux(b) - (char *)b->data > b->l_data)
         return -4;
@@ -412,8 +413,11 @@ int bam_read1(BGZF *fp, bam1_t *b)
             return -4;
     }
     if (bgzf_read(fp, b->data, c->l_qname) != c->l_qname) return -4;
-    for (i = 0; i < c->l_extranul; ++i) b->data[c->l_qname+i] = '\0';
-    c->l_qname += c->l_extranul;
+    for (i = 0; i < l_extranul-1; ++i) b->data[c->l_qname+i] = '\0';
+    b->data[c->l_qname+l_extranul-1] = l_extranul;
+    c->l_qname += l_extranul;
+    // TODO Remove l_qname_old when it is no longer needed for compatibility
+    c->l_qname_old = (uint8_t) c->l_qname;
     if (b->l_data < c->l_qname ||
         bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
@@ -424,7 +428,8 @@ int bam_read1(BGZF *fp, bam1_t *b)
 int bam_write1(BGZF *fp, const bam1_t *b)
 {
     const bam1_core_t *c = &b->core;
-    uint32_t x[8], block_len = b->l_data - c->l_extranul + 32, y;
+    uint16_t l_extranul = b->data[c->l_qname-1];
+    uint32_t x[8], block_len = b->l_data - l_extranul + 32, y;
     int i, ok;
     if (c->n_cigar >= 65536) {
         if (hts_verbose >= 1)
@@ -434,7 +439,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     }
     x[0] = c->tid;
     x[1] = c->pos;
-    x[2] = (uint32_t)c->bin<<16 | c->qual<<8 | (c->l_qname - c->l_extranul);
+    x[2] = (uint32_t)c->bin<<16 | c->qual<<8 | (c->l_qname - l_extranul);
     x[3] = (uint32_t)c->flag<<16 | c->n_cigar;
     x[4] = c->l_qseq;
     x[5] = c->mtid;
@@ -450,7 +455,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
         if (ok) ok = (bgzf_write(fp, &block_len, 4) >= 0);
     }
     if (ok) ok = (bgzf_write(fp, x, 32) >= 0);
-    if (ok) ok = (bgzf_write(fp, b->data, c->l_qname - c->l_extranul) >= 0);
+    if (ok) ok = (bgzf_write(fp, b->data, c->l_qname - l_extranul) >= 0);
     if (ok) ok = (bgzf_write(fp, b->data + c->l_qname, b->l_data - c->l_qname) >= 0);
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
     return ok? 4 + block_len : -1;
@@ -855,6 +860,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     uint8_t *t;
     char *p = s->s, *q;
     int i;
+    uint16_t l_extranul;
     kstring_t str;
     bam1_core_t *c = &b->core;
 
@@ -873,9 +879,11 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     _parse_warn(p - q <= 1, "empty query name");
     _parse_err(p - q > 255, "query name too long");
     kputsn_(q, p - q, &str);
-    for (c->l_extranul = 0; str.l % 4 != 0; c->l_extranul++)
+    for (l_extranul = 0; str.l % 4 != 0; l_extranul++)
         kputc_('\0', &str);
-    c->l_qname = p - q + c->l_extranul;
+    str.s[str.l-1] = l_extranul;
+    c->l_qname = p - q + l_extranul;
+    c->l_qname_old = (uint8_t) c->l_qname;
     // flag
     c->flag = strtol(p, &p, 0);
     if (*p++ != '\t') goto err_ret; // malformated flag
@@ -1127,7 +1135,7 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
     const bam1_core_t *c = &b->core;
 
     str->l = 0;
-    kputsn(bam_get_qname(b), c->l_qname-1-c->l_extranul, str); kputc('\t', str); // query name
+    kputsn(bam_get_qname(b), c->l_qname-1-b->data[c->l_qname-1], str); kputc('\t', str); // query name
     kputw(c->flag, str); kputc('\t', str); // flag
     if (c->tid >= 0) { // chr
         kputs(h->target_name[c->tid] , str);

@@ -94,7 +94,7 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
     b->core.bin     = bam_reg2bin(pos-1, end);
     b->core.qual    = mapq;
     b->core.l_qname = qname_len+qname_nuls;
-    b->core.l_extranul = qname_nuls-1;
+    b->core.l_qname_old = (uint8_t) b->core.l_qname;
     b->core.flag    = flag;
     b->core.n_cigar = ncigar;
     b->core.l_qseq  = len;
@@ -105,8 +105,9 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
     cp = b->data;
 
     strncpy((char *)cp, qname, qname_len);
-    for (i = 0; i < qname_nuls; i++)
+    for (i = 0; i < qname_nuls-1; i++)
 	cp[qname_len+i] = '\0';
+    cp[qname_len+qname_nuls-1] = qname_nuls-1;
     cp += qname_len+qname_nuls;
     if (ncigar > 0) memcpy(cp, cigar, ncigar*4);
     cp += ncigar*4;

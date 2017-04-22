@@ -139,9 +139,8 @@ typedef struct {
  @field  pos     0-based leftmost coordinate
  @field  bin     bin calculated by bam_reg2bin()
  @field  qual    mapping quality
- @field  l_qname length of the query name
  @field  flag    bitwise flag
- @field  l_extranul length of extra NULs between qname & cigar (for alignment)
+ @field  l_qname length of the query name
  @field  n_cigar number of CIGAR operations
  @field  l_qseq  length of the query sequence (read)
  @field  mtid    chromosome ID of next read in template, defined by bam_hdr_t
@@ -152,10 +151,9 @@ typedef struct {
     int32_t pos;
     uint16_t bin;
     uint8_t qual;
-    uint8_t l_qname;
+    uint8_t l_qname_old;
     uint16_t flag;
-    uint8_t unused1;
-    uint8_t l_extranul;
+    uint16_t l_qname;
     uint32_t n_cigar;
     int32_t l_qseq;
     int32_t mtid;
@@ -174,7 +172,8 @@ typedef struct {
 
  1. qname is terminated by one to four NULs, so that the following
  cigar data is 32-bit aligned; core.l_qname includes these trailing NULs,
- while core.l_extranul counts the excess NULs (so 0 <= l_extranul <= 3).
+ while the last NUL byte is in fact a count of the excess "NULs" (thus
+ 0 <= data[l_qname-1] <= 3) rather than necessarily being actually '\0'.
  2. l_qseq is calculated from the total length of an alignment block
  on reading or from CIGAR.
  3. cigar data is encoded 4 bytes per CIGAR operation.

@@ -263,6 +263,7 @@ static void copy_check_alignment(const char *infname, const char *informat,
     samFile *out = sam_open(outfname, outmode);
     bam1_t *aln = bam_init1();
     bam_hdr_t *header;
+    int ret;
 
     if (outref) {
         if (hts_set_opt(out, CRAM_OPT_REFERENCE, outref) < 0)
@@ -272,7 +273,7 @@ static void copy_check_alignment(const char *infname, const char *informat,
     header = sam_hdr_read(in);
     if (sam_hdr_write(out, header) < 0) fail("writing headers to %s", outfname);
 
-    while (sam_read1(in, header, aln) >= 0) {
+    while ((ret = sam_read1(in, header, aln)) >= 0) {
         int mod4 = ((intptr_t) bam_get_cigar(aln)) % 4;
         if (mod4 != 0)
             fail("%s CIGAR not 4-byte aligned; offset is 4k+%d for \"%s\"",
@@ -280,12 +281,16 @@ static void copy_check_alignment(const char *infname, const char *informat,
 
         if (sam_write1(out, header, aln) < 0) fail("writing to %s", outfname);
     }
+    if (ret < -1) fail("reading alignment record from %s", infname);
 
     bam_destroy1(aln);
     bam_hdr_destroy(header);
     sam_close(in);
     sam_close(out);
 }
+
+#define ABC50   "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
+#define ABC250  ABC50 ABC50 ABC50 ABC50 ABC50
 
 static void samrecord_layout(void)
 {
@@ -295,7 +300,12 @@ static void samrecord_layout(void)
    "bc\t0\tCHROMOSOME_II\t200\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
   "def\t0\tCHROMOSOME_II\t300\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
  "ghij\t0\tCHROMOSOME_II\t400\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
-"klmno\t0\tCHROMOSOME_II\t500\t10\t4M\t*\t0\t0\tATGC\tqqqq\n";
+"klmno\t0\tCHROMOSOME_II\t500\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+    ABC250"\t0\tCHROMOSOME_II\t600\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+   ABC250"1\t0\tCHROMOSOME_II\t600\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+  ABC250"12\t0\tCHROMOSOME_II\t700\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+ ABC250"123\t0\tCHROMOSOME_II\t700\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+ABC250"1234\t0\tCHROMOSOME_II\t700\t10\t4M\t*\t0\t0\tATGC\tqqqq\n";
 
     size_t bam1_t_size, bam1_t_size2;
 
