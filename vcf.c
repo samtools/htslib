@@ -645,6 +645,35 @@ int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt)
         needs_sync += bcf_hdr_add_hrec(hdr, hrec);
         p += len;
     }
+
+    // Detect incorrect header lines, print a warning, and skip them.
+    // Alternatively, the program could refuse to work with such VCF. However,
+    // many VCF operations do not really care about a few malformed header
+    // lines.
+    if ( strncmp("#CHROM\tPOS",p,10) )
+    {
+        char *ptr = p, tmp; 
+        while ( *ptr && *ptr!='\n' ) ptr++;
+        tmp  = *ptr;
+        *ptr = 0;
+        if (hts_verbose >= 2) fprintf(stderr, "[W::%s] Error parsing the header starting with: %s\n", __func__, p);
+        *ptr = tmp;
+
+        ptr = strstr(p, "#CHROM\tPOS");
+        if ( !ptr )
+        {
+            if (hts_verbose >= 1) fprintf(stderr,"[E::%s] Could not parse the header, sample line not found\n", __func__);
+            return -1;
+        }
+        while ( p < ptr )
+        {
+            hrec = bcf_hdr_parse_line(hdr,p,&len);
+            if ( !len ) break;
+            if ( hrec ) needs_sync += bcf_hdr_add_hrec(hdr, hrec);
+            p += len;
+        }
+        p = ptr;
+    }
     int ret = bcf_hdr_parse_sample_line(hdr,p);
     bcf_hdr_sync(hdr);
     bcf_hdr_check_sanity(hdr);
@@ -876,7 +905,7 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     if (!htxt) goto fail;
     if (bgzf_read(fp, htxt, hlen) != hlen) goto fail;
     htxt[hlen] = '\0'; // Ensure htxt is terminated
-    bcf_hdr_parse(h, htxt);  // FIXME: Does this return anything meaningful?
+    if ( bcf_hdr_parse(h, htxt) < 0 ) goto fail;
     free(htxt);
     return h;
  fail:
@@ -1553,7 +1582,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
         fprintf(stderr,"[%s:%d %s] Could not read the header\n", __FILE__,__LINE__,__FUNCTION__);
         goto error;
     }
-    bcf_hdr_parse(h, txt.s);
+    if ( bcf_hdr_parse(h, txt.s) < 0 ) goto error;
 
     // check tabix index, are all contigs listed in the header? add the missing ones
     tbx_t *idx = tbx_index_load(fp->fn);
@@ -2773,7 +2802,7 @@ bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src)
         dst = bcf_hdr_init("r");
         kstring_t htxt = {0,0,0};
         bcf_hdr_format(src, 0, &htxt);
-        bcf_hdr_parse(dst, htxt.s);
+        if ( bcf_hdr_parse(dst, htxt.s) < 0 ) dst = NULL;
         free(htxt.s);
         return dst;
     }
@@ -2962,7 +2991,7 @@ bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr)
     }
     kstring_t htxt = {0,0,0};
     bcf_hdr_format(hdr, 1, &htxt);
-    bcf_hdr_parse(hout, htxt.s);
+    if ( bcf_hdr_parse(hout, htxt.s) < 0 ) hout = NULL;
     free(htxt.s);
     return hout;
 }
@@ -3009,7 +3038,7 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
     } else kputsn(htxt.s, htxt.l, &str);
     while (str.l && (!str.s[str.l-1] || str.s[str.l-1]=='\n') ) str.l--; // kill trailing zeros and newlines
     kputc('\n',&str);
-    bcf_hdr_parse(h, str.s);
+    if ( bcf_hdr_parse(h, str.s) < 0 ) h = NULL;
     free(str.s);
     free(htxt.s);
     khash_str2int_destroy(names_hash);
