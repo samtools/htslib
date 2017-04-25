@@ -212,8 +212,10 @@ static faidx_t *fai_read(hFILE *fp, const char *fname)
     if (!buf) goto fail;
 
     while ((l = hgetln(buf, 0x10000, fp)) > 0) {
-        for (p = buf; *p && isgraph_c(*p); ++p);
-        *p = 0; ++p;
+        for (p = buf; *p && !isspace(*p); ++p);
+        if (p - buf < l) {
+            *p = 0; ++p;
+        }
         n = sscanf(p, "%"SCNd64"%"SCNu64"%d%d", &len, &offset, &line_blen, &line_len);
         if (n != 4) {
             if (hts_verbose > 1)
