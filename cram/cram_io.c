@@ -57,7 +57,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <bzlib.h>
 #endif
 #ifdef HAVE_LIBLZMA
+#ifdef HAVE_LZMA_H
 #include <lzma.h>
+#else
+#include "os/lzma_stub.h"
+#endif
 #endif
 #include <sys/types.h>
 #include <sys/stat.h>

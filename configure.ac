@@ -237,9 +237,9 @@ fi
 
 if test "$enable_lzma" != no; then
   lzma_devel=ok
-  AC_CHECK_HEADER([lzma.h], [], [lzma_devel=missing], [;])
+  AC_CHECK_HEADERS([lzma.h], [], [lzma_devel=header-missing], [;])
   AC_CHECK_LIB([lzma], [lzma_easy_buffer_encode], [], [lzma_devel=missing])
-  if test $lzma_devel != ok; then
+  if test $lzma_devel = missing; then
     AC_MSG_ERROR([liblzma development files not found
 
 The CRAM format may use LZMA2 compression, which is implemented in HTSlib
