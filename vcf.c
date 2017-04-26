@@ -836,6 +836,13 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
 {
     if (hfp->format.format == vcf)
         return vcf_hdr_read(hfp);
+    if (hfp->format.format != bcf) {
+        fprintf(stderr, "[E::%s] Input is not detected as bcf or vcf format\n",
+                __func__);
+        return NULL;
+    }
+
+    assert(hfp->is_bgzf);
 
     BGZF *fp = hfp->fp.bgzf;
     uint8_t magic[5];
