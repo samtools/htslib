@@ -452,7 +452,7 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
                           long beg, long end, int *len) {
     char *s;
     size_t l;
-    int c;
+    int c = 0;
     int ret = bgzf_useek(fai->bgzf,
                          val->offset
                          + beg / val->line_blen * val->line_len
@@ -472,7 +472,7 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
         return NULL;
     }
 
-    while ( (c=bgzf_getc(fai->bgzf))>=0 && l < end - beg )
+    while ( l < end - beg && (c=bgzf_getc(fai->bgzf))>=0 )
         if (isgraph(c)) s[l++] = c;
     if (c < 0) {
         if (hts_verbose >= 1) {
