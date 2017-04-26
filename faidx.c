@@ -213,7 +213,7 @@ static faidx_t *fai_read(hFILE *fp, const char *fname)
     if (!buf) goto fail;
 
     while ((l = hgetln(buf, 0x10000, fp)) > 0) {
-        for (p = buf; *p && !isspace(*p); ++p);
+        for (p = buf; *p && !isspace_c(*p); ++p);
         if (p - buf < l) {
             *p = 0; ++p;
         }
