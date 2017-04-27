@@ -79,6 +79,8 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
     //b->l_aux = extra_len; // we fill this out later
 
     qname_nuls = 4 - qname_len%4;
+    if (qname_len + qname_nuls > 255) // Check for core.l_qname overflow
+        return -1;
     bam_len = qname_len + qname_nuls + ncigar*4 + (len+1)/2 + len + extra_len;
     if (b->m_data < bam_len) {
 	b->m_data = bam_len;
