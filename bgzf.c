@@ -1083,6 +1083,9 @@ static int bgzf_check_EOF_common(BGZF *fp)
     off_t offset = htell(fp->fp);
     if (hseek(fp->fp, -28, SEEK_END) < 0) {
         if (errno == ESPIPE) { hclearerr(fp->fp); return 2; }
+#ifdef _WIN32
+        if (errno == EINVAL) { hclearerr(fp->fp); return 2; }
+#endif
         else return -1;
     }
     if ( hread(fp->fp, buf, 28) != 28 ) return -1;
@@ -1222,6 +1225,7 @@ restart:
             pthread_exit(NULL);
         }
     }
+    return NULL;
 }
 
 int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {

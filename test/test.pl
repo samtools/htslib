@@ -68,6 +68,23 @@ sub error
         "\n";
     exit 1;
 }
+
+sub cygpath {
+    my ($path) = @_;
+    $path = `cygpath -m $path`;
+    $path =~ s/\r?\n//;
+    return $path
+}
+
+sub safe_tempdir
+{
+    my $dir = tempdir(CLEANUP=>1);
+    if ($^O =~ /^msys/) {
+        $dir = cygpath($dir);
+    }
+    return $dir;
+}
+
 sub parse_params
 {
     my $opts = { keep_files=>0, nok=>0, nfailed=>0 };
@@ -80,11 +97,16 @@ sub parse_params
             'h|?|help' => \$help
             );
     if ( !$ret or $help ) { error(); }
-    $$opts{tmp} = $$opts{keep_files} ? $$opts{keep_files} : tempdir(CLEANUP=>1);
+    $$opts{tmp} = $$opts{keep_files} ? $$opts{keep_files} : safe_tempdir();
     if ( $$opts{keep_files} ) { cmd("mkdir -p $$opts{keep_files}"); }
     $$opts{path} = $FindBin::RealBin;
     $$opts{bin}  = $FindBin::RealBin;
     $$opts{bin}  =~ s{/test/?$}{};
+    if ($^O =~ /^msys/) {
+	$$opts{path} = cygpath($$opts{path});
+	$$opts{bin}  = cygpath($$opts{bin});
+    }
+
     return $opts;
 }
 sub _cmd

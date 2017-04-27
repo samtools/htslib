@@ -43,6 +43,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts_endian.h"
 #include "version.h"
 #include "hts_internal.h"
+#include "htslib/hts_os.h" // drand48
 
 #include "htslib/khash.h"
 #include "htslib/kseq.h"

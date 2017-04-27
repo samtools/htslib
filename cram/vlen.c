@@ -274,12 +274,11 @@ int vflen(char *fmt, va_list ap)
 		break;
 
 	    case 'p':
-		l = (long)va_arg(ap, void *);
+		va_arg(ap, void *);
 		/*
 		 * Max pointer is 64bits == 16 chars (on alpha),
 		 * == 20 with + "0x".
 		 */
-		DEBUG_printf("%p", (void *)l);
 		len += MAX(conv_len, 20);
 		break;
 

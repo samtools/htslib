@@ -28,6 +28,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <math.h>
 #include "htslib/hts.h"
 #include "htslib/ksort.h"
+#include "htslib/hts_os.h" // for drand48
+
 KSORT_INIT_GENERIC(uint16_t)
 
 struct errmod_t {

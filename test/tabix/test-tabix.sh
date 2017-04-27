@@ -57,11 +57,12 @@ run_test() {
 	y="exit_code"
     elif [ "x$e" != "x" -a "$e" != "." ]
     then
-	if cmp -s _out.tmp "$e"
+    sed -n 's/.*/&/p' _out.tmp > _out.tmp2
+	if cmp -s _out.tmp2 "$e"
 	then
 	    # Output was as expected
 	    r="P"
-	    rm -f _out.tmp _err.tmp
+	    rm -f _out.tmp _out.tmp2 _err.tmp
 	else
 	    # Output differed
 	    r="F"
@@ -70,7 +71,7 @@ run_test() {
     else
 	# Expected zero exit code and got it.
 	r="P"
-	rm -f _out.tmp _err.tmp
+	rm -f _out.tmp _out.tmp2 _err.tmp
     fi
 
     if [ "$r" = "F" ]

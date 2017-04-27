@@ -1446,7 +1446,7 @@ char *cram_block_method2str(enum cram_block_method m) {
     case RANS0:    return "RANS0";
     case RANS1:    return "RANS1";
     case GZIP_RLE: return "GZIP_RLE";
-    case ERROR:    break;
+    case BM_ERROR: break;
     }
     return "?";
 }
@@ -3663,7 +3663,11 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
  * Out must be at least PATH_MAX bytes long.
  */
 static void full_path(char *out, char *in) {
-    if (*in == '/') {
+    size_t in_l = strlen(in);
+    if (*in == '/' ||
+	// Windows paths
+	(in_l > 3 && toupper(*in) >= 'A'  && toupper(*in) <= 'Z' &&
+	 in[1] == ':' && (in[2] == '/' || in[2] == '\\'))) {
 	strncpy(out, in, PATH_MAX);
 	out[PATH_MAX-1] = 0;
     } else {
