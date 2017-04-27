@@ -71,6 +71,7 @@ AC_ARG_ENABLE([gcs],
   [], [enable_gcs=check])
 
 AC_SYS_LARGEFILE
+AC_FUNC_FSEEKO
 
 AC_ARG_ENABLE([libcurl],
   [AS_HELP_STRING([--enable-libcurl],
@@ -112,8 +113,8 @@ AC_ARG_ENABLE([s3],
                   [support Amazon AWS S3 URLs])],
   [], [enable_s3=check])
 
-AC_MSG_CHECKING([shared library type])
 test -n "$host_alias" || host_alias=unknown-`uname -s`
+AC_MSG_CHECKING([shared library type for $host_alias])
 case $host_alias in
   *-cygwin* | *-CYGWIN*)
     host_result="Cygwin DLL"
@@ -124,6 +125,15 @@ case $host_alias in
     host_result="Darwin dylib"
     PLATFORM=Darwin
     PLUGIN_EXT=.bundle
+    ;;
+  *-msys* | *-MSYS* | *-mingw* | *-MINGW*)
+    host_result="MSYS dll"
+    PLATFORM=MSYS
+    PLUGIN_EXT=.dll
+    # This also sets __USE_MINGW_ANSI_STDIO which in turn makes PRId64,
+    # %lld and %z printf formats work.  It also enforces the snprintf to
+    # be C99 compliant so it returns the correct values (in kstring.c).
+    CPPFLAGS="$CPPCFLAGS -D_POSIX_C_SOURCE=600"
     ;;
   *)
     host_result="plain .so"
@@ -136,7 +146,7 @@ AC_SUBST([PLATFORM])
 
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
-AC_CHECK_FUNCS(gmtime_r)
+AC_CHECK_FUNCS([gmtime_r fsync drand48])
 
 # Darwin has a dubious fdatasync() symbol, but no declaration in <unistd.h>
 AC_CHECK_DECL([fdatasync(int)], [AC_CHECK_FUNCS(fdatasync)])
@@ -183,9 +193,11 @@ FAILED.  This error must be resolved in order to build HTSlib successfully.])
 fi
 
 dnl connect() etc. fns are in libc on linux, but libsocket on illumos/Solaris
-libsocket=unneeded
-AC_SEARCH_LIBS(connect, socket, [libsocket=needed], [])
-
+AC_SEARCH_LIBS([recv], [socket ws2_32], [
+if test "$ac_cv_search_recv" != "none required"
+then
+  static_LIBS="$static_LIBS $ac_cv_search_recv"
+fi], [AC_MSG_ERROR([unable to find the recv() function])])
 
 if test "$enable_bz2" != no; then
   bz2_devel=ok

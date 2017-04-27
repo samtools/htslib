@@ -36,6 +36,11 @@
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 
+#ifdef _WIN32
+#  define WIN32_LEAN_AND_MEAN
+#  include <windows.h>
+#endif
+
 static const int WINDOW_SIZE = 64 * 1024;
 
 static void error(const char *format, ...)
@@ -198,6 +203,9 @@ int main(int argc, char **argv)
 
         if ( index ) bgzf_index_build_init(fp);
         buffer = malloc(WINDOW_SIZE);
+#ifdef _WIN32
+        _setmode(f_src, O_BINARY);
+#endif
         if (rebgzip){
             if ( bgzf_index_load(fp, index_fname, NULL) < 0 ) error("Could not load index: %s.gzi\n", argv[optind]);
 
@@ -319,13 +327,21 @@ int main(int argc, char **argv)
             if ( bgzf_index_load(fp, argv[optind], ".gzi") < 0 ) error("Could not load index: %s.gzi\n", argv[optind]);
             if ( bgzf_useek(fp, start, SEEK_SET) < 0 ) error("Could not seek to %d-th (uncompressd) byte\n", start);
         }
+#ifdef _WIN32
+        _setmode(f_dst, O_BINARY);
+#endif
         while (1) {
             if (end < 0) c = bgzf_read(fp, buffer, WINDOW_SIZE);
             else c = bgzf_read(fp, buffer, (end - start > WINDOW_SIZE)? WINDOW_SIZE:(end - start));
             if (c == 0) break;
             if (c < 0) error("Could not read %d bytes: Error %d\n", (end - start > WINDOW_SIZE)? WINDOW_SIZE:(end - start), fp->errcode);
             start += c;
-            if ( write(f_dst, buffer, c) != c ) error("Could not write %d bytes\n", c);
+            if ( write(f_dst, buffer, c) != c ) {
+#ifdef _WIN32
+                if (GetLastError() != ERROR_NO_DATA)
+#endif
+                error("Could not write %d bytes\n", c);
+            }
             if (end >= 0 && start >= end) break;
         }
         free(buffer);

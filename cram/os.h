@@ -205,9 +205,12 @@ static inline uint16_t le_int2(uint16_t x) {
  * Microsoft Windows running MinGW
  */
 #if defined(__MINGW32__)
-/* #define mkdir(filename,mode) mkdir((filename)) */
+#include <io.h>
+#define mkdir(filename,mode) mkdir((filename))
 #define sysconf(x) 512
-#define ftruncate(fd,len) _chsize(fd,len)
+#ifndef ftruncate
+#  define ftruncate(fd,len) _chsize(fd,len)
+#endif
 #endif
 
 /* Generic WIN32 API issues */

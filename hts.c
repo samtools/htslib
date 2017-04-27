@@ -44,6 +44,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "version.h"
 #include "hts_internal.h"
 #include "hfile_internal.h"
+#include "htslib/hts_os.h" // drand48
 
 #include "htslib/khash.h"
 #include "htslib/kseq.h"

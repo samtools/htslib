@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <strings.h>
 #include <getopt.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -69,7 +70,6 @@ static void error(const char *format, ...)
 int file_type(const char *fname)
 {
     int l = strlen(fname);
-    int strcasecmp(const char *s1, const char *s2);
     if (l>=7 && strcasecmp(fname+l-7, ".gff.gz") == 0) return IS_GFF;
     else if (l>=7 && strcasecmp(fname+l-7, ".bed.gz") == 0) return IS_BED;
     else if (l>=7 && strcasecmp(fname+l-7, ".sam.gz") == 0) return IS_SAM;
