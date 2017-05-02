@@ -296,7 +296,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     p += 2;
 
     const char *q = p;
-    while ( *q && *q!='=' ) q++;
+    while ( *q && *q!='=' && *q != '\n' ) q++;
     int n = q-p;
     if ( *q!='=' || !n ) { *len = q-line+1; return NULL; } // wrong format
 
@@ -337,10 +337,8 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         {
             // wrong format
             while ( *q && *q!='\n' ) q++;
-            kstring_t tmp = {0,0,0};
-            kputsn(line,q-line,&tmp);
-            fprintf(stderr,"Could not parse the header line: \"%s\"\n", tmp.s);
-            free(tmp.s);
+            fprintf(stderr,"Could not parse the header line: \"%.*s\"\n",
+                    (int) (q - line), line);
             *len = q - line + (*q ? 1 : 0);
             bcf_hrec_destroy(hrec);
             return NULL;
@@ -369,8 +367,15 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         if ( *q=='>' ) { nopen--; q++; }
     }
 
-    // Skip trailing spaces
-    while ( *q && *q==' ' ) { q++; }
+    // Skip to end of line
+    int nonspace = 0;
+    p = q;
+    while ( *q && *q!='\n' ) { nonspace |= !isspace(*q); q++; }
+    if (nonspace && hts_verbose > 2) {
+        fprintf(stderr,
+                "[W::%s] Dropped trailing junk from header line '%.*s'\n",
+                __func__, (int) (q - line), line);
+    }
 
     *len = q - line + (*q ? 1 : 0);
     return hrec;
