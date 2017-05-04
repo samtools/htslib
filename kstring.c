@@ -61,7 +61,7 @@ int kputd(double d, kstring_t *s) {
 		return len;
 	}
 
-	uint64_t i = d*10000000000;
+	uint64_t i = d*10000000000LL;
 	// Correction for rounding - rather ugly
 
 	// Optimised for small numbers.
@@ -88,7 +88,7 @@ int kputd(double d, kstring_t *s) {
 	else if (d < 100000)
 		i+=500000000;
 	else
-		i+=5000000000;
+		i+=5000000000LL;
 
 	do {
 		*--cp = '0' + i%10;
