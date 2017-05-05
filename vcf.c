@@ -631,7 +631,7 @@ void bcf_hdr_check_sanity(bcf_hdr_t *hdr)
 
 int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt)
 {
-    int len, needs_sync = 0;
+    int len, needs_sync = 0, done = 0;
     char *p = htxt;
 
     // Check sanity: "fileformat" string must come as first
@@ -645,40 +645,41 @@ int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt)
     needs_sync += bcf_hdr_add_hrec(hdr, hrec);
 
     // Parse the whole header
-    while ( (hrec=bcf_hdr_parse_line(hdr,p,&len)) )
-    {
-        needs_sync += bcf_hdr_add_hrec(hdr, hrec);
-        p += len;
-    }
-
-    // Detect incorrect header lines, print a warning, and skip them.
-    // Alternatively, the program could refuse to work with such VCF. However,
-    // many VCF operations do not really care about a few malformed header
-    // lines.
-    if ( strncmp("#CHROM\tPOS",p,10) )
-    {
-        char *ptr = p, tmp; 
-        while ( *ptr && *ptr!='\n' ) ptr++;
-        tmp  = *ptr;
-        *ptr = 0;
-        if (hts_verbose >= 2) fprintf(stderr, "[W::%s] Error parsing the header starting with: %s\n", __func__, p);
-        *ptr = tmp;
-
-        ptr = strstr(p, "#CHROM\tPOS");
-        if ( !ptr )
-        {
-            if (hts_verbose >= 1) fprintf(stderr,"[E::%s] Could not parse the header, sample line not found\n", __func__);
-            return -1;
-        }
-        while ( p < ptr )
-        {
-            hrec = bcf_hdr_parse_line(hdr,p,&len);
-            if ( !len ) break;
-            if ( hrec ) needs_sync += bcf_hdr_add_hrec(hdr, hrec);
+    do {
+        while (NULL != (hrec = bcf_hdr_parse_line(hdr, p, &len))) {
+            needs_sync += bcf_hdr_add_hrec(hdr, hrec);
             p += len;
         }
-        p = ptr;
+
+        // Next should be the sample line.  If not, it was a malformed
+        // header, in which case print a warning and skip (many VCF
+        // operations do not really care about a few malformed lines).
+        // In the future we may want to add a strict mode that errors in
+        // this case.
+        if ( strncmp("#CHROM\tPOS",p,10) != 0 ) {
+            char *eol = strchr(p, '\n');
+            if (hts_verbose >= 2 && *p != '\0')
+                    fprintf(stderr,
+                            "[W::%s] Couldn't parse header line: %.*s\n",
+                            __func__, eol ? (int) (eol - p) : INT_MAX, p);
+            if (eol) {
+                p = eol + 1; // Try from the next line.
+            } else {
+                done = -1; // No more lines left, give up.
+            }
+        } else {
+            done = 1; // Sample line found
+        }
+    } while (!done);
+
+    if (done < 0) {
+        // No sample line is fatal.
+        if (hts_verbose >= 1)
+            fprintf(stderr, "[E::%s] Could not parse the header, "
+                    "sample line not found\n", __func__);
+        return -1;
     }
+
     int ret = bcf_hdr_parse_sample_line(hdr,p);
     bcf_hdr_sync(hdr);
     bcf_hdr_check_sanity(hdr);
