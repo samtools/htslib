@@ -2803,7 +2803,10 @@ bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src)
         dst = bcf_hdr_init("r");
         kstring_t htxt = {0,0,0};
         bcf_hdr_format(src, 0, &htxt);
-        if ( bcf_hdr_parse(dst, htxt.s) < 0 ) dst = NULL;
+        if ( bcf_hdr_parse(dst, htxt.s) < 0 ) {
+            bcf_hdr_destroy(dst);
+            dst = NULL;
+        }
         free(htxt.s);
         return dst;
     }
@@ -2992,7 +2995,10 @@ bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr)
     }
     kstring_t htxt = {0,0,0};
     bcf_hdr_format(hdr, 1, &htxt);
-    if ( bcf_hdr_parse(hout, htxt.s) < 0 ) hout = NULL;
+    if ( bcf_hdr_parse(hout, htxt.s) < 0 ) {
+        bcf_hdr_destroy(hout);
+        hout = NULL;
+    }
     free(htxt.s);
     return hout;
 }
@@ -3039,7 +3045,10 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
     } else kputsn(htxt.s, htxt.l, &str);
     while (str.l && (!str.s[str.l-1] || str.s[str.l-1]=='\n') ) str.l--; // kill trailing zeros and newlines
     kputc('\n',&str);
-    if ( bcf_hdr_parse(h, str.s) < 0 ) h = NULL;
+    if ( bcf_hdr_parse(h, str.s) < 0 ) {
+        bcf_hdr_destroy(h);
+        h = NULL;
+    }
     free(str.s);
     free(htxt.s);
     khash_str2int_destroy(names_hash);
