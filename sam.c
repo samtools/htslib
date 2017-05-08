@@ -754,47 +754,66 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
     if (h->l_text == 0)
         return h;
 
-    uint32_t i, j;
-    char *cp = h->text, last = 0;
-    for (i = j = 0; i < h->l_text; i++) {
+    uint32_t i, lnum = 0;
+    char *cp = h->text, last = '\n';
+    for (i = 0; i < h->l_text; i++) {
         // NB: l_text excludes terminating nul.  This finds early ones.
         if (cp[i] == 0)
             break;
 
         // Error on \n[^@], including duplicate newlines
         if (last == '\n') {
+            lnum++;
             if (cp[i] != '@') {
                 if (hts_verbose >= 1)
-                    fprintf(stderr, "[E::%s] Malformed SAM header.\n", __func__);
+                    fprintf(stderr,
+                            "[E::%s] Malformed SAM header at line %u.\n",
+                            __func__, lnum);
                 bam_hdr_destroy(h);
                 return NULL;
             }
         }
 
-        last = cp[j++] = cp[i];
+        last = cp[i];
+    }
+
+    if (i < h->l_text) { // Early nul found.  Complain if not just padding.
+        uint32_t j = i;
+        while (j < h->l_text && cp[j] == '\0') j++;
+        if (j < h->l_text && hts_verbose >= 2)
+            fprintf(stderr, "[W::%s] Unexpected NUL character in header.  "
+                    "Possibly truncated.\n", __func__);
     }
 
     // Add trailing newline and/or trailing nul if required.
-    if (j + (last != '\n') + (i < h->l_text) > h->l_text) {
-        char *np = realloc(cp, h->l_text+2);
-        if (!np) {
-            bam_hdr_destroy(h);
-            return NULL;
-        }
-        h->text = cp = np;
-    }
-
     if (last != '\n') {
         if (hts_verbose >= 2)
             fprintf(stderr, "[W::%s] Missing trailing newline on SAM header.  "
                     "Possibly truncated.\n", __func__);
-        cp[j++] = '\n';
-    }
 
-    // l_text may be larger already due to multiple nul padding
-    if (h->l_text < j)
-        h->l_text = j;
-    cp[h->l_text] = '\0';
+        if (h->l_text == UINT32_MAX) {
+            if (hts_verbose >= 1)
+                fprintf(stderr, "[E::%s] No room for extra newline.\n",
+                        __func__);
+            bam_hdr_destroy(h);
+            return NULL;
+        }
+
+        if (i >= h->l_text - 1) {
+            cp = realloc(h->text, (size_t) h->l_text+2);
+            if (!cp) {
+                bam_hdr_destroy(h);
+                return NULL;
+            }
+            h->text = cp;
+        }
+        cp[i++] = '\n';
+
+        // l_text may be larger already due to multiple nul padding
+        if (h->l_text < i)
+            h->l_text = i;
+        cp[h->l_text] = '\0';
+    }
 
     return h;
 }
