@@ -277,202 +277,6 @@ const int ltf8_bytes[256] = {
     5, 5, 5, 5,  5, 5, 5, 5,  6, 6, 6, 6,  7, 7, 8, 9
 };
 
-#ifndef ITF8_MACROS
-/*
- * As above, but decoding from memory
- */
-int itf8_get(char *cp, int32_t *val_p) {
-    unsigned char *up = (unsigned char *)cp;
-    
-    if (up[0] < 0x80) {
-	*val_p =   up[0];
-	return 1;
-    } else if (up[0] < 0xc0) {
-	*val_p = ((up[0] <<8) |  up[1])                           & 0x3fff;
-	return 2;
-    } else if (up[0] < 0xe0) {
-	*val_p = ((up[0]<<16) | (up[1]<< 8) |  up[2])             & 0x1fffff;
-	return 3;
-    } else if (up[0] < 0xf0) {
-	*val_p = ((up[0]<<24) | (up[1]<<16) | (up[2]<<8) | up[3]) & 0x0fffffff;
-	return 4;
-    } else {
-	*val_p = ((up[0] & 0x0f)<<28) | (up[1]<<20) | (up[2]<<12) | (up[3]<<4) | (up[4] & 0x0f);
-	return 5;
-    }
-}
-
-/*
- * Stores a value to memory in ITF-8 format.
- *
- * Returns the number of bytes required to store the number.
- * This is a maximum of 5 bytes.
- */
-int itf8_put(char *cp, int32_t val) {
-    if        (!(val & ~0x00000007f)) { // 1 byte
-	*cp = val;
-	return 1;
-    } else if (!(val & ~0x00003fff)) { // 2 byte
-	*cp++ = (val >> 8 ) | 0x80;
-	*cp   = val & 0xff;
-	return 2;
-    } else if (!(val & ~0x01fffff)) { // 3 byte
-	*cp++ = (val >> 16) | 0xc0;
-	*cp++ = (val >> 8 ) & 0xff;
-	*cp   = val & 0xff;
-	return 3;
-    } else if (!(val & ~0x0fffffff)) { // 4 byte
-	*cp++ = (val >> 24) | 0xe0;
-	*cp++ = (val >> 16) & 0xff;
-	*cp++ = (val >> 8 ) & 0xff;
-	*cp   = val & 0xff;
-	return 4;
-    } else {                           // 5 byte
-	*cp++ = 0xf0 | ((val>>28) & 0xff);
-	*cp++ = (val >> 20) & 0xff;
-	*cp++ = (val >> 12) & 0xff;
-	*cp++ = (val >> 4 ) & 0xff;
-	*cp = val & 0x0f;
-	return 5;
-    }
-}
-#endif
-
-/* 64-bit itf8 variant */
-int ltf8_put(char *cp, int64_t val) {
-    if        (!(val & ~((1LL<<7)-1))) {
-	*cp = val;
-	return 1;
-    } else if (!(val & ~((1LL<<(6+8))-1))) {
-	*cp++ = (val >> 8 ) | 0x80;
-	*cp   = val & 0xff;
-	return 2;
-    } else if (!(val & ~((1LL<<(5+2*8))-1))) {
-	*cp++ = (val >> 16) | 0xc0;
-	*cp++ = (val >> 8 ) & 0xff;
-	*cp   = val & 0xff;
-	return 3;
-    } else if (!(val & ~((1LL<<(4+3*8))-1))) {
-	*cp++ = (val >> 24) | 0xe0;
-	*cp++ = (val >> 16) & 0xff;
-	*cp++ = (val >> 8 ) & 0xff;
-	*cp   = val & 0xff;
-	return 4;
-    } else if (!(val & ~((1LL<<(3+4*8))-1))) {
-	*cp++ = (val >> 32) | 0xf0;
-	*cp++ = (val >> 24) & 0xff;
-	*cp++ = (val >> 16) & 0xff;
-	*cp++ = (val >> 8 ) & 0xff;
-	*cp   = val & 0xff;
-	return 5;
-    } else if (!(val & ~((1LL<<(2+5*8))-1))) {
-	*cp++ = (val >> 40) | 0xf8;
-	*cp++ = (val >> 32) & 0xff;
-	*cp++ = (val >> 24) & 0xff;
-	*cp++ = (val >> 16) & 0xff;
-	*cp++ = (val >> 8 ) & 0xff;
-	*cp   = val & 0xff;
-	return 6;
-    } else if (!(val & ~((1LL<<(1+6*8))-1))) {
-	*cp++ = (val >> 48) | 0xfc;
-	*cp++ = (val >> 40) & 0xff;
-	*cp++ = (val >> 32) & 0xff;
-	*cp++ = (val >> 24) & 0xff;
-	*cp++ = (val >> 16) & 0xff;
-	*cp++ = (val >> 8 ) & 0xff;
-	*cp   = val & 0xff;
-	return 7;
-    } else if (!(val & ~((1LL<<(7*8))-1))) {
-	*cp++ = (val >> 56) | 0xfe;
-	*cp++ = (val >> 48) & 0xff;
-	*cp++ = (val >> 40) & 0xff;
-	*cp++ = (val >> 32) & 0xff;
-	*cp++ = (val >> 24) & 0xff;
-	*cp++ = (val >> 16) & 0xff;
-	*cp++ = (val >> 8 ) & 0xff;
-	*cp   = val & 0xff;
-	return 8;
-    } else {
-	*cp++ = 0xff;
-	*cp++ = (val >> 56) & 0xff;
-	*cp++ = (val >> 48) & 0xff;
-	*cp++ = (val >> 40) & 0xff;
-	*cp++ = (val >> 32) & 0xff;
-	*cp++ = (val >> 24) & 0xff;
-	*cp++ = (val >> 16) & 0xff;
-	*cp++ = (val >> 8 ) & 0xff;
-	*cp   = val & 0xff;
-	return 9;
-    }
-}
-
-int ltf8_get(char *cp, int64_t *val_p) {
-    unsigned char *up = (unsigned char *)cp;
-    
-    if (up[0] < 0x80) {
-	*val_p =   up[0];
-	return 1;
-    } else if (up[0] < 0xc0) {
-	*val_p = (((uint64_t)up[0]<< 8) |
-		   (uint64_t)up[1]) & (((1LL<<(6+8)))-1);
-	return 2;
-    } else if (up[0] < 0xe0) {
-	*val_p = (((uint64_t)up[0]<<16) |
-		  ((uint64_t)up[1]<< 8) |
-		   (uint64_t)up[2]) & ((1LL<<(5+2*8))-1);
-	return 3;
-    } else if (up[0] < 0xf0) {
-	*val_p = (((uint64_t)up[0]<<24) |
-		  ((uint64_t)up[1]<<16) |
-		  ((uint64_t)up[2]<< 8) |
-		   (uint64_t)up[3]) & ((1LL<<(4+3*8))-1);
-	return 4;
-    } else if (up[0] < 0xf8) {
-	*val_p = (((uint64_t)up[0]<<32) |
-		  ((uint64_t)up[1]<<24) |
-		  ((uint64_t)up[2]<<16) |
-		  ((uint64_t)up[3]<< 8) |
-		   (uint64_t)up[4]) & ((1LL<<(3+4*8))-1);
-	return 5;
-    } else if (up[0] < 0xfc) {
-	*val_p = (((uint64_t)up[0]<<40) |
-		  ((uint64_t)up[1]<<32) |
-		  ((uint64_t)up[2]<<24) |
-		  ((uint64_t)up[3]<<16) |
-		  ((uint64_t)up[4]<< 8) |
-		   (uint64_t)up[5]) & ((1LL<<(2+5*8))-1);
-	return 6;
-    } else if (up[0] < 0xfe) {
-	*val_p = (((uint64_t)up[0]<<48) |
-		  ((uint64_t)up[1]<<40) |
-		  ((uint64_t)up[2]<<32) |
-		  ((uint64_t)up[3]<<24) |
-		  ((uint64_t)up[4]<<16) |
-		  ((uint64_t)up[5]<< 8) |
-		   (uint64_t)up[6]) & ((1LL<<(1+6*8))-1);
-	return 7;
-    } else if (up[0] < 0xff) {
-	*val_p = (((uint64_t)up[1]<<48) |
-		  ((uint64_t)up[2]<<40) |
-		  ((uint64_t)up[3]<<32) |
-		  ((uint64_t)up[4]<<24) |
-		  ((uint64_t)up[5]<<16) |
-		  ((uint64_t)up[6]<< 8) |
-		   (uint64_t)up[7]) & ((1LL<<(7*8))-1);
-	return 8;
-    } else {
-	*val_p = (((uint64_t)up[1]<<56) |
-		  ((uint64_t)up[2]<<48) |
-		  ((uint64_t)up[3]<<40) |
-		  ((uint64_t)up[4]<<32) |
-		  ((uint64_t)up[5]<<24) |
-		  ((uint64_t)up[6]<<16) |
-		  ((uint64_t)up[7]<< 8) |
-		   (uint64_t)up[8]);
-	return 9;
-    }
-}
-
 /*
  * LEGACY: consider using ltf8_decode_crc.
  */
@@ -1039,9 +843,9 @@ uint32_t cram_block_size(cram_block *b) {
 
     *cp++ = b->method;
     *cp++ = b->content_type;
-    cp += itf8_put(cp, b->content_id);
-    cp += itf8_put(cp, b->comp_size);
-    cp += itf8_put(cp, b->uncomp_size);
+    cp += itf8_put((char*)cp, b->content_id);
+    cp += itf8_put((char*)cp, b->comp_size);
+    cp += itf8_put((char*)cp, b->uncomp_size);
 
     sz = cp-dat + 4;
     sz += b->method == RAW ? b->uncomp_size : b->comp_size;
@@ -1082,9 +886,9 @@ int cram_write_block(cram_fd *fd, cram_block *b) {
 
 	*cp++ = b->method;
 	*cp++ = b->content_type;
-	cp += itf8_put(cp, b->content_id);
-	cp += itf8_put(cp, b->comp_size);
-	cp += itf8_put(cp, b->uncomp_size);
+	cp += itf8_put((char*)cp, b->content_id);
+	cp += itf8_put((char*)cp, b->comp_size);
+	cp += itf8_put((char*)cp, b->uncomp_size);
 	crc = crc32(0L, dat, cp-dat);
 
 	if (b->method == RAW) {
@@ -2222,7 +2026,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     int local_path = 0;
 
     if (fd->verbose)
-	fprintf(stderr, "cram_populate_ref on fd %p, id %d\n", fd, id);
+	fprintf(stderr, "cram_populate_ref on fd %p, id %d\n", (void *)fd, id);
 
     cache_root[0] = '\0';
 
@@ -3114,7 +2918,7 @@ int cram_container_size(cram_container *c) {
  */
 int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
 {
-    char *cp = dat;
+    unsigned char *cp = (unsigned char *)dat;
     int i;
 
     // Check the input buffer is large enough according to our stated
@@ -3123,36 +2927,36 @@ int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
         return -1;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
-	cp += itf8_put(cp, c->length);
+	cp += itf8_put((char*)cp, c->length);
     } else {
 	*(int32_t *)cp = le_int4(c->length);
 	cp += 4;
     }
     if (c->multi_seq) {
-	cp += itf8_put(cp, -2);
-	cp += itf8_put(cp, 0);
-	cp += itf8_put(cp, 0);
+	cp += itf8_put((char*)cp, -2);
+	cp += itf8_put((char*)cp, 0);
+	cp += itf8_put((char*)cp, 0);
     } else {
-	cp += itf8_put(cp, c->ref_seq_id);
-	cp += itf8_put(cp, c->ref_seq_start);
-	cp += itf8_put(cp, c->ref_seq_span);
+	cp += itf8_put((char*)cp, c->ref_seq_id);
+	cp += itf8_put((char*)cp, c->ref_seq_start);
+	cp += itf8_put((char*)cp, c->ref_seq_span);
     }
-    cp += itf8_put(cp, c->num_records);
+    cp += itf8_put((char*)cp, c->num_records);
     if (CRAM_MAJOR_VERS(fd->version) == 2) {
-	cp += itf8_put(cp, c->record_counter);
-	cp += ltf8_put(cp, c->num_bases);
+	cp += itf8_put((char*)cp, c->record_counter);
+	cp += ltf8_put((char*)cp, c->num_bases);
     } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-	cp += ltf8_put(cp, c->record_counter);
-	cp += ltf8_put(cp, c->num_bases);
+	cp += ltf8_put((char*)cp, c->record_counter);
+	cp += ltf8_put((char*)cp, c->num_bases);
     }
 
-    cp += itf8_put(cp, c->num_blocks);
-    cp += itf8_put(cp, c->num_landmarks);
+    cp += itf8_put((char*)cp, c->num_blocks);
+    cp += itf8_put((char*)cp, c->num_landmarks);
     for (i = 0; i < c->num_landmarks; i++)
-	cp += itf8_put(cp, c->landmark[i]);
+	cp += itf8_put((char*)cp, c->landmark[i]);
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-	c->crc32 = crc32(0L, (uc *)dat, cp-dat);
+	c->crc32 = crc32(0L, (uc *)dat, (char*)cp-dat);
 	cp[0] =  c->crc32        & 0xff;
 	cp[1] = (c->crc32 >>  8) & 0xff;
 	cp[2] = (c->crc32 >> 16) & 0xff;
@@ -3160,7 +2964,7 @@ int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
 	cp += 4;
     }
 
-    *size = cp-dat; // actual used size
+    *size = (char *)cp-dat; // actual used size
 
     return 0;
 }
@@ -3173,44 +2977,45 @@ int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
  *        -1 on failure
  */
 int cram_write_container(cram_fd *fd, cram_container *c) {
-    char buf_a[1024], *buf = buf_a, *cp;
+    char buf_a[1024], *buf = buf_a;
+    unsigned char *cp;
     int i;
 
     if (55 + c->num_landmarks * 5 >= 1024)
 	buf = malloc(55 + c->num_landmarks * 5);
-    cp = buf;
+    cp = (unsigned char *)buf;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
-	cp += itf8_put(cp, c->length);
+	cp += itf8_put((char*)cp, c->length);
     } else {
 	*(int32_t *)cp = le_int4(c->length);
 	cp += 4;
     }
     if (c->multi_seq) {
-	cp += itf8_put(cp, -2);
-	cp += itf8_put(cp, 0);
-	cp += itf8_put(cp, 0);
+	cp += itf8_put((char*)cp, -2);
+	cp += itf8_put((char*)cp, 0);
+	cp += itf8_put((char*)cp, 0);
     } else {
-	cp += itf8_put(cp, c->ref_seq_id);
-	cp += itf8_put(cp, c->ref_seq_start);
-	cp += itf8_put(cp, c->ref_seq_span);
+	cp += itf8_put((char*)cp, c->ref_seq_id);
+	cp += itf8_put((char*)cp, c->ref_seq_start);
+	cp += itf8_put((char*)cp, c->ref_seq_span);
     }
-    cp += itf8_put(cp, c->num_records);
+    cp += itf8_put((char*)cp, c->num_records);
     if (CRAM_MAJOR_VERS(fd->version) == 2) {
-	cp += itf8_put(cp, c->record_counter);
-	cp += ltf8_put(cp, c->num_bases);
+	cp += itf8_put((char*)cp, c->record_counter);
+	cp += ltf8_put((char*)cp, c->num_bases);
     } else if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-	cp += ltf8_put(cp, c->record_counter);
-	cp += ltf8_put(cp, c->num_bases);
+	cp += ltf8_put((char*)cp, c->record_counter);
+	cp += ltf8_put((char*)cp, c->num_bases);
     }
 
-    cp += itf8_put(cp, c->num_blocks);
-    cp += itf8_put(cp, c->num_landmarks);
+    cp += itf8_put((char*)cp, c->num_blocks);
+    cp += itf8_put((char*)cp, c->num_landmarks);
     for (i = 0; i < c->num_landmarks; i++)
-	cp += itf8_put(cp, c->landmark[i]);
+	cp += itf8_put((char*)cp, c->landmark[i]);
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-	c->crc32 = crc32(0L, (uc *)buf, cp-buf);
+	c->crc32 = crc32(0L, (uc *)buf, (char*)cp-buf);
 	cp[0] =  c->crc32        & 0xff;
 	cp[1] = (c->crc32 >>  8) & 0xff;
 	cp[2] = (c->crc32 >> 16) & 0xff;
@@ -3218,7 +3023,7 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
 	cp += 4;
     }
 
-    if (cp-buf != hwrite(fd->fp, buf, cp-buf)) {
+    if ((char*)cp-buf != hwrite(fd->fp, buf, (char*)cp-buf)) {
 	if (buf != buf_a)
 	    free(buf);
 	return -1;
@@ -3789,6 +3594,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
 	}
 	if (cram_uncompress_block(b) != 0) {
 	    cram_free_container(c);
+	    cram_free_block(b);
 	    return NULL;
 	}
 
@@ -4224,8 +4030,10 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
 	fd->version = fd->file_def->major_version * 256 +
 	    fd->file_def->minor_version;
 
-	if (!(fd->header = cram_read_SAM_hdr(fd)))
+	if (!(fd->header = cram_read_SAM_hdr(fd))) {
+	    cram_free_file_def(fd->file_def);
 	    goto err;
+	}
 
     } else {
 	/* Writer */

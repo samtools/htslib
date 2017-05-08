@@ -701,7 +701,7 @@ static hFILE *hopen_mem(const char *url, const char *mode)
 
 #include "htslib/khash.h"
 
-KHASH_MAP_INIT_STR(scheme_string, const struct hFILE_scheme_handler *);
+KHASH_MAP_INIT_STR(scheme_string, const struct hFILE_scheme_handler *)
 static khash_t(scheme_string) *schemes = NULL;
 
 struct hFILE_plugin_list {

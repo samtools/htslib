@@ -25,6 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
+#include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -396,6 +397,8 @@ int bam_read1(BGZF *fp, bam1_t *b)
     c->tid = x[0]; c->pos = x[1];
     c->bin = x[2]>>16; c->qual = x[2]>>8&0xff; c->l_qname = x[2]&0xff;
     c->l_extranul = (c->l_qname%4 != 0)? (4 - c->l_qname%4) : 0;
+    if ((uint32_t) c->l_qname + c->l_extranul > 255) // l_qname would overflow
+        return -4;
     c->flag = x[3]>>16; c->n_cigar = x[3]&0xffff;
     c->l_qseq = x[4];
     c->mtid = x[5]; c->mpos = x[6]; c->isize = x[7];
@@ -413,7 +416,9 @@ int bam_read1(BGZF *fp, bam1_t *b)
     if (bgzf_read(fp, b->data, c->l_qname) != c->l_qname) return -4;
     for (i = 0; i < c->l_extranul; ++i) b->data[c->l_qname+i] = '\0';
     c->l_qname += c->l_extranul;
-    if (bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname) return -4;
+    if (b->l_data < c->l_qname ||
+        bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
+        return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
     return 4 + block_len;
 }
@@ -732,14 +737,95 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
     return hdr_from_dict(d);
 }
 
+// Minimal sanitisation of a header to ensure.
+// - null terminated string.
+// - all lines start with @ (also implies no blank lines).
+//
+// Much more could be done, but currently is not, including:
+// - checking header types are known (HD, SQ, etc).
+// - syntax (eg checking tab separated fields).
+// - validating n_targets matches @SQ records.
+// - validating target lengths against @SQ records.
+static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
+    if (!h)
+        return NULL;
+
+    // Special case for empty headers.
+    if (h->l_text == 0)
+        return h;
+
+    uint32_t i, lnum = 0;
+    char *cp = h->text, last = '\n';
+    for (i = 0; i < h->l_text; i++) {
+        // NB: l_text excludes terminating nul.  This finds early ones.
+        if (cp[i] == 0)
+            break;
+
+        // Error on \n[^@], including duplicate newlines
+        if (last == '\n') {
+            lnum++;
+            if (cp[i] != '@') {
+                if (hts_verbose >= 1)
+                    fprintf(stderr,
+                            "[E::%s] Malformed SAM header at line %u.\n",
+                            __func__, lnum);
+                bam_hdr_destroy(h);
+                return NULL;
+            }
+        }
+
+        last = cp[i];
+    }
+
+    if (i < h->l_text) { // Early nul found.  Complain if not just padding.
+        uint32_t j = i;
+        while (j < h->l_text && cp[j] == '\0') j++;
+        if (j < h->l_text && hts_verbose >= 2)
+            fprintf(stderr, "[W::%s] Unexpected NUL character in header.  "
+                    "Possibly truncated.\n", __func__);
+    }
+
+    // Add trailing newline and/or trailing nul if required.
+    if (last != '\n') {
+        if (hts_verbose >= 2)
+            fprintf(stderr, "[W::%s] Missing trailing newline on SAM header.  "
+                    "Possibly truncated.\n", __func__);
+
+        if (h->l_text == UINT32_MAX) {
+            if (hts_verbose >= 1)
+                fprintf(stderr, "[E::%s] No room for extra newline.\n",
+                        __func__);
+            bam_hdr_destroy(h);
+            return NULL;
+        }
+
+        if (i >= h->l_text - 1) {
+            cp = realloc(h->text, (size_t) h->l_text+2);
+            if (!cp) {
+                bam_hdr_destroy(h);
+                return NULL;
+            }
+            h->text = cp;
+        }
+        cp[i++] = '\n';
+
+        // l_text may be larger already due to multiple nul padding
+        if (h->l_text < i)
+            h->l_text = i;
+        cp[h->l_text] = '\0';
+    }
+
+    return h;
+}
+
 bam_hdr_t *sam_hdr_read(htsFile *fp)
 {
     switch (fp->format.format) {
     case bam:
-        return bam_hdr_read(fp->fp.bgzf);
+        return sam_hdr_sanitise(bam_hdr_read(fp->fp.bgzf));
 
     case cram:
-        return cram_header_to_bam(fp->fp.cram->header);
+        return sam_hdr_sanitise(cram_header_to_bam(fp->fp.cram->header));
 
     case sam: {
         kstring_t str = { 0, 0, NULL };
@@ -774,7 +860,7 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         if (str.l == 0) kputsn("", 0, &str);
         h = sam_hdr_parse(str.l, str.s);
         h->l_text = str.l; h->text = str.s;
-        return h;
+        return sam_hdr_sanitise(h);
 
      error:
         bam_hdr_destroy(h);
@@ -868,7 +954,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     // qname
     q = _read_token(p);
     _parse_warn(p - q <= 1, "empty query name");
-    _parse_err(p - q > 255, "query name too long");
+    _parse_err(p - q > 252, "query name too long");
     kputsn_(q, p - q, &str);
     for (c->l_extranul = 0; str.l % 4 != 0; c->l_extranul++)
         kputc_('\0', &str);
@@ -1028,6 +1114,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             size = aux_type2size(type);
             _parse_err_param(size <= 0 || size > 4,
                              "unrecognized type B:%c", type);
+            _parse_err(*q && *q != ',', "B aux field type not followed by ','");
 
             for (r = q, n = 0; *r; ++r)
                 if (*r == ',') ++n;

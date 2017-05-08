@@ -273,12 +273,129 @@ void iterator(const char *fname)
     }
 }
 
+void test_get_info_values(const char *fname)
+{
+    htsFile *fp = hts_open(fname, "r");
+    bcf_hdr_t *hdr = bcf_hdr_read(fp);
+    bcf1_t *line = bcf_init();
+
+    while (bcf_read(fp, hdr, line) == 0)
+    {
+        float *afs = 0;
+        int count = 0;
+        int ret = bcf_get_info_float(hdr, line, "AF", &afs, &count);
+
+        if (line->pos == 14369)
+        {
+            if (ret != 1 || afs[0] != 0.5f)
+            {
+                fprintf(stderr, "AF on position 14370 should be 0.5\n");
+                exit(-1);
+            }
+        }
+        else
+        {
+            if (ret != 2 || afs[0] != 0.333f || !bcf_float_is_missing(afs[1]))
+            {
+                fprintf(stderr, "AF on position 1110696 should be 0.333, missing\n");
+                exit(-1);
+            }
+        }
+
+        free(afs);
+    }
+
+    bcf_destroy(line);
+    bcf_hdr_destroy(hdr);
+    hts_close(fp);
+}
+
+void write_format_values(const char *fname)
+{
+    // Init
+    htsFile *fp = hts_open(fname, "wb");
+    bcf_hdr_t *hdr = bcf_hdr_init("w");
+    bcf1_t *rec = bcf_init1();
+
+    // Create VCF header
+    bcf_hdr_append(hdr, "##contig=<ID=1>");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=TF,Number=1,Type=Float,Description=\"Test Float\">");
+    bcf_hdr_add_sample(hdr, "S");
+    bcf_hdr_add_sample(hdr, NULL); // to update internal structures
+    bcf_hdr_write(fp, hdr);
+
+    // Add a record
+    // .. FORMAT
+    float test[4];
+    bcf_float_set_missing(test[0]);
+    test[1] = 47.11f;
+    bcf_float_set_vector_end(test[2]);
+    bcf_update_format_float(hdr, rec, "TF", test, 4);
+    bcf_write1(fp, hdr, rec);
+
+    bcf_destroy1(rec);
+    bcf_hdr_destroy(hdr);
+    int ret;
+    if ((ret = hts_close(fp)))
+    {
+        fprintf(stderr, "hts_close(%s): non-zero status %d\n", fname, ret);
+        exit(ret);
+    }
+}
+
+void check_format_values(const char *fname)
+{
+    htsFile *fp = hts_open(fname, "r");
+    bcf_hdr_t *hdr = bcf_hdr_read(fp);
+    bcf1_t *line = bcf_init();
+
+    while (bcf_read(fp, hdr, line) == 0)
+    {
+        float *values = 0;
+        int count = 0;
+        int ret = bcf_get_format_float(hdr, line, "TF", &values, &count);
+
+        // NOTE the return value from bcf_get_format_float is different from
+        // bcf_get_info_float in the sense that vector-end markers also count.
+        if (ret != 4 ||
+            count < ret ||
+            !bcf_float_is_missing(values[0]) ||
+            values[1] != 47.11f ||
+            !bcf_float_is_vector_end(values[2]) ||
+            !bcf_float_is_vector_end(values[3]))
+        {
+            fprintf(stderr, "bcf_get_format_float didn't produce the expected output.\n");
+            exit(-1);
+        }
+
+        free(values);
+    }
+
+    bcf_destroy(line);
+    bcf_hdr_destroy(hdr);
+    hts_close(fp);
+}
+
+void test_get_format_values(const char *fname)
+{
+    write_format_values(fname);
+    check_format_values(fname);
+}
+
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
+
+    // format test. quiet unless there's a failure
+    test_get_format_values(fname);
+
+    // main test. writes to stdout
     write_bcf(fname);
     bcf_to_vcf(fname);
     iterator(fname);
+
+    // additional tests. quiet unless there's a failure.
+    test_get_info_values(fname);
+
     return 0;
 }
-

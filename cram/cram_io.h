@@ -42,8 +42,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _CRAM_IO_H_
 #define _CRAM_IO_H_
 
-#define ITF8_MACROS
-
 #include <stdint.h>
 #include <cram/misc.h>
 
@@ -69,39 +67,202 @@ extern "C" {
  */
 int itf8_decode(cram_fd *fd, int32_t *val);
 
-#ifndef ITF8_MACROS
-/*! Reads an integer in ITF-8 encoding from 'cp' and stores it in
- * *val.
- *
- * @return
- * Returns the number of bytes read on success;
- *        -1 on failure
- */
-int itf8_get(char *cp, int32_t *val_p);
+static inline int itf8_get(char *cp, int32_t *val_p) {
+    unsigned char *up = (unsigned char *)cp;
+    
+    if (up[0] < 0x80) {
+	*val_p =   up[0];
+	return 1;
+    } else if (up[0] < 0xc0) {
+	*val_p = ((up[0] <<8) |  up[1])                           & 0x3fff;
+	return 2;
+    } else if (up[0] < 0xe0) {
+	*val_p = ((up[0]<<16) | (up[1]<< 8) |  up[2])             & 0x1fffff;
+	return 3;
+    } else if (up[0] < 0xf0) {
+	*val_p = ((up[0]<<24) | (up[1]<<16) | (up[2]<<8) | up[3]) & 0x0fffffff;
+	return 4;
+    } else {
+	*val_p = ((up[0] & 0x0f)<<28) | (up[1]<<20) | (up[2]<<12) | (up[3]<<4) | (up[4] & 0x0f);
+	return 5;
+    }
+}
 
-/*! Stores a value to memory in ITF-8 format.
+/*
+ * Stores a value to memory in ITF-8 format.
  *
- * @return
  * Returns the number of bytes required to store the number.
  * This is a maximum of 5 bytes.
  */
-int itf8_put(char *cp, int32_t val);
+static inline int itf8_put(char *cp, int32_t val) {
+    unsigned char *up = (unsigned char *)cp;
+    if        (!(val & ~0x00000007f)) { // 1 byte
+	*up = val;
+	return 1;
+    } else if (!(val & ~0x00003fff)) { // 2 byte
+	*up++ = (val >> 8 ) | 0x80;
+	*up   = val & 0xff;
+	return 2;
+    } else if (!(val & ~0x01fffff)) { // 3 byte
+	*up++ = (val >> 16) | 0xc0;
+	*up++ = (val >> 8 ) & 0xff;
+	*up   = val & 0xff;
+	return 3;
+    } else if (!(val & ~0x0fffffff)) { // 4 byte
+	*up++ = (val >> 24) | 0xe0;
+	*up++ = (val >> 16) & 0xff;
+	*up++ = (val >> 8 ) & 0xff;
+	*up   = val & 0xff;
+	return 4;
+    } else {                           // 5 byte
+	*up++ = 0xf0 | ((val>>28) & 0xff);
+	*up++ = (val >> 20) & 0xff;
+	*up++ = (val >> 12) & 0xff;
+	*up++ = (val >> 4 ) & 0xff;
+	*up = val & 0x0f;
+	return 5;
+    }
+}
 
-#else
 
-/*
- * Macro implementations of the above
- */
-#define itf8_get(c,v) (((uc)(c)[0]<0x80)?(*(v)=(uc)(c)[0],1):(((uc)(c)[0]<0xc0)?(*(v)=(((uc)(c)[0]<<8)|(uc)(c)[1])&0x3fff,2):(((uc)(c)[0]<0xe0)?(*(v)=(((uc)(c)[0]<<16)|((uc)(c)[1]<<8)|(uc)(c)[2])&0x1fffff,3):(((uc)(c)[0]<0xf0)?(*(v)=(((uc)(c)[0]<<24)|((uc)(c)[1]<<16)|((uc)(c)[2]<<8)|(uc)(c)[3])&0x0fffffff,4):(*(v)=(((uc)(c)[0]&0x0f)<<28)|((uc)(c)[1]<<20)|((uc)(c)[2]<<12)|((uc)(c)[3]<<4)|((uc)(c)[4]&0x0f),5)))))
+/* 64-bit itf8 variant */
+static inline int ltf8_put(char *cp, int64_t val) {
+    unsigned char *up = (unsigned char *)cp;
+    if        (!(val & ~((1LL<<7)-1))) {
+	*up = val;
+	return 1;
+    } else if (!(val & ~((1LL<<(6+8))-1))) {
+	*up++ = (val >> 8 ) | 0x80;
+	*up   = val & 0xff;
+	return 2;
+    } else if (!(val & ~((1LL<<(5+2*8))-1))) {
+	*up++ = (val >> 16) | 0xc0;
+	*up++ = (val >> 8 ) & 0xff;
+	*up   = val & 0xff;
+	return 3;
+    } else if (!(val & ~((1LL<<(4+3*8))-1))) {
+	*up++ = (val >> 24) | 0xe0;
+	*up++ = (val >> 16) & 0xff;
+	*up++ = (val >> 8 ) & 0xff;
+	*up   = val & 0xff;
+	return 4;
+    } else if (!(val & ~((1LL<<(3+4*8))-1))) {
+	*up++ = (val >> 32) | 0xf0;
+	*up++ = (val >> 24) & 0xff;
+	*up++ = (val >> 16) & 0xff;
+	*up++ = (val >> 8 ) & 0xff;
+	*up   = val & 0xff;
+	return 5;
+    } else if (!(val & ~((1LL<<(2+5*8))-1))) {
+	*up++ = (val >> 40) | 0xf8;
+	*up++ = (val >> 32) & 0xff;
+	*up++ = (val >> 24) & 0xff;
+	*up++ = (val >> 16) & 0xff;
+	*up++ = (val >> 8 ) & 0xff;
+	*up   = val & 0xff;
+	return 6;
+    } else if (!(val & ~((1LL<<(1+6*8))-1))) {
+	*up++ = (val >> 48) | 0xfc;
+	*up++ = (val >> 40) & 0xff;
+	*up++ = (val >> 32) & 0xff;
+	*up++ = (val >> 24) & 0xff;
+	*up++ = (val >> 16) & 0xff;
+	*up++ = (val >> 8 ) & 0xff;
+	*up   = val & 0xff;
+	return 7;
+    } else if (!(val & ~((1LL<<(7*8))-1))) {
+	*up++ = (val >> 56) | 0xfe;
+	*up++ = (val >> 48) & 0xff;
+	*up++ = (val >> 40) & 0xff;
+	*up++ = (val >> 32) & 0xff;
+	*up++ = (val >> 24) & 0xff;
+	*up++ = (val >> 16) & 0xff;
+	*up++ = (val >> 8 ) & 0xff;
+	*up   = val & 0xff;
+	return 8;
+    } else {
+	*up++ = 0xff;
+	*up++ = (val >> 56) & 0xff;
+	*up++ = (val >> 48) & 0xff;
+	*up++ = (val >> 40) & 0xff;
+	*up++ = (val >> 32) & 0xff;
+	*up++ = (val >> 24) & 0xff;
+	*up++ = (val >> 16) & 0xff;
+	*up++ = (val >> 8 ) & 0xff;
+	*up   = val & 0xff;
+	return 9;
+    }
+}
 
-#define itf8_put(c,v) ((!((v)&~0x7f))?((c)[0]=(v),1):(!((v)&~0x3fff))?((c)[0]=((v)>>8)|0x80,(c)[1]=(v)&0xff,2):(!((v)&~0x1fffff))?((c)[0]=((v)>>16)|0xc0,(c)[1]=((v)>>8)&0xff,(c)[2]=(v)&0xff,3):(!((v)&~0xfffffff))?((c)[0]=((v)>>24)|0xe0,(c)[1]=((v)>>16)&0xff,(c)[2]=((v)>>8)&0xff,(c)[3]=(v)&0xff,4):((c)[0]=0xf0|(((v)>>28)&0xff),(c)[1]=((v)>>20)&0xff,(c)[2]=((v)>>12)&0xff,(c)[3]=((v)>>4)&0xff,(c)[4]=(v)&0xf,5))
+static inline int ltf8_get(char *cp, int64_t *val_p) {
+    unsigned char *up = (unsigned char *)cp;
+    
+    if (up[0] < 0x80) {
+	*val_p =   up[0];
+	return 1;
+    } else if (up[0] < 0xc0) {
+	*val_p = (((uint64_t)up[0]<< 8) |
+		   (uint64_t)up[1]) & (((1LL<<(6+8)))-1);
+	return 2;
+    } else if (up[0] < 0xe0) {
+	*val_p = (((uint64_t)up[0]<<16) |
+		  ((uint64_t)up[1]<< 8) |
+		   (uint64_t)up[2]) & ((1LL<<(5+2*8))-1);
+	return 3;
+    } else if (up[0] < 0xf0) {
+	*val_p = (((uint64_t)up[0]<<24) |
+		  ((uint64_t)up[1]<<16) |
+		  ((uint64_t)up[2]<< 8) |
+		   (uint64_t)up[3]) & ((1LL<<(4+3*8))-1);
+	return 4;
+    } else if (up[0] < 0xf8) {
+	*val_p = (((uint64_t)up[0]<<32) |
+		  ((uint64_t)up[1]<<24) |
+		  ((uint64_t)up[2]<<16) |
+		  ((uint64_t)up[3]<< 8) |
+		   (uint64_t)up[4]) & ((1LL<<(3+4*8))-1);
+	return 5;
+    } else if (up[0] < 0xfc) {
+	*val_p = (((uint64_t)up[0]<<40) |
+		  ((uint64_t)up[1]<<32) |
+		  ((uint64_t)up[2]<<24) |
+		  ((uint64_t)up[3]<<16) |
+		  ((uint64_t)up[4]<< 8) |
+		   (uint64_t)up[5]) & ((1LL<<(2+5*8))-1);
+	return 6;
+    } else if (up[0] < 0xfe) {
+	*val_p = (((uint64_t)up[0]<<48) |
+		  ((uint64_t)up[1]<<40) |
+		  ((uint64_t)up[2]<<32) |
+		  ((uint64_t)up[3]<<24) |
+		  ((uint64_t)up[4]<<16) |
+		  ((uint64_t)up[5]<< 8) |
+		   (uint64_t)up[6]) & ((1LL<<(1+6*8))-1);
+	return 7;
+    } else if (up[0] < 0xff) {
+	*val_p = (((uint64_t)up[1]<<48) |
+		  ((uint64_t)up[2]<<40) |
+		  ((uint64_t)up[3]<<32) |
+		  ((uint64_t)up[4]<<24) |
+		  ((uint64_t)up[5]<<16) |
+		  ((uint64_t)up[6]<< 8) |
+		   (uint64_t)up[7]) & ((1LL<<(7*8))-1);
+	return 8;
+    } else {
+	*val_p = (((uint64_t)up[1]<<56) |
+		  ((uint64_t)up[2]<<48) |
+		  ((uint64_t)up[3]<<40) |
+		  ((uint64_t)up[4]<<32) |
+		  ((uint64_t)up[5]<<24) |
+		  ((uint64_t)up[6]<<16) |
+		  ((uint64_t)up[7]<< 8) |
+		   (uint64_t)up[8]);
+	return 9;
+    }
+}
 
 #define itf8_size(v) ((!((v)&~0x7f))?1:(!((v)&~0x3fff))?2:(!((v)&~0x1fffff))?3:(!((v)&~0xfffffff))?4:5)
 
-#endif
-
-int ltf8_get(char *cp, int64_t *val_p);
-int ltf8_put(char *cp, int64_t val);
 
 /* Version of itf8_get that checks it hasn't run out of input */
 

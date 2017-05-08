@@ -239,6 +239,8 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 	RansDecSymbolInit(&syms[j], C, F);
 
 	/* Build reverse lookup table */
+	if (x + F > TOTFREQ)
+	    return NULL;
 	memset(&D.R[x], j, F);
 
 	x += F;
@@ -249,12 +251,17 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 	} else if (rle) {
 	    rle--;
 	    j++;
+	    if (j > 255)
+		return NULL;
 	} else {
 	    j = *cp++;
 	}
     } while(j);
 
-    assert(x < TOTFREQ);
+    if (x < TOTFREQ-1 || x > TOTFREQ)
+	return NULL;
+    if (x < TOTFREQ) // historically we fill 4095, not 4096
+	D.R[x] = D.R[x-1];
 
     if (cp > cp_end - 16) return NULL; // Not enough input bytes left
 
@@ -291,6 +298,18 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 	out_buf[i+1] = c[1];
 	out_buf[i+2] = c[2];
 	out_buf[i+3] = c[3];
+
+	// In theory all TOTFREQ elements of D.R are filled out, but it's
+	// possible this may not be true (invalid input).  We could
+	// check with x == TOTFREQ after filling out D.R matrix, but
+	// for historical reasons this sums to TOTFREQ-1 leaving one
+	// byte in D.R uninitialised. Or we could check here that
+	// syms[c[0..3]].freq > 0 and initialising syms, but that is
+	// slow.
+	//
+	// We take the former approach and accept a potential for garbage in
+	// -> garbage out in the rare 1 in TOTFREQ case as the overhead of
+	// continuous validation of freq > 0 is steep on this tight loop.
 
 	// RansDecAdvanceSymbolStep(&R[0], &syms[c[0]], TF_SHIFT);
 	// RansDecAdvanceSymbolStep(&R[1], &syms[c[1]], TF_SHIFT);
@@ -566,10 +585,12 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     if (in_sz != in_size-9)
 	return NULL;
 
-    D = malloc(256 * sizeof(*D));
+    // calloc may add 2% overhead to CRAM decode, but on linux with glibc it's
+    // often the same thing due to using mmap.
+    D = calloc(256, sizeof(*D));
     if (!D) goto cleanup;
     syms = malloc(256 * sizeof(*syms));
-    if (!syms) goto cleanup;
+    memset(&syms[0], 0, sizeof(syms[0]));
 
     //fprintf(stderr, "out_sz=%d\n", out_sz);
 
@@ -596,10 +617,11 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 	    RansDecSymbolInit(&syms[i][j], C, F);
 
 	    /* Build reverse lookup table */
+	    if (x + F > TOTFREQ)
+		goto cleanup;
 	    memset(&D[i].R[x], j, F);
 
 	    x += F;
-	    assert(x <= TOTFREQ);
 
 	    if (!rle_j && j+1 == *cp) {
 		j = *cp++;
@@ -607,10 +629,17 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 	    } else if (rle_j) {
 		rle_j--;
 		j++;
+		if (j > 255)
+		    goto cleanup;
 	    } else {
 		j = *cp++;
 	    }
 	} while(j);
+
+	if (x < TOTFREQ-1 || x > TOTFREQ)
+	    goto cleanup;
+	if (x < TOTFREQ) // historically we fill 4095, not 4096
+	    D[i].R[x] = D[i].R[x-1];
 
 	if (!rle_i && i+1 == *cp) {
 	    i = *cp++;
@@ -618,6 +647,8 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 	} else if (rle_i) {
 	    rle_i--;
 	    i++;
+	    if (i > 255)
+		goto cleanup;
 	} else {
 	    i = *cp++;
 	}
@@ -628,10 +659,10 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     RansState rans0, rans1, rans2, rans3;
     uint8_t *ptr = cp;
     if (ptr > ptr_end - 16) goto cleanup; // Not enough input bytes left
-    RansDecInit(&rans0, &ptr);
-    RansDecInit(&rans1, &ptr);
-    RansDecInit(&rans2, &ptr);
-    RansDecInit(&rans3, &ptr);
+    RansDecInit(&rans0, &ptr); if (rans0 < RANS_BYTE_L) goto cleanup;
+    RansDecInit(&rans1, &ptr); if (rans1 < RANS_BYTE_L) goto cleanup;
+    RansDecInit(&rans2, &ptr); if (rans2 < RANS_BYTE_L) goto cleanup;
+    RansDecInit(&rans3, &ptr); if (rans3 < RANS_BYTE_L) goto cleanup;
 
     int isz4 = out_sz>>2;
     int l0 = 0;

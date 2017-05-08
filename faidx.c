@@ -31,6 +31,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdio.h>
 #include <inttypes.h>
 #include <errno.h>
+#include <limits.h>
 #include <unistd.h>
 #include <assert.h>
 
@@ -212,8 +213,10 @@ static faidx_t *fai_read(hFILE *fp, const char *fname)
     if (!buf) goto fail;
 
     while ((l = hgetln(buf, 0x10000, fp)) > 0) {
-        for (p = buf; *p && isgraph_c(*p); ++p);
-        *p = 0; ++p;
+        for (p = buf; *p && !isspace_c(*p); ++p);
+        if (p - buf < l) {
+            *p = 0; ++p;
+        }
         n = sscanf(p, "%"SCNd64"%"SCNu64"%d%d", &len, &offset, &line_blen, &line_len);
         if (n != 4) {
             if (hts_verbose > 1)
@@ -428,6 +431,8 @@ faidx_t *fai_load3(const char *fn, const char *fnfai, const char *fngzi,
             goto fail;
         }
     }
+    free(fai_kstr.s);
+    free(gzi_kstr.s);
     return fai;
 
  fail:
@@ -443,26 +448,73 @@ faidx_t *fai_load(const char *fn)
     return fai_load3(fn, NULL, NULL, FAI_CREATE);
 }
 
+static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
+                          long beg, long end, int *len) {
+    char *s;
+    size_t l;
+    int c = 0;
+    int ret = bgzf_useek(fai->bgzf,
+                         val->offset
+                         + beg / val->line_blen * val->line_len
+                         + beg % val->line_blen, SEEK_SET);
+
+    if (ret < 0) {
+        *len = -1;
+        if (hts_verbose >= 1)
+            fprintf(stderr, "[fai_fetch] Error: fai_fetch failed. (Seeking in a compressed, .gzi unindexed, file?)\n");
+        return NULL;
+    }
+
+    l = 0;
+    s = (char*)malloc((size_t) end - beg + 2);
+    if (!s) {
+        *len = -1;
+        return NULL;
+    }
+
+    while ( l < end - beg && (c=bgzf_getc(fai->bgzf))>=0 )
+        if (isgraph(c)) s[l++] = c;
+    if (c < 0) {
+        if (hts_verbose >= 1) {
+            fprintf(stderr, "[E::fai_fetch] fai_fetch failed : %s\n",
+                    c == -1 ? "unexpected end of file" : "error reading file");
+        }
+        free(s);
+        *len = -1;
+        return NULL;
+    }
+
+    s[l] = '\0';
+    *len = l < INT_MAX ? l : INT_MAX;
+    return s;
+}
+
 char *fai_fetch(const faidx_t *fai, const char *str, int *len)
 {
-    char *s;
-    int c, i, l, k, name_end;
+    char *s, *ep;
+    size_t i, l, k, name_end;
     khiter_t iter;
     faidx1_t val;
     khash_t(s) *h;
-    int beg, end;
+    long beg, end;
 
     beg = end = -1;
     h = fai->hash;
     name_end = l = strlen(str);
     s = (char*)malloc(l+1);
+    if (!s) {
+        *len = -1;
+        return NULL;
+    }
+
     // remove space
     for (i = k = 0; i < l; ++i)
         if (!isspace_c(str[i])) s[k++] = str[i];
-    s[k] = 0; l = k;
+    s[k] = 0;
+    name_end = l = k;
     // determine the sequence name
-    for (i = l - 1; i >= 0; --i) if (s[i] == ':') break; // look for colon from the end
-    if (i >= 0) name_end = i;
+    for (i = l; i > 0; --i) if (s[i - 1] == ':') break; // look for colon from the end
+    if (i > 0) name_end = i - 1;
     if (name_end < l) { // check if this is really the end
         int n_hyphen = 0;
         for (i = name_end + 1; i < l; ++i) {
@@ -474,10 +526,10 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
         iter = kh_get(s, h, s);
         if (iter == kh_end(h)) { // cannot find the sequence name
             iter = kh_get(s, h, str); // try str as the name
-            if (iter == kh_end(h)) {
-                *len = 0;
-            free(s); return 0;
-            } else s[name_end] = ':', name_end = l;
+            if (iter != kh_end(h)) {
+                s[name_end] = ':';
+                name_end = l;
+            }
         }
     } else iter = kh_get(s, h, str);
     if(iter == kh_end(h)) {
@@ -485,17 +537,34 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
         free(s);
         *len = -2;
         return 0;
-    };
+    }
     val = kh_value(h, iter);
     // parse the interval
     if (name_end < l) {
+        int save_errno = errno;
+        errno = 0;
         for (i = k = name_end + 1; i < l; ++i)
             if (s[i] != ',') s[k++] = s[i];
         s[k] = 0;
-        beg = atoi(s + name_end + 1);
-        for (i = name_end + 1; i != k; ++i) if (s[i] == '-') break;
-        end = i < k? atoi(s + i + 1) : val.len;
+        if (s[name_end + 1] == '-') {
+            beg = 0;
+            i = name_end + 2;
+        } else {
+            beg = strtol(s + name_end + 1, &ep, 10);
+            for (i = ep - s; i < k;) if (s[i++] == '-') break;
+        }
+        end = i < k? strtol(s + i, &ep, 10) : val.len;
         if (beg > 0) --beg;
+        // Check for out of range numbers.  Only going to be a problem on
+        // 32-bit platforms with >2Gb sequence length.
+        if (errno == ERANGE && (uint64_t) val.len > LONG_MAX) {
+            fprintf(stderr, "[fai_fetch] Positions in range %s are too large"
+                    " for this platform.\n", s);
+            free(s);
+            *len = -2;
+            return NULL;
+        }
+        errno = save_errno;
     } else beg = 0, end = val.len;
     if (beg >= val.len) beg = val.len;
     if (end >= val.len) end = val.len;
@@ -503,20 +572,7 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
     free(s);
 
     // now retrieve the sequence
-    int ret = bgzf_useek(fai->bgzf, val.offset + beg / val.line_blen * val.line_len + beg % val.line_blen, SEEK_SET);
-    if ( ret<0 )
-    {
-        *len = -1;
-        fprintf(stderr, "[fai_fetch] Error: fai_fetch failed. (Seeking in a compressed, .gzi unindexed, file?)\n");
-        return NULL;
-    }
-    l = 0;
-    s = (char*)malloc(end - beg + 2);
-    while ( (c=bgzf_getc(fai->bgzf))>=0 && l < end - beg )
-        if (isgraph(c)) s[l++] = c;
-    s[l] = '\0';
-    *len = l;
-    return s;
+    return fai_retrieve(fai, &val, beg, end, len);
 }
 
 int faidx_fetch_nseq(const faidx_t *fai)
@@ -543,10 +599,8 @@ int faidx_seq_len(const faidx_t *fai, const char *seq)
 
 char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p_end_i, int *len)
 {
-    int l, c;
     khiter_t iter;
     faidx1_t val;
-    char *seq=NULL;
 
     // Adjust position
     iter = kh_get(s, fai->hash, c_name);
@@ -564,20 +618,7 @@ char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p
     else if(val.len <= p_end_i) p_end_i = val.len - 1;
 
     // Now retrieve the sequence
-    int ret = bgzf_useek(fai->bgzf, val.offset + p_beg_i / val.line_blen * val.line_len + p_beg_i % val.line_blen, SEEK_SET);
-    if ( ret<0 )
-    {
-        *len = -1;
-        fprintf(stderr, "[fai_fetch_seq] Error: fai_fetch failed. (Seeking in a compressed, .gzi unindexed, file?)\n");
-        return NULL;
-    }
-    l = 0;
-    seq = (char*)malloc(p_end_i - p_beg_i + 2);
-    while ( (c=bgzf_getc(fai->bgzf))>=0 && l < p_end_i - p_beg_i + 1)
-        if (isgraph(c)) seq[l++] = c;
-    seq[l] = '\0';
-    *len = l;
-    return seq;
+    return fai_retrieve(fai, &val, p_beg_i, (long) p_end_i + 1, len);
 }
 
 int faidx_has_seq(const faidx_t *fai, const char *seq)

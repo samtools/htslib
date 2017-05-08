@@ -31,6 +31,8 @@ htslib_default_libs = -lz -lm -lbz2 -llzma
 
 CPPFLAGS =
 # TODO: probably update cram code to make it compile cleanly with -Wc++-compat
+# For testing strict C99 support add -std=c99 -D_XOPEN_SOURCE=600
+#CFLAGS   = -g -Wall -O2 -pedantic -std=c99 -D_XOPEN_SOURCE=600 -D__FUNCTION__=__func__
 CFLAGS   = -g -Wall -O2
 EXTRA_CFLAGS_PIC = -fpic
 LDFLAGS  =
@@ -90,7 +92,7 @@ HTSPREFIX =
 include htslib_vars.mk
 
 
-PACKAGE_VERSION = 1.4
+PACKAGE_VERSION = 1.4.1
 LIBHTS_SOVERSION = 2
 
 
@@ -262,7 +264,7 @@ print-config:
 # file used at runtime (when $LD_LIBRARY_PATH includes the build directory).
 
 libhts.so: $(LIBHTS_OBJS:.o=.pico)
-	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) -pthread $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LIBS)
+	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LIBS) -lpthread
 	ln -sf $@ libhts.so.$(LIBHTS_SOVERSION)
 
 # Similarly this also creates libhts.NN.dylib as a byproduct, so that programs
@@ -274,11 +276,11 @@ libhts.dylib: $(LIBHTS_OBJS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 cyghts-$(LIBHTS_SOVERSION).dll: $(LIBHTS_OBJS)
-	$(CC) -shared -Wl,--out-implib=libhts.dll.a -Wl,--export-all-symbols -Wl,--enable-auto-import -pthread $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS)
+	$(CC) -shared -Wl,--out-implib=libhts.dll.a -Wl,--export-all-symbols -Wl,--enable-auto-import $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
 
 
 .pico.so:
-	$(CC) -shared -Wl,-E -pthread $(LDFLAGS) -o $@ $< $(LIBS)
+	$(CC) -shared -Wl,-E $(LDFLAGS) -o $@ $< $(LIBS) -lpthread
 
 .o.bundle:
 	$(CC) -bundle -Wl,-undefined,dynamic_lookup $(LDFLAGS) -o $@ $< $(LIBS)
@@ -335,13 +337,13 @@ cram/zfio.o cram/zfio.pico: cram/zfio.c config.h $(cram_os_h) cram/zfio.h
 
 
 bgzip: bgzip.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ bgzip.o libhts.a $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ bgzip.o libhts.a $(LIBS) -lpthread
 
 htsfile: htsfile.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ htsfile.o libhts.a $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ htsfile.o libhts.a $(LIBS) -lpthread
 
 tabix: tabix.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ tabix.o libhts.a $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ tabix.o libhts.a $(LIBS) -lpthread
 
 bgzip.o: bgzip.c config.h $(htslib_bgzf_h) $(htslib_hts_h)
 htsfile.o: htsfile.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
@@ -350,7 +352,7 @@ tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htsl
 
 # For tests that might use it, set $REF_PATH explicitly to use only reference
 # areas within the test suite (or set it to ':' to use no reference areas).
-check test: bgzip htsfile $(BUILT_TEST_PROGRAMS)
+check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 	test/hts_endian
 	test/fieldarith test/fieldarith.sam
 	test/hfile
@@ -364,31 +366,31 @@ test/hts_endian: test/hts_endian.o
 	$(CC) $(LDFLAGS) -o $@ test/hts_endian.o $(LIBS)
 
 test/fieldarith: test/fieldarith.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/fieldarith.o libhts.a $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/fieldarith.o libhts.a $(LIBS) -lpthread
 
 test/hfile: test/hfile.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LIBS) -lpthread
 
 test/sam: test/sam.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/sam.o libhts.a $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/sam.o libhts.a $(LIBS) -lpthread
 
 test/test_bgzf: test/test_bgzf.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a -lz $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a -lz $(LIBS) -lpthread
 
 test/test-regidx: test/test-regidx.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/test-regidx.o libhts.a $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/test-regidx.o libhts.a $(LIBS) -lpthread
 
 test/test_view: test/test_view.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LIBS) -lpthread
 
 test/test-vcf-api: test/test-vcf-api.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-api.o libhts.a $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/test-vcf-api.o libhts.a $(LIBS) -lpthread
 
 test/test-vcf-sweep: test/test-vcf-sweep.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/test-vcf-sweep.o libhts.a $(LIBS) -lpthread
 
 test/test-bcf-sr: test/test-bcf-sr.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/test-bcf-sr.o libhts.a -lz $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/test-bcf-sr.o libhts.a -lz $(LIBS) -lpthread
 
 test/hts_endian.o: test/hts_endian.c $(htslib_hts_endian_h)
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
@@ -403,22 +405,22 @@ test/test-bcf-sr.o: test/test-bcf-sr.c config.h $(htslib_vcf_sweep_h) bcf_sr_sor
 
 
 test/thrash_threads1: test/thrash_threads1.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads1.o libhts.a -lz $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads1.o libhts.a -lz $(LIBS) -lpthread
 
 test/thrash_threads2: test/thrash_threads2.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads2.o libhts.a -lz $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads2.o libhts.a -lz $(LIBS) -lpthread
 
 test/thrash_threads3: test/thrash_threads3.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads3.o libhts.a -lz $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads3.o libhts.a -lz $(LIBS) -lpthread
 
 test/thrash_threads4: test/thrash_threads4.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads4.o libhts.a -lz $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads4.o libhts.a -lz $(LIBS) -lpthread
 
 test/thrash_threads5: test/thrash_threads5.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads5.o libhts.a -lz $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads5.o libhts.a -lz $(LIBS) -lpthread
 
 test/thrash_threads6: test/thrash_threads6.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/thrash_threads6.o libhts.a -lz $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads6.o libhts.a -lz $(LIBS) -lpthread
 
 test_thrash: $(BUILT_THRASH_PROGRAMS)
 

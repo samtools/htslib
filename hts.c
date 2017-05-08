@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <zlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <fcntl.h>
@@ -2156,10 +2157,15 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
 
     q = hts_parse_reg(reg, &beg, &end);
     if (q) {
-        char *tmp = (char*)alloca(q - reg + 1);
+        char tmp_a[1024], *tmp = tmp_a;
+        if (q - reg + 1 > 1024)
+            if (!(tmp = malloc(q - reg + 1)))
+                return NULL;
         strncpy(tmp, reg, q - reg);
         tmp[q - reg] = 0;
         tid = getid(hdr, tmp);
+        if (tmp != tmp_a)
+            free(tmp);
     }
     else {
         // not parsable as a region, but possibly a sequence named "foo:a"

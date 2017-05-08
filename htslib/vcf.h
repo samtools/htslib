@@ -137,6 +137,7 @@ extern uint8_t bcf_type_shift[];
 #define VCF_MNP   2
 #define VCF_INDEL 4
 #define VCF_OTHER 8
+#define VCF_BND   16    // breakend
 
 typedef struct {
     int type, n;    // variant type and the number of bases affected, negative for deletions
@@ -651,10 +652,11 @@ typedef struct {
      *  @dst:       *dst is pointer to a memory location, can point to NULL
      *  @ndst:      pointer to the size of allocated memory
      *
-     *  Returns negative value on error or the number of written values on
-     *  success. bcf_get_info_string() returns on success the number of
-     *  characters written excluding the null-terminating byte. bcf_get_info_flag()
-     *  returns 1 when flag is set or 0 if not.
+     *  Returns negative value on error or the number of written values
+     *  (including missing values) on success. bcf_get_info_string() returns
+     *  on success the number of characters written excluding the null-
+     *  terminating byte. bcf_get_info_flag() returns 1 when flag is set or 0
+     *  if not.
      *
      *  List of return codes:
      *      -1 .. no such INFO tag defined in the header
