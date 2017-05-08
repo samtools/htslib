@@ -15,6 +15,8 @@ This is primarily a security bug fix update.
 
 * Miscellaneous bug fixes (#482, #521, #522, #523, #524).
 
+* Sanitise headers (#509)
+
 
 Release 1.4 (13 March 2017)
 
