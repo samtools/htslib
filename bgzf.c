@@ -1670,7 +1670,7 @@ int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name)
     // for reading. The terminating record is not present when opened for writing.
     // This is not a bug.
 
-    int i, save_errno;
+    int i;
 
     if (!fp->idx) {
         hts_log_error("Called for BGZF handle with no index");
@@ -1689,9 +1689,7 @@ int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name)
     return 0;
 
  fail:
-    save_errno = errno;
     hts_log_error("Error writing to %s : %s", name ? name : "index", strerror(errno));
-    errno = save_errno;
     return -1;
 }
 
@@ -1700,7 +1698,6 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
     const char *name = bname, *msg = NULL;
     char *tmp = NULL;
     hFILE *idx = NULL;
-    int save_errno;
 
     if (!fp->idx) {
         hts_log_error("Called for BGZF handle with no index");
@@ -1734,13 +1731,11 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
     return 0;
 
  fail:
-    save_errno = errno;
     if (msg != NULL) {
         hts_log_error("%s %s : %s", msg, name, strerror(errno));
     }
     if (idx) hclose_abruptly(idx);
     free(tmp);
-    errno = save_errno;
     return -1;
 }
 
@@ -1753,7 +1748,6 @@ static inline int hread_uint64(uint64_t *xptr, hFILE *f)
 
 int bgzf_index_load_hfile(BGZF *fp, struct hFILE *idx, const char *name)
 {
-    int save_errno;
     fp->idx = (bgzidx_t*) calloc(1,sizeof(bgzidx_t));
     if (fp->idx == NULL) goto fail;
     uint64_t x;
@@ -1774,20 +1768,17 @@ int bgzf_index_load_hfile(BGZF *fp, struct hFILE *idx, const char *name)
     return 0;
 
  fail:
-    save_errno = errno;
     hts_log_error("Error reading %s : %s", name ? name : "index", strerror(errno));
     if (fp->idx) {
         free(fp->idx->offs);
         free(fp->idx);
         fp->idx = NULL;
     }
-    errno = save_errno;
     return -1;
 }
 
 int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
 {
-    int save_errno;
     const char *name = bname, *msg = NULL;
     char *tmp = NULL;
     hFILE *idx = NULL;
@@ -1816,13 +1807,11 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
     return 0;
 
  fail:
-    save_errno = errno;
     if (msg != NULL) {
         hts_log_error("%s %s : %s", msg, name, strerror(errno));
     }
     if (idx) hclose_abruptly(idx);
     free(tmp);
-    errno = save_errno;
     return -1;
 }
 
