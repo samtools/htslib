@@ -537,7 +537,7 @@ static int load_block_from_cache(BGZF *fp, int64_t block_address)
     if ( hseek(fp->fp, p->end_offset, SEEK_SET) < 0 )
     {
         // todo: move the error up
-        fprintf(stderr,"Could not hseek to %"PRId64"", p->end_offset);
+        hts_log_error("Could not hseek to %"PRId64"", p->end_offset);
         exit(1);
     }
     return p->size;
@@ -804,7 +804,7 @@ int bgzf_read_block(BGZF *fp)
         }
         size += count;
         if ((count = inflate_block(fp, block_length)) < 0) {
-            hts_log_warning("inflate_block error %d", count);
+            hts_log_debug("inflate_block error %d", count);
             fp->errcode |= BGZF_ERR_ZLIB;
             return -1;
         }
@@ -835,7 +835,7 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
         if (available <= 0) {
             int ret = bgzf_read_block(fp);
             if (ret != 0) {
-                hts_log_warning("bgzf_read_block error %d after %zd of %zu bytes", ret, bytes_read, length);
+                hts_log_error("bgzf_read_block error %d after %zd of %zu bytes", ret, bytes_read, length);
                 fp->errcode |= BGZF_ERR_ZLIB;
                 return -1;
             }
@@ -1673,7 +1673,7 @@ int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name)
     int i, save_errno;
 
     if (!fp->idx) {
-        hts_log_warning("Called for BGZF handle with no index");
+        hts_log_error("Called for BGZF handle with no index");
         errno = EINVAL;
         return -1;
     }
@@ -1690,7 +1690,7 @@ int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name)
 
  fail:
     save_errno = errno;
-    hts_log_warning("Error writing to %s : %s", name ? name : "index", strerror(errno));
+    hts_log_error("Error writing to %s : %s", name ? name : "index", strerror(errno));
     errno = save_errno;
     return -1;
 }
@@ -1703,7 +1703,7 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
     int save_errno;
 
     if (!fp->idx) {
-        hts_log_warning("Called for BGZF handle with no index");
+        hts_log_error("Called for BGZF handle with no index");
         errno = EINVAL;
         return -1;
     }
@@ -1736,7 +1736,7 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
  fail:
     save_errno = errno;
     if (msg != NULL) {
-        hts_log_warning("%s %s : %s", msg, name, strerror(errno));
+        hts_log_error("%s %s : %s", msg, name, strerror(errno));
     }
     if (idx) hclose_abruptly(idx);
     free(tmp);
@@ -1775,7 +1775,7 @@ int bgzf_index_load_hfile(BGZF *fp, struct hFILE *idx, const char *name)
 
  fail:
     save_errno = errno;
-    hts_log_warning("Error reading %s : %s", name ? name : "index", strerror(errno));
+    hts_log_error("Error reading %s : %s", name ? name : "index", strerror(errno));
     if (fp->idx) {
         free(fp->idx->offs);
         free(fp->idx);
@@ -1818,7 +1818,7 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
  fail:
     save_errno = errno;
     if (msg != NULL) {
-        hts_log_warning("%s %s : %s", msg, name, strerror(errno));
+        hts_log_error("%s %s : %s", msg, name, strerror(errno));
     }
     if (idx) hclose_abruptly(idx);
     free(tmp);
