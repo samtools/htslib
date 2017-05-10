@@ -50,7 +50,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
-int hts_verbose = 3;
+int hts_verbose = HTS_LOG_WARNING;
 
 const char *hts_version()
 {
@@ -2359,4 +2359,51 @@ size_t hts_realloc_or_die(size_t n, size_t m, size_t m_sz, size_t size,
     if (hts_verbose > 1)
         fprintf(stderr, "[E::%s] %s\n", func, strerror(errno));
     exit(1);
+}
+
+void hts_set_log_level(enum htsLogLevel level)
+{
+    hts_verbose = level;
+}
+
+enum htsLogLevel hts_get_log_level()
+{
+    return hts_verbose;
+}
+
+static char get_severity_tag(enum htsLogLevel severity)
+{
+    switch (severity) {
+    case HTS_LOG_ERROR:
+        return 'E';
+    case HTS_LOG_WARNING:
+        return 'W';
+    case HTS_LOG_INFO:
+        return 'I';
+    case HTS_LOG_DEBUG:
+        return 'D';
+    case HTS_LOG_TRACE:
+        return 'T';
+    default:
+        break;
+    }
+
+    return '*';
+}
+
+void hts_log(enum htsLogLevel severity, const char *context, const char *format, ...)
+{
+    int save_errno = errno;
+    if (severity <= hts_verbose) {
+        va_list argptr;
+
+        fprintf(stderr, "[%c::%s] ", get_severity_tag(severity), context);
+
+        va_start(argptr, format);
+        vfprintf(stderr, format, argptr);
+        va_end(argptr);
+
+        fprintf(stderr, "\n");
+    }
+    errno = save_errno;
 }

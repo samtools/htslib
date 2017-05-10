@@ -1,6 +1,10 @@
 Release a.b (future)
 --------------------
 
+* Added a new logging API: hts_log(), along with hts_log_error(),
+  hts_log_warn() etc. convenience macros.  Thanks go to Anders Kaplan
+  for the implementation. (#499)
+
 Noteworthy changes in release 1.4.1  (8th May 2017)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
