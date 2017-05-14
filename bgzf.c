@@ -809,7 +809,7 @@ int bgzf_read_block(BGZF *fp)
         }
         size += count;
         if ((count = inflate_block(fp, block_length)) < 0) {
-            hts_log_debug("Inflate block operation failed: %d", bgzf_zerr(count, NULL));
+            hts_log_debug("Inflate block operation failed: %s", bgzf_zerr(count, NULL));
             fp->errcode |= BGZF_ERR_ZLIB;
             return -1;
         }
@@ -1348,7 +1348,7 @@ int bgzf_flush(BGZF *fp)
         }
         block_length = deflate_block(fp, fp->block_offset);
         if (block_length < 0) {
-            hts_log_debug("Deflate block operation failed: %d", bgzf_zerr(block_length, NULL));
+            hts_log_debug("Deflate block operation failed: %s", bgzf_zerr(block_length, NULL));
             return -1;
         }
         if (hwrite(fp->fp, fp->compressed_block, block_length) != block_length) {
@@ -1434,7 +1434,7 @@ int bgzf_close(BGZF* fp)
         fp->compress_level = -1;
         block_length = deflate_block(fp, 0); // write an empty block
         if (block_length < 0) {
-            hts_log_debug("Deflate block operation failed: %d", bgzf_zerr(block_length, NULL));
+            hts_log_debug("Deflate block operation failed: %s", bgzf_zerr(block_length, NULL));
             return -1;
         }
         if (hwrite(fp->fp, fp->compressed_block, block_length) < 0

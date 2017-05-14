@@ -1066,18 +1066,13 @@ static int bcf_dec_size_safe(uint8_t *p, uint8_t *end, uint8_t **q,
     return *num >= 0 ? 0 : -1;
 }
 
-static void report_bad_id(const char *func, const char *rectype, int badval) {
-    hts_log_warning("Bad BCF record: Invalid %s id %d", func, rectype, badval);
-}
-
-static void report_bad_type(const char *func, const char *rectype, int type) {
+static const char *get_type_name(int type) {
     const char *types[9] = {
         "null", "int (8-bit)", "int (16 bit)", "int (32 bit)",
         "unknown", "float", "unknown", "char", "unknown"
     };
     int t = (type >= 0 && type < 8) ? type : 8;
-    hts_log_warning("Bad BCF record: Invalid %s type %d (%s)",
-        func, rectype, type, types[t]);
+    return types[t];
 }
 
 static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
@@ -1098,7 +1093,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
 
     // Check for valid contig ID
     if (rec->rid < 0 || rec->rid >= hdr->n[BCF_DT_CTG]) {
-        report_bad_id(__func__, "CONTIG", rec->rid);
+        hts_log_warning("Bad BCF record: Invalid %s id %d", "CONTIG", rec->rid);
         err |= BCF_ERR_CTG_INVALID;
     }
 
@@ -1107,7 +1102,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     end = ptr + rec->shared.l;
     if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
     if (type != BCF_BT_CHAR) {
-        report_bad_type(__func__, "ID", type);
+        hts_log_warning("Bad BCF record: Invalid %s type %d (%s)", "ID", type, get_type_name(type));
         err |= BCF_ERR_TAG_INVALID;
     }
     bytes = (size_t) num << bcf_type_shift[type];
@@ -1120,7 +1115,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
         if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
         if (type != BCF_BT_CHAR) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
-                report_bad_type(__func__, "REF/ALT", type);
+                hts_log_warning("Bad BCF record: Invalid %s type %d (%s)", "REF/ALT", type, get_type_name(type));
             err |= BCF_ERR_CHAR;
         }
         bytes = (size_t) num << bcf_type_shift[type];
@@ -1133,7 +1128,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
     if (num > 0) {
         if (((1 << type) & is_integer) == 0) {
-            report_bad_type(__func__, "FILTER", type);
+            hts_log_warning("Bad BCF record: Invalid %s type %d (%s)", "FILTER", type, get_type_name(type));
             err |= BCF_ERR_TAG_INVALID;
         }
         bytes = (size_t) num << bcf_type_shift[type];
@@ -1142,7 +1137,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             int32_t key = bcf_dec_int1(ptr, type, &ptr);
             if (key < 0 || key >= hdr->n[BCF_DT_ID]) {
                 if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
-                    report_bad_id(__func__, "FILTER", key);
+                    hts_log_warning("Bad BCF record: Invalid %s id %d", "FILTER", key);
                 err |= BCF_ERR_TAG_UNDEF;
             }
         }
@@ -1155,13 +1150,13 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
         if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) goto bad_shared;
         if (key < 0 || key >= hdr->n[BCF_DT_ID]) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
-                report_bad_id(__func__, "INFO", key);
+                hts_log_warning("Bad BCF record: Invalid %s id %d", "INFO", key);
             err |= BCF_ERR_TAG_UNDEF;
         }
         if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
         if (((1 << type) & is_valid_type) == 0) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
-                report_bad_type(__func__, "INFO", type);
+                hts_log_warning("Bad BCF record: Invalid %s type %d (%s)", "INFO", type, get_type_name(type));
             err |= BCF_ERR_TAG_INVALID;
         }
         bytes = (size_t) num << bcf_type_shift[type];
@@ -1178,13 +1173,13 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
         if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) goto bad_indiv;
         if (key < 0 || key >= hdr->n[BCF_DT_ID]) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
-                report_bad_id(__func__, "FORMAT", key);
+                hts_log_warning("Bad BCF record: Invalid %s id %d", "FORMAT", key);
             err |= BCF_ERR_TAG_UNDEF;
         }
         if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_indiv;
         if (((1 << type) & is_valid_type) == 0) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
-                report_bad_type(__func__, "FORMAT", type);
+                hts_log_warning("Bad BCF record: Invalid %s type %d (%s)", "FORMAT", type, get_type_name(type));
             err |= BCF_ERR_TAG_INVALID;
         }
         bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
