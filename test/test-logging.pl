@@ -60,7 +60,10 @@ sub check_file
   {
     if ($line =~ /hts_log_\w+\s*\(\s*(\"[^\"]*\")/)
     {
-      check_log_message($1, $filename, $line_num);
+      unless ($line =~ /\\n\"\s*$/) # string constant continues on next line
+      {
+        check_log_message($1, $filename, $line_num);
+      }
     }
 
     $line_num++;

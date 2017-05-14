@@ -761,16 +761,12 @@ static int init_add_plugin(void *obj, int (*init)(struct hFILE_plugin *),
     int ret = (*init)(&p->plugin);
 
     if (ret != 0) {
-        if (hts_verbose >= 4)
-            fprintf(stderr, "[W::load_hfile_plugins] "
-                    "initialisation failed for plugin \"%s\": %d\n",
-                    pluginname, ret);
+        hts_log_debug("initialisation failed for plugin \"%s\": %d", pluginname, ret);
         free(p);
         return ret;
     }
 
-    if (hts_verbose >= 5)
-        fprintf(stderr, "[M::load_hfile_plugins] loaded \"%s\"\n", pluginname);
+    hts_log_debug("loaded \"%s\"", pluginname);
 
     p->next = plugins, plugins = p;
     return 0;

@@ -610,7 +610,7 @@ int hts_idx_set_meta(hts_idx_t *idx, uint32_t l_meta, uint8_t *meta, int is_copy
     @param flags   Or'ed-together combination of HTS_PARSE_* flags
     @return  Converted value of the parsed number.
 
-    When @a strend is NULL, a warning will be printed (if hts_verbose is 2
+    When @a strend is NULL, a warning will be printed (if hts_verbose is HTS_LOG_WARNING
     or more) if there are any trailing characters after the number.
 */
 long long hts_parse_decimal(const char *str, char **strend, int flags);
