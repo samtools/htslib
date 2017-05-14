@@ -653,7 +653,7 @@ int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt)
         if ( strncmp("#CHROM\tPOS",p,10) != 0 ) {
             char *eol = strchr(p, '\n');
             if (*p != '\0') {
-                hts_log_warning("Couldn't parse header line: %.*s",
+                hts_log_warning("Could not parse header line: %.*s",
                     eol ? (int)(eol - p) : INT_MAX, p);
             }
             if (eol) {
@@ -888,9 +888,9 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     if (strncmp((char*)magic, "BCF\2\2", 5) != 0)
     {
         if (!strncmp((char*)magic, "BCF", 3))
-            hts_log_error("invalid BCF2 magic string: only BCFv2.2 is supported");
+            hts_log_error("Invalid BCF2 magic string: only BCFv2.2 is supported");
         else
-            hts_log_error("invalid BCF2 magic string");
+            hts_log_error("Invalid BCF2 magic string");
         bcf_hdr_destroy(h);
         return NULL;
     }
@@ -908,7 +908,7 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     free(htxt);
     return h;
  fail:
-    hts_log_error("failed to read BCF header");
+    hts_log_error("Failed to read BCF header");
     free(htxt);
     bcf_hdr_destroy(h);
     return NULL;
@@ -1534,7 +1534,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
     while ((ret = hts_getline(fp, KS_SEP_LINE, s)) >= 0) {
         if (s->l == 0) continue;
         if (s->s[0] != '#') {
-            hts_log_error("no sample line");
+            hts_log_error("No sample line");
             goto error;
         }
         if (s->s[1] != '#' && fp->fn_aux) { // insert contigs here
@@ -1553,7 +1553,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
             }
             free(tmp.s);
             if (hclose(f) != 0) {
-                hts_log_warning("closing %s failed", fp->fn_aux);
+                hts_log_warning("Failed to close %s", fp->fn_aux);
             }
         }
         kputsn(s->s, s->l, &txt);
@@ -2164,7 +2164,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             {
                 // Simple error recovery for chromosomes not defined in the header. It will not help when VCF header has
                 // been already printed, but will enable tools like vcfcheck to proceed.
-                hts_log_warning("contig '%s' is not defined in the header. (Quick workaround: index the file with tabix.)", p);
+                hts_log_warning("Contig '%s' is not defined in the header. (Quick workaround: index the file with tabix.)", p);
                 kstring_t tmp = {0,0,0};
                 int l;
                 ksprintf(&tmp, "##contig=<ID=%s>", p);

@@ -431,7 +431,7 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     return fp;
 
 error:
-    hts_log_error("fail to open file %s", fn);
+    hts_log_error("Failed to open file %s", fn);
 
     if (hfile)
         hclose_abruptly(hfile);
@@ -874,7 +874,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
     return fp;
 
 error:
-    hts_log_error("fail to open file %s", fn);
+    hts_log_error("Failed to open file %s", fn);
 
     // If redirecting, close the failed redirection hFILE that we have opened
     if (hfile != hfile_orig) hclose_abruptly(hfile);
@@ -1476,13 +1476,13 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
         }
         if (tid>=0 && idx->bidx[tid] != 0)
         {
-            hts_log_error("chromosome blocks not continuous");
+            hts_log_error("Chromosome blocks not continuous");
             return -1;
         }
         idx->z.last_tid = tid;
         idx->z.last_bin = 0xffffffffu;
     } else if (tid >= 0 && idx->z.last_coor > beg) { // test if positions are out of order
-        hts_log_error("unsorted positions on sequence #%d: %d followed by %d", tid+1, idx->z.last_coor+1, beg+1);
+        hts_log_error("Unsorted positions on sequence #%d: %d followed by %d", tid+1, idx->z.last_coor+1, beg+1);
         return -1;
     }
     if ( tid>=0 )
@@ -2110,13 +2110,13 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
     while (e < 0) lost += n % 10, n /= 10, e++;
 
     if (lost > 0) {
-        hts_log_warning("discarding fractional part of %.*s", (int)(s - str), str);
+        hts_log_warning("Discarding fractional part of %.*s", (int)(s - str), str);
     }
 
     if (strend) {
         *strend = (char *)s;
     } else if (*s) {
-        hts_log_warning("ignoring unknown characters after %.*s[%s]", (int)(s - str), str, s);
+        hts_log_warning("Ignoring unknown characters after %.*s[%s]", (int)(s - str), str, s);
     }
 
     return (sign == '+')? n : -n;
@@ -2242,17 +2242,17 @@ static char *test_and_fetch(const char *fn)
         // Attempt to open remote file. Stay quiet on failure, it is OK to fail when trying first .csi then .tbi index.
         if ((fp_remote = hopen(fn, "r")) == 0) return 0;
         if ((fp = fopen(p, "w")) == 0) {
-            hts_log_error("fail to create file %s in the working directory", p);
+            hts_log_error("Failed to create file %s in the working directory", p);
             hclose_abruptly(fp_remote);
             return 0;
         }
-        hts_log_info("downloading file %s to local directory", fn);
+        hts_log_info("Downloading file %s to local directory", fn);
         buf = (uint8_t*)calloc(buf_size, 1);
         while ((l = hread(fp_remote, buf, buf_size)) > 0) fwrite(buf, 1, l, fp);
         free(buf);
         fclose(fp);
         if (hclose(fp_remote) != 0) {
-            hts_log_error("fail to close remote file %s", fn);
+            hts_log_error("Failed to close remote file %s", fn);
         }
         return (char*)p;
     } else {
@@ -2355,7 +2355,7 @@ size_t hts_realloc_or_die(size_t n, size_t m, size_t m_sz, size_t size,
     return new_m;
 
  die:
-    hts_log_error(strerror(errno));
+    hts_log_error("%s", strerror(errno));
     exit(1);
 }
 

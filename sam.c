@@ -135,7 +135,7 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     // read "BAM1"
     magic_len = bgzf_read(fp, buf, 4);
     if (magic_len != 4 || strncmp(buf, "BAM\1", 4)) {
-        hts_log_error("invalid BAM binary header");
+        hts_log_error("Invalid BAM binary header");
         return 0;
     }
     h = bam_hdr_init();
@@ -203,19 +203,19 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     return h;
 
  nomem:
-    hts_log_error("out of memory");
+    hts_log_error("Out of memory");
     goto clean;
 
  read_err:
     if (bytes < 0) {
-        hts_log_error("error reading BGZF stream");
+        hts_log_error("Error reading BGZF stream");
     } else {
-        hts_log_error("truncated bam header");
+        hts_log_error("Truncated BAM header");
     }
     goto clean;
 
  invalid:
-    hts_log_error("invalid BAM binary header");
+    hts_log_error("Invalid BAM binary header");
 
  clean:
     if (h != NULL) {
@@ -426,7 +426,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     uint32_t x[8], block_len = b->l_data - c->l_extranul + 32, y;
     int i, ok;
     if (c->n_cigar >= 65536) {
-        hts_log_error("too many CIGAR operations (%d >= 64K for QNAME \"%s\")", c->n_cigar, bam_get_qname(b));
+        hts_log_error("Too many CIGAR operations (%d >= 64K for QNAME \"%s\")", c->n_cigar, bam_get_qname(b));
         errno = EOVERFLOW;
         return -1;
     }
@@ -722,7 +722,7 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
                 int absent;
                 k = kh_put(s2i, d, sn, &absent);
                 if (!absent) {
-                    hts_log_warning("duplicated sequence '%s'", sn);
+                    hts_log_warning("Duplicated sequence '%s'", sn);
                     free(sn);
                 } else kh_val(d, k) = (int64_t)(kh_size(d) - 1)<<32 | ln;
             }
@@ -840,7 +840,7 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
             }
             free(line.s);
             if (hclose(f) != 0) {
-                hts_log_warning("closing %s failed", fp->fn_aux);
+                hts_log_warning("Failed to close %s", fp->fn_aux);
             }
         }
         if (str.l == 0) kputsn("", 0, &str);
@@ -1177,7 +1177,7 @@ err_recover:
         ret = sam_parse1(&fp->line, h, b);
         fp->line.l = 0;
         if (ret < 0) {
-            hts_log_warning("parse error at line %lld", (long long)fp->lineno);
+            hts_log_warning("Parse error at line %lld", (long long)fp->lineno);
             if (h->ignore_sam_err) goto err_recover;
         }
         return ret;
@@ -1528,7 +1528,7 @@ int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data)
     }
     char type = *s;
     if (type != 'Z') {
-        hts_log_error("bam_aux_update_str() called for type '%c' instead of 'Z'", type);
+        hts_log_error("Called bam_aux_update_str for type '%c' instead of 'Z'", type);
         errno = EINVAL;
         return -1;
     }

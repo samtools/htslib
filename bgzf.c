@@ -261,7 +261,7 @@ static BGZF *bgzf_write_init(const char *mode)
 
         int ret = deflateInit2(fp->gz_stream, fp->compress_level, Z_DEFLATED, 15|16, 8, Z_DEFAULT_STRATEGY);
         if (ret!=Z_OK) {
-            hts_log_error("deflateInit2 failed: %s", bgzf_zerr(ret, fp->gz_stream));
+            hts_log_error("Call to deflateInit2 failed: %s", bgzf_zerr(ret, fp->gz_stream));
             goto fail;
         }
     }
@@ -358,15 +358,15 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
     zs.avail_out = *dlen - BLOCK_HEADER_LENGTH - BLOCK_FOOTER_LENGTH;
     int ret = deflateInit2(&zs, level, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY); // -15 to disable zlib header/footer
     if (ret!=Z_OK) {
-        hts_log_error("deflateInit2 failed: %s", bgzf_zerr(ret, &zs));
+        hts_log_error("Call to deflateInit2 failed: %s", bgzf_zerr(ret, &zs));
         return -1;
     }
     if ((ret = deflate(&zs, Z_FINISH)) != Z_STREAM_END) {
-        hts_log_error("deflate failed: %s", bgzf_zerr(ret, ret == Z_DATA_ERROR ? &zs : NULL));
+        hts_log_error("Deflate operation failed: %s", bgzf_zerr(ret, ret == Z_DATA_ERROR ? &zs : NULL));
         return -1;
     }
     if ((ret = deflateEnd(&zs)) != Z_OK) {
-        hts_log_error("deflateEnd failed: %s", bgzf_zerr(ret, NULL));
+        hts_log_error("Call to deflateEnd failed: %s", bgzf_zerr(ret, NULL));
         return -1;
     }
     *dlen = zs.total_out + BLOCK_HEADER_LENGTH + BLOCK_FOOTER_LENGTH;
@@ -391,11 +391,11 @@ static int bgzf_gzip_compress(BGZF *fp, void *_dst, size_t *dlen, const void *sr
     zs->avail_out = *dlen;
     int ret = deflate(zs, flush);
     if (ret == Z_STREAM_ERROR) {
-        hts_log_error("deflate failed: %s", bgzf_zerr(ret, NULL));
+        hts_log_error("Deflate operation failed: %s", bgzf_zerr(ret, NULL));
         return -1;
     }
     if (zs->avail_in != 0) {
-        hts_log_error("deflate block too large for output buffer");
+        hts_log_error("Deflate block too large for output buffer");
         return -1;
     }
     *dlen = *dlen - zs->avail_out;
@@ -414,7 +414,7 @@ static int deflate_block(BGZF *fp, int block_length)
 
     if ( ret != 0 )
     {
-        hts_log_debug("compression error %d", ret);
+        hts_log_debug("Compression error %d", ret);
         fp->errcode |= BGZF_ERR_ZLIB;
         return -1;
     }
@@ -434,18 +434,18 @@ static int bgzf_uncompress(uint8_t *dst, size_t *dlen, const uint8_t *src, size_
 
     int ret = inflateInit2(&zs, -15);
     if (ret != Z_OK) {
-        hts_log_error("inflateInit2 failed: %s", bgzf_zerr(ret, &zs));
+        hts_log_error("Call to inflateInit2 failed: %s", bgzf_zerr(ret, &zs));
         return -1;
     }
     if ((ret = inflate(&zs, Z_FINISH)) != Z_STREAM_END) {
-        hts_log_error("inflate failed: %s", bgzf_zerr(ret, ret == Z_DATA_ERROR ? &zs : NULL));
+        hts_log_error("Inflate operation failed: %s", bgzf_zerr(ret, ret == Z_DATA_ERROR ? &zs : NULL));
         if ((ret = inflateEnd(&zs)) != Z_OK) {
-            hts_log_warning("inflateEnd failed: %s", bgzf_zerr(ret, NULL));
+            hts_log_warning("Call to inflateEnd failed: %s", bgzf_zerr(ret, NULL));
         }
         return -1;
     }
     if ((ret = inflateEnd(&zs)) != Z_OK) {
-        hts_log_error("inflateEnd failed: %s", bgzf_zerr(ret, NULL));
+        hts_log_error("Call to inflateEnd failed: %s", bgzf_zerr(ret, NULL));
         return -1;
     }
     *dlen = *dlen - zs.avail_out;
@@ -486,7 +486,7 @@ static int inflate_gzip_block(BGZF *fp, int cached)
             fp->gz_stream->msg = NULL;
             ret = inflate(fp->gz_stream, Z_NO_FLUSH);
             if (ret < 0 && ret != Z_BUF_ERROR) {
-                hts_log_error("inflate failed: %s", bgzf_zerr(ret, ret == Z_DATA_ERROR ? fp->gz_stream : NULL));
+                hts_log_error("Inflate operation failed: %s", bgzf_zerr(ret, ret == Z_DATA_ERROR ? fp->gz_stream : NULL));
                 fp->errcode |= BGZF_ERR_ZLIB;
                 return -1;
             }
@@ -775,7 +775,7 @@ int bgzf_read_block(BGZF *fp)
             int ret = inflateInit2(fp->gz_stream, -15);
             if (ret != Z_OK)
             {
-                hts_log_error("inflateInit2 failed: %s", bgzf_zerr(ret, fp->gz_stream));
+                hts_log_error("Call to inflateInit2 failed: %s", bgzf_zerr(ret, fp->gz_stream));
                 fp->errcode |= BGZF_ERR_ZLIB;
                 return -1;
             }
@@ -809,7 +809,7 @@ int bgzf_read_block(BGZF *fp)
         }
         size += count;
         if ((count = inflate_block(fp, block_length)) < 0) {
-            hts_log_debug("inflate_block error %d", count);
+            hts_log_debug("Inflate block operation failed: %d", bgzf_zerr(count, NULL));
             fp->errcode |= BGZF_ERR_ZLIB;
             return -1;
         }
@@ -840,7 +840,7 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
         if (available <= 0) {
             int ret = bgzf_read_block(fp);
             if (ret != 0) {
-                hts_log_error("bgzf_read_block error %d after %zd of %zu bytes", ret, bytes_read, length);
+                hts_log_error("Read block operation failed with error %d after %zd of %zu bytes", ret, bytes_read, length);
                 fp->errcode |= BGZF_ERR_ZLIB;
                 return -1;
             }
@@ -1348,11 +1348,11 @@ int bgzf_flush(BGZF *fp)
         }
         block_length = deflate_block(fp, fp->block_offset);
         if (block_length < 0) {
-            hts_log_debug("deflate_block error %d", block_length);
+            hts_log_debug("Deflate block operation failed: %d", bgzf_zerr(block_length, NULL));
             return -1;
         }
         if (hwrite(fp->fp, fp->compressed_block, block_length) != block_length) {
-            hts_log_error("hwrite error (wrong size)");
+            hts_log_error("File write failed (wrong size)");
             fp->errcode |= BGZF_ERR_IO; // possibly truncated file
             return -1;
         }
@@ -1434,12 +1434,12 @@ int bgzf_close(BGZF* fp)
         fp->compress_level = -1;
         block_length = deflate_block(fp, 0); // write an empty block
         if (block_length < 0) {
-            hts_log_debug("deflate_block error %d", block_length);
+            hts_log_debug("Deflate block operation failed: %d", bgzf_zerr(block_length, NULL));
             return -1;
         }
         if (hwrite(fp->fp, fp->compressed_block, block_length) < 0
             || hflush(fp->fp) != 0) {
-            hts_log_error("file write error");
+            hts_log_error("File write failed");
             fp->errcode |= BGZF_ERR_IO;
             return -1;
         }
@@ -1457,7 +1457,7 @@ int bgzf_close(BGZF* fp)
         else if (!fp->is_write) ret = inflateEnd(fp->gz_stream);
         else ret = deflateEnd(fp->gz_stream);
         if (ret != Z_OK) {
-            hts_log_error("inflateEnd/deflateEnd failed: %s", bgzf_zerr(ret, NULL));
+            hts_log_error("Call to inflateEnd/deflateEnd failed: %s", bgzf_zerr(ret, NULL));
         }
         free(fp->gz_stream);
     }

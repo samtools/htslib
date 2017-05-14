@@ -761,12 +761,12 @@ static int init_add_plugin(void *obj, int (*init)(struct hFILE_plugin *),
     int ret = (*init)(&p->plugin);
 
     if (ret != 0) {
-        hts_log_debug("initialisation failed for plugin \"%s\": %d", pluginname, ret);
+        hts_log_debug("Initialisation failed for plugin \"%s\": %d", pluginname, ret);
         free(p);
         return ret;
     }
 
-    hts_log_debug("loaded \"%s\"", pluginname);
+    hts_log_debug("Loaded \"%s\"", pluginname);
 
     p->next = plugins, plugins = p;
     return 0;

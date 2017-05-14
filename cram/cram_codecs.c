@@ -1716,7 +1716,7 @@ cram_codec *cram_byte_array_stop_decode_init(char *data, int size,
         c->decode = cram_byte_array_stop_decode_char;
 	break;
     default:
-        hts_log_error("byte_array_stop codec only supports BYTE_ARRAYs");
+        hts_log_error("The byte_array_stop codec only supports BYTE_ARRAYs");
         free(c);
         return NULL;
     }

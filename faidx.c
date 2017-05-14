@@ -219,7 +219,7 @@ static faidx_t *fai_read(hFILE *fp, const char *fname)
         }
         n = sscanf(p, "%"SCNd64"%"SCNu64"%d%d", &len, &offset, &line_blen, &line_len);
         if (n != 4) {
-            hts_log_error("couldn't understand FAI %s line %zd", fname, lnum);
+            hts_log_error("Could not understand FAI %s line %zd", fname, lnum);
             goto fail;
         }
         if (fai_insert_index(fai, buf, len, line_len, line_blen, offset) != 0) {
@@ -229,7 +229,7 @@ static faidx_t *fai_read(hFILE *fp, const char *fname)
     }
 
     if (l < 0) {
-        hts_log_error("error while reading %s: %s", fname, strerror(errno));
+        hts_log_error("Error while reading %s: %s", fname, strerror(errno));
         goto fail;
     }
     free(buf);
@@ -272,12 +272,12 @@ int fai_build3(const char *fn, const char *fnfai, const char *fngzi)
 
     bgzf = bgzf_open(fn, "r");
     if ( !bgzf ) {
-        hts_log_error("fail to open the FASTA file %s", fn);
+        hts_log_error("Failed to open the FASTA file %s", fn);
         goto fail;
     }
     if ( bgzf->is_compressed ) {
         if (bgzf_index_build_init(bgzf) != 0) {
-            hts_log_error("fail to allocate bgzf index");
+            hts_log_error("Failed to allocate bgzf index");
             goto fail;
         }
     }
@@ -290,7 +290,7 @@ int fai_build3(const char *fn, const char *fnfai, const char *fngzi)
     }
     if ( bgzf->is_compressed ) {
         if (bgzf_index_dump(bgzf, fngzi, NULL) < 0) {
-            hts_log_error("fail to make bgzf index %s", fngzi);
+            hts_log_error("Failed to make bgzf index %s", fngzi);
             goto fail;
         }
     }
@@ -302,15 +302,15 @@ int fai_build3(const char *fn, const char *fnfai, const char *fngzi)
     }
     fp = hopen(fnfai, "wb");
     if ( !fp ) {
-        hts_log_error("fail to open FASTA index %s : %s", fnfai, strerror(errno));
+        hts_log_error("Failed to open FASTA index %s : %s", fnfai, strerror(errno));
         goto fail;
     }
     if (fai_save(fai, fp) != 0) {
-        hts_log_error("fail to write FASTA index %s : %s", fnfai, strerror(errno));
+        hts_log_error("Failed to write FASTA index %s : %s", fnfai, strerror(errno));
         goto fail;
     }
     if (hclose(fp) != 0) {
-        hts_log_error("fail on closing FASTA index %s : %s", fnfai, strerror(errno));
+        hts_log_error("Failed on closing FASTA index %s : %s", fnfai, strerror(errno));
         goto fail;
     }
 
@@ -358,11 +358,11 @@ faidx_t *fai_load3(const char *fn, const char *fnfai, const char *fngzi,
 
     if (fp == 0) {
         if (!(flags & FAI_CREATE) || errno != ENOENT) {
-            hts_log_error("failed to open FASTA index %s: %s", fnfai, strerror(errno));
+            hts_log_error("Failed to open FASTA index %s: %s", fnfai, strerror(errno));
             goto fail;
         }
 
-        hts_log_info("build FASTA index");
+        hts_log_info("Build FASTA index");
 
         if (fai_build3(fn, fnfai, fngzi) < 0) {
             goto fail;
@@ -370,32 +370,32 @@ faidx_t *fai_load3(const char *fn, const char *fnfai, const char *fngzi,
 
         fp = hopen(fnfai, "rb");
         if (fp == 0) {
-            hts_log_error("failed to open FASTA index %s: %s", fnfai, strerror(errno));
+            hts_log_error("Failed to open FASTA index %s: %s", fnfai, strerror(errno));
             goto fail;
         }
     }
 
     fai = fai_read(fp, fnfai);
     if (fai == NULL) {
-        hts_log_error("failed to read FASTA index %s", fnfai);
+        hts_log_error("Failed to read FASTA index %s", fnfai);
         goto fail;
     }
 
     res = hclose(fp);
     fp = NULL;
     if (res < 0) {
-        hts_log_error("fail on closing FASTA index %s : %s", fnfai, strerror(errno));
+        hts_log_error("Failed on closing FASTA index %s : %s", fnfai, strerror(errno));
         goto fail;
     }
 
     fai->bgzf = bgzf_open(fn, "rb");
     if (fai->bgzf == 0) {
-        hts_log_error("fail to open FASTA file %s", fn);
+        hts_log_error("Failed to open FASTA file %s", fn);
         goto fail;
     }
     if ( fai->bgzf->is_compressed==1 ) {
         if ( bgzf_index_load(fai->bgzf, fngzi, NULL) < 0 ) {
-            hts_log_error("failed to load .gzi index: %s", fngzi);
+            hts_log_error("Failed to load .gzi index: %s", fngzi);
             goto fail;
         }
     }
@@ -428,7 +428,7 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
 
     if (ret < 0) {
         *len = -1;
-        hts_log_error("fai_fetch failed. (Seeking in a compressed, .gzi unindexed, file?)");
+        hts_log_error("Failed to retrieve block. (Seeking in a compressed, .gzi unindexed, file?)");
         return NULL;
     }
 
@@ -442,7 +442,7 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
     while ( l < end - beg && (c=bgzf_getc(fai->bgzf))>=0 )
         if (isgraph(c)) s[l++] = c;
     if (c < 0) {
-        hts_log_error("fai_fetch failed : %s",
+        hts_log_error("Failed to retrieve block: %s",
             c == -1 ? "unexpected end of file" : "error reading file");
         free(s);
         *len = -1;

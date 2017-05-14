@@ -78,7 +78,7 @@ open_next:
     if (fp->currentfp == NULL) {
         if (fp->current < fp->nparts) {
             const hfile_part *p = &fp->parts[fp->current];
-            hts_log_debug("opening part #%zu of %zu: \"%.120s%s\"",
+            hts_log_debug("Opening part #%zu of %zu: \"%.120s%s\"",
                 fp->current+1, fp->nparts, p->url,
                 (strlen(p->url) > 120)? "..." : "");
 

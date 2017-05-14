@@ -188,7 +188,7 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
                 if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
                 if ( bcf_gt_is_missing(p[ial]) ) continue; /* missing allele */ \
                 if ( (p[ial]>>1)-1 >= line->n_allele ) { \
-                    hts_log_error("allele index is out of bounds at %s:%d", header->id[BCF_DT_CTG][line->rid].key, line->pos+1); \
+                    hts_log_error("Allele index is out of bounds at %s:%d", header->id[BCF_DT_CTG][line->rid].key, line->pos+1); \
                     ret = -1; \
                     goto clean; \
                 } \
