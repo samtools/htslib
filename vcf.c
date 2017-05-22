@@ -500,10 +500,19 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
             if (var != BCF_VL_FIXED) num = 0xfffff;
         }
     }
-    if (strcmp(hrec->key, "INFO") == 0 && type == -1) {
-        if (hts_verbose >= 2)
-            fprintf(stderr, "[E::%s] An INFO field has no Type defined. Assuming String\n", __func__);
-        type = BCF_HT_STR;
+    if (hrec->type == BCF_HL_INFO || hrec->type == BCF_HL_FMT) {
+        if (type == -1) {
+            if (hts_verbose >= 2)
+                fprintf(stderr, "[E::%s] A%s %s field has no Type defined. Assuming String\n",
+                        __func__, "n" + (*hrec->key != 'I'), hrec->key);
+            type = BCF_HT_STR;
+        }
+        if (var == -1) {
+            if (hts_verbose >= 2)
+                fprintf(stderr, "[E::%s] A%s %s field has no Number defined. Assuming '.'\n",
+                        __func__, "n" + (*hrec->key != 'I'), hrec->key);
+            var = BCF_VL_VAR;
+        }
     }
     uint32_t info = ((((uint32_t)num) & 0xfffff)<<12 |
                      (var & 0xf) << 8 |
