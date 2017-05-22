@@ -875,6 +875,11 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
 
 int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 {
+    if (!h) {
+        errno = EINVAL;
+        return -1;
+    }
+
     switch (fp->format.format) {
     case binary_format:
         fp->format.category = sequence_data;

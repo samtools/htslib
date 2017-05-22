@@ -940,6 +940,10 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
 
 int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
 {
+    if (!h) {
+        errno = EINVAL;
+        return -1;
+    }
     if ( h->dirty ) bcf_hdr_sync(h);
     if (hfp->format.format == vcf || hfp->format.format == text_format)
         return vcf_hdr_write(hfp, h);
