@@ -500,6 +500,11 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
             if (var != BCF_VL_FIXED) num = 0xfffff;
         }
     }
+    if (strcmp(hrec->key, "INFO") == 0 && type == -1) {
+        if (hts_verbose >= 2)
+            fprintf(stderr, "[E::%s] An INFO field has no Type defined. Assuming String\n", __func__);
+        type = BCF_HT_STR;
+    }
     uint32_t info = ((((uint32_t)num) & 0xfffff)<<12 |
                      (var & 0xf) << 8 |
                      (type & 0xf) << 4 |
@@ -2533,6 +2538,11 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             if ( !z->vptr ) continue;
             if ( !first ) kputc(';', s);
             first = 0;
+            if (z->key >= h->n[BCF_DT_ID]) {
+                fprintf(stderr, "[E::%s] invalid BCF, the INFO index is too large.\n", __func__);
+                errno = EINVAL;
+                return -1;
+            }
             kputs(h->id[BCF_DT_ID][z->key].key, s);
             if (z->len <= 0) continue;
             kputc('=', s);
@@ -2612,7 +2622,8 @@ int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
     int ret;
     fp->line.l = 0;
-    vcf_format1(h, v, &fp->line);
+    if (vcf_format1(h, v, &fp->line) != 0)
+        return -1;
     if ( fp->format.compression!=no_compression )
         ret = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
     else
