@@ -1333,8 +1333,8 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 
  bad_aux:
     if (hts_verbose >= 1) {
-        fprintf(stderr, "[E::%s] Corrupted aux data for read %s\n",
-                __func__, bam_get_qname(b));
+        fprintf(stderr, "[E::%s] Corrupted aux data for read %.*s\n",
+                __func__, b->core.l_qname, bam_get_qname(b));
     }
     errno = EINVAL;
     return -1;
