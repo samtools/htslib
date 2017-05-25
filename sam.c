@@ -404,14 +404,18 @@ int bam_read1(BGZF *fp, bam1_t *b)
     c->mtid = x[5]; c->mpos = x[6]; c->isize = x[7];
     b->l_data = block_len - 32 + c->l_extranul;
     if (b->l_data < 0 || c->l_qseq < 0 || c->l_qname < 1) return -4;
-    if ((char *)bam_get_aux(b) - (char *)b->data > b->l_data)
+    if (((uint64_t) c->n_cigar << 2) + c->l_qname + c->l_extranul
+        + (((uint64_t) c->l_qseq + 1) >> 1) + c->l_qseq > (uint64_t) b->l_data)
         return -4;
     if (b->m_data < b->l_data) {
-        b->m_data = b->l_data;
-        kroundup32(b->m_data);
-        b->data = (uint8_t*)realloc(b->data, b->m_data);
-        if (!b->data)
+        uint8_t *new_data;
+        uint32_t new_m = b->l_data;
+        kroundup32(new_m);
+        new_data = (uint8_t*)realloc(b->data, new_m);
+        if (!new_data)
             return -4;
+        b->data = new_data;
+        b->m_data = new_m;
     }
     if (bgzf_read(fp, b->data, c->l_qname) != c->l_qname) return -4;
     for (i = 0; i < c->l_extranul; ++i) b->data[c->l_qname+i] = '\0';
