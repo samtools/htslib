@@ -749,8 +749,8 @@ cram_codec *cram_subexp_decode_init(char *data, int size,
     cram_codec *c;
     char *cp = data;
 
-    if (option == E_BYTE_ARRAY_BLOCK) {
-	fprintf(stderr, "BYTE_ARRAYs not supported by this codec\n");
+    if (option != E_INT) {
+	fprintf(stderr, "This codec only supports INT encodings\n");
 	return NULL;
     }
 
@@ -815,8 +815,8 @@ cram_codec *cram_gamma_decode_init(char *data, int size,
     cram_codec *c = NULL;
     char *cp = data;
 
-    if (option == E_BYTE_ARRAY_BLOCK) {
-	fprintf(stderr, "BYTE_ARRAYs not supported by this codec\n");
+    if (option != E_INT) {
+	fprintf(stderr, "This codec only supports INT encodings\n");
 	return NULL;
     }
 
