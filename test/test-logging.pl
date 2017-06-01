@@ -33,6 +33,13 @@ sub check_log_message
   my ($message, $filename, $line_num) = @_;
   $log_message_count++;
 
+  unless ($message =~ /^\"([A-Z]|%s)/)
+  {
+    print "$filename line $line_num:\n";
+    print "Log message should begin with a capital letter: $message.\n";
+    $failure_count++;
+  }
+
   if ($message =~ /\\n\"$/)
   {
     print "$filename line $line_num:\n";
@@ -60,7 +67,10 @@ sub check_file
   {
     if ($line =~ /hts_log_\w+\s*\(\s*(\"[^\"]*\")/)
     {
-      check_log_message($1, $filename, $line_num);
+      unless ($line =~ /\\n\"\s*$/) # string constant continues on next line
+      {
+        check_log_message($1, $filename, $line_num);
+      }
     }
 
     $line_num++;

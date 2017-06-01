@@ -431,8 +431,7 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     return fp;
 
 error:
-    if (hts_verbose >= 2)
-        fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
+    hts_log_error("Failed to open file %s", fn);
 
     if (hfile)
         hclose_abruptly(hfile);
@@ -875,8 +874,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
     return fp;
 
 error:
-    if (hts_verbose >= 2)
-        fprintf(stderr, "[E::%s] fail to open file '%s'\n", __func__, fn);
+    hts_log_error("Failed to open file %s", fn);
 
     // If redirecting, close the failed redirection hFILE that we have opened
     if (hfile != hfile_orig) hclose_abruptly(hfile);
@@ -1473,18 +1471,18 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
     if (idx->z.last_tid != tid || (idx->z.last_tid >= 0 && tid < 0)) { // change of chromosome
         if ( tid>=0 && idx->n_no_coor )
         {
-            if (hts_verbose >= 1) fprintf(stderr,"[E::%s] NO_COOR reads not in a single block at the end %d %d\n", __func__, tid,idx->z.last_tid);
+            hts_log_error("NO_COOR reads not in a single block at the end %d %d", tid, idx->z.last_tid);
             return -1;
         }
         if (tid>=0 && idx->bidx[tid] != 0)
         {
-            if (hts_verbose >= 1) fprintf(stderr, "[E::%s] chromosome blocks not continuous\n", __func__);
+            hts_log_error("Chromosome blocks not continuous");
             return -1;
         }
         idx->z.last_tid = tid;
         idx->z.last_bin = 0xffffffffu;
     } else if (tid >= 0 && idx->z.last_coor > beg) { // test if positions are out of order
-        if (hts_verbose >= 1) fprintf(stderr, "[E::%s] unsorted positions on sequence #%d: %d followed by %d\n", __func__, tid+1, idx->z.last_coor+1, beg+1);
+        hts_log_error("Unsorted positions on sequence #%d: %d followed by %d", tid+1, idx->z.last_coor+1, beg+1);
         return -1;
     }
     if ( tid>=0 )
@@ -1533,21 +1531,19 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
             s <<= 3;
         }
 
-        if (hts_verbose >= 1) {
-            if (idx->fmt == HTS_FMT_CSI) {
-                fprintf(stderr,
-                        "[E::%s] Region %d..%d cannot be stored in a csi index "
-                        "with min_shift = %d, n_lvls = %d.  Try using "
-                        " min_shift = 14, n_lvls >= %d\n",
-                        __func__, beg, end,
-                        idx->min_shift, idx->n_lvls, n_lvls);
-            } else {
-                fprintf(stderr,
-                        "[E::%s] Region %d..%d cannot be stored in a %s index. "
-                        "Try using a csi index with min_shift = 14, "
-                        "n_lvls >= %d\n",
-                        __func__, beg, end, idx_format_name(idx->fmt), n_lvls);
-            }
+        if (idx->fmt == HTS_FMT_CSI) {
+            hts_log_error("Region %d..%d cannot be stored in a csi index "
+                "with min_shift = %d, n_lvls = %d. Try using "
+                "min_shift = 14, n_lvls >= %d",
+                beg, end,
+                idx->min_shift, idx->n_lvls,
+                n_lvls);
+        } else {
+            hts_log_error("Region %d..%d cannot be stored in a %s index. "
+                "Try using a csi index with min_shift = 14, "
+                "n_lvls >= %d",
+                beg, end, idx_format_name(idx->fmt),
+                n_lvls);
         }
         errno = ERANGE;
         return -1;
@@ -2113,14 +2109,15 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
     while (e > 0) n *= 10, e--;
     while (e < 0) lost += n % 10, n /= 10, e++;
 
-    if (lost > 0 && hts_verbose >= 3)
-        fprintf(stderr, "[W::%s] discarding fractional part of %.*s\n",
-                __func__, (int)(s - str), str);
+    if (lost > 0) {
+        hts_log_warning("Discarding fractional part of %.*s", (int)(s - str), str);
+    }
 
-    if (strend) *strend = (char *) s;
-    else if (*s && hts_verbose >= 2)
-        fprintf(stderr, "[W::%s] ignoring unknown characters after %.*s[%s]\n",
-                __func__, (int)(s - str), str, s);
+    if (strend) {
+        *strend = (char *)s;
+    } else if (*s) {
+        hts_log_warning("Ignoring unknown characters after %.*s[%s]", (int)(s - str), str, s);
+    }
 
     return (sign == '+')? n : -n;
 }
@@ -2245,16 +2242,18 @@ static char *test_and_fetch(const char *fn)
         // Attempt to open remote file. Stay quiet on failure, it is OK to fail when trying first .csi then .tbi index.
         if ((fp_remote = hopen(fn, "r")) == 0) return 0;
         if ((fp = fopen(p, "w")) == 0) {
-            if (hts_verbose >= 1) fprintf(stderr, "[E::%s] fail to create file '%s' in the working directory\n", __func__, p);
+            hts_log_error("Failed to create file %s in the working directory", p);
             hclose_abruptly(fp_remote);
             return 0;
         }
-        if (hts_verbose >= 3) fprintf(stderr, "[M::%s] downloading file '%s' to local directory\n", __func__, fn);
+        hts_log_info("Downloading file %s to local directory", fn);
         buf = (uint8_t*)calloc(buf_size, 1);
         while ((l = hread(fp_remote, buf, buf_size)) > 0) fwrite(buf, 1, l, fp);
         free(buf);
         fclose(fp);
-        if (hclose(fp_remote) != 0) fprintf(stderr, "[E::%s] fail to close remote file '%s'\n", __func__, fn);
+        if (hclose(fp_remote) != 0) {
+            hts_log_error("Failed to close remote file %s", fn);
+        }
         return (char*)p;
     } else {
         hFILE *fp;
@@ -2305,8 +2304,8 @@ hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx)
     struct stat stat_idx,stat_main;
     if ( !stat(fn, &stat_main) && !stat(fnidx, &stat_idx) )
     {
-        if ( hts_verbose >= 1 && stat_idx.st_mtime < stat_main.st_mtime )
-            fprintf(stderr, "Warning: The index file is older than the data file: %s\n", fnidx);
+        if ( stat_idx.st_mtime < stat_main.st_mtime )
+            hts_log_warning("The index file is older than the data file: %s", fnidx);
     }
 
     return hts_idx_load_local(fnidx);
@@ -2356,8 +2355,7 @@ size_t hts_realloc_or_die(size_t n, size_t m, size_t m_sz, size_t size,
     return new_m;
 
  die:
-    if (hts_verbose > 1)
-        fprintf(stderr, "[E::%s] %s\n", func, strerror(errno));
+    hts_log_error("%s", strerror(errno));
     exit(1);
 }
 

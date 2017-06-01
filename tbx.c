@@ -326,10 +326,8 @@ tbx_t *tbx_index_load2(const char *fn, const char *fnidx)
     return tbx;
 
  invalid:
-    if (hts_verbose >= 1) {
-        fprintf(stderr, "[E::%s] Invalid index header for %s\n",
-                __func__, fnidx ? fnidx : fn);
-    }
+    hts_log_error("Invalid index header for %s", fnidx ? fnidx : fn);
+
  fail:
     tbx_destroy(tbx);
     return NULL;

@@ -422,8 +422,7 @@ cram_codec *cram_external_decode_init(char *data, int size,
     return c;
 
  malformed:
-    if (hts_verbose >= 1)
-        fprintf(stderr, "Malformed external header stream\n");
+    hts_log_error("Malformed external header stream");
     free(c);
     return NULL;
 }
@@ -571,10 +570,9 @@ cram_codec *cram_beta_decode_init(char *data, int size,
 
     if (cp - data != size
         || c->beta.nbits < 0 || c->beta.nbits > 8 * sizeof(int)) {
-        if (hts_verbose >= 1)
-            fprintf(stderr, "Malformed beta header stream\n");
-	free(c);
-	return NULL;
+        hts_log_error("Malformed beta header stream");
+        free(c);
+        return NULL;
     }
 
     c->reset = cram_nop_decode_reset;
@@ -840,8 +838,7 @@ cram_codec *cram_gamma_decode_init(char *data, int size,
     return c;
 
  malformed:
-    if (hts_verbose >= 1)
-        fprintf(stderr, "Malformed gamma header stream\n");
+    hts_log_error("Malformed gamma header stream");
     free(c);
     return NULL;
 }
@@ -1719,8 +1716,7 @@ cram_codec *cram_byte_array_stop_decode_init(char *data, int size,
         c->decode = cram_byte_array_stop_decode_char;
 	break;
     default:
-        if (hts_verbose >= 1)
-            fprintf(stderr, "byte_array_stop codec only supports BYTE_ARRAYs.\n");
+        hts_log_error("The byte_array_stop codec only supports BYTE_ARRAYs");
         free(c);
         return NULL;
     }
@@ -1745,8 +1741,7 @@ cram_codec *cram_byte_array_stop_decode_init(char *data, int size,
     return c;
 
  malformed:
-    if (hts_verbose >= 1)
-        fprintf(stderr, "Malformed byte_array_stop header stream\n");
+    hts_log_error("Malformed byte_array_stop header stream");
     free(c);
     return NULL;
 }

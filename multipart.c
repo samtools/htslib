@@ -78,10 +78,9 @@ open_next:
     if (fp->currentfp == NULL) {
         if (fp->current < fp->nparts) {
             const hfile_part *p = &fp->parts[fp->current];
-            if (hts_verbose >= 5)
-                fprintf(stderr, "[M::multipart_read] opening part #%zu of %zu:"
-                        " \"%.120s%s\"\n", fp->current+1, fp->nparts, p->url,
-                        (strlen(p->url) > 120)? "..." : "");
+            hts_log_debug("Opening part #%zu of %zu: \"%.120s%s\"",
+                fp->current+1, fp->nparts, p->url,
+                (strlen(p->url) > 120)? "..." : "");
 
             fp->currentfp = p->headers?
                   hopen(p->url, "r:", "httphdr:v", p->headers, NULL)
@@ -201,9 +200,7 @@ parse_ga4gh_redirect_json(hFILE_multipart *fp, hFILE *json,
         else if (strcmp(t.str, "format") == 0) {
             if (hts_json_fnext(json, &t, b) != 's') return t.type;
 
-            if (hts_verbose >= 5)
-                fprintf(stderr, "[M::multipart_open] GA4GH JSON redirection "
-                        "to multipart %s data\n", t.str);
+            hts_log_debug("GA4GH JSON redirection to multipart %s data", t.str);
         }
         else if (hts_json_fskip_value(json, '\0') != 'v') return '?';
     }

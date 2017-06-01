@@ -129,12 +129,13 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     has_EOF = bgzf_check_EOF(fp);
     if (has_EOF < 0) {
         perror("[W::bam_hdr_read] bgzf_check_EOF");
-    } else if (has_EOF == 0 && hts_verbose >= 2)
-        fprintf(stderr, "[W::%s] EOF marker is absent. The input is probably truncated.\n", __func__);
+    } else if (has_EOF == 0) {
+        hts_log_warning("EOF marker is absent. The input is probably truncated");
+    }
     // read "BAM1"
     magic_len = bgzf_read(fp, buf, 4);
     if (magic_len != 4 || strncmp(buf, "BAM\1", 4)) {
-        if (hts_verbose >= 1) fprintf(stderr, "[E::%s] invalid BAM binary header\n", __func__);
+        hts_log_error("Invalid BAM binary header");
         return 0;
     }
     h = bam_hdr_init();
@@ -202,23 +203,19 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     return h;
 
  nomem:
-    if (hts_verbose >= 1) fprintf(stderr, "[E::%s] out of memory\n", __func__);
+    hts_log_error("Out of memory");
     goto clean;
 
  read_err:
-    if (hts_verbose >= 1) {
-        if (bytes < 0) {
-            fprintf(stderr, "[E::%s] error reading BGZF stream\n", __func__);
-        } else {
-            fprintf(stderr, "[E::%s] truncated bam header\n", __func__);
-        }
+    if (bytes < 0) {
+        hts_log_error("Error reading BGZF stream");
+    } else {
+        hts_log_error("Truncated BAM header");
     }
     goto clean;
 
  invalid:
-    if (hts_verbose >= 1) {
-        fprintf(stderr, "[E::%s] invalid BAM binary header\n", __func__);
-    }
+    hts_log_error("Invalid BAM binary header");
 
  clean:
     if (h != NULL) {
@@ -433,8 +430,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     uint32_t x[8], block_len = b->l_data - c->l_extranul + 32, y;
     int i, ok;
     if (c->n_cigar >= 65536) {
-        if (hts_verbose >= 1)
-            fprintf(stderr, "[E::%s] too many CIGAR operations (%d >= 64K for QNAME \"%s\")\n", __func__, c->n_cigar, bam_get_qname(b));
+        hts_log_error("Too many CIGAR operations (%d >= 64K for QNAME \"%s\")", c->n_cigar, bam_get_qname(b));
         errno = EOVERFLOW;
         return -1;
     }
@@ -730,8 +726,7 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
                 int absent;
                 k = kh_put(s2i, d, sn, &absent);
                 if (!absent) {
-                    if (hts_verbose >= 2)
-                        fprintf(stderr, "[W::%s] duplicated sequence '%s'\n", __func__, sn);
+                    hts_log_warning("Duplicated sequence '%s'", sn);
                     free(sn);
                 } else kh_val(d, k) = (int64_t)(kh_size(d) - 1)<<32 | ln;
             }
@@ -769,10 +764,7 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
         if (last == '\n') {
             lnum++;
             if (cp[i] != '@') {
-                if (hts_verbose >= 1)
-                    fprintf(stderr,
-                            "[E::%s] Malformed SAM header at line %u.\n",
-                            __func__, lnum);
+                hts_log_error("Malformed SAM header at line %u", lnum);
                 bam_hdr_destroy(h);
                 return NULL;
             }
@@ -784,21 +776,16 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
     if (i < h->l_text) { // Early nul found.  Complain if not just padding.
         uint32_t j = i;
         while (j < h->l_text && cp[j] == '\0') j++;
-        if (j < h->l_text && hts_verbose >= 2)
-            fprintf(stderr, "[W::%s] Unexpected NUL character in header.  "
-                    "Possibly truncated.\n", __func__);
+        if (j < h->l_text)
+            hts_log_warning("Unexpected NUL character in header. Possibly truncated");
     }
 
     // Add trailing newline and/or trailing nul if required.
     if (last != '\n') {
-        if (hts_verbose >= 2)
-            fprintf(stderr, "[W::%s] Missing trailing newline on SAM header.  "
-                    "Possibly truncated.\n", __func__);
+        hts_log_warning("Missing trailing newline on SAM header. Possibly truncated");
 
         if (h->l_text == UINT32_MAX) {
-            if (hts_verbose >= 1)
-                fprintf(stderr, "[E::%s] No room for extra newline.\n",
-                        __func__);
+            hts_log_error("No room for extra newline");
             bam_hdr_destroy(h);
             return NULL;
         }
@@ -857,8 +844,7 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
             }
             free(line.s);
             if (hclose(f) != 0) {
-                if (hts_verbose >= 2)
-                    fprintf(stderr, "[W::%s] closing \"%s\" failed\n", __func__, fp->fn_aux);
+                hts_log_warning("Failed to close %s", fp->fn_aux);
             }
         }
         if (str.l == 0) kputsn("", 0, &str);
@@ -940,9 +926,9 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 #define _read_token(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); if (*(_p) != '\t') goto err_ret; *(_p)++ = 0
 #define _read_token_aux(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); *(_p)++ = 0 // this is different in that it does not test *(_p)=='\t'
 #define _get_mem(type_t, _x, _s, _l) ks_resize((_s), (_s)->l + (_l)); *(_x) = (type_t*)((_s)->s + (_s)->l); (_s)->l += (_l)
-#define _parse_err(cond, msg) do { if ((cond) && hts_verbose >= 1) { fprintf(stderr, "[E::%s] " msg "\n", __func__); goto err_ret; } } while (0)
-#define _parse_err_param(cond, msg, param) do { if ((cond) && hts_verbose >= 1) { fprintf(stderr, "[E::%s] " msg "\n", __func__, param); goto err_ret; } } while (0)
-#define _parse_warn(cond, msg) if ((cond) && hts_verbose >= 2) fprintf(stderr, "[W::%s] " msg "\n", __func__)
+#define _parse_err(cond, msg) do { if (cond) { hts_log_error(msg); goto err_ret; } } while (0)
+#define _parse_err_param(cond, msg, param) do { if (cond) { hts_log_error(msg, param); goto err_ret; } } while (0)
+#define _parse_warn(cond, msg) do { if (cond) { hts_log_warning(msg); } } while (0)
 
     uint8_t *t;
     char *p = s->s, *q;
@@ -1200,12 +1186,11 @@ err_recover:
         ret = sam_parse1(&fp->line, h, b);
         fp->line.l = 0;
         if (ret < 0) {
-            if (hts_verbose >= 1)
-                fprintf(stderr, "[W::%s] parse error at line %lld\n", __func__, (long long)fp->lineno);
+            hts_log_warning("Parse error at line %lld", (long long)fp->lineno);
             if (h->ignore_sam_err) goto err_recover;
         }
         return ret;
-        }
+    }
 
     default:
         abort();
@@ -1341,10 +1326,8 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
     return str->l;
 
  bad_aux:
-    if (hts_verbose >= 1) {
-        fprintf(stderr, "[E::%s] Corrupted aux data for read %.*s\n",
-                __func__, b->core.l_qname, bam_get_qname(b));
-    }
+    hts_log_error("Corrupted aux data for read %.*s",
+                  b->core.l_qname, bam_get_qname(b));
     errno = EINVAL;
     return -1;
 }
@@ -1519,10 +1502,7 @@ uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
     return NULL;
 
  bad_aux:
-    if (hts_verbose >= 1) {
-        fprintf(stderr, "[E::%s] Corrupted aux data for read %s\n",
-                __func__, bam_get_qname(b));
-    }
+    hts_log_error("Corrupted aux data for read %s", bam_get_qname(b));
     errno = EINVAL;
     return NULL;
 }
@@ -1540,10 +1520,7 @@ int bam_aux_del(bam1_t *b, uint8_t *s)
     return 0;
 
  bad_aux:
-    if (hts_verbose >= 1) {
-        fprintf(stderr, "[E::%s] Corrupted aux data for read %s\n",
-                __func__, bam_get_qname(b));
-    }
+    hts_log_error("Corrupted aux data for read %s", bam_get_qname(b));
     errno = EINVAL;
     return -1;
 }
@@ -1561,9 +1538,7 @@ int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data)
     }
     char type = *s;
     if (type != 'Z') {
-        if (hts_verbose > 1) {
-            fprintf(stderr,"bam_aux_update_str() called for type '%c' instead of 'Z'\n", type);
-        }
+        hts_log_error("Called bam_aux_update_str for type '%c' instead of 'Z'", type);
         errno = EINVAL;
         return -1;
     }
