@@ -47,6 +47,7 @@
 #endif
 
 #include "htslib/knetfile.h"
+#include "htslib/hts_log.h"
 
 /* In winsock.h, the type of a socket is SOCKET, which is: "typedef
  * u_int SOCKET". An invalid SOCKET is: "(SOCKET)(~0)", or signed
