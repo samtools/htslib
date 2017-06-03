@@ -149,7 +149,7 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
     assert( !readers->regions );
     if ( readers->nreaders )
     {
-        fprintf(stderr,"[%s:%d %s] Error: bcf_sr_set_regions() must be called before bcf_sr_add_reader()\n", __FILE__,__LINE__,__FUNCTION__);
+        hts_log_error("Must call bcf_sr_set_regions() before bcf_sr_add_reader()");
         return -1;
     }
     readers->regions = bcf_sr_regions_init(regions,is_file,0,1,-2);
@@ -220,7 +220,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
         BGZF *bgzf = hts_get_bgzfp(reader->file);
         if ( bgzf && bgzf_check_EOF(bgzf) == 0 ) {
             files->errnum = no_eof;
-            fprintf(stderr,"[%s] Warning: no BGZF EOF marker; file may be truncated.\n", fname);
+            hts_log_warning("No BGZF EOF marker; file '%s' may be truncated", fname);
         }
         if (files->p)
             bgzf_thread_pool(bgzf, files->p->pool, files->p->qsize);
@@ -284,13 +284,13 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     if ( files->streaming && files->nreaders>1 )
     {
         files->errnum = api_usage_error;
-        fprintf(stderr,"[%s:%d %s] Error: %d readers, yet require_index not set\n", __FILE__,__LINE__,__FUNCTION__,files->nreaders);
+        hts_log_error("Must set require_index when the number of readers is greater than one");
         return 0;
     }
     if ( files->streaming && files->regions )
     {
         files->errnum = api_usage_error;
-        fprintf(stderr,"[%s:%d %s] Error: cannot tabix-jump in streaming mode\n", __FILE__,__LINE__,__FUNCTION__);
+        hts_log_error("Cannot tabix-jump in streaming mode");
         return 0;
     }
     if ( !reader->header )
@@ -422,7 +422,7 @@ static int _reader_seek(bcf_sr_t *reader, const char *seq, int start, int end)
 {
     if ( end>=MAX_CSI_COOR )
     {
-        fprintf(stderr,"The coordinate is out of csi index limit: %d\n", end+1);
+        hts_log_error("The coordinate is out of csi index limit: %d", end+1);
         exit(1);
     }
     if ( reader->itr )
@@ -443,8 +443,10 @@ static int _reader_seek(bcf_sr_t *reader, const char *seq, int start, int end)
         if ( tid==-1 ) return -1;    // the sequence not present in this file
         reader->itr = bcf_itr_queryi(reader->bcf_idx,tid,start,end+1);
     }
-    if ( !reader->itr ) fprintf(stderr,"Could not seek: %s:%d-%d\n",seq,start+1,end+1);
-    assert(reader->itr);
+    if (!reader->itr) {
+        hts_log_error("Could not seek: %s:%d-%d", seq, start + 1, end + 1);
+        assert(0);
+    }
     return 0;
 }
 
@@ -517,7 +519,7 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             }
             else
             {
-                fprintf(stderr,"[%s:%d %s] fixme: not ready for this\n", __FILE__,__LINE__,__FUNCTION__);
+                hts_log_error("Fixme: not ready for this");
                 exit(1);
             }
         }
@@ -693,7 +695,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
         smpl = hts_readlist(fname, is_file, &nsmpl);
         if ( !smpl )
         {
-            fprintf(stderr,"Could not read the file: \"%s\"\n", fname);
+            hts_log_error("Could not read the file: \"%s\"", fname);
             return 0;
         }
         if ( exclude )
@@ -723,7 +725,8 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
         }
         if ( n_isec!=files->nreaders )
         {
-            fprintf(stderr,"Warning: The sample \"%s\" was not found in %s, skipping\n", smpl[i], files->readers[n_isec].fname);
+            hts_log_warning("The sample \"%s\" was not found in %s, skipping",
+                smpl[i], files->readers[n_isec].fname);
             continue;
         }
 
@@ -741,7 +744,7 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
     if ( !files->n_smpl )
     {
         if ( files->nreaders>1 )
-            fprintf(stderr,"No samples in common.\n");
+            hts_log_warning("No samples in common");
         return 0;
     }
     for (i=0; i<files->nreaders; i++)
@@ -828,7 +831,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             from = hts_parse_decimal(sp,(char**)&ep,0);
             if ( sp==ep )
             {
-                fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
+                hts_log_error("Could not parse the region(s): %s", str);
                 free(reg); free(tmp.s); return NULL;
             }
             if ( !*ep || *ep==',' )
@@ -839,7 +842,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             }
             if ( *ep!='-' )
             {
-                fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
+                hts_log_error("Could not parse the region(s): %s", str);
                 free(reg); free(tmp.s); return NULL;
             }
             ep++;
@@ -847,7 +850,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
             to = hts_parse_decimal(sp,(char**)&ep,0);
             if ( *ep && *ep!=',' )
             {
-                fprintf(stderr,"[%s:%d %s] Could not parse the region(s): %s\n", __FILE__,__LINE__,__FUNCTION__,str);
+                hts_log_error("Could not parse the region(s): %s", str);
                 free(reg); free(tmp.s); return NULL;
             }
             if ( sp==ep ) to = MAX_CSI_COOR-1;
@@ -939,7 +942,7 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
     reg->file = hts_open(regions, "rb");
     if ( !reg->file )
     {
-        fprintf(stderr,"[%s:%d %s] Could not open file: %s\n", __FILE__,__LINE__,__FUNCTION__,regions);
+        hts_log_error("Could not open file: %s", regions);
         free(reg);
         return NULL;
     }
@@ -965,7 +968,8 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
                     ret = _regions_parse_line(reg->line.s, ichr,ifrom,ifrom, &chr,&chr_end,&from,&to);
                 if ( ret<0 )
                 {
-                    fprintf(stderr,"[%s:%d] Could not parse the file %s, using the columns %d,%d[,%d]\n", __FILE__,__LINE__,regions,ichr+1,ifrom+1,ito+1);
+                    hts_log_error("Could not parse the file %s, using the columns %d,%d[,%d]",
+                        regions,ichr+1,ifrom+1,ito+1);
                     hts_close(reg->file); reg->file = NULL; free(reg);
                     return NULL;
                 }
@@ -1092,7 +1096,7 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
                 reg->file = hts_open(reg->fname, "r");
                 if ( !reg->file )
                 {
-                    fprintf(stderr,"[%s:%d %s] Could not open file: %s\n", __FILE__,__LINE__,__FUNCTION__,reg->fname);
+                    hts_log_error("Could not open file: %s", reg->fname);
                     reg->file = NULL;
                     bcf_sr_regions_destroy(reg);
                     return -1;
@@ -1107,7 +1111,8 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
         ret = _regions_parse_line(reg->line.s, ichr,ifrom,ito, &chr,&chr_end,&from,&to);
         if ( ret<0 )
         {
-            fprintf(stderr,"[%s:%d] Could not parse the file %s, using the columns %d,%d,%d\n", __FILE__,__LINE__,reg->fname,ichr+1,ifrom+1,ito+1);
+            hts_log_error("Could not parse the file %s, using the columns %d,%d,%d",
+                reg->fname,ichr+1,ifrom+1,ito+1);
             return -1;
         }
     }
@@ -1116,7 +1121,8 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
     *chr_end = 0;
     if ( khash_str2int_get(reg->seq_hash, chr, &reg->iseq)<0 )
     {
-        fprintf(stderr,"Broken tabix index? The sequence \"%s\" not in dictionary [%s]\n", chr,reg->line.s);
+        hts_log_error("Broken tabix index? The sequence \"%s\" not in dictionary [%s]",
+            chr, reg->line.s);
         exit(1);
     }
     *chr_end = '\t';
@@ -1131,7 +1137,7 @@ static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *re
     if ( reg->regs )
     {
         // payload is not supported for in-memory regions, switch to regidx instead in future
-        fprintf(stderr,"Error: Compressed and indexed targets file is required\n");
+        hts_log_error("Compressed and indexed targets file is required");
         exit(1);
     }
 

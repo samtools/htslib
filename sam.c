@@ -578,7 +578,7 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
     case cram:  return cram_get_bam_seq(fp->fp.cram, &b);
     default:
         // TODO Need headers available to implement this for SAM files
-        fprintf(stderr, "[sam_bam_cram_readrec] Not implemented for SAM files -- Exiting\n");
+        hts_log_error("Not implemented for SAM files");
         abort();
     }
 }
@@ -658,7 +658,7 @@ static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end
         iter->finished = 1;
         break;
     default:
-        fprintf(stderr, "[cram_itr_query] tid=%d not implemented for CRAM files -- Exiting\n", tid);
+        hts_log_error("Query with tid=%d not implemented for CRAM files", tid);
         abort();
         break;
     }
@@ -2035,7 +2035,7 @@ static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, int
             (*cigar)++; *icig = 0; *iref += ncig;
             continue;
         }
-        fprintf(stderr,"todo: cigar %d\n", cig);
+        hts_log_error("Unexpected cigar %d", cig);
         assert(0);
     }
     *iseq = -1;
@@ -2058,7 +2058,7 @@ static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, in
         if ( cig==BAM_CINS ) { (*cigar)++; *iseq += ncig; *icig = 0; continue; }
         if ( cig==BAM_CSOFT_CLIP ) { (*cigar)++; *iseq += ncig; *icig = 0; continue; }
         if ( cig==BAM_CHARD_CLIP || cig==BAM_CPAD ) { (*cigar)++; *icig = 0; continue; }
-        fprintf(stderr,"todo: cigar %d\n", cig);
+        hts_log_error("Unexpected cigar %d", cig);
         assert(0);
     }
     *iseq = -1;
@@ -2228,7 +2228,7 @@ const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_
         // update iter->tid and iter->pos
         if (iter->head != iter->tail) {
             if (iter->tid > iter->head->b.core.tid) {
-                fprintf(stderr, "[%s] unsorted input. Pileup aborts.\n", __func__);
+                hts_log_error("Unsorted input. Pileup aborts");
                 iter->error = 1;
                 *_n_plp = -1;
                 return NULL;
@@ -2267,12 +2267,12 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
         iter->tail->end = bam_endpos(b);
         iter->tail->s = g_cstate_null; iter->tail->s.end = iter->tail->end - 1; // initialize cstate_t
         if (b->core.tid < iter->max_tid) {
-            fprintf(stderr, "[bam_pileup_core] the input is not sorted (chromosomes out of order)\n");
+            hts_log_error("The input is not sorted (chromosomes out of order)");
             iter->error = 1;
             return -1;
         }
         if ((b->core.tid == iter->max_tid) && (iter->tail->beg < iter->max_pos)) {
-            fprintf(stderr, "[bam_pileup_core] the input is not sorted (reads out of order)\n");
+            hts_log_error("The input is not sorted (reads out of order)");
             iter->error = 1;
             return -1;
         }

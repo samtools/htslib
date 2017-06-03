@@ -496,15 +496,13 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     }
     if (hrec->type == BCF_HL_INFO || hrec->type == BCF_HL_FMT) {
         if (type == -1) {
-            if (hts_verbose >= 2)
-                fprintf(stderr, "[E::%s] %s %s field has no Type defined. Assuming String\n",
-                        __func__, *hrec->key == 'I' ? "An" : "A", hrec->key);
+            hts_log_warning("%s %s field has no Type defined. Assuming String",
+                *hrec->key == 'I' ? "An" : "A", hrec->key);
             type = BCF_HT_STR;
         }
         if (var == -1) {
-            if (hts_verbose >= 2)
-                fprintf(stderr, "[E::%s] %s %s field has no Number defined. Assuming '.'\n",
-                        __func__, *hrec->key == 'I' ? "An" : "A", hrec->key);
+            hts_log_warning("%s %s field has no Number defined. Assuming '.'",
+                *hrec->key == 'I' ? "An" : "A", hrec->key);
             var = BCF_VL_VAR;
         }
     }

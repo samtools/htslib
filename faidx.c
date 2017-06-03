@@ -63,7 +63,7 @@ struct __faidx_t {
 static inline int fai_insert_index(faidx_t *idx, const char *name, int64_t len, int line_len, int line_blen, uint64_t offset)
 {
     if (!name) {
-        fprintf(stderr, "[fai_build_core] malformed line\n");
+        hts_log_error("Malformed line");
         return -1;
     }
 
@@ -73,7 +73,7 @@ static inline int fai_insert_index(faidx_t *idx, const char *name, int64_t len, 
     faidx1_t *v = &kh_value(idx->hash, k);
 
     if (! absent) {
-        fprintf(stderr, "[fai_build_core] ignoring duplicate sequence \"%s\" at byte offset %"PRIu64"\n", name, offset);
+        hts_log_warning("Ignoring duplicate sequence \"%s\" at byte offset %"PRIu64"", name, offset);
         free(name_key);
         return 0;
     }
@@ -82,7 +82,7 @@ static inline int fai_insert_index(faidx_t *idx, const char *name, int64_t len, 
         char **tmp;
         idx->m = idx->m? idx->m<<1 : 16;
         if (!(tmp = (char**)realloc(idx->name, sizeof(char*) * idx->m))) {
-            fprintf(stderr, "[fai_build_core] out of memory\n");
+            hts_log_error("Out of memory");
             return -1;
         }
         idx->name = tmp;
@@ -130,7 +130,7 @@ faidx_t *fai_build_core(BGZF *bgzf)
             kputsn("", 0, &name);
 
             if ( c<0 ) {
-                fprintf(stderr, "[fai_build_core] the last entry has no sequence\n");
+                hts_log_error("The last entry has no sequence");
                 goto fail;
             }
             if (c != '\n') while ( (c=bgzf_getc(bgzf))>=0 && c != '\n');
@@ -138,7 +138,7 @@ faidx_t *fai_build_core(BGZF *bgzf)
             offset = bgzf_utell(bgzf);
         } else {
             if (state == 3) {
-                fprintf(stderr, "[fai_build_core] inlined empty line is not allowed in sequence '%s'.\n", name.s);
+                hts_log_error("Inlined empty line is not allowed in sequence '%s'", name.s);
                 goto fail;
             }
             if (state == 2) state = 3;
@@ -148,7 +148,7 @@ faidx_t *fai_build_core(BGZF *bgzf)
                 if (isgraph(c)) ++l2;
             } while ( (c=bgzf_getc(bgzf))>=0 && c != '\n');
             if (state == 3 && l2) {
-                fprintf(stderr, "[fai_build_core] different line length in sequence '%s'.\n", name.s);
+                hts_log_error("Different line length in sequence '%s'", name.s);
                 goto fail;
             }
             ++l1; len += l2;
@@ -498,7 +498,7 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
         }
     } else iter = kh_get(s, h, str);
     if(iter == kh_end(h)) {
-        fprintf(stderr, "[fai_fetch] Warning - Reference %s not found in FASTA file, returning empty sequence\n", str);
+        hts_log_warning("Reference %s not found in FASTA file, returning empty sequence", str);
         free(s);
         *len = -2;
         return 0;
@@ -523,8 +523,7 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
         // Check for out of range numbers.  Only going to be a problem on
         // 32-bit platforms with >2Gb sequence length.
         if (errno == ERANGE && (uint64_t) val.len > LONG_MAX) {
-            fprintf(stderr, "[fai_fetch] Positions in range %s are too large"
-                    " for this platform.\n", s);
+            hts_log_error("Positions in range %s are too large for this platform", s);
             free(s);
             *len = -2;
             return NULL;
@@ -572,7 +571,7 @@ char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p
     if (iter == kh_end(fai->hash))
     {
         *len = -2;
-        fprintf(stderr, "[fai_fetch_seq] The sequence \"%s\" not found\n", c_name);
+        hts_log_error("The sequence \"%s\" not found", c_name);
         return NULL;
     }
     val = kh_value(fai->hash, iter);
