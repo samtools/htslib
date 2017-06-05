@@ -176,8 +176,7 @@ LIBHTS_OBJS = \
 	cram/rANS_static.o \
 	cram/sam_header.o \
 	cram/string_alloc.o \
-	cram/vlen.o \
-	cram/zfio.o
+	cram/vlen.o
 
 PLUGIN_EXT  =
 PLUGIN_OBJS =
@@ -320,7 +319,7 @@ cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h)
 cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(htslib_hts_endian_h)
 cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htslib_hfile_h) $(cram_h)
-cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h) cram/zfio.h
+cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h)
 cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
 cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c config.h $(cram_h) $(htslib_sam_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c config.h $(cram_h) $(cram_os_h)
@@ -333,7 +332,6 @@ cram/sam_header.o cram/sam_header.pico: cram/sam_header.c config.h $(cram_sam_he
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
 thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h)
 cram/vlen.o cram/vlen.pico: cram/vlen.c config.h cram/vlen.h $(cram_os_h)
-cram/zfio.o cram/zfio.pico: cram/zfio.c config.h $(cram_os_h) cram/zfio.h
 
 
 bgzip: bgzip.o libhts.a
