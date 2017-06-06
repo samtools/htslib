@@ -139,9 +139,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/sam_header.c \
 	$(HTSDIR)/cram/sam_header.h \
 	$(HTSDIR)/cram/string_alloc.c \
-	$(HTSDIR)/cram/string_alloc.h \
-	$(HTSDIR)/cram/vlen.c \
-	$(HTSDIR)/cram/vlen.h
+	$(HTSDIR)/cram/string_alloc.h
 
 $(HTSDIR)/config.h:
 	+cd $(HTSDIR) && $(MAKE) config.h

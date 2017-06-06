@@ -175,8 +175,7 @@ LIBHTS_OBJS = \
 	cram/pooled_alloc.o \
 	cram/rANS_static.o \
 	cram/sam_header.o \
-	cram/string_alloc.o \
-	cram/vlen.o
+	cram/string_alloc.o
 
 PLUGIN_EXT  =
 PLUGIN_OBJS =
@@ -324,14 +323,13 @@ cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h $(cram_h) $(cram_os_h)
 cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c config.h $(cram_h) $(htslib_sam_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c config.h $(cram_h) $(cram_os_h)
 cram/files.o cram/files.pico: cram/files.c config.h $(cram_misc_h)
-cram/mFILE.o cram/mFILE.pico: cram/mFILE.c config.h $(cram_os_h) cram/mFILE.h cram/vlen.h
+cram/mFILE.o cram/mFILE.pico: cram/mFILE.c config.h $(cram_os_h) cram/mFILE.h
 cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c config.h $(cram_os_h) $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h)
 cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c config.h cram/pooled_alloc.h $(cram_misc_h)
 cram/rANS_static.o cram/rANS_static.pico: cram/rANS_static.c config.h cram/rANS_static.h cram/rANS_byte.h
 cram/sam_header.o cram/sam_header.pico: cram/sam_header.c config.h $(cram_sam_header_h) cram/string_alloc.h
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
 thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h)
-cram/vlen.o cram/vlen.pico: cram/vlen.c config.h cram/vlen.h $(cram_os_h)
 
 
 bgzip: bgzip.o libhts.a
