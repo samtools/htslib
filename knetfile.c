@@ -275,8 +275,8 @@ int kftp_connect(knetFile *ftp)
 	ftp->ctrl_fd = socket_connect(ftp->host, ftp->port);
 	if (ftp->ctrl_fd == -1) return -1;
 	kftp_get_response(ftp);
-	kftp_send_cmd(ftp, "USER anonymous\r\n", 1);
-	kftp_send_cmd(ftp, "PASS kftp@\r\n", 1);
+	kftp_send_cmd(ftp, ftp->user_cmd, 1);
+	kftp_send_cmd(ftp, ftp->password_cmd, 1);
 	kftp_send_cmd(ftp, "TYPE I\r\n", 1);
 	return 0;
 }
@@ -308,9 +308,38 @@ knetFile *kftp_parse_url(const char *fn, const char *mode)
 	/* the Linux/Mac version of socket_connect() also recognizes a port
 	 * like "ftp", but the Windows version does not. */
 	fp->port = strdup("21");
-	fp->host = (char*)calloc(l + 1, 1);
 	if (strchr(mode, 'c')) fp->no_reconnect = 1;
-	strncpy(fp->host, fn + 6, l);
+
+	char* host_with_creds = (char*) calloc(l + 1, 1);
+	strncpy(host_with_creds, fn + 6, l);
+
+	char* host_only;
+	char* uname;
+	char* pwd;
+	if ((host_only = strstr(host_with_creds, "@")) != NULL) {
+		int l_host = host_with_creds - host_only + l - 1;
+		fp->host = (char*) calloc(l_host + 1, 1);
+		strncpy(fp->host, host_only + 1, l_host);
+		*host_only = '\0';
+		uname = host_with_creds;
+		char* pwd_token;
+		if ((pwd_token = strstr(host_with_creds, ":")) != NULL) {
+			*pwd_token = '\0';
+			pwd = pwd_token + 1;
+		} else {
+			pwd = "";
+		}
+
+	} else {
+		uname = "anonymous";
+		pwd = "kftp@";
+		fp->host = host_with_creds;
+	}
+	fp->user_cmd = (char*) calloc(strlen(uname) + 8, 1);
+	sprintf(fp->user_cmd, "USER %s\r\n", uname); // "USER anonymous\r\n"
+	fp->password_cmd = (char*) calloc(strlen(pwd) + 8, 1);
+	sprintf(fp->password_cmd, "PASS %s\r\n", pwd); // "PASS kftp@\r\n"
+
 	fp->retr = (char*)calloc(strlen(p) + 8, 1);
 	sprintf(fp->retr, "RETR %s\r\n", p);
     fp->size_cmd = (char*)calloc(strlen(p) + 8, 1);

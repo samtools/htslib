@@ -61,6 +61,7 @@ typedef struct knetFile_s {
 
 	// the following are for HTTP only
 	char *path, *http_host;
+	char *user_cmd, *password_cmd;
 } knetFile;
 
 #define knet_tell(fp) ((fp)->offset)
