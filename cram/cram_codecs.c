@@ -912,7 +912,7 @@ int cram_huffman_decode_char(cram_slice *slice, cram_codec *c,
 		return -1;
 
 	    if (codes[idx].code == val && codes[idx].len == len) {
-		out[i] = codes[idx].symbol;
+		if (out) out[i] = codes[idx].symbol;
 		break;
 	    }
 	}
