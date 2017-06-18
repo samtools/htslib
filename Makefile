@@ -475,6 +475,7 @@ clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 distclean maintainer-clean: clean
 	-rm -f config.cache config.h config.log config.mk config.status
 	-rm -f TAGS *.pc.tmp *-uninstalled.pc htslib_static.mk
+	-rm -rf autom4te.cache
 
 clean-so:
 	-rm -f libhts.so libhts.so.*
