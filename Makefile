@@ -191,8 +191,6 @@ cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h) $(cram_sam_header_h)
 cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) cram/string_alloc.h $(htslib_khash_h)
 cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
 hfile_internal_h = hfile_internal.h $(htslib_hfile_h)
-hts_log_h = htslib/hts_defs.h htslib/hts_log.h
-htslib_hts_h = htslib/hts.h $(hts_log_h)
 hts_internal_h = hts_internal.h $(htslib_hts_h)
 thread_pool_internal_h = thread_pool_internal.h $(htslib_thread_pool_h)
 
@@ -294,7 +292,7 @@ cyghts-$(LIBHTS_SOVERSION).dll: $(LIBHTS_OBJS)
 bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) cram/pooled_alloc.h $(htslib_khash_h)
 errmod.o errmod.pico: errmod.c config.h $(htslib_hts_h) $(htslib_ksort_h)
 kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
-knetfile.o knetfile.pico: knetfile.c config.h $(hts_log_h) $(htslib_knetfile_h)
+knetfile.o knetfile.pico: knetfile.c config.h $(htslib_hts_log_h) $(htslib_knetfile_h)
 hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(hts_internal_h) $(htslib_khash_h)
 hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(hfile_internal_h)
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
