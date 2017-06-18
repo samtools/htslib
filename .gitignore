@@ -5,6 +5,7 @@
 *.pc.tmp
 *-uninstalled.pc
 /version.h
+/_dist
 
 autom4te.cache
 config.cache
