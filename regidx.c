@@ -154,9 +154,9 @@ int regidx_insert(regidx_t *idx, char *line)
     if ( idx->rid_prev==rid )
     {
         if ( idx->start_prev > reg.start || (idx->start_prev==reg.start && idx->end_prev>reg.end) ) 
-        { 
-            fprintf(stderr,"The regions are not sorted: %s:%d-%d is before %s:%d-%d\n", 
-                idx->str.s,idx->start_prev+1,idx->end_prev+1,idx->str.s,reg.start+1,reg.end+1); 
+        {
+            hts_log_error("The regions are not sorted: %s:%d-%d is before %s:%d-%d",
+                idx->str.s,idx->start_prev+1,idx->end_prev+1,idx->str.s,reg.start+1,reg.end+1);
             return -1;
         }
     }
@@ -293,18 +293,18 @@ int regidx_parse_bed(const char *line, char **chr_beg, char **chr_end, reg_t *re
     
     char *se = ss;
     while ( *se && !isspace_c(*se) ) se++;
-    if ( !*se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
+    if ( !*se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
 
     *chr_beg = ss;
     *chr_end = se-1;
 
     ss = se+1;
     reg->start = hts_parse_decimal(ss, &se, 0);
-    if ( ss==se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
+    if ( ss==se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
 
     ss = se+1;
     reg->end = hts_parse_decimal(ss, &se, 0) - 1;
-    if ( ss==se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
+    if ( ss==se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
     
     return 0;
 }
@@ -318,14 +318,14 @@ int regidx_parse_tab(const char *line, char **chr_beg, char **chr_end, reg_t *re
     
     char *se = ss;
     while ( *se && !isspace_c(*se) ) se++;
-    if ( !*se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
+    if ( !*se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
 
     *chr_beg = ss;
     *chr_end = se-1;
 
     ss = se+1;
     reg->start = hts_parse_decimal(ss, &se, 0) - 1;
-    if ( ss==se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
+    if ( ss==se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
 
     if ( !se[0] || !se[1] )
         reg->end = reg->start;

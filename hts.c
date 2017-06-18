@@ -569,7 +569,7 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
         case 'k': case 'K': o->val.i *= 1024; break;
         case '\0': break;
         default:
-            fprintf(stderr, "Unrecognised cache size suffix '%c'\n", *endp);
+            hts_log_error("Unrecognised cache size suffix '%c'", *endp);
             free(o->arg);
             free(o);
             return -1;
@@ -593,7 +593,7 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
         o->opt = HTS_OPT_BLOCK_SIZE, o->val.i = strtol(val, NULL, 0);
 
     else {
-        fprintf(stderr, "Unknown option '%s'\n", o->arg);
+        hts_log_error("Unknown option '%s'", o->arg);
         free(o->arg);
         free(o);
         return -1;
@@ -907,7 +907,7 @@ int hts_close(htsFile *fp)
         if (!fp->is_write) {
             switch (cram_eof(fp->fp.cram)) {
             case 2:
-                fprintf(stderr, "[W::%s] EOF marker is absent. The input is probably truncated.\n", __func__);
+                hts_log_warning("EOF marker is absent. The input is probably truncated");
                 break;
             case 0:  /* not at EOF, but may not have wanted all seqs */
             default: /* case 1, expected EOF */
@@ -1104,7 +1104,7 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
 {
     int ret;
     if (! (delimiter == KS_SEP_LINE || delimiter == '\n')) {
-        fprintf(stderr, "[hts_getline] unexpected delimiter %d\n", delimiter);
+        hts_log_error("Unexpected delimiter %d", delimiter);
         abort();
     }
 
