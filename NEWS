@@ -1,9 +1,17 @@
-Release a.b (future)
---------------------
+Noteworthy changes in release 1.5 (21st June 2017)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 * Added a new logging API: hts_log(), along with hts_log_error(),
   hts_log_warn() etc. convenience macros.  Thanks go to Anders Kaplan
-  for the implementation. (#499)
+  for the implementation. (#499, #543, #551)
+
+* Added a new file I/O option "block_size" (HTS_OPT_BLOCK_SIZE) to
+  alter the hFILE buffer size.
+
+* Fixed various bugs, including compilation issues samtools/bcftools#610,
+  samtools/bcftools#611 and robustness to corrupted data #537, #538,
+  #541, #546, #548, #549, #554.
+
 
 Noteworthy changes in release 1.4.1  (8th May 2017)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
