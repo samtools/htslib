@@ -644,7 +644,7 @@ int bgzf_read_block(BGZF *fp)
 
         // block_length=0 and block_offset set by bgzf_seek.
         if (fp->block_length != 0) fp->block_offset = 0;
-        fp->block_address = j->block_address;
+        if (!j->hit_eof) fp->block_address = j->block_address;
         fp->block_clength = j->comp_len;
         fp->block_length = j->uncomp_len;
         // bgzf_read() can change fp->block_length
@@ -1088,6 +1088,7 @@ restart:
     bgzf_job *j = pool_alloc(mt->job_pool);
     pthread_mutex_unlock(&mt->job_pool_m);
     j->errcode = 0;
+    j->comp_len = 0;
     j->uncomp_len = 0;
     j->hit_eof = 0;
 
@@ -1123,6 +1124,7 @@ restart:
         j = pool_alloc(mt->job_pool);
         pthread_mutex_unlock(&mt->job_pool_m);
         j->errcode = 0;
+        j->comp_len = 0;
         j->uncomp_len = 0;
         j->hit_eof = 0;
     }
