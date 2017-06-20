@@ -92,7 +92,7 @@ HTSPREFIX =
 include htslib_vars.mk
 
 
-PACKAGE_VERSION = 1.4.1
+PACKAGE_VERSION = 1.5
 LIBHTS_SOVERSION = 2
 
 
