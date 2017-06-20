@@ -335,6 +335,10 @@ dnl Only need to add to static_LIBS if not building as a plugin
   fi
 fi
 
+dnl Look for PTHREAD_MUTEX_RECURSIVE.
+dnl This is normally in pthread.h except on some broken glibc implementations.
+AC_CHECK_DECL(PTHREAD_MUTEX_RECURSIVE, [], [AC_DEFINE([_XOPEN_SOURCE],[600], [Needed for PTHREAD_MUTEX_RECURSIVE])], [[#include <pthread.h>]])
+
 if test "$s3" = enabled ; then
    AC_DEFINE([ENABLE_S3], 1, [Define if HTSlib should enable S3 support.])
 fi

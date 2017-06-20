@@ -26,6 +26,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
@@ -175,6 +176,36 @@ static ssize_t refill_buffer(hFILE *fp)
 
     fp->end += n;
     return n;
+}
+
+/*
+ * Changes the buffer size for an hFILE.  Ideally this is done
+ * immediately after opening.  If performed later, this function may
+ * fail if we are reducing the buffer size and the current offset into
+ * the buffer is beyond the new capacity.
+ *
+ * Returns 0 on success;
+ *        -1 on failure.
+ */
+int hfile_set_blksize(hFILE *fp, size_t bufsiz) {
+    char *buffer;
+    ptrdiff_t curr_used;
+    if (!fp) return -1;
+    curr_used = (fp->begin > fp->end ? fp->begin : fp->end) - fp->buffer;
+    if (bufsiz == 0) bufsiz = 32768;
+
+    // Ensure buffer resize will not erase live data
+    if (bufsiz < curr_used)
+        return -1;
+
+    if (!(buffer = (char *) realloc(fp->buffer, bufsiz))) return -1;
+
+    fp->begin  = buffer + (fp->begin - fp->buffer);
+    fp->end    = buffer + (fp->end   - fp->buffer);
+    fp->buffer = buffer;
+    fp->limit  = &fp->buffer[bufsiz];
+
+    return 0;
 }
 
 /* Called only from hgetc(), when our buffer is empty.  */
@@ -761,16 +792,12 @@ static int init_add_plugin(void *obj, int (*init)(struct hFILE_plugin *),
     int ret = (*init)(&p->plugin);
 
     if (ret != 0) {
-        if (hts_verbose >= 4)
-            fprintf(stderr, "[W::load_hfile_plugins] "
-                    "initialisation failed for plugin \"%s\": %d\n",
-                    pluginname, ret);
+        hts_log_debug("Initialisation failed for plugin \"%s\": %d", pluginname, ret);
         free(p);
         return ret;
     }
 
-    if (hts_verbose >= 5)
-        fprintf(stderr, "[M::load_hfile_plugins] loaded \"%s\"\n", pluginname);
+    hts_log_debug("Loaded \"%s\"", pluginname);
 
     p->next = plugins, plugins = p;
     return 0;

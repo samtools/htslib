@@ -80,7 +80,11 @@ typedef struct {
 
 #define bam_cigar_op(c) ((c)&BAM_CIGAR_MASK)
 #define bam_cigar_oplen(c) ((c)>>BAM_CIGAR_SHIFT)
-#define bam_cigar_opchr(c) (BAM_CIGAR_STR[bam_cigar_op(c)])
+// Note that BAM_CIGAR_STR is padded to length 16 bytes below so that
+// the array look-up will not fall off the end.  '?' is chosen as the
+// padding character so it's easy to spot if one is emitted, and will
+// result in a parsing failure (in sam_parse1(), at least) if read.
+#define bam_cigar_opchr(c) (BAM_CIGAR_STR "??????" [bam_cigar_op(c)])
 #define bam_cigar_gen(l, o) ((l)<<BAM_CIGAR_SHIFT|(o))
 
 /* bam_cigar_type returns a bit flag with:

@@ -32,6 +32,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 
 #include "hts_defs.h"
+#include "hts_log.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -234,6 +235,7 @@ enum hts_fmt_option {
     HTS_OPT_NTHREADS,
     HTS_OPT_THREAD_POOL,
     HTS_OPT_CACHE_SIZE,
+    HTS_OPT_BLOCK_SIZE,
 };
 
 // For backwards compatibility
@@ -298,8 +300,6 @@ int hts_parse_format(htsFormat *opt, const char *str);
  *        -1 on failure.
  */
 int hts_parse_opt_list(htsFormat *opt, const char *str);
-
-extern int hts_verbose;
 
 /*! @abstract Table for converting a nucleotide character to 4-bit encoding.
 The input character may be either an IUPAC ambiguity code, '=' for 0, or
@@ -611,7 +611,7 @@ int hts_idx_set_meta(hts_idx_t *idx, uint32_t l_meta, uint8_t *meta, int is_copy
     @param flags   Or'ed-together combination of HTS_PARSE_* flags
     @return  Converted value of the parsed number.
 
-    When @a strend is NULL, a warning will be printed (if hts_verbose is 2
+    When @a strend is NULL, a warning will be printed (if hts_verbose is HTS_LOG_WARNING
     or more) if there are any trailing characters after the number.
 */
 long long hts_parse_decimal(const char *str, char **strend, int flags);

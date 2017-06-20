@@ -47,6 +47,7 @@
 #endif
 
 #include "htslib/knetfile.h"
+#include "htslib/hts_log.h"
 
 /* In winsock.h, the type of a socket is SOCKET, which is: "typedef
  * u_int SOCKET". An invalid SOCKET is: "(SOCKET)(~0)", or signed
@@ -75,9 +76,9 @@ static int socket_wait(int fd, int is_read)
 	if (ret == -1) perror("select");
 #else
 	if (ret == 0)
-		fprintf(stderr, "select time-out\n");
+		hts_log_warning("Select timed out");
 	else if (ret == SOCKET_ERROR)
-		fprintf(stderr, "select: %d\n", WSAGetLastError());
+		hts_log_error("Select returned error %d", WSAGetLastError());
 #endif
 	return ret;
 }
@@ -98,7 +99,7 @@ static int socket_connect(const char *host, const char *port)
 	hints.ai_socktype = SOCK_STREAM;
 	/* In Unix/Mac, getaddrinfo() is the most convenient way to get
 	 * server information. */
-	if ((ai_err = getaddrinfo(host, port, &hints, &res)) != 0) { fprintf(stderr, "can't resolve %s:%s: %s\n", host, port, gai_strerror(ai_err)); return -1; }
+	if ((ai_err = getaddrinfo(host, port, &hints, &res)) != 0) { hts_log_error("Can't resolve %s:%s: %s", host, port, gai_strerror(ai_err)); return -1; }
 	if ((fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1) __err_connect("socket");
 	/* The following two setsockopt() are used by ftplib
 	 * (http://nbpfaus.net/~pfau/ftplib/). I am not sure if they
@@ -149,10 +150,10 @@ void knet_win32_destroy()
  * non-Windows OS, I do not use this one. */
 static SOCKET socket_connect(const char *host, const char *port)
 {
-#define __err_connect(func)										\
-	do {														\
-		fprintf(stderr, "%s: %d\n", func, WSAGetLastError());	\
-		return -1;												\
+#define __err_connect(func) \
+	do { \
+		hts_log_error("The %s operation returned error %d", func, WSAGetLastError()); \
+		return -1; \
 	} while (0)
 
 	int on = 1;
@@ -260,7 +261,7 @@ static int kftp_pasv_connect(knetFile *ftp)
 {
 	char host[80], port[10];
 	if (ftp->pasv_port == 0) {
-		fprintf(stderr, "[kftp_pasv_connect] kftp_pasv_prep() is not called before hand.\n");
+		hts_log_error("Must call kftp_pasv_prep() first");
 		return -1;
 	}
 	sprintf(host, "%d.%d.%d.%d", ftp->pasv_ip[0], ftp->pasv_ip[1], ftp->pasv_ip[2], ftp->pasv_ip[3]);
@@ -355,7 +356,7 @@ int kftp_connect_file(knetFile *fp)
 	kftp_pasv_connect(fp);
 	ret = kftp_get_response(fp);
 	if (ret != 150) {
-		fprintf(stderr, "[kftp_connect_file] %s\n", fp->response);
+		hts_log_error("%s", fp->response);
 		netclose(fp->fd);
 		fp->fd = -1;
 		return -1;
@@ -466,7 +467,7 @@ knetFile *knet_open(const char *fn, const char *mode)
 {
 	knetFile *fp = 0;
 	if (mode[0] != 'r') {
-		fprintf(stderr, "[knet_open] only mode \"r\" is supported.\n");
+		hts_log_error("Only mode \"r\" is supported");
 		errno = ENOTSUP;
 		return 0;
 	}
@@ -562,7 +563,7 @@ off_t knet_seek(knetFile *fp, off_t off, int whence)
 		return fp->offset;
 	} else if (fp->type == KNF_TYPE_HTTP) {
 		if (whence == SEEK_END) { // FIXME: can we allow SEEK_END in future?
-			fprintf(stderr, "[knet_seek] SEEK_END is not supported for HTTP. Offset is unchanged.\n");
+			hts_log_error("SEEK_END is not supported for HTTP. Offset is unchanged");
 			errno = ESPIPE;
 			return -1;
 		}
@@ -573,7 +574,7 @@ off_t knet_seek(knetFile *fp, off_t off, int whence)
 		return fp->offset;
 	}
 	errno = EINVAL;
-	fprintf(stderr,"[knet_seek] %s\n", strerror(errno));
+	hts_log_error("%s", strerror(errno));
 	return -1;
 }
 
