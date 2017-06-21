@@ -208,7 +208,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 
 
     // Parse it line at a time
-    do {
+    while (pos < kstr.l) {
 	/* 1.1 layout */
 	if (kget_int32(&kstr, &pos, &e.refid) == -1)
             goto fail;
@@ -292,7 +292,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 	while (pos < kstr.l && kstr.s[pos] != '\n')
 	    pos++;
 	pos++;
-    } while (pos < kstr.l);
+    }
 
     free(idx_stack);
     free(kstr.s);
