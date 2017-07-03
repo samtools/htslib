@@ -1411,10 +1411,9 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 	b->method = GZIP;
     }
 
-    if (fd->verbose)
-	hts_log_info("Compressed block ID %d from %d to %d by method %s",
-		b->content_id, b->uncomp_size, b->comp_size,
-		cram_block_method2str(b->method));
+    hts_log_info("Compressed block ID %d from %d to %d by method %s",
+	    b->content_id, b->uncomp_size, b->comp_size,
+	    cram_block_method2str(b->method));
 
     if (b->method == RANS1)
 	b->method = RANS0; // Spec just has RANS (not 0/1) with auto-sensing
@@ -2021,8 +2020,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     mFILE *mf;
     int local_path = 0;
 
-    if (fd->verbose)
-	hts_log_info("Running cram_populate_ref on fd %p, id %d", (void *)fd, id);
+    hts_log_info("Running cram_populate_ref on fd %p, id %d", (void *)fd, id);
 
     cache_root[0] = '\0';
 
@@ -2038,8 +2036,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	    snprintf(cache_root, PATH_MAX, "%s%s/hts-ref", base, extra);
 	    snprintf(cache,PATH_MAX, "%s%s/hts-ref/%%2s/%%2s/%%s", base, extra);
 	    local_cache = cache;
-	    if (fd->verbose)
-		hts_log_info("Populating local cache: %s", local_cache);
+	    hts_log_info("Populating local cache: %s", local_cache);
 	}
     }
 
@@ -2052,8 +2049,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if (!(tag = sam_hdr_find_key(fd->header, ty, "M5", NULL)))
 	goto no_M5;
 
-    if (fd->verbose)
-	hts_log_info("Querying ref %s", tag->str+3);
+    hts_log_info("Querying ref %s", tag->str+3);
 
     /* Use cache if available */
     if (local_cache && *local_cache) {
@@ -2164,8 +2160,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         }
 
 	expand_cache_path(path, local_cache, tag->str+3);
-	if (fd->verbose)
-	    hts_log_info("Writing cache file '%s'", path);
+	hts_log_info("Writing cache file '%s'", path);
 	mkdir_prefix(path, 01777);
 
 	do {
@@ -4072,7 +4067,6 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->ref = NULL;
 
     fd->decode_md = 0;
-    fd->verbose = 0;
     fd->seqs_per_slice = SEQS_PER_SLICE;
     fd->bases_per_slice = BASES_PER_SLICE;
     fd->slices_per_container = SLICE_PER_CNT;
@@ -4340,7 +4334,6 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 	break;
 
     case CRAM_OPT_VERBOSITY:
-	fd->verbose = va_arg(args, int);
 	break;
 
     case CRAM_OPT_SEQS_PER_SLICE:

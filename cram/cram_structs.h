@@ -706,7 +706,6 @@ typedef struct cram_fd {
 
     // options
     int decode_md; // Whether to export MD and NM tags
-    int verbose;
     int seqs_per_slice;
     int bases_per_slice;
     int slices_per_container;

@@ -499,9 +499,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
     itf8_put_blk(cb, mc);    
     BLOCK_APPEND(cb, BLOCK_DATA(map), BLOCK_SIZE(map));
 
-    if (fd->verbose)
-	hts_log_info("Wrote compression block header in %d bytes",
-		(int)BLOCK_SIZE(cb));
+    hts_log_info("Wrote compression block header in %d bytes", (int)BLOCK_SIZE(cb));
 
     BLOCK_UPLEN(cb);
 
@@ -1405,8 +1403,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     multi_ref = c->stats[DS_RI]->nvals > 1;
 
     if (multi_ref) {
-	if (fd->verbose)
-	    hts_log_info("Multi-ref container");
+	hts_log_info("Multi-ref container");
 	c->ref_seq_id = -2;
 	c->ref_seq_start = 0;
 	c->ref_seq_span = 0;
@@ -1640,8 +1637,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
     /* Encode slices */
     for (i = 0; i < c->curr_slice; i++) {
-	if (fd->verbose)
-	    hts_log_info("Encode slice %d", i);
+	hts_log_info("Encode slice %d", i);
 
 	if (cram_encode_slice(fd, c, h, c->slices[i]) != 0)
 	    return -1;
@@ -2445,10 +2441,9 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
     if (c->curr_slice == c->max_slice ||
 	(bam_ref(b) != c->curr_ref && !c->multi_seq)) {
 	c->ref_seq_span = fd->last_base - c->ref_seq_start + 1;
-	if (fd->verbose)
-	    hts_log_info("Flush container %d/%d..%d",
-		    c->ref_seq_id, c->ref_seq_start,
-		    c->ref_seq_start + c->ref_seq_span -1);
+	hts_log_info("Flush container %d/%d..%d",
+		c->ref_seq_id, c->ref_seq_start,
+		c->ref_seq_start + c->ref_seq_span -1);
 
 	/* Encode slices */
 	if (fd->pool) {
@@ -3085,7 +3080,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 	if (fd->multi_seq == -1 && c->curr_rec < c->max_rec/4+10 &&
 	    fd->last_slice && fd->last_slice < c->max_rec/4+10 &&
 	    !fd->embed_ref) {
-	    if (fd->verbose && !c->multi_seq)
+	    if (!c->multi_seq)
 		hts_log_info("Multi-ref enabled for this container");
 	    multi_seq = 1;
 	}
