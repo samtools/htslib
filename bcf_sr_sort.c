@@ -267,6 +267,8 @@ static int cmpstringp(const void *p1, const void *p2)
 {
     return strcmp(* (char * const *) p1, * (char * const *) p2);
 }
+
+#if DEBUG_VSETS
 void debug_vsets(sr_sort_t *srt)
 {
     int i,j,k;
@@ -285,6 +287,9 @@ void debug_vsets(sr_sort_t *srt)
         fprintf(stderr,"\n");
     }
 }
+#endif
+
+#if DEBUG_VBUF
 void debug_vbuf(sr_sort_t *srt)
 {
     int i, j;
@@ -299,6 +304,8 @@ void debug_vbuf(sr_sort_t *srt)
         fprintf(stderr,"\n");
     }
 }
+#endif
+
 char *grp_create_key(sr_sort_t *srt)
 {
     if ( !srt->str.l ) return strdup("");
@@ -485,7 +492,9 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
         }
         var->type = type;
     }
-    // debug_vsets(srt);
+#if DEBUG_VSETS
+    debug_vsets(srt);
+#endif
 
     // initialize the pairing matrix
     hts_expand(int, srt->ngrp*srt->nvset, srt->mpmat, srt->pmat);
@@ -501,7 +510,10 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
     // pair the lines
     while ( srt->nvset )
     {
-        // fprintf(stderr,"\n"); debug_vsets(srt);
+#if DEBUG_VSETS
+	fprintf(stderr,"\n");
+	debug_vsets(srt);
+#endif
 
         int imax = 0;
         for (ivset=1; ivset<srt->nvset; ivset++)
@@ -567,7 +579,9 @@ int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int mi
 
     if ( !srt->vcf_buf[0].nrec ) return 0;
 
-    // debug_vbuf(srt);
+#if DEBUG_VBUF
+    debug_vbuf(srt);
+#endif
 
     int nret = 0;
     for (i=0; i<srt->sr->nreaders; i++)
