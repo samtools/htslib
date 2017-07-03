@@ -87,11 +87,11 @@ void cram_stats_del(cram_stats *st, int32_t val) {
 	    if (--kh_val(st->h, k) == 0)
 		kh_del(m_i2i, st->h, k);
 	} else {
-	    fprintf(stderr, "Failed to remove val %d from cram_stats\n", val);
+	    hts_log_warning("Failed to remove val %d from cram_stats", val);
 	    st->nsamp++;
 	}
     } else {
-	fprintf(stderr, "Failed to remove val %d from cram_stats\n", val);
+	hts_log_warning("Failed to remove val %d from cram_stats", val);
 	st->nsamp++;
     }
 }

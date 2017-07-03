@@ -558,7 +558,7 @@ cram_codec *cram_beta_decode_init(char *data, int size,
     else if (option == E_BYTE_ARRAY || option == E_BYTE)
 	c->decode = cram_beta_decode_char;
     else {
-	fprintf(stderr, "BYTE_ARRAYs not supported by this codec\n");
+	hts_log_error("BYTE_ARRAYs not supported by this codec");
 	return NULL;
     }
     c->free   = cram_beta_decode_free;
@@ -748,7 +748,7 @@ cram_codec *cram_subexp_decode_init(char *data, int size,
     char *cp = data;
 
     if (option != E_INT) {
-	fprintf(stderr, "This codec only supports INT encodings\n");
+	hts_log_error("This codec only supports INT encodings");
 	return NULL;
     }
 
@@ -764,7 +764,7 @@ cram_codec *cram_subexp_decode_init(char *data, int size,
     cp += safe_itf8_get(cp, data + size, &c->subexp.k);
 
     if (cp - data != size || c->subexp.k < 0) {
-	fprintf(stderr, "Malformed subexp header stream\n");
+	hts_log_error("Malformed subexp header stream");
 	free(c);
 	return NULL;
     }
@@ -814,7 +814,7 @@ cram_codec *cram_gamma_decode_init(char *data, int size,
     char *cp = data;
 
     if (option != E_INT) {
-	fprintf(stderr, "This codec only supports INT encodings\n");
+	hts_log_error("This codec only supports INT encodings");
 	return NULL;
     }
 
@@ -985,13 +985,13 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
     int l;
 
     if (option == E_BYTE_ARRAY_BLOCK) {
-	fprintf(stderr, "BYTE_ARRAYs not supported by this codec\n");
+	hts_log_error("BYTE_ARRAYs not supported by this codec");
 	return NULL;
     }
 
     cp += safe_itf8_get(cp, data_end, &ncodes);
     if (ncodes < 0) {
-        fprintf(stderr, "Invalid number of symbols in huffman stream\n");
+	hts_log_error("Invalid number of symbols in huffman stream");
         return NULL;
     }
     if (ncodes >= SIZE_MAX / sizeof(*codes)) {
@@ -1023,13 +1023,13 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
     }
 
     if (l < 1) {
-	fprintf(stderr, "Malformed huffman header stream\n");
+	hts_log_error("Malformed huffman header stream");
 	free(h);
 	return NULL;
     }
     cp += safe_itf8_get(cp, data_end, &i);
     if (i != ncodes) {
-	fprintf(stderr, "Malformed huffman header stream\n");
+	hts_log_error("Malformed huffman header stream");
 	free(h);
 	return NULL;
     }
@@ -1051,7 +1051,7 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
 	    max_len = codes[i].len;
     }
     if (l < 1 || cp - data != size || max_len >= ncodes) {
-	fprintf(stderr, "Malformed huffman header stream\n");
+	hts_log_error("Malformed huffman header stream");
 	free(h);
 	return NULL;
     }
@@ -1511,7 +1511,7 @@ cram_codec *cram_byte_array_len_decode_init(char *data, int size,
     return c;
 
  malformed:
-    fprintf(stderr, "Malformed byte_array_len header stream\n");
+    hts_log_error("Malformed byte_array_len header stream");
  no_codec:
     free(c);
     return NULL;
@@ -1855,7 +1855,7 @@ cram_codec *cram_decoder_init(enum cram_encoding codec,
     if (codec >= E_NULL && codec < E_NUM_CODECS && decode_init[codec]) {
 	return decode_init[codec](data, size, option, version);
     } else {
-	fprintf(stderr, "Unimplemented codec of type %s\n", cram_encoding2str(codec));
+	hts_log_error("Unimplemented codec of type %s", cram_encoding2str(codec));
 	return NULL;
     }
 }
@@ -1890,7 +1890,7 @@ cram_codec *cram_encoder_init(enum cram_encoding codec,
 	    r->out = NULL;
 	return r;
     } else {
-	fprintf(stderr, "Unimplemented codec of type %s\n", cram_encoding2str(codec));
+	hts_log_error("Unimplemented codec of type %s", cram_encoding2str(codec));
 	abort();
     }
 }
@@ -1928,7 +1928,7 @@ int cram_codec_to_id(cram_codec *c, int *id2) {
 	bnum1 = -2;
 	break;
     default:
-	fprintf(stderr, "Unknown codec type %d\n", c->codec);
+	hts_log_error("Unknown codec type %d", c->codec);
 	bnum1 = -1;
     }
 
