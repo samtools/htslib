@@ -776,8 +776,7 @@ static enum sam_sort_order sam_hdr_parse_sort_order(SAM_hdr *hdr) {
 		else if (strcmp(tag->str+3, "coordinate") == 0)
 		    so = ORDER_COORD;
 		else if (strcmp(tag->str+3, "unknown") != 0)
-		    fprintf(stderr, "Unknown sort order field: %s\n",
-			    tag->str+3);
+		    hts_log_error("Unknown sort order field: %s", tag->str+3);
 	    }
 	}
     }

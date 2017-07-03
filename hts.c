@@ -994,13 +994,14 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
 
         if (hf) {
             va_start(args, opt);
-            if (hfile_set_blksize(hf, va_arg(args, int)) != 0 && hts_verbose >= 2)
-                fprintf(stderr, "[W::%s] Failed to change block size\n", __func__);
+            if (hfile_set_blksize(hf, va_arg(args, int)) != 0)
+                hts_log_warning("Failed to change block size");
             va_end(args);
-        } else if (hts_verbose >= 2)
+        }
+        else {
             // To do - implement for vcf/bcf.
-            fprintf(stderr, "[W::%s] cannot change block size for this format\n", __func__);
-
+            hts_log_warning("Cannot change block size for this format");
+        }
 
         return 0;
     }
