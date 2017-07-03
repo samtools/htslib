@@ -42,6 +42,7 @@ test_vcf_various($opts);
 test_bcf_sr_sort($opts);
 test_convert_padded_header($opts);
 test_rebgzip($opts);
+test_logging($opts);
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -390,3 +391,14 @@ sub test_bcf_sr_sort
     }
 }
 
+sub test_logging
+{
+  my ($opts) = @_;
+  my $test = 'test-logging';
+  my $cmd  = "$$opts{path}/test-logging.pl";
+  print "$test:\n";
+  print "\t$cmd\n";
+  my ($ret,$out) = _cmd($cmd);
+  if ( $ret ) { failed($opts,$test); }
+  else { passed($opts,$test); }
+}

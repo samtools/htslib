@@ -60,11 +60,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <math.h>
 
+#include "htslib/bgzf.h"
 #include "htslib/hfile.h"
 #include "hts_internal.h"
 #include "cram/cram.h"
 #include "cram/os.h"
-#include "cram/zfio.h"
 
 #if 0
 static void dump_index_(cram_index *e, int level) {
@@ -208,7 +208,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 
 
     // Parse it line at a time
-    do {
+    while (pos < kstr.l) {
 	/* 1.1 layout */
 	if (kget_int32(&kstr, &pos, &e.refid) == -1)
             goto fail;
@@ -292,7 +292,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 	while (pos < kstr.l && kstr.s[pos] != '\n')
 	    pos++;
 	pos++;
-    } while (pos < kstr.l);
+    }
 
     free(idx_stack);
     free(kstr.s);
@@ -450,12 +450,13 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
  * decode the slice to look at the RI data series instead.
  *
  * Returns 0 on success
- *        -1 on failure
+ *        -1 on read failure
+ *        -4 on write failure
  */
 static int cram_index_build_multiref(cram_fd *fd,
 				     cram_container *c,
 				     cram_slice *s,
-				     zfp *fp,
+				     BGZF *fp,
 				     off_t cpos,
 				     int32_t landmark,
 				     int sz) {
@@ -477,19 +478,21 @@ static int cram_index_build_multiref(cram_fd *fd,
 	    sprintf(buf, "%d\t%d\t%d\t%"PRId64"\t%d\t%d\n",
 		    ref, ref_start, ref_end - ref_start + 1,
 		    (int64_t)cpos, landmark, sz);
-	    zfputs(buf, fp);
+	    if (bgzf_write(fp, buf, strlen(buf)) < 0)
+		return -4;
 	}
 
 	ref = s->crecs[i].ref_id;
 	ref_start = s->crecs[i].apos;
-	ref_end = INT_MIN;
+	ref_end   = s->crecs[i].aend;
     }
 
     if (ref != -2) {
 	sprintf(buf, "%d\t%d\t%d\t%"PRId64"\t%d\t%d\n",
 		ref, ref_start, ref_end - ref_start + 1,
 		(int64_t)cpos, landmark, sz);
-	zfputs(buf, fp);
+	if (bgzf_write(fp, buf, strlen(buf)) < 0)
+	    return -4;
     }
 
     return 0;
@@ -509,7 +512,7 @@ static int cram_index_build_multiref(cram_fd *fd,
 int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     cram_container *c;
     off_t cpos, spos, hpos;
-    zfp *fp;
+    BGZF *fp;
     kstring_t fn_idx_str = {0};
 
     if (! fn_idx) {
@@ -518,7 +521,7 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
         fn_idx = fn_idx_str.s;
     }
 
-    if (!(fp = zfopen(fn_idx, "wz"))) {
+    if (!(fp = bgzf_open(fn_idx, "wg"))) {
         perror(fn_idx);
         free(fn_idx_str.s);
         return -4;
@@ -549,30 +552,35 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
         for (j = 0; j < c->num_landmarks; j++) {
             char buf[1024];
             cram_slice *s;
-            int sz;
+            int sz, ret;
 
             spos = htell(fd->fp);
             assert(spos - cpos - c->offset == c->landmark[j]);
 
             if (!(s = cram_read_slice(fd))) {
-		zfclose(fp);
+		bgzf_close(fp);
 		return -1;
 	    }
 
             sz = (int)(htell(fd->fp) - spos);
 
 	    if (s->hdr->ref_seq_id == -2) {
-		cram_index_build_multiref(fd, c, s, fp,
-					  cpos, c->landmark[j], sz);
+		ret = cram_index_build_multiref(fd, c, s, fp,
+						cpos, c->landmark[j], sz);
 	    } else {
 		sprintf(buf, "%d\t%d\t%d\t%"PRId64"\t%d\t%d\n",
 			s->hdr->ref_seq_id, s->hdr->ref_seq_start,
 			s->hdr->ref_seq_span, (int64_t)cpos,
 			c->landmark[j], sz);
-		zfputs(buf, fp);
+		ret = (bgzf_write(fp, buf, strlen(buf)) >= 0)? 0 : -4;
 	    }
 
             cram_free_slice(s);
+
+	    if (ret < 0) {
+		bgzf_close(fp);
+		return ret;
+	    }
         }
 
         cpos = htell(fd->fp);
@@ -581,10 +589,9 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
         cram_free_container(c);
     }
     if (fd->err) {
-	zfclose(fp);
+	bgzf_close(fp);
 	return -1;
     }
-	
 
-    return (zfclose(fp) >= 0)? 0 : -4;
+    return (bgzf_close(fp) >= 0)? 0 : -4;
 }

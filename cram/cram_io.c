@@ -2157,15 +2157,15 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     /* Populate the local disk cache if required */
     if (local_cache && *local_cache) {
-	int pid = (int) getpid();
-	unsigned thrid = get_int_threadid();
-	hFILE *fp;
+        int pid = (int) getpid();
+        unsigned thrid = get_int_threadid();
+        hFILE *fp;
 
-	if (*cache_root && !is_directory(cache_root) && hts_verbose >= 1)
-	    fprintf(stderr,
-"Creating reference cache directory %s\n"
-"This may become large; see the samtools(1) manual page REF_CACHE discussion\n",
-		    cache_root);
+        if (*cache_root && !is_directory(cache_root)) {
+            hts_log_warning("Creating reference cache directory %s\n"
+                "This may become large; see the samtools(1) manual page REF_CACHE discussion",
+                cache_root);
+        }
 
 	expand_cache_path(path, local_cache, tag->str+3);
 	if (fd->verbose)

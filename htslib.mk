@@ -54,6 +54,7 @@ HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/hts.h \
 	$(HTSDIR)/htslib/hts_defs.h \
 	$(HTSDIR)/htslib/hts_endian.h \
+	$(HTSDIR)/htslib/hts_log.h \
 	$(HTSDIR)/htslib/kbitset.h \
 	$(HTSDIR)/htslib/kfunc.h \
 	$(HTSDIR)/htslib/khash.h \
@@ -138,11 +139,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/sam_header.c \
 	$(HTSDIR)/cram/sam_header.h \
 	$(HTSDIR)/cram/string_alloc.c \
-	$(HTSDIR)/cram/string_alloc.h \
-	$(HTSDIR)/cram/vlen.c \
-	$(HTSDIR)/cram/vlen.h \
-	$(HTSDIR)/cram/zfio.c \
-	$(HTSDIR)/cram/zfio.h
+	$(HTSDIR)/cram/string_alloc.h
 
 $(HTSDIR)/config.h:
 	+cd $(HTSDIR) && $(MAKE) config.h

@@ -914,7 +914,7 @@ static inline void bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
         case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
         case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
         case BCF_BT_NULL:  kputc('.', str); break;
-        default: fprintf(stderr,"FIXME: type %d in bcf_format_gt?\n", fmt->type); abort(); break;
+        default: hts_log_error("Unexpected type %d", fmt->type); abort(); break;
     }
     #undef BRANCH
 }

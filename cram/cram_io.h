@@ -895,6 +895,12 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
  */
 int cram_set_header(cram_fd *fd, SAM_hdr *hdr);
 
+/*!
+ * Returns the hFILE connected to a cram_fd.
+ */
+static inline struct hFILE *cram_hfile(cram_fd *fd) {
+    return fd->fp;
+}
 
 #ifdef __cplusplus
 }

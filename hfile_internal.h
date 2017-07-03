@@ -33,6 +33,27 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
+/*!
+  @abstract  Resizes the buffer within an hFILE.
+
+  @notes  Changes the buffer size for an hFILE.  Ideally this is done
+  immediately after opening.  If performed later, this function may
+  fail if we are reducing the buffer size and the current offset into
+  the buffer is beyond the new capacity.
+
+  @param fp        The file stream
+  @param bufsiz    The size of the new bufsiz
+
+  @return Returns 0 on success, -1 on failure.
+ */
+int hfile_set_blksize(hFILE *fp, size_t capacity);
+
+struct BGZF;
+/*!
+  @abstract Return the hFILE connected to a BGZF
+ */
+struct hFILE *bgzf_hfile(struct BGZF *fp);
+
 struct hFILE_backend {
     /* As per read(2), returning the number of bytes read (possibly 0) or
        negative (and setting errno) on errors.  Front-end code will call this

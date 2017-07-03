@@ -42,7 +42,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/os.h"
 #include "cram/mFILE.h"
-#include "cram/vlen.h"
 
 #ifdef HAVE_MMAP
 #include <sys/mman.h>
@@ -628,45 +627,6 @@ int mfflush(mFILE *mf) {
     }
 
     return 0;
-}
-
-/*
- * A wrapper around vsprintf() to write to an mFILE. This also uses vflen() to
- * estimate how many additional bytes of storage will be required for the
- * vsprintf to work.
- */
-int mfprintf(mFILE *mf, char *fmt, ...) {
-    int ret;
-    size_t est_length;
-    va_list args;
-
-    va_start(args, fmt);
-    est_length = vflen(fmt, args);
-    va_end(args);
-    while (est_length + mf->offset > mf->alloced) {
-	size_t new_alloced = mf->alloced ? mf->alloced * 2 : 1024;
-	void * new_data    = realloc(mf->data, new_alloced);
-	if (NULL == new_data) return -1;
-	mf->alloced = new_alloced;
-	mf->data    = new_data;
-    }
-
-    va_start(args, fmt);
-    ret = vsprintf(&mf->data[mf->offset], fmt, args);
-    va_end(args);
-
-    if (ret > 0) {
-	mf->offset += ret;
-	if (mf->size < mf->offset)
-	    mf->size = mf->offset;
-    }
-
-    if (mf->fp == stderr) {
-	/* Auto-flush for stderr */
-	if (0 != mfflush(mf)) return -1;
-    }
-
-    return ret;
 }
 
 /*

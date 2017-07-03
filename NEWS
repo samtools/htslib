@@ -1,3 +1,41 @@
+Noteworthy changes in release a.b (Equinox)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Noteworthy changes in release 1.5 (21st June 2017)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Added a new logging API: hts_log(), along with hts_log_error(),
+  hts_log_warn() etc. convenience macros.  Thanks go to Anders Kaplan
+  for the implementation. (#499, #543, #551)
+
+* Added a new file I/O option "block_size" (HTS_OPT_BLOCK_SIZE) to
+  alter the hFILE buffer size.
+
+* Fixed various bugs, including compilation issues samtools/bcftools#610,
+  samtools/bcftools#611 and robustness to corrupted data #537, #538,
+  #541, #546, #548, #549, #554.
+
+
+Noteworthy changes in release 1.4.1  (8th May 2017)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This is primarily a security bug fix update.
+
+* Fixed SECURITY issue with buffer overruns with malicious data. (#514).
+
+* S3 support for non Amazon AWS endpoints. (#506)
+
+* Support for variant breakpoints in bcftools. (#516)
+
+* Improved handling of BCF NaNs. (#485)
+
+* Compilation / portability improvements. (#255, #423, #498, #488)
+
+* Miscellaneous bug fixes (#482, #521, #522, #523, #524).
+
+* Sanitise headers (#509)
+
+
 Release 1.4 (13 March 2017)
 
 * Incompatible changes: several functions and data types have been changed
