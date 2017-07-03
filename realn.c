@@ -78,7 +78,7 @@ int sam_cap_mapq(bam1_t *b, const char *ref, int ref_len, int thres)
     if (t > thres) return -1;
     if (t < 0) t = 0;
     t = sqrt((thres - t) / thres) * thres;
-//  fprintf(stderr, "%s %lf %d\n", bam_get_qname(b), t, q);
+    //fprintf(stderr, "%s %lf %d\n", bam_get_qname(b), t, q);
     return (int)(t + .499);
 }
 

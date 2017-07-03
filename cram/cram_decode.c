@@ -2741,11 +2741,11 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     // As we grow blocks we overallocate by up to 50%. So shrink
     // back to their final sizes here.
     //
-//    fprintf(stderr, "%d %d // %d %d // %d %d // %d %d\n",
-//    	    (int)s->seqs_blk->byte, (int)s->seqs_blk->alloc, 
-//    	    (int)s->qual_blk->byte, (int)s->qual_blk->alloc, 
-//    	    (int)s->name_blk->byte, (int)s->name_blk->alloc, 
-//    	    (int)s->aux_blk->byte,  (int)s->aux_blk->alloc);
+    //fprintf(stderr, "%d %d // %d %d // %d %d // %d %d\n",
+    //	    (int)s->seqs_blk->byte, (int)s->seqs_blk->alloc,
+    //	    (int)s->qual_blk->byte, (int)s->qual_blk->alloc,
+    //	    (int)s->name_blk->byte, (int)s->name_blk->alloc,
+    //	    (int)s->aux_blk->byte,  (int)s->aux_blk->alloc);
     BLOCK_RESIZE_EXACT(s->seqs_blk, BLOCK_SIZE(s->seqs_blk)+1);
     BLOCK_RESIZE_EXACT(s->qual_blk, BLOCK_SIZE(s->qual_blk)+1);
     BLOCK_RESIZE_EXACT(s->name_blk, BLOCK_SIZE(s->name_blk)+1);
@@ -3121,9 +3121,9 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	hts_tpool_result *res;
 	cram_decode_job *j;
 	
-//	fprintf(stderr, "Thread pool len = %d, %d\n",
-//		hts_tpool_results_queue_len(fd->rqueue),
-//		hts_tpool_results_queue_sz(fd->rqueue));
+	//fprintf(stderr, "Thread pool len = %d, %d\n",
+	//	hts_tpool_results_queue_len(fd->rqueue),
+	//	hts_tpool_results_queue_sz(fd->rqueue));
 
 	if (fd->ooc && hts_tpool_process_empty(fd->rqueue))
 	    return NULL;

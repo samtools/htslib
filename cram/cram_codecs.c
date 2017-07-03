@@ -239,7 +239,7 @@ static inline unsigned int get_bits_MSB(cram_block *block, int nbits) {
  * for it elsewhere.)
  */
 static int store_bits_MSB(cram_block *block, unsigned int val, int nbits) {
-    /* fprintf(stderr, " store_bits: %02x %d\n", val, nbits); */
+    //fprintf(stderr, " store_bits: %02x %d\n", val, nbits);
 
     /*
      * Use slow mode until we tweak the huffman generator to never generate

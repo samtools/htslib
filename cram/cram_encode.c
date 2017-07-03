@@ -1446,7 +1446,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     h->codecs[DS_CF] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_CF]),
 					 c->stats[DS_CF], E_INT, NULL,
 					 fd->version);
-//    fprintf(stderr, "=== RN ===\n");
+    //fprintf(stderr, "=== RN ===\n");
 //    h->codecs[DS_RN] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_RN]),
 //				    c->stats[DS_RN], E_BYTE_ARRAY, NULL,
 //				    fd->version);
