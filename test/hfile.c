@@ -62,8 +62,8 @@ char *slurp(const char *filename)
     char *text;
     struct stat sbuf;
     size_t filesize;
-    FILE *f = fopen(filename, "r");
-    if (f == NULL) fail("fopen(\"%s\", \"r\")", filename);
+    FILE *f = fopen(filename, "rb");
+    if (f == NULL) fail("fopen(\"%s\", \"rb\")", filename);
     if (fstat(fileno(f), &sbuf) != 0) fail("fstat(\"%s\")", filename);
     filesize = sbuf.st_size;
 

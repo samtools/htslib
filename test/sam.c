@@ -43,7 +43,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 int status;
 
-static void HTS_FORMAT(printf, 1, 2) fail(const char *fmt, ...)
+static void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) fail(const char *fmt, ...)
 {
     va_list args;
 

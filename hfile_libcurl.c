@@ -28,7 +28,9 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/select.h>
+#ifndef _WIN32
+# include <sys/select.h>
+#endif
 
 #include "hfile_internal.h"
 #ifdef ENABLE_PLUGINS

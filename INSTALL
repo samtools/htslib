@@ -48,6 +48,12 @@ library is used.  Systems that do not have CChmac will get this from
 libcrypto.  libcrypto is part of OpenSSL or one of its derivatives (LibreSSL
 or BoringSSL).
 
+On Microsoft Windows we recommend use of Mingw64/Msys2.  Note that
+currently for the test harness to work you will need to override the
+test temporary directory with e.g.: make check TEST_OPTS="-t C:/msys64/tmp/_"
+Whilst the code may work on Windows with other environments, these have
+not be verified.
+
 Building Configure
 ==================
 

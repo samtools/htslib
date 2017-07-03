@@ -526,6 +526,18 @@ static ssize_t fd_write(hFILE *fpv, const void *buffer, size_t nbytes)
         n = fp->is_socket?  send(fp->fd, buffer, nbytes, 0)
                          : write(fp->fd, buffer, nbytes);
     } while (n < 0 && errno == EINTR);
+#ifdef _WIN32
+        // On windows we have no SIGPIPE.  Instead write returns
+        // EINVAL.  We check for this and our fd being a pipe.
+        // If so, we raise SIGTERM instead of SIGPIPE.  It's not
+        // ideal, but I think the only alternative is extra checking
+        // in every single piece of code.
+        if (n < 0 && errno == EINVAL &&
+            GetLastError() == ERROR_NO_DATA &&
+            GetFileType((HANDLE)_get_osfhandle(fp->fd)) == FILE_TYPE_PIPE) {
+            raise(SIGTERM);
+        }
+#endif
     return n;
 }
 
@@ -537,12 +549,13 @@ static off_t fd_seek(hFILE *fpv, off_t offset, int whence)
 
 static int fd_flush(hFILE *fpv)
 {
-    hFILE_fd *fp = (hFILE_fd *) fpv;
-    int ret;
+    int ret = 0;
     do {
 #ifdef HAVE_FDATASYNC
+        hFILE_fd *fp = (hFILE_fd *) fpv;
         ret = fdatasync(fp->fd);
-#else
+#elif defined(HAVE_FSYNC)
+        hFILE_fd *fp = (hFILE_fd *) fpv;
         ret = fsync(fp->fd);
 #endif
         // Ignore invalid-for-fsync(2) errors due to being, e.g., a pipe,
@@ -618,6 +631,11 @@ static hFILE *hopen_fd_fileuri(const char *url, const char *mode)
     if (strncmp(url, "file://localhost/", 17) == 0) url += 16;
     else if (strncmp(url, "file:///", 8) == 0) url += 7;
     else { errno = EPROTONOSUPPORT; return NULL; }
+
+#ifdef _WIN32
+    // For cases like C:/foo
+    if (url[0] == '/' && url[2] == ':' && url[3] == '/') url++;
+#endif
 
     return hopen_fd(url, mode);
 }
@@ -876,7 +894,8 @@ static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
         else if (s[i] == ':') break;
         else return NULL;
 
-    if (i == 0 || i >= sizeof scheme) return NULL;
+    // 1 byte schemes are likely windows C:/foo pathnames
+    if (i <= 1 || i >= sizeof scheme) return NULL;
     scheme[i] = '\0';
 
     pthread_mutex_lock(&plugins_lock);
