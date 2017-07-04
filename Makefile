@@ -138,7 +138,6 @@ print-version:
 
 
 LIBHTS_OBJS = \
-	hts_os.o\
 	kfunc.o \
 	knetfile.o \
 	kstring.o \
@@ -149,6 +148,7 @@ LIBHTS_OBJS = \
 	hfile.o \
 	hfile_net.o \
 	hts.o \
+	hts_os.o\
 	md5.o \
 	multipart.o \
 	probaln.o \

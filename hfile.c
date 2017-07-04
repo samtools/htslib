@@ -629,12 +629,13 @@ hFILE *hdopen(int fd, const char *mode)
 static hFILE *hopen_fd_fileuri(const char *url, const char *mode)
 {
     if (strncmp(url, "file://localhost/", 17) == 0) url += 16;
-#ifdef _WIN32
-    else if (strncmp(url, "file:///", 8) == 0) url += 8;
-#else
     else if (strncmp(url, "file:///", 8) == 0) url += 7;
-#endif
     else { errno = EPROTONOSUPPORT; return NULL; }
+
+#ifdef _WIN32
+    // For cases like C:/foo
+    if (url[0] == '/' && url[2] == ':' && url[3] == '/') url++;
+#endif
 
     return hopen_fd(url, mode);
 }
