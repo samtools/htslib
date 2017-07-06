@@ -326,6 +326,18 @@ bam1_t *bam_dup1(const bam1_t *bsrc)
     return bam_copy1(bdst, bsrc);
 }
 
+void bam_cigar2rqlens(int n_cigar, const uint32_t *cigar, int *rlen, int *qlen)
+{
+    int k;
+    *rlen = *qlen = 0;
+    for (k = 0; k < n_cigar; ++k) {
+        int type = bam_cigar_type(bam_cigar_op(cigar[k]));
+        int len = bam_cigar_oplen(cigar[k]);
+        if (type & 1) *qlen += len;
+        if (type & 2) *rlen += len;
+    }
+}
+
 int bam_cigar2qlen(int n_cigar, const uint32_t *cigar)
 {
     int k, l;
@@ -350,6 +362,49 @@ int32_t bam_endpos(const bam1_t *b)
         return b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
     else
         return b->core.pos + 1;
+}
+
+static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
+{
+    bam1_core_t *c = &b->core;
+    uint32_t cigar_st, n_cigar4, CG_st, CG_en, ori_len = b->l_data, *cigar0, CG_len, fake_bytes;
+    uint8_t *CG;
+
+    // test where there is a real CIGAR in the CG tag to move
+    if (c->n_cigar == 0 || c->tid < 0 || c->pos < 0) return 0;
+    cigar0 = bam_get_cigar(b);
+    if (bam_cigar_op(cigar0[0]) != BAM_CSOFT_CLIP || bam_cigar_oplen(cigar0[0]) != c->l_qseq) return 0;
+    fake_bytes = c->n_cigar * 4;
+    if ((CG = bam_aux_get(b, "CG")) == 0) return 0; // no CG tag
+    if (CG[0] != 'B' || CG[1] != 'I') return 0; // not of type B,I
+    CG_len = le_to_u32(CG + 2);
+    if (CG_len < c->n_cigar || CG_len >= 1U<<29) return 0; // don't move if the real CIGAR length is shorter than the fake cigar length
+
+    // move from the CG tag to the right position
+    cigar_st = (uint8_t*)cigar0 - b->data;
+    c->n_cigar = CG_len;
+    n_cigar4 = c->n_cigar * 4;
+    CG_st = CG - b->data - 2;
+    CG_en = CG_st + 8 + n_cigar4;
+    b->l_data = b->l_data - fake_bytes + n_cigar4; // we need c->n_cigar-fake_bytes bytes to swap CIGAR to the right place
+    if (b->m_data < b->l_data) {
+        uint8_t *new_data;
+        uint32_t new_max = b->l_data;
+        kroundup32(new_max);
+        new_data = (uint8_t*)realloc(b->data, new_max);
+        if (new_data == 0) return -1;
+        b->m_data = new_max, b->data = new_data;
+    }
+    memmove(b->data + cigar_st + n_cigar4, b->data + cigar_st + fake_bytes, ori_len - (cigar_st + fake_bytes)); // insert c->n_cigar-fake_bytes empty space to make room
+    memcpy(b->data + cigar_st, b->data + (n_cigar4 - fake_bytes) + CG_st + 8, n_cigar4); // copy the real CIGAR to the right place; -fake_bytes for the fake CIGAR
+    if (ori_len > CG_en) // move data after the CG tag
+        memmove(b->data + CG_st + n_cigar4 - fake_bytes, b->data + CG_en + n_cigar4 - fake_bytes, ori_len - CG_en);
+    b->l_data -= n_cigar4 + 8; // 8: CGBI (4 bytes) and CGBI length (4)
+    if (recal_bin)
+        b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)), 14, 5);
+    if (give_warning)
+        hts_log_error("%s encodes a CIGAR with %d operators at the CG tag", bam_get_qname(b), c->n_cigar);
+    return 1;
 }
 
 static inline int aux_type2size(uint8_t type)
@@ -423,13 +478,19 @@ int bam_read1(BGZF *fp, bam1_t *b)
         bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
-
-    // Sanity check for broken CIGAR alignments
-    if (c->n_cigar > 0 && c->l_qseq > 0 && !(c->flag & BAM_FUNMAP)
-        && bam_cigar2qlen(c->n_cigar, bam_get_cigar(b)) != c->l_qseq) {
-        hts_log_error("CIGAR and query sequence lengths differ for %s",
-                      bam_get_qname(b));
+    if (bam_tag2cigar(b, 0, 0) < 0)
         return -4;
+
+    if (c->n_cigar > 0) { // recompute "bin" and check CIGAR-qlen consistency
+        int rlen, qlen;
+        bam_cigar2rqlens(c->n_cigar, bam_get_cigar(b), &rlen, &qlen);
+        b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + rlen, 14, 5);
+        // Sanity check for broken CIGAR alignments
+        if (c->l_qseq > 0 && !(c->flag & BAM_FUNMAP) && qlen != c->l_qseq) {
+            hts_log_error("CIGAR and query sequence lengths differ for %s",
+                    bam_get_qname(b));
+            return -4;
+        }
     }
 
     return 4 + block_len;
@@ -440,15 +501,12 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     const bam1_core_t *c = &b->core;
     uint32_t x[8], block_len = b->l_data - c->l_extranul + 32, y;
     int i, ok;
-    if (c->n_cigar >= 65536) {
-        hts_log_error("Too many CIGAR operations (%d >= 64K for QNAME \"%s\")", c->n_cigar, bam_get_qname(b));
-        errno = EOVERFLOW;
-        return -1;
-    }
+    if (c->n_cigar > 0xffff) block_len += 16; // "16" for "CGBI", 4-byte tag length and 8-byte fake CIGAR
     x[0] = c->tid;
     x[1] = c->pos;
     x[2] = (uint32_t)c->bin<<16 | c->qual<<8 | (c->l_qname - c->l_extranul);
-    x[3] = (uint32_t)c->flag<<16 | c->n_cigar;
+    if (c->n_cigar > 0xffff) x[3] = (uint32_t)c->flag << 16 | 2;
+    else x[3] = (uint32_t)c->flag << 16 | (c->n_cigar & 0xffff);
     x[4] = c->l_qseq;
     x[5] = c->mtid;
     x[6] = c->mpos;
@@ -464,7 +522,24 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     }
     if (ok) ok = (bgzf_write(fp, x, 32) >= 0);
     if (ok) ok = (bgzf_write(fp, b->data, c->l_qname - c->l_extranul) >= 0);
-    if (ok) ok = (bgzf_write(fp, b->data + c->l_qname, b->l_data - c->l_qname) >= 0);
+    if (c->n_cigar <= 0xffff) { // no long CIGAR; write normally
+        if (ok) ok = (bgzf_write(fp, b->data + c->l_qname, b->l_data - c->l_qname) >= 0);
+    } else { // with long CIGAR, insert a fake CIGAR record and move the real CIGAR to the CG:B,I tag
+        uint8_t buf[8];
+        uint32_t cigar_st, cigar_en, cigar[2];
+        cigar_st = (uint8_t*)bam_get_cigar(b) - b->data;
+        cigar_en = cigar_st + c->n_cigar * 4;
+        cigar[0] = (uint32_t)c->l_qseq << 4 | BAM_CSOFT_CLIP;
+        cigar[1] = (uint32_t)bam_cigar2rlen(c->n_cigar, bam_get_cigar(b)) << 4 | BAM_CREF_SKIP;
+        u32_to_le(cigar[0], buf);
+        u32_to_le(cigar[1], buf + 4);
+        if (ok) ok = (bgzf_write(fp, buf, 8) >= 0); // write cigar: <read_length>S<ref_length>N
+        if (ok) ok = (bgzf_write(fp, &b->data[cigar_en], b->l_data - cigar_en) >= 0); // write data after CIGAR
+        if (ok) ok = (bgzf_write(fp, "CGBI", 4) >= 0); // write CG:B,I
+        u32_to_le(c->n_cigar, buf);
+        if (ok) ok = (bgzf_write(fp, buf, 4) >= 0); // write the true CIGAR length
+        if (ok) ok = (bgzf_write(fp, &b->data[cigar_st], c->n_cigar * 4) >= 0); // write the real CIGAR
+    }
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
     return ok? 4 + block_len : -1;
 }
@@ -577,6 +652,9 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, 
     htsFile *fp = fpv;
     bam1_t *b = bv;
     int ret = cram_get_bam_seq(fp->fp.cram, &b);
+    if (bam_tag2cigar(b, 1, 1) < 0)
+        return -2;
+
     *tid = b->core.tid;
     *beg = b->core.pos;
     *end = bam_endpos(b);
@@ -651,6 +729,8 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
     case bam:   return bam_read1(bgzfp, b);
     case cram: {
         int ret = cram_get_bam_seq(fp->fp.cram, &b);
+        if (bam_tag2cigar(b, 1, 1) < 0)
+            return -2;
         return ret >= 0
             ? ret
             : (cram_eof(fp->fp.cram) ? -1 : -2);
@@ -1233,6 +1313,8 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         } else _parse_err_param(1, "unrecognized type %c", type);
     }
     b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
+    if (bam_tag2cigar(b, 1, 1) < 0)
+        return -2;
     return 0;
 
 #undef _parse_warn
@@ -1261,6 +1343,7 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 
     case cram: {
         int ret = cram_get_bam_seq(fp->fp.cram, &b);
+        bam_tag2cigar(b, 1, 1);
         return ret >= 0
             ? ret
             : (cram_eof(fp->fp.cram) ? -1 : -2);
