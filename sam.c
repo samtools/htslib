@@ -352,24 +352,27 @@ int32_t bam_endpos(const bam1_t *b)
         return b->core.pos + 1;
 }
 
-static void bam_tag2cigar(bam1_t *b)
+static int bam_tag2cigar(bam1_t *b)
 {
     bam1_core_t *c = &b->core;
     uint32_t cigar_st, n_cigar4, CG_st, CG_en, ori_len = b->l_data;
     uint8_t *CG;
-    if (c->n_cigar > 0 || !(c->flag & BAM_FUNMAP) || c->tid < 0 || c->pos < 0) return;
-    if ((CG = bam_aux_get(b, "CG")) == 0) return;
-    if (CG[0] != 'B' || CG[1] != 'I') return;
+    if (c->n_cigar > 0 || !(c->flag & BAM_FUNMAP) || c->tid < 0 || c->pos < 0) return 0;
+    if ((CG = bam_aux_get(b, "CG")) == 0) return 0;
+    if (CG[0] != 'B' || CG[1] != 'I') return 0;
     cigar_st = (uint8_t*)bam_get_cigar(b) - b->data;
-    c->n_cigar = *(uint32_t*)(CG + 2);
+    c->n_cigar = le_to_u32(CG + 2);
     n_cigar4 = c->n_cigar * 4;
     CG_st = CG - b->data - 2;
     CG_en = CG_st + 8 + n_cigar4;
     b->l_data += n_cigar4;
     if (b->m_data < b->l_data) {
-        b->m_data = b->l_data;
-        kroundup32(b->m_data);
-        b->data = (uint8_t*)realloc(b->data, b->m_data);
+        uint8_t *new_data;
+        uint32_t new_max = b->l_data;
+        kroundup32(new_max);
+        new_data = (uint8_t*)realloc(b->data, new_max);
+        if (new_data == 0) return -1;
+        b->m_data = new_max, b->data = new_data;
     }
     memmove(b->data + cigar_st + n_cigar4, b->data + cigar_st, ori_len - cigar_st); // make room for the real CIGAR
     memcpy(b->data + cigar_st, b->data + n_cigar4 + CG_st + 8, n_cigar4); // copy the real CIGAR to the right place
@@ -377,6 +380,7 @@ static void bam_tag2cigar(bam1_t *b)
         memmove(b->data + CG_st + n_cigar4, b->data + CG_en + n_cigar4, ori_len - CG_en);
     b->l_data -= n_cigar4 + 8;
     c->flag &= ~BAM_FUNMAP;
+    return 1;
 }
 
 static inline int aux_type2size(uint8_t type)
@@ -448,7 +452,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
         bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
-    bam_tag2cigar(b);
+    if (bam_tag2cigar(b) < 0) return -4;
     return 4 + block_len;
 }
 
@@ -1183,7 +1187,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         } else _parse_err_param(1, "unrecognized type %c", type);
     }
     b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
-    bam_tag2cigar(b);
+    if (bam_tag2cigar(b) < 0) return -2;
     return 0;
 
 #undef _parse_warn
