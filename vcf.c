@@ -2929,11 +2929,12 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
         int src_id = line->d.info[i].key;
         int dst_id = src_hdr->transl[BCF_DT_ID][src_id];
         if ( dst_id<0 ) continue;
+        line->d.info[i].key = dst_id;
+        if ( !line->d.info[i].vptr ) continue;  // skip deleted
         int src_size = src_id>>7 ? ( src_id>>15 ? BCF_BT_INT32 : BCF_BT_INT16) : BCF_BT_INT8;
         int dst_size = dst_id>>7 ? ( dst_id>>15 ? BCF_BT_INT32 : BCF_BT_INT16) : BCF_BT_INT8;
         if ( src_size==dst_size )   // can overwrite
         {
-            line->d.info[i].key = dst_id;
             uint8_t *vptr = line->d.info[i].vptr - line->d.info[i].vptr_off;
             if ( dst_size==BCF_BT_INT8 ) { vptr[1] = (uint8_t)dst_id; }
             else if ( dst_size==BCF_BT_INT16 ) { *(uint16_t*)vptr = (uint16_t)dst_id; }
@@ -2950,7 +2951,6 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
             kputsn((char*)info->vptr, info->vptr_len, &str);
             info->vptr = (uint8_t*)str.s + info->vptr_off;
             info->vptr_free = 1;
-            info->key = dst_id;
             line->d.shared_dirty |= BCF1_DIRTY_INF;
         }
     }
