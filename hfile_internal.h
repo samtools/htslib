@@ -42,11 +42,11 @@ extern "C" {
   the buffer is beyond the new capacity.
 
   @param fp        The file stream
-  @param bufsiz    The size of the new bufsiz
+  @param bufsiz    The size of the new buffer
 
   @return Returns 0 on success, -1 on failure.
  */
-int hfile_set_blksize(hFILE *fp, size_t capacity);
+int hfile_set_blksize(hFILE *fp, size_t bufsiz);
 
 struct BGZF;
 /*!
