@@ -2961,11 +2961,12 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
         int src_id = line->d.fmt[i].id;
         int dst_id = src_hdr->transl[BCF_DT_ID][src_id];
         if ( dst_id<0 ) continue;
+        line->d.fmt[i].id = dst_id;
+        if( !line->d.fmt[i].p ) continue;  // skip deleted
         int src_size = src_id>>7 ? ( src_id>>15 ? BCF_BT_INT32 : BCF_BT_INT16) : BCF_BT_INT8;
         int dst_size = dst_id>>7 ? ( dst_id>>15 ? BCF_BT_INT32 : BCF_BT_INT16) : BCF_BT_INT8;
         if ( src_size==dst_size )   // can overwrite
         {
-            line->d.fmt[i].id = dst_id;
             uint8_t *p = line->d.fmt[i].p - line->d.fmt[i].p_off;    // pointer to the vector size (4bits) and BT type (4bits)
             if ( dst_size==BCF_BT_INT8 ) { p[1] = dst_id; }
             else if ( dst_size==BCF_BT_INT16 ) { uint8_t *x = (uint8_t*) &dst_id; p[1] = x[0]; p[2] = x[1]; }
@@ -2982,7 +2983,6 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
             kputsn((char*)fmt->p, fmt->p_len, &str);
             fmt->p = (uint8_t*)str.s + fmt->p_off;
             fmt->p_free = 1;
-            fmt->id = dst_id;
             line->d.indiv_dirty = 1;
         }
     }
