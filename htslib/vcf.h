@@ -877,23 +877,20 @@ extern uint32_t bcf_float_vector_end;
 extern uint32_t bcf_float_missing;
 static inline void bcf_float_set(float *ptr, uint32_t value)
 {
-    union { uint32_t i; float f; } u;
-    u.i = value;
-    *ptr = u.f;
+    uint32_t *pf = (uint32_t*)ptr;
+    *pf = value;
 }
 #define bcf_float_set_vector_end(x) bcf_float_set(&(x),bcf_float_vector_end)
 #define bcf_float_set_missing(x)    bcf_float_set(&(x),bcf_float_missing)
 static inline int bcf_float_is_missing(float f)
 {
-    union { uint32_t i; float f; } u;
-    u.f = f;
-    return u.i==bcf_float_missing ? 1 : 0;
+    uint32_t *pf = (uint32_t*)&f;
+    return *pf==bcf_float_missing ? 1 : 0;
 }
 static inline int bcf_float_is_vector_end(float f)
 {
-    union { uint32_t i; float f; } u;
-    u.f = f;
-    return u.i==bcf_float_vector_end ? 1 : 0;
+    uint32_t *pf = (uint32_t*)&f;
+    return *pf==bcf_float_vector_end ? 1 : 0;
 }
 
 static inline void bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
