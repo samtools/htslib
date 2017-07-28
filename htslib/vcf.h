@@ -882,15 +882,12 @@ static inline void bcf_float_set(float *ptr, uint32_t value)
 }
 #define bcf_float_set_vector_end(x) bcf_float_set(&(x),bcf_float_vector_end)
 #define bcf_float_set_missing(x)    bcf_float_set(&(x),bcf_float_missing)
-static inline int bcf_float_is_missing(float f)
+#define bcf_float_is_vector_end(x) bcf_float_equals(&(x),bcf_float_vector_end)
+#define bcf_float_is_missing(x)    bcf_float_equals(&(x),bcf_float_missing)
+static inline int bcf_float_equals(const float *ptr, uint32_t value)
 {
-    uint32_t *pf = (uint32_t*)&f;
-    return *pf==bcf_float_missing ? 1 : 0;
-}
-static inline int bcf_float_is_vector_end(float f)
-{
-    uint32_t *pf = (uint32_t*)&f;
-    return *pf==bcf_float_vector_end ? 1 : 0;
+    uint32_t *pf = (uint32_t*)ptr;
+    return *pf==value ? 1 : 0;
 }
 
 static inline void bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
