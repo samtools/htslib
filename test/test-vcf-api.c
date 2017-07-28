@@ -330,6 +330,7 @@ void write_format_values(const char *fname)
     bcf_float_set_missing(test[0]);
     test[1] = 47.11f;
     bcf_float_set_vector_end(test[2]);
+    bcf_float_set_vector_end(test[3]);
     bcf_update_format_float(hdr, rec, "TF", test, 4);
     bcf_write1(fp, hdr, rec);
 
