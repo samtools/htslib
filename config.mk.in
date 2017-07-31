@@ -77,7 +77,7 @@ plugin_OBJS += hfile_s3.o
 
 CRYPTO_LIBS = @CRYPTO_LIBS@
 noplugin_LIBS += $(CRYPTO_LIBS)
-hfile_s3$(PLUGIN_EXT): LIBS += $(CRYPTO_LIBS)
+hfile_s3$(PLUGIN_EXT): LIBS += $(LIBCURL_LIBS)
 endif
 
 ifeq "plugins-@enable_plugins@" "plugins-yes"
