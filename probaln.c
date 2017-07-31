@@ -92,7 +92,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
     if (bw > c->bw) bw = c->bw;
     if (bw < abs(l_ref - l_query)) bw = abs(l_ref - l_query);
     bw2 = bw * 2 + 1;
-    size_t i_dim = (size_t) bw2*3+6;
+    size_t i_dim = bw2 < l_ref ? (size_t) bw2*3+6 : (size_t) l_ref*3+6;
 
     // allocate the forward and backward matrices f[][] and b[][] and the scaling array s[]
     // Ideally these callocs would be mallocs + initialisation of the few bits needed.
@@ -174,7 +174,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
         for (k = 1, sum = 0.; k <= l_ref; ++k) {
             int u;
             set_u(u, bw, l_query, k);
-            if (u < 3 || u >= bw2*3+3) continue;
+            if (u < 3 || u >= i_dim - 3) continue;
             sum += M*f[l_query*i_dim + u+0] * sM + M*f[l_query*i_dim + u+1] * sI;
         }
         s[l_query+1] = sum; // the last scaling factor
@@ -198,7 +198,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
         int u;
         double *bi = &b[l_query*i_dim];
         set_u(u, bw, l_query, k);
-        if (u < 3 || u >= bw2*3+3) continue;
+        if (u < 3 || u >= i_dim - 3) continue;
         bi[u+0] = sM / s[l_query] / s[l_query+1]; bi[u+1] = sI / s[l_query] / s[l_query+1];
     }
     // b[l_query-1..1]
@@ -236,7 +236,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
             int u;
             double e = (ref[k - 1] > 3 || query[0] > 3)? 1. : ref[k - 1] == query[0]? 1. - qual[0] : qual[0] * EM;
             set_u(u, bw, 1, k);
-            if (u < 3 || u >= bw2*3+3) continue;
+            if (u < 3 || u >= i_dim - 3) continue;
             sum += e * b[1*i_dim + u+0] * bM + EI * b[1*i_dim + u+1] * bI;
         }
         set_u(k, bw, 0, 0);
