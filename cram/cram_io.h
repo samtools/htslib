@@ -842,6 +842,8 @@ int cram_close(cram_fd *fd);
  */
 int cram_seek(cram_fd *fd, off_t offset, int whence);
 
+int64_t cram_tell(cram_fd *fd);
+
 /*
  * Flushes a CRAM file.
  * Useful for when writing to stdout without wishing to close the stream.
