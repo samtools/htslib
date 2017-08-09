@@ -2208,6 +2208,22 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
     return itr_query(idx, tid, beg, end, readrec);
 }
 
+hts_itr_t *hts_itr_bed(const hts_idx_t *idx, const char *reg, unsigned int beg, unsigned int end, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
+{
+    int tid;
+    const char *q;
+
+    if (strcmp(reg, ".") == 0)
+        return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
+    else if (strcmp(reg, "*") == 0)
+        return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
+
+    tid = getid(hdr, reg);
+    if (tid < 0) return NULL;
+
+    return itr_query(idx, tid, beg, end, readrec);
+}
+
 int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 {
     int ret, tid, beg, end;

@@ -353,6 +353,7 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
     #define sam_itr_destroy(iter) hts_itr_destroy(iter)
     hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
     hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
+    hts_itr_t *sam_itr_bed(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region, unsigned int beg, unsigned int end);
     #define sam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (htsfp))
 
     /***************

@@ -692,6 +692,15 @@ hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *regi
         return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr, hts_itr_query, bam_readrec);
 }
 
+hts_itr_t *sam_itr_bed(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region, unsigned int beg, unsigned int end)
+{
+    const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
+    if (cidx->fmt == HTS_FMT_CRAI)
+        return hts_itr_bed(idx, region, beg, end, cram_name2id, cidx->cram, cram_itr_query, cram_readrec);
+    else
+        return hts_itr_bed(idx, region, beg, end, (hts_name2id_f)(bam_name2id), hdr, hts_itr_query, bam_readrec);
+}
+
 /**********************
  *** SAM header I/O ***
  **********************/
