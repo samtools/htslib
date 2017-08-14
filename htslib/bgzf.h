@@ -49,6 +49,7 @@ extern "C" {
 #define BGZF_ERR_IO     4
 #define BGZF_ERR_MISUSE 8
 #define BGZF_ERR_MT     16 // stream cannot be multi-threaded
+#define BGZF_ERR_CRC    32
 
 struct hFILE;
 struct hts_tpool;
