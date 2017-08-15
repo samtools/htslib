@@ -2943,12 +2943,13 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
         else    // must realloc
         {
             bcf_info_t *info = &line->d.info[i];
-            assert( !info->vptr_free );
             kstring_t str = {0,0,0};
             bcf_enc_int1(&str, dst_id);
             bcf_enc_size(&str, info->len,info->type);
-            info->vptr_off = str.l;
+            uint32_t vptr_off = str.l;
             kputsn((char*)info->vptr, info->vptr_len, &str);
+            if( info->vptr_free ) free(info->vptr - info->vptr_off);
+            info->vptr_off = vptr_off;
             info->vptr = (uint8_t*)str.s + info->vptr_off;
             info->vptr_free = 1;
             line->d.shared_dirty |= BCF1_DIRTY_INF;
@@ -2975,12 +2976,13 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
         else    // must realloc
         {
             bcf_fmt_t *fmt = &line->d.fmt[i];
-            assert( !fmt->p_free );
             kstring_t str = {0,0,0};
             bcf_enc_int1(&str, dst_id);
             bcf_enc_size(&str, fmt->n, fmt->type);
-            fmt->p_off = str.l;
+            uint32_t p_off = str.l;
             kputsn((char*)fmt->p, fmt->p_len, &str);
+            if( fmt->p_free ) free(fmt->p - fmt->p_off);
+            fmt->p_off = p_off;
             fmt->p = (uint8_t*)str.s + fmt->p_off;
             fmt->p_free = 1;
             line->d.indiv_dirty = 1;
