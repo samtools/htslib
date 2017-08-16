@@ -69,6 +69,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <time.h>
 #include <stdint.h>
 
+#ifdef HAVE_LIBDEFLATE
+#include <libdeflate.h>
+#define crc32(a,b,c) libdeflate_crc32((a),(b),(c))
+#endif
+
 #include "cram/cram.h"
 #include "cram/os.h"
 #include "htslib/hts.h"

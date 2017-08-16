@@ -37,10 +37,11 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/sam.h"
 
 enum test_op {
-    READ_COMPRESSED  = 1,
-    WRITE_COMPRESSED = 2,
-    READ_CRAM        = 4,
-    WRITE_CRAM       = 8
+    READ_COMPRESSED    = 1,
+    WRITE_COMPRESSED   = 2,
+    READ_CRAM          = 4,
+    WRITE_CRAM         = 8,
+    WRITE_UNCOMPRESSED = 16,
 };
 
 int main(int argc, char *argv[])
@@ -61,7 +62,7 @@ int main(int argc, char *argv[])
     int nthreads = 0; // shared pool
     int multi_reg = 0;
 
-    while ((c = getopt(argc, argv, "DSIt:i:bCl:o:N:BZ:@:M")) >= 0) {
+    while ((c = getopt(argc, argv, "DSIt:i:bCul:o:N:BZ:@:M")) >= 0) {
         switch (c) {
         case 'D': flag |= READ_CRAM; break;
         case 'S': flag |= READ_COMPRESSED; break;
@@ -70,6 +71,7 @@ int main(int argc, char *argv[])
         case 'i': if (hts_opt_add(&in_opts, optarg)) return 1; break;
         case 'b': flag |= WRITE_COMPRESSED; break;
         case 'C': flag |= WRITE_CRAM; break;
+        case 'u': flag |= WRITE_UNCOMPRESSED; break; // eg u-BAM not SAM
         case 'l': clevel = atoi(optarg); flag |= WRITE_COMPRESSED; break;
         case 'o': if (hts_opt_add(&out_opts, optarg)) return 1; break;
         case 'N': nreads = atoi(optarg); break;
@@ -133,6 +135,7 @@ int main(int argc, char *argv[])
     if (clevel >= 0 && clevel <= 9) sprintf(modew + 1, "%d", clevel);
     if (flag & WRITE_CRAM) strcat(modew, "c");
     else if (flag & WRITE_COMPRESSED) strcat(modew, "b");
+    else if (flag & WRITE_UNCOMPRESSED) strcat(modew, "bu");
     out = hts_open("-", modew);
     if (out == NULL) {
         fprintf(stderr, "Error opening standard output\n");
