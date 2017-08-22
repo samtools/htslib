@@ -565,7 +565,10 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, 
 {
     htsFile *fp = fpv;
     bam1_t *b = bv;
-    return cram_get_bam_seq(fp->fp.cram, &b);
+    int ret = cram_get_bam_seq(fp->fp.cram, &b);
+    return ret >= 0
+        ? ret
+        : (cram_eof(fp->fp.cram) ? -1 : -2);
 }
 
 // This is used only with read_rest=1 iterators, so need not set tid/beg/end.
@@ -575,7 +578,12 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
     bam1_t *b = bv;
     switch (fp->format.format) {
     case bam:   return bam_read1(bgzfp, b);
-    case cram:  return cram_get_bam_seq(fp->fp.cram, &b);
+    case cram: {
+        int ret = cram_get_bam_seq(fp->fp.cram, &b);
+        return ret >= 0
+            ? ret
+            : (cram_eof(fp->fp.cram) ? -1 : -2);
+    }
     default:
         // TODO Need headers available to implement this for SAM files
         hts_log_error("Not implemented for SAM files");
