@@ -109,7 +109,7 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
     case bed:
         return region_list;
 
-    case json:
+    case htsget:
         return unknown_category;
 
     case unknown_format:
@@ -197,7 +197,7 @@ cmp_nonblank(const char *key, const unsigned char *u, const unsigned char *ulim)
 
 int hts_detect_format(hFILE *hfile, htsFormat *fmt)
 {
-    unsigned char s[21];
+    unsigned char s[32];
     ssize_t len = hpeek(hfile, s, 18);
     if (len < 0) return -1;
 
@@ -286,9 +286,9 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
             fmt->version.major = 1, fmt->version.minor = -1;
         return 0;
     }
-    else if (cmp_nonblank("{\"", s, &s[len]) == 0) {
+    else if (cmp_nonblank("{\"htsget\":", s, &s[len]) == 0) {
         fmt->category = unknown_category;
-        fmt->format = json;
+        fmt->format = htsget;
         fmt->version.major = fmt->version.minor = -1;
         return 0;
     }
@@ -329,7 +329,7 @@ char *hts_format_description(const htsFormat *format)
     case crai:  kputs("CRAI", &str); break;
     case csi:   kputs("CSI", &str); break;
     case tbi:   kputs("Tabix", &str); break;
-    case json:  kputs("JSON", &str); break;
+    case htsget: kputs("htsget", &str); break;
     default:    kputs("unknown", &str); break;
     }
 
@@ -376,7 +376,7 @@ char *hts_format_description(const htsFormat *format)
         case crai:
         case vcf:
         case bed:
-        case json:
+        case htsget:
             kputs(" text", &str);
             break;
 
@@ -797,8 +797,8 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
     if (strchr(simple_mode, 'r')) {
         if (hts_detect_format(hfile, &fp->format) < 0) goto error;
 
-        if (fp->format.format == json) {
-            hFILE *hfile2 = hopen_json_redirect(hfile, simple_mode);
+        if (fp->format.format == htsget) {
+            hFILE *hfile2 = hopen_htsget_redirect(hfile, simple_mode);
             if (hfile2 == NULL) goto error;
 
             // Build fp against the result of the redirection
