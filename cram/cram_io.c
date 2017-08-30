@@ -4427,7 +4427,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_NTHREADS: {
 	int nthreads =  va_arg(args, int);
-        if (nthreads > 1) {
+        if (nthreads >= 1) {
             if (!(fd->pool = hts_tpool_init(nthreads)))
                 return -1;
 
