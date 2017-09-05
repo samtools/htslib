@@ -24,7 +24,7 @@ Noteworthy changes in release 1.4.1  (8th May 2017)
 
 This is primarily a security bug fix update.
 
-* Fixed SECURITY issue with buffer overruns with malicious data. (#514).
+* Fixed SECURITY (CVE-2017-1000206) issue with buffer overruns with malicious data. (#514).
 
 * S3 support for non Amazon AWS endpoints. (#506)
 
