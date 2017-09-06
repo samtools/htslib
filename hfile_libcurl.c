@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <pthread.h>
 #ifndef _WIN32
 # include <sys/select.h>
 #endif
@@ -55,6 +56,9 @@ typedef struct {
     unsigned paused : 1;    // callback tells us that it has paused transfer
     unsigned closing : 1;   // informs callback that hclose() has been invoked
     unsigned finished : 1;  // wait_perform() tells us transfer is complete
+    unsigned perform_again : 1;
+    int nrunning;
+    CURLM *multi;
 } hFILE_libcurl;
 
 static int http_status_errno(int status)
@@ -180,16 +184,25 @@ static int multi_errno(CURLMcode errm)
 
 
 static struct {
-    CURLM *multi;
     kstring_t useragent;
-    int nrunning;
-    unsigned perform_again : 1;
-} curl = { NULL, { 0, 0, NULL }, 0, 0 };
+    CURLSH *share;
+    pthread_mutex_t lock;
+} curl = { { 0, 0, NULL }, NULL, PTHREAD_MUTEX_INITIALIZER };
+
+static void share_lock(CURL *handle, curl_lock_data data,
+                       curl_lock_access access, void *userptr) {
+    pthread_mutex_lock(&curl.lock);
+}
+
+static void share_unlock(CURL *handle, curl_lock_data data, void *userptr) {
+    pthread_mutex_unlock(&curl.lock);
+}
+
 
 static void libcurl_exit()
 {
-    (void) curl_multi_cleanup(curl.multi);
-    curl.multi = NULL;
+    if (curl_share_cleanup(curl.share) == CURLSHE_OK)
+        curl.share = NULL;
 
     free(curl.useragent.s);
     curl.useragent.l = curl.useragent.m = 0; curl.useragent.s = NULL;
@@ -198,14 +211,12 @@ static void libcurl_exit()
 }
 
 
-static void process_messages()
+static void process_messages(hFILE_libcurl *fp)
 {
     CURLMsg *msg;
     int remaining;
 
-    while ((msg = curl_multi_info_read(curl.multi, &remaining)) != NULL) {
-        hFILE_libcurl *fp = NULL;
-        curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, (char **) &fp);
+    while ((msg = curl_multi_info_read(fp->multi, &remaining)) != NULL) {
         switch (msg->msg) {
         case CURLMSG_DONE:
             fp->finished = 1;
@@ -218,7 +229,7 @@ static void process_messages()
     }
 }
 
-static int wait_perform()
+static int wait_perform(hFILE_libcurl *fp)
 {
     fd_set rd, wr, ex;
     int maxfd, nrunning;
@@ -228,18 +239,18 @@ static int wait_perform()
     FD_ZERO(&rd);
     FD_ZERO(&wr);
     FD_ZERO(&ex);
-    if (curl_multi_fdset(curl.multi, &rd, &wr, &ex, &maxfd) != CURLM_OK)
+    if (curl_multi_fdset(fp->multi, &rd, &wr, &ex, &maxfd) != CURLM_OK)
         maxfd = -1, timeout = 1000;
     else if (maxfd < 0)
         timeout = 100;  // as recommended by curl_multi_fdset(3)
     else {
-        if (curl_multi_timeout(curl.multi, &timeout) != CURLM_OK)
+        if (curl_multi_timeout(fp->multi, &timeout) != CURLM_OK)
             timeout = 1000;
         else if (timeout < 0)
             timeout = 10000;  // as recommended by curl_multi_timeout(3)
     }
 
-    if (timeout > 0 && ! curl.perform_again) {
+    if (timeout > 0 && ! fp->perform_again) {
         struct timeval tval;
         tval.tv_sec  = (timeout / 1000);
         tval.tv_usec = (timeout % 1000) * 1000;
@@ -247,12 +258,12 @@ static int wait_perform()
         if (select(maxfd + 1, &rd, &wr, &ex, &tval) < 0) return -1;
     }
 
-    errm = curl_multi_perform(curl.multi, &nrunning);
-    curl.perform_again = 0;
-    if (errm == CURLM_CALL_MULTI_PERFORM) curl.perform_again = 1;
+    errm = curl_multi_perform(fp->multi, &nrunning);
+    fp->perform_again = 0;
+    if (errm == CURLM_CALL_MULTI_PERFORM) fp->perform_again = 1;
     else if (errm != CURLM_OK) { errno = multi_errno(errm); return -1; }
 
-    if (nrunning < curl.nrunning) process_messages();
+    if (nrunning < fp->nrunning) process_messages(fp);
     return 0;
 }
 
@@ -284,7 +295,7 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
     if (err != CURLE_OK) { errno = easy_errno(fp->easy, err); return -1; }
 
     while (! fp->paused && ! fp->finished)
-        if (wait_perform() < 0) return -1;
+        if (wait_perform(fp) < 0) return -1;
 
     nbytes = fp->buffer.ptr.rd - buffer;
     fp->buffer.ptr.rd = NULL;
@@ -329,7 +340,7 @@ static ssize_t libcurl_write(hFILE *fpv, const void *bufferv, size_t nbytes)
     if (err != CURLE_OK) { errno = easy_errno(fp->easy, err); return -1; }
 
     while (! fp->paused && ! fp->finished)
-        if (wait_perform() < 0) return -1;
+        if (wait_perform(fp) < 0) return -1;
 
     nbytes = fp->buffer.ptr.wr - buffer;
     fp->buffer.ptr.wr = NULL;
@@ -376,9 +387,9 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
 
     pos = origin + offset;
 
-    errm = curl_multi_remove_handle(curl.multi, fp->easy);
+    errm = curl_multi_remove_handle(fp->multi, fp->easy);
     if (errm != CURLM_OK) { errno = multi_errno(errm); return -1; }
-    curl.nrunning--;
+    fp->nrunning--;
 
     // TODO If we seem to be doing random access, use CURLOPT_RANGE to do
     // limited reads (e.g. about a BAM block!) so seeking can reuse the
@@ -390,15 +401,15 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
     fp->buffer.len = 0;
     fp->paused = fp->finished = 0;
 
-    errm = curl_multi_add_handle(curl.multi, fp->easy);
+    errm = curl_multi_add_handle(fp->multi, fp->easy);
     if (errm != CURLM_OK) { errno = multi_errno(errm); return -1; }
-    curl.nrunning++;
+    fp->nrunning++;
 
     err = curl_easy_pause(fp->easy, CURLPAUSE_CONT);
     if (err != CURLE_OK) { errno = easy_errno(fp->easy, err); return -1; }
 
     while (! fp->paused && ! fp->finished)
-        if (wait_perform() < 0) return -1;
+        if (wait_perform(fp) < 0) return -1;
 
     if (fp->finished && fp->final_result != CURLE_OK) {
         errno = easy_errno(fp->easy, fp->final_result);
@@ -425,16 +436,17 @@ static int libcurl_close(hFILE *fpv)
     if (err != CURLE_OK) save_errno = easy_errno(fp->easy, err);
 
     while (save_errno == 0 && ! fp->paused && ! fp->finished)
-        if (wait_perform() < 0) save_errno = errno;
+        if (wait_perform(fp) < 0) save_errno = errno;
 
     if (fp->finished && fp->final_result != CURLE_OK)
         save_errno = easy_errno(fp->easy, fp->final_result);
 
-    errm = curl_multi_remove_handle(curl.multi, fp->easy);
+    errm = curl_multi_remove_handle(fp->multi, fp->easy);
     if (errm != CURLM_OK && save_errno == 0) save_errno = multi_errno(errm);
-    curl.nrunning--;
+    fp->nrunning--;
 
     curl_easy_cleanup(fp->easy);
+    curl_multi_cleanup(fp->multi);
 
     if (save_errno) { errno = save_errno; return -1; }
     else return 0;
@@ -471,7 +483,12 @@ libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
     fp->buffer.ptr.rd = NULL;
     fp->buffer.len = 0;
     fp->final_result = (CURLcode) -1;
-    fp->paused = fp->closing = fp->finished = 0;
+    fp->paused = fp->closing = fp->finished = fp->perform_again = 0;
+    fp->nrunning = 0;
+    fp->easy = NULL;
+
+    fp->multi = curl_multi_init();
+    if (fp->multi == NULL) { errno = ENOMEM; goto error; }
 
     fp->easy = curl_easy_init();
     if (fp->easy == NULL) { errno = ENOMEM; goto error; }
@@ -494,6 +511,7 @@ libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
         if (list) fp->headers = list; else goto error;
     }
 
+    err |= curl_easy_setopt(fp->easy, CURLOPT_SHARE, curl.share);
     err |= curl_easy_setopt(fp->easy, CURLOPT_URL, url);
     err |= curl_easy_setopt(fp->easy, CURLOPT_USERAGENT, curl.useragent.s);
     if (fp->headers)
@@ -506,12 +524,12 @@ libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
 
     if (err != 0) { errno = ENOSYS; goto error; }
 
-    errm = curl_multi_add_handle(curl.multi, fp->easy);
+    errm = curl_multi_add_handle(fp->multi, fp->easy);
     if (errm != CURLM_OK) { errno = multi_errno(errm); goto error; }
-    curl.nrunning++;
+    fp->nrunning++;
 
     while (! fp->paused && ! fp->finished)
-        if (wait_perform() < 0) goto error_remove;
+        if (wait_perform(fp) < 0) goto error_remove;
 
     if (fp->finished && fp->final_result != CURLE_OK) {
         errno = easy_errno(fp->easy, fp->final_result);
@@ -530,13 +548,14 @@ libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
 
 error_remove:
     save = errno;
-    (void) curl_multi_remove_handle(curl.multi, fp->easy);
-    curl.nrunning--;
+    (void) curl_multi_remove_handle(fp->multi, fp->easy);
+    fp->nrunning--;
     errno = save;
 
 error:
     save = errno;
     if (fp->easy) curl_easy_cleanup(fp->easy);
+    if (fp->multi) curl_multi_cleanup(fp->multi);
     if (fp->headers) curl_slist_free_all(fp->headers);
     hfile_destroy((hFILE *) fp);
     errno = save;
@@ -623,14 +642,21 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
     err = curl_global_init(CURL_GLOBAL_ALL);
     if (err != CURLE_OK) { errno = easy_errno(NULL, err); return -1; }
 
-    curl.multi = curl_multi_init();
-    if (curl.multi == NULL) { curl_global_cleanup(); errno = EIO; return -1; }
+    curl.share = curl_share_init();
+    if (curl.share == NULL) { curl_global_cleanup(); errno = EIO; return -1; }
+    err = curl_share_setopt(curl.share, CURLSHOPT_LOCKFUNC, share_lock);
+    err |= curl_share_setopt(curl.share, CURLSHOPT_UNLOCKFUNC, share_unlock);
+    err |= curl_share_setopt(curl.share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+    if (err != 0) {
+        curl_share_cleanup(curl.share);
+        curl_global_cleanup();
+        errno = EIO;
+        return -1;
+    }
 
     info = curl_version_info(CURLVERSION_NOW);
     ksprintf(&curl.useragent, "htslib/%s libcurl/%s", version, info->version);
 
-    curl.nrunning = 0;
-    curl.perform_again = 0;
     self->name = "libcurl";
     self->destroy = libcurl_exit;
 
