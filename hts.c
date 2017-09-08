@@ -2258,8 +2258,8 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 //         -2 on other errors
 static int test_and_fetch(const char *fn, const char **local_fn)
 {
-    hFILE *fp_remote;
-    FILE *fp = NULL;
+    hFILE *remote_hfp;
+    FILE *local_fp = NULL;
     uint8_t *buf = NULL;
     int save_errno;
 
@@ -2271,15 +2271,15 @@ static int test_and_fetch(const char *fn, const char **local_fn)
             if (*p == '/') break;
         ++p; // p now points to the local file name
         // Attempt to open local file first
-        if ((fp = fopen((char*)p, "rb")) != 0)
+        if ((local_fp = fopen((char*)p, "rb")) != 0)
         {
-            fclose(fp);
+            fclose(local_fp);
             *local_fn = p;
             return 0;
         }
         // Attempt to open remote file. Stay quiet on failure, it is OK to fail when trying first .csi then .tbi index.
-        if ((fp_remote = hopen(fn, "r")) == 0) return -1;
-        if ((fp = fopen(p, "w")) == 0) {
+        if ((remote_hfp = hopen(fn, "r")) == 0) return -1;
+        if ((local_fp = fopen(p, "w")) == 0) {
             hts_log_error("Failed to create file %s in the working directory", p);
             goto fail;
         }
@@ -2289,36 +2289,36 @@ static int test_and_fetch(const char *fn, const char **local_fn)
             hts_log_error("%s", strerror(errno));
             goto fail;
         }
-        while ((l = hread(fp_remote, buf, buf_size)) > 0) {
-            if (fwrite(buf, 1, l, fp) != l) {
+        while ((l = hread(remote_hfp, buf, buf_size)) > 0) {
+            if (fwrite(buf, 1, l, local_fp) != l) {
                 hts_log_error("Failed to write data to %s : %s",
                               fn, strerror(errno));
                 goto fail;
             }
         }
         free(buf);
-        if (fclose(fp) < 0) {
+        if (fclose(local_fp) < 0) {
             hts_log_error("Error closing %s : %s", fn, strerror(errno));
-            fp = NULL;
+            local_fp = NULL;
             goto fail;
         }
-        if (hclose(fp_remote) != 0) {
+        if (hclose(remote_hfp) != 0) {
             hts_log_error("Failed to close remote file %s", fn);
         }
         *local_fn = p;
         return 0;
     } else {
-        hFILE *fp;
-        if ((fp = hopen(fn, "r")) == 0) return -1;
-        hclose_abruptly(fp);
+        hFILE *local_hfp;
+        if ((local_hfp = hopen(fn, "r")) == 0) return -1;
+        hclose_abruptly(local_hfp);
         *local_fn = fn;
         return 0;
     }
 
  fail:
     save_errno = errno;
-    hclose_abruptly(fp_remote);
-    if (fp) fclose(fp);
+    hclose_abruptly(remote_hfp);
+    if (local_fp) fclose(local_fp);
     free(buf);
     errno = save_errno;
     return -2;
