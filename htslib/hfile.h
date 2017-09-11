@@ -202,7 +202,7 @@ hread(hFILE *fp, void *buffer, size_t nbytes)
     if (n > nbytes) n = nbytes;
     memcpy(buffer, fp->begin, n);
     fp->begin += n;
-    return (n == nbytes)? (ssize_t) n : hread2(fp, buffer, nbytes, n);
+    return (n == nbytes || !fp->mobile)? (ssize_t) n : hread2(fp, buffer, nbytes, n);
 }
 
 /// Write a character to the stream
@@ -239,7 +239,15 @@ static inline ssize_t HTS_RESULT_USED
 hwrite(hFILE *fp, const void *buffer, size_t nbytes)
 {
     extern ssize_t hwrite2(hFILE *, const void *, size_t, size_t);
-
+    extern int hfile_set_blksize(hFILE *fp, size_t bufsiz);
+    
+    if(!fp->mobile){
+        if (fp->limit - fp->begin < nbytes){
+            hfile_set_blksize(fp, fp->limit - fp->buffer + nbytes);
+            fp->end = fp->limit;
+        }
+    }
+    
     size_t n = fp->limit - fp->begin;
     if (n > nbytes) n = nbytes;
     memcpy(fp->begin, buffer, n);
@@ -253,6 +261,11 @@ hwrite(hFILE *fp, const void *buffer, size_t nbytes)
 This includes low-level flushing such as via `fdatasync(2)`.
 */
 int hflush(hFILE *fp) HTS_RESULT_USED;
+
+/// For hfile_mem: get the internal buffer and it's size from a hfile
+/** @return  0 if successful, or -1 if an error occurred
+*/
+int hfile_mem_get_buffer(hFILE *file, char **buffer, size_t *length);
 
 #ifdef __cplusplus
 }
