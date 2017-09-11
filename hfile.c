@@ -138,10 +138,12 @@ hFILE *hfile_init_fixed(size_t struct_size, const char *mode,
     return fp;
 }
 
+static const struct hFILE_backend mem_backend;
+
 void hfile_destroy(hFILE *fp)
 {
     int save = errno;
-    if (fp) free(fp->buffer);
+    if (fp && fp->backend != &mem_backend) free(fp->buffer);
     free(fp);
     errno = save;
 }
@@ -404,7 +406,7 @@ off_t hseek(hFILE *fp, off_t offset, int whence)
 {
     off_t curpos, pos;
 
-    if (writebuffer_is_nonempty(fp)) {
+    if (writebuffer_is_nonempty(fp) && fp->mobile) {
         int ret = flush_buffer(fp);
         if (ret < 0) return ret;
     }
@@ -615,6 +617,39 @@ error:
     return NULL;
 }
 
+static hFILE *hpreload_fd(const char *filename, const char *mode)
+{
+    if(mode == NULL || !strchr(mode, 'r'))
+    {
+        return NULL;
+    }
+    
+    hFILE_fd *fp = NULL;
+    FILE *file = fopen(filename, mode);
+    if (!file) goto error;
+
+    if(fseek(file, 0, SEEK_END) != 0) goto error;
+    int len = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    char* buffer = malloc(len);
+    if(buffer == NULL) goto error;
+    if(fread(buffer, 1, len, file) != len) goto error;
+
+    fp = (hFILE_fd *) hfile_init_fixed(sizeof (hFILE_fd), mode, buffer, len, len);
+    if (fp == NULL) goto error;
+
+    fp->fd = fileno(file);
+    fp->is_socket = 0;
+    fp->base.backend = &fd_backend;
+    return &fp->base;
+
+error:
+    if (file) { int save = errno; (void) fclose(file); errno = save; }
+    hfile_destroy((hFILE *) fp);
+    return NULL;
+}
+
 hFILE *hdopen(int fd, const char *mode)
 {
     hFILE_fd *fp = (hFILE_fd*) hfile_init(sizeof (hFILE_fd), mode, blksize(fd));
@@ -711,6 +746,16 @@ static int cmp_prefix(const char *key, const char *s)
     return 0;
 }
 
+static hFILE *create_hfile_mem(char* buffer, const char* mode, size_t buf_filled, size_t buf_size)
+{
+    hFILE_mem *fp = (hFILE_mem *) hfile_init_fixed(sizeof(hFILE_mem), mode, buffer, buf_filled, buf_size);
+    if (fp == NULL)
+        return NULL;
+
+    fp->base.backend = &mem_backend;
+    return &fp->base;
+}
+
 static hFILE *hopen_mem(const char *url, const char *mode)
 {
     size_t length, size;
@@ -734,13 +779,52 @@ static hFILE *hopen_mem(const char *url, const char *mode)
         if (buffer == NULL) return NULL;
         hts_decode_percent(buffer, &length, data);
     }
+    hFILE* hf;
 
-    hFILE_mem *fp = (hFILE_mem *)
-        hfile_init_fixed(sizeof (hFILE_mem), mode, buffer, length, size);
-    if (fp == NULL) { free(buffer); return NULL; }
+    if(!(hf = create_hfile_mem(buffer, mode, length, size))){
+        free(buffer);
+        return NULL;
+    }
 
-    fp->base.backend = &mem_backend;
-    return &fp->base;
+    return hf;
+}
+
+hFILE *hopenv_mem(const char *filename, const char *mode, va_list args)
+{
+    char* buffer = va_arg(args, char*);
+    size_t sz = va_arg(args, size_t);
+    va_end(args);
+
+    hFILE* hf;
+    
+    if(!(hf = create_hfile_mem(buffer, mode, sz, sz))){
+        free(buffer);
+        return NULL;
+    }
+
+    return hf;
+}
+
+int hfile_mem_get_buffer(hFILE *file, char **buffer, size_t *length){
+    if(file->backend != &mem_backend) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    *buffer = file->buffer;
+    *length = file->buffer - file->limit;
+
+    return 0;
+}
+
+int hfile_plugin_init_mem(struct hFILE_plugin *self)
+{
+    // mem files are declared remote so they work with a tabix index
+    static const struct hFILE_scheme_handler handler =
+            {NULL, hfile_always_remote, "mem", 2000 + 50, hopenv_mem};
+    self->name = "mem";
+    hfile_add_scheme_handler("mem", &handler);
+    return 0;
 }
 
 
@@ -833,6 +917,7 @@ static void load_hfile_plugins()
     hfile_add_scheme_handler("data", &data);
     hfile_add_scheme_handler("file", &file);
     init_add_plugin(NULL, hfile_plugin_init_net, "knetfile");
+    init_add_plugin(NULL, hfile_plugin_init_mem, "mem");
 
 #ifdef ENABLE_PLUGINS
     struct hts_path_itr path;
@@ -879,11 +964,25 @@ static hFILE *hopen_unknown_scheme(const char *fname, const char *mode)
     return fp;
 }
 
+static hFILE *hopenv_unknown_scheme(const char *fname, const char *mode, va_list args)
+{
+    char* method_type = va_arg(args, char*);
+    va_end(args);
+    if(!strcmp(method_type, "preload")){
+        errno = EPROTONOSUPPORT;
+        return NULL;
+    }
+
+    hFILE *fp = hpreload_fd(fname, mode);
+    if (fp == NULL && errno == ENOENT) errno = EPROTONOSUPPORT;
+    return fp;
+}
+
 /* Returns the appropriate handler, or NULL if the string isn't an URL.  */
 static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
 {
     static const struct hFILE_scheme_handler unknown_scheme =
-        { hopen_unknown_scheme, hfile_always_local, "built-in", 0 };
+        { hopen_unknown_scheme, hfile_always_local, "built-in", 2000 + 50, hopenv_unknown_scheme };
 
     char scheme[12];
     int i;
