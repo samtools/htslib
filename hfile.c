@@ -626,21 +626,13 @@ static hFILE *hpreload_fd(const char *filename, const char *mode)
     FILE *file = fopen(filename, mode);
     if (!file) goto error;
 
-    fseek(file, 0, SEEK_END);
+    if(fseek(file, 0, SEEK_END) != 0) goto error;
     int len = ftell(file);
     fseek(file, 0, SEEK_SET);
 
     char* buffer = malloc(len);
-    if(buffer == NULL)
-    {
-        errno = ENOMEM;
-        goto error;
-    }
-    if(fread(buffer, 1, len, file) != len)
-    {
-        errno = EIO;
-        goto error;
-    }
+    if(buffer == NULL) goto error;
+    if(fread(buffer, 1, len, file) != len) goto error;
 
     fp = (hFILE_fd *) hfile_init_fixed(sizeof (hFILE_fd), mode, buffer, len, len);
     if (fp == NULL) goto error;
