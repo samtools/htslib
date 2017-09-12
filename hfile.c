@@ -787,6 +787,37 @@ static hFILE *hopen_mem(const char *url, const char *mode)
     return &fp->base;
 }
 
+hFILE *hopenv_mem(const char *filename, const char *mode, va_list args)
+{
+    char* buffer = va_arg(args, char*);
+    size_t sz = va_arg(args, size_t);
+    va_end(args);
+
+    return create_hfile_mem(buffer, mode, sz, sz);
+}
+
+int hfile_mem_get_buffer(hFILE *file, char **buffer, size_t *length){
+    if(file->backend != &mem_backend) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    *buffer = file->buffer;
+    *length = file->buffer - file->limit;
+
+    return 0;
+}
+
+int hfile_plugin_init_mem(struct hFILE_plugin *self)
+{
+    // mem files are declared remote so they work with a tabix index
+    static const struct hFILE_scheme_handler handler =
+            {NULL, hfile_always_remote, "mem", 2000 + 50, hopenv_mem};
+    self->name = "mem";
+    hfile_add_scheme_handler("mem", &handler);
+    return 0;
+}
+
 
 /*****************************************
  * Plugin and hopen() backend dispatcher *
@@ -862,37 +893,6 @@ static int init_add_plugin(void *obj, int (*init)(struct hFILE_plugin *),
     hts_log_debug("Loaded \"%s\"", pluginname);
 
     p->next = plugins, plugins = p;
-    return 0;
-}
-
-hFILE *hopenv_mem(const char *filename, const char *mode, va_list args)
-{
-    char* buffer = va_arg(args, char*);
-    size_t sz = va_arg(args, size_t);
-    va_end(args);
-
-    return create_hfile_mem(buffer, mode, sz, sz);
-}
-
-int hfile_mem_get_buffer(hFILE *file, char **buffer, size_t *length){
-    if(file->backend != &mem_backend) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    *buffer = file->buffer;
-    *length = file->buffer - file->limit;
-
-    return 0;
-}
-
-int hfile_plugin_init_mem(struct hFILE_plugin *self)
-{
-    // mem files are declared remote so they work with a tabix index
-    static const struct hFILE_scheme_handler handler =
-            {NULL, hfile_always_remote, "mem", 2000 + 50, hopenv_mem};
-    self->name = "mem";
-    hfile_add_scheme_handler("mem", &handler);
     return 0;
 }
 
