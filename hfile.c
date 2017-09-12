@@ -744,6 +744,15 @@ static int cmp_prefix(const char *key, const char *s)
     return 0;
 }
 
+static hFILE *create_hfile_mem(char* buffer, const char* mode, size_t buf_filled, size_t buf_size)
+{
+    hFILE_mem *fp = (hFILE_mem *) hfile_init_fixed(sizeof(hFILE_mem), mode, buffer, buf_filled, buf_size);
+    if (fp == NULL) { free(buffer); return NULL; }
+
+    fp->base.backend = &mem_backend;
+    return &fp->base;
+}
+
 static hFILE *hopen_mem(const char *url, const char *mode)
 {
     size_t length, size;
@@ -767,6 +776,8 @@ static hFILE *hopen_mem(const char *url, const char *mode)
         if (buffer == NULL) return NULL;
         hts_decode_percent(buffer, &length, data);
     }
+
+    return create_hfile_mem(buffer, mode, length, size);
 
     hFILE_mem *fp = (hFILE_mem *)
         hfile_init_fixed(sizeof (hFILE_mem), mode, buffer, length, size);
@@ -860,11 +871,7 @@ hFILE *hopenv_mem(const char *filename, const char *mode, va_list args)
     size_t sz = va_arg(args, size_t);
     va_end(args);
 
-    hFILE_mem *fp = (hFILE_mem *) hfile_init_fixed(sizeof(hFILE_mem), mode, buffer, sz, sz);
-    
-    fp->base.backend = &mem_backend;
-
-    return &fp->base;
+    return create_hfile_mem(buffer, mode, sz, sz);
 }
 
 int hfile_mem_get_buffer(hFILE *file, char **buffer, size_t *length){
