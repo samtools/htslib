@@ -777,8 +777,14 @@ static hFILE *hopen_mem(const char *url, const char *mode)
         if (buffer == NULL) return NULL;
         hts_decode_percent(buffer, &length, data);
     }
+    hFILE* hf;
 
-    return create_hfile_mem(buffer, mode, length, size);
+    if(!(hf = create_hfile_mem(buffer, mode, length, size))){
+        free(buffer);
+        return NULL;
+    }
+
+    return hf;
 }
 
 hFILE *hopenv_mem(const char *filename, const char *mode, va_list args)
@@ -787,7 +793,14 @@ hFILE *hopenv_mem(const char *filename, const char *mode, va_list args)
     size_t sz = va_arg(args, size_t);
     va_end(args);
 
-    return create_hfile_mem(buffer, mode, sz, sz);
+    hFILE* hf;
+    
+    if(!(hf = create_hfile_mem(buffer, mode, sz, sz))){
+        free(buffer);
+        return NULL;
+    }
+
+    return hf;
 }
 
 int hfile_mem_get_buffer(hFILE *file, char **buffer, size_t *length){
