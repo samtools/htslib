@@ -42,10 +42,24 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <curl/curl.h>
 
+// Curl-compatible header linked list
+typedef struct {
+    struct curl_slist *list;
+    unsigned int num;
+    unsigned int size;
+} hdrlist;
+
+typedef struct {
+    hdrlist fixed;                   // List of headers supplied at hopen()
+    hdrlist extra;                   // List of headers from callback
+    hts_httphdr_callback callback;   // Callback to get more headers
+    void *callback_data;             // Data to pass to callback
+} http_headers;
+
 typedef struct {
     hFILE base;
     CURL *easy;
-    struct curl_slist *headers;
+    CURLM *multi;
     off_t file_size;
     struct {
         union { char *rd; const char *wr; } ptr;
@@ -60,7 +74,7 @@ typedef struct {
     unsigned is_read : 1;   // Opened in read mode
     unsigned can_seek : 1;  // Can (attempt to) seek on this handle
     int nrunning;
-    CURLM *multi;
+    http_headers headers;
 } hFILE_libcurl;
 
 static int http_status_errno(int status)
@@ -212,6 +226,91 @@ static void libcurl_exit()
     curl_global_cleanup();
 }
 
+static int append_header(hdrlist *hdrs, const char *data, int dup) {
+    if (hdrs->num == hdrs->size) {
+        unsigned int new_sz = hdrs->size ? hdrs->size * 2 : 4, i;
+        struct curl_slist *new_list = realloc(hdrs->list,
+                                              new_sz * sizeof(*new_list));
+        if (!new_list) return -1;
+        hdrs->size = new_sz;
+        hdrs->list = new_list;
+        for (i = 1; i < hdrs->num; i++) hdrs->list[i-1].next = &hdrs->list[i];
+    }
+    // Annoyingly, libcurl doesn't declare the char * as const...
+    hdrs->list[hdrs->num].data = dup ? strdup(data) : (char *) data;
+    if (!hdrs->list[hdrs->num].data) return -1;
+    if (hdrs->num > 0) hdrs->list[hdrs->num - 1].next = &hdrs->list[hdrs->num];
+    hdrs->list[hdrs->num].next = NULL;
+    hdrs->num++;
+    return 0;
+}
+
+static void free_headers(hdrlist *hdrs, int completely) {
+    unsigned int i;
+    for (i = 0; i < hdrs->num; i++) {
+        free(hdrs->list[i].data);
+        hdrs->list[i].data = NULL;
+        hdrs->list[i].next = NULL;
+    }
+    hdrs->num = 0;
+    if (completely) {
+        free(hdrs->list);
+        hdrs->size = 0;
+        hdrs->list = NULL;
+    }
+}
+
+static struct curl_slist * get_header_list(hFILE_libcurl *fp) {
+    if (fp->headers.fixed.num > 0)
+        return &fp->headers.fixed.list[0];
+    if (fp->headers.extra.num > 0)
+        return &fp->headers.extra.list[0];
+    return 0;
+}
+
+static int add_callback_headers(hFILE_libcurl *fp) {
+    char **hdrs = NULL, **hdr;
+
+    if (!fp->headers.callback)
+        return 0;
+
+    // Get the headers from the callback
+    if (fp->headers.callback(fp->headers.callback_data, &hdrs) != 0) {
+        return -1;
+    }
+
+    if (!hdrs) // No change
+        return 0;
+
+    // Remove any old callback headers
+    if (fp->headers.fixed.num > 0) {
+        // Unlink lists
+        fp->headers.fixed.list[fp->headers.fixed.num - 1].next = NULL;
+    }
+    free_headers(&fp->headers.extra, 0);
+
+    // Convert to libcurl-suitable form
+    for (hdr = hdrs; *hdr; hdr++) {
+        if (append_header(&fp->headers.extra, *hdr, 0) < 0) {
+            goto cleanup;
+        }
+    }
+    for (hdr = hdrs; *hdr; hdr++) *hdr = NULL;
+
+    if (fp->headers.fixed.num > 0 && fp->headers.extra.num > 0) {
+        // Relink lists
+        fp->headers.fixed.list[fp->headers.fixed.num - 1].next
+            = &fp->headers.extra.list[0];
+    }
+    return 0;
+
+ cleanup:
+    while (hdr && *hdr) {
+        free(*hdr);
+        *hdr = NULL;
+    }
+    return -1;
+}
 
 static void process_messages(hFILE_libcurl *fp)
 {
@@ -399,6 +498,24 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
     // limited reads (e.g. about a BAM block!) so seeking can reuse the
     // existing connection more often.
 
+    // Get new headers from the callback (if defined).  This changes the
+    // headers in fp before it gets duplicated, but they should be have been
+    // sent by now.
+
+    if (fp->headers.callback) {
+        struct curl_slist *list;
+        if (add_callback_headers(fp) != 0)
+            return -1;
+        list = get_header_list(fp);
+        if (list) {
+            err = curl_easy_setopt(fp->easy, CURLOPT_HTTPHEADER, list);
+            if (err != CURLE_OK) {
+                errno = easy_errno(fp->easy,err);
+                return -1;
+            }
+        }
+    }
+
     /*
       Duplicate the easy handle, and use CURLOPT_RESUME_FROM_LARGE to open
       a new request to the server, reading from the location that we want
@@ -518,6 +635,11 @@ static int libcurl_close(hFILE *fpv)
     curl_easy_cleanup(fp->easy);
     curl_multi_cleanup(fp->multi);
 
+    if (fp->headers.callback) // Tell callback to free any data it needs to
+        fp->headers.callback(fp->headers.callback_data, NULL);
+    free_headers(&fp->headers.fixed, 1);
+    free_headers(&fp->headers.extra, 1);
+
     if (save_errno) { errno = save_errno; return -1; }
     else return 0;
 }
@@ -528,9 +650,10 @@ static const struct hFILE_backend libcurl_backend =
 };
 
 static hFILE *
-libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
+libcurl_open(const char *url, const char *modes, http_headers *headers)
 {
     hFILE_libcurl *fp;
+    struct curl_slist *list;
     char mode;
     const char *s;
     CURLcode err;
@@ -548,7 +671,11 @@ libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
     fp = (hFILE_libcurl *) hfile_init(sizeof (hFILE_libcurl), modes, 0);
     if (fp == NULL) goto early_error;
 
-    fp->headers = headers;
+    if (headers) {
+        fp->headers = *headers;
+    } else {
+        memset(&fp->headers, 0, sizeof(fp->headers));
+    }
     fp->file_size = -1;
     fp->buffer.ptr.rd = NULL;
     fp->buffer.len = 0;
@@ -573,22 +700,23 @@ libcurl_open(const char *url, const char *modes, struct curl_slist *headers)
         fp->is_read = 1;
     }
     else {
-        struct curl_slist *list;
-
         err |= curl_easy_setopt(fp->easy, CURLOPT_READFUNCTION, send_callback);
         err |= curl_easy_setopt(fp->easy, CURLOPT_READDATA, fp);
         err |= curl_easy_setopt(fp->easy, CURLOPT_UPLOAD, 1L);
-
-        list = curl_slist_append(fp->headers, "Transfer-Encoding: chunked");
-        if (list) fp->headers = list; else goto error;
+        if (append_header(&fp->headers.fixed,
+                          "Transfer-Encoding: chunked", 1) < 0)
+            goto error;
         fp->is_read = 0;
     }
 
     err |= curl_easy_setopt(fp->easy, CURLOPT_SHARE, curl.share);
     err |= curl_easy_setopt(fp->easy, CURLOPT_URL, url);
     err |= curl_easy_setopt(fp->easy, CURLOPT_USERAGENT, curl.useragent.s);
-    if (fp->headers)
-        err |= curl_easy_setopt(fp->easy, CURLOPT_HTTPHEADER, fp->headers);
+    if (fp->headers.callback) {
+        if (add_callback_headers(fp) != 0) goto error;
+    }
+    if ((list = get_header_list(fp)) != NULL)
+        err |= curl_easy_setopt(fp->easy, CURLOPT_HTTPHEADER, list);
     err |= curl_easy_setopt(fp->easy, CURLOPT_FOLLOWLOCATION, 1L);
     if (hts_verbose <= 8)
         err |= curl_easy_setopt(fp->easy, CURLOPT_FAILONERROR, 1L);
@@ -629,14 +757,14 @@ error:
     save = errno;
     if (fp->easy) curl_easy_cleanup(fp->easy);
     if (fp->multi) curl_multi_cleanup(fp->multi);
-    if (fp->headers) curl_slist_free_all(fp->headers);
+    free_headers(&fp->headers.fixed, 1);
+    free_headers(&fp->headers.extra, 1);
     hfile_destroy((hFILE *) fp);
     errno = save;
     return NULL;
 
 early_error:
     save = errno;
-    if (headers) curl_slist_free_all(headers);
     errno = save;
     return NULL;
 }
@@ -646,7 +774,7 @@ static hFILE *hopen_libcurl(const char *url, const char *modes)
     return libcurl_open(url, modes, NULL);
 }
 
-static int parse_va_list(struct curl_slist **headers, va_list args)
+static int parse_va_list(http_headers *headers, va_list args)
 {
     const char *argtype;
 
@@ -654,23 +782,29 @@ static int parse_va_list(struct curl_slist **headers, va_list args)
         if (strcmp(argtype, "httphdr:v") == 0) {
             const char **hdr;
             for (hdr = va_arg(args, const char **); *hdr; hdr++) {
-                struct curl_slist *list = curl_slist_append(*headers, *hdr);
-                if (list) *headers = list; else return -1;
+                if (append_header(&headers->fixed, *hdr, 1) < 0)
+                    return -1;
             }
         }
         else if (strcmp(argtype, "httphdr:l") == 0) {
             const char *hdr;
             while ((hdr = va_arg(args, const char *)) != NULL) {
-                struct curl_slist *list = curl_slist_append(*headers, hdr);
-                if (list) *headers = list; else return -1;
+                if (append_header(&headers->fixed, hdr, 1) < 0)
+                    return -1;
             }
         }
         else if (strcmp(argtype, "httphdr") == 0) {
             const char *hdr = va_arg(args, const char *);
             if (hdr) {
-                struct curl_slist *list = curl_slist_append(*headers, hdr);
-                if (list) *headers = list; else return -1;
+                if (append_header(&headers->fixed, hdr, 1) < 0)
+                    return -1;
             }
+        }
+        else if (strcmp(argtype, "httphdr_callback") == 0) {
+            headers->callback = va_arg(args, const hts_httphdr_callback);
+        }
+        else if (strcmp(argtype, "httphdr_callback_data") == 0) {
+            headers->callback_data = va_arg(args, void *);
         }
         else if (strcmp(argtype, "va_list") == 0) {
             va_list *args2 = va_arg(args, va_list *);
@@ -683,15 +817,62 @@ static int parse_va_list(struct curl_slist **headers, va_list args)
     return 0;
 }
 
+/*
+  HTTP headers to be added to the request can be passed in as extra
+  arguments to hopen().  The headers can be specified as follows:
+
+  * Single header:
+    hopen(url, mode, "httphdr", "X-Hdr-1: text", NULL);
+
+  * Multiple headers in the argument list:
+    hopen(url, mode, "httphdr:l", "X-Hdr-1: text", "X-Hdr-2: text", NULL, NULL);
+
+  * Multiple headers in a char* array:
+    hopen(url, mode, "httphdr:v", hdrs, NULL);
+    where `hdrs` is a char **.  The list ends with a NULL pointer.
+
+  * A callback function
+    hopen(url, mode, "httphdr_callback", func,
+                     "httphdr_callback_data", arg, NULL);
+    `func` has type
+         int (* hts_httphdr_callback) (void *cb_data, char ***hdrs);
+    `arg` is passed to the callback as a void *.
+
+    The function is called at file open, and when attempting to seek (which
+    opens a new HTTP request).  This allows, for example, access tokens
+    that may have gone stale to be regenerated.  The function is also
+    called (with `hdrs` == NULL) on file close so that the callback can
+    free any memory that it needs to.
+
+    The callback should return 0 on success, non-zero on failure.  It should
+    return in *hdrs a list of strings containing the new headers (terminated
+    with a NULL pointer).  These will replace any headers previously supplied
+    by the callback.  If no changes are necessary, it can return NULL
+    in *hdrs, in which case the previous headers will be left unchanged.
+
+    Ownership of the strings in the header list passes to hfile_libcurl,
+    so the callback should not attempt to use or free them itself.  The memory
+    containing the array belongs to the callback and will not be freed by
+    hfile_libcurl.
+
+    Headers supplied by the callback are appended after any specified
+    using the "httphdr", "httphdr:l" or "httphdr:v" methods.  No attempt
+    is made to replace these headers (even if a key is repeated) so anything
+    that is expected to vary needs to come from the callback.
+ */
+
 static hFILE *vhopen_libcurl(const char *url, const char *modes, va_list args)
 {
-    struct curl_slist *headers = NULL;
-    if (parse_va_list(&headers, args) < 0) {
-        if (headers) curl_slist_free_all(headers);
-        return NULL;
+    hFILE *fp = NULL;
+    http_headers headers = { { NULL, 0, 0 }, { NULL, 0, 0 }, NULL, NULL };
+    if (parse_va_list(&headers, args) == 0) {
+        fp = libcurl_open(url, modes, &headers);
     }
 
-    return libcurl_open(url, modes, headers);
+    if (!fp) {
+        free_headers(&headers.fixed, 1);
+    }
+    return fp;
 }
 
 int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
