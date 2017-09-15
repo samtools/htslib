@@ -700,13 +700,12 @@ hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *regi
         return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr, hts_itr_query, bam_readrec);
 }
 
-hts_itr_t *sam_itr_bed(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region, unsigned int beg, unsigned int end)
-{
+hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount) {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
     if (cidx->fmt == HTS_FMT_CRAI)
-        return hts_itr_bed(idx, region, beg, end, cram_name2id, cidx->cram, cram_itr_query, cram_readrec);
+        return hts_itr_regions(idx, reglist, regcount, cram_name2id, cidx->cram, hts_itr_multi_cram, cram_readrec);
     else
-        return hts_itr_bed(idx, region, beg, end, (hts_name2id_f)(bam_name2id), hdr, hts_itr_query, bam_readrec);
+        return hts_itr_regions(idx, reglist, regcount, (hts_name2id_f)(bam_name2id), hdr, hts_itr_multi_bam, bam_readrec);
 }
 
 /**********************
