@@ -172,6 +172,11 @@ extern int hfile_plugin_init_s3(struct hFILE_plugin *self);
 /* This one is never built as a separate plugin.  */
 extern int hfile_plugin_init_net(struct hFILE_plugin *self);
 
+// Callback to allow headers to be set in http connections.  Currently used
+// to allow s3 to renew tokens when seeking.  Kept internal for now,
+// although we may consider exposing it in the API later.
+typedef int (* hts_httphdr_callback) (void *cb_data, char ***hdrs);
+
 #ifdef __cplusplus
 }
 #endif
