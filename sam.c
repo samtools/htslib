@@ -51,6 +51,9 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 
+#ifndef EFTYPE
+#define EFTYPE ENOEXEC
+#endif
 #ifndef EOVERFLOW
 #define EOVERFLOW ERANGE
 #endif
@@ -1383,7 +1386,8 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
         return sam_hdr_create(fp);
 
     default:
-        abort();
+        errno = EFTYPE;
+        return NULL;
     }
 }
 
@@ -1481,7 +1485,8 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
         break;
 
     default:
-        abort();
+        errno = EBADF;
+        return -1;
     }
     return 0;
 }
@@ -2616,8 +2621,10 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
         int r = bam_read1(fp->fp.bgzf, b);
         if (h && r >= 0) {
             if (b->core.tid  >= h->n_targets || b->core.tid  < -1 ||
-                b->core.mtid >= h->n_targets || b->core.mtid < -1)
+                b->core.mtid >= h->n_targets || b->core.mtid < -1) {
+                errno = ERANGE;
                 return -3;
+            }
         }
         return r;
         }
@@ -2723,7 +2730,8 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
     }
 
     default:
-        abort();
+        errno = EFTYPE;
+        return -3;
     }
 }
 
@@ -3045,7 +3053,8 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
         }
 
     default:
-        abort();
+        errno = EBADF;
+        return -1;
     }
 }
 
