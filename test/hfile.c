@@ -217,7 +217,13 @@ int main(void)
         fail("hopen('mem:', 'r') failed read");
     if(strcmp(buffer, test_string) != 0)
         fail("hopen('mem:', 'r') missread '%s' != '%s'", buffer, test_string);
+    char* internal_buf;
+    size_t interval_buf_len;
+    if(hfile_mem_get_buffer(fin, &internal_buf, &interval_buf_len) != 0){
+        fail("hopen('mem:', 'r') failed to get internal buffer");
+    }
     if (hclose(fin) != 0) fail("hclose mem for reading");
+    free(internal_buf);
 
     test_string = strdup("Test string");
     fin = hopen("mem:", "wr:", test_string, 12);
@@ -232,7 +238,11 @@ int main(void)
         fail("hopen('mem:', 'wr') failed read");
     if (strcmp(buffer, "Test string extra") != 0)
         fail("hopen('mem:', 'wr') misswrote '%s' != '%s'", buffer, "Test string extra");
+    if(hfile_mem_get_buffer(fin, &internal_buf, &interval_buf_len) != 0){
+        fail("hopen('mem:', 'wr') failed to get internal buffer");
+    }
     if (hclose(fin) != 0) fail("hclose mem for writing");
+    free(internal_buf);
 
     fin = hopen("data:,hello, world!%0A", "r");
     if (fin == NULL) fail("hopen(\"data:...\")");

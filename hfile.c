@@ -138,10 +138,12 @@ hFILE *hfile_init_fixed(size_t struct_size, const char *mode,
     return fp;
 }
 
+static const struct hFILE_backend mem_backend;
+
 void hfile_destroy(hFILE *fp)
 {
     int save = errno;
-    if (fp) free(fp->buffer);
+    if (fp && fp->backend != &mem_backend) free(fp->buffer);
     free(fp);
     errno = save;
 }
