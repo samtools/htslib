@@ -386,9 +386,11 @@ int bam_read1(BGZF *fp, bam1_t *b)
         if (ret == 0) return -1; // normal end-of-file
         else return -2; // truncated
     }
+    if (fp->is_be)
+        ed_swap_4p(&block_len);
+    if (block_len < 32) return -4;  // block_len includes core data
     if (bgzf_read(fp, x, 32) != 32) return -3;
     if (fp->is_be) {
-        ed_swap_4p(&block_len);
         for (i = 0; i < 8; ++i) ed_swap_4p(x + i);
     }
     c->tid = x[0]; c->pos = x[1];
