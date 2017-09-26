@@ -855,7 +855,7 @@ static int code_sort(const void *vp1, const void *vp2) {
     if (c1->len != c2->len)
 	return c1->len - c2->len;
     else
-	return c1->symbol - c2->symbol;
+	return c1->symbol < c2->symbol ? -1 : (c1->symbol > c2->symbol ? 1 : 0);
 }
 
 void cram_huffman_decode_free(cram_codec *c) {
@@ -980,8 +980,10 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
     int32_t ncodes = 0, i, j;
     char *cp = data, *data_end = &data[size];
     cram_codec *h;
-    cram_huffman_code *codes;
+    cram_huffman_code *codes = NULL;
     int32_t val, last_len, max_len = 0;
+    uint32_t max_val; // needs one more bit than val
+    const int max_code_bits = sizeof(val) * 8 - 1;
     int l;
 
     if (option == E_BYTE_ARRAY_BLOCK) {
@@ -1022,17 +1024,12 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
 	l = safe_itf8_get(cp, data_end, &codes[i].symbol);
     }
 
-    if (l < 1) {
-	hts_log_error("Malformed huffman header stream");
-	free(h);
-	return NULL;
-    }
+    if (l < 1)
+        goto malformed;
+
     cp += safe_itf8_get(cp, data_end, &i);
-    if (i != ncodes) {
-	hts_log_error("Malformed huffman header stream");
-	free(h);
-	return NULL;
-    }
+    if (i != ncodes)
+        goto malformed;
 
     h->reset = cram_nop_decode_reset;
 
@@ -1050,24 +1047,32 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
 	if (max_len < codes[i].len)
 	    max_len = codes[i].len;
     }
-    if (l < 1 || cp - data != size || max_len >= ncodes) {
-	hts_log_error("Malformed huffman header stream");
-	free(h);
-	return NULL;
+    if (l < 1 || cp - data != size || max_len >= ncodes)
+        goto malformed;
+
+    /* 31 is max. bits available in val */
+    if (max_len > max_code_bits) {
+        hts_log_error("Huffman code length (%d) is greater "
+                      "than maximum supported (%d)", max_len, max_code_bits);
+        free(h);
+        free(codes);
+        return NULL;
     }
 
     /* Sort by bit length and then by symbol value */
     qsort(codes, ncodes, sizeof(*codes), code_sort);
 
     /* Assign canonical codes */
-    val = -1, last_len = 0;
+    val = -1, last_len = 0, max_val = 0;
     for (i = 0; i < ncodes; i++) {
 	val++;
+        if (val > max_val)
+            goto malformed;
+
 	if (codes[i].len > last_len) {
-	    while (codes[i].len > last_len) {
-		val <<= 1;
-		last_len++;
-	    }
+            val <<= (codes[i].len - last_len);
+            last_len = codes[i].len;
+            max_val = (1U << codes[i].len) - 1;
 	}
 	codes[i].code = val;
     }
@@ -1116,6 +1121,12 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
     }
 
     return (cram_codec *)h;
+
+ malformed:
+    hts_log_error("Malformed huffman header stream");
+    free(codes);
+    free(h);
+    return NULL;
 }
 
 int cram_huffman_encode_char0(cram_slice *slice, cram_codec *c,

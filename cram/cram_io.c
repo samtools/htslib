@@ -790,7 +790,10 @@ cram_block *cram_read_block(cram_fd *fd) {
     //	    b->method, b->content_type, b->content_id, b->comp_size, b->uncomp_size);
 
     if (b->method == RAW) {
-        if (b->uncomp_size < 0) { free(b); return NULL; }
+        if (b->uncomp_size < 0 || b->comp_size != b->uncomp_size) {
+            free(b);
+            return NULL;
+        }
 	b->alloc = b->uncomp_size;
 	if (!(b->data = malloc(b->uncomp_size))){ free(b); return NULL; }
 	if (b->uncomp_size != hread(fd->fp, b->data, b->uncomp_size)) {
@@ -3566,7 +3569,8 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
     } else {
 	cram_container *c = cram_read_container(fd);
 	cram_block *b;
-	int i, len;
+	int i;
+        int64_t len;
 
 	if (!c)
 	    return NULL;
