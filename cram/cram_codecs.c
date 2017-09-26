@@ -1063,7 +1063,7 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
     qsort(codes, ncodes, sizeof(*codes), code_sort);
 
     /* Assign canonical codes */
-    val = -1, last_len = 0, max_val = 1;
+    val = -1, last_len = 0, max_val = 0;
     for (i = 0; i < ncodes; i++) {
 	val++;
         if (val > max_val)
