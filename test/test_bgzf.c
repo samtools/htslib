@@ -302,7 +302,7 @@ static int setup(const char *src, Files *f) {
     const unsigned int max = 50000;
     unsigned int i;
     size_t text_sz = max * 8 + 1;
-    
+
     mem = calloc(5, len);
     if (mem == NULL) {
         perror(__func__);
@@ -677,7 +677,7 @@ static int test_bgzf_getline(Files *f, const char *mode, int nthreads) {
 
     bg_put = try_bgzf_write(bgz, f->text, f->ltext, f->tmp_bgzf, __func__);
     if (bg_put < 0) goto fail;
-    
+
     if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
 
     bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);

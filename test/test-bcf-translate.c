@@ -10,10 +10,10 @@
     to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
     copies of the Software, and to permit persons to whom the Software is
     furnished to do so, subject to the following conditions:
-    
+
     The above copyright notice and this permission notice shall be included in
     all copies or substantial portions of the Software.
-    
+
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
     IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
     FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -32,7 +32,7 @@ int main(int argc, char **argv)
     char *fname = argc>1 ? argv[1] : "/dev/null";
     htsFile *fp = hts_open(fname, "w");
     bcf_hdr_t *hdr1, *hdr2;
-    
+
     hdr1 = bcf_hdr_init("w");
     hdr2 = bcf_hdr_init("w");
 
@@ -66,7 +66,7 @@ int main(int argc, char **argv)
     bcf_hdr_sync(hdr1);
     bcf_hdr_sync(hdr2);
 
-    hdr2 = bcf_hdr_merge(hdr2,hdr1); 
+    hdr2 = bcf_hdr_merge(hdr2,hdr1);
     bcf_hdr_sync(hdr2);
     bcf_hdr_write(fp, hdr2);
 

@@ -444,7 +444,7 @@ uint32_t bam_auxB_len(const uint8_t *s);
     @return The idx'th value, or 0 on error.
     If the array is not an integer type, errno is set to EINVAL.  If idx
     is greater than or equal to  the value returned by bam_auxB_len(s),
-    errno is set to ERANGE.  In both cases, 0 will be returned.    
+    errno is set to ERANGE.  In both cases, 0 will be returned.
  */
 int64_t bam_auxB2i(const uint8_t *s, uint32_t idx);
 

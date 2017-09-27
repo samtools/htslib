@@ -1,4 +1,4 @@
-/* 
+/*
     Copyright (C) 2017 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
@@ -9,10 +9,10 @@
     to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
     copies of the Software, and to permit persons to whom the Software is
     furnished to do so, subject to the following conditions:
-    
+
     The above copyright notice and this permission notice shall be included in
     all copies or substantial portions of the Software.
-    
+
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
     IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
     FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -61,11 +61,11 @@ int main(int argc, char *argv[])
     };
 
     int c, pair = 0;
-    while ((c = getopt_long(argc, argv, "p:h", loptions, NULL)) >= 0) 
+    while ((c = getopt_long(argc, argv, "p:h", loptions, NULL)) >= 0)
     {
         switch (c)
         {
-            case 'p': 
+            case 'p':
                 if ( !strcmp(optarg,"snps") )            pair |= BCF_SR_PAIR_SNPS;
                 else if ( !strcmp(optarg,"snp+ref") )    pair |= BCF_SR_PAIR_SNPS|BCF_SR_PAIR_SNP_REF;
                 else if ( !strcmp(optarg,"snps+ref") )   pair |= BCF_SR_PAIR_SNPS|BCF_SR_PAIR_SNP_REF;
@@ -120,7 +120,7 @@ int main(int argc, char *argv[])
             str.l = 0;
             bcf1_t *rec = bcf_sr_get_line(sr, i);
             kputs(rec->n_allele > 1 ? rec->d.allele[1] : ".", &str);
-            for (j=2; j<rec->n_allele; j++) 
+            for (j=2; j<rec->n_allele; j++)
             {
                 kputc(',', &str);
                 kputs(rec->d.allele[j], &str);
