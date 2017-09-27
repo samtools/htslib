@@ -892,16 +892,17 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
     const curl_version_info_data *info;
     const char * const *protocol;
     CURLcode err;
+    CURLSHcode errsh;
 
     err = curl_global_init(CURL_GLOBAL_ALL);
     if (err != CURLE_OK) { errno = easy_errno(NULL, err); return -1; }
 
     curl.share = curl_share_init();
     if (curl.share == NULL) { curl_global_cleanup(); errno = EIO; return -1; }
-    err = curl_share_setopt(curl.share, CURLSHOPT_LOCKFUNC, share_lock);
-    err |= curl_share_setopt(curl.share, CURLSHOPT_UNLOCKFUNC, share_unlock);
-    err |= curl_share_setopt(curl.share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
-    if (err != 0) {
+    errsh = curl_share_setopt(curl.share, CURLSHOPT_LOCKFUNC, share_lock);
+    errsh |= curl_share_setopt(curl.share, CURLSHOPT_UNLOCKFUNC, share_unlock);
+    errsh |= curl_share_setopt(curl.share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+    if (errsh != 0) {
         curl_share_cleanup(curl.share);
         curl_global_cleanup();
         errno = EIO;

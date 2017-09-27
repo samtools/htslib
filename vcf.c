@@ -2161,7 +2161,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     int32_t *flt_a = NULL, *val_a = NULL;
     int ret = -1;
 
-    if (!s || !h || !v || !(s->s) || !(h->dict))
+    if (!s || !h || !v || !(s->s))
         return ret;
 
     // Assumed in lots of places, but we may as well spot this early
