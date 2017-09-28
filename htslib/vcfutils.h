@@ -51,7 +51,7 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line);
  *  @header:  for access to BCF_DT_ID dictionary
  *  @line:    VCF line obtained from vcf_parse1
  *  @mask:    alleles to remove
- * 
+ *
  *  If you have more than 31 alleles, then the integer bit mask will
  *  overflow, so use bcf_remove_allele_set instead
  */
@@ -63,7 +63,7 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int mask) HTS_DEP
  *  @line:    VCF line obtained from vcf_parse1
  *  @rm_set:  pointer to kbitset_t object with bits set for allele
  *            indexes to remove
- *  
+ *
  *  Returns 0 on success or -1 on failure
  *
  *  Number=A,R,G INFO and FORMAT fields will be updated accordingly.

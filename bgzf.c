@@ -39,6 +39,7 @@
 #include "htslib/bgzf.h"
 #include "htslib/hfile.h"
 #include "htslib/thread_pool.h"
+#include "htslib/hts_endian.h"
 #include "cram/pooled_alloc.h"
 
 #define BGZF_CACHE
@@ -460,6 +461,16 @@ static int inflate_block(BGZF* fp, int block_length)
                               (Bytef*)fp->compressed_block + 18, block_length - 18);
     if (ret < 0) {
         fp->errcode |= BGZF_ERR_ZLIB;
+        return -1;
+    }
+
+    // Check CRC of uncompressed block matches the gzip header.
+    // NB: we may wish to switch out the zlib crc32 for something more performant.
+    // See PR#361 and issue#467
+    uint32_t c1 = crc32(0L, (unsigned char *)fp->uncompressed_block, dlen);
+    uint32_t c2 = le_to_u32((uint8_t *)fp->compressed_block + block_length-8);
+    if (c1 != c2) {
+        fp->errcode |= BGZF_ERR_CRC;
         return -1;
     }
 
@@ -1038,6 +1049,9 @@ static int bgzf_check_EOF_common(BGZF *fp)
     off_t offset = htell(fp->fp);
     if (hseek(fp->fp, -28, SEEK_END) < 0) {
         if (errno == ESPIPE) { hclearerr(fp->fp); return 2; }
+#ifdef _WIN32
+        if (errno == EINVAL) { hclearerr(fp->fp); return 2; }
+#endif
         else return -1;
     }
     if ( hread(fp->fp, buf, 28) != 28 ) return -1;
@@ -1179,6 +1193,7 @@ restart:
             pthread_exit(NULL);
         }
     }
+    return NULL;
 }
 
 int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {

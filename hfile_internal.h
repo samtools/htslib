@@ -42,11 +42,11 @@ extern "C" {
   the buffer is beyond the new capacity.
 
   @param fp        The file stream
-  @param bufsiz    The size of the new bufsiz
+  @param bufsiz    The size of the new buffer
 
   @return Returns 0 on success, -1 on failure.
  */
-int hfile_set_blksize(hFILE *fp, size_t capacity);
+int hfile_set_blksize(hFILE *fp, size_t bufsiz);
 
 struct BGZF;
 /*!
@@ -171,6 +171,11 @@ extern int hfile_plugin_init_s3(struct hFILE_plugin *self);
 
 /* This one is never built as a separate plugin.  */
 extern int hfile_plugin_init_net(struct hFILE_plugin *self);
+
+// Callback to allow headers to be set in http connections.  Currently used
+// to allow s3 to renew tokens when seeking.  Kept internal for now,
+// although we may consider exposing it in the API later.
+typedef int (* hts_httphdr_callback) (void *cb_data, char ***hdrs);
 
 #ifdef __cplusplus
 }

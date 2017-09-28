@@ -138,7 +138,8 @@ enum htsExactFormat {
     unknown_format,
     binary_format, text_format,
     sam, bam, bai, cram, crai, vcf, bcf, csi, gzi, tbi, bed,
-    json,
+    htsget,
+    json HTS_DEPRECATED_ENUM("Use htsExactFormat 'htsget' instead") = htsget,
     format_maximum = 32767
 };
 
@@ -210,7 +211,7 @@ enum hts_fmt_option {
     // CRAM specific
     CRAM_OPT_DECODE_MD,
     CRAM_OPT_PREFIX,
-    CRAM_OPT_VERBOSITY,  // make general
+    CRAM_OPT_VERBOSITY,  // obsolete, use hts_set_log_level() instead
     CRAM_OPT_SEQS_PER_SLICE,
     CRAM_OPT_SLICES_PER_CONTAINER,
     CRAM_OPT_RANGE,

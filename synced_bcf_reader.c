@@ -95,13 +95,13 @@ char *bcf_sr_strerror(int errnum)
 int bcf_sr_set_opt(bcf_srs_t *readers, bcf_sr_opt_t opt, ...)
 {
     va_list args;
-    switch (opt) 
+    switch (opt)
     {
         case BCF_SR_REQUIRE_IDX:
             readers->require_index = 1;
             return 0;
 
-        case BCF_SR_PAIR_LOGIC: 
+        case BCF_SR_PAIR_LOGIC:
             va_start(args, opt);
             BCF_SR_AUX(readers)->sort.pair = va_arg(args, int);
             return 0;

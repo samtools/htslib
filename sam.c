@@ -386,9 +386,11 @@ int bam_read1(BGZF *fp, bam1_t *b)
         if (ret == 0) return -1; // normal end-of-file
         else return -2; // truncated
     }
+    if (fp->is_be)
+        ed_swap_4p(&block_len);
+    if (block_len < 32) return -4;  // block_len includes core data
     if (bgzf_read(fp, x, 32) != 32) return -3;
     if (fp->is_be) {
-        ed_swap_4p(&block_len);
         for (i = 0; i < 8; ++i) ed_swap_4p(x + i);
     }
     c->tid = x[0]; c->pos = x[1];
@@ -421,6 +423,15 @@ int bam_read1(BGZF *fp, bam1_t *b)
         bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
+
+    // Sanity check for broken CIGAR alignments
+    if (c->n_cigar > 0 && c->l_qseq > 0 && !(c->flag & BAM_FUNMAP)
+        && bam_cigar2qlen(c->n_cigar, bam_get_cigar(b)) != c->l_qseq) {
+        hts_log_error("CIGAR and query sequence lengths differ for %s",
+                      bam_get_qname(b));
+        return -4;
+    }
+
     return 4 + block_len;
 }
 
@@ -565,7 +576,10 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, 
 {
     htsFile *fp = fpv;
     bam1_t *b = bv;
-    return cram_get_bam_seq(fp->fp.cram, &b);
+    int ret = cram_get_bam_seq(fp->fp.cram, &b);
+    return ret >= 0
+        ? ret
+        : (cram_eof(fp->fp.cram) ? -1 : -2);
 }
 
 // This is used only with read_rest=1 iterators, so need not set tid/beg/end.
@@ -575,7 +589,12 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
     bam1_t *b = bv;
     switch (fp->format.format) {
     case bam:   return bam_read1(bgzfp, b);
-    case cram:  return cram_get_bam_seq(fp->fp.cram, &b);
+    case cram: {
+        int ret = cram_get_bam_seq(fp->fp.cram, &b);
+        return ret >= 0
+            ? ret
+            : (cram_eof(fp->fp.cram) ? -1 : -2);
+    }
     default:
         // TODO Need headers available to implement this for SAM files
         hts_log_error("Not implemented for SAM files");
@@ -1852,7 +1871,7 @@ static inline int resolve_cigar2(bam_pileup1_t *p, int32_t pos, cstate_t *s)
     uint32_t *cigar = bam_get_cigar(b);
     int k;
     // determine the current CIGAR operation
-//  fprintf(stderr, "%s\tpos=%d\tend=%d\t(%d,%d,%d)\n", bam_get_qname(b), pos, s->end, s->k, s->x, s->y);
+    //fprintf(stderr, "%s\tpos=%d\tend=%d\t(%d,%d,%d)\n", bam_get_qname(b), pos, s->end, s->k, s->x, s->y);
     if (s->k == -1) { // never processed
         if (c->n_cigar == 1) { // just one operation, save a loop
           if (_cop(cigar[0]) == BAM_CMATCH || _cop(cigar[0]) == BAM_CEQUAL || _cop(cigar[0]) == BAM_CDIFF) s->k = 0, s->x = c->pos, s->y = 0;

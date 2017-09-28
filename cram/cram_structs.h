@@ -192,7 +192,7 @@ typedef struct cram_file_def {
 struct cram_slice;
 
 enum cram_block_method {
-    ERROR    = -1,
+    BM_ERROR = -1,
     RAW      = 0,
     GZIP     = 1,
     BZIP2    = 2,
@@ -706,7 +706,6 @@ typedef struct cram_fd {
 
     // options
     int decode_md; // Whether to export MD and NM tags
-    int verbose;
     int seqs_per_slice;
     int bases_per_slice;
     int slices_per_container;

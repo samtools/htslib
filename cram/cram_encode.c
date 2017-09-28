@@ -239,7 +239,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 	    }
 
 	    default:
-		fprintf(stderr, "Unknown preservation key '%.2s'\n", key);
+		hts_log_warning("Unknown preservation key '%.2s'", key);
 		break;
 	    }
 
@@ -499,9 +499,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
     itf8_put_blk(cb, mc);    
     BLOCK_APPEND(cb, BLOCK_DATA(map), BLOCK_SIZE(map));
 
-    if (fd->verbose)
-	fprintf(stderr, "Wrote compression block header in %d bytes\n",
-		(int)BLOCK_SIZE(cb));
+    hts_log_info("Wrote compression block header in %d bytes", (int)BLOCK_SIZE(cb));
 
     BLOCK_UPLEN(cb);
 
@@ -746,8 +744,7 @@ static int cram_encode_slice_read(cram_fd *fd,
 		    
 
 	    default:
-		fprintf(stderr, "unhandled feature code %c\n",
-			f->X.code);
+		hts_log_error("Unhandled feature code %c", f->X.code);
 		return -1;
 	    }
 	}
@@ -1278,7 +1275,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
 	ref = cram_get_ref(fd, bam_ref(b), 1, 0);
 	if (!ref && bam_ref(b) >= 0) {
-	    fprintf(stderr, "Failed to load reference #%d\n", bam_ref(b));
+	    hts_log_error("Failed to load reference #%d", bam_ref(b));
 	    return -1;
 	}
 	if ((c->ref_id = bam_ref(b)) >= 0) {
@@ -1322,8 +1319,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 			cram_ref_decr(fd->refs, c->ref_seq_id);
 
 		    if (!cram_get_ref(fd, bam_ref(b), 1, 0)) {
-			fprintf(stderr, "Failed to load reference #%d\n",
-				bam_ref(b));
+			hts_log_error("Failed to load reference #%d", bam_ref(b));
 			return -1;
 		    }
 
@@ -1407,8 +1403,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     multi_ref = c->stats[DS_RI]->nvals > 1;
 
     if (multi_ref) {
-	if (fd->verbose)
-	    fprintf(stderr, "Multi-ref container\n");
+	hts_log_info("Multi-ref container");
 	c->ref_seq_id = -2;
 	c->ref_seq_start = 0;
 	c->ref_seq_span = 0;
@@ -1448,7 +1443,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     h->codecs[DS_CF] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_CF]),
 					 c->stats[DS_CF], E_INT, NULL,
 					 fd->version);
-//    fprintf(stderr, "=== RN ===\n");
+    //fprintf(stderr, "=== RN ===\n");
 //    h->codecs[DS_RN] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_RN]),
 //				    c->stats[DS_RN], E_BYTE_ARRAY, NULL,
 //				    fd->version);
@@ -1642,8 +1637,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
     /* Encode slices */
     for (i = 0; i < c->curr_slice; i++) {
-	if (fd->verbose)
-	    fprintf(stderr, "Encode slice %d\n", i);
+	hts_log_info("Encode slice %d", i);
 
 	if (cram_encode_slice(fd, c, h, c->slices[i]) != 0)
 	    return -1;
@@ -1935,7 +1929,7 @@ static int cram_add_insertion(cram_container *c, cram_slice *s, cram_record *r,
 }
 
 /*
- * Encodes auxiliary data.
+ * Encodes auxiliary data, CRAM 1.0 format.
  * Returns the read-group parsed out of the BAM aux fields on success
  *         NULL on failure or no rg present (FIXME)
  */
@@ -1970,7 +1964,7 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
 	    case 'A': case 'C': case 'c': aux+=4; break;
 	    case 'I': case 'i': case 'f': aux+=7; break;
 	    default:
-		fprintf(stderr, "Unhandled type code for NM tag\n");
+		hts_log_error("Unhandled type code for NM tag");
 		return NULL;
 	    }
 	    continue;
@@ -2040,10 +2034,8 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
 		blen = 4*count;
 		break;
 	    default:
-		fprintf(stderr, "Unknown sub-type '%c' for aux type 'B'\n",
-			type);
+		hts_log_error("Unknown sub-type '%c' for aux type 'B'", type);
 		return NULL;
-		    
 	    }
 
 	    tmp += itf8_put(tmp, blen+5);
@@ -2058,7 +2050,7 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
 	    break;
 	}
 	default:
-	    fprintf(stderr, "Unknown aux type '%c'\n", aux[2]);
+	    hts_log_error("Unknown aux type '%c'", aux[2]);
 	    return NULL;
 	}
     }
@@ -2117,7 +2109,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 		case 'S': case 's':           aux+=5; break;
 		case 'I': case 'i': case 'f': aux+=7; break;
 		default:
-		    fprintf(stderr, "Unhandled type code for NM tag\n");
+		    hts_log_error("Unhandled type code for NM tag");
 		    return NULL;
 		}
 		continue;
@@ -2243,8 +2235,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 	    }
 
 	    default:
-		fprintf(stderr, "Unsupported SAM aux type '%c'\n",
-			aux[2]);
+		hts_log_error("Unsupported SAM aux type '%c'", aux[2]);
 		c = NULL;
 	    }
 
@@ -2355,10 +2346,8 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 		blen = 4*count;
 		break;
 	    default:
-		fprintf(stderr, "Unknown sub-type '%c' for aux type 'B'\n",
-			type);
+		hts_log_error("Unknown sub-type '%c' for aux type 'B'", type);
 		return NULL;
-		    
 	    }
 
 	    blen += 5; // sub-type & length
@@ -2368,7 +2357,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 	    break;
 	}
 	default:
-	    fprintf(stderr, "Unknown aux type '%c'\n", aux[2]);
+	    hts_log_error("Unknown aux type '%c'", aux[2]);
 	    return NULL;
 	}
 	tm->blk->m = tm->m;
@@ -2452,10 +2441,9 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
     if (c->curr_slice == c->max_slice ||
 	(bam_ref(b) != c->curr_ref && !c->multi_seq)) {
 	c->ref_seq_span = fd->last_base - c->ref_seq_start + 1;
-	if (fd->verbose)
-	    fprintf(stderr, "Flush container %d/%d..%d\n",
-		    c->ref_seq_id, c->ref_seq_start,
-		    c->ref_seq_start + c->ref_seq_span -1);
+	hts_log_info("Flush container %d/%d..%d",
+		c->ref_seq_id, c->ref_seq_start,
+		c->ref_seq_start + c->ref_seq_span -1);
 
 	/* Encode slices */
 	if (fd->pool) {
@@ -2697,8 +2685,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 		    char *rp = &ref[apos];
 		    char *qp = &qual[spos];
 		    if (end > cr->len) {
-			fprintf(stderr, "CIGAR and query sequence are of "
-				"different length\n");
+			hts_log_error("CIGAR and query sequence are of different length");
 			return -1;
 		    }
 		    for (l = 0; l < end; l++) {
@@ -2822,13 +2809,12 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 		break;
 
 	    default:
-		fprintf(stderr, "Unknown CIGAR op code %d\n", cig_op);
+		hts_log_error("Unknown CIGAR op code %d", cig_op);
 		return -1;
 	    }
 	}
 	if (cr->len && spos != cr->len) {
-	    fprintf(stderr, "CIGAR and query sequence are of different "
-		    "length\n");
+	    hts_log_error("CIGAR and query sequence are of different length");
 	    return -1;
 	}
 	fake_qual = spos;
@@ -3094,8 +3080,8 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
 	if (fd->multi_seq == -1 && c->curr_rec < c->max_rec/4+10 &&
 	    fd->last_slice && fd->last_slice < c->max_rec/4+10 &&
 	    !fd->embed_ref) {
-	    if (fd->verbose && !c->multi_seq)
-		fprintf(stderr, "Multi-ref enabled for this container\n");
+	    if (!c->multi_seq)
+		hts_log_info("Multi-ref enabled for this container");
 	    multi_seq = 1;
 	}
 

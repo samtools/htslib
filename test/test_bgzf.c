@@ -23,6 +23,8 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
  */
 
+#include <config.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -32,6 +34,7 @@ DEALINGS IN THE SOFTWARE.
 #include <fcntl.h>
 #include "htslib/bgzf.h"
 #include "htslib/hfile.h"
+#include "hfile_internal.h"
 
 const char *bgzf_suffix = ".gz";
 const char *idx_suffix  = ".gzi";
@@ -113,17 +116,7 @@ static BGZF * try_bgzf_open(const char *name, const char *mode,
 static BGZF * try_bgzf_dopen(const char *name, const char *mode,
                              const char *func) {
     BGZF *bgz = NULL;
-    int fd = -1;
-    if (strchr(mode, 'r')) {
-        fd = open(name, O_RDONLY);
-    } else if (strchr(mode, 'w')) {
-        fd = open(name, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    } else if (strchr(mode, 'a')) {
-        fd = open(name, O_WRONLY | O_CREAT | O_APPEND, 0666);
-    } else {
-        errno = EINVAL;
-    }
-
+    int fd = open(name, hfile_oflags(mode), 0666);
     if (fd < 0) {
         fprintf(stderr, "%s : Failed to open %s with mode %s : %s\n",
                 func, name, mode, strerror(errno));
@@ -309,7 +302,7 @@ static int setup(const char *src, Files *f) {
     const unsigned int max = 50000;
     unsigned int i;
     size_t text_sz = max * 8 + 1;
-    
+
     mem = calloc(5, len);
     if (mem == NULL) {
         perror(__func__);
@@ -684,7 +677,7 @@ static int test_bgzf_getline(Files *f, const char *mode, int nthreads) {
 
     bg_put = try_bgzf_write(bgz, f->text, f->ltext, f->tmp_bgzf, __func__);
     if (bg_put < 0) goto fail;
-    
+
     if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
 
     bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);

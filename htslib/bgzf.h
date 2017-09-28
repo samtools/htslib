@@ -49,6 +49,7 @@ extern "C" {
 #define BGZF_ERR_IO     4
 #define BGZF_ERR_MISUSE 8
 #define BGZF_ERR_MT     16 // stream cannot be multi-threaded
+#define BGZF_ERR_CRC    32
 
 struct hFILE;
 struct hts_tpool;
@@ -92,6 +93,9 @@ typedef struct __kstring_t {
      * Open an existing file descriptor for reading or writing.
      *
      * @param fd    file descriptor
+     *              Note that the file must be opened in binary mode, or else
+     *              there will be problems on platforms that make a difference
+     *              between text and binary mode.
      * @param mode  mode matching /[rwag][u0-9]+/: 'r' for reading, 'w' for
      *              writing, 'a' for appending, 'g' for gzip rather than BGZF
      *              compression (with 'w' only), and digit specifies the zlib

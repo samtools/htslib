@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <strings.h>
 #include <getopt.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -69,7 +70,6 @@ static void error(const char *format, ...)
 int file_type(const char *fname)
 {
     int l = strlen(fname);
-    int strcasecmp(const char *s1, const char *s2);
     if (l>=7 && strcasecmp(fname+l-7, ".gff.gz") == 0) return IS_GFF;
     else if (l>=7 && strcasecmp(fname+l-7, ".bed.gz") == 0) return IS_BED;
     else if (l>=7 && strcasecmp(fname+l-7, ".sam.gz") == 0) return IS_SAM;
@@ -171,7 +171,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
                 hts_itr_t *itr = bcf_itr_querys(idx,hdr,regs[i]);
                 while ( bcf_itr_next(fp, itr, rec) >=0 )
                 {
-                    if ( reg_idx && !regidx_overlap(reg_idx, bcf_seqname(hdr,rec),rec->pos,rec->pos+rec->rlen-1, NULL) ) continue; 
+                    if ( reg_idx && !regidx_overlap(reg_idx, bcf_seqname(hdr,rec),rec->pos,rec->pos+rec->rlen-1, NULL) ) continue;
                     bcf_write(out,hdr,rec);
                 }
                 tbx_itr_destroy(itr);

@@ -554,7 +554,7 @@ char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
     //err = inflateInit(&s);
     err = inflateInit2(&s, 15 + 32);
     if (err != Z_OK) {
-	fprintf(stderr, "zlib inflateInit error: %s\n", s.msg);
+	hts_log_error("Call to zlib inflateInit failed: %s", s.msg);
 	free(data);
 	return NULL;
     }
@@ -570,7 +570,7 @@ char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
 	    break;
 
 	if (err != Z_OK) {
-	    fprintf(stderr, "zlib inflate error: %s\n", s.msg);
+	    hts_log_error("Call to zlib inflate failed: %s", s.msg);
 	    if (data)
 		free(data);
 	    return NULL;
@@ -618,7 +618,7 @@ static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
 
     err = deflateInit2(&s, level, Z_DEFLATED, 15|16, 9, strat);
     if (err != Z_OK) {
-	fprintf(stderr, "zlib deflateInit2 error: %s\n", s.msg);
+	hts_log_error("Call to zlib deflateInit2 failed: %s", s.msg);
 	return NULL;
     }
 
@@ -627,23 +627,23 @@ static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
 	s.next_out = &cdata[cdata_pos];
 	s.avail_out = cdata_alloc - cdata_pos;
 	if (cdata_alloc - cdata_pos <= 0) {
-	    fprintf(stderr, "Deflate produced larger output than expected. Abort\n"); 
+	    hts_log_error("Deflate produced larger output than expected");
 	    return NULL;
 	}
 	err = deflate(&s, Z_NO_FLUSH);
 	cdata_pos = cdata_alloc - s.avail_out;
 	if (err != Z_OK) {
-	    fprintf(stderr, "zlib deflate error: %s\n", s.msg);
+	    hts_log_error("Call to zlib deflate failed: %s", s.msg);
 	    break;
 	}
     }
     if (deflate(&s, Z_FINISH) != Z_STREAM_END) {
-	fprintf(stderr, "zlib deflate error: %s\n", s.msg);
+	hts_log_error("Call to zlib deflate failed: %s", s.msg);
     }
     *cdata_size = s.total_out;
 
     if (deflateEnd(&s) != Z_OK) {
-	fprintf(stderr, "zlib deflate error: %s\n", s.msg);
+	hts_log_error("Call to zlib deflate failed: %s", s.msg);
     }
     return (char *)cdata;
 }
@@ -705,7 +705,7 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
 
 	r = lzma_code(&strm, LZMA_RUN);
 	if (LZMA_OK != r && LZMA_STREAM_END != r) {
-	    fprintf(stderr, "[E::%s] LZMA decode failure (error %d)\n", __func__, r);
+	    hts_log_error("LZMA decode failure (error %d)", r);
 	    return NULL;
 	}
 
@@ -718,7 +718,7 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
     /* finish up any unflushed data; necessary? */
     r = lzma_code(&strm, LZMA_FINISH);
     if (r != LZMA_OK && r != LZMA_STREAM_END) {
-	fprintf(stderr, "r=%d\n", r);
+	hts_log_error("Call to lzma_code failed with error %d", r);
 	return NULL;
     }
 
@@ -786,11 +786,14 @@ cram_block *cram_read_block(cram_fd *fd) {
     if (-1 == itf8_decode_crc(fd, &b->comp_size, &crc))   { free(b); return NULL; }
     if (-1 == itf8_decode_crc(fd, &b->uncomp_size, &crc)) { free(b); return NULL; }
 
-    //    fprintf(stderr, "  method %d, ctype %d, cid %d, csize %d, ucsize %d\n",
+    //fprintf(stderr, "  method %d, ctype %d, cid %d, csize %d, ucsize %d\n",
     //	    b->method, b->content_type, b->content_id, b->comp_size, b->uncomp_size);
 
     if (b->method == RAW) {
-        if (b->uncomp_size < 0) { free(b); return NULL; }
+        if (b->uncomp_size < 0 || b->comp_size != b->uncomp_size) {
+            free(b);
+            return NULL;
+        }
 	b->alloc = b->uncomp_size;
 	if (!(b->data = malloc(b->uncomp_size))){ free(b); return NULL; }
 	if (b->uncomp_size != hread(fd->fp, b->data, b->uncomp_size)) {
@@ -817,7 +820,7 @@ cram_block *cram_read_block(cram_fd *fd) {
 
 	crc = crc32(crc, b->data ? b->data : (uc *)"", b->alloc);
 	if (crc != b->crc32) {
-	    fprintf(stderr, "Block CRC32 failure\n");
+	    hts_log_error("Block CRC32 failure");
 	    free(b->data);
 	    free(b);
 	    return NULL;
@@ -966,8 +969,7 @@ int cram_uncompress_block(cram_block *b) {
     }
 #else
     case BZIP2:
-	fprintf(stderr, "Bzip2 compression is not compiled into this "
-		"version.\nPlease rebuild and try again.\n");
+	hts_log_error("Bzip2 compression is not compiled into this version. Please rebuild and try again");
 	return -1;
 #endif
 
@@ -985,8 +987,7 @@ int cram_uncompress_block(cram_block *b) {
 	break;
 #else
     case LZMA:
-	fprintf(stderr, "Lzma compression is not compiled into this "
-		"version.\nPlease rebuild and try again.\n");
+	hts_log_error("Lzma compression is not compiled into this version. Please rebuild and try again");
 	return -1;
 	break;
 #endif
@@ -1404,7 +1405,7 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 	comp = cram_compress_by_method((char *)b->data, b->uncomp_size,
 				       &comp_size, GZIP, level, Z_FILTERED);
 	if (!comp) {
-	    fprintf(stderr, "Compression failed!\n");
+	    hts_log_error("Compression failed");
 	    return -1;
 	}
 	free(b->data);
@@ -1413,10 +1414,9 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 	b->method = GZIP;
     }
 
-    if (fd->verbose)
-	fprintf(stderr, "Compressed block ID %d from %d to %d by method %s\n",
-		b->content_id, b->uncomp_size, b->comp_size,
-		cram_block_method2str(b->method));
+    hts_log_info("Compressed block ID %d from %d to %d by method %s",
+	    b->content_id, b->uncomp_size, b->comp_size,
+	    cram_block_method2str(b->method));
 
     if (b->method == RANS1)
 	b->method = RANS0; // Spec just has RANS (not 0/1) with auto-sensing
@@ -1446,7 +1446,7 @@ char *cram_block_method2str(enum cram_block_method m) {
     case RANS0:    return "RANS0";
     case RANS1:    return "RANS1";
     case GZIP_RLE: return "GZIP_RLE";
-    case ERROR:    break;
+    case BM_ERROR: break;
     }
     return "?";
 }
@@ -1594,7 +1594,7 @@ static BGZF *bgzf_open_ref(char *fn, char *mode, int is_md5) {
     }
 
     if (fp->is_compressed == 1 && bgzf_index_load(fp, fn, ".gzi") < 0) {
-	fprintf(stderr, "Unable to load .gzi index '%s.gzi'\n", fn);
+	hts_log_error("Unable to load .gzi index '%s.gzi'", fn);
 	bgzf_close(fp);
 	return NULL;
     }
@@ -1780,8 +1780,7 @@ static void sanitise_SQ_lines(cram_fd *fd) {
 
 	    // Should we also check MD5sums here to ensure the correct
 	    // reference was given?
-	    fprintf(stderr, "WARNING: Header @SQ length mismatch for "
-		    "ref %s, %d vs %d\n",
+	    hts_log_warning("Header @SQ length mismatch for ref %s, %d vs %d",
 		    r->name, fd->header->ref[i].len, (int)r->length);
 
 	    // Fixing the parsed @SQ header will make MD:Z: strings work
@@ -1816,8 +1815,7 @@ int refs2id(refs_t *r, SAM_hdr *h) {
 	if (k != kh_end(r->h_meta)) {
 	    r->ref_id[i] = kh_val(r->h_meta, k);
 	} else {
-	    fprintf(stderr, "Unable to find ref name '%s'\n",
-		    h->ref[i].name);
+	    hts_log_warning("Unable to find ref name '%s'", h->ref[i].name);
 	}
     }
 
@@ -2025,8 +2023,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     mFILE *mf;
     int local_path = 0;
 
-    if (fd->verbose)
-	fprintf(stderr, "cram_populate_ref on fd %p, id %d\n", (void *)fd, id);
+    hts_log_info("Running cram_populate_ref on fd %p, id %d", (void *)fd, id);
 
     cache_root[0] = '\0';
 
@@ -2042,8 +2039,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	    snprintf(cache_root, PATH_MAX, "%s%s/hts-ref", base, extra);
 	    snprintf(cache,PATH_MAX, "%s%s/hts-ref/%%2s/%%2s/%%s", base, extra);
 	    local_cache = cache;
-	    if (fd->verbose)
-		fprintf(stderr, "Populating local cache: %s\n", local_cache);
+	    hts_log_info("Populating local cache: %s", local_cache);
 	}
     }
 
@@ -2056,8 +2052,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if (!(tag = sam_hdr_find_key(fd->header, ty, "M5", NULL)))
 	goto no_M5;
 
-    if (fd->verbose)
-	fprintf(stderr, "Querying ref %s\n", tag->str+3);
+    hts_log_info("Querying ref %s", tag->str+3);
 
     /* Use cache if available */
     if (local_cache && *local_cache) {
@@ -2168,8 +2163,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         }
 
 	expand_cache_path(path, local_cache, tag->str+3);
-	if (fd->verbose)
-	    fprintf(stderr, "Writing cache file '%s'\n", path);
+	hts_log_info("Writing cache file '%s'", path);
 	mkdir_prefix(path, 01777);
 
 	do {
@@ -2203,7 +2197,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	hts_md5_hex(md5_buf2, md5_buf1);
 
 	if (strncmp(tag->str+3, md5_buf2, 32) != 0) {
-	    fprintf(stderr, "[E::%s] mismatching md5sum for downloaded reference.\n", __func__);
+	    hts_log_error("Mismatching md5sum for downloaded reference");
 	    hclose_abruptly(fp);
 	    unlink(path_tmp);
 	    return -1;
@@ -2330,7 +2324,7 @@ static char *load_ref_portion(BGZF *fp, ref_entry *e, int start, int end) {
 	cp_to = cp+j;
 
 	if (cp_to - seq != end-start+1) {
-	    fprintf(stderr, "Malformed reference file?\n");
+	    hts_log_error("Malformed reference file");
 	    free(seq);
 	    return NULL;
 	}
@@ -2463,19 +2457,19 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
 
     /* Sanity checking: does this ID exist? */
     if (id >= fd->refs->nref) {
-	fprintf(stderr, "No reference found for id %d\n", id);
+	hts_log_error("No reference found for id %d", id);
 	pthread_mutex_unlock(&fd->ref_lock);
 	return NULL;
     }
 
     if (!fd->refs || !fd->refs->ref_id[id]) {
-	fprintf(stderr, "No reference found for id %d\n", id);
+	hts_log_error("No reference found for id %d", id);
 	pthread_mutex_unlock(&fd->ref_lock);
 	return NULL;
     }
 
     if (!(r = fd->refs->ref_id[id])) {
-	fprintf(stderr, "No reference found for id %d\n", id);
+	hts_log_error("No reference found for id %d", id);
 	pthread_mutex_unlock(&fd->ref_lock);
 	return NULL;
     }
@@ -2495,7 +2489,7 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
     pthread_mutex_lock(&fd->refs->lock);
     if (r->length == 0) {
 	if (cram_populate_ref(fd, id, r) == -1) {
-	    fprintf(stderr, "Failed to populate reference for id %d\n", id);
+	    hts_log_error("Failed to populate reference for id %d", id);
 	    pthread_mutex_unlock(&fd->refs->lock);
 	    pthread_mutex_unlock(&fd->ref_lock);
 	    return NULL;
@@ -2874,7 +2868,7 @@ cram_container *cram_read_container(cram_fd *fd) {
 	    rd+=4;
 
 	if (crc != c->crc32) {
-	    fprintf(stderr, "Container header CRC32 failure\n");
+	    hts_log_error("Container header CRC32 failure");
 	    cram_free_container(c);
 	    return NULL;
 	}
@@ -3094,7 +3088,7 @@ void *cram_flush_thread(void *arg) {
 
     /* Encode the container blocks and generate compression header */
     if (0 != cram_encode_container(j->fd, j->c)) {
-	fprintf(stderr, "cram_encode_container failed\n");
+	hts_log_error("Call to cram_encode_container failed");
 	return NULL;
     }
 
@@ -3424,13 +3418,13 @@ cram_slice *cram_read_slice(cram_fd *fd) {
 	break;
 
     default:
-	fprintf(stderr, "Unexpected block of type %s\n",
+	hts_log_error("Unexpected block of type %s",
 		cram_content_type2str(b->content_type));
 	goto err;
     }
 
     if (s->hdr->num_blocks < 1) {
-        fprintf(stderr, "Slice does not include any data blocks.\n");
+	hts_log_error("Slice does not include any data blocks");
 	goto err;
     }
 
@@ -3514,8 +3508,7 @@ cram_file_def *cram_read_file_def(cram_fd *fd) {
     }
 
     if (def->major_version > 3) {
-	fprintf(stderr, "CRAM version number mismatch\n"
-		"Expected 1.x, 2.x or 3.x, got %d.%d\n",
+	hts_log_error("CRAM version number mismatch. Expected 1.x, 2.x or 3.x, got %d.%d",
 		def->major_version, def->minor_version);
 	free(def);
 	return NULL;
@@ -3576,7 +3569,8 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
     } else {
 	cram_container *c = cram_read_container(fd);
 	cram_block *b;
-	int i, len;
+	int i;
+        int64_t len;
 
 	if (!c)
 	    return NULL;
@@ -3663,7 +3657,11 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
  * Out must be at least PATH_MAX bytes long.
  */
 static void full_path(char *out, char *in) {
-    if (*in == '/') {
+    size_t in_l = strlen(in);
+    if (*in == '/' ||
+	// Windows paths
+	(in_l > 3 && toupper(*in) >= 'A'  && toupper(*in) <= 'Z' &&
+	 in[1] == ':' && (in[2] == '/' || in[2] == '\\'))) {
 	strncpy(out, in, PATH_MAX);
 	out[PATH_MAX-1] = 0;
     } else {
@@ -4073,7 +4071,6 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->ref = NULL;
 
     fd->decode_md = 0;
-    fd->verbose = 0;
     fd->seqs_per_slice = SEQS_PER_SLICE;
     fd->bases_per_slice = BASES_PER_SLICE;
     fd->slices_per_container = SLICE_PER_CNT;
@@ -4341,7 +4338,6 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 	break;
 
     case CRAM_OPT_VERBOSITY:
-	fd->verbose = va_arg(args, int);
 	break;
 
     case CRAM_OPT_SEQS_PER_SLICE:
@@ -4412,14 +4408,13 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 	int major, minor;
 	char *s = va_arg(args, char *);
 	if (2 != sscanf(s, "%d.%d", &major, &minor)) {
-	    fprintf(stderr, "Malformed version string %s\n", s);
+	    hts_log_error("Malformed version string %s", s);
 	    return -1;
 	}
 	if (!((major == 1 &&  minor == 0) ||
 	      (major == 2 && (minor == 0 || minor == 1)) ||
 	      (major == 3 &&  minor == 0))) {
-	    fprintf(stderr, "Unknown version string; "
-		    "use 1.0, 2.0, 2.1 or 3.0\n");
+	    hts_log_error("Unknown version string; use 1.0, 2.0, 2.1 or 3.0");
 	    errno = EINVAL;
 	    return -1;
 	}
@@ -4436,7 +4431,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_NTHREADS: {
 	int nthreads =  va_arg(args, int);
-        if (nthreads > 1) {
+        if (nthreads >= 1) {
             if (!(fd->pool = hts_tpool_init(nthreads)))
                 return -1;
 
@@ -4479,7 +4474,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 	break;
 
     default:
-	fprintf(stderr, "Unknown CRAM option code %d\n", opt);
+	hts_log_error("Unknown CRAM option code %d", opt);
 	errno = EINVAL;
 	return -1;
     }

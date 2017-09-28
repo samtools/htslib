@@ -1,4 +1,4 @@
-/* 
+/*
     Copyright (C) 2014 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
@@ -9,10 +9,10 @@
     to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
     copies of the Software, and to permit persons to whom the Software is
     furnished to do so, subject to the following conditions:
-    
+
     The above copyright notice and this permission notice shall be included in
     all copies or substantial portions of the Software.
-    
+
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
     IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
     FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -95,7 +95,7 @@ int _regidx_build_index(regidx_t *idx)
             int iend = list->regs[j].end >> LIDX_SHIFT;
             if ( imax < iend + 1 )
             {
-                int old_imax = imax; 
+                int old_imax = imax;
                 imax = iend + 1;
                 kroundup32(imax);
                 list->idx = (int*) realloc(list->idx, imax*sizeof(int));
@@ -153,7 +153,7 @@ int regidx_insert(regidx_t *idx, char *line)
 
     if ( idx->rid_prev==rid )
     {
-        if ( idx->start_prev > reg.start || (idx->start_prev==reg.start && idx->end_prev>reg.end) ) 
+        if ( idx->start_prev > reg.start || (idx->start_prev==reg.start && idx->end_prev>reg.end) )
         {
             hts_log_error("The regions are not sorted: %s:%d-%d is before %s:%d-%d",
                 idx->str.s,idx->start_prev+1,idx->end_prev+1,idx->str.s,reg.start+1,reg.end+1);
@@ -197,7 +197,7 @@ regidx_t *regidx_init(const char *fname, regidx_parse_f parser, regidx_free_f fr
     if ( payload_size ) idx->payload = malloc(payload_size);
 
     if ( !fname ) return idx;
-    
+
     kstring_t str = {0,0,0};
 
     htsFile *fp = hts_open(fname,"r");
@@ -208,7 +208,7 @@ regidx_t *regidx_init(const char *fname, regidx_parse_f parser, regidx_free_f fr
         if ( regidx_insert(idx, str.s) ) goto error;
     }
     regidx_insert(idx, NULL);
-    
+
     free(str.s);
     hts_close(fp);
     return idx;
@@ -253,7 +253,7 @@ int regidx_overlap(regidx_t *idx, const char *chr, uint32_t from, uint32_t to, r
     reglist_t *list = &idx->seq[iseq];
     if ( !list->nregs ) return 0;
 
-    int i, ibeg = from>>LIDX_SHIFT; 
+    int i, ibeg = from>>LIDX_SHIFT;
     int ireg = ibeg < list->nidx ? list->idx[ibeg] : list->idx[ list->nidx - 1 ];
     if ( ireg < 0 )
     {
@@ -290,7 +290,7 @@ int regidx_parse_bed(const char *line, char **chr_beg, char **chr_end, reg_t *re
     while ( *ss && isspace_c(*ss) ) ss++;
     if ( !*ss ) return -1;      // skip blank lines
     if ( *ss=='#' ) return -1;  // skip comments
-    
+
     char *se = ss;
     while ( *se && !isspace_c(*se) ) se++;
     if ( !*se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
@@ -305,7 +305,7 @@ int regidx_parse_bed(const char *line, char **chr_beg, char **chr_end, reg_t *re
     ss = se+1;
     reg->end = hts_parse_decimal(ss, &se, 0) - 1;
     if ( ss==se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
-    
+
     return 0;
 }
 
@@ -315,7 +315,7 @@ int regidx_parse_tab(const char *line, char **chr_beg, char **chr_end, reg_t *re
     while ( *ss && isspace_c(*ss) ) ss++;
     if ( !*ss ) return -1;      // skip blank lines
     if ( *ss=='#' ) return -1;  // skip comments
-    
+
     char *se = ss;
     while ( *se && !isspace_c(*se) ) se++;
     if ( !*se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
@@ -336,7 +336,7 @@ int regidx_parse_tab(const char *line, char **chr_beg, char **chr_end, reg_t *re
         if ( ss==se ) reg->end = reg->start;
         else reg->end--;
     }
-    
+
     return 0;
 }
 

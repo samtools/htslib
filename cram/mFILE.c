@@ -40,6 +40,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <unistd.h>
 #include <stdarg.h>
 
+#include "hts_internal.h"
 #include "cram/os.h"
 #include "cram/mFILE.h"
 
@@ -307,7 +308,7 @@ mFILE *mfreopen(const char *path, const char *mode_str, FILE *fp) {
 	mf = mfcreate(NULL, 0);
 	if (NULL == mf) return NULL;
     } else {
-        fprintf(stderr, "Must specify either r, w or a for mode\n");
+	hts_log_error("Must specify either r, w or a for mode");
         return NULL;
     }
     mf->fp = fp;
