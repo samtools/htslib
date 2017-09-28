@@ -1,5 +1,10 @@
-Noteworthy changes in release a.b (Equinox)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Noteworthy changes in release a.b (New Year)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+Noteworthy changes in release 1.6 (28th September 2017)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 * Fixed bug where iterators on CRAM files did not propagate error return
   values to the caller correctly.  Thanks go to Chris Saunders.
