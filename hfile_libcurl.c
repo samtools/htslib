@@ -758,7 +758,6 @@ error:
     save = errno;
     if (fp->easy) curl_easy_cleanup(fp->easy);
     if (fp->multi) curl_multi_cleanup(fp->multi);
-    free_headers(&fp->headers.fixed, 1);
     free_headers(&fp->headers.extra, 1);
     hfile_destroy((hFILE *) fp);
     errno = save;
