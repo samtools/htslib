@@ -386,9 +386,11 @@ int bam_read1(BGZF *fp, bam1_t *b)
         if (ret == 0) return -1; // normal end-of-file
         else return -2; // truncated
     }
+    if (fp->is_be)
+        ed_swap_4p(&block_len);
+    if (block_len < 32) return -4;  // block_len includes core data
     if (bgzf_read(fp, x, 32) != 32) return -3;
     if (fp->is_be) {
-        ed_swap_4p(&block_len);
         for (i = 0; i < 8; ++i) ed_swap_4p(x + i);
     }
     c->tid = x[0]; c->pos = x[1];
@@ -421,6 +423,15 @@ int bam_read1(BGZF *fp, bam1_t *b)
         bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
+
+    // Sanity check for broken CIGAR alignments
+    if (c->n_cigar > 0 && c->l_qseq > 0 && !(c->flag & BAM_FUNMAP)
+        && bam_cigar2qlen(c->n_cigar, bam_get_cigar(b)) != c->l_qseq) {
+        hts_log_error("CIGAR and query sequence lengths differ for %s",
+                      bam_get_qname(b));
+        return -4;
+    }
+
     return 4 + block_len;
 }
 

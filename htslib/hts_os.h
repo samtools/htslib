@@ -26,14 +26,24 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTSLIB_HTS_OS_H
 #define HTSLIB_HTS_OS_H
 
-extern void srand48(long seed);
-extern double drand48(void);
-extern long lrand48(void);
+extern void hts_srand48(long seed);
+extern double hts_erand48(unsigned short xseed[3]);
+extern double hts_drand48(void);
+extern long hts_lrand48(void);
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(__CYGWIN__)
+// Windows usually lacks *rand48(), but cygwin provides them.
+#define srand48(S) hts_srand48((S))
+#define erand48(X) hts_erand48((X))
+#define drand48() hts_drand48()
+#define lrand48() hts_lrand48()
+#endif
+
+#if 0  /* def _WIN32 - disabled for now, not currently used */
 /* Check if the fd is a cygwin/msys's pty. */
 extern int is_cygpty(int fd);
 #endif
+
 
 #if defined(__MINGW32__)
 #include <io.h>

@@ -92,35 +92,17 @@ all: lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS)
 HTSPREFIX =
 include htslib_vars.mk
 
-
-PACKAGE_VERSION = 1.5
+# If not using GNU make, you need to copy the version number from version.sh
+# into here.
+PACKAGE_VERSION := $(shell ./version.sh)
 LIBHTS_SOVERSION = 2
-
 
 # $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
 # even if this is a dirty or untagged Git working tree.
-NUMERIC_VERSION = $(PACKAGE_VERSION)
-
-# If building from a Git repository, replace $(PACKAGE_VERSION) with the Git
-# description of the working tree: either a release tag with the same value
-# as $(PACKAGE_VERSION) above, or an exact description likely based on a tag.
-# Much of this is also GNU Make-specific.  If you don't have GNU Make and/or
-# are not building from a Git repository, comment out this conditional.
-ifneq "$(wildcard .git)" ""
-original_version := $(PACKAGE_VERSION)
-PACKAGE_VERSION := $(shell git describe --always --dirty)
-
-# Unless the Git description matches /\d*\.\d*(\.\d*)?/, i.e., is exactly a tag
-# with a numeric name, revert $(NUMERIC_VERSION) to the original version number
-# written above, but with the patchlevel field bumped to 255.
-ifneq "$(subst ..,.,$(subst 0,,$(subst 1,,$(subst 2,,$(subst 3,,$(subst 4,,$(subst 5,,$(subst 6,,$(subst 7,,$(subst 8,,$(subst 9,,$(PACKAGE_VERSION))))))))))))" "."
-empty :=
-NUMERIC_VERSION := $(subst $(empty) ,.,$(wordlist 1,2,$(subst ., ,$(original_version))) 255)
-endif
+NUMERIC_VERSION := $(shell ./version.sh numeric)
 
 # Force version.h to be remade if $(PACKAGE_VERSION) has changed.
 version.h: $(if $(wildcard version.h),$(if $(findstring "$(PACKAGE_VERSION)",$(shell cat version.h)),,force))
-endif
 
 version.h:
 	echo '#define HTS_VERSION "$(PACKAGE_VERSION)"' > $@
@@ -128,6 +110,9 @@ version.h:
 print-version:
 	@echo $(PACKAGE_VERSION)
 
+show-version:
+	@echo PACKAGE_VERSION = $(PACKAGE_VERSION)
+	@echo NUMERIC_VERSION = $(NUMERIC_VERSION)
 
 .SUFFIXES: .bundle .c .cygdll .dll .o .pico .so
 
@@ -525,7 +510,8 @@ tags TAGS:
 # (The wildcards attempt to omit non-exported files (.git*, README.md,
 # etc) and other detritus that might be in the top-level directory.)
 distdir:
-	tar -c *.[ch15] [ILMNRcht]*[ELSbcekmnt] | (cd $(distdir) && tar -x)
+	@if [ -z "$(distdir)" ]; then echo "Please supply a distdir=DIR argument."; false; fi
+	tar -c *.[ch15] [ILMNRchtv]*[ELSbcekmnth] | (cd $(distdir) && tar -x)
 	+cd $(distdir) && $(MAKE) distclean
 
 force:
@@ -534,7 +520,7 @@ force:
 .PHONY: all check clean distclean distdir force
 .PHONY: install install-pkgconfig installdirs lib-shared lib-static
 .PHONY: maintainer-clean mostlyclean plugins print-config print-version
-.PHONY: tags test testclean
+.PHONY: show-version tags test testclean
 .PHONY: clean-so install-so
 .PHONY: clean-cygdll install-cygdll
 .PHONY: clean-dll install-dll

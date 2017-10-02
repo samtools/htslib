@@ -31,17 +31,17 @@
 #define	RAND48_MULT_2	(0x0005)
 #define	RAND48_ADD	(0x000b)
 
-unsigned short _rand48_seed[3] = {
+static unsigned short _rand48_seed[3] = {
 	RAND48_SEED_0,
 	RAND48_SEED_1,
 	RAND48_SEED_2
 };
-unsigned short _rand48_mult[3] = {
+static unsigned short _rand48_mult[3] = {
 	RAND48_MULT_0,
 	RAND48_MULT_1,
 	RAND48_MULT_2
 };
-unsigned short _rand48_add = RAND48_ADD;
+static unsigned short _rand48_add = RAND48_ADD;
 
 static void
 _dorand48(unsigned short xseed[3])
@@ -64,7 +64,7 @@ _dorand48(unsigned short xseed[3])
 }
 
 void
-srand48(long seed)
+hts_srand48(long seed)
 {
 	_rand48_seed[0] = RAND48_SEED_0;
 	_rand48_seed[1] = (unsigned short) seed;
@@ -76,7 +76,7 @@ srand48(long seed)
 }
 
 double
-erand48(unsigned short xseed[3])
+hts_erand48(unsigned short xseed[3])
 {
 	_dorand48(xseed);
 	return ldexp((double) xseed[0], -48) +
@@ -85,13 +85,13 @@ erand48(unsigned short xseed[3])
 }
 
 double
-drand48(void)
+hts_drand48(void)
 {
-	return erand48(_rand48_seed);
+	return hts_erand48(_rand48_seed);
 }
 
 long
-lrand48(void)
+hts_lrand48(void)
 {
 	_dorand48(_rand48_seed);
 	return ((long) _rand48_seed[2] << 15) + ((long) _rand48_seed[1] >> 1);

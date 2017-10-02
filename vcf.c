@@ -517,7 +517,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
     vdict_t *d = (vdict_t*)hdr->dict[BCF_DT_ID];
     k = kh_get(vdict, d, str);
-    if ( k != kh_end(d) ) 
+    if ( k != kh_end(d) )
     {
         // already present
         free(str);
@@ -1345,9 +1345,9 @@ static int bcf1_sync(bcf1_t *line)
     else if ( line->d.shared_dirty )
     {
         // The line was edited, update the BCF data block.
-        
+
         if ( !(line->unpacked & BCF_UN_STR) ) bcf_unpack(line,BCF_UN_STR);
-        
+
         // ptr_ori points to the original unchanged BCF data.
         uint8_t *ptr_ori = (uint8_t *) line->shared.s;
 
@@ -1962,14 +1962,14 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 if (fmt[j].max_l < l) fmt[j].max_l = l;
                 if (fmt[j].is_gt && fmt[j].max_g < g) fmt[j].max_g = g;
                 l = 0, m = g = 1;
-                if ( *r==':' ) 
+                if ( *r==':' )
                 {
                     j++;
-                    if ( j>=v->n_fmt ) 
+                    if ( j>=v->n_fmt )
                     {
                         hts_log_error("Incorrect number of FORMAT fields at %s:%d",
                             h->id[BCF_DT_CTG][v->rid].key, v->pos+1);
-                        exit(1); 
+                        exit(1);
                     }
                 }
                 else break;
@@ -2160,6 +2160,9 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     int max_n_flt = 0, max_n_val = 0;
     int32_t *flt_a = NULL, *val_a = NULL;
     int ret = -1;
+
+    if (!s || !h || !v || !(s->s))
+        return ret;
 
     // Assumed in lots of places, but we may as well spot this early
     assert(sizeof(float) == sizeof(int32_t));
@@ -2528,9 +2531,9 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             kputs(h->id[BCF_DT_ID][z->key].key, s);
             if (z->len <= 0) continue;
             kputc('=', s);
-            if (z->len == 1) 
+            if (z->len == 1)
             {
-                switch (z->type) 
+                switch (z->type)
                 {
                     case BCF_BT_INT8:  if ( z->v1.i==bcf_int8_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
                     case BCF_BT_INT16: if ( z->v1.i==bcf_int16_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
@@ -3178,7 +3181,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
     {
         if ( *alt == '.' || *ref==*alt ) { var->n = 0; var->type = VCF_REF; return; }
         if ( *alt == 'X' ) { var->n = 0; var->type = VCF_REF; return; }  // mpileup's X allele shouldn't be treated as variant
-        if ( *alt == '*' ) { var->n = 0; var->type = VCF_REF; return; } 
+        if ( *alt == '*' ) { var->n = 0; var->type = VCF_REF; return; }
         var->n = 1; var->type = VCF_SNP; return;
     }
     if ( alt[0]=='<' )
@@ -3661,7 +3664,7 @@ bcf_info_t *bcf_get_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key)
     return bcf_get_info_id(line, id);
 }
 
-bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id) 
+bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id)
 {
     int i;
     if ( !(line->unpacked & BCF_UN_FMT) ) bcf_unpack(line, BCF_UN_FMT);
@@ -3672,7 +3675,7 @@ bcf_fmt_t *bcf_get_fmt_id(bcf1_t *line, const int id)
     return NULL;
 }
 
-bcf_info_t *bcf_get_info_id(bcf1_t *line, const int id) 
+bcf_info_t *bcf_get_info_id(bcf1_t *line, const int id)
 {
     int i;
     if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
