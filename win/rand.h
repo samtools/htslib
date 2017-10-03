@@ -16,8 +16,9 @@
 #ifndef HTSLIB_HTS_RAND_H
 #define HTSLIB_HTS_RAND_H
 
-void srand48(long seed);
-double drand48(void);
-long lrand48(void);
+void hts_srand48(long seed);
+double hts_erand48(unsigned short xseed[3]);
+double hts_drand48(void);
+long hts_lrand48(void);
 
 #endif /* HTSLIB_HTS_RAND_H */

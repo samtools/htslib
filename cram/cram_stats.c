@@ -87,15 +87,16 @@ void cram_stats_del(cram_stats *st, int32_t val) {
 	    if (--kh_val(st->h, k) == 0)
 		kh_del(m_i2i, st->h, k);
 	} else {
-	    fprintf(stderr, "Failed to remove val %d from cram_stats\n", val);
+	    hts_log_warning("Failed to remove val %d from cram_stats", val);
 	    st->nsamp++;
 	}
     } else {
-	fprintf(stderr, "Failed to remove val %d from cram_stats\n", val);
+	hts_log_warning("Failed to remove val %d from cram_stats", val);
 	st->nsamp++;
     }
 }
 
+#if DEBUG_CRAM_STATS
 void cram_stats_dump(cram_stats *st) {
     int i;
     fprintf(stderr, "cram_stats:\n");
@@ -114,6 +115,7 @@ void cram_stats_dump(cram_stats *st) {
 	}
     }
 }
+#endif
 
 /*
  * Computes entropy from integer frequencies for various encoding methods and
@@ -128,7 +130,9 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
     int nvals, i, ntot = 0, max_val = 0, min_val = INT_MAX;
     int *vals = NULL, *freqs = NULL, vals_alloc = 0;
 
-    //cram_stats_dump(st);
+#if DEBUG_CRAM_STATS
+    cram_stats_dump(st);
+#endif
 
     /* Count number of unique symbols */
     for (nvals = i = 0; i < MAX_STAT_VAL; i++) {

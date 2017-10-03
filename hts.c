@@ -109,7 +109,7 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
     case bed:
         return region_list;
 
-    case json:
+    case htsget:
         return unknown_category;
 
     case unknown_format:
@@ -197,7 +197,7 @@ cmp_nonblank(const char *key, const unsigned char *u, const unsigned char *ulim)
 
 int hts_detect_format(hFILE *hfile, htsFormat *fmt)
 {
-    unsigned char s[21];
+    unsigned char s[32];
     ssize_t len = hpeek(hfile, s, 18);
     if (len < 0) return -1;
 
@@ -286,9 +286,9 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
             fmt->version.major = 1, fmt->version.minor = -1;
         return 0;
     }
-    else if (cmp_nonblank("{\"", s, &s[len]) == 0) {
+    else if (cmp_nonblank("{\"htsget\":", s, &s[len]) == 0) {
         fmt->category = unknown_category;
-        fmt->format = json;
+        fmt->format = htsget;
         fmt->version.major = fmt->version.minor = -1;
         return 0;
     }
@@ -329,7 +329,7 @@ char *hts_format_description(const htsFormat *format)
     case crai:  kputs("CRAI", &str); break;
     case csi:   kputs("CSI", &str); break;
     case tbi:   kputs("Tabix", &str); break;
-    case json:  kputs("JSON", &str); break;
+    case htsget: kputs("htsget", &str); break;
     default:    kputs("unknown", &str); break;
     }
 
@@ -376,7 +376,7 @@ char *hts_format_description(const htsFormat *format)
         case crai:
         case vcf:
         case bed:
-        case json:
+        case htsget:
             kputs(" text", &str);
             break;
 
@@ -797,8 +797,8 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
     if (strchr(simple_mode, 'r')) {
         if (hts_detect_format(hfile, &fp->format) < 0) goto error;
 
-        if (fp->format.format == json) {
-            hFILE *hfile2 = hopen_json_redirect(hfile, simple_mode);
+        if (fp->format.format == htsget) {
+            hFILE *hfile2 = hopen_htsget_redirect(hfile, simple_mode);
             if (hfile2 == NULL) goto error;
 
             // Build fp against the result of the redirection
@@ -994,13 +994,14 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
 
         if (hf) {
             va_start(args, opt);
-            if (hfile_set_blksize(hf, va_arg(args, int)) != 0 && hts_verbose >= 2)
-                fprintf(stderr, "[W::%s] Failed to change block size\n", __func__);
+            if (hfile_set_blksize(hf, va_arg(args, int)) != 0)
+                hts_log_warning("Failed to change block size");
             va_end(args);
-        } else if (hts_verbose >= 2)
+        }
+        else {
             // To do - implement for vcf/bcf.
-            fprintf(stderr, "[W::%s] cannot change block size for this format\n", __func__);
-
+            hts_log_warning("Cannot change block size for this format");
+        }
 
         return 0;
     }
@@ -2253,68 +2254,101 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 /**********************
  *** Retrieve index ***
  **********************/
-
-static char *test_and_fetch(const char *fn)
+// Returns -1 if index couldn't be opened.
+//         -2 on other errors
+static int test_and_fetch(const char *fn, const char **local_fn)
 {
+    hFILE *remote_hfp;
+    FILE *local_fp = NULL;
+    uint8_t *buf = NULL;
+    int save_errno;
+
     if (hisremote(fn)) {
         const int buf_size = 1 * 1024 * 1024;
-        hFILE *fp_remote;
-        FILE *fp;
-        uint8_t *buf;
         int l;
         const char *p;
         for (p = fn + strlen(fn) - 1; p >= fn; --p)
             if (*p == '/') break;
         ++p; // p now points to the local file name
         // Attempt to open local file first
-        if ((fp = fopen((char*)p, "rb")) != 0)
+        if ((local_fp = fopen((char*)p, "rb")) != 0)
         {
-            fclose(fp);
-            return (char*)p;
+            fclose(local_fp);
+            *local_fn = p;
+            return 0;
         }
         // Attempt to open remote file. Stay quiet on failure, it is OK to fail when trying first .csi then .tbi index.
-        if ((fp_remote = hopen(fn, "r")) == 0) return 0;
-        if ((fp = fopen(p, "w")) == 0) {
+        if ((remote_hfp = hopen(fn, "r")) == 0) return -1;
+        if ((local_fp = fopen(p, "w")) == 0) {
             hts_log_error("Failed to create file %s in the working directory", p);
-            hclose_abruptly(fp_remote);
-            return 0;
+            goto fail;
         }
         hts_log_info("Downloading file %s to local directory", fn);
         buf = (uint8_t*)calloc(buf_size, 1);
-        while ((l = hread(fp_remote, buf, buf_size)) > 0) fwrite(buf, 1, l, fp);
+        if (!buf) {
+            hts_log_error("%s", strerror(errno));
+            goto fail;
+        }
+        while ((l = hread(remote_hfp, buf, buf_size)) > 0) {
+            if (fwrite(buf, 1, l, local_fp) != l) {
+                hts_log_error("Failed to write data to %s : %s",
+                              fn, strerror(errno));
+                goto fail;
+            }
+        }
         free(buf);
-        fclose(fp);
-        if (hclose(fp_remote) != 0) {
+        if (fclose(local_fp) < 0) {
+            hts_log_error("Error closing %s : %s", fn, strerror(errno));
+            local_fp = NULL;
+            goto fail;
+        }
+        if (hclose(remote_hfp) != 0) {
             hts_log_error("Failed to close remote file %s", fn);
         }
-        return (char*)p;
+        *local_fn = p;
+        return 0;
     } else {
-        hFILE *fp;
-        if ((fp = hopen(fn, "r")) == 0) return 0;
-        hclose_abruptly(fp);
-        return (char*)fn;
+        hFILE *local_hfp;
+        if ((local_hfp = hopen(fn, "r")) == 0) return -1;
+        hclose_abruptly(local_hfp);
+        *local_fn = fn;
+        return 0;
     }
+
+ fail:
+    save_errno = errno;
+    hclose_abruptly(remote_hfp);
+    if (local_fp) fclose(local_fp);
+    free(buf);
+    errno = save_errno;
+    return -2;
 }
 
 char *hts_idx_getfn(const char *fn, const char *ext)
 {
-    int i, l_fn, l_ext;
-    char *fnidx, *ret;
+    int i, l_fn, l_ext, ret;
+    char *fnidx;
+    const char *local_fn = NULL;
     l_fn = strlen(fn); l_ext = strlen(ext);
     fnidx = (char*)calloc(l_fn + l_ext + 1, 1);
+    if (!fnidx) return NULL;
+    // First try : append `ext` to `fn`
     strcpy(fnidx, fn); strcpy(fnidx + l_fn, ext);
-    if ((ret = test_and_fetch(fnidx)) == 0) {
+    if ((ret = test_and_fetch(fnidx, &local_fn)) == -1) {
+        // Second try : replace suffix of `fn` with `ext`
         for (i = l_fn - 1; i > 0; --i)
-            if (fnidx[i] == '.') break;
-        strcpy(fnidx + i, ext);
-        ret = test_and_fetch(fnidx);
+            if (fnidx[i] == '.' || fnidx[i] == '/') break;
+        if (fnidx[i] == '.') {
+            strcpy(fnidx + i, ext);
+            ret = test_and_fetch(fnidx, &local_fn);
+        }
     }
-    if (ret == 0) {
+    if (ret < 0) {
         free(fnidx);
-        return 0;
+        return NULL;
     }
-    l_fn = strlen(ret);
-    memmove(fnidx, ret, l_fn + 1);
+    l_fn = strlen(local_fn);
+    memmove(fnidx, local_fn, l_fn + 1);
     return fnidx;
 }
 

@@ -40,6 +40,7 @@ test_vcf_api($opts,out=>'test-vcf-api.out');
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
 test_vcf_various($opts);
 test_bcf_sr_sort($opts);
+test_command($opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
 test_convert_padded_header($opts);
 test_rebgzip($opts);
 test_logging($opts);
@@ -389,6 +390,13 @@ sub test_bcf_sr_sort
         if ( $ret ) { failed($opts,$test); }
         else { passed($opts,$test); }
     }
+}
+
+sub test_command
+{
+    my ($opts, %args) = @_;
+    my $cmd  = "$$opts{path}/$args{cmd}";
+    test_cmd($opts, %args, cmd=>$cmd);
 }
 
 sub test_logging

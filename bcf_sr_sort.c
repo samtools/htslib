@@ -1,4 +1,4 @@
-/* 
+/*
     Copyright (C) 2017 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
@@ -9,10 +9,10 @@
     to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
     copies of the Software, and to permit persons to whom the Software is
     furnished to do so, subject to the following conditions:
-    
+
     The above copyright notice and this permission notice shall be included in
     all copies or substantial portions of the Software.
-    
+
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
     IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
     FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -77,12 +77,12 @@ static void bcf_sr_init_scores(sr_sort_t *srt)
     if ( srt->pair & BCF_SR_PAIR_ANY ) srt->pair |= (BCF_SR_PAIR_SNPS | BCF_SR_PAIR_INDELS | BCF_SR_PAIR_SNP_REF | BCF_SR_PAIR_INDEL_REF);
     if ( srt->pair & BCF_SR_PAIR_SNPS ) SR_SCORE(srt,SR_SNP,SR_SNP) = 3;
     if ( srt->pair & BCF_SR_PAIR_INDELS ) SR_SCORE(srt,SR_INDEL,SR_INDEL) = 3;
-    if ( srt->pair & BCF_SR_PAIR_SNP_REF ) 
+    if ( srt->pair & BCF_SR_PAIR_SNP_REF )
     {
         SR_SCORE(srt,SR_SNP,SR_REF) = 2;
         SR_SCORE(srt,SR_REF,SR_SNP) = 2;
     }
-    if ( srt->pair & BCF_SR_PAIR_INDEL_REF ) 
+    if ( srt->pair & BCF_SR_PAIR_INDEL_REF )
     {
         SR_SCORE(srt,SR_INDEL,SR_REF) = 2;
         SR_SCORE(srt,SR_REF,SR_INDEL) = 2;
@@ -267,6 +267,8 @@ static int cmpstringp(const void *p1, const void *p2)
 {
     return strcmp(* (char * const *) p1, * (char * const *) p2);
 }
+
+#if DEBUG_VSETS
 void debug_vsets(sr_sort_t *srt)
 {
     int i,j,k;
@@ -285,6 +287,9 @@ void debug_vsets(sr_sort_t *srt)
         fprintf(stderr,"\n");
     }
 }
+#endif
+
+#if DEBUG_VBUF
 void debug_vbuf(sr_sort_t *srt)
 {
     int i, j;
@@ -299,6 +304,8 @@ void debug_vbuf(sr_sort_t *srt)
         fprintf(stderr,"\n");
     }
 }
+#endif
+
 char *grp_create_key(sr_sort_t *srt)
 {
     if ( !srt->str.l ) return strdup("");
@@ -365,7 +372,7 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
         {
             bcf1_t *line = reader->buffer[irec];
             if ( line->rid!=rid || line->pos!=min_pos ) break;
-            
+
             if ( srt->str.l ) kputc(';',&srt->str);
             srt->off[srt->noff++] = srt->str.l;
             size_t beg = srt->str.l;
@@ -459,7 +466,7 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
     }
 
     // create the initial list of variant sets
-    for (ivar=0; ivar<srt->nvar; ivar++) 
+    for (ivar=0; ivar<srt->nvar; ivar++)
     {
         ivset = srt->nvset++;
         hts_expand0(varset_t, srt->nvset, srt->mvset, srt->vset);
@@ -485,7 +492,9 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
         }
         var->type = type;
     }
-    // debug_vsets(srt);
+#if DEBUG_VSETS
+    debug_vsets(srt);
+#endif
 
     // initialize the pairing matrix
     hts_expand(int, srt->ngrp*srt->nvset, srt->mpmat, srt->pmat);
@@ -501,7 +510,10 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
     // pair the lines
     while ( srt->nvset )
     {
-        // fprintf(stderr,"\n"); debug_vsets(srt);
+#if DEBUG_VSETS
+    fprintf(stderr,"\n");
+    debug_vsets(srt);
+#endif
 
         int imax = 0;
         for (ivset=1; ivset<srt->nvset; ivset++)
@@ -567,14 +579,16 @@ int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int mi
 
     if ( !srt->vcf_buf[0].nrec ) return 0;
 
-    // debug_vbuf(srt);
+#if DEBUG_VBUF
+    debug_vbuf(srt);
+#endif
 
     int nret = 0;
     for (i=0; i<srt->sr->nreaders; i++)
     {
         vcf_buf_t *buf = &srt->vcf_buf[i];
 
-        if ( buf->rec[0] ) 
+        if ( buf->rec[0] )
         {
             bcf_sr_t *reader = &srt->sr->readers[i];
             for (j=1; j<=reader->nbuffer; j++)
@@ -592,7 +606,7 @@ int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int mi
             srt->sr->has_line[i] = 1;
         }
         else
-            srt->sr->has_line[i] = 0; 
+            srt->sr->has_line[i] = 0;
 
         buf->nrec--;
         if ( buf->nrec > 0 )

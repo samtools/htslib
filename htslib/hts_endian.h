@@ -82,7 +82,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 /** @def HTS_ALLOW_UNALIGNED
  *  @brief Control use of unaligned memory access.
- * 
+ *
  * Defining HTS_ALLOW_UNALIGNED=1 converts shift-and-or to simple casts on
  * little-endian platforms that can tolerate unaligned access (notably Intel
  * x86).
@@ -136,7 +136,7 @@ static inline uint32_t le_to_u32(const uint8_t *buf) {
     return *((uint32_u *) buf);
 #else
     return ((uint32_t) buf[0] |
-            ((uint32_t) buf[1] << 8) | 
+            ((uint32_t) buf[1] << 8) |
             ((uint32_t) buf[2] << 16) |
             ((uint32_t) buf[3] << 24));
 #endif
@@ -285,7 +285,7 @@ static inline void i64_to_le(int64_t val, uint8_t *buf) {
 
 /* Floating point.  Assumptions:
  *  Platform uses IEEE 754 format
- *  sizeof(float) == sizeof(uint32_t) 
+ *  sizeof(float) == sizeof(uint32_t)
  *  sizeof(double) == sizeof(uint64_t)
  *  Endian-ness is the same for both floating point and integer
  *  Type-punning via a union is allowed

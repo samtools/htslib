@@ -232,7 +232,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 	//printf("%d/%d..%d\n", e.refid, e.start, e.end);
 
 	if (e.refid < -1) {
-	    fprintf(stderr, "Malformed index file, refid %d\n", e.refid);
+	    hts_log_error("Malformed index file, refid %d", e.refid);
             goto fail;
 	}
 

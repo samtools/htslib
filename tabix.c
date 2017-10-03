@@ -171,7 +171,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
                 hts_itr_t *itr = bcf_itr_querys(idx,hdr,regs[i]);
                 while ( bcf_itr_next(fp, itr, rec) >=0 )
                 {
-                    if ( reg_idx && !regidx_overlap(reg_idx, bcf_seqname(hdr,rec),rec->pos,rec->pos+rec->rlen-1, NULL) ) continue; 
+                    if ( reg_idx && !regidx_overlap(reg_idx, bcf_seqname(hdr,rec),rec->pos,rec->pos+rec->rlen-1, NULL) ) continue;
                     bcf_write(out,hdr,rec);
                 }
                 tbx_itr_destroy(itr);

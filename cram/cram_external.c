@@ -301,8 +301,7 @@ int cram_transcode_rg(cram_fd *in, cram_fd *out,
     cram_block_compression_hdr *ch;
 
     if (nrg != 1) {
-	fprintf(stderr, "[%s] ERROR: not implemented for nrg != 1\n",
-		__func__);
+	hts_log_error("CRAM transcode supports only a single RG");
 	return -2;
     }
 

@@ -379,6 +379,10 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
 
     int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b) HTS_RESULT_USED;
     int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str) HTS_RESULT_USED;
+
+    /*!
+     *  @return >= 0 on successfully reading a new record, -1 on end of stream, < -1 on error
+     **/
     int sam_read1(samFile *fp, bam_hdr_t *h, bam1_t *b) HTS_RESULT_USED;
     int sam_write1(samFile *fp, const bam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
 
@@ -440,7 +444,7 @@ uint32_t bam_auxB_len(const uint8_t *s);
     @return The idx'th value, or 0 on error.
     If the array is not an integer type, errno is set to EINVAL.  If idx
     is greater than or equal to  the value returned by bam_auxB_len(s),
-    errno is set to ERANGE.  In both cases, 0 will be returned.    
+    errno is set to ERANGE.  In both cases, 0 will be returned.
  */
 int64_t bam_auxB2i(const uint8_t *s, uint32_t idx);
 
