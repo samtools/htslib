@@ -711,6 +711,7 @@ libcurl_open(const char *url, const char *modes, http_headers *headers)
 
     err |= curl_easy_setopt(fp->easy, CURLOPT_SHARE, curl.share);
     err |= curl_easy_setopt(fp->easy, CURLOPT_URL, url);
+    err |= curl_easy_setopt(fp->easy, CURLOPT_CAINFO, getenv("CURL_CA_BUNDLE"));
     err |= curl_easy_setopt(fp->easy, CURLOPT_USERAGENT, curl.useragent.s);
     if (fp->headers.callback) {
         if (add_callback_headers(fp) != 0) goto error;
