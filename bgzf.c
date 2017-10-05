@@ -1512,7 +1512,7 @@ int bgzf_check_EOF(BGZF *fp) {
     return has_eof;
 }
 
-int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
+int bgzf_seek(BGZF* fp, int64_t pos, int where)
 {
     int block_offset;
     int64_t block_address;
@@ -1562,6 +1562,12 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
     }
 
     return 0;
+}
+
+int64_t bgzf_tell(BGZF* fp) {
+    if (!fp) 
+        return -1L; 
+    return ((fp)->block_address << 16) | ((fp)->block_offset & 0xFFFF); 
 }
 
 int bgzf_is_bgzf(const char *fn)

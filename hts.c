@@ -2288,18 +2288,21 @@ hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
 hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-    int tid, beg, end, i, j, ret;
+    int tid, beg, end, i, j, l, n_off = 0;
     hts_reglist_t *curr_reg;
     hts_pair32_t *curr_intv;
+    hts_pair64_t *off = NULL;
+    cram_index *e = NULL;
 
     if (!cidx || !iter)
         return NULL;
 
     iter->is_cram = 1;
-    iter->read_rest = 1;
+    iter->read_rest = 0;
     iter->off = NULL;
     iter->n_off = 0;
     iter->curr_off = 0;
+    iter->i = -1;
 
     for (i=0; i<iter->n_reg; i++) {
 
@@ -2307,7 +2310,11 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
         tid = curr_reg->tid;
 
         if (tid >= 0) {
-            for(j=0; j<curr_reg->count; j++) {
+            off = (hts_pair64_t*)realloc(off, (n_off + curr_reg->count) * sizeof(hts_pair64_t));
+            if (!off)
+                return NULL;
+
+            for(j=0; j < curr_reg->count; j++) {
                 curr_intv = &curr_reg->intervals[j];
                 if (curr_intv->beg < 0) curr_intv->beg = 0;
                 if (curr_intv->end < curr_intv->beg)
@@ -2316,39 +2323,18 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
                 beg = curr_intv->beg;
                 end = curr_intv->end;
             
-                cram_range r = {tid, beg+1, end};
-                ret = cram_set_option(cidx->cram, CRAM_OPT_RANGE, &r);
-            
-                switch (ret) {
-                    case 0:
-                        break;
-                    case -2:
-                    // No data vs this ref, so mark iterator as completed.
-                    // Same as HTS_IDX_NONE.
-                        iter->finished = 1;
-                        break;
-                    default:
-                        return NULL;
+                e = cram_index_query(cidx->cram, tid, beg+1, NULL);
+                if (e) {
+                    off[n_off].u = e->offset;
+                    off[n_off++].v = INT_MAX; //e->offset + e->slice + e->len;
                 }
             }
         } else {
             switch (tid) {
                 case HTS_IDX_NOCOOR:
-                    ;
-                    cram_range r = { -1, 1, 0};
-                    ret = cram_set_option(cidx->cram, CRAM_OPT_RANGE, &r);
-
-                    switch (ret) {
-                        case 0:
-                            break;
-                        case -2:
-                        // No data vs this ref, so mark iterator as completed.
-                        // Same as HTS_IDX_NONE.
-                            iter->finished = 1;
-                            break;
-                        default:
-                            return NULL;
-                    }
+                    e = cram_index_query(cidx->cram, -1, 1, NULL);
+                    iter->nocoor = 1;
+                    iter->nocoor_off = e->offset;
                     break;
                 case HTS_IDX_REST:
                     break;
@@ -2360,6 +2346,27 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
             }
         }
     }
+
+    if (n_off) {
+        ks_introsort(_off, n_off, off);
+        // resolve completely contained adjacent blocks
+        for (i = 1, l = 0; i < n_off; ++i)
+            if (off[l].v < off[i].v) off[++l] = off[i];
+        n_off = l + 1;
+        // resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
+        for (i = 1; i < n_off; ++i)
+            if (off[i-1].v >= off[i].u) off[i-1].v = off[i].u;
+        // merge adjacent blocks
+        for (i = 1, l = 0; i < n_off; ++i) {
+            if (off[l].v>>16 == off[i].u>>16) off[l].v = off[i].v;
+            else off[++l] = off[i];
+        }
+        n_off = l + 1;
+        iter->n_off = n_off; iter->off = off;
+    }
+
+    if(!n_off && !iter->nocoor)
+        iter->finished;
 
     return iter;
 }
@@ -2514,7 +2521,8 @@ hts_itr_t *hts_itr_bed(const hts_idx_t *idx, const char *reg, unsigned int beg, 
 }
 #endif
 
-hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec) {
+hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr,
+        hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell) {
 
     int i, j;
     uint64_t off;
@@ -2526,6 +2534,8 @@ hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, i
     if (itr) { 
         itr->n_reg = count;
         itr->readrec = readrec;
+        itr->seek = seek;
+        itr->tell = tell;
         itr->reg_list = reglist;
         itr->finished = 0;
         itr->nocoor = 0;
@@ -2602,7 +2612,7 @@ int hts_itr_multi_next(BGZF *fp, hts_itr_multi_t *iter, void *r, void *data)
     if (iter == NULL || iter->finished) return -1;
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
-            if (bgzf_seek(fp, iter->curr_off, SEEK_SET) < 0) return -1;
+            if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) return -1;
             iter->curr_off = 0; // only seek once
         }
         ret = iter->readrec(fp, data, r, &tid, &beg, &end);
@@ -2626,13 +2636,13 @@ int hts_itr_multi_next(BGZF *fp, hts_itr_multi_t *iter, void *r, void *data)
                }
             } // no more chunks
             if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-                if (bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) return -1;
-                iter->curr_off = bgzf_tell(fp);
+                if (iter->seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) return -1;
+                iter->curr_off = iter->tell(fp);
             }
             ++iter->i;
         }
         if ((ret = iter->readrec(fp, data, r, &tid, &beg, &end)) >= 0) {
-            iter->curr_off = bgzf_tell(fp);
+            iter->curr_off = iter->tell(fp);
 
             if (tid != iter->curr_tid) {
 

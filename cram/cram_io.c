@@ -4146,6 +4146,8 @@ int cram_seek(cram_fd *fd, off_t offset, int whence) {
     return 0;
 }
 
+inline int64_t cram_tell(cram_fd *fd) { if(!fd) return -1L; return htell(fd->fp); }
+
 /*
  * Flushes a CRAM file.
  * Useful for when writing to stdout without wishing to close the stream.

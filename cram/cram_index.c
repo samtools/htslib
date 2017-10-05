@@ -345,7 +345,7 @@ void cram_index_free(cram_fd *fd) {
  * "from" as the last slice we checked to find the next one. Otherwise
  * set "from" to be NULL to find the first one.
  *
- * Returns the cram_index pointer on sucess
+ * Returns the cram_index pointer on success
  *         NULL on failure
  */
 cram_index *cram_index_query(cram_fd *fd, int refid, int pos, 

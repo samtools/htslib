@@ -194,11 +194,12 @@ typedef struct __kstring_t {
 
     /**
      * Return a virtual file pointer to the current location in the file.
-     * No interpetation of the value should be made, other than a subsequent
+     * No interpretation of the value should be made, other than a subsequent
      * call to bgzf_seek can be used to position the file at the same point.
      * Return value is non-negative on success.
      */
-    #define bgzf_tell(fp) (((fp)->block_address << 16) | ((fp)->block_offset & 0xFFFF))
+    //#define bgzf_tell(fp) (((fp)->block_address << 16) | ((fp)->block_offset & 0xFFFF))
+    int64_t bgzf_tell(BGZF *fp);
 
     /**
      * Set the file to read from the location specified by _pos_.
@@ -208,7 +209,7 @@ typedef struct __kstring_t {
      * @param whence must be SEEK_SET
      * @return       0 on success and -1 on error
      */
-    int64_t bgzf_seek(BGZF *fp, int64_t pos, int whence) HTS_RESULT_USED;
+    int bgzf_seek(BGZF *fp, int64_t pos, int whence) HTS_RESULT_USED;
 
     /**
      * Check if the BGZF end-of-file (EOF) marker is present

@@ -577,6 +577,10 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, 
     htsFile *fp = fpv;
     bam1_t *b = bv;
     int ret = cram_get_bam_seq(fp->fp.cram, &b);
+    *tid = b->core.tid;
+    *beg = b->core.pos;
+    *end = bam_endpos(b);
+
     return ret >= 0
         ? ret
         : (cram_eof(fp->fp.cram) ? -1 : -2);
@@ -714,9 +718,9 @@ hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *regi
 hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount) {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
     if (cidx->fmt == HTS_FMT_CRAI)
-        return hts_itr_regions(idx, reglist, regcount, cram_name2id, cidx->cram, hts_itr_multi_cram, cram_readrec);
+        return hts_itr_regions(idx, reglist, regcount, cram_name2id, cidx->cram, hts_itr_multi_cram, cram_readrec, cram_seek, cram_tell);
     else
-        return hts_itr_regions(idx, reglist, regcount, (hts_name2id_f)(bam_name2id), hdr, hts_itr_multi_bam, bam_readrec);
+        return hts_itr_regions(idx, reglist, regcount, (hts_name2id_f)(bam_name2id), hdr, hts_itr_multi_bam, bam_readrec, bgzf_seek, bgzf_tell);
 }
 
 /**********************
