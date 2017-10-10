@@ -1474,12 +1474,20 @@ bcf1_t *bcf_copy(bcf1_t *dst, bcf1_t *src)
     dst->n_info = src->n_info; dst->n_allele = src->n_allele;
     dst->n_fmt = src->n_fmt; dst->n_sample = src->n_sample;
 
-    dst->shared.m = dst->shared.l = src->shared.l;
-    dst->shared.s = (char*) malloc(dst->shared.l);
+    if ( dst->shared.m < src->shared.l )
+    {
+        dst->shared.s = (char*) realloc(dst->shared.s, src->shared.l);
+        dst->shared.m = src->shared.l;
+    }
+    dst->shared.l = src->shared.l;
     memcpy(dst->shared.s,src->shared.s,dst->shared.l);
 
-    dst->indiv.m = dst->indiv.l = src->indiv.l;
-    dst->indiv.s = (char*) malloc(dst->indiv.l);
+    if ( dst->indiv.m < src->indiv.l )
+    {
+        dst->indiv.s = (char*) realloc(dst->indiv.s, src->indiv.l);
+        dst->indiv.m = src->indiv.l;
+    }
+    dst->indiv.l = src->indiv.l;
     memcpy(dst->indiv.s,src->indiv.s,dst->indiv.l);
 
     return dst;
