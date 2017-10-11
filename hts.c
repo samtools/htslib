@@ -851,6 +851,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
         if (!fp->is_write)
             cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, 1);
         fp->is_cram = 1;
+        fp->fp.cram->new_seek = 0;
         break;
 
     case text_format:
@@ -2326,7 +2327,7 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
                 e = cram_index_query(cidx->cram, tid, beg+1, NULL);
                 if (e) {
                     off[n_off].u = e->offset;
-                    off[n_off++].v = INT_MAX; //e->offset + e->slice + e->len;
+                    off[n_off++].v = e->offset + e->slice + e->len;
                 }
             }
         } else {
@@ -2605,47 +2606,75 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
     return ret;
 }
 
-int hts_itr_multi_next(BGZF *fp, hts_itr_multi_t *iter, void *r, void *data)
+int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
 {
+    void *fp;
     int ret, tid, beg, end, i, cr, ci;
     hts_reglist_t *found_reg;
     if (iter == NULL || iter->finished) return -1;
+
+    if (iter->is_cram) {
+        fp = fd->fp.cram;
+    } else {
+        fp = fd->fp.bgzf;
+    }
+
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
-            if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) return -1;
+            if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
+		 return -1;
+            }
             iter->curr_off = 0; // only seek once
         }
-        ret = iter->readrec(fp, data, r, &tid, &beg, &end);
-        if (ret < 0) iter->finished = 1;
+
+        ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
+        if (ret < 0) {
+            iter->finished = 1;
+        }
+
         iter->curr_tid = tid;
         iter->curr_beg = beg;
         iter->curr_end = end;
+
         return ret;
     }    
     // A NULL iter->off should always be accompanied by iter->finished.
     assert(iter->off != NULL || iter->nocoor != 0);
     for (;;) {
         if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
-            if (iter->i == iter->n_off - 1) {
+            if (iter->i == iter->n_off - 1) { // no more chunks, except NOCOORs
                if (iter->nocoor) {
                    iter->read_rest = 1;
                    iter->curr_off = iter->nocoor_off;
-                   return hts_itr_multi_next(fp, iter, r, data);
+
+                   return hts_itr_multi_next(fd, iter, r);
                } else {
                    ret = -1; break;
                }
-            } // no more chunks
+            }
+
             if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-                if (iter->seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) return -1;
+                if (iter->seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) {
+                    return -1;     
+                } 
+
+                /* For CRAM files we need to adjust the interval end with the container offset, 
+                 *   which was not known at the time the iterator was created from the index.
+                 */
+                if (iter->is_cram) {
+                    cram_container *c = cram_read_container(fp);
+                    if (c) iter->off[iter->i+1].v += c->offset;
+                    iter->seek(fp, iter->off[iter->i+1].u, SEEK_SET);
+                }
+
                 iter->curr_off = iter->tell(fp);
             }
             ++iter->i;
         }
-        if ((ret = iter->readrec(fp, data, r, &tid, &beg, &end)) >= 0) {
+        if ((ret = iter->readrec(fp, fd, r, &tid, &beg, &end)) >= 0) {
             iter->curr_off = iter->tell(fp);
 
             if (tid != iter->curr_tid) {
-
                 hts_reglist_t key;
                 key.tid = tid;
 
@@ -2662,14 +2691,17 @@ int hts_itr_multi_next(BGZF *fp, hts_itr_multi_t *iter, void *r, void *data)
             cr = iter->curr_reg;
             ci = iter->curr_intv;
 
-            for (i = ci; i < iter->reg_list[cr].count; i++)
+            for (i = ci; i < iter->reg_list[cr].count; i++) {
              if (end > iter->reg_list[cr].intervals[i].beg && iter->reg_list[cr].intervals[i].end > beg) {
                 iter->curr_beg = beg;
                 iter->curr_end = end;
                 iter->curr_intv = i;
                 return ret;
             }
-        } else break; // end of file or error
+            }
+        } else {
+break; // end of file or error
+        }
     }
     iter->finished = 1;
     return ret;

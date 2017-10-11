@@ -526,7 +526,7 @@ typedef struct {
 } hts_reglist_t;
 
 typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, int *end);
-typedef int hts_seek_func(void *fp, uint64_t offset, int whence);
+typedef int hts_seek_func(void *fp, int64_t offset, int where);
 typedef int64_t hts_tell_func(void *fp);
 
 typedef struct {
@@ -674,9 +674,8 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
 typedef hts_itr_multi_t *hts_itr_multi_query_func(const hts_idx_t *idx, hts_itr_multi_t *itr);
 hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter);
 hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter);
-hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr,
-        hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell);
-int hts_itr_multi_next(BGZF *fp, hts_itr_multi_t *iter, void *r, void *data);
+hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell);
+int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r);
 void hts_reglist_free(hts_reglist_t *reglist, int count);
 void hts_itr_multi_destroy(hts_itr_multi_t *iter, int n_reg);
 

@@ -356,7 +356,7 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
     hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount);
     
     #define sam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (htsfp))
-    #define sam_itr_multi_next(htsfp, itr, r) hts_itr_multi_next((htsfp)->fp.bgzf, (itr), (r), (htsfp))
+    #define sam_itr_multi_next(htsfp, itr, r) hts_itr_multi_next((htsfp), (itr), (r))
 
     /***************
      *** SAM I/O ***

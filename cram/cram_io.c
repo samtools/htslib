@@ -2807,6 +2807,8 @@ cram_container *cram_read_container(cram_fd *fd) {
 	len = le_int4(c2.length);
 	crc = crc32(0L, (unsigned char *)&len, 4);
     }
+    fd->new_seek = 0;
+
     if ((s = itf8_decode_crc(fd, &c2.ref_seq_id, &crc))   == -1) return NULL; else rd+=s;
     if ((s = itf8_decode_crc(fd, &c2.ref_seq_start, &crc))== -1) return NULL; else rd+=s;
     if ((s = itf8_decode_crc(fd, &c2.ref_seq_span, &crc)) == -1) return NULL; else rd+=s;
@@ -4124,13 +4126,15 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_seek(cram_fd *fd, off_t offset, int whence) {
+int cram_seek(cram_fd *fd, int64_t offset, int whence) {
     char buf[65536];
 
     fd->ooc = 0;
 
-    if (hseek(fd->fp, offset, whence) >= 0)
-	return 0;
+    if (hseek(fd->fp, offset, whence) >= 0) {
+        fd->new_seek = 1;
+        return 0;
+    }
 
     if (!(whence == SEEK_CUR && offset >= 0))
 	return -1;
@@ -4146,7 +4150,26 @@ int cram_seek(cram_fd *fd, off_t offset, int whence) {
     return 0;
 }
 
-inline int64_t cram_tell(cram_fd *fd) { if(!fd) return -1L; return htell(fd->fp); }
+/*
+ * cram_tell is a pseudo-tell function, because it matches the position of the disk cursor only
+ *   after a fresh seek call. Otherwise it indicates that the read takes place inside the buffered 
+ *   container previously fetched. It was designed like this to integrate with the functionality 
+ *   of the iterator stepping logic.
+ */
+
+int64_t cram_tell(cram_fd *fd) { 
+    cram_container *c;
+    int64_t ret = -1L;
+
+    if (fd && fd->fp) { 
+        ret = htell(fd->fp);
+        if (!fd->new_seek && ((c = fd->ctr) != NULL)) {
+            ret -= ((c->curr_slice != c->max_slice || c->curr_rec != c->max_rec) ? 1 : 0);
+        }
+    }
+
+    return ret;
+}
 
 /*
  * Flushes a CRAM file.
