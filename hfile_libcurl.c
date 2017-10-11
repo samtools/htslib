@@ -540,7 +540,7 @@ static int add_auth_header(hFILE_libcurl *fp) {
                 fp->headers.fixed.list[fp->headers.fixed.num - 1].next = NULL;
             }
         }
-    } else {
+    } else if (fp->headers.auth->token) {
         // Add new header and remember where it is
         if (append_header(&fp->headers.extra,
                           fp->headers.auth->token, 1) < 0) {
