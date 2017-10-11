@@ -45,6 +45,10 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <curl/curl.h>
 
+// Number of seconds to take off auth_token expiry, to allow for clock skew
+// and slow servers
+#define AUTH_REFRESH_EARLY_SECS 60
+
 typedef struct {
     char *path;
     char *token;
@@ -464,7 +468,7 @@ static int renew_auth_token(auth_token *tok, int *changed) {
     ssize_t len;
 
     *changed = 0;
-    if (tok->expiry == 0 || time(NULL) < tok->expiry)
+    if (tok->expiry == 0 || time(NULL) + AUTH_REFRESH_EARLY_SECS < tok->expiry)
         return 0; // Still valid
 
     if (tok->failed)
