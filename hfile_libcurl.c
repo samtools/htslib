@@ -259,6 +259,7 @@ static void libcurl_exit()
         for (i = kh_begin(curl.auth_map); i != kh_end(curl.auth_map); ++i) {
             if (kh_exist(curl.auth_map, i)) {
                 free_auth(kh_value(curl.auth_map, i));
+                kh_key(curl.auth_map, i) = NULL;
                 kh_value(curl.auth_map, i) = NULL;
             }
         }
@@ -511,7 +512,7 @@ static int add_auth_header(hFILE_libcurl *fp) {
     if (renew_auth_token(fp->headers.auth, &changed) < 0)
         goto unlock_fail;
 
-    if (!changed) {
+    if (!changed && fp->headers.auth_hdr_num < 0) {
         pthread_mutex_unlock(&fp->headers.auth->lock);
         return 0;
     }
@@ -616,6 +617,7 @@ static int get_auth_token(hFILE_libcurl *fp, const char *url) {
                 free_auth(tok);
                 tok = NULL;
             }
+            kh_value(curl.auth_map, idx) = tok;
         }
     }
     pthread_mutex_unlock(&curl.auth_lock);
@@ -965,7 +967,6 @@ static int libcurl_close(hFILE *fpv)
         fp->headers.callback(fp->headers.callback_data, NULL);
     free_headers(&fp->headers.fixed, 1);
     free_headers(&fp->headers.extra, 1);
-    free(fp->headers.auth);
 
     if (save_errno) { errno = save_errno; return -1; }
     else return 0;
