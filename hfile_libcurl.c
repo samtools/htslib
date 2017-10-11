@@ -365,6 +365,12 @@ static int add_callback_headers(hFILE_libcurl *fp) {
     return -1;
 }
 
+/*
+ * Read an OAUTH2-style Bearer access token (see
+ * https://tools.ietf.org/html/rfc6750#section-4).
+ * Returns 'v' for valid; 'i' for invalid (token missing or wrong sort);
+ * '?' for a JSON parse error; 'm' if it runs out of memory.
+ */
 static int read_auth_json(auth_token *tok, hFILE *auth_fp) {
     hts_json_token t;
     kstring_t str = {0, 0, NULL};
