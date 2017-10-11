@@ -69,7 +69,11 @@ typedef struct {
     hts_httphdr_callback callback;   // Callback to get more headers
     void *callback_data;             // Data to pass to callback
     auth_token *auth;                // Authentication token
-    int auth_hdr_num;                // Authorization header list position + 1
+    int auth_hdr_num;                // Location of auth_token in hdrlist extra
+                                     // If -1, Authorization header is in fixed
+                                     //    -2, it came from the callback
+                                     //    -3, "auth_token_enabled", "false"
+                                     //        passed to hopen()
 } http_headers;
 
 typedef struct {
@@ -337,8 +341,7 @@ static int add_callback_headers(hFILE_libcurl *fp) {
     }
     free_headers(&fp->headers.extra, 0);
 
-    if (fp->headers.auth_hdr_num < 0
-        || fp->headers.auth_hdr_num > fp->headers.fixed.num)
+    if (fp->headers.auth_hdr_num > 0 || fp->headers.auth_hdr_num == -2)
         fp->headers.auth_hdr_num = 0; // Just removed it...
 
     // Convert to libcurl-suitable form
@@ -346,8 +349,8 @@ static int add_callback_headers(hFILE_libcurl *fp) {
         if (append_header(&fp->headers.extra, *hdr, 0) < 0) {
             goto cleanup;
         }
-        if (is_authorization(*hdr))
-            fp->headers.auth_hdr_num = fp->headers.fixed.num + fp->headers.extra.num;
+        if (is_authorization(*hdr) && !fp->headers.auth_hdr_num)
+            fp->headers.auth_hdr_num = -2;
     }
     for (hdr = hdrs; *hdr; hdr++) *hdr = NULL;
 
@@ -502,7 +505,7 @@ static int renew_auth_token(auth_token *tok, int *changed) {
 static int add_auth_header(hFILE_libcurl *fp) {
     int changed = 0;
 
-    if (fp->headers.auth_hdr_num > 0)
+    if (fp->headers.auth_hdr_num < 0)
         return 0; // Have an Authorization header from open or header callback
 
     if (!fp->headers.auth)
@@ -512,21 +515,18 @@ static int add_auth_header(hFILE_libcurl *fp) {
     if (renew_auth_token(fp->headers.auth, &changed) < 0)
         goto unlock_fail;
 
-    if (!changed && fp->headers.auth_hdr_num < 0) {
+    if (!changed && fp->headers.auth_hdr_num > 0) {
         pthread_mutex_unlock(&fp->headers.auth->lock);
         return 0;
     }
 
-    if (fp->headers.auth_hdr_num < 0) {
+    if (fp->headers.auth_hdr_num > 0) {
         // Had a previous header, so swap in the new one
         char *header = fp->headers.auth->token;
         char *header_copy = header ? strdup(header) : NULL;
-        int idx = -fp->headers.auth_hdr_num - 1;
+        int idx = fp->headers.auth_hdr_num - 1;
         if (header && !header_copy)
             goto unlock_fail;
-        assert(idx >= fp->headers.fixed.num);
-        idx -= fp->headers.fixed.num;
-        assert(idx < fp->headers.extra.num);
 
         if (header_copy) {
             free(fp->headers.extra.list[idx].data);
@@ -546,6 +546,7 @@ static int add_auth_header(hFILE_libcurl *fp) {
             } else if (fp->headers.fixed.num > 0) {
                 fp->headers.fixed.list[fp->headers.fixed.num - 1].next = NULL;
             }
+            fp->headers.auth_hdr_num = 0;
         }
     } else if (fp->headers.auth->token) {
         // Add new header and remember where it is
@@ -553,7 +554,7 @@ static int add_auth_header(hFILE_libcurl *fp) {
                           fp->headers.auth->token, 1) < 0) {
             goto unlock_fail;
         }
-        fp->headers.auth_hdr_num = -(fp->headers.fixed.num + fp->headers.extra.num);
+        fp->headers.auth_hdr_num = fp->headers.extra.num;
     }
 
     pthread_mutex_unlock(&fp->headers.auth->lock);
@@ -828,7 +829,7 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
             return -1;
         update_headers = 1;
     }
-    if (fp->headers.auth_hdr_num <= 0 && fp->headers.auth) {
+    if (fp->headers.auth_hdr_num > 0 && fp->headers.auth) {
         if (add_auth_header(fp) != 0)
             return -1;
         update_headers = 1;
@@ -1119,7 +1120,7 @@ static int parse_va_list(http_headers *headers, va_list args)
                 if (append_header(&headers->fixed, *hdr, 1) < 0)
                     return -1;
                 if (is_authorization(*hdr))
-                    headers->auth_hdr_num = headers->fixed.num;
+                    headers->auth_hdr_num = -1;
             }
         }
         else if (strcmp(argtype, "httphdr:l") == 0) {
@@ -1128,7 +1129,7 @@ static int parse_va_list(http_headers *headers, va_list args)
                 if (append_header(&headers->fixed, hdr, 1) < 0)
                     return -1;
                 if (is_authorization(hdr))
-                    headers->auth_hdr_num = headers->fixed.num;
+                    headers->auth_hdr_num = -1;
             }
         }
         else if (strcmp(argtype, "httphdr") == 0) {
@@ -1137,7 +1138,7 @@ static int parse_va_list(http_headers *headers, va_list args)
                 if (append_header(&headers->fixed, hdr, 1) < 0)
                     return -1;
                 if (is_authorization(hdr))
-                    headers->auth_hdr_num = headers->fixed.num;
+                    headers->auth_hdr_num = -1;
             }
         }
         else if (strcmp(argtype, "httphdr_callback") == 0) {
@@ -1151,6 +1152,11 @@ static int parse_va_list(http_headers *headers, va_list args)
             if (args2) {
                 if (parse_va_list(headers, *args2) < 0) return -1;
             }
+        }
+        else if (strcmp(argtype, "auth_token_enabled") == 0) {
+            const char *flag = va_arg(args, const char *);
+            if (strcmp(flag, "false") == 0)
+                headers->auth_hdr_num = -3;
         }
         else { errno = EINVAL; return -1; }
 
