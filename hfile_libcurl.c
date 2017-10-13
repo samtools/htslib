@@ -1103,8 +1103,6 @@ error:
     return NULL;
 
 early_error:
-    save = errno;
-    errno = save;
     return NULL;
 }
 
