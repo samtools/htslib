@@ -1217,9 +1217,6 @@ static hFILE *vhopen_libcurl(const char *url, const char *modes, va_list args)
         fp = libcurl_open(url, modes, &headers);
     }
 
-    if (!fp) {
-        free_headers(&headers.fixed, 1);
-    }
     return fp;
 }
 
