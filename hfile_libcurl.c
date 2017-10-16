@@ -922,6 +922,13 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
     return pos;
 
  error_remove:
+    if (temp_fp.final_result != CURLE_OK) {
+      errno = easy_errno(temp_fp.easy, temp_fp.final_result);
+      if (errno == ESPIPE) {
+        fp->can_seek = 0;  // Don't try to seek again
+      }
+    }
+
     curl_easy_reset(temp_fp.easy); // Ensure no pointers to on-stack temp_fp
     errm = curl_multi_remove_handle(fp->multi, temp_fp.easy);
     if (errm != CURLM_OK) {
@@ -932,10 +939,6 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
  error:
     curl_easy_cleanup(temp_fp.easy);
  early_error:
-    fp->can_seek = 0;  // Don't try to seek again
-    /* This value for errno may not be entirely true, but the caller may be
-       able to carry on with the existing handle. */
-    errno = ESPIPE;
     return -1;
 }
 

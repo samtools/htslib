@@ -201,6 +201,9 @@ int main(int argc, char *argv[])
                     break;
             }
             hts_itr_destroy(iter);
+            if (r < -1) {
+              break;
+            }
         }
         hts_idx_destroy(idx);
     } else while ((r = sam_read1(in, h, b)) >= 0) {

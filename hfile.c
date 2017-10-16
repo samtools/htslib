@@ -452,6 +452,7 @@ off_t hseek(hFILE *fp, off_t offset, int whence)
     // Seeking succeeded, so discard any non-empty read buffer
     fp->begin = fp->end = fp->buffer;
     fp->at_eof = 0;
+    fp->has_errno = 0;
 
     fp->offset = pos;
     return pos;
