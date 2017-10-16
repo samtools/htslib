@@ -82,11 +82,20 @@ open_next:
                 fp->current+1, fp->nparts, p->url,
                 (strlen(p->url) > 120)? "..." : "");
 
-            fp->currentfp = p->headers?
-                  hopen(p->url, "r:",
-                        "httphdr:v", p->headers,
-                        "auth_token_enabled", "false", NULL)
-                : hopen(p->url, "r:", "auth_token_enabled", "false", NULL);
+            if (p->headers) {
+                fp->currentfp = hopen(p->url, "r:",
+                                      "httphdr:v", p->headers,
+                                      "auth_token_enabled", "false", NULL);
+            } else {
+                const struct hFILE_scheme_handler *handler;
+                handler = find_scheme_handler(p->url);
+                if (handler && strcmp(handler->provider, "libcurl") == 0) {
+                    fp->currentfp = hopen(p->url, "r:",
+                                          "auth_token_enabled", "false", NULL);
+                } else {
+                    fp->currentfp = hopen(p->url, "r");
+                }
+            }
 
             if (fp->currentfp == NULL) return -1;
         }

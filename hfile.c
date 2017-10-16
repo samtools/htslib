@@ -880,7 +880,7 @@ static hFILE *hopen_unknown_scheme(const char *fname, const char *mode)
 }
 
 /* Returns the appropriate handler, or NULL if the string isn't an URL.  */
-static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
+const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
 {
     static const struct hFILE_scheme_handler unknown_scheme =
         { hopen_unknown_scheme, hfile_always_local, "built-in", 0 };
