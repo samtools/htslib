@@ -851,7 +851,6 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
         if (!fp->is_write)
             cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, 1);
         fp->is_cram = 1;
-        fp->fp.cram->new_seek = 0;
         break;
 
     case text_format:
@@ -2315,7 +2314,7 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
             if (!off)
                 return NULL;
 
-            for(j=0; j < curr_reg->count; j++) {
+            for (j=0; j < curr_reg->count; j++) {
                 curr_intv = &curr_reg->intervals[j];
                 if (curr_intv->beg < 0) curr_intv->beg = 0;
                 if (curr_intv->end < curr_intv->beg)
@@ -2323,11 +2322,29 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
 
                 beg = curr_intv->beg;
                 end = curr_intv->end;
-            
+
+/* First, fetch the container overlapping 'beg' and assign its file offset to u, then
+ * find the container overlapping 'end' and assing the relative end of the slice to v.
+ * The cram_ptell function will adjust with the container offset, which is not stored
+ * in the index.
+ */
                 e = cram_index_query(cidx->cram, tid, beg+1, NULL);
                 if (e) {
                     off[n_off].u = e->offset;
-                    off[n_off++].v = e->offset + e->slice + e->len;
+
+                    if (end == INT_MAX) {
+                       e = cram_index_max(cidx->cram, tid, NULL);
+                    } else {
+                       e = cram_index_query(cidx->cram, tid, end+1, NULL);
+                    }
+
+                    if (e) {
+                        off[n_off++].v = e->offset + e->slice + e->len;
+                    } else {
+                        fprintf(stderr, "[hts_itr_multi_cram]: Could not set offset end for region %d(%s):%d-%d\n. Skipping...", tid, curr_reg->reg, beg, end);
+                    }
+                } else {
+                    fprintf(stderr, "[hts_itr_multi_cram]: No index entry for region %d:%d-%d\n", tid, beg, end);
                 }
             }
         } else {
@@ -2504,23 +2521,6 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
     if (tid < 0) return NULL;
     return itr_query(idx, tid, beg, end, readrec);
 }
-#if 0
-hts_itr_t *hts_itr_bed(const hts_idx_t *idx, const char *reg, unsigned int beg, unsigned int end, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
-{
-    int tid;
-    const char *q;
-
-    if (strcmp(reg, ".") == 0)
-        return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
-    else if (strcmp(reg, "*") == 0)
-        return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
-
-    tid = getid(hdr, reg);
-    if (tid < 0) return NULL;
-
-    return itr_query(idx, tid, beg, end, readrec);
-}
-#endif
 
 hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr,
         hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell) {
@@ -2611,6 +2611,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
     void *fp;
     int ret, tid, beg, end, i, cr, ci;
     hts_reglist_t *found_reg;
+
     if (iter == NULL || iter->finished) return -1;
 
     if (iter->is_cram) {
@@ -2640,6 +2641,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
     }    
     // A NULL iter->off should always be accompanied by iter->finished.
     assert(iter->off != NULL || iter->nocoor != 0);
+
     for (;;) {
         if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
             if (iter->i == iter->n_off - 1) { // no more chunks, except NOCOORs
@@ -2658,31 +2660,23 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
                     return -1;     
                 } 
 
-                /* For CRAM files we need to adjust the interval end with the container offset, 
-                 *   which was not known at the time the iterator was created from the index.
-                 */
-                if (iter->is_cram) {
-                    cram_container *c = cram_read_container(fp);
-                    if (c) iter->off[iter->i+1].v += c->offset;
-                    iter->seek(fp, iter->off[iter->i+1].u, SEEK_SET);
-                }
-
                 iter->curr_off = iter->tell(fp);
             }
             ++iter->i;
         }
+
         if ((ret = iter->readrec(fp, fd, r, &tid, &beg, &end)) >= 0) {
             iter->curr_off = iter->tell(fp);
-
             if (tid != iter->curr_tid) {
+ 
                 hts_reglist_t key;
                 key.tid = tid;
 
                 found_reg = (hts_reglist_t *)bsearch(&key, iter->reg_list, iter->n_reg, sizeof(hts_reglist_t), compare_regions);
 
-                if (!found_reg) {
+                if (!found_reg) 
                     continue;
-                }
+                
                 iter->curr_reg = (found_reg - iter->reg_list);
                 iter->curr_tid = tid;
                 iter->curr_intv = 0;
@@ -2692,18 +2686,20 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
             ci = iter->curr_intv;
 
             for (i = ci; i < iter->reg_list[cr].count; i++) {
-             if (end > iter->reg_list[cr].intervals[i].beg && iter->reg_list[cr].intervals[i].end > beg) {
-                iter->curr_beg = beg;
-                iter->curr_end = end;
-                iter->curr_intv = i;
-                return ret;
-            }
+                if (end > iter->reg_list[cr].intervals[i].beg && iter->reg_list[cr].intervals[i].end > beg) {
+                    iter->curr_beg = beg;
+                    iter->curr_end = end;
+                    iter->curr_intv = i;
+
+                    return ret;
+                }
             }
         } else {
-break; // end of file or error
+            break; // end of file or error
         }
     }
     iter->finished = 1;
+
     return ret;
 }
 
