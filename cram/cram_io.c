@@ -4125,7 +4125,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_seek(cram_fd *fd, int64_t offset, int whence) {
+int cram_seek(cram_fd *fd, off_t offset, int whence) {
     char buf[65536];
 
     fd->ooc = 0;

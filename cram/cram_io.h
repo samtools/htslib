@@ -840,7 +840,7 @@ int cram_close(cram_fd *fd);
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_seek(cram_fd *fd, int64_t offset, int where);
+int cram_seek(cram_fd *fd, off_t offset, int where);
 
 int64_t cram_tell(cram_fd *fd);
 

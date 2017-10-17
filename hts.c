@@ -2333,7 +2333,7 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
                     off[n_off].u = e->offset;
 
                     if (end == INT_MAX) {
-                       e = cram_index_max(cidx->cram, tid, NULL);
+                       e = cram_index_last(cidx->cram, tid, NULL);
                     } else {
                        e = cram_index_query(cidx->cram, tid, end+1, NULL);
                     }
@@ -2351,8 +2351,12 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
             switch (tid) {
                 case HTS_IDX_NOCOOR:
                     e = cram_index_query(cidx->cram, -1, 1, NULL);
-                    iter->nocoor = 1;
-                    iter->nocoor_off = e->offset;
+                    if (e) {
+                        iter->nocoor = 1;
+                        iter->nocoor_off = e->offset;
+                    } else {
+                        fprintf(stderr, "[hts_itr_multi_cram]: No index entry for NOCOOR region\n");
+                    }
                     break;
                 case HTS_IDX_REST:
                     break;

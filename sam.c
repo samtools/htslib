@@ -604,7 +604,7 @@ static int cram_pseek(void *fp, int64_t offset, int whence)
 }
 
 /*
- * cram_tell is a pseudo-tell function, because it matches the position of the disk cursor only
+ * cram_ptell is a pseudo-tell function, because it matches the position of the disk cursor only
  *   after a fresh seek call. Otherwise it indicates that the read takes place inside the buffered
  *   container previously fetched. It was designed like this to integrate with the functionality
  *   of the iterator stepping logic.
@@ -636,6 +636,8 @@ static int bam_pseek(void *fp, int64_t offset, int whence)
 static int64_t bam_ptell(void *fp)
 {
     BGZF *fd = (BGZF *)fp;
+    if (!fd)
+        return -1L;
 
     return bgzf_tell(fd);
 }
