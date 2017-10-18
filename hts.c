@@ -1953,7 +1953,7 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
     return itr->bins.n;
 }
 
-static inline int regs2bins(int64_t beg, int64_t end, hts_itr_multi_t *itr, int min_shift, int n_lvls)
+static inline int regs2bins(hts_itr_multi_t *itr, int64_t beg, int64_t end, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
 {
     if (!itr)
         return 0;
@@ -1968,11 +1968,16 @@ static inline int regs2bins(int64_t beg, int64_t end, hts_itr_multi_t *itr, int 
         if (itr->bins.n + n > itr->bins.m) {
             itr->bins.m = itr->bins.n + n;
             kroundup32(itr->bins.m);
-            itr->bins.a = (int*)realloc(itr->bins.a, sizeof(int) * itr->bins.m);
+            itr->bins.a = (aux_key_t *)realloc(itr->bins.a, sizeof(aux_key_t) * itr->bins.m);
             if (!itr->bins.a)
                 return 0;
         }
-        for (i = b; i <= e; ++i) itr->bins.a[itr->bins.n++] = i;
+        for (i = b; i <= e; ++i) {
+            itr->bins.a[itr->bins.n].key = i;
+            itr->bins.a[itr->bins.n].minoff = min_off;
+            itr->bins.a[itr->bins.n].maxoff = max_off;
+            itr->bins.n++;
+        }
     }
     return itr->bins.n;
 }
@@ -2155,7 +2160,7 @@ hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
     hts_pair64_t *off = NULL;
     khint_t k;
     bidx_t *bidx;
-    uint64_t min_off = INT64_MAX, max_off = 0, tmp, t_off = (uint64_t)-1;
+    uint64_t min_off, max_off, t_off = (uint64_t)-1;
     int tid, beg, end;
     hts_reglist_t *curr_reg;
 
@@ -2208,10 +2213,7 @@ hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
                         else bin = hts_bin_parent(bin);
                     } while (bin);
                     if (bin == 0) k = kh_get(bin, bidx, bin);
-                    tmp = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
-
-                    if (tmp < min_off)
-                        min_off = tmp;
+                    min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
 
                     // compute max_off: a virtual offset from a bin to the right of end
                     bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
@@ -2224,21 +2226,19 @@ hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
                         if (bin == 0) { max_off = (uint64_t)-1; break; }
                         k = kh_get(bin, bidx, bin);
                         if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) { 
-                            tmp = kh_val(bidx, k).list[0].u;
-                            if (tmp > max_off) 
-                                max_off = tmp; 
+                            max_off = kh_val(bidx, k).list[0].u;
                             break; 
                         }
                         bin++;
                     }
 
                     // retrieve bins
-                    regs2bins(beg, end, iter, idx->min_shift, idx->n_lvls);
+                    regs2bins(iter, beg, end, min_off, max_off, idx->min_shift, idx->n_lvls);
                 }
             }
 
             for (j = 0; j < iter->bins.n; ++j) {
-                if ((k = kh_get(bin, bidx, iter->bins.a[j])) != kh_end(bidx)) {
+                if ((k = kh_get(bin, bidx, iter->bins.a[j].key)) != kh_end(bidx)) {
                     bins_t *p = &kh_value(bidx, k);
 
                     if (p->n) {
@@ -2246,7 +2246,7 @@ hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
                         if (!off) 
                             return NULL; 
                         for (l = 0; l < p->n; ++l) {
-                            if (p->list[l].v > min_off && p->list[l].u < max_off)
+                            if (p->list[l].v > iter->bins.a[j].minoff && p->list[l].u < iter->bins.a[j].maxoff)
                                 off[n_off++] = p->list[l];
                         }
                     }

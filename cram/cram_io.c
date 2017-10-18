@@ -2807,7 +2807,6 @@ cram_container *cram_read_container(cram_fd *fd) {
 	len = le_int4(c2.length);
 	crc = crc32(0L, (unsigned char *)&len, 4);
     }
-
     if ((s = itf8_decode_crc(fd, &c2.ref_seq_id, &crc))   == -1) return NULL; else rd+=s;
     if ((s = itf8_decode_crc(fd, &c2.ref_seq_start, &crc))== -1) return NULL; else rd+=s;
     if ((s = itf8_decode_crc(fd, &c2.ref_seq_span, &crc)) == -1) return NULL; else rd+=s;

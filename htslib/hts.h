@@ -543,6 +543,11 @@ typedef struct {
 } hts_itr_t;
 
 typedef struct {
+    int key;
+    uint64_t minoff, maxoff;
+} aux_key_t;
+
+typedef struct {
     uint32_t read_rest:1, finished:1, is_cram:1, nocoor:1, dummy:28;
     hts_reglist_t *reg_list;
     int n_reg, i;
@@ -555,7 +560,7 @@ typedef struct {
     hts_tell_func *tell;
     struct {
         int n, m;
-        int *a;
+        aux_key_t *a;
     } bins;
 } hts_itr_multi_t;
 
