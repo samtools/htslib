@@ -387,6 +387,7 @@ static int bam_tag2cigar(bam1_t *b)
     if (ori_len > CG_en) // move data after the CG tag
       memmove(b->data + CG_st + n_cigar4 - 4, b->data + CG_en + n_cigar4 - 4, ori_len - CG_en);
     b->l_data -= n_cigar4 + 8; // 8: CGBI (4 bytes) and CGBI length (4)
+	b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)), 14, 5);
     return 1;
 }
 
