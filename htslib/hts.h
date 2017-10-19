@@ -523,6 +523,7 @@ typedef struct {
     int tid;
     hts_pair32_t *intervals;
     uint32_t count;
+    uint32_t min_beg, max_end;
 } hts_reglist_t;
 
 typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, int *end);
@@ -544,7 +545,7 @@ typedef struct {
 
 typedef struct {
     int key;
-    uint64_t minoff, maxoff;
+    uint64_t min_off, max_off;
 } aux_key_t;
 
 typedef struct {

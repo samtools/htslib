@@ -1974,8 +1974,8 @@ static inline int regs2bins(hts_itr_multi_t *itr, int64_t beg, int64_t end, uint
         }
         for (i = b; i <= e; ++i) {
             itr->bins.a[itr->bins.n].key = i;
-            itr->bins.a[itr->bins.n].minoff = min_off;
-            itr->bins.a[itr->bins.n].maxoff = max_off;
+            itr->bins.a[itr->bins.n].min_off = min_off;
+            itr->bins.a[itr->bins.n].max_off = max_off;
             itr->bins.n++;
         }
     }
@@ -2028,8 +2028,7 @@ uint64_t hts_itr_off(const hts_idx_t* idx, int tid) {
                 bidx = idx->bidx[i];
                 k = kh_get(bin, bidx, META_BIN(idx));
                 if (k != kh_end(bidx)) {
-                    if (off0 == (uint64_t) -1
-                            || off0 < kh_val(bidx, k).list[0].v) {
+                    if (off0 == (uint64_t) -1 || off0 < kh_val(bidx, k).list[0].v) {
                         off0 = kh_val(bidx, k).list[0].v;
                     }
                 }
@@ -2246,7 +2245,7 @@ hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
                         if (!off) 
                             return NULL; 
                         for (l = 0; l < p->n; ++l) {
-                            if (p->list[l].v > iter->bins.a[j].minoff && p->list[l].u < iter->bins.a[j].maxoff)
+                            if (p->list[l].v > iter->bins.a[j].min_off && p->list[l].u < iter->bins.a[j].max_off)
                                 off[n_off++] = p->list[l];
                         }
                     }
@@ -2280,7 +2279,7 @@ hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
         }
 
         if(!n_off && !iter->nocoor)
-            iter->finished;
+            iter->finished = 1;
     }
     return iter;
 }
@@ -2388,7 +2387,7 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
     }
 
     if(!n_off && !iter->nocoor)
-        iter->finished;
+        iter->finished = 1;
 
     return iter;
 }
@@ -2688,6 +2687,9 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
               
             cr = iter->curr_reg;
             ci = iter->curr_intv;
+
+            if (beg >=  iter->reg_list[cr].max_end)
+                continue;
 
             for (i = ci; i < iter->reg_list[cr].count; i++) {
                 if (end > iter->reg_list[cr].intervals[i].beg && iter->reg_list[cr].intervals[i].end > beg) {
