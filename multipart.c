@@ -88,7 +88,7 @@ open_next:
                                       "auth_token_enabled", "false", NULL);
             } else {
                 const struct hFILE_scheme_handler *handler;
-                handler = find_scheme_handler(p->url);
+                handler = hfile_find_scheme_handler(p->url);
                 if (handler && strcmp(handler->provider, "libcurl") == 0) {
                     fp->currentfp = hopen(p->url, "r:",
                                           "auth_token_enabled", "false", NULL);

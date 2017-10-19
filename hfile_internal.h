@@ -138,7 +138,7 @@ void hfile_add_scheme_handler(const char *scheme,
                               const struct hFILE_scheme_handler *handler);
 
 /* Returns the appropriate handler, or NULL if the string isn't an URL.  */
-const struct hFILE_scheme_handler *find_scheme_handler(const char *s);
+const struct hFILE_scheme_handler *hfile_find_scheme_handler(const char *s);
 
 struct hFILE_plugin {
     /* On entry, HTSlib's plugin API version (currently 1).  */
