@@ -516,6 +516,7 @@ typedef struct {
 
 typedef struct {
     uint64_t u, v;
+//    int max_end;
 } hts_pair64_t;
 
 typedef struct {
@@ -559,10 +560,6 @@ typedef struct {
     hts_readrec_func *readrec;
     hts_seek_func *seek;
     hts_tell_func *tell;
-    struct {
-        int n, m;
-        aux_key_t *a;
-    } bins;
 } hts_itr_multi_t;
 
     #define hts_bin_first(l) (((1<<(((l)<<1) + (l))) - 1) / 7)
