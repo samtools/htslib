@@ -1100,7 +1100,7 @@ int test_square(int n) {
     hts_tpool_process_flush(q);
 
     while ((r = hts_tpool_next_result(q))) {
-      printf("RESULT: %d\n", *(int *)hts_tpool_result_data(r));
+        printf("RESULT: %d\n", *(int *)hts_tpool_result_data(r));
         hts_tpool_delete_result(r, 1);
     }
 
