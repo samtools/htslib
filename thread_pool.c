@@ -850,7 +850,7 @@ int hts_tpool_process_flush(hts_tpool_process *q) {
 }
 
 /*
- * Resets a process to the intial state.
+ * Resets a process to the initial state.
  *
  * This removes any queued up input jobs, disables any notification of
  * new results/output, flushes what is left and then discards any
@@ -1175,7 +1175,7 @@ int test_squareB(int n) {
 
 /*-----------------------------------------------------------------------------
  * A simple pipeline test.
- * We use a dediocated input thread that does the initial generation of job
+ * We use a dedicated input thread that does the initial generation of job
  * and dispatch, several execution steps running in a shared pool, and a
  * dedicated output thread that prints up the final result.  It's key that our
  * pipeline execution stages can run independently and don't themselves have
