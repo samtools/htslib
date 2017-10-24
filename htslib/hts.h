@@ -516,8 +516,12 @@ typedef struct {
 
 typedef struct {
     uint64_t u, v;
-//    int max_end;
 } hts_pair64_t;
+
+typedef struct {
+    uint64_t u, v;
+    uint64_t max;
+} hts_pair64_max_t;
 
 typedef struct {
     const char *reg;
@@ -554,7 +558,7 @@ typedef struct {
     hts_reglist_t *reg_list;
     int n_reg, i;
     int curr_tid, curr_intv, curr_beg, curr_end, curr_reg;
-    hts_pair64_t *off;
+    hts_pair64_max_t *off;
     int n_off;
     uint64_t curr_off, nocoor_off;
     hts_readrec_func *readrec;
