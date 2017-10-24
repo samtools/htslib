@@ -850,7 +850,7 @@ int hts_tpool_process_flush(hts_tpool_process *q) {
 }
 
 /*
- * Resets a process to the intial state.
+ * Resets a process to the initial state.
  *
  * This removes any queued up input jobs, disables any notification of
  * new results/output, flushes what is left and then discards any
@@ -1084,7 +1084,7 @@ int test_square(int n) {
 
             // Check for results.
             if ((r = hts_tpool_next_result(q))) {
-                printf("RESULT: %d\n", *(int *)r->data);
+                printf("RESULT: %d\n", *(int *)hts_tpool_result_data(r));
                 hts_tpool_delete_result(r, 1);
             }
             if (blk == -1) {
@@ -1100,7 +1100,7 @@ int test_square(int n) {
     hts_tpool_process_flush(q);
 
     while ((r = hts_tpool_next_result(q))) {
-        printf("RESULT: %d\n", *(int *)r->data);
+        printf("RESULT: %d\n", *(int *)hts_tpool_result_data(r));
         hts_tpool_delete_result(r, 1);
     }
 
@@ -1152,7 +1152,7 @@ int test_squareB(int n) {
     // Consume all results until we find the end-of-job marker.
     for(;;) {
         hts_tpool_result *r = hts_tpool_next_result_wait(q);
-        int x = *(int *)r->data;
+        int x = *(int *)hts_tpool_result_data(r);
         hts_tpool_delete_result(r, 1);
         if (x == -1)
             break;
@@ -1175,7 +1175,7 @@ int test_squareB(int n) {
 
 /*-----------------------------------------------------------------------------
  * A simple pipeline test.
- * We use a dediocated input thread that does the initial generation of job
+ * We use a dedicated input thread that does the initial generation of job
  * and dispatch, several execution steps running in a shared pool, and a
  * dedicated output thread that prints up the final result.  It's key that our
  * pipeline execution stages can run independently and don't themselves have
@@ -1253,7 +1253,7 @@ static void *pipe_stage1to2(void *arg) {
     hts_tpool_result *r;
 
     while ((r = hts_tpool_next_result_wait(o->q1))) {
-        pipe_job *j = (pipe_job *)r->data;
+        pipe_job *j = (pipe_job *)hts_tpool_result_data(r);
         hts_tpool_delete_result(r, 0);
         if (hts_tpool_dispatch(j->o->p, j->o->q2, pipe_stage2, j) != 0)
             pthread_exit((void *)1);
@@ -1279,7 +1279,7 @@ static void *pipe_stage2to3(void *arg) {
     hts_tpool_result *r;
 
     while ((r = hts_tpool_next_result_wait(o->q2))) {
-        pipe_job *j = (pipe_job *)r->data;
+        pipe_job *j = (pipe_job *)hts_tpool_result_data(r);
         hts_tpool_delete_result(r, 0);
         if (hts_tpool_dispatch(j->o->p, j->o->q3, pipe_stage3, j) != 0)
             pthread_exit((void *)1);
@@ -1303,7 +1303,7 @@ static void *pipe_output_thread(void *arg) {
     hts_tpool_result *r;
 
     while ((r = hts_tpool_next_result_wait(o->q3))) {
-        pipe_job *j = (pipe_job *)r->data;
+        pipe_job *j = (pipe_job *)hts_tpool_result_data(r);
         int eof = j->eof;
         printf("O  %08x\n", j->x);
         hts_tpool_delete_result(r, 1);
