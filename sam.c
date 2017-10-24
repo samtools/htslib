@@ -117,26 +117,43 @@ static bam_hdr_t *hdr_from_dict(sdict_t *d)
     return h;
 }
 
-bam_hdr_t *bam_hdr_read(BGZF *fp)
+static bam_hdr_t *bam_read_header(BGZF *fp, int *version)
 {
     bam_hdr_t *h;
     char buf[4];
-    int magic_len, has_EOF;
+    int magic_len, has_EOF, vers = version ? *version : 0;
     int32_t i, name_len, num_names = 0;
+    uint32_t header_flags = 0;
     size_t bufsize;
     ssize_t bytes;
     // check EOF
     has_EOF = bgzf_check_EOF(fp);
     if (has_EOF < 0) {
-        perror("[W::bam_hdr_read] bgzf_check_EOF");
+        perror("[W::bam_read_header] bgzf_check_EOF");
     } else if (has_EOF == 0) {
         hts_log_warning("EOF marker is absent. The input is probably truncated");
     }
     // read "BAM1"
     magic_len = bgzf_read(fp, buf, 4);
-    if (magic_len != 4 || strncmp(buf, "BAM\1", 4)) {
+    if (magic_len != 4 || strncmp(buf, "BAM", 3)) {
         hts_log_error("Invalid BAM binary header");
         return 0;
+    }
+    if (buf[3] < 1 || buf[3] > 2 || (vers && vers != buf[3])) {
+        hts_log_error("Incorrect BAM version number");
+        return NULL;
+    }
+    if (version) *version = buf[3];
+    if (buf[3] == 2) { // header_flags is BAM2 only
+        if (bgzf_read(fp, &header_flags, 4) != 4) {
+            hts_log_error("Truncated BAM header");
+            return NULL;
+        }
+        if (fp->is_be) ed_swap_4p(&header_flags);
+        if (header_flags != 0) {
+            hts_log_error("Unsupported BAM header extension");
+            return NULL;
+        }
     }
     h = bam_hdr_init();
     if (!h) goto nomem;
@@ -225,13 +242,53 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     return NULL;
 }
 
-int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
+// For legacy support
+bam_hdr_t *bam_hdr_read(BGZF *fp) {
+    int vers = 1; // Force version 1
+    return bam_read_header(fp, &vers);
+}
+
+static int check_bam_version_hint(const bam_hdr_t *h) {
+    char *eol_pos, *tag_pos;
+    int vers = 1;
+    // Look for @HD line (should be first one)
+    if (h->l_text < 3 || memcmp(h->text, "@HD", 3) != 0)
+        return 1;
+    eol_pos = memchr(h->text + 3, '\n', h->l_text - 3);
+    if (!eol_pos) eol_pos = h->text + h->l_text;
+    // Look for BV: tag
+    for (tag_pos = memchr(h->text + 3, '\t', eol_pos - h->text - 3);
+         tag_pos && eol_pos - tag_pos >= 5;
+         tag_pos = memchr(tag_pos + 1, '\t', eol_pos - tag_pos - 1)) {
+        if (memcmp(tag_pos + 1, "BV:", 3) != 0) continue;
+        if (tag_pos[4] < '1' || tag_pos[4] > '2'
+            || (eol_pos - tag_pos > 5 && tag_pos[5] != '\t' && tag_pos[5] != '\n')) {
+            hts_log_warning("Ignoring malformed or unsupported BAM version hint");
+            break;
+        }
+        vers = tag_pos[4] - '0';
+    }
+    return vers;
+}
+
+static int bam_write_header(BGZF *fp, const bam_hdr_t *h, int version)
 {
-    char buf[4];
+    uint8_t buf[8];
     int32_t i, name_len, x;
-    // write "BAM1"
-    strncpy(buf, "BAM\1", 4);
-    if (bgzf_write(fp, buf, 4) < 0) return -1;
+
+    // write magic string
+    if (version < 1 || version > 2) {
+        hts_log_error("Invalid BAM version %d (should be 1 or 2)", version);
+        return -1;
+    }
+    memcpy(buf, "BAM", 3);
+    buf[3] = version;
+    if (version == 2) { // Add header_flags (BAM2 only)
+        u32_to_le(0, &buf[4]);
+    }
+
+    if (bgzf_write(fp, buf, version == 2 ? 8 : 4) < 0) return -1;
+
     // write plain text and the number of reference sequences
     if (fp->is_be) {
         x = ed_swap_4(h->l_text);
@@ -268,6 +325,11 @@ int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
     }
     if (bgzf_flush(fp) < 0) return -1;
     return 0;
+}
+
+// For legacy support
+int bam_hdr_write(BGZF *fp, const bam_hdr_t *h) {
+    return bam_write_header(fp, h, 1);
 }
 
 int bam_name2id(bam_hdr_t *h, const char *ref)
@@ -377,31 +439,49 @@ static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data, int is_ho
     for (i = 0; i < c->n_cigar; ++i) ed_swap_4p(&cigar[i]);
 }
 
-int bam_read1(BGZF *fp, bam1_t *b)
+static int bam_read_bam1_t(BGZF *fp, bam1_t *b, int version)
 {
     bam1_core_t *c = &b->core;
     int32_t block_len, ret, i;
-    uint32_t x[8];
-    if ((ret = bgzf_read(fp, &block_len, 4)) != 4) {
+    uint32_t bam2_flags = 0;
+    uint8_t x[40];
+    int core_len_all = version == 2 ? 40 : 36; // all core fields
+    int core_len = 32; // Not including bam2_flags and block_len
+    assert(core_len_all <= sizeof(x));
+    if ((ret = bgzf_read(fp, x, core_len_all)) != core_len_all) {
         if (ret == 0) return -1; // normal end-of-file
         else return -2; // truncated
     }
-    if (fp->is_be)
-        ed_swap_4p(&block_len);
-    if (block_len < 32) return -4;  // block_len includes core data
-    if (bgzf_read(fp, x, 32) != 32) return -3;
-    if (fp->is_be) {
-        for (i = 0; i < 8; ++i) ed_swap_4p(x + i);
+
+    // Read core data
+    i = 0;
+    if (version == 2) {
+        bam2_flags = le_to_u32(&x[i]); i += 4;
+        if (bam2_flags != 0) return -4; // extension we don't understand
     }
-    c->tid = x[0]; c->pos = x[1];
-    c->bin = x[2]>>16; c->qual = x[2]>>8&0xff; c->l_qname = x[2]&0xff;
+    block_len = le_to_i32(&x[i]); i += 4;
+    if (block_len < core_len) return -3; // Invalid
+    c->tid = le_to_i32(&x[i]); i += 4;
+    c->pos = le_to_i32(&x[i]); i += 4;
+    c->l_qname = x[i]; i++;
     c->l_extranul = (c->l_qname%4 != 0)? (4 - c->l_qname%4) : 0;
     if ((uint32_t) c->l_qname + c->l_extranul > 255) // l_qname would overflow
         return -4;
-    c->flag = x[3]>>16; c->n_cigar = x[3]&0xffff;
-    c->l_qseq = x[4];
-    c->mtid = x[5]; c->mpos = x[6]; c->isize = x[7];
-    b->l_data = block_len - 32 + c->l_extranul;
+    c->qual =  x[i]; i++;
+    if (version == 2) {
+        c->n_cigar = le_to_u32(&x[i]); i += 4;
+    } else {
+        c->bin = le_to_u16(&x[i]); i += 2;
+        c->n_cigar = le_to_u16(&x[i]); i += 2;
+    }
+    c->flag = le_to_u16(&x[i]); i += 2;
+    c->l_qseq = le_to_i32(&x[i]); i += 4;
+    c->mtid = le_to_i32(&x[i]); i += 4;
+    c->mpos = le_to_i32(&x[i]); i += 4;
+    c->isize = le_to_i32(&x[i]);
+
+    // Allocate memory for variable parts (qname, cigar, seq, qual, tags)
+    b->l_data = block_len - core_len + c->l_extranul;
     if (b->l_data < 0 || c->l_qseq < 0 || c->l_qname < 1) return -4;
     if (((uint64_t) c->n_cigar << 2) + c->l_qname + c->l_extranul
         + (((uint64_t) c->l_qseq + 1) >> 1) + c->l_qseq > (uint64_t) b->l_data)
@@ -416,9 +496,15 @@ int bam_read1(BGZF *fp, bam1_t *b)
         b->data = new_data;
         b->m_data = new_m;
     }
+
+    // Read qname
     if (bgzf_read(fp, b->data, c->l_qname) != c->l_qname) return -4;
+
+    // Pad so CIGAR is on a 4-byte boundary
     for (i = 0; i < c->l_extranul; ++i) b->data[c->l_qname+i] = '\0';
     c->l_qname += c->l_extranul;
+
+    // Read everything else (cigar, seq, qual, tags)
     if (b->l_data < c->l_qname ||
         bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
@@ -432,41 +518,85 @@ int bam_read1(BGZF *fp, bam1_t *b)
         return -4;
     }
 
+    if (version == 2) {
+        // Set c->bin in case the data is written later as version 1
+        i = (!(c->flag&BAM_FUNMAP)) ? bam_cigar2rlen(c->n_cigar, bam_get_cigar(b)) : 1;
+        c->bin = hts_reg2bin(c->pos, c->pos + i, 14, 5);
+    }
+
     return 4 + block_len;
 }
 
-int bam_write1(BGZF *fp, const bam1_t *b)
+// Legacy interface, only supports BAM1
+int bam_read1(BGZF *fp, bam1_t *b) {
+    return bam_read_bam1_t(fp, b, 1);
+}
+
+static int bam_write_bam1_t(BGZF *fp, const bam1_t *b, int version)
 {
     const bam1_core_t *c = &b->core;
-    uint32_t x[8], block_len = b->l_data - c->l_extranul + 32, y;
+    uint32_t core_len_all = version == 2 ? 40 : 36; // All fields
+    uint32_t core_len = 32; // Not including bam2_flags and block_size
+    uint32_t block_len;
     int i, ok;
-    if (c->n_cigar >= 65536) {
+    uint8_t x[40];
+
+    assert(core_len_all <= sizeof(x));
+    if (version != 2 && c->n_cigar >= 65536) {
         hts_log_error("Too many CIGAR operations (%d >= 64K for QNAME \"%s\")", c->n_cigar, bam_get_qname(b));
         errno = EOVERFLOW;
         return -1;
     }
-    x[0] = c->tid;
-    x[1] = c->pos;
-    x[2] = (uint32_t)c->bin<<16 | c->qual<<8 | (c->l_qname - c->l_extranul);
-    x[3] = (uint32_t)c->flag<<16 | c->n_cigar;
-    x[4] = c->l_qseq;
-    x[5] = c->mtid;
-    x[6] = c->mpos;
-    x[7] = c->isize;
-    ok = (bgzf_flush_try(fp, 4 + block_len) >= 0);
-    if (fp->is_be) {
-        for (i = 0; i < 8; ++i) ed_swap_4p(x + i);
-        y = block_len;
-        if (ok) ok = (bgzf_write(fp, ed_swap_4p(&y), 4) >= 0);
-        swap_data(c, b->l_data, b->data, 1);
-    } else {
-        if (ok) ok = (bgzf_write(fp, &block_len, 4) >= 0);
+    if (b->l_data < 0 || c->tid < -1 || c->mtid < -1
+        || c->pos < -1 || c->mpos < -1 || c->l_qseq < 0) {
+        hts_log_error("Invalid core data for QNAME \"%s\"", bam_get_qname(b));
+        errno = EINVAL;
+        return -1;
     }
-    if (ok) ok = (bgzf_write(fp, x, 32) >= 0);
+    block_len = b->l_data - c->l_extranul + core_len;
+    if (block_len > INT_MAX) {
+        hts_log_error("BAM record is too big for QNAME \"%s\"", bam_get_qname(b));
+        errno = EOVERFLOW;
+        return -1;
+    }
+
+    i = 0;
+    if (version == 2) {
+        u32_to_le(0, &x[i]); i += 4; // bam2_flags
+    }
+    u32_to_le(block_len, &x[i]); i += 4;
+    i32_to_le(c->tid, &x[i]); i += 4;
+    i32_to_le(c->pos, &x[i]); i += 4;
+    x[i] = c->l_qname - c->l_extranul; i++;
+    x[i] = c->qual; i++;
+    if (version == 2) {
+        u32_to_le(c->n_cigar, &x[i]); i += 4;
+    } else {
+        u16_to_le(c->bin, &x[i]); i += 2;
+        u16_to_le(c->n_cigar, &x[i]); i += 2;
+    }
+    u16_to_le(c->flag, &x[i]); i += 2;
+    i32_to_le(c->l_qseq, &x[i]); i += 4;
+    i32_to_le(c->mtid, &x[i]); i += 4;
+    i32_to_le(c->mpos, &x[i]); i += 4;
+    i32_to_le(c->isize, &x[i]);
+
+    // Start a new BGZF block if this won't fit in the current one
+    ok = (bgzf_flush_try(fp, 4 + block_len) >= 0);
+    // Write core data
+    if (ok) ok = (bgzf_write(fp, x, core_len_all) >= 0);
+    // Write qname
     if (ok) ok = (bgzf_write(fp, b->data, c->l_qname - c->l_extranul) >= 0);
+    // Write everything else (cigar, seq, qual, tags)
+    if (fp->is_be) swap_data(c, b->l_data, b->data, 1);
     if (ok) ok = (bgzf_write(fp, b->data + c->l_qname, b->l_data - c->l_qname) >= 0);
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
     return ok? 4 + block_len : -1;
+}
+
+// Legacy interface, only supports BAM1
+int bam_write1(BGZF *fp, const bam1_t *b) {
+    return bam_write_bam1_t(fp, b, 1);
 }
 
 /********************
@@ -475,11 +605,11 @@ int bam_write1(BGZF *fp, const bam1_t *b)
 
 static hts_idx_t *bam_index(BGZF *fp, int min_shift)
 {
-    int n_lvls, i, fmt, ret;
+    int n_lvls, i, fmt, ret, version = 0;
     bam1_t *b;
     hts_idx_t *idx;
     bam_hdr_t *h;
-    h = bam_hdr_read(fp);
+    h = bam_read_header(fp, &version);
     if (h == NULL) return NULL;
     if (min_shift > 0) {
         int64_t max_len = 0, s;
@@ -492,7 +622,7 @@ static hts_idx_t *bam_index(BGZF *fp, int min_shift)
     idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp), min_shift, n_lvls);
     bam_hdr_destroy(h);
     b = bam_init1();
-    while ((ret = bam_read1(fp, b)) >= 0) {
+    while ((ret = bam_read_bam1_t(fp, b, version)) >= 0) {
         ret = hts_idx_push(idx, b->core.tid, b->core.pos, bam_endpos(b), bgzf_tell(fp), !(b->core.flag&BAM_FUNMAP));
         if (ret < 0) goto err; // unsorted
     }
@@ -559,11 +689,13 @@ int bam_index_build(const char *fn, int min_shift)
     return sam_index_build2(fn, NULL, min_shift);
 }
 
-static int bam_readrec(BGZF *fp, void *ignored, void *bv, int *tid, int *beg, int *end)
+static int bam_readrec(BGZF *fp, void *hfpv, void *bv, int *tid, int *beg, int *end)
 {
     bam1_t *b = bv;
+    // Earlier versions set hfpv to NULL.  Allow this to preserve the ABI.
+    int version = hfpv ? ((htsFile *) hfpv)->format.version.major : 1;
     int ret;
-    if ((ret = bam_read1(fp, b)) >= 0) {
+    if ((ret = bam_read_bam1_t(fp, b, version)) >= 0) {
         *tid = b->core.tid;
         *beg = b->core.pos;
         *end = bam_endpos(b);
@@ -588,7 +720,7 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
     htsFile *fp = fpv;
     bam1_t *b = bv;
     switch (fp->format.format) {
-    case bam:   return bam_read1(bgzfp, b);
+    case bam:   return bam_read_bam1_t(bgzfp, b, fp->format.version.major);
     case cram: {
         int ret = cram_get_bam_seq(fp->fp.cram, &b);
         return ret >= 0
@@ -831,8 +963,14 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
 bam_hdr_t *sam_hdr_read(htsFile *fp)
 {
     switch (fp->format.format) {
-    case bam:
-        return sam_hdr_sanitise(bam_hdr_read(fp->fp.bgzf));
+    case bam: {
+        int version = 0;
+        bam_hdr_t *h = sam_hdr_sanitise(bam_read_header(fp->fp.bgzf, &version));
+        if (h) {
+            fp->format.version.major = version;
+        }
+        return h;
+    }
 
     case cram:
         return sam_hdr_sanitise(cram_header_to_bam(fp->fp.cram->header));
@@ -894,9 +1032,15 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
         fp->format.category = sequence_data;
         fp->format.format = bam;
         /* fall-through */
-    case bam:
-        if (bam_hdr_write(fp->fp.bgzf, h) < 0) return -1;
+    case bam: {
+        int vers = fp->format.version.major;
+        if (vers <= 0) {
+            vers = check_bam_version_hint(h);
+            fp->format.version.major = vers;
+        }
+        if (bam_write_header(fp->fp.bgzf, h, vers) < 0) return -1;
         break;
+    }
 
     case cram: {
         cram_fd *fd = fp->fp.cram;
@@ -1179,7 +1323,7 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 {
     switch (fp->format.format) {
     case bam: {
-        int r = bam_read1(fp->fp.bgzf, b);
+        int r = bam_read_bam1_t(fp->fp.bgzf, b, fp->format.version.major);
         if (r >= 0) {
             if (b->core.tid  >= h->n_targets || b->core.tid  < -1 ||
                 b->core.mtid >= h->n_targets || b->core.mtid < -1)
@@ -1359,7 +1503,7 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
         fp->format.format = bam;
         /* fall-through */
     case bam:
-        return bam_write1(fp->fp.bgzf, b);
+        return bam_write_bam1_t(fp->fp.bgzf, b, fp->format.version.major);
 
     case cram:
         return cram_put_bam_seq(fp->fp.cram, (bam1_t *)b);
