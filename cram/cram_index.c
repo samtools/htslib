@@ -345,7 +345,7 @@ void cram_index_free(cram_fd *fd) {
  * "from" as the last slice we checked to find the next one. Otherwise
  * set "from" to be NULL to find the first one.
  *
- * Returns the cram_index pointer on sucess
+ * Returns the cram_index pointer on success
  *         NULL on failure
  */
 cram_index *cram_index_query(cram_fd *fd, int refid, int pos, 
@@ -406,6 +406,23 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
     return e;
 }
 
+cram_index *cram_index_last(cram_fd *fd, int refid, cram_index *from) {
+    int slice;
+
+    if (refid+1 < 0 || refid+1 >= fd->index_sz)
+        return NULL;
+
+    if (!from)
+        from = &fd->index[refid+1];
+
+    // Ref with nothing aligned against it.
+    if (!from->e)
+        return NULL;
+
+    slice = fd->index[refid+1].nslice - 1;
+
+    return &from->e[slice];
+}
 
 /*
  * Skips to a container overlapping the start coordinate listed in
