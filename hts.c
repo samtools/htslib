@@ -2350,10 +2350,10 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
                         off[n_off].max = (uint64_t)tid<<32 | end;
                         n_off++;
                     } else {
-                        fprintf(stderr, "[hts_itr_multi_cram]: Could not set offset end for region %d(%s):%d-%d\n. Skipping...", tid, curr_reg->reg, beg, end);
+                        hts_log_warning("Could not set offset end for region %d(%s):%d-%d. Skipping", tid, curr_reg->reg, beg, end);
                     }
                 } else {
-                    fprintf(stderr, "[hts_itr_multi_cram]: No index entry for region %d:%d-%d\n", tid, beg, end);
+                    hts_log_warning("No index entry for region %d:%d-%d", tid, beg, end);
                 }
             }
         } else {
@@ -2364,7 +2364,7 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
                         iter->nocoor = 1;
                         iter->nocoor_off = e->offset;
                     } else {
-                        fprintf(stderr, "[hts_itr_multi_cram]: No index entry for NOCOOR region\n");
+                        hts_log_warning("No index entry for NOCOOR region");
                     }
                     break;
                 case HTS_IDX_REST:
@@ -2542,8 +2542,7 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
     return itr_query(idx, tid, beg, end, readrec);
 }
 
-hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr,
-        hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell) {
+hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell) {
 
     int i, j;
     uint64_t off;
@@ -2575,6 +2574,8 @@ hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, i
             }
 
             itr->reg_list[i].tid = getid(hdr, reglist[i].reg);
+            if (itr->reg_list[i].tid < 0) 
+                hts_log_warning("Region '%s' specifies an unknown reference name. Continue anyway", reglist[i].reg);
         }
 
         qsort(itr->reg_list, itr->n_reg, sizeof(hts_reglist_t), compare_regions);
