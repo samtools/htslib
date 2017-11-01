@@ -81,14 +81,14 @@ tcga_rewrite(const char *tcga_url, const char *mode, int mode_has_colon,
     uuid = &tcga_url[5];
     while (*uuid == '/') uuid++;
 
-    if (strlen(uuid) != strcspn(uuid, "/?#")) {
-      fprintf(stderr, "[M::tcga_open] Invalid URL: %s, must be of format tcga://UUID\n", tcga_url);
-      return NULL;
-    }
-
-    // TCGA URL format is tcga://UUID or tcga://UUID.bai
+    // Valid TCGA URL formats are tcga://UUID or tcga://UUID.bai
     url_len = strlen(tcga_url);
     bai_idx = strstr(tcga_url, INDEX_FMT);
+
+    if (strlen(uuid) != strcspn(uuid, "/?#") ||
+        (!bai_idx && strlen(uuid) != strcspn(uuid, "."))) {
+      return NULL;
+    }
 
     // Requested TCGA index file; Look up corresponding UUID and return TCGA URL
     if (bai_idx && (bai_idx - tcga_url) == (url_len - strlen(INDEX_FMT))) {
