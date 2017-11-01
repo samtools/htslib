@@ -880,7 +880,7 @@ static hFILE *hopen_unknown_scheme(const char *fname, const char *mode)
 }
 
 /* Returns the appropriate handler, or NULL if the string isn't an URL.  */
-static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
+const struct hFILE_scheme_handler *hfile_find_scheme_handler(const char *s)
 {
     static const struct hFILE_scheme_handler unknown_scheme =
         { hopen_unknown_scheme, hfile_always_local, "built-in", 0 };
@@ -908,7 +908,7 @@ static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
 
 hFILE *hopen(const char *fname, const char *mode, ...)
 {
-    const struct hFILE_scheme_handler *handler = find_scheme_handler(fname);
+    const struct hFILE_scheme_handler *handler = hfile_find_scheme_handler(fname);
     if (handler) {
         if (strchr(mode, ':') == NULL
             || handler->priority < 2000
@@ -933,6 +933,6 @@ int hfile_always_remote(const char *fname) { return 1; }
 
 int hisremote(const char *fname)
 {
-    const struct hFILE_scheme_handler *handler = find_scheme_handler(fname);
+    const struct hFILE_scheme_handler *handler = hfile_find_scheme_handler(fname);
     return handler? handler->isremote(fname) : 0;
 }
