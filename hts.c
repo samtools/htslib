@@ -1986,7 +1986,7 @@ static inline int reg2intervals(hts_itr_multi_t *iter, const hts_idx_t *idx, int
                         if (p->list[j].v > min_off && p->list[j].u < max_off) {
                             iter->off[iter->n_off].u = p->list[j].u;
                             iter->off[iter->n_off].v = p->list[j].v;
-                            iter->off[iter->n_off].max = (uint64_t)tid<<32 | end+1;
+                            iter->off[iter->n_off].max = ((uint64_t)tid<<32) | (end+1);
                             iter->n_off++;
                         }
                     }
@@ -2013,7 +2013,6 @@ static int compare_regions(const void *r1, const void *r2) {
 uint64_t hts_itr_off(const hts_idx_t* idx, int tid) {
 
     int i;
-    int res = 0;
     bidx_t* bidx;
     uint64_t off0 = (uint64_t) -1;
     khint_t k;
@@ -2171,7 +2170,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
 
 hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
 {
-    int i, j, l, n_off = 0, bin, t_fin;
+    int i, j, l, n_off = 0, bin;
     hts_pair64_max_t *off = NULL;
     khint_t k;
     bidx_t *bidx;
@@ -2210,7 +2209,6 @@ hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
 
                 for(j=0; j<curr_reg->count; j++) {
                     hts_pair32_t *curr_intv = &curr_reg->intervals[j];
-                    if (curr_intv->beg < 0) curr_intv->beg = 0;
                     if (curr_intv->end < curr_intv->beg)
                         continue;
 
@@ -2322,7 +2320,6 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
 
             for (j=0; j < curr_reg->count; j++) {
                 curr_intv = &curr_reg->intervals[j];
-                if (curr_intv->beg < 0) curr_intv->beg = 0;
                 if (curr_intv->end < curr_intv->beg)
                     continue;
 
@@ -2543,8 +2540,7 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
 
 hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell) {
 
-    int i, j;
-    uint64_t off;
+    int i;
 
     if (!reglist)
         return NULL;
