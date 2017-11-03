@@ -652,9 +652,68 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, 
     bam1_t *b = bv;
     int ret = cram_get_bam_seq(fp->fp.cram, &b);
     bam_tag2cigar(b, 1, 1);
+    *tid = b->core.tid;
+    *beg = b->core.pos;
+    *end = bam_endpos(b);
     return ret >= 0
         ? ret
         : (cram_eof(fp->fp.cram) ? -1 : -2);
+}
+
+static int cram_pseek(void *fp, int64_t offset, int whence)
+{
+    cram_fd *fd =  (cram_fd *)fp;
+
+    if ((0 != cram_seek(fd, offset, SEEK_SET))
+     && (0 != cram_seek(fd, offset - fd->first_container, SEEK_CUR)))
+        return -1;
+
+    if (fd->ctr) {
+        cram_free_container(fd->ctr);
+        fd->ctr = NULL;
+        fd->ooc = 0;
+    }
+
+    return 0;
+}
+
+/*
+ * cram_ptell is a pseudo-tell function, because it matches the position of the disk cursor only
+ *   after a fresh seek call. Otherwise it indicates that the read takes place inside the buffered
+ *   container previously fetched. It was designed like this to integrate with the functionality
+ *   of the iterator stepping logic.
+ */
+
+static int64_t cram_ptell(void *fp)
+{
+    cram_fd *fd = (cram_fd *)fp;
+    cram_container *c;
+    int64_t ret = -1L;
+
+    if (fd && fd->fp) {
+        ret = htell(fd->fp);
+        if ((c = fd->ctr) != NULL) {
+            ret -= ((c->curr_slice != c->max_slice || c->curr_rec != c->max_rec) ? c->offset + 1 : 0);
+        }
+    }
+
+    return ret;
+}
+
+static int bam_pseek(void *fp, int64_t offset, int whence)
+{
+    BGZF *fd = (BGZF *)fp;
+
+    return bgzf_seek(fd, offset, whence);
+}
+
+static int64_t bam_ptell(void *fp)
+{
+    BGZF *fd = (BGZF *)fp;
+    if (!fd)
+        return -1L;
+
+    return bgzf_tell(fd);
 }
 
 // This is used only with read_rest=1 iterators, so need not set tid/beg/end.
@@ -785,6 +844,17 @@ hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *regi
         return hts_itr_querys(idx, region, cram_name2id, cidx->cram, cram_itr_query, cram_readrec);
     else
         return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr, hts_itr_query, bam_readrec);
+}
+
+hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount)
+{
+    const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
+    if (cidx->fmt == HTS_FMT_CRAI)
+        return hts_itr_regions(idx, reglist, regcount, cram_name2id, cidx->cram,
+                   hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell);
+    else
+        return hts_itr_regions(idx, reglist, regcount, (hts_name2id_f)(bam_name2id), hdr,
+                   hts_itr_multi_bam, bam_readrec, bam_pseek, bam_ptell);
 }
 
 /**********************

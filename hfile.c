@@ -910,8 +910,12 @@ hFILE *hopen(const char *fname, const char *mode, ...)
 {
     const struct hFILE_scheme_handler *handler = find_scheme_handler(fname);
     if (handler) {
-        if (strchr(mode, ':') == NULL) return handler->open(fname, mode);
-        else if (handler->priority >= 2000 && handler->vopen) {
+        if (strchr(mode, ':') == NULL
+            || handler->priority < 2000
+            || handler->vopen == NULL) {
+            return handler->open(fname, mode);
+        }
+        else {
             hFILE *fp;
             va_list arg;
             va_start(arg, mode);
@@ -919,7 +923,6 @@ hFILE *hopen(const char *fname, const char *mode, ...)
             va_end(arg);
             return fp;
         }
-        else { errno = ENOTSUP; return NULL; }
     }
     else if (strcmp(fname, "-") == 0) return hopen_fd_stdinout(mode);
     else return hopen_fd(fname, mode);

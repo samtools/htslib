@@ -194,7 +194,7 @@ typedef struct __kstring_t {
 
     /**
      * Return a virtual file pointer to the current location in the file.
-     * No interpetation of the value should be made, other than a subsequent
+     * No interpretation of the value should be made, other than a subsequent
      * call to bgzf_seek can be used to position the file at the same point.
      * Return value is non-negative on success.
      */

@@ -52,6 +52,7 @@ void cram_index_free(cram_fd *fd);
  *         NULL on failure
  */
 cram_index *cram_index_query(cram_fd *fd, int refid, int pos, cram_index *frm);
+cram_index *cram_index_last(cram_fd *fd, int refid, cram_index *from);
 
 /*
  * Skips to a container overlapping the start coordinate listed in
