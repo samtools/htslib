@@ -362,7 +362,7 @@ static int bam_tag2cigar(bam1_t *b)
     if (c->n_cigar == 0 || c->tid < 0 || c->pos < 0) return 0;
     cigar0 = bam_get_cigar(b);
     if (bam_cigar_op(cigar0[0]) != BAM_CSOFT_CLIP || bam_cigar_oplen(cigar0[0]) != c->l_qseq) return 0;
-	fake_bytes = c->n_cigar * 4;
+    fake_bytes = c->n_cigar * 4;
     if ((CG = bam_aux_get(b, "CG")) == 0) return 0; // no CG tag
     if (CG[0] != 'B' || CG[1] != 'I') return 0; // not of type B,I
     CG_len = le_to_u32(CG + 2);
