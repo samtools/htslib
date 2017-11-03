@@ -326,6 +326,18 @@ bam1_t *bam_dup1(const bam1_t *bsrc)
     return bam_copy1(bdst, bsrc);
 }
 
+void bam_cigar2rqlens(int n_cigar, const uint32_t *cigar, int *rlen, int *qlen)
+{
+    int k;
+    *rlen = *qlen = 0;
+    for (k = 0; k < n_cigar; ++k) {
+		int type = bam_cigar_type(bam_cigar_op(cigar[k]));
+        int len = bam_cigar_oplen(cigar[k]);
+        if (type & 1) *qlen += len;
+        if (type & 2) *rlen += len;
+    }
+}
+
 int bam_cigar2qlen(int n_cigar, const uint32_t *cigar)
 {
     int k, l;
@@ -352,7 +364,7 @@ int32_t bam_endpos(const bam1_t *b)
         return b->core.pos + 1;
 }
 
-static int bam_tag2cigar(bam1_t *b)
+int bam_tag2cigar(bam1_t *b) // return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
 {
     bam1_core_t *c = &b->core;
     uint32_t cigar_st, n_cigar4, CG_st, CG_en, ori_len = b->l_data, *cigar0, CG_len, fake_bytes;
@@ -388,7 +400,6 @@ static int bam_tag2cigar(bam1_t *b)
     if (ori_len > CG_en) // move data after the CG tag
       memmove(b->data + CG_st + n_cigar4 - fake_bytes, b->data + CG_en + n_cigar4 - fake_bytes, ori_len - CG_en);
     b->l_data -= n_cigar4 + 8; // 8: CGBI (4 bytes) and CGBI length (4)
-    b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)), 14, 5);
     return 1;
 }
 
@@ -463,14 +474,18 @@ int bam_read1(BGZF *fp, bam1_t *b)
         bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
-    if (bam_tag2cigar(b) < 0) return -4;
+    bam_tag2cigar(b);
 
-    // Sanity check for broken CIGAR alignments
-    if (c->n_cigar > 0 && c->l_qseq > 0 && !(c->flag & BAM_FUNMAP)
-        && bam_cigar2qlen(c->n_cigar, bam_get_cigar(b)) != c->l_qseq) {
-        hts_log_error("CIGAR and query sequence lengths differ for %s",
-                      bam_get_qname(b));
-        return -4;
+    if (c->n_cigar > 0) { // recompute "bin" and check CIGAR-qlen consistency
+        int rlen, qlen;
+        bam_cigar2rqlens(c->n_cigar, bam_get_cigar(b), &rlen, &qlen);
+        b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + rlen, 14, 5);
+        // Sanity check for broken CIGAR alignments
+        if (c->l_qseq > 0 && !(c->flag & BAM_FUNMAP) && qlen != c->l_qseq) {
+            hts_log_error("CIGAR and query sequence lengths differ for %s",
+                    bam_get_qname(b));
+            return -4;
+        }
     }
 
     return 4 + block_len;
@@ -1217,7 +1232,8 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         } else _parse_err_param(1, "unrecognized type %c", type);
     }
     b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
-    if (bam_tag2cigar(b) < 0) return -2;
+    if (bam_tag2cigar(b)) // if the CIGAR is replaced with the CG tag, recompute bin
+        b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)), 14, 5);
     return 0;
 
 #undef _parse_warn
