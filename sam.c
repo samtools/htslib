@@ -331,7 +331,7 @@ void bam_cigar2rqlens(int n_cigar, const uint32_t *cigar, int *rlen, int *qlen)
     int k;
     *rlen = *qlen = 0;
     for (k = 0; k < n_cigar; ++k) {
-		int type = bam_cigar_type(bam_cigar_op(cigar[k]));
+        int type = bam_cigar_type(bam_cigar_op(cigar[k]));
         int len = bam_cigar_oplen(cigar[k]);
         if (type & 1) *qlen += len;
         if (type & 2) *rlen += len;
@@ -364,7 +364,7 @@ int32_t bam_endpos(const bam1_t *b)
         return b->core.pos + 1;
 }
 
-int bam_tag2cigar(bam1_t *b) // return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
+static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
 {
     bam1_core_t *c = &b->core;
     uint32_t cigar_st, n_cigar4, CG_st, CG_en, ori_len = b->l_data, *cigar0, CG_len, fake_bytes;
@@ -398,8 +398,12 @@ int bam_tag2cigar(bam1_t *b) // return 0 if CIGAR is untouched; 1 if CIGAR is up
     memmove(b->data + cigar_st + n_cigar4, b->data + cigar_st + fake_bytes, ori_len - (cigar_st + fake_bytes)); // insert c->n_cigar-fake_bytes empty space to make room
     memcpy(b->data + cigar_st, b->data + (n_cigar4 - fake_bytes) + CG_st + 8, n_cigar4); // copy the real CIGAR to the right place; -fake_bytes for the fake CIGAR
     if (ori_len > CG_en) // move data after the CG tag
-      memmove(b->data + CG_st + n_cigar4 - fake_bytes, b->data + CG_en + n_cigar4 - fake_bytes, ori_len - CG_en);
+        memmove(b->data + CG_st + n_cigar4 - fake_bytes, b->data + CG_en + n_cigar4 - fake_bytes, ori_len - CG_en);
     b->l_data -= n_cigar4 + 8; // 8: CGBI (4 bytes) and CGBI length (4)
+    if (recal_bin)
+        b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)), 14, 5);
+    if (give_warning)
+        hts_log_error("%s encodes a CIGAR with %d operators at the CG tag", bam_get_qname(b), c->n_cigar);
     return 1;
 }
 
@@ -474,7 +478,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
         bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
-    bam_tag2cigar(b);
+    bam_tag2cigar(b, 0, 0);
 
     if (c->n_cigar > 0) { // recompute "bin" and check CIGAR-qlen consistency
         int rlen, qlen;
@@ -647,6 +651,7 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, 
     htsFile *fp = fpv;
     bam1_t *b = bv;
     int ret = cram_get_bam_seq(fp->fp.cram, &b);
+    bam_tag2cigar(b, 1, 1);
     return ret >= 0
         ? ret
         : (cram_eof(fp->fp.cram) ? -1 : -2);
@@ -661,6 +666,7 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
     case bam:   return bam_read1(bgzfp, b);
     case cram: {
         int ret = cram_get_bam_seq(fp->fp.cram, &b);
+        bam_tag2cigar(b, 1, 1);
         return ret >= 0
             ? ret
             : (cram_eof(fp->fp.cram) ? -1 : -2);
@@ -1232,8 +1238,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         } else _parse_err_param(1, "unrecognized type %c", type);
     }
     b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
-    if (bam_tag2cigar(b)) // if the CIGAR is replaced with the CG tag, recompute bin
-        b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)), 14, 5);
+    bam_tag2cigar(b, 1, 1);
     return 0;
 
 #undef _parse_warn
@@ -1262,6 +1267,7 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 
     case cram: {
         int ret = cram_get_bam_seq(fp->fp.cram, &b);
+        bam_tag2cigar(b, 1, 1);
         return ret >= 0
             ? ret
             : (cram_eof(fp->fp.cram) ? -1 : -2);
