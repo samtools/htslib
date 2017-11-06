@@ -69,11 +69,23 @@ static const uint8_t g_magic[19] = "\037\213\010\4\0\0\0\0\0\377\6\0\102\103\2\0
 typedef struct {
     int size;
     uint8_t *block;
-    int64_t end_offset;
+    uint64_t end_offset;
+    uint64_t next_cached_block_address;
+    unsigned has_next_cached_block:1;
 } cache_t;
+
 #include "htslib/khash.h"
 KHASH_MAP_INIT_INT64(cache, cache_t)
-#endif
+
+typedef struct {
+    khash_t(cache)* hash;
+    uint64_t oldest_block_address;
+    uint64_t latest_block_address;
+    unsigned in_use:1; // set if there is atleast one object in cache
+} bgzf_cache_t;
+
+#define bgzf_cache(x) ((bgzf_cache_t*) x->cache)
+#endif // BGZF_CACHE
 
 #ifdef BGZF_MT
 
@@ -215,7 +227,10 @@ static BGZF *bgzf_read_init(hFILE *hfpr)
     fp->is_compressed = (n==18 && magic[0]==0x1f && magic[1]==0x8b);
     fp->is_gzip = ( !fp->is_compressed || ((magic[3]&4) && memcmp(&magic[12], "BC\2\0",4)==0) ) ? 0 : 1;
 #ifdef BGZF_CACHE
-    fp->cache = kh_init(cache);
+    bgzf_cache_t *bc = calloc(1, sizeof(bgzf_cache_t));
+    if (bc == NULL) { free(fp->uncompressed_block); free(fp); return NULL; }
+    bc->hash = kh_init(cache);
+    fp->cache = bc;
 #endif
     return fp;
 }
@@ -524,11 +539,12 @@ static int check_header(const uint8_t *header)
 static void free_cache(BGZF *fp)
 {
     khint_t k;
-    khash_t(cache) *h = (khash_t(cache)*)fp->cache;
     if (fp->is_write) return;
+    khash_t(cache) *h = bgzf_cache(fp)->hash;
     for (k = kh_begin(h); k < kh_end(h); ++k)
         if (kh_exist(h, k)) free(kh_val(h, k).block);
     kh_destroy(cache, h);
+    free(bgzf_cache(fp));
 }
 
 static int load_block_from_cache(BGZF *fp, int64_t block_address)
@@ -536,7 +552,8 @@ static int load_block_from_cache(BGZF *fp, int64_t block_address)
     khint_t k;
     cache_t *p;
 
-    khash_t(cache) *h = (khash_t(cache)*)fp->cache;
+    assert(fp->is_write == 0); // cache should never be used in write mode
+    khash_t(cache) *h = bgzf_cache(fp)->hash;
     k = kh_get(cache, h, block_address);
     if (k == kh_end(h)) return 0;
     p = &kh_val(h, k);
@@ -559,19 +576,27 @@ static void cache_block(BGZF *fp, int size)
     int ret;
     khint_t k;
     cache_t *p;
-    //fprintf(stderr, "Cache block at %llx\n", (int)fp->block_address);
-    khash_t(cache) *h = (khash_t(cache)*)fp->cache;
+
+    assert(fp->is_write == 0); // cache should never be used in write mode
+    bgzf_cache_t *bc = bgzf_cache(fp);
+    assert(bc != NULL);
+    khash_t(cache) *h = bc->hash;
     if (BGZF_MAX_BLOCK_SIZE >= fp->cache_size) return;
     if ((kh_size(h) + 1) * BGZF_MAX_BLOCK_SIZE > (uint32_t)fp->cache_size) {
-        /* A better way would be to remove the oldest block in the
-         * cache, but here we remove a random one for simplicity. This
-         * should not have a big impact on performance. */
-        for (k = kh_begin(h); k < kh_end(h); ++k)
-            if (kh_exist(h, k)) break;
-        if (k < kh_end(h)) {
-            free(kh_val(h, k).block);
-            kh_del(cache, h, k);
+        // Remove the oldest cached block
+        assert(bc->in_use == 1);
+        k = kh_get(cache, h, bc->oldest_block_address);
+        assert(k != kh_end(h));
+        p = &kh_val(h, k);
+        if (p->has_next_cached_block) {
+            // The block being freed has a next block pointer. It is now the oldest block.
+            bc->oldest_block_address = p->next_cached_block_address;
+        } else {
+            // Last object in cache was evicted. Mark state appropriately.
+            bc->in_use = 0;
         }
+        free(kh_val(h, k).block);
+        kh_del(cache, h, k);
     }
     k = kh_put(cache, h, fp->block_address, &ret);
     if (ret == 0) return; // if this happens, a bug!
@@ -579,7 +604,24 @@ static void cache_block(BGZF *fp, int size)
     p->size = fp->block_length;
     p->end_offset = fp->block_address + size;
     p->block = (uint8_t*)malloc(BGZF_MAX_BLOCK_SIZE);
+    p->has_next_cached_block = 0;
+    p->next_cached_block_address = 0xDEADBEEF;
     memcpy(kh_val(h, k).block, fp->uncompressed_block, BGZF_MAX_BLOCK_SIZE);
+
+    if (!bc->in_use) {
+        // Cache is being populated for the first time. Save current block as oldest and latest.
+        bc->oldest_block_address = bc->latest_block_address = fp->block_address;
+        bc->in_use = 1;
+    } else {
+        // A new block was added to the cache. Lookup the previously latest block and
+        // set its next pointer to the current block.
+        k = kh_get(cache, h, bc->latest_block_address);
+        assert(k != kh_end(h));
+        p = &kh_val(h, k);
+        p->next_cached_block_address = fp->block_address;
+        p->has_next_cached_block = 1;
+        bc->latest_block_address = fp->block_address;
+    }
 }
 #else
 static void free_cache(BGZF *fp) {}
@@ -1482,7 +1524,9 @@ int bgzf_close(BGZF* fp)
     if (ret != 0) return -1;
     bgzf_index_destroy(fp);
     free(fp->uncompressed_block);
+#ifdef BGZF_CACHE
     free_cache(fp);
+#endif
     free(fp);
     return 0;
 }
