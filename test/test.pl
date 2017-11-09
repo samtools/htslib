@@ -256,6 +256,7 @@ sub test_view
         $ref .= ".fa";
 
         my $bam  = "$base.tmp.bam";
+	my $bam2 = "$base.tmp.v2.bam";
         my $cram = "$base.tmp.cram";
 
         my $md = "-nomd";
@@ -270,6 +271,11 @@ sub test_view
         testv $opts, "./test_view $tv_args -S -b $sam > $bam";
         testv $opts, "./test_view $tv_args $bam > $bam.sam_";
         testv $opts, "./compare_sam.pl $sam $bam.sam_";
+
+	# SAM -> BAM2 -> SAM
+	testv $opts, "./test_view $tv_args -S -b -o VERSION=2.0 $sam > $bam2";
+	testv $opts, "./test_view $tv_args $bam2 > $bam2.sam_";
+	testv $opts, "./compare_sam.pl $sam $bam2.sam_";
 
         # SAM -> CRAM -> SAM
         testv $opts, "./test_view $tv_args -t $ref -S -C $sam > $cram";

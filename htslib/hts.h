@@ -216,6 +216,7 @@ enum hts_fmt_option {
     CRAM_OPT_SLICES_PER_CONTAINER,
     CRAM_OPT_RANGE,
     CRAM_OPT_VERSION,    // rename to cram_version?
+    HTS_OPT_VERSION = CRAM_OPT_VERSION, // Generic name for above
     CRAM_OPT_EMBED_REF,
     CRAM_OPT_IGNORE_MD5,
     CRAM_OPT_REFERENCE,  // make general

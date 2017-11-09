@@ -225,11 +225,11 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         return 0;
     }
     else if (len >= 4 && s[3] <= '\4') {
-        if (memcmp(s, "BAM\1", 4) == 0) {
+        if (memcmp(s, "BAM", 3) == 0 && s[3] >= 1 && s[3] <= 2) {
             fmt->category = sequence_data;
             fmt->format = bam;
             // TODO Decompress enough to pick version from @HD-VN header
-            fmt->version.major = 1, fmt->version.minor = -1;
+            fmt->version.major = s[3], fmt->version.minor = -1;
             return 0;
         }
         else if (memcmp(s, "BAI\1", 4) == 0) {
@@ -1021,6 +1021,29 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         return 0;
     }
 
+    case HTS_OPT_VERSION: {
+        // Rather annoyingly, BAM and BCF files start off as binary_format
+        // until we write the header.
+        if (fp->format.format == bam || fp->format.format == binary_format) {
+            int major, minor;
+            char *s;
+            va_start(args, opt);
+            s = va_arg(args, char *);
+            va_end(args);
+            if (2 != sscanf(s, "%d.%d", &major, &minor)) {
+                hts_log_error("Malformed version string %s", s);
+                return -1;
+            }
+            if (minor != 0 || major < 1 || major > 2) {
+                hts_log_error("Unknown version: use 1.0 or 2.0");
+                return -1;
+            }
+            fp->format.version.major = major;
+            fp->format.version.minor = minor;
+        }
+        // else let cram have a go at it
+        break;
+    }
     default:
         break;
     }
