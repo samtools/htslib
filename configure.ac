@@ -113,6 +113,11 @@ AC_ARG_ENABLE([s3],
                   [support Amazon AWS S3 URLs])],
   [], [enable_s3=check])
 
+AC_ARG_ENABLE([tcga],
+  [AS_HELP_STRING([--enable-tcga],
+                  [support TCGA Genomic Data Commons URLs])],
+  [], [enable_tcga=check])
+
 test -n "$host_alias" || host_alias=unknown-`uname -s`
 AC_MSG_CHECKING([shared library type for $host_alias])
 case $host_alias in
@@ -223,7 +228,7 @@ dnl Redhat/Fedora has it; Debian/Ubuntu does not.
      pc_requires="$pc_requires bzip2"
   else
      private_LIBS="$private_LIBS -lbz2"
-  fi  
+  fi
   static_LIBS="$static_LIBS -lbz2"
 fi
 
@@ -314,6 +319,24 @@ in HTSlib.  Configure with --enable-libcurl in order to use S3 URLs.])
     esac
   fi
 fi
+
+tcga=disabled
+if test "$enable_tcga" != no; then
+  if test $libcurl = enabled; then
+    AC_DEFINE([ENABLE_TCGA], 1, [Define if HTSlib should enable TCGA support.])
+    tcga=enabled
+  else
+    case "$enable_tcga" in
+      check) AC_MSG_WARN([TCGA support not enabled: requires libcurl support]) ;;
+      *) AC_MSG_ERROR([TCGA support not enabled
+
+Support for TCGA URLs requires libcurl support to be enabled
+in HTSlib.  Configure with --enable-libcurl in order to use TCGA URLs.])
+      ;;
+    esac
+  fi
+fi
+AC_SUBST([tcga])
 
 CRYPTO_LIBS=
 if test $need_crypto != no; then

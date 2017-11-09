@@ -17,7 +17,7 @@ In addition, building the configure script requires:
 
 Running the configure script uses awk, along with a number of
 standard UNIX tools (cat, cp, grep, mv, rm, sed, among others).  Almost
-all installations will have these already.  
+all installations will have these already.
 
 Running the test harness (make test) uses:
 
@@ -138,6 +138,10 @@ various features and specify further optional external requirements:
 --enable-s3
     Implement network access to Amazon AWS S3.  By default or with
     --enable-s3=check, this is enabled when libcurl is enabled.
+
+--enable-tcga
+    Implement network access to TCGA Genomic Data Commons.  By default or with
+    --enable-tcga=check, this is enabled when libcurl is enabled.
 
 --disable-bz2
     Bzip2 is an optional compression codec format for CRAM, included

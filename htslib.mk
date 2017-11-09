@@ -87,6 +87,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/hfile_libcurl.c \
 	$(HTSDIR)/hfile_net.c \
 	$(HTSDIR)/hfile_s3.c \
+	$(HTSDIR)/hfile_tcga.c \
 	$(HTSDIR)/hts.c \
 	$(HTSDIR)/hts_internal.h \
 	$(HTSDIR)/kfunc.c \
