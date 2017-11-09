@@ -378,7 +378,7 @@ static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0
     if ((CG = bam_aux_get(b, "CG")) == 0) return 0; // no CG tag
     if (CG[0] != 'B' || CG[1] != 'I') return 0; // not of type B,I
     CG_len = le_to_u32(CG + 2);
-    if (CG_len == 0) return 0; // nothing to move
+    if (CG_len < c->n_cigar || CG_len >= 1U<<29) return 0; // don't move if the real CIGAR length is shorter than the fake cigar length
 
     // move from the CG tag to the right position
     cigar_st = (uint8_t*)cigar0 - b->data;
@@ -386,7 +386,7 @@ static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0
     n_cigar4 = c->n_cigar * 4;
     CG_st = CG - b->data - 2;
     CG_en = CG_st + 8 + n_cigar4;
-    b->l_data += n_cigar4 - fake_bytes; // we need c->n_cigar-fake_bytes bytes to swap CIGAR to the right place
+    b->l_data = b->l_data - fake_bytes + n_cigar4; // we need c->n_cigar-fake_bytes bytes to swap CIGAR to the right place
     if (b->m_data < b->l_data) {
         uint8_t *new_data;
         uint32_t new_max = b->l_data;
@@ -478,7 +478,8 @@ int bam_read1(BGZF *fp, bam1_t *b)
         bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
-    bam_tag2cigar(b, 0, 0);
+    if (bam_tag2cigar(b, 0, 0) < 0)
+        return -4;
 
     if (c->n_cigar > 0) { // recompute "bin" and check CIGAR-qlen consistency
         int rlen, qlen;
@@ -651,7 +652,8 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, 
     htsFile *fp = fpv;
     bam1_t *b = bv;
     int ret = cram_get_bam_seq(fp->fp.cram, &b);
-    bam_tag2cigar(b, 1, 1);
+    if (bam_tag2cigar(b, 1, 1) < 0)
+        return -2;
     *tid = b->core.tid;
     *beg = b->core.pos;
     *end = bam_endpos(b);
@@ -725,7 +727,8 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
     case bam:   return bam_read1(bgzfp, b);
     case cram: {
         int ret = cram_get_bam_seq(fp->fp.cram, &b);
-        bam_tag2cigar(b, 1, 1);
+        if (bam_tag2cigar(b, 1, 1) < 0)
+            return -2;
         return ret >= 0
             ? ret
             : (cram_eof(fp->fp.cram) ? -1 : -2);
@@ -1308,7 +1311,8 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         } else _parse_err_param(1, "unrecognized type %c", type);
     }
     b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
-    bam_tag2cigar(b, 1, 1);
+    if (bam_tag2cigar(b, 1, 1) < 0)
+        return -2;
     return 0;
 
 #undef _parse_warn
