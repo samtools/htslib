@@ -71,9 +71,15 @@ typedef struct {
     uint8_t *block;
     int64_t end_offset;
 } cache_t;
+
 #include "htslib/khash.h"
 KHASH_MAP_INIT_INT64(cache, cache_t)
 #endif
+
+struct __bgzf_cache_t {
+    khash_t(cache) *h;
+    int last_pos;
+};
 
 #ifdef BGZF_MT
 
@@ -215,7 +221,12 @@ static BGZF *bgzf_read_init(hFILE *hfpr)
     fp->is_compressed = (n==18 && magic[0]==0x1f && magic[1]==0x8b);
     fp->is_gzip = ( !fp->is_compressed || ((magic[3]&4) && memcmp(&magic[12], "BC\2\0",4)==0) ) ? 0 : 1;
 #ifdef BGZF_CACHE
-    fp->cache = kh_init(cache);
+    if (!(fp->cache = malloc(sizeof(*fp->cache)))) {
+        free(fp);
+        return NULL;
+    }
+    fp->cache->h = kh_init(cache);
+    fp->cache->last_pos = 0;
 #endif
     return fp;
 }
@@ -524,11 +535,12 @@ static int check_header(const uint8_t *header)
 static void free_cache(BGZF *fp)
 {
     khint_t k;
-    khash_t(cache) *h = (khash_t(cache)*)fp->cache;
     if (fp->is_write) return;
+    khash_t(cache) *h = fp->cache->h;
     for (k = kh_begin(h); k < kh_end(h); ++k)
         if (kh_exist(h, k)) free(kh_val(h, k).block);
     kh_destroy(cache, h);
+    free(fp->cache);
 }
 
 static int load_block_from_cache(BGZF *fp, int64_t block_address)
@@ -536,7 +548,7 @@ static int load_block_from_cache(BGZF *fp, int64_t block_address)
     khint_t k;
     cache_t *p;
 
-    khash_t(cache) *h = (khash_t(cache)*)fp->cache;
+    khash_t(cache) *h = fp->cache->h;
     k = kh_get(cache, h, block_address);
     if (k == kh_end(h)) return 0;
     p = &kh_val(h, k);
@@ -557,18 +569,28 @@ static int load_block_from_cache(BGZF *fp, int64_t block_address)
 static void cache_block(BGZF *fp, int size)
 {
     int ret;
-    khint_t k;
+    khint_t k, k_orig;
     cache_t *p;
     //fprintf(stderr, "Cache block at %llx\n", (int)fp->block_address);
-    khash_t(cache) *h = (khash_t(cache)*)fp->cache;
+    khash_t(cache) *h = fp->cache->h;
     if (BGZF_MAX_BLOCK_SIZE >= fp->cache_size) return;
     if ((kh_size(h) + 1) * BGZF_MAX_BLOCK_SIZE > (uint32_t)fp->cache_size) {
-        /* A better way would be to remove the oldest block in the
-         * cache, but here we remove a random one for simplicity. This
-         * should not have a big impact on performance. */
-        for (k = kh_begin(h); k < kh_end(h); ++k)
-            if (kh_exist(h, k)) break;
-        if (k < kh_end(h)) {
+        /* Remove uniformly from any position in the hash by a simple
+         * round-robin approach.  An alternative strategy would be to
+         * remove the least recently accessed block, but the round-robin
+         * removal is simpler and is not expected to have a big impact
+         * on performance */
+        k_orig = k = fp->cache->last_pos;
+        if (++k == kh_end(h)) k = kh_begin(h);
+        while (k != k_orig) {
+            if (kh_exist(h, k))
+                break;
+            if (++k == kh_end(h))
+                k = kh_begin(h);
+        }
+        fp->cache->last_pos = k;
+
+        if (k != k_orig) {
             free(kh_val(h, k).block);
             kh_del(cache, h, k);
         }
