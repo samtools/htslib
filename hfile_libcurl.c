@@ -1048,9 +1048,11 @@ libcurl_open(const char *url, const char *modes, http_headers *headers)
 
     err |= curl_easy_setopt(fp->easy, CURLOPT_SHARE, curl.share);
     err |= curl_easy_setopt(fp->easy, CURLOPT_URL, url);
-    char* env_curl_ca_bundle = getenv("CURL_CA_BUNDLE");
-    if (env_curl_ca_bundle) {
-      err |= curl_easy_setopt(fp->easy, CURLOPT_CAINFO, env_curl_ca_bundle);
+    {
+        char* env_curl_ca_bundle = getenv("CURL_CA_BUNDLE");
+        if (env_curl_ca_bundle) {
+            err |= curl_easy_setopt(fp->easy, CURLOPT_CAINFO, env_curl_ca_bundle);
+        }
     }
     err |= curl_easy_setopt(fp->easy, CURLOPT_USERAGENT, curl.useragent.s);
     if (fp->headers.callback) {
