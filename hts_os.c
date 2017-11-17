@@ -25,7 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 // Windows (maybe more) lack a drand48 implementation.
 #ifndef HAVE_DRAND48
-#include "win/rand.c"
+#include "os/rand.c"
 #else
 void hts_srand48(long seed) { return srand48(seed); }
 double hts_erand48(unsigned short xseed[3]) { return erand48(xseed); }
@@ -36,5 +36,5 @@ double hts_lrand48(void) { return lrand48(); }
 // // On Windows when using the MSYS or Cygwin terminals, isatty fails
 // #ifdef _WIN32
 // #define USE_FILEEXTD
-// #include "win/iscygpty.c"
+// #include "os/iscygpty.c"
 // #endif
