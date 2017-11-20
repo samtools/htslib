@@ -484,6 +484,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
     if (c->n_cigar > 0) { // recompute "bin" and check CIGAR-qlen consistency
         int rlen, qlen;
         bam_cigar2rqlens(c->n_cigar, bam_get_cigar(b), &rlen, &qlen);
+        if ((b->core.flag & BAM_FUNMAP)) rlen=1;
         b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + rlen, 14, 5);
         // Sanity check for broken CIGAR alignments
         if (c->l_qseq > 0 && !(c->flag & BAM_FUNMAP) && qlen != c->l_qseq) {
