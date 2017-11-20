@@ -2355,12 +2355,25 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
         } else {
             switch (tid) {
                 case HTS_IDX_NOCOOR:
-                    e = cram_index_query(cidx->cram, -1, 1, NULL);
+                    e = cram_index_query(cidx->cram, tid, 1, NULL);
                     if (e) {
                         iter->nocoor = 1;
                         iter->nocoor_off = e->offset;
                     } else {
                         hts_log_warning("No index entry for NOCOOR region");
+                    }
+                    break;
+                case HTS_IDX_START:
+                    e = cram_index_query(cidx->cram, tid, 1, NULL);
+                    if (e) {
+                        iter->read_rest = 1;
+                        off = (hts_pair64_max_t*)realloc(off, sizeof(hts_pair64_max_t));
+                        off[0].u = e->offset;
+                        off[0].v = 0;
+                        off[0].max = 0;
+                        n_off=1;
+                    } else {
+                        hts_log_warning("No index entries");
                     }
                     break;
                 case HTS_IDX_REST:

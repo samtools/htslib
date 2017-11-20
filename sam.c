@@ -782,8 +782,8 @@ static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end
     iter->bins.a = NULL;
     iter->readrec = readrec;
 
-    if (tid >= 0 || tid == HTS_IDX_NOCOOR) {
-        cram_range r = { tid == HTS_IDX_NOCOOR ? -1 : tid, beg+1, end };
+    if (tid >= 0 || tid == HTS_IDX_NOCOOR || tid == HTS_IDX_START) {
+        cram_range r = { tid, beg+1, end };
         int ret = cram_set_option(cidx->cram, CRAM_OPT_RANGE, &r);
 
         iter->curr_off = 0;
