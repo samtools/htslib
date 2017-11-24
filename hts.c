@@ -2435,11 +2435,11 @@ void hts_reglist_free(hts_reglist_t *reglist, int count) {
     }
 }
 
-void hts_itr_multi_destroy(hts_itr_multi_t *iter, int count) {
+void hts_itr_multi_destroy(hts_itr_multi_t *iter) {
 
     if (iter) {
         if (iter->reg_list && iter->n_reg)
-            hts_reglist_free(iter->reg_list, count);
+            hts_reglist_free(iter->reg_list, iter->n_reg);
 
         if (iter->off && iter->n_off)
             free(iter->off);

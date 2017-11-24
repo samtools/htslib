@@ -684,7 +684,7 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
 hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell);
 int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r);
 void hts_reglist_free(hts_reglist_t *reglist, int count);
-void hts_itr_multi_destroy(hts_itr_multi_t *iter, int n_reg);
+void hts_itr_multi_destroy(hts_itr_multi_t *iter);
 
 
     /**

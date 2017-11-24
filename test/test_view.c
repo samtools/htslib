@@ -261,7 +261,7 @@ int main(int argc, char *argv[])
                 if (nreads && --nreads == 0)
                     break;
             }
-            hts_itr_multi_destroy(iter, reg_count);
+            hts_itr_multi_destroy(iter);
         } else {
             for (i = optind + 1; i < argc; ++i) {
                 hts_itr_t *iter;
