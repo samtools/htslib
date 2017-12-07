@@ -219,18 +219,17 @@ int main(void)
         fail("hopen('mem:', 'r') missread '%s' != '%s'", buffer, test_string);
     char* internal_buf;
     size_t interval_buf_len;
-    if(hfile_mem_get_buffer(fin, &internal_buf, &interval_buf_len) != 0){
+    if((internal_buf = hfile_mem_get_buffer(fin, &interval_buf_len)) == NULL){
         fail("hopen('mem:', 'r') failed to get internal buffer");
     }
     if (hclose(fin) != 0) fail("hclose mem for reading");
-    free(internal_buf);
 
     test_string = strdup("Test string");
     fin = hopen("mem:", "wr:", test_string, 12);
     if (fin == NULL) fail("hopen(\"mem:\", \"w:\", ...)");
     if (hseek(fin, -1, SEEK_END) < 0)
         fail("hopen('mem:', 'wr') failed seek");
-    if (hwrite(fin, strdup(" extra"), 7) != 7)
+    if (hwrite(fin, " extra", 7) != 7)
         fail("hopen('mem:', 'wr') failed write");
     if (hseek(fin, 0, SEEK_SET) < 0)
         fail("hopen('mem:', 'wr') failed seek");
@@ -238,11 +237,11 @@ int main(void)
         fail("hopen('mem:', 'wr') failed read");
     if (strcmp(buffer, "Test string extra") != 0)
         fail("hopen('mem:', 'wr') misswrote '%s' != '%s'", buffer, "Test string extra");
-    if(hfile_mem_get_buffer(fin, &internal_buf, &interval_buf_len) != 0){
+    if((internal_buf = hfile_mem_steal_buffer(fin, &interval_buf_len)) == NULL){
         fail("hopen('mem:', 'wr') failed to get internal buffer");
     }
-    if (hclose(fin) != 0) fail("hclose mem for writing");
     free(internal_buf);
+    if (hclose(fin) != 0) fail("hclose mem for writing");
 
     fin = hopen("data:,hello, world!%0A", "r");
     if (fin == NULL) fail("hopen(\"data:...\")");

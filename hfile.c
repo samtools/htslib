@@ -83,15 +83,15 @@ then there is a non-empty read buffer, and if begin == end then both buffers
 are empty.  In all cases, the stream's file position indicator corresponds
 to the position pointed to by begin.
 
-The above is the normal scenario of a mobile window.  For in-memory streams,
-a fixed (immobile) buffer can be used as the full contents without any separate
-backend behind it.  These always have at_eof set, offset set to 0, need no
-read() method, and should just return EINVAL for seek():
+The above is the normal scenario of a mobile window.  For in-memory
+streams (eg via hfile_init_fixed) the buffer can be used as the full
+contents without any separate backend behind it.  These always have at_eof
+set, offset set to 0, need no read() method, and should just return EINVAL
+for seek():
 
    abcdefghijkLMNOPQRSTUVWXYZ------
    ^buffer    ^begin         ^end  ^limit
-
-Use hfile_init_fixed() to create one of these.  */
+*/
 
 hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity)
 {
@@ -143,7 +143,7 @@ static const struct hFILE_backend mem_backend;
 void hfile_destroy(hFILE *fp)
 {
     int save = errno;
-    if (fp && fp->backend != &mem_backend) free(fp->buffer);
+    if (fp) free(fp->buffer);
     free(fp);
     errno = save;
 }
@@ -617,36 +617,44 @@ error:
     return NULL;
 }
 
-static hFILE *hpreload_fd(const char *filename, const char *mode)
-{
-    if(mode == NULL || !strchr(mode, 'r'))
-    {
-        return NULL;
+// Loads the contents of filename to produced a read-only, in memory,
+// immobile hfile.  fp is the already opened file.  We always close this
+// input fp, irrespective of whether we error or whether we return a new
+// immobile hfile.
+static hFILE *hopen_preload(hFILE *fp) {
+    hFILE *mem_fp;
+    char *buf = NULL;
+    off_t buf_sz = 0, buf_a = 0, buf_inc = 8192, len;
+
+    for (;;) {
+        if (buf_a - buf_sz < 5000) {
+            buf_a += buf_inc;
+            char *t = realloc(buf, buf_a);
+            if (!t) goto err;
+            buf = t;
+            if (buf_inc < 1000000) buf_inc *= 1.3;
+        }
+        len = hread(fp, buf+buf_sz, buf_a-buf_sz);
+        if (len > 0)
+            buf_sz += len;
+        else
+            break;
     }
-    
-    hFILE_fd *fp = NULL;
-    FILE *file = fopen(filename, mode);
-    if (!file) goto error;
 
-    if(fseek(file, 0, SEEK_END) != 0) goto error;
-    int len = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    if (len < 0) goto err;
+    mem_fp = hfile_init_fixed(sizeof(hFILE), "r", buf, buf_sz, buf_a);
+    if (!mem_fp) goto err;
+    mem_fp->backend = &mem_backend;
 
-    char* buffer = malloc(len);
-    if(buffer == NULL) goto error;
-    if(fread(buffer, 1, len, file) != len) goto error;
+    if (hclose(fp) < 0) {
+        hclose_abruptly(mem_fp);
+        goto err;
+    }
+    return mem_fp;
 
-    fp = (hFILE_fd *) hfile_init_fixed(sizeof (hFILE_fd), mode, buffer, len, len);
-    if (fp == NULL) goto error;
-
-    fp->fd = fileno(file);
-    fp->is_socket = 0;
-    fp->base.backend = &fd_backend;
-    return &fp->base;
-
-error:
-    if (file) { int save = errno; (void) fclose(file); errno = save; }
-    hfile_destroy((hFILE *) fp);
+ err:
+    free(buf);
+    hclose_abruptly(fp);
     return NULL;
 }
 
@@ -796,7 +804,7 @@ hFILE *hopenv_mem(const char *filename, const char *mode, va_list args)
     va_end(args);
 
     hFILE* hf;
-    
+
     if(!(hf = create_hfile_mem(buffer, mode, sz, sz))){
         free(buffer);
         return NULL;
@@ -805,16 +813,23 @@ hFILE *hopenv_mem(const char *filename, const char *mode, va_list args)
     return hf;
 }
 
-int hfile_mem_get_buffer(hFILE *file, char **buffer, size_t *length){
-    if(file->backend != &mem_backend) {
+char *hfile_mem_get_buffer(hFILE *file, size_t *length) {
+    if (file->backend != &mem_backend) {
         errno = EINVAL;
-        return -1;
+        return NULL;
     }
 
-    *buffer = file->buffer;
-    *length = file->buffer - file->limit;
+    if (length)
+        *length = file->buffer - file->limit;
 
-    return 0;
+    return file->buffer;
+}
+
+char *hfile_mem_steal_buffer(hFILE *file, size_t *length) {
+    char *buf = hfile_mem_get_buffer(file, length);
+    if (buf)
+        file->buffer = NULL;
+    return buf;
 }
 
 int hfile_plugin_init_mem(struct hFILE_plugin *self)
@@ -964,25 +979,11 @@ static hFILE *hopen_unknown_scheme(const char *fname, const char *mode)
     return fp;
 }
 
-static hFILE *hopenv_unknown_scheme(const char *fname, const char *mode, va_list args)
-{
-    char* method_type = va_arg(args, char*);
-    va_end(args);
-    if(!strcmp(method_type, "preload")){
-        errno = EPROTONOSUPPORT;
-        return NULL;
-    }
-
-    hFILE *fp = hpreload_fd(fname, mode);
-    if (fp == NULL && errno == ENOENT) errno = EPROTONOSUPPORT;
-    return fp;
-}
-
 /* Returns the appropriate handler, or NULL if the string isn't an URL.  */
 static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
 {
     static const struct hFILE_scheme_handler unknown_scheme =
-        { hopen_unknown_scheme, hfile_always_local, "built-in", 2000 + 50, hopenv_unknown_scheme };
+        { hopen_unknown_scheme, hfile_always_local, "built-in", 0 };
 
     char scheme[12];
     int i;
@@ -1007,24 +1008,37 @@ static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
 
 hFILE *hopen(const char *fname, const char *mode, ...)
 {
+    hFILE *fp = NULL;
+
     const struct hFILE_scheme_handler *handler = find_scheme_handler(fname);
     if (handler) {
         if (strchr(mode, ':') == NULL
             || handler->priority < 2000
             || handler->vopen == NULL) {
-            return handler->open(fname, mode);
+            fp = handler->open(fname, mode);
         }
         else {
-            hFILE *fp;
             va_list arg;
             va_start(arg, mode);
             fp = handler->vopen(fname, mode, arg);
             va_end(arg);
-            return fp;
         }
     }
-    else if (strcmp(fname, "-") == 0) return hopen_fd_stdinout(mode);
-    else return hopen_fd(fname, mode);
+    else if (strcmp(fname, "-") == 0) fp = hopen_fd_stdinout(mode);
+    else fp = hopen_fd(fname, mode);
+
+    if (!fp) return NULL;
+
+    if (strchr(mode, 'r') && strchr(mode, ':')) {
+        va_list arg;
+        va_start(arg, mode);
+        const char *argtype = va_arg(arg, const char *);
+        if (strcmp(argtype, "preload") == 0)
+            fp = hopen_preload(fp);
+        va_end(arg);
+    }
+
+    return fp;
 }
 
 int hfile_always_local (const char *fname) { return 0; }
