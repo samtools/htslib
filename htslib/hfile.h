@@ -263,9 +263,22 @@ This includes low-level flushing such as via `fdatasync(2)`.
 int hflush(hFILE *fp) HTS_RESULT_USED;
 
 /// For hfile_mem: get the internal buffer and it's size from a hfile
-/** @return  0 if successful, or -1 if an error occurred
+/** @return  buffer if successful, or NULL if an error occurred
+
+The buffer returned should not be freed as this will happen when the
+hFILE is closed.
 */
-int hfile_mem_get_buffer(hFILE *file, char **buffer, size_t *length);
+char *hfile_mem_get_buffer(hFILE *file, size_t *length);
+
+/// For hfile_mem: get the internal buffer and it's size from a hfile.
+/** @return  buffer if successful, or NULL if an error occurred
+
+This is similar to hfile_mem_get_buffer except that ownership of the
+buffer is granted to the caller, who now has responsibility for freeing
+it.  From this point onwards, the hFILE should not be used for any
+purpose other than closing.
+*/
+char *hfile_mem_steal_buffer(hFILE *file, size_t *length);
 
 #ifdef __cplusplus
 }
