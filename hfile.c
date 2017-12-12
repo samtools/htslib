@@ -621,7 +621,7 @@ error:
 // immobile hfile.  fp is the already opened file.  We always close this
 // input fp, irrespective of whether we error or whether we return a new
 // immobile hfile.
-static hFILE *hopen_preload(hFILE *fp) {
+static hFILE *hpreload(hFILE *fp) {
     hFILE *mem_fp;
     char *buf = NULL;
     off_t buf_sz = 0, buf_a = 0, buf_inc = 8192, len;
@@ -656,6 +656,15 @@ static hFILE *hopen_preload(hFILE *fp) {
     free(buf);
     hclose_abruptly(fp);
     return NULL;
+}
+
+static int is_preload_url_remote(const char *url){
+    return hisremote(url + 8); // len("preload:") = 8
+}
+
+static hFILE *hopen_preload(const char *url, const char *mode){
+    hFILE* fp = hopen(url + 8, mode);
+    return hpreload(fp);
 }
 
 hFILE *hdopen(int fd, const char *mode)
@@ -924,13 +933,15 @@ static void load_hfile_plugins()
 {
     static const struct hFILE_scheme_handler
         data = { hopen_mem, hfile_always_local, "built-in", 80 },
-        file = { hopen_fd_fileuri, hfile_always_local, "built-in", 80 };
+        file = { hopen_fd_fileuri, hfile_always_local, "built-in", 80 },
+        preload = { hopen_preload, is_preload_url_remote, "built-in", 80 };
 
     schemes = kh_init(scheme_string);
     if (schemes == NULL) abort();
 
     hfile_add_scheme_handler("data", &data);
     hfile_add_scheme_handler("file", &file);
+    hfile_add_scheme_handler("preload", &preload);
     init_add_plugin(NULL, hfile_plugin_init_net, "knetfile");
     init_add_plugin(NULL, hfile_plugin_init_mem, "mem");
 
@@ -1025,15 +1036,6 @@ hFILE *hopen(const char *fname, const char *mode, ...)
     else fp = hopen_fd(fname, mode);
 
     if (!fp) return NULL;
-
-    if (strchr(mode, 'r') && strchr(mode, ':')) {
-        va_list arg;
-        va_start(arg, mode);
-        const char *argtype = va_arg(arg, const char *);
-        if (strcmp(argtype, "preload") == 0)
-            fp = hopen_preload(fp);
-        va_end(arg);
-    }
 
     return fp;
 }

@@ -202,8 +202,8 @@ int main(void)
     if ((c = hgetc(fin)) != EOF) fail("chars: hgetc (EOF) returned %d", c);
     if (hclose(fin) != 0) fail("hclose(test/hfile_chars.tmp) for reading");
 
-    fin = hopen("test/hfile_chars.tmp", "r:", "preload");
-    if (fin == NULL) fail("preloading hopen(\"test/hfile_chars.tmp\") for reading");
+    fin = hopen("preload:test/hfile_chars.tmp", "r");
+    if (fin == NULL) fail("preloading \"test/hfile_chars.tmp\" for reading");
     for (i = 0; i < 256; i++)
         if ((c = hgetc(fin)) != i)
             fail("preloading chars: hgetc (%d = 0x%x) returned %d = 0x%x", i, i, c, c);
