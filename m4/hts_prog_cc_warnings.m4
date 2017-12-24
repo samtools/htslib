@@ -126,6 +126,12 @@ dnl an option that includes a hash sign...
         AS_IF([test "x$ansi" = "x"],
               [hts_cv_prog_cc_warnings="-h#msglevel_2"],
               [hts_cv_prog_cc_warnings="-h#msglevel_2,conform"])
+        ],
+	# The Tiny C Compiler
+        ["$CC" -v 2>&1 | $GREP "tcc version" > /dev/null &&
+         "$CC" -Wall -c conftest.c > /dev/null 2>&1 &&
+         test -f conftest.o],[dnl
+         hts_cv_prog_cc_warnings="-Wall"
         ])
         rm -f conftest.*
       ])
@@ -145,8 +151,10 @@ do
 [*" $ac_arg_sp "*], [],
 [ac_arg_needed="$ac_arg_all $ac_arg_sp"])
 done
-CFLAGS="$ac_arg_needed $CFLAGS"])
-  ],[AC_MSG_RESULT(unknown)])
+CFLAGS="$ac_arg_needed $CFLAGS"],[dnl
+      AC_MSG_RESULT(unknown)
+    ])
+  ])
 ])dnl HTS_PROG_CC_WARNINGS
 
 # SYNOPSIS
@@ -180,7 +188,11 @@ EOF
          # Sun Studio or Solaris C compiler
          ["$CC" -V 2>&1 | $GREP -i -E "WorkShop|Sun C" > /dev/null 2>&1 &&
           "$CC" -c -errwarn=%all conftest.c > /dev/null 2>&1 &&
-          test -f conftest.o],[hts_cv_prog_cc_werror="-errwarn=%all"]
+          test -f conftest.o],[hts_cv_prog_cc_werror="-errwarn=%all"],
+	 # The Tiny C Compiler
+         ["$CC" -v 2>&1 | $GREP "tcc version" > /dev/null &&
+          "$CC" -Wall -c conftest.c > /dev/null 2>&1 &&
+          test -f conftest.o],[hts_cv_prog_cc_werror="-Werror"]
          dnl TODO: Add more compilers
         )
         rm -f conftest.*
