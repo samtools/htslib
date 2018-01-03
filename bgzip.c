@@ -1,7 +1,7 @@
 /* bgzip.c -- Block compression/decompression utility.
 
    Copyright (C) 2008, 2009 Broad Institute / Massachusetts Institute of Technology
-   Copyright (C) 2010, 2013-2017 Genome Research Ltd.
+   Copyright (C) 2010, 2013-2018 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -130,7 +130,7 @@ int main(int argc, char **argv)
         case 1:
             printf(
 "bgzip (htslib) %s\n"
-"Copyright (C) 2017 Genome Research Ltd.\n", hts_version());
+"Copyright (C) 2018 Genome Research Ltd.\n", hts_version());
             return EXIT_SUCCESS;
         case 'h':
         case '?': return bgzip_main_usage();
