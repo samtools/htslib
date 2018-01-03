@@ -662,26 +662,29 @@ static int wait_perform(hFILE_libcurl *fp)
     long timeout;
     CURLMcode errm;
 
-    FD_ZERO(&rd);
-    FD_ZERO(&wr);
-    FD_ZERO(&ex);
-    if (curl_multi_fdset(fp->multi, &rd, &wr, &ex, &maxfd) != CURLM_OK)
-        maxfd = -1, timeout = 1000;
-    else if (maxfd < 0)
-        timeout = 100;  // as recommended by curl_multi_fdset(3)
-    else {
-        if (curl_multi_timeout(fp->multi, &timeout) != CURLM_OK)
-            timeout = 1000;
-        else if (timeout < 0)
-            timeout = 10000;  // as recommended by curl_multi_timeout(3)
-    }
+    if (!fp->perform_again) {
+        FD_ZERO(&rd);
+        FD_ZERO(&wr);
+        FD_ZERO(&ex);
+        if (curl_multi_fdset(fp->multi, &rd, &wr, &ex, &maxfd) != CURLM_OK)
+            maxfd = -1, timeout = 1000;
+        else {
+            if (curl_multi_timeout(fp->multi, &timeout) != CURLM_OK)
+                timeout = 1000;
+            else if (timeout < 0) {
+                timeout = 10000;  // as recommended by curl_multi_timeout(3)
+            }
+        }
+        if (maxfd < 0 && timeout > 100)
+            timeout = 100; // as recommended by curl_multi_fdset(3)
 
-    if (timeout > 0 && ! fp->perform_again) {
-        struct timeval tval;
-        tval.tv_sec  = (timeout / 1000);
-        tval.tv_usec = (timeout % 1000) * 1000;
+        if (timeout > 0) {
+            struct timeval tval;
+            tval.tv_sec  = (timeout / 1000);
+            tval.tv_usec = (timeout % 1000) * 1000;
 
-        if (select(maxfd + 1, &rd, &wr, &ex, &tval) < 0) return -1;
+            if (select(maxfd + 1, &rd, &wr, &ex, &tval) < 0) return -1;
+        }
     }
 
     errm = curl_multi_perform(fp->multi, &nrunning);
