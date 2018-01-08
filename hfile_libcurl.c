@@ -49,6 +49,12 @@ DEALINGS IN THE SOFTWARE.  */
 // and slow servers
 #define AUTH_REFRESH_EARLY_SECS 60
 
+// Minimum number of bytes to skip when seeking forward.  Seeks less than
+// this will just read the data and throw it away.  The optimal value
+// depends on how long it takes to make a new connection compared
+// to how fast the data arrives.
+#define MIN_SEEK_FORWARD 1000000
+
 typedef struct {
     char *path;
     char *token;
@@ -101,7 +107,8 @@ typedef struct {
     unsigned tried_seek : 1; // At least one seek has been attempted
     int nrunning;
     http_headers headers;
-    off_t delayed_seek;     // Location to seek to before reading
+    off_t delayed_seek;      // Location to seek to before reading
+    off_t last_offset;       // Location we're seeking from
 } hFILE_libcurl;
 
 static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence);
@@ -720,6 +727,8 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
 {
     hFILE_libcurl *fp = (hFILE_libcurl *) fpv;
     char *buffer = (char *) bufferv;
+    off_t to_skip = -1;
+    ssize_t got = 0;
     CURLcode err;
 
     if (fp->delayed_seek >= 0) {
@@ -727,22 +736,45 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
                && fp->base.begin == fp->base.buffer
                && fp->base.end == fp->base.buffer);
 
-        if (restart_from_position(fp, fp->delayed_seek) < 0) {
-            return -1;
+        if (fp->last_offset >= 0
+            && fp->delayed_seek > fp->last_offset
+            && fp->delayed_seek - fp->last_offset < MIN_SEEK_FORWARD) {
+            // If not seeking far, just read the data and throw it away.  This
+            // is likely to be quicker than opening a new stream
+            to_skip = fp->delayed_seek - fp->last_offset;
+        } else {
+            if (restart_from_position(fp, fp->delayed_seek) < 0) {
+                return -1;
+            }
         }
         fp->delayed_seek = -1;
+        fp->last_offset = -1;
     }
 
-    fp->buffer.ptr.rd = buffer;
-    fp->buffer.len = nbytes;
-    fp->paused = 0;
-    err = curl_easy_pause(fp->easy, CURLPAUSE_CONT);
-    if (err != CURLE_OK) { errno = easy_errno(fp->easy, err); return -1; }
+    do {
+        fp->buffer.ptr.rd = buffer;
+        fp->buffer.len = nbytes;
+        fp->paused = 0;
+        err = curl_easy_pause(fp->easy, CURLPAUSE_CONT);
+        if (err != CURLE_OK) { errno = easy_errno(fp->easy, err); return -1; }
 
-    while (! fp->paused && ! fp->finished)
-        if (wait_perform(fp) < 0) return -1;
+        while (! fp->paused && ! fp->finished)
+            if (wait_perform(fp) < 0) return -1;
 
-    nbytes = fp->buffer.ptr.rd - buffer;
+        got = fp->buffer.ptr.rd - buffer;
+
+        if (to_skip >= 0) { // Skipping over a small seek
+            if (got < to_skip) { // Need to skip more data
+                to_skip -= got;
+            } else {
+                got -= to_skip;
+                if (got > 0) {  // If enough was skipped, return the rest
+                    memmove(buffer, buffer + to_skip, got);
+                    to_skip = -1;
+                }
+            }
+        }
+    } while (to_skip >= 0 && ! fp->finished);
     fp->buffer.ptr.rd = NULL;
     fp->buffer.len = 0;
 
@@ -751,7 +783,7 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
         return -1;
     }
 
-    return nbytes;
+    return got;
 }
 
 static size_t send_callback(char *ptr, size_t size, size_t nmemb, void *fpv)
@@ -840,6 +872,9 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
            the actual work until the next read.  This avoids lots of pointless
            http or ftp reconnections if the caller does lots of seeks
            without any intervening reads. */
+        if (fp->delayed_seek < 0) {
+            fp->last_offset = fp->base.offset + (fp->base.end - fp->base.buffer);
+        }
         fp->delayed_seek = pos;
         return pos;
     }
@@ -1073,7 +1108,7 @@ libcurl_open(const char *url, const char *modes, http_headers *headers)
     fp->paused = fp->closing = fp->finished = fp->perform_again = 0;
     fp->can_seek = 1;
     fp->tried_seek = 0;
-    fp->delayed_seek = -1;
+    fp->delayed_seek = fp->last_offset = -1;
     fp->is_recursive = is_recursive;
     fp->nrunning = 0;
     fp->easy = NULL;
