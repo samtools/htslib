@@ -98,9 +98,14 @@ typedef struct {
     unsigned is_read : 1;   // Opened in read mode
     unsigned can_seek : 1;  // Can (attempt to) seek on this handle
     unsigned is_recursive:1; // Opened by hfile_libcurl itself
+    unsigned tried_seek : 1; // At least one seek has been attempted
     int nrunning;
     http_headers headers;
+    off_t delayed_seek;     // Location to seek to before reading
 } hFILE_libcurl;
+
+static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence);
+static int restart_from_position(hFILE_libcurl *fp, off_t pos);
 
 static int http_status_errno(int status)
 {
@@ -717,6 +722,17 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
     char *buffer = (char *) bufferv;
     CURLcode err;
 
+    if (fp->delayed_seek >= 0) {
+        assert(fp->base.offset == fp->delayed_seek
+               && fp->base.begin == fp->base.buffer
+               && fp->base.end == fp->base.buffer);
+
+        if (restart_from_position(fp, fp->delayed_seek) < 0) {
+            return -1;
+        }
+        fp->delayed_seek = -1;
+    }
+
     fp->buffer.ptr.rd = buffer;
     fp->buffer.len = nbytes;
     fp->paused = 0;
@@ -786,11 +802,7 @@ static ssize_t libcurl_write(hFILE *fpv, const void *bufferv, size_t nbytes)
 static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
 {
     hFILE_libcurl *fp = (hFILE_libcurl *) fpv;
-    hFILE_libcurl temp_fp;
-    CURLcode err;
-    CURLMcode errm;
     off_t origin, pos;
-    int update_headers = 0;
 
     if (!fp->is_read || !fp->can_seek) {
         // Cowardly refuse to seek when writing or a previous seek failed.
@@ -822,6 +834,33 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
     }
 
     pos = origin + offset;
+
+    if (fp->tried_seek) {
+        /* Seeking has worked at least once, so now we can delay doing
+           the actual work until the next read.  This avoids lots of pointless
+           http or ftp reconnections if the caller does lots of seeks
+           without any intervening reads. */
+        fp->delayed_seek = pos;
+        return pos;
+    }
+
+    if (restart_from_position(fp, pos) < 0) {
+        /* This value for errno may not be entirely true, but the caller may be
+           able to carry on with the existing handle. */
+        errno = ESPIPE;
+        return -1;
+    }
+
+    fp->tried_seek = 1;
+    return pos;
+}
+
+static int restart_from_position(hFILE_libcurl *fp, off_t pos) {
+    hFILE_libcurl temp_fp;
+    CURLcode err;
+    CURLMcode errm;
+    int update_headers = 0;
+    int save_errno = 0;
 
     // TODO If we seem to be doing random access, use CURLOPT_RANGE to do
     // limited reads (e.g. about a BAM block!) so seeking can reuse the
@@ -857,10 +896,7 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
       a new request to the server, reading from the location that we want
       to seek to.  If the new request works and returns the correct data,
       the original easy handle in *fp is closed and replaced with the new
-      one.  If not, we close the new handle, leave *fp unchanged, set
-      errno to ESPIPE and return -1 so that the caller knows we can't seek.
-      This allows the caller to decide if it wants to continue reading from
-      fp, in the same way as it would if reading from a pipe.
+      one.  If not, we close the new handle and leave *fp unchanged.
      */
 
     memcpy(&temp_fp, fp, sizeof(temp_fp));
@@ -873,36 +909,52 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
     err = curl_easy_setopt(temp_fp.easy, CURLOPT_RESUME_FROM_LARGE,(curl_off_t)pos);
     err |= curl_easy_setopt(temp_fp.easy, CURLOPT_PRIVATE, &temp_fp);
     err |= curl_easy_setopt(temp_fp.easy, CURLOPT_WRITEDATA, &temp_fp);
-    if (err != CURLE_OK)
+    if (err != CURLE_OK) {
+        save_errno = easy_errno(temp_fp.easy, err);
         goto error;
+    }
 
     temp_fp.buffer.len = 0;  // Ensures we only read the response headers
     temp_fp.paused = temp_fp.finished = 0;
 
     // fp->multi and temp_fp.multi are the same.
     errm = curl_multi_add_handle(fp->multi, temp_fp.easy);
-    if (errm != CURLM_OK) { errno = multi_errno(errm); return -1; }
+    if (errm != CURLM_OK) {
+        save_errno = multi_errno(errm);
+        goto error;
+    }
     temp_fp.nrunning = ++fp->nrunning;
 
     err = curl_easy_pause(temp_fp.easy, CURLPAUSE_CONT);
-    if (err != CURLE_OK)
+    if (err != CURLE_OK) {
+        save_errno = easy_errno(temp_fp.easy, err);
         goto error_remove;
+    }
 
     while (! temp_fp.paused && ! temp_fp.finished)
-        if (wait_perform(&temp_fp) < 0) goto error_remove;
+        if (wait_perform(&temp_fp) < 0) {
+            save_errno = errno;
+            goto error_remove;
+        }
 
-    if (temp_fp.finished && temp_fp.final_result != CURLE_OK)
+    if (temp_fp.finished && temp_fp.final_result != CURLE_OK) {
+        save_errno = easy_errno(temp_fp.easy, temp_fp.final_result);
         goto error_remove;
+    }
 
     // We've got a good response, close the original connection and
     // replace it with the new one.
 
     errm = curl_multi_remove_handle(fp->multi, fp->easy);
     if (errm != CURLM_OK) {
+        // Clean up as much as possible
         curl_easy_reset(temp_fp.easy);
-        curl_multi_remove_handle(fp->multi, temp_fp.easy);
-        errno = multi_errno(errm);
-        return -1;
+        if (curl_multi_remove_handle(fp->multi, temp_fp.easy) == CURLM_OK) {
+            fp->nrunning--;
+            curl_easy_cleanup(temp_fp.easy);
+        }
+        save_errno = multi_errno(errm);
+        goto early_error;
     }
     fp->nrunning--;
 
@@ -911,7 +963,7 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
     err = curl_easy_setopt(fp->easy, CURLOPT_WRITEDATA, fp);
     err |= curl_easy_setopt(fp->easy, CURLOPT_PRIVATE, fp);
     if (err != CURLE_OK) {
-        int save_errno = easy_errno(fp->easy, err);
+        save_errno = easy_errno(fp->easy, err);
         curl_easy_reset(fp->easy);
         errno = save_errno;
         return -1;
@@ -922,7 +974,7 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
     fp->perform_again = temp_fp.perform_again;
     fp->final_result = temp_fp.final_result;
 
-    return pos;
+    return 0;
 
  error_remove:
     curl_easy_reset(temp_fp.easy); // Ensure no pointers to on-stack temp_fp
@@ -936,9 +988,8 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
     curl_easy_cleanup(temp_fp.easy);
  early_error:
     fp->can_seek = 0;  // Don't try to seek again
-    /* This value for errno may not be entirely true, but the caller may be
-       able to carry on with the existing handle. */
-    errno = ESPIPE;
+    if (save_errno)
+        errno = save_errno;
     return -1;
 }
 
@@ -1021,6 +1072,8 @@ libcurl_open(const char *url, const char *modes, http_headers *headers)
     fp->final_result = (CURLcode) -1;
     fp->paused = fp->closing = fp->finished = fp->perform_again = 0;
     fp->can_seek = 1;
+    fp->tried_seek = 0;
+    fp->delayed_seek = -1;
     fp->is_recursive = is_recursive;
     fp->nrunning = 0;
     fp->easy = NULL;
