@@ -579,9 +579,66 @@ static int fd_close(hFILE *fpv)
     return ret;
 }
 
+
 static const struct hFILE_backend fd_backend =
 {
     fd_read, fd_write, fd_seek, fd_flush, fd_close
+};
+
+typedef struct {
+	hFILE base;
+	hFILE_ops ops;
+} hFILE_cb;
+
+static ssize_t cb_read(hFILE *fpv, void *buffer, size_t nbytes)
+{
+	hFILE_cb* hcb = (hFILE_cb*)fpv;
+	ssize_t ret;
+	do {
+		ret = hcb->ops.read ? hcb->ops.read(hcb->ops.cb_data, buffer, nbytes) : 0;
+	} while(ret < 0 && errno == EINTR);
+
+	return ret;
+}
+
+static ssize_t cb_write(hFILE* fpv, const void* buffer, size_t nbytes)
+{
+	hFILE_cb* hcb = (hFILE_cb*)fpv;
+	ssize_t ret;
+	do {
+		ret = hcb->ops.write ? hcb->ops.write(hcb->ops.cb_data, buffer, nbytes) : 0;
+	} while(ret < 0 && errno == EINTR);
+
+	return ret;
+}
+
+static off_t cb_seek(hFILE *fpv, off_t offset, int whence)
+{
+	hFILE_cb* hcb = (hFILE_cb*)fpv;
+	if(hcb->ops.seek)
+		return hcb->ops.seek(hcb->ops.cb_data, offset, whence);
+
+	errno = ESPIPE;
+	return -1;
+}
+
+static int cb_flush(hFILE* fpv)
+{
+	hFILE_cb* hcb = (hFILE_cb*)fpv;
+
+	return hcb->ops.flush ? hcb->ops.flush(hcb->ops.cb_data) : 0;
+}
+
+static int cb_close(hFILE* fpv)
+{
+	hFILE_cb* hcb = (hFILE_cb*)fpv;
+
+	return hcb->ops.close ? hcb->ops.close(hcb->ops.cb_data) : 0;
+}
+
+static const struct hFILE_backend cb_backend =
+{
+    cb_read, cb_write, cb_seek, cb_flush, cb_close
 };
 
 static size_t blksize(int fd)
@@ -593,6 +650,15 @@ static size_t blksize(int fd)
 #else
     return 0;
 #endif
+}
+
+hFILE *hcbopen(hFILE_ops ops, const char* mode)
+{
+	hFILE_cb *ret = (hFILE_cb*) hfile_init(sizeof(*ret), mode, 0);
+	if(ret)
+		ret->ops = ops;
+
+	return (hFILE*)ret;
 }
 
 static hFILE *hopen_fd(const char *filename, const char *mode)

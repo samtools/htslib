@@ -44,6 +44,7 @@ typedef struct BGZF BGZF;
 #endif
 struct cram_fd;
 struct hFILE;
+struct hFILE_ops;
 struct hts_tpool;
 
 #ifndef KSTRING_T
@@ -369,6 +370,8 @@ char *hts_format_description(const htsFormat *format);
       [rw]   .. uncompressed VCF
 */
 htsFile *hts_open(const char *fn, const char *mode);
+
+htsFile *hts_open_cb(const struct hFILE_ops* ops, const char* mode);
 
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file

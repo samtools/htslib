@@ -390,7 +390,7 @@ char *hts_format_description(const htsFormat *format)
     return ks_release(&str);
 }
 
-htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
+static htsFile *hts_open_format_impl(const char *fn, const char *mode, const htsFormat *fmt, hFILE* hf)
 {
     char smode[102], *cp, *cp2, *mode_c;
     htsFile *fp = NULL;
@@ -420,7 +420,7 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     if (fmt && fmt->format != unknown_format)
         *mode_c = "\0g\0\0b\0c\0\0b\0g\0\0"[fmt->format];
 
-    hfile = hopen(fn, smode);
+    hfile = hf ? hf : hopen(fn, smode);
     if (hfile == NULL) goto error;
 
     fp = hts_hopen(hfile, fn, smode);
@@ -439,6 +439,17 @@ error:
         hclose_abruptly(hfile);
 
     return NULL;
+}
+htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
+{
+	return hts_open_format_impl(fn, mode, fmt, NULL);
+}
+
+htsFile *hts_open_cb(const hFILE_ops* ops, const char* mode)
+{
+	if(NULL == ops) return NULL;
+	hFILE* fp = hcbopen(*ops, mode);
+	return hts_open_format_impl(NULL, mode, NULL, fp);
 }
 
 htsFile *hts_open(const char *fn, const char *mode) {
