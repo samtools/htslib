@@ -98,8 +98,8 @@ sr_sort_t;
 
 sr_sort_t *bcf_sr_sort_init(sr_sort_t *srt);
 int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int pos);
-void bcf_sr_sort_set_active(sr_sort_t *srt, int i);
-void bcf_sr_sort_add_active(sr_sort_t *srt, int i);
+int bcf_sr_sort_set_active(sr_sort_t *srt, int i);
+int bcf_sr_sort_add_active(sr_sort_t *srt, int i);
 void bcf_sr_sort_destroy(sr_sort_t *srt);
 void bcf_sr_sort_remove_reader(bcf_srs_t *readers, sr_sort_t *srt, int i);
 

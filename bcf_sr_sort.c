@@ -327,17 +327,19 @@ char *grp_create_key(sr_sort_t *srt)
     }
     return ret;
 }
-void bcf_sr_sort_set_active(sr_sort_t *srt, int idx)
+int bcf_sr_sort_set_active(sr_sort_t *srt, int idx)
 {
     hts_expand(int,idx+1,srt->mactive,srt->active);
     srt->nactive = 1;
     srt->active[srt->nactive - 1] = idx;
+    return 0;
 }
-void bcf_sr_sort_add_active(sr_sort_t *srt, int idx)
+int bcf_sr_sort_add_active(sr_sort_t *srt, int idx)
 {
     hts_expand(int,idx+1,srt->mactive,srt->active);
     srt->nactive++;
     srt->active[srt->nactive - 1] = idx;
+    return 0;
 }
 static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int min_pos)
 {
