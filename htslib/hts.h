@@ -371,6 +371,15 @@ char *hts_format_description(const htsFormat *format);
 */
 htsFile *hts_open(const char *fn, const char *mode);
 
+/*!
+  @abstract      Open a SAM/BAM/CRAM/VCF/BCF/etc from stream callbacks
+  @param ops     The IO operation callback
+  @param mode    The mode string
+  @discussion    
+     See hts_open for description of mode string.
+	 This function is useful when data sources other than file/pipe
+	 should be consumed.
+*/
 htsFile *hts_open_cb(const struct hFILE_ops* ops, const char* mode);
 
 /*!

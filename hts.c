@@ -449,7 +449,7 @@ htsFile *hts_open_cb(const hFILE_ops* ops, const char* mode)
 {
 	if(NULL == ops) return NULL;
 	hFILE* fp = hcbopen(*ops, mode);
-	return hts_open_format_impl(NULL, mode, NULL, fp);
+	return hts_open_format_impl("-", mode, NULL, fp);
 }
 
 htsFile *hts_open(const char *fn, const char *mode) {

@@ -658,6 +658,8 @@ hFILE *hcbopen(hFILE_ops ops, const char* mode)
 	if(ret)
 		ret->ops = ops;
 
+	ret->base.backend = &cb_backend;
+
 	return (hFILE*)ret;
 }
 
