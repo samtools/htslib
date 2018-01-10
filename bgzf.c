@@ -76,9 +76,9 @@ typedef struct {
 KHASH_MAP_INIT_INT64(cache, cache_t)
 #endif
 
-struct __bgzf_cache_t {
+struct bgzf_cache_t {
     khash_t(cache) *h;
-    int last_pos;
+    khint_t last_pos;
 };
 
 #ifdef BGZF_MT
@@ -225,7 +225,11 @@ static BGZF *bgzf_read_init(hFILE *hfpr)
         free(fp);
         return NULL;
     }
-    fp->cache->h = kh_init(cache);
+    if (!(fp->cache->h = kh_init(cache))) {
+        free(fp->cache);
+        free(fp);
+        return NULL;
+    }
     fp->cache->last_pos = 0;
 #endif
     return fp;
@@ -570,6 +574,7 @@ static void cache_block(BGZF *fp, int size)
 {
     int ret;
     khint_t k, k_orig;
+    uint8_t *block = NULL;
     cache_t *p;
     //fprintf(stderr, "Cache block at %llx\n", (int)fp->block_address);
     khash_t(cache) *h = fp->cache->h;
@@ -580,8 +585,9 @@ static void cache_block(BGZF *fp, int size)
          * remove the least recently accessed block, but the round-robin
          * removal is simpler and is not expected to have a big impact
          * on performance */
+        if (fp->cache->last_pos >= kh_end(h)) fp->cache->last_pos = kh_begin(h);
         k_orig = k = fp->cache->last_pos;
-        if (++k == kh_end(h)) k = kh_begin(h);
+        if (++k >= kh_end(h)) k = kh_begin(h);
         while (k != k_orig) {
             if (kh_exist(h, k))
                 break;
@@ -591,17 +597,23 @@ static void cache_block(BGZF *fp, int size)
         fp->cache->last_pos = k;
 
         if (k != k_orig) {
-            free(kh_val(h, k).block);
+            block = kh_val(h, k).block;
             kh_del(cache, h, k);
         }
+    } else {
+        block = (uint8_t*)malloc(BGZF_MAX_BLOCK_SIZE);
     }
+    if (!block) return;
     k = kh_put(cache, h, fp->block_address, &ret);
-    if (ret == 0) return; // if this happens, a bug!
+    if (ret <= 0) { // kh_put failed, or in there already (shouldn't happen)
+        free(block);
+        return;
+    }
     p = &kh_val(h, k);
     p->size = fp->block_length;
     p->end_offset = fp->block_address + size;
-    p->block = (uint8_t*)malloc(BGZF_MAX_BLOCK_SIZE);
-    memcpy(kh_val(h, k).block, fp->uncompressed_block, BGZF_MAX_BLOCK_SIZE);
+    p->block = block;
+    memcpy(p->block, fp->uncompressed_block, BGZF_MAX_BLOCK_SIZE);
 }
 #else
 static void free_cache(BGZF *fp) {}
@@ -1511,7 +1523,7 @@ int bgzf_close(BGZF* fp)
 
 void bgzf_set_cache_size(BGZF *fp, int cache_size)
 {
-    if (fp) fp->cache_size = cache_size;
+    if (fp && fp->cache) fp->cache_size = cache_size;
 }
 
 int bgzf_check_EOF(BGZF *fp) {

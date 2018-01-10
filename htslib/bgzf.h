@@ -55,7 +55,7 @@ struct hFILE;
 struct hts_tpool;
 struct bgzf_mtaux_t;
 typedef struct __bgzidx_t bgzidx_t;
-typedef struct __bgzf_cache_t bgzf_cache_t;
+typedef struct bgzf_cache_t bgzf_cache_t;
 
 struct BGZF {
     // Reserved bits should be written as 0; read as "don't care"
