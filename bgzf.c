@@ -559,8 +559,7 @@ static int load_block_from_cache(BGZF *fp, int64_t block_address)
     if (fp->block_length != 0) fp->block_offset = 0;
     fp->block_address = block_address;
     fp->block_length = p->size;
-    // FIXME: why BGZF_MAX_BLOCK_SIZE and not p->size?
-    memcpy(fp->uncompressed_block, p->block, BGZF_MAX_BLOCK_SIZE);
+    memcpy(fp->uncompressed_block, p->block, p->size);
     if ( hseek(fp->fp, p->end_offset, SEEK_SET) < 0 )
     {
         // todo: move the error up
@@ -579,6 +578,7 @@ static void cache_block(BGZF *fp, int size)
     //fprintf(stderr, "Cache block at %llx\n", (int)fp->block_address);
     khash_t(cache) *h = fp->cache->h;
     if (BGZF_MAX_BLOCK_SIZE >= fp->cache_size) return;
+    if (fp->block_length < 0 || fp->block_length > BGZF_MAX_BLOCK_SIZE) return;
     if ((kh_size(h) + 1) * BGZF_MAX_BLOCK_SIZE > (uint32_t)fp->cache_size) {
         /* Remove uniformly from any position in the hash by a simple
          * round-robin approach.  An alternative strategy would be to
@@ -613,7 +613,7 @@ static void cache_block(BGZF *fp, int size)
     p->size = fp->block_length;
     p->end_offset = fp->block_address + size;
     p->block = block;
-    memcpy(p->block, fp->uncompressed_block, BGZF_MAX_BLOCK_SIZE);
+    memcpy(p->block, fp->uncompressed_block, p->size);
 }
 #else
 static void free_cache(BGZF *fp) {}
