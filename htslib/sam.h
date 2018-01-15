@@ -34,6 +34,9 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
+/// Highest SAM format version supported by this library
+#define SAM_FORMAT_VERSION "1.5"
+
 /**********************
  *** SAM/BAM header ***
  **********************/
@@ -379,6 +382,7 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
     bam_hdr_t *sam_hdr_parse(int l_text, const char *text);
     bam_hdr_t *sam_hdr_read(samFile *fp);
     int sam_hdr_write(samFile *fp, const bam_hdr_t *h) HTS_RESULT_USED;
+    int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val);
 
     int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b) HTS_RESULT_USED;
     int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str) HTS_RESULT_USED;
