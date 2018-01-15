@@ -175,8 +175,9 @@ cram_sam_header_h = cram/sam_header.h cram/string_alloc.h cram/pooled_alloc.h $(
 cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h) $(cram_sam_header_h)
 cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) cram/string_alloc.h $(htslib_khash_h)
 cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
-hfile_internal_h = hfile_internal.h $(htslib_hfile_h)
-hts_internal_h = hts_internal.h $(htslib_hts_h)
+hfile_internal_h = hfile_internal.h $(htslib_hfile_h) $(textutils_internal_h)
+hts_internal_h = hts_internal.h $(htslib_hts_h) $(textutils_internal_h)
+textutils_internal_h = textutils_internal.h $(htslib_kstring_h)
 thread_pool_internal_h = thread_pool_internal.h $(htslib_thread_pool_h)
 
 
@@ -294,7 +295,7 @@ hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(hts
 hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(hfile_internal_h)
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
 hfile_net.o hfile_net.pico: hfile_net.c config.h $(hfile_internal_h) $(htslib_knetfile_h)
-hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hts_internal_h) $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
+hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
 hts.o hts.pico: hts.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(hfile_internal_h) $(htslib_hfile_h) version.h $(hts_internal_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h)
 hts_os.o hts_os.pico: hts_os.c config.h os/rand.c
 vcf.o vcf.pico: vcf.c config.h $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h)

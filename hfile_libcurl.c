@@ -34,7 +34,6 @@ DEALINGS IN THE SOFTWARE.  */
 #endif
 #include <assert.h>
 
-#include "hts_internal.h"
 #include "hfile_internal.h"
 #ifdef ENABLE_PLUGINS
 #include "version.h"
@@ -392,25 +391,30 @@ static int add_callback_headers(hFILE_libcurl *fp) {
  * '?' for a JSON parse error; 'm' if it runs out of memory.
  */
 static int read_auth_json(auth_token *tok, hFILE *auth_fp) {
-    hts_json_token t;
+    hts_json_token *t = hts_json_alloc_token();
     kstring_t str = {0, 0, NULL};
     char *token = NULL, *type = NULL, *expiry = NULL;
     int ret = 'i';
 
-    if ((ret = hts_json_fnext(auth_fp, &t, &str)) != '{') goto error;
-    while (hts_json_fnext(auth_fp, &t, &str) != '}') {
-        if (t.type != 's') {
+    if (!t) goto error;
+
+    if ((ret = hts_json_fnext(auth_fp, t, &str)) != '{') goto error;
+    while (hts_json_fnext(auth_fp, t, &str) != '}') {
+        char *key;
+        if (hts_json_token_type(t) != 's') {
             ret = '?';
             goto error;
         }
-        if (strcmp(t.str, "access_token") == 0) {
-            if ((ret = hts_json_fnext(auth_fp, &t, &str)) != 's') goto error;
+        key = hts_json_token_str(t);
+        if (!key) goto error;
+        if (strcmp(key, "access_token") == 0) {
+            if ((ret = hts_json_fnext(auth_fp, t, &str)) != 's') goto error;
             token = ks_release(&str);
-        } else if (strcmp(t.str, "token_type") == 0) {
-            if ((ret = hts_json_fnext(auth_fp, &t, &str)) != 's') goto error;
+        } else if (strcmp(key, "token_type") == 0) {
+            if ((ret = hts_json_fnext(auth_fp, t, &str)) != 's') goto error;
             type = ks_release(&str);
-        } else if (strcmp(t.str, "expires_in") == 0) {
-            if ((ret = hts_json_fnext(auth_fp, &t, &str)) != 'n') goto error;
+        } else if (strcmp(key, "expires_in") == 0) {
+            if ((ret = hts_json_fnext(auth_fp, t, &str)) != 'n') goto error;
             expiry = ks_release(&str);
         } else if (hts_json_fskip_value(auth_fp, '\0') != 'v') {
             ret = '?';
@@ -443,6 +447,7 @@ static int read_auth_json(auth_token *tok, hFILE *auth_fp) {
     free(type);
     free(expiry);
     free(str.s);
+    hts_json_free_token(t);
     return ret;
 }
 
