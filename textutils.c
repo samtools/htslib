@@ -223,6 +223,10 @@ char hts_json_token_type(hts_json_token *token) {
     return token->type;
 }
 
+void hts_json_free_token(hts_json_token *token) {
+    free(token);
+}
+
 char *hts_json_token_str(hts_json_token *token) {
     return token->str;
 }

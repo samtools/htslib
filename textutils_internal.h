@@ -68,9 +68,7 @@ typedef struct hts_json_token hts_json_token;
 hts_json_token * hts_json_alloc_token();
 
 /// Free a JSON token
-static inline void hts_json_free_token(hts_json_token *token) {
-    free(token);
-}
+void hts_json_free_token(hts_json_token *token);
 
 /// Accessor funtion to get JSON token type
 /** @param  token Pointer to JSON token
