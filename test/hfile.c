@@ -28,6 +28,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <sys/stat.h>
 
@@ -92,6 +94,54 @@ void reopen(const char *infname, const char *outfname)
     if (fout == NULL) fail("hopen(\"%s\")", outfname);
 }
 
+ssize_t _callback_read(void* cb_data, void* buf, size_t sz)
+{
+	return read(*(int*)cb_data, buf, sz);
+}
+ssize_t _callback_write(void* cb_data, const void* buf, size_t sz)
+{
+	return write(*(int*)cb_data, buf, sz);
+}
+off_t _callback_seek(void* cb_data, off_t ofs, int whence)
+{
+	return lseek(*(int*)cb_data, ofs, whence);
+}
+int _callback_close(void* cb_data)
+{
+	int fd = *(int*)cb_data;
+	free(cb_data);
+	return close(fd);
+}
+
+
+void reopen_callback(const char* infname, const char* outfilename)
+{
+	hFILE_callback_ops read_callback = {
+		.cb_data = malloc(sizeof(int)),
+		.read = _callback_read,
+		.seek = _callback_seek,
+		.close = _callback_close
+	};
+	
+	hFILE_callback_ops write_callback = {
+		.cb_data = malloc(sizeof(int)),
+		.write = _callback_write,
+		.close = _callback_close
+	};
+
+    if (fin) { if (hclose(fin) != 0) fail("hclose(input)"); }
+    if (fout) { if (hclose(fout) != 0) fail("hclose(output)"); }
+
+	*(int*)read_callback.cb_data = open(infname, O_RDONLY);
+	*(int*)write_callback.cb_data = open(outfilename, O_WRONLY);
+
+    fin = hopen_callback(read_callback, "r");
+    if (fin == NULL) fail("hopen(\"%s\")", infname);
+
+    fout = hopen_callback(write_callback, "w");
+    if (fout == NULL) fail("hopen(\"%s\")", outfilename);
+}
+
 int main(void)
 {
     static const int size[] = { 1, 13, 403, 999, 30000 };
@@ -107,6 +157,14 @@ int main(void)
         if (hputc(c, fout) == EOF) fail("hputc");
     }
     if (herrno(fin)) { errno = herrno(fin); fail("hgetc"); }
+
+	reopen_callback("vcf.c", "test/hfile1.tmp");
+    while ((c = hgetc(fin)) != EOF) {
+        if (hputc(c, fout) == EOF) fail("hputc");
+    }
+    if (herrno(fin)) { errno = herrno(fin); fail("callback hgetc"); }
+    
+	if(hseek(fin, SEEK_SET, 0) < 0) fail("callback seek");
 
     reopen("test/hfile1.tmp", "test/hfile2.tmp");
     if (hpeek(fin, buffer, 50) < 0) fail("hpeek");

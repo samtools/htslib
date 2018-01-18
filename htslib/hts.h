@@ -44,7 +44,7 @@ typedef struct BGZF BGZF;
 #endif
 struct cram_fd;
 struct hFILE;
-struct hFILE_ops;
+struct hFILE_callback_ops;
 struct hts_tpool;
 
 #ifndef KSTRING_T
@@ -380,7 +380,7 @@ htsFile *hts_open(const char *fn, const char *mode);
 	 This function is useful when data sources other than file/pipe
 	 should be consumed.
 */
-htsFile *hts_open_cb(const struct hFILE_ops* ops, const char* mode);
+htsFile *hts_open_callback(const char* fn, struct hFILE_callback_ops* ops, const char* mode);
 
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file

@@ -445,11 +445,11 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
 	return hts_open_format_impl(fn, mode, fmt, NULL);
 }
 
-htsFile *hts_open_cb(const hFILE_ops* ops, const char* mode)
+htsFile *hts_open_callback(const char* fn, hFILE_callback_ops* ops, const char* mode)
 {
 	if(NULL == ops) return NULL;
-	hFILE* fp = hcbopen(*ops, mode);
-	return hts_open_format_impl("-", mode, NULL, fp);
+	hFILE* fp = hopen_callback(*ops, mode);
+	return hts_open_format_impl(fn ? fn : "-", mode, NULL, fp);
 }
 
 htsFile *hts_open(const char *fn, const char *mode) {

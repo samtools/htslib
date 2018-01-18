@@ -587,13 +587,20 @@ static const struct hFILE_backend fd_backend =
 
 typedef struct {
 	hFILE base;
-	hFILE_ops ops;
+	hFILE_callback_ops ops;
 } hFILE_cb;
 
 static ssize_t cb_read(hFILE *fpv, void *buffer, size_t nbytes)
 {
 	hFILE_cb* hcb = (hFILE_cb*)fpv;
 	ssize_t ret;
+
+	if(hcb->ops.read == NULL)
+	{
+		errno = EBADF;
+		return -1;
+	}
+
 	do {
 		ret = hcb->ops.read ? hcb->ops.read(hcb->ops.cb_data, buffer, nbytes) : 0;
 	} while(ret < 0 && errno == EINTR);
@@ -605,6 +612,13 @@ static ssize_t cb_write(hFILE* fpv, const void* buffer, size_t nbytes)
 {
 	hFILE_cb* hcb = (hFILE_cb*)fpv;
 	ssize_t ret;
+	
+	if(hcb->ops.write == NULL)
+	{
+		errno = EBADF;
+		return -1;
+	}
+
 	do {
 		ret = hcb->ops.write ? hcb->ops.write(hcb->ops.cb_data, buffer, nbytes) : 0;
 	} while(ret < 0 && errno == EINTR);
@@ -652,7 +666,7 @@ static size_t blksize(int fd)
 #endif
 }
 
-hFILE *hcbopen(hFILE_ops ops, const char* mode)
+hFILE *hopen_callback(hFILE_callback_ops ops, const char* mode)
 {
 	hFILE_cb *ret = (hFILE_cb*) hfile_init(sizeof(*ret), mode, 0);
 	if(ret)
