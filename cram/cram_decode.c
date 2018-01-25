@@ -2941,7 +2941,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	if (fd->range.refid != -2) {
 	    while (c->ref_seq_id != -2 &&
 		   (c->ref_seq_id < fd->range.refid ||
-		    c->ref_seq_start + c->ref_seq_span-1 < fd->range.start)) {
+                    (fd->range.refid >= 0 && c->ref_seq_id  == fd->range.refid
+                     && c->ref_seq_start + c->ref_seq_span-1 < fd->range.start))) {
 		if (0 != cram_seek(fd, c->length, SEEK_CUR))
 		    return NULL;
 		cram_free_container(fd->ctr);
@@ -2951,8 +2952,10 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		} while (c->length == 0);
 	    }
 
-	    if (c->ref_seq_id != -2 && c->ref_seq_id != fd->range.refid)
+	    if (c->ref_seq_id != -2 && c->ref_seq_id != fd->range.refid) {
+                fd->eof = 1;
 		return NULL;
+            }
 	}
 
 	if (!(c->comp_hdr_block = cram_read_block(fd)))
