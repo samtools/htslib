@@ -653,6 +653,9 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, 
     htsFile *fp = fpv;
     bam1_t *b = bv;
     int ret = cram_get_bam_seq(fp->fp.cram, &b);
+    if (ret < 0)
+        return cram_eof(fp->fp.cram) ? -1 : -2;
+
     if (bam_tag2cigar(b, 1, 1) < 0)
         return -2;
 
@@ -660,9 +663,7 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, 
     *beg = b->core.pos;
     *end = bam_endpos(b);
 
-    return ret >= 0
-        ? ret
-        : (cram_eof(fp->fp.cram) ? -1 : -2);
+    return ret;
 }
 
 static int cram_pseek(void *fp, int64_t offset, int whence)
@@ -730,11 +731,12 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
     case bam:   return bam_read1(bgzfp, b);
     case cram: {
         int ret = cram_get_bam_seq(fp->fp.cram, &b);
+        if (ret < 0)
+            return cram_eof(fp->fp.cram) ? -1 : -2;
+
         if (bam_tag2cigar(b, 1, 1) < 0)
             return -2;
-        return ret >= 0
-            ? ret
-            : (cram_eof(fp->fp.cram) ? -1 : -2);
+        return ret;
     }
     default:
         // TODO Need headers available to implement this for SAM files
@@ -1416,10 +1418,12 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 
     case cram: {
         int ret = cram_get_bam_seq(fp->fp.cram, &b);
-        bam_tag2cigar(b, 1, 1);
-        return ret >= 0
-            ? ret
-            : (cram_eof(fp->fp.cram) ? -1 : -2);
+        if (ret < 0)
+            return cram_eof(fp->fp.cram) ? -1 : -2;
+
+        if (bam_tag2cigar(b, 1, 1) < 0)
+            return -2;
+        return ret;
     }
 
     case sam: {
