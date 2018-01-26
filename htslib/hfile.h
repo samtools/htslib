@@ -240,14 +240,14 @@ hwrite(hFILE *fp, const void *buffer, size_t nbytes)
 {
     extern ssize_t hwrite2(hFILE *, const void *, size_t, size_t);
     extern int hfile_set_blksize(hFILE *fp, size_t bufsiz);
-    
+
     if(!fp->mobile){
         if (fp->limit - fp->begin < nbytes){
             hfile_set_blksize(fp, fp->limit - fp->buffer + nbytes);
             fp->end = fp->limit;
         }
     }
-    
+
     size_t n = fp->limit - fp->begin;
     if (n > nbytes) n = nbytes;
     memcpy(fp->begin, buffer, n);

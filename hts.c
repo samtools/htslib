@@ -2651,7 +2651,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
             if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
-		 return -1;
+                return -1;
             }
             iter->curr_off = 0; // only seek once
         }
