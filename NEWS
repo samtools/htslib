@@ -1,5 +1,9 @@
-Noteworthy changes in release a.b (New Year)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Noteworthy changes in release a.b
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Noteworthy changes in release 1.7 (26th January 2018)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 * BAM: HTSlib now supports BAMs which include CIGARs with more than 
   65535 operations as per HTS-Specs 18th November (dab57f4 and 2f915a8).
