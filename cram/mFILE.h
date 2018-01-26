@@ -81,7 +81,6 @@ void mfrecreate(mFILE *mf, char *data, int size);
 void *mfsteal(mFILE *mf, size_t *size_out);
 char *mfgets(char *s, int size, mFILE *mf);
 int mfflush(mFILE *mf);
-int mfprintf(mFILE *mf, char *fmt, ...);
 mFILE *mstdin(void);
 mFILE *mstdout(void);
 mFILE *mstderr(void);

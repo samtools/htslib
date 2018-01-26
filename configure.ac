@@ -29,6 +29,8 @@ AC_PREREQ(2.63)  dnl This version introduced 4-argument AC_CHECK_HEADER
 AC_CONFIG_SRCDIR(hts.c)
 AC_CONFIG_HEADERS(config.h)
 
+m4_include([m4/hts_prog_cc_warnings.m4])
+
 dnl Copyright notice to be copied into the generated configure script
 AC_COPYRIGHT([Portions copyright (C) 2016 Genome Research Ltd.
 
@@ -48,6 +50,12 @@ AH_TOP([/* If you use configure, this file provides @%:@defines reflecting your
 
 AC_PROG_CC
 AC_PROG_RANLIB
+
+dnl Turn on compiler warnings, if possible
+HTS_PROG_CC_WARNINGS
+dnl Flags to treat warnings as errors.  These need to be applied to CFLAGS
+dnl later as they can interfere with some of the tests (notably AC_SEARCH_LIBS)
+HTS_PROG_CC_WERROR(hts_late_cflags)
 
 dnl Avoid chicken-and-egg problem where pkg-config supplies the
 dnl PKG_PROG_PKG_CONFIG macro, but we want to use it to check
@@ -229,9 +237,9 @@ fi
 
 if test "$enable_lzma" != no; then
   lzma_devel=ok
-  AC_CHECK_HEADER([lzma.h], [], [lzma_devel=missing], [;])
+  AC_CHECK_HEADERS([lzma.h], [], [lzma_devel=header-missing], [;])
   AC_CHECK_LIB([lzma], [lzma_easy_buffer_encode], [], [lzma_devel=missing])
-  if test $lzma_devel != ok; then
+  if test $lzma_devel = missing; then
     AC_MSG_ERROR([liblzma development files not found
 
 The CRAM format may use LZMA2 compression, which is implemented in HTSlib
@@ -354,6 +362,10 @@ AC_CHECK_DECL(PTHREAD_MUTEX_RECURSIVE, [], [AC_DEFINE([_XOPEN_SOURCE],[600], [Ne
 if test "$s3" = enabled ; then
    AC_DEFINE([ENABLE_S3], 1, [Define if HTSlib should enable S3 support.])
 fi
+
+dnl Apply value from HTS_PROG_CC_WERROR (if set)
+AS_IF([test "x$hts_late_cflags" != x],[CFLAGS="$CFLAGS $hts_late_cflags"])
+
 AC_SUBST([s3])
 AC_SUBST([CRYPTO_LIBS])
 

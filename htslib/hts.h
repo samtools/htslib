@@ -511,10 +511,29 @@ struct __hts_idx_t;
 typedef struct __hts_idx_t hts_idx_t;
 
 typedef struct {
+    uint32_t beg, end;
+} hts_pair32_t;
+
+typedef struct {
     uint64_t u, v;
 } hts_pair64_t;
 
+typedef struct {
+    uint64_t u, v;
+    uint64_t max;
+} hts_pair64_max_t;
+
+typedef struct {
+    const char *reg;
+    int tid;
+    hts_pair32_t *intervals;
+    uint32_t count;
+    uint32_t min_beg, max_end;
+} hts_reglist_t;
+
 typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, int *end);
+typedef int hts_seek_func(void *fp, int64_t offset, int where);
+typedef int64_t hts_tell_func(void *fp);
 
 typedef struct {
     uint32_t read_rest:1, finished:1, is_cram:1, dummy:29;
@@ -528,6 +547,24 @@ typedef struct {
         int *a;
     } bins;
 } hts_itr_t;
+
+typedef struct {
+    int key;
+    uint64_t min_off, max_off;
+} aux_key_t;
+
+typedef struct {
+    uint32_t read_rest:1, finished:1, is_cram:1, nocoor:1, dummy:28;
+    hts_reglist_t *reg_list;
+    int n_reg, i;
+    int curr_tid, curr_intv, curr_beg, curr_end, curr_reg;
+    hts_pair64_max_t *off;
+    int n_off;
+    uint64_t curr_off, nocoor_off;
+    hts_readrec_func *readrec;
+    hts_seek_func *seek;
+    hts_tell_func *tell;
+} hts_itr_multi_t;
 
     #define hts_bin_first(l) (((1<<(((l)<<1) + (l))) - 1) / 7)
     #define hts_bin_parent(l) (((l) - 1) >> 3)
@@ -636,6 +673,19 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
     hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec);
     int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data) HTS_RESULT_USED;
     const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
+
+/**********************************
+ * Iterator with multiple regions *
+ **********************************/
+
+typedef hts_itr_multi_t *hts_itr_multi_query_func(const hts_idx_t *idx, hts_itr_multi_t *itr);
+hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter);
+hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter);
+hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell);
+int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r);
+void hts_reglist_free(hts_reglist_t *reglist, int count);
+void hts_itr_multi_destroy(hts_itr_multi_t *iter);
+
 
     /**
      * hts_file_type() - Convenience function to determine file type

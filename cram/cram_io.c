@@ -57,7 +57,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <bzlib.h>
 #endif
 #ifdef HAVE_LIBLZMA
+#ifdef HAVE_LZMA_H
 #include <lzma.h>
+#else
+#include "os/lzma_stub.h"
+#endif
 #endif
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -4129,8 +4133,9 @@ int cram_seek(cram_fd *fd, off_t offset, int whence) {
 
     fd->ooc = 0;
 
-    if (hseek(fd->fp, offset, whence) >= 0)
-	return 0;
+    if (hseek(fd->fp, offset, whence) >= 0) {
+        return 0;
+    }
 
     if (!(whence == SEEK_CUR && offset >= 0))
 	return -1;

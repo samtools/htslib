@@ -1,6 +1,6 @@
 /*  sam.c -- SAM and BAM file I/O and manipulation.
 
-    Copyright (C) 2008-2010, 2012-2017 Genome Research Ltd.
+    Copyright (C) 2008-2010, 2012-2018 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -326,6 +326,18 @@ bam1_t *bam_dup1(const bam1_t *bsrc)
     return bam_copy1(bdst, bsrc);
 }
 
+void bam_cigar2rqlens(int n_cigar, const uint32_t *cigar, int *rlen, int *qlen)
+{
+    int k;
+    *rlen = *qlen = 0;
+    for (k = 0; k < n_cigar; ++k) {
+        int type = bam_cigar_type(bam_cigar_op(cigar[k]));
+        int len = bam_cigar_oplen(cigar[k]);
+        if (type & 1) *qlen += len;
+        if (type & 2) *rlen += len;
+    }
+}
+
 int bam_cigar2qlen(int n_cigar, const uint32_t *cigar)
 {
     int k, l;
@@ -350,6 +362,49 @@ int32_t bam_endpos(const bam1_t *b)
         return b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
     else
         return b->core.pos + 1;
+}
+
+static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
+{
+    bam1_core_t *c = &b->core;
+    uint32_t cigar_st, n_cigar4, CG_st, CG_en, ori_len = b->l_data, *cigar0, CG_len, fake_bytes;
+    uint8_t *CG;
+
+    // test where there is a real CIGAR in the CG tag to move
+    if (c->n_cigar == 0 || c->tid < 0 || c->pos < 0) return 0;
+    cigar0 = bam_get_cigar(b);
+    if (bam_cigar_op(cigar0[0]) != BAM_CSOFT_CLIP || bam_cigar_oplen(cigar0[0]) != c->l_qseq) return 0;
+    fake_bytes = c->n_cigar * 4;
+    if ((CG = bam_aux_get(b, "CG")) == 0) return 0; // no CG tag
+    if (CG[0] != 'B' || CG[1] != 'I') return 0; // not of type B,I
+    CG_len = le_to_u32(CG + 2);
+    if (CG_len < c->n_cigar || CG_len >= 1U<<29) return 0; // don't move if the real CIGAR length is shorter than the fake cigar length
+
+    // move from the CG tag to the right position
+    cigar_st = (uint8_t*)cigar0 - b->data;
+    c->n_cigar = CG_len;
+    n_cigar4 = c->n_cigar * 4;
+    CG_st = CG - b->data - 2;
+    CG_en = CG_st + 8 + n_cigar4;
+    b->l_data = b->l_data - fake_bytes + n_cigar4; // we need c->n_cigar-fake_bytes bytes to swap CIGAR to the right place
+    if (b->m_data < b->l_data) {
+        uint8_t *new_data;
+        uint32_t new_max = b->l_data;
+        kroundup32(new_max);
+        new_data = (uint8_t*)realloc(b->data, new_max);
+        if (new_data == 0) return -1;
+        b->m_data = new_max, b->data = new_data;
+    }
+    memmove(b->data + cigar_st + n_cigar4, b->data + cigar_st + fake_bytes, ori_len - (cigar_st + fake_bytes)); // insert c->n_cigar-fake_bytes empty space to make room
+    memcpy(b->data + cigar_st, b->data + (n_cigar4 - fake_bytes) + CG_st + 8, n_cigar4); // copy the real CIGAR to the right place; -fake_bytes for the fake CIGAR
+    if (ori_len > CG_en) // move data after the CG tag
+        memmove(b->data + CG_st + n_cigar4 - fake_bytes, b->data + CG_en + n_cigar4 - fake_bytes, ori_len - CG_en);
+    b->l_data -= n_cigar4 + 8; // 8: CGBI (4 bytes) and CGBI length (4)
+    if (recal_bin)
+        b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)), 14, 5);
+    if (give_warning)
+        hts_log_error("%s encodes a CIGAR with %d operators at the CG tag", bam_get_qname(b), c->n_cigar);
+    return 1;
 }
 
 static inline int aux_type2size(uint8_t type)
@@ -423,13 +478,20 @@ int bam_read1(BGZF *fp, bam1_t *b)
         bgzf_read(fp, b->data + c->l_qname, b->l_data - c->l_qname) != b->l_data - c->l_qname)
         return -4;
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
-
-    // Sanity check for broken CIGAR alignments
-    if (c->n_cigar > 0 && c->l_qseq > 0 && !(c->flag & BAM_FUNMAP)
-        && bam_cigar2qlen(c->n_cigar, bam_get_cigar(b)) != c->l_qseq) {
-        hts_log_error("CIGAR and query sequence lengths differ for %s",
-                      bam_get_qname(b));
+    if (bam_tag2cigar(b, 0, 0) < 0)
         return -4;
+
+    if (c->n_cigar > 0) { // recompute "bin" and check CIGAR-qlen consistency
+        int rlen, qlen;
+        bam_cigar2rqlens(c->n_cigar, bam_get_cigar(b), &rlen, &qlen);
+        if ((b->core.flag & BAM_FUNMAP)) rlen=1;
+        b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + rlen, 14, 5);
+        // Sanity check for broken CIGAR alignments
+        if (c->l_qseq > 0 && !(c->flag & BAM_FUNMAP) && qlen != c->l_qseq) {
+            hts_log_error("CIGAR and query sequence lengths differ for %s",
+                    bam_get_qname(b));
+            return -4;
+        }
     }
 
     return 4 + block_len;
@@ -440,15 +502,12 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     const bam1_core_t *c = &b->core;
     uint32_t x[8], block_len = b->l_data - c->l_extranul + 32, y;
     int i, ok;
-    if (c->n_cigar >= 65536) {
-        hts_log_error("Too many CIGAR operations (%d >= 64K for QNAME \"%s\")", c->n_cigar, bam_get_qname(b));
-        errno = EOVERFLOW;
-        return -1;
-    }
+    if (c->n_cigar > 0xffff) block_len += 16; // "16" for "CGBI", 4-byte tag length and 8-byte fake CIGAR
     x[0] = c->tid;
     x[1] = c->pos;
     x[2] = (uint32_t)c->bin<<16 | c->qual<<8 | (c->l_qname - c->l_extranul);
-    x[3] = (uint32_t)c->flag<<16 | c->n_cigar;
+    if (c->n_cigar > 0xffff) x[3] = (uint32_t)c->flag << 16 | 2;
+    else x[3] = (uint32_t)c->flag << 16 | (c->n_cigar & 0xffff);
     x[4] = c->l_qseq;
     x[5] = c->mtid;
     x[6] = c->mpos;
@@ -464,7 +523,24 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     }
     if (ok) ok = (bgzf_write(fp, x, 32) >= 0);
     if (ok) ok = (bgzf_write(fp, b->data, c->l_qname - c->l_extranul) >= 0);
-    if (ok) ok = (bgzf_write(fp, b->data + c->l_qname, b->l_data - c->l_qname) >= 0);
+    if (c->n_cigar <= 0xffff) { // no long CIGAR; write normally
+        if (ok) ok = (bgzf_write(fp, b->data + c->l_qname, b->l_data - c->l_qname) >= 0);
+    } else { // with long CIGAR, insert a fake CIGAR record and move the real CIGAR to the CG:B,I tag
+        uint8_t buf[8];
+        uint32_t cigar_st, cigar_en, cigar[2];
+        cigar_st = (uint8_t*)bam_get_cigar(b) - b->data;
+        cigar_en = cigar_st + c->n_cigar * 4;
+        cigar[0] = (uint32_t)c->l_qseq << 4 | BAM_CSOFT_CLIP;
+        cigar[1] = (uint32_t)bam_cigar2rlen(c->n_cigar, bam_get_cigar(b)) << 4 | BAM_CREF_SKIP;
+        u32_to_le(cigar[0], buf);
+        u32_to_le(cigar[1], buf + 4);
+        if (ok) ok = (bgzf_write(fp, buf, 8) >= 0); // write cigar: <read_length>S<ref_length>N
+        if (ok) ok = (bgzf_write(fp, &b->data[cigar_en], b->l_data - cigar_en) >= 0); // write data after CIGAR
+        if (ok) ok = (bgzf_write(fp, "CGBI", 4) >= 0); // write CG:B,I
+        u32_to_le(c->n_cigar, buf);
+        if (ok) ok = (bgzf_write(fp, buf, 4) >= 0); // write the true CIGAR length
+        if (ok) ok = (bgzf_write(fp, &b->data[cigar_st], c->n_cigar * 4) >= 0); // write the real CIGAR
+    }
     if (fp->is_be) swap_data(c, b->l_data, b->data, 0);
     return ok? 4 + block_len : -1;
 }
@@ -577,9 +653,73 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, 
     htsFile *fp = fpv;
     bam1_t *b = bv;
     int ret = cram_get_bam_seq(fp->fp.cram, &b);
-    return ret >= 0
-        ? ret
-        : (cram_eof(fp->fp.cram) ? -1 : -2);
+    if (ret < 0)
+        return cram_eof(fp->fp.cram) ? -1 : -2;
+
+    if (bam_tag2cigar(b, 1, 1) < 0)
+        return -2;
+
+    *tid = b->core.tid;
+    *beg = b->core.pos;
+    *end = bam_endpos(b);
+
+    return ret;
+}
+
+static int cram_pseek(void *fp, int64_t offset, int whence)
+{
+    cram_fd *fd =  (cram_fd *)fp;
+
+    if ((0 != cram_seek(fd, offset, SEEK_SET))
+     && (0 != cram_seek(fd, offset - fd->first_container, SEEK_CUR)))
+        return -1;
+
+    if (fd->ctr) {
+        cram_free_container(fd->ctr);
+        fd->ctr = NULL;
+        fd->ooc = 0;
+    }
+
+    return 0;
+}
+
+/*
+ * cram_ptell is a pseudo-tell function, because it matches the position of the disk cursor only
+ *   after a fresh seek call. Otherwise it indicates that the read takes place inside the buffered
+ *   container previously fetched. It was designed like this to integrate with the functionality
+ *   of the iterator stepping logic.
+ */
+
+static int64_t cram_ptell(void *fp)
+{
+    cram_fd *fd = (cram_fd *)fp;
+    cram_container *c;
+    int64_t ret = -1L;
+
+    if (fd && fd->fp) {
+        ret = htell(fd->fp);
+        if ((c = fd->ctr) != NULL) {
+            ret -= ((c->curr_slice != c->max_slice || c->curr_rec != c->max_rec) ? c->offset + 1 : 0);
+        }
+    }
+
+    return ret;
+}
+
+static int bam_pseek(void *fp, int64_t offset, int whence)
+{
+    BGZF *fd = (BGZF *)fp;
+
+    return bgzf_seek(fd, offset, whence);
+}
+
+static int64_t bam_ptell(void *fp)
+{
+    BGZF *fd = (BGZF *)fp;
+    if (!fd)
+        return -1L;
+
+    return bgzf_tell(fd);
 }
 
 // This is used only with read_rest=1 iterators, so need not set tid/beg/end.
@@ -591,9 +731,12 @@ static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int 
     case bam:   return bam_read1(bgzfp, b);
     case cram: {
         int ret = cram_get_bam_seq(fp->fp.cram, &b);
-        return ret >= 0
-            ? ret
-            : (cram_eof(fp->fp.cram) ? -1 : -2);
+        if (ret < 0)
+            return cram_eof(fp->fp.cram) ? -1 : -2;
+
+        if (bam_tag2cigar(b, 1, 1) < 0)
+            return -2;
+        return ret;
     }
     default:
         // TODO Need headers available to implement this for SAM files
@@ -642,8 +785,8 @@ static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end
     iter->bins.a = NULL;
     iter->readrec = readrec;
 
-    if (tid >= 0 || tid == HTS_IDX_NOCOOR) {
-        cram_range r = { tid == HTS_IDX_NOCOOR ? -1 : tid, beg+1, end };
+    if (tid >= 0 || tid == HTS_IDX_NOCOOR || tid == HTS_IDX_START) {
+        cram_range r = { tid, beg+1, end };
         int ret = cram_set_option(cidx->cram, CRAM_OPT_RANGE, &r);
 
         iter->curr_off = 0;
@@ -709,6 +852,17 @@ hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *regi
         return hts_itr_querys(idx, region, cram_name2id, cidx->cram, cram_itr_query, cram_readrec);
     else
         return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr, hts_itr_query, bam_readrec);
+}
+
+hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount)
+{
+    const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
+    if (cidx->fmt == HTS_FMT_CRAI)
+        return hts_itr_regions(idx, reglist, regcount, cram_name2id, cidx->cram,
+                   hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell);
+    else
+        return hts_itr_regions(idx, reglist, regcount, (hts_name2id_f)(bam_name2id), hdr,
+                   hts_itr_multi_bam, bam_readrec, bam_pseek, bam_ptell);
 }
 
 /**********************
@@ -933,6 +1087,78 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
     default:
         abort();
     }
+    return 0;
+}
+
+int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
+{
+    char *p, *q, *beg = NULL, *end = NULL, *newtext;
+    if (!h || !key)
+        return -1;
+
+    if (h->l_text > 3) {
+        if (strncmp(h->text, "@HD", 3) == 0) { //@HD line exists
+            if ((p = strchr(h->text, '\n')) == 0) return -1;
+            *p = '\0'; // for strstr call
+
+            char tmp[5] = { '\t', key[0], key[0] ? key[1] : '\0', ':', '\0' };
+
+            if ((q = strstr(h->text, tmp)) != 0) { // key exists
+                *p = '\n'; // change back
+
+                // mark the key:val
+                beg = q;
+                for (q += 4; *q != '\n' && *q != '\t'; ++q);
+                end = q;
+
+                if (val && (strncmp(beg + 4, val, end - beg - 4) == 0)
+                    && strlen(val) == end - beg - 4)
+                     return 0; // val is the same, no need to change
+
+            } else {
+                beg = end = p;
+                *p = '\n';
+            }
+        }
+    }
+    if (beg == NULL) { // no @HD
+        if (h->l_text > UINT32_MAX - strlen(SAM_FORMAT_VERSION) - 9)
+            return -1;
+        h->l_text += strlen(SAM_FORMAT_VERSION) + 8;
+        if (val) {
+            if (h->l_text > UINT32_MAX - strlen(val) - 5)
+                return -1;
+            h->l_text += strlen(val) + 4;
+        }
+        newtext = (char*)malloc(h->l_text + 1);
+        if (!newtext) return -1;
+
+        if (val)
+            snprintf(newtext, h->l_text + 1,
+                    "@HD\tVN:%s\t%s:%s\n%s", SAM_FORMAT_VERSION, key, val, h->text);
+        else
+            snprintf(newtext, h->l_text + 1,
+                    "@HD\tVN:%s\n%s", SAM_FORMAT_VERSION, h->text);
+    } else { // has @HD but different or no key
+        h->l_text = (beg - h->text) + (h->text + h->l_text - end);
+        if (val) {
+            if (h->l_text > UINT32_MAX - strlen(val) - 5)
+                return -1;
+            h->l_text += strlen(val) + 4;
+        }
+        newtext = (char*)malloc(h->l_text + 1);
+        if (!newtext) return -1;
+
+        if (val) {
+            snprintf(newtext, h->l_text + 1, "%.*s\t%s:%s%s",
+                    (int) (beg - h->text), h->text, key, val, end);
+        } else { //delete key
+            snprintf(newtext, h->l_text + 1, "%.*s%s",
+                    (int) (beg - h->text), h->text, end);
+        }
+    }
+    free(h->text);
+    h->text = newtext;
     return 0;
 }
 
@@ -1162,6 +1388,8 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         } else _parse_err_param(1, "unrecognized type %c", type);
     }
     b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
+    if (bam_tag2cigar(b, 1, 1) < 0)
+        return -2;
     return 0;
 
 #undef _parse_warn
@@ -1190,9 +1418,12 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 
     case cram: {
         int ret = cram_get_bam_seq(fp->fp.cram, &b);
-        return ret >= 0
-            ? ret
-            : (cram_eof(fp->fp.cram) ? -1 : -2);
+        if (ret < 0)
+            return cram_eof(fp->fp.cram) ? -1 : -2;
+
+        if (bam_tag2cigar(b, 1, 1) < 0)
+            return -2;
+        return ret;
     }
 
     case sam: {

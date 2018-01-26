@@ -1798,6 +1798,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		}
 		ref_pos += cr->len - seq_pos + 1;
 	    }
+	} else if (cr->ref_id >= 0) {
+	    // So alignment end can be computed even when not decoding sequence
+	    ref_pos += cr->len - seq_pos + 1;
 	}
 
 	if (ncigar+1 >= cigar_alloc) {
@@ -1950,7 +1953,7 @@ static int cram_decode_aux_1_0(cram_container *c, cram_slice *s,
 
 	cr->aux_size += out_sz + 3;
     }
-    
+
     return r;
 }
 
@@ -1961,7 +1964,7 @@ static int cram_decode_aux(cram_container *c, cram_slice *s,
     int32_t TL = 0;
     unsigned char *TN;
     uint32_t ds = c->comp_hdr->data_series;
-	    
+
     if (!(ds & (CRAM_TL|CRAM_aux))) {
 	cr->aux = 0;
 	cr->aux_size = 0;
@@ -2938,7 +2941,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	if (fd->range.refid != -2) {
 	    while (c->ref_seq_id != -2 &&
 		   (c->ref_seq_id < fd->range.refid ||
-		    c->ref_seq_start + c->ref_seq_span-1 < fd->range.start)) {
+                    (fd->range.refid >= 0 && c->ref_seq_id == fd->range.refid
+                     && c->ref_seq_start + c->ref_seq_span-1 < fd->range.start))) {
 		if (0 != cram_seek(fd, c->length, SEEK_CUR))
 		    return NULL;
 		cram_free_container(fd->ctr);
@@ -2948,8 +2952,10 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		} while (c->length == 0);
 	    }
 
-	    if (c->ref_seq_id != -2 && c->ref_seq_id != fd->range.refid)
+	    if (c->ref_seq_id != -2 && c->ref_seq_id != fd->range.refid) {
+                fd->eof = 1;
 		return NULL;
+            }
 	}
 
 	if (!(c->comp_hdr_block = cram_read_block(fd)))
@@ -3225,7 +3231,7 @@ cram_record *cram_get_seq(cram_fd *fd) {
 /*
  * Read the next cram record and convert it to a bam_seq_t struct.
  *
- * Returns 0 on success
+ * Returns >= 0 success (number of bytes written to *bam)
  *        -1 on EOF or failure (check fd->err)
  */
 int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam) {

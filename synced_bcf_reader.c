@@ -598,7 +598,10 @@ int _reader_next_line(bcf_srs_t *files)
             {
                 min_pos = files->readers[i].buffer[1]->pos;
                 chr = bcf_seqname(files->readers[i].header, files->readers[i].buffer[1]);
+                bcf_sr_sort_set_active(&BCF_SR_AUX(files)->sort, i);
             }
+            else if ( min_pos==files->readers[i].buffer[1]->pos )
+                bcf_sr_sort_add_active(&BCF_SR_AUX(files)->sort, i);
         }
         if ( min_pos==INT_MAX )
         {

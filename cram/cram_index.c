@@ -345,7 +345,10 @@ void cram_index_free(cram_fd *fd) {
  * "from" as the last slice we checked to find the next one. Otherwise
  * set "from" to be NULL to find the first one.
  *
- * Returns the cram_index pointer on sucess
+ * Refid can also be any of the special HTS_IDX_ values.
+ * For backwards compatibility, refid -1 is equivalent to HTS_IDX_NOCOOR.
+ *
+ * Returns the cram_index pointer on success
  *         NULL on failure
  */
 cram_index *cram_index_query(cram_fd *fd, int refid, int pos, 
@@ -353,8 +356,33 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
     int i, j, k;
     cram_index *e;
 
-    if (refid+1 < 0 || refid+1 >= fd->index_sz)
+    switch(refid) {
+    case HTS_IDX_NONE:
+    case HTS_IDX_REST:
+	// fail, or already there, dealt with elsewhere.
 	return NULL;
+
+    case HTS_IDX_NOCOOR:
+	refid = -1;
+	break;
+
+    case HTS_IDX_START: {
+	int64_t min_idx = INT64_MAX;
+	for (i = 0, j = -1; i < fd->index_sz; i++) {
+	    if (fd->index[i].e && fd->index[i].e[0].offset < min_idx) {
+		min_idx = fd->index[i].e[0].offset;
+		j = i;
+	    }
+	}
+	if (j < 0)
+	    return NULL;
+	return fd->index[j].e;
+    }
+
+    default:
+	if (refid < HTS_IDX_NONE || refid+1 >= fd->index_sz)
+	    return NULL;
+    }
 
     if (!from)
 	from = &fd->index[refid+1];
@@ -406,6 +434,24 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
     return e;
 }
 
+// Return the index entry for last slice on a specific reference.
+cram_index *cram_index_last(cram_fd *fd, int refid, cram_index *from) {
+    int slice;
+
+    if (refid+1 < 0 || refid+1 >= fd->index_sz)
+        return NULL;
+
+    if (!from)
+        from = &fd->index[refid+1];
+
+    // Ref with nothing aligned against it.
+    if (!from->e)
+        return NULL;
+
+    slice = fd->index[refid+1].nslice - 1;
+
+    return &from->e[slice];
+}
 
 /*
  * Skips to a container overlapping the start coordinate listed in
@@ -424,6 +470,9 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
 int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
     cram_index *e;
 
+    if (r->refid == HTS_IDX_NONE)
+	return -2;
+
     // Ideally use an index, so see if we have one.
     if ((e = cram_index_query(fd, r->refid, r->start, NULL))) {
 	if (0 != cram_seek(fd, e->offset, SEEK_SET))
@@ -433,6 +482,9 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
 	// Absent from index, but this most likely means it simply has no data.
 	return -2;
     }
+
+    if (r->refid == HTS_IDX_START || r->refid == HTS_IDX_REST)
+	fd->range.refid = -2; // special case in cram_next_slice
 
     if (fd->ctr) {
 	cram_free_container(fd->ctr);

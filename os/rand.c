@@ -21,7 +21,6 @@
 //__FBSDID("$FreeBSD: src/lib/libc/gen/_rand48.c,v 1.2 2002/03/22 21:52:05 obrien Exp $");
 
 #include <math.h>
-#include "win/rand.h"
 
 #define	RAND48_SEED_0	(0x330e)
 #define	RAND48_SEED_1	(0xabcd)
