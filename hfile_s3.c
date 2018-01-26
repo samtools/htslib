@@ -41,7 +41,7 @@ typedef struct {
     kstring_t id;
     kstring_t token;
     kstring_t secret;
-    kstring_t region;
+    char *region;
     char *bucket;
     kstring_t auth_hdr;
     time_t auth_time;
