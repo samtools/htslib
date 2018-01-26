@@ -14,6 +14,9 @@ Noteworthy changes in release a.b (New Year)
   - Easier to build when lzma header files are absent.
   - Bug fixing: a region query with REQUIRED_FIELDS option to
     disable sequence retrieval now gives correct results.
+  - Bug fixing: stop queries to regions starting after the last
+    read on a chromosome from incorrectly reporting errors
+    (#651, #653; reported by Imran Haque and @egafni via pysam).
 
 * Multi-region iterator: The new structure takes a list of regions and
   iterates over all, deduplicating reads in the process, and producing a 
