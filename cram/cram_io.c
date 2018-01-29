@@ -3132,7 +3132,8 @@ static int cram_flush_result(cram_fd *fd) {
 
 	cram_free_container(c);
 
-	ret |= hflush(fd->fp) == 0 ? 0 : -1;
+	if (fd->mode == 'w')
+	    ret |= hflush(fd->fp) == 0 ? 0 : -1;
 
 	hts_tpool_delete_result(r, 1);
     }
