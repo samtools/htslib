@@ -2257,7 +2257,7 @@ static void cram_ref_decr_locked(refs_t *r, int id) {
 		RP("%d FREE REF %d (%p)\n", gettid(),
 		   r->last_id, r->ref_id[r->last_id]->seq);
 		ref_entry_free_seq(r->ref_id[r->last_id]);
-		r->ref_id[r->last_id]->length = 0;
+		if (r->ref_id[r->last_id]->is_md5) r->ref_id[r->last_id]->length = 0;
 	    }
 	}
 	r->last_id = id;
