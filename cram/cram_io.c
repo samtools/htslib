@@ -2036,7 +2036,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 	 * If we have no ref path, we use the EBI server.
 	 * However to avoid spamming it we require a local ref cache too.
 	 */
-	ref_path = "http://www.ebi.ac.uk:80/ena/cram/md5/%s";
+	ref_path = "https://www.ebi.ac.uk/ena/cram/md5/%s";
 	if (!local_cache || *local_cache == '\0') {
 	    const char *extra;
 	    const char *base = get_cache_basedir(&extra);
