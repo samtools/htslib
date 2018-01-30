@@ -105,6 +105,11 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		      SAM_hdr *hdr);
 
 
+/*
+ * Drains and frees the decode read-queue for a multi-threaded reader.
+ */
+void cram_drain_rqueue(cram_fd *fd);
+
 #ifdef __cplusplus
 }
 #endif

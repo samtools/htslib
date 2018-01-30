@@ -741,6 +741,7 @@ typedef struct cram_fd {
     hts_tpool_process *rqueue;
     pthread_mutex_t metrics_lock;
     pthread_mutex_t ref_lock;
+    pthread_mutex_t range_lock;
     spare_bams *bl;
     pthread_mutex_t bam_list_lock;
     void *job_pending;

@@ -2442,12 +2442,31 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		    && cr->ref_id >= 0
 		    && cr->ref_id != last_ref_id) {
 		    if (!fd->no_ref) {
-			if (!refs[cr->ref_id])
-			    refs[cr->ref_id] = cram_get_ref(fd, cr->ref_id,
-							    1, 0);
-			s->ref = refs[cr->ref_id];
+			// Range(fd):  seq >= 0, unmapped -1, unspecified   -2
+			// Slice(s):   seq >= 0, unmapped -1, multiple refs -2
+			// Record(cr): seq >= 0, unmapped -1
+			pthread_mutex_lock(&fd->range_lock);
+			int need_ref = (fd->range.refid == -2 || cr->ref_id == fd->range.refid);
+			pthread_mutex_unlock(&fd->range_lock);
+			if  (need_ref) {
+			    if (!refs[cr->ref_id])
+				refs[cr->ref_id] = cram_get_ref(fd, cr->ref_id, 1, 0);
+			    if (!(s->ref = refs[cr->ref_id]))
+				return -1;
+			} else {
+			    // For multi-ref containers, we don't need to fetch all
+			    // refs if we're only querying one.
+			    s->ref = NULL;
+			}
 
-			if (!fd->unsorted && last_ref_id >= 0 && refs[last_ref_id]) {
+			pthread_mutex_lock(&fd->range_lock);
+			int discard_last_ref = (!fd->unsorted &&
+						last_ref_id >= 0 &&
+						refs[last_ref_id] &&
+						(fd->range.refid == -2 ||
+						 last_ref_id == fd->range.refid));
+			pthread_mutex_unlock(&fd->range_lock);
+			if  (discard_last_ref) {
 			    cram_ref_decr(fd->refs, last_ref_id);
 			    refs[last_ref_id] = NULL;
 			}
@@ -2938,6 +2957,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	 * In which case it may still not be the optimal starting point
 	 * due to skipped containers/slices in the index. 
 	 */
+	// No need for locks here as we're in the main thread.
 	if (fd->range.refid != -2) {
 	    while (c->ref_seq_id != -2 &&
 		   (c->ref_seq_id < fd->range.refid ||
@@ -3066,9 +3086,9 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		goto empty_container;
 	    }
 
-
 	    if (!(s = c->slice = cram_read_slice(fd)))
 		return NULL;
+
 	    c->curr_slice++;
 	    c->curr_rec = 0;
 	    c->max_rec = s->hdr->num_records;
@@ -3184,6 +3204,8 @@ cram_record *cram_get_seq(cram_fd *fd) {
 	    continue; /* In case slice contains no records */
 	}
 
+	// No need to lock here as get_seq is running in the main thread,
+	// which is also the same one that does the range modifications.
 	if (fd->range.refid != -2) {
 	    if (fd->range.refid == -1 && s->crecs[c->curr_rec].ref_id != -1) {
 		// Special case when looking for unmapped blocks at end.
@@ -3246,4 +3268,31 @@ int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam) {
     s = c->slice;
 
     return cram_to_bam(fd->header, fd, s, cr, c->curr_rec-1, bam);
+}
+
+/*
+ * Drains and frees the decode read-queue for a multi-threaded reader.
+ */
+void cram_drain_rqueue(cram_fd *fd) {
+    if (!fd->pool)
+	return;
+
+    // drain queue of any in-flight decode jobs
+    while (!hts_tpool_process_empty(fd->rqueue)) {
+	hts_tpool_result *r = hts_tpool_next_result_wait(fd->rqueue);
+	cram_decode_job *j = (cram_decode_job *)hts_tpool_result_data(r);
+	cram_free_container(j->c);
+	cram_free_slice(j->s);
+	hts_tpool_delete_result(r, 1);
+    }
+
+    // Also tidy up any pending decode job that we didn't submit to the workers
+    // due to the input queue being full.
+    if (fd->job_pending) {
+	cram_decode_job *j = (cram_decode_job *)fd->job_pending;
+	cram_free_container(j->c);
+	cram_free_slice(j->s);
+	free(j);
+	fd->job_pending = NULL;
+    }
 }

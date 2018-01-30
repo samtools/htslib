@@ -1,6 +1,7 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* Bug fix to processing multiple range queries in CRAM while multi-threading.
 
 Noteworthy changes in release 1.7 (26th January 2018)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
