@@ -126,6 +126,9 @@ sub _cmd
     }
     else
     {
+	# Example of how to embed Valgrind into the testing framework.
+	# $cmd = "valgrind --leak-check=full --suppressions=$ENV{HOME}/valgrind.supp $cmd";
+
         # child
         exec('bash', '-o','pipefail','-c', $cmd) or error("Cannot execute the command [/bin/sh -o pipefail -c $cmd]: $!");
     }
@@ -322,6 +325,19 @@ sub test_view
             failed($opts, "$sam conversions", "$test_view_failures subtests failed");
         }
     }
+
+    # BAM and CRAM range queries on prebuilt BAM and CRAM
+    # The cram file has @SQ UR: set to point to an invalid location to
+    # force the reference to be reloaded from the one given on the
+    # command line and nowhere else.  REF_PATH should also point to nowhere
+    # (currently done by the Makefile).  This is to test the refseq reference
+    # counting and reload (Issue #654).
+    my $regions = "CHROMOSOME_II:2980-2980 CHROMOSOME_IV:1500-1500 CHROMOSOME_II:2980-2980 CHROMOSOME_I:1000-1100";
+    testv $opts, "./test_view $tv_args -i reference=ce.fa range.cram $regions > range.tmp";
+    testv $opts, "./compare_sam.pl range.tmp range.out";
+    
+    testv $opts, "./test_view $tv_args range.bam $regions > range.tmp";
+    testv $opts, "./compare_sam.pl range.tmp range.out";
 }
 
 sub test_vcf_api
