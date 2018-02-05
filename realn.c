@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <assert.h>
 #include "htslib/hts.h"
 #include "htslib/sam.h"
 
@@ -82,9 +83,24 @@ int sam_cap_mapq(bam1_t *b, const char *ref, int ref_len, int thres)
     return (int)(t + .499);
 }
 
+static int realn_check_tag(const uint8_t *tg, enum htsLogLevel severity,
+                           const char *type, const bam1_t *b) {
+    if (*tg != 'Z') {
+        hts_log(severity, "Incorrect %s tag type (%c) for read %s",
+                type, *tg, bam_get_qname(b));
+        return -1;
+    }
+    if (b->core.l_qseq != strlen((const char *) tg + 1)) {
+        hts_log(severity, "Read %s %s tag is wrong length",
+                bam_get_qname(b), type);
+        return -1;
+    }
+    return 0;
+}
+
 int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
 {
-    int k, i, bw, x, y, yb, ye, xb, xe, apply_baq = flag&1, extend_baq = flag>>1&1, redo_baq = flag&4;
+    int k, i, bw, x, y, yb, ye, xb, xe, apply_baq = flag&1, extend_baq = flag>>1&1, redo_baq = flag&4, fix_bq = 0;
     uint32_t *cigar = bam_get_cigar(b);
     bam1_core_t *c = &b->core;
     probaln_par_t conf = { 0.001, 0.1, 10 };
@@ -92,9 +108,19 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
     if ((c->flag & BAM_FUNMAP) || b->core.l_qseq == 0 || qual[0] == (uint8_t)-1)
         return -1; // do nothing
 
-    // test if BQ or ZQ is present
-    if ((bq = bam_aux_get(b, "BQ")) != 0) ++bq;
-    if ((zq = bam_aux_get(b, "ZQ")) != 0 && *zq == 'Z') ++zq;
+    // test if BQ or ZQ is present, and make sanity checks
+    if ((bq = bam_aux_get(b, "BQ")) != NULL) {
+        if (!redo_baq) {
+            if (realn_check_tag(bq, HTS_LOG_WARNING, "BQ", b) < 0)
+                fix_bq = 1;
+        }
+        ++bq;
+    }
+    if ((zq = bam_aux_get(b, "ZQ")) != NULL) {
+        if (realn_check_tag(zq, HTS_LOG_ERROR, "ZQ", b) < 0)
+            return -4;
+        ++zq;
+    }
     if (bq && redo_baq)
     {
         bam_aux_del(b, bq-1);
@@ -104,6 +130,12 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
         bam_aux_del(b, zq-1);
         zq = 0;
     }
+    if (!zq && fix_bq) { // Need to fix invalid BQ tag (by realigning)
+        assert(bq != NULL);
+        bam_aux_del(b, bq-1);
+        bq = 0;
+    }
+
     if (bq || zq) {
         if ((apply_baq && zq) || (!apply_baq && bq)) return -3; // in both cases, do nothing
         if (bq && apply_baq) { // then convert BQ to ZQ
