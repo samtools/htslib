@@ -163,6 +163,8 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
         else if (op == BAM_CDEL) x += l;
         else if (op == BAM_CREF_SKIP) return -1; // do nothing if there is a reference skip
     }
+    if (xb == -1) // No matches in CIGAR.
+        return -1;
     // set bandwidth and the start and the end
     bw = 7;
     if (abs((xe - xb) - (ye - yb)) > bw)
@@ -191,13 +193,23 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;
                 if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
+                    // Sanity check running off the end of the sequence
+                    // Can only happen if the alignment is broken
+                    if (l > c->l_qseq - y)
+                        l = c->l_qseq - y;
                     for (i = y; i < y + l; ++i) {
                         if ((state[i]&3) != 0 || state[i]>>2 != x - xb + (i - y)) bq[i] = 0;
                         else bq[i] = bq[i] < q[i]? bq[i] : q[i];
                     }
                     x += l; y += l;
-                } else if (op == BAM_CSOFT_CLIP || op == BAM_CINS) y += l;
-                else if (op == BAM_CDEL) x += l;
+                } else if (op == BAM_CSOFT_CLIP || op == BAM_CINS) {
+                    // Need sanity check here too.
+                    if (l > c->l_qseq - y)
+                        l = c->l_qseq - y;
+                    y += l;
+                } else if (op == BAM_CDEL) {
+                    x += l;
+                }
             }
             for (i = 0; i < c->l_qseq; ++i) bq[i] = qual[i] - bq[i] + 64; // finalize BQ
         } else { // in this block, bq[] is BAQ that can be larger than qual[] (different from the above!)
@@ -206,6 +218,10 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;
                 if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
+                    // Sanity check running off the end of the sequence
+                    // Can only happen if the alignment is broken
+                    if (l > c->l_qseq - y)
+                        l = c->l_qseq - y;
                     for (i = y; i < y + l; ++i)
                         bq[i] = ((state[i]&3) != 0 || state[i]>>2 != x - xb + (i - y))? 0 : q[i];
                     for (left[y] = bq[y], i = y + 1; i < y + l; ++i)
@@ -215,8 +231,14 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
                     for (i = y; i < y + l; ++i)
                         bq[i] = left[i] < rght[i]? left[i] : rght[i];
                     x += l; y += l;
-                } else if (op == BAM_CSOFT_CLIP || op == BAM_CINS) y += l;
-                else if (op == BAM_CDEL) x += l;
+                } else if (op == BAM_CSOFT_CLIP || op == BAM_CINS) {
+                    // Need sanity check here too.
+                    if (l > c->l_qseq - y)
+                        l = c->l_qseq - y;
+                    y += l;
+                } else if (op == BAM_CDEL) {
+                    x += l;
+                }
             }
             for (i = 0; i < c->l_qseq; ++i) bq[i] = 64 + (qual[i] <= bq[i]? 0 : qual[i] - bq[i]); // finalize BQ
             free(left); free(rght);
