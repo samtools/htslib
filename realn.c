@@ -29,6 +29,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 #include <math.h>
 #include <limits.h>
+#include <stdint.h>
+#include <errno.h>
 #include <assert.h>
 #include "htslib/hts.h"
 #include "htslib/sam.h"
@@ -106,7 +108,6 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
     bam1_core_t *c = &b->core;
     probaln_par_t conf = { 0.001, 0.1, 10 };
     uint8_t *bq = NULL, *zq = NULL, *qual = bam_get_qual(b);
-    uint8_t *s = NULL, *r = NULL, *q = NULL, *left = NULL, *rght = NULL;
     int *state = NULL;
     if ((c->flag & BAM_FUNMAP) || b->core.l_qseq == 0 || qual[0] == (uint8_t)-1)
         return -1; // do nothing
@@ -178,30 +179,40 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
     if (xe - xb - c->l_qseq > bw)
         xb += (xe - xb - c->l_qseq - bw) / 2, xe -= (xe - xb - c->l_qseq - bw) / 2;
     { // glocal
-        uint8_t *seq = bam_get_seq(b);
-        size_t lref;
-        assert(bq == NULL);
-        bq = malloc(c->l_qseq + 1);
+        uint8_t *seq = bam_get_seq(b), *s, *r, *q;
+        size_t lref = xe > xb ? xe - xb : 1;
+        size_t align_lqseq;
+        if (extend_baq && lref < c->l_qseq)
+            lref = c->l_qseq; // So we can recycle s, r for left, rght below
+        // Try to make q,r,s reasonably well aligned
+        align_lqseq = ((c->l_qseq + 1) | 0xf) + 1;
+        // Overflow check - 3 for *bq, sizeof(int) for *state
+        if ((SIZE_MAX - lref) / (3 + sizeof(int)) < align_lqseq) {
+            errno = ENOMEM;
+            goto fail;
+        }
+
+        assert(bq == NULL); // bq was used above, but should now be NULL
+        bq = malloc(align_lqseq * 3 + lref);
         if (!bq) goto fail;
+        q = bq + align_lqseq;
+        s = q + align_lqseq;
+        r = s + align_lqseq;
+
         memcpy(bq, qual, c->l_qseq); bq[c->l_qseq] = 0;
-        s = malloc(c->l_qseq);
-        if (!s) goto fail;
         for (i = 0; i < c->l_qseq; ++i) s[i] = seq_nt16_int[bam_seqi(seq, i)];
-        lref = xe > xb ? xe - xb : 1;
-        r = calloc(lref, 1);
-        if (!r) goto fail;
         for (i = xb; i < xe; ++i) {
             if (i >= ref_len || ref[i] == '\0') { xe = i; break; }
             r[i-xb] = seq_nt16_int[seq_nt16_table[(unsigned char)ref[i]]];
         }
-        state = calloc(c->l_qseq, sizeof(int));
+
+        state = malloc(c->l_qseq * sizeof(int));
         if (!state) goto fail;
-        q = calloc(c->l_qseq, 1);
-        if (!q) goto fail;
         if (probaln_glocal(r, xe-xb, s, c->l_qseq, qual,
                            &conf, state, q) == INT_MIN) {
             goto fail;
         }
+
         if (!extend_baq) { // in this block, bq[] is capped by base quality qual[]
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;
@@ -226,10 +237,9 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
             }
             for (i = 0; i < c->l_qseq; ++i) bq[i] = qual[i] - bq[i] + 64; // finalize BQ
         } else { // in this block, bq[] is BAQ that can be larger than qual[] (different from the above!)
-            left = calloc(c->l_qseq, 1);
-            if (!left) goto fail;
-            rght = calloc(c->l_qseq, 1);
-            if (!rght) goto fail;
+            // s,r are no longer needed, so we can steal them to avoid mallocs
+            uint8_t *left = s;
+            uint8_t *rght = r;
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;
                 if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
@@ -256,17 +266,16 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
                 }
             }
             for (i = 0; i < c->l_qseq; ++i) bq[i] = 64 + (qual[i] <= bq[i]? 0 : qual[i] - bq[i]); // finalize BQ
-            free(left); free(rght);
         }
         if (apply_baq) {
             for (i = 0; i < c->l_qseq; ++i) qual[i] -= bq[i] - 64; // modify qual
             bam_aux_append(b, "ZQ", 'Z', c->l_qseq + 1, bq);
         } else bam_aux_append(b, "BQ", 'Z', c->l_qseq + 1, bq);
-        free(bq); free(s); free(r); free(q); free(state);
+        free(bq); free(state);
     }
     return 0;
 
  fail:
-    free(bq); free(s); free(r); free(q); free(state); free(left); free(rght);
+    free(bq); free(state);
     return -4;
 }
