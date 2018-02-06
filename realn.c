@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <limits.h>
 #include <assert.h>
 #include "htslib/hts.h"
 #include "htslib/sam.h"
@@ -104,7 +105,9 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
     uint32_t *cigar = bam_get_cigar(b);
     bam1_core_t *c = &b->core;
     probaln_par_t conf = { 0.001, 0.1, 10 };
-    uint8_t *bq = 0, *zq = 0, *qual = bam_get_qual(b);
+    uint8_t *bq = NULL, *zq = NULL, *qual = bam_get_qual(b);
+    uint8_t *s = NULL, *r = NULL, *q = NULL, *left = NULL, *rght = NULL;
+    int *state = NULL;
     if ((c->flag & BAM_FUNMAP) || b->core.l_qseq == 0 || qual[0] == (uint8_t)-1)
         return -1; // do nothing
 
@@ -175,20 +178,30 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
     if (xe - xb - c->l_qseq > bw)
         xb += (xe - xb - c->l_qseq - bw) / 2, xe -= (xe - xb - c->l_qseq - bw) / 2;
     { // glocal
-        uint8_t *s, *r, *q, *seq = bam_get_seq(b), *bq;
-        int *state;
-        bq = calloc(c->l_qseq + 1, 1);
-        memcpy(bq, qual, c->l_qseq);
-        s = calloc(c->l_qseq, 1);
+        uint8_t *seq = bam_get_seq(b);
+        size_t lref;
+        assert(bq == NULL);
+        bq = malloc(c->l_qseq + 1);
+        if (!bq) goto fail;
+        memcpy(bq, qual, c->l_qseq); bq[c->l_qseq] = 0;
+        s = malloc(c->l_qseq);
+        if (!s) goto fail;
         for (i = 0; i < c->l_qseq; ++i) s[i] = seq_nt16_int[bam_seqi(seq, i)];
-        r = calloc(xe - xb, 1);
+        lref = xe > xb ? xe - xb : 1;
+        r = calloc(lref, 1);
+        if (!r) goto fail;
         for (i = xb; i < xe; ++i) {
             if (i >= ref_len || ref[i] == '\0') { xe = i; break; }
-            r[i-xb] = seq_nt16_int[seq_nt16_table[(int)ref[i]]];
+            r[i-xb] = seq_nt16_int[seq_nt16_table[(unsigned char)ref[i]]];
         }
         state = calloc(c->l_qseq, sizeof(int));
+        if (!state) goto fail;
         q = calloc(c->l_qseq, 1);
-        probaln_glocal(r, xe-xb, s, c->l_qseq, qual, &conf, state, q);
+        if (!q) goto fail;
+        if (probaln_glocal(r, xe-xb, s, c->l_qseq, qual,
+                           &conf, state, q) == INT_MIN) {
+            goto fail;
+        }
         if (!extend_baq) { // in this block, bq[] is capped by base quality qual[]
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;
@@ -213,8 +226,10 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
             }
             for (i = 0; i < c->l_qseq; ++i) bq[i] = qual[i] - bq[i] + 64; // finalize BQ
         } else { // in this block, bq[] is BAQ that can be larger than qual[] (different from the above!)
-            uint8_t *left, *rght;
-            left = calloc(c->l_qseq, 1); rght = calloc(c->l_qseq, 1);
+            left = calloc(c->l_qseq, 1);
+            if (!left) goto fail;
+            rght = calloc(c->l_qseq, 1);
+            if (!rght) goto fail;
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;
                 if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
@@ -250,4 +265,8 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
         free(bq); free(s); free(r); free(q); free(state);
     }
     return 0;
+
+ fail:
+    free(bq); free(s); free(r); free(q); free(state); free(left); free(rght);
+    return -4;
 }
