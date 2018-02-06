@@ -3,6 +3,16 @@ Noteworthy changes in release a.b
 
 * Bug fix to processing multiple range queries in CRAM while multi-threading.
 
+* Fixed bug where probaln_glocal() allocated far more memory than needed
+  when the query sequence was much longer than the reference. (#572, problem
+  reported by Felix Bemm via minimap2).
+
+* sam_prop_realn() now returns -1 (the same value as for unmapped reads)
+  on reads that do not include at least one 'M', 'X' or '=' CIGAR operator,
+  and no longer adds BQ or ZQ tags.  BAQ adjustments are only made to bases
+  covered by these operators so there is no point in trying to align
+  reads that do not have them. (#572)
+
 Noteworthy changes in release 1.7 (26th January 2018)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

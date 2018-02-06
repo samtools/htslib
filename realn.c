@@ -179,12 +179,15 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
     if (xe - xb - c->l_qseq > bw)
         xb += (xe - xb - c->l_qseq - bw) / 2, xe -= (xe - xb - c->l_qseq - bw) / 2;
     { // glocal
-        uint8_t *seq = bam_get_seq(b), *s, *r, *q;
+        uint8_t *seq = bam_get_seq(b);
+        uint8_t *tseq; // translated seq A=>0,C=>1,G=>2,T=>3,other=>4
+        uint8_t *tref; // translated ref
+        uint8_t *q; // Probability of incorrect alignment from probaln_glocal()
         size_t lref = xe > xb ? xe - xb : 1;
         size_t align_lqseq;
         if (extend_baq && lref < c->l_qseq)
-            lref = c->l_qseq; // So we can recycle s, r for left, rght below
-        // Try to make q,r,s reasonably well aligned
+            lref = c->l_qseq; // So we can recycle tseq,tref for left,rght below
+        // Try to make q,tref,tseq reasonably well aligned
         align_lqseq = ((c->l_qseq + 1) | 0xf) + 1;
         // Overflow check - 3 for *bq, sizeof(int) for *state
         if ((SIZE_MAX - lref) / (3 + sizeof(int)) < align_lqseq) {
@@ -196,19 +199,20 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
         bq = malloc(align_lqseq * 3 + lref);
         if (!bq) goto fail;
         q = bq + align_lqseq;
-        s = q + align_lqseq;
-        r = s + align_lqseq;
+        tseq = q + align_lqseq;
+        tref = tseq + align_lqseq;
 
         memcpy(bq, qual, c->l_qseq); bq[c->l_qseq] = 0;
-        for (i = 0; i < c->l_qseq; ++i) s[i] = seq_nt16_int[bam_seqi(seq, i)];
+        for (i = 0; i < c->l_qseq; ++i)
+            tseq[i] = seq_nt16_int[bam_seqi(seq, i)];
         for (i = xb; i < xe; ++i) {
             if (i >= ref_len || ref[i] == '\0') { xe = i; break; }
-            r[i-xb] = seq_nt16_int[seq_nt16_table[(unsigned char)ref[i]]];
+            tref[i-xb] = seq_nt16_int[seq_nt16_table[(unsigned char)ref[i]]];
         }
 
         state = malloc(c->l_qseq * sizeof(int));
         if (!state) goto fail;
-        if (probaln_glocal(r, xe-xb, s, c->l_qseq, qual,
+        if (probaln_glocal(tref, xe-xb, tseq, c->l_qseq, qual,
                            &conf, state, q) == INT_MIN) {
             goto fail;
         }
@@ -237,9 +241,9 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
             }
             for (i = 0; i < c->l_qseq; ++i) bq[i] = qual[i] - bq[i] + 64; // finalize BQ
         } else { // in this block, bq[] is BAQ that can be larger than qual[] (different from the above!)
-            // s,r are no longer needed, so we can steal them to avoid mallocs
-            uint8_t *left = s;
-            uint8_t *rght = r;
+            // tseq,tref are no longer needed, so we can steal them to avoid mallocs
+            uint8_t *left = tseq;
+            uint8_t *rght = tref;
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;
                 if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
