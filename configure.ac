@@ -121,6 +121,11 @@ AC_ARG_ENABLE([s3],
                   [support Amazon AWS S3 URLs])],
   [], [enable_s3=check])
 
+AX_LIBDEFLATE([
+pc_requires="$pc_requires $LIBDEFLATE_LDFLAGS"
+static_LIBS="$static_LIBS $LIBDEFLATE_LDFLAGS"
+])
+
 test -n "$host_alias" || host_alias=unknown-`uname -s`
 AC_MSG_CHECKING([shared library type for $host_alias])
 case $host_alias in
