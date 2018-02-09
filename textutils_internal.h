@@ -125,6 +125,8 @@ or array.
 */
 char hts_json_sskip_value(char *str, size_t *state, char type);
 
+struct hFILE;
+
 /// Read one JSON token from a file
 /** @param fp     The file stream
     @param token  On return, filled in with the token read

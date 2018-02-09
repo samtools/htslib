@@ -55,6 +55,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "htslib/khash.h"
 #include "htslib/kstring.h"
 
+#define SAM_HDR_LINES 32
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -123,12 +125,17 @@ typedef struct SAM_hdr_tag_s {
  * structure which holds the tokenised attributes; the tab separated
  * key:value pairs per line.
  */
-typedef struct SAM_hdr_item_s {
-    struct SAM_hdr_item_s *next; // cirular
-    struct SAM_hdr_item_s *prev;
+typedef struct SAM_hdr_type_s {
+    struct SAM_hdr_type_s *next; // circular
+    struct SAM_hdr_type_s *prev;
     SAM_hdr_tag *tag;            // first tag
     int order;                   // 0 upwards
 } SAM_hdr_type;
+
+typedef struct SAM_hdr_line_s {
+    char          type_name[3];
+    SAM_hdr_type *type_data;
+} SAM_hdr_line;
 
 /*! Parsed \@SQ lines */
 typedef struct {
@@ -162,8 +169,14 @@ enum sam_sort_order {
     ORDER_UNKNOWN  =-1,
     ORDER_UNSORTED = 0,
     ORDER_NAME     = 1,
-    ORDER_COORD    = 2,
+    ORDER_COORD    = 2
   //ORDER_COLLATE  = 3 // maybe one day!
+};
+
+enum sam_group_order {
+    ORDER_NONE      =-1,
+    ORDER_QUERY     = 0,
+    ORDER_REFERENCE = 1
 };
 
 KHASH_MAP_INIT_INT(sam_hdr, SAM_hdr_type*)
@@ -206,14 +219,16 @@ typedef struct {
     khash_t(m_s2i) *pg_hash;  //!< Maps PG ID field to pg[] index
     int *pg_end;              //!< \@PG chain termination IDs
 
-    // @HD data
-    enum sam_sort_order sort_order; //!< @HD SO: field
-
     // @cond internal
     char ID_buf[1024];  // temporary buffer
     int ID_cnt;
     int ref_count;      // number of uses of this SAM_hdr
     // @endcond
+
+    SAM_hdr_line *line_order;  //array holding the header lines in the
+                               //order they are found in the file
+    unsigned int line_count;    //number of header lines found in the file
+    unsigned int line_size;     //number of header lines the array can hold
 } SAM_hdr;
 
 /*! Creates an empty SAM header, ready to be populated.
@@ -372,6 +387,10 @@ SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
                               char *key,
                               SAM_hdr_tag **prev);
 
+void sam_hdr_remove_key(SAM_hdr *sh,
+        SAM_hdr_type *type,
+        char *key);
+
 /*! Adds or updates tag key,value pairs in a header line.
  *
  * Eg for adding M5 tags to @SQ lines or updating sort order for the
@@ -388,6 +407,9 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...);
 
 /*! Returns the sort order from the @HD SO: field */
 enum sam_sort_order sam_hdr_sort_order(SAM_hdr *hdr);
+
+/*! Returns the group order from the @HD SO: field */
+enum sam_group_order sam_hdr_group_order(SAM_hdr *hdr);
 
 /*! Reconstructs the kstring from the header hash table.
  * @return
