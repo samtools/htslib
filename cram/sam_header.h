@@ -55,6 +55,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "htslib/khash.h"
 #include "htslib/kstring.h"
 
+#define SAM_TYPES 5
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -166,6 +168,12 @@ enum sam_sort_order {
   //ORDER_COLLATE  = 3 // maybe one day!
 };
 
+enum sam_group_order {
+    ORDER_NONE      =-1,
+    ORDER_QUERY     = 0,
+    ORDER_REFERENCE = 1   
+};
+
 KHASH_MAP_INIT_INT(sam_hdr, SAM_hdr_type*)
 KHASH_MAP_INIT_STR(m_s2i, int)
 
@@ -206,14 +214,15 @@ typedef struct {
     khash_t(m_s2i) *pg_hash;  //!< Maps PG ID field to pg[] index
     int *pg_end;              //!< \@PG chain termination IDs
 
-    // @HD data
-    enum sam_sort_order sort_order; //!< @HD SO: field
-
     // @cond internal
     char ID_buf[1024];  // temporary buffer
     int ID_cnt;
     int ref_count;      // number of uses of this SAM_hdr
     // @endcond
+
+    char (*type_order)[3];
+    unsigned short type_count;
+    unsigned int type_size;
 } SAM_hdr;
 
 /*! Creates an empty SAM header, ready to be populated.
@@ -372,6 +381,10 @@ SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
 			      char *key,
 			      SAM_hdr_tag **prev);
 
+void sam_hdr_remove_key(SAM_hdr *sh,
+                        SAM_hdr_type *type,
+                        char *key);
+
 /*! Adds or updates tag key,value pairs in a header line.
  *
  * Eg for adding M5 tags to @SQ lines or updating sort order for the
@@ -388,6 +401,9 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...);
 
 /*! Returns the sort order from the @HD SO: field */
 enum sam_sort_order sam_hdr_sort_order(SAM_hdr *hdr);
+
+/*! Returns the group order from the @HD SO: field */
+enum sam_group_order sam_hdr_group_order(SAM_hdr *hdr);
 
 /*! Reconstructs the kstring from the header hash table.
  * @return

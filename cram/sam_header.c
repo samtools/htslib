@@ -32,6 +32,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <string.h>
 #include <assert.h>
+#include <ctype.h>
 
 #include "hts_internal.h"
 #include "cram/sam_header.h"
@@ -66,8 +67,10 @@ void sam_hdr_dump(SAM_hdr *hdr) {
 	    SAM_hdr_tag *tag;
 	    printf(">>>%d ", t1->order);
 	    for (tag = t1->tag; tag; tag=tag->next) {
-		printf("\"%.2s\":\"%.*s\"\t",
-		       tag->str, tag->len-3, tag->str+3);
+                if (strncmp(c, "CO", 2))
+                    printf("\"%.2s\":\"%.*s\"\t", tag->str, tag->len-3, tag->str+3);
+                else
+                    printf("%s", tag->str);
 	    }
 	    putchar('\n');
 	    t1 = t1->next;
@@ -86,6 +89,9 @@ void sam_hdr_dump(SAM_hdr *hdr) {
 	}
 	printf("\n");
     }
+    printf("Number of types in the header = %d, in the order:\n", hdr->type_count);
+    for (i=0; i<hdr->type_count; i++)
+        printf("type %d = '%s'\n", i, hdr->type_order[i]);
 
     puts("===END DUMP===");
 }
@@ -311,8 +317,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	}
 
 	type = (hdr[i+1]<<8) | hdr[i+2];
-	if (hdr[i+1] < 'A' || hdr[i+1] > 'z' ||
-	    hdr[i+2] < 'A' || hdr[i+2] > 'z') {
+	if (!isalpha(hdr[i+1]) || !isalpha(hdr[i+2])) {
 	    sam_hdr_error("Header line does not have a two character key",
 			  &hdr[l_start], len - l_start, lno);
 	    return -1;
@@ -344,6 +349,11 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	    kh_val(sh->h, k) = h_type;
 	    h_type->prev = h_type->next = h_type;
 	    h_type->order = 0;
+            if (sh->type_count == (sh->type_size - 1)) {
+                sh->type_size <<= 1;
+                sh->type_order = realloc(sh->type_order, sizeof(*sh->type_order) * sh->type_size);
+            }
+            strncpy(sh->type_order[sh->type_count++], hdr+i-2, 2);
 	}
 
 	// Parse the tags on this line
@@ -695,6 +705,20 @@ SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
     return NULL;
 }
 
+void sam_hdr_remove_key(SAM_hdr *sh,
+                        SAM_hdr_type *type,
+                        char *key) {
+    SAM_hdr_tag *tag, *prev;
+    tag = sam_hdr_find_key(sh, type, key, &prev);
+    if (tag) { //tag exists
+        if (!prev) { //first tag
+            type->tag = tag->next;
+        } else {
+            prev->next = tag->next;
+        }
+    }
+}
+
 
 /*
  * Adds or updates tag key,value pairs in a header line.
@@ -751,14 +775,7 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
 
 #define K(a) (((a)[0]<<8)|((a)[1]))
 
-/*
- * Returns the sort order:
- */
 enum sam_sort_order sam_hdr_sort_order(SAM_hdr *hdr) {
-    return hdr->sort_order;
-}
-
-static enum sam_sort_order sam_hdr_parse_sort_order(SAM_hdr *hdr) {
     khint_t k;
     enum sam_sort_order so;
 
@@ -784,6 +801,27 @@ static enum sam_sort_order sam_hdr_parse_sort_order(SAM_hdr *hdr) {
     return so;
 }
 
+enum sam_group_order sam_hdr_group_order(SAM_hdr *hdr) {
+    khint_t k;
+    enum sam_group_order go;
+
+    go = ORDER_NONE;
+    k = kh_get(sam_hdr, hdr->h, K("HD"));
+    if (k != kh_end(hdr->h)) {
+	SAM_hdr_type *ty = kh_val(hdr->h, k);
+	SAM_hdr_tag *tag;
+        for (tag = ty->tag; tag; tag = tag->next) {
+	    if (tag->str[0] == 'G' && tag->str[1] == 'O') {
+		if (strcmp(tag->str+3, "query") == 0)
+		    go = ORDER_QUERY;
+		else if (strcmp(tag->str+3, "reference") == 0)
+		    go = ORDER_REFERENCE;
+	    }
+	}
+    }
+    
+    return go;
+}
 
 /*
  * Reconstructs the kstring from the header hash table.
@@ -794,6 +832,7 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
     /* Order: HD then others */
     kstring_t ks = KS_INITIALIZER;
     khint_t k;
+    unsigned short i;
 
 
     k = kh_get(sam_hdr, hdr->h, K("HD"));
@@ -812,8 +851,11 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
 	    return -1;
     }
 
-    for (k = kh_begin(hdr->h); k != kh_end(hdr->h); k++) {
+    //for (k = kh_begin(hdr->h); k != kh_end(hdr->h); k++) {
+    for (i = 0; i < hdr->type_count; i++) {
 	SAM_hdr_type *t1, *t2;
+
+        k = kh_get(sam_hdr, hdr->h, K(hdr->type_order[i]));
 
 	if (!kh_exist(hdr->h, k))
 	    continue;
@@ -900,6 +942,10 @@ SAM_hdr *sam_hdr_new() {
     if (!(sh->str_pool = string_pool_create(8192)))
 	goto err;
 
+    sh->type_count = 0;
+    sh->type_size = SAM_TYPES; 
+    sh->type_order = calloc(sh->type_size, sizeof(*sh->type_order));
+
     return sh;
 
  err:
@@ -942,9 +988,6 @@ SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
 	sam_hdr_free(sh);
 	return NULL;
     }
-
-    /* Obtain sort order */
-    sh->sort_order = sam_hdr_parse_sort_order(sh);
 
     //sam_hdr_dump(sh);
     //sam_hdr_add(sh, "RG", "ID", "foo", "SM", "bar", NULL);
@@ -1058,6 +1101,7 @@ void sam_hdr_free(SAM_hdr *hdr) {
     if (hdr->str_pool)
 	string_pool_destroy(hdr->str_pool);
 
+    free(hdr->type_order);
     free(hdr);
 }
 
