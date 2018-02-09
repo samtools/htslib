@@ -43,6 +43,7 @@ lib*.so.*
 /test/test-bcf-sr
 /test/test-bcf-translate
 /test/test_bgzf
+/test/test_realn
 /test/test-regidx
 /test/test-vcf-api
 /test/test-vcf-sweep

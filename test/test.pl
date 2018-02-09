@@ -44,6 +44,7 @@ test_command($opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
 test_convert_padded_header($opts);
 test_rebgzip($opts);
 test_logging($opts);
+test_realn($opts);
 
 print "\nNumber of tests:\n";
 printf "    total   .. %d\n", $$opts{nok}+$$opts{nfailed};
@@ -425,4 +426,30 @@ sub test_logging
   my ($ret,$out) = _cmd($cmd);
   if ( $ret ) { failed($opts,$test); }
   else { passed($opts,$test); }
+}
+
+sub test_realn {
+    my ($opts) = @_;
+
+    my $test_realn = "$$opts{path}/test_realn";
+    # Calculate BAQ
+    test_cmd($opts, cmd => "$test_realn -f $$opts{path}/realn01.fa -i $$opts{path}/realn01.sam -o -", out => "realn01_exp.sam");
+    test_cmd($opts, cmd => "$test_realn -f $$opts{path}/realn02.fa -i $$opts{path}/realn02.sam -o -", out => "realn02_exp.sam");
+
+    # Calculate and apply BAQ
+    test_cmd($opts, cmd => "$test_realn -a -f $$opts{path}/realn01.fa -i $$opts{path}/realn01.sam -o -", out => "realn01_exp-a.sam");
+    test_cmd($opts, cmd => "$test_realn -a -f $$opts{path}/realn02.fa -i $$opts{path}/realn02.sam -o -", out => "realn02_exp-a.sam");
+
+    # Calculate extended BAQ
+    test_cmd($opts, cmd => "$test_realn -e -f $$opts{path}/realn01.fa -i $$opts{path}/realn01.sam -o -", out => "realn01_exp-e.sam");
+    test_cmd($opts, cmd => "$test_realn -e -f $$opts{path}/realn02.fa -i $$opts{path}/realn02.sam -o -", out => "realn02_exp-e.sam");
+
+    # Recalculate BAQ
+    test_cmd($opts, cmd => "$test_realn -r -f $$opts{path}/realn02.fa -i $$opts{path}/realn02-r.sam -o -", out => "realn02_exp.sam");
+
+    # Apply from existing BQ tags
+    test_cmd($opts, cmd => "$test_realn -a -f $$opts{path}/realn02.fa -i $$opts{path}/realn02_exp.sam -o -", out => "realn02_exp-a.sam");
+
+    # Revert quality values (using data in ZQ tags)
+    test_cmd($opts, cmd => "$test_realn -f $$opts{path}/realn02.fa -i $$opts{path}/realn02_exp-a.sam -o -", out => "realn02_exp.sam");
 }
