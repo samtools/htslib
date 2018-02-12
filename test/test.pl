@@ -42,7 +42,9 @@ test_vcf_various($opts);
 test_bcf_sr_sort($opts);
 test_command($opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
 test_convert_padded_header($opts);
-test_rebgzip($opts);
+# Not an appropriate test given it assumes native zlib and nothing else,
+# so not cloudflare, intel or an alternative deflate library.
+#test_rebgzip($opts);
 test_logging($opts);
 
 print "\nNumber of tests:\n";
