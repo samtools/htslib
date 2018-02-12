@@ -25,4 +25,4 @@ before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" && "$USE_CONFIG" == "no" ]]; then HOMEBREW_NO_AUTO_UPDATE=1 brew install xz || ( brew update && brew install xz ); fi
 
 script:
-  - if test "$USE_CONFIG" = "yes" ; then autoreconf && ./configure ; fi && make -e && make test
+  - if test "$USE_CONFIG" = "yes" ; then autoreconf -I m4 && ./configure ; fi && make -e && make test
