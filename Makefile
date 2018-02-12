@@ -395,7 +395,7 @@ test/test-bcf-sr: test/test-bcf-sr.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-bcf-sr.o libhts.a -lz $(HTS_LIBS) $(LIBS) -lpthread
 
 test/test-bcf-translate: test/test-bcf-translate.o libhts.a
-	$(CC) $(LDFLAGS) -o $@ test/test-bcf-translate.o libhts.a -lz $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/test-bcf-translate.o libhts.a -lz $(HTS_LIBS) $(LIBS) -lpthread
 
 test/hts_endian.o: test/hts_endian.c $(htslib_hts_endian_h)
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
