@@ -55,7 +55,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "htslib/khash.h"
 #include "htslib/kstring.h"
 
-#define SAM_TYPES 5
+#define SAM_HDR_LINES 30
 
 #ifdef __cplusplus
 extern "C" {
@@ -132,6 +132,11 @@ typedef struct SAM_hdr_item_s {
     int order;                   // 0 upwards
 } SAM_hdr_type;
 
+typedef struct SAM_hdr_line_s {
+    char          type_name[3];
+    SAM_hdr_type *type_data;
+} SAM_hdr_line;
+
 /*! Parsed \@SQ lines */
 typedef struct {
     char *name;
@@ -164,7 +169,7 @@ enum sam_sort_order {
     ORDER_UNKNOWN  =-1,
     ORDER_UNSORTED = 0,
     ORDER_NAME     = 1,
-    ORDER_COORD    = 2,
+    ORDER_COORD    = 2
   //ORDER_COLLATE  = 3 // maybe one day!
 };
 
@@ -220,9 +225,10 @@ typedef struct {
     int ref_count;      // number of uses of this SAM_hdr
     // @endcond
 
-    char (*type_order)[3];
-    unsigned short type_count;
-    unsigned int type_size;
+    SAM_hdr_line *line_order;  //array holding the header lines in the
+                                //order they are found in the file
+    unsigned int line_count;    //number of header lines found in the file
+    unsigned int line_size;     //number of header lines the array can hold
 } SAM_hdr;
 
 /*! Creates an empty SAM header, ready to be populated.

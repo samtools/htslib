@@ -89,9 +89,7 @@ void sam_hdr_dump(SAM_hdr *hdr) {
 	}
 	printf("\n");
     }
-    printf("Number of types in the header = %d, in the order:\n", hdr->type_count);
-    for (i=0; i<hdr->type_count; i++)
-        printf("type %d = '%s'\n", i, hdr->type_order[i]);
+    printf("Number of lines in the header: %d\n", hdr->line_count);
 
     puts("===END DUMP===");
 }
@@ -349,12 +347,14 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	    kh_val(sh->h, k) = h_type;
 	    h_type->prev = h_type->next = h_type;
 	    h_type->order = 0;
-            if (sh->type_count == (sh->type_size - 1)) {
-                sh->type_size <<= 1;
-                sh->type_order = realloc(sh->type_order, sizeof(*sh->type_order) * sh->type_size);
-            }
-            strncpy(sh->type_order[sh->type_count++], hdr+i-2, 2);
 	}
+
+        if (sh->line_count == (sh->line_size - 1)) {
+            sh->line_size <<= 1;
+            sh->line_order = realloc(sh->line_order, sizeof(SAM_hdr_line) * sh->line_size);
+        }
+        strncpy(sh->line_order[sh->line_count].type_name, hdr+i-2, 2); ;
+        sh->line_order[sh->line_count++].type_data = h_type;
 
 	// Parse the tags on this line
 	last = NULL;
@@ -851,39 +851,30 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
 	    return -1;
     }
 
-    //for (k = kh_begin(hdr->h); k != kh_end(hdr->h); k++) {
-    for (i = 0; i < hdr->type_count; i++) {
-	SAM_hdr_type *t1, *t2;
+    for (i = 0; i < hdr->line_count; i++) {
+	SAM_hdr_type *type;
+	SAM_hdr_tag *tag;
+	char c[2];
 
-        k = kh_get(sam_hdr, hdr->h, K(hdr->type_order[i]));
-
-	if (!kh_exist(hdr->h, k))
+	if (!strncmp(hdr->line_order[i].type_name, "HD", 2))
 	    continue;
 
-	if (kh_key(hdr->h, k) == K("HD"))
-	    continue;
+	type = hdr->line_order[i].type_data;
+        if (EOF == kputc_('@', &ks))
+            return -1;
 
-	t1 = t2 = kh_val(hdr->h, k);
-	do {
-	    SAM_hdr_tag *tag;
-	    char c[2];
+        strncpy(c, hdr->line_order[i].type_name, 2);
+        if (EOF == kputsn_(c, 2, &ks))
+            return -1;
 
-	    if (EOF == kputc_('@', &ks))
-		return -1;
-	    c[0] = kh_key(hdr->h, k)>>8;
-	    c[1] = kh_key(hdr->h, k)&0xff;
-	    if (EOF == kputsn_(c, 2, &ks))
-		return -1;
-	    for (tag = t1->tag; tag; tag=tag->next) {
-		if (EOF == kputc_('\t', &ks))
-		    return -1;
-		if (EOF == kputsn_(tag->str, tag->len, &ks))
-		    return -1;
-	    }
-	    if (EOF == kputc('\n', &ks))
-		return -1;
-	    t1 = t1->next;
-	} while (t1 != t2);
+        for (tag = type->tag; tag; tag=tag->next) {
+            if (EOF == kputc_('\t', &ks))
+                return -1;
+            if (EOF == kputsn_(tag->str, tag->len, &ks))
+                return -1;
+        }
+        if (EOF == kputc('\n', &ks))
+            return -1;
     }
 
     if (ks_str(&hdr->text))
@@ -942,9 +933,10 @@ SAM_hdr *sam_hdr_new() {
     if (!(sh->str_pool = string_pool_create(8192)))
 	goto err;
 
-    sh->type_count = 0;
-    sh->type_size = SAM_TYPES; 
-    sh->type_order = calloc(sh->type_size, sizeof(*sh->type_order));
+    sh->line_count = 0;
+    sh->line_size = SAM_HDR_LINES; 
+    if(!(sh->line_order = calloc(sh->line_size, sizeof(SAM_hdr_line))))
+        goto err;
 
     return sh;
 
@@ -1101,7 +1093,7 @@ void sam_hdr_free(SAM_hdr *hdr) {
     if (hdr->str_pool)
 	string_pool_destroy(hdr->str_pool);
 
-    free(hdr->type_order);
+    free(hdr->line_order);
     free(hdr);
 }
 
