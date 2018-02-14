@@ -1293,6 +1293,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		    // May miss MD/NM cases where both seq/ref are N, but this is a
 		    // malformed cram file anyway.
 		    if (rlen > 0) {
+			if (ref_pos + rlen > s->ref_end)
+			    goto beyond_slice;
+
 			memcpy(&seq[seq_pos-1],
 			       &s->ref[ref_pos - s->ref_start +1], rlen);
 			if ((pos - seq_pos) - rlen > 0)
@@ -1305,6 +1308,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 			md_dist += pos - seq_pos;
 		} else {
 		    // 'N' in both ref and seq is also mismatch for NM/MD
+		    if (ref_pos + pos-seq_pos > s->ref_end)
+			goto beyond_slice;
 		    if (decode_md || decode_nm) {
 			int i;
 			for (i = 0; i < pos - seq_pos; i++) {
@@ -1440,7 +1445,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 			nm--;
 		    }
 		} else {
-		    unsigned char ref_call = ref_pos <= s->ref_end 
+		    unsigned char ref_call = ref_pos < s->ref_end
 			? (uc)s->ref[ref_pos - s->ref_start +1]
 			: 'N';
 		    ref_base = fd->L1[ref_call];
@@ -1471,6 +1476,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 					 (char *)&i32, &out_sz);
 		if (r) return r;
 		if (decode_md || decode_nm) {
+		    if (ref_pos + i32 > s->ref_end)
+			goto beyond_slice;
 		    if (md_dist >= 0 && decode_md)
 			BLOCK_APPEND_UINT(s->aux_blk, md_dist);
 		    if (ref_pos + i32 <= bfd->ref[cr->ref_id].len) {
@@ -1582,6 +1589,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 			    break;
 			} else {
 			    if (decode_md) {
+				if (ref_pos + x > s->ref_end)
+				    goto beyond_slice;
 				char r = s->ref[ref_pos+x-s->ref_start +1];
 				BLOCK_APPEND_CHAR(s->aux_blk, r);
 			    }
@@ -1651,9 +1660,12 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		    if (ref_pos >= bfd->ref[cr->ref_id].len || !s->ref) {
 			md_dist = -1;
 		    } else {
-			if (decode_md)
+			if (decode_md) {
+			    if (ref_pos > s->ref_end)
+				goto beyond_slice;
 			    BLOCK_APPEND_CHAR(s->aux_blk,
 					      s->ref[ref_pos-s->ref_start +1]);
+			}
 			nm++;
 			md_dist = 0;
 		    }
@@ -1776,6 +1788,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 		    md_dist += cr->len - seq_pos + 1;
 	    } else {
 		if (cr->len - seq_pos + 1 > 0) {
+		    if (ref_pos + cr->len-seq_pos +1 > s->ref_end)
+			goto beyond_slice;
 		    if (decode_md || decode_nm) {
 			int i;
 			for (i = 0; i < cr->len - seq_pos + 1; i++) {
@@ -1892,6 +1906,14 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     }
 
     return r;
+
+ beyond_slice:
+    // Cramtools can create CRAMs that have sequence features outside the
+    // stated range of the container & slice reference extents (start + span).
+    // We have to check for these in many places, but for brevity have the
+    // error reporting in only one.
+    hts_log_error("CRAM CIGAR extends beyond slice reference extents");
+    return -1;
 }
 
 /*
