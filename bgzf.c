@@ -1542,7 +1542,7 @@ ssize_t bgzf_block_write(BGZF *fp, const void *data, size_t length)
     uint64_t ublock_size; // amount of uncompressed data to be fed into next block
     while (remaining > 0) {
         current_block = fp->idx->moffs - fp->idx->noffs;
-        ublock_size = fp->idx->offs[current_block+1].uaddr-fp->idx->offs[current_block].uaddr;
+        ublock_size = current_block + 1 < fp->idx->moffs ? fp->idx->offs[current_block+1].uaddr-fp->idx->offs[current_block].uaddr : BGZF_MAX_BLOCK_SIZE;
         uint8_t* buffer = (uint8_t*)fp->uncompressed_block;
         int copy_length = ublock_size - fp->block_offset;
         if (copy_length > remaining) copy_length = remaining;
@@ -1552,7 +1552,8 @@ ssize_t bgzf_block_write(BGZF *fp, const void *data, size_t length)
         remaining -= copy_length;
         if (fp->block_offset == ublock_size) {
             if (lazy_flush(fp) != 0) return -1;
-            fp->idx->noffs--;  // decrement noffs to track the blocks
+            if (fp->idx->noffs > 0)
+                fp->idx->noffs--;  // decrement noffs to track the blocks
         }
     }
     return length - remaining;
