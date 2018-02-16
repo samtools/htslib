@@ -1248,9 +1248,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
 	if (ncigar+2 >= cigar_alloc) {
 	    cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-	    s->cigar = cigar;
 	    if (!(cigar = realloc(cigar, cigar_alloc * sizeof(*cigar))))
 		return -1;
+	    s->cigar = cigar;
 	}
 
 	if (ds & CRAM_FC) {
@@ -1819,9 +1819,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
 	if (ncigar+1 >= cigar_alloc) {
 	    cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-	    s->cigar = cigar;
 	    if (!(cigar = realloc(cigar, cigar_alloc * sizeof(*cigar))))
 		return -1;
+	    s->cigar = cigar;
 	}
 #ifdef USE_X
 	if (cig_len && cig_op != BAM_CBASE_MATCH) {
@@ -1849,9 +1849,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     if (cig_len) {
 	if (ncigar >= cigar_alloc) {
 	    cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-	    s->cigar = cigar;
 	    if (!(cigar = realloc(cigar, cigar_alloc * sizeof(*cigar))))
 		return -1;
+	    s->cigar = cigar;
 	}
 
 	cigar[ncigar++] = (cig_len<<4) + cig_op;
