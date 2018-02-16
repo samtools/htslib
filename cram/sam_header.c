@@ -352,6 +352,8 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
         if (sh->line_count == (sh->line_size - 1)) {
             sh->line_size <<= 1;
             sh->line_order = realloc(sh->line_order, sizeof(SAM_hdr_line) * sh->line_size);
+            if (!sh->line_order)
+                return -1;
         }
         strncpy(sh->line_order[sh->line_count].type_name, hdr+i-2, 2); ;
         sh->line_order[sh->line_count++].type_data = h_type;
@@ -674,6 +676,94 @@ char *sam_hdr_find_line(SAM_hdr *hdr, char *type,
     return ks_str(&ks);
 }
 
+/*
+ * Function for deallocating a list of tags
+ */
+
+static void free_tags(SAM_hdr *hdr, SAM_hdr_tag *tag) {
+    if (!tag)
+        return;
+    if (tag->next)
+        free_tags(hdr, tag->next);
+
+    pool_free(hdr->tag_pool, tag);
+}
+
+static int remove_line(SAM_hdr *hdr, char *type_name, SAM_hdr_type *type_found) {
+    if (!hdr || !type_name || !type_found)
+        return -1;
+
+    int itype = (type_name[0]<<8) | type_name[1], i;
+    khint_t k = kh_get(sam_hdr, hdr->h, itype);
+    if (k == kh_end(hdr->h))
+        return -1;
+
+    for(i = 0; i < hdr->line_count; i++) {
+        if (!strncmp(type_name, hdr->line_order[i].type_name, 2) && 
+            hdr->line_order[i].type_data &&
+            hdr->line_order[i].type_data->order == type_found->order) {
+            hdr->line_order[i].type_data = NULL;       
+        }
+    } 
+
+    free_tags(hdr, type_found->tag); 
+    /* single element in the list */
+    if (type_found->prev == type_found || type_found->next == type_found) {
+        pool_free(hdr->type_pool, type_found);
+        kh_del(sam_hdr, hdr->h, k);
+    } else {
+        type_found->prev->next = type_found->next;
+        type_found->next->prev = type_found->prev;
+        pool_free(hdr->type_pool, type_found);
+    }
+    return 0;
+} 
+
+/*
+ * Remove a line from the header by specifying the position in the type
+ * group, i.e. 3rd @SQ line.
+ */
+
+int sam_hdr_remove_line_pos(SAM_hdr *hdr, char *type, int position) {
+    if (!hdr || !type || position < 0 || position > hdr->line_count)
+        return -1;
+
+    SAM_hdr_type *type_beg, *type_end, *type_found = NULL;
+    int itype = (type[0]<<8) | type[1];
+
+    khint_t k = kh_get(sam_hdr, hdr->h, itype);
+    if (k == kh_end(hdr->h))
+        return -1;
+
+    type_beg = type_end = kh_val(hdr->h, k);
+    do {
+        if (!type_found) { 
+            if(type_beg->order == position-1) {
+                type_found = type_beg;
+                break;
+            }
+        }
+        type_beg = type_beg->next;
+    } while (type_beg != type_end);
+
+    return remove_line(hdr, type, type_found);
+}
+
+/*
+ * Remove a line from the header by specifying a tag:value that uniquely 
+ * identifies a line, i.e. the @SQ line containing "SN:ref1".
+ */
+
+int sam_hdr_remove_line_key(SAM_hdr *hdr, char *type, 
+                            char *ID_key, char *ID_value) {
+    SAM_hdr_type *type_found = sam_hdr_find(hdr, type, ID_key, ID_value);
+    int itype = (type[0]<<8) | type[1];
+    khint_t k = kh_get(sam_hdr, hdr->h, itype);
+    if (!type_found || (k == kh_end(hdr->h)))
+        return -1;
+
+    return remove_line(hdr, type, type_found);
+}
 
 /*
  * Looks for a specific key in a single sam header line.
@@ -716,6 +806,7 @@ void sam_hdr_remove_key(SAM_hdr *sh,
         } else {
             prev->next = tag->next;
         }
+        pool_free(sh->tag_pool, tag);
     }
 }
 
@@ -856,7 +947,7 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
 	SAM_hdr_tag *tag;
 	char c[2];
 
-	if (!strncmp(hdr->line_order[i].type_name, "HD", 2))
+	if (!hdr->line_order[i].type_data || !strncmp(hdr->line_order[i].type_name, "HD", 2))
 	    continue;
 
 	type = hdr->line_order[i].type_data;
