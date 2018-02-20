@@ -64,9 +64,9 @@ m4_ifdef([PKG_PROG_PKG_CONFIG], [PKG_PROG_PKG_CONFIG], [PKG_CONFIG=""])
 
 need_crypto=no
 pc_requires=
-static_LDFLAGS=
-static_LIBS='-lz -lm'
-private_LIBS=
+static_LDFLAGS=$LDFLAGS
+static_LIBS='-lpthread -lz -lm'
+private_LIBS=$LDFLAGS
 
 AC_ARG_ENABLE([bz2],
   [AS_HELP_STRING([--disable-bz2],
