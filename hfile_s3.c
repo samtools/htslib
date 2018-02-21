@@ -41,6 +41,7 @@ typedef struct {
     kstring_t id;
     kstring_t token;
     kstring_t secret;
+    char *region;
     char *bucket;
     kstring_t auth_hdr;
     time_t auth_time;
@@ -248,6 +249,7 @@ static void free_auth_data(s3_auth_data *ad) {
     free(ad->token.s);
     free(ad->secret.s);
     free(ad->bucket);
+    free(ad->region);
     free(ad->auth_hdr.s);
     free(ad);
 }
@@ -358,6 +360,7 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
         if ((v = getenv("AWS_ACCESS_KEY_ID")) != NULL) kputs(v, &ad->id);
         if ((v = getenv("AWS_SECRET_ACCESS_KEY")) != NULL) kputs(v, &ad->secret);
         if ((v = getenv("AWS_SESSION_TOKEN")) != NULL) kputs(v, &ad->token);
+        if ((v = getenv("AWS_DEFAULT_REGION")) != NULL) kputs(v, &ad->region);
 
         if ((v = getenv("AWS_DEFAULT_PROFILE")) != NULL) kputs(v, &profile);
         else if ((v = getenv("AWS_PROFILE")) != NULL) kputs(v, &profile);
@@ -369,17 +372,21 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
         parse_ini(v? v : "~/.aws/credentials", profile.s,
                   "aws_access_key_id", &ad->id,
                   "aws_secret_access_key", &ad->secret,
+                  "region", &ad->region,
                   "aws_session_token", &ad->token, NULL);
     }
     if (ad->id.l == 0)
         parse_ini("~/.s3cfg", profile.s, "access_key", &ad->id,
                   "secret_key", &ad->secret, "access_token", &ad->token,
+                  "region", &ad->region,
                   "host_base", &host_base, NULL);
     if (ad->id.l == 0)
         parse_simple("~/.awssecret", &ad->id, &ad->secret);
 
     if (host_base.l == 0)
-        kputs("s3.amazonaws.com", &host_base);
+        kputs("s3-", &host_base);
+        kputs(ad->region, &host_base);
+        kputs(".amazonaws.com", &host_base);
     // Use virtual hosted-style access if possible, otherwise path-style.
     if (is_dns_compliant(bucket, path)) {
         kputsn(bucket, path - bucket, &url);
