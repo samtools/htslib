@@ -273,6 +273,65 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
     return 0;
 }
 
+static int sam_hdr_remove_hash_entry(SAM_hdr *sh,
+				 int type,
+				 SAM_hdr_type *h_type) {
+    if (!sh || !h_type)
+        return -1;
+
+    SAM_hdr_tag *tag;
+    char *key = NULL;
+    khint_t k;
+
+    /* Remove from reference hash */
+    if ((type>>8) == 'S' && (type&0xff) == 'Q') {
+	tag = h_type->tag;
+
+	while (tag) {
+	    if (tag->str[0] == 'S' && tag->str[1] == 'N') {
+		if (!(key = malloc(tag->len)))
+		    return -1;
+		strncpy(key, tag->str+3, tag->len-3);
+		key[tag->len-3] = 0;
+                k = kh_get(m_s2i, sh->ref_hash, key);
+                if (k != kh_end(sh->ref_hash)) {
+                    if (kh_val(sh->ref_hash, k) < sh->nref-1) 
+                        memcpy(&sh->ref[kh_val(sh->ref_hash, k)], &sh->ref[kh_val(sh->ref_hash, k)+1], sizeof(SAM_SQ)*(sh->nref - kh_val(sh->ref_hash, k) - 1));
+                    kh_del(m_s2i, sh->ref_hash, k);
+                    sh->nref--;   
+                }
+                break;
+	    }
+	    tag = tag->next;
+	}
+    }
+
+    /* Remove from read-group hash */
+    if ((type>>8) == 'R' && (type&0xff) == 'G') {
+	tag = h_type->tag;
+
+	while (tag) {
+	    if (tag->str[0] == 'I' && tag->str[1] == 'D') {
+		if (!(key = malloc(tag->len)))
+		    return -1;
+		strncpy(key, tag->str+3, tag->len-3);
+		key[tag->len-3] = 0;
+                k = kh_get(m_s2i, sh->rg_hash, key);
+                if (k != kh_end(sh->rg_hash)) {
+                    if (kh_val(sh->rg_hash, k) < sh->nrg-1) 
+                        memcpy(&sh->rg[kh_val(sh->rg_hash, k)], &sh->rg[kh_val(sh->rg_hash, k)+1], sizeof(SAM_RG)*(sh->nrg - kh_val(sh->rg_hash, k) - 1));
+                    kh_del(m_s2i, sh->rg_hash, k);
+                    sh->nrg--;
+                }
+                break;
+	    }
+	    tag = tag->next;
+	}
+    }
+
+    free(key);
+    return 0;
+}
 /*
  * Appends a formatted line to an existing SAM header.
  * Line is a full SAM header record, eg "@SQ\tSN:foo\tLN:100", with
@@ -681,7 +740,7 @@ char *sam_hdr_find_line(SAM_hdr *hdr, char *type,
  */
 
 static void free_tags(SAM_hdr *hdr, SAM_hdr_tag *tag) {
-    if (!tag)
+    if (!hdr || !tag)
         return;
     if (tag->next)
         free_tags(hdr, tag->next);
@@ -716,6 +775,10 @@ static int remove_line(SAM_hdr *hdr, char *type_name, SAM_hdr_type *type_found) 
         type_found->next->prev = type_found->prev;
         pool_free(hdr->type_pool, type_found);
     }
+
+    if (!strncmp(type_name, "SQ", 2) || !strncmp(type_name, "RG", 2))
+        sam_hdr_remove_hash_entry(hdr, itype, type_found);
+
     return 0;
 } 
 
@@ -727,6 +790,10 @@ static int remove_line(SAM_hdr *hdr, char *type_name, SAM_hdr_type *type_found) 
 int sam_hdr_remove_line_pos(SAM_hdr *hdr, char *type, int position) {
     if (!hdr || !type || position < 0 || position > hdr->line_count)
         return -1;
+    if (!strncmp(type, "PG", 2)) {
+       hts_log_warning("Removing PG lines is not supported!");
+       return -1;
+    }
 
     SAM_hdr_type *type_beg, *type_end, *type_found = NULL;
     int itype = (type[0]<<8) | type[1];
@@ -756,10 +823,15 @@ int sam_hdr_remove_line_pos(SAM_hdr *hdr, char *type, int position) {
 
 int sam_hdr_remove_line_key(SAM_hdr *hdr, char *type, 
                             char *ID_key, char *ID_value) {
+    if (!hdr || !type)
+        return -1;
+    if (!strncmp(type, "PG", 2)) {
+       hts_log_warning("Removing PG lines is not supported!");
+       return -1;
+    }
+ 
     SAM_hdr_type *type_found = sam_hdr_find(hdr, type, ID_key, ID_value);
-    int itype = (type[0]<<8) | type[1];
-    khint_t k = kh_get(sam_hdr, hdr->h, itype);
-    if (!type_found || (k == kh_end(hdr->h)))
+    if (!type_found)
         return -1;
 
     return remove_line(hdr, type, type_found);
