@@ -208,7 +208,8 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
     /* Load in the static tables */
     unsigned char *cp = in + 9;
     unsigned char *cp_end = in + in_size;
-    int i, j, x, out_sz, in_sz, rle;
+    int i, j, x, rle;
+    unsigned int out_sz, in_sz;
     char *out_buf;
     ari_decoder D;
     RansDecSymbol syms[256];
@@ -569,7 +570,8 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     /* Load in the static tables */
     unsigned char *cp = in + 9;
     unsigned char *ptr_end = in + in_size;
-    int i, j = -999, x, out_sz, in_sz, rle_i, rle_j;
+    int i, j = -999, x, rle_i, rle_j;
+    unsigned int out_sz, in_sz;
     char *out_buf = NULL;
     ari_decoder *D = NULL;              /* D[256] */
     RansDecSymbol (*syms)[256] = NULL;  /* syms[256][256] */
@@ -590,7 +592,12 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     D = calloc(256, sizeof(*D));
     if (!D) goto cleanup;
     syms = malloc(256 * sizeof(*syms));
+    if (!syms) goto cleanup;
+    /* These memsets prevent illegal memory access in syms due to
+       broken compressed data.  As D is calloc'd, all illegal transitions
+       will end up in either row or column 0 of syms. */
     memset(&syms[0], 0, sizeof(syms[0]));
+    for (i = 1; i < 256; i++) memset(&syms[i][0], 0, sizeof(syms[0][0]));
 
     //fprintf(stderr, "out_sz=%d\n", out_sz);
 
