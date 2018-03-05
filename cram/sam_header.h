@@ -55,7 +55,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "htslib/khash.h"
 #include "htslib/kstring.h"
 
-#define SAM_HDR_LINES 30
+#define SAM_HDR_LINES 32
 
 #ifdef __cplusplus
 extern "C" {

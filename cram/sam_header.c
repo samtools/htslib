@@ -32,7 +32,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <string.h>
 #include <assert.h>
-#include <ctype.h>
 
 #include "hts_internal.h"
 #include "cram/sam_header.h"
@@ -273,9 +272,7 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
     return 0;
 }
 
-static int sam_hdr_remove_hash_entry(SAM_hdr *sh,
-				 int type,
-				 SAM_hdr_type *h_type) {
+static int sam_hdr_remove_hash_entry(SAM_hdr *sh, int type, SAM_hdr_type *h_type) {
     if (!sh || !h_type)
         return -1;
 
@@ -285,14 +282,14 @@ static int sam_hdr_remove_hash_entry(SAM_hdr *sh,
 
     /* Remove from reference hash */
     if ((type>>8) == 'S' && (type&0xff) == 'Q') {
-	tag = h_type->tag;
+        tag = h_type->tag;
 
-	while (tag) {
-	    if (tag->str[0] == 'S' && tag->str[1] == 'N') {
-		if (!(key = malloc(tag->len)))
-		    return -1;
-		strncpy(key, tag->str+3, tag->len-3);
-		key[tag->len-3] = 0;
+        while (tag) {
+            if (tag->str[0] == 'S' && tag->str[1] == 'N') {
+                if (!(key = malloc(tag->len)))
+                    return -1;
+                strncpy(key, tag->str+3, tag->len-3);
+                key[tag->len-3] = 0;
                 k = kh_get(m_s2i, sh->ref_hash, key);
                 if (k != kh_end(sh->ref_hash)) {
                     if (kh_val(sh->ref_hash, k) < sh->nref-1) 
@@ -301,21 +298,21 @@ static int sam_hdr_remove_hash_entry(SAM_hdr *sh,
                     sh->nref--;   
                 }
                 break;
-	    }
-	    tag = tag->next;
-	}
+            }
+            tag = tag->next;
+        }
     }
 
     /* Remove from read-group hash */
     if ((type>>8) == 'R' && (type&0xff) == 'G') {
-	tag = h_type->tag;
+        tag = h_type->tag;
 
-	while (tag) {
-	    if (tag->str[0] == 'I' && tag->str[1] == 'D') {
-		if (!(key = malloc(tag->len)))
-		    return -1;
-		strncpy(key, tag->str+3, tag->len-3);
-		key[tag->len-3] = 0;
+        while (tag) {
+            if (tag->str[0] == 'I' && tag->str[1] == 'D') {
+                if (!(key = malloc(tag->len)))
+                    return -1;
+                strncpy(key, tag->str+3, tag->len-3);
+                key[tag->len-3] = 0;
                 k = kh_get(m_s2i, sh->rg_hash, key);
                 if (k != kh_end(sh->rg_hash)) {
                     if (kh_val(sh->rg_hash, k) < sh->nrg-1) 
@@ -324,9 +321,9 @@ static int sam_hdr_remove_hash_entry(SAM_hdr *sh,
                     sh->nrg--;
                 }
                 break;
-	    }
-	    tag = tag->next;
-	}
+            }
+            tag = tag->next;
+        }
     }
 
     free(key);
@@ -374,7 +371,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	}
 
 	type = (hdr[i+1]<<8) | hdr[i+2];
-	if (!isalpha(hdr[i+1]) || !isalpha(hdr[i+2])) {
+	if (!isalpha_c(hdr[i+1]) || !isalpha_c(hdr[i+2])) {
 	    sam_hdr_error("Header line does not have a two character key",
 			  &hdr[l_start], len - l_start, lno);
 	    return -1;
@@ -408,14 +405,15 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 	    h_type->order = 0;
 	}
 
-        if (sh->line_count == (sh->line_size - 1)) {
-            sh->line_size <<= 1;
-            sh->line_order = realloc(sh->line_order, sizeof(SAM_hdr_line) * sh->line_size);
-            if (!sh->line_order)
-                return -1;
-        }
-        strncpy(sh->line_order[sh->line_count].type_name, hdr+i-2, 2); ;
-        sh->line_order[sh->line_count++].type_data = h_type;
+	if (sh->line_count == (sh->line_size - 1)) {
+	    sh->line_size <<= 1;
+	    SAM_hdr_line *tmp= realloc(sh->line_order, sizeof(SAM_hdr_line) * sh->line_size);
+	    if (!tmp)
+	        return -1;
+	    sh->line_order = tmp;
+	}
+	strncpy(sh->line_order[sh->line_count].type_name, hdr+i-2, 2); ;
+	sh->line_order[sh->line_count++].type_data = h_type;
 
 	// Parse the tags on this line
 	last = NULL;
@@ -821,8 +819,7 @@ int sam_hdr_remove_line_pos(SAM_hdr *hdr, char *type, int position) {
  * identifies a line, i.e. the @SQ line containing "SN:ref1".
  */
 
-int sam_hdr_remove_line_key(SAM_hdr *hdr, char *type, 
-                            char *ID_key, char *ID_value) {
+int sam_hdr_remove_line_key(SAM_hdr *hdr, char *type, char *ID_key, char *ID_value) {
     if (!hdr || !type)
         return -1;
     if (!strncmp(type, "PG", 2)) {
@@ -995,7 +992,7 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
     /* Order: HD then others */
     kstring_t ks = KS_INITIALIZER;
     khint_t k;
-    unsigned short i;
+    unsigned int i;
 
 
     k = kh_get(sam_hdr, hdr->h, K("HD"));
@@ -1015,14 +1012,14 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
     }
 
     for (i = 0; i < hdr->line_count; i++) {
-	SAM_hdr_type *type;
-	SAM_hdr_tag *tag;
-	char c[2];
+        SAM_hdr_type *type;
+        SAM_hdr_tag *tag;
+        char c[2];
 
-	if (!hdr->line_order[i].type_data || !strncmp(hdr->line_order[i].type_name, "HD", 2))
-	    continue;
+        if (!hdr->line_order[i].type_data || !strncmp(hdr->line_order[i].type_name, "HD", 2))
+            continue;
 
-	type = hdr->line_order[i].type_data;
+        type = hdr->line_order[i].type_data;
         if (EOF == kputc_('@', &ks))
             return -1;
 
