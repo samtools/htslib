@@ -469,68 +469,66 @@ typedef struct cram_record {
  * A feature is a base difference, used for the sequence reference encoding.
  * (We generate these internally when writing CRAM.)
  */
-typedef struct cram_feature {
-    union {
-	struct {
-	    int pos;
-	    int code;
-	    int base;    // substitution code
-	} X;
-	struct {
-	    int pos;
-	    int code;
-	    int base;    // actual base & qual
-	    int qual;
-	} B;
-	struct {
-	    int pos;
-	    int code;
-	    int seq_idx; // index to s->seqs_blk
-	    int len;
-	} b;
-	struct {
-	    int pos;
-	    int code;
-	    int qual;
-	} Q;
-	struct {
-	    int pos;
-	    int code;
-	    int len;
-	    int seq_idx; // soft-clip multiple bases
-	} S;
-	struct {
-	    int pos;
-	    int code;
-	    int len;
-	    int seq_idx; // insertion multiple bases
-	} I;
-	struct {
-	    int pos;
-	    int code;
-	    int base; // insertion single base
-	} i;
-	struct {
-	    int pos;
-	    int code;
-	    int len;
-	} D;
-	struct {
-	    int pos;
-	    int code;
-	    int len;
-	} N;
-	struct {
-	    int pos;
-	    int code;
-	    int len;
-	} P;
-	struct {
-	    int pos;
-	    int code;
-	    int len;
-	} H;
-    };
+typedef union cram_feature {
+    struct {
+        int pos;
+        int code;
+        int base;    // substitution code
+    } X;
+    struct {
+        int pos;
+        int code;
+        int base;    // actual base & qual
+        int qual;
+    } B;
+    struct {
+        int pos;
+        int code;
+        int seq_idx; // index to s->seqs_blk
+        int len;
+    } b;
+    struct {
+        int pos;
+        int code;
+        int qual;
+    } Q;
+    struct {
+        int pos;
+        int code;
+        int len;
+        int seq_idx; // soft-clip multiple bases
+    } S;
+    struct {
+        int pos;
+        int code;
+        int len;
+        int seq_idx; // insertion multiple bases
+    } I;
+    struct {
+        int pos;
+        int code;
+        int base; // insertion single base
+    } i;
+    struct {
+        int pos;
+        int code;
+        int len;
+    } D;
+    struct {
+        int pos;
+        int code;
+        int len;
+    } N;
+    struct {
+        int pos;
+        int code;
+        int len;
+    } P;
+    struct {
+        int pos;
+        int code;
+        int len;
+    } H;
 } cram_feature;
 
 /*
@@ -844,7 +842,7 @@ enum cram_fields {
 
 /* Internal only */
 #define CRAM_FLAG_STATS_ADDED          (1<<30)
-#define CRAM_FLAG_DISCARD_NAME         (1<<31)
+#define CRAM_FLAG_DISCARD_NAME         (1U<<31)
 
 #ifdef __cplusplus
 }

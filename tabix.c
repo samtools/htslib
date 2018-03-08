@@ -542,5 +542,4 @@ int main(int argc, char *argv[])
         if ( tbx_index_build(fname, min_shift, &conf) ) error("tbx_index_build failed: %s\n", fname);
         return 0;
     }
-    return 0;
 }

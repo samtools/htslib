@@ -87,6 +87,9 @@ static int socket_wait(int fd, int is_read)
 /* This function does not work with Windows due to the lack of
  * getaddrinfo() in winsock. It is addapted from an example in "Beej's
  * Guide to Network Programming" (http://beej.us/guide/bgnet/). */
+#  ifdef __SUNPRO_C
+#    pragma error_messages(off, E_END_OF_LOOP_CODE_NOT_REACHED)
+#  endif
 static int socket_connect(const char *host, const char *port)
 {
 #define __err_connect(func) do { perror(func); freeaddrinfo(res); return -1; } while (0)
@@ -110,6 +113,9 @@ static int socket_connect(const char *host, const char *port)
 	freeaddrinfo(res);
 	return fd;
 }
+#  ifdef __SUNPRO_C
+#    pragma error_messages(off, E_END_OF_LOOP_CODE_NOT_REACHED)
+#  endif
 #else
 /* MinGW's printf has problem with "%lld" */
 char *int64tostr(char *buf, int64_t x)

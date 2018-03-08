@@ -1152,11 +1152,11 @@ static int lossy_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
 	    uint64_t i64;
 	    struct {
 		int32_t e,c; // expected & observed counts.
-	    };
+	    } counts;
 	} u;
 
 	e = expected_template_count(b);
-	u.e = e; u.c = 1;
+	u.counts.e = e; u.counts.c = 1;
 
 	k = kh_put(m_s2u64, names, bam_name(b), &n);
 	if (n == -1)
@@ -1165,13 +1165,13 @@ static int lossy_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
 	if (n == 0) {
 	    // not a new name
 	    u.i64 = kh_val(names, k);
-	    if (u.e != e) {
+	    if (u.counts.e != e) {
 		// different expectation or already hit the max
 		//fprintf(stderr, "Err computing no. %s recs\n", bam_name(b));
 		kh_val(names, k) = 0;
 	    } else {
-		u.c++;
-		if (u.e == u.c) {
+		u.counts.c++;
+		if (u.counts.e == u.counts.c) {
 		    // Reached expected count.
 		    kh_val(names, k) = -1;
 		} else {

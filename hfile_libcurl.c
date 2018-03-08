@@ -63,7 +63,7 @@ typedef struct {
 } auth_token;
 
 // For the authorization header cache
-KHASH_MAP_INIT_STR(auth_map, auth_token *);
+KHASH_MAP_INIT_STR(auth_map, auth_token *)
 
 // Curl-compatible header linked list
 typedef struct {

@@ -1317,7 +1317,6 @@ restart:
             pthread_exit(NULL);
         }
     }
-    return NULL;
 }
 
 int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {

@@ -165,7 +165,7 @@ sub test_cmd
         open(my $fh,'>',"$$opts{path}/$args{out}") or error("$$opts{path}/$args{out}: $!");
         print $fh $out;
         close($fh);
-        my ($ret,$out) = _cmd("diff -q $$opts{path}/$args{out} $$opts{path}/$args{out}.old");
+        my ($ret,$out) = _cmd("cmp $$opts{path}/$args{out} $$opts{path}/$args{out}.old");
         if ( !$ret && $out eq '' ) { unlink("$$opts{path}/$args{out}.old"); }
         else
         {
@@ -408,7 +408,7 @@ sub test_rebgzip
     write_multiblock_bgzf($mb, \@frags);
 
     # See if it really does match
-    my ($ret, $out) = _cmd("diff -q $mb $$opts{path}/bgziptest.txt.gz");
+    my ($ret, $out) = _cmd("cmp $mb $$opts{path}/bgziptest.txt.gz");
 
     if (!$ret && $out eq '') { # If it does, use the original
 	test_cmd($opts, %args, out => "bgziptest.txt.gz",
