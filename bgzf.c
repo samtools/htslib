@@ -1250,7 +1250,7 @@ restart:
             pthread_cond_signal(&mt->command_c);
             pthread_mutex_unlock(&mt->command_m);
             hts_tpool_process_destroy(mt->out_queue);
-            pthread_exit(NULL);
+            return NULL;
 
         default:
             break;
@@ -1272,7 +1272,7 @@ restart:
         // We tear down the multi-threaded decoder and revert to the old code.
         hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
         hts_tpool_process_ref_decr(mt->out_queue);
-        pthread_exit(&j->errcode);
+        return &j->errcode;
     }
 
     // Dispatch an empty block so EOF is spotted.
@@ -1283,7 +1283,7 @@ restart:
     hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
     if (j->errcode != 0) {
         hts_tpool_process_destroy(mt->out_queue);
-        pthread_exit(&j->errcode);
+        return &j->errcode;
     }
 
     // We hit EOF so can stop reading, but we may get a subsequent
@@ -1314,7 +1314,7 @@ restart:
             pthread_cond_signal(&mt->command_c);
             pthread_mutex_unlock(&mt->command_m);
             hts_tpool_process_destroy(mt->out_queue);
-            pthread_exit(NULL);
+            return NULL;
         }
     }
 }
