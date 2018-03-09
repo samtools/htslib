@@ -128,7 +128,8 @@ sub _cmd
     else
     {
 	# Example of how to embed Valgrind into the testing framework.
-	# $cmd = "valgrind --leak-check=full --suppressions=$ENV{HOME}/valgrind.supp $cmd";
+	# TEST_PRECMD="valgrind --leak-check=full --suppressions=$ENV{HOME}/valgrind.supp" make check
+	$cmd = "$ENV{TEST_PRECMD} $cmd" if exists $ENV{TEST_PRECMD};
 
         # child
         exec('bash', '-o','pipefail','-c', $cmd) or error("Cannot execute the command [/bin/sh -o pipefail -c $cmd]: $!");
@@ -306,6 +307,9 @@ sub test_view
 
         # CRAM2 -> CRAM3
         testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
+
+	# CRAM3 -> CRAM3 + multi-slice
+	testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 -o seqs_per_slice=7 -o slices_per_container=5 $cram.cram > $cram";
         testv $opts, "./test_view $tv_args $cram > $cram.sam_";
         testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
 

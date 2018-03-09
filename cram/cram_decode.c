@@ -693,57 +693,57 @@ int cram_dependent_data_series(cram_fd *fd,
      * contents.
      */
     if (fd->required_fields && fd->required_fields != INT_MAX) {
-	hdr->data_series = 0;
+	s->data_series = 0;
 
 	if (fd->required_fields & SAM_QNAME)
-	    hdr->data_series |= CRAM_RN;
+	    s->data_series |= CRAM_RN;
 
 	if (fd->required_fields & SAM_FLAG)
-	    hdr->data_series |= CRAM_BF;
+	    s->data_series |= CRAM_BF;
 
 	if (fd->required_fields & SAM_RNAME)
-	    hdr->data_series |= CRAM_RI | CRAM_BF;
+	    s->data_series |= CRAM_RI | CRAM_BF;
 
 	if (fd->required_fields & SAM_POS)
-	    hdr->data_series |= CRAM_AP | CRAM_BF;
+	    s->data_series |= CRAM_AP | CRAM_BF;
 
 	if (fd->required_fields & SAM_MAPQ)
-	    hdr->data_series |= CRAM_MQ;
+	    s->data_series |= CRAM_MQ;
 
 	if (fd->required_fields & SAM_CIGAR)
-	    hdr->data_series |= CRAM_CIGAR;
+	    s->data_series |= CRAM_CIGAR;
 
 	if (fd->required_fields & SAM_RNEXT)
-	    hdr->data_series |= CRAM_CF | CRAM_NF | CRAM_RI | CRAM_NS |CRAM_BF;
+	    s->data_series |= CRAM_CF | CRAM_NF | CRAM_RI | CRAM_NS |CRAM_BF;
 
 	if (fd->required_fields & SAM_PNEXT)
-	    hdr->data_series |= CRAM_CF | CRAM_NF | CRAM_AP | CRAM_NP | CRAM_BF;
+	    s->data_series |= CRAM_CF | CRAM_NF | CRAM_AP | CRAM_NP | CRAM_BF;
 
 	if (fd->required_fields & SAM_TLEN)
-	    hdr->data_series |= CRAM_CF | CRAM_NF | CRAM_AP | CRAM_TS |
+	    s->data_series |= CRAM_CF | CRAM_NF | CRAM_AP | CRAM_TS |
 		CRAM_BF | CRAM_MF | CRAM_RI | CRAM_CIGAR;
 
 	if (fd->required_fields & SAM_SEQ)
-	    hdr->data_series |= CRAM_SEQ;
+	    s->data_series |= CRAM_SEQ;
 
 	if (!(fd->required_fields & SAM_AUX))
 	    // No easy way to get MD/NM without other tags at present
 	    fd->decode_md = 0;
 
 	if (fd->required_fields & SAM_QUAL)
-	    hdr->data_series |= CRAM_QUAL;
+	    s->data_series |= CRAM_QUAL;
 
 	if (fd->required_fields & SAM_AUX)
-	    hdr->data_series |= CRAM_RG | CRAM_TL | CRAM_aux;
+	    s->data_series |= CRAM_RG | CRAM_TL | CRAM_aux;
 
 	if (fd->required_fields & SAM_RGAUX)
-	    hdr->data_series |= CRAM_RG | CRAM_BF;
+	    s->data_series |= CRAM_RG | CRAM_BF;
 
 	// Always uncompress CORE block
 	if (cram_uncompress_block(s->block[0]))
 	    return -1;
     } else {
-	hdr->data_series = CRAM_ALL;
+	s->data_series = CRAM_ALL;
 
 	for (i = 0; i < s->hdr->num_blocks; i++) {
 	    if (cram_uncompress_block(s->block[i]))
@@ -766,42 +766,42 @@ int cram_dependent_data_series(cram_fd *fd,
 	 * It's not reciprocal though. We may be needing to decode FN
 	 * but have no need to decode FC, FP and cigar ops.
 	 */
-	if (hdr->data_series & CRAM_RS)    hdr->data_series |= CRAM_FC|CRAM_FP;
-	if (hdr->data_series & CRAM_PD)    hdr->data_series |= CRAM_FC|CRAM_FP;
-	if (hdr->data_series & CRAM_HC)    hdr->data_series |= CRAM_FC|CRAM_FP;
-	if (hdr->data_series & CRAM_QS)    hdr->data_series |= CRAM_FC|CRAM_FP;
-	if (hdr->data_series & CRAM_IN)    hdr->data_series |= CRAM_FC|CRAM_FP;
-	if (hdr->data_series & CRAM_SC)    hdr->data_series |= CRAM_FC|CRAM_FP;
-	if (hdr->data_series & CRAM_BS)    hdr->data_series |= CRAM_FC|CRAM_FP;
-	if (hdr->data_series & CRAM_DL)    hdr->data_series |= CRAM_FC|CRAM_FP;
-	if (hdr->data_series & CRAM_BA)    hdr->data_series |= CRAM_FC|CRAM_FP;
-	if (hdr->data_series & CRAM_BB)    hdr->data_series |= CRAM_FC|CRAM_FP;
-	if (hdr->data_series & CRAM_QQ)    hdr->data_series |= CRAM_FC|CRAM_FP;
+	if (s->data_series & CRAM_RS)    s->data_series |= CRAM_FC|CRAM_FP;
+	if (s->data_series & CRAM_PD)    s->data_series |= CRAM_FC|CRAM_FP;
+	if (s->data_series & CRAM_HC)    s->data_series |= CRAM_FC|CRAM_FP;
+	if (s->data_series & CRAM_QS)    s->data_series |= CRAM_FC|CRAM_FP;
+	if (s->data_series & CRAM_IN)    s->data_series |= CRAM_FC|CRAM_FP;
+	if (s->data_series & CRAM_SC)    s->data_series |= CRAM_FC|CRAM_FP;
+	if (s->data_series & CRAM_BS)    s->data_series |= CRAM_FC|CRAM_FP;
+	if (s->data_series & CRAM_DL)    s->data_series |= CRAM_FC|CRAM_FP;
+	if (s->data_series & CRAM_BA)    s->data_series |= CRAM_FC|CRAM_FP;
+	if (s->data_series & CRAM_BB)    s->data_series |= CRAM_FC|CRAM_FP;
+	if (s->data_series & CRAM_QQ)    s->data_series |= CRAM_FC|CRAM_FP;
 
 	// cram_decode_seq() needs seq[] array
-	if (hdr->data_series & (CRAM_SEQ|CRAM_CIGAR)) hdr->data_series |= CRAM_RL;
+	if (s->data_series & (CRAM_SEQ|CRAM_CIGAR)) s->data_series |= CRAM_RL;
 
-	if (hdr->data_series & CRAM_FP)    hdr->data_series |= CRAM_FC;
-	if (hdr->data_series & CRAM_FC)    hdr->data_series |= CRAM_FN;
-	if (hdr->data_series & CRAM_aux)   hdr->data_series |= CRAM_TL;
-	if (hdr->data_series & CRAM_MF)    hdr->data_series |= CRAM_CF;
-	if (hdr->data_series & CRAM_MQ)    hdr->data_series |= CRAM_BF;
-	if (hdr->data_series & CRAM_BS)    hdr->data_series |= CRAM_RI;
-	if (hdr->data_series & (CRAM_MF |CRAM_NS |CRAM_NP |CRAM_TS |CRAM_NF))
-	    hdr->data_series |= CRAM_CF;
-	if (!hdr->read_names_included && hdr->data_series & CRAM_RN)
-	    hdr->data_series |= CRAM_CF | CRAM_NF;
-	if (hdr->data_series & (CRAM_BA | CRAM_QS | CRAM_BB | CRAM_QQ))
-	    hdr->data_series |= CRAM_BF | CRAM_CF | CRAM_RL;
+	if (s->data_series & CRAM_FP)    s->data_series |= CRAM_FC;
+	if (s->data_series & CRAM_FC)    s->data_series |= CRAM_FN;
+	if (s->data_series & CRAM_aux)   s->data_series |= CRAM_TL;
+	if (s->data_series & CRAM_MF)    s->data_series |= CRAM_CF;
+	if (s->data_series & CRAM_MQ)    s->data_series |= CRAM_BF;
+	if (s->data_series & CRAM_BS)    s->data_series |= CRAM_RI;
+	if (s->data_series & (CRAM_MF |CRAM_NS |CRAM_NP |CRAM_TS |CRAM_NF))
+	    s->data_series |= CRAM_CF;
+	if (!hdr->read_names_included && s->data_series & CRAM_RN)
+	    s->data_series |= CRAM_CF | CRAM_NF;
+	if (s->data_series & (CRAM_BA | CRAM_QS | CRAM_BB | CRAM_QQ))
+	    s->data_series |= CRAM_BF | CRAM_CF | CRAM_RL;
 
-	orig_ds = hdr->data_series;
+	orig_ds = s->data_series;
 
 	// Find which blocks are in use.
 	for (i = 0; i < sizeof(i_to_id)/sizeof(*i_to_id); i++) {
 	    int bnum1, bnum2, j;
 	    cram_codec *c = hdr->codecs[i_to_id[i]];
 
-	    if (!(hdr->data_series & (1<<i)))
+	    if (!(s->data_series & (1<<i)))
 		continue;
 
 	    if (!c)
@@ -841,7 +841,7 @@ int cram_dependent_data_series(cram_fd *fd,
 
 	// Tags too
 	if ((fd->required_fields & SAM_AUX) ||
-	    (hdr->data_series & CRAM_aux)) {
+	    (s->data_series & CRAM_aux)) {
 	    for (i = 0; i < CRAM_MAP_HASH; i++) {
 		int bnum1, bnum2, j;
 		cram_map *m = hdr->tag_encoding_map[i];
@@ -908,7 +908,7 @@ int cram_dependent_data_series(cram_fd *fd,
 		case -1:
 		    if (core_used) {
 			//printf(" + data series %08x:\n", 1<<i);
-			hdr->data_series |= 1<<i;
+			s->data_series |= 1<<i;
 		    }
 		    break;
 
@@ -918,7 +918,7 @@ int cram_dependent_data_series(cram_fd *fd,
 			    s->block[j]->content_id == bnum1) {
 			    if (block_used[j]) {
 				//printf(" + data series %08x:\n", 1<<i);
-				hdr->data_series |= 1<<i;
+				s->data_series |= 1<<i;
 			    }
 			}
 		    }
@@ -953,7 +953,7 @@ int cram_dependent_data_series(cram_fd *fd,
 
 		    case -1:
 			//printf(" + data series %08x:\n", CRAM_aux);
-			hdr->data_series |= CRAM_aux;
+			s->data_series |= CRAM_aux;
 			break;
 
 		    default:
@@ -963,7 +963,7 @@ int cram_dependent_data_series(cram_fd *fd,
 				if (block_used[j]) {
 				    //printf(" + data series %08x:\n",
 				    //       CRAM_aux);
-				    hdr->data_series |= CRAM_aux;
+				    s->data_series |= CRAM_aux;
 				}
 			    }
 			}
@@ -979,7 +979,7 @@ int cram_dependent_data_series(cram_fd *fd,
 		m = m->next;
 	    }
 	}
-    } while (orig_ds != hdr->data_series);
+    } while (orig_ds != s->data_series);
 
     free(block_used);
     return 0;
@@ -1213,7 +1213,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     int orig_aux = 0;
     int decode_md = fd->decode_md && s->ref && !has_MD && cr->ref_id >= 0;
     int decode_nm = fd->decode_md && s->ref && !has_NM && cr->ref_id >= 0;
-    uint32_t ds = c->comp_hdr->data_series;
+    uint32_t ds = s->data_series;
 
     if ((ds & CRAM_QS) && !(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES)) {
 	memset(qual, 255, cr->len);
@@ -1985,7 +1985,7 @@ static int cram_decode_aux(cram_container *c, cram_slice *s,
     int i, r = 0, out_sz = 1;
     int32_t TL = 0;
     unsigned char *TN;
-    uint32_t ds = c->comp_hdr->data_series;
+    uint32_t ds = s->data_series;
 
     if (!(ds & (CRAM_TL|CRAM_aux))) {
 	cr->aux = 0;
@@ -2199,27 +2199,6 @@ static char *md5_print(unsigned char *md5, char *out) {
     return out;
 }
 
-static void reset_all_codecs(cram_block_compression_hdr *hdr) {
-    int i;
-
-    for (i = 0; i < DS_END; i++) {
-	if (hdr->codecs[i] && hdr->codecs[i]->reset)
-	    hdr->codecs[i]->reset(hdr->codecs[i]);
-    }
-
-    for (i = 0; i < CRAM_MAP_HASH; i++) {
-	cram_map *m;
-	for (m = hdr->rec_encoding_map[i]; m; m = m->next)
-	    if (m->codec) m->codec->reset(m->codec);
-    }
-
-    for (i = 0; i < CRAM_MAP_HASH; i++) {
-	cram_map *m;
-	for (m = hdr->tag_encoding_map[i]; m; m = m->next)
-	    if (m->codec) m->codec->reset(m->codec);
-    }
-}
-
 /*
  * Decode an entire slice from container blocks. Fills out s->crecs[] array.
  * Returns 0 on success
@@ -2238,13 +2217,10 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     char **refs = NULL;
     uint32_t ds;
 
-    /* Clear any cached blocks in the external / B.A.S. codecs */
-    reset_all_codecs(c->comp_hdr);
-
     if (cram_dependent_data_series(fd, c->comp_hdr, s) != 0)
 	return -1;
 
-    ds = c->comp_hdr->data_series;
+    ds = s->data_series;
 
     blk->bit = 7; // MSB first
 
@@ -2963,86 +2939,125 @@ static int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
 /*
  * Here be dragons! The multi-threading code in this is crufty beyond belief.
  */
-static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
+
+/*
+ * Load first container.
+ * Called when fd->ctr is NULL>
+ *
+ * Returns container on success
+ *        NULL on failure.
+ */
+static cram_container *cram_first_slice(cram_fd *fd) {
     cram_container *c;
-    cram_slice *s = NULL;
 
-    if (!(c = fd->ctr)) {
-	// Load first container.
-	do {
-	    if (!(c = fd->ctr = cram_read_container(fd)))
+    do {
+	if (!(c = fd->ctr = cram_read_container(fd)))
+	    return NULL;
+	c->curr_slice_mt = c->curr_slice;
+    } while (c->length == 0);
+
+    /*
+     * The first container may be a result of a sub-range query.
+     * In which case it may still not be the optimal starting point
+     * due to skipped containers/slices in the index. 
+     */
+    // No need for locks here as we're in the main thread.
+    if (fd->range.refid != -2) {
+	while (c->ref_seq_id != -2 &&
+	       (c->ref_seq_id < fd->range.refid ||
+		(fd->range.refid >= 0 && c->ref_seq_id == fd->range.refid
+		 && c->ref_seq_start + c->ref_seq_span-1 < fd->range.start))) {
+	    if (0 != cram_seek(fd, c->length, SEEK_CUR))
 		return NULL;
-	} while (c->length == 0);
-
-	/*
-	 * The first container may be a result of a sub-range query.
-	 * In which case it may still not be the optimal starting point
-	 * due to skipped containers/slices in the index. 
-	 */
-	// No need for locks here as we're in the main thread.
-	if (fd->range.refid != -2) {
-	    while (c->ref_seq_id != -2 &&
-		   (c->ref_seq_id < fd->range.refid ||
-                    (fd->range.refid >= 0 && c->ref_seq_id == fd->range.refid
-                     && c->ref_seq_start + c->ref_seq_span-1 < fd->range.start))) {
-		if (0 != cram_seek(fd, c->length, SEEK_CUR))
+	    cram_free_container(fd->ctr);
+	    do {
+		if (!(c = fd->ctr = cram_read_container(fd)))
 		    return NULL;
-		cram_free_container(fd->ctr);
-		do {
-		    if (!(c = fd->ctr = cram_read_container(fd)))
-			return NULL;
-		} while (c->length == 0);
-	    }
-
-	    if (c->ref_seq_id != -2 && c->ref_seq_id != fd->range.refid) {
-                fd->eof = 1;
-		return NULL;
-            }
+	    } while (c->length == 0);
 	}
 
-	if (!(c->comp_hdr_block = cram_read_block(fd)))
+	if (c->ref_seq_id != -2 && c->ref_seq_id != fd->range.refid) {
+	    fd->eof = 1;
 	    return NULL;
-	if (c->comp_hdr_block->content_type != COMPRESSION_HEADER)
-	    return NULL;
-
-	c->comp_hdr = cram_decode_compression_header(fd, c->comp_hdr_block);
-	if (!c->comp_hdr)
-	    return NULL;
-	if (!c->comp_hdr->AP_delta &&
-	    sam_hdr_sort_order(fd->header) != ORDER_COORD) {
-	    pthread_mutex_lock(&fd->ref_lock);
-	    fd->unsorted = 1;
-	    pthread_mutex_unlock(&fd->ref_lock);
 	}
     }
 
-    if ((s = c->slice)) {
-	c->slice = NULL;
-	cram_free_slice(s);
-	s = NULL;
+    if (!(c->comp_hdr_block = cram_read_block(fd)))
+	return NULL;
+    if (c->comp_hdr_block->content_type != COMPRESSION_HEADER)
+	return NULL;
+
+    c->comp_hdr = cram_decode_compression_header(fd, c->comp_hdr_block);
+    if (!c->comp_hdr)
+	return NULL;
+    if (!c->comp_hdr->AP_delta &&
+	sam_hdr_sort_order(fd->header) != ORDER_COORD) {
+	pthread_mutex_lock(&fd->ref_lock);
+	fd->unsorted = 1;
+	pthread_mutex_unlock(&fd->ref_lock);
     }
 
-    if (c->curr_slice == c->max_slice) {
-	if (fd->ctr == c)
+    return c;
+}
+
+static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
+    cram_container *c_curr;  // container being consumed via cram_get_seq()
+    cram_slice *s_curr = NULL;
+
+    // Populate the first container if unknown.
+    if (!(c_curr = fd->ctr)) {
+	if (!(c_curr = cram_first_slice(fd)))
+	    return NULL;
+    }
+
+    // Discard previous slice
+    if ((s_curr = c_curr->slice)) {
+	c_curr->slice = NULL;
+	cram_free_slice(s_curr);
+	s_curr = NULL;
+    }
+
+    // If we've consumed all slices in this container, also discard
+    // the container too.
+    if (c_curr->curr_slice == c_curr->max_slice) {
+	if (fd->ctr == c_curr)
 	    fd->ctr = NULL;
-	cram_free_container(c);
-	c = NULL;
+	if (fd->ctr_mt == c_curr)
+	    fd->ctr_mt = NULL;
+	cram_free_container(c_curr);
+	c_curr = NULL;
     }
 
-    /* Sorry this is so contorted! */
+    if (!fd->ctr_mt)
+	fd->ctr_mt = c_curr;
+
+    // Fetch the next slice (and the container if necessary).
+    //
+    // If single threaded this loop bails out as soon as it finds
+    // a slice in range.  In this case c_next and c_curr end up being
+    // the same thing.
+    //
+    // If multi-threaded, we loop until we have filled out
+    // thread pool input queue.  Here c_next and c_curr *may* differ, as
+    // can fd->ctr and fd->ctr_mt.
     for (;;) {
+	cram_container *c_next = fd->ctr_mt;
+	cram_slice *s_next = NULL;
+
+	// Next slice; either from the last job we failed to push
+	// to the input queue or via more I/O.
 	if (fd->job_pending) {
 	    cram_decode_job *j = (cram_decode_job *)fd->job_pending;
-	    c = j->c;
-	    s = j->s;
+	    c_next = j->c;
+	    s_next = j->s;
 	    free(fd->job_pending);
 	    fd->job_pending = NULL;
 	} else if (!fd->ooc) {
 	empty_container:
-	    if (!c || c->curr_slice == c->max_slice) {
+	    if (!c_next || c_next->curr_slice_mt == c_next->max_slice) {
 		// new container
-		do {
-		    if (!(c = fd->ctr = cram_read_container(fd))) {
+		for(;;) {
+		    if (!(c_next = cram_read_container(fd))) {
 			if (fd->pool) {
 			    fd->ooc = 1;
 			    break;
@@ -3050,52 +3065,60 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 
 			return NULL;
 		    }
-		} while (c->length == 0);
+		    c_next->curr_slice_mt = c_next->curr_slice;
+
+		    if (c_next->length != 0)
+			break;
+
+		    cram_free_container(c_next);
+		}
 		if (fd->ooc)
 		    break;
 
 		/* Skip containers not yet spanning our range */
-		if (fd->range.refid != -2 && c->ref_seq_id != -2) {
-		    fd->required_fields |= SAM_POS;
-
-		    if (c->ref_seq_id != fd->range.refid) {
-			cram_free_container(c);
-			fd->ctr = NULL;
+		if (fd->range.refid != -2 && c_next->ref_seq_id != -2) {
+		    // ref_id beyond end of range; bail out
+		    if (c_next->ref_seq_id != fd->range.refid) {
+			cram_free_container(c_next);
+			fd->ctr_mt = NULL;
 			fd->ooc = 1;
-			fd->eof = 1;
 			break;
 		    }
 
-		    if (c->ref_seq_start > fd->range.end) {
-			cram_free_container(c);
-			fd->ctr = NULL;
+		    // position beyond end of range; bail out
+		    if (c_next->ref_seq_start > fd->range.end) {
+			cram_free_container(c_next);
+			fd->ctr_mt = NULL;
 			fd->ooc = 1;
-			fd->eof = 1;
 			break;
 		    }
 
-		    if (c->ref_seq_start + c->ref_seq_span-1 <
+		    // before start of range; skip to next container
+		    if (c_next->ref_seq_start + c_next->ref_seq_span-1 <
 			fd->range.start) {
-			c->curr_rec = c->max_rec;
-			c->curr_slice = c->max_slice;
-			cram_seek(fd, c->length, SEEK_CUR);
-			cram_free_container(c);
-			c = NULL;
+			c_next->curr_slice_mt = c_next->max_slice;
+			cram_seek(fd, c_next->length, SEEK_CUR);
+			cram_free_container(c_next);
+			c_next = NULL;
 			continue;
 		    }
 		}
 
-		if (!(c->comp_hdr_block = cram_read_block(fd)))
+		// Container is valid range, so remember it for restarting
+		// this function.
+		fd->ctr_mt = c_next;
+
+		if (!(c_next->comp_hdr_block = cram_read_block(fd)))
 		    return NULL;
-		if (c->comp_hdr_block->content_type != COMPRESSION_HEADER)
+		if (c_next->comp_hdr_block->content_type != COMPRESSION_HEADER)
 		    return NULL;
 
-		c->comp_hdr =
-		    cram_decode_compression_header(fd, c->comp_hdr_block);
-		if (!c->comp_hdr)
+		c_next->comp_hdr =
+		    cram_decode_compression_header(fd, c_next->comp_hdr_block);
+		if (!c_next->comp_hdr)
 		    return NULL;
 
-		if (!c->comp_hdr->AP_delta &&
+		if (!c_next->comp_hdr->AP_delta &&
 		    sam_hdr_sort_order(fd->header) != ORDER_COORD) {
 		    pthread_mutex_lock(&fd->ref_lock);
 		    fd->unsorted = 1;
@@ -3103,76 +3126,91 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		}
 	    }
 
-	    if (c->num_records == 0) {
-		cram_free_container(c); c = NULL;
+	    if (c_next->num_records == 0) {
+		cram_free_container(c_next);
+		if (fd->ctr_mt == c_next)
+		    fd->ctr_mt = NULL;
+		c_next = NULL;
 		goto empty_container;
 	    }
 
-	    if (!(s = c->slice = cram_read_slice(fd)))
+	    if (!(s_next = c_next->slice = cram_read_slice(fd)))
 		return NULL;
 
-	    c->curr_slice++;
-	    c->curr_rec = 0;
-	    c->max_rec = s->hdr->num_records;
+	    s_next->slice_num = ++c_next->curr_slice_mt;
+	    s_next->curr_rec = 0;
+	    s_next->max_rec = s_next->hdr->num_records;
 
-	    s->last_apos = s->hdr->ref_seq_start;
+	    s_next->last_apos = s_next->hdr->ref_seq_start;
 	    
-	    /* Skip slices not yet spanning our range */
-	    if (fd->range.refid != -2 && s->hdr->ref_seq_id != -2) {
-		if (s->hdr->ref_seq_id != fd->range.refid) {
-		    fd->eof = 1;
-		    cram_free_slice(s);
-		    c->slice = NULL;
-		    return NULL;
+	    // We know the container overlaps our range, but with multi-slice
+	    // containers we may have slices that do not.  Skip these also.
+	    if (fd->range.refid != -2 && s_next->hdr->ref_seq_id != -2) {
+		// ref_id beyond end of range; bail out
+		if (s_next->hdr->ref_seq_id != fd->range.refid) {
+		    fd->ooc = 1;
+		    cram_free_slice(s_next);
+		    s_next = NULL;
+		    break;
 		}
 
-		if (s->hdr->ref_seq_start > fd->range.end) {
-		    fd->eof = 1;
-		    cram_free_slice(s);
-		    c->slice = NULL;
-		    return NULL;
+		// position beyond end of range; bail out
+		if (s_next->hdr->ref_seq_start > fd->range.end) {
+		    fd->ooc = 1;
+		    cram_free_slice(s_next);
+		    s_next = NULL;
+		    break;
 		}
 
-		if (s->hdr->ref_seq_start + s->hdr->ref_seq_span-1 <
+		// before start of range; skip to next slice
+		if (s_next->hdr->ref_seq_start + s_next->hdr->ref_seq_span-1 <
 		    fd->range.start) {
-		    cram_free_slice(s);
-		    c->slice = NULL;
-		    cram_free_container(c);
-		    c = NULL;
+		    cram_free_slice(s_next);
 		    continue;
 		}
 	    }
-	}
+	} // end: if (!fd->ooc)
 
-	/* Test decoding of 1st seq */
-	if (!c || !s)
+	if (!c_next || !s_next)
 	    break;
 
-	if (cram_decode_slice_mt(fd, c, s, fd->header) != 0) {
-	    //	if (cram_decode_slice(fd, c, s, fd->header) != 0) {
+	// Decode the slice, either right now (non-threaded) or by pushing
+	// it to the a decode queue (threaded).
+	if (cram_decode_slice_mt(fd, c_next, s_next, fd->header) != 0) {
 	    hts_log_error("Failure to decode slice");
-	    cram_free_slice(s);
-	    c->slice = NULL;
+	    cram_free_slice(s_next);
+	    c_next->slice = NULL;
 	    return NULL;
 	}
 
-	if (!fd->pool || fd->job_pending)
+	// No thread pool, so don't loop again
+	if (!fd->pool) {
+	    c_curr = c_next;
+	    s_curr = s_next;
+	    break;
+	}
+
+	// With thread pool, but we have a job pending so our decode queue
+	// is full.
+	if (fd->job_pending)
 	    break;
 
+	// Otherwise we're threaded with room in the decode input queue, so
+	// keep reading slices for decode.
 	// Push it a bit far, to qsize in queue rather than pending arrival,
 	// as cram tends to be a bit bursty in decode timings.
-	if (hts_tpool_process_len(fd->rqueue) > hts_tpool_process_qsize(fd->rqueue))
+	if (hts_tpool_process_len(fd->rqueue) >
+	    hts_tpool_process_qsize(fd->rqueue))
 	    break;
-    }
+    } // end of for(;;)
 
+
+    // When not threaded we've already have c_curr and s_curr.
+    // Otherwise we need get them by pulling off the decode output queue.
     if (fd->pool) {
 	hts_tpool_result *res;
 	cram_decode_job *j;
 	
-	//fprintf(stderr, "Thread pool len = %d, %d\n",
-	//	hts_tpool_results_queue_len(fd->rqueue),
-	//	hts_tpool_results_queue_sz(fd->rqueue));
-
 	if (fd->ooc && hts_tpool_process_empty(fd->rqueue))
 	    return NULL;
 
@@ -3184,8 +3222,8 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	}
 
 	j = (cram_decode_job *)hts_tpool_result_data(res);
-	c = j->c;
-	s = j->s;
+	c_curr = j->c;
+	s_curr = j->s;
 
 	if (j->exit_code != 0) {
 	    hts_log_error("Slice decode failure");
@@ -3194,13 +3232,25 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 	    return NULL;
 	}
 
-	fd->ctr = c;
-
 	hts_tpool_delete_result(res, 1);
     }
 
-    *cp = c;
-    return s;
+    *cp = c_curr;
+
+    // Update current slice being processed (as opposed to current
+    // slice in the multi-threaded reahead.
+    fd->ctr = c_curr;
+    if (c_curr) {
+	c_curr->slice = s_curr;
+	if (s_curr)
+	    c_curr->curr_slice = s_curr->slice_num;
+    }
+    if (s_curr)
+	s_curr->curr_rec = 0;
+    else
+	fd->eof = 1;
+
+    return s_curr;
 }
 
 /*
@@ -3218,7 +3268,7 @@ cram_record *cram_get_seq(cram_fd *fd) {
 
     for (;;) {
 	c = fd->ctr;
-	if (c && c->slice && c->curr_rec < c->max_rec) {
+	if (c && c->slice && c->slice->curr_rec < c->slice->max_rec) {
 	    s = c->slice;
 	} else {
 	    if (!(s = cram_next_slice(fd, &c)))
@@ -3229,37 +3279,37 @@ cram_record *cram_get_seq(cram_fd *fd) {
 	// No need to lock here as get_seq is running in the main thread,
 	// which is also the same one that does the range modifications.
 	if (fd->range.refid != -2) {
-	    if (fd->range.refid == -1 && s->crecs[c->curr_rec].ref_id != -1) {
+	    if (fd->range.refid == -1 && s->crecs[s->curr_rec].ref_id != -1) {
 		// Special case when looking for unmapped blocks at end.
 		// If these are mixed in with mapped data (c->ref_id == -2)
 		// then we need skip until we find the unmapped data, if at all
-		c->curr_rec++;
+		s->curr_rec++;
 		continue;
 	    }
-	    if (s->crecs[c->curr_rec].ref_id < fd->range.refid &&
-		s->crecs[c->curr_rec].ref_id != -1) {
+	    if (s->crecs[s->curr_rec].ref_id < fd->range.refid &&
+		s->crecs[s->curr_rec].ref_id != -1) {
 		// Looking for a mapped read, but not there yet.  Special case
 		// as -1 (unmapped) shouldn't be considered < refid.
-		c->curr_rec++;
+		s->curr_rec++;
 		continue;
 	    }
 
-	    if (s->crecs[c->curr_rec].ref_id != fd->range.refid) {
+	    if (s->crecs[s->curr_rec].ref_id != fd->range.refid) {
 		fd->eof = 1;
 		cram_free_slice(s);
 		c->slice = NULL;
 		return NULL;
 	    }
 
-	    if (fd->range.refid != -1 && s->crecs[c->curr_rec].apos > fd->range.end) {
+	    if (fd->range.refid != -1 && s->crecs[s->curr_rec].apos > fd->range.end) {
 		fd->eof = 1;
 		cram_free_slice(s);
 		c->slice = NULL;
 		return NULL;
 	    }
 
-	    if (fd->range.refid != -1 && s->crecs[c->curr_rec].aend < fd->range.start) {
-		c->curr_rec++;
+	    if (fd->range.refid != -1 && s->crecs[s->curr_rec].aend < fd->range.start) {
+		s->curr_rec++;
 		continue;
 	    }
 	}
@@ -3269,7 +3319,7 @@ cram_record *cram_get_seq(cram_fd *fd) {
 
     fd->ctr = c;
     c->slice = s;
-    return &s->crecs[c->curr_rec++];
+    return &s->crecs[s->curr_rec++];
 }
 
 /*
@@ -3289,7 +3339,7 @@ int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam) {
     c = fd->ctr;
     s = c->slice;
 
-    return cram_to_bam(fd->header, fd, s, cr, c->curr_rec-1, bam);
+    return cram_to_bam(fd->header, fd, s, cr, s->curr_rec-1, bam);
 }
 
 /*

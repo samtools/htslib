@@ -3107,7 +3107,11 @@ void *cram_flush_thread(void *arg) {
 static int cram_flush_result(cram_fd *fd) {
     int i, ret = 0;
     hts_tpool_result *r;
+    cram_container *lc = NULL;
 
+    // NB: we can have one result per slice, not per container,
+    // so we need to free the container only after all slices
+    // within it have been freed.  (Automatic via reference counting.)
     while ((r = hts_tpool_next_result(fd->rqueue))) {
 	cram_job *j = (cram_job *)hts_tpool_result_data(r);
 	cram_container *c;
@@ -3135,12 +3139,30 @@ static int cram_flush_result(cram_fd *fd) {
 	c->slice = NULL;
 	c->curr_slice = 0;
 
-	cram_free_container(c);
+	// Our jobs will be in order, so we free the last
+	// container when our job has switched to a new one.
+	if (c != lc) {
+	    if (lc) {
+		if (fd->ctr == lc)
+		    fd->ctr = NULL;
+		if (fd->ctr_mt == lc)
+		    fd->ctr_mt = NULL;
+		cram_free_container(lc);
+	    }
+	    lc = c;
+	}
 
 	if (fd->mode == 'w')
 	    ret |= hflush(fd->fp) == 0 ? 0 : -1;
 
 	hts_tpool_delete_result(r, 1);
+    }
+    if (lc) {
+	if (fd->ctr == lc)
+	    fd->ctr = NULL;
+	if (fd->ctr_mt == lc)
+	    fd->ctr_mt = NULL;
+	cram_free_container(lc);
     }
 
     return ret;
@@ -3453,15 +3475,17 @@ cram_slice *cram_read_slice(cram_fd *fd) {
 		min_id = s->block[i]->content_id;
 	}
     }
-    if (min_id >= 0 && max_id < 1024) {
-	if (!(s->block_by_id = calloc(1024, sizeof(s->block[0]))))
-	    goto err;
 
-	for (i = 0; i < n; i++) {
-	    if (s->block[i]->content_type != EXTERNAL)
-		continue;
-	    s->block_by_id[s->block[i]->content_id] = s->block[i];
-	}
+    if (!(s->block_by_id = calloc(512, sizeof(s->block[0]))))
+	goto err;
+
+    for (i = 0; i < n; i++) {
+	if (s->block[i]->content_type != EXTERNAL)
+	    continue;
+	int v = s->block[i]->content_id;
+	if (v < 0 || v >= 256)
+	    v = 256 + (v > 0 ? v % 251 : (-v) % 251);
+	s->block_by_id[v] = s->block[i];
     }
 
     /* Initialise encoding/decoding tables */
@@ -4074,6 +4098,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->record_counter = 0;
 
     fd->ctr = NULL;
+    fd->ctr_mt = NULL;
     fd->refs  = refs_create();
     if (!fd->refs)
 	goto err;
@@ -4271,6 +4296,9 @@ int cram_close(cram_fd *fd) {
     if (fd->ctr)
 	cram_free_container(fd->ctr);
 
+    if (fd->ctr_mt && fd->ctr_mt != fd->ctr)
+	cram_free_container(fd->ctr_mt);
+
     if (fd->refs)
 	refs_free(fd->refs);
     if (fd->ref_free)
@@ -4414,8 +4442,14 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 	}
 	break;
 
-    case CRAM_OPT_RANGE:
-	return cram_seek_to_refpos(fd, va_arg(args, cram_range *));
+    case CRAM_OPT_RANGE: {
+	int r = cram_seek_to_refpos(fd, va_arg(args, cram_range *));
+	pthread_mutex_lock(&fd->range_lock);
+	if (fd->range.refid != -2)
+	    fd->required_fields |= SAM_POS;
+	pthread_mutex_unlock(&fd->range_lock);
+	return r;
+    }
 
     case CRAM_OPT_REFERENCE:
 	return cram_load_reference(fd, va_arg(args, char *));
@@ -4485,6 +4519,8 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_REQUIRED_FIELDS:
 	fd->required_fields = va_arg(args, int);
+	if (fd->range.refid != -2)
+	    fd->required_fields |= SAM_POS;
 	break;
 
     case HTS_OPT_COMPRESSION_LEVEL:

@@ -312,8 +312,6 @@ typedef struct cram_block_compression_hdr {
 
     char *uncomp; // A single block of uncompressed data
     size_t uncomp_size, uncomp_alloc;
-
-    unsigned int data_series; // See cram_fields enum below
 } cram_block_compression_hdr;
 
 typedef struct cram_map {
@@ -381,6 +379,7 @@ typedef struct cram_container {
 
     /* For construction purposes */
     int max_slice, curr_slice;   // maximum number of slices
+    int curr_slice_mt;           // Curr_slice when reading ahead (via threads)
     int max_rec, curr_rec;       // current and max recs per slice
     int max_c_rec, curr_c_rec;   // current and max recs per container
     int slice_rec;               // rec no. for start of this slice
@@ -589,6 +588,11 @@ typedef struct cram_slice {
     // For going from BAM to CRAM; an array of auxiliary blocks per type
     int naux_block;
     cram_block **aux_block;
+
+    unsigned int data_series; // See cram_fields enum
+
+    int max_rec, curr_rec;       // current and max recs per slice
+    int slice_num;               // To be copied into c->curr_slice in decode
 } cram_slice;
 
 /*-----------------------------------------------------------------------------
@@ -685,8 +689,11 @@ typedef struct cram_fd {
     //cram_block_compression_hdr *comp_hdr;
     //cram_block_slice_hdr       *slice_hdr;
 
-    // Current container being processed.
+    // Current container being processed
     cram_container *ctr;
+
+    // Current container used for decoder threads
+    cram_container *ctr_mt;
 
     // positions for encoding or decoding
     int first_base, last_base;
