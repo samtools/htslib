@@ -3695,7 +3695,7 @@ static void full_path(char *out, char *in) {
     size_t in_l = strlen(in);
     if (*in == '/' ||
 	// Windows paths
-	(in_l > 3 && toupper(*in) >= 'A'  && toupper(*in) <= 'Z' &&
+	(in_l > 3 && toupper_c(*in) >= 'A'  && toupper_c(*in) <= 'Z' &&
 	 in[1] == ':' && (in[2] == '/' || in[2] == '\\'))) {
 	strncpy(out, in, PATH_MAX);
 	out[PATH_MAX-1] = 0;

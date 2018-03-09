@@ -366,7 +366,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     // Skip to end of line
     int nonspace = 0;
     p = q;
-    while ( *q && *q!='\n' ) { nonspace |= !isspace(*q); q++; }
+    while ( *q && *q!='\n' ) { nonspace |= !isspace_c(*q); q++; }
     if (nonspace) {
         hts_log_warning("Dropped trailing junk from header line '%.*s'", (int) (q - line), line);
     }

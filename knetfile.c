@@ -229,7 +229,7 @@ static int kftp_get_response(knetFile *ftp)
 		}
 		ftp->response[n++] = c;
 		if (c == '\n') {
-			if (n >= 4 && isdigit(ftp->response[0]) && isdigit(ftp->response[1]) && isdigit(ftp->response[2])
+			if (n >= 4 && isdigit((int)((unsigned char) ftp->response[0])) && isdigit((int)((unsigned char) ftp->response[1])) && isdigit((int)((unsigned char) ftp->response[2]))
 				&& ftp->response[3] != '-') break;
 			n = 0;
 			continue;
