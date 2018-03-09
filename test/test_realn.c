@@ -128,6 +128,7 @@ int main(int argc, char **argv) {
     bam_hdr_destroy(hdr);
     bam_destroy1(rec);
     free(ref_seq);
+    fai_destroy(fai);
 
     return EXIT_SUCCESS;
 
