@@ -3503,7 +3503,8 @@ cram_slice *cram_read_slice(cram_fd *fd) {
     s->crecs = NULL;
 
     s->last_apos = s->hdr->ref_seq_start;
-    
+    s->decode_md = fd->decode_md;
+
     return s;
 
  err:

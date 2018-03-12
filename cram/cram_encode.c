@@ -2242,7 +2242,9 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 	    m->codec = c;
 
 	    // Link to fd-global tag metrics
+	    pthread_mutex_lock(&fd->metrics_lock);
 	    m->m = k_global ? (cram_metrics *)kh_val(fd->tags_used, k_global) : NULL;
+	    pthread_mutex_unlock(&fd->metrics_lock);
 	}
 
 	cram_tag_map *tm = (cram_tag_map *)kh_val(c->tags_used, k);

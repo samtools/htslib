@@ -296,6 +296,7 @@ typedef struct cram_block_compression_hdr {
     int AP_delta;
     // indexed by ref-base and subst. code
     char substitution_matrix[5][4];
+    int no_ref;
 
     // TD Dictionary as a concatenated block
     cram_block *TD_blk;          // Tag Dictionary
@@ -590,6 +591,7 @@ typedef struct cram_slice {
     cram_block **aux_block;
 
     unsigned int data_series; // See cram_fields enum
+    int decode_md;
 
     int max_rec, curr_rec;       // current and max recs per slice
     int slice_num;               // To be copied into c->curr_slice in decode

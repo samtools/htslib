@@ -270,7 +270,7 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
             }
 
 	    kh_val(hdr->preservation_map, k) = hd;
-	    fd->no_ref = !hd.i;
+	    hdr->no_ref = !hd.i;
 	    break;
 
 	case CRAM_KEY('S','M'):
@@ -728,7 +728,7 @@ int cram_dependent_data_series(cram_fd *fd,
 
 	if (!(fd->required_fields & SAM_AUX))
 	    // No easy way to get MD/NM without other tags at present
-	    fd->decode_md = 0;
+	    s->decode_md = 0;
 
 	if (fd->required_fields & SAM_QUAL)
 	    s->data_series |= CRAM_QUAL;
@@ -1211,8 +1211,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     uint32_t nm = 0;
     int32_t md_dist = 0;
     int orig_aux = 0;
-    int decode_md = fd->decode_md && s->ref && !has_MD && cr->ref_id >= 0;
-    int decode_nm = fd->decode_md && s->ref && !has_NM && cr->ref_id >= 0;
+    int decode_md = s->decode_md && s->ref && !has_MD && cr->ref_id >= 0;
+    int decode_nm = s->decode_md && s->ref && !has_NM && cr->ref_id >= 0;
     uint32_t ds = s->data_series;
 
     if ((ds & CRAM_QS) && !(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES)) {
@@ -2281,7 +2281,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		hts_log_error("Embedded reference is too small");
 		return -1;
 	    }
-	} else if (!fd->no_ref) {
+	} else if (!c->comp_hdr->no_ref) {
 	    //// Avoid Java cramtools bug by loading entire reference seq 
 	    //s->ref = cram_get_ref(fd, s->hdr->ref_seq_id, 1, 0);
 	    //s->ref_start = 1;
@@ -2312,7 +2312,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     }
 
     if ((fd->required_fields & SAM_SEQ) &&
-	s->ref == NULL && s->hdr->ref_seq_id >= 0 && !fd->no_ref) {
+	s->ref == NULL && s->hdr->ref_seq_id >= 0 && !c->comp_hdr->no_ref) {
 	hts_log_error("Unable to fetch reference #%d %d..%d",
 		s->hdr->ref_seq_id, s->hdr->ref_seq_start,
 		s->hdr->ref_seq_start + s->hdr->ref_seq_span-1);
@@ -2439,7 +2439,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 		if ((fd->required_fields & (SAM_SEQ|SAM_TLEN))
 		    && cr->ref_id >= 0
 		    && cr->ref_id != last_ref_id) {
-		    if (!fd->no_ref) {
+		    if (!c->comp_hdr->no_ref) {
 			// Range(fd):  seq >= 0, unmapped -1, unspecified   -2
 			// Slice(s):   seq >= 0, unmapped -1, multiple refs -2
 			// Record(cr): seq >= 0, unmapped -1
