@@ -1,11 +1,32 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* Bug fix to processing multiple range queries in CRAM while multi-threading.
+* The URL to get sequences from the EBI reference server has been changed
+  to https://.  This is because the EBI no longer serve sequences via
+  plain HTTP - requests to the http:// endpoint just get redirected.
+  HTSlib needs to be linked against libcurl to download https:// URLs,
+  so CRAM users who want to get references from the EBI will need to
+  run configure and ensure libcurl support is enabled using the
+  --enable-libcurl option.
 
-* Fixed bug where probaln_glocal() allocated far more memory than needed
-  when the query sequence was much longer than the reference. (#572, problem
-  reported by Felix Bemm via minimap2).
+* Added libdeflate as a build option for alternative faster compression and
+  decompression.  Results vary by CPU but compression should be twice as fast
+  and decompression faster.
+  
+* Multiple CRAM bug fixes, including a fix to free and the subsequent reuse of
+  references with `-T ref.fa`. (#654; reported by Chris Saunders)
+
+* CRAM multi-threading bugs fixed: don't try to call flush on reading;
+  processing of multiple range queries; problems with multi-slice containers.
+
+* Fixed crashes caused when decoding some cramtools produced CRAM files.
+
+* Fixed a couple of minor rANS issues with handling invalid data.
+
+* Fixed bug where probaln_glocal() tried to allocate far more memory than
+  needed when the query sequence was much longer than the reference.  This
+  caused crashes in samtools and bcftools mpileup when used on data with very
+  long reads. (#572, problem reported by Felix Bemm via minimap2).
 
 * sam_prop_realn() now returns -1 (the same value as for unmapped reads)
   on reads that do not include at least one 'M', 'X' or '=' CIGAR operator,
