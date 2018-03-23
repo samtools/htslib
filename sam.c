@@ -1194,10 +1194,59 @@ int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
  *** SAM record I/O ***
  **********************/
 
+/* Custom strtol for aux tags, always base 10 */
+static int64_t inline STRTOL64(const char *v, char **rv, int b) {
+    int64_t n = 0;
+    int neg = 1;
+    switch(*v) {
+    case '-':
+        neg=-1;
+        break;
+    case '+':
+        break;
+    case '0': case '1': case '2': case '3': case '4':
+    case '5': case '6': case '7': case '8': case '9':
+        n = *v - '0';
+        break;
+    default:
+        *rv = (char *)v;
+        return 0;
+    }
+    v++;
+
+    while (isdigit(*v))
+        n = n*10 + *v++ - '0';
+    *rv = (char *)v;
+    return neg*n;
+}
+
+static int64_t inline STRTOUL64(const char *v, char **rv, int b) {
+    int64_t n = 0;
+    switch(*v) {
+    case '+':
+        break;
+    case '0': case '1': case '2': case '3': case '4':
+    case '5': case '6': case '7': case '8': case '9':
+        n = *v - '0';
+        break;
+    default:
+        *rv = (char *)v;
+        return 0;
+    }
+    v++;
+
+    while (isdigit(*v))
+        n = n*10 + *v++ - '0';
+    *rv = (char *)v;
+    return n;
+}
+
 int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 {
-#define _read_token(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); if (*(_p) != '\t') goto err_ret; *(_p)++ = 0
-#define _read_token_aux(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); *(_p)++ = 0 // this is different in that it does not test *(_p)=='\t'
+//#define _read_token(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); if (*(_p) != '\t') goto err_ret; *(_p)++ = 0
+//#define _read_token_aux(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); *(_p)++ = 0 // this is different in that it does not test *(_p)=='\t'
+#define _read_token(_p) (_p); while(*(_p) > '\t')(_p)++;if (*(_p) != '\t') goto err_ret; *(_p)++ = 0
+#define _read_token_aux(_p) (_p); while(*(_p) > '\t')(_p)++; *(_p)++ = 0 // this is different in that it does not test *(_p)=='\t'
 #define _get_mem(type_t, _x, _s, _l) ks_resize((_s), (_s)->l + (_l)); *(_x) = (type_t*)((_s)->s + (_s)->l); (_s)->l += (_l)
 #define _parse_err(cond, msg) do { if (cond) { hts_log_error(msg); goto err_ret; } } while (0)
 #define _parse_err_param(cond, msg, param) do { if (cond) { hts_log_error(msg, param); goto err_ret; } } while (0)
@@ -1228,7 +1277,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         kputc_('\0', &str);
     c->l_qname = p - q + c->l_extranul;
     // flag
-    c->flag = strtol(p, &p, 0);
+    c->flag = STRTOL64(p, &p, 0);
     if (*p++ != '\t') goto err_ret; // malformated flag
     // chr
     q = _read_token(p);
@@ -1238,7 +1287,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         _parse_warn(c->tid < 0, "urecognized reference name; treated as unmapped");
     } else c->tid = -1;
     // pos
-    c->pos = strtol(p, &p, 10) - 1;
+    c->pos = STRTOL64(p, &p, 10) - 1;
     if (*p++ != '\t') goto err_ret;
     if (c->pos < 0 && c->tid >= 0) {
         _parse_warn(1, "mapped query cannot have zero coordinate; treated as unmapped");
@@ -1246,7 +1295,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     }
     if (c->tid < 0) c->flag |= BAM_FUNMAP;
     // mapq
-    c->qual = strtol(p, &p, 10);
+    c->qual = STRTOL64(p, &p, 10);
     if (*p++ != '\t') goto err_ret;
     // cigar
     if (*p != '*') {
@@ -1261,7 +1310,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         _get_mem(uint32_t, &cigar, &str, c->n_cigar * sizeof(uint32_t));
         for (i = 0; i < c->n_cigar; ++i, ++q) {
             int op;
-            cigar[i] = strtol(q, &q, 10)<<BAM_CIGAR_SHIFT;
+            cigar[i] = STRTOL64(q, &q, 10)<<BAM_CIGAR_SHIFT;
             op = (uint8_t)*q >= 128? -1 : h->cigar_tab[(int)*q];
             _parse_err(op < 0, "unrecognized CIGAR operator");
             cigar[i] |= op;
@@ -1286,14 +1335,14 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         _parse_warn(c->mtid < 0, "urecognized mate reference name; treated as unmapped");
     }
     // mpos
-    c->mpos = strtol(p, &p, 10) - 1;
+    c->mpos = STRTOL64(p, &p, 10) - 1;
     if (*p++ != '\t') goto err_ret;
     if (c->mpos < 0 && c->mtid >= 0) {
         _parse_warn(1, "mapped mate cannot have zero coordinate; treated as unmapped");
         c->mtid = -1;
     }
     // tlen
-    c->isize = strtol(p, &p, 10);
+    c->isize = STRTOL64(p, &p, 10);
     if (*p++ != '\t') goto err_ret;
     // seq
     q = _read_token(p);
@@ -1303,16 +1352,35 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         _parse_err(c->n_cigar && i != c->l_qseq, "CIGAR and query sequence are of different length");
         i = (c->l_qseq + 1) >> 1;
         _get_mem(uint8_t, &t, &str, i);
-        memset(t, 0, i);
-        for (i = 0; i < c->l_qseq; ++i)
-            t[i>>1] |= seq_nt16_table[(unsigned char)q[i]] << ((~i&1)<<2);
+        for (i = 0; i < (c->l_qseq&~2); i+=2)
+            t[i>>1] = (seq_nt16_table[(unsigned char)q[i]] << 4) | seq_nt16_table[(unsigned char)q[i+1]];
+        for (; i < c->l_qseq; ++i)
+            t[i>>1] = seq_nt16_table[(unsigned char)q[i]] << ((~i&1)<<2);
     } else c->l_qseq = 0;
     // qual
     q = _read_token_aux(p);
     _get_mem(uint8_t, &t, &str, c->l_qseq);
+
+// An example of how to speed this up further, but needing extra guards
+// for unaligned access, 32-bit or 64-bit, etc. (See jkbonfield/io_lib.)
+//
+//#define hasless(x,n) (((x)-0x01010101UL*(n))&~(x)&0x80808080UL)
+//#define COPY_CPF_TO_CPTM(n)                                \
+//    do {                                                   \
+//        uint64_t *cpfi = (uint64_t *)q;                    \
+//        uint64_t *cpti = (uint64_t *)t;                    \
+//        uint64_t *orig = cpfi;                             \
+//        while (!hasless(*cpfi,10)) {                       \
+//            *cpti++ = *cpfi++ - (n)*0x0101010101010101UL;  \
+//        }                                                  \
+//        q += (cpfi-orig)*8; t += (cpfi-orig)*8;            \
+//        while (*q > '\t')                                  \
+//            *t++ = *q++ - (n);                             \
+//    } while (0)
+
     if (strcmp(q, "*")) {
         _parse_err(p - q - 1 != c->l_qseq, "SEQ and QUAL are of different length");
-        for (i = 0; i < c->l_qseq; ++i) t[i] = q[i] - 33;
+        for (i = 0; i < c->l_qseq; ++i) t[i] = q[i] - 33; //aka COPY_CPF_TO_CPTM(33);
     } else memset(t, 0xff, c->l_qseq);
     // aux
     while (p < s->s + s->l) {
@@ -1334,7 +1402,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             kputc_(*q, &str);
         } else if (type == 'i' || type == 'I') {
             if (*q == '-') {
-                long x = strtol(q, &q, 10);
+                long x = STRTOL64(q, &q, 10);
                 if (x >= INT8_MIN) {
                     kputc_('c', &str); kputc_(x, &str);
                 } else if (x >= INT16_MIN) {
@@ -1347,7 +1415,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
                     str.l += 4;
                 }
             } else {
-                unsigned long x = strtoul(q, &q, 10);
+                unsigned long x = STRTOUL64(q, &q, 10);
                 if (x <= UINT8_MAX) {
                     kputc_('C', &str); kputc_(x, &str);
                 } else if (x <= UINT16_MAX) {
@@ -1402,12 +1470,12 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             // prevents the possibility of trying to read more than n items.
 #define _skip_to_comma(q, p) do { while ((q) < (p) && *(q) != ',') (q)++; } while (0)
 
-            if (type == 'c')      while (q + 1 < p) { int8_t   x = strtol(q + 1, &q, 0); kputc_(x, &str); }
-            else if (type == 'C') while (q + 1 < p) { uint8_t  x = strtoul(q + 1, &q, 0); kputc_(x, &str); }
-            else if (type == 's') while (q + 1 < p) { i16_to_le(strtol(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 2; _skip_to_comma(q, p); }
-            else if (type == 'S') while (q + 1 < p) { u16_to_le(strtoul(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 2; _skip_to_comma(q, p); }
-            else if (type == 'i') while (q + 1 < p) { i32_to_le(strtol(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
-            else if (type == 'I') while (q + 1 < p) { u32_to_le(strtoul(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
+            if (type == 'c')      while (q + 1 < p) { int8_t   x = STRTOL64(q + 1, &q, 0); kputc_(x, &str); }
+            else if (type == 'C') while (q + 1 < p) { uint8_t  x = STRTOUL64(q + 1, &q, 0); kputc_(x, &str); }
+            else if (type == 's') while (q + 1 < p) { i16_to_le(STRTOL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 2; _skip_to_comma(q, p); }
+            else if (type == 'S') while (q + 1 < p) { u16_to_le(STRTOUL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 2; _skip_to_comma(q, p); }
+            else if (type == 'i') while (q + 1 < p) { i32_to_le(STRTOL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
+            else if (type == 'I') while (q + 1 < p) { u32_to_le(STRTOUL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
             else if (type == 'f') while (q + 1 < p) { float_to_le(strtod(q + 1, &q), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
             else _parse_err_param(1, "unrecognized type B:%c", type);
 
