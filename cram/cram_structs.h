@@ -724,6 +724,8 @@ typedef struct cram_fd {
     int use_lzma;
     int shared_ref;
     unsigned int required_fields;
+    int store_md;
+    int store_nm;
     cram_range range;
 
     // lookup tables, stored here so we can be trivially multi-threaded

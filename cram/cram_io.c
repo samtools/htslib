@@ -4120,6 +4120,8 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->multi_seq = -1;
     fd->unsorted   = 0;
     fd->shared_ref = 0;
+    fd->store_md = 0;
+    fd->store_nm = 0;
 
     fd->index       = NULL;
     fd->own_pool    = 0;
@@ -4522,6 +4524,14 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 	fd->required_fields = va_arg(args, int);
 	if (fd->range.refid != -2)
 	    fd->required_fields |= SAM_POS;
+	break;
+
+    case CRAM_OPT_STORE_MD:
+	fd->store_md = va_arg(args, int);
+	break;
+
+    case CRAM_OPT_STORE_NM:
+	fd->store_nm = va_arg(args, int);
 	break;
 
     case HTS_OPT_COMPRESSION_LEVEL:

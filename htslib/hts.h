@@ -230,6 +230,8 @@ enum hts_fmt_option {
     CRAM_OPT_REQUIRED_FIELDS,
     CRAM_OPT_LOSSY_NAMES,
     CRAM_OPT_BASES_PER_SLICE,
+    CRAM_OPT_STORE_MD,
+    CRAM_OPT_STORE_NM,
 
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,

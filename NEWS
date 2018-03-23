@@ -13,6 +13,13 @@ Noteworthy changes in release a.b
   decompression.  Results vary by CPU but compression should be twice as fast
   and decompression faster.
   
+* CRAM encoding now stored MD and NM tags verbatim where the reference
+  contains 'N' characters, to work around ambiguities in the SAM
+  specification (samtools #717/762).
+  Also added "store_md" and "store_nm" cram-options for forcing these
+  tags to be stored at all locations.  This is best when combined with
+  a subsequent decode_md=0 option while reading CRAM.
+
 * Multiple CRAM bug fixes, including a fix to free and the subsequent reuse of
   references with `-T ref.fa`. (#654; reported by Chris Saunders)
 

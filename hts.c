@@ -589,6 +589,14 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "NAME_PREFIX") == 0)
         o->opt = CRAM_OPT_PREFIX, o->val.s = val;
 
+    else if (strcmp(o->arg, "store_md") == 0 ||
+             strcmp(o->arg, "store_md") == 0)
+        o->opt = CRAM_OPT_STORE_MD, o->val.i = atoi(val);
+
+    else if (strcmp(o->arg, "store_nm") == 0 ||
+             strcmp(o->arg, "store_nm") == 0)
+        o->opt = CRAM_OPT_STORE_NM, o->val.i = atoi(val);
+
     else if (strcmp(o->arg, "block_size") == 0 ||
              strcmp(o->arg, "BLOCK_SIZE") == 0)
         o->opt = HTS_OPT_BLOCK_SIZE, o->val.i = strtol(val, NULL, 0);
