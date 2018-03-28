@@ -12,7 +12,12 @@ Noteworthy changes in release a.b
 * Added libdeflate as a build option for alternative faster compression and
   decompression.  Results vary by CPU but compression should be twice as fast
   and decompression faster.
-  
+
+* It is now possible to set the compression level in bgzip.  (#675; thanks
+  to Nathan Weeks).
+
+* bgzip now gets its own manual page.
+
 * CRAM encoding now stored MD and NM tags verbatim where the reference
   contains 'N' characters, to work around ambiguities in the SAM
   specification (samtools #717/762).

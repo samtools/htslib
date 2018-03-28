@@ -80,7 +80,7 @@ static int bgzip_main_usage(void)
     fprintf(stderr, "   -h, --help                 give this help\n");
     fprintf(stderr, "   -i, --index                compress and create BGZF index\n");
     fprintf(stderr, "   -I, --index-name FILE      name of BGZF index file [file.gz.gzi]\n");
-    fprintf(stderr, "   -l, --compress-level INT   Compression level to use when compressing, from 0 to 9 [-1]\n");
+    fprintf(stderr, "   -l, --compress-level INT   Compression level to use when compressing; 0 to 9, or -1 for default [-1]\n");
     fprintf(stderr, "   -r, --reindex              (re)index compressed file\n");
     fprintf(stderr, "   -g, --rebgzip              use an index file to bgzip a file\n");
     fprintf(stderr, "   -s, --size INT             decompress INT bytes (uncompressed size)\n");
