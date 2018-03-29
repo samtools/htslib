@@ -2753,6 +2753,11 @@ void cram_free_container(cram_container *c) {
 	free(c->slices);
     }
 
+    if (c->slice)
+    {
+        cram_free_slice(c->slice);
+    }
+
     for (id = DS_RN; id < DS_TN; id++)
 	if (c->stats[id]) cram_stats_free(c->stats[id]);
 
