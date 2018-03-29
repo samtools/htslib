@@ -147,10 +147,16 @@ int main(int argc, char **argv)
     if (compress == 1) {
         struct stat sbuf;
         int f_src = fileno(stdin);
+        char out_mode[3] = "w\0";
+        char out_mode_exclusive[4] = "wx\0";
 
         if (compress_level < -1 || compress_level > 9) {
             fprintf(stderr, "[bgzip] Invalid compress-level: %d\n", compress_level);
             return 1;
+        }
+        if (compress_level >= 0) {
+            out_mode[1] = compress_level + '0';
+            out_mode_exclusive[2] = compress_level + '0';
         }
 
         if ( argc>optind )
@@ -167,15 +173,15 @@ int main(int argc, char **argv)
             }
 
             if (pstdout)
-                fp = bgzf_open("-", "w");
+                fp = bgzf_open("-", out_mode);
             else
             {
                 char *name = malloc(strlen(argv[optind]) + 5);
                 strcpy(name, argv[optind]);
                 strcat(name, ".gz");
-                fp = bgzf_open(name, is_forced? "w" : "wx");
+                fp = bgzf_open(name, is_forced? out_mode : out_mode_exclusive);
                 if (fp == NULL && errno == EEXIST && confirm_overwrite(name))
-                    fp = bgzf_open(name, "w");
+                    fp = bgzf_open(name, out_mode);
                 if (fp == NULL) {
                     fprintf(stderr, "[bgzip] can't create %s: %s\n", name, strerror(errno));
                     free(name);
@@ -192,9 +198,7 @@ int main(int argc, char **argv)
             return 1;
         }
         else
-            fp = bgzf_open("-", "w");
-
-        fp->compress_level = compress_level;
+            fp = bgzf_open("-", out_mode);
 
         if ( index && rebgzip )
         {
