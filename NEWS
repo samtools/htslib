@@ -1,6 +1,9 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Noteworthy changes in release 1.8 (3rd April 2018)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 * The URL to get sequences from the EBI reference server has been changed
   to https://.  This is because the EBI no longer serve sequences via
   plain HTTP - requests to the http:// endpoint just get redirected.
