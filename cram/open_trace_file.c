@@ -120,10 +120,13 @@ char *tokenise_search_path(char *searchpath) {
 	if (path_sep == ':') {
 	    if ((i == 0 || (i > 0 && searchpath[i-1] == ':')) &&
 		(!strncmp(&searchpath[i], "http:",     5) ||
+		 !strncmp(&searchpath[i], "https:",    6) ||
 		 !strncmp(&searchpath[i], "ftp:",      4) ||
 		 !strncmp(&searchpath[i], "|http:",    6) ||
+		 !strncmp(&searchpath[i], "|https:",   7) ||
 		 !strncmp(&searchpath[i], "|ftp:",     5) ||
 		 !strncmp(&searchpath[i], "URL=http:", 9) ||
+		 !strncmp(&searchpath[i], "URL=https:",10)||
 		 !strncmp(&searchpath[i], "URL=ftp:",  8))) {
 		do {
 		    newsearch[j++] = searchpath[i];
@@ -342,6 +345,7 @@ mFILE *open_path_mfile(char *file, char *path, char *relative_to) {
 		return fp;
 	    }
 	} else if (!strncmp(ele2, "http:", 5) ||
+		   !strncmp(ele2, "https:", 6) ||
 		   !strncmp(ele2, "ftp:", 4)) {
 	    if ((fp = find_file_url(file, ele2))) {
 		free(newsearch);
@@ -394,6 +398,7 @@ char *find_path(char *file, char *path) {
 
 	if (!strncmp(ele2, "URL=", 4) ||
 	    !strncmp(ele2, "http:", 5) ||
+	    !strncmp(ele2, "https:", 6) ||
 	    !strncmp(ele2, "ftp:", 4)) {
 	    continue;
 	} else {

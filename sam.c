@@ -1935,9 +1935,12 @@ char *sam_open_mode_opts(const char *fn,
             free(mode_opts);
             return NULL;
         }
-        return sam_open_mode(cp, fn, ext+1)
-            ? (free(mode_opts), NULL)
-            : mode_opts;
+        if (sam_open_mode(cp, fn, ext+1) == 0) {
+            return mode_opts;
+        } else {
+            free(mode_opts);
+            return NULL;
+        }
     }
 
     if ((opts = strchr(format, ','))) {

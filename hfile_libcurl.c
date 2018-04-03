@@ -63,7 +63,7 @@ typedef struct {
 } auth_token;
 
 // For the authorization header cache
-KHASH_MAP_INIT_STR(auth_map, auth_token *);
+KHASH_MAP_INIT_STR(auth_map, auth_token *)
 
 // Curl-compatible header linked list
 typedef struct {
@@ -459,8 +459,8 @@ static int read_auth_plain(auth_token *tok, hFILE *auth_fp) {
     if (kgetline(&line, (char * (*)(char *, int, void *)) hgets, auth_fp) < 0) goto error;
     if (kputc('\0', &line) < 0) goto error;
 
-    for (start = line.s; *start && isspace(*start); start++) {}
-    for (end = start; *end && !isspace(*end); end++) {}
+    for (start = line.s; *start && isspace_c(*start); start++) {}
+    for (end = start; *end && !isspace_c(*end); end++) {}
 
     if (end > start) {
         if (kputs("Authorization: Bearer ", &token) < 0) goto error;

@@ -69,25 +69,25 @@ char *bcf_sr_strerror(int errnum)
     switch (errnum)
     {
         case open_failed:
-            return strerror(errno); break;
+            return strerror(errno);
         case not_bgzf:
-            return "not compressed with bgzip"; break;
+            return "not compressed with bgzip";
         case idx_load_failed:
-            return "could not load index"; break;
+            return "could not load index";
         case file_type_error:
-            return "unknown file type"; break;
+            return "unknown file type";
         case api_usage_error:
-            return "API usage error"; break;
+            return "API usage error";
         case header_error:
-            return "could not parse header"; break;
+            return "could not parse header";
         case no_eof:
-            return "no BGZF EOF marker; file may be truncated"; break;
+            return "no BGZF EOF marker; file may be truncated";
         case no_memory:
-            return "Out of memory"; break;
+            return "Out of memory";
         case vcf_parse_error:
-            return "VCF parse error"; break;
+            return "VCF parse error";
         case bcf_read_error:
-            return "BCF read error"; break;
+            return "BCF read error";
         default: return "";
     }
 }

@@ -296,6 +296,7 @@ typedef struct cram_block_compression_hdr {
     int AP_delta;
     // indexed by ref-base and subst. code
     char substitution_matrix[5][4];
+    int no_ref;
 
     // TD Dictionary as a concatenated block
     cram_block *TD_blk;          // Tag Dictionary
@@ -312,8 +313,6 @@ typedef struct cram_block_compression_hdr {
 
     char *uncomp; // A single block of uncompressed data
     size_t uncomp_size, uncomp_alloc;
-
-    unsigned int data_series; // See cram_fields enum below
 } cram_block_compression_hdr;
 
 typedef struct cram_map {
@@ -381,6 +380,7 @@ typedef struct cram_container {
 
     /* For construction purposes */
     int max_slice, curr_slice;   // maximum number of slices
+    int curr_slice_mt;           // Curr_slice when reading ahead (via threads)
     int max_rec, curr_rec;       // current and max recs per slice
     int max_c_rec, curr_c_rec;   // current and max recs per container
     int slice_rec;               // rec no. for start of this slice
@@ -469,68 +469,66 @@ typedef struct cram_record {
  * A feature is a base difference, used for the sequence reference encoding.
  * (We generate these internally when writing CRAM.)
  */
-typedef struct cram_feature {
-    union {
-	struct {
-	    int pos;
-	    int code;
-	    int base;    // substitution code
-	} X;
-	struct {
-	    int pos;
-	    int code;
-	    int base;    // actual base & qual
-	    int qual;
-	} B;
-	struct {
-	    int pos;
-	    int code;
-	    int seq_idx; // index to s->seqs_blk
-	    int len;
-	} b;
-	struct {
-	    int pos;
-	    int code;
-	    int qual;
-	} Q;
-	struct {
-	    int pos;
-	    int code;
-	    int len;
-	    int seq_idx; // soft-clip multiple bases
-	} S;
-	struct {
-	    int pos;
-	    int code;
-	    int len;
-	    int seq_idx; // insertion multiple bases
-	} I;
-	struct {
-	    int pos;
-	    int code;
-	    int base; // insertion single base
-	} i;
-	struct {
-	    int pos;
-	    int code;
-	    int len;
-	} D;
-	struct {
-	    int pos;
-	    int code;
-	    int len;
-	} N;
-	struct {
-	    int pos;
-	    int code;
-	    int len;
-	} P;
-	struct {
-	    int pos;
-	    int code;
-	    int len;
-	} H;
-    };
+typedef union cram_feature {
+    struct {
+        int pos;
+        int code;
+        int base;    // substitution code
+    } X;
+    struct {
+        int pos;
+        int code;
+        int base;    // actual base & qual
+        int qual;
+    } B;
+    struct {
+        int pos;
+        int code;
+        int seq_idx; // index to s->seqs_blk
+        int len;
+    } b;
+    struct {
+        int pos;
+        int code;
+        int qual;
+    } Q;
+    struct {
+        int pos;
+        int code;
+        int len;
+        int seq_idx; // soft-clip multiple bases
+    } S;
+    struct {
+        int pos;
+        int code;
+        int len;
+        int seq_idx; // insertion multiple bases
+    } I;
+    struct {
+        int pos;
+        int code;
+        int base; // insertion single base
+    } i;
+    struct {
+        int pos;
+        int code;
+        int len;
+    } D;
+    struct {
+        int pos;
+        int code;
+        int len;
+    } N;
+    struct {
+        int pos;
+        int code;
+        int len;
+    } P;
+    struct {
+        int pos;
+        int code;
+        int len;
+    } H;
 } cram_feature;
 
 /*
@@ -589,6 +587,12 @@ typedef struct cram_slice {
     // For going from BAM to CRAM; an array of auxiliary blocks per type
     int naux_block;
     cram_block **aux_block;
+
+    unsigned int data_series; // See cram_fields enum
+    int decode_md;
+
+    int max_rec, curr_rec;       // current and max recs per slice
+    int slice_num;               // To be copied into c->curr_slice in decode
 } cram_slice;
 
 /*-----------------------------------------------------------------------------
@@ -685,8 +689,11 @@ typedef struct cram_fd {
     //cram_block_compression_hdr *comp_hdr;
     //cram_block_slice_hdr       *slice_hdr;
 
-    // Current container being processed.
+    // Current container being processed
     cram_container *ctr;
+
+    // Current container used for decoder threads
+    cram_container *ctr_mt;
 
     // positions for encoding or decoding
     int first_base, last_base;
@@ -717,6 +724,8 @@ typedef struct cram_fd {
     int use_lzma;
     int shared_ref;
     unsigned int required_fields;
+    int store_md;
+    int store_nm;
     cram_range range;
 
     // lookup tables, stored here so we can be trivially multi-threaded
@@ -741,6 +750,7 @@ typedef struct cram_fd {
     hts_tpool_process *rqueue;
     pthread_mutex_t metrics_lock;
     pthread_mutex_t ref_lock;
+    pthread_mutex_t range_lock;
     spare_bams *bl;
     pthread_mutex_t bam_list_lock;
     void *job_pending;
@@ -834,7 +844,7 @@ enum cram_fields {
 
 /* Internal only */
 #define CRAM_FLAG_STATS_ADDED          (1<<30)
-#define CRAM_FLAG_DISCARD_NAME         (1<<31)
+#define CRAM_FLAG_DISCARD_NAME         (1U<<31)
 
 #ifdef __cplusplus
 }

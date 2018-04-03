@@ -228,10 +228,12 @@ int ksplit_core(char *s, int delimiter, int *_max, int **_offsets)
 
 	for (i = 0, last_char = last_start = 0; i <= l; ++i) {
 		if (delimiter == 0) {
-			if (isspace(s[i]) || s[i] == 0) {
-				if (isgraph(last_char)) __ksplit_aux; // the end of a field
+			if (isspace((int)((unsigned char) s[i])) || s[i] == 0) {
+				if (isgraph(last_char))
+                    __ksplit_aux; // the end of a field
 			} else {
-				if (isspace(last_char) || last_char == 0) last_start = i;
+				if (isspace(last_char) || last_char == 0)
+                    last_start = i;
 			}
 		} else {
 			if (s[i] == delimiter || s[i] == 0) {
@@ -240,7 +242,7 @@ int ksplit_core(char *s, int delimiter, int *_max, int **_offsets)
 				if (last_char == delimiter || last_char == 0) last_start = i;
 			}
 		}
-		last_char = s[i];
+		last_char = (int)((unsigned char)s[i]);
 	}
 	*_max = max; *_offsets = offsets;
 	return n;

@@ -502,7 +502,7 @@ static void *tpool_worker(void *arg) {
             fprintf(stderr, "%d: Shutting down\n", worker_id(p));
 #endif
             pthread_mutex_unlock(&p->pool_m);
-            pthread_exit(NULL);
+            return NULL;
         }
 
         if (!work_to_do) {
@@ -584,8 +584,6 @@ static void *tpool_worker(void *arg) {
 
         pthread_mutex_unlock(&p->pool_m);
     }
-
-    return NULL;
 }
 
 static void wake_next_worker(hts_tpool_process *q, int locked) {

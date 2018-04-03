@@ -606,6 +606,47 @@ typedef struct __bam_mplp_t *bam_mplp_t;
  ***********************************/
 
 int sam_cap_mapq(bam1_t *b, const char *ref, int ref_len, int thres);
+
+/// Calculate BAQ scores
+/** @param b   BAM record
+    @param ref     Reference sequence
+    @param ref_len Reference sequence length
+    @param flag    Flags, see description
+    @return 0 on success \n
+           -1 if the read was unmapped, zero length, had no quality values, did not have at least one M, X or = CIGAR operator, or included a reference skip. \n
+           -3 if BAQ alignment has already been done and does not need to be applied, or has already been applied. \n
+           -4 if alignment failed (most likely due to running out of memory)
+
+This function calculates base alignment quality (BAQ) values using the method
+described in "Improving SNP discovery by base alignment quality", Heng Li,
+Bioinformatics, Volume 27, Issue 8 (https://doi.org/10.1093/bioinformatics/btr076).
+
+The following @param flag bits can be used:
+
+Bit 0: Adjust the quality values using the BAQ values
+
+ If set, the data in the BQ:Z tag is used to adjust the quality values, and
+ the BQ:Z tag is renamed to ZQ:Z.
+
+ If clear, and a ZQ:Z tag is present, the quality values are reverted using
+ the data in the tag, and the tag is renamed to BQ:Z.
+
+Bit 1: Use "extended" BAQ.
+
+ Changes the BAQ calculation to increase sensitivity at the expense of
+ reduced specificity.
+
+Bit 2: Recalculate BAQ, even if a BQ tag is present.
+
+ Force BAQ to be recalculated.  Note that a ZQ:Z tag will always disable
+ recalculation.
+
+@bug
+If the input read has both BQ:Z and ZQ:Z tags, the ZQ:Z one will be removed.
+Depending on what previous processing happened, this may or may not be the
+correct thing to do.  It would be wise to avoid this situation if possible.
+*/
+
 int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag);
 
 #ifdef __cplusplus

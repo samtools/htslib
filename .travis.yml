@@ -13,6 +13,15 @@ env:
   - USE_CONFIG=no
   - USE_CONFIG=yes
 
+matrix:
+  include:
+  - compiler: gcc
+    os: linux
+    env: USE_CONFIG=yes USE_LIBDEFLATE=yes
+  - compiler: clang
+    os: osx
+    env: USE_CONFIG=yes USE_LIBDEFLATE=yes
+
 # For linux systems
 addons:
   apt:
@@ -24,5 +33,9 @@ addons:
 before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" && "$USE_CONFIG" == "no" ]]; then HOMEBREW_NO_AUTO_UPDATE=1 brew install xz || ( brew update && brew install xz ); fi
 
+before_script:
+  - if test "x$USE_LIBDEFLATE" == "xyes" ; then ( cd "$HOME" && git clone --depth 1 https://github.com/ebiggers/libdeflate.git && cd libdeflate && make -j 2 CFLAGS='-fPIC -O3' libdeflate.a ); fi
+
 script:
-  - if test "$USE_CONFIG" = "yes" ; then autoreconf && ./configure ; fi && make -e && make test
+  - if test "x$USE_LIBDEFLATE" = "xyes" ; then CONFIG_OPTS='CPPFLAGS="-I$HOME/libdeflate" LDFLAGS="-L$HOME/libdeflate" --with-libdeflate' ; else CONFIG_OPTS='--without-libdeflate' ; fi
+  - if test "$USE_CONFIG" = "yes" ; then autoreconf && eval ./configure $CONFIG_OPTS || { cat config.log ; false ; } ; fi && make -j 2 -e && make test

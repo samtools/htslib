@@ -1,7 +1,5 @@
-.TH tabix 1 "26 January 2018" "htslib-1.7" "Bioinformatics tools"
+.TH tabix 1 "3 April 2018" "htslib-1.8" "Bioinformatics tools"
 .SH NAME
-.PP
-bgzip \- Block compression/decompression utility
 .PP
 tabix \- Generic indexer for TAB-delimited genome position files
 .\"
@@ -28,14 +26,6 @@ tabix \- Generic indexer for TAB-delimited genome position files
 .\" DEALINGS IN THE SOFTWARE.
 .\"
 .SH SYNOPSIS
-.PP
-.B bgzip
-.RB [ -cdhB ]
-.RB [ -b
-.IR virtualOffset ]
-.RB [ -s
-.IR size ]
-.RI [ file ]
 .PP
 .B tabix
 .RB [ -0lf ]
@@ -178,4 +168,4 @@ access and in-memory caching.
 
 .SH SEE ALSO
 .PP
-.BR samtools (1)
+.BR bgzip (1), samtools (1)

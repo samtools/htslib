@@ -72,6 +72,7 @@ BUILT_TEST_PROGRAMS = \
 	test/hfile \
 	test/sam \
 	test/test_bgzf \
+	test/test_realn \
 	test/test-regidx \
 	test/test_view \
 	test/test-vcf-api \
@@ -377,6 +378,9 @@ test/sam: test/sam.o libhts.a
 test/test_bgzf: test/test_bgzf.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a -lz $(LIBS) -lpthread
 
+test/test_realn: test/test_realn.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_realn.o libhts.a $(LIBS) -lpthread
+
 test/test-regidx: test/test-regidx.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-regidx.o libhts.a $(LIBS) -lpthread
 
@@ -400,6 +404,7 @@ test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h)
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
 test/test_bgzf.o: test/test_bgzf.c $(htslib_bgzf_h) $(htslib_hfile_h)
+test/test-realn.o: test/test_realn.c $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_regidx_h) $(hts_internal_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
@@ -434,7 +439,7 @@ install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB
 	if test -n "$(BUILT_PLUGINS)"; then $(INSTALL_PROGRAM) $(BUILT_PLUGINS) $(DESTDIR)$(plugindir); fi
 	$(INSTALL_DATA) htslib/*.h $(DESTDIR)$(includedir)/htslib
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
-	$(INSTALL_MAN) htsfile.1 tabix.1 $(DESTDIR)$(man1dir)
+	$(INSTALL_MAN) bgzip.1 htsfile.1 tabix.1 $(DESTDIR)$(man1dir)
 	$(INSTALL_MAN) faidx.5 sam.5 vcf.5 $(DESTDIR)$(man5dir)
 
 installdirs:

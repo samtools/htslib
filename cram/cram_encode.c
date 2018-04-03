@@ -1152,11 +1152,11 @@ static int lossy_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
 	    uint64_t i64;
 	    struct {
 		int32_t e,c; // expected & observed counts.
-	    };
+	    } counts;
 	} u;
 
 	e = expected_template_count(b);
-	u.e = e; u.c = 1;
+	u.counts.e = e; u.counts.c = 1;
 
 	k = kh_put(m_s2u64, names, bam_name(b), &n);
 	if (n == -1)
@@ -1165,13 +1165,13 @@ static int lossy_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
 	if (n == 0) {
 	    // not a new name
 	    u.i64 = kh_val(names, k);
-	    if (u.e != e) {
+	    if (u.counts.e != e) {
 		// different expectation or already hit the max
 		//fprintf(stderr, "Err computing no. %s recs\n", bam_name(b));
 		kh_val(names, k) = 0;
 	    } else {
-		u.c++;
-		if (u.e == u.c) {
+		u.counts.c++;
+		if (u.counts.e == u.counts.c) {
 		    // Reached expected count.
 		    kh_val(names, k) = -1;
 		} else {
@@ -2072,7 +2072,8 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
  *         NULL on failure or no rg present (FIXME)
  */
 static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
-			     cram_slice *s, cram_record *cr) {
+			     cram_slice *s, cram_record *cr,
+			     int verbatim_NM, int verbatim_MD) {
     char *aux, *orig, *rg = NULL;
     int aux_size = bam_get_l_aux(b);
     cram_block *td_b = c->comp_hdr->TD_blk;
@@ -2095,7 +2096,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 
 	// MD:Z
 	if (aux[0] == 'M' && aux[1] == 'D' && aux[2] == 'Z') {
-	    if (cr->len && !fd->no_ref && !(cr->flags & BAM_FUNMAP)) {
+	    if (cr->len && !fd->no_ref && !(cr->flags & BAM_FUNMAP) && !verbatim_MD) {
 		while (*aux++);
 		continue;
 	    }
@@ -2103,7 +2104,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 
 	// NM:i
 	if (aux[0] == 'N' && aux[1] == 'M') {
-	    if (cr->len && !fd->no_ref && !(cr->flags & BAM_FUNMAP)) {
+	    if (cr->len && !fd->no_ref && !(cr->flags & BAM_FUNMAP) && !verbatim_NM) {
 		switch(aux[2]) {
 		case 'A': case 'C': case 'c': aux+=4; break;
 		case 'S': case 's':           aux+=5; break;
@@ -2242,7 +2243,9 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 	    m->codec = c;
 
 	    // Link to fd-global tag metrics
+	    pthread_mutex_lock(&fd->metrics_lock);
 	    m->m = k_global ? (cram_metrics *)kh_val(fd->tags_used, k_global) : NULL;
+	    pthread_mutex_unlock(&fd->metrics_lock);
 	}
 
 	cram_tag_map *tm = (cram_tag_map *)kh_val(c->tags_used, k);
@@ -2514,6 +2517,14 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     char *cp, *rg;
     char *ref, *seq, *qual;
 
+    // Any places with N in seq and/or reference can lead to ambiguous
+    // interpretation of the SAM NM:i tag.  So we store these verbatim
+    // to ensure valid data round-trips the same regardless of who
+    // defines it as valid.
+    // Similarly when alignments go beyond end of the reference.
+    int verbatim_NM = fd->store_nm;
+    int verbatim_MD = fd->store_md;
+
     // FIXME: multi-ref containers
 
     ref = c->ref;
@@ -2522,33 +2533,6 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     //fprintf(stderr, "%s => %d\n", rg ? rg : "\"\"", cr->rg);
 
-    // Fields to resolve later
-    //cr->mate_line;    // index to another cram_record
-    //cr->mate_flags;   // MF
-    //cr->ntags;        // TC
-    cr->ntags      = 0; //cram_stats_add(c->stats[DS_TC], cr->ntags);
-    if (CRAM_MAJOR_VERS(fd->version) == 1)
-	rg = cram_encode_aux_1_0(fd, b, c, s, cr);
-    else
-	rg = cram_encode_aux(fd, b, c, s, cr);
-
-    //cr->aux_size = b->blk_size - ((char *)bam_aux(b) - (char *)&bam_ref(b));
-    //cr->aux = DSTRING_LEN(s->aux_ds);
-    //dstring_nappend(s->aux_ds, bam_aux(b), cr->aux_size);
-
-    /* Read group, identified earlier */
-    if (rg) {
-	SAM_RG *brg = sam_hdr_find_rg(fd->header, rg);
-	cr->rg = brg ? brg->id : -1;
-    } else if (CRAM_MAJOR_VERS(fd->version) == 1) {
-	SAM_RG *brg = sam_hdr_find_rg(fd->header, "UNKNOWN");
-	assert(brg);
-    } else {
-	cr->rg = -1;
-    }
-    cram_stats_add(c->stats[DS_RG], cr->rg);
-
-    
     cr->ref_id      = bam_ref(b);  cram_stats_add(c->stats[DS_RI], cr->ref_id);
     cram_stats_add(c->stats[DS_BF], fd->cram_flag_swap[cr->flags & 0xfff]);
 
@@ -2689,6 +2673,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 			return -1;
 		    }
 		    for (l = 0; l < end; l++) {
+			if (rp[l] == 'N' && sp[l] == 'N')
+			    verbatim_NM = verbatim_MD = 1;
 			if (rp[l] != sp[l]) {
 			    if (!sp[l])
 				break;
@@ -2737,6 +2723,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 			}
 		    } else {
 			/* off end of sequence or non-ref based output */
+			verbatim_NM = verbatim_MD = 1;
 			for (; l < cig_len && seq[spos]; l++, spos++) {
 			    if (cram_add_base(fd, c, s, cr, spos,
 					      seq[spos], qual[spos]))
@@ -2746,6 +2733,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 		    apos += cig_len;
 		} else if (!cr->len) {
 		    /* Seq "*" */
+		    verbatim_NM = verbatim_MD = 1;
 		    apos += cig_len;
 		    spos += cig_len;
 		}
@@ -2831,6 +2819,24 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 	    cram_stats_add(c->stats[DS_BA], seq[i]);
 	fake_qual = 0;
     }
+
+    cr->ntags      = 0; //cram_stats_add(c->stats[DS_TC], cr->ntags);
+    if (CRAM_MAJOR_VERS(fd->version) == 1)
+	rg = cram_encode_aux_1_0(fd, b, c, s, cr);
+    else
+	rg = cram_encode_aux(fd, b, c, s, cr, verbatim_NM, verbatim_MD);
+
+    /* Read group, identified earlier */
+    if (rg) {
+	SAM_RG *brg = sam_hdr_find_rg(fd->header, rg);
+	cr->rg = brg ? brg->id : -1;
+    } else if (CRAM_MAJOR_VERS(fd->version) == 1) {
+	SAM_RG *brg = sam_hdr_find_rg(fd->header, "UNKNOWN");
+	assert(brg);
+    } else {
+	cr->rg = -1;
+    }
+    cram_stats_add(c->stats[DS_RG], cr->rg);
 
     /*
      * Append to the qual block now. We do this here as

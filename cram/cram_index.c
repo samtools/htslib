@@ -463,36 +463,57 @@ cram_index *cram_index_last(cram_fd *fd, int refid, cram_index *from) {
  * and then read from then on, skipping decoding of slices and/or
  * whole containers when they don't overlap the specified cram_range.
  *
+ * This function also updates the cram_fd range field.
+ *
  * Returns 0 on success
  *        -1 on general failure
  *        -2 on no-data (empty chromosome)
  */
 int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
+    int ret = 0;
     cram_index *e;
 
-    if (r->refid == HTS_IDX_NONE)
-	return -2;
+    if (r->refid == HTS_IDX_NONE) {
+	ret = -2; goto err;
+    }
 
     // Ideally use an index, so see if we have one.
     if ((e = cram_index_query(fd, r->refid, r->start, NULL))) {
-	if (0 != cram_seek(fd, e->offset, SEEK_SET))
-	    if (0 != cram_seek(fd, e->offset - fd->first_container, SEEK_CUR))
-		return -1;
+	if (0 != cram_seek(fd, e->offset, SEEK_SET)) {
+	    if (0 != cram_seek(fd, e->offset - fd->first_container, SEEK_CUR)) {
+		ret = -1; goto err;
+	    }
+	}
     } else {
 	// Absent from index, but this most likely means it simply has no data.
-	return -2;
+	ret = -2; goto err;
     }
 
+    pthread_mutex_lock(&fd->range_lock);
+    fd->range = *r;
     if (r->refid == HTS_IDX_START || r->refid == HTS_IDX_REST)
 	fd->range.refid = -2; // special case in cram_next_slice
+    pthread_mutex_unlock(&fd->range_lock);
 
     if (fd->ctr) {
 	cram_free_container(fd->ctr);
+	if (fd->ctr_mt && fd->ctr_mt != fd->ctr)
+	    cram_free_container(fd->ctr_mt);
 	fd->ctr = NULL;
+	fd->ctr_mt = NULL;
 	fd->ooc = 0;
+	fd->eof = 0;
     }
 
     return 0;
+
+ err:
+    // It's unlikely fd->range will be accessed after EOF or error,
+    // but this maintains identical behaviour to the previous code.
+    pthread_mutex_lock(&fd->range_lock);
+    fd->range = *r;
+    pthread_mutex_unlock(&fd->range_lock);
+    return ret;
 }
 
 

@@ -628,10 +628,16 @@ int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int mi
 }
 void bcf_sr_sort_remove_reader(bcf_srs_t *readers, sr_sort_t *srt, int i)
 {
-    free(srt->vcf_buf[i].rec);
-    if ( i+1 < srt->nsr )
-        memmove(&srt->vcf_buf[i], &srt->vcf_buf[i+1], (srt->nsr - i - 1)*sizeof(vcf_buf_t));
-    memset(srt->vcf_buf + srt->nsr - 1, 0, sizeof(vcf_buf_t));
+    //vcf_buf is allocated only in bcf_sr_sort_next
+    //So, a call to bcf_sr_add_reader() followed immediately by bcf_sr_remove_reader()
+    //would cause the program to crash in this segment
+    if (srt->vcf_buf)
+    {
+        free(srt->vcf_buf[i].rec);
+        if ( i+1 < srt->nsr )
+            memmove(&srt->vcf_buf[i], &srt->vcf_buf[i+1], (srt->nsr - i - 1)*sizeof(vcf_buf_t));
+        memset(srt->vcf_buf + srt->nsr - 1, 0, sizeof(vcf_buf_t));
+    }
 }
 sr_sort_t *bcf_sr_sort_init(sr_sort_t *srt)
 {

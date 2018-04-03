@@ -149,6 +149,12 @@ various features and specify further optional external requirements:
     by default.  It can be disabled with --disable-lzma, but be aware
     that not all CRAM files may be possible to decode.
 
+--with-libdeflate
+    Libdeflate is a heavily optimized library for DEFLATE-based compression
+    and decompression.  It also includes a fast crc32 implementation.
+    By default, ./configure will probe for libdeflate and use it if
+    available.  To prevent this, use --without-libdeflate.
+
 The configure script also accepts the usual options and environment variables
 for tuning installation locations and compilers: type './configure --help'
 for details.  For example,
@@ -158,6 +164,16 @@ for details.  For example,
 would specify that HTSlib is to be built with icc and installed into bin,
 lib, etc subdirectories under /opt/icc-compiled.
 
+If dependencies have been installed in non-standard locations (i.e. not on
+the normal include and library search paths) then the CPPFLAGS and LDFLAGS
+environment variables can be used to set the options needed to find them.
+For example, NetBSD users may use:
+
+    ./configure CPPFLAGS=-I/usr/pkg/include \
+                LDFLAGS='-L/usr/pkg/lib -Wl,-R/usr/pkg/lib'
+
+to allow compiling and linking against dependencies installed via the ports
+collection.
 
 Installation Locations
 ======================

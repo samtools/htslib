@@ -366,7 +366,7 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     // Skip to end of line
     int nonspace = 0;
     p = q;
-    while ( *q && *q!='\n' ) { nonspace |= !isspace(*q); q++; }
+    while ( *q && *q!='\n' ) { nonspace |= !isspace_c(*q); q++; }
     if (nonspace) {
         hts_log_warning("Dropped trailing junk from header line '%.*s'", (int) (q - line), line);
     }
@@ -453,7 +453,7 @@ int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
     // INFO/FILTER/FORMAT
     char *id = NULL;
-    uint32_t type = -1, var = -1;
+    uint32_t type = UINT32_MAX, var = UINT32_MAX;
     int num = -1, idx = -1;
     for (i=0; i<hrec->nkeys; i++)
     {
@@ -3697,7 +3697,7 @@ bcf_info_t *bcf_get_info_id(bcf1_t *line, const int id)
 
 int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type)
 {
-    int i,j, tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag);
+    int i, ret = -4, tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag);
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_INFO,tag_id) ) return -1;    // no such INFO field in the header
     if ( bcf_hdr_id2type(hdr,BCF_HL_INFO,tag_id)!=type ) return -2;     // expected different type
 
@@ -3730,18 +3730,19 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
         *dst  = realloc(*dst, *ndst * size1);
     }
 
-    #define BRANCH(type_t, convert, is_missing, is_vector_end, set_missing, set_regular, out_type_t) { \
+    #define BRANCH(type_t, convert, is_missing, is_vector_end, set_missing, set_regular, out_type_t) do { \
         out_type_t *tmp = (out_type_t *) *dst; \
+        int j; \
         for (j=0; j<info->len; j++) \
         { \
             type_t p = convert(info->vptr + j * sizeof(type_t)); \
-            if ( is_vector_end ) return j; \
+            if ( is_vector_end ) break; \
             if ( is_missing ) set_missing; \
             else set_regular; \
             tmp++; \
         } \
-        return j; \
-    }
+        ret = j; \
+    } while (0)
     switch (info->type) {
         case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
         case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
@@ -3750,7 +3751,7 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
         default: hts_log_error("Unexpected type %d", info->type); exit(1);
     }
     #undef BRANCH
-    return -4;  // this can never happen
+    return ret;  // set by BRANCH
 }
 
 int bcf_get_format_string(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, char ***dst, int *ndst)

@@ -142,10 +142,10 @@ static int cram_block_compression_hdr_set_DS(cram_block_compression_hdr *ch,
 	return 0;
 
     default:
-	return -1;
+	break;
     }
 
-    return 0;
+    return -1;
 }
 
 int cram_block_compression_hdr_set_rg(cram_block_compression_hdr *ch, int new_rg) {

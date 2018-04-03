@@ -230,6 +230,8 @@ enum hts_fmt_option {
     CRAM_OPT_REQUIRED_FIELDS,
     CRAM_OPT_LOSSY_NAMES,
     CRAM_OPT_BASES_PER_SLICE,
+    CRAM_OPT_STORE_MD,
+    CRAM_OPT_STORE_NM,
 
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,
@@ -721,14 +723,39 @@ void errmod_destroy(errmod_t *em);
 int errmod_cal(const errmod_t *em, int n, int m, uint16_t *bases, float *q);
 
 
-/*****************************************
- * Probabilistic banded glocal alignment *
- *****************************************/
+/*****************************************************
+ * Probabilistic banded glocal alignment             *
+ * See https://doi.org/10.1093/bioinformatics/btr076 *
+ *****************************************************/
 
 typedef struct probaln_par_t {
     float d, e;
     int bw;
 } probaln_par_t;
+
+/// Perform probabilistic banded glocal alignment
+/** @param      ref     Reference sequence
+    @param      l_ref   Length of reference
+    @param      query   Query sequence
+    @param      l_query Length of query sequence
+    @param      iqual   Query base qualities
+    @param      c       Alignment parameters
+    @param[out] state   Output alignment
+    @param[out] q    Phred scaled posterior probability of state[i] being wrong
+    @return     Phred-scaled likelihood score, or INT_MIN on failure.
+
+The reference and query sequences are coded using integers 0,1,2,3,4 for
+bases A,C,G,T,N respectively (N here is for any ambiguity code).
+
+On output, state and q are arrays of length l_query. The higher 30
+bits give the reference position the query base is matched to and the
+lower two bits can be 0 (an alignment match) or 1 (an
+insertion). q[i] gives the phred scaled posterior probability of
+state[i] being wrong.
+
+On failure, errno will be set to EINVAL if the values of l_ref or l_query
+were invalid; or ENOMEM if a memory allocation failed.
+*/
 
 int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_query, const uint8_t *iqual, const probaln_par_t *c, int *state, uint8_t *q);
 
