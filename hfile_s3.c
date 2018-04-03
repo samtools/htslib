@@ -41,7 +41,7 @@ typedef struct {
     kstring_t id;
     kstring_t token;
     kstring_t secret;
-    char *region;
+    kstring_t region;
     char *bucket;
     kstring_t auth_hdr;
     time_t auth_time;
@@ -248,8 +248,8 @@ static void free_auth_data(s3_auth_data *ad) {
     free(ad->id.s);
     free(ad->token.s);
     free(ad->secret.s);
+    free(ad->region.s);
     free(ad->bucket);
-    free(ad->region);
     free(ad->auth_hdr.s);
     free(ad);
 }
@@ -383,10 +383,11 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
     if (ad->id.l == 0)
         parse_simple("~/.awssecret", &ad->id, &ad->secret);
 
-    if (host_base.l == 0)
-        kputs("s3-", &host_base);
-        kputs(ad->region, &host_base);
-        kputs(".amazonaws.com", &host_base);
+    if (host_base.l == 0){
+        ksprintf(&host_base, "%s%s.amazonaws.com",
+        ad->region.l > 0 ? "s3." : "s3",
+        ad->region.l > 0 ? ad->region.s : "");
+    }
     // Use virtual hosted-style access if possible, otherwise path-style.
     if (is_dns_compliant(bucket, path)) {
         kputsn(bucket, path - bucket, &url);
