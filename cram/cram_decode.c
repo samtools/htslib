@@ -3150,7 +3150,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		if (s_next->hdr->ref_seq_id != fd->range.refid) {
 		    fd->ooc = 1;
 		    cram_free_slice(s_next);
-		    s_next = NULL;
+		    c_next->slice = s_next = NULL;
 		    break;
 		}
 
@@ -3158,7 +3158,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		if (s_next->hdr->ref_seq_start > fd->range.end) {
 		    fd->ooc = 1;
 		    cram_free_slice(s_next);
-		    s_next = NULL;
+		    c_next->slice = s_next = NULL;
 		    break;
 		}
 
@@ -3166,6 +3166,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
 		if (s_next->hdr->ref_seq_start + s_next->hdr->ref_seq_span-1 <
 		    fd->range.start) {
 		    cram_free_slice(s_next);
+		    c_next->slice = s_next = NULL;
 		    continue;
 		}
 	    }
@@ -3346,6 +3347,8 @@ int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam) {
  * Drains and frees the decode read-queue for a multi-threaded reader.
  */
 void cram_drain_rqueue(cram_fd *fd) {
+    cram_container *lc = NULL;
+
     if (!fd->pool)
 	return;
 
@@ -3353,7 +3356,18 @@ void cram_drain_rqueue(cram_fd *fd) {
     while (!hts_tpool_process_empty(fd->rqueue)) {
 	hts_tpool_result *r = hts_tpool_next_result_wait(fd->rqueue);
 	cram_decode_job *j = (cram_decode_job *)hts_tpool_result_data(r);
-	cram_free_container(j->c);
+	if (j->c->slice == j->s)
+	    j->c->slice = NULL;
+	if (j->c != lc) {
+	    if (lc) {
+		if (fd->ctr == lc)
+		    fd->ctr = NULL;
+		if (fd->ctr_mt == lc)
+		    fd->ctr_mt = NULL;
+		cram_free_container(lc);
+	    }
+	    lc = j->c;
+	}
 	cram_free_slice(j->s);
 	hts_tpool_delete_result(r, 1);
     }
@@ -3362,9 +3376,28 @@ void cram_drain_rqueue(cram_fd *fd) {
     // due to the input queue being full.
     if (fd->job_pending) {
 	cram_decode_job *j = (cram_decode_job *)fd->job_pending;
-	cram_free_container(j->c);
+	if (j->c->slice == j->s)
+	    j->c->slice = NULL;
+	if (j->c != lc) {
+	    if (lc) {
+		if (fd->ctr == lc)
+		    fd->ctr = NULL;
+		if (fd->ctr_mt == lc)
+		    fd->ctr_mt = NULL;
+		cram_free_container(lc);
+	    }
+	    lc = j->c;
+	}
 	cram_free_slice(j->s);
 	free(j);
 	fd->job_pending = NULL;
+    }
+
+    if (lc) {
+	if (fd->ctr == lc)
+	    fd->ctr = NULL;
+	if (fd->ctr_mt == lc)
+	    fd->ctr_mt = NULL;
+	cram_free_container(lc);
     }
 }

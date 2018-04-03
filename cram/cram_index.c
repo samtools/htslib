@@ -497,6 +497,8 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
 
     if (fd->ctr) {
 	cram_free_container(fd->ctr);
+	if (fd->ctr_mt && fd->ctr_mt != fd->ctr)
+	    cram_free_container(fd->ctr_mt);
 	fd->ctr = NULL;
 	fd->ctr_mt = NULL;
 	fd->ooc = 0;

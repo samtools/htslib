@@ -2746,6 +2746,7 @@ void cram_free_container(cram_container *c) {
     if (c->comp_hdr_block)
 	cram_free_block(c->comp_hdr_block);
 
+    // Free the slices; filled out by encoder only
     if (c->slices) {
         for (i = 0; i < c->max_slice; i++) {
             if (c->slices[i])
@@ -2756,8 +2757,10 @@ void cram_free_container(cram_container *c) {
         free(c->slices);
     }
 
+    // Free the current slice; set by both encoder & decoder
     if (c->slice) {
-        cram_free_slice(c->slice);
+	cram_free_slice(c->slice);
+	c->slice = NULL;
     }
 
     for (id = DS_RN; id < DS_TN; id++)
@@ -3136,7 +3139,7 @@ static int cram_flush_result(cram_fd *fd) {
 	    if (0 != cram_flush_container2(fd, c))
 		return -1;
 
-	/* Free the container */
+	// Free the slices; filled out by encoder only
 	if (c->slices) {
 	    for (i = 0; i < c->max_slice; i++) {
 		if (c->slices[i])
@@ -3147,6 +3150,7 @@ static int cram_flush_result(cram_fd *fd) {
 	    }
 	}
 
+	// Free the current slice; set by both encoder & decoder
 	if (c->slice) {
 	    cram_free_slice(c->slice);
 	    c->slice = NULL;
