@@ -295,7 +295,7 @@ int main(int argc, char **argv)
             }
             char *name;
             int len = strlen(argv[optind]);
-            if ( strcmp(argv[optind]+len-3,".gz") )
+            if ( strcmp(argv[optind]+len-3,".gz") && !test)
             {
                 fprintf(stderr, "[bgzip] %s: unknown suffix -- ignored\n", argv[optind]);
                 return 1;
