@@ -335,6 +335,12 @@ int main(int argc, char **argv)
                 return 1;
             }
         }
+
+        if (!fp->is_compressed) {
+            fprintf(stderr, "[bgzip] Expected compressed file -- ignored\n");
+            return 1;
+        }
+
         if (threads > 1)
             bgzf_mt(fp, threads, 256);
 
