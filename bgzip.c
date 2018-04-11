@@ -32,6 +32,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <getopt.h>
+#include <inttypes.h>
 #include <sys/stat.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
@@ -357,15 +358,13 @@ int main(int argc, char **argv)
             if (end < 0) c = bgzf_read(fp, buffer, WINDOW_SIZE);
             else c = bgzf_read(fp, buffer, (end - start > WINDOW_SIZE)? WINDOW_SIZE:(end - start));
             if (c == 0) break;
-            if (c < 0) error("Could not read %d bytes: Error %d\n", (end - start > WINDOW_SIZE)? WINDOW_SIZE:(end - start), fp->errcode);
+            if (c < 0) error("Error %d in block starting at offset %" PRId64 "(%" PRIX64 ")\n", fp->errcode, fp->block_address, fp->block_address);
             start += c;
-            if ( !test ) {
-                if ( write(f_dst, buffer, c) != c ) {
+            if ( !test && write(f_dst, buffer, c) != c ) {
 #ifdef _WIN32
-                    if (GetLastError() != ERROR_NO_DATA)
+                if (GetLastError() != ERROR_NO_DATA)
 #endif
-                    error("Could not write %d bytes\n", c);
-                }
+                error("Could not write %d bytes\n", c);
             }
             if (end >= 0 && start >= end) break;
         }
