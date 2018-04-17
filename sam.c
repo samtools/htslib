@@ -676,7 +676,11 @@ static int cram_pseek(void *fp, int64_t offset, int whence)
 
     if (fd->ctr) {
         cram_free_container(fd->ctr);
+        if (fd->ctr_mt && fd->ctr_mt != fd->ctr)
+            cram_free_container(fd->ctr_mt);
+
         fd->ctr = NULL;
+        fd->ctr_mt = NULL;
         fd->ooc = 0;
     }
 
@@ -699,7 +703,7 @@ static int64_t cram_ptell(void *fp)
     if (fd && fd->fp) {
         ret = htell(fd->fp);
         if ((c = fd->ctr) != NULL) {
-            ret -= ((c->curr_slice != c->max_slice || c->curr_rec != c->max_rec) ? c->offset + 1 : 0);
+            ret -= ((c->curr_slice < c->max_slice || c->curr_rec < c->num_records) ? c->offset + 1 : 0);
         }
     }
 
