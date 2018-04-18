@@ -159,7 +159,8 @@ static hts_tpool_result *hts_tpool_next_result_locked(hts_tpool_process *q) {
             // Not technically input full, but can guarantee there is
             // room for the input to go somewhere so we still signal.
             // The waiting code will then check the condition again.
-            pthread_cond_signal(&q->input_not_full_c);
+            if (q->n_input < q->qsize)
+                pthread_cond_signal(&q->input_not_full_c);
             if (!q->shutdown)
                 wake_next_worker(q, 1);
         }
