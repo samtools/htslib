@@ -249,6 +249,12 @@ hwrite(hFILE *fp, const void *buffer, size_t nbytes)
     }
 
     size_t n = fp->limit - fp->begin;
+    if (nbytes >= n && fp->begin == fp->buffer) {
+        // Go straight to hwrite2 if the buffer is empty and the request
+        // won't fit.
+        return hwrite2(fp, buffer, nbytes, 0);
+    }
+
     if (n > nbytes) n = nbytes;
     memcpy(fp->begin, buffer, n);
     fp->begin += n;
