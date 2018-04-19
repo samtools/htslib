@@ -2251,7 +2251,7 @@ hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
                         if (bin == 0) { max_off = (uint64_t)-1; break; }
                         k = kh_get(bin, bidx, bin);
                         if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) {
-                            max_off = kh_val(bidx, k).loff;
+                            max_off = kh_val(bidx, k).list[0].u;
                             break;
                         }
                         bin++;
