@@ -210,6 +210,14 @@ int main(void)
     if ((c = hgetc(fin)) != EOF) fail("preloading chars: hgetc (EOF) returned %d", c);
     if (hclose(fin) != 0) fail("preloading hclose(test/hfile_chars.tmp) for reading");
 
+    fin = hopen("mmap:test/hfile_chars.tmp", "r");
+    if (fin == NULL) fail("mmapping \"test/hfile_chars.tmp\" for reading");
+    for (i = 0; i < 256; i++)
+        if ((c = hgetc(fin)) != i)
+            fail("mmapping chars: hgetc (%d = 0x%x) returned %d = 0x%x", i, i, c, c);
+    if ((c = hgetc(fin)) != EOF) fail("mmapping chars: hgetc (EOF) returned %d", c);
+    if (hclose(fin) != 0) fail("mmapping hclose(test/hfile_chars.tmp) for reading");
+
     char* test_string = strdup("Test string");
     fin = hopen("mem:", "r:", test_string, 12);
     if (fin == NULL) fail("hopen(\"mem:\", \"r:\", ...)");
