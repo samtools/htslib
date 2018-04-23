@@ -871,7 +871,7 @@ static int hfile_mmaped_close(hFILE *fp)
     fp->buffer = NULL;
     return 0;
 #else
-    return 1
+    return 1;
 #endif
 }
 
