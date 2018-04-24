@@ -672,6 +672,7 @@ static void bcf_sr_seek_start(bcf_srs_t *readers)
 int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos)
 {
     if ( !readers->regions ) return 0;
+    bcf_sr_sort_reset(&BCF_SR_AUX(readers)->sort);
     if ( !seq && !pos )
     {
         // seek to start
