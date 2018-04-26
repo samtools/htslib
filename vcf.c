@@ -3581,9 +3581,9 @@ static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nal
         n++;
     }
 
-    // Update REF length
+    // Update REF length. Note that END is 1-based while line->pos 0-based
     bcf_info_t *end_info = bcf_get_info(hdr,line,"END");
-    line->rlen = end_info ? end_info->v1.i : strlen(line->d.allele[0]);
+    line->rlen = end_info ? end_info->v1.i - line->pos : strlen(line->d.allele[0]);
 
     return 0;
 }
