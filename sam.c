@@ -296,6 +296,40 @@ bam1_t *bam_init1()
     return (bam1_t*)calloc(1, sizeof(bam1_t));
 }
 
+static int do_realloc_bam_data(bam1_t *b, size_t desired)
+{
+    uint32_t new_m_data;
+    uint8_t *new_data;
+    new_m_data = desired;
+    kroundup32(new_m_data);
+    if (new_m_data < desired) {
+        errno = ENOMEM; // Not strictly true but we can't store the size
+        return -1;
+    }
+    new_data = realloc(b->data, new_m_data);
+    if (!new_data) return -1;
+    b->data = new_data;
+    b->m_data = new_m_data;
+    return 0;
+}
+
+static inline int realloc_bam_data(bam1_t *b, size_t desired)
+{
+    if (desired <= b->m_data) return 0;
+    return do_realloc_bam_data(b, desired);
+}
+
+static inline int possibly_expand_bam_data(bam1_t *b, size_t bytes) {
+    uint32_t new_len = b->l_data + bytes;
+
+    if (new_len > INT32_MAX || new_len < b->l_data) {
+        errno = ENOMEM;
+        return -1;
+    }
+    if (new_len <= b->m_data) return 0;
+    return do_realloc_bam_data(b, new_len);
+}
+
 void bam_destroy1(bam1_t *b)
 {
     if (b == 0) return;
@@ -386,15 +420,8 @@ static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0
     n_cigar4 = c->n_cigar * 4;
     CG_st = CG - b->data - 2;
     CG_en = CG_st + 8 + n_cigar4;
+    if (possibly_expand_bam_data(b, n_cigar4 - fake_bytes) < 0) return -1;
     b->l_data = b->l_data - fake_bytes + n_cigar4; // we need c->n_cigar-fake_bytes bytes to swap CIGAR to the right place
-    if (b->m_data < b->l_data) {
-        uint8_t *new_data;
-        uint32_t new_max = b->l_data;
-        kroundup32(new_max);
-        new_data = (uint8_t*)realloc(b->data, new_max);
-        if (new_data == 0) return -1;
-        b->m_data = new_max, b->data = new_data;
-    }
     memmove(b->data + cigar_st + n_cigar4, b->data + cigar_st + fake_bytes, ori_len - (cigar_st + fake_bytes)); // insert c->n_cigar-fake_bytes empty space to make room
     memcpy(b->data + cigar_st, b->data + (n_cigar4 - fake_bytes) + CG_st + 8, n_cigar4); // copy the real CIGAR to the right place; -fake_bytes for the fake CIGAR
     if (ori_len > CG_en) // move data after the CG tag
@@ -436,7 +463,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
 {
     bam1_core_t *c = &b->core;
     int32_t block_len, ret, i;
-    uint32_t x[8];
+    uint32_t x[8], new_l_data;
     if ((ret = bgzf_read(fp, &block_len, 4)) != 4) {
         if (ret == 0) return -1; // normal end-of-file
         else return -2; // truncated
@@ -456,21 +483,15 @@ int bam_read1(BGZF *fp, bam1_t *b)
     c->flag = x[3]>>16; c->n_cigar = x[3]&0xffff;
     c->l_qseq = x[4];
     c->mtid = x[5]; c->mpos = x[6]; c->isize = x[7];
-    b->l_data = block_len - 32 + c->l_extranul;
-    if (b->l_data < 0 || c->l_qseq < 0 || c->l_qname < 1) return -4;
+
+    new_l_data = block_len - 32 + c->l_extranul;
+    if (new_l_data > INT_MAX || c->l_qseq < 0 || c->l_qname < 1) return -4;
     if (((uint64_t) c->n_cigar << 2) + c->l_qname + c->l_extranul
-        + (((uint64_t) c->l_qseq + 1) >> 1) + c->l_qseq > (uint64_t) b->l_data)
+        + (((uint64_t) c->l_qseq + 1) >> 1) + c->l_qseq > (uint64_t) new_l_data)
         return -4;
-    if (b->m_data < b->l_data) {
-        uint8_t *new_data;
-        uint32_t new_m = b->l_data;
-        kroundup32(new_m);
-        new_data = (uint8_t*)realloc(b->data, new_m);
-        if (!new_data)
-            return -4;
-        b->data = new_data;
-        b->m_data = new_m;
-    }
+    if (realloc_bam_data(b, new_l_data) < 0) return -4;
+    b->l_data = new_l_data;
+
     if (bgzf_read(fp, b->data, c->l_qname) != c->l_qname) return -4;
     for (i = 0; i < c->l_extranul; ++i) b->data[c->l_qname+i] = '\0';
     c->l_qname += c->l_extranul;
@@ -1670,15 +1691,7 @@ int bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8
     new_len = b->l_data + 3 + len;
     if (new_len > INT32_MAX || new_len < b->l_data) goto nomem;
 
-    if (b->m_data < new_len) {
-        uint32_t new_size = new_len;
-        uint8_t *new_data;
-        kroundup32(new_size);
-        new_data = realloc(b->data, new_size);
-        if (new_data == NULL) goto nomem;
-        b->m_data = new_size;
-        b->data = new_data;
-    }
+    if (realloc_bam_data(b, new_len) < 0) return -1;
 
     b->data[b->l_data] = tag[0];
     b->data[b->l_data + 1] = tag[1];
@@ -1801,14 +1814,11 @@ int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data)
     s -= 2;
     int l_aux = bam_get_l_aux(b);
 
+    ptrdiff_t s_offset = s - b->data;
+    if (possibly_expand_bam_data(b, 3 + len) < 0) return -1;
+    s = b->data + s_offset;
     b->l_data += 3 + len;
-    if (b->m_data < b->l_data) {
-        ptrdiff_t s_offset = s - b->data;
-        b->m_data = b->l_data;
-        kroundup32(b->m_data);
-        b->data = (uint8_t*)realloc(b->data, b->m_data);
-        s = b->data + s_offset;
-    }
+
     memmove(s+3+len, s, l_aux - (s - bam_get_aux(b)));
     s[0] = tag[0];
     s[1] = tag[1];
