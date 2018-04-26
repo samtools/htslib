@@ -528,11 +528,27 @@ int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data);
    ENOMEM: The bam data needs to be expanded and either the attempt to
    reallocate the data buffer failed or the resulting buffer would be
    longer than the maximum size allowed in a bam record (2Gbytes).
-
-   This function will not change the ordering of tags in the bam record.
-   New tags will be appended to any existing aux records.
 */
 int bam_aux_update_int(bam1_t *b, const char tag[2], int64_t val);
+
+/// Update or add a floating-point tag
+/* @param b    The bam record to update
+   @param tag  Tag identifier
+   @param val  The new value
+   @return 0 on success, -1 on failure
+   This function will not change the ordering of tags in the bam record.
+   New tags will be appended to any existing aux records.
+
+   On failure, errno may be set to one of the following values:
+
+   EINVAL: The bam record's aux data is corrupt or an existing tag with the
+   given ID is not of a float type.
+
+   ENOMEM: The bam data needs to be expanded and either the attempt to
+   reallocate the data buffer failed or the resulting buffer would be
+   longer than the maximum size allowed in a bam record (2Gbytes).
+*/
+int bam_aux_update_float(bam1_t *b, const char tag[2], float val);
 
 /**************************
  *** Pileup and Mpileup ***

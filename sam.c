@@ -1893,6 +1893,42 @@ int bam_aux_update_int(bam1_t *b, const char tag[2], int64_t val)
     return 0;
 }
 
+int bam_aux_update_float(bam1_t *b, const char tag[2], float val)
+{
+    uint8_t *s = bam_aux_get(b, tag);
+    int shrink = 0, new = 0;
+
+    if (s) { // Tag present - what was it?
+        switch (*s) {
+            case 'f': break;
+            case 'd': shrink = 1; break;
+            default: errno = EINVAL; return -1;  // Not a float
+        }
+    } else {
+        if (errno == ENOENT) {  // Tag doesn't exist - add a new one
+            new = 1;
+        }  else { // Invalid aux data, give up.
+            return -1;
+        }
+    }
+
+    if (new) { // Ensure there's room
+        if (possibly_expand_bam_data(b, 3 + 4) < 0)
+            return -1;
+        s = b->data + b->l_data;
+        *s++ = tag[0];
+        *s++ = tag[1];
+    } else if (shrink) { // Convert non-standard double tag to float
+        memmove(s + 5, s + 9, b->l_data - ((s + 9) - b->data));
+        b->l_data -= 4;
+    }
+    *s++ = 'f';
+    float_to_le(val, s);
+    if (new) b->l_data += 7;
+
+    return 0;
+}
+
 static inline int64_t get_int_aux_val(uint8_t type, const uint8_t *s,
                                       uint32_t idx)
 {

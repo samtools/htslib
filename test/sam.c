@@ -150,10 +150,10 @@ static int aux_fields1(void)
     static const char sam[] = "data:,"
 "@SQ\tSN:one\tLN:1000\n"
 "@SQ\tSN:two\tLN:500\n"
-"r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\n";
+"r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tF2:d:2.46801\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\n";
 
     // Canonical form of the alignment record above, as output by sam_format1()
-    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" NEW_HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\tN0:i:-1234\tN1:i:1234\tN2:i:-2\tN3:i:3";
+    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" NEW_HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tF2:f:9.8765\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\tN0:i:-1234\tN1:i:1234\tN2:i:-2\tN3:i:3\tF1:f:4.5678";
 
     samFile *in = sam_open(sam, "r");
     bam_hdr_t *header = sam_hdr_read(in);
@@ -172,6 +172,8 @@ static int aux_fields1(void)
 
     int32_t ival = -1234;
     uint32_t uval = 1234;
+    float f1 = 4.5678;
+    float f2 = 9.8765;
 
     size_t nvals, i;
 
@@ -301,6 +303,33 @@ static int aux_fields1(void)
         if (i == 0) test_update_int(aln, "N2", -1, 's', "N3", 3, 'C');
         if (i == 0) test_update_int(aln, "N2", 4294967295U, 'I', "N3", 3, 'C');
         if (i == 0) test_update_int(aln, "N2", -2, 'i', "N3", 3, 'C');
+
+        // Append a value with bam_aux_update_float()
+        if (bam_aux_update_float(aln, "F1", f1) < 0)
+            fail("append F1:f tag");
+
+        p = bam_aux_get(aln, "F1");
+        if (!p)
+            fail("retrieve F1 tag");
+        else if (*p != 'f' || bam_aux2f(p) != f1)
+            fail("F1 field is %c:%e, expected f:%e", *p, bam_aux2f(p), f1);
+
+        // Change a double tag to a float
+        if (bam_aux_update_float(aln, "F2", f2) < 0)
+            fail("update F2 tag");
+
+        p = bam_aux_get(aln, "F2");
+        if (!p)
+            fail("retrieve F2 tag");
+        else if (*p != 'f' || bam_aux2f(p) != f2)
+            fail("F2 field is %c:%e, expected f:%e", *p, bam_aux2f(p), f2);
+
+        // Check the next one is intact too
+        p = bam_aux_get(aln, "Y1");
+        if (!p)
+            fail("retrieve Y1 tag");
+        else if (*p != 'i' && bam_aux2i(p) != -2147483647-1)
+            fail("Y1 field is %"PRId64", expected -2^31", bam_aux2i(p));
 
         if (sam_format1(header, aln, &ks) < 0)
             fail("can't format record");
