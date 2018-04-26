@@ -1827,6 +1827,72 @@ int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data)
     return 0;
 }
 
+int bam_aux_update_int(bam1_t *b, const char tag[2], int64_t val)
+{
+    uint32_t sz, old_sz = 0, new = 0;
+    uint8_t *s, type;
+
+    if (val < INT32_MIN || val > UINT32_MAX) {
+        errno = EOVERFLOW;
+        return -1;
+    }
+    if (val < INT16_MIN)       { type = 'i'; sz = 4; }
+    else if (val < INT8_MIN)   { type = 's'; sz = 2; }
+    else if (val < 0)          { type = 'c'; sz = 1; }
+    else if (val < UINT8_MAX)  { type = 'C'; sz = 1; }
+    else if (val < UINT16_MAX) { type = 'S'; sz = 2; }
+    else                       { type = 'I'; sz = 4; }
+
+    s = bam_aux_get(b, tag);
+    if (s) {  // Tag present - how big was the old one?
+        switch (*s) {
+            case 'c': case 'C': old_sz = 1; break;
+            case 's': case 'S': old_sz = 2; break;
+            case 'i': case 'I': old_sz = 4; break;
+            default: errno = EINVAL; return -1;  // Not an integer
+        }
+    } else {
+        if (errno == ENOENT) {  // Tag doesn't exist - add a new one
+            s = b->data + b->l_data;
+            new = 1;
+        }  else { // Invalid aux data, give up.
+            return -1;
+        }
+    }
+
+    if (new || old_sz < sz) {
+        // Make room for new tag
+        ptrdiff_t s_offset = s - b->data;
+        if (possibly_expand_bam_data(b, (new ? 3 : 0) + sz - old_sz) < 0)
+            return -1;
+        s =  b->data + s_offset;
+        if (new) { // Add tag id
+            *s++ = tag[0];
+            *s++ = tag[1];
+        } else {   // Shift following data so we have space
+            memmove(s + sz, s + old_sz, b->l_data - s_offset - old_sz);
+        }
+    } else {
+        // Reuse old space.  Data value may be bigger than necessary but
+        // we avoid having to move everything else
+        sz = old_sz;
+        type = (val < 0 ? "\0cs\0i" : "\0CS\0I")[old_sz];
+        assert(type > 0);
+    }
+    *s++ = type;
+#ifdef HTS_LITTLE_ENDIAN
+    memcpy(s, &val, sz);
+#else
+    switch (sz) {
+        case 4:  u32_to_le(val, s); break;
+        case 2:  u16_to_le(val, s); break;
+        default: *s = val; break;
+    }
+#endif
+    b->l_data += (new ? 3 : 0) + sz - old_sz;
+    return 0;
+}
+
 static inline int64_t get_int_aux_val(uint8_t type, const uint8_t *s,
                                       uint32_t idx)
 {

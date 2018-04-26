@@ -488,14 +488,51 @@ int bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8
 */
 int bam_aux_del(bam1_t *b, uint8_t *s);
 
-/// Update a string-type tag
+/// Update or add a string-type tag
 /* @param b    The bam record to update
    @param tag  Tag identifier
    @param len  The length of the new string
    @param data The new string
    @return 0 on success, -1 on failure
+   This function will not change the ordering of tags in the bam record.
+   New tags will be appended to any existing aux records.
+
+   On failure, errno may be set to one of the following values:
+
+   EINVAL: The bam record's aux data is corrupt or an existing tag with the
+   given ID is not of type 'Z'.
+
+   ENOMEM: The bam data needs to be expanded and either the attempt to
+   reallocate the data buffer failed or the resulting buffer would be
+   longer than the maximum size allowed in a bam record (2Gbytes).
 */
 int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data);
+
+/// Update or add an integer tag
+/* @param b    The bam record to update
+   @param tag  Tag identifier
+   @param val  The new value
+   @return 0 on success, -1 on failure
+   This function will not change the ordering of tags in the bam record.
+   New tags will be appended to any existing aux records.
+
+   On failure, errno may be set to one of the following values:
+
+   EINVAL: The bam record's aux data is corrupt or an existing tag with the
+   given ID is not of an integer type (c, C, s, S, i or I).
+
+   EOVERFLOW (or ERANGE on systems that do not have EOVERFLOW): val is
+   outside the range that can be stored in an integer bam tag (-2147483647
+   to 4294967295).
+
+   ENOMEM: The bam data needs to be expanded and either the attempt to
+   reallocate the data buffer failed or the resulting buffer would be
+   longer than the maximum size allowed in a bam record (2Gbytes).
+
+   This function will not change the ordering of tags in the bam record.
+   New tags will be appended to any existing aux records.
+*/
+int bam_aux_update_int(bam1_t *b, const char tag[2], int64_t val);
 
 /**************************
  *** Pileup and Mpileup ***

@@ -102,6 +102,49 @@ static void check_int_B_array(bam1_t *aln, char *tag,
 #define str(x) #x
 #define xstr(x) str(x)
 
+static int test_update_int(bam1_t *aln,
+                           const char target_id[2], int64_t target_val,
+                           char expected_type, 
+                           const char next_id[2], int64_t next_val,
+                           char next_type) {
+    uint8_t *p;
+
+    // Try updating target
+    if (bam_aux_update_int(aln, target_id, target_val) < 0) {
+        fail("update %.2s tag", target_id);
+        return -1;
+    }
+
+    // Check it's there and has the right type and value
+    p = bam_aux_get(aln, target_id);
+    if (!p) {
+        fail("find  %.2s tag", target_id);
+        return -1;
+    }
+    if (*p != expected_type || bam_aux2i(p) != target_val) {
+        fail("%.2s field is %c:%"PRId64"; expected %c:%"PRId64,
+             target_id, *p, bam_aux2i(p), expected_type, target_val);
+        return -1;
+    }
+
+    // If given, check that the next tag hasn't been clobbered by the
+    // update above.
+    if (!*next_id) return 0;
+    p = bam_aux_get(aln, next_id);
+    if (!p) {
+        fail("find  %.2s tag after updating %.2s", next_id, target_id);
+        return -1;
+    }
+    if (*p != next_type || bam_aux2i(p) != next_val) {
+        fail("after updating %.2s to %"PRId64":"
+             " %.2s field is %c:%"PRId64"; expected %c:%"PRId64,
+             target_id, target_val,
+             next_id, *p, bam_aux2i(p), next_type, next_val);
+        return -1;
+    }
+    return 0;
+}
+
 static int aux_fields1(void)
 {
     static const char sam[] = "data:,"
@@ -110,7 +153,7 @@ static int aux_fields1(void)
 "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\n";
 
     // Canonical form of the alignment record above, as output by sam_format1()
-    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" NEW_HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\tN0:i:-1234\tN1:i:1234";
+    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" NEW_HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\tN0:i:-1234\tN1:i:1234\tN2:i:-2\tN3:i:3";
 
     samFile *in = sam_open(sam, "r");
     bam_hdr_t *header = sam_hdr_read(in);
@@ -232,6 +275,32 @@ static int aux_fields1(void)
 
         if ((p = bam_aux_get(aln, "N1")) && bam_aux2i(p) != uval)
             fail("N1 field is %"PRId64", expected %u", bam_aux2i(p), uval);
+
+        // Append tags with bam_aux_update_int()
+        if (bam_aux_update_int(aln, "N2", -2) < 0)
+            fail("failed to append N2:c tag");
+
+        if (bam_aux_update_int(aln, "N3", 3) < 0)
+            fail("failed to append N3:C tag");
+
+        p = bam_aux_get(aln, "N2");
+        if (!p)
+            fail("failed to retrieve N2 tag");
+        else if (*p != 'c' || bam_aux2i(p) != -2)
+            fail("N2 field is %c:%"PRId64", expected c:-2", *p, bam_aux2i(p));
+
+        p = bam_aux_get(aln, "N3");
+        if (!p)
+            fail("failed to retrieve N3 tag");
+        else if (*p != 'C' || bam_aux2i(p) != 3)
+            fail("N3 field is %c:%"PRId64", expected C:3", *p, bam_aux2i(p));
+
+        // Try changing values with bam_aux_update_int()
+        i = test_update_int(aln, "N2", 2, 'C', "N3", 3, 'C');
+        if (i == 0) test_update_int(aln, "N2", 1234, 'S', "N3", 3, 'C');
+        if (i == 0) test_update_int(aln, "N2", -1, 's', "N3", 3, 'C');
+        if (i == 0) test_update_int(aln, "N2", 4294967295U, 'I', "N3", 3, 'C');
+        if (i == 0) test_update_int(aln, "N2", -2, 'i', "N3", 3, 'C');
 
         if (sam_format1(header, aln, &ks) < 0)
             fail("can't format record");
