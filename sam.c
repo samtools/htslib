@@ -1929,6 +1929,61 @@ int bam_aux_update_float(bam1_t *b, const char tag[2], float val)
     return 0;
 }
 
+int bam_aux_update_array(bam1_t *b, const char tag[2],
+                         uint8_t type, uint32_t items, void *data)
+{
+    uint8_t *s = bam_aux_get(b, tag);
+    size_t old_sz = 0, new_sz;
+    int new = 0;
+
+    if (s) { // Tag present
+        if (*s != 'B') { errno = EINVAL; return -1; }
+        old_sz = aux_type2size(s[1]);
+        if (old_sz < 1 || old_sz > 4) { errno = EINVAL; return -1; }
+        old_sz *= le_to_u32(s + 2);
+    } else {
+        if (errno == ENOENT) {  // Tag doesn't exist - add a new one
+            s = b->data + b->l_data;
+            new = 1;
+        }  else { // Invalid aux data, give up.
+            return -1;
+        }
+    }
+
+    new_sz = aux_type2size(type);
+    if (new_sz < 1 || new_sz > 4) { errno = EINVAL; return -1; }
+    if (items > INT32_MAX / new_sz) { errno = ENOMEM; return -1; }
+    new_sz *= items;
+
+    if (new || old_sz < new_sz) {
+        // Make room for new tag
+        ptrdiff_t s_offset = s - b->data;
+        if (possibly_expand_bam_data(b, (new ? 8 : 0) + new_sz - old_sz) < 0)
+            return -1;
+        s =  b->data + s_offset;
+    }
+    if (new) { // Add tag id and type
+        *s++ = tag[0];
+        *s++ = tag[1];
+        *s = 'B';
+        b->l_data += 8 + new_sz;
+    } else if (old_sz != new_sz) { // shift following data if necessary
+        memmove(s + 6 + new_sz, s + 6 + old_sz,
+                b->l_data - ((s + 6 + old_sz) - b->data));
+        b->l_data -= old_sz;
+        b->l_data += new_sz;
+    }
+
+    s[1] = type;
+    u32_to_le(items, s + 2);
+#ifdef HTS_LITTLE_ENDIAN
+    memcpy(s + 6, data, new_sz);
+    return 0;
+#else
+    return aux_to_le(type, s + 6, data, new_sz);
+#endif
+}
+
 static inline int64_t get_int_aux_val(uint8_t type, const uint8_t *s,
                                       uint32_t idx)
 {

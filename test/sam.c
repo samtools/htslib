@@ -102,6 +102,8 @@ static void check_int_B_array(bam1_t *aln, char *tag,
 #define str(x) #x
 #define xstr(x) str(x)
 
+#define NELE(x) (sizeof(x)/sizeof(x[0]))
+
 static int test_update_int(bam1_t *aln,
                            const char target_id[2], int64_t target_val,
                            char expected_type, 
@@ -145,6 +147,73 @@ static int test_update_int(bam1_t *aln,
     return 0;
 }
 
+#define CHECK_ARRAY_VALS(T, GET_VAL, FMT1, FMT2) do {                   \
+        T * vals = (T *) data;                                          \
+    uint32_t i;                                                         \
+    for (i = 0; i < nitems; i++) {                                      \
+        if (GET_VAL(p, i) != vals[i]) {                                 \
+            fail("Wrong value from %s for %.2s field index %u, "        \
+                 "got %" FMT1 " expected %" FMT2,                       \
+                 xstr(GET_VAL), target_id, i, GET_VAL(p, i), vals[i]);  \
+            return -1;                                                  \
+        }                                                               \
+    }                                                                   \
+} while (0)
+
+static int test_update_array(bam1_t *aln, const char target_id[2],
+                             uint8_t type, uint32_t nitems, void *data,
+                             const char next_id[2], int64_t next_val,
+                             char next_type)
+{
+    uint8_t *p;
+
+    // Try updating target
+    if (bam_aux_update_array(aln, target_id, type, nitems, data) < 0) {
+        fail("update %2.s tag", target_id);
+        return -1;
+    }
+
+    // Check values
+    p = bam_aux_get(aln, target_id);
+    if (!p) {
+        fail("find  %.2s tag", target_id);
+        return -1;
+    }
+    switch (type) {
+        case 'c':
+            CHECK_ARRAY_VALS(int8_t, bam_auxB2i, PRId64, PRId8); break;
+        case 'C':
+            CHECK_ARRAY_VALS(uint8_t, bam_auxB2i, PRId64, PRIu8); break;
+        case 's':
+            CHECK_ARRAY_VALS(int16_t, bam_auxB2i, PRId64, PRId16); break;
+        case 'S':
+            CHECK_ARRAY_VALS(uint16_t, bam_auxB2i, PRId64, PRIu16); break;
+        case 'i':
+            CHECK_ARRAY_VALS(int32_t, bam_auxB2i, PRId64, PRId32); break;
+        case 'I':
+            CHECK_ARRAY_VALS(uint32_t, bam_auxB2i, PRId64, PRIu32); break;
+        case 'f':
+            CHECK_ARRAY_VALS(float, bam_auxB2f, "e", "e"); break;
+    }
+
+    // If given, check that the next tag hasn't been clobbered by the
+    // update above.
+    if (!*next_id) return 0;
+    p = bam_aux_get(aln, next_id);
+    if (!p) {
+        fail("find  %.2s tag after updating %.2s", next_id, target_id);
+        return -1;
+    }
+    if (*p != next_type || bam_aux2i(p) != next_val) {
+        fail("after updating %.2s:"
+             " %.2s field is %c:%"PRId64"; expected %c:%"PRId64,
+             target_id, next_id, *p, bam_aux2i(p), next_type, next_val);
+        return -1;
+    }
+
+    return 0;
+}
+
 static int aux_fields1(void)
 {
     static const char sam[] = "data:,"
@@ -153,7 +222,7 @@ static int aux_fields1(void)
 "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tF2:d:2.46801\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\n";
 
     // Canonical form of the alignment record above, as output by sam_format1()
-    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" NEW_HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tF2:f:9.8765\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\tN0:i:-1234\tN1:i:1234\tN2:i:-2\tN3:i:3\tF1:f:4.5678";
+    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" NEW_HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tF2:f:9.8765\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\tN0:i:-1234\tN1:i:1234\tN2:i:-2\tN3:i:3\tF1:f:4.5678\tN4:B:S,65535,32768,1,0\tN5:i:4242";
 
     samFile *in = sam_open(sam, "r");
     bam_hdr_t *header = sam_hdr_read(in);
@@ -169,6 +238,15 @@ static int aux_fields1(void)
     // NB: Floats not doubles below!
     // See https://randomascii.wordpress.com/2012/06/26/doubles-are-not-floats-so-dont-compare-them/
     float bfvals[2] = { -3.14159f, 2.71828f };
+
+    int8_t n4v1[] = { -128, -64, -32, -16, -8, -4, -2, -1,
+                      0, 1, 2, 4, 8, 16, 32, 64, 127 };
+    uint32_t n4v2[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 1234, 5678, 1U << 31, 0 };
+    int16_t n4v3[] = { -32768, -1, 0, 1, 32767 };
+    float n4v4[] = { 0, 1, 2, 10, 20, 30, 1.5, -2.5 };
+    uint8_t n4v5[] = { 0, 255 };
+    int32_t n4v6[] = { -2147483647 - 1, 10, -1, 0, 1, 2147483647 };
+    uint16_t n4v7[] = { 65535, 32768, 1, 0 };
 
     int32_t ival = -1234;
     uint32_t uval = 1234;
@@ -210,20 +288,14 @@ static int aux_fields1(void)
                   && memcmp(p + 2, "\x03\x00\x00\x00\xfe\x00\x02", 7) == 0))
             fail("XB field is %c,..., expected c,-2,0,+2", p[1]);
 
-        check_int_B_array(aln, "B0",
-                          sizeof(b0vals) / sizeof(b0vals[0]), b0vals);
-        check_int_B_array(aln, "B1",
-                          sizeof(b1vals) / sizeof(b1vals[0]), b1vals);
-        check_int_B_array(aln, "B2",
-                          sizeof(b2vals) / sizeof(b2vals[0]), b2vals);
-        check_int_B_array(aln, "B3",
-                          sizeof(b3vals) / sizeof(b3vals[0]), b3vals);
-        check_int_B_array(aln, "B4",
-                          sizeof(b4vals) / sizeof(b4vals[0]), b4vals);
-        check_int_B_array(aln, "B5",
-                          sizeof(b5vals) / sizeof(b5vals[0]), b5vals);
+        check_int_B_array(aln, "B0", NELE(b0vals), b0vals);
+        check_int_B_array(aln, "B1", NELE(b1vals), b1vals);
+        check_int_B_array(aln, "B2", NELE(b2vals), b2vals);
+        check_int_B_array(aln, "B3", NELE(b3vals), b3vals);
+        check_int_B_array(aln, "B4", NELE(b4vals), b4vals);
+        check_int_B_array(aln, "B5", NELE(b5vals), b5vals);
 
-        nvals = sizeof(bfvals) / sizeof(bfvals[0]);
+        nvals = NELE(bfvals);
         if ((p = check_bam_aux_get(aln, "Bf", 'B')) != NULL) {
             if (bam_auxB_len(p) != nvals)
                 fail("Wrong length reported for Bf field, got %d, expected %zd\n",
@@ -330,6 +402,33 @@ static int aux_fields1(void)
             fail("retrieve Y1 tag");
         else if (*p != 'i' && bam_aux2i(p) != -2147483647-1)
             fail("Y1 field is %"PRId64", expected -2^31", bam_aux2i(p));
+
+        // bam_aux_update_array tests
+        // append a new array
+        i = test_update_array(aln, "N4", 'c', NELE(n4v1), n4v1, "\0\0", 0, 0);
+
+        // Add a sentinal to check resizes work
+        if (i == 0) i = test_update_int(aln, "N5", 4242, 'S', "\0\0", 0, 0);
+
+        // alter the array tag a few times
+        if (i == 0)
+            i = test_update_array(aln, "N4", 'I', NELE(n4v2), n4v2,
+                                  "N5", 4242, 'S');
+        if (i == 0)
+            i = test_update_array(aln, "N4", 's', NELE(n4v3), n4v3,
+                                  "N5", 4242, 'S');
+        if (i == 0)
+            i = test_update_array(aln, "N4", 'f', NELE(n4v4), n4v4,
+                                  "N5", 4242, 'S');
+        if (i == 0)
+            i = test_update_array(aln, "N4", 'c', NELE(n4v5), n4v5,
+                                  "N5", 4242, 'S');
+        if (i == 0)
+            i = test_update_array(aln, "N4", 'i', NELE(n4v6), n4v6,
+                                  "N5", 4242, 'S');
+        if (i == 0)
+            i = test_update_array(aln, "N4", 'S', NELE(n4v7), n4v7,
+                                  "N5", 4242, 'S');
 
         if (sam_format1(header, aln, &ks) < 0)
             fail("can't format record");
