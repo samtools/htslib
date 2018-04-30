@@ -3000,7 +3000,7 @@ static cram_container *cram_first_slice(cram_fd *fd) {
     return c;
 }
 
-cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
+static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
     cram_container *c_curr;  // container being consumed via cram_get_seq()
     cram_slice *s_curr = NULL;
 
