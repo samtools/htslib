@@ -588,6 +588,9 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     BGZF *fp;
     kstring_t fn_idx_str = {0};
 
+    // Useful for cram_index_build_multiref
+    cram_set_option(fd, CRAM_OPT_REQUIRED_FIELDS, SAM_RNAME | SAM_POS | SAM_CIGAR);
+
     if (! fn_idx) {
         kputs(fn_base, &fn_idx_str);
         kputs(".crai", &fn_idx_str);
