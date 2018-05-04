@@ -2886,6 +2886,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                 kh_val(s->pair[sec], k) = rnum;
         } else {
             new = 1;
+            k = 0; // Prevents false-positive warning from gcc -Og
         }
 
         if (new == 0) {

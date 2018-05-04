@@ -1911,17 +1911,24 @@ int cram_set_header(cram_fd *fd, SAM_hdr *hdr) {
  * in directory with the filename and %[0-9]+s with portions of the filename
  * Any remaining parts of filename are added to the end with /%s.
  */
-void expand_cache_path(char *path, char *dir, char *fn) {
-    char *cp;
+int expand_cache_path(char *path, char *dir, char *fn) {
+    char *cp, *start = path;
+    size_t len;
+    size_t sz = PATH_MAX;
 
     while ((cp = strchr(dir, '%'))) {
+        if (cp-dir >= sz) return -1;
         strncpy(path, dir, cp-dir);
         path += cp-dir;
+        sz -= cp-dir;
 
         if (*++cp == 's') {
+            len = strlen(fn);
+            if (len >= sz) return -1;
             strcpy(path, fn);
-            path += strlen(fn);
-            fn += strlen(fn);
+            path += len;
+            sz -= len;
+            fn += len;
             cp++;
         } else if (*cp >= '0' && *cp <= '9') {
             char *endp;
@@ -1930,26 +1937,38 @@ void expand_cache_path(char *path, char *dir, char *fn) {
             l = strtol(cp, &endp, 10);
             l = MIN(l, strlen(fn));
             if (*endp == 's') {
+                if (l >= sz) return -1;
                 strncpy(path, fn, l);
                 path += l;
                 fn += l;
+                sz -= l;
                 *path = 0;
                 cp = endp+1;
             } else {
+                if (sz < 3) return -1;
                 *path++ = '%';
                 *path++ = *cp++;
             }
         } else {
+            if (sz < 3) return -1;
             *path++ = '%';
             *path++ = *cp++;
         }
         dir = cp;
     }
+
+    len = strlen(dir);
+    if (len >= sz) return -1;
     strcpy(path, dir);
-    path += strlen(dir);
-    if (*fn && path[-1] != '/')
+    path += len;
+    sz -= len;
+
+    len = strlen(fn) + (*fn && path > start && path[-1] != '/') ? 1 : 0;
+    if (len >= sz) return -1;
+    if (*fn && path > start && path[-1] != '/')
         *path++ = '/';
     strcpy(path, fn);
+    return 0;
 }
 
 /*
@@ -2026,7 +2045,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     char *ref_path = getenv("REF_PATH");
     SAM_hdr_type *ty;
     SAM_hdr_tag *tag;
-    char path[PATH_MAX], path_tmp[PATH_MAX];
+    char path[PATH_MAX], path_tmp[PATH_MAX + 64];
     char cache[PATH_MAX], cache_root[PATH_MAX];
     char *local_cache = getenv("REF_CACHE");
     mFILE *mf;
@@ -2065,8 +2084,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     /* Use cache if available */
     if (local_cache && *local_cache) {
-        expand_cache_path(path, local_cache, tag->str+3);
-        local_path = 1;
+        if (expand_cache_path(path, local_cache, tag->str+3) == 0)
+            local_path = 1;
     }
 
 #ifndef HAVE_MMAP
@@ -2171,7 +2190,9 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
                             cache_root);
         }
 
-        expand_cache_path(path, local_cache, tag->str+3);
+        if (expand_cache_path(path, local_cache, tag->str+3) < 0) {
+            return 0; // Not fatal - we have the data already so keep going.
+        }
         hts_log_info("Writing cache file '%s'", path);
         mkdir_prefix(path, 01777);
 
@@ -2180,7 +2201,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
             unsigned t = ((unsigned) time(NULL)) ^ ((unsigned) clock());
             thrid++; // Ensure filename changes even if time/clock haven't
 
-            sprintf(path_tmp, "%s.tmp_%d_%u_%u", path, pid, thrid, t);
+            snprintf(path_tmp, sizeof(path_tmp), "%s.tmp_%d_%u_%u",
+                     path, pid, thrid, t);
             fp = hopen(path_tmp, "wx");
         } while (fp == NULL && errno == EEXIST);
         if (!fp) {

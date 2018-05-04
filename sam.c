@@ -227,11 +227,9 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
 
 int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
 {
-    char buf[4];
     int32_t i, name_len, x;
     // write "BAM1"
-    strncpy(buf, "BAM\1", 4);
-    if (bgzf_write(fp, buf, 4) < 0) return -1;
+    if (bgzf_write(fp, "BAM\1", 4) < 0) return -1;
     // write plain text and the number of reference sequences
     if (fp->is_be) {
         x = ed_swap_4(h->l_text);

@@ -877,6 +877,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
 // returns -1 on error, 0 if the line is a comment line, 1 on success
 static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **chr,char **chr_end,int *from,int *to)
 {
+    if (ifrom < 0 || ito < 0) return -1;
     *chr_end = NULL;
 
     if ( line[0]=='#' ) return 0;
