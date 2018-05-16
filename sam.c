@@ -2444,6 +2444,7 @@ static inline int resolve_cigar2(bam_pileup1_t *p, int32_t pos, cstate_t *s)
     // determine the current CIGAR operation
     //fprintf(stderr, "%s\tpos=%d\tend=%d\t(%d,%d,%d)\n", bam_get_qname(b), pos, s->end, s->k, s->x, s->y);
     if (s->k == -1) { // never processed
+        p->qpos = 0;
         if (c->n_cigar == 1) { // just one operation, save a loop
           if (_cop(cigar[0]) == BAM_CMATCH || _cop(cigar[0]) == BAM_CEQUAL || _cop(cigar[0]) == BAM_CDIFF) s->k = 0, s->x = c->pos, s->y = 0;
         } else { // find the first match or deletion
@@ -2674,7 +2675,8 @@ void bam_plp_destructor(bam_plp_t plp,
  *  @iseq:        position in the sequence (rw)
  *  @iref:        position with respect to the beginning of the read (iref_pos - b->core.pos) (rw)
  *
- *  Returns BAM_CMATCH or -1 when there is no more cigar to process or the requested position is not covered.
+ *  Returns BAM_CMATCH, -1 when there is no more cigar to process or the requested position is not covered,
+ *  or -2 on error.
  */
 static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, int *icig, int *iseq, int *iref)
 {
@@ -2706,7 +2708,7 @@ static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, int
             continue;
         }
         hts_log_error("Unexpected cigar %d", cig);
-        assert(0);
+        return -2;
     }
     *iseq = -1;
     return -1;
@@ -2729,14 +2731,14 @@ static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, in
         if ( cig==BAM_CSOFT_CLIP ) { (*cigar)++; *iseq += ncig; *icig = 0; continue; }
         if ( cig==BAM_CHARD_CLIP || cig==BAM_CPAD ) { (*cigar)++; *icig = 0; continue; }
         hts_log_error("Unexpected cigar %d", cig);
-        assert(0);
+        return -2;
     }
     *iseq = -1;
     *iref = -1;
     return -1;
 }
 
-static void tweak_overlap_quality(bam1_t *a, bam1_t *b)
+static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
 {
     uint32_t *a_cigar = bam_get_cigar(a), *a_cigar_max = a_cigar + a->core.n_cigar;
     uint32_t *b_cigar = bam_get_cigar(b), *b_cigar_max = b_cigar + b->core.n_cigar;
@@ -2749,26 +2751,27 @@ static void tweak_overlap_quality(bam1_t *a, bam1_t *b)
     int a_iref = iref - a->core.pos;
     int b_iref = iref - b->core.pos;
     int a_ret = cigar_iref2iseq_set(&a_cigar, a_cigar_max, &a_icig, &a_iseq, &a_iref);
-    if ( a_ret<0 ) return;  // no overlap
+    if ( a_ret<0 ) return a_ret<-1 ? -1:0;  // no overlap or error
     int b_ret = cigar_iref2iseq_set(&b_cigar, b_cigar_max, &b_icig, &b_iseq, &b_iref);
-    if ( b_ret<0 ) return;  // no overlap
+    if ( b_ret<0 ) return b_ret<-1 ? -1:0;  // no overlap or error
 
     #if DBG
         fprintf(stderr,"tweak %s  n_cigar=%d %d  .. %d-%d vs %d-%d\n", bam_get_qname(a), a->core.n_cigar, b->core.n_cigar,
             a->core.pos+1,a->core.pos+bam_cigar2rlen(a->core.n_cigar,bam_get_cigar(a)), b->core.pos+1, b->core.pos+bam_cigar2rlen(b->core.n_cigar,bam_get_cigar(b)));
     #endif
 
+    int err = 0;
     while ( 1 )
     {
         // Increment reference position
-        while ( a_iref>=0 && a_iref < iref - a->core.pos )
+        while ( a_ret >= 0 && a_iref>=0 && a_iref < iref - a->core.pos )
             a_ret = cigar_iref2iseq_next(&a_cigar, a_cigar_max, &a_icig, &a_iseq, &a_iref);
-        if ( a_ret<0 ) break;   // done
+        if ( a_ret<0 ) { err = a_ret<-1?-1:0; break; }   // done
         if ( iref < a_iref + a->core.pos ) iref = a_iref + a->core.pos;
 
-        while ( b_iref>=0 && b_iref < iref - b->core.pos )
+        while ( b_ret >= 0 && b_iref>=0 && b_iref < iref - b->core.pos )
             b_ret = cigar_iref2iseq_next(&b_cigar, b_cigar_max, &b_icig, &b_iseq, &b_iref);
-        if ( b_ret<0 ) break;   // done
+        if ( b_ret<0 ) { err = b_ret<-1?-1:0; break; }  // done
         if ( iref < b_iref + b->core.pos ) iref = b_iref + b->core.pos;
 
         iref++;
@@ -2807,20 +2810,22 @@ static void tweak_overlap_quality(bam1_t *a, bam1_t *b)
     #if DBG
         fprintf(stderr,"\n");
     #endif
+    return err;
 }
 
 // Fix overlapping reads. Simple soft-clipping did not give good results.
 // Lowering qualities of unwanted bases is more selective and works better.
 //
-static void overlap_push(bam_plp_t iter, lbnode_t *node)
+// Returns 0 on success, -1 on failure
+static int overlap_push(bam_plp_t iter, lbnode_t *node)
 {
-    if ( !iter->overlaps ) return;
+    if ( !iter->overlaps ) return 0;
 
     // mapped mates and paired reads only
-    if ( node->b.core.flag&BAM_FMUNMAP || !(node->b.core.flag&BAM_FPROPER_PAIR) ) return;
+    if ( node->b.core.flag&BAM_FMUNMAP || !(node->b.core.flag&BAM_FPROPER_PAIR) ) return 0;
 
     // no overlap possible, unless some wild cigar
-    if ( abs(node->b.core.isize) >= 2*node->b.core.l_qseq ) return;
+    if ( abs(node->b.core.isize) >= 2*node->b.core.l_qseq ) return 0;
 
     khiter_t kitr = kh_get(olap_hash, iter->overlaps, bam_get_qname(&node->b));
     if ( kitr==kh_end(iter->overlaps) )
@@ -2832,12 +2837,14 @@ static void overlap_push(bam_plp_t iter, lbnode_t *node)
     else
     {
         lbnode_t *a = kh_value(iter->overlaps, kitr);
-        tweak_overlap_quality(&a->b, &node->b);
+        int err = tweak_overlap_quality(&a->b, &node->b);
         kh_del(olap_hash, iter->overlaps, kitr);
         assert(a->end-1 == a->s.end);
         a->end = bam_endpos(&a->b);
         a->s.end = a->end - 1;
+        return err;
     }
+    return 0;
 }
 
 static void overlap_remove(bam_plp_t iter, const bam1_t *b)
@@ -2929,7 +2936,10 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
             return 0;
         }
         bam_copy1(&iter->tail->b, b);
-        overlap_push(iter, iter->tail);
+        if (overlap_push(iter, iter->tail) < 0) {
+            iter->error = 1;
+            return -1;
+        }
 #ifndef BAM_NO_ID
         iter->tail->b.id = iter->id++;
 #endif
@@ -2975,7 +2985,10 @@ const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_
             // otherwise no pileup line can be returned; read the next alignment.
         }
         if ( ret < -1 ) { iter->error = ret; *_n_plp = -1; return 0; }
-        bam_plp_push(iter, 0);
+        if (bam_plp_push(iter, 0) < 0) {
+            *_n_plp = -1;
+            return 0;
+        }
         if ((plp = bam_plp_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
         return 0;
     }
