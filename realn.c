@@ -220,6 +220,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
         if (!extend_baq) { // in this block, bq[] is capped by base quality qual[]
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;
+                if (l == 0) continue;
                 if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
                     // Sanity check running off the end of the sequence
                     // Can only happen if the alignment is broken
@@ -246,6 +247,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
             uint8_t *rght = tref;
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;
+                if (l == 0) continue;
                 if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
                     // Sanity check running off the end of the sequence
                     // Can only happen if the alignment is broken
