@@ -427,27 +427,38 @@ int bgzf_compress(void *_dst, size_t *dlen, const void *src, size_t slen, int le
     z_stream zs;
     uint8_t *dst = (uint8_t*)_dst;
 
-    // compress the body
-    zs.zalloc = NULL; zs.zfree = NULL;
-    zs.msg = NULL;
-    zs.next_in  = (Bytef*)src;
-    zs.avail_in = slen;
-    zs.next_out = dst + BLOCK_HEADER_LENGTH;
-    zs.avail_out = *dlen - BLOCK_HEADER_LENGTH - BLOCK_FOOTER_LENGTH;
-    int ret = deflateInit2(&zs, level, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY); // -15 to disable zlib header/footer
-    if (ret!=Z_OK) {
-        hts_log_error("Call to deflateInit2 failed: %s", bgzf_zerr(ret, &zs));
-        return -1;
+    if (level == 0) {
+        // Uncompressed data
+        if (*dlen < slen+5 + BLOCK_HEADER_LENGTH + BLOCK_FOOTER_LENGTH) return -1;
+        dst[BLOCK_HEADER_LENGTH] = 1; // BFINAL=1, BTYPE=00; see RFC1951
+        u16_to_le(slen,  &dst[BLOCK_HEADER_LENGTH+1]); // length
+        u16_to_le(~slen, &dst[BLOCK_HEADER_LENGTH+3]); // ones-complement length
+        memcpy(dst + BLOCK_HEADER_LENGTH+5, src, slen);
+        *dlen = slen+5 + BLOCK_HEADER_LENGTH + BLOCK_FOOTER_LENGTH;
+    } else {
+        // compress the body
+        zs.zalloc = NULL; zs.zfree = NULL;
+        zs.msg = NULL;
+        zs.next_in  = (Bytef*)src;
+        zs.avail_in = slen;
+        zs.next_out = dst + BLOCK_HEADER_LENGTH;
+        zs.avail_out = *dlen - BLOCK_HEADER_LENGTH - BLOCK_FOOTER_LENGTH;
+        int ret = deflateInit2(&zs, level, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY); // -15 to disable zlib header/footer
+        if (ret!=Z_OK) {
+            hts_log_error("Call to deflateInit2 failed: %s", bgzf_zerr(ret, &zs));
+            return -1;
+        }
+        if ((ret = deflate(&zs, Z_FINISH)) != Z_STREAM_END) {
+            hts_log_error("Deflate operation failed: %s", bgzf_zerr(ret, ret == Z_DATA_ERROR ? &zs : NULL));
+            return -1;
+        }
+        if ((ret = deflateEnd(&zs)) != Z_OK) {
+            hts_log_error("Call to deflateEnd failed: %s", bgzf_zerr(ret, NULL));
+            return -1;
+        }
+        *dlen = zs.total_out + BLOCK_HEADER_LENGTH + BLOCK_FOOTER_LENGTH;
     }
-    if ((ret = deflate(&zs, Z_FINISH)) != Z_STREAM_END) {
-        hts_log_error("Deflate operation failed: %s", bgzf_zerr(ret, ret == Z_DATA_ERROR ? &zs : NULL));
-        return -1;
-    }
-    if ((ret = deflateEnd(&zs)) != Z_OK) {
-        hts_log_error("Call to deflateEnd failed: %s", bgzf_zerr(ret, NULL));
-        return -1;
-    }
-    *dlen = zs.total_out + BLOCK_HEADER_LENGTH + BLOCK_FOOTER_LENGTH;
+
     // write the header
     memcpy(dst, g_magic, BLOCK_HEADER_LENGTH); // the last two bytes are a place holder for the length of the block
     packInt16(&dst[16], *dlen - 1); // write the compressed length; -1 to fit 2 bytes
