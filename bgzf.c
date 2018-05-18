@@ -1034,6 +1034,39 @@ void *bgzf_encode_func(void *arg) {
     return arg;
 }
 
+// Optimisation for compression level 0 (uncompressed deflate blocks)
+// Avoids memcpy of the data from uncompressed to compressed buffer.
+void *bgzf_encode_level0_func(void *arg) {
+    bgzf_job *j = (bgzf_job *)arg;
+    uint32_t crc;
+    j->comp_len = j->uncomp_len + BLOCK_HEADER_LENGTH + BLOCK_FOOTER_LENGTH + 5;
+
+    // Data will have already been copied in to
+    // j->comp_data + BLOCK_HEADER_LENGTH + 5
+
+    // Add preamble
+    memcpy(j->comp_data, g_magic, BLOCK_HEADER_LENGTH);
+    u16_to_le(j->comp_len, j->comp_data + 16);
+
+    // Deflate uncompressed data header
+    j->comp_data[BLOCK_HEADER_LENGTH] = 1; // BFINAL=1, BTYPE=00; see RFC1951
+    u16_to_le(j->uncomp_len, j->comp_data + BLOCK_HEADER_LENGTH + 1);
+    u16_to_le(~j->uncomp_len, j->comp_data + BLOCK_HEADER_LENGTH + 3);
+
+    // Trailer (CRC, uncompressed length)
+#ifdef HAVE_LIBDEFLATE
+    crc = libdeflate_crc32(0, j->comp_data + BLOCK_HEADER_LENGTH + 5,
+                           j->uncomp_len);
+#else
+    crc = crc32(crc32(0L, NULL, 0L),
+                (Bytef*)j->comp_data + BLOCK_HEADER_LENGTH + 5, j->uncomp_len);
+#endif
+    u32_to_le(crc, j->comp_data +  j->comp_len - 8);
+    u32_to_le(j->uncomp_len, j->comp_data + j->comp_len - 4);
+
+    return arg;
+}
+
 // Our input block has already been decoded by bgzf_mt_read_block().
 // We need to split that into a fetch block (compressed) and make this
 // do the actual decompression step.
@@ -1425,10 +1458,16 @@ static int mt_queue(BGZF *fp)
     j->fp = fp;
     j->errcode = 0;
     j->uncomp_len  = fp->block_offset;
-    memcpy(j->uncomp_data, fp->uncompressed_block, j->uncomp_len);
+    if (fp->compress_level == 0) {
+        memcpy(j->comp_data + BLOCK_HEADER_LENGTH + 5, fp->uncompressed_block,
+               j->uncomp_len);
+        hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_encode_level0_func, j);
+    } else {
+        memcpy(j->uncomp_data, fp->uncompressed_block, j->uncomp_len);
 
-    // Need non-block vers & job_pending?
-    hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_encode_func, j);
+        // Need non-block vers & job_pending?
+        hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_encode_func, j);
+    }
 
     fp->block_offset = 0;
     return 0;
