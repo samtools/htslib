@@ -519,7 +519,7 @@ static void samrecord_layout(void)
 
 static void faidx1(const char *filename)
 {
-    int n, n_exp = 0;
+    int n, n_exp = 0, n_fq_exp = 0;
     char tmpfilename[FILENAME_MAX], line[500];
     FILE *fin, *fout;
     faidx_t *fai;
@@ -531,10 +531,16 @@ static void faidx1(const char *filename)
     if (fout == NULL) fail("can't create temporary %s\n", tmpfilename);
     while (fgets(line, sizeof line, fin)) {
         if (line[0] == '>') n_exp++;
+        if (line[0] == '+' && line[1] == '\n') n_fq_exp++;
         fputs(line, fout);
     }
     fclose(fin);
     fclose(fout);
+
+    if (n_exp == 0 && n_fq_exp != 0) {
+        // probably a fastq file
+        n_exp = n_fq_exp;
+    }
 
     if (fai_build(tmpfilename) < 0) fail("can't index %s", tmpfilename);
     fai = fai_load(tmpfilename);
