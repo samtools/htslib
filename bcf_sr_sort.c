@@ -36,7 +36,7 @@
 #define SR_SCORE(srt,a,b) (srt)->score[((a)<<4)|(b)]
 
 // Resize a bit set.
-static inline kbitset_t *kbs_resize(kbitset_t *bs, size_t ni)
+static inline kbitset_t *bitset_resize(kbitset_t *bs, size_t ni)
 {
     if ( !bs ) return kbs_init(ni);
     size_t n = (ni + KBS_ELTBITS-1) / KBS_ELTBITS;
@@ -469,7 +469,7 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
     // initialize bitmask - which groups is the variant present in
     for (ivar=0; ivar<srt->nvar; ivar++)
     {
-        srt->var[ivar].mask = kbs_resize(srt->var[ivar].mask, srt->ngrp);
+        srt->var[ivar].mask = bitset_resize(srt->var[ivar].mask, srt->ngrp);
         kbs_clear(srt->var[ivar].mask);
     }
     for (igrp=0; igrp<srt->ngrp; igrp++)
@@ -493,7 +493,7 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
         vset->var[vset->nvar-1] = ivar;
         var_t *var  = &srt->var[ivar];
         vset->cnt   = var->nvcf;
-        vset->mask  = kbs_resize(vset->mask, srt->ngrp);
+        vset->mask  = bitset_resize(vset->mask, srt->ngrp);
         kbs_clear(vset->mask);
         kbs_bitwise_or(vset->mask, var->mask);
 
