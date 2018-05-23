@@ -23,11 +23,13 @@
 # DEALINGS IN THE SOFTWARE.
 
 dnl Process this file with autoconf to produce a configure script
-AC_INIT([HTSlib], m4_esyscmd_s([make print-version]),
+AC_INIT([HTSlib], m4_esyscmd_s([./version.sh 2>/dev/null]),
         [samtools-help@lists.sourceforge.net], [], [http://www.htslib.org/])
 AC_PREREQ(2.63)  dnl This version introduced 4-argument AC_CHECK_HEADER
 AC_CONFIG_SRCDIR(hts.c)
 AC_CONFIG_HEADERS(config.h)
+
+m4_include([m4/hts_prog_cc_warnings.m4])
 
 dnl Copyright notice to be copied into the generated configure script
 AC_COPYRIGHT([Portions copyright (C) 2016 Genome Research Ltd.
@@ -49,6 +51,12 @@ AH_TOP([/* If you use configure, this file provides @%:@defines reflecting your
 AC_PROG_CC
 AC_PROG_RANLIB
 
+dnl Turn on compiler warnings, if possible
+HTS_PROG_CC_WARNINGS
+dnl Flags to treat warnings as errors.  These need to be applied to CFLAGS
+dnl later as they can interfere with some of the tests (notably AC_SEARCH_LIBS)
+HTS_PROG_CC_WERROR(hts_late_cflags)
+
 dnl Avoid chicken-and-egg problem where pkg-config supplies the
 dnl PKG_PROG_PKG_CONFIG macro, but we want to use it to check
 dnl for pkg-config...
@@ -56,9 +64,9 @@ m4_ifdef([PKG_PROG_PKG_CONFIG], [PKG_PROG_PKG_CONFIG], [PKG_CONFIG=""])
 
 need_crypto=no
 pc_requires=
-static_LDFLAGS=
-static_LIBS='-lz -lm'
-private_LIBS=
+static_LDFLAGS=$LDFLAGS
+static_LIBS='-lpthread -lz -lm'
+private_LIBS=$LDFLAGS
 
 AC_ARG_ENABLE([bz2],
   [AS_HELP_STRING([--disable-bz2],
@@ -71,6 +79,7 @@ AC_ARG_ENABLE([gcs],
   [], [enable_gcs=check])
 
 AC_SYS_LARGEFILE
+AC_FUNC_FSEEKO
 
 AC_ARG_ENABLE([libcurl],
   [AS_HELP_STRING([--enable-libcurl],
@@ -87,6 +96,11 @@ AC_ARG_ENABLE([plugins],
                   [enable separately-compiled plugins for file access])],
   [], [enable_plugins=no])
 AC_SUBST(enable_plugins)
+
+AC_ARG_WITH([libdeflate],
+  [AS_HELP_STRING([--with-libdeflate],
+                  [use libdeflate for faster crc and deflate algorithms])],
+  [], [with_libdeflate=check])
 
 AC_ARG_WITH([plugin-dir],
   [AS_HELP_STRING([--with-plugin-dir=DIR],
@@ -112,8 +126,8 @@ AC_ARG_ENABLE([s3],
                   [support Amazon AWS S3 URLs])],
   [], [enable_s3=check])
 
-AC_MSG_CHECKING([shared library type])
 test -n "$host_alias" || host_alias=unknown-`uname -s`
+AC_MSG_CHECKING([shared library type for $host_alias])
 case $host_alias in
   *-cygwin* | *-CYGWIN*)
     host_result="Cygwin DLL"
@@ -124,6 +138,15 @@ case $host_alias in
     host_result="Darwin dylib"
     PLATFORM=Darwin
     PLUGIN_EXT=.bundle
+    ;;
+  *-msys* | *-MSYS* | *-mingw* | *-MINGW*)
+    host_result="MSYS dll"
+    PLATFORM=MSYS
+    PLUGIN_EXT=.dll
+    # This also sets __USE_MINGW_ANSI_STDIO which in turn makes PRId64,
+    # %lld and %z printf formats work.  It also enforces the snprintf to
+    # be C99 compliant so it returns the correct values (in kstring.c).
+    CPPFLAGS="$CPPCFLAGS -D_XOPEN_SOURCE=600"
     ;;
   *)
     host_result="plain .so"
@@ -136,7 +159,7 @@ AC_SUBST([PLATFORM])
 
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
-AC_CHECK_FUNCS(gmtime_r)
+AC_CHECK_FUNCS([gmtime_r fsync drand48])
 
 # Darwin has a dubious fdatasync() symbol, but no declaration in <unistd.h>
 AC_CHECK_DECL([fdatasync(int)], [AC_CHECK_FUNCS(fdatasync)])
@@ -183,9 +206,11 @@ FAILED.  This error must be resolved in order to build HTSlib successfully.])
 fi
 
 dnl connect() etc. fns are in libc on linux, but libsocket on illumos/Solaris
-libsocket=unneeded
-AC_SEARCH_LIBS(connect, socket, [libsocket=needed], [])
-
+AC_SEARCH_LIBS([recv], [socket ws2_32], [
+if test "$ac_cv_search_recv" != "none required"
+then
+  static_LIBS="$static_LIBS $ac_cv_search_recv"
+fi], [AC_MSG_ERROR([unable to find the recv() function])])
 
 if test "$enable_bz2" != no; then
   bz2_devel=ok
@@ -217,9 +242,9 @@ fi
 
 if test "$enable_lzma" != no; then
   lzma_devel=ok
-  AC_CHECK_HEADER([lzma.h], [], [lzma_devel=missing], [;])
+  AC_CHECK_HEADERS([lzma.h], [], [lzma_devel=header-missing], [;])
   AC_CHECK_LIB([lzma], [lzma_easy_buffer_encode], [], [lzma_devel=missing])
-  if test $lzma_devel != ok; then
+  if test $lzma_devel = missing; then
     AC_MSG_ERROR([liblzma development files not found
 
 The CRAM format may use LZMA2 compression, which is implemented in HTSlib
@@ -236,6 +261,26 @@ produced elsewhere unreadable) or resolve this error to build HTSlib.])
   pc_requires="$pc_requires liblzma"
   static_LIBS="$static_LIBS -llzma"
 fi
+
+AS_IF([test "x$with_libdeflate" != "xno"],
+  [libdeflate=ok
+   AC_CHECK_HEADER([libdeflate.h],[],[libdeflate='missing header'],[;])
+   AC_CHECK_LIB([deflate], [libdeflate_deflate_compress],[],[libdeflate='missing library'])
+   AS_IF([test "$libdeflate" = "ok"],
+    [AC_DEFINE([HAVE_LIBDEFLATE], 1, [Define if libdeflate is available.])
+     private_LIBS="$private_LIBS -ldeflate"
+     static_LIBS="$static_LIBS -ldeflate"],
+    [AS_IF([test "x$with_libdeflate" != "xcheck"],
+       [AC_MSG_ERROR([libdeflate development files not found: $libdeflate
+
+You requested libdeflate, but do not have the required header / library
+files.  The source for libdeflate is available from
+<https://github.com/ebiggers/libdeflate>.  You may have to adjust
+search paths in CPPFLAGS and/or LDFLAGS if the header and library
+are not currently on them.
+
+Either configure with --without-libdeflate or resolve this error to build
+HTSlib.])])])])
 
 libcurl=disabled
 if test "$enable_libcurl" != no; then
@@ -342,6 +387,10 @@ AC_CHECK_DECL(PTHREAD_MUTEX_RECURSIVE, [], [AC_DEFINE([_XOPEN_SOURCE],[600], [Ne
 if test "$s3" = enabled ; then
    AC_DEFINE([ENABLE_S3], 1, [Define if HTSlib should enable S3 support.])
 fi
+
+dnl Apply value from HTS_PROG_CC_WERROR (if set)
+AS_IF([test "x$hts_late_cflags" != x],[CFLAGS="$CFLAGS $hts_late_cflags"])
+
 AC_SUBST([s3])
 AC_SUBST([CRYPTO_LIBS])
 

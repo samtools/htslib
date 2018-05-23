@@ -30,13 +30,26 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 #include <time.h>
 
-#include "hts_internal.h"
 #include "hfile_internal.h"
 #ifdef ENABLE_PLUGINS
 #include "version.h"
 #endif
 #include "htslib/hts.h"  // for hts_version() and hts_verbose
 #include "htslib/kstring.h"
+
+typedef struct {
+    kstring_t id;
+    kstring_t token;
+    kstring_t secret;
+    char *bucket;
+    kstring_t auth_hdr;
+    time_t auth_time;
+    char date[40];
+    char mode;
+    char *headers[3];
+} s3_auth_data;
+
+#define AUTH_LIFETIME 60
 
 #if defined HAVE_COMMONCRYPTO
 
@@ -215,21 +228,32 @@ static void parse_simple(const char *fname, kstring_t *id, kstring_t *secret)
     free(text.s);
 }
 
-static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
-{
-    const char *bucket, *path;
-    char date_hdr[40];
-    char *header_list[4], **header = header_list;
+static int copy_auth_headers(s3_auth_data *ad, char ***hdrs) {
+    char **hdr = &ad->headers[0];
+    *hdrs = hdr;
+    *hdr = strdup(ad->date);
+    if (!*hdr) return -1;
+    hdr++;
+    if (ad->auth_hdr.l) {
+        *hdr = strdup(ad->auth_hdr.s);
+        if (!*hdr) { free(ad->headers[0]); return -1; }
+        hdr++;
+    }
+    *hdr = NULL;
+    return 0;
+}
 
-    kstring_t message = { 0, 0, NULL };
-    kstring_t url = { 0, 0, NULL };
-    kstring_t profile = { 0, 0, NULL };
-    kstring_t id = { 0, 0, NULL };
-    kstring_t secret = { 0, 0, NULL };
-    kstring_t host_base = { 0, 0, NULL };
-    kstring_t token = { 0, 0, NULL };
-    kstring_t token_hdr = { 0, 0, NULL };
-    kstring_t auth_hdr = { 0, 0, NULL };
+static void free_auth_data(s3_auth_data *ad) {
+    free(ad->id.s);
+    free(ad->token.s);
+    free(ad->secret.s);
+    free(ad->bucket);
+    free(ad->auth_hdr.s);
+    free(ad);
+}
+
+static int auth_header_callback(void *ctx, char ***hdrs) {
+    s3_auth_data *ad = (s3_auth_data *) ctx;
 
     time_t now = time(NULL);
 #ifdef HAVE_GMTIME_R
@@ -238,14 +262,66 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
 #else
     struct tm *tm = gmtime(&now);
 #endif
+    kstring_t message = { 0, 0, NULL };
+    unsigned char digest[DIGEST_BUFSIZ];
+    size_t digest_len;
 
-    kputs(strchr(mode, 'r')? "GET\n" : "PUT\n", &message);
-    kputc('\n', &message);
-    kputc('\n', &message);
-    strftime(date_hdr, sizeof date_hdr, "Date: %a, %d %b %Y %H:%M:%S GMT", tm);
-    *header++ = date_hdr;
-    kputs(&date_hdr[6], &message);
-    kputc('\n', &message);
+    if (!hdrs) { // Closing connection
+        free_auth_data(ad);
+        return 0;
+    }
+
+    if (now - ad->auth_time < AUTH_LIFETIME) {
+        // Last auth string should still be valid
+        *hdrs = NULL;
+        return 0;
+    }
+
+    strftime(ad->date, sizeof(ad->date), "Date: %a, %d %b %Y %H:%M:%S GMT", tm);
+    if (!ad->id.l || !ad->secret.l) {
+        ad->auth_time = now;
+        return copy_auth_headers(ad, hdrs);
+    }
+
+    if (ksprintf(&message, "%s\n\n\n%s\n%s%s%s/%s",
+                 ad->mode == 'r' ? "GET" : "PUT", ad->date + 6,
+                 ad->token.l ? "x-amz-security-token:" : "",
+                 ad->token.l ? ad->token.s : "",
+                 ad->token.l ? "\n" : "",
+                 ad->bucket) < 0) {
+        return -1;
+    }
+
+    digest_len = s3_sign(digest, &ad->secret, &message);
+    ad->auth_hdr.l = 0;
+    if (ksprintf(&ad->auth_hdr, "Authorization: AWS %s:", ad->id.s) < 0)
+        goto fail;
+    base64_kput(digest, digest_len, &ad->auth_hdr);
+
+    free(message.s);
+    ad->auth_time = now;
+    return copy_auth_headers(ad, hdrs);
+
+ fail:
+    free(message.s);
+    return -1;
+}
+
+static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
+{
+    const char *bucket, *path;
+    char *header_list[4], **header = header_list;
+
+    kstring_t url = { 0, 0, NULL };
+    kstring_t profile = { 0, 0, NULL };
+    kstring_t host_base = { 0, 0, NULL };
+    kstring_t token_hdr = { 0, 0, NULL };
+
+    s3_auth_data *ad = calloc(1, sizeof(*ad));
+
+    if (!ad)
+        return NULL;
+    ad->mode = strchr(mode, 'r') ? 'r' : 'w';
 
     // Our S3 URL format is s3[+SCHEME]://[ID[:SECRET[:TOKEN]]@]BUCKET/PATH
 
@@ -267,10 +343,10 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
         }
         else {
             const char *colon2 = strpbrk(&colon[1], ":@");
-            urldecode_kput(bucket, colon - bucket, &id);
-            urldecode_kput(&colon[1], colon2 - &colon[1], &secret);
+            urldecode_kput(bucket, colon - bucket, &ad->id);
+            urldecode_kput(&colon[1], colon2 - &colon[1], &ad->secret);
             if (*colon2 == ':')
-                urldecode_kput(&colon2[1], path - &colon2[1], &token);
+                urldecode_kput(&colon2[1], path - &colon2[1], &ad->token);
         }
 
         bucket = &path[1];
@@ -279,27 +355,28 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
     else {
         // If the URL has no ID[:SECRET]@, consider environment variables.
         const char *v;
-        if ((v = getenv("AWS_ACCESS_KEY_ID")) != NULL) kputs(v, &id);
-        if ((v = getenv("AWS_SECRET_ACCESS_KEY")) != NULL) kputs(v, &secret);
-        if ((v = getenv("AWS_SESSION_TOKEN")) != NULL) kputs(v, &token);
+        if ((v = getenv("AWS_ACCESS_KEY_ID")) != NULL) kputs(v, &ad->id);
+        if ((v = getenv("AWS_SECRET_ACCESS_KEY")) != NULL) kputs(v, &ad->secret);
+        if ((v = getenv("AWS_SESSION_TOKEN")) != NULL) kputs(v, &ad->token);
 
         if ((v = getenv("AWS_DEFAULT_PROFILE")) != NULL) kputs(v, &profile);
         else if ((v = getenv("AWS_PROFILE")) != NULL) kputs(v, &profile);
         else kputs("default", &profile);
     }
 
-    if (id.l == 0) {
+    if (ad->id.l == 0) {
         const char *v = getenv("AWS_SHARED_CREDENTIALS_FILE");
         parse_ini(v? v : "~/.aws/credentials", profile.s,
-                  "aws_access_key_id", &id, "aws_secret_access_key", &secret,
-                  "aws_session_token", &token, NULL);
+                  "aws_access_key_id", &ad->id,
+                  "aws_secret_access_key", &ad->secret,
+                  "aws_session_token", &ad->token, NULL);
     }
-    if (id.l == 0)
-        parse_ini("~/.s3cfg", profile.s, "access_key", &id,
-                  "secret_key", &secret, "access_token", &token,
+    if (ad->id.l == 0)
+        parse_ini("~/.s3cfg", profile.s, "access_key", &ad->id,
+                  "secret_key", &ad->secret, "access_token", &ad->token,
                   "host_base", &host_base, NULL);
-    if (id.l == 0)
-        parse_simple("~/.awssecret", &id, &secret);
+    if (ad->id.l == 0)
+        parse_simple("~/.awssecret", &ad->id, &ad->secret);
 
     if (host_base.l == 0)
         kputs("s3.amazonaws.com", &host_base);
@@ -316,46 +393,35 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
     }
     kputs(path, &url);
 
-    if (token.l > 0) {
-        kputs("x-amz-security-token:", &message);
-        kputs(token.s, &message);
-        kputc('\n', &message);
-
+    if (ad->token.l > 0) {
         kputs("X-Amz-Security-Token: ", &token_hdr);
-        kputs(token.s, &token_hdr);
+        kputs(ad->token.s, &token_hdr);
         *header++ = token_hdr.s;
     }
 
-    kputc('/', &message);
-    kputs(bucket, &message); // CanonicalizedResource is '/' + bucket + path
-
-    // If we have no id/secret, we can't sign the request but will
-    // still be able to access public data sets.
-    if (id.l > 0 && secret.l > 0) {
-        unsigned char digest[DIGEST_BUFSIZ];
-        size_t digest_len = s3_sign(digest, &secret, &message);
-
-        kputs("Authorization: AWS ", &auth_hdr);
-        kputs(id.s, &auth_hdr);
-        kputc(':', &auth_hdr);
-        base64_kput(digest, digest_len, &auth_hdr);
-
-        *header++ = auth_hdr.s;
-    }
+    ad->bucket = strdup(bucket);
+    if (!ad->bucket)
+        goto fail;
 
     *header = NULL;
     hFILE *fp = hopen(url.s, mode, "va_list", argsp, "httphdr:v", header_list,
-                      NULL);
-    free(message.s);
+                      "httphdr_callback", auth_header_callback,
+                      "httphdr_callback_data", ad, NULL);
+    if (!fp) goto fail;
+
     free(url.s);
     free(profile.s);
-    free(id.s);
-    free(secret.s);
     free(host_base.s);
-    free(token.s);
     free(token_hdr.s);
-    free(auth_hdr.s);
     return fp;
+
+ fail:
+    free(url.s);
+    free(profile.s);
+    free(host_base.s);
+    free(token_hdr.s);
+    free_auth_data(ad);
+    return NULL;
 }
 
 static hFILE *s3_open(const char *url, const char *mode)

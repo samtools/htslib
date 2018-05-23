@@ -69,6 +69,24 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_DEPRECATED(message)
 #endif
 
+#if HTS_COMPILER_HAS(__deprecated__) || HTS_GCC_AT_LEAST(6,4)
+#define HTS_DEPRECATED_ENUM(message) __attribute__ ((__deprecated__ (message)))
+#else
+#define HTS_DEPRECATED_ENUM(message)
+#endif
+
+// On mingw the "printf" format type doesn't work.  It needs "gnu_printf"
+// in order to check %lld and %z, otherwise it defaults to checking against
+// the Microsoft library printf format options despite linking against the
+// GNU posix implementation of printf.  The __MINGW_PRINTF_FORMAT macro
+// expands to printf or gnu_printf as required, but obviously may not
+// exist
+#ifdef __MINGW_PRINTF_FORMAT
+#define HTS_PRINTF_FMT __MINGW_PRINTF_FORMAT
+#else
+#define HTS_PRINTF_FMT printf
+#endif
+
 #if HTS_COMPILER_HAS(__format__) || HTS_GCC_AT_LEAST(3,0)
 #define HTS_FORMAT(type, idx, first) __attribute__((__format__ (type, idx, first)))
 #else

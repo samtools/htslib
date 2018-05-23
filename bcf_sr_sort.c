@@ -1,4 +1,4 @@
-/* 
+/*
     Copyright (C) 2017 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
@@ -9,10 +9,10 @@
     to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
     copies of the Software, and to permit persons to whom the Software is
     furnished to do so, subject to the following conditions:
-    
+
     The above copyright notice and this permission notice shall be included in
     all copies or substantial portions of the Software.
-    
+
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
     IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
     FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -62,12 +62,12 @@ static void bcf_sr_init_scores(sr_sort_t *srt)
     if ( srt->pair & BCF_SR_PAIR_ANY ) srt->pair |= (BCF_SR_PAIR_SNPS | BCF_SR_PAIR_INDELS | BCF_SR_PAIR_SNP_REF | BCF_SR_PAIR_INDEL_REF);
     if ( srt->pair & BCF_SR_PAIR_SNPS ) SR_SCORE(srt,SR_SNP,SR_SNP) = 3;
     if ( srt->pair & BCF_SR_PAIR_INDELS ) SR_SCORE(srt,SR_INDEL,SR_INDEL) = 3;
-    if ( srt->pair & BCF_SR_PAIR_SNP_REF ) 
+    if ( srt->pair & BCF_SR_PAIR_SNP_REF )
     {
         SR_SCORE(srt,SR_SNP,SR_REF) = 2;
         SR_SCORE(srt,SR_REF,SR_SNP) = 2;
     }
-    if ( srt->pair & BCF_SR_PAIR_INDEL_REF ) 
+    if ( srt->pair & BCF_SR_PAIR_INDEL_REF )
     {
         SR_SCORE(srt,SR_INDEL,SR_REF) = 2;
         SR_SCORE(srt,SR_REF,SR_INDEL) = 2;
@@ -252,6 +252,8 @@ static int cmpstringp(const void *p1, const void *p2)
 {
     return strcmp(* (char * const *) p1, * (char * const *) p2);
 }
+
+#if DEBUG_VSETS
 void debug_vsets(sr_sort_t *srt)
 {
     int i,j,k;
@@ -270,6 +272,9 @@ void debug_vsets(sr_sort_t *srt)
         fprintf(stderr,"\n");
     }
 }
+#endif
+
+#if DEBUG_VBUF
 void debug_vbuf(sr_sort_t *srt)
 {
     int i, j;
@@ -284,6 +289,8 @@ void debug_vbuf(sr_sort_t *srt)
         fprintf(stderr,"\n");
     }
 }
+#endif
+
 char *grp_create_key(sr_sort_t *srt)
 {
     if ( !srt->str.l ) return strdup("");
@@ -304,6 +311,20 @@ char *grp_create_key(sr_sort_t *srt)
         ptr[-1] = i+1==srt->noff ? 0 : ';';
     }
     return ret;
+}
+int bcf_sr_sort_set_active(sr_sort_t *srt, int idx)
+{
+    hts_expand(int,idx+1,srt->mactive,srt->active);
+    srt->nactive = 1;
+    srt->active[srt->nactive - 1] = idx;
+    return 0;
+}
+int bcf_sr_sort_add_active(sr_sort_t *srt, int idx)
+{
+    hts_expand(int,idx+1,srt->mactive,srt->active);
+    srt->nactive++;
+    srt->active[srt->nactive - 1] = idx;
+    return 0;
 }
 static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int min_pos)
 {
@@ -335,11 +356,11 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
     memset(&grp,0,sizeof(grp_t));
 
     // group VCFs into groups, each with a unique combination of variants in the duplicate lines
-    int ireader,ivar,irec,igrp,ivset;
-    for (ireader=0; ireader<readers->nreaders; ireader++)
+    int ireader,ivar,irec,igrp,ivset,iact;
+    for (ireader=0; ireader<readers->nreaders; ireader++) srt->vcf_buf[ireader].nrec = 0;
+    for (iact=0; iact<srt->nactive; iact++)
     {
-        srt->vcf_buf[ireader].nrec = 0;
-
+        ireader = srt->active[iact];
         bcf_sr_t *reader = &readers->readers[ireader];
         int rid   = bcf_hdr_name2id(reader->header, chr);
         grp.nvar  = 0;
@@ -350,7 +371,7 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
         {
             bcf1_t *line = reader->buffer[irec];
             if ( line->rid!=rid || line->pos!=min_pos ) break;
-            
+
             if ( srt->str.l ) kputc(';',&srt->str);
             srt->off[srt->noff++] = srt->str.l;
             size_t beg = srt->str.l;
@@ -448,7 +469,7 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
     }
 
     // create the initial list of variant sets
-    for (ivar=0; ivar<srt->nvar; ivar++) 
+    for (ivar=0; ivar<srt->nvar; ivar++)
     {
         ivset = srt->nvset++;
         hts_expand0(varset_t, srt->nvset, srt->mvset, srt->vset);
@@ -478,7 +499,9 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
         }
         var->type = type;
     }
-    // debug_vsets(srt);
+#if DEBUG_VSETS
+    debug_vsets(srt);
+#endif
 
     // initialize the pairing matrix
     hts_expand(int, srt->ngrp*srt->nvset, srt->mpmat, srt->pmat);
@@ -494,7 +517,10 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
     // pair the lines
     while ( srt->nvset )
     {
-        // fprintf(stderr,"\n"); debug_vsets(srt);
+#if DEBUG_VSETS
+    fprintf(stderr,"\n");
+    debug_vsets(srt);
+#endif
 
         int imax = 0;
         for (ivset=1; ivset<srt->nvset; ivset++)
@@ -527,23 +553,8 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
 int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int min_pos)
 {
     int i,j;
-    if ( readers->nreaders == 1 )
-    {
-        srt->nsr = 1;
-        if ( !srt->msr )
-        {
-            srt->vcf_buf = (vcf_buf_t*) calloc(1,sizeof(vcf_buf_t));   // first time here
-            srt->msr = 1;
-        }
-        bcf_sr_t *reader = &readers->readers[0];
-        assert( reader->buffer[1]->pos==min_pos );
-        bcf1_t *tmp = reader->buffer[0];
-        for (j=1; j<=reader->nbuffer; j++) reader->buffer[j-1] = reader->buffer[j];
-        reader->buffer[ reader->nbuffer ] = tmp;
-        reader->nbuffer--;
-        readers->has_line[0] = 1;
-        return 1;
-    }
+    assert( srt->nactive>0 );
+
     if ( srt->nsr != readers->nreaders )
     {
         srt->sr = readers;
@@ -556,18 +567,33 @@ int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int mi
         srt->nsr = readers->nreaders;
         srt->chr = NULL;
     }
+    if ( srt->nactive == 1 )
+    {
+        if ( readers->nreaders>1 )
+            memset(readers->has_line, 0, readers->nreaders*sizeof(*readers->has_line));
+        bcf_sr_t *reader = &readers->readers[srt->active[0]];
+        assert( reader->buffer[1]->pos==min_pos );
+        bcf1_t *tmp = reader->buffer[0];
+        for (j=1; j<=reader->nbuffer; j++) reader->buffer[j-1] = reader->buffer[j];
+        reader->buffer[ reader->nbuffer ] = tmp;
+        reader->nbuffer--;
+        readers->has_line[srt->active[0]] = 1;
+        return 1;
+    }
     if ( !srt->chr || srt->pos!=min_pos || strcmp(srt->chr,chr) ) bcf_sr_sort_set(readers, srt, chr, min_pos);
 
     if ( !srt->vcf_buf[0].nrec ) return 0;
 
-    // debug_vbuf(srt);
+#if DEBUG_VBUF
+    debug_vbuf(srt);
+#endif
 
     int nret = 0;
     for (i=0; i<srt->sr->nreaders; i++)
     {
         vcf_buf_t *buf = &srt->vcf_buf[i];
 
-        if ( buf->rec[0] ) 
+        if ( buf->rec[0] )
         {
             bcf_sr_t *reader = &srt->sr->readers[i];
             for (j=1; j<=reader->nbuffer; j++)
@@ -585,7 +611,7 @@ int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int mi
             srt->sr->has_line[i] = 1;
         }
         else
-            srt->sr->has_line[i] = 0; 
+            srt->sr->has_line[i] = 0;
 
         buf->nrec--;
         if ( buf->nrec > 0 )
@@ -595,10 +621,16 @@ int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int mi
 }
 void bcf_sr_sort_remove_reader(bcf_srs_t *readers, sr_sort_t *srt, int i)
 {
-    free(srt->vcf_buf[i].rec);
-    if ( i+1 < srt->nsr )
-        memmove(&srt->vcf_buf[i], &srt->vcf_buf[i+1], (srt->nsr - i - 1)*sizeof(vcf_buf_t));
-    memset(srt->vcf_buf + srt->nsr - 1, 0, sizeof(vcf_buf_t));
+    //vcf_buf is allocated only in bcf_sr_sort_next
+    //So, a call to bcf_sr_add_reader() followed immediately by bcf_sr_remove_reader()
+    //would cause the program to crash in this segment
+    if (srt->vcf_buf)
+    {
+        free(srt->vcf_buf[i].rec);
+        if ( i+1 < srt->nsr )
+            memmove(&srt->vcf_buf[i], &srt->vcf_buf[i+1], (srt->nsr - i - 1)*sizeof(vcf_buf_t));
+        memset(srt->vcf_buf + srt->nsr - 1, 0, sizeof(vcf_buf_t));
+    }
 }
 sr_sort_t *bcf_sr_sort_init(sr_sort_t *srt)
 {
@@ -606,8 +638,13 @@ sr_sort_t *bcf_sr_sort_init(sr_sort_t *srt)
     memset(srt,0,sizeof(sr_sort_t));
     return srt;
 }
+void bcf_sr_sort_reset(sr_sort_t *srt)
+{
+    srt->chr = NULL;
+}
 void bcf_sr_sort_destroy(sr_sort_t *srt)
 {
+    free(srt->active);
     if ( srt->var_str2int ) khash_str2int_destroy_free(srt->var_str2int);
     if ( srt->grp_str2int ) khash_str2int_destroy_free(srt->grp_str2int);
     int i;

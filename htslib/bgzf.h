@@ -49,11 +49,13 @@ extern "C" {
 #define BGZF_ERR_IO     4
 #define BGZF_ERR_MISUSE 8
 #define BGZF_ERR_MT     16 // stream cannot be multi-threaded
+#define BGZF_ERR_CRC    32
 
 struct hFILE;
 struct hts_tpool;
 struct bgzf_mtaux_t;
 typedef struct __bgzidx_t bgzidx_t;
+typedef struct bgzf_cache_t bgzf_cache_t;
 
 struct BGZF {
     // Reserved bits should be written as 0; read as "don't care"
@@ -64,7 +66,7 @@ struct BGZF {
     int block_length, block_clength, block_offset;
     int64_t block_address, uncompressed_address;
     void *uncompressed_block, *compressed_block;
-    void *cache; // a pointer to a hash table
+    bgzf_cache_t *cache;
     struct hFILE *fp; // actual file handle
     struct bgzf_mtaux_t *mt; // only used for multi-threading
     bgzidx_t *idx;      // BGZF index
@@ -92,6 +94,9 @@ typedef struct __kstring_t {
      * Open an existing file descriptor for reading or writing.
      *
      * @param fd    file descriptor
+     *              Note that the file must be opened in binary mode, or else
+     *              there will be problems on platforms that make a difference
+     *              between text and binary mode.
      * @param mode  mode matching /[rwag][u0-9]+/: 'r' for reading, 'w' for
      *              writing, 'a' for appending, 'g' for gzip rather than BGZF
      *              compression (with 'w' only), and digit specifies the zlib
@@ -190,7 +195,7 @@ typedef struct __kstring_t {
 
     /**
      * Return a virtual file pointer to the current location in the file.
-     * No interpetation of the value should be made, other than a subsequent
+     * No interpretation of the value should be made, other than a subsequent
      * call to bgzf_seek can be used to position the file at the same point.
      * Return value is non-negative on success.
      */

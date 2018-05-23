@@ -1,7 +1,7 @@
 /*  tabix.c -- Generic indexer for TAB-delimited genome position files.
 
     Copyright (C) 2009-2011 Broad Institute.
-    Copyright (C) 2010-2012, 2014-2017 Genome Research Ltd.
+    Copyright (C) 2010-2012, 2014-2018 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <strings.h>
 #include <getopt.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -69,7 +70,6 @@ static void error(const char *format, ...)
 int file_type(const char *fname)
 {
     int l = strlen(fname);
-    int strcasecmp(const char *s1, const char *s2);
     if (l>=7 && strcasecmp(fname+l-7, ".gff.gz") == 0) return IS_GFF;
     else if (l>=7 && strcasecmp(fname+l-7, ".bed.gz") == 0) return IS_BED;
     else if (l>=7 && strcasecmp(fname+l-7, ".sam.gz") == 0) return IS_SAM;
@@ -171,7 +171,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
                 hts_itr_t *itr = bcf_itr_querys(idx,hdr,regs[i]);
                 while ( bcf_itr_next(fp, itr, rec) >=0 )
                 {
-                    if ( reg_idx && !regidx_overlap(reg_idx, bcf_seqname(hdr,rec),rec->pos,rec->pos+rec->rlen-1, NULL) ) continue; 
+                    if ( reg_idx && !regidx_overlap(reg_idx, bcf_seqname(hdr,rec),rec->pos,rec->pos+rec->rlen-1, NULL) ) continue;
                     bcf_write(out,hdr,rec);
                 }
                 tbx_itr_destroy(itr);
@@ -446,7 +446,7 @@ int main(int argc, char *argv[])
             case 1:
                 printf(
 "tabix (htslib) %s\n"
-"Copyright (C) 2017 Genome Research Ltd.\n", hts_version());
+"Copyright (C) 2018 Genome Research Ltd.\n", hts_version());
                 return EXIT_SUCCESS;
             default: return usage();
         }
@@ -542,5 +542,4 @@ int main(int argc, char *argv[])
         if ( tbx_index_build(fname, min_shift, &conf) ) error("tbx_index_build failed: %s\n", fname);
         return 0;
     }
-    return 0;
 }

@@ -64,13 +64,13 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
                 case BCF_BT_INT8:  BRANCH_INT(int8_t); break;
                 case BCF_BT_INT16: BRANCH_INT(int16_t); break;
                 case BCF_BT_INT32: BRANCH_INT(int32_t); break;
-                default: fprintf(stderr, "[E::%s] todo: %d at %s:%d\n", __func__, ac_type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
+                default: hts_log_error("Unexpected type %d at %s:%d", ac_type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
             }
             #undef BRANCH_INT
             if ( an<nac )
             {
-                fprintf(stderr,"[E::%s] Incorrect AN/AC counts at %s:%d\n", __func__,header->id[BCF_DT_CTG][line->rid].key, line->pos+1); 
-                exit(1); 
+                hts_log_error("Incorrect AN/AC counts at %s:%d", header->id[BCF_DT_CTG][line->rid].key, line->pos+1);
+                exit(1);
             }
             ac[0] = an - nac;
             return 1;
@@ -98,7 +98,7 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
                     if ( bcf_gt_is_missing(p[ial]) ) continue; /* missing allele */ \
                     if ( p[ial]>>1 > line->n_allele ) \
                     { \
-                        fprintf(stderr,"[E::%s] Incorrect allele (\"%d\") in %s at %s:%d\n", __func__,(p[ial]>>1)-1, header->samples[i],header->id[BCF_DT_CTG][line->rid].key, line->pos+1); \
+                        hts_log_error("Incorrect allele (\"%d\") in %s at %s:%d", (p[ial]>>1)-1, header->samples[i], header->id[BCF_DT_CTG][line->rid].key, line->pos+1); \
                         exit(1); \
                     } \
                     ac[(p[ial]>>1)-1]++; \
@@ -109,7 +109,7 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
             case BCF_BT_INT8:  BRANCH_INT(int8_t,  bcf_int8_vector_end); break;
             case BCF_BT_INT16: BRANCH_INT(int16_t, bcf_int16_vector_end); break;
             case BCF_BT_INT32: BRANCH_INT(int32_t, bcf_int32_vector_end); break;
-            default: fprintf(stderr, "[E::%s] todo: %d at %s:%d\n", __func__, fmt_gt->type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
+            default: hts_log_error("Unexpected type %d at %s:%d", fmt_gt->type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
         }
         #undef BRANCH_INT
         return 1;
@@ -152,7 +152,7 @@ int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial, int *_jal)
         case BCF_BT_INT8:  BRANCH_INT(int8_t,  bcf_int8_vector_end); break;
         case BCF_BT_INT16: BRANCH_INT(int16_t, bcf_int16_vector_end); break;
         case BCF_BT_INT32: BRANCH_INT(int32_t, bcf_int32_vector_end); break;
-        default: fprintf(stderr, "[E::%s] todo: fmt_type %d\n", __func__, fmt_ptr->type); exit(1); break;
+        default: hts_log_error("Unexpected type %d", fmt_ptr->type); exit(1); break;
     }
     #undef BRANCH_INT
 
@@ -202,7 +202,7 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
         case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_vector_end); break;
         default: hts_log_error("Unexpected GT %d at %s:%d",
             gt->type, header->id[BCF_DT_CTG][line->rid].key, line->pos + 1);
-            goto clean; break;
+            goto clean;
     }
     #undef BRANCH
 
@@ -391,7 +391,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 case BCF_BT_INT16: BRANCH(int16_t, p[0]==bcf_int16_missing); break;
                 case BCF_BT_INT32: BRANCH(int32_t, p[0]==bcf_int32_missing); break;
                 case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[0])); break;
-                default: hts_log_error("Unexpected type %d", info->type); goto err; break;
+                default: hts_log_error("Unexpected type %d", info->type); goto err;
             }
             #undef BRANCH
             if (missing) continue; // could remove this INFO tag?
@@ -692,7 +692,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 case BCF_BT_INT16: BRANCH(int16_t, p[0]==bcf_int16_missing); break;
                 case BCF_BT_INT32: BRANCH(int32_t, p[0]==bcf_int32_missing); break;
                 case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[0])); break;
-                default: hts_log_error("Unexpected type %d", fmt->type); goto err; break;
+                default: hts_log_error("Unexpected type %d", fmt->type); goto err;
             }
             #undef BRANCH
             if (all_missing) continue; // could remove this FORMAT tag?

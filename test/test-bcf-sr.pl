@@ -156,6 +156,7 @@ sub check_outputs
     {
         my ($pos,@vals) = split(/\t/,$line);
         chomp($vals[-1]);
+        $vals[-1] =~ s/\r$//;
         push @{$out{$pos}},join("\t",@vals);
     }
     close($fh) or error("close failed: $fname_bin");
@@ -173,6 +174,7 @@ sub check_outputs
     while (my $line=<$fh>)
     {
         chomp($line);
+        $line =~ s/\r$//;
         push @plines,$line;
     }
     close($fh) or error("close failed: $fname_perl");
@@ -181,8 +183,8 @@ sub check_outputs
     @plines = sort @plines;
     for (my $i=0; $i<@plines; $i++)
     {
-        if ( $blines[$i] ne $plines[$i] ) 
-        { 
+        if ( $blines[$i] ne $plines[$i] )
+        {
             #error("Different lines in $fname_bin vs $fname_perl:\n\t$blines[$i].\nvs\n\t$plines[$i].\n"); 
             error("Different lines in $fname_bin vs $fname_perl:\n\t".join("\n\t",@blines)."\nvs\n\t".join("\n\t",@plines)."\n"); 
         }

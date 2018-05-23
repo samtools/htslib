@@ -29,9 +29,32 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/hfile.h"
 
+#include "textutils_internal.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/*!
+  @abstract  Resizes the buffer within an hFILE.
+
+  @notes  Changes the buffer size for an hFILE.  Ideally this is done
+  immediately after opening.  If performed later, this function may
+  fail if we are reducing the buffer size and the current offset into
+  the buffer is beyond the new capacity.
+
+  @param fp        The file stream
+  @param bufsiz    The size of the new buffer
+
+  @return Returns 0 on success, -1 on failure.
+ */
+int hfile_set_blksize(hFILE *fp, size_t bufsiz);
+
+struct BGZF;
+/*!
+  @abstract Return the hFILE connected to a BGZF
+ */
+struct hFILE *bgzf_hfile(struct BGZF *fp);
 
 struct hFILE_backend {
     /* As per read(2), returning the number of bytes read (possibly 0) or
@@ -150,6 +173,11 @@ extern int hfile_plugin_init_s3(struct hFILE_plugin *self);
 
 /* This one is never built as a separate plugin.  */
 extern int hfile_plugin_init_net(struct hFILE_plugin *self);
+
+// Callback to allow headers to be set in http connections.  Currently used
+// to allow s3 to renew tokens when seeking.  Kept internal for now,
+// although we may consider exposing it in the API later.
+typedef int (* hts_httphdr_callback) (void *cb_data, char ***hdrs);
 
 #ifdef __cplusplus
 }
