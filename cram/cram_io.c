@@ -1963,7 +1963,7 @@ int expand_cache_path(char *path, char *dir, char *fn) {
     path += len;
     sz -= len;
 
-    len = (strlen(fn) + (*fn && path > start && path[-1] != '/')) ? 1 : 0;
+    len = strlen(fn) + ((*fn && path > start && path[-1] != '/') ? 1 : 0);
     if (len >= sz) return -1;
     if (*fn && path > start && path[-1] != '/')
         *path++ = '/';
