@@ -2511,7 +2511,7 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
 {
     char *hyphen;
     const char *colon = strrchr(s, ':');
-    if (colon == NULL) {
+    if (colon == NULL || strncmp(s, "HLA", 3) == 0) {
         *beg = 0; *end = INT_MAX;
         return s + strlen(s);
     }
