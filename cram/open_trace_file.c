@@ -68,6 +68,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <unistd.h>
 #include <limits.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "cram/os.h"
@@ -78,6 +79,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/open_trace_file.h"
 #include "cram/misc.h"
 #include "htslib/hfile.h"
+#include "htslib/hts_log.h"
 
 /*
  * Tokenises the search path splitting on colons (unix) or semicolons
@@ -183,8 +185,10 @@ mFILE *find_file_url(char *file, char *url) {
     }
     *cp++ = 0;
 
-    if (!(hf = hopen(buf, "r")))
+    if (!(hf = hopen(buf, "r"))) {
+        hts_log_error("Failed to open reference \"%s\": %s", buf, strerror(errno));
         return NULL;
+    }
 
     if (NULL == (mf = mfcreate(NULL, 0)))
         return NULL;
