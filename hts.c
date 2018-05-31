@@ -2624,15 +2624,39 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
     return (sign == '+')? n : -n;
 }
 
-const char *hts_parse_reg(const char *s, int *beg, int *end)
+/*
+ * A variant of hts_parse_reg which is reference-id aware.  It uses
+ * the iterator name2id callbacks to validate the region tokenisation works.
+ *
+ * This is necessary due to GRCh38 HLA additions which have reference names
+ * like "HLA-DRB1*12:17".
+ *
+ * On success the end of the reference is returned (colon or end of string).
+ * On failure NULL is returned, and if tid/getid are supplied *tid will be -1.
+ */
+const char *hts_parse_reg2(const char *s, int *tid, int *beg, int *end,
+                           hts_name2id_f getid, void *hdr)
 {
-    char *hyphen;
+    // FIXME: do we need to permit tid=-1 for reference "*" to indicate unmapped
+    // reads, and strictly have NULL as failure test?
+    int tid_, s_len = strlen(s); // int is sufficient given beg/end types
+    if (!tid) tid = &tid_;       // simplifies code below
+
     const char *colon = strrchr(s, ':');
     if (colon == NULL) {
         *beg = 0; *end = INT_MAX;
-        return s + strlen(s);
+        *tid = getid ? getid(hdr, s) : 0;
+        return *tid >= 0 ? s + s_len : NULL;
     }
 
+    // Has a colon, but check whole name first
+    if (getid) {
+        *beg = 0; *end = INT_MAX;
+        if ((*tid = getid(hdr, s)) >= 0)
+            return s + s_len;
+    }
+
+    char *hyphen;
     *beg = hts_parse_decimal(colon+1, &hyphen, HTS_PARSE_THOUSANDS_SEP) - 1;
     if (*beg < 0) *beg = 0;
 
@@ -2641,36 +2665,41 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
     else return NULL;
 
     if (*beg >= *end) return NULL;
+    if (getid) {
+        kstring_t ks = { 0, 0, NULL };
+        kputsn(s, colon-s, &ks); // convert to nul terminated string
+        if (!ks.s) {
+            *tid = -1;
+            return NULL;
+        }
+        *tid = getid(hdr, ks.s);
+        free(ks.s);
+    } else {
+        *tid = 0;
+    }
     return colon;
+}
+
+const char *hts_parse_reg(const char *s, int *beg, int *end)
+{
+    return hts_parse_reg2(s, NULL, beg, end, NULL, NULL);
 }
 
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
     int tid, beg, end;
-    const char *q;
 
     if (strcmp(reg, ".") == 0)
         return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
     else if (strcmp(reg, "*") == 0)
         return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
 
-    q = hts_parse_reg(reg, &beg, &end);
-    if (q) {
-        char tmp_a[1024], *tmp = tmp_a;
-        if (q - reg + 1 > 1024)
-            if (!(tmp = malloc(q - reg + 1)))
-                return NULL;
-        strncpy(tmp, reg, q - reg);
-        tmp[q - reg] = 0;
-        tid = getid(hdr, tmp);
-        if (tmp != tmp_a)
-            free(tmp);
-    }
-    else {
-        // not parsable as a region, but possibly a sequence named "foo:a"
-        tid = getid(hdr, reg);
+    if ((tid = getid(hdr, reg)) >= 0) {
         beg = 0; end = INT_MAX;
+        return itr_query(idx, tid, beg, end, readrec);
     }
+
+    hts_parse_reg2(reg, &tid, &beg, &end, getid, hdr);
 
     if (tid < 0) return NULL;
     return itr_query(idx, tid, beg, end, readrec);

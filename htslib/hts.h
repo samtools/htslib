@@ -791,7 +791,24 @@ long long hts_parse_decimal(const char *str, char **strend, int flags);
     @return  Pointer to the colon or '\0' after the reference sequence name,
              or NULL if @a str could not be parsed.
 */
+
+typedef int (*hts_name2id_f)(void*, const char*);
+typedef const char *(*hts_id2name_f)(void*, int);
 const char *hts_parse_reg(const char *str, int *beg, int *end);
+
+/// Parse a "CHR:START-END"-style region string
+/** @param str   String to be parsed
+    @param tid   Set on return (if not NULL) to be reference index (-1 if invalid)
+    @param beg   Set on return to the 0-based start of the region
+    @param end   Set on return to the 1-based end of the region
+    @param getid Function pointer.  Called if not NULL to set tid.
+    @param hdr   Caller data passed to getid.
+    @return  Pointer to the colon or '\0' after the reference sequence name,
+             or NULL if @a str could not be parsed.
+*/
+const char *hts_parse_reg2(const char *str, int *tid, int *beg, int *end,
+                           hts_name2id_f getid, void *hdr);
+
 
 ///////////////////////////////////////////////////////////
 // Generic iterators
@@ -818,8 +835,6 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
  */
 void hts_itr_destroy(hts_itr_t *iter);
 
-typedef int (*hts_name2id_f)(void*, const char*);
-typedef const char *(*hts_id2name_f)(void*, int);
 typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
 
 /// Create a single-region iterator from a text region specification
