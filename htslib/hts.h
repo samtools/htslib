@@ -578,7 +578,8 @@ When REST or NONE is used, idx is also ignored and may be NULL.
 #define HTS_FMT_CRAI 3
 
 typedef struct {
-    uint32_t beg, end;
+    //uint32_t beg, end;
+    uint64_t beg, end; // sorry for the bad naming: FIXME!
 } hts_pair32_t;
 
 typedef struct {
@@ -595,18 +596,20 @@ typedef struct {
     hts_pair32_t *intervals;
     int tid;
     uint32_t count;
-    uint32_t min_beg, max_end;
+    uint64_t min_beg, max_end;
 } hts_reglist_t;
 
-typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, int *end);
+typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int64_t *beg, int64_t *end);
 typedef int hts_seek_func(void *fp, int64_t offset, int where);
 typedef int64_t hts_tell_func(void *fp);
 
 typedef struct {
     uint32_t read_rest:1, finished:1, is_cram:1, nocoor:1, multi:1, dummy:27;
-    int tid, beg, end, n_off, i, n_reg;
+    int tid, n_off, i, n_reg;
+    int64_t beg, end;
     hts_reglist_t *reg_list;
-    int curr_tid, curr_beg, curr_end, curr_reg, curr_intv;
+    int curr_tid, curr_reg, curr_intv;
+    int64_t curr_beg, curr_end;
     uint64_t curr_off, nocoor_off;
     hts_pair64_max_t *off;
     hts_readrec_func *readrec;
@@ -658,7 +661,7 @@ void hts_idx_destroy(hts_idx_t *idx);
 The @p is_mapped parameter is used to update the n_mapped / n_unmapped counts
 stored in the meta-data bin.
  */
-int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped);
+int hts_idx_push(hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint64_t offset, int is_mapped);
 
 /// Finish building an index
 /** @param idx          Index
@@ -940,14 +943,14 @@ const char *hts_parse_region(const char *str, int *tid, int64_t *beg, int64_t *e
     @param readrec  Callback to read a record from the input file
     @return An iterator on success; NULL on failure
  */
-hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
+hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int64_t beg, int64_t end, hts_readrec_func *readrec);
 
 /// Free an iterator
 /** @param iter   Iterator to free
  */
 void hts_itr_destroy(hts_itr_t *iter);
 
-typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
+typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, int64_t beg, int64_t end, hts_readrec_func *readrec);
 
 /// Create a single-region iterator from a text region specification
 /** @param idx       Index

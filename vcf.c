@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <limits.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <errno.h>
 
 #include "htslib/vcf.h"
@@ -1180,21 +1181,27 @@ void bcf_destroy(bcf1_t *v)
 
 static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 {
-    uint32_t x[8];
+    union {
+        uint32_t i;
+        float f;
+    } x[8];
     ssize_t ret;
     if ((ret = bgzf_read(fp, x, 32)) != 32) {
         if (ret == 0) return -1;
         return -2;
     }
     bcf_clear1(v);
-    if (x[0] < 24) return -2;
-    x[0] -= 24; // to exclude six 32-bit integers
-    if (ks_resize(&v->shared, x[0]) != 0) return -2;
-    if (ks_resize(&v->indiv, x[1]) != 0) return -2;
-    memcpy(v, x + 2, 16);
-    v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
-    v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
-    v->shared.l = x[0], v->indiv.l = x[1];
+    if (x[0].i < 24) return -2;
+    x[0].i -= 24; // to exclude six 32-bit integers
+    if (ks_resize(&v->shared, x[0].i) != 0) return -2;
+    if (ks_resize(&v->indiv, x[1].i) != 0) return -2;
+    v->rid  = x[2].i;
+    v->pos  = x[3].i;
+    v->rlen = x[4].i;
+    v->qual = x[5].f;
+    v->n_allele = x[6].i>>16; v->n_info = x[6].i&0xffff;
+    v->n_fmt = x[7].i>>24; v->n_sample = x[7].i&0xffffff;
+    v->shared.l = x[0].i, v->indiv.l = x[1].i;
     // silent fix of broken BCFs produced by earlier versions of bcf_subset, prior to and including bd6ed8b4
     if ( (!v->indiv.l || !v->n_sample) && v->n_fmt ) v->n_fmt = 0;
 
@@ -1436,7 +1443,7 @@ int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
     return bcf_subset_format(h,v);
 }
 
-int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, int *beg, int *end)
+int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, int64_t *beg, int64_t *end)
 {
     bcf1_t *v = (bcf1_t *) vv;
     int ret;
@@ -1684,7 +1691,7 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     }
     if ( bcf_hdr_nsamples(h)!=v->n_sample )
     {
-        hts_log_error("Broken VCF record, the number of columns at %s:%d does not match the number of samples (%d vs %d)",
+        hts_log_error("Broken VCF record, the number of columns at %s:%"PRId64" does not match the number of samples (%d vs %d)",
             bcf_seqname(h,v), v->pos+1, v->n_sample, bcf_hdr_nsamples(h));
         return -1;
     }
@@ -1704,12 +1711,18 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     bcf1_sync(v);   // check if the BCF record was modified
 
     BGZF *fp = hfp->fp.bgzf;
-    uint32_t x[8];
-    x[0] = v->shared.l + 24; // to include six 32-bit integers
-    x[1] = v->indiv.l;
-    memcpy(x + 2, v, 16);
-    x[6] = (uint32_t)v->n_allele<<16 | v->n_info;
-    x[7] = (uint32_t)v->n_fmt<<24 | v->n_sample;
+    union {
+        uint32_t i;
+        float f;
+    } x[8];
+    x[0].i = v->shared.l + 24; // to include six 32-bit integers
+    x[1].i = v->indiv.l;
+    x[2].i = v->rid;
+    x[3].i = v->pos;
+    x[4].i = v->rlen;
+    x[5].f = v->qual;
+    x[6].i = (uint32_t)v->n_allele<<16 | v->n_info;
+    x[7].i = (uint32_t)v->n_fmt<<24 | v->n_sample;
     if ( bgzf_write(fp, x, 32) != 32 ) return -1;
     if ( bgzf_write(fp, v->shared.s, v->shared.l) != v->shared.l ) return -1;
     if ( bgzf_write(fp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;
@@ -2132,7 +2145,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
     char *end = s->s + s->l;
     if ( q>=end )
     {
-        hts_log_error("FORMAT column with no sample columns starting at %s:%d", s->s, v->pos+1);
+        hts_log_error("FORMAT column with no sample columns starting at %s:%"PRId64"", s->s, v->pos+1);
         v->errcode |= BCF_ERR_NCOLS;
         return -1;
     }
@@ -2148,7 +2161,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
     for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
         if (j >= MAX_N_FMT) {
             v->errcode |= BCF_ERR_LIMITS;
-            hts_log_error("FORMAT column at %s:%d lists more identifiers than htslib can handle",
+            hts_log_error("FORMAT column at %s:%"PRId64" lists more identifiers than htslib can handle",
                 bcf_seqname(h,v), v->pos+1);
             return -1;
         }
@@ -2220,7 +2233,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                     j++;
                     if ( j>=v->n_fmt )
                     {
-                        hts_log_error("Incorrect number of FORMAT fields at %s:%d",
+                        hts_log_error("Incorrect number of FORMAT fields at %s:%"PRId64"",
                             h->id[BCF_DT_CTG][v->rid].key, v->pos+1);
                         v->errcode |= BCF_ERR_NCOLS;
                         return -1;
@@ -2327,7 +2340,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             }
             else {
                 char buffer[8];
-                hts_log_error("Invalid character '%s' in '%s' FORMAT field at %s:%d",
+                hts_log_error("Invalid character '%s' in '%s' FORMAT field at %s:%"PRId64"",
                     dump_char(buffer, *t), h->id[BCF_DT_ID][z->key].key, bcf_seqname(h,v), v->pos+1);
                 v->errcode |= BCF_ERR_CHAR;
                 return -1;
@@ -2386,14 +2399,14 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
 
     if ( v->n_sample!=bcf_hdr_nsamples(h) )
     {
-        hts_log_error("Number of columns at %s:%d does not match the number of samples (%d vs %d)",
+        hts_log_error("Number of columns at %s:%"PRId64" does not match the number of samples (%d vs %d)",
             bcf_seqname(h,v), v->pos+1, v->n_sample, bcf_hdr_nsamples(h));
         v->errcode |= BCF_ERR_NCOLS;
         return -1;
     }
     if ( v->indiv.l > 0xffffffff )
     {
-        hts_log_error("The FORMAT at %s:%d is too long", bcf_seqname(h,v), v->pos+1);
+        hts_log_error("The FORMAT at %s:%"PRId64" is too long", bcf_seqname(h,v), v->pos+1);
         v->errcode |= BCF_ERR_LIMITS;
 
         // Error recovery: return -1 if this is a critical error or 0 if we want to ignore the FORMAT and proceed

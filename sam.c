@@ -455,16 +455,17 @@ int bam_cigar2qlen(int n_cigar, const uint32_t *cigar)
     return l;
 }
 
-int bam_cigar2rlen(int n_cigar, const uint32_t *cigar)
+int64_t bam_cigar2rlen(int n_cigar, const uint32_t *cigar)
 {
-    int k, l;
+    int k;
+    int64_t l;
     for (k = l = 0; k < n_cigar; ++k)
         if (bam_cigar_type(bam_cigar_op(cigar[k]))&2)
             l += bam_cigar_oplen(cigar[k]);
     return l;
 }
 
-int32_t bam_endpos(const bam1_t *b)
+int64_t bam_endpos(const bam1_t *b)
 {
     if (!(b->core.flag & BAM_FUNMAP) && b->core.n_cigar > 0)
         return b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
@@ -556,12 +557,12 @@ int bam_read1(BGZF *fp, bam1_t *b)
     if (fp->is_be) {
         for (i = 0; i < 8; ++i) ed_swap_4p(x + i);
     }
-    c->tid = x[0]; c->pos = x[1];
+    c->tid = x[0]; c->pos = (int32_t)x[1];
     c->bin = x[2]>>16; c->qual = x[2]>>8&0xff; c->l_qname = x[2]&0xff;
     c->l_extranul = (c->l_qname%4 != 0)? (4 - c->l_qname%4) : 0;
     c->flag = x[3]>>16; c->n_cigar = x[3]&0xffff;
     c->l_qseq = x[4];
-    c->mtid = x[5]; c->mpos = x[6]; c->isize = x[7];
+    c->mtid = x[5]; c->mpos = (int32_t)x[6]; c->isize = (int32_t)x[7];
 
     new_l_data = block_len - 32 + c->l_extranul;
     if (new_l_data > INT_MAX || c->l_qseq < 0 || c->l_qname < 1) return -4;
@@ -608,6 +609,12 @@ int bam_write1(BGZF *fp, const bam1_t *b)
         return -1;
     }
     if (c->n_cigar > 0xffff) block_len += 16; // "16" for "CGBI", 4-byte tag length and 8-byte fake CIGAR
+    if (c->pos > INT_MAX ||
+        c->mpos > INT_MAX ||
+        c->isize < INT_MIN || c->isize > INT_MAX) {
+        hts_log_error("Positional data is too large for BAM format");
+        return -1;
+    }
     x[0] = c->tid;
     x[1] = c->pos;
     x[2] = (uint32_t)c->bin<<16 | c->qual<<8 | (c->l_qname - c->l_extranul);
@@ -828,7 +835,7 @@ int sam_idx_save(htsFile *fp) {
     return 0;
 }
 
-static int sam_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
+static int sam_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int64_t *beg, int64_t *end)
 {
     htsFile *fp = (htsFile *)fpv;
     bam1_t *b = bv;
@@ -843,7 +850,7 @@ static int sam_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, i
 }
 
 // This is used only with read_rest=1 iterators, so need not set tid/beg/end.
-static int sam_readrec_rest(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
+static int sam_readrec_rest(BGZF *ignored, void *fpv, void *bv, int *tid, int64_t *beg, int64_t *end)
 {
     htsFile *fp = (htsFile *)fpv;
     bam1_t *b = bv;
@@ -852,7 +859,7 @@ static int sam_readrec_rest(BGZF *ignored, void *fpv, void *bv, int *tid, int *b
     return ret;
 }
 
-static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
+static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int64_t *beg, int64_t *end)
 {
     htsFile *fp = fpv;
     bam1_t *b = bv;
@@ -975,7 +982,7 @@ hts_idx_t *sam_index_load(htsFile *fp, const char *fn)
     return index_load(fp, fn, NULL, HTS_IDX_SAVE_REMOTE);
 }
 
-static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
+static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int64_t beg, int64_t end, hts_readrec_func *readrec)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
     hts_itr_t *iter = (hts_itr_t *) calloc(1, sizeof(hts_itr_t));
@@ -1032,7 +1039,7 @@ static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end
     return iter;
 }
 
-hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
+hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int64_t beg, int64_t end)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
     if (idx == NULL)
@@ -2759,7 +2766,7 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
         r |= kputs(h->target_name[c->tid] , str);
         r |= kputc_('\t', str);
     } else r |= kputsn_("*\t", 2, str);
-    r |= kputw(c->pos + 1, str); r |= kputc_('\t', str); // pos
+    r |= kputll(c->pos + 1, str); r |= kputc_('\t', str); // pos
     r |= kputw(c->qual, str); r |= kputc_('\t', str); // qual
     if (c->n_cigar) { // cigar
         uint32_t *cigar = bam_get_cigar(b);
@@ -2775,8 +2782,8 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
         r |= kputs(h->target_name[c->mtid], str);
         r |= kputc_('\t', str);
     }
-    r |= kputw(c->mpos + 1, str); r |= kputc_('\t', str); // mate pos
-    r |= kputw(c->isize, str); r |= kputc_('\t', str); // template len
+    r |= kputll(c->mpos + 1, str); r |= kputc_('\t', str); // mate pos
+    r |= kputll(c->isize, str); r |= kputc_('\t', str); // template len
     if (c->l_qseq) { // seq and qual
         uint8_t *s = bam_get_seq(b);
         if (ks_resize(str, str->l+2+2*c->l_qseq) < 0) goto mem_err;
@@ -3659,7 +3666,7 @@ static cstate_t g_cstate_null = { -1, 0, 0, 0 };
 
 typedef struct __linkbuf_t {
     bam1_t b;
-    int32_t beg, end;
+    int64_t beg, end;
     cstate_t s;
     struct __linkbuf_t *next;
     bam_pileup_cd cd;
@@ -3957,7 +3964,7 @@ void bam_plp_destructor(bam_plp_t plp,
  *  Returns BAM_CMATCH, -1 when there is no more cigar to process or the requested position is not covered,
  *  or -2 on error.
  */
-static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, int *icig, int *iseq, int *iref)
+static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, int *icig, int *iseq, int64_t *iref)
 {
     int pos = *iref;
     if ( pos < 0 ) return -1;
@@ -3992,7 +3999,7 @@ static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, int
     *iseq = -1;
     return -1;
 }
-static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, int *icig, int *iseq, int *iref)
+static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, int *icig, int *iseq, int64_t *iref)
 {
     while ( *cigar < cigar_max )
     {
@@ -4026,16 +4033,16 @@ static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
     uint8_t *a_qual = bam_get_qual(a), *b_qual = bam_get_qual(b);
     uint8_t *a_seq  = bam_get_seq(a), *b_seq = bam_get_seq(b);
 
-    int iref   = b->core.pos;
-    int a_iref = iref - a->core.pos;
-    int b_iref = iref - b->core.pos;
+    int64_t iref   = b->core.pos;
+    int64_t a_iref = iref - a->core.pos;
+    int64_t b_iref = iref - b->core.pos;
     int a_ret = cigar_iref2iseq_set(&a_cigar, a_cigar_max, &a_icig, &a_iseq, &a_iref);
     if ( a_ret<0 ) return a_ret<-1 ? -1:0;  // no overlap or error
     int b_ret = cigar_iref2iseq_set(&b_cigar, b_cigar_max, &b_icig, &b_iseq, &b_iref);
     if ( b_ret<0 ) return b_ret<-1 ? -1:0;  // no overlap or error
 
     #if DBG
-        fprintf(stderr,"tweak %s  n_cigar=%d %d  .. %d-%d vs %d-%d\n", bam_get_qname(a), a->core.n_cigar, b->core.n_cigar,
+        fprintf(stderr,"tweak %s  n_cigar=%d %d  .. %d-%d vs %"PRId64"-%"PRId64"\n", bam_get_qname(a), a->core.n_cigar, b->core.n_cigar,
             a->core.pos+1,a->core.pos+bam_cigar2rlen(a->core.n_cigar,bam_get_cigar(a)), b->core.pos+1, b->core.pos+bam_cigar2rlen(b->core.n_cigar,bam_get_cigar(b)));
     #endif
 
@@ -4105,7 +4112,7 @@ static int overlap_push(bam_plp_t iter, lbnode_t *node)
 
     // no overlap possible, unless some wild cigar
     if ( node->b.core.tid != node->b.core.mtid
-         || (abs(node->b.core.isize) >= 2*node->b.core.l_qseq
+         || (llabs(node->b.core.isize) >= 2*node->b.core.l_qseq
          && node->b.core.mpos >= node->end) // for those wild cigars
        ) return 0;
 

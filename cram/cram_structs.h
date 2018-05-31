@@ -661,8 +661,8 @@ typedef struct cram_index {
 
 typedef struct {
     int refid;
-    int start;
-    int end;
+    int64_t start;
+    int64_t end;
 } cram_range;
 
 /*-----------------------------------------------------------------------------

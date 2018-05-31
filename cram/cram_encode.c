@@ -3065,7 +3065,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
             // This vs p: tlen, matepos, flags. Permit TLEN 0 and/or TLEN +/-
             // a small amount, if appropriate options set.
             if ((bam_ins_size(b) &&
-                 abs(bam_ins_size(b) - sign*(aright-aleft+1)) > fd->tlen_approx) ||
+                 llabs(bam_ins_size(b) - sign*(aright-aleft+1)) > fd->tlen_approx) ||
                 (!bam_ins_size(b) && !fd->tlen_zero))
                 goto detached;
 

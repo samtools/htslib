@@ -209,8 +209,8 @@ typedef struct {
  */
 typedef struct {
     int32_t rid;  // CHROM
-    int32_t pos;  // POS
-    int32_t rlen; // length of REF
+    int64_t pos;  // POS
+    int64_t rlen; // length of REF
     float qual;   // QUAL
     uint32_t n_info:16, n_allele:16;
     uint32_t n_fmt:8, n_sample:24;
@@ -427,7 +427,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v) HTS_RESULT_USED;
 
     /** Helper function for the bcf_itr_next() macro; internal use, ignore it */
-    int bcf_readrec(BGZF *fp, void *null, void *v, int *tid, int *beg, int *end);
+    int bcf_readrec(BGZF *fp, void *null, void *v, int *tid, int64_t *beg, int64_t *end);
 
 
 

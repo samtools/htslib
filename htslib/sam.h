@@ -169,6 +169,22 @@ extern const int8_t bam_cigar_table[256];
  *** Alignment records ***
  *************************/
 
+/*
+ * Assumptions made here.  While pos can be 64-bit, no sequence
+ * itself is that long, but due to ref skip CIGAR fields it
+ * may span more than that.  (CIGAR itself is 28-bit len + 4 bit
+ * type, but in theory we can combine multiples together.)
+ *
+ * Mate position and insert size also need to be 64-bit, but
+ * we won't accept more than 32-bit for tid.
+ *
+ * The bam_core_t structure is the *in memory* layout and not
+ * the same as the on-disk format.  64-bit changes here permit
+ * SAM to work with very long chromosomes and permit BAM and CRAM
+ * to seamlessly update in the future without further API/ABI
+ * revisions.
+ */
+
 /*! @typedef
  @abstract Structure for core alignment information.
  @field  tid     chromosome ID, defined by sam_hdr_t
@@ -185,8 +201,8 @@ extern const int8_t bam_cigar_table[256];
  */
 typedef struct {
     int32_t tid;
-    int32_t pos;
-    uint16_t bin;
+    int64_t pos;
+    uint16_t bin; // NB: invalid on 64-bit pos
     uint8_t qual;
     uint8_t l_extranul;
     uint16_t flag;
@@ -194,8 +210,8 @@ typedef struct {
     uint32_t n_cigar;
     int32_t l_qseq;
     int32_t mtid;
-    int32_t mpos;
-    int32_t isize;
+    int64_t mpos;
+    int64_t isize;
 } bam1_core_t;
 
 /*! @typedef
@@ -946,7 +962,7 @@ int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
    operations in @p cigar (these are the operations that "consume" reference
    bases).  All other operations (including invalid ones) are ignored.
  */
-int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
+int64_t bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
 
 /*!
       @abstract Calculate the rightmost base position of an alignment on the
@@ -959,7 +975,7 @@ int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
       For an unmapped read (either according to its flags or if it has no cigar
       string), we return b->core.pos + 1 by convention.
  */
-int32_t bam_endpos(const bam1_t *b);
+int64_t bam_endpos(const bam1_t *b);
 
 int   bam_str2flag(const char *str);    /** returns negative value on error */
 char *bam_flag2str(int flag);   /** The string must be freed by the user */
@@ -1084,7 +1100,7 @@ When using one of these values, @p beg and @p end are ignored.
 
 When using HTS_IDX_REST or HTS_IDX_NONE, NULL can be passed in to @p idx.
  */
-hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
+hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int64_t beg, int64_t end);
 
 /// Create a SAM/BAM/CRAM iterator
 /** @param idx     Index
