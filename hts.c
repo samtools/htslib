@@ -2631,8 +2631,13 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
  * This is necessary due to GRCh38 HLA additions which have reference names
  * like "HLA-DRB1*12:17".
  *
- * On success the end of the reference is returned (colon or end of string).
- * On failure NULL is returned, and if tid/getid are supplied *tid will be -1.
+ * getid is optional and may be passed in as NULL.  If given it is used to
+ * validate the reference name exists and is unambiguously parseable.  If not
+ * given the best guess will be made but no has guarantees in validity.
+ *
+ * On success the end of the reference is returned (colon or end of string)
+ *            beg/end will be set, plus tid if getid has been supplied.
+ * On failure NULL is returned.
  */
 const char *hts_parse_reg2(const char *s, int *tid, int *beg, int *end,
                            hts_name2id_f getid, void *hdr)
@@ -2642,6 +2647,7 @@ const char *hts_parse_reg2(const char *s, int *tid, int *beg, int *end,
     int tid_, s_len = strlen(s); // int is sufficient given beg/end types
     if (!tid) tid = &tid_;       // simplifies code below
 
+    // No colon implies entirety of the reference
     const char *colon = strrchr(s, ':');
     if (colon == NULL) {
         *beg = 0; *end = INT_MAX;
@@ -2649,11 +2655,29 @@ const char *hts_parse_reg2(const char *s, int *tid, int *beg, int *end,
         return *tid >= 0 ? s + s_len : NULL;
     }
 
-    // Has a colon, but check whole name first
+    // Has a colon, but check whole name first.
     if (getid) {
         *beg = 0; *end = INT_MAX;
-        if ((*tid = getid(hdr, s)) >= 0)
+        if ((*tid = getid(hdr, s)) >= 0) {
+            // Entire name matches, but also check this isn't
+            // ambiguous.  eg we have ref chr1 and ref chr1:100-200
+            // both present.
+            kstring_t ks = { 0, 0, NULL };
+            kputsn(s, colon-s, &ks); // convert to nul terminated string
+            if (!ks.s) {
+                *tid = -1;
+                return NULL;
+            }
+            if (getid(hdr, ks.s) >= 0) {
+                free(ks.s);
+                *tid = -1;
+                hts_log_error("Range %s is ambiguous", s);
+                return NULL;
+            }
+            free(ks.s);
+
             return s + s_len;
+        }
     }
 
     char *hyphen;
@@ -2674,6 +2698,8 @@ const char *hts_parse_reg2(const char *s, int *tid, int *beg, int *end,
         }
         *tid = getid(hdr, ks.s);
         free(ks.s);
+        if (*tid < 0)
+            return NULL;
     } else {
         *tid = 0;
     }
@@ -2694,14 +2720,9 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
     else if (strcmp(reg, "*") == 0)
         return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
 
-    if ((tid = getid(hdr, reg)) >= 0) {
-        beg = 0; end = INT_MAX;
-        return itr_query(idx, tid, beg, end, readrec);
-    }
+    if (!hts_parse_reg2(reg, &tid, &beg, &end, getid, hdr))
+        return NULL;
 
-    hts_parse_reg2(reg, &tid, &beg, &end, getid, hdr);
-
-    if (tid < 0) return NULL;
     return itr_query(idx, tid, beg, end, readrec);
 }
 
