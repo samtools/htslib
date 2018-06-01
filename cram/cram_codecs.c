@@ -331,6 +331,26 @@ int cram_external_decode_int(cram_slice *slice, cram_codec *c,
     return l > 0 ? 0 : -1;
 }
 
+int cram_external_decode_long(cram_slice *slice, cram_codec *c,
+                              cram_block *in, char *out, int *out_size) {
+    int64_t l;
+    char *cp;
+    cram_block *b;
+
+    /* Find the external block */
+    b = cram_get_block_by_id(slice, c->u.external.content_id);
+    if (!b)
+        return *out_size?-1:0;
+
+    cp = (char *)b->data + b->idx;
+    // E_INT and E_LONG are guaranteed single item queries
+    l = safe_ltf8_get(cp, (char *)b->data + b->uncomp_size, (int64_t *)out);
+    b->idx += l;
+    *out_size = 1;
+
+    return l > 0 ? 0 : -1;
+}
+
 int cram_external_decode_char(cram_slice *slice, cram_codec *c,
                               cram_block *in, char *out,
                               int *out_size) {
@@ -392,8 +412,10 @@ cram_codec *cram_external_decode_init(char *data, int size,
         return NULL;
 
     c->codec  = E_EXTERNAL;
-    if (option == E_INT || option == E_LONG)
+    if (option == E_INT)
         c->decode = cram_external_decode_int;
+    else if (option == E_LONG)
+        c->decode = cram_external_decode_long;
     else if (option == E_BYTE_ARRAY || option == E_BYTE)
         c->decode = cram_external_decode_char;
     else
@@ -420,6 +442,14 @@ int cram_external_encode_int(cram_slice *slice, cram_codec *c,
     uint32_t *i32 = (uint32_t *)in;
 
     return itf8_put_blk(c->out, *i32) >= 0 ? 0 : -1;
+}
+
+int cram_external_encode_long(cram_slice *slice, cram_codec *c,
+                             char *in, int in_size) {
+    uint64_t *i64 = (uint64_t *)in;
+
+    ltf8_put_blk(c->out, *i64);
+    return 0;
 }
 
 int cram_external_encode_char(cram_slice *slice, cram_codec *c,
@@ -472,8 +502,10 @@ cram_codec *cram_external_encode_init(cram_stats *st,
         return NULL;
     c->codec = E_EXTERNAL;
     c->free = cram_external_encode_free;
-    if (option == E_INT || option == E_LONG)
+    if (option == E_INT)
         c->encode = cram_external_encode_int;
+    else if (option == E_LONG)
+        c->encode = cram_external_encode_long;
     else if (option == E_BYTE_ARRAY || option == E_BYTE)
         c->encode = cram_external_encode_char;
     else
@@ -962,6 +994,56 @@ int cram_huffman_decode_int(cram_slice *slice, cram_codec *c,
     return 0;
 }
 
+int cram_huffman_decode_long0(cram_slice *slice, cram_codec *c,
+                              cram_block *in, char *out, int *out_size) {
+    int64_t *out_i = (int64_t *)out;
+    int i, n;
+    const cram_huffman_code * const codes = c->u.huffman.codes;
+
+    /* Special case of 0 length codes */
+    for (i = 0, n = *out_size; i < n; i++) {
+        out_i[i] = codes[0].symbol;
+    }
+    return 0;
+}
+
+int cram_huffman_decode_long(cram_slice *slice, cram_codec *c,
+                             cram_block *in, char *out, int *out_size) {
+    int64_t *out_i = (int64_t *)out;
+    int i, n, ncodes = c->u.huffman.ncodes;
+    const cram_huffman_code * const codes = c->u.huffman.codes;
+
+    for (i = 0, n = *out_size; i < n; i++) {
+        int idx = 0;
+        int val = 0, len = 0, last_len = 0;
+
+        // Now one bit at a time for remaining checks
+        for (;;) {
+            int dlen = codes[idx].len - last_len;
+            if (cram_not_enough_bits(in, dlen))
+                return -1;
+
+            //val <<= dlen;
+            //val  |= get_bits_MSB(in, dlen);
+            //last_len = (len += dlen);
+
+            last_len = (len += dlen);
+            for (; dlen; dlen--) GET_BIT_MSB(in, val);
+
+            idx = val - codes[idx].p;
+            if (idx >= ncodes || idx < 0)
+                return -1;
+
+            if (codes[idx].code == val && codes[idx].len == len) {
+                out_i[i] = codes[idx].symbol;
+                break;
+            }
+        }
+    }
+
+    return 0;
+}
+
 /*
  * Initialises a huffman decoder from an encoding data stream.
  */
@@ -1011,8 +1093,16 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
     }
 
     /* Read symbols and bit-lengths */
-    for (i = 0, l = 1; i < ncodes && l > 0; i++, cp += l) {
-        l = safe_itf8_get(cp, data_end, &codes[i].symbol);
+    if (option == E_LONG) {
+        for (i = 0, l = 1; i < ncodes && l > 0; i++, cp += l) {
+            l = safe_ltf8_get(cp, data_end, &codes[i].symbol);
+        }
+    } else {
+        for (i = 0, l = 1; i < ncodes && l > 0; i++, cp += l) {
+            int32_t i32;
+            l = safe_itf8_get(cp, data_end, &i32);
+            codes[i].symbol = i32;
+        }
     }
 
     if (l < 1)
@@ -1100,13 +1190,18 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
             h->decode = cram_huffman_decode_char0;
         else
             h->decode = cram_huffman_decode_char;
-    } else if (option == E_BYTE_ARRAY_BLOCK) {
-        abort();
-    } else {
+    } else if (option == E_LONG) {
+        if (h->u.huffman.codes[0].len == 0)
+            h->decode = cram_huffman_decode_long0;
+        else
+            h->decode = cram_huffman_decode_long;
+    } else if (option == E_INT) {
         if (h->u.huffman.codes[0].len == 0)
             h->decode = cram_huffman_decode_int0;
         else
             h->decode = cram_huffman_decode_int;
+    } else {
+        return NULL;
     }
 
     return (cram_codec *)h;
@@ -1230,8 +1325,14 @@ int cram_huffman_encode_store(cram_codec *c, cram_block *b, char *prefix,
     }
 
     tp += itf8_put(tp, c->u.e_huffman.nvals);
-    for (i = 0; i < c->u.e_huffman.nvals; i++) {
-        tp += itf8_put(tp, codes[i].symbol);
+    if (c->u.e_huffman.option == E_LONG) {
+        for (i = 0; i < c->u.e_huffman.nvals; i++) {
+            tp += ltf8_put(tp, codes[i].symbol);
+        }
+    } else {
+        for (i = 0; i < c->u.e_huffman.nvals; i++) {
+            tp += itf8_put(tp, codes[i].symbol);
+        }
     }
 
     tp += itf8_put(tp, c->u.e_huffman.nvals);
@@ -1409,6 +1510,7 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 
     c->u.e_huffman.codes = codes;
     c->u.e_huffman.nvals = nvals;
+    c->u.e_huffman.option = option;
 
     c->free = cram_huffman_encode_free;
     if (option == E_BYTE || option == E_BYTE_ARRAY) {

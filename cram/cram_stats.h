@@ -36,8 +36,8 @@ extern "C" {
 #endif
 
 cram_stats *cram_stats_create(void);
-int cram_stats_add(cram_stats *st, int32_t val);
-void cram_stats_del(cram_stats *st, int32_t val);
+int cram_stats_add(cram_stats *st, int64_t val);
+void cram_stats_del(cram_stats *st, int64_t val);
 void cram_stats_dump(cram_stats *st);
 void cram_stats_free(cram_stats *st);
 

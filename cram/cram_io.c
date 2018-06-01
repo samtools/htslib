@@ -490,11 +490,23 @@ int ltf8_decode_crc(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
  *
  * Returns the number of bytes written
  */
-int itf8_put_blk(cram_block *blk, int val) {
+int itf8_put_blk(cram_block *blk, int32_t val) {
     char buf[5];
     int sz;
 
     sz = itf8_put(buf, val);
+    BLOCK_APPEND(blk, buf, sz);
+    return sz;
+
+ block_err:
+    return -1;
+}
+
+int ltf8_put_blk(cram_block *blk, int64_t val) {
+    char buf[9];
+    int sz;
+
+    sz = ltf8_put(buf, val);
     BLOCK_APPEND(blk, buf, sz);
     return sz;
 
@@ -2944,8 +2956,26 @@ cram_container *cram_read_container(cram_fd *fd) {
         crc = crc32(0L, (unsigned char *)&len, 4);
     }
     if ((s = itf8_decode_crc(fd, &c2.ref_seq_id, &crc))   == -1) return NULL; else rd+=s;
-    if ((s = itf8_decode_crc(fd, &c2.ref_seq_start, &crc))== -1) return NULL; else rd+=s;
-    if ((s = itf8_decode_crc(fd, &c2.ref_seq_span, &crc)) == -1) return NULL; else rd+=s;
+/*
+ * LARGE_POS used in this code is purely a debugging mechanism for testing
+ * whether the htslib API can cope with 64-bit quantities.  These are
+ * possible in SAM, but not *yet* in BAM or CRAM.
+ *
+ * DO NOT ENABLE LARGE_POS for anything other than debugging / testing.
+ *
+ * At some point it is expected these ifdefs will become a version check
+ * instead.
+ */
+#ifdef LARGE_POS
+    if ((s = ltf8_decode_crc(fd, &c2.ref_seq_start, &crc))== -1) return NULL; else rd+=s;
+    if ((s = ltf8_decode_crc(fd, &c2.ref_seq_span, &crc)) == -1) return NULL; else rd+=s;
+#else
+    int32_t i32;
+    if ((s = itf8_decode_crc(fd, &i32, &crc))== -1) return NULL; else rd+=s;
+    c2.ref_seq_start = i32;
+    if ((s = itf8_decode_crc(fd, &i32, &crc)) == -1) return NULL; else rd+=s;
+    c2.ref_seq_span = i32;
+#endif
     if ((s = itf8_decode_crc(fd, &c2.num_records, &crc))  == -1) return NULL; else rd+=s;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
@@ -3070,8 +3100,13 @@ int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size)
         cp += itf8_put((char*)cp, 0);
     } else {
         cp += itf8_put((char*)cp, c->ref_seq_id);
+#ifdef LARGE_POS
+        cp += ltf8_put((char*)cp, c->ref_seq_start);
+        cp += ltf8_put((char*)cp, c->ref_seq_span);
+#else
         cp += itf8_put((char*)cp, c->ref_seq_start);
         cp += itf8_put((char*)cp, c->ref_seq_span);
+#endif
     }
     cp += itf8_put((char*)cp, c->num_records);
     if (CRAM_MAJOR_VERS(fd->version) == 2) {

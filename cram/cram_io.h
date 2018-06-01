@@ -377,7 +377,8 @@ static inline int safe_ltf8_get(const char *cp, const char *endp,
  * @return
  * Returns the number of bytes written
  */
-int itf8_put_blk(cram_block *blk, int val);
+int itf8_put_blk(cram_block *blk, int32_t val);
+int ltf8_put_blk(cram_block *blk, int64_t val);
 
 /*! Pulls a literal 32-bit value from a block.
  *
