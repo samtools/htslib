@@ -3068,7 +3068,7 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
 
 // Next release we should mark this as deprecated?
 // Use hts_parse_region above instead.
-const char *hts_parse_reg_(const char *s, int64_t *beg, int64_t *end)
+const char *hts_parse_reg64(const char *s, int64_t *beg, int64_t *end)
 {
     char *hyphen;
     const char *colon = strrchr(s, ':');
@@ -3091,7 +3091,7 @@ const char *hts_parse_reg_(const char *s, int64_t *beg, int64_t *end)
 const char *hts_parse_reg(const char *s, int *beg, int *end)
 {
     int64_t beg64 = 0, end64 = 0;
-    const char *colon = hts_parse_reg_(s, &beg64, &end64);
+    const char *colon = hts_parse_reg64(s, &beg64, &end64);
     if (beg64 > INT_MAX) {
         hts_log_error("Position %"PRId64" too large", beg64);
         return NULL;

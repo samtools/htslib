@@ -847,6 +847,9 @@ uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
 */
 long long hts_parse_decimal(const char *str, char **strend, int flags);
 
+typedef int (*hts_name2id_f)(void*, const char*);
+typedef const char *(*hts_id2name_f)(void*, int);
+
 /// Parse a "CHR:START-END"-style region string
 /** @param str  String to be parsed
     @param beg  Set on return to the 0-based start of the region
@@ -854,10 +857,15 @@ long long hts_parse_decimal(const char *str, char **strend, int flags);
     @return  Pointer to the colon or '\0' after the reference sequence name,
              or NULL if @a str could not be parsed.
 */
+const char *hts_parse_reg64(const char *str, int64_t *beg, int64_t *end);
 
-typedef int (*hts_name2id_f)(void*, const char*);
-typedef const char *(*hts_id2name_f)(void*, int);
-
+/// Parse a "CHR:START-END"-style region string
+/** @param str  String to be parsed
+    @param beg  Set on return to the 0-based start of the region
+    @param end  Set on return to the 1-based end of the region
+    @return  Pointer to the colon or '\0' after the reference sequence name,
+             or NULL if @a str could not be parsed.
+*/
 const char *hts_parse_reg(const char *str, int *beg, int *end);
 
 /// Parse a "CHR:START-END"-style region string
