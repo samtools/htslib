@@ -2635,6 +2635,10 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
  * validate the reference name exists and is unambiguously parseable.  If not
  * given the best guess will be made but no has guarantees in validity.
  *
+ * To work around these issues quoting is also permitted via {ref}:start-end.
+ * In this case, the return value will point to '}' and not the end of the
+ * reference (but this is a useful indication that it started with '{').
+ *
  * On success the end of the reference is returned (colon or end of string)
  *            beg/end will be set, plus tid if getid has been supplied.
  * On failure NULL is returned.
@@ -2647,16 +2651,45 @@ const char *hts_parse_reg2(const char *s, int *tid, int *beg, int *end,
     int tid_, s_len = strlen(s); // int is sufficient given beg/end types
     if (!tid) tid = &tid_;       // simplifies code below
 
-    // No colon implies entirety of the reference
-    const char *colon = strrchr(s, ':');
+    const char *colon = NULL;
+    int quoted = 0;
+
+    // Braced quoting of references is permitted to resolve ambiguities.
+    if (*s == '{') {
+        const char *close = strrchr(s, '}');
+        if (!close) {
+            hts_log_error("Mismatching braces in \"%s\"", s);
+            return NULL;
+        }
+        s++;
+        s_len--;
+        if (close[1] == ':')
+            colon = close+1;
+        quoted = 1; // number of trailing characters to trim
+    } else {
+        colon = strrchr(s, ':');
+    }
+
     if (colon == NULL) {
         *beg = 0; *end = INT_MAX;
-        *tid = getid ? getid(hdr, s) : 0;
+        if (getid) {
+            kstring_t ks = { 0, 0, NULL };
+            kputsn(s, s_len-quoted, &ks); // convert to nul terminated string
+            if (!ks.s) {
+                *tid = -1;
+                return NULL;
+            }
+
+            *tid = getid(hdr, ks.s);
+            free(ks.s);
+        } else {
+            *tid = 0;
+        }
         return *tid >= 0 ? s + s_len : NULL;
     }
 
     // Has a colon, but check whole name first.
-    if (getid) {
+    if (!quoted && getid) {
         *beg = 0; *end = INT_MAX;
         if ((*tid = getid(hdr, s)) >= 0) {
             // Entire name matches, but also check this isn't
@@ -2671,7 +2704,9 @@ const char *hts_parse_reg2(const char *s, int *tid, int *beg, int *end,
             if (getid(hdr, ks.s) >= 0) {
                 free(ks.s);
                 *tid = -1;
-                hts_log_error("Range %s is ambiguous", s);
+                hts_log_error("Range is ambiguous. "
+                              "Use {%s} or {%.*s}%s instead",
+                              s, (int)(colon-s), s, colon);
                 return NULL;
             }
             free(ks.s);
@@ -2691,7 +2726,7 @@ const char *hts_parse_reg2(const char *s, int *tid, int *beg, int *end,
     if (*beg >= *end) return NULL;
     if (getid) {
         kstring_t ks = { 0, 0, NULL };
-        kputsn(s, colon-s, &ks); // convert to nul terminated string
+        kputsn(s, colon-s-quoted, &ks); // convert to nul terminated string
         if (!ks.s) {
             *tid = -1;
             return NULL;
