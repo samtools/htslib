@@ -552,8 +552,13 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s) {
     }
 
     cp += itf8_put(cp, s->hdr->ref_seq_id);
+#ifdef LARGE_POS
+    cp += ltf8_put(cp, s->hdr->ref_seq_start);
+    cp += ltf8_put(cp, s->hdr->ref_seq_span);
+#else
     cp += itf8_put(cp, s->hdr->ref_seq_start);
     cp += itf8_put(cp, s->hdr->ref_seq_span);
+#endif
     cp += itf8_put(cp, s->hdr->num_records);
     if (CRAM_MAJOR_VERS(fd->version) == 2)
         cp += itf8_put(cp, s->hdr->record_counter);
@@ -3102,7 +3107,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
         if (new == 0) {
             cram_record *p = &s->crecs[kh_val(s->pair[sec], k)];
-            int aleft, aright, sign;
+            int64_t aleft, aright;
+            int sign;
 
             aleft = MIN(cr->apos, p->apos);
             aright = MAX(cr->aend, p->aend);

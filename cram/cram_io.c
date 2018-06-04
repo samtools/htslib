@@ -3164,8 +3164,13 @@ int cram_write_container(cram_fd *fd, cram_container *c) {
         cp += itf8_put((char*)cp, 0);
     } else {
         cp += itf8_put((char*)cp, c->ref_seq_id);
+#ifdef LARGE_POS
+        cp += ltf8_put((char*)cp, c->ref_seq_start);
+        cp += ltf8_put((char*)cp, c->ref_seq_span);
+#else
         cp += itf8_put((char*)cp, c->ref_seq_start);
         cp += itf8_put((char*)cp, c->ref_seq_span);
+#endif
     }
     cp += itf8_put((char*)cp, c->num_records);
     if (CRAM_MAJOR_VERS(fd->version) == 2) {

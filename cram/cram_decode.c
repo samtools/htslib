@@ -2036,8 +2036,8 @@ static int cram_decode_slice_xref(cram_slice *s, int required_fields) {
                  */
                 if (cr->tlen == INT_MIN) {
                     int id1 = rec, id2 = rec;
-                    int aleft = cr->apos, aright = cr->aend;
-                    int tlen;
+                    int64_t aleft = cr->apos, aright = cr->aend;
+                    int64_t tlen;
                     int ref = cr->ref_id;
 
                     // number of segments starting at the same point.
