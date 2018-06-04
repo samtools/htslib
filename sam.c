@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <zlib.h>
 #include <assert.h>
 #include <signal.h>
+#include <inttypes.h>
 
 // Suppress deprecation message for cigar_tab, which we initialise
 #include "htslib/hts_defs.h"
@@ -3659,7 +3660,8 @@ char *bam_flag2str(int flag)
  *******************/
 
 typedef struct {
-    int k, x, y, end;
+    int k, y;
+    int64_t x, end;
 } cstate_t;
 
 static cstate_t g_cstate_null = { -1, 0, 0, 0 };
@@ -3717,7 +3719,7 @@ static inline void mp_free(mempool_t *mp, lbnode_t *p)
    s->x: the reference coordinate of the start of s->k
    s->y: the query coordiante of the start of s->k
  */
-static inline int resolve_cigar2(bam_pileup1_t *p, int32_t pos, cstate_t *s)
+static inline int resolve_cigar2(bam_pileup1_t *p, int64_t pos, cstate_t *s)
 {
 #define _cop(c) ((c)&BAM_CIGAR_MASK)
 #define _cln(c) ((c)>>BAM_CIGAR_SHIFT)
@@ -3886,7 +3888,8 @@ typedef khash_t(olap_hash) olap_hash_t;
 struct __bam_plp_t {
     mempool_t *mp;
     lbnode_t *head, *tail;
-    int32_t tid, pos, max_tid, max_pos;
+    int32_t tid, max_tid;
+    int64_t pos, max_pos;
     int is_eof, max_plp, error, maxcnt;
     uint64_t id;
     bam_pileup1_t *plp;
@@ -4164,7 +4167,7 @@ static void overlap_remove(bam_plp_t iter, const bam1_t *b)
 // Prepares next pileup position in bam records collected by bam_plp_auto -> user func -> bam_plp_push. Returns
 // pointer to the piled records if next position is ready or NULL if there is not enough records in the
 // buffer yet (the current position is still the maximum position across all buffered reads).
-const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp)
+const bam_pileup1_t *bam_plp64_next(bam_plp_t iter, int *_tid, int64_t *_pos, int *_n_plp)
 {
     if (iter->error) { *_n_plp = -1; return NULL; }
     *_n_plp = 0;
@@ -4216,6 +4219,22 @@ const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_
     return NULL;
 }
 
+const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp)
+{
+    int64_t pos64 = 0;
+    const bam_pileup1_t *p = bam_plp64_next(iter, _tid, &pos64, _n_plp);
+    if (pos64 < INT_MAX) {
+        *_pos = pos64;
+    } else {
+        hts_log_error("Position %"PRId64" too large", pos64);
+        *_pos = INT_MAX;
+        iter->error = 1;
+        *_n_plp = -1;
+        return NULL;
+    }
+    return p;
+}
+
 int bam_plp_push(bam_plp_t iter, const bam1_t *b)
 {
     if (iter->error) return -1;
@@ -4265,11 +4284,11 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
     return 0;
 }
 
-const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp)
+const bam_pileup1_t *bam_plp64_auto(bam_plp_t iter, int *_tid, int64_t *_pos, int *_n_plp)
 {
     const bam_pileup1_t *plp;
     if (iter->func == 0 || iter->error) { *_n_plp = -1; return 0; }
-    if ((plp = bam_plp_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
+    if ((plp = bam_plp64_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
     else { // no pileup line can be obtained; read alignments
         *_n_plp = 0;
         if (iter->is_eof) return 0;
@@ -4279,7 +4298,7 @@ const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_
                 *_n_plp = -1;
                 return 0;
             }
-            if ((plp = bam_plp_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
+            if ((plp = bam_plp64_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
             // otherwise no pileup line can be returned; read the next alignment.
         }
         if ( ret < -1 ) { iter->error = ret; *_n_plp = -1; return 0; }
@@ -4287,9 +4306,25 @@ const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_
             *_n_plp = -1;
             return 0;
         }
-        if ((plp = bam_plp_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
+        if ((plp = bam_plp64_next(iter, _tid, _pos, _n_plp)) != 0) return plp;
         return 0;
     }
+}
+
+const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp)
+{
+    int64_t pos64 = 0;
+    const bam_pileup1_t *p = bam_plp64_auto(iter, _tid, &pos64, _n_plp);
+    if (pos64 < INT_MAX) {
+        *_pos = pos64;
+    } else {
+        hts_log_error("Position %"PRId64" too large", pos64);
+        *_pos = INT_MAX;
+        iter->error = 1;
+        *_n_plp = -1;
+        return NULL;
+    }
+    return p;
 }
 
 void bam_plp_reset(bam_plp_t iter)
@@ -4316,7 +4351,8 @@ void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt)
 
 struct __bam_mplp_t {
     int n;
-    uint64_t min, *pos;
+    int32_t min_tid, *tid;
+    uint64_t min_pos, *pos;
     bam_plp_t *iter;
     int *n_plp;
     const bam_pileup1_t **plp;
@@ -4328,14 +4364,17 @@ bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data)
     bam_mplp_t iter;
     iter = (bam_mplp_t)calloc(1, sizeof(struct __bam_mplp_t));
     iter->pos = (uint64_t*)calloc(n, sizeof(uint64_t));
+    iter->tid = (int32_t*)calloc(n, sizeof(int32_t));
     iter->n_plp = (int*)calloc(n, sizeof(int));
     iter->plp = (const bam_pileup1_t**)calloc(n, sizeof(bam_pileup1_t*));
     iter->iter = (bam_plp_t*)calloc(n, sizeof(bam_plp_t));
     iter->n = n;
-    iter->min = (uint64_t)-1;
+    iter->min_pos = (uint64_t)-1;
+    iter->min_tid = (uint32_t)-1;
     for (i = 0; i < n; ++i) {
         iter->iter[i] = bam_plp_init(func, data[i]);
-        iter->pos[i] = iter->min;
+        iter->pos[i] = iter->min_pos;
+        iter->tid[i] = iter->min_tid;
     }
     return iter;
 }
@@ -4359,28 +4398,45 @@ void bam_mplp_destroy(bam_mplp_t iter)
 {
     int i;
     for (i = 0; i < iter->n; ++i) bam_plp_destroy(iter->iter[i]);
-    free(iter->iter); free(iter->pos); free(iter->n_plp); free(iter->plp);
+    free(iter->iter); free(iter->pos); free(iter->tid);
+    free(iter->n_plp); free(iter->plp);
     free(iter);
 }
 
-int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp)
+int bam_mplp64_auto(bam_mplp_t iter, int *_tid, int64_t *_pos, int *n_plp, const bam_pileup1_t **plp)
 {
     int i, ret = 0;
-    uint64_t new_min = (uint64_t)-1;
+    uint64_t new_min_pos = (uint64_t)-1;
+    uint32_t new_min_tid = (uint32_t)-1;
     for (i = 0; i < iter->n; ++i) {
-        if (iter->pos[i] == iter->min) {
-            int tid, pos;
-            iter->plp[i] = bam_plp_auto(iter->iter[i], &tid, &pos, &iter->n_plp[i]);
+        if (iter->pos[i] == iter->min_pos && iter->tid[i] == iter->min_tid) {
+            int tid;
+            int64_t pos;
+            iter->plp[i] = bam_plp64_auto(iter->iter[i], &tid, &pos, &iter->n_plp[i]);
             if ( iter->iter[i]->error ) return -1;
-            iter->pos[i] = iter->plp[i] ? (uint64_t)tid<<32 | pos : 0;
+            if (iter->plp[i]) {
+                iter->tid[i] = tid;
+                iter->pos[i] = pos;
+            } else {
+                iter->tid[i] = 0;
+                iter->pos[i] = 0;
+            }
         }
-        if (iter->plp[i] && iter->pos[i] < new_min) new_min = iter->pos[i];
+        if (iter->plp[i]) {
+            if (iter->tid[i] < new_min_tid) {
+                new_min_tid = iter->tid[i];
+                new_min_pos = iter->pos[i];
+            } else if (iter->pos[i] < new_min_pos) {
+                new_min_pos = iter->pos[i];
+            }
+        }
     }
-    iter->min = new_min;
-    if (new_min == (uint64_t)-1) return 0;
-    *_tid = new_min>>32; *_pos = (uint32_t)new_min;
+    iter->min_pos = new_min_pos;
+    iter->min_tid = new_min_tid;
+    if (new_min_pos == (uint64_t)-1) return 0;
+    *_tid = new_min_tid; *_pos = new_min_pos;
     for (i = 0; i < iter->n; ++i) {
-        if (iter->pos[i] == iter->min) { // FIXME: valgrind reports "uninitialised value(s) at this line"
+        if (iter->pos[i] == iter->min_pos && iter->tid[i] == iter->min_tid) {
             n_plp[i] = iter->n_plp[i], plp[i] = iter->plp[i];
             ++ret;
         } else n_plp[i] = 0, plp[i] = 0;
@@ -4388,13 +4444,29 @@ int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_p
     return ret;
 }
 
+int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp)
+{
+    int64_t pos64 = 0;
+    int ret = bam_mplp64_auto(iter, _tid, &pos64, n_plp, plp);
+    if (pos64 < INT_MAX) {
+        *_pos = pos64;
+    } else {
+        hts_log_error("Position %"PRId64" too large", pos64);
+        *_pos = INT_MAX;
+        return -1;
+    }
+    return ret;
+}
+
 void bam_mplp_reset(bam_mplp_t iter)
 {
     int i;
-    iter->min = (uint64_t)-1;
+    iter->min_pos = (uint64_t)-1;
+    iter->min_tid = (uint32_t)-1;
     for (i = 0; i < iter->n; ++i) {
         bam_plp_reset(iter->iter[i]);
         iter->pos[i] = (uint64_t)-1;
+        iter->tid[i] = (uint32_t)-1;
         iter->n_plp[i] = 0;
         iter->plp[i] = NULL;
     }

@@ -170,6 +170,7 @@ are reference names, quote using curly braces.
 Thus "{chr1}:100-200" and "{chr1:100-200}" disambiguate the above example.
 */
 char *fai_fetch(const faidx_t *fai, const char *reg, int *len);
+char *fai_fetch64(const faidx_t *fai, const char *reg, int64_t *len);
 
 /// Fetch the quality string for a region for FASTQ files
 /** @param  fai  Pointer to the faidx_t struct
@@ -183,6 +184,7 @@ destroyed by end users by calling `free()` on it.
 Region names can be quoted with curly braces, as for fai_fetch().
 */
 char *fai_fetchqual(const faidx_t *fai, const char *reg, int *len);
+char *fai_fetchqual64(const faidx_t *fai, const char *reg, int64_t *len);
 
 /// Fetch the number of sequences
 /** @param  fai  Pointer to the faidx_t struct
@@ -203,6 +205,19 @@ by end users by calling `free()` on it.
 */
 char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p_end_i, int *len);
 
+/// Fetch the sequence in a region
+/** @param  fai  Pointer to the faidx_t struct
+    @param  c_name Region name
+    @param  p_beg_i  Beginning position number (zero-based)
+    @param  p_end_i  End position number (zero-based)
+    @param  len  Length of the region; -2 if c_name not present, -1 general error
+    @return      Pointer to the sequence; null on failure
+
+The returned sequence is allocated by `malloc()` family and should be destroyed
+by end users by calling `free()` on it.
+*/
+char *faidx_fetch_seq64(const faidx_t *fai, const char *c_name, int64_t p_beg_i, int64_t p_end_i, int64_t *len);
+
 /// Fetch the quality string in a region for FASTQ files
 /** @param  fai  Pointer to the faidx_t struct
     @param  c_name Region name
@@ -215,6 +230,19 @@ The returned sequence is allocated by `malloc()` family and should be destroyed
 by end users by calling `free()` on it.
 */
 char *faidx_fetch_qual(const faidx_t *fai, const char *c_name, int p_beg_i, int p_end_i, int *len);
+
+/// Fetch the quality string in a region for FASTQ files
+/** @param  fai  Pointer to the faidx_t struct
+    @param  c_name Region name
+    @param  p_beg_i  Beginning position number (zero-based)
+    @param  p_end_i  End position number (zero-based)
+    @param  len  Length of the region; -2 if c_name not present, -1 general error
+    @return      Pointer to the sequence; null on failure
+
+The returned sequence is allocated by `malloc()` family and should be destroyed
+by end users by calling `free()` on it.
+*/
+char *faidx_fetch_qual64(const faidx_t *fai, const char *c_name, int64_t p_beg_i, int64_t p_end_i, int64_t *len);
 
 /// Query if sequence is present
 /**   @param  fai  Pointer to the faidx_t struct

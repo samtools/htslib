@@ -1501,6 +1501,8 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     int bam_plp_push(bam_plp_t iter, const bam1_t *b);
     const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp);
     const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp);
+    const bam_pileup1_t *bam_plp64_next(bam_plp_t iter, int *_tid, int64_t *_pos, int *_n_plp);
+    const bam_pileup1_t *bam_plp64_auto(bam_plp_t iter, int *_tid, int64_t *_pos, int *_n_plp);
     void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt);
     void bam_plp_reset(bam_plp_t iter);
 
@@ -1549,6 +1551,7 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     void bam_mplp_destroy(bam_mplp_t iter);
     void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
     int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
+    int bam_mplp64_auto(bam_mplp_t iter, int *_tid, int64_t *_pos, int *n_plp, const bam_pileup1_t **plp);
     void bam_mplp_reset(bam_mplp_t iter);
     void bam_mplp_constructor(bam_mplp_t iter,
                               int (*func)(void *data, const bam1_t *b, bam_pileup_cd *cd));
@@ -1562,7 +1565,7 @@ typedef struct __bam_mplp_t *bam_mplp_t;
  * BAQ calculation and realignment *
  ***********************************/
 
-int sam_cap_mapq(bam1_t *b, const char *ref, int ref_len, int thres);
+int sam_cap_mapq(bam1_t *b, const char *ref, int64_t ref_len, int thres);
 
 /// Calculate BAQ scores
 /** @param b   BAM record
@@ -1604,7 +1607,7 @@ Depending on what previous processing happened, this may or may not be the
 correct thing to do.  It would be wise to avoid this situation if possible.
 */
 
-int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag);
+int sam_prob_realn(bam1_t *b, const char *ref, int64_t ref_len, int flag);
 
 #ifdef __cplusplus
 }
