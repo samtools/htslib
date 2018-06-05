@@ -1443,7 +1443,7 @@ int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
     return bcf_subset_format(h,v);
 }
 
-int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, int64_t *beg, int64_t *end)
+int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, hts_pos_t *beg, hts_pos_t *end)
 {
     bcf1_t *v = (bcf1_t *) vv;
     int ret;
@@ -1691,7 +1691,7 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     }
     if ( bcf_hdr_nsamples(h)!=v->n_sample )
     {
-        hts_log_error("Broken VCF record, the number of columns at %s:%"PRId64" does not match the number of samples (%d vs %d)",
+        hts_log_error("Broken VCF record, the number of columns at %s:%"PRIhts_pos" does not match the number of samples (%d vs %d)",
             bcf_seqname(h,v), v->pos+1, v->n_sample, bcf_hdr_nsamples(h));
         return -1;
     }
@@ -2145,7 +2145,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
     char *end = s->s + s->l;
     if ( q>=end )
     {
-        hts_log_error("FORMAT column with no sample columns starting at %s:%"PRId64"", s->s, v->pos+1);
+        hts_log_error("FORMAT column with no sample columns starting at %s:%"PRIhts_pos"", s->s, v->pos+1);
         v->errcode |= BCF_ERR_NCOLS;
         return -1;
     }
@@ -2161,7 +2161,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
     for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
         if (j >= MAX_N_FMT) {
             v->errcode |= BCF_ERR_LIMITS;
-            hts_log_error("FORMAT column at %s:%"PRId64" lists more identifiers than htslib can handle",
+            hts_log_error("FORMAT column at %s:%"PRIhts_pos" lists more identifiers than htslib can handle",
                 bcf_seqname(h,v), v->pos+1);
             return -1;
         }
@@ -2233,7 +2233,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                     j++;
                     if ( j>=v->n_fmt )
                     {
-                        hts_log_error("Incorrect number of FORMAT fields at %s:%"PRId64"",
+                        hts_log_error("Incorrect number of FORMAT fields at %s:%"PRIhts_pos"",
                             h->id[BCF_DT_CTG][v->rid].key, v->pos+1);
                         v->errcode |= BCF_ERR_NCOLS;
                         return -1;
@@ -2340,7 +2340,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             }
             else {
                 char buffer[8];
-                hts_log_error("Invalid character '%s' in '%s' FORMAT field at %s:%"PRId64"",
+                hts_log_error("Invalid character '%s' in '%s' FORMAT field at %s:%"PRIhts_pos"",
                     dump_char(buffer, *t), h->id[BCF_DT_ID][z->key].key, bcf_seqname(h,v), v->pos+1);
                 v->errcode |= BCF_ERR_CHAR;
                 return -1;
@@ -2399,14 +2399,14 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
 
     if ( v->n_sample!=bcf_hdr_nsamples(h) )
     {
-        hts_log_error("Number of columns at %s:%"PRId64" does not match the number of samples (%d vs %d)",
+        hts_log_error("Number of columns at %s:%"PRIhts_pos" does not match the number of samples (%d vs %d)",
             bcf_seqname(h,v), v->pos+1, v->n_sample, bcf_hdr_nsamples(h));
         v->errcode |= BCF_ERR_NCOLS;
         return -1;
     }
     if ( v->indiv.l > 0xffffffff )
     {
-        hts_log_error("The FORMAT at %s:%"PRId64" is too long", bcf_seqname(h,v), v->pos+1);
+        hts_log_error("The FORMAT at %s:%"PRIhts_pos" is too long", bcf_seqname(h,v), v->pos+1);
         v->errcode |= BCF_ERR_LIMITS;
 
         // Error recovery: return -1 if this is a critical error or 0 if we want to ignore the FORMAT and proceed

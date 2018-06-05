@@ -201,7 +201,7 @@ extern const int8_t bam_cigar_table[256];
  */
 typedef struct {
     int32_t tid;
-    int64_t pos;
+    hts_pos_t pos;
     uint16_t bin; // NB: invalid on 64-bit pos
     uint8_t qual;
     uint8_t l_extranul;
@@ -210,8 +210,8 @@ typedef struct {
     uint32_t n_cigar;
     int32_t l_qseq;
     int32_t mtid;
-    int64_t mpos;
-    int64_t isize;
+    hts_pos_t mpos;
+    hts_pos_t isize;
 } bam1_core_t;
 
 /*! @typedef
@@ -962,7 +962,7 @@ int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
    operations in @p cigar (these are the operations that "consume" reference
    bases).  All other operations (including invalid ones) are ignored.
  */
-int64_t bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
+hts_pos_t bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
 
 /*!
       @abstract Calculate the rightmost base position of an alignment on the
@@ -975,7 +975,7 @@ int64_t bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
       For an unmapped read (either according to its flags or if it has no cigar
       string), we return b->core.pos + 1 by convention.
  */
-int64_t bam_endpos(const bam1_t *b);
+hts_pos_t bam_endpos(const bam1_t *b);
 
 int   bam_str2flag(const char *str);    /** returns negative value on error */
 char *bam_flag2str(int flag);   /** The string must be freed by the user */
@@ -1100,7 +1100,7 @@ When using one of these values, @p beg and @p end are ignored.
 
 When using HTS_IDX_REST or HTS_IDX_NONE, NULL can be passed in to @p idx.
  */
-hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int64_t beg, int64_t end);
+hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end);
 
 /// Create a SAM/BAM/CRAM iterator
 /** @param idx     Index
@@ -1501,8 +1501,8 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     int bam_plp_push(bam_plp_t iter, const bam1_t *b);
     const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp);
     const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp);
-    const bam_pileup1_t *bam_plp64_next(bam_plp_t iter, int *_tid, int64_t *_pos, int *_n_plp);
-    const bam_pileup1_t *bam_plp64_auto(bam_plp_t iter, int *_tid, int64_t *_pos, int *_n_plp);
+    const bam_pileup1_t *bam_plp64_next(bam_plp_t iter, int *_tid, hts_pos_t *_pos, int *_n_plp);
+    const bam_pileup1_t *bam_plp64_auto(bam_plp_t iter, int *_tid, hts_pos_t *_pos, int *_n_plp);
     void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt);
     void bam_plp_reset(bam_plp_t iter);
 
@@ -1551,7 +1551,7 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     void bam_mplp_destroy(bam_mplp_t iter);
     void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
     int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
-    int bam_mplp64_auto(bam_mplp_t iter, int *_tid, int64_t *_pos, int *n_plp, const bam_pileup1_t **plp);
+    int bam_mplp64_auto(bam_mplp_t iter, int *_tid, hts_pos_t *_pos, int *n_plp, const bam_pileup1_t **plp);
     void bam_mplp_reset(bam_mplp_t iter);
     void bam_mplp_constructor(bam_mplp_t iter,
                               int (*func)(void *data, const bam1_t *b, bam_pileup_cd *cd));
@@ -1565,7 +1565,7 @@ typedef struct __bam_mplp_t *bam_mplp_t;
  * BAQ calculation and realignment *
  ***********************************/
 
-int sam_cap_mapq(bam1_t *b, const char *ref, int64_t ref_len, int thres);
+int sam_cap_mapq(bam1_t *b, const char *ref, hts_pos_t ref_len, int thres);
 
 /// Calculate BAQ scores
 /** @param b   BAM record
@@ -1607,7 +1607,7 @@ Depending on what previous processing happened, this may or may not be the
 correct thing to do.  It would be wise to avoid this situation if possible.
 */
 
-int sam_prob_realn(bam1_t *b, const char *ref, int64_t ref_len, int flag);
+int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag);
 
 #ifdef __cplusplus
 }

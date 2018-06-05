@@ -384,7 +384,7 @@ void debug_buffer(FILE *fp, bcf_sr_t *reader)
     for (j=0; j<=reader->nbuffer; j++)
     {
         bcf1_t *line = reader->buffer[j];
-        fprintf(fp,"\t%p\t%s%s\t%s:%"PRId64"\t%s ", (void*)line,reader->fname,j==0?"*":" ",reader->header->id[BCF_DT_CTG][line->rid].key,line->pos+1,line->n_allele?line->d.allele[0]:"");
+        fprintf(fp,"\t%p\t%s%s\t%s:%"PRIhts_pos"\t%s ", (void*)line,reader->fname,j==0?"*":" ",reader->header->id[BCF_DT_CTG][line->rid].key,line->pos+1,line->n_allele?line->d.allele[0]:"");
         int k;
         for (k=1; k<line->n_allele; k++) fprintf(fp," %s", line->d.allele[k]);
         fprintf(fp,"\n");

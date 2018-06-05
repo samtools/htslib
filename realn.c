@@ -35,13 +35,13 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts.h"
 #include "htslib/sam.h"
 
-int sam_cap_mapq(bam1_t *b, const char *ref, int64_t ref_len, int thres)
+int sam_cap_mapq(bam1_t *b, const char *ref, hts_pos_t ref_len, int thres)
 {
     uint8_t *seq = bam_get_seq(b), *qual = bam_get_qual(b);
     uint32_t *cigar = bam_get_cigar(b);
     bam1_core_t *c = &b->core;
     int i, y, mm, q, len, clip_l, clip_q;
-    int64_t x;
+    hts_pos_t x;
     double t;
     if (thres < 0) thres = 40; // set the default
     mm = q = len = clip_l = clip_q = 0;
@@ -102,10 +102,10 @@ static int realn_check_tag(const uint8_t *tg, enum htsLogLevel severity,
     return 0;
 }
 
-int sam_prob_realn(bam1_t *b, const char *ref, int64_t ref_len, int flag)
+int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag)
 {
     int k, bw, y, yb, ye, xb, xe, apply_baq = flag&1, extend_baq = flag>>1&1, redo_baq = flag&4, fix_bq = 0;
-    int64_t i, x;
+    hts_pos_t i, x;
     uint32_t *cigar = bam_get_cigar(b);
     bam1_core_t *c = &b->core;
     probaln_par_t conf = { 0.001, 0.1, 10 };

@@ -31,6 +31,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 #include <inttypes.h>
 #include <math.h>
+#include <assert.h>
 
 // Suppress message for faidx_fetch_nseq(), which we're intentionally testing
 #include "htslib/hts_defs.h"
@@ -1148,11 +1149,13 @@ static void samrecord_layout(void)
 
     size_t bam1_t_size, bam1_t_size2;
 
-    bam1_t_size = (56 + sizeof(int) + 4 + sizeof (char *) + sizeof(uint64_t)
-                   + sizeof(uint32_t));
+    assert(sizeof(hts_pos_t) == 8 || sizeof(hts_pos_t) == 4);
+    int core_size = sizeof(hts_pos_t) == 8 ? 56 : 36;
+    bam1_t_size = (core_size + sizeof(int) + sizeof(char *) + sizeof(uint64_t)
+                   + 2 * sizeof(uint32_t));
     bam1_t_size2 = bam1_t_size + 4;  // Account for padding on some platforms
 
-    if (sizeof (bam1_core_t) != 56)
+    if (sizeof (bam1_core_t) != core_size)
         fail("sizeof bam1_core_t is %zu, expected 56", sizeof (bam1_core_t));
 
     if (sizeof (bam1_t) != bam1_t_size && sizeof (bam1_t) != bam1_t_size2)
