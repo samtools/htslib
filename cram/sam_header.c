@@ -39,9 +39,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 static void sam_hdr_error(char *msg, char *line, int len, int lno) {
     int j;
-    
+
     for (j = 0; j < len && line[j] != '\n'; j++)
-	;
+        ;
     hts_log_error("%s at line %d: \"%.*s\"", msg, lno, j, line);
 }
 
@@ -51,42 +51,42 @@ void sam_hdr_dump(SAM_hdr *hdr) {
 
     printf("===DUMP===\n");
     for (k = kh_begin(hdr->h); k != kh_end(hdr->h); k++) {
-	SAM_hdr_type *t1, *t2;
-	char c[2];
+        SAM_hdr_type *t1, *t2;
+        char c[2];
 
-	if (!kh_exist(hdr->h, k))
-	    continue;
+        if (!kh_exist(hdr->h, k))
+            continue;
 
-	t1 = t2 = kh_val(hdr->h, k);
-	c[0] = kh_key(hdr->h, k)>>8;
-	c[1] = kh_key(hdr->h, k)&0xff;
-	printf("Type %.2s, count %d\n", c, t1->prev->order+1);
+        t1 = t2 = kh_val(hdr->h, k);
+        c[0] = kh_key(hdr->h, k)>>8;
+        c[1] = kh_key(hdr->h, k)&0xff;
+        printf("Type %.2s, count %d\n", c, t1->prev->order+1);
 
-	do {
-	    SAM_hdr_tag *tag;
-	    printf(">>>%d ", t1->order);
-	    for (tag = t1->tag; tag; tag=tag->next) {
+        do {
+            SAM_hdr_tag *tag;
+            printf(">>>%d ", t1->order);
+            for (tag = t1->tag; tag; tag=tag->next) {
                 if (strncmp(c, "CO", 2))
                     printf("\"%.2s\":\"%.*s\"\t", tag->str, tag->len-3, tag->str+3);
                 else
                     printf("%s", tag->str);
-	    }
-	    putchar('\n');
-	    t1 = t1->next;
-	} while (t1 != t2);
+            }
+            putchar('\n');
+            t1 = t1->next;
+        } while (t1 != t2);
     }
 
     /* Dump out PG chains */
     printf("\n@PG chains:\n");
     for (i = 0; i < hdr->npg_end; i++) {
-	int j;
-	printf("  %d:", i);
-	for (j = hdr->pg_end[i]; j != -1; j = hdr->pg[j].prev_id) {
-	    printf("%s%d(%.*s)", 
-		   j == hdr->pg_end[i] ? " " : "->",
-		   j, hdr->pg[j].name_len, hdr->pg[j].name);
-	}
-	printf("\n");
+        int j;
+        printf("  %d:", i);
+        for (j = hdr->pg_end[i]; j != -1; j = hdr->pg[j].prev_id) {
+            printf("%s%d(%.*s)",
+                    j == hdr->pg_end[i] ? " " : "->",
+                    j, hdr->pg[j].name_len, hdr->pg[j].name);
+        }
+        printf("\n");
     }
     printf("Number of lines in the header: %d\n", hdr->line_count);
 
@@ -99,174 +99,174 @@ void sam_hdr_dump(SAM_hdr *hdr) {
  *        -1 on failure
  */
 static int sam_hdr_update_hashes(SAM_hdr *sh,
-				 int type,
-				 SAM_hdr_type *h_type) {
+        int type,
+        SAM_hdr_type *h_type) {
     /* Add to reference hash? */
     if ((type>>8) == 'S' && (type&0xff) == 'Q') {
-	SAM_hdr_tag *tag;
-	SAM_SQ *new_ref;
-	int nref = sh->nref;
+        SAM_hdr_tag *tag;
+        SAM_SQ *new_ref;
+        int nref = sh->nref;
 
-	new_ref = realloc(sh->ref, (sh->nref+1)*sizeof(*sh->ref));
-	if (!new_ref)
-	    return -1;
-	sh->ref = new_ref;
+        new_ref = realloc(sh->ref, (sh->nref+1)*sizeof(*sh->ref));
+        if (!new_ref)
+            return -1;
+        sh->ref = new_ref;
 
-	tag = h_type->tag;
-	sh->ref[nref].name = NULL;
-	sh->ref[nref].len  = 0;
-	sh->ref[nref].ty = h_type;
-	sh->ref[nref].tag  = tag;
+        tag = h_type->tag;
+        sh->ref[nref].name = NULL;
+        sh->ref[nref].len  = 0;
+        sh->ref[nref].ty = h_type;
+        sh->ref[nref].tag  = tag;
 
-	while (tag) {
-	    if (tag->str[0] == 'S' && tag->str[1] == 'N') {
-		if (!(sh->ref[nref].name = malloc(tag->len)))
-		    return -1;
-		strncpy(sh->ref[nref].name, tag->str+3, tag->len-3);
-		sh->ref[nref].name[tag->len-3] = 0;
-	    } else if (tag->str[0] == 'L' && tag->str[1] == 'N') {
-		sh->ref[nref].len = atoi(tag->str+3);
-	    }
-	    tag = tag->next;
-	}
+        while (tag) {
+            if (tag->str[0] == 'S' && tag->str[1] == 'N') {
+                if (!(sh->ref[nref].name = malloc(tag->len)))
+                    return -1;
+                strncpy(sh->ref[nref].name, tag->str+3, tag->len-3);
+                sh->ref[nref].name[tag->len-3] = 0;
+            } else if (tag->str[0] == 'L' && tag->str[1] == 'N') {
+                sh->ref[nref].len = atoi(tag->str+3);
+            }
+            tag = tag->next;
+        }
 
-	if (sh->ref[nref].name) {
-	    khint_t k;
-	    int r;
-	    k = kh_put(m_s2i, sh->ref_hash, sh->ref[nref].name, &r);
-	    if (-1 == r) return -1;
-	    kh_val(sh->ref_hash, k) = nref;
-	} else {
-	    return -1; // SN should be present, according to spec.
-	}
+        if (sh->ref[nref].name) {
+            khint_t k;
+            int r;
+            k = kh_put(m_s2i, sh->ref_hash, sh->ref[nref].name, &r);
+            if (-1 == r) return -1;
+            kh_val(sh->ref_hash, k) = nref;
+        } else {
+            return -1; // SN should be present, according to spec.
+        }
 
-	sh->nref++;
+        sh->nref++;
     }
 
     /* Add to read-group hash? */
     if ((type>>8) == 'R' && (type&0xff) == 'G') {
-	SAM_hdr_tag *tag;
-	SAM_RG *new_rg;
-	int nrg = sh->nrg;
+        SAM_hdr_tag *tag;
+        SAM_RG *new_rg;
+        int nrg = sh->nrg;
 
-	new_rg = realloc(sh->rg, (sh->nrg+1)*sizeof(*sh->rg));
-	if (!new_rg)
-	    return -1;
-	sh->rg = new_rg;
+        new_rg = realloc(sh->rg, (sh->nrg+1)*sizeof(*sh->rg));
+        if (!new_rg)
+            return -1;
+        sh->rg = new_rg;
 
-	tag = h_type->tag;
-	sh->rg[nrg].name = NULL;
-	sh->rg[nrg].name_len = 0;
-	sh->rg[nrg].ty   = h_type;
-	sh->rg[nrg].tag  = tag;
-	sh->rg[nrg].id   = nrg;
+        tag = h_type->tag;
+        sh->rg[nrg].name = NULL;
+        sh->rg[nrg].name_len = 0;
+        sh->rg[nrg].ty   = h_type;
+        sh->rg[nrg].tag  = tag;
+        sh->rg[nrg].id   = nrg;
 
-	while (tag) {
-	    if (tag->str[0] == 'I' && tag->str[1] == 'D') {
-		if (!(sh->rg[nrg].name = malloc(tag->len)))
-		    return -1;
-		strncpy(sh->rg[nrg].name, tag->str+3, tag->len-3);
-		sh->rg[nrg].name[tag->len-3] = 0;
-		sh->rg[nrg].name_len = strlen(sh->rg[nrg].name);
-	    }
-	    tag = tag->next;
-	}
+        while (tag) {
+            if (tag->str[0] == 'I' && tag->str[1] == 'D') {
+                if (!(sh->rg[nrg].name = malloc(tag->len)))
+                    return -1;
+                strncpy(sh->rg[nrg].name, tag->str+3, tag->len-3);
+                sh->rg[nrg].name[tag->len-3] = 0;
+                sh->rg[nrg].name_len = strlen(sh->rg[nrg].name);
+            }
+            tag = tag->next;
+        }
 
-	if (sh->rg[nrg].name) {
-	    khint_t k;
-	    int r;
-	    k = kh_put(m_s2i, sh->rg_hash, sh->rg[nrg].name, &r);
-	    if (-1 == r) return -1;
-	    kh_val(sh->rg_hash, k) = nrg;
-	} else {
-	    return -1; // ID should be present, according to spec.
-	}
+        if (sh->rg[nrg].name) {
+            khint_t k;
+            int r;
+            k = kh_put(m_s2i, sh->rg_hash, sh->rg[nrg].name, &r);
+            if (-1 == r) return -1;
+            kh_val(sh->rg_hash, k) = nrg;
+        } else {
+            return -1; // ID should be present, according to spec.
+        }
 
-	sh->nrg++;
+        sh->nrg++;
     }
 
     /* Add to program hash? */
     if ((type>>8) == 'P' && (type&0xff) == 'G') {
-	SAM_hdr_tag *tag;
-	SAM_PG *new_pg;
-	int npg = sh->npg;
+        SAM_hdr_tag *tag;
+        SAM_PG *new_pg;
+        int npg = sh->npg;
 
-	new_pg = realloc(sh->pg, (sh->npg+1)*sizeof(*sh->pg));
-	if (!new_pg)
-	    return -1;
-	sh->pg = new_pg;
+        new_pg = realloc(sh->pg, (sh->npg+1)*sizeof(*sh->pg));
+        if (!new_pg)
+            return -1;
+        sh->pg = new_pg;
 
-	tag = h_type->tag;
-	sh->pg[npg].name = NULL;
-	sh->pg[npg].name_len = 0;
-	sh->pg[npg].ty  = h_type;
-	sh->pg[npg].tag  = tag;
-	sh->pg[npg].id   = npg;
-	sh->pg[npg].prev_id = -1;
+        tag = h_type->tag;
+        sh->pg[npg].name = NULL;
+        sh->pg[npg].name_len = 0;
+        sh->pg[npg].ty  = h_type;
+        sh->pg[npg].tag  = tag;
+        sh->pg[npg].id   = npg;
+        sh->pg[npg].prev_id = -1;
 
-	while (tag) {
-	    if (tag->str[0] == 'I' && tag->str[1] == 'D') {
-		if (!(sh->pg[npg].name = malloc(tag->len)))
-		    return -1;
-		strncpy(sh->pg[npg].name, tag->str+3, tag->len-3);
-		sh->pg[npg].name[tag->len-3] = 0;
-		sh->pg[npg].name_len = strlen(sh->pg[npg].name);
-	    } else if (tag->str[0] == 'P' && tag->str[1] == 'P') {
-		// Resolve later if needed
-		khint_t k;
-		char tmp = tag->str[tag->len]; tag->str[tag->len] = 0;
-		k = kh_get(m_s2i, sh->pg_hash, tag->str+3);
-		tag->str[tag->len] = tmp;
+        while (tag) {
+            if (tag->str[0] == 'I' && tag->str[1] == 'D') {
+                if (!(sh->pg[npg].name = malloc(tag->len)))
+                    return -1;
+                strncpy(sh->pg[npg].name, tag->str+3, tag->len-3);
+                sh->pg[npg].name[tag->len-3] = 0;
+                sh->pg[npg].name_len = strlen(sh->pg[npg].name);
+            } else if (tag->str[0] == 'P' && tag->str[1] == 'P') {
+                // Resolve later if needed
+                khint_t k;
+                char tmp = tag->str[tag->len]; tag->str[tag->len] = 0;
+                k = kh_get(m_s2i, sh->pg_hash, tag->str+3);
+                tag->str[tag->len] = tmp;
 
-		if (k != kh_end(sh->pg_hash)) {
-		    int p_id = kh_val(sh->pg_hash, k);
-		    sh->pg[npg].prev_id = sh->pg[p_id].id;
+                if (k != kh_end(sh->pg_hash)) {
+                    int p_id = kh_val(sh->pg_hash, k);
+                    sh->pg[npg].prev_id = sh->pg[p_id].id;
 
-		    /* Unmark previous entry as a PG termination */
-		    if (sh->npg_end > 0 &&
-			sh->pg_end[sh->npg_end-1] == p_id) {
-			sh->npg_end--;
-		    } else {
-			int i;
-			for (i = 0; i < sh->npg_end; i++) {
-			    if (sh->pg_end[i] == p_id) {
-				memmove(&sh->pg_end[i], &sh->pg_end[i+1],
-					(sh->npg_end-i-1)*sizeof(*sh->pg_end));
-				sh->npg_end--;
-			    }
-			}
-		    }
-		} else {
-		    sh->pg[npg].prev_id = -1;
-		}
-	    }
-	    tag = tag->next;
-	}
+                    /* Unmark previous entry as a PG termination */
+                    if (sh->npg_end > 0 &&
+                            sh->pg_end[sh->npg_end-1] == p_id) {
+                        sh->npg_end--;
+                    } else {
+                        int i;
+                        for (i = 0; i < sh->npg_end; i++) {
+                            if (sh->pg_end[i] == p_id) {
+                                memmove(&sh->pg_end[i], &sh->pg_end[i+1],
+                                        (sh->npg_end-i-1)*sizeof(*sh->pg_end));
+                                sh->npg_end--;
+                            }
+                        }
+                    }
+                } else {
+                    sh->pg[npg].prev_id = -1;
+                }
+            }
+            tag = tag->next;
+        }
 
-	if (sh->pg[npg].name) {
-	    khint_t k;
-	    int r;
-	    k = kh_put(m_s2i, sh->pg_hash, sh->pg[npg].name, &r);
-	    if (-1 == r) return -1;
-	    kh_val(sh->pg_hash, k) = npg;
-	} else {
-	    return -1; // ID should be present, according to spec.
-	}
+        if (sh->pg[npg].name) {
+            khint_t k;
+            int r;
+            k = kh_put(m_s2i, sh->pg_hash, sh->pg[npg].name, &r);
+            if (-1 == r) return -1;
+            kh_val(sh->pg_hash, k) = npg;
+        } else {
+            return -1; // ID should be present, according to spec.
+        }
 
-	/* Add to npg_end[] array. Remove later if we find a PP line */
-	if (sh->npg_end >= sh->npg_end_alloc) {
-	    int *new_pg_end;
-	    int  new_alloc = sh->npg_end_alloc ? sh->npg_end_alloc*2 : 4;
+        /* Add to npg_end[] array. Remove later if we find a PP line */
+        if (sh->npg_end >= sh->npg_end_alloc) {
+            int *new_pg_end;
+            int  new_alloc = sh->npg_end_alloc ? sh->npg_end_alloc*2 : 4;
 
-	    new_pg_end = realloc(sh->pg_end, new_alloc * sizeof(int));
-	    if (!new_pg_end)
-		return -1;
-	    sh->npg_end_alloc = new_alloc;
-	    sh->pg_end = new_pg_end;
-	}
-	sh->pg_end[sh->npg_end++] = npg;
+            new_pg_end = realloc(sh->pg_end, new_alloc * sizeof(int));
+            if (!new_pg_end)
+                return -1;
+            sh->npg_end_alloc = new_alloc;
+            sh->pg_end = new_pg_end;
+        }
+        sh->pg_end[sh->npg_end++] = npg;
 
-	sh->npg++;
+        sh->npg++;
     }
 
     return 0;
@@ -346,137 +346,137 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
     char *hdr;
 
     if (!len)
-	len = strlen(lines);
+        len = strlen(lines);
 
     text_offset = ks_len(&sh->text);
     if (EOF == kputsn(lines, len, &sh->text))
-	return -1;
+        return -1;
     hdr = ks_str(&sh->text) + text_offset;
 
     for (i = 0, lno = 1; i < len && hdr[i] != '\0'; i++, lno++) {
-	khint32_t type;
-	khint_t k;
+        khint32_t type;
+        khint_t k;
 
-	int l_start = i, new;
-	SAM_hdr_type *h_type;
-	SAM_hdr_tag *h_tag, *last;
+        int l_start = i, new;
+        SAM_hdr_type *h_type;
+        SAM_hdr_tag *h_tag, *last;
 
-	if (hdr[i] != '@') {
-	    int j;
-	    for (j = i; j < len && hdr[j] != '\0' && hdr[j] != '\n'; j++)
-		;
-	    sam_hdr_error("Header line does not start with '@'",
-			  &hdr[l_start], len - l_start, lno);
-	    return -1;
-	}
+        if (hdr[i] != '@') {
+            int j;
+            for (j = i; j < len && hdr[j] != '\0' && hdr[j] != '\n'; j++)
+                ;
+            sam_hdr_error("Header line does not start with '@'",
+                    &hdr[l_start], len - l_start, lno);
+            return -1;
+        }
 
-	type = (hdr[i+1]<<8) | hdr[i+2];
-	if (!isalpha_c(hdr[i+1]) || !isalpha_c(hdr[i+2])) {
-	    sam_hdr_error("Header line does not have a two character key",
-			  &hdr[l_start], len - l_start, lno);
-	    return -1;
-	}
+        type = (hdr[i+1]<<8) | hdr[i+2];
+        if (!isalpha_c(hdr[i+1]) || !isalpha_c(hdr[i+2])) {
+            sam_hdr_error("Header line does not have a two character key",
+                    &hdr[l_start], len - l_start, lno);
+            return -1;
+        }
 
-	i += 3;
-	if (hdr[i] == '\n')
-	    continue;
+        i += 3;
+        if (hdr[i] == '\n')
+            continue;
 
-	// Add the header line type
-	if (!(h_type = pool_alloc(sh->type_pool)))
-	    return -1;
-	if (-1 == (k = kh_put(sam_hdr, sh->h, type, &new)))
-	    return -1;
+        // Add the header line type
+        if (!(h_type = pool_alloc(sh->type_pool)))
+            return -1;
+        if (-1 == (k = kh_put(sam_hdr, sh->h, type, &new)))
+            return -1;
 
-	// Form the ring, either with self or other lines of this type
-	if (!new) {
-	    SAM_hdr_type *t = kh_val(sh->h, k), *p;
-	    p = t->prev;
-	    
-	    assert(p->next == t);
-	    p->next = h_type;
-	    h_type->prev = p;
+        // Form the ring, either with self or other lines of this type
+        if (!new) {
+            SAM_hdr_type *t = kh_val(sh->h, k), *p;
+            p = t->prev;
 
-	    t->prev = h_type;
-	    h_type->next = t;
-	    h_type->order = p->order+1;
-	} else {
-	    kh_val(sh->h, k) = h_type;
-	    h_type->prev = h_type->next = h_type;
-	    h_type->order = 0;
-	}
+            assert(p->next == t);
+            p->next = h_type;
+            h_type->prev = p;
 
-	if (sh->line_count == (sh->line_size - 1)) {
-	    sh->line_size <<= 1;
-	    SAM_hdr_line *tmp= realloc(sh->line_order, sizeof(SAM_hdr_line) * sh->line_size);
-	    if (!tmp)
-	        return -1;
-	    sh->line_order = tmp;
-	}
-	strncpy(sh->line_order[sh->line_count].type_name, hdr+i-2, 2); ;
-	sh->line_order[sh->line_count++].type_data = h_type;
+            t->prev = h_type;
+            h_type->next = t;
+            h_type->order = p->order+1;
+        } else {
+            kh_val(sh->h, k) = h_type;
+            h_type->prev = h_type->next = h_type;
+            h_type->order = 0;
+        }
 
-	// Parse the tags on this line
-	last = NULL;
-	if ((type>>8) == 'C' && (type&0xff) == 'O') {
-	    int j;
-	    if (hdr[i] != '\t') {
-		sam_hdr_error("Missing tab",
-			      &hdr[l_start], len - l_start, lno);
-		return -1;
-	    }
+        if (sh->line_count == (sh->line_size - 1)) {
+            sh->line_size <<= 1;
+            SAM_hdr_line *tmp= realloc(sh->line_order, sizeof(SAM_hdr_line) * sh->line_size);
+            if (!tmp)
+                return -1;
+            sh->line_order = tmp;
+        }
+        strncpy(sh->line_order[sh->line_count].type_name, hdr+i-2, 2); ;
+        sh->line_order[sh->line_count++].type_data = h_type;
 
-	    for (j = ++i; j < len && hdr[j] != '\0' && hdr[j] != '\n'; j++)
-		;
+        // Parse the tags on this line
+        last = NULL;
+        if ((type>>8) == 'C' && (type&0xff) == 'O') {
+            int j;
+            if (hdr[i] != '\t') {
+                sam_hdr_error("Missing tab",
+                        &hdr[l_start], len - l_start, lno);
+                return -1;
+            }
 
-	    if (!(h_type->tag = h_tag = pool_alloc(sh->tag_pool)))
-		return -1;
-	    h_tag->str = string_ndup(sh->str_pool, &hdr[i], j-i);
-	    h_tag->len = j-i;
-	    h_tag->next = NULL;
-	    if (!h_tag->str)
-		return -1;
+            for (j = ++i; j < len && hdr[j] != '\0' && hdr[j] != '\n'; j++)
+                ;
 
-	    i = j;
+            if (!(h_type->tag = h_tag = pool_alloc(sh->tag_pool)))
+                return -1;
+            h_tag->str = string_ndup(sh->str_pool, &hdr[i], j-i);
+            h_tag->len = j-i;
+            h_tag->next = NULL;
+            if (!h_tag->str)
+                return -1;
 
-	} else {
-	    do {
-		int j;
-		if (hdr[i] != '\t') {
-		    sam_hdr_error("Missing tab",
-				  &hdr[l_start], len - l_start, lno);
-		    return -1;
-		}
+            i = j;
 
-		for (j = ++i; j < len && hdr[j] != '\0' && hdr[j] != '\n' && hdr[j] != '\t'; j++)
-		    ;
-	    
-		if (!(h_tag = pool_alloc(sh->tag_pool)))
-		    return -1;
-		h_tag->str = string_ndup(sh->str_pool, &hdr[i], j-i);
-		h_tag->len = j-i;
-		h_tag->next = NULL;
-		if (!h_tag->str)
-		    return -1;
+        } else {
+            do {
+                int j;
+                if (hdr[i] != '\t') {
+                    sam_hdr_error("Missing tab",
+                            &hdr[l_start], len - l_start, lno);
+                    return -1;
+                }
 
-		if (h_tag->len < 3 || h_tag->str[2] != ':') {
-		    sam_hdr_error("Malformed key:value pair",
-				  &hdr[l_start], len - l_start, lno);
-		    return -1;
-		}
-	    
-		if (last)
-		    last->next = h_tag;
-		else
-		    h_type->tag = h_tag;
+                for (j = ++i; j < len && hdr[j] != '\0' && hdr[j] != '\n' && hdr[j] != '\t'; j++)
+                    ;
 
-		last = h_tag;
-		i = j;
-	    } while (i < len && hdr[i] != '\0' && hdr[i] != '\n');
-	}
+                if (!(h_tag = pool_alloc(sh->tag_pool)))
+                    return -1;
+                h_tag->str = string_ndup(sh->str_pool, &hdr[i], j-i);
+                h_tag->len = j-i;
+                h_tag->next = NULL;
+                if (!h_tag->str)
+                    return -1;
 
-	/* Update RG/SQ hashes */
-	if (-1 == sam_hdr_update_hashes(sh, type, h_type))
-	    return -1;
+                if (h_tag->len < 3 || h_tag->str[2] != ':') {
+                    sam_hdr_error("Malformed key:value pair",
+                            &hdr[l_start], len - l_start, lno);
+                    return -1;
+                }
+
+                if (last)
+                    last->next = h_tag;
+                else
+                    h_type->tag = h_tag;
+
+                last = h_tag;
+                i = j;
+            } while (i < len && hdr[i] != '\0' && hdr[i] != '\n');
+        }
+
+        /* Update RG/SQ hashes */
+        if (-1 == sam_hdr_update_hashes(sh, type, h_type))
+            return -1;
     }
 
     return 0;
@@ -511,31 +511,31 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
     khint32_t type_i = (type[0]<<8) | type[1], k;
 
     if (EOF == kputc_('@', &sh->text))
-	return -1;
+        return -1;
     if (EOF == kputsn(type, 2, &sh->text))
-	return -1;
+        return -1;
 
     if (!(h_type = pool_alloc(sh->type_pool)))
-	return -1;
+        return -1;
     if (-1 == (k = kh_put(sam_hdr, sh->h, type_i, &new)))
-	return -1;
+        return -1;
 
     // Form the ring, either with self or other lines of this type
     if (!new) {
-	SAM_hdr_type *t = kh_val(sh->h, k), *p;
-	p = t->prev;
-	    
-	assert(p->next == t);
-	p->next = h_type;
-	h_type->prev = p;
+        SAM_hdr_type *t = kh_val(sh->h, k), *p;
+        p = t->prev;
 
-	t->prev = h_type;
-	h_type->next = t;
-	h_type->order = p->order + 1;
+        assert(p->next == t);
+        p->next = h_type;
+        h_type->prev = p;
+
+        t->prev = h_type;
+        h_type->next = t;
+        h_type->order = p->order + 1;
     } else {
-	kh_val(sh->h, k) = h_type;
-	h_type->prev = h_type->next = h_type;
-	h_type->order = 0;
+        kh_val(sh->h, k) = h_type;
+        h_type->prev = h_type->next = h_type;
+        h_type->order = 0;
     }
 
     last = NULL;
@@ -543,90 +543,90 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
     // Any ... varargs
     va_start(args, ap);
     for (;;) {
-	char *k, *v;
-	int idx;
-	
-	if (!(k = (char *)va_arg(args, char *)))
-	    break;
-	v = va_arg(args, char *);
+        char *k, *v;
+        int idx;
 
-	if (EOF == kputc_('\t', &sh->text))
-	    return -1;
+        if (!(k = (char *)va_arg(args, char *)))
+            break;
+        v = va_arg(args, char *);
 
-	if (!(h_tag = pool_alloc(sh->tag_pool)))
-	    return -1;
-	idx = ks_len(&sh->text);
-	
-	if (EOF == kputs(k, &sh->text))
-	    return -1;
-	if (EOF == kputc_(':', &sh->text))
-	    return -1;
-	if (EOF == kputs(v, &sh->text))
-	    return -1;
+        if (EOF == kputc_('\t', &sh->text))
+            return -1;
 
-	h_tag->len = ks_len(&sh->text) - idx;
-	h_tag->str = string_ndup(sh->str_pool,
-				 ks_str(&sh->text) + idx,
-				 h_tag->len);
-	h_tag->next = NULL;
-	if (!h_tag->str)
-	    return -1;
+        if (!(h_tag = pool_alloc(sh->tag_pool)))
+            return -1;
+        idx = ks_len(&sh->text);
 
-	if (last)
-	    last->next = h_tag;
-	else
-	    h_type->tag = h_tag;
-	
-	last = h_tag;
+        if (EOF == kputs(k, &sh->text))
+            return -1;
+        if (EOF == kputc_(':', &sh->text))
+            return -1;
+        if (EOF == kputs(v, &sh->text))
+            return -1;
+
+        h_tag->len = ks_len(&sh->text) - idx;
+        h_tag->str = string_ndup(sh->str_pool,
+                ks_str(&sh->text) + idx,
+                h_tag->len);
+        h_tag->next = NULL;
+        if (!h_tag->str)
+            return -1;
+
+        if (last)
+            last->next = h_tag;
+        else
+            h_type->tag = h_tag;
+
+        last = h_tag;
     }
     va_end(args);
 
     // Plus the specified va_list params
     for (;;) {
-	char *k, *v;
-	int idx;
-	
-	if (!(k = (char *)va_arg(ap, char *)))
-	    break;
-	v = va_arg(ap, char *);
+        char *k, *v;
+        int idx;
 
-	if (EOF == kputc_('\t', &sh->text))
-	    return -1;
+        if (!(k = (char *)va_arg(ap, char *)))
+            break;
+        v = va_arg(ap, char *);
 
-	if (!(h_tag = pool_alloc(sh->tag_pool)))
-	    return -1;
-	idx = ks_len(&sh->text);
-	
-	if (EOF == kputs(k, &sh->text))
-	    return -1;
-	if (EOF == kputc_(':', &sh->text))
-	    return -1;
-	if (EOF == kputs(v, &sh->text))
-	    return -1;
+        if (EOF == kputc_('\t', &sh->text))
+            return -1;
 
-	h_tag->len = ks_len(&sh->text) - idx;
-	h_tag->str = string_ndup(sh->str_pool,
-				 ks_str(&sh->text) + idx,
-				 h_tag->len);
-	h_tag->next = NULL;
-	if (!h_tag->str)
-	    return -1;
+        if (!(h_tag = pool_alloc(sh->tag_pool)))
+            return -1;
+        idx = ks_len(&sh->text);
 
-	if (last)
-	    last->next = h_tag;
-	else
-	    h_type->tag = h_tag;
-	
-	last = h_tag;
+        if (EOF == kputs(k, &sh->text))
+            return -1;
+        if (EOF == kputc_(':', &sh->text))
+            return -1;
+        if (EOF == kputs(v, &sh->text))
+            return -1;
+
+        h_tag->len = ks_len(&sh->text) - idx;
+        h_tag->str = string_ndup(sh->str_pool,
+                ks_str(&sh->text) + idx,
+                h_tag->len);
+        h_tag->next = NULL;
+        if (!h_tag->str)
+            return -1;
+
+        if (last)
+            last->next = h_tag;
+        else
+            h_type->tag = h_tag;
+
+        last = h_tag;
     }
     va_end(ap);
 
     if (EOF == kputc('\n', &sh->text))
-	return -1;
+        return -1;
 
     int itype = (type[0]<<8) | type[1];
     if (-1 == sam_hdr_update_hashes(sh, itype, h_type))
-	return -1;
+        return -1;
 
     return h_type->order;
 }
@@ -638,60 +638,60 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
  * Returns NULL if no type/ID is found
  */
 SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
-			   char *ID_key, char *ID_value) {
+        char *ID_key, char *ID_value) {
     SAM_hdr_type *t1, *t2;
     int itype = (type[0]<<8)|(type[1]);
     khint_t k;
 
     /* Special case for types we have prebuilt hashes on */
     if (ID_key) {
-	if (type[0]   == 'S' && type[1]   == 'Q' &&
-	    ID_key[0] == 'S' && ID_key[1] == 'N') {
-	    k = kh_get(m_s2i, hdr->ref_hash, ID_value);
-	    return k != kh_end(hdr->ref_hash)
-		? hdr->ref[kh_val(hdr->ref_hash, k)].ty
-		: NULL;
-	}
+        if (type[0]   == 'S' && type[1]   == 'Q' &&
+                ID_key[0] == 'S' && ID_key[1] == 'N') {
+            k = kh_get(m_s2i, hdr->ref_hash, ID_value);
+            return k != kh_end(hdr->ref_hash)
+                    ? hdr->ref[kh_val(hdr->ref_hash, k)].ty
+                            : NULL;
+        }
 
-	if (type[0]   == 'R' && type[1]   == 'G' &&
-	    ID_key[0] == 'I' && ID_key[1] == 'D') {
-	    k = kh_get(m_s2i, hdr->rg_hash, ID_value);
-	    return k != kh_end(hdr->rg_hash)
-		? hdr->rg[kh_val(hdr->rg_hash, k)].ty
-		: NULL;
-	}
+        if (type[0]   == 'R' && type[1]   == 'G' &&
+                ID_key[0] == 'I' && ID_key[1] == 'D') {
+            k = kh_get(m_s2i, hdr->rg_hash, ID_value);
+            return k != kh_end(hdr->rg_hash)
+                    ? hdr->rg[kh_val(hdr->rg_hash, k)].ty
+                            : NULL;
+        }
 
-	if (type[0]   == 'P' && type[1]   == 'G' &&
-	    ID_key[0] == 'I' && ID_key[1] == 'D') {
-	    k = kh_get(m_s2i, hdr->pg_hash, ID_value);
-	    return k != kh_end(hdr->pg_hash)
-		? hdr->pg[kh_val(hdr->pg_hash, k)].ty
-		: NULL;
-	}
+        if (type[0]   == 'P' && type[1]   == 'G' &&
+                ID_key[0] == 'I' && ID_key[1] == 'D') {
+            k = kh_get(m_s2i, hdr->pg_hash, ID_value);
+            return k != kh_end(hdr->pg_hash)
+                    ? hdr->pg[kh_val(hdr->pg_hash, k)].ty
+                            : NULL;
+        }
     }
 
     k = kh_get(sam_hdr, hdr->h, itype);
     if (k == kh_end(hdr->h))
-	return NULL;
-    
+        return NULL;
+
     if (!ID_key)
-	return kh_val(hdr->h, k);
+        return kh_val(hdr->h, k);
 
     t1 = t2 = kh_val(hdr->h, k);
     do {
-	SAM_hdr_tag *tag;
-	for (tag = t1->tag; tag; tag = tag->next) {
-	    if (tag->str[0] == ID_key[0] && tag->str[1] == ID_key[1]) {
-		char *cp1 = tag->str+3;
-		char *cp2 = ID_value;
-		while (*cp1 && *cp1 == *cp2)
-		    cp1++, cp2++;
-		if (*cp2 || *cp1)
-		    continue;
-		return t1;
-	    }
-	}
-	t1 = t1->next;
+        SAM_hdr_tag *tag;
+        for (tag = t1->tag; tag; tag = tag->next) {
+            if (tag->str[0] == ID_key[0] && tag->str[1] == ID_key[1]) {
+                char *cp1 = tag->str+3;
+                char *cp2 = ID_value;
+                while (*cp1 && *cp1 == *cp2)
+                    cp1++, cp2++;
+                if (*cp2 || *cp1)
+                    continue;
+                return t1;
+            }
+        }
+        t1 = t1->next;
     } while (t1 != t2);
 
     return NULL;
@@ -708,26 +708,26 @@ SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
  * Returns NULL if no type/ID is found.
  */
 char *sam_hdr_find_line(SAM_hdr *hdr, char *type,
-			char *ID_key, char *ID_value) {
+        char *ID_key, char *ID_value) {
     SAM_hdr_type *ty = sam_hdr_find(hdr, type, ID_key, ID_value);
     kstring_t ks = KS_INITIALIZER;
     SAM_hdr_tag *tag;
     int r = 0;
 
     if (!ty)
-	return NULL;
+        return NULL;
 
     // Paste together the line from the hashed copy
     r |= (kputc_('@', &ks) == EOF);
     r |= (kputs(type, &ks) == EOF);
     for (tag = ty->tag; tag; tag = tag->next) {
-	r |= (kputc_('\t', &ks) == EOF);
-	r |= (kputsn(tag->str, tag->len, &ks) == EOF);
+        r |= (kputc_('\t', &ks) == EOF);
+        r |= (kputsn(tag->str, tag->len, &ks) == EOF);
     }
 
     if (r) {
-	KS_FREE(&ks);
-	return NULL;
+        KS_FREE(&ks);
+        return NULL;
     }
 
     return ks_str(&ks);
@@ -757,8 +757,8 @@ static int remove_line(SAM_hdr *hdr, char *type_name, SAM_hdr_type *type_found) 
 
     for(i = 0; i < hdr->line_count; i++) {
         if (!strncmp(type_name, hdr->line_order[i].type_name, 2) && 
-            hdr->line_order[i].type_data &&
-            hdr->line_order[i].type_data->order == type_found->order) {
+                hdr->line_order[i].type_data &&
+                hdr->line_order[i].type_data->order == type_found->order) {
             hdr->line_order[i].type_data = NULL;       
         }
     } 
@@ -789,8 +789,8 @@ int sam_hdr_remove_line_pos(SAM_hdr *hdr, char *type, int position) {
     if (!hdr || !type || position < 0 || position > hdr->line_count)
         return -1;
     if (!strncmp(type, "PG", 2)) {
-       hts_log_warning("Removing PG lines is not supported!");
-       return -1;
+        hts_log_warning("Removing PG lines is not supported!");
+        return -1;
     }
 
     SAM_hdr_type *type_beg, *type_end, *type_found = NULL;
@@ -823,10 +823,10 @@ int sam_hdr_remove_line_key(SAM_hdr *hdr, char *type, char *ID_key, char *ID_val
     if (!hdr || !type)
         return -1;
     if (!strncmp(type, "PG", 2)) {
-       hts_log_warning("Removing PG lines is not supported!");
-       return -1;
+        hts_log_warning("Removing PG lines is not supported!");
+        return -1;
     }
- 
+
     SAM_hdr_type *type_found = sam_hdr_find(hdr, type, ID_key, ID_value);
     if (!type_found)
         return -1;
@@ -845,28 +845,28 @@ int sam_hdr_remove_line_key(SAM_hdr *hdr, char *type, char *ID_key, char *ID_val
  *         NULL on failure
  */
 SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
-			      SAM_hdr_type *type,
-			      char *key,
-			      SAM_hdr_tag **prev) {
+        SAM_hdr_type *type,
+        char *key,
+        SAM_hdr_tag **prev) {
     SAM_hdr_tag *tag, *p = NULL;
 
     for (tag = type->tag; tag; p = tag, tag = tag->next) {
-	if (tag->str[0] == key[0] && tag->str[1] == key[1]) {
-	    if (prev)
-		*prev = p;
-	    return tag;
-	}
+        if (tag->str[0] == key[0] && tag->str[1] == key[1]) {
+            if (prev)
+                *prev = p;
+            return tag;
+        }
     }
 
     if (prev)
-	*prev = p;
+        *prev = p;
 
     return NULL;
 }
 
 void sam_hdr_remove_key(SAM_hdr *sh,
-                        SAM_hdr_type *type,
-                        char *key) {
+        SAM_hdr_type *type,
+        char *key) {
     SAM_hdr_tag *tag, *prev;
     tag = sam_hdr_find_key(sh, type, key, &prev);
     if (tag) { //tag exists
@@ -895,37 +895,37 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
     va_list ap;
 
     va_start(ap, type);
-    
+
     for (;;) {
-	char *k, *v;
-	int idx;
-	SAM_hdr_tag *tag, *prev;
+        char *k, *v;
+        int idx;
+        SAM_hdr_tag *tag, *prev;
 
-	if (!(k = (char *)va_arg(ap, char *)))
-	    break;
-	v = va_arg(ap, char *);
+        if (!(k = (char *)va_arg(ap, char *)))
+            break;
+        v = va_arg(ap, char *);
 
-	tag = sam_hdr_find_key(hdr, type, k, &prev);
-	if (!tag) {
-	    if (!(tag = pool_alloc(hdr->tag_pool)))
-		return -1;
-	    if (prev)
-		prev->next = tag;
-	    else
-		type->tag = tag;
+        tag = sam_hdr_find_key(hdr, type, k, &prev);
+        if (!tag) {
+            if (!(tag = pool_alloc(hdr->tag_pool)))
+                return -1;
+            if (prev)
+                prev->next = tag;
+            else
+                type->tag = tag;
 
-	    tag->next = NULL;
-	}
+            tag->next = NULL;
+        }
 
-	idx = ks_len(&hdr->text);
-	if (ksprintf(&hdr->text, "%2.2s:%s", k, v) < 0)
-	    return -1;
-	tag->len = ks_len(&hdr->text) - idx;
-	tag->str = string_ndup(hdr->str_pool,
-			       ks_str(&hdr->text) + idx,
-			       tag->len);
-	if (!tag->str)
-	    return -1;
+        idx = ks_len(&hdr->text);
+        if (ksprintf(&hdr->text, "%2.2s:%s", k, v) < 0)
+            return -1;
+        tag->len = ks_len(&hdr->text) - idx;
+        tag->str = string_ndup(hdr->str_pool,
+                ks_str(&hdr->text) + idx,
+                tag->len);
+        if (!tag->str)
+            return -1;
     }
 
     va_end(ap);
@@ -942,20 +942,20 @@ enum sam_sort_order sam_hdr_sort_order(SAM_hdr *hdr) {
     so = ORDER_UNKNOWN;
     k = kh_get(sam_hdr, hdr->h, K("HD"));
     if (k != kh_end(hdr->h)) {
-	SAM_hdr_type *ty = kh_val(hdr->h, k);
-	SAM_hdr_tag *tag;
+        SAM_hdr_type *ty = kh_val(hdr->h, k);
+        SAM_hdr_tag *tag;
         for (tag = ty->tag; tag; tag = tag->next) {
-	    if (tag->str[0] == 'S' && tag->str[1] == 'O') {
-		if (strcmp(tag->str+3, "unsorted") == 0)
-		    so = ORDER_UNSORTED;
-		else if (strcmp(tag->str+3, "queryname") == 0)
-		    so = ORDER_NAME;
-		else if (strcmp(tag->str+3, "coordinate") == 0)
-		    so = ORDER_COORD;
-		else if (strcmp(tag->str+3, "unknown") != 0)
-		    hts_log_error("Unknown sort order field: %s", tag->str+3);
-	    }
-	}
+            if (tag->str[0] == 'S' && tag->str[1] == 'O') {
+                if (strcmp(tag->str+3, "unsorted") == 0)
+                    so = ORDER_UNSORTED;
+                else if (strcmp(tag->str+3, "queryname") == 0)
+                    so = ORDER_NAME;
+                else if (strcmp(tag->str+3, "coordinate") == 0)
+                    so = ORDER_COORD;
+                else if (strcmp(tag->str+3, "unknown") != 0)
+                    hts_log_error("Unknown sort order field: %s", tag->str+3);
+            }
+        }
     }
 
     return so;
@@ -968,18 +968,18 @@ enum sam_group_order sam_hdr_group_order(SAM_hdr *hdr) {
     go = ORDER_NONE;
     k = kh_get(sam_hdr, hdr->h, K("HD"));
     if (k != kh_end(hdr->h)) {
-	SAM_hdr_type *ty = kh_val(hdr->h, k);
-	SAM_hdr_tag *tag;
+        SAM_hdr_type *ty = kh_val(hdr->h, k);
+        SAM_hdr_tag *tag;
         for (tag = ty->tag; tag; tag = tag->next) {
-	    if (tag->str[0] == 'G' && tag->str[1] == 'O') {
-		if (strcmp(tag->str+3, "query") == 0)
-		    go = ORDER_QUERY;
-		else if (strcmp(tag->str+3, "reference") == 0)
-		    go = ORDER_REFERENCE;
-	    }
-	}
+            if (tag->str[0] == 'G' && tag->str[1] == 'O') {
+                if (strcmp(tag->str+3, "query") == 0)
+                    go = ORDER_QUERY;
+                else if (strcmp(tag->str+3, "reference") == 0)
+                    go = ORDER_REFERENCE;
+            }
+        }
     }
-    
+
     return go;
 }
 
@@ -997,18 +997,18 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
 
     k = kh_get(sam_hdr, hdr->h, K("HD"));
     if (k != kh_end(hdr->h)) {
-	SAM_hdr_type *ty = kh_val(hdr->h, k);
-	SAM_hdr_tag *tag;
-	if (EOF == kputs("@HD", &ks))
-	    return -1;
-	for (tag = ty->tag; tag; tag = tag->next) {
-	    if (EOF == kputc_('\t', &ks))
-		return -1;
-	    if (EOF == kputsn_(tag->str, tag->len, &ks))
-		return -1;
-	}
-	if (EOF == kputc('\n', &ks))
-	    return -1;
+        SAM_hdr_type *ty = kh_val(hdr->h, k);
+        SAM_hdr_tag *tag;
+        if (EOF == kputs("@HD", &ks))
+            return -1;
+        for (tag = ty->tag; tag; tag = tag->next) {
+            if (EOF == kputc_('\t', &ks))
+                return -1;
+            if (EOF == kputsn_(tag->str, tag->len, &ks))
+                return -1;
+        }
+        if (EOF == kputc('\n', &ks))
+            return -1;
     }
 
     for (i = 0; i < hdr->line_count; i++) {
@@ -1038,7 +1038,7 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
     }
 
     if (ks_str(&hdr->text))
-	KS_FREE(&hdr->text);
+        KS_FREE(&hdr->text);
 
     hdr->text = ks;
 
@@ -1056,11 +1056,11 @@ SAM_hdr *sam_hdr_new() {
     SAM_hdr *sh = calloc(1, sizeof(*sh));
 
     if (!sh)
-	return NULL;
-    
+        return NULL;
+
     sh->h = kh_init(sam_hdr);
     if (!sh->h)
-	goto err;
+        goto err;
 
     sh->ID_cnt = 1;
     sh->ref_count = 1;
@@ -1068,30 +1068,30 @@ SAM_hdr *sam_hdr_new() {
     sh->nref = 0;
     sh->ref  = NULL;
     if (!(sh->ref_hash = kh_init(m_s2i)))
-	goto err;
+        goto err;
 
     sh->nrg = 0;
     sh->rg  = NULL;
     if (!(sh->rg_hash = kh_init(m_s2i)))
-	goto err;
+        goto err;
 
     sh->npg = 0;
     sh->pg  = NULL;
     sh->npg_end = sh->npg_end_alloc = 0;
     sh->pg_end = NULL;
     if (!(sh->pg_hash = kh_init(m_s2i)))
-	goto err;
+        goto err;
 
     KS_INIT(&sh->text);
 
     if (!(sh->tag_pool = pool_create(sizeof(SAM_hdr_tag))))
-	goto err;
+        goto err;
 
     if (!(sh->type_pool = pool_create(sizeof(SAM_hdr_type))))
-	goto err;
+        goto err;
 
     if (!(sh->str_pool = string_pool_create(8192)))
-	goto err;
+        goto err;
 
     sh->line_count = 0;
     sh->line_size = SAM_HDR_LINES; 
@@ -1100,18 +1100,18 @@ SAM_hdr *sam_hdr_new() {
 
     return sh;
 
- err:
+    err:
     if (sh->h)
-	kh_destroy(sam_hdr, sh->h);
+        kh_destroy(sam_hdr, sh->h);
 
     if (sh->tag_pool)
-	pool_destroy(sh->tag_pool);
+        pool_destroy(sh->tag_pool);
 
     if (sh->type_pool)
-	pool_destroy(sh->type_pool);
+        pool_destroy(sh->type_pool);
 
     if (sh->str_pool)
-	string_pool_destroy(sh->str_pool);
+        string_pool_destroy(sh->str_pool);
 
     free(sh);
 
@@ -1129,7 +1129,7 @@ SAM_hdr *sam_hdr_new() {
 SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
     /* Make an empty SAM_hdr */
     SAM_hdr *sh;
-    
+
     sh = sam_hdr_new();
     if (NULL == sh) return NULL;
 
@@ -1137,8 +1137,8 @@ SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
 
     /* Parse the header, line by line */
     if (-1 == sam_hdr_add_lines(sh, hdr, len)) {
-	sam_hdr_free(sh);
-	return NULL;
+        sam_hdr_free(sh);
+        return NULL;
     }
 
     //sam_hdr_dump(sh);
@@ -1161,7 +1161,7 @@ SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
  */
 SAM_hdr *sam_hdr_dup(SAM_hdr *hdr) {
     if (-1 == sam_hdr_rebuild(hdr))
-	return NULL;
+        return NULL;
 
     return sam_hdr_parse_(sam_hdr_str(hdr), sam_hdr_length(hdr));
 }
@@ -1197,61 +1197,61 @@ void sam_hdr_decr_ref(SAM_hdr *hdr) {
  */
 void sam_hdr_free(SAM_hdr *hdr) {
     if (!hdr)
-	return;
+        return;
 
     if (--hdr->ref_count > 0)
-	return;
+        return;
 
     if (ks_str(&hdr->text))
-	KS_FREE(&hdr->text);
+        KS_FREE(&hdr->text);
 
     if (hdr->h)
-	kh_destroy(sam_hdr, hdr->h);
+        kh_destroy(sam_hdr, hdr->h);
 
     if (hdr->ref_hash)
-	kh_destroy(m_s2i, hdr->ref_hash);
+        kh_destroy(m_s2i, hdr->ref_hash);
 
     if (hdr->ref) {
-	int i;
-	for (i = 0; i < hdr->nref; i++)
-	    if (hdr->ref[i].name)
-		free(hdr->ref[i].name);
-	free(hdr->ref);
+        int i;
+        for (i = 0; i < hdr->nref; i++)
+            if (hdr->ref[i].name)
+                free(hdr->ref[i].name);
+        free(hdr->ref);
     }
 
     if (hdr->rg_hash)
-	kh_destroy(m_s2i, hdr->rg_hash);
+        kh_destroy(m_s2i, hdr->rg_hash);
 
     if (hdr->rg) {
-	int i;
-	for (i = 0; i < hdr->nrg; i++)
-	    if (hdr->rg[i].name)
-		free(hdr->rg[i].name);
-	free(hdr->rg);
+        int i;
+        for (i = 0; i < hdr->nrg; i++)
+            if (hdr->rg[i].name)
+                free(hdr->rg[i].name);
+        free(hdr->rg);
     }
 
     if (hdr->pg_hash)
-	kh_destroy(m_s2i, hdr->pg_hash);
+        kh_destroy(m_s2i, hdr->pg_hash);
 
     if (hdr->pg) {
-	int i;
-	for (i = 0; i < hdr->npg; i++)
-	    if (hdr->pg[i].name)
-		free(hdr->pg[i].name);
-	free(hdr->pg);
+        int i;
+        for (i = 0; i < hdr->npg; i++)
+            if (hdr->pg[i].name)
+                free(hdr->pg[i].name);
+        free(hdr->pg);
     }
 
     if (hdr->pg_end)
-	free(hdr->pg_end);
+        free(hdr->pg_end);
 
     if (hdr->type_pool)
-	pool_destroy(hdr->type_pool);
+        pool_destroy(hdr->type_pool);
 
     if (hdr->tag_pool)
-	pool_destroy(hdr->tag_pool);
+        pool_destroy(hdr->tag_pool);
 
     if (hdr->str_pool)
-	string_pool_destroy(hdr->str_pool);
+        string_pool_destroy(hdr->str_pool);
 
     free(hdr->line_order);
     free(hdr);
@@ -1283,8 +1283,8 @@ int sam_hdr_name2ref(SAM_hdr *hdr, const char *ref) {
 SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, const char *rg) {
     khint_t k = kh_get(m_s2i, hdr->rg_hash, rg);
     return k == kh_end(hdr->rg_hash)
-	? NULL
-	: &hdr->rg[kh_val(hdr->rg_hash, k)];
+            ? NULL
+                    : &hdr->rg[kh_val(hdr->rg_hash, k)];
 }
 
 
@@ -1307,41 +1307,41 @@ int sam_hdr_link_pg(SAM_hdr *hdr) {
     hdr->npg_end_alloc = hdr->npg;
     hdr->pg_end = realloc(hdr->pg_end, hdr->npg * sizeof(*hdr->pg_end));
     if (!hdr->pg_end)
-	return -1;
+        return -1;
 
     for (i = 0; i < hdr->npg; i++)
-	hdr->pg_end[i] = i;
+        hdr->pg_end[i] = i;
 
     for (i = 0; i < hdr->npg; i++) {
-	khint_t k;
-	SAM_hdr_tag *tag;
-	char tmp;
+        khint_t k;
+        SAM_hdr_tag *tag;
+        char tmp;
 
-	for (tag = hdr->pg[i].tag; tag; tag = tag->next) {
-	    if (tag->str[0] == 'P' && tag->str[1] == 'P')
-		break;
-	}
-	if (!tag) {
-	    /* Chain start points */
-	    continue;
-	}
+        for (tag = hdr->pg[i].tag; tag; tag = tag->next) {
+            if (tag->str[0] == 'P' && tag->str[1] == 'P')
+                break;
+        }
+        if (!tag) {
+            /* Chain start points */
+            continue;
+        }
 
-	tmp = tag->str[tag->len]; tag->str[tag->len] = 0;
-	k = kh_get(m_s2i, hdr->pg_hash, tag->str+3);
-	tag->str[tag->len] = tmp;
+        tmp = tag->str[tag->len]; tag->str[tag->len] = 0;
+        k = kh_get(m_s2i, hdr->pg_hash, tag->str+3);
+        tag->str[tag->len] = tmp;
 
-	if (k == kh_end(hdr->pg_hash)) {
-	    ret = -1;
-	    continue;
-	}
+        if (k == kh_end(hdr->pg_hash)) {
+            ret = -1;
+            continue;
+        }
 
-	hdr->pg[i].prev_id = hdr->pg[kh_val(hdr->pg_hash, k)].id;
-	hdr->pg_end[kh_val(hdr->pg_hash, k)] = -1;
+        hdr->pg[i].prev_id = hdr->pg[kh_val(hdr->pg_hash, k)].id;
+        hdr->pg_end[kh_val(hdr->pg_hash, k)] = -1;
     }
 
     for (i = j = 0; i < hdr->npg; i++) {
-	if (hdr->pg_end[i] != -1)
-	    hdr->pg_end[j++] = hdr->pg_end[i];
+        if (hdr->pg_end[i] != -1)
+            hdr->pg_end[j++] = hdr->pg_end[i];
     }
     hdr->npg_end = j;
 
@@ -1357,11 +1357,11 @@ int sam_hdr_link_pg(SAM_hdr *hdr) {
 const char *sam_hdr_PG_ID(SAM_hdr *sh, const char *name) {
     khint_t k = kh_get(m_s2i, sh->pg_hash, name);
     if (k == kh_end(sh->pg_hash))
-	return name;
+        return name;
 
     do {
-	sprintf(sh->ID_buf, "%.1000s.%d", name, sh->ID_cnt++);
-	k = kh_get(m_s2i, sh->pg_hash, sh->ID_buf);
+        sprintf(sh->ID_buf, "%.1000s.%d", name, sh->ID_cnt++);
+        k = kh_get(m_s2i, sh->pg_hash, sh->ID_buf);
     } while (k != kh_end(sh->pg_hash));
 
     return sh->ID_buf;
@@ -1387,37 +1387,37 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
     va_list args;
 
     if (sh->npg_end) {
-	/* Copy ends array to avoid us looping while modifying it */
-	int *end = malloc(sh->npg_end * sizeof(int));
-	int i, nends = sh->npg_end;
+        /* Copy ends array to avoid us looping while modifying it */
+        int *end = malloc(sh->npg_end * sizeof(int));
+        int i, nends = sh->npg_end;
 
-	if (!end)
-	    return -1;
+        if (!end)
+            return -1;
 
-	memcpy(end, sh->pg_end, nends * sizeof(*end));
+        memcpy(end, sh->pg_end, nends * sizeof(*end));
 
-	for (i = 0; i < nends; i++) {
-	    va_start(args, name);
-	    if (-1 == sam_hdr_vadd(sh, "PG", args,
-				   "ID", sam_hdr_PG_ID(sh, name),
-				   "PN", name,
-				   "PP", sh->pg[end[i]].name,
-				   NULL)) {
-		free(end);
-		return  -1;
-	    }
-	    va_end(args);
-	}
+        for (i = 0; i < nends; i++) {
+            va_start(args, name);
+            if (-1 == sam_hdr_vadd(sh, "PG", args,
+                    "ID", sam_hdr_PG_ID(sh, name),
+                    "PN", name,
+                    "PP", sh->pg[end[i]].name,
+                    NULL)) {
+                free(end);
+                return  -1;
+            }
+            va_end(args);
+        }
 
-	free(end);
+        free(end);
     } else {
-	va_start(args, name);
-	if (-1 == sam_hdr_vadd(sh, "PG", args,
-			       "ID", sam_hdr_PG_ID(sh, name),
-			       "PN", name,
-			       NULL))
-	    return -1;
-	va_end(args);
+        va_start(args, name);
+        if (-1 == sam_hdr_vadd(sh, "PG", args,
+                "ID", sam_hdr_PG_ID(sh, name),
+                "PN", name,
+                NULL))
+            return -1;
+        va_end(args);
     }
 
     //sam_hdr_dump(sh);
@@ -1440,24 +1440,24 @@ char *stringify_argv(int argc, char *argv[]) {
 
     /* Allocate */
     for (i = 0; i < argc; i++) {
-	if (i > 0) nbytes += 1;
-	nbytes += strlen(argv[i]);
+        if (i > 0) nbytes += 1;
+        nbytes += strlen(argv[i]);
     }
     if (!(str = malloc(nbytes)))
-	return NULL;
+        return NULL;
 
     /* Copy */
     cp = str;
     for (i = 0; i < argc; i++) {
-	if (i > 0) *cp++ = ' ';
-	j = 0;
-	while (argv[i][j]) {
-	    if (argv[i][j] == '\t')
-		*cp++ = ' ';
-	    else
-		*cp++ = argv[i][j];
-	    j++;
-	}
+        if (i > 0) *cp++ = ' ';
+        j = 0;
+        while (argv[i][j]) {
+            if (argv[i][j] == '\t')
+                *cp++ = ' ';
+            else
+                *cp++ = argv[i][j];
+            j++;
+        }
     }
     *cp++ = 0;
 

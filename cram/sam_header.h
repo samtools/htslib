@@ -126,7 +126,7 @@ typedef struct SAM_hdr_tag_s {
  * key:value pairs per line.
  */
 typedef struct SAM_hdr_item_s {
-    struct SAM_hdr_item_s *next; // cirular
+    struct SAM_hdr_item_s *next; // circular
     struct SAM_hdr_item_s *prev;
     SAM_hdr_tag *tag;            // first tag
     int order;                   // 0 upwards
@@ -226,7 +226,7 @@ typedef struct {
     // @endcond
 
     SAM_hdr_line *line_order;  //array holding the header lines in the
-                                //order they are found in the file
+                               //order they are found in the file
     unsigned int line_count;    //number of header lines found in the file
     unsigned int line_size;     //number of header lines the array can hold
 } SAM_hdr;
@@ -354,7 +354,7 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...);
  * Returns NULL if no type/ID is found
  */
 SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
-			   char *ID_key, char *ID_value);
+        char *ID_key, char *ID_value);
 
 /*!
  *
@@ -369,7 +369,7 @@ SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
  * Returns NULL if no type/ID is found.
  */
 char *sam_hdr_find_line(SAM_hdr *hdr, char *type,
-			char *ID_key, char *ID_value);
+        char *ID_key, char *ID_value);
 
 /*! Looks for a specific key in a single sam header line.
  *
@@ -383,13 +383,13 @@ char *sam_hdr_find_line(SAM_hdr *hdr, char *type,
  *         NULL on failure
  */
 SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
-			      SAM_hdr_type *type,
-			      char *key,
-			      SAM_hdr_tag **prev);
+        SAM_hdr_type *type,
+        char *key,
+        SAM_hdr_tag **prev);
 
 void sam_hdr_remove_key(SAM_hdr *sh,
-                        SAM_hdr_type *type,
-                        char *key);
+        SAM_hdr_type *type,
+        char *key);
 
 /*! Adds or updates tag key,value pairs in a header line.
  *
