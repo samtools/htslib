@@ -645,6 +645,10 @@ sr_sort_t *bcf_sr_sort_init(sr_sort_t *srt)
     memset(srt,0,sizeof(sr_sort_t));
     return srt;
 }
+void bcf_sr_sort_reset(sr_sort_t *srt)
+{
+    srt->chr = NULL;
+}
 void bcf_sr_sort_destroy(sr_sort_t *srt)
 {
     free(srt->active);

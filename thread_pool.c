@@ -111,10 +111,14 @@ static int hts_tpool_add_result(hts_tpool_job *j, void *data) {
         q->output_head = q->output_tail = r;
     }
 
-    DBG_OUT(stderr, "%d: Broadcasting result_avail (id %"PRId64")\n",
-            worker_id(j->p), r->serial);
-    pthread_cond_broadcast(&q->output_avail_c);
-    DBG_OUT(stderr, "%d: Broadcast complete\n", worker_id(j->p));
+    assert(r->serial >= q->next_serial    // Or it will never be dequeued ...
+           || q->next_serial == INT_MAX); // ... unless flush in progress.
+    if (r->serial == q->next_serial) {
+        DBG_OUT(stderr, "%d: Broadcasting result_avail (id %"PRId64")\n",
+                worker_id(j->p), r->serial);
+        pthread_cond_broadcast(&q->output_avail_c);
+        DBG_OUT(stderr, "%d: Broadcast complete\n", worker_id(j->p));
+    }
 
     pthread_mutex_unlock(&q->p->pool_m);
 
@@ -155,7 +159,8 @@ static hts_tpool_result *hts_tpool_next_result_locked(hts_tpool_process *q) {
             // Not technically input full, but can guarantee there is
             // room for the input to go somewhere so we still signal.
             // The waiting code will then check the condition again.
-            pthread_cond_signal(&q->input_not_full_c);
+            if (q->n_input < q->qsize)
+                pthread_cond_signal(&q->input_not_full_c);
             if (!q->shutdown)
                 wake_next_worker(q, 1);
         }

@@ -368,8 +368,10 @@ int hputc2(int c, hFILE *fp)
     return c;
 }
 
-/* Called only from hwrite() and hputs2(); when called, our buffer is full and
-   ncopied bytes from the source have already been copied to our buffer.  */
+/* Called only from hwrite() and hputs2(); when called, our buffer is either
+   full and ncopied bytes from the source have already been copied to our
+   buffer; or completely empty, ncopied is zero and totalbytes is greater than
+   the buffer size.  */
 ssize_t hwrite2(hFILE *fp, const void *srcv, size_t totalbytes, size_t ncopied)
 {
     const char *src = (const char *) srcv;

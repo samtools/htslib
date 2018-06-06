@@ -2,23 +2,23 @@
 Copyright (c) 2013 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
-Redistribution and use in source and binary forms, with or without 
+Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
 
-   1. Redistributions of source code must retain the above copyright notice, 
+   1. Redistributions of source code must retain the above copyright notice,
 this list of conditions and the following disclaimer.
 
-   2. Redistributions in binary form must reproduce the above copyright notice, 
-this list of conditions and the following disclaimer in the documentation 
+   2. Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
 and/or other materials provided with the distribution.
 
    3. Neither the names Genome Research Ltd and Wellcome Trust Sanger
 Institute nor the names of its contributors may be used to endorse or promote
 products derived from this software without specific prior written permission.
 
-THIS SOFTWARE IS PROVIDED BY GENOME RESEARCH LTD AND CONTRIBUTORS "AS IS" AND 
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+THIS SOFTWARE IS PROVIDED BY GENOME RESEARCH LTD AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
 DISCLAIMED. IN NO EVENT SHALL GENOME RESEARCH LTD OR CONTRIBUTORS BE LIABLE
 FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
 DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
@@ -83,8 +83,8 @@ void sam_hdr_dump(SAM_hdr *hdr) {
         printf("  %d:", i);
         for (j = hdr->pg_end[i]; j != -1; j = hdr->pg[j].prev_id) {
             printf("%s%d(%.*s)",
-                    j == hdr->pg_end[i] ? " " : "->",
-                    j, hdr->pg[j].name_len, hdr->pg[j].name);
+                   j == hdr->pg_end[i] ? " " : "->",
+                   j, hdr->pg[j].name_len, hdr->pg[j].name);
         }
         printf("\n");
     }
@@ -99,8 +99,8 @@ void sam_hdr_dump(SAM_hdr *hdr) {
  *        -1 on failure
  */
 static int sam_hdr_update_hashes(SAM_hdr *sh,
-        int type,
-        SAM_hdr_type *h_type) {
+                                 int type,
+                                 SAM_hdr_type *h_type) {
     /* Add to reference hash? */
     if ((type>>8) == 'S' && (type&0xff) == 'Q') {
         SAM_hdr_tag *tag;
@@ -224,7 +224,7 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 
                     /* Unmark previous entry as a PG termination */
                     if (sh->npg_end > 0 &&
-                            sh->pg_end[sh->npg_end-1] == p_id) {
+                        sh->pg_end[sh->npg_end-1] == p_id) {
                         sh->npg_end--;
                     } else {
                         int i;
@@ -366,14 +366,14 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
             for (j = i; j < len && hdr[j] != '\0' && hdr[j] != '\n'; j++)
                 ;
             sam_hdr_error("Header line does not start with '@'",
-                    &hdr[l_start], len - l_start, lno);
+                          &hdr[l_start], len - l_start, lno);
             return -1;
         }
 
         type = (hdr[i+1]<<8) | hdr[i+2];
         if (!isalpha_c(hdr[i+1]) || !isalpha_c(hdr[i+2])) {
             sam_hdr_error("Header line does not have a two character key",
-                    &hdr[l_start], len - l_start, lno);
+                          &hdr[l_start], len - l_start, lno);
             return -1;
         }
 
@@ -421,7 +421,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
             int j;
             if (hdr[i] != '\t') {
                 sam_hdr_error("Missing tab",
-                        &hdr[l_start], len - l_start, lno);
+                              &hdr[l_start], len - l_start, lno);
                 return -1;
             }
 
@@ -443,7 +443,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
                 int j;
                 if (hdr[i] != '\t') {
                     sam_hdr_error("Missing tab",
-                            &hdr[l_start], len - l_start, lno);
+                                  &hdr[l_start], len - l_start, lno);
                     return -1;
                 }
 
@@ -460,7 +460,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 
                 if (h_tag->len < 3 || h_tag->str[2] != ':') {
                     sam_hdr_error("Malformed key:value pair",
-                            &hdr[l_start], len - l_start, lno);
+                                  &hdr[l_start], len - l_start, lno);
                     return -1;
                 }
 
@@ -496,7 +496,7 @@ int sam_hdr_add(SAM_hdr *sh, const char *type, ...) {
     return sam_hdr_vadd(sh, type, args, NULL);
 }
 
-/* 
+/*
  * sam_hdr_add with a va_list interface.
  *
  * Note: this function invokes va_arg at least once, making the value
@@ -566,8 +566,8 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 
         h_tag->len = ks_len(&sh->text) - idx;
         h_tag->str = string_ndup(sh->str_pool,
-                ks_str(&sh->text) + idx,
-                h_tag->len);
+                                 ks_str(&sh->text) + idx,
+                                 h_tag->len);
         h_tag->next = NULL;
         if (!h_tag->str)
             return -1;
@@ -606,8 +606,8 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 
         h_tag->len = ks_len(&sh->text) - idx;
         h_tag->str = string_ndup(sh->str_pool,
-                ks_str(&sh->text) + idx,
-                h_tag->len);
+                                 ks_str(&sh->text) + idx,
+                                 h_tag->len);
         h_tag->next = NULL;
         if (!h_tag->str)
             return -1;
@@ -638,7 +638,7 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
  * Returns NULL if no type/ID is found
  */
 SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
-        char *ID_key, char *ID_value) {
+                           char *ID_key, char *ID_value) {
     SAM_hdr_type *t1, *t2;
     int itype = (type[0]<<8)|(type[1]);
     khint_t k;
@@ -646,27 +646,27 @@ SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
     /* Special case for types we have prebuilt hashes on */
     if (ID_key) {
         if (type[0]   == 'S' && type[1]   == 'Q' &&
-                ID_key[0] == 'S' && ID_key[1] == 'N') {
+            ID_key[0] == 'S' && ID_key[1] == 'N') {
             k = kh_get(m_s2i, hdr->ref_hash, ID_value);
             return k != kh_end(hdr->ref_hash)
-                    ? hdr->ref[kh_val(hdr->ref_hash, k)].ty
-                            : NULL;
+                ? hdr->ref[kh_val(hdr->ref_hash, k)].ty
+                : NULL;
         }
 
         if (type[0]   == 'R' && type[1]   == 'G' &&
-                ID_key[0] == 'I' && ID_key[1] == 'D') {
+            ID_key[0] == 'I' && ID_key[1] == 'D') {
             k = kh_get(m_s2i, hdr->rg_hash, ID_value);
             return k != kh_end(hdr->rg_hash)
-                    ? hdr->rg[kh_val(hdr->rg_hash, k)].ty
-                            : NULL;
+                ? hdr->rg[kh_val(hdr->rg_hash, k)].ty
+                : NULL;
         }
 
         if (type[0]   == 'P' && type[1]   == 'G' &&
-                ID_key[0] == 'I' && ID_key[1] == 'D') {
+            ID_key[0] == 'I' && ID_key[1] == 'D') {
             k = kh_get(m_s2i, hdr->pg_hash, ID_value);
             return k != kh_end(hdr->pg_hash)
-                    ? hdr->pg[kh_val(hdr->pg_hash, k)].ty
-                            : NULL;
+                ? hdr->pg[kh_val(hdr->pg_hash, k)].ty
+                : NULL;
         }
     }
 
@@ -708,7 +708,7 @@ SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
  * Returns NULL if no type/ID is found.
  */
 char *sam_hdr_find_line(SAM_hdr *hdr, char *type,
-        char *ID_key, char *ID_value) {
+                        char *ID_key, char *ID_value) {
     SAM_hdr_type *ty = sam_hdr_find(hdr, type, ID_key, ID_value);
     kstring_t ks = KS_INITIALIZER;
     SAM_hdr_tag *tag;
@@ -845,9 +845,9 @@ int sam_hdr_remove_line_key(SAM_hdr *hdr, char *type, char *ID_key, char *ID_val
  *         NULL on failure
  */
 SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
-        SAM_hdr_type *type,
-        char *key,
-        SAM_hdr_tag **prev) {
+                              SAM_hdr_type *type,
+                              char *key,
+                              SAM_hdr_tag **prev) {
     SAM_hdr_tag *tag, *p = NULL;
 
     for (tag = type->tag; tag; p = tag, tag = tag->next) {
@@ -922,8 +922,8 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
             return -1;
         tag->len = ks_len(&hdr->text) - idx;
         tag->str = string_ndup(hdr->str_pool,
-                ks_str(&hdr->text) + idx,
-                tag->len);
+                               ks_str(&hdr->text) + idx,
+                               tag->len);
         if (!tag->str)
             return -1;
     }
@@ -935,6 +935,9 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
 
 #define K(a) (((a)[0]<<8)|((a)[1]))
 
+/*
+ * Returns the sort order:
+ */
 enum sam_sort_order sam_hdr_sort_order(SAM_hdr *hdr) {
     khint_t k;
     enum sam_sort_order so;
@@ -1048,7 +1051,7 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
 
 /*
  * Creates an empty SAM header, ready to be populated.
- * 
+ *
  * Returns a SAM_hdr struct on success (free with sam_hdr_free())
  *         NULL on failure
  */
@@ -1100,7 +1103,7 @@ SAM_hdr *sam_hdr_new() {
 
     return sh;
 
-    err:
+err:
     if (sh->h)
         kh_destroy(sam_hdr, sh->h);
 
@@ -1189,7 +1192,7 @@ void sam_hdr_decr_ref(SAM_hdr *hdr) {
 
 /*! Deallocates all storage used by a SAM_hdr struct.
  *
- * This also decrements the header reference count. If after decrementing 
+ * This also decrements the header reference count. If after decrementing
  * it is still non-zero then the header is assumed to be in use by another
  * caller and the free is not done.
  *
@@ -1283,8 +1286,8 @@ int sam_hdr_name2ref(SAM_hdr *hdr, const char *ref) {
 SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, const char *rg) {
     khint_t k = kh_get(m_s2i, hdr->rg_hash, rg);
     return k == kh_end(hdr->rg_hash)
-            ? NULL
-                    : &hdr->rg[kh_val(hdr->rg_hash, k)];
+        ? NULL
+        : &hdr->rg[kh_val(hdr->rg_hash, k)];
 }
 
 
@@ -1399,10 +1402,10 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
         for (i = 0; i < nends; i++) {
             va_start(args, name);
             if (-1 == sam_hdr_vadd(sh, "PG", args,
-                    "ID", sam_hdr_PG_ID(sh, name),
-                    "PN", name,
-                    "PP", sh->pg[end[i]].name,
-                    NULL)) {
+                                   "ID", sam_hdr_PG_ID(sh, name),
+                                   "PN", name,
+                                   "PP", sh->pg[end[i]].name,
+                                   NULL)) {
                 free(end);
                 return  -1;
             }
@@ -1413,9 +1416,9 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
     } else {
         va_start(args, name);
         if (-1 == sam_hdr_vadd(sh, "PG", args,
-                "ID", sam_hdr_PG_ID(sh, name),
-                "PN", name,
-                NULL))
+                               "ID", sam_hdr_PG_ID(sh, name),
+                               "PN", name,
+                               NULL))
             return -1;
         va_end(args);
     }
@@ -1429,7 +1432,7 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
  * A function to help with construction of CL tags in @PG records.
  * Takes an argc, argv pair and returns a single space-separated string.
  * This string should be deallocated by the calling function.
- * 
+ *
  * Returns malloced char * on success
  *         NULL on failure
  */
