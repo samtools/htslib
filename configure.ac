@@ -51,7 +51,11 @@ AH_TOP([/* If you use configure, this file provides @%:@defines reflecting your
 dnl Variant of AC_MSG_ERROR that ensures subsequent make(1) invocations fail
 dnl until the configuration error is resolved and configure is run again.
 AC_DEFUN([MSG_ERROR],
-  [echo '$(error Resolve configure error first)' >config.mk
+  [cat > config.mk <<'EOF'
+ifneq ($(MAKECMDGOALS),distclean)
+$(error Resolve configure error first)
+endif
+EOF
    AC_MSG_ERROR([$1], [$2])])
 
 AC_PROG_CC
