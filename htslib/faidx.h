@@ -225,6 +225,17 @@ const char *faidx_iseq(const faidx_t *fai, int i);
 /// Return sequence length, -1 if not present
 int faidx_seq_len(const faidx_t *fai, const char *seq);
 
+/// Parses a region string.
+/** @param  fai   Pointer to the faidx_t struct
+    @param  s     Region string
+    @param  tid   Returns which i-th sequence is described in the region.
+    @param  beg   Returns the start of the region (0 based)
+    @param  end   Returns the one past last of the region (0 based)
+    @param  flags Parsing method, see HTS_PARSE_* in hts.h.
+    @return      pointer to end of parsed s if successs, NULL if not.
+*/
+const char *fai_parse_region(const faidx_t *fai, const char *s, int *tid, int *beg, int *end, int flags);
+
 #ifdef __cplusplus
 }
 #endif
