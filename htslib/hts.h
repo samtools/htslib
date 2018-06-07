@@ -769,6 +769,8 @@ uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
 // Region parsing
 
 #define HTS_PARSE_THOUSANDS_SEP 1  ///< Ignore ',' separators within numbers
+#define HTS_PARSE_ONE_COORD     2  ///< chr:pos means chr:pos-pos and not chr:pos-end
+#define HTS_PARSE_LIST          4  ///< Expect a comma separated list of regions. (Disables HTS_PARSE_THOUSANDS_SEP)
 
 /// Parse a numeric string
 /** The number may be expressed in scientific notation, and optionally may
@@ -794,6 +796,7 @@ long long hts_parse_decimal(const char *str, char **strend, int flags);
 
 typedef int (*hts_name2id_f)(void*, const char*);
 typedef const char *(*hts_id2name_f)(void*, int);
+
 const char *hts_parse_reg(const char *str, int *beg, int *end);
 
 /// Parse a "CHR:START-END"-style region string
@@ -803,11 +806,13 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
     @param end   Set on return to the 1-based end of the region
     @param getid Function pointer.  Called if not NULL to set tid.
     @param hdr   Caller data passed to getid.
-    @return  Pointer to the colon or '\0' after the reference sequence name,
-             or NULL if @a str could not be parsed.
+    @param flags Bitwise HTS_PARSE_* flags listed above.
+    @return      Pointer to the byte after the end of the entire region
+                 specifier (including any trailing comma) on success,
+                 or NULL if @a str could not be parsed.
 */
-const char *hts_parse_reg2(const char *str, int *tid, int *beg, int *end,
-                           hts_name2id_f getid, void *hdr);
+const char *hts_parse_region(const char *str, int *tid, int *beg, int *end,
+                             hts_name2id_f getid, void *hdr, int flags);
 
 
 ///////////////////////////////////////////////////////////

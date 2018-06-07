@@ -82,7 +82,8 @@ BUILT_TEST_PROGRAMS = \
 	test/test-vcf-sweep \
 	test/test-bcf-sr \
 	test/fuzz/hts_open_fuzzer.o \
-	test/test-bcf-translate
+	test/test-bcf-translate \
+	test/test-parse-reg
 
 BUILT_THRASH_PROGRAMS = \
 	test/thrash_threads1 \
@@ -377,6 +378,7 @@ check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 	test/fieldarith test/fieldarith.sam
 	test/hfile
 	test/test_bgzf test/bgziptest.txt
+	test/test-parse-reg -t test/colons.bam
 	cd test/tabix && ./test-tabix.sh tabix.tst
 	cd test/mpileup && ./test-pileup.sh mpileup.tst
 	REF_PATH=: test/sam test/ce.fa test/faidx.fa test/fastqs.fq
@@ -413,6 +415,9 @@ test/test_realn: test/test_realn.o libhts.a
 test/test-regidx: test/test-regidx.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-regidx.o libhts.a $(LIBS) -lpthread
 
+test/test-parse-reg: test/test-parse-reg.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test-parse-reg.o libhts.a $(LIBS) -lpthread
+
 test/test_view: test/test_view.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LIBS) -lpthread
 
@@ -439,6 +444,7 @@ test/pileup.o: test/pileup.c config.h $(htslib_sam_h) $(htslib_kstring_h)
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
+test/test-parse-reg.o: test/test-parse-reg.c $(htslib_hts_h) $(htslib_sam_h)
 test/test-realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_regidx_h) $(hts_internal_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h) $(htslib_vcf_h)

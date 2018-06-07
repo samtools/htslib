@@ -281,7 +281,7 @@ typedef struct {
     int bam_hdr_write(BGZF *fp, const bam_hdr_t *h) HTS_RESULT_USED;
     void bam_hdr_destroy(bam_hdr_t *h);
     int bam_name2id(bam_hdr_t *h, const char *ref);
-    const char *sam_parse_reg(bam_hdr_t *h, const char *s, int *tid, int *beg, int *end);
+    const char *sam_parse_region(bam_hdr_t *h, const char *s, int *tid, int *beg, int *end, int flags);
     bam_hdr_t* bam_hdr_dup(const bam_hdr_t *h0);
 
     bam1_t *bam_init1(void);

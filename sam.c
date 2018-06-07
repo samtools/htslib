@@ -298,9 +298,8 @@ int bam_name2id(bam_hdr_t *h, const char *ref)
     return k == kh_end(d)? -1 : kh_val(d, k);
 }
 
-const char *sam_parse_reg(bam_hdr_t *h, const char *s, int *tid, int *beg, int *end) {
-    // FIXME: do we need to also use cram_name2id?
-    return hts_parse_reg2(s, tid, beg, end, (hts_name2id_f)bam_name2id, h);
+const char *sam_parse_region(bam_hdr_t *h, const char *s, int *tid, int *beg, int *end, int flags) {
+    return hts_parse_region(s, tid, beg, end, (hts_name2id_f)bam_name2id, h, flags);
 }
 
 /*************************
