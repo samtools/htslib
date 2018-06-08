@@ -1046,7 +1046,7 @@ void *bgzf_encode_level0_func(void *arg) {
 
     // Add preamble
     memcpy(j->comp_data, g_magic, BLOCK_HEADER_LENGTH);
-    u16_to_le(j->comp_len, j->comp_data + 16);
+    u16_to_le(j->comp_len-1, j->comp_data + 16);
 
     // Deflate uncompressed data header
     j->comp_data[BLOCK_HEADER_LENGTH] = 1; // BFINAL=1, BTYPE=00; see RFC1951

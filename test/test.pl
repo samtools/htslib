@@ -276,21 +276,26 @@ sub test_view
         testv $opts, "./test_view $tv_args $bam > $bam.sam_";
         testv $opts, "./compare_sam.pl $sam $bam.sam_";
 
-        # SAM -> CRAM -> SAM
-        testv $opts, "./test_view $tv_args -t $ref -S -C $sam > $cram";
+        # SAM -> BAMu -> SAM
+        testv $opts, "./test_view $tv_args -S -l0 -b $sam > $bam";
+        testv $opts, "./test_view $tv_args $bam > $bam.sam_";
+        testv $opts, "./compare_sam.pl $sam $bam.sam_";
+
+        # SAM -> CRAM2 -> SAM
+        testv $opts, "./test_view $tv_args -t $ref -S -C -o VERSION=2.1 $sam > $cram";
         testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
         testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
 
-        # BAM -> CRAM -> BAM -> SAM
+        # BAM -> CRAM2 -> BAM -> SAM
         $cram = "$bam.cram";
-        testv $opts, "./test_view $tv_args -t $ref -C $bam > $cram";
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=2.1 $bam > $cram";
         testv $opts, "./test_view $tv_args -b -D $cram > $cram.bam";
         testv $opts, "./test_view $tv_args $cram.bam > $cram.bam.sam_";
         testv $opts, "./compare_sam.pl $md $sam $cram.bam.sam_";
 
-        # SAM -> CRAM3 -> SAM
+        # SAM -> CRAM3u -> SAM
         $cram = "$base.tmp.cram";
-        testv $opts, "./test_view $tv_args -t $ref -S -C -o VERSION=3.0 $sam > $cram";
+        testv $opts, "./test_view $tv_args -t $ref -S -l0 -C -o VERSION=3.0 $sam > $cram";
         testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
         testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
 
