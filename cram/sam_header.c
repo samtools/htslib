@@ -292,10 +292,10 @@ static int sam_hdr_remove_hash_entry(SAM_hdr *sh, int type, SAM_hdr_type *h_type
                 key[tag->len-3] = 0;
                 k = kh_get(m_s2i, sh->ref_hash, key);
                 if (k != kh_end(sh->ref_hash)) {
-                    if (kh_val(sh->ref_hash, k) < sh->nref-1) 
+                    if (kh_val(sh->ref_hash, k) < sh->nref-1)
                         memcpy(&sh->ref[kh_val(sh->ref_hash, k)], &sh->ref[kh_val(sh->ref_hash, k)+1], sizeof(SAM_SQ)*(sh->nref - kh_val(sh->ref_hash, k) - 1));
                     kh_del(m_s2i, sh->ref_hash, k);
-                    sh->nref--;   
+                    sh->nref--;
                 }
                 break;
             }
@@ -315,7 +315,7 @@ static int sam_hdr_remove_hash_entry(SAM_hdr *sh, int type, SAM_hdr_type *h_type
                 key[tag->len-3] = 0;
                 k = kh_get(m_s2i, sh->rg_hash, key);
                 if (k != kh_end(sh->rg_hash)) {
-                    if (kh_val(sh->rg_hash, k) < sh->nrg-1) 
+                    if (kh_val(sh->rg_hash, k) < sh->nrg-1)
                         memcpy(&sh->rg[kh_val(sh->rg_hash, k)], &sh->rg[kh_val(sh->rg_hash, k)+1], sizeof(SAM_RG)*(sh->nrg - kh_val(sh->rg_hash, k) - 1));
                     kh_del(m_s2i, sh->rg_hash, k);
                     sh->nrg--;
@@ -412,7 +412,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
                 return -1;
             sh->line_order = tmp;
         }
-        strncpy(sh->line_order[sh->line_count].type_name, hdr+i-2, 2); ;
+        strncpy(sh->line_order[sh->line_count].type_name, hdr+i-2, 2);
         sh->line_order[sh->line_count++].type_data = h_type;
 
         // Parse the tags on this line
@@ -756,14 +756,14 @@ static int remove_line(SAM_hdr *hdr, char *type_name, SAM_hdr_type *type_found) 
         return -1;
 
     for(i = 0; i < hdr->line_count; i++) {
-        if (!strncmp(type_name, hdr->line_order[i].type_name, 2) && 
+        if (!strncmp(type_name, hdr->line_order[i].type_name, 2) &&
                 hdr->line_order[i].type_data &&
                 hdr->line_order[i].type_data->order == type_found->order) {
-            hdr->line_order[i].type_data = NULL;       
+            hdr->line_order[i].type_data = NULL;
         }
-    } 
+    }
 
-    free_tags(hdr, type_found->tag); 
+    free_tags(hdr, type_found->tag);
     /* single element in the list */
     if (type_found->prev == type_found || type_found->next == type_found) {
         pool_free(hdr->type_pool, type_found);
@@ -778,7 +778,7 @@ static int remove_line(SAM_hdr *hdr, char *type_name, SAM_hdr_type *type_found) 
         sam_hdr_remove_hash_entry(hdr, itype, type_found);
 
     return 0;
-} 
+}
 
 /*
  * Remove a line from the header by specifying the position in the type
@@ -802,7 +802,7 @@ int sam_hdr_remove_line_pos(SAM_hdr *hdr, char *type, int position) {
 
     type_beg = type_end = kh_val(hdr->h, k);
     do {
-        if (!type_found) { 
+        if (!type_found) {
             if(type_beg->order == position-1) {
                 type_found = type_beg;
                 break;
@@ -815,7 +815,7 @@ int sam_hdr_remove_line_pos(SAM_hdr *hdr, char *type, int position) {
 }
 
 /*
- * Remove a line from the header by specifying a tag:value that uniquely 
+ * Remove a line from the header by specifying a tag:value that uniquely
  * identifies a line, i.e. the @SQ line containing "SN:ref1".
  */
 
@@ -865,8 +865,8 @@ SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
 }
 
 void sam_hdr_remove_key(SAM_hdr *sh,
-        SAM_hdr_type *type,
-        char *key) {
+                        SAM_hdr_type *type,
+                        char *key) {
     SAM_hdr_tag *tag, *prev;
     tag = sam_hdr_find_key(sh, type, key, &prev);
     if (tag) { //tag exists
@@ -1097,7 +1097,7 @@ SAM_hdr *sam_hdr_new() {
         goto err;
 
     sh->line_count = 0;
-    sh->line_size = SAM_HDR_LINES; 
+    sh->line_size = SAM_HDR_LINES;
     if(!(sh->line_order = calloc(sh->line_size, sizeof(SAM_hdr_line))))
         goto err;
 

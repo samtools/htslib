@@ -176,7 +176,7 @@ enum sam_sort_order {
 enum sam_group_order {
     ORDER_NONE      =-1,
     ORDER_QUERY     = 0,
-    ORDER_REFERENCE = 1   
+    ORDER_REFERENCE = 1
 };
 
 KHASH_MAP_INIT_INT(sam_hdr, SAM_hdr_type*)
