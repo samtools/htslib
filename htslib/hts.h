@@ -203,6 +203,9 @@ typedef struct htsFormat {
     void *specific;  // format specific options; see struct hts_opt.
 } htsFormat;
 
+struct __hts_idx_t;
+typedef struct __hts_idx_t hts_idx_t;
+
 // Maintainers note htsFile cannot be an opaque structure because some of its
 // fields are part of libhts.so's ABI (hence these fields must not be moved):
 //  - fp is used in the public sam_itr_next()/etc macros
@@ -221,6 +224,7 @@ typedef struct {
         struct hFILE *hfile;
     } fp;
     htsFormat format;
+    hts_idx_t *idx;
 } htsFile;
 
 // A combined thread pool and queue allocation size.
@@ -555,9 +559,6 @@ When REST or NONE is used, idx is also ignored and may be NULL.
 #define HTS_FMT_TBI 2
 #define HTS_FMT_CRAI 3
 
-struct __hts_idx_t;
-typedef struct __hts_idx_t hts_idx_t;
-
 typedef struct {
     uint32_t beg, end;
 } hts_pair32_t;
@@ -620,7 +621,8 @@ typedef struct {
     hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_lvls);
     void hts_idx_destroy(hts_idx_t *idx);
     int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped);
-    void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
+    int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
+    int hts_idx_fmt(hts_idx_t *idx);
 
 /// Save an index to a file
 /** @param idx  Index to be written

@@ -573,6 +573,30 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     return ok? 4 + block_len : -1;
 }
 
+/*
+ * Write a BAM file and append to the in-memory index simultaneously.
+ */
+int bam_write1_idx(htsFile *fp, const bam1_t *b) {
+    BGZF *bfp = fp->fp.bgzf;
+
+    if (!fp->idx) 
+        return bam_write1(bfp, b);
+
+    uint32_t block_len = b->l_data - b->core.l_extranul + 32;
+    if (bgzf_flush_try(bfp, 4 + block_len) < 0)
+        return -1;
+    hts_idx_amend_last(fp->idx, bgzf_tell(bfp));
+
+    int ret = bam_write1(bfp, b);
+
+    if (ret >= 0 &&
+        hts_idx_push(fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
+                     bgzf_tell(bfp), !(b->core.flag&BAM_FUNMAP)) < 0)
+        ret = -1;
+
+    return ret;
+}
+
 /********************
  *** BAM indexing ***
  ********************/
@@ -624,6 +648,7 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
 
     switch (fp->format.format) {
     case cram:
+
         ret = cram_index_build(fp->fp.cram, fn, fnidx);
         break;
 
@@ -662,6 +687,38 @@ int bam_index_build(const char *fn, int min_shift)
 {
     return sam_index_build2(fn, NULL, min_shift);
 }
+
+// Initialise fp->idx for the current format type.
+// This must be called after the header has been written but no other data.
+int sam_idx_init(htsFile *fp, bam_hdr_t *h, int min_shift) {
+    int n_lvls, fmt = HTS_FMT_CSI;
+    if (min_shift > 0) {
+        int64_t max_len = 0, s;
+        int i;
+        for (i = 0; i < h->n_targets; ++i)
+            if (max_len < h->target_len[i]) max_len = h->target_len[i];
+        max_len += 256;
+        for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+
+    } else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_BAI;
+
+    fp->idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
+
+    return fp->idx ? 0 : -1;
+}
+
+// Finishes an index. Call afer the last record has been written.
+// Returns 0 on success, <0 on failure.
+int sam_idx_save(htsFile *fp, const char *fn, const char *fnidx) {
+    if (bgzf_flush(fp->fp.bgzf) < 0)
+        return -1;
+
+    if (hts_idx_finish(fp->idx, bgzf_tell(fp->fp.bgzf)) < 0)
+        return -1;
+
+    return hts_idx_save_as(fp->idx, fn, fnidx, hts_idx_fmt(fp->idx));
+}
+
 
 static int bam_readrec(BGZF *fp, void *ignored, void *bv, int *tid, int *beg, int *end)
 {
@@ -1830,7 +1887,7 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
         fp->format.format = bam;
         /* fall-through */
     case bam:
-        return bam_write1(fp->fp.bgzf, b);
+        return bam_write1_idx(fp, b);
 
     case cram:
         return cram_put_bam_seq(fp->fp.cram, (bam1_t *)b);

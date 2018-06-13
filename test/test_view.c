@@ -61,8 +61,10 @@ int main(int argc, char *argv[])
     int benchmark = 0;
     int nthreads = 0; // shared pool
     int multi_reg = 0;
+    char *index = NULL;
+    int min_shift = 0;
 
-    while ((c = getopt(argc, argv, "DSIt:i:bCul:o:N:BZ:@:M")) >= 0) {
+    while ((c = getopt(argc, argv, "DSIt:i:bCul:o:N:BZ:@:Mx:m:")) >= 0) {
         switch (c) {
         case 'D': flag |= READ_CRAM; break;
         case 'S': flag |= READ_COMPRESSED; break;
@@ -79,10 +81,12 @@ int main(int argc, char *argv[])
         case 'Z': extra_hdr_nuls = atoi(optarg); break;
         case 'M': multi_reg = 1; break;
         case '@': nthreads = atoi(optarg); break;
+        case 'x': index = optarg; break;
+        case 'm': min_shift = atoi(optarg); break;
         }
     }
     if (argc == optind) {
-        fprintf(stderr, "Usage: test_view [-DSI] [-t fn_ref] [-i option=value] [-bC] [-l level] [-o option=value] [-N num_reads] [-B] [-Z hdr_nuls] [-@ num_threads] <in.bam>|<in.sam>|<in.cram> [region]\n");
+        fprintf(stderr, "Usage: test_view [-DSI] [-t fn_ref] [-i option=value] [-bC] [-l level] [-o option=value] [-N num_reads] [-B] [-Z hdr_nuls] [-@ num_threads] [-x index_fn] [-m min_shift] <in.bam>|<in.sam>|<in.cram> [region]\n");
         fprintf(stderr, "\n");
         fprintf(stderr, "-D: read CRAM format (mode 'c')\n");
         fprintf(stderr, "-S: read compressed BCF, BAM, FAI (mode 'b')\n");
@@ -100,6 +104,8 @@ int main(int argc, char *argv[])
         fprintf(stderr, "-M: use hts_itr_multi iterator\n");
         fprintf(stderr, "-Z hdr_nuls: append specified number of null bytes to the SAM header\n");
         fprintf(stderr, "-@ num_threads: use thread pool with specified number of threads\n\n");
+        fprintf(stderr, "-x fn: write index to fn\n");
+        fprintf(stderr, "-m min_shift: specifies BAI/CSI bin size; 0 is BAI, 14 is CSI default\n");
         fprintf(stderr, "The region list entries should be specified as 'reg:beg-end', with intervals of a region being disjunct and sorted by the starting coordinate.\n");
         return 1;
     }
@@ -186,6 +192,14 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error writing output header.\n");
         exit_code = 1;
     }
+
+    if (index) {
+        if (sam_idx_init(out, h, min_shift) < 0) {
+            fprintf(stderr, "Failed to initialise index\n");
+            return EXIT_FAILURE;
+        }
+    }
+
     if (optind + 1 < argc && !(flag & READ_COMPRESSED)) { // BAM input and has a region
         int i;
         hts_idx_t *idx;
@@ -298,6 +312,13 @@ int main(int argc, char *argv[])
     if (r < -1) {
         fprintf(stderr, "Error parsing input.\n");
         exit_code = 1;
+    }
+
+    if (index) {
+        if (sam_idx_save(out, "-", index) < 0) {
+            fprintf(stderr, "Error saving index\n");
+            exit_code = 1;
+        }
     }
 
     r = sam_close(out);

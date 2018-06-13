@@ -945,6 +945,7 @@ int hts_close(htsFile *fp)
     }
 
     save = errno;
+    hts_idx_destroy(fp->idx);
     free(fp->fn);
     free(fp->fn_aux);
     free(fp->line.s);
@@ -1480,20 +1481,22 @@ static void compress_binning(hts_idx_t *idx, int i)
     }
 }
 
-void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
+int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 {
-    int i;
-    if (idx == NULL || idx->z.finished) return; // do not run this function on an empty index or multiple times
+    int i, ret = 0;
+    if (idx == NULL || idx->z.finished) return 0; // do not run this function on an empty index or multiple times
     if (idx->z.save_tid >= 0) {
-        insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, final_offset);
-        insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.off_beg, final_offset);
-        insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.n_mapped, idx->z.n_unmapped);
+        ret |= insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, final_offset);
+        ret |= insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.off_beg, final_offset);
+        ret |= insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.n_mapped, idx->z.n_unmapped);
     }
     for (i = 0; i < idx->n; ++i) {
         update_loff(idx, i, (idx->fmt == HTS_FMT_CSI));
         compress_binning(idx, i);
     }
     idx->z.finished = 1;
+
+    return ret;
 }
 
 int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped)
@@ -1605,6 +1608,21 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
     }
 }
 
+// When doing samtools index we have a read_bam / hts_idx_push(bgzf_tell())
+// loop.  idx->z.last_off is the previous bzgf_tell location, so we know
+// the location the current bam record started at as well as where it ends.
+//
+// When building an index on the fly via a write_bam / hts_idx_push loop,
+// this isn't quite identical as we may amend the virtual coord returned
+// by bgzf_tell to the start of a new block if the next bam struct doesn't
+// fit.  It's essentially the same thing, but for bit-identical indices
+// we need to amend the idx->z.last_off when we know we're starting a new
+// block.
+void hts_idx_amend_last(hts_idx_t *idx, uint64_t offset)
+{
+    idx->z.last_off = offset;
+}
+
 void hts_idx_destroy(hts_idx_t *idx)
 {
     khint_t k;
@@ -1630,6 +1648,10 @@ void hts_idx_destroy(hts_idx_t *idx)
     }
     free(idx->bidx); free(idx->lidx); free(idx->meta);
     free(idx);
+}
+
+int hts_idx_fmt(hts_idx_t *idx) {
+    return idx->fmt;
 }
 
 // The optimizer eliminates these ed_is_big() calls; still it would be good to

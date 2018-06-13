@@ -324,6 +324,14 @@ typedef struct {
 #define bam_index_load(fn) hts_idx_load((fn), HTS_FMT_BAI)
 #define bam_index_build(fn, min_shift) (sam_index_build((fn), (min_shift)))
 
+// Initialise fp->idx for the current format type.
+// This must be called after the header has been written but no other data.
+int sam_idx_init(htsFile *fp, bam_hdr_t *h, int min_shift) HTS_RESULT_USED;
+
+// Finishes and saves an index. Call afer the last record has been written.
+// Returns 0 on success, <0 on failure.
+int sam_idx_save(htsFile *fp, const char *fn, const char *fnidx) HTS_RESULT_USED;
+
 /// Load a BAM (.csi or .bai) or CRAM (.crai) index file
 /** @param fp  File handle of the data file whose index is being opened
     @param fn  BAM/CRAM/etc filename to search alongside for the index file
