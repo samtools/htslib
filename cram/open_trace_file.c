@@ -186,7 +186,8 @@ mFILE *find_file_url(char *file, char *url) {
     *cp++ = 0;
 
     if (!(hf = hopen(buf, "r"))) {
-        hts_log_error("Failed to open reference \"%s\": %s", buf, strerror(errno));
+        if (errno != ENOENT)
+            hts_log_warning("Failed to open reference \"%s\": %s", buf, strerror(errno));
         return NULL;
     }
 
