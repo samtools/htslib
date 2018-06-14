@@ -1517,92 +1517,119 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
         key[0] = s[0]; key[1] = s[1];
         s += 2; type = *s++;
         kputc('\t', str); kputsn((char*)key, 2, str); kputc(':', str);
-        if (type == 'A') {
-            kputsn("A:", 2, str);
-            kputc(*s, str);
-            ++s;
-        } else if (type == 'C') {
-            kputsn("i:", 2, str);
-            kputw(*s, str);
-            ++s;
-        } else if (type == 'c') {
-            kputsn("i:", 2, str);
-            kputw(*(int8_t*)s, str);
-            ++s;
-        } else if (type == 'S') {
-            if (end - s >= 2) {
-                kputsn("i:", 2, str);
-                kputuw(le_to_u16(s), str);
-                s += 2;
-            } else goto bad_aux;
-        } else if (type == 's') {
-            if (end - s >= 2) {
-                kputsn("i:", 2, str);
-                kputw(le_to_i16(s), str);
-                s += 2;
-            } else goto bad_aux;
-        } else if (type == 'I') {
-            if (end - s >= 4) {
-                kputsn("i:", 2, str);
-                kputuw(le_to_u32(s), str);
-                s += 4;
-            } else goto bad_aux;
-        } else if (type == 'i') {
-            if (end - s >= 4) {
-                kputsn("i:", 2, str);
-                kputw(le_to_i32(s), str);
-                s += 4;
-            } else goto bad_aux;
-        } else if (type == 'f') {
-            if (end - s >= 4) {
-                ksprintf(str, "f:%g", le_to_float(s));
-                s += 4;
-            } else goto bad_aux;
 
-        } else if (type == 'd') {
-            if (end - s >= 8) {
-                ksprintf(str, "d:%g", le_to_double(s));
-                s += 8;
-            } else goto bad_aux;
-        } else if (type == 'Z' || type == 'H') {
-            kputc(type, str); kputc(':', str);
-            while (s < end && *s) kputc(*s++, str);
-            if (s >= end)
-                goto bad_aux;
-            ++s;
-        } else if (type == 'B') {
-            uint8_t sub_type = *(s++);
-            int sub_type_size = aux_type2size(sub_type);
-            uint32_t n;
-            if (sub_type_size == 0 || end - s < 4)
-                goto bad_aux;
-            n = le_to_u32(s);
-            s += 4; // now points to the start of the array
-            if ((end - s) / sub_type_size < n)
-                goto bad_aux;
-            kputsn("B:", 2, str); kputc(sub_type, str); // write the typing
-            for (i = 0; i < n; ++i) { // FIXME: for better performance, put the loop after "if"
-                kputc(',', str);
-                if ('c' == sub_type)      { kputw(*(int8_t*)s, str); ++s; }
-                else if ('C' == sub_type) { kputw(*(uint8_t*)s, str); ++s; }
-                else if ('s' == sub_type) { kputw(le_to_i16(s), str); s += 2; }
-                else if ('S' == sub_type) { kputw(le_to_u16(s), str); s += 2; }
-                else if ('i' == sub_type) { kputw(le_to_i32(s), str); s += 4; }
-                else if ('I' == sub_type) { kputuw(le_to_u32(s), str); s += 4; }
-                else if ('f' == sub_type) { kputd(le_to_float(s), str); s += 4; }
-                else goto bad_aux;  // Unknown sub-type
+ #define LOG_ERROR_AUX do {\
+    hts_log_error("Corrupted aux data \"%c%c\" for read %.*s",\
+               key[0],key[1],\
+               b->core.l_qname, bam_get_qname(b));\
+    errno = EINVAL;\
+    return -1;\
+    } while(0)
+
+        switch(type) {
+            case 'A': {
+                kputsn("A:", 2, str);
+                kputc(*s, str);
+                ++s;
+                break;
             }
-        } else { // Unknown type
-            goto bad_aux;
-        }
+            case 'C': {
+				kputsn("i:", 2, str);
+				kputw(*s, str);
+				++s;
+				break;
+            }
+            case 'c': {
+				kputsn("i:", 2, str);
+				kputw(*(int8_t*)s, str);
+				++s;
+				break;
+            }
+            case 'S': {
+				if (end - s >= 2) {
+					kputsn("i:", 2, str);
+					kputuw(le_to_u16(s), str);
+					s += 2;
+				} else LOG_ERROR_AUX;
+				break;
+            }
+            case 's': {
+				if (end - s >= 2) {
+					kputsn("i:", 2, str);
+					kputw(le_to_i16(s), str);
+					s += 2;
+				} else LOG_ERROR_AUX;
+				break;
+            }
+            case 'I': {
+				if (end - s >= 4) {
+					kputsn("i:", 2, str);
+					kputuw(le_to_u32(s), str);
+					s += 4;
+				} else LOG_ERROR_AUX;
+				break;
+             }
+            case 'i': {
+				if (end - s >= 4) {
+					kputsn("i:", 2, str);
+					kputw(le_to_i32(s), str);
+					s += 4;
+				} else LOG_ERROR_AUX;
+				break;
+            }
+            case 'f': {
+				if (end - s >= 4) {
+					ksprintf(str, "f:%g", le_to_float(s));
+					s += 4;
+				} else LOG_ERROR_AUX;
+				break;
+            }
+            case 'd': {
+				if (end - s >= 8) {
+					ksprintf(str, "d:%g", le_to_double(s));
+					s += 8;
+				} else LOG_ERROR_AUX;
+				break;
+            }
+            case 'Z': case 'H': {
+				kputc(type, str); kputc(':', str);
+				while (s < end && *s) kputc(*s++, str);
+				if (s >= end)
+				    LOG_ERROR_AUX;
+				++s;
+				break;
+			}
+            case 'B': {
+				uint8_t sub_type = *(s++);
+				int sub_type_size = aux_type2size(sub_type);
+				uint32_t n;
+				if (sub_type_size == 0 || end - s < 4)
+				    LOG_ERROR_AUX;
+				n = le_to_u32(s);
+				s += 4; // now points to the start of the array
+				if ((end - s) / sub_type_size < n)
+				    LOG_ERROR_AUX;
+				kputsn("B:", 2, str); kputc(sub_type, str); // write the typing
+
+                switch(sub_type) {
+                    case 'c' : for (i = 0; i < n; ++i) {kputc(',', str); kputw(*(int8_t*)s, str); ++s; } break;
+                    case 'C' : for (i = 0; i < n; ++i) {kputc(',', str); kputw(*(uint8_t*)s, str); ++s; } break;
+                    case 's' : for (i = 0; i < n; ++i) {kputc(',', str); kputw(le_to_i16(s), str); s += 2; } break;
+                    case 'S' : for (i = 0; i < n; ++i) {kputc(',', str); kputw(le_to_u16(s), str); s += 2; } break;
+                    case 'i' : for (i = 0; i < n; ++i) {kputc(',', str); kputw(le_to_i32(s), str); s += 4; } break;
+                    case 'I' : for (i = 0; i < n; ++i) {kputc(',', str); kputuw(le_to_u32(s), str); s += 4; } break;
+                    case 'f' : for (i = 0; i < n; ++i) {kputc(',', str); kputd(le_to_float(s), str); s += 4; } break;
+                    default: LOG_ERROR_AUX; break;  // Unknown sub-type
+                }
+
+				break;
+			}
+            default: LOG_ERROR_AUX;break;
+    	}
     }
     return str->l;
 
- bad_aux:
-    hts_log_error("Corrupted aux data for read %.*s",
-                  b->core.l_qname, bam_get_qname(b));
-    errno = EINVAL;
-    return -1;
+#undef LOG_ERROR_AUX
 }
 
 int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
