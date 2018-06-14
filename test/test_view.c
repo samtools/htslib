@@ -276,6 +276,13 @@ int vcf_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
     if (!opts->benchmark && bcf_hdr_write(out, h) < 0)
         return 1;
 
+    if (opts->index) {
+        if (bcf_idx_init(out, h, opts->min_shift) < 0) {
+            fprintf(stderr, "Failed to initialise index\n");
+            return 1;
+        }
+    }
+
     if (optind + 1 < argc) {
         // A series of regions.
         if ((idx = bcf_index_load(argv[optind])) == 0) {
@@ -321,6 +328,13 @@ int vcf_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
         }
         if (r < -1) {
             fprintf(stderr, "Error reading input.\n");
+            exit_code = 1;
+        }
+    }
+
+    if (exit_code == 0 && opts->index) {
+        if (bcf_idx_save(out, "-", opts->index) < 0) {
+            fprintf(stderr, "Error saving index\n");
             exit_code = 1;
         }
     }

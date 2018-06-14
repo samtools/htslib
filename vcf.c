@@ -43,6 +43,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts_endian.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/kstring.h"
+#include "htslib/sam.h"
 
 #include "htslib/khash.h"
 KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
@@ -1686,6 +1687,11 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     if ( bgzf_write(fp, x, 32) != 32 ) return -1;
     if ( bgzf_write(fp, v->shared.s, v->shared.l) != v->shared.l ) return -1;
     if ( bgzf_write(fp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;
+
+    if (hfp->idx)
+        if (hts_idx_push(hfp->idx, v->rid, v->pos, v->pos + v->rlen, bgzf_tell(fp), 1) < 0)
+            return -1;
+
     return 0;
 }
 
@@ -2936,6 +2942,38 @@ int bcf_index_build2(const char *fn, const char *fnidx, int min_shift)
 int bcf_index_build(const char *fn, int min_shift)
 {
     return bcf_index_build3(fn, NULL, min_shift, 0);
+}
+
+// Initialise fp->idx for the current format type.
+// This must be called after the header has been written but no other data.
+int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift) {
+    int n_lvls, nids = 0;
+    if (min_shift > 0) {
+        int64_t max_len = 0, s;
+        int i;
+        for (i = 0; i < h->n[BCF_DT_CTG]; i++) {
+            if (!h->id[BCF_DT_CTG][i].val) continue;
+            if (max_len < h->id[BCF_DT_CTG][i].val->info[0])
+                max_len = h->id[BCF_DT_CTG][i].val->info[0];
+            nids++;
+        }
+        if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
+        max_len += 256;
+        for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+
+    } else min_shift = 14, n_lvls = 5;
+
+    fp->idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
+
+    return fp->idx ? 0 : -1;
+}
+
+// Finishes an index. Call afer the last record has been written.
+// Returns 0 on success, <0 on failure.
+//
+// NB: same format as SAM/BAM as it uses bgzf.
+int bcf_idx_save(htsFile *fp, const char *fn, const char *fnidx) {
+    return sam_idx_save(fp, fn, fnidx);
 }
 
 /*****************
