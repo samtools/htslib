@@ -3106,23 +3106,37 @@ static int cram_flush_container2(cram_fd *fd, cram_container *c) {
 
     //fprintf(stderr, "Writing container %d, sum %u\n", c->record_counter, sum);
 
+    off_t c_offset = htell(fd->fp); // File offset of container
+
     /* Write the container struct itself */
     if (0 != cram_write_container(fd, c))
         return -1;
+
+    off_t hdr_size = htell(fd->fp) - c_offset;
 
     /* And the compression header */
     if (0 != cram_write_block(fd, c->comp_hdr_block))
         return -1;
 
     /* Followed by the slice blocks */
+    off_t file_offset = htell(fd->fp);
     for (i = 0; i < c->curr_slice; i++) {
         cram_slice *s = c->slices[i];
+        off_t spos = file_offset - c_offset - hdr_size;
 
         if (0 != cram_write_block(fd, s->hdr_block))
             return -1;
 
         for (j = 0; j < s->hdr->num_blocks; j++) {
             if (0 != cram_write_block(fd, s->block[j]))
+                return -1;
+        }
+
+        file_offset = htell(fd->fp);
+        off_t sz = file_offset - c_offset - hdr_size - spos;
+
+        if (fd->idxfp) {
+            if (cram_index_slice(fd, c, s, fd->idxfp, c_offset, spos, sz) < 0)
                 return -1;
         }
     }
@@ -4402,6 +4416,10 @@ int cram_close(cram_fd *fd) {
 
     if (fd->own_pool && fd->pool)
         hts_tpool_destroy(fd->pool);
+
+    if (fd->idxfp)
+        if (bgzf_close(fd->idxfp) < 0)
+            return -1;
 
     free(fd);
     return 0;

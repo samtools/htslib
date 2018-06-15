@@ -1078,8 +1078,14 @@ int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
     if ( h->dirty ) {
         if (bcf_hdr_sync(h) < 0) return -1;
     }
-    if (hfp->format.format == vcf || hfp->format.format == text_format)
+    hfp->format.category = variant_data;
+    if (hfp->format.format == vcf || hfp->format.format == text_format) {
+        hfp->format.format = vcf;
         return vcf_hdr_write(hfp, h);
+    }
+
+    if (hfp->format.format == binary_format)
+        hfp->format.format = bcf;
 
     kstring_t htxt = {0,0,0};
     bcf_hdr_format(h, 1, &htxt);
@@ -1688,9 +1694,10 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     if ( bgzf_write(fp, v->shared.s, v->shared.l) != v->shared.l ) return -1;
     if ( bgzf_write(fp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;
 
-    if (hfp->idx)
+    if (hfp->idx) {
         if (hts_idx_push(hfp->idx, v->rid, v->pos, v->pos + v->rlen, bgzf_tell(fp), 1) < 0)
             return -1;
+    }
 
     return 0;
 }
@@ -2946,24 +2953,26 @@ int bcf_index_build(const char *fn, int min_shift)
 
 // Initialise fp->idx for the current format type.
 // This must be called after the header has been written but no other data.
-int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift) {
+int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
     int n_lvls, nids = 0;
-    if (min_shift > 0) {
-        int64_t max_len = 0, s;
-        int i;
-        for (i = 0; i < h->n[BCF_DT_CTG]; i++) {
-            if (!h->id[BCF_DT_CTG][i].val) continue;
-            if (max_len < h->id[BCF_DT_CTG][i].val->info[0])
-                max_len = h->id[BCF_DT_CTG][i].val->info[0];
-            nids++;
-        }
-        if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
-        max_len += 256;
-        for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+    int64_t max_len = 0, s;
+    int i;
 
-    } else min_shift = 14, n_lvls = 5;
+    if (!min_shift)
+        min_shift = 14;
+
+    for (i = 0; i < h->n[BCF_DT_CTG]; i++) {
+        if (!h->id[BCF_DT_CTG][i].val) continue;
+        if (max_len < h->id[BCF_DT_CTG][i].val->info[0])
+            max_len = h->id[BCF_DT_CTG][i].val->info[0];
+        nids++;
+    }
+    if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
+    max_len += 256;
+    for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
 
     fp->idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
+    fp->fnidx = fnidx;
 
     return fp->idx ? 0 : -1;
 }
@@ -2972,8 +2981,8 @@ int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift) {
 // Returns 0 on success, <0 on failure.
 //
 // NB: same format as SAM/BAM as it uses bgzf.
-int bcf_idx_save(htsFile *fp, const char *fn, const char *fnidx) {
-    return sam_idx_save(fp, fn, fnidx);
+int bcf_idx_save(htsFile *fp) {
+    return sam_idx_save(fp);
 }
 
 /*****************

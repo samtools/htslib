@@ -112,7 +112,7 @@ int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
     }
 
     if (opts->index) {
-        if (sam_idx_init(out, h, opts->min_shift) < 0) {
+        if (sam_idx_init(out, h, opts->min_shift, opts->index) < 0) {
             fprintf(stderr, "Failed to initialise index\n");
             goto fail;
         }
@@ -244,7 +244,7 @@ int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
     }
 
     if (opts->index) {
-        if (sam_idx_save(out, "-", opts->index) < 0) {
+        if (sam_idx_save(out) < 0) {
             fprintf(stderr, "Error saving index\n");
             goto fail;
         }
@@ -277,7 +277,7 @@ int vcf_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
         return 1;
 
     if (opts->index) {
-        if (bcf_idx_init(out, h, opts->min_shift) < 0) {
+        if (bcf_idx_init(out, h, opts->min_shift, opts->index) < 0) {
             fprintf(stderr, "Failed to initialise index\n");
             return 1;
         }
@@ -333,7 +333,7 @@ int vcf_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
     }
 
     if (exit_code == 0 && opts->index) {
-        if (bcf_idx_save(out, "-", opts->index) < 0) {
+        if (bcf_idx_save(out) < 0) {
             fprintf(stderr, "Error saving index\n");
             exit_code = 1;
         }

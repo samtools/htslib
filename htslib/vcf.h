@@ -949,19 +949,19 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      /** @param fp        File handle for the data file being written.
          @param h         BCF header structured (needed for BAI and CSI).
          @param min_shift CSI bin size (CSI default is 14).
+         @param fnidx     Filename to write index to.  This pointer must remain valid
+                          until after sam_idx_save is called.
          @return          0 on success, <0 on failure.
          @note This must be called after the header has been written, but before
                any other data.
      */
-     int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift);
+     int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx);
 
      /// Writes the index initialised with bcf_idx_init to disk.
      /** @param fp        File handle for the data file being written.
-         @param fn        File name of fp
-         @param fnidx     Index file name
          @return          0 on success, <0 on failure.
      */
-     int bcf_idx_save(htsFile *fp, const char *fn, const char *fnidx);
+     int bcf_idx_save(htsFile *fp);
 
 /*******************
  * Typed value I/O *

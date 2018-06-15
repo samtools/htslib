@@ -324,13 +324,24 @@ typedef struct {
 #define bam_index_load(fn) hts_idx_load((fn), HTS_FMT_BAI)
 #define bam_index_build(fn, min_shift) (sam_index_build((fn), (min_shift)))
 
-// Initialise fp->idx for the current format type.
-// This must be called after the header has been written but no other data.
-int sam_idx_init(htsFile *fp, bam_hdr_t *h, int min_shift) HTS_RESULT_USED;
+/// Initialise fp->idx for the current format type for SAM, BAM and CRAM types .
+/** @param fp        File handle for the data file being written.
+    @param h         Bam header structured (needed for BAI and CSI).
+    @param min_shift 0 for BAI, or larger for CSI (CSI defaults to 14).
+    @param fnidx     Filename to write index to.  This pointer must remain valid
+                     until after sam_idx_save is called.
+    @return          0 on success, <0 on failure.
 
-// Finishes and saves an index. Call afer the last record has been written.
-// Returns 0 on success, <0 on failure.
-int sam_idx_save(htsFile *fp, const char *fn, const char *fnidx) HTS_RESULT_USED;
+    @note This must be called after the header has been written, but before
+          any other data.
+*/
+int sam_idx_init(htsFile *fp, bam_hdr_t *h, int min_shift, const char *fnidx);
+
+/// Writes the index initialised with sam_idx_init to disk.
+/** @param fp        File handle for the data file being written.
+    @return          0 on success, <0 on filaure.
+*/
+int sam_idx_save(htsFile *fp) HTS_RESULT_USED;
 
 /// Load a BAM (.csi or .bai) or CRAM (.crai) index file
 /** @param fp  File handle of the data file whose index is being opened

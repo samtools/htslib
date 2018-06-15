@@ -225,6 +225,7 @@ typedef struct {
     } fp;
     htsFormat format;
     hts_idx_t *idx;
+    const char *fnidx;
 } htsFile;
 
 // A combined thread pool and queue allocation size.
