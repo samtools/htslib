@@ -524,10 +524,10 @@ static void faidx1(const char *filename)
     FILE *fin, *fout;
     faidx_t *fai;
 
-    fin = fopen(filename, "r");
+    fin = fopen(filename, "rb");
     if (fin == NULL) fail("can't open %s\n", filename);
     sprintf(tmpfilename, "%s.tmp", filename);
-    fout = fopen(tmpfilename, "w");
+    fout = fopen(tmpfilename, "wb");
     if (fout == NULL) fail("can't create temporary %s\n", tmpfilename);
     while (fgets(line, sizeof line, fin)) {
         if (line[0] == '>') n_exp++;
@@ -544,7 +544,7 @@ static void faidx1(const char *filename)
 
     if (fai_build(tmpfilename) < 0) fail("can't index %s", tmpfilename);
     fai = fai_load(tmpfilename);
-    if (fai == NULL) fail("can't load faidx file %s", tmpfilename);
+    if (fai == NULL) { fail("can't load faidx file %s", tmpfilename); return; }
 
     n = faidx_fetch_nseq(fai);
     if (n != n_exp)
