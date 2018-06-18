@@ -140,16 +140,27 @@ static faidx_t *fai_build_core(BGZF *bgzf) {
                         state = IN_NAME;
                     break;
 
+                    case '\r':
+                        // Blank line with cr-lf ending?
+                        if ((c = bgzf_getc(bgzf)) == '\n') {
+                            line_num++;
+                        } else {
+                            hts_log_error("Format error, carriage return not followed by new line at line %d", line_num);
+                            goto fail;
+                        }
+                    break;
 
                     case '\n':
                         // just move onto the next line
                         line_num++;
                     break;
 
-                    default:
-                        hts_log_error("Format error, unexpected %c at line %d", c, line_num);
+                    default: {
+                        char s[4] = { '"', c, '"', '\0' };
+                        hts_log_error("Format error, unexpected %s at line %d", isprint(c) ? s : "character", line_num);
                         goto fail;
                     break;
+                    }
                 }
             break;
 
