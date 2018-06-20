@@ -36,6 +36,8 @@ my $opts = parse_params();
 test_bgzip($opts, 0);
 test_bgzip($opts, 4);
 
+test_index($opts);
+
 test_view($opts,0);
 test_view($opts,4);
 
@@ -205,6 +207,60 @@ sub test_cmd
         {
             failed($opts,$test,"The outputs differ:\n\t\t$$opts{path}/$args{out}\n\t\t$$opts{path}/$args{out}.new");
         }
+        return;
+    }
+    passed($opts,$test);
+}
+
+# Run cmd, producing file out, and compare contents against exp
+sub test_compare
+{
+    my ($opts,$cmd,$exp_fn,$out_fn, %args) = @_;
+    my ($package, $filename, $line, $test)=caller(1);
+    $test =~ s/^.+:://;
+
+    print "$test:\n\t$cmd\n";
+
+    my ($ret,$stdout) = _cmd($cmd);
+    if ( $ret ) { failed($opts,$test); return; }
+
+    local $/;
+    my ($exp,$out) = ("","");
+    if ( exists($args{"gz"}) ) {
+	if ( open(my $fh,'-|',"$$opts{bin}/bgzip -d < $exp_fn") ) {
+	    $exp = <$fh>;
+	    close($fh);
+	} else {
+	    failed($opts,$test,"bgzip -d < $exp_fn $!"); return;
+	}
+    } else {
+	if ( open(my $fh,'<',$exp_fn) ) {
+	    $exp = <$fh>;
+	    close($fh);
+	} else {
+	    failed($opts,$test,"$exp_fn $!"); return;
+	}
+    }
+
+    if ( exists($args{"gz"}) ) {
+	if ( open(my $fh,'-|',"$$opts{bin}/bgzip -d < $out_fn") ) {
+	    $out = <$fh>;
+	    close($fh);
+	} else {
+	    failed($opts,$test,"bgzip -d < $out_fn $!"); return;
+	}
+    } else {
+	if ( open(my $fh,'<',$out_fn) ) {
+	    $out = <$fh>;
+	    close($fh);
+	} else {
+	    failed($opts,$test,"$out_fn $!"); return;
+	}
+    }
+
+    if ( $exp ne $out )
+    {
+	failed($opts,$test,"The outputs differ:\n\t\t$exp_fn\n\t\t$out_fn");
         return;
     }
     passed($opts,$test);
@@ -510,6 +566,21 @@ sub test_MD
             failed($opts, "$sam MD tests", "$test_view_failures subtests failed");
         }
     }
+}
+
+sub test_index
+{
+    my ($opts,%args) = @_;
+    # BAM
+    test_compare($opts,"$$opts{path}/test_view -l 0 -b -m 14 -x $$opts{tmp}/index.bam.csi $$opts{path}/index.sam > $$opts{tmp}/index.bam", "$$opts{tmp}/index.bam.csi", "$$opts{path}/index.bam.csi", gz=>1);
+    test_compare($opts,"$$opts{path}/test_view -l 0 -b -m 0 -x $$opts{tmp}/index.bam.bai $$opts{path}/index.sam > $$opts{tmp}/index.bam", "$$opts{tmp}/index.bam.bai", "$$opts{path}/index.bam.bai");
+
+    # BCF
+    test_compare($opts,"$$opts{path}/test_view -l 0 -b -m 14 -x $$opts{tmp}/index.bcf.csi $$opts{path}/index.vcf > $$opts{tmp}/index.bcf", "$$opts{tmp}/index.bcf.csi", "$$opts{path}/index.bcf.csi", gz=>1);
+
+    # VCF
+    test_compare($opts,"$$opts{path}/test_view -l 0 -z -m 14 -x $$opts{tmp}/index.vcf.gz.csi $$opts{path}/index.vcf > $$opts{tmp}/index.vcf.gz", "$$opts{tmp}/index.vcf.gz.csi", "$$opts{path}/index.vcf.gz.csi", gz=>1);
+    test_compare($opts,"$$opts{path}/test_view -l 0 -z -m 0 -x $$opts{tmp}/index.vcf.gz.tbi $$opts{path}/index.vcf > $$opts{tmp}/index.vcf.gz", "$$opts{tmp}/index.vcf.gz.tbi", "$$opts{path}/index.vcf.gz.tbi", gz=>1);
 }
 
 sub test_vcf_api

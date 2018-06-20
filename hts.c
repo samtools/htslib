@@ -49,6 +49,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/khash.h"
 #include "htslib/kseq.h"
 #include "htslib/ksort.h"
+#include "htslib/tbx.h"
 
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
@@ -1305,6 +1306,7 @@ struct __hts_idx_t {
     bidx_t **bidx;
     lidx_t *lidx;
     uint8_t *meta; // MUST have a terminating NUL on the end
+    int tbi_n, last_tbi_tid;
     struct {
         uint32_t last_bin, save_bin;
         int last_coor, last_tid, save_tid, finished;
@@ -1394,6 +1396,8 @@ hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_l
         idx->lidx = (lidx_t*) calloc(n, sizeof(lidx_t));
         if (idx->lidx == NULL) { free(idx->bidx); free(idx); return NULL; }
     }
+    idx->tbi_n = -1;
+    idx->last_tbi_tid = -1;
     return idx;
 }
 
@@ -1608,6 +1612,36 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
     }
 }
 
+// Needed for TBI only.  Ensure 'tid' with 'name' is in the index meta data.
+// idx->meta needs to have been initialsed first with an appropriate Tabix
+// configuration via hts_idx_set_meta.
+//
+// NB number of references (first 4 bytes of tabix header) aren't in
+// idx->meta, but held in idx->n instead.
+int hts_idx_tbi_name(hts_idx_t *idx, int tid, const char *name) {
+    // Horrid - we have to map incoming tid to a tbi alternative tid.
+    // This is because TBI counts tids by "covered" refs while everything
+    // else counts by Nth SQ/contig record in header.
+    if (tid == idx->last_tbi_tid || tid < 0 || !name)
+        return idx->tbi_n;
+
+    uint32_t len = strlen(name)+1;
+    uint8_t *tmp = (uint8_t *)realloc(idx->meta, idx->l_meta + len);
+    if (!tmp)
+        return -1;
+
+    // Append name
+    idx->meta = tmp;
+    strcpy((char *)idx->meta + idx->l_meta, name);
+    idx->l_meta += len;
+
+    // Update seq length
+    u32_to_le(le_to_u32(idx->meta+24)+len, idx->meta+24);
+
+    idx->last_tbi_tid = tid;
+    return ++idx->tbi_n;
+}
+
 // When doing samtools index we have a read_bam / hts_idx_push(bgzf_tell())
 // loop.  idx->z.last_off is the previous bzgf_tell location, so we know
 // the location the current bam record started at as well as where it ends.
@@ -1690,7 +1724,18 @@ static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
 
     #define check(ret) if ((ret) < 0) return -1
 
-    check(idx_write_int32(fp, idx->n));
+    // VCF TBI/CSI only writes IDs for non-empty bins (ie covered references)
+    //
+    // NOTE: CSI meta is undefined in spec, so this code has an assumption
+    // that we're only using it for Tabix data.
+    int nids = idx->n;
+    if (idx->meta && idx->l_meta >= 4 && le_to_u32(idx->meta) == TBX_VCF) {
+        for (i = nids = 0; i < idx->n; ++i) {
+            if (idx->bidx[i])
+                nids++;
+        }
+    }
+    check(idx_write_int32(fp, nids));
     if (fmt == HTS_FMT_TBI && idx->l_meta)
         check(bgzf_write(fp, idx->meta, idx->l_meta));
 
@@ -1698,8 +1743,10 @@ static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
         khint_t k;
         bidx_t *bidx = idx->bidx[i];
         lidx_t *lidx = &idx->lidx[i];
+
         // write binning index
-        check(idx_write_int32(fp, bidx? kh_size(bidx) : 0));
+        if (nids == idx->n || bidx)
+            check(idx_write_int32(fp, bidx? kh_size(bidx) : 0));
         if (bidx)
             for (k = kh_begin(bidx); k != kh_end(bidx); ++k)
                 if (kh_exist(bidx, k)) {

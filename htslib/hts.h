@@ -624,6 +624,7 @@ typedef struct {
     int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped);
     int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
     int hts_idx_fmt(hts_idx_t *idx);
+    int hts_idx_tbi_name(hts_idx_t *idx, int tid, const char *name);
 
 /// Save an index to a file
 /** @param idx  Index to be written

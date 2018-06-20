@@ -52,10 +52,11 @@ struct opts {
 
 enum test_op {
     READ_COMPRESSED    = 1,
-    WRITE_COMPRESSED   = 2,
+    WRITE_BINARY_COMP  = 2, // eg bam, bcf
     READ_CRAM          = 4,
     WRITE_CRAM         = 8,
     WRITE_UNCOMPRESSED = 16,
+    WRITE_COMPRESSED   = 32, // eg vcf.gz, sam.gz
 };
 
 int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, htsFile *out) {
@@ -365,17 +366,18 @@ int main(int argc, char *argv[])
     opts.index = NULL;
     opts.min_shift = 0;
 
-    while ((c = getopt(argc, argv, "DSIt:i:bCul:o:N:BZ:@:Mx:m:")) >= 0) {
+    while ((c = getopt(argc, argv, "DSIt:i:bzCul:o:N:BZ:@:Mx:m:")) >= 0) {
         switch (c) {
         case 'D': opts.flag |= READ_CRAM; break;
         case 'S': opts.flag |= READ_COMPRESSED; break;
         case 'I': opts.ignore_sam_err = 1; break;
         case 't': opts.fn_ref = optarg; break;
         case 'i': if (hts_opt_add(&in_opts, optarg)) return 1; break;
-        case 'b': opts.flag |= WRITE_COMPRESSED; break;
+        case 'b': opts.flag |= WRITE_BINARY_COMP; break;
+        case 'z': opts.flag |= WRITE_COMPRESSED; break;
         case 'C': opts.flag |= WRITE_CRAM; break;
         case 'u': opts.flag |= WRITE_UNCOMPRESSED; break; // eg u-BAM not SAM
-        case 'l': opts.clevel = atoi(optarg); opts.flag |= WRITE_COMPRESSED; break;
+        case 'l': opts.clevel = atoi(optarg); break;
         case 'o': if (hts_opt_add(&out_opts, optarg)) return 1; break;
         case 'N': opts.nreads = atoi(optarg); break;
         case 'B': opts.benchmark = 1; break;
@@ -395,7 +397,8 @@ int main(int argc, char *argv[])
         fprintf(stderr, "-t: fn_ref: load CRAM references from the specificed fasta file instead of @SQ headers when writing a CRAM file\n");
         fprintf(stderr, "-i: option=value: set an option for CRAM input\n");
         fprintf(stderr, "\n");
-        fprintf(stderr, "-b: write compressed BCF, BAM, FAI (mode 'b')\n");
+        fprintf(stderr, "-b: write binary compressed BCF, BAM, FAI (mode 'b')\n");
+        fprintf(stderr, "-z: write text compressed VCF.gz, SAM.gz (mode 'z')\n");
         fprintf(stderr, "-C: write CRAM format (mode 'c')\n");
         fprintf(stderr, "-l 0-9: set zlib compression level\n");
         fprintf(stderr, "-o option=value: set an option for CRAM output\n");
@@ -406,7 +409,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "-Z hdr_nuls: append specified number of null bytes to the SAM header\n");
         fprintf(stderr, "-@ num_threads: use thread pool with specified number of threads\n\n");
         fprintf(stderr, "-x fn: write index to fn\n");
-        fprintf(stderr, "-m min_shift: specifies BAI/CSI bin size; 0 is BAI, 14 is CSI default\n");
+        fprintf(stderr, "-m min_shift: specifies BAI/CSI bin size; 0 is BAI(BAM) or TBI(VCF), 14 is CSI default\n");
         fprintf(stderr, "The region list entries should be specified as 'reg:beg-end', with intervals of a region being disjunct and sorted by the starting coordinate.\n");
         return 1;
     }
@@ -423,7 +426,8 @@ int main(int argc, char *argv[])
     strcpy(modew, "w");
     if (opts.clevel >= 0 && opts.clevel <= 9) sprintf(modew + 1, "%d", opts.clevel);
     if (opts.flag & WRITE_CRAM) strcat(modew, "c");
-    else if (opts.flag & WRITE_COMPRESSED) strcat(modew, "b");
+    else if (opts.flag & WRITE_BINARY_COMP) strcat(modew, "b");
+    else if (opts.flag & WRITE_COMPRESSED) strcat(modew, "z");
     else if (opts.flag & WRITE_UNCOMPRESSED) strcat(modew, "bu");
     out = hts_open("-", modew);
     if (out == NULL) {

@@ -719,7 +719,7 @@ int sam_idx_init(htsFile *fp, bam_hdr_t *h, int min_shift, const char *fnidx) {
 // Finishes an index. Call afer the last record has been written.
 // Returns 0 on success, <0 on failure.
 int sam_idx_save(htsFile *fp) {
-    if (fp->format.format == bam || fp->format.format == bcf) {
+    if (fp->format.format == bam || fp->format.format == bcf || fp->format.format == vcf) {
         if (bgzf_flush(fp->fp.bgzf) < 0)
             return -1;
         hts_idx_amend_last(fp->idx, bgzf_tell(fp->fp.bgzf));

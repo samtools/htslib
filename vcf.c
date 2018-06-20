@@ -2835,6 +2835,16 @@ int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
         ret = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
     else
         ret = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
+
+    if (fp->idx) {
+        int tid;
+        if ((tid = hts_idx_tbi_name(fp->idx, v->rid, bcf_seqname(h, v))) < 0)
+            return -1;
+
+        if (hts_idx_push(fp->idx, tid, v->pos, v->pos + v->rlen, bgzf_tell(fp->fp.bgzf), 1) < 0)
+            return -1;
+    }
+
     return ret==fp->line.l ? 0 : -1;
 }
 
@@ -2953,10 +2963,58 @@ int bcf_index_build(const char *fn, int min_shift)
 
 // Initialise fp->idx for the current format type.
 // This must be called after the header has been written but no other data.
+int vcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
+    int n_lvls, i, fmt;
+    int64_t max_len = 0;
+
+    for (i = 0; i < h->n[BCF_DT_CTG]; i++) {
+        if (!h->id[BCF_DT_CTG][i].val) continue;
+        if (max_len < h->id[BCF_DT_CTG][i].val->info[0])
+            max_len = h->id[BCF_DT_CTG][i].val->info[0];
+    }
+    if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
+    max_len += 256;
+
+    if (min_shift == 0) {
+        min_shift = 14;
+        n_lvls = 5;
+        fmt = HTS_FMT_TBI;
+    } else {
+        n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3;
+        fmt = HTS_FMT_CSI;
+    }
+
+    fp->idx = hts_idx_init(0, fmt, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
+    if (!fp->idx) return -1;
+
+    // Tabix meta data, added even in CSI for VCF
+    uint8_t conf[4*7];
+    u32_to_le(TBX_VCF, conf+0);  // fmt
+    u32_to_le(1,       conf+4);  // name col
+    u32_to_le(2,       conf+8);  // beg col
+    u32_to_le(0,       conf+12); // end col
+    u32_to_le('#',     conf+16); // comment
+    u32_to_le(0,       conf+20); // n.skip
+    u32_to_le(0,       conf+24); // ref name len
+    if (hts_idx_set_meta(fp->idx, sizeof(conf)*sizeof(*conf), (uint8_t *)conf, 1) < 0) {
+        hts_idx_destroy(fp->idx);
+        fp->idx = NULL;
+        return -1;
+    }
+    fp->fnidx = fnidx;
+
+    return 0;
+}
+
+// Initialise fp->idx for the current format type.
+// This must be called after the header has been written but no other data.
 int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
     int n_lvls, nids = 0;
     int64_t max_len = 0, s;
     int i;
+
+    if (fp->format.format == vcf)
+        return vcf_idx_init(fp, h, min_shift, fnidx);
 
     if (!min_shift)
         min_shift = 14;
@@ -2972,9 +3030,10 @@ int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
     for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
 
     fp->idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
+    if (!fp->idx) return -1;
     fp->fnidx = fnidx;
 
-    return fp->idx ? 0 : -1;
+    return 0;
 }
 
 // Finishes an index. Call afer the last record has been written.
