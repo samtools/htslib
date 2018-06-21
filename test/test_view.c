@@ -209,11 +209,11 @@ int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
         } else {
             for (i = optind + 1; i < argc; ++i) {
                 hts_itr_t *iter;
-                if ((iter = sam_itr_querys(idx, h, argv[i])) == 0) {
+                if ((iter = sam_itr_querys2(idx, h, argv[i])) == 0) {
                     fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
                     goto fail;
                 }
-                while ((r = sam_itr_next(in, iter, b)) >= 0) {
+                while ((r = sam_itr_next2(in, h, iter, b)) >= 0) {
                     if (!opts->benchmark && sam_write1(out, h, b) < 0) {
                         fprintf(stderr, "Error writing output.\n");
                         hts_itr_destroy(iter);
@@ -273,6 +273,11 @@ int vcf_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
     bcf1_t *b = bcf_init1();
     hts_idx_t *idx;
     int i, exit_code = 0, r = 0;
+
+    if (!h)
+        return 1;
+    if (!b)
+        return 1;
 
     if (!opts->benchmark && bcf_hdr_write(out, h) < 0)
         return 1;
