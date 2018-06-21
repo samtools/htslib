@@ -601,13 +601,13 @@ static int bam_write_idx1(htsFile *fp, const bam1_t *b) {
  *** BAM indexing ***
  ********************/
 
-static hts_idx_t *bam_index(BGZF *fp, int min_shift)
+static hts_idx_t *sam_index(htsFile *fp, int min_shift)
 {
     int n_lvls, i, fmt, ret;
     bam1_t *b;
     hts_idx_t *idx;
     bam_hdr_t *h;
-    h = bam_hdr_read(fp);
+    h = sam_hdr_read(fp);
     if (h == NULL) return NULL;
     if (min_shift > 0) {
         int64_t max_len = 0, s;
@@ -617,16 +617,16 @@ static hts_idx_t *bam_index(BGZF *fp, int min_shift)
         for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
         fmt = HTS_FMT_CSI;
     } else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_BAI;
-    idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp), min_shift, n_lvls);
-    bam_hdr_destroy(h);
+    idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     b = bam_init1();
-    while ((ret = bam_read1(fp, b)) >= 0) {
-        ret = hts_idx_push(idx, b->core.tid, b->core.pos, bam_endpos(b), bgzf_tell(fp), !(b->core.flag&BAM_FUNMAP));
+    while ((ret = sam_read1(fp, h, b)) >= 0) {
+        ret = hts_idx_push(idx, b->core.tid, b->core.pos, bam_endpos(b), bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP));
         if (ret < 0) goto err; // unsorted
     }
     if (ret < -1) goto err; // corrupted BAM file
 
-    hts_idx_finish(idx, bgzf_tell(fp));
+    hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
+    bam_hdr_destroy(h);
     bam_destroy1(b);
     return idx;
 
@@ -653,7 +653,8 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
         break;
 
     case bam:
-        idx = bam_index(fp->fp.bgzf, min_shift);
+    case sam:
+        idx = sam_index(fp, min_shift);
         if (idx) {
             ret = hts_idx_save_as(idx, fn, fnidx, (min_shift > 0)? HTS_FMT_CSI : HTS_FMT_BAI);
             if (ret < 0) ret = -4;
@@ -1188,12 +1189,22 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         kstring_t str = { 0, 0, NULL };
         bam_hdr_t *h = NULL;
         int ret, has_SQ = 0;
-        while ((ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) >= 0) {
+        int next_c = '@';
+        while (next_c == '@' && (ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) >= 0) {
             if (fp->line.s[0] != '@') break;
             if (fp->line.l > 3 && strncmp(fp->line.s,"@SQ",3) == 0) has_SQ = 1;
             if (kputsn(fp->line.s, fp->line.l, &str) < 0) goto error;
             if (kputc('\n', &str) < 0) goto error;
+            if (fp->format.compression == bgzf) {
+                next_c = bgzf_peek(fp->fp.bgzf);
+            } else {
+                unsigned char nc;
+                ssize_t pret = hpeek(fp->fp.hfile, &nc, 1);
+                next_c = pret > 0 ? nc : pret - 1;
+            }
+            if (next_c < -1) goto error;
         }
+        if (next_c != '@') fp->line.l = 0;
         if (ret < -1) goto error;
         if (! has_SQ && fp->fn_aux) {
             kstring_t line = { 0, 0, NULL };
