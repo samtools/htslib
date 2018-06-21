@@ -357,6 +357,7 @@ int main(int argc, char *argv[])
     char modew[800];
     int c, exit_code = EXIT_SUCCESS;
     hts_opt *in_opts = NULL, *out_opts = NULL;
+    char *out_fn = "-";
 
     struct opts opts;
     opts.fn_ref = NULL;
@@ -371,7 +372,7 @@ int main(int argc, char *argv[])
     opts.index = NULL;
     opts.min_shift = 0;
 
-    while ((c = getopt(argc, argv, "DSIt:i:bzCul:o:N:BZ:@:Mx:m:")) >= 0) {
+    while ((c = getopt(argc, argv, "DSIt:i:bzCul:o:N:BZ:@:Mx:m:p:")) >= 0) {
         switch (c) {
         case 'D': opts.flag |= READ_CRAM; break;
         case 'S': opts.flag |= READ_COMPRESSED; break;
@@ -391,10 +392,11 @@ int main(int argc, char *argv[])
         case '@': opts.nthreads = atoi(optarg); break;
         case 'x': opts.index = optarg; break;
         case 'm': opts.min_shift = atoi(optarg); break;
+        case 'p': out_fn = optarg; break;
         }
     }
     if (argc == optind) {
-        fprintf(stderr, "Usage: test_view [-DSI] [-t fn_ref] [-i option=value] [-bC] [-l level] [-o option=value] [-N num_reads] [-B] [-Z hdr_nuls] [-@ num_threads] [-x index_fn] [-m min_shift] <in.bam>|<in.sam>|<in.cram> [region]\n");
+        fprintf(stderr, "Usage: test_view [-DSI] [-t fn_ref] [-i option=value] [-bC] [-l level] [-o option=value] [-N num_reads] [-B] [-Z hdr_nuls] [-@ num_threads] [-x index_fn] [-m min_shift] [-p out] <in.bam>|<in.sam>|<in.cram> [region]\n");
         fprintf(stderr, "\n");
         fprintf(stderr, "-D: read CRAM format (mode 'c')\n");
         fprintf(stderr, "-S: read compressed BCF, BAM, FAI (mode 'b')\n");
@@ -415,6 +417,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "-@ num_threads: use thread pool with specified number of threads\n\n");
         fprintf(stderr, "-x fn: write index to fn\n");
         fprintf(stderr, "-m min_shift: specifies BAI/CSI bin size; 0 is BAI(BAM) or TBI(VCF), 14 is CSI default\n");
+        fprintf(stderr, "-p out_fn: output to out_fn instead of stdout\n");
         fprintf(stderr, "The region list entries should be specified as 'reg:beg-end', with intervals of a region being disjunct and sorted by the starting coordinate.\n");
         return 1;
     }
@@ -434,7 +437,7 @@ int main(int argc, char *argv[])
     else if (opts.flag & WRITE_BINARY_COMP) strcat(modew, "b");
     else if (opts.flag & WRITE_COMPRESSED) strcat(modew, "z");
     else if (opts.flag & WRITE_UNCOMPRESSED) strcat(modew, "bu");
-    out = hts_open("-", modew);
+    out = hts_open(out_fn, modew);
     if (out == NULL) {
         fprintf(stderr, "Error opening standard output\n");
         return EXIT_FAILURE;
