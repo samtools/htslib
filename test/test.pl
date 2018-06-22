@@ -573,18 +573,32 @@ sub test_index
     my ($opts,%args) = @_;
     # BAM
     test_compare($opts,"$$opts{path}/test_view -l 0 -b -m 14 -x $$opts{tmp}/index.bam.csi $$opts{path}/index.sam > $$opts{tmp}/index.bam", "$$opts{tmp}/index.bam.csi", "$$opts{path}/index.bam.csi", gz=>1);
+    unlink("$$opts{tmp}/index.bam.csi");
+    test_compare($opts,"$$opts{path}/test_index -c $$opts{tmp}/index.bam", "$$opts{tmp}/index.bam.csi", "$$opts{path}/index.bam.csi", gz=>1);
     test_compare($opts,"$$opts{path}/test_view -l 0 -b -m 0 -x $$opts{tmp}/index.bam.bai $$opts{path}/index.sam > $$opts{tmp}/index.bam", "$$opts{tmp}/index.bam.bai", "$$opts{path}/index.bam.bai");
+    unlink("$$opts{tmp}/index.bam.bai");
+    test_compare($opts,"$$opts{path}/test_index -b $$opts{tmp}/index.bam", "$$opts{tmp}/index.bam.bai", "$$opts{path}/index.bam.bai");
 
     # SAM
     test_compare($opts,"$$opts{path}/test_view -l 0 -z -m 14 -x $$opts{tmp}/index.sam.gz.csi $$opts{path}/index.sam > $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.csi", "$$opts{path}/index.sam.gz.csi", gz=>1);
+    unlink("$$opts{tmp}/index.bam.bai");
+    test_compare($opts,"$$opts{path}/test_index -c $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.csi", "$$opts{path}/index.sam.gz.csi", gz=>1);
     test_compare($opts,"$$opts{path}/test_view -l 0 -z -m 0 -x $$opts{tmp}/index.sam.gz.bai $$opts{path}/index.sam > $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.bai", "$$opts{path}/index.sam.gz.bai");
+    unlink("$$opts{tmp}/index.sam.gz.bai");
+    test_compare($opts,"$$opts{path}/test_index -b $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.bai", "$$opts{path}/index.sam.gz.bai");
 
     # BCF
     test_compare($opts,"$$opts{path}/test_view -l 0 -b -m 14 -x $$opts{tmp}/index.bcf.csi $$opts{path}/index.vcf > $$opts{tmp}/index.bcf", "$$opts{tmp}/index.bcf.csi", "$$opts{path}/index.bcf.csi", gz=>1);
+    unlink("$$opts{tmp}/index.bcf.csi");
+    test_compare($opts,"$$opts{path}/test_index -c $$opts{tmp}/index.bcf", "$$opts{tmp}/index.bcf.csi", "$$opts{path}/index.bcf.csi", gz=>1);
 
     # VCF
     test_compare($opts,"$$opts{path}/test_view -l 0 -z -m 14 -x $$opts{tmp}/index.vcf.gz.csi $$opts{path}/index.vcf > $$opts{tmp}/index.vcf.gz", "$$opts{tmp}/index.vcf.gz.csi", "$$opts{path}/index.vcf.gz.csi", gz=>1);
+    unlink("$$opts{tmp}/index.vcf.gz.csi");
+    test_compare($opts,"$$opts{path}/test_index -c $$opts{tmp}/index.vcf.gz", "$$opts{tmp}/index.vcf.gz.csi", "$$opts{path}/index.vcf.gz.csi", gz=>1);
     test_compare($opts,"$$opts{path}/test_view -l 0 -z -m 0 -x $$opts{tmp}/index.vcf.gz.tbi $$opts{path}/index.vcf > $$opts{tmp}/index.vcf.gz", "$$opts{tmp}/index.vcf.gz.tbi", "$$opts{path}/index.vcf.gz.tbi", gz=>1);
+    unlink("$$opts{tmp}/index.vcf.gz.tbi");
+    test_compare($opts,"$$opts{path}/test_index -t $$opts{tmp}/index.vcf.gz", "$$opts{tmp}/index.vcf.gz.tbi", "$$opts{path}/index.vcf.gz.tbi", gz=>1);
 }
 
 sub test_vcf_api

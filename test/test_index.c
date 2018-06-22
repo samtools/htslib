@@ -40,14 +40,13 @@ void usage(FILE *fp) {
 }
 
 int main(int argc, char **argv) {
-    int c, fmt = HTS_FMT_CSI, min_shift = 14;
+    int c, min_shift = 14;
 
     while ((c = getopt(argc, argv, "bctm:")) >= 0) {
         switch (c) {
-        case 'b': fmt = HTS_FMT_BAI; min_shift = 0; break;
-        case 'c': fmt = HTS_FMT_CSI; min_shift = 14; break;
-        case 't': fmt = HTS_FMT_TBI; min_shift = 0; break;
-        case 'm': fmt = HTS_FMT_CSI; min_shift = atoi(optarg); break;
+        case 't': case 'b': min_shift = 0; break;
+        case 'c': min_shift = 14; break;
+        case 'm': min_shift = atoi(optarg); break;
         case 'h': usage(stdout);
         default:  usage(stderr);
         }
