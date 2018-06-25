@@ -1212,9 +1212,10 @@ static int64_t inline STRTOL64(const char *v, char **rv, int b) {
         *rv = (char *)v;
         return 0;
     }
+
     v++;
 
-    while (isdigit(*v))
+    while (*v>='0' && *v<='9')
         n = n*10 + *v++ - '0';
     *rv = (char *)v;
     return neg*n;
@@ -1222,20 +1223,10 @@ static int64_t inline STRTOL64(const char *v, char **rv, int b) {
 
 static int64_t inline STRTOUL64(const char *v, char **rv, int b) {
     int64_t n = 0;
-    switch(*v) {
-    case '+':
-        break;
-    case '0': case '1': case '2': case '3': case '4':
-    case '5': case '6': case '7': case '8': case '9':
-        n = *v - '0';
-        break;
-    default:
-        *rv = (char *)v;
-        return 0;
-    }
-    v++;
+    if (*v == '+')
+        v++;
 
-    while (isdigit(*v))
+    while (*v>='0' && *v<='9')
         n = n*10 + *v++ - '0';
     *rv = (char *)v;
     return n;
@@ -1243,16 +1234,66 @@ static int64_t inline STRTOUL64(const char *v, char **rv, int b) {
 
 int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 {
-//#define _read_token(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); if (*(_p) != '\t') goto err_ret; *(_p)++ = 0
-//#define _read_token_aux(_p) (_p); for (; *(_p) && *(_p) != '\t'; ++(_p)); *(_p)++ = 0 // this is different in that it does not test *(_p)=='\t'
+#if HTS_ALLOW_UNALIGNED != 0 && ULONG_MAX == 0xffffffffffffffff
+
+// Macros that operate on 64-bits at a time.
+#define hasless(x,n) (((x)-0x0101010101010101UL*(n))&~(x)&0x8080808080808080UL)
+#define _read_token(_p) (_p);                   \
+    do {                                        \
+        uint64_t *p64 = (uint64_t *)(_p);       \
+        uint64_t *orig = p64;                   \
+        while (!hasless(*p64, 10))              \
+            p64++;                              \
+        (_p) += (p64-orig)*8;                   \
+        while (*(_p) > '\t')                    \
+            (_p)++;                             \
+        if (*(_p) != '\t') goto err_ret;        \
+        *(_p)++ = 0;                            \
+    } while (0)
+#define _read_token_aux(_p) (_p);               \
+    do {                                        \
+        uint64_t *p64 = (uint64_t *)(_p);       \
+        uint64_t *orig = p64;                   \
+        while (!hasless(*p64, 10))              \
+            p64++;                              \
+        (_p) += (p64-orig)*8;                   \
+        while (*(_p) > '\t')                    \
+            (_p)++;                             \
+        *(_p)++ = 0;                            \
+    } while (0)
+#define COPY_Q_T_MINUS_N(n,l)                                   \
+    do {                                                        \
+        uint64_t *q8 = (uint64_t *)q;                           \
+        uint64_t *t8 = (uint64_t *)t;                           \
+        int l8 = (l)>>3;                                        \
+        for (i = 0; i < l8; i++)                                \
+            t8[i] = q8[i] - (n)*0x0101010101010101UL;           \
+        for (i<<=3; i < (l); ++i)                               \
+            t[i] = q[i] - (n);                                  \
+    } while (0)
+
+#else
+
+// Basic versions which operate a byte at a time
 #define _read_token(_p) (_p); while(*(_p) > '\t')(_p)++;if (*(_p) != '\t') goto err_ret; *(_p)++ = 0
 #define _read_token_aux(_p) (_p); while(*(_p) > '\t')(_p)++; *(_p)++ = 0 // this is different in that it does not test *(_p)=='\t'
+#define COPY_Q_T_MINUS_N(n,l) do {for (i = 0; i < (l); ++i) t[i] = q[i] - (n);} while (0)
+
+#endif
+
 #define _get_mem(type_t, _x, _s, _l) ks_resize((_s), (_s)->l + (_l)); *(_x) = (type_t*)((_s)->s + (_s)->l); (_s)->l += (_l)
 #define _parse_err(cond, msg) do { if (cond) { hts_log_error(msg); goto err_ret; } } while (0)
 #define _parse_err_param(cond, msg, param) do { if (cond) { hts_log_error(msg, param); goto err_ret; } } while (0)
 #define _parse_warn(cond, msg) do { if (cond) { hts_log_warning(msg); } } while (0)
 
     uint8_t *t;
+
+    // Ensure kstring has at least 7 bytes more, so we can work in 8-byte chunks.
+    // (It doesn't have to be initialised, but we do so to silence valgrind.)
+    int vg = s->l;
+    ks_resize(s, s->l+7);
+    memset(s->s+vg, 0, 7);
+
     char *p = s->s, *q;
     int i;
     kstring_t str;
@@ -1268,17 +1309,25 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         for (i = 0; BAM_CIGAR_STR[i]; ++i)
             h->cigar_tab[(int)BAM_CIGAR_STR[i]] = i;
     }
+
     // qname
     q = _read_token(p);
+
     _parse_warn(p - q <= 1, "empty query name");
     _parse_err(p - q > 252, "query name too long");
-    kputsn_(q, p - q, &str);
-    for (c->l_extranul = 0; str.l % 4 != 0; c->l_extranul++)
-        kputc_('\0', &str);
+    // resize large enough for name + extranul
+    if ((p-q)+4 > SIZE_MAX - s->l || ks_resize(&str, str.l+(p-q)+4) < 0) goto err_ret;
+    memcpy(str.s+str.l, q, p-q); str.l += p-q;
+
+    c->l_extranul = 4-(str.l % 4); if (c->l_extranul == 0) c->l_extranul = 0;
+    memcpy(str.s+str.l, "\0\0\0\0", c->l_extranul); str.l += c->l_extranul;
+
     c->l_qname = p - q + c->l_extranul;
+
     // flag
     c->flag = STRTOL64(p, &p, 0);
     if (*p++ != '\t') goto err_ret; // malformated flag
+
     // chr
     q = _read_token(p);
     if (strcmp(q, "*")) {
@@ -1286,6 +1335,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         c->tid = bam_name2id(h, q);
         _parse_warn(c->tid < 0, "urecognized reference name; treated as unmapped");
     } else c->tid = -1;
+
     // pos
     c->pos = STRTOL64(p, &p, 10) - 1;
     if (*p++ != '\t') goto err_ret;
@@ -1294,6 +1344,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         c->tid = -1;
     }
     if (c->tid < 0) c->flag |= BAM_FUNMAP;
+
     // mapq
     c->qual = STRTOL64(p, &p, 10);
     if (*p++ != '\t') goto err_ret;
@@ -1352,7 +1403,9 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         _parse_err(c->n_cigar && i != c->l_qseq, "CIGAR and query sequence are of different length");
         i = (c->l_qseq + 1) >> 1;
         _get_mem(uint8_t, &t, &str, i);
-        for (i = 0; i < (c->l_qseq&~2); i+=2)
+
+        unsigned int lqs2 = c->l_qseq&~1, i;
+        for (i = 0; i < lqs2; i+=2)
             t[i>>1] = (seq_nt16_table[(unsigned char)q[i]] << 4) | seq_nt16_table[(unsigned char)q[i+1]];
         for (; i < c->l_qseq; ++i)
             t[i>>1] = seq_nt16_table[(unsigned char)q[i]] << ((~i&1)<<2);
@@ -1361,26 +1414,9 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     q = _read_token_aux(p);
     _get_mem(uint8_t, &t, &str, c->l_qseq);
 
-// An example of how to speed this up further, but needing extra guards
-// for unaligned access, 32-bit or 64-bit, etc. (See jkbonfield/io_lib.)
-//
-//#define hasless(x,n) (((x)-0x01010101UL*(n))&~(x)&0x80808080UL)
-//#define COPY_CPF_TO_CPTM(n)                                \
-//    do {                                                   \
-//        uint64_t *cpfi = (uint64_t *)q;                    \
-//        uint64_t *cpti = (uint64_t *)t;                    \
-//        uint64_t *orig = cpfi;                             \
-//        while (!hasless(*cpfi,10)) {                       \
-//            *cpti++ = *cpfi++ - (n)*0x0101010101010101UL;  \
-//        }                                                  \
-//        q += (cpfi-orig)*8; t += (cpfi-orig)*8;            \
-//        while (*q > '\t')                                  \
-//            *t++ = *q++ - (n);                             \
-//    } while (0)
-
     if (strcmp(q, "*")) {
         _parse_err(p - q - 1 != c->l_qseq, "SEQ and QUAL are of different length");
-        for (i = 0; i < c->l_qseq; ++i) t[i] = q[i] - 33; //aka COPY_CPF_TO_CPTM(33);
+        COPY_Q_T_MINUS_N(33,c->l_qseq);
     } else memset(t, 0xff, c->l_qseq);
     // aux
     while (p < s->s + s->l) {
@@ -1478,7 +1514,6 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             else if (type == 'I') while (q + 1 < p) { u32_to_le(STRTOUL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
             else if (type == 'f') while (q + 1 < p) { float_to_le(strtod(q + 1, &q), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
             else _parse_err_param(1, "unrecognized type B:%c", type);
-
 #undef _skip_to_comma
 
         } else _parse_err_param(1, "unrecognized type %c", type);
