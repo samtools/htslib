@@ -101,6 +101,8 @@ extern "C" {
 	 * EOF or on error (determined by querying fp, as per fgets()). */
 	typedef char *kgets_func(char *, int, void *);
 	int kgetline(kstring_t *s, kgets_func *fgets, void *fp);
+	typedef ssize_t kgets_func2(char *, int, void *);
+	int kgetline2(kstring_t *s, kgets_func2 *fgets, void *fp);
 
 #ifdef __cplusplus
 }

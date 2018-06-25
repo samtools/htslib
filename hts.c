@@ -1133,7 +1133,7 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
     switch (fp->format.compression) {
     case no_compression:
         str->l = 0;
-        ret = kgetline(str, (kgets_func *) hgets, fp->fp.hfile);
+        ret = kgetline2(str, (kgets_func2 *) hgetln, fp->fp.hfile);
         if (ret >= 0) ret = str->l;
         else if (herrno(fp->fp.hfile)) ret = -2, errno = herrno(fp->fp.hfile);
         else ret = -1;
