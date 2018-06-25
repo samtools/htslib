@@ -1282,6 +1282,11 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 #define _parse_warn(cond, msg) do { if (cond) { hts_log_warning(msg); } } while (0)
 
     uint8_t *t;
+
+    // Ensure kstring has at least 7 bytes more, so we can work in 8-byte chunks.
+    // (It doesn't have to be initialised.)
+    ks_resize(s, s->l+7);
+
     char *p = s->s, *q;
     int i;
     kstring_t str;
