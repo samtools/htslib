@@ -204,6 +204,13 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
     ssize_t len = hpeek(hfile, s, 18);
     if (len < 0) return -1;
 
+    fmt->category = unknown_category;
+    fmt->format = unknown_format;
+    fmt->version.major = fmt->version.minor = -1;
+    fmt->compression = no_compression;
+    fmt->compression_level = -1;
+    fmt->specific = NULL;
+
     if (len >= 2 && s[0] == 0x1f && s[1] == 0x8b) {
         // The stream is either gzip-compressed or BGZF-compressed.
         // Determine which, and decompress the first few bytes.
@@ -212,13 +219,9 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         len = decompress_peek(hfile, s, sizeof s);
     }
     else {
-        fmt->compression = no_compression;
         len = hpeek(hfile, s, sizeof s);
     }
     if (len < 0) return -1;
-
-    fmt->compression_level = -1;
-    fmt->specific = NULL;
 
     if (len >= 6 && memcmp(s,"CRAM",4) == 0 && s[4]>=1 && s[4]<=3 && s[5]<=1) {
         fmt->category = sequence_data;
@@ -263,7 +266,6 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         else if (memcmp(s, "TBI\1", 4) == 0) {
             fmt->category = index_file;
             fmt->format = tbi;
-            fmt->version.major = -1, fmt->version.minor = -1;
             return 0;
         }
     }
@@ -272,8 +274,6 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         fmt->format = vcf;
         if (len >= 21 && s[16] == 'v')
             parse_version(fmt, &s[17], &s[len]);
-        else
-            fmt->version.major = fmt->version.minor = -1;
         return 0;
     }
     else if (len >= 4 && s[0] == '@' &&
@@ -292,7 +292,6 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
     else if (cmp_nonblank("{\"htsget\":", s, &s[len]) == 0) {
         fmt->category = unknown_category;
         fmt->format = htsget;
-        fmt->version.major = fmt->version.minor = -1;
         return 0;
     }
     else {
@@ -308,10 +307,7 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         return 0;
     }
 
-    fmt->category = unknown_category;
-    fmt->format = unknown_format;
-    fmt->version.major = fmt->version.minor = -1;
-    fmt->compression = no_compression;
+    // Nothing recognised: leave unset fmt-> fields as unknown.
     return 0;
 }
 
