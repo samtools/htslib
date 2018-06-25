@@ -1040,6 +1040,10 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid, int64_t *beg
  */
     int sam_write1(samFile *fp, const sam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
 
+    int sam_state_destroy(samFile *fp);
+    int sam_set_thread_pool(htsFile *fp, htsThreadPool *p);
+    int sam_set_threads(htsFile *fp, int nthreads);
+
     /*************************************
      *** Manipulating auxiliary fields ***
      *************************************/

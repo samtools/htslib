@@ -224,6 +224,7 @@ typedef struct {
         struct cram_fd *cram;
         struct hFILE *hfile;
     } fp;
+    void *state;  // format specific state information
     htsFormat format;
     hts_idx_t *idx;
     const char *fnidx;

@@ -864,7 +864,10 @@ sub test_logging
   print "$test:\n";
   print "\t$cmd\n";
   my ($ret,$out) = _cmd($cmd);
-  if ( $ret ) { failed($opts,$test); }
+  if ( $ret ) {
+      print $out;
+      failed($opts,$test);
+  }
   else { passed($opts,$test); }
 }
 

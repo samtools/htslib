@@ -2029,6 +2029,16 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
         fp->errcode |= BGZF_ERR_MISUSE;
         return -1;
     }
+
+    // This is a flag to indicate we've jumped elsewhere in the stream, to act
+    // as a hint to any other code which is wrapping up bgzf for its own
+    // purposes.  We may not be able to tell when seek happens as it can be
+    // done on our behalf, eg by the iterator.
+    //
+    // This is never cleared here.  Any tool that needs to handle it is also
+    // responsible for clearing it.
+    fp->seeked = pos;
+
     return bgzf_seek_common(fp, pos >> 16, pos & 0xFFFF);
 }
 

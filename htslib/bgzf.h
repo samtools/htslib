@@ -73,6 +73,7 @@ struct BGZF {
     bgzidx_t *idx;      // BGZF index
     int idx_build_otf;  // build index on the fly, set by bgzf_index_build_init()
     z_stream *gz_stream;// for gzip-compressed files
+    int64_t seeked;     // virtual offset of last seek
 };
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;

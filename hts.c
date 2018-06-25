@@ -960,9 +960,11 @@ int hts_close(htsFile *fp)
         ret = cram_close(fp->fp.cram);
         break;
 
-    case text_format:
     case sam:
+    case text_format:
     case vcf:
+        sam_state_destroy(fp);
+
         if (fp->format.compression != no_compression)
             ret = bgzf_close(fp->fp.bgzf);
         else
@@ -1012,11 +1014,15 @@ const char *hts_format_file_extension(const htsFormat *format) {
 
 static hFILE *hts_hfile(htsFile *fp) {
     switch (fp->format.format) {
-    case binary_format: // fall through; still valid if bcf?
+    case binary_format:// fall through
+    case bcf:          // fall through
     case bam:          return bgzf_hfile(fp->fp.bgzf);
     case cram:         return cram_hfile(fp->fp.cram);
     case text_format:  return fp->fp.hfile;
-    case sam:          return fp->fp.hfile;
+    case vcf:          // fall through
+    case sam:          return fp->format.compression != no_compression
+                              ? bgzf_hfile(fp->fp.bgzf)
+                              : fp->fp.hfile;
     default:           return NULL;
     }
 }
@@ -1091,7 +1097,9 @@ BGZF *hts_get_bgzfp(htsFile *fp);
 
 int hts_set_threads(htsFile *fp, int n)
 {
-    if (fp->format.compression == bgzf) {
+    if (fp->format.format == sam) {
+        return sam_set_threads(fp, n);
+    } else if (fp->format.compression == bgzf) {
         return bgzf_mt(hts_get_bgzfp(fp), n, 256/*unused*/);
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_NTHREADS, n);
@@ -1100,7 +1108,9 @@ int hts_set_threads(htsFile *fp, int n)
 }
 
 int hts_set_thread_pool(htsFile *fp, htsThreadPool *p) {
-    if (fp->format.compression == bgzf) {
+    if (fp->format.format == sam || fp->format.format == text_format) {
+        return sam_set_thread_pool(fp, p);
+    } else if (fp->format.compression == bgzf) {
         return bgzf_thread_pool(hts_get_bgzfp(fp), p->pool, p->qsize);
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_THREAD_POOL, p);
@@ -1797,6 +1807,7 @@ static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
                     //int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
                     check(idx_write_int32(fp, p->n));
                     for (j = 0; j < p->n; ++j) {
+                        //fprintf(stderr, "\t%ld\t%ld\n", p->list[j].u, p->list[j].v);
                         check(idx_write_uint64(fp, p->list[j].u));
                         check(idx_write_uint64(fp, p->list[j].v));
                     }
