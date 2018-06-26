@@ -100,6 +100,7 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
     case bam:
     case sam:
     case cram:
+    case fastq_format:
         return sequence_data;
 
     case vcf:
@@ -109,6 +110,8 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
     case bai:
     case crai:
     case csi:
+    case fai_format:
+    case fqi_format:
     case gzi:
     case tbi:
         return index_file;
@@ -116,6 +119,7 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
     case bed:
         return region_list;
 
+    case fasta_format:
     case htsget:
         return unknown_category;
 
@@ -207,6 +211,22 @@ static int is_text_only(const unsigned char *u, const unsigned char *ulim)
             return 0;
 
     return 1;
+}
+
+static int
+secondline_is_bases(const unsigned char *u, const unsigned char *ulim)
+{
+    // Skip to second line, returning false if there isn't one
+    u = memchr(u, '\n', ulim - u);
+    if (u == NULL || ++u == ulim) return 0;
+
+    // Scan over all base-encoding letters (including 'N' but not SEQ's '=')
+    while (u < ulim && (seq_nt16_table[*u] != 15 || toupper(*u) == 'N')) {
+        if (*u == '=') return 0;
+        u++;
+    }
+
+    return (u == ulim || *u == '\r' || *u == '\n')? 1 : 0;
 }
 
 // Parse tab-delimited text, filling in a string of column types and returning
@@ -394,6 +414,15 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         fmt->format = htsget;
         return 0;
     }
+    else if (len >= 1 && s[0] == '>' && secondline_is_bases(s, &s[len])) {
+        fmt->format = fasta_format;
+        return 0;
+    }
+    else if (len >= 1 && s[0] == '@' && secondline_is_bases(s, &s[len])) {
+        fmt->category = sequence_data;
+        fmt->format = fastq_format;
+        return 0;
+    }
     else if (parse_tabbed_text(columns, sizeof columns, s, &s[len]) > 0) {
         if (colmatch(columns, "ZiZiiCZiiZZOOOOOOOOOOOOOOOOOOOO+") >= 11) {
             fmt->category = sequence_data;
@@ -404,6 +433,16 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         else if (fmt->compression == gzip && colmatch(columns, "iiiiii") == 6) {
             fmt->category = index_file;
             fmt->format = crai;
+            return 0;
+        }
+        else if (colmatch(columns, "Ziiiii") == 6) {
+            fmt->category = index_file;
+            fmt->format = fqi_format;
+            return 0;
+        }
+        else if (colmatch(columns, "Ziiii") == 5) {
+            fmt->category = index_file;
+            fmt->format = fai_format;
             return 0;
         }
         else if (colmatch(columns, "Zii+") >= 3) {
@@ -428,6 +467,8 @@ char *hts_format_description(const htsFormat *format)
     case sam:   kputs("SAM", &str); break;
     case bam:   kputs("BAM", &str); break;
     case cram:  kputs("CRAM", &str); break;
+    case fasta_format:  kputs("FASTA", &str); break;
+    case fastq_format:  kputs("FASTQ", &str); break;
     case vcf:   kputs("VCF", &str); break;
     case bcf:
         if (format->version.major == 1) kputs("Legacy BCF", &str);
@@ -436,6 +477,8 @@ char *hts_format_description(const htsFormat *format)
     case bai:   kputs("BAI", &str); break;
     case crai:  kputs("CRAI", &str); break;
     case csi:   kputs("CSI", &str); break;
+    case fai_format:    kputs("FASTA-IDX", &str); break;
+    case fqi_format:    kputs("FASTQ-IDX", &str); break;
     case gzi:   kputs("GZI", &str); break;
     case tbi:   kputs("Tabix", &str); break;
     case bed:   kputs("BED", &str); break;
@@ -489,6 +532,10 @@ char *hts_format_description(const htsFormat *format)
         case crai:
         case vcf:
         case bed:
+        case fai_format:
+        case fqi_format:
+        case fasta_format:
+        case fastq_format:
         case htsget:
             kputs(" text", &str);
             break;
@@ -565,7 +612,8 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     if (fp->is_write && fmt &&
         (fmt->format == bam || fmt->format == sam ||
          fmt->format == vcf || fmt->format == bcf ||
-         fmt->format == bed))
+         fmt->format == bed || fmt->format == fasta_format ||
+         fmt->format == fastq_format))
         fp->format.format = fmt->format;
 
     if (fmt && fmt->specific)
@@ -1018,6 +1066,8 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
     case empty_format:
     case text_format:
     case bed:
+    case fasta_format:
+    case fastq_format:
     case sam:
     case vcf:
         if (fp->format.compression != no_compression) {
@@ -1085,6 +1135,8 @@ int hts_close(htsFile *fp)
     case empty_format:
     case text_format:
     case bed:
+    case fasta_format:
+    case fastq_format:
     case sam:
     case vcf:
         ret = sam_state_destroy(fp);
@@ -1129,9 +1181,13 @@ const char *hts_format_file_extension(const htsFormat *format) {
     case vcf:  return "vcf";
     case bcf:  return "bcf";
     case csi:  return "csi";
+    case fai_format:   return "fai";
+    case fqi_format:   return "fqi";
     case gzi:  return "gzi";
     case tbi:  return "tbi";
     case bed:  return "bed";
+    case fasta_format: return "fa";
+    case fastq_format: return "fq";
     default:   return "?";
     }
 }

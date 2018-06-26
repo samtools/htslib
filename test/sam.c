@@ -1062,7 +1062,7 @@ static void test_empty_sam_file(const char *filename)
     else fail("can't open %s to read as SAM", filename);
 }
 
-static void test_empty_text_file(const char *filename)
+static void test_text_file(const char *filename, int nexp)
 {
     htsFile *in = hts_open(filename, "r");
     if (in) {
@@ -1070,7 +1070,7 @@ static void test_empty_text_file(const char *filename)
         int ret, n = 0;
         while ((ret = hts_getline(in, '\n', &str)) >= 0) n++;
         if (ret != -1) fail("hts_getline got an error from %s\n", filename);
-        if (n != 0) fail("hts_getline read %d lines from %s\n", n, filename);
+        if (n != nexp) fail("hts_getline read %d lines from %s (expected %d)\n", n, filename, nexp);
 
         hts_close(in);
         free(str.s);
@@ -1114,7 +1114,10 @@ int main(int argc, char **argv)
     test_header_pg_lines();
     test_header_updates();
     test_empty_sam_file("test/emptyfile");
-    test_empty_text_file("test/emptyfile");
+    test_text_file("test/emptyfile", 0);
+    test_text_file("test/xx#pair.sam", 7);
+    test_text_file("test/xx.fa", 7);
+    test_text_file("test/fastqs.fq", 500);
     check_enum1();
     check_cigar_tab();
     for (i = 1; i < argc; i++) faidx1(argv[i]);

@@ -94,8 +94,8 @@ Noteworthy changes in release a.b
 
 * hts_detect_format() no longer identifies arbitrary text files as SAM.
   Instead the first few lines are checked for @HD/etc headers or having
-  11 or more SAM-like columns.  It also identifies BED files and several
-  index formats.  (#200, PR #721)
+  11 or more SAM-like columns.  It also identifies BED/FASTA/FASTQ files
+  and several index formats.  (#200, #719, PR #721)
 
 * Empty (0-length) files are no longer considered to be valid SAM files.
   Input files without any headers or records at all are usually seen in
