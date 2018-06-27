@@ -185,33 +185,75 @@ static inline int kputsn_(const void *p, size_t l, kstring_t *s)
 	return l;
 }
 
-static inline int kputw(int c, kstring_t *s)
+static inline int kputuw(unsigned x, kstring_t *s)
 {
-	char buf[16];
-	int i, l = 0;
-	unsigned int x = c;
-	if (c < 0) x = -x;
-	do { buf[l++] = x%10 + '0'; x /= 10; } while (x > 0);
-	if (c < 0) buf[l++] = '-';
-	if (ks_resize(s, s->l + l + 2) < 0)
-		return EOF;
-	for (i = l - 1; i >= 0; --i) s->s[s->l++] = buf[i];
-	s->s[s->l] = 0;
-	return 0;
+    if (x < 10) {
+        if (ks_resize(s, s->l + 2) < 0)
+            return EOF;
+        s->s[s->l++] = '0'+x;
+        s->s[s->l] = 0;
+        return 0;
+    }
+
+#if defined(HAVE___BUILTIN_CLZ) || (defined __GNUC__ && (__GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4)))
+    static const unsigned int r[32] =
+        {0,0,1e9,0,0,1e8,0,0,1e7,0,0,0,1e6,0,0,1e5,0,0,1e4,0,0,0,1e3,0,0,100,0,0,10,0,0,0};
+    static const int d[32] =
+        {10,10,10,9,9,9,8,8,8,7,7,7,7,6,6,6,5,5,5,4,4,4,4,3,3,3,2,2,2,1,1,1};
+    int l = __builtin_clz(x);
+    l = d[l] - (x<r[l]);
+#else
+    int l = 0;
+    uint64_t m = 1;
+    do {
+        l++;
+        m *= 10;
+    } while (x >= m);
+#endif
+
+    if (ks_resize(s, s->l + l + 2) < 0)
+        return EOF;
+
+    static const char *dig2r =
+        "00010203040506070809"
+        "10111213141516171819"
+        "20212223242526272829"
+        "30313233343536373839"
+        "40414243444546474849"
+        "50515253545556575859"
+        "60616263646566676869"
+        "70717273747576777879"
+        "80818283848586878889"
+        "90919293949596979899";
+
+    unsigned int j = l;
+
+    char *cp = s->s + s->l;
+    while (x >= 10) {
+        const char *d = dig2r + 2*(x%100);
+        x /= 100;
+        memcpy(&cp[j-=2], d, 2);
+    }
+
+    if (j == 1)
+        cp[0] = x%10 + '0';
+
+    s->l += l;
+    s->s[s->l] = 0;
+    return 0;
 }
 
-static inline int kputuw(unsigned c, kstring_t *s)
+static inline int kputw(int c, kstring_t *s)
 {
-	char buf[16];
-	int l, i;
-	unsigned x;
-	if (c == 0) return kputc('0', s);
-	for (l = 0, x = c; x > 0; x /= 10) buf[l++] = x%10 + '0';
-	if (ks_resize(s, s->l + l + 2) < 0)
-		return EOF;
-	for (i = l - 1; i >= 0; --i) s->s[s->l++] = buf[i];
-	s->s[s->l] = 0;
-	return 0;
+    unsigned int x = c;
+    if (c < 0) {
+        x = -x;
+        if (ks_resize(s, s->l + 3) < 0)
+            return EOF;
+        s->s[s->l++] = '-';
+    }
+
+    return kputuw(x, s);
 }
 
 static inline int kputl(long c, kstring_t *s)

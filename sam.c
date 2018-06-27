@@ -1585,38 +1585,56 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
     const bam1_core_t *c = &b->core;
 
     str->l = 0;
-    kputsn(bam_get_qname(b), c->l_qname-1-c->l_extranul, str); kputc('\t', str); // query name
-    kputw(c->flag, str); kputc('\t', str); // flag
+    kputsn_(bam_get_qname(b), c->l_qname-1-c->l_extranul, str); kputc_('\t', str); // query name
+    kputw(c->flag, str); kputc_('\t', str); // flag
     if (c->tid >= 0) { // chr
         kputs(h->target_name[c->tid] , str);
-        kputc('\t', str);
-    } else kputsn("*\t", 2, str);
-    kputw(c->pos + 1, str); kputc('\t', str); // pos
-    kputw(c->qual, str); kputc('\t', str); // qual
+        kputc_('\t', str);
+    } else kputsn_("*\t", 2, str);
+    kputw(c->pos + 1, str); kputc_('\t', str); // pos
+    kputw(c->qual, str); kputc_('\t', str); // qual
     if (c->n_cigar) { // cigar
         uint32_t *cigar = bam_get_cigar(b);
         for (i = 0; i < c->n_cigar; ++i) {
             kputw(bam_cigar_oplen(cigar[i]), str);
-            kputc(bam_cigar_opchr(cigar[i]), str);
+            kputc_(bam_cigar_opchr(cigar[i]), str);
         }
-    } else kputc('*', str);
-    kputc('\t', str);
-    if (c->mtid < 0) kputsn("*\t", 2, str); // mate chr
-    else if (c->mtid == c->tid) kputsn("=\t", 2, str);
+    } else kputc_('*', str);
+    kputc_('\t', str);
+    if (c->mtid < 0) kputsn_("*\t", 2, str); // mate chr
+    else if (c->mtid == c->tid) kputsn_("=\t", 2, str);
     else {
         kputs(h->target_name[c->mtid], str);
-        kputc('\t', str);
+        kputc_('\t', str);
     }
-    kputw(c->mpos + 1, str); kputc('\t', str); // mate pos
-    kputw(c->isize, str); kputc('\t', str); // template len
+    kputw(c->mpos + 1, str); kputc_('\t', str); // mate pos
+    kputw(c->isize, str); kputc_('\t', str); // template len
     if (c->l_qseq) { // seq and qual
         uint8_t *s = bam_get_seq(b);
-        for (i = 0; i < c->l_qseq; ++i) kputc("=ACMGRSVTWYHKDBN"[bam_seqi(s, i)], str);
-        kputc('\t', str);
+        ks_resize(str, str->l+2+2*c->l_qseq);
+        char *cp = str->s + str->l;
+        int lq2 = c->l_qseq / 2;
+        for (i = 0; i < lq2; i++) {
+            uint8_t b = s[i];
+            cp[i*2+0] = "=ACMGRSVTWYHKDBN"[b>>4];
+            cp[i*2+1] = "=ACMGRSVTWYHKDBN"[b&0xf];
+        }
+        for (i *= 2; i < c->l_qseq; ++i)
+            cp[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(s, i)];
+        cp[i++] = '\t';
+        cp += i;
         s = bam_get_qual(b);
-        if (s[0] == 0xff) kputc('*', str);
-        else for (i = 0; i < c->l_qseq; ++i) kputc(s[i] + 33, str);
-    } else kputsn("*\t*", 3, str);
+        i = 0;
+        if (s[0] == 0xff) {
+            cp[i++] = '*';
+        } else {
+            for (i = 0; i < c->l_qseq; ++i)
+                cp[i]=s[i]+33;
+        }
+        cp[i] = 0;
+        cp += i;
+        str->l = cp - str->s;
+    } else kputsn_("*\t*", 3, str);
 
     s = bam_get_aux(b); // aux
     end = b->data + b->l_data;
@@ -1624,40 +1642,40 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
         uint8_t type, key[2];
         key[0] = s[0]; key[1] = s[1];
         s += 2; type = *s++;
-        kputc('\t', str); kputsn((char*)key, 2, str); kputc(':', str);
+        kputc_('\t', str); kputsn_((char*)key, 2, str); kputc_(':', str);
         if (type == 'A') {
-            kputsn("A:", 2, str);
-            kputc(*s, str);
+            kputsn_("A:", 2, str);
+            kputc_(*s, str);
             ++s;
         } else if (type == 'C') {
-            kputsn("i:", 2, str);
+            kputsn_("i:", 2, str);
             kputw(*s, str);
             ++s;
         } else if (type == 'c') {
-            kputsn("i:", 2, str);
+            kputsn_("i:", 2, str);
             kputw(*(int8_t*)s, str);
             ++s;
         } else if (type == 'S') {
             if (end - s >= 2) {
-                kputsn("i:", 2, str);
+                kputsn_("i:", 2, str);
                 kputuw(le_to_u16(s), str);
                 s += 2;
             } else goto bad_aux;
         } else if (type == 's') {
             if (end - s >= 2) {
-                kputsn("i:", 2, str);
+                kputsn_("i:", 2, str);
                 kputw(le_to_i16(s), str);
                 s += 2;
             } else goto bad_aux;
         } else if (type == 'I') {
             if (end - s >= 4) {
-                kputsn("i:", 2, str);
+                kputsn_("i:", 2, str);
                 kputuw(le_to_u32(s), str);
                 s += 4;
             } else goto bad_aux;
         } else if (type == 'i') {
             if (end - s >= 4) {
-                kputsn("i:", 2, str);
+                kputsn_("i:", 2, str);
                 kputw(le_to_i32(s), str);
                 s += 4;
             } else goto bad_aux;
@@ -1673,8 +1691,8 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
                 s += 8;
             } else goto bad_aux;
         } else if (type == 'Z' || type == 'H') {
-            kputc(type, str); kputc(':', str);
-            while (s < end && *s) kputc(*s++, str);
+            kputc_(type, str); kputc_(':', str);
+            while (s < end && *s) kputc_(*s++, str);
             if (s >= end)
                 goto bad_aux;
             ++s;
@@ -1688,7 +1706,8 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
             s += 4; // now points to the start of the array
             if ((end - s) / sub_type_size < n)
                 goto bad_aux;
-            kputsn("B:", 2, str); kputc(sub_type, str); // write the typing
+            kputsn_("B:", 2, str); kputc_(sub_type, str); // write the typing
+#if 0
             for (i = 0; i < n; ++i) { // FIXME: for better performance, put the loop after "if"
                 kputc(',', str);
                 if ('c' == sub_type)      { kputw(*(int8_t*)s, str); ++s; }
@@ -1700,10 +1719,46 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
                 else if ('f' == sub_type) { kputd(le_to_float(s), str); s += 4; }
                 else goto bad_aux;  // Unknown sub-type
             }
+#else
+            switch (sub_type) {
+            case 'c':
+                ks_resize(str, str->l + n*2);
+                for (i = 0; i < n; ++i) {kputc_(',', str); kputw(*(int8_t*)s, str); ++s;}
+                break;
+            case 'C':
+                ks_resize(str, str->l + n*2);
+                for (i = 0; i < n; ++i) {kputc_(',', str); kputw(*(uint8_t*)s, str); ++s;}
+                break;
+            case 's':
+                ks_resize(str, str->l + n*4);
+                for (i = 0; i < n; ++i) {kputc_(',', str); kputw(le_to_i16(s), str); s += 2; }
+                break;
+            case 'S':
+                ks_resize(str, str->l + n*4);
+                for (i = 0; i < n; ++i) {kputc_(',', str); kputw(le_to_u16(s), str); s += 2; }
+                break;
+            case 'i':
+                ks_resize(str, str->l + n*6);
+                for (i = 0; i < n; ++i) {kputc_(',', str); kputw(le_to_i32(s), str); s += 4; }
+                break;
+            case 'I':
+                ks_resize(str, str->l + n*6);
+                for (i = 0; i < n; ++i) {kputc_(',', str); kputuw(le_to_u32(s), str); s += 4; }
+                break;
+            case 'f':
+                ks_resize(str, str->l + n*8);
+                for (i = 0; i < n; ++i) {kputc_(',', str); kputd(le_to_float(s), str); s += 4; }
+                break;
+            default:
+                goto bad_aux;
+            }
+#endif
         } else { // Unknown type
             goto bad_aux;
         }
     }
+    //kputc('\0', str); str->l--;
+    kputsn("", 0, str); // nul terminate
     return str->l;
 
  bad_aux:
