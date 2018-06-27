@@ -191,7 +191,7 @@ enum htsExactFormat {
 };
 
 enum htsCompression {
-    no_compression, gzip, bgzf, custom,
+    no_compression, gzip, bgzf, custom, bzip2_compression,
     compression_maximum = 32767
 };
 

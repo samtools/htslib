@@ -216,7 +216,22 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         // Determine which, and decompress the first few bytes.
         fmt->compression = (len >= 18 && (s[3] & 4) &&
                             memcmp(&s[12], "BC\2\0", 4) == 0)? bgzf : gzip;
+        if (len >= 9 && s[2] == 8)
+            fmt->compression_level = (s[8] == 2)? 9 : (s[8] == 4)? 1 : -1;
+
         len = decompress_peek(hfile, s, sizeof s);
+    }
+    else if (len >= 10 && memcmp(s, "BZh", 3) == 0 &&
+             (memcmp(&s[4], "\x31\x41\x59\x26\x53\x59", 6) == 0 ||
+              memcmp(&s[4], "\x17\x72\x45\x38\x50\x90", 6) == 0)) {
+        fmt->compression = bzip2_compression;
+        fmt->compression_level = s[3] - '0';
+        // Decompressing via libbz2 produces no output until it has a whole
+        // block (of size 100Kb x level), which is too large for peeking.
+        // So unfortunately we can recognise bzip2 but not the contents,
+        // except that \x1772... magic indicates the stream is empty.
+        if (s[4] == '\x31') return 0;
+        else len = 0;
     }
     else {
         len = hpeek(hfile, s, sizeof s);
@@ -342,6 +357,7 @@ char *hts_format_description(const htsFormat *format)
     }
 
     switch (format->compression) {
+    case bzip2_compression:  kputs(" bzip2-compressed", &str); break;
     case custom: kputs(" compressed", &str); break;
     case gzip:   kputs(" gzip-compressed", &str); break;
     case bgzf:
