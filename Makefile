@@ -208,6 +208,7 @@ config.h:
 	echo '#define HAVE_LZMA_H 1' >> $@
 	echo '#define HAVE_FSEEKO 1' >> $@
 	echo '#define HAVE_DRAND48 1' >> $@
+	echo '#define HAVE___BUILTIN_CLZ 1' >> $@
 
 # And similarly for htslib.pc.tmp ("pkg-config template").  No dependency
 # on htslib.pc.in listed, as if that file is newer the usual way to regenerate

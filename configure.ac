@@ -72,6 +72,8 @@ dnl PKG_PROG_PKG_CONFIG macro, but we want to use it to check
 dnl for pkg-config...
 m4_ifdef([PKG_PROG_PKG_CONFIG], [PKG_PROG_PKG_CONFIG], [PKG_CONFIG=""])
 
+AX_GCC_BUILTIN(__builtin_clz)
+
 need_crypto=no
 pc_requires=
 static_LDFLAGS=$LDFLAGS
