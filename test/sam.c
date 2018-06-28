@@ -106,7 +106,7 @@ static void check_int_B_array(bam1_t *aln, char *tag,
 
 static int test_update_int(bam1_t *aln,
                            const char target_id[2], int64_t target_val,
-                           char expected_type, 
+                           char expected_type,
                            const char next_id[2], int64_t next_val,
                            char next_type) {
     uint8_t *p;

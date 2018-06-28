@@ -246,7 +246,7 @@ dnl Redhat/Fedora has it; Debian/Ubuntu does not.
      pc_requires="$pc_requires bzip2"
   else
      private_LIBS="$private_LIBS -lbz2"
-  fi  
+  fi
   static_LIBS="$static_LIBS -lbz2"
 fi
 

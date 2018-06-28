@@ -345,7 +345,7 @@ sub test_view
     my $regions = "CHROMOSOME_II:2980-2980 CHROMOSOME_IV:1500-1500 CHROMOSOME_II:2980-2980 CHROMOSOME_I:1000-1100";
     testv $opts, "./test_view $tv_args -i reference=ce.fa range.cram $regions > range.tmp";
     testv $opts, "./compare_sam.pl range.tmp range.out";
-    
+
     testv $opts, "./test_view $tv_args range.bam $regions > range.tmp";
     testv $opts, "./compare_sam.pl range.tmp range.out";
 }
