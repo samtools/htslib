@@ -1284,8 +1284,10 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     uint8_t *t;
 
     // Ensure kstring has at least 7 bytes more, so we can work in 8-byte chunks.
-    // (It doesn't have to be initialised.)
+    // (It doesn't have to be initialised, but we do so to silence valgrind.)
+    int vg = s->l;
     ks_resize(s, s->l+7);
+    memset(s->s+vg, 0, 7);
 
     char *p = s->s, *q;
     int i;
