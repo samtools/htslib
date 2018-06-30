@@ -133,12 +133,13 @@ extern uint8_t bcf_type_shift[];
 #define BCF_BT_FLOAT    5
 #define BCF_BT_CHAR     7
 
-#define VCF_REF   0
-#define VCF_SNP   1
-#define VCF_MNP   2
-#define VCF_INDEL 4
-#define VCF_OTHER 8
-#define VCF_BND   16    // breakend
+#define VCF_REF      0
+#define VCF_SNP      1
+#define VCF_MNP      2
+#define VCF_INDEL    4
+#define VCF_OTHER    8
+#define VCF_BND     16    // breakend
+#define VCF_OVERLAP 32    // overlapping deletion, ALT=*
 
 typedef struct {
     int type, n;    // variant type and the number of bases affected, negative for deletions

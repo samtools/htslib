@@ -3578,7 +3578,7 @@ int bcf_is_snp(bcf1_t *v)
     bcf_unpack(v, BCF_UN_STR);
     for (i = 0; i < v->n_allele; ++i)
     {
-        if ( v->d.allele[i][1]==0 ) continue;
+        if ( v->d.allele[i][1]==0 && v->d.allele[i][0]!='*' ) continue;
 
         // mpileup's <X> allele, see also below. This is not completely satisfactory,
         // a general library is here narrowly tailored to fit samtools.
@@ -3592,12 +3592,13 @@ int bcf_is_snp(bcf1_t *v)
 
 static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *var)
 {
+    if ( *alt == '*' && !alt[1] ) { var->n = 0; var->type = VCF_OVERLAP; return; }  // overlapping variant
+
     // The most frequent case
     if ( !ref[1] && !alt[1] )
     {
         if ( *alt == '.' || *ref==*alt ) { var->n = 0; var->type = VCF_REF; return; }
         if ( *alt == 'X' ) { var->n = 0; var->type = VCF_REF; return; }  // mpileup's X allele shouldn't be treated as variant
-        if ( *alt == '*' ) { var->n = 0; var->type = VCF_REF; return; }
         var->n = 1; var->type = VCF_SNP; return;
     }
     if ( alt[0]=='<' )
