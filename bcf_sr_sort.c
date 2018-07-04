@@ -22,6 +22,8 @@
     THE SOFTWARE.
 */
 
+#include <config.h>
+
 #include <strings.h>
 
 #include "bcf_sr_sort.h"

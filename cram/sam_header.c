@@ -33,7 +33,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <assert.h>
 
-#include "hts_internal.h"
+#include "htslib/hts_log.h"
 #include "cram/sam_header.h"
 #include "cram/string_alloc.h"
 
