@@ -1007,6 +1007,11 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
 
 bam_hdr_t *sam_hdr_read(htsFile *fp)
 {
+    if (!fp) {
+        errno = EINVAL;
+        return NULL;
+    }
+
     switch (fp->format.format) {
     case bam:
         return sam_hdr_sanitise(bam_hdr_read(fp->fp.bgzf));
@@ -1061,7 +1066,7 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
 
 int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 {
-    if (!h) {
+    if (!fp || !h) {
         errno = EINVAL;
         return -1;
     }
