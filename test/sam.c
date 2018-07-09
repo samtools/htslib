@@ -459,17 +459,37 @@ static void copy_check_alignment(const char *infname, const char *informat,
     samFile *in = sam_open(infname, "r");
     samFile *out = sam_open(outfname, outmode);
     bam1_t *aln = bam_init1();
-    bam_hdr_t *header;
+    bam_hdr_t *header = NULL;
+    int res;
+
+    if (!in) {
+        fail("couldn't open %s", infname);
+        goto err;
+    }
+    if (!out) {
+        fail("couldn't open %s with mode %s", outfname, outmode);
+        goto err;
+    }
+    if (!aln) {
+        fail("bam_init1() failed");
+        goto err;
+    }
 
     if (outref) {
-        if (hts_set_opt(out, CRAM_OPT_REFERENCE, outref) < 0)
+        if (hts_set_opt(out, CRAM_OPT_REFERENCE, outref) < 0) {
             fail("setting reference %s for %s", outref, outfname);
+            goto err;
+        }
     }
 
     header = sam_hdr_read(in);
+    if (!header) {
+        fail("reading header from %s", infname);
+        goto err;
+    }
     if (sam_hdr_write(out, header) < 0) fail("writing headers to %s", outfname);
 
-    while (sam_read1(in, header, aln) >= 0) {
+    while ((res = sam_read1(in, header, aln)) >= 0) {
         int mod4 = ((intptr_t) bam_get_cigar(aln)) % 4;
         if (mod4 != 0)
             fail("%s CIGAR not 4-byte aligned; offset is 4k+%d for \"%s\"",
@@ -477,11 +497,15 @@ static void copy_check_alignment(const char *infname, const char *informat,
 
         if (sam_write1(out, header, aln) < 0) fail("writing to %s", outfname);
     }
+    if (res < -1) {
+        fail("failed to read alignment from %s", infname);
+    }
 
+ err:
     bam_destroy1(aln);
     bam_hdr_destroy(header);
-    sam_close(in);
-    sam_close(out);
+    if (in) sam_close(in);
+    if (out) sam_close(out);
 }
 
 static void samrecord_layout(void)
