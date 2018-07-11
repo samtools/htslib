@@ -1305,7 +1305,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         _get_mem(uint8_t, &t, &str, i);
         memset(t, 0, i);
         for (i = 0; i < c->l_qseq; ++i)
-            t[i>>1] |= seq_nt16_table[(int)q[i]] << ((~i&1)<<2);
+            t[i>>1] |= seq_nt16_table[(unsigned char)q[i]] << ((~i&1)<<2);
     } else c->l_qseq = 0;
     // qual
     q = _read_token_aux(p);

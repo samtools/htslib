@@ -164,5 +164,6 @@ int main(int argc, char **argv) {
     if (in) hts_close(in);
     if (out) hts_close(out);
     free(ref_seq);
+    fai_destroy(fai);
     return EXIT_FAILURE;
 }
