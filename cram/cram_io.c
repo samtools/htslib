@@ -1932,6 +1932,8 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         hts_log_info("Querying ref %s", m5_str);
 
         if (!(ref_fn = m5_to_path(m5_str))){
+            hts_log_warning("Failed to find reference with MD5 \"%s\".", m5_str);
+
             no_m5 = 1;
         }
     }
@@ -1954,8 +1956,11 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
                 return -1;
             fd->refs->fp = NULL;
         }
-        if (!(refs = refs_load_fai(fd->refs, fn, 0)))
+        if (!(refs = refs_load_fai(fd->refs, fn, 0))){
+            hts_log_warning("Failed to find reference \"%s\" from the @SQ UR: tag.", fn);
+
             return -1;
+        }
         sanitise_SQ_lines(fd);
 
         fd->refs = refs;
@@ -1984,7 +1989,12 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         /* Read the whole sequence into memory, as we're dealing with a remote file */
         kstring_t ref_seq = {0};
 
-        hFILE* ref_hfile = hopen(ref_fn, "r");
+        hFILE* ref_hfile;
+        if (!(ref_hfile = hopen(ref_fn, "r"))){
+            hts_log_error("Failed to open reference \"%s\": %s", ref_fn, strerror(errno));
+
+            return -1;
+        }
 
         do{
             ks_resize(&ref_seq, ks_len(&ref_seq) + READ_LENGTH);
@@ -2022,7 +2032,6 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     free(ref_fn);
 
     return 0;
-
 }
 
 static void cram_ref_incr_locked(refs_t *r, int id) {
