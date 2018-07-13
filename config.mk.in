@@ -47,6 +47,7 @@ LIBS     = @LIBS@
 
 PLATFORM   = @PLATFORM@
 PLUGIN_EXT = @PLUGIN_EXT@
+ENABLE_HTTP_TESTS = @ENABLE_HTTP_TESTS@
 
 # Lowercase here indicates these are "local" to config.mk
 plugin_OBJS =

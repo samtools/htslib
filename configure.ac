@@ -136,6 +136,11 @@ AC_ARG_ENABLE([s3],
                   [support Amazon AWS S3 URLs])],
   [], [enable_s3=check])
 
+AC_ARG_ENABLE([http-tests],
+  [AS_HELP_STRING([--disable-http-tests],
+                  [disables tests that require querying to a http server])],
+  [disable_http_tests=yes], [disable_http_tests=no])
+
 test -n "$host_alias" || host_alias=unknown-`uname -s`
 AC_MSG_CHECKING([shared library type for $host_alias])
 case $host_alias in
@@ -293,10 +298,14 @@ Either configure with --without-libdeflate or resolve this error to build
 HTSlib.])])])])
 
 libcurl=disabled
+ENABLE_HTTP_TESTS=false
 if test "$enable_libcurl" != no; then
   AC_CHECK_LIB([curl], [curl_easy_pause],
     [AC_DEFINE([HAVE_LIBCURL], 1, [Define if libcurl file access is enabled.])
-     libcurl=enabled],
+     libcurl=enabled
+     if test "$disable_http_tests" = no; then
+      ENABLE_HTTP_TESTS=true
+     fi ],
     [AC_CHECK_LIB([curl], [curl_easy_init],
        [message="library is too old (7.18+ required)"],
        [message="library not found"])
@@ -322,6 +331,7 @@ dnl -lcurl is only needed for static linking if hfile_libcurl is not a plugin
   fi
 fi
 AC_SUBST([libcurl])
+AC_SUBST([ENABLE_HTTP_TESTS])
 
 gcs=disabled
 if test "$enable_gcs" != no; then
