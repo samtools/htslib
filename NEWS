@@ -57,6 +57,12 @@ Noteworthy changes in release a.b
 
   - Fixed warnings found when compiling with gcc 8.1.0. (#700)
 
+  - sam_hdr_read() and sam_hdr_write() will now return an error code
+    if passed a NULL file pointer, instead of crashing.
+
+  - Fixed possible negative array look-up in sam_parse1() that somehow
+    escaped previous fuzz testing. (#731, reported by @fCorleone)
+
 Noteworthy changes in release 1.8 (3rd April 2018)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
