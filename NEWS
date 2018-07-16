@@ -63,6 +63,12 @@ Noteworthy changes in release a.b
   - Fixed possible negative array look-up in sam_parse1() that somehow
     escaped previous fuzz testing. (#731, reported by @fCorleone)
 
+  - Fixed bug where cram range queries could incorrectly report an error
+    when using multiple threads. (#734, reported by Brent Pedersen)
+
+  - Fixed very rare rANS normalisation bug that could cause an assertion
+    failure when writing CRAM files.  (#739, reported by @carsonhh)
+
 Noteworthy changes in release 1.8 (3rd April 2018)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
