@@ -3212,8 +3212,10 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
         hts_tpool_result *res;
         cram_decode_job *j;
 
-        if (fd->ooc && hts_tpool_process_empty(fd->rqueue))
+        if (fd->ooc && hts_tpool_process_empty(fd->rqueue)) {
+            fd->eof = 1;
             return NULL;
+        }
 
         res = hts_tpool_next_result_wait(fd->rqueue);
 
