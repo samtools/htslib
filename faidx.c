@@ -493,7 +493,12 @@ static int fai_build3_core(const char *fn, const char *fnfai, const char *fngzi)
         goto fail;
     }
 
-    fp = hopen(fnfai, "wb");
+    if (hisremote(fnfai)) {
+        fp = hopen(fnfai, "wb");
+    } else {
+        unlink(fnfai);
+        fp = hopen(fnfai, "wbx");
+    }
 
     if ( !fp ) {
         hts_log_error("Failed to open %s index %s : %s", file_type, fnfai, strerror(errno));
