@@ -672,6 +672,7 @@ static void bcf_sr_seek_start(bcf_srs_t *readers)
 int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos)
 {
     if ( !readers->regions ) return 0;
+    bcf_sr_sort_reset(&BCF_SR_AUX(readers)->sort);
     if ( !seq && !pos )
     {
         // seek to start
@@ -876,6 +877,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
 // returns -1 on error, 0 if the line is a comment line, 1 on success
 static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **chr,char **chr_end,int *from,int *to)
 {
+    if (ifrom < 0 || ito < 0) return -1;
     *chr_end = NULL;
 
     if ( line[0]=='#' ) return 0;

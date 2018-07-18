@@ -601,6 +601,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "BLOCK_SIZE") == 0)
         o->opt = HTS_OPT_BLOCK_SIZE, o->val.i = strtol(val, NULL, 0);
 
+    else if (strcmp(o->arg, "level") == 0 ||
+             strcmp(o->arg, "LEVEL") == 0)
+        o->opt = HTS_OPT_COMPRESSION_LEVEL, o->val.i = strtol(val, NULL, 0);
+
     else {
         hts_log_error("Unknown option '%s'", o->arg);
         free(o->arg);
@@ -1027,6 +1031,14 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         va_end(args);
         hts_set_cache_size(fp, cache_size);
         return 0;
+    }
+
+    case HTS_OPT_COMPRESSION_LEVEL: {
+        va_start(args, opt);
+        int level = va_arg(args, int);
+        va_end(args);
+        if (fp->is_bgzf)
+            fp->fp.bgzf->compress_level = level;
     }
 
     default:
@@ -2251,7 +2263,7 @@ hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
                         if (bin == 0) { max_off = (uint64_t)-1; break; }
                         k = kh_get(bin, bidx, bin);
                         if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) {
-                            max_off = kh_val(bidx, k).loff;
+                            max_off = kh_val(bidx, k).list[0].u;
                             break;
                         }
                         bin++;
@@ -2701,44 +2713,42 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
             ++iter->i;
         }
 
-        if ((ret = iter->readrec(fp, fd, r, &tid, &beg, &end)) >= 0) {
-            iter->curr_off = iter->tell(fp);
-            if (tid != iter->curr_tid) {
-                hts_reglist_t key;
-                key.tid = tid;
+        ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
+        if (ret < 0)
+            break;
 
-                found_reg = (hts_reglist_t *)bsearch(&key, iter->reg_list, iter->n_reg, sizeof(hts_reglist_t), compare_regions);
+        iter->curr_off = iter->tell(fp);
+        if (tid != iter->curr_tid) {
+            hts_reglist_t key;
+            key.tid = tid;
 
-                if (!found_reg)
-                    continue;
-
-                iter->curr_reg = (found_reg - iter->reg_list);
-                iter->curr_tid = tid;
-                iter->curr_intv = 0;
-            }
-
-            cr = iter->curr_reg;
-            ci = iter->curr_intv;
-
-
-            if (beg >  iter->off[iter->i].max) {
-                iter->curr_off = iter->off[iter->i].v;
-                continue;
-            }
-            if (beg >  iter->reg_list[cr].max_end)
+            found_reg = (hts_reglist_t *)bsearch(&key, iter->reg_list, iter->n_reg, sizeof(hts_reglist_t), compare_regions);
+            if (!found_reg)
                 continue;
 
-            for (i = ci; i < iter->reg_list[cr].count; i++) {
-                if (end > iter->reg_list[cr].intervals[i].beg && iter->reg_list[cr].intervals[i].end > beg) {
-                    iter->curr_beg = beg;
-                    iter->curr_end = end;
-                    iter->curr_intv = i;
+            iter->curr_reg = (found_reg - iter->reg_list);
+            iter->curr_tid = tid;
+            iter->curr_intv = 0;
+        }
 
-                    return ret;
-                }
+        cr = iter->curr_reg;
+        ci = iter->curr_intv;
+
+        if (beg >  iter->off[iter->i].max) {
+            iter->curr_off = iter->off[iter->i].v;
+            continue;
+        }
+        if (beg >  iter->reg_list[cr].max_end)
+            continue;
+
+        for (i = ci; i < iter->reg_list[cr].count; i++) {
+            if (end > iter->reg_list[cr].intervals[i].beg && iter->reg_list[cr].intervals[i].end > beg) {
+                iter->curr_beg = beg;
+                iter->curr_end = end;
+                iter->curr_intv = i;
+
+                return ret;
             }
-        } else {
-            break; // end of file or error
         }
     }
     iter->finished = 1;

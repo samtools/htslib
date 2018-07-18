@@ -3075,11 +3075,25 @@ int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples, int is_file)
 {
     if ( samples && !strcmp("-",samples) ) return 0;            // keep all samples
 
-    hdr->nsamples_ori = bcf_hdr_nsamples(hdr);
-    if ( !samples ) { bcf_hdr_nsamples(hdr) = 0; return 0; }    // exclude all samples
-
     int i, narr = bit_array_size(bcf_hdr_nsamples(hdr));
     hdr->keep_samples = (uint8_t*) calloc(narr,1);
+
+    hdr->nsamples_ori = bcf_hdr_nsamples(hdr);
+    if ( !samples )
+    {
+        // exclude all samples
+        bcf_hdr_nsamples(hdr) = 0;
+        khint_t k;
+        vdict_t *d = (vdict_t*)hdr->dict[BCF_DT_SAMPLE];
+        for (k = kh_begin(d); k != kh_end(d); ++k)
+            if (kh_exist(d, k)) free((char*)kh_key(d, k));
+        kh_destroy(vdict, d);
+        hdr->dict[BCF_DT_SAMPLE] = kh_init(vdict);
+        bcf_hdr_sync(hdr);
+
+        return 0;
+    }
+
     if ( samples[0]=='^' )
         for (i=0; i<bcf_hdr_nsamples(hdr); i++) bit_array_set(hdr->keep_samples,i);
 
@@ -3567,9 +3581,9 @@ static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nal
         n++;
     }
 
-    // Update REF length
+    // Update REF length. Note that END is 1-based while line->pos 0-based
     bcf_info_t *end_info = bcf_get_info(hdr,line,"END");
-    line->rlen = end_info ? end_info->v1.i : strlen(line->d.allele[0]);
+    line->rlen = end_info ? end_info->v1.i - line->pos : strlen(line->d.allele[0]);
 
     return 0;
 }

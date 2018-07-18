@@ -32,6 +32,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <getopt.h>
+#include <inttypes.h>
 #include <sys/stat.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
@@ -85,13 +86,14 @@ static int bgzip_main_usage(void)
     fprintf(stderr, "   -g, --rebgzip              use an index file to bgzip a file\n");
     fprintf(stderr, "   -s, --size INT             decompress INT bytes (uncompressed size)\n");
     fprintf(stderr, "   -@, --threads INT          number of compression threads to use [1]\n");
+    fprintf(stderr, "   -t, --test                 test integrity of compressed file");
     fprintf(stderr, "\n");
     return 1;
 }
 
 int main(int argc, char **argv)
 {
-    int c, compress, compress_level = -1, pstdout, is_forced, index = 0, rebgzip = 0, reindex = 0;
+    int c, compress, compress_level = -1, pstdout, is_forced, test, index = 0, rebgzip = 0, reindex = 0;
     BGZF *fp;
     void *buffer;
     long start, end, size;
@@ -112,12 +114,13 @@ int main(int argc, char **argv)
         {"rebgzip",no_argument,NULL,'g'},
         {"size", required_argument, NULL, 's'},
         {"threads", required_argument, NULL, '@'},
+        {"test", no_argument, NULL, 't'},
         {"version", no_argument, NULL, 1},
         {NULL, 0, NULL, 0}
     };
 
-    compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0;
-    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:l:gr",loptions,NULL)) >= 0){
+    compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0; test = 0;
+    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:l:grt",loptions,NULL)) >= 0){
         switch(c){
         case 'd': compress = 0; break;
         case 'c': pstdout = 1; break;
@@ -130,6 +133,7 @@ int main(int argc, char **argv)
         case 'g': rebgzip = 1; break;
         case 'r': reindex = 1; compress = 0; break;
         case '@': threads = atoi(optarg); break;
+        case 't': test = 1; compress = 0; reindex = 0; break;
         case 1:
             printf(
 "bgzip (htslib) %s\n"
@@ -292,7 +296,7 @@ int main(int argc, char **argv)
             }
             char *name;
             int len = strlen(argv[optind]);
-            if ( strcmp(argv[optind]+len-3,".gz") )
+            if ( strcmp(argv[optind]+len-3,".gz") && !test)
             {
                 fprintf(stderr, "[bgzip] %s: unknown suffix -- ignored\n", argv[optind]);
                 return 1;
@@ -303,7 +307,7 @@ int main(int argc, char **argv)
                 return 1;
             }
 
-            if (pstdout) {
+            if (pstdout || test) {
                 f_dst = fileno(stdout);
             }
             else {
@@ -332,6 +336,12 @@ int main(int argc, char **argv)
                 return 1;
             }
         }
+
+        if (!fp->is_compressed) {
+            fprintf(stderr, "[bgzip] Expected compressed file -- ignored\n");
+            return 1;
+        }
+
         if (threads > 1)
             bgzf_mt(fp, threads, 256);
 
@@ -348,9 +358,9 @@ int main(int argc, char **argv)
             if (end < 0) c = bgzf_read(fp, buffer, WINDOW_SIZE);
             else c = bgzf_read(fp, buffer, (end - start > WINDOW_SIZE)? WINDOW_SIZE:(end - start));
             if (c == 0) break;
-            if (c < 0) error("Could not read %d bytes: Error %d\n", (end - start > WINDOW_SIZE)? WINDOW_SIZE:(end - start), fp->errcode);
+            if (c < 0) error("Error %d in block starting at offset %" PRId64 "(%" PRIX64 ")\n", fp->errcode, fp->block_address, fp->block_address);
             start += c;
-            if ( write(f_dst, buffer, c) != c ) {
+            if ( !test && write(f_dst, buffer, c) != c ) {
 #ifdef _WIN32
                 if (GetLastError() != ERROR_NO_DATA)
 #endif
@@ -360,7 +370,7 @@ int main(int argc, char **argv)
         }
         free(buffer);
         if (bgzf_close(fp) < 0) error("Close failed: Error %d\n",fp->errcode);
-        if (!pstdout) unlink(argv[optind]);
+        if (!pstdout && !test) unlink(argv[optind]);
         return 0;
     }
 }

@@ -35,7 +35,7 @@ extern "C" {
 #endif
 
 /// Highest SAM format version supported by this library
-#define SAM_FORMAT_VERSION "1.5"
+#define SAM_FORMAT_VERSION "1.6"
 
 /**********************
  *** SAM/BAM header ***
@@ -488,14 +488,106 @@ int bam_aux_append(bam1_t *b, const char tag[2], char type, int len, const uint8
 */
 int bam_aux_del(bam1_t *b, uint8_t *s);
 
-/// Update a string-type tag
+/// Update or add a string-type tag
 /* @param b    The bam record to update
    @param tag  Tag identifier
    @param len  The length of the new string
    @param data The new string
    @return 0 on success, -1 on failure
+   This function will not change the ordering of tags in the bam record.
+   New tags will be appended to any existing aux records.
+
+   On failure, errno may be set to one of the following values:
+
+   EINVAL: The bam record's aux data is corrupt or an existing tag with the
+   given ID is not of type 'Z'.
+
+   ENOMEM: The bam data needs to be expanded and either the attempt to
+   reallocate the data buffer failed or the resulting buffer would be
+   longer than the maximum size allowed in a bam record (2Gbytes).
 */
 int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data);
+
+/// Update or add an integer tag
+/* @param b    The bam record to update
+   @param tag  Tag identifier
+   @param val  The new value
+   @return 0 on success, -1 on failure
+   This function will not change the ordering of tags in the bam record.
+   New tags will be appended to any existing aux records.
+
+   On failure, errno may be set to one of the following values:
+
+   EINVAL: The bam record's aux data is corrupt or an existing tag with the
+   given ID is not of an integer type (c, C, s, S, i or I).
+
+   EOVERFLOW (or ERANGE on systems that do not have EOVERFLOW): val is
+   outside the range that can be stored in an integer bam tag (-2147483647
+   to 4294967295).
+
+   ENOMEM: The bam data needs to be expanded and either the attempt to
+   reallocate the data buffer failed or the resulting buffer would be
+   longer than the maximum size allowed in a bam record (2Gbytes).
+*/
+int bam_aux_update_int(bam1_t *b, const char tag[2], int64_t val);
+
+/// Update or add a floating-point tag
+/* @param b    The bam record to update
+   @param tag  Tag identifier
+   @param val  The new value
+   @return 0 on success, -1 on failure
+   This function will not change the ordering of tags in the bam record.
+   New tags will be appended to any existing aux records.
+
+   On failure, errno may be set to one of the following values:
+
+   EINVAL: The bam record's aux data is corrupt or an existing tag with the
+   given ID is not of a float type.
+
+   ENOMEM: The bam data needs to be expanded and either the attempt to
+   reallocate the data buffer failed or the resulting buffer would be
+   longer than the maximum size allowed in a bam record (2Gbytes).
+*/
+int bam_aux_update_float(bam1_t *b, const char tag[2], float val);
+
+/// Update or add an array tag
+/* @param b     The bam record to update
+   @param tag   Tag identifier
+   @param type  Data type (one of c, C, s, S, i, I or f)
+   @param items Number of items
+   @param data  Pointer to data
+   @return 0 on success, -1 on failure
+   The type parameter indicates the how the data is interpreted:
+
+   Letter code | Data type | Item Size (bytes)
+   ----------- | --------- | -----------------
+   c           | int8_t    | 1
+   C           | uint8_t   | 1
+   s           | int16_t   | 2
+   S           | uint16_t  | 2
+   i           | int32_t   | 4
+   I           | uint32_t  | 4
+   f           | float     | 4
+
+   This function will not change the ordering of tags in the bam record.
+   New tags will be appended to any existing aux records.  The bam record
+   will grow or shrink in order to accomodate the new data.
+
+   The data parameter must not point to any data in the bam record itself or
+   undefined behaviour may result.
+
+   On failure, errno may be set to one of the following values:
+
+   EINVAL: The bam record's aux data is corrupt, an existing tag with the
+   given ID is not of an array type or the type parameter is not one of
+   the values listed above.
+
+   ENOMEM: The bam data needs to be expanded and either the attempt to
+   reallocate the data buffer failed or the resulting buffer would be
+   longer than the maximum size allowed in a bam record (2Gbytes).
+*/
+int bam_aux_update_array(bam1_t *b, const char tag[2],
+                         uint8_t type, uint32_t items, void *data);
 
 /**************************
  *** Pileup and Mpileup ***
