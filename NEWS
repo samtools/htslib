@@ -1,6 +1,9 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Noteworthy changes in release 1.9 (18th July 2018)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 * If `./configure` fails, `make` will stop working until either configure
   is re-run successfully, or `make distclean` is used.  This makes
   configuration failures more obvious.  (#711, thanks to John Marshall)
