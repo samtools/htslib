@@ -284,8 +284,8 @@ typedef struct {
     typedef htsFile vcfFile;
     #define bcf_open(fn, mode) hts_open((fn), (mode))
     #define vcf_open(fn, mode) hts_open((fn), (mode))
-    #define bcf_close(fp) hts_close(fp) HTS_RESULT_USED
-    #define vcf_close(fp) hts_close(fp) HTS_RESULT_USED
+    #define bcf_close(fp) hts_close(fp)
+    #define vcf_close(fp) hts_close(fp)
 
     /** Reads VCF or BCF header */
     bcf_hdr_t *bcf_hdr_read(htsFile *fp) HTS_RESULT_USED;
