@@ -77,7 +77,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/cram.h"
 #include "cram/os.h"
 #include "htslib/hts.h"
-#include "cram/open_trace_file.h"
+#include "htslib/ref.h"
 #include "cram/rANS_static.h"
 
 //#define REF_DEBUG
@@ -1500,13 +1500,10 @@ char *cram_content_type2str(enum cram_content_type t) {
  * Frees/unmaps a reference sequence and associated file handles.
  */
 static void ref_entry_free_seq(ref_entry *e) {
-    if (e->mf)
-        mfclose(e->mf);
-    if (e->seq && !e->mf)
+    if (e->seq)
         free(e->seq);
 
     e->seq = NULL;
-    e->mf = NULL;
 }
 
 void refs_free(refs_t *r) {
@@ -1709,7 +1706,6 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 
         e->count = 0;
         e->seq = NULL;
-        e->mf = NULL;
         e->is_md5 = 0;
 
         k = kh_put(refs, r->h_meta, e->name, &n);
@@ -1907,169 +1903,17 @@ int cram_set_header(cram_fd *fd, SAM_hdr *hdr) {
 }
 
 /*
- * Converts a directory and a filename into an expanded path, replacing %s
- * in directory with the filename and %[0-9]+s with portions of the filename
- * Any remaining parts of filename are added to the end with /%s.
- */
-int expand_cache_path(char *path, char *dir, char *fn) {
-    char *cp, *start = path;
-    size_t len;
-    size_t sz = PATH_MAX;
-
-    while ((cp = strchr(dir, '%'))) {
-        if (cp-dir >= sz) return -1;
-        strncpy(path, dir, cp-dir);
-        path += cp-dir;
-        sz -= cp-dir;
-
-        if (*++cp == 's') {
-            len = strlen(fn);
-            if (len >= sz) return -1;
-            strcpy(path, fn);
-            path += len;
-            sz -= len;
-            fn += len;
-            cp++;
-        } else if (*cp >= '0' && *cp <= '9') {
-            char *endp;
-            long l;
-
-            l = strtol(cp, &endp, 10);
-            l = MIN(l, strlen(fn));
-            if (*endp == 's') {
-                if (l >= sz) return -1;
-                strncpy(path, fn, l);
-                path += l;
-                fn += l;
-                sz -= l;
-                *path = 0;
-                cp = endp+1;
-            } else {
-                if (sz < 3) return -1;
-                *path++ = '%';
-                *path++ = *cp++;
-            }
-        } else {
-            if (sz < 3) return -1;
-            *path++ = '%';
-            *path++ = *cp++;
-        }
-        dir = cp;
-    }
-
-    len = strlen(dir);
-    if (len >= sz) return -1;
-    strcpy(path, dir);
-    path += len;
-    sz -= len;
-
-    len = strlen(fn) + ((*fn && path > start && path[-1] != '/') ? 1 : 0);
-    if (len >= sz) return -1;
-    if (*fn && path > start && path[-1] != '/')
-        *path++ = '/';
-    strcpy(path, fn);
-    return 0;
-}
-
-/*
- * Make the directory containing path and any prefix directories.
- */
-void mkdir_prefix(char *path, int mode) {
-    char *cp = strrchr(path, '/');
-    if (!cp)
-        return;
-
-    *cp = 0;
-    if (is_directory(path)) {
-        *cp = '/';
-        return;
-    }
-
-    if (mkdir(path, mode) == 0) {
-        chmod(path, mode);
-        *cp = '/';
-        return;
-    }
-
-    mkdir_prefix(path, mode);
-    mkdir(path, mode);
-    chmod(path, mode);
-    *cp = '/';
-}
-
-/*
- * Return the cache directory to use, based on the first of these
- * environment variables to be set to a non-empty value.
- */
-static const char *get_cache_basedir(const char **extra) {
-    char *base;
-
-    *extra = "";
-
-    base = getenv("XDG_CACHE_HOME");
-    if (base && *base) return base;
-
-    base = getenv("HOME");
-    if (base && *base) { *extra = "/.cache"; return base; }
-
-    base = getenv("TMPDIR");
-    if (base && *base) return base;
-
-    base = getenv("TEMP");
-    if (base && *base) return base;
-
-    return "/tmp";
-}
-
-/*
- * Return an integer representation of pthread_self().
- */
-static unsigned get_int_threadid() {
-    pthread_t pt = pthread_self();
-    unsigned char *s = (unsigned char *) &pt;
-    size_t i;
-    unsigned h = 0;
-    for (i = 0; i < sizeof(pthread_t); i++)
-        h = (h << 5) - h + s[i];
-    return h;
-}
-
-/*
- * Queries the M5 string from the header and attempts to populate the
+ * Queries the M5 string from the header and attempt to populate the
  * reference from this using the REF_PATH environment.
  *
- * Returns 0 on sucess
+ * Returns 0 on success
  *        -1 on failure
  */
 static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
-    char *ref_path = getenv("REF_PATH");
     SAM_hdr_type *ty;
     SAM_hdr_tag *tag;
-    char path[PATH_MAX], path_tmp[PATH_MAX + 64];
-    char cache[PATH_MAX], cache_root[PATH_MAX];
-    char *local_cache = getenv("REF_CACHE");
-    mFILE *mf;
-    int local_path = 0;
 
     hts_log_info("Running cram_populate_ref on fd %p, id %d", (void *)fd, id);
-
-    cache_root[0] = '\0';
-
-    if (!ref_path || *ref_path == '\0') {
-        /*
-         * If we have no ref path, we use the EBI server.
-         * However to avoid spamming it we require a local ref cache too.
-         */
-        ref_path = "https://www.ebi.ac.uk/ena/cram/md5/%s";
-        if (!local_cache || *local_cache == '\0') {
-            const char *extra;
-            const char *base = get_cache_basedir(&extra);
-            snprintf(cache_root, PATH_MAX, "%s%s/hts-ref", base, extra);
-            snprintf(cache,PATH_MAX, "%s%s/hts-ref/%%2s/%%2s/%%s", base, extra);
-            local_cache = cache;
-            hts_log_info("Populating local cache: %s", local_cache);
-        }
-    }
 
     if (!r->name)
         return -1;
@@ -2077,72 +1921,29 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if (!(ty = sam_hdr_find(fd->header, "SQ", "SN", r->name)))
         return -1;
 
-    if (!(tag = sam_hdr_find_key(fd->header, ty, "M5", NULL)))
-        goto no_M5;
+    int no_m5 = 0;
+    char* ref_fn;
 
-    hts_log_info("Querying ref %s", tag->str+3);
-
-    /* Use cache if available */
-    if (local_cache && *local_cache) {
-        if (expand_cache_path(path, local_cache, tag->str+3) == 0)
-            local_path = 1;
+    if (!(tag = sam_hdr_find_key(fd->header, ty, "M5", NULL))){
+        no_m5 = 1;
     }
+    else {
+        const char* m5_str = tag->str+3;
+        hts_log_info("Querying ref %s", m5_str);
 
-#ifndef HAVE_MMAP
-    char *path2;
-    /* Search local files in REF_PATH; we can open them and return as above */
-    if (!local_path && (path2 = find_path(tag->str+3, ref_path))) {
-        strncpy(path, path2, PATH_MAX);
-        free(path2);
-        if (is_file(path)) // incase it's too long
-            local_path = 1;
-    }
-#endif
+        if (!(ref_fn = m5_to_path(m5_str))){
+            hts_log_warning("Failed to find reference with MD5 \"%s\".", m5_str);
 
-    /* Found via REF_CACHE or local REF_PATH file */
-    if (local_path) {
-        struct stat sb;
-        BGZF *fp;
-
-        if (0 == stat(path, &sb) && (fp = bgzf_open(path, "r"))) {
-            r->length = sb.st_size;
-            r->offset = r->line_length = r->bases_per_line = 0;
-
-            r->fn = string_dup(fd->refs->pool, path);
-
-            if (fd->refs->fp)
-                if (bgzf_close(fd->refs->fp) != 0)
-                    return -1;
-            fd->refs->fp = fp;
-            fd->refs->fn = r->fn;
-            r->is_md5 = 1;
-
-            // Fall back to cram_get_ref() where it'll do the actual
-            // reading of the file.
-            return 0;
+            no_m5 = 1;
         }
     }
 
-
-    /* Otherwise search full REF_PATH; slower as loads entire file */
-    if ((mf = open_path_mfile(tag->str+3, ref_path, NULL))) {
-        size_t sz;
-        r->seq = mfsteal(mf, &sz);
-        if (r->seq) {
-            r->mf = NULL;
-        } else {
-            // keep mf around as we couldn't detach
-            r->seq = mf->data;
-            r->mf = mf;
-        }
-        r->length = sz;
-        r->is_md5 = 1;
-    } else {
+    if (no_m5) {
+        // Couldn't get reference using the M5 (no M5 field, not in search path
+        // and not in the M5 cache), see if querying the @SQ UR: tag works
         refs_t *refs;
         char *fn;
 
-    no_M5:
-        /* Failed to find in search path or M5 cache, see if @SQ UR: tag? */
         if (!(tag = sam_hdr_find_key(fd->header, ty, "UR", NULL)))
             return -1;
 
@@ -2155,8 +1956,11 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
                 return -1;
             fd->refs->fp = NULL;
         }
-        if (!(refs = refs_load_fai(fd->refs, fn, 0)))
+        if (!(refs = refs_load_fai(fd->refs, fn, 0))){
+            hts_log_warning("Failed to find reference \"%s\" from the @SQ UR: tag.", fn);
+
             return -1;
+        }
         sanitise_SQ_lines(fd);
 
         fd->refs = refs;
@@ -2178,74 +1982,54 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         return 0;
     }
 
-    /* Populate the local disk cache if required */
-    if (local_cache && *local_cache) {
-        int pid = (int) getpid();
-        unsigned thrid = get_int_threadid();
-        hFILE *fp;
+    r->is_md5 = 1;
 
-        if (*cache_root && !is_directory(cache_root)) {
-            hts_log_warning("Creating reference cache directory %s\n"
-                            "This may become large; see the samtools(1) manual page REF_CACHE discussion",
-                            cache_root);
-        }
+    if (!strncmp(ref_fn, "http:", 5) || !strncmp(ref_fn, "ftp:", 4)) {
+        const int READ_LENGTH = 8193;
+        /* Read the whole sequence into memory, as we're dealing with a remote file */
+        kstring_t ref_seq = {0};
 
-        if (expand_cache_path(path, local_cache, tag->str+3) < 0) {
-            return 0; // Not fatal - we have the data already so keep going.
-        }
-        hts_log_info("Writing cache file '%s'", path);
-        mkdir_prefix(path, 01777);
+        hFILE* ref_hfile;
+        if (!(ref_hfile = hopen(ref_fn, "r"))){
+            hts_log_error("Failed to open reference \"%s\": %s", ref_fn, strerror(errno));
 
-        do {
-            // Attempt to further uniquify the temporary filename
-            unsigned t = ((unsigned) time(NULL)) ^ ((unsigned) clock());
-            thrid++; // Ensure filename changes even if time/clock haven't
-
-            snprintf(path_tmp, sizeof(path_tmp), "%s.tmp_%d_%u_%u",
-                     path, pid, thrid, t);
-            fp = hopen(path_tmp, "wx");
-        } while (fp == NULL && errno == EEXIST);
-        if (!fp) {
-            perror(path_tmp);
-
-            // Not fatal - we have the data already so keep going.
-            return 0;
-        }
-
-        // Check md5sum
-        hts_md5_context *md5;
-        char unsigned md5_buf1[16];
-        char md5_buf2[33];
-
-        if (!(md5 = hts_md5_init())) {
-            hclose_abruptly(fp);
-            unlink(path_tmp);
-            return -1;
-        }
-        hts_md5_update(md5, r->seq, r->length);
-        hts_md5_final(md5_buf1, md5);
-        hts_md5_destroy(md5);
-        hts_md5_hex(md5_buf2, md5_buf1);
-
-        if (strncmp(tag->str+3, md5_buf2, 32) != 0) {
-            hts_log_error("Mismatching md5sum for downloaded reference");
-            hclose_abruptly(fp);
-            unlink(path_tmp);
             return -1;
         }
 
-        if (hwrite(fp, r->seq, r->length) != r->length) {
-            perror(path);
+        do{
+            ks_resize(&ref_seq, ks_len(&ref_seq) + READ_LENGTH);
+        } while (hread(ref_hfile, ks_str(&ref_seq) + ks_len(&ref_seq), READ_LENGTH) > 0);
+
+        if(hclose(ref_hfile) != 0){
+            free(ref_fn);
+            return -1;
         }
-        if (hclose(fp) < 0) {
-            unlink(path_tmp);
-        } else {
-            if (0 == chmod(path_tmp, 0444))
-                rename(path_tmp, path);
-            else
-                unlink(path_tmp);
-        }
+
+        r->length = ks_len(&ref_seq);
+        r->seq = ks_str(&ref_seq);
     }
+    else {
+        struct stat st;
+        if(stat(ref_fn, &st) != 0){
+            free(ref_fn);
+            return -1;
+        }
+        r->length = st.st_size;
+
+        r->offset = r->line_length = r->bases_per_line = 0;
+
+        fd->refs->fn = r->fn = string_dup(fd->refs->pool, ref_fn);
+
+        if (fd->refs->fp)
+            if (bgzf_close(fd->refs->fp) != 0){
+                free(ref_fn);
+                return -1;
+            }
+
+        fd->refs->fp = bgzf_open_ref(ref_fn, "r", 1);
+    }
+
+    free(ref_fn);
 
     return 0;
 }
@@ -2423,7 +2207,6 @@ ref_entry *cram_ref_load(refs_t *r, int id, int is_md5) {
 
     RP("%d INC REF %d, %d\n", gettid(), id, (int)(e->count+1));
     e->seq = seq;
-    e->mf = NULL;
     e->count++;
 
     /*
@@ -2514,8 +2297,8 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
      * an on-disk filename for it.
      *
      * 19 Sep 2013: Moved the lock here as the cram_populate_ref code calls
-     * open_path_mfile and libcurl, which isn't multi-thread safe unless I
-     * rewrite my code to have one curl handle per thread.
+     * libcurl, which isn't multi-thread safe unless I rewrite my code to
+     * have one curl handle per thread.
      */
     pthread_mutex_lock(&fd->refs->lock);
     if (r->length == 0) {

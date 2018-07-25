@@ -91,6 +91,11 @@ int hfile_oflags(const char *mode);
    or 0 for a default-sized buffer.  */
 hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity);
 
+/* Initialise a hfile wrapper - a wrapper that redirects all public calls
+   to another hFILE. This can be used so that you can contain extra information
+   about a hFILE in a wrapper hFILE */
+hFILE *hfile_init_wrapper(size_t struct_size, hFILE* wrapper);
+
 /* Alternative to hfile_init() for in-memory backends for which the base
    buffer is the only storage.  Buffer is already allocated via malloc(2)
    of size buf_size and with buf_filled bytes already filled.  Ownership

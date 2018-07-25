@@ -66,6 +66,7 @@ HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/ksort.h \
 	$(HTSDIR)/htslib/kstring.h \
 	$(HTSDIR)/htslib/regidx.h \
+	$(HTSDIR)/htslib/ref.h \
 	$(HTSDIR)/htslib/sam.h \
 	$(HTSDIR)/htslib/synced_bcf_reader.h \
 	$(HTSDIR)/htslib/tbx.h \
@@ -100,6 +101,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/probaln.c \
 	$(HTSDIR)/realn.c \
 	$(HTSDIR)/regidx.c \
+	$(HTSDIR)/ref.c \
 	$(HTSDIR)/sam.c \
 	$(HTSDIR)/synced_bcf_reader.c \
 	$(HTSDIR)/tbx.c \
@@ -128,11 +130,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/cram_stats.h \
 	$(HTSDIR)/cram/cram_structs.h \
 	$(HTSDIR)/cram/files.c \
-	$(HTSDIR)/cram/mFILE.c \
-	$(HTSDIR)/cram/mFILE.h \
 	$(HTSDIR)/cram/misc.h \
-	$(HTSDIR)/cram/open_trace_file.c \
-	$(HTSDIR)/cram/open_trace_file.h \
 	$(HTSDIR)/cram/os.h \
 	$(HTSDIR)/cram/pooled_alloc.c \
 	$(HTSDIR)/cram/pooled_alloc.h \

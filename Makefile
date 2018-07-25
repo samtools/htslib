@@ -72,6 +72,7 @@ BUILT_TEST_PROGRAMS = \
 	test/hfile \
 	test/sam \
 	test/test_bgzf \
+	test/test-ref \
 	test/test_realn \
 	test/test-regidx \
 	test/test_view \
@@ -140,6 +141,7 @@ LIBHTS_OBJS = \
 	multipart.o \
 	probaln.o \
 	realn.o \
+	ref.o \
 	regidx.o \
 	sam.o \
 	synced_bcf_reader.o \
@@ -158,8 +160,6 @@ LIBHTS_OBJS = \
 	cram/cram_samtools.o \
 	cram/cram_stats.o \
 	cram/files.o \
-	cram/mFILE.o \
-	cram/open_trace_file.o \
 	cram/pooled_alloc.o \
 	cram/rANS_static.o \
 	cram/sam_header.o \
@@ -174,11 +174,12 @@ cram_misc_h = cram/misc.h $(cram_os_h)
 cram_os_h = cram/os.h $(htslib_hts_endian_h)
 cram_sam_header_h = cram/sam_header.h cram/string_alloc.h cram/pooled_alloc.h $(htslib_khash_h) $(htslib_kstring_h)
 cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h) $(cram_sam_header_h)
-cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) cram/string_alloc.h cram/mFILE.h $(htslib_khash_h)
-cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
 bcf_sr_sort_h = bcf_sr_sort.h $(htslib_synced_bcf_reader_h) $(htslib_kbitset_h)
+cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) cram/string_alloc.h $(htslib_khash_h)
+
 hfile_internal_h = hfile_internal.h $(htslib_hfile_h) $(textutils_internal_h)
 hts_internal_h = hts_internal.h $(htslib_hts_h) $(textutils_internal_h)
+ref_internal_h = ref_internal.h $(htslib_hfile_h) cram/mFILE.h
 textutils_internal_h = textutils_internal.h $(htslib_kstring_h)
 thread_pool_internal_h = thread_pool_internal.h $(htslib_thread_pool_h)
 
@@ -316,18 +317,17 @@ plugin.o plugin.pico: plugin.c config.h $(hts_internal_h) $(htslib_kstring_h)
 probaln.o probaln.pico: probaln.c config.h $(htslib_hts_h)
 realn.o realn.pico: realn.c config.h $(htslib_hts_h) $(htslib_sam_h)
 textutils.o textutils.pico: textutils.c config.h $(htslib_hfile_h) $(htslib_kstring_h) $(hts_internal_h)
+ref.o ref.pico: ref.c config.h $(htslib_kstring_h) $(htslib_bgzf_h) $(cram_h) $(cram_io_h) $(htslib_hfile_h)
 
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h)
 cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(htslib_hts_endian_h)
 cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htslib_hfile_h) $(cram_h)
 cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h)
-cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
+cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(htslib_ref_h) cram/rANS_static.h $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
 cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c config.h $(cram_h) $(htslib_sam_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c config.h $(cram_h) $(cram_os_h)
 cram/files.o cram/files.pico: cram/files.c config.h $(cram_misc_h)
-cram/mFILE.o cram/mFILE.pico: cram/mFILE.c config.h $(htslib_hts_log_h) $(cram_os_h) cram/mFILE.h
-cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c config.h $(cram_os_h) $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h) $(htslib_hts_log_h)
 cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c config.h cram/pooled_alloc.h $(cram_misc_h)
 cram/rANS_static.o cram/rANS_static.pico: cram/rANS_static.c config.h cram/rANS_static.h cram/rANS_byte.h
 cram/sam_header.o cram/sam_header.pico: cram/sam_header.c config.h $(htslib_hts_log_h) $(cram_sam_header_h) cram/string_alloc.h
@@ -354,7 +354,7 @@ tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htsl
 #
 # If using MSYS, avoid poor shell expansion via:
 #    MSYS2_ARG_CONV_EXCL="*" make check
-check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
+check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) test_ebi_fetch
 	test/hts_endian
 	test/fieldarith test/fieldarith.sam
 	test/hfile
@@ -363,6 +363,26 @@ check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 	REF_PATH=: test/sam test/ce.fa test/faidx.fa test/fastqs.fq
 	test/test-regidx
 	cd test && REF_PATH=: ./test.pl $${TEST_OPTS:-}
+
+test_ebi_fetch:
+	@if [ "$(ENABLE_HTTP_TESTS)" = true ] ; then \
+		export REF_CACHE=`mktemp -d` && \
+		echo "test ref: fetching" && \
+		test/test-ref && \
+		echo "test ref: fetch from cache" && \
+		test/test-ref && \
+		rm -rf $$REF_CACHE; \
+		export REF_CACHE=`mktemp -d` && \
+		test/test_view  -t test/xx.fa -S -C test/xx#rg.sam > test/xx#rg.tmp.cram && \
+		echo "test view: fetching" && \
+		test/test_view -D test/xx#rg.tmp.cram > /dev/null && \
+		echo "test view: fetch from cache" && \
+		test/test_view -D test/xx#rg.tmp.cram > /dev/null && \
+		rm -rf $$REF_CACHE; \
+	else \
+		echo "Warning: testing of EBI fetching disabled"; \
+	fi
+
 
 test/hts_endian: test/hts_endian.o
 	$(CC) $(LDFLAGS) -o $@ test/hts_endian.o $(LIBS)
@@ -378,6 +398,9 @@ test/sam: test/sam.o libhts.a
 
 test/test_bgzf: test/test_bgzf.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a -lz $(LIBS) -lpthread
+
+test/test-ref: test/test-ref.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test-ref.o libhts.a $(LIBS) -lpthread
 
 test/test_realn: test/test_realn.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_realn.o libhts.a $(LIBS) -lpthread
@@ -406,6 +429,7 @@ test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h)
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
 test/test-realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
+test/test-ref.o: test/test-ref.c $(htslib_bgzf_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_regidx_h) $(hts_internal_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h)
 test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
