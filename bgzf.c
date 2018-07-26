@@ -516,7 +516,9 @@ static int deflate_block(BGZF *fp, int block_length)
 
 #ifdef HAVE_LIBDEFLATE
 
-static int bgzf_uncompress(uint8_t *dst, size_t *dlen, const uint8_t *src, size_t slen) {
+static int bgzf_uncompress(uint8_t *dst, size_t *dlen,
+                           const uint8_t *src, size_t slen,
+                           uint32_t expected_crc) {
     struct libdeflate_decompressor *z = libdeflate_alloc_decompressor();
     if (!z) {
         hts_log_error("Call to libdeflate_alloc_decompressor failed");
@@ -531,12 +533,20 @@ static int bgzf_uncompress(uint8_t *dst, size_t *dlen, const uint8_t *src, size_
         return -1;
     }
 
+    uint32_t crc = libdeflate_crc32(0, (unsigned char *)dst, *dlen);
+    if (crc != expected_crc) {
+        hts_log_error("CRC32 checksum mismatch");
+        return -2;
+    }
+
     return 0;
 }
 
 #else
 
-static int bgzf_uncompress(uint8_t *dst, size_t *dlen, const uint8_t *src, size_t slen) {
+static int bgzf_uncompress(uint8_t *dst, size_t *dlen,
+                           const uint8_t *src, size_t slen,
+                           uint32_t expected_crc) {
     z_stream zs;
     zs.zalloc = NULL;
     zs.zfree = NULL;
@@ -563,6 +573,13 @@ static int bgzf_uncompress(uint8_t *dst, size_t *dlen, const uint8_t *src, size_
         return -1;
     }
     *dlen = *dlen - zs.avail_out;
+
+    uint32_t crc = crc32(crc32(0L, NULL, 0L), (unsigned char *)dst, *dlen);
+    if (crc != expected_crc) {
+        hts_log_error("CRC32 checksum mismatch");
+        return -2;
+    }
+
     return 0;
 }
 #endif // HAVE_LIBDEFLATE
@@ -571,24 +588,15 @@ static int bgzf_uncompress(uint8_t *dst, size_t *dlen, const uint8_t *src, size_
 static int inflate_block(BGZF* fp, int block_length)
 {
     size_t dlen = BGZF_MAX_BLOCK_SIZE;
+    uint32_t crc = le_to_u32((uint8_t *)fp->compressed_block + block_length-8);
     int ret = bgzf_uncompress(fp->uncompressed_block, &dlen,
-                              (Bytef*)fp->compressed_block + 18, block_length - 18);
+                              (Bytef*)fp->compressed_block + 18,
+                              block_length - 18, crc);
     if (ret < 0) {
-        fp->errcode |= BGZF_ERR_ZLIB;
-        return -1;
-    }
-
-    // Check CRC of uncompressed block matches the gzip header.
-    // NB: we may wish to switch out the zlib crc32 for something more performant.
-    // See PR#361 and issue#467
-#ifdef HAVE_LIBDEFLATE
-    uint32_t c1 = libdeflate_crc32(0L, (unsigned char *)fp->uncompressed_block, dlen);
-#else
-    uint32_t c1 = crc32(0L, (unsigned char *)fp->uncompressed_block, dlen);
-#endif
-    uint32_t c2 = le_to_u32((uint8_t *)fp->compressed_block + block_length-8);
-    if (c1 != c2) {
-        fp->errcode |= BGZF_ERR_CRC;
+        if (ret == -2)
+            fp->errcode |= BGZF_ERR_CRC;
+        else
+            fp->errcode |= BGZF_ERR_ZLIB;
         return -1;
     }
 
@@ -1085,8 +1093,9 @@ void *bgzf_decode_func(void *arg) {
     bgzf_job *j = (bgzf_job *)arg;
 
     j->uncomp_len = BGZF_MAX_BLOCK_SIZE;
+    uint32_t crc = le_to_u32((uint8_t *)j->comp_data + j->comp_len-8);
     int ret = bgzf_uncompress(j->uncomp_data, &j->uncomp_len,
-                              j->comp_data+18, j->comp_len-18);
+                              j->comp_data+18, j->comp_len-18, crc);
     if (ret != 0)
         j->errcode |= BGZF_ERR_ZLIB;
 
