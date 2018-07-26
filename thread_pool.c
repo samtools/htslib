@@ -582,10 +582,12 @@ static void *tpool_worker(void *arg) {
         }
         if (--q->ref_count == 0) // we were the last user
             hts_tpool_process_destroy(q);
-        else
+        else {
             // Out of jobs on this queue, so restart search from next one.
             // This is equivalent to "work-stealing".
-            p->q_head = q->next;
+            if (p->q_head)
+                p->q_head = p->q_head->next;
+        }
 
         pthread_mutex_unlock(&p->pool_m);
     }

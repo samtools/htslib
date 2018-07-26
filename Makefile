@@ -86,7 +86,8 @@ BUILT_THRASH_PROGRAMS = \
 	test/thrash_threads3 \
 	test/thrash_threads4 \
 	test/thrash_threads5 \
-	test/thrash_threads6
+	test/thrash_threads6 \
+	test/thrash_threads7
 
 all: lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS)
 
@@ -431,7 +432,8 @@ test/thrash_threads5: test/thrash_threads5.o libhts.a
 
 test/thrash_threads6: test/thrash_threads6.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/thrash_threads6.o libhts.a -lz $(LIBS) -lpthread
-
+test/thrash_threads7: test/thrash_threads7.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/thrash_threads7.o libhts.a -lz $(LIBS) -lpthread
 test_thrash: $(BUILT_THRASH_PROGRAMS)
 
 
