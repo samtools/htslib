@@ -635,17 +635,21 @@ static int inflate_gzip_block(BGZF *fp)
             return -1;
         } else if ( ret == Z_STREAM_END ) {
             // we finished a GZIP member
-            if ( input_eof ) {
-                // we are done with the last stream in the file
-                break;
-            } else if (fp->gz_stream->avail_in > 0) {
-                // try and read another GZIP member in the remaining data
+            
+            // scratch for peeking to see if the file is over
+            char c;
+            if (fp->gz_stream->avail_in > 0 || hpeek(fp->fp, &c, 1) == 1) {
+                // there is more data; try and read another GZIP member in the remaining data
                 int reset_ret = inflateReset(fp->gz_stream);
                 if (reset_ret != Z_OK) {
                     hts_log_error("Call to inflateReset failed: %s", bgzf_zerr(reset_ret, NULL));
                     fp->errcode |= BGZF_ERR_ZLIB;
                     return -1;
                 }
+            } else {
+                // we consumed all the input data and hit Z_STREAM_END
+                // so stop looping, even if we never fill the output buffer
+                break;
             }
         } else if ( ret == Z_BUF_ERROR && input_eof && fp->gz_stream->avail_out > 0 ) {
             // the gzip file has ended prematurely
