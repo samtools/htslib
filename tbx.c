@@ -164,6 +164,12 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
     }
 }
 
+/*
+ * Called by tabix iterator to read the next record.
+ * Returns    >=  0 on success
+ *               -1 on EOF
+ *            <= -2 on error
+ */
 int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end)
 {
     tbx_t *tbx = (tbx_t *) tbxv;
@@ -171,7 +177,8 @@ int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end)
     int ret;
     if ((ret = bgzf_getline(fp, '\n', s)) >= 0) {
         tbx_intv_t intv;
-        get_intv(tbx, s, &intv, 0);
+        if (get_intv(tbx, s, &intv, 0) < 0)
+            return -2;
         *tid = intv.tid; *beg = intv.beg; *end = intv.end;
     }
     return ret;
