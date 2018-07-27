@@ -613,11 +613,12 @@ static int inflate_gzip_block(BGZF *fp)
         if ( !input_eof && fp->gz_stream->avail_in == 0 ) {
             // we are out of input data in the buffer. Get more.
             fp->gz_stream->next_in = fp->compressed_block;
-            fp->gz_stream->avail_in = hread(fp->fp, fp->compressed_block, BGZF_BLOCK_SIZE);
-            if ( fp->gz_stream->avail_in < 0 ) {
+            int ret = hread(fp->fp, fp->compressed_block, BGZF_BLOCK_SIZE);
+            if ( ret < 0 ) {
                 // hread had an error. Pass it on.
-                return fp->gz_stream->avail_in;
+                return ret;
             }
+            fp->gz_stream->avail_in = ret;
             if ( fp->gz_stream->avail_in < BGZF_BLOCK_SIZE ) {
                 // we have reached EOF but the decompressor hasn't necessarily
                 input_eof = 1;
