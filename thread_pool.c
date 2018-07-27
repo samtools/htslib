@@ -40,6 +40,9 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "thread_pool_internal.h"
 
+static void hts_tpool_process_detach_locked(hts_tpool *p,
+                                            hts_tpool_process *q);
+
 //#define DEBUG
 
 #ifdef DEBUG
@@ -298,13 +301,17 @@ int hts_tpool_process_sz(hts_tpool_process *q) {
  * This sets the shutdown flag and wakes any threads waiting on process
  * condition variables.
  */
-void hts_tpool_process_shutdown(hts_tpool_process *q) {
-    pthread_mutex_lock(&q->p->pool_m);
+static void hts_tpool_process_shutdown_locked(hts_tpool_process *q) {
     q->shutdown = 1;
     pthread_cond_broadcast(&q->output_avail_c);
     pthread_cond_broadcast(&q->input_not_full_c);
     pthread_cond_broadcast(&q->input_empty_c);
     pthread_cond_broadcast(&q->none_processing_c);
+}
+
+void hts_tpool_process_shutdown(hts_tpool_process *q) {
+    pthread_mutex_lock(&q->p->pool_m);
+    hts_tpool_process_shutdown_locked(q);
     pthread_mutex_unlock(&q->p->pool_m);
 }
 
@@ -384,8 +391,8 @@ void hts_tpool_process_destroy(hts_tpool_process *q) {
     // Ensure it's fully drained before destroying the queue
     hts_tpool_process_reset(q, 0);
     pthread_mutex_lock(&q->p->pool_m);
-    hts_tpool_process_detach(q->p, q);
-    hts_tpool_process_shutdown(q);
+    hts_tpool_process_detach_locked(q->p, q);
+    hts_tpool_process_shutdown_locked(q);
 
     // Maybe a worker is scanning this queue, so delay destruction
     if (--q->ref_count > 0) {
@@ -429,10 +436,10 @@ void hts_tpool_process_attach(hts_tpool *p, hts_tpool_process *q) {
     pthread_mutex_unlock(&p->pool_m);
 }
 
-void hts_tpool_process_detach(hts_tpool *p, hts_tpool_process *q) {
-    pthread_mutex_lock(&p->pool_m);
+static void hts_tpool_process_detach_locked(hts_tpool *p,
+                                            hts_tpool_process *q) {
     if (!p->q_head || !q->prev || !q->next)
-        goto done;
+        return;
 
     hts_tpool_process *curr = p->q_head, *first = curr;
     do {
@@ -450,8 +457,11 @@ void hts_tpool_process_detach(hts_tpool *p, hts_tpool_process *q) {
 
         curr = curr->next;
     } while (curr != first);
+}
 
- done:
+void hts_tpool_process_detach(hts_tpool *p, hts_tpool_process *q) {
+    pthread_mutex_lock(&p->pool_m);
+    hts_tpool_process_detach_locked(p, q);
     pthread_mutex_unlock(&p->pool_m);
 }
 
@@ -477,18 +487,15 @@ static void *tpool_worker(void *arg) {
     hts_tpool *p = w->p;
     hts_tpool_job *j;
 
-    for (;;) {
+    pthread_mutex_lock(&p->pool_m);
+    while (!p->shutdown) {
         // Pop an item off the pool queue
-        pthread_mutex_lock(&p->pool_m);
 
         assert(p->q_head == 0 || (p->q_head->prev && p->q_head->next));
 
         int work_to_do = 0;
         hts_tpool_process *first = p->q_head, *q = first;
         do {
-            if (p->shutdown)
-                break;
-
             // Iterate over queues, finding one with jobs and also
             // room to put the result.
             //if (q && q->input_head && !hts_tpool_process_output_full(q)) {
@@ -500,15 +507,6 @@ static void *tpool_worker(void *arg) {
 
             if (q) q = q->next;
         } while (q && q != first);
-
-        if (p->shutdown) {
-        shutdown:
-#ifdef DEBUG
-            fprintf(stderr, "%d: Shutting down\n", worker_id(p));
-#endif
-            pthread_mutex_unlock(&p->pool_m);
-            return NULL;
-        }
 
         if (!work_to_do) {
             // We scanned all queues and cannot process any, so we wait.
@@ -536,8 +534,7 @@ static void *tpool_worker(void *arg) {
             }
 
             p->nwaiting--;
-            pthread_mutex_unlock(&p->pool_m);
-            continue; // To outer for(;;) loop.
+            continue; // To outer loop.
         }
 
         // Otherwise work_to_do, so process as many items in this queue as
@@ -580,17 +577,22 @@ static void *tpool_worker(void *arg) {
 
             pthread_mutex_lock(&p->pool_m);
         }
-        if (--q->ref_count == 0) // we were the last user
+        if (--q->ref_count == 0) { // we were the last user
             hts_tpool_process_destroy(q);
-        else {
+        } else {
             // Out of jobs on this queue, so restart search from next one.
             // This is equivalent to "work-stealing".
             if (p->q_head)
                 p->q_head = p->q_head->next;
         }
-
-        pthread_mutex_unlock(&p->pool_m);
     }
+
+ shutdown:
+    pthread_mutex_unlock(&p->pool_m);
+#ifdef DEBUG
+    fprintf(stderr, "%d: Shutting down\n", worker_id(p));
+#endif
+    return NULL;
 }
 
 static void wake_next_worker(hts_tpool_process *q, int locked) {
