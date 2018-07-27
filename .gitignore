@@ -9,6 +9,7 @@
 /version.h
 
 autom4te.cache
+aclocal.m4
 config.cache
 config.h
 config.h.in
