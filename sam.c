@@ -1546,6 +1546,61 @@ err_ret:
     return -2;
 }
 
+#define NT 8
+#define NL 128
+static hts_tpool *p = NULL;
+static bam1_t global_b[NT*5][NL];
+static hts_tpool_process *q = NULL;
+static pthread_t dispatcher;
+static kstring_t lines[NT*5][NL]; // in queue + out queue + workers
+static bam_hdr_t *global_h;
+
+void *sam_parse_worker(void *arg) {
+    // convert string lines[id] to bam global_b[id].
+    int id = (int)arg, i;
+
+    for (i = 0; i < NL; i++) {
+        if (lines[id][i].l == 0)
+            break;
+        sam_parse1(&lines[id][i], global_h, &global_b[id][i]);
+    }
+    //fprintf(stderr, "Parsed %d lines\n", i);
+    return arg; // id;
+}
+
+void *sam_parse_eof(void *arg) {
+    return (void *)-1;
+}
+
+static void *sam_dispatcher(void *vp) {
+    htsFile *fp = vp;
+    int cyc = 0;
+
+    for (;;) {
+        int i;
+        for (i = 0; i < NL; i++) {
+            int ret = hts_getline(fp, KS_SEP_LINE, &lines[cyc][i]);
+            if (ret < 0) break;
+        }
+        if (i < NL)
+            lines[cyc][i].l = 0;
+
+        if (i == 0)
+            break;
+        
+        //fprintf(stderr, "Dispatching %d lines\n", i);
+        hts_tpool_dispatch(p, q, sam_parse_worker, (void *)cyc);
+
+        // cyclic usage
+        if (++cyc == NT*5)
+            cyc = 0;
+    }
+
+    fprintf(stderr, "EOF: dispatch -1\n");
+    hts_tpool_dispatch(p, q, sam_parse_eof, NULL);
+    pthread_exit(NULL); // exit 'ret' maybe
+}
+
 int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 {
     switch (fp->format.format) {
@@ -1570,6 +1625,32 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
     }
 
     case sam: {
+#if 1
+        if (!p) {
+            p = hts_tpool_init(NT);
+            q = hts_tpool_process_init(p, NT*2, 0);
+            global_h = h;
+            pthread_create(&dispatcher, NULL, sam_dispatcher, fp);
+        }
+
+        static hts_tpool_result *r = NULL;
+        static int id = 0, idx = 0;
+        if (!r) {
+            r = hts_tpool_next_result_wait(q);
+            int id = (int)hts_tpool_result_data(r);
+            //fprintf(stderr, "id=%d\n", id);
+            if (id < 0) return -1;
+        }
+        bam_copy1(b, &global_b[id][idx++]);
+        if (idx == NL) {
+            hts_tpool_delete_result(r, 0);
+            r = NULL;
+            idx =0 ;
+        }
+
+        return 0;
+
+#else
         int ret;
 err_recover:
         if (fp->line.l == 0) {
@@ -1583,6 +1664,7 @@ err_recover:
             if (h->ignore_sam_err) goto err_recover;
         }
         return ret;
+#endif
     }
 
     default:
