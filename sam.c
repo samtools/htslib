@@ -1555,6 +1555,10 @@ static pthread_t dispatcher;
 static kstring_t lines[NT*5][NL]; // in queue + out queue + workers
 static bam_hdr_t *global_h;
 
+// Maybe not needed if we guarantee read / write to different locations
+// at different times. (Enforced by cycling usage and limited size of queue.)
+pthread_mutex_t global_b_mutex;
+
 void *sam_parse_worker(void *arg) {
     // convert string lines[id] to bam global_b[id].
     int id = (int)arg, i;
@@ -1631,6 +1635,18 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
             q = hts_tpool_process_init(p, NT*2, 0);
             global_h = h;
             pthread_create(&dispatcher, NULL, sam_dispatcher, fp);
+            fp->line.l = 0; // NB: discards first line?
+
+            pthread_mutex_init(&global_b_mutex, NULL);
+
+            if (h->cigar_tab == 0) {
+                int i;
+                h->cigar_tab = (int8_t*) malloc(128);
+                for (i = 0; i < 128; ++i)
+                    h->cigar_tab[i] = -1;
+                for (i = 0; BAM_CIGAR_STR[i]; ++i)
+                    h->cigar_tab[(int)BAM_CIGAR_STR[i]] = i;
+            }
         }
 
         static hts_tpool_result *r = NULL;
@@ -1641,11 +1657,13 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
             //fprintf(stderr, "id=%d\n", id);
             if (id < 0) return -1;
         }
+        pthread_mutex_lock(&global_b_mutex);
         bam_copy1(b, &global_b[id][idx++]);
+        pthread_mutex_unlock(&global_b_mutex);
         if (idx == NL) {
             hts_tpool_delete_result(r, 0);
             r = NULL;
-            idx =0 ;
+            idx = 0;
         }
 
         return 0;
