@@ -119,8 +119,8 @@ static inline int ks_resize(kstring_t *s, size_t size)
 		char *tmp;
 		kroundup_size_t(size);
 		tmp = (char*)realloc(s->s, size);
-		if (!tmp)
-			return -1;
+		if (!tmp && size)
+		    return -1;
 		s->s = tmp;
 		s->m = size;
 	}

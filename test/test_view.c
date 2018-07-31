@@ -285,7 +285,7 @@ int main(int argc, char *argv[])
             }
         }
         hts_idx_destroy(idx);
-    } else while ((r = sam_read1(in, h, b)) >= 0) {
+        } else while ((r = sam_read1(in, h, b)) >= 0) {
         if (!benchmark && sam_write1(out, h, b) < 0) {
             fprintf(stderr, "Error writing output.\n");
             exit_code = 1;

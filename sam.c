@@ -1546,61 +1546,109 @@ err_ret:
     return -2;
 }
 
-#define NT 8
-#define NL 128
+/*
+  10m.u.bam    ~4.7s (1)   ~1.5s (4)
+  10m.sam      ~6.3s (1)   ~2.0s (4)
+  
+  So SAM is around 1/3rd slower than BAM, with/without threading.
+ */
+#define NT 4 // up to 4 is fine
+#define NL 2000
 static hts_tpool *p = NULL;
-static bam1_t global_b[NT*5][NL];
 static hts_tpool_process *q = NULL;
 static pthread_t dispatcher;
-static kstring_t lines[NT*5][NL]; // in queue + out queue + workers
 static bam_hdr_t *global_h;
+typedef struct global_list {
+    void *data;
+    int data_size;
+    int serial;
+    struct global_list *next;
+} global_list;
+static global_list *global_lines = NULL;
+static global_list *global_bams = NULL;
 
-// Maybe not needed if we guarantee read / write to different locations
-// at different times. (Enforced by cycling usage and limited size of queue.)
 pthread_mutex_t global_b_mutex;
 
+// Convert passed in array of lines to array of BAMs
 void *sam_parse_worker(void *arg) {
-    // convert string lines[id] to bam global_b[id].
-    int id = (int)arg, i;
+    global_list *gl = (global_list *)arg;
+    global_list *gb;
+    kstring_t *lines = (kstring_t *)gl->data;
+    int i;
+    bam1_t *b;
 
-    for (i = 0; i < NL; i++) {
-        if (lines[id][i].l == 0)
-            break;
-        sam_parse1(&lines[id][i], global_h, &global_b[id][i]);
+    pthread_mutex_lock(&global_b_mutex);
+    if (global_bams) { 
+        gb = global_bams;
+        global_bams = gb->next;
+    } else {
+        gb = calloc(1, sizeof(*gb));
+        gb->data = b = calloc(NL, sizeof(*b));
     }
-    //fprintf(stderr, "Parsed %d lines\n", i);
-    return arg; // id;
+    b = (bam1_t *)gb->data;
+    gb->data_size = gl->data_size;
+    gb->serial = gl->serial;
+    gb->next = NULL;
+    pthread_mutex_unlock(&global_b_mutex);
+
+    if (!b)
+        return NULL;
+
+    for (i = 0; i < gl->data_size; i++) {
+        if (sam_parse1(&lines[i], global_h, &b[i]) < 0) { 
+            lines[i].l = 0;
+            return NULL;
+        }
+        lines[i].l = 0;
+    }
+    pthread_mutex_lock(&global_b_mutex);
+    gl->next = global_lines;
+    global_lines = gl;
+    pthread_mutex_unlock(&global_b_mutex);
+    return gb;
 }
 
 void *sam_parse_eof(void *arg) {
-    return (void *)-1;
+    //    return (void *)-1;
+    return NULL;
 }
 
 static void *sam_dispatcher(void *vp) {
     htsFile *fp = vp;
-    int cyc = 0;
 
     for (;;) {
         int i;
+        global_list *l;
+        kstring_t *lines;
+
+        pthread_mutex_lock(&global_b_mutex);
+        if (global_lines) {
+            lines = global_lines->data;
+            l = global_lines;
+            global_lines = l->next;
+        } else {
+            lines = calloc(NL, sizeof(*lines));
+            l = calloc(1, sizeof(*l));
+            l->data = lines;
+        }
+        l->next = NULL;
+        pthread_mutex_unlock(&global_b_mutex);
+
         for (i = 0; i < NL; i++) {
-            int ret = hts_getline(fp, KS_SEP_LINE, &lines[cyc][i]);
+            int ret = hts_getline(fp, KS_SEP_LINE, &lines[i]);
             if (ret < 0) break;
         }
-        if (i < NL)
-            lines[cyc][i].l = 0;
+        l->data_size = i;
 
         if (i == 0)
             break;
-        
-        //fprintf(stderr, "Dispatching %d lines\n", i);
-        hts_tpool_dispatch(p, q, sam_parse_worker, (void *)cyc);
 
-        // cyclic usage
-        if (++cyc == NT*5)
-            cyc = 0;
+        static int serial = 0;
+        l->serial = serial++;
+        //fprintf(stderr, "Dispatching %p, %d lines, serial %d\n", l, l->data_size, l->serial);
+        hts_tpool_dispatch(p, q, sam_parse_worker, l);
     }
 
-    fprintf(stderr, "EOF: dispatch -1\n");
     hts_tpool_dispatch(p, q, sam_parse_eof, NULL);
     pthread_exit(NULL); // exit 'ret' maybe
 }
@@ -1630,14 +1678,22 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 
     case sam: {
 #if 1
+        // Consume 1st line after header parsing as it wasn't using peek
+        if (fp->line.l != 0) {
+            int ret = sam_parse1(&fp->line, h, b);
+            fp->line.l = 0;
+            return ret;
+        }
+
         if (!p) {
+            // FIXME: we need shutdown code too.  This belongs in the SAM_fd struct.
+            pthread_mutex_init(&global_b_mutex, NULL);
             p = hts_tpool_init(NT);
             q = hts_tpool_process_init(p, NT*2, 0);
             global_h = h;
             pthread_create(&dispatcher, NULL, sam_dispatcher, fp);
             fp->line.l = 0; // NB: discards first line?
-
-            pthread_mutex_init(&global_b_mutex, NULL);
+            fp->line.s = 0; // fixes errors in output?
 
             if (h->cigar_tab == 0) {
                 int i;
@@ -1649,20 +1705,25 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
             }
         }
 
-        static hts_tpool_result *r = NULL;
-        static int id = 0, idx = 0;
-        if (!r) {
-            r = hts_tpool_next_result_wait(q);
-            int id = (int)hts_tpool_result_data(r);
-            //fprintf(stderr, "id=%d\n", id);
-            if (id < 0) return -1;
-        }
-        pthread_mutex_lock(&global_b_mutex);
-        bam_copy1(b, &global_b[id][idx++]);
-        pthread_mutex_unlock(&global_b_mutex);
-        if (idx == NL) {
+        static int idx = 0;
+        static global_list *gb = NULL;
+        if (!gb) {
+            hts_tpool_result *r = hts_tpool_next_result_wait(q);
+            gb = (global_list *)hts_tpool_result_data(r);
             hts_tpool_delete_result(r, 0);
-            r = NULL;
+        }
+        if (!gb) // FIXME: distinguish error from EOF
+            return -1;
+        bam1_t *b_array = (bam1_t *)gb->data;
+        if (idx < gb->data_size)
+            bam_copy1(b, &b_array[idx++]);
+        if (idx == gb->data_size) {
+            pthread_mutex_lock(&global_b_mutex);
+            gb->next = global_bams;
+            global_bams = gb;
+            pthread_mutex_unlock(&global_b_mutex);
+
+            gb = NULL;
             idx = 0;
         }
 
@@ -1696,6 +1757,8 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
     uint8_t *s, *end;
     const bam1_core_t *c = &b->core;
 
+    if (c->l_qname == 0)
+        abort();
     str->l = 0;
     kputsn_(bam_get_qname(b), c->l_qname-1-c->l_extranul, str); kputc_('\t', str); // query name
     kputw(c->flag, str); kputc_('\t', str); // flag
