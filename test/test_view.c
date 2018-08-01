@@ -44,6 +44,8 @@ enum test_op {
     WRITE_UNCOMPRESSED = 16,
 };
 
+const bam1_t *sam_read1x(htsFile *fp, bam_hdr_t *h);
+
 int main(int argc, char *argv[])
 {
     samFile *in;
@@ -61,6 +63,7 @@ int main(int argc, char *argv[])
     int benchmark = 0;
     int nthreads = 0; // shared pool
     int multi_reg = 0;
+    const bam1_t *bp;
 
     while ((c = getopt(argc, argv, "DSIt:i:bCul:o:N:BZ:@:M")) >= 0) {
         switch (c) {
@@ -285,7 +288,8 @@ int main(int argc, char *argv[])
             }
         }
         hts_idx_destroy(idx);
-        } else while ((r = sam_read1(in, h, b)) >= 0) {
+#if 1
+    } else while ((r = sam_read1(in, h, b)) >= 0) {
         if (!benchmark && sam_write1(out, h, b) < 0) {
             fprintf(stderr, "Error writing output.\n");
             exit_code = 1;
@@ -294,6 +298,17 @@ int main(int argc, char *argv[])
         if (nreads && --nreads == 0)
             break;
     }
+#else
+    } else while ((bp = sam_read1x(in, h))) {
+        if (!benchmark && sam_write1(out, h, bp) < 0) {
+            fprintf(stderr, "Error writing output.\n");
+            exit_code = 1;
+            break;
+        }
+        if (nreads && --nreads == 0)
+            break;
+    }
+#endif
 
     if (r < -1) {
         fprintf(stderr, "Error parsing input.\n");

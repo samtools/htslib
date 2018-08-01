@@ -1285,9 +1285,9 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 
     // Ensure kstring has at least 7 bytes more, so we can work in 8-byte chunks.
     // (It doesn't have to be initialised, but we do so to silence valgrind.)
-    int vg = s->l;
+    //int vg = s->l;
     ks_resize(s, s->l+7);
-    memset(s->s+vg, 0, 7);
+    //memset(s->s+vg, 0, 7);
 
     char *p = s->s, *q;
     int i;
@@ -1547,13 +1547,11 @@ err_ret:
 }
 
 /*
-  10m.u.bam    ~4.7s (1)   ~1.5s (4)
-  10m.sam      ~6.3s (1)   ~2.0s (4)
-  
-  So SAM is around 1/3rd slower than BAM, with/without threading.
+  10m.u.bam    ~4.7s (1)   ~1.6s (10)
+  10m.sam      ~6.3s (1)   ~1.0s (10)
  */
-#define NT 4 // up to 4 is fine
-#define NL 2000
+#define NT 10 // up to 8 is fine
+#define NL 800 // worse case; fixme check; ~256KB
 static hts_tpool *p = NULL;
 static hts_tpool_process *q = NULL;
 static pthread_t dispatcher;
@@ -1561,6 +1559,7 @@ static bam_hdr_t *global_h;
 typedef struct global_list {
     void *data;
     int data_size;
+    int alloc;
     int serial;
     struct global_list *next;
 } global_list;
@@ -1573,7 +1572,7 @@ pthread_mutex_t global_b_mutex;
 void *sam_parse_worker(void *arg) {
     global_list *gl = (global_list *)arg;
     global_list *gb;
-    kstring_t *lines = (kstring_t *)gl->data;
+    char *lines = gl->data;
     int i;
     bam1_t *b;
 
@@ -1586,7 +1585,6 @@ void *sam_parse_worker(void *arg) {
         gb->data = b = calloc(NL, sizeof(*b));
     }
     b = (bam1_t *)gb->data;
-    gb->data_size = gl->data_size;
     gb->serial = gl->serial;
     gb->next = NULL;
     pthread_mutex_unlock(&global_b_mutex);
@@ -1594,13 +1592,28 @@ void *sam_parse_worker(void *arg) {
     if (!b)
         return NULL;
 
-    for (i = 0; i < gl->data_size; i++) {
-        if (sam_parse1(&lines[i], global_h, &b[i]) < 0) { 
-            lines[i].l = 0;
+    i = 0;
+    char *cp = lines, *cp_end = lines + gl->data_size;
+    while (cp < cp_end) {
+        // FIXME:  get sam_parse1 to return the number of
+        // bytes decoded and to be able to stop on newline as
+        // well as \0.
+        //
+        // We can then avoid the additional strchr loop.
+        // It's around 6% of our CPU cost, albeit threadable.
+        char *nl = strchr(cp, '\n');
+        nl = nl ? nl : cp_end;
+        if (*nl) *nl++ = '\0';
+        kstring_t ks = {nl-cp, gl->alloc, cp};
+        if (sam_parse1(&ks, global_h, &b[i]) < 0) {
+            fprintf(stderr, "Fail to parse\n");
             return NULL;
         }
-        lines[i].l = 0;
+        cp = nl;
+        i++;
+        if (i > NL) abort(); // FIXME: resize b array here instead
     }
+    gb->data_size = i;
     pthread_mutex_lock(&global_b_mutex);
     gl->next = global_lines;
     global_lines = gl;
@@ -1615,37 +1628,45 @@ void *sam_parse_eof(void *arg) {
 
 static void *sam_dispatcher(void *vp) {
     htsFile *fp = vp;
+    char line[8192]; // FIXME;
+    int line_frag = 0;
 
     for (;;) {
-        int i;
         global_list *l;
-        kstring_t *lines;
 
         pthread_mutex_lock(&global_b_mutex);
         if (global_lines) {
-            lines = global_lines->data;
             l = global_lines;
             global_lines = l->next;
         } else {
-            lines = calloc(NL, sizeof(*lines));
             l = calloc(1, sizeof(*l));
-            l->data = lines;
+            // test is 373 bytes per line avg.
+            l->alloc = NL*300+8; // +8 for optimisation in sam_parse1
+            l->data = malloc(l->alloc);
         }
         l->next = NULL;
         pthread_mutex_unlock(&global_b_mutex);
 
-        for (i = 0; i < NL; i++) {
-            int ret = hts_getline(fp, KS_SEP_LINE, &lines[i]);
-            if (ret < 0) break;
-        }
-        l->data_size = i;
+        memcpy(l->data, line, line_frag);
+        l->data_size = hread(fp->fp.hfile, l->data + line_frag, l->alloc - line_frag);
+        if (l->data_size <= 0) break;
 
-        if (i == 0)
-            break;
+        // trim to last \n. Maybe \r\n, but that's still fine
+        if (l->data_size == l->alloc - line_frag) {
+            char *cp_end = l->data + l->data_size + line_frag;
+            char *cp = cp_end-1;
+            while (cp > (char *)l->data && *cp != '\n')
+                cp--;
+            cp++;
+
+            memcpy(line, cp, cp_end - cp);
+            line_frag = cp_end - cp;
+            l->data_size = l->alloc - line_frag;
+        }
 
         static int serial = 0;
         l->serial = serial++;
-        //fprintf(stderr, "Dispatching %p, %d lines, serial %d\n", l, l->data_size, l->serial);
+        //fprintf(stderr, "Dispatching %p, %d bytes, serial %d\n", l, l->data_size, l->serial);
         hts_tpool_dispatch(p, q, sam_parse_worker, l);
     }
 
@@ -1744,6 +1765,69 @@ err_recover:
         }
         return ret;
 #endif
+    }
+
+    default:
+        abort();
+    }
+}
+
+const bam1_t *sam_read1x(htsFile *fp, bam_hdr_t *h) // FIXME: add ret code
+{
+    switch (fp->format.format) {
+    case sam: {
+        // Consume 1st line after header parsing as it wasn't using peek
+        if (fp->line.l != 0) {
+            static bam1_t b;
+            int ret = sam_parse1(&fp->line, h, &b);
+            fp->line.l = 0;
+            return ret >= 0 ? &b : NULL;
+        }
+
+        if (!p) {
+            // FIXME: we need shutdown code too.  This belongs in the SAM_fd struct.
+            pthread_mutex_init(&global_b_mutex, NULL);
+            p = hts_tpool_init(NT);
+            q = hts_tpool_process_init(p, NT*2, 0);
+            global_h = h;
+            pthread_create(&dispatcher, NULL, sam_dispatcher, fp);
+            fp->line.l = 0; // NB: discards first line?
+            fp->line.s = 0; // fixes errors in output?
+
+            if (h->cigar_tab == 0) {
+                int i;
+                h->cigar_tab = (int8_t*) malloc(128);
+                for (i = 0; i < 128; ++i)
+                    h->cigar_tab[i] = -1;
+                for (i = 0; BAM_CIGAR_STR[i]; ++i)
+                    h->cigar_tab[(int)BAM_CIGAR_STR[i]] = i;
+            }
+        }
+
+        static int idx = 0;
+        static global_list *gb = NULL;
+        if (!gb) {
+            hts_tpool_result *r = hts_tpool_next_result_wait(q);
+            gb = (global_list *)hts_tpool_result_data(r);
+            hts_tpool_delete_result(r, 0);
+        }
+        if (!gb) // FIXME: distinguish error from EOF
+            return NULL;
+        bam1_t *b_array = (bam1_t *)gb->data;
+        bam1_t *bp = (idx < gb->data_size)
+            ? &b_array[idx++]
+            : NULL;
+        if (idx == gb->data_size) {
+            pthread_mutex_lock(&global_b_mutex);
+            gb->next = global_bams;
+            global_bams = gb;
+            pthread_mutex_unlock(&global_b_mutex);
+
+            gb = NULL;
+            idx = 0;
+        }
+
+        return bp;
     }
 
     default:
