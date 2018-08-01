@@ -601,6 +601,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "BLOCK_SIZE") == 0)
         o->opt = HTS_OPT_BLOCK_SIZE, o->val.i = strtol(val, NULL, 0);
 
+    else if (strcmp(o->arg, "level") == 0 ||
+             strcmp(o->arg, "LEVEL") == 0)
+        o->opt = HTS_OPT_COMPRESSION_LEVEL, o->val.i = strtol(val, NULL, 0);
+
     else {
         hts_log_error("Unknown option '%s'", o->arg);
         free(o->arg);
@@ -1027,6 +1031,14 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         va_end(args);
         hts_set_cache_size(fp, cache_size);
         return 0;
+    }
+
+    case HTS_OPT_COMPRESSION_LEVEL: {
+        va_start(args, opt);
+        int level = va_arg(args, int);
+        va_end(args);
+        if (fp->is_bgzf)
+            fp->fp.bgzf->compress_level = level;
     }
 
     default:

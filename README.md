@@ -26,7 +26,7 @@ requires extra steps:
 ```sh
 autoheader     # If using configure, generate the header template...
 autoconf       # ...and configure script (or use autoreconf to do both)
-./configure    # Optional, needed for choosing optional functionality
+./configure    # Optional but recommended, for choosing extra functionality
 make
 make install
 ```

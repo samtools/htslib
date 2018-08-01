@@ -162,7 +162,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
         bcf_hdr_t *hdr = bcf_hdr_read(fp);
         if ( !hdr ) error("Could not read the header: %s\n", fname);
         if ( args->print_header )
-            bcf_hdr_write(out,hdr);
+            if ( bcf_hdr_write(out,hdr)!=0 ) error("Failed to write to %s\n", fname);
         if ( !args->header_only )
         {
             bcf1_t *rec = bcf_init();
@@ -172,7 +172,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
                 while ( bcf_itr_next(fp, itr, rec) >=0 )
                 {
                     if ( reg_idx && !regidx_overlap(reg_idx, bcf_seqname(hdr,rec),rec->pos,rec->pos+rec->rlen-1, NULL) ) continue;
-                    bcf_write(out,hdr,rec);
+                    if ( bcf_write(out,hdr,rec)!=0 ) error("Failed to write to %s\n", fname);
                 }
                 tbx_itr_destroy(itr);
             }

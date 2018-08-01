@@ -35,7 +35,7 @@ extern "C" {
 #endif
 
 /// Highest SAM format version supported by this library
-#define SAM_FORMAT_VERSION "1.5"
+#define SAM_FORMAT_VERSION "1.6"
 
 /**********************
  *** SAM/BAM header ***

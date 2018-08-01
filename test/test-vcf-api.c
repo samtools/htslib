@@ -30,6 +30,15 @@ DEALINGS IN THE SOFTWARE.  */
 #include <htslib/kstring.h>
 #include <htslib/kseq.h>
 
+void error(const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    vfprintf(stderr, format, ap);
+    va_end(ap);
+    exit(-1);
+}
+
 void write_bcf(char *fname)
 {
     // Init
@@ -69,7 +78,7 @@ void write_bcf(char *fname)
     bcf_hdr_add_sample(hdr, "NA00002");
     bcf_hdr_add_sample(hdr, "NA00003");
     bcf_hdr_add_sample(hdr, NULL);      // to update internal structures
-    bcf_hdr_write(fp, hdr);
+    if ( bcf_hdr_write(fp, hdr)!=0 ) error("Failed to write to %s\n", fname);
 
 
     // Add a record
@@ -122,7 +131,7 @@ void write_bcf(char *fname)
     bcf_update_format_int32(hdr, rec, "HQ", tmpia, bcf_hdr_nsamples(hdr)*2);
     char *tmp_str[] = {"String1","SomeOtherString2","YetAnotherString3"};
     bcf_update_format_string(hdr, rec, "TS", (const char**)tmp_str, 3);
-    bcf_write1(fp, hdr, rec);
+    if ( bcf_write1(fp, hdr, rec)!=0 ) error("Failed to write to %s\n", fname);
 
     // 20     1110696 . A      G,T     67   .   NS=2;DP=10;AF=0.333,.;AA=T;DB GT 2 1   ./.
     bcf_clear1(rec);
@@ -147,7 +156,7 @@ void write_bcf(char *fname)
     tmpia[4] = bcf_gt_missing;
     tmpia[5] = bcf_gt_missing;
     bcf_update_genotypes(hdr, rec, tmpia, bcf_hdr_nsamples(hdr)*2);
-    bcf_write1(fp, hdr, rec);
+    if ( bcf_write1(fp, hdr, rec)!=0 ) error("Failed to write to %s\n", fname);
 
     free(tmpia);
     free(tmpfa);
@@ -181,11 +190,11 @@ void bcf_to_vcf(char *fname)
     bcf_hdr_remove(hdr_out,BCF_HL_INFO,"UI");
     bcf_hdr_remove(hdr_out,BCF_HL_FMT,"UF");
     bcf_hdr_remove(hdr_out,BCF_HL_CTG,"Unused");
-    bcf_hdr_write(out, hdr_out);
+    if ( bcf_hdr_write(out, hdr_out)!=0 ) error("Failed to write to %s\n", fname);
 
     while ( bcf_read1(fp, hdr, rec)>=0 )
     {
-        bcf_write1(out, hdr_out, rec);
+        if ( bcf_write1(out, hdr_out, rec)!=0 ) error("Failed to write to %s\n", fname);
 
         // Test problems caused by bcf1_sync: the data block
         // may be realloced, also the unpacked structures must
@@ -195,7 +204,7 @@ void bcf_to_vcf(char *fname)
         bcf_update_format_int32(hdr, rec, "GQ", NULL, 0);
 
         bcf1_t *dup = bcf_dup(rec);     // force bcf1_sync call
-        bcf_write1(out, hdr_out, dup);
+        if ( bcf_write1(out, hdr_out, dup)!=0 ) error("Failed to write to %s\n", fname);
         bcf_destroy1(dup);
 
         bcf_update_alleles_str(hdr_out, rec, "G,A");
@@ -204,7 +213,7 @@ void bcf_to_vcf(char *fname)
         int32_t tmpia[] = {9,9,9};
         bcf_update_format_int32(hdr_out, rec, "DP", tmpia, 3);
 
-        bcf_write1(out, hdr_out, rec);
+        if ( bcf_write1(out, hdr_out, rec)!=0 ) error("Failed to write to %s\n", fname);
     }
 
     bcf_destroy1(rec);
@@ -322,7 +331,7 @@ void write_format_values(const char *fname)
     bcf_hdr_append(hdr, "##FORMAT=<ID=TF,Number=1,Type=Float,Description=\"Test Float\">");
     bcf_hdr_add_sample(hdr, "S");
     bcf_hdr_add_sample(hdr, NULL); // to update internal structures
-    bcf_hdr_write(fp, hdr);
+    if ( bcf_hdr_write(fp, hdr)!=0 ) error("Failed to write to %s\n", fname);
 
     // Add a record
     // .. FORMAT
@@ -332,7 +341,7 @@ void write_format_values(const char *fname)
     bcf_float_set_vector_end(test[2]);
     test[3] = -1.2e-13;
     bcf_update_format_float(hdr, rec, "TF", test, 4);
-    bcf_write1(fp, hdr, rec);
+    if ( bcf_write1(fp, hdr, rec)!=0 ) error("Failed to write to %s\n", fname);
 
     bcf_destroy1(rec);
     bcf_hdr_destroy(hdr);

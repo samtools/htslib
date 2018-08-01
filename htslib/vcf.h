@@ -288,7 +288,7 @@ typedef struct {
     #define vcf_close(fp) hts_close(fp)
 
     /** Reads VCF or BCF header */
-    bcf_hdr_t *bcf_hdr_read(htsFile *fp);
+    bcf_hdr_t *bcf_hdr_read(htsFile *fp) HTS_RESULT_USED;
 
     /**
      *  bcf_hdr_set_samples() - for more efficient VCF parsing when only one/few samples are needed
@@ -317,7 +317,7 @@ typedef struct {
 
 
     /** Writes VCF or BCF header */
-    int bcf_hdr_write(htsFile *fp, bcf_hdr_t *h);
+    int bcf_hdr_write(htsFile *fp, bcf_hdr_t *h) HTS_RESULT_USED;
 
     /**
      * Parse VCF line contained in kstring and populate the bcf1_t struct
@@ -336,7 +336,7 @@ typedef struct {
      *  set to one of BCF_ERR* code and must be checked before calling
      *  vcf_write().
      */
-    int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
+    int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v) HTS_RESULT_USED;
 
     /**
      *  bcf_unpack() - unpack/decode a BCF record (fills the bcf1_t::d field)
@@ -367,17 +367,17 @@ typedef struct {
     /**
      *  bcf_write() - write one VCF or BCF record. The type is determined at the open() call.
      */
-    int bcf_write(htsFile *fp, bcf_hdr_t *h, bcf1_t *v);
+    int bcf_write(htsFile *fp, bcf_hdr_t *h, bcf1_t *v) HTS_RESULT_USED;
 
     /**
      *  The following functions work only with VCFs and should rarely be called
      *  directly. Usually one wants to use their bcf_* alternatives, which work
      *  transparently with both VCFs and BCFs.
      */
-    bcf_hdr_t *vcf_hdr_read(htsFile *fp);
-    int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h);
-    int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
-    int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v);
+    bcf_hdr_t *vcf_hdr_read(htsFile *fp) HTS_RESULT_USED;
+    int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h) HTS_RESULT_USED;
+    int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v) HTS_RESULT_USED;
+    int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v) HTS_RESULT_USED;
 
     /** Helper function for the bcf_itr_next() macro; internal use, ignore it */
     int bcf_readrec(BGZF *fp, void *null, void *v, int *tid, int *beg, int *end);

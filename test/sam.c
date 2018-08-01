@@ -106,7 +106,7 @@ static void check_int_B_array(bam1_t *aln, char *tag,
 
 static int test_update_int(bam1_t *aln,
                            const char target_id[2], int64_t target_val,
-                           char expected_type, 
+                           char expected_type,
                            const char next_id[2], int64_t next_val,
                            char next_type) {
     uint8_t *p;
@@ -459,17 +459,37 @@ static void copy_check_alignment(const char *infname, const char *informat,
     samFile *in = sam_open(infname, "r");
     samFile *out = sam_open(outfname, outmode);
     bam1_t *aln = bam_init1();
-    bam_hdr_t *header;
+    bam_hdr_t *header = NULL;
+    int res;
+
+    if (!in) {
+        fail("couldn't open %s", infname);
+        goto err;
+    }
+    if (!out) {
+        fail("couldn't open %s with mode %s", outfname, outmode);
+        goto err;
+    }
+    if (!aln) {
+        fail("bam_init1() failed");
+        goto err;
+    }
 
     if (outref) {
-        if (hts_set_opt(out, CRAM_OPT_REFERENCE, outref) < 0)
+        if (hts_set_opt(out, CRAM_OPT_REFERENCE, outref) < 0) {
             fail("setting reference %s for %s", outref, outfname);
+            goto err;
+        }
     }
 
     header = sam_hdr_read(in);
+    if (!header) {
+        fail("reading header from %s", infname);
+        goto err;
+    }
     if (sam_hdr_write(out, header) < 0) fail("writing headers to %s", outfname);
 
-    while (sam_read1(in, header, aln) >= 0) {
+    while ((res = sam_read1(in, header, aln)) >= 0) {
         int mod4 = ((intptr_t) bam_get_cigar(aln)) % 4;
         if (mod4 != 0)
             fail("%s CIGAR not 4-byte aligned; offset is 4k+%d for \"%s\"",
@@ -477,11 +497,15 @@ static void copy_check_alignment(const char *infname, const char *informat,
 
         if (sam_write1(out, header, aln) < 0) fail("writing to %s", outfname);
     }
+    if (res < -1) {
+        fail("failed to read alignment from %s", infname);
+    }
 
+ err:
     bam_destroy1(aln);
     bam_hdr_destroy(header);
-    sam_close(in);
-    sam_close(out);
+    if (in) sam_close(in);
+    if (out) sam_close(out);
 }
 
 static void samrecord_layout(void)
@@ -519,26 +543,32 @@ static void samrecord_layout(void)
 
 static void faidx1(const char *filename)
 {
-    int n, n_exp = 0;
+    int n, n_exp = 0, n_fq_exp = 0;
     char tmpfilename[FILENAME_MAX], line[500];
     FILE *fin, *fout;
     faidx_t *fai;
 
-    fin = fopen(filename, "r");
+    fin = fopen(filename, "rb");
     if (fin == NULL) fail("can't open %s\n", filename);
     sprintf(tmpfilename, "%s.tmp", filename);
-    fout = fopen(tmpfilename, "w");
+    fout = fopen(tmpfilename, "wb");
     if (fout == NULL) fail("can't create temporary %s\n", tmpfilename);
     while (fgets(line, sizeof line, fin)) {
         if (line[0] == '>') n_exp++;
+        if (line[0] == '+' && line[1] == '\n') n_fq_exp++;
         fputs(line, fout);
     }
     fclose(fin);
     fclose(fout);
 
+    if (n_exp == 0 && n_fq_exp != 0) {
+        // probably a fastq file
+        n_exp = n_fq_exp;
+    }
+
     if (fai_build(tmpfilename) < 0) fail("can't index %s", tmpfilename);
     fai = fai_load(tmpfilename);
-    if (fai == NULL) fail("can't load faidx file %s", tmpfilename);
+    if (fai == NULL) { fail("can't load faidx file %s", tmpfilename); return; }
 
     n = faidx_fetch_nseq(fai);
     if (n != n_exp)

@@ -1,6 +1,77 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Noteworthy changes in release 1.9 (18th July 2018)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* If `./configure` fails, `make` will stop working until either configure
+  is re-run successfully, or `make distclean` is used.  This makes
+  configuration failures more obvious.  (#711, thanks to John Marshall)
+
+* The default SAM version has been changed to 1.6.  This is in line with the
+  latest version specification and indicates that HTSlib supports the
+  CG tag used to store long CIGAR data in BAM format.
+
+* bgzip integrity check option '--test' (#682, thanks to @sd4B75bJ, @jrayner)
+
+* Faidx can now index fastq files as well as fasta.  The fastq index adds
+  an extra column to the `.fai` index which gives the offset to the quality
+  values.  New interfaces have been added to `htslib/faidx.h` to read the
+  fastq index and retrieve the quality values.  It is possible to open
+  a fastq index as if fasta (only sequences will be returned), but not
+  the other way round. (#701)
+
+* New API interfaces to add or update integer, float and array aux tags. (#694)
+
+* Add `level=<number>` option to `hts_set_opt()` to allow the compression
+  level to be set.  Setting `level=0` enables uncompressed output. (#715)
+
+* Improved bgzip error reporting.
+
+* Better error reporting when CRAM reference files can't be opened. (#706)
+
+* Fixes to make tests work properly on Windows/MinGW - mainly to handle
+  line ending differences. (#716)
+
+* Efficiency improvements:
+
+  - Small speed-up for CRAM indexing.
+
+  - Reduce the number of unnecessary wake-ups in the thread pool. (#703)
+
+  - Avoid some memory copies when writing data, notably for uncompressed
+    BGZF output. (#703)
+
+* Bug fixes:
+
+  - Fix multi-region iterator bugs on CRAM files. (#684)
+
+  - Fixed multi-region iterator bug that caused some reads to be skipped
+    incorrectly when reading BAM files. (#687)
+
+  - Fixed synced_bcf_reader() bug when reading contigs multiple times. (#691,
+    reported by @freeseek)
+
+  - Fixed bug where bcf_hdr_set_samples() did not update the sample dictionary
+    when removing samples. (#692, reported by @freeseek)
+
+  - Fixed bug where the VCF record ref length was calculated incorrectly
+    if an INFO END tag was present. (71b00a)
+
+  - Fixed warnings found when compiling with gcc 8.1.0. (#700)
+
+  - sam_hdr_read() and sam_hdr_write() will now return an error code
+    if passed a NULL file pointer, instead of crashing.
+
+  - Fixed possible negative array look-up in sam_parse1() that somehow
+    escaped previous fuzz testing. (#731, reported by @fCorleone)
+
+  - Fixed bug where cram range queries could incorrectly report an error
+    when using multiple threads. (#734, reported by Brent Pedersen)
+
+  - Fixed very rare rANS normalisation bug that could cause an assertion
+    failure when writing CRAM files.  (#739, reported by @carsonhh)
+
 Noteworthy changes in release 1.8 (3rd April 2018)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
