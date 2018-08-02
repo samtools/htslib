@@ -402,6 +402,8 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
  */
     int sam_write1(samFile *fp, const bam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
 
+    int sam_state_destroy(samFile *fp);
+
     /*************************************
      *** Manipulating auxiliary fields ***
      *************************************/

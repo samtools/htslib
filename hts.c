@@ -930,8 +930,11 @@ int hts_close(htsFile *fp)
         ret = cram_close(fp->fp.cram);
         break;
 
-    case text_format:
     case sam:
+        sam_state_destroy(fp);
+        // fall through
+
+    case text_format:
     case vcf:
         if (fp->format.compression != no_compression)
             ret = bgzf_close(fp->fp.bgzf);
@@ -980,11 +983,15 @@ const char *hts_format_file_extension(const htsFormat *format) {
 
 static hFILE *hts_hfile(htsFile *fp) {
     switch (fp->format.format) {
-    case binary_format: // fall through; still valid if bcf?
+    case binary_format:// fall through
+    case bcf:          // fall through
     case bam:          return bgzf_hfile(fp->fp.bgzf);
     case cram:         return cram_hfile(fp->fp.cram);
     case text_format:  return fp->fp.hfile;
-    case sam:          return fp->fp.hfile;
+    case vcf:          // fall through
+    case sam:          return fp->format.compression != no_compression
+                              ? bgzf_hfile(fp->fp.bgzf)
+                              : fp->fp.hfile;
     default:           return NULL;
     }
 }

@@ -174,6 +174,7 @@ typedef struct {
         struct cram_fd *cram;
         struct hFILE *hfile;
     } fp;
+    void *state;  // format specific state information
     htsFormat format;
 } htsFile;
 

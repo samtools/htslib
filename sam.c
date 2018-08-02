@@ -32,6 +32,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <errno.h>
 #include <zlib.h>
 #include <assert.h>
+#include <signal.h>
+
 #include "htslib/sam.h"
 #include "htslib/bgzf.h"
 #include "cram/cram.h"
@@ -1554,6 +1556,8 @@ err_ret:
 #define NT 10 // up to 8 is fine
 #define NM 300000 // worse case; fixme check; ~256KB
 
+struct SAM_fd;
+
 // Input job - a block of SAM text
 typedef struct sp_lines {
     struct sp_lines *next;
@@ -1562,6 +1566,8 @@ typedef struct sp_lines {
     char *data;
     int data_size;
     int alloc;
+
+    struct SAM_fd *fd;
 } sp_lines;
 
 // Output job - a block of BAM records
@@ -1571,9 +1577,14 @@ typedef struct sp_bams {
 
     bam1_t *bams;
     int nbams, abams; // used and alloc
+
+    struct SAM_fd *fd;
 } sp_bams;
 
-typedef struct {
+typedef struct SAM_fd {
+    BGZF *bgzf;
+    hFILE *hfile;  // used if bgzf is NULL
+
     hts_tpool *p;
     hts_tpool_process *q;
     pthread_t dispatcher;
@@ -1582,26 +1593,90 @@ typedef struct {
     bam_hdr_t *h;
     sp_lines *lines;
     sp_bams *bams;
+
+    sp_bams *curr_bam;
+    int curr_idx;
+
+    bam1_t b; // current bam (sam_read1x)
 } SAM_fd;
 
-static SAM_fd sam_fd_static; // FIXME: move this into htsFile
-static SAM_fd *_sam = &sam_fd_static;
+// Returns a SAM_fd struct from a generic hFILE.
+//
+// Returns NULL on failure.
+static SAM_fd *sam_state_create(htsFile *fp) {
+    if (fp->format.format != sam)
+        return NULL;
+
+    SAM_fd *fd = calloc(1, sizeof(*fd));
+    if (!fd)
+        return NULL;
+
+    fp->state = fd;
+
+    return fd;
+}
+
+// Destroys the state produce by sam_state_create.
+int sam_state_destroy(htsFile *fp) {
+    if (fp->format.format != sam)
+        return -1;
+
+    if (!fp->state)
+        return 0;
+
+    SAM_fd *fd = fp->state;
+    if (fd->p) {
+        fprintf(stderr, "Destroy state\n");
+        hts_tpool_process_destroy(fd->q);
+        pthread_kill(fd->dispatcher, 9);
+        hts_tpool_destroy(fd->p);
+        pthread_mutex_destroy(&fd->mutex);
+
+        sp_lines *l = fd->lines;
+        while (l) {
+            sp_lines *n = l->next;
+            free(l->data);
+            free(l);
+            l = n;
+        }
+
+        sp_bams *b = fd->bams;
+        while (b) {
+            sp_bams *n = b->next;
+            int i;
+            for (i = 0; i < b->abams; i++)
+                if (b->bams[i].data)
+                    free(b->bams[i].data);
+            free(b);
+            b = n;
+        }
+    }
+
+    free(fp->state);
+    return 0;
+}
 
 // Run from one of the worker threads.
 // Convert a passed in array of lines to array of BAMs, returning
 // the result back to the thread queue.
+//
+// FIXME: big question here is how does seeking interact with this?
+// The iterator uses bgzf_seek, which is one layer lower down.
+// Delay until we get indexable SAM in place and then revisit this as
+// it'll almost certainly trample over each other.
 void *sam_parse_worker(void *arg) {
     sp_lines *gl = (sp_lines *)arg;
     sp_bams *gb;
     char *lines = gl->data;
     int i;
     bam1_t *b;
+    SAM_fd *fd = gl->fd;
 
     // Use a block of BAM structs we had earlier if available.
-    pthread_mutex_lock(&_sam->mutex);
-    if (_sam->bams) { 
-        gb = _sam->bams;
-        _sam->bams = gb->next;
+    pthread_mutex_lock(&fd->mutex);
+    if (fd->bams) { 
+        gb = fd->bams;
+        fd->bams = gb->next;
     } else {
         gb = calloc(1, sizeof(*gb));
         gb->abams = 100;
@@ -1610,7 +1685,7 @@ void *sam_parse_worker(void *arg) {
     }
     gb->serial = gl->serial;
     gb->next = NULL;
-    pthread_mutex_unlock(&_sam->mutex);
+    pthread_mutex_unlock(&fd->mutex);
 
     b = (bam1_t *)gb->bams;
     if (!b)
@@ -1640,7 +1715,7 @@ void *sam_parse_worker(void *arg) {
         nl = nl ? nl : cp_end;
         if (*nl) *nl++ = '\0';
         kstring_t ks = {nl-cp, gl->alloc, cp};
-        if (sam_parse1(&ks, _sam->h, &b[i]) < 0) {
+        if (sam_parse1(&ks, fd->h, &b[i]) < 0) {
             fprintf(stderr, "Fail to parse\n");
             return NULL;
         }
@@ -1649,10 +1724,10 @@ void *sam_parse_worker(void *arg) {
     }
     gb->nbams = i;
 
-    pthread_mutex_lock(&_sam->mutex);
-    gl->next = _sam->lines;
-    _sam->lines = gl;
-    pthread_mutex_unlock(&_sam->mutex);
+    pthread_mutex_lock(&fd->mutex);
+    gl->next = fd->lines;
+    fd->lines = gl;
+    pthread_mutex_unlock(&fd->mutex);
     return gb;
 }
 
@@ -1668,21 +1743,23 @@ static void *sam_dispatcher(void *vp) {
     htsFile *fp = vp;
     char line[8192]; // FIXME;
     int line_frag = 0;
+    SAM_fd *fd = fp->state;
 
     for (;;) {
         sp_lines *l;
 
-        pthread_mutex_lock(&_sam->mutex);
-        if (_sam->lines) {
-            l = _sam->lines;
-            _sam->lines = l->next;
+        pthread_mutex_lock(&fd->mutex);
+        if (fd->lines) {
+            l = fd->lines;
+            fd->lines = l->next;
         } else {
             l = calloc(1, sizeof(*l));
             l->alloc = NM+8; // +8 for optimisation in sam_parse1
             l->data = malloc(l->alloc);
+            l->fd = fd;
         }
         l->next = NULL;
-        pthread_mutex_unlock(&_sam->mutex);
+        pthread_mutex_unlock(&fd->mutex);
 
         memcpy(l->data, line, line_frag);
         if (fp->is_bgzf)
@@ -1707,10 +1784,10 @@ static void *sam_dispatcher(void *vp) {
         static int serial = 0;
         l->serial = serial++;
         //fprintf(stderr, "Dispatching %p, %d bytes, serial %d\n", l, l->data_size, l->serial);
-        hts_tpool_dispatch(_sam->p, _sam->q, sam_parse_worker, l);
+        hts_tpool_dispatch(fd->p, fd->q, sam_parse_worker, l);
     }
 
-    hts_tpool_dispatch(_sam->p, _sam->q, sam_parse_eof, NULL);
+    hts_tpool_dispatch(fd->p, fd->q, sam_parse_eof, NULL);
     pthread_exit(NULL); // exit 'ret' maybe
 }
 
@@ -1746,13 +1823,18 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
             return ret;
         }
 
-        if (!_sam->p) {
+        if (!fp->state)
+            if (!(fp->state = sam_state_create(fp)))
+                return -2;
+        SAM_fd *fd = (SAM_fd *)fp->state;
+
+        if (!fd->p) {
             // FIXME: we need shutdown code too.  This belongs in the SAM_fd struct.
-            pthread_mutex_init(&_sam->mutex, NULL);
-            _sam->p = hts_tpool_init(NT);
-            _sam->q = hts_tpool_process_init(_sam->p, NT*2, 0);
-            _sam->h = h;
-            pthread_create(&_sam->dispatcher, NULL, sam_dispatcher, fp);
+            pthread_mutex_init(&fd->mutex, NULL);
+            fd->p = hts_tpool_init(NT);
+            fd->q = hts_tpool_process_init(fd->p, NT*2, 0);
+            fd->h = h;
+            pthread_create(&fd->dispatcher, NULL, sam_dispatcher, fp);
             fp->line.l = 0; // NB: discards first line?
             fp->line.s = 0; // fixes errors in output?
 
@@ -1766,26 +1848,25 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
             }
         }
 
-        static int idx = 0;
-        static sp_bams *gb = NULL;
+        sp_bams *gb = fd->curr_bam;
         if (!gb) {
-            hts_tpool_result *r = hts_tpool_next_result_wait(_sam->q);
-            gb = (sp_bams *)hts_tpool_result_data(r);
+            hts_tpool_result *r = hts_tpool_next_result_wait(fd->q);
+            fd->curr_bam = gb = (sp_bams *)hts_tpool_result_data(r);
             hts_tpool_delete_result(r, 0);
             if (!gb) // FIXME: distinguish error from EOF
                 return -1;
         }
         bam1_t *b_array = (bam1_t *)gb->bams;
-        if (idx < gb->nbams)
-            bam_copy1(b, &b_array[idx++]);
-        if (idx == gb->nbams) {
-            pthread_mutex_lock(&_sam->mutex);
-            gb->next = _sam->bams;
-            _sam->bams = gb;
-            pthread_mutex_unlock(&_sam->mutex);
+        if (fd->curr_idx < gb->nbams)
+            bam_copy1(b, &b_array[fd->curr_idx++]);
+        if (fd->curr_idx == gb->nbams) {
+            pthread_mutex_lock(&fd->mutex);
+            gb->next = fd->bams;
+            fd->bams = gb;
+            pthread_mutex_unlock(&fd->mutex);
 
-            gb = NULL;
-            idx = 0;
+            fd->curr_bam = NULL;
+            fd->curr_idx = 0;
         }
 
         return 0;
@@ -1801,7 +1882,7 @@ err_recover:
         fp->line.l = 0;
         if (ret < 0) {
             hts_log_warning("Parse error at line %lld", (long long)fp->lineno);
-            if (h->ignore_sam_err) goto err_recover;
+            if (h->ignorefd_err) goto err_recover;
         }
         return ret;
 #endif
@@ -1818,19 +1899,24 @@ const bam1_t *sam_read1x(htsFile *fp, bam_hdr_t *h) // FIXME: add ret code
     case sam: {
         // Consume 1st line after header parsing as it wasn't using peek
         if (fp->line.l != 0) {
-            static bam1_t b;
+            static bam1_t b; // FIXME: replace with SAM_fd->b
             int ret = sam_parse1(&fp->line, h, &b);
             fp->line.l = 0;
             return ret >= 0 ? &b : NULL;
         }
 
-        if (!_sam->p) {
+        if (!fp->state)
+            if (!(fp->state = sam_state_create(fp)))
+                return NULL;
+        SAM_fd *fd = (SAM_fd *)fp->state;
+
+        if (!fd->p) {
             // FIXME: we need shutdown code too.  This belongs in the SAM_fd struct.
-            pthread_mutex_init(&_sam->mutex, NULL);
-            _sam->p = hts_tpool_init(NT);
-            _sam->q = hts_tpool_process_init(_sam->p, NT*2, 0);
-            _sam->h = h;
-            pthread_create(&_sam->dispatcher, NULL, sam_dispatcher, fp);
+            pthread_mutex_init(&fd->mutex, NULL);
+            fd->p = hts_tpool_init(NT);
+            fd->q = hts_tpool_process_init(fd->p, NT*2, 0);
+            fd->h = h;
+            pthread_create(&fd->dispatcher, NULL, sam_dispatcher, fp);
             fp->line.l = 0; // NB: discards first line?
             fp->line.s = 0; // fixes errors in output?
 
@@ -1844,27 +1930,26 @@ const bam1_t *sam_read1x(htsFile *fp, bam_hdr_t *h) // FIXME: add ret code
             }
         }
 
-        static int idx = 0;
-        static sp_bams *gb = NULL;
+        sp_bams *gb = fd->curr_bam;
         if (!gb) {
-            hts_tpool_result *r = hts_tpool_next_result_wait(_sam->q);
-            gb = (sp_bams *)hts_tpool_result_data(r);
+            hts_tpool_result *r = hts_tpool_next_result_wait(fd->q);
+            fd->curr_bam = gb = (sp_bams *)hts_tpool_result_data(r);
             hts_tpool_delete_result(r, 0);
         }
         if (!gb) // FIXME: distinguish error from EOF
             return NULL;
         bam1_t *b_array = (bam1_t *)gb->bams;
-        bam1_t *bp = (idx < gb->nbams)
-            ? &b_array[idx++]
+        bam1_t *bp = (fd->curr_idx < gb->nbams)
+            ? &b_array[fd->curr_idx++]
             : NULL;
-        if (idx == gb->nbams) {
-            pthread_mutex_lock(&_sam->mutex);
-            gb->next = _sam->bams;
-            _sam->bams = gb;
-            pthread_mutex_unlock(&_sam->mutex);
+        if (fd->curr_idx == gb->nbams) {
+            pthread_mutex_lock(&fd->mutex);
+            gb->next = fd->bams;
+            fd->bams = gb;
+            pthread_mutex_unlock(&fd->mutex);
 
-            gb = NULL;
-            idx = 0;
+            fd->curr_bam = NULL;
+            fd->curr_idx = 0;
         }
 
         return bp;
