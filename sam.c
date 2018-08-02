@@ -338,9 +338,10 @@ bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc)
 {
     uint8_t *data = bdst->data;
     int m_data = bdst->m_data;   // backup data and m_data
-    if (m_data < bsrc->l_data) { // double the capacity
+    if (m_data < bsrc->l_data) {
         m_data = bsrc->l_data; kroundup32(m_data);
         data = (uint8_t*)realloc(data, m_data);
+        if (!data) return NULL;
     }
     memcpy(data, bsrc->data, bsrc->l_data); // copy var-len data
     *bdst = *bsrc; // copy the rest
@@ -1551,73 +1552,106 @@ err_ret:
   10m.sam      ~6.3s (1)   ~1.0s (10)
  */
 #define NT 10 // up to 8 is fine
-#define NL 800 // worse case; fixme check; ~256KB
+#define NM 300000 // worse case; fixme check; ~256KB
 static hts_tpool *p = NULL;
 static hts_tpool_process *q = NULL;
 static pthread_t dispatcher;
-static bam_hdr_t *global_h;
-typedef struct global_list {
-    void *data;
+
+// Input job - a block of SAM text
+typedef struct sp_lines {
+    struct sp_lines *next;
+    int serial;
+
+    char *data;
     int data_size;
     int alloc;
+} sp_lines;
+
+// Output job - a block of BAM records
+typedef struct sp_bams {
+    struct sp_bams *next;
     int serial;
-    struct global_list *next;
-} global_list;
-static global_list *global_lines = NULL;
-static global_list *global_bams = NULL;
 
-pthread_mutex_t global_b_mutex;
+    bam1_t *bams;
+    int nbams, abams; // used and alloc
+} sp_bams;
 
-// Convert passed in array of lines to array of BAMs
+typedef struct {
+    pthread_mutex_t mutex;
+    bam_hdr_t *h;
+    sp_lines *lines;
+    sp_bams *bams;
+} SAM_fd;
+
+static SAM_fd sam_fd_static; // FIXME: move this into htsFile
+static SAM_fd *_sam = &sam_fd_static;
+
+// Run from one of the worker threads.
+// Convert a passed in array of lines to array of BAMs, returning
+// the result back to the thread queue.
 void *sam_parse_worker(void *arg) {
-    global_list *gl = (global_list *)arg;
-    global_list *gb;
+    sp_lines *gl = (sp_lines *)arg;
+    sp_bams *gb;
     char *lines = gl->data;
     int i;
     bam1_t *b;
 
-    pthread_mutex_lock(&global_b_mutex);
-    if (global_bams) { 
-        gb = global_bams;
-        global_bams = gb->next;
+    // Use a block of BAM structs we had earlier if available.
+    pthread_mutex_lock(&_sam->mutex);
+    if (_sam->bams) { 
+        gb = _sam->bams;
+        _sam->bams = gb->next;
     } else {
         gb = calloc(1, sizeof(*gb));
-        gb->data = b = calloc(NL, sizeof(*b));
+        gb->abams = 100;
+        gb->bams = b = calloc(gb->abams, sizeof(*b));
+        gb->nbams = 0;
     }
-    b = (bam1_t *)gb->data;
     gb->serial = gl->serial;
     gb->next = NULL;
-    pthread_mutex_unlock(&global_b_mutex);
+    pthread_mutex_unlock(&_sam->mutex);
 
+    b = (bam1_t *)gb->bams;
     if (!b)
         return NULL;
 
     i = 0;
     char *cp = lines, *cp_end = lines + gl->data_size;
     while (cp < cp_end) {
+        if (i >= gb->abams) {
+            int old_abams = gb->abams;
+            gb->abams *= 2;
+            b = (bam1_t *)realloc(gb->bams, gb->abams*sizeof(bam1_t));
+            if (!b)
+                return NULL;
+            memset(&b[old_abams], 0, (gb->abams - old_abams)*sizeof(*b));
+            gb->bams = b;
+        }
+
         // FIXME:  get sam_parse1 to return the number of
         // bytes decoded and to be able to stop on newline as
         // well as \0.
         //
         // We can then avoid the additional strchr loop.
         // It's around 6% of our CPU cost, albeit threadable.
+
         char *nl = strchr(cp, '\n');
         nl = nl ? nl : cp_end;
         if (*nl) *nl++ = '\0';
         kstring_t ks = {nl-cp, gl->alloc, cp};
-        if (sam_parse1(&ks, global_h, &b[i]) < 0) {
+        if (sam_parse1(&ks, _sam->h, &b[i]) < 0) {
             fprintf(stderr, "Fail to parse\n");
             return NULL;
         }
         cp = nl;
         i++;
-        if (i > NL) abort(); // FIXME: resize b array here instead
     }
-    gb->data_size = i;
-    pthread_mutex_lock(&global_b_mutex);
-    gl->next = global_lines;
-    global_lines = gl;
-    pthread_mutex_unlock(&global_b_mutex);
+    gb->nbams = i;
+
+    pthread_mutex_lock(&_sam->mutex);
+    gl->next = _sam->lines;
+    _sam->lines = gl;
+    pthread_mutex_unlock(&_sam->mutex);
     return gb;
 }
 
@@ -1626,29 +1660,34 @@ void *sam_parse_eof(void *arg) {
     return NULL;
 }
 
+// Runs in the main thread.
+// Reads a block of text (SAM) and sends a new job to the thread queue to
+// translate this to BAM.
 static void *sam_dispatcher(void *vp) {
     htsFile *fp = vp;
     char line[8192]; // FIXME;
     int line_frag = 0;
 
     for (;;) {
-        global_list *l;
+        sp_lines *l;
 
-        pthread_mutex_lock(&global_b_mutex);
-        if (global_lines) {
-            l = global_lines;
-            global_lines = l->next;
+        pthread_mutex_lock(&_sam->mutex);
+        if (_sam->lines) {
+            l = _sam->lines;
+            _sam->lines = l->next;
         } else {
             l = calloc(1, sizeof(*l));
-            // test is 373 bytes per line avg.
-            l->alloc = NL*300+8; // +8 for optimisation in sam_parse1
+            l->alloc = NM+8; // +8 for optimisation in sam_parse1
             l->data = malloc(l->alloc);
         }
         l->next = NULL;
-        pthread_mutex_unlock(&global_b_mutex);
+        pthread_mutex_unlock(&_sam->mutex);
 
         memcpy(l->data, line, line_frag);
-        l->data_size = hread(fp->fp.hfile, l->data + line_frag, l->alloc - line_frag);
+        if (fp->is_bgzf)
+            l->data_size = bgzf_read(fp->fp.bgzf, l->data + line_frag, l->alloc - line_frag);
+        else
+            l->data_size = hread(fp->fp.hfile, l->data + line_frag, l->alloc - line_frag);
         if (l->data_size <= 0) break;
 
         // trim to last \n. Maybe \r\n, but that's still fine
@@ -1708,10 +1747,10 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
 
         if (!p) {
             // FIXME: we need shutdown code too.  This belongs in the SAM_fd struct.
-            pthread_mutex_init(&global_b_mutex, NULL);
+            pthread_mutex_init(&_sam->mutex, NULL);
             p = hts_tpool_init(NT);
             q = hts_tpool_process_init(p, NT*2, 0);
-            global_h = h;
+            _sam->h = h;
             pthread_create(&dispatcher, NULL, sam_dispatcher, fp);
             fp->line.l = 0; // NB: discards first line?
             fp->line.s = 0; // fixes errors in output?
@@ -1727,22 +1766,22 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
         }
 
         static int idx = 0;
-        static global_list *gb = NULL;
+        static sp_bams *gb = NULL;
         if (!gb) {
             hts_tpool_result *r = hts_tpool_next_result_wait(q);
-            gb = (global_list *)hts_tpool_result_data(r);
+            gb = (sp_bams *)hts_tpool_result_data(r);
             hts_tpool_delete_result(r, 0);
+            if (!gb) // FIXME: distinguish error from EOF
+                return -1;
         }
-        if (!gb) // FIXME: distinguish error from EOF
-            return -1;
-        bam1_t *b_array = (bam1_t *)gb->data;
-        if (idx < gb->data_size)
+        bam1_t *b_array = (bam1_t *)gb->bams;
+        if (idx < gb->nbams)
             bam_copy1(b, &b_array[idx++]);
-        if (idx == gb->data_size) {
-            pthread_mutex_lock(&global_b_mutex);
-            gb->next = global_bams;
-            global_bams = gb;
-            pthread_mutex_unlock(&global_b_mutex);
+        if (idx == gb->nbams) {
+            pthread_mutex_lock(&_sam->mutex);
+            gb->next = _sam->bams;
+            _sam->bams = gb;
+            pthread_mutex_unlock(&_sam->mutex);
 
             gb = NULL;
             idx = 0;
@@ -1786,10 +1825,10 @@ const bam1_t *sam_read1x(htsFile *fp, bam_hdr_t *h) // FIXME: add ret code
 
         if (!p) {
             // FIXME: we need shutdown code too.  This belongs in the SAM_fd struct.
-            pthread_mutex_init(&global_b_mutex, NULL);
+            pthread_mutex_init(&_sam->mutex, NULL);
             p = hts_tpool_init(NT);
             q = hts_tpool_process_init(p, NT*2, 0);
-            global_h = h;
+            _sam->h = h;
             pthread_create(&dispatcher, NULL, sam_dispatcher, fp);
             fp->line.l = 0; // NB: discards first line?
             fp->line.s = 0; // fixes errors in output?
@@ -1805,23 +1844,23 @@ const bam1_t *sam_read1x(htsFile *fp, bam_hdr_t *h) // FIXME: add ret code
         }
 
         static int idx = 0;
-        static global_list *gb = NULL;
+        static sp_bams *gb = NULL;
         if (!gb) {
             hts_tpool_result *r = hts_tpool_next_result_wait(q);
-            gb = (global_list *)hts_tpool_result_data(r);
+            gb = (sp_bams *)hts_tpool_result_data(r);
             hts_tpool_delete_result(r, 0);
         }
         if (!gb) // FIXME: distinguish error from EOF
             return NULL;
-        bam1_t *b_array = (bam1_t *)gb->data;
-        bam1_t *bp = (idx < gb->data_size)
+        bam1_t *b_array = (bam1_t *)gb->bams;
+        bam1_t *bp = (idx < gb->nbams)
             ? &b_array[idx++]
             : NULL;
-        if (idx == gb->data_size) {
-            pthread_mutex_lock(&global_b_mutex);
-            gb->next = global_bams;
-            global_bams = gb;
-            pthread_mutex_unlock(&global_b_mutex);
+        if (idx == gb->nbams) {
+            pthread_mutex_lock(&_sam->mutex);
+            gb->next = _sam->bams;
+            _sam->bams = gb;
+            pthread_mutex_unlock(&_sam->mutex);
 
             gb = NULL;
             idx = 0;
