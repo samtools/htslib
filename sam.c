@@ -1553,9 +1553,6 @@ err_ret:
  */
 #define NT 10 // up to 8 is fine
 #define NM 300000 // worse case; fixme check; ~256KB
-static hts_tpool *p = NULL;
-static hts_tpool_process *q = NULL;
-static pthread_t dispatcher;
 
 // Input job - a block of SAM text
 typedef struct sp_lines {
@@ -1577,7 +1574,11 @@ typedef struct sp_bams {
 } sp_bams;
 
 typedef struct {
+    hts_tpool *p;
+    hts_tpool_process *q;
+    pthread_t dispatcher;
     pthread_mutex_t mutex;
+
     bam_hdr_t *h;
     sp_lines *lines;
     sp_bams *bams;
@@ -1706,10 +1707,10 @@ static void *sam_dispatcher(void *vp) {
         static int serial = 0;
         l->serial = serial++;
         //fprintf(stderr, "Dispatching %p, %d bytes, serial %d\n", l, l->data_size, l->serial);
-        hts_tpool_dispatch(p, q, sam_parse_worker, l);
+        hts_tpool_dispatch(_sam->p, _sam->q, sam_parse_worker, l);
     }
 
-    hts_tpool_dispatch(p, q, sam_parse_eof, NULL);
+    hts_tpool_dispatch(_sam->p, _sam->q, sam_parse_eof, NULL);
     pthread_exit(NULL); // exit 'ret' maybe
 }
 
@@ -1745,13 +1746,13 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
             return ret;
         }
 
-        if (!p) {
+        if (!_sam->p) {
             // FIXME: we need shutdown code too.  This belongs in the SAM_fd struct.
             pthread_mutex_init(&_sam->mutex, NULL);
-            p = hts_tpool_init(NT);
-            q = hts_tpool_process_init(p, NT*2, 0);
+            _sam->p = hts_tpool_init(NT);
+            _sam->q = hts_tpool_process_init(_sam->p, NT*2, 0);
             _sam->h = h;
-            pthread_create(&dispatcher, NULL, sam_dispatcher, fp);
+            pthread_create(&_sam->dispatcher, NULL, sam_dispatcher, fp);
             fp->line.l = 0; // NB: discards first line?
             fp->line.s = 0; // fixes errors in output?
 
@@ -1768,7 +1769,7 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
         static int idx = 0;
         static sp_bams *gb = NULL;
         if (!gb) {
-            hts_tpool_result *r = hts_tpool_next_result_wait(q);
+            hts_tpool_result *r = hts_tpool_next_result_wait(_sam->q);
             gb = (sp_bams *)hts_tpool_result_data(r);
             hts_tpool_delete_result(r, 0);
             if (!gb) // FIXME: distinguish error from EOF
@@ -1823,13 +1824,13 @@ const bam1_t *sam_read1x(htsFile *fp, bam_hdr_t *h) // FIXME: add ret code
             return ret >= 0 ? &b : NULL;
         }
 
-        if (!p) {
+        if (!_sam->p) {
             // FIXME: we need shutdown code too.  This belongs in the SAM_fd struct.
             pthread_mutex_init(&_sam->mutex, NULL);
-            p = hts_tpool_init(NT);
-            q = hts_tpool_process_init(p, NT*2, 0);
+            _sam->p = hts_tpool_init(NT);
+            _sam->q = hts_tpool_process_init(_sam->p, NT*2, 0);
             _sam->h = h;
-            pthread_create(&dispatcher, NULL, sam_dispatcher, fp);
+            pthread_create(&_sam->dispatcher, NULL, sam_dispatcher, fp);
             fp->line.l = 0; // NB: discards first line?
             fp->line.s = 0; // fixes errors in output?
 
@@ -1846,7 +1847,7 @@ const bam1_t *sam_read1x(htsFile *fp, bam_hdr_t *h) // FIXME: add ret code
         static int idx = 0;
         static sp_bams *gb = NULL;
         if (!gb) {
-            hts_tpool_result *r = hts_tpool_next_result_wait(q);
+            hts_tpool_result *r = hts_tpool_next_result_wait(_sam->q);
             gb = (sp_bams *)hts_tpool_result_data(r);
             hts_tpool_delete_result(r, 0);
         }
