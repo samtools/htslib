@@ -385,6 +385,7 @@ int main(int argc, char *argv[])
         {"comment", required_argument, NULL, 'c'},
         {"end", required_argument, NULL, 'e'},
         {"force", no_argument, NULL, 'f'},
+        {"min-shift", required_argument, NULL, 'm'},
         {"preset", required_argument, NULL, 'p'},
         {"sequence", required_argument, NULL, 's'},
         {"skip-lines", required_argument, NULL, 'S'},
