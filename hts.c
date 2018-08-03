@@ -1066,7 +1066,9 @@ BGZF *hts_get_bgzfp(htsFile *fp);
 
 int hts_set_threads(htsFile *fp, int n)
 {
-    if (fp->format.compression == bgzf) {
+    if (fp->format.format == sam && !fp->is_write) {
+        return sam_set_threads(fp, n);
+    } else if (fp->format.compression == bgzf) {
         return bgzf_mt(hts_get_bgzfp(fp), n, 256/*unused*/);
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_NTHREADS, n);
@@ -1075,7 +1077,9 @@ int hts_set_threads(htsFile *fp, int n)
 }
 
 int hts_set_thread_pool(htsFile *fp, htsThreadPool *p) {
-    if (fp->format.compression == bgzf) {
+    if (fp->format.format == sam && !fp->is_write) {
+        return sam_set_thread_pool(fp, p);
+    } else if (fp->format.compression == bgzf) {
         return bgzf_thread_pool(hts_get_bgzfp(fp), p->pool, p->qsize);
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_THREAD_POOL, p);
