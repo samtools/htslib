@@ -335,33 +335,33 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
     return 0;
 }
 
-static int usage(void)
+static int usage(FILE *fp, int status)
 {
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Version: %s\n", hts_version());
-    fprintf(stderr, "Usage:   tabix [OPTIONS] [FILE] [REGION [...]]\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Indexing Options:\n");
-    fprintf(stderr, "   -0, --zero-based           coordinates are zero-based\n");
-    fprintf(stderr, "   -b, --begin INT            column number for region start [4]\n");
-    fprintf(stderr, "   -c, --comment CHAR         skip comment lines starting with CHAR [null]\n");
-    fprintf(stderr, "   -C, --csi                  generate CSI index for VCF (default is TBI)\n");
-    fprintf(stderr, "   -e, --end INT              column number for region end (if no end, set INT to -b) [5]\n");
-    fprintf(stderr, "   -f, --force                overwrite existing index without asking\n");
-    fprintf(stderr, "   -m, --min-shift INT        set minimal interval size for CSI indices to 2^INT [14]\n");
-    fprintf(stderr, "   -p, --preset STR           gff, bed, sam, vcf\n");
-    fprintf(stderr, "   -s, --sequence INT         column number for sequence names (suppressed by -p) [1]\n");
-    fprintf(stderr, "   -S, --skip-lines INT       skip first INT lines [0]\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Querying and other options:\n");
-    fprintf(stderr, "   -h, --print-header         print also the header lines\n");
-    fprintf(stderr, "   -H, --only-header          print only the header lines\n");
-    fprintf(stderr, "   -l, --list-chroms          list chromosome names\n");
-    fprintf(stderr, "   -r, --reheader FILE        replace the header with the content of FILE\n");
-    fprintf(stderr, "   -R, --regions FILE         restrict to regions listed in the file\n");
-    fprintf(stderr, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
-    fprintf(stderr, "\n");
-    return 1;
+    fprintf(fp, "\n");
+    fprintf(fp, "Version: %s\n", hts_version());
+    fprintf(fp, "Usage:   tabix [OPTIONS] [FILE] [REGION [...]]\n");
+    fprintf(fp, "\n");
+    fprintf(fp, "Indexing Options:\n");
+    fprintf(fp, "   -0, --zero-based           coordinates are zero-based\n");
+    fprintf(fp, "   -b, --begin INT            column number for region start [4]\n");
+    fprintf(fp, "   -c, --comment CHAR         skip comment lines starting with CHAR [null]\n");
+    fprintf(fp, "   -C, --csi                  generate CSI index for VCF (default is TBI)\n");
+    fprintf(fp, "   -e, --end INT              column number for region end (if no end, set INT to -b) [5]\n");
+    fprintf(fp, "   -f, --force                overwrite existing index without asking\n");
+    fprintf(fp, "   -m, --min-shift INT        set minimal interval size for CSI indices to 2^INT [14]\n");
+    fprintf(fp, "   -p, --preset STR           gff, bed, sam, vcf\n");
+    fprintf(fp, "   -s, --sequence INT         column number for sequence names (suppressed by -p) [1]\n");
+    fprintf(fp, "   -S, --skip-lines INT       skip first INT lines [0]\n");
+    fprintf(fp, "\n");
+    fprintf(fp, "Querying and other options:\n");
+    fprintf(fp, "   -h, --print-header         print also the header lines\n");
+    fprintf(fp, "   -H, --only-header          print only the header lines\n");
+    fprintf(fp, "   -l, --list-chroms          list chromosome names\n");
+    fprintf(fp, "   -r, --reheader FILE        replace the header with the content of FILE\n");
+    fprintf(fp, "   -R, --regions FILE         restrict to regions listed in the file\n");
+    fprintf(fp, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
+    fprintf(fp, "\n");
+    return status;
 }
 
 int main(int argc, char *argv[])
@@ -449,11 +449,13 @@ int main(int argc, char *argv[])
 "tabix (htslib) %s\n"
 "Copyright (C) 2018 Genome Research Ltd.\n", hts_version());
                 return EXIT_SUCCESS;
-            default: return usage();
+            case 2:
+                return usage(stdout, EXIT_SUCCESS);
+            default: return usage(stderr, EXIT_FAILURE);
         }
     }
 
-    if ( optind==argc ) return usage();
+    if ( optind==argc ) return usage(stderr, EXIT_FAILURE);
 
     if ( list_chroms )
         return query_chroms(argv[optind]);

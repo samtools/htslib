@@ -68,27 +68,27 @@ static int confirm_overwrite(const char *fn)
     return ret;
 }
 
-static int bgzip_main_usage(void)
+static int bgzip_main_usage(FILE *fp, int status)
 {
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Version: %s\n", hts_version());
-    fprintf(stderr, "Usage:   bgzip [OPTIONS] [FILE] ...\n");
-    fprintf(stderr, "Options:\n");
-    fprintf(stderr, "   -b, --offset INT           decompress at virtual file pointer (0-based uncompressed offset)\n");
-    fprintf(stderr, "   -c, --stdout               write on standard output, keep original files unchanged\n");
-    fprintf(stderr, "   -d, --decompress           decompress\n");
-    fprintf(stderr, "   -f, --force                overwrite files without asking\n");
-    fprintf(stderr, "   -h, --help                 give this help\n");
-    fprintf(stderr, "   -i, --index                compress and create BGZF index\n");
-    fprintf(stderr, "   -I, --index-name FILE      name of BGZF index file [file.gz.gzi]\n");
-    fprintf(stderr, "   -l, --compress-level INT   Compression level to use when compressing; 0 to 9, or -1 for default [-1]\n");
-    fprintf(stderr, "   -r, --reindex              (re)index compressed file\n");
-    fprintf(stderr, "   -g, --rebgzip              use an index file to bgzip a file\n");
-    fprintf(stderr, "   -s, --size INT             decompress INT bytes (uncompressed size)\n");
-    fprintf(stderr, "   -@, --threads INT          number of compression threads to use [1]\n");
-    fprintf(stderr, "   -t, --test                 test integrity of compressed file");
-    fprintf(stderr, "\n");
-    return 1;
+    fprintf(fp, "\n");
+    fprintf(fp, "Version: %s\n", hts_version());
+    fprintf(fp, "Usage:   bgzip [OPTIONS] [FILE] ...\n");
+    fprintf(fp, "Options:\n");
+    fprintf(fp, "   -b, --offset INT           decompress at virtual file pointer (0-based uncompressed offset)\n");
+    fprintf(fp, "   -c, --stdout               write on standard output, keep original files unchanged\n");
+    fprintf(fp, "   -d, --decompress           decompress\n");
+    fprintf(fp, "   -f, --force                overwrite files without asking\n");
+    fprintf(fp, "   -h, --help                 give this help\n");
+    fprintf(fp, "   -i, --index                compress and create BGZF index\n");
+    fprintf(fp, "   -I, --index-name FILE      name of BGZF index file [file.gz.gzi]\n");
+    fprintf(fp, "   -l, --compress-level INT   Compression level to use when compressing; 0 to 9, or -1 for default [-1]\n");
+    fprintf(fp, "   -r, --reindex              (re)index compressed file\n");
+    fprintf(fp, "   -g, --rebgzip              use an index file to bgzip a file\n");
+    fprintf(fp, "   -s, --size INT             decompress INT bytes (uncompressed size)\n");
+    fprintf(fp, "   -@, --threads INT          number of compression threads to use [1]\n");
+    fprintf(fp, "   -t, --test                 test integrity of compressed file");
+    fprintf(fp, "\n");
+    return status;
 }
 
 int main(int argc, char **argv)
@@ -139,8 +139,8 @@ int main(int argc, char **argv)
 "bgzip (htslib) %s\n"
 "Copyright (C) 2018 Genome Research Ltd.\n", hts_version());
             return EXIT_SUCCESS;
-        case 'h':
-        case '?': return bgzip_main_usage();
+        case 'h': return bgzip_main_usage(stdout, EXIT_SUCCESS);
+        case '?': return bgzip_main_usage(stderr, EXIT_FAILURE);
         }
     }
     if (size >= 0) end = start + size;
@@ -195,7 +195,7 @@ int main(int argc, char **argv)
             }
         }
         else if (!pstdout && isatty(fileno((FILE *)stdout)) )
-            return bgzip_main_usage();
+            return bgzip_main_usage(stderr, EXIT_FAILURE);
         else if ( index && !index_fname )
         {
             fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
@@ -326,7 +326,7 @@ int main(int argc, char **argv)
             }
         }
         else if (!pstdout && isatty(fileno((FILE *)stdin)) )
-            return bgzip_main_usage();
+            return bgzip_main_usage(stderr, EXIT_FAILURE);
         else
         {
             f_dst = fileno(stdout);
