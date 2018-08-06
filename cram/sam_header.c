@@ -36,6 +36,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "htslib/hts_log.h"
 #include "cram/sam_header.h"
 #include "cram/string_alloc.h"
+#include "textutils_internal.h"
 
 static void sam_hdr_error(char *msg, char *line, int len, int lno) {
     int j;
@@ -1017,7 +1018,6 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
     for (i = 0; i < hdr->line_count; i++) {
         SAM_hdr_type *type;
         SAM_hdr_tag *tag;
-        char c[2];
 
         if (!hdr->line_order[i].type_data || !strncmp(hdr->line_order[i].type_name, "HD", 2))
             continue;
@@ -1026,8 +1026,7 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
         if (EOF == kputc_('@', &ks))
             return -1;
 
-        strncpy(c, hdr->line_order[i].type_name, 2);
-        if (EOF == kputsn_(c, 2, &ks))
+        if (EOF == kputsn_(hdr->line_order[i].type_name, 2, &ks))
             return -1;
 
         for (tag = type->tag; tag; tag=tag->next) {

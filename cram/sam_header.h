@@ -125,9 +125,9 @@ typedef struct SAM_hdr_tag_s {
  * structure which holds the tokenised attributes; the tab separated
  * key:value pairs per line.
  */
-typedef struct SAM_hdr_item_s {
-    struct SAM_hdr_item_s *next; // circular
-    struct SAM_hdr_item_s *prev;
+typedef struct SAM_hdr_type_s {
+    struct SAM_hdr_type_s *next; // circular
+    struct SAM_hdr_type_s *prev;
     SAM_hdr_tag *tag;            // first tag
     int order;                   // 0 upwards
 } SAM_hdr_type;
