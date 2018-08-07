@@ -121,12 +121,8 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 
         while (tag) {
             if (tag->str[0] == 'S' && tag->str[1] == 'N') {
-                if (sh->ref[nref].name)
-                    free(sh->ref[nref].name);
-                if (!(sh->ref[nref].name = malloc(tag->len)))
-                    return -1;
-                strncpy(sh->ref[nref].name, tag->str+3, tag->len-3);
-                sh->ref[nref].name[tag->len-3] = 0;
+                assert(tag->len >= 3);
+                sh->ref[nref].name = tag->str+3;
             } else if (tag->str[0] == 'L' && tag->str[1] == 'N') {
                 sh->ref[nref].len = atoi(tag->str+3);
             }
@@ -166,11 +162,9 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 
         while (tag) {
             if (tag->str[0] == 'I' && tag->str[1] == 'D') {
-                if (!(sh->rg[nrg].name = malloc(tag->len)))
-                    return -1;
-                strncpy(sh->rg[nrg].name, tag->str+3, tag->len-3);
-                sh->rg[nrg].name[tag->len-3] = 0;
-                sh->rg[nrg].name_len = strlen(sh->rg[nrg].name);
+                assert(tag->len >= 3);
+                sh->rg[nrg].name = tag->str + 3;
+                sh->rg[nrg].name_len = tag->len - 3;
             }
             tag = tag->next;
         }
@@ -209,11 +203,9 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 
         while (tag) {
             if (tag->str[0] == 'I' && tag->str[1] == 'D') {
-                if (!(sh->pg[npg].name = malloc(tag->len)))
-                    return -1;
-                strncpy(sh->pg[npg].name, tag->str+3, tag->len-3);
-                sh->pg[npg].name[tag->len-3] = 0;
-                sh->pg[npg].name_len = strlen(sh->pg[npg].name);
+                assert(tag->len >= 3);
+                sh->pg[npg].name = tag->str + 3;
+                sh->pg[npg].name_len = tag->len - 3;
             } else if (tag->str[0] == 'P' && tag->str[1] == 'P') {
                 // Resolve later if needed
                 khint_t k;
@@ -289,10 +281,8 @@ static int sam_hdr_remove_hash_entry(SAM_hdr *sh, int type, SAM_hdr_type *h_type
 
         while (tag) {
             if (tag->str[0] == 'S' && tag->str[1] == 'N') {
-                if (!(key = malloc(tag->len)))
-                    return -1;
-                strncpy(key, tag->str+3, tag->len-3);
-                key[tag->len-3] = 0;
+                assert(tag->len >= 3);
+                key = tag->str + 3;
                 k = kh_get(m_s2i, sh->ref_hash, key);
                 if (k != kh_end(sh->ref_hash)) {
                     if (kh_val(sh->ref_hash, k) < sh->nref-1)
@@ -312,10 +302,8 @@ static int sam_hdr_remove_hash_entry(SAM_hdr *sh, int type, SAM_hdr_type *h_type
 
         while (tag) {
             if (tag->str[0] == 'I' && tag->str[1] == 'D') {
-                if (!(key = malloc(tag->len)))
-                    return -1;
-                strncpy(key, tag->str+3, tag->len-3);
-                key[tag->len-3] = 0;
+                assert(tag->len >= 3);
+                key = tag->str + 3;
                 k = kh_get(m_s2i, sh->rg_hash, key);
                 if (k != kh_end(sh->rg_hash)) {
                     if (kh_val(sh->rg_hash, k) < sh->nrg-1)
@@ -329,7 +317,6 @@ static int sam_hdr_remove_hash_entry(SAM_hdr *sh, int type, SAM_hdr_type *h_type
         }
     }
 
-    free(key);
     return 0;
 }
 /*
@@ -1212,35 +1199,20 @@ void sam_hdr_free(SAM_hdr *hdr) {
     if (hdr->ref_hash)
         kh_destroy(m_s2i, hdr->ref_hash);
 
-    if (hdr->ref) {
-        int i;
-        for (i = 0; i < hdr->nref; i++)
-            if (hdr->ref[i].name)
-                free(hdr->ref[i].name);
+    if (hdr->ref)
         free(hdr->ref);
-    }
 
     if (hdr->rg_hash)
         kh_destroy(m_s2i, hdr->rg_hash);
 
-    if (hdr->rg) {
-        int i;
-        for (i = 0; i < hdr->nrg; i++)
-            if (hdr->rg[i].name)
-                free(hdr->rg[i].name);
+    if (hdr->rg)
         free(hdr->rg);
-    }
 
     if (hdr->pg_hash)
         kh_destroy(m_s2i, hdr->pg_hash);
 
-    if (hdr->pg) {
-        int i;
-        for (i = 0; i < hdr->npg; i++)
-            if (hdr->pg[i].name)
-                free(hdr->pg[i].name);
+    if (hdr->pg)
         free(hdr->pg);
-    }
 
     if (hdr->pg_end)
         free(hdr->pg_end);
