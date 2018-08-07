@@ -30,6 +30,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <ctype.h>
 #include <stdlib.h>
 #include "htslib/kstring.h"
+#include "htslib/hfile.h"
 
 #ifdef __cplusplus
 extern "C" {
