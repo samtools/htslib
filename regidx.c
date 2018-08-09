@@ -266,7 +266,7 @@ int regidx_overlap(regidx_t *idx, const char *chr, uint32_t from, uint32_t to, r
     for (i=ireg; i<list->nregs; i++)
     {
         if ( list->regs[i].start > to ) return 0;   // no match
-        if ( list->regs[i].end >= from && list->regs[i].start <= to ) break; // found
+        if ( list->regs[i].end > from && list->regs[i].start < to ) break; // found - use 0-based exclusive matching
     }
 
     if ( i>=list->nregs ) return 0;   // no match
@@ -283,6 +283,11 @@ int regidx_overlap(regidx_t *idx, const char *chr, uint32_t from, uint32_t to, r
 
     return 1;
 }
+
+/*
+ * Read a BED file line and return the parsed result into the reg_t structure.
+ * Both the BED file and the resulting coordinates are 0-based exclusive.
+ */
 
 int regidx_parse_bed(const char *line, char **chr_beg, char **chr_end, reg_t *reg, void *payload, void *usr)
 {
@@ -303,11 +308,17 @@ int regidx_parse_bed(const char *line, char **chr_beg, char **chr_end, reg_t *re
     if ( ss==se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
 
     ss = se+1;
-    reg->end = hts_parse_decimal(ss, &se, 0) - 1;
+    reg->end = hts_parse_decimal(ss, &se, 0);
     if ( ss==se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
 
     return 0;
 }
+
+/*
+ * Read a TAB delimited (region or target) file line and return the parsed
+ * result into the reg_t structure. While the TAB file is 1-based inclusive,
+ * the resulting coordinates are 0-based exclusive.
+ */
 
 int regidx_parse_tab(const char *line, char **chr_beg, char **chr_end, reg_t *reg, void *payload, void *usr)
 {
@@ -328,13 +339,12 @@ int regidx_parse_tab(const char *line, char **chr_beg, char **chr_end, reg_t *re
     if ( ss==se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
 
     if ( !se[0] || !se[1] )
-        reg->end = reg->start;
+        reg->end = reg->start + 1;
     else
     {
         ss = se+1;
         reg->end = hts_parse_decimal(ss, &se, 0);
-        if ( ss==se ) reg->end = reg->start;
-        else reg->end--;
+        if ( ss==se ) reg->end = reg->start + 1;
     }
 
     return 0;
