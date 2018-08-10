@@ -1,6 +1,6 @@
 /*  hfile_s3.c -- Amazon S3 backend for low-level file streams.
 
-    Copyright (C) 2015-2017 Genome Research Ltd.
+    Copyright (C) 2015-2018 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -307,9 +307,59 @@ static int auth_header_callback(void *ctx, char ***hdrs) {
     return -1;
 }
 
+
+static char *escape_path(const char *path) {
+    size_t i, j = 0, length;
+    char *escaped;
+
+    length = strlen(path);
+
+    if ((escaped = malloc(length * 3)) == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; i < length; i++) {
+        int c = path[i];
+
+        if (c < 0x20 || c > 0x7E || strchr("&@:,$=+?; \\^`><{}][#%\"~|", c)) {
+            sprintf(escaped + j, "%%%02X", c);
+            j += 3;
+        } else {
+            sprintf(escaped + j, "%c", c);
+            j++;
+        }
+    }
+
+    return escaped;
+}
+
+
+static int is_escaped(const char *str) {
+    size_t length = strlen(str);
+    size_t i = 0;
+    int escaped = 0;
+
+    while (str[i]) {
+        if (str[i] == '%' && i + 2 < length) {
+            if (isxdigit(str[i + 1]) && isxdigit(str[i + 2])) {
+                escaped = 1;
+            } else {
+                // only escaped if all % signes are escaped
+                escaped = 0;
+            }
+        }
+
+        i++;
+    }
+
+    return escaped;
+}
+
+
 static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
 {
     const char *bucket, *path;
+    char *escape_str = NULL;
     char *header_list[4], **header = header_list;
 
     kstring_t url = { 0, 0, NULL };
@@ -333,9 +383,11 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
         kputs("https:", &url);
         bucket = &s3url[3];
     }
+
     while (*bucket == '/') kputc(*bucket++, &url);
 
     path = bucket + strcspn(bucket, "/?#@");
+
     if (*path == '@') {
         const char *colon = strpbrk(bucket, ":@");
         if (*colon != ':') {
@@ -391,17 +443,25 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
         kputc('/', &url);
         kputsn(bucket, path - bucket, &url);
     }
-    kputs(path, &url);
+
+    if (is_escaped(bucket)) {
+        ad->bucket = strdup(bucket);
+        kputs(path, &url);
+    } else {
+        // replace any unsafe/reserved characters
+        escape_str = escape_path(path);
+        kputs(escape_str, &url);
+        ad->bucket = escape_path(bucket);
+    }
+
+    if (!ad->bucket)
+        goto fail;
 
     if (ad->token.l > 0) {
         kputs("X-Amz-Security-Token: ", &token_hdr);
         kputs(ad->token.s, &token_hdr);
         *header++ = token_hdr.s;
     }
-
-    ad->bucket = strdup(bucket);
-    if (!ad->bucket)
-        goto fail;
 
     *header = NULL;
     hFILE *fp = hopen(url.s, mode, "va_list", argsp, "httphdr:v", header_list,
@@ -413,6 +473,7 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
     free(profile.s);
     free(host_base.s);
     free(token_hdr.s);
+    free(escape_str);
     return fp;
 
  fail:
@@ -421,6 +482,7 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
     free(host_base.s);
     free(token_hdr.s);
     free_auth_data(ad);
+    free(escape_str);
     return NULL;
 }
 
