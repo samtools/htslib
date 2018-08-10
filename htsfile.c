@@ -236,7 +236,7 @@ int main(int argc, char **argv)
         { "no-header", no_argument, NULL, 'H' },
         { "view", no_argument, NULL, 'c' },
         { "verbose", no_argument, NULL, 'v' },
-        { "help", no_argument, NULL, '?' },
+        { "help", no_argument, NULL, 2 },
         { "version", no_argument, NULL, 1 },
         { NULL, 0, NULL, 0 }
     };
@@ -244,7 +244,7 @@ int main(int argc, char **argv)
     int c, i;
 
     status = EXIT_SUCCESS;
-    while ((c = getopt_long(argc, argv, "cChHv?", options, NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "cChHv", options, NULL)) >= 0)
         switch (c) {
         case 'c': mode = view_all; break;
         case 'C': mode = copy; break;
@@ -258,7 +258,7 @@ int main(int argc, char **argv)
                    hts_version());
             exit(EXIT_SUCCESS);
             break;
-        case '?': usage(stdout, EXIT_SUCCESS); break;
+        case 2:   usage(stdout, EXIT_SUCCESS); break;
         default:  usage(stderr, EXIT_FAILURE); break;
         }
 
