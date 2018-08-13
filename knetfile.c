@@ -597,6 +597,7 @@ int knet_close(knetFile *fp)
 	free(fp->host); free(fp->port);
 	free(fp->response); free(fp->retr); // FTP specific
 	free(fp->path); free(fp->http_host); // HTTP specific
+	free(fp->size_cmd);
 	free(fp);
 	return 0;
 }
