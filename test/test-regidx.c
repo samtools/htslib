@@ -94,20 +94,20 @@ int main(int argc, char **argv)
     int from, to;
 
     from = to = 10000000;
-    if ( !regidx_overlap(idx,"1",from-1,to-1,&itr) ) error("query failed: 1:%d-%d\n",from,to);
+    if ( !regidx_overlap(idx,"1",from-1,to,&itr) ) error("query failed: 1:%d-%d\n",from,to);
     if ( strcmp("1:10000000-10000000",REGITR_PAYLOAD(itr,char*)) ) error("query failed: 1:%d-%d vs %s\n", from,to,REGITR_PAYLOAD(itr,char*));
-    if ( !regidx_overlap(idx,"1",from-2,to-1,&itr) ) error("query failed: 1:%d-%d\n",from-1,to);
-    if ( !regidx_overlap(idx,"1",from-2,to+3,&itr) ) error("query failed: 1:%d-%d\n",from-1,to+2);
-    if ( regidx_overlap(idx,"1",from-2,to-2,&itr) ) error("query failed: 1:%d-%d\n",from-1,to-1);
+    if ( !regidx_overlap(idx,"1",from-2,to,&itr) ) error("query failed: 1:%d-%d\n",from-1,to);
+    if ( !regidx_overlap(idx,"1",from-2,to+4,&itr) ) error("query failed: 1:%d-%d\n",from-1,to+2);
+    if ( regidx_overlap(idx,"1",from-2,to-1,&itr) ) error("query failed: 1:%d-%d\n",from-1,to-1);
 
     from = to = 20000000;
-    if ( !regidx_overlap(idx,"1",from-1,to-1,&itr) ) error("query failed: 1:%d-%d\n",from,to);
+    if ( !regidx_overlap(idx,"1",from-1,to,&itr) ) error("query failed: 1:%d-%d\n",from,to);
 
     from = to = 20000002;
-    if ( !regidx_overlap(idx,"1",from-1,to-1,&itr) ) error("query failed: 1:%d-%d\n",from,to);
+    if ( !regidx_overlap(idx,"1",from-1,to,&itr) ) error("query failed: 1:%d-%d\n",from,to);
 
     from = to = 30000000;
-    if ( !regidx_overlap(idx,"1",from-1,to-1,&itr) ) error("query failed: 1:%d-%d\n",from,to);
+    if ( !regidx_overlap(idx,"1",from-1,to,&itr) ) error("query failed: 1:%d-%d\n",from,to);
 
     // Clean up
     regidx_destroy(idx);

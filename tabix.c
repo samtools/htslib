@@ -115,7 +115,9 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
             while ( itr.i < itr.n )
             {
                 str.l = 0;
-                ksprintf(&str, "%s:%d-%d", seqs[iseq], REGITR_START(itr)+1, REGITR_END(itr)+1);
+                // transform the internal representation (0-based exclusive)
+                // into 1-based inclusive, used by the CLI
+                ksprintf(&str, "%s:%d-%d", seqs[iseq], REGITR_START(itr)+1, REGITR_END(itr));
                 regs[ireg++] = strdup(str.s);
                 itr.i++;
             }
@@ -136,6 +138,7 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
         }
     }
 
+    // region coordinates taken from the CLI are 1-based inclusive
     for (iseq=0; iseq<argc; iseq++) regs[ireg++] = strdup(argv[iseq]);
     return regs;
 }

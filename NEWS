@@ -1,6 +1,12 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* tabix uses an internal 0-based exclusive representation of the regions (-R)
+  and targets (-T) files and consequently enforces stricter checks at both ends
+  when detecting overlaps. Thus, some of the resulted lines obtained by using
+  a targets file may be removed now, especially the ones overlapping at the
+  boundary of a region.
+
 Noteworthy changes in release 1.9 (18th July 2018)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
