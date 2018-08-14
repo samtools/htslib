@@ -187,7 +187,7 @@ void test_custom_payload(void)
 
 void get_random_region(uint32_t min, uint32_t max, uint32_t *beg, uint32_t *end)
 {
-    long int b = random(), e = random();
+    long int b = rand(), e = rand();
     *beg = min + (float)b * (max-min) / RAND_MAX;
     *end = *beg + (float)e * (max-*beg) / RAND_MAX;
 }
@@ -461,7 +461,7 @@ int main(int argc, char **argv)
     test_explicit("12:2064519-2064763","12:2064488-2067434","1");
 
     int i, ntest = 1000, nreg = 50;
-    srandom(seed);
+    srand(seed);
     info("%d randomized tests, %d regions per test. Random seed is %d\n", ntest,nreg,seed);
     for (i=0; i<ntest; i++) test_random(nreg,1,1000);
 
