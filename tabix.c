@@ -206,7 +206,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
                 if ( !itr ) continue;
                 while (tbx_itr_next(fp, tbx, itr, &str) >= 0)
                 {
-                    if ( reg_idx && !regidx_overlap(reg_idx,seq[itr->curr_tid],itr->curr_beg,itr->curr_end, NULL) ) continue;
+                    if ( reg_idx && !regidx_overlap(reg_idx,seq[itr->curr_tid],itr->curr_beg,itr->curr_end-1, NULL) ) continue;
                     puts(str.s);
                 }
                 tbx_itr_destroy(itr);
