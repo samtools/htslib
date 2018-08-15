@@ -868,7 +868,7 @@ static int faidx_adjust_position(const faidx_t *fai, faidx1_t *val, const char *
 
     if (iter == kh_end(fai->hash)) {
         *len = -2;
-        hts_log_error("The sequence \"%s\" not found", c_name);
+        hts_log_error("The sequence \"%s\" was not found", c_name);
         return 1;
     }
 
