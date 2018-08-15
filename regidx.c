@@ -22,12 +22,14 @@
     THE SOFTWARE.
 */
 
+#include <config.h>
 #include <strings.h>
 #include "htslib/hts.h"
 #include "htslib/kstring.h"
 #include "htslib/kseq.h"
 #include "htslib/khash_str2int.h"
 #include "htslib/regidx.h"
+#include "hts_internal.h"
 
 #define MAX_COOR_0 REGIDX_MAX   // CSI and hts_itr_query limit, 0-based
 
@@ -208,13 +210,13 @@ regidx_t *regidx_init_string(const char *str, regidx_parse_f parser, regidx_free
     const char *ss = str;
     while ( *ss )
     {
-        while ( *ss && isspace(*ss) ) ss++;
+        while ( *ss && isspace_c(*ss) ) ss++;
         const char *se = ss;
         while ( *se && *se!='\r' && *se!='\n' ) se++;
         tmp.l = 0;
         kputsn(ss, se-ss, &tmp);
         regidx_insert(idx,tmp.s);
-        while ( *se && isspace(*se) ) se++;
+        while ( *se && isspace_c(*se) ) se++;
         ss = se;
     }
     free(tmp.s);
@@ -267,7 +269,7 @@ regidx_t *regidx_init(const char *fname, regidx_parse_f parser, regidx_free_f fr
     free(str.s);
     if ( hts_close(fp)!=0 )
     {
-        fprintf(stderr,"[%s] Error: close failed .. %s\n", __func__,fname);
+        hts_log_error("Close failed .. %s", fname);
         goto error;
     }
     return idx;
@@ -436,12 +438,12 @@ int regidx_overlap(regidx_t *regidx, const char *chr, hts_pos_t beg, hts_pos_t e
 int regidx_parse_bed(const char *line, char **chr_beg, char **chr_end, hts_pos_t *beg, hts_pos_t *end, void *payload, void *usr)
 {
     char *ss = (char*) line;
-    while ( *ss && isspace(*ss) ) ss++;
+    while ( *ss && isspace_c(*ss) ) ss++;
     if ( !*ss ) return -1;      // skip blank lines
     if ( *ss=='#' ) return -1;  // skip comments
 
     char *se = ss;
-    while ( *se && !isspace(*se) ) se++;
+    while ( *se && !isspace_c(*se) ) se++;
 
     *chr_beg = ss;
     *chr_end = se-1;
@@ -455,25 +457,25 @@ int regidx_parse_bed(const char *line, char **chr_beg, char **chr_end, hts_pos_t
     }
 
     ss = se+1;
-    *beg = strtod(ss, &se);
-    if ( ss==se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
+    *beg = hts_parse_decimal(ss, &se, 0);
+    if ( ss==se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
 
     ss = se+1;
-    *end = strtod(ss, &se) - 1;
-    if ( ss==se ) { fprintf(stderr,"Could not parse bed line: %s\n", line); return -2; }
-
+    *end = hts_parse_decimal(ss, &se, 0) - 1;
+    if ( ss==se ) { hts_log_error("Could not parse bed line: %s", line); return -2; }
+    
     return 0;
 }
 
 int regidx_parse_tab(const char *line, char **chr_beg, char **chr_end, hts_pos_t *beg, hts_pos_t *end, void *payload, void *usr)
 {
     char *ss = (char*) line;
-    while ( *ss && isspace(*ss) ) ss++;
+    while ( *ss && isspace_c(*ss) ) ss++;
     if ( !*ss ) return -1;      // skip blank lines
     if ( *ss=='#' ) return -1;  // skip comments
 
     char *se = ss;
-    while ( *se && !isspace(*se) ) se++;
+    while ( *se && !isspace_c(*se) ) se++;
 
     *chr_beg = ss;
     *chr_end = se-1;
@@ -487,9 +489,9 @@ int regidx_parse_tab(const char *line, char **chr_beg, char **chr_end, hts_pos_t
     }
 
     ss = se+1;
-    *beg = strtod(ss, &se);
-    if ( ss==se ) { fprintf(stderr,"Could not parse tab line: %s\n", line); return -2; }
-    if ( *beg==0 ) { fprintf(stderr,"Could not parse tab line, expected 1-based coordinate: %s\n", line); return -2; }
+    *beg = hts_parse_decimal(ss, &se, 0);
+    if ( ss==se ) { hts_log_error("Could not parse tab line: %s", line); return -2; }
+    if ( *beg==0 ) { hts_log_error("Could not parse tab line, expected 1-based coordinate: %s", line); return -2; }
     (*beg)--;
 
     if ( !se[0] || !se[1] )
@@ -497,9 +499,9 @@ int regidx_parse_tab(const char *line, char **chr_beg, char **chr_end, hts_pos_t
     else
     {
         ss = se+1;
-        *end = strtod(ss, &se);
-        if ( ss==se || (*se && !isspace(*se)) ) *end = *beg;
-        else if ( *end==0 ) { fprintf(stderr,"Could not parse tab line, expected 1-based coordinate: %s\n", line); return -2; }
+        *end = hts_parse_decimal(ss, &se, 0);
+        if ( ss==se || (*se && !isspace_c(*se)) ) *end = *beg;
+        else if ( *end==0 ) { hts_log_error("Could not parse tab line, expected 1-based coordinate: %s", line); return -2; }
         else (*end)--;
     }
     return 0;
@@ -515,7 +517,7 @@ int regidx_parse_vcf(const char *line, char **chr_beg, char **chr_end, hts_pos_t
 int regidx_parse_reg(const char *line, char **chr_beg, char **chr_end, hts_pos_t *beg, hts_pos_t *end, void *payload, void *usr)
 {
     char *ss = (char*) line;
-    while ( *ss && isspace(*ss) ) ss++;
+    while ( *ss && isspace_c(*ss) ) ss++;
     if ( !*ss ) return -1;      // skip blank lines
     if ( *ss=='#' ) return -1;  // skip comments
 
@@ -533,9 +535,9 @@ int regidx_parse_reg(const char *line, char **chr_beg, char **chr_end, hts_pos_t
     }
 
     ss = se+1;
-    *beg = strtod(ss, &se);
-    if ( ss==se ) { fprintf(stderr,"Could not parse reg line: %s\n", line); return -2; }
-    if ( *beg==0 ) { fprintf(stderr,"Could not parse reg line, expected 1-based coordinate: %s\n", line); return -2; }
+    *beg = hts_parse_decimal(ss, &se, 0);
+    if ( ss==se ) { hts_log_error("Could not parse reg line: %s", line); return -2; }
+    if ( *beg==0 ) { hts_log_error("Could not parse reg line, expected 1-based coordinate: %s", line); return -2; }
     (*beg)--;
 
     if ( !se[0] || !se[1] )
@@ -543,9 +545,9 @@ int regidx_parse_reg(const char *line, char **chr_beg, char **chr_end, hts_pos_t
     else
     {
         ss = se+1;
-        *end = strtod(ss, &se);
+        *end = hts_parse_decimal(ss, &se, 0);
         if ( ss==se ) *end = *beg;
-        else if ( *end==0 ) { fprintf(stderr,"Could not parse reg line, expected 1-based coordinate: %s\n", line); return -2; }
+        else if ( *end==0 ) { hts_log_error("Could not parse reg line, expected 1-based coordinate: %s", line); return -2; }
         else (*end)--;
     }
     return 0;

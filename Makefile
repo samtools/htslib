@@ -332,7 +332,7 @@ synced_bcf_reader.o synced_bcf_reader.pico: synced_bcf_reader.c config.h $(htsli
 vcf_sweep.o vcf_sweep.pico: vcf_sweep.c config.h $(htslib_vcf_sweep_h) $(htslib_bgzf_h)
 vcfutils.o vcfutils.pico: vcfutils.c config.h $(htslib_vcfutils_h) $(htslib_kbitset_h)
 kfunc.o kfunc.pico: kfunc.c config.h $(htslib_kfunc_h)
-regidx.o regidx.pico: regidx.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_regidx_h)
+regidx.o regidx.pico: regidx.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_regidx_h) $(hts_internal_h)
 region.o region.pico: region.c config.h $(htslib_hts_h) $(htslib_khash_h)
 md5.o md5.pico: md5.c config.h $(htslib_hts_h) $(htslib_hts_endian_h)
 multipart.o multipart.pico: multipart.c config.h $(htslib_kstring_h) $(hts_internal_h) $(hfile_internal_h)
