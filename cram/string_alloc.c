@@ -139,11 +139,11 @@ char *string_alloc(string_alloc_t *a_str, size_t length) {
 
 /* equivalent to strdup */
 
-char *string_dup(string_alloc_t *a_str, char *instr) {
+char *string_dup(string_alloc_t *a_str, const char *instr) {
     return string_ndup(a_str, instr, strlen(instr));
 }
 
-char *string_ndup(string_alloc_t *a_str, char *instr, size_t len) {
+char *string_ndup(string_alloc_t *a_str, const char *instr, size_t len) {
     char *str = string_alloc(a_str, len + 1);
 
     if (NULL == str) return NULL;

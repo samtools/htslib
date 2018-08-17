@@ -38,12 +38,15 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/string_alloc.h"
 #include "../textutils_internal.h"
 
-static void sam_hdr_error(char *msg, char *line, int len, int lno) {
+#define MAX_ERROR_QUOTE 320 // Prevent over-long error messages
+static void sam_hdr_error(const char *msg, const char *line, size_t len, size_t lno) {
     int j;
 
+    if (len > MAX_ERROR_QUOTE)
+        len = MAX_ERROR_QUOTE;
     for (j = 0; j < len && line[j] != '\n'; j++)
         ;
-    hts_log_error("%s at line %d: \"%.*s\"", msg, lno, j, line);
+    hts_log_error("%s at line %zd: \"%.*s\"", msg, lno, j, line);
 }
 
 void sam_hdr_dump(SAM_hdr *hdr) {
@@ -89,7 +92,6 @@ void sam_hdr_dump(SAM_hdr *hdr) {
         }
         printf("\n");
     }
-    printf("Number of lines in the header: %d\n", hdr->line_count);
 
     puts("===END DUMP===");
 }
@@ -320,8 +322,8 @@ static int sam_hdr_remove_hash_entry(SAM_hdr *sh, int type, SAM_hdr_type *h_type
     return 0;
 }
 /*
- * Appends a formatted line to an existing SAM header.
- * Line is a full SAM header record, eg "@SQ\tSN:foo\tLN:100", with
+ * Appends formatted lines to an existing SAM header.
+ * hdr is a full SAM header record, eg "@SQ\tSN:foo\tLN:100", with
  * optional new-line. If it contains more than 1 line then multiple lines
  * will be added in order.
  *
@@ -331,19 +333,22 @@ static int sam_hdr_remove_hash_entry(SAM_hdr *sh, int type, SAM_hdr_type *h_type
  * Returns 0 on success
  *        -1 on failure
  */
-int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
-    int i, lno, text_offset;
-    char *hdr;
+int sam_hdr_add_lines(SAM_hdr *sh, const char *hdr, size_t len) {
+    size_t i, lno;
 
-    if (!len)
-        len = strlen(lines);
-
-    text_offset = ks_len(&sh->text);
-    if (EOF == kputsn(lines, len, &sh->text))
+    if (!sh || len > SSIZE_MAX)
         return -1;
-    hdr = ks_str(&sh->text) + text_offset;
+ 
+    if (!len)
+        len = strlen(hdr);
 
-    for (i = 0, lno = 1; i < len && hdr[i] != '\0'; i++, lno++) {
+    if (len < 3) {
+        if (len == 0) return 0;
+        sam_hdr_error("Header line too short", hdr, len, 1);
+        return -1;
+    }
+
+    for (i = 0, lno = 1; i < len - 3 && hdr[i] != '\0'; i++, lno++) {
         khint32_t type;
         khint_t k;
 
@@ -352,9 +357,6 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
         SAM_hdr_tag *h_tag, *last;
 
         if (hdr[i] != '@') {
-            int j;
-            for (j = i; j < len && hdr[j] != '\0' && hdr[j] != '\n'; j++)
-                ;
             sam_hdr_error("Header line does not start with '@'",
                           &hdr[l_start], len - l_start, lno);
             return -1;
@@ -368,7 +370,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
         }
 
         i += 3;
-        if (hdr[i] == '\n')
+        if (i == len || hdr[i] == '\n')
             continue;
 
         // Add the header line type
@@ -395,21 +397,11 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
             h_type->order = 0;
         }
 
-	if (sh->line_count == (sh->line_size - 1)) {
-	    sh->line_size <<= 1;
-	    SAM_hdr_line *tmp= realloc(sh->line_order, sizeof(SAM_hdr_line) * sh->line_size);
-	    if (!tmp)
-	        return -1;
-	    sh->line_order = tmp;
-	}
-	strncpy(sh->line_order[sh->line_count].type_name, hdr+i-2, 2);
-	sh->line_order[sh->line_count++].type_data = h_type;
-
         // Parse the tags on this line
         last = NULL;
         if ((type>>8) == 'C' && (type&0xff) == 'O') {
-            int j;
-            if (hdr[i] != '\t') {
+            size_t j;
+            if (i == len || hdr[i] != '\t') {
                 sam_hdr_error("Missing tab",
                               &hdr[l_start], len - l_start, lno);
                 return -1;
@@ -430,8 +422,9 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
 
         } else {
             do {
-                int j;
-                if (hdr[i] != '\t') {
+                size_t j;
+
+                if (i == len || hdr[i] != '\t') {
                     sam_hdr_error("Missing tab",
                                   &hdr[l_start], len - l_start, lno);
                     return -1;
@@ -440,6 +433,12 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
                 for (j = ++i; j < len && hdr[j] != '\0' && hdr[j] != '\n' && hdr[j] != '\t'; j++)
                     ;
 
+                if (j - i < 3 || hdr[i + 2] != ':') {
+                    sam_hdr_error("Malformed key:value pair",
+                                  &hdr[l_start], len - l_start, lno);
+                    return -1;
+                }
+
                 if (!(h_tag = pool_alloc(sh->tag_pool)))
                     return -1;
                 h_tag->str = string_ndup(sh->str_pool, &hdr[i], j-i);
@@ -447,12 +446,6 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
                 h_tag->next = NULL;
                 if (!h_tag->str)
                     return -1;
-
-                if (h_tag->len < 3 || h_tag->str[2] != ':') {
-                    sam_hdr_error("Malformed key:value pair",
-                                  &hdr[l_start], len - l_start, lno);
-                    return -1;
-                }
 
                 if (last)
                     last->next = h_tag;
@@ -469,6 +462,7 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
             return -1;
     }
 
+    sh->dirty = 1;
     return 0;
 }
 
@@ -500,11 +494,6 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
     int new;
     khint32_t type_i = (type[0]<<8) | type[1], k;
 
-    if (EOF == kputc_('@', &sh->text))
-        return -1;
-    if (EOF == kputsn(type, 2, &sh->text))
-        return -1;
-
     if (!(h_type = pool_alloc(sh->type_pool)))
         return -1;
     if (-1 == (k = kh_put(sam_hdr, sh->h, type_i, &new)))
@@ -534,32 +523,19 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
     va_start(args, ap);
     for (;;) {
         char *k, *v;
-        int idx;
 
         if (!(k = (char *)va_arg(args, char *)))
             break;
-        v = va_arg(args, char *);
-
-        if (EOF == kputc_('\t', &sh->text))
-            return -1;
+        if (!(v = (char *)va_arg(args, char *)))
+            v = "";
 
         if (!(h_tag = pool_alloc(sh->tag_pool)))
             return -1;
-        idx = ks_len(&sh->text);
 
-        if (EOF == kputs(k, &sh->text))
-            return -1;
-        if (EOF == kputc_(':', &sh->text))
-            return -1;
-        if (EOF == kputs(v, &sh->text))
-            return -1;
-
-        h_tag->len = ks_len(&sh->text) - idx;
-        h_tag->str = string_ndup(sh->str_pool,
-                                 ks_str(&sh->text) + idx,
-                                 h_tag->len);
+        h_tag->len = 3 + strlen(v);
+        h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
         h_tag->next = NULL;
-        if (!h_tag->str)
+        if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", k, v) < 0)
             return -1;
 
         if (last)
@@ -574,32 +550,19 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
     // Plus the specified va_list params
     for (;;) {
         char *k, *v;
-        int idx;
 
         if (!(k = (char *)va_arg(ap, char *)))
             break;
-        v = va_arg(ap, char *);
-
-        if (EOF == kputc_('\t', &sh->text))
-            return -1;
+        if (!(v = (char *)va_arg(ap, char *)))
+            v = "";
 
         if (!(h_tag = pool_alloc(sh->tag_pool)))
             return -1;
-        idx = ks_len(&sh->text);
 
-        if (EOF == kputs(k, &sh->text))
-            return -1;
-        if (EOF == kputc_(':', &sh->text))
-            return -1;
-        if (EOF == kputs(v, &sh->text))
-            return -1;
-
-        h_tag->len = ks_len(&sh->text) - idx;
-        h_tag->str = string_ndup(sh->str_pool,
-                                 ks_str(&sh->text) + idx,
-                                 h_tag->len);
+        h_tag->len = 3 + strlen(v);
+        h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
         h_tag->next = NULL;
-        if (!h_tag->str)
+        if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", k, v) < 0)
             return -1;
 
         if (last)
@@ -611,13 +574,11 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
     }
     va_end(ap);
 
-    if (EOF == kputc('\n', &sh->text))
-        return -1;
-
     int itype = (type[0]<<8) | type[1];
     if (-1 == sam_hdr_update_hashes(sh, itype, h_type))
         return -1;
 
+    sh->dirty = 1;
     return h_type->order;
 }
 
@@ -740,18 +701,10 @@ static int remove_line(SAM_hdr *hdr, char *type_name, SAM_hdr_type *type_found) 
     if (!hdr || !type_name || !type_found)
         return -1;
 
-    int itype = (type_name[0]<<8) | type_name[1], i;
+    int itype = (type_name[0]<<8) | type_name[1];
     khint_t k = kh_get(sam_hdr, hdr->h, itype);
     if (k == kh_end(hdr->h))
         return -1;
-
-    for(i = 0; i < hdr->line_count; i++) {
-        if (!strncmp(type_name, hdr->line_order[i].type_name, 2) &&
-                hdr->line_order[i].type_data &&
-                hdr->line_order[i].type_data->order == type_found->order) {
-            hdr->line_order[i].type_data = NULL;
-        }
-    }
 
     free_tags(hdr, type_found->tag);
     /* single element in the list */
@@ -767,6 +720,7 @@ static int remove_line(SAM_hdr *hdr, char *type_name, SAM_hdr_type *type_found) 
     if (!strncmp(type_name, "SQ", 2) || !strncmp(type_name, "RG", 2))
         sam_hdr_remove_hash_entry(hdr, itype, type_found);
 
+    hdr->dirty = 1; //mark text as dirty and force a rebuild
     return 0;
 }
 
@@ -776,7 +730,7 @@ static int remove_line(SAM_hdr *hdr, char *type_name, SAM_hdr_type *type_found) 
  */
 
 int sam_hdr_remove_line_pos(SAM_hdr *hdr, char *type, int position) {
-    if (!hdr || !type || position < 0 || position > hdr->line_count)
+    if (!hdr || !type || position < 0)
         return -1;
     if (!strncmp(type, "PG", 2)) {
         hts_log_warning("Removing PG lines is not supported!");
@@ -818,8 +772,6 @@ int sam_hdr_remove_line_key(SAM_hdr *hdr, char *type, char *ID_key, char *ID_val
     }
 
     SAM_hdr_type *type_found = sam_hdr_find(hdr, type, ID_key, ID_value);
-    if (!type_found)
-        return -1;
 
     return remove_line(hdr, type, type_found);
 }
@@ -854,7 +806,7 @@ SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
     return NULL;
 }
 
-void sam_hdr_remove_key(SAM_hdr *sh,
+int sam_hdr_remove_key(SAM_hdr *sh,
                         SAM_hdr_type *type,
                         char *key) {
     SAM_hdr_tag *tag, *prev;
@@ -866,9 +818,13 @@ void sam_hdr_remove_key(SAM_hdr *sh,
             prev->next = tag->next;
         }
         pool_free(sh->tag_pool, tag);
-    }
-}
+        sh->dirty = 1; //mark text as dirty and force a rebuild
 
+        return 0;
+    }
+
+    return 1;
+}
 
 /*
  * Adds or updates tag key,value pairs in a header line.
@@ -888,12 +844,12 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
 
     for (;;) {
         char *k, *v;
-        int idx;
         SAM_hdr_tag *tag, *prev;
 
         if (!(k = (char *)va_arg(ap, char *)))
             break;
-        v = va_arg(ap, char *);
+        if (!(v = va_arg(ap, char *)))
+            v = "";
 
         tag = sam_hdr_find_key(hdr, type, k, &prev);
         if (!tag) {
@@ -907,18 +863,17 @@ int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
             tag->next = NULL;
         }
 
-        idx = ks_len(&hdr->text);
-        if (ksprintf(&hdr->text, "%2.2s:%s", k, v) < 0)
-            return -1;
-        tag->len = ks_len(&hdr->text) - idx;
-        tag->str = string_ndup(hdr->str_pool,
-                               ks_str(&hdr->text) + idx,
-                               tag->len);
+        tag->len = 3 + strlen(v);
+        tag->str = string_alloc(hdr->str_pool, tag->len+1);
         if (!tag->str)
+            return -1;
+
+        if (snprintf(tag->str, tag->len+1, "%2.2s:%s", k, v) < 0)
             return -1;
     }
 
     va_end(ap);
+    hdr->dirty = 1; //mark text as dirty and force a rebuild
 
     return 0;
 }
@@ -979,11 +934,16 @@ enum sam_group_order sam_hdr_group_order(SAM_hdr *hdr) {
  *        -1 on failure
  */
 int sam_hdr_rebuild(SAM_hdr *hdr) {
+    if (!hdr)
+        return -1;
+
+    /* If header text wasn't changed, don't rebuild it. */
+    if (!hdr->dirty)
+        return 0;
+
     /* Order: HD then others */
     kstring_t ks = KS_INITIALIZER;
     khint_t k;
-    unsigned int i;
-
 
     k = kh_get(sam_hdr, hdr->h, K("HD"));
     if (k != kh_end(hdr->h)) {
@@ -1001,34 +961,43 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
             return -1;
     }
 
-    for (i = 0; i < hdr->line_count; i++) {
-        SAM_hdr_type *type;
-        SAM_hdr_tag *tag;
+    for (k = kh_begin(hdr->h); k != kh_end(hdr->h); k++) {
+        SAM_hdr_type *t1, *t2;
 
-        if (!hdr->line_order[i].type_data || !strncmp(hdr->line_order[i].type_name, "HD", 2))
+        if (!kh_exist(hdr->h, k))
             continue;
 
-        type = hdr->line_order[i].type_data;
-        if (EOF == kputc_('@', &ks))
-            return -1;
+        if (kh_key(hdr->h, k) == K("HD"))
+            continue;
 
-        if (EOF == kputsn_(hdr->line_order[i].type_name, 2, &ks))
-            return -1;
+        t1 = t2 = kh_val(hdr->h, k);
+        do {
+            SAM_hdr_tag *tag;
+            char c[2];
 
-        for (tag = type->tag; tag; tag=tag->next) {
-            if (EOF == kputc_('\t', &ks))
+            if (EOF == kputc_('@', &ks))
                 return -1;
-            if (EOF == kputsn_(tag->str, tag->len, &ks))
+            c[0] = kh_key(hdr->h, k)>>8;
+            c[1] = kh_key(hdr->h, k)&0xff;
+            if (EOF == kputsn_(c, 2, &ks))
                 return -1;
-        }
-        if (EOF == kputc('\n', &ks))
-            return -1;
+            for (tag = t1->tag; tag; tag=tag->next) {
+                if (EOF == kputc_('\t', &ks))
+                    return -1;
+                if (EOF == kputsn_(tag->str, tag->len, &ks))
+                    return -1;
+            }
+            if (EOF == kputc('\n', &ks))
+                return -1;
+            t1 = t1->next;
+        } while (t1 != t2);
     }
 
     if (ks_str(&hdr->text))
         KS_FREE(&hdr->text);
 
     hdr->text = ks;
+    hdr->dirty = 0;
 
     return 0;
 }
@@ -1081,11 +1050,6 @@ SAM_hdr *sam_hdr_new() {
     if (!(sh->str_pool = string_pool_create(8192)))
         goto err;
 
-    sh->line_count = 0;
-    sh->line_size = SAM_HDR_LINES;
-    if(!(sh->line_order = calloc(sh->line_size, sizeof(SAM_hdr_line))))
-        goto err;
-
     return sh;
 
     err:
@@ -1129,15 +1093,14 @@ SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
         return NULL;
     }
 
-    //sam_hdr_dump(sh);
     //sam_hdr_add(sh, "RG", "ID", "foo", "SM", "bar", NULL);
-    //sam_hdr_rebuild(sh);
     //printf(">>%s<<", ks_str(sh->text));
 
     //parse_references(sh);
     //parse_read_groups(sh);
 
     sam_hdr_link_pg(sh);
+    sam_hdr_rebuild(sh);
     //sam_hdr_dump(sh);
 
     return sh;
@@ -1226,15 +1189,24 @@ void sam_hdr_free(SAM_hdr *hdr) {
     if (hdr->str_pool)
         string_pool_destroy(hdr->str_pool);
 
-    free(hdr->line_order);
     free(hdr);
 }
 
 int sam_hdr_length(SAM_hdr *hdr) {
+    if (hdr->dirty) {
+        if (-1 == sam_hdr_rebuild(hdr))
+            return -1;
+    }
+
     return ks_len(&hdr->text);
 }
 
 char *sam_hdr_str(SAM_hdr *hdr) {
+    if (hdr->dirty) {
+        if (-1 == sam_hdr_rebuild(hdr))
+            return NULL;
+    }
+
     return ks_str(&hdr->text);
 }
 
@@ -1310,6 +1282,7 @@ int sam_hdr_link_pg(SAM_hdr *hdr) {
 
         hdr->pg[i].prev_id = hdr->pg[kh_val(hdr->pg_hash, k)].id;
         hdr->pg_end[kh_val(hdr->pg_hash, k)] = -1;
+        hdr->dirty = 1;
     }
 
     for (i = j = 0; i < hdr->npg; i++) {
@@ -1393,7 +1366,7 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
         va_end(args);
     }
 
-    //sam_hdr_dump(sh);
+    sh->dirty = 1;
 
     return 0;
 }

@@ -58,8 +58,8 @@ typedef struct {
 string_alloc_t *string_pool_create(size_t max_length);
 void string_pool_destroy(string_alloc_t *a_str);
 char *string_alloc(string_alloc_t *a_str, size_t length);
-char *string_dup(string_alloc_t *a_str, char *instr);
-char *string_ndup(string_alloc_t *a_str, char *instr, size_t len);
+char *string_dup(string_alloc_t *a_str, const char *instr);
+char *string_ndup(string_alloc_t *a_str, const char *instr, size_t len);
 
 #ifdef __cplusplus
 }
