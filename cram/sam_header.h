@@ -204,7 +204,7 @@ typedef struct {
     // @SQ lines / references
     int nref;                 //!< Number of \@SQ lines
     SAM_SQ *ref;              //!< Array of parsed \@SQ lines
-    khash_t(m_s2i) *ref_hash; //!< Maps SQ SN field to sq[] index
+    khash_t(m_s2i) *ref_hash; //!< Maps SQ SN field to ref[] index
 
     // @RG lines / read-groups
     int nrg;                  //!< Number of \@RG lines
@@ -225,10 +225,7 @@ typedef struct {
     int ref_count;      // number of uses of this SAM_hdr
     // @endcond
 
-    SAM_hdr_line *line_order;  //array holding the header lines in the
-                               //order they are found in the file
-    unsigned int line_count;    //number of header lines found in the file
-    unsigned int line_size;     //number of header lines the array can hold
+    int dirty;                // marks the header as modified, so it can be rebuilt
 } SAM_hdr;
 
 /*! Creates an empty SAM header, ready to be populated.
@@ -387,7 +384,7 @@ SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
                               char *key,
                               SAM_hdr_tag **prev);
 
-void sam_hdr_remove_key(SAM_hdr *sh,
+int sam_hdr_remove_key(SAM_hdr *sh,
         SAM_hdr_type *type,
         char *key);
 
