@@ -933,40 +933,60 @@ enum sam_group_order sam_hdr_group_order(SAM_hdr *hdr) {
  *        -1 on failure
  */
 int sam_hdr_rebuild(SAM_hdr *hdr) {
-    if (!hdr)
+    if (!hdr || !hdr->h)
         return -1;
 
-    /* If header text wasn't changed, don't rebuild it. */
-    if (!hdr->dirty)
+    /* If header text wasn't changed or header is empty, don't rebuild it. */
+    if (!hdr->dirty || !hdr->h->size)
         return 0;
 
     /* Order: HD then others */
     kstring_t ks = KS_INITIALIZER;
     khint_t k;
+    int i;
 
-    k = kh_get(sam_hdr, hdr->h, K("HD"));
-    if (k != kh_end(hdr->h)) {
-        SAM_hdr_type *ty = kh_val(hdr->h, k);
-        SAM_hdr_tag *tag;
-        if (EOF == kputs("@HD", &ks))
-            return -1;
-        for (tag = ty->tag; tag; tag = tag->next) {
-            if (EOF == kputc_('\t', &ks))
+    /* process the array keys first */
+    for (i = 0; i < hdr->type_count; i++) {
+        SAM_hdr_type *t1, *t2;
+
+        k = kh_get(sam_hdr, hdr->h, K(hdr->type_order[i]));
+        if (!kh_exist(hdr->h, k))
+            continue;
+
+        t1 = t2 = kh_val(hdr->h, k);
+        do {
+            SAM_hdr_tag *tag;
+            char c[2];
+
+            if (EOF == kputc_('@', &ks))
                 return -1;
-            if (EOF == kputsn_(tag->str, tag->len, &ks))
+            c[0] = kh_key(hdr->h, k)>>8;
+            c[1] = kh_key(hdr->h, k)&0xff;
+            if (EOF == kputsn_(c, 2, &ks))
                 return -1;
-        }
-        if (EOF == kputc('\n', &ks))
-            return -1;
+            for (tag = t1->tag; tag; tag=tag->next) {
+                if (EOF == kputc_('\t', &ks))
+                    return -1;
+                if (EOF == kputsn_(tag->str, tag->len, &ks))
+                    return -1;
+            }
+            if (EOF == kputc('\n', &ks))
+                return -1;
+            t1 = t1->next;
+        } while (t1 != t2);
     }
 
+    /* process the other keys from the hash table */
     for (k = kh_begin(hdr->h); k != kh_end(hdr->h); k++) {
         SAM_hdr_type *t1, *t2;
 
         if (!kh_exist(hdr->h, k))
             continue;
 
-        if (kh_key(hdr->h, k) == K("HD"))
+        for (i = 0; i < hdr->type_count; i++)
+            if (kh_key(hdr->h, k) == K(hdr->type_order[i]))
+                break;
+        if (i < hdr->type_count)
             continue;
 
         t1 = t2 = kh_val(hdr->h, k);
@@ -997,6 +1017,25 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
 
     hdr->text = ks;
     hdr->dirty = 0;
+
+    return 0;
+}
+
+static int init_type_order(SAM_hdr *sh, char *type_list) {
+    if (!sh)
+        return -1;
+
+    if (!type_list) {
+        sh->type_count = 5;
+        sh->type_order = calloc(sh->type_count, 3);
+        if (!sh->type_order)
+            return -1;
+        strncpy(sh->type_order[0], "HD", 2);
+        strncpy(sh->type_order[1], "SQ", 2);
+        strncpy(sh->type_order[2], "RG", 2);
+        strncpy(sh->type_order[3], "PG", 2);
+        strncpy(sh->type_order[4], "CO", 2);
+    }
 
     return 0;
 }
@@ -1047,6 +1086,9 @@ SAM_hdr *sam_hdr_new() {
         goto err;
 
     if (!(sh->str_pool = string_pool_create(8192)))
+        goto err;
+
+    if (init_type_order(sh, NULL))
         goto err;
 
     return sh;
@@ -1187,6 +1229,9 @@ void sam_hdr_free(SAM_hdr *hdr) {
 
     if (hdr->str_pool)
         string_pool_destroy(hdr->str_pool);
+
+    if (hdr->type_order)
+        free(hdr->type_order);
 
     free(hdr);
 }
