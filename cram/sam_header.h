@@ -226,6 +226,9 @@ typedef struct {
     // @endcond
 
     int dirty;                // marks the header as modified, so it can be rebuilt
+
+    int type_count;
+    char (*type_order)[3];
 } SAM_hdr;
 
 /*! Creates an empty SAM header, ready to be populated.
