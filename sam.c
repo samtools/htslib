@@ -1234,50 +1234,39 @@ static int64_t inline STRTOUL64(const char *v, char **rv, int b) {
 
 int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 {
+#define _read_token(_p) (_p); do { char *tab = strchr((_p), '\t'); if (!tab) goto err_ret; *tab = '\0'; (_p) = tab + 1; } while (0)
+
 #if HTS_ALLOW_UNALIGNED != 0 && ULONG_MAX == 0xffffffffffffffff
 
-// Macros that operate on 64-bits at a time.
-#define hasless(x,n) (((x)-0x0101010101010101UL*(n))&~(x)&0x8080808080808080UL)
-#define _read_token(_p) (_p);                   \
-    do {                                        \
-        uint64_t *p64 = (uint64_t *)(_p);       \
-        uint64_t *orig = p64;                   \
-        while (!hasless(*p64, 10))              \
-            p64++;                              \
-        (_p) += (p64-orig)*8;                   \
-        while (*(_p) > '\t')                    \
-            (_p)++;                             \
-        if (*(_p) != '\t') goto err_ret;        \
-        *(_p)++ = 0;                            \
-    } while (0)
-#define _read_token_aux(_p) (_p);               \
-    do {                                        \
-        uint64_t *p64 = (uint64_t *)(_p);       \
-        uint64_t *orig = p64;                   \
-        while (!hasless(*p64, 10))              \
-            p64++;                              \
-        (_p) += (p64-orig)*8;                   \
-        while (*(_p) > '\t')                    \
-            (_p)++;                             \
-        *(_p)++ = 0;                            \
-    } while (0)
-#define COPY_Q_T_MINUS_N(n,l)                                   \
+// Macro that operates on 64-bits at a time.
+#define COPY_MINUS_N(to,from,n,l,failed)                        \
     do {                                                        \
-        uint64_t *q8 = (uint64_t *)q;                           \
-        uint64_t *t8 = (uint64_t *)t;                           \
-        int l8 = (l)>>3;                                        \
-        for (i = 0; i < l8; i++)                                \
-            t8[i] = q8[i] - (n)*0x0101010101010101UL;           \
-        for (i<<=3; i < (l); ++i)                               \
-            t[i] = q[i] - (n);                                  \
+        uint64_u *from8 = (uint64_u *)(from);                   \
+        uint64_u *to8 = (uint64_u *)(to);                       \
+        uint64_t uflow = 0;                                     \
+        size_t l8 = (l)>>3, i;                                  \
+        for (i = 0; i < l8; i++) {                              \
+            to8[i] = from8[i] - (n)*0x0101010101010101UL;       \
+            uflow |= to8[i];                                    \
+        }                                                       \
+        for (i<<=3; i < (l); ++i) {                             \
+            to[i] = from[i] - (n);                              \
+            uflow |= to[i];                                     \
+        }                                                       \
+        failed = (uflow & 0x8080808080808080UL) > 0;            \
     } while (0)
 
 #else
 
-// Basic versions which operate a byte at a time
-#define _read_token(_p) (_p); while(*(_p) > '\t')(_p)++;if (*(_p) != '\t') goto err_ret; *(_p)++ = 0
-#define _read_token_aux(_p) (_p); while(*(_p) > '\t')(_p)++; *(_p)++ = 0 // this is different in that it does not test *(_p)=='\t'
-#define COPY_Q_T_MINUS_N(n,l) do {for (i = 0; i < (l); ++i) t[i] = q[i] - (n);} while (0)
+// Basic version which operates a byte at a time
+#define COPY_MINUS_N(to,from,n,l,failed) do {                \
+        uint8_t uflow = 0;                                   \
+        for (i = 0; i < (l); ++i) {                          \
+            (to)[i] = (from)[i] - (n);                       \
+            uflow |= (uint8_t) (to)[i];                      \
+        }                                                    \
+        failed = (uflow & 0x80) > 0;                         \
+    } while (0)
 
 #endif
 
@@ -1287,13 +1276,6 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 #define _parse_warn(cond, msg) do { if (cond) { hts_log_warning(msg); } } while (0)
 
     uint8_t *t;
-
-    // Ensure kstring has at least 7 bytes more, so we can work in 8-byte chunks.
-    // (It doesn't have to be initialised, but we do so to silence valgrind.)
-    int vg = s->l;
-    ks_resize(s, s->l+7);
-    memset(s->s+vg, 0, 7);
-
     char *p = s->s, *q;
     int i;
     kstring_t str;
@@ -1398,6 +1380,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     // seq
     q = _read_token(p);
     if (strcmp(q, "*")) {
+        _parse_err(p - q - 1 > INT32_MAX, "read sequence is too long");
         c->l_qseq = p - q - 1;
         i = bam_cigar2qlen(c->n_cigar, (uint32_t*)(str.s + c->l_qname));
         _parse_err(c->n_cigar && i != c->l_qseq, "CIGAR and query sequence are of different length");
@@ -1411,22 +1394,30 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             t[i>>1] = seq_nt16_table[(unsigned char)q[i]] << ((~i&1)<<2);
     } else c->l_qseq = 0;
     // qual
-    q = _read_token_aux(p);
     _get_mem(uint8_t, &t, &str, c->l_qseq);
-
-    if (strcmp(q, "*")) {
-        _parse_err(p - q - 1 != c->l_qseq, "SEQ and QUAL are of different length");
-        COPY_Q_T_MINUS_N(33,c->l_qseq);
-    } else memset(t, 0xff, c->l_qseq);
+    if (p[0] == '*' && (p[1] == '\t' || p[1] == '\0')) {
+        memset(t, 0xff, c->l_qseq);
+        p += 2;
+    } else {
+        int failed = 0;
+        _parse_err(s->l - (p - s->s) < c->l_qseq
+                   || (p[c->l_qseq] != '\t' && p[c->l_qseq] != '\0'),
+                   "SEQ and QUAL are of different length");
+        COPY_MINUS_N(t, p, 33, c->l_qseq, failed);
+        _parse_err(failed, "invalid QUAL character");
+        p += c->l_qseq + 1;
+    }
     // aux
-    while (p < s->s + s->l) {
+    q = p;
+    p = s->s + s->l;
+    while (q < p) {
         uint8_t type;
-        q = _read_token_aux(p); // FIXME: can be accelerated for long 'B' arrays
-        _parse_err(p - q - 1 < 5, "incomplete aux field");
+        _parse_err(p - q < 5, "incomplete aux field");
+        _parse_err(q[0] < '!' || q[1] < '!', "invalid aux tag id");
         kputsn_(q, 2, &str);
         q += 3; type = *q++; ++q; // q points to value
         if (type != 'Z' && type != 'H') // the only zero length acceptable fields
-            _parse_err(p - q - 1 < 1, "incomplete aux field");
+            _parse_err(*q <= '\t', "incomplete aux field");
 
         // Ensure str has enough space for a double + type allocated.
         // This is so we can stuff bigger integers and floats directly into
@@ -1434,13 +1425,14 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         _parse_err(ks_resize(&str, str.l + 16), "out of memory");
 
         if (type == 'A' || type == 'a' || type == 'c' || type == 'C') {
-            kputc_('A', &str);
-            kputc_(*q, &str);
+            str.s[str.l++] = 'A';
+            str.s[str.l++] = *q++;
         } else if (type == 'i' || type == 'I') {
             if (*q == '-') {
                 long x = STRTOL64(q, &q, 10);
                 if (x >= INT8_MIN) {
-                    kputc_('c', &str); kputc_(x, &str);
+                    str.s[str.l++] = 'c';
+                    str.s[str.l++] = x;
                 } else if (x >= INT16_MIN) {
                     str.s[str.l++] = 's';
                     i16_to_le(x, (uint8_t *) str.s + str.l);
@@ -1453,7 +1445,9 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             } else {
                 unsigned long x = STRTOUL64(q, &q, 10);
                 if (x <= UINT8_MAX) {
-                    kputc_('C', &str); kputc_(x, &str);
+                    str.s[str.l++] = 'C';
+                    *((uint8_t *) str.s + str.l) = x;
+                    str.l++;
                 } else if (x <= UINT16_MAX) {
                     str.s[str.l++] = 'S';
                     u16_to_le(x, (uint8_t *) str.s + str.l);
@@ -1473,22 +1467,26 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             double_to_le(strtod(q, &q), (uint8_t *) str.s + str.l);
             str.l += sizeof(double);
         } else if (type == 'Z' || type == 'H') {
-            _parse_err(type == 'H' && !((p-q)&1),
+            char *end = strchr(q, '\t');
+            if (!end) end = q + strlen(q);
+            _parse_err(type == 'H' && ((end-q)&1) != 0,
                        "hex field does not have an even number of digits");
-            kputc_(type, &str);kputsn_(q, p - q, &str); // note that this include the trailing NULL
+            str.s[str.l++] = type;
+            kputsn(q, end - q, &str);
+            str.l++; // include the trailing NULL
+            q = end;
         } else if (type == 'B') {
             int32_t n, size;
             size_t bytes;
             char *r;
-            _parse_err(p - q - 1 < 3, "incomplete B-typed aux field");
             type = *q++; // q points to the first ',' following the typing byte
-
             size = aux_type2size(type);
             _parse_err_param(size <= 0 || size > 4,
                              "unrecognized type B:%c", type);
-            _parse_err(*q && *q != ',', "B aux field type not followed by ','");
+            _parse_err(*q && *q != ',' && *q != '\t',
+                       "B aux field type not followed by ','");
 
-            for (r = q, n = 0; *r; ++r)
+            for (r = q, n = 0; *r > '\t'; ++r)
                 if (*r == ',') ++n;
 
             // Ensure space for type + values
@@ -1504,19 +1502,21 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
             // This ensures that q always ends up at the next comma after
             // reading a number even if it's followed by junk.  It
             // prevents the possibility of trying to read more than n items.
-#define _skip_to_comma(q, p) do { while ((q) < (p) && *(q) != ',') (q)++; } while (0)
-
-            if (type == 'c')      while (q + 1 < p) { int8_t   x = STRTOL64(q + 1, &q, 0); kputc_(x, &str); }
-            else if (type == 'C') while (q + 1 < p) { uint8_t  x = STRTOUL64(q + 1, &q, 0); kputc_(x, &str); }
-            else if (type == 's') while (q + 1 < p) { i16_to_le(STRTOL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 2; _skip_to_comma(q, p); }
-            else if (type == 'S') while (q + 1 < p) { u16_to_le(STRTOUL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 2; _skip_to_comma(q, p); }
-            else if (type == 'i') while (q + 1 < p) { i32_to_le(STRTOL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
-            else if (type == 'I') while (q + 1 < p) { u32_to_le(STRTOUL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
-            else if (type == 'f') while (q + 1 < p) { float_to_le(strtod(q + 1, &q), (uint8_t *) str.s + str.l); str.l += 4; _skip_to_comma(q, p); }
+#define skip_to_comma_(q) do { while (*(q) > '\t' && *(q) != ',') (q)++; } while (0)
+            if (type == 'c')      while (q < r) { *(str.s + str.l) = STRTOL64(q + 1, &q, 0); str.l++; skip_to_comma_(q); }
+            else if (type == 'C') while (q < r) { *((uint8_t *) str.s + str.l) = STRTOUL64(q + 1, &q, 0); str.l++; skip_to_comma_(q); }
+            else if (type == 's') while (q < r) { i16_to_le(STRTOL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 2; skip_to_comma_(q); }
+            else if (type == 'S') while (q < r) { u16_to_le(STRTOUL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 2; skip_to_comma_(q); }
+            else if (type == 'i') while (q < r) { i32_to_le(STRTOL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; skip_to_comma_(q); }
+            else if (type == 'I') while (q < r) { u32_to_le(STRTOUL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; skip_to_comma_(q); }
+            else if (type == 'f') while (q < r) { float_to_le(strtod(q + 1, &q), (uint8_t *) str.s + str.l); str.l += 4; skip_to_comma_(q); }
             else _parse_err_param(1, "unrecognized type B:%c", type);
-#undef _skip_to_comma
+#undef skip_to_comma_
 
         } else _parse_err_param(1, "unrecognized type %c", type);
+
+        while (*q > '\t') { q++; } // Skip any junk to next tab
+        q++;
     }
     b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
     if (bam_tag2cigar(b, 1, 1) < 0)
@@ -1527,7 +1527,6 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
 #undef _parse_err
 #undef _parse_err_param
 #undef _get_mem
-#undef _read_token_aux
 #undef _read_token
 err_ret:
     b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
