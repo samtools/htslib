@@ -130,12 +130,10 @@ typedef struct SAM_hdr_type_s {
     struct SAM_hdr_type_s *prev;
     SAM_hdr_tag *tag;            // first tag
     int order;                   // 0 upwards
+    int skip;                    // 1 - don't add this line to the header text together with all the others from the same type.
+                                 // Useful for comments.
+    struct SAM_hdr_type_s *comm; // attached comment line
 } SAM_hdr_type;
-
-typedef struct SAM_hdr_line_s {
-    char          type_name[3];
-    SAM_hdr_type *type_data;
-} SAM_hdr_line;
 
 /*! Parsed \@SQ lines */
 typedef struct {

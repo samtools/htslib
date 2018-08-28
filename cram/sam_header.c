@@ -50,6 +50,8 @@ void sam_hdr_dump(SAM_hdr *hdr) {
     khint_t k;
     int i;
 
+    sam_hdr_rebuild(hdr);
+
     printf("===DUMP===\n");
     for (k = kh_begin(hdr->h); k != kh_end(hdr->h); k++) {
         SAM_hdr_type *t1, *t2;
@@ -333,6 +335,7 @@ static int sam_hdr_remove_hash_entry(SAM_hdr *sh, int type, SAM_hdr_type *h_type
 int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
     int i, lno;
     char *hdr;
+    SAM_hdr_type *last_comm = NULL;
 
     if (!len)
         len = strlen(lines);
@@ -393,11 +396,18 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
             h_type->prev = h_type->next = h_type;
             h_type->order = 0;
         }
+        h_type->skip = 0;
 
         // Parse the tags on this line
         last = NULL;
         if ((type>>8) == 'C' && (type&0xff) == 'O') {
             int j;
+
+            h_type->comm = last_comm;
+            if (last_comm)
+                last_comm->skip = 1;
+            last_comm = h_type;
+
             if (hdr[i] != '\t') {
                 sam_hdr_error("Missing tab",
                               &hdr[l_start], len - l_start, lno);
@@ -418,8 +428,15 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
             i = j;
 
         } else {
+            h_type->comm = last_comm;
+            if (last_comm) {
+                last_comm->skip = 1;
+                last_comm = NULL;
+            }
+
             do {
                 int j;
+
                 if (hdr[i] != '\t') {
                     sam_hdr_error("Missing tab",
                                   &hdr[l_start], len - l_start, lno);
@@ -927,6 +944,69 @@ enum sam_group_order sam_hdr_group_order(SAM_hdr *hdr) {
     return go;
 }
 
+static int rebuild_comms(SAM_hdr_type *t, kstring_t *ks) {
+    if (!t->comm) {
+        if (EOF == kputsn_("@CO\t", 4, ks))
+            return -1;
+        if (t->tag)
+            if (EOF == kputsn_(t->tag->str, t->tag->len, ks))
+                return -1;
+        if (EOF == kputc('\n', ks))
+            return -1;
+    } else {
+        if (rebuild_comms(t->comm, ks))
+            return -1;
+        if (EOF == kputsn_("@CO\t", 4, ks))
+            return -1;
+        if (t->tag)
+            if (EOF == kputsn_(t->tag->str, t->tag->len, ks))
+                return -1;
+        if (EOF == kputc('\n', ks))
+            return -1;
+    }
+
+    return 0;
+}
+
+static int rebuild_lines(SAM_hdr *hdr, khint_t k, kstring_t *ks) {
+    SAM_hdr_type *t1, *t2;
+
+    t1 = t2 = kh_val(hdr->h, k);
+    do {
+        SAM_hdr_tag *tag;
+        char c[2];
+
+        if (t1->skip) {
+            t1 = t1->next;
+            continue;
+        }
+
+        /* if there is a comment line attached, print it first */
+        if (t1->comm) {
+            if (rebuild_comms(t1->comm, ks))
+                return -1;
+        }
+
+        if (EOF == kputc_('@', ks))
+            return -1;
+        c[0] = kh_key(hdr->h, k)>>8;
+        c[1] = kh_key(hdr->h, k)&0xff;
+        if (EOF == kputsn_(c, 2, ks))
+            return -1;
+        for (tag = t1->tag; tag; tag=tag->next) {
+            if (EOF == kputc_('\t', ks))
+                return -1;
+            if (EOF == kputsn_(tag->str, tag->len, ks))
+                return -1;
+        }
+        if (EOF == kputc('\n', ks))
+            return -1;
+        t1 = t1->next;
+    } while (t1 != t2);
+
+    return 0;
+}
+
 /*
  * Reconstructs the kstring from the header hash table.
  * Returns 0 on success
@@ -947,38 +1027,17 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
 
     /* process the array keys first */
     for (i = 0; i < hdr->type_count; i++) {
-        SAM_hdr_type *t1, *t2;
 
         k = kh_get(sam_hdr, hdr->h, K(hdr->type_order[i]));
         if (!kh_exist(hdr->h, k))
             continue;
 
-        t1 = t2 = kh_val(hdr->h, k);
-        do {
-            SAM_hdr_tag *tag;
-            char c[2];
-
-            if (EOF == kputc_('@', &ks))
-                return -1;
-            c[0] = kh_key(hdr->h, k)>>8;
-            c[1] = kh_key(hdr->h, k)&0xff;
-            if (EOF == kputsn_(c, 2, &ks))
-                return -1;
-            for (tag = t1->tag; tag; tag=tag->next) {
-                if (EOF == kputc_('\t', &ks))
-                    return -1;
-                if (EOF == kputsn_(tag->str, tag->len, &ks))
-                    return -1;
-            }
-            if (EOF == kputc('\n', &ks))
-                return -1;
-            t1 = t1->next;
-        } while (t1 != t2);
+        if (rebuild_lines(hdr, k, &ks))
+            return -1;
     }
 
     /* process the other keys from the hash table */
     for (k = kh_begin(hdr->h); k != kh_end(hdr->h); k++) {
-        SAM_hdr_type *t1, *t2;
 
         if (!kh_exist(hdr->h, k))
             continue;
@@ -989,27 +1048,8 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
         if (i < hdr->type_count)
             continue;
 
-        t1 = t2 = kh_val(hdr->h, k);
-        do {
-            SAM_hdr_tag *tag;
-            char c[2];
-
-            if (EOF == kputc_('@', &ks))
-                return -1;
-            c[0] = kh_key(hdr->h, k)>>8;
-            c[1] = kh_key(hdr->h, k)&0xff;
-            if (EOF == kputsn_(c, 2, &ks))
-                return -1;
-            for (tag = t1->tag; tag; tag=tag->next) {
-                if (EOF == kputc_('\t', &ks))
-                    return -1;
-                if (EOF == kputsn_(tag->str, tag->len, &ks))
-                    return -1;
-            }
-            if (EOF == kputc('\n', &ks))
-                return -1;
-            t1 = t1->next;
-        } while (t1 != t2);
+        if (rebuild_lines(hdr, k, &ks))
+            return -1;
     }
 
     if (ks_str(&hdr->text))
