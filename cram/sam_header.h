@@ -322,28 +322,6 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len);
  */
 int sam_hdr_add(SAM_hdr *sh, const char *type, ...);
 
-/*! Adds a single line to a SAM header.
- *
- * This is much like sam_hdr_add() but with the additional va_list
- * argument. This is followed by specifying type and one or more
- * key,value pairs, ending with the NULL key.
- *
- * Eg. sam_hdr_vadd(h, "SQ", args, "ID", "foo", "LN", "100", NULL).
- *
- * The purpose of the additional va_list parameter is to permit other
- * varargs functions to call this while including their own additional
- * parameters; an example is in sam_hdr_add_PG().
- *
- * Note: this function invokes va_arg at least once, making the value
- * of ap indeterminate after the return.  The caller should call
- * va_start/va_end before/after calling this function or use va_copy.
- *
- * @return
- * Returns 0 on success;
- *        -1 on failure
- */
-int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...);
-
 /*!
  * @return
  * Returns the first header item matching 'type'. If ID is non-NULL it checks

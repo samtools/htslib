@@ -479,31 +479,32 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *lines, int len) {
     return 0;
 }
 
-/*
- * Adds a single line to a SAM header.
- * Specify type and one or more key,value pairs, ending with the NULL key.
- * Eg. sam_hdr_add(h, "SQ", "ID", "foo", "LN", "100", NULL).
+/*! sam_hdr_add with a va_list interface.
  *
- * Returns index for specific entry on success (eg 2nd SQ, 4th RG)
- *        -1 on failure
- */
-int sam_hdr_add(SAM_hdr *sh, const char *type, ...) {
-    va_list args;
-    va_start(args, type);
-    return sam_hdr_vadd(sh, type, args, NULL);
-}
-
-/*
- * sam_hdr_add with a va_list interface.
+ * Adds a single line to a SAM header.
+ *
+ * This is much like sam_hdr_add() but with the additional va_list
+ * argument. This is followed by specifying type and one or more
+ * key,value pairs, ending with the NULL key.
+ *
+ * Eg. sam_hdr_vadd(h, "SQ", args, "ID", "foo", "LN", "100", NULL).
+ *
+ * The purpose of the additional va_list parameter is to permit other
+ * varargs functions to call this while including their own additional
+ * parameters; an example is in sam_hdr_add_PG().
  *
  * Note: this function invokes va_arg at least once, making the value
- * of ap indeterminate after the return.  The caller should call
+ * of ap indeterminate after the return. The caller should call
  * va_start/va_end before/after calling this function or use va_copy.
+ *
+ * @return
+ * Returns >= 0 on success;
+ *        -1 on failure
  */
-int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
+static int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
     va_list args;
     SAM_hdr_type *h_type;
-    SAM_hdr_tag *h_tag, *last;
+    SAM_hdr_tag *h_tag, *last=NULL;
     int new;
     khint32_t type_i = (type[0]<<8) | type[1], k;
 
@@ -529,8 +530,7 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
         h_type->prev = h_type->next = h_type;
         h_type->order = 0;
     }
-
-    last = NULL;
+    h_type->comm = NULL;
 
     // Any ... varargs
     va_start(args, ap);
@@ -539,18 +539,25 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 
         if (!(k = (char *)va_arg(args, char *)))
             break;
-        if (!(v = (char *)va_arg(args, char *)))
-            v = "";
+        if (strncmp(type, "CO", 2) && !(v = (char *)va_arg(args, char *)))
+            break;
 
         if (!(h_tag = pool_alloc(sh->tag_pool)))
             return -1;
 
-        h_tag->len = 3 + strlen(v);
-        h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
-        h_tag->next = NULL;
-        if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", k, v) < 0)
-            return -1;
+        if (strncmp(type, "CO", 2)) {
+            h_tag->len = 3 + strlen(v);
+            h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
+            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", k, v) < 0)
+                return -1;
+        } else {
+            h_tag->len = strlen(k);
+            h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
+            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%s", k) < 0)
+                return -1;
+        }
 
+        h_tag->next = NULL;
         if (last)
             last->next = h_tag;
         else
@@ -566,18 +573,25 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 
         if (!(k = (char *)va_arg(ap, char *)))
             break;
-        if (!(v = (char *)va_arg(ap, char *)))
-            v = "";
+        if (strncmp(type, "CO", 2) && !(v = (char *)va_arg(ap, char *)))
+            break;
 
         if (!(h_tag = pool_alloc(sh->tag_pool)))
             return -1;
 
-        h_tag->len = 3 + strlen(v);
-        h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
-        h_tag->next = NULL;
-        if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", k, v) < 0)
-            return -1;
+        if (strncmp(type, "CO", 2)) {
+            h_tag->len = 3 + strlen(v);
+            h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
+            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", k, v) < 0)
+                return -1;
+        } else {
+            h_tag->len = strlen(k);
+            h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
+            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%s", k) < 0)
+                return -1;
+        }
 
+        h_tag->next = NULL;
         if (last)
             last->next = h_tag;
         else
@@ -585,7 +599,6 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 
         last = h_tag;
     }
-    va_end(ap);
 
     int itype = (type[0]<<8) | type[1];
     if (-1 == sam_hdr_update_hashes(sh, itype, h_type))
@@ -593,6 +606,23 @@ int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 
     sh->dirty = 1;
     return h_type->order;
+}
+
+/*
+ * Adds a single line to a SAM header.
+ * Specify type and one or more key,value pairs, ending with the NULL key.
+ * Eg. sam_hdr_add(h, "SQ", "ID", "foo", "LN", "100", NULL).
+ *
+ * Returns index for specific entry on success (eg 2nd SQ, 4th RG)
+ *        -1 on failure
+ */
+int sam_hdr_add(SAM_hdr *sh, const char *type, ...) {
+    va_list args;
+    va_start(args, type);
+    int ret = sam_hdr_vadd(sh, type, args, NULL);
+    va_end(args);
+
+    return ret;
 }
 
 /*
