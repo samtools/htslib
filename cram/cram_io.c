@@ -2092,9 +2092,9 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     char *path2;
     /* Search local files in REF_PATH; we can open them and return as above */
     if (!local_path && (path2 = find_path(tag->str+3, ref_path))) {
-        strncpy(path, path2, PATH_MAX);
+        int len = snprintf(path, PATH_MAX, "%s", path2);
         free(path2);
-        if (is_file(path)) // incase it's too long
+        if (len > 0 && len < PATH_MAX) // incase it's too long
             local_path = 1;
     }
 #endif
@@ -2104,7 +2104,9 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         struct stat sb;
         BGZF *fp;
 
-        if (0 == stat(path, &sb) && (fp = bgzf_open(path, "r"))) {
+        if (0 == stat(path, &sb)
+            && S_ISREG(sb.st_mode)
+            && (fp = bgzf_open(path, "r"))) {
             r->length = sb.st_size;
             r->offset = r->line_length = r->bases_per_line = 0;
 
@@ -3737,7 +3739,7 @@ static void full_path(char *out, char *in) {
         // Windows paths
         (in_l > 3 && toupper_c(*in) >= 'A'  && toupper_c(*in) <= 'Z' &&
          in[1] == ':' && (in[2] == '/' || in[2] == '\\'))) {
-        strncpy(out, in, PATH_MAX);
+        strncpy(out, in, PATH_MAX-1);
         out[PATH_MAX-1] = 0;
     } else {
         int len;
@@ -3745,12 +3747,12 @@ static void full_path(char *out, char *in) {
         // unable to get dir or out+in is too long
         if (!getcwd(out, PATH_MAX) ||
             (len = strlen(out))+1+strlen(in) >= PATH_MAX) {
-            strncpy(out, in, PATH_MAX);
+            strncpy(out, in, PATH_MAX-1);
             out[PATH_MAX-1] = 0;
             return;
         }
 
-        sprintf(out+len, "/%.*s", PATH_MAX - len, in);
+        sprintf(out+len, "/%.*s", PATH_MAX - 2 - len, in);
 
         // FIXME: cope with `pwd`/../../../foo.fa ?
     }

@@ -148,7 +148,7 @@ char *string_ndup(string_alloc_t *a_str, char *instr, size_t len) {
 
     if (NULL == str) return NULL;
 
-    strncpy(str, instr, len);
+    memcpy(str, instr, len);
     str[len] = 0;
 
     return str;
