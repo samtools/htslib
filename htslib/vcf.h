@@ -947,8 +947,8 @@ static inline void bcf_enc_size(kstring_t *s, int size, int type)
 
 static inline int bcf_enc_inttype(long x)
 {
-    if (x <= INT8_MAX && x > bcf_int8_missing) return BCF_BT_INT8;
-    if (x <= INT16_MAX && x > bcf_int16_missing) return BCF_BT_INT16;
+    if (x <= INT8_MAX && x >= INT8_MIN + 8) return BCF_BT_INT8;
+    if (x <= INT16_MAX && x >= INT16_MIN + 8) return BCF_BT_INT16;
     return BCF_BT_INT32;
 }
 
@@ -960,10 +960,10 @@ static inline void bcf_enc_int1(kstring_t *s, int32_t x)
     } else if (x == bcf_int32_missing) {
         bcf_enc_size(s, 1, BCF_BT_INT8);
         kputc(bcf_int8_missing, s);
-    } else if (x <= INT8_MAX && x > bcf_int8_missing) {
+    } else if (x <= INT8_MAX && x >= INT8_MIN + 8) {
         bcf_enc_size(s, 1, BCF_BT_INT8);
         kputc(x, s);
-    } else if (x <= INT16_MAX && x > bcf_int16_missing) {
+    } else if (x <= INT16_MAX && x >= INT16_MIN + 8) {
         int16_t z = x;
         bcf_enc_size(s, 1, BCF_BT_INT16);
         kputsn((char*)&z, 2, s);

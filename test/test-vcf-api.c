@@ -62,6 +62,7 @@ void write_bcf(char *fname)
     bcf_hdr_append(hdr, "##phasing=partial");
     bcf_hdr_append(hdr, "##INFO=<ID=NS,Number=1,Type=Integer,Description=\"Number of Samples With Data\">");
     bcf_hdr_append(hdr, "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Total Depth\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=NEG,Number=.,Type=Integer,Description=\"Test Negative Numbers\">");
     bcf_hdr_append(hdr, "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele Frequency\">");
     bcf_hdr_append(hdr, "##INFO=<ID=AA,Number=1,Type=String,Description=\"Ancestral Allele\">");
     bcf_hdr_append(hdr, "##INFO=<ID=DB,Number=0,Type=Flag,Description=\"dbSNP membership, build 129\">");
@@ -82,7 +83,7 @@ void write_bcf(char *fname)
 
 
     // Add a record
-    // 20     14370   rs6054257 G      A       29   PASS   NS=3;DP=14;AF=0.5;DB;H2           GT:GQ:DP:HQ 0|0:48:1:51,51 1|0:48:8:51,51 1/1:43:5:.,.
+    // 20     14370   rs6054257 G      A       29   PASS   NS=3;DP=14;NEG=-127;AF=0.5;DB;H2           GT:GQ:DP:HQ 0|0:48:1:51,51 1|0:48:8:51,51 1/1:43:5:.,.
     // .. CHROM
     rec->rid = bcf_hdr_name2id(hdr, "20");
     // .. POS
@@ -101,6 +102,8 @@ void write_bcf(char *fname)
     bcf_update_info_int32(hdr, rec, "NS", &tmpi, 1);
     tmpi = 14;
     bcf_update_info_int32(hdr, rec, "DP", &tmpi, 1);
+    tmpi = -127;
+    bcf_update_info_int32(hdr, rec, "NEG", &tmpi, 1);
     float tmpf = 0.5;
     bcf_update_info_float(hdr, rec, "AF", &tmpf, 1);
     bcf_update_info_flag(hdr, rec, "DB", NULL, 1);
@@ -133,7 +136,7 @@ void write_bcf(char *fname)
     bcf_update_format_string(hdr, rec, "TS", (const char**)tmp_str, 3);
     if ( bcf_write1(fp, hdr, rec)!=0 ) error("Failed to write to %s\n", fname);
 
-    // 20     1110696 . A      G,T     67   .   NS=2;DP=10;AF=0.333,.;AA=T;DB GT 2 1   ./.
+    // 20     1110696 . A      G,T     67   .   NS=2;DP=10;NEG=-128;AF=0.333,.;AA=T;DB GT 2 1   ./.
     bcf_clear1(rec);
     rec->rid = bcf_hdr_name2id(hdr, "20");
     rec->pos = 1110695;
@@ -143,6 +146,8 @@ void write_bcf(char *fname)
     bcf_update_info_int32(hdr, rec, "NS", &tmpi, 1);
     tmpi = 10;
     bcf_update_info_int32(hdr, rec, "DP", &tmpi, 1);
+    tmpi = -128;
+    bcf_update_info_int32(hdr, rec, "NEG", &tmpi, 1);
     float *tmpfa = (float*)malloc(2*sizeof(float));
     tmpfa[0] = 0.333;
     bcf_float_set_missing(tmpfa[1]);
@@ -291,6 +296,7 @@ void test_get_info_values(const char *fname)
     while (bcf_read(fp, hdr, line) == 0)
     {
         float *afs = 0;
+        int32_t *negs = NULL;
         int count = 0;
         int ret = bcf_get_info_float(hdr, line, "AF", &afs, &count);
 
@@ -312,6 +318,21 @@ void test_get_info_values(const char *fname)
         }
 
         free(afs);
+
+        int32_t expected = (line->pos == 14369)? -127 : -128;
+        count = 0;
+        ret = bcf_get_info_int32(hdr, line, "NEG", &negs, &count);
+        if (ret != 1 || negs[0] != expected)
+        {
+            if (ret < 0)
+                fprintf(stderr, "NEG should be %d, got error ret=%d\n", expected, ret);
+            else if (ret == 0)
+                fprintf(stderr, "NEG should be %d, got no entries\n", expected);
+            else
+                fprintf(stderr, "NEG should be %d, got %d entries (first is %d)\n", expected, ret, negs[0]);
+            exit(1);
+        }
+        free(negs);
     }
 
     bcf_destroy(line);
