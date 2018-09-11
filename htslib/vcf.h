@@ -418,6 +418,12 @@ typedef struct {
     /**
      *  bcf_hdr_add_sample() - add a new sample.
      *  @param sample:  sample name to be added
+     *
+     *  Note:
+     *      After all samples have been added, the internal header structure must be updated
+     *      by calling bcf_hdr_sync(). This is normally done automatically by the first bcf_hdr_write()
+     *      or bcf_write() call. Otherwise, the caller must force the update by calling bcf_hdr_sync()
+     *      explicitly.
      */
     int bcf_hdr_add_sample(bcf_hdr_t *hdr, const char *sample);
 
