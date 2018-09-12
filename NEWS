@@ -1,6 +1,16 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* Fixed bug where some 8 or 16-bit negative integers were stored using values
+  reserved by the BCF specification.  These numbers are now promoted to the
+  next size up, so -120 to -128 are stored using at least 16 bits, and -32760
+  to -32768 are stored using 32 bits.
+
+  Note that while BCF files affected by this bug are technically incorrect,
+  it is still possible to read them.  When converting to VCF format,
+  HTSlib (and therefore bcftools) will interpret the values as intended
+  and write out the correct negative numbers. (#766, thanks to John Marshall)
+
 Noteworthy changes in release 1.9 (18th July 2018)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
