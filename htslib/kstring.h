@@ -193,13 +193,13 @@ static inline int kputsn_(const void *p, size_t l, kstring_t *s)
 static inline int kputuw(unsigned x, kstring_t *s)
 {
 #if HAVE___BUILTIN_CLZ && UINT_MAX == 4294967295U
-    const static unsigned int kputuw_num_digits[32] = {
+    static const unsigned int kputuw_num_digits[32] = {
         10, 10, 10,  9,  9,  9,  8,  8,
         8,   7,  7,  7,  7,  6,  6,  6,
         5,   5,  5,  4,  4,  4,  4,  3,
         3,   3,  2,  2,  2,  1,  1,  1
     };
-    const static unsigned int kputuw_thresholds[32] = {
+    static const unsigned int kputuw_thresholds[32] = {
         0,        0, 1000000000U, 0,       0, 100000000U,   0,      0,
         10000000, 0,          0,  0, 1000000,         0,    0, 100000,
         0,        0,      10000,  0,       0,         0, 1000,      0,
@@ -208,7 +208,7 @@ static inline int kputuw(unsigned x, kstring_t *s)
 #else
     uint64_t m;
 #endif
-    const static char kputuw_dig2r[200] =
+    static const char kputuw_dig2r[200] =
         "00010203040506070809"
         "10111213141516171819"
         "20212223242526272829"

@@ -1195,7 +1195,7 @@ int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
  **********************/
 
 /* Custom strtol for aux tags, always base 10 */
-static int64_t inline STRTOL64(const char *v, char **rv, int b) {
+static inline int64_t STRTOL64(const char *v, char **rv, int b) {
     int64_t n = 0;
     int neg = 1;
     switch(*v) {
@@ -1221,7 +1221,7 @@ static int64_t inline STRTOL64(const char *v, char **rv, int b) {
     return neg*n;
 }
 
-static int64_t inline STRTOUL64(const char *v, char **rv, int b) {
+static inline int64_t STRTOUL64(const char *v, char **rv, int b) {
     int64_t n = 0;
     if (*v == '+')
         v++;
