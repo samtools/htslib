@@ -54,6 +54,11 @@
 #define KS_ATTR_PRINTF(fmt, arg)
 #endif
 
+#ifndef HAVE___BUILTIN_CLZ
+#if defined __GNUC__ && (__GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4))
+#define HAVE___BUILTIN_CLZ 1
+#endif
+#endif
 
 /* kstring_t is a simple non-opaque type whose fields are likely to be
  * used directly by user code (but see also ks_str() and ks_len() below).
@@ -101,6 +106,8 @@ extern "C" {
 	 * EOF or on error (determined by querying fp, as per fgets()). */
 	typedef char *kgets_func(char *, int, void *);
 	int kgetline(kstring_t *s, kgets_func *fgets, void *fp);
+	typedef ssize_t kgets_func2(char *, int, void *);
+	int kgetline2(kstring_t *s, kgets_func2 *fgets, void *fp);
 
 #ifdef __cplusplus
 }
@@ -183,33 +190,102 @@ static inline int kputsn_(const void *p, size_t l, kstring_t *s)
 	return l;
 }
 
-static inline int kputw(int c, kstring_t *s)
+static inline int kputuw(unsigned x, kstring_t *s)
 {
-	char buf[16];
-	int i, l = 0;
-	unsigned int x = c;
-	if (c < 0) x = -x;
-	do { buf[l++] = x%10 + '0'; x /= 10; } while (x > 0);
-	if (c < 0) buf[l++] = '-';
-	if (ks_resize(s, s->l + l + 2) < 0)
-		return EOF;
-	for (i = l - 1; i >= 0; --i) s->s[s->l++] = buf[i];
-	s->s[s->l] = 0;
-	return 0;
+#if HAVE___BUILTIN_CLZ && UINT_MAX == 4294967295U
+    const static unsigned int kputuw_num_digits[32] = {
+        10, 10, 10,  9,  9,  9,  8,  8,
+        8,   7,  7,  7,  7,  6,  6,  6,
+        5,   5,  5,  4,  4,  4,  4,  3,
+        3,   3,  2,  2,  2,  1,  1,  1
+    };
+    const static unsigned int kputuw_thresholds[32] = {
+        0,        0, 1000000000U, 0,       0, 100000000U,   0,      0,
+        10000000, 0,          0,  0, 1000000,         0,    0, 100000,
+        0,        0,      10000,  0,       0,         0, 1000,      0,
+        0,      100,          0,  0,      10,         0,    0,      0
+    };
+#else
+    uint64_t m;
+#endif
+    const static char kputuw_dig2r[200] =
+        "00010203040506070809"
+        "10111213141516171819"
+        "20212223242526272829"
+        "30313233343536373839"
+        "40414243444546474849"
+        "50515253545556575859"
+        "60616263646566676869"
+        "70717273747576777879"
+        "80818283848586878889"
+        "90919293949596979899";
+    unsigned int l, j;
+    char *cp;
+
+    // Trivial case - also prevents __builtin_clz(0), which is undefined
+    if (x < 10) {
+        if (ks_resize(s, s->l + 2) < 0)
+            return EOF;
+        s->s[s->l++] = '0'+x;
+        s->s[s->l] = 0;
+        return 0;
+    }
+
+    // Find out how many digits are to be printed.
+#if HAVE___BUILTIN_CLZ && UINT_MAX == 4294967295U
+    /*
+     * Table method - should be quick if clz can be done in hardware.
+     * Find the most significant bit of the value to print and look
+     * up in a table to find out how many decimal digits are needed.
+     * This number needs to be adjusted by 1 for cases where the decimal
+     * length could vary for a given number of bits (for example,
+     * a four bit number could be between 8 and 15).
+     */
+
+    l = __builtin_clz(x);
+    l = kputuw_num_digits[l] - (x < kputuw_thresholds[l]);
+#else
+    // Fallback for when clz is not available
+    m = 1;
+    l = 0;
+    do {
+        l++;
+        m *= 10;
+    } while (x >= m);
+#endif
+
+    if (ks_resize(s, s->l + l + 2) < 0)
+        return EOF;
+
+    // Add digits two at a time
+    j = l;
+    cp = s->s + s->l;
+    while (x >= 10) {
+        const char *d = &kputuw_dig2r[2*(x%100)];
+        x /= 100;
+        memcpy(&cp[j-=2], d, 2);
+    }
+
+    // Last one (if necessary).  We know that x < 10 by now.
+    if (j == 1)
+        cp[0] = x + '0';
+
+    s->l += l;
+    s->s[s->l] = 0;
+    return 0;
 }
 
-static inline int kputuw(unsigned c, kstring_t *s)
+static inline int kputw(int c, kstring_t *s)
 {
-	char buf[16];
-	int l, i;
-	unsigned x;
-	if (c == 0) return kputc('0', s);
-	for (l = 0, x = c; x > 0; x /= 10) buf[l++] = x%10 + '0';
-	if (ks_resize(s, s->l + l + 2) < 0)
-		return EOF;
-	for (i = l - 1; i >= 0; --i) s->s[s->l++] = buf[i];
-	s->s[s->l] = 0;
-	return 0;
+    unsigned int x = c;
+    if (c < 0) {
+        x = -x;
+        if (ks_resize(s, s->l + 3) < 0)
+            return EOF;
+        s->s[s->l++] = '-';
+    }
+
+    return kputuw(x, s);
 }
 
 static inline int kputl(long c, kstring_t *s)

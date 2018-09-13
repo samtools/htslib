@@ -72,6 +72,7 @@ BUILT_TEST_PROGRAMS = \
 	test/hfile \
 	test/sam \
 	test/test_bgzf \
+	test/test_kstring \
 	test/test_realn \
 	test/test-regidx \
 	test/test_view \
@@ -357,6 +358,7 @@ tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htsl
 #    MSYS2_ARG_CONV_EXCL="*" make check
 check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 	test/hts_endian
+	test/test_kstring
 	test/fieldarith test/fieldarith.sam
 	test/hfile
 	test/test_bgzf test/bgziptest.txt
@@ -379,6 +381,9 @@ test/sam: test/sam.o libhts.a
 
 test/test_bgzf: test/test_bgzf.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a -lz $(LIBS) -lpthread
+
+test/test_kstring: test/test_kstring.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_kstring.o libhts.a -lz $(LIBS) -lpthread
 
 test/test_realn: test/test_realn.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_realn.o libhts.a $(LIBS) -lpthread
@@ -406,6 +411,7 @@ test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h)
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
+test/test_kstring.o: test/test_kstring.c $(htslib_kstring_h)
 test/test-realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_regidx_h) $(hts_internal_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h)
