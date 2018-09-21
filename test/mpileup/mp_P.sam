@@ -1,0 +1,41 @@
+@HD	VN:1.6	SO:coordinate
+@SQ	SN:z	LN:13
+@CO	
+@CO	Copyright (c) 2018 Genome Research Ltd.
+@CO	
+@CO	Permission is hereby granted, free of charge, to any person obtaining
+@CO	a copy of this software and associated documentation files (the
+@CO	"Software"), to deal in the Software without restriction, including
+@CO	without limitation the rights to use, copy, modify, merge, publish,
+@CO	distribute, sublicense, and/or sell copies of the Software, and to
+@CO	permit persons to whom the Software is furnished to do so, subject
+@CO	to the following conditions:
+@CO	
+@CO	The above copyright notice and this permission notice shall be included
+@CO	in all copies or substantial portions of the Software.
+@CO	
+@CO	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+@CO	OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+@CO	MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+@CO	IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+@CO	CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+@CO	TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+@CO	SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+@CO	
+@CO	Various I combinations with (P)ads
+@CO	
+@CO	                  1
+@CO	     12345    67890  Depadded base numbering
+@CO	ref  AGCTT    AGCAG
+@CO	
+@CO	s1   AGCTT    AGCAG  10M
+@CO	s2   AGCTTGGCCAGCAG  5M 4I 5M
+@CO	s3   AGCTTGG**AGCAG  5M 2I 2P 5M
+@CO	s4   AGCTT*GC*AGCAG  5M 1P 2I 1P 5M
+@CO	s5   AGCTT**CCAGCAG  5M 2P 2I 5M
+@CO	qual 01234ABCD56789
+s1	0	z	2	0	10M	*	0	0	AGCTTAGCAG	0123456789
+s2	0	z	2	0	5M4I5M	*	0	0	AGCTTGGCCAGCAG	01234ABCD56789
+s3	0	z	2	0	5M2I2P5M	*	0	0	AGCTTGGAGCAG	01234AB56789
+s4	0	z	2	0	5M1P2I1P5M	*	0	0	AGCTTGCAGCAG	01234BC56789
+s5	0	z	2	0	5M2P2I5M	*	0	0	AGCTTCCAGCAG	01234CD56789

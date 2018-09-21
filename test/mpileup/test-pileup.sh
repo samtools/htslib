@@ -25,10 +25,9 @@
 # Load in the test driver
 . ../simple_test_driver.sh
 
-echo "Testing tabix..."
+echo "Testing (m)pileup..."
 
-bgzip="../../bgzip"
-tabix="../../tabix"
+pileup="../pileup"
 
 test_driver $@
 

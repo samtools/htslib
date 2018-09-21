@@ -369,6 +369,7 @@ check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 	test/hfile
 	test/test_bgzf test/bgziptest.txt
 	cd test/tabix && ./test-tabix.sh tabix.tst
+	cd test/mpileup && ./test-pileup.sh mpileup.tst
 	REF_PATH=: test/sam test/ce.fa test/faidx.fa test/fastqs.fq
 	test/test-regidx
 	cd test && REF_PATH=: ./test.pl $${TEST_OPTS:-}
