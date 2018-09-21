@@ -535,7 +535,7 @@ static int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
     // Any ... varargs
     va_start(args, ap);
     for (;;) {
-        char *k, *v;
+        char *k, *v = NULL;
 
         if (!(k = (char *)va_arg(args, char *)))
             break;
@@ -569,7 +569,7 @@ static int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
 
     // Plus the specified va_list params
     for (;;) {
-        char *k, *v;
+        char *k, *v = NULL;
 
         if (!(k = (char *)va_arg(ap, char *)))
             break;
@@ -1100,11 +1100,11 @@ static int init_type_order(SAM_hdr *sh, char *type_list) {
         sh->type_order = calloc(sh->type_count, 3);
         if (!sh->type_order)
             return -1;
-        strncpy(sh->type_order[0], "HD", 2);
-        strncpy(sh->type_order[1], "SQ", 2);
-        strncpy(sh->type_order[2], "RG", 2);
-        strncpy(sh->type_order[3], "PG", 2);
-        strncpy(sh->type_order[4], "CO", 2);
+        memcpy(sh->type_order[0], "HD", 2);
+        memcpy(sh->type_order[1], "SQ", 2);
+        memcpy(sh->type_order[2], "RG", 2);
+        memcpy(sh->type_order[3], "PG", 2);
+        memcpy(sh->type_order[4], "CO", 2);
     }
 
     return 0;
