@@ -151,7 +151,8 @@ static inline char *ks_release(kstring_t *s)
 
 static inline int kputsn(const char *p, size_t l, kstring_t *s)
 {
-    if (l > SIZE_MAX - 2 - s->l || ks_resize(s, s->l + l + 2) < 0)
+	size_t new_sz = s->l + l + 2;
+	if (new_sz < s->l || ks_resize(s, new_sz) < 0)
 		return EOF;
 	memcpy(s->s + s->l, p, l);
 	s->l += l;
@@ -183,7 +184,8 @@ static inline int kputc_(int c, kstring_t *s)
 
 static inline int kputsn_(const void *p, size_t l, kstring_t *s)
 {
-	if (l > SIZE_MAX - s->l || ks_resize(s, s->l + l) < 0)
+	size_t new_sz = s->l + l;
+	if (new_sz < s->l || ks_resize(s, new_sz) < 0)
 		return EOF;
 	memcpy(s->s + s->l, p, l);
 	s->l += l;
@@ -208,7 +210,7 @@ static inline int kputuw(unsigned x, kstring_t *s)
 #else
     uint64_t m;
 #endif
-    static const char kputuw_dig2r[200] =
+    static const char kputuw_dig2r[] =
         "00010203040506070809"
         "10111213141516171819"
         "20212223242526272829"

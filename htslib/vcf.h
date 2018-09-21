@@ -876,14 +876,25 @@ typedef struct {
     enables to handle correctly vectors with different ploidy in presence of
     missing values.
  */
-#define bcf_int8_vector_end  (INT8_MIN+1)
-#define bcf_int16_vector_end (INT16_MIN+1)
-#define bcf_int32_vector_end (INT32_MIN+1)
+#define bcf_int8_vector_end  (-127)         /* INT8_MIN  + 1 */
+#define bcf_int16_vector_end (-32767)       /* INT16_MIN + 1 */
+#define bcf_int32_vector_end (-2147483647)  /* INT32_MIN + 1 */
 #define bcf_str_vector_end   0
-#define bcf_int8_missing     INT8_MIN
-#define bcf_int16_missing    INT16_MIN
-#define bcf_int32_missing    INT32_MIN
+#define bcf_int8_missing     (-128)          /* INT8_MIN  */
+#define bcf_int16_missing    (-32767-1)      /* INT16_MIN */
+#define bcf_int32_missing    (-2147483647-1) /* INT32_MIN */
 #define bcf_str_missing      0x07
+
+// Limits on BCF values stored in given types.  Max values are the same
+// as for the underlying type.  Min values are slightly different as
+// the last 8 values for each type were reserved by BCFv2.2.
+#define BCF_MAX_BT_INT8  (0x7f)        /* INT8_MAX  */
+#define BCF_MAX_BT_INT16 (0x7fff)      /* INT16_MAX */
+#define BCF_MAX_BT_INT32 (0x7fffffff)  /* INT32_MAX */
+#define BCF_MIN_BT_INT8  (-120)        /* INT8_MIN  + 8 */
+#define BCF_MIN_BT_INT16 (-32760)      /* INT16_MIN + 8 */
+#define BCF_MIN_BT_INT32 (-2147483640) /* INT32_MIN + 8 */
+
 extern uint32_t bcf_float_vector_end;
 extern uint32_t bcf_float_missing;
 static inline void bcf_float_set(float *ptr, uint32_t value)
@@ -953,8 +964,8 @@ static inline void bcf_enc_size(kstring_t *s, int size, int type)
 
 static inline int bcf_enc_inttype(long x)
 {
-    if (x <= INT8_MAX && x >= INT8_MIN + 8) return BCF_BT_INT8;
-    if (x <= INT16_MAX && x >= INT16_MIN + 8) return BCF_BT_INT16;
+    if (x <= BCF_MAX_BT_INT8 && x >= BCF_MIN_BT_INT8) return BCF_BT_INT8;
+    if (x <= BCF_MAX_BT_INT16 && x >= BCF_MIN_BT_INT16) return BCF_BT_INT16;
     return BCF_BT_INT32;
 }
 
@@ -966,10 +977,10 @@ static inline void bcf_enc_int1(kstring_t *s, int32_t x)
     } else if (x == bcf_int32_missing) {
         bcf_enc_size(s, 1, BCF_BT_INT8);
         kputc(bcf_int8_missing, s);
-    } else if (x <= INT8_MAX && x >= INT8_MIN + 8) {
+    } else if (x <= BCF_MAX_BT_INT8 && x >= BCF_MIN_BT_INT8) {
         bcf_enc_size(s, 1, BCF_BT_INT8);
         kputc(x, s);
-    } else if (x <= INT16_MAX && x >= INT16_MIN + 8) {
+    } else if (x <= BCF_MAX_BT_INT16 && x >= BCF_MIN_BT_INT16) {
         int16_t z = x;
         bcf_enc_size(s, 1, BCF_BT_INT16);
         kputsn((char*)&z, 2, s);
