@@ -321,12 +321,13 @@ static char *escape_path(const char *path) {
     for (i = 0; i < length; i++) {
         int c = path[i];
 
-        if (c < 0x20 || c > 0x7E || strchr("&@:,$=+?; \\^`><{}][#%\"~|", c)) {
-            sprintf(escaped + j, "%%%02X", c);
-            j += 3;
-        } else {
+        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+             c == '_' || c == '-' || c == '~' || c == '.' || c == '/') {
             sprintf(escaped + j, "%c", c);
             j++;
+        } else {
+            sprintf(escaped + j, "%%%02X", c);
+            j += 3;
         }
     }
 
@@ -453,7 +454,7 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
         kputs(escape_str, &url);
         ad->bucket = escape_path(bucket);
     }
-
+    
     if (!ad->bucket)
         goto fail;
 
