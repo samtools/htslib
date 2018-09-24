@@ -1301,7 +1301,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     if ((p-q)+4 > SIZE_MAX - s->l || ks_resize(&str, str.l+(p-q)+4) < 0) goto err_ret;
     memcpy(str.s+str.l, q, p-q); str.l += p-q;
 
-    c->l_extranul = 4-(str.l % 4); if (c->l_extranul == 0) c->l_extranul = 0;
+    c->l_extranul = (4 - (str.l & 3)) & 3;
     memcpy(str.s+str.l, "\0\0\0\0", c->l_extranul); str.l += c->l_extranul;
 
     c->l_qname = p - q + c->l_extranul;
