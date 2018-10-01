@@ -1,5 +1,5 @@
 [![Build Status](https://travis-ci.org/samtools/htslib.svg?branch=develop)](https://travis-ci.org/samtools/htslib)
-[![Build status](https://ci.appveyor.com/api/projects/status/66umpo7yismqx1nd/branch/develop?svg=true)](https://ci.appveyor.com/project/samtools/htslib/branch/develop)
+[![Build status](https://ci.appveyor.com/api/projects/status/v46hkwyfjp3l8nd3/branch/develop?svg=true)](https://ci.appveyor.com/project/samtools/htslib/branch/develop)
 [![Github All Releases](https://img.shields.io/github/downloads/samtools/htslib/total.svg)](https://github.com/samtools/htslib)
 
 HTSlib is an implementation of a unified C library for accessing common file
