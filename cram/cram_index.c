@@ -364,6 +364,7 @@ cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
 
     case HTS_IDX_NOCOOR:
         refid = -1;
+        pos = 0;
         break;
 
     case HTS_IDX_START: {
@@ -491,7 +492,9 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
 
     pthread_mutex_lock(&fd->range_lock);
     fd->range = *r;
-    if (r->refid == HTS_IDX_START || r->refid == HTS_IDX_REST)
+    if (r->refid == HTS_IDX_NOCOOR)
+        fd->range.refid = -1;
+    else if (r->refid == HTS_IDX_START || r->refid == HTS_IDX_REST)
         fd->range.refid = -2; // special case in cram_next_slice
     pthread_mutex_unlock(&fd->range_lock);
 
