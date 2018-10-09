@@ -686,7 +686,7 @@ static hFILE *hopen_fd_fileuri(const char *url, const char *mode)
     else if (strncmp(url, "file:///", 8) == 0) url += 7;
     else { errno = EPROTONOSUPPORT; return NULL; }
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__MSYS__)
     // For cases like C:/foo
     if (url[0] == '/' && url[2] == ':' && url[3] == '/') url++;
 #endif
