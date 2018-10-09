@@ -97,7 +97,7 @@ char *tokenise_search_path(char *searchpath) {
     char *newsearch;
     unsigned int i, j;
     size_t len;
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__MSYS__)
     char path_sep = ';';
 #else
     char path_sep = ':';
