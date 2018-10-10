@@ -3639,7 +3639,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
             return NULL;
 
         if (header_len != hread(fd->fp, header, header_len)) {
-	    free(header)
+            free(header)
             return NULL;
 	}
         header[header_len] = '\0';
