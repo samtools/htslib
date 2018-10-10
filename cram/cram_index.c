@@ -229,7 +229,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
             goto fail;
 
         e.end += e.start-1;
-        //printf("%d/%d..%d\n", e.refid, e.start, e.end);
+        //printf("%d/%d..%d-offset=%" PRIu64 ",len=%d,slice=%d\n", e.refid, e.start, e.end, e.offset, e.len, e.slice);
 
         if (e.refid < -1) {
             hts_log_error("Malformed index file, refid %d", e.refid);
