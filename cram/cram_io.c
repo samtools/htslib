@@ -3638,8 +3638,10 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
         if (header_len < 0 || NULL == (header = malloc((size_t) header_len+1)))
             return NULL;
 
-        if (header_len != hread(fd->fp, header, header_len))
+        if (header_len != hread(fd->fp, header, header_len)) {
+	    free(header)
             return NULL;
+	}
         header[header_len] = '\0';
 
         fd->first_container += 4 + header_len;
