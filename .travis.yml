@@ -1,33 +1,52 @@
 # Control file for continuous integration testing at http://travis-ci.org/
 
 language: c
-compiler:
-  - clang
-  - gcc
-
-os:
-  - linux
-  - osx
-
-env:
-  - USE_CONFIG=no
-  - USE_CONFIG=yes
 
 matrix:
   include:
-  - compiler: gcc
+  - compiler: gcc-8
     os: linux
-    env: USE_CONFIG=yes USE_LIBDEFLATE=yes
+    env: USE_CONFIG=yes CC=gcc-8 AR=gcc-ar-8
+    addons:
+      apt:
+        sources:
+          - ubuntu-toolchain-r-test
+        packages:
+          - gcc-8
+
+  - compiler: gcc-8
+    os: linux
+    env: USE_CONFIG=yes USE_LIBDEFLATE=yes CC=gcc-8 AR=gcc-ar-8
+    addons:
+      apt:
+        sources:
+          - ubuntu-toolchain-r-test
+        packages:
+          - gcc-8
+
+  - compiler: clang
+    os: osx
+    env: USE_CONFIG=no
+
+  - compiler: clang
+    os: osx
+    env: USE_CONFIG=yes
+
   - compiler: clang
     os: osx
     env: USE_CONFIG=yes USE_LIBDEFLATE=yes
 
-# For linux systems
-addons:
-  apt:
-    packages:
-    - liblzma-dev
-    - libbz2-dev
+  - compiler: gcc
+    os: linux
+    env: USE_CONFIG=no
+
+  - compiler: gcc
+    os: linux
+    env: USE_CONFIG=yes
+
+  - compiler: clang
+    os: linux
+    env: USE_CONFIG=yes
 
 # For MacOSX systems
 before_install:
