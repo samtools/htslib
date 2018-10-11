@@ -1558,6 +1558,7 @@ err_ret:
  * 10m.u.bam    ~4.7s (1)   ~1.6s (10)
  * 10m.sam      ~6.3s (1)   ~1.0s (10)
  */
+// Size of sam text block
 #define NM 240000
 
 struct SAM_fd;
@@ -1707,7 +1708,7 @@ void *sam_parse_worker(void *arg) {
 
     // Use a block of BAM structs we had earlier if available.
     pthread_mutex_lock(&fd->lines_m);
-    if (fd->bams) { 
+    if (fd->bams) {
         gb = fd->bams;
         fd->bams = gb->next;
     } else {
