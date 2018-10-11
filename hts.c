@@ -2670,8 +2670,10 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
 
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
-            if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0)
+            if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
+                hts_log_error("Seek at offset %" PRIu64 " failed.", iter->curr_off);
                 return -1;
+            }
             iter->curr_off = 0; // only seek once
         }
 
@@ -2691,39 +2693,39 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
     for (;;) {
         if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
             if (iter->i == iter->n_off - 1) { // no more chunks, except NOCOORs
-               if (iter->nocoor) {
-                   if (iter->seek(fp, iter->nocoor_off, SEEK_SET) < 0)
-                       return -1;
+                if (iter->nocoor) {
+                    if (iter->seek(fp, iter->nocoor_off, SEEK_SET) < 0) {
+                        hts_log_error("Seek at offset %" PRIu64 " failed.", iter->nocoor_off);
+                        return -1;
+                    }
 
-                   //The first slice covering the unmapped reads might contain a few mapped reads, so scroll
-                   //forward until finding the first unmapped read.
-                   do {
-                       ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
-                   } while (tid >= 0 && ret >=0);
+                    //The first slice covering the unmapped reads might contain a few mapped reads, so scroll
+                    //forward until finding the first unmapped read.
+                    do {
+                        ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
+                    } while (tid >= 0 && ret >=0);
 
-                   if (ret < 0)
-                       iter->finished = 1;
-                   else
-                       iter->read_rest = 1;
+                    if (ret < 0)
+                        iter->finished = 1;
+                    else
+                        iter->read_rest = 1;
 
-                   iter->curr_tid = tid;
-                   iter->curr_beg = beg;
-                   iter->curr_end = end;
+                    iter->curr_off = 0; // don't seek any more
+                    iter->curr_tid = tid;
+                    iter->curr_beg = beg;
+                    iter->curr_end = end;
 
-                   return ret;
-               } else {
-                   ret = -1; break;
-               }
-            }
-
-            if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-                if (iter->seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) {
+                    return ret;
+                } else {
+                    ret = -1; break;
+                }
+            } else if (iter->i < iter->n_off - 1) {
+                iter->curr_off = iter->off[++iter->i].u;
+                if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
+                    hts_log_error("Seek at offset %" PRIu64 " failed.", iter->curr_off);
                     return -1;
                 }
-
-                iter->curr_off = iter->tell(fp);
             }
-            ++iter->i;
         }
 
         ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
@@ -2731,6 +2733,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
             break;
 
         iter->curr_off = iter->tell(fp);
+        //printf("tid=%d,beg=%u,end=%u,tell=%" PRIu64 "\n", tid, beg, end, iter->curr_off);
         if (tid != iter->curr_tid) {
             hts_reglist_t key;
             key.tid = tid;
