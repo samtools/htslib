@@ -28,8 +28,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef _CRAM_SAMTOOLS_H_
-#define _CRAM_SAMTOOLS_H_
+#ifndef CRAM_SAMTOOLS_H
+#define CRAM_SAMTOOLS_H
 
 /* Samtools compatible API */
 #define bam_blk_size(b)  ((b)->l_data)
@@ -97,4 +97,4 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
 }
 #endif
 
-#endif /* _CRAM_SAMTOOLS_H_ */
+#endif /* CRAM_SAMTOOLS_H */

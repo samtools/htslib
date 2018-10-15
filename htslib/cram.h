@@ -46,7 +46,7 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
-#ifndef _CRAM_STRUCTS_H_
+#ifndef HTSLIB_CRAM_STRUCTS_H
 enum cram_block_method {
     BM_ERROR = -1,
     RAW      = 0,

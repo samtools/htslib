@@ -259,7 +259,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
         max /= sum; sum *= s[i]; // if everything works as is expected, sum == 1.0
         if (state) state[i-1] = max_k;
         if (q) k = (int)(-4.343 * log(1. - max) + .499), q[i-1] = k > 100? 99 : k;
-#ifdef _MAIN
+#ifdef PROBALN_MAIN
         k = 0;
         set_u(k, bw, 0, 0);
         fprintf(stderr, "(%.10lg,%.10lg) (%d,%d:%c,%c:%d) %lg\n", b[0][k], sum, i-1, max_k>>2,
@@ -275,7 +275,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
     return INT_MIN;
 }
 
-#ifdef _MAIN
+#ifdef PROBALN_MAIN
 #include <unistd.h>
 int main(int argc, char *argv[])
 {

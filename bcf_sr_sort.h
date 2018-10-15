@@ -31,8 +31,8 @@
 
 */
 
-#ifndef __BCF_SR_SORT_H__
-#define __BCF_SR_SORT_H__
+#ifndef BCF_SR_SORT_H
+#define BCF_SR_SORT_H
 
 #include "htslib/synced_bcf_reader.h"
 #include "htslib/kbitset.h"

@@ -28,8 +28,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef _CRAM_ENCODINGS_H_
-#define _CRAM_ENCODINGS_H_
+#ifndef CRAM_CODECS_H
+#define CRAM_CODECS_H
 
 #include <inttypes.h>
 
@@ -192,4 +192,4 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c);
 }
 #endif
 
-#endif /* _CRAM_ENCODINGS_H_ */
+#endif /* CRAM_CODECS_H */

@@ -28,8 +28,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef _CRAM_STRUCTS_H_
-#define _CRAM_STRUCTS_H_
+#ifndef HTSLIB_CRAM_STRUCTS_H
+#define HTSLIB_CRAM_STRUCTS_H
 
 /*
  * Defines in-memory structs for the basic file-format objects in the
@@ -855,4 +855,4 @@ enum cram_fields {
 }
 #endif
 
-#endif /* _CRAM_STRUCTS_H_ */
+#endif /* HTSLIB_CRAM_STRUCTS_H */

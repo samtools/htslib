@@ -72,8 +72,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
-#ifndef _OS_H_
-#define _OS_H_
+#ifndef CRAM_OS_H
+#define CRAM_OS_H
 
 #include <limits.h>
 #include <inttypes.h>
@@ -160,22 +160,6 @@ static inline uint16_t le_int2(uint16_t x) {
 #endif
 
 /*-----------------------------------------------------------------------------
- * <inttypes.h> definitions, incase they're not present
- */
-
-#ifndef PRId64
-#define __PRI64__ "l"
-#define PRId64 __PRI64__ "d"
-#define PRId32 "d"
-#define PRId16 "d"
-#define PRId8  "d"
-#define PRIu64 __PRI64__ "u"
-#define PRIu32 "u"
-#define PRIu16 "u"
-#define PRIu8  "u"
-#endif
-
-/*-----------------------------------------------------------------------------
  * Operating system specifics.
  * These ought to be done by autoconf, but are legacy code.
  */
@@ -217,4 +201,4 @@ static inline uint16_t le_int2(uint16_t x) {
 }
 #endif
 
-#endif /*_OS_H_*/
+#endif /* CRAM_OS_H */

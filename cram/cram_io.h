@@ -39,8 +39,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * maps, bitwise I/O, etc.
  */
 
-#ifndef _CRAM_IO_H_
-#define _CRAM_IO_H_
+#ifndef CRAM_IO_H
+#define CRAM_IO_H
 
 #include <stdint.h>
 #include <cram/misc.h>
@@ -914,4 +914,4 @@ static inline struct hFILE *cram_hfile(cram_fd *fd) {
 }
 #endif
 
-#endif /* _CRAM_IO_H_ */
+#endif /* CRAM_IO_H */

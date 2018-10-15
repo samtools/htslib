@@ -61,8 +61,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef _OPEN_TRACE_FILE_H_
-#define _OPEN_TRACE_FILE_H_
+#ifndef OPEN_TRACE_FILE_H
+#define OPEN_TRACE_FILE_H
 
 #include "cram/mFILE.h"
 
@@ -122,4 +122,4 @@ char *find_path(const char *file, const char *path);
 }
 #endif
 
-#endif /* _OPEN_TRACE_FILE_H_ */
+#endif /* OPEN_TRACE_FILE_H */

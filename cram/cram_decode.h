@@ -38,8 +38,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * cram_codecs.[ch] for the actual encoding functions themselves.
  */
 
-#ifndef _CRAM_READ_H_
-#define _CRAM_READ_H_
+#ifndef CRAM_DECODE_H
+#define CRAM_DECODE_H
 
 #ifdef __cplusplus
 extern "C" {
