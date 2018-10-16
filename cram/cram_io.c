@@ -3592,6 +3592,7 @@ cram_file_def *cram_read_file_def(cram_fd *fd) {
     }
 
     fd->first_container += 26;
+    fd->curr_position = fd->first_container;
     fd->last_slice = 0;
 
     return def;
@@ -3655,6 +3656,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
             return NULL;
 
         fd->first_container += c->length + c->offset;
+        fd->curr_position = fd->first_container;
 
         if (c->num_blocks < 1) {
             cram_free_container(c);
@@ -4097,6 +4099,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->fp = fp;
     fd->mode = *mode;
     fd->first_container = 0;
+    fd->curr_position = 0;
 
     if (fd->mode == 'r') {
         /* Reader */

@@ -738,6 +738,7 @@ typedef struct cram_fd {
     int         index_sz;
     cram_index *index;                  // array, sizeof index_sz
     off_t first_container;
+    off_t curr_position;
     int eof;
     int last_slice;                     // number of recs encoded in last slice
     int multi_seq;
