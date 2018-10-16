@@ -2733,7 +2733,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
             break;
 
         iter->curr_off = iter->tell(fp);
-        //printf("tid=%d,beg=%u,end=%u,tell=%" PRIu64 "\n", tid, beg, end, iter->curr_off);
+
         if (tid != iter->curr_tid) {
             hts_reglist_t key;
             key.tid = tid;
