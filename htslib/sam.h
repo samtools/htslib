@@ -387,10 +387,19 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
     int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b) HTS_RESULT_USED;
     int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str) HTS_RESULT_USED;
 
-    /*!
-     *  @return >= 0 on successfully reading a new record, -1 on end of stream, < -1 on error
-     **/
+/// sam_read1 - Read a record from a file
+/** @param fp   Pointer to the source file
+ *  @param h    Pointer to the header previously read (fully or partially)
+ *  @param b    Pointer to the record placeholder
+ *  @return >= 0 on successfully reading a new record, -1 on end of stream, < -1 on error
+ */
     int sam_read1(samFile *fp, bam_hdr_t *h, bam1_t *b) HTS_RESULT_USED;
+/// sam_write1 - Write a record to a file
+/** @param fp    Pointer to the destination file
+ *  @param h     Pointer to the header structure previously read
+ *  @param b     Pointer to the record to be written
+ *  @return >= 0 on successfully writing the record, -1 on error
+ */
     int sam_write1(samFile *fp, const bam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
 
     /*************************************
