@@ -401,7 +401,7 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
  *  @param b     Pointer to the record to be written
  *  @return >= 0 on successfully writing the record, -1 on error
  */
-    int sam_write1(samFile *fp, const bam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
+    int sam_write1(samFile *fp, bam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
 
     int sam_state_destroy(samFile *fp);
     int sam_set_thread_pool(htsFile *fp, htsThreadPool *p);

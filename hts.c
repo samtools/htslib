@@ -1066,7 +1066,7 @@ BGZF *hts_get_bgzfp(htsFile *fp);
 
 int hts_set_threads(htsFile *fp, int n)
 {
-    if (fp->format.format == sam && !fp->is_write) {
+    if (fp->format.format == sam) {
         return sam_set_threads(fp, n);
     } else if (fp->format.compression == bgzf) {
         return bgzf_mt(hts_get_bgzfp(fp), n, 256/*unused*/);
@@ -1077,7 +1077,7 @@ int hts_set_threads(htsFile *fp, int n)
 }
 
 int hts_set_thread_pool(htsFile *fp, htsThreadPool *p) {
-    if (fp->format.format == sam && !fp->is_write) {
+    if (fp->format.format == sam || fp->format.format == text_format /* FIXME: get this to SAM somehow */) {
         return sam_set_thread_pool(fp, p);
     } else if (fp->format.compression == bgzf) {
         return bgzf_thread_pool(hts_get_bgzfp(fp), p->pool, p->qsize);

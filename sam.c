@@ -62,9 +62,9 @@ bam_hdr_t *bam_hdr_init()
 void bam_hdr_destroy(bam_hdr_t *h)
 {
     int32_t i;
+    if (h == NULL) return;
     if (h->ref_count-- > 0) return;
 
-    if (h == NULL) return;
     if (h->target_name) {
         for (i = 0; i < h->n_targets; ++i)
             free(h->target_name[i]);
@@ -462,6 +462,10 @@ static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data, int is_ho
     for (i = 0; i < c->n_cigar; ++i) ed_swap_4p(&cigar[i]);
 }
 
+/*
+ * Note a second interface that returns a bam pointer instead would avoid bam_copy1
+ * in multi-threaded handling.  This may be worth considering for htslib2.
+ */
 int bam_read1(BGZF *fp, bam1_t *b)
 {
     bam1_core_t *c = &b->core;
@@ -1554,25 +1558,25 @@ err_ret:
 /*
  * -----------------------------------------------------------------------------
  * SAM threading
- *
- * 10m.u.bam    ~4.7s (1)   ~1.6s (10)
- * 10m.sam      ~6.3s (1)   ~1.0s (10)
  */
-// Size of sam text block
+// Size of SAM text block (reading)
 #define NM 240000
+// Number of BAM records (writing)
+#define NB 1000
 
-struct SAM_fd;
+struct SAM_state;
 
 // Input job - a block of SAM text
 typedef struct sp_lines {
     struct sp_lines *next;
     int serial;
 
+    // FIXME: replace by kstring
     char *data;
     int data_size;
     int alloc;
 
-    struct SAM_fd *fd;
+    struct SAM_state *fd;
 } sp_lines;
 
 // Output job - a block of BAM records
@@ -1583,7 +1587,7 @@ typedef struct sp_bams {
     bam1_t *bams;
     int nbams, abams; // used and alloc
 
-    struct SAM_fd *fd;
+    struct SAM_state *fd;
 } sp_bams;
 
 enum sam_cmd {
@@ -1592,7 +1596,7 @@ enum sam_cmd {
     SAM_CLOSE,
 };
 
-typedef struct SAM_fd {
+typedef struct SAM_state {
     bam_hdr_t *h;
 
     hts_tpool *p;
@@ -1606,23 +1610,29 @@ typedef struct SAM_fd {
 
     sp_bams *curr_bam;
     int curr_idx;
-    //bam1_t b; // current bam (sam_read1x)
+    int serial;
 
     // Be warned: moving these mutexes around in this struct can reduce
     // threading performance by up to 70%!
     pthread_mutex_t command_m;
     pthread_cond_t command_c;
     enum sam_cmd command;
-} SAM_fd;
 
-// Returns a SAM_fd struct from a generic hFILE.
+    int errcode;
+} SAM_state;
+
+// Returns a SAM_state struct from a generic hFILE.
 //
 // Returns NULL on failure.
-static SAM_fd *sam_state_create(htsFile *fp) {
-    if (fp->format.format != sam)
+static SAM_state *sam_state_create(htsFile *fp) {
+    // Ideally sam_open wouldn't be a #define to hts_open but instead would
+    // be a redirect call with an additional 'S' mode.  This in turn would
+    // correctly set the designed format to sam instead of a generic
+    // text_format.
+    if (fp->format.format != sam && fp->format.format != text_format /* FIXME */)
         return NULL;
 
-    SAM_fd *fd = calloc(1, sizeof(*fd));
+    SAM_state *fd = calloc(1, sizeof(*fd));
     if (!fd)
         return NULL;
 
@@ -1632,25 +1642,56 @@ static SAM_fd *sam_state_create(htsFile *fp) {
 }
 
 // Destroys the state produce by sam_state_create.
+static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *str);
+static void *sam_format_worker(void *arg);
 int sam_state_destroy(htsFile *fp) {
-    if (fp->format.format != sam)
+    int ret = 0;
+
+    if (fp->format.format != sam && fp->format.format != text_format /* FIXME */)
         return -1;
 
     if (!fp->state)
         return 0;
 
-    SAM_fd *fd = fp->state;
+    SAM_state *fd = fp->state;
     if (fd->p) {
         if (fd->h) {
             // Notify sam_dispatcher we're closing
             pthread_mutex_lock(&fd->command_m);
             fd->command = SAM_CLOSE;
             pthread_cond_signal(&fd->command_c);
-            hts_tpool_wake_dispatch(fd->q); // unstick the reader
+            ret = -fd->errcode;
+            if (!ret) hts_tpool_wake_dispatch(fd->q); // unstick the reader
             pthread_mutex_unlock(&fd->command_m);
+
+            if (fp->is_write) {
+                // Dispatch the last partial block.
+                sp_bams *gb = fd->curr_bam;
+                if (!ret && gb && gb->nbams > 0)
+                    hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb);
+
+                // Flush and drain output
+                pthread_mutex_lock(&fd->command_m);
+                ret = -fd->errcode;
+                pthread_mutex_unlock(&fd->command_m);
+
+                hts_tpool_process_flush(fd->q);
+                pthread_mutex_lock(&fd->command_m);
+                ret = -fd->errcode;
+                pthread_mutex_unlock(&fd->command_m);
+
+                while (!ret && !hts_tpool_process_empty(fd->q)) {
+                    usleep(10000);
+                    pthread_mutex_lock(&fd->command_m);
+                    ret = -fd->errcode;
+                    pthread_mutex_unlock(&fd->command_m);
+                }
+                hts_tpool_process_shutdown(fd->q);
+            }
 
             // Wait for it to acknowledge
             pthread_join(fd->dispatcher, NULL);
+            ret = fd->errcode;
         }
 
         // Tidy up memory
@@ -1688,7 +1729,7 @@ int sam_state_destroy(htsFile *fp) {
     }
 
     free(fp->state);
-    return 0;
+    return ret;
 }
 
 // Run from one of the worker threads.
@@ -1705,7 +1746,7 @@ void *sam_parse_worker(void *arg) {
     char *lines = gl->data;
     int i;
     bam1_t *b;
-    SAM_fd *fd = gl->fd;
+    SAM_state *fd = gl->fd;
 
     // Use a block of BAM structs we had earlier if available.
     pthread_mutex_lock(&fd->lines_m);
@@ -1773,11 +1814,11 @@ void *sam_parse_eof(void *arg) {
 // Runs in the main thread.
 // Reads a block of text (SAM) and sends a new job to the thread queue to
 // translate this to BAM.
-static void *sam_dispatcher(void *vp) {
+static void *sam_dispatcher_read(void *vp) {
     htsFile *fp = vp;
     kstring_t line = {0};
     int line_frag = 0;
-    SAM_fd *fd = fp->state;
+    SAM_state *fd = fp->state;
     sp_lines *l = NULL;
 
     for (;;) {
@@ -1870,8 +1911,7 @@ static void *sam_dispatcher(void *vp) {
             line_frag = 0;
         }
 
-        static int serial = 0;
-        l->serial = serial++;
+        l->serial = fd->serial++;
         //fprintf(stderr, "Dispatching %p, %d bytes, serial %d\n", l, l->data_size, l->serial);
         hts_tpool_dispatch(fd->p, fd->q, sam_parse_worker, l);
     }
@@ -1910,13 +1950,101 @@ static void *sam_dispatcher(void *vp) {
     return NULL;
 }
 
+// Runs in the main thread.
+// Takes encoded blocks of SAM off the thread results queue and writes them
+// to our output stream.
+static void *sam_dispatcher_write(void *vp) {
+    htsFile *fp = vp;
+    SAM_state *fd = fp->state;
+    hts_tpool_result *r;
+
+    // Iterates until result queue is shutdown, where it returns NULL.
+    while ((r = hts_tpool_next_result_wait(fd->q))) {
+        sp_lines *gl = (sp_lines *)hts_tpool_result_data(r);
+        assert(gl);
+
+        if (hwrite(fp->fp.hfile, gl->data, gl->data_size) != gl->data_size) {
+            pthread_mutex_lock(&fd->command_m);
+            fd->errcode |= BGZF_ERR_IO;
+            pthread_mutex_unlock(&fd->command_m);
+            goto err;
+        }
+
+        hts_tpool_delete_result(r, 0);
+
+        // Also updated by main thread
+        pthread_mutex_lock(&fd->lines_m);
+        gl->next = fd->lines;
+        fd->lines = gl;
+        pthread_mutex_unlock(&fd->lines_m);
+    }
+
+    pthread_mutex_lock(&fd->command_m);
+    fd->errcode = 0;
+    pthread_mutex_unlock(&fd->command_m);
+    return NULL;
+
+ err:
+    return (void *)-1;
+}
+
+// Run from one of the worker threads.
+// Convert a passed in array of BAMs (sp_bams) and converts to a block
+// of text SAM records (sp_lines).
+static void *sam_format_worker(void *arg) {
+    sp_bams *gb = (sp_bams *)arg;
+    sp_lines *gl;
+    int i;
+    SAM_state *fd = gb->fd;
+
+    // Use a block of SAM strings we had earlier if available.
+    pthread_mutex_lock(&fd->lines_m);
+    if (fd->lines) {
+        gl = fd->lines;
+        fd->lines = gl->next;
+    } else {
+        gl = calloc(1, sizeof(*gb));
+        if (!gl) {
+            fd->errcode = ENOMEM;
+            return NULL;
+        }
+        gl->alloc = gl->data_size = 0;
+        gl->data = NULL;
+    }
+    gl->serial = gb->serial;
+    gl->next = NULL;
+    pthread_mutex_unlock(&fd->lines_m);
+
+    kstring_t ks = {0, gl->alloc, gl->data};
+
+    for (i = 0; i < gb->nbams; i++) {
+        if (sam_format1_append(fd->h, &gb->bams[i], &ks) < 0) {
+            fd->errcode = EIO;
+            return NULL;
+        }
+        kputc('\n', &ks);
+    }
+
+    gl->data_size = ks.l;
+    gl->alloc = ks.m;
+    gl->data = ks.s;
+
+    // Add bam array to free-list
+    pthread_mutex_lock(&fd->lines_m);
+    gb->next = fd->bams;
+    fd->bams = gb;
+    pthread_mutex_unlock(&fd->lines_m);
+
+    return gl;
+}
+
 int sam_set_thread_pool(htsFile *fp, htsThreadPool *p) {
     if (fp->state)
         return 0;
 
     if (!(fp->state = sam_state_create(fp)))
         return -1;
-    SAM_fd *fd = (SAM_fd *)fp->state;
+    SAM_state *fd = (SAM_state *)fp->state;
 
     // FIXME: add checks
     pthread_mutex_init(&fd->lines_m, NULL);
@@ -1946,7 +2074,7 @@ int sam_set_threads(htsFile *fp, int nthreads) {
     if (ret < 0)
         return ret;
 
-    SAM_fd *fd = (SAM_fd *)fp->state;
+    SAM_state *fd = (SAM_state *)fp->state;
     fd->own_pool = 1;
 
     return 0;
@@ -1984,7 +2112,7 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
         }
 
         if (fp->state) {
-            SAM_fd *fd = (SAM_fd *)fp->state;
+            SAM_state *fd = (SAM_state *)fp->state;
 
             if (!fd->h) {
                 fd->h = h;
@@ -2000,7 +2128,7 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
                 }
 
                 // We can only do this once we've got a header
-                pthread_create(&fd->dispatcher, NULL, sam_dispatcher, fp);
+                pthread_create(&fd->dispatcher, NULL, sam_dispatcher_read, fp);
             }
 
             if (fd->h != h) {
@@ -2053,7 +2181,7 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
     }
 }
 
-int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
+static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 {
     int i;
     uint8_t *s, *end;
@@ -2061,7 +2189,6 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 
     if (c->l_qname == 0)
         abort();
-    str->l = 0;
     kputsn_(bam_get_qname(b), c->l_qname-1-c->l_extranul, str); kputc_('\t', str); // query name
     kputw(c->flag, str); kputc_('\t', str); // flag
     if (c->tid >= 0) { // chr
@@ -2245,7 +2372,15 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
     return -1;
 }
 
-int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
+int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
+{
+    str->l = 0;
+    return sam_format1_append(h, b, str);
+}
+
+// Sadly we need to be able to modify the bam_hdr here so we can
+// reference count the structure.
+int sam_write1(htsFile *fp, bam_hdr_t *h, const bam1_t *b)
 {
     switch (fp->format.format) {
     case binary_format:
@@ -2263,10 +2398,70 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
         fp->format.format = sam;
         /* fall-through */
     case sam:
-        if (sam_format1(h, b, &fp->line) < 0) return -1;
-        kputc('\n', &fp->line);
-        if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
-        return fp->line.l;
+        if (fp->state) {
+            SAM_state *fd = (SAM_state *)fp->state;
+
+            // Threaded output
+            if (!fd->h) {
+                fd->h = h;
+                h->ref_count++;
+
+                pthread_create(&fd->dispatcher, NULL, sam_dispatcher_write, fp);
+            }
+
+            if (fd->h != h) {
+                hts_log_error("SAM multi-threaded decoding does not support changing header");
+                return -2;
+            }
+
+            // Find a suitable BAM array to copy to
+            sp_bams *gb = fd->curr_bam;
+            if (!gb) {
+                pthread_mutex_lock(&fd->lines_m);
+                if (fd->bams) {
+                    fd->curr_bam = gb = fd->bams;
+                    fd->bams = gb->next;
+                    gb->next = NULL;
+                    gb->nbams = 0;
+                    pthread_mutex_unlock(&fd->lines_m);
+                } else {
+                    pthread_mutex_unlock(&fd->lines_m);
+                    if (!(gb = calloc(1, sizeof(*gb)))) return -1;
+                    if (!(gb->bams = calloc(NB, sizeof(*gb->bams)))) return -1;
+                    gb->nbams = 0;
+                    gb->abams = NB;
+                    gb->fd = fd;
+                    fd->curr_idx = 0;
+                    fd->curr_bam = gb;
+                }
+            }
+
+            bam_copy1(&gb->bams[gb->nbams++], b);
+
+            // Dispatch if full
+            if (gb->nbams == NB) {
+                gb->serial = fd->serial++;
+                //fprintf(stderr, "Dispatch another %d bams\n", NB);
+                pthread_mutex_lock(&fd->command_m);
+                if (fd->errcode != 0) {
+                    pthread_mutex_unlock(&fd->command_m);
+                    return -fd->errcode;
+                }
+                hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb);
+                pthread_mutex_unlock(&fd->command_m);
+                fd->curr_bam = NULL;
+            }
+
+            // Dummy value as we don't know how long it really is.
+            // We could track file sizes via a SAM_state field, but I don't think
+            // it is necessary.
+            return 1;
+        } else {
+            if (sam_format1(h, b, &fp->line) < 0) return -1;
+            kputc('\n', &fp->line);
+            if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
+            return fp->line.l;
+        }
 
     default:
         abort();
