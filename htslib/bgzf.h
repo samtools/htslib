@@ -3,7 +3,7 @@
 /*
    Copyright (c) 2008 Broad Institute / Massachusetts Institute of Technology
                  2011, 2012 Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2009, 2013, 2014,2017 Genome Research Ltd
+   Copyright (C) 2009, 2013, 2014, 2017, 2018 Genome Research Ltd
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -53,6 +53,7 @@ extern "C" {
 
 struct hFILE;
 struct hts_tpool;
+struct kstring_t;
 struct bgzf_mtaux_t;
 typedef struct __bgzidx_t bgzidx_t;
 typedef struct bgzf_cache_t bgzf_cache_t;
@@ -76,14 +77,6 @@ struct BGZF {
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;
 #define HTS_BGZF_TYPEDEF
-#endif
-
-#ifndef KSTRING_T
-#define KSTRING_T kstring_t
-typedef struct __kstring_t {
-    size_t l, m;
-    char *s;
-} kstring_t;
 #endif
 
     /******************
@@ -275,7 +268,7 @@ typedef struct __kstring_t {
      * @param str    string to write to; must be initialized
      * @return       length of the string; -1 on end-of-file; <= -2 on error
      */
-    int bgzf_getline(BGZF *fp, int delim, kstring_t *str);
+    int bgzf_getline(BGZF *fp, int delim, struct kstring_t *str);
 
     /**
      * Read the next BGZF block.
