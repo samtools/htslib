@@ -955,8 +955,8 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
             return -1;
         s->ref_id = DS_ref; // needed?
         BLOCK_APPEND(s->block[DS_ref],
-                     c->ref + c->first_base - c->ref_start,
-                     c->last_base - c->first_base + 1);
+                     c->ref + s->hdr->ref_seq_start - c->ref_start,
+                     s->hdr->ref_seq_span);
     }
 
     /*
