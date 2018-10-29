@@ -70,7 +70,7 @@
  * destroyed with  free(str.s);  */
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
-typedef struct __kstring_t {
+typedef struct kstring_t {
 	size_t l, m;
 	char *s;
 } kstring_t;
