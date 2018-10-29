@@ -642,7 +642,7 @@ typedef struct {
     bam1_t *b;
     int32_t qpos;
     int indel, level;
-    uint32_t is_del:1, is_head:1, is_tail:1, is_refskip:1, aux:28;
+    uint32_t is_del:1, is_head:1, is_tail:1, is_refskip:1, /* reserved */ :1, aux:27;
     bam_pileup_cd cd; // generic per-struct data, owned by caller.
     int cigar_ind;
 } bam_pileup1_t;
