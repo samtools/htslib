@@ -71,7 +71,7 @@ int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
         return EXIT_FAILURE;
     }
     h->ignore_sam_err = opts->ignore_sam_err;
-    if (opts->extra_hdr_nuls) {
+    if (opts->extra_hdr_nuls > 0) {
         char *new_text = realloc(h->text, h->l_text + opts->extra_hdr_nuls);
         if (new_text == NULL) {
             fprintf(stderr, "Error reallocing header text\n");

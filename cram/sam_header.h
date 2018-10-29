@@ -220,7 +220,6 @@ typedef struct {
     // @cond internal
     char ID_buf[1024];  // temporary buffer
     int ID_cnt;
-    int ref_count;      // number of uses of this SAM_hdr
     // @endcond
 
     int dirty;                // marks the header as modified, so it can be rebuilt
@@ -363,9 +362,6 @@ SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
                               char *key,
                               SAM_hdr_tag **prev);
 
-int sam_hdr_remove_key(SAM_hdr *sh,
-        SAM_hdr_type *type,
-        char *key);
 
 /*! Adds or updates tag key,value pairs in a header line.
  *
