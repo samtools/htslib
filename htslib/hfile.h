@@ -1,7 +1,7 @@
 /// @file htslib/hfile.h
 /// Buffered low-level input/output streams.
 /*
-    Copyright (C) 2013-2016 Genome Research Ltd.
+    Copyright (C) 2013-2018 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -37,6 +37,8 @@ extern "C" {
 #endif
 
 struct hFILE_backend;
+struct kstring_t;
+
 /// Low-level input/output stream handle
 /** The fields of this structure are declared here solely for the benefit
 of the hFILE-related inline functions.  They may change in future releases.
@@ -81,6 +83,20 @@ hFILE *hdopen(int fd, const char *mode) HTS_RESULT_USED;
 that callers may wish to cache such files' contents locally.
 */
 int hisremote(const char *filename) HTS_RESULT_USED;
+
+/// Append an extension or replace an existing extension
+/** @param buffer     The kstring to be used to store the modified filename
+    @param filename   The filename to be (copied and) adjusted
+    @param replace    If non-zero, one extension (if any) is removed first
+    @param extension  The extension to be added (e.g. ".csi")
+    @return  The modified filename (i.e., `buffer->s`), or NULL on error.
+    @since   1.10
+
+If _filename_ is an URL, alters extensions at the end of the `hier-part`,
+leaving any trailing `?query` or `#fragment` unchanged.
+*/
+char *haddextension(struct kstring_t *buffer, const char *filename,
+                    int replace, const char *extension) HTS_RESULT_USED;
 
 /// Flush (for output streams) and close the stream
 /** @return  0 if successful, or `EOF` (with _errno_ set) if an error occurred.
