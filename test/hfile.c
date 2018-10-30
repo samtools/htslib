@@ -1,6 +1,6 @@
 /*  test/hfile.c -- Test cases for low-level input/output streams.
 
-    Copyright (C) 2013-2014, 2016 Genome Research Ltd.
+    Copyright (C) 2013-2014, 2016, 2018 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/hfile.h"
 #include "htslib/hts_defs.h"
+#include "htslib/kstring.h"
 
 void HTS_NORETURN fail(const char *format, ...)
 {
@@ -278,6 +279,29 @@ int main(void)
 "of knowledge, exceeds the short vehemence of any carnal pleasure.") != 0)
         fail("hread result for base64");
     if (hclose(fin) != 0) fail("hclose(\"data:;base64,...\")");
+
+    kstring_t kstr = { 0, 0, NULL };
+
+    if (strcmp(haddextension(&kstr, "foo/bar.bam", 0, ".bai"),
+               "foo/bar.bam.bai") != 0) fail("haddextension foo/bar.bam[.bai]");
+    if (strcmp(haddextension(&kstr, "foo/bar.bam", 1, ".bai"),
+               "foo/bar.bai") != 0) fail("haddextension foo/bar[.bai]");
+    if (strcmp(haddextension(&kstr, "foo.bar/baz", 1, ".bai"),
+               "foo.bar/baz.bai") != 0) fail("haddextension foo.bar/baz[.bai]");
+    if (strcmp(haddextension(&kstr, "foo#bar.bam", 0, ".bai"),
+               "foo#bar.bam.bai") != 0) fail("haddextension foo#bar.bam[.bai]");
+    if (strcmp(haddextension(&kstr, ".bam", 1, ".bai"),
+               ".bai") != 0) fail("haddextension [.bai]");
+    if (strcmp(haddextension(&kstr, "foo", 1, ".csi"),
+               "foo.csi") != 0) fail("haddextension foo[.csi]");
+
+    if (strcmp(haddextension(&kstr, "http://host/bar.cram?a&b&c", 0, ".crai"),
+               "http://host/bar.cram.crai?a&b&c") != 0)
+        fail("haddextension http://host/bar.cram[.crai]?a&b&c");
+
+    if (strcmp(haddextension(&kstr, "http://host/bar.cram#frag", 1, ".crai"),
+               "http://host/bar.crai#frag") != 0)
+        fail("haddextension http://host/bar[.crai]#frag");
 
     return EXIT_SUCCESS;
 }

@@ -1,6 +1,6 @@
 /*  hfile.c -- buffered low-level input/output streams.
 
-    Copyright (C) 2013-2016 Genome Research Ltd.
+    Copyright (C) 2013-2018 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -35,6 +35,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/hfile.h"
 #include "hfile_internal.h"
+#include "htslib/kstring.h"
 
 #ifndef ENOTSUP
 #define ENOTSUP EINVAL
@@ -1048,4 +1049,40 @@ int hisremote(const char *fname)
 {
     const struct hFILE_scheme_handler *handler = find_scheme_handler(fname);
     return handler? handler->isremote(fname) : 0;
+}
+
+// Remove an extension, if any, from the basename part of [start,limit).
+// Note: Doesn't notice percent-encoded '.' and '/' characters. Don't do that.
+static const char *strip_extension(const char *start, const char *limit)
+{
+    const char *s = limit;
+    while (s > start) {
+        --s;
+        if (*s == '.') return s;
+        else if (*s == '/') break;
+    }
+    return limit;
+}
+
+char *haddextension(struct kstring_t *buffer, const char *filename,
+                    int replace, const char *new_extension)
+{
+    const char *trailing, *end;
+
+    if (find_scheme_handler(filename)) {
+        // URL, so alter extensions before any trailing query or fragment parts
+        trailing = filename + strcspn(filename, "?#");
+    }
+    else {
+        // Local path, so alter extensions at the end of the filename
+        trailing = strchr(filename, '\0');
+    }
+
+    end = replace? strip_extension(filename, trailing) : trailing;
+
+    buffer->l = 0;
+    if (kputsn(filename, end - filename, buffer) >= 0 &&
+        kputs(new_extension, buffer) >= 0 &&
+        kputs(trailing, buffer) >= 0) return buffer->s;
+    else return NULL;
 }

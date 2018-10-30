@@ -1,6 +1,6 @@
 # Makefile for htslib, a C library for high-throughput sequencing data formats.
 #
-#    Copyright (C) 2013-2017 Genome Research Ltd.
+#    Copyright (C) 2013-2018 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -300,7 +300,7 @@ bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfil
 errmod.o errmod.pico: errmod.c config.h $(htslib_hts_h) $(htslib_ksort_h) $(htslib_hts_os_h)
 kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
 knetfile.o knetfile.pico: knetfile.c config.h $(htslib_hts_log_h) $(htslib_knetfile_h)
-hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(hts_internal_h) $(htslib_khash_h)
+hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(htslib_kstring_h) $(hts_internal_h) $(htslib_khash_h)
 hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(hfile_internal_h)
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_net.o hfile_net.pico: hfile_net.c config.h $(hfile_internal_h) $(htslib_knetfile_h)
@@ -413,7 +413,7 @@ test/test-bcf-translate: test/test-bcf-translate.o libhts.a
 
 test/hts_endian.o: test/hts_endian.c config.h $(htslib_hts_endian_h)
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
-test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h)
+test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h) $(htslib_kstring_h)
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
 test/test_kstring.o: test/test_kstring.c $(htslib_kstring_h)
