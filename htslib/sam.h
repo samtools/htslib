@@ -626,10 +626,11 @@ typedef union {
  @field  indel      indel length; 0 for no indel, positive for ins and negative for del
  @field  level      the level of the read in the "viewer" mode
  @field  is_del     1 iff the base on the padded read is a deletion
- @field  is_head    ???
- @field  is_tail    ???
- @field  is_refskip ???
- @field  aux        ???
+ @field  is_head    1 iff this is the first base in the query sequence
+ @field  is_tail    1 iff this is the last base in the query sequence
+ @field  is_refskip 1 iff the base on the padded read is part of CIGAR N op
+ @field  aux        (used by bcf_call_gap_prep())
+ @field  cigar_ind  index of the CIGAR operator that has just been processed
 
  @discussion See also bam_plbuf_push() and bam_lplbuf_push(). The
  difference between the two functions is that the former does not
@@ -641,8 +642,9 @@ typedef struct {
     bam1_t *b;
     int32_t qpos;
     int indel, level;
-    uint32_t is_del:1, is_head:1, is_tail:1, is_refskip:1, aux:28;
+    uint32_t is_del:1, is_head:1, is_tail:1, is_refskip:1, /* reserved */ :1, aux:27;
     bam_pileup_cd cd; // generic per-struct data, owned by caller.
+    int cigar_ind;
 } bam_pileup1_t;
 
 typedef int (*bam_plp_auto_f)(void *data, bam1_t *b);
@@ -679,6 +681,21 @@ typedef struct __bam_mplp_t *bam_mplp_t;
                              int (*func)(void *data, const bam1_t *b, bam_pileup_cd *cd));
     void bam_plp_destructor(bam_plp_t plp,
                             int (*func)(void *data, const bam1_t *b, bam_pileup_cd *cd));
+
+    /// Get pileup padded insertion sequence
+    /*
+     * @param p       pileup data
+     * @param ins     the kstring where the insertion sequence will be written
+     * @param del_len location for deletion length
+     * @return the length of insertion string on success; -1 on failure.
+     *
+     * Fills out the kstring with the padded insertion sequence for the current
+     * location in 'p'.  If this is not an insertion site, the string is blank.
+     *
+     * If del_len is not NULL, the location pointed to is set to the length of
+     * any deletion immediately following the insertion, or zero if none.
+     */
+    int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) HTS_RESULT_USED;
 
     bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data);
     /**

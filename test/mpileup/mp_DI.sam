@@ -1,0 +1,40 @@
+@HD	VN:1.6	SO:coordinate
+@SQ	SN:z	LN:13
+@CO	
+@CO	Copyright (c) 2018 Genome Research Ltd.
+@CO	
+@CO	Permission is hereby granted, free of charge, to any person obtaining
+@CO	a copy of this software and associated documentation files (the
+@CO	"Software"), to deal in the Software without restriction, including
+@CO	without limitation the rights to use, copy, modify, merge, publish,
+@CO	distribute, sublicense, and/or sell copies of the Software, and to
+@CO	permit persons to whom the Software is furnished to do so, subject
+@CO	to the following conditions:
+@CO	
+@CO	The above copyright notice and this permission notice shall be included
+@CO	in all copies or substantial portions of the Software.
+@CO	
+@CO	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+@CO	OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+@CO	MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+@CO	IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+@CO	CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+@CO	TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+@CO	SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+@CO	
+@CO	               1
+@CO	    123  4567890  123 Depadded base numbering
+@CO	ref TAG  CTTAGCA  GGT
+@CO	
+@CO	s1   AG  CTTAG**TTGGC 7M 2D 2I 3M
+@CO	s2   AG  CTTAG**TT    7M 2D 2I
+@CO	s4   AG  CTTAG***T    7M 2D 1P 1I
+@CO	s3   **AACTTAGCA  GG  2D 2I 9M
+@CO	s5   ***ACTTAGCA  GG  2D 1P 1I 9M
+@CO	     01AB2345678AB901
+@CO	
+s1	0	z	2	0	7M2D2I3M	*	0	0	AGCTTAGTTGGC	0123456AB901
+s2	0	z	2	0	7M2D2I	*	0	0	AGCTTAGTT	0123456AB
+s4	0	z	2	0	7M2D1P1I	*	0	0	AGCTTAGT	0123456B
+s3	0	z	2	0	2D2I9M	*	0	0	AACTTAGCAGG	AB234567890
+s5	0	z	2	0	2D1P1I9M	*	0	0	ACTTAGCAGG	B234567890

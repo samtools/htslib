@@ -1,0 +1,53 @@
+@HD	VN:1.6	SO:coordinate
+@SQ	SN:c1	LN:16
+@RG	ID:p.sam	SM:unknown	LB:p.sam
+@CO	
+@CO	Copyright (c) 2014,2018 Genome Research Ltd.
+@CO	
+@CO	Permission is hereby granted, free of charge, to any person obtaining
+@CO	a copy of this software and associated documentation files (the
+@CO	"Software"), to deal in the Software without restriction, including
+@CO	without limitation the rights to use, copy, modify, merge, publish,
+@CO	distribute, sublicense, and/or sell copies of the Software, and to
+@CO	permit persons to whom the Software is furnished to do so, subject
+@CO	to the following conditions:
+@CO	
+@CO	The above copyright notice and this permission notice shall be included
+@CO	in all copies or substantial portions of the Software.
+@CO	
+@CO	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+@CO	OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+@CO	MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+@CO	IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+@CO	CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+@CO	TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+@CO	SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+@CO	
+@CO	Ref  ***********CGGTT
+@CO	                12345  Depadded base numbering
+@CO	
+@CO	s0a  AACCG******CGGTT  5I 6P 5M
+@CO	s0b  AACCG******CGGTT  5I 6P 5M
+@CO	s0c  AACCG******CGGTT  5I 6P 5M
+@CO	s0d  AACCG******CGGTT  5I 6P 5M
+@CO	s1   AACCGGTTAACCGGTT  11I 5M
+@CO	s2   AACCG*TTAA*CGGTT  5I 1P 4I 1P 5M
+@CO	s3   AACCGGTT***CGGTT  8I 3P 5M
+@CO	s4   AACCG***AACCGGTT  5I 3P 3I 5M
+@CO	s5   AACC***TA***GGTT  4I 3P 2I 2P 1D 4M
+@CO	s6   AA***GTTAAC***TT  2I 3P 6I 3D 2M
+@CO	s7   AACC********GGTT  4I 7P 1D 4M
+@CO	s8   *******TA**       7P 2I 2P
+@CO	
+s0a	0	c1	6	0	5I6P5M	*	0	0	AACCGCGGTT	*	RG:Z:p.sam
+s0b	0	c1	6	0	5I6P5M	*	0	0	AACCGCGGTT	*	RG:Z:p.sam
+s0c	0	c1	6	0	5I6P5M	*	0	0	AACCGCGGTT	*	RG:Z:p.sam
+s0d	0	c1	6	0	5I6P5M	*	0	0	AACCGCGGTT	*	RG:Z:p.sam
+s1	0	c1	6	0	11I5M	*	0	0	AACCGGTTAACCGGTT	*	RG:Z:p.sam
+s2	0	c1	6	0	5I1P4I1P5M	*	0	0	AACCGTTAACGGTT	*	RG:Z:p.sam
+s3	0	c1	6	0	8I3P5M	*	0	0	AACCGGTTCGGTT	*	RG:Z:p.sam
+s4	0	c1	6	0	5I3P3I5M	*	0	0	AACCGAACCGGTT	*	RG:Z:p.sam
+s5	0	c1	6	0	4I3P2I2P1D4M	*	0	0	AACCTAGGTT	*	RG:Z:p.sam
+s6	0	c1	6	0	2I3P6I3D2M	*	0	0	AAGTTAACTT	*	RG:Z:p.sam
+s7	0	c1	6	0	4I7P1D4M	*	0	0	AACCGGTT	*	RG:Z:p.sam
+s8	0	c1	6	0	7P2I2P	*	0	0	TA	!!	RG:Z:p.sam

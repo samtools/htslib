@@ -1,0 +1,40 @@
+@HD	VN:1.6	SO:coordinate
+@SQ	SN:z	LN:13
+@CO	
+@CO	Copyright (c) 2018 Genome Research Ltd.
+@CO	
+@CO	Permission is hereby granted, free of charge, to any person obtaining
+@CO	a copy of this software and associated documentation files (the
+@CO	"Software"), to deal in the Software without restriction, including
+@CO	without limitation the rights to use, copy, modify, merge, publish,
+@CO	distribute, sublicense, and/or sell copies of the Software, and to
+@CO	permit persons to whom the Software is furnished to do so, subject
+@CO	to the following conditions:
+@CO	
+@CO	The above copyright notice and this permission notice shall be included
+@CO	in all copies or substantial portions of the Software.
+@CO	
+@CO	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+@CO	OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+@CO	MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+@CO	IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+@CO	CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+@CO	TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+@CO	SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+@CO	
+@CO	Various I combinations
+@CO	Starting with I isn't handled due to the pileup ordering.
+@CO	The record only appears in the pileup list when the first base
+@CO	is placed against the reference, which is too late.
+@CO	
+@CO	             1
+@CO	    1234567890123 Depadded base numbering
+@CO	ref TAGCTTAGCAGGT
+@CO	s1   AGCTTAGCAGG  11M
+@CO	s2   AGCT>>>CAGG  4M 3N 4M
+@CO	s3   >>CTTAGCA>>  2N 7M 2N
+@CO	qual 01234567890
+@CO	
+s1	0	z	2	0	11M	*	0	0	AGCTTAGCAGG	01234567890
+s2	0	z	2	0	4M3N4M	*	0	0	AGCTCAGG	01237890
+s3	0	z	2	0	2N7M2N	*	0	0	CTTAGCA	2345678
