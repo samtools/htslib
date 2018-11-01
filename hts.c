@@ -3115,33 +3115,46 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
 /**********************
  *** Retrieve index ***
  **********************/
+// Local_fn and local_len will return a sub-region of 'fn'.
+// Eg http://elsewhere/dir/foo.bam.bai?a=b may return
+// foo.bam.bai via local_fn and local_len.
+//
 // Returns -1 if index couldn't be opened.
 //         -2 on other errors
-static int idx_test_and_fetch(const char *fn, const char **local_fn, int download)
+static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_len, int download)
 {
     hFILE *remote_hfp;
     FILE *local_fp = NULL;
     uint8_t *buf = NULL;
     int save_errno;
     htsFormat fmt;
+    kstring_t s = KS_INITIALIZE;
 
     if (hisremote(fn)) {
         const int buf_size = 1 * 1024 * 1024;
         int l;
-        const char *p;
-        for (p = fn + strlen(fn) - 1; p >= fn; --p)
-            if (*p == '/') break;
-        ++p; // p now points to the local file name
+        const char *p, *e;
+        // Ignore ?# params: eg any file.fmt?param=val
+        e = fn + strcspn(fn, "?#");
+        // Find the previous slash from there.
+        p = e;
+        while (p > fn && *p != '/') p--;
+        if (*p == '/') p++;
+
         // Attempt to open local file first
-        if ((local_fp = fopen((char*)p, "rb")) != 0)
+        kputsn(p, e-p, &s);
+        if ((local_fp = fopen(s.s, "rb")) != 0)
         {
             fclose(local_fp);
+            free(s.s);
             *local_fn = p;
             return 0;
         }
+
         // Attempt to open remote file. Stay quiet on failure, it is OK to fail when trying first .csi then .bai or .tbi index.
         if ((remote_hfp = hopen(fn, "r")) == 0) {
             hts_log_info("Failed to open index file '%s'", fn);
+            free(s.s);
             return -1;
         }
         if (hts_detect_format(remote_hfp, &fmt)) {
@@ -3154,7 +3167,7 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int downloa
         }
 
         if (download) {
-            if ((local_fp = fopen(p, "w")) == 0) {
+            if ((local_fp = fopen(s.s, "w")) == 0) {
                 hts_log_error("Failed to create file %s in the working directory", p);
                 goto fail;
             }
@@ -3184,20 +3197,24 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int downloa
             }
 
             *local_fn = p;
+            *local_len = e-p;
         } else {
             *local_fn = fn;
+            *local_len = e-fn;
         }
 
         if (hclose(remote_hfp) != 0) {
             hts_log_error("Failed to close remote file %s", fn);
         }
 
+        free(s.s);
         return 0;
     } else {
         hFILE *local_hfp;
         if ((local_hfp = hopen(fn, "r")) == 0) return -1;
         hclose_abruptly(local_hfp);
         *local_fn = fn;
+        *local_len = strlen(fn);
         return 0;
     }
 
@@ -3206,6 +3223,7 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int downloa
     hclose_abruptly(remote_hfp);
     if (local_fp) fclose(local_fp);
     free(buf);
+    free(s.s);
     errno = save_errno;
     return -2;
 }
@@ -3310,29 +3328,32 @@ static int idx_check_local(const char *fn, int fmt, char **fnidx) {
 }
 
 static char *idx_filename(const char *fn, const char *ext, int download) {
-    int i, l_fn, l_ext, ret;
+    int ret, local_len;
     char *fnidx;
     const char *local_fn = NULL;
-    l_fn = strlen(fn); l_ext = strlen(ext);
-    fnidx = (char*)calloc(l_fn + l_ext + 1, 1);
-    if (!fnidx) return NULL;
+    kstring_t buffer = KS_INITIALIZE;
+
     // First try : append `ext` to `fn`
-    strcpy(fnidx, fn); strcpy(fnidx + l_fn, ext);
-    if ((ret = idx_test_and_fetch(fnidx, &local_fn, download)) == -1) {
-        // Second try : replace suffix of `fn` with `ext`
-        for (i = l_fn - 1; i > 0; --i)
-            if (fnidx[i] == '.' || fnidx[i] == '/') break;
-        if (fnidx[i] == '.') {
-            strcpy(fnidx + i, ext);
-            ret = idx_test_and_fetch(fnidx, &local_fn, download);
-        }
-    }
-    if (ret < 0) {
-        free(fnidx);
+    if (!(fnidx = haddextension(&buffer, fn, 0, ext))) {
+        free(buffer.s);
         return NULL;
     }
-    l_fn = strlen(local_fn);
-    memmove(fnidx, local_fn, l_fn + 1);
+    if ((ret = idx_test_and_fetch(fnidx, &local_fn, &local_len, download)) == -1) {
+        // Second try : replace suffix of `fn` with `ext`
+        if (!(fnidx = haddextension(&buffer, fn, 1, ext))) {
+            free(buffer.s);
+            return NULL;
+        }
+        ret = idx_test_and_fetch(fnidx, &local_fn, &local_len, download);
+    }
+
+    if (ret < 0) {
+        free(buffer.s);
+        return NULL;
+    }
+
+    memmove(fnidx, local_fn, local_len);
+    fnidx[local_len] = 0;
     return fnidx;
 }
 
