@@ -36,6 +36,8 @@ my $opts = parse_params();
 test_view($opts,0);
 test_view($opts,4);
 
+test_MD($opts);
+
 test_vcf_api($opts,out=>'test-vcf-api.out');
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
 test_vcf_various($opts);
@@ -342,12 +344,80 @@ sub test_view
     # command line and nowhere else.  REF_PATH should also point to nowhere
     # (currently done by the Makefile).  This is to test the refseq reference
     # counting and reload (Issue #654).
+    print "test_view testing region queries:\n";
+    $test_view_failures = 0;
+
     my $regions = "CHROMOSOME_II:2980-2980 CHROMOSOME_IV:1500-1500 CHROMOSOME_II:2980-2980 CHROMOSOME_I:1000-1100";
     testv $opts, "./test_view $tv_args -i reference=ce.fa range.cram $regions > range.tmp";
     testv $opts, "./compare_sam.pl range.tmp range.out";
 
     testv $opts, "./test_view $tv_args range.bam $regions > range.tmp";
     testv $opts, "./compare_sam.pl range.tmp range.out";
+
+    if ($test_view_failures == 0) {
+	passed($opts, "range.cram tests");
+    } else {
+	failed($opts, "range.cram tests", "$test_view_failures subtests failed");
+    }
+}
+
+# Tests CRAM's ability to correctly preserve MD and NM, irrespective of whether
+# they are correct.
+sub test_MD
+{
+    my ($opts) = @_;
+
+    foreach my $sam (glob("*#MD*.sam")) {
+        my ($base, $ref) = ($sam =~ /((.*)#.*)\.sam/);
+        $ref .= ".fa";
+
+        my $bam  = "$base.tmp.bam";
+        my $cram = "$base.tmp.cram";
+
+        print "\ntest_MD testing $sam, ref $ref:\n";
+        $test_view_failures = 0;
+        $cram = "$base.tmp.cram";
+
+	# Forcibly store MD and NM and don't auto-generate.
+	# ALL NM/MD should match and be present only when originally present
+        testv $opts, "./test_view -o store_nm=1 -o store_md=1 -t $ref -C $sam > $cram";
+        testv $opts, "./test_view -i decode_md=0 -D $cram > $cram.sam_";
+        testv $opts, "./compare_sam.pl $sam $cram.sam_";
+
+        # Skip auto-MD generation; check MD iff in output file.
+	# (NB this does not check that all erroneous values are stored.)
+        testv $opts, "./test_view -t $ref -C $sam > $cram";
+        testv $opts, "./test_view -i decode_md=0 -D $cram > $cram.sam_";
+        testv $opts, "./compare_sam.pl -partialmd=2 $sam $cram.sam_";
+
+	# Also check we haven't added NM or MD needlessly for xx#MD.sam.
+	# This file has no errors so without auto-generation there must be
+	# no NM or MD records.
+	if ($sam eq "xx#MD.sam") {
+	    print "  Checking for MD/NM in $sam\n";
+	    open(my $fh, "<$cram.sam_") || die;
+	    while (<$fh>) {
+		if (/(MD|NM):/) {
+		    print STDERR "Failed\nLine contains MD/NM:\n$_";
+		    $test_view_failures++;
+		    last;
+		}
+	    }
+	    close($fh);
+	}
+
+	# Force auto-MD generation; check MD iff in input file.
+	# This will ensure any erroneous values have been round-tripped.
+        testv $opts, "./test_view -t $ref -C $sam > $cram";
+        testv $opts, "./test_view -i decode_md=1 -D $cram > $cram.sam_";
+        testv $opts, "./compare_sam.pl -partialmd=1 $sam $cram.sam_";
+
+	if ($test_view_failures == 0) {
+	    passed($opts, "$sam MD tests");
+	} else {
+	    failed($opts, "$sam MD tests", "$test_view_failures subtests failed");
+	}
+    }
 }
 
 sub test_vcf_api

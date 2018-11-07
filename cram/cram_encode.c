@@ -54,7 +54,7 @@ KHASH_MAP_INIT_STR(m_s2u64, uint64_t)
 
 static int process_one_read(cram_fd *fd, cram_container *c,
                             cram_slice *s, cram_record *cr,
-                            bam_seq_t *b, int rnum);
+                            bam_seq_t *b, int rnum, kstring_t *MD);
 
 /*
  * Returns index of val into key.
@@ -1306,6 +1306,12 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         if (lossy_read_names(fd, c, s, r1_start) != 0)
             return -1;
 
+        // Tracking of MD tags so we can spot when the auto-generated values
+        // will differ from the current stored ones.  The kstring here is
+        // simply to avoid excessive malloc and free calls.  All initialisation
+        // is done within process_one_read().
+        kstring_t MD = {0};
+
         // Iterate through records creating the cram blocks for some
         // fields and just gathering stats for others.
         for (r2 = 0; r1 < c->curr_c_rec && r2 < s->hdr->num_records; r1++, r2++) {
@@ -1320,6 +1326,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
                     if (!cram_get_ref(fd, bam_ref(b), 1, 0)) {
                         hts_log_error("Failed to load reference #%d", bam_ref(b));
+                        free(MD.s);
                         return -1;
                     }
 
@@ -1332,8 +1339,10 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                 }
             }
 
-            if (process_one_read(fd, c, s, cr, b, r2) != 0)
+            if (process_one_read(fd, c, s, cr, b, r2, &MD) != 0) {
+                free(MD.s);
                 return -1;
+            }
 
             if (first_base > cr->apos)
                 first_base = cr->apos;
@@ -1341,6 +1350,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
             if (last_base < cr->aend)
                 last_base = cr->aend;
         }
+        free(MD.s);
 
         // Process_one_read doesn't add read names as it can change
         // its mind during the loop on the CRAM_FLAG_DETACHED setting
@@ -2073,7 +2083,8 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
  */
 static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                              cram_slice *s, cram_record *cr,
-                             int verbatim_NM, int verbatim_MD) {
+                             int verbatim_NM, int verbatim_MD,
+                             int NM, kstring_t *MD) {
     char *aux, *orig, *rg = NULL;
     int aux_size = bam_get_l_aux(b);
     cram_block *td_b = c->comp_hdr->TD_blk;
@@ -2097,23 +2108,28 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
         // MD:Z
         if (aux[0] == 'M' && aux[1] == 'D' && aux[2] == 'Z') {
             if (cr->len && !fd->no_ref && !(cr->flags & BAM_FUNMAP) && !verbatim_MD) {
-                while (*aux++);
-                continue;
+                if (MD && MD->s && strncasecmp(MD->s, aux+3, orig + aux_size - (aux+3)) == 0) {
+                    while (*aux++);
+                    continue;
+                }
             }
         }
 
         // NM:i
         if (aux[0] == 'N' && aux[1] == 'M') {
             if (cr->len && !fd->no_ref && !(cr->flags & BAM_FUNMAP) && !verbatim_NM) {
-                switch(aux[2]) {
-                case 'A': case 'C': case 'c': aux+=4; break;
-                case 'S': case 's':           aux+=5; break;
-                case 'I': case 'i': case 'f': aux+=7; break;
-                default:
-                    hts_log_error("Unhandled type code for NM tag");
-                    return NULL;
+                int NM_ = bam_aux2i((uint8_t *)aux+2);
+                if (NM_ == NM) {
+                    switch(aux[2]) {
+                    case 'A': case 'C': case 'c': aux+=4; break;
+                    case 'S': case 's':           aux+=5; break;
+                    case 'I': case 'i': case 'f': aux+=7; break;
+                    default:
+                        hts_log_error("Unhandled type code for NM tag");
+                        return NULL;
+                    }
+                    continue;
                 }
-                continue;
             }
         }
 
@@ -2512,8 +2528,8 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
  */
 static int process_one_read(cram_fd *fd, cram_container *c,
                             cram_slice *s, cram_record *cr,
-                            bam_seq_t *b, int rnum) {
-    int i, fake_qual = -1;
+                            bam_seq_t *b, int rnum, kstring_t *MD) {
+    int i, fake_qual = -1, NM = 0;
     char *cp, *rg;
     char *ref, *seq, *qual;
 
@@ -2530,6 +2546,10 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     ref = c->ref;
     cr->flags       = bam_flag(b);
     cr->len         = bam_seq_len(b);
+    if (!bam_aux_get(b, "MD"))
+        MD = NULL;
+    else
+        MD->l = 0;
 
     //fprintf(stderr, "%s => %d\n", rg ? rg : "\"\"", cr->rg);
 
@@ -2630,6 +2650,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     if (!(cr->flags & BAM_FUNMAP)) {
         uint32_t *cig_to, *cig_from;
         int apos = cr->apos-1, spos = 0;
+        int MD_last = apos; // last position of edit in MD tag
 
         cr->cigar       = s->ncigar;
         cr->ncigar      = bam_cigar_len(b);
@@ -2673,9 +2694,20 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                         return -1;
                     }
                     for (l = 0; l < end; l++) {
+                        // This case is just too disputed and different tools
+                        // interpret these in different ways.  We give up and
+                        // store verbatim.
                         if (rp[l] == 'N' && sp[l] == 'N')
                             verbatim_NM = verbatim_MD = 1;
                         if (rp[l] != sp[l]) {
+                            // Build our own MD tag if one is on the sequence, so
+                            // we can ensure it matches and thus can be discarded.
+                            if (MD && ref) {
+                                kputuw(apos+l - MD_last, MD);
+                                kputc(rp[l], MD);
+                                MD_last = apos+l+1;
+                            }
+                            NM++;
                             if (!sp[l])
                                 break;
                             if (0 && CRAM_MAJOR_VERS(fd->version) >= 3) {
@@ -2740,15 +2772,26 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                 break;
 
             case BAM_CDEL:
+		if (MD && ref) {
+                    kputuw(apos - MD_last, MD);
+		    if (apos < c->ref_end) {
+                        kputc_('^', MD);
+                        kputsn(&ref[apos], MIN(c->ref_end - apos, cig_len), MD);
+		    }
+		}
+		NM += cig_len;
+
                 if (cram_add_deletion(c, s, cr, spos, cig_len, &seq[spos]))
                     return -1;
                 apos += cig_len;
+                MD_last = apos;
                 break;
 
             case BAM_CREF_SKIP:
                 if (cram_add_skip(c, s, cr, spos, cig_len, &seq[spos]))
                     return -1;
                 apos += cig_len;
+                MD_last += cig_len;
                 break;
 
             case BAM_CINS:
@@ -2762,6 +2805,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                 } else {
                     spos += cig_len;
                 }
+                NM += cig_len;
                 break;
 
             case BAM_CSOFT_CLIP:
@@ -2808,6 +2852,9 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         fake_qual = spos;
         cr->aend = fd->no_ref ? apos : MIN(apos, c->ref_end);
         cram_stats_add(c->stats[DS_FN], cr->nfeature);
+
+        if (MD && ref)
+            kputuw(apos - MD_last, MD);
     } else {
         // Unmapped
         cr->cram_flags |= CRAM_FLAG_PRESERVE_QUAL_SCORES;
@@ -2824,7 +2871,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     if (CRAM_MAJOR_VERS(fd->version) == 1)
         rg = cram_encode_aux_1_0(fd, b, c, s, cr);
     else
-        rg = cram_encode_aux(fd, b, c, s, cr, verbatim_NM, verbatim_MD);
+        rg = cram_encode_aux(fd, b, c, s, cr, verbatim_NM, verbatim_MD, NM, MD);
 
     /* Read group, identified earlier */
     if (rg) {
