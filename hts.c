@@ -1438,12 +1438,12 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
     }
 }
 
-static void compress_binning(hts_idx_t *idx, int i)
+static int compress_binning(hts_idx_t *idx, int i)
 {
     bidx_t *bidx = idx->bidx[i];
     khint_t k;
     int l, m;
-    if (bidx == 0) return;
+    if (bidx == 0) return 0;
     // merge a bin to its parent if the bin is too small
     for (l = idx->n_lvls; l > 0; --l) {
         unsigned start = hts_bin_first(l);
@@ -1458,9 +1458,14 @@ static void compress_binning(hts_idx_t *idx, int i)
                 if (kp == kh_end(bidx)) continue;
                 q = &kh_val(bidx, kp);
                 if (q->n + p->n > q->m) {
-                    q->m = q->n + p->n;
-                    kroundup32(q->m);
-                    q->list = (hts_pair64_t*)realloc(q->list, q->m * sizeof(hts_pair64_t));
+                    uint32_t new_m = q->n + p->n;
+                    hts_pair64_t *new_list;
+                    kroundup32(new_m);
+                    if (new_m > INT32_MAX) return -1; // Limited by index format
+                    new_list = realloc(q->list, new_m * sizeof(*new_list));
+                    if (!new_list) return -1;
+                    q->m = new_m;
+                    q->list = new_list;
                 }
                 memcpy(q->list + q->n, p->list, p->n * sizeof(hts_pair64_t));
                 q->n += p->n;
@@ -1483,6 +1488,7 @@ static void compress_binning(hts_idx_t *idx, int i)
         }
         p->n = m + 1;
     }
+    return 0;
 }
 
 int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
@@ -1496,7 +1502,7 @@ int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
     }
     for (i = 0; i < idx->n; ++i) {
         update_loff(idx, i, (idx->fmt == HTS_FMT_CSI));
-        compress_binning(idx, i);
+        ret |= compress_binning(idx, i);
     }
     idx->z.finished = 1;
 
@@ -1842,12 +1848,14 @@ static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
         h = idx->bidx[i] = kh_init(bin);
         if (bgzf_read(fp, &n, 4) != 4) return -1;
         if (is_be) ed_swap_4p(&n);
+        if (n < 0) return -3;
         for (j = 0; j < n; ++j) {
             khint_t k;
             if (bgzf_read(fp, &key, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&key);
             k = kh_put(bin, h, key, &absent);
-            if (absent <= 0) return -3; // Duplicate bin number
+            if (absent <  0) return -2; // No memory
+            if (absent == 0) return -3; // Duplicate bin number
             p = &kh_val(h, k);
             if (fmt == HTS_FMT_CSI) {
                 if (bgzf_read(fp, &p->loff, 8) != 8) return -1;
@@ -1855,16 +1863,20 @@ static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
             } else p->loff = 0;
             if (bgzf_read(fp, &p->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&p->n);
+            if (p->n < 0) return -3;
+            if ((size_t) p->n > SIZE_MAX / sizeof(hts_pair64_t)) return -2;
             p->m = p->n;
             p->list = (hts_pair64_t*)malloc(p->m * sizeof(hts_pair64_t));
             if (p->list == NULL) return -2;
-            if (bgzf_read(fp, p->list, p->n<<4) != p->n<<4) return -1;
+            if (bgzf_read(fp, p->list, ((size_t) p->n)<<4) != ((size_t) p->n)<<4) return -1;
             if (is_be) swap_bins(p);
         }
         if (fmt != HTS_FMT_CSI) { // load linear index
             int j;
             if (bgzf_read(fp, &l->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&l->n);
+            if (l->n < 0) return -3;
+            if ((size_t) l->n > SIZE_MAX / sizeof(uint64_t)) return -2;
             l->m = l->n;
             l->offset = (uint64_t*)malloc(l->n * sizeof(uint64_t));
             if (l->offset == NULL) return -2;
@@ -1904,6 +1916,7 @@ static hts_idx_t *hts_idx_load_local(const char *fn)
         }
         if (bgzf_read(fp, &n, 4) != 4) goto fail;
         if (is_be) ed_swap_4p(&n);
+        if (n > INT32_MAX) goto fail;
         if ((idx = hts_idx_init(n, HTS_FMT_CSI, 0, x[0], x[1])) == NULL) goto fail;
         idx->l_meta = x[2];
         idx->meta = meta;
@@ -1916,6 +1929,7 @@ static hts_idx_t *hts_idx_load_local(const char *fn)
         // Read file header
         if (bgzf_read(fp, x, sizeof(x)) != sizeof(x)) goto fail;
         n = le_to_u32(&x[0]); // location of n_ref
+        if (n > INT32_MAX) goto fail;
         if ((idx = hts_idx_init(n, HTS_FMT_TBI, 0, 14, 5)) == NULL) goto fail;
         n = le_to_u32(&x[7*4]); // location of l_nm
         if (n > UINT32_MAX - 29) goto fail; // Prevent possible overflow
@@ -1934,7 +1948,8 @@ static hts_idx_t *hts_idx_load_local(const char *fn)
         uint32_t n;
         if (bgzf_read(fp, &n, 4) != 4) goto fail;
         if (is_be) ed_swap_4p(&n);
-        idx = hts_idx_init(n, HTS_FMT_BAI, 0, 14, 5);
+        if (n > INT32_MAX) goto fail;
+        if ((idx = hts_idx_init(n, HTS_FMT_BAI, 0, 14, 5)) == NULL) goto fail;
         if (hts_idx_load_core(idx, fp, HTS_FMT_BAI) < 0) goto fail;
     }
     else { errno = EINVAL; goto fail; }
