@@ -176,6 +176,7 @@ typedef struct {
  @field  l_data     current length of bam1_t::data
  @field  m_data     maximum length of bam1_t::data
  @field  data       all variable-length data, concatenated; structure: qname-cigar-seq-qual-aux
+ @field  fam_data   flexible array member for contiguous-memory optimization
 
  @discussion Notes:
 
@@ -186,6 +187,10 @@ typedef struct {
  on reading or from CIGAR.
  3. cigar data is encoded 4 bytes per CIGAR operation.
  4. seq is nybble-encoded according to bam_nt16_table.
+ 5. fam_data can be used to allow the variable-length data to exist in
+ the same contiguous memory as the rest of the bam1_t. In that case,
+ for compatibility the data member should point to fam_data, and
+ m_data set to a large value (e.g., INT_MAX).
  */
 typedef struct {
     bam1_core_t core;
@@ -195,6 +200,7 @@ typedef struct {
 #ifndef BAM_NO_ID
     uint64_t id;
 #endif
+    uint8_t fam_data[];
 } bam1_t;
 
 /*! @function
