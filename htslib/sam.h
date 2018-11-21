@@ -179,13 +179,18 @@ typedef struct {
 
  @discussion Notes:
 
- 1. qname is terminated by one to four NULs, so that the following
- cigar data is 32-bit aligned; core.l_qname includes these trailing NULs,
- while core.l_extranul counts the excess NULs (so 0 <= l_extranul <= 3).
- 2. l_qseq is calculated from the total length of an alignment block
- on reading or from CIGAR.
- 3. cigar data is encoded 4 bytes per CIGAR operation.
- 4. seq is nybble-encoded according to bam_nt16_table.
+ 1. The data blob should be accessed using bam_get_qname, bam_get_cigar,
+    bam_get_seq, bam_get_qual and bam_get_aux macros.  These returns pointers
+    to the start of each type of data.
+ 2. qname is terminated by one to four NULs, so that the following
+    cigar data is 32-bit aligned; core.l_qname includes these trailing NULs,
+    while core.l_extranul counts the excess NULs (so 0 <= l_extranul <= 3).
+ 3. Cigar data is encoded 4 bytes per CIGAR operation.
+    See the bam_cigar_* macros for manipulation.
+ 4. seq is nibble-encoded according to bam_nt16_table.
+    See the bam_seqi macro for retrieving individual bases.
+ 5. Per base qualilties are stored in the Phred scale with no +33 offset.
+    Ie as per the BAM specification and not the SAM ASCII printable method.
  */
 typedef struct {
     bam1_core_t core;
