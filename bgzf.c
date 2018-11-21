@@ -1289,6 +1289,10 @@ restart:
     pthread_mutex_lock(&mt->job_pool_m);
     bgzf_job *j = pool_alloc(mt->job_pool);
     pthread_mutex_unlock(&mt->job_pool_m);
+    if (!j) {
+        hts_tpool_process_destroy(mt->out_queue);
+        return NULL;
+    }
     j->errcode = 0;
     j->comp_len = 0;
     j->uncomp_len = 0;
@@ -1325,6 +1329,10 @@ restart:
         pthread_mutex_lock(&mt->job_pool_m);
         j = pool_alloc(mt->job_pool);
         pthread_mutex_unlock(&mt->job_pool_m);
+        if (!j) {
+            hts_tpool_process_destroy(mt->out_queue);
+            return NULL;
+        }
         j->errcode = 0;
         j->comp_len = 0;
         j->uncomp_len = 0;
