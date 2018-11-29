@@ -2825,14 +2825,21 @@ static int overlap_push(bam_plp_t iter, lbnode_t *node)
     if ( node->b.core.flag&BAM_FMUNMAP || !(node->b.core.flag&BAM_FPROPER_PAIR) ) return 0;
 
     // no overlap possible, unless some wild cigar
-    if ( abs(node->b.core.isize) >= 2*node->b.core.l_qseq ) return 0;
+    if ( node->b.core.tid != node->b.core.mtid
+         || (abs(node->b.core.isize) >= 2*node->b.core.l_qseq
+         && node->b.core.mpos >= node->end) // for those wild cigars
+       ) return 0;
 
     khiter_t kitr = kh_get(olap_hash, iter->overlaps, bam_get_qname(&node->b));
     if ( kitr==kh_end(iter->overlaps) )
     {
-        int ret;
-        kitr = kh_put(olap_hash, iter->overlaps, bam_get_qname(&node->b), &ret);
-        kh_value(iter->overlaps, kitr) = node;
+        // Only add reads where the mate is still to arrive
+        if (node->b.core.mpos >= node->b.core.pos) {
+            int ret;
+            kitr = kh_put(olap_hash, iter->overlaps, bam_get_qname(&node->b), &ret);
+            if (ret < 0) return -1;
+            kh_value(iter->overlaps, kitr) = node;
+        }
     }
     else
     {
@@ -2936,15 +2943,15 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
             return 0;
         }
         bam_copy1(&iter->tail->b, b);
-        if (overlap_push(iter, iter->tail) < 0) {
-            iter->error = 1;
-            return -1;
-        }
 #ifndef BAM_NO_ID
         iter->tail->b.id = iter->id++;
 #endif
         iter->tail->beg = b->core.pos;
         iter->tail->end = bam_endpos(b);
+        if (overlap_push(iter, iter->tail) < 0) {
+            iter->error = 1;
+            return -1;
+        }
         iter->tail->s = g_cstate_null; iter->tail->s.end = iter->tail->end - 1; // initialize cstate_t
         if (b->core.tid < iter->max_tid) {
             hts_log_error("The input is not sorted (chromosomes out of order)");
