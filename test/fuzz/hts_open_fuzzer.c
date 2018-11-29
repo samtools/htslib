@@ -23,13 +23,17 @@ static void view_sam(htsFile *in) {
     samFile *out = dup_stdout("w");
     bam_hdr_t *hdr = sam_hdr_read(in);
     if (hdr == NULL) {
-        assert(hts_close(out) == 0 && "Error closing duplicated SAM output descriptor.");
+        if (hts_close(out) != 0) {
+            abort();
+        }
         return;
     }
 
     if (sam_hdr_write(out, hdr) != 0) {
         bam_hdr_destroy(hdr);
-        assert(hts_close(out) == 0 && "Error closing duplicated SAM output descriptor.");
+        if (hts_close(out) != 0) {
+            abort();
+        }
         return;
     }
     bam1_t *b = bam_init1();
@@ -41,8 +45,9 @@ static void view_sam(htsFile *in) {
     bam_destroy1(b);
 
     bam_hdr_destroy(hdr);
-    assert(hts_close(out) == 0 && "Error closing duplicated SAM output descriptor.");
-    return;
+    if (hts_close(out) != 0) {
+        abort();
+    }
 }
 
 static void view_vcf(htsFile *in) {
@@ -52,13 +57,17 @@ static void view_vcf(htsFile *in) {
     vcfFile *out = dup_stdout("w");
     bcf_hdr_t *hdr = bcf_hdr_read(in);
     if (hdr == NULL) {
-        assert(hts_close(out) == 0 && "Error closing duplicated VCF output descriptor.");
+        if (hts_close(out) != 0) {
+            abort();
+        }
         return;
     }
 
     if (bcf_hdr_write(out, hdr) != 0) {
         bcf_hdr_destroy(hdr);
-        assert(hts_close(out) == 0 && "Error closing duplicated VCF output descriptor.");
+        if (hts_close(out) != 0) {
+            abort();
+        }
     }
     bcf1_t *rec = bcf_init();
     while (bcf_read(in, hdr, rec) >= 0) {
@@ -69,18 +78,19 @@ static void view_vcf(htsFile *in) {
     bcf_destroy(rec);
 
     bcf_hdr_destroy(hdr);
-    assert(hts_close(out) == 0 && "Error closing duplicated VCF output descriptor.");
-    return;
+    if (hts_close(out) != 0) {
+        abort();
+    }
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     hFILE *memfile;
-    uint8_t *copy;
-    copy = malloc(size);
+    uint8_t *copy = malloc(size);
     if (copy == NULL) {
-        return 0;
+        abort();
     }
     memcpy(copy, data, size);
+    // hopen does not take ownership of `copy`, but hts_hopen does.
     memfile = hopen("mem:", "rb:", copy, size);
     if (memfile == NULL) {
         free(copy);
@@ -89,7 +99,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
     htsFile *ht_file = hts_hopen(memfile, "data", "rb");
     if (ht_file == NULL) {
-        assert(hclose(memfile) == 0 && "Error closing memfile.");
+        if (hclose(memfile) != 0) {
+            abort();
+        }
         return 0;
     }
     switch (ht_file->format.category) {
@@ -102,6 +114,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         default:
             break;
     }
-    hts_close(ht_file);
+    if (hts_close(ht_file) != 0) {
+        abort();
+    }
     return 0;
 }
