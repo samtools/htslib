@@ -1146,18 +1146,21 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     reports = 0;
     if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_shared;
     if (num > 0) {
+        bytes = (size_t) num << bcf_type_shift[type];
         if (((1 << type) & is_integer) == 0) {
             hts_log_warning("Bad BCF record: Invalid %s type %d (%s)", "FILTER", type, get_type_name(type));
             err |= BCF_ERR_TAG_INVALID;
-        }
-        bytes = (size_t) num << bcf_type_shift[type];
-        if (end - ptr < bytes) goto bad_shared;
-        for (i = 0; i < num; i++) {
-            int32_t key = bcf_dec_int1(ptr, type, &ptr);
-            if (key < 0 || key >= hdr->n[BCF_DT_ID]) {
-                if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
-                    hts_log_warning("Bad BCF record: Invalid %s id %d", "FILTER", key);
-                err |= BCF_ERR_TAG_UNDEF;
+            if (end - ptr < bytes) goto bad_shared;
+            ptr += bytes;
+        } else {
+            if (end - ptr < bytes) goto bad_shared;
+            for (i = 0; i < num; i++) {
+                int32_t key = bcf_dec_int1(ptr, type, &ptr);
+                if (key < 0 || key >= hdr->n[BCF_DT_ID]) {
+                    if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
+                        hts_log_warning("Bad BCF record: Invalid %s id %d", "FILTER", key);
+                    err |= BCF_ERR_TAG_UNDEF;
+                }
             }
         }
     }
@@ -1167,7 +1170,8 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     for (i = 0; i < rec->n_info; i++) {
         int32_t key = -1;
         if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) goto bad_shared;
-        if (key < 0 || key >= hdr->n[BCF_DT_ID]) {
+        if (key < 0 || key >= hdr->n[BCF_DT_ID]
+            || hdr->id[BCF_DT_ID][key].key == NULL) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
                 hts_log_warning("Bad BCF record: Invalid %s id %d", "INFO", key);
             err |= BCF_ERR_TAG_UNDEF;
