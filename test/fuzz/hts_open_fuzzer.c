@@ -16,6 +16,12 @@ static htsFile *dup_stdout(const char *mode) {
     return hfp ? hts_hopen(hfp, "-", mode) : NULL;
 }
 
+void hts_close_or_abort(htsFile* file) {
+    if (hts_close(file) != 0) {
+        abort();
+    }
+}
+
 static void view_sam(htsFile *in) {
     if (!in) {
         return;
@@ -23,17 +29,13 @@ static void view_sam(htsFile *in) {
     samFile *out = dup_stdout("w");
     bam_hdr_t *hdr = sam_hdr_read(in);
     if (hdr == NULL) {
-        if (hts_close(out) != 0) {
-            abort();
-        }
+        hts_close_or_abort(out);
         return;
     }
 
     if (sam_hdr_write(out, hdr) != 0) {
         bam_hdr_destroy(hdr);
-        if (hts_close(out) != 0) {
-            abort();
-        }
+        hts_close_or_abort(out);
         return;
     }
     bam1_t *b = bam_init1();
@@ -45,9 +47,7 @@ static void view_sam(htsFile *in) {
     bam_destroy1(b);
 
     bam_hdr_destroy(hdr);
-    if (hts_close(out) != 0) {
-        abort();
-    }
+    hts_close_or_abort(out);
 }
 
 static void view_vcf(htsFile *in) {
@@ -57,17 +57,13 @@ static void view_vcf(htsFile *in) {
     vcfFile *out = dup_stdout("w");
     bcf_hdr_t *hdr = bcf_hdr_read(in);
     if (hdr == NULL) {
-        if (hts_close(out) != 0) {
-            abort();
-        }
+        hts_close_or_abort(out);
         return;
     }
 
     if (bcf_hdr_write(out, hdr) != 0) {
         bcf_hdr_destroy(hdr);
-        if (hts_close(out) != 0) {
-            abort();
-        }
+        hts_close_or_abort(out);
     }
     bcf1_t *rec = bcf_init();
     while (bcf_read(in, hdr, rec) >= 0) {
@@ -78,9 +74,7 @@ static void view_vcf(htsFile *in) {
     bcf_destroy(rec);
 
     bcf_hdr_destroy(hdr);
-    if (hts_close(out) != 0) {
-        abort();
-    }
+    hts_close_or_abort(out);
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
@@ -114,8 +108,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         default:
             break;
     }
-    if (hts_close(ht_file) != 0) {
-        abort();
-    }
+    hts_close_or_abort(ht_file);
     return 0;
 }
