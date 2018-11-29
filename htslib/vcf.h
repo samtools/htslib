@@ -991,6 +991,21 @@ static inline void bcf_enc_int1(kstring_t *s, int32_t x)
     }
 }
 
+/// Return the value of a single typed integer.
+/** @param      p    Pointer to input data block.
+    @param      type One of the BCF_BT_INT* type codes
+    @param[out] q    Location to store an updated value for p
+    @return The integer value, or zero if @p type is not valid.
+
+If @p type is not one of BCF_BT_INT8, BCF_BT_INT16 or BCF_BT_INT32, zero
+will be returned and @p *q will not be updated.  Otherwise, the integer
+value will be returned and @p *q will be set to the memory location
+immediately following the integer value.
+
+Cautious callers can detect invalid type codes by checking that *q has
+actually been updated.
+*/
+
 static inline int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
 {
     if (type == BCF_BT_INT8) {
@@ -999,12 +1014,30 @@ static inline int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
     } else if (type == BCF_BT_INT16) {
         *q = (uint8_t*)p + 2;
         return le_to_i16(p);
-    } else {
+    } else if (type == BCF_BT_INT32) {
         *q = (uint8_t*)p + 4;
         return le_to_i32(p);
+    } else { // Invalid type.
+        return 0;
     }
 }
 
+/// Return the value of a single typed integer from a byte stream.
+/** @param      p    Pointer to input data block.
+    @param[out] q    Location to store an updated value for p
+    @return The integer value, or zero if the type code was not valid.
+
+Reads a one-byte type code from @p p, and uses it to decode an integer
+value from the following bytes in @p p.
+
+If the type is not one of BCF_BT_INT8, BCF_BT_INT16 or BCF_BT_INT32, zero
+will be returned and @p *q will unchanged.  Otherwise, the integer value will
+be returned and @p *q will be set to the memory location immediately following
+the integer value.
+
+Cautious callers can detect invalid type codes by checking that *q has
+actually been updated.
+*/
 static inline int32_t bcf_dec_typed_int1(const uint8_t *p, uint8_t **q)
 {
     return bcf_dec_int1(p + 1, *p&0xf, q);
