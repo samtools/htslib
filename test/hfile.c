@@ -303,5 +303,7 @@ int main(void)
                "http://host/bar.crai#frag") != 0)
         fail("haddextension http://host/bar[.crai]#frag");
 
+    free(ks_release(&kstr));
+
     return EXIT_SUCCESS;
 }
