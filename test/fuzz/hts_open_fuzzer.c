@@ -16,7 +16,7 @@ static htsFile *dup_stdout(const char *mode) {
     return hfp ? hts_hopen(hfp, "-", mode) : NULL;
 }
 
-void hts_close_or_abort(htsFile* file) {
+static void hts_close_or_abort(htsFile* file) {
     if (hts_close(file) != 0) {
         abort();
     }
