@@ -60,7 +60,7 @@ typedef struct kstring_t {
 
 /**
  * @hideinitializer
- * Macro to expand a dynamic array of a given type
+ * Deprecated macro to expand a dynamic array of a given type
  *
  * @param         type_t The type of the array elements
  * @param[in]     n      Requested number of elements of type type_t
@@ -68,9 +68,12 @@ typedef struct kstring_t {
  * @param[in,out] ptr    Pointer to the array
  *
  * @discussion
+ * Do not use this macro.  Use hts_resize() instead as allows allocation
+ * failures to be handled more gracefully.
+ *
  * The array *ptr will be expanded if necessary so that it can hold @p n
  * or more elements.  If the array is expanded then the new size will be
- * written to @p m and the value in @ptr may change.
+ * written to @p m and the value in @p ptr may change.
  *
  * It must be possible to take the address of @p ptr and @p m must be usable
  * as an lvalue.
@@ -99,6 +102,9 @@ typedef struct kstring_t {
  * @param[in,out] ptr    Pointer to the array
  *
  * @discussion
+ * Do not use this macro.  Use hts_resize() instead as allows allocation
+ * failures to be handled more gracefully.
+ *
  * As for hts_expand(), except the bytes that make up the array elements
  * between the old and new values of @p m are set to zero using memset().
  *
@@ -117,6 +123,39 @@ typedef struct kstring_t {
                                      (void **)&(ptr), __func__);        \
         }                                                               \
     } while (0)
+
+
+int hts_resize_array_(size_t, size_t, size_t, void *, void **, int,
+                      const char *);
+
+#define HTS_RESIZE_CLEAR 1
+
+/**
+ * @hideinitializer
+ * Macro to expand a dynamic array of a given type
+ *
+ * @param         type_t    The type of the array elements
+ * @param[in]     num       Requested number of elements of type type_t
+ * @param[in,out] size_ptr  Pointer to where the size (in elements) of the
+                            array is stored.
+ * @param[in,out] ptr       Location of the pointer to the array
+ * @param[in]     flags     Option flags
+ *
+ * @discussion
+ * The array *ptr will be expanded if necessary so that it can hold @p num
+ * or more elements.  If the array is expanded then the new size will be
+ * written to @p *size_ptr and the value in @p *ptr may change.
+ *
+ * If ( @p flags & HTS_RESIZE_CLEAR ) is set, any newly allocated memory will
+ * be cleared.
+ */
+
+#define hts_resize(type_t, num, size_ptr, ptr, flags)       \
+    ((num) > (*(size_ptr))                                  \
+     ? hts_resize_array_(sizeof(type_t), (num),             \
+                         sizeof(*(size_ptr)), (size_ptr),   \
+                         (void **)(ptr), (flags), __func__) \
+     : 0)
 
 /************
  * File I/O *
