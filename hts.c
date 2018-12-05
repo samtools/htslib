@@ -2947,6 +2947,80 @@ size_t hts_realloc_or_die(size_t n, size_t m, size_t m_sz, size_t size,
     exit(1);
 }
 
+/*
+ * Companion to hts_resize() macro that does the actual allocation.
+ *
+ * Somewhat complicated as hts_resize() needs to write the new allocated
+ * size back into *size_in_out, and the value pointed to may either be
+ * int32_t, uint32_t or size_t depending on which array is being resized.
+ * This is solved by making `size_in_out` a void pointer, getting the macro
+ * to pass in the size of the item pointed to (in `size_sz`) and then using
+ * an appropriate cast (based on the value of size_sz).  The function
+ * ensures that the maximum size will be storable in a signed type of
+ * the given size so storing to an int32_t should work correctly.
+ *
+ * Assumes that sizeof(uint32_t) and sizeof(int32_t) is 4,
+ * sizeof(uint64_t) and sizeof(int64_t) is 8 and sizeof(size_t) is
+ * either 4 or 8.  It also assumes casting from unsigned to signed will
+ * work as long as the top bit isn't set.
+ */
+
+int hts_resize_array_(size_t item_size, size_t num, size_t size_sz,
+                      void *size_in_out, void **ptr_in_out, int flags,
+                      const char *func) {
+    /* If new_size and item_size are both below this limit, multiplying them
+       together can't overflow */
+    const size_t safe = (size_t) 1 << (sizeof(size_t) * 4);
+    void *new_ptr;
+    size_t bytes, new_size;
+
+    new_size = num;
+    kroundup_size_t(new_size);
+    bytes = item_size * new_size;
+
+    /* Check for overflow.  Both ensure that alloc will fit in alloc_in_out (we
+       make the pessimistic assumption that *alloc_in_out is signed), and that
+       bytes has not wrapped around. */
+
+    if ((new_size > (((size_t) 1 << (size_sz * 8 - 1)) - 1))
+        || (((item_size > safe) || (new_size > safe))
+            && bytes / new_size != item_size)) {
+        hts_log(HTS_LOG_ERROR, func, "Memory allocation too large");
+        errno = ENOMEM;
+        return -1;
+    }
+
+    new_ptr = realloc(*ptr_in_out, bytes);
+    if (new_ptr == NULL) {
+        int save_errno = errno;
+        hts_log(HTS_LOG_ERROR, func, "%s", strerror(errno));
+        errno = save_errno;
+        return -1;
+    }
+
+    if (flags & HTS_RESIZE_CLEAR) {
+        size_t old_size;
+        switch (size_sz) {
+        case 4: old_size = *((uint32_t *) size_in_out); break;
+        case 8: old_size = *((uint64_t *) size_in_out); break;
+        default: abort();
+        }
+        if (new_size > old_size) {
+            memset((char *) new_ptr + old_size * item_size, 0,
+                   (new_size - old_size) * item_size);
+        }
+    }
+
+    switch (size_sz) {
+    case 4: *((uint32_t *) size_in_out) = new_size; break;
+    case 8: *((uint64_t *) size_in_out) = new_size; break;
+    default: abort();
+    }
+
+    *ptr_in_out = new_ptr;
+    return 0;
+}
+
 void hts_set_log_level(enum htsLogLevel level)
 {
     hts_verbose = level;
