@@ -352,11 +352,15 @@ const char **tbx_seqnames(tbx_t *tbx, int *n)
     if (d == NULL)
     {
         *n = 0;
-        return NULL;
+        return calloc(1, sizeof(char *));
     }
     int tid, m = kh_size(d);
     const char **names = (const char**) calloc(m,sizeof(const char*));
     khint_t k;
+    if (!names) {
+        *n = 0;
+        return NULL;
+    }
     for (k=kh_begin(d); k<kh_end(d); k++)
     {
         if ( !kh_exist(d,k) ) continue;
