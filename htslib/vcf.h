@@ -287,17 +287,21 @@ typedef struct {
     #define bcf_close(fp) hts_close(fp)
     #define vcf_close(fp) hts_close(fp)
 
-    /** Reads VCF or BCF header */
+    /// Read a VCF or BCF header
+    /** @param  fp  The file to read the header from
+        @return Pointer to a populated header structure on success;
+                NULL on failure
+    */
     bcf_hdr_t *bcf_hdr_read(htsFile *fp) HTS_RESULT_USED;
 
     /**
      *  bcf_hdr_set_samples() - for more efficient VCF parsing when only one/few samples are needed
-     *  @samples: samples to include or exclude from file or as a comma-separated string.
+     *  @param samples  samples to include or exclude from file or as a comma-separated string.
      *              LIST|FILE   .. select samples in list/file
      *              ^LIST|FILE  .. exclude samples from list/file
      *              -           .. include all samples
      *              NULL        .. exclude all samples
-     *  @is_file: @samples is a file (1) or a comma-separated list (0)
+     *  @param is_file  @p samples is a file (1) or a comma-separated list (0)
      *
      *  The bottleneck of VCF reading is parsing of genotype fields. If the
      *  reader knows in advance that only subset of samples is needed (possibly
@@ -312,11 +316,14 @@ typedef struct {
      *  contains samples not present in the VCF header. In such a case, the
      *  return value is the index of the offending sample.
      */
-    int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples, int is_file);
+    int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples, int is_file) HTS_RESULT_USED;
     int bcf_subset_format(const bcf_hdr_t *hdr, bcf1_t *rec);
 
-
-    /** Writes VCF or BCF header */
+    /// Write a VCF or BCF header
+    /** @param  fp  Output file
+        @param  h   The header to write
+        @return 0 on success; -1 on failure
+     */
     int bcf_hdr_write(htsFile *fp, bcf_hdr_t *h) HTS_RESULT_USED;
 
     /**
@@ -328,13 +335,15 @@ typedef struct {
     /** The opposite of vcf_parse. It should rarely be called directly, see vcf_write */
     int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s);
 
-    /**
-     *  bcf_read() - read next VCF or BCF record
-     *
-     *  Returns -1 on critical errors, 0 otherwise. On errors which are not
-     *  critical for reading, such as missing header definitions, v->errcode is
-     *  set to one of BCF_ERR* code and must be checked before calling
-     *  vcf_write().
+    /// Read next VCF or BCF record
+    /** @param fp  The file to read the record from
+        @param h   The header for the vcf/bcf file
+        @param v   The bcf1_t structure to populate
+        @return 0 on success; -1 on end of file; < -1 on critical error
+
+On errors which are not critical for reading, such as missing header
+definitions in vcf files, zero will be returned but v->errcode will have been
+set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      */
     int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v) HTS_RESULT_USED;
 
@@ -364,8 +373,11 @@ typedef struct {
     bcf1_t *bcf_dup(bcf1_t *src);
     bcf1_t *bcf_copy(bcf1_t *dst, bcf1_t *src);
 
-    /**
-     *  bcf_write() - write one VCF or BCF record. The type is determined at the open() call.
+    /// Write one VCF or BCF record. The type is determined at the open() call.
+    /** @param  fp  The file to write to
+        @param  h   The header for the vcf/bcf file
+        @param  v   The bcf1_t structure to write
+        @return 0 on success; -1 on error
      */
     int bcf_write(htsFile *fp, bcf_hdr_t *h, bcf1_t *v) HTS_RESULT_USED;
 
@@ -374,9 +386,42 @@ typedef struct {
      *  directly. Usually one wants to use their bcf_* alternatives, which work
      *  transparently with both VCFs and BCFs.
      */
+    /// Read a VCF format header
+    /** @param  fp  The file to read the header from
+        @return Pointer to a populated header structure on success;
+                NULL on failure
+
+        Use bcf_hdr_read() instead
+    */
     bcf_hdr_t *vcf_hdr_read(htsFile *fp) HTS_RESULT_USED;
+
+    /// Write a VCF format header
+    /** @param  fp  Output file
+        @param  h   The header to write
+        @return 0 on success; -1 on failure
+
+        Use bcf_hdr_write() instead
+    */
     int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h) HTS_RESULT_USED;
+
+    /// Read a record from a VCF file
+    /** @param fp  The file to read the record from
+        @param h   The header for the vcf file
+        @param v   The bcf1_t structure to populate
+        @return 0 on success; -1 on end of file; < -1 on error
+
+        Use bcf_read() instead
+    */
     int vcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v) HTS_RESULT_USED;
+
+    /// Write a record to a VCF file
+    /** @param  fp  The file to write to
+        @param h   The header for the vcf file
+        @param v   The bcf1_t structure to write
+        @return 0 on success; -1 on error
+
+        Use bcf_write() instead
+    */
     int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v) HTS_RESULT_USED;
 
     /** Helper function for the bcf_itr_next() macro; internal use, ignore it */
@@ -482,7 +527,16 @@ typedef struct {
 
     /** The following functions are for internal use and should rarely be called directly */
     int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt);
-    int bcf_hdr_sync(bcf_hdr_t *h);
+
+    /// Synchronize internal header structures
+    /** @param h  Header
+        @return 0 on success, -1 on failure
+
+        This function updates the id, sample and contig arrays in the
+        bcf_hdr_t structure so that they point to the same locations as
+        the id, sample and contig dictionaries.
+    */
+    int bcf_hdr_sync(bcf_hdr_t *h) HTS_RESULT_USED;
     bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len);
     void bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str);
     int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec);
@@ -495,11 +549,43 @@ typedef struct {
      *  @param str_class: the class of BCF_HL_STR line (e.g. "ALT" or "SAMPLE"), otherwise NULL
      */
     bcf_hrec_t *bcf_hdr_get_hrec(const bcf_hdr_t *hdr, int type, const char *key, const char *value, const char *str_class);
+
+    /// Duplicate a header record
+    /** @param hrec   Header record to copy
+        @return A new header record on success; NULL on failure
+    */
     bcf_hrec_t *bcf_hrec_dup(bcf_hrec_t *hrec);
-    void bcf_hrec_add_key(bcf_hrec_t *hrec, const char *str, int len);
-    void bcf_hrec_set_val(bcf_hrec_t *hrec, int i, const char *str, int len, int is_quoted);
+
+    /// Add a new header record key
+    /** @param hrec  Header record
+        @param str   Key name
+        @param len   Length of @p str
+        @return 0 on success; -1 on failure
+    */
+    int bcf_hrec_add_key(bcf_hrec_t *hrec, const char *str, size_t len) HTS_RESULT_USED;
+
+    /// Set a header record value
+    /** @param hrec      Header record
+        @param i         Index of value
+        @param str       Value to set
+        @param len       Length of @p str
+        @param is_quoted Value should be quoted
+        @return 0 on success; -1 on failure
+    */
+    int bcf_hrec_set_val(bcf_hrec_t *hrec, int i, const char *str, size_t len, int is_quoted) HTS_RESULT_USED;
     int bcf_hrec_find_key(bcf_hrec_t *hrec, const char *key);
-    void hrec_add_idx(bcf_hrec_t *hrec, int idx);
+
+
+    /// Add an IDX header record
+    /** @param hrec   Header record
+        @param idx    IDX value to add
+        @return 0 on success; -1 on failure
+    */
+    int hrec_add_idx(bcf_hrec_t *hrec, int idx) HTS_RESULT_USED;
+
+    /// Free up a header record and associated structures
+    /** @param hrec  Header record
+     */
     void bcf_hrec_destroy(bcf_hrec_t *hrec);
 
 
