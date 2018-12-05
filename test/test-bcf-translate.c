@@ -72,11 +72,11 @@ int main(int argc, char **argv)
     bcf_hdr_add_sample(hdr1,"SMPL2");
     bcf_hdr_add_sample(hdr2,"SMPL1");
     bcf_hdr_add_sample(hdr2,"SMPL2");
-    bcf_hdr_sync(hdr1);
-    bcf_hdr_sync(hdr2);
+    if (bcf_hdr_sync(hdr1) < 0) error("bcf_hdr_sync(hdr1)");
+    if (bcf_hdr_sync(hdr2) < 0) error("bcf_hdr_sync(hdr2)");
 
     hdr2 = bcf_hdr_merge(hdr2,hdr1);
-    bcf_hdr_sync(hdr2);
+    if (bcf_hdr_sync(hdr2) < 0) error("bcf_hdr_sync(hdr2) after merge");
     if ( bcf_hdr_write(fp, hdr2)!=0 ) error("Failed to write to %s\n", fname);
 
     bcf1_t *rec = bcf_init1();
