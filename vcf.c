@@ -910,7 +910,7 @@ bcf_hdr_t *bcf_hdr_read(htsFile *hfp)
     size_t hlen;
     char *htxt = NULL;
     if (bgzf_read(fp, buf, 4) != 4) goto fail;
-    hlen = buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24);
+    hlen = buf[0] | (buf[1] << 8) | (buf[2] << 16) | ((size_t) buf[3] << 24);
     if (hlen >= SIZE_MAX) { errno = ENOMEM; goto fail; }
     htxt = (char*)malloc(hlen + 1);
     if (!htxt) goto fail;
