@@ -2772,14 +2772,14 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                 break;
 
             case BAM_CDEL:
-		if (MD && ref) {
+                if (MD && ref) {
                     kputuw(apos - MD_last, MD);
-		    if (apos < c->ref_end) {
+                    if (apos < c->ref_end) {
                         kputc_('^', MD);
                         kputsn(&ref[apos], MIN(c->ref_end - apos, cig_len), MD);
-		    }
-		}
-		NM += cig_len;
+                    }
+                }
+                NM += cig_len;
 
                 if (cram_add_deletion(c, s, cr, spos, cig_len, &seq[spos]))
                     return -1;

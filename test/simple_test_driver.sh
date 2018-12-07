@@ -35,96 +35,96 @@ run_test() {
     y=""
     if [ "x$test_iter" = "x" ]
     then
-	test_iter=1
+        test_iter=1
     else
-	test_iter=`expr $test_iter + 1`
+        test_iter=`expr $test_iter + 1`
     fi
     result=`eval ${@+"$@"} 2>_err.tmp > _out.tmp`
     if [ $? != 0 ]
     then
-	if [ "$p" != "N" ]
-	then
-	    # Expected zero exit code, got non-zero
-	    r="F"
-	    y="exit_code"
-	else
-	    # Expected non-zero exit code and got it
-	    r="P"
-	fi
+        if [ "$p" != "N" ]
+        then
+            # Expected zero exit code, got non-zero
+            r="F"
+            y="exit_code"
+        else
+            # Expected non-zero exit code and got it
+            r="P"
+        fi
     elif [ "$p" = "N" ]
     then
-	# Expected non-zero exit code, but got zero
-	r="F"
-	y="exit_code"
+        # Expected non-zero exit code, but got zero
+        r="F"
+        y="exit_code"
     elif [ "x$e" != "x" -a "$e" != "." ]
     then
         sed -n 's/.*/&/p' _out.tmp > _out.tmp2
-	if cmp -s _out.tmp2 "$e"
-	then
-	    # Output was as expected
-	    r="P"
-	    rm -f _out.tmp _out.tmp2 _err.tmp
-	else
-	    # Output differed
-	    r="F"
-	    y="output"
-	fi
+        if cmp -s _out.tmp2 "$e"
+        then
+            # Output was as expected
+            r="P"
+            rm -f _out.tmp _out.tmp2 _err.tmp
+        else
+            # Output differed
+            r="F"
+            y="output"
+        fi
     else
-	# Expected zero exit code and got it.
-	r="P"
-	rm -f _out.tmp _out.tmp2 _err.tmp
+        # Expected zero exit code and got it.
+        r="P"
+        rm -f _out.tmp _out.tmp2 _err.tmp
     fi
 
     if [ "$r" = "F" ]
     then
-	# Test failed
-	case "$p" in
-	    [PN])
-		echo "FAIL : $@"
-		if [ "x$e" != "x" -a "$e" != "." ]
-		then
-		    keep_output="FAIL-$e.${test_iter}"
-		else
-		    keep_output="FAIL.${test_iter}"
-		fi
-		mv _out.tmp "${keep_output}.out"
-		mv _err.tmp "${keep_output}.err"
-		nufail=`expr $nufail + 1`
-		if [ "$y" = "exit_code" ]
-		then
-		    if [ "$p" != "N" ]
-		    then
-			echo "Got non-zero exit code"
-		    else
-			echo "Got unexpected zero exit code"
-		    fi
-		    echo "See ${keep_output}.{out,err} for output"
-		else
-		    echo "Output differed from expected result"
-		    echo "Compare $e ${keep_output}.out"
-		fi
-		;;
-	    *)
-		echo "XFAIL: $@"
-		nefail=`expr $nefail + 1`
-		;;
-	esac
+        # Test failed
+        case "$p" in
+            [PN])
+                echo "FAIL : $@"
+                if [ "x$e" != "x" -a "$e" != "." ]
+                then
+                    keep_output="FAIL-$e.${test_iter}"
+                else
+                    keep_output="FAIL.${test_iter}"
+                fi
+                mv _out.tmp "${keep_output}.out"
+                mv _err.tmp "${keep_output}.err"
+                nufail=`expr $nufail + 1`
+                if [ "$y" = "exit_code" ]
+                then
+                    if [ "$p" != "N" ]
+                    then
+                        echo "Got non-zero exit code"
+                    else
+                        echo "Got unexpected zero exit code"
+                    fi
+                    echo "See ${keep_output}.{out,err} for output"
+                else
+                    echo "Output differed from expected result"
+                    echo "Compare $e ${keep_output}.out"
+                fi
+                ;;
+            *)
+                echo "XFAIL: $@"
+                nefail=`expr $nefail + 1`
+                ;;
+        esac
     else
-	# Test passed
-	case "$p" in
-	    "P")
-		echo "PASS : $@"
-		nepass=`expr $nepass + 1`
-		;;
-	    "N")
-		echo "PASS : $@ (must exit non-zero)"
-		nepass=`expr $nepass + 1`
-		;;
-	    *)
-		echo "XPASS: $@"
-		nupass=`expr $nupass + 1`
-		;;
-	esac
+        # Test passed
+        case "$p" in
+            "P")
+                echo "PASS : $@"
+                nepass=`expr $nepass + 1`
+                ;;
+            "N")
+                echo "PASS : $@ (must exit non-zero)"
+                nepass=`expr $nepass + 1`
+                ;;
+            *)
+                echo "XPASS: $@"
+                nupass=`expr $nupass + 1`
+                ;;
+        esac
     fi
 }
 
@@ -150,29 +150,29 @@ test_driver() {
     exec 9<"$1"
     while read -r line <&9
     do
-	set -- $line
-	case $1 in
+        set -- $line
+        case $1 in
             "#"*) # skip comments
-		;;
+                ;;
             "")   # skip blank lines too
-		;;
+                ;;
 
-	    "INIT")
-		shift
-		eval ${@+"$@"} > /dev/null
-		if [ $? != 0 ]
-		then
-		    echo "INIT FAIL: $@"
-		    return 1
-		fi
-		;;
+            "INIT")
+                shift
+                eval ${@+"$@"} > /dev/null
+                if [ $? != 0 ]
+                then
+                    echo "INIT FAIL: $@"
+                    return 1
+                fi
+                ;;
 
             *)
-		p=$1;shift
-		o=$1;shift
-		run_test "$p" "$o" ${@+"$@"}
-		;;
-	esac
+                p=$1;shift
+                o=$1;shift
+                run_test "$p" "$o" ${@+"$@"}
+                ;;
+        esac
     done
     exec 9<&-
 
@@ -183,8 +183,8 @@ test_driver() {
     echo "Unexpected failures: $nufail"
     if [ "$nupass" -gt 0 -o "$nufail" -gt 0 ]
     then
-	return 1
+        return 1
     else
-	return 0
+        return 0
     fi
 }

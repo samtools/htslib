@@ -89,14 +89,14 @@ while ($ln1 && $ln2) {
     # 2: if file 2 has NM/MD keep in file 1, othewise discard from file1
     # 3: if file 1 and file 2 both have NM/MD keep, otherwise discard.
     if (exists $opts{partialmd}) {
-	if ($opts{partialmd} & 2) {
-	    $ln1 =~ s/\tNM:i:\d+//        unless ($ln2 =~ /\tNM:i:\d+/);
-	    $ln1 =~ s/\tMD:Z:[A-Z0-9^]*// unless ($ln2 =~ /\tMD:Z:[A-Z0-9^]*/);
-	}
-	if ($opts{partialmd} & 1) {
-	    $ln2 =~ s/\tNM:i:\d+//        unless ($ln1 =~ /\tNM:i:\d+/);
-	    $ln2 =~ s/\tMD:Z:[A-Z0-9^]*// unless ($ln1 =~ /\tMD:Z:[A-Z0-9^]*/);
-	}
+        if ($opts{partialmd} & 2) {
+            $ln1 =~ s/\tNM:i:\d+//        unless ($ln2 =~ /\tNM:i:\d+/);
+            $ln1 =~ s/\tMD:Z:[A-Z0-9^]*// unless ($ln2 =~ /\tMD:Z:[A-Z0-9^]*/);
+        }
+        if ($opts{partialmd} & 1) {
+            $ln2 =~ s/\tNM:i:\d+//        unless ($ln1 =~ /\tNM:i:\d+/);
+            $ln2 =~ s/\tMD:Z:[A-Z0-9^]*// unless ($ln1 =~ /\tMD:Z:[A-Z0-9^]*/);
+        }
     }
 
     my @ln1 = split("\t", $ln1);
