@@ -610,14 +610,14 @@ static int inflate_gzip_block(BGZF *fp)
 {
     // we will set this to true when we detect EOF, so we don't bang against the EOF more than once per call
     int input_eof = 0;
-    
+
     // write to the part of the output buffer after block_offset
     fp->gz_stream->next_out = (Bytef*)fp->uncompressed_block + fp->block_offset;
     fp->gz_stream->avail_out = BGZF_MAX_BLOCK_SIZE - fp->block_offset;
-    
+
     while ( fp->gz_stream->avail_out != 0 ) {
         // until we fill the output buffer (or hit EOF)
-        
+
         if ( !input_eof && fp->gz_stream->avail_in == 0 ) {
             // we are out of input data in the buffer. Get more.
             fp->gz_stream->next_in = fp->compressed_block;
@@ -632,11 +632,11 @@ static int inflate_gzip_block(BGZF *fp)
                 input_eof = 1;
             }
         }
-        
+
         fp->gz_stream->msg = NULL;
         // decompress as much data as we can
         int ret = inflate(fp->gz_stream, Z_SYNC_FLUSH);
-        
+
         if ( (ret < 0 && ret != Z_BUF_ERROR) || ret == Z_NEED_DICT ) {
             // an error occurred, other than running out of space
             hts_log_error("Inflate operation failed: %s", bgzf_zerr(ret, ret == Z_DATA_ERROR ? fp->gz_stream : NULL));
@@ -644,7 +644,7 @@ static int inflate_gzip_block(BGZF *fp)
             return -1;
         } else if ( ret == Z_STREAM_END ) {
             // we finished a GZIP member
-            
+
             // scratch for peeking to see if the file is over
             char c;
             if (fp->gz_stream->avail_in > 0 || hpeek(fp->fp, &c, 1) == 1) {
@@ -667,7 +667,7 @@ static int inflate_gzip_block(BGZF *fp)
             return -1;
         }
     }
-    
+
     // when we get here, the buffer is full or there is an EOF after a complete gzip member
     return BGZF_MAX_BLOCK_SIZE - fp->gz_stream->avail_out;
 }

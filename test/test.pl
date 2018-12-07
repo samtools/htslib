@@ -108,8 +108,8 @@ sub parse_params
     $$opts{bin}  = $FindBin::RealBin;
     $$opts{bin}  =~ s{/test/?$}{};
     if ($^O =~ /^msys/) {
-	$$opts{path} = cygpath($$opts{path});
-	$$opts{bin}  = cygpath($$opts{bin});
+        $$opts{path} = cygpath($$opts{path});
+        $$opts{bin}  = cygpath($$opts{bin});
     }
 
     return $opts;
@@ -129,9 +129,9 @@ sub _cmd
     }
     else
     {
-	# Example of how to embed Valgrind into the testing framework.
-	# TEST_PRECMD="valgrind --leak-check=full --suppressions=$ENV{HOME}/valgrind.supp" make check
-	$cmd = "$ENV{TEST_PRECMD} $cmd" if exists $ENV{TEST_PRECMD};
+        # Example of how to embed Valgrind into the testing framework.
+        # TEST_PRECMD="valgrind --leak-check=full --suppressions=$ENV{HOME}/valgrind.supp" make check
+        $cmd = "$ENV{TEST_PRECMD} $cmd" if exists $ENV{TEST_PRECMD};
 
         # child
         exec('bash', '-o','pipefail','-c', $cmd) or error("Cannot execute the command [/bin/sh -o pipefail -c $cmd]: $!");
@@ -315,8 +315,8 @@ sub test_view
         # CRAM2 -> CRAM3
         testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram.cram > $cram";
 
-	# CRAM3 -> CRAM3 + multi-slice
-	testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 -o seqs_per_slice=7 -o slices_per_container=5 $cram.cram > $cram";
+        # CRAM3 -> CRAM3 + multi-slice
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 -o seqs_per_slice=7 -o slices_per_container=5 $cram.cram > $cram";
         testv $opts, "./test_view $tv_args $cram > $cram.sam_";
         testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
 
@@ -355,9 +355,9 @@ sub test_view
     testv $opts, "./compare_sam.pl range.tmp range.out";
 
     if ($test_view_failures == 0) {
-	passed($opts, "range.cram tests");
+        passed($opts, "range.cram tests");
     } else {
-	failed($opts, "range.cram tests", "$test_view_failures subtests failed");
+        failed($opts, "range.cram tests", "$test_view_failures subtests failed");
     }
 }
 
@@ -378,45 +378,45 @@ sub test_MD
         $test_view_failures = 0;
         $cram = "$base.tmp.cram";
 
-	# Forcibly store MD and NM and don't auto-generate.
-	# ALL NM/MD should match and be present only when originally present
+        # Forcibly store MD and NM and don't auto-generate.
+        # ALL NM/MD should match and be present only when originally present
         testv $opts, "./test_view -o store_nm=1 -o store_md=1 -t $ref -C $sam > $cram";
         testv $opts, "./test_view -i decode_md=0 -D $cram > $cram.sam_";
         testv $opts, "./compare_sam.pl $sam $cram.sam_";
 
         # Skip auto-MD generation; check MD iff in output file.
-	# (NB this does not check that all erroneous values are stored.)
+        # (NB this does not check that all erroneous values are stored.)
         testv $opts, "./test_view -t $ref -C $sam > $cram";
         testv $opts, "./test_view -i decode_md=0 -D $cram > $cram.sam_";
         testv $opts, "./compare_sam.pl -partialmd=2 $sam $cram.sam_";
 
-	# Also check we haven't added NM or MD needlessly for xx#MD.sam.
-	# This file has no errors so without auto-generation there must be
-	# no NM or MD records.
-	if ($sam eq "xx#MD.sam") {
-	    print "  Checking for MD/NM in $sam\n";
-	    open(my $fh, "<$cram.sam_") || die;
-	    while (<$fh>) {
-		if (/(MD|NM):/) {
-		    print STDERR "Failed\nLine contains MD/NM:\n$_";
-		    $test_view_failures++;
-		    last;
-		}
-	    }
-	    close($fh);
-	}
+        # Also check we haven't added NM or MD needlessly for xx#MD.sam.
+        # This file has no errors so without auto-generation there must be
+        # no NM or MD records.
+        if ($sam eq "xx#MD.sam") {
+            print "  Checking for MD/NM in $sam\n";
+            open(my $fh, "<$cram.sam_") || die;
+            while (<$fh>) {
+                if (/(MD|NM):/) {
+                    print STDERR "Failed\nLine contains MD/NM:\n$_";
+                    $test_view_failures++;
+                    last;
+                }
+            }
+            close($fh);
+        }
 
-	# Force auto-MD generation; check MD iff in input file.
-	# This will ensure any erroneous values have been round-tripped.
+        # Force auto-MD generation; check MD iff in input file.
+        # This will ensure any erroneous values have been round-tripped.
         testv $opts, "./test_view -t $ref -C $sam > $cram";
         testv $opts, "./test_view -i decode_md=1 -D $cram > $cram.sam_";
         testv $opts, "./compare_sam.pl -partialmd=1 $sam $cram.sam_";
 
-	if ($test_view_failures == 0) {
-	    passed($opts, "$sam MD tests");
-	} else {
-	    failed($opts, "$sam MD tests", "$test_view_failures subtests failed");
-	}
+        if ($test_view_failures == 0) {
+            passed($opts, "$sam MD tests");
+        } else {
+            failed($opts, "$sam MD tests", "$test_view_failures subtests failed");
+        }
     }
 }
 
@@ -455,19 +455,19 @@ sub write_multiblock_bgzf {
     my $tmp = "$name.tmp";
     open(my $out, '>', $name) || die "Couldn't open $name $!\n";
     for (my $i = 0; $i < @$frags; $i++) {
-	local $/;
-	open(my $f, '>', $tmp) || die "Couldn't open $tmp : $!\n";
-	print $f $frags->[$i];
-	close($f) || die "Error writing to $tmp: $!\n";
-	open(my $bgz, '-|', "$$opts{bin}/bgzip -c $tmp")
-	    || die "Couldn't open pipe to bgzip: $!\n";
-	my $compressed = <$bgz>;
-	close($bgz) || die "Error running bgzip\n";
-	if ($i < $#$frags) {
-	    # Strip EOF block
-	    $compressed =~ s/\x1f\x8b\x08\x04\x00{5}\xff\x06\x00\x42\x43\x02\x00\x1b\x00\x03\x00{9}$//;
-	}
-	print $out $compressed;
+        local $/;
+        open(my $f, '>', $tmp) || die "Couldn't open $tmp : $!\n";
+        print $f $frags->[$i];
+        close($f) || die "Error writing to $tmp: $!\n";
+        open(my $bgz, '-|', "$$opts{bin}/bgzip -c $tmp")
+            || die "Couldn't open pipe to bgzip: $!\n";
+        my $compressed = <$bgz>;
+        close($bgz) || die "Error running bgzip\n";
+        if ($i < $#$frags) {
+            # Strip EOF block
+            $compressed =~ s/\x1f\x8b\x08\x04\x00{5}\xff\x06\x00\x42\x43\x02\x00\x1b\x00\x03\x00{9}$//;
+        }
+        print $out $compressed;
     }
     close($out) || die "Error writing to $name: $!\n";
     unlink($tmp);
@@ -486,14 +486,14 @@ sub test_rebgzip
     my ($ret, $out) = _cmd("cmp $mb $$opts{path}/bgziptest.txt.gz");
 
     if (!$ret && $out eq '') { # If it does, use the original
-	test_cmd($opts, %args, out => "bgziptest.txt.gz",
-		 cmd => "$$opts{bin}/bgzip -I $$opts{path}/bgziptest.txt.gz.gzi -c -g $$opts{path}/bgziptest.txt");
+        test_cmd($opts, %args, out => "bgziptest.txt.gz",
+                 cmd => "$$opts{bin}/bgzip -I $$opts{path}/bgziptest.txt.gz.gzi -c -g $$opts{path}/bgziptest.txt");
     } else {
-	# Otherwise index the one we just made and test that
-	print "test_rebgzip: Alternate zlib/deflate library detected\n";
-	cmd("$$opts{bin}/bgzip -I $mb.gzi -r $mb");
-	test_cmd($opts, %args, out => "bgziptest.txt.tmp.gz",
-		 cmd => "$$opts{bin}/bgzip -I $mb.gzi -c -g $$opts{path}/bgziptest.txt");
+        # Otherwise index the one we just made and test that
+        print "test_rebgzip: Alternate zlib/deflate library detected\n";
+        cmd("$$opts{bin}/bgzip -I $mb.gzi -r $mb");
+        test_cmd($opts, %args, out => "bgziptest.txt.tmp.gz",
+                 cmd => "$$opts{bin}/bgzip -I $mb.gzi -c -g $$opts{path}/bgziptest.txt");
     }
 }
 
