@@ -421,7 +421,7 @@ test/test-bcf-translate: test/test-bcf-translate.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-bcf-translate.o libhts.a -lz $(LIBS) -lpthread
 
 test/hts_endian.o: test/hts_endian.c config.h $(htslib_hts_endian_h)
-test/fuzz/hts_open_fuzzer.o: test/fuzz/hts_open_fuzzer.c config.h
+test/fuzz/hts_open_fuzzer.o: test/fuzz/hts_open_fuzzer.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h) $(htslib_kstring_h)
 test/pileup.o: test/pileup.c $(htslib_sam_h) $(htslib_kstring_h)
