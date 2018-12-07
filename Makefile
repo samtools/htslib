@@ -80,7 +80,6 @@ BUILT_TEST_PROGRAMS = \
 	test/test-vcf-api \
 	test/test-vcf-sweep \
 	test/test-bcf-sr \
-	test/fuzz/hts_open_fuzzer.o \
 	test/test-bcf-translate
 
 BUILT_THRASH_PROGRAMS = \
@@ -378,9 +377,6 @@ check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 test/hts_endian: test/hts_endian.o
 	$(CC) $(LDFLAGS) -o $@ test/hts_endian.o $(LIBS)
 
-test/fuzz/hts_open_fuzzer: test/fuzz/hts_open_fuzzer.o
-	$(CC) $(LDFLAGS) -o $@ test/fuzz/hts_open_fuzzer.o libhts.a $(LIBS) -lpthread
-
 test/fieldarith: test/fieldarith.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/fieldarith.o libhts.a $(LIBS) -lpthread
 
@@ -421,7 +417,6 @@ test/test-bcf-translate: test/test-bcf-translate.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-bcf-translate.o libhts.a -lz $(LIBS) -lpthread
 
 test/hts_endian.o: test/hts_endian.c config.h $(htslib_hts_endian_h)
-test/fuzz/hts_open_fuzzer.o: test/fuzz/hts_open_fuzzer.c config.h
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h) $(htslib_kstring_h)
 test/pileup.o: test/pileup.c $(htslib_sam_h) $(htslib_kstring_h)
