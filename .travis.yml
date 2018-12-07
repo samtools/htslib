@@ -4,6 +4,10 @@ language: c
 
 matrix:
   include:
+  - compiler: gcc
+    os: linux
+    env: DO_MAINTAINER_CHECKS=yes USE_CONFIG=no
+
   - compiler: gcc-8
     os: linux
     env: USE_CONFIG=yes CC=gcc-8 AR=gcc-ar-8
@@ -38,10 +42,6 @@ matrix:
 
   - compiler: gcc
     os: linux
-    env: USE_CONFIG=no
-
-  - compiler: gcc
-    os: linux
     env: USE_CONFIG=yes
 
   - compiler: clang
@@ -56,5 +56,6 @@ before_script:
   - if test "x$USE_LIBDEFLATE" == "xyes" ; then ( cd "$HOME" && git clone --depth 1 https://github.com/ebiggers/libdeflate.git && cd libdeflate && make -j 2 CFLAGS='-fPIC -O3' libdeflate.a ); fi
 
 script:
+  - if test "xDO_MAINTAINER_CHECKS" = "xyes" ; then make maintainer-check ; fi
   - if test "x$USE_LIBDEFLATE" = "xyes" ; then CONFIG_OPTS='CPPFLAGS="-I$HOME/libdeflate" LDFLAGS="-L$HOME/libdeflate" --with-libdeflate' ; else CONFIG_OPTS='--without-libdeflate' ; fi
-  - if test "$USE_CONFIG" = "yes" ; then autoreconf && eval ./configure --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3\" || { cat config.log ; false ; } ; fi && make -j 2 -e && make test
+  - if test "$USE_CONFIG" = "yes" ; then autoreconf && eval ./configure --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3\" || { cat config.log ; false ; } ; fi && if test "xDO_MAINTAINER_CHECKS" = "xyes" ; then make maintainer-check ; fi && make -j 2 -e && make test
