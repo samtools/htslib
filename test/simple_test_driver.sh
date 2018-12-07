@@ -1,4 +1,5 @@
 #!/bin/sh
+# simple_test_driver.sh -- shell functions for test scripts
 #
 #    Copyright (C) 2017 Genome Research Ltd.
 #
