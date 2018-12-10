@@ -1167,6 +1167,7 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
         return -2;
     }
     bcf_clear1(v);
+    if (x[0] < 24) return -2;
     x[0] -= 24; // to exclude six 32-bit integers
     if (ks_resize(&v->shared, x[0]) != 0) return -2;
     if (ks_resize(&v->indiv, x[1]) != 0) return -2;
