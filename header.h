@@ -62,7 +62,7 @@ extern "C" {
 #define KS_INIT(ks) ((ks)->l = 0, (ks)->m = 0, (ks)->s = NULL)
 
 // Frees the string subfield only. Assumes 's' itself is static.
-#define KS_FREE(ks) do { if ((ks)->s) free((ks)->s); } while(0)
+#define KS_FREE(ks) do { if ((ks)->s) {free((ks)->s); (ks)->s = NULL;} } while(0)
 
 #define K(a) (((a)[0]<<8)|((a)[1]))
 

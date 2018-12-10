@@ -53,6 +53,17 @@ typedef khash_t(s2i) sdict_t;
  *** BAM header I/O ***
  **********************/
 
+static int8_t cigar_tab[128];
+
+static int8_t *cigar_tab_init() {
+    int i;
+    for (i = 0; i < 128; ++i)
+        cigar_tab[i] = -1;
+    for (i = 0; BAM_CIGAR_STR[i]; ++i)
+        cigar_tab[(int) BAM_CIGAR_STR[i]] = i;
+    return cigar_tab;
+}
+
 bam_hdr_t *bam_hdr_init()
 {
     bam_hdr_t *bh = (bam_hdr_t*)calloc(1, sizeof(bam_hdr_t));
@@ -76,7 +87,6 @@ void bam_hdr_destroy(bam_hdr_t *bh)
         free(bh->target_name);
         free(bh->target_len);
     }
-    free(bh->cigar_tab);
     if (bh->sdict) kh_destroy(s2i, (sdict_t*)bh->sdict);
     free(bh->text);
     if (bh->hrecs)
@@ -1568,11 +1578,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     str.s = (char*)b->data; str.m = b->m_data;
     memset(c, 0, 32);
     if (h->cigar_tab == 0) {
-        h->cigar_tab = (int8_t*) malloc(128);
-        for (i = 0; i < 128; ++i)
-            h->cigar_tab[i] = -1;
-        for (i = 0; BAM_CIGAR_STR[i]; ++i)
-            h->cigar_tab[(int)BAM_CIGAR_STR[i]] = i;
+        h->cigar_tab = cigar_tab_init();
     }
 
     // qname

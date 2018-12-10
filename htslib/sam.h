@@ -294,15 +294,13 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text);
 bam_hdr_t *sam_hdr_read(samFile *fp);
 int sam_hdr_write(samFile *fp, bam_hdr_t *h) HTS_RESULT_USED;
 
-/*! Returns the current length of the bam_hdr_t in text form.
- *
- * Call sam_hdr_rebuild() first if editing has taken place.
+/*!
+ * Returns the current length of the bam_hdr_t in text form.
  */
 int sam_hdr_length2(bam_hdr_t *bh);
 
-/*! Returns the string form of the bam_hdr_t.
- *
- * Call sam_hdr_rebuild() first if editing has taken place.
+/*!
+ * Returns the string form of the bam_hdr_t.
  */
 const char *sam_hdr_str2(bam_hdr_t *bh);
 
@@ -354,6 +352,12 @@ char *sam_hdr_find_line2(bam_hdr_t *bh, const char *type, const char *ID_key, co
  *
  * Remove a line from the header by specifying a tag:value that uniquely
  * identifies a line, i.e. the @SQ line containing "SN:ref1".
+ * @SQ line is uniquely identified by SN tag.
+ * @RG line is uniquely identified by ID tag.
+ * @PG line is uniquely identified by ID tag.
+ *
+ * @return
+ * Returns 0 on success and -1 on error.
  */
 int sam_hdr_remove_line_key2(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
 
@@ -366,9 +370,15 @@ int sam_hdr_remove_line_pos2(bam_hdr_t *bh, const char *type, int position);
 
 /*!
  *
- * Remove all lines from the header, except the one specified by tag:value, i.e. the @SQ line containing "SN:ref1".
+ * Remove all lines of type <type> from the header, except the one specified by tag:value, i.e. the @SQ line containing "SN:ref1".
+ * @param type     - the selected type, e.g. SQ, RG.
+ * @param ID_key   - the key that uniquely identifies the respective type, e.g. SN for SQ, ID for RG.
+ * @param ID_value - the value of the key, e.g. SN:ref1 for SQ, ID:rg1 for RG.
+ *
+ * @return
+ * Returns 0 on success and -1 on error.
  */
-int sam_hdr_leave_line_key2(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
+int sam_hdr_keep_line_key2(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
 
 /* ==== Key:val level methods ==== */
 

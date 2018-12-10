@@ -836,13 +836,14 @@ char *sam_hdr_find_line2(bam_hdr_t *bh, const char *type,
     }
 
     bam_hrec_type_t *ty = bam_hrecs_find_type(hrecs, type, ID_key, ID_value);
+    if (!ty) {
+        hts_log_warning("Could not find type '%s'", type);
+        return NULL;
+    }
+
     kstring_t ks = KS_INITIALIZER;
     bam_hrec_tag_t *tag;
     int r = 0;
-
-    if (!ty)
-        return NULL;
-
     // Paste together the line from the hashed copy
     r |= (kputc_('@', &ks) == EOF);
     r |= (kputs(type, &ks) == EOF);
@@ -862,6 +863,9 @@ char *sam_hdr_find_line2(bam_hdr_t *bh, const char *type,
 /*
  * Remove a line from the header by specifying a tag:value that uniquely
  * identifies a line, i.e. the @SQ line containing "SN:ref1".
+ * @SQ line is uniquely identified by SN tag.
+ * @RG line is uniquely identified by ID tag.
+ * @PG line is uniquely identified by ID tag.
  *
  * Returns 0 on success and -1 on error
  */
@@ -941,7 +945,7 @@ int sam_hdr_remove_line_pos2(bam_hdr_t *bh, const char *type, int position) {
     return ret;
 }
 
-int sam_hdr_leave_line_key2(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
+int sam_hdr_keep_line_key2(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
     bam_hrecs_t *hrecs;
     if (!bh || !type)
         return -1;
@@ -952,8 +956,8 @@ int sam_hdr_leave_line_key2(bam_hdr_t *bh, const char *type, const char *ID_key,
         hrecs = bh->hrecs;
     }
 
-    if (!strncmp(type, "PG", 2)) {
-        hts_log_warning("Removing PG lines is not supported!");
+    if (!strncmp(type, "PG", 2) || !strncmp(type, "CO", 2)) {
+        hts_log_warning("Removing PG or CO lines is not supported!");
         return -1;
     }
 
