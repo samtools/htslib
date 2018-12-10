@@ -103,11 +103,15 @@ static bam_hdr_t *hdr_from_dict(sdict_t *d)
     bam_hdr_t *h;
     khint_t k;
     h = bam_hdr_init();
+    if (!h) return NULL;
+
     h->sdict = d;
     h->n_targets = kh_size(d);
     // TODO Check for memory allocation failures
     h->target_len = (uint32_t*)malloc(sizeof(uint32_t) * h->n_targets);
+    if (!h->target_len) goto fail;
     h->target_name = (char**)malloc(sizeof(char*) * h->n_targets);
+    if (!h->target_name) goto fail;
     for (k = kh_begin(d); k != kh_end(d); ++k) {
         if (!kh_exist(d, k)) continue;
         h->target_name[kh_val(d, k)>>32] = (char*)kh_key(d, k);
@@ -115,6 +119,11 @@ static bam_hdr_t *hdr_from_dict(sdict_t *d)
         kh_val(d, k) >>= 32;
     }
     return h;
+
+ fail:
+    free(h->target_len);
+    free(h);
+    return NULL;
 }
 
 bam_hdr_t *bam_hdr_read(BGZF *fp)
@@ -904,17 +913,25 @@ hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_regli
 bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
 {
     const char *q, *r, *p;
+    char *sn = NULL;
+    bam_hdr_t *header;
     khash_t(s2i) *d;
     d = kh_init(s2i);
+    if (!d) return NULL;
+
     for (p = text; *p; ++p) {
         if (strncmp(p, "@SQ\t", 4) == 0) {
-            char *sn = 0;
             int ln = -1;
             for (q = p + 4;; ++q) {
                 if (strncmp(q, "SN:", 3) == 0) {
                     q += 3;
                     for (r = q; *r != '\t' && *r != '\n' && *r != '\0'; ++r);
+                    if (sn) {
+                        hts_log_warning("SQ header line has more than one SN: tag");
+                        free(sn);
+                    }
                     sn = (char*)calloc(r - q + 1, 1);
+                    if (!sn) goto fail;
                     strncpy(sn, q, r - q);
                     q = r;
                 } else if (strncmp(q, "LN:", 3) == 0)
@@ -923,19 +940,46 @@ bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
                 if (*q == '\0' || *q == '\n') break;
             }
             p = q;
-            if (sn && ln >= 0) {
-                khint_t k;
-                int absent;
-                k = kh_put(s2i, d, sn, &absent);
-                if (!absent) {
-                    hts_log_warning("Duplicated sequence '%s'", sn);
+            if (sn) {
+                if (ln >= 0) {
+                    khint_t k;
+                    int absent;
+                    k = kh_put(s2i, d, sn, &absent);
+                    if (absent < 0) goto fail;
+                    if (!absent) {
+                        hts_log_warning("Duplicated sequence '%s'", sn);
+                        free(sn);
+                    } else kh_val(d, k) = (int64_t)(kh_size(d) - 1)<<32 | ln;
+                } else {
+                    hts_log_warning("Ignored @SQ SN:%s : bad or missing LN tag",
+                                    sn);
                     free(sn);
-                } else kh_val(d, k) = (int64_t)(kh_size(d) - 1)<<32 | ln;
+                }
+            } else {
+                hts_log_warning("Ignored @SQ line with missing SN: tag");
+                free(sn);
             }
+            sn = NULL;
         }
         while (*p != '\0' && *p != '\n') ++p;
     }
-    return hdr_from_dict(d);
+    header = hdr_from_dict(d);
+    if (!header) goto fail;
+    return header;
+
+ fail: {
+        int save_errno = errno;
+        khint_t k;
+        hts_log_error("%s", strerror(errno));
+        free(sn);
+        for (k = kh_begin(d); k != kh_end(d); ++k) {
+            if (!kh_exist(d, k)) continue;
+            free((char *) kh_key(d, k));
+        }
+        kh_destroy(s2i, d);
+        errno = save_errno;
+        return NULL;
+    }
 }
 
 // Minimal sanitisation of a header to ensure.
@@ -1032,30 +1076,35 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         while ((ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) >= 0) {
             if (fp->line.s[0] != '@') break;
             if (fp->line.l > 3 && strncmp(fp->line.s,"@SQ",3) == 0) has_SQ = 1;
-            kputsn(fp->line.s, fp->line.l, &str);
-            kputc('\n', &str);
+            if (kputsn(fp->line.s, fp->line.l, &str) < 0) goto error;
+            if (kputc('\n', &str) < 0) goto error;
         }
         if (ret < -1) goto error;
         if (! has_SQ && fp->fn_aux) {
             kstring_t line = { 0, 0, NULL };
             hFILE *f = hopen(fp->fn_aux, "r");
+            int e = 0;
             if (f == NULL) goto error;
             while (line.l = 0, kgetline(&line, (kgets_func *) hgets, f) >= 0) {
                 char *tab = strchr(line.s, '\t');
                 if (tab == NULL) continue;
-                kputs("@SQ\tSN:", &str);
-                kputsn(line.s, tab - line.s, &str);
-                kputs("\tLN:", &str);
-                kputl(atol(tab), &str);
-                kputc('\n', &str);
+                e |= kputs("@SQ\tSN:", &str) < 0;
+                e |= kputsn(line.s, tab - line.s, &str) < 0;
+                e |= kputs("\tLN:", &str) < 0;
+                e |= kputl(atol(tab), &str) < 0;
+                e |= kputc('\n', &str) < 0;
+                if (e) break;
             }
             free(line.s);
             if (hclose(f) != 0) {
-                hts_log_warning("Failed to close %s", fp->fn_aux);
+                hts_log_error("Error on closing %s", fp->fn_aux);
+                e = 1;
             }
+            if (e) goto error;
         }
         if (str.l == 0) kputsn("", 0, &str);
         h = sam_hdr_parse(str.l, str.s);
+        if (!h) goto error;
         h->l_text = str.l; h->text = str.s;
         return sam_hdr_sanitise(h);
 
