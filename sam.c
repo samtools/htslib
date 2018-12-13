@@ -1308,7 +1308,7 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         bam_hdr_destroy(h);
         KS_FREE(&str);
         return NULL;
-        }
+     }
 
     default:
         abort();
@@ -1475,7 +1475,7 @@ int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
         return old_sam_hdr_change_HD(h, key, val);
 
     if (val) {
-        if (sam_hdr_find_update2(h, "HD", NULL, NULL, key, val, NULL) != 0)
+        if (sam_hdr_update_line(h, "HD", NULL, NULL, key, val, NULL) != 0)
             return -1;
     } else {
         if (sam_hdr_remove_tag2(h, "HD", NULL, NULL, key) != 0)

@@ -304,6 +304,13 @@ int sam_hdr_length2(bam_hdr_t *bh);
  */
 const char *sam_hdr_str2(bam_hdr_t *bh);
 
+/*! Reconstructs the kstring from the header hash table.
+ * @return
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int sam_hdr_rebuild2(bam_hdr_t *bh);
+
 /* ==== Line level methods ==== */
 
 /*! Appends a formatted line to an existing SAM header.
@@ -324,15 +331,13 @@ int sam_hdr_add_lines2(bam_hdr_t *bh, const char *lines, int len);
 /*! Adds a single line to a SAM header.
  *
  * Specify type and one or more key,value pairs, ending with the NULL key.
- * Eg. sam_hdr_add(h, "SQ", "ID", "foo", "LN", "100", NULL).
+ * Eg. sam_hdr_add_line(h, "SQ", "ID", "foo", "LN", "100", NULL).
  *
  * @return
  * Returns 0 on success;
  *        -1 on failure
  */
 int sam_hdr_add_line2(bam_hdr_t *bh, const char *type, ...);
-
-int sam_hdr_parse2(bam_hdr_t *bh, const char *hdr, int len);
 
 /*!
  *
@@ -368,6 +373,22 @@ int sam_hdr_remove_line_key2(bam_hdr_t *bh, const char *type, const char *ID_key
  */
 int sam_hdr_remove_line_pos2(bam_hdr_t *bh, const char *type, int position);
 
+/*! Adds or updates tag key,value pairs in a header line.
+ *
+ * Eg for adding M5 tags to @SQ lines or updating sort order for the
+ * @HD line.
+ *
+ * Specify multiple key,value pairs ending in NULL.
+ *
+ * @return
+ * Returns 0 on success;
+ *        -1 on failure
+ */
+int sam_hdr_update_line(bam_hdr_t *bh, const char *type,
+        const char *ID_key, const char *ID_value, ...);
+
+int sam_hdr_update_HD(bam_hdr_t *bh, ...);
+
 /*!
  *
  * Remove all lines of type <type> from the header, except the one specified by tag:value, i.e. the @SQ line containing "SN:ref1".
@@ -378,7 +399,7 @@ int sam_hdr_remove_line_pos2(bam_hdr_t *bh, const char *type, int position);
  * @return
  * Returns 0 on success and -1 on error.
  */
-int sam_hdr_keep_line_key2(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
+int sam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
 
 /* ==== Key:val level methods ==== */
 
@@ -395,27 +416,6 @@ const char *sam_hdr_find_tag2(bam_hdr_t *bh, const char *type, const char *ID_ke
  *
  */
 int sam_hdr_remove_tag2(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value, const char *key);
-
-/*! Adds or updates tag key,value pairs in a header line.
- *
- * Eg for adding M5 tags to @SQ lines or updating sort order for the
- * @HD line.
- *
- * Specify multiple key,value pairs ending in NULL.
- *
- * @return
- * Returns 0 on success;
- *        -1 on failure
- */
-int sam_hdr_find_update2(bam_hdr_t *bh, const char *type,
-        const char *ID_key, const char *ID_value, ...);
-
-/*! Reconstructs the kstring from the header hash table.
- * @return
- * Returns 0 on success;
- *        -1 on failure
- */
-int sam_hdr_rebuild2(bam_hdr_t *bh);
 
 /*! Looks up a reference sequence by name and returns the numerical ID.
  * @return
@@ -441,7 +441,7 @@ int sam_hdr_link_pg2(bam_hdr_t *bh);
  * The value returned is valid until the next call to
  * this function.
  */
-const char *sam_hdr_PG_ID2(bam_hdr_t *bh, const char *name);
+const char *sam_hdr_pg_id(bam_hdr_t *bh, const char *name);
 
 /*! Add an @PG line.
  *
@@ -459,7 +459,7 @@ const char *sam_hdr_PG_ID2(bam_hdr_t *bh, const char *name);
  * Returns 0 on success;
  *        -1 on failure
  */
-int sam_hdr_add_PG2(bam_hdr_t *bh, const char *name, ...);
+int sam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...);
 
 /* Alignment */
 
