@@ -50,7 +50,7 @@ int sam_cap_mapq(bam1_t *b, const char *ref, int ref_len, int thres)
             for (j = 0; j < l; ++j) {
                 int c1, c2, z = y + j;
                 if (x+j >= ref_len || ref[x+j] == '\0') break; // out of bounds
-                c1 = bam_seqi(seq, z), c2 = seq_nt16_table[(int)ref[x+j]];
+                c1 = bam_seqi(seq, z), c2 = seq_nt16_table[(unsigned char)ref[x+j]];
                 if (c2 != 15 && c1 != 15 && qual[z] >= 13) { // not ambiguous
                     ++len;
                     if (c1 && c1 != c2 && qual[z] >= 13) { // mismatch
