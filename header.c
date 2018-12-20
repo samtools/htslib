@@ -106,13 +106,15 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
         if (hrecs->ref[nref].name) {
             khint_t k;
             int r;
-            k = kh_put(m_s2i2, hrecs->ref_hash, hrecs->ref[nref].name, &r);
+            k = kh_put(m_s2i, hrecs->ref_hash, hrecs->ref[nref].name, &r);
             if (-1 == r) return -1;
             kh_val(hrecs->ref_hash, k) = nref;
         } else {
             return -1; // SN should be present, according to spec.
         }
 
+        if (hrecs->refs_changed < 0 || hrecs->refs_changed > hrecs->nref)
+            hrecs->refs_changed = hrecs->nref;
         hrecs->nref++;
     }
 
@@ -146,7 +148,7 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
         if (hrecs->rg[nrg].name) {
             khint_t k;
             int r;
-            k = kh_put(m_s2i2, hrecs->rg_hash, hrecs->rg[nrg].name, &r);
+            k = kh_put(m_s2i, hrecs->rg_hash, hrecs->rg[nrg].name, &r);
             if (-1 == r) return -1;
             kh_val(hrecs->rg_hash, k) = nrg;
         } else {
@@ -184,7 +186,7 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
                 // Resolve later if needed
                 khint_t k;
                 char tmp = tag->str[tag->len]; tag->str[tag->len] = 0;
-                k = kh_get(m_s2i2, hrecs->pg_hash, tag->str+3);
+                k = kh_get(m_s2i, hrecs->pg_hash, tag->str+3);
                 tag->str[tag->len] = tmp;
 
                 if (k != kh_end(hrecs->pg_hash)) {
@@ -215,7 +217,7 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
         if (hrecs->pg[npg].name) {
             khint_t k;
             int r;
-            k = kh_put(m_s2i2, hrecs->pg_hash, hrecs->pg[npg].name, &r);
+            k = kh_put(m_s2i, hrecs->pg_hash, hrecs->pg[npg].name, &r);
             if (-1 == r) return -1;
             kh_val(hrecs->pg_hash, k) = npg;
         } else {
@@ -257,12 +259,16 @@ static int bam_hrecs_remove_hash_entry(bam_hrecs_t *hrecs, int type, bam_hrec_ty
             if (tag->str[0] == 'S' && tag->str[1] == 'N') {
                 assert(tag->len >= 3);
                 key = tag->str + 3;
-                k = kh_get(m_s2i2, hrecs->ref_hash, key);
+                k = kh_get(m_s2i, hrecs->ref_hash, key);
                 if (k != kh_end(hrecs->ref_hash)) {
-                    if (kh_val(hrecs->ref_hash, k) < hrecs->nref-1)
-                        memmove(&hrecs->ref[kh_val(hrecs->ref_hash, k)], &hrecs->ref[kh_val(hrecs->ref_hash, k)+1], sizeof(bam_hrec_sq_t)*(hrecs->nref - kh_val(hrecs->ref_hash, k) - 1));
-                    kh_del(m_s2i2, hrecs->ref_hash, k);
+                    int idx = kh_val(hrecs->ref_hash, k);
+                    if (idx < hrecs->nref-1)
+                        memmove(&hrecs->ref[idx], &hrecs->ref[idx+1],
+                                sizeof(bam_hrec_sq_t)*(hrecs->nref - idx - 1));
+                    kh_del(m_s2i, hrecs->ref_hash, k);
                     hrecs->nref--;
+                    if (hrecs->refs_changed < 0 || hrecs->refs_changed > idx)
+                        hrecs->refs_changed = idx;
                 }
                 break;
             }
@@ -278,11 +284,11 @@ static int bam_hrecs_remove_hash_entry(bam_hrecs_t *hrecs, int type, bam_hrec_ty
             if (tag->str[0] == 'I' && tag->str[1] == 'D') {
                 assert(tag->len >= 3);
                 key = tag->str + 3;
-                k = kh_get(m_s2i2, hrecs->rg_hash, key);
+                k = kh_get(m_s2i, hrecs->rg_hash, key);
                 if (k != kh_end(hrecs->rg_hash)) {
                     if (kh_val(hrecs->rg_hash, k) < hrecs->nrg-1)
                         memmove(&hrecs->rg[kh_val(hrecs->rg_hash, k)], &hrecs->rg[kh_val(hrecs->rg_hash, k)+1], sizeof(bam_hrec_rg_t)*(hrecs->nrg - kh_val(hrecs->rg_hash, k) - 1));
-                    kh_del(m_s2i2, hrecs->rg_hash, k);
+                    kh_del(m_s2i, hrecs->rg_hash, k);
                     hrecs->nrg--;
                 }
                 break;
@@ -679,7 +685,73 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
     return 0;
 }
 
-static int bam_hrecs_populate(bam_hdr_t *bh) {
+/*! Update bam_hdr_t target_name and target_len arrays
+ *
+ *  @return 0 on success; -1 on failure
+ */
+int update_target_arrays(bam_hdr_t *bh, const bam_hrecs_t *hrecs,
+                         int refs_changed) {
+    if (!bh || !hrecs)
+        return -1;
+
+    if (refs_changed < 0)
+        return 0;
+
+    // Grow arrays if necessary
+    if (bh->n_targets < hrecs->nref) {
+        char **new_names = realloc(bh->target_name,
+                                   hrecs->nref * sizeof(*new_names));
+        if (!new_names)
+            return -1;
+        bh->target_name = new_names;
+        uint32_t *new_lens = realloc(bh->target_len,
+                                     hrecs->nref * sizeof(*new_lens));
+        if (!new_lens)
+            return -1;
+        bh->target_len = new_lens;
+    }
+
+    // Update names and lengths where changed
+    // hrecs->refs_changed is the first ref that has been updated, so ones
+    // before that can be skipped.
+    int i;
+    for (i = refs_changed; i < hrecs->nref; i++) {
+        if (i >= bh->n_targets
+            || strcmp(bh->target_name[i], hrecs->ref[i].name) != 0) {
+            if (i < bh->n_targets)
+                free(bh->target_name[i]);
+            bh->target_name[i] = strdup(hrecs->ref[i].name);
+            if (!bh->target_name[i])
+                return -1;
+        }
+        bh->target_len[i] = hrecs->ref[i].len;
+    }
+
+    // Free up any names that have been removed
+    for (; i < bh->n_targets; i++) {
+        free(bh->target_name[i]);
+    }
+
+    bh->n_targets = hrecs->nref;
+    return 0;
+}
+
+static int rebuild_target_arrays(bam_hdr_t *bh) {
+    if (!bh || !bh->hrecs)
+        return -1;
+
+    bam_hrecs_t *hrecs = bh->hrecs;
+    if (hrecs->refs_changed < 0)
+        return 0;
+
+    if (update_target_arrays(bh, hrecs, hrecs->refs_changed) != 0)
+        return -1;
+
+    hrecs->refs_changed = -1;
+    return 0;
+}
+
+int bam_hrecs_populate(bam_hdr_t *bh) {
     bam_hrecs_t *hrecs = bam_hrecs_new();
 
     if (!hrecs)
@@ -694,7 +766,11 @@ static int bam_hrecs_populate(bam_hdr_t *bh) {
     }
 
     bh->hrecs = hrecs;
-    sam_hdr_link_pg2(bh);
+
+    if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
+        return -1;
+
+    sam_hdr_link_pg(bh);
 
     return 0;
 }
@@ -715,15 +791,15 @@ static void redact_header_text(bam_hdr_t *bh) {
 
 /* ==== Public methods ==== */
 
-int sam_hdr_length2(bam_hdr_t *bh) {
-    if (-1 == sam_hdr_rebuild2(bh))
+int sam_hdr_length(bam_hdr_t *bh) {
+    if (-1 == sam_hdr_rebuild(bh))
         return -1;
 
     return bh->l_text;
 }
 
-const char *sam_hdr_str2(bam_hdr_t *bh) {
-    if (-1 == sam_hdr_rebuild2(bh))
+const char *sam_hdr_str(bam_hdr_t *bh) {
+    if (-1 == sam_hdr_rebuild(bh))
         return NULL;
 
     return bh->text;
@@ -734,10 +810,15 @@ const char *sam_hdr_str2(bam_hdr_t *bh) {
  * Returns 0 on success
  *        -1 on failure
  */
-int sam_hdr_rebuild2(bam_hdr_t *bh) {
+int sam_hdr_rebuild(bam_hdr_t *bh) {
     bam_hrecs_t *hrecs;
     if (!bh || !(hrecs = bh->hrecs))
         return -1;
+
+    if (hrecs->refs_changed >= 0) {
+        if (rebuild_target_arrays(bh) < 0)
+            return -1;
+    }
 
     /* If header text wasn't changed or header is empty, don't rebuild it. */
     if (!hrecs->dirty)
@@ -771,7 +852,7 @@ int sam_hdr_rebuild2(bam_hdr_t *bh) {
  * Returns 0 on success
  *        -1 on failure
  */
-int sam_hdr_add_lines2(bam_hdr_t *bh, const char *lines, int len) {
+int sam_hdr_add_lines(bam_hdr_t *bh, const char *lines, int len) {
     bam_hrecs_t *hrecs;
 
     if (!bh || !lines)
@@ -789,6 +870,9 @@ int sam_hdr_add_lines2(bam_hdr_t *bh, const char *lines, int len) {
     if (bam_hrecs_parse_lines(hrecs, lines, len) != 0)
         return -1;
 
+    if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
+        return -1;
+
     hrecs->dirty = 1;
     redact_header_text(bh);
 
@@ -803,7 +887,7 @@ int sam_hdr_add_lines2(bam_hdr_t *bh, const char *lines, int len) {
  * Returns index for specific entry on success (eg 2nd SQ, 4th RG)
  *        -1 on failure
  */
-int sam_hdr_add_line2(bam_hdr_t *bh, const char *type, ...) {
+int sam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
     va_list args;
     bam_hrecs_t *hrecs;
 
@@ -820,8 +904,13 @@ int sam_hdr_add_line2(bam_hdr_t *bh, const char *type, ...) {
     int ret = bam_hrecs_vadd(hrecs, type, args, NULL);
     va_end(args);
 
-    if (ret >= 0 && hrecs->dirty)
-        redact_header_text(bh);
+    if (ret >= 0) {
+        if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
+            return -1;
+
+        if (hrecs->dirty)
+            redact_header_text(bh);
+    }
 
     return ret;
 }
@@ -837,7 +926,7 @@ int sam_hdr_add_line2(bam_hdr_t *bh, const char *type, ...) {
  *
  * Returns NULL if no type/ID is found.
  */
-char *sam_hdr_find_line2(bam_hdr_t *bh, const char *type,
+char *sam_hdr_find_line(bam_hdr_t *bh, const char *type,
                         const char *ID_key, const char *ID_value) {
     bam_hrecs_t *hrecs;
     if (!bh)
@@ -884,7 +973,7 @@ char *sam_hdr_find_line2(bam_hdr_t *bh, const char *type,
  * Returns 0 on success and -1 on error
  */
 
-int sam_hdr_remove_line_key2(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
+int sam_hdr_remove_line_key(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
     bam_hrecs_t *hrecs;
     if (!bh || !type)
         return -1;
@@ -918,7 +1007,7 @@ int sam_hdr_remove_line_key2(bam_hdr_t *bh, const char *type, const char *ID_key
  * Returns 0 on success and -1 on error
  */
 
-int sam_hdr_remove_line_pos2(bam_hdr_t *bh, const char *type, int position) {
+int sam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position) {
     bam_hrecs_t *hrecs;
     if (!bh || !type || position < 0)
         return -1;
@@ -1023,7 +1112,7 @@ int sam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const
 
 /* ==== Key:val level methods ==== */
 
-const char *sam_hdr_find_tag2(bam_hdr_t *bh,
+const char *sam_hdr_find_tag(bam_hdr_t *bh,
         const char *type,
         const char *ID_key,
         const char *ID_value,
@@ -1049,7 +1138,7 @@ const char *sam_hdr_find_tag2(bam_hdr_t *bh,
     return tg->str;
 }
 
-int sam_hdr_remove_tag2(bam_hdr_t *bh,
+int sam_hdr_remove_tag(bam_hdr_t *bh,
         const char *type,
         const char *ID_key,
         const char *ID_value,
@@ -1124,7 +1213,7 @@ int bam_hrecs_rebuild_text(const bam_hrecs_t *hrecs, kstring_t *ks) {
  * Looks up a reference sequence by name and returns the numerical ID.
  * Returns -1 if unknown reference.
  */
-int sam_hdr_name2ref2(bam_hdr_t *bh, const char *ref) {
+int sam_hdr_name2ref(bam_hdr_t *bh, const char *ref) {
     bam_hrecs_t *hrecs;
     khint_t k;
 
@@ -1140,7 +1229,7 @@ int sam_hdr_name2ref2(bam_hdr_t *bh, const char *ref) {
     if (!hrecs->ref_hash)
         return -1;
 
-    k = kh_get(m_s2i2, hrecs->ref_hash, ref);
+    k = kh_get(m_s2i, hrecs->ref_hash, ref);
     return k == kh_end(hrecs->ref_hash) ? bam_name2id(bh, ref) : kh_val(hrecs->ref_hash, k);
 
 }
@@ -1158,7 +1247,7 @@ int sam_hdr_name2ref2(bam_hdr_t *bh, const char *ref) {
  * Returns 0 on success
  *        -1 on failure (indicating broken PG/PP records)
  */
-int sam_hdr_link_pg2(bam_hdr_t *bh) {
+int sam_hdr_link_pg(bam_hdr_t *bh) {
     bam_hrecs_t *hrecs;
     int i, j, ret = 0, *new_pg_end;
 
@@ -1195,7 +1284,7 @@ int sam_hdr_link_pg2(bam_hdr_t *bh) {
         }
 
         tmp = tag->str[tag->len]; tag->str[tag->len] = 0;
-        k = kh_get(m_s2i2, hrecs->pg_hash, tag->str+3);
+        k = kh_get(m_s2i, hrecs->pg_hash, tag->str+3);
         tag->str[tag->len] = tmp;
 
         if (k == kh_end(hrecs->pg_hash)) {
@@ -1237,13 +1326,13 @@ const char *sam_hdr_pg_id(bam_hdr_t *bh, const char *name) {
         hrecs = bh->hrecs;
     }
 
-    khint_t k = kh_get(m_s2i2, hrecs->pg_hash, name);
+    khint_t k = kh_get(m_s2i, hrecs->pg_hash, name);
     if (k == kh_end(hrecs->pg_hash))
         return name;
 
     do {
         sprintf(hrecs->ID_buf, "%.1000s.%d", name, hrecs->ID_cnt++);
-        k = kh_get(m_s2i2, hrecs->pg_hash, hrecs->ID_buf);
+        k = kh_get(m_s2i, hrecs->pg_hash, hrecs->ID_buf);
     } while (k != kh_end(hrecs->pg_hash));
 
     return hrecs->ID_buf;
@@ -1341,19 +1430,20 @@ bam_hrecs_t *bam_hrecs_new() {
 
     hrecs->nref = 0;
     hrecs->ref  = NULL;
-    if (!(hrecs->ref_hash = kh_init(m_s2i2)))
+    if (!(hrecs->ref_hash = kh_init(m_s2i)))
         goto err;
+    hrecs->refs_changed = -1;
 
     hrecs->nrg = 0;
     hrecs->rg  = NULL;
-    if (!(hrecs->rg_hash = kh_init(m_s2i2)))
+    if (!(hrecs->rg_hash = kh_init(m_s2i)))
         goto err;
 
     hrecs->npg = 0;
     hrecs->pg  = NULL;
     hrecs->npg_end = hrecs->npg_end_alloc = 0;
     hrecs->pg_end = NULL;
-    if (!(hrecs->pg_hash = kh_init(m_s2i2)))
+    if (!(hrecs->pg_hash = kh_init(m_s2i)))
         goto err;
 
     if (!(hrecs->tag_pool = pool_create(sizeof(bam_hrec_tag_t))))
@@ -1387,7 +1477,7 @@ err:
 
     return NULL;
 }
-
+#if 0
 /*
  * Produces a duplicate copy of source and returns it.
  * Returns NULL on failure
@@ -1395,7 +1485,7 @@ err:
 bam_hrecs_t *bam_hrecs_dup(bam_hrecs_t *source) {
         return NULL;
 }
-
+#endif
 /*! Deallocates all storage used by a bam_hrecs_t struct.
  *
  * This also decrements the header reference count. If after decrementing
@@ -1412,19 +1502,19 @@ void bam_hrecs_free(bam_hrecs_t *hrecs) {
         kh_destroy(bam_hrecs_t, hrecs->h);
 
     if (hrecs->ref_hash)
-        kh_destroy(m_s2i2, hrecs->ref_hash);
+        kh_destroy(m_s2i, hrecs->ref_hash);
 
     if (hrecs->ref)
         free(hrecs->ref);
 
     if (hrecs->rg_hash)
-        kh_destroy(m_s2i2, hrecs->rg_hash);
+        kh_destroy(m_s2i, hrecs->rg_hash);
 
     if (hrecs->rg)
         free(hrecs->rg);
 
     if (hrecs->pg_hash)
-        kh_destroy(m_s2i2, hrecs->pg_hash);
+        kh_destroy(m_s2i, hrecs->pg_hash);
 
     if (hrecs->pg)
         free(hrecs->pg);
@@ -1466,7 +1556,7 @@ bam_hrec_type_t *bam_hrecs_find_type(bam_hrecs_t *hrecs, const char *type,
     if (ID_key) {
         if (type[0]   == 'S' && type[1]   == 'Q' &&
             ID_key[0] == 'S' && ID_key[1] == 'N') {
-            k = kh_get(m_s2i2, hrecs->ref_hash, ID_value);
+            k = kh_get(m_s2i, hrecs->ref_hash, ID_value);
             return k != kh_end(hrecs->ref_hash)
                 ? hrecs->ref[kh_val(hrecs->ref_hash, k)].ty
                 : NULL;
@@ -1474,7 +1564,7 @@ bam_hrec_type_t *bam_hrecs_find_type(bam_hrecs_t *hrecs, const char *type,
 
         if (type[0]   == 'R' && type[1]   == 'G' &&
             ID_key[0] == 'I' && ID_key[1] == 'D') {
-            k = kh_get(m_s2i2, hrecs->rg_hash, ID_value);
+            k = kh_get(m_s2i, hrecs->rg_hash, ID_value);
             return k != kh_end(hrecs->rg_hash)
                 ? hrecs->rg[kh_val(hrecs->rg_hash, k)].ty
                 : NULL;
@@ -1482,7 +1572,7 @@ bam_hrec_type_t *bam_hrecs_find_type(bam_hrecs_t *hrecs, const char *type,
 
         if (type[0]   == 'P' && type[1]   == 'G' &&
             ID_key[0] == 'I' && ID_key[1] == 'D') {
-            k = kh_get(m_s2i2, hrecs->pg_hash, ID_value);
+            k = kh_get(m_s2i, hrecs->pg_hash, ID_value);
             return k != kh_end(hrecs->pg_hash)
                 ? hrecs->pg[kh_val(hrecs->pg_hash, k)].ty
                 : NULL;
@@ -1624,7 +1714,7 @@ int bam_hrecs_remove_key(bam_hrecs_t *hrecs,
  * Returns NULL on failure
  */
 bam_hrec_rg_t *bam_hrecs_find_rg(bam_hrecs_t *hrecs, const char *rg) {
-    khint_t k = kh_get(m_s2i2, hrecs->rg_hash, rg);
+    khint_t k = kh_get(m_s2i, hrecs->rg_hash, rg);
     return k == kh_end(hrecs->rg_hash)
         ? NULL
         : &hrecs->rg[kh_val(hrecs->rg_hash, k)];
@@ -1633,11 +1723,11 @@ bam_hrec_rg_t *bam_hrecs_find_rg(bam_hrecs_t *hrecs, const char *rg) {
 /*
  * Returns the sort order:
  */
-enum sam_sort_order2 bam_hrecs_sort_order(bam_hrecs_t *hrecs) {
+enum sam_sort_order bam_hrecs_sort_order(bam_hrecs_t *hrecs) {
     khint_t k;
-    enum sam_sort_order2 so;
+    enum sam_sort_order so;
 
-    so = ORDER_UNKNOWN2;
+    so = ORDER_UNKNOWN;
     k = kh_get(bam_hrecs_t, hrecs->h, K("HD"));
     if (k != kh_end(hrecs->h)) {
         bam_hrec_type_t *ty = kh_val(hrecs->h, k);
@@ -1645,11 +1735,11 @@ enum sam_sort_order2 bam_hrecs_sort_order(bam_hrecs_t *hrecs) {
         for (tag = ty->tag; tag; tag = tag->next) {
             if (tag->str[0] == 'S' && tag->str[1] == 'O') {
                 if (strcmp(tag->str+3, "unsorted") == 0)
-                    so = ORDER_UNSORTED2;
+                    so = ORDER_UNSORTED;
                 else if (strcmp(tag->str+3, "queryname") == 0)
-                    so = ORDER_NAME2;
+                    so = ORDER_NAME;
                 else if (strcmp(tag->str+3, "coordinate") == 0)
-                    so = ORDER_COORD2;
+                    so = ORDER_COORD;
                 else if (strcmp(tag->str+3, "unknown") != 0)
                     hts_log_error("Unknown sort order field: %s", tag->str+3);
             }
@@ -1659,11 +1749,11 @@ enum sam_sort_order2 bam_hrecs_sort_order(bam_hrecs_t *hrecs) {
     return so;
 }
 
-enum sam_group_order2 bam_hrecs_group_order(bam_hrecs_t *hrecs) {
+enum sam_group_order bam_hrecs_group_order(bam_hrecs_t *hrecs) {
     khint_t k;
-    enum sam_group_order2 go;
+    enum sam_group_order go;
 
-    go = ORDER_NONE2;
+    go = ORDER_NONE;
     k = kh_get(bam_hrecs_t, hrecs->h, K("HD"));
     if (k != kh_end(hrecs->h)) {
         bam_hrec_type_t *ty = kh_val(hrecs->h, k);
@@ -1671,12 +1761,31 @@ enum sam_group_order2 bam_hrecs_group_order(bam_hrecs_t *hrecs) {
         for (tag = ty->tag; tag; tag = tag->next) {
             if (tag->str[0] == 'G' && tag->str[1] == 'O') {
                 if (strcmp(tag->str+3, "query") == 0)
-                    go = ORDER_QUERY2;
+                    go = ORDER_QUERY;
                 else if (strcmp(tag->str+3, "reference") == 0)
-                    go = ORDER_REFERENCE2;
+                    go = ORDER_REFERENCE;
             }
         }
     }
 
     return go;
+}
+
+// Legacy functions from htslb/cram.h, included here for API compatibility.
+typedef bam_hdr_t SAM_hdr;
+
+SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
+    bam_hdr_t *bh = bam_hdr_init();
+    if (!bh) return NULL;
+
+    if (sam_hdr_add_lines(bh, hdr, len) != 0) {
+        bam_hdr_destroy(bh);
+        return NULL;
+    }
+
+    return bh;
+}
+
+void sam_hdr_free(SAM_hdr *hdr) {
+    bam_hdr_destroy(hdr);
 }

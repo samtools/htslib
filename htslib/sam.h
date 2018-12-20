@@ -297,19 +297,19 @@ int sam_hdr_write(samFile *fp, bam_hdr_t *h) HTS_RESULT_USED;
 /*!
  * Returns the current length of the bam_hdr_t in text form.
  */
-int sam_hdr_length2(bam_hdr_t *bh);
+int sam_hdr_length(bam_hdr_t *bh);
 
 /*!
  * Returns the string form of the bam_hdr_t.
  */
-const char *sam_hdr_str2(bam_hdr_t *bh);
+const char *sam_hdr_str(bam_hdr_t *bh);
 
 /*! Reconstructs the kstring from the header hash table.
  * @return
  * Returns 0 on success;
  *        -1 on failure
  */
-int sam_hdr_rebuild2(bam_hdr_t *bh);
+int sam_hdr_rebuild(bam_hdr_t *bh);
 
 /* ==== Line level methods ==== */
 
@@ -326,7 +326,7 @@ int sam_hdr_rebuild2(bam_hdr_t *bh);
  * Returns 0 on success;
  *        -1 on failure
  */
-int sam_hdr_add_lines2(bam_hdr_t *bh, const char *lines, int len);
+int sam_hdr_add_lines(bam_hdr_t *bh, const char *lines, int len);
 
 /*! Adds a single line to a SAM header.
  *
@@ -337,7 +337,7 @@ int sam_hdr_add_lines2(bam_hdr_t *bh, const char *lines, int len);
  * Returns 0 on success;
  *        -1 on failure
  */
-int sam_hdr_add_line2(bam_hdr_t *bh, const char *type, ...);
+int sam_hdr_add_line(bam_hdr_t *bh, const char *type, ...);
 
 /*!
  *
@@ -351,7 +351,7 @@ int sam_hdr_add_line2(bam_hdr_t *bh, const char *type, ...);
  * @return
  * Returns NULL if no type/ID is found.
  */
-char *sam_hdr_find_line2(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
+char *sam_hdr_find_line(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
 
 /*!
  *
@@ -364,14 +364,14 @@ char *sam_hdr_find_line2(bam_hdr_t *bh, const char *type, const char *ID_key, co
  * @return
  * Returns 0 on success and -1 on error.
  */
-int sam_hdr_remove_line_key2(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
+int sam_hdr_remove_line_key(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
 
 /*!
  *
  * Remove a line from the header by specifying the position in the type
  * group, i.e. 3rd @SQ line.
  */
-int sam_hdr_remove_line_pos2(bam_hdr_t *bh, const char *type, int position);
+int sam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position);
 
 /*! Adds or updates tag key,value pairs in a header line.
  *
@@ -410,18 +410,18 @@ int sam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const
  * Returns a char pointer on success;
  *         NULL on failure
  */
-const char *sam_hdr_find_tag2(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value, const char *key);
+const char *sam_hdr_find_tag(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value, const char *key);
 
 /* ! Remove the key from the line identified by type, ID_key and ID_value
  *
  */
-int sam_hdr_remove_tag2(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value, const char *key);
+int sam_hdr_remove_tag(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value, const char *key);
 
 /*! Looks up a reference sequence by name and returns the numerical ID.
  * @return
  * Returns -1 if unknown reference.
  */
-int sam_hdr_name2ref2(bam_hdr_t *bh, const char *ref);
+int sam_hdr_name2ref(bam_hdr_t *bh, const char *ref);
 
 /*! Fixes any PP links in @PG headers.
  *
@@ -433,7 +433,7 @@ int sam_hdr_name2ref2(bam_hdr_t *bh, const char *ref);
  * Returns 0 on success;
  *        -1 on failure (indicating broken PG/PP records)
  */
-int sam_hdr_link_pg2(bam_hdr_t *bh);
+int sam_hdr_link_pg(bam_hdr_t *bh);
 
 /*
  * Returns a unique ID from a base name.

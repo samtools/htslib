@@ -47,8 +47,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *-----------------------------------------------------------------------------
  * cram_fd
  */
-SAM_hdr *cram_fd_get_header(cram_fd *fd) { return fd->header; }
-void cram_fd_set_header(cram_fd *fd, SAM_hdr *hdr) { fd->header = hdr; }
+bam_hdr_t *cram_fd_get_header(cram_fd *fd) { return fd->header; }
+void cram_fd_set_header(cram_fd *fd, bam_hdr_t *hdr) { fd->header = hdr; }
 
 int cram_fd_get_version(cram_fd *fd) { return fd->version; }
 void cram_fd_set_version(cram_fd *fd, int vers) { fd->version = vers; }

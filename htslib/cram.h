@@ -69,7 +69,6 @@ enum cram_content_type {
 };
 
 // Opaque data types, see cram_structs for the fully fledged versions.
-typedef struct SAM_hdr SAM_hdr;
 typedef struct cram_file_def cram_file_def;
 typedef struct cram_fd cram_fd;
 typedef struct cram_container cram_container;
@@ -89,8 +88,8 @@ struct hFILE;
  *-----------------------------------------------------------------------------
  * cram_fd
  */
-SAM_hdr *cram_fd_get_header(cram_fd *fd);
-void cram_fd_set_header(cram_fd *fd, SAM_hdr *hdr);
+bam_hdr_t *cram_fd_get_header(cram_fd *fd);
+void cram_fd_set_header(cram_fd *fd, bam_hdr_t *hdr);
 
 int cram_fd_get_version(cram_fd *fd);
 void cram_fd_set_version(cram_fd *fd, int vers);
@@ -193,22 +192,6 @@ int cram_transcode_rg(cram_fd *in, cram_fd *out,
  *        -1 on failure
  */
 int cram_copy_slice(cram_fd *in, cram_fd *out, int32_t num_slice);
-
-/*
- *-----------------------------------------------------------------------------
- * SAM_hdr
- */
-
-/*! Tokenises a SAM header into a hash table.
- *
- * Also extracts a few bits on specific data types, such as @RG lines.
- *
- * @return
- * Returns a SAM_hdr struct on success (free with sam_hdr_free());
- *         NULL on failure
- */
-SAM_hdr *sam_hdr_parse_(const char *hdr, int len);
-
 
 /*
  *-----------------------------------------------------------------------------
@@ -410,7 +393,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_set_header(cram_fd *fd, SAM_hdr *hdr);
+int cram_set_header(cram_fd *fd, bam_hdr_t *hdr);
 
 /*! Check if this file has a proper EOF block
  *
@@ -429,6 +412,19 @@ int int32_put_blk(cram_block *b, int32_t val);
 
 /**@}*/
 /**@{ -------------------------------------------------------------------*/
+
+typedef struct bam_hdr_t SAM_hdr;
+
+/*! Tokenises a SAM header into a hash table.
+ *
+ * Also extracts a few bits on specific data types, such as @RG lines.
+ *
+ * @return
+ * Returns a SAM_hdr struct on success (free with sam_hdr_free());
+ *         NULL on failure
+ */
+SAM_hdr *sam_hdr_parse_(const char *hdr, int len);
+
 /*! Deallocates all storage used by a SAM_hdr struct.
  *
  * This also decrements the header reference count. If after decrementing
@@ -443,13 +439,13 @@ void sam_hdr_free(SAM_hdr *hdr);
  *
  * Call sam_hdr_rebuild() first if editing has taken place.
  */
-int sam_hdr_length(SAM_hdr *hdr);
+//int sam_hdr_length(SAM_hdr *hdr);
 
 /*! Returns the string form of the SAM_hdr.
  *
  * Call sam_hdr_rebuild() first if editing has taken place.
  */
-char *sam_hdr_str(SAM_hdr *hdr);
+//char *sam_hdr_str(SAM_hdr *hdr);
 
 /*! Appends a formatted line to an existing SAM header.
  *
@@ -481,7 +477,7 @@ char *sam_hdr_str(SAM_hdr *hdr);
  * Returns 0 on success;
  *        -1 on failure
  */
-int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...);
+#define sam_hdr_add_PG sam_hdr_add_pg
 
 /*!
  * A function to help with construction of CL tags in @PG records.
@@ -494,6 +490,7 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...);
  */
 char *stringify_argv(int argc, char *argv[]);
 
+/**@{ -------------------------------------------------------------------*/
 
 /*!
  * Returns the refs_t structure used by a cram file handle.

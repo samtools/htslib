@@ -679,7 +679,7 @@ typedef struct cram_fd {
     int            mode;     // 'r' or 'w'
     int            version;
     cram_file_def *file_def;
-    SAM_hdr       *header;
+    bam_hdr_t     *header;
 
     char          *prefix;
     int64_t        record_counter;

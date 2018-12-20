@@ -395,3 +395,42 @@ char hts_json_fskip_value(struct hFILE *fp, char type)
     free(str.s);
     return ret;
 }
+
+/*
+ * A function to help with construction of CL tags in @PG records.
+ * Takes an argc, argv pair and returns a single space-separated string.
+ * This string should be deallocated by the calling function.
+ *
+ * Returns malloced char * on success
+ *         NULL on failure
+ */
+char *stringify_argv(int argc, char *argv[]) {
+    char *str, *cp;
+    size_t nbytes = 1;
+    int i, j;
+
+    /* Allocate */
+    for (i = 0; i < argc; i++) {
+        if (i > 0) nbytes += 1;
+        nbytes += strlen(argv[i]);
+    }
+    if (!(str = malloc(nbytes)))
+        return NULL;
+
+    /* Copy */
+    cp = str;
+    for (i = 0; i < argc; i++) {
+        if (i > 0) *cp++ = ' ';
+        j = 0;
+        while (argv[i][j]) {
+            if (argv[i][j] == '\t')
+                *cp++ = ' ';
+            else
+                *cp++ = argv[i][j];
+            j++;
+        }
+    }
+    *cp++ = 0;
+
+    return str;
+}

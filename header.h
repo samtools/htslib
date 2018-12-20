@@ -160,22 +160,22 @@ typedef struct {
 
 
 /*! Sort order parsed from @HD line */
-enum sam_sort_order2 {
-    ORDER_UNKNOWN2  =-1,
-    ORDER_UNSORTED2 = 0,
-    ORDER_NAME2     = 1,
-    ORDER_COORD2    = 2
+enum sam_sort_order {
+    ORDER_UNKNOWN  =-1,
+    ORDER_UNSORTED = 0,
+    ORDER_NAME     = 1,
+    ORDER_COORD    = 2
   //ORDER_COLLATE  = 3 // maybe one day!
 };
 
-enum sam_group_order2 {
-    ORDER_NONE2      =-1,
-    ORDER_QUERY2     = 0,
-    ORDER_REFERENCE2 = 1
+enum sam_group_order {
+    ORDER_NONE      =-1,
+    ORDER_QUERY     = 0,
+    ORDER_REFERENCE = 1
 };
 
 KHASH_MAP_INIT_INT(bam_hrecs_t, bam_hrec_type_t*)
-KHASH_MAP_INIT_STR(m_s2i2, int)
+KHASH_MAP_INIT_STR(m_s2i, int)
 
 /*! Primary structure for header manipulation
  *
@@ -198,19 +198,19 @@ struct sam_hdr {
     // @SQ lines / references
     int nref;                  //!< Number of \@SQ lines
     bam_hrec_sq_t *ref;        //!< Array of parsed \@SQ lines
-    khash_t(m_s2i2) *ref_hash; //!< Maps SQ SN field to ref[] index
+    khash_t(m_s2i) *ref_hash;  //!< Maps SQ SN field to ref[] index
 
     // @RG lines / read-groups
     int nrg;                   //!< Number of \@RG lines
     bam_hrec_rg_t *rg;         //!< Array of parsed \@RG lines
-    khash_t(m_s2i2) *rg_hash;  //!< Maps RG ID field to rg[] index
+    khash_t(m_s2i) *rg_hash;   //!< Maps RG ID field to rg[] index
 
     // @PG lines / programs
     int npg;                   //!< Number of \@PG lines
     int npg_end;               //!< Number of terminating \@PG lines
     int npg_end_alloc;         //!< Size of pg_end field
     bam_hrec_pg_t *pg;         //!< Array of parsed \@PG lines
-    khash_t(m_s2i2) *pg_hash;  //!< Maps PG ID field to pg[] index
+    khash_t(m_s2i) *pg_hash;   //!< Maps PG ID field to pg[] index
     int *pg_end;               //!< \@PG chain termination IDs
 
     // @cond internal
@@ -219,15 +219,22 @@ struct sam_hdr {
     // @endcond
 
     int dirty;                // marks the header as modified, so it can be rebuilt
-
+    int refs_changed;   // Index of first changed ref (-1 if unchanged)
     int type_count;
     char (*type_order)[3];
 };
 
+/*! Populate the internal SAM header from the header text.
+ *
+ * @return
+ * Returns -1 on error, 0 on success
+ */
+int bam_hrecs_populate(bam_hdr_t *bh);
+
 /*! Creates an empty SAM header, ready to be populated.
  *
  * @return
- * Returns a bam_hrecs_t struct on success (free with sam_hdr_free())
+ * Returns a bam_hrecs_t struct on success (free with bam_hrecs_free())
  *         NULL on failure
  */
 bam_hrecs_t *bam_hrecs_new(void);
@@ -237,6 +244,16 @@ bam_hrecs_t *bam_hrecs_new(void);
  * Returns NULL on failure
  */
 bam_hrecs_t *bam_hrecs_dup(bam_hrecs_t *hrecs);
+
+/*! Update bam_hdr_t target_name and target_len arrays
+ *
+ *  bam_hdr_t and bam_hrecs_t are specified separately so that bam_hdr_dup
+ *  can use it to construct target arrays from the source header.
+ *
+ *  @return 0 on success; -1 on failure
+ */
+int update_target_arrays(bam_hdr_t *bh, const bam_hrecs_t *hrecs,
+                         int refs_changed);
 
 /*! Reconstructs a kstring from the header hash table.
  *
@@ -295,10 +312,10 @@ int bam_hrecs_remove_key(bam_hrecs_t *hrecs,
 bam_hrec_rg_t *bam_hrecs_find_rg(bam_hrecs_t *hrecs, const char *rg);
 
 /*! Returns the sort order from the @HD SO: field */
-enum sam_sort_order2 bam_hrecs_sort_order(bam_hrecs_t *hrecs);
+enum sam_sort_order bam_hrecs_sort_order(bam_hrecs_t *hrecs);
 
 /*! Returns the group order from the @HD SO: field */
-enum sam_group_order2 bam_hrecs_group_order(bam_hrecs_t *hrecs);
+enum sam_group_order bam_hrecs_group_order(bam_hrecs_t *hrecs);
 
 #ifdef __cplusplus
 }

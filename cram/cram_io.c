@@ -1787,14 +1787,14 @@ static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
 static void sanitise_SQ_lines(cram_fd *fd) {
     int i;
 
-    if (!fd->header)
+    if (!fd->header || !fd->header->hrecs)
         return;
 
     if (!fd->refs || !fd->refs->h_meta)
         return;
 
-    for (i = 0; i < fd->header->nref; i++) {
-        char *name = fd->header->ref[i].name;
+    for (i = 0; i < fd->header->hrecs->nref; i++) {
+        char *name = fd->header->hrecs->ref[i].name;
         khint_t k = kh_get(refs, fd->refs->h_meta, name);
         ref_entry *r;
 
@@ -1806,17 +1806,17 @@ static void sanitise_SQ_lines(cram_fd *fd) {
         if (!(r = (ref_entry *)kh_val(fd->refs->h_meta, k)))
             continue;
 
-        if (r->length && r->length != fd->header->ref[i].len) {
-            assert(strcmp(r->name, fd->header->ref[i].name) == 0);
+        if (r->length && r->length != fd->header->hrecs->ref[i].len) {
+            assert(strcmp(r->name, fd->header->hrecs->ref[i].name) == 0);
 
             // Should we also check MD5sums here to ensure the correct
             // reference was given?
             hts_log_warning("Header @SQ length mismatch for ref %s, %d vs %d",
-                            r->name, fd->header->ref[i].len, (int)r->length);
+                            r->name, fd->header->hrecs->ref[i].len, (int)r->length);
 
             // Fixing the parsed @SQ header will make MD:Z: strings work
             // and also stop it producing N for the sequence.
-            fd->header->ref[i].len = r->length;
+            fd->header->hrecs->ref[i].len = r->length;
         }
     }
 }
@@ -1828,8 +1828,9 @@ static void sanitise_SQ_lines(cram_fd *fd) {
  * Returns 0 on success
  *        -1 on failure
  */
-int refs2id(refs_t *r, SAM_hdr *h) {
+int refs2id(refs_t *r, bam_hdr_t *bh) {
     int i;
+    bam_hrecs_t *h = bh->hrecs;
 
     if (r->ref_id)
         free(r->ref_id);
@@ -1858,29 +1859,37 @@ int refs2id(refs_t *r, SAM_hdr *h) {
  * Returns 0 on success
  *         -1 on failure
  */
-static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
+static int refs_from_header(refs_t *r, cram_fd *fd, bam_hdr_t *h) {
     int i, j;
 
     if (!r)
         return -1;
 
-    if (!h || h->nref == 0)
+    if (!h)
+        return 0;
+
+    if (!h->hrecs) {
+        if (-1 == bam_hrecs_populate(h))
+            return -1;
+    }
+
+    if (h->hrecs->nref == 0)
         return 0;
 
     //fprintf(stderr, "refs_from_header for %p mode %c\n", fd, fd->mode);
 
     /* Existing refs are fine, as long as they're compatible with the hdr. */
-    if (!(r->ref_id = realloc(r->ref_id, (r->nref + h->nref) * sizeof(*r->ref_id))))
+    if (!(r->ref_id = realloc(r->ref_id, (r->nref + h->hrecs->nref) * sizeof(*r->ref_id))))
         return -1;
 
     /* Copy info from h->ref[i] over to r */
-    for (i = 0, j = r->nref; i < h->nref; i++) {
-        SAM_hdr_type *ty;
-        SAM_hdr_tag *tag;
+    for (i = 0, j = r->nref; i < h->hrecs->nref; i++) {
+        bam_hrec_type_t *ty;
+        bam_hrec_tag_t *tag;
         khint_t k;
         int n;
 
-        k = kh_get(refs, r->h_meta, h->ref[i].name);
+        k = kh_get(refs, r->h_meta, h->hrecs->ref[i].name);
         if (k != kh_end(r->h_meta))
             // Ref already known about
             continue;
@@ -1888,15 +1897,15 @@ static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
         if (!(r->ref_id[j] = calloc(1, sizeof(ref_entry))))
             return -1;
 
-        if (!h->ref[i].name)
+        if (!h->hrecs->ref[i].name)
             return -1;
 
-        r->ref_id[j]->name = string_dup(r->pool, h->ref[i].name);
+        r->ref_id[j]->name = string_dup(r->pool, h->hrecs->ref[i].name);
         r->ref_id[j]->length = 0; // marker for not yet loaded
 
         /* Initialise likely filename if known */
-        if ((ty = sam_hdr_find(h, "SQ", "SN", h->ref[i].name))) {
-            if ((tag = sam_hdr_find_key(h, ty, "M5", NULL))) {
+        if ((ty = bam_hrecs_find_type(h->hrecs, "SQ", "SN", h->hrecs->ref[i].name))) {
+            if ((tag = bam_hrecs_find_key(ty, "M5", NULL))) {
                 r->ref_id[j]->fn = string_dup(r->pool, tag->str+3);
                 //fprintf(stderr, "Tagging @SQ %s / %s\n", r->ref_id[h]->name, r->ref_id[h]->fn);
             }
@@ -1921,11 +1930,13 @@ static int refs_from_header(refs_t *r, cram_fd *fd, SAM_hdr *h) {
  * we have an SAM_hdr already constructed (eg from a file we've read
  * in).
  */
-int cram_set_header(cram_fd *fd, SAM_hdr *hdr) {
+int cram_set_header(cram_fd *fd, bam_hdr_t *hdr) {
     if (fd->header)
-        sam_hdr_free(fd->header);
-    fd->header = hdr;
-    return refs_from_header(fd->refs, fd, hdr);
+        bam_hdr_destroy(fd->header);
+    fd->header = bam_hdr_dup(hdr);
+    if (!fd->header)
+        return -1;
+    return refs_from_header(fd->refs, fd, fd->header);
 }
 
 /*
@@ -2074,8 +2085,8 @@ static unsigned get_int_threadid() {
  */
 static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     char *ref_path = getenv("REF_PATH");
-    SAM_hdr_type *ty;
-    SAM_hdr_tag *tag;
+    bam_hrec_type_t *ty;
+    bam_hrec_tag_t *tag;
     char path[PATH_MAX], path_tmp[PATH_MAX + 64];
     char cache[PATH_MAX], cache_root[PATH_MAX];
     char *local_cache = getenv("REF_CACHE");
@@ -2105,10 +2116,10 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if (!r->name)
         return -1;
 
-    if (!(ty = sam_hdr_find(fd->header, "SQ", "SN", r->name)))
+    if (!(ty = bam_hrecs_find_type(fd->header->hrecs, "SQ", "SN", r->name)))
         return -1;
 
-    if (!(tag = sam_hdr_find_key(fd->header, ty, "M5", NULL)))
+    if (!(tag = bam_hrecs_find_key(ty, "M5", NULL)))
         goto no_M5;
 
     hts_log_info("Querying ref %s", tag->str+3);
@@ -2176,7 +2187,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     no_M5:
         /* Failed to find in search path or M5 cache, see if @SQ UR: tag? */
-        if (!(tag = sam_hdr_find_key(fd->header, ty, "UR", NULL)))
+        if (!(tag = bam_hrecs_find_key(ty, "UR", NULL)))
             return -1;
 
         fn = (strncmp(tag->str+3, "file:", 5) == 0)
@@ -3668,10 +3679,10 @@ void cram_free_file_def(cram_file_def *def) {
  * Returns SAM hdr ptr on success
  *         NULL on failure
  */
-SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
+bam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
     int32_t header_len;
     char *header;
-    SAM_hdr *hdr;
+    bam_hdr_t *hdr;
 
     /* 1.1 onwards stores the header in the first block of a container */
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
@@ -3775,10 +3786,21 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
     }
 
     /* Parse */
-    hdr = sam_hdr_parse_(header, header_len);
-    free(header);
+    hdr = bam_hdr_init();
+    if (!hdr) {
+        free(header);
+        return NULL;
+    }
 
+    if (-1 == sam_hdr_add_lines(hdr, header, header_len)) {
+        free(header);
+        bam_hdr_destroy(hdr);
+        return NULL;
+    }
+
+    free(header);
     return hdr;
+
 }
 
 /*
@@ -3815,7 +3837,7 @@ static void full_path(char *out, char *in) {
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
+int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
     int header_len;
     int blank_block = (CRAM_MAJOR_VERS(fd->version) >= 3);
 
@@ -3829,8 +3851,8 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
 
     /* 1.0 requires an UNKNOWN read-group */
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
-        if (!sam_hdr_find_rg(hdr, "UNKNOWN"))
-            if (sam_hdr_add(hdr, "RG",
+        if (!bam_hrecs_find_rg(hdr->hrecs, "UNKNOWN"))
+            if (sam_hdr_add_line(hdr, "RG",
                             "ID", "UNKNOWN", "SM", "UNKNOWN", NULL))
                 return -1;
     }
@@ -3838,14 +3860,14 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
     /* Fix M5 strings */
     if (fd->refs && !fd->no_ref) {
         int i;
-        for (i = 0; i < hdr->nref; i++) {
-            SAM_hdr_type *ty;
+        for (i = 0; i < hdr->hrecs->nref; i++) {
+            bam_hrec_type_t *ty;
             char *ref;
 
-            if (!(ty = sam_hdr_find(hdr, "SQ", "SN", hdr->ref[i].name)))
+            if (!(ty = bam_hrecs_find_type(hdr->hrecs, "SQ", "SN", hdr->hrecs->ref[i].name)))
                 return -1;
 
-            if (!sam_hdr_find_key(hdr, ty, "M5", NULL)) {
+            if (!bam_hrecs_find_key(ty, "M5", NULL)) {
                 char unsigned buf[16];
                 char buf2[33];
                 int rlen;
@@ -3868,21 +3890,18 @@ int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr) {
                 cram_ref_decr(fd->refs, i);
 
                 hts_md5_hex(buf2, buf);
-                if (sam_hdr_update(hdr, ty, "M5", buf2, NULL))
+                if (sam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "M5", buf2, NULL))
                     return -1;
             }
 
             if (fd->ref_fn) {
                 char ref_fn[PATH_MAX];
                 full_path(ref_fn, fd->ref_fn);
-                if (sam_hdr_update(hdr, ty, "UR", ref_fn, NULL))
+                if (sam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "UR", ref_fn, NULL))
                     return -1;
             }
         }
     }
-
-    if (sam_hdr_rebuild(hdr))
-        return -1;
 
     /* Length */
     header_len = sam_hdr_length(hdr);
@@ -4387,7 +4406,7 @@ int cram_close(cram_fd *fd) {
         cram_free_file_def(fd->file_def);
 
     if (fd->header)
-        sam_hdr_free(fd->header);
+        bam_hdr_destroy(fd->header);
 
     free(fd->prefix);
 

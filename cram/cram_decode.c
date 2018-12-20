@@ -1204,7 +1204,7 @@ static inline void add_md_char(cram_slice *s, int decode_md, char c, int32_t *md
  * Generates the sequence, quality and cigar components.
  */
 static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
-                           cram_block *blk, cram_record *cr, SAM_hdr *bfd,
+                           cram_block *blk, cram_record *cr, bam_hdr_t *bh,
                            int cf, char *seq, char *qual,
                            int has_MD, int has_NM) {
     int prev_pos = 0, f, r = 0, out_sz = 1;
@@ -1221,6 +1221,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     int decode_md = s->decode_md && s->ref && !has_MD && cr->ref_id >= 0;
     int decode_nm = s->decode_md && s->ref && !has_NM && cr->ref_id >= 0;
     uint32_t ds = s->data_series;
+    bam_hrecs_t *bfd = bh->hrecs;
 
     if ((ds & CRAM_QS) && !(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES)) {
         memset(qual, 255, cr->len);
@@ -2231,7 +2232,7 @@ static char *md5_print(unsigned char *md5, char *out) {
  *        -1 on failure
  */
 int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
-                      SAM_hdr *bfd) {
+                      bam_hdr_t *bh) {
     cram_block *blk = s->block[0];
     int32_t bf, ref_id;
     unsigned char cf;
@@ -2242,6 +2243,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     int embed_ref;
     char **refs = NULL;
     uint32_t ds;
+    bam_hrecs_t *bfd = bh->hrecs;
 
     if (cram_dependent_data_series(fd, c->comp_hdr, s) != 0)
         return -1;
@@ -2719,7 +2721,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             }
             /* Decode sequence and generate CIGAR */
             if (ds & (CRAM_SEQ | CRAM_MQ)) {
-                r |= cram_decode_seq(fd, c, s, blk, cr, bfd, cf, seq, qual,
+                r |= cram_decode_seq(fd, c, s, blk, cr, bh, cf, seq, qual,
                                      has_MD, has_NM);
                 if (r) return r;
             } else {
@@ -2808,7 +2810,7 @@ typedef struct {
     cram_fd *fd;
     cram_container *c;
     cram_slice *s;
-    SAM_hdr *h;
+    bam_hdr_t *h;
     int exit_code;
 } cram_decode_job;
 
@@ -2824,7 +2826,7 @@ void *cram_decode_slice_thread(void *arg) {
  * Spawn a multi-threaded version of cram_decode_slice().
  */
 int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
-                         SAM_hdr *bfd) {
+                         bam_hdr_t *bfd) {
     cram_decode_job *j;
     int nonblock;
 
@@ -2871,13 +2873,14 @@ int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
  * Returns the used size of the bam record on success
  *         -1 on failure.
  */
-static int cram_to_bam(SAM_hdr *bfd, cram_fd *fd, cram_slice *s,
+static int cram_to_bam(bam_hdr_t *bh, cram_fd *fd, cram_slice *s,
                        cram_record *cr, int rec, bam_seq_t **bam) {
     int bam_idx, rg_len;
     char name_a[1024], *name;
     int name_len;
     char *aux, *aux_orig;
     char *seq, *qual;
+    bam_hrecs_t *bfd = bh->hrecs;
 
     /* Assign names if not explicitly set */
     if (fd->required_fields & SAM_QNAME) {
@@ -3024,7 +3027,7 @@ static cram_container *cram_first_slice(cram_fd *fd) {
     if (!c->comp_hdr)
         return NULL;
     if (!c->comp_hdr->AP_delta &&
-        sam_hdr_sort_order(fd->header) != ORDER_COORD) {
+        bam_hrecs_sort_order(fd->header->hrecs) != ORDER_COORD) {
         pthread_mutex_lock(&fd->ref_lock);
         fd->unsorted = 1;
         pthread_mutex_unlock(&fd->ref_lock);
@@ -3152,7 +3155,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
                     return NULL;
 
                 if (!c_next->comp_hdr->AP_delta &&
-                    sam_hdr_sort_order(fd->header) != ORDER_COORD) {
+                    bam_hrecs_sort_order(fd->header->hrecs) != ORDER_COORD) {
                     pthread_mutex_lock(&fd->ref_lock);
                     fd->unsorted = 1;
                     pthread_mutex_unlock(&fd->ref_lock);

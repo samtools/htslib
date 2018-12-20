@@ -127,7 +127,7 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
     return bam_len;
 }
 
-bam_hdr_t *cram_header_to_bam(SAM_hdr *h) {
+/*bam_hdr_t *cram_header_to_bam(SAM_hdr *h) {
     bam_hdr_t *header;
     int i;
     if (!h || h->nref < 0)
@@ -164,4 +164,4 @@ bam_hdr_t *cram_header_to_bam(SAM_hdr *h) {
 
 SAM_hdr *bam_header_to_cram(bam_hdr_t *h) {
     return sam_hdr_parse_(h->text, h->l_text);
-}
+}*/
