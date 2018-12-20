@@ -556,24 +556,24 @@ static void use_header_api() {
         fail("reading header from file");
         goto err;
     }
-    r = sam_hdr_remove_tag(header, "HD", NULL, NULL, "GO");
-    if (r != 1) { fail("sam_hdr_remove_tag2"); goto err; }
+    r = bam_hdr_remove_tag(header, "HD", NULL, NULL, "GO");
+    if (r != 1) { fail("bam_hdr_remove_tag"); goto err; }
 
-    r = sam_hdr_update_line(header, "HD", NULL, NULL, "VN", "1.5", NULL);
-    if (r != 0) { fail("sam_hdr_find_update2 HD"); goto err; }
+    r = bam_hdr_update_line(header, "HD", NULL, NULL, "VN", "1.5", NULL);
+    if (r != 0) { fail("bam_hdr_update_line HD"); goto err; }
 
-    r = sam_hdr_add_line(header, "SQ", "SN", "ref3", "LN", "5003", NULL);
-    if (r < 0) { fail("sam_hdr_add_line2"); goto err; }
+    r = bam_hdr_add_line(header, "SQ", "SN", "ref3", "LN", "5003", NULL);
+    if (r < 0) { fail("bam_hdr_add_line"); goto err; }
 
-    r = sam_hdr_update_line(header, "SQ", "SN", "ref1",
+    r = bam_hdr_update_line(header, "SQ", "SN", "ref1",
                              "M5", "kja8u34a2q3", NULL);
-    if (r != 0) { fail("sam_hdr_find_update2 SQ"); goto err; }
+    if (r != 0) { fail("bam_hdr_update_line SQ"); goto err; }
 
-    r = sam_hdr_add_pg(header, "samtools", "VN", "1.9", NULL);
-    if (r != 0) { fail("sam_hdr_add_PG2"); goto err; }
+    r = bam_hdr_add_pg(header, "samtools", "VN", "1.9", NULL);
+    if (r != 0) { fail("bam_hdr_add_pg"); goto err; }
 
     // Test addition with no newline or trailing NUL
-    r = sam_hdr_add_lines(header, rg_line, sizeof(rg_line));
+    r = bam_hdr_add_lines(header, rg_line, sizeof(rg_line));
     if (r != 0) { fail("bam_hdr_add_lines rg_line"); goto err; }
     //printf("line='%s'\n", bam_hdr_find_line(header, "SQ", "SN", "ref3"));
     //printf("tag='%s'\n", bam_hdr_find_tag(header, "SQ", "SN", "ref1", "M5"));

@@ -770,7 +770,7 @@ int bam_hrecs_populate(bam_hdr_t *bh) {
     if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
         return -1;
 
-    sam_hdr_link_pg(bh);
+    bam_hdr_link_pg(bh);
 
     return 0;
 }
@@ -791,15 +791,15 @@ static void redact_header_text(bam_hdr_t *bh) {
 
 /* ==== Public methods ==== */
 
-int sam_hdr_length(bam_hdr_t *bh) {
-    if (-1 == sam_hdr_rebuild(bh))
+int bam_hdr_length(bam_hdr_t *bh) {
+    if (-1 == bam_hdr_rebuild(bh))
         return -1;
 
     return bh->l_text;
 }
 
-const char *sam_hdr_str(bam_hdr_t *bh) {
-    if (-1 == sam_hdr_rebuild(bh))
+const char *bam_hdr_str(bam_hdr_t *bh) {
+    if (-1 == bam_hdr_rebuild(bh))
         return NULL;
 
     return bh->text;
@@ -810,7 +810,7 @@ const char *sam_hdr_str(bam_hdr_t *bh) {
  * Returns 0 on success
  *        -1 on failure
  */
-int sam_hdr_rebuild(bam_hdr_t *bh) {
+int bam_hdr_rebuild(bam_hdr_t *bh) {
     bam_hrecs_t *hrecs;
     if (!bh || !(hrecs = bh->hrecs))
         return -1;
@@ -852,7 +852,7 @@ int sam_hdr_rebuild(bam_hdr_t *bh) {
  * Returns 0 on success
  *        -1 on failure
  */
-int sam_hdr_add_lines(bam_hdr_t *bh, const char *lines, int len) {
+int bam_hdr_add_lines(bam_hdr_t *bh, const char *lines, int len) {
     bam_hrecs_t *hrecs;
 
     if (!bh || !lines)
@@ -882,12 +882,12 @@ int sam_hdr_add_lines(bam_hdr_t *bh, const char *lines, int len) {
 /*
  * Adds a single line to a SAM header.
  * Specify type and one or more key,value pairs, ending with the NULL key.
- * Eg. sam_hdr_add(h, "SQ", "ID", "foo", "LN", "100", NULL).
+ * Eg. bam_hdr_add(h, "SQ", "ID", "foo", "LN", "100", NULL).
  *
  * Returns index for specific entry on success (eg 2nd SQ, 4th RG)
  *        -1 on failure
  */
-int sam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
+int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
     va_list args;
     bam_hrecs_t *hrecs;
 
@@ -926,7 +926,7 @@ int sam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
  *
  * Returns NULL if no type/ID is found.
  */
-char *sam_hdr_find_line(bam_hdr_t *bh, const char *type,
+char *bam_hdr_find_line(bam_hdr_t *bh, const char *type,
                         const char *ID_key, const char *ID_value) {
     bam_hrecs_t *hrecs;
     if (!bh)
@@ -973,7 +973,7 @@ char *sam_hdr_find_line(bam_hdr_t *bh, const char *type,
  * Returns 0 on success and -1 on error
  */
 
-int sam_hdr_remove_line_key(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
+int bam_hdr_remove_line_key(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
     bam_hrecs_t *hrecs;
     if (!bh || !type)
         return -1;
@@ -1007,7 +1007,7 @@ int sam_hdr_remove_line_key(bam_hdr_t *bh, const char *type, const char *ID_key,
  * Returns 0 on success and -1 on error
  */
 
-int sam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position) {
+int bam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position) {
     bam_hrecs_t *hrecs;
     if (!bh || !type || position < 0)
         return -1;
@@ -1048,7 +1048,7 @@ int sam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position) {
     return ret;
 }
 
-int sam_hdr_update_line(bam_hdr_t *bh, const char *type,
+int bam_hdr_update_line(bam_hdr_t *bh, const char *type,
         const char *ID_key, const char *ID_value, ...) {
     bam_hrecs_t *hrecs;
     if (!bh)
@@ -1078,7 +1078,7 @@ int sam_hdr_update_line(bam_hdr_t *bh, const char *type,
     return ret;
 }
 
-int sam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
+int bam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
     bam_hrecs_t *hrecs;
     if (!bh || !type)
         return -1;
@@ -1112,7 +1112,7 @@ int sam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const
 
 /* ==== Key:val level methods ==== */
 
-const char *sam_hdr_find_tag(bam_hdr_t *bh,
+const char *bam_hdr_find_tag(bam_hdr_t *bh,
         const char *type,
         const char *ID_key,
         const char *ID_value,
@@ -1138,7 +1138,7 @@ const char *sam_hdr_find_tag(bam_hdr_t *bh,
     return tg->str;
 }
 
-int sam_hdr_remove_tag(bam_hdr_t *bh,
+int bam_hdr_remove_tag(bam_hdr_t *bh,
         const char *type,
         const char *ID_key,
         const char *ID_value,
@@ -1213,7 +1213,7 @@ int bam_hrecs_rebuild_text(const bam_hrecs_t *hrecs, kstring_t *ks) {
  * Looks up a reference sequence by name and returns the numerical ID.
  * Returns -1 if unknown reference.
  */
-int sam_hdr_name2ref(bam_hdr_t *bh, const char *ref) {
+int bam_hdr_name2ref(bam_hdr_t *bh, const char *ref) {
     bam_hrecs_t *hrecs;
     khint_t k;
 
@@ -1247,7 +1247,7 @@ int sam_hdr_name2ref(bam_hdr_t *bh, const char *ref) {
  * Returns 0 on success
  *        -1 on failure (indicating broken PG/PP records)
  */
-int sam_hdr_link_pg(bam_hdr_t *bh) {
+int bam_hdr_link_pg(bam_hdr_t *bh) {
     bam_hrecs_t *hrecs;
     int i, j, ret = 0, *new_pg_end;
 
@@ -1315,7 +1315,7 @@ int sam_hdr_link_pg(bam_hdr_t *bh) {
  * The value returned is valid until the next call to
  * this function.
  */
-const char *sam_hdr_pg_id(bam_hdr_t *bh, const char *name) {
+const char *bam_hdr_pg_id(bam_hdr_t *bh, const char *name) {
     bam_hrecs_t *hrecs;
     if (!bh)
         return NULL;
@@ -1341,20 +1341,20 @@ const char *sam_hdr_pg_id(bam_hdr_t *bh, const char *name) {
 /*
  * Add an @PG line.
  *
- * If we wish complete control over this use sam_hdr_add() directly. This
+ * If we wish complete control over this use bam_hdr_add() directly. This
  * function uses that, but attempts to do a lot of tedious house work for
  * you too.
  *
  * - It will generate a suitable ID if the supplied one clashes.
  * - It will generate multiple @PG records if we have multiple PG chains.
  *
- * Call it as per sam_hdr_add() with a series of key,value pairs ending
+ * Call it as per bam_hdr_add() with a series of key,value pairs ending
  * in NULL.
  *
  * Returns 0 on success
  *        -1 on failure
  */
-int sam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
+int bam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
     bam_hrecs_t *hrecs;
     if (!bh)
         return -1;
@@ -1380,7 +1380,7 @@ int sam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
         for (i = 0; i < nends; i++) {
             va_start(args, name);
             if (-1 == bam_hrecs_vadd(hrecs, "PG", args,
-                                     "ID", sam_hdr_pg_id(bh, name),
+                                     "ID", bam_hdr_pg_id(bh, name),
                                      "PN", name,
                                      "PP", hrecs->pg[end[i]].name,
                                      NULL)) {
@@ -1394,7 +1394,7 @@ int sam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
     } else {
         va_start(args, name);
         if (-1 == bam_hrecs_vadd(hrecs, "PG", args,
-                                 "ID", sam_hdr_pg_id(bh, name),
+                                 "ID", bam_hdr_pg_id(bh, name),
                                  "PN", name,
                                  NULL))
             return -1;
@@ -1413,7 +1413,7 @@ int sam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
  * Creates an empty SAM header.  Allocates space for the SAM header
  * structures (hash tables) ready to be populated.
  *
- * Returns a bam_hrecs_t struct on success (free with sam_hdr_free())
+ * Returns a bam_hrecs_t struct on success (free with bam_hrecs_free())
  *         NULL on failure
  */
 bam_hrecs_t *bam_hrecs_new() {
@@ -1778,7 +1778,7 @@ SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
     bam_hdr_t *bh = bam_hdr_init();
     if (!bh) return NULL;
 
-    if (sam_hdr_add_lines(bh, hdr, len) != 0) {
+    if (bam_hdr_add_lines(bh, hdr, len) != 0) {
         bam_hdr_destroy(bh);
         return NULL;
     }
@@ -1788,4 +1788,12 @@ SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
 
 void sam_hdr_free(SAM_hdr *hdr) {
     bam_hdr_destroy(hdr);
+}
+
+int sam_hdr_length(SAM_hdr *hdr) {
+    return bam_hdr_length(hdr);
+}
+
+char *sam_hdr_str(SAM_hdr *hdr) {
+    return (char *) bam_hdr_str(hdr);
 }

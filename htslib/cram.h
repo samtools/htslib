@@ -439,12 +439,14 @@ void sam_hdr_free(SAM_hdr *hdr);
  *
  * Call sam_hdr_rebuild() first if editing has taken place.
  */
+#define sam_hdr_length bam_hdr_length
 //int sam_hdr_length(SAM_hdr *hdr);
 
 /*! Returns the string form of the SAM_hdr.
  *
  * Call sam_hdr_rebuild() first if editing has taken place.
  */
+#define sam_hdr_str bam_hdr_str
 //char *sam_hdr_str(SAM_hdr *hdr);
 
 /*! Appends a formatted line to an existing SAM header.
@@ -477,7 +479,7 @@ void sam_hdr_free(SAM_hdr *hdr);
  * Returns 0 on success;
  *        -1 on failure
  */
-#define sam_hdr_add_PG sam_hdr_add_pg
+#define sam_hdr_add_PG bam_hdr_add_pg
 
 /*!
  * A function to help with construction of CL tags in @PG records.

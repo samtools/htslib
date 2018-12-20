@@ -291,7 +291,7 @@ int bam_hdr_write(BGZF *fp, bam_hdr_t *h)
 {
     int32_t i, name_len, x;
     if (h->hrecs) {
-        if (-1 == sam_hdr_rebuild(h)) return -1;
+        if (-1 == bam_hdr_rebuild(h)) return -1;
     }
     // write "BAM1"
     if (bgzf_write(fp, "BAM\1", 4) < 0) return -1;
@@ -1013,7 +1013,7 @@ hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
 static int cram_name2id(void *fdv, const char *ref)
 {
     cram_fd *fd = (cram_fd *) fdv;
-    return sam_hdr_name2ref(fd->header, ref);
+    return bam_hdr_name2ref(fd->header, ref);
 }
 
 hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region)
@@ -1313,7 +1313,7 @@ int sam_hdr_write(htsFile *fp, bam_hdr_t *h)
     }
 
     if (h->hrecs) {
-        if (-1 == sam_hdr_rebuild(h))
+        if (-1 == bam_hdr_rebuild(h))
             return -1;
     }
 
@@ -1463,13 +1463,13 @@ int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
         return old_sam_hdr_change_HD(h, key, val);
 
     if (val) {
-        if (sam_hdr_update_line(h, "HD", NULL, NULL, key, val, NULL) != 0)
+        if (bam_hdr_update_line(h, "HD", NULL, NULL, key, val, NULL) != 0)
             return -1;
     } else {
-        if (sam_hdr_remove_tag(h, "HD", NULL, NULL, key) != 0)
+        if (bam_hdr_remove_tag(h, "HD", NULL, NULL, key) != 0)
             return -1;
     }
-    return sam_hdr_rebuild(h);
+    return bam_hdr_rebuild(h);
 }
 /**********************
  *** SAM record I/O ***
