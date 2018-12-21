@@ -461,6 +461,13 @@ const char *bam_hdr_pg_id(bam_hdr_t *bh, const char *name);
  */
 int bam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...);
 
+/*! Increments a reference count on bh.
+ *
+ * This permits multiple files to share the same header, all calling
+ * bam_hdr_destroy when done, without causing errors for other open files.
+ */
+void bam_hdr_incr_ref(bam_hdr_t *bh);
+
 /* Alignment */
 
 bam1_t *bam_init1(void);

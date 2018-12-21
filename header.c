@@ -1407,6 +1407,17 @@ int bam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
     return 0;
 }
 
+/*! Increments a reference count on bh.
+ *
+ * This permits multiple files to share the same header, all calling
+ * bam_hdr_destroy when done, without causing errors for other open files.
+ */
+void bam_hdr_incr_ref(bam_hdr_t *bh) {
+    if (!bh)
+        return;
+    bh->ref_count++;
+}
+
 /* ==== Internal methods ==== */
 
 /*
@@ -1492,7 +1503,6 @@ bam_hrecs_t *bam_hrecs_dup(bam_hrecs_t *source) {
  * it is still non-zero then the header is assumed to be in use by another
  * caller and the free is not done.
  *
- * This is a synonym for sam_hdr_dec_ref().
  */
 void bam_hrecs_free(bam_hrecs_t *hrecs) {
     if (!hrecs)
@@ -1718,6 +1728,53 @@ bam_hrec_rg_t *bam_hrecs_find_rg(bam_hrecs_t *hrecs, const char *rg) {
     return k == kh_end(hrecs->rg_hash)
         ? NULL
         : &hrecs->rg[kh_val(hrecs->rg_hash, k)];
+}
+
+void bam_hrecs_dump(bam_hrecs_t *hrecs) {
+    khint_t k;
+    int i;
+
+    printf("===DUMP===\n");
+    for (k = kh_begin(hrecs->h); k != kh_end(hrecs->h); k++) {
+        bam_hrec_type_t *t1, *t2;
+        char c[2];
+
+        if (!kh_exist(hrecs->h, k))
+            continue;
+
+        t1 = t2 = kh_val(hrecs->h, k);
+        c[0] = kh_key(hrecs->h, k)>>8;
+        c[1] = kh_key(hrecs->h, k)&0xff;
+        printf("Type %.2s, count %d\n", c, t1->prev->order+1);
+
+        do {
+            bam_hrec_tag_t *tag;
+            printf(">>>%d ", t1->order);
+            for (tag = t1->tag; tag; tag=tag->next) {
+                if (strncmp(c, "CO", 2))
+                    printf("\"%.2s\":\"%.*s\"\t", tag->str, tag->len-3, tag->str+3);
+                else
+                    printf("%s", tag->str);
+            }
+            putchar('\n');
+            t1 = t1->next;
+        } while (t1 != t2);
+    }
+
+    /* Dump out PG chains */
+    printf("\n@PG chains:\n");
+    for (i = 0; i < hrecs->npg_end; i++) {
+        int j;
+        printf("  %d:", i);
+        for (j = hrecs->pg_end[i]; j != -1; j = hrecs->pg[j].prev_id) {
+            printf("%s%d(%.*s)",
+                   j == hrecs->pg_end[i] ? " " : "->",
+                   j, hrecs->pg[j].name_len, hrecs->pg[j].name);
+        }
+        printf("\n");
+    }
+
+    puts("===END DUMP===");
 }
 
 /*
