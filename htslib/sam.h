@@ -271,6 +271,9 @@ typedef struct {
  */
 #define bam_seqi(s, i) ((s)[(i)>>1] >> ((~(i)&1)<<2) & 0xf)
 
+#define bam_hdr_update_hd(h, ...) bam_hdr_update_line(h, "HD", NULL, NULL, __VA_ARGS__, NULL)
+#define bam_hdr_remove_tag_hd(h, ...) bam_hdr_remove_tag(h, "HD", NULL, NULL, __VA_ARGS__)
+
 /**************************
  *** Exported functions ***
  **************************/
@@ -386,8 +389,6 @@ int bam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position);
  */
 int bam_hdr_update_line(bam_hdr_t *bh, const char *type,
         const char *ID_key, const char *ID_value, ...);
-
-int sam_hdr_update_HD(bam_hdr_t *bh, ...);
 
 /*!
  *
