@@ -79,6 +79,15 @@ int file_type(const char *fname)
     else if (l>=4 && strcasecmp(fname+l-5, ".cram") == 0) return IS_CRAM;
 
     htsFile *fp = hts_open(fname,"r");
+    if (!fp) {
+        if (errno == ENOEXEC) {
+            // hts_open() uses this to report that it didn't understand the
+            // file format.
+            error("Couldn't understand format of \"%s\"\n", fname);
+        } else {
+            error("Couldn't open \"%s\" : %s\n", fname, strerror(errno));
+        }
+    }
     enum htsExactFormat format = fp->format.format;
     hts_close(fp);
     if ( format == bcf ) return IS_BCF;
