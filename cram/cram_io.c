@@ -580,8 +580,8 @@ char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
 
         if (err != Z_OK) {
             hts_log_error("Call to zlib inflate failed: %s", s.msg);
-            if (data)
-                free(data);
+            free(data);
+            inflateEnd(&s);
             return NULL;
         }
 
@@ -590,6 +590,7 @@ char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
         data = realloc((data_tmp = data), data_alloc += alloc_inc);
         if (!data) {
             free(data_tmp);
+            inflateEnd(&s);
             return NULL;
         }
         s.avail_out += alloc_inc;
@@ -693,7 +694,7 @@ static char *lzma_mem_deflate(char *data, size_t size, size_t *cdata_size,
 static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
     lzma_stream strm = LZMA_STREAM_INIT;
     size_t out_size = 0, out_pos = 0;
-    char *out = NULL;
+    char *out = NULL, *new_out;
     int r;
 
     /* Initiate the decoder */
@@ -707,7 +708,10 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
     for (;strm.avail_in;) {
         if (strm.avail_in > out_size - out_pos) {
             out_size += strm.avail_in * 4 + 32768;
-            out = realloc(out, out_size);
+            new_out = realloc(out, out_size);
+            if (!new_out)
+                goto fail;
+            out = new_out;
         }
         strm.avail_out = out_size - out_pos;
         strm.next_out = (uint8_t *)&out[out_pos];
@@ -715,7 +719,7 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
         r = lzma_code(&strm, LZMA_RUN);
         if (LZMA_OK != r && LZMA_STREAM_END != r) {
             hts_log_error("LZMA decode failure (error %d)", r);
-            return NULL;
+            goto fail;
         }
 
         out_pos = strm.total_out;
@@ -731,12 +735,19 @@ static char *lzma_mem_inflate(char *cdata, size_t csize, size_t *size) {
         return NULL;
     }
 
-    out = realloc(out, strm.total_out);
+    new_out = realloc(out, strm.total_out > 0 ? strm.total_out : 1);
+    if (new_out)
+        out = new_out;
     *size = strm.total_out;
 
     lzma_end(&strm);
 
     return out;
+
+ fail:
+    lzma_end(&strm);
+    free(out);
+    return NULL;
 }
 #endif
 
@@ -823,6 +834,7 @@ cram_block *cram_read_block(cram_fd *fd) {
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
         if (-1 == int32_decode(fd, (int32_t *)&b->crc32)) {
+            free(b->data);
             free(b);
             return NULL;
         }
@@ -987,8 +999,10 @@ int cram_uncompress_block(cram_block *b) {
         uncomp = lzma_mem_inflate((char *)b->data, b->comp_size, &uncomp_size);
         if (!uncomp)
             return -1;
-        if ((int)uncomp_size != b->uncomp_size)
+        if ((int)uncomp_size != b->uncomp_size) {
+            free(uncomp);
             return -1;
+        }
         free(b->data);
         b->data = (unsigned char *)uncomp;
         b->alloc = uncomp_size;
@@ -1004,8 +1018,12 @@ int cram_uncompress_block(cram_block *b) {
     case RANS: {
         unsigned int usize = b->uncomp_size, usize2;
         uncomp = (char *)rans_uncompress(b->data, b->comp_size, &usize2);
-        if (!uncomp || usize != usize2)
+        if (!uncomp)
             return -1;
+        if (usize != usize2) {
+            free(uncomp);
+            return -1;
+        }
         free(b->data);
         b->data = (unsigned char *)uncomp;
         b->alloc = usize2;
@@ -2905,10 +2923,12 @@ cram_container *cram_read_container(cram_fd *fd) {
     }
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
-        if (-1 == int32_decode(fd, (int32_t *)&c->crc32))
+        if (-1 == int32_decode(fd, (int32_t *)&c->crc32)) {
+            cram_free_container(c);
             return NULL;
-        else
+        } else {
             rd+=4;
+        }
 
         if (crc != c->crc32) {
             hts_log_error("Container header CRC32 failure");
@@ -3699,6 +3719,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
         for (i = 1; i < c->num_blocks; i++) {
             if (!(b = cram_read_block(fd))) {
                 cram_free_container(c);
+                free(header);
                 return NULL;
             }
             len += b->comp_size + 2 + 4*(CRAM_MAJOR_VERS(fd->version) >= 3) +
@@ -3713,11 +3734,14 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd) {
             char *pads = malloc(c->length - len);
             if (!pads) {
                 cram_free_container(c);
+                free(header);
                 return NULL;
             }
 
             if (c->length - len != hread(fd->fp, pads, c->length - len)) {
                 cram_free_container(c);
+                free(header);
+                free(pads);
                 return NULL;
             }
             free(pads);

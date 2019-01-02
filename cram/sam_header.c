@@ -117,6 +117,8 @@ static int sam_hdr_update_hashes(SAM_hdr *sh,
 
         while (tag) {
             if (tag->str[0] == 'S' && tag->str[1] == 'N') {
+                if (sh->ref[nref].name)
+                    free(sh->ref[nref].name);
                 if (!(sh->ref[nref].name = malloc(tag->len)))
                     return -1;
                 strncpy(sh->ref[nref].name, tag->str+3, tag->len-3);

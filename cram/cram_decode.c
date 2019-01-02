@@ -352,10 +352,10 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
         char *key = cp;
         int32_t encoding = E_NULL;
         int32_t size = 0;
-        cram_map *m = malloc(sizeof(*m)); // FIXME: use pooled_alloc
+        ptrdiff_t offset;
+        cram_map *m;
 
-        if (!m || endp - cp < 4) {
-            free(m);
+        if (endp - cp < 4) {
             cram_free_compression_header(hdr);
             return NULL;
         }
@@ -364,18 +364,12 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
         cp += safe_itf8_get(cp, endp, &encoding);
         cp += safe_itf8_get(cp, endp, &size);
 
-        // Fill out cram_map purely for cram_dump to dump out.
-        m->key = (key[0]<<8)|key[1];
-        m->encoding = encoding;
-        m->size     = size;
-        m->offset   = cp - (char *)b->data;
-        m->codec = NULL;
+        offset = cp - (char *)b->data;
 
-        if (m->encoding == E_NULL)
+        if (encoding == E_NULL)
             continue;
 
         if (size < 0 || endp - cp < size) {
-            free(m);
             cram_free_compression_header(hdr);
             return NULL;
         }
@@ -609,6 +603,18 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
         }
 
         cp += size;
+
+        // Fill out cram_map purely for cram_dump to dump out.
+        m = malloc(sizeof(*m));
+        if (!m) {
+            cram_free_compression_header(hdr);
+            free(m);
+        }
+        m->key = (key[0]<<8)|key[1];
+        m->encoding = encoding;
+        m->size     = size;
+        m->offset   = offset;
+        m->codec = NULL;
 
         m->next = hdr->rec_encoding_map[CRAM_MAP(key[0], key[1])];
         hdr->rec_encoding_map[CRAM_MAP(key[0], key[1])] = m;
@@ -2951,6 +2957,9 @@ static cram_container *cram_first_slice(cram_fd *fd) {
     cram_container *c;
 
     do {
+        if (fd->ctr)
+            cram_free_container(fd->ctr);
+
         if (!(c = fd->ctr = cram_read_container(fd)))
             return NULL;
         c->curr_slice_mt = c->curr_slice;
