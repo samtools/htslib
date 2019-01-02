@@ -822,7 +822,10 @@ cram_block *cram_read_block(cram_fd *fd) {
             return NULL;
         }
     } else {
-        if (b->comp_size < 0) { free(b); return NULL; }
+        if (b->comp_size < 0 || b->uncomp_size < 0) {
+            free(b);
+            return NULL;
+        }
         b->alloc = b->comp_size;
         if (!(b->data = malloc(b->comp_size)))  { free(b); return NULL; }
         if (b->comp_size != hread(fd->fp, b->data, b->comp_size)) {
@@ -951,6 +954,7 @@ int cram_uncompress_block(cram_block *b) {
         b->method = RAW;
         return 0;
     }
+    assert(b->uncomp_size >= 0); // cram_read_block should ensure this
 
     switch (b->method) {
     case RAW:
@@ -960,7 +964,7 @@ int cram_uncompress_block(cram_block *b) {
         uncomp = zlib_mem_inflate((char *)b->data, b->comp_size, &uncomp_size);
         if (!uncomp)
             return -1;
-        if ((int)uncomp_size != b->uncomp_size) {
+        if (uncomp_size != b->uncomp_size) {
             free(uncomp);
             return -1;
         }
@@ -999,7 +1003,7 @@ int cram_uncompress_block(cram_block *b) {
         uncomp = lzma_mem_inflate((char *)b->data, b->comp_size, &uncomp_size);
         if (!uncomp)
             return -1;
-        if ((int)uncomp_size != b->uncomp_size) {
+        if (uncomp_size != b->uncomp_size) {
             free(uncomp);
             return -1;
         }
