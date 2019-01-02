@@ -224,10 +224,14 @@ struct sam_hdr {
     char (*type_order)[3];
 };
 
-/*! Populate the internal SAM header from the header text.
+/*!
+ * Method for parsing the header text and populating the
+ * internal hash tables. After calling this method, the
+ * parsed representation becomes the single source of truth.
  *
- * @return
- * Returns -1 on error, 0 on success
+ * @param bh    Header structure, previously initialised by a
+ *              bam_hdr_init call
+ * @return      0 on success, -1 on failure
  */
 int bam_hrecs_populate(bam_hdr_t *bh);
 

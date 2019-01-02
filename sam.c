@@ -61,6 +61,7 @@ static int8_t *cigar_tab_init() {
         cigar_tab[i] = -1;
     for (i = 0; BAM_CIGAR_STR[i]; ++i)
         cigar_tab[(int) BAM_CIGAR_STR[i]] = i;
+
     return cigar_tab;
 }
 
