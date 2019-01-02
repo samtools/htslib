@@ -36,6 +36,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 #include <limits.h>
 #include <assert.h>
+#include <errno.h>
 #include "hts.h"
 #include "kstring.h"
 #include "hts_defs.h"
@@ -886,7 +887,16 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     #define bcf_itr_destroy(iter) hts_itr_destroy(iter)
     #define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query((idx), (tid), (beg), (end), bcf_readrec)
     #define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_hdr_name2id), (hdr), hts_itr_query, bcf_readrec)
-    #define bcf_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
+
+    static inline int bcf_itr_next(htsFile *htsfp, hts_itr_t *itr, void *r) {
+        if (htsfp->is_bgzf)
+            return hts_itr_next(htsfp->fp.bgzf, itr, r, 0);
+
+        hts_log_error("Only bgzf compressed files can be used with iterators");
+        errno = EINVAL;
+        return -2;
+    }
+
     #define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
     #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
 

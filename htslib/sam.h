@@ -456,7 +456,13 @@ hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_regli
     @param r           Pointer to a bam1_t struct
     @return >= 0 on success; -1 when there is no more data; < -1 on error
  */
-#define sam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (htsfp))
+static inline int sam_itr_next(htsFile *htsfp, hts_itr_t *itr, bam1_t *r) {
+    if (!htsfp->is_bgzf && !htsfp->is_cram) {
+        hts_log_error("%s not BGZF compressed", htsfp->fn ? htsfp->fn : "File");
+        return -1;
+    }
+    return hts_itr_next(htsfp->is_bgzf ? htsfp->fp.bgzf : NULL, itr, r, htsfp);
+}
 
 /// Get the next read from a BAM/CRAM multi-iterator
 /** @param htsfp       Htsfile pointer for the input file

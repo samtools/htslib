@@ -658,6 +658,12 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
 
     case bam:
     case sam:
+        if (!fp->is_bgzf) {
+            hts_log_error("%s file \"%s\" not BGZF compressed",
+                          fp->format.format == bam ? "BAM" : "SAM", fn);
+            ret = -1;
+            break;
+        }
         idx = sam_index(fp, min_shift);
         if (idx) {
             ret = hts_idx_save_as(idx, fn, fnidx, (min_shift > 0)? HTS_FMT_CSI : HTS_FMT_BAI);
