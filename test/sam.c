@@ -507,6 +507,111 @@ static void copy_check_alignment(const char *infname, const char *informat,
     if (in) sam_close(in);
     if (out) sam_close(out);
 }
+ 
+static void use_header_api() {
+    static const char header_text[] = "data:,"
+            "@HD\tVN:1.4\tGO:group\n"
+            "@CO\tThis line will be updated\n"
+            "@SQ\tSN:ref1\tLN:5001\tM5:983dalu9ue2\n"
+            "@CO\tThis line is good\n"
+            "@SQ\tSN:ref2\tLN:5002\n";
+
+    static const char rg_line[] =
+            { '@', 'R', 'G', '\t', 'I', 'D', ':', 'r', 'u', 'n', '1' };
+
+    static const char expected[] =
+            "@HD\tVN:1.5\n"
+            "@CO\tThis line will be updated\n"
+            "@SQ\tSN:ref1\tLN:5001\tM5:kja8u34a2q3\n"
+            "@CO\tThis line is good\n"
+            "@SQ\tSN:ref2\tLN:5002\n"
+            "@SQ\tSN:ref3\tLN:5003\n"
+            "@RG\tID:run1\n"
+            "@PG\tID:samtools\tPN:samtools\tVN:1.9\n";
+
+    const char outfname[] = "test/sam_header.tmp.sam_";
+    const char outmode[] = "w";
+    FILE *inf = NULL;
+    char buffer[sizeof(expected) + 1024];
+
+    samFile *in = sam_open(header_text, "r");
+    samFile *out = sam_open(outfname, outmode);
+    bam_hdr_t *header = NULL;
+    size_t bytes;
+    int r;
+
+    if (!in) {
+        fail("couldn't open file");
+        goto err;
+    }
+    if (!out) {
+        fail("couldn't open %s with mode %s", outfname, outmode);
+        goto err;
+    }
+
+    header = sam_hdr_read(in);
+    if (!header) {
+        fail("reading header from file");
+        goto err;
+    }
+    r = sam_hdr_remove_tag2(header, "HD", NULL, NULL, "GO");
+    if (r != 0) { fail("sam_hdr_remove_tag2"); goto err; }
+
+    r = sam_hdr_find_update2(header, "HD", NULL, NULL, "VN", "1.5", NULL);
+    if (r != 0) { fail("sam_hdr_find_update2 HD"); goto err; }
+
+    r = sam_hdr_add_line2(header, "SQ", "SN", "ref3", "LN", "5003", NULL);
+    if (r < 0) { fail("sam_hdr_add_line2"); goto err; }
+
+    r = sam_hdr_find_update2(header, "SQ", "SN", "ref1",
+                             "M5", "kja8u34a2q3", NULL);
+    if (r != 0) { fail("sam_hdr_find_update2 SQ"); goto err; }
+
+    r = sam_hdr_add_PG2(header, "samtools", "VN", "1.9", NULL);
+    if (r != 0) { fail("sam_hdr_add_PG2"); goto err; }
+
+    // Test addition with no newline or trailing NUL
+    r = sam_hdr_add_lines2(header, rg_line, sizeof(rg_line));
+    if (r != 0) { fail("bam_hdr_add_lines rg_line"); goto err; }
+    //printf("line='%s'\n", bam_hdr_find_line(header, "SQ", "SN", "ref3"));
+    //printf("tag='%s'\n", bam_hdr_find_tag(header, "SQ", "SN", "ref1", "M5"));
+
+    if (sam_hdr_write(out, header) < 0) {
+        fail("writing headers to \"%s\"", outfname);
+        goto err;
+    }
+    r = sam_close(out);
+    out = NULL;
+    if (r < 0) {
+        fail("close \"%s\"", outfname);
+        goto err;
+    }
+
+    inf = fopen(outfname, "r");
+    if (!inf) {
+        fail("Opening written header \"%s\"", outfname);
+        goto err;
+    }
+    bytes = fread(buffer, 1, sizeof(buffer), inf);
+    if (bytes != sizeof(expected) - 1 || memcmp(buffer, expected, bytes) != 0) {
+        fail("edited header does not match expected version");
+        fprintf(stderr,
+                "---------- Expected:\n%.*s\n"
+                "++++++++++ Got:\n%.*s\n"
+                "====================\n",
+                (int) sizeof(expected), expected,
+                (int) bytes, buffer);
+        goto err;
+    }
+
+ err:
+    bam_hdr_destroy(header);
+    header = NULL;
+    if (in) sam_close(in);
+    if (out) sam_close(out);
+    if (inf) fclose(inf);
+}
+
 
 static void samrecord_layout(void)
 {
@@ -598,6 +703,7 @@ int main(int argc, char **argv)
     aux_fields1();
     iterators1();
     samrecord_layout();
+    use_header_api();
     check_enum1();
     for (i = 1; i < argc; i++) faidx1(argv[i]);
 
