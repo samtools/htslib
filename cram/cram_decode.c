@@ -3137,9 +3137,13 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
             }
 
             if (c_next->num_records == 0) {
-                cram_free_container(c_next);
+                if (fd->ctr == c_next)
+                    fd->ctr = NULL;
+                if (c_curr == c_next)
+                    c_curr = NULL;
                 if (fd->ctr_mt == c_next)
                     fd->ctr_mt = NULL;
+                cram_free_container(c_next);
                 c_next = NULL;
                 goto empty_container;
             }
