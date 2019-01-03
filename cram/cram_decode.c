@@ -152,8 +152,9 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
         cp += safe_itf8_get(cp, endp, &hdr->ref_seq_span);
         cp += safe_itf8_get(cp, endp, &hdr->num_records);
         cp += safe_itf8_get(cp, endp, &hdr->num_landmarks);
-        if ((hdr->num_landmarks < 0 ||
-             hdr->num_landmarks >= SIZE_MAX / sizeof(int32_t))) {
+        if (hdr->num_landmarks < 0 ||
+            hdr->num_landmarks >= SIZE_MAX / sizeof(int32_t) ||
+            endp - cp < hdr->num_landmarks) {
             free(hdr);
             return NULL;
         }
