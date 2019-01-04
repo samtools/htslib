@@ -532,6 +532,7 @@ void bam_hdr_incr_ref(bam_hdr_t *bh);
 /*
  * Macros for changing the @HD line. They eliminate the need to use NULL method arguments.
  */
+#define bam_hdr_find_hd(h) bam_hdr_find_line(h, "HD", NULL, NULL)
 #define bam_hdr_update_hd(h, ...) bam_hdr_update_line(h, "HD", NULL, NULL, __VA_ARGS__, NULL)
 #define bam_hdr_remove_tag_hd(h, ...) bam_hdr_remove_tag(h, "HD", NULL, NULL, __VA_ARGS__)
 
