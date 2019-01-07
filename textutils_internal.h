@@ -1,6 +1,6 @@
 /* textutils_internal.h -- non-bioinformatics utility routines for text etc.
 
-   Copyright (C) 2016,2018 Genome Research Ltd.
+   Copyright (C) 2016,2018,2019 Genome Research Ltd.
 
    Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -170,6 +170,125 @@ static inline int isspace_c(char c) { return isspace((unsigned char) c); }
 static inline int isupper_c(char c) { return isupper((unsigned char) c); }
 static inline char tolower_c(char c) { return tolower((unsigned char) c); }
 static inline char toupper_c(char c) { return toupper((unsigned char) c); }
+
+// Faster replacements for strtol, for use when parsing lots of numbers.
+// Note that these only handle base 10 and do not skip leading whitespace
+
+/// Convert a string to a signed integer, with overflow detection
+/** @param[in]  in     Input string
+    @param[out] end    Returned end pointer
+    @param[in]  bits   Bits available for the converted value
+    @param[out] failed Location of overflow flag
+    @return String value converted to an int64_t
+
+Converts a signed decimal string to an int64_t.  The string should
+consist of an optional '+' or '-' sign followed by one or more of
+the digits 0 to 9.  The output value will be limited to fit in the
+given number of bits (including the sign bit).  If the value is too big,
+the largest possible value will be returned and *failed will be set to 1.
+
+The address of the first character following the converted number will
+be stored in *end.
+
+Both end and failed must be non-NULL.
+ */
+static inline int64_t hts_str2int(const char *in, char **end, int bits,
+                                    int *failed) {
+    uint64_t n = 0, limit = (1ULL << (bits - 1)) - 1;
+    uint32_t fast = (bits - 1) * 1000 / 3322 + 1; // log(10)/log(2) ~= 3.322
+    const unsigned char *v = (const unsigned char *) in;
+    const unsigned int ascii_zero = '0'; // Prevents conversion to signed
+    unsigned char d;
+    int neg = 1;
+
+    switch(*v) {
+    case '-':
+        neg=-1;
+        limit++; /* fall through */
+    case '+':
+        v++;
+        break;
+    default:
+        break;
+    }
+
+    while (--fast && *v>='0' && *v<='9')
+        n = n*10 + *v++ - ascii_zero;
+
+    if (!fast) {
+        uint64_t limit_d_10 = limit / 10;
+        uint64_t limit_m_10 = limit - 10 * limit_d_10;
+         while ((d = *v - ascii_zero) < 10) {
+            if (n < limit_d_10 || (n == limit_d_10 && d <= limit_m_10)) {
+                n = n*10 + d;
+                v++;
+            } else {
+                do { v++; } while (*v - ascii_zero < 10);
+                n = limit;
+                *failed = 1;
+                break;
+            }
+        }
+    }
+
+    *end = (char *)v;
+
+    return (n && neg < 0) ? -((int64_t) (n - 1)) - 1 : n;
+}
+
+/// Convert a string to an unsigned integer, with overflow detection
+/** @param[in]  in     Input string
+    @param[out] end    Returned end pointer
+    @param[in]  bits   Bits available for the converted value
+    @param[out] failed Location of overflow flag
+    @return String value converted to a uint64_t
+
+Converts an unsigned decimal string to a uint64_t.  The string should
+consist of an optional '+' sign followed by one or more of the digits 0
+to 9.  The output value will be limited to fit in the given number of bits.
+If the value is too big, the largest possible value will be returned
+and *failed will be set to 1.
+
+The address of the first character following the converted number will
+be stored in *end.
+
+Both end and failed must be non-NULL.
+ */
+
+static inline uint64_t hts_str2uint(const char *in, char **end, int bits,
+                                      int *failed) {
+    uint64_t n = 0, limit = (bits < 64 ? (1ULL << bits) : 0) - 1;
+    const unsigned char *v = (const unsigned char *) in;
+    const unsigned int ascii_zero = '0'; // Prevents conversion to signed
+    uint32_t fast = bits * 1000 / 3322 + 1; // log(10)/log(2) ~= 3.322
+    unsigned char d;
+
+    if (*v == '+')
+        v++;
+
+    while (--fast && *v>='0' && *v<='9')
+        n = n*10 + *v++ - ascii_zero;
+
+    if (!fast) {
+        uint64_t limit_d_10 = limit / 10;
+        uint64_t limit_m_10 = limit - 10 * limit_d_10;
+        while ((d = *v - ascii_zero) < 10) {
+            if (n < limit_d_10 || (n == limit_d_10 && d <= limit_m_10)) {
+                n = n*10 + d;
+                v++;
+            } else {
+                do { v++; } while (*v - ascii_zero < 10);
+                n = limit;
+                *failed = 1;
+                break;
+            }
+        }
+    }
+
+    *end = (char *)v;
+    return n;
+}
+
 
 #ifdef __cplusplus
 }
