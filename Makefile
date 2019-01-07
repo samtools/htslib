@@ -76,6 +76,7 @@ BUILT_TEST_PROGRAMS = \
 	test/test_kstring \
 	test/test_realn \
 	test/test-regidx \
+	test/test_str2int \
 	test/test_view \
 	test/test_index \
 	test/test-vcf-api \
@@ -384,6 +385,7 @@ maintainer-check:
 check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 	test/hts_endian
 	test/test_kstring
+	test/test_str2int
 	test/fieldarith test/fieldarith.sam
 	test/hfile
 	test/test_bgzf test/bgziptest.txt
@@ -427,6 +429,9 @@ test/test-regidx: test/test-regidx.o libhts.a
 test/test-parse-reg: test/test-parse-reg.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-parse-reg.o libhts.a $(LIBS) -lpthread
 
+test/test_str2int: test/test_str2int.o
+	$(CC) $(LDFLAGS) -o $@ test/test_str2int.o
+
 test/test_view: test/test_view.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LIBS) -lpthread
 
@@ -456,6 +461,7 @@ test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
 test/test-parse-reg.o: test/test-parse-reg.c config.h $(htslib_hts_h) $(htslib_sam_h)
 test/test_realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_regidx_h) $(hts_internal_h)
+test/test_str2int.o: test/test_str2int.c config.h $(textutils_internal_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_hts_log_h)
 test/test_index.o: test/test_index.c config.h $(htslib_sam_h) $(htslib_vcf_h)
 test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h) $(htslib_kstring_h) $(htslib_kseq_h)
