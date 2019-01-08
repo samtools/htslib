@@ -440,6 +440,17 @@ int bam_hdr_update_line(bam_hdr_t *bh, const char *type,
  */
 int bam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
 
+/*!
+ * Remove all lines of type <type> from the header, except the one
+ * specified in the hash set rh.
+ *
+ * @param type  Type of the searched line. Eg. "RG"
+ * @param id    Tag key defining the line. Eg. "ID"
+ * @param h     Hash set initialised by the caller with the values to be kept.
+ * @return      0 on success, -1 on failure
+ */
+int bam_hdr_remove_lines(bam_hdr_t *bh, const char *type, const char *id, void *h);
+
 /* ==== Key:val level methods ==== */
 
 /*!

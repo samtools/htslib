@@ -49,8 +49,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "htslib/kstring.h"
 #include "htslib/sam.h"
 
-#define SAM_HDR_LINES 32
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -65,6 +63,8 @@ extern "C" {
 #define KS_FREE(ks) do { if ((ks)->s) {free((ks)->s); (ks)->s = NULL;} } while(0)
 
 #define K(a) (((a)[0]<<8)|((a)[1]))
+
+#define SAM_HDR_LINES 32
 
 /*
  * Proposed new SAM header parsing

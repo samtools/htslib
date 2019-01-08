@@ -33,8 +33,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <assert.h>
 #include "textutils_internal.h"
-
 #include "header.h"
+
+// Hash table for removing multiple lines from the header
+KHASH_SET_INIT_STR(rm)
+typedef khash_t(rm) rmhash_t;
 
 #define MAX_ERROR_QUOTE 320 // Prevent over-long error messages
 static void bam_hrecs_error(const char *msg, const char *line, size_t len, size_t lno) {
@@ -1041,6 +1044,8 @@ int bam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position) {
         type_beg = type_beg->next;
     } while (type_beg != type_end);
 
+    if (!type_found) // nothing to remove
+        return 0;
     int ret = bam_hrecs_remove_line(hrecs, type, type_found);
     if (!ret && hrecs->dirty)
         redact_header_text(bh);
@@ -1072,8 +1077,6 @@ int bam_hdr_update_line(bam_hdr_t *bh, const char *type,
 
     if (!ret && hrecs->dirty)
         redact_header_text(bh);
-    if (!ret)
-        bh->l_text = 0;
 
     return ret;
 }
@@ -1089,25 +1092,100 @@ int bam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const
         hrecs = bh->hrecs;
     }
 
+    bam_hrec_type_t *step;
+    int ret = 1, remove_all = 0;
+
     if (!strncmp(type, "PG", 2) || !strncmp(type, "CO", 2)) {
         hts_log_warning("Removing PG or CO lines is not supported!");
         return -1;
     }
 
     bam_hrec_type_t *type_found = bam_hrecs_find_type(hrecs, type, ID_key, ID_value);
-    if (!type_found)
-        return 0;
-
-    bam_hrec_type_t *step = type_found->next;
-    int ret;
-    while (step != type_found) {
-        ret = bam_hrecs_remove_line(hrecs, type, step);
-        step = step->next;
-        if (!ret && hrecs->dirty)
-            redact_header_text(bh);
+    if (!type_found) { // remove all line of this type
+        int itype = (type[0]<<8)|(type[1]);
+        khint_t k = kh_get(bam_hrecs_t, hrecs->h, itype);
+        if (k == kh_end(hrecs->h))
+            return 0;
+        type_found =  kh_val(hrecs->h, k);
+        if (!type_found)
+            return 0;
+        remove_all = 1;
     }
 
+    step = type_found->next;
+    while (step != type_found) {
+        bam_hrec_type_t *to_remove = step;
+        step = step->next;
+        ret &= bam_hrecs_remove_line(hrecs, type, to_remove);
+    }
+
+    if (remove_all)
+        ret &= bam_hrecs_remove_line(hrecs, type, type_found);
+
+    if (!ret && hrecs->dirty)
+        redact_header_text(bh);
+
     return 0;
+}
+
+int bam_hdr_remove_lines(bam_hdr_t *bh, const char *type, const char *id, void *h) {
+    bam_hrecs_t *hrecs;
+    rmhash_t *rh;
+    if (!bh || !type || !id || !(rh = (rmhash_t *)h))
+        return -1;
+
+    if (!(hrecs = bh->hrecs)) {
+        if (bam_hdr_parse(bh) != 0)
+            return -1;
+        hrecs = bh->hrecs;
+    }
+
+    int itype = (type[0]<<8)|(type[1]);
+    khint_t k = kh_get(bam_hrecs_t, hrecs->h, itype);
+    if (k == kh_end(hrecs->h)) { // nothing to remove from
+        hts_log_warning("Type '%s' does not exist in the header", type);
+        return 0;
+    }
+
+    bam_hrec_type_t *head = kh_val(hrecs->h, k);
+    if (!head) {
+        hts_log_error("Header inconsistency");
+        return -1;
+    }
+
+    int ret = 0;
+    bam_hrec_type_t *step = head->next;
+    while (step != head) {
+        bam_hrec_tag_t *tag = bam_hrecs_find_key(step, id, NULL);
+        if (tag && tag->str && tag->len >= 3) {
+           k = kh_get(rm, rh, tag->str+3);
+           if (k == kh_end(rh)) { // value is not in the hash table, so remove
+               bam_hrec_type_t *to_remove = step;
+               step = step->next;
+               ret |= bam_hrecs_remove_line(hrecs, type, to_remove);
+           } else {
+               step = step->next;
+           }
+        } else { // tag is not on the line, so skip to next line
+            step = step->next;
+        }
+    }
+
+    // process the first line
+    bam_hrec_tag_t * tag = bam_hrecs_find_key(head, id, NULL);
+    if (tag && tag->str && tag->len >= 3) {
+       k = kh_get(rm, rh, tag->str+3);
+       if (k == kh_end(rh)) { // value is not in the hash table, so remove
+           bam_hrec_type_t *to_remove = head;
+           head = head->next;
+           ret |= bam_hrecs_remove_line(hrecs, type, to_remove);
+       }
+    }
+
+    if (!ret && hrecs->dirty)
+        redact_header_text(bh);
+
+    return ret;
 }
 
 /* ==== Key:val level methods ==== */

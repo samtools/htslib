@@ -1859,12 +1859,15 @@ int refs2id(refs_t *r, bam_hdr_t *bh) {
  * Returns 0 on success
  *         -1 on failure
  */
-static int refs_from_header(refs_t *r, cram_fd *fd, bam_hdr_t *h) {
-    int i, j;
+static int refs_from_header(cram_fd *fd) {
+    if (!fd)
+        return -1;
 
+    refs_t *r = fd->refs;
     if (!r)
         return -1;
 
+    bam_hdr_t *h = fd->header;
     if (!h)
         return 0;
 
@@ -1882,6 +1885,7 @@ static int refs_from_header(refs_t *r, cram_fd *fd, bam_hdr_t *h) {
     if (!(r->ref_id = realloc(r->ref_id, (r->nref + h->hrecs->nref) * sizeof(*r->ref_id))))
         return -1;
 
+    int i, j;
     /* Copy info from h->ref[i] over to r */
     for (i = 0, j = r->nref; i < h->hrecs->nref; i++) {
         bam_hrec_type_t *ty;
@@ -1936,7 +1940,7 @@ int cram_set_header(cram_fd *fd, bam_hdr_t *hdr) {
     fd->header = bam_hdr_dup(hdr);
     if (!fd->header)
         return -1;
-    return refs_from_header(fd->refs, fd, fd->header);
+    return refs_from_header(fd);
 }
 
 /*
@@ -2717,7 +2721,7 @@ int cram_load_reference(cram_fd *fd, char *fn) {
             refs_free(fd->refs);
         if (!(fd->refs = refs_create()))
             return -1;
-        if (-1 == refs_from_header(fd->refs, fd, fd->header))
+        if (-1 == refs_from_header(fd))
             return -1;
     }
 
@@ -4011,7 +4015,7 @@ int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
         cram_free_container(c);
     }
 
-    if (-1 == refs_from_header(fd->refs, fd, fd->header))
+    if (-1 == refs_from_header(fd))
         return -1;
     if (-1 == refs2id(fd->refs, fd->header))
         return -1;
@@ -4258,7 +4262,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->bl = NULL;
 
     /* Initialise dummy refs from the @SQ headers */
-    if (-1 == refs_from_header(fd->refs, fd, fd->header))
+    if (-1 == refs_from_header(fd))
         goto err;
 
     return fd;
