@@ -387,7 +387,7 @@ int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...);
  * @param ID_value  Tag value associated with the key above. Eg. "ref1"
  * @return          A pointer to the line text on success, NULL if no type/ID is found
  */
-char *bam_hdr_find_line(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
+char *bam_hdr_find_line(bam_hdr_t *bh, const char *type, ...);
 
 /*!
  * Remove a line from the header by specifying a tag:value that uniquely
@@ -395,6 +395,11 @@ char *bam_hdr_find_line(bam_hdr_t *bh, const char *type, const char *ID_key, con
  * @SQ line is uniquely identified by the SN tag.
  * @RG line is uniquely identified by the ID tag.
  * @PG line is uniquely identified by the ID tag.
+ * Eg. bam_hdr_find_line(bh, "SQ", "SN", "ref1")
+ *
+ * If no key:value pair is specified, the type MUST be followed by a NULL argument and
+ * the first line of the type will be returned, if any.
+ * Eg. bam_hdr_find_line(bh, "SQ", NULL)
  *
  * @param type      Type of the searched line. Eg. "SQ"
  * @param ID_key    Tag key defining the line. Eg. "SN"
@@ -457,9 +462,12 @@ int bam_hdr_remove_lines(bam_hdr_t *bh, const char *type, const char *id, void *
  * Looks for a specific key in a single SAM header line and returns the
  * associated value.
  *
+ * The returned string is malloced and should be freed by the calling
+ * function with free().
+ *
  * @param type      Type of the line to which the tag belongs. Eg. "SQ"
- * @param ID_key    Tag key defining the line. Eg. "SN"
- * @param ID_value  Tag value associated with the key above. Eg. "ref1"
+ * @param ID_key    Tag key defining the line. Eg. "SN". Can be NULL, if looking for the first line.
+ * @param ID_value  Tag value associated with the key above. Eg. "ref1". Can be NULL, if ID_key is NULL.
  * @param key       Key of the searched tag. Eg. "LN"
  * @return          A pointer to the key:value text on success, NULL on failure
  */

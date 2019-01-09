@@ -559,8 +559,8 @@ static void use_header_api() {
     r = bam_hdr_remove_tag(header, "HD", NULL, NULL, "GO");
     if (r != 1) { fail("bam_hdr_remove_tag"); goto err; }
 
-    r = bam_hdr_update_line(header, "HD", NULL, NULL, "VN", "1.5", NULL);
-    if (r != 0) { fail("bam_hdr_update_line HD"); goto err; }
+    r = bam_hdr_update_hd(header, "VN", "1.5");
+    if (r != 0) { fail("bam_hdr_find_update_hd"); goto err; }
 
     r = bam_hdr_add_line(header, "SQ", "SN", "ref3", "LN", "5003", NULL);
     if (r < 0) { fail("bam_hdr_add_line"); goto err; }
@@ -575,9 +575,11 @@ static void use_header_api() {
     // Test addition with no newline or trailing NUL
     r = bam_hdr_add_lines(header, rg_line, sizeof(rg_line));
     if (r != 0) { fail("bam_hdr_add_lines rg_line"); goto err; }
+    //printf("first line='%s'\n", bam_hdr_find_line(header, "SQ", NULL));
     //printf("line='%s'\n", bam_hdr_find_line(header, "SQ", "SN", "ref3"));
-    //printf("tag='%s'\n", bam_hdr_find_tag(header, "SQ", "SN", "ref1", "M5"));
+    //printf("tag='%s'\n", bam_hdr_find_tag(header, "SQ", "SN", "ref2", "LN"));
     //printf("hd line='%s'\n", bam_hdr_find_hd(header));
+    //printf("first line tag='%s'\n", bam_hdr_find_tag(header, "SQ", NULL, NULL, "SN"));
 
     if (sam_hdr_write(out, header) < 0) {
         fail("writing headers to \"%s\"", outfname);
