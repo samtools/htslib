@@ -360,25 +360,25 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
     // Any ... varargs
     va_start(args, ap);
     for (;;) {
-        char *k, *v = NULL;
+        char *key, *val = NULL;
 
-        if (!(k = (char *)va_arg(args, char *)))
+        if (!(key = (char *)va_arg(args, char *)))
             break;
-        if (strncmp(type, "CO", 2) && !(v = (char *)va_arg(args, char *)))
+        if (strncmp(type, "CO", 2) && !(val = (char *)va_arg(args, char *)))
             break;
 
         if (!(h_tag = pool_alloc(hrecs->tag_pool)))
             return -1;
 
         if (strncmp(type, "CO", 2)) {
-            h_tag->len = 3 + strlen(v);
+            h_tag->len = 3 + strlen(val);
             h_tag->str = string_alloc(hrecs->str_pool, h_tag->len+1);
-            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", k, v) < 0)
+            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", key, val) < 0)
                 return -1;
         } else {
-            h_tag->len = strlen(k);
+            h_tag->len = strlen(key);
             h_tag->str = string_alloc(hrecs->str_pool, h_tag->len+1);
-            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%s", k) < 0)
+            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%s", key) < 0)
                 return -1;
         }
 
@@ -394,25 +394,25 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
 
     // Plus the specified va_list params
     for (;;) {
-        char *k, *v = NULL;
+        char *key, *val = NULL;
 
-        if (!(k = (char *)va_arg(ap, char *)))
+        if (!(key = (char *)va_arg(ap, char *)))
             break;
-        if (strncmp(type, "CO", 2) && !(v = (char *)va_arg(ap, char *)))
+        if (strncmp(type, "CO", 2) && !(val = (char *)va_arg(ap, char *)))
             break;
 
         if (!(h_tag = pool_alloc(hrecs->tag_pool)))
             return -1;
 
         if (strncmp(type, "CO", 2)) {
-            h_tag->len = 3 + strlen(v);
+            h_tag->len = 3 + strlen(val);
             h_tag->str = string_alloc(hrecs->str_pool, h_tag->len+1);
-            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", k, v) < 0)
+            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", key, val) < 0)
                 return -1;
         } else {
-            h_tag->len = strlen(k);
+            h_tag->len = strlen(key);
             h_tag->str = string_alloc(hrecs->str_pool, h_tag->len+1);
-            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%s", k) < 0)
+            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%s", key) < 0)
                 return -1;
         }
 
@@ -952,10 +952,8 @@ char *bam_hdr_find_line(bam_hdr_t *bh, const char *type, ...) {
     va_end(args);
 
     bam_hrec_type_t *ty = bam_hrecs_find_type(hrecs, type, ID_key, ID_value);
-    if (!ty) {
-        hts_log_warning("Could not find type '%s'", type);
+    if (!ty)
         return NULL;
-    }
 
     kstring_t ks = KS_INITIALIZER;
     bam_hrec_tag_t *tag;
@@ -973,7 +971,7 @@ char *bam_hdr_find_line(bam_hdr_t *bh, const char *type, ...) {
         return NULL;
     }
 
-    return ks_str(&ks);
+    return ks_release(&ks);
 }
 
 /*
@@ -1152,10 +1150,8 @@ int bam_hdr_remove_lines(bam_hdr_t *bh, const char *type, const char *id, void *
 
     int itype = (type[0]<<8)|(type[1]);
     khint_t k = kh_get(bam_hrecs_t, hrecs->h, itype);
-    if (k == kh_end(hrecs->h)) { // nothing to remove from
-        hts_log_warning("Type '%s' does not exist in the header", type);
+    if (k == kh_end(hrecs->h)) // nothing to remove from
         return 0;
-    }
 
     bam_hrec_type_t *head = kh_val(hrecs->h, k);
     if (!head) {
@@ -1229,7 +1225,7 @@ const char *bam_hdr_find_tag(bam_hdr_t *bh,
         return NULL;
     }
 
-    return ks_str(&ks);
+    return ks_release(&ks);
 }
 
 int bam_hdr_remove_tag(bam_hdr_t *bh,
