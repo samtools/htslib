@@ -1396,8 +1396,13 @@ static int bgzf_check_EOF_common(BGZF *fp)
         if (errno == ESPIPE) { hclearerr(fp->fp); return 2; }
 #ifdef _WIN32
         if (errno == EINVAL) { hclearerr(fp->fp); return 2; }
+#else
+        // Assume that EINVAL was due to the file being less than 28 bytes
+        // long, rather than being a random error return from an hfile backend.
+        // This should be reported as "no EOF block" rather than an error.
+        if (errno == EINVAL) { hclearerr(fp->fp); return 0; }
 #endif
-        else return -1;
+        return -1;
     }
     if ( hread(fp->fp, buf, 28) != 28 ) return -1;
     if ( hseek(fp->fp, offset, SEEK_SET) < 0 ) return -1;
