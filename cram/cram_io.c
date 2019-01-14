@@ -1935,11 +1935,16 @@ static int refs_from_header(cram_fd *fd) {
  * in).
  */
 int cram_set_header(cram_fd *fd, bam_hdr_t *hdr) {
-    if (fd->header)
-        bam_hdr_destroy(fd->header);
-    fd->header = bam_hdr_dup(hdr);
-    if (!fd->header)
+    if (!fd || !hdr )
         return -1;
+
+    if (fd->header != hdr) {
+        if (fd->header)
+            bam_hdr_destroy(fd->header);
+        fd->header = bam_hdr_dup(hdr);
+        if (!fd->header)
+            return -1;
+    }
     return refs_from_header(fd);
 }
 
