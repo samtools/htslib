@@ -795,17 +795,24 @@ static void redact_header_text(bam_hdr_t *bh) {
 /* ==== Public methods ==== */
 
 int bam_hdr_length(bam_hdr_t *bh) {
-    if (-1 == bam_hdr_rebuild(bh))
+    if (!bh || -1 == bam_hdr_rebuild(bh))
         return -1;
 
     return bh->l_text;
 }
 
 const char *bam_hdr_str(bam_hdr_t *bh) {
-    if (-1 == bam_hdr_rebuild(bh))
+    if (!bh || -1 == bam_hdr_rebuild(bh))
         return NULL;
 
     return bh->text;
+}
+
+int bam_hdr_nref(const bam_hdr_t *bh) {
+    if (!bh)
+        return -1;
+
+    return bh->hrecs ? bh->hrecs->nref : bh->n_targets;
 }
 
 /*
@@ -1196,7 +1203,7 @@ int bam_hdr_remove_lines(bam_hdr_t *bh, const char *type, const char *id, void *
 
 /* ==== Key:val level methods ==== */
 
-const char *bam_hdr_find_tag(bam_hdr_t *bh,
+char *bam_hdr_find_tag(bam_hdr_t *bh,
         const char *type,
         const char *ID_key,
         const char *ID_value,

@@ -332,13 +332,24 @@ int sam_hdr_write(samFile *fp, bam_hdr_t *h) HTS_RESULT_USED;
 
 /*!
  * Returns the current length of the header.
+ *
+ * @return  >= 0 on success, -1 on failure
  */
 int bam_hdr_length(bam_hdr_t *bh);
 
 /*!
  * Returns the text representation of the header.
+ *
+ * @return  valid char pointer on success, NULL on failure
  */
 const char *bam_hdr_str(bam_hdr_t *bh);
+
+/*!
+ * Returns the number of references in the header.
+ *
+ * @return  >= 0 on success, -1 on failure
+ */
+int bam_hdr_nref(const bam_hdr_t *bh);
 
 /*!
  * Reconstructs the text representation of the header from
@@ -471,7 +482,7 @@ int bam_hdr_remove_lines(bam_hdr_t *bh, const char *type, const char *id, void *
  * @param key       Key of the searched tag. Eg. "LN"
  * @return          A pointer to the key:value text on success, NULL on failure
  */
-const char *bam_hdr_find_tag(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value, const char *key);
+char *bam_hdr_find_tag(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value, const char *key);
 
 /* !
  * Remove the key from the line identified by type, ID_key and ID_value.
