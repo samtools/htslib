@@ -159,6 +159,13 @@ static inline uint16_t le_int2(uint16_t x) {
 }
 #endif
 
+/*
+ * in case PATH_MAX is not defined (like in hurd)
+ */
+#ifndef PATH_MAX
+#  define PATH_MAX 1024
+#endif
+
 /*-----------------------------------------------------------------------------
  * <inttypes.h> definitions, incase they're not present
  */

@@ -72,9 +72,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "cram/os.h"
-#ifndef PATH_MAX
-#  define PATH_MAX 1024
-#endif
 
 #include "cram/open_trace_file.h"
 #include "cram/misc.h"
