@@ -124,7 +124,6 @@ typedef struct kstring_t {
         }                                                               \
     } while (0)
 
-
 int hts_resize_array_(size_t, size_t, size_t, void *, void **, int,
                       const char *);
 
@@ -156,6 +155,14 @@ int hts_resize_array_(size_t, size_t, size_t, void *, void **, int,
                          sizeof(*(size_ptr)), (size_ptr),   \
                          (void **)(ptr), (flags), __func__) \
      : 0)
+
+/**
+ * Wrapper function for free(). Enables memory deallocation across DLL
+ * boundary. Should be used by all applications, which are compiled
+ * with a different standard library than htslib and call htslib
+ * methods that return dynamically allocated data.
+ */
+void hts_free(void *ptr);
 
 /************
  * File I/O *

@@ -3021,6 +3021,10 @@ int hts_resize_array_(size_t item_size, size_t num, size_t size_sz,
     return 0;
 }
 
+void hts_free(void *ptr) {
+    free(ptr);
+}
+
 void hts_set_log_level(enum htsLogLevel level)
 {
     hts_verbose = level;
