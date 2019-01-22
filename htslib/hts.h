@@ -619,12 +619,60 @@ typedef struct {
     #define hts_bin_first(l) (((1<<(((l)<<1) + (l))) - 1) / 7)
     #define hts_bin_parent(l) (((l) - 1) >> 3)
 
-    hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_lvls);
-    void hts_idx_destroy(hts_idx_t *idx);
-    int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped);
-    int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
-    int hts_idx_fmt(hts_idx_t *idx);
-    int hts_idx_tbi_name(hts_idx_t *idx, int tid, const char *name);
+///////////////////////////////////////////////////////////
+// Low-level API for building indexes.
+
+/// Create a BAI/CSI/TBI type index structure
+/** @param n          Initial number of targets
+    @param fmt        Format, one of HTS_FMT_CSI, HTS_FMT_BAI or HTS_FMT_TBI
+    @param offset0    Initial file offset
+    @param min_shift  Number of bits for the minimal interval
+    @param n_lvls     Number of levels in the binning index
+    @return An initialised hts_idx_t struct on success; NULL on failure
+*/
+hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_lvls);
+
+/// Free a BAI/CSI/TBI type index
+/** @param idx   Index structure to free
+ */
+void hts_idx_destroy(hts_idx_t *idx);
+
+/// Push an index entry
+/** @param idx        Index
+    @param tid        Target id
+    @param beg        Range start (zero-based)
+    @param end        Range end (zero-based, half-open)
+    @param offset     File offset
+    @param is_mapped  Range corresponds to a mapped read
+    @return 0 on success; -1 on failure
+
+The @p is_mapped parameter is used to update the n_mapped / n_unmapped counts
+stored in the meta-data bin.
+ */
+int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped);
+
+/// Finish building an index
+/** @param idx          Index
+    @param final_offset Last file offset
+    @return 0 on success; non-zero on failure.
+*/
+int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset);
+
+/// Returns index format
+/** @param idx   Index
+    @return One of HTS_FMT_CSI, HTS_FMT_BAI or HTS_FMT_TBI
+*/
+int hts_idx_fmt(hts_idx_t *idx);
+
+/// Add name to TBI index meta-data
+/** @param idx   Index
+    @param tid   Target identifier
+    @param name  Target name
+    @return Index number of name in names list on success; -1 on failure.
+*/
+int hts_idx_tbi_name(hts_idx_t *idx, int tid, const char *name);
+
+// Index loading and saving
 
 /// Save an index to a file
 /** @param idx  Index to be written
@@ -658,6 +706,8 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt);
 */
 hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx);
 
+///////////////////////////////////////////////////////////
+// Functions for accessing meta-data stored in indexes
 
 /// Get extra index meta-data
 /** @param idx    The index
@@ -686,9 +736,33 @@ uint8_t *hts_idx_get_meta(hts_idx_t *idx, uint32_t *l_meta);
 */
 int hts_idx_set_meta(hts_idx_t *idx, uint32_t l_meta, uint8_t *meta, int is_copy);
 
-    int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped);
-    uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
+/// Get number of mapped and unmapped reads from an index
+/** @param      idx      Index
+    @param      tid      Target ID
+    @param[out] mapped   Location to store number of mapped reads
+    @param[out] unmapped Location to store number of unmapped reads
+    @return 0 on success; -1 on failure (data not available)
 
+    BAI and CSI indexes store information on the number of reads for each
+    target that were mapped or unmapped (unmapped reads will generally have
+    a paired read that is mapped to the target).  This function returns this
+    infomation if it is available.
+
+    @note Cram CRAI indexes do not include this information.
+*/
+int hts_idx_get_stat(const hts_idx_t* idx, int tid, uint64_t* mapped, uint64_t* unmapped);
+
+/// Return the number of unplaced reads from an index
+/** @param idx    Index
+    @return Unplaced reads count
+
+    Unplaced reads are not linked to any reference (e.g. RNAME is '*' in SAM
+    files).
+*/
+uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
+
+///////////////////////////////////////////////////////////
+// Region parsing
 
 #define HTS_PARSE_THOUSANDS_SEP 1  ///< Ignore ',' separators within numbers
 
@@ -715,16 +789,67 @@ long long hts_parse_decimal(const char *str, char **strend, int flags);
 */
 const char *hts_parse_reg(const char *str, int *beg, int *end);
 
-    hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
-    void hts_itr_destroy(hts_itr_t *iter);
+///////////////////////////////////////////////////////////
+// Generic iterators
+//
+// These functions provide the low-level infrastructure for iterators.
+// Wrappers around these are used to make iterators for specific file types.
+// See:
+//     htslib/sam.h  for SAM/BAM/CRAM iterators
+//     htslib/vcf.h  for VCF/BCF iterators
+//     htslib/tbx.h  for files indexed by tabix
 
-    typedef int (*hts_name2id_f)(void*, const char*);
-    typedef const char *(*hts_id2name_f)(void*, int);
-    typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
+/// Create a single-region iterator
+/** @param idx      Index
+    @param tid      Target ID
+    @param beg      Start of region
+    @param end      End of region
+    @param readrec  Callback to read a record from the input file
+    @return An iterator on success; NULL on failure
+ */
+hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
 
-    hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec);
-    int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data) HTS_RESULT_USED;
-    const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
+/// Free an iterator
+/** @param iter   Iterator to free
+ */
+void hts_itr_destroy(hts_itr_t *iter);
+
+typedef int (*hts_name2id_f)(void*, const char*);
+typedef const char *(*hts_id2name_f)(void*, int);
+typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
+
+/// Create a single-region iterator from a text region specification
+/** @param idx       Index
+    @param reg       Region specifier
+    @param getid     Callback function to return the target ID for a name
+    @param hdr       Input file header
+    @param itr_query Callback function returning an iterator for a numeric tid,
+                     start and end position
+    @param readrec   Callback to read a record from the input file
+    @return An iterator on success; NULL on error
+ */
+hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec);
+
+/// Return the next record from an iterator
+/** @param fp      Input file handle
+    @param iter    Iterator
+    @param r       Pointer to record placeholder
+    @param data    Data passed to the readrec callback
+    @return >= 0 on success, -1 when there is no more data, < -1 on error
+ */
+int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data) HTS_RESULT_USED;
+
+/// Return a list of target names from an index
+/** @param      idx    Index
+    @param[out] n      Location to store the number of targets
+    @param      getid  Callback function to get the name for a target ID
+    @param      hdr    Header from indexed file
+    @return An array of pointers to the names on success; NULL on failure
+
+    @note The names are pointers into the header data structure.  When cleaning
+    up, only the array should be freed, not the names.
+ */
+const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid, void *hdr); // free only the array, not the values
 
 /**********************************
  * Iterator with multiple regions *
@@ -733,9 +858,38 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
 typedef hts_itr_multi_t *hts_itr_multi_query_func(const hts_idx_t *idx, hts_itr_multi_t *itr);
 hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter);
 hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter);
+
+/// Create a multi-region iterator from a region list
+/** @param idx          Index
+    @param reglist      Region list
+    @param count        Number of items in region list
+    @param getid        Callback to convert names to target IDs
+    @param hdr          Indexed file header (passed to getid)
+    @param itr_specific Filetype-specific callback function
+    @param readrec      Callback to read an input file record
+    @param seek         Callback to seek in the input file
+    @param tell         Callback to return current input file location
+    @return An iterator on success; NULL on failure
+ */
 hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell);
+
+/// Return the next record from an iterator
+/** @param fp      Input file handle
+    @param iter    Iterator
+    @param r       Pointer to record placeholder
+    @return >= 0 on success, -1 when there is no more data, < -1 on error
+ */
 int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r);
+
+/// Free a region list
+/** @param reglist    Region list
+    @param count      Number of items in the list
+ */
 void hts_reglist_free(hts_reglist_t *reglist, int count);
+
+/// Free a multi-region iterator
+/** @param iter   Iterator to free
+ */
 void hts_itr_multi_destroy(hts_itr_multi_t *iter);
 
 
