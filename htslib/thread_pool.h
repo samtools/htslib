@@ -229,16 +229,6 @@ hts_tpool_process *hts_tpool_process_init(hts_tpool *p, int qsize, int in_only);
 void hts_tpool_process_destroy(hts_tpool_process *q);
 
 /*
- * Flushes the thread pool, but doesn't exit. This simply drains the
- * process-queue and ensures all worker threads have finished their current
- * task if associated with this process.
- *
- * Returns 0 on success;
- *        -1 on failure
- */
-int hts_tpool_process_flush(hts_tpool_process *q);
-
-/*
  * Returns true if there are no items in the process results queue and
  * also none still pending.
  */
