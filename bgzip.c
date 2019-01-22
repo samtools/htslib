@@ -216,10 +216,10 @@ int main(int argc, char **argv)
             return 1;
         }
 
+        if ( index ) bgzf_index_build_init(fp);
         if (threads > 1)
             bgzf_mt(fp, threads, 256);
 
-        if ( index ) bgzf_index_build_init(fp);
         buffer = malloc(WINDOW_SIZE);
 #ifdef _WIN32
         _setmode(f_src, O_BINARY);
@@ -342,15 +342,16 @@ int main(int argc, char **argv)
             return 1;
         }
 
-        if (threads > 1)
-            bgzf_mt(fp, threads, 256);
-
         buffer = malloc(WINDOW_SIZE);
         if ( start>0 )
         {
             if ( bgzf_index_load(fp, argv[optind], ".gzi") < 0 ) error("Could not load index: %s.gzi\n", argv[optind]);
             if ( bgzf_useek(fp, start, SEEK_SET) < 0 ) error("Could not seek to %d-th (uncompressd) byte\n", start);
         }
+
+        if (threads > 1)
+            bgzf_mt(fp, threads, 256);
+
 #ifdef _WIN32
         _setmode(f_dst, O_BINARY);
 #endif

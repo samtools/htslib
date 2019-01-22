@@ -1119,10 +1119,29 @@ static void *bgzf_mt_writer(void *vp) {
     mtaux_t *mt = fp->mt;
     hts_tpool_result *r;
 
+    if (fp->idx_build_otf) {
+        fp->idx->moffs = fp->idx->noffs = 1;
+        fp->idx->offs = (bgzidx1_t*) calloc(fp->idx->moffs, sizeof(bgzidx1_t));
+        if (!fp->idx->offs) goto err;
+    }
+
     // Iterates until result queue is shutdown, where it returns NULL.
     while ((r = hts_tpool_next_result_wait(mt->out_queue))) {
         bgzf_job *j = (bgzf_job *)hts_tpool_result_data(r);
         assert(j);
+
+        if (fp->idx_build_otf) {
+            fp->idx->noffs++;
+            if ( fp->idx->noffs > fp->idx->moffs )
+            {
+                fp->idx->moffs = fp->idx->noffs;
+                kroundup32(fp->idx->moffs);
+                fp->idx->offs = (bgzidx1_t*) realloc(fp->idx->offs, fp->idx->moffs*sizeof(bgzidx1_t));
+                if ( !fp->idx->offs ) goto err;
+            }
+            fp->idx->offs[ fp->idx->noffs-1 ].uaddr = fp->idx->offs[ fp->idx->noffs-2 ].uaddr + j->uncomp_len;
+            fp->idx->offs[ fp->idx->noffs-1 ].caddr = fp->idx->offs[ fp->idx->noffs-2 ].caddr + j->comp_len;
+        }
 
         if (hwrite(fp->fp, j->comp_data, j->comp_len) != j->comp_len) {
             fp->errcode |= BGZF_ERR_IO;
@@ -1907,6 +1926,10 @@ int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name)
     }
 
     if (bgzf_flush(fp) != 0) return -1;
+
+    // discard the entry marking the end of the file
+    if (fp->mt && fp->idx)
+        fp->idx->noffs--;
 
     if (hwrite_uint64(fp->idx->noffs - 1, idx) < 0) goto fail;
     for (i=1; i<fp->idx->noffs; i++)
