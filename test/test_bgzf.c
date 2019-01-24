@@ -764,9 +764,8 @@ int main(int argc, char **argv) {
     if (test_index_seek_getc(&f, "w", 1000000, 0) != 0) goto out;
 
     // Index building on the fly and bgzf_useek, with threads
-    // ** Not implemented yet **
-    // if (test_index_seek_getc(&f, "w", 1000000, 1) != 0) goto out;
-    // if (test_index_seek_getc(&f, "w", 1000000, 2) != 0) goto out;
+    if (test_index_seek_getc(&f, "w", 1000000, 1) != 0) goto out;
+    if (test_index_seek_getc(&f, "w", 1000000, 2) != 0) goto out;
 
     // bgzf_useek on an uncompressed file
     if (test_index_seek_getc(&f, "wu", 0, 0) != 0) goto out;

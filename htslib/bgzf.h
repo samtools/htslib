@@ -201,6 +201,9 @@ typedef struct BGZF BGZF;
      * @param pos    virtual file offset returned by bgzf_tell()
      * @param whence must be SEEK_SET
      * @return       0 on success and -1 on error
+     *
+     * @note It is not permitted to seek on files open for writing,
+     * or files compressed with gzip (as opposed to bgzip).
      */
     int64_t bgzf_seek(BGZF *fp, int64_t pos, int whence) HTS_RESULT_USED;
 
@@ -317,9 +320,12 @@ typedef struct BGZF BGZF;
      *
      *  @param fp           BGZF file handler; must be opened for reading
      *  @param uoffset      file offset in the uncompressed data
-     *  @param where        SEEK_SET supported atm
+     *  @param where        must be SEEK_SET
      *
      *  Returns 0 on success and -1 on error.
+     *
+     *  @note It is not permitted to seek on files open for writing,
+     *  or files compressed with gzip (as opposed to bgzip).
      */
     int bgzf_useek(BGZF *fp, long uoffset, int where) HTS_RESULT_USED;
 

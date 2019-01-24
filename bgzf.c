@@ -1733,18 +1733,9 @@ int bgzf_check_EOF(BGZF *fp) {
     return has_eof;
 }
 
-int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
+static inline int64_t bgzf_seek_common(BGZF* fp,
+                                       int64_t block_address, int block_offset)
 {
-    int block_offset;
-    int64_t block_address;
-
-    if (fp->is_write || where != SEEK_SET || fp->is_gzip) {
-        fp->errcode |= BGZF_ERR_MISUSE;
-        return -1;
-    }
-    block_offset = pos & 0xFFFF;
-    block_address = pos >> 16;
-
     if (fp->mt) {
         // The reader runs asynchronous and does loops of:
         //    Read block
@@ -1783,6 +1774,15 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
     }
 
     return 0;
+}
+
+int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
+{
+    if (fp->is_write || where != SEEK_SET || fp->is_gzip) {
+        fp->errcode |= BGZF_ERR_MISUSE;
+        return -1;
+    }
+    return bgzf_seek_common(fp, pos >> 16, pos & 0xFFFF);
 }
 
 int bgzf_is_bgzf(const char *fn)
@@ -2068,6 +2068,10 @@ int bgzf_index_load(BGZF *fp, const char *bname, const char *suffix)
 
 int bgzf_useek(BGZF *fp, long uoffset, int where)
 {
+    if (fp->is_write || where != SEEK_SET || fp->is_gzip) {
+        fp->errcode |= BGZF_ERR_MISUSE;
+        return -1;
+    }
     if ( !fp->is_compressed )
     {
         if (hseek(fp->fp, uoffset, SEEK_SET) < 0)
@@ -2102,14 +2106,9 @@ int bgzf_useek(BGZF *fp, long uoffset, int where)
         else break;
     }
     int i = ilo-1;
-    if (hseek(fp->fp, fp->idx->offs[i].caddr, SEEK_SET) < 0)
-    {
-        fp->errcode |= BGZF_ERR_IO;
+    if (bgzf_seek_common(fp, fp->idx->offs[i].caddr, 0) < 0)
         return -1;
-    }
-    fp->block_length = 0;  // indicates current block has not been loaded
-    fp->block_address = fp->idx->offs[i].caddr;
-    fp->block_offset = 0;
+
     if ( bgzf_read_block(fp) < 0 ) {
         fp->errcode |= BGZF_ERR_IO;
         return -1;
