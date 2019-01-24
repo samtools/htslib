@@ -1357,15 +1357,15 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
 
     rec->errcode |= err;
 
-    return err ? -1 : 0;
+    return err ? -2 : 0; // Return -2 so bcf_read() reports an error
 
  bad_shared:
     hts_log_error("Bad BCF record - shared section malformed or too short");
-    return -1;
+    return -2;
 
  bad_indiv:
     hts_log_error("Bad BCF record - individuals section malformed or too short");
-    return -1;
+    return -2;
 }
 
 static inline uint8_t *bcf_unpack_fmt_core1(uint8_t *ptr, int n_sample, bcf_fmt_t *fmt);
