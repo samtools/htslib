@@ -2465,12 +2465,16 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                         }
 
                         pthread_mutex_lock(&fd->range_lock);
-                        int discard_last_ref = (!fd->unsorted &&
-                                                last_ref_id >= 0 &&
+                        int discard_last_ref = (last_ref_id >= 0 &&
                                                 refs[last_ref_id] &&
                                                 (fd->range.refid == -2 ||
                                                  last_ref_id == fd->range.refid));
                         pthread_mutex_unlock(&fd->range_lock);
+                        if  (discard_last_ref) {
+                            pthread_mutex_lock(&fd->ref_lock);
+                            discard_last_ref = !fd->unsorted;
+                            pthread_mutex_unlock(&fd->ref_lock);
+                        }
                         if  (discard_last_ref) {
                             cram_ref_decr(fd->refs, last_ref_id);
                             refs[last_ref_id] = NULL;
