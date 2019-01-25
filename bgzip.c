@@ -345,7 +345,17 @@ int main(int argc, char **argv)
         buffer = malloc(WINDOW_SIZE);
         if ( start>0 )
         {
-            if ( bgzf_index_load(fp, argv[optind], ".gzi") < 0 ) error("Could not load index: %s.gzi\n", argv[optind]);
+            if (index_fname) {
+                if ( bgzf_index_load(fp, index_fname, NULL) < 0 )
+                    error("Could not load index: %s\n", index_fname);
+            } else {
+                if (optind >= argc) {
+                    error("The -b option requires -I when reading from stdin "
+                          "(and stdin must be seekable)\n");
+                }
+                if ( bgzf_index_load(fp, argv[optind], ".gzi") < 0 )
+                    error("Could not load index: %s.gzi\n", argv[optind]);
+            }
             if ( bgzf_useek(fp, start, SEEK_SET) < 0 ) error("Could not seek to %d-th (uncompressd) byte\n", start);
         }
 
