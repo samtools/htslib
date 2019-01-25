@@ -338,6 +338,11 @@ typedef struct BGZF BGZF;
      * @param fp          BGZF file handler; can be opened for reading or writing.
      *
      * Returns 0 on success and -1 on error.
+     *
+     * @note This function must be called before any data has been read or
+     * written, and in particular before calling bgzf_mt() on the same
+     * file handle (as threads may start reading data before the index
+     * has been set up).
      */
     int bgzf_index_build_init(BGZF *fp);
 
