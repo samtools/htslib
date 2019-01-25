@@ -33,6 +33,9 @@ use IO::Handle;
 
 my $opts = parse_params();
 
+test_bgzip($opts, 0);
+test_bgzip($opts, 4);
+
 test_view($opts,0);
 test_view($opts,4);
 
@@ -236,6 +239,95 @@ sub is_file_newer
 
 
 # The tests --------------------------
+
+sub test_bgzip {
+    my ($opts, $threads) = @_;
+
+    my $at = $threads ? "-@ $threads" : '';
+    my $data = "$$opts{path}/ce.fa";
+    my $compressed = "$$opts{tmp}/ce.fa.$threads.gz";
+    my $compressed_copy = "$$opts{tmp}/ce.fa.$threads.copy.gz";
+    my $uncompressed = "$$opts{tmp}/ce.fa.$threads.uncomp";
+    my $offset = 1055584; # Start of MT in ce.fa
+    my $uncompressed_part = "$$opts{tmp}/ce.fa.$threads.part";
+    my $uncompressed_part2 = "$$opts{tmp}/ce.fa.$threads.part2";
+    my $expected_part = "$$opts{tmp}/ce.fa.$threads.tail";
+    my $index = "${compressed}.gzi";
+    my $test = sprintf('%s %2s threads', 'bgzip round-trip',
+		       $threads ? $threads : 'no');
+
+    # Round-trip test
+    print "$test: ";
+    my $c = "$$opts{bin}/bgzip $at -i -I '$index' < '$data' > '$compressed'";
+    my ($ret, $out) = _cmd($c);
+    if ($ret) {
+	failed($opts, $test, "non-zero exit from $c");
+	return;
+    }
+    $c = "$$opts{bin}/bgzip $at -d < '$compressed' > '$uncompressed'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+	failed($opts, $test, "non-zero exit from $c");
+	return;
+    }
+    $c = "cmp '$data' '$uncompressed'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+	failed($opts, $test, $out ? $out : "'$data' '$uncompressed' differ");
+	return;
+    }
+    passed($opts,$test);
+
+    # Extract from an offset
+    $test = sprintf('%s %2s threads', 'bgzip -b',
+		    $threads ? $threads : 'no');
+    print "$test: ";
+    $c = sprintf("tail -c +%d '%s' > '%s'", $offset + 1, $data, $expected_part);
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+	failed($opts, $test, "non-zero exit from $c");
+	return;
+    }
+    $c = "$$opts{bin}/bgzip $at -b $offset -d '$compressed' > $uncompressed_part";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+	failed($opts, $test, "non-zero exit from $c");
+	return;
+    }
+    $c = "cmp '$expected_part' '$uncompressed_part'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+	failed($opts, $test,
+	       $out ? $out : "'$expected_part' '$uncompressed_part' differ");
+	return;
+    }
+    passed($opts,$test);
+
+    # Extract from an offset with named index
+    $test = sprintf('%s %2s threads', 'bgzip -b -I',
+		    $threads ? $threads : 'no');
+    print "$test: ";
+    $c = "cp '$compressed' '$compressed_copy'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+	failed($opts, $test, "non-zero exit from $c");
+	return;
+    }
+    $c = "$$opts{bin}/bgzip $at -b $offset -d -I '$index' '$compressed_copy' > $uncompressed_part2";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+	failed($opts, $test, "non-zero exit from $c");
+	return;
+    }
+    $c = "cmp '$expected_part' '$uncompressed_part2'";
+    ($ret, $out) = _cmd($c);
+    if ($ret) {
+	failed($opts, $test,
+	       $out ? $out : "'$expected_part' '$uncompressed_part2' differ");
+	return;
+    }
+    passed($opts,$test);
+}
 
 my $test_view_failures;
 sub testv {
