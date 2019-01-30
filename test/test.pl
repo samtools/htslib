@@ -36,6 +36,7 @@ my $opts = parse_params();
 test_bgzip($opts, 0);
 test_bgzip($opts, 4);
 
+ce_fa_to_md5_cache($opts);
 test_index($opts);
 
 test_view($opts,0);
@@ -291,6 +292,54 @@ sub is_file_newer
     my (@bstat) = stat($bfile) or return 0;
     if ( $astat[9]>$bstat[9] ) { return 1 }
     return 0;
+}
+
+sub ce_fa_to_md5_cache {
+    my ($opts) = @_;
+
+    # These should really be worked out from the file contents, but
+    # pre-calculating them avoids a dependency on Digest::MD5
+    my %csums = (CHROMOSOME_I     => '8ede36131e0dbf3417807e48f77f3ebd',
+		 CHROMOSOME_II    => '8e7993f7a93158587ee897d7287948ec',
+		 CHROMOSOME_III   => '3adcb065e1cf74fafdbba1e8c352b323',
+		 CHROMOSOME_IV    => '251af66a69ee589c9f3757340ec2de6f',
+		 CHROMOSOME_V     => 'cf200a65fb754836dcc56b24b3170ee8',
+		 CHROMOSOME_X     => '6f9368fd2192c89c613718399d2d31fc',
+		 CHROMOSOME_MtDNA => 'cd05857ece6411f40257a565ccfe15bb');
+    
+    my $m5_dir = "$$opts{tmp}/md5";
+    if (!-d $m5_dir) {
+	mkdir($m5_dir) || die "Couldn't make directory $m5_dir\n";
+    }
+    my $out;
+    open(my $fa, '<', "$$opts{path}/ce.fa")
+	|| die "Couldn't open $$opts{path}/ce.fa : $!\n";
+    my $name = '';
+    while (<$fa>) {
+	chomp;
+	if (/^>(\S+)/) {
+	    if ($out) {
+		close($out) || die "Error closing $m5_dir/$csums{$name} : $!\n";
+	    }
+	    $name = $1;
+	    if (!exists($csums{$name})) {
+		die "Unexpected fasta entry : $name\n";
+	    }
+	    open($out, '>', "$m5_dir/$csums{$name}")
+	} else {
+	    if (!$out) {
+		die "$$opts{path}/ce.fa : Got data before fasta header\n";
+	    }
+	    $_ = uc($_);
+	    s/\s+//g;
+	    print $out $_;
+	}
+    }
+    if ($out) {
+	close($out) || die "Error closing $m5_dir/$csums{$name} : $!\n";
+    }
+    close($fa) || die "Error reading $$opts{path}/ce.fa : $!\n";
+    $$opts{m5_dir} = $m5_dir;
 }
 
 
@@ -586,6 +635,12 @@ sub test_index
     test_compare($opts,"$$opts{path}/test_view -l 0 -z -m 0 -x $$opts{tmp}/index.sam.gz.bai $$opts{path}/index.sam > $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.bai", "$$opts{path}/index.sam.gz.bai");
     unlink("$$opts{tmp}/index.sam.gz.bai");
     test_compare($opts,"$$opts{path}/test_index -b $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.bai", "$$opts{path}/index.sam.gz.bai");
+
+    # CRAM
+    local $ENV{REF_PATH} = $$opts{m5_dir};
+    test_compare($opts,"$$opts{path}/test_view -l 0 -C -x $$opts{tmp}/index.cram.crai $$opts{path}/index.sam > $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
+    unlink("$$opts{tmp}/index.cram.crai");
+    test_compare($opts,"$$opts{path}/test_index $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
 
     # BCF
     test_compare($opts,"$$opts{path}/test_view -l 0 -b -m 14 -x $$opts{tmp}/index.bcf.csi $$opts{path}/index.vcf > $$opts{tmp}/index.bcf", "$$opts{tmp}/index.bcf.csi", "$$opts{path}/index.bcf.csi", gz=>1);
