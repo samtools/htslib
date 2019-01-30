@@ -1978,7 +1978,7 @@ int hts_idx_set_meta(hts_idx_t *idx, uint32_t l_meta, uint8_t *meta,
         if (!new_meta) return -1;
         memcpy(new_meta, meta, l);
         // Prevent possible strlen past the end in tbx_index_load2
-        meta[l + 1] = '\0';
+        new_meta[l] = '\0';
     }
     if (idx->meta) free(idx->meta);
     idx->l_meta = l_meta;
