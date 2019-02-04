@@ -743,25 +743,6 @@ int sam_idx_save(htsFile *fp) {
     return 0;
 }
 
-
-static int bam_readrec(BGZF *bfp, void *ignored, void *bv, int *tid, int *beg, int *end)
-{
-    bam1_t *b = bv;
-    int ret;
-    if ((ret = bam_read1(bfp, b)) >= 0) {
-        *tid = b->core.tid;
-        *beg = b->core.pos;
-        *end = bam_endpos(b);
-    }
-    return ret;
-}
-
-// A combination of htsFile and bam_hdr_t is sufficient to read SAM, BAM and CRAM.
-struct itr_cd {
-    htsFile *fp;
-    bam_hdr_t *h;
-};
-
 static int sam_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
 {
     htsFile *fp = (htsFile *)fpv;
@@ -988,7 +969,7 @@ hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_regli
                    hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell);
     else
         return hts_itr_regions(idx, reglist, regcount, (hts_name2id_f)(bam_name2id), hdr,
-                   hts_itr_multi_bam, bam_readrec, bam_pseek, bam_ptell);
+                   hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell);
 }
 
 /**********************
