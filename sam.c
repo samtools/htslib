@@ -61,6 +61,10 @@ void bam_hdr_destroy(bam_hdr_t *h)
 {
     int32_t i;
     if (h == NULL) return;
+    if (h->ref_count > 0) {
+        --h->ref_count;
+        return;
+    }
     if (h->target_name) {
         for (i = 0; i < h->n_targets; ++i)
             free(h->target_name[i]);
@@ -758,12 +762,12 @@ struct itr_cd {
     bam_hdr_t *h;
 };
 
-static int sam_readrec(BGZF *ignored, void *cdv, void *bv, int *tid, int *beg, int *end)
+static int sam_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
 {
-    struct itr_cd *cd = (struct itr_cd *)cdv;
+    htsFile *fp = (htsFile *)fpv;
     bam1_t *b = bv;
-    cd->fp->line.l = 0;
-    int ret = sam_read1(cd->fp, cd->h, b);
+    fp->line.l = 0;
+    int ret = sam_read1(fp, fp->bam_header, b);
     if (ret >= 0) {
         *tid = b->core.tid;
         *beg = b->core.pos;
@@ -773,6 +777,15 @@ static int sam_readrec(BGZF *ignored, void *cdv, void *bv, int *tid, int *beg, i
 }
 
 // This is used only with read_rest=1 iterators, so need not set tid/beg/end.
+static int sam_readrec_rest(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
+{
+    htsFile *fp = (htsFile *)fpv;
+    bam1_t *b = bv;
+    fp->line.l = 0;
+    int ret = sam_read1(fp, fp->bam_header, b);
+    return ret;
+}
+
 static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
 {
     htsFile *fp = fpv;
@@ -855,29 +868,6 @@ static int64_t bam_ptell(void *fp)
         return -1L;
 
     return bgzf_tell(fd);
-}
-
-// This is used only with read_rest=1 iterators, so need not set tid/beg/end.
-static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int *beg, int *end)
-{
-    htsFile *fp = fpv;
-    bam1_t *b = bv;
-    switch (fp->format.format) {
-    case bam:   return bam_read1(bgzfp, b);
-    case cram: {
-        int ret = cram_get_bam_seq(fp->fp.cram, &b);
-        if (ret < 0)
-            return cram_eof(fp->fp.cram) ? -1 : -2;
-
-        if (bam_tag2cigar(b, 1, 1) < 0)
-            return -2;
-        return ret;
-    }
-    default:
-        // TODO Need headers available to implement this for SAM files
-        hts_log_error("Not implemented for SAM files");
-        abort();
-    }
 }
 
 hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx)
@@ -969,11 +959,11 @@ hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
     if (idx == NULL)
-        return hts_itr_query(NULL, tid, beg, end, sam_bam_cram_readrec);
+        return hts_itr_query(NULL, tid, beg, end, sam_readrec_rest);
     else if (cidx->fmt == HTS_FMT_CRAI)
-        return cram_itr_query(idx, tid, beg, end, cram_readrec);
+        return cram_itr_query(idx, tid, beg, end, sam_readrec);
     else
-        return hts_itr_query(idx, tid, beg, end, bam_readrec);
+        return hts_itr_query(idx, tid, beg, end, sam_readrec);
 }
 
 static int cram_name2id(void *fdv, const char *ref)
@@ -985,27 +975,9 @@ static int cram_name2id(void *fdv, const char *ref)
 hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-    if (cidx->fmt == HTS_FMT_CRAI)
-        return hts_itr_querys(idx, region, cram_name2id, cidx->cram, cram_itr_query, cram_readrec);
-    else
-        return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr, hts_itr_query, bam_readrec);
-}
-
-// Format agnostic version of the above iterators.
-// This is implemented using the itr_cd structure as the hts iterator 'data',
-// to get access to htsFile instead of BGZF and the bam_hdr_t pointers..
-hts_itr_t *sam_itr_querys2(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region)
-{
-    const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
     return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr,
                           cidx->fmt == HTS_FMT_CRAI ? cram_itr_query : hts_itr_query,
                           sam_readrec);
-}
-
-int sam_itr_next2(htsFile *fp, bam_hdr_t *hdr, hts_itr_t *iter, void *r)
-{
-    struct itr_cd cd = {fp, hdr};
-    return hts_itr_next(fp->fp.bgzf, iter, r, &cd);
 }
 
 hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount)
@@ -1232,7 +1204,9 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         h = sam_hdr_parse(str.l, str.s);
         if (!h) goto error;
         h->l_text = str.l; h->text = str.s;
-        return sam_hdr_sanitise(h);
+        fp->bam_header = sam_hdr_sanitise(h);
+        fp->bam_header->ref_count = 1;
+        return fp->bam_header;
 
      error:
         bam_hdr_destroy(h);
@@ -1735,7 +1709,7 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
     switch (fp->format.format) {
     case bam: {
         int r = bam_read1(fp->fp.bgzf, b);
-        if (r >= 0) {
+        if (h && r >= 0) {
             if (b->core.tid  >= h->n_targets || b->core.tid  < -1 ||
                 b->core.mtid >= h->n_targets || b->core.mtid < -1)
                 return -3;

@@ -51,7 +51,7 @@ extern "C" {
  @field sdict       header dictionary
  */
 
-typedef struct {
+typedef struct bam_hdr_t {
     int32_t n_targets, ignore_sam_err;
     uint32_t l_text;
     uint32_t *target_len;
@@ -59,6 +59,7 @@ typedef struct {
     char **target_name;
     char *text;
     void *sdict;
+    uint32_t ref_count;
 } bam_hdr_t;
 
 /****************************
@@ -397,47 +398,17 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
     @param end     End position in target
     @return An iterator on success; NULL on failure
 
-Despite the name, this function does not work with SAM files.  Use
-sam_itr_queryi2() instead.
+The following special values (defined in htslib/hts.h)can be used for @p tid.
+When using one of these values, @p beg and @p end are ignored.
+
+  HTS_IDX_NOCOOR iterates over unmapped reads sorted at the end of the file
+  HTS_IDX_START  iterates over the entire file
+  HTS_IDX_REST   iterates from the current position to the end of the file
+  HTS_IDX_NONE   always returns "no more alignment records"
+
+When using HTS_IDX_REST or HTS_IDX_NONE, NULL can be passed in to @p idx.
  */
 hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
-
-/// Create a BAM/CRAM iterator
-/** @param idx     Index
-    @param hdr     Header
-    @param region  Region specification
-    @return An iterator on success; NULL on failure
-
-Despite the name, this function does not work with SAM files.  Use
-sam_itr_querys2() instead.
- */
-hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
-hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount);
-
-/// Get the next read from a BAM/CRAM iterator
-/** @param htsfp       Htsfile pointer for the input file
-    @param itr         Iterator
-    @param r           Pointer to a bam1_t struct
-    @return >= 0 on success; -1 when there is no more data; < -1 on error
-
-Despite the name, this function does not work with SAM files.  Use
-sam_itr_queryi2() instead.
- */
-#define sam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (htsfp))
-#define sam_itr_multi_next(htsfp, itr, r) hts_itr_multi_next((htsfp), (itr), (r))
-
-// Format agnostic version of the above iterators.
-// The key difference is availability of the header.
-
-/// Create a SAM/BAM/CRAM iterator
-/** @param idx     Index
-    @param hdr     Header
-    @param tid     Target id
-    @param beg     Start position in target
-    @param end     End position in target
-    @return An iterator on success; NULL on failure
- */
-hts_itr_t *sam_itr_queryi2(const hts_idx_t *idx, bam_hdr_t *hdr, int tid, int beg, int end);
 
 /// Create a SAM/BAM/CRAM iterator
 /** @param idx     Index
@@ -447,44 +418,53 @@ hts_itr_t *sam_itr_queryi2(const hts_idx_t *idx, bam_hdr_t *hdr, int tid, int be
 
 Regions are parsed by hts_parse_reg(), and take one of the following forms:
 
-  REF
-  REF:
-  REF:START
-  REF:-END
-  REF:START-END
-  .
-  *
+region          | Outputs
+--------------- | -------------  
+REF             | All reads with RNAME REF
+REF:            | All reads with RNAME REF
+REF:START       | Reads with RNAME REF overlapping START to end of REF
+REF:-END        | Reads with RNAME REF overlapping start of REF to END
+REF:START-END   | Reads with RNAME REF overlapping START to END
+.               | All reads from the start of the file
+*               | Unmapped reads at the end of the file (RNAME '*' in SAM)
 
-Where:
-  REF is a reference name, which should appear as the ID in an @SQ header line.
-  START is a numeric start position
-  END is a numeric end position
-
- The first two forms will create an iterator over the entire target reference.
- The third will output everything from START to the end of the target.
- The fourth will output everything from the start end the target to END.
- The fifth will output all reads in the given range
- The sixth creates an iterator from the start of the file
- The seventh creates an iterator over the uplaced reads (i.e. all reads with
-reference name '*' in a SAM file)
-
-The region parser searches for the colon separating REF from START right-to-left.
-This means reference names that themselves contain a colon can be used as
-long as a trailing colon is always appended to the name.
+The form `REF:` should be used when the reference name itself contains a colon.
 
 Note that SAM files must be bgzf-compressed for iterators to work.
  */
+hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
 
-hts_itr_t *sam_itr_querys2(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
+/// Create a multi-region iterator
+/** @param idx       Index
+    @param hdr       Header
+    @param reglist   Array of regions to iterate over
+    @param regcount  Number of items in reglist
+
+Each @p reglist entry should have the reference name in the `reg` field, an
+array of regions for that reference in `intervals` and the number of items
+in `intervals` should be stored in `count`.  No other fields need to be filled
+in.
+
+The iterator will return all reads overlapping the given regions.  If a read
+overlaps more than one region, it will only be returned once.
+ */
+hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount);
 
 /// Get the next read from a SAM/BAM/CRAM iterator
 /** @param htsfp       Htsfile pointer for the input file
-    @param hdr         Header
     @param itr         Iterator
     @param r           Pointer to a bam1_t struct
     @return >= 0 on success; -1 when there is no more data; < -1 on error
-*/
-int sam_itr_next2(htsFile *fp, bam_hdr_t *hdr, hts_itr_t *iter, void *r);
+ */
+#define sam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (htsfp))
+
+/// Get the next read from a BAM/CRAM multi-iterator
+/** @param htsfp       Htsfile pointer for the input file
+    @param itr         Iterator
+    @param r           Pointer to a bam1_t struct
+    @return >= 0 on success; -1 when there is no more data; < -1 on error
+ */
+#define sam_itr_multi_next(htsfp, itr, r) hts_itr_multi_next((htsfp), (itr), (r))
 
     /***************
      *** SAM I/O ***

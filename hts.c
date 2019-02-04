@@ -946,6 +946,7 @@ int hts_close(htsFile *fp)
     }
 
     save = errno;
+    bam_hdr_destroy(fp->bam_header);
     hts_idx_destroy(fp->idx);
     free(fp->fn);
     free(fp->fn_aux);
@@ -2174,7 +2175,16 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off, max_off;
-    hts_itr_t *iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
+    hts_itr_t *iter;
+
+    // It's possible to call this function with NULL idx iff
+    // tid is one of the special values HTS_IDX_REST or HTS_IDX_NONE
+    if (!idx && !(tid == HTS_IDX_REST || tid == HTS_IDX_NONE)) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
     if (iter) {
         if (tid < 0) {
             uint64_t off = hts_itr_off(idx, tid);
