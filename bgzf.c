@@ -1057,6 +1057,17 @@ ssize_t bgzf_raw_read(BGZF *fp, void *data, size_t length)
 
 #ifdef BGZF_MT
 
+/* Function to clean up when jobs are discarded (e.g. during seek)
+ * This works for results too, as results are the same struct with
+ * decompressed data stored in it. */
+static void job_cleanup(void *arg) {
+    bgzf_job *j = (bgzf_job *)arg;
+    mtaux_t *mt = j->fp->mt;
+    pthread_mutex_lock(&mt->job_pool_m);
+    pool_free(mt->job_pool, j);
+    pthread_mutex_unlock(&mt->job_pool_m);
+}
+
 void *bgzf_encode_func(void *arg) {
     bgzf_job *j = (bgzf_job *)arg;
 
@@ -1333,10 +1344,16 @@ restart:
     j->comp_len = 0;
     j->uncomp_len = 0;
     j->hit_eof = 0;
+    j->fp = fp;
 
     while (bgzf_mt_read_block(fp, j) == 0) {
         // Dispatch
-        hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_decode_func, j);
+        if (hts_tpool_dispatch3(mt->pool, mt->out_queue, bgzf_decode_func, j,
+                                job_cleanup, job_cleanup, 0) < 0) {
+            job_cleanup(j);
+            hts_tpool_process_destroy(mt->out_queue);
+            return NULL;
+        }
 
         // Check for command
         pthread_mutex_lock(&mt->command_m);
@@ -1373,12 +1390,18 @@ restart:
         j->comp_len = 0;
         j->uncomp_len = 0;
         j->hit_eof = 0;
+        j->fp = fp;
     }
 
     if (j->errcode == BGZF_ERR_MT) {
         // Attempt to multi-thread decode a raw gzip stream cannot be done.
         // We tear down the multi-threaded decoder and revert to the old code.
-        hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
+        if (hts_tpool_dispatch3(mt->pool, mt->out_queue, bgzf_nul_func, j,
+                                job_cleanup, job_cleanup, 0) < 0) {
+            job_cleanup(j);
+            hts_tpool_process_destroy(mt->out_queue);
+            return NULL;
+        }
         hts_tpool_process_ref_decr(mt->out_queue);
         return &j->errcode;
     }
@@ -1388,7 +1411,12 @@ restart:
     // j->errcode is set already.
 
     j->hit_eof = 1;
-    hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_nul_func, j);
+    if (hts_tpool_dispatch3(mt->pool, mt->out_queue, bgzf_nul_func, j,
+                            job_cleanup, job_cleanup, 0) < 0) {
+        job_cleanup(j);
+        hts_tpool_process_destroy(mt->out_queue);
+        return NULL;
+    }
     if (j->errcode != 0) {
         hts_tpool_process_destroy(mt->out_queue);
         return &j->errcode;
@@ -1516,8 +1544,9 @@ static int mt_queue(BGZF *fp)
     // Also updated by writer thread
     pthread_mutex_lock(&mt->job_pool_m);
     bgzf_job *j = pool_alloc(mt->job_pool);
-    mt->jobs_pending++;
+    if (j) mt->jobs_pending++;
     pthread_mutex_unlock(&mt->job_pool_m);
+    if (!j) return -1;
 
     j->fp = fp;
     j->errcode = 0;
@@ -1525,16 +1554,30 @@ static int mt_queue(BGZF *fp)
     if (fp->compress_level == 0) {
         memcpy(j->comp_data + BLOCK_HEADER_LENGTH + 5, fp->uncompressed_block,
                j->uncomp_len);
-        hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_encode_level0_func, j);
+        if (hts_tpool_dispatch3(mt->pool, mt->out_queue,
+                                bgzf_encode_level0_func, j,
+                                job_cleanup, job_cleanup, 0) < 0) {
+            goto fail;
+        }
     } else {
         memcpy(j->uncomp_data, fp->uncompressed_block, j->uncomp_len);
 
         // Need non-block vers & job_pending?
-        hts_tpool_dispatch(mt->pool, mt->out_queue, bgzf_encode_func, j);
+        if (hts_tpool_dispatch3(mt->pool, mt->out_queue, bgzf_encode_func, j,
+                                job_cleanup, job_cleanup, 0) < 0) {
+            goto fail;
+        }
     }
 
     fp->block_offset = 0;
     return 0;
+
+ fail:
+    job_cleanup(j);
+    pthread_mutex_lock(&mt->job_pool_m);
+    mt->jobs_pending--;
+    pthread_mutex_unlock(&mt->job_pool_m);
+    return -1;
 }
 
 static int mt_flush_queue(BGZF *fp)
