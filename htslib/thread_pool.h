@@ -108,22 +108,84 @@ hts_tpool *hts_tpool_init(int n);
 int hts_tpool_size(hts_tpool *p);
 
 
-/*
- * Adds an item to the work pool.
- *
- * FIXME: permit q to be NULL, indicating a global/default pool held by
- * the thread pool itself?  This pool would be for jobs that have no
- * output, so fire and forget only with..
- *
- * Returns 0 on success
+/// Add an item to the work pool.
+/**
+ * @param p     Thread pool
+ * @param q     Process queue
+ * @param func  Function run by the thread pool
+ * @param arg   Data for use by func()
+ * @return 0 on success
  *        -1 on failure
  */
-
 // FIXME: should this drop the hts_tpool*p argument? It's just q->p
 int hts_tpool_dispatch(hts_tpool *p, hts_tpool_process *q,
                        void *(*func)(void *arg), void *arg);
+
+/// Add an item to the work pool, with nonblocking option.
+/**
+ * @param p         Thread pool
+ * @param q         Process queue
+ * @param func      Function run by the thread pool
+ * @param arg       Data for use by func()
+ * @param nonblock  Non-blocking flag (see description)
+ * @return 0 on success
+ *        -1 on failure
+ *
+ * The @p nonblock parameter can take one of the following values:
+ *      0 => block if input queue is full
+ *     +1 => don't block if input queue is full, but do not add task
+ *     -1 => add task regardless of whether queue is full (over-size)
+ *
+ * If @p nonblock is +1 and the queue is full, -1 will be returned and
+ * `errno` is set to `EAGAIN`.
+ */
 int hts_tpool_dispatch2(hts_tpool *p, hts_tpool_process *q,
                         void *(*func)(void *arg), void *arg, int nonblock);
+
+/// Add an item to the work pool, with nonblocking and cleanup callbacks.
+/**
+ * @param p               Thread pool
+ * @param q               Process queue
+ * @param exec_func       Function run by the thread pool
+ * @param arg             Data for use by func()
+ * @param job_cleanup     Callback to clean up when discarding jobs
+ * @param result_cleanup  Callback to clean up when discarding result data
+ * @param nonblock        Non-blocking flag (see description)
+ * @return 0 on success
+ *        -1 on failure
+ *
+ * The @p nonblock parameter can take one of the following values:
+ *      0 => block if input queue is full
+ *     +1 => don't block if input queue is full, but do not add task
+ *     -1 => add task regardless of whether queue is full (over-size)
+ *
+ * If @p nonblock is +1 and the queue is full, -1 will be returned and
+ * `errno` is set to `EAGAIN`.
+ *
+ * The job_cleanup() and result_cleanup() callbacks are used when discarding
+ * data from a queue, for example when calling hts_tpool_process_reset()
+ * or hts_tpool_process_destroy().
+ *
+ * If not NULL, job_cleanup() will be called for each pending job with the
+ * value of @p arg that was set for that job.  This can be used to free
+ * any data associated with @p arg, and also @p arg itself.
+ *
+ * Similarly, result_cleanup() can be used to free any results left by
+ * jobs that had started before hts_tpool_process_reset() was called.
+ * The argument passed to result_cleanup() is the pointer that would
+ * have been returned by calling hts_tpool_result_data() on the result
+ * when pulled from the queue.
+ *
+ * job_cleanup() and result_cleanup() are only called when discarding jobs.
+ * For jobs that are processed normally, it is the resposibility of
+ * exec_func() and / or consumers of any results to do any cleaning up
+ * necessary.
+ */
+int hts_tpool_dispatch3(hts_tpool *p, hts_tpool_process *q,
+                        void *(*exec_func)(void *arg), void *arg,
+                        void (*job_cleanup)(void *arg),
+                        void (*result_cleanup)(void *data),
+                        int nonblock);
 
 /*
  * Wakes up a single thread stuck in dispatch and make it return with

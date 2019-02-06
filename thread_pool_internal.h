@@ -56,6 +56,8 @@ extern "C" {
 typedef struct hts_tpool_job {
     void *(*func)(void *arg);
     void *arg;
+    void (*job_cleanup)(void *arg);
+    void (*result_cleanup)(void *data);
     struct hts_tpool_job *next;
 
     struct hts_tpool *p;
@@ -68,6 +70,7 @@ typedef struct hts_tpool_job {
  */
 struct hts_tpool_result {
     struct hts_tpool_result *next;
+    void (*result_cleanup)(void *data);
     uint64_t serial; // sequential number for ordering
     void *data;      // result itself
 };
