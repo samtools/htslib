@@ -978,7 +978,7 @@ const char *hts_format_file_extension(const htsFormat *format) {
     }
 }
 
-static hFILE *hts_hfile(htsFile *fp) {
+hFILE *hts_hfile(htsFile *fp) {
     switch (fp->format.format) {
     case binary_format: // fall through; still valid if bcf?
     case bam:          return bgzf_hfile(fp->fp.bgzf);

@@ -531,6 +531,8 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
 */
 int hts_check_EOF(htsFile *fp);
 
+struct hFILE *hts_hfile(htsFile *fp);
+
 /************
  * Indexing *
  ************/
