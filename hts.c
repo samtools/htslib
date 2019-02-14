@@ -2106,8 +2106,14 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
             }
         } else {
             if (beg < 0) beg = 0;
-            if (end < beg) return 0;
-            if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL) return 0;
+            if (end < beg) {
+              free(iter);
+              return 0;
+            }
+            if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL) {
+              free(iter);
+              return 0;
+            }
 
             iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
             iter->readrec = readrec;
