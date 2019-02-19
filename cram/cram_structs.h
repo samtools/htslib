@@ -760,6 +760,8 @@ typedef struct cram_fd {
     int lossy_read_names;               // boolean
     int tlen_approx;                    // max TLEN calculation offset.
     int tlen_zero;                      // If true, permit tlen 0 (=> tlen calculated)
+
+    BGZF *idxfp;                        // File pointer for on-the-fly index creation
 } cram_fd;
 
 // Translation of required fields to cram data series

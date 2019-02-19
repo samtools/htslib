@@ -36,6 +36,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 #include <limits.h>
 #include <assert.h>
+#include <errno.h>
 #include "hts.h"
 #include "kstring.h"
 #include "hts_defs.h"
@@ -886,7 +887,16 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     #define bcf_itr_destroy(iter) hts_itr_destroy(iter)
     #define bcf_itr_queryi(idx, tid, beg, end) hts_itr_query((idx), (tid), (beg), (end), bcf_readrec)
     #define bcf_itr_querys(idx, hdr, s) hts_itr_querys((idx), (s), (hts_name2id_f)(bcf_hdr_name2id), (hdr), hts_itr_query, bcf_readrec)
-    #define bcf_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
+
+    static inline int bcf_itr_next(htsFile *htsfp, hts_itr_t *itr, void *r) {
+        if (htsfp->is_bgzf)
+            return hts_itr_next(htsfp->fp.bgzf, itr, r, 0);
+
+        hts_log_error("Only bgzf compressed files can be used with iterators");
+        errno = EINVAL;
+        return -2;
+    }
+
     #define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
     #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
 
@@ -944,6 +954,24 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *      -4 .. failed to create and/or save the index
      */
      int bcf_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads);
+
+     /// Initialise fp->idx for the current format type, for VCF and BCF files.
+     /** @param fp        File handle for the data file being written.
+         @param h         BCF header structured (needed for BAI and CSI).
+         @param min_shift CSI bin size (CSI default is 14).
+         @param fnidx     Filename to write index to.  This pointer must remain valid
+                          until after sam_idx_save is called.
+         @return          0 on success, <0 on failure.
+         @note This must be called after the header has been written, but before
+               any other data.
+     */
+     int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx);
+
+     /// Writes the index initialised with bcf_idx_init to disk.
+     /** @param fp        File handle for the data file being written.
+         @return          0 on success, <0 on failure.
+     */
+     int bcf_idx_save(htsFile *fp);
 
 /*******************
  * Typed value I/O *

@@ -381,7 +381,7 @@ int main(int argc, char **argv)
         }
         free(buffer);
         if (bgzf_close(fp) < 0) error("Close failed: Error %d\n",fp->errcode);
-        if (!pstdout && !test) unlink(argv[optind]);
+        if (argc > optind && !pstdout && !test) unlink(argv[optind]);
         return 0;
     }
 }

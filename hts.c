@@ -49,6 +49,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/khash.h"
 #include "htslib/kseq.h"
 #include "htslib/ksort.h"
+#include "htslib/tbx.h"
 
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
@@ -945,6 +946,8 @@ int hts_close(htsFile *fp)
     }
 
     save = errno;
+    bam_hdr_destroy(fp->bam_header);
+    hts_idx_destroy(fp->idx);
     free(fp->fn);
     free(fp->fn_aux);
     free(fp->line.s);
@@ -1304,6 +1307,7 @@ struct __hts_idx_t {
     bidx_t **bidx;
     lidx_t *lidx;
     uint8_t *meta; // MUST have a terminating NUL on the end
+    int tbi_n, last_tbi_tid;
     struct {
         uint32_t last_bin, save_bin;
         int last_coor, last_tid, save_tid, finished;
@@ -1393,6 +1397,8 @@ hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_l
         idx->lidx = (lidx_t*) calloc(n, sizeof(lidx_t));
         if (idx->lidx == NULL) { free(idx->bidx); free(idx); return NULL; }
     }
+    idx->tbi_n = -1;
+    idx->last_tbi_tid = -1;
     return idx;
 }
 
@@ -1433,12 +1439,12 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
     }
 }
 
-static void compress_binning(hts_idx_t *idx, int i)
+static int compress_binning(hts_idx_t *idx, int i)
 {
     bidx_t *bidx = idx->bidx[i];
     khint_t k;
     int l, m;
-    if (bidx == 0) return;
+    if (bidx == 0) return 0;
     // merge a bin to its parent if the bin is too small
     for (l = idx->n_lvls; l > 0; --l) {
         unsigned start = hts_bin_first(l);
@@ -1453,9 +1459,14 @@ static void compress_binning(hts_idx_t *idx, int i)
                 if (kp == kh_end(bidx)) continue;
                 q = &kh_val(bidx, kp);
                 if (q->n + p->n > q->m) {
-                    q->m = q->n + p->n;
-                    kroundup32(q->m);
-                    q->list = (hts_pair64_t*)realloc(q->list, q->m * sizeof(hts_pair64_t));
+                    uint32_t new_m = q->n + p->n;
+                    hts_pair64_t *new_list;
+                    kroundup32(new_m);
+                    if (new_m > INT32_MAX) return -1; // Limited by index format
+                    new_list = realloc(q->list, new_m * sizeof(*new_list));
+                    if (!new_list) return -1;
+                    q->m = new_m;
+                    q->list = new_list;
                 }
                 memcpy(q->list + q->n, p->list, p->n * sizeof(hts_pair64_t));
                 q->n += p->n;
@@ -1478,22 +1489,25 @@ static void compress_binning(hts_idx_t *idx, int i)
         }
         p->n = m + 1;
     }
+    return 0;
 }
 
-void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
+int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 {
-    int i;
-    if (idx == NULL || idx->z.finished) return; // do not run this function on an empty index or multiple times
+    int i, ret = 0;
+    if (idx == NULL || idx->z.finished) return 0; // do not run this function on an empty index or multiple times
     if (idx->z.save_tid >= 0) {
-        insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, final_offset);
-        insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.off_beg, final_offset);
-        insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.n_mapped, idx->z.n_unmapped);
+        ret |= insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, final_offset);
+        ret |= insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.off_beg, final_offset);
+        ret |= insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.n_mapped, idx->z.n_unmapped);
     }
     for (i = 0; i < idx->n; ++i) {
         update_loff(idx, i, (idx->fmt == HTS_FMT_CSI));
-        compress_binning(idx, i);
+        ret |= compress_binning(idx, i);
     }
     idx->z.finished = 1;
+
+    return ret;
 }
 
 int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped)
@@ -1605,6 +1619,51 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
     }
 }
 
+// Needed for TBI only.  Ensure 'tid' with 'name' is in the index meta data.
+// idx->meta needs to have been initialsed first with an appropriate Tabix
+// configuration via hts_idx_set_meta.
+//
+// NB number of references (first 4 bytes of tabix header) aren't in
+// idx->meta, but held in idx->n instead.
+int hts_idx_tbi_name(hts_idx_t *idx, int tid, const char *name) {
+    // Horrid - we have to map incoming tid to a tbi alternative tid.
+    // This is because TBI counts tids by "covered" refs while everything
+    // else counts by Nth SQ/contig record in header.
+    if (tid == idx->last_tbi_tid || tid < 0 || !name)
+        return idx->tbi_n;
+
+    uint32_t len = strlen(name)+1;
+    uint8_t *tmp = (uint8_t *)realloc(idx->meta, idx->l_meta + len);
+    if (!tmp)
+        return -1;
+
+    // Append name
+    idx->meta = tmp;
+    strcpy((char *)idx->meta + idx->l_meta, name);
+    idx->l_meta += len;
+
+    // Update seq length
+    u32_to_le(le_to_u32(idx->meta+24)+len, idx->meta+24);
+
+    idx->last_tbi_tid = tid;
+    return ++idx->tbi_n;
+}
+
+// When doing samtools index we have a read_bam / hts_idx_push(bgzf_tell())
+// loop.  idx->z.last_off is the previous bzgf_tell location, so we know
+// the location the current bam record started at as well as where it ends.
+//
+// When building an index on the fly via a write_bam / hts_idx_push loop,
+// this isn't quite identical as we may amend the virtual coord returned
+// by bgzf_tell to the start of a new block if the next bam struct doesn't
+// fit.  It's essentially the same thing, but for bit-identical indices
+// we need to amend the idx->z.last_off when we know we're starting a new
+// block.
+void hts_idx_amend_last(hts_idx_t *idx, uint64_t offset)
+{
+    idx->z.last_off = offset;
+}
+
 void hts_idx_destroy(hts_idx_t *idx)
 {
     khint_t k;
@@ -1630,6 +1689,10 @@ void hts_idx_destroy(hts_idx_t *idx)
     }
     free(idx->bidx); free(idx->lidx); free(idx->meta);
     free(idx);
+}
+
+int hts_idx_fmt(hts_idx_t *idx) {
+    return idx->fmt;
 }
 
 // The optimizer eliminates these ed_is_big() calls; still it would be good to
@@ -1668,7 +1731,18 @@ static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
 
     #define check(ret) if ((ret) < 0) return -1
 
-    check(idx_write_int32(fp, idx->n));
+    // VCF TBI/CSI only writes IDs for non-empty bins (ie covered references)
+    //
+    // NOTE: CSI meta is undefined in spec, so this code has an assumption
+    // that we're only using it for Tabix data.
+    int nids = idx->n;
+    if (idx->meta && idx->l_meta >= 4 && le_to_u32(idx->meta) == TBX_VCF) {
+        for (i = nids = 0; i < idx->n; ++i) {
+            if (idx->bidx[i])
+                nids++;
+        }
+    }
+    check(idx_write_int32(fp, nids));
     if (fmt == HTS_FMT_TBI && idx->l_meta)
         check(bgzf_write(fp, idx->meta, idx->l_meta));
 
@@ -1676,8 +1750,10 @@ static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
         khint_t k;
         bidx_t *bidx = idx->bidx[i];
         lidx_t *lidx = &idx->lidx[i];
+
         // write binning index
-        check(idx_write_int32(fp, bidx? kh_size(bidx) : 0));
+        if (nids == idx->n || bidx)
+            check(idx_write_int32(fp, bidx? kh_size(bidx) : 0));
         if (bidx)
             for (k = kh_begin(bidx); k != kh_end(bidx); ++k)
                 if (kh_exist(bidx, k)) {
@@ -1773,12 +1849,14 @@ static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
         h = idx->bidx[i] = kh_init(bin);
         if (bgzf_read(fp, &n, 4) != 4) return -1;
         if (is_be) ed_swap_4p(&n);
+        if (n < 0) return -3;
         for (j = 0; j < n; ++j) {
             khint_t k;
             if (bgzf_read(fp, &key, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&key);
             k = kh_put(bin, h, key, &absent);
-            if (absent <= 0) return -3; // Duplicate bin number
+            if (absent <  0) return -2; // No memory
+            if (absent == 0) return -3; // Duplicate bin number
             p = &kh_val(h, k);
             if (fmt == HTS_FMT_CSI) {
                 if (bgzf_read(fp, &p->loff, 8) != 8) return -1;
@@ -1786,16 +1864,20 @@ static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
             } else p->loff = 0;
             if (bgzf_read(fp, &p->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&p->n);
+            if (p->n < 0) return -3;
+            if ((size_t) p->n > SIZE_MAX / sizeof(hts_pair64_t)) return -2;
             p->m = p->n;
             p->list = (hts_pair64_t*)malloc(p->m * sizeof(hts_pair64_t));
             if (p->list == NULL) return -2;
-            if (bgzf_read(fp, p->list, p->n<<4) != p->n<<4) return -1;
+            if (bgzf_read(fp, p->list, ((size_t) p->n)<<4) != ((size_t) p->n)<<4) return -1;
             if (is_be) swap_bins(p);
         }
         if (fmt != HTS_FMT_CSI) { // load linear index
             int j;
             if (bgzf_read(fp, &l->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&l->n);
+            if (l->n < 0) return -3;
+            if ((size_t) l->n > SIZE_MAX / sizeof(uint64_t)) return -2;
             l->m = l->n;
             l->offset = (uint64_t*)malloc(l->n * sizeof(uint64_t));
             if (l->offset == NULL) return -2;
@@ -1835,6 +1917,7 @@ static hts_idx_t *hts_idx_load_local(const char *fn)
         }
         if (bgzf_read(fp, &n, 4) != 4) goto fail;
         if (is_be) ed_swap_4p(&n);
+        if (n > INT32_MAX) goto fail;
         if ((idx = hts_idx_init(n, HTS_FMT_CSI, 0, x[0], x[1])) == NULL) goto fail;
         idx->l_meta = x[2];
         idx->meta = meta;
@@ -1847,6 +1930,7 @@ static hts_idx_t *hts_idx_load_local(const char *fn)
         // Read file header
         if (bgzf_read(fp, x, sizeof(x)) != sizeof(x)) goto fail;
         n = le_to_u32(&x[0]); // location of n_ref
+        if (n > INT32_MAX) goto fail;
         if ((idx = hts_idx_init(n, HTS_FMT_TBI, 0, 14, 5)) == NULL) goto fail;
         n = le_to_u32(&x[7*4]); // location of l_nm
         if (n > UINT32_MAX - 29) goto fail; // Prevent possible overflow
@@ -1865,7 +1949,8 @@ static hts_idx_t *hts_idx_load_local(const char *fn)
         uint32_t n;
         if (bgzf_read(fp, &n, 4) != 4) goto fail;
         if (is_be) ed_swap_4p(&n);
-        idx = hts_idx_init(n, HTS_FMT_BAI, 0, 14, 5);
+        if (n > INT32_MAX) goto fail;
+        if ((idx = hts_idx_init(n, HTS_FMT_BAI, 0, 14, 5)) == NULL) goto fail;
         if (hts_idx_load_core(idx, fp, HTS_FMT_BAI) < 0) goto fail;
     }
     else { errno = EINVAL; goto fail; }
@@ -1894,7 +1979,7 @@ int hts_idx_set_meta(hts_idx_t *idx, uint32_t l_meta, uint8_t *meta,
         if (!new_meta) return -1;
         memcpy(new_meta, meta, l);
         // Prevent possible strlen past the end in tbx_index_load2
-        meta[l + 1] = '\0';
+        new_meta[l] = '\0';
     }
     if (idx->meta) free(idx->meta);
     idx->l_meta = l_meta;
@@ -2090,7 +2175,16 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off, max_off;
-    hts_itr_t *iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
+    hts_itr_t *iter;
+
+    // It's possible to call this function with NULL idx iff
+    // tid is one of the special values HTS_IDX_REST or HTS_IDX_NONE
+    if (!idx && !(tid == HTS_IDX_REST || tid == HTS_IDX_NONE)) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
     if (iter) {
         if (tid < 0) {
             uint64_t off = hts_itr_off(idx, tid);
@@ -2108,11 +2202,11 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
             if (beg < 0) beg = 0;
             if (end < beg) {
               free(iter);
-              return 0;
+              return NULL;
             }
             if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL) {
               free(iter);
-              return 0;
+              return NULL;
             }
 
             iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;

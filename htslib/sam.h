@@ -51,7 +51,7 @@ extern "C" {
  @field sdict       header dictionary
  */
 
-typedef struct {
+typedef struct bam_hdr_t {
     int32_t n_targets, ignore_sam_err;
     uint32_t l_text;
     uint32_t *target_len;
@@ -59,6 +59,7 @@ typedef struct {
     char **target_name;
     char *text;
     void *sdict;
+    uint32_t ref_count;
 } bam_hdr_t;
 
 /****************************
@@ -324,6 +325,25 @@ typedef struct {
 #define bam_index_load(fn) hts_idx_load((fn), HTS_FMT_BAI)
 #define bam_index_build(fn, min_shift) (sam_index_build((fn), (min_shift)))
 
+/// Initialise fp->idx for the current format type for SAM, BAM and CRAM types .
+/** @param fp        File handle for the data file being written.
+    @param h         Bam header structured (needed for BAI and CSI).
+    @param min_shift 0 for BAI, or larger for CSI (CSI defaults to 14).
+    @param fnidx     Filename to write index to.  This pointer must remain valid
+                     until after sam_idx_save is called.
+    @return          0 on success, <0 on failure.
+
+    @note This must be called after the header has been written, but before
+          any other data.
+*/
+int sam_idx_init(htsFile *fp, bam_hdr_t *h, int min_shift, const char *fnidx);
+
+/// Writes the index initialised with sam_idx_init to disk.
+/** @param fp        File handle for the data file being written.
+    @return          0 on success, <0 on filaure.
+*/
+int sam_idx_save(htsFile *fp) HTS_RESULT_USED;
+
 /// Load a BAM (.csi or .bai) or CRAM (.crai) index file
 /** @param fp  File handle of the data file whose index is being opened
     @param fn  BAM/CRAM/etc filename to search alongside for the index file
@@ -356,15 +376,101 @@ int sam_index_build(const char *fn, int min_shift) HTS_RESULT_USED;
              sam_index_build for error codes)
 */
 int sam_index_build2(const char *fn, const char *fnidx, int min_shift) HTS_RESULT_USED;
+
+/// Generate and save an index to a specific file
+/** @param fn        Input BAM/CRAM/etc filename
+    @param fnidx     Output filename, or NULL to add .bai/.csi/etc to @a fn
+    @param min_shift Positive to generate CSI, or 0 to generate BAI
+    @param nthreads  Number of threads to use when building the index
+    @return  0 if successful, or negative if an error occurred (see
+             sam_index_build for error codes)
+*/
 int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthreads) HTS_RESULT_USED;
 
-    #define sam_itr_destroy(iter) hts_itr_destroy(iter)
-    hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
-    hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
-    hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount);
+/// Free a SAM iterator
+/// @param iter     Iterator to free
+#define sam_itr_destroy(iter) hts_itr_destroy(iter)
 
-    #define sam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), (htsfp))
-    #define sam_itr_multi_next(htsfp, itr, r) hts_itr_multi_next((htsfp), (itr), (r))
+/// Create a BAM/CRAM iterator
+/** @param idx     Index
+    @param tid     Target id
+    @param beg     Start position in target
+    @param end     End position in target
+    @return An iterator on success; NULL on failure
+
+The following special values (defined in htslib/hts.h)can be used for @p tid.
+When using one of these values, @p beg and @p end are ignored.
+
+  HTS_IDX_NOCOOR iterates over unmapped reads sorted at the end of the file
+  HTS_IDX_START  iterates over the entire file
+  HTS_IDX_REST   iterates from the current position to the end of the file
+  HTS_IDX_NONE   always returns "no more alignment records"
+
+When using HTS_IDX_REST or HTS_IDX_NONE, NULL can be passed in to @p idx.
+ */
+hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
+
+/// Create a SAM/BAM/CRAM iterator
+/** @param idx     Index
+    @param hdr     Header
+    @param region  Region specification
+    @return An iterator on success; NULL on failure
+
+Regions are parsed by hts_parse_reg(), and take one of the following forms:
+
+region          | Outputs
+--------------- | -------------  
+REF             | All reads with RNAME REF
+REF:            | All reads with RNAME REF
+REF:START       | Reads with RNAME REF overlapping START to end of REF
+REF:-END        | Reads with RNAME REF overlapping start of REF to END
+REF:START-END   | Reads with RNAME REF overlapping START to END
+.               | All reads from the start of the file
+*               | Unmapped reads at the end of the file (RNAME '*' in SAM)
+
+The form `REF:` should be used when the reference name itself contains a colon.
+
+Note that SAM files must be bgzf-compressed for iterators to work.
+ */
+hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region);
+
+/// Create a multi-region iterator
+/** @param idx       Index
+    @param hdr       Header
+    @param reglist   Array of regions to iterate over
+    @param regcount  Number of items in reglist
+
+Each @p reglist entry should have the reference name in the `reg` field, an
+array of regions for that reference in `intervals` and the number of items
+in `intervals` should be stored in `count`.  No other fields need to be filled
+in.
+
+The iterator will return all reads overlapping the given regions.  If a read
+overlaps more than one region, it will only be returned once.
+ */
+hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount);
+
+/// Get the next read from a SAM/BAM/CRAM iterator
+/** @param htsfp       Htsfile pointer for the input file
+    @param itr         Iterator
+    @param r           Pointer to a bam1_t struct
+    @return >= 0 on success; -1 when there is no more data; < -1 on error
+ */
+static inline int sam_itr_next(htsFile *htsfp, hts_itr_t *itr, bam1_t *r) {
+    if (!htsfp->is_bgzf && !htsfp->is_cram) {
+        hts_log_error("%s not BGZF compressed", htsfp->fn ? htsfp->fn : "File");
+        return -1;
+    }
+    return hts_itr_next(htsfp->is_bgzf ? htsfp->fp.bgzf : NULL, itr, r, htsfp);
+}
+
+/// Get the next read from a BAM/CRAM multi-iterator
+/** @param htsfp       Htsfile pointer for the input file
+    @param itr         Iterator
+    @param r           Pointer to a bam1_t struct
+    @return >= 0 on success; -1 when there is no more data; < -1 on error
+ */
+#define sam_itr_multi_next(htsfp, itr, r) hts_itr_multi_next((htsfp), (itr), (r))
 
     /***************
      *** SAM I/O ***

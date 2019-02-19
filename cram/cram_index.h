@@ -93,6 +93,20 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r);
  */
 int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx);
 
+/*
+ * Adds a single slice to the index.
+ *
+ * Returns 0 on success,
+ *        -1 on failure
+ */
+int cram_index_slice(cram_fd *fd,
+                     cram_container *c,
+                     cram_slice *s,
+                     BGZF *fp,
+                     off_t cpos,
+                     off_t spos, // relative to cpos
+                     off_t sz);
+
 #ifdef __cplusplus
 }
 #endif

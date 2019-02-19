@@ -36,6 +36,9 @@ my $opts = parse_params();
 test_bgzip($opts, 0);
 test_bgzip($opts, 4);
 
+ce_fa_to_md5_cache($opts);
+test_index($opts);
+
 test_view($opts,0);
 test_view($opts,4);
 
@@ -209,6 +212,60 @@ sub test_cmd
     }
     passed($opts,$test);
 }
+
+# Run cmd, producing file out, and compare contents against exp
+sub test_compare
+{
+    my ($opts,$cmd,$exp_fn,$out_fn, %args) = @_;
+    my ($package, $filename, $line, $test)=caller(1);
+    $test =~ s/^.+:://;
+
+    print "$test:\n\t$cmd\n";
+
+    my ($ret,$stdout) = _cmd($cmd);
+    if ( $ret ) { failed($opts,$test); return; }
+
+    local $/;
+    my ($exp,$out) = ("","");
+    if ( exists($args{"gz"}) ) {
+	if ( open(my $fh,'-|',"$$opts{bin}/bgzip -d < $exp_fn") ) {
+	    $exp = <$fh>;
+	    close($fh);
+	} else {
+	    failed($opts,$test,"bgzip -d < $exp_fn $!"); return;
+	}
+    } else {
+	if ( open(my $fh,'<',$exp_fn) ) {
+	    $exp = <$fh>;
+	    close($fh);
+	} else {
+	    failed($opts,$test,"$exp_fn $!"); return;
+	}
+    }
+
+    if ( exists($args{"gz"}) ) {
+	if ( open(my $fh,'-|',"$$opts{bin}/bgzip -d < $out_fn") ) {
+	    $out = <$fh>;
+	    close($fh);
+	} else {
+	    failed($opts,$test,"bgzip -d < $out_fn $!"); return;
+	}
+    } else {
+	if ( open(my $fh,'<',$out_fn) ) {
+	    $out = <$fh>;
+	    close($fh);
+	} else {
+	    failed($opts,$test,"$out_fn $!"); return;
+	}
+    }
+
+    if ( $exp ne $out )
+    {
+	failed($opts,$test,"The outputs differ:\n\t\t$exp_fn\n\t\t$out_fn");
+        return;
+    }
+    passed($opts,$test);
+}
 sub failed
 {
     my ($opts,$test,$reason) = @_;
@@ -235,6 +292,54 @@ sub is_file_newer
     my (@bstat) = stat($bfile) or return 0;
     if ( $astat[9]>$bstat[9] ) { return 1 }
     return 0;
+}
+
+sub ce_fa_to_md5_cache {
+    my ($opts) = @_;
+
+    # These should really be worked out from the file contents, but
+    # pre-calculating them avoids a dependency on Digest::MD5
+    my %csums = (CHROMOSOME_I     => '8ede36131e0dbf3417807e48f77f3ebd',
+		 CHROMOSOME_II    => '8e7993f7a93158587ee897d7287948ec',
+		 CHROMOSOME_III   => '3adcb065e1cf74fafdbba1e8c352b323',
+		 CHROMOSOME_IV    => '251af66a69ee589c9f3757340ec2de6f',
+		 CHROMOSOME_V     => 'cf200a65fb754836dcc56b24b3170ee8',
+		 CHROMOSOME_X     => '6f9368fd2192c89c613718399d2d31fc',
+		 CHROMOSOME_MtDNA => 'cd05857ece6411f40257a565ccfe15bb');
+    
+    my $m5_dir = "$$opts{tmp}/md5";
+    if (!-d $m5_dir) {
+	mkdir($m5_dir) || die "Couldn't make directory $m5_dir\n";
+    }
+    my $out;
+    open(my $fa, '<', "$$opts{path}/ce.fa")
+	|| die "Couldn't open $$opts{path}/ce.fa : $!\n";
+    my $name = '';
+    while (<$fa>) {
+	chomp;
+	if (/^>(\S+)/) {
+	    if ($out) {
+		close($out) || die "Error closing $m5_dir/$csums{$name} : $!\n";
+	    }
+	    $name = $1;
+	    if (!exists($csums{$name})) {
+		die "Unexpected fasta entry : $name\n";
+	    }
+	    open($out, '>', "$m5_dir/$csums{$name}")
+	} else {
+	    if (!$out) {
+		die "$$opts{path}/ce.fa : Got data before fasta header\n";
+	    }
+	    $_ = uc($_);
+	    s/\s+//g;
+	    print $out $_;
+	}
+    }
+    if ($out) {
+	close($out) || die "Error closing $m5_dir/$csums{$name} : $!\n";
+    }
+    close($fa) || die "Error reading $$opts{path}/ce.fa : $!\n";
+    $$opts{m5_dir} = $m5_dir;
 }
 
 
@@ -510,6 +615,45 @@ sub test_MD
             failed($opts, "$sam MD tests", "$test_view_failures subtests failed");
         }
     }
+}
+
+sub test_index
+{
+    my ($opts,%args) = @_;
+    # BAM
+    test_compare($opts,"$$opts{path}/test_view -l 0 -b -m 14 -x $$opts{tmp}/index.bam.csi $$opts{path}/index.sam > $$opts{tmp}/index.bam", "$$opts{tmp}/index.bam.csi", "$$opts{path}/index.bam.csi", gz=>1);
+    unlink("$$opts{tmp}/index.bam.csi");
+    test_compare($opts,"$$opts{path}/test_index -c $$opts{tmp}/index.bam", "$$opts{tmp}/index.bam.csi", "$$opts{path}/index.bam.csi", gz=>1);
+    test_compare($opts,"$$opts{path}/test_view -l 0 -b -m 0 -x $$opts{tmp}/index.bam.bai $$opts{path}/index.sam > $$opts{tmp}/index.bam", "$$opts{tmp}/index.bam.bai", "$$opts{path}/index.bam.bai");
+    unlink("$$opts{tmp}/index.bam.bai");
+    test_compare($opts,"$$opts{path}/test_index -b $$opts{tmp}/index.bam", "$$opts{tmp}/index.bam.bai", "$$opts{path}/index.bam.bai");
+
+    # SAM
+    test_compare($opts,"$$opts{path}/test_view -l 0 -z -m 14 -x $$opts{tmp}/index.sam.gz.csi $$opts{path}/index.sam > $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.csi", "$$opts{path}/index.sam.gz.csi", gz=>1);
+    unlink("$$opts{tmp}/index.bam.bai");
+    test_compare($opts,"$$opts{path}/test_index -c $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.csi", "$$opts{path}/index.sam.gz.csi", gz=>1);
+    test_compare($opts,"$$opts{path}/test_view -l 0 -z -m 0 -x $$opts{tmp}/index.sam.gz.bai $$opts{path}/index.sam > $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.bai", "$$opts{path}/index.sam.gz.bai");
+    unlink("$$opts{tmp}/index.sam.gz.bai");
+    test_compare($opts,"$$opts{path}/test_index -b $$opts{tmp}/index.sam.gz", "$$opts{tmp}/index.sam.gz.bai", "$$opts{path}/index.sam.gz.bai");
+
+    # CRAM
+    local $ENV{REF_PATH} = $$opts{m5_dir};
+    test_compare($opts,"$$opts{path}/test_view -l 0 -C -x $$opts{tmp}/index.cram.crai $$opts{path}/index.sam > $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
+    unlink("$$opts{tmp}/index.cram.crai");
+    test_compare($opts,"$$opts{path}/test_index $$opts{tmp}/index.cram", "$$opts{tmp}/index.cram.crai", "$$opts{path}/index.cram.crai", gz=>1);
+
+    # BCF
+    test_compare($opts,"$$opts{path}/test_view -l 0 -b -m 14 -x $$opts{tmp}/index.bcf.csi $$opts{path}/index.vcf > $$opts{tmp}/index.bcf", "$$opts{tmp}/index.bcf.csi", "$$opts{path}/index.bcf.csi", gz=>1);
+    unlink("$$opts{tmp}/index.bcf.csi");
+    test_compare($opts,"$$opts{path}/test_index -c $$opts{tmp}/index.bcf", "$$opts{tmp}/index.bcf.csi", "$$opts{path}/index.bcf.csi", gz=>1);
+
+    # VCF
+    test_compare($opts,"$$opts{path}/test_view -l 0 -z -m 14 -x $$opts{tmp}/index.vcf.gz.csi $$opts{path}/index.vcf > $$opts{tmp}/index.vcf.gz", "$$opts{tmp}/index.vcf.gz.csi", "$$opts{path}/index.vcf.gz.csi", gz=>1);
+    unlink("$$opts{tmp}/index.vcf.gz.csi");
+    test_compare($opts,"$$opts{path}/test_index -c $$opts{tmp}/index.vcf.gz", "$$opts{tmp}/index.vcf.gz.csi", "$$opts{path}/index.vcf.gz.csi", gz=>1);
+    test_compare($opts,"$$opts{path}/test_view -l 0 -z -m 0 -x $$opts{tmp}/index.vcf.gz.tbi $$opts{path}/index.vcf > $$opts{tmp}/index.vcf.gz", "$$opts{tmp}/index.vcf.gz.tbi", "$$opts{path}/index.vcf.gz.tbi", gz=>1);
+    unlink("$$opts{tmp}/index.vcf.gz.tbi");
+    test_compare($opts,"$$opts{path}/test_index -t $$opts{tmp}/index.vcf.gz", "$$opts{tmp}/index.vcf.gz.tbi", "$$opts{path}/index.vcf.gz.tbi", gz=>1);
 }
 
 sub test_vcf_api

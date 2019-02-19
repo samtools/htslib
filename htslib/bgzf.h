@@ -155,6 +155,15 @@ typedef struct BGZF BGZF;
     ssize_t bgzf_block_write(BGZF *fp, const void *data, size_t length);
 
     /**
+     * Returns the next byte in the file without consuming it.
+     * @param fp     BGZF file handler
+     * @return       -1 on EOF,
+     *               -2 on error,
+     *               otherwise the unsigned byte value.
+     */
+    int bgzf_peek(BGZF *fp);
+
+    /**
      * Read up to _length_ bytes directly from the underlying stream without
      * decompressing.  Bypasses BGZF blocking, so must be used with care in
      * specialised circumstances only.

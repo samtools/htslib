@@ -61,6 +61,10 @@ void bam_hdr_destroy(bam_hdr_t *h)
 {
     int32_t i;
     if (h == NULL) return;
+    if (h->ref_count > 0) {
+        --h->ref_count;
+        return;
+    }
     if (h->target_name) {
         for (i = 0; i < h->n_targets; ++i)
             free(h->target_name[i]);
@@ -573,17 +577,41 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     return ok? 4 + block_len : -1;
 }
 
+/*
+ * Write a BAM file and append to the in-memory index simultaneously.
+ */
+static int bam_write_idx1(htsFile *fp, const bam1_t *b) {
+    BGZF *bfp = fp->fp.bgzf;
+
+    if (!fp->idx)
+        return bam_write1(bfp, b);
+
+    uint32_t block_len = b->l_data - b->core.l_extranul + 32;
+    if (bgzf_flush_try(bfp, 4 + block_len) < 0)
+        return -1;
+    hts_idx_amend_last(fp->idx, bgzf_tell(bfp));
+
+    int ret = bam_write1(bfp, b);
+
+    if (ret >= 0 &&
+        hts_idx_push(fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
+                     bgzf_tell(bfp), !(b->core.flag&BAM_FUNMAP)) < 0)
+        ret = -1;
+
+    return ret;
+}
+
 /********************
  *** BAM indexing ***
  ********************/
 
-static hts_idx_t *bam_index(BGZF *fp, int min_shift)
+static hts_idx_t *sam_index(htsFile *fp, int min_shift)
 {
     int n_lvls, i, fmt, ret;
     bam1_t *b;
     hts_idx_t *idx;
     bam_hdr_t *h;
-    h = bam_hdr_read(fp);
+    h = sam_hdr_read(fp);
     if (h == NULL) return NULL;
     if (min_shift > 0) {
         int64_t max_len = 0, s;
@@ -593,16 +621,16 @@ static hts_idx_t *bam_index(BGZF *fp, int min_shift)
         for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
         fmt = HTS_FMT_CSI;
     } else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_BAI;
-    idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp), min_shift, n_lvls);
-    bam_hdr_destroy(h);
+    idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     b = bam_init1();
-    while ((ret = bam_read1(fp, b)) >= 0) {
-        ret = hts_idx_push(idx, b->core.tid, b->core.pos, bam_endpos(b), bgzf_tell(fp), !(b->core.flag&BAM_FUNMAP));
+    while ((ret = sam_read1(fp, h, b)) >= 0) {
+        ret = hts_idx_push(idx, b->core.tid, b->core.pos, bam_endpos(b), bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP));
         if (ret < 0) goto err; // unsorted
     }
     if (ret < -1) goto err; // corrupted BAM file
 
-    hts_idx_finish(idx, bgzf_tell(fp));
+    hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
+    bam_hdr_destroy(h);
     bam_destroy1(b);
     return idx;
 
@@ -624,11 +652,19 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
 
     switch (fp->format.format) {
     case cram:
+
         ret = cram_index_build(fp->fp.cram, fn, fnidx);
         break;
 
     case bam:
-        idx = bam_index(fp->fp.bgzf, min_shift);
+    case sam:
+        if (!fp->is_bgzf) {
+            hts_log_error("%s file \"%s\" not BGZF compressed",
+                          fp->format.format == bam ? "BAM" : "SAM", fn);
+            ret = -1;
+            break;
+        }
+        idx = sam_index(fp, min_shift);
         if (idx) {
             ret = hts_idx_save_as(idx, fn, fnidx, (min_shift > 0)? HTS_FMT_CSI : HTS_FMT_BAI);
             if (ret < 0) ret = -4;
@@ -663,11 +699,63 @@ int bam_index_build(const char *fn, int min_shift)
     return sam_index_build2(fn, NULL, min_shift);
 }
 
-static int bam_readrec(BGZF *fp, void *ignored, void *bv, int *tid, int *beg, int *end)
+// Initialise fp->idx for the current format type.
+// This must be called after the header has been written but no other data.
+int sam_idx_init(htsFile *fp, bam_hdr_t *h, int min_shift, const char *fnidx) {
+    fp->fnidx = fnidx;
+    if (fp->format.format == bam || fp->format.format == bcf ||
+        (fp->format.format == sam && fp->format.compression == bgzf)) {
+        int n_lvls, fmt = HTS_FMT_CSI;
+        if (min_shift > 0) {
+            int64_t max_len = 0, s;
+            int i;
+            for (i = 0; i < h->n_targets; ++i)
+                if (max_len < h->target_len[i]) max_len = h->target_len[i];
+            max_len += 256;
+            for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+
+        } else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_BAI;
+
+        fp->idx = hts_idx_init(h->n_targets, fmt, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
+        return fp->idx ? 0 : -1;
+    }
+
+    if (fp->format.format == cram) {
+        fp->fp.cram->idxfp = bgzf_open(fnidx, "wg");
+        return fp->fp.cram->idxfp ? 0 : -1;
+    }
+
+    return -1;
+}
+
+// Finishes an index. Call afer the last record has been written.
+// Returns 0 on success, <0 on failure.
+int sam_idx_save(htsFile *fp) {
+    if (fp->format.format == bam || fp->format.format == bcf ||
+        fp->format.format == vcf || fp->format.format == sam) {
+        if (bgzf_flush(fp->fp.bgzf) < 0)
+            return -1;
+        hts_idx_amend_last(fp->idx, bgzf_tell(fp->fp.bgzf));
+
+        if (hts_idx_finish(fp->idx, bgzf_tell(fp->fp.bgzf)) < 0)
+            return -1;
+
+        return hts_idx_save_as(fp->idx, NULL, fp->fnidx, hts_idx_fmt(fp->idx));
+
+    } else if (fp->format.format == cram) {
+        // flushed and closed by cram_close
+    }
+
+    return 0;
+}
+
+static int sam_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
 {
+    htsFile *fp = (htsFile *)fpv;
     bam1_t *b = bv;
-    int ret;
-    if ((ret = bam_read1(fp, b)) >= 0) {
+    fp->line.l = 0;
+    int ret = sam_read1(fp, fp->bam_header, b);
+    if (ret >= 0) {
         *tid = b->core.tid;
         *beg = b->core.pos;
         *end = bam_endpos(b);
@@ -676,6 +764,15 @@ static int bam_readrec(BGZF *fp, void *ignored, void *bv, int *tid, int *beg, in
 }
 
 // This is used only with read_rest=1 iterators, so need not set tid/beg/end.
+static int sam_readrec_rest(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
+{
+    htsFile *fp = (htsFile *)fpv;
+    bam1_t *b = bv;
+    fp->line.l = 0;
+    int ret = sam_read1(fp, fp->bam_header, b);
+    return ret;
+}
+
 static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, int *beg, int *end)
 {
     htsFile *fp = fpv;
@@ -760,37 +857,16 @@ static int64_t bam_ptell(void *fp)
     return bgzf_tell(fd);
 }
 
-// This is used only with read_rest=1 iterators, so need not set tid/beg/end.
-static int sam_bam_cram_readrec(BGZF *bgzfp, void *fpv, void *bv, int *tid, int *beg, int *end)
-{
-    htsFile *fp = fpv;
-    bam1_t *b = bv;
-    switch (fp->format.format) {
-    case bam:   return bam_read1(bgzfp, b);
-    case cram: {
-        int ret = cram_get_bam_seq(fp->fp.cram, &b);
-        if (ret < 0)
-            return cram_eof(fp->fp.cram) ? -1 : -2;
-
-        if (bam_tag2cigar(b, 1, 1) < 0)
-            return -2;
-        return ret;
-    }
-    default:
-        // TODO Need headers available to implement this for SAM files
-        hts_log_error("Not implemented for SAM files");
-        abort();
-    }
-}
-
 hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx)
 {
     switch (fp->format.format) {
     case bam:
+    case sam:
         return fnidx? hts_idx_load2(fn, fnidx) : hts_idx_load(fn, HTS_FMT_BAI);
 
     case cram: {
         if (cram_index_load(fp->fp.cram, fn, fnidx) < 0) return NULL;
+
         // Cons up a fake "index" just pointing at the associated cram_fd:
         hts_cram_idx_t *idx = malloc(sizeof (hts_cram_idx_t));
         if (idx == NULL) return NULL;
@@ -870,11 +946,11 @@ hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
     if (idx == NULL)
-        return hts_itr_query(NULL, tid, beg, end, sam_bam_cram_readrec);
+        return hts_itr_query(NULL, tid, beg, end, sam_readrec_rest);
     else if (cidx->fmt == HTS_FMT_CRAI)
-        return cram_itr_query(idx, tid, beg, end, cram_readrec);
+        return cram_itr_query(idx, tid, beg, end, sam_readrec);
     else
-        return hts_itr_query(idx, tid, beg, end, bam_readrec);
+        return hts_itr_query(idx, tid, beg, end, sam_readrec);
 }
 
 static int cram_name2id(void *fdv, const char *ref)
@@ -886,10 +962,9 @@ static int cram_name2id(void *fdv, const char *ref)
 hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-    if (cidx->fmt == HTS_FMT_CRAI)
-        return hts_itr_querys(idx, region, cram_name2id, cidx->cram, cram_itr_query, cram_readrec);
-    else
-        return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr, hts_itr_query, bam_readrec);
+    return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr,
+                          cidx->fmt == HTS_FMT_CRAI ? cram_itr_query : hts_itr_query,
+                          sam_readrec);
 }
 
 hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount)
@@ -900,7 +975,7 @@ hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_regli
                    hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell);
     else
         return hts_itr_regions(idx, reglist, regcount, (hts_name2id_f)(bam_name2id), hdr,
-                   hts_itr_multi_bam, bam_readrec, bam_pseek, bam_ptell);
+                   hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell);
 }
 
 /**********************
@@ -1073,12 +1148,22 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         kstring_t str = { 0, 0, NULL };
         bam_hdr_t *h = NULL;
         int ret, has_SQ = 0;
-        while ((ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) >= 0) {
+        int next_c = '@';
+        while (next_c == '@' && (ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) >= 0) {
             if (fp->line.s[0] != '@') break;
             if (fp->line.l > 3 && strncmp(fp->line.s,"@SQ",3) == 0) has_SQ = 1;
             if (kputsn(fp->line.s, fp->line.l, &str) < 0) goto error;
             if (kputc('\n', &str) < 0) goto error;
+            if (fp->format.compression == bgzf) {
+                next_c = bgzf_peek(fp->fp.bgzf);
+            } else {
+                unsigned char nc;
+                ssize_t pret = hpeek(fp->fp.hfile, &nc, 1);
+                next_c = pret > 0 ? nc : pret - 1;
+            }
+            if (next_c < -1) goto error;
         }
+        if (next_c != '@') fp->line.l = 0;
         if (ret < -1) goto error;
         if (! has_SQ && fp->fn_aux) {
             kstring_t line = { 0, 0, NULL };
@@ -1106,7 +1191,9 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         h = sam_hdr_parse(str.l, str.s);
         if (!h) goto error;
         h->l_text = str.l; h->text = str.s;
-        return sam_hdr_sanitise(h);
+        fp->bam_header = sam_hdr_sanitise(h);
+        fp->bam_header->ref_count = 1;
+        return fp->bam_header;
 
      error:
         bam_hdr_destroy(h);
@@ -1152,18 +1239,34 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
         /* fall-through */
     case sam: {
         char *p;
-        hputs(h->text, fp->fp.hfile);
-        p = strstr(h->text, "@SQ\t"); // FIXME: we need a loop to make sure "@SQ\t" does not match something unwanted!!!
-        if (p == 0) {
-            int i;
-            for (i = 0; i < h->n_targets; ++i) {
-                fp->line.l = 0;
-                kputsn("@SQ\tSN:", 7, &fp->line); kputs(h->target_name[i], &fp->line);
-                kputsn("\tLN:", 4, &fp->line); kputw(h->target_len[i], &fp->line); kputc('\n', &fp->line);
-                if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
+        if (fp->format.compression == bgzf) {
+            if (bgzf_write(fp->fp.bgzf, h->text, h->l_text) != h->l_text)
+                return -1;
+            p = strstr(h->text, "@SQ\t"); // FIXME: we need a loop to make sure "@SQ\t" does not match something unwanted!!!
+            if (p == NULL) {
+                int i;
+                for (i = 0; i < h->n_targets; ++i) {
+                    fp->line.l = 0;
+                    kputsn("@SQ\tSN:", 7, &fp->line); kputs(h->target_name[i], &fp->line);
+                    kputsn("\tLN:", 4, &fp->line); kputw(h->target_len[i], &fp->line); kputc('\n', &fp->line);
+                    if ( bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l ) return -1;
+                }
             }
+            if ( bgzf_flush(fp->fp.bgzf) != 0 ) return -1;
+        } else {
+            hputs(h->text, fp->fp.hfile);
+            p = strstr(h->text, "@SQ\t"); // FIXME: we need a loop to make sure "@SQ\t" does not match something unwanted!!!
+            if (p == NULL) {
+                int i;
+                for (i = 0; i < h->n_targets; ++i) {
+                    fp->line.l = 0;
+                    kputsn("@SQ\tSN:", 7, &fp->line); kputs(h->target_name[i], &fp->line);
+                    kputsn("\tLN:", 4, &fp->line); kputw(h->target_len[i], &fp->line); kputc('\n', &fp->line);
+                    if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
+                }
+            }
+            if ( hflush(fp->fp.hfile) != 0 ) return -1;
         }
-        if ( hflush(fp->fp.hfile) != 0 ) return -1;
         }
         break;
 
@@ -1593,7 +1696,7 @@ int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
     switch (fp->format.format) {
     case bam: {
         int r = bam_read1(fp->fp.bgzf, b);
-        if (r >= 0) {
+        if (h && r >= 0) {
             if (b->core.tid  >= h->n_targets || b->core.tid  < -1 ||
                 b->core.mtid >= h->n_targets || b->core.mtid < -1)
                 return -3;
@@ -1830,7 +1933,7 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
         fp->format.format = bam;
         /* fall-through */
     case bam:
-        return bam_write1(fp->fp.bgzf, b);
+        return bam_write_idx1(fp, b);
 
     case cram:
         return cram_put_bam_seq(fp->fp.cram, (bam1_t *)b);
@@ -1842,7 +1945,18 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
     case sam:
         if (sam_format1(h, b, &fp->line) < 0) return -1;
         kputc('\n', &fp->line);
-        if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
+        if (fp->format.compression == bgzf) {
+            if ( bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l ) return -1;
+        } else {
+            if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
+        }
+
+        if (fp->idx) {
+            if (hts_idx_push(fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
+                             bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0)
+                return -1;
+        }
+
         return fp->line.l;
 
     default:

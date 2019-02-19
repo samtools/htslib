@@ -1031,6 +1031,23 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
     return bytes_read;
 }
 
+// -1 for EOF, -2 for error, 0-255 for byte.
+int bgzf_peek(BGZF *fp) {
+    int available = fp->block_length - fp->block_offset;
+    if (available <= 0) {
+        if (bgzf_read_block(fp) < 0) {
+            hts_log_error("Read block operation failed with error %d", fp->errcode);
+            fp->errcode = BGZF_ERR_ZLIB;
+            return -2;
+        }
+    }
+    available = fp->block_length - fp->block_offset;
+    if (available)
+        return ((unsigned char *)fp->uncompressed_block)[fp->block_offset];
+
+    return -1;
+}
+
 ssize_t bgzf_raw_read(BGZF *fp, void *data, size_t length)
 {
     ssize_t ret = hread(fp->fp, data, length);
