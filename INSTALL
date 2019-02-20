@@ -157,6 +157,10 @@ various features and specify further optional external requirements:
     and decompression.  It also includes a fast crc32 implementation.
     By default, ./configure will probe for libdeflate and use it if
     available.  To prevent this, use --without-libdeflate.
+    
+    Note: turning on --with-libdeflate will cause any compressed output, such
+    as Tabix indices, to have different bytes, though the underlying
+    uncompressed data streams will be unchanged.
 
 The configure script also accepts the usual options and environment variables
 for tuning installation locations and compilers: type './configure --help'
