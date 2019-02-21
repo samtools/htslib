@@ -3,3 +3,13 @@ formats, such as SAM, CRAM, VCF, and BCF, used for high-throughput sequencing
 data.  It is the core library used by samtools and bcftools.
 
 See INSTALL for building and installation instructions.
+
+Compressed File Formats Note
+============================
+
+Many of these file formats and associated index formats are compressed,
+which in this implementation involves the use of system or external
+compression libraries such as zlib.  Hence the exact bytes in compressed
+files output by HTSlib may vary across different compression libraries or
+with different compression level settings, so tasks requiring byte-for-byte
+equivalence across repeated runs should compare decompressed file contents.
