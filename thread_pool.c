@@ -363,6 +363,7 @@ hts_tpool_process *hts_tpool_process_init(hts_tpool *p, int qsize, int in_only) 
     q->output_tail = NULL;
     q->next_serial = 0;
     q->curr_serial = 0;
+    q->no_more_input = 0;
     q->n_input     = 0;
     q->n_output    = 0;
     q->n_processing= 0;
@@ -388,6 +389,14 @@ void hts_tpool_process_destroy(hts_tpool_process *q) {
 
     if (!q)
         return;
+
+    // Prevent dispatch from queuing up any more jobs.
+    // We want to reset (and flush) the queue here, before
+    // we set the shutdown flag, but we need to avoid races
+    // with queue more input during reset.
+    pthread_mutex_lock(&q->p->pool_m);
+    q->no_more_input = 1;
+    pthread_mutex_unlock(&q->p->pool_m);
 
     // Ensure it's fully drained before destroying the queue
     hts_tpool_process_reset(q, 0);
@@ -750,7 +759,7 @@ int hts_tpool_dispatch3(hts_tpool *p, hts_tpool_process *q,
     DBG_OUT(stderr, "Dispatching job for queue %p, serial %"PRId64"\n",
             q, q->curr_serial);
 
-    if (q->n_input >= q->qsize && nonblock == 1) {
+    if ((q->no_more_input || q->n_input >= q->qsize) && nonblock == 1) {
         pthread_mutex_unlock(&p->pool_m);
         errno = EAGAIN;
         return -1;
@@ -770,9 +779,11 @@ int hts_tpool_dispatch3(hts_tpool *p, hts_tpool_process *q,
     j->serial = q->curr_serial++;
 
     if (nonblock == 0) {
-        while (q->n_input >= q->qsize && !q->shutdown && !q->wake_dispatch)
+        while ((q->no_more_input || q->n_input >= q->qsize) &&
+               !q->shutdown && !q->wake_dispatch) {
             pthread_cond_wait(&q->input_not_full_c, &q->p->pool_m);
-        if (q->shutdown) {
+        }
+        if (q->no_more_input || q->shutdown) {
             free(j);
             pthread_mutex_unlock(&p->pool_m);
             return -1;
@@ -832,39 +843,39 @@ void hts_tpool_wake_dispatch(hts_tpool_process *q) {
  *        -1 on failure
  */
 int hts_tpool_process_flush(hts_tpool_process *q) {
-     int i;
-     hts_tpool *p = q->p;
+    int i;
+    hts_tpool *p = q->p;
 
-     DBG_OUT(stderr, "Flushing pool %p\n", p);
+    DBG_OUT(stderr, "Flushing pool %p\n", p);
 
-     // Drains the queue
-     pthread_mutex_lock(&p->pool_m);
+    // Drains the queue
+    pthread_mutex_lock(&p->pool_m);
 
-     // Wake up everything for the final sprint!
-     for (i = 0; i < p->tsize; i++)
-         if (p->t_stack[i])
-             pthread_cond_signal(&p->t[i].pending_c);
+    // Wake up everything for the final sprint!
+    for (i = 0; i < p->tsize; i++)
+        if (p->t_stack[i])
+            pthread_cond_signal(&p->t[i].pending_c);
 
-     // Ensure there is room for the final sprint.
-     // Shouldn't be possible to get here, but just incase.
-     if (q->qsize < q->n_output + q->n_input + q->n_processing)
-         q->qsize = q->n_output + q->n_input + q->n_processing;
+    // Ensure there is room for the final sprint.
+    // Shouldn't be possible to get here, but just incase.
+    if (q->qsize < q->n_output + q->n_input + q->n_processing)
+        q->qsize = q->n_output + q->n_input + q->n_processing;
 
-     // Wait for n_input and n_processing to hit zero.
-     while (q->n_input || q->n_processing) {
-         while (q->n_input)
-             pthread_cond_wait(&q->input_empty_c, &p->pool_m);
-         if (q->shutdown) break;
-         while (q->n_processing)
-             pthread_cond_wait(&q->none_processing_c, &p->pool_m);
-         if (q->shutdown) break;
+    // Wait for n_input and n_processing to hit zero.
+    while (q->n_input || q->n_processing) {
+        while (q->n_input)
+            pthread_cond_wait(&q->input_empty_c, &p->pool_m);
+        if (q->shutdown) break;
+        while (q->n_processing)
+            pthread_cond_wait(&q->none_processing_c, &p->pool_m);
+        if (q->shutdown) break;
     }
 
-     pthread_mutex_unlock(&p->pool_m);
+    pthread_mutex_unlock(&p->pool_m);
 
-     DBG_OUT(stderr, "Flushed complete for pool %p, queue %p\n", p, q);
+    DBG_OUT(stderr, "Flushed complete for pool %p, queue %p\n", p, q);
 
-     return 0;
+    return 0;
 }
 
 /*

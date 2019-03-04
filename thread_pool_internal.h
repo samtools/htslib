@@ -107,6 +107,7 @@ struct hts_tpool_process {
     uint64_t next_serial;            // next serial for output
     uint64_t curr_serial;            // current serial (next input)
 
+    int no_more_input;               // disable dispatching of more jobs
     int n_input;                     // no. items in input queue; was njobs
     int n_output;                    // no. items in output queue
     int n_processing;                // no. items being processed (executing)

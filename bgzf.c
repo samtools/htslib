@@ -152,7 +152,7 @@ struct __bgzidx_t
 
 void bgzf_index_destroy(BGZF *fp);
 int bgzf_index_add_block(BGZF *fp);
-static void mt_destroy(mtaux_t *mt);
+static int mt_destroy(mtaux_t *mt);
 
 static inline void packInt16(uint8_t *buffer, uint16_t value)
 {
@@ -805,7 +805,8 @@ int bgzf_read_block(BGZF *fp)
                 if (fp->uncompressed_block == NULL) return -1;
                 fp->compressed_block = (char *)fp->uncompressed_block + BGZF_MAX_BLOCK_SIZE;
             } // else it's already allocated with malloc, maybe even in-use.
-            mt_destroy(fp->mt);
+            if (mt_destroy(fp->mt) < 0)
+                fp->errcode = BGZF_ERR_IO;
             fp->mt = NULL;
             hts_tpool_delete_result(r, 0);
 
@@ -1171,10 +1172,8 @@ static void *bgzf_mt_writer(void *vp) {
             fp->idx->offs[ fp->idx->noffs-1 ].caddr = fp->idx->offs[ fp->idx->noffs-2 ].caddr + j->comp_len;
         }
 
-        if (hwrite(fp->fp, j->comp_data, j->comp_len) != j->comp_len) {
-            fp->errcode |= BGZF_ERR_IO;
+        if (hwrite(fp->fp, j->comp_data, j->comp_len) != j->comp_len)
             goto err;
-        }
 
         /*
          * Periodically call hflush (which calls fsync when on a file).
@@ -1510,8 +1509,10 @@ int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
     return 0;
 }
 
-static void mt_destroy(mtaux_t *mt)
+static int mt_destroy(mtaux_t *mt)
 {
+    int ret = 0;
+
     pthread_mutex_lock(&mt->command_m);
     mt->command = CLOSE;
     pthread_cond_signal(&mt->command_c);
@@ -1520,7 +1521,9 @@ static void mt_destroy(mtaux_t *mt)
 
     // Destroying the queue first forces the writer to exit.
     hts_tpool_process_destroy(mt->out_queue);
-    pthread_join(mt->io_task, NULL);
+    void *retval = NULL;
+    pthread_join(mt->io_task, &retval);
+    ret = retval != NULL ? -1 : 0;
 
     pthread_mutex_destroy(&mt->job_pool_m);
     pthread_mutex_destroy(&mt->command_m);
@@ -1535,6 +1538,8 @@ static void mt_destroy(mtaux_t *mt)
 
     free(mt);
     fflush(stderr);
+
+    return ret;
 }
 
 static int mt_queue(BGZF *fp)
@@ -1691,6 +1696,7 @@ ssize_t bgzf_block_write(BGZF *fp, const void *data, size_t length)
 {
     if ( !fp->is_compressed )
         return hwrite(fp->fp, data, length);
+
     const uint8_t *input = (const uint8_t*)data;
     ssize_t remaining = length;
     assert(fp->is_write);
@@ -1723,16 +1729,30 @@ ssize_t bgzf_raw_write(BGZF *fp, const void *data, size_t length)
     return ret;
 }
 
+// Helper function for tidying up fp->mt and setting errcode
+static void bgzf_close_mt(BGZF *fp) {
+    if (fp->mt) {
+        if (!fp->mt->free_block)
+            fp->uncompressed_block = NULL;
+        if (mt_destroy(fp->mt) < 0)
+            fp->errcode = BGZF_ERR_IO;
+    }
+}
+
 int bgzf_close(BGZF* fp)
 {
     int ret, block_length;
     if (fp == 0) return -1;
     if (fp->is_write && fp->is_compressed) {
-        if (bgzf_flush(fp) != 0) return -1;
+        if (bgzf_flush(fp) != 0) {
+            bgzf_close_mt(fp);
+            return -1;
+        }
         fp->compress_level = -1;
         block_length = deflate_block(fp, 0); // write an empty block
         if (block_length < 0) {
             hts_log_debug("Deflate block operation failed: %s", bgzf_zerr(block_length, NULL));
+            bgzf_close_mt(fp);
             return -1;
         }
         if (hwrite(fp->fp, fp->compressed_block, block_length) < 0
@@ -1742,13 +1762,9 @@ int bgzf_close(BGZF* fp)
             return -1;
         }
     }
-#ifdef BGZF_MT
-    if (fp->mt) {
-        if (!fp->mt->free_block)
-            fp->uncompressed_block = NULL;
-        mt_destroy(fp->mt);
-    }
-#endif
+
+    bgzf_close_mt(fp);
+
     if ( fp->is_gzip )
     {
         if (fp->gz_stream == NULL) ret = Z_OK;
