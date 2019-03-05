@@ -448,7 +448,7 @@ in.
 The iterator will return all reads overlapping the given regions.  If a read
 overlaps more than one region, it will only be returned once.
  */
-hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount);
+hts_itr_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount);
 
 /// Get the next read from a SAM/BAM/CRAM iterator
 /** @param htsfp       Htsfile pointer for the input file
@@ -461,7 +461,15 @@ static inline int sam_itr_next(htsFile *htsfp, hts_itr_t *itr, bam1_t *r) {
         hts_log_error("%s not BGZF compressed", htsfp->fn ? htsfp->fn : "File");
         return -1;
     }
-    return hts_itr_next(htsfp->is_bgzf ? htsfp->fp.bgzf : NULL, itr, r, htsfp);
+    if (!itr) {
+        hts_log_error("Null iterator");
+        return -1;
+    }
+
+    if (itr->multi)
+        return hts_itr_multi_next(htsfp, itr, r);
+    else
+        return hts_itr_next(htsfp->is_bgzf ? htsfp->fp.bgzf : NULL, itr, r, htsfp);
 }
 
 /// Get the next read from a BAM/CRAM multi-iterator
@@ -470,7 +478,7 @@ static inline int sam_itr_next(htsFile *htsfp, hts_itr_t *itr, bam1_t *r) {
     @param r           Pointer to a bam1_t struct
     @return >= 0 on success; -1 when there is no more data; < -1 on error
  */
-#define sam_itr_multi_next(htsfp, itr, r) hts_itr_multi_next((htsfp), (itr), (r))
+#define sam_itr_multi_next(htsfp, itr, r) sam_itr_next(htsfp, itr, r)
 
     /***************
      *** SAM I/O ***

@@ -188,20 +188,20 @@ int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
                     r->max_end = end;
             }
 
-            hts_itr_multi_t *iter = sam_itr_regions(idx, h, reg_list, reg_count);
+            hts_itr_t *iter = sam_itr_regions(idx, h, reg_list, reg_count);
             if (!iter)
                 goto fail;
             reg_list = NULL; // Now owned by iterator
-            while ((r = sam_itr_multi_next(in, iter, b)) >= 0) {
+            while ((r = sam_itr_next(in, iter, b)) >= 0) {
                 if (!opts->benchmark && sam_write1(out, h, b) < 0) {
                     fprintf(stderr, "Error writing output.\n");
-                    hts_itr_multi_destroy(iter);
+                    hts_itr_destroy(iter);
                     goto fail;
                 }
                 if (opts->nreads && --opts->nreads == 0)
                     break;
             }
-            hts_itr_multi_destroy(iter);
+            hts_itr_destroy(iter);
             if (r < -1) {
                 fprintf(stderr, "Error reading input.\n");
                 goto fail;

@@ -2059,7 +2059,7 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
     return itr->bins.n;
 }
 
-static inline int reg2intervals(hts_itr_multi_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
+static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
 {
     int l, t, s;
     int b, e, i, j;
@@ -2171,7 +2171,7 @@ uint64_t hts_itr_off(const hts_idx_t* idx, int tid) {
 hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
 {
     int i, n_off, l, bin;
-    hts_pair64_t *off;
+    hts_pair64_max_t *off;
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off, max_off;
@@ -2252,14 +2252,17 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
                 iter->finished = 1;
                 return iter;
             }
-            off = (hts_pair64_t*)calloc(n_off, sizeof(hts_pair64_t));
+            off = (hts_pair64_max_t*)calloc(n_off, sizeof(hts_pair64_max_t));
             for (i = n_off = 0; i < iter->bins.n; ++i) {
                 if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
                     int j;
                     bins_t *p = &kh_value(bidx, k);
                     for (j = 0; j < p->n; ++j)
-                        if (p->list[j].v > min_off && p->list[j].u < max_off)
-                            off[n_off++] = p->list[j];
+                        if (p->list[j].v > min_off && p->list[j].u < max_off) {
+                            off[n_off].u = p->list[j].u;
+                            off[n_off].v = p->list[j].v;
+                            n_off++;
+                        }
                 }
             }
 
@@ -2268,7 +2271,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
                 iter->finished = 1;
                 return iter;
             }
-            ks_introsort(_off, n_off, off);
+            ks_introsort(_off_max, n_off, off);
             // resolve completely contained adjacent blocks
             for (i = 1, l = 0; i < n_off; ++i)
                 if (off[l].v < off[i].v) off[++l] = off[i];
@@ -2285,10 +2288,11 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
             iter->n_off = n_off; iter->off = off;
         }
     }
+
     return iter;
 }
 
-hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
+int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
 {
     int i, j, l, n_off = 0, bin;
     hts_pair64_max_t *off = NULL;
@@ -2298,118 +2302,120 @@ hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
     int tid, beg, end;
     hts_reglist_t *curr_reg;
 
-    if (iter) {
-        iter->i = -1;
-        for (i=0; i<iter->n_reg; i++) {
+    if (!idx || !iter || !iter->multi)
+        return -1;
 
-            curr_reg = &iter->reg_list[i];
-            tid = curr_reg->tid;
+    iter->i = -1;
+    for (i=0; i<iter->n_reg; i++) {
 
-            if (tid < 0) {
-                t_off = hts_itr_off(idx, tid);
-                if (t_off != (uint64_t)-1) {
-                    switch (tid) {
-                        case HTS_IDX_NONE:
-                            iter->finished = 1;
-                        case HTS_IDX_START:
-                        case HTS_IDX_REST:
-                            iter->curr_off = t_off;
-                            iter->n_reg = 0;
-                            iter->reg_list = NULL;
-                            iter->read_rest = 1;
-                            return iter;
-                        case HTS_IDX_NOCOOR:
-                            iter->nocoor = 1;
-                            iter->nocoor_off = t_off;
-                    }
+        curr_reg = &iter->reg_list[i];
+        tid = curr_reg->tid;
+
+        if (tid < 0) {
+            t_off = hts_itr_off(idx, tid);
+            if (t_off != (uint64_t)-1) {
+                switch (tid) {
+                case HTS_IDX_NONE:
+                    iter->finished = 1;
+                case HTS_IDX_START:
+                case HTS_IDX_REST:
+                    iter->curr_off = t_off;
+                    iter->n_reg = 0;
+                    iter->reg_list = NULL;
+                    iter->read_rest = 1;
+                    return 0;
+                case HTS_IDX_NOCOOR:
+                    iter->nocoor = 1;
+                    iter->nocoor_off = t_off;
                 }
-            } else {
-                if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL || !kh_size(bidx))
+            }
+        } else {
+            if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL || !kh_size(bidx))
+                continue;
+
+            for(j=0; j<curr_reg->count; j++) {
+                hts_pair32_t *curr_intv = &curr_reg->intervals[j];
+                if (curr_intv->end < curr_intv->beg)
                     continue;
 
-                for(j=0; j<curr_reg->count; j++) {
-                    hts_pair32_t *curr_intv = &curr_reg->intervals[j];
-                    if (curr_intv->end < curr_intv->beg)
-                        continue;
+                beg = curr_intv->beg;
+                end = curr_intv->end;
 
-                    beg = curr_intv->beg;
-                    end = curr_intv->end;
-
-                    /* Compute 'min_off' by searching the lowest level bin containing 'beg'.
+                /* Compute 'min_off' by searching the lowest level bin containing 'beg'.
                        If the computed bin is not in the index, try the next bin to the
                        left, belonging to the same parent. If it is the first sibling bin,
                        try the parent bin. */
-                    bin = hts_bin_first(idx->n_lvls) + (beg>>idx->min_shift);
-                    do {
-                        int first;
-                        k = kh_get(bin, bidx, bin);
-                        if (k != kh_end(bidx)) break;
-                        first = (hts_bin_parent(bin)<<3) + 1;
-                        if (bin > first) --bin;
-                        else bin = hts_bin_parent(bin);
-                    } while (bin);
-                    if (bin == 0)
-                        k = kh_get(bin, bidx, bin);
-                    min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
+                bin = hts_bin_first(idx->n_lvls) + (beg>>idx->min_shift);
+                do {
+                    int first;
+                    k = kh_get(bin, bidx, bin);
+                    if (k != kh_end(bidx)) break;
+                    first = (hts_bin_parent(bin)<<3) + 1;
+                    if (bin > first) --bin;
+                    else bin = hts_bin_parent(bin);
+                } while (bin);
+                if (bin == 0)
+                    k = kh_get(bin, bidx, bin);
+                min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
 
-                    // compute max_off: a virtual offset from a bin to the right of end
-                    bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
-                    if (bin >= idx->n_bins) bin = 0;
-                    while (1) {
+                // compute max_off: a virtual offset from a bin to the right of end
+                bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
+                if (bin >= idx->n_bins) bin = 0;
+                while (1) {
                     // search for an extant bin by moving right, but moving up to the
                     // parent whenever we get to a first child (which also covers falling
                     // off the RHS, which wraps around and immediately goes up to bin 0)
-                        while (bin % 8 == 1) bin = hts_bin_parent(bin);
-                        if (bin == 0) { max_off = (uint64_t)-1; break; }
-                        k = kh_get(bin, bidx, bin);
-                        if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) {
-                            max_off = kh_val(bidx, k).list[0].u;
-                            break;
-                        }
-                        bin++;
+                    while (bin % 8 == 1) bin = hts_bin_parent(bin);
+                    if (bin == 0) { max_off = (uint64_t)-1; break; }
+                    k = kh_get(bin, bidx, bin);
+                    if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) {
+                        max_off = kh_val(bidx, k).list[0].u;
+                        break;
                     }
-
-                    //convert coordinates to file offsets
-                    reg2intervals(iter, idx, tid, beg, end, min_off, max_off, idx->min_shift, idx->n_lvls);
+                    bin++;
                 }
+
+                //convert coordinates to file offsets
+                reg2intervals(iter, idx, tid, beg, end, min_off, max_off, idx->min_shift, idx->n_lvls);
             }
         }
-
-        off = iter->off;
-        n_off = iter->n_off;
-
-        if (n_off) {
-            ks_introsort(_off_max, n_off, off);
-            // resolve completely contained adjacent blocks
-            for (i = 1, l = 0; i < n_off; ++i) {
-                if (off[l].v < off[i].v) {
-                    off[++l] = off[i];
-                } else {
-                    off[l].max = (off[i].max > off[l].max ? off[i].max : off[l].max);
-                }
-            }
-            n_off = l + 1;
-            // resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
-            for (i = 1; i < n_off; ++i)
-                if (off[i-1].v >= off[i].u) off[i-1].v = off[i].u;
-            // merge adjacent blocks
-            for (i = 1, l = 0; i < n_off; ++i) {
-                if (off[l].v>>16 == off[i].u>>16) {
-                    off[l].v = off[i].v;
-                    off[l].max = (off[i].max > off[l].max ? off[i].max : off[l].max);
-                } else off[++l] = off[i];
-            }
-            n_off = l + 1;
-            iter->n_off = n_off; iter->off = off;
-        }
-
-        if(!n_off && !iter->nocoor)
-            iter->finished = 1;
     }
-    return iter;
+
+    off = iter->off;
+    n_off = iter->n_off;
+
+    if (n_off) {
+        ks_introsort(_off_max, n_off, off);
+        // resolve completely contained adjacent blocks
+        for (i = 1, l = 0; i < n_off; ++i) {
+            if (off[l].v < off[i].v) {
+                off[++l] = off[i];
+            } else {
+                off[l].max = (off[i].max > off[l].max ? off[i].max : off[l].max);
+            }
+        }
+        n_off = l + 1;
+        // resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
+        for (i = 1; i < n_off; ++i)
+            if (off[i-1].v >= off[i].u) off[i-1].v = off[i].u;
+        // merge adjacent blocks
+        for (i = 1, l = 0; i < n_off; ++i) {
+            if (off[l].v>>16 == off[i].u>>16) {
+                off[l].v = off[i].v;
+                off[l].max = (off[i].max > off[l].max ? off[i].max : off[l].max);
+            } else off[++l] = off[i];
+        }
+        n_off = l + 1;
+        iter->n_off = n_off; iter->off = off;
+    }
+
+    if(!n_off && !iter->nocoor)
+        iter->finished = 1;
+
+    return 0;
 }
 
-hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
+int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
     int tid, beg, end, i, j, l, n_off = 0;
@@ -2418,8 +2424,8 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
     hts_pair64_max_t *off = NULL;
     cram_index *e = NULL;
 
-    if (!cidx || !iter)
-        return NULL;
+    if (!cidx || !iter || !iter->multi)
+        return -1;
 
     iter->is_cram = 1;
     iter->read_rest = 0;
@@ -2436,7 +2442,7 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
         if (tid >= 0) {
             off = (hts_pair64_max_t*)realloc(off, (n_off + curr_reg->count) * sizeof(hts_pair64_max_t));
             if (!off)
-                return NULL;
+                return -1;
 
             for (j=0; j < curr_reg->count; j++) {
                 curr_intv = &curr_reg->intervals[j];
@@ -2535,12 +2541,21 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
     if(!n_off && !iter->nocoor)
         iter->finished = 1;
 
-    return iter;
+    return 0;
 }
 
 void hts_itr_destroy(hts_itr_t *iter)
 {
-    if (iter) { free(iter->off); free(iter->bins.a); free(iter); }
+    if (iter) {
+        if (iter->multi)
+            hts_reglist_free(iter->reg_list, iter->n_reg);
+        else
+            free(iter->bins.a);
+
+        if (iter->off)
+            free(iter->off);
+        free(iter);
+    }
 }
 
 void hts_reglist_free(hts_reglist_t *reglist, int count) {
@@ -2552,18 +2567,6 @@ void hts_reglist_free(hts_reglist_t *reglist, int count) {
                 free(reglist[i].intervals);
         }
         free(reglist);
-    }
-}
-
-void hts_itr_multi_destroy(hts_itr_multi_t *iter) {
-
-    if (iter) {
-        if (iter->reg_list && iter->n_reg)
-            hts_reglist_free(iter->reg_list, iter->n_reg);
-
-        if (iter->off && iter->n_off)
-            free(iter->off);
-        free(iter);
     }
 }
 
@@ -2671,14 +2674,14 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
     return itr_query(idx, tid, beg, end, readrec);
 }
 
-hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell) {
+hts_itr_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell) {
 
     int i;
 
     if (!reglist)
         return NULL;
 
-    hts_itr_multi_t *itr = (hts_itr_multi_t*)calloc(1, sizeof(hts_itr_multi_t));
+    hts_itr_t *itr = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
     if (itr) {
         itr->n_reg = count;
         itr->readrec = readrec;
@@ -2687,6 +2690,7 @@ hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, i
         itr->reg_list = reglist;
         itr->finished = 0;
         itr->nocoor = 0;
+        itr->multi = 1;
 
 
         for (i = 0; i < itr->n_reg; i++) {
@@ -2706,8 +2710,13 @@ hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, i
         }
 
         qsort(itr->reg_list, itr->n_reg, sizeof(hts_reglist_t), compare_regions);
-        itr_specific(idx, itr);
+        if (itr_specific(idx, itr) != 0) {
+            hts_log_error("Failed to create the multi-region iterator!");
+            hts_itr_destroy(itr);
+            itr = NULL;
+        }
     }
+
     return itr;
 }
 
@@ -2754,7 +2763,7 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
     return ret;
 }
 
-int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
+int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
 {
     void *fp;
     int ret, tid, beg, end, i, cr, ci;

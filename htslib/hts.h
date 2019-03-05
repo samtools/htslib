@@ -589,12 +589,15 @@ typedef int hts_seek_func(void *fp, int64_t offset, int where);
 typedef int64_t hts_tell_func(void *fp);
 
 typedef struct {
-    uint32_t read_rest:1, finished:1, is_cram:1, dummy:29;
-    int tid, beg, end, n_off, i;
-    int curr_tid, curr_beg, curr_end;
-    uint64_t curr_off;
-    hts_pair64_t *off;
+    uint32_t read_rest:1, finished:1, is_cram:1, nocoor:1, multi:1, dummy:27;
+    int tid, beg, end, n_off, i, n_reg;
+    hts_reglist_t *reg_list;
+    int curr_tid, curr_beg, curr_end, curr_reg, curr_intv;
+    uint64_t curr_off, nocoor_off;
+    hts_pair64_max_t *off;
     hts_readrec_func *readrec;
+    hts_seek_func *seek;
+    hts_tell_func *tell;
     struct {
         int n, m;
         int *a;
@@ -606,18 +609,7 @@ typedef struct {
     uint64_t min_off, max_off;
 } aux_key_t;
 
-typedef struct {
-    uint32_t read_rest:1, finished:1, is_cram:1, nocoor:1, dummy:28;
-    hts_reglist_t *reg_list;
-    int n_reg, i;
-    int curr_tid, curr_intv, curr_beg, curr_end, curr_reg;
-    hts_pair64_max_t *off;
-    int n_off;
-    uint64_t curr_off, nocoor_off;
-    hts_readrec_func *readrec;
-    hts_seek_func *seek;
-    hts_tell_func *tell;
-} hts_itr_multi_t;
+typedef hts_itr_t hts_itr_multi_t;
 
     #define hts_bin_first(l) (((1<<(((l)<<1) + (l))) - 1) / 7)
     #define hts_bin_parent(l) (((l) - 1) >> 3)
@@ -858,9 +850,9 @@ const char **hts_idx_seqnames(const hts_idx_t *idx, int *n, hts_id2name_f getid,
  * Iterator with multiple regions *
  **********************************/
 
-typedef hts_itr_multi_t *hts_itr_multi_query_func(const hts_idx_t *idx, hts_itr_multi_t *itr);
-hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter);
-hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter);
+typedef int hts_itr_multi_query_func(const hts_idx_t *idx, hts_itr_t *itr);
+int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter);
+int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter);
 
 /// Create a multi-region iterator from a region list
 /** @param idx          Index
@@ -874,7 +866,7 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
     @param tell         Callback to return current input file location
     @return An iterator on success; NULL on failure
  */
-hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell);
+hts_itr_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell);
 
 /// Return the next record from an iterator
 /** @param fp      Input file handle
@@ -882,7 +874,7 @@ hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, i
     @param r       Pointer to record placeholder
     @return >= 0 on success, -1 when there is no more data, < -1 on error
  */
-int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r);
+int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r);
 
 /// Free a region list
 /** @param reglist    Region list
@@ -893,7 +885,7 @@ void hts_reglist_free(hts_reglist_t *reglist, int count);
 /// Free a multi-region iterator
 /** @param iter   Iterator to free
  */
-void hts_itr_multi_destroy(hts_itr_multi_t *iter);
+#define hts_itr_multi_destroy(iter) hts_itr_destroy(iter)
 
 
     /**

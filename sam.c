@@ -967,9 +967,13 @@ hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *regi
                           sam_readrec);
 }
 
-hts_itr_multi_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount)
+hts_itr_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
+
+    if(!cidx || !hdr || !reglist)
+        return NULL;
+
     if (cidx->fmt == HTS_FMT_CRAI)
         return hts_itr_regions(idx, reglist, regcount, cram_name2id, cidx->cram,
                    hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell);
