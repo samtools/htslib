@@ -852,7 +852,7 @@ typedef struct __bam_mplp_t *bam_mplp_t;
      *  is increased to the sum of their qualities (capped at 200), otherwise
      *  it is multiplied by 0.8.
      */
-    void bam_mplp_init_overlaps(bam_mplp_t iter);
+    int bam_mplp_init_overlaps(bam_mplp_t iter);
     void bam_mplp_destroy(bam_mplp_t iter);
     void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
     int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);

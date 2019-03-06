@@ -961,7 +961,7 @@ const char *bcf_hdr_get_version(const bcf_hdr_t *hdr)
     return hrec->value;
 }
 
-void bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
+int bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
 {
     bcf_hrec_t *hrec = bcf_hdr_get_hrec(hdr, BCF_HL_GEN, "fileformat", NULL, NULL);
     if ( !hrec )
@@ -978,6 +978,7 @@ void bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
         hrec->value = strdup(version);
     }
     hdr->dirty = 1;
+    return 0; // FIXME: check for errs in this function
 }
 
 bcf_hdr_t *bcf_hdr_init(const char *mode)
@@ -1855,7 +1856,7 @@ int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname)
     return 1;
 }
 
-static void _bcf_hrec_format(const bcf_hrec_t *hrec, int is_bcf, kstring_t *str)
+static int _bcf_hrec_format(const bcf_hrec_t *hrec, int is_bcf, kstring_t *str)
 {
     if ( !hrec->value )
     {
@@ -1873,11 +1874,13 @@ static void _bcf_hrec_format(const bcf_hrec_t *hrec, int is_bcf, kstring_t *str)
     }
     else
         ksprintf(str,"##%s=%s\n", hrec->key,hrec->value);
+
+    return 0; // FIXME: check for errs in this function
 }
 
-void bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str)
+int bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str)
 {
-    _bcf_hrec_format(hrec,0,str);
+    return _bcf_hrec_format(hrec,0,str);
 }
 
 int bcf_hdr_format(const bcf_hdr_t *hdr, int is_bcf, kstring_t *str)
@@ -1944,7 +1947,7 @@ int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
  *** Typed value I/O ***
  ***********************/
 
-void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
+int bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
 {
     int32_t max = INT32_MIN, min = INT32_MAX;
     int i;
@@ -1990,6 +1993,8 @@ void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
             s->l += n * sizeof(int32_t);
         }
     }
+
+    return 0; // FIXME: check for errs in this function
 }
 
 static inline int serialize_float_array(kstring_t *s, size_t n, const float *a) {
@@ -2010,25 +2015,27 @@ static inline int serialize_float_array(kstring_t *s, size_t n, const float *a) 
     return 0;
 }
 
-void bcf_enc_vfloat(kstring_t *s, int n, float *a)
+int bcf_enc_vfloat(kstring_t *s, int n, float *a)
 {
     assert(n >= 0);
     bcf_enc_size(s, n, BCF_BT_FLOAT);
     serialize_float_array(s, n, a);
+    return 0; // FIXME: check for errs in this function
 }
 
-void bcf_enc_vchar(kstring_t *s, int l, const char *a)
+int bcf_enc_vchar(kstring_t *s, int l, const char *a)
 {
     bcf_enc_size(s, l, BCF_BT_CHAR);
     kputsn(a, l, s);
+    return 0; // FIXME: check for errs in this function
 }
 
-void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
+int bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 {
     int j = 0;
     if (n == 0) {
         kputc('.', s);
-        return;
+        return 0;
     }
     if (type == BCF_BT_CHAR)
     {
@@ -2061,6 +2068,7 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
         }
         #undef BRANCH
     }
+    return 0; // FIXME: check for errs in this function
 }
 
 uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr)

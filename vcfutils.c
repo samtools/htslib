@@ -222,7 +222,7 @@ clean:
     return ret ? ret : nrm;
 }
 
-void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
+int bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
 {
     int i;
     kbitset_t *rm_set = kbs_init(line->n_allele);
@@ -231,6 +231,8 @@ void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int rm_mask)
 
     bcf_remove_allele_set(header, line, rm_set);
     kbs_destroy(rm_set);
+
+    return 0; // FIXME: check for errs in this function
 }
 
 int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kbitset_t *rm_set)

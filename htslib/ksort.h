@@ -95,7 +95,7 @@ typedef struct {
 #define KSORT_INIT2(name, SCOPE, type_t, __sort_lt)	KSORT_INIT_(_ ## name, SCOPE, type_t, __sort_lt)
 
 #define KSORT_INIT_(name, SCOPE, type_t, __sort_lt)						\
-	SCOPE void ks_mergesort##name(size_t n, type_t array[], type_t temp[]) \
+	SCOPE int ks_mergesort##name(size_t n, type_t array[], type_t temp[]) \
 	{																	\
 		type_t *a2[2], *a, *b;											\
 		int curr, shift;												\
@@ -142,6 +142,7 @@ typedef struct {
 			for (; p < eb; ++i) *p++ = *i;								\
 		}																\
 		if (temp == 0) free(a2[1]);										\
+		return 0;															\
 	}																	\
 	SCOPE void ks_heapadjust##name(size_t i, size_t n, type_t l[])		\
 	{																	\
@@ -198,17 +199,17 @@ typedef struct {
 		} while (do_swap || gap > 2);									\
 		if (gap != 1) __ks_insertsort##name(a, a + n);					\
 	}																	\
-	SCOPE void ks_introsort##name(size_t n, type_t a[])					\
+	SCOPE int ks_introsort##name(size_t n, type_t a[])					\
 	{																	\
 		int d;															\
 		ks_isort_stack_t *top, *stack;									\
 		type_t rp, swap_tmp;											\
 		type_t *s, *t, *i, *j, *k;										\
 																		\
-		if (n < 1) return;												\
+		if (n < 1) return 0;												\
 		else if (n == 2) {												\
 			if (__sort_lt(a[1], a[0])) { swap_tmp = a[0]; a[0] = a[1]; a[1] = swap_tmp; } \
-			return;														\
+			return 0;														\
 		}																\
 		for (d = 2; 1ul<<d < n; ++d);									\
 		stack = (ks_isort_stack_t*)malloc(sizeof(ks_isort_stack_t) * ((sizeof(size_t)*d)+2)); \
@@ -244,10 +245,11 @@ typedef struct {
 				if (top == stack) {										\
 					free(stack);										\
 					__ks_insertsort##name(a, a+n);						\
-					return;												\
+					return 0;												\
 				} else { --top; s = (type_t*)top->left; t = (type_t*)top->right; d = top->depth; } \
 			}															\
 		}																\
+		return 0;															\
 	}																	\
 	/* This function is adapted from: http://ndevilla.free.fr/median/ */ \
 	/* 0 <= kk < n */													\
