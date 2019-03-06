@@ -1299,6 +1299,7 @@ static int bgzf_check_EOF_common(BGZF *fp)
 static void bgzf_mt_eof(BGZF *fp) {
     mtaux_t *mt = fp->mt;
 
+    mt->command = NONE;
     pthread_mutex_lock(&mt->job_pool_m);
     mt->eof = bgzf_check_EOF_common(fp);
     pthread_mutex_unlock(&mt->job_pool_m);
@@ -1358,12 +1359,12 @@ restart:
         pthread_mutex_lock(&mt->command_m);
         switch (mt->command) {
         case SEEK:
-            bgzf_mt_seek(fp);
+            bgzf_mt_seek(fp);  // Resets mt->command
             pthread_mutex_unlock(&mt->command_m);
             goto restart;
 
         case HAS_EOF:
-            bgzf_mt_eof(fp);
+            bgzf_mt_eof(fp);   // Resets mt->command
             break;
 
         case CLOSE:
