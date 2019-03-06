@@ -967,6 +967,36 @@ hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *regi
                           sam_readrec);
 }
 
+hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, bam_hdr_t *hdr, char **regarray, unsigned int regcount)
+{
+    const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
+    hts_reglist_t *r_list = NULL;
+    int r_count = 0;
+
+    if (!cidx || !hdr)
+        return NULL;
+
+    hts_itr_t *itr = NULL;
+    if (cidx->fmt == HTS_FMT_CRAI) {
+        r_list = hts_reglist_create(regarray, regcount, &r_count, hdr, cram_name2id);
+        if (!r_list)
+            return NULL;
+        itr = hts_itr_regions(idx, r_list, r_count, cram_name2id, cidx->cram,
+                   hts_itr_multi_cram, cram_readrec, cram_pseek, cram_ptell);
+    } else {
+        r_list = hts_reglist_create(regarray, regcount, &r_count, hdr, (hts_name2id_f)(bam_name2id));
+        if (!r_list)
+            return NULL;
+        itr = hts_itr_regions(idx, r_list, r_count, (hts_name2id_f)(bam_name2id), hdr,
+                   hts_itr_multi_bam, sam_readrec, bam_pseek, bam_ptell);
+    }
+
+    if (!itr)
+        hts_reglist_free(r_list, r_count);
+
+    return itr;
+}
+
 hts_itr_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;

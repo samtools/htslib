@@ -60,11 +60,10 @@ enum test_op {
 };
 
 int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, htsFile *out) {
-    int r = 0, reg_count = 0;
+    int r = 0;
     bam_hdr_t *h = NULL;
     hts_idx_t *idx = NULL;
     bam1_t *b = NULL;
-    hts_reglist_t *reg_list = NULL;
 
     h = sam_hdr_read(in);
     if (h == NULL) {
@@ -126,72 +125,9 @@ int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
             goto fail;
         }
         if (opts->multi_reg) {
-            reg_count = 0;
-            reg_list = calloc(argc-(optind+1), sizeof(*reg_list));
-            if (!reg_list)
-                goto fail;
-
-            // We need a public function somewhere to turn an array of region strings
-            // into a region list, but for testing this will suffice for now.
-            // Consider moving a derivation of this into htslib proper sometime.
-            for (i = optind + 1; i < argc; ++i) {
-                int j;
-                uint32_t beg, end;
-                char *cp = strrchr(argv[i], ':');
-                if (cp) *cp = 0;
-
-                for (j = 0; j < reg_count; j++)
-                    if (strcmp(reg_list[j].reg, argv[i]) == 0)
-                        break;
-                if (j == reg_count) {
-                    reg_list[reg_count++].reg = argv[i];
-                    if (strcmp(".", argv[i]) == 0) {
-                        reg_list[j].tid = HTS_IDX_START;
-
-                    } else if (strcmp("*", argv[i]) == 0) {
-                        reg_list[j].tid = HTS_IDX_NOCOOR;
-
-                    } else {
-                        int k; // need the header API here!
-                        for (k = 0; k < h->n_targets; k++)
-                            if (strcmp(h->target_name[k], argv[i]) == 0)
-                                break;
-                        if (k == h->n_targets) {
-                            fprintf(stderr, "Region %s not in targets list\n",
-                                    argv[i]);
-                            goto fail;
-                        }
-                        reg_list[j].tid = k;
-                        reg_list[j].min_beg = h->target_len[k];
-                        reg_list[j].max_end = 0;
-                    }
-                }
-
-                hts_reglist_t *r = &reg_list[j];
-                hts_pair32_t *new_intervals = realloc(r->intervals, ++r->count * sizeof(*r->intervals));
-                if (!new_intervals)
-                    goto fail;
-                r->intervals = new_intervals;
-                beg = 1;
-                end = r->tid >= 0 ? h->target_len[r->tid] : 0;
-                if (cp) {
-                    *cp = 0;
-                    // hts_parse_reg() is better, but awkward here
-                    sscanf(cp+1, "%d-%d", &beg, &end);
-                }
-                r->intervals[r->count-1].beg = beg-1; // BED syntax
-                r->intervals[r->count-1].end = end;
-
-                if (r->min_beg > beg)
-                    r->min_beg = beg;
-                if (r->max_end < end)
-                    r->max_end = end;
-            }
-
-            hts_itr_t *iter = sam_itr_regions(idx, h, reg_list, reg_count);
+            hts_itr_t *iter = sam_itr_regarray(idx, h, &argv[optind + 1], argc - optind-1);
             if (!iter)
                 goto fail;
-            reg_list = NULL; // Now owned by iterator
             while ((r = sam_itr_next(in, iter, b)) >= 0) {
                 if (!opts->benchmark && sam_write1(out, h, b) < 0) {
                     fprintf(stderr, "Error writing output.\n");
@@ -259,12 +195,7 @@ int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
     if (b) bam_destroy1(b);
     if (h) bam_hdr_destroy(h);
     if (idx) hts_idx_destroy(idx);
-    if (reg_list) {
-        int i;
-        for (i = 0; i < reg_count; i++)
-            free(reg_list[i].intervals);
-        free(reg_list);
-    }
+
     return 1;
 }
 

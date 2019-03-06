@@ -2472,7 +2472,7 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
                         off[n_off].max = (uint64_t)tid<<32 | end;
                         n_off++;
                     } else {
-                        hts_log_warning("Could not set offset end for region %d(%s):%d-%d. Skipping", tid, curr_reg->reg, beg, end);
+                        hts_log_warning("Could not set offset end for region %d:%d-%d. Skipping", tid, beg, end);
                     }
                 } else {
                     hts_log_warning("No index entry for region %d:%d-%d", tid, beg, end);
@@ -2555,18 +2555,6 @@ void hts_itr_destroy(hts_itr_t *iter)
         if (iter->off)
             free(iter->off);
         free(iter);
-    }
-}
-
-void hts_reglist_free(hts_reglist_t *reglist, int count) {
-
-    int i;
-    if(reglist) {
-        for (i=0;i<count;i++) {
-            if (reglist[i].intervals)
-                free(reglist[i].intervals);
-        }
-        free(reglist);
     }
 }
 
@@ -2694,19 +2682,21 @@ hts_itr_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int cou
 
 
         for (i = 0; i < itr->n_reg; i++) {
-            if (!strcmp(itr->reg_list[i].reg, ".")) {
-                itr->reg_list[i].tid = HTS_IDX_START;
-                continue;
-            }
+            if (itr->reg_list[i].reg) {
+                if (!strcmp(itr->reg_list[i].reg, ".")) {
+                    itr->reg_list[i].tid = HTS_IDX_START;
+                    continue;
+                }
 
-            if (!strcmp(itr->reg_list[i].reg, "*")) {
-                itr->reg_list[i].tid = HTS_IDX_NOCOOR;
-                continue;
-            }
+                if (!strcmp(itr->reg_list[i].reg, "*")) {
+                    itr->reg_list[i].tid = HTS_IDX_NOCOOR;
+                    continue;
+                }
 
-            itr->reg_list[i].tid = getid(hdr, reglist[i].reg);
-            if (itr->reg_list[i].tid < 0)
-                hts_log_warning("Region '%s' specifies an unknown reference name. Continue anyway", reglist[i].reg);
+                itr->reg_list[i].tid = getid(hdr, reglist[i].reg);
+                if (itr->reg_list[i].tid < 0)
+                    hts_log_warning("Region '%s' specifies an unknown reference name. Continue anyway", reglist[i].reg);
+            }
         }
 
         qsort(itr->reg_list, itr->n_reg, sizeof(hts_reglist_t), compare_regions);

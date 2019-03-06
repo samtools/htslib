@@ -449,6 +449,7 @@ The iterator will return all reads overlapping the given regions.  If a read
 overlaps more than one region, it will only be returned once.
  */
 hts_itr_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount);
+hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, bam_hdr_t *hdr, char **regarray, unsigned int regcount);
 
 /// Get the next read from a SAM/BAM/CRAM iterator
 /** @param htsfp       Htsfile pointer for the input file
