@@ -44,6 +44,7 @@ lib*.so.*
 /test/test-bcf-sr
 /test/test-bcf-translate
 /test/test_bgzf
+/test/test_index
 /test/test_kstring
 /test/test_realn
 /test/test-regidx
