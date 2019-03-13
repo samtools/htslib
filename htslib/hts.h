@@ -578,8 +578,8 @@ typedef struct {
 
 typedef struct {
     const char *reg;
-    int tid;
     hts_pair32_t *intervals;
+    int tid;
     uint32_t count;
     uint32_t min_beg, max_end;
 } hts_reglist_t;
