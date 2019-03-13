@@ -104,7 +104,7 @@ PACKAGE_VERSION := $(shell ./version.sh)
 
 # Increment this for each ABI breaking change until ABI version 3 becomes
 # stable
-TWO_TO_THREE_TRANSITION_COUNT = 4
+TWO_TO_THREE_TRANSITION_COUNT = 5
 LIBHTS_SOVERSION = 2to3part$(TWO_TO_THREE_TRANSITION_COUNT)
 MACH_O_COMPATIBILITY_VERSION = 2.$(TWO_TO_THREE_TRANSITION_COUNT)
 
@@ -173,7 +173,8 @@ LIBHTS_OBJS = \
 	cram/pooled_alloc.o \
 	cram/rANS_static.o \
 	cram/sam_header.o \
-	cram/string_alloc.o
+	cram/string_alloc.o \
+	region.o
 
 PLUGIN_EXT  =
 PLUGIN_OBJS =
@@ -343,6 +344,7 @@ cram/rANS_static.o cram/rANS_static.pico: cram/rANS_static.c config.h cram/rANS_
 cram/sam_header.o cram/sam_header.pico: cram/sam_header.c config.h $(htslib_hts_log_h) $(cram_sam_header_h) cram/string_alloc.h
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
 thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h)
+region.o region.pico: region.c $(htslib_hts_h) $(htslib_khash_h)
 
 
 bgzip: bgzip.o libhts.a
