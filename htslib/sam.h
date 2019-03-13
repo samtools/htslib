@@ -419,7 +419,7 @@ hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
 Regions are parsed by hts_parse_reg(), and take one of the following forms:
 
 region          | Outputs
---------------- | -------------  
+--------------- | -------------
 REF             | All reads with RNAME REF
 REF:            | All reads with RNAME REF
 REF:START       | Reads with RNAME REF overlapping START to end of REF
@@ -449,6 +449,31 @@ The iterator will return all reads overlapping the given regions.  If a read
 overlaps more than one region, it will only be returned once.
  */
 hts_itr_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount);
+
+/// Create a multi-region iterator
+/** @param idx       Index
+    @param hdr       Header
+    @param regarray  Array of ref:interval region specifiers
+    @param regcount  Number of items in regarray
+
+Each @p regarray entry is parsed by hts_parse_reg(), and takes one of the
+following forms:
+
+region          | Outputs
+--------------- | -------------
+REF             | All reads with RNAME REF
+REF:            | All reads with RNAME REF
+REF:START       | Reads with RNAME REF overlapping START to end of REF
+REF:-END        | Reads with RNAME REF overlapping start of REF to END
+REF:START-END   | Reads with RNAME REF overlapping START to END
+.               | All reads from the start of the file
+*               | Unmapped reads at the end of the file (RNAME '*' in SAM)
+
+The form `REF:` should be used when the reference name itself contains a colon.
+
+The iterator will return all reads overlapping the given regions.  If a read
+overlaps more than one region, it will only be returned once.
+ */
 hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, bam_hdr_t *hdr, char **regarray, unsigned int regcount);
 
 /// Get the next read from a SAM/BAM/CRAM iterator

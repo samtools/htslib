@@ -877,9 +877,11 @@ hts_itr_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int cou
 int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r);
 
 /// Create a region list from a char array
-/** @param argv       Char array of region:interval elements, e.g. chr1:2500-3600, chr1:5100, chr2
-    @param argc       Number of items in the array
-    @param r_count    Pointer to the number of items in the resulting region list
+/** @param argv      Char array of target:interval elements, e.g. chr1:2500-3600, chr1:5100, chr2
+    @param argc      Number of items in the array
+    @param r_count   Pointer to the number of items in the resulting region list
+    @param hdr       Header for the sam/bam/cram file
+    @param getid     Callback to convert target names to target ids.
     @return  A region list on success, NULL on failure
  */
 hts_reglist_t *hts_reglist_create(char **argv, int argc, int *r_count, void *hdr,  hts_name2id_f getid);
