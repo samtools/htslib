@@ -485,11 +485,11 @@ hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, bam_hdr_t *hdr, char **regarra
 static inline int sam_itr_next(htsFile *htsfp, hts_itr_t *itr, bam1_t *r) {
     if (!htsfp->is_bgzf && !htsfp->is_cram) {
         hts_log_error("%s not BGZF compressed", htsfp->fn ? htsfp->fn : "File");
-        return -1;
+        return -2;
     }
     if (!itr) {
         hts_log_error("Null iterator");
-        return -1;
+        return -2;
     }
 
     if (itr->multi)
