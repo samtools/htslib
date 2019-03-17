@@ -2612,6 +2612,12 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
 
 const char *hts_parse_reg(const char *s, int *beg, int *end)
 {
+    return hts_parse_region(s, NULL, beg, end, HTS_PARSE_THOUSANDS_SEP);
+}
+
+const char *
+hts_parse_region(const char *s, char **strend, int *beg, int *end, int flags)
+{
     char *hyphen;
     const char *colon = strrchr(s, ':');
     if (colon == NULL) {
@@ -2619,11 +2625,12 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
         return s + strlen(s);
     }
 
-    *beg = hts_parse_decimal(colon+1, &hyphen, HTS_PARSE_THOUSANDS_SEP) - 1;
+    *beg = hts_parse_decimal(colon+1, &hyphen, flags) - 1;
     if (*beg < 0) *beg = 0;
 
+    // FIXME \0 vs. return NULL
     if (*hyphen == '\0') *end = INT_MAX;
-    else if (*hyphen == '-') *end = hts_parse_decimal(hyphen+1, NULL, HTS_PARSE_THOUSANDS_SEP);
+    else if (*hyphen == '-') *end = hts_parse_decimal(hyphen+1, strend, flags);
     else return NULL;
 
     if (*beg >= *end) return NULL;

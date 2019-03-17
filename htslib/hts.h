@@ -775,14 +775,23 @@ uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
 */
 long long hts_parse_decimal(const char *str, char **strend, int flags);
 
-/// Parse a "CHR:START-END"-style region string
-/** @param str  String to be parsed
-    @param beg  Set on return to the 0-based start of the region
-    @param end  Set on return to the 1-based end of the region
-    @return  Pointer to the colon or '\0' after the reference sequence name,
-             or NULL if @a str could not be parsed.
-*/
+/// Equivalent to hts_parse_region(str, NULL, beg, end, HTS_PARSE_THOUSANDS_SEP)
 const char *hts_parse_reg(const char *str, int *beg, int *end);
+
+/// Parse a "CHR:START-END"-style region string
+/** @param str     String to be parsed
+    @param strend  If non-NULL, set on return to point to the first character
+                   in @a str after those forming the parsed region
+    @param beg     Set on return to the 0-based start of the region
+    @param end     Set on return to the 1-based end of the region
+    @param flags   Or'ed-together combination of HTS_PARSE_* flags
+    @return  Pointer to the colon or terminating character after the reference
+             sequence name, or NULL if @a str could not be parsed.
+
+    When @a strend is NULL, a warning will be printed (if hts_verbose is 2
+    or more) if there are any trailing characters after the region string.
+*/
+const char *hts_parse_region(const char *str, char **strend, int *beg, int *end, int flags);
 
 ///////////////////////////////////////////////////////////
 // Generic iterators
