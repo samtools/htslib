@@ -2924,13 +2924,18 @@ int bcf_index_build3(const char *fn, const char *fnidx, int min_shift, int n_thr
     if ( fp->format.compression!=bgzf ) { hts_close(fp); return -3; }
     switch (fp->format.format) {
         case bcf:
-            idx = bcf_index(fp, min_shift);
-            if (idx) {
-                ret = hts_idx_save_as(idx, fn, fnidx, HTS_FMT_CSI);
-                if (ret < 0) ret = -4;
-                hts_idx_destroy(idx);
+            if (!min_shift) {
+                hts_log_error("TBI indices for BCF files are not supported");
+                ret = -1;
+            } else {
+                idx = bcf_index(fp, min_shift);
+                if (idx) {
+                    ret = hts_idx_save_as(idx, fn, fnidx, HTS_FMT_CSI);
+                    if (ret < 0) ret = -4;
+                    hts_idx_destroy(idx);
+                }
+                else ret = -1;
             }
-            else ret = -1;
             break;
 
         case vcf:
