@@ -169,6 +169,7 @@ extern int hfile_plugin_init(struct hFILE_plugin *self);
 extern int hfile_plugin_init_gcs(struct hFILE_plugin *self);
 extern int hfile_plugin_init_libcurl(struct hFILE_plugin *self);
 extern int hfile_plugin_init_s3(struct hFILE_plugin *self);
+extern int hfile_plugin_init_s3_write(struct hFILE_plugin *self);
 #endif
 
 /* This one is never built as a separate plugin.  */
@@ -178,6 +179,18 @@ extern int hfile_plugin_init_net(struct hFILE_plugin *self);
 // to allow s3 to renew tokens when seeking.  Kept internal for now,
 // although we may consider exposing it in the API later.
 typedef int (* hts_httphdr_callback) (void *cb_data, char ***hdrs);
+
+/** Callback for handling 3xx redirect responses from http connections.
+
+    @param data       is passed to the callback
+    @param response   http response code (e.g. 301)
+    @param headers    http response headers
+    @param new_url    the callback should write the url to switch to in here
+
+    Currently used by s3 to handle switching region endpoints.
+*/
+typedef int (*redirect_callback) (void *data, long response,
+                                  kstring_t *headers, kstring_t *new_url);
 
 #ifdef __cplusplus
 }
