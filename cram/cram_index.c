@@ -527,6 +527,7 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
  *
  * Returns 0 on success
  *        -1 on read failure
+ *        -2 on wrong sort order
  *        -4 on write failure
  */
 static int cram_index_build_multiref(cram_fd *fd,
@@ -546,7 +547,16 @@ static int cram_index_build_multiref(cram_fd *fd,
 
     ref_end = INT_MIN;
 
+    int32_t last_ref = -9;
+    int32_t last_pos = -9;
     for (i = 0; i < s->hdr->num_records; i++) {
+        if (s->crecs[i].ref_id == last_ref && s->crecs[i].apos < last_pos) {
+            hts_log_error("CRAM file is not sorted by chromosome / position");
+            return -2;
+        }
+        last_ref = s->crecs[i].ref_id;
+        last_pos = s->crecs[i].apos;
+
         if (s->crecs[i].ref_id == ref) {
             if (ref_end < s->crecs[i].aend)
                 ref_end = s->crecs[i].aend;
@@ -667,6 +677,7 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     off_t cpos, hpos;
     BGZF *fp;
     kstring_t fn_idx_str = {0};
+    int32_t last_ref = -9, last_start = -9;
 
     // Useful for cram_index_build_multiref
     cram_set_option(fd, CRAM_OPT_REQUIRED_FIELDS, SAM_RNAME | SAM_POS | SAM_CIGAR);
@@ -701,6 +712,13 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
         c->comp_hdr = cram_decode_compression_header(fd, c->comp_hdr_block);
         if (!c->comp_hdr)
             return -1;
+
+        if (c->ref_seq_id == last_ref && c->ref_seq_start < last_start) {
+            hts_log_error("CRAM file is not sorted by chromosome / position");
+            return -2;
+        }
+        last_ref = c->ref_seq_id;
+        last_start = c->ref_seq_start;
 
         if (cram_index_container(fd, c, fp, cpos) < 0) {
             bgzf_close(fp);
