@@ -887,6 +887,7 @@ void bcf_hdr_remove(bcf_hdr_t *hdr, int type, const char *key)
             vdict_t *d = type==BCF_HL_CTG ? (vdict_t*)hdr->dict[BCF_DT_CTG] : (vdict_t*)hdr->dict[BCF_DT_ID];
             khint_t k = kh_get(vdict, d, key);
             kh_val(d, k).hrec[type==BCF_HL_CTG?0:type] = NULL;
+            kh_del(vdict, d, k);
         }
         else
         {
