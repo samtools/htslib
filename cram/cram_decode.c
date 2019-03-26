@@ -1903,13 +1903,27 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
     if (decode_nm) {
         char buf[7];
-        buf[0] = 'N'; buf[1] = 'M'; buf[2] = 'I';
-        buf[3] = (nm>> 0) & 0xff;
-        buf[4] = (nm>> 8) & 0xff;
-        buf[5] = (nm>>16) & 0xff;
-        buf[6] = (nm>>24) & 0xff;
-        BLOCK_APPEND(s->aux_blk, buf, 7);
-        cr->aux_size += 7;
+        size_t buf_size;
+        buf[0] = 'N'; buf[1] = 'M';
+        if (nm <= UINT8_MAX) {
+            buf_size = 4;
+            buf[2] = 'C';
+            buf[3] = (nm>> 0) & 0xff;
+        } else if (nm <= UINT16_MAX) {
+            buf_size = 5;
+            buf[2] = 'S';
+            buf[3] = (nm>> 0) & 0xff;
+            buf[4] = (nm>> 8) & 0xff;
+        } else {
+            buf_size = 7;
+            buf[2] = 'I';
+            buf[3] = (nm>> 0) & 0xff;
+            buf[4] = (nm>> 8) & 0xff;
+            buf[5] = (nm>>16) & 0xff;
+            buf[6] = (nm>>24) & 0xff;
+        }
+        BLOCK_APPEND(s->aux_blk, buf, buf_size);
+        cr->aux_size += buf_size;
     }
 
     return r;
