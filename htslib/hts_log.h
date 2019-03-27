@@ -49,7 +49,7 @@ enum htsLogLevel {
 void hts_set_log_level(enum htsLogLevel level);
 
 /// Gets the selected log level.
-enum htsLogLevel hts_get_log_level();
+enum htsLogLevel hts_get_log_level(void);
 
 /// Selected log level.
 /*!

@@ -65,7 +65,7 @@ typedef struct hts_json_token hts_json_token;
 /// Allocate an empty JSON token structure, for use with hts_json_* functions
 /** @return An empty token on success; NULL on failure
  */
-hts_json_token * hts_json_alloc_token();
+hts_json_token *hts_json_alloc_token(void);
 
 /// Free a JSON token
 void hts_json_free_token(hts_json_token *token);
