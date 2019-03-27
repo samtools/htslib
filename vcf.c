@@ -888,6 +888,7 @@ void bcf_hdr_remove(bcf_hdr_t *hdr, int type, const char *key)
             khint_t k = kh_get(vdict, d, key);
             kh_val(d, k).hrec[type==BCF_HL_CTG?0:type] = NULL;
             kh_del(vdict, d, k);
+            free((char*) kh_key(d,k));
         }
         else
         {
