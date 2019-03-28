@@ -832,8 +832,11 @@ int bam_hdr_nref(const bam_hdr_t *bh) {
  */
 int bam_hdr_rebuild(bam_hdr_t *bh) {
     bam_hrecs_t *hrecs;
-    if (!bh || !(hrecs = bh->hrecs))
+    if (!bh)
         return -1;
+
+    if (!(hrecs = bh->hrecs))
+        return bh->text ? 0 : -1;
 
     if (hrecs->refs_changed >= 0) {
         if (rebuild_target_arrays(bh) < 0)
