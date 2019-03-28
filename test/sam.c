@@ -581,6 +581,27 @@ static void use_header_api() {
     //printf("hd line='%s'\n", bam_hdr_find_hd(header));
     //printf("first line tag='%s'\n", bam_hdr_find_tag(header, "SQ", NULL, NULL, "SN"));
 
+    if ((r = bam_hdr_count_lines(header, "HD")) != 1) {
+        fail("incorrect HD line count - expected 1, got %d", r);
+        goto err;
+    }
+    if ((r = bam_hdr_count_lines(header, "SQ")) != 3) {
+        fail("incorrect SQ line count - expected 3, got %d", r);
+        goto err;
+    }
+    if ((r = bam_hdr_count_lines(header, "PG")) != 1) {
+        fail("incorrect PG line count - expected 1, got %d", r);
+        goto err;
+    }
+    if ((r = bam_hdr_count_lines(header, "RG")) != 1) {
+        fail("incorrect RG line count - expected 1, got %d", r);
+        goto err;
+    }
+    if ((r = bam_hdr_count_lines(header, "CO")) != 2) {
+        fail("incorrect CO line count - expected 2, got %d", r);
+        goto err;
+    }
+
     if (sam_hdr_write(out, header) < 0) {
         fail("writing headers to \"%s\"", outfname);
         goto err;

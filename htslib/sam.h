@@ -467,6 +467,15 @@ int bam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const
  */
 int bam_hdr_remove_lines(bam_hdr_t *bh, const char *type, const char *id, void *h);
 
+/*!
+ * Count the number of lines for a given header type
+ *
+ * @param bh    BAM header
+ * @param type  Header type to count. Eg. "RG"
+ * @return  Number of lines of this type on success; -1 on failure
+ */
+int bam_hdr_count_lines(bam_hdr_t *bh, const char *type);
+
 /* ==== Key:val level methods ==== */
 
 /*!

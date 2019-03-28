@@ -1214,6 +1214,46 @@ int bam_hdr_remove_lines(bam_hdr_t *bh, const char *type, const char *id, void *
     return ret;
 }
 
+int bam_hdr_count_lines(bam_hdr_t *bh, const char *type) {
+    int count;
+    bam_hrec_type_t *first_ty, *itr_ty;
+
+    if (!bh || !type)
+        return -1;
+
+    if (!bh->hrecs) {
+        if (bam_hdr_parse(bh) != 0)
+            return -1;
+    }
+
+    // Deal with types that have counts
+    switch (type[0]) {
+    case 'S':
+        if (type[1] == 'Q')
+            return bh->hrecs->nref;
+    case 'R':
+        if (type[1] == 'G')
+            return bh->hrecs->nrg;
+    case 'P':
+        if (type[1] == 'G')
+            return bh->hrecs->npg;
+    default:
+        break;
+    }
+
+    first_ty = bam_hrecs_find_type(bh->hrecs, type, NULL, NULL);
+    if (!first_ty)
+        return 0;
+
+    count = 1;
+    for (itr_ty = first_ty->next;
+         itr_ty && itr_ty != first_ty; itr_ty = itr_ty->next) {
+        count++;
+    }
+
+    return count;
+}
+
 /* ==== Key:val level methods ==== */
 
 char *bam_hdr_find_tag(bam_hdr_t *bh,
