@@ -197,16 +197,19 @@ struct sam_hdr {
 
     // @SQ lines / references
     int nref;                  //!< Number of \@SQ lines
+    int ref_sz;                //!< Number of entries available in ref[]
     bam_hrec_sq_t *ref;        //!< Array of parsed \@SQ lines
     khash_t(m_s2i) *ref_hash;  //!< Maps SQ SN field to ref[] index
 
     // @RG lines / read-groups
     int nrg;                   //!< Number of \@RG lines
+    int rg_sz;                 //!< number of entries available in rg[]
     bam_hrec_rg_t *rg;         //!< Array of parsed \@RG lines
     khash_t(m_s2i) *rg_hash;   //!< Maps RG ID field to rg[] index
 
     // @PG lines / programs
     int npg;                   //!< Number of \@PG lines
+    int pg_sz;                //!< Number of entries available in pg[]
     int npg_end;               //!< Number of terminating \@PG lines
     int npg_end_alloc;         //!< Size of pg_end field
     bam_hrec_pg_t *pg;         //!< Array of parsed \@PG lines

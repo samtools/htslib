@@ -82,13 +82,16 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
     /* Add to reference hash? */
     if ((type>>8) == 'S' && (type&0xff) == 'Q') {
         bam_hrec_tag_t *tag;
-        bam_hrec_sq_t *new_ref;
         int nref = hrecs->nref;
 
-        new_ref = realloc(hrecs->ref, (hrecs->nref+1)*sizeof(*hrecs->ref));
-        if (!new_ref)
-            return -1;
-        hrecs->ref = new_ref;
+        if (nref == hrecs->ref_sz) {
+            size_t new_sz = hrecs->ref_sz >= 4 ? hrecs->ref_sz + (hrecs->ref_sz / 4) : 32;
+            bam_hrec_sq_t *new_ref = realloc(hrecs->ref, sizeof(*hrecs->ref) * new_sz);
+            if (!new_ref)
+                return -1;
+            hrecs->ref = new_ref;
+            hrecs->ref_sz = new_sz;
+        }
 
         tag = h_type->tag;
         hrecs->ref[nref].name = NULL;
@@ -124,13 +127,16 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
     /* Add to read-group hash? */
     if ((type>>8) == 'R' && (type&0xff) == 'G') {
         bam_hrec_tag_t *tag;
-        bam_hrec_rg_t *new_rg;
         int nrg = hrecs->nrg;
 
-        new_rg = realloc(hrecs->rg, (hrecs->nrg+1)*sizeof(*hrecs->rg));
-        if (!new_rg)
-            return -1;
-        hrecs->rg = new_rg;
+        if (nrg == hrecs->rg_sz) {
+            size_t new_sz = hrecs->rg_sz >= 4 ? hrecs->rg_sz + hrecs->rg_sz / 4 : 4;
+            bam_hrec_rg_t *new_rg = realloc(hrecs->rg, sizeof(*hrecs->rg) * new_sz);
+            if (!new_rg)
+                return -1;
+            hrecs->rg = new_rg;
+            hrecs->rg_sz = new_sz;
+        }
 
         tag = h_type->tag;
         hrecs->rg[nrg].name = NULL;
@@ -167,10 +173,14 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
         bam_hrec_pg_t *new_pg;
         int npg = hrecs->npg;
 
-        new_pg = realloc(hrecs->pg, (hrecs->npg+1)*sizeof(*hrecs->pg));
-        if (!new_pg)
-            return -1;
-        hrecs->pg = new_pg;
+        if (npg == hrecs->pg_sz) {
+            size_t new_sz = hrecs->pg_sz >= 4 ? hrecs->pg_sz + hrecs->pg_sz / 4 : 4;
+            new_pg = realloc(hrecs->pg, sizeof(*hrecs->pg) * new_sz);
+            if (!new_pg)
+                return -1;
+            hrecs->pg = new_pg;
+            hrecs->pg_sz = new_sz;
+        }
 
         tag = h_type->tag;
         hrecs->pg[npg].name = NULL;
@@ -265,7 +275,7 @@ static int bam_hrecs_remove_hash_entry(bam_hrecs_t *hrecs, int type, bam_hrec_ty
                 k = kh_get(m_s2i, hrecs->ref_hash, key);
                 if (k != kh_end(hrecs->ref_hash)) {
                     int idx = kh_val(hrecs->ref_hash, k);
-                    if (idx < hrecs->nref-1)
+                    if (idx + 1 < hrecs->nref)
                         memmove(&hrecs->ref[idx], &hrecs->ref[idx+1],
                                 sizeof(bam_hrec_sq_t)*(hrecs->nref - idx - 1));
                     kh_del(m_s2i, hrecs->ref_hash, k);
@@ -289,7 +299,7 @@ static int bam_hrecs_remove_hash_entry(bam_hrecs_t *hrecs, int type, bam_hrec_ty
                 key = tag->str + 3;
                 k = kh_get(m_s2i, hrecs->rg_hash, key);
                 if (k != kh_end(hrecs->rg_hash)) {
-                    if (kh_val(hrecs->rg_hash, k) < hrecs->nrg-1)
+                    if (kh_val(hrecs->rg_hash, k) + 1 < hrecs->nrg)
                         memmove(&hrecs->rg[kh_val(hrecs->rg_hash, k)], &hrecs->rg[kh_val(hrecs->rg_hash, k)+1], sizeof(bam_hrec_rg_t)*(hrecs->nrg - kh_val(hrecs->rg_hash, k) - 1));
                     kh_del(m_s2i, hrecs->rg_hash, k);
                     hrecs->nrg--;
@@ -1536,17 +1546,20 @@ bam_hrecs_t *bam_hrecs_new() {
     hrecs->ID_cnt = 1;
 
     hrecs->nref = 0;
+    hrecs->ref_sz = 0;
     hrecs->ref  = NULL;
     if (!(hrecs->ref_hash = kh_init(m_s2i)))
         goto err;
     hrecs->refs_changed = -1;
 
     hrecs->nrg = 0;
+    hrecs->rg_sz = 0;
     hrecs->rg  = NULL;
     if (!(hrecs->rg_hash = kh_init(m_s2i)))
         goto err;
 
     hrecs->npg = 0;
+    hrecs->pg_sz = 0;
     hrecs->pg  = NULL;
     hrecs->npg_end = hrecs->npg_end_alloc = 0;
     hrecs->pg_end = NULL;
