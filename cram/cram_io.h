@@ -903,7 +903,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_set_header(cram_fd *fd, bam_hdr_t *hdr);
+int cram_set_header2(cram_fd *fd, const bam_hdr_t *hdr);
 
 /*!
  * Returns the hFILE connected to a cram_fd.

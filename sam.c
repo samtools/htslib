@@ -288,30 +288,47 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     return NULL;
 }
 
-int bam_hdr_write(BGZF *fp, bam_hdr_t *h)
+int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
 {
     int32_t i, name_len, x;
+    kstring_t hdr_ks = { 0, 0, NULL };
+    char *text;
+    uint32_t l_text;
+
+    if (!h) return -1;
+
     if (h->hrecs) {
-        if (-1 == bam_hdr_rebuild(h)) return -1;
+        if (bam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0) return -1;
+        if (hdr_ks.l > INT32_MAX) {
+            hts_log_error("Header too long for BAM format");
+            free(hdr_ks.s);
+            return -1;
+        }
+        text = hdr_ks.s;
+        l_text = hdr_ks.l;
+    } else {
+        text = h->text;
+        l_text = h->l_text;
     }
     // write "BAM1"
-    if (bgzf_write(fp, "BAM\1", 4) < 0) return -1;
+    if (bgzf_write(fp, "BAM\1", 4) < 0) { free(hdr_ks.s); return -1; }
     // write plain text and the number of reference sequences
     if (fp->is_be) {
-        x = ed_swap_4(h->l_text);
-        if (bgzf_write(fp, &x, 4) < 0) return -1;
-        if (h->l_text) {
-            if (bgzf_write(fp, h->text, h->l_text) < 0) return -1;
+        x = ed_swap_4(l_text);
+        if (bgzf_write(fp, &x, 4) < 0) { free(hdr_ks.s); return -1; }
+        if (l_text) {
+            if (bgzf_write(fp, text, l_text) < 0) { free(hdr_ks.s); return -1; }
         }
         x = ed_swap_4(h->n_targets);
-        if (bgzf_write(fp, &x, 4) < 0) return -1;
+        if (bgzf_write(fp, &x, 4) < 0) { free(hdr_ks.s); return -1; }
     } else {
-        if (bgzf_write(fp, &h->l_text, 4) < 0) return -1;
-        if (h->l_text) {
-            if (bgzf_write(fp, h->text, h->l_text) < 0) return -1;
+        if (bgzf_write(fp, &l_text, 4) < 0) { free(hdr_ks.s); return -1; }
+        if (l_text) {
+            if (bgzf_write(fp, text, l_text) < 0) { free(hdr_ks.s); return -1; }
         }
-        if (bgzf_write(fp, &h->n_targets, 4) < 0) return -1;
+        if (bgzf_write(fp, &h->n_targets, 4) < 0) { free(hdr_ks.s); return -1; }
     }
+    free(hdr_ks.s);
     // write sequence names and lengths
     for (i = 0; i != h->n_targets; ++i) {
         char *p = h->target_name[i];
@@ -1306,19 +1323,14 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
     }
 }
 
-int sam_hdr_write(htsFile *fp, bam_hdr_t *h)
+int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 {
     if (!fp || !h) {
         errno = EINVAL;
         return -1;
     }
 
-    if (h->hrecs) {
-        if (-1 == bam_hdr_rebuild(h))
-            return -1;
-    }
-
-    if (!h->text)
+    if (!h->hrecs && !h->text)
         return 0;
 
     switch (fp->format.format) {
@@ -1332,7 +1344,7 @@ int sam_hdr_write(htsFile *fp, bam_hdr_t *h)
 
     case cram: {
         cram_fd *fd = fp->fp.cram;
-        if (cram_set_header(fd, h) < 0) return -1;
+        if (cram_set_header2(fd, h) < 0) return -1;
         if (fp->fn_aux)
             cram_load_reference(fd, fp->fn_aux);
         if (cram_write_SAM_hdr(fd, fd->header) < 0) return -1;
@@ -1344,34 +1356,61 @@ int sam_hdr_write(htsFile *fp, bam_hdr_t *h)
         fp->format.format = sam;
         /* fall-through */
     case sam: {
-        char *p;
-        if (fp->format.compression == bgzf) {
-            if (bgzf_write(fp->fp.bgzf, h->text, h->l_text) != h->l_text)
+        char *text;
+        kstring_t hdr_ks = { 0, 0, NULL };
+        size_t l_text;
+        ssize_t bytes;
+        int r = 0, no_sq = 0;
+
+        if (h->hrecs) {
+            if (bam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0)
                 return -1;
-            p = strstr(h->text, "@SQ\t"); // FIXME: we need a loop to make sure "@SQ\t" does not match something unwanted!!!
-            if (p == NULL) {
-                int i;
-                for (i = 0; i < h->n_targets; ++i) {
-                    fp->line.l = 0;
-                    kputsn("@SQ\tSN:", 7, &fp->line); kputs(h->target_name[i], &fp->line);
-                    kputsn("\tLN:", 4, &fp->line); kputw(h->target_len[i], &fp->line); kputc('\n', &fp->line);
-                    if ( bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l ) return -1;
-                }
-            }
-            if ( bgzf_flush(fp->fp.bgzf) != 0 ) return -1;
+            text = hdr_ks.s;
+            l_text = hdr_ks.l;
         } else {
-            hputs(h->text, fp->fp.hfile);
-            p = strstr(h->text, "@SQ\t"); // FIXME: we need a loop to make sure "@SQ\t" does not match something unwanted!!!
-            if (p == NULL) {
-                int i;
-                for (i = 0; i < h->n_targets; ++i) {
-                    fp->line.l = 0;
-                    kputsn("@SQ\tSN:", 7, &fp->line); kputs(h->target_name[i], &fp->line);
-                    kputsn("\tLN:", 4, &fp->line); kputw(h->target_len[i], &fp->line); kputc('\n', &fp->line);
-                    if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
+            char *p;
+            do {
+                p = strstr(h->text, "@SQ\t");
+            } while (!(p == NULL || p == h->text || *(p - 1) == '\n'));
+            no_sq = p == NULL;
+            text = h->text;
+            l_text = h->l_text;
+        }
+
+        if (fp->format.compression == bgzf) {
+            bytes = bgzf_write(fp->fp.bgzf, text, l_text);
+        } else {
+            bytes = hwrite(fp->fp.hfile, text, l_text);
+        }
+        free(hdr_ks.s);
+        if (bytes != l_text)
+            return -1;
+
+        if (no_sq) {
+            int i;
+            for (i = 0; i < h->n_targets; ++i) {
+                fp->line.l = 0;
+                r |= kputsn("@SQ\tSN:", 7, &fp->line) < 0;
+                r |= kputs(h->target_name[i], &fp->line) < 0;
+                r |= kputsn("\tLN:", 4, &fp->line) < 0;
+                r |= kputw(h->target_len[i], &fp->line) < 0;
+                r |= kputc('\n', &fp->line);
+                if (r != 0)
+                    return -1;
+
+                if (fp->format.compression == bgzf) {
+                    bytes = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
+                } else {
+                    bytes = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
                 }
+                if (bytes != fp->line.l)
+                    return -1;
             }
-            if ( hflush(fp->fp.hfile) != 0 ) return -1;
+        }
+        if (fp->format.compression == bgzf) {
+            if (bgzf_flush(fp->fp.bgzf) != 0) return -1;
+        } else {
+            if (hflush(fp->fp.hfile) != 0) return -1;
         }
         }
         break;

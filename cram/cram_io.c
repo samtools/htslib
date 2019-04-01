@@ -1931,10 +1931,10 @@ static int refs_from_header(cram_fd *fd) {
  * Attaches a header to a cram_fd.
  *
  * This should be used when creating a new cram_fd for writing where
- * we have an SAM_hdr already constructed (eg from a file we've read
+ * we have a header already constructed (eg from a file we've read
  * in).
  */
-int cram_set_header(cram_fd *fd, bam_hdr_t *hdr) {
+int cram_set_header2(cram_fd *fd, const bam_hdr_t *hdr) {
     if (!fd || !hdr )
         return -1;
 
@@ -1946,6 +1946,10 @@ int cram_set_header(cram_fd *fd, bam_hdr_t *hdr) {
             return -1;
     }
     return refs_from_header(fd);
+}
+
+int cram_set_header(cram_fd *fd, bam_hdr_t *hdr) {
+    return cram_set_header2(fd, hdr);
 }
 
 /*

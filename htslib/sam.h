@@ -309,7 +309,7 @@ bam_hdr_t *bam_hdr_read(BGZF *fp);
  * @param h   Header pointer
  * @return    0 on success, -1 on failure
  */
-int bam_hdr_write(BGZF *fp, bam_hdr_t *h) HTS_RESULT_USED;
+int bam_hdr_write(BGZF *fp, const bam_hdr_t *h) HTS_RESULT_USED;
 
 /*!
  * Frees the resources associated with a header.
@@ -328,7 +328,7 @@ bam_hdr_t* bam_hdr_dup(const bam_hdr_t *h0);
 typedef htsFile samFile;
 bam_hdr_t *sam_hdr_parse(int l_text, const char *text);
 bam_hdr_t *sam_hdr_read(samFile *fp);
-int sam_hdr_write(samFile *fp, bam_hdr_t *h) HTS_RESULT_USED;
+int sam_hdr_write(samFile *fp, const bam_hdr_t *h) HTS_RESULT_USED;
 
 /*!
  * Returns the current length of the header.
