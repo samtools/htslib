@@ -135,7 +135,7 @@ void cram_block_set_uncomp_size(cram_block *b, int32_t size);
 void cram_block_set_crc32(cram_block *b, int32_t crc);
 void cram_block_set_data(cram_block *b, void *data);
 
-int cram_block_append(cram_block *b, void *data, int size);
+int cram_block_append(cram_block *b, const void *data, int size);
 void cram_block_update_size(cram_block *b);
 
 // Offset is known as "size" internally, but it can be confusing.

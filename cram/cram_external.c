@@ -209,7 +209,7 @@ void cram_block_set_crc32(cram_block *b, int32_t crc) { b->crc32 = crc; }
 void cram_block_set_data(cram_block *b, void *data) { BLOCK_DATA(b) = data; }
 void cram_block_set_size(cram_block *b, int32_t size) { BLOCK_SIZE(b) = size; }
 
-int cram_block_append(cram_block *b, void *data, int size) {
+int cram_block_append(cram_block *b, const void *data, int size) {
     BLOCK_APPEND(b, data, size);
     return BLOCK_DATA(b) ? 0 : -1; // It'll do for now...
 }
