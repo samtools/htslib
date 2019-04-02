@@ -1466,7 +1466,9 @@ int bam_hdr_link_pg(bam_hdr_t *bh) {
  */
 const char *bam_hdr_pg_id(bam_hdr_t *bh, const char *name) {
     bam_hrecs_t *hrecs;
-    if (!bh)
+    size_t name_len;
+    const size_t name_extra = 17;
+    if (!bh || !name)
         return NULL;
 
     if (!(hrecs = bh->hrecs)) {
@@ -1479,8 +1481,18 @@ const char *bam_hdr_pg_id(bam_hdr_t *bh, const char *name) {
     if (k == kh_end(hrecs->pg_hash))
         return name;
 
+    name_len = strlen(name);
+    if (name_len > 1000) name_len = 1000;
+    if (hrecs->ID_buf_sz < name_len + name_extra) {
+        char *new_ID_buf = realloc(hrecs->ID_buf, name_len + name_extra);
+        if (new_ID_buf == NULL)
+            return NULL;
+        hrecs->ID_buf = new_ID_buf;
+        hrecs->ID_buf_sz = name_len + name_extra;
+    }
+
     do {
-        sprintf(hrecs->ID_buf, "%.1000s.%d", name, hrecs->ID_cnt++);
+        snprintf(hrecs->ID_buf, hrecs->ID_buf_sz, "%.1000s.%d", name, hrecs->ID_cnt++);
         k = kh_get(m_s2i, hrecs->pg_hash, hrecs->ID_buf);
     } while (k != kh_end(hrecs->pg_hash));
 
@@ -1527,9 +1539,12 @@ int bam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
         memcpy(end, hrecs->pg_end, nends * sizeof(*end));
 
         for (i = 0; i < nends; i++) {
+            const char *id = bam_hdr_pg_id(bh, name);
+            if (!id)
+                return -1;
             va_start(args, name);
             if (-1 == bam_hrecs_vadd(hrecs, "PG", args,
-                                     "ID", bam_hdr_pg_id(bh, name),
+                                     "ID", id,
                                      "PN", name,
                                      "PP", hrecs->pg[end[i]].name,
                                      NULL)) {
@@ -1541,9 +1556,12 @@ int bam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
 
         free(end);
     } else {
+        const char *id = bam_hdr_pg_id(bh, name);
+        if (!id)
+            return -1;
         va_start(args, name);
         if (-1 == bam_hrecs_vadd(hrecs, "PG", args,
-                                 "ID", bam_hdr_pg_id(bh, name),
+                                 "ID", id,
                                  "PN", name,
                                  NULL))
             return -1;
@@ -1695,6 +1713,9 @@ void bam_hrecs_free(bam_hrecs_t *hrecs) {
 
     if (hrecs->type_order)
         free(hrecs->type_order);
+
+    if (hrecs->ID_buf)
+        free(hrecs->ID_buf);
 
     free(hrecs);
 }

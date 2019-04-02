@@ -217,7 +217,8 @@ struct sam_hdr {
     int *pg_end;               //!< \@PG chain termination IDs
 
     // @cond internal
-    char ID_buf[1024];  // temporary buffer
+    char *ID_buf;             // temporary buffer for bam_hdr_pg_id
+    uint32_t ID_buf_sz;
     int ID_cnt;
     // @endcond
 
