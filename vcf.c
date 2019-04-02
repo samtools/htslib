@@ -497,9 +497,10 @@ static int bcf_hdr_set_idx(bcf_hdr_t *hdr, int dict_type, const char *tag, bcf_i
 static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 {
     // contig
-    int i,j, ret;
+    int i,j, ret, replacing = 0;
     khint_t k;
     char *str;
+
     if ( !strcmp(hrec->key, "contig") )
     {
         hrec->type = BCF_HL_CTG;
@@ -517,9 +518,15 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         // Register in the dictionary
         vdict_t *d = (vdict_t*)hdr->dict[BCF_DT_CTG];
         khint_t k = kh_get(vdict, d, str);
-        if ( k != kh_end(d) ) { free(str); return 0; }    // already present
-        k = kh_put(vdict, d, str, &ret);
-        if (ret < 0) { free(str); return -1; }
+        if ( k != kh_end(d) ) { // already present
+            free(str);
+            if (kh_val(d, k).hrec[0] != NULL) // and not removed
+                return 0;
+            replacing = 1;
+        } else {
+            k = kh_put(vdict, d, str, &ret);
+            if (ret < 0) { free(str); return -1; }
+        }
 
         int idx = bcf_hrec_find_key(hrec,"IDX");
         if ( idx!=-1 )
@@ -528,8 +535,10 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
             idx = strtol(hrec->vals[idx], &tmp, 10);
             if ( *tmp || idx < 0 || idx >= INT_MAX - 1)
             {
-                kh_del(vdict, d, k);
-                free(str);
+                if (!replacing) {
+                    kh_del(vdict, d, k);
+                    free(str);
+                }
                 hts_log_warning("Error parsing the IDX tag, skipping");
                 return 0;
             }
@@ -540,8 +549,10 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         kh_val(d, k).info[0] = j;
         kh_val(d, k).hrec[0] = hrec;
         if (bcf_hdr_set_idx(hdr, BCF_DT_CTG, kh_key(d,k), &kh_val(d,k)) < 0) {
-            kh_del(vdict, d, k);
-            free(str);
+            if (!replacing) {
+                kh_del(vdict, d, k);
+                free(str);
+            }
             return -1;
         }
         if ( idx==-1 ) {
