@@ -351,15 +351,6 @@ const char *bam_hdr_str(bam_hdr_t *bh);
  */
 int bam_hdr_nref(const bam_hdr_t *bh);
 
-/*!
- * Reconstructs the text representation of the header from
- * the hash table data after a change has been performed on
- * the header.
- *
- * @return  0 on success, -1 on failure
- */
-int bam_hdr_rebuild(bam_hdr_t *bh);
-
 /* ==== Line level methods ==== */
 
 /*!

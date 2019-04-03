@@ -239,6 +239,15 @@ struct sam_hdr {
  */
 int bam_hdr_parse(bam_hdr_t *bh);
 
+/*!
+ * Reconstructs the text representation of the header from
+ * the hash table data after a change has been performed on
+ * the header.
+ *
+ * @return  0 on success, -1 on failure
+ */
+int bam_hdr_rebuild(bam_hdr_t *bh);
+
 /*! Creates an empty SAM header, ready to be populated.
  *
  * @return
