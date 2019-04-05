@@ -277,7 +277,7 @@ int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_thr
     int ret;
     if ((fp = bgzf_open(fn, "r")) == 0) return -1;
     if ( n_threads ) bgzf_mt(fp, n_threads, 256);
-    if ( bgzf_compression(fp) != bgzf ) { bgzf_close(fp); return -1; }
+    if ( bgzf_compression(fp) != bgzf ) { bgzf_close(fp); return -2; }
     tbx = tbx_index(fp, min_shift, conf);
     bgzf_close(fp);
     if ( !tbx ) return -1;
