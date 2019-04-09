@@ -1282,8 +1282,8 @@ int hts_check_EOF(htsFile *fp)
 
 #define pair64_lt(a,b) ((a).u < (b).u)
 
-KSORT_INIT(_off, hts_pair64_t, pair64_lt)
-KSORT_INIT(_off_max, hts_pair64_max_t, pair64_lt)
+KSORT_INIT_STATIC(_off, hts_pair64_t, pair64_lt)
+KSORT_INIT_STATIC(_off_max, hts_pair64_max_t, pair64_lt)
 
 typedef struct {
     int32_t m, n;
