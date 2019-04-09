@@ -30,7 +30,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/ksort.h"
 #include "htslib/hts_os.h" // for drand48
 
-KSORT_INIT_GENERIC(uint16_t)
+KSORT_INIT_STATIC_GENERIC(uint16_t)
 
 struct errmod_t {
     double depcorr;
