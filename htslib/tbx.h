@@ -67,6 +67,9 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
     int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end);
 
     tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf);
+/*
+ * All tbx_index_build* methods return: 0 (success), -1 (general failure) or -2 (compression not BGZF)
+ */
     int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf);
     int tbx_index_build2(const char *fn, const char *fnidx, int min_shift, const tbx_conf_t *conf);
     int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads, const tbx_conf_t *conf);

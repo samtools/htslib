@@ -529,6 +529,7 @@ int main(int argc, char *argv[])
     }
     free(idx_fname);
 
+    int ret;
     if ( ftype==IS_CRAM )
     {
         if ( bam_index_build(fname, min_shift)!=0 ) error("bam_index_build failed: %s\n", fname);
@@ -546,12 +547,29 @@ int main(int argc, char *argv[])
             if ( bam_index_build(fname, min_shift)!=0 ) error("bam_index_build failed: %s\n", fname);
             return 0;
         }
-        if ( tbx_index_build(fname, min_shift, &conf)!=0 ) error("tbx_index_build failed: %s\n", fname);
-        return 0;
+
+        switch (ret = tbx_index_build(fname, min_shift, &conf))
+        {
+            case 0:
+                return 0;
+            case -2:
+                error("[tabix] the compression of '%s' is not BGZF\n", fname);
+            default:
+                error("tbx_index_build failed: %s\n", fname);
+        }
     }
     else    // TBI index
     {
-        if ( tbx_index_build(fname, min_shift, &conf) ) error("tbx_index_build failed: %s\n", fname);
-        return 0;
+        switch (ret = tbx_index_build(fname, min_shift, &conf))
+        {
+            case 0:
+                return 0;
+            case -2:
+                error("[tabix] the compression of '%s' is not BGZF\n", fname);
+            default:
+                error("tbx_index_build failed: %s\n", fname);
+        }
     }
+
+    return 0;
 }
