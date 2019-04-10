@@ -62,25 +62,35 @@ void write_bcf(char *fname)
     check0(bcf_hdr_append(hdr, "##unused=<XX=AA,Description=\"Unused generic\">"));
     check0(bcf_hdr_append(hdr, "##unused=unformatted text 1"));
     check0(bcf_hdr_append(hdr, "##unused=unformatted text 2"));
-    check0(bcf_hdr_append(hdr, "##contig=<ID=Unused,length=62435964>"));
+    check0(bcf_hdr_append(hdr, "##contig=<ID=Unused,length=1>"));
     check0(bcf_hdr_append(hdr, "##source=myImputationProgramV3.1"));
     check0(bcf_hdr_append(hdr, "##reference=file:///seq/references/1000GenomesPilot-NCBI36.fasta"));
     check0(bcf_hdr_append(hdr, "##contig=<ID=20,length=62435964,assembly=B36,md5=f126cdf8a6e0c7f379d618ff66beb2da,species=\"Homo sapiens\",taxonomy=x>"));
     check0(bcf_hdr_append(hdr, "##phasing=partial"));
     check0(bcf_hdr_append(hdr, "##INFO=<ID=NS,Number=1,Type=Integer,Description=\"Number of Samples With Data\">"));
     check0(bcf_hdr_append(hdr, "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Total Depth\">"));
-    check0(bcf_hdr_append(hdr, "##INFO=<ID=NEG,Number=.,Type=Integer,Description=\"Test Negative Numbers\">"));
+    check0(bcf_hdr_append(hdr, "##INFO=<ID=NEG,Number=.,Type=Integer,Description=\"Test -ve Numbers\">"));
     check0(bcf_hdr_append(hdr, "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele Frequency\">"));
     check0(bcf_hdr_append(hdr, "##INFO=<ID=AA,Number=1,Type=String,Description=\"Ancestral Allele\">"));
     check0(bcf_hdr_append(hdr, "##INFO=<ID=DB,Number=0,Type=Flag,Description=\"dbSNP membership, build 129\">"));
     check0(bcf_hdr_append(hdr, "##INFO=<ID=H2,Number=0,Type=Flag,Description=\"HapMap2 membership\">"));
     check0(bcf_hdr_append(hdr, "##FILTER=<ID=q10,Description=\"Quality below 10\">"));
-    check0(bcf_hdr_append(hdr, "##FILTER=<ID=s50,Description=\"Less than 50% of samples have data\">"));
+    check0(bcf_hdr_append(hdr, "##FILTER=<ID=s50,Description=\"Less than half of samples have data\">"));
     check0(bcf_hdr_append(hdr, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">"));
     check0(bcf_hdr_append(hdr, "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">"));
     check0(bcf_hdr_append(hdr, "##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Read Depth\">"));
     check0(bcf_hdr_append(hdr, "##FORMAT=<ID=HQ,Number=2,Type=Integer,Description=\"Haplotype Quality\">"));
+    check0(bcf_hdr_append(hdr, "##FORMAT=<ID=TS,Number=1,Type=String,Description=\"Test String 1\">"));
+
+    // Try a few header modifications
+    bcf_hdr_remove(hdr, BCF_HL_CTG, "Unused");
+    check0(bcf_hdr_append(hdr, "##contig=<ID=Unused,length=62435964>"));
+    bcf_hdr_remove(hdr, BCF_HL_FMT, "TS");
     check0(bcf_hdr_append(hdr, "##FORMAT=<ID=TS,Number=1,Type=String,Description=\"Test String\">"));
+    bcf_hdr_remove(hdr, BCF_HL_INFO, "NEG");
+    check0(bcf_hdr_append(hdr, "##INFO=<ID=NEG,Number=.,Type=Integer,Description=\"Test Negative Numbers\">"));
+    bcf_hdr_remove(hdr, BCF_HL_FLT, "s50");
+    check0(bcf_hdr_append(hdr, "##FILTER=<ID=s50,Description=\"Less than 50% of samples have data\">"));
 
     check0(bcf_hdr_add_sample(hdr, "NA00001"));
     check0(bcf_hdr_add_sample(hdr, "NA00002"));
