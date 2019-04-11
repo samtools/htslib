@@ -98,6 +98,25 @@ void sam_hdr_dump(SAM_hdr *hdr) {
     puts("===END DUMP===");
 }
 
+static int init_type_order(SAM_hdr *sh, char *type_list) {
+    if (!sh)
+        return -1;
+
+    if (!type_list) {
+        sh->type_count = 5;
+        sh->type_order = calloc(sh->type_count, 3);
+        if (!sh->type_order)
+            return -1;
+        memcpy(sh->type_order[0], "HD", 2);
+        memcpy(sh->type_order[1], "SQ", 2);
+        memcpy(sh->type_order[2], "RG", 2);
+        memcpy(sh->type_order[3], "PG", 2);
+        memcpy(sh->type_order[4], "CO", 2);
+    }
+
+    return 0;
+}
+
 /* Updates the hash tables in the SAM_hdr structure.
  *
  * Returns 0 on success;
@@ -323,6 +342,241 @@ static int sam_hdr_remove_hash_entry(SAM_hdr *sh, int type, SAM_hdr_type *h_type
 
     return 0;
 }
+
+/*! sam_hdr_add with a va_list interface.
+ *
+ * Adds a single line to a SAM header.
+ *
+ * This is much like sam_hdr_add() but with the additional va_list
+ * argument. This is followed by specifying type and one or more
+ * key,value pairs, ending with the NULL key.
+ *
+ * Eg. sam_hdr_vadd(h, "SQ", args, "ID", "foo", "LN", "100", NULL).
+ *
+ * The purpose of the additional va_list parameter is to permit other
+ * varargs functions to call this while including their own additional
+ * parameters; an example is in sam_hdr_add_PG().
+ *
+ * Note: this function invokes va_arg at least once, making the value
+ * of ap indeterminate after the return. The caller should call
+ * va_start/va_end before/after calling this function or use va_copy.
+ *
+ * @return
+ * Returns >= 0 on success;
+ *        -1 on failure
+ */
+static int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
+    va_list args;
+    SAM_hdr_type *h_type;
+    SAM_hdr_tag *h_tag, *last=NULL;
+    int new;
+    khint32_t type_i = (type[0]<<8) | type[1], k;
+
+    if (!(h_type = pool_alloc(sh->type_pool)))
+        return -1;
+    if (-1 == (k = kh_put(sam_hdr, sh->h, type_i, &new)))
+        return -1;
+
+    // Form the ring, either with self or other lines of this type
+    if (!new) {
+        SAM_hdr_type *t = kh_val(sh->h, k), *p;
+        p = t->prev;
+
+        assert(p->next == t);
+        p->next = h_type;
+        h_type->prev = p;
+
+        t->prev = h_type;
+        h_type->next = t;
+        h_type->order = p->order + 1;
+    } else {
+        kh_val(sh->h, k) = h_type;
+        h_type->prev = h_type->next = h_type;
+        h_type->order = 0;
+    }
+    h_type->skip = 0;
+    h_type->tag = NULL;
+    h_type->comm = NULL;
+
+    // Any ... varargs
+    va_start(args, ap);
+    for (;;) {
+        char *k, *v = NULL;
+
+        if (!(k = (char *)va_arg(args, char *)))
+            break;
+        if (strncmp(type, "CO", 2) && !(v = (char *)va_arg(args, char *)))
+            break;
+
+        if (!(h_tag = pool_alloc(sh->tag_pool)))
+            return -1;
+
+        if (strncmp(type, "CO", 2)) {
+            h_tag->len = 3 + strlen(v);
+            h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
+            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", k, v) < 0)
+                return -1;
+        } else {
+            h_tag->len = strlen(k);
+            h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
+            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%s", k) < 0)
+                return -1;
+        }
+
+        h_tag->next = NULL;
+        if (last)
+            last->next = h_tag;
+        else
+            h_type->tag = h_tag;
+
+        last = h_tag;
+    }
+    va_end(args);
+
+    // Plus the specified va_list params
+    for (;;) {
+        char *k, *v = NULL;
+
+        if (!(k = (char *)va_arg(ap, char *)))
+            break;
+        if (strncmp(type, "CO", 2) && !(v = (char *)va_arg(ap, char *)))
+            break;
+
+        if (!(h_tag = pool_alloc(sh->tag_pool)))
+            return -1;
+
+        if (strncmp(type, "CO", 2)) {
+            h_tag->len = 3 + strlen(v);
+            h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
+            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", k, v) < 0)
+                return -1;
+        } else {
+            h_tag->len = strlen(k);
+            h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
+            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%s", k) < 0)
+                return -1;
+        }
+
+        h_tag->next = NULL;
+        if (last)
+            last->next = h_tag;
+        else
+            h_type->tag = h_tag;
+
+        last = h_tag;
+    }
+
+    int itype = (type[0]<<8) | type[1];
+    if (-1 == sam_hdr_update_hashes(sh, itype, h_type))
+        return -1;
+
+    sh->dirty = 1;
+    return h_type->order;
+}
+
+/*
+ * Function for deallocating a list of tags
+ */
+
+static void free_tags(SAM_hdr *hdr, SAM_hdr_tag *tag) {
+    if (!hdr || !tag)
+        return;
+    if (tag->next)
+        free_tags(hdr, tag->next);
+
+    pool_free(hdr->tag_pool, tag);
+}
+
+static int remove_line(SAM_hdr *hdr, char *type_name, SAM_hdr_type *type_found) {
+    if (!hdr || !type_name || !type_found)
+        return -1;
+
+    int itype = (type_name[0]<<8) | type_name[1];
+    khint_t k = kh_get(sam_hdr, hdr->h, itype);
+    if (k == kh_end(hdr->h))
+        return -1;
+
+    free_tags(hdr, type_found->tag);
+    /* single element in the list */
+    if (type_found->prev == type_found || type_found->next == type_found) {
+        pool_free(hdr->type_pool, type_found);
+        kh_del(sam_hdr, hdr->h, k);
+    } else {
+        type_found->prev->next = type_found->next;
+        type_found->next->prev = type_found->prev;
+        pool_free(hdr->type_pool, type_found);
+    }
+
+    if (!strncmp(type_name, "SQ", 2) || !strncmp(type_name, "RG", 2))
+        sam_hdr_remove_hash_entry(hdr, itype, type_found);
+
+    hdr->dirty = 1; //mark text as dirty and force a rebuild
+    return 0;
+}
+
+static int rebuild_comms(SAM_hdr_type *t, kstring_t *ks) {
+    if (!t->comm) {
+        if (EOF == kputsn_("@CO\t", 4, ks))
+            return -1;
+        if (t->tag)
+            if (EOF == kputsn_(t->tag->str, t->tag->len, ks))
+                return -1;
+        if (EOF == kputc('\n', ks))
+            return -1;
+    } else {
+        if (rebuild_comms(t->comm, ks))
+            return -1;
+        if (EOF == kputsn_("@CO\t", 4, ks))
+            return -1;
+        if (t->tag)
+            if (EOF == kputsn_(t->tag->str, t->tag->len, ks))
+                return -1;
+        if (EOF == kputc('\n', ks))
+            return -1;
+    }
+
+    return 0;
+}
+
+static int rebuild_lines(SAM_hdr *hdr, khint_t k, kstring_t *ks) {
+    SAM_hdr_type *t1, *t2;
+
+    t1 = t2 = kh_val(hdr->h, k);
+    do {
+        SAM_hdr_tag *tag;
+        char c[2];
+
+        if (t1->skip) {
+            t1 = t1->next;
+            continue;
+        }
+
+        /* if there is a comment line attached, print it first */
+        if (t1->comm) {
+            if (rebuild_comms(t1->comm, ks))
+                return -1;
+        }
+
+        if (EOF == kputc_('@', ks))
+            return -1;
+        c[0] = kh_key(hdr->h, k)>>8;
+        c[1] = kh_key(hdr->h, k)&0xff;
+        if (EOF == kputsn_(c, 2, ks))
+            return -1;
+        for (tag = t1->tag; tag; tag=tag->next) {
+            if (EOF == kputc_('\t', ks))
+                return -1;
+            if (EOF == kputsn_(tag->str, tag->len, ks))
+                return -1;
+        }
+        if (EOF == kputc('\n', ks))
+            return -1;
+        t1 = t1->next;
+    } while (t1 != t2);
+
+    return 0;
+}
+
 /*
  * Appends formatted lines to an existing SAM header.
  * hdr is a full SAM header record, eg "@SQ\tSN:foo\tLN:100", with
@@ -482,135 +736,22 @@ int sam_hdr_add_lines(SAM_hdr *sh, const char *hdr, size_t len) {
     return 0;
 }
 
-/*! sam_hdr_add with a va_list interface.
- *
- * Adds a single line to a SAM header.
- *
- * This is much like sam_hdr_add() but with the additional va_list
- * argument. This is followed by specifying type and one or more
- * key,value pairs, ending with the NULL key.
- *
- * Eg. sam_hdr_vadd(h, "SQ", args, "ID", "foo", "LN", "100", NULL).
- *
- * The purpose of the additional va_list parameter is to permit other
- * varargs functions to call this while including their own additional
- * parameters; an example is in sam_hdr_add_PG().
- *
- * Note: this function invokes va_arg at least once, making the value
- * of ap indeterminate after the return. The caller should call
- * va_start/va_end before/after calling this function or use va_copy.
- *
- * @return
- * Returns >= 0 on success;
- *        -1 on failure
- */
-static int sam_hdr_vadd(SAM_hdr *sh, const char *type, va_list ap, ...) {
-    va_list args;
-    SAM_hdr_type *h_type;
-    SAM_hdr_tag *h_tag, *last=NULL;
-    int new;
-    khint32_t type_i = (type[0]<<8) | type[1], k;
-
-    if (!(h_type = pool_alloc(sh->type_pool)))
-        return -1;
-    if (-1 == (k = kh_put(sam_hdr, sh->h, type_i, &new)))
-        return -1;
-
-    // Form the ring, either with self or other lines of this type
-    if (!new) {
-        SAM_hdr_type *t = kh_val(sh->h, k), *p;
-        p = t->prev;
-
-        assert(p->next == t);
-        p->next = h_type;
-        h_type->prev = p;
-
-        t->prev = h_type;
-        h_type->next = t;
-        h_type->order = p->order + 1;
-    } else {
-        kh_val(sh->h, k) = h_type;
-        h_type->prev = h_type->next = h_type;
-        h_type->order = 0;
-    }
-    h_type->skip = 0;
-    h_type->tag = NULL;
-    h_type->comm = NULL;
-
-    // Any ... varargs
-    va_start(args, ap);
-    for (;;) {
-        char *k, *v = NULL;
-
-        if (!(k = (char *)va_arg(args, char *)))
-            break;
-        if (strncmp(type, "CO", 2) && !(v = (char *)va_arg(args, char *)))
-            break;
-
-        if (!(h_tag = pool_alloc(sh->tag_pool)))
+int sam_hdr_length(SAM_hdr *hdr) {
+    if (hdr->dirty) {
+        if (-1 == sam_hdr_rebuild(hdr))
             return -1;
-
-        if (strncmp(type, "CO", 2)) {
-            h_tag->len = 3 + strlen(v);
-            h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
-            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", k, v) < 0)
-                return -1;
-        } else {
-            h_tag->len = strlen(k);
-            h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
-            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%s", k) < 0)
-                return -1;
-        }
-
-        h_tag->next = NULL;
-        if (last)
-            last->next = h_tag;
-        else
-            h_type->tag = h_tag;
-
-        last = h_tag;
-    }
-    va_end(args);
-
-    // Plus the specified va_list params
-    for (;;) {
-        char *k, *v = NULL;
-
-        if (!(k = (char *)va_arg(ap, char *)))
-            break;
-        if (strncmp(type, "CO", 2) && !(v = (char *)va_arg(ap, char *)))
-            break;
-
-        if (!(h_tag = pool_alloc(sh->tag_pool)))
-            return -1;
-
-        if (strncmp(type, "CO", 2)) {
-            h_tag->len = 3 + strlen(v);
-            h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
-            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", k, v) < 0)
-                return -1;
-        } else {
-            h_tag->len = strlen(k);
-            h_tag->str = string_alloc(sh->str_pool, h_tag->len+1);
-            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%s", k) < 0)
-                return -1;
-        }
-
-        h_tag->next = NULL;
-        if (last)
-            last->next = h_tag;
-        else
-            h_type->tag = h_tag;
-
-        last = h_tag;
     }
 
-    int itype = (type[0]<<8) | type[1];
-    if (-1 == sam_hdr_update_hashes(sh, itype, h_type))
-        return -1;
+    return ks_len(&hdr->text);
+}
 
-    sh->dirty = 1;
-    return h_type->order;
+char *sam_hdr_str(SAM_hdr *hdr) {
+    if (hdr->dirty) {
+        if (-1 == sam_hdr_rebuild(hdr))
+            return NULL;
+    }
+
+    return ks_str(&hdr->text);
 }
 
 /*
@@ -631,69 +772,38 @@ int sam_hdr_add(SAM_hdr *sh, const char *type, ...) {
 }
 
 /*
- * Returns the first header item matching 'type'. If ID is non-NULL it checks
- * for the tag ID: and compares against the specified ID.
+ * Tokenises a SAM header into a hash table.
+ * Also extracts a few bits on specific data types, such as @RG lines.
  *
- * Returns NULL if no type/ID is found
+ * Returns a SAM_hdr struct on success (free with sam_hdr_free())
+ *         NULL on failure
  */
-SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
-                           char *ID_key, char *ID_value) {
-    SAM_hdr_type *t1, *t2;
-    int itype = (type[0]<<8)|(type[1]);
-    khint_t k;
+SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
+    /* Make an empty SAM_hdr */
+    SAM_hdr *sh;
 
-    /* Special case for types we have prebuilt hashes on */
-    if (ID_key) {
-        if (type[0]   == 'S' && type[1]   == 'Q' &&
-            ID_key[0] == 'S' && ID_key[1] == 'N') {
-            k = kh_get(m_s2i, hdr->ref_hash, ID_value);
-            return k != kh_end(hdr->ref_hash)
-                ? hdr->ref[kh_val(hdr->ref_hash, k)].ty
-                : NULL;
-        }
+    sh = sam_hdr_new();
+    if (NULL == sh) return NULL;
 
-        if (type[0]   == 'R' && type[1]   == 'G' &&
-            ID_key[0] == 'I' && ID_key[1] == 'D') {
-            k = kh_get(m_s2i, hdr->rg_hash, ID_value);
-            return k != kh_end(hdr->rg_hash)
-                ? hdr->rg[kh_val(hdr->rg_hash, k)].ty
-                : NULL;
-        }
+    if (NULL == hdr) return sh; // empty header is permitted
 
-        if (type[0]   == 'P' && type[1]   == 'G' &&
-            ID_key[0] == 'I' && ID_key[1] == 'D') {
-            k = kh_get(m_s2i, hdr->pg_hash, ID_value);
-            return k != kh_end(hdr->pg_hash)
-                ? hdr->pg[kh_val(hdr->pg_hash, k)].ty
-                : NULL;
-        }
+    /* Parse the header, line by line */
+    if (-1 == sam_hdr_add_lines(sh, hdr, len)) {
+        sam_hdr_free(sh);
+        return NULL;
     }
 
-    k = kh_get(sam_hdr, hdr->h, itype);
-    if (k == kh_end(hdr->h))
-        return NULL;
+    //sam_hdr_add(sh, "RG", "ID", "foo", "SM", "bar", NULL);
+    //printf(">>%s<<", ks_str(sh->text));
 
-    if (!ID_key)
-        return kh_val(hdr->h, k);
+    //parse_references(sh);
+    //parse_read_groups(sh);
 
-    t1 = t2 = kh_val(hdr->h, k);
-    do {
-        SAM_hdr_tag *tag;
-        for (tag = t1->tag; tag; tag = tag->next) {
-            if (tag->str[0] == ID_key[0] && tag->str[1] == ID_key[1]) {
-                char *cp1 = tag->str+3;
-                char *cp2 = ID_value;
-                while (*cp1 && *cp1 == *cp2)
-                    cp1++, cp2++;
-                if (*cp2 || *cp1)
-                    continue;
-                return t1;
-            }
-        }
-        t1 = t1->next;
-    } while (t1 != t2);
+    sam_hdr_link_pg(sh);
+    sam_hdr_rebuild(sh);
+    //sam_hdr_dump(sh);
 
-    return NULL;
+    return sh;
 }
 
 /*
@@ -733,43 +843,21 @@ char *sam_hdr_find_line(SAM_hdr *hdr, char *type,
 }
 
 /*
- * Function for deallocating a list of tags
+ * Remove a line from the header by specifying a tag:value that uniquely
+ * identifies a line, i.e. the @SQ line containing "SN:ref1".
  */
 
-static void free_tags(SAM_hdr *hdr, SAM_hdr_tag *tag) {
-    if (!hdr || !tag)
-        return;
-    if (tag->next)
-        free_tags(hdr, tag->next);
-
-    pool_free(hdr->tag_pool, tag);
-}
-
-static int remove_line(SAM_hdr *hdr, char *type_name, SAM_hdr_type *type_found) {
-    if (!hdr || !type_name || !type_found)
+int sam_hdr_remove_line_key(SAM_hdr *hdr, char *type, char *ID_key, char *ID_value) {
+    if (!hdr || !type)
         return -1;
-
-    int itype = (type_name[0]<<8) | type_name[1];
-    khint_t k = kh_get(sam_hdr, hdr->h, itype);
-    if (k == kh_end(hdr->h))
+    if (!strncmp(type, "PG", 2)) {
+        hts_log_warning("Removing PG lines is not supported!");
         return -1;
-
-    free_tags(hdr, type_found->tag);
-    /* single element in the list */
-    if (type_found->prev == type_found || type_found->next == type_found) {
-        pool_free(hdr->type_pool, type_found);
-        kh_del(sam_hdr, hdr->h, k);
-    } else {
-        type_found->prev->next = type_found->next;
-        type_found->next->prev = type_found->prev;
-        pool_free(hdr->type_pool, type_found);
     }
 
-    if (!strncmp(type_name, "SQ", 2) || !strncmp(type_name, "RG", 2))
-        sam_hdr_remove_hash_entry(hdr, itype, type_found);
+    SAM_hdr_type *type_found = sam_hdr_find(hdr, type, ID_key, ID_value);
 
-    hdr->dirty = 1; //mark text as dirty and force a rebuild
-    return 0;
+    return remove_line(hdr, type, type_found);
 }
 
 /*
@@ -806,238 +894,7 @@ int sam_hdr_remove_line_pos(SAM_hdr *hdr, char *type, int position) {
     return remove_line(hdr, type, type_found);
 }
 
-/*
- * Remove a line from the header by specifying a tag:value that uniquely
- * identifies a line, i.e. the @SQ line containing "SN:ref1".
- */
-
-int sam_hdr_remove_line_key(SAM_hdr *hdr, char *type, char *ID_key, char *ID_value) {
-    if (!hdr || !type)
-        return -1;
-    if (!strncmp(type, "PG", 2)) {
-        hts_log_warning("Removing PG lines is not supported!");
-        return -1;
-    }
-
-    SAM_hdr_type *type_found = sam_hdr_find(hdr, type, ID_key, ID_value);
-
-    return remove_line(hdr, type, type_found);
-}
-
-/*
- * Looks for a specific key in a single sam header line.
- * If prev is non-NULL it also fills this out with the previous tag, to
- * permit use in key removal. *prev is set to NULL when the tag is the first
- * key in the list. When a tag isn't found, prev (if non NULL) will be the last
- * tag in the existing list.
- *
- * Returns the tag pointer on success
- *         NULL on failure
- */
-SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
-                              SAM_hdr_type *type,
-                              char *key,
-                              SAM_hdr_tag **prev) {
-    SAM_hdr_tag *tag, *p = NULL;
-
-    for (tag = type->tag; tag; p = tag, tag = tag->next) {
-        if (tag->str[0] == key[0] && tag->str[1] == key[1]) {
-            if (prev)
-                *prev = p;
-            return tag;
-        }
-    }
-
-    if (prev)
-        *prev = p;
-
-    return NULL;
-}
-
-int sam_hdr_remove_key(SAM_hdr *sh,
-                        SAM_hdr_type *type,
-                        char *key) {
-    SAM_hdr_tag *tag, *prev;
-    tag = sam_hdr_find_key(sh, type, key, &prev);
-    if (tag) { //tag exists
-        if (!prev) { //first tag
-            type->tag = tag->next;
-        } else {
-            prev->next = tag->next;
-        }
-        pool_free(sh->tag_pool, tag);
-        sh->dirty = 1; //mark text as dirty and force a rebuild
-
-        return 0;
-    }
-
-    return 1;
-}
-
-/*
- * Adds or updates tag key,value pairs in a header line.
- * Eg for adding M5 tags to @SQ lines or updating sort order for the
- * @HD line (although use the sam_hdr_sort_order() function for
- * HD manipulation, which is a wrapper around this funuction).
- *
- * Specify multiple key,value pairs ending in NULL.
- *
- * Returns 0 on success
- *        -1 on failure
- */
-int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
-    va_list ap;
-
-    va_start(ap, type);
-
-    for (;;) {
-        char *k, *v;
-        SAM_hdr_tag *tag, *prev;
-
-        if (!(k = (char *)va_arg(ap, char *)))
-            break;
-        if (!(v = va_arg(ap, char *)))
-            v = "";
-
-        tag = sam_hdr_find_key(hdr, type, k, &prev);
-        if (!tag) {
-            if (!(tag = pool_alloc(hdr->tag_pool)))
-                return -1;
-            if (prev)
-                prev->next = tag;
-            else
-                type->tag = tag;
-
-            tag->next = NULL;
-        }
-
-        tag->len = 3 + strlen(v);
-        tag->str = string_alloc(hdr->str_pool, tag->len+1);
-        if (!tag->str)
-            return -1;
-
-        if (snprintf(tag->str, tag->len+1, "%2.2s:%s", k, v) < 0)
-            return -1;
-    }
-
-    va_end(ap);
-    hdr->dirty = 1; //mark text as dirty and force a rebuild
-
-    return 0;
-}
-
 #define K(a) (((a)[0]<<8)|((a)[1]))
-
-enum sam_sort_order sam_hdr_sort_order(SAM_hdr *hdr) {
-    khint_t k;
-    enum sam_sort_order so;
-
-    so = ORDER_UNKNOWN;
-    k = kh_get(sam_hdr, hdr->h, K("HD"));
-    if (k != kh_end(hdr->h)) {
-        SAM_hdr_type *ty = kh_val(hdr->h, k);
-        SAM_hdr_tag *tag;
-        for (tag = ty->tag; tag; tag = tag->next) {
-            if (tag->str[0] == 'S' && tag->str[1] == 'O') {
-                if (strcmp(tag->str+3, "unsorted") == 0)
-                    so = ORDER_UNSORTED;
-                else if (strcmp(tag->str+3, "queryname") == 0)
-                    so = ORDER_NAME;
-                else if (strcmp(tag->str+3, "coordinate") == 0)
-                    so = ORDER_COORD;
-                else if (strcmp(tag->str+3, "unknown") != 0)
-                    hts_log_error("Unknown sort order field: %s", tag->str+3);
-            }
-        }
-    }
-
-    return so;
-}
-
-enum sam_group_order sam_hdr_group_order(SAM_hdr *hdr) {
-    khint_t k;
-    enum sam_group_order go;
-
-    go = ORDER_NONE;
-    k = kh_get(sam_hdr, hdr->h, K("HD"));
-    if (k != kh_end(hdr->h)) {
-        SAM_hdr_type *ty = kh_val(hdr->h, k);
-        SAM_hdr_tag *tag;
-        for (tag = ty->tag; tag; tag = tag->next) {
-            if (tag->str[0] == 'G' && tag->str[1] == 'O') {
-                if (strcmp(tag->str+3, "query") == 0)
-                    go = ORDER_QUERY;
-                else if (strcmp(tag->str+3, "reference") == 0)
-                    go = ORDER_REFERENCE;
-            }
-        }
-    }
-
-    return go;
-}
-
-static int rebuild_comms(SAM_hdr_type *t, kstring_t *ks) {
-    if (!t->comm) {
-        if (EOF == kputsn_("@CO\t", 4, ks))
-            return -1;
-        if (t->tag)
-            if (EOF == kputsn_(t->tag->str, t->tag->len, ks))
-                return -1;
-        if (EOF == kputc('\n', ks))
-            return -1;
-    } else {
-        if (rebuild_comms(t->comm, ks))
-            return -1;
-        if (EOF == kputsn_("@CO\t", 4, ks))
-            return -1;
-        if (t->tag)
-            if (EOF == kputsn_(t->tag->str, t->tag->len, ks))
-                return -1;
-        if (EOF == kputc('\n', ks))
-            return -1;
-    }
-
-    return 0;
-}
-
-static int rebuild_lines(SAM_hdr *hdr, khint_t k, kstring_t *ks) {
-    SAM_hdr_type *t1, *t2;
-
-    t1 = t2 = kh_val(hdr->h, k);
-    do {
-        SAM_hdr_tag *tag;
-        char c[2];
-
-        if (t1->skip) {
-            t1 = t1->next;
-            continue;
-        }
-
-        /* if there is a comment line attached, print it first */
-        if (t1->comm) {
-            if (rebuild_comms(t1->comm, ks))
-                return -1;
-        }
-
-        if (EOF == kputc_('@', ks))
-            return -1;
-        c[0] = kh_key(hdr->h, k)>>8;
-        c[1] = kh_key(hdr->h, k)&0xff;
-        if (EOF == kputsn_(c, 2, ks))
-            return -1;
-        for (tag = t1->tag; tag; tag=tag->next) {
-            if (EOF == kputc_('\t', ks))
-                return -1;
-            if (EOF == kputsn_(tag->str, tag->len, ks))
-                return -1;
-        }
-        if (EOF == kputc('\n', ks))
-            return -1;
-        t1 = t1->next;
-    } while (t1 != t2);
-
-    return 0;
-}
 
 /*
  * Reconstructs the kstring from the header hash table.
@@ -1093,239 +950,6 @@ int sam_hdr_rebuild(SAM_hdr *hdr) {
     return 0;
 }
 
-static int init_type_order(SAM_hdr *sh, char *type_list) {
-    if (!sh)
-        return -1;
-
-    if (!type_list) {
-        sh->type_count = 5;
-        sh->type_order = calloc(sh->type_count, 3);
-        if (!sh->type_order)
-            return -1;
-        memcpy(sh->type_order[0], "HD", 2);
-        memcpy(sh->type_order[1], "SQ", 2);
-        memcpy(sh->type_order[2], "RG", 2);
-        memcpy(sh->type_order[3], "PG", 2);
-        memcpy(sh->type_order[4], "CO", 2);
-    }
-
-    return 0;
-}
-
-
-/*
- * Creates an empty SAM header, ready to be populated.
- *
- * Returns a SAM_hdr struct on success (free with sam_hdr_free())
- *         NULL on failure
- */
-SAM_hdr *sam_hdr_new() {
-    SAM_hdr *sh = calloc(1, sizeof(*sh));
-
-    if (!sh)
-        return NULL;
-
-    sh->h = kh_init(sam_hdr);
-    if (!sh->h)
-        goto err;
-
-    sh->ID_cnt = 1;
-    sh->ref_count = 1;
-
-    sh->nref = 0;
-    sh->ref  = NULL;
-    if (!(sh->ref_hash = kh_init(m_s2i)))
-        goto err;
-
-    sh->nrg = 0;
-    sh->rg  = NULL;
-    if (!(sh->rg_hash = kh_init(m_s2i)))
-        goto err;
-
-    sh->npg = 0;
-    sh->pg  = NULL;
-    sh->npg_end = sh->npg_end_alloc = 0;
-    sh->pg_end = NULL;
-    if (!(sh->pg_hash = kh_init(m_s2i)))
-        goto err;
-
-    KS_INIT(&sh->text);
-
-    if (!(sh->tag_pool = pool_create(sizeof(SAM_hdr_tag))))
-        goto err;
-
-    if (!(sh->type_pool = pool_create(sizeof(SAM_hdr_type))))
-        goto err;
-
-    if (!(sh->str_pool = string_pool_create(8192)))
-        goto err;
-
-    if (init_type_order(sh, NULL))
-        goto err;
-
-    return sh;
-
-    err:
-    if (sh->h)
-        kh_destroy(sam_hdr, sh->h);
-
-    if (sh->tag_pool)
-        pool_destroy(sh->tag_pool);
-
-    if (sh->type_pool)
-        pool_destroy(sh->type_pool);
-
-    if (sh->str_pool)
-        string_pool_destroy(sh->str_pool);
-
-    free(sh);
-
-    return NULL;
-}
-
-
-/*
- * Tokenises a SAM header into a hash table.
- * Also extracts a few bits on specific data types, such as @RG lines.
- *
- * Returns a SAM_hdr struct on success (free with sam_hdr_free())
- *         NULL on failure
- */
-SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
-    /* Make an empty SAM_hdr */
-    SAM_hdr *sh;
-
-    sh = sam_hdr_new();
-    if (NULL == sh) return NULL;
-
-    if (NULL == hdr) return sh; // empty header is permitted
-
-    /* Parse the header, line by line */
-    if (-1 == sam_hdr_add_lines(sh, hdr, len)) {
-        sam_hdr_free(sh);
-        return NULL;
-    }
-
-    //sam_hdr_add(sh, "RG", "ID", "foo", "SM", "bar", NULL);
-    //printf(">>%s<<", ks_str(sh->text));
-
-    //parse_references(sh);
-    //parse_read_groups(sh);
-
-    sam_hdr_link_pg(sh);
-    sam_hdr_rebuild(sh);
-    //sam_hdr_dump(sh);
-
-    return sh;
-}
-
-/*
- * Produces a duplicate copy of hdr and returns it.
- * Returns NULL on failure
- */
-SAM_hdr *sam_hdr_dup(SAM_hdr *hdr) {
-    if (-1 == sam_hdr_rebuild(hdr))
-        return NULL;
-
-    return sam_hdr_parse_(sam_hdr_str(hdr), sam_hdr_length(hdr));
-}
-
-/*! Increments a reference count on hdr.
- *
- * This permits multiple files to share the same header, all calling
- * sam_hdr_free when done, without causing errors for other open  files.
- */
-void sam_hdr_incr_ref(SAM_hdr *hdr) {
-    hdr->ref_count++;
-}
-
-/*! Increments a reference count on hdr.
- *
- * This permits multiple files to share the same header, all calling
- * sam_hdr_free when done, without causing errors for other open  files.
- *
- * If the reference count hits zero then the header is automatically
- * freed. This makes it a synonym for sam_hdr_free().
- */
-void sam_hdr_decr_ref(SAM_hdr *hdr) {
-    sam_hdr_free(hdr);
-}
-
-/*! Deallocates all storage used by a SAM_hdr struct.
- *
- * This also decrements the header reference count. If after decrementing
- * it is still non-zero then the header is assumed to be in use by another
- * caller and the free is not done.
- *
- * This is a synonym for sam_hdr_dec_ref().
- */
-void sam_hdr_free(SAM_hdr *hdr) {
-    if (!hdr)
-        return;
-
-    if (--hdr->ref_count > 0)
-        return;
-
-    if (ks_str(&hdr->text))
-        KS_FREE(&hdr->text);
-
-    if (hdr->h)
-        kh_destroy(sam_hdr, hdr->h);
-
-    if (hdr->ref_hash)
-        kh_destroy(m_s2i, hdr->ref_hash);
-
-    if (hdr->ref)
-        free(hdr->ref);
-
-    if (hdr->rg_hash)
-        kh_destroy(m_s2i, hdr->rg_hash);
-
-    if (hdr->rg)
-        free(hdr->rg);
-
-    if (hdr->pg_hash)
-        kh_destroy(m_s2i, hdr->pg_hash);
-
-    if (hdr->pg)
-        free(hdr->pg);
-
-    if (hdr->pg_end)
-        free(hdr->pg_end);
-
-    if (hdr->type_pool)
-        pool_destroy(hdr->type_pool);
-
-    if (hdr->tag_pool)
-        pool_destroy(hdr->tag_pool);
-
-    if (hdr->str_pool)
-        string_pool_destroy(hdr->str_pool);
-
-    if (hdr->type_order)
-        free(hdr->type_order);
-
-    free(hdr);
-}
-
-int sam_hdr_length(SAM_hdr *hdr) {
-    if (hdr->dirty) {
-        if (-1 == sam_hdr_rebuild(hdr))
-            return -1;
-    }
-
-    return ks_len(&hdr->text);
-}
-
-char *sam_hdr_str(SAM_hdr *hdr) {
-    if (hdr->dirty) {
-        if (-1 == sam_hdr_rebuild(hdr))
-            return NULL;
-    }
-
-    return ks_str(&hdr->text);
-}
-
 /*
  * Looks up a reference sequence by name and returns the numerical ID.
  * Returns -1 if unknown reference.
@@ -1334,20 +958,6 @@ int sam_hdr_name2ref(SAM_hdr *hdr, const char *ref) {
     khint_t k = kh_get(m_s2i, hdr->ref_hash, ref);
     return k == kh_end(hdr->ref_hash) ? -1 : kh_val(hdr->ref_hash, k);
 }
-
-/*
- * Looks up a read-group by name and returns a pointer to the start of the
- * associated tag list.
- *
- * Returns NULL on failure
- */
-SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, const char *rg) {
-    khint_t k = kh_get(m_s2i, hdr->rg_hash, rg);
-    return k == kh_end(hdr->rg_hash)
-        ? NULL
-        : &hdr->rg[kh_val(hdr->rg_hash, k)];
-}
-
 
 /*
  * Fixes any PP links in @PG headers.
@@ -1485,6 +1095,394 @@ int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...) {
     sh->dirty = 1;
 
     return 0;
+}
+
+/*
+ * Creates an empty SAM header, ready to be populated.
+ *
+ * Returns a SAM_hdr struct on success (free with sam_hdr_free())
+ *         NULL on failure
+ */
+SAM_hdr *sam_hdr_new() {
+    SAM_hdr *sh = calloc(1, sizeof(*sh));
+
+    if (!sh)
+        return NULL;
+
+    sh->h = kh_init(sam_hdr);
+    if (!sh->h)
+        goto err;
+
+    sh->ID_cnt = 1;
+    sh->ref_count = 1;
+
+    sh->nref = 0;
+    sh->ref  = NULL;
+    if (!(sh->ref_hash = kh_init(m_s2i)))
+        goto err;
+
+    sh->nrg = 0;
+    sh->rg  = NULL;
+    if (!(sh->rg_hash = kh_init(m_s2i)))
+        goto err;
+
+    sh->npg = 0;
+    sh->pg  = NULL;
+    sh->npg_end = sh->npg_end_alloc = 0;
+    sh->pg_end = NULL;
+    if (!(sh->pg_hash = kh_init(m_s2i)))
+        goto err;
+
+    KS_INIT(&sh->text);
+
+    if (!(sh->tag_pool = pool_create(sizeof(SAM_hdr_tag))))
+        goto err;
+
+    if (!(sh->type_pool = pool_create(sizeof(SAM_hdr_type))))
+        goto err;
+
+    if (!(sh->str_pool = string_pool_create(8192)))
+        goto err;
+
+    if (init_type_order(sh, NULL))
+        goto err;
+
+    return sh;
+
+    err:
+    if (sh->h)
+        kh_destroy(sam_hdr, sh->h);
+
+    if (sh->tag_pool)
+        pool_destroy(sh->tag_pool);
+
+    if (sh->type_pool)
+        pool_destroy(sh->type_pool);
+
+    if (sh->str_pool)
+        string_pool_destroy(sh->str_pool);
+
+    free(sh);
+
+    return NULL;
+}
+
+/*
+ * Produces a duplicate copy of hdr and returns it.
+ * Returns NULL on failure
+ */
+SAM_hdr *sam_hdr_dup(SAM_hdr *hdr) {
+    if (-1 == sam_hdr_rebuild(hdr))
+        return NULL;
+
+    return sam_hdr_parse_(sam_hdr_str(hdr), sam_hdr_length(hdr));
+}
+
+/*! Deallocates all storage used by a SAM_hdr struct.
+ *
+ * This also decrements the header reference count. If after decrementing
+ * it is still non-zero then the header is assumed to be in use by another
+ * caller and the free is not done.
+ *
+ * This is a synonym for sam_hdr_dec_ref().
+ */
+void sam_hdr_free(SAM_hdr *hdr) {
+    if (!hdr)
+        return;
+
+    if (--hdr->ref_count > 0)
+        return;
+
+    if (ks_str(&hdr->text))
+        KS_FREE(&hdr->text);
+
+    if (hdr->h)
+        kh_destroy(sam_hdr, hdr->h);
+
+    if (hdr->ref_hash)
+        kh_destroy(m_s2i, hdr->ref_hash);
+
+    if (hdr->ref)
+        free(hdr->ref);
+
+    if (hdr->rg_hash)
+        kh_destroy(m_s2i, hdr->rg_hash);
+
+    if (hdr->rg)
+        free(hdr->rg);
+
+    if (hdr->pg_hash)
+        kh_destroy(m_s2i, hdr->pg_hash);
+
+    if (hdr->pg)
+        free(hdr->pg);
+
+    if (hdr->pg_end)
+        free(hdr->pg_end);
+
+    if (hdr->type_pool)
+        pool_destroy(hdr->type_pool);
+
+    if (hdr->tag_pool)
+        pool_destroy(hdr->tag_pool);
+
+    if (hdr->str_pool)
+        string_pool_destroy(hdr->str_pool);
+
+    if (hdr->type_order)
+        free(hdr->type_order);
+
+    free(hdr);
+}
+
+/*
+ * Returns the first header item matching 'type'. If ID is non-NULL it checks
+ * for the tag ID: and compares against the specified ID.
+ *
+ * Returns NULL if no type/ID is found
+ */
+SAM_hdr_type *sam_hdr_find(SAM_hdr *hdr, char *type,
+                           char *ID_key, char *ID_value) {
+    SAM_hdr_type *t1, *t2;
+    int itype = (type[0]<<8)|(type[1]);
+    khint_t k;
+
+    /* Special case for types we have prebuilt hashes on */
+    if (ID_key) {
+        if (type[0]   == 'S' && type[1]   == 'Q' &&
+            ID_key[0] == 'S' && ID_key[1] == 'N') {
+            k = kh_get(m_s2i, hdr->ref_hash, ID_value);
+            return k != kh_end(hdr->ref_hash)
+                ? hdr->ref[kh_val(hdr->ref_hash, k)].ty
+                : NULL;
+        }
+
+        if (type[0]   == 'R' && type[1]   == 'G' &&
+            ID_key[0] == 'I' && ID_key[1] == 'D') {
+            k = kh_get(m_s2i, hdr->rg_hash, ID_value);
+            return k != kh_end(hdr->rg_hash)
+                ? hdr->rg[kh_val(hdr->rg_hash, k)].ty
+                : NULL;
+        }
+
+        if (type[0]   == 'P' && type[1]   == 'G' &&
+            ID_key[0] == 'I' && ID_key[1] == 'D') {
+            k = kh_get(m_s2i, hdr->pg_hash, ID_value);
+            return k != kh_end(hdr->pg_hash)
+                ? hdr->pg[kh_val(hdr->pg_hash, k)].ty
+                : NULL;
+        }
+    }
+
+    k = kh_get(sam_hdr, hdr->h, itype);
+    if (k == kh_end(hdr->h))
+        return NULL;
+
+    if (!ID_key)
+        return kh_val(hdr->h, k);
+
+    t1 = t2 = kh_val(hdr->h, k);
+    do {
+        SAM_hdr_tag *tag;
+        for (tag = t1->tag; tag; tag = tag->next) {
+            if (tag->str[0] == ID_key[0] && tag->str[1] == ID_key[1]) {
+                char *cp1 = tag->str+3;
+                char *cp2 = ID_value;
+                while (*cp1 && *cp1 == *cp2)
+                    cp1++, cp2++;
+                if (*cp2 || *cp1)
+                    continue;
+                return t1;
+            }
+        }
+        t1 = t1->next;
+    } while (t1 != t2);
+
+    return NULL;
+}
+
+/*
+ * Adds or updates tag key,value pairs in a header line.
+ * Eg for adding M5 tags to @SQ lines or updating sort order for the
+ * @HD line (although use the sam_hdr_sort_order() function for
+ * HD manipulation, which is a wrapper around this funuction).
+ *
+ * Specify multiple key,value pairs ending in NULL.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int sam_hdr_update(SAM_hdr *hdr, SAM_hdr_type *type, ...) {
+    va_list ap;
+
+    va_start(ap, type);
+
+    for (;;) {
+        char *k, *v;
+        SAM_hdr_tag *tag, *prev;
+
+        if (!(k = (char *)va_arg(ap, char *)))
+            break;
+        if (!(v = va_arg(ap, char *)))
+            v = "";
+
+        tag = sam_hdr_find_key(hdr, type, k, &prev);
+        if (!tag) {
+            if (!(tag = pool_alloc(hdr->tag_pool)))
+                return -1;
+            if (prev)
+                prev->next = tag;
+            else
+                type->tag = tag;
+
+            tag->next = NULL;
+        }
+
+        tag->len = 3 + strlen(v);
+        tag->str = string_alloc(hdr->str_pool, tag->len+1);
+        if (!tag->str)
+            return -1;
+
+        if (snprintf(tag->str, tag->len+1, "%2.2s:%s", k, v) < 0)
+            return -1;
+    }
+
+    va_end(ap);
+    hdr->dirty = 1; //mark text as dirty and force a rebuild
+
+    return 0;
+}
+
+/*
+ * Looks for a specific key in a single sam header line.
+ * If prev is non-NULL it also fills this out with the previous tag, to
+ * permit use in key removal. *prev is set to NULL when the tag is the first
+ * key in the list. When a tag isn't found, prev (if non NULL) will be the last
+ * tag in the existing list.
+ *
+ * Returns the tag pointer on success
+ *         NULL on failure
+ */
+SAM_hdr_tag *sam_hdr_find_key(SAM_hdr *sh,
+                              SAM_hdr_type *type,
+                              char *key,
+                              SAM_hdr_tag **prev) {
+    SAM_hdr_tag *tag, *p = NULL;
+
+    for (tag = type->tag; tag; p = tag, tag = tag->next) {
+        if (tag->str[0] == key[0] && tag->str[1] == key[1]) {
+            if (prev)
+                *prev = p;
+            return tag;
+        }
+    }
+
+    if (prev)
+        *prev = p;
+
+    return NULL;
+}
+
+int sam_hdr_remove_key(SAM_hdr *sh,
+                        SAM_hdr_type *type,
+                        char *key) {
+    SAM_hdr_tag *tag, *prev;
+    tag = sam_hdr_find_key(sh, type, key, &prev);
+    if (tag) { //tag exists
+        if (!prev) { //first tag
+            type->tag = tag->next;
+        } else {
+            prev->next = tag->next;
+        }
+        pool_free(sh->tag_pool, tag);
+        sh->dirty = 1; //mark text as dirty and force a rebuild
+
+        return 0;
+    }
+
+    return 1;
+}
+
+/*
+ * Looks up a read-group by name and returns a pointer to the start of the
+ * associated tag list.
+ *
+ * Returns NULL on failure
+ */
+SAM_RG *sam_hdr_find_rg(SAM_hdr *hdr, const char *rg) {
+    khint_t k = kh_get(m_s2i, hdr->rg_hash, rg);
+    return k == kh_end(hdr->rg_hash)
+        ? NULL
+        : &hdr->rg[kh_val(hdr->rg_hash, k)];
+}
+
+enum sam_sort_order sam_hdr_sort_order(SAM_hdr *hdr) {
+    khint_t k;
+    enum sam_sort_order so;
+
+    so = ORDER_UNKNOWN;
+    k = kh_get(sam_hdr, hdr->h, K("HD"));
+    if (k != kh_end(hdr->h)) {
+        SAM_hdr_type *ty = kh_val(hdr->h, k);
+        SAM_hdr_tag *tag;
+        for (tag = ty->tag; tag; tag = tag->next) {
+            if (tag->str[0] == 'S' && tag->str[1] == 'O') {
+                if (strcmp(tag->str+3, "unsorted") == 0)
+                    so = ORDER_UNSORTED;
+                else if (strcmp(tag->str+3, "queryname") == 0)
+                    so = ORDER_NAME;
+                else if (strcmp(tag->str+3, "coordinate") == 0)
+                    so = ORDER_COORD;
+                else if (strcmp(tag->str+3, "unknown") != 0)
+                    hts_log_error("Unknown sort order field: %s", tag->str+3);
+            }
+        }
+    }
+
+    return so;
+}
+
+enum sam_group_order sam_hdr_group_order(SAM_hdr *hdr) {
+    khint_t k;
+    enum sam_group_order go;
+
+    go = ORDER_NONE;
+    k = kh_get(sam_hdr, hdr->h, K("HD"));
+    if (k != kh_end(hdr->h)) {
+        SAM_hdr_type *ty = kh_val(hdr->h, k);
+        SAM_hdr_tag *tag;
+        for (tag = ty->tag; tag; tag = tag->next) {
+            if (tag->str[0] == 'G' && tag->str[1] == 'O') {
+                if (strcmp(tag->str+3, "query") == 0)
+                    go = ORDER_QUERY;
+                else if (strcmp(tag->str+3, "reference") == 0)
+                    go = ORDER_REFERENCE;
+            }
+        }
+    }
+
+    return go;
+}
+
+/*! Increments a reference count on hdr.
+ *
+ * This permits multiple files to share the same header, all calling
+ * sam_hdr_free when done, without causing errors for other open  files.
+ */
+void sam_hdr_incr_ref(SAM_hdr *hdr) {
+    hdr->ref_count++;
+}
+
+/*! Increments a reference count on hdr.
+ *
+ * This permits multiple files to share the same header, all calling
+ * sam_hdr_free when done, without causing errors for other open  files.
+ *
+ * If the reference count hits zero then the header is automatically
+ * freed. This makes it a synonym for sam_hdr_free().
+ */
+void sam_hdr_decr_ref(SAM_hdr *hdr) {
+    sam_hdr_free(hdr);
 }
 
 /*
