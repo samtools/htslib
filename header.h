@@ -136,14 +136,12 @@ typedef struct {
     char *name;
     uint32_t len;
     bam_hrec_type_t *ty;
-    bam_hrec_tag_t  *tag;
 } bam_hrec_sq_t;
 
 /*! Parsed \@RG lines */
 typedef struct {
     char *name;
     bam_hrec_type_t *ty;
-    bam_hrec_tag_t  *tag;
     int name_len;
     int id;           // numerical ID
 } bam_hrec_rg_t;
@@ -152,7 +150,6 @@ typedef struct {
 typedef struct {
     char *name;
     bam_hrec_type_t *ty;
-    bam_hrec_tag_t  *tag;
     int name_len;
     int id;           // numerical ID
     int prev_id;      // -1 if none

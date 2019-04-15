@@ -97,7 +97,6 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
         hrecs->ref[nref].name = NULL;
         hrecs->ref[nref].len  = 0;
         hrecs->ref[nref].ty = h_type;
-        hrecs->ref[nref].tag  = tag;
 
         while (tag) {
             if (tag->str[0] == 'S' && tag->str[1] == 'N') {
@@ -142,7 +141,6 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
         hrecs->rg[nrg].name = NULL;
         hrecs->rg[nrg].name_len = 0;
         hrecs->rg[nrg].ty   = h_type;
-        hrecs->rg[nrg].tag  = tag;
         hrecs->rg[nrg].id   = nrg;
 
         while (tag) {
@@ -186,7 +184,6 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
         hrecs->pg[npg].name = NULL;
         hrecs->pg[npg].name_len = 0;
         hrecs->pg[npg].ty  = h_type;
-        hrecs->pg[npg].tag  = tag;
         hrecs->pg[npg].id   = npg;
         hrecs->pg[npg].prev_id = -1;
 
@@ -1423,7 +1420,8 @@ int bam_hdr_link_pg(bam_hdr_t *bh) {
         bam_hrec_tag_t *tag;
         char tmp;
 
-        for (tag = hrecs->pg[i].tag; tag; tag = tag->next) {
+        assert(hrecs->pg[i].ty != NULL);
+        for (tag = hrecs->pg[i].ty->tag; tag; tag = tag->next) {
             if (tag->str[0] == 'P' && tag->str[1] == 'P')
                 break;
         }
