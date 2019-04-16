@@ -279,6 +279,12 @@ static int bam_hrecs_remove_hash_entry(bam_hrecs_t *hrecs, int type, bam_hrec_ty
                     hrecs->nref--;
                     if (hrecs->refs_changed < 0 || hrecs->refs_changed > idx)
                         hrecs->refs_changed = idx;
+                    for (k = 0; k < kh_end(hrecs->ref_hash); k++) {
+                        if (kh_exist(hrecs->ref_hash, k)
+                            && kh_value(hrecs->ref_hash, k) > idx) {
+                            kh_value(hrecs->ref_hash, k)--;
+                        }
+                    }
                 }
                 break;
             }
@@ -296,10 +302,17 @@ static int bam_hrecs_remove_hash_entry(bam_hrecs_t *hrecs, int type, bam_hrec_ty
                 key = tag->str + 3;
                 k = kh_get(m_s2i, hrecs->rg_hash, key);
                 if (k != kh_end(hrecs->rg_hash)) {
-                    if (kh_val(hrecs->rg_hash, k) + 1 < hrecs->nrg)
-                        memmove(&hrecs->rg[kh_val(hrecs->rg_hash, k)], &hrecs->rg[kh_val(hrecs->rg_hash, k)+1], sizeof(bam_hrec_rg_t)*(hrecs->nrg - kh_val(hrecs->rg_hash, k) - 1));
+                    int idx = kh_val(hrecs->rg_hash, k);
+                    if (idx + 1 < hrecs->nrg)
+                        memmove(&hrecs->rg[idx], &hrecs->rg[idx+1], sizeof(bam_hrec_rg_t)*(hrecs->nrg - idx - 1));
                     kh_del(m_s2i, hrecs->rg_hash, k);
                     hrecs->nrg--;
+                    for (k = 0; k < kh_end(hrecs->rg_hash); k++) {
+                        if (kh_exist(hrecs->rg_hash, k)
+                            && kh_value(hrecs->rg_hash, k) > idx) {
+                            kh_value(hrecs->rg_hash, k)--;
+                        }
+                    }
                 }
                 break;
             }
@@ -1022,8 +1035,13 @@ int bam_hdr_remove_line_key(bam_hdr_t *bh, const char *type, const char *ID_key,
         return 0;
 
     int ret = bam_hrecs_remove_line(hrecs, type, type_found);
-    if (!ret && hrecs->dirty)
-        redact_header_text(bh);
+    if (ret == 0) {
+        if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
+            return -1;
+
+        if (hrecs->dirty)
+            redact_header_text(bh);
+    }
 
     return ret;
 }

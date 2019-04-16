@@ -513,6 +513,7 @@ static void copy_check_alignment(const char *infname, const char *informat,
 static void use_header_api() {
     static const char header_text[] = "data:,"
             "@HD\tVN:1.4\tGO:group\n"
+            "@SQ\tSN:ref0\tLN:100\n"
             "@CO\tThis line will be updated\n"
             "@SQ\tSN:ref1\tLN:5001\tM5:983dalu9ue2\n"
             "@CO\tThis line is good\n"
@@ -529,7 +530,13 @@ static void use_header_api() {
             "@SQ\tSN:ref2\tLN:5002\n"
             "@SQ\tSN:ref3\tLN:5003\n"
             "@RG\tID:run1\n"
+            "@RG\tID:run3\n"
+            "@RG\tID:run4\n"
             "@PG\tID:samtools\tPN:samtools\tVN:1.9\n";
+
+    static const char *expected_targets[] = { "ref1", "ref2", "ref3" };
+    static const int   expected_lengths[] = { 5001, 5002, 5003 };
+    const int expected_n_targets = sizeof(expected_targets) / sizeof(char *);
 
     const char outfname[] = "test/sam_header.tmp.sam_";
     const char outmode[] = "w";
@@ -539,8 +546,9 @@ static void use_header_api() {
     samFile *in = sam_open(header_text, "r");
     samFile *out = sam_open(outfname, outmode);
     bam_hdr_t *header = NULL;
+    char *val;
     size_t bytes;
-    int r;
+    int r, i;
 
     if (!in) {
         fail("couldn't open file");
@@ -575,6 +583,68 @@ static void use_header_api() {
     // Test addition with no newline or trailing NUL
     r = bam_hdr_add_lines(header, rg_line, sizeof(rg_line));
     if (r != 0) { fail("bam_hdr_add_lines rg_line"); goto err; }
+
+    // Test header line removal
+    r = bam_hdr_add_line(header, "RG", "ID", "run2", NULL);
+    if (r < 0) { fail("bam_hdr_add_line"); goto err; }
+
+    r = bam_hdr_add_line(header, "RG", "ID", "run3", NULL);
+    if (r < 0) { fail("bam_hdr_add_line"); goto err; }
+
+    r = bam_hdr_add_line(header, "RG", "ID", "run4", NULL);
+    if (r < 0) { fail("bam_hdr_add_line"); goto err; }
+
+    r = bam_hdr_remove_line_key(header, "RG", "ID", "run2");
+    if (r < 0) { fail("bam_hdr_remove_line_key"); goto err; }
+
+    val = bam_hdr_find_tag(header, "RG", "ID", "run3", "ID");
+    if (!val || strcmp(val, "run3") != 0) {
+        fail("bam_hdr_find_tag() expected \"run3\" got \"%s\"", val);
+        goto err;
+    }
+    free(val);
+
+    r = bam_hdr_remove_line_key(header, "SQ", "SN", "ref0");
+    if (r < 0) { fail("bam_hdr_remove_line_key"); goto err; }
+
+    val = bam_hdr_find_tag(header, "SQ", "SN", "ref1", "M5");
+    if (!val || strcmp(val, "kja8u34a2q3") != 0) {
+        fail("bam_hdr_find_tag() expected \"kja8u34a2q3\" got \"%s\"",
+             val ? val : "NULL");
+        goto err;
+    }
+    free(val);
+
+    // Check consistency of target_names array
+    if (!header->target_name) {
+        fail("target_name is NULL");
+        goto err;
+    }
+    if (!header->target_len) {
+        fail("target_len is NULL");
+        goto err;
+    }
+    if (header->n_targets != expected_n_targets) {
+        fail("header->n_targets (%d) != expected_n_targets (%d)",
+             header->n_targets, expected_n_targets);
+        goto err;
+    }
+    
+    for (i = 0; i < expected_n_targets; i++) {
+        if (!header->target_name[i]
+            || strcmp(header->target_name[i], expected_targets[i]) != 0) {
+            fail("header->target_name[%d] (%s) != \"%s\"",
+                 i, header->target_name[i] ? header->target_name[i] : "NULL",
+                 expected_targets[i]);
+            goto err;
+        }
+        if (header->target_len[i] != expected_lengths[i]) {
+            fail("header->target_len[%d] (%d) != %d",
+                 i, header->target_len[i], expected_lengths[i]);
+            goto err;
+        }
+    }
+
     //printf("first line='%s'\n", bam_hdr_find_line(header, "SQ", NULL));
     //printf("line='%s'\n", bam_hdr_find_line(header, "SQ", "SN", "ref3"));
     //printf("tag='%s'\n", bam_hdr_find_tag(header, "SQ", "SN", "ref2", "LN"));
@@ -593,7 +663,7 @@ static void use_header_api() {
         fail("incorrect PG line count - expected 1, got %d", r);
         goto err;
     }
-    if ((r = bam_hdr_count_lines(header, "RG")) != 1) {
+    if ((r = bam_hdr_count_lines(header, "RG")) != 3) {
         fail("incorrect RG line count - expected 1, got %d", r);
         goto err;
     }
