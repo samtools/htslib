@@ -117,6 +117,10 @@ void write_bcf(char *fname)
     // .. INFO
     tmpi = 3;
     check0(bcf_update_info_int32(hdr, rec, "NS", &tmpi, 1));
+    tmpi = 500;
+    check0(bcf_update_info_int32(hdr, rec, "DP", &tmpi, 1));
+    tmpi = 100000;
+    check0(bcf_update_info_int32(hdr, rec, "DP", &tmpi, 1));
     tmpi = 14;
     check0(bcf_update_info_int32(hdr, rec, "DP", &tmpi, 1));
     tmpi = -127;
@@ -138,6 +142,14 @@ void write_bcf(char *fname)
     tmpia[1] = 48;
     tmpia[2] = 43;
     check0(bcf_update_format_int32(hdr, rec, "GQ", tmpia, bcf_hdr_nsamples(hdr)));
+    tmpia[0] = 0;
+    tmpia[1] = 0;
+    tmpia[2] = 1;
+    check0(bcf_update_format_int32(hdr, rec, "DP", tmpia, bcf_hdr_nsamples(hdr)));
+    tmpia[0] = 1;
+    tmpia[1] = 100000;
+    tmpia[2] = 1;
+    check0(bcf_update_format_int32(hdr, rec, "DP", tmpia, bcf_hdr_nsamples(hdr)));
     tmpia[0] = 1;
     tmpia[1] = 8;
     tmpia[2] = 5;
@@ -150,6 +162,10 @@ void write_bcf(char *fname)
     tmpia[5] = bcf_int32_missing;
     check0(bcf_update_format_int32(hdr, rec, "HQ", tmpia, bcf_hdr_nsamples(hdr)*2));
     char *tmp_str[] = {"String1","SomeOtherString2","YetAnotherString3"};
+    check0(bcf_update_format_string(hdr, rec, "TS", (const char**)tmp_str, 3));
+    tmp_str[0] = "LongerStringRequiringBufferReallocation";
+    check0(bcf_update_format_string(hdr, rec, "TS", (const char**)tmp_str, 3));
+    tmp_str[0] = "String1";
     check0(bcf_update_format_string(hdr, rec, "TS", (const char**)tmp_str, 3));
     if ( bcf_write1(fp, hdr, rec)!=0 ) error("Failed to write to %s\n", fname);
 
@@ -169,6 +185,8 @@ void write_bcf(char *fname)
     tmpfa[0] = 0.333;
     bcf_float_set_missing(tmpfa[1]);
     check0(bcf_update_info_float(hdr, rec, "AF", tmpfa, 2));
+    check0(bcf_update_info_string(hdr, rec, "AA", "SHORT"));
+    check0(bcf_update_info_string(hdr, rec, "AA", "LONGSTRING"));
     check0(bcf_update_info_string(hdr, rec, "AA", "T"));
     check0(bcf_update_info_flag(hdr, rec, "DB", NULL, 1));
     tmpia[0] = bcf_gt_phased(2);

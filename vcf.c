@@ -3727,7 +3727,8 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
         }
         else
         {
-            assert( !inf->vptr_free );  // fix the caller or improve here: this has been modified before
+            if ( inf->vptr_free )
+                free(inf->vptr - inf->vptr_off);
             bcf_unpack_info_core1((uint8_t*)str.s, inf);
             inf->vptr_free = 1;
             line->d.shared_dirty |= BCF1_DIRTY_INF;
@@ -3867,7 +3868,8 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
         }
         else
         {
-            assert( !fmt->p_free );  // fix the caller or improve here: this has been modified before
+            if ( fmt->p_free )
+                free(fmt->p - fmt->p_off);
             bcf_unpack_fmt_core1((uint8_t*)str.s, line->n_sample, fmt);
             fmt->p_free = 1;
             line->d.indiv_dirty = 1;
