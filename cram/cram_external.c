@@ -130,15 +130,15 @@ static int cram_block_compression_hdr_set_DS(cram_block_compression_hdr *ch,
 
     switch (ch->codecs[ds]->codec) {
     case E_HUFFMAN:
-        if (ch->codecs[ds]->huffman.ncodes != 1)
+        if (ch->codecs[ds]->u.huffman.ncodes != 1)
             return -1;
-        ch->codecs[ds]->huffman.codes[0].symbol = new_rg;
+        ch->codecs[ds]->u.huffman.codes[0].symbol = new_rg;
         return 0;
 
     case E_BETA:
-        if (ch->codecs[ds]->beta.nbits != 0)
+        if (ch->codecs[ds]->u.beta.nbits != 0)
             return -1;
-        ch->codecs[ds]->beta.offset = -new_rg;
+        ch->codecs[ds]->u.beta.offset = -new_rg;
         return 0;
 
     default:

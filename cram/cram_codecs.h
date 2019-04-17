@@ -136,7 +136,7 @@ typedef struct cram_codec {
         cram_byte_array_stop_decoder e_byte_array_stop;
         cram_byte_array_len_encoder  e_byte_array_len;
         cram_beta_decoder            e_beta;
-    };
+    } u;
 } cram_codec;
 #ifdef __SUNPRO_C
 #  pragma error_messages(default, E_ANONYMOUS_UNION_DECL)

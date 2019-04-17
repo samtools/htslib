@@ -943,7 +943,7 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
         if (h->codecs[DS_TN]->codec == E_EXTERNAL) {
             if (!(s->block[DS_TN] = cram_new_block(EXTERNAL,DS_TN))) return -1;
-            h->codecs[DS_TN]->external.content_id = DS_TN;
+            h->codecs[DS_TN]->u.external.content_id = DS_TN;
         } else {
             s->block[DS_TN] = s->block[0];
         }
@@ -971,34 +971,34 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
             case E_EXTERNAL:
                 if (!(s->block[id] = cram_new_block(EXTERNAL, id)))
                     return -1;
-                h->codecs[id]->external.content_id = id;
+                h->codecs[id]->u.external.content_id = id;
                 break;
 
             case E_BYTE_ARRAY_STOP:
                 if (!(s->block[id] = cram_new_block(EXTERNAL, id)))
                     return -1;
-                h->codecs[id]->byte_array_stop.content_id = id;
+                h->codecs[id]->u.byte_array_stop.content_id = id;
                 break;
 
             case E_BYTE_ARRAY_LEN: {
                 cram_codec *cc;
 
-                cc = h->codecs[id]->e_byte_array_len.len_codec;
+                cc = h->codecs[id]->u.e_byte_array_len.len_codec;
                 if (cc->codec == E_EXTERNAL) {
-                    int eid = cc->external.content_id;
+                    int eid = cc->u.external.content_id;
                     if (!(s->block[eid] = cram_new_block(EXTERNAL, eid)))
                         return -1;
-                    cc->external.content_id = eid;
+                    cc->u.external.content_id = eid;
                     cc->out = s->block[eid];
                 }
 
-                cc = h->codecs[id]->e_byte_array_len.val_codec;
+                cc = h->codecs[id]->u.e_byte_array_len.val_codec;
                 if (cc->codec == E_EXTERNAL) {
-                    int eid = cc->external.content_id;
+                    int eid = cc->u.external.content_id;
                     if (!s->block[eid])
                         if (!(s->block[eid] = cram_new_block(EXTERNAL, eid)))
                             return -1;
-                    cc->external.content_id = eid;
+                    cc->u.external.content_id = eid;
                     cc->out = s->block[eid];
                 }
                 break;
@@ -2273,7 +2273,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
                     return NULL;
-                codec->e_byte_array_len.val_codec->out = tm->blk;
+                codec->u.e_byte_array_len.val_codec->out = tm->blk;
             }
 
             aux+=3;
@@ -2287,7 +2287,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
                     return NULL;
-                codec->e_byte_array_len.val_codec->out = tm->blk;
+                codec->u.e_byte_array_len.val_codec->out = tm->blk;
             }
 
             aux+=3;
@@ -2300,7 +2300,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
                     return NULL;
-                codec->e_byte_array_len.val_codec->out = tm->blk;
+                codec->u.e_byte_array_len.val_codec->out = tm->blk;
             }
 
             aux+=3;
@@ -2313,7 +2313,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
                     return NULL;
-                codec->e_byte_array_len.val_codec->out = tm->blk;
+                codec->u.e_byte_array_len.val_codec->out = tm->blk;
             }
 
             aux+=3; //*tmp++=*aux++; *tmp++=*aux++; *tmp++=*aux++;
@@ -2347,8 +2347,8 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
             if (!tm->blk) {
                 if (!(tm->blk = cram_new_block(EXTERNAL, key)))
                     return NULL;
-                codec->e_byte_array_len.len_codec->out = tm->blk;
-                codec->e_byte_array_len.val_codec->out = tm->blk;
+                codec->u.e_byte_array_len.len_codec->out = tm->blk;
+                codec->u.e_byte_array_len.val_codec->out = tm->blk;
             }
 
             // skip TN field
