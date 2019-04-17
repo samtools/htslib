@@ -151,6 +151,7 @@ LIBHTS_OBJS = \
 	probaln.o \
 	realn.o \
 	regidx.o \
+	region.o \
 	sam.o \
 	synced_bcf_reader.o \
 	vcf_sweep.o \
@@ -173,8 +174,7 @@ LIBHTS_OBJS = \
 	cram/pooled_alloc.o \
 	cram/rANS_static.o \
 	cram/sam_header.o \
-	cram/string_alloc.o \
-	region.o
+	cram/string_alloc.o
 
 PLUGIN_EXT  =
 PLUGIN_OBJS =
@@ -321,6 +321,7 @@ vcf_sweep.o vcf_sweep.pico: vcf_sweep.c config.h $(htslib_vcf_sweep_h) $(htslib_
 vcfutils.o vcfutils.pico: vcfutils.c config.h $(htslib_vcfutils_h) $(htslib_kbitset_h)
 kfunc.o kfunc.pico: kfunc.c config.h $(htslib_kfunc_h)
 regidx.o regidx.pico: regidx.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(htslib_kseq_h) $(htslib_khash_str2int_h) $(htslib_regidx_h) $(hts_internal_h)
+region.o region.pico: region.c config.h $(htslib_hts_h) $(htslib_khash_h)
 md5.o md5.pico: md5.c config.h $(htslib_hts_h) $(htslib_hts_endian_h)
 multipart.o multipart.pico: multipart.c config.h $(htslib_kstring_h) $(hts_internal_h) $(hfile_internal_h)
 plugin.o plugin.pico: plugin.c config.h $(hts_internal_h) $(htslib_kstring_h)
@@ -344,7 +345,6 @@ cram/rANS_static.o cram/rANS_static.pico: cram/rANS_static.c config.h cram/rANS_
 cram/sam_header.o cram/sam_header.pico: cram/sam_header.c config.h $(htslib_hts_log_h) $(cram_sam_header_h) cram/string_alloc.h
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
 thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h)
-region.o region.pico: region.c $(htslib_hts_h) $(htslib_khash_h)
 
 
 bgzip: bgzip.o libhts.a
@@ -436,10 +436,10 @@ test/hts_endian.o: test/hts_endian.c config.h $(htslib_hts_endian_h)
 test/fuzz/hts_open_fuzzer.o: test/fuzz/hts_open_fuzzer.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h) $(htslib_kstring_h)
-test/pileup.o: test/pileup.c $(htslib_sam_h) $(htslib_kstring_h)
+test/pileup.o: test/pileup.c config.h $(htslib_sam_h) $(htslib_kstring_h)
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
-test/test_kstring.o: test/test_kstring.c $(htslib_kstring_h)
+test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
 test/test-realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_regidx_h) $(hts_internal_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h) $(htslib_vcf_h)
