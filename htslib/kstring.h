@@ -32,6 +32,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <limits.h>
+#include <sys/types.h>
 
 #ifndef kroundup32
 #define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))

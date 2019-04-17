@@ -206,7 +206,7 @@ hts_reglist_t *hts_reglist_create(char **argv, int argc, int *r_count, void *hdr
         }
 
         if (reg_insert(h, reg, beg, end) != 0) {
-            hts_log_error("Error when inserting region='%s' in the bed hash table at address=%p", argv[i], h);
+            hts_log_error("Error when inserting region='%s' in the bed hash table at address=%p", argv[i], (void *) h);
             goto fail;
         }
     }
