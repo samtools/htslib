@@ -42,6 +42,7 @@ extern "C" {
 typedef struct BGZF BGZF;
 #define HTS_BGZF_TYPEDEF
 #endif
+struct bam_hdr_t;
 struct cram_fd;
 struct hFILE;
 struct hts_tpool;
@@ -206,8 +207,6 @@ typedef struct htsFormat {
 struct __hts_idx_t;
 typedef struct __hts_idx_t hts_idx_t;
 
-typedef struct bam_hdr_t bam_hdr_t;
-
 // Maintainers note htsFile cannot be an opaque structure because some of its
 // fields are part of libhts.so's ABI (hence these fields must not be moved):
 //  - fp is used in the public sam_itr_next()/etc macros
@@ -228,7 +227,7 @@ typedef struct {
     htsFormat format;
     hts_idx_t *idx;
     const char *fnidx;
-    bam_hdr_t *bam_header;
+    struct bam_hdr_t *bam_header;
 } htsFile;
 
 // A combined thread pool and queue allocation size.
