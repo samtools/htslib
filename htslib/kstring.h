@@ -49,7 +49,11 @@
 #endif
 
 #if defined __GNUC__ && (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ > 4))
+#ifdef __MINGW_PRINTF_FORMAT
+#define KS_ATTR_PRINTF(fmt, arg) __attribute__((__format__ (__MINGW_PRINTF_FORMAT, fmt, arg)))
+#else
 #define KS_ATTR_PRINTF(fmt, arg) __attribute__((__format__ (__printf__, fmt, arg)))
+#endif // __MINGW_PRINTF_FORMAT
 #else
 #define KS_ATTR_PRINTF(fmt, arg)
 #endif
