@@ -654,6 +654,14 @@ sub test_index
     test_compare($opts,"$$opts{path}/test_view -l 0 -z -m 0 -x $$opts{tmp}/index.vcf.gz.tbi $$opts{path}/index.vcf > $$opts{tmp}/index.vcf.gz", "$$opts{tmp}/index.vcf.gz.tbi", "$$opts{path}/index.vcf.gz.tbi", gz=>1);
     unlink("$$opts{tmp}/index.vcf.gz.tbi");
     test_compare($opts,"$$opts{path}/test_index -t $$opts{tmp}/index.vcf.gz", "$$opts{tmp}/index.vcf.gz.tbi", "$$opts{path}/index.vcf.gz.tbi", gz=>1);
+
+    # Tabix and custom index names
+    _cmd("$$opts{bin}/tabix -fp vcf $$opts{tmp}/index.vcf.gz");
+    my $wtmp = $$opts{tmp};
+    if ($^O =~ /^msys/) {
+        $wtmp =~ s/\//\\\\/g;
+    }
+    test_cmd($opts,out=>'tabix.out',cmd=>"$$opts{bin}/tabix $wtmp/index.vcf.gz##idx##$wtmp/index.vcf.gz.tbi 1:10000060-10000060");
 }
 
 sub test_vcf_api

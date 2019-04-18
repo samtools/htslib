@@ -395,7 +395,7 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
 {
     char smode[102], *cp, *cp2, *mode_c;
     htsFile *fp = NULL;
-    hFILE *hfile;
+    hFILE *hfile = NULL;
     char fmt_code = '\0';
 
     strncpy(smode, mode, 100);
@@ -421,6 +421,14 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     if (fmt && fmt->format != unknown_format)
         *mode_c = "\0g\0\0b\0c\0\0b\0g\0\0"[fmt->format];
 
+    char *rmme = NULL, *fnidx = strstr(fn, HTS_IDX_DELIM);
+    if ( fnidx ) {
+        rmme = strdup(fn);
+        if ( !rmme ) goto error;
+        rmme[fnidx-fn] = 0;
+        fn = rmme;
+    }
+
     hfile = hopen(fn, smode);
     if (hfile == NULL) goto error;
 
@@ -431,10 +439,12 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
         if (hts_opt_apply(fp, fmt->specific) != 0)
             goto error;
 
+    if ( rmme ) free(rmme);
     return fp;
 
 error:
     hts_log_error("Failed to open file %s", fn);
+    if ( rmme ) free(rmme);
 
     if (hfile)
         hclose_abruptly(hfile);
@@ -2974,8 +2984,14 @@ char *hts_idx_getfn(const char *fn, const char *ext)
 
 hts_idx_t *hts_idx_load(const char *fn, int fmt)
 {
-    char *fnidx;
+    char *fnidx = strstr(fn, HTS_IDX_DELIM);
     hts_idx_t *idx;
+    if ( fnidx )
+    {
+        fnidx += strlen(HTS_IDX_DELIM);
+        idx = hts_idx_load2(fn, fnidx);
+        return idx;
+    }
     fnidx = hts_idx_getfn(fn, ".csi");
     if (! fnidx) fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
     if (fnidx == 0) return 0;

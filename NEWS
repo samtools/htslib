@@ -39,7 +39,15 @@ Noteworthy changes in release a.b
 * New API functions hts_reglist_create() and sam_itr_regarray() are added
   to create hts_reglist_t region lists from `chr:<from>-<to>` type region
   specifiers.
- 
+
+* hts_idx_load() and hts_open() have been changed to support indexes
+  which are not stored in the same location as the indexed file.  This works
+  by appending a delimiter '##idx##' and the index file location to the
+  normal file name.  hts_open() opens the file in the part before the
+  delimiter; hts_idx_load() opens the index in the part after it.  So for
+  example, "/path1/my_data.bam##idx##/path2/my_index.csi" will open bam file
+  "/path1/my_data.bam" and index file "/path2/my_index.csi".
+
 * Fixed bug where some 8 or 16-bit negative integers were stored using values
   reserved by the BCF specification.  These numbers are now promoted to the
   next size up, so -121 to -128 are stored using at least 16 bits, and -32761
