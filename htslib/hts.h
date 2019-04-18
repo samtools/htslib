@@ -309,6 +309,12 @@ typedef struct hts_opt {
 
 #define HTS_FILE_OPTS_INIT {{0},0}
 
+/*
+ * Explicit index file name delimiter, see below
+ */
+#define HTS_IDX_DELIM "##idx##"
+
+
 /**********************
  * Exported functions *
  **********************/
@@ -398,7 +404,9 @@ char *hts_format_description(const htsFormat *format);
 
 /*!
   @abstract       Open a SAM/BAM/CRAM/VCF/BCF/etc file
-  @param fn       The file name or "-" for stdin/stdout
+  @param fn       The file name or "-" for stdin/stdout. For indexed files
+                  with a non-standard naming, the file name can include the
+                  name of the index file delimited with HTS_IDX_DELIM 
   @param mode     Mode matching / [rwa][bceguxz0-9]* /
   @discussion
       With 'r' opens for reading; any further format mode letters are ignored
@@ -687,7 +695,9 @@ int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int
 
 /// Load an index file
 /** @param fn   BAM/BCF/etc filename, to which .bai/.csi/etc will be added or
-                the extension substituted, to search for an existing index file
+                the extension substituted, to search for an existing index file.
+                In case of a non-standard naming, the file name can include the
+                name of the index file delimited with HTS_IDX_DELIM.
     @param fmt  One of the HTS_FMT_* index formats
     @return  The index, or NULL if an error occurred.
 */

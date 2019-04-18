@@ -152,7 +152,7 @@ $(HTSDIR)/config.h:
 $(HTSDIR)/libhts.a: $(HTSLIB_ALL)
 	+cd $(HTSDIR) && $(MAKE) lib-static
 
-$(HTSDIR)/libhts.so $(HTSDIR)/libhts.dylib $(HTSDIR)/libhts.dll.a $(HTSDIR)/hts.dll.a: $(HTSLIB_ALL)
+$(HTSDIR)/libhts.so $(HTSDIR)/libhts.dylib: $(HTSLIB_ALL)
 	+cd $(HTSDIR) && $(MAKE) lib-shared
 
 $(HTSDIR)/bgzip: $(HTSDIR)/bgzip.c $(HTSLIB_PUBLIC_HEADERS)
