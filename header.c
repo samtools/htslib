@@ -812,6 +812,45 @@ static void redact_header_text(bam_hdr_t *bh) {
     bh->text = NULL;
 }
 
+/** Find nth header record of a given type
+
+    @param type   Header type (SQ, RG etc.)
+    @param idx    0-based index
+
+    @return bam_hrec_type_t pointer to the record on success
+            NULL if no record exists with the given type and index
+ */
+
+static bam_hrec_type_t *bam_hrecs_find_type_pos(bam_hrecs_t *hrecs,
+                                                const char *type, int idx) {
+    bam_hrec_type_t *first, *itr;
+
+    if (idx < 0)
+        return NULL;
+
+    if (type[0] == 'S' && type[1] == 'Q')
+        return idx < hrecs->nref ? hrecs->ref[idx].ty : NULL;
+
+    if (type[0] == 'R' && type[1] == 'G')
+        return idx < hrecs->nrg ? hrecs->rg[idx].ty : NULL;
+
+    if (type[0] == 'P' && type[1] == 'G')
+        return idx < hrecs->npg ? hrecs->pg[idx].ty : NULL;
+
+    first = itr = bam_hrecs_find_type(hrecs, type, NULL, NULL);
+    if (!first)
+        return NULL;
+
+    while (idx > 0) {
+        itr = itr->next;
+        if (itr == first)
+            break;
+        --idx;
+    }
+
+    return idx == 0 ? itr : NULL;
+}
+
 /* ==== Public methods ==== */
 
 int bam_hdr_length(bam_hdr_t *bh) {
@@ -1055,7 +1094,7 @@ int bam_hdr_remove_line_key(bam_hdr_t *bh, const char *type, const char *ID_key,
 
 int bam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position) {
     bam_hrecs_t *hrecs;
-    if (!bh || !type || position < 0)
+    if (!bh || !type || position <= 0)
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
@@ -1069,29 +1108,19 @@ int bam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position) {
         return -1;
     }
 
-    bam_hrec_type_t *type_beg, *type_end, *type_found = NULL;
-    int itype = (type[0]<<8) | type[1];
-
-    khint_t k = kh_get(bam_hrecs_t, hrecs->h, itype);
-    if (k == kh_end(hrecs->h))
+    bam_hrec_type_t *type_found = bam_hrecs_find_type_pos(hrecs, type,
+                                                          position - 1);
+    if (!type_found)
         return -1;
 
-    type_beg = type_end = kh_val(hrecs->h, k);
-    do {
-        if (!type_found) {
-            if(type_beg->order == position-1) {
-                type_found = type_beg;
-                break;
-            }
-        }
-        type_beg = type_beg->next;
-    } while (type_beg != type_end);
-
-    if (!type_found) // nothing to remove
-        return 0;
     int ret = bam_hrecs_remove_line(hrecs, type, type_found);
-    if (!ret && hrecs->dirty)
-        redact_header_text(bh);
+    if (ret == 0) {
+        if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
+            return -1;
+
+        if (hrecs->dirty)
+            redact_header_text(bh);
+    }
 
     return ret;
 }
