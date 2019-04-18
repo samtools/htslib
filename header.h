@@ -125,7 +125,6 @@ typedef struct bam_hrec_type_s {
     struct bam_hrec_type_s *next; // circular
     struct bam_hrec_type_s *prev;
     bam_hrec_tag_t *tag;          // first tag
-    int order;                    // 0 upwards
     int skip;                     // 1 - don't add this line to the header text together with all the others from the same type.
                                   // Useful for comments.
     struct bam_hrec_type_s *comm; // attached comment line

@@ -367,11 +367,9 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
 
         t->prev = h_type;
         h_type->next = t;
-        h_type->order = p->order + 1;
     } else {
         kh_val(hrecs->h, k) = h_type;
         h_type->prev = h_type->next = h_type;
-        h_type->order = 0;
     }
     h_type->skip = 0;
     h_type->tag = NULL;
@@ -451,7 +449,7 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
 
     hrecs->dirty = 1;
 
-    return h_type->order;
+    return 0;
 }
 
 /*
@@ -483,9 +481,8 @@ static int bam_hrecs_remove_line(bam_hrecs_t *hrecs, const char *type_name, bam_
     } else {
         type_found->prev->next = type_found->next;
         type_found->next->prev = type_found->prev;
-        if (!type_found->order) { //first element
+        if (kh_val(hrecs->h, k) == type_found) { //first element
             kh_val(hrecs->h, k) = type_found->next;
-            type_found->next->order = 0; //mark the new element as the first
         }
     }
 
@@ -620,11 +617,9 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
 
             t->prev = h_type;
             h_type->next = t;
-            h_type->order = p->order+1;
         } else {
             kh_val(hrecs->h, k) = h_type;
             h_type->prev = h_type->next = h_type;
-            h_type->order = 0;
         }
         h_type->skip = 0;
 
@@ -956,7 +951,7 @@ int bam_hdr_add_lines(bam_hdr_t *bh, const char *lines, int len) {
  * Specify type and one or more key,value pairs, ending with the NULL key.
  * Eg. bam_hdr_add(h, "SQ", "ID", "foo", "LN", "100", NULL).
  *
- * Returns index for specific entry on success (eg 2nd SQ, 4th RG)
+ * Returns 0 on success
  *        -1 on failure
  */
 int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
@@ -976,7 +971,7 @@ int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
     int ret = bam_hrecs_vadd(hrecs, type, args, NULL);
     va_end(args);
 
-    if (ret >= 0) {
+    if (ret == 0) {
         if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
             return -1;
 
@@ -1959,6 +1954,7 @@ void bam_hrecs_dump(bam_hrecs_t *hrecs) {
     for (k = kh_begin(hrecs->h); k != kh_end(hrecs->h); k++) {
         bam_hrec_type_t *t1, *t2;
         char c[2];
+        int idx = 0;
 
         if (!kh_exist(hrecs->h, k))
             continue;
@@ -1966,11 +1962,11 @@ void bam_hrecs_dump(bam_hrecs_t *hrecs) {
         t1 = t2 = kh_val(hrecs->h, k);
         c[0] = kh_key(hrecs->h, k)>>8;
         c[1] = kh_key(hrecs->h, k)&0xff;
-        printf("Type %.2s, count %d\n", c, t1->prev->order+1);
+        printf("Type %.2s\n", c);
 
         do {
             bam_hrec_tag_t *tag;
-            printf(">>>%d ", t1->order);
+            printf(">>>%d ", idx++);
             for (tag = t1->tag; tag; tag=tag->next) {
                 if (strncmp(c, "CO", 2))
                     printf("\"%.2s\":\"%.*s\"\t", tag->str, tag->len-3, tag->str+3);
