@@ -49,6 +49,10 @@ matrix:
     os: linux
     env: USE_CONFIG=yes
 
+  - compiler: gcc
+    os: linux
+    env: CFLAGS="-std=c99 -pedantic" USE_CONFIG=yes
+
 # For MacOSX systems
 before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" && "$USE_CONFIG" == "no" ]]; then HOMEBREW_NO_AUTO_UPDATE=1 brew install xz || ( brew update && brew install xz ); fi
@@ -59,4 +63,4 @@ before_script:
 script:
   - if test "xDO_MAINTAINER_CHECKS" = "xyes" ; then make maintainer-check ; fi
   - if test "x$USE_LIBDEFLATE" = "xyes" ; then CONFIG_OPTS='CPPFLAGS="-I$HOME/libdeflate" LDFLAGS="-L$HOME/libdeflate" --with-libdeflate' ; else CONFIG_OPTS='--without-libdeflate' ; fi
-  - if test "$USE_CONFIG" = "yes" ; then autoreconf && eval ./configure --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3\" || { cat config.log ; false ; } ; fi && if test "xDO_MAINTAINER_CHECKS" = "xyes" ; then make maintainer-check ; fi && make -j 2 -e && make test
+  - if test "$USE_CONFIG" = "yes" ; then MAKE_OPTS= ; autoreconf && eval ./configure --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3 $CFLAGS\" || { cat config.log ; false ; } ; else MAKE_OPTS=-e ; fi && if test "xDO_MAINTAINER_CHECKS" = "xyes" ; then make maintainer-check ; fi && make -j 2 $MAKE_OPTS && make test
