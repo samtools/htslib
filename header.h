@@ -122,12 +122,12 @@ typedef struct bam_hrec_tag_s {
  * key:value pairs per line.
  */
 typedef struct bam_hrec_type_s {
-    struct bam_hrec_type_s *next; // circular
-    struct bam_hrec_type_s *prev;
+    struct bam_hrec_type_s *next; // circular list of this type
+    struct bam_hrec_type_s *prev; // circular list of this type
+    struct bam_hrec_type_s *global_next; // circular list of all lines
+    struct bam_hrec_type_s *global_prev; // circular list of all lines
     bam_hrec_tag_t *tag;          // first tag
-    int skip;                     // 1 - don't add this line to the header text together with all the others from the same type.
-                                  // Useful for comments.
-    struct bam_hrec_type_s *comm; // attached comment line
+    khint32_t type;               // Two-letter type code as an int
 } bam_hrec_type_t;
 
 /*! Parsed \@SQ lines */
@@ -187,6 +187,7 @@ KHASH_MAP_INIT_STR(m_s2i, int)
  */
 struct sam_hdr {
     khash_t(bam_hrecs_t) *h;
+    bam_hrec_type_t *first_line; //!< First line (usually @HD)
     string_alloc_t *str_pool; //!< Pool of sam_hdr_tag->str strings
     pool_alloc_t   *type_pool;//!< Pool of sam_hdr_type structs
     pool_alloc_t   *tag_pool; //!< Pool of sam_hdr_tag structs

@@ -530,9 +530,9 @@ static void use_header_api() {
             "@CO\tThis line is good\n"
             "@SQ\tSN:ref2\tLN:5002\n"
             "@SQ\tSN:ref3\tLN:5003\n"
+            "@PG\tID:samtools\tPN:samtools\tVN:1.9\n"
             "@RG\tID:run1\n"
-            "@RG\tID:run4\n"
-            "@PG\tID:samtools\tPN:samtools\tVN:1.9\n";
+            "@RG\tID:run4\n";
 
     static const char *expected_targets[] = { "ref1", "ref2", "ref3" };
     static const int   expected_lengths[] = { 5001, 5002, 5003 };

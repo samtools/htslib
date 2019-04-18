@@ -323,6 +323,45 @@ static int bam_hrecs_remove_hash_entry(bam_hrecs_t *hrecs, int type, bam_hrec_ty
     return 0;
 }
 
+/** Add a header record to the global line ordering
+ *
+ * If @p after is not NULL, the new record will be inserted after this one,
+ * otherwise it will go at the end.
+ *
+ * An exception is an HD record, which will always be put first unless
+ * one is already present.
+ */
+static void bam_hrecs_global_list_add(bam_hrecs_t *hrecs,
+                                      bam_hrec_type_t *h_type,
+                                      bam_hrec_type_t *after) {
+    const khint32_t hd_type = 'H' << 8 | 'D';
+    int update_first_line = 0;
+
+    // First line seen
+    if (!hrecs->first_line) {
+        hrecs->first_line = h_type->global_next = h_type->global_prev = h_type;
+        return;
+    }
+
+    // @HD goes at the top (unless there's one already)
+    if (h_type->type == hd_type && hrecs->first_line->type != hd_type) {
+        after = hrecs->first_line->global_prev;
+        update_first_line = 1;
+    }
+
+    // If no instructions given, put it at the end
+    if (!after)
+        after = hrecs->first_line->global_prev;
+
+    h_type->global_prev = after;
+    h_type->global_next = after->global_next;
+    h_type->global_prev->global_next = h_type;
+    h_type->global_next->global_prev = h_type;
+
+    if (update_first_line)
+        hrecs->first_line = h_type;
+}
+
 /*! Add header record with a va_list interface.
  *
  * Adds a single record to a SAM header.
@@ -356,6 +395,8 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
     if (-1 == (k = kh_put(bam_hrecs_t, hrecs->h, type_i, &new)))
         return -1;
 
+    h_type->type = type_i;
+
     // Form the ring, either with self or other lines of this type
     if (!new) {
         bam_hrec_type_t *t = kh_val(hrecs->h, k), *p;
@@ -371,9 +412,17 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
         kh_val(hrecs->h, k) = h_type;
         h_type->prev = h_type->next = h_type;
     }
-    h_type->skip = 0;
     h_type->tag = NULL;
-    h_type->comm = NULL;
+
+    // Add to global line ordering after any existing line of the same type,
+    // or at the end if no line of this type exists yet.
+    bam_hrecs_global_list_add(hrecs, h_type, !new ? h_type->prev : NULL);
+
+    // Check linked-list invariants
+    assert(h_type->prev->next == h_type);
+    assert(h_type->next->prev == h_type);
+    assert(h_type->global_prev->global_next == h_type);
+    assert(h_type->global_next->global_prev == h_type);
 
     // Any ... varargs
     va_start(args, ap);
@@ -475,6 +524,15 @@ static int bam_hrecs_remove_line(bam_hrecs_t *hrecs, const char *type_name, bam_
         return -1;
 
     bam_hrecs_free_tags(hrecs, type_found->tag);
+
+    // Remove from global list (remembering it could be the only line)
+    if (hrecs->first_line == type_found) {
+        hrecs->first_line = (type_found->global_next != type_found
+                             ? type_found->global_next : NULL);
+    }
+    type_found->global_next->global_prev = type_found->global_prev;
+    type_found->global_prev->global_next = type_found->global_next;
+
     /* single element in the list */
     if (type_found->prev == type_found || type_found->next == type_found) {
         kh_del(bam_hrecs_t, hrecs->h, k);
@@ -496,53 +554,20 @@ static int bam_hrecs_remove_line(bam_hrecs_t *hrecs, const char *type_name, bam_
     return 0;
 }
 
-static int bam_hrec_rebuild_comments(const bam_hrec_type_t *t, kstring_t *ks) {
-    if (!t->comm) {
-        if (EOF == kputsn_("@CO\t", 4, ks))
-            return -1;
-        if (t->tag)
-            if (EOF == kputsn_(t->tag->str, t->tag->len, ks))
-                return -1;
-        if (EOF == kputc('\n', ks))
-            return -1;
-    } else {
-        if (bam_hrec_rebuild_comments(t->comm, ks))
-            return -1;
-        if (EOF == kputsn_("@CO\t", 4, ks))
-            return -1;
-        if (t->tag)
-            if (EOF == kputsn_(t->tag->str, t->tag->len, ks))
-                return -1;
-        if (EOF == kputc('\n', ks))
-            return -1;
-    }
-
-    return 0;
-}
-
-static int bam_hrecs_rebuild_lines(const bam_hrecs_t *hrecs, khint_t k, kstring_t *ks) {
+static int bam_hrecs_rebuild_lines(const bam_hrecs_t *hrecs, kstring_t *ks) {
     const bam_hrec_type_t *t1, *t2;
 
-    t1 = t2 = kh_val(hrecs->h, k);
+    if (!hrecs->first_line)
+        return kputsn("", 0, ks) >= 0 ? 0 : -1;
+
+    t1 = t2 = hrecs->first_line;
     do {
         bam_hrec_tag_t *tag;
-        char c[2];
-
-        if (t1->skip) {
-            t1 = t1->next;
-            continue;
-        }
-
-        /* if there is a comment line attached, print it first */
-        if (t1->comm) {
-            if (bam_hrec_rebuild_comments(t1->comm, ks))
-                return -1;
-        }
+        char c[2] = { t1->type >> 8, t1->type & 0xff };
 
         if (EOF == kputc_('@', ks))
             return -1;
-        c[0] = kh_key(hrecs->h, k)>>8;
-        c[1] = kh_key(hrecs->h, k)&0xff;
+
         if (EOF == kputsn_(c, 2, ks))
             return -1;
         for (tag = t1->tag; tag; tag=tag->next) {
@@ -553,7 +578,7 @@ static int bam_hrecs_rebuild_lines(const bam_hrecs_t *hrecs, khint_t k, kstring_
         }
         if (EOF == kputc('\n', ks))
             return -1;
-        t1 = t1->next;
+        t1 = t1->global_next;
     } while (t1 != t2);
 
     return 0;
@@ -561,7 +586,6 @@ static int bam_hrecs_rebuild_lines(const bam_hrecs_t *hrecs, khint_t k, kstring_
 
 static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len) {
     size_t i, lno;
-    bam_hrec_type_t *last_comm = NULL;
 
     if (!hrecs || len > SSIZE_MAX)
         return -1;
@@ -606,6 +630,11 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
         if (-1 == (k = kh_put(bam_hrecs_t, hrecs->h, type, &new)))
             return -1;
 
+        h_type->type = type;
+
+        // Add to end of global list
+        bam_hrecs_global_list_add(hrecs, h_type, NULL);
+
         // Form the ring, either with self or other lines of this type
         if (!new) {
             bam_hrec_type_t *t = kh_val(hrecs->h, k), *p;
@@ -621,17 +650,11 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
             kh_val(hrecs->h, k) = h_type;
             h_type->prev = h_type->next = h_type;
         }
-        h_type->skip = 0;
 
         // Parse the tags on this line
         last = NULL;
         if ((type>>8) == 'C' && (type&0xff) == 'O') {
             size_t j;
-
-            h_type->comm = last_comm;
-            if (last_comm)
-                last_comm->skip = 1;
-            last_comm = h_type;
 
             if (i == len || hdr[i] != '\t') {
                 bam_hrecs_error("Missing tab",
@@ -653,12 +676,6 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
             i = j;
 
         } else {
-            h_type->comm = last_comm;
-            if (last_comm) {
-                last_comm->skip = 1;
-                last_comm = NULL;
-            }
-
             do {
                 size_t j;
 
@@ -1359,41 +1376,13 @@ int bam_hdr_remove_tag(bam_hdr_t *bh,
  *        -1 on failure
  */
 int bam_hrecs_rebuild_text(const bam_hrecs_t *hrecs, kstring_t *ks) {
-    khint_t k;
-    int i;
-
     ks->l = 0;
 
     if (!hrecs->h || !hrecs->h->size) {
         return kputsn("", 0, ks) >= 0 ? 0 : -1;
     }
-
-    /* process the array keys first */
-    for (i = 0; i < hrecs->type_count; i++) {
-
-        k = kh_get(bam_hrecs_t, hrecs->h, K(hrecs->type_order[i]));
-        if (!kh_exist(hrecs->h, k))
-            continue;
-
-        if (bam_hrecs_rebuild_lines(hrecs, k, ks))
-            return -1;
-    }
-
-    /* process the other keys from the hash table */
-    for (k = kh_begin(hrecs->h); k != kh_end(hrecs->h); k++) {
-
-        if (!kh_exist(hrecs->h, k))
-            continue;
-
-        for (i = 0; i < hrecs->type_count; i++)
-            if (kh_key(hrecs->h, k) == K(hrecs->type_order[i]))
-                break;
-        if (i < hrecs->type_count)
-            continue;
-
-        if (bam_hrecs_rebuild_lines(hrecs, k, ks))
-            return -1;
-    }
+    if (bam_hrecs_rebuild_lines(hrecs, ks) != 0)
+        return -1;
 
     return 0;
 }
