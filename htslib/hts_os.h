@@ -26,6 +26,10 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTSLIB_HTS_OS_H
 #define HTSLIB_HTS_OS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern void hts_srand48(long seed);
 extern double hts_erand48(unsigned short xseed[3]);
 extern double hts_drand48(void);
@@ -44,6 +48,9 @@ extern long hts_lrand48(void);
 extern int is_cygpty(int fd);
 #endif
 
+#ifdef __cplusplus
+}
+#endif
 
 #if defined(__MINGW32__)
 #include <io.h>
