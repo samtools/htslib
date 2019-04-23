@@ -657,7 +657,11 @@ sub test_index
 
     # Tabix and custom index names
     _cmd("$$opts{bin}/tabix -fp vcf $$opts{tmp}/index.vcf.gz");
-    test_cmd($opts,out=>'tabix.out',cmd=>"$$opts{bin}/tabix $$opts{tmp}/index.vcf.gz##idx##$$opts{tmp}/index.vcf.gz.tbi 1:10000060-10000060");
+    my $wtmp = $$opts{tmp}; 
+    if ($^O =~ /^msys/) {
+        $wtmp =~ s/\//\\\\/g;
+    }
+    test_cmd($opts,out=>'tabix.out',cmd=>"$$opts{bin}/tabix $wtmp/index.vcf.gz##idx##$wtmp/index.vcf.gz.tbi 1:10000060-10000060");
 }
 
 sub test_vcf_api
