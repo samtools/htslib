@@ -2077,7 +2077,8 @@ uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr)
 
 typedef struct {
     int key, max_m, size, offset;
-    uint64_t is_gt:1, max_g:31, max_l:32;
+    uint32_t is_gt:1, max_g:31;
+    uint32_t max_l;
     uint32_t y;
     uint8_t *buf;
 } fmt_aux_t;

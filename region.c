@@ -22,6 +22,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#include <config.h>
+
 #include "htslib/hts.h"
 #include "htslib/khash.h"
 
@@ -206,7 +208,7 @@ hts_reglist_t *hts_reglist_create(char **argv, int argc, int *r_count, void *hdr
         }
 
         if (reg_insert(h, reg, beg, end) != 0) {
-            hts_log_error("Error when inserting region='%s' in the bed hash table at address=%p", argv[i], h);
+            hts_log_error("Error when inserting region='%s' in the bed hash table at address=%p", argv[i], (void *) h);
             goto fail;
         }
     }

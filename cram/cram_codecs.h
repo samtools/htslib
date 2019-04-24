@@ -108,9 +108,6 @@ typedef struct {
 /*
  * A generic codec structure.
  */
-#ifdef __SUNPRO_C
-#  pragma error_messages(off, E_ANONYMOUS_UNION_DECL)
-#endif
 typedef struct cram_codec {
     enum cram_encoding codec;
     cram_block *out;
@@ -136,11 +133,8 @@ typedef struct cram_codec {
         cram_byte_array_stop_decoder e_byte_array_stop;
         cram_byte_array_len_encoder  e_byte_array_len;
         cram_beta_decoder            e_beta;
-    };
+    } u;
 } cram_codec;
-#ifdef __SUNPRO_C
-#  pragma error_messages(default, E_ANONYMOUS_UNION_DECL)
-#endif
 
 const char *cram_encoding2str(enum cram_encoding t);
 

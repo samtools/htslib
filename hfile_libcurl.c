@@ -27,9 +27,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef __MSYS__
 #include <strings.h>
-#endif
 #include <errno.h>
 #include <pthread.h>
 #ifndef _WIN32

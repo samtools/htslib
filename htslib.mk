@@ -100,6 +100,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/probaln.c \
 	$(HTSDIR)/realn.c \
 	$(HTSDIR)/regidx.c \
+	$(HTSDIR)/region.c \
 	$(HTSDIR)/sam.c \
 	$(HTSDIR)/synced_bcf_reader.c \
 	$(HTSDIR)/tbx.c \
