@@ -397,7 +397,7 @@ test/hfile: test/hfile.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/hfile.o libhts.a $(LIBS) -lpthread
 
 test/pileup: test/pileup.o libhts.a
-	$(CC) -pthread $(LDFLAGS) -o $@ test/pileup.o libhts.a $(LIBS) -lpthread
+	$(CC) $(LDFLAGS) -o $@ test/pileup.o libhts.a $(LIBS) -lpthread
 
 test/sam: test/sam.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/sam.o libhts.a $(LIBS) -lpthread

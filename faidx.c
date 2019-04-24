@@ -159,7 +159,6 @@ static faidx_t *fai_build_core(BGZF *bgzf) {
                         char s[4] = { '"', c, '"', '\0' };
                         hts_log_error("Format error, unexpected %s at line %d", isprint(c) ? s : "character", line_num);
                         goto fail;
-                    break;
                     }
                 }
             break;
@@ -252,10 +251,9 @@ static faidx_t *fai_build_core(BGZF *bgzf) {
             case SEQ_END:
                 if (c == '+') {
                     state = IN_QUAL;
-                    if (c != '\n') while ((c = bgzf_getc(bgzf)) >= 0 && c != '\n');
+                    while ((c = bgzf_getc(bgzf)) >= 0 && c != '\n');
                     qual_offset = bgzf_utell(bgzf);
                     line_num++;
-                    continue;
                 } else {
                     hts_log_error("Format error, expecting '+', got '%c' at line %d", c, line_num);
                     goto fail;
