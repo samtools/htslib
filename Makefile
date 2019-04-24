@@ -441,7 +441,7 @@ test/fuzz/hts_open_fuzzer.o: test/fuzz/hts_open_fuzzer.c config.h $(htslib_hfile
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h) $(htslib_kstring_h)
 test/pileup.o: test/pileup.c config.h $(htslib_sam_h) $(htslib_kstring_h)
-test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h)
+test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h) $(htslib_hts_log_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
 test/test-parse-reg.o: test/test-parse-reg.c $(htslib_hts_h) $(htslib_sam_h)

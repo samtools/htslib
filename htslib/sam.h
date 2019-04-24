@@ -555,12 +555,6 @@ int bam_hdr_name2ref(bam_hdr_t *bh, const char *ref);
  */
 int bam_name2id(bam_hdr_t *h, const char *ref);
 
-/// Build chains of \@PG headers via PP links
-/*!
- * @return  0 on success, -1 on failure (indicating broken PG/PP records)
- */
-int bam_hdr_link_pg(bam_hdr_t *bh);
-
 /// Generate a unique \@PG ID: value
 /*!
  * @param name  Name of the program. Eg. samtools

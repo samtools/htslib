@@ -39,6 +39,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 KHASH_SET_INIT_STR(rm)
 typedef khash_t(rm) rmhash_t;
 
+static int bam_hdr_link_pg(bam_hdr_t *bh);
+
 #define MAX_ERROR_QUOTE 320 // Prevent over-long error messages
 static void bam_hrecs_error(const char *msg, const char *line, size_t len, size_t lno) {
     int j;
@@ -369,11 +371,11 @@ static void bam_hrecs_global_list_add(bam_hrecs_t *hrecs,
  * This takes a header record type, a va_list argument and one or more
  * key,value pairs, ending with the NULL key.
  *
- * Eg. sam_hdr_vadd(h, "SQ", args, "ID", "foo", "LN", "100", NULL).
+ * Eg. bam_hrecs_vadd(h, "SQ", args, "ID", "foo", "LN", "100", NULL).
  *
  * The purpose of the additional va_list parameter is to permit other
  * varargs functions to call this while including their own additional
- * parameters; an example is in sam_hdr_add_PG().
+ * parameters; an example is in bam_hdr_add_pg().
  *
  * Note: this function invokes va_arg at least once, making the value
  * of ap indeterminate after the return. The caller should call
@@ -433,6 +435,8 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
             break;
         if (strncmp(type, "CO", 2) && !(val = (char *)va_arg(args, char *)))
             break;
+        if (*val == '\0')
+            continue;
 
         if (!(h_tag = pool_alloc(hrecs->tag_pool)))
             return -1;
@@ -1424,7 +1428,7 @@ int bam_hdr_name2ref(bam_hdr_t *bh, const char *ref) {
  * Returns 0 on success
  *        -1 on failure (indicating broken PG/PP records)
  */
-int bam_hdr_link_pg(bam_hdr_t *bh) {
+static int bam_hdr_link_pg(bam_hdr_t *bh) {
     bam_hrecs_t *hrecs;
     int i, j, ret = 0, *new_pg_end;
 
@@ -1546,6 +1550,8 @@ const char *bam_hdr_pg_id(bam_hdr_t *bh, const char *name) {
  */
 int bam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
     bam_hrecs_t *hrecs;
+    const char *specified_id = NULL, *specified_pn = NULL, *specified_pp = NULL;
+    const char *key, *val;
     if (!bh)
         return -1;
 
@@ -1556,8 +1562,38 @@ int bam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
     }
 
     va_list args;
+    // Check for ID / PN / PP tags in varargs list
+    va_start(args, name);
+    while ((key = va_arg(args, const char *)) != NULL) {
+        val = va_arg(args, const char *);
+        if (!val) break;
+        if (strcmp(key, "PN") == 0 && *val != '\0')
+            specified_pn = val;
+        else if (strcmp(key, "PP") == 0 && *val != '\0')
+            specified_pp = val;
+        else if (strcmp(key, "ID") == 0 && *val != '\0')
+            specified_id = val;
+    }
+    va_end(args);
 
-    if (hrecs->npg_end) {
+    if (specified_id && hrecs->pg_hash) {
+        khint_t k = kh_get(m_s2i, hrecs->pg_hash, specified_id);
+        if (k != kh_end(hrecs->pg_hash)) {
+            hts_log_error("Header @PG ID:%s already present", specified_id);
+            return -1;
+        }
+    }
+
+    if (specified_pp && hrecs->pg_hash) {
+        khint_t k = kh_get(m_s2i, hrecs->pg_hash, specified_pp);
+        if (k == kh_end(hrecs->pg_hash)) {
+            hts_log_error("Header @PG ID:%s referred to by PP tag not present",
+                          specified_pp);
+            return -1;
+        }
+    }
+
+    if (!specified_pp && hrecs->npg_end) {
         /* Copy ends array to avoid us looping while modifying it */
         int *end = malloc(hrecs->npg_end * sizeof(int));
         int i, nends = hrecs->npg_end;
@@ -1568,13 +1604,15 @@ int bam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
         memcpy(end, hrecs->pg_end, nends * sizeof(*end));
 
         for (i = 0; i < nends; i++) {
-            const char *id = bam_hdr_pg_id(bh, name);
-            if (!id)
+            const char *id = !specified_id ? bam_hdr_pg_id(bh, name) : "";
+            if (!id) {
+                free(end);
                 return -1;
+            }
             va_start(args, name);
             if (-1 == bam_hrecs_vadd(hrecs, "PG", args,
                                      "ID", id,
-                                     "PN", name,
+                                     "PN", !specified_pn ? name : "",
                                      "PP", hrecs->pg[end[i]].name,
                                      NULL)) {
                 free(end);
@@ -1585,13 +1623,13 @@ int bam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
 
         free(end);
     } else {
-        const char *id = bam_hdr_pg_id(bh, name);
+        const char *id = !specified_id ? bam_hdr_pg_id(bh, name) : "";
         if (!id)
             return -1;
         va_start(args, name);
         if (-1 == bam_hrecs_vadd(hrecs, "PG", args,
                                  "ID", id,
-                                 "PN", name,
+                                 "PN", !specified_pn ? name : "",
                                  NULL))
             return -1;
         va_end(args);

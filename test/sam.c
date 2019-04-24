@@ -40,6 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/sam.h"
 #include "htslib/faidx.h"
 #include "htslib/kstring.h"
+#include "htslib/hts_log.h"
 
 int status;
 
@@ -714,6 +715,90 @@ static void use_header_api() {
     if (inf) fclose(inf);
 }
 
+static void test_header_pg_lines() {
+    static const char header_text[] = "data:,"
+        "@HD\tVN:1.5\n"
+        "@PG\tID:prog1\tPN:prog1\n"
+        "@PG\tID:prog2\tPN:prog2\tPP:prog1\n";
+
+    static const char expected[] =
+        "@HD\tVN:1.5\n"
+        "@PG\tID:prog1\tPN:prog1\n"
+        "@PG\tID:prog2\tPN:prog2\tPP:prog1\n"
+        "@PG\tID:prog3\tPN:prog3\tPP:prog2\n"
+        "@PG\tID:prog4\tPN:prog4\tPP:prog1\n"
+        "@PG\tID:prog5\tPN:prog5\tPP:prog2\n"
+        "@PG\tID:prog6\tPN:prog6\tPP:prog3\n"
+        "@PG\tID:prog6.1\tPN:prog6\tPP:prog4\n"
+        "@PG\tID:prog6.2\tPN:prog6\tPP:prog5\n"
+        "@PG\tPN:prog7\tID:my_id\tPP:prog6\n";
+
+    samFile *in = sam_open(header_text, "r");
+    bam_hdr_t *header = NULL;
+    const char *text = NULL;
+    enum htsLogLevel old_log_level;
+    int r;
+
+    if (!in) {
+        fail("couldn't open file");
+        goto err;
+    }
+
+    header = sam_hdr_read(in);
+    if (!header) {
+        fail("reading header from file");
+        goto err;
+    }
+
+    r = bam_hdr_add_pg(header, "prog3", NULL);
+    if (r != 0) { fail("bam_hdr_add_pg prog3"); goto err; }
+
+
+    r = bam_hdr_add_pg(header, "prog4", "PP", "prog1", NULL);
+    if (r != 0) { fail("bam_hdr_add_pg prog4"); goto err; }
+
+    r = bam_hdr_add_line(header, "PG", "ID",
+                         "prog5", "PN", "prog5", "PP", "prog2", NULL);
+    if (r != 0) { fail("bam_hdr_add_line @PG ID:prog5"); goto err; }
+
+    r = bam_hdr_add_pg(header, "prog6", NULL);
+    if (r != 0) { fail("bam_hdr_add_pg prog6"); goto err; }
+
+    r = bam_hdr_add_pg(header, "prog7", "ID", "my_id", "PP", "prog6", NULL);
+    if (r != 0) { fail("bam_hdr_add_pg prog7"); goto err; }
+
+    text = bam_hdr_str(header);
+    if (!text) { fail("bam_hdr_str"); goto err; }
+
+    // These should fail
+    old_log_level = hts_get_log_level();
+    hts_set_log_level(HTS_LOG_OFF);
+
+    r = bam_hdr_add_pg(header, "prog8", "ID", "my_id", NULL);
+    if (r == 0) { fail("bam_hdr_add_pg prog8 (unexpected success)"); goto err; }
+
+    r = bam_hdr_add_pg(header, "prog9", "PP", "non-existent", NULL);
+    if (r == 0) { fail("bam_hdr_add_pg prog9 (unexpected success)"); goto err; }
+
+    hts_set_log_level(old_log_level);
+    // End failing tests
+
+    if (strcmp(text, expected) != 0) {
+        fail("edited header does not match expected version");
+        fprintf(stderr,
+                "---------- Expected:\n%s\n"
+                "++++++++++ Got:\n%s\n"
+                "====================\n",
+                expected, text);
+        goto err;
+    }
+
+ err:
+    bam_hdr_destroy(header);
+    header = NULL;
+    if (in) sam_close(in);
+    return;
+}
 
 static void samrecord_layout(void)
 {
@@ -806,6 +891,7 @@ int main(int argc, char **argv)
     iterators1();
     samrecord_layout();
     use_header_api();
+    test_header_pg_lines();
     check_enum1();
     for (i = 1; i < argc; i++) faidx1(argv[i]);
 
