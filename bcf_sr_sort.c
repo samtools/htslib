@@ -147,7 +147,7 @@ static int multi_is_subset(var_t *avar, var_t *bvar)
     }
     return 0;
 }
-int32_t pairing_score(sr_sort_t *srt, int ivset, int jvset)
+uint32_t pairing_score(sr_sort_t *srt, int ivset, int jvset)
 {
     varset_t *iv = &srt->vset[ivset];
     varset_t *jv = &srt->vset[jvset];
@@ -185,7 +185,7 @@ int32_t pairing_score(sr_sort_t *srt, int ivset, int jvset)
     for (i=0; i<iv->nvar; i++) cnt += srt->var[iv->var[i]].nvcf;
     for (j=0; j<jv->nvar; j++) cnt += srt->var[jv->var[j]].nvcf;
 
-    return (1<<(28+min)) + cnt;
+    return (1u<<(28+min)) + cnt;
 }
 void remove_vset(sr_sort_t *srt, int jvset)
 {
