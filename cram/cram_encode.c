@@ -2632,10 +2632,14 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
         int l2 = cr->len / 2;
         unsigned char *from = (unsigned char *)bam_seq(b);
-        uint16_t *cpi = (uint16_t *)cp;
         cp[0] = 0;
         for (i = 0; i < l2; i++)
-            cpi[i] = le_int2(code2base[from[i]]);
+        {
+            // do not replace this memcpy by creating a misaligned
+            // pointer to cp using a uint16_t*, that is UB
+            const uint16_t cpi = le_int2(code2base[from[i]]);
+            memcpy(cp + i*sizeof(uint16_t), &cpi, sizeof(uint16_t));
+        }
         if ((i *= 2) < cr->len)
             cp[i] = seq_nt16_str[bam_seqi(bam_seq(b), i)];
     }
