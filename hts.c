@@ -395,7 +395,7 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
 {
     char smode[102], *cp, *cp2, *mode_c;
     htsFile *fp = NULL;
-    hFILE *hfile;
+    hFILE *hfile = NULL;
     char fmt_code = '\0';
 
     strncpy(smode, mode, 100);
@@ -421,8 +421,15 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     if (fmt && fmt->format != unknown_format)
         *mode_c = "\0g\0\0b\0c\0\0b\0g\0\0"[fmt->format];
 
-    char *fnidx = strstr(fn, HTS_IDX_DELIM);
-    if ( fnidx ) *fnidx = 0;
+    char *rmme = NULL, *fnidx = strstr(fn, HTS_IDX_DELIM);
+    if ( fnidx )
+    {
+        rmme = strdup(fn);
+        if ( !rmme ) goto error;
+        rmme[fnidx-fn] = 0;
+        fn = rmme;
+
+    }
 
     hfile = hopen(fn, smode);
     if (hfile == NULL) goto error;
@@ -434,12 +441,12 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
         if (hts_opt_apply(fp, fmt->specific) != 0)
             goto error;
 
-    if ( fnidx ) *fnidx = HTS_IDX_DELIM[0];
+    if ( rmme ) free(rmme);
     return fp;
 
 error:
-    hts_log_error("Failed to open file %s", fn);
-    if ( fnidx ) *fnidx = HTS_IDX_DELIM[0];
+    hts_log_error("Failed to open file %s", rmme);
+    if ( rmme ) free(rmme);
 
     if (hfile)
         hclose_abruptly(hfile);
