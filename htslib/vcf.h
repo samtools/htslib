@@ -960,7 +960,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
          @param h         BCF header structured (needed for BAI and CSI).
          @param min_shift CSI bin size (CSI default is 14).
          @param fnidx     Filename to write index to.  This pointer must remain valid
-                          until after sam_idx_save is called.
+                          until after bcf_idx_save is called.
          @return          0 on success, <0 on failure.
          @note This must be called after the header has been written, but before
                any other data.

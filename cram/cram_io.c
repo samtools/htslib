@@ -484,7 +484,7 @@ int itf8_put_blk(cram_block *blk, int val) {
  * Returns the number of bytes read on success
  *         -1 on failure
  */
-int int32_decode(cram_fd *fd, int32_t *val) {
+static int int32_decode(cram_fd *fd, int32_t *val) {
     int32_t i;
     if (4 != hread(fd->fp, &i, 4))
         return -1;
@@ -499,7 +499,7 @@ int int32_decode(cram_fd *fd, int32_t *val) {
  * Returns the number of bytes written on success
  *         -1 on failure
  */
-int int32_encode(cram_fd *fd, int32_t val) {
+static int int32_encode(cram_fd *fd, int32_t val) {
     val = le_int4(val);
     if (4 != hwrite(fd->fp, &val, 4))
         return -1;
@@ -1933,7 +1933,7 @@ int cram_set_header(cram_fd *fd, SAM_hdr *hdr) {
  * in directory with the filename and %[0-9]+s with portions of the filename
  * Any remaining parts of filename are added to the end with /%s.
  */
-int expand_cache_path(char *path, char *dir, char *fn) {
+static int expand_cache_path(char *path, char *dir, char *fn) {
     char *cp, *start = path;
     size_t len;
     size_t sz = PATH_MAX;
@@ -1996,7 +1996,7 @@ int expand_cache_path(char *path, char *dir, char *fn) {
 /*
  * Make the directory containing path and any prefix directories.
  */
-void mkdir_prefix(char *path, int mode) {
+static void mkdir_prefix(char *path, int mode) {
     char *cp = strrchr(path, '/');
     if (!cp)
         return;

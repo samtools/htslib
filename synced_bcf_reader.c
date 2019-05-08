@@ -376,7 +376,7 @@ void bcf_sr_remove_reader(bcf_srs_t *files, int i)
     files->nreaders--;
 }
 
-
+#if DEBUG_SYNCED_READER
 void debug_buffer(FILE *fp, bcf_sr_t *reader)
 {
     int j;
@@ -400,6 +400,7 @@ void debug_buffers(FILE *fp, bcf_srs_t *files)
     }
     fprintf(fp,"\n");
 }
+#endif
 
 static inline int has_filter(bcf_sr_t *reader, bcf1_t *line)
 {
@@ -576,7 +577,7 @@ static void _reader_shift_buffer(bcf_sr_t *reader)
         reader->nbuffer = 0;    // no other line
 }
 
-int _reader_next_line(bcf_srs_t *files)
+static int next_line(bcf_srs_t *files)
 {
     int i, min_pos = INT_MAX;
     const char *chr = NULL;
@@ -635,11 +636,11 @@ int _reader_next_line(bcf_srs_t *files)
 int bcf_sr_next_line(bcf_srs_t *files)
 {
     if ( !files->targets_als )
-        return _reader_next_line(files);
+        return next_line(files);
 
     while (1)
     {
-        int i, ret = _reader_next_line(files);
+        int i, ret = next_line(files);
         if ( !ret ) return ret;
 
         for (i=0; i<files->nreaders; i++)

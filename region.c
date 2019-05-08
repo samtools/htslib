@@ -36,7 +36,7 @@ typedef struct reglist
 KHASH_MAP_INIT_STR(reg, reglist_t)
 typedef kh_reg_t reghash_t;
 
-int compare_uint64 (const void * a, const void * b)
+static int compare_uint64 (const void * a, const void * b)
 {
     if (*(uint64_t *)a < *(uint64_t *)b) return -1;
     if (*(uint64_t *)a > *(uint64_t *)b) return 1;

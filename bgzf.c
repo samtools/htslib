@@ -1069,7 +1069,7 @@ static void job_cleanup(void *arg) {
     pthread_mutex_unlock(&mt->job_pool_m);
 }
 
-void *bgzf_encode_func(void *arg) {
+static void *bgzf_encode_func(void *arg) {
     bgzf_job *j = (bgzf_job *)arg;
 
     j->comp_len = BGZF_MAX_BLOCK_SIZE;
@@ -1084,7 +1084,7 @@ void *bgzf_encode_func(void *arg) {
 
 // Optimisation for compression level 0 (uncompressed deflate blocks)
 // Avoids memcpy of the data from uncompressed to compressed buffer.
-void *bgzf_encode_level0_func(void *arg) {
+static void *bgzf_encode_level0_func(void *arg) {
     bgzf_job *j = (bgzf_job *)arg;
     uint32_t crc;
     j->comp_len = j->uncomp_len + BLOCK_HEADER_LENGTH + BLOCK_FOOTER_LENGTH + 5;
@@ -1118,7 +1118,7 @@ void *bgzf_encode_level0_func(void *arg) {
 // Our input block has already been decoded by bgzf_mt_read_block().
 // We need to split that into a fetch block (compressed) and make this
 // do the actual decompression step.
-void *bgzf_decode_func(void *arg) {
+static void *bgzf_decode_func(void *arg) {
     bgzf_job *j = (bgzf_job *)arg;
 
     j->uncomp_len = BGZF_MAX_BLOCK_SIZE;
@@ -1135,7 +1135,7 @@ void *bgzf_decode_func(void *arg) {
  * Nul function so we can dispatch a job with the correct serial
  * to mark failure or to indicate an empty read (EOF).
  */
-void *bgzf_nul_func(void *arg) { return arg; }
+static void *bgzf_nul_func(void *arg) { return arg; }
 
 /*
  * Takes compressed blocks off the results queue and calls hwrite to

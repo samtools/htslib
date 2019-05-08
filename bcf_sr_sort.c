@@ -147,7 +147,7 @@ static int multi_is_subset(var_t *avar, var_t *bvar)
     }
     return 0;
 }
-uint32_t pairing_score(sr_sort_t *srt, int ivset, int jvset)
+static uint32_t pairing_score(sr_sort_t *srt, int ivset, int jvset)
 {
     varset_t *iv = &srt->vset[ivset];
     varset_t *jv = &srt->vset[jvset];
@@ -187,7 +187,7 @@ uint32_t pairing_score(sr_sort_t *srt, int ivset, int jvset)
 
     return (1u<<(28+min)) + cnt;
 }
-void remove_vset(sr_sort_t *srt, int jvset)
+static void remove_vset(sr_sort_t *srt, int jvset)
 {
     if ( jvset+1 < srt->nvset )
     {
@@ -202,7 +202,7 @@ void remove_vset(sr_sort_t *srt, int jvset)
     }
     srt->nvset--;
 }
-int merge_vsets(sr_sort_t *srt, int ivset, int jvset)
+static int merge_vsets(sr_sort_t *srt, int ivset, int jvset)
 {
     int i,j;
     if ( ivset > jvset ) { i = ivset; ivset = jvset; jvset = i; }
@@ -226,7 +226,7 @@ int merge_vsets(sr_sort_t *srt, int ivset, int jvset)
 
     return ivset;
 }
-void push_vset(sr_sort_t *srt, int ivset)
+static void push_vset(sr_sort_t *srt, int ivset)
 {
     varset_t *iv = &srt->vset[ivset];
     int i,j;
@@ -293,7 +293,7 @@ void debug_vbuf(sr_sort_t *srt)
 }
 #endif
 
-char *grp_create_key(sr_sort_t *srt)
+static char *grp_create_key(sr_sort_t *srt)
 {
     if ( !srt->str.l ) return strdup("");
     int i;

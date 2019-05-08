@@ -82,7 +82,7 @@ char **regidx_seq_names(regidx_t *idx, int *n)
     return idx->seq_names;
 }
 
-int _regidx_build_index(regidx_t *idx)
+static int build_index(regidx_t *idx)
 {
     int iseq;
     for (iseq=0; iseq<idx->nseq; iseq++)
@@ -119,7 +119,7 @@ int _regidx_build_index(regidx_t *idx)
 int regidx_insert(regidx_t *idx, char *line)
 {
     if ( !line )
-        return _regidx_build_index(idx);
+        return build_index(idx);
 
     char *chr_from, *chr_to;
     reg_t reg;

@@ -809,7 +809,7 @@ static hFILE *hopen_mem(const char *url, const char *mode)
     return hf;
 }
 
-hFILE *hopenv_mem(const char *filename, const char *mode, va_list args)
+static hFILE *hopenv_mem(const char *filename, const char *mode, va_list args)
 {
     char* buffer = va_arg(args, char*);
     size_t sz = va_arg(args, size_t);
