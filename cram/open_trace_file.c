@@ -82,6 +82,15 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "htslib/hts_log.h"
 
 /*
+ * Returns whether the path refers to a regular file.
+ */
+static int is_file(char *fn) {
+    struct stat buf;
+    if ( stat(fn,&buf) ) return 0;
+    return S_ISREG(buf.st_mode);
+}
+
+/*
  * Tokenises the search path splitting on colons (unix) or semicolons
  * (windows).
  * We also  explicitly add a "./" to the end of the search path

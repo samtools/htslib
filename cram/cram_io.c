@@ -1929,6 +1929,15 @@ int cram_set_header(cram_fd *fd, SAM_hdr *hdr) {
 }
 
 /*
+ * Returns whether the path refers to a directory.
+ */
+static int is_directory(char *fn) {
+    struct stat buf;
+    if ( stat(fn,&buf) ) return 0;
+    return S_ISDIR(buf.st_mode);
+}
+
+/*
  * Converts a directory and a filename into an expanded path, replacing %s
  * in directory with the filename and %[0-9]+s with portions of the filename
  * Any remaining parts of filename are added to the end with /%s.
