@@ -3123,6 +3123,7 @@ static int test_and_fetch(const char *fn, const char **local_fn)
     FILE *local_fp = NULL;
     uint8_t *buf = NULL;
     int save_errno;
+    htsFormat fmt;
 
     if (hisremote(fn)) {
         const int buf_size = 1 * 1024 * 1024;
@@ -3138,8 +3139,20 @@ static int test_and_fetch(const char *fn, const char **local_fn)
             *local_fn = p;
             return 0;
         }
-        // Attempt to open remote file. Stay quiet on failure, it is OK to fail when trying first .csi then .tbi index.
-        if ((remote_hfp = hopen(fn, "r")) == 0) return -1;
+        // Attempt to open remote file. Stay quiet on failure, it is OK to fail when trying first .csi then .bai or .tbi index.
+        if ((remote_hfp = hopen(fn, "r")) == 0) {
+            hts_log_info("Failed to open index file '%s'", fn);
+            return -1;
+        }
+        if (hts_detect_format(remote_hfp, &fmt)) {
+            hts_log_error("Failed to detect format of index file '%s'", fn);
+            goto fail;
+        }
+        if (fmt.category != index_file || (fmt.format != bai &&  fmt.format != csi && fmt.format != tbi)) {
+            hts_log_error("Format of index file '%s' is not supported", fn);
+            goto fail;
+        }
+
         if ((local_fp = fopen(p, "w")) == 0) {
             hts_log_error("Failed to create file %s in the working directory", p);
             goto fail;
