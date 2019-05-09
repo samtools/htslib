@@ -3198,6 +3198,92 @@ static int test_and_fetch(const char *fn, const char **local_fn)
     return -2;
 }
 
+/*
+ * Check the existence of a local index file using part of the alignment file name.
+ * The order is alignment.bam.csi, alignment.csi, alignment.bam.bai, alignment.bai
+ * @param fn    - pointer to the file name
+ * @param fnidx - pointer to the index file name placeholder
+ * @return        1 for success, 0 for failure
+ */
+static int idx_check(const char *fn, int fmt, char **fnidx) {
+    int i, l_fn, l_ext;
+    char *fn_tmp = NULL, *fnidx_tmp;
+    char *csi_ext = ".csi";
+    char *bai_ext = ".bai";
+    char *tbi_ext = ".tbi";
+
+    if (hisremote(fn)) {
+        for (i = strlen(fn) - 1; i >= 0; --i)
+            if (fn[i] == '/') {
+                fn_tmp = (char *)&fn[i+1];
+                break;
+            }
+    } else {
+        fn_tmp = (char *)fn;
+    }
+
+    if (!fn_tmp) return 0;
+    hts_log_info("Using alignment file '%s'", fn_tmp);
+    l_fn = strlen(fn_tmp); l_ext = 4;
+    fnidx_tmp = (char*)calloc(l_fn + l_ext + 1, 1);
+    if (!fnidx_tmp) return 0;
+
+    struct stat sbuf;
+    if (fmt != HTS_FMT_TBI) {
+        // Try alignment.bam.csi first
+        strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, csi_ext);
+        if(stat(fnidx_tmp, &sbuf) == 0) {
+            *fnidx = fnidx_tmp;
+            return 1;
+        } else { // Then try alignment.csi
+            for (i = l_fn - 1; i > 0; --i)
+                if (fnidx_tmp[i] == '.') {
+                    strcpy(fnidx_tmp + i, csi_ext);
+                    if(stat(fnidx_tmp, &sbuf) == 0) {
+                        *fnidx = fnidx_tmp;
+                        return 1;
+                    }
+                    break;
+                }
+        }
+        // Next, try alignment.bam.bai
+        strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, bai_ext);
+        if(stat(fnidx_tmp, &sbuf) == 0) {
+            *fnidx = fnidx_tmp;
+            return 1;
+        } else { // And finally, try alignment.bai
+            for (i = l_fn - 1; i > 0; --i)
+                if (fnidx_tmp[i] == '.') {
+                    strcpy(fnidx_tmp + i, bai_ext);
+                    if(stat(fnidx_tmp, &sbuf) == 0) {
+                        *fnidx = fnidx_tmp;
+                        return 1;
+                    }
+                    break;
+                }
+        }
+    } else { // Do the same for .tbi
+        strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, tbi_ext);
+        if(stat(fnidx_tmp, &sbuf) == 0) {
+            *fnidx = fnidx_tmp;
+            return 1;
+        } else {
+            for (i = l_fn - 1; i > 0; --i)
+                if (fnidx_tmp[i] == '.') {
+                    strcpy(fnidx_tmp + i, tbi_ext);
+                    if(stat(fnidx_tmp, &sbuf) == 0) {
+                        *fnidx = fnidx_tmp;
+                        return 1;
+                    }
+                    break;
+                }
+        }
+    }
+
+    free(fnidx_tmp);
+    return 0;
+}
+
 char *hts_idx_getfn(const char *fn, const char *ext)
 {
     int i, l_fn, l_ext, ret;
@@ -3244,9 +3330,16 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt)
         return idx;
     }
 
-    fnidx = hts_idx_getfn(fn, ".csi");
-    if (! fnidx) fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
-    if (fnidx == 0) return 0;
+    if (idx_check(fn, fmt, &fnidx) == 0) {
+        fnidx = hts_idx_getfn(fn, ".csi");
+        if (! fnidx) fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
+    } else {
+        hts_log_info("Using index file '%s'", fnidx);
+    }
+    if (fnidx == 0) {
+        hts_log_error("Could not retrieve index file for '%s'", fn);
+        return 0;
+    }
 
     idx = hts_idx_load2(fn, fnidx);
     free(fnidx);
