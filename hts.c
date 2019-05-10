@@ -1922,7 +1922,7 @@ static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
     return 0;
 }
 
-static hts_idx_t *hts_idx_load_local(const char *fn)
+static hts_idx_t *idx_load_local(const char *fn)
 {
     uint8_t magic[4];
     int i, is_be;
@@ -3117,7 +3117,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
  **********************/
 // Returns -1 if index couldn't be opened.
 //         -2 on other errors
-static int test_and_fetch(const char *fn, const char **local_fn)
+static int idx_test_and_fetch(const char *fn, const char **local_fn)
 {
     hFILE *remote_hfp;
     FILE *local_fp = NULL;
@@ -3205,7 +3205,7 @@ static int test_and_fetch(const char *fn, const char **local_fn)
  * @param fnidx - pointer to the index file name placeholder
  * @return        1 for success, 0 for failure
  */
-static int idx_check(const char *fn, int fmt, char **fnidx) {
+static int idx_check_local(const char *fn, int fmt, char **fnidx) {
     int i, l_fn, l_ext;
     char *fn_tmp = NULL, *fnidx_tmp;
     char *csi_ext = ".csi";
@@ -3294,13 +3294,13 @@ char *hts_idx_getfn(const char *fn, const char *ext)
     if (!fnidx) return NULL;
     // First try : append `ext` to `fn`
     strcpy(fnidx, fn); strcpy(fnidx + l_fn, ext);
-    if ((ret = test_and_fetch(fnidx, &local_fn)) == -1) {
+    if ((ret = idx_test_and_fetch(fnidx, &local_fn)) == -1) {
         // Second try : replace suffix of `fn` with `ext`
         for (i = l_fn - 1; i > 0; --i)
             if (fnidx[i] == '.' || fnidx[i] == '/') break;
         if (fnidx[i] == '.') {
             strcpy(fnidx + i, ext);
-            ret = test_and_fetch(fnidx, &local_fn);
+            ret = idx_test_and_fetch(fnidx, &local_fn);
         }
     }
     if (ret < 0) {
@@ -3330,13 +3330,13 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt)
         return idx;
     }
 
-    if (idx_check(fn, fmt, &fnidx) == 0) {
+    if (idx_check_local(fn, fmt, &fnidx) == 0) {
         fnidx = hts_idx_getfn(fn, ".csi");
-        if (! fnidx) fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
+        if (!fnidx) fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
     } else {
         hts_log_info("Using index file '%s'", fnidx);
     }
-    if (fnidx == 0) {
+    if (!fnidx) {
         hts_log_error("Could not retrieve index file for '%s'", fn);
         return 0;
     }
@@ -3356,7 +3356,11 @@ hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx)
             hts_log_warning("The index file is older than the data file: %s", fnidx);
     }
 
-    return hts_idx_load_local(fnidx);
+    hts_idx_t *idx = idx_load_local(fnidx);
+    if (!idx)
+        hts_log_error("Could not load local index file '%s'", fnidx);
+
+    return idx;
 }
 
 
