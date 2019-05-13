@@ -3207,7 +3207,8 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn)
  */
 static int idx_check_local(const char *fn, int fmt, char **fnidx) {
     int i, l_fn, l_ext;
-    char *fn_tmp = NULL, *fnidx_tmp;
+    const char *fn_tmp = NULL;
+    char *fnidx_tmp;
     char *csi_ext = ".csi";
     char *bai_ext = ".bai";
     char *tbi_ext = ".tbi";
@@ -3219,7 +3220,15 @@ static int idx_check_local(const char *fn, int fmt, char **fnidx) {
                 break;
             }
     } else {
-        fn_tmp = (char *)fn;
+        // Borrowed from hopen_fd_fileuri()
+        if (strncmp(fn, "file://localhost/", 17) == 0) fn_tmp = fn + 16;
+        else if (strncmp(fn, "file:///", 8) == 0) fn_tmp = fn + 7;
+        else fn_tmp = fn;
+#if defined(_WIN32) || defined(__MSYS__)
+        // For cases like C:/foo
+        if (fn_tmp[0] == '/' && fn_tmp[1] && fn_tmp[2] == ':' && fn_tmp[3] == '/')
+            fn_tmp++;
+#endif
     }
 
     if (!fn_tmp) return 0;
@@ -3229,23 +3238,24 @@ static int idx_check_local(const char *fn, int fmt, char **fnidx) {
     if (!fnidx_tmp) return 0;
 
     struct stat sbuf;
-    if (fmt != HTS_FMT_TBI) {
-        // Try alignment.bam.csi first
-        strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, csi_ext);
-        if(stat(fnidx_tmp, &sbuf) == 0) {
-            *fnidx = fnidx_tmp;
-            return 1;
-        } else { // Then try alignment.csi
-            for (i = l_fn - 1; i > 0; --i)
-                if (fnidx_tmp[i] == '.') {
-                    strcpy(fnidx_tmp + i, csi_ext);
-                    if(stat(fnidx_tmp, &sbuf) == 0) {
-                        *fnidx = fnidx_tmp;
-                        return 1;
-                    }
-                    break;
+
+    // Try alignment.bam.csi first
+    strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, csi_ext);
+    if(stat(fnidx_tmp, &sbuf) == 0) {
+        *fnidx = fnidx_tmp;
+        return 1;
+    } else { // Then try alignment.csi
+        for (i = l_fn - 1; i > 0; --i)
+            if (fnidx_tmp[i] == '.') {
+                strcpy(fnidx_tmp + i, csi_ext);
+                if(stat(fnidx_tmp, &sbuf) == 0) {
+                    *fnidx = fnidx_tmp;
+                    return 1;
                 }
-        }
+                break;
+            }
+    }
+    if (fmt == HTS_FMT_BAI) {
         // Next, try alignment.bam.bai
         strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, bai_ext);
         if(stat(fnidx_tmp, &sbuf) == 0) {
@@ -3262,7 +3272,7 @@ static int idx_check_local(const char *fn, int fmt, char **fnidx) {
                     break;
                 }
         }
-    } else { // Do the same for .tbi
+    } else { // Or .tbi
         strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, tbi_ext);
         if(stat(fnidx_tmp, &sbuf) == 0) {
             *fnidx = fnidx_tmp;
@@ -3330,7 +3340,7 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt)
         return idx;
     }
 
-    if (idx_check_local(fn, fmt, &fnidx) == 0) {
+    if (idx_check_local(fn, fmt, &fnidx) == 0 && hisremote(fn)) {
         fnidx = hts_idx_getfn(fn, ".csi");
         if (!fnidx) fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
     } else {

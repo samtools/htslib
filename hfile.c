@@ -689,7 +689,7 @@ static hFILE *hopen_fd_fileuri(const char *url, const char *mode)
 
 #if defined(_WIN32) || defined(__MSYS__)
     // For cases like C:/foo
-    if (url[0] == '/' && url[2] == ':' && url[3] == '/') url++;
+    if (url[0] == '/' && url[1] && url[2] == ':' && url[3] == '/') url++;
 #endif
 
     return hopen_fd(url, mode);
