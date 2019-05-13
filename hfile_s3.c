@@ -378,7 +378,7 @@ static hFILE * s3_rewrite(const char *s3url, const char *mode, va_list *argsp)
     if (ad->id.l == 0)
         parse_ini("~/.s3cfg", profile.s, "access_key", &ad->id,
                   "secret_key", &ad->secret, "access_token", &ad->token,
-                  "region", &ad->bucket_location || &ad->region,
+                  "bucket_location", &ad->region,
                   "host_base", &host_base, NULL);
     if (ad->id.l == 0)
         parse_simple("~/.awssecret", &ad->id, &ad->secret);
