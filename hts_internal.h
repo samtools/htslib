@@ -46,6 +46,7 @@ struct hts_json_token {
 
 struct cram_fd;
 
+// Retrieve the name of the index file and also download it, if it is remote
 char *hts_idx_getfn(const char *fn, const char *ext);
 
 // Used for on-the-fly indexing.  See the comments in hts.c.

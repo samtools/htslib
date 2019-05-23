@@ -75,6 +75,7 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
     int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads, const tbx_conf_t *conf);
     tbx_t *tbx_index_load(const char *fn);
     tbx_t *tbx_index_load2(const char *fn, const char *fnidx);
+    tbx_t *tbx_index_load3(const char *fn);
     const char **tbx_seqnames(tbx_t *tbx, int *n);  // free the array but not the values
     void tbx_destroy(tbx_t *tbx);
 

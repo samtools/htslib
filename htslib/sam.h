@@ -730,6 +730,8 @@ hts_idx_t *sam_index_load(htsFile *fp, const char *fn);
 */
 hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx);
 
+hts_idx_t *sam_index_load3(htsFile *fp, const char *fn);
+
 /// Generate and save an index file
 /** @param fn        Input BAM/etc filename, to which .csi/etc will be added
     @param min_shift Positive to generate CSI, or 0 to generate BAI

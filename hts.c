@@ -1864,7 +1864,7 @@ fail:
     return -1;
 }
 
-static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
+static int idx_read_core(hts_idx_t *idx, BGZF *fp, int fmt)
 {
     int32_t i, n, is_be;
     is_be = ed_is_big();
@@ -1922,7 +1922,7 @@ static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
     return 0;
 }
 
-static hts_idx_t *idx_load_local(const char *fn)
+static hts_idx_t *idx_read(const char *fn)
 {
     uint8_t magic[4];
     int i, is_be;
@@ -1951,7 +1951,7 @@ static hts_idx_t *idx_load_local(const char *fn)
         idx->l_meta = x[2];
         idx->meta = meta;
         meta = NULL;
-        if (hts_idx_load_core(idx, fp, HTS_FMT_CSI) < 0) goto fail;
+        if (idx_read_core(idx, fp, HTS_FMT_CSI) < 0) goto fail;
     }
     else if (memcmp(magic, "TBI\1", 4) == 0) {
         uint8_t x[8 * 4];
@@ -1972,7 +1972,7 @@ static hts_idx_t *idx_load_local(const char *fn)
         if (bgzf_read(fp, idx->meta + 28, n) != n) goto fail;
         // Prevent possible strlen past the end in tbx_index_load2
         idx->meta[idx->l_meta] = '\0';
-        if (hts_idx_load_core(idx, fp, HTS_FMT_TBI) < 0) goto fail;
+        if (idx_read_core(idx, fp, HTS_FMT_TBI) < 0) goto fail;
     }
     else if (memcmp(magic, "BAI\1", 4) == 0) {
         uint32_t n;
@@ -1980,7 +1980,7 @@ static hts_idx_t *idx_load_local(const char *fn)
         if (is_be) ed_swap_4p(&n);
         if (n > INT32_MAX) goto fail;
         if ((idx = hts_idx_init(n, HTS_FMT_BAI, 0, 14, 5)) == NULL) goto fail;
-        if (hts_idx_load_core(idx, fp, HTS_FMT_BAI) < 0) goto fail;
+        if (idx_read_core(idx, fp, HTS_FMT_BAI) < 0) goto fail;
     }
     else { errno = EINVAL; goto fail; }
 
@@ -3117,7 +3117,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
  **********************/
 // Returns -1 if index couldn't be opened.
 //         -2 on other errors
-static int idx_test_and_fetch(const char *fn, const char **local_fn)
+static int idx_test_and_fetch(const char *fn, const char **local_fn, int download)
 {
     hFILE *remote_hfp;
     FILE *local_fp = NULL;
@@ -3153,33 +3153,45 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn)
             goto fail;
         }
 
-        if ((local_fp = fopen(p, "w")) == 0) {
-            hts_log_error("Failed to create file %s in the working directory", p);
-            goto fail;
-        }
-        hts_log_info("Downloading file %s to local directory", fn);
-        buf = (uint8_t*)calloc(buf_size, 1);
-        if (!buf) {
-            hts_log_error("%s", strerror(errno));
-            goto fail;
-        }
-        while ((l = hread(remote_hfp, buf, buf_size)) > 0) {
-            if (fwrite(buf, 1, l, local_fp) != l) {
-                hts_log_error("Failed to write data to %s : %s",
-                              fn, strerror(errno));
+        if (download) {
+            if ((local_fp = fopen(p, "w")) == 0) {
+                hts_log_error("Failed to create file %s in the working directory", p);
                 goto fail;
             }
+            hts_log_info("Downloading file %s to local directory", fn);
+            buf = (uint8_t*)calloc(buf_size, 1);
+            if (!buf) {
+                hts_log_error("%s", strerror(errno));
+                goto fail;
+            }
+            while ((l = hread(remote_hfp, buf, buf_size)) > 0) {
+                if (fwrite(buf, 1, l, local_fp) != l) {
+                    hts_log_error("Failed to write data to %s : %s",
+                            fn, strerror(errno));
+                    free(buf);
+                    goto fail;
+                }
+            }
+            free(buf);
+            if (l < 0) {
+                hts_log_error("Error reading \"%s\"", fn);
+                goto fail;
+            }
+            if (fclose(local_fp) < 0) {
+                hts_log_error("Error closing %s : %s", fn, strerror(errno));
+                local_fp = NULL;
+                goto fail;
+            }
+
+            *local_fn = p;
+        } else {
+            *local_fn = fn;
         }
-        free(buf);
-        if (fclose(local_fp) < 0) {
-            hts_log_error("Error closing %s : %s", fn, strerror(errno));
-            local_fp = NULL;
-            goto fail;
-        }
+
         if (hclose(remote_hfp) != 0) {
             hts_log_error("Failed to close remote file %s", fn);
         }
-        *local_fn = p;
+
         return 0;
     } else {
         hFILE *local_hfp;
@@ -3212,6 +3224,9 @@ static int idx_check_local(const char *fn, int fmt, char **fnidx) {
     char *csi_ext = ".csi";
     char *bai_ext = ".bai";
     char *tbi_ext = ".tbi";
+
+    if (!fn)
+        return 0;
 
     if (hisremote(fn)) {
         for (i = strlen(fn) - 1; i >= 0; --i)
@@ -3294,8 +3309,7 @@ static int idx_check_local(const char *fn, int fmt, char **fnidx) {
     return 0;
 }
 
-char *hts_idx_getfn(const char *fn, const char *ext)
-{
+static char *idx_filename(const char *fn, const char *ext, int download) {
     int i, l_fn, l_ext, ret;
     char *fnidx;
     const char *local_fn = NULL;
@@ -3304,13 +3318,13 @@ char *hts_idx_getfn(const char *fn, const char *ext)
     if (!fnidx) return NULL;
     // First try : append `ext` to `fn`
     strcpy(fnidx, fn); strcpy(fnidx + l_fn, ext);
-    if ((ret = idx_test_and_fetch(fnidx, &local_fn)) == -1) {
+    if ((ret = idx_test_and_fetch(fnidx, &local_fn, download)) == -1) {
         // Second try : replace suffix of `fn` with `ext`
         for (i = l_fn - 1; i > 0; --i)
             if (fnidx[i] == '.' || fnidx[i] == '/') break;
         if (fnidx[i] == '.') {
             strcpy(fnidx + i, ext);
-            ret = idx_test_and_fetch(fnidx, &local_fn);
+            ret = idx_test_and_fetch(fnidx, &local_fn, download);
         }
     }
     if (ret < 0) {
@@ -3322,7 +3336,12 @@ char *hts_idx_getfn(const char *fn, const char *ext)
     return fnidx;
 }
 
-hts_idx_t *hts_idx_load(const char *fn, int fmt)
+char *hts_idx_getfn(const char *fn, const char *ext)
+{
+    return idx_filename(fn, ext, 1);
+}
+
+static hts_idx_t *idx_find_and_load(const char *fn, int fmt, int download)
 {
     char *fnidx = strstr(fn, HTS_IDX_DELIM);
     hts_idx_t *idx;
@@ -3341,19 +3360,33 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt)
     }
 
     if (idx_check_local(fn, fmt, &fnidx) == 0 && hisremote(fn)) {
-        fnidx = hts_idx_getfn(fn, ".csi");
-        if (!fnidx) fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
-    } else {
-        hts_log_info("Using index file '%s'", fnidx);
+        if (download) {
+            fnidx = hts_idx_getfn(fn, ".csi");
+            if (!fnidx) fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
+        } else {
+            fnidx = idx_filename(fn, ".csi", 0);
+            if (!fnidx) fnidx = idx_filename(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi", 0);
+        }
     }
     if (!fnidx) {
         hts_log_error("Could not retrieve index file for '%s'", fn);
         return 0;
     }
 
-    idx = hts_idx_load2(fn, fnidx);
+    if (download)
+        idx = hts_idx_load2(fn, fnidx);
+    else
+        idx = idx_read(fnidx);
     free(fnidx);
     return idx;
+}
+
+hts_idx_t *hts_idx_load(const char *fn, int fmt) {
+    return idx_find_and_load(fn, fmt, 1);
+}
+
+hts_idx_t *hts_idx_stream(const char *fn, int fmt) {
+    return idx_find_and_load(fn, fmt, 0);
 }
 
 hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx)
@@ -3366,7 +3399,7 @@ hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx)
             hts_log_warning("The index file is older than the data file: %s", fnidx);
     }
 
-    hts_idx_t *idx = idx_load_local(fnidx);
+    hts_idx_t *idx = idx_read(fnidx);
     if (!idx)
         hts_log_error("Could not load local index file '%s'", fnidx);
 

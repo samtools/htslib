@@ -703,6 +703,16 @@ int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int
 */
 hts_idx_t *hts_idx_load(const char *fn, int fmt);
 
+/// Stream an index file. Same as above, but do not save it to disk.
+/** @param fn   BAM/BCF/etc filename, to which .bai/.csi/etc will be added or
+                the extension substituted, to search for an existing index file.
+                In case of a non-standard naming, the file name can include the
+                name of the index file delimited with HTS_IDX_DELIM.
+    @param fmt  One of the HTS_FMT_* index formats
+    @return  The index, or NULL if an error occurred.
+*/
+hts_idx_t *hts_idx_stream(const char *fn, int fmt);
+
 /// Load a specific index file
 /** @param fn     Input BAM/BCF/etc filename
     @param fnidx  The input index filename
