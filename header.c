@@ -1006,57 +1006,41 @@ int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
 
 /*
  * Returns a complete line of formatted text for a specific head type/ID
- * combination. If ID is NULL then it returns the first line of the specified
+ * combination. If ID_key is NULL then it returns the first line of the specified
  * type.
- *
- * The returned string is malloced and should be freed by the calling
- * function with free().
- *
- * Returns NULL if no type/ID is found.
  */
-char *bam_hdr_find_line(bam_hdr_t *bh, const char *type, ...) {
-    //                    ) {
-    va_list args;
+int bam_hdr_find_line(bam_hdr_t *bh, const char *type,
+                      const char *ID_key, const char *ID_val, kstring_t *ks) {
     bam_hrecs_t *hrecs;
     if (!bh)
-        return NULL;
+        return -2;
 
     if (!(hrecs = bh->hrecs)) {
         if (bam_hdr_parse(bh) != 0)
-            return NULL;
+            return -2;
         hrecs = bh->hrecs;
     }
 
-    const char *ID_key, *ID_value;
-    va_start(args, type);
-    ID_key = (char *)va_arg(args, char *);
-    if (ID_key)
-        ID_value = (char *)va_arg(args, char *);
-    else
-        ID_value = NULL;
-    va_end(args);
-
-    bam_hrec_type_t *ty = bam_hrecs_find_type(hrecs, type, ID_key, ID_value);
+    bam_hrec_type_t *ty = bam_hrecs_find_type(hrecs, type, ID_key, ID_val);
     if (!ty)
-        return NULL;
+        return -1;
 
-    kstring_t ks = KS_INITIALIZER;
     bam_hrec_tag_t *tag;
     int r = 0;
     // Paste together the line from the hashed copy
-    r |= (kputc_('@', &ks) == EOF);
-    r |= (kputs(type, &ks) == EOF);
+    ks->l = 0;
+    r |= (kputc_('@', ks) == EOF);
+    r |= (kputs(type, ks) == EOF);
     for (tag = ty->tag; tag; tag = tag->next) {
-        r |= (kputc_('\t', &ks) == EOF);
-        r |= (kputsn(tag->str, tag->len, &ks) == EOF);
+        r |= (kputc_('\t', ks) == EOF);
+        r |= (kputsn(tag->str, tag->len, ks) == EOF);
     }
 
     if (r) {
-        KS_FREE(&ks);
-        return NULL;
+        return -2;
     }
 
-    return ks_release(&ks);
+    return 0;
 }
 
 /*
@@ -1316,36 +1300,36 @@ int bam_hdr_count_lines(bam_hdr_t *bh, const char *type) {
 
 /* ==== Key:val level methods ==== */
 
-char *bam_hdr_find_tag(bam_hdr_t *bh,
-        const char *type,
-        const char *ID_key,
-        const char *ID_value,
-        const char *key) {
+int bam_hdr_find_tag(bam_hdr_t *bh,
+                     const char *type,
+                     const char *ID_key,
+                     const char *ID_value,
+                     const char *key,
+                     kstring_t *ks) {
     bam_hrecs_t *hrecs;
     if (!bh || !type || !key)
-        return NULL;
+        return -2;
 
     if (!(hrecs = bh->hrecs)) {
         if (bam_hdr_parse(bh) != 0)
-            return NULL;
+            return -2;
         hrecs = bh->hrecs;
     }
 
     bam_hrec_type_t *ty = bam_hrecs_find_type(hrecs, type, ID_key, ID_value);
     if (!ty)
-        return NULL;
+        return -1;
 
     bam_hrec_tag_t *tag = bam_hrecs_find_key(ty, key, NULL);
     if (!tag || !tag->str || tag->len < 4)
-        return NULL;
+        return -1;
 
-    kstring_t ks = KS_INITIALIZER;
-    if (kputsn(tag->str+3, tag->len-3, &ks) == EOF) {
-        KS_FREE(&ks);
-        return NULL;
+    ks->l = 0;
+    if (kputsn(tag->str+3, tag->len-3, ks) == EOF) {
+        return -2;
     }
 
-    return ks_release(&ks);
+    return 0;
 }
 
 int bam_hdr_remove_tag(bam_hdr_t *bh,

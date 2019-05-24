@@ -414,17 +414,19 @@ int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...);
  * @param type      Type of the searched line. Eg. "SQ"
  * @param ID_key    Tag key defining the line. Eg. "SN"
  * @param ID_value  Tag value associated with the key above. Eg. "ref1"
- * @return          A pointer to the line text on success;
- *                  NULL if no type/ID is found, or another error occurred
+ * @param ks        kstring to hold the result
+ * @return          0 on success;
+ *                 -1 if no matching line is found
+ *                 -2 on other failures
  *
- * Returns a complete line of formatted text for a specific
- * head type/ID combination. If ID is NULL then it returns
- * the first line of the specified type.
+ * Puts a complete line of formatted text for a specific header type/ID
+ * combination into @p ks. If ID_key is NULL then it returns the first line of
+ * the specified type.
  *
- * The returned string is malloced and should be freed by the calling
- * function with free().
+ * Any existing content in @p ks will be overwritten.
  */
-char *bam_hdr_find_line(bam_hdr_t *bh, const char *type, ...);
+int bam_hdr_find_line(bam_hdr_t *bh, const char *type,
+                      const char *ID_key, const char *ID_val, kstring_t *ks);
 
 /// Remove a line with given type / id from a header
 /*!
@@ -439,11 +441,11 @@ char *bam_hdr_find_line(bam_hdr_t *bh, const char *type, ...);
  * \@SQ line is uniquely identified by the SN tag.
  * \@RG line is uniquely identified by the ID tag.
  * \@PG line is uniquely identified by the ID tag.
- * Eg. bam_hdr_find_line(bh, "SQ", "SN", "ref1")
+ * Eg. bam_hdr_remove_line_key(bh, "SQ", "SN", "ref1")
  *
  * If no key:value pair is specified, the type MUST be followed by a NULL argument and
  * the first line of the type will be removed, if any.
- * Eg. bam_hdr_find_line(bh, "SQ", NULL)
+ * Eg. bam_hdr_remove_line_key(bh, "SQ", NULL, NULL)
  *
  * @note Removing \@PG lines is currently unsupported.
  */
@@ -517,16 +519,17 @@ int bam_hdr_count_lines(bam_hdr_t *bh, const char *type);
  * @param ID_key    Tag key defining the line. Eg. "SN". Can be NULL, if looking for the first line.
  * @param ID_value  Tag value associated with the key above. Eg. "ref1". Can be NULL, if ID_key is NULL.
  * @param key       Key of the searched tag. Eg. "LN"
- * @return          A pointer to the key:value text on success, NULL on failure
+ * @param ks        kstring where the value will be written
+ * @return          0 on success
+ *                 -1 if the requested tag does not exist
+ *                 -2 on other errors
  *
- * Looks for a specific key in a single SAM header line and returns the
- * associated value.  The header line is selected using the ID_key and
- * ID_value parameters.
- *
- * The returned string is malloced and should be freed by the calling
- * function with free().
+ * Looks for a specific key in a single SAM header line and writes the
+ * associated value into @p ks.  The header line is selected using the ID_key
+ * and ID_value parameters.  Any pre-existing content in @p ks will be
+ * overwritten.
  */
-char *bam_hdr_find_tag(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value, const char *key);
+int bam_hdr_find_tag(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value, const char *key, kstring_t *ks);
 
 /// Remove the key from the line identified by type, ID_key and ID_value.
 /*!
@@ -595,13 +598,13 @@ void bam_hdr_incr_ref(bam_hdr_t *bh);
  */
 
 /// Returns the SAM formatted text of the \@HD header line
-#define bam_hdr_find_hd(h) bam_hdr_find_line(h, "HD", NULL, NULL)
+#define bam_hdr_find_hd(h, ks) bam_hdr_find_line((h), "HD", NULL, NULL, (ks))
 /// Returns the value associated with a given \@HD line tag
-#define bam_hdr_find_tag_hd(h, key) bam_hdr_find_tag(h, "HD", NULL, NULL, key)
+#define bam_hdr_find_tag_hd(h, key, ks) bam_hdr_find_tag((h), "HD", NULL, NULL, (key), (ks))
 /// Adds or updates tags on the header \@HD line
-#define bam_hdr_update_hd(h, ...) bam_hdr_update_line(h, "HD", NULL, NULL, __VA_ARGS__, NULL)
+#define bam_hdr_update_hd(h, ...) bam_hdr_update_line((h), "HD", NULL, NULL, __VA_ARGS__, NULL)
 /// Removes the \@HD line tag with the given key
-#define bam_hdr_remove_tag_hd(h, ...) bam_hdr_remove_tag(h, "HD", NULL, NULL, __VA_ARGS__)
+#define bam_hdr_remove_tag_hd(h, key) bam_hdr_remove_tag((h), "HD", NULL, NULL, (key))
 
 /* Alignment */
 

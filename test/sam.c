@@ -513,7 +513,7 @@ static void copy_check_alignment(const char *infname, const char *informat,
 
 static void use_header_api() {
     static const char header_text[] = "data:,"
-            "@HD\tVN:1.4\tGO:group\n"
+            "@HD\tVN:1.4\tGO:group\tSS:coordinate:queryname\n"
             "@SQ\tSN:ref0\tLN:100\n"
             "@CO\tThis line below will be updated\n"
             "@SQ\tSN:ref1\tLN:5001\tM5:983dalu9ue2\n"
@@ -525,7 +525,7 @@ static void use_header_api() {
             { '@', 'R', 'G', '\t', 'I', 'D', ':', 'r', 'u', 'n', '1' };
 
     static const char expected[] =
-            "@HD\tVN:1.5\n"
+            "@HD\tVN:1.5\tSO:coordinate\n"
             "@CO\tThis line below will be updated\n"
             "@SQ\tSN:ref1\tLN:5001\tM5:kja8u34a2q3\n"
             "@CO\tThis line is good\n"
@@ -547,7 +547,7 @@ static void use_header_api() {
     samFile *in = sam_open(header_text, "r");
     samFile *out = sam_open(outfname, outmode);
     bam_hdr_t *header = NULL;
-    char *val;
+    kstring_t ks = { 0, 0, NULL };
     size_t bytes;
     int r, i;
 
@@ -598,12 +598,12 @@ static void use_header_api() {
     r = bam_hdr_remove_line_key(header, "RG", "ID", "run2");
     if (r < 0) { fail("bam_hdr_remove_line_key"); goto err; }
 
-    val = bam_hdr_find_tag(header, "RG", "ID", "run3", "ID");
-    if (!val || strcmp(val, "run3") != 0) {
-        fail("bam_hdr_find_tag() expected \"run3\" got \"%s\"", val);
+    r = bam_hdr_find_tag(header, "RG", "ID", "run3", "ID", &ks);
+    if (r < 0 || !ks.s || strcmp(ks.s, "run3") != 0) {
+        fail("bam_hdr_find_tag() expected \"run3\" got \"%s\"",
+             r == 0 && ks.s ? ks.s : "NULL");
         goto err;
     }
-    free(val);
 
     r = bam_hdr_remove_line_pos(header, "RG", 2); // Removes run3
     if (r < 0) { fail("bam_hdr_remove_line_pos"); goto err; }
@@ -614,13 +614,34 @@ static void use_header_api() {
     r = bam_hdr_remove_line_pos(header, "SQ", 2); // Removes ref1.5
     if (r < 0) { fail("bam_hdr_remove_line_pos"); goto err; }
 
-    val = bam_hdr_find_tag(header, "SQ", "SN", "ref1", "M5");
-    if (!val || strcmp(val, "kja8u34a2q3") != 0) {
+    r = bam_hdr_find_tag(header, "SQ", "SN", "ref1", "M5", &ks);
+    if (r < 0 || !ks.s || strcmp(ks.s, "kja8u34a2q3") != 0) {
         fail("bam_hdr_find_tag() expected \"kja8u34a2q3\" got \"%s\"",
-             val ? val : "NULL");
+             r == 0 && ks.s ? ks.s : "NULL");
         goto err;
     }
-    free(val);
+
+    r = bam_hdr_remove_tag_hd(header, "SS");
+    if (r < 0) {
+        fail("bam_hdr_remove_tag_hd");
+    }
+
+    r = bam_hdr_find_hd(header, &ks);
+    if (r < 0 || !ks.s || strcmp(ks.s, "@HD\tVN:1.5") != 0) {
+        fail("bam_hdr_find_hd() expected \"@HD\tVN:1.5\" got \"%s\"",
+             r == 0 && ks.s ? ks.s : "NULL");
+    }
+
+    r = bam_hdr_find_tag_hd(header, "VN", &ks);
+    if (r < 0 || !ks.s || strcmp(ks.s, "1.5") != 0) {
+        fail("bam_hdr_find_tag_hd() expected \"1.5\" got \"%s\"",
+             r == 0 && ks.s ? ks.s : "NULL");
+    }
+
+    r = bam_hdr_update_hd(header, "SO", "coordinate");
+    if (r < 0) {
+        fail("bam_hdr_update_hd");
+    }
 
     // Check consistency of target_names array
     if (!header->target_name) {
@@ -651,12 +672,6 @@ static void use_header_api() {
             goto err;
         }
     }
-
-    //printf("first line='%s'\n", bam_hdr_find_line(header, "SQ", NULL));
-    //printf("line='%s'\n", bam_hdr_find_line(header, "SQ", "SN", "ref3"));
-    //printf("tag='%s'\n", bam_hdr_find_tag(header, "SQ", "SN", "ref2", "LN"));
-    //printf("hd line='%s'\n", bam_hdr_find_hd(header));
-    //printf("first line tag='%s'\n", bam_hdr_find_tag(header, "SQ", NULL, NULL, "SN"));
 
     if ((r = bam_hdr_count_lines(header, "HD")) != 1) {
         fail("incorrect HD line count - expected 1, got %d", r);
@@ -707,12 +722,15 @@ static void use_header_api() {
         goto err;
     }
 
+    free(ks_release(&ks));
+
  err:
     bam_hdr_destroy(header);
     header = NULL;
     if (in) sam_close(in);
     if (out) sam_close(out);
     if (inf) fclose(inf);
+    free(ks_release(&ks));
 }
 
 static void test_header_pg_lines() {
