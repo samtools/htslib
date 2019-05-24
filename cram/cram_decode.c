@@ -1798,23 +1798,28 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                     if (ref_pos + cr->len-seq_pos +1 > s->ref_end)
                         goto beyond_slice;
                     if (decode_md || decode_nm) {
-                        int i;
-                        for (i = 0; i < cr->len - seq_pos + 1; i++) {
-                            // FIXME: not N, but nt16 lookup == 15?
-                            char base = s->ref[ref_pos - s->ref_start + 1 + i];
-                            if (base == 'N') {
-                                add_md_char(s, decode_md,
-                                            s->ref[ref_pos - s->ref_start + 1 + i],
-                                            &md_dist);
-                                nm++;
-                            } else {
-                                md_dist++;
+                        int i, j = ref_pos - s->ref_start + 1;
+                        // FIXME: Update this to match spec once we're also
+                        // ready to update samtools calmd. (N vs any ambig)
+                        if (memchr(&s->ref[j], 'N', cr->len - (seq_pos-1))) {
+                            for (i = seq_pos-1, j -= i; i < cr->len; i++) {
+                                char base = s->ref[j+i];
+                                if (base == 'N') {
+                                    add_md_char(s, decode_md, 'N', &md_dist);
+                                    nm++;
+                                } else {
+                                    md_dist++;
+                                }
+                                seq[i] = base;
                             }
-                            seq[seq_pos-1+i] = base;
+                        } else {
+                            // faster than above code
+                            memcpy(&seq[seq_pos-1], &s->ref[j], cr->len - (seq_pos-1));
+                            md_dist += cr->len - (seq_pos-1);
                         }
                     } else {
                         memcpy(&seq[seq_pos-1], &s->ref[ref_pos - s->ref_start +1],
-                               cr->len - seq_pos + 1);
+                               cr->len - (seq_pos-1));
                     }
                 }
                 ref_pos += cr->len - seq_pos + 1;
