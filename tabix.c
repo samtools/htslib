@@ -148,7 +148,7 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
     for (iseq=0; iseq<argc; iseq++) regs[ireg++] = strdup(argv[iseq]);
     return regs;
 }
-static int query_regions(args_t *args, char *fname, char **regs, int nregs)
+static int query_regions(args_t *args, char *fname, char **regs, int nregs, int download)
 {
     int i;
     htsFile *fp = hts_open(fname,"r");
@@ -166,7 +166,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
     {
         htsFile *out = hts_open("-","w");
         if ( !out ) error("Could not open stdout\n", fname);
-        hts_idx_t *idx = bcf_index_load(fname);
+        hts_idx_t *idx = download ? bcf_index_load(fname) : hts_idx_stream(fname, HTS_FMT_CSI);
         if ( !idx ) error("Could not load .csi index of %s\n", fname);
         bcf_hdr_t *hdr = bcf_hdr_read(fp);
         if ( !hdr ) error("Could not read the header: %s\n", fname);
@@ -193,7 +193,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
     }
     else if ( format==vcf || format==sam || format==unknown_format )
     {
-        tbx_t *tbx = tbx_index_load(fname);
+        tbx_t *tbx = download ? tbx_index_load(fname) : tbx_index_load3(fname);
         if ( !tbx ) error("Could not load .tbi/.csi index of %s\n", fname);
         kstring_t str = {0,0,0};
         if ( args->print_header )
@@ -235,13 +235,13 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
     free(regs);
     return 0;
 }
-static int query_chroms(char *fname)
+static int query_chroms(char *fname, int download)
 {
     const char **seq;
     int i, nseq, ftype = file_type(fname);
     if ( ftype & IS_TXT || !ftype )
     {
-        tbx_t *tbx = tbx_index_load(fname);
+        tbx_t *tbx = download ? tbx_index_load(fname) : tbx_index_load3(fname);
         if ( !tbx ) error("Could not load .tbi index of %s\n", fname);
         seq = tbx_seqnames(tbx, &nseq);
         for (i=0; i<nseq; i++)
@@ -256,7 +256,7 @@ static int query_chroms(char *fname)
         bcf_hdr_t *hdr = bcf_hdr_read(fp);
         if ( !hdr ) error("Could not read the header: %s\n", fname);
         hts_close(fp);
-        hts_idx_t *idx = bcf_index_load(fname);
+        hts_idx_t *idx = download ? bcf_index_load(fname) : hts_idx_stream(fname, HTS_FMT_CSI);
         if ( !idx ) error("Could not load .csi index of %s\n", fname);
         seq = bcf_index_seqnames(idx, hdr, &nseq);
         for (i=0; i<nseq; i++)
@@ -369,13 +369,14 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "   -r, --reheader FILE        replace the header with the content of FILE\n");
     fprintf(fp, "   -R, --regions FILE         restrict to regions listed in the file\n");
     fprintf(fp, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
+    fprintf(fp, "   -D                         do not download the index file\n");
     fprintf(fp, "\n");
     return status;
 }
 
 int main(int argc, char *argv[])
 {
-    int c, detect = 1, min_shift = 0, is_force = 0, list_chroms = 0, do_csi = 0;
+    int c, detect = 1, min_shift = 0, is_force = 0, list_chroms = 0, do_csi = 0, download_index = 1;
     tbx_conf_t conf = tbx_conf_gff;
     char *reheader = NULL;
     args_t args;
@@ -405,7 +406,7 @@ int main(int argc, char *argv[])
     };
 
     char *tmp;
-    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:", loptions,NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:D", loptions,NULL)) >= 0)
     {
         switch (c)
         {
@@ -453,6 +454,9 @@ int main(int argc, char *argv[])
                 if ( *tmp ) error("Could not parse argument: -S %s\n", optarg);
                 detect = 0;
                 break;
+            case 'D':
+                download_index = 0;
+                break;
             case 1:
                 printf(
 "tabix (htslib) %s\n"
@@ -467,7 +471,7 @@ int main(int argc, char *argv[])
     if ( optind==argc ) return usage(stderr, EXIT_FAILURE);
 
     if ( list_chroms )
-        return query_chroms(argv[optind]);
+        return query_chroms(argv[optind], download_index);
 
     if ( argc > optind+1 || args.header_only || args.regions_fname || args.targets_fname )
     {
@@ -475,7 +479,7 @@ int main(int argc, char *argv[])
         char **regs = NULL;
         if ( !args.header_only )
             regs = parse_regions(args.regions_fname, argv+optind+1, argc-optind-1, &nregs);
-        return query_regions(&args, argv[optind], regs, nregs);
+        return query_regions(&args, argv[optind], regs, nregs, download_index);
     }
 
     char *fname = argv[optind];
