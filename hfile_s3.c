@@ -1051,7 +1051,7 @@ static hFILE *s3_open_v4(const char *s3url, const char *mode, va_list *argsp) {
 
     free(url.s);
     free(token_hdr.s);
- 
+
     return fp;
 
   error:

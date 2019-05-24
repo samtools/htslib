@@ -228,40 +228,40 @@ sub test_compare
     local $/;
     my ($exp,$out) = ("","");
     if ( exists($args{"gz"}) ) {
-	if ( open(my $fh,'-|',"$$opts{bin}/bgzip -d < $exp_fn") ) {
-	    $exp = <$fh>;
-	    close($fh);
-	} else {
-	    failed($opts,$test,"bgzip -d < $exp_fn $!"); return;
-	}
+        if ( open(my $fh,'-|',"$$opts{bin}/bgzip -d < $exp_fn") ) {
+            $exp = <$fh>;
+            close($fh);
+        } else {
+            failed($opts,$test,"bgzip -d < $exp_fn $!"); return;
+        }
     } else {
-	if ( open(my $fh,'<',$exp_fn) ) {
-	    $exp = <$fh>;
-	    close($fh);
-	} else {
-	    failed($opts,$test,"$exp_fn $!"); return;
-	}
+        if ( open(my $fh,'<',$exp_fn) ) {
+            $exp = <$fh>;
+            close($fh);
+        } else {
+            failed($opts,$test,"$exp_fn $!"); return;
+        }
     }
 
     if ( exists($args{"gz"}) ) {
-	if ( open(my $fh,'-|',"$$opts{bin}/bgzip -d < $out_fn") ) {
-	    $out = <$fh>;
-	    close($fh);
-	} else {
-	    failed($opts,$test,"bgzip -d < $out_fn $!"); return;
-	}
+        if ( open(my $fh,'-|',"$$opts{bin}/bgzip -d < $out_fn") ) {
+            $out = <$fh>;
+            close($fh);
+        } else {
+            failed($opts,$test,"bgzip -d < $out_fn $!"); return;
+        }
     } else {
-	if ( open(my $fh,'<',$out_fn) ) {
-	    $out = <$fh>;
-	    close($fh);
-	} else {
-	    failed($opts,$test,"$out_fn $!"); return;
-	}
+        if ( open(my $fh,'<',$out_fn) ) {
+            $out = <$fh>;
+            close($fh);
+        } else {
+            failed($opts,$test,"$out_fn $!"); return;
+        }
     }
 
     if ( $exp ne $out )
     {
-	failed($opts,$test,"The outputs differ:\n\t\t$exp_fn\n\t\t$out_fn");
+        failed($opts,$test,"The outputs differ:\n\t\t$exp_fn\n\t\t$out_fn");
         return;
     }
     passed($opts,$test);
@@ -300,43 +300,43 @@ sub ce_fa_to_md5_cache {
     # These should really be worked out from the file contents, but
     # pre-calculating them avoids a dependency on Digest::MD5
     my %csums = (CHROMOSOME_I     => '8ede36131e0dbf3417807e48f77f3ebd',
-		 CHROMOSOME_II    => '8e7993f7a93158587ee897d7287948ec',
-		 CHROMOSOME_III   => '3adcb065e1cf74fafdbba1e8c352b323',
-		 CHROMOSOME_IV    => '251af66a69ee589c9f3757340ec2de6f',
-		 CHROMOSOME_V     => 'cf200a65fb754836dcc56b24b3170ee8',
-		 CHROMOSOME_X     => '6f9368fd2192c89c613718399d2d31fc',
-		 CHROMOSOME_MtDNA => 'cd05857ece6411f40257a565ccfe15bb');
-    
+                 CHROMOSOME_II    => '8e7993f7a93158587ee897d7287948ec',
+                 CHROMOSOME_III   => '3adcb065e1cf74fafdbba1e8c352b323',
+                 CHROMOSOME_IV    => '251af66a69ee589c9f3757340ec2de6f',
+                 CHROMOSOME_V     => 'cf200a65fb754836dcc56b24b3170ee8',
+                 CHROMOSOME_X     => '6f9368fd2192c89c613718399d2d31fc',
+                 CHROMOSOME_MtDNA => 'cd05857ece6411f40257a565ccfe15bb');
+
     my $m5_dir = "$$opts{tmp}/md5";
     if (!-d $m5_dir) {
-	mkdir($m5_dir) || die "Couldn't make directory $m5_dir\n";
+        mkdir($m5_dir) || die "Couldn't make directory $m5_dir\n";
     }
     my $out;
     open(my $fa, '<', "$$opts{path}/ce.fa")
-	|| die "Couldn't open $$opts{path}/ce.fa : $!\n";
+        || die "Couldn't open $$opts{path}/ce.fa : $!\n";
     my $name = '';
     while (<$fa>) {
-	chomp;
-	if (/^>(\S+)/) {
-	    if ($out) {
-		close($out) || die "Error closing $m5_dir/$csums{$name} : $!\n";
-	    }
-	    $name = $1;
-	    if (!exists($csums{$name})) {
-		die "Unexpected fasta entry : $name\n";
-	    }
-	    open($out, '>', "$m5_dir/$csums{$name}")
-	} else {
-	    if (!$out) {
-		die "$$opts{path}/ce.fa : Got data before fasta header\n";
-	    }
-	    $_ = uc($_);
-	    s/\s+//g;
-	    print $out $_;
-	}
+        chomp;
+        if (/^>(\S+)/) {
+            if ($out) {
+                close($out) || die "Error closing $m5_dir/$csums{$name} : $!\n";
+            }
+            $name = $1;
+            if (!exists($csums{$name})) {
+                die "Unexpected fasta entry : $name\n";
+            }
+            open($out, '>', "$m5_dir/$csums{$name}")
+        } else {
+            if (!$out) {
+                die "$$opts{path}/ce.fa : Got data before fasta header\n";
+            }
+            $_ = uc($_);
+            s/\s+//g;
+            print $out $_;
+        }
     }
     if ($out) {
-	close($out) || die "Error closing $m5_dir/$csums{$name} : $!\n";
+        close($out) || die "Error closing $m5_dir/$csums{$name} : $!\n";
     }
     close($fa) || die "Error reading $$opts{path}/ce.fa : $!\n";
     $$opts{m5_dir} = $m5_dir;
@@ -359,77 +359,77 @@ sub test_bgzip {
     my $expected_part = "$$opts{tmp}/ce.fa.$threads.tail";
     my $index = "${compressed}.gzi";
     my $test = sprintf('%s %2s threads', 'bgzip round-trip',
-		       $threads ? $threads : 'no');
+                       $threads ? $threads : 'no');
 
     # Round-trip test
     print "$test: ";
     my $c = "$$opts{bin}/bgzip $at -i -I '$index' < '$data' > '$compressed'";
     my ($ret, $out) = _cmd($c);
     if ($ret) {
-	failed($opts, $test, "non-zero exit from $c");
-	return;
+        failed($opts, $test, "non-zero exit from $c");
+        return;
     }
     $c = "$$opts{bin}/bgzip $at -d < '$compressed' > '$uncompressed'";
     ($ret, $out) = _cmd($c);
     if ($ret) {
-	failed($opts, $test, "non-zero exit from $c");
-	return;
+        failed($opts, $test, "non-zero exit from $c");
+        return;
     }
     $c = "cmp '$data' '$uncompressed'";
     ($ret, $out) = _cmd($c);
     if ($ret) {
-	failed($opts, $test, $out ? $out : "'$data' '$uncompressed' differ");
-	return;
+        failed($opts, $test, $out ? $out : "'$data' '$uncompressed' differ");
+        return;
     }
     passed($opts,$test);
 
     # Extract from an offset
     $test = sprintf('%s %2s threads', 'bgzip -b',
-		    $threads ? $threads : 'no');
+                    $threads ? $threads : 'no');
     print "$test: ";
     $c = sprintf("tail -c +%d '%s' > '%s'", $offset + 1, $data, $expected_part);
     ($ret, $out) = _cmd($c);
     if ($ret) {
-	failed($opts, $test, "non-zero exit from $c");
-	return;
+        failed($opts, $test, "non-zero exit from $c");
+        return;
     }
     $c = "$$opts{bin}/bgzip $at -b $offset -d '$compressed' > $uncompressed_part";
     ($ret, $out) = _cmd($c);
     if ($ret) {
-	failed($opts, $test, "non-zero exit from $c");
-	return;
+        failed($opts, $test, "non-zero exit from $c");
+        return;
     }
     $c = "cmp '$expected_part' '$uncompressed_part'";
     ($ret, $out) = _cmd($c);
     if ($ret) {
-	failed($opts, $test,
-	       $out ? $out : "'$expected_part' '$uncompressed_part' differ");
-	return;
+        failed($opts, $test,
+               $out ? $out : "'$expected_part' '$uncompressed_part' differ");
+        return;
     }
     passed($opts,$test);
 
     # Extract from an offset with named index
     $test = sprintf('%s %2s threads', 'bgzip -b -I',
-		    $threads ? $threads : 'no');
+                    $threads ? $threads : 'no');
     print "$test: ";
     $c = "cp '$compressed' '$compressed_copy'";
     ($ret, $out) = _cmd($c);
     if ($ret) {
-	failed($opts, $test, "non-zero exit from $c");
-	return;
+        failed($opts, $test, "non-zero exit from $c");
+        return;
     }
     $c = "$$opts{bin}/bgzip $at -b $offset -d -I '$index' '$compressed_copy' > $uncompressed_part2";
     ($ret, $out) = _cmd($c);
     if ($ret) {
-	failed($opts, $test, "non-zero exit from $c");
-	return;
+        failed($opts, $test, "non-zero exit from $c");
+        return;
     }
     $c = "cmp '$expected_part' '$uncompressed_part2'";
     ($ret, $out) = _cmd($c);
     if ($ret) {
-	failed($opts, $test,
-	       $out ? $out : "'$expected_part' '$uncompressed_part2' differ");
-	return;
+        failed($opts, $test,
+               $out ? $out : "'$expected_part' '$uncompressed_part2' differ");
+        return;
     }
     passed($opts,$test);
 }
