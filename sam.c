@@ -1119,7 +1119,8 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
         if (last == '\n') {
             lnum++;
             if (cp[i] != '@') {
-                hts_log_error("Malformed SAM header at line %u", lnum);
+                uint32_t offset = i < 300 ? 0 : (i - 300);
+                hts_log_error("Malformed SAM header: unexpected newline character at line %u in ... %s", lnum , cp + offset);
                 bam_hdr_destroy(h);
                 return NULL;
             }
