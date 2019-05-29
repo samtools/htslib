@@ -693,14 +693,22 @@ faidx_t *fai_load_format(const char *fn, enum fai_format_options format) {
 
 
 static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
-                          uint64_t offset, long beg, long end, int *len) {
+                          uint64_t offset, int64_t beg, int64_t end, int *len) {
     char *s;
     size_t l;
     int c = 0;
-    int ret = bgzf_useek(fai->bgzf,
-                         offset
-                         + beg / val->line_blen * val->line_len
-                         + beg % val->line_blen, SEEK_SET);
+    int ret;
+
+    if ((uint64_t) end - (uint64_t) beg >= SIZE_MAX - 2) {
+        hts_log_error("Range %"PRId64"..%"PRId64" too big", beg, end);
+        *len = -1;
+        return NULL;
+    }
+
+    ret = bgzf_useek(fai->bgzf,
+                     offset
+                     + beg / val->line_blen * val->line_len
+                     + beg % val->line_blen, SEEK_SET);
 
     if (ret < 0) {
         *len = -1;
@@ -730,10 +738,12 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
     return s;
 }
 
-static int fai_get_val(const faidx_t *fai, const char *str, int *len, faidx1_t *val, long *fbeg, long *fend) {
+static int fai_get_val(const faidx_t *fai, const char *str,
+                       int *len, faidx1_t *val, int64_t *fbeg, int64_t *fend) {
     khiter_t iter;
     khash_t(s) *h;
-    int id, beg, end;
+    int id;
+    int64_t beg, end;
 
     if (!fai_parse_region(fai, str, &id, &beg, &end, 0)) {
         hts_log_warning("Reference %s not found in FASTA file, returning empty sequence", str);
@@ -765,7 +775,7 @@ static int fai_get_val(const faidx_t *fai, const char *str, int *len, faidx1_t *
 char *fai_fetch(const faidx_t *fai, const char *str, int *len)
 {
     faidx1_t val;
-    long beg, end;
+    int64_t beg, end;
 
     if (fai_get_val(fai, str, len, &val, &beg, &end)) {
         return NULL;
@@ -778,7 +788,7 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
 
 char *fai_fetchqual(const faidx_t *fai, const char *str, int *len) {
     faidx1_t val;
-    long beg, end;
+    int64_t beg, end;
 
     if (fai_get_val(fai, str, len, &val, &beg, &end)) {
         return NULL;
@@ -878,7 +888,8 @@ int faidx_has_seq(const faidx_t *fai, const char *seq)
     return 1;
 }
 
-const char *fai_parse_region(const faidx_t *fai, const char *s, int *tid, int *beg, int *end, int flags)
+const char *fai_parse_region(const faidx_t *fai, const char *s,
+                             int *tid, int64_t *beg, int64_t *end, int flags)
 {
     return hts_parse_region(s, tid, beg, end, (hts_name2id_f)fai_name2id, (void *)fai, flags);
 }

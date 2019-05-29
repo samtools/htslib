@@ -811,7 +811,7 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
                  specifier (including any trailing comma) on success,
                  or NULL if @a str could not be parsed.
 */
-const char *hts_parse_region(const char *str, int *tid, int *beg, int *end,
+const char *hts_parse_region(const char *str, int *tid, int64_t *beg, int64_t *end,
                              hts_name2id_f getid, void *hdr, int flags);
 
 

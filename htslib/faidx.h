@@ -29,6 +29,7 @@
 #ifndef HTSLIB_FAIDX_H
 #define HTSLIB_FAIDX_H
 
+#include <inttypes.h>
 #include "hts_defs.h"
 
 #ifdef __cplusplus
@@ -234,7 +235,7 @@ int faidx_seq_len(const faidx_t *fai, const char *seq);
     @param  flags Parsing method, see HTS_PARSE_* in hts.h.
     @return      pointer to end of parsed s if successs, NULL if not.
 */
-const char *fai_parse_region(const faidx_t *fai, const char *s, int *tid, int *beg, int *end, int flags);
+const char *fai_parse_region(const faidx_t *fai, const char *s, int *tid, int64_t *beg, int64_t *end, int flags);
 
 #ifdef __cplusplus
 }

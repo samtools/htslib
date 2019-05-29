@@ -2687,13 +2687,13 @@ static void *hts_memrchr(const void *s, int c, size_t n) {
  *            beg & end will be set.
  * On failure NULL is returned.
  */
-const char *hts_parse_region(const char *s, int *tid, int *beg, int *end,
+const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end,
                              hts_name2id_f getid, void *hdr, int flags)
 {
     if (!s || !tid || !beg || !end || !getid)
         return NULL;
 
-    int s_len = strlen(s); // int is sufficient given beg/end types
+    size_t s_len = strlen(s);
     kstring_t ks = { 0, 0, NULL };
 
     const char *colon = NULL, *comma = NULL;
@@ -2742,7 +2742,7 @@ const char *hts_parse_region(const char *s, int *tid, int *beg, int *end,
 
     // No colon is simplest case; just check and return.
     if (colon == NULL) {
-        *beg = 0; *end = INT_MAX;
+        *beg = 0; *end = INT64_MAX;
         kputsn(s, s_len-quoted, &ks); // convert to nul terminated string
         if (!ks.s) {
             *tid = -1;
@@ -2757,7 +2757,7 @@ const char *hts_parse_region(const char *s, int *tid, int *beg, int *end,
 
     // Has a colon, but check whole name first.
     if (!quoted) {
-        *beg = 0; *end = INT_MAX;
+        *beg = 0; *end = INT64_MAX;
         kputsn(s, s_len, &ks); // convert to nul terminated string
         if (!ks.s) {
             *tid = -1;
@@ -2806,7 +2806,7 @@ const char *hts_parse_region(const char *s, int *tid, int *beg, int *end,
     if (*beg < 0) {
         if (isdigit(*hyphen) || *hyphen == '\0' || *hyphen == ',') {
             // interpret chr:-100 as chr:1-100
-            *end = *beg==-1 ? INT_MAX : -(*beg+1);
+            *end = *beg==-1 ? INT64_MAX : -(*beg+1);
             *beg = 0;
             return s_end;
         } else if (*hyphen == '-') {
@@ -2818,7 +2818,7 @@ const char *hts_parse_region(const char *s, int *tid, int *beg, int *end,
     }
 
     if (*hyphen == '\0' || ((flags & HTS_PARSE_LIST) && *hyphen == ',')) {
-        *end = flags & HTS_PARSE_ONE_COORD ? *beg+1 : INT_MAX;
+        *end = flags & HTS_PARSE_ONE_COORD ? *beg+1 : INT64_MAX;
     } else if (*hyphen == '-') {
         *end = hts_parse_decimal(hyphen+1, &hyphen, flags);
         if (*hyphen != '\0' && *hyphen != ',') {
@@ -2831,7 +2831,7 @@ const char *hts_parse_region(const char *s, int *tid, int *beg, int *end,
     }
 
     if (*end == 0)
-        *end = INT_MAX; // interpret chr:100- as chr:100-<end>
+        *end = INT64_MAX; // interpret chr:100- as chr:100-<end>
 
     if (*beg >= *end) return NULL;
 
@@ -2862,7 +2862,8 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
 
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
-    int tid, beg, end;
+    int tid;
+    int64_t beg, end;
 
     if (strcmp(reg, ".") == 0)
         return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
@@ -2871,6 +2872,8 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
 
     if (!hts_parse_region(reg, &tid, &beg, &end, getid, hdr, HTS_PARSE_THOUSANDS_SEP))
         return NULL;
+
+    if (end > INT_MAX) end = INT_MAX; // Remove when fully 64-bit compliant
 
     return itr_query(idx, tid, beg, end, readrec);
 }
