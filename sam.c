@@ -911,9 +911,9 @@ static hts_idx_t *index_load(htsFile *fp, const char *fn, const char *fnidx, int
     }
 }
 
-hts_idx_t *sam_index_load3(htsFile *fp, const char *fn)
+hts_idx_t *sam_index_load3(htsFile *fp, const char *fn, const char *fnidx, int download)
 {
-    return index_load(fp, fn, NULL, 0);
+    return index_load(fp, fn, fnidx, download);
 }
 
 hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx) {

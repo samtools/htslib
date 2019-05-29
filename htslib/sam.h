@@ -730,7 +730,14 @@ hts_idx_t *sam_index_load(htsFile *fp, const char *fn);
 */
 hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx);
 
-hts_idx_t *sam_index_load3(htsFile *fp, const char *fn);
+/// Load or stream a BAM (.csi or .bai) or CRAM (.crai) index file
+/** @param fp     File handle of the data file whose index is being opened
+    @param fn     BAM/CRAM/etc data file filename
+    @param fnidx  Index filename, or NULL to search alongside @a fn
+    @download     1 - Save the index file to disk, 0 - do not save it
+    @return  The index, or NULL if an error occurred.
+*/
+hts_idx_t *sam_index_load3(htsFile *fp, const char *fn, const char *fnidx, int download);
 
 /// Generate and save an index file
 /** @param fn        Input BAM/etc filename, to which .csi/etc will be added
