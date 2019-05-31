@@ -31,9 +31,10 @@ typedef struct reglist
 {
     uint32_t n, m;
     uint64_t *a;
+    int tid;
 } reglist_t;
 
-KHASH_MAP_INIT_STR(reg, reglist_t)
+KHASH_MAP_INIT_INT(reg, reglist_t)
 typedef kh_reg_t reghash_t;
 
 static int compare_uint64 (const void * a, const void * b)
@@ -52,7 +53,7 @@ static void reg_print(reghash_t *h) {
     reglist_t *p;
     khint_t k;
     uint32_t i;
-    const char *reg;
+    khint32_t key;
     uint32_t beg, end;
 
     if (!h) {
@@ -61,8 +62,8 @@ static void reg_print(reghash_t *h) {
     }
     for (k = kh_begin(h); k < kh_end(h); k++) {
         if (kh_exist(h,k)) {
-            reg = kh_key(h,k);
-            fprintf(stderr, "Region: '%s'\n", reg);
+            key = kh_key(h,k);
+            fprintf(stderr, "Region: key %u tid %d\n", key, p->tid);
             if ((p = &kh_val(h,k)) != NULL && p->n > 0) {
                 for (i=0; i<p->n; i++) {
                     beg = (uint32_t)(p->a[i]>>32);
@@ -70,7 +71,7 @@ static void reg_print(reghash_t *h) {
                     fprintf(stderr, "\tinterval[%d]: %d-%d\n", i, beg, end);
                 }
             } else {
-                fprintf(stderr, "Region '%s' has no intervals!\n", reg);
+                fprintf(stderr, "Region key %u has no intervals!\n", key);
             }
         }
     }
@@ -109,7 +110,7 @@ static int reg_compact(reghash_t *h) {
     return count;
 }
 
-static int reg_insert(reghash_t *h, char *reg, unsigned int beg, unsigned int end) {
+static int reg_insert(reghash_t *h, int tid, unsigned int beg, unsigned int end) {
 
     khint_t k;
     reglist_t *p;
@@ -118,17 +119,15 @@ static int reg_insert(reghash_t *h, char *reg, unsigned int beg, unsigned int en
         return -1;
 
     // Put reg in the hash table if not already there
-    k = kh_get(reg, h, reg); //looks strange, but only the second reg is the actual region name.
+    k = kh_get(reg, h, tid);
     if (k == kh_end(h)) { // absent from the hash table
         int ret;
-        char *s = strdup(reg);
-        if (NULL == s) return -1;
-        k = kh_put(reg, h, s, &ret);
+        k = kh_put(reg, h, tid, &ret);
         if (-1 == ret) {
-            free(s);
             return -1;
         }
         memset(&kh_val(h, k), 0, sizeof(reglist_t));
+        kh_val(h, k).tid = tid;
     }
     p = &kh_val(h, k);
 
@@ -156,7 +155,6 @@ static void reg_destroy(reghash_t *h) {
     for (k = 0; k < kh_end(h); ++k) {
         if (kh_exist(h, k)) {
             free(kh_val(h, k).a);
-            free((char*)kh_key(h, k));
         }
     }
     kh_destroy(reg, h);
@@ -175,11 +173,10 @@ hts_reglist_t *hts_reglist_create(char **argv, int argc, int *r_count, void *hdr
     hts_reglist_t *h_reglist = NULL;
 
     khint_t k;
-    int i, l_count = 0;
+    int i, l_count = 0, tid;
     uint32_t j;
-    char reg[1024];
     const char *q;
-    int beg, end;
+    int64_t beg, end;
 
     /* First, transform the char array into a hash table */
     h = kh_init(reg);
@@ -189,25 +186,26 @@ hts_reglist_t *hts_reglist_create(char **argv, int argc, int *r_count, void *hdr
     }
 
     for (i=0; i<argc; i++) {
-        q = hts_parse_reg(argv[i], &beg, &end);
-        if (q) {
-            if (q - argv[i] > sizeof(reg) - 1) {
-                hts_log_error("Region name '%s' is too long (bigger than %d)", argv[i], (int) sizeof(reg) - 1);
-                continue;
-            }
-            memcpy(reg, argv[i], q - argv[i]);
-            reg[q - argv[i]] = 0;
+        if (!strcmp(argv[i], ".")) {
+            q = argv[i] + 1;
+            tid = HTS_IDX_START; beg = 0; end = INT64_MAX;
+        } else if (!strcmp(argv[i], "*")) {
+            q = argv[i] + 1;
+            tid = HTS_IDX_NOCOOR; beg = 0; end = INT64_MAX;
         } else {
-            // not parsable as a region, but possibly a sequence named "foo:a"
-            if (strlen(argv[i]) > sizeof(reg) - 1) {
-                hts_log_error("Region name '%s' is too long (bigger than %d)", argv[i], (int) sizeof(reg) - 1);
-                continue;
-            }
-            strcpy(reg, argv[i]);
-            beg = 0; end = INT_MAX;
+            q = hts_parse_region(argv[i], &tid, &beg, &end, getid, hdr,
+                                 HTS_PARSE_THOUSANDS_SEP);
+        }
+        if (!q) {
+            // not parsable as a region
+            hts_log_warning("Region '%s' specifies an unknown reference name. Continue anyway", argv[i]);
+            continue;
         }
 
-        if (reg_insert(h, reg, beg, end) != 0) {
+        if (beg > INT_MAX) beg = INT_MAX; // Remove when fully 64-bit compliant
+        if (end > INT_MAX) end = INT_MAX; // Remove when fully 64-bit compliant
+
+        if (reg_insert(h, tid, beg, end) != 0) {
             hts_log_error("Error when inserting region='%s' in the bed hash table at address=%p", argv[i], (void *) h);
             goto fail;
         }
@@ -215,31 +213,21 @@ hts_reglist_t *hts_reglist_create(char **argv, int argc, int *r_count, void *hdr
 
     *r_count = reg_compact(h);
     if (!*r_count)
-        return NULL;
+        goto fail;
 
     /* Transform the hash table into a list */
     h_reglist = (hts_reglist_t *)calloc(*r_count, sizeof(hts_reglist_t));
     if (!h_reglist)
-        return NULL;
+        goto fail;
 
     for (k = kh_begin(h); k < kh_end(h) && l_count < *r_count; k++) {
         if (!kh_exist(h,k) || !(p = &kh_val(h,k)))
             continue;
 
-        char *reg_name = (char *)kh_key(h,k);
-        if (!strcmp(reg_name, ".")) {
-            h_reglist[l_count].tid = HTS_IDX_START;
-        } else if (!strcmp(reg_name, "*")) {
-            h_reglist[l_count].tid = HTS_IDX_NOCOOR;
-        } else {
-            h_reglist[l_count].tid = getid(hdr, reg_name);
-            if (h_reglist[l_count].tid < 0)
-                hts_log_warning("Region '%s' specifies an unknown reference name. Continue anyway", reg_name);
-        }
-
-        h_reglist[l_count].intervals = (hts_pair32_t *)calloc(p->n, sizeof(hts_pair32_t));
+        h_reglist[l_count].tid = p->tid;
+        h_reglist[l_count].intervals = calloc(p->n, sizeof(h_reglist[l_count].intervals[0]));
         if(!(h_reglist[l_count].intervals)) {
-            hts_log_error("Could not allocate memory for intervals for region='%s'", kh_key(h,k));
+            hts_log_error("Could not allocate memory for intervals");
             goto fail;
         }
         h_reglist[l_count].count = p->n;
@@ -247,7 +235,7 @@ hts_reglist_t *hts_reglist_create(char **argv, int argc, int *r_count, void *hdr
 
         for (j = 0; j < p->n; j++) {
             h_reglist[l_count].intervals[j].beg = (uint32_t)(p->a[j]>>32);
-            h_reglist[l_count].intervals[j].end = (uint32_t)(p->a[j]);
+            h_reglist[l_count].intervals[j].end = (uint32_t)(p->a[j] & 0xffffffffU);
 
             if (h_reglist[l_count].intervals[j].end > h_reglist[l_count].max_end)
                 h_reglist[l_count].max_end = h_reglist[l_count].intervals[j].end;
