@@ -477,7 +477,7 @@ static int fai_build3_core(const char *fn, const char *fnfai, const char *fngzi)
     }
 
     if ( bgzf->is_compressed ) {
-        if (bgzf_index_dump(bgzf, fngzi, NULL) < 0) {
+        if (bgzf_index_dump(bgzf, fngzi, NULL, 0) < 0) {
             hts_log_error("Failed to make bgzf index %s", fngzi);
             goto fail;
         }

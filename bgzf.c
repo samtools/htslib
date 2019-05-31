@@ -1988,7 +1988,7 @@ static char * get_name_suffix(const char *bname, const char *suffix)
     return buff;
 }
 
-int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name)
+int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name, int last_index_pointer)
 {
     // Note that the index contains one extra record when indexing files opened
     // for reading. The terminating record is not present when opened for writing.
@@ -2002,30 +2002,58 @@ int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name)
         return -1;
     }
 
-    if (bgzf_flush(fp) != 0) return -1;
+    if ( fp->mt ) {
+        if (bgzf_flush(fp) != 0) return -1;
+    } else {
+        // bgzf_flush(fp) moved to bgzf_index_dump() on close of idx
+        ;
+    }
 
     // discard the entry marking the end of the file
     if (fp->mt && fp->idx)
         fp->idx->noffs--;
 
-    if (hwrite_uint64(fp->idx->noffs - 1, idx) < 0) goto fail;
-    for (i=1; i<fp->idx->noffs; i++)
-    {
-        if (hwrite_uint64(fp->idx->offs[i].caddr, idx) < 0) goto fail;
-        if (hwrite_uint64(fp->idx->offs[i].uaddr, idx) < 0) goto fail;
+    if ( fp->mt ) {
+        if (hwrite_uint64(fp->idx->noffs - 1, idx) < 0) goto fail;
+        for (i=1; i<fp->idx->noffs; i++)
+        {
+            if (hwrite_uint64(fp->idx->offs[i].caddr, idx) < 0) goto fail;
+            if (hwrite_uint64(fp->idx->offs[i].uaddr, idx) < 0) goto fail;
+        }
+
+        return 0;
+    } else {
+        // write header with idx->noffs
+        if ( hseek(idx, 0, SEEK_SET) == 0 ) {
+            if (hwrite_uint64(fp->idx->noffs - 1, idx) < 0) goto fail;
+        } else {
+            goto fail;
+        }
+
+        // Seek to end of file before writing to not overwrite/repeat previously written indexes
+        if ( hseek( idx, 8 + (last_index_pointer - 1)*( 8 + 8 ), SEEK_SET ) < 0 ) goto fail;
+
+        for (i=last_index_pointer; i<fp->idx->noffs; i++)
+        {
+            if (hwrite_uint64(fp->idx->offs[i].caddr, idx) < 0) goto fail;
+            if (hwrite_uint64(fp->idx->offs[i].uaddr, idx) < 0) goto fail;
+        }
+
+        // return last written index
+        return i;
     }
-    return 0;
 
  fail:
     hts_log_error("Error writing to %s : %s", name ? name : "index", strerror(errno));
     return -1;
 }
 
-int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
+int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix, int last_index_pointer)
 {
     const char *name = bname, *msg = NULL;
-    char *tmp = NULL;
-    hFILE *idx = NULL;
+    static char *tmp = NULL;
+    static hFILE *idx = NULL;
+    int close_file = 0;
 
     if (!fp->idx) {
         hts_log_error("Called for BGZF handle with no index");
@@ -2033,30 +2061,58 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix)
         return -1;
     }
 
-    if ( suffix )
-    {
-        tmp = get_name_suffix(bname, suffix);
-        if ( !tmp ) return -1;
-        name = tmp;
+    if ( last_index_pointer == 0 ) {
+
+        if (bgzf_flush(fp) != 0) return -1;
+
+        last_index_pointer = 1; // (incomplete)-index-file will be (over)written with complete index,
+        close_file = 1;         // and closed.
     }
 
-    idx = hopen(name, "wb");
-    if ( !idx ) {
-        msg = "Error opening";
-        goto fail;
+    if ( last_index_pointer > 0 ) {
+
+        if ( !idx )
+        {
+            if ( suffix ) {
+                tmp = get_name_suffix(bname, suffix);
+                if ( !tmp ) return -1;
+                name = tmp;
+            }
+            idx = hopen(name, "wb");
+        } else {
+            name = tmp;
+        }
+
+        if ( !idx )
+        {
+            msg = "Error opening";
+            goto fail;
+        }
+
+        last_index_pointer = bgzf_index_dump_hfile(fp, idx, name, last_index_pointer);
+
+        if (last_index_pointer == -1) goto fail;
+
+        if ( close_file == 0 )
+            return last_index_pointer;
+
     }
 
-    if (bgzf_index_dump_hfile(fp, idx, name) != 0) goto fail;
+    if ( close_file == 1 ) {
 
-    if (hclose(idx) < 0)
-    {
-        idx = NULL;
-        msg = "Error on closing";
-        goto fail;
+        // close index file
+
+        if (hclose(idx) < 0)
+        {
+            idx = NULL;
+            msg = "Error on closing";
+            goto fail;
+        }
+        free(tmp);
+
+        return 0;
+
     }
-
-    free(tmp);
-    return 0;
 
  fail:
     if (msg != NULL) {

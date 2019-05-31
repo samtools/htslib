@@ -394,17 +394,19 @@ typedef struct BGZF BGZF;
      * @param fp          BGZF file handler
      * @param bname       base name
      * @param suffix      suffix to add to bname (can be NULL)
-     * @return 0 on success and -1 on error.
+     * @param last_index_pointer    last index written to index file
+     * @return 0 if fp->mt, or last index pointer written (>1) if !fp->mt, and -1 on error.
      */
     int bgzf_index_dump(BGZF *fp,
-                        const char *bname, const char *suffix) HTS_RESULT_USED;
+                        const char *bname, const char *suffix, int last_index_pointer) HTS_RESULT_USED;
 
     /// Write a BGZF index to an hFILE
     /**
      * @param fp     BGZF file handle
      * @param idx    hFILE to write to
      * @param name   file name (for error reporting only, can be NULL)
-     * @return 0 on success and -1 on error.
+     * @param last_index_pointer    last index written to index file
+     * @return 0 if fp->mt, or last index pointer written (>1) if !fp->mt, and -1 on error.
      *
      * Write index data from @p fp to the file @p idx.
      *
@@ -414,7 +416,7 @@ typedef struct BGZF BGZF;
      */
 
     int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx,
-                              const char *name) HTS_RESULT_USED;
+                              const char *name, int last_index_pointer) HTS_RESULT_USED;
 
 #ifdef __cplusplus
 }
