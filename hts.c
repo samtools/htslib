@@ -2607,6 +2607,12 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
         if (esign == '-') e = -e;
     }
 
+    switch (*s) {
+    case 'k': case 'K': e += 3; s++; break;
+    case 'm': case 'M': e += 6; s++; break;
+    case 'g': case 'G': e += 9; s++; break;
+    }
+
     e -= decimals;
     while (e > 0) n *= 10, e--;
     while (e < 0) lost += n % 10, n /= 10, e++;
@@ -2618,12 +2624,222 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
     if (strend) {
         *strend = (char *)s;
     } else if (*s) {
-        hts_log_warning("Ignoring unknown characters after %.*s[%s]", (int)(s - str), str, s);
+        if ((flags & HTS_PARSE_THOUSANDS_SEP) || (!(flags & HTS_PARSE_THOUSANDS_SEP) && *s != ','))
+            hts_log_warning("Ignoring unknown characters after %.*s[%s]", (int)(s - str), str, s);
     }
 
     return (sign == '+')? n : -n;
 }
 
+static void *hts_memrchr(const void *s, int c, size_t n) {
+    size_t i;
+    unsigned char *u = (unsigned char *)s;
+    for (i = n; i > 0; i--) {
+        if (u[i-1] == c)
+            return u+i-1;
+    }
+
+    return NULL;
+}
+
+/*
+ * A variant of hts_parse_reg which is reference-id aware.  It uses
+ * the iterator name2id callbacks to validate the region tokenisation works.
+ *
+ * This is necessary due to GRCh38 HLA additions which have reference names
+ * like "HLA-DRB1*12:17".
+ *
+ * All parameters are mandatory.
+ *
+ * To work around ambiguous parsing issues, eg both "chr1" and "chr1:100-200"
+ * are reference names, we may quote using curly braces.
+ * Thus "{chr1}:100-200" and "{chr1:100-200}" disambiguate the above example.
+ *
+ * Flags are used to control how parsing works, and can be one of the below.
+ *
+ * HTS_PARSE_LIST:
+ *     If present, the region is assmed to be a comma separated list and
+ *     position parsing will not contain commas (this implicitly
+ *     clears HTS_PARSE_THOUSANDS_SEP in the call to hts_parse_decimal).
+ *     On success the return pointer will be the start of the next region, ie
+ *     the character after the comma.  (If *ret != '\0' then the caller can
+ *     assume another region is present in the list.)
+ *
+ *     If not set then positions may contain commas.  In this case the return
+ *     value should point to the end of the string, or NULL on failure.
+ *
+ * HTS_PARSE_ONE_COORD:
+ *     If present, X:100 is treated as the single base pair region X:100-100.
+ *     In this case X:-100 is shorthand for X:1-100 and X:100- is X:100-<end>.
+ *     (This is the standard bcftools region convention.)
+ *
+ *     When not set X:100 is considered to be X:100-<end> where <end> is
+ *     the end of chromosome X (set to INT_MAX here).  X:100- and X:-100 are
+ *     invalid.
+ *     (This is the standard samtools region convention.)
+ *
+ * Note the supplied string expects 1 based inclusive coordinates, but the
+ * returned coordinates start from 0 and are half open, so pos0 is valid
+ * for use in e.g. "for (pos0 = beg; pos0 < end; pos0++) {...}"
+ *
+ * On success a pointer to the byte after the end of the entire region
+ *            specifier is returned (plus any trailing comma), and tid,
+ *            beg & end will be set.
+ * On failure NULL is returned.
+ */
+const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end,
+                             hts_name2id_f getid, void *hdr, int flags)
+{
+    if (!s || !tid || !beg || !end || !getid)
+        return NULL;
+
+    size_t s_len = strlen(s);
+    kstring_t ks = { 0, 0, NULL };
+
+    const char *colon = NULL, *comma = NULL;
+    int quoted = 0;
+
+    if (flags & HTS_PARSE_LIST)
+        flags &= ~HTS_PARSE_THOUSANDS_SEP;
+    else
+        flags |= HTS_PARSE_THOUSANDS_SEP;
+
+    const char *s_end = s + s_len;
+
+    // Braced quoting of references is permitted to resolve ambiguities.
+    if (*s == '{') {
+        const char *close = memchr(s, '}', s_len);
+        if (!close) {
+            hts_log_error("Mismatching braces in \"%s\"", s);
+            return NULL;
+        }
+        s++;
+        s_len--;
+        if (close[1] == ':')
+            colon = close+1;
+        quoted = 1; // number of trailing characters to trim
+
+        // Truncate to this item only, if appropriate.
+        if (flags & HTS_PARSE_LIST) {
+            comma = strchr(close, ',');
+            if (comma) {
+                s_len = comma-s;
+                s_end = comma+1;
+            }
+        }
+    } else {
+        // Truncate to this item only, if appropriate.
+        if (flags & HTS_PARSE_LIST) {
+            comma = strchr(s, ',');
+            if (comma) {
+                s_len = comma-s;
+                s_end = comma+1;
+            }
+        }
+
+        colon = hts_memrchr(s, ':', s_len);
+    }
+
+    // No colon is simplest case; just check and return.
+    if (colon == NULL) {
+        *beg = 0; *end = INT64_MAX;
+        kputsn(s, s_len-quoted, &ks); // convert to nul terminated string
+        if (!ks.s) {
+            *tid = -1;
+            return NULL;
+        }
+
+        *tid = getid(hdr, ks.s);
+        free(ks.s);
+
+        return *tid >= 0 ? s_end : NULL;
+    }
+
+    // Has a colon, but check whole name first.
+    if (!quoted) {
+        *beg = 0; *end = INT64_MAX;
+        kputsn(s, s_len, &ks); // convert to nul terminated string
+        if (!ks.s) {
+            *tid = -1;
+            return NULL;
+        }
+        if ((*tid = getid(hdr, ks.s)) >= 0) {
+            // Entire name matches, but also check this isn't
+            // ambiguous.  eg we have ref chr1 and ref chr1:100-200
+            // both present.
+            ks.l = 0;
+            kputsn(s, colon-s, &ks); // convert to nul terminated string
+            if (!ks.s) {
+                *tid = -1;
+                return NULL;
+            }
+            if (getid(hdr, ks.s) >= 0) {
+                free(ks.s);
+                *tid = -1;
+                hts_log_error("Range is ambiguous. "
+                              "Use {%s} or {%.*s}%s instead",
+                              s, (int)(colon-s), s, colon);
+                return NULL;
+            }
+            free(ks.s);
+
+            return s_end;
+        }
+    }
+
+    // Quoted, or unquoted and whole string isn't a name.
+    // Check the pre-colon part is valid.
+    ks.l = 0;
+    kputsn(s, colon-s-quoted, &ks); // convert to nul terminated string
+    if (!ks.s) {
+        *tid = -1;
+        return NULL;
+    }
+    *tid = getid(hdr, ks.s);
+    free(ks.s);
+    if (*tid < 0)
+        return NULL;
+
+    // Finally parse the post-colon coordinates
+    char *hyphen;
+    *beg = hts_parse_decimal(colon+1, &hyphen, flags) - 1;
+    if (*beg < 0) {
+        if (isdigit(*hyphen) || *hyphen == '\0' || *hyphen == ',') {
+            // interpret chr:-100 as chr:1-100
+            *end = *beg==-1 ? INT64_MAX : -(*beg+1);
+            *beg = 0;
+            return s_end;
+        } else if (*hyphen == '-') {
+            *beg = 0;
+        } else {
+            hts_log_error("Unexpected string \"%s\" after region", hyphen);
+            return NULL;
+        }
+    }
+
+    if (*hyphen == '\0' || ((flags & HTS_PARSE_LIST) && *hyphen == ',')) {
+        *end = flags & HTS_PARSE_ONE_COORD ? *beg+1 : INT64_MAX;
+    } else if (*hyphen == '-') {
+        *end = hts_parse_decimal(hyphen+1, &hyphen, flags);
+        if (*hyphen != '\0' && *hyphen != ',') {
+            hts_log_error("Unexpected string \"%s\" after region", hyphen);
+            return NULL;
+        }
+    } else {
+        hts_log_error("Unexpected string \"%s\" after region", hyphen);
+        return NULL;
+    }
+
+    if (*end == 0)
+        *end = INT64_MAX; // interpret chr:100- as chr:100-<end>
+
+    if (*beg >= *end) return NULL;
+
+    return s_end;
+}
+
+// Next release we should mark this as deprecated?
+// Use hts_parse_region above instead.
 const char *hts_parse_reg(const char *s, int *beg, int *end)
 {
     char *hyphen;
@@ -2646,33 +2862,19 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
 
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
-    int tid, beg, end;
-    const char *q;
+    int tid;
+    int64_t beg, end;
 
     if (strcmp(reg, ".") == 0)
         return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
     else if (strcmp(reg, "*") == 0)
         return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
 
-    q = hts_parse_reg(reg, &beg, &end);
-    if (q) {
-        char tmp_a[1024], *tmp = tmp_a;
-        if (q - reg + 1 > 1024)
-            if (!(tmp = malloc(q - reg + 1)))
-                return NULL;
-        strncpy(tmp, reg, q - reg);
-        tmp[q - reg] = 0;
-        tid = getid(hdr, tmp);
-        if (tmp != tmp_a)
-            free(tmp);
-    }
-    else {
-        // not parsable as a region, but possibly a sequence named "foo:a"
-        tid = getid(hdr, reg);
-        beg = 0; end = INT_MAX;
-    }
+    if (!hts_parse_region(reg, &tid, &beg, &end, getid, hdr, HTS_PARSE_THOUSANDS_SEP))
+        return NULL;
 
-    if (tid < 0) return NULL;
+    if (end > INT_MAX) end = INT_MAX; // Remove when fully 64-bit compliant
+
     return itr_query(idx, tid, beg, end, readrec);
 }
 

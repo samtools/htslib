@@ -29,6 +29,7 @@
 #ifndef HTSLIB_FAIDX_H
 #define HTSLIB_FAIDX_H
 
+#include <inttypes.h>
 #include "hts_defs.h"
 
 #ifdef __cplusplus
@@ -163,6 +164,10 @@ faidx_t *fai_load_format(const char *fn, enum fai_format_options format);
 
 The returned sequence is allocated by `malloc()` family and should be destroyed
 by end users by calling `free()` on it.
+
+To work around ambiguous parsing issues, eg both "chr1" and "chr1:100-200"
+are reference names, quote using curly braces.
+Thus "{chr1}:100-200" and "{chr1:100-200}" disambiguate the above example.
 */
 char *fai_fetch(const faidx_t *fai, const char *reg, int *len);
 
@@ -172,8 +177,10 @@ char *fai_fetch(const faidx_t *fai, const char *reg, int *len);
     @param  len  Length of the region; -2 if seq not present, -1 general error
     @return      Pointer to the quality string; null on failure
 
-The returned quality string is allocated by `malloc()` family and should be destroyed
-by end users by calling `free()` on it.
+The returned quality string is allocated by `malloc()` family and should be
+destroyed by end users by calling `free()` on it.
+
+Region names can be quoted with curly braces, as for fai_fetch().
 */
 char *fai_fetchqual(const faidx_t *fai, const char *reg, int *len);
 
@@ -224,6 +231,21 @@ const char *faidx_iseq(const faidx_t *fai, int i);
 
 /// Return sequence length, -1 if not present
 int faidx_seq_len(const faidx_t *fai, const char *seq);
+
+/// Parses a region string.
+/** @param  fai   Pointer to the faidx_t struct
+    @param  s     Region string
+    @param  tid   Returns which i-th sequence is described in the region.
+    @param  beg   Returns the start of the region (0 based)
+    @param  end   Returns the one past last of the region (0 based)
+    @param  flags Parsing method, see HTS_PARSE_* in hts.h.
+    @return      pointer to end of parsed s if successs, NULL if not.
+
+    To work around ambiguous parsing issues, eg both "chr1" and "chr1:100-200"
+    are reference names, quote using curly braces.
+    Thus "{chr1}:100-200" and "{chr1:100-200}" disambiguate the above example.
+*/
+const char *fai_parse_region(const faidx_t *fai, const char *s, int *tid, int64_t *beg, int64_t *end, int flags);
 
 #ifdef __cplusplus
 }

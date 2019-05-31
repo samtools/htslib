@@ -40,6 +40,19 @@ Noteworthy changes in release a.b
   to create hts_reglist_t region lists from `chr:<from>-<to>` type region
   specifiers.
 
+* An improved region parsing function hts_parse_region() is added.  This
+  is designed to help deal with ambiguities that arise when reference names
+  contain colons followed by numbers.  It does this by checking possible
+  names against the known list of references in the input file.  When even
+  this method fails (for example when names "chr1" and "chr1:100-200" both
+  exist) the reference name part can be quoted using curly braces.  Thus
+  "{chr1}:100-200" and "{chr1:100-200}" disambiguate the above example.
+
+  Specialisations of this function sam_parse_region() and fai_parse_region()
+  are also added for SAM/BAM/CRAM files and fasta/fastq files respectively.
+  HTSlib iterator functions that accept a region specifier have been
+  upgraded to use the new interface.
+
 * hts_idx_load() and hts_open() have been changed to support indexes
   which are not stored in the same location as the indexed file.  This works
   by appending a delimiter '##idx##' and the index file location to the
