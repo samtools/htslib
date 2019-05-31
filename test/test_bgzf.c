@@ -234,7 +234,7 @@ static int try_bgzf_index_load(BGZF *fp, const char *bname, const char *suffix,
 
 static int try_bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix,
                                const char *func) {
-    if (bgzf_index_dump(fp, bname, suffix) != 0) {
+    if (bgzf_index_dump(fp, bname, suffix, 0) != 0) {
         fprintf(stderr, "%s : Couldn't bgzf_index_dump %s%s : %s\n",
                 func, bname, suffix ? suffix : "", strerror(errno));
         return -1;

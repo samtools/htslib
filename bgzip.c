@@ -78,6 +78,7 @@ static int bgzip_main_usage(FILE *fp, int status)
     fprintf(fp, "   -c, --stdout               write on standard output, keep original files unchanged\n");
     fprintf(fp, "   -d, --decompress           decompress\n");
     fprintf(fp, "   -f, --force                overwrite files without asking\n");
+    fprintf(fp, "   -F, --on-the-fly           write index incrementally as input is compressed\n");
     fprintf(fp, "   -h, --help                 give this help\n");
     fprintf(fp, "   -i, --index                compress and create BGZF index\n");
     fprintf(fp, "   -I, --index-name FILE      name of BGZF index file [file.gz.gzi]\n");
@@ -93,7 +94,7 @@ static int bgzip_main_usage(FILE *fp, int status)
 
 int main(int argc, char **argv)
 {
-    int c, compress, compress_level = -1, pstdout, is_forced, test, index = 0, rebgzip = 0, reindex = 0;
+    int c, compress, compress_level = -1, pstdout, is_forced, test, index = 0, rebgzip = 0, reindex = 0, on_the_fly;
     BGZF *fp;
     void *buffer;
     long start, end, size;
@@ -107,6 +108,7 @@ int main(int argc, char **argv)
         {"stdout", no_argument, NULL, 'c'},
         {"decompress", no_argument, NULL, 'd'},
         {"force", no_argument, NULL, 'f'},
+        {"on-the-fly", no_argument, NULL, 'F'},
         {"index", no_argument, NULL, 'i'},
         {"index-name", required_argument, NULL, 'I'},
         {"compress-level", required_argument, NULL, 'l'},
@@ -119,14 +121,15 @@ int main(int argc, char **argv)
         {NULL, 0, NULL, 0}
     };
 
-    compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0; test = 0;
-    while((c  = getopt_long(argc, argv, "cdh?fb:@:s:iI:l:grt",loptions,NULL)) >= 0){
+    compress = 1; pstdout = 0; start = 0; size = -1; end = -1; is_forced = 0; test = 0; on_the_fly = 0;
+    while((c  = getopt_long(argc, argv, "cdh?fFb:@:s:iI:l:grt",loptions,NULL)) >= 0){
         switch(c){
         case 'd': compress = 0; break;
         case 'c': pstdout = 1; break;
         case 'b': start = atol(optarg); compress = 0; pstdout = 1; break;
         case 's': size = atol(optarg); pstdout = 1; break;
         case 'f': is_forced = 1; break;
+        case 'F': on_the_fly = 1; break;
         case 'i': index = 1; break;
         case 'I': index_fname = optarg; break;
         case 'l': compress_level = atol(optarg); break;
@@ -216,6 +219,12 @@ int main(int argc, char **argv)
             return 1;
         }
 
+        if ( on_the_fly && threads > 1 )
+        {
+            fprintf(stderr, "[bgzip] Cannot write index incrementally when using threads\n");
+            return 1;
+        }
+
         if ( index ) bgzf_index_build_init(fp);
         if (threads > 1)
             bgzf_mt(fp, threads, 256);
@@ -231,16 +240,38 @@ int main(int argc, char **argv)
                 if (bgzf_block_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
         }
         else {
-            while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0)
+            int last_index_pointer = 1;
+            // Compressing data:
+            while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0) {
                 if (bgzf_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
+                // if incremental index requested, write index after every bgzf_write():
+                if ( index && on_the_fly )
+                {
+                    if (index_fname) {
+                        last_index_pointer = bgzf_index_dump(fp, index_fname, NULL, last_index_pointer);
+                        if (last_index_pointer < 0)
+                            error("Could not write index to '%s'\n", index_fname);
+                    } else {
+                        last_index_pointer = bgzf_index_dump(fp, argv[optind], ".gz.gzi", last_index_pointer);
+                        if (last_index_pointer < 0)
+                            error("Could not write index to '%s.gz.gzi'", argv[optind]);
+                    }
+                }
+
+            }
+            if ( index && on_the_fly ) {
+                // write complete index file and close it
+                if (bgzf_index_dump(fp, NULL, NULL, 0) < 0)
+                    error("Could not write index to '%s'\n", index_fname);
+            }
         }
-        if ( index )
+        if ( index && ! on_the_fly )
         {
             if (index_fname) {
-                if (bgzf_index_dump(fp, index_fname, NULL) < 0)
+                if (bgzf_index_dump(fp, index_fname, NULL, 0) < 0)
                     error("Could not write index to '%s'\n", index_fname);
             } else {
-                if (bgzf_index_dump(fp, argv[optind], ".gz.gzi") < 0)
+                if (bgzf_index_dump(fp, argv[optind], ".gz.gzi", 0) < 0)
                     error("Could not write index to '%s.gz.gzi'", argv[optind]);
             }
         }
@@ -272,10 +303,10 @@ int main(int argc, char **argv)
         if ( ret<0 ) error("Is the file gzipped or bgzipped? The latter is required for indexing.\n");
 
         if ( index_fname ) {
-            if (bgzf_index_dump(fp, index_fname, NULL) < 0)
+            if (bgzf_index_dump(fp, index_fname, NULL, 0) < 0)
                 error("Could not write index to '%s'\n", index_fname);
         } else {
-            if (bgzf_index_dump(fp, argv[optind], ".gzi") < 0)
+            if (bgzf_index_dump(fp, argv[optind], ".gzi", 0) < 0)
                 error("Could not write index to '%s.gzi'\n", argv[optind]);
         }
 
