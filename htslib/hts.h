@@ -810,6 +810,47 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
     @return      Pointer to the byte after the end of the entire region
                  specifier (including any trailing comma) on success,
                  or NULL if @a str could not be parsed.
+
+    A variant of hts_parse_reg which is reference-id aware.  It uses
+    the iterator name2id callbacks to validate the region tokenisation works.
+
+    This is necessary due to GRCh38 HLA additions which have reference names
+    like "HLA-DRB1*12:17".
+
+    To work around ambiguous parsing issues, eg both "chr1" and "chr1:100-200"
+    are reference names, quote using curly braces.
+    Thus "{chr1}:100-200" and "{chr1:100-200}" disambiguate the above example.
+
+    Flags are used to control how parsing works, and can be one of the below.
+
+    HTS_PARSE_THOUSANDS_SEP:
+        Ignore commas in numbers.  For example with this flag 1,234,567
+        is interpreted as 1234567.
+
+    HTS_PARSE_LIST:
+        If present, the region is assmed to be a comma separated list and
+        position parsing will not contain commas (this implicitly
+        clears HTS_PARSE_THOUSANDS_SEP in the call to hts_parse_decimal).
+        On success the return pointer will be the start of the next region, ie
+        the character after the comma.  (If *ret != '\0' then the caller can
+        assume another region is present in the list.)
+
+        If not set then positions may contain commas.  In this case the return
+        value should point to the end of the string, or NULL on failure.
+
+    HTS_PARSE_ONE_COORD:
+        If present, X:100 is treated as the single base pair region X:100-100.
+        In this case X:-100 is shorthand for X:1-100 and X:100- is X:100-<end>.
+        (This is the standard bcftools region convention.)
+
+        When not set X:100 is considered to be X:100-<end> where <end> is
+        the end of chromosome X (set to INT_MAX here).  X:100- and X:-100 are
+        invalid.
+        (This is the standard samtools region convention.)
+
+    Note the supplied string expects 1 based inclusive coordinates, but the
+    returned coordinates start from 0 and are half open, so pos0 is valid
+    for use in e.g. "for (pos0 = beg; pos0 < end; pos0++) {...}"
 */
 const char *hts_parse_region(const char *str, int *tid, int64_t *beg, int64_t *end,
                              hts_name2id_f getid, void *hdr, int flags);
