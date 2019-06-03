@@ -497,6 +497,12 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
 
     /** VCF version, e.g. VCFv4.2 */
     const char *bcf_hdr_get_version(const bcf_hdr_t *hdr);
+    /// Set version in bcf header
+    /**
+       @param hdr     BCF header struct
+       @param version Version to set, e.g. "VCFv4.3"
+       @return 0 on success; < 0 on error
+     */
     int bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version);
 
     /**
@@ -539,6 +545,12 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     */
     int bcf_hdr_sync(bcf_hdr_t *h) HTS_RESULT_USED;
     bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len);
+    /// Convert a bcf header record to string form
+    /**
+     * @param hrec    Header record
+     * @param str     Destination kstring
+     * @return 0 on success; < 0 on error
+     */
     int bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str);
     int bcf_hdr_add_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec);
     /**
@@ -867,12 +879,43 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     #define bcf_hdr_id2coltype(hdr,type,int_id) ((hdr)->id[BCF_DT_ID][int_id].val->info[type] & 0xf)
     #define bcf_hdr_idinfo_exists(hdr,type,int_id)  ((int_id<0 || bcf_hdr_id2coltype(hdr,type,int_id)==0xf) ? 0 : 1)
     #define bcf_hdr_id2hrec(hdr,dict_type,col_type,int_id)    ((hdr)->id[(dict_type)==BCF_DT_CTG?BCF_DT_CTG:BCF_DT_ID][int_id].val->hrec[(dict_type)==BCF_DT_CTG?0:(col_type)])
-
+    /// Convert BCF FORMAT data to string form
+    /**
+     * @param s    kstring to write into
+     * @param n    number of items in @p data
+     * @param type type of items in @p data
+     * @param data BCF format data
+     * @return  0 on success
+     *         -1 if out of memory
+     */
     int bcf_fmt_array(kstring_t *s, int n, int type, void *data);
     uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr);
 
+    /// Encode a variable-length char array in BCF format
+    /**
+     * @param s    kstring to write into
+     * @param l    length of input
+     * @param a    input data to encode
+     * @return 0 on success; < 0 on error
+     */
     int bcf_enc_vchar(kstring_t *s, int l, const char *a);
+    /// Encode a variable-length integer array in BCF format
+    /**
+     * @param s      kstring to write into
+     * @param n      total number of items in @p a (<= 0 to encode BCF_BT_NULL)
+     * @param a      input data to encode
+     * @param wsize  vector length (<= 0 is equivalent to @p n)
+     * @return 0 on success; < 0 on error
+     * @note @p n should be an exact multiple of @p wsize
+     */
     int bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize);
+    /// Encode a variable-length float array in BCF format
+    /**
+     * @param s      kstring to write into
+     * @param n      total number of items in @p a (<= 0 to encode BCF_BT_NULL)
+     * @param a      input data to encode
+     * @return 0 on success; < 0 on error
+     */
     int bcf_enc_vfloat(kstring_t *s, int n, float *a);
 
 
