@@ -341,8 +341,9 @@ int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, in
 /*
  *  bcf_sr_regions_flush() - calls repeatedly regs->missed_reg_handler() until
  *  all remaining records are processed.
+ *  Returns 0 on success, <0 on error.
  */
-void bcf_sr_regions_flush(bcf_sr_regions_t *regs);
+int bcf_sr_regions_flush(bcf_sr_regions_t *regs);
 
 #ifdef __cplusplus
 }

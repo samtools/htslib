@@ -54,8 +54,9 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line);
  *
  *  If you have more than 31 alleles, then the integer bit mask will
  *  overflow, so use bcf_remove_allele_set instead
+ *  Returns 0 on sucess, <0 on error
  */
-void bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int mask) HTS_DEPRECATED("Please use bcf_remove_allele_set instead");
+int bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int mask) HTS_DEPRECATED("Please use bcf_remove_allele_set instead");
 
 /**
  *  bcf_remove_allele_set() - remove ALT alleles according to bitset @rm_set

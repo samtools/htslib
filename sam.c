@@ -2834,9 +2834,10 @@ bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data)
     return iter;
 }
 
-void bam_plp_init_overlaps(bam_plp_t iter)
+int bam_plp_init_overlaps(bam_plp_t iter)
 {
     iter->overlaps = kh_init(olap_hash);  // hash for tweaking quality of bases in overlapping reads
+    return iter->overlaps ? 0 : -1;
 }
 
 void bam_plp_destroy(bam_plp_t iter)
@@ -3250,11 +3251,12 @@ bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data)
     return iter;
 }
 
-void bam_mplp_init_overlaps(bam_mplp_t iter)
+int bam_mplp_init_overlaps(bam_mplp_t iter)
 {
-    int i;
+    int i, r = 0;
     for (i = 0; i < iter->n; ++i)
-        bam_plp_init_overlaps(iter->iter[i]);
+        r |= bam_plp_init_overlaps(iter->iter[i]);
+    return r == 0 ? 0 : -1;
 }
 
 void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt)

@@ -829,7 +829,7 @@ typedef struct __bam_mplp_t *bam_mplp_t;
                             int (*func)(void *data, const bam1_t *b, bam_pileup_cd *cd));
 
     /// Get pileup padded insertion sequence
-    /*
+    /**
      * @param p       pileup data
      * @param ins     the kstring where the insertion sequence will be written
      * @param del_len location for deletion length
@@ -844,15 +844,19 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) HTS_RESULT_USED;
 
     bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data);
+    /// Set up mpileup overlap detection
     /**
-     *  bam_mplp_init_overlaps() - if called, mpileup will detect overlapping
+     * @param iter    mpileup iterator
+     * @return 0 on success; a negative value on error
+     *
+     *  If called, mpileup will detect overlapping
      *  read pairs and for each base pair set the base quality of the
      *  lower-quality base to zero, thus effectively discarding it from
      *  calling. If the two bases are identical, the quality of the other base
      *  is increased to the sum of their qualities (capped at 200), otherwise
      *  it is multiplied by 0.8.
      */
-    void bam_mplp_init_overlaps(bam_mplp_t iter);
+    int bam_mplp_init_overlaps(bam_mplp_t iter);
     void bam_mplp_destroy(bam_mplp_t iter);
     void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
     int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);

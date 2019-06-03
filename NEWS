@@ -26,6 +26,19 @@ Noteworthy changes in release a.b
     the offset.  This allows them to work correctly on files longer than
     2G bytes on Windows and 32-bit Linux.
 
+  - A number of functions that used to return void now return int so that
+    they can report problems like memory allocation failures.  Callers
+    should take care to check the return values from these functions.
+    The affected functions are:
+       ksort.h:             ks_introsort(), ks_mergesort()
+       sam.h:               bam_mplp_init_overlaps()
+       synced_bcf_reader.h: bcf_sr_regions_flush()
+       vcf.h:               bcf_format_gt(), bcf_fmt_array(),
+			    bcf_enc_int1(), bcf_enc_size(),
+                            bcf_enc_vchar(), bcf_enc_vfloat(), bcf_enc_vint(),
+			    bcf_hdr_set_version(), bcf_hrec_format()
+       vcfutils.h:          bcf_remove_alleles()
+
 * SAM format reading and writing is now much faster.  Compared to revision 1.9,
   reading uncompressed SAM may be up to 100% faster; writing up to 80%.  The
   exact improvement depends on which compiler options are used and the

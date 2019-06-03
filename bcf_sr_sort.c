@@ -226,7 +226,8 @@ static int merge_vsets(sr_sort_t *srt, int ivset, int jvset)
 
     return ivset;
 }
-static void push_vset(sr_sort_t *srt, int ivset)
+
+static int push_vset(sr_sort_t *srt, int ivset)
 {
     varset_t *iv = &srt->vset[ivset];
     int i,j;
@@ -248,6 +249,7 @@ static void push_vset(sr_sort_t *srt, int ivset)
         }
     }
     remove_vset(srt, ivset);
+    return 0; // FIXME: check for errs in this function
 }
 
 static int cmpstringp(const void *p1, const void *p2)
@@ -319,16 +321,16 @@ int bcf_sr_sort_set_active(sr_sort_t *srt, int idx)
     hts_expand(int,idx+1,srt->mactive,srt->active);
     srt->nactive = 1;
     srt->active[srt->nactive - 1] = idx;
-    return 0;
+    return 0; // FIXME: check for errs in this function
 }
 int bcf_sr_sort_add_active(sr_sort_t *srt, int idx)
 {
     hts_expand(int,idx+1,srt->mactive,srt->active);
     srt->nactive++;
     srt->active[srt->nactive - 1] = idx;
-    return 0;
+    return 0; // FIXME: check for errs in this function
 }
-static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int min_pos)
+static int bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int min_pos)
 {
     if ( !srt->grp_str2int )
     {
@@ -550,6 +552,8 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
 
     srt->chr = chr;
     srt->pos = min_pos;
+
+    return 0;  // FIXME: check for errs in this function
 }
 
 int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int min_pos)

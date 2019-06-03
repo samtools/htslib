@@ -961,7 +961,7 @@ const char *bcf_hdr_get_version(const bcf_hdr_t *hdr)
     return hrec->value;
 }
 
-void bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
+int bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
 {
     bcf_hrec_t *hrec = bcf_hdr_get_hrec(hdr, BCF_HL_GEN, "fileformat", NULL, NULL);
     if ( !hrec )
@@ -978,6 +978,7 @@ void bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
         hrec->value = strdup(version);
     }
     hdr->dirty = 1;
+    return 0; // FIXME: check for errs in this function (return < 0 if so)
 }
 
 bcf_hdr_t *bcf_hdr_init(const char *mode)
@@ -1446,31 +1447,40 @@ int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, int *beg, int *end)
     return ret;
 }
 
-static inline void bcf1_sync_id(bcf1_t *line, kstring_t *str)
+static inline int bcf1_sync_id(bcf1_t *line, kstring_t *str)
 {
     // single typed string
-    if ( line->d.id && strcmp(line->d.id, ".") ) bcf_enc_vchar(str, strlen(line->d.id), line->d.id);
-    else bcf_enc_size(str, 0, BCF_BT_CHAR);
+    if ( line->d.id && strcmp(line->d.id, ".") ) {
+        return bcf_enc_vchar(str, strlen(line->d.id), line->d.id);
+    } else {
+        return bcf_enc_size(str, 0, BCF_BT_CHAR);
+    }
 }
-static inline void bcf1_sync_alleles(bcf1_t *line, kstring_t *str)
+static inline int bcf1_sync_alleles(bcf1_t *line, kstring_t *str)
 {
     // list of typed strings
     int i;
-    for (i=0; i<line->n_allele; i++)
-        bcf_enc_vchar(str, strlen(line->d.allele[i]), line->d.allele[i]);
+    for (i=0; i<line->n_allele; i++) {
+        if (bcf_enc_vchar(str, strlen(line->d.allele[i]), line->d.allele[i]) < 0)
+            return -1;
+    }
     if ( !line->rlen && line->n_allele ) line->rlen = strlen(line->d.allele[0]);
+    return 0;
 }
-static inline void bcf1_sync_filter(bcf1_t *line, kstring_t *str)
+static inline int bcf1_sync_filter(bcf1_t *line, kstring_t *str)
 {
     // typed vector of integers
-    if ( line->d.n_flt ) bcf_enc_vint(str, line->d.n_flt, line->d.flt, -1);
-    else bcf_enc_vint(str, 0, 0, -1);
+    if ( line->d.n_flt ) {
+        return bcf_enc_vint(str, line->d.n_flt, line->d.flt, -1);
+    } else {
+        return bcf_enc_vint(str, 0, 0, -1);
+    }
 }
 
-static inline void bcf1_sync_info(bcf1_t *line, kstring_t *str)
+static inline int bcf1_sync_info(bcf1_t *line, kstring_t *str)
 {
     // pairs of typed vectors
-    int i, irm = -1;
+    int i, irm = -1, e = 0;
     for (i=0; i<line->n_info; i++)
     {
         bcf_info_t *info = &line->d.info[i];
@@ -1480,7 +1490,7 @@ static inline void bcf1_sync_info(bcf1_t *line, kstring_t *str)
             if ( irm < 0 ) irm = i;
             continue;
         }
-        kputsn_(info->vptr - info->vptr_off, info->vptr_len + info->vptr_off, str);
+        e |= kputsn_(info->vptr - info->vptr_off, info->vptr_len + info->vptr_off, str) < 0;
         if ( irm >=0 )
         {
             bcf_info_t tmp = line->d.info[irm]; line->d.info[irm] = line->d.info[i]; line->d.info[i] = tmp;
@@ -1488,6 +1498,7 @@ static inline void bcf1_sync_info(bcf1_t *line, kstring_t *str)
         }
     }
     if ( irm>=0 ) line->n_info = irm;
+    return e == 0 ? 0 : -1;
 }
 
 static int bcf1_sync(bcf1_t *line)
@@ -1855,29 +1866,32 @@ int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname)
     return 1;
 }
 
-static void _bcf_hrec_format(const bcf_hrec_t *hrec, int is_bcf, kstring_t *str)
+static int _bcf_hrec_format(const bcf_hrec_t *hrec, int is_bcf, kstring_t *str)
 {
+    uint32_t e = 0;
     if ( !hrec->value )
     {
         int j, nout = 0;
-        ksprintf(str, "##%s=<", hrec->key);
+        e |= ksprintf(str, "##%s=<", hrec->key) < 0;
         for (j=0; j<hrec->nkeys; j++)
         {
             // do not output IDX if output is VCF
             if ( !is_bcf && !strcmp("IDX",hrec->keys[j]) ) continue;
-            if ( nout ) kputc(',',str);
-            ksprintf(str,"%s=%s", hrec->keys[j], hrec->vals[j]);
+            if ( nout ) e |= kputc(',',str) < 0;
+            e |= ksprintf(str,"%s=%s", hrec->keys[j], hrec->vals[j]) < 0;
             nout++;
         }
-        ksprintf(str,">\n");
+        e |= ksprintf(str,">\n") < 0;
     }
     else
-        ksprintf(str,"##%s=%s\n", hrec->key,hrec->value);
+        e |= ksprintf(str,"##%s=%s\n", hrec->key,hrec->value) < 0;
+
+    return e == 0 ? 0 : -1;
 }
 
-void bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str)
+int bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str)
 {
-    _bcf_hrec_format(hrec,0,str);
+    return _bcf_hrec_format(hrec,0,str);
 }
 
 int bcf_hdr_format(const bcf_hdr_t *hdr, int is_bcf, kstring_t *str)
@@ -1944,7 +1958,7 @@ int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
  *** Typed value I/O ***
  ***********************/
 
-void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
+int bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
 {
     int32_t max = INT32_MIN, min = INT32_MAX;
     int i;
@@ -1990,6 +2004,8 @@ void bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
             s->l += n * sizeof(int32_t);
         }
     }
+
+    return 0; // FIXME: check for errs in this function
 }
 
 static inline int serialize_float_array(kstring_t *s, size_t n, const float *a) {
@@ -2010,33 +2026,35 @@ static inline int serialize_float_array(kstring_t *s, size_t n, const float *a) 
     return 0;
 }
 
-void bcf_enc_vfloat(kstring_t *s, int n, float *a)
+int bcf_enc_vfloat(kstring_t *s, int n, float *a)
 {
     assert(n >= 0);
     bcf_enc_size(s, n, BCF_BT_FLOAT);
     serialize_float_array(s, n, a);
+    return 0; // FIXME: check for errs in this function
 }
 
-void bcf_enc_vchar(kstring_t *s, int l, const char *a)
+int bcf_enc_vchar(kstring_t *s, int l, const char *a)
 {
     bcf_enc_size(s, l, BCF_BT_CHAR);
     kputsn(a, l, s);
+    return 0; // FIXME: check for errs in this function
 }
 
-void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
+int bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 {
     int j = 0;
+    uint32_t e = 0;
     if (n == 0) {
-        kputc('.', s);
-        return;
+        return kputc('.', s) >= 0 ? 0 : -1;
     }
     if (type == BCF_BT_CHAR)
     {
         char *p = (char*)data;
         for (j = 0; j < n && *p; ++j, ++p)
         {
-            if ( *p==bcf_str_missing ) kputc('.', s);
-            else kputc(*p, s);
+            if ( *p==bcf_str_missing ) e |= kputc('.', s) < 0;
+            else e |= kputc(*p, s) < 0;
         }
     }
     else
@@ -2049,7 +2067,7 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
                 if ( is_vector_end ) break; \
                 if ( j ) kputc(',', s); \
                 if ( is_missing ) kputc('.', s); \
-                else kprint; \
+                else e |= kprint < 0; \
             } \
         }
         switch (type) {
@@ -2061,6 +2079,7 @@ void bcf_fmt_array(kstring_t *s, int n, int type, void *data)
         }
         #undef BRANCH
     }
+    return e == 0 ? 0 : -1;
 }
 
 uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr)
@@ -2083,13 +2102,15 @@ typedef struct {
     uint8_t *buf;
 } fmt_aux_t;
 
-static inline void align_mem(kstring_t *s)
+static inline int align_mem(kstring_t *s)
 {
+    int e = 0;
     if (s->l&7) {
         uint64_t zero = 0;
         int l = ((s->l + 7)>>3<<3) - s->l;
-        kputsn((char*)&zero, l, s);
+        e = kputsn((char*)&zero, l, s) < 0;
     }
+    return e == 0 ? 0 : -1;
 }
 
 // p,q is the start and the end of the FORMAT field
@@ -3630,7 +3651,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
     // should do also complex events, SVs, etc...
 }
 
-static void bcf_set_variant_types(bcf1_t *b)
+static int bcf_set_variant_types(bcf1_t *b)
 {
     if ( !(b->unpacked & BCF_UN_STR) ) bcf_unpack(b, BCF_UN_STR);
     bcf_dec_t *d = &b->d;
@@ -3649,6 +3670,7 @@ static void bcf_set_variant_types(bcf1_t *b)
         b->d.var_type |= d->var[i].type;
         //fprintf(stderr,"[set_variant_type] %d   %s %s -> %d %d .. %d\n", b->pos+1,d->allele[0],d->allele[i],d->var[i].type,d->var[i].n, b->d.var_type);
     }
+    return 0;
 }
 
 int bcf_get_variant_types(bcf1_t *rec)
