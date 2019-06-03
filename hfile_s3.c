@@ -45,6 +45,7 @@ typedef struct s3_auth_data {
     kstring_t secret;
     kstring_t region;
     kstring_t canonical_query_string;
+    kstring_t user_query_string;
     kstring_t host;
     char *bucket;
     kstring_t auth_hdr;
@@ -290,6 +291,7 @@ static void free_auth_data(s3_auth_data *ad) {
     free(ad->secret.s);
     free(ad->region.s);
     free(ad->canonical_query_string.s);
+    free(ad->user_query_string.s);
     free(ad->host.s);
     free(ad->bucket);
     free(ad->auth_hdr.s);
@@ -353,6 +355,40 @@ static int auth_header_callback(void *ctx, char ***hdrs) {
 }
 
 
+/* like a escape path but for query strings '=' and '&' are untouched */
+static char *escape_query(const char *qs) {
+    size_t i, j = 0, length;
+    char *escaped;
+
+    length = strlen(qs);
+
+    if ((escaped = malloc(length * 3 + 1)) == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; i < length; i++) {
+        int c = qs[i];
+
+        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+             c == '_' || c == '-' || c == '~' || c == '.' || c == '/' || c == '=' || c == '&') {
+            escaped[j++] = c;
+        } else {
+            sprintf(escaped + j, "%%%02X", c);
+            j += 3;
+        }
+    }
+
+    if (i != length) {
+        // in the case of a '?' copy the rest of the qs across unchanged
+        strcpy(escaped + j, qs + i);
+    } else {
+        escaped[j] = '\0';
+    }
+
+    return escaped;
+}
+
+
 static char *escape_path(const char *path) {
     size_t i, j = 0, length;
     char *escaped;
@@ -366,6 +402,8 @@ static char *escape_path(const char *path) {
     for (i = 0; i < length; i++) {
         int c = path[i];
 
+        if (c == '?') break; // don't escape ? or beyond
+
         if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
              c == '_' || c == '-' || c == '~' || c == '.' || c == '/') {
             escaped[j++] = c;
@@ -374,7 +412,13 @@ static char *escape_path(const char *path) {
             j += 3;
         }
     }
-    escaped[j] = '\0';
+
+    if (i != length) {
+        // in the case of a '?' copy the rest of the path across unchanged
+        strcpy(escaped + j, path + i);
+    } else {
+        escaped[j] = '\0';
+    }
 
     return escaped;
 }
@@ -435,7 +479,10 @@ static int redirect_endpoint_callback(void *auth, long response,
                url->l = 0;
                kputs(ad->host.s, url);
                kputsn(ad->bucket, strlen(ad->bucket), url);
-
+               if (ad->user_query_string.l) {
+                   kputc('?', url);
+                   kputsn(ad->user_query_string.s, ad->user_query_string.l, url);
+               }
                ret = 0;
             }
         }
@@ -454,6 +501,7 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
     size_t url_path_pos;
     ptrdiff_t bucket_len;
     int is_https = 1, dns_compliant;
+    char *query_start;
 
     if (!ad)
         return NULL;
@@ -501,6 +549,7 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
         if ((v = getenv("AWS_SECRET_ACCESS_KEY")) != NULL) kputs(v, &ad->secret);
         if ((v = getenv("AWS_SESSION_TOKEN")) != NULL) kputs(v, &ad->token);
         if ((v = getenv("AWS_DEFAULT_REGION")) != NULL) kputs(v, &ad->region);
+        if ((v = getenv("HTS_S3_HOST")) != NULL) kputs(v, &ad->host);
 
         if ((v = getenv("AWS_DEFAULT_PROFILE")) != NULL) kputs(v, &profile);
         else if ((v = getenv("AWS_PROFILE")) != NULL) kputs(v, &profile);
@@ -515,11 +564,15 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
                   "aws_session_token", &ad->token,
                   "region", &ad->region, NULL);
     }
-    if (ad->id.l == 0)
-        parse_ini("~/.s3cfg", profile.s, "access_key", &ad->id,
+
+    if (ad->id.l == 0) {
+        const char *v = getenv("HTS_S3_S3CFG");
+        parse_ini(v? v : "~/.s3cfg", profile.s, "access_key", &ad->id,
                   "secret_key", &ad->secret, "access_token", &ad->token,
                   "host_base", &ad->host,
                   "bucket_location", &ad->region, NULL);
+    }
+
     if (ad->id.l == 0)
         parse_simple("~/.awssecret", &ad->id, &ad->secret);
 
@@ -589,6 +642,12 @@ static s3_auth_data * setup_auth_data(const char *s3url, const char *mode,
         memcpy(ad->bucket + 1, bucket, bucket_len);
         memcpy(ad->bucket + bucket_len + 1,
                url->s + url_path_pos, url->l - url_path_pos + 1);
+    }
+
+    // write any query strings to its own place to use later
+    if ((query_start = strchr(ad->bucket, '?'))) {
+        kputs(query_start + 1, &ad->user_query_string);
+        *query_start = 0;
     }
 
     free(profile.s);
@@ -740,7 +799,6 @@ static int make_authorisation(s3_auth_data *ad, char *http_request, char *conten
         goto cleanup;
     }
 
-
     // bucket == canonical_uri
     ksprintf(&canonical_request, "%s\n%s\n%s\n%s\n%s\n%s",
         http_request, ad->bucket, ad->canonical_query_string.s,
@@ -820,8 +878,64 @@ static int update_time(s3_auth_data *ad) {
 }
 
 
+static int query_cmp(const void *p1, const void *p2) {
+    char **q1 = (char **)p1;
+    char **q2 = (char **)p2;
+
+    return strcmp(*q1, *q2);
+}
+
+
+/* Query strings must be in alphabetical order for authorisation */
+
+static int order_query_string(kstring_t *qs) {
+    int *query_offset;
+    int num_queries, i;
+    char **queries;
+    kstring_t ordered = {0, 0, NULL};
+    char *escaped;
+
+    if ((query_offset = ksplit(qs, '&', &num_queries)) == NULL) {
+        return -1;
+    }
+
+    if ((queries = malloc(num_queries * sizeof(char*))) == NULL) {
+        return -1;
+    }
+
+    for (i = 0; i < num_queries; i++) {
+        queries[i] = qs->s + query_offset[i];
+    }
+
+    qsort(queries, num_queries, sizeof(char *), query_cmp);
+
+    for (i = 0; i < num_queries; i++) {
+        if (i) {
+            kputs("&", &ordered);
+        }
+
+        kputs(queries[i], &ordered);
+    }
+
+    if ((escaped = escape_query(ordered.s)) == NULL) {
+        return -1;
+    }
+
+    qs->l = 0;
+    kputs(escaped, qs);
+
+    free(ordered.s);
+    free(queries);
+    free(query_offset);
+    free(escaped);
+
+    return 0;
+}
+
+
 static int write_authorisation_callback(void *auth, char *request, kstring_t *content, char *cqs,
-                                        kstring_t *hash, kstring_t *auth_str, kstring_t *date, kstring_t *token) {
+                                        kstring_t *hash, kstring_t *auth_str, kstring_t *date,
+                                        kstring_t *token, int uqs) {
     s3_auth_data *ad = (s3_auth_data *)auth;
     char content_hash[HASH_LENGTH_SHA256];
 
@@ -847,6 +961,16 @@ static int write_authorisation_callback(void *auth, char *request, kstring_t *co
 
     if (ad->canonical_query_string.l == 0) {
         return -1;
+    }
+
+    /* add a user provided query string, normally only useful on upload initiation */
+    if (uqs) {
+        kputs("&", &ad->canonical_query_string);
+        kputs(ad->user_query_string.s, &ad->canonical_query_string);
+
+        if (order_query_string(&ad->canonical_query_string)) {
+            return -1;
+        }
     }
 
     if (make_authorisation(ad, request, content_hash, auth_str)) {
@@ -887,7 +1011,16 @@ static int v4_auth_header_callback(void *ctx, char ***hdrs) {
     hash_string("", 0, content_hash); // empty hash
 
     ad->canonical_query_string.l = 0;
-    kputs("", &ad->canonical_query_string);
+
+    if (ad->user_query_string.l > 0) {
+        kputs(ad->user_query_string.s, &ad->canonical_query_string);
+
+        if (order_query_string(&ad->canonical_query_string)) {
+            return -1;
+        }
+    } else {
+        kputs("", &ad->canonical_query_string);
+    }
 
     if (make_authorisation(ad, "GET", content_hash, &authorisation)) {
         return -1;

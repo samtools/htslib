@@ -103,7 +103,7 @@ static void share_unlock(CURL *handle, curl_lock_data data, void *userptr) {
     pthread_mutex_unlock(&curl.share_lock);
 }
 
-typedef int (*s3_auth_callback) (void *auth_data, char *, kstring_t*, char*, kstring_t*, kstring_t*, kstring_t*, kstring_t*);
+typedef int (*s3_auth_callback) (void *auth_data, char *, kstring_t*, char*, kstring_t*, kstring_t*, kstring_t*, kstring_t*, int);
 
 typedef int (*set_region_callback) (void *auth_data, kstring_t *region);
 
@@ -189,7 +189,7 @@ static void cleanup_local(hFILE_s3_write *fp) {
 
 static void cleanup(hFILE_s3_write *fp) {
     // free up authorisation data
-    fp->au->callback(fp->au->callback_data,  NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+    fp->au->callback(fp->au->callback_data,  NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0);
     cleanup_local(fp);
 }
 
@@ -234,7 +234,7 @@ static int abort_upload(hFILE_s3_write *fp) {
 
     if (fp->au->callback(fp->au->callback_data,  http_request, NULL,
                          canonical_query_string.s, &content_hash,
-                         &authorisation, &date, &token) != 0) {
+                         &authorisation, &date, &token, 0) != 0) {
         goto out;
     }
 
@@ -300,7 +300,7 @@ static int complete_upload(hFILE_s3_write *fp, kstring_t *resp) {
 
     if (fp->au->callback(fp->au->callback_data,  http_request,
                          &fp->completion_message, canonical_query_string.s,
-                         &content_hash, &authorisation, &date, &token) != 0) {
+                         &content_hash, &authorisation, &date, &token, 0) != 0) {
         goto out;
     }
 
@@ -380,7 +380,7 @@ static int upload_part(hFILE_s3_write *fp, kstring_t *resp) {
 
     if (fp->au->callback(fp->au->callback_data, http_request, &fp->buffer,
                          canonical_query_string.s, &content_hash,
-                         &authorisation, &date, &token) != 0) {
+                         &authorisation, &date, &token, 0) != 0) {
         goto out;
     }
 
@@ -571,7 +571,7 @@ static int handle_bad_request(hFILE_s3_write *fp, kstring_t *resp) {
     return ret;
 }
 
-static int initialise_upload(hFILE_s3_write *fp, kstring_t *head, kstring_t *resp) {
+static int initialise_upload(hFILE_s3_write *fp, kstring_t *head, kstring_t *resp, int user_query) {
     kstring_t content_hash = {0, 0, NULL};
     kstring_t authorisation = {0, 0, NULL};
     kstring_t url = {0, 0, NULL};
@@ -581,13 +581,18 @@ static int initialise_upload(hFILE_s3_write *fp, kstring_t *head, kstring_t *res
     int ret = -1;
     struct curl_slist *headers = NULL;
     char http_request[] = "POST";
+    char delimeter = '?';
+
+    if (user_query) {
+        delimeter = '&';
+    }
 
     if (fp->au->callback(fp->au->callback_data,  http_request, NULL, "uploads=",
-                         &content_hash, &authorisation, &date, &token) != 0) {
+                         &content_hash, &authorisation, &date, &token, user_query) != 0) {
         goto out;
     }
 
-    if (ksprintf(&url, "%s?uploads", fp->url.s) < 0) {
+    if (ksprintf(&url, "%s%cuploads", fp->url.s, delimeter) < 0) {
         goto out;
     }
 
@@ -648,7 +653,9 @@ static hFILE *s3_write_open(const char *url, s3_authorisation *auth) {
     hFILE_s3_write *fp;
     kstring_t response = {0, 0, NULL};
     kstring_t header   = {0, 0, NULL};
-    int ret;
+    int ret, has_user_query = 0;
+    char *query_start;
+
 
     if (!auth || !auth->callback || !auth->callback_data) {
         return NULL;
@@ -684,7 +691,11 @@ static hFILE *s3_write_open(const char *url, s3_authorisation *auth) {
 
     kputs(url + 4, &fp->url);
 
-    ret = initialise_upload(fp, &header, &response);
+    if ((query_start = strchr(fp->url.s, '?'))) {
+        has_user_query = 1;;
+    }
+
+    ret = initialise_upload(fp, &header, &response, has_user_query);
 
     if (ret == 0) {
         long response_code;
@@ -696,14 +707,14 @@ static hFILE *s3_write_open(const char *url, s3_authorisation *auth) {
                 ksfree(&response);
                 ksfree(&header);
 
-                ret = initialise_upload(fp, &header, &response);
+                ret = initialise_upload(fp, &header, &response, has_user_query);
             }
         } else if (response_code == S3_BAD_REQUEST) {
             if (handle_bad_request(fp, &response) == 0) {
                 ksfree(&response);
                 ksfree(&header);
 
-                ret = initialise_upload(fp, &header, &response);
+                ret = initialise_upload(fp, &header, &response, has_user_query);
             }
         }
 
@@ -722,6 +733,10 @@ static hFILE *s3_write_open(const char *url, s3_authorisation *auth) {
     }
 
     fp->part_no = 1;
+
+    // user query string no longer a useful part of the URL
+    if (query_start)
+         *query_start = '\0';
 
     fp->base.backend = &s3_write_backend;
     ksfree(&response);
