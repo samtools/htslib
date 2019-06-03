@@ -978,7 +978,7 @@ int bcf_hdr_set_version(bcf_hdr_t *hdr, const char *version)
         hrec->value = strdup(version);
     }
     hdr->dirty = 1;
-    return 0; // FIXME: check for errs in this function
+    return 0; // FIXME: check for errs in this function (return < 0 if so)
 }
 
 bcf_hdr_t *bcf_hdr_init(const char *mode)
@@ -1868,24 +1868,25 @@ int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname)
 
 static int _bcf_hrec_format(const bcf_hrec_t *hrec, int is_bcf, kstring_t *str)
 {
+    uint32_t e = 0;
     if ( !hrec->value )
     {
         int j, nout = 0;
-        ksprintf(str, "##%s=<", hrec->key);
+        e |= ksprintf(str, "##%s=<", hrec->key) < 0;
         for (j=0; j<hrec->nkeys; j++)
         {
             // do not output IDX if output is VCF
             if ( !is_bcf && !strcmp("IDX",hrec->keys[j]) ) continue;
-            if ( nout ) kputc(',',str);
-            ksprintf(str,"%s=%s", hrec->keys[j], hrec->vals[j]);
+            if ( nout ) e |= kputc(',',str) < 0;
+            e |= ksprintf(str,"%s=%s", hrec->keys[j], hrec->vals[j]) < 0;
             nout++;
         }
-        ksprintf(str,">\n");
+        e |= ksprintf(str,">\n") < 0;
     }
     else
-        ksprintf(str,"##%s=%s\n", hrec->key,hrec->value);
+        e |= ksprintf(str,"##%s=%s\n", hrec->key,hrec->value) < 0;
 
-    return 0; // FIXME: check for errs in this function
+    return e == 0 ? 0 : -1;
 }
 
 int bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str)
@@ -2043,17 +2044,17 @@ int bcf_enc_vchar(kstring_t *s, int l, const char *a)
 int bcf_fmt_array(kstring_t *s, int n, int type, void *data)
 {
     int j = 0;
+    uint32_t e = 0;
     if (n == 0) {
-        kputc('.', s);
-        return 0;
+        return kputc('.', s) >= 0 ? 0 : -1;
     }
     if (type == BCF_BT_CHAR)
     {
         char *p = (char*)data;
         for (j = 0; j < n && *p; ++j, ++p)
         {
-            if ( *p==bcf_str_missing ) kputc('.', s);
-            else kputc(*p, s);
+            if ( *p==bcf_str_missing ) e |= kputc('.', s) < 0;
+            else e |= kputc(*p, s) < 0;
         }
     }
     else
@@ -2066,7 +2067,7 @@ int bcf_fmt_array(kstring_t *s, int n, int type, void *data)
                 if ( is_vector_end ) break; \
                 if ( j ) kputc(',', s); \
                 if ( is_missing ) kputc('.', s); \
-                else kprint; \
+                else e |= kprint < 0; \
             } \
         }
         switch (type) {
@@ -2078,7 +2079,7 @@ int bcf_fmt_array(kstring_t *s, int n, int type, void *data)
         }
         #undef BRANCH
     }
-    return 0; // FIXME: check for errs in this function
+    return e == 0 ? 0 : -1;
 }
 
 uint8_t *bcf_fmt_sized_array(kstring_t *s, uint8_t *ptr)

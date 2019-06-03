@@ -3256,7 +3256,7 @@ int bam_mplp_init_overlaps(bam_mplp_t iter)
     int i, r = 0;
     for (i = 0; i < iter->n; ++i)
         r |= bam_plp_init_overlaps(iter->iter[i]);
-    return r;
+    return r == 0 ? 0 : -1;
 }
 
 void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt)
