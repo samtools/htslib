@@ -55,6 +55,7 @@ static inline int get_tid(tbx_t *tbx, const char *ss, int is_add)
     khint_t k;
     khash_t(s2i) *d;
     if (tbx->dict == 0) tbx->dict = kh_init(s2i);
+    if (!tbx->dict) return -1; // Out of memory
     d = (khash_t(s2i)*)tbx->dict;
     if (is_add) {
         int absent;
@@ -148,7 +149,8 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
     if (tbx_parse1(&tbx->conf, str->l, str->s, intv) == 0) {
         int c = *intv->se;
         *intv->se = '\0'; intv->tid = get_tid(tbx, intv->ss, is_add); *intv->se = c;
-        return (intv->tid >= 0 && intv->beg >= 0 && intv->end >= 0)? 0 : -1;
+        if (intv->tid < 0) return -2;  // get_tid out of memory
+        return (intv->beg >= 0 && intv->end >= 0)? 0 : -1;
     } else {
         char *type = NULL;
         switch (tbx->conf.preset&0xffff)
@@ -184,7 +186,7 @@ int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end)
     return ret;
 }
 
-void tbx_set_meta(tbx_t *tbx)
+static int tbx_set_meta(tbx_t *tbx)
 {
     int i, l = 0, l_nm;
     uint32_t x[7];
@@ -195,6 +197,7 @@ void tbx_set_meta(tbx_t *tbx)
 
     memcpy(x, &tbx->conf, 24);
     name = (char**)malloc(sizeof(char*) * kh_size(d));
+    if (!name) return -1;
     for (k = kh_begin(d), l = 0; k != kh_end(d); ++k) {
         if (!kh_exist(d, k)) continue;
         name[kh_val(d, k)] = (char*)kh_key(d, k);
@@ -202,6 +205,7 @@ void tbx_set_meta(tbx_t *tbx)
     }
     l_nm = x[6] = l;
     meta = (uint8_t*)malloc(l_nm + 28);
+    if (!meta) { free(name); return -1; }
     if (ed_is_big())
         for (i = 0; i < 7; ++i)
             x[i] = ed_swap_4(x[i]);
@@ -213,6 +217,7 @@ void tbx_set_meta(tbx_t *tbx)
     }
     free(name);
     hts_idx_set_meta(tbx->idx, l, meta, 0);
+    return 0;
 }
 
 tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
@@ -226,6 +231,7 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 
     str.s = 0; str.l = str.m = 0;
     tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
+    if (!tbx) return NULL;
     tbx->conf = *conf;
     if (min_shift > 0) n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3, fmt = HTS_FMT_CSI;
     else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_TBI;
@@ -237,23 +243,31 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
         }
         if (first == 0) {
             tbx->idx = hts_idx_init(0, fmt, last_off, min_shift, n_lvls);
+            if (!tbx->idx) goto fail;
             first = 1;
         }
-        get_intv(tbx, &str, &intv, 1);
-        ret = hts_idx_push(tbx->idx, intv.tid, intv.beg, intv.end, bgzf_tell(fp), 1);
-        if (ret < 0)
-        {
-            free(str.s);
-            tbx_destroy(tbx);
-            return NULL;
+        ret = get_intv(tbx, &str, &intv, 1);
+        if (ret < -1) goto fail;  // Out of memory
+        if (ret < 0) continue; // Skip unparsable lines
+        if (hts_idx_push(tbx->idx, intv.tid, intv.beg, intv.end,
+                         bgzf_tell(fp), 1) < 0) {
+            goto fail;
         }
     }
+    if (ret < -1) goto fail;
     if ( !tbx->idx ) tbx->idx = hts_idx_init(0, fmt, last_off, min_shift, n_lvls);   // empty file
+    if (!tbx->idx) goto fail;
     if ( !tbx->dict ) tbx->dict = kh_init(s2i);
-    hts_idx_finish(tbx->idx, bgzf_tell(fp));
-    tbx_set_meta(tbx);
+    if (!tbx->dict) goto fail;
+    if (hts_idx_finish(tbx->idx, bgzf_tell(fp)) != 0) goto fail;
+    if (tbx_set_meta(tbx) != 0) goto fail;
     free(str.s);
     return tbx;
+
+ fail:
+    free(str.s);
+    tbx_destroy(tbx);
+    return NULL;
 }
 
 void tbx_destroy(tbx_t *tbx)

@@ -480,13 +480,13 @@ static int _readers_next_region(bcf_srs_t *files)
 /*
  *  _reader_fill_buffer() - buffers all records with the same coordinate
  */
-static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
+static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
 {
     // Return if the buffer is full: the coordinate of the last buffered record differs
-    if ( reader->nbuffer && reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) return;
+    if ( reader->nbuffer && reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) return 0;
 
     // No iterator (sequence not present in this file) and not streaming
-    if ( !reader->itr && !files->streaming ) return;
+    if ( !reader->itr && !files->streaming ) return 0;
 
     // Fill the buffer with records starting at the same position
     int i, ret = 0;
@@ -556,6 +556,7 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         tbx_itr_destroy(reader->itr);
         reader->itr = NULL;
     }
+    return 0; // FIXME: Check for more errs in this function
 }
 
 /*

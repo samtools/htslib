@@ -1032,48 +1032,52 @@ static inline int bcf_float_is_vector_end(float f)
     return u.i==bcf_float_vector_end ? 1 : 0;
 }
 
-static inline void bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
+static inline int bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 {
+    uint32_t e = 0;
     #define BRANCH(type_t, missing, vector_end) { \
         type_t *ptr = (type_t*) (fmt->p + isample*fmt->size); \
         int i; \
         for (i=0; i<fmt->n && ptr[i]!=vector_end; i++) \
         { \
-            if ( i ) kputc("/|"[ptr[i]&1], str); \
-            if ( !(ptr[i]>>1) ) kputc('.', str); \
-            else kputw((ptr[i]>>1) - 1, str); \
+            if ( i ) e |= kputc("/|"[ptr[i]&1], str) < 0; \
+            if ( !(ptr[i]>>1) ) e |= kputc('.', str) < 0; \
+            else e |= kputw((ptr[i]>>1) - 1, str) < 0; \
         } \
-        if (i == 0) kputc('.', str); \
+        if (i == 0) e |= kputc('.', str) < 0; \
     }
     switch (fmt->type) {
         case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_missing, bcf_int8_vector_end); break;
         case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_missing, bcf_int16_vector_end); break;
         case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_missing, bcf_int32_vector_end); break;
-        case BCF_BT_NULL:  kputc('.', str); break;
-        default: hts_log_error("Unexpected type %d", fmt->type); abort(); break;
+        case BCF_BT_NULL:  e |= kputc('.', str) < 0; break;
+        default: hts_log_error("Unexpected type %d", fmt->type); return -2;
     }
     #undef BRANCH
+    return e == 0 ? 0 : -1;
 }
 
-static inline void bcf_enc_size(kstring_t *s, int size, int type)
+static inline int bcf_enc_size(kstring_t *s, int size, int type)
 {
+    uint32_t e = 0;
     if (size >= 15) {
-        kputc(15<<4|type, s);
+        e |= kputc(15<<4|type, s) < 0;
         if (size >= 128) {
             if (size >= 32768) {
                 int32_t x = size;
-                kputc(1<<4|BCF_BT_INT32, s);
-                kputsn((char*)&x, 4, s);
+                e |= kputc(1<<4|BCF_BT_INT32, s) < 0;
+                e |= kputsn((char*)&x, 4, s) < 0;
             } else {
                 int16_t x = size;
-                kputc(1<<4|BCF_BT_INT16, s);
-                kputsn((char*)&x, 2, s);
+                e |= kputc(1<<4|BCF_BT_INT16, s) < 0;
+                e |= kputsn((char*)&x, 2, s) < 0;
             }
         } else {
-            kputc(1<<4|BCF_BT_INT8, s);
-            kputc(size, s);
+            e |= kputc(1<<4|BCF_BT_INT8, s) < 0;
+            e |= kputc(size, s) < 0;
         }
-    } else kputc(size<<4|type, s);
+    } else e |= kputc(size<<4|type, s) < 0;
+    return e == 0 ? 0 : -1;
 }
 
 static inline int bcf_enc_inttype(long x)
@@ -1083,26 +1087,28 @@ static inline int bcf_enc_inttype(long x)
     return BCF_BT_INT32;
 }
 
-static inline void bcf_enc_int1(kstring_t *s, int32_t x)
+static inline int bcf_enc_int1(kstring_t *s, int32_t x)
 {
+    uint32_t e = 0;
     if (x == bcf_int32_vector_end) {
-        bcf_enc_size(s, 1, BCF_BT_INT8);
-        kputc(bcf_int8_vector_end, s);
+        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
+        e |= kputc(bcf_int8_vector_end, s) < 0;
     } else if (x == bcf_int32_missing) {
-        bcf_enc_size(s, 1, BCF_BT_INT8);
-        kputc(bcf_int8_missing, s);
+        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
+        e |= kputc(bcf_int8_missing, s) < 0;
     } else if (x <= BCF_MAX_BT_INT8 && x >= BCF_MIN_BT_INT8) {
-        bcf_enc_size(s, 1, BCF_BT_INT8);
-        kputc(x, s);
+        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
+        e |= kputc(x, s) < 0;
     } else if (x <= BCF_MAX_BT_INT16 && x >= BCF_MIN_BT_INT16) {
         int16_t z = x;
-        bcf_enc_size(s, 1, BCF_BT_INT16);
-        kputsn((char*)&z, 2, s);
+        e |= bcf_enc_size(s, 1, BCF_BT_INT16);
+        e |= kputsn((char*)&z, 2, s) < 0;
     } else {
         int32_t z = x;
-        bcf_enc_size(s, 1, BCF_BT_INT32);
-        kputsn((char*)&z, 4, s);
+        e |= bcf_enc_size(s, 1, BCF_BT_INT32);
+        e |= kputsn((char*)&z, 4, s) < 0;
     }
+    return e == 0 ? 0 : -1;
 }
 
 /// Return the value of a single typed integer.

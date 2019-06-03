@@ -159,20 +159,21 @@ static char *sscan_string(char *s)
     }
 }
 
-static void fscan_string(hFILE *fp, kstring_t *d)
+static int fscan_string(hFILE *fp, kstring_t *d)
 {
     int c, d1, d2, d3, d4;
+    uint32_t e = 0;
 
     while ((c = hgetc(fp)) != EOF) switch (c) {
     case '\\':
-        if ((c = hgetc(fp)) == EOF) return;
+        if ((c = hgetc(fp)) == EOF) return e == 0 ? 0 : -1;
         switch (c) {
-        case 'b': kputc('\b', d); break;
-        case 'f': kputc('\f', d); break;
-        case 'n': kputc('\n', d); break;
-        case 'r': kputc('\r', d); break;
-        case 't': kputc('\t', d); break;
-        default:  kputc(c,    d); break;
+        case 'b': e |= kputc('\b', d) < 0; break;
+        case 'f': e |= kputc('\f', d) < 0; break;
+        case 'n': e |= kputc('\n', d) < 0; break;
+        case 'r': e |= kputc('\r', d) < 0; break;
+        case 't': e |= kputc('\t', d) < 0; break;
+        default:  e |= kputc(c,    d) < 0; break;
         case 'u':
             if ((c = hgetc(fp)) != EOF && (d1 = dehex(c)) >= 0 &&
                 (c = hgetc(fp)) != EOF && (d2 = dehex(c)) >= 0 &&
@@ -180,19 +181,20 @@ static void fscan_string(hFILE *fp, kstring_t *d)
                 (c = hgetc(fp)) != EOF && (d4 = dehex(c)) >= 0) {
                 char buf[8];
                 char *lim = encode_utf8(buf, d1 << 12 | d2 << 8 | d3 << 4 | d4);
-                kputsn(buf, lim - buf, d);
+                e |= kputsn(buf, lim - buf, d) < 0;
             }
             break;
         }
         break;
 
     case '"':
-        return;
+        return e == 0 ? 0 : -1;
 
     default:
-        kputc(c, d);
+        e |= kputc(c, d) < 0;
         break;
     }
+    return e == 0 ? 0 : -1;
 }
 
 static char token_type(hts_json_token *token)

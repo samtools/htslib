@@ -1447,31 +1447,40 @@ int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, int *beg, int *end)
     return ret;
 }
 
-static inline void bcf1_sync_id(bcf1_t *line, kstring_t *str)
+static inline int bcf1_sync_id(bcf1_t *line, kstring_t *str)
 {
     // single typed string
-    if ( line->d.id && strcmp(line->d.id, ".") ) bcf_enc_vchar(str, strlen(line->d.id), line->d.id);
-    else bcf_enc_size(str, 0, BCF_BT_CHAR);
+    if ( line->d.id && strcmp(line->d.id, ".") ) {
+        return bcf_enc_vchar(str, strlen(line->d.id), line->d.id);
+    } else {
+        return bcf_enc_size(str, 0, BCF_BT_CHAR);
+    }
 }
-static inline void bcf1_sync_alleles(bcf1_t *line, kstring_t *str)
+static inline int bcf1_sync_alleles(bcf1_t *line, kstring_t *str)
 {
     // list of typed strings
     int i;
-    for (i=0; i<line->n_allele; i++)
-        bcf_enc_vchar(str, strlen(line->d.allele[i]), line->d.allele[i]);
+    for (i=0; i<line->n_allele; i++) {
+        if (bcf_enc_vchar(str, strlen(line->d.allele[i]), line->d.allele[i]) < 0)
+            return -1;
+    }
     if ( !line->rlen && line->n_allele ) line->rlen = strlen(line->d.allele[0]);
+    return 0;
 }
-static inline void bcf1_sync_filter(bcf1_t *line, kstring_t *str)
+static inline int bcf1_sync_filter(bcf1_t *line, kstring_t *str)
 {
     // typed vector of integers
-    if ( line->d.n_flt ) bcf_enc_vint(str, line->d.n_flt, line->d.flt, -1);
-    else bcf_enc_vint(str, 0, 0, -1);
+    if ( line->d.n_flt ) {
+        return bcf_enc_vint(str, line->d.n_flt, line->d.flt, -1);
+    } else {
+        return bcf_enc_vint(str, 0, 0, -1);
+    }
 }
 
-static inline void bcf1_sync_info(bcf1_t *line, kstring_t *str)
+static inline int bcf1_sync_info(bcf1_t *line, kstring_t *str)
 {
     // pairs of typed vectors
-    int i, irm = -1;
+    int i, irm = -1, e = 0;
     for (i=0; i<line->n_info; i++)
     {
         bcf_info_t *info = &line->d.info[i];
@@ -1481,7 +1490,7 @@ static inline void bcf1_sync_info(bcf1_t *line, kstring_t *str)
             if ( irm < 0 ) irm = i;
             continue;
         }
-        kputsn_(info->vptr - info->vptr_off, info->vptr_len + info->vptr_off, str);
+        e |= kputsn_(info->vptr - info->vptr_off, info->vptr_len + info->vptr_off, str) < 0;
         if ( irm >=0 )
         {
             bcf_info_t tmp = line->d.info[irm]; line->d.info[irm] = line->d.info[i]; line->d.info[i] = tmp;
@@ -1489,6 +1498,7 @@ static inline void bcf1_sync_info(bcf1_t *line, kstring_t *str)
         }
     }
     if ( irm>=0 ) line->n_info = irm;
+    return e == 0 ? 0 : -1;
 }
 
 static int bcf1_sync(bcf1_t *line)
@@ -2091,13 +2101,15 @@ typedef struct {
     uint8_t *buf;
 } fmt_aux_t;
 
-static inline void align_mem(kstring_t *s)
+static inline int align_mem(kstring_t *s)
 {
+    int e = 0;
     if (s->l&7) {
         uint64_t zero = 0;
         int l = ((s->l + 7)>>3<<3) - s->l;
-        kputsn((char*)&zero, l, s);
+        e = kputsn((char*)&zero, l, s) < 0;
     }
+    return e == 0 ? 0 : -1;
 }
 
 // p,q is the start and the end of the FORMAT field
@@ -3638,7 +3650,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
     // should do also complex events, SVs, etc...
 }
 
-static void bcf_set_variant_types(bcf1_t *b)
+static int bcf_set_variant_types(bcf1_t *b)
 {
     if ( !(b->unpacked & BCF_UN_STR) ) bcf_unpack(b, BCF_UN_STR);
     bcf_dec_t *d = &b->d;
@@ -3657,6 +3669,7 @@ static void bcf_set_variant_types(bcf1_t *b)
         b->d.var_type |= d->var[i].type;
         //fprintf(stderr,"[set_variant_type] %d   %s %s -> %d %d .. %d\n", b->pos+1,d->allele[0],d->allele[i],d->var[i].type,d->var[i].n, b->d.var_type);
     }
+    return 0;
 }
 
 int bcf_get_variant_types(bcf1_t *rec)

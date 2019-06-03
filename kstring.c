@@ -306,12 +306,14 @@ static int *ksBM_prep(const ubyte_t *pat, int m)
 {
 	int i, *suff, *prep, *bmGs, *bmBc;
 	prep = (int*)calloc(m + 256, sizeof(int));
+    if (!prep) return NULL;
 	bmGs = prep; bmBc = prep + m;
 	{ // preBmBc()
 		for (i = 0; i < 256; ++i) bmBc[i] = m;
 		for (i = 0; i < m - 1; ++i) bmBc[pat[i]] = m - i - 1;
 	}
 	suff = (int*)calloc(m, sizeof(int));
+    if (!suff) { free(prep); return NULL; }
 	{ // suffixes()
 		int f = 0, g;
 		suff[m - 1] = m;
@@ -348,6 +350,7 @@ void *kmemmem(const void *_str, int n, const void *_pat, int m, int **_prep)
 	const ubyte_t *str, *pat;
 	str = (const ubyte_t*)_str; pat = (const ubyte_t*)_pat;
 	prep = (_prep == 0 || *_prep == 0)? ksBM_prep(pat, m) : *_prep;
+    if (!prep) return NULL;
 	if (_prep && *_prep == 0) *_prep = prep;
 	bmGs = prep; bmBc = prep + m;
 	j = 0;
