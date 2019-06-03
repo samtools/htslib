@@ -74,7 +74,7 @@ typedef struct bam_hdr_t {
     int8_t *cigar_tab;
     char **target_name;
     char *text;
-    void *sdict;
+    void *sdict HTS_DEPRECATED("Unused since 1.10");
     bam_hrecs_t *hrecs;
     uint32_t ref_count;
 } bam_hdr_t;

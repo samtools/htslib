@@ -43,8 +43,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 
-typedef khash_t(s2i) sdict_t;
-
 #ifndef EOVERFLOW
 #define EOVERFLOW ERANGE
 #endif
@@ -88,7 +86,6 @@ void bam_hdr_destroy(bam_hdr_t *bh)
         free(bh->target_name);
         free(bh->target_len);
     }
-    if (bh->sdict) kh_destroy(s2i, (sdict_t*)bh->sdict);
     free(bh->text);
     if (bh->hrecs)
         bam_hrecs_free(bh->hrecs);
@@ -106,7 +103,6 @@ bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
     h->l_text = 0;
     // Then the pointery stuff
     h->cigar_tab = NULL;
-    h->sdict = NULL;
 
     if (!h0->hrecs) {
         h->target_len = (uint32_t*)calloc(h0->n_targets, sizeof(uint32_t));
@@ -148,35 +144,6 @@ bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
 
  fail:
     bam_hdr_destroy(h);
-    return NULL;
-}
-
-
-static bam_hdr_t *sam_hdr_from_dict(sdict_t *d)
-{
-    bam_hdr_t *h;
-    khint_t k;
-    h = bam_hdr_init();
-    if (!h) return NULL;
-
-    h->sdict = d;
-    h->n_targets = kh_size(d);
-    // TODO Check for memory allocation failures
-    h->target_len = (uint32_t*)malloc(sizeof(uint32_t) * h->n_targets);
-    if (!h->target_len) goto fail;
-    h->target_name = (char**)malloc(sizeof(char*) * h->n_targets);
-    if (!h->target_name) goto fail;
-    for (k = kh_begin(d); k != kh_end(d); ++k) {
-        if (!kh_exist(d, k)) continue;
-        h->target_name[kh_val(d, k)>>32] = (char*)kh_key(d, k);
-        h->target_len[kh_val(d, k)>>32]  = kh_val(d, k) & 0xffffffffUL;
-        kh_val(d, k) >>= 32;
-    }
-    return h;
-
- fail:
-    free(h->target_len);
-    free(h);
     return NULL;
 }
 
@@ -353,19 +320,7 @@ int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
 
 int bam_name2id(bam_hdr_t *h, const char *ref)
 {
-    sdict_t *d = (sdict_t*)h->sdict;
-    khint_t k;
-    if (h->sdict == 0) {
-        int i, absent;
-        d = kh_init(s2i);
-        for (i = 0; i < h->n_targets; ++i) {
-            k = kh_put(s2i, d, h->target_name[i], &absent);
-            kh_val(d, k) = i;
-        }
-        h->sdict = d;
-    }
-    k = kh_get(s2i, d, ref);
-    return k == kh_end(d)? -1 : kh_val(d, k);
+    return bam_hdr_name2ref(h, ref);
 }
 
 const char *sam_parse_region(bam_hdr_t *h, const char *s, int *tid, int64_t *beg, int64_t *end, int flags) {
@@ -1094,75 +1049,6 @@ hts_itr_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *
 #include "htslib/kseq.h"
 #include "htslib/kstring.h"
 
-static sdict_t *sam_hdr_parse_dict(const char *text, int l_text)
-{
-    const char *q, *r, *p;
-    char *sn = NULL;
-    khash_t(s2i) *d;
-    d = kh_init(s2i);
-    if (!d) return NULL;
-
-    for (p = text; *p; ++p) {
-        if (strncmp(p, "@SQ\t", 4) == 0) {
-            int ln = -1;
-            for (q = p + 4;; ++q) {
-                if (strncmp(q, "SN:", 3) == 0) {
-                    q += 3;
-                    for (r = q; *r != '\t' && *r != '\n' && *r != '\0'; ++r);
-                    if (sn) {
-                        hts_log_warning("SQ header line has more than one SN: tag");
-                        free(sn);
-                    }
-                    sn = (char*)calloc(r - q + 1, 1);
-                    if (!sn) goto fail;
-                    strncpy(sn, q, r - q);
-                    q = r;
-                } else if (strncmp(q, "LN:", 3) == 0)
-                    ln = strtol(q + 3, (char**)&q, 10);
-                while (*q != '\t' && *q != '\n' && *q != '\0') ++q;
-                if (*q == '\0' || *q == '\n') break;
-            }
-            p = q;
-            if (sn) {
-                if (ln >= 0) {
-                    khint_t k;
-                    int absent;
-                    k = kh_put(s2i, d, sn, &absent);
-                    if (absent < 0) goto fail;
-                    if (!absent) {
-                        hts_log_warning("Duplicated sequence '%s'", sn);
-                        free(sn);
-                    } else kh_val(d, k) = (int64_t)(kh_size(d) - 1)<<32 | ln;
-                } else {
-                    hts_log_warning("Ignored @SQ SN:%s : bad or missing LN tag",
-                                    sn);
-                    free(sn);
-                }
-            } else {
-                hts_log_warning("Ignored @SQ line with missing SN: tag");
-                free(sn);
-            }
-            sn = NULL;
-        }
-        while (*p != '\0' && *p != '\n') ++p;
-    }
-    return d;
-
- fail: {
-        int save_errno = errno;
-        khint_t k;
-        hts_log_error("%s", strerror(errno));
-        free(sn);
-        for (k = kh_begin(d); k != kh_end(d); ++k) {
-            if (!kh_exist(d, k)) continue;
-            free((char *) kh_key(d, k));
-        }
-        kh_destroy(s2i, d);
-        errno = save_errno;
-        return NULL;
-    }
-}
-
 bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
 {
     return sam_hdr_parse_(text, l_text);
@@ -1241,6 +1127,181 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
     return h;
 }
 
+static bam_hdr_t *sam_hdr_create(htsFile* fp) {
+    kstring_t str = { 0, 0, NULL };
+    khint_t k;
+    bam_hdr_t* h = bam_hdr_init();
+    const char *q, *r;
+    char* sn = NULL;
+    khash_t(s2i) *d = kh_init(s2i);
+    if (!h || !d)
+        goto error;
+
+    int ret, has_SQ = 0;
+    int next_c = '@';
+    while (next_c == '@' && (ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) >= 0) {
+        if (fp->line.s[0] != '@')
+            break;
+
+        if (fp->line.l > 3 && strncmp(fp->line.s, "@SQ", 3) == 0) {
+            has_SQ = 1;
+            int ln = -1;
+            for (q = fp->line.s + 4;; ++q) {
+                if (strncmp(q, "SN:", 3) == 0) {
+                    q += 3;
+                    for (r = q;*r != '\t' && *r != '\n' && *r != '\0';++r);
+
+                    if (sn) {
+                        hts_log_warning("SQ header line has more than one SN: tag");
+                        free(sn);
+                    }
+                    sn = (char*)calloc(r - q + 1, 1);
+                    if (!sn)
+                    goto error;
+
+                    strncpy(sn, q, r - q);
+                    q = r;
+                } else {
+                    if (strncmp(q, "LN:", 3) == 0)
+                        ln = strtol(q + 3, (char**)&q, 10);
+                }
+
+                while (*q != '\t' && *q != '\n' && *q != '\0')
+                    ++q;
+                if (*q == '\0' || *q == '\n')
+                    break;
+            }
+            if (sn) {
+                if (ln >= 0) {
+                    int absent;
+                    k = kh_put(s2i, d, sn, &absent);
+                    if (absent < 0)
+                        goto error;
+
+                    if (!absent) {
+                        hts_log_warning("Duplicated sequence '%s'", sn);
+                        free(sn);
+                    } else {
+                        kh_val(d, k) = (int64_t) (kh_size(d) - 1) << 32 | ln;
+                    }
+                } else {
+                    hts_log_warning("Ignored @SQ SN:%s : bad or missing LN tag", sn);
+                    free(sn);
+                }
+            } else {
+                hts_log_warning("Ignored @SQ line with missing SN: tag");
+            }
+            sn = NULL;
+        }
+        if (kputsn(fp->line.s, fp->line.l, &str) < 0)
+            goto error;
+
+        if (kputc('\n', &str) < 0)
+            goto error;
+
+        if (fp->format.compression == bgzf) {
+            next_c = bgzf_peek(fp->fp.bgzf);
+        } else {
+            unsigned char nc;
+            ssize_t pret = hpeek(fp->fp.hfile, &nc, 1);
+            next_c = pret > 0 ? nc : pret - 1;
+        }
+        if (next_c < -1)
+            goto error;
+    }
+    if (next_c != '@')
+        fp->line.l = 0;
+
+    if (ret < -1)
+        goto error;
+
+    if (!has_SQ && fp->fn_aux) {
+        kstring_t line = { 0, 0, NULL };
+        hFILE* f = hopen(fp->fn_aux, "r");
+        int e = 0, absent;
+        if (f == NULL)
+            goto error;
+
+        while (line.l = 0, kgetline(&line, (kgets_func*) hgets, f) >= 0) {
+            char* tab = strchr(line.s, '\t');
+            if (tab == NULL)
+                continue;
+
+            sn = (char*)calloc(tab-line.s+1, 1);
+            if (!sn)
+                break;
+            memcpy(sn, line.s, tab-line.s);
+            k = kh_put(s2i, d, sn, &absent);
+            if (absent < 0)
+                break;
+
+            if (!absent) {
+                hts_log_warning("Duplicated sequence '%s'", sn);
+                free(sn);
+            } else {
+                kh_val(d, k) = (int64_t) (kh_size(d) - 1) << 32 | atol(tab);
+                has_SQ = 1;
+            }
+
+            e |= kputs("@SQ\tSN:", &str) < 0;
+            e |= kputsn(line.s, tab - line.s, &str) < 0;
+            e |= kputs("\tLN:", &str) < 0;
+            e |= kputl(atol(tab), &str) < 0;
+            e |= kputc('\n', &str) < 0;
+            if (e)
+                break;
+        }
+
+        KS_FREE(&line);
+        if (hclose(f) != 0) {
+            hts_log_error("Error on closing %s", fp->fn_aux);
+            e = 1;
+        }
+        if (e)
+            goto error;
+    }
+
+    if (has_SQ) {
+        // Populate the targets array
+        h->n_targets = kh_size(d);
+
+        h->target_name = (char**) malloc(sizeof(char*) * h->n_targets);
+        if (!h->target_name)
+            goto error;
+
+        h->target_len = (uint32_t*) malloc(sizeof(uint32_t) * h->n_targets);
+        if (!h->target_len)
+            goto error;
+
+        for (k = kh_begin(d); k != kh_end(d); ++k) {
+            if (!kh_exist(d, k))
+                continue;
+
+            h->target_name[kh_val(d, k) >> 32] = (char*) kh_key(d, k);
+            h->target_len[kh_val(d, k) >> 32] = kh_val(d, k) & 0xffffffffUL;
+            kh_val(d, k) >>= 32;
+        }
+    }
+
+    kh_destroy(s2i, d);
+
+    if (str.l == 0)
+        kputsn("", 0, &str);
+    h->l_text = str.l;
+    h->text = ks_release(&str);
+    fp->bam_header = sam_hdr_sanitise(h);
+    fp->bam_header->ref_count = 1;
+
+    return fp->bam_header;
+
+ error:
+    bam_hdr_destroy(h);
+    KS_FREE(&str);
+    kh_destroy(s2i, d);
+    if (sn) free(sn);
+    return NULL;
+}
+
 bam_hdr_t *sam_hdr_read(htsFile *fp)
 {
     if (!fp) {
@@ -1255,68 +1316,8 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
     case cram:
         return sam_hdr_sanitise(bam_hdr_dup(fp->fp.cram->header));
 
-    case sam: {
-        kstring_t str = { 0, 0, NULL };
-        bam_hdr_t *h = NULL;
-        sdict_t *sq_dict = NULL;
-        int ret, has_SQ = 0;
-        int next_c = '@';
-        while (next_c == '@' && (ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) >= 0) {
-            if (fp->line.s[0] != '@') break;
-            if (fp->line.l > 3 && strncmp(fp->line.s,"@SQ",3) == 0) has_SQ = 1;
-            if (kputsn(fp->line.s, fp->line.l, &str) < 0) goto error;
-            if (kputc('\n', &str) < 0) goto error;
-            if (fp->format.compression == bgzf) {
-                next_c = bgzf_peek(fp->fp.bgzf);
-            } else {
-                unsigned char nc;
-                ssize_t pret = hpeek(fp->fp.hfile, &nc, 1);
-                next_c = pret > 0 ? nc : pret - 1;
-            }
-            if (next_c < -1) goto error;
-        }
-        if (next_c != '@') fp->line.l = 0;
-        if (ret < -1) goto error;
-        if (! has_SQ && fp->fn_aux) {
-            kstring_t line = { 0, 0, NULL };
-            hFILE *f = hopen(fp->fn_aux, "r");
-            int e = 0;
-            if (f == NULL) goto error;
-            while (line.l = 0, kgetline(&line, (kgets_func *) hgets, f) >= 0) {
-                char *tab = strchr(line.s, '\t');
-                if (tab == NULL) continue;
-                e |= kputs("@SQ\tSN:", &str) < 0;
-                e |= kputsn(line.s, tab - line.s, &str) < 0;
-                e |= kputs("\tLN:", &str) < 0;
-                e |= kputl(atol(tab), &str) < 0;
-                e |= kputc('\n', &str) < 0;
-                if (e) break;
-            }
-            free(line.s);
-            if (hclose(f) != 0) {
-                hts_log_error("Error on closing %s", fp->fn_aux);
-                e = 1;
-            }
-            if (e) goto error;
-        }
-        if (str.l == 0) kputsn("", 0, &str);
-        sq_dict = sam_hdr_parse_dict(str.s, str.l);
-        if (!sq_dict) goto error;
-        h = sam_hdr_from_dict(sq_dict);
-        if (!h) goto error;
-        h->l_text = str.l;
-        h->text = ks_release(&str);
-
-        fp->bam_header = sam_hdr_sanitise(h);
-        fp->bam_header->ref_count = 1;
-        return fp->bam_header;
-
-     error:
-        if (sq_dict) kh_destroy(s2i, sq_dict);
-        bam_hdr_destroy(h);
-        KS_FREE(&str);
-        return NULL;
-     }
+    case sam:
+        return sam_hdr_create(fp);
 
     default:
         abort();

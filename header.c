@@ -809,8 +809,6 @@ int bam_hdr_parse(bam_hdr_t *bh) {
     if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
         return -1;
 
-    bam_hdr_link_pg(bh);
-
     return 0;
 }
 
@@ -911,6 +909,8 @@ int bam_hdr_rebuild(bam_hdr_t *bh) {
     /* If header text wasn't changed or header is empty, don't rebuild it. */
     if (!hrecs->dirty)
         return 0;
+
+    bam_hdr_link_pg(bh);
 
     kstring_t ks = KS_INITIALIZER;
     if (bam_hrecs_rebuild_text(hrecs, &ks) != 0) {
@@ -1396,7 +1396,7 @@ int bam_hdr_name2ref(bam_hdr_t *bh, const char *ref) {
         return -1;
 
     k = kh_get(m_s2i, hrecs->ref_hash, ref);
-    return k == kh_end(hrecs->ref_hash) ? bam_name2id(bh, ref) : kh_val(hrecs->ref_hash, k);
+    return k == kh_end(hrecs->ref_hash) ? -1 : kh_val(hrecs->ref_hash, k);
 }
 
 /*
