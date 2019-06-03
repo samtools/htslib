@@ -39,6 +39,9 @@ Noteworthy changes in release a.b
 			    bcf_hdr_set_version(), bcf_hrec_format()
        vcfutils.h:          bcf_remove_alleles()
 
+  - bcf_set_variant_type() now outputs VCF_OVERLAP for spanning
+    deletions (ALT=*).
+
 * SAM format reading and writing is now much faster.  Compared to revision 1.9,
   reading uncompressed SAM may be up to 100% faster; writing up to 80%.  The
   exact improvement depends on which compiler options are used and the
