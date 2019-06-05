@@ -24,6 +24,7 @@
 
 #include <config.h>
 #include <strings.h>
+#include <assert.h>
 #include "htslib/hts.h"
 #include "htslib/kstring.h"
 #include "htslib/kseq.h"
@@ -66,7 +67,7 @@ struct reglist_t
     uint32_t *idx, nidx;    // index to list.reg+1
     uint32_t nreg, mreg;    // n:used, m:allocated
     reg_t *reg;             // regions
-    void *dat;              // payload data
+    uint8_t *dat;           // payload data
     char *seq;              // sequence name
     int unsorted;
 };
@@ -154,30 +155,41 @@ int regidx_push(regidx_t *idx, char *chr_beg, char *chr_end, hts_pos_t beg, hts_
 
     int rid;
     idx->str.l = 0;
-    kputsn(chr_beg, chr_end-chr_beg+1, &idx->str);
+    if (kputsn(chr_beg, chr_end-chr_beg+1, &idx->str) < 0) return -1;
     if ( khash_str2int_get(idx->seq2regs, idx->str.s, &rid)!=0 )
     {
         // new chromosome
+        int m_tmp = idx->mseq;
+        if (hts_resize(char*, idx->nseq + 1, &m_tmp,
+                       &idx->seq_names, HTS_RESIZE_CLEAR) < 0) {
+            return -1;
+        }
+        if (hts_resize(reglist_t, idx->nseq + 1, &idx->mseq,
+                       &idx->seq, HTS_RESIZE_CLEAR) < 0) {
+            return -1;
+        }
+        assert(m_tmp == idx->mseq);
+        idx->seq_names[idx->nseq] = strdup(idx->str.s);
+        rid = khash_str2int_inc(idx->seq2regs, idx->seq_names[idx->nseq]);
         idx->nseq++;
-        int m_prev = idx->mseq;
-        hts_expand0(reglist_t,idx->nseq,idx->mseq,idx->seq);
-        hts_expand0(char*,idx->nseq,m_prev,idx->seq_names);
-        idx->seq_names[idx->nseq-1] = strdup(idx->str.s);
-        rid = khash_str2int_inc(idx->seq2regs, idx->seq_names[idx->nseq-1]);
     }
 
     reglist_t *list = &idx->seq[rid];
     list->seq = idx->seq_names[rid];
-    list->nreg++;
     int mreg = list->mreg;
-    hts_expand(reg_t,list->nreg,list->mreg,list->reg);
-    list->reg[list->nreg-1].beg = beg;
-    list->reg[list->nreg-1].end = end;
-    if ( idx->payload_size )
-    {
-        if ( mreg != list->mreg ) list->dat = realloc(list->dat,idx->payload_size*list->mreg);
-        memcpy((char *)list->dat + idx->payload_size*(list->nreg-1), payload, idx->payload_size);
+    if (hts_resize(reg_t, list->nreg + 1, &list->mreg, &list->reg, 0) < 0)
+        return -1;
+    list->reg[list->nreg].beg = beg;
+    list->reg[list->nreg].end = end;
+    if ( idx->payload_size ) {
+        if ( mreg != list->mreg ) {
+            uint8_t *new_dat = realloc(list->dat, idx->payload_size*list->mreg);
+            if (!new_dat) return -1;
+            list->dat = new_dat;
+        }
+        memcpy(list->dat + idx->payload_size*list->nreg, payload, idx->payload_size);
     }
+    list->nreg++;
     if ( !list->unsorted && list->nreg>1 && cmp_regs(&list->reg[list->nreg-2],&list->reg[list->nreg-1])>0 ) list->unsorted = 1;
     return 0;
 }
@@ -190,12 +202,12 @@ int regidx_insert(regidx_t *idx, char *line)
     int ret = idx->parse(line,&chr_from,&chr_to,&beg,&end,idx->payload,idx->usr);
     if ( ret==-2 ) return -1;   // error
     if ( ret==-1 ) return 0;    // skip the line
-    regidx_push(idx, chr_from,chr_to,beg,end,idx->payload);
-    return 0;
+    return regidx_push(idx, chr_from,chr_to,beg,end,idx->payload);
 }
 
 regidx_t *regidx_init_string(const char *str, regidx_parse_f parser, regidx_free_f free_f, size_t payload_size, void *usr_dat)
 {
+    kstring_t tmp = {0,0,0};
     regidx_t *idx = (regidx_t*) calloc(1,sizeof(regidx_t));
     if ( !idx ) return NULL;
 
@@ -203,10 +215,13 @@ regidx_t *regidx_init_string(const char *str, regidx_parse_f parser, regidx_free
     idx->parse = parser ? parser : regidx_parse_tab;
     idx->usr   = usr_dat;
     idx->seq2regs = khash_str2int_init();
+    if (!idx->seq2regs) goto fail;
     idx->payload_size = payload_size;
-    if ( payload_size ) idx->payload = malloc(payload_size);
+    if ( payload_size ) {
+        idx->payload = malloc(payload_size);
+        if (!idx->payload) goto fail;
+    }
 
-    kstring_t tmp = {0,0,0};
     const char *ss = str;
     while ( *ss )
     {
@@ -214,13 +229,18 @@ regidx_t *regidx_init_string(const char *str, regidx_parse_f parser, regidx_free
         const char *se = ss;
         while ( *se && *se!='\r' && *se!='\n' ) se++;
         tmp.l = 0;
-        kputsn(ss, se-ss, &tmp);
-        regidx_insert(idx,tmp.s);
+        if (kputsn(ss, se-ss, &tmp) < 0) goto fail;
+        if (regidx_insert(idx, tmp.s) < 0) goto fail;
         while ( *se && isspace_c(*se) ) se++;
         ss = se;
     }
     free(tmp.s);
     return idx;
+
+ fail:
+    regidx_destroy(idx);
+    free(tmp.s);
+    return NULL;
 }
 
 regidx_t *regidx_init(const char *fname, regidx_parse_f parser, regidx_free_f free_f, size_t payload_size, void *usr_dat)
@@ -246,32 +266,39 @@ regidx_t *regidx_init(const char *fname, regidx_parse_f parser, regidx_free_f fr
         }
     }
 
+    kstring_t str = {0,0,0};
+    htsFile *fp = NULL;
+    int ret;
     regidx_t *idx = (regidx_t*) calloc(1,sizeof(regidx_t));
+    if (!idx) return NULL;
     idx->free  = free_f;
     idx->parse = parser;
     idx->usr   = usr_dat;
     idx->seq2regs = khash_str2int_init();
+    if (!idx->seq2regs) goto error;
     idx->payload_size = payload_size;
-    if ( payload_size ) idx->payload = malloc(payload_size);
+    if ( payload_size ) {
+        idx->payload = malloc(payload_size);
+        if (!idx->payload) goto error;
+    }
 
     if ( !fname ) return idx;
 
-    kstring_t str = {0,0,0};
-
-    htsFile *fp = hts_open(fname,"r");
+    fp = hts_open(fname,"r");
     if ( !fp ) goto error;
 
-    while ( hts_getline(fp, KS_SEP_LINE, &str) > 0 )
-    {
+    while ((ret = hts_getline(fp, KS_SEP_LINE, &str)) > 0 ) {
         if ( regidx_insert(idx, str.s) ) goto error;
     }
+    if (ret < -1) goto error;
 
-    free(str.s);
-    if ( hts_close(fp)!=0 )
-    {
+    ret = hts_close(fp);
+    fp = NULL;
+    if ( ret != 0 ) {
         hts_log_error("Close failed .. %s", fname);
         goto error;
     }
+    free(str.s);
     return idx;
 
 error:
@@ -284,6 +311,7 @@ error:
 void regidx_destroy(regidx_t *idx)
 {
     int i, j;
+    if (!idx) return;
     for (i=0; i<idx->nseq; i++)
     {
         reglist_t *list = &idx->seq[i];
@@ -307,30 +335,29 @@ void regidx_destroy(regidx_t *idx)
 static int reglist_build_index_(regidx_t *regidx, reglist_t *list)
 {
     int i;
-    if ( list->unsorted )
-    {
-        if ( !regidx->payload_size )
+    if ( list->unsorted ) {
+        if ( !regidx->payload_size ) {
             qsort(list->reg,list->nreg,sizeof(reg_t),cmp_reg_ptrs);
-        else
-        {
-            reg_t **ptr = (reg_t**) malloc(sizeof(reg_t*)*list->nreg);
+        } else {
+            reg_t **ptr = malloc(sizeof(*ptr)*list->nreg);
+            if (!ptr) return -1;
             for (i=0; i<list->nreg; i++) ptr[i] = list->reg + i;
             qsort(ptr,list->nreg,sizeof(*ptr),cmp_reg_ptrs2);
 
-            void *tmp_dat = malloc(regidx->payload_size*list->nreg);
-            for (i=0; i<list->nreg; i++)
-            {
+            uint8_t *tmp_dat = malloc(regidx->payload_size*list->nreg);
+            if (!tmp_dat) { free(ptr); return -1; }
+            for (i=0; i<list->nreg; i++) {
                 size_t iori = ptr[i] - list->reg;
-                memcpy((char *)tmp_dat+i*regidx->payload_size,
-                       (char *)list->dat+iori*regidx->payload_size,
+                memcpy(tmp_dat+i*regidx->payload_size,
+                       list->dat+iori*regidx->payload_size,
                        regidx->payload_size);
             }
             free(list->dat);
             list->dat = tmp_dat;
 
             reg_t *tmp_reg = (reg_t*) malloc(sizeof(reg_t)*list->nreg);
-            for (i=0; i<list->nreg; i++)
-            {
+            if (!tmp_reg) { free(ptr); return -1; }
+            for (i=0; i<list->nreg; i++) {
                 size_t iori = ptr[i] - list->reg;
                 tmp_reg[i] = list->reg[iori];
             }
@@ -344,8 +371,7 @@ static int reglist_build_index_(regidx_t *regidx, reglist_t *list)
 
     list->nidx = 0;
     int j,k, midx = 0;
-    for (j=0; j<list->nreg; j++)
-    {
+    for (j=0; j<list->nreg; j++) {
         int ibeg = iBIN(list->reg[j].beg);
         int iend = iBIN(list->reg[j].end);
         if ( midx <= iend )
@@ -353,15 +379,14 @@ static int reglist_build_index_(regidx_t *regidx, reglist_t *list)
             int old_midx = midx;
             midx = iend + 1;
             kroundup32(midx);
-            list->idx = (uint32_t*) realloc(list->idx, midx*sizeof(uint32_t));
+            uint32_t *new_idx = realloc(list->idx, midx*sizeof(uint32_t));
+            if (!new_idx) return -1;
+            list->idx = new_idx;
             memset(list->idx+old_midx, 0, sizeof(uint32_t)*(midx-old_midx));
         }
-        if ( ibeg==iend )
-        {
+        if ( ibeg==iend ) {
             if ( !list->idx[ibeg] ) list->idx[ibeg] = j + 1;
-        }
-        else
-        {
+        } else {
             for (k=ibeg; k<=iend; k++)
                 if ( !list->idx[k] ) list->idx[k] = j + 1;
         }
@@ -389,8 +414,9 @@ int regidx_overlap(regidx_t *regidx, const char *chr, hts_pos_t beg, hts_pos_t e
     }
     else
     {
-        if ( !list->idx )
-            reglist_build_index_(regidx,list);
+        if ( !list->idx ) {
+            if (reglist_build_index_(regidx,list) < 0) return -1;
+        }
 
         int ibeg = iBIN(beg);
         if ( ibeg >= list->nidx ) return 0;     // beg is too big
@@ -430,7 +456,7 @@ int regidx_overlap(regidx_t *regidx, const char *chr, hts_pos_t beg, hts_pos_t e
     regitr->beg = list->reg[ireg].beg;
     regitr->end = list->reg[ireg].end;
     if ( regidx->payload_size )
-        regitr->payload = (char *)list->dat + regidx->payload_size*ireg;
+        regitr->payload = list->dat + regidx->payload_size*ireg;
 
     return 1;
 }
@@ -556,7 +582,12 @@ int regidx_parse_reg(const char *line, char **chr_beg, char **chr_end, hts_pos_t
 regitr_t *regitr_init(regidx_t *regidx)
 {
     regitr_t *regitr = (regitr_t*) calloc(1,sizeof(regitr_t));
+    if (!regitr) return NULL;
     regitr->itr  = (itr_t_*) calloc(1,sizeof(itr_t_));
+    if (!regitr->itr) {
+        free(regitr);
+        return NULL;
+    }
     itr_t_ *itr = (itr_t_*) regitr->itr;
     itr->ridx = regidx;
     itr->list = NULL;
