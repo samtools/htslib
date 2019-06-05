@@ -93,6 +93,12 @@ regitr_t;
 
 #define regitr_payload(itr,type_t) (*((type_t*)(itr)->payload))
 
+// Old API for backwards compatibility
+#define REGITR_START(itr) (itr).beg
+#define REGITR_END(itr)   (itr).end
+#define REGITR_PAYLOAD(itr,type_t) ((type_t*)(itr).payload)
+#define REGITR_OVERLAP(itr,from,to) regidx_overlap((itr));
+
 /*
  *  regidx_parse_f - Function to parse one input line, such as regidx_parse_bed
  *  or regidx_parse_tab below. The function is expected to set `chr_from` and
