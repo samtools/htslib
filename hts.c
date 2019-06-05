@@ -393,14 +393,14 @@ char *hts_format_description(const htsFormat *format)
 
 htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
 {
-    char smode[102], *cp, *cp2, *mode_c;
+    char smode[101], *cp, *cp2, *mode_c;
     htsFile *fp = NULL;
     hFILE *hfile = NULL;
     char fmt_code = '\0';
     const char format_to_mode[] = "\0g\0\0b\0c\0\0b\0g\0\0";
 
-    strncpy(smode, mode, 100);
-    smode[100]=0;
+    strncpy(smode, mode, 99);
+    smode[99]=0;
     if ((cp = strchr(smode, ',')))
         *cp = '\0';
 
@@ -416,12 +416,18 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     mode_c = cp2;
     *cp2++ = fmt_code;
     *cp2++ = 0;
-    *cp2++ = 0;
 
     // Set or reset the format code if opts->format is used
     if (fmt && fmt->format > unknown_format
         && fmt->format < sizeof(format_to_mode)) {
         *mode_c = format_to_mode[fmt->format];
+    }
+
+    // If we really asked for a compressed text format then mode_c above will
+    // point to nul.  We set to 'z' to enable bgzf.
+    if (strchr(mode, 'w') && fmt && fmt->compression == bgzf) {
+        if (fmt->format == sam || fmt->format == vcf || fmt->format == text_format)
+            *mode_c = 'z';
     }
 
     char *rmme = NULL, *fnidx = strstr(fn, HTS_IDX_DELIM);
@@ -437,6 +443,15 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
 
     fp = hts_hopen(hfile, fn, smode);
     if (fp == NULL) goto error;
+
+    // Compensate for the loss of exactness in htsExactFormat.
+    // hts_hopen returns generics such as binary or text, but we
+    // have been given something explicit here so use that instead.
+    if (fp->is_write && fmt &&
+        (fmt->format == bam || fmt->format == sam ||
+         fmt->format == vcf || fmt->format == bcf ||
+         fmt->format == bed))
+        fp->format.format = fmt->format;
 
     if (fmt && fmt->specific)
         if (hts_opt_apply(fp, fmt->specific) != 0)
