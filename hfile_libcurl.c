@@ -1130,6 +1130,7 @@ libcurl_open(const char *url, const char *modes, http_headers *headers)
         fp->headers = *headers;
     } else {
         memset(&fp->headers, 0, sizeof(fp->headers));
+        fp->headers.fail_on_error = 1;
     }
 
     fp->file_size = -1;
