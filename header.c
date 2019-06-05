@@ -392,6 +392,9 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
     int new;
     khint32_t type_i = (type[0]<<8) | type[1], k;
 
+    if (!strncmp(type, "HD", 2) && (h_type = bam_hrecs_find_type(hrecs, "HD", NULL, NULL)))
+        return bam_hrecs_update(hrecs, h_type, ap);
+
     if (!(h_type = pool_alloc(hrecs->type_pool)))
         return -1;
     if (-1 == (k = kh_put(bam_hrecs_t, hrecs->h, type_i, &new)))
