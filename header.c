@@ -500,6 +500,9 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
     if (-1 == bam_hrecs_update_hashes(hrecs, itype, h_type))
         return -1;
 
+    if (!strncmp(type, "PG", 2))
+        hrecs->pgs_changed = 1;
+
     hrecs->dirty = 1;
 
     return 0;
@@ -910,7 +913,8 @@ int bam_hdr_rebuild(bam_hdr_t *bh) {
     if (!hrecs->dirty)
         return 0;
 
-    bam_hdr_link_pg(bh);
+    if (hrecs->pgs_changed)
+        bam_hdr_link_pg(bh);
 
     kstring_t ks = KS_INITIALIZER;
     if (bam_hrecs_rebuild_text(hrecs, &ks) != 0) {
@@ -979,7 +983,7 @@ int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
     va_list args;
     bam_hrecs_t *hrecs;
 
-    if (!bh)
+    if (!bh || !type)
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
@@ -1425,6 +1429,9 @@ static int bam_hdr_link_pg(bam_hdr_t *bh) {
         hrecs = bh->hrecs;
     }
 
+    if (!hrecs->pgs_changed)
+        return 0;
+
     hrecs->npg_end_alloc = hrecs->npg;
     new_pg_end = realloc(hrecs->pg_end, hrecs->npg * sizeof(*new_pg_end));
     if (!new_pg_end)
@@ -1467,6 +1474,7 @@ static int bam_hdr_link_pg(bam_hdr_t *bh) {
             hrecs->pg_end[j++] = hrecs->pg_end[i];
     }
     hrecs->npg_end = j;
+    hrecs->pgs_changed = 0;
 
     /* mark as dirty or empty for rebuild */
     hrecs->dirty = 1;

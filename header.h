@@ -220,7 +220,8 @@ struct sam_hdr {
     // @endcond
 
     int dirty;                // marks the header as modified, so it can be rebuilt
-    int refs_changed;   // Index of first changed ref (-1 if unchanged)
+    int refs_changed;         // Index of first changed ref (-1 if unchanged)
+    int pgs_changed;          // New PG line added
     int type_count;
     char (*type_order)[3];
 };
