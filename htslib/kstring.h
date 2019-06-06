@@ -68,11 +68,11 @@
 /* kstring_t is a simple non-opaque type whose fields are likely to be
  * used directly by user code (but see also ks_str() and ks_len() below).
  * A kstring_t object is initialised by either of
- *       kstring_t str = { 0, 0, NULL };
- *       kstring_t str; ...; str.l = str.m = 0; str.s = NULL;
+ *       kstring_t str = KS_INITIALIZE;
+ *       kstring_t str; ...; ks_initialize(&str);
  * and either ownership of the underlying buffer should be given away before
  * the object disappears (see ks_release() below) or the kstring_t should be
- * destroyed with  free(str.s);  */
+ * destroyed with  ks_free(&str) or free(str.s) */
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
 typedef struct kstring_t {
@@ -118,6 +118,22 @@ extern "C" {
 }
 #endif
 
+/// kstring initializer for structure assignment
+#define KS_INITIALIZE { 0, 0, NULL }
+
+/// kstring initializer for pointers
+/**
+   @note Not to be used if the buffer has been allocated.  Use ks_release()
+   or ks_clear() instead.
+*/
+
+static inline void ks_initialize(kstring_t *s)
+{
+    s->l = s->m = 0;
+    s->s = NULL;
+}
+
+/// Resize a kstring to a given capacity
 static inline int ks_resize(kstring_t *s, size_t size)
 {
 	if (s->m < size) {
@@ -132,14 +148,48 @@ static inline int ks_resize(kstring_t *s, size_t size)
 	return 0;
 }
 
+/// Increase kstring capacity by a given number of bytes
+static inline int ks_expand(kstring_t *s, size_t expansion)
+{
+    size_t new_size = s->l + expansion;
+
+    if (new_size < s->l) // Overflow check
+        return -1;
+    return ks_resize(s, new_size);
+}
+
+/// Returns the kstring buffer
 static inline char *ks_str(kstring_t *s)
 {
 	return s->s;
 }
 
+/// Returns the kstring buffer, or an empty string if l == 0
+/**
+ * Unlike ks_str(), this function will never return NULL.  If the kstring is
+ * empty it will return a read-only empty string.  As the returned value
+ * may be read-only, the caller should not attempt to modify it.
+ */
+static inline const char *ks_c_str(kstring_t *s)
+{
+    return s->l && s->s ? s->s : "";
+}
+
 static inline size_t ks_len(kstring_t *s)
 {
 	return s->l;
+}
+
+/// Reset kstring length to zero
+/**
+   @return The kstring itself
+
+   Example use: kputsn(string, len, ks_clear(s))
+*/
+static inline kstring_t *ks_clear(kstring_t *s)
+{
+    s->l = 0;
+    return s;
 }
 
 // Give ownership of the underlying buffer away to something else (making
@@ -152,6 +202,15 @@ static inline char *ks_release(kstring_t *s)
 	s->l = s->m = 0;
 	s->s = NULL;
 	return ss;
+}
+
+/// Safely free the underlying buffer in a kstring.
+static inline void ks_free(kstring_t *s)
+{
+    if (s) {
+        free(s->s);
+        ks_initialize(s);
+    }
 }
 
 static inline int kputsn(const char *p, size_t l, kstring_t *s)
