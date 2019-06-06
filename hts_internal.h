@@ -83,6 +83,15 @@ void *load_plugin(void **pluginp, const char *filename, const char *symbol);
 void *plugin_sym(void *plugin, const char *name, const char **errmsg);
 void close_plugin(void *plugin);
 
+/*
+ * Buffers up arguments to hts_idx_push for later use, once we've written all bar
+ * this block.  This is necessary when multiple blocks are in flight (threading).
+ *
+ * Returns 0 on success,
+ *        -1 on failure
+ */
+int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, int beg, int end, uint64_t offset, int is_mapped);
+
 #ifdef __cplusplus
 }
 #endif

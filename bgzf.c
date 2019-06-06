@@ -105,6 +105,18 @@ enum mtaux_cmd {
     CLOSE,
 };
 
+// When multi-threaded bgzf_tell won't work, so we delay the hts_idx_push
+// until we've written the last block.
+typedef struct {
+    int tid, beg, end, is_mapped;  // args for hts_idx_push
+    uint64_t offset, block_number;
+} hts_idx_cache_entry;
+
+typedef struct {
+    int nentries, mentries; // used and allocated
+    hts_idx_cache_entry *e; // hts_idx elements
+} hts_idx_cache_t;
+
 typedef struct bgzf_mtaux_t {
     // Memory pool for bgzf_job structs, to avoid many malloc/free
     pool_alloc_t *job_pool;
@@ -133,6 +145,12 @@ typedef struct bgzf_mtaux_t {
     pthread_mutex_t command_m; // Set whenever fp is being updated
     pthread_cond_t command_c;
     enum mtaux_cmd command;
+
+    // For multi-threaded on-the-fly indexing. See bgzf_idx_push below.
+    pthread_mutex_t idx_m;
+    hts_idx_t *hts_idx;
+    uint64_t block_number, block_written;
+    hts_idx_cache_t idx_cache;
 } mtaux_t;
 #endif
 
@@ -149,6 +167,86 @@ struct __bgzidx_t
     bgzidx1_t *offs;        // offsets
     uint64_t ublock_addr;   // offset of the current block (uncompressed data)
 };
+
+/*
+ * Buffers up arguments to hts_idx_push for later use, once we've written all bar
+ * this block.  This is necessary when multiple blocks are in flight (threading)
+ * and fp->block_address isn't known at the time of call as we have in-flight
+ * blocks that haven't yet been compressed.
+ *
+ * NB: this only matters when we're indexing on the fly (writing).
+ * Normal indexing is threaded reads, but we already know block sizes
+ * so it's a simpler process
+ *
+ * Returns 0 on success,
+ *        -1 on failure
+ */
+int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, int beg, int end, uint64_t offset, int is_mapped) {
+    hts_idx_cache_entry *e;
+    mtaux_t *mt = fp->mt;
+
+    if (!mt)
+        return hts_idx_push(hidx, tid, beg, end, offset, is_mapped);
+
+    pthread_mutex_lock(&mt->idx_m);
+
+    mt->hts_idx = hidx;
+    hts_idx_cache_t *ic = &mt->idx_cache;
+
+    if (ic->nentries >= ic->mentries) {
+        int new_sz = ic->mentries ? ic->mentries*2 : 1024;
+        if (!(e = realloc(ic->e, new_sz * sizeof(*ic->e)))) {
+            pthread_mutex_unlock(&mt->idx_m);
+            return -1;
+        }
+        ic->e = e;
+        ic->mentries = new_sz;
+    }
+
+    e = &ic->e[ic->nentries++];
+    e->tid = tid;
+    e->beg = beg;
+    e->end = end;
+    e->is_mapped = is_mapped;
+    e->offset = offset & 0xffff;
+    e->block_number = mt->block_number;
+
+    pthread_mutex_unlock(&mt->idx_m);
+
+    return 0;
+}
+
+static int bgzf_idx_flush(BGZF *fp) {
+    mtaux_t *mt = fp->mt;
+
+    if (!mt->idx_cache.e) {
+        mt->block_written++;
+        return 0;
+    }
+
+    pthread_mutex_lock(&mt->idx_m);
+
+    hts_idx_cache_entry *e = mt->idx_cache.e;
+    int i;
+
+    assert(mt->idx_cache.nentries == 0 || mt->block_written >= e[0].block_number);
+
+    for (i = 0; i < mt->idx_cache.nentries && e[i].block_number == mt->block_written; i++) {
+        if (hts_idx_push(mt->hts_idx, e[i].tid, e[i].beg, e[i].end,
+                         (mt->block_address << 16) + e[i].offset,
+                         e[i].is_mapped) < 0) {
+            pthread_mutex_unlock(&mt->idx_m);
+            return -1;
+        }
+    }
+
+    memmove(&e[0], &e[i], (mt->idx_cache.nentries - i) * sizeof(*e));
+    mt->idx_cache.nentries -= i;
+    mt->block_written++;
+
+    pthread_mutex_unlock(&mt->idx_m);
+    return 0;
+}
 
 void bgzf_index_destroy(BGZF *fp);
 int bgzf_index_add_block(BGZF *fp);
@@ -1172,8 +1270,18 @@ static void *bgzf_mt_writer(void *vp) {
             fp->idx->offs[ fp->idx->noffs-1 ].caddr = fp->idx->offs[ fp->idx->noffs-2 ].caddr + j->comp_len;
         }
 
+        // Flush any cached hts_idx_push calls
+        if (bgzf_idx_flush(fp) < 0)
+            goto err;
+
         if (hwrite(fp->fp, j->comp_data, j->comp_len) != j->comp_len)
             goto err;
+
+        // Update our local block_address.  Cannot be fp->block_address due to no
+        // locking in bgzf_tell.
+        pthread_mutex_lock(&mt->idx_m);
+        mt->block_address += j->comp_len;
+        pthread_mutex_unlock(&mt->idx_m);
 
         /*
          * Periodically call hflush (which calls fsync when on a file).
@@ -1479,10 +1587,12 @@ int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
 
     pthread_mutex_init(&mt->job_pool_m, NULL);
     pthread_mutex_init(&mt->command_m, NULL);
+    pthread_mutex_init(&mt->idx_m, NULL);
     pthread_cond_init(&mt->command_c, NULL);
     mt->flush_pending = 0;
     mt->jobs_pending = 0;
     mt->free_block = fp->uncompressed_block; // currently in-use block
+    mt->block_address = fp->block_address;
     pthread_create(&mt->io_task, NULL,
                    fp->is_write ? bgzf_mt_writer : bgzf_mt_reader, fp);
 
@@ -1528,6 +1638,7 @@ static int mt_destroy(mtaux_t *mt)
 
     pthread_mutex_destroy(&mt->job_pool_m);
     pthread_mutex_destroy(&mt->command_m);
+    pthread_mutex_destroy(&mt->idx_m);
     pthread_cond_destroy(&mt->command_c);
     if (mt->curr_job)
         pool_free(mt->job_pool, mt->curr_job);
@@ -1536,6 +1647,9 @@ static int mt_destroy(mtaux_t *mt)
         hts_tpool_destroy(mt->pool);
 
     pool_destroy(mt->job_pool);
+
+    if (mt->idx_cache.e)
+        free(mt->idx_cache.e);
 
     free(mt);
     fflush(stderr);
@@ -1546,6 +1660,8 @@ static int mt_destroy(mtaux_t *mt)
 static int mt_queue(BGZF *fp)
 {
     mtaux_t *mt = fp->mt;
+
+    mt->block_number++;
 
     // Also updated by writer thread
     pthread_mutex_lock(&mt->job_pool_m);
@@ -1639,7 +1755,17 @@ int bgzf_flush(BGZF *fp)
     if (fp->mt) {
         int ret = 0;
         if (fp->block_offset) ret = mt_queue(fp);
-        return ret ? ret : mt_flush_queue(fp);
+        if (!ret) ret = mt_flush_queue(fp);
+
+        // We maintain mt->block_address when threading as the
+        // main code can call bgzf_tell without any locks.
+        // (The result from tell are wrong, but we only care about the last
+        // 16-bits worth except for the final flush process.
+        pthread_mutex_lock(&fp->mt->idx_m);
+        fp->block_address = fp->mt->block_address;
+        pthread_mutex_unlock(&fp->mt->idx_m);
+
+        return ret;
     }
 #endif
     while (fp->block_offset > 0) {

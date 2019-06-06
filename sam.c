@@ -593,13 +593,14 @@ static int bam_write_idx1(htsFile *fp, const bam1_t *b) {
     uint32_t block_len = b->l_data - b->core.l_extranul + 32;
     if (bgzf_flush_try(bfp, 4 + block_len) < 0)
         return -1;
-    hts_idx_amend_last(fp->idx, bgzf_tell(bfp));
+    if (!bfp->mt)
+        hts_idx_amend_last(fp->idx, bgzf_tell(bfp));
 
     int ret = bam_write1(bfp, b);
+    if (ret < 0)
+        return -1;
 
-    if (ret >= 0 &&
-        hts_idx_push(fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
-                     bgzf_tell(bfp), !(b->core.flag&BAM_FUNMAP)) < 0)
+    if (bgzf_idx_push(bfp, fp->idx, b->core.tid, b->core.pos, bam_endpos(b), bgzf_tell(bfp), !(b->core.flag&BAM_FUNMAP)) < 0)
         ret = -1;
 
     return ret;
@@ -1990,9 +1991,15 @@ int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
         }
 
         if (fp->idx) {
-            if (hts_idx_push(fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
-                             bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0)
-                return -1;
+            if (fp->format.compression == bgzf) {
+                if (bgzf_idx_push(fp->fp.bgzf, fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
+                                  bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0)
+                    return -1;
+            } else {
+                if (hts_idx_push(fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
+                                 bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0)
+                    return -1;
+            }
         }
 
         return fp->line.l;
