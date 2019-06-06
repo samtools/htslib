@@ -156,11 +156,8 @@ static inline char *ks_release(kstring_t *s)
 
 static inline int kputsn(const char *p, size_t l, kstring_t *s)
 {
-	if (l > SIZE_MAX-2)
-		return EOF;
-
 	size_t new_sz = s->l + l + 2;
-	if (new_sz < s->l || ks_resize(s, new_sz) < 0)
+	if (new_sz <= s->l || ks_resize(s, new_sz) < 0)
 		return EOF;
 	memcpy(s->s + s->l, p, l);
 	s->l += l;
