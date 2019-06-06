@@ -1633,6 +1633,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     if (strcmp(q, "*")) {
         _parse_err(h->n_targets == 0, "missing SAM header");
         c->tid = bam_name2id(h, q);
+        _parse_err(c->tid < -1, "failed to parse header");
         _parse_warn(c->tid < 0, "urecognized reference name; treated as unmapped");
     } else c->tid = -1;
 
@@ -1683,6 +1684,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         c->mtid = -1;
     } else {
         c->mtid = bam_name2id(h, q);
+        _parse_err(c->tid < -1, "failed to parse header");
         _parse_warn(c->mtid < 0, "urecognized mate reference name; treated as unmapped");
     }
     // mpos

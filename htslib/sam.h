@@ -544,7 +544,9 @@ int bam_hdr_remove_tag(bam_hdr_t *bh, const char *type, const char *ID_key, cons
 /// Get the target id for a given reference sequence name
 /*!
  * @param ref  Reference name
- * @return     Positive value on success, -1 if unknown reference
+ * @return     Positive value on success,
+ *             -1 if unknown reference,
+ *             -2 if the header could not be parsed
  *
  * Looks up a reference sequence by name in the reference hash table
  * and returns the numerical target id.
@@ -554,7 +556,9 @@ int bam_hdr_name2ref(bam_hdr_t *bh, const char *ref);
 /// Alias of bam_hdr_name2ref(), for backwards compatibility.
 /*!
  * @param ref  Reference name
- * @return     Positive value on success, -1 if unknown reference
+ * @return     Positive value on success,
+ *             -1 if unknown reference,
+ *             -2 if the header could not be parsed
  */
 int bam_name2id(bam_hdr_t *h, const char *ref);
 

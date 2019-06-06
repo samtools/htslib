@@ -1384,7 +1384,7 @@ int bam_hrecs_rebuild_text(const bam_hrecs_t *hrecs, kstring_t *ks) {
 
 /*
  * Looks up a reference sequence by name and returns the numerical ID.
- * Returns -1 if unknown reference.
+ * Returns -1 if unknown reference; -2 if header could not be parsed.
  */
 int bam_hdr_name2ref(bam_hdr_t *bh, const char *ref) {
     bam_hrecs_t *hrecs;
@@ -1395,7 +1395,7 @@ int bam_hdr_name2ref(bam_hdr_t *bh, const char *ref) {
 
     if (!(hrecs = bh->hrecs)) {
         if (bam_hdr_parse(bh) != 0)
-            return -1;
+            return -2;
         hrecs = bh->hrecs;
     }
 
