@@ -127,20 +127,23 @@ static inline int ksplit_core(char *s, int delimiter, int *max_, int **offsets_)
 }
 
 /// Boyer-Moore pattern search
-static inline void *kmemmem(const void *str, int n, const void *pat, int m, int **prep_)
+/// @note @p m must be less than INT_MAX
+static inline void *kmemmem(const void *str, size_t n, const void *pat, size_t m, int **prep_)
 {
-    void *hts_kmemmem(const void *str, int n, const void *pat, int m, int **prep_);
+    void *hts_kmemmem(const void *str, size_t n, const void *pat, size_t m, int **prep_);
     return hts_kmemmem(str, n, pat, m, prep_);
 }
 
 /// Boyer-Moore pattern search
+/// @note @p pat must be less than INT_MAX bytes long
 static inline char *kstrstr(const char *str, const char *pat, int **prep_)
 {
     return (char*)kmemmem(str, strlen(str), pat, strlen(pat), prep_);
 }
 
 /// Boyer-Moore pattern search
-static inline char *kstrnstr(const char *str, const char *pat, int n, int **prep_)
+/// @note @p pat must be less than INT_MAX bytes long
+static inline char *kstrnstr(const char *str, const char *pat, size_t n, int **prep_)
 {
     return (char*)kmemmem(str, n, pat, strlen(pat), prep_);
 }

@@ -179,6 +179,41 @@ static int test_kputw(int64_t start, int64_t end) {
     return 0;
 }
 
+static int test_kstrstr(void) {
+    const char *hs = "haystackhaystack", *found;
+    char haystack[1025];
+    size_t i;
+    for (i = 0; i < sizeof(haystack) - 1; i += 16)
+        memcpy(&haystack[i], hs, 16);
+    haystack[i] = '\0';
+
+    found = kstrstr(haystack, "needle", NULL);
+    if (found) {
+        fprintf(stderr,
+                "Wrong result from kstrstr, expected NULL, got str + %zu\n",
+                found - haystack);
+    }
+
+    for (i = 0; i < sizeof(haystack) - 7; i++) {
+        memcpy(&haystack[i], "needle", 6);
+        found = kstrstr(haystack, "needle", NULL);
+        if (!found) {
+            fprintf(stderr,
+                    "Wrong result from kstrstr, expected str + %zd got NULL\n",
+                    i);
+            return -1;
+        }
+        if ((found - haystack) != i) {
+            fprintf(stderr,
+                    "Wrong result from kstrstr, expected str + %zd got %zd\n",
+                    i, (size_t)(found - haystack));
+            return -1;
+        }
+        memcpy(&haystack[i], hs + (i % 8), 6);
+    }
+    return 0;
+}
+
 int main(int argc, char **argv) {
     int opt, res = EXIT_SUCCESS;
     int64_t start = 0;
@@ -208,6 +243,9 @@ int main(int argc, char **argv) {
 
     if (!test || strcmp(test, "kputw") == 0)
         if (test_kputw(start, end) != 0) res = EXIT_FAILURE;
+
+    if (!test || strcmp(test, "kstrstr") == 0)
+        if (test_kstrstr() != 0) res = EXIT_FAILURE;
 
     return res;
 }

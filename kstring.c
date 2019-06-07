@@ -31,6 +31,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
+#include <assert.h>
 #include "htslib/kstring.h"
 
 int hts_kputd(double d, kstring_t *s) {
@@ -334,25 +335,32 @@ static int *ksBM_prep(const ubyte_t *pat, int m)
 	return prep;
 }
 
-void *hts_kmemmem(const void *_str, int n, const void *_pat, int m, int **_prep)
+void *hts_kmemmem(const void *str_, size_t n, const void *pat_, size_t m, int **prep_)
 {
-	int i, j, *prep = 0, *bmGs, *bmBc;
+	size_t i, j;
+	int *prep = 0, *bmGs, *bmBc;
 	const ubyte_t *str, *pat;
-	str = (const ubyte_t*)_str; pat = (const ubyte_t*)_pat;
-	prep = (_prep == 0 || *_prep == 0)? ksBM_prep(pat, m) : *_prep;
+    if (m == 0) return (void *) str_;
+    if (m > n) return NULL;
+    if (m > INT_MAX) m = INT_MAX;  // Maximum supported pattern length
+	str = (const ubyte_t*)str_; pat = (const ubyte_t*)pat_;
+	prep = (prep_ == 0 || *prep_ == 0)? ksBM_prep(pat, m) : *prep_;
     if (!prep) return NULL;
-	if (_prep && *_prep == 0) *_prep = prep;
+	if (prep_ && *prep_ == 0) *prep_ = prep;
 	bmGs = prep; bmBc = prep + m;
 	j = 0;
 	while (j <= n - m) {
-		for (i = m - 1; i >= 0 && pat[i] == str[i+j]; --i);
-		if (i >= 0) {
-			int max = bmBc[str[i+j]] - m + 1 + i;
+		for (i = m - 1; i > 0 && pat[i] == str[i+j]; --i);
+		if (i > 0 || pat[0] != str[j]) {
+			size_t max = bmBc[str[i+j]] - m + 1 + i;
 			if (max < bmGs[i]) max = bmGs[i];
 			j += max;
-		} else return (void*)(str + j);
+		} else {
+			if (prep_ == 0) free(prep);
+			return (void*)(str + j);
+        }
 	}
-	if (_prep == 0) free(prep);
+	if (prep_ == 0) free(prep);
 	return 0;
 }
 
