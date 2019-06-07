@@ -565,7 +565,7 @@ static void use_header_api() {
         fail("reading header from file");
         goto err;
     }
-    r = bam_hdr_remove_tag(header, "HD", NULL, NULL, "GO");
+    r = bam_hdr_remove_tag_id(header, "HD", NULL, NULL, "GO");
     if (r != 1) { fail("bam_hdr_remove_tag"); goto err; }
 
     r = bam_hdr_update_hd(header, "VN", "1.5");
@@ -595,10 +595,10 @@ static void use_header_api() {
     r = bam_hdr_add_line(header, "RG", "ID", "run4", NULL);
     if (r < 0) { fail("bam_hdr_add_line"); goto err; }
 
-    r = bam_hdr_remove_line_key(header, "RG", "ID", "run2");
+    r = bam_hdr_remove_line_id(header, "RG", "ID", "run2");
     if (r < 0) { fail("bam_hdr_remove_line_key"); goto err; }
 
-    r = bam_hdr_find_tag(header, "RG", "ID", "run3", "ID", &ks);
+    r = bam_hdr_find_tag_id(header, "RG", "ID", "run3", "ID", &ks);
     if (r < 0 || !ks.s || strcmp(ks.s, "run3") != 0) {
         fail("bam_hdr_find_tag() expected \"run3\" got \"%s\"",
              r == 0 && ks.s ? ks.s : "NULL");
@@ -608,13 +608,13 @@ static void use_header_api() {
     r = bam_hdr_remove_line_pos(header, "RG", 2); // Removes run3
     if (r < 0) { fail("bam_hdr_remove_line_pos"); goto err; }
 
-    r = bam_hdr_remove_line_key(header, "SQ", "SN", "ref0");
+    r = bam_hdr_remove_line_id(header, "SQ", "SN", "ref0");
     if (r < 0) { fail("bam_hdr_remove_line_key"); goto err; }
 
     r = bam_hdr_remove_line_pos(header, "SQ", 2); // Removes ref1.5
     if (r < 0) { fail("bam_hdr_remove_line_pos"); goto err; }
 
-    r = bam_hdr_find_tag(header, "SQ", "SN", "ref1", "M5", &ks);
+    r = bam_hdr_find_tag_id(header, "SQ", "SN", "ref1", "M5", &ks);
     if (r < 0 || !ks.s || strcmp(ks.s, "kja8u34a2q3") != 0) {
         fail("bam_hdr_find_tag() expected \"kja8u34a2q3\" got \"%s\"",
              r == 0 && ks.s ? ks.s : "NULL");

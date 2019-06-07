@@ -392,7 +392,7 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
     int new;
     khint32_t type_i = (type[0]<<8) | type[1], k;
 
-    if (!strncmp(type, "HD", 2) && (h_type = bam_hrecs_find_type(hrecs, "HD", NULL, NULL)))
+    if (!strncmp(type, "HD", 2) && (h_type = bam_hrecs_find_type_id(hrecs, "HD", NULL, NULL)))
         return bam_hrecs_update(hrecs, h_type, ap);
 
     if (!(h_type = pool_alloc(hrecs->type_pool)))
@@ -857,7 +857,7 @@ static bam_hrec_type_t *bam_hrecs_find_type_pos(bam_hrecs_t *hrecs,
     if (type[0] == 'P' && type[1] == 'G')
         return idx < hrecs->npg ? hrecs->pg[idx].ty : NULL;
 
-    first = itr = bam_hrecs_find_type(hrecs, type, NULL, NULL);
+    first = itr = bam_hrecs_find_type_id(hrecs, type, NULL, NULL);
     if (!first)
         return NULL;
 
@@ -1016,7 +1016,7 @@ int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
  * combination. If ID_key is NULL then it returns the first line of the specified
  * type.
  */
-int bam_hdr_find_line(bam_hdr_t *bh, const char *type,
+int bam_hdr_find_line_id(bam_hdr_t *bh, const char *type,
                       const char *ID_key, const char *ID_val, kstring_t *ks) {
     bam_hrecs_t *hrecs;
     if (!bh)
@@ -1028,7 +1028,7 @@ int bam_hdr_find_line(bam_hdr_t *bh, const char *type,
         hrecs = bh->hrecs;
     }
 
-    bam_hrec_type_t *ty = bam_hrecs_find_type(hrecs, type, ID_key, ID_val);
+    bam_hrec_type_t *ty = bam_hrecs_find_type_id(hrecs, type, ID_key, ID_val);
     if (!ty)
         return -1;
 
@@ -1060,7 +1060,7 @@ int bam_hdr_find_line(bam_hdr_t *bh, const char *type,
  * Returns 0 on success and -1 on error
  */
 
-int bam_hdr_remove_line_key(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
+int bam_hdr_remove_line_id(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
     bam_hrecs_t *hrecs;
     if (!bh || !type)
         return -1;
@@ -1076,7 +1076,7 @@ int bam_hdr_remove_line_key(bam_hdr_t *bh, const char *type, const char *ID_key,
         return -1;
     }
 
-    bam_hrec_type_t *type_found = bam_hrecs_find_type(hrecs, type, ID_key, ID_value);
+    bam_hrec_type_t *type_found = bam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
     if (!type_found)
         return 0;
 
@@ -1145,7 +1145,7 @@ int bam_hdr_update_line(bam_hdr_t *bh, const char *type,
     }
 
     int ret;
-    bam_hrec_type_t *ty = bam_hrecs_find_type(hrecs, type, ID_key, ID_value);
+    bam_hrec_type_t *ty = bam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
     if (!ty)
         return -1;
 
@@ -1179,7 +1179,7 @@ int bam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const
         return -1;
     }
 
-    bam_hrec_type_t *type_found = bam_hrecs_find_type(hrecs, type, ID_key, ID_value);
+    bam_hrec_type_t *type_found = bam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
     if (!type_found) { // remove all line of this type
         int itype = (type[0]<<8)|(type[1]);
         khint_t k = kh_get(bam_hrecs_t, hrecs->h, itype);
@@ -1292,7 +1292,7 @@ int bam_hdr_count_lines(bam_hdr_t *bh, const char *type) {
         break;
     }
 
-    first_ty = bam_hrecs_find_type(bh->hrecs, type, NULL, NULL);
+    first_ty = bam_hrecs_find_type_id(bh->hrecs, type, NULL, NULL);
     if (!first_ty)
         return 0;
 
@@ -1307,7 +1307,7 @@ int bam_hdr_count_lines(bam_hdr_t *bh, const char *type) {
 
 /* ==== Key:val level methods ==== */
 
-int bam_hdr_find_tag(bam_hdr_t *bh,
+int bam_hdr_find_tag_id(bam_hdr_t *bh,
                      const char *type,
                      const char *ID_key,
                      const char *ID_value,
@@ -1323,7 +1323,7 @@ int bam_hdr_find_tag(bam_hdr_t *bh,
         hrecs = bh->hrecs;
     }
 
-    bam_hrec_type_t *ty = bam_hrecs_find_type(hrecs, type, ID_key, ID_value);
+    bam_hrec_type_t *ty = bam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
     if (!ty)
         return -1;
 
@@ -1339,7 +1339,38 @@ int bam_hdr_find_tag(bam_hdr_t *bh,
     return 0;
 }
 
-int bam_hdr_remove_tag(bam_hdr_t *bh,
+int bam_hdr_find_tag_pos(bam_hdr_t *bh,
+                     const char *type,
+                     int pos,
+                     const char *key,
+                     kstring_t *ks) {
+    bam_hrecs_t *hrecs;
+    if (!bh || !type || !key)
+        return -2;
+
+    if (!(hrecs = bh->hrecs)) {
+        if (bam_hdr_parse(bh) != 0)
+            return -2;
+        hrecs = bh->hrecs;
+    }
+
+    bam_hrec_type_t *ty = bam_hrecs_find_type_pos(hrecs, type, pos-1);
+    if (!ty)
+        return -1;
+
+    bam_hrec_tag_t *tag = bam_hrecs_find_key(ty, key, NULL);
+    if (!tag || !tag->str || tag->len < 4)
+        return -1;
+
+    ks->l = 0;
+    if (kputsn(tag->str+3, tag->len-3, ks) == EOF) {
+        return -2;
+    }
+
+    return 0;
+}
+
+int bam_hdr_remove_tag_id(bam_hdr_t *bh,
         const char *type,
         const char *ID_key,
         const char *ID_value,
@@ -1354,7 +1385,7 @@ int bam_hdr_remove_tag(bam_hdr_t *bh,
         hrecs = bh->hrecs;
     }
 
-    bam_hrec_type_t *ty = bam_hrecs_find_type(hrecs, type, ID_key, ID_value);
+    bam_hrec_type_t *ty = bam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
     if (!ty)
         return -1;
 
@@ -1789,7 +1820,7 @@ void bam_hrecs_free(bam_hrecs_t *hrecs) {
  *
  * Returns NULL if no type/ID is found
  */
-bam_hrec_type_t *bam_hrecs_find_type(bam_hrecs_t *hrecs, const char *type,
+bam_hrec_type_t *bam_hrecs_find_type_id(bam_hrecs_t *hrecs, const char *type,
                                      const char *ID_key, const char *ID_value) {
     if (!hrecs || !type)
         return NULL;

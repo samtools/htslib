@@ -318,11 +318,6 @@ int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
     return 0;
 }
 
-int bam_name2id(bam_hdr_t *h, const char *ref)
-{
-    return bam_hdr_name2ref(h, ref);
-}
-
 const char *sam_parse_region(bam_hdr_t *h, const char *s, int *tid, int64_t *beg, int64_t *end, int flags) {
     return hts_parse_region(s, tid, beg, end, (hts_name2id_f)bam_name2id, h, flags);
 }
@@ -1507,7 +1502,7 @@ int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
         if (bam_hdr_update_line(h, "HD", NULL, NULL, key, val, NULL) != 0)
             return -1;
     } else {
-        if (bam_hdr_remove_tag(h, "HD", NULL, NULL, key) != 0)
+        if (bam_hdr_remove_tag_id(h, "HD", NULL, NULL, key) != 0)
             return -1;
     }
     return bam_hdr_rebuild(h);

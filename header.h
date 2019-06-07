@@ -295,7 +295,7 @@ void bam_hrecs_free(bam_hrecs_t *hrecs);
  *
  * Returns NULL if no type/ID is found
  */
-bam_hrec_type_t *bam_hrecs_find_type(bam_hrecs_t *hrecs, const char *type,
+bam_hrec_type_t *bam_hrecs_find_type_id(bam_hrecs_t *hrecs, const char *type,
                                      const char *ID_key, const char *ID_value);
 
 /*

@@ -1908,7 +1908,7 @@ static int refs_from_header(cram_fd *fd) {
         r->ref_id[j]->length = 0; // marker for not yet loaded
 
         /* Initialise likely filename if known */
-        if ((ty = bam_hrecs_find_type(h->hrecs, "SQ", "SN", h->hrecs->ref[i].name))) {
+        if ((ty = bam_hrecs_find_type_id(h->hrecs, "SQ", "SN", h->hrecs->ref[i].name))) {
             if ((tag = bam_hrecs_find_key(ty, "M5", NULL))) {
                 r->ref_id[j]->fn = string_dup(r->pool, tag->str+3);
                 //fprintf(stderr, "Tagging @SQ %s / %s\n", r->ref_id[h]->name, r->ref_id[h]->fn);
@@ -2129,7 +2129,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if (!r->name)
         return -1;
 
-    if (!(ty = bam_hrecs_find_type(fd->header->hrecs, "SQ", "SN", r->name)))
+    if (!(ty = bam_hrecs_find_type_id(fd->header->hrecs, "SQ", "SN", r->name)))
         return -1;
 
     if (!(tag = bam_hrecs_find_key(ty, "M5", NULL)))
@@ -3879,7 +3879,7 @@ int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
             bam_hrec_type_t *ty;
             char *ref;
 
-            if (!(ty = bam_hrecs_find_type(hdr->hrecs, "SQ", "SN", hdr->hrecs->ref[i].name)))
+            if (!(ty = bam_hrecs_find_type_id(hdr->hrecs, "SQ", "SN", hdr->hrecs->ref[i].name)))
                 return -1;
 
             if (!bam_hrecs_find_key(ty, "M5", NULL)) {
