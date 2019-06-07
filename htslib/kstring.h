@@ -91,28 +91,100 @@ typedef struct {
 extern "C" {
 #endif
 
-	int kvsprintf(kstring_t *s, const char *fmt, va_list ap) KS_ATTR_PRINTF(2,0);
-	int ksprintf(kstring_t *s, const char *fmt, ...) KS_ATTR_PRINTF(2,3);
-    int kputd(double d, kstring_t *s); // custom %g only handler
-	int ksplit_core(char *s, int delimiter, int *_max, int **_offsets);
-	char *kstrstr(const char *str, const char *pat, int **_prep);
-	char *kstrnstr(const char *str, const char *pat, int n, int **_prep);
-	void *kmemmem(const void *_str, int n, const void *_pat, int m, int **_prep);
+/// Append formatted data to a kstring
+KS_ATTR_PRINTF(2,0)
+static inline int kvsprintf(kstring_t *s, const char *fmt, va_list ap)
+{
+    int hts_kvsprintf(kstring_t *s, const char *fmt, va_list ap);
+    return hts_kvsprintf(s, fmt, ap);
+}
 
-	/* kstrtok() is similar to strtok_r() except that str is not
-	 * modified and both str and sep can be NULL. For efficiency, it is
-	 * actually recommended to set both to NULL in the subsequent calls
-	 * if sep is not changed. */
-	char *kstrtok(const char *str, const char *sep, ks_tokaux_t *aux);
+/// Append formatted data to a kstring
+KS_ATTR_PRINTF(2,3)
+static inline int ksprintf(kstring_t *s, const char *fmt, ...)
+{
+    int hts_kvsprintf(kstring_t *s, const char *fmt, va_list ap);
+    va_list ap;
+    int l;
+    va_start(ap, fmt);
+    l = kvsprintf(s, fmt, ap);
+    va_end(ap);
+    return l;
+}
 
-	/* kgetline() uses the supplied fgets()-like function to read a "\n"-
-	 * or "\r\n"-terminated line from fp.  The line read is appended to the
-	 * kstring without its terminator and 0 is returned; EOF is returned at
-	 * EOF or on error (determined by querying fp, as per fgets()). */
-	typedef char *kgets_func(char *, int, void *);
-	int kgetline(kstring_t *s, kgets_func *fgets, void *fp);
-	typedef ssize_t kgets_func2(char *, int, void *);
-	int kgetline2(kstring_t *s, kgets_func2 *fgets, void *fp);
+/// Append a double value to a kstring (%g format only)
+static inline int kputd(double d, kstring_t *s)
+{
+    int hts_kputd(double d, kstring_t *s);
+    return hts_kputd(d, s);
+}
+
+/// Split a string at a delimiter
+static inline int ksplit_core(char *s, int delimiter, int *max_, int **offsets_)
+{
+    int hts_ksplit_core(char *s, int delimiter, int *max_, int **offsets_);
+    return hts_ksplit_core(s, delimiter, max_, offsets_);
+}
+
+/// Boyer-Moore pattern search
+static inline void *kmemmem(const void *str, int n, const void *pat, int m, int **prep_)
+{
+    void *hts_kmemmem(const void *str, int n, const void *pat, int m, int **prep_);
+    return hts_kmemmem(str, n, pat, m, prep_);
+}
+
+/// Boyer-Moore pattern search
+static inline char *kstrstr(const char *str, const char *pat, int **prep_)
+{
+    return (char*)kmemmem(str, strlen(str), pat, strlen(pat), prep_);
+}
+
+/// Boyer-Moore pattern search
+static inline char *kstrnstr(const char *str, const char *pat, int n, int **prep_)
+{
+    return (char*)kmemmem(str, n, pat, strlen(pat), prep_);
+}
+
+/// Tokenise a string
+/**
+ * kstrtok() is similar to strtok_r() except that str is not
+ * modified and both str and sep can be NULL. For efficiency, it is
+ * actually recommended to set both to NULL in the subsequent calls
+ * if sep is not changed. */
+static inline char *kstrtok(const char *str, const char *sep, ks_tokaux_t *aux)
+{
+    char *hts_kstrtok(const char *str, const char *sep, ks_tokaux_t *aux);
+    return hts_kstrtok(str, sep, aux);
+}
+
+/// Callback function for kgetline
+typedef char *kgets_func(char *, int, void *);
+
+/// Read a line into a kstring
+/**
+ * kgetline() uses the supplied fgets()-like function to read a "\n"-
+ * or "\r\n"-terminated line from fp.  The line read is appended to the
+ * kstring without its terminator and 0 is returned; EOF is returned at
+ * EOF or on error (determined by querying fp, as per fgets()). */
+static inline int kgetline(kstring_t *s, kgets_func *fgets, void *fp)
+{
+    int hts_kgetline(kstring_t *s, kgets_func *fgets, void *fp);
+    return hts_kgetline(s, fgets, fp);
+}
+
+/// Callback function for kgetline2()
+typedef ssize_t kgets_func2(char *, int, void *);
+
+/// Read a line into a kstring
+/**
+ * Similar to kgetline(), but the callback function returns the number of
+ * bytes added.
+ */
+static inline int kgetline2(kstring_t *s, kgets_func2 *fgets, void *fp)
+{
+    int hts_kgetline2(kstring_t *s, kgets_func2 *fgets, void *fp);
+    return hts_kgetline2(s, fgets, fp);
+}
 
 #ifdef __cplusplus
 }

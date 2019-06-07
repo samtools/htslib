@@ -33,7 +33,7 @@
 #include <math.h>
 #include "htslib/kstring.h"
 
-int kputd(double d, kstring_t *s) {
+int hts_kputd(double d, kstring_t *s) {
 	int len = 0;
 	char buf[21], *cp = buf+20, *ep;
 	if (d == 0) {
@@ -138,7 +138,7 @@ int kputd(double d, kstring_t *s) {
 	return len;
 }
 
-int kvsprintf(kstring_t *s, const char *fmt, va_list ap)
+int hts_kvsprintf(kstring_t *s, const char *fmt, va_list ap)
 {
 	va_list args;
 	int l;
@@ -164,17 +164,7 @@ int kvsprintf(kstring_t *s, const char *fmt, va_list ap)
 	return l;
 }
 
-int ksprintf(kstring_t *s, const char *fmt, ...)
-{
-	va_list ap;
-	int l;
-	va_start(ap, fmt);
-	l = kvsprintf(s, fmt, ap);
-	va_end(ap);
-	return l;
-}
-
-char *kstrtok(const char *str, const char *sep_in, ks_tokaux_t *aux)
+char *hts_kstrtok(const char *str, const char *sep_in, ks_tokaux_t *aux)
 {
 	const unsigned char *p, *start, *sep = (unsigned char *) sep_in;
 	if (sep) { // set up the table
@@ -202,7 +192,7 @@ char *kstrtok(const char *str, const char *sep_in, ks_tokaux_t *aux)
 }
 
 // s MUST BE a null terminated string; l = strlen(s)
-int ksplit_core(char *s, int delimiter, int *_max, int **_offsets)
+int hts_ksplit_core(char *s, int delimiter, int *_max, int **_offsets)
 {
 	int i, n, max, last_char, last_start, *offsets, l;
 	n = 0; max = *_max; offsets = *_offsets;
@@ -248,7 +238,7 @@ int ksplit_core(char *s, int delimiter, int *_max, int **_offsets)
 	return n;
 }
 
-int kgetline(kstring_t *s, kgets_func *fgets_fn, void *fp)
+int hts_kgetline(kstring_t *s, kgets_func *fgets_fn, void *fp)
 {
 	size_t l0 = s->l;
 
@@ -271,7 +261,7 @@ int kgetline(kstring_t *s, kgets_func *fgets_fn, void *fp)
 	return 0;
 }
 
-int kgetline2(kstring_t *s, kgets_func2 *fgets_fn, void *fp)
+int hts_kgetline2(kstring_t *s, kgets_func2 *fgets_fn, void *fp)
 {
 	size_t l0 = s->l;
 
@@ -344,7 +334,7 @@ static int *ksBM_prep(const ubyte_t *pat, int m)
 	return prep;
 }
 
-void *kmemmem(const void *_str, int n, const void *_pat, int m, int **_prep)
+void *hts_kmemmem(const void *_str, int n, const void *_pat, int m, int **_prep)
 {
 	int i, j, *prep = 0, *bmGs, *bmBc;
 	const ubyte_t *str, *pat;
@@ -364,16 +354,6 @@ void *kmemmem(const void *_str, int n, const void *_pat, int m, int **_prep)
 	}
 	if (_prep == 0) free(prep);
 	return 0;
-}
-
-char *kstrstr(const char *str, const char *pat, int **_prep)
-{
-	return (char*)kmemmem(str, strlen(str), pat, strlen(pat), _prep);
-}
-
-char *kstrnstr(const char *str, const char *pat, int n, int **_prep)
-{
-	return (char*)kmemmem(str, n, pat, strlen(pat), _prep);
 }
 
 /***********************
