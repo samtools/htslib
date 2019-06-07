@@ -18,10 +18,11 @@ matrix:
         packages:
           - gcc-8
 
+  # An optimised build with address and leak checking, also using libdeflate
   - compiler: gcc-8
     os: linux
     dist: xenial
-    env: USE_CONFIG=yes USE_LIBDEFLATE=yes CC=gcc-8 AR=gcc-ar-8
+    env: USE_CONFIG=yes USE_LIBDEFLATE=yes CC=gcc-8 AR=gcc-ar-8 CFLAGS="-g -Wall -O3 -fsanitize=address" LDFLAGS="-fsanitize=address"
     addons:
       apt:
         sources:
@@ -61,5 +62,5 @@ before_script:
   - if test "x$USE_LIBDEFLATE" == "xyes" ; then ( cd "$HOME" && git clone --depth 1 https://github.com/ebiggers/libdeflate.git && cd libdeflate && make -j 2 CFLAGS='-fPIC -O3' libdeflate.a ); fi
 
 script:
-  - if test "x$USE_LIBDEFLATE" = "xyes" ; then CONFIG_OPTS='CPPFLAGS="-I$HOME/libdeflate" LDFLAGS="-L$HOME/libdeflate" --with-libdeflate' ; else CONFIG_OPTS='--without-libdeflate' ; fi
+  - if test "x$USE_LIBDEFLATE" = "xyes" ; then CONFIG_OPTS='CPPFLAGS="-I$HOME/libdeflate" LDFLAGS="$LDFLAGS -L$HOME/libdeflate" --with-libdeflate' ; else CONFIG_OPTS='--without-libdeflate' ; fi
   - if test "$USE_CONFIG" = "yes" ; then MAKE_OPTS= ; autoreconf && eval ./configure --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3 $CFLAGS\" || { cat config.log ; false ; } ; else MAKE_OPTS=-e ; fi && if test "x$DO_MAINTAINER_CHECKS" = "xyes" ; then make maintainer-check ; fi && make -j 2 $MAKE_OPTS && make test
