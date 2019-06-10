@@ -34,7 +34,7 @@
  * \log{\Gamma(z)}
  * AS245, 2nd algorithm, http://lib.stat.cmu.edu/apstat/245
  */
-double kf_lgamma(double z)
+double hts_kf_lgamma(double z)
 {
 	double x = 0;
 	x += 0.1659470187408462e-06 / (z+7);
@@ -53,7 +53,7 @@ double kf_lgamma(double z)
  * \frac{2}{\sqrt{\pi}} \int_x^{\infty} e^{-t^2} dt
  * AS66, 2nd algorithm, http://lib.stat.cmu.edu/apstat/66
  */
-double kf_erfc(double x)
+double hts_kf_erfc(double x)
 {
 	const double p0 = 220.2068679123761;
 	const double p1 = 221.2135961699311;
@@ -98,7 +98,7 @@ double kf_erfc(double x)
 #define KF_TINY 1e-290
 
 // regularized lower incomplete gamma function, by series expansion
-static double _kf_gammap(double s, double z)
+static double kf_gammap_(double s, double z)
 {
 	double sum, x;
 	int k;
@@ -109,7 +109,7 @@ static double _kf_gammap(double s, double z)
 	return exp(s * log(z) - z - kf_lgamma(s + 1.) + log(sum));
 }
 // regularized upper incomplete gamma function, by continued fraction
-static double _kf_gammaq(double s, double z)
+static double kf_gammaq_(double s, double z)
 {
 	int j;
 	double C, D, f;
@@ -130,14 +130,14 @@ static double _kf_gammaq(double s, double z)
 	return exp(s * log(z) - z - kf_lgamma(s) - log(f));
 }
 
-double kf_gammap(double s, double z)
+double hts_kf_gammap(double s, double z)
 {
-	return z <= 1. || z < s? _kf_gammap(s, z) : 1. - _kf_gammaq(s, z);
+	return z <= 1. || z < s? kf_gammap_(s, z) : 1. - kf_gammaq_(s, z);
 }
 
-double kf_gammaq(double s, double z)
+double hts_kf_gammaq(double s, double z)
 {
-	return z <= 1. || z < s? 1. - _kf_gammap(s, z) : _kf_gammaq(s, z);
+	return z <= 1. || z < s? 1. - kf_gammap_(s, z) : kf_gammaq_(s, z);
 }
 
 /* Regularized incomplete beta function. The method is taken from
@@ -171,7 +171,7 @@ static double kf_betai_aux(double a, double b, double x)
 	}
 	return exp(kf_lgamma(a+b) - kf_lgamma(a) - kf_lgamma(b) + a * log(x) + b * log(1.-x)) / a / f;
 }
-double kf_betai(double a, double b, double x)
+double hts_kf_betai(double a, double b, double x)
 {
 	return x < (a + 1.) / (a + b + 2.)? kf_betai_aux(a, b, x) : 1. - kf_betai_aux(b, a, 1. - x);
 }
@@ -240,7 +240,7 @@ static double hypergeo_acc(int n11, int n1_, int n_1, int n, hgacc_t *aux)
     return aux->p;
 }
 
-double kt_fisher_exact(int n11, int n12, int n21, int n22, double *_left, double *_right, double *two)
+double hts_kt_fisher_exact(int n11, int n12, int n21, int n22, double *left_, double *right_, double *two)
 {
     int i, j, max, min;
     double p, q, left, right;
@@ -251,7 +251,7 @@ double kt_fisher_exact(int n11, int n12, int n21, int n22, double *_left, double
     max = (n_1 < n1_) ? n_1 : n1_; // max n11, for right tail
     min = n1_ + n_1 - n;    // not sure why n11-n22 is used instead of min(n_1,n1_)
     if (min < 0) min = 0; // min n11, for left tail
-    *two = *_left = *_right = 1.;
+    *two = *left_ = *right_ = 1.;
     if (min == max) return 1.; // no need to do test
     q = hypergeo_acc(n11, n1_, n_1, n, &aux); // the probability of the current table
     // left tail
@@ -274,7 +274,7 @@ double kt_fisher_exact(int n11, int n12, int n21, int n22, double *_left, double
     // adjust left and right
     if (abs(i - n11) < abs(j - n11)) right = 1. - left + q;
     else left = 1.0 - right + q;
-    *_left = left; *_right = right;
+    *left_ = left; *right_ = right;
     return q;
 }
 
