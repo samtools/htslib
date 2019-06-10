@@ -71,29 +71,50 @@ extern "C" {
 #endif
 
 #ifdef _WIN32
-	int knet_win32_init();
-	void knet_win32_destroy();
+	static inline int knet_win32_init() {
+		int hts_knet_win32_init();
+		return hts_knet_win32_init();
+	}
+	static inline void knet_win32_destroy() {
+		void hts_knet_win32_destroy();
+		hts_knet_win32_destroy();
+	}
 #endif
 
-	knetFile *knet_open(const char *fn, const char *mode);
+	static inline knetFile *knet_open(const char *fn, const char *mode) {
+		knetFile *hts_knet_open(const char *fn, const char *mode);
+		return hts_knet_open(fn, mode);
+	}
 
 	/*
 	   This only works with local files.
 	 */
-	knetFile *knet_dopen(int fd, const char *mode);
+	static inline knetFile *knet_dopen(int fd, const char *mode) {
+		knetFile *hts_knet_dopen(int fd, const char *mode);
+		return hts_knet_dopen(fd, mode);
+	}
 
 	/*
 	  If ->is_ready==0, this routine updates ->fd; otherwise, it simply
 	  reads from ->fd.
 	 */
-	ssize_t knet_read(knetFile *fp, void *buf, size_t len);
+	static inline ssize_t knet_read(knetFile *fp, void *buf, size_t len) {
+		ssize_t hts_knet_read(knetFile *fp, void *buf, size_t len);
+		return hts_knet_read(fp, buf, len);
+	}
 
 	/*
 	  This routine only sets ->offset and ->is_ready=0. It does not
 	  communicate with the FTP server.
 	 */
-	off_t knet_seek(knetFile *fp, off_t off, int whence);
-	int knet_close(knetFile *fp);
+	static inline off_t knet_seek(knetFile *fp, off_t off, int whence) {
+		off_t hts_knet_seek(knetFile *fp, off_t off, int whence);
+		return hts_knet_seek(fp, off, whence);
+	}
+	static inline int knet_close(knetFile *fp) {
+		int hts_knet_close(knetFile *fp);
+		return hts_knet_close(fp);
+	}
 
 #ifdef __cplusplus
 }

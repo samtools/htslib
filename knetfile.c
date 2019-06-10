@@ -118,7 +118,7 @@ static int socket_connect(const char *host, const char *port)
 #  endif
 #else
 /* MinGW's printf has problem with "%lld" */
-char *int64tostr(char *buf, int64_t x)
+static char *int64tostr(char *buf, int64_t x)
 {
 	int cnt;
 	int i = 0;
@@ -133,7 +133,7 @@ char *int64tostr(char *buf, int64_t x)
 	return buf;
 }
 
-int64_t strtoint64(const char *buf)
+static int64_t strtoint64(const char *buf)
 {
 	int64_t x;
 	for (x = 0; *buf != '\0'; ++buf)
@@ -141,12 +141,12 @@ int64_t strtoint64(const char *buf)
 	return x;
 }
 /* In windows, the first thing is to establish the TCP connection. */
-int knet_win32_init()
+int hts_knet_win32_init()
 {
 	WSADATA wsaData;
 	return WSAStartup(MAKEWORD(2, 2), &wsaData);
 }
-void knet_win32_destroy()
+void hts_knet_win32_destroy()
 {
 	WSACleanup();
 }
@@ -277,7 +277,7 @@ static int kftp_pasv_connect(knetFile *ftp)
 	return 0;
 }
 
-int kftp_connect(knetFile *ftp)
+static int kftp_connect(knetFile *ftp)
 {
 	ftp->ctrl_fd = socket_connect(ftp->host, ftp->port);
 	if (ftp->ctrl_fd == -1) return -1;
@@ -288,7 +288,7 @@ int kftp_connect(knetFile *ftp)
 	return 0;
 }
 
-int kftp_reconnect(knetFile *ftp)
+static int kftp_reconnect(knetFile *ftp)
 {
 	if (ftp->ctrl_fd != -1) {
 		netclose(ftp->ctrl_fd);
@@ -300,7 +300,7 @@ int kftp_reconnect(knetFile *ftp)
 }
 
 // initialize ->type, ->host, ->retr and ->size
-knetFile *kftp_parse_url(const char *fn, const char *mode)
+static knetFile *kftp_parse_url(const char *fn, const char *mode)
 {
 	knetFile *fp;
 	char *p;
@@ -326,7 +326,7 @@ knetFile *kftp_parse_url(const char *fn, const char *mode)
 	return fp;
 }
 // place ->fd at offset off
-int kftp_connect_file(knetFile *fp)
+static int kftp_connect_file(knetFile *fp)
 {
 	int ret;
 	long long file_size;
@@ -376,7 +376,7 @@ int kftp_connect_file(knetFile *fp)
  * HTTP specific routines *
  **************************/
 
-knetFile *khttp_parse_url(const char *fn, const char *mode)
+static knetFile *khttp_parse_url(const char *fn, const char *mode)
 {
 	knetFile *fp;
 	char *p, *proxy, *q;
@@ -411,7 +411,7 @@ knetFile *khttp_parse_url(const char *fn, const char *mode)
 	return fp;
 }
 
-int khttp_connect_file(knetFile *fp)
+static int khttp_connect_file(knetFile *fp)
 {
 	int ret, l = 0;
 	char *buf, *p;
@@ -469,7 +469,7 @@ int khttp_connect_file(knetFile *fp)
  * Generic routines *
  ********************/
 
-knetFile *knet_open(const char *fn, const char *mode)
+knetFile *hts_knet_open(const char *fn, const char *mode)
 {
 	knetFile *fp = 0;
 	if (mode[0] != 'r') {
@@ -514,7 +514,7 @@ knetFile *knet_open(const char *fn, const char *mode)
 	return fp;
 }
 
-knetFile *knet_dopen(int fd, const char *mode)
+knetFile *hts_knet_dopen(int fd, const char *mode)
 {
 	knetFile *fp = (knetFile*)calloc(1, sizeof(knetFile));
 	fp->type = KNF_TYPE_LOCAL;
@@ -522,7 +522,7 @@ knetFile *knet_dopen(int fd, const char *mode)
 	return fp;
 }
 
-ssize_t knet_read(knetFile *fp, void *buf, size_t len)
+ssize_t hts_knet_read(knetFile *fp, void *buf, size_t len)
 {
 	off_t l = 0;
 	if (fp->fd == -1) return 0;
@@ -551,7 +551,7 @@ ssize_t knet_read(knetFile *fp, void *buf, size_t len)
 	return l;
 }
 
-off_t knet_seek(knetFile *fp, off_t off, int whence)
+off_t hts_knet_seek(knetFile *fp, off_t off, int whence)
 {
 	if (whence == SEEK_SET && off == fp->offset) return 0;
 	if (fp->type == KNF_TYPE_LOCAL) {
@@ -584,7 +584,7 @@ off_t knet_seek(knetFile *fp, off_t off, int whence)
 	return -1;
 }
 
-int knet_close(knetFile *fp)
+int hts_knet_close(knetFile *fp)
 {
 	if (fp == 0) return 0;
 	if (fp->ctrl_fd != -1) netclose(fp->ctrl_fd); // FTP specific
