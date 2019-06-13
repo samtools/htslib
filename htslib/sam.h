@@ -428,6 +428,23 @@ int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...);
 int bam_hdr_find_line_id(bam_hdr_t *bh, const char *type,
                       const char *ID_key, const char *ID_val, kstring_t *ks);
 
+/// Returns a complete line of formatted text for a given type and index.
+/*!
+ * @param type      Type of the searched line. Eg. "SQ"
+ * @param position  Index in lines of this type (1-based)
+ * @param ks        kstring to hold the result
+ * @return          0 on success;
+ *                 -1 if no matching line is found
+ *                 -2 on other failures
+ *
+ * Puts a complete line of formatted text for a specific line into @p ks.
+ * The header line is selected using the @p type and @p position parameters.
+ *
+ * Any existing content in @p ks will be overwritten.
+ */
+int bam_hdr_find_line_pos(bam_hdr_t *bh, const char *type,
+                          int pos, kstring_t *ks);
+
 /// Remove a line with given type / id from a header
 /*!
  * @param type      Type of the searched line. Eg. "SQ"
@@ -542,8 +559,8 @@ int bam_hdr_find_tag_id(bam_hdr_t *bh, const char *type, const char *ID_key, con
  *                 -2 on other errors
  *
  * Looks for a specific key in a single SAM header line and writes the
- * associated value into @p ks.  The header line is selected using the ID_key
- * and ID_value parameters.  Any pre-existing content in @p ks will be
+ * associated value into @p ks.  The header line is selected using the @p type
+ * and @p position parameters.  Any pre-existing content in @p ks will be
  * overwritten.
  */
 int bam_hdr_find_tag_pos(bam_hdr_t *bh, const char *type, int pos, const char *key, kstring_t *ks);

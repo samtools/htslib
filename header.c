@@ -564,6 +564,22 @@ static int bam_hrecs_remove_line(bam_hrecs_t *hrecs, const char *type_name, bam_
     return 0;
 }
 
+// Paste together a line from the parsed data structures
+static int build_header_line(const bam_hrec_type_t *ty, kstring_t *ks) {
+    bam_hrec_tag_t *tag;
+    int r = 0;
+    char c[2]= { ty->type >> 8, ty->type & 0xff };;
+
+    r |= (kputc_('@', ks) == EOF);
+    r |= (kputsn(c, 2, ks) == EOF);
+    for (tag = ty->tag; tag; tag = tag->next) {
+        r |= (kputc_('\t', ks) == EOF);
+        r |= (kputsn(tag->str, tag->len, ks) == EOF);
+    }
+
+    return r;
+}
+
 static int bam_hrecs_rebuild_lines(const bam_hrecs_t *hrecs, kstring_t *ks) {
     const bam_hrec_type_t *t1, *t2;
 
@@ -572,22 +588,11 @@ static int bam_hrecs_rebuild_lines(const bam_hrecs_t *hrecs, kstring_t *ks) {
 
     t1 = t2 = hrecs->first_line;
     do {
-        bam_hrec_tag_t *tag;
-        char c[2] = { t1->type >> 8, t1->type & 0xff };
-
-        if (EOF == kputc_('@', ks))
+        if (build_header_line(t1, ks) != 0)
+            return -1;
+        if (kputc('\n', ks) < 0)
             return -1;
 
-        if (EOF == kputsn_(c, 2, ks))
-            return -1;
-        for (tag = t1->tag; tag; tag=tag->next) {
-            if (EOF == kputc_('\t', ks))
-                return -1;
-            if (EOF == kputsn_(tag->str, tag->len, ks))
-                return -1;
-        }
-        if (EOF == kputc('\n', ks))
-            return -1;
         t1 = t1->global_next;
     } while (t1 != t2);
 
@@ -1010,7 +1015,6 @@ int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
     return ret;
 }
 
-
 /*
  * Returns a complete line of formatted text for a specific head type/ID
  * combination. If ID_key is NULL then it returns the first line of the specified
@@ -1032,18 +1036,32 @@ int bam_hdr_find_line_id(bam_hdr_t *bh, const char *type,
     if (!ty)
         return -1;
 
-    bam_hrec_tag_t *tag;
-    int r = 0;
-    // Paste together the line from the hashed copy
     ks->l = 0;
-    r |= (kputc_('@', ks) == EOF);
-    r |= (kputs(type, ks) == EOF);
-    for (tag = ty->tag; tag; tag = tag->next) {
-        r |= (kputc_('\t', ks) == EOF);
-        r |= (kputsn(tag->str, tag->len, ks) == EOF);
+    if (build_header_line(ty, ks) < 0) {
+        return -2;
     }
 
-    if (r) {
+    return 0;
+}
+
+int bam_hdr_find_line_pos(bam_hdr_t *bh, const char *type,
+                          int pos, kstring_t *ks) {
+        bam_hrecs_t *hrecs;
+    if (!bh || !type)
+        return -2;
+
+    if (!(hrecs = bh->hrecs)) {
+        if (bam_hdr_parse(bh) != 0)
+            return -2;
+        hrecs = bh->hrecs;
+    }
+
+    bam_hrec_type_t *ty = bam_hrecs_find_type_pos(hrecs, type, pos-1);
+    if (!ty)
+        return -1;
+
+    ks->l = 0;
+    if (build_header_line(ty, ks) < 0) {
         return -2;
     }
 
