@@ -568,7 +568,7 @@ static int bam_hrecs_remove_line(bam_hrecs_t *hrecs, const char *type_name, bam_
 static int build_header_line(const bam_hrec_type_t *ty, kstring_t *ks) {
     bam_hrec_tag_t *tag;
     int r = 0;
-    char c[2]= { ty->type >> 8, ty->type & 0xff };;
+    char c[2]= { ty->type >> 8, ty->type & 0xff };
 
     r |= (kputc_('@', ks) == EOF);
     r |= (kputsn(c, 2, ks) == EOF);
@@ -1023,7 +1023,7 @@ int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
 int bam_hdr_find_line_id(bam_hdr_t *bh, const char *type,
                       const char *ID_key, const char *ID_val, kstring_t *ks) {
     bam_hrecs_t *hrecs;
-    if (!bh)
+    if (!bh || !type)
         return -2;
 
     if (!(hrecs = bh->hrecs)) {
@@ -1046,7 +1046,7 @@ int bam_hdr_find_line_id(bam_hdr_t *bh, const char *type,
 
 int bam_hdr_find_line_pos(bam_hdr_t *bh, const char *type,
                           int pos, kstring_t *ks) {
-        bam_hrecs_t *hrecs;
+    bam_hrecs_t *hrecs;
     if (!bh || !type)
         return -2;
 
