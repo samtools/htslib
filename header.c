@@ -1056,7 +1056,7 @@ int bam_hdr_find_line_pos(bam_hdr_t *bh, const char *type,
         hrecs = bh->hrecs;
     }
 
-    bam_hrec_type_t *ty = bam_hrecs_find_type_pos(hrecs, type, pos-1);
+    bam_hrec_type_t *ty = bam_hrecs_find_type_pos(hrecs, type, pos);
     if (!ty)
         return -1;
 
@@ -1134,7 +1134,7 @@ int bam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position) {
     }
 
     bam_hrec_type_t *type_found = bam_hrecs_find_type_pos(hrecs, type,
-                                                          position - 1);
+                                                          position);
     if (!type_found)
         return -1;
 
@@ -1372,7 +1372,7 @@ int bam_hdr_find_tag_pos(bam_hdr_t *bh,
         hrecs = bh->hrecs;
     }
 
-    bam_hrec_type_t *ty = bam_hrecs_find_type_pos(hrecs, type, pos-1);
+    bam_hrec_type_t *ty = bam_hrecs_find_type_pos(hrecs, type, pos);
     if (!ty)
         return -1;
 

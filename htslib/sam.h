@@ -431,7 +431,7 @@ int bam_hdr_find_line_id(bam_hdr_t *bh, const char *type,
 /// Returns a complete line of formatted text for a given type and index.
 /*!
  * @param type      Type of the searched line. Eg. "SQ"
- * @param position  Index in lines of this type (1-based)
+ * @param position  Index in lines of this type (zero-based)
  * @param ks        kstring to hold the result
  * @return          0 on success;
  *                 -1 if no matching line is found
@@ -471,7 +471,7 @@ int bam_hdr_remove_line_id(bam_hdr_t *bh, const char *type, const char *ID_key, 
 /// Remove nth line of a given type from a header
 /*!
  * @param type     Type of the searched line. Eg. "SQ"
- * @param position The position of the line inside the group (1 based). E.g. 3
+ * @param position Index in lines of this type (zero-based). E.g. 3
  * @return         0 on success, -1 on error
  *
  * Remove a line from the header by specifying the position in the type
@@ -551,7 +551,7 @@ int bam_hdr_find_tag_id(bam_hdr_t *bh, const char *type, const char *ID_key, con
 /// Return the value associated with a key for a header line identified by position
 /*!
  * @param type      Type of the line to which the tag belongs. Eg. "SQ"
- * @param position  The position of the line inside the group (1 based). E.g. 3
+ * @param position  Index in lines of this type (zero-based). E.g. 3
  * @param key       Key of the searched tag. Eg. "LN"
  * @param ks        kstring where the value will be written
  * @return          0 on success

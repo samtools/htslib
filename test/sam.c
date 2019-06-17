@@ -605,13 +605,13 @@ static void use_header_api() {
         goto err;
     }
 
-    r = bam_hdr_remove_line_pos(header, "RG", 2); // Removes run3
+    r = bam_hdr_remove_line_pos(header, "RG", 1); // Removes run3
     if (r < 0) { fail("bam_hdr_remove_line_pos"); goto err; }
 
     r = bam_hdr_remove_line_id(header, "SQ", "SN", "ref0");
     if (r < 0) { fail("bam_hdr_remove_line_key"); goto err; }
 
-    r = bam_hdr_remove_line_pos(header, "SQ", 2); // Removes ref1.5
+    r = bam_hdr_remove_line_pos(header, "SQ", 1); // Removes ref1.5
     if (r < 0) { fail("bam_hdr_remove_line_pos"); goto err; }
 
     r = bam_hdr_find_tag_id(header, "SQ", "SN", "ref1", "M5", &ks);
