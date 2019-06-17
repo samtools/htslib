@@ -3157,10 +3157,6 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
 #endif
         iter->tail->beg = b->core.pos;
         iter->tail->end = bam_endpos(b);
-        if (overlap_push(iter, iter->tail) < 0) {
-            iter->error = 1;
-            return -1;
-        }
         iter->tail->s = g_cstate_null; iter->tail->s.end = iter->tail->end - 1; // initialize cstate_t
         if (b->core.tid < iter->max_tid) {
             hts_log_error("The input is not sorted (chromosomes out of order)");
@@ -3174,9 +3170,19 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
         }
         iter->max_tid = b->core.tid; iter->max_pos = iter->tail->beg;
         if (iter->tail->end > iter->pos || iter->tail->b.core.tid > iter->tid) {
+            lbnode_t *next = mp_alloc(iter->mp);
+            if (!next) {
+                iter->error = 1;
+                return -1;
+            }
             if (iter->plp_construct)
                 iter->plp_construct(iter->data, b, &iter->tail->cd);
-            iter->tail->next = mp_alloc(iter->mp);
+            if (overlap_push(iter, iter->tail) < 0) {
+                mp_free(iter->mp, next);
+                iter->error = 1;
+                return -1;
+            }
+            iter->tail->next = next;
             iter->tail = iter->tail->next;
         }
     } else iter->is_eof = 1;
