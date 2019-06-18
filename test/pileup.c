@@ -168,6 +168,11 @@ static int test_mpileup(ptest_t *input) {
         perror("bam_plp_init");
         goto fail;
     }
+    if (bam_mplp_init_overlaps(iter) < 0) {
+        perror("bam_mplp_init_overlaps");
+        goto fail;
+    }
+
     while ((n = bam_mplp_auto(iter, &tid, &pos, n_plp, pileups)) > 0) {
         if (tid < 0) break;
         if (tid >= input->fp_hdr->n_targets) {
