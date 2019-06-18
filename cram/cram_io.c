@@ -3150,7 +3150,7 @@ static int cram_flush_container2(cram_fd *fd, cram_container *c) {
         }
     }
 
-    return hflush(fd->fp) == 0 ? 0 : -1;
+    return 0;
 }
 
 /*
@@ -3240,9 +3240,6 @@ static int cram_flush_result(cram_fd *fd) {
             }
             lc = c;
         }
-
-        if (fd->mode == 'w')
-            ret |= hflush(fd->fp) == 0 ? 0 : -1;
 
         hts_tpool_delete_result(r, 1);
     }
