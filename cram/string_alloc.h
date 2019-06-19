@@ -52,6 +52,7 @@ typedef struct {
 typedef struct {
     size_t max_length;
     size_t nstrings;
+    size_t max_strings;
     string_t *strings;
 } string_alloc_t;
 

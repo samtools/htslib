@@ -1744,7 +1744,7 @@ bam_hrecs_t *bam_hrecs_new() {
     if (!(hrecs->type_pool = pool_create(sizeof(bam_hrec_type_t))))
         goto err;
 
-    if (!(hrecs->str_pool = string_pool_create(8192)))
+    if (!(hrecs->str_pool = string_pool_create(65536)))
         goto err;
 
     if (bam_hrecs_init_type_order(hrecs, NULL))
