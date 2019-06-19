@@ -3853,7 +3853,7 @@ static void full_path(char *out, char *in) {
  *        -1 on failure
  */
 int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
-    int header_len;
+    size_t header_len;
     int blank_block = (CRAM_MAJOR_VERS(fd->version) >= 3);
 
     /* Write CRAM MAGIC if not yet written. */
@@ -3920,6 +3920,10 @@ int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
 
     /* Length */
     header_len = bam_hdr_length(hdr);
+    if (header_len > INT32_MAX) {
+        hts_log_error("Header is too long for CRAM format");
+        return -1;
+    }
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
         if (-1 == int32_encode(fd, header_len))
             return -1;

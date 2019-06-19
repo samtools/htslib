@@ -878,7 +878,7 @@ static bam_hrec_type_t *bam_hrecs_find_type_pos(bam_hrecs_t *hrecs,
 
 /* ==== Public methods ==== */
 
-int bam_hdr_length(bam_hdr_t *bh) {
+size_t bam_hdr_length(bam_hdr_t *bh) {
     if (!bh || -1 == bam_hdr_rebuild(bh))
         return -1;
 
@@ -952,7 +952,7 @@ int bam_hdr_rebuild(bam_hdr_t *bh) {
  * Returns 0 on success
  *        -1 on failure
  */
-int bam_hdr_add_lines(bam_hdr_t *bh, const char *lines, int len) {
+int bam_hdr_add_lines(bam_hdr_t *bh, const char *lines, size_t len) {
     bam_hrecs_t *hrecs;
 
     if (!bh || !lines)
@@ -2119,7 +2119,7 @@ enum sam_group_order bam_hrecs_group_order(bam_hrecs_t *hrecs) {
 // Legacy functions from htslb/cram.h, included here for API compatibility.
 typedef bam_hdr_t SAM_hdr;
 
-SAM_hdr *sam_hdr_parse_(const char *hdr, int len) {
+SAM_hdr *sam_hdr_parse_(const char *hdr, size_t len) {
     bam_hdr_t *bh = bam_hdr_init();
     if (!bh) return NULL;
 
@@ -2135,7 +2135,7 @@ void sam_hdr_free(SAM_hdr *hdr) {
     bam_hdr_destroy(hdr);
 }
 
-int sam_hdr_length(SAM_hdr *hdr) {
+size_t sam_hdr_length(SAM_hdr *hdr) {
     return bam_hdr_length(hdr);
 }
 

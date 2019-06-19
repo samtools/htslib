@@ -150,7 +150,7 @@ bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
 bam_hdr_t *bam_hdr_read(BGZF *fp)
 {
     bam_hdr_t *h;
-    char buf[4];
+    uint8_t buf[4];
     int magic_len, has_EOF;
     int32_t i, name_len, num_names = 0;
     size_t bufsize;
@@ -164,7 +164,7 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     }
     // read "BAM1"
     magic_len = bgzf_read(fp, buf, 4);
-    if (magic_len != 4 || strncmp(buf, "BAM\1", 4)) {
+    if (magic_len != 4 || memcmp(buf, "BAM\1", 4)) {
         hts_log_error("Invalid BAM binary header");
         return 0;
     }
@@ -172,11 +172,11 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     if (!h) goto nomem;
 
     // read plain text and the number of reference sequences
-    bytes = bgzf_read(fp, &h->l_text, 4);
+    bytes = bgzf_read(fp, buf, 4);
     if (bytes != 4) goto read_err;
-    if (fp->is_be) ed_swap_4p(&h->l_text);
+    h->l_text = le_to_u32(buf);
 
-    bufsize = ((size_t) h->l_text) + 1;
+    bufsize = h->l_text + 1;
     if (bufsize < h->l_text) goto nomem; // so large that adding 1 overflowed
     h->text = (char*)malloc(bufsize);
     if (!h->text) goto nomem;
@@ -274,6 +274,10 @@ int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
         text = hdr_ks.s;
         l_text = hdr_ks.l;
     } else {
+        if (h->l_text > INT32_MAX) {
+            hts_log_error("Header too long for BAM format");
+            return -1;
+        }
         text = h->text;
         l_text = h->l_text;
     }
@@ -1044,7 +1048,7 @@ hts_itr_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *
 #include "htslib/kseq.h"
 #include "htslib/kstring.h"
 
-bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
+bam_hdr_t *sam_hdr_parse(size_t l_text, const char *text)
 {
     return sam_hdr_parse_(text, l_text);
 }
@@ -1066,7 +1070,8 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
     if (h->l_text == 0)
         return h;
 
-    uint32_t i, lnum = 0;
+    size_t i;
+    unsigned int lnum = 0;
     char *cp = h->text, last = '\n';
     for (i = 0; i < h->l_text; i++) {
         // NB: l_text excludes terminating nul.  This finds early ones.
@@ -1087,7 +1092,7 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
     }
 
     if (i < h->l_text) { // Early nul found.  Complain if not just padding.
-        uint32_t j = i;
+        size_t j = i;
         while (j < h->l_text && cp[j] == '\0') j++;
         if (j < h->l_text)
             hts_log_warning("Unexpected NUL character in header. Possibly truncated");
@@ -1097,13 +1102,13 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
     if (last != '\n') {
         hts_log_warning("Missing trailing newline on SAM header. Possibly truncated");
 
-        if (h->l_text == UINT32_MAX) {
-            hts_log_error("No room for extra newline");
-            bam_hdr_destroy(h);
-            return NULL;
-        }
+        if (h->l_text < 2 || i >= h->l_text - 2) {
+            if (h->l_text >= SIZE_MAX - 2) {
+                hts_log_error("No room for extra newline");
+                bam_hdr_destroy(h);
+                return NULL;
+            }
 
-        if (i >= h->l_text - 1) {
             cp = realloc(h->text, (size_t) h->l_text+2);
             if (!cp) {
                 bam_hdr_destroy(h);
@@ -1364,9 +1369,10 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
             text = hdr_ks.s;
             l_text = hdr_ks.l;
         } else {
-            char *p;
+            const char *p = NULL;
             do {
-                p = strstr(h->text, "@SQ\t");
+                const char *q = p == NULL ? h->text : p + 4;
+                p = strstr(q, "@SQ\t");
             } while (!(p == NULL || p == h->text || *(p - 1) == '\n'));
             no_sq = p == NULL;
             text = h->text;
@@ -1420,6 +1426,7 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 static int old_sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
 {
     char *p, *q, *beg = NULL, *end = NULL, *newtext;
+    size_t new_l_text;
     if (!h || !key)
         return -1;
 
@@ -1449,43 +1456,45 @@ static int old_sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
         }
     }
     if (beg == NULL) { // no @HD
-        if (h->l_text > UINT32_MAX - strlen(SAM_FORMAT_VERSION) - 9)
+        new_l_text = h->l_text;
+        if (new_l_text > SIZE_MAX - strlen(SAM_FORMAT_VERSION) - 9)
             return -1;
-        h->l_text += strlen(SAM_FORMAT_VERSION) + 8;
+        new_l_text += strlen(SAM_FORMAT_VERSION) + 8;
         if (val) {
-            if (h->l_text > UINT32_MAX - strlen(val) - 5)
+            if (new_l_text > SIZE_MAX - strlen(val) - 5)
                 return -1;
-            h->l_text += strlen(val) + 4;
+            new_l_text += strlen(val) + 4;
         }
-        newtext = (char*)malloc(h->l_text + 1);
+        newtext = (char*)malloc(new_l_text + 1);
         if (!newtext) return -1;
 
         if (val)
-            snprintf(newtext, h->l_text + 1,
+            snprintf(newtext, new_l_text + 1,
                     "@HD\tVN:%s\t%s:%s\n%s", SAM_FORMAT_VERSION, key, val, h->text);
         else
-            snprintf(newtext, h->l_text + 1,
+            snprintf(newtext, new_l_text + 1,
                     "@HD\tVN:%s\n%s", SAM_FORMAT_VERSION, h->text);
     } else { // has @HD but different or no key
-        h->l_text = (beg - h->text) + (h->text + h->l_text - end);
+        new_l_text = (beg - h->text) + (h->text + h->l_text - end);
         if (val) {
-            if (h->l_text > UINT32_MAX - strlen(val) - 5)
+            if (new_l_text > SIZE_MAX - strlen(val) - 5)
                 return -1;
-            h->l_text += strlen(val) + 4;
+            new_l_text += strlen(val) + 4;
         }
-        newtext = (char*)malloc(h->l_text + 1);
+        newtext = (char*)malloc(new_l_text + 1);
         if (!newtext) return -1;
 
         if (val) {
-            snprintf(newtext, h->l_text + 1, "%.*s\t%s:%s%s",
+            snprintf(newtext, new_l_text + 1, "%.*s\t%s:%s%s",
                     (int) (beg - h->text), h->text, key, val, end);
         } else { //delete key
-            snprintf(newtext, h->l_text + 1, "%.*s%s",
+            snprintf(newtext, new_l_text + 1, "%.*s%s",
                     (int) (beg - h->text), h->text, end);
         }
     }
     free(h->text);
     h->text = newtext;
+    h->l_text = new_l_text;
     return 0;
 }
 

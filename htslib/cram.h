@@ -423,7 +423,7 @@ typedef struct bam_hdr_t SAM_hdr;
  * Returns a SAM_hdr struct on success (free with sam_hdr_free());
  *         NULL on failure
  */
-SAM_hdr *sam_hdr_parse_(const char *hdr, int len);
+SAM_hdr *sam_hdr_parse_(const char *hdr, size_t len);
 
 /*! Deallocates all storage used by a SAM_hdr struct.
  *

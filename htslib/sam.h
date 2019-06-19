@@ -69,7 +69,7 @@ typedef struct sam_hdr bam_hrecs_t;
 
 typedef struct bam_hdr_t {
     int32_t n_targets, ignore_sam_err;
-    uint32_t l_text;
+    size_t l_text;
     uint32_t *target_len;
     int8_t *cigar_tab;
     char **target_name;
@@ -344,7 +344,7 @@ typedef htsFile samFile;
  * @note The text field of the returned header will be NULL, and the l_text
  * field will be zero.
  */
-bam_hdr_t *sam_hdr_parse(int l_text, const char *text);
+bam_hdr_t *sam_hdr_parse(size_t l_text, const char *text);
 
 /// Read a header from a SAM, BAM or CRAM file.
 /*!
@@ -365,7 +365,7 @@ int sam_hdr_write(samFile *fp, const bam_hdr_t *h) HTS_RESULT_USED;
 /*!
  * @return  >= 0 on success, -1 on failure
  */
-int bam_hdr_length(bam_hdr_t *bh);
+size_t bam_hdr_length(bam_hdr_t *bh);
 
 /// Returns the text representation of the header.
 /*!
@@ -397,7 +397,7 @@ int bam_hdr_nref(const bam_hdr_t *bh);
  *               lines must be NUL-terminated
  * @return       0 on success, -1 on failure
  */
-int bam_hdr_add_lines(bam_hdr_t *bh, const char *lines, int len);
+int bam_hdr_add_lines(bam_hdr_t *bh, const char *lines, size_t len);
 
 /// Adds a single line to an existing header.
 /*!
