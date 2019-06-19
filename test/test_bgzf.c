@@ -579,8 +579,9 @@ static int test_index_seek_getc(Files *f, const char *mode,
                                 int cache_size, int nthreads) {
     BGZF* bgz = NULL;
     ssize_t bg_put;
-    size_t i, j, iskip = f->ltext / 10;
+    size_t i, j, k, iskip = f->ltext / 10;
     int is_uncompressed = strchr(mode, 'u') != NULL;
+    size_t offsets[3] = { 0, 100, 50 };
 
     bgz = try_bgzf_open(f->tmp_bgzf, mode, __func__);
     if (!bgz) goto fail;
@@ -612,13 +613,16 @@ static int test_index_seek_getc(Files *f, const char *mode,
     }
 
     for (i = 0; i < f->ltext; i += iskip) {
-        if (try_bgzf_useek(bgz, i, SEEK_SET, f->tmp_bgzf, __func__) != 0) {
-            goto fail;
-        }
+        for (k = 0; k < sizeof(offsets) / sizeof(offsets[0]); k++) {
+            size_t o = offsets[k];
+            if (try_bgzf_useek(bgz, i + o, SEEK_SET, f->tmp_bgzf, __func__) != 0) {
+                goto fail;
+            }
 
-        for (j = 0; j < 16 && i + j < f->ltext; j++) {
-            if (try_bgzf_getc(bgz, i + j, f->text[i + j],
-                              f->tmp_bgzf, __func__) < 0) goto fail;
+            for (j = 0; j < 16 && i + o + j < f->ltext; j++) {
+                if (try_bgzf_getc(bgz, i + o + j, f->text[i + o + j],
+                                  f->tmp_bgzf, __func__) < 0) goto fail;
+            }
         }
     }
 

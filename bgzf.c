@@ -2275,6 +2275,13 @@ int bgzf_useek(BGZF *fp, off_t uoffset, int where)
         fp->errcode |= BGZF_ERR_MISUSE;
         return -1;
     }
+    if (uoffset >= fp->uncompressed_address - fp->block_offset &&
+        uoffset < fp->uncompressed_address + fp->block_length - fp->block_offset) {
+        // Can seek into existing data
+        fp->block_offset += uoffset - fp->uncompressed_address;
+        fp->uncompressed_address = uoffset;
+        return 0;
+    }
     if ( !fp->is_compressed )
     {
         if (hseek(fp->fp, uoffset, SEEK_SET) < 0)
