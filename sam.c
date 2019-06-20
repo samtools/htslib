@@ -1635,7 +1635,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     // chr
     q = _read_token(p);
     if (strcmp(q, "*")) {
-        _parse_err(h->n_targets == 0, "missing SAM header");
+        _parse_err(h->n_targets == 0, "no SQ lines present in the header");
         c->tid = bam_name2id(h, q);
         _parse_err(c->tid < -1, "failed to parse header");
         _parse_warn(c->tid < 0, "urecognized reference name; treated as unmapped");
