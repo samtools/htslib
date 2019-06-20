@@ -396,6 +396,9 @@ int bam_hdr_nref(const bam_hdr_t *bh);
  *               encountered). len may be 0 if unknown, in which case
  *               lines must be NUL-terminated
  * @return       0 on success, -1 on failure
+ *
+ * The lines will be appended to the end of the existing header
+ * (apart from HD, which always comes first).
  */
 int bam_hdr_add_lines(bam_hdr_t *bh, const char *lines, size_t len);
 
@@ -406,6 +409,11 @@ int bam_hdr_add_lines(bam_hdr_t *bh, const char *lines, size_t len);
  *
  * @param type  Type of the added line. Eg. "SQ"
  * @return      0 on success, -1 on failure
+ *
+ * The new line will be added immediately after any others of the same
+ * type, or at the end of the existing header if no lines of the
+ * given type currently exist.  The exception is HD lines, which always
+ * come first.  If an HD line already exists, it will be replaced.
  */
 int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...);
 

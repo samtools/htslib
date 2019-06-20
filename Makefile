@@ -174,7 +174,7 @@ LIBHTS_OBJS = \
 	cram/open_trace_file.o \
 	cram/pooled_alloc.o \
 	cram/rANS_static.o \
-	cram/string_alloc.o \
+	cram/string_alloc.o
 
 PLUGIN_EXT  =
 PLUGIN_OBJS =
