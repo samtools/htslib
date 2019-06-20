@@ -40,6 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/sam.h"
 #include "htslib/faidx.h"
 #include "htslib/kstring.h"
+#include "htslib/hts_log.h"
 
 int status;
 
@@ -503,9 +504,318 @@ static void copy_check_alignment(const char *infname, const char *informat,
 
  err:
     bam_destroy1(aln);
+    aln = NULL;
     bam_hdr_destroy(header);
+    header = NULL;
     if (in) sam_close(in);
     if (out) sam_close(out);
+}
+
+static void use_header_api() {
+    static const char header_text[] = "data:,"
+            "@HD\tVN:1.4\tGO:group\tSS:coordinate:queryname\n"
+            "@SQ\tSN:ref0\tLN:100\n"
+            "@CO\tThis line below will be updated\n"
+            "@SQ\tSN:ref1\tLN:5001\tM5:983dalu9ue2\n"
+            "@SQ\tSN:ref1.5\tLN:5001\n"
+            "@CO\tThis line is good\n"
+            "@SQ\tSN:ref2\tLN:5002\n";
+
+    static const char rg_line[] =
+            { '@', 'R', 'G', '\t', 'I', 'D', ':', 'r', 'u', 'n', '1' };
+
+    static const char expected[] =
+            "@HD\tVN:1.5\tSO:coordinate\n"
+            "@CO\tThis line below will be updated\n"
+            "@SQ\tSN:ref1\tLN:5001\tM5:kja8u34a2q3\n"
+            "@CO\tThis line is good\n"
+            "@SQ\tSN:ref2\tLN:5002\n"
+            "@SQ\tSN:ref3\tLN:5003\n"
+            "@PG\tID:samtools\tPN:samtools\tVN:1.9\n"
+            "@RG\tID:run1\n"
+            "@RG\tID:run4\n";
+
+    static const char *expected_targets[] = { "ref1", "ref2", "ref3" };
+    static const int   expected_lengths[] = { 5001, 5002, 5003 };
+    const int expected_n_targets = sizeof(expected_targets) / sizeof(char *);
+
+    const char outfname[] = "test/sam_header.tmp.sam_";
+    const char outmode[] = "w";
+    FILE *inf = NULL;
+    char buffer[sizeof(expected) + 1024];
+
+    samFile *in = sam_open(header_text, "r");
+    samFile *out = sam_open(outfname, outmode);
+    bam_hdr_t *header = NULL;
+    kstring_t ks = { 0, 0, NULL };
+    size_t bytes;
+    int r, i;
+
+    if (!in) {
+        fail("couldn't open file");
+        goto err;
+    }
+    if (!out) {
+        fail("couldn't open %s with mode %s", outfname, outmode);
+        goto err;
+    }
+
+    header = sam_hdr_read(in);
+    if (!header) {
+        fail("reading header from file");
+        goto err;
+    }
+    r = bam_hdr_remove_tag_id(header, "HD", NULL, NULL, "GO");
+    if (r != 1) { fail("bam_hdr_remove_tag"); goto err; }
+
+    r = bam_hdr_update_hd(header, "VN", "1.5");
+    if (r != 0) { fail("bam_hdr_find_update_hd"); goto err; }
+
+    r = bam_hdr_add_line(header, "SQ", "SN", "ref3", "LN", "5003", NULL);
+    if (r < 0) { fail("bam_hdr_add_line"); goto err; }
+
+    r = bam_hdr_update_line(header, "SQ", "SN", "ref1",
+                             "M5", "kja8u34a2q3", NULL);
+    if (r != 0) { fail("bam_hdr_update_line SQ"); goto err; }
+
+    r = bam_hdr_add_pg(header, "samtools", "VN", "1.9", NULL);
+    if (r != 0) { fail("bam_hdr_add_pg"); goto err; }
+
+    // Test addition with no newline or trailing NUL
+    r = bam_hdr_add_lines(header, rg_line, sizeof(rg_line));
+    if (r != 0) { fail("bam_hdr_add_lines rg_line"); goto err; }
+
+    // Test header line removal
+    r = bam_hdr_add_line(header, "RG", "ID", "run2", NULL);
+    if (r < 0) { fail("bam_hdr_add_line"); goto err; }
+
+    r = bam_hdr_add_line(header, "RG", "ID", "run3", NULL);
+    if (r < 0) { fail("bam_hdr_add_line"); goto err; }
+
+    r = bam_hdr_add_line(header, "RG", "ID", "run4", NULL);
+    if (r < 0) { fail("bam_hdr_add_line"); goto err; }
+
+    r = bam_hdr_remove_line_id(header, "RG", "ID", "run2");
+    if (r < 0) { fail("bam_hdr_remove_line_key"); goto err; }
+
+    r = bam_hdr_find_tag_id(header, "RG", "ID", "run3", "ID", &ks);
+    if (r < 0 || !ks.s || strcmp(ks.s, "run3") != 0) {
+        fail("bam_hdr_find_tag() expected \"run3\" got \"%s\"",
+             r == 0 && ks.s ? ks.s : "NULL");
+        goto err;
+    }
+
+    r = bam_hdr_remove_line_pos(header, "RG", 1); // Removes run3
+    if (r < 0) { fail("bam_hdr_remove_line_pos"); goto err; }
+
+    r = bam_hdr_remove_line_id(header, "SQ", "SN", "ref0");
+    if (r < 0) { fail("bam_hdr_remove_line_key"); goto err; }
+
+    r = bam_hdr_remove_line_pos(header, "SQ", 1); // Removes ref1.5
+    if (r < 0) { fail("bam_hdr_remove_line_pos"); goto err; }
+
+    r = bam_hdr_find_tag_id(header, "SQ", "SN", "ref1", "M5", &ks);
+    if (r < 0 || !ks.s || strcmp(ks.s, "kja8u34a2q3") != 0) {
+        fail("bam_hdr_find_tag() expected \"kja8u34a2q3\" got \"%s\"",
+             r == 0 && ks.s ? ks.s : "NULL");
+        goto err;
+    }
+
+    r = bam_hdr_remove_tag_hd(header, "SS");
+    if (r < 0) {
+        fail("bam_hdr_remove_tag_hd");
+    }
+
+    r = bam_hdr_find_hd(header, &ks);
+    if (r < 0 || !ks.s || strcmp(ks.s, "@HD\tVN:1.5") != 0) {
+        fail("bam_hdr_find_hd() expected \"@HD\tVN:1.5\" got \"%s\"",
+             r == 0 && ks.s ? ks.s : "NULL");
+    }
+
+    r = bam_hdr_find_tag_hd(header, "VN", &ks);
+    if (r < 0 || !ks.s || strcmp(ks.s, "1.5") != 0) {
+        fail("bam_hdr_find_tag_hd() expected \"1.5\" got \"%s\"",
+             r == 0 && ks.s ? ks.s : "NULL");
+    }
+
+    r = bam_hdr_update_hd(header, "SO", "coordinate");
+    if (r < 0) {
+        fail("bam_hdr_update_hd");
+    }
+
+    // Check consistency of target_names array
+    if (!header->target_name) {
+        fail("target_name is NULL");
+        goto err;
+    }
+    if (!header->target_len) {
+        fail("target_len is NULL");
+        goto err;
+    }
+    if (header->n_targets != expected_n_targets) {
+        fail("header->n_targets (%d) != expected_n_targets (%d)",
+             header->n_targets, expected_n_targets);
+        goto err;
+    }
+
+    for (i = 0; i < expected_n_targets; i++) {
+        if (!header->target_name[i]
+            || strcmp(header->target_name[i], expected_targets[i]) != 0) {
+            fail("header->target_name[%d] (%s) != \"%s\"",
+                 i, header->target_name[i] ? header->target_name[i] : "NULL",
+                 expected_targets[i]);
+            goto err;
+        }
+        if (header->target_len[i] != expected_lengths[i]) {
+            fail("header->target_len[%d] (%d) != %d",
+                 i, header->target_len[i], expected_lengths[i]);
+            goto err;
+        }
+    }
+
+    if ((r = bam_hdr_count_lines(header, "HD")) != 1) {
+        fail("incorrect HD line count - expected 1, got %d", r);
+        goto err;
+    }
+    if ((r = bam_hdr_count_lines(header, "SQ")) != 3) {
+        fail("incorrect SQ line count - expected 3, got %d", r);
+        goto err;
+    }
+    if ((r = bam_hdr_count_lines(header, "PG")) != 1) {
+        fail("incorrect PG line count - expected 1, got %d", r);
+        goto err;
+    }
+    if ((r = bam_hdr_count_lines(header, "RG")) != 2) {
+        fail("incorrect RG line count - expected 2, got %d", r);
+        goto err;
+    }
+    if ((r = bam_hdr_count_lines(header, "CO")) != 2) {
+        fail("incorrect CO line count - expected 2, got %d", r);
+        goto err;
+    }
+
+    if (sam_hdr_write(out, header) < 0) {
+        fail("writing headers to \"%s\"", outfname);
+        goto err;
+    }
+    r = sam_close(out);
+    out = NULL;
+    if (r < 0) {
+        fail("close \"%s\"", outfname);
+        goto err;
+    }
+
+    inf = fopen(outfname, "r");
+    if (!inf) {
+        fail("Opening written header \"%s\"", outfname);
+        goto err;
+    }
+    bytes = fread(buffer, 1, sizeof(buffer), inf);
+    if (bytes != sizeof(expected) - 1 || memcmp(buffer, expected, bytes) != 0) {
+        fail("edited header does not match expected version");
+        fprintf(stderr,
+                "---------- Expected:\n%.*s\n"
+                "++++++++++ Got:\n%.*s\n"
+                "====================\n",
+                (int) sizeof(expected), expected,
+                (int) bytes, buffer);
+        goto err;
+    }
+
+    free(ks_release(&ks));
+
+ err:
+    bam_hdr_destroy(header);
+    header = NULL;
+    if (in) sam_close(in);
+    if (out) sam_close(out);
+    if (inf) fclose(inf);
+    free(ks_release(&ks));
+}
+
+static void test_header_pg_lines() {
+    static const char header_text[] = "data:,"
+        "@HD\tVN:1.5\n"
+        "@PG\tID:prog1\tPN:prog1\n"
+        "@PG\tID:prog2\tPN:prog2\tPP:prog1\n";
+
+    static const char expected[] =
+        "@HD\tVN:1.5\n"
+        "@PG\tID:prog1\tPN:prog1\n"
+        "@PG\tID:prog2\tPN:prog2\tPP:prog1\n"
+        "@PG\tID:prog3\tPN:prog3\tPP:prog2\n"
+        "@PG\tID:prog4\tPN:prog4\tPP:prog1\n"
+        "@PG\tID:prog5\tPN:prog5\tPP:prog2\n"
+        "@PG\tID:prog6\tPN:prog6\tPP:prog3\n"
+        "@PG\tID:prog6.1\tPN:prog6\tPP:prog4\n"
+        "@PG\tID:prog6.2\tPN:prog6\tPP:prog5\n"
+        "@PG\tPN:prog7\tID:my_id\tPP:prog6\n";
+
+    samFile *in = sam_open(header_text, "r");
+    bam_hdr_t *header = NULL;
+    const char *text = NULL;
+    enum htsLogLevel old_log_level;
+    int r;
+
+    if (!in) {
+        fail("couldn't open file");
+        goto err;
+    }
+
+    header = sam_hdr_read(in);
+    if (!header) {
+        fail("reading header from file");
+        goto err;
+    }
+
+    r = bam_hdr_add_pg(header, "prog3", NULL);
+    if (r != 0) { fail("bam_hdr_add_pg prog3"); goto err; }
+
+
+    r = bam_hdr_add_pg(header, "prog4", "PP", "prog1", NULL);
+    if (r != 0) { fail("bam_hdr_add_pg prog4"); goto err; }
+
+    r = bam_hdr_add_line(header, "PG", "ID",
+                         "prog5", "PN", "prog5", "PP", "prog2", NULL);
+    if (r != 0) { fail("bam_hdr_add_line @PG ID:prog5"); goto err; }
+
+    r = bam_hdr_add_pg(header, "prog6", NULL);
+    if (r != 0) { fail("bam_hdr_add_pg prog6"); goto err; }
+
+    r = bam_hdr_add_pg(header, "prog7", "ID", "my_id", "PP", "prog6", NULL);
+    if (r != 0) { fail("bam_hdr_add_pg prog7"); goto err; }
+
+    text = bam_hdr_str(header);
+    if (!text) { fail("bam_hdr_str"); goto err; }
+
+    // These should fail
+    old_log_level = hts_get_log_level();
+    hts_set_log_level(HTS_LOG_OFF);
+
+    r = bam_hdr_add_pg(header, "prog8", "ID", "my_id", NULL);
+    if (r == 0) { fail("bam_hdr_add_pg prog8 (unexpected success)"); goto err; }
+
+    r = bam_hdr_add_pg(header, "prog9", "PP", "non-existent", NULL);
+    if (r == 0) { fail("bam_hdr_add_pg prog9 (unexpected success)"); goto err; }
+
+    hts_set_log_level(old_log_level);
+    // End failing tests
+
+    if (strcmp(text, expected) != 0) {
+        fail("edited header does not match expected version");
+        fprintf(stderr,
+                "---------- Expected:\n%s\n"
+                "++++++++++ Got:\n%s\n"
+                "====================\n",
+                expected, text);
+        goto err;
+    }
+
+ err:
+    bam_hdr_destroy(header);
+    header = NULL;
+    if (in) sam_close(in);
+    return;
 }
 
 static void samrecord_layout(void)
@@ -598,6 +908,8 @@ int main(int argc, char **argv)
     aux_fields1();
     iterators1();
     samrecord_layout();
+    use_header_api();
+    test_header_pg_lines();
     check_enum1();
     for (i = 1; i < argc; i++) faidx1(argv[i]);
 

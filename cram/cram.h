@@ -43,7 +43,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define _CRAM_H_
 
 #include "cram/cram_samtools.h"
-#include "cram/sam_header.h"
+#include "header.h"
 #include "cram_structs.h"
 #include "cram_io.h"
 #include "cram_encode.h"

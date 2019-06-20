@@ -197,9 +197,14 @@ hts_reglist_t *hts_reglist_create(char **argv, int argc, int *r_count, void *hdr
                                  HTS_PARSE_THOUSANDS_SEP);
         }
         if (!q) {
-            // not parsable as a region
-            hts_log_warning("Region '%s' specifies an unknown reference name. Continue anyway", argv[i]);
-            continue;
+            if (tid < -1) {
+                hts_log_error("Failed to parse header");
+                goto fail;
+            } else {
+                // not parsable as a region
+                hts_log_warning("Region '%s' specifies an unknown reference name. Continue anyway", argv[i]);
+                continue;
+            }
         }
 
         if (beg > INT_MAX) beg = INT_MAX; // Remove when fully 64-bit compliant

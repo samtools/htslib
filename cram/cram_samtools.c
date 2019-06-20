@@ -126,29 +126,3 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
 
     return bam_len;
 }
-
-bam_hdr_t *cram_header_to_bam(SAM_hdr *h) {
-    int i;
-    bam_hdr_t *header = bam_hdr_init();
-
-    header->l_text = ks_len(&h->text);
-    header->text = malloc(header->l_text+1);
-    memcpy(header->text, ks_str(&h->text), header->l_text);
-    header->text[header->l_text] = 0;
-
-    header->n_targets = h->nref;
-    header->target_name = (char **)calloc(header->n_targets,
-                                          sizeof(char *));
-    header->target_len = (uint32_t *)calloc(header->n_targets, 4);
-
-    for (i = 0; i < h->nref; i++) {
-        header->target_name[i] = strdup(h->ref[i].name);
-        header->target_len[i] = h->ref[i].len;
-    }
-
-    return header;
-}
-
-SAM_hdr *bam_header_to_cram(bam_hdr_t *h) {
-    return sam_hdr_parse_(h->text, h->l_text);
-}

@@ -71,7 +71,7 @@ int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
         return EXIT_FAILURE;
     }
     h->ignore_sam_err = opts->ignore_sam_err;
-    if (opts->extra_hdr_nuls) {
+    if (opts->extra_hdr_nuls > 0) {
         char *new_text = realloc(h->text, h->l_text + opts->extra_hdr_nuls);
         if (new_text == NULL) {
             fprintf(stderr, "Error reallocing header text\n");
@@ -90,17 +90,8 @@ int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
 
     /* CRAM output */
     if (opts->flag & WRITE_CRAM) {
-        int ret;
-
-        // Parse input header and use for CRAM output
-        out->fp.cram->header = sam_hdr_parse_(h->text, h->l_text);
-
         // Create CRAM references arrays
-        if (opts->fn_ref)
-            ret = cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, opts->fn_ref);
-        else
-            // Attempt to fill out a cram->refs[] array from @SQ headers
-            ret = cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, NULL);
+        int ret = hts_set_fai_filename(out, opts->fn_ref);
 
         if (ret != 0)
             goto fail;

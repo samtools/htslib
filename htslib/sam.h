@@ -38,27 +38,44 @@ extern "C" {
 #define SAM_FORMAT_VERSION "1.6"
 
 /**********************
- *** SAM/BAM header ***
+ *** SAM/BAM/CRAM header ***
  **********************/
+
+/*! @typedef
+ * @abstract Header extension structure, grouping a collection
+ *  of hash tables that contain the parsed header data.
+ */
+
+typedef struct sam_hdr bam_hrecs_t;
 
 /*! @typedef
  @abstract Structure for the alignment header.
  @field n_targets   number of reference sequences
- @field l_text      length of the plain text in the header
+ @field l_text      length of the plain text in the header (may be zero if
+                    the header has been edited)
  @field target_len  lengths of the reference sequences
  @field target_name names of the reference sequences
- @field text        plain text
+ @field text        plain text (may be NULL if the header has been edited)
  @field sdict       header dictionary
+ @field hrecs       pointer to the extended header struct (internal use only)
+ @field ref_count   reference count
+
+ @note The text and l_text fields are included for backwards compatibility.
+ These fields may be set to NULL and zero respectively as a side-effect
+ of calling some header API functions.  New code that needs to access the
+ header text should use the bam_hdr_str() and bam_hdr_length() functions
+ instead of these fields.
  */
 
 typedef struct bam_hdr_t {
     int32_t n_targets, ignore_sam_err;
-    uint32_t l_text;
+    size_t l_text;
     uint32_t *target_len;
     int8_t *cigar_tab;
     char **target_name;
     char *text;
-    void *sdict;
+    void *sdict HTS_DEPRECATED("Unused since 1.10");
+    bam_hrecs_t *hrecs;
     uint32_t ref_count;
 } bam_hdr_t;
 
@@ -272,29 +289,382 @@ typedef struct {
  *** Exported functions ***
  **************************/
 
-    /***************
-     *** BAM I/O ***
-     ***************/
+/***************
+ *** BAM I/O ***
+ ***************/
 
-    bam_hdr_t *bam_hdr_init(void);
-    bam_hdr_t *bam_hdr_read(BGZF *fp);
-    int bam_hdr_write(BGZF *fp, const bam_hdr_t *h) HTS_RESULT_USED;
-    void bam_hdr_destroy(bam_hdr_t *h);
-    int bam_name2id(bam_hdr_t *h, const char *ref);
-    const char *sam_parse_region(bam_hdr_t *h, const char *s, int *tid, int64_t *beg, int64_t *end, int flags);
-    bam_hdr_t* bam_hdr_dup(const bam_hdr_t *h0);
+/* Header */
 
-    bam1_t *bam_init1(void);
-    void bam_destroy1(bam1_t *b);
-    int bam_read1(BGZF *fp, bam1_t *b) HTS_RESULT_USED;
-    int bam_write1(BGZF *fp, const bam1_t *b) HTS_RESULT_USED;
-    bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc);
-    bam1_t *bam_dup1(const bam1_t *bsrc);
+/// Generates a new unpopulated header structure.
+/*!
+ *
+ * @return  A valid pointer to new header on success, NULL on failure
+ */
+bam_hdr_t *bam_hdr_init(void);
 
-    int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
-    int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
+/// Read the header from a BAM compressed file.
+/*!
+ * @param fp  File pointer
+ * @return    A valid pointer to new header on success, NULL on failure
+ *
+ * This function only works with BAM files.  It is usually better to use
+ * sam_hdr_read(), which works on SAM, BAM and CRAM files.
+ */
+bam_hdr_t *bam_hdr_read(BGZF *fp);
 
-    /*!
+/// Writes the header to a BAM file.
+/*!
+ * @param fp  File pointer
+ * @param h   Header pointer
+ * @return    0 on success, -1 on failure
+ *
+ * This function only works with BAM files.  Use sam_hdr_write() to
+ * write in any of the SAM, BAM or CRAM formats.
+ */
+int bam_hdr_write(BGZF *fp, const bam_hdr_t *h) HTS_RESULT_USED;
+
+/*!
+ * Frees the resources associated with a header.
+ */
+void bam_hdr_destroy(bam_hdr_t *h);
+
+/// Duplicate a header structure.
+/*!
+ * @return  A valid pointer to new header on success, NULL on failure
+ */
+bam_hdr_t* bam_hdr_dup(const bam_hdr_t *h0);
+
+typedef htsFile samFile;
+
+/// Create a header from existing text.
+/*!
+ * @param l_text    Length of text
+ * @param text      Header text
+ * @return A populated bam_hdr_t structure on success; NULL on failure.
+ * @note The text field of the returned header will be NULL, and the l_text
+ * field will be zero.
+ */
+bam_hdr_t *sam_hdr_parse(size_t l_text, const char *text);
+
+/// Read a header from a SAM, BAM or CRAM file.
+/*!
+ * @param fp    Pointer to a SAM, BAM or CRAM file handle
+ * @return  A populated bam_hdr_t struct on success; NULL on failure.
+ */
+bam_hdr_t *sam_hdr_read(samFile *fp);
+
+/// Write a header to a SAM, BAM or CRAM file.
+/*!
+ * @param fp    SAM, BAM or CRAM file header
+ * @param h     Header structure to write
+ * @return  0 on success; -1 on failure
+ */
+int sam_hdr_write(samFile *fp, const bam_hdr_t *h) HTS_RESULT_USED;
+
+/// Returns the current length of the header text.
+/*!
+ * @return  >= 0 on success, -1 on failure
+ */
+size_t bam_hdr_length(bam_hdr_t *bh);
+
+/// Returns the text representation of the header.
+/*!
+ * @return  valid char pointer on success, NULL on failure
+ *
+ * The returned string is part of the header structure.  It will remain
+ * valid until a call to a header API function causes the string to be
+ * invalidated, or the header is destroyed.
+ *
+ * The caller should not attempt to free or realloc this pointer.
+ */
+const char *bam_hdr_str(bam_hdr_t *bh);
+
+/// Returns the number of references in the header.
+/*!
+ * @return  >= 0 on success, -1 on failure
+ */
+int bam_hdr_nref(const bam_hdr_t *bh);
+
+/* ==== Line level methods ==== */
+
+/// Add formatted lines to an existing header.
+/*!
+ * @param lines  Full SAM header record, eg "@SQ\tSN:foo\tLN:100", with
+ *               optional new-line. If it contains more than 1 line then
+ *               multiple lines will be added in order
+ * @param len    The maximum length of lines (if an early NUL is not
+ *               encountered). len may be 0 if unknown, in which case
+ *               lines must be NUL-terminated
+ * @return       0 on success, -1 on failure
+ *
+ * The lines will be appended to the end of the existing header
+ * (apart from HD, which always comes first).
+ */
+int bam_hdr_add_lines(bam_hdr_t *bh, const char *lines, size_t len);
+
+/// Adds a single line to an existing header.
+/*!
+ * Specify type and one or more key,value pairs, ending with the NULL key.
+ * Eg. bam_hdr_add_line(h, "SQ", "ID", "foo", "LN", "100", NULL).
+ *
+ * @param type  Type of the added line. Eg. "SQ"
+ * @return      0 on success, -1 on failure
+ *
+ * The new line will be added immediately after any others of the same
+ * type, or at the end of the existing header if no lines of the
+ * given type currently exist.  The exception is HD lines, which always
+ * come first.  If an HD line already exists, it will be replaced.
+ */
+int bam_hdr_add_line(bam_hdr_t *bh, const char *type, ...);
+
+/// Returns a complete line of formatted text for a given type and ID.
+/*!
+ * @param type      Type of the searched line. Eg. "SQ"
+ * @param ID_key    Tag key defining the line. Eg. "SN"
+ * @param ID_value  Tag value associated with the key above. Eg. "ref1"
+ * @param ks        kstring to hold the result
+ * @return          0 on success;
+ *                 -1 if no matching line is found
+ *                 -2 on other failures
+ *
+ * Puts a complete line of formatted text for a specific header type/ID
+ * combination into @p ks. If ID_key is NULL then it returns the first line of
+ * the specified type.
+ *
+ * Any existing content in @p ks will be overwritten.
+ */
+int bam_hdr_find_line_id(bam_hdr_t *bh, const char *type,
+                      const char *ID_key, const char *ID_val, kstring_t *ks);
+
+/// Returns a complete line of formatted text for a given type and index.
+/*!
+ * @param type      Type of the searched line. Eg. "SQ"
+ * @param position  Index in lines of this type (zero-based)
+ * @param ks        kstring to hold the result
+ * @return          0 on success;
+ *                 -1 if no matching line is found
+ *                 -2 on other failures
+ *
+ * Puts a complete line of formatted text for a specific line into @p ks.
+ * The header line is selected using the @p type and @p position parameters.
+ *
+ * Any existing content in @p ks will be overwritten.
+ */
+int bam_hdr_find_line_pos(bam_hdr_t *bh, const char *type,
+                          int pos, kstring_t *ks);
+
+/// Remove a line with given type / id from a header
+/*!
+ * @param type      Type of the searched line. Eg. "SQ"
+ * @param ID_key    Tag key defining the line. Eg. "SN"
+ * @param ID_value  Tag value associated with the key above. Eg. "ref1"
+ * @return          0 on success, -1 on error
+ *
+ * Remove a line from the header by specifying a tag:value that uniquely
+ * identifies the line, i.e. the @SQ line containing "SN:ref1".
+ *
+ * \@SQ line is uniquely identified by the SN tag.
+ * \@RG line is uniquely identified by the ID tag.
+ * \@PG line is uniquely identified by the ID tag.
+ * Eg. bam_hdr_remove_line_key(bh, "SQ", "SN", "ref1")
+ *
+ * If no key:value pair is specified, the type MUST be followed by a NULL argument and
+ * the first line of the type will be removed, if any.
+ * Eg. bam_hdr_remove_line_key(bh, "SQ", NULL, NULL)
+ *
+ * @note Removing \@PG lines is currently unsupported.
+ */
+int bam_hdr_remove_line_id(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
+
+/// Remove nth line of a given type from a header
+/*!
+ * @param type     Type of the searched line. Eg. "SQ"
+ * @param position Index in lines of this type (zero-based). E.g. 3
+ * @return         0 on success, -1 on error
+ *
+ * Remove a line from the header by specifying the position in the type
+ * group, i.e. 3rd @SQ line.
+ */
+int bam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position);
+
+/// Add or update tag key,value pairs in a header line.
+/*!
+ * @param type      Type of the searched line. Eg. "SQ"
+ * @param ID_key    Tag key defining the line. Eg. "SN"
+ * @param ID_value  Tag value associated with the key above. Eg. "ref1"
+ * @return          0 on success, -1 on error
+ *
+ * Adds or updates tag key,value pairs in a header line.
+ * Eg. for adding M5 tags to @SQ lines or updating sort order for the
+ * @HD line.
+ *
+ * Specify multiple key,value pairs ending in NULL. Eg.
+ * bam_hdr_update_line(bh, "RG", "ID", "rg1", "DS", "description", "PG", "samtools", NULL)
+ */
+int bam_hdr_update_line(bam_hdr_t *bh, const char *type,
+        const char *ID_key, const char *ID_value, ...);
+
+/// Remove all lines of a given type from a header, except one matching an ID
+/*!
+ * @param type      Type of the searched line. Eg. "SQ"
+ * @param ID_key    Tag key defining the line. Eg. "SN"
+ * @param ID_value  Tag value associated with the key above. Eg. "ref1"
+ * @return          0 on success, -1 on failure
+ *
+ * Remove all lines of type <type> from the header, except the one
+ * specified by tag:value, i.e. the @SQ line containing "SN:ref1".
+ */
+int bam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value);
+
+/// Remove header lines of a given type, except those in a given ID set
+/*!
+ * @param type  Type of the searched line. Eg. "RG"
+ * @param id    Tag key defining the line. Eg. "ID"
+ * @param h     Hash set initialised by the caller with the values to be kept.
+ * @return      0 on success, -1 on failure
+ *
+ * Remove all lines of type <type> from the header, except the one
+ * specified in the hash set rh.
+ */
+int bam_hdr_remove_lines(bam_hdr_t *bh, const char *type, const char *id, void *h);
+
+/// Count the number of lines for a given header type
+/*!
+ * @param bh    BAM header
+ * @param type  Header type to count. Eg. "RG"
+ * @return  Number of lines of this type on success; -1 on failure
+ */
+int bam_hdr_count_lines(bam_hdr_t *bh, const char *type);
+
+/* ==== Key:val level methods ==== */
+
+/// Return the value associated with a key for a header line identified by ID_key:ID_val
+/*!
+ * @param type      Type of the line to which the tag belongs. Eg. "SQ"
+ * @param ID_key    Tag key defining the line. Eg. "SN". Can be NULL, if looking for the first line.
+ * @param ID_value  Tag value associated with the key above. Eg. "ref1". Can be NULL, if ID_key is NULL.
+ * @param key       Key of the searched tag. Eg. "LN"
+ * @param ks        kstring where the value will be written
+ * @return          0 on success
+ *                 -1 if the requested tag does not exist
+ *                 -2 on other errors
+ *
+ * Looks for a specific key in a single SAM header line and writes the
+ * associated value into @p ks.  The header line is selected using the ID_key
+ * and ID_value parameters.  Any pre-existing content in @p ks will be
+ * overwritten.
+ */
+int bam_hdr_find_tag_id(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value, const char *key, kstring_t *ks);
+
+/// Return the value associated with a key for a header line identified by position
+/*!
+ * @param type      Type of the line to which the tag belongs. Eg. "SQ"
+ * @param position  Index in lines of this type (zero-based). E.g. 3
+ * @param key       Key of the searched tag. Eg. "LN"
+ * @param ks        kstring where the value will be written
+ * @return          0 on success
+ *                 -1 if the requested tag does not exist
+ *                 -2 on other errors
+ *
+ * Looks for a specific key in a single SAM header line and writes the
+ * associated value into @p ks.  The header line is selected using the @p type
+ * and @p position parameters.  Any pre-existing content in @p ks will be
+ * overwritten.
+ */
+int bam_hdr_find_tag_pos(bam_hdr_t *bh, const char *type, int pos, const char *key, kstring_t *ks);
+
+/// Remove the key from the line identified by type, ID_key and ID_value.
+/*!
+ * @param type      Type of the line to which the tag belongs. Eg. "SQ"
+ * @param ID_key    Tag key defining the line. Eg. "SN"
+ * @param ID_value  Tag value associated with the key above. Eg. "ref1"
+ * @param key       Key of the targeted tag. Eg. "M5"
+ * @return          1 if the key was removed; 0 if it was not present; -1 on error
+ */
+int bam_hdr_remove_tag_id(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value, const char *key);
+
+/// Get the target id for a given reference sequence name
+/*!
+ * @param ref  Reference name
+ * @return     Positive value on success,
+ *             -1 if unknown reference,
+ *             -2 if the header could not be parsed
+ *
+ * Looks up a reference sequence by name in the reference hash table
+ * and returns the numerical target id.
+ */
+int bam_hdr_name2ref(bam_hdr_t *bh, const char *ref);
+
+/// Alias of bam_hdr_name2ref(), for backwards compatibility.
+/*!
+ * @param ref  Reference name
+ * @return     Positive value on success,
+ *             -1 if unknown reference,
+ *             -2 if the header could not be parsed
+ */
+static inline int bam_name2id(bam_hdr_t *h, const char *ref) { return bam_hdr_name2ref(h, ref); }
+
+/// Generate a unique \@PG ID: value
+/*!
+ * @param name  Name of the program. Eg. samtools
+ * @return      Valid ID on success, NULL on failure
+ *
+ * Returns a unique ID from a base name.  The string returned will remain
+ * valid until the next call to this function, or the header is destroyed.
+ * The caller should not attempt to free() or realloc() it.
+ */
+const char *bam_hdr_pg_id(bam_hdr_t *bh, const char *name);
+
+/// Add an \@PG line.
+/*!
+ * @param name  Name of the program. Eg. samtools
+ * @return      0 on success, -1 on failure
+ *
+ * If we wish complete control over this use bam_hdr_add_line() directly. This
+ * function uses that, but attempts to do a lot of tedious house work for
+ * you too.
+ *
+ * - It will generate a suitable ID if the supplied one clashes.
+ * - It will generate multiple \@PG records if we have multiple PG chains.
+ *
+ * Call it as per bam_hdr_add_line() with a series of key,value pairs ending
+ * in NULL.
+ */
+int bam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...);
+
+/// Increments the reference count on a header
+/*!
+ * This permits multiple files to share the same header, all calling
+ * bam_hdr_destroy when done, without causing errors for other open files.
+ */
+void bam_hdr_incr_ref(bam_hdr_t *bh);
+
+/*
+ * Macros for changing the \@HD line. They eliminate the need to use NULL method arguments.
+ */
+
+/// Returns the SAM formatted text of the \@HD header line
+#define bam_hdr_find_hd(h, ks) bam_hdr_find_line_id((h), "HD", NULL, NULL, (ks))
+/// Returns the value associated with a given \@HD line tag
+#define bam_hdr_find_tag_hd(h, key, ks) bam_hdr_find_tag_id((h), "HD", NULL, NULL, (key), (ks))
+/// Adds or updates tags on the header \@HD line
+#define bam_hdr_update_hd(h, ...) bam_hdr_update_line((h), "HD", NULL, NULL, __VA_ARGS__, NULL)
+/// Removes the \@HD line tag with the given key
+#define bam_hdr_remove_tag_hd(h, key) bam_hdr_remove_tag_id((h), "HD", NULL, NULL, (key))
+
+/* Alignment */
+
+bam1_t *bam_init1(void);
+void bam_destroy1(bam1_t *b);
+int bam_read1(BGZF *fp, bam1_t *b) HTS_RESULT_USED;
+int bam_write1(BGZF *fp, const bam1_t *b) HTS_RESULT_USED;
+bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc);
+bam1_t *bam_dup1(const bam1_t *bsrc);
+
+int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
+int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
+
+/*!
       @abstract Calculate the rightmost base position of an alignment on the
       reference genome.
 
@@ -304,22 +674,22 @@ typedef struct {
       @discussion For a mapped read, this is just b->core.pos + bam_cigar2rlen.
       For an unmapped read (either according to its flags or if it has no cigar
       string), we return b->core.pos + 1 by convention.
-    */
-    int32_t bam_endpos(const bam1_t *b);
+ */
+int32_t bam_endpos(const bam1_t *b);
 
-    int   bam_str2flag(const char *str);    /** returns negative value on error */
-    char *bam_flag2str(int flag);   /** The string must be freed by the user */
+int   bam_str2flag(const char *str);    /** returns negative value on error */
+char *bam_flag2str(int flag);   /** The string must be freed by the user */
 
-    /*************************
-     *** BAM/CRAM indexing ***
-     *************************/
+/*************************
+ *** BAM/CRAM indexing ***
+ *************************/
 
-    // These BAM iterator functions work only on BAM files.  To work with either
-    // BAM or CRAM files use the sam_index_load() & sam_itr_*() functions.
-    #define bam_itr_destroy(iter) hts_itr_destroy(iter)
-    #define bam_itr_queryi(idx, tid, beg, end) sam_itr_queryi(idx, tid, beg, end)
-    #define bam_itr_querys(idx, hdr, region) sam_itr_querys(idx, hdr, region)
-    #define bam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
+// These BAM iterator functions work only on BAM files.  To work with either
+// BAM or CRAM files use the sam_index_load() & sam_itr_*() functions.
+#define bam_itr_destroy(iter) hts_itr_destroy(iter)
+#define bam_itr_queryi(idx, tid, beg, end) sam_itr_queryi(idx, tid, beg, end)
+#define bam_itr_querys(idx, hdr, region) sam_itr_querys(idx, hdr, region)
+#define bam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
 
 // Load/build .csi or .bai BAM index file.  Does not work with CRAM.
 // It is recommended to use the sam_index_* functions below instead.
@@ -507,6 +877,8 @@ static inline int sam_itr_next(htsFile *htsfp, hts_itr_t *itr, bam1_t *r) {
  */
 #define sam_itr_multi_next(htsfp, itr, r) sam_itr_next(htsfp, itr, r)
 
+const char *sam_parse_region(bam_hdr_t *h, const char *s, int *tid, int64_t *beg, int64_t *end, int flags);
+
     /***************
      *** SAM I/O ***
      ***************/
@@ -524,10 +896,6 @@ static inline int sam_itr_next(htsFile *htsfp, hts_itr_t *itr, bam1_t *r) {
                              const char *mode,
                              const char *format);
 
-    typedef htsFile samFile;
-    bam_hdr_t *sam_hdr_parse(int l_text, const char *text);
-    bam_hdr_t *sam_hdr_read(samFile *fp);
-    int sam_hdr_write(samFile *fp, const bam_hdr_t *h) HTS_RESULT_USED;
     int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val);
 
     int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b) HTS_RESULT_USED;

@@ -125,6 +125,8 @@ or array.
 */
 char hts_json_sskip_value(char *str, size_t *state, char type);
 
+struct hFILE;
+
 /// Read one JSON token from a file
 /** @param fp     The file stream
     @param token  On return, filled in with the token read
@@ -148,6 +150,7 @@ or array.
 */
 char hts_json_fskip_value(struct hFILE *fp, char type);
 
+char *stringify_argv(int argc, char *argv[]);
 
 // The <ctype.h> functions operate on ints such as are returned by fgetc(),
 // i.e., characters represented as unsigned-char-valued ints, or EOF.

@@ -82,6 +82,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/config.h \
 	$(HTSDIR)/errmod.c \
 	$(HTSDIR)/faidx.c \
+	$(HTSDIR)/header.h \
 	$(HTSDIR)/hfile_internal.h \
 	$(HTSDIR)/hfile.c \
 	$(HTSDIR)/hfile_gcs.c \
@@ -139,8 +140,6 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/rANS_byte.h \
 	$(HTSDIR)/cram/rANS_static.c \
 	$(HTSDIR)/cram/rANS_static.h \
-	$(HTSDIR)/cram/sam_header.c \
-	$(HTSDIR)/cram/sam_header.h \
 	$(HTSDIR)/cram/string_alloc.c \
 	$(HTSDIR)/cram/string_alloc.h \
 	$(HTSDIR)/os/lzma_stub.h \

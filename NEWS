@@ -42,6 +42,19 @@ Noteworthy changes in release a.b
   - bcf_set_variant_type() now outputs VCF_OVERLAP for spanning
     deletions (ALT=*).
 
+  - A new field (hrecs) has been added to the bam_hdr_t structure for
+    use by the new header API.  The old sdict field is now not used and
+    marked as deprecated.  The l_text field has been changed from uint32_t
+    to size_t, to allow for very large headers in SAM files.  The text
+    and l_text fields have been left for backwards compatibility, but
+    should not be accessed directly in code that uses the new header API.
+    To access the header text, the new functions bam_hdr_length() and
+    bam_hdr_str() should be used instead.
+
+* A new header API has been added to HTSlib, allowing header data to
+  be updated without having to parse or rewrite large parts of the header
+  text.  See htslib/sam.h for function definitions and documentation.
+
 * SAM format reading and writing is now much faster.  Compared to revision 1.9,
   reading uncompressed SAM may be up to 100% faster; writing up to 80%.  The
   exact improvement depends on which compiler options are used and the

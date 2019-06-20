@@ -643,7 +643,7 @@ int cram_load_reference(cram_fd *fd, char *fn);
  * Returns 0 on success;
  *        -1 on failure
  */
-int refs2id(refs_t *r, SAM_hdr *bfd);
+int refs2id(refs_t *r, bam_hdr_t *bfd);
 
 void refs_free(refs_t *r);
 
@@ -800,7 +800,7 @@ void cram_free_file_def(cram_file_def *def);
  * Returns SAM hdr ptr on success;
  *         NULL on failure
  */
-SAM_hdr *cram_read_SAM_hdr(cram_fd *fd);
+bam_hdr_t *cram_read_SAM_hdr(cram_fd *fd);
 
 /*! Writes a CRAM SAM header.
  *
@@ -808,7 +808,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr);
+int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr);
 
 
 /**@}*/
@@ -903,7 +903,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_set_header(cram_fd *fd, SAM_hdr *hdr);
+int cram_set_header2(cram_fd *fd, const bam_hdr_t *hdr);
 
 /*!
  * Returns the hFILE connected to a cram_fd.

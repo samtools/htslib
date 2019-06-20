@@ -851,6 +851,14 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
     Note the supplied string expects 1 based inclusive coordinates, but the
     returned coordinates start from 0 and are half open, so pos0 is valid
     for use in e.g. "for (pos0 = beg; pos0 < end; pos0++) {...}"
+
+    If NULL is returned, the value in tid mat give additional information
+    about the error:
+
+        -2   Failed to parse @p hdr; or out of memory
+        -1   The reference in @p str has mismatched braces, or does not
+             exist in @p hdr
+        >= 0 The specified range in @p str could not be parsed
 */
 const char *hts_parse_region(const char *str, int *tid, int64_t *beg, int64_t *end,
                              hts_name2id_f getid, void *hdr, int flags);

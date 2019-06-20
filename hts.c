@@ -2726,6 +2726,7 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
         const char *close = memchr(s, '}', s_len);
         if (!close) {
             hts_log_error("Mismatching braces in \"%s\"", s);
+            *tid = -1;
             return NULL;
         }
         s++;
@@ -2760,7 +2761,7 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
         *beg = 0; *end = INT64_MAX;
         kputsn(s, s_len-quoted, &ks); // convert to nul terminated string
         if (!ks.s) {
-            *tid = -1;
+            *tid = -2;
             return NULL;
         }
 
@@ -2775,7 +2776,7 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
         *beg = 0; *end = INT64_MAX;
         kputsn(s, s_len, &ks); // convert to nul terminated string
         if (!ks.s) {
-            *tid = -1;
+            *tid = -2;
             return NULL;
         }
         if ((*tid = getid(hdr, ks.s)) >= 0) {
@@ -2785,7 +2786,7 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
             ks.l = 0;
             kputsn(s, colon-s, &ks); // convert to nul terminated string
             if (!ks.s) {
-                *tid = -1;
+                *tid = -2;
                 return NULL;
             }
             if (getid(hdr, ks.s) >= 0) {
@@ -2800,6 +2801,8 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
 
             return s_end;
         }
+        if (*tid < -1) // Failed to parse header
+            return NULL;
     }
 
     // Quoted, or unquoted and whole string isn't a name.
@@ -2807,7 +2810,7 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
     ks.l = 0;
     kputsn(s, colon-s-quoted, &ks); // convert to nul terminated string
     if (!ks.s) {
-        *tid = -1;
+        *tid = -2;
         return NULL;
     }
     *tid = getid(hdr, ks.s);
@@ -2925,8 +2928,15 @@ hts_itr_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int cou
                 }
 
                 itr->reg_list[i].tid = getid(hdr, reglist[i].reg);
-                if (itr->reg_list[i].tid < 0)
-                    hts_log_warning("Region '%s' specifies an unknown reference name. Continue anyway", reglist[i].reg);
+                if (itr->reg_list[i].tid < 0) {
+                    if (itr->reg_list[i].tid < -1) {
+                        hts_log_error("Failed to parse header");
+                        hts_itr_destroy(itr);
+                        return NULL;
+                    } else {
+                        hts_log_warning("Region '%s' specifies an unknown reference name. Continue anyway", reglist[i].reg);
+                    }
+                }
             }
         }
 

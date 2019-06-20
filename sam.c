@@ -38,11 +38,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include "hts_internal.h"
 #include "htslib/hfile.h"
 #include "htslib/hts_endian.h"
+#include "header.h"
 
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
-
-typedef khash_t(s2i) sdict_t;
 
 #ifndef EOVERFLOW
 #define EOVERFLOW ERANGE
@@ -52,28 +51,45 @@ typedef khash_t(s2i) sdict_t;
  *** BAM header I/O ***
  **********************/
 
-bam_hdr_t *bam_hdr_init()
-{
-    return (bam_hdr_t*)calloc(1, sizeof(bam_hdr_t));
+static int8_t cigar_tab[128];
+
+static int8_t *cigar_tab_init() {
+    int i;
+    for (i = 0; i < 128; ++i)
+        cigar_tab[i] = -1;
+    for (i = 0; BAM_CIGAR_STR[i]; ++i)
+        cigar_tab[(int) BAM_CIGAR_STR[i]] = i;
+
+    return cigar_tab;
 }
 
-void bam_hdr_destroy(bam_hdr_t *h)
+bam_hdr_t *bam_hdr_init()
+{
+    bam_hdr_t *bh = (bam_hdr_t*)calloc(1, sizeof(bam_hdr_t));
+
+    return bh;
+}
+
+void bam_hdr_destroy(bam_hdr_t *bh)
 {
     int32_t i;
-    if (h == NULL) return;
-    if (h->ref_count > 0) {
-        --h->ref_count;
+
+    if (bh == NULL) return;
+
+    if (bh->ref_count > 0) {
+        --bh->ref_count;
         return;
     }
-    if (h->target_name) {
-        for (i = 0; i < h->n_targets; ++i)
-            free(h->target_name[i]);
-        free(h->target_name);
-        free(h->target_len);
+    if (bh->target_name) {
+        for (i = 0; i < bh->n_targets; ++i)
+            free(bh->target_name[i]);
+        free(bh->target_name);
+        free(bh->target_len);
     }
-    free(h->text); free(h->cigar_tab);
-    if (h->sdict) kh_destroy(s2i, (sdict_t*)h->sdict);
-    free(h);
+    free(bh->text);
+    if (bh->hrecs)
+        bam_hrecs_free(bh->hrecs);
+    free(bh);
 }
 
 bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
@@ -82,58 +98,59 @@ bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
     bam_hdr_t *h;
     if ((h = bam_hdr_init()) == NULL) return NULL;
     // copy the simple data
-    h->n_targets = h0->n_targets;
+    h->n_targets = 0;
     h->ignore_sam_err = h0->ignore_sam_err;
-    h->l_text = h0->l_text;
+    h->l_text = 0;
     // Then the pointery stuff
     h->cigar_tab = NULL;
-    h->sdict = NULL;
-    // TODO Check for memory allocation failures
-    h->text = (char*)calloc(h->l_text + 1, 1);
-    memcpy(h->text, h0->text, h->l_text);
-    h->target_len = (uint32_t*)calloc(h->n_targets, sizeof(uint32_t));
-    h->target_name = (char**)calloc(h->n_targets, sizeof(char*));
-    int i;
-    for (i = 0; i < h->n_targets; ++i) {
-        h->target_len[i] = h0->target_len[i];
-        h->target_name[i] = strdup(h0->target_name[i]);
+
+    if (!h0->hrecs) {
+        h->target_len = (uint32_t*)calloc(h0->n_targets, sizeof(uint32_t));
+        if (!h->target_len) goto fail;
+        h->target_name = (char**)calloc(h0->n_targets, sizeof(char*));
+        if (!h->target_name) goto fail;
+
+        int i;
+        for (i = 0; i < h0->n_targets; ++i) {
+            h->target_len[i] = h0->target_len[i];
+            h->target_name[i] = strdup(h0->target_name[i]);
+            if (!h->target_name[i]) break;
+        }
+        h->n_targets = i;
+        if (i < h0->n_targets) goto fail;
     }
-    return h;
-}
 
+    if (h0->hrecs) {
+        kstring_t tmp = { 0, 0, NULL };
+        if (bam_hrecs_rebuild_text(h0->hrecs, &tmp) != 0) {
+            free(ks_release(&tmp));
+            goto fail;
+        }
 
-static bam_hdr_t *hdr_from_dict(sdict_t *d)
-{
-    bam_hdr_t *h;
-    khint_t k;
-    h = bam_hdr_init();
-    if (!h) return NULL;
+        h->l_text = tmp.l;
+        h->text   = ks_release(&tmp);
 
-    h->sdict = d;
-    h->n_targets = kh_size(d);
-    // TODO Check for memory allocation failures
-    h->target_len = (uint32_t*)malloc(sizeof(uint32_t) * h->n_targets);
-    if (!h->target_len) goto fail;
-    h->target_name = (char**)malloc(sizeof(char*) * h->n_targets);
-    if (!h->target_name) goto fail;
-    for (k = kh_begin(d); k != kh_end(d); ++k) {
-        if (!kh_exist(d, k)) continue;
-        h->target_name[kh_val(d, k)>>32] = (char*)kh_key(d, k);
-        h->target_len[kh_val(d, k)>>32]  = kh_val(d, k) & 0xffffffffUL;
-        kh_val(d, k) >>= 32;
+        if (update_target_arrays(h, h0->hrecs, 0) != 0)
+            goto fail;
+    } else {
+        h->l_text = h0->l_text;
+        h->text = malloc(h->l_text + 1);
+        if (!h->text) goto fail;
+        memcpy(h->text, h0->text, h->l_text);
+        h->text[h->l_text] = '\0';
     }
+
     return h;
 
  fail:
-    free(h->target_len);
-    free(h);
+    bam_hdr_destroy(h);
     return NULL;
 }
 
 bam_hdr_t *bam_hdr_read(BGZF *fp)
 {
     bam_hdr_t *h;
-    char buf[4];
+    uint8_t buf[4];
     int magic_len, has_EOF;
     int32_t i, name_len, num_names = 0;
     size_t bufsize;
@@ -147,7 +164,7 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     }
     // read "BAM1"
     magic_len = bgzf_read(fp, buf, 4);
-    if (magic_len != 4 || strncmp(buf, "BAM\1", 4)) {
+    if (magic_len != 4 || memcmp(buf, "BAM\1", 4)) {
         hts_log_error("Invalid BAM binary header");
         return 0;
     }
@@ -155,11 +172,11 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
     if (!h) goto nomem;
 
     // read plain text and the number of reference sequences
-    bytes = bgzf_read(fp, &h->l_text, 4);
+    bytes = bgzf_read(fp, buf, 4);
     if (bytes != 4) goto read_err;
-    if (fp->is_be) ed_swap_4p(&h->l_text);
+    h->l_text = le_to_u32(buf);
 
-    bufsize = ((size_t) h->l_text) + 1;
+    bufsize = h->l_text + 1;
     if (bufsize < h->l_text) goto nomem; // so large that adding 1 overflowed
     h->text = (char*)malloc(bufsize);
     if (!h->text) goto nomem;
@@ -241,24 +258,48 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
 int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
 {
     int32_t i, name_len, x;
+    kstring_t hdr_ks = { 0, 0, NULL };
+    char *text;
+    uint32_t l_text;
+
+    if (!h) return -1;
+
+    if (h->hrecs) {
+        if (bam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0) return -1;
+        if (hdr_ks.l > INT32_MAX) {
+            hts_log_error("Header too long for BAM format");
+            free(hdr_ks.s);
+            return -1;
+        }
+        text = hdr_ks.s;
+        l_text = hdr_ks.l;
+    } else {
+        if (h->l_text > INT32_MAX) {
+            hts_log_error("Header too long for BAM format");
+            return -1;
+        }
+        text = h->text;
+        l_text = h->l_text;
+    }
     // write "BAM1"
-    if (bgzf_write(fp, "BAM\1", 4) < 0) return -1;
+    if (bgzf_write(fp, "BAM\1", 4) < 0) { free(hdr_ks.s); return -1; }
     // write plain text and the number of reference sequences
     if (fp->is_be) {
-        x = ed_swap_4(h->l_text);
-        if (bgzf_write(fp, &x, 4) < 0) return -1;
-        if (h->l_text) {
-            if (bgzf_write(fp, h->text, h->l_text) < 0) return -1;
+        x = ed_swap_4(l_text);
+        if (bgzf_write(fp, &x, 4) < 0) { free(hdr_ks.s); return -1; }
+        if (l_text) {
+            if (bgzf_write(fp, text, l_text) < 0) { free(hdr_ks.s); return -1; }
         }
         x = ed_swap_4(h->n_targets);
-        if (bgzf_write(fp, &x, 4) < 0) return -1;
+        if (bgzf_write(fp, &x, 4) < 0) { free(hdr_ks.s); return -1; }
     } else {
-        if (bgzf_write(fp, &h->l_text, 4) < 0) return -1;
-        if (h->l_text) {
-            if (bgzf_write(fp, h->text, h->l_text) < 0) return -1;
+        if (bgzf_write(fp, &l_text, 4) < 0) { free(hdr_ks.s); return -1; }
+        if (l_text) {
+            if (bgzf_write(fp, text, l_text) < 0) { free(hdr_ks.s); return -1; }
         }
-        if (bgzf_write(fp, &h->n_targets, 4) < 0) return -1;
+        if (bgzf_write(fp, &h->n_targets, 4) < 0) { free(hdr_ks.s); return -1; }
     }
+    free(hdr_ks.s);
     // write sequence names and lengths
     for (i = 0; i != h->n_targets; ++i) {
         char *p = h->target_name[i];
@@ -279,23 +320,6 @@ int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
     }
     if (bgzf_flush(fp) < 0) return -1;
     return 0;
-}
-
-int bam_name2id(bam_hdr_t *h, const char *ref)
-{
-    sdict_t *d = (sdict_t*)h->sdict;
-    khint_t k;
-    if (h->sdict == 0) {
-        int i, absent;
-        d = kh_init(s2i);
-        for (i = 0; i < h->n_targets; ++i) {
-            k = kh_put(s2i, d, h->target_name[i], &absent);
-            kh_val(d, k) = i;
-        }
-        h->sdict = d;
-    }
-    k = kh_get(s2i, d, ref);
-    return k == kh_end(d)? -1 : kh_val(d, k);
 }
 
 const char *sam_parse_region(bam_hdr_t *h, const char *s, int *tid, int64_t *beg, int64_t *end, int flags) {
@@ -961,7 +985,7 @@ hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
 static int cram_name2id(void *fdv, const char *ref)
 {
     cram_fd *fd = (cram_fd *) fdv;
-    return sam_hdr_name2ref(fd->header, ref);
+    return bam_hdr_name2ref(fd->header, ref);
 }
 
 hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region)
@@ -1024,76 +1048,9 @@ hts_itr_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *
 #include "htslib/kseq.h"
 #include "htslib/kstring.h"
 
-bam_hdr_t *sam_hdr_parse(int l_text, const char *text)
+bam_hdr_t *sam_hdr_parse(size_t l_text, const char *text)
 {
-    const char *q, *r, *p;
-    char *sn = NULL;
-    bam_hdr_t *header;
-    khash_t(s2i) *d;
-    d = kh_init(s2i);
-    if (!d) return NULL;
-
-    for (p = text; *p; ++p) {
-        if (strncmp(p, "@SQ\t", 4) == 0) {
-            int ln = -1;
-            for (q = p + 4;; ++q) {
-                if (strncmp(q, "SN:", 3) == 0) {
-                    q += 3;
-                    for (r = q; *r != '\t' && *r != '\n' && *r != '\0'; ++r);
-                    if (sn) {
-                        hts_log_warning("SQ header line has more than one SN: tag");
-                        free(sn);
-                    }
-                    sn = (char*)calloc(r - q + 1, 1);
-                    if (!sn) goto fail;
-                    strncpy(sn, q, r - q);
-                    q = r;
-                } else if (strncmp(q, "LN:", 3) == 0)
-                    ln = strtol(q + 3, (char**)&q, 10);
-                while (*q != '\t' && *q != '\n' && *q != '\0') ++q;
-                if (*q == '\0' || *q == '\n') break;
-            }
-            p = q;
-            if (sn) {
-                if (ln >= 0) {
-                    khint_t k;
-                    int absent;
-                    k = kh_put(s2i, d, sn, &absent);
-                    if (absent < 0) goto fail;
-                    if (!absent) {
-                        hts_log_warning("Duplicated sequence '%s'", sn);
-                        free(sn);
-                    } else kh_val(d, k) = (int64_t)(kh_size(d) - 1)<<32 | ln;
-                } else {
-                    hts_log_warning("Ignored @SQ SN:%s : bad or missing LN tag",
-                                    sn);
-                    free(sn);
-                }
-            } else {
-                hts_log_warning("Ignored @SQ line with missing SN: tag");
-                free(sn);
-            }
-            sn = NULL;
-        }
-        while (*p != '\0' && *p != '\n') ++p;
-    }
-    header = hdr_from_dict(d);
-    if (!header) goto fail;
-    return header;
-
- fail: {
-        int save_errno = errno;
-        khint_t k;
-        hts_log_error("%s", strerror(errno));
-        free(sn);
-        for (k = kh_begin(d); k != kh_end(d); ++k) {
-            if (!kh_exist(d, k)) continue;
-            free((char *) kh_key(d, k));
-        }
-        kh_destroy(s2i, d);
-        errno = save_errno;
-        return NULL;
-    }
+    return sam_hdr_parse_(text, l_text);
 }
 
 // Minimal sanitisation of a header to ensure.
@@ -1113,7 +1070,8 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
     if (h->l_text == 0)
         return h;
 
-    uint32_t i, lnum = 0;
+    size_t i;
+    unsigned int lnum = 0;
     char *cp = h->text, last = '\n';
     for (i = 0; i < h->l_text; i++) {
         // NB: l_text excludes terminating nul.  This finds early ones.
@@ -1134,7 +1092,7 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
     }
 
     if (i < h->l_text) { // Early nul found.  Complain if not just padding.
-        uint32_t j = i;
+        size_t j = i;
         while (j < h->l_text && cp[j] == '\0') j++;
         if (j < h->l_text)
             hts_log_warning("Unexpected NUL character in header. Possibly truncated");
@@ -1144,13 +1102,13 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
     if (last != '\n') {
         hts_log_warning("Missing trailing newline on SAM header. Possibly truncated");
 
-        if (h->l_text == UINT32_MAX) {
-            hts_log_error("No room for extra newline");
-            bam_hdr_destroy(h);
-            return NULL;
-        }
+        if (h->l_text < 2 || i >= h->l_text - 2) {
+            if (h->l_text >= SIZE_MAX - 2) {
+                hts_log_error("No room for extra newline");
+                bam_hdr_destroy(h);
+                return NULL;
+            }
 
-        if (i >= h->l_text - 1) {
             cp = realloc(h->text, (size_t) h->l_text+2);
             if (!cp) {
                 bam_hdr_destroy(h);
@@ -1169,6 +1127,181 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
     return h;
 }
 
+static bam_hdr_t *sam_hdr_create(htsFile* fp) {
+    kstring_t str = { 0, 0, NULL };
+    khint_t k;
+    bam_hdr_t* h = bam_hdr_init();
+    const char *q, *r;
+    char* sn = NULL;
+    khash_t(s2i) *d = kh_init(s2i);
+    if (!h || !d)
+        goto error;
+
+    int ret, has_SQ = 0;
+    int next_c = '@';
+    while (next_c == '@' && (ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) >= 0) {
+        if (fp->line.s[0] != '@')
+            break;
+
+        if (fp->line.l > 3 && strncmp(fp->line.s, "@SQ", 3) == 0) {
+            has_SQ = 1;
+            int ln = -1;
+            for (q = fp->line.s + 4;; ++q) {
+                if (strncmp(q, "SN:", 3) == 0) {
+                    q += 3;
+                    for (r = q;*r != '\t' && *r != '\n' && *r != '\0';++r);
+
+                    if (sn) {
+                        hts_log_warning("SQ header line has more than one SN: tag");
+                        free(sn);
+                    }
+                    sn = (char*)calloc(r - q + 1, 1);
+                    if (!sn)
+                    goto error;
+
+                    strncpy(sn, q, r - q);
+                    q = r;
+                } else {
+                    if (strncmp(q, "LN:", 3) == 0)
+                        ln = strtol(q + 3, (char**)&q, 10);
+                }
+
+                while (*q != '\t' && *q != '\n' && *q != '\0')
+                    ++q;
+                if (*q == '\0' || *q == '\n')
+                    break;
+            }
+            if (sn) {
+                if (ln >= 0) {
+                    int absent;
+                    k = kh_put(s2i, d, sn, &absent);
+                    if (absent < 0)
+                        goto error;
+
+                    if (!absent) {
+                        hts_log_warning("Duplicated sequence '%s'", sn);
+                        free(sn);
+                    } else {
+                        kh_val(d, k) = (int64_t) (kh_size(d) - 1) << 32 | ln;
+                    }
+                } else {
+                    hts_log_warning("Ignored @SQ SN:%s : bad or missing LN tag", sn);
+                    free(sn);
+                }
+            } else {
+                hts_log_warning("Ignored @SQ line with missing SN: tag");
+            }
+            sn = NULL;
+        }
+        if (kputsn(fp->line.s, fp->line.l, &str) < 0)
+            goto error;
+
+        if (kputc('\n', &str) < 0)
+            goto error;
+
+        if (fp->format.compression == bgzf) {
+            next_c = bgzf_peek(fp->fp.bgzf);
+        } else {
+            unsigned char nc;
+            ssize_t pret = hpeek(fp->fp.hfile, &nc, 1);
+            next_c = pret > 0 ? nc : pret - 1;
+        }
+        if (next_c < -1)
+            goto error;
+    }
+    if (next_c != '@')
+        fp->line.l = 0;
+
+    if (ret < -1)
+        goto error;
+
+    if (!has_SQ && fp->fn_aux) {
+        kstring_t line = { 0, 0, NULL };
+        hFILE* f = hopen(fp->fn_aux, "r");
+        int e = 0, absent;
+        if (f == NULL)
+            goto error;
+
+        while (line.l = 0, kgetline(&line, (kgets_func*) hgets, f) >= 0) {
+            char* tab = strchr(line.s, '\t');
+            if (tab == NULL)
+                continue;
+
+            sn = (char*)calloc(tab-line.s+1, 1);
+            if (!sn)
+                break;
+            memcpy(sn, line.s, tab-line.s);
+            k = kh_put(s2i, d, sn, &absent);
+            if (absent < 0)
+                break;
+
+            if (!absent) {
+                hts_log_warning("Duplicated sequence '%s'", sn);
+                free(sn);
+            } else {
+                kh_val(d, k) = (int64_t) (kh_size(d) - 1) << 32 | atol(tab);
+                has_SQ = 1;
+            }
+
+            e |= kputs("@SQ\tSN:", &str) < 0;
+            e |= kputsn(line.s, tab - line.s, &str) < 0;
+            e |= kputs("\tLN:", &str) < 0;
+            e |= kputl(atol(tab), &str) < 0;
+            e |= kputc('\n', &str) < 0;
+            if (e)
+                break;
+        }
+
+        KS_FREE(&line);
+        if (hclose(f) != 0) {
+            hts_log_error("Error on closing %s", fp->fn_aux);
+            e = 1;
+        }
+        if (e)
+            goto error;
+    }
+
+    if (has_SQ) {
+        // Populate the targets array
+        h->n_targets = kh_size(d);
+
+        h->target_name = (char**) malloc(sizeof(char*) * h->n_targets);
+        if (!h->target_name)
+            goto error;
+
+        h->target_len = (uint32_t*) malloc(sizeof(uint32_t) * h->n_targets);
+        if (!h->target_len)
+            goto error;
+
+        for (k = kh_begin(d); k != kh_end(d); ++k) {
+            if (!kh_exist(d, k))
+                continue;
+
+            h->target_name[kh_val(d, k) >> 32] = (char*) kh_key(d, k);
+            h->target_len[kh_val(d, k) >> 32] = kh_val(d, k) & 0xffffffffUL;
+            kh_val(d, k) >>= 32;
+        }
+    }
+
+    kh_destroy(s2i, d);
+
+    if (str.l == 0)
+        kputsn("", 0, &str);
+    h->l_text = str.l;
+    h->text = ks_release(&str);
+    fp->bam_header = sam_hdr_sanitise(h);
+    fp->bam_header->ref_count = 1;
+
+    return fp->bam_header;
+
+ error:
+    bam_hdr_destroy(h);
+    KS_FREE(&str);
+    kh_destroy(s2i, d);
+    if (sn) free(sn);
+    return NULL;
+}
+
 bam_hdr_t *sam_hdr_read(htsFile *fp)
 {
     if (!fp) {
@@ -1181,64 +1314,10 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         return sam_hdr_sanitise(bam_hdr_read(fp->fp.bgzf));
 
     case cram:
-        return sam_hdr_sanitise(cram_header_to_bam(fp->fp.cram->header));
+        return sam_hdr_sanitise(bam_hdr_dup(fp->fp.cram->header));
 
-    case sam: {
-        kstring_t str = { 0, 0, NULL };
-        bam_hdr_t *h = NULL;
-        int ret, has_SQ = 0;
-        int next_c = '@';
-        while (next_c == '@' && (ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) >= 0) {
-            if (fp->line.s[0] != '@') break;
-            if (fp->line.l > 3 && strncmp(fp->line.s,"@SQ",3) == 0) has_SQ = 1;
-            if (kputsn(fp->line.s, fp->line.l, &str) < 0) goto error;
-            if (kputc('\n', &str) < 0) goto error;
-            if (fp->format.compression == bgzf) {
-                next_c = bgzf_peek(fp->fp.bgzf);
-            } else {
-                unsigned char nc;
-                ssize_t pret = hpeek(fp->fp.hfile, &nc, 1);
-                next_c = pret > 0 ? nc : pret - 1;
-            }
-            if (next_c < -1) goto error;
-        }
-        if (next_c != '@') fp->line.l = 0;
-        if (ret < -1) goto error;
-        if (! has_SQ && fp->fn_aux) {
-            kstring_t line = { 0, 0, NULL };
-            hFILE *f = hopen(fp->fn_aux, "r");
-            int e = 0;
-            if (f == NULL) goto error;
-            while (line.l = 0, kgetline(&line, (kgets_func *) hgets, f) >= 0) {
-                char *tab = strchr(line.s, '\t');
-                if (tab == NULL) continue;
-                e |= kputs("@SQ\tSN:", &str) < 0;
-                e |= kputsn(line.s, tab - line.s, &str) < 0;
-                e |= kputs("\tLN:", &str) < 0;
-                e |= kputl(atol(tab), &str) < 0;
-                e |= kputc('\n', &str) < 0;
-                if (e) break;
-            }
-            free(line.s);
-            if (hclose(f) != 0) {
-                hts_log_error("Error on closing %s", fp->fn_aux);
-                e = 1;
-            }
-            if (e) goto error;
-        }
-        if (str.l == 0) kputsn("", 0, &str);
-        h = sam_hdr_parse(str.l, str.s);
-        if (!h) goto error;
-        h->l_text = str.l; h->text = str.s;
-        fp->bam_header = sam_hdr_sanitise(h);
-        fp->bam_header->ref_count = 1;
-        return fp->bam_header;
-
-     error:
-        bam_hdr_destroy(h);
-        free(str.s);
-        return NULL;
-        }
+    case sam:
+        return sam_hdr_create(fp);
 
     default:
         abort();
@@ -1252,6 +1331,9 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
         return -1;
     }
 
+    if (!h->hrecs && !h->text)
+        return 0;
+
     switch (fp->format.format) {
     case binary_format:
         fp->format.category = sequence_data;
@@ -1263,9 +1345,7 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
 
     case cram: {
         cram_fd *fd = fp->fp.cram;
-        SAM_hdr *hdr = bam_header_to_cram((bam_hdr_t *)h);
-        if (! hdr) return -1;
-        if (cram_set_header(fd, hdr) < 0) return -1;
+        if (cram_set_header2(fd, h) < 0) return -1;
         if (fp->fn_aux)
             cram_load_reference(fd, fp->fn_aux);
         if (cram_write_SAM_hdr(fd, fd->header) < 0) return -1;
@@ -1277,34 +1357,62 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
         fp->format.format = sam;
         /* fall-through */
     case sam: {
-        char *p;
-        if (fp->format.compression == bgzf) {
-            if (bgzf_write(fp->fp.bgzf, h->text, h->l_text) != h->l_text)
+        char *text;
+        kstring_t hdr_ks = { 0, 0, NULL };
+        size_t l_text;
+        ssize_t bytes;
+        int r = 0, no_sq = 0;
+
+        if (h->hrecs) {
+            if (bam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0)
                 return -1;
-            p = strstr(h->text, "@SQ\t"); // FIXME: we need a loop to make sure "@SQ\t" does not match something unwanted!!!
-            if (p == NULL) {
-                int i;
-                for (i = 0; i < h->n_targets; ++i) {
-                    fp->line.l = 0;
-                    kputsn("@SQ\tSN:", 7, &fp->line); kputs(h->target_name[i], &fp->line);
-                    kputsn("\tLN:", 4, &fp->line); kputw(h->target_len[i], &fp->line); kputc('\n', &fp->line);
-                    if ( bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l ) return -1;
-                }
-            }
-            if ( bgzf_flush(fp->fp.bgzf) != 0 ) return -1;
+            text = hdr_ks.s;
+            l_text = hdr_ks.l;
         } else {
-            hputs(h->text, fp->fp.hfile);
-            p = strstr(h->text, "@SQ\t"); // FIXME: we need a loop to make sure "@SQ\t" does not match something unwanted!!!
-            if (p == NULL) {
-                int i;
-                for (i = 0; i < h->n_targets; ++i) {
-                    fp->line.l = 0;
-                    kputsn("@SQ\tSN:", 7, &fp->line); kputs(h->target_name[i], &fp->line);
-                    kputsn("\tLN:", 4, &fp->line); kputw(h->target_len[i], &fp->line); kputc('\n', &fp->line);
-                    if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
+            const char *p = NULL;
+            do {
+                const char *q = p == NULL ? h->text : p + 4;
+                p = strstr(q, "@SQ\t");
+            } while (!(p == NULL || p == h->text || *(p - 1) == '\n'));
+            no_sq = p == NULL;
+            text = h->text;
+            l_text = h->l_text;
+        }
+
+        if (fp->format.compression == bgzf) {
+            bytes = bgzf_write(fp->fp.bgzf, text, l_text);
+        } else {
+            bytes = hwrite(fp->fp.hfile, text, l_text);
+        }
+        free(hdr_ks.s);
+        if (bytes != l_text)
+            return -1;
+
+        if (no_sq) {
+            int i;
+            for (i = 0; i < h->n_targets; ++i) {
+                fp->line.l = 0;
+                r |= kputsn("@SQ\tSN:", 7, &fp->line) < 0;
+                r |= kputs(h->target_name[i], &fp->line) < 0;
+                r |= kputsn("\tLN:", 4, &fp->line) < 0;
+                r |= kputw(h->target_len[i], &fp->line) < 0;
+                r |= kputc('\n', &fp->line);
+                if (r != 0)
+                    return -1;
+
+                if (fp->format.compression == bgzf) {
+                    bytes = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
+                } else {
+                    bytes = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
                 }
+                if (bytes != fp->line.l)
+                    return -1;
             }
-            if ( hflush(fp->fp.hfile) != 0 ) return -1;
+        }
+        if (fp->format.compression == bgzf) {
+            if (bgzf_flush(fp->fp.bgzf) != 0) return -1;
+        } else {
+            if (hflush(fp->fp.hfile) != 0) return -1;
         }
         }
         break;
@@ -1315,9 +1423,10 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
     return 0;
 }
 
-int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
+static int old_sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
 {
     char *p, *q, *beg = NULL, *end = NULL, *newtext;
+    size_t new_l_text;
     if (!h || !key)
         return -1;
 
@@ -1347,46 +1456,66 @@ int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
         }
     }
     if (beg == NULL) { // no @HD
-        if (h->l_text > UINT32_MAX - strlen(SAM_FORMAT_VERSION) - 9)
+        new_l_text = h->l_text;
+        if (new_l_text > SIZE_MAX - strlen(SAM_FORMAT_VERSION) - 9)
             return -1;
-        h->l_text += strlen(SAM_FORMAT_VERSION) + 8;
+        new_l_text += strlen(SAM_FORMAT_VERSION) + 8;
         if (val) {
-            if (h->l_text > UINT32_MAX - strlen(val) - 5)
+            if (new_l_text > SIZE_MAX - strlen(val) - 5)
                 return -1;
-            h->l_text += strlen(val) + 4;
+            new_l_text += strlen(val) + 4;
         }
-        newtext = (char*)malloc(h->l_text + 1);
+        newtext = (char*)malloc(new_l_text + 1);
         if (!newtext) return -1;
 
         if (val)
-            snprintf(newtext, h->l_text + 1,
+            snprintf(newtext, new_l_text + 1,
                     "@HD\tVN:%s\t%s:%s\n%s", SAM_FORMAT_VERSION, key, val, h->text);
         else
-            snprintf(newtext, h->l_text + 1,
+            snprintf(newtext, new_l_text + 1,
                     "@HD\tVN:%s\n%s", SAM_FORMAT_VERSION, h->text);
     } else { // has @HD but different or no key
-        h->l_text = (beg - h->text) + (h->text + h->l_text - end);
+        new_l_text = (beg - h->text) + (h->text + h->l_text - end);
         if (val) {
-            if (h->l_text > UINT32_MAX - strlen(val) - 5)
+            if (new_l_text > SIZE_MAX - strlen(val) - 5)
                 return -1;
-            h->l_text += strlen(val) + 4;
+            new_l_text += strlen(val) + 4;
         }
-        newtext = (char*)malloc(h->l_text + 1);
+        newtext = (char*)malloc(new_l_text + 1);
         if (!newtext) return -1;
 
         if (val) {
-            snprintf(newtext, h->l_text + 1, "%.*s\t%s:%s%s",
+            snprintf(newtext, new_l_text + 1, "%.*s\t%s:%s%s",
                     (int) (beg - h->text), h->text, key, val, end);
         } else { //delete key
-            snprintf(newtext, h->l_text + 1, "%.*s%s",
+            snprintf(newtext, new_l_text + 1, "%.*s%s",
                     (int) (beg - h->text), h->text, end);
         }
     }
     free(h->text);
     h->text = newtext;
+    h->l_text = new_l_text;
     return 0;
 }
 
+
+int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
+{
+    if (!h || !key)
+        return -1;
+
+    if (!h->hrecs)
+        return old_sam_hdr_change_HD(h, key, val);
+
+    if (val) {
+        if (bam_hdr_update_line(h, "HD", NULL, NULL, key, val, NULL) != 0)
+            return -1;
+    } else {
+        if (bam_hdr_remove_tag_id(h, "HD", NULL, NULL, key) != 0)
+            return -1;
+    }
+    return bam_hdr_rebuild(h);
+}
 /**********************
  *** SAM record I/O ***
  **********************/
@@ -1482,11 +1611,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     str.s = (char*)b->data; str.m = b->m_data;
     memset(c, 0, 32);
     if (h->cigar_tab == 0) {
-        h->cigar_tab = (int8_t*) malloc(128);
-        for (i = 0; i < 128; ++i)
-            h->cigar_tab[i] = -1;
-        for (i = 0; BAM_CIGAR_STR[i]; ++i)
-            h->cigar_tab[(int)BAM_CIGAR_STR[i]] = i;
+        h->cigar_tab = cigar_tab_init();
     }
 
     // qname
@@ -1512,6 +1637,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
     if (strcmp(q, "*")) {
         _parse_err(h->n_targets == 0, "missing SAM header");
         c->tid = bam_name2id(h, q);
+        _parse_err(c->tid < -1, "failed to parse header");
         _parse_warn(c->tid < 0, "urecognized reference name; treated as unmapped");
     } else c->tid = -1;
 
@@ -1562,6 +1688,7 @@ int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
         c->mtid = -1;
     } else {
         c->mtid = bam_name2id(h, q);
+        _parse_err(c->tid < -1, "failed to parse header");
         _parse_warn(c->mtid < 0, "urecognized mate reference name; treated as unmapped");
     }
     // mpos
