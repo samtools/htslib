@@ -55,6 +55,9 @@ static void view_sam(htsFile *in) {
         return;
     }
 
+    // This will force the header to be parsed.
+    (void) sam_hdr_count_lines(hdr, "SQ");
+
     if (sam_hdr_write(out, hdr) != 0) {
         sam_hdr_destroy(hdr);
         hts_close_or_abort(out);
