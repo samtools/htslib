@@ -35,13 +35,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/sam.h"
 #include "htslib/vcf.h"
 
-// Duplicated from: htsfile.c
-static htsFile *dup_stdout(const char *mode) {
-    int fd = dup(STDOUT_FILENO);
-    hFILE *hfp = (fd >= 0) ? hdopen(fd, mode) : NULL;
-    return hfp ? hts_hopen(hfp, "-", mode) : NULL;
-}
-
 static void hts_close_or_abort(htsFile* file) {
     if (hts_close(file) != 0) {
         abort();
@@ -52,7 +45,10 @@ static void view_sam(htsFile *in) {
     if (!in) {
         return;
     }
-    samFile *out = dup_stdout("w");
+    samFile *out = sam_open("/dev/null", "w");
+    if (!out) {
+        abort();
+    }
     sam_hdr_t *hdr = sam_hdr_read(in);
     if (hdr == NULL) {
         hts_close_or_abort(out);
@@ -85,7 +81,10 @@ static void view_vcf(htsFile *in) {
     if (!in) {
         return;
     }
-    vcfFile *out = dup_stdout("w");
+    vcfFile *out = vcf_open("/dev/null", "w");
+    if (!out) {
+        abort();
+    }
     bcf_hdr_t *hdr = bcf_hdr_read(in);
     if (hdr == NULL) {
         hts_close_or_abort(out);
