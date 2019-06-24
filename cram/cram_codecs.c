@@ -542,6 +542,7 @@ cram_codec *cram_beta_decode_init(char *data, int size,
         c->decode = cram_beta_decode_char;
     else {
         hts_log_error("BYTE_ARRAYs not supported by this codec");
+        free(c);
         return NULL;
     }
     c->free   = cram_beta_decode_free;
