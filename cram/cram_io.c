@@ -3805,7 +3805,7 @@ bam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
         return NULL;
     }
 
-    if (-1 == bam_hdr_add_lines(hdr, header, header_len)) {
+    if (-1 == sam_hdr_add_lines(hdr, header, header_len)) {
         free(header);
         bam_hdr_destroy(hdr);
         return NULL;
@@ -3867,7 +3867,7 @@ int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
     /* 1.0 requires an UNKNOWN read-group */
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
         if (!bam_hrecs_find_rg(hdr->hrecs, "UNKNOWN"))
-            if (bam_hdr_add_line(hdr, "RG",
+            if (sam_hdr_add_line(hdr, "RG",
                             "ID", "UNKNOWN", "SM", "UNKNOWN", NULL))
                 return -1;
     }
@@ -3905,21 +3905,21 @@ int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
                 cram_ref_decr(fd->refs, i);
 
                 hts_md5_hex(buf2, buf);
-                if (bam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "M5", buf2, NULL))
+                if (sam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "M5", buf2, NULL))
                     return -1;
             }
 
             if (fd->ref_fn) {
                 char ref_fn[PATH_MAX];
                 full_path(ref_fn, fd->ref_fn);
-                if (bam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "UR", ref_fn, NULL))
+                if (sam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "UR", ref_fn, NULL))
                     return -1;
             }
         }
     }
 
     /* Length */
-    header_len = bam_hdr_length(hdr);
+    header_len = sam_hdr_length(hdr);
     if (header_len > INT32_MAX) {
         hts_log_error("Header is too long for CRAM format");
         return -1;
@@ -3929,7 +3929,7 @@ int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
             return -1;
 
         /* Text data */
-        if (header_len != hwrite(fd->fp, bam_hdr_str(hdr), header_len))
+        if (header_len != hwrite(fd->fp, sam_hdr_str(hdr), header_len))
             return -1;
     } else {
         /* Create block(s) inside a container */
@@ -3947,7 +3947,7 @@ int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
 
         int32_put_blk(b, header_len);
         if (header_len)
-            BLOCK_APPEND(b, bam_hdr_str(hdr), header_len);
+            BLOCK_APPEND(b, sam_hdr_str(hdr), header_len);
         BLOCK_UPLEN(b);
 
         // Compress header block if V3.0 and above

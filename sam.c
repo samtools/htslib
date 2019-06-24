@@ -996,7 +996,7 @@ hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
 static int cram_name2id(void *fdv, const char *ref)
 {
     cram_fd *fd = (cram_fd *) fdv;
-    return bam_hdr_name2ref(fd->header, ref);
+    return sam_hdr_name2ref(fd->header, ref);
 }
 
 hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region)
@@ -1519,10 +1519,10 @@ int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
         return old_sam_hdr_change_HD(h, key, val);
 
     if (val) {
-        if (bam_hdr_update_line(h, "HD", NULL, NULL, key, val, NULL) != 0)
+        if (sam_hdr_update_line(h, "HD", NULL, NULL, key, val, NULL) != 0)
             return -1;
     } else {
-        if (bam_hdr_remove_tag_id(h, "HD", NULL, NULL, key) != 0)
+        if (sam_hdr_remove_tag_id(h, "HD", NULL, NULL, key) != 0)
             return -1;
     }
     return bam_hdr_rebuild(h);
