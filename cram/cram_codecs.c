@@ -1240,7 +1240,8 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
                                      enum cram_external_type option,
                                      void *dat,
                                      int version) {
-    int *vals = NULL, *freqs = NULL, vals_alloc = 0, *lens, code, len;
+    int *vals = NULL, *freqs = NULL, vals_alloc = 0, *lens = NULL, code, len;
+    int *new_vals, *new_freqs;
     int nvals, i, ntot = 0, max_val = 0, min_val = INT_MAX, k;
     cram_codec *c;
     cram_huffman_code *codes;
@@ -1256,14 +1257,12 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
             continue;
         if (nvals >= vals_alloc) {
             vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-            vals  = realloc(vals,  vals_alloc * sizeof(int));
-            freqs = realloc(freqs, vals_alloc * sizeof(int));
-            if (!vals || !freqs) {
-                if (vals)  free(vals);
-                if (freqs) free(freqs);
-                free(c);
-                return NULL;
-            }
+            new_vals  = realloc(vals,  vals_alloc * sizeof(int));
+            if (!new_vals) goto nomem;
+            vals = new_vals;
+            new_freqs = realloc(freqs, vals_alloc * sizeof(int));
+            if (!new_freqs) goto nomem;
+            freqs = new_freqs;
         }
         vals[nvals] = i;
         freqs[nvals] = st->freqs[i];
@@ -1281,10 +1280,12 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
                 continue;
             if (nvals >= vals_alloc) {
                 vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-                vals  = realloc(vals,  vals_alloc * sizeof(int));
-                freqs = realloc(freqs, vals_alloc * sizeof(int));
-                if (!vals || !freqs)
-                    return NULL;
+                new_vals  = realloc(vals,  vals_alloc * sizeof(int));
+                if (!new_vals) goto nomem;
+                vals = new_vals;
+                new_freqs = realloc(freqs, vals_alloc * sizeof(int));
+                if (!new_freqs) goto nomem;
+                freqs = new_freqs;
             }
             vals[nvals]= kh_key(st->h, k);
             freqs[nvals] = kh_val(st->h, k);
@@ -1298,10 +1299,11 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 
     assert(nvals > 0);
 
-    freqs = realloc(freqs, 2*nvals*sizeof(*freqs));
+    new_freqs = realloc(freqs, 2*nvals*sizeof(*freqs));
+    if (!new_freqs) goto nomem;
+    freqs = new_freqs;
     lens = calloc(2*nvals, sizeof(*lens));
-    if (!lens || !freqs)
-        return NULL;
+    if (!lens) goto nomem;
 
     /* Inefficient, use pointers to form chain so we can insert and maintain
      * a sorted list? This is currently O(nvals^2) complexity.
@@ -1342,7 +1344,7 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
 
     /* Sort, need in a struct */
     if (!(codes = malloc(nvals * sizeof(*codes))))
-        return NULL;
+        goto nomem;
     for (i = 0; i < nvals; i++) {
         codes[i].symbol = vals[i];
         codes[i].len = lens[i];
@@ -1406,6 +1408,14 @@ cram_codec *cram_huffman_encode_init(cram_stats *st,
     c->store = cram_huffman_encode_store;
 
     return c;
+
+ nomem:
+    hts_log_error("Out of memory");
+    free(vals);
+    free(freqs);
+    free(lens);
+    free(c);
+    return NULL;
 }
 
 /*
@@ -1463,6 +1473,8 @@ cram_codec *cram_byte_array_len_decode_init(char *data, int size,
     c->codec  = E_BYTE_ARRAY_LEN;
     c->decode = cram_byte_array_len_decode;
     c->free   = cram_byte_array_len_decode_free;
+    c->u.byte_array_len.len_codec = NULL;
+    c->u.byte_array_len.val_codec = NULL;
 
     cp += safe_itf8_get(cp, endp, &encoding);
     cp += safe_itf8_get(cp, endp, &sub_size);
@@ -1493,7 +1505,7 @@ cram_codec *cram_byte_array_len_decode_init(char *data, int size,
  malformed:
     hts_log_error("Malformed byte_array_len header stream");
  no_codec:
-    free(c);
+    cram_byte_array_len_decode_free(c);
     return NULL;
 }
 
