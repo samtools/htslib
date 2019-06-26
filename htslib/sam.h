@@ -46,7 +46,7 @@ extern "C" {
  *  of hash tables that contain the parsed header data.
  */
 
-typedef struct sam_hdr bam_hrecs_t;
+typedef struct bam_hrecs_t bam_hrecs_t;
 
 /*! @typedef
  @abstract Structure for the alignment header.

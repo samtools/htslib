@@ -185,7 +185,7 @@ KHASH_MAP_INIT_STR(m_s2i, int)
  * call sam_hdr_rebuild() any time the textual form needs to be
  * updated again.
  */
-struct sam_hdr {
+struct bam_hrecs_t {
     khash_t(bam_hrecs_t) *h;
     bam_hrec_type_t *first_line; //!< First line (usually @HD)
     string_alloc_t *str_pool; //!< Pool of sam_hdr_tag->str strings
