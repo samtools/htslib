@@ -166,7 +166,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
     {
         htsFile *out = hts_open("-","w");
         if ( !out ) error("Could not open stdout\n", fname);
-        hts_idx_t *idx = download ? bcf_index_load(fname) : hts_idx_stream(fname, HTS_FMT_CSI);
+        hts_idx_t *idx = bcf_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !idx ) error("Could not load .csi index of %s\n", fname);
         bcf_hdr_t *hdr = bcf_hdr_read(fp);
         if ( !hdr ) error("Could not read the header: %s\n", fname);
@@ -193,7 +193,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
     }
     else if ( format==vcf || format==sam || format==unknown_format )
     {
-        tbx_t *tbx = download ? tbx_index_load(fname) : tbx_index_load3(fname);
+        tbx_t *tbx = tbx_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !tbx ) error("Could not load .tbi/.csi index of %s\n", fname);
         kstring_t str = {0,0,0};
         if ( args->print_header )
@@ -241,7 +241,7 @@ static int query_chroms(char *fname, int download)
     int i, nseq, ftype = file_type(fname);
     if ( ftype & IS_TXT || !ftype )
     {
-        tbx_t *tbx = download ? tbx_index_load(fname) : tbx_index_load3(fname);
+        tbx_t *tbx = tbx_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !tbx ) error("Could not load .tbi index of %s\n", fname);
         seq = tbx_seqnames(tbx, &nseq);
         for (i=0; i<nseq; i++)
@@ -256,7 +256,7 @@ static int query_chroms(char *fname, int download)
         bcf_hdr_t *hdr = bcf_hdr_read(fp);
         if ( !hdr ) error("Could not read the header: %s\n", fname);
         hts_close(fp);
-        hts_idx_t *idx = download ? bcf_index_load(fname) : hts_idx_stream(fname, HTS_FMT_CSI);
+        hts_idx_t *idx = bcf_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !idx ) error("Could not load .csi index of %s\n", fname);
         seq = bcf_index_seqnames(idx, hdr, &nseq);
         for (i=0; i<nseq; i++)

@@ -3362,7 +3362,7 @@ char *hts_idx_getfn(const char *fn, const char *ext)
     return idx_filename(fn, ext, 1);
 }
 
-static hts_idx_t *idx_find_and_load(const char *fn, int fmt, int download)
+static hts_idx_t *idx_find_and_load(const char *fn, int fmt, int flags)
 {
     char *fnidx = strstr(fn, HTS_IDX_DELIM);
     hts_idx_t *idx;
@@ -3381,21 +3381,34 @@ static hts_idx_t *idx_find_and_load(const char *fn, int fmt, int download)
     }
 
     if (idx_check_local(fn, fmt, &fnidx) == 0 && hisremote(fn)) {
-        if (download) {
+        if (flags & HTS_IDX_SAVE_REMOTE) {
             fnidx = hts_idx_getfn(fn, ".csi");
-            if (!fnidx) fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
+            if (!fnidx) {
+                switch (fmt) {
+                case HTS_FMT_BAI: fnidx = hts_idx_getfn(fn, ".bai"); break;
+                case HTS_FMT_TBI: fnidx = hts_idx_getfn(fn, ".tbi"); break;
+                default: break;
+                }
+            }
         } else {
             fnidx = idx_filename(fn, ".csi", 0);
-            if (!fnidx) fnidx = idx_filename(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi", 0);
+            if (!fnidx) {
+                switch (fmt) {
+                case HTS_FMT_BAI: fnidx = idx_filename(fn, ".bai", 0); break;
+                case HTS_FMT_TBI: fnidx = idx_filename(fn, ".tbi", 0); break;
+                default: break;
+                }
+            }
         }
     }
     if (!fnidx) {
-        hts_log_error("Could not retrieve index file for '%s'", fn);
+        if (!(flags & HTS_IDX_SILENT_FAIL))
+            hts_log_error("Could not retrieve index file for '%s'", fn);
         return 0;
     }
 
-    if (download)
-        idx = hts_idx_load2(fn, fnidx);
+    if (flags & HTS_IDX_SAVE_REMOTE)
+        idx = hts_idx_load3(fn, fnidx, fmt, flags);
     else
         idx = idx_read(fnidx);
     free(fnidx);
@@ -3406,23 +3419,46 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt) {
     return idx_find_and_load(fn, fmt, 1);
 }
 
-hts_idx_t *hts_idx_stream(const char *fn, int fmt) {
-    return idx_find_and_load(fn, fmt, 0);
-}
-
 hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx)
 {
+    return hts_idx_load3(fn, fnidx, 0, 0);
+}
+
+hts_idx_t *hts_idx_load3(const char *fn, const char *fnidx, int fmt, int flags)
+{
+    const char *local_fn = NULL;
+    char *local_fnidx = NULL;
+    int local_len;
+    if (!fnidx)
+        return idx_find_and_load(fn, fmt, flags);
+
     // Check that the index file is up to date, the main file might have changed
     struct stat stat_idx,stat_main;
-    if ( !stat(fn, &stat_main) && !stat(fnidx, &stat_idx) )
+    int remote_fn = hisremote(fn), remote_fnidx = hisremote(fnidx);
+    if ( !remote_fn && !remote_fnidx
+         && !stat(fn, &stat_main) && !stat(fnidx, &stat_idx) )
     {
         if ( stat_idx.st_mtime < stat_main.st_mtime )
             hts_log_warning("The index file is older than the data file: %s", fnidx);
     }
 
+    if (remote_fnidx && (flags & HTS_IDX_SAVE_REMOTE))
+    {
+        int ret = idx_test_and_fetch(fnidx, &local_fn, &local_len, 1);
+        if (ret == 0) {
+            local_fnidx = strdup(local_fn);
+            if (local_fnidx) {
+                local_fnidx[local_len] = '\0';
+                fnidx = local_fnidx;
+            }
+        }
+    }
+
     hts_idx_t *idx = idx_read(fnidx);
-    if (!idx)
+    if (!idx && !(flags & HTS_IDX_SILENT_FAIL))
         hts_log_error("Could not load local index file '%s'", fnidx);
+
+    free(local_fnidx);
 
     return idx;
 }

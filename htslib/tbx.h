@@ -73,9 +73,41 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
     int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf);
     int tbx_index_build2(const char *fn, const char *fnidx, int min_shift, const tbx_conf_t *conf);
     int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads, const tbx_conf_t *conf);
+
+
+/// Load or stream a .tbi or .csi index
+/** @param fn     Name of the data file corresponding to the index
+
+    Equivalent to tbx_index_load3(fn, NULL, HTS_IDX_SAVE_REMOTE);
+*/
     tbx_t *tbx_index_load(const char *fn);
+
+/// Load or stream a .tbi or .csi index
+/** @param fn     Name of the data file corresponding to the index
+    @param fnidx  Name of the indexed file
+    @return The index, or NULL if an error occurred
+
+    If @p fnidx is NULL, the index name will be derived from @p fn.
+
+    Equivalent to tbx_index_load3(fn, fnidx, HTS_IDX_SAVE_REMOTE);
+*/
     tbx_t *tbx_index_load2(const char *fn, const char *fnidx);
-    tbx_t *tbx_index_load3(const char *fn);
+
+/// Load or stream a .tbi or .csi index
+/** @param fn     Name of the data file corresponding to the index
+    @param fnidx  Name of the indexed file
+    @param flags  Flags to alter behaviour (see description)
+    @return The index, or NULL if an error occurred
+
+    If @p fnidx is NULL, the index name will be derived from @p fn.
+
+    The @p flags parameter can be set to a combination of the following
+    values:
+
+        HTS_IDX_SAVE_REMOTE   Save a local copy of any remote indexes
+        HTS_IDX_SILENT_FAIL   Fail silently if the index is not present
+*/
+    tbx_t *tbx_index_load3(const char *fn, const char *fnidx, int flags);
     const char **tbx_seqnames(tbx_t *tbx, int *n);  // free the array but not the values
     void tbx_destroy(tbx_t *tbx);
 

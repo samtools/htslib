@@ -1807,7 +1807,7 @@ bcf_hdr_t *vcf_hdr_read(htsFile *fp)
     if ( bcf_hdr_parse(h, txt.s) < 0 ) goto error;
 
     // check tabix index, are all contigs listed in the header? add the missing ones
-    idx = tbx_index_load(fp->fn);
+    idx = tbx_index_load3(fp->fn, NULL, HTS_IDX_SAVE_REMOTE|HTS_IDX_SILENT_FAIL);
     if ( idx )
     {
         int i, n, need_sync = 0;
@@ -2943,6 +2943,11 @@ hts_idx_t *bcf_index(htsFile *fp, int min_shift)
 hts_idx_t *bcf_index_load2(const char *fn, const char *fnidx)
 {
     return fnidx? hts_idx_load2(fn, fnidx) : bcf_index_load(fn);
+}
+
+hts_idx_t *bcf_index_load3(const char *fn, const char *fnidx, int flags)
+{
+    return hts_idx_load3(fn, fnidx, HTS_FMT_CSI, flags);
 }
 
 int bcf_index_build3(const char *fn, const char *fnidx, int min_shift, int n_threads)
