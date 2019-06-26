@@ -1583,6 +1583,11 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
         hts_log_error("Unsorted positions on sequence #%d: %d followed by %d", tid+1, idx->z.last_coor+1, beg+1);
         return -1;
     }
+    else if (end < beg) {
+        // Malformed ranges are errors. (Empty ranges (beg==end) are unusual but acceptable.)
+        hts_log_error("Invalid record on sequence #%d: end %d < begin %d", tid+1, end, beg+1);
+        return -1;
+    }
     if ( tid>=0 )
     {
         if (idx->bidx[tid] == 0) idx->bidx[tid] = kh_init(bin);
