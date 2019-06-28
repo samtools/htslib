@@ -310,14 +310,14 @@ int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf)
     return tbx_index_build3(fn, NULL, min_shift, 0, conf);
 }
 
-tbx_t *tbx_index_load2(const char *fn, const char *fnidx)
+static tbx_t *index_load(const char *fn, const char *fnidx, int flags)
 {
     tbx_t *tbx;
     uint8_t *meta;
     char *nm, *p;
     uint32_t l_meta, l_nm;
     tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
-    tbx->idx = fnidx? hts_idx_load2(fn, fnidx) : hts_idx_load(fn, HTS_FMT_TBI);
+    tbx->idx = hts_idx_load3(fn, fnidx, HTS_FMT_TBI, flags);
     if ( !tbx->idx )
     {
         free(tbx);
@@ -355,9 +355,19 @@ tbx_t *tbx_index_load2(const char *fn, const char *fnidx)
     return NULL;
 }
 
+tbx_t *tbx_index_load3(const char *fn, const char *fnidx, int flags)
+{
+    return index_load(fn, fnidx, flags);
+}
+
+tbx_t *tbx_index_load2(const char *fn, const char *fnidx)
+{
+    return index_load(fn, fnidx, 1);
+}
+
 tbx_t *tbx_index_load(const char *fn)
 {
-    return tbx_index_load2(fn, NULL);
+    return index_load(fn, NULL, 1);
 }
 
 const char **tbx_seqnames(tbx_t *tbx, int *n)

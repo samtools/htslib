@@ -956,7 +956,7 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         return NULL;
     }
 
-    reg->tbx = tbx_index_load(regions);
+    reg->tbx = tbx_index_load3(regions, NULL, HTS_IDX_SAVE_REMOTE|HTS_IDX_SILENT_FAIL);
     if ( !reg->tbx )
     {
         int len = strlen(regions);

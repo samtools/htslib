@@ -51,6 +51,9 @@ Noteworthy changes in release a.b
     To access the header text, the new functions bam_hdr_length() and
     bam_hdr_str() should be used instead.
 
+  - bcf_index_load() no longer tries the '.tbi' suffix when looking for
+    BCF index files (.tbi indexes are for text files, not binary BCF).
+
 * A new header API has been added to HTSlib, allowing header data to
   be updated without having to parse or rewrite large parts of the header
   text.  See htslib/sam.h for function definitions and documentation.
@@ -89,6 +92,16 @@ Noteworthy changes in release a.b
   delimiter; hts_idx_load() opens the index in the part after it.  So for
   example, "/path1/my_data.bam##idx##/path2/my_index.csi" will open bam file
   "/path1/my_data.bam" and index file "/path2/my_index.csi".
+
+* New API functions hts_idx_load3(), sam_index_load3(), tbx_index_load3()
+  and bcf_index_load3() have been added.  These allow control of whether
+  remote indexes should be cached locally, and allow the error message
+  printed when the index does not exist to be suppressed.
+
+* hts_idx_load() now checks locally for all possible index names before
+  attempting to download a remote index.  It also checks that the remote
+  file it downloads is actually an index before trying to save and use
+  it.  (https://github.com/samtools/samtools/issues/1045)
 
 * Changes to hfile_s3, which provides support for the AWS S3 API.
 

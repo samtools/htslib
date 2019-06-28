@@ -700,6 +700,29 @@ int hts_idx_save_as(const hts_idx_t *idx, const char *fn, const char *fnidx, int
                 name of the index file delimited with HTS_IDX_DELIM.
     @param fmt  One of the HTS_FMT_* index formats
     @return  The index, or NULL if an error occurred.
+
+If @p fn contains the string "##idx##" (HTS_IDX_DELIM), the part before
+the delimiter will be used as the name of the data file and the part after
+it will be used as the name of the index.
+
+Otherwise, this function tries to work out the index name as follows:
+
+  It will try appending ".csi" to @p fn
+  It will try substituting an existing suffix (e.g. .bam, .vcf) with ".csi"
+  Then, if @p fmt is HTS_FMT_BAI:
+    It will try appending ".bai" to @p fn
+    To will substituting the existing suffix (e.g. .bam) with ".bai"
+  else if @p fmt is HTS_FMT_TBI:
+    It will try appending ".tbi" to @p fn
+    To will substituting the existing suffix (e.g. .vcf) with ".tbi"
+
+If the index file is remote (served over a protocol like https), first a check
+is made to see is a locally cached copy is available.  This is done for all
+of the possible names listed above.  If a cached copy is not available then
+the index will be downloaded and stored in the current working directory,
+with the same name as the remote index.
+
+    Equivalent to hts_idx_load3(fn, NULL, fmt, HTS_IDX_SAVE_REMOTE);
 */
 hts_idx_t *hts_idx_load(const char *fn, int fmt);
 
@@ -707,8 +730,36 @@ hts_idx_t *hts_idx_load(const char *fn, int fmt);
 /** @param fn     Input BAM/BCF/etc filename
     @param fnidx  The input index filename
     @return  The index, or NULL if an error occurred.
+
+    Equivalent to hts_idx_load3(fn, fnidx, 0, 0);
+
+    This function will not attempt to save index files locally.
 */
 hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx);
+
+/// Load a specific index file
+/** @param fn     Input BAM/BCF/etc filename
+    @param fnidx  The input index filename
+    @param fmt    One of the HTS_FMT_* index formats
+    @param flags  Flags to alter behaviour (see description)
+    @return  The index, or NULL if an error occurred.
+
+    If @p fnidx is NULL, the index name will be derived from @p fn in the
+    same way as hts_idx_load().
+
+    If @p fnidx is not NULL, @p fmt is ignored.
+
+    The @p flags parameter can be set to a combination of the following
+    values:
+
+        HTS_IDX_SAVE_REMOTE   Save a local copy of any remote indexes
+        HTS_IDX_SILENT_FAIL   Fail silently if the index is not present
+*/
+hts_idx_t *hts_idx_load3(const char *fn, const char *fnidx, int fmt, int flags);
+
+/// Flags for hts_idx_load3() ( and also sam_idx_load3(), tbx_idx_load3() )
+#define HTS_IDX_SAVE_REMOTE 1
+#define HTS_IDX_SILENT_FAIL 2
 
 ///////////////////////////////////////////////////////////
 // Functions for accessing meta-data stored in indexes

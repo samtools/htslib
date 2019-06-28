@@ -940,11 +940,41 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
         errno = EINVAL;
         return -2;
     }
-
+/// Load a BCF index
+/** @param fn   BCF file name
+    @return The index, or NULL if an error occurred.
+     @note This only works for BCF files.  Consider synced_bcf_reader instead
+which works for both BCF and VCF.
+*/
     #define bcf_index_load(fn) hts_idx_load(fn, HTS_FMT_CSI)
     #define bcf_index_seqnames(idx, hdr, nptr) hts_idx_seqnames((idx),(nptr),(hts_id2name_f)(bcf_hdr_id2name),(hdr))
 
+/// Load a BCF index from a given index file name
+/**  @param fn     Input BAM/BCF/etc filename
+     @param fnidx  The input index filename
+     @return  The index, or NULL if an error occurred.
+     @note This only works for BCF files.  Consider synced_bcf_reader instead
+which works for both BCF and VCF.
+*/
     hts_idx_t *bcf_index_load2(const char *fn, const char *fnidx);
+
+/// Load a BCF index from a given index file name
+/**  @param fn     Input BAM/BCF/etc filename
+     @param fnidx  The input index filename
+     @param flags  Flags to alter behaviour (see description)
+     @return  The index, or NULL if an error occurred.
+     @note This only works for BCF files.  Consider synced_bcf_reader instead
+which works for both BCF and VCF.
+
+     The @p flags parameter can be set to a combination of the following
+     values:
+
+        HTS_IDX_SAVE_REMOTE   Save a local copy of any remote indexes
+        HTS_IDX_SILENT_FAIL   Fail silently if the index is not present
+
+     Equivalent to hts_idx_load3(fn, fnidx, HTS_FMT_CSI, flags);
+*/
+    hts_idx_t *bcf_index_load3(const char *fn, const char *fnidx, int flags);
 
     /**
      *  bcf_index_build() - Generate and save an index file

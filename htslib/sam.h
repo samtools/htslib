@@ -719,6 +719,8 @@ int sam_idx_save(htsFile *fp) HTS_RESULT_USED;
 /** @param fp  File handle of the data file whose index is being opened
     @param fn  BAM/CRAM/etc filename to search alongside for the index file
     @return  The index, or NULL if an error occurred.
+
+Equivalent to sam_index_load3(fp, fn, NULL, HTS_IDX_SAVE_REMOTE);
 */
 hts_idx_t *sam_index_load(htsFile *fp, const char *fn);
 
@@ -727,8 +729,27 @@ hts_idx_t *sam_index_load(htsFile *fp, const char *fn);
     @param fn     BAM/CRAM/etc data file filename
     @param fnidx  Index filename, or NULL to search alongside @a fn
     @return  The index, or NULL if an error occurred.
+
+Equivalent to sam_index_load3(fp, fn, fnidx, HTS_IDX_SAVE_REMOTE);
 */
 hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx);
+
+/// Load or stream a BAM (.csi or .bai) or CRAM (.crai) index file
+/** @param fp     File handle of the data file whose index is being opened
+    @param fn     BAM/CRAM/etc data file filename
+    @param fnidx  Index filename, or NULL to search alongside @a fn
+    @param flags  Flags to alter behaviour (see description)
+    @return  The index, or NULL if an error occurred.
+
+The @p flags parameter can be set to a combination of the following values:
+
+        HTS_IDX_SAVE_REMOTE   Save a local copy of any remote indexes
+        HTS_IDX_SILENT_FAIL   Fail silently if the index is not present
+
+Note that HTS_IDX_SAVE_REMOTE has no effect for remote CRAM indexes.  They
+are always downloaded and never cached locally.
+*/
+hts_idx_t *sam_index_load3(htsFile *fp, const char *fn, const char *fnidx, int flags);
 
 /// Generate and save an index file
 /** @param fn        Input BAM/etc filename, to which .csi/etc will be added

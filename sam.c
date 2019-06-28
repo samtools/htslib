@@ -886,12 +886,14 @@ static int64_t bam_ptell(void *fp)
     return bgzf_tell(fd);
 }
 
-hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx)
+
+
+static hts_idx_t *index_load(htsFile *fp, const char *fn, const char *fnidx, int flags)
 {
     switch (fp->format.format) {
     case bam:
     case sam:
-        return fnidx? hts_idx_load2(fn, fnidx) : hts_idx_load(fn, HTS_FMT_BAI);
+        return hts_idx_load3(fn, fnidx, HTS_FMT_BAI, flags);
 
     case cram: {
         if (cram_index_load(fp->fp.cram, fn, fnidx) < 0) return NULL;
@@ -909,9 +911,18 @@ hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx)
     }
 }
 
+hts_idx_t *sam_index_load3(htsFile *fp, const char *fn, const char *fnidx, int flags)
+{
+    return index_load(fp, fn, fnidx, flags);
+}
+
+hts_idx_t *sam_index_load2(htsFile *fp, const char *fn, const char *fnidx) {
+    return index_load(fp, fn, fnidx, HTS_IDX_SAVE_REMOTE);
+}
+
 hts_idx_t *sam_index_load(htsFile *fp, const char *fn)
 {
-    return sam_index_load2(fp, fn, NULL);
+    return index_load(fp, fn, NULL, HTS_IDX_SAVE_REMOTE);
 }
 
 static hts_itr_t *cram_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
