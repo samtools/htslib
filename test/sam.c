@@ -566,10 +566,10 @@ static void use_header_api() {
         goto err;
     }
     r = sam_hdr_remove_tag_id(header, "HD", NULL, NULL, "GO");
-    if (r != 1) { fail("bam_hdr_remove_tag"); goto err; }
+    if (r != 1) { fail("sam_hdr_remove_tag_id"); goto err; }
 
     r = sam_hdr_update_hd(header, "VN", "1.5");
-    if (r != 0) { fail("bam_hdr_find_update_hd"); goto err; }
+    if (r != 0) { fail("sam_hdr_update_hd"); goto err; }
 
     r = sam_hdr_add_line(header, "SQ", "SN", "ref3", "LN", "5003", NULL);
     if (r < 0) { fail("sam_hdr_add_line"); goto err; }
@@ -596,11 +596,11 @@ static void use_header_api() {
     if (r < 0) { fail("sam_hdr_add_line"); goto err; }
 
     r = sam_hdr_remove_line_id(header, "RG", "ID", "run2");
-    if (r < 0) { fail("bam_hdr_remove_line_key"); goto err; }
+    if (r < 0) { fail("sam_hdr_remove_line_id"); goto err; }
 
     r = sam_hdr_find_tag_id(header, "RG", "ID", "run3", "ID", &ks);
     if (r < 0 || !ks.s || strcmp(ks.s, "run3") != 0) {
-        fail("bam_hdr_find_tag() expected \"run3\" got \"%s\"",
+        fail("sam_hdr_find_tag_id() expected \"run3\" got \"%s\"",
              r == 0 && ks.s ? ks.s : "NULL");
         goto err;
     }
@@ -609,14 +609,14 @@ static void use_header_api() {
     if (r < 0) { fail("sam_hdr_remove_line_pos"); goto err; }
 
     r = sam_hdr_remove_line_id(header, "SQ", "SN", "ref0");
-    if (r < 0) { fail("bam_hdr_remove_line_key"); goto err; }
+    if (r < 0) { fail("sam_hdr_remove_line_id"); goto err; }
 
     r = sam_hdr_remove_line_pos(header, "SQ", 1); // Removes ref1.5
     if (r < 0) { fail("sam_hdr_remove_line_pos"); goto err; }
 
     r = sam_hdr_find_tag_id(header, "SQ", "SN", "ref1", "M5", &ks);
     if (r < 0 || !ks.s || strcmp(ks.s, "kja8u34a2q3") != 0) {
-        fail("bam_hdr_find_tag() expected \"kja8u34a2q3\" got \"%s\"",
+        fail("sam_hdr_find_tag_id() expected \"kja8u34a2q3\" got \"%s\"",
              r == 0 && ks.s ? ks.s : "NULL");
         goto err;
     }

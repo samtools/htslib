@@ -466,11 +466,11 @@ int sam_hdr_find_line_pos(bam_hdr_t *bh, const char *type,
  * \@SQ line is uniquely identified by the SN tag.
  * \@RG line is uniquely identified by the ID tag.
  * \@PG line is uniquely identified by the ID tag.
- * Eg. sam_hdr_remove_line_key(bh, "SQ", "SN", "ref1")
+ * Eg. sam_hdr_remove_line_id(bh, "SQ", "SN", "ref1")
  *
  * If no key:value pair is specified, the type MUST be followed by a NULL argument and
  * the first line of the type will be removed, if any.
- * Eg. sam_hdr_remove_line_key(bh, "SQ", NULL, NULL)
+ * Eg. sam_hdr_remove_line_id(bh, "SQ", NULL, NULL)
  *
  * @note Removing \@PG lines is currently unsupported.
  */
