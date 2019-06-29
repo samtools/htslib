@@ -240,7 +240,9 @@ int main(int argc, char **argv)
                 if (bgzf_block_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
         }
         else {
-            int last_index_pointer = 1;
+            BGZF_IDX_CONTEXT ctx;
+            empty_bgzf_idx_context(&ctx);
+            ctx.close_file = 0;
             // Compressing data:
             while ((c = read(f_src, buffer, WINDOW_SIZE)) > 0) {
                 if (bgzf_write(fp, buffer, c) < 0) error("Could not write %d bytes: Error %d\n", c, fp->errcode);
@@ -248,30 +250,28 @@ int main(int argc, char **argv)
                 if ( index && on_the_fly )
                 {
                     if (index_fname) {
-                        last_index_pointer = bgzf_index_dump(fp, index_fname, NULL, last_index_pointer);
-                        if (last_index_pointer < 0)
+                        if (bgzf_index_dump(fp, index_fname, NULL, &ctx) < 0)
                             error("Could not write index to '%s'\n", index_fname);
                     } else {
-                        last_index_pointer = bgzf_index_dump(fp, argv[optind], ".gz.gzi", last_index_pointer);
-                        if (last_index_pointer < 0)
+                        if (bgzf_index_dump(fp, argv[optind], ".gz.gzi", &ctx) < 0)
                             error("Could not write index to '%s.gz.gzi'", argv[optind]);
                     }
                 }
-
             }
             if ( index && on_the_fly ) {
                 // write complete index file and close it
-                if (bgzf_index_dump(fp, NULL, NULL, 0) < 0)
+                ctx.close_file = 1;
+                if (bgzf_index_dump(fp, NULL, NULL, &ctx) < 0)
                     error("Could not write index to '%s'\n", index_fname);
             }
         }
         if ( index && ! on_the_fly )
         {
             if (index_fname) {
-                if (bgzf_index_dump(fp, index_fname, NULL, 0) < 0)
+                if (bgzf_index_dump(fp, index_fname, NULL, NULL) < 0)
                     error("Could not write index to '%s'\n", index_fname);
             } else {
-                if (bgzf_index_dump(fp, argv[optind], ".gz.gzi", 0) < 0)
+                if (bgzf_index_dump(fp, argv[optind], ".gz.gzi", NULL) < 0)
                     error("Could not write index to '%s.gz.gzi'", argv[optind]);
             }
         }
@@ -303,10 +303,10 @@ int main(int argc, char **argv)
         if ( ret<0 ) error("Is the file gzipped or bgzipped? The latter is required for indexing.\n");
 
         if ( index_fname ) {
-            if (bgzf_index_dump(fp, index_fname, NULL, 0) < 0)
+            if (bgzf_index_dump(fp, index_fname, NULL, NULL) < 0)
                 error("Could not write index to '%s'\n", index_fname);
         } else {
-            if (bgzf_index_dump(fp, argv[optind], ".gzi", 0) < 0)
+            if (bgzf_index_dump(fp, argv[optind], ".gzi", NULL) < 0)
                 error("Could not write index to '%s.gzi'\n", argv[optind]);
         }
 

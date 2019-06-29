@@ -1981,14 +1981,15 @@ static inline int hwrite_uint64(uint64_t x, hFILE *f)
 
 static char * get_name_suffix(const char *bname, const char *suffix)
 {
-    size_t len = strlen(bname) + strlen(suffix) + 1;
+    size_t len = strlen(bname) + (suffix?strlen(suffix):0) + 1;
     char *buff = malloc(len);
     if (!buff) return NULL;
-    snprintf(buff, len, "%s%s", bname, suffix);
+    snprintf(buff, len, "%s%s", bname, (suffix?suffix:""));
     return buff;
 }
 
-int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name, int last_index_pointer)
+// ctx is not NULL only with `--on-the-fly` index generation
+int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name, BGZF_IDX_CONTEXT *ctx)
 {
     // Note that the index contains one extra record when indexing files opened
     // for reading. The terminating record is not present when opened for writing.
@@ -2013,7 +2014,7 @@ int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name, int las
     if (fp->mt && fp->idx)
         fp->idx->noffs--;
 
-    if ( fp->mt ) {
+    if ( fp->mt || ctx == NULL ) {
         if (hwrite_uint64(fp->idx->noffs - 1, idx) < 0) goto fail;
         for (i=1; i<fp->idx->noffs; i++)
         {
@@ -2031,16 +2032,18 @@ int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name, int las
         }
 
         // Seek to end of file before writing to not overwrite/repeat previously written indexes
-        if ( hseek( idx, 8 + (last_index_pointer - 1)*( 8 + 8 ), SEEK_SET ) < 0 ) goto fail;
+        if ( hseek( idx, 8 + (ctx->last_index_pointer - 1)*( 8 + 8 ), SEEK_SET ) < 0 ) goto fail;
 
-        for (i=last_index_pointer; i<fp->idx->noffs; i++)
+        for (i=ctx->last_index_pointer; i<fp->idx->noffs; i++)
         {
             if (hwrite_uint64(fp->idx->offs[i].caddr, idx) < 0) goto fail;
             if (hwrite_uint64(fp->idx->offs[i].uaddr, idx) < 0) goto fail;
         }
 
-        // return last written index
-        return i;
+        // set last written index
+        ctx->last_index_pointer = i;
+
+        return 0;
     }
 
  fail:
@@ -2048,12 +2051,21 @@ int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx, const char *name, int las
     return -1;
 }
 
-int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix, int last_index_pointer)
+// ctx_passed is not NULL only with `--on-the-fly` index generation
+int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix, BGZF_IDX_CONTEXT *ctx_passed)
 {
-    const char *name = bname, *msg = NULL;
-    static char *tmp = NULL;
-    static hFILE *idx = NULL;
-    int close_file = 0;
+    const char *msg = NULL;
+    BGZF_IDX_CONTEXT *ctx;
+
+    // ctx_local will be used in case ctx_passed is NULL
+    BGZF_IDX_CONTEXT ctx_local;
+    empty_bgzf_idx_context(&ctx_local);
+
+    if (!ctx_passed) {
+        ctx = &ctx_local;
+    } else {
+        ctx = ctx_passed;
+    }
 
     if (!fp->idx) {
         hts_log_error("Called for BGZF handle with no index");
@@ -2061,57 +2073,48 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix, int last_in
         return -1;
     }
 
-    if ( last_index_pointer == 0 ) {
+    if ( ctx->close_file == 1 ) {
 
         if (bgzf_flush(fp) != 0) return -1;
 
-        last_index_pointer = 1; // (incomplete)-index-file will be (over)written with complete index,
-        close_file = 1;         // and closed.
     }
 
-    if ( last_index_pointer > 0 ) {
+    if ( !ctx->idx ) {
+        // if !suffix, simply a copy of bname is returned
+        ctx->idxfilename = get_name_suffix(bname, suffix);
+        if ( !ctx->idxfilename ) return -1;
 
-        if ( !idx )
-        {
-            if ( suffix ) {
-                tmp = get_name_suffix(bname, suffix);
-                if ( !tmp ) return -1;
-                name = tmp;
-            }
-            idx = hopen(name, "wb");
-        } else {
-            name = tmp;
-        }
-
-        if ( !idx )
-        {
-            msg = "Error opening";
-            goto fail;
-        }
-
-        last_index_pointer = bgzf_index_dump_hfile(fp, idx, name, last_index_pointer);
-
-        if (last_index_pointer == -1) goto fail;
-
-        if ( close_file == 0 )
-            return last_index_pointer;
-
+        ctx->idx = hopen(ctx->idxfilename, "wb");
     }
 
-    if ( close_file == 1 ) {
+    if ( !ctx->idx )
+    {
+        msg = "Error opening";
+        goto fail;
+    }
+
+    if (bgzf_index_dump_hfile(fp, ctx->idx, ctx->idxfilename, ctx) != 0) goto fail;
+
+    if ( ctx->close_file == 0 ) {
+
+        // writing index `--on-the-fly`, so do not close file yet
+
+        return 0;
+
+    } else {
 
         // close index file
 
-        if (hclose(idx) < 0)
+        if (hclose(ctx->idx) < 0)
         {
-            idx = NULL;
+            ctx->idx = NULL;
             msg = "Error on closing";
             goto fail;
         }
 
-        idx = NULL;
-        free(tmp);
-        tmp = NULL;
+        ctx->idx = NULL;
+        free(ctx->idxfilename);
+        ctx->idxfilename = NULL;
 
         return 0;
 
@@ -2119,11 +2122,11 @@ int bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix, int last_in
 
  fail:
     if (msg != NULL) {
-        hts_log_error("%s %s : %s", msg, name, strerror(errno));
+        hts_log_error("%s %s : %s", msg, ctx->idxfilename, strerror(errno));
     }
-    if (idx) hclose_abruptly(idx);
-    free(tmp);
-    tmp = NULL;
+    if (ctx->idx) hclose_abruptly(ctx->idx);
+    free(ctx->idxfilename);
+    ctx->idxfilename = NULL;
     return -1;
 }
 
@@ -2267,4 +2270,12 @@ off_t bgzf_utell(BGZF *fp)
 /* prototype is in hfile_internal.h */
 struct hFILE *bgzf_hfile(struct BGZF *fp) {
     return fp->fp;
+}
+
+void empty_bgzf_idx_context(BGZF_IDX_CONTEXT *ctx) {
+    ctx->last_index_pointer = 1;
+    ctx->idxfilename = NULL;
+    ctx->idx = NULL;
+    ctx->close_file = 1;
+    return;
 }

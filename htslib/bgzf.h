@@ -79,6 +79,19 @@ typedef struct BGZF BGZF;
 #define HTS_BGZF_TYPEDEF
 #endif
 
+// struct BGZF_IDX_CONTEXT is used with `--on-the-fly` index writing
+struct BGZF_IDX_CONTEXT {
+    int last_index_pointer;
+    char *idxfilename;
+    struct hFILE *idx;
+    int close_file;
+};
+#ifndef HTS_BGZF_IDX_CONTEXT_TYPEDEF
+typedef struct BGZF_IDX_CONTEXT BGZF_IDX_CONTEXT;
+#define HTS_BGZF_IDX_CONTEXT_TYPEDEF
+#endif
+
+
     /******************
      * Basic routines *
      ******************/
@@ -394,19 +407,19 @@ typedef struct BGZF BGZF;
      * @param fp          BGZF file handler
      * @param bname       base name
      * @param suffix      suffix to add to bname (can be NULL)
-     * @param last_index_pointer    last index written to index file
-     * @return 0 if fp->mt, or last index pointer written (>1) if !fp->mt, and -1 on error.
+     * @param ctx         BGZF_IDX_CONTEXT struct for incremental `--on-the-fly` index, or NULL
+     * @return 0 on success and -1 on error.
      */
     int bgzf_index_dump(BGZF *fp,
-                        const char *bname, const char *suffix, int last_index_pointer) HTS_RESULT_USED;
+                        const char *bname, const char *suffix, BGZF_IDX_CONTEXT *ctx) HTS_RESULT_USED;
 
     /// Write a BGZF index to an hFILE
     /**
      * @param fp     BGZF file handle
      * @param idx    hFILE to write to
      * @param name   file name (for error reporting only, can be NULL)
-     * @param last_index_pointer    last index written to index file
-     * @return 0 if fp->mt, or last index pointer written (>1) if !fp->mt, and -1 on error.
+     * @param ctx    BGZF_IDX_CONTEXT struct for incremental `--on-the-fly` index, or NULL
+     * @return 0 on success and -1 on error.
      *
      * Write index data from @p fp to the file @p idx.
      *
@@ -416,7 +429,18 @@ typedef struct BGZF BGZF;
      */
 
     int bgzf_index_dump_hfile(BGZF *fp, struct hFILE *idx,
-                              const char *name, int last_index_pointer) HTS_RESULT_USED;
+                              const char *name, BGZF_IDX_CONTEXT *ctx) HTS_RESULT_USED;
+
+    /// Set values of BGZF_IDX_CONTEXT struct to an empty context
+    /**
+     * @param ctx    BGZF_IDX_CONTEXT
+     *
+     * Initialize values of BGZF_IDX_CONTEXT struct as if there was no context
+     * and so incremental index file writing (`--on-the-fly`) is not in use.
+     *
+     * Set both last_index_pointer and close_file to 1, and pointers to NULL.
+     */
+    void empty_bgzf_idx_context(BGZF_IDX_CONTEXT *ctx);
 
 #ifdef __cplusplus
 }
