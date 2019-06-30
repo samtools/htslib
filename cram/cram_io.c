@@ -1940,8 +1940,8 @@ int cram_set_header2(cram_fd *fd, const sam_hdr_t *hdr) {
 
     if (fd->header != hdr) {
         if (fd->header)
-            bam_hdr_destroy(fd->header);
-        fd->header = bam_hdr_dup(hdr);
+            sam_hdr_destroy(fd->header);
+        fd->header = sam_hdr_dup(hdr);
         if (!fd->header)
             return -1;
     }
@@ -3799,7 +3799,7 @@ sam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
     }
 
     /* Parse */
-    hdr = bam_hdr_init();
+    hdr = sam_hdr_init();
     if (!hdr) {
         free(header);
         return NULL;
@@ -3807,7 +3807,7 @@ sam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
 
     if (-1 == sam_hdr_add_lines(hdr, header, header_len)) {
         free(header);
-        bam_hdr_destroy(hdr);
+        sam_hdr_destroy(hdr);
         return NULL;
     }
 
@@ -4425,7 +4425,7 @@ int cram_close(cram_fd *fd) {
         cram_free_file_def(fd->file_def);
 
     if (fd->header)
-        bam_hdr_destroy(fd->header);
+        sam_hdr_destroy(fd->header);
 
     free(fd->prefix);
 

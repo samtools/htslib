@@ -305,7 +305,7 @@ typedef struct {
  *
  * @return  A valid pointer to new header on success, NULL on failure
  */
-sam_hdr_t *bam_hdr_init(void);
+sam_hdr_t *sam_hdr_init(void);
 
 /// Read the header from a BAM compressed file.
 /*!
@@ -331,13 +331,20 @@ int bam_hdr_write(BGZF *fp, const sam_hdr_t *h) HTS_RESULT_USED;
 /*!
  * Frees the resources associated with a header.
  */
-void bam_hdr_destroy(sam_hdr_t *h);
+void sam_hdr_destroy(sam_hdr_t *h);
 
 /// Duplicate a header structure.
 /*!
  * @return  A valid pointer to new header on success, NULL on failure
  */
-sam_hdr_t* bam_hdr_dup(const sam_hdr_t *h0);
+sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0);
+
+/*!
+ * @abstract Old names for compatibility with existing code.
+ */
+static inline sam_hdr_t *bam_hdr_init(void) { return sam_hdr_init(); }
+static inline void bam_hdr_destroy(sam_hdr_t *h) { sam_hdr_destroy(h); }
+static inline sam_hdr_t *bam_hdr_dup(const sam_hdr_t *h0) { return sam_hdr_dup(h0); }
 
 typedef htsFile samFile;
 
@@ -640,7 +647,7 @@ int sam_hdr_add_pg(sam_hdr_t *h, const char *name, ...);
 /// Increments the reference count on a header
 /*!
  * This permits multiple files to share the same header, all calling
- * bam_hdr_destroy when done, without causing errors for other open files.
+ * sam_hdr_destroy when done, without causing errors for other open files.
  */
 void sam_hdr_incr_ref(sam_hdr_t *h);
 

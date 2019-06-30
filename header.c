@@ -1688,7 +1688,7 @@ int sam_hdr_add_pg(sam_hdr_t *bh, const char *name, ...) {
 /*! Increments a reference count on bh.
  *
  * This permits multiple files to share the same header, all calling
- * bam_hdr_destroy when done, without causing errors for other open files.
+ * sam_hdr_destroy when done, without causing errors for other open files.
  */
 void sam_hdr_incr_ref(sam_hdr_t *bh) {
     if (!bh)
@@ -2120,11 +2120,11 @@ enum sam_group_order bam_hrecs_group_order(bam_hrecs_t *hrecs) {
 typedef sam_hdr_t SAM_hdr;
 
 SAM_hdr *sam_hdr_parse_(const char *hdr, size_t len) {
-    sam_hdr_t *bh = bam_hdr_init();
+    sam_hdr_t *bh = sam_hdr_init();
     if (!bh) return NULL;
 
     if (sam_hdr_add_lines(bh, hdr, len) != 0) {
-        bam_hdr_destroy(bh);
+        sam_hdr_destroy(bh);
         return NULL;
     }
 
@@ -2132,5 +2132,5 @@ SAM_hdr *sam_hdr_parse_(const char *hdr, size_t len) {
 }
 
 void sam_hdr_free(SAM_hdr *hdr) {
-    bam_hdr_destroy(hdr);
+    sam_hdr_destroy(hdr);
 }

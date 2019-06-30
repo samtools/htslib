@@ -179,12 +179,12 @@ int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
     }
 
     bam_destroy1(b);
-    bam_hdr_destroy(h);
+    sam_hdr_destroy(h);
 
     return 0;
  fail:
     if (b) bam_destroy1(b);
-    if (h) bam_hdr_destroy(h);
+    if (h) sam_hdr_destroy(h);
     if (idx) hts_idx_destroy(idx);
 
     return 1;

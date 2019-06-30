@@ -104,7 +104,7 @@ static void view_sam(samFile *in, const char *filename)
     }
 
  clean:
-    bam_hdr_destroy(hdr);
+    sam_hdr_destroy(hdr);
     bam_destroy1(b);
     if (out) hts_close(out);
 }

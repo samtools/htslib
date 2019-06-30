@@ -60,13 +60,13 @@ static void view_sam(htsFile *in) {
     }
 
     if (sam_hdr_write(out, hdr) != 0) {
-        bam_hdr_destroy(hdr);
+        sam_hdr_destroy(hdr);
         hts_close_or_abort(out);
         return;
     }
     bam1_t *b = bam_init1();
     if (b == NULL) {
-        bam_hdr_destroy(hdr);
+        sam_hdr_destroy(hdr);
         hts_close_or_abort(out);
         return;
     }
@@ -77,7 +77,7 @@ static void view_sam(htsFile *in) {
     }
     bam_destroy1(b);
 
-    bam_hdr_destroy(hdr);
+    sam_hdr_destroy(hdr);
     hts_close_or_abort(out);
 }
 

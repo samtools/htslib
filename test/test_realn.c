@@ -151,7 +151,7 @@ int main(int argc, char **argv) {
         goto fail;
     }
 
-    bam_hdr_destroy(hdr);
+    sam_hdr_destroy(hdr);
     bam_destroy1(rec);
     free(ref_seq);
     fai_destroy(fai);
@@ -159,7 +159,7 @@ int main(int argc, char **argv) {
     return EXIT_SUCCESS;
 
  fail:
-    if (hdr) bam_hdr_destroy(hdr);
+    if (hdr) sam_hdr_destroy(hdr);
     if (rec) bam_destroy1(rec);
     if (in) hts_close(in);
     if (out) hts_close(out);

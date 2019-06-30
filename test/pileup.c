@@ -243,13 +243,13 @@ int main(int argc, char **argv) {
             goto fail;
     }
 
-    bam_hdr_destroy(g.fp_hdr);
+    sam_hdr_destroy(g.fp_hdr);
     sam_close(g.fp);
 
     return EXIT_SUCCESS;
 
  fail:
-    if (g.fp_hdr) bam_hdr_destroy(g.fp_hdr);
+    if (g.fp_hdr) sam_hdr_destroy(g.fp_hdr);
     if (g.fp) sam_close(g.fp);
     return EXIT_FAILURE;
 }

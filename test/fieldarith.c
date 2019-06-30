@@ -64,7 +64,7 @@ int main(int argc, char **argv)
             check(aln, "endpos", "XE", bam_endpos(aln));
         }
 
-        bam_hdr_destroy(header);
+        sam_hdr_destroy(header);
         sam_close(in);
     }
 

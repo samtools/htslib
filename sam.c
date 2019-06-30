@@ -63,14 +63,14 @@ static int8_t *cigar_tab_init() {
     return cigar_tab;
 }
 
-sam_hdr_t *bam_hdr_init()
+sam_hdr_t *sam_hdr_init()
 {
     sam_hdr_t *bh = (sam_hdr_t*)calloc(1, sizeof(sam_hdr_t));
 
     return bh;
 }
 
-void bam_hdr_destroy(sam_hdr_t *bh)
+void sam_hdr_destroy(sam_hdr_t *bh)
 {
     int32_t i;
 
@@ -92,11 +92,11 @@ void bam_hdr_destroy(sam_hdr_t *bh)
     free(bh);
 }
 
-sam_hdr_t *bam_hdr_dup(const sam_hdr_t *h0)
+sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
 {
     if (h0 == NULL) return NULL;
     sam_hdr_t *h;
-    if ((h = bam_hdr_init()) == NULL) return NULL;
+    if ((h = sam_hdr_init()) == NULL) return NULL;
     // copy the simple data
     h->n_targets = 0;
     h->ignore_sam_err = h0->ignore_sam_err;
@@ -143,7 +143,7 @@ sam_hdr_t *bam_hdr_dup(const sam_hdr_t *h0)
     return h;
 
  fail:
-    bam_hdr_destroy(h);
+    sam_hdr_destroy(h);
     return NULL;
 }
 
@@ -168,7 +168,7 @@ sam_hdr_t *bam_hdr_read(BGZF *fp)
         hts_log_error("Invalid BAM binary header");
         return 0;
     }
-    h = bam_hdr_init();
+    h = sam_hdr_init();
     if (!h) goto nomem;
 
     // read plain text and the number of reference sequences
@@ -250,7 +250,7 @@ sam_hdr_t *bam_hdr_read(BGZF *fp)
  clean:
     if (h != NULL) {
         h->n_targets = num_names; // ensure we free only allocated target_names
-        bam_hdr_destroy(h);
+        sam_hdr_destroy(h);
     }
     return NULL;
 }
@@ -659,7 +659,7 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
     if (ret < -1) goto err; // corrupted BAM file
 
     hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
-    bam_hdr_destroy(h);
+    sam_hdr_destroy(h);
     bam_destroy1(b);
     return idx;
 
@@ -1094,7 +1094,7 @@ static sam_hdr_t *sam_hdr_sanitise(sam_hdr_t *h) {
             lnum++;
             if (cp[i] != '@') {
                 hts_log_error("Malformed SAM header at line %u", lnum);
-                bam_hdr_destroy(h);
+                sam_hdr_destroy(h);
                 return NULL;
             }
         }
@@ -1116,13 +1116,13 @@ static sam_hdr_t *sam_hdr_sanitise(sam_hdr_t *h) {
         if (h->l_text < 2 || i >= h->l_text - 2) {
             if (h->l_text >= SIZE_MAX - 2) {
                 hts_log_error("No room for extra newline");
-                bam_hdr_destroy(h);
+                sam_hdr_destroy(h);
                 return NULL;
             }
 
             cp = realloc(h->text, (size_t) h->l_text+2);
             if (!cp) {
-                bam_hdr_destroy(h);
+                sam_hdr_destroy(h);
                 return NULL;
             }
             h->text = cp;
@@ -1141,7 +1141,7 @@ static sam_hdr_t *sam_hdr_sanitise(sam_hdr_t *h) {
 static sam_hdr_t *sam_hdr_create(htsFile* fp) {
     kstring_t str = { 0, 0, NULL };
     khint_t k;
-    sam_hdr_t* h = bam_hdr_init();
+    sam_hdr_t* h = sam_hdr_init();
     const char *q, *r;
     char* sn = NULL;
     khash_t(s2i) *d = kh_init(s2i);
@@ -1306,7 +1306,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
     return fp->bam_header;
 
  error:
-    bam_hdr_destroy(h);
+    sam_hdr_destroy(h);
     KS_FREE(&str);
     kh_destroy(s2i, d);
     if (sn) free(sn);
@@ -1325,7 +1325,7 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
         return sam_hdr_sanitise(bam_hdr_read(fp->fp.bgzf));
 
     case cram:
-        return sam_hdr_sanitise(bam_hdr_dup(fp->fp.cram->header));
+        return sam_hdr_sanitise(sam_hdr_dup(fp->fp.cram->header));
 
     case sam:
         return sam_hdr_create(fp);

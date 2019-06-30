@@ -232,7 +232,7 @@ struct bam_hrecs_t {
  * parsed representation becomes the single source of truth.
  *
  * @param bh    Header structure, previously initialised by a
- *              bam_hdr_init call
+ *              sam_hdr_init call
  * @return      0 on success, -1 on failure
  */
 int bam_hdr_parse(sam_hdr_t *bh);
@@ -262,7 +262,7 @@ bam_hrecs_t *bam_hrecs_dup(bam_hrecs_t *hrecs);
 
 /*! Update sam_hdr_t target_name and target_len arrays
  *
- *  sam_hdr_t and bam_hrecs_t are specified separately so that bam_hdr_dup
+ *  sam_hdr_t and bam_hrecs_t are specified separately so that sam_hdr_dup
  *  can use it to construct target arrays from the source header.
  *
  *  @return 0 on success; -1 on failure

@@ -729,7 +729,7 @@ static void use_header_api() {
     free(ks_release(&ks));
 
  err:
-    bam_hdr_destroy(header);
+    sam_hdr_destroy(header);
     header = NULL;
     if (in) sam_close(in);
     if (out) sam_close(out);
@@ -816,7 +816,7 @@ static void test_header_pg_lines() {
     }
 
  err:
-    bam_hdr_destroy(header);
+    sam_hdr_destroy(header);
     header = NULL;
     if (in) sam_close(in);
     return;

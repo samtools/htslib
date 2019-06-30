@@ -136,7 +136,7 @@ int reg_test(char *fn) {
     fprintf(stderr, "Expected error: ");
     reg_expected(hdr, "chr1:1,chr3", 0, NULL, 0, 0, 0);
 
-    bam_hdr_destroy(hdr);
+    sam_hdr_destroy(hdr);
     sam_close(fp);
 
     exit(0);
@@ -197,7 +197,7 @@ int main(int argc, char **argv) {
                beg, end);
     }
 
-    bam_hdr_destroy(hdr);
+    sam_hdr_destroy(hdr);
     sam_close(fp);
 
     return 0;
