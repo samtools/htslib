@@ -47,7 +47,7 @@
 #include <htslib/hts.h>
 #include <htslib/sam.h>
 
-void reg_expected(bam_hdr_t *hdr, const char *reg, int flags,
+void reg_expected(sam_hdr_t *hdr, const char *reg, int flags,
                  char *reg_exp, int tid_exp, int64_t beg_exp, int64_t end_exp) {
     const char *reg_out;
     int tid_out = -1;
@@ -71,7 +71,7 @@ void reg_expected(bam_hdr_t *hdr, const char *reg, int flags,
 
 int reg_test(char *fn) {
     samFile *fp;
-    bam_hdr_t *hdr;
+    sam_hdr_t *hdr;
 
     if (!(fp = sam_open(fn, "r")))
         return 1;
@@ -143,7 +143,7 @@ int reg_test(char *fn) {
 }
 
 int main(int argc, char **argv) {
-    bam_hdr_t *hdr;
+    sam_hdr_t *hdr;
     samFile *fp;
     int flags = 0;
 

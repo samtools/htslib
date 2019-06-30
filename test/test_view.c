@@ -61,7 +61,7 @@ enum test_op {
 
 int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, htsFile *out) {
     int r = 0;
-    bam_hdr_t *h = NULL;
+    sam_hdr_t *h = NULL;
     hts_idx_t *idx = NULL;
     bam1_t *b = NULL;
 

@@ -89,8 +89,8 @@ struct hFILE;
  *-----------------------------------------------------------------------------
  * cram_fd
  */
-bam_hdr_t *cram_fd_get_header(cram_fd *fd);
-void cram_fd_set_header(cram_fd *fd, bam_hdr_t *hdr);
+sam_hdr_t *cram_fd_get_header(cram_fd *fd);
+void cram_fd_set_header(cram_fd *fd, sam_hdr_t *hdr);
 
 int cram_fd_get_version(cram_fd *fd);
 void cram_fd_set_version(cram_fd *fd, int vers);
@@ -394,7 +394,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_set_header(cram_fd *fd, bam_hdr_t *hdr);
+int cram_set_header(cram_fd *fd, sam_hdr_t *hdr);
 
 /*! Check if this file has a proper EOF block
  *

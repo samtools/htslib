@@ -215,6 +215,8 @@ static int test_update_array(bam1_t *aln, const char target_id[2],
     return 0;
 }
 
+// This function uses bam_hdr_t etc as a check ensuring the legacy typedef
+// and functions continue to compile successfully.
 static int aux_fields1(void)
 {
     static const char sam[] = "data:,"
@@ -454,6 +456,8 @@ static void iterators1(void)
     hts_itr_destroy(sam_itr_queryi(NULL, HTS_IDX_NONE, 0, 0));
 }
 
+// This function uses bam_hdr_t etc as a check ensuring the legacy typedef
+// and functions continue to compile successfully.
 static void copy_check_alignment(const char *infname, const char *informat,
     const char *outfname, const char *outmode, const char *outref)
 {
@@ -546,7 +550,7 @@ static void use_header_api() {
 
     samFile *in = sam_open(header_text, "r");
     samFile *out = sam_open(outfname, outmode);
-    bam_hdr_t *header = NULL;
+    sam_hdr_t *header = NULL;
     kstring_t ks = { 0, 0, NULL };
     size_t bytes;
     int r, i;
@@ -752,7 +756,7 @@ static void test_header_pg_lines() {
         "@PG\tPN:prog7\tID:my_id\tPP:prog6\n";
 
     samFile *in = sam_open(header_text, "r");
-    bam_hdr_t *header = NULL;
+    sam_hdr_t *header = NULL;
     const char *text = NULL;
     enum htsLogLevel old_log_level;
     int r;

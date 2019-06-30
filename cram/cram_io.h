@@ -634,7 +634,7 @@ static inline unsigned char *append_uint64(unsigned char *cp, uint64_t i) {
  */
 int cram_load_reference(cram_fd *fd, char *fn);
 
-/*! Generates a lookup table in refs based on the SQ headers in SAM_hdr.
+/*! Generates a lookup table in refs based on the SQ headers in sam_hdr_t.
  *
  * Indexes references by the order they appear in a BAM file. This may not
  * necessarily be the same order they appear in the fasta reference file.
@@ -643,7 +643,7 @@ int cram_load_reference(cram_fd *fd, char *fn);
  * Returns 0 on success;
  *        -1 on failure
  */
-int refs2id(refs_t *r, bam_hdr_t *bfd);
+int refs2id(refs_t *r, sam_hdr_t *hdr);
 
 void refs_free(refs_t *r);
 
@@ -800,7 +800,7 @@ void cram_free_file_def(cram_file_def *def);
  * Returns SAM hdr ptr on success;
  *         NULL on failure
  */
-bam_hdr_t *cram_read_SAM_hdr(cram_fd *fd);
+sam_hdr_t *cram_read_SAM_hdr(cram_fd *fd);
 
 /*! Writes a CRAM SAM header.
  *
@@ -808,7 +808,7 @@ bam_hdr_t *cram_read_SAM_hdr(cram_fd *fd);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr);
+int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr);
 
 
 /**@}*/
@@ -896,14 +896,14 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
  * Attaches a header to a cram_fd.
  *
  * This should be used when creating a new cram_fd for writing where
- * we have an SAM_hdr already constructed (eg from a file we've read
+ * we have an sam_hdr_t already constructed (eg from a file we've read
  * in).
  *
  * @return
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_set_header2(cram_fd *fd, const bam_hdr_t *hdr);
+int cram_set_header2(cram_fd *fd, const sam_hdr_t *hdr);
 
 /*!
  * Returns the hFILE connected to a cram_fd.

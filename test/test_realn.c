@@ -47,7 +47,7 @@ int main(int argc, char **argv) {
     char *ref_seq = NULL;
     char modew[8] = "w";
     faidx_t *fai = NULL;
-    bam_hdr_t *hdr = NULL;
+    sam_hdr_t *hdr = NULL;
     bam1_t *rec = NULL;
     int c, res, last_ref = -1, ref_len = 0;
     int adjust = 0, extended = 0, recalc = 0, flags = 0;

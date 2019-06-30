@@ -68,7 +68,7 @@ static htsFile *dup_stdout(const char *mode)
 static void view_sam(samFile *in, const char *filename)
 {
     bam1_t *b = NULL;
-    bam_hdr_t *hdr = NULL;
+    sam_hdr_t *hdr = NULL;
     samFile *out = NULL;
 
     hdr = sam_hdr_read(in);

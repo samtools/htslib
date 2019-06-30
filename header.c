@@ -39,7 +39,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 KHASH_SET_INIT_STR(rm)
 typedef khash_t(rm) rmhash_t;
 
-static int bam_hdr_link_pg(bam_hdr_t *bh);
+static int bam_hdr_link_pg(sam_hdr_t *bh);
 
 #define MAX_ERROR_QUOTE 320 // Prevent over-long error messages
 static void bam_hrecs_error(const char *msg, const char *line, size_t len, size_t lno) {
@@ -735,11 +735,11 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
     return 0;
 }
 
-/*! Update bam_hdr_t target_name and target_len arrays
+/*! Update sam_hdr_t target_name and target_len arrays
  *
  *  @return 0 on success; -1 on failure
  */
-int update_target_arrays(bam_hdr_t *bh, const bam_hrecs_t *hrecs,
+int update_target_arrays(sam_hdr_t *bh, const bam_hrecs_t *hrecs,
                          int refs_changed) {
     if (!bh || !hrecs)
         return -1;
@@ -786,7 +786,7 @@ int update_target_arrays(bam_hdr_t *bh, const bam_hrecs_t *hrecs,
     return 0;
 }
 
-static int rebuild_target_arrays(bam_hdr_t *bh) {
+static int rebuild_target_arrays(sam_hdr_t *bh) {
     if (!bh || !bh->hrecs)
         return -1;
 
@@ -801,7 +801,7 @@ static int rebuild_target_arrays(bam_hdr_t *bh) {
     return 0;
 }
 
-int bam_hdr_parse(bam_hdr_t *bh) {
+int bam_hdr_parse(sam_hdr_t *bh) {
     bam_hrecs_t *hrecs = bam_hrecs_new();
 
     if (!hrecs)
@@ -830,7 +830,7 @@ int bam_hdr_parse(bam_hdr_t *bh) {
     This is called when API functions have changed the header so that the
     text version is no longer valid.
  */
-static void redact_header_text(bam_hdr_t *bh) {
+static void redact_header_text(sam_hdr_t *bh) {
     assert(bh->hrecs && bh->hrecs->dirty);
     bh->l_text = 0;
     free(bh->text);
@@ -878,21 +878,21 @@ static bam_hrec_type_t *bam_hrecs_find_type_pos(bam_hrecs_t *hrecs,
 
 /* ==== Public methods ==== */
 
-size_t sam_hdr_length(bam_hdr_t *bh) {
+size_t sam_hdr_length(sam_hdr_t *bh) {
     if (!bh || -1 == bam_hdr_rebuild(bh))
         return -1;
 
     return bh->l_text;
 }
 
-const char *sam_hdr_str(bam_hdr_t *bh) {
+const char *sam_hdr_str(sam_hdr_t *bh) {
     if (!bh || -1 == bam_hdr_rebuild(bh))
         return NULL;
 
     return bh->text;
 }
 
-int sam_hdr_nref(const bam_hdr_t *bh) {
+int sam_hdr_nref(const sam_hdr_t *bh) {
     if (!bh)
         return -1;
 
@@ -904,7 +904,7 @@ int sam_hdr_nref(const bam_hdr_t *bh) {
  * Returns 0 on success
  *        -1 on failure
  */
-int bam_hdr_rebuild(bam_hdr_t *bh) {
+int bam_hdr_rebuild(sam_hdr_t *bh) {
     bam_hrecs_t *hrecs;
     if (!bh)
         return -1;
@@ -952,7 +952,7 @@ int bam_hdr_rebuild(bam_hdr_t *bh) {
  * Returns 0 on success
  *        -1 on failure
  */
-int sam_hdr_add_lines(bam_hdr_t *bh, const char *lines, size_t len) {
+int sam_hdr_add_lines(sam_hdr_t *bh, const char *lines, size_t len) {
     bam_hrecs_t *hrecs;
 
     if (!bh || !lines)
@@ -987,7 +987,7 @@ int sam_hdr_add_lines(bam_hdr_t *bh, const char *lines, size_t len) {
  * Returns 0 on success
  *        -1 on failure
  */
-int sam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
+int sam_hdr_add_line(sam_hdr_t *bh, const char *type, ...) {
     va_list args;
     bam_hrecs_t *hrecs;
 
@@ -1020,7 +1020,7 @@ int sam_hdr_add_line(bam_hdr_t *bh, const char *type, ...) {
  * combination. If ID_key is NULL then it returns the first line of the specified
  * type.
  */
-int sam_hdr_find_line_id(bam_hdr_t *bh, const char *type,
+int sam_hdr_find_line_id(sam_hdr_t *bh, const char *type,
                       const char *ID_key, const char *ID_val, kstring_t *ks) {
     bam_hrecs_t *hrecs;
     if (!bh || !type)
@@ -1044,7 +1044,7 @@ int sam_hdr_find_line_id(bam_hdr_t *bh, const char *type,
     return 0;
 }
 
-int sam_hdr_find_line_pos(bam_hdr_t *bh, const char *type,
+int sam_hdr_find_line_pos(sam_hdr_t *bh, const char *type,
                           int pos, kstring_t *ks) {
     bam_hrecs_t *hrecs;
     if (!bh || !type)
@@ -1078,7 +1078,7 @@ int sam_hdr_find_line_pos(bam_hdr_t *bh, const char *type,
  * Returns 0 on success and -1 on error
  */
 
-int sam_hdr_remove_line_id(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
+int sam_hdr_remove_line_id(sam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
     bam_hrecs_t *hrecs;
     if (!bh || !type)
         return -1;
@@ -1117,7 +1117,7 @@ int sam_hdr_remove_line_id(bam_hdr_t *bh, const char *type, const char *ID_key, 
  * Returns 0 on success and -1 on error
  */
 
-int sam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position) {
+int sam_hdr_remove_line_pos(sam_hdr_t *bh, const char *type, int position) {
     bam_hrecs_t *hrecs;
     if (!bh || !type || position <= 0)
         return -1;
@@ -1150,7 +1150,7 @@ int sam_hdr_remove_line_pos(bam_hdr_t *bh, const char *type, int position) {
     return ret;
 }
 
-int sam_hdr_update_line(bam_hdr_t *bh, const char *type,
+int sam_hdr_update_line(sam_hdr_t *bh, const char *type,
         const char *ID_key, const char *ID_value, ...) {
     bam_hrecs_t *hrecs;
     if (!bh)
@@ -1178,7 +1178,7 @@ int sam_hdr_update_line(bam_hdr_t *bh, const char *type,
     return ret;
 }
 
-int sam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
+int sam_hdr_keep_line(sam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
     bam_hrecs_t *hrecs;
     if (!bh || !type)
         return -1;
@@ -1225,7 +1225,7 @@ int sam_hdr_keep_line(bam_hdr_t *bh, const char *type, const char *ID_key, const
     return 0;
 }
 
-int sam_hdr_remove_lines(bam_hdr_t *bh, const char *type, const char *id, void *h) {
+int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *h) {
     bam_hrecs_t *hrecs;
     rmhash_t *rh;
     if (!bh || !type || !id || !(rh = (rmhash_t *)h))
@@ -1283,7 +1283,7 @@ int sam_hdr_remove_lines(bam_hdr_t *bh, const char *type, const char *id, void *
     return ret;
 }
 
-int sam_hdr_count_lines(bam_hdr_t *bh, const char *type) {
+int sam_hdr_count_lines(sam_hdr_t *bh, const char *type) {
     int count;
     bam_hrec_type_t *first_ty, *itr_ty;
 
@@ -1325,7 +1325,7 @@ int sam_hdr_count_lines(bam_hdr_t *bh, const char *type) {
 
 /* ==== Key:val level methods ==== */
 
-int sam_hdr_find_tag_id(bam_hdr_t *bh,
+int sam_hdr_find_tag_id(sam_hdr_t *bh,
                      const char *type,
                      const char *ID_key,
                      const char *ID_value,
@@ -1357,7 +1357,7 @@ int sam_hdr_find_tag_id(bam_hdr_t *bh,
     return 0;
 }
 
-int sam_hdr_find_tag_pos(bam_hdr_t *bh,
+int sam_hdr_find_tag_pos(sam_hdr_t *bh,
                      const char *type,
                      int pos,
                      const char *key,
@@ -1388,7 +1388,7 @@ int sam_hdr_find_tag_pos(bam_hdr_t *bh,
     return 0;
 }
 
-int sam_hdr_remove_tag_id(bam_hdr_t *bh,
+int sam_hdr_remove_tag_id(sam_hdr_t *bh,
         const char *type,
         const char *ID_key,
         const char *ID_value,
@@ -1435,7 +1435,7 @@ int bam_hrecs_rebuild_text(const bam_hrecs_t *hrecs, kstring_t *ks) {
  * Looks up a reference sequence by name and returns the numerical ID.
  * Returns -1 if unknown reference; -2 if header could not be parsed.
  */
-int sam_hdr_name2ref(bam_hdr_t *bh, const char *ref) {
+int sam_hdr_name2ref(sam_hdr_t *bh, const char *ref) {
     bam_hrecs_t *hrecs;
     khint_t k;
 
@@ -1468,7 +1468,7 @@ int sam_hdr_name2ref(bam_hdr_t *bh, const char *ref) {
  * Returns 0 on success
  *        -1 on failure (indicating broken PG/PP records)
  */
-static int bam_hdr_link_pg(bam_hdr_t *bh) {
+static int bam_hdr_link_pg(sam_hdr_t *bh) {
     bam_hrecs_t *hrecs;
     int i, j, ret = 0, *new_pg_end;
 
@@ -1541,7 +1541,7 @@ static int bam_hdr_link_pg(bam_hdr_t *bh) {
  * The value returned is valid until the next call to
  * this function.
  */
-const char *sam_hdr_pg_id(bam_hdr_t *bh, const char *name) {
+const char *sam_hdr_pg_id(sam_hdr_t *bh, const char *name) {
     bam_hrecs_t *hrecs;
     size_t name_len;
     const size_t name_extra = 17;
@@ -1592,7 +1592,7 @@ const char *sam_hdr_pg_id(bam_hdr_t *bh, const char *name) {
  * Returns 0 on success
  *        -1 on failure
  */
-int sam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
+int sam_hdr_add_pg(sam_hdr_t *bh, const char *name, ...) {
     bam_hrecs_t *hrecs;
     const char *specified_id = NULL, *specified_pn = NULL, *specified_pp = NULL;
     const char *key, *val;
@@ -1690,7 +1690,7 @@ int sam_hdr_add_pg(bam_hdr_t *bh, const char *name, ...) {
  * This permits multiple files to share the same header, all calling
  * bam_hdr_destroy when done, without causing errors for other open files.
  */
-void sam_hdr_incr_ref(bam_hdr_t *bh) {
+void sam_hdr_incr_ref(sam_hdr_t *bh) {
     if (!bh)
         return;
     bh->ref_count++;
@@ -2117,10 +2117,10 @@ enum sam_group_order bam_hrecs_group_order(bam_hrecs_t *hrecs) {
 }
 
 // Legacy functions from htslb/cram.h, included here for API compatibility.
-typedef bam_hdr_t SAM_hdr;
+typedef sam_hdr_t SAM_hdr;
 
 SAM_hdr *sam_hdr_parse_(const char *hdr, size_t len) {
-    bam_hdr_t *bh = bam_hdr_init();
+    sam_hdr_t *bh = bam_hdr_init();
     if (!bh) return NULL;
 
     if (sam_hdr_add_lines(bh, hdr, len) != 0) {

@@ -47,7 +47,7 @@ void check(const bam1_t *aln, const char *testname, const char *tag, int value)
 
 int main(int argc, char **argv)
 {
-    bam_hdr_t *header;
+    sam_hdr_t *header;
     bam1_t *aln = bam_init1();
     int i;
 

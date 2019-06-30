@@ -1828,9 +1828,9 @@ static void sanitise_SQ_lines(cram_fd *fd) {
  * Returns 0 on success
  *        -1 on failure
  */
-int refs2id(refs_t *r, bam_hdr_t *bh) {
+int refs2id(refs_t *r, sam_hdr_t *hdr) {
     int i;
-    bam_hrecs_t *h = bh->hrecs;
+    bam_hrecs_t *h = hdr->hrecs;
 
     if (r->ref_id)
         free(r->ref_id);
@@ -1867,7 +1867,7 @@ static int refs_from_header(cram_fd *fd) {
     if (!r)
         return -1;
 
-    bam_hdr_t *h = fd->header;
+    sam_hdr_t *h = fd->header;
     if (!h)
         return 0;
 
@@ -1934,7 +1934,7 @@ static int refs_from_header(cram_fd *fd) {
  * we have a header already constructed (eg from a file we've read
  * in).
  */
-int cram_set_header2(cram_fd *fd, const bam_hdr_t *hdr) {
+int cram_set_header2(cram_fd *fd, const sam_hdr_t *hdr) {
     if (!fd || !hdr )
         return -1;
 
@@ -1948,7 +1948,7 @@ int cram_set_header2(cram_fd *fd, const bam_hdr_t *hdr) {
     return refs_from_header(fd);
 }
 
-int cram_set_header(cram_fd *fd, bam_hdr_t *hdr) {
+int cram_set_header(cram_fd *fd, sam_hdr_t *hdr) {
     return cram_set_header2(fd, hdr);
 }
 
@@ -3692,10 +3692,10 @@ void cram_free_file_def(cram_file_def *def) {
  * Returns SAM hdr ptr on success
  *         NULL on failure
  */
-bam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
+sam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
     int32_t header_len;
     char *header;
-    bam_hdr_t *hdr;
+    sam_hdr_t *hdr;
 
     /* 1.1 onwards stores the header in the first block of a container */
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
@@ -3852,7 +3852,7 @@ static void full_path(char *out, char *in) {
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
+int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
     size_t header_len;
     int blank_block = (CRAM_MAJOR_VERS(fd->version) >= 3);
 

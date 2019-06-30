@@ -53,7 +53,7 @@ static void view_sam(htsFile *in) {
         return;
     }
     samFile *out = dup_stdout("w");
-    bam_hdr_t *hdr = sam_hdr_read(in);
+    sam_hdr_t *hdr = sam_hdr_read(in);
     if (hdr == NULL) {
         hts_close_or_abort(out);
         return;
