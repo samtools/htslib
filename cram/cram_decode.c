@@ -74,11 +74,18 @@ int cram_decode_TD(char *cp, const char *endp, cram_block_compression_hdr *h) {
     if (!(b = cram_new_block(0, 0)))
         return -1;
 
+    if (h->TD_blk || h->TL) {
+        hts_log_warning("More than one TD block found in compression header");
+        cram_free_block(h->TD_blk);
+        free(h->TL);
+        h->TD_blk = NULL;
+        h->TL = NULL;
+    }
+
     /* Decode */
     cp += safe_itf8_get(cp, endp, &blk_size);
     if (!blk_size) {
         h->nTL = 0;
-        h->TL = NULL;
         cram_free_block(b);
         return cp - op;
     }
@@ -106,8 +113,7 @@ int cram_decode_TD(char *cp, const char *endp, cram_block_compression_hdr *h) {
     }
 
     // Copy
-    h->nTL = nTL;
-    if (!(h->TL = calloc(h->nTL, sizeof(unsigned char *)))) {
+    if (!(h->TL = calloc(nTL, sizeof(*h->TL)))) {
         cram_free_block(b);
         return -1;
     }
@@ -117,6 +123,7 @@ int cram_decode_TD(char *cp, const char *endp, cram_block_compression_hdr *h) {
             i++;
     }
     h->TD_blk = b;
+    h->nTL = nTL;
 
     return sz;
 }
