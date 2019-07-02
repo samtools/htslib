@@ -753,11 +753,9 @@ static int fai_get_val(const faidx_t *fai, const char *str,
 
     h = fai->hash;
     iter = kh_get(s, h, faidx_iseq(fai, id));
-    if (!iter) {
+    if (iter >= kh_end(h)) {
         // should have already been caught above
         abort();
-        *len = -2;
-        return 1;
     }
     *val = kh_value(h, iter);
 
