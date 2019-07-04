@@ -82,7 +82,7 @@ extern "C" {
  * The returned data has been malloced. It is up to the caller to free this
  * memory.
  */
-char *tokenise_search_path(char *searchpath);
+char *tokenise_search_path(const char *searchpath);
 
 /*
  * Opens a trace file named 'file'. This is initially looked for as a
@@ -99,13 +99,13 @@ char *tokenise_search_path(char *searchpath);
  * Returns a mFILE pointer when found.
  *           NULL otherwise.
  */
-mFILE *open_path_mfile(char *file, char *path, char *relative_to);
+mFILE *open_path_mfile(const char *file, char *path, char *relative_to);
 
 /*
  * Returns a mFILE containing the entire contents of the url;
  *         NULL on failure.
  */
-mFILE *find_file_url(char *file, char *url);
+mFILE *find_file_url(const char *file, char *url);
 
 
 /*
@@ -116,7 +116,7 @@ mFILE *find_file_url(char *file, char *url);
  * Returns the expanded pathname if found.
  *         NULL if not
  */
-char *find_path(char *file, char *path);
+char *find_path(const char *file, const char *path);
 
 #ifdef __cplusplus
 }

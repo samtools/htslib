@@ -102,7 +102,7 @@ Ie SQ->ID(foo)->LN(100)
  */
 typedef struct sam_hrec_tag_s {
     struct sam_hrec_tag_s *next;
-    char *str;
+    const char *str;
     int   len;
 } sam_hrec_tag_t;
 
@@ -132,14 +132,14 @@ typedef struct sam_hrec_type_s {
 
 /*! Parsed \@SQ lines */
 typedef struct {
-    char *name;
+    const char *name;
     uint32_t len;
     sam_hrec_type_t *ty;
 } sam_hrec_sq_t;
 
 /*! Parsed \@RG lines */
 typedef struct {
-    char *name;
+    const char *name;
     sam_hrec_type_t *ty;
     int name_len;
     int id;           // numerical ID
@@ -147,7 +147,7 @@ typedef struct {
 
 /*! Parsed \@PG lines */
 typedef struct {
-    char *name;
+    const char *name;
     sam_hrec_type_t *ty;
     int name_len;
     int id;           // numerical ID

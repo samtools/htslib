@@ -1642,7 +1642,7 @@ static BGZF *bgzf_open_ref(char *fn, char *mode, int is_md5) {
  * Returns the refs_t struct on success (maybe newly allocated);
  *         NULL on failure
  */
-static refs_t *refs_load_fai(refs_t *r_orig, char *fn, int is_err) {
+static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
     struct stat sb;
     FILE *fp = NULL;
     char fai_fn[PATH_MAX];
@@ -1794,7 +1794,7 @@ static void sanitise_SQ_lines(cram_fd *fd) {
         return;
 
     for (i = 0; i < fd->header->hrecs->nref; i++) {
-        char *name = fd->header->hrecs->ref[i].name;
+        const char *name = fd->header->hrecs->ref[i].name;
         khint_t k = kh_get(refs, fd->refs->h_meta, name);
         ref_entry *r;
 
@@ -1966,7 +1966,7 @@ static int is_directory(char *fn) {
  * in directory with the filename and %[0-9]+s with portions of the filename
  * Any remaining parts of filename are added to the end with /%s.
  */
-static int expand_cache_path(char *path, char *dir, char *fn) {
+static int expand_cache_path(char *path, char *dir, const char *fn) {
     char *cp, *start = path;
     size_t len;
     size_t sz = PATH_MAX;
@@ -2196,7 +2196,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
         r->is_md5 = 1;
     } else {
         refs_t *refs;
-        char *fn;
+        const char *fn;
 
     no_M5:
         /* Failed to find in search path or M5 cache, see if @SQ UR: tag? */

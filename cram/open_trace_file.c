@@ -102,7 +102,7 @@ static int is_file(char *fn) {
  * The returned data has been malloced. It is up to the caller to free this
  * memory.
  */
-char *tokenise_search_path(char *searchpath) {
+char *tokenise_search_path(const char *searchpath) {
     char *newsearch;
     unsigned int i, j;
     size_t len;
@@ -177,9 +177,9 @@ char *tokenise_search_path(char *searchpath) {
     return newsearch;
 }
 
-static char *expand_path(char *file, char *dirname, int max_s_digits);
+static char *expand_path(const char *file, char *dirname, int max_s_digits);
 
-mFILE *find_file_url(char *file, char *url) {
+mFILE *find_file_url(const char *file, char *url) {
     char *path = NULL, buf[8192];
     mFILE *mf = NULL;
     ssize_t len;
@@ -227,7 +227,7 @@ mFILE *find_file_url(char *file, char *url) {
  *
  * Returns expanded pathname or NULL for malloc failure.
  */
-static char *expand_path(char *file, char *dirname, int max_s_digits) {
+static char *expand_path(const char *file, char *dirname, int max_s_digits) {
     size_t len = strlen(dirname);
     size_t lenf = strlen(file);
     char *cp, *path;
@@ -293,7 +293,7 @@ static char *expand_path(char *file, char *dirname, int max_s_digits) {
  * Returns mFILE pointer if found
  *         NULL if not
  */
-static mFILE *find_file_dir(char *file, char *dirname) {
+static mFILE *find_file_dir(const char *file, char *dirname) {
     char *path;
     mFILE *mf = NULL;
 
@@ -328,7 +328,7 @@ static mFILE *find_file_dir(char *file, char *dirname) {
  * Returns a mFILE pointer when found.
  *           NULL otherwise.
  */
-mFILE *open_path_mfile(char *file, char *path, char *relative_to) {
+mFILE *open_path_mfile(const char *file, char *path, char *relative_to) {
     char *newsearch;
     char *ele;
     mFILE *fp;
@@ -403,7 +403,7 @@ mFILE *open_path_mfile(char *file, char *path, char *relative_to) {
  * Returns the expanded pathname if found.
  *         NULL if not
  */
-char *find_path(char *file, char *path) {
+char *find_path(const char *file, const char *path) {
     char *newsearch;
     char *ele;
     char *outpath = NULL;

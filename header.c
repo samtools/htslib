@@ -197,9 +197,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
             } else if (tag->str[0] == 'P' && tag->str[1] == 'P') {
                 // Resolve later if needed
                 khint_t k;
-                char tmp = tag->str[tag->len]; tag->str[tag->len] = 0;
                 k = kh_get(m_s2i, hrecs->pg_hash, tag->str+3);
-                tag->str[tag->len] = tmp;
 
                 if (k != kh_end(hrecs->pg_hash)) {
                     int p_id = kh_val(hrecs->pg_hash, k);
@@ -260,7 +258,7 @@ static int sam_hrecs_remove_hash_entry(sam_hrecs_t *hrecs, int type, sam_hrec_ty
         return -1;
 
     sam_hrec_tag_t *tag;
-    char *key = NULL;
+    const char *key = NULL;
     khint_t k;
 
     /* Remove from reference hash */
@@ -432,7 +430,7 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
     // Any ... varargs
     va_start(args, ap);
     for (;;) {
-        char *key, *val = NULL;
+        char *key, *val = NULL, *str;
 
         if (!(key = (char *)va_arg(args, char *)))
             break;
@@ -446,13 +444,14 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
 
         if (strncmp(type, "CO", 2)) {
             h_tag->len = 3 + strlen(val);
-            h_tag->str = string_alloc(hrecs->str_pool, h_tag->len+1);
-            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", key, val) < 0)
+            str = string_alloc(hrecs->str_pool, h_tag->len+1);
+            if (!str || snprintf(str, h_tag->len+1, "%2.2s:%s", key, val) < 0)
                 return -1;
+            h_tag->str = str;
         } else {
             h_tag->len = strlen(key);
-            h_tag->str = string_alloc(hrecs->str_pool, h_tag->len+1);
-            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%s", key) < 0)
+            h_tag->str = string_ndup(hrecs->str_pool, key, h_tag->len);
+            if (!h_tag->str)
                 return -1;
         }
 
@@ -468,7 +467,7 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
 
     // Plus the specified va_list params
     for (;;) {
-        char *key, *val = NULL;
+        char *key, *val = NULL, *str;
 
         if (!(key = (char *)va_arg(ap, char *)))
             break;
@@ -480,13 +479,14 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
 
         if (strncmp(type, "CO", 2)) {
             h_tag->len = 3 + strlen(val);
-            h_tag->str = string_alloc(hrecs->str_pool, h_tag->len+1);
-            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%2.2s:%s", key, val) < 0)
+            str = string_alloc(hrecs->str_pool, h_tag->len+1);
+            if (!str || snprintf(str, h_tag->len+1, "%2.2s:%s", key, val) < 0)
                 return -1;
+            h_tag->str = str;
         } else {
             h_tag->len = strlen(key);
-            h_tag->str = string_alloc(hrecs->str_pool, h_tag->len+1);
-            if (!h_tag->str || snprintf(h_tag->str, h_tag->len+1, "%s", key) < 0)
+            h_tag->str = string_ndup(hrecs->str_pool, key, h_tag->len);
+            if (!h_tag->str)
                 return -1;
         }
 
@@ -1528,7 +1528,6 @@ static int sam_hdr_link_pg(sam_hdr_t *bh) {
     for (i = 0; i < hrecs->npg; i++) {
         khint_t k;
         sam_hrec_tag_t *tag;
-        char tmp;
 
         assert(hrecs->pg[i].ty != NULL);
         for (tag = hrecs->pg[i].ty->tag; tag; tag = tag->next) {
@@ -1540,9 +1539,7 @@ static int sam_hdr_link_pg(sam_hdr_t *bh) {
             continue;
         }
 
-        tmp = tag->str[tag->len]; tag->str[tag->len] = 0;
         k = kh_get(m_s2i, hrecs->pg_hash, tag->str+3);
-        tag->str[tag->len] = tmp;
 
         if (k == kh_end(hrecs->pg_hash)) {
             ret = -1;
@@ -1920,7 +1917,7 @@ sam_hrec_type_t *sam_hrecs_find_type_id(sam_hrecs_t *hrecs, const char *type,
         sam_hrec_tag_t *tag;
         for (tag = t1->tag; tag; tag = tag->next) {
             if (tag->str[0] == ID_key[0] && tag->str[1] == ID_key[1]) {
-                char *cp1 = tag->str+3;
+                const char *cp1 = tag->str+3;
                 const char *cp2 = ID_value;
                 while (*cp1 && *cp1 == *cp2)
                     cp1++, cp2++;
@@ -1950,7 +1947,7 @@ int sam_hrecs_update(sam_hrecs_t *hrecs, sam_hrec_type_t *type, va_list ap) {
         return -1;
 
     for (;;) {
-        char *k, *v;
+        char *k, *v, *str;
         sam_hrec_tag_t *tag, *prev = NULL;
 
         if (!(k = (char *)va_arg(ap, char *)))
@@ -1971,12 +1968,14 @@ int sam_hrecs_update(sam_hrecs_t *hrecs, sam_hrec_type_t *type, va_list ap) {
         }
 
         tag->len = 3 + strlen(v);
-        tag->str = string_alloc(hrecs->str_pool, tag->len+1);
-        if (!tag->str)
+        str = string_alloc(hrecs->str_pool, tag->len+1);
+        if (!str)
             return -1;
 
-        if (snprintf(tag->str, tag->len+1, "%2.2s:%s", k, v) < 0)
+        if (snprintf(str, tag->len+1, "%2.2s:%s", k, v) < 0)
             return -1;
+
+        tag->str = str;
     }
 
     hrecs->dirty = 1; //mark text as dirty and force a rebuild
