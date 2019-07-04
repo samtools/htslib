@@ -1443,7 +1443,7 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
                 r |= kputs(h->target_name[i], &fp->line) < 0;
                 r |= kputsn("\tLN:", 4, &fp->line) < 0;
                 r |= kputw(h->target_len[i], &fp->line) < 0;
-                r |= kputc('\n', &fp->line);
+                r |= kputc('\n', &fp->line) < 0;
                 if (r != 0)
                     return -1;
 

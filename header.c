@@ -32,6 +32,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <string.h>
 #include <assert.h>
+#include <errno.h>
 #include "textutils_internal.h"
 #include "header.h"
 
@@ -40,6 +41,10 @@ KHASH_SET_INIT_STR(rm)
 typedef khash_t(rm) rmhash_t;
 
 static int sam_hdr_link_pg(sam_hdr_t *bh);
+
+static int sam_hrecs_vupdate(sam_hrecs_t *hrecs, sam_hrec_type_t *type, va_list ap);
+static int sam_hrecs_update(sam_hrecs_t *hrecs, sam_hrec_type_t *type, ...);
+
 
 #define MAX_ERROR_QUOTE 320 // Prevent over-long error messages
 static void sam_hrecs_error(const char *msg, const char *line, size_t len, size_t lno) {
@@ -83,8 +88,58 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                                    sam_hrec_type_t *h_type) {
     /* Add to reference hash? */
     if ((type>>8) == 'S' && (type&0xff) == 'Q') {
-        sam_hrec_tag_t *tag;
+        sam_hrec_tag_t *tag = h_type->tag;
         int nref = hrecs->nref;
+        const char *name = NULL;
+        int len = -1, r;
+        khint_t k;
+
+        while (tag) {
+            if (tag->str[0] == 'S' && tag->str[1] == 'N') {
+                assert(tag->len >= 3);
+                name = tag->str+3;
+            } else if (tag->str[0] == 'L' && tag->str[1] == 'N') {
+                assert(tag->len >= 3);
+                len = atoi(tag->str+3);
+            }
+            tag = tag->next;
+        }
+
+        if (!name) {
+            hts_log_error("Header includes @SQ line with no SN: tag");
+            return -1; // SN should be present, according to spec.
+        }
+
+        if (len == -1) {
+            hts_log_error("Header includes @SQ line \"%s\" with no LN: tag",
+                          name);
+            return -1; // LN should be present, according to spec.
+        }
+
+        // Seen already?
+        k = kh_get(m_s2i, hrecs->ref_hash, name);
+        if (k < kh_end(hrecs->ref_hash)) {
+            nref = kh_val(hrecs->ref_hash, k);
+            if (hrecs->ref[nref].ty != NULL) {
+                if (hrecs->ref[nref].ty != h_type) {
+                    hts_log_warning("Duplicate entry \"%s\" in sam header",
+                                    name);
+                } else { // Updating
+                    hrecs->ref[nref].len = len;
+                }
+            } else {
+                // Attach header line to existing stub entry.
+                hrecs->ref[nref].ty = h_type;
+                // Check lengths match; correct if not.
+                if (len != hrecs->ref[nref].len) {
+                    char tmp[32];
+                    snprintf(tmp, sizeof(tmp), "%u", hrecs->ref[nref].len);
+                    if (sam_hrecs_update(hrecs, h_type, "LN", tmp, NULL) < 0)
+                        return -1;
+                }
+            }
+            return 0;
+        }
 
         if (nref == hrecs->ref_sz) {
             size_t new_sz = hrecs->ref_sz >= 4 ? hrecs->ref_sz + (hrecs->ref_sz / 4) : 32;
@@ -95,30 +150,13 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
             hrecs->ref_sz = new_sz;
         }
 
-        tag = h_type->tag;
-        hrecs->ref[nref].name = NULL;
-        hrecs->ref[nref].len  = 0;
+        hrecs->ref[nref].name = name;
+        hrecs->ref[nref].len  = len;
         hrecs->ref[nref].ty = h_type;
 
-        while (tag) {
-            if (tag->str[0] == 'S' && tag->str[1] == 'N') {
-                assert(tag->len >= 3);
-                hrecs->ref[nref].name = tag->str+3;
-            } else if (tag->str[0] == 'L' && tag->str[1] == 'N') {
-                hrecs->ref[nref].len = atoi(tag->str+3);
-            }
-            tag = tag->next;
-        }
-
-        if (hrecs->ref[nref].name) {
-            khint_t k;
-            int r;
-            k = kh_put(m_s2i, hrecs->ref_hash, hrecs->ref[nref].name, &r);
-            if (-1 == r) return -1;
-            kh_val(hrecs->ref_hash, k) = nref;
-        } else {
-            return -1; // SN should be present, according to spec.
-        }
+        k = kh_put(m_s2i, hrecs->ref_hash, hrecs->ref[nref].name, &r);
+        if (-1 == r) return -1;
+        kh_val(hrecs->ref_hash, k) = nref;
 
         if (hrecs->refs_changed < 0 || hrecs->refs_changed > hrecs->nref)
             hrecs->refs_changed = hrecs->nref;
@@ -391,7 +429,7 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
     khint32_t type_i = (type[0]<<8) | type[1], k;
 
     if (!strncmp(type, "HD", 2) && (h_type = sam_hrecs_find_type_id(hrecs, "HD", NULL, NULL)))
-        return sam_hrecs_update(hrecs, h_type, ap);
+        return sam_hrecs_vupdate(hrecs, h_type, ap);
 
     if (!(h_type = pool_alloc(hrecs->type_pool)))
         return -1;
@@ -509,6 +547,16 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
     hrecs->dirty = 1;
 
     return 0;
+}
+
+// As sam_hrecs_vadd(), but without the extra va_list parameter
+static int sam_hrecs_add(sam_hrecs_t *hrecs, const char *type, ...) {
+    va_list args;
+    int res;
+    va_start(args, type);
+    res = sam_hrecs_vadd(hrecs, type, args, NULL);
+    va_end(args);
+    return res;
 }
 
 /*
@@ -801,11 +849,120 @@ static int rebuild_target_arrays(sam_hdr_t *bh) {
     return 0;
 }
 
+/// Populate hrecs refs array from header target_name, target_len arrays
+/**
+ * @return 0 on success; -1 on failure
+ *
+ * Pre-fills the refs hash from the target arrays.  For BAM files this
+ * will ensure that they are in the correct order as the target arrays
+ * are the canonical source for converting target ids to names and lengths.
+ *
+ * The added entries do not link to a header line. sam_hrecs_update_hashes()
+ * will add the links later for lines found in the text header.
+ *
+ * This should be called before the text header is parsed.
+ */
+static int sam_hrecs_refs_from_targets_array(sam_hrecs_t *hrecs,
+                                             const sam_hdr_t *bh) {
+    int32_t tid = 0;
+
+    if (!hrecs || !bh)
+        return -1;
+
+    // This should always be called before parsing the text header
+    // so the ref array should start off empty, and we don't have to try
+    // to reconcile any existing data.
+    if (hrecs->nref > 0) {
+        hts_log_error("Called with non-empty ref array");
+        return -1;
+    }
+
+    if (hrecs->ref_sz < bh->n_targets) {
+        sam_hrec_sq_t *new_ref = realloc(hrecs->ref,
+                                         bh->n_targets * sizeof(*new_ref));
+        if (!new_ref)
+            return -1;
+
+        hrecs->ref = new_ref;
+        hrecs->ref_sz = bh->n_targets;
+    }
+
+    for (tid = 0; tid < bh->n_targets; tid++) {
+        khint_t k;
+        int r;
+        hrecs->ref[tid].name = string_dup(hrecs->str_pool, bh->target_name[tid]);
+        if (!hrecs->ref[tid].name) goto fail;
+        hrecs->ref[tid].len  = bh->target_len[tid];
+        hrecs->ref[tid].ty   = NULL;
+        k = kh_put(m_s2i, hrecs->ref_hash, hrecs->ref[tid].name, &r);
+        if (r < 0) goto fail;
+        if (r == 0) {
+            hts_log_warning("Duplicate entry \"%s\" in target list",
+                            hrecs->ref[tid].name);
+        } else {
+            kh_val(hrecs->ref_hash, k) = tid;
+        }
+    }
+    hrecs->nref = bh->n_targets;
+    return 0;
+
+ fail: {
+        int32_t i;
+        hts_log_error("%s", strerror(errno));
+        for (i = 0; i < tid; i++) {
+            khint_t k;
+            if (!hrecs->ref[i].name) continue;
+            k = kh_get(m_s2i, hrecs->ref_hash, hrecs->ref[tid].name);
+            if (k < kh_end(hrecs->ref_hash)) kh_del(m_s2i, hrecs->ref_hash, k);
+        }
+        hrecs->nref = 0;
+        return -1;
+    }
+}
+
+/*
+ * Add SQ header records for any references in the hrecs->ref array that
+ * were added by sam_hrecs_refs_from_targets_array() but have not
+ * been linked to an @SQ line by sam_hrecs_update_hashes() yet.
+ *
+ * This may be needed either because:
+ *
+ *   - A bam file was read that had entries in its refs list with no
+ *     corresponding @SQ line.
+ *
+ *   - A program constructed a sam_hdr_t which has target_name and target_len
+ *     array entries with no corresponding @SQ line in text.
+ */
+static int add_stub_ref_sq_lines(sam_hrecs_t *hrecs) {
+    int tid;
+    char len[32];
+
+    for (tid = 0; tid < hrecs->nref; tid++) {
+        if (hrecs->ref[tid].ty == NULL) {
+            snprintf(len, sizeof(len), "%d", hrecs->ref[tid].len);
+            if (sam_hrecs_add(hrecs, "SQ",
+                              "SN", hrecs->ref[tid].name,
+                              "LN", len, NULL) != 0)
+                return -1;
+            // This should be true after adding the new line
+            assert(hrecs->ref[tid].ty != NULL);
+        }
+    }
+    return 0;
+}
+
 int sam_hdr_fill_hrecs(sam_hdr_t *bh) {
     sam_hrecs_t *hrecs = sam_hrecs_new();
 
     if (!hrecs)
         return -1;
+
+    if (bh->target_name && bh->target_len && bh->n_targets > 0) {
+        if (sam_hrecs_refs_from_targets_array(hrecs, bh) != 0) {
+            sam_hrecs_free(hrecs);
+            return -1;
+        }
+    }
 
     // Parse existing header text
     if (bh->text && bh->l_text > 0) {
@@ -813,6 +970,11 @@ int sam_hdr_fill_hrecs(sam_hdr_t *bh) {
             sam_hrecs_free(hrecs);
             return -1;
         }
+    }
+
+    if (add_stub_ref_sq_lines(hrecs) < 0) {
+        sam_hrecs_free(hrecs);
+        return -1;
     }
 
     bh->hrecs = hrecs;
@@ -1169,7 +1331,7 @@ int sam_hdr_update_line(sam_hdr_t *bh, const char *type,
 
     va_list args;
     va_start(args, ID_value);
-    ret = sam_hrecs_update(hrecs, ty, args);
+    ret = sam_hrecs_vupdate(hrecs, ty, args);
     va_end(args);
 
     if (!ret && hrecs->dirty)
@@ -1937,12 +2099,12 @@ sam_hrec_type_t *sam_hrecs_find_type_id(sam_hrecs_t *hrecs, const char *type,
  * Eg for adding M5 tags to @SQ lines or updating sort order for the
  * @HD line.
  *
- * Specify multiple key,value pairs ending in NULL.
+ * va_list contains multiple key,value pairs ending in NULL.
  *
  * Returns 0 on success
  *        -1 on failure
  */
-int sam_hrecs_update(sam_hrecs_t *hrecs, sam_hrec_type_t *type, va_list ap) {
+int sam_hrecs_vupdate(sam_hrecs_t *hrecs, sam_hrec_type_t *type, va_list ap) {
     if (!hrecs)
         return -1;
 
@@ -1981,6 +2143,25 @@ int sam_hrecs_update(sam_hrecs_t *hrecs, sam_hrec_type_t *type, va_list ap) {
     hrecs->dirty = 1; //mark text as dirty and force a rebuild
 
     return 0;
+}
+
+/*
+ * Adds or updates tag key,value pairs in a header line.
+ * Eg for adding M5 tags to @SQ lines or updating sort order for the
+ * @HD line.
+ *
+ * Specify multiple key,value pairs ending in NULL.
+ *
+ * Returns 0 on success
+ *        -1 on failure
+ */
+static int sam_hrecs_update(sam_hrecs_t *hrecs, sam_hrec_type_t *type, ...) {
+    va_list args;
+    int res;
+    va_start(args, type);
+    res = sam_hrecs_vupdate(hrecs, type, args);
+    va_end(args);
+    return res;
 }
 
 /*

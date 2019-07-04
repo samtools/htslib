@@ -296,18 +296,6 @@ void sam_hrecs_free(sam_hrecs_t *hrecs);
 sam_hrec_type_t *sam_hrecs_find_type_id(sam_hrecs_t *hrecs, const char *type,
                                      const char *ID_key, const char *ID_value);
 
-/*
- * Adds or updates tag key,value pairs in a header line.
- * Eg for adding M5 tags to @SQ lines or updating sort order for the
- * @HD line.
- *
- * Specify multiple key,value pairs ending in NULL.
- *
- * Returns 0 on success
- *        -1 on failure
- */
-int sam_hrecs_update(sam_hrecs_t *hrecs, sam_hrec_type_t *type, va_list ap);
-
 sam_hrec_tag_t *sam_hrecs_find_key(sam_hrec_type_t *type,
                                    const char *key,
                                    sam_hrec_tag_t **prev);

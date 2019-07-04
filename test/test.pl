@@ -557,6 +557,23 @@ sub test_view
     } else {
         failed($opts, "range.cram tests", "$test_view_failures subtests failed");
     }
+
+    # Test BAM files with references in targets list but no corresponding @SQ
+    # lines in the text header.
+    print "test_view testing BAM files with absent \@SQ lines:\n";
+    $test_view_failures = 0;
+    testv $opts, "./test_view $tv_args -p no_hdr_sq_1.tmp.sam no_hdr_sq_1.bam";
+    testv $opts, "./compare_sam.pl no_hdr_sq_1.tmp.sam no_hdr_sq_1.expected.sam";
+
+    # Try a range query to ensure id <-> name mapping works
+    # Input only has reads from CHROMOSOME_I, so same "expected" file is used
+    testv $opts, "./test_view $tv_args -p no_hdr_sq_1.chr1.tmp.sam no_hdr_sq_1.bam CHROMOSOME_I";
+    testv $opts, "./compare_sam.pl no_hdr_sq_1.chr1.tmp.sam no_hdr_sq_1.expected.sam";
+    if ($test_view_failures == 0) {
+        passed($opts, "no_hdr_sq tests");
+    } else {
+        failed($opts, "no_hdr_sq tests", "$test_view_failures subtests failed");
+    }
 }
 
 # Tests CRAM's ability to correctly preserve MD and NM, irrespective of whether
