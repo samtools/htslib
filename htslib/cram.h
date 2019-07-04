@@ -412,9 +412,12 @@ int cram_check_EOF(cram_fd *fd);
 int int32_put_blk(cram_block *b, int32_t val);
 
 /**@}*/
-/**@{ -------------------------------------------------------------------*/
+/**@{ -------------------------------------------------------------------
+ * Old typedef and function names for compatibility with existing code.
+ * Header functionality is now provided by sam.h's sam_hdr_t functions.
+ */
 
-typedef struct bam_hdr_t SAM_hdr;
+typedef sam_hdr_t SAM_hdr;
 
 /*! Tokenises a SAM header into a hash table.
  *
@@ -424,17 +427,15 @@ typedef struct bam_hdr_t SAM_hdr;
  * Returns a SAM_hdr struct on success (free with sam_hdr_free());
  *         NULL on failure
  */
-SAM_hdr *sam_hdr_parse_(const char *hdr, size_t len);
+static inline SAM_hdr *sam_hdr_parse_(const char *hdr, size_t len) { return sam_hdr_parse(len, hdr); }
 
 /*! Deallocates all storage used by a SAM_hdr struct.
  *
  * This also decrements the header reference count. If after decrementing
  * it is still non-zero then the header is assumed to be in use by another
  * caller and the free is not done.
- *
- * This is a synonym for sam_hdr_dec_ref().
  */
-void sam_hdr_free(SAM_hdr *hdr);
+static inline void sam_hdr_free(SAM_hdr *hdr) { sam_hdr_destroy(hdr); }
 
 /* sam_hdr_length() and sam_hdr_str() are now provided by sam.h. */
 

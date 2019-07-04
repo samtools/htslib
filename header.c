@@ -2115,22 +2115,3 @@ enum sam_group_order bam_hrecs_group_order(bam_hrecs_t *hrecs) {
 
     return go;
 }
-
-// Legacy functions from htslb/cram.h, included here for API compatibility.
-typedef sam_hdr_t SAM_hdr;
-
-SAM_hdr *sam_hdr_parse_(const char *hdr, size_t len) {
-    sam_hdr_t *bh = sam_hdr_init();
-    if (!bh) return NULL;
-
-    if (sam_hdr_add_lines(bh, hdr, len) != 0) {
-        sam_hdr_destroy(bh);
-        return NULL;
-    }
-
-    return bh;
-}
-
-void sam_hdr_free(SAM_hdr *hdr) {
-    sam_hdr_destroy(hdr);
-}

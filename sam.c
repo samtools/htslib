@@ -1061,7 +1061,15 @@ hts_itr_t *sam_itr_regions(const hts_idx_t *idx, sam_hdr_t *hdr, hts_reglist_t *
 
 sam_hdr_t *sam_hdr_parse(size_t l_text, const char *text)
 {
-    return sam_hdr_parse_(text, l_text);
+    sam_hdr_t *bh = sam_hdr_init();
+    if (!bh) return NULL;
+
+    if (sam_hdr_add_lines(bh, text, l_text) != 0) {
+        sam_hdr_destroy(bh);
+        return NULL;
+    }
+
+    return bh;
 }
 
 // Minimal sanitisation of a header to ensure.

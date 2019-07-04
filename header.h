@@ -283,8 +283,6 @@ int bam_hrecs_rebuild_text(const bam_hrecs_t *hrecs, kstring_t *ks);
  * This also decrements the header reference count. If after decrementing
  * it is still non-zero then the header is assumed to be in use by another
  * caller and the free is not done.
- *
- * This is a synonym for sam_hdr_dec_ref().
  */
 void bam_hrecs_free(bam_hrecs_t *hrecs);
 
