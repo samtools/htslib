@@ -48,7 +48,7 @@ extern "C" {
 
 #ifndef _CRAM_STRUCTS_H_
 enum cram_block_method {
-    ERROR    = -1,
+    BM_ERROR = -1,
     RAW      = 0,
     GZIP     = 1,
     BZIP2    = 2,
@@ -439,30 +439,16 @@ static inline void sam_hdr_free(SAM_hdr *hdr) { sam_hdr_destroy(hdr); }
 
 /* sam_hdr_length() and sam_hdr_str() are now provided by sam.h. */
 
-/*! Appends a formatted line to an existing SAM header.
- *
- * Line is a full SAM header record, eg "@SQ\tSN:foo\tLN:100", with
- * optional new-line. If it contains more than 1 line then multiple lines
- * will be added in order.
- *
- * Len is the length of the text data, or 0 if unknown (in which case
- * it should be null terminated).
- *
- * @return
- * Returns 0 on success;
- *        -1 on failure
- */
-
 /*! Add an @PG line.
  *
- * If we wish complete control over this use sam_hdr_add() directly. This
+ * If we wish complete control over this use sam_hdr_add_line() directly. This
  * function uses that, but attempts to do a lot of tedious house work for
  * you too.
  *
  * - It will generate a suitable ID if the supplied one clashes.
  * - It will generate multiple @PG records if we have multiple PG chains.
  *
- * Call it as per sam_hdr_add() with a series of key,value pairs ending
+ * Call it as per sam_hdr_add_line() with a series of key,value pairs ending
  * in NULL.
  *
  * @return

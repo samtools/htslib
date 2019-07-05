@@ -982,7 +982,7 @@ int sam_hdr_add_lines(sam_hdr_t *bh, const char *lines, size_t len) {
 /*
  * Adds a single line to a SAM header.
  * Specify type and one or more key,value pairs, ending with the NULL key.
- * Eg. bam_hdr_add(h, "SQ", "ID", "foo", "LN", "100", NULL).
+ * Eg. sam_hdr_add_line(h, "SQ", "ID", "foo", "LN", "100", NULL).
  *
  * Returns 0 on success
  *        -1 on failure
