@@ -1872,7 +1872,7 @@ static int refs_from_header(cram_fd *fd) {
         return 0;
 
     if (!h->hrecs) {
-        if (-1 == bam_hdr_parse(h))
+        if (-1 == sam_hdr_fill_hrecs(h))
             return -1;
     }
 

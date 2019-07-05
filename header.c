@@ -39,7 +39,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 KHASH_SET_INIT_STR(rm)
 typedef khash_t(rm) rmhash_t;
 
-static int bam_hdr_link_pg(sam_hdr_t *bh);
+static int sam_hdr_link_pg(sam_hdr_t *bh);
 
 #define MAX_ERROR_QUOTE 320 // Prevent over-long error messages
 static void bam_hrecs_error(const char *msg, const char *line, size_t len, size_t lno) {
@@ -739,8 +739,8 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
  *
  *  @return 0 on success; -1 on failure
  */
-int update_target_arrays(sam_hdr_t *bh, const bam_hrecs_t *hrecs,
-                         int refs_changed) {
+int sam_hdr_update_target_arrays(sam_hdr_t *bh, const bam_hrecs_t *hrecs,
+                                 int refs_changed) {
     if (!bh || !hrecs)
         return -1;
 
@@ -794,14 +794,14 @@ static int rebuild_target_arrays(sam_hdr_t *bh) {
     if (hrecs->refs_changed < 0)
         return 0;
 
-    if (update_target_arrays(bh, hrecs, hrecs->refs_changed) != 0)
+    if (sam_hdr_update_target_arrays(bh, hrecs, hrecs->refs_changed) != 0)
         return -1;
 
     hrecs->refs_changed = -1;
     return 0;
 }
 
-int bam_hdr_parse(sam_hdr_t *bh) {
+int sam_hdr_fill_hrecs(sam_hdr_t *bh) {
     bam_hrecs_t *hrecs = bam_hrecs_new();
 
     if (!hrecs)
@@ -879,14 +879,14 @@ static bam_hrec_type_t *bam_hrecs_find_type_pos(bam_hrecs_t *hrecs,
 /* ==== Public methods ==== */
 
 size_t sam_hdr_length(sam_hdr_t *bh) {
-    if (!bh || -1 == bam_hdr_rebuild(bh))
+    if (!bh || -1 == sam_hdr_rebuild(bh))
         return -1;
 
     return bh->l_text;
 }
 
 const char *sam_hdr_str(sam_hdr_t *bh) {
-    if (!bh || -1 == bam_hdr_rebuild(bh))
+    if (!bh || -1 == sam_hdr_rebuild(bh))
         return NULL;
 
     return bh->text;
@@ -904,7 +904,7 @@ int sam_hdr_nref(const sam_hdr_t *bh) {
  * Returns 0 on success
  *        -1 on failure
  */
-int bam_hdr_rebuild(sam_hdr_t *bh) {
+int sam_hdr_rebuild(sam_hdr_t *bh) {
     bam_hrecs_t *hrecs;
     if (!bh)
         return -1;
@@ -922,7 +922,7 @@ int bam_hdr_rebuild(sam_hdr_t *bh) {
         return 0;
 
     if (hrecs->pgs_changed)
-        bam_hdr_link_pg(bh);
+        sam_hdr_link_pg(bh);
 
     kstring_t ks = KS_INITIALIZER;
     if (bam_hrecs_rebuild_text(hrecs, &ks) != 0) {
@@ -962,7 +962,7 @@ int sam_hdr_add_lines(sam_hdr_t *bh, const char *lines, size_t len) {
         return 0;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -1;
         hrecs = bh->hrecs;
     }
@@ -995,7 +995,7 @@ int sam_hdr_add_line(sam_hdr_t *bh, const char *type, ...) {
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -1;
         hrecs = bh->hrecs;
     }
@@ -1027,7 +1027,7 @@ int sam_hdr_find_line_id(sam_hdr_t *bh, const char *type,
         return -2;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -2;
         hrecs = bh->hrecs;
     }
@@ -1051,7 +1051,7 @@ int sam_hdr_find_line_pos(sam_hdr_t *bh, const char *type,
         return -2;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -2;
         hrecs = bh->hrecs;
     }
@@ -1084,7 +1084,7 @@ int sam_hdr_remove_line_id(sam_hdr_t *bh, const char *type, const char *ID_key, 
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -1;
         hrecs = bh->hrecs;
     }
@@ -1123,7 +1123,7 @@ int sam_hdr_remove_line_pos(sam_hdr_t *bh, const char *type, int position) {
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -1;
         hrecs = bh->hrecs;
     }
@@ -1157,7 +1157,7 @@ int sam_hdr_update_line(sam_hdr_t *bh, const char *type,
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -1;
         hrecs = bh->hrecs;
     }
@@ -1184,7 +1184,7 @@ int sam_hdr_keep_line(sam_hdr_t *bh, const char *type, const char *ID_key, const
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -1;
         hrecs = bh->hrecs;
     }
@@ -1232,7 +1232,7 @@ int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -1;
         hrecs = bh->hrecs;
     }
@@ -1291,7 +1291,7 @@ int sam_hdr_count_lines(sam_hdr_t *bh, const char *type) {
         return -1;
 
     if (!bh->hrecs) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -1;
     }
 
@@ -1336,7 +1336,7 @@ int sam_hdr_find_tag_id(sam_hdr_t *bh,
         return -2;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -2;
         hrecs = bh->hrecs;
     }
@@ -1367,7 +1367,7 @@ int sam_hdr_find_tag_pos(sam_hdr_t *bh,
         return -2;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -2;
         hrecs = bh->hrecs;
     }
@@ -1398,7 +1398,7 @@ int sam_hdr_remove_tag_id(sam_hdr_t *bh,
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -1;
         hrecs = bh->hrecs;
     }
@@ -1443,7 +1443,7 @@ int sam_hdr_name2ref(sam_hdr_t *bh, const char *ref) {
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -2;
         hrecs = bh->hrecs;
     }
@@ -1468,7 +1468,7 @@ int sam_hdr_name2ref(sam_hdr_t *bh, const char *ref) {
  * Returns 0 on success
  *        -1 on failure (indicating broken PG/PP records)
  */
-static int bam_hdr_link_pg(sam_hdr_t *bh) {
+static int sam_hdr_link_pg(sam_hdr_t *bh) {
     bam_hrecs_t *hrecs;
     int i, j, ret = 0, *new_pg_end;
 
@@ -1476,7 +1476,7 @@ static int bam_hdr_link_pg(sam_hdr_t *bh) {
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -1;
         hrecs = bh->hrecs;
     }
@@ -1549,7 +1549,7 @@ const char *sam_hdr_pg_id(sam_hdr_t *bh, const char *name) {
         return NULL;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return NULL;
         hrecs = bh->hrecs;
     }
@@ -1600,7 +1600,7 @@ int sam_hdr_add_pg(sam_hdr_t *bh, const char *name, ...) {
         return -1;
 
     if (!(hrecs = bh->hrecs)) {
-        if (bam_hdr_parse(bh) != 0)
+        if (sam_hdr_fill_hrecs(bh) != 0)
             return -1;
         hrecs = bh->hrecs;
     }

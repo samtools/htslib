@@ -130,7 +130,7 @@ sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
         h->l_text = tmp.l;
         h->text   = ks_release(&tmp);
 
-        if (update_target_arrays(h, h0->hrecs, 0) != 0)
+        if (sam_hdr_update_target_arrays(h, h0->hrecs, 0) != 0)
             goto fail;
     } else {
         h->l_text = h0->l_text;
@@ -1533,7 +1533,7 @@ int sam_hdr_change_HD(sam_hdr_t *h, const char *key, const char *val)
         if (sam_hdr_remove_tag_id(h, "HD", NULL, NULL, key) != 0)
             return -1;
     }
-    return bam_hdr_rebuild(h);
+    return sam_hdr_rebuild(h);
 }
 /**********************
  *** SAM record I/O ***

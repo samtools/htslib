@@ -235,7 +235,7 @@ struct bam_hrecs_t {
  *              sam_hdr_init call
  * @return      0 on success, -1 on failure
  */
-int bam_hdr_parse(sam_hdr_t *bh);
+int sam_hdr_fill_hrecs(sam_hdr_t *bh);
 
 /*!
  * Reconstructs the text representation of the header from
@@ -244,7 +244,7 @@ int bam_hdr_parse(sam_hdr_t *bh);
  *
  * @return  0 on success, -1 on failure
  */
-int bam_hdr_rebuild(sam_hdr_t *bh);
+int sam_hdr_rebuild(sam_hdr_t *bh);
 
 /*! Creates an empty SAM header, ready to be populated.
  *
@@ -267,8 +267,8 @@ bam_hrecs_t *bam_hrecs_dup(bam_hrecs_t *hrecs);
  *
  *  @return 0 on success; -1 on failure
  */
-int update_target_arrays(sam_hdr_t *bh, const bam_hrecs_t *hrecs,
-                         int refs_changed);
+int sam_hdr_update_target_arrays(sam_hdr_t *bh, const bam_hrecs_t *hrecs,
+                                 int refs_changed);
 
 /*! Reconstructs a kstring from the header hash table.
  *
