@@ -102,7 +102,7 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b);
  *        -1 on failure
  */
 int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
-                      bam_hdr_t *hdr);
+                      sam_hdr_t *hdr);
 
 
 /*

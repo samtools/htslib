@@ -42,10 +42,10 @@ extern "C" {
 typedef struct BGZF BGZF;
 #define HTS_BGZF_TYPEDEF
 #endif
-struct bam_hdr_t;
 struct cram_fd;
 struct hFILE;
 struct hts_tpool;
+struct sam_hdr_t;
 
 #ifndef KSTRING_T
 #define KSTRING_T kstring_t
@@ -227,7 +227,7 @@ typedef struct {
     htsFormat format;
     hts_idx_t *idx;
     const char *fnidx;
-    struct bam_hdr_t *bam_header;
+    struct sam_hdr_t *bam_header;
 } htsFile;
 
 // A combined thread pool and queue allocation size.

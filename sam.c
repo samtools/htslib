@@ -63,14 +63,14 @@ static int8_t *cigar_tab_init() {
     return cigar_tab;
 }
 
-bam_hdr_t *bam_hdr_init()
+sam_hdr_t *sam_hdr_init()
 {
-    bam_hdr_t *bh = (bam_hdr_t*)calloc(1, sizeof(bam_hdr_t));
+    sam_hdr_t *bh = (sam_hdr_t*)calloc(1, sizeof(sam_hdr_t));
 
     return bh;
 }
 
-void bam_hdr_destroy(bam_hdr_t *bh)
+void sam_hdr_destroy(sam_hdr_t *bh)
 {
     int32_t i;
 
@@ -88,15 +88,15 @@ void bam_hdr_destroy(bam_hdr_t *bh)
     }
     free(bh->text);
     if (bh->hrecs)
-        bam_hrecs_free(bh->hrecs);
+        sam_hrecs_free(bh->hrecs);
     free(bh);
 }
 
-bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
+sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
 {
     if (h0 == NULL) return NULL;
-    bam_hdr_t *h;
-    if ((h = bam_hdr_init()) == NULL) return NULL;
+    sam_hdr_t *h;
+    if ((h = sam_hdr_init()) == NULL) return NULL;
     // copy the simple data
     h->n_targets = 0;
     h->ignore_sam_err = h0->ignore_sam_err;
@@ -122,7 +122,7 @@ bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
 
     if (h0->hrecs) {
         kstring_t tmp = { 0, 0, NULL };
-        if (bam_hrecs_rebuild_text(h0->hrecs, &tmp) != 0) {
+        if (sam_hrecs_rebuild_text(h0->hrecs, &tmp) != 0) {
             free(ks_release(&tmp));
             goto fail;
         }
@@ -130,7 +130,7 @@ bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
         h->l_text = tmp.l;
         h->text   = ks_release(&tmp);
 
-        if (update_target_arrays(h, h0->hrecs, 0) != 0)
+        if (sam_hdr_update_target_arrays(h, h0->hrecs, 0) != 0)
             goto fail;
     } else {
         h->l_text = h0->l_text;
@@ -143,13 +143,13 @@ bam_hdr_t *bam_hdr_dup(const bam_hdr_t *h0)
     return h;
 
  fail:
-    bam_hdr_destroy(h);
+    sam_hdr_destroy(h);
     return NULL;
 }
 
-bam_hdr_t *bam_hdr_read(BGZF *fp)
+sam_hdr_t *bam_hdr_read(BGZF *fp)
 {
-    bam_hdr_t *h;
+    sam_hdr_t *h;
     uint8_t buf[4];
     int magic_len, has_EOF;
     int32_t i, name_len, num_names = 0;
@@ -168,7 +168,7 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
         hts_log_error("Invalid BAM binary header");
         return 0;
     }
-    h = bam_hdr_init();
+    h = sam_hdr_init();
     if (!h) goto nomem;
 
     // read plain text and the number of reference sequences
@@ -250,12 +250,12 @@ bam_hdr_t *bam_hdr_read(BGZF *fp)
  clean:
     if (h != NULL) {
         h->n_targets = num_names; // ensure we free only allocated target_names
-        bam_hdr_destroy(h);
+        sam_hdr_destroy(h);
     }
     return NULL;
 }
 
-int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
+int bam_hdr_write(BGZF *fp, const sam_hdr_t *h)
 {
     int32_t i, name_len, x;
     kstring_t hdr_ks = { 0, 0, NULL };
@@ -265,7 +265,7 @@ int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
     if (!h) return -1;
 
     if (h->hrecs) {
-        if (bam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0) return -1;
+        if (sam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0) return -1;
         if (hdr_ks.l > INT32_MAX) {
             hts_log_error("Header too long for BAM format");
             free(hdr_ks.s);
@@ -322,7 +322,7 @@ int bam_hdr_write(BGZF *fp, const bam_hdr_t *h)
     return 0;
 }
 
-const char *sam_parse_region(bam_hdr_t *h, const char *s, int *tid, int64_t *beg, int64_t *end, int flags) {
+const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid, int64_t *beg, int64_t *end, int flags) {
     return hts_parse_region(s, tid, beg, end, (hts_name2id_f)bam_name2id, h, flags);
 }
 
@@ -639,7 +639,7 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
     int n_lvls, i, fmt, ret;
     bam1_t *b;
     hts_idx_t *idx;
-    bam_hdr_t *h;
+    sam_hdr_t *h;
     h = sam_hdr_read(fp);
     if (h == NULL) return NULL;
     if (min_shift > 0) {
@@ -659,7 +659,7 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
     if (ret < -1) goto err; // corrupted BAM file
 
     hts_idx_finish(idx, bgzf_tell(fp->fp.bgzf));
-    bam_hdr_destroy(h);
+    sam_hdr_destroy(h);
     bam_destroy1(b);
     return idx;
 
@@ -730,7 +730,7 @@ int bam_index_build(const char *fn, int min_shift)
 
 // Initialise fp->idx for the current format type.
 // This must be called after the header has been written but no other data.
-int sam_idx_init(htsFile *fp, bam_hdr_t *h, int min_shift, const char *fnidx) {
+int sam_idx_init(htsFile *fp, sam_hdr_t *h, int min_shift, const char *fnidx) {
     fp->fnidx = fnidx;
     if (fp->format.format == bam || fp->format.format == bcf ||
         (fp->format.format == sam && fp->format.compression == bgzf)) {
@@ -996,10 +996,10 @@ hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
 static int cram_name2id(void *fdv, const char *ref)
 {
     cram_fd *fd = (cram_fd *) fdv;
-    return bam_hdr_name2ref(fd->header, ref);
+    return sam_hdr_name2ref(fd->header, ref);
 }
 
-hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *region)
+hts_itr_t *sam_itr_querys(const hts_idx_t *idx, sam_hdr_t *hdr, const char *region)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
     return hts_itr_querys(idx, region, (hts_name2id_f)(bam_name2id), hdr,
@@ -1007,7 +1007,7 @@ hts_itr_t *sam_itr_querys(const hts_idx_t *idx, bam_hdr_t *hdr, const char *regi
                           sam_readrec);
 }
 
-hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, bam_hdr_t *hdr, char **regarray, unsigned int regcount)
+hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, sam_hdr_t *hdr, char **regarray, unsigned int regcount)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
     hts_reglist_t *r_list = NULL;
@@ -1037,7 +1037,7 @@ hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, bam_hdr_t *hdr, char **regarra
     return itr;
 }
 
-hts_itr_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount)
+hts_itr_t *sam_itr_regions(const hts_idx_t *idx, sam_hdr_t *hdr, hts_reglist_t *reglist, unsigned int regcount)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
 
@@ -1059,9 +1059,17 @@ hts_itr_t *sam_itr_regions(const hts_idx_t *idx, bam_hdr_t *hdr, hts_reglist_t *
 #include "htslib/kseq.h"
 #include "htslib/kstring.h"
 
-bam_hdr_t *sam_hdr_parse(size_t l_text, const char *text)
+sam_hdr_t *sam_hdr_parse(size_t l_text, const char *text)
 {
-    return sam_hdr_parse_(text, l_text);
+    sam_hdr_t *bh = sam_hdr_init();
+    if (!bh) return NULL;
+
+    if (sam_hdr_add_lines(bh, text, l_text) != 0) {
+        sam_hdr_destroy(bh);
+        return NULL;
+    }
+
+    return bh;
 }
 
 // Minimal sanitisation of a header to ensure.
@@ -1073,7 +1081,7 @@ bam_hdr_t *sam_hdr_parse(size_t l_text, const char *text)
 // - syntax (eg checking tab separated fields).
 // - validating n_targets matches @SQ records.
 // - validating target lengths against @SQ records.
-static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
+static sam_hdr_t *sam_hdr_sanitise(sam_hdr_t *h) {
     if (!h)
         return NULL;
 
@@ -1094,7 +1102,7 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
             lnum++;
             if (cp[i] != '@') {
                 hts_log_error("Malformed SAM header at line %u", lnum);
-                bam_hdr_destroy(h);
+                sam_hdr_destroy(h);
                 return NULL;
             }
         }
@@ -1116,13 +1124,13 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
         if (h->l_text < 2 || i >= h->l_text - 2) {
             if (h->l_text >= SIZE_MAX - 2) {
                 hts_log_error("No room for extra newline");
-                bam_hdr_destroy(h);
+                sam_hdr_destroy(h);
                 return NULL;
             }
 
             cp = realloc(h->text, (size_t) h->l_text+2);
             if (!cp) {
-                bam_hdr_destroy(h);
+                sam_hdr_destroy(h);
                 return NULL;
             }
             h->text = cp;
@@ -1138,10 +1146,10 @@ static bam_hdr_t *sam_hdr_sanitise(bam_hdr_t *h) {
     return h;
 }
 
-static bam_hdr_t *sam_hdr_create(htsFile* fp) {
+static sam_hdr_t *sam_hdr_create(htsFile* fp) {
     kstring_t str = { 0, 0, NULL };
     khint_t k;
-    bam_hdr_t* h = bam_hdr_init();
+    sam_hdr_t* h = sam_hdr_init();
     const char *q, *r;
     char* sn = NULL;
     khash_t(s2i) *d = kh_init(s2i);
@@ -1306,14 +1314,14 @@ static bam_hdr_t *sam_hdr_create(htsFile* fp) {
     return fp->bam_header;
 
  error:
-    bam_hdr_destroy(h);
+    sam_hdr_destroy(h);
     KS_FREE(&str);
     kh_destroy(s2i, d);
     if (sn) free(sn);
     return NULL;
 }
 
-bam_hdr_t *sam_hdr_read(htsFile *fp)
+sam_hdr_t *sam_hdr_read(htsFile *fp)
 {
     if (!fp) {
         errno = EINVAL;
@@ -1325,7 +1333,7 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
         return sam_hdr_sanitise(bam_hdr_read(fp->fp.bgzf));
 
     case cram:
-        return sam_hdr_sanitise(bam_hdr_dup(fp->fp.cram->header));
+        return sam_hdr_sanitise(sam_hdr_dup(fp->fp.cram->header));
 
     case sam:
         return sam_hdr_create(fp);
@@ -1335,7 +1343,7 @@ bam_hdr_t *sam_hdr_read(htsFile *fp)
     }
 }
 
-int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
+int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
 {
     if (!fp || !h) {
         errno = EINVAL;
@@ -1375,7 +1383,7 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
         int r = 0, no_sq = 0;
 
         if (h->hrecs) {
-            if (bam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0)
+            if (sam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0)
                 return -1;
             text = hdr_ks.s;
             l_text = hdr_ks.l;
@@ -1434,7 +1442,7 @@ int sam_hdr_write(htsFile *fp, const bam_hdr_t *h)
     return 0;
 }
 
-static int old_sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
+static int old_sam_hdr_change_HD(sam_hdr_t *h, const char *key, const char *val)
 {
     char *p, *q, *beg = NULL, *end = NULL, *newtext;
     size_t new_l_text;
@@ -1510,7 +1518,7 @@ static int old_sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
 }
 
 
-int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
+int sam_hdr_change_HD(sam_hdr_t *h, const char *key, const char *val)
 {
     if (!h || !key)
         return -1;
@@ -1519,13 +1527,13 @@ int sam_hdr_change_HD(bam_hdr_t *h, const char *key, const char *val)
         return old_sam_hdr_change_HD(h, key, val);
 
     if (val) {
-        if (bam_hdr_update_line(h, "HD", NULL, NULL, key, val, NULL) != 0)
+        if (sam_hdr_update_line(h, "HD", NULL, NULL, key, val, NULL) != 0)
             return -1;
     } else {
-        if (bam_hdr_remove_tag_id(h, "HD", NULL, NULL, key) != 0)
+        if (sam_hdr_remove_tag_id(h, "HD", NULL, NULL, key) != 0)
             return -1;
     }
-    return bam_hdr_rebuild(h);
+    return sam_hdr_rebuild(h);
 }
 /**********************
  *** SAM record I/O ***
@@ -1569,7 +1577,7 @@ static inline int64_t STRTOUL64(const char *v, char **rv, int b) {
     return n;
 }
 
-int sam_parse1(kstring_t *s, bam_hdr_t *h, bam1_t *b)
+int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 {
 #define _read_token(_p) (_p); do { char *tab = strchr((_p), '\t'); if (!tab) goto err_ret; *tab = '\0'; (_p) = tab + 1; } while (0)
 
@@ -1868,7 +1876,7 @@ err_ret:
     return -2;
 }
 
-int sam_read1(htsFile *fp, bam_hdr_t *h, bam1_t *b)
+int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
 {
     switch (fp->format.format) {
     case bam: {
@@ -1912,7 +1920,7 @@ err_recover:
     }
 }
 
-int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
+int sam_format1(const sam_hdr_t *h, const bam1_t *b, kstring_t *str)
 {
     int i;
     uint8_t *s, *end;
@@ -2102,7 +2110,7 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
     return -1;
 }
 
-int sam_write1(htsFile *fp, const bam_hdr_t *h, const bam1_t *b)
+int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
 {
     switch (fp->format.format) {
     case binary_format:

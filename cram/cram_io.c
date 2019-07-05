@@ -1828,9 +1828,9 @@ static void sanitise_SQ_lines(cram_fd *fd) {
  * Returns 0 on success
  *        -1 on failure
  */
-int refs2id(refs_t *r, bam_hdr_t *bh) {
+int refs2id(refs_t *r, sam_hdr_t *hdr) {
     int i;
-    bam_hrecs_t *h = bh->hrecs;
+    sam_hrecs_t *h = hdr->hrecs;
 
     if (r->ref_id)
         free(r->ref_id);
@@ -1867,12 +1867,12 @@ static int refs_from_header(cram_fd *fd) {
     if (!r)
         return -1;
 
-    bam_hdr_t *h = fd->header;
+    sam_hdr_t *h = fd->header;
     if (!h)
         return 0;
 
     if (!h->hrecs) {
-        if (-1 == bam_hdr_parse(h))
+        if (-1 == sam_hdr_fill_hrecs(h))
             return -1;
     }
 
@@ -1888,8 +1888,8 @@ static int refs_from_header(cram_fd *fd) {
     int i, j;
     /* Copy info from h->ref[i] over to r */
     for (i = 0, j = r->nref; i < h->hrecs->nref; i++) {
-        bam_hrec_type_t *ty;
-        bam_hrec_tag_t *tag;
+        sam_hrec_type_t *ty;
+        sam_hrec_tag_t *tag;
         khint_t k;
         int n;
 
@@ -1908,8 +1908,8 @@ static int refs_from_header(cram_fd *fd) {
         r->ref_id[j]->length = 0; // marker for not yet loaded
 
         /* Initialise likely filename if known */
-        if ((ty = bam_hrecs_find_type_id(h->hrecs, "SQ", "SN", h->hrecs->ref[i].name))) {
-            if ((tag = bam_hrecs_find_key(ty, "M5", NULL))) {
+        if ((ty = sam_hrecs_find_type_id(h->hrecs, "SQ", "SN", h->hrecs->ref[i].name))) {
+            if ((tag = sam_hrecs_find_key(ty, "M5", NULL))) {
                 r->ref_id[j]->fn = string_dup(r->pool, tag->str+3);
                 //fprintf(stderr, "Tagging @SQ %s / %s\n", r->ref_id[h]->name, r->ref_id[h]->fn);
             }
@@ -1934,21 +1934,21 @@ static int refs_from_header(cram_fd *fd) {
  * we have a header already constructed (eg from a file we've read
  * in).
  */
-int cram_set_header2(cram_fd *fd, const bam_hdr_t *hdr) {
+int cram_set_header2(cram_fd *fd, const sam_hdr_t *hdr) {
     if (!fd || !hdr )
         return -1;
 
     if (fd->header != hdr) {
         if (fd->header)
-            bam_hdr_destroy(fd->header);
-        fd->header = bam_hdr_dup(hdr);
+            sam_hdr_destroy(fd->header);
+        fd->header = sam_hdr_dup(hdr);
         if (!fd->header)
             return -1;
     }
     return refs_from_header(fd);
 }
 
-int cram_set_header(cram_fd *fd, bam_hdr_t *hdr) {
+int cram_set_header(cram_fd *fd, sam_hdr_t *hdr) {
     return cram_set_header2(fd, hdr);
 }
 
@@ -2098,8 +2098,8 @@ static unsigned get_int_threadid() {
  */
 static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     char *ref_path = getenv("REF_PATH");
-    bam_hrec_type_t *ty;
-    bam_hrec_tag_t *tag;
+    sam_hrec_type_t *ty;
+    sam_hrec_tag_t *tag;
     char path[PATH_MAX], path_tmp[PATH_MAX + 64];
     char cache[PATH_MAX], cache_root[PATH_MAX];
     char *local_cache = getenv("REF_CACHE");
@@ -2129,10 +2129,10 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if (!r->name)
         return -1;
 
-    if (!(ty = bam_hrecs_find_type_id(fd->header->hrecs, "SQ", "SN", r->name)))
+    if (!(ty = sam_hrecs_find_type_id(fd->header->hrecs, "SQ", "SN", r->name)))
         return -1;
 
-    if (!(tag = bam_hrecs_find_key(ty, "M5", NULL)))
+    if (!(tag = sam_hrecs_find_key(ty, "M5", NULL)))
         goto no_M5;
 
     hts_log_info("Querying ref %s", tag->str+3);
@@ -2200,7 +2200,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     no_M5:
         /* Failed to find in search path or M5 cache, see if @SQ UR: tag? */
-        if (!(tag = bam_hrecs_find_key(ty, "UR", NULL)))
+        if (!(tag = sam_hrecs_find_key(ty, "UR", NULL)))
             return -1;
 
         fn = (strncmp(tag->str+3, "file:", 5) == 0)
@@ -3692,10 +3692,10 @@ void cram_free_file_def(cram_file_def *def) {
  * Returns SAM hdr ptr on success
  *         NULL on failure
  */
-bam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
+sam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
     int32_t header_len;
     char *header;
-    bam_hdr_t *hdr;
+    sam_hdr_t *hdr;
 
     /* 1.1 onwards stores the header in the first block of a container */
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
@@ -3799,15 +3799,15 @@ bam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
     }
 
     /* Parse */
-    hdr = bam_hdr_init();
+    hdr = sam_hdr_init();
     if (!hdr) {
         free(header);
         return NULL;
     }
 
-    if (-1 == bam_hdr_add_lines(hdr, header, header_len)) {
+    if (-1 == sam_hdr_add_lines(hdr, header, header_len)) {
         free(header);
-        bam_hdr_destroy(hdr);
+        sam_hdr_destroy(hdr);
         return NULL;
     }
 
@@ -3852,7 +3852,7 @@ static void full_path(char *out, char *in) {
  * Returns 0 on success
  *        -1 on failure
  */
-int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
+int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
     size_t header_len;
     int blank_block = (CRAM_MAJOR_VERS(fd->version) >= 3);
 
@@ -3866,8 +3866,8 @@ int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
 
     /* 1.0 requires an UNKNOWN read-group */
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
-        if (!bam_hrecs_find_rg(hdr->hrecs, "UNKNOWN"))
-            if (bam_hdr_add_line(hdr, "RG",
+        if (!sam_hrecs_find_rg(hdr->hrecs, "UNKNOWN"))
+            if (sam_hdr_add_line(hdr, "RG",
                             "ID", "UNKNOWN", "SM", "UNKNOWN", NULL))
                 return -1;
     }
@@ -3876,13 +3876,13 @@ int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
     if (fd->refs && !fd->no_ref) {
         int i;
         for (i = 0; i < hdr->hrecs->nref; i++) {
-            bam_hrec_type_t *ty;
+            sam_hrec_type_t *ty;
             char *ref;
 
-            if (!(ty = bam_hrecs_find_type_id(hdr->hrecs, "SQ", "SN", hdr->hrecs->ref[i].name)))
+            if (!(ty = sam_hrecs_find_type_id(hdr->hrecs, "SQ", "SN", hdr->hrecs->ref[i].name)))
                 return -1;
 
-            if (!bam_hrecs_find_key(ty, "M5", NULL)) {
+            if (!sam_hrecs_find_key(ty, "M5", NULL)) {
                 char unsigned buf[16];
                 char buf2[33];
                 int rlen;
@@ -3905,21 +3905,21 @@ int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
                 cram_ref_decr(fd->refs, i);
 
                 hts_md5_hex(buf2, buf);
-                if (bam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "M5", buf2, NULL))
+                if (sam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "M5", buf2, NULL))
                     return -1;
             }
 
             if (fd->ref_fn) {
                 char ref_fn[PATH_MAX];
                 full_path(ref_fn, fd->ref_fn);
-                if (bam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "UR", ref_fn, NULL))
+                if (sam_hdr_update_line(hdr, "SQ", "SN", hdr->hrecs->ref[i].name, "UR", ref_fn, NULL))
                     return -1;
             }
         }
     }
 
     /* Length */
-    header_len = bam_hdr_length(hdr);
+    header_len = sam_hdr_length(hdr);
     if (header_len > INT32_MAX) {
         hts_log_error("Header is too long for CRAM format");
         return -1;
@@ -3929,7 +3929,7 @@ int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
             return -1;
 
         /* Text data */
-        if (header_len != hwrite(fd->fp, bam_hdr_str(hdr), header_len))
+        if (header_len != hwrite(fd->fp, sam_hdr_str(hdr), header_len))
             return -1;
     } else {
         /* Create block(s) inside a container */
@@ -3947,7 +3947,7 @@ int cram_write_SAM_hdr(cram_fd *fd, bam_hdr_t *hdr) {
 
         int32_put_blk(b, header_len);
         if (header_len)
-            BLOCK_APPEND(b, bam_hdr_str(hdr), header_len);
+            BLOCK_APPEND(b, sam_hdr_str(hdr), header_len);
         BLOCK_UPLEN(b);
 
         // Compress header block if V3.0 and above
@@ -4425,7 +4425,7 @@ int cram_close(cram_fd *fd) {
         cram_free_file_def(fd->file_def);
 
     if (fd->header)
-        bam_hdr_destroy(fd->header);
+        sam_hdr_destroy(fd->header);
 
     free(fd->prefix);
 

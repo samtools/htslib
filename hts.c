@@ -975,7 +975,7 @@ int hts_close(htsFile *fp)
     }
 
     save = errno;
-    bam_hdr_destroy(fp->bam_header);
+    sam_hdr_destroy(fp->bam_header);
     hts_idx_destroy(fp->idx);
     free(fp->fn);
     free(fp->fn_aux);

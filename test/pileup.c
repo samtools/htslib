@@ -55,7 +55,7 @@ samtools mpileup -B -Q 0 in.bam | perl -lane \
 typedef struct ptest_t {
     const char *fname;
     samFile *fp;
-    bam_hdr_t *fp_hdr;
+    sam_hdr_t *fp_hdr;
 } ptest_t;
 
 static int readaln(void *data, bam1_t *b) {
@@ -243,13 +243,13 @@ int main(int argc, char **argv) {
             goto fail;
     }
 
-    bam_hdr_destroy(g.fp_hdr);
+    sam_hdr_destroy(g.fp_hdr);
     sam_close(g.fp);
 
     return EXIT_SUCCESS;
 
  fail:
-    if (g.fp_hdr) bam_hdr_destroy(g.fp_hdr);
+    if (g.fp_hdr) sam_hdr_destroy(g.fp_hdr);
     if (g.fp) sam_close(g.fp);
     return EXIT_FAILURE;
 }

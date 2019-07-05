@@ -61,7 +61,7 @@ enum test_op {
 
 int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, htsFile *out) {
     int r = 0;
-    bam_hdr_t *h = NULL;
+    sam_hdr_t *h = NULL;
     hts_idx_t *idx = NULL;
     bam1_t *b = NULL;
 
@@ -179,12 +179,12 @@ int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
     }
 
     bam_destroy1(b);
-    bam_hdr_destroy(h);
+    sam_hdr_destroy(h);
 
     return 0;
  fail:
     if (b) bam_destroy1(b);
-    if (h) bam_hdr_destroy(h);
+    if (h) sam_hdr_destroy(h);
     if (idx) hts_idx_destroy(idx);
 
     return 1;

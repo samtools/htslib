@@ -40,6 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <sys/types.h>
 
 #include "hts.h"
+#include "sam.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,7 +48,7 @@ extern "C" {
 
 #ifndef _CRAM_STRUCTS_H_
 enum cram_block_method {
-    ERROR    = -1,
+    BM_ERROR = -1,
     RAW      = 0,
     GZIP     = 1,
     BZIP2    = 2,
@@ -88,8 +89,8 @@ struct hFILE;
  *-----------------------------------------------------------------------------
  * cram_fd
  */
-bam_hdr_t *cram_fd_get_header(cram_fd *fd);
-void cram_fd_set_header(cram_fd *fd, bam_hdr_t *hdr);
+sam_hdr_t *cram_fd_get_header(cram_fd *fd);
+void cram_fd_set_header(cram_fd *fd, sam_hdr_t *hdr);
 
 int cram_fd_get_version(cram_fd *fd);
 void cram_fd_set_version(cram_fd *fd, int vers);
@@ -393,7 +394,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_set_header(cram_fd *fd, bam_hdr_t *hdr);
+int cram_set_header(cram_fd *fd, sam_hdr_t *hdr);
 
 /*! Check if this file has a proper EOF block
  *
@@ -411,9 +412,12 @@ int cram_check_EOF(cram_fd *fd);
 int int32_put_blk(cram_block *b, int32_t val);
 
 /**@}*/
-/**@{ -------------------------------------------------------------------*/
+/**@{ -------------------------------------------------------------------
+ * Old typedef and function names for compatibility with existing code.
+ * Header functionality is now provided by sam.h's sam_hdr_t functions.
+ */
 
-typedef struct bam_hdr_t SAM_hdr;
+typedef sam_hdr_t SAM_hdr;
 
 /*! Tokenises a SAM header into a hash table.
  *
@@ -423,63 +427,35 @@ typedef struct bam_hdr_t SAM_hdr;
  * Returns a SAM_hdr struct on success (free with sam_hdr_free());
  *         NULL on failure
  */
-SAM_hdr *sam_hdr_parse_(const char *hdr, size_t len);
+static inline SAM_hdr *sam_hdr_parse_(const char *hdr, size_t len) { return sam_hdr_parse(len, hdr); }
 
 /*! Deallocates all storage used by a SAM_hdr struct.
  *
  * This also decrements the header reference count. If after decrementing
  * it is still non-zero then the header is assumed to be in use by another
  * caller and the free is not done.
- *
- * This is a synonym for sam_hdr_dec_ref().
  */
-void sam_hdr_free(SAM_hdr *hdr);
+static inline void sam_hdr_free(SAM_hdr *hdr) { sam_hdr_destroy(hdr); }
 
-/*! Returns the current length of the SAM_hdr in text form.
- *
- * Call sam_hdr_rebuild() first if editing has taken place.
- */
-#define sam_hdr_length bam_hdr_length
-//int sam_hdr_length(SAM_hdr *hdr);
-
-/*! Returns the string form of the SAM_hdr.
- *
- * Call sam_hdr_rebuild() first if editing has taken place.
- */
-#define sam_hdr_str bam_hdr_str
-//char *sam_hdr_str(SAM_hdr *hdr);
-
-/*! Appends a formatted line to an existing SAM header.
- *
- * Line is a full SAM header record, eg "@SQ\tSN:foo\tLN:100", with
- * optional new-line. If it contains more than 1 line then multiple lines
- * will be added in order.
- *
- * Len is the length of the text data, or 0 if unknown (in which case
- * it should be null terminated).
- *
- * @return
- * Returns 0 on success;
- *        -1 on failure
- */
+/* sam_hdr_length() and sam_hdr_str() are now provided by sam.h. */
 
 /*! Add an @PG line.
  *
- * If we wish complete control over this use sam_hdr_add() directly. This
+ * If we wish complete control over this use sam_hdr_add_line() directly. This
  * function uses that, but attempts to do a lot of tedious house work for
  * you too.
  *
  * - It will generate a suitable ID if the supplied one clashes.
  * - It will generate multiple @PG records if we have multiple PG chains.
  *
- * Call it as per sam_hdr_add() with a series of key,value pairs ending
+ * Call it as per sam_hdr_add_line() with a series of key,value pairs ending
  * in NULL.
  *
  * @return
  * Returns 0 on success;
  *        -1 on failure
  */
-#define sam_hdr_add_PG bam_hdr_add_pg
+#define sam_hdr_add_PG sam_hdr_add_pg
 
 /*!
  * A function to help with construction of CL tags in @PG records.

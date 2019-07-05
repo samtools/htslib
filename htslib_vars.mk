@@ -26,7 +26,7 @@
 # See htslib.mk for details.
 
 htslib_bgzf_h = $(HTSPREFIX)htslib/bgzf.h $(htslib_hts_defs_h)
-htslib_cram_h = $(HTSPREFIX)htslib/cram.h $(htslib_hts_h)
+htslib_cram_h = $(HTSPREFIX)htslib/cram.h $(htslib_hts_h) $(htslib_sam_h)
 htslib_faidx_h = $(HTSPREFIX)htslib/faidx.h $(htslib_hts_defs_h)
 htslib_hfile_h = $(HTSPREFIX)htslib/hfile.h $(htslib_hts_defs_h)
 htslib_hts_h = $(HTSPREFIX)htslib/hts.h $(htslib_hts_defs_h) $(htslib_hts_log_h)

@@ -215,6 +215,8 @@ static int test_update_array(bam1_t *aln, const char target_id[2],
     return 0;
 }
 
+// This function uses bam_hdr_t etc as a check ensuring the legacy typedef
+// and functions continue to compile successfully.
 static int aux_fields1(void)
 {
     static const char sam[] = "data:,"
@@ -454,6 +456,8 @@ static void iterators1(void)
     hts_itr_destroy(sam_itr_queryi(NULL, HTS_IDX_NONE, 0, 0));
 }
 
+// This function uses bam_hdr_t etc as a check ensuring the legacy typedef
+// and functions continue to compile successfully.
 static void copy_check_alignment(const char *infname, const char *informat,
     const char *outfname, const char *outmode, const char *outref)
 {
@@ -546,7 +550,7 @@ static void use_header_api() {
 
     samFile *in = sam_open(header_text, "r");
     samFile *out = sam_open(outfname, outmode);
-    bam_hdr_t *header = NULL;
+    sam_hdr_t *header = NULL;
     kstring_t ks = { 0, 0, NULL };
     size_t bytes;
     int r, i;
@@ -565,82 +569,82 @@ static void use_header_api() {
         fail("reading header from file");
         goto err;
     }
-    r = bam_hdr_remove_tag_id(header, "HD", NULL, NULL, "GO");
-    if (r != 1) { fail("bam_hdr_remove_tag"); goto err; }
+    r = sam_hdr_remove_tag_id(header, "HD", NULL, NULL, "GO");
+    if (r != 1) { fail("sam_hdr_remove_tag_id"); goto err; }
 
-    r = bam_hdr_update_hd(header, "VN", "1.5");
-    if (r != 0) { fail("bam_hdr_find_update_hd"); goto err; }
+    r = sam_hdr_update_hd(header, "VN", "1.5");
+    if (r != 0) { fail("sam_hdr_update_hd"); goto err; }
 
-    r = bam_hdr_add_line(header, "SQ", "SN", "ref3", "LN", "5003", NULL);
-    if (r < 0) { fail("bam_hdr_add_line"); goto err; }
+    r = sam_hdr_add_line(header, "SQ", "SN", "ref3", "LN", "5003", NULL);
+    if (r < 0) { fail("sam_hdr_add_line"); goto err; }
 
-    r = bam_hdr_update_line(header, "SQ", "SN", "ref1",
+    r = sam_hdr_update_line(header, "SQ", "SN", "ref1",
                              "M5", "kja8u34a2q3", NULL);
-    if (r != 0) { fail("bam_hdr_update_line SQ"); goto err; }
+    if (r != 0) { fail("sam_hdr_update_line SQ"); goto err; }
 
-    r = bam_hdr_add_pg(header, "samtools", "VN", "1.9", NULL);
-    if (r != 0) { fail("bam_hdr_add_pg"); goto err; }
+    r = sam_hdr_add_pg(header, "samtools", "VN", "1.9", NULL);
+    if (r != 0) { fail("sam_hdr_add_pg"); goto err; }
 
     // Test addition with no newline or trailing NUL
-    r = bam_hdr_add_lines(header, rg_line, sizeof(rg_line));
-    if (r != 0) { fail("bam_hdr_add_lines rg_line"); goto err; }
+    r = sam_hdr_add_lines(header, rg_line, sizeof(rg_line));
+    if (r != 0) { fail("sam_hdr_add_lines rg_line"); goto err; }
 
     // Test header line removal
-    r = bam_hdr_add_line(header, "RG", "ID", "run2", NULL);
-    if (r < 0) { fail("bam_hdr_add_line"); goto err; }
+    r = sam_hdr_add_line(header, "RG", "ID", "run2", NULL);
+    if (r < 0) { fail("sam_hdr_add_line"); goto err; }
 
-    r = bam_hdr_add_line(header, "RG", "ID", "run3", NULL);
-    if (r < 0) { fail("bam_hdr_add_line"); goto err; }
+    r = sam_hdr_add_line(header, "RG", "ID", "run3", NULL);
+    if (r < 0) { fail("sam_hdr_add_line"); goto err; }
 
-    r = bam_hdr_add_line(header, "RG", "ID", "run4", NULL);
-    if (r < 0) { fail("bam_hdr_add_line"); goto err; }
+    r = sam_hdr_add_line(header, "RG", "ID", "run4", NULL);
+    if (r < 0) { fail("sam_hdr_add_line"); goto err; }
 
-    r = bam_hdr_remove_line_id(header, "RG", "ID", "run2");
-    if (r < 0) { fail("bam_hdr_remove_line_key"); goto err; }
+    r = sam_hdr_remove_line_id(header, "RG", "ID", "run2");
+    if (r < 0) { fail("sam_hdr_remove_line_id"); goto err; }
 
-    r = bam_hdr_find_tag_id(header, "RG", "ID", "run3", "ID", &ks);
+    r = sam_hdr_find_tag_id(header, "RG", "ID", "run3", "ID", &ks);
     if (r < 0 || !ks.s || strcmp(ks.s, "run3") != 0) {
-        fail("bam_hdr_find_tag() expected \"run3\" got \"%s\"",
+        fail("sam_hdr_find_tag_id() expected \"run3\" got \"%s\"",
              r == 0 && ks.s ? ks.s : "NULL");
         goto err;
     }
 
-    r = bam_hdr_remove_line_pos(header, "RG", 1); // Removes run3
-    if (r < 0) { fail("bam_hdr_remove_line_pos"); goto err; }
+    r = sam_hdr_remove_line_pos(header, "RG", 1); // Removes run3
+    if (r < 0) { fail("sam_hdr_remove_line_pos"); goto err; }
 
-    r = bam_hdr_remove_line_id(header, "SQ", "SN", "ref0");
-    if (r < 0) { fail("bam_hdr_remove_line_key"); goto err; }
+    r = sam_hdr_remove_line_id(header, "SQ", "SN", "ref0");
+    if (r < 0) { fail("sam_hdr_remove_line_id"); goto err; }
 
-    r = bam_hdr_remove_line_pos(header, "SQ", 1); // Removes ref1.5
-    if (r < 0) { fail("bam_hdr_remove_line_pos"); goto err; }
+    r = sam_hdr_remove_line_pos(header, "SQ", 1); // Removes ref1.5
+    if (r < 0) { fail("sam_hdr_remove_line_pos"); goto err; }
 
-    r = bam_hdr_find_tag_id(header, "SQ", "SN", "ref1", "M5", &ks);
+    r = sam_hdr_find_tag_id(header, "SQ", "SN", "ref1", "M5", &ks);
     if (r < 0 || !ks.s || strcmp(ks.s, "kja8u34a2q3") != 0) {
-        fail("bam_hdr_find_tag() expected \"kja8u34a2q3\" got \"%s\"",
+        fail("sam_hdr_find_tag_id() expected \"kja8u34a2q3\" got \"%s\"",
              r == 0 && ks.s ? ks.s : "NULL");
         goto err;
     }
 
-    r = bam_hdr_remove_tag_hd(header, "SS");
+    r = sam_hdr_remove_tag_hd(header, "SS");
     if (r < 0) {
-        fail("bam_hdr_remove_tag_hd");
+        fail("sam_hdr_remove_tag_hd");
     }
 
-    r = bam_hdr_find_hd(header, &ks);
+    r = sam_hdr_find_hd(header, &ks);
     if (r < 0 || !ks.s || strcmp(ks.s, "@HD\tVN:1.5") != 0) {
-        fail("bam_hdr_find_hd() expected \"@HD\tVN:1.5\" got \"%s\"",
+        fail("sam_hdr_find_hd() expected \"@HD\tVN:1.5\" got \"%s\"",
              r == 0 && ks.s ? ks.s : "NULL");
     }
 
-    r = bam_hdr_find_tag_hd(header, "VN", &ks);
+    r = sam_hdr_find_tag_hd(header, "VN", &ks);
     if (r < 0 || !ks.s || strcmp(ks.s, "1.5") != 0) {
-        fail("bam_hdr_find_tag_hd() expected \"1.5\" got \"%s\"",
+        fail("sam_hdr_find_tag_hd() expected \"1.5\" got \"%s\"",
              r == 0 && ks.s ? ks.s : "NULL");
     }
 
-    r = bam_hdr_update_hd(header, "SO", "coordinate");
+    r = sam_hdr_update_hd(header, "SO", "coordinate");
     if (r < 0) {
-        fail("bam_hdr_update_hd");
+        fail("sam_hdr_update_hd");
     }
 
     // Check consistency of target_names array
@@ -673,23 +677,23 @@ static void use_header_api() {
         }
     }
 
-    if ((r = bam_hdr_count_lines(header, "HD")) != 1) {
+    if ((r = sam_hdr_count_lines(header, "HD")) != 1) {
         fail("incorrect HD line count - expected 1, got %d", r);
         goto err;
     }
-    if ((r = bam_hdr_count_lines(header, "SQ")) != 3) {
+    if ((r = sam_hdr_count_lines(header, "SQ")) != 3) {
         fail("incorrect SQ line count - expected 3, got %d", r);
         goto err;
     }
-    if ((r = bam_hdr_count_lines(header, "PG")) != 1) {
+    if ((r = sam_hdr_count_lines(header, "PG")) != 1) {
         fail("incorrect PG line count - expected 1, got %d", r);
         goto err;
     }
-    if ((r = bam_hdr_count_lines(header, "RG")) != 2) {
+    if ((r = sam_hdr_count_lines(header, "RG")) != 2) {
         fail("incorrect RG line count - expected 2, got %d", r);
         goto err;
     }
-    if ((r = bam_hdr_count_lines(header, "CO")) != 2) {
+    if ((r = sam_hdr_count_lines(header, "CO")) != 2) {
         fail("incorrect CO line count - expected 2, got %d", r);
         goto err;
     }
@@ -725,7 +729,7 @@ static void use_header_api() {
     free(ks_release(&ks));
 
  err:
-    bam_hdr_destroy(header);
+    sam_hdr_destroy(header);
     header = NULL;
     if (in) sam_close(in);
     if (out) sam_close(out);
@@ -752,7 +756,7 @@ static void test_header_pg_lines() {
         "@PG\tPN:prog7\tID:my_id\tPP:prog6\n";
 
     samFile *in = sam_open(header_text, "r");
-    bam_hdr_t *header = NULL;
+    sam_hdr_t *header = NULL;
     const char *text = NULL;
     enum htsLogLevel old_log_level;
     int r;
@@ -768,35 +772,35 @@ static void test_header_pg_lines() {
         goto err;
     }
 
-    r = bam_hdr_add_pg(header, "prog3", NULL);
-    if (r != 0) { fail("bam_hdr_add_pg prog3"); goto err; }
+    r = sam_hdr_add_pg(header, "prog3", NULL);
+    if (r != 0) { fail("sam_hdr_add_pg prog3"); goto err; }
 
 
-    r = bam_hdr_add_pg(header, "prog4", "PP", "prog1", NULL);
-    if (r != 0) { fail("bam_hdr_add_pg prog4"); goto err; }
+    r = sam_hdr_add_pg(header, "prog4", "PP", "prog1", NULL);
+    if (r != 0) { fail("sam_hdr_add_pg prog4"); goto err; }
 
-    r = bam_hdr_add_line(header, "PG", "ID",
+    r = sam_hdr_add_line(header, "PG", "ID",
                          "prog5", "PN", "prog5", "PP", "prog2", NULL);
-    if (r != 0) { fail("bam_hdr_add_line @PG ID:prog5"); goto err; }
+    if (r != 0) { fail("sam_hdr_add_line @PG ID:prog5"); goto err; }
 
-    r = bam_hdr_add_pg(header, "prog6", NULL);
-    if (r != 0) { fail("bam_hdr_add_pg prog6"); goto err; }
+    r = sam_hdr_add_pg(header, "prog6", NULL);
+    if (r != 0) { fail("sam_hdr_add_pg prog6"); goto err; }
 
-    r = bam_hdr_add_pg(header, "prog7", "ID", "my_id", "PP", "prog6", NULL);
-    if (r != 0) { fail("bam_hdr_add_pg prog7"); goto err; }
+    r = sam_hdr_add_pg(header, "prog7", "ID", "my_id", "PP", "prog6", NULL);
+    if (r != 0) { fail("sam_hdr_add_pg prog7"); goto err; }
 
-    text = bam_hdr_str(header);
-    if (!text) { fail("bam_hdr_str"); goto err; }
+    text = sam_hdr_str(header);
+    if (!text) { fail("sam_hdr_str"); goto err; }
 
     // These should fail
     old_log_level = hts_get_log_level();
     hts_set_log_level(HTS_LOG_OFF);
 
-    r = bam_hdr_add_pg(header, "prog8", "ID", "my_id", NULL);
-    if (r == 0) { fail("bam_hdr_add_pg prog8 (unexpected success)"); goto err; }
+    r = sam_hdr_add_pg(header, "prog8", "ID", "my_id", NULL);
+    if (r == 0) { fail("sam_hdr_add_pg prog8 (unexpected success)"); goto err; }
 
-    r = bam_hdr_add_pg(header, "prog9", "PP", "non-existent", NULL);
-    if (r == 0) { fail("bam_hdr_add_pg prog9 (unexpected success)"); goto err; }
+    r = sam_hdr_add_pg(header, "prog9", "PP", "non-existent", NULL);
+    if (r == 0) { fail("sam_hdr_add_pg prog9 (unexpected success)"); goto err; }
 
     hts_set_log_level(old_log_level);
     // End failing tests
@@ -812,7 +816,7 @@ static void test_header_pg_lines() {
     }
 
  err:
-    bam_hdr_destroy(header);
+    sam_hdr_destroy(header);
     header = NULL;
     if (in) sam_close(in);
     return;
