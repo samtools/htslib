@@ -44,6 +44,7 @@
 #include <assert.h>
 #include <string.h>
 #include <sys/time.h>
+#include <limits.h>
 
 #include "cram/rANS_static.h"
 #include "cram/rANS_byte.h"
@@ -224,6 +225,9 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
     out_sz = ((in[4])<<0) | ((in[5])<<8) | ((in[6])<<16) | ((in[7])<<24);
     if (in_sz != in_size-9)
         return NULL;
+
+    if (out_sz >= INT_MAX)
+        return NULL; // protect against some overflow cases
 
     // Precompute reverse lookup of frequency.
     rle = x = 0;
@@ -586,6 +590,9 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     out_sz = ((in[4])<<0) | ((in[5])<<8) | ((in[6])<<16) | ((in[7])<<24);
     if (in_sz != in_size-9)
         return NULL;
+
+    if (out_sz >= INT_MAX)
+        return NULL; // protect against some overflow cases
 
     // calloc may add 2% overhead to CRAM decode, but on linux with glibc it's
     // often the same thing due to using mmap.
