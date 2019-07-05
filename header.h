@@ -97,19 +97,19 @@ Ie SQ->ID(foo)->LN(100)
  *
  * These form a linked list and hold strings. The strings are
  * allocated from a string_alloc_t pool referenced in the master
- * bam_hrecs_t structure. Do not attempt to free, malloc or manipulate
+ * sam_hrecs_t structure. Do not attempt to free, malloc or manipulate
  * these strings directly.
  */
-typedef struct bam_hrec_tag_s {
-    struct bam_hrec_tag_s *next;
+typedef struct sam_hrec_tag_s {
+    struct sam_hrec_tag_s *next;
     char *str;
     int   len;
-} bam_hrec_tag_t;
+} sam_hrec_tag_t;
 
 /*! The parsed version of the SAM header string.
  *
  * Each header type (SQ, RG, HD, etc) points to its own sam_hdr_type
- * struct via the main hash table h in the bam_hrecs_t struct.
+ * struct via the main hash table h in the sam_hrecs_t struct.
  *
  * These in turn consist of circular bi-directional linked lists (ie
  * rings) to hold the multiple instances of the same header type
@@ -121,38 +121,38 @@ typedef struct bam_hrec_tag_s {
  * structure which holds the tokenised attributes; the tab separated
  * key:value pairs per line.
  */
-typedef struct bam_hrec_type_s {
-    struct bam_hrec_type_s *next; // circular list of this type
-    struct bam_hrec_type_s *prev; // circular list of this type
-    struct bam_hrec_type_s *global_next; // circular list of all lines
-    struct bam_hrec_type_s *global_prev; // circular list of all lines
-    bam_hrec_tag_t *tag;          // first tag
+typedef struct sam_hrec_type_s {
+    struct sam_hrec_type_s *next; // circular list of this type
+    struct sam_hrec_type_s *prev; // circular list of this type
+    struct sam_hrec_type_s *global_next; // circular list of all lines
+    struct sam_hrec_type_s *global_prev; // circular list of all lines
+    sam_hrec_tag_t *tag;          // first tag
     khint32_t type;               // Two-letter type code as an int
-} bam_hrec_type_t;
+} sam_hrec_type_t;
 
 /*! Parsed \@SQ lines */
 typedef struct {
     char *name;
     uint32_t len;
-    bam_hrec_type_t *ty;
-} bam_hrec_sq_t;
+    sam_hrec_type_t *ty;
+} sam_hrec_sq_t;
 
 /*! Parsed \@RG lines */
 typedef struct {
     char *name;
-    bam_hrec_type_t *ty;
+    sam_hrec_type_t *ty;
     int name_len;
     int id;           // numerical ID
-} bam_hrec_rg_t;
+} sam_hrec_rg_t;
 
 /*! Parsed \@PG lines */
 typedef struct {
     char *name;
-    bam_hrec_type_t *ty;
+    sam_hrec_type_t *ty;
     int name_len;
     int id;           // numerical ID
     int prev_id;      // -1 if none
-} bam_hrec_pg_t;
+} sam_hrec_pg_t;
 
 
 /*! Sort order parsed from @HD line */
@@ -170,7 +170,7 @@ enum sam_group_order {
     ORDER_REFERENCE = 1
 };
 
-KHASH_MAP_INIT_INT(bam_hrecs_t, bam_hrec_type_t*)
+KHASH_MAP_INIT_INT(sam_hrecs_t, sam_hrec_type_t*)
 KHASH_MAP_INIT_STR(m_s2i, int)
 
 /*! Primary structure for header manipulation
@@ -185,9 +185,9 @@ KHASH_MAP_INIT_STR(m_s2i, int)
  * call sam_hdr_rebuild() any time the textual form needs to be
  * updated again.
  */
-struct bam_hrecs_t {
-    khash_t(bam_hrecs_t) *h;
-    bam_hrec_type_t *first_line; //!< First line (usually @HD)
+struct sam_hrecs_t {
+    khash_t(sam_hrecs_t) *h;
+    sam_hrec_type_t *first_line; //!< First line (usually @HD)
     string_alloc_t *str_pool; //!< Pool of sam_hdr_tag->str strings
     pool_alloc_t   *type_pool;//!< Pool of sam_hdr_type structs
     pool_alloc_t   *tag_pool; //!< Pool of sam_hdr_tag structs
@@ -195,13 +195,13 @@ struct bam_hrecs_t {
     // @SQ lines / references
     int nref;                  //!< Number of \@SQ lines
     int ref_sz;                //!< Number of entries available in ref[]
-    bam_hrec_sq_t *ref;        //!< Array of parsed \@SQ lines
+    sam_hrec_sq_t *ref;        //!< Array of parsed \@SQ lines
     khash_t(m_s2i) *ref_hash;  //!< Maps SQ SN field to ref[] index
 
     // @RG lines / read-groups
     int nrg;                   //!< Number of \@RG lines
     int rg_sz;                 //!< number of entries available in rg[]
-    bam_hrec_rg_t *rg;         //!< Array of parsed \@RG lines
+    sam_hrec_rg_t *rg;         //!< Array of parsed \@RG lines
     khash_t(m_s2i) *rg_hash;   //!< Maps RG ID field to rg[] index
 
     // @PG lines / programs
@@ -209,7 +209,7 @@ struct bam_hrecs_t {
     int pg_sz;                //!< Number of entries available in pg[]
     int npg_end;               //!< Number of terminating \@PG lines
     int npg_end_alloc;         //!< Size of pg_end field
-    bam_hrec_pg_t *pg;         //!< Array of parsed \@PG lines
+    sam_hrec_pg_t *pg;         //!< Array of parsed \@PG lines
     khash_t(m_s2i) *pg_hash;   //!< Maps PG ID field to pg[] index
     int *pg_end;               //!< \@PG chain termination IDs
 
@@ -249,25 +249,25 @@ int sam_hdr_rebuild(sam_hdr_t *bh);
 /*! Creates an empty SAM header, ready to be populated.
  *
  * @return
- * Returns a bam_hrecs_t struct on success (free with bam_hrecs_free())
+ * Returns a sam_hrecs_t struct on success (free with sam_hrecs_free())
  *         NULL on failure
  */
-bam_hrecs_t *bam_hrecs_new(void);
+sam_hrecs_t *sam_hrecs_new(void);
 
 /*! Produces a duplicate copy of hrecs and returns it.
  * @return
  * Returns NULL on failure
  */
-bam_hrecs_t *bam_hrecs_dup(bam_hrecs_t *hrecs);
+sam_hrecs_t *sam_hrecs_dup(sam_hrecs_t *hrecs);
 
 /*! Update sam_hdr_t target_name and target_len arrays
  *
- *  sam_hdr_t and bam_hrecs_t are specified separately so that sam_hdr_dup
+ *  sam_hdr_t and sam_hrecs_t are specified separately so that sam_hdr_dup
  *  can use it to construct target arrays from the source header.
  *
  *  @return 0 on success; -1 on failure
  */
-int sam_hdr_update_target_arrays(sam_hdr_t *bh, const bam_hrecs_t *hrecs,
+int sam_hdr_update_target_arrays(sam_hdr_t *bh, const sam_hrecs_t *hrecs,
                                  int refs_changed);
 
 /*! Reconstructs a kstring from the header hash table.
@@ -276,15 +276,15 @@ int sam_hdr_update_target_arrays(sam_hdr_t *bh, const bam_hrecs_t *hrecs,
  * Returns 0 on success
  *        -1 on failure
  */
-int bam_hrecs_rebuild_text(const bam_hrecs_t *hrecs, kstring_t *ks);
+int sam_hrecs_rebuild_text(const sam_hrecs_t *hrecs, kstring_t *ks);
 
-/*! Deallocates all storage used by a bam_hrecs_t struct.
+/*! Deallocates all storage used by a sam_hrecs_t struct.
  *
  * This also decrements the header reference count. If after decrementing
  * it is still non-zero then the header is assumed to be in use by another
  * caller and the free is not done.
  */
-void bam_hrecs_free(bam_hrecs_t *hrecs);
+void sam_hrecs_free(sam_hrecs_t *hrecs);
 
 /*!
  * @return
@@ -293,7 +293,7 @@ void bam_hrecs_free(bam_hrecs_t *hrecs);
  *
  * Returns NULL if no type/ID is found
  */
-bam_hrec_type_t *bam_hrecs_find_type_id(bam_hrecs_t *hrecs, const char *type,
+sam_hrec_type_t *sam_hrecs_find_type_id(sam_hrecs_t *hrecs, const char *type,
                                      const char *ID_key, const char *ID_value);
 
 /*
@@ -306,14 +306,14 @@ bam_hrec_type_t *bam_hrecs_find_type_id(bam_hrecs_t *hrecs, const char *type,
  * Returns 0 on success
  *        -1 on failure
  */
-int bam_hrecs_update(bam_hrecs_t *hrecs, bam_hrec_type_t *type, va_list ap);
+int sam_hrecs_update(sam_hrecs_t *hrecs, sam_hrec_type_t *type, va_list ap);
 
-bam_hrec_tag_t *bam_hrecs_find_key(bam_hrec_type_t *type,
+sam_hrec_tag_t *sam_hrecs_find_key(sam_hrec_type_t *type,
                                    const char *key,
-                                   bam_hrec_tag_t **prev);
+                                   sam_hrec_tag_t **prev);
 
-int bam_hrecs_remove_key(bam_hrecs_t *hrecs,
-                         bam_hrec_type_t *type,
+int sam_hrecs_remove_key(sam_hrecs_t *hrecs,
+                         sam_hrec_type_t *type,
                          const char *key);
 
 /*! Looks up a read-group by name and returns a pointer to the start of the
@@ -322,13 +322,13 @@ int bam_hrecs_remove_key(bam_hrecs_t *hrecs,
  * @return
  * Returns NULL on failure
  */
-bam_hrec_rg_t *bam_hrecs_find_rg(bam_hrecs_t *hrecs, const char *rg);
+sam_hrec_rg_t *sam_hrecs_find_rg(sam_hrecs_t *hrecs, const char *rg);
 
 /*! Returns the sort order from the @HD SO: field */
-enum sam_sort_order bam_hrecs_sort_order(bam_hrecs_t *hrecs);
+enum sam_sort_order sam_hrecs_sort_order(sam_hrecs_t *hrecs);
 
 /*! Returns the group order from the @HD SO: field */
-enum sam_group_order bam_hrecs_group_order(bam_hrecs_t *hrecs);
+enum sam_group_order sam_hrecs_group_order(sam_hrecs_t *hrecs);
 
 #ifdef __cplusplus
 }

@@ -88,7 +88,7 @@ void sam_hdr_destroy(sam_hdr_t *bh)
     }
     free(bh->text);
     if (bh->hrecs)
-        bam_hrecs_free(bh->hrecs);
+        sam_hrecs_free(bh->hrecs);
     free(bh);
 }
 
@@ -122,7 +122,7 @@ sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
 
     if (h0->hrecs) {
         kstring_t tmp = { 0, 0, NULL };
-        if (bam_hrecs_rebuild_text(h0->hrecs, &tmp) != 0) {
+        if (sam_hrecs_rebuild_text(h0->hrecs, &tmp) != 0) {
             free(ks_release(&tmp));
             goto fail;
         }
@@ -265,7 +265,7 @@ int bam_hdr_write(BGZF *fp, const sam_hdr_t *h)
     if (!h) return -1;
 
     if (h->hrecs) {
-        if (bam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0) return -1;
+        if (sam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0) return -1;
         if (hdr_ks.l > INT32_MAX) {
             hts_log_error("Header too long for BAM format");
             free(hdr_ks.s);
@@ -1383,7 +1383,7 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
         int r = 0, no_sq = 0;
 
         if (h->hrecs) {
-            if (bam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0)
+            if (sam_hrecs_rebuild_text(h->hrecs, &hdr_ks) != 0)
                 return -1;
             text = hdr_ks.s;
             l_text = hdr_ks.l;

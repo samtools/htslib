@@ -1221,7 +1221,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     int decode_md = s->decode_md && s->ref && !has_MD && cr->ref_id >= 0;
     int decode_nm = s->decode_md && s->ref && !has_NM && cr->ref_id >= 0;
     uint32_t ds = s->data_series;
-    bam_hrecs_t *bfd = sh->hrecs;
+    sam_hrecs_t *bfd = sh->hrecs;
 
     if ((ds & CRAM_QS) && !(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES)) {
         memset(qual, 255, cr->len);
@@ -2243,7 +2243,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     int embed_ref;
     char **refs = NULL;
     uint32_t ds;
-    bam_hrecs_t *bfd = sh->hrecs;
+    sam_hrecs_t *bfd = sh->hrecs;
 
     if (cram_dependent_data_series(fd, c->comp_hdr, s) != 0)
         return -1;
@@ -2880,7 +2880,7 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
     int name_len;
     char *aux, *aux_orig;
     char *seq, *qual;
-    bam_hrecs_t *bfd = sh->hrecs;
+    sam_hrecs_t *bfd = sh->hrecs;
 
     /* Assign names if not explicitly set */
     if (fd->required_fields & SAM_QNAME) {
@@ -3027,7 +3027,7 @@ static cram_container *cram_first_slice(cram_fd *fd) {
     if (!c->comp_hdr)
         return NULL;
     if (!c->comp_hdr->AP_delta &&
-        bam_hrecs_sort_order(fd->header->hrecs) != ORDER_COORD) {
+        sam_hrecs_sort_order(fd->header->hrecs) != ORDER_COORD) {
         pthread_mutex_lock(&fd->ref_lock);
         fd->unsorted = 1;
         pthread_mutex_unlock(&fd->ref_lock);
@@ -3155,7 +3155,7 @@ static cram_slice *cram_next_slice(cram_fd *fd, cram_container **cp) {
                     return NULL;
 
                 if (!c_next->comp_hdr->AP_delta &&
-                    bam_hrecs_sort_order(fd->header->hrecs) != ORDER_COORD) {
+                    sam_hrecs_sort_order(fd->header->hrecs) != ORDER_COORD) {
                     pthread_mutex_lock(&fd->ref_lock);
                     fd->unsorted = 1;
                     pthread_mutex_unlock(&fd->ref_lock);

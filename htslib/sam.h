@@ -46,7 +46,7 @@ extern "C" {
  *  of hash tables that contain the parsed header data.
  */
 
-typedef struct bam_hrecs_t bam_hrecs_t;
+typedef struct sam_hrecs_t sam_hrecs_t;
 
 /*! @typedef
  @abstract Structure for the alignment header.
@@ -75,7 +75,7 @@ typedef struct sam_hdr_t {
     char **target_name;
     char *text;
     void *sdict HTS_DEPRECATED("Unused since 1.10");
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     uint32_t ref_count;
 } sam_hdr_t;
 

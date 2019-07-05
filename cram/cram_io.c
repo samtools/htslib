@@ -1830,7 +1830,7 @@ static void sanitise_SQ_lines(cram_fd *fd) {
  */
 int refs2id(refs_t *r, sam_hdr_t *hdr) {
     int i;
-    bam_hrecs_t *h = hdr->hrecs;
+    sam_hrecs_t *h = hdr->hrecs;
 
     if (r->ref_id)
         free(r->ref_id);
@@ -1888,8 +1888,8 @@ static int refs_from_header(cram_fd *fd) {
     int i, j;
     /* Copy info from h->ref[i] over to r */
     for (i = 0, j = r->nref; i < h->hrecs->nref; i++) {
-        bam_hrec_type_t *ty;
-        bam_hrec_tag_t *tag;
+        sam_hrec_type_t *ty;
+        sam_hrec_tag_t *tag;
         khint_t k;
         int n;
 
@@ -1908,8 +1908,8 @@ static int refs_from_header(cram_fd *fd) {
         r->ref_id[j]->length = 0; // marker for not yet loaded
 
         /* Initialise likely filename if known */
-        if ((ty = bam_hrecs_find_type_id(h->hrecs, "SQ", "SN", h->hrecs->ref[i].name))) {
-            if ((tag = bam_hrecs_find_key(ty, "M5", NULL))) {
+        if ((ty = sam_hrecs_find_type_id(h->hrecs, "SQ", "SN", h->hrecs->ref[i].name))) {
+            if ((tag = sam_hrecs_find_key(ty, "M5", NULL))) {
                 r->ref_id[j]->fn = string_dup(r->pool, tag->str+3);
                 //fprintf(stderr, "Tagging @SQ %s / %s\n", r->ref_id[h]->name, r->ref_id[h]->fn);
             }
@@ -2098,8 +2098,8 @@ static unsigned get_int_threadid() {
  */
 static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     char *ref_path = getenv("REF_PATH");
-    bam_hrec_type_t *ty;
-    bam_hrec_tag_t *tag;
+    sam_hrec_type_t *ty;
+    sam_hrec_tag_t *tag;
     char path[PATH_MAX], path_tmp[PATH_MAX + 64];
     char cache[PATH_MAX], cache_root[PATH_MAX];
     char *local_cache = getenv("REF_CACHE");
@@ -2129,10 +2129,10 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if (!r->name)
         return -1;
 
-    if (!(ty = bam_hrecs_find_type_id(fd->header->hrecs, "SQ", "SN", r->name)))
+    if (!(ty = sam_hrecs_find_type_id(fd->header->hrecs, "SQ", "SN", r->name)))
         return -1;
 
-    if (!(tag = bam_hrecs_find_key(ty, "M5", NULL)))
+    if (!(tag = sam_hrecs_find_key(ty, "M5", NULL)))
         goto no_M5;
 
     hts_log_info("Querying ref %s", tag->str+3);
@@ -2200,7 +2200,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 
     no_M5:
         /* Failed to find in search path or M5 cache, see if @SQ UR: tag? */
-        if (!(tag = bam_hrecs_find_key(ty, "UR", NULL)))
+        if (!(tag = sam_hrecs_find_key(ty, "UR", NULL)))
             return -1;
 
         fn = (strncmp(tag->str+3, "file:", 5) == 0)
@@ -3866,7 +3866,7 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
 
     /* 1.0 requires an UNKNOWN read-group */
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
-        if (!bam_hrecs_find_rg(hdr->hrecs, "UNKNOWN"))
+        if (!sam_hrecs_find_rg(hdr->hrecs, "UNKNOWN"))
             if (sam_hdr_add_line(hdr, "RG",
                             "ID", "UNKNOWN", "SM", "UNKNOWN", NULL))
                 return -1;
@@ -3876,13 +3876,13 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
     if (fd->refs && !fd->no_ref) {
         int i;
         for (i = 0; i < hdr->hrecs->nref; i++) {
-            bam_hrec_type_t *ty;
+            sam_hrec_type_t *ty;
             char *ref;
 
-            if (!(ty = bam_hrecs_find_type_id(hdr->hrecs, "SQ", "SN", hdr->hrecs->ref[i].name)))
+            if (!(ty = sam_hrecs_find_type_id(hdr->hrecs, "SQ", "SN", hdr->hrecs->ref[i].name)))
                 return -1;
 
-            if (!bam_hrecs_find_key(ty, "M5", NULL)) {
+            if (!sam_hrecs_find_key(ty, "M5", NULL)) {
                 char unsigned buf[16];
                 char buf2[33];
                 int rlen;

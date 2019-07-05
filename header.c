@@ -42,7 +42,7 @@ typedef khash_t(rm) rmhash_t;
 static int sam_hdr_link_pg(sam_hdr_t *bh);
 
 #define MAX_ERROR_QUOTE 320 // Prevent over-long error messages
-static void bam_hrecs_error(const char *msg, const char *line, size_t len, size_t lno) {
+static void sam_hrecs_error(const char *msg, const char *line, size_t len, size_t lno) {
     int j;
 
     if (len > MAX_ERROR_QUOTE)
@@ -54,7 +54,7 @@ static void bam_hrecs_error(const char *msg, const char *line, size_t len, size_
 
 /* ==== Static methods ==== */
 
-static int bam_hrecs_init_type_order(bam_hrecs_t *hrecs, char *type_list) {
+static int sam_hrecs_init_type_order(sam_hrecs_t *hrecs, char *type_list) {
     if (!hrecs)
         return -1;
 
@@ -73,22 +73,22 @@ static int bam_hrecs_init_type_order(bam_hrecs_t *hrecs, char *type_list) {
     return 0;
 }
 
-/* Updates the hash tables in the bam_hrecs_t structure.
+/* Updates the hash tables in the sam_hrecs_t structure.
  *
  * Returns 0 on success;
  *        -1 on failure
  */
-static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
+static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                                    int type,
-                                   bam_hrec_type_t *h_type) {
+                                   sam_hrec_type_t *h_type) {
     /* Add to reference hash? */
     if ((type>>8) == 'S' && (type&0xff) == 'Q') {
-        bam_hrec_tag_t *tag;
+        sam_hrec_tag_t *tag;
         int nref = hrecs->nref;
 
         if (nref == hrecs->ref_sz) {
             size_t new_sz = hrecs->ref_sz >= 4 ? hrecs->ref_sz + (hrecs->ref_sz / 4) : 32;
-            bam_hrec_sq_t *new_ref = realloc(hrecs->ref, sizeof(*hrecs->ref) * new_sz);
+            sam_hrec_sq_t *new_ref = realloc(hrecs->ref, sizeof(*hrecs->ref) * new_sz);
             if (!new_ref)
                 return -1;
             hrecs->ref = new_ref;
@@ -127,12 +127,12 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
 
     /* Add to read-group hash? */
     if ((type>>8) == 'R' && (type&0xff) == 'G') {
-        bam_hrec_tag_t *tag;
+        sam_hrec_tag_t *tag;
         int nrg = hrecs->nrg;
 
         if (nrg == hrecs->rg_sz) {
             size_t new_sz = hrecs->rg_sz >= 4 ? hrecs->rg_sz + hrecs->rg_sz / 4 : 4;
-            bam_hrec_rg_t *new_rg = realloc(hrecs->rg, sizeof(*hrecs->rg) * new_sz);
+            sam_hrec_rg_t *new_rg = realloc(hrecs->rg, sizeof(*hrecs->rg) * new_sz);
             if (!new_rg)
                 return -1;
             hrecs->rg = new_rg;
@@ -169,8 +169,8 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
 
     /* Add to program hash? */
     if ((type>>8) == 'P' && (type&0xff) == 'G') {
-        bam_hrec_tag_t *tag;
-        bam_hrec_pg_t *new_pg;
+        sam_hrec_tag_t *tag;
+        sam_hrec_pg_t *new_pg;
         int npg = hrecs->npg;
 
         if (npg == hrecs->pg_sz) {
@@ -255,11 +255,11 @@ static int bam_hrecs_update_hashes(bam_hrecs_t *hrecs,
     return 0;
 }
 
-static int bam_hrecs_remove_hash_entry(bam_hrecs_t *hrecs, int type, bam_hrec_type_t *h_type) {
+static int sam_hrecs_remove_hash_entry(sam_hrecs_t *hrecs, int type, sam_hrec_type_t *h_type) {
     if (!hrecs || !h_type)
         return -1;
 
-    bam_hrec_tag_t *tag;
+    sam_hrec_tag_t *tag;
     char *key = NULL;
     khint_t k;
 
@@ -276,7 +276,7 @@ static int bam_hrecs_remove_hash_entry(bam_hrecs_t *hrecs, int type, bam_hrec_ty
                     int idx = kh_val(hrecs->ref_hash, k);
                     if (idx + 1 < hrecs->nref)
                         memmove(&hrecs->ref[idx], &hrecs->ref[idx+1],
-                                sizeof(bam_hrec_sq_t)*(hrecs->nref - idx - 1));
+                                sizeof(sam_hrec_sq_t)*(hrecs->nref - idx - 1));
                     kh_del(m_s2i, hrecs->ref_hash, k);
                     hrecs->nref--;
                     if (hrecs->refs_changed < 0 || hrecs->refs_changed > idx)
@@ -306,7 +306,7 @@ static int bam_hrecs_remove_hash_entry(bam_hrecs_t *hrecs, int type, bam_hrec_ty
                 if (k != kh_end(hrecs->rg_hash)) {
                     int idx = kh_val(hrecs->rg_hash, k);
                     if (idx + 1 < hrecs->nrg)
-                        memmove(&hrecs->rg[idx], &hrecs->rg[idx+1], sizeof(bam_hrec_rg_t)*(hrecs->nrg - idx - 1));
+                        memmove(&hrecs->rg[idx], &hrecs->rg[idx+1], sizeof(sam_hrec_rg_t)*(hrecs->nrg - idx - 1));
                     kh_del(m_s2i, hrecs->rg_hash, k);
                     hrecs->nrg--;
                     for (k = 0; k < kh_end(hrecs->rg_hash); k++) {
@@ -333,9 +333,9 @@ static int bam_hrecs_remove_hash_entry(bam_hrecs_t *hrecs, int type, bam_hrec_ty
  * An exception is an HD record, which will always be put first unless
  * one is already present.
  */
-static void bam_hrecs_global_list_add(bam_hrecs_t *hrecs,
-                                      bam_hrec_type_t *h_type,
-                                      bam_hrec_type_t *after) {
+static void sam_hrecs_global_list_add(sam_hrecs_t *hrecs,
+                                      sam_hrec_type_t *h_type,
+                                      sam_hrec_type_t *after) {
     const khint32_t hd_type = 'H' << 8 | 'D';
     int update_first_line = 0;
 
@@ -371,7 +371,7 @@ static void bam_hrecs_global_list_add(bam_hrecs_t *hrecs,
  * This takes a header record type, a va_list argument and one or more
  * key,value pairs, ending with the NULL key.
  *
- * Eg. bam_hrecs_vadd(h, "SQ", args, "ID", "foo", "LN", "100", NULL).
+ * Eg. sam_hrecs_vadd(h, "SQ", args, "ID", "foo", "LN", "100", NULL).
  *
  * The purpose of the additional va_list parameter is to permit other
  * varargs functions to call this while including their own additional
@@ -385,26 +385,26 @@ static void bam_hrecs_global_list_add(bam_hrecs_t *hrecs,
  * Returns >= 0 on success;
  *        -1 on failure
  */
-static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...) {
+static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...) {
     va_list args;
-    bam_hrec_type_t *h_type;
-    bam_hrec_tag_t *h_tag, *last=NULL;
+    sam_hrec_type_t *h_type;
+    sam_hrec_tag_t *h_tag, *last=NULL;
     int new;
     khint32_t type_i = (type[0]<<8) | type[1], k;
 
-    if (!strncmp(type, "HD", 2) && (h_type = bam_hrecs_find_type_id(hrecs, "HD", NULL, NULL)))
-        return bam_hrecs_update(hrecs, h_type, ap);
+    if (!strncmp(type, "HD", 2) && (h_type = sam_hrecs_find_type_id(hrecs, "HD", NULL, NULL)))
+        return sam_hrecs_update(hrecs, h_type, ap);
 
     if (!(h_type = pool_alloc(hrecs->type_pool)))
         return -1;
-    if (-1 == (k = kh_put(bam_hrecs_t, hrecs->h, type_i, &new)))
+    if (-1 == (k = kh_put(sam_hrecs_t, hrecs->h, type_i, &new)))
         return -1;
 
     h_type->type = type_i;
 
     // Form the ring, either with self or other lines of this type
     if (!new) {
-        bam_hrec_type_t *t = kh_val(hrecs->h, k), *p;
+        sam_hrec_type_t *t = kh_val(hrecs->h, k), *p;
         p = t->prev;
 
         assert(p->next == t);
@@ -421,7 +421,7 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
 
     // Add to global line ordering after any existing line of the same type,
     // or at the end if no line of this type exists yet.
-    bam_hrecs_global_list_add(hrecs, h_type, !new ? h_type->prev : NULL);
+    sam_hrecs_global_list_add(hrecs, h_type, !new ? h_type->prev : NULL);
 
     // Check linked-list invariants
     assert(h_type->prev->next == h_type);
@@ -500,7 +500,7 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
     }
 
     int itype = (type[0]<<8) | type[1];
-    if (-1 == bam_hrecs_update_hashes(hrecs, itype, h_type))
+    if (-1 == sam_hrecs_update_hashes(hrecs, itype, h_type))
         return -1;
 
     if (!strncmp(type, "PG", 2))
@@ -515,25 +515,25 @@ static int bam_hrecs_vadd(bam_hrecs_t *hrecs, const char *type, va_list ap, ...)
  * Function for deallocating a list of tags
  */
 
-static void bam_hrecs_free_tags(bam_hrecs_t *hrecs, bam_hrec_tag_t *tag) {
+static void sam_hrecs_free_tags(sam_hrecs_t *hrecs, sam_hrec_tag_t *tag) {
     if (!hrecs || !tag)
         return;
     if (tag->next)
-        bam_hrecs_free_tags(hrecs, tag->next);
+        sam_hrecs_free_tags(hrecs, tag->next);
 
     pool_free(hrecs->tag_pool, tag);
 }
 
-static int bam_hrecs_remove_line(bam_hrecs_t *hrecs, const char *type_name, bam_hrec_type_t *type_found) {
+static int sam_hrecs_remove_line(sam_hrecs_t *hrecs, const char *type_name, sam_hrec_type_t *type_found) {
     if (!hrecs || !type_name || !type_found)
         return -1;
 
     int itype = (type_name[0]<<8) | type_name[1];
-    khint_t k = kh_get(bam_hrecs_t, hrecs->h, itype);
+    khint_t k = kh_get(sam_hrecs_t, hrecs->h, itype);
     if (k == kh_end(hrecs->h))
         return -1;
 
-    bam_hrecs_free_tags(hrecs, type_found->tag);
+    sam_hrecs_free_tags(hrecs, type_found->tag);
 
     // Remove from global list (remembering it could be the only line)
     if (hrecs->first_line == type_found) {
@@ -545,7 +545,7 @@ static int bam_hrecs_remove_line(bam_hrecs_t *hrecs, const char *type_name, bam_
 
     /* single element in the list */
     if (type_found->prev == type_found || type_found->next == type_found) {
-        kh_del(bam_hrecs_t, hrecs->h, k);
+        kh_del(sam_hrecs_t, hrecs->h, k);
     } else {
         type_found->prev->next = type_found->next;
         type_found->next->prev = type_found->prev;
@@ -555,7 +555,7 @@ static int bam_hrecs_remove_line(bam_hrecs_t *hrecs, const char *type_name, bam_
     }
 
     if (!strncmp(type_name, "SQ", 2) || !strncmp(type_name, "RG", 2))
-        bam_hrecs_remove_hash_entry(hrecs, itype, type_found);
+        sam_hrecs_remove_hash_entry(hrecs, itype, type_found);
 
     pool_free(hrecs->type_pool, type_found);
 
@@ -565,8 +565,8 @@ static int bam_hrecs_remove_line(bam_hrecs_t *hrecs, const char *type_name, bam_
 }
 
 // Paste together a line from the parsed data structures
-static int build_header_line(const bam_hrec_type_t *ty, kstring_t *ks) {
-    bam_hrec_tag_t *tag;
+static int build_header_line(const sam_hrec_type_t *ty, kstring_t *ks) {
+    sam_hrec_tag_t *tag;
     int r = 0;
     char c[2]= { ty->type >> 8, ty->type & 0xff };
 
@@ -580,8 +580,8 @@ static int build_header_line(const bam_hrec_type_t *ty, kstring_t *ks) {
     return r;
 }
 
-static int bam_hrecs_rebuild_lines(const bam_hrecs_t *hrecs, kstring_t *ks) {
-    const bam_hrec_type_t *t1, *t2;
+static int sam_hrecs_rebuild_lines(const sam_hrecs_t *hrecs, kstring_t *ks) {
+    const sam_hrec_type_t *t1, *t2;
 
     if (!hrecs->first_line)
         return kputsn("", 0, ks) >= 0 ? 0 : -1;
@@ -599,7 +599,7 @@ static int bam_hrecs_rebuild_lines(const bam_hrecs_t *hrecs, kstring_t *ks) {
     return 0;
 }
 
-static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len) {
+static int sam_hrecs_parse_lines(sam_hrecs_t *hrecs, const char *hdr, size_t len) {
     size_t i, lno;
 
     if (!hrecs || len > SSIZE_MAX)
@@ -610,7 +610,7 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
 
     if (len < 3) {
         if (len == 0 || *hdr == '\0') return 0;
-        bam_hrecs_error("Header line too short", hdr, len, 1);
+        sam_hrecs_error("Header line too short", hdr, len, 1);
         return -1;
     }
 
@@ -619,18 +619,18 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
         khint_t k;
 
         int l_start = i, new;
-        bam_hrec_type_t *h_type;
-        bam_hrec_tag_t *h_tag, *last;
+        sam_hrec_type_t *h_type;
+        sam_hrec_tag_t *h_tag, *last;
 
         if (hdr[i] != '@') {
-            bam_hrecs_error("Header line does not start with '@'",
+            sam_hrecs_error("Header line does not start with '@'",
                           &hdr[l_start], len - l_start, lno);
             return -1;
         }
 
         type = (hdr[i+1]<<8) | hdr[i+2];
         if (!isalpha_c(hdr[i+1]) || !isalpha_c(hdr[i+2])) {
-            bam_hrecs_error("Header line does not have a two character key",
+            sam_hrecs_error("Header line does not have a two character key",
                           &hdr[l_start], len - l_start, lno);
             return -1;
         }
@@ -642,17 +642,17 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
         // Add the header line type
         if (!(h_type = pool_alloc(hrecs->type_pool)))
             return -1;
-        if (-1 == (k = kh_put(bam_hrecs_t, hrecs->h, type, &new)))
+        if (-1 == (k = kh_put(sam_hrecs_t, hrecs->h, type, &new)))
             return -1;
 
         h_type->type = type;
 
         // Add to end of global list
-        bam_hrecs_global_list_add(hrecs, h_type, NULL);
+        sam_hrecs_global_list_add(hrecs, h_type, NULL);
 
         // Form the ring, either with self or other lines of this type
         if (!new) {
-            bam_hrec_type_t *t = kh_val(hrecs->h, k), *p;
+            sam_hrec_type_t *t = kh_val(hrecs->h, k), *p;
             p = t->prev;
 
             assert(p->next == t);
@@ -672,7 +672,7 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
             size_t j;
 
             if (i == len || hdr[i] != '\t') {
-                bam_hrecs_error("Missing tab",
+                sam_hrecs_error("Missing tab",
                               &hdr[l_start], len - l_start, lno);
                 return -1;
             }
@@ -695,7 +695,7 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
                 size_t j;
 
                 if (i == len || hdr[i] != '\t') {
-                    bam_hrecs_error("Missing tab",
+                    sam_hrecs_error("Missing tab",
                                   &hdr[l_start], len - l_start, lno);
                     return -1;
                 }
@@ -704,7 +704,7 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
                     ;
 
                 if (j - i < 3 || hdr[i + 2] != ':') {
-                    bam_hrecs_error("Malformed key:value pair",
+                    sam_hrecs_error("Malformed key:value pair",
                                    &hdr[l_start], len - l_start, lno);
                     return -1;
                 }
@@ -728,7 +728,7 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
         }
 
         /* Update RG/SQ hashes */
-        if (-1 == bam_hrecs_update_hashes(hrecs, type, h_type))
+        if (-1 == sam_hrecs_update_hashes(hrecs, type, h_type))
             return -1;
     }
 
@@ -739,7 +739,7 @@ static int bam_hrecs_parse_lines(bam_hrecs_t *hrecs, const char *hdr, size_t len
  *
  *  @return 0 on success; -1 on failure
  */
-int sam_hdr_update_target_arrays(sam_hdr_t *bh, const bam_hrecs_t *hrecs,
+int sam_hdr_update_target_arrays(sam_hdr_t *bh, const sam_hrecs_t *hrecs,
                                  int refs_changed) {
     if (!bh || !hrecs)
         return -1;
@@ -790,7 +790,7 @@ static int rebuild_target_arrays(sam_hdr_t *bh) {
     if (!bh || !bh->hrecs)
         return -1;
 
-    bam_hrecs_t *hrecs = bh->hrecs;
+    sam_hrecs_t *hrecs = bh->hrecs;
     if (hrecs->refs_changed < 0)
         return 0;
 
@@ -802,15 +802,15 @@ static int rebuild_target_arrays(sam_hdr_t *bh) {
 }
 
 int sam_hdr_fill_hrecs(sam_hdr_t *bh) {
-    bam_hrecs_t *hrecs = bam_hrecs_new();
+    sam_hrecs_t *hrecs = sam_hrecs_new();
 
     if (!hrecs)
         return -1;
 
     // Parse existing header text
     if (bh->text && bh->l_text > 0) {
-        if (bam_hrecs_parse_lines(hrecs, bh->text, bh->l_text) != 0) {
-            bam_hrecs_free(hrecs);
+        if (sam_hrecs_parse_lines(hrecs, bh->text, bh->l_text) != 0) {
+            sam_hrecs_free(hrecs);
             return -1;
         }
     }
@@ -842,13 +842,13 @@ static void redact_header_text(sam_hdr_t *bh) {
     @param type   Header type (SQ, RG etc.)
     @param idx    0-based index
 
-    @return bam_hrec_type_t pointer to the record on success
+    @return sam_hrec_type_t pointer to the record on success
             NULL if no record exists with the given type and index
  */
 
-static bam_hrec_type_t *bam_hrecs_find_type_pos(bam_hrecs_t *hrecs,
+static sam_hrec_type_t *sam_hrecs_find_type_pos(sam_hrecs_t *hrecs,
                                                 const char *type, int idx) {
-    bam_hrec_type_t *first, *itr;
+    sam_hrec_type_t *first, *itr;
 
     if (idx < 0)
         return NULL;
@@ -862,7 +862,7 @@ static bam_hrec_type_t *bam_hrecs_find_type_pos(bam_hrecs_t *hrecs,
     if (type[0] == 'P' && type[1] == 'G')
         return idx < hrecs->npg ? hrecs->pg[idx].ty : NULL;
 
-    first = itr = bam_hrecs_find_type_id(hrecs, type, NULL, NULL);
+    first = itr = sam_hrecs_find_type_id(hrecs, type, NULL, NULL);
     if (!first)
         return NULL;
 
@@ -905,7 +905,7 @@ int sam_hdr_nref(const sam_hdr_t *bh) {
  *        -1 on failure
  */
 int sam_hdr_rebuild(sam_hdr_t *bh) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     if (!bh)
         return -1;
 
@@ -925,7 +925,7 @@ int sam_hdr_rebuild(sam_hdr_t *bh) {
         sam_hdr_link_pg(bh);
 
     kstring_t ks = KS_INITIALIZER;
-    if (bam_hrecs_rebuild_text(hrecs, &ks) != 0) {
+    if (sam_hrecs_rebuild_text(hrecs, &ks) != 0) {
         KS_FREE(&ks);
         return -1;
     }
@@ -953,7 +953,7 @@ int sam_hdr_rebuild(sam_hdr_t *bh) {
  *        -1 on failure
  */
 int sam_hdr_add_lines(sam_hdr_t *bh, const char *lines, size_t len) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
 
     if (!bh || !lines)
         return -1;
@@ -967,7 +967,7 @@ int sam_hdr_add_lines(sam_hdr_t *bh, const char *lines, size_t len) {
         hrecs = bh->hrecs;
     }
 
-    if (bam_hrecs_parse_lines(hrecs, lines, len) != 0)
+    if (sam_hrecs_parse_lines(hrecs, lines, len) != 0)
         return -1;
 
     if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
@@ -989,7 +989,7 @@ int sam_hdr_add_lines(sam_hdr_t *bh, const char *lines, size_t len) {
  */
 int sam_hdr_add_line(sam_hdr_t *bh, const char *type, ...) {
     va_list args;
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
 
     if (!bh || !type)
         return -1;
@@ -1001,7 +1001,7 @@ int sam_hdr_add_line(sam_hdr_t *bh, const char *type, ...) {
     }
 
     va_start(args, type);
-    int ret = bam_hrecs_vadd(hrecs, type, args, NULL);
+    int ret = sam_hrecs_vadd(hrecs, type, args, NULL);
     va_end(args);
 
     if (ret == 0) {
@@ -1022,7 +1022,7 @@ int sam_hdr_add_line(sam_hdr_t *bh, const char *type, ...) {
  */
 int sam_hdr_find_line_id(sam_hdr_t *bh, const char *type,
                       const char *ID_key, const char *ID_val, kstring_t *ks) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     if (!bh || !type)
         return -2;
 
@@ -1032,7 +1032,7 @@ int sam_hdr_find_line_id(sam_hdr_t *bh, const char *type,
         hrecs = bh->hrecs;
     }
 
-    bam_hrec_type_t *ty = bam_hrecs_find_type_id(hrecs, type, ID_key, ID_val);
+    sam_hrec_type_t *ty = sam_hrecs_find_type_id(hrecs, type, ID_key, ID_val);
     if (!ty)
         return -1;
 
@@ -1046,7 +1046,7 @@ int sam_hdr_find_line_id(sam_hdr_t *bh, const char *type,
 
 int sam_hdr_find_line_pos(sam_hdr_t *bh, const char *type,
                           int pos, kstring_t *ks) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     if (!bh || !type)
         return -2;
 
@@ -1056,7 +1056,7 @@ int sam_hdr_find_line_pos(sam_hdr_t *bh, const char *type,
         hrecs = bh->hrecs;
     }
 
-    bam_hrec_type_t *ty = bam_hrecs_find_type_pos(hrecs, type, pos);
+    sam_hrec_type_t *ty = sam_hrecs_find_type_pos(hrecs, type, pos);
     if (!ty)
         return -1;
 
@@ -1079,7 +1079,7 @@ int sam_hdr_find_line_pos(sam_hdr_t *bh, const char *type,
  */
 
 int sam_hdr_remove_line_id(sam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     if (!bh || !type)
         return -1;
 
@@ -1094,11 +1094,11 @@ int sam_hdr_remove_line_id(sam_hdr_t *bh, const char *type, const char *ID_key, 
         return -1;
     }
 
-    bam_hrec_type_t *type_found = bam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
+    sam_hrec_type_t *type_found = sam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
     if (!type_found)
         return 0;
 
-    int ret = bam_hrecs_remove_line(hrecs, type, type_found);
+    int ret = sam_hrecs_remove_line(hrecs, type, type_found);
     if (ret == 0) {
         if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
             return -1;
@@ -1118,7 +1118,7 @@ int sam_hdr_remove_line_id(sam_hdr_t *bh, const char *type, const char *ID_key, 
  */
 
 int sam_hdr_remove_line_pos(sam_hdr_t *bh, const char *type, int position) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     if (!bh || !type || position <= 0)
         return -1;
 
@@ -1133,12 +1133,12 @@ int sam_hdr_remove_line_pos(sam_hdr_t *bh, const char *type, int position) {
         return -1;
     }
 
-    bam_hrec_type_t *type_found = bam_hrecs_find_type_pos(hrecs, type,
+    sam_hrec_type_t *type_found = sam_hrecs_find_type_pos(hrecs, type,
                                                           position);
     if (!type_found)
         return -1;
 
-    int ret = bam_hrecs_remove_line(hrecs, type, type_found);
+    int ret = sam_hrecs_remove_line(hrecs, type, type_found);
     if (ret == 0) {
         if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
             return -1;
@@ -1152,7 +1152,7 @@ int sam_hdr_remove_line_pos(sam_hdr_t *bh, const char *type, int position) {
 
 int sam_hdr_update_line(sam_hdr_t *bh, const char *type,
         const char *ID_key, const char *ID_value, ...) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     if (!bh)
         return -1;
 
@@ -1163,13 +1163,13 @@ int sam_hdr_update_line(sam_hdr_t *bh, const char *type,
     }
 
     int ret;
-    bam_hrec_type_t *ty = bam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
+    sam_hrec_type_t *ty = sam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
     if (!ty)
         return -1;
 
     va_list args;
     va_start(args, ID_value);
-    ret = bam_hrecs_update(hrecs, ty, args);
+    ret = sam_hrecs_update(hrecs, ty, args);
     va_end(args);
 
     if (!ret && hrecs->dirty)
@@ -1179,7 +1179,7 @@ int sam_hdr_update_line(sam_hdr_t *bh, const char *type,
 }
 
 int sam_hdr_keep_line(sam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     if (!bh || !type)
         return -1;
 
@@ -1189,7 +1189,7 @@ int sam_hdr_keep_line(sam_hdr_t *bh, const char *type, const char *ID_key, const
         hrecs = bh->hrecs;
     }
 
-    bam_hrec_type_t *step;
+    sam_hrec_type_t *step;
     int ret = 1, remove_all = 0;
 
     if (!strncmp(type, "PG", 2) || !strncmp(type, "CO", 2)) {
@@ -1197,10 +1197,10 @@ int sam_hdr_keep_line(sam_hdr_t *bh, const char *type, const char *ID_key, const
         return -1;
     }
 
-    bam_hrec_type_t *type_found = bam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
+    sam_hrec_type_t *type_found = sam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
     if (!type_found) { // remove all line of this type
         int itype = (type[0]<<8)|(type[1]);
-        khint_t k = kh_get(bam_hrecs_t, hrecs->h, itype);
+        khint_t k = kh_get(sam_hrecs_t, hrecs->h, itype);
         if (k == kh_end(hrecs->h))
             return 0;
         type_found =  kh_val(hrecs->h, k);
@@ -1211,13 +1211,13 @@ int sam_hdr_keep_line(sam_hdr_t *bh, const char *type, const char *ID_key, const
 
     step = type_found->next;
     while (step != type_found) {
-        bam_hrec_type_t *to_remove = step;
+        sam_hrec_type_t *to_remove = step;
         step = step->next;
-        ret &= bam_hrecs_remove_line(hrecs, type, to_remove);
+        ret &= sam_hrecs_remove_line(hrecs, type, to_remove);
     }
 
     if (remove_all)
-        ret &= bam_hrecs_remove_line(hrecs, type, type_found);
+        ret &= sam_hrecs_remove_line(hrecs, type, type_found);
 
     if (!ret && hrecs->dirty)
         redact_header_text(bh);
@@ -1226,7 +1226,7 @@ int sam_hdr_keep_line(sam_hdr_t *bh, const char *type, const char *ID_key, const
 }
 
 int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *h) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     rmhash_t *rh;
     if (!bh || !type || !id || !(rh = (rmhash_t *)h))
         return -1;
@@ -1238,26 +1238,26 @@ int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *
     }
 
     int itype = (type[0]<<8)|(type[1]);
-    khint_t k = kh_get(bam_hrecs_t, hrecs->h, itype);
+    khint_t k = kh_get(sam_hrecs_t, hrecs->h, itype);
     if (k == kh_end(hrecs->h)) // nothing to remove from
         return 0;
 
-    bam_hrec_type_t *head = kh_val(hrecs->h, k);
+    sam_hrec_type_t *head = kh_val(hrecs->h, k);
     if (!head) {
         hts_log_error("Header inconsistency");
         return -1;
     }
 
     int ret = 0;
-    bam_hrec_type_t *step = head->next;
+    sam_hrec_type_t *step = head->next;
     while (step != head) {
-        bam_hrec_tag_t *tag = bam_hrecs_find_key(step, id, NULL);
+        sam_hrec_tag_t *tag = sam_hrecs_find_key(step, id, NULL);
         if (tag && tag->str && tag->len >= 3) {
            k = kh_get(rm, rh, tag->str+3);
            if (k == kh_end(rh)) { // value is not in the hash table, so remove
-               bam_hrec_type_t *to_remove = step;
+               sam_hrec_type_t *to_remove = step;
                step = step->next;
-               ret |= bam_hrecs_remove_line(hrecs, type, to_remove);
+               ret |= sam_hrecs_remove_line(hrecs, type, to_remove);
            } else {
                step = step->next;
            }
@@ -1267,13 +1267,13 @@ int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *
     }
 
     // process the first line
-    bam_hrec_tag_t * tag = bam_hrecs_find_key(head, id, NULL);
+    sam_hrec_tag_t * tag = sam_hrecs_find_key(head, id, NULL);
     if (tag && tag->str && tag->len >= 3) {
        k = kh_get(rm, rh, tag->str+3);
        if (k == kh_end(rh)) { // value is not in the hash table, so remove
-           bam_hrec_type_t *to_remove = head;
+           sam_hrec_type_t *to_remove = head;
            head = head->next;
-           ret |= bam_hrecs_remove_line(hrecs, type, to_remove);
+           ret |= sam_hrecs_remove_line(hrecs, type, to_remove);
        }
     }
 
@@ -1285,7 +1285,7 @@ int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *
 
 int sam_hdr_count_lines(sam_hdr_t *bh, const char *type) {
     int count;
-    bam_hrec_type_t *first_ty, *itr_ty;
+    sam_hrec_type_t *first_ty, *itr_ty;
 
     if (!bh || !type)
         return -1;
@@ -1310,7 +1310,7 @@ int sam_hdr_count_lines(sam_hdr_t *bh, const char *type) {
         break;
     }
 
-    first_ty = bam_hrecs_find_type_id(bh->hrecs, type, NULL, NULL);
+    first_ty = sam_hrecs_find_type_id(bh->hrecs, type, NULL, NULL);
     if (!first_ty)
         return 0;
 
@@ -1331,7 +1331,7 @@ int sam_hdr_find_tag_id(sam_hdr_t *bh,
                      const char *ID_value,
                      const char *key,
                      kstring_t *ks) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     if (!bh || !type || !key)
         return -2;
 
@@ -1341,11 +1341,11 @@ int sam_hdr_find_tag_id(sam_hdr_t *bh,
         hrecs = bh->hrecs;
     }
 
-    bam_hrec_type_t *ty = bam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
+    sam_hrec_type_t *ty = sam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
     if (!ty)
         return -1;
 
-    bam_hrec_tag_t *tag = bam_hrecs_find_key(ty, key, NULL);
+    sam_hrec_tag_t *tag = sam_hrecs_find_key(ty, key, NULL);
     if (!tag || !tag->str || tag->len < 4)
         return -1;
 
@@ -1362,7 +1362,7 @@ int sam_hdr_find_tag_pos(sam_hdr_t *bh,
                      int pos,
                      const char *key,
                      kstring_t *ks) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     if (!bh || !type || !key)
         return -2;
 
@@ -1372,11 +1372,11 @@ int sam_hdr_find_tag_pos(sam_hdr_t *bh,
         hrecs = bh->hrecs;
     }
 
-    bam_hrec_type_t *ty = bam_hrecs_find_type_pos(hrecs, type, pos);
+    sam_hrec_type_t *ty = sam_hrecs_find_type_pos(hrecs, type, pos);
     if (!ty)
         return -1;
 
-    bam_hrec_tag_t *tag = bam_hrecs_find_key(ty, key, NULL);
+    sam_hrec_tag_t *tag = sam_hrecs_find_key(ty, key, NULL);
     if (!tag || !tag->str || tag->len < 4)
         return -1;
 
@@ -1393,7 +1393,7 @@ int sam_hdr_remove_tag_id(sam_hdr_t *bh,
         const char *ID_key,
         const char *ID_value,
         const char *key) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     if (!bh || !type || !key)
         return -1;
 
@@ -1403,11 +1403,11 @@ int sam_hdr_remove_tag_id(sam_hdr_t *bh,
         hrecs = bh->hrecs;
     }
 
-    bam_hrec_type_t *ty = bam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
+    sam_hrec_type_t *ty = sam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
     if (!ty)
         return -1;
 
-    int ret = bam_hrecs_remove_key(hrecs, ty, key);
+    int ret = sam_hrecs_remove_key(hrecs, ty, key);
     if (!ret && hrecs->dirty)
         redact_header_text(bh);
 
@@ -1419,13 +1419,13 @@ int sam_hdr_remove_tag_id(sam_hdr_t *bh,
  * Returns 0 on success
  *        -1 on failure
  */
-int bam_hrecs_rebuild_text(const bam_hrecs_t *hrecs, kstring_t *ks) {
+int sam_hrecs_rebuild_text(const sam_hrecs_t *hrecs, kstring_t *ks) {
     ks->l = 0;
 
     if (!hrecs->h || !hrecs->h->size) {
         return kputsn("", 0, ks) >= 0 ? 0 : -1;
     }
-    if (bam_hrecs_rebuild_lines(hrecs, ks) != 0)
+    if (sam_hrecs_rebuild_lines(hrecs, ks) != 0)
         return -1;
 
     return 0;
@@ -1436,7 +1436,7 @@ int bam_hrecs_rebuild_text(const bam_hrecs_t *hrecs, kstring_t *ks) {
  * Returns -1 if unknown reference; -2 if header could not be parsed.
  */
 int sam_hdr_name2ref(sam_hdr_t *bh, const char *ref) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     khint_t k;
 
     if (!bh)
@@ -1469,7 +1469,7 @@ int sam_hdr_name2ref(sam_hdr_t *bh, const char *ref) {
  *        -1 on failure (indicating broken PG/PP records)
  */
 static int sam_hdr_link_pg(sam_hdr_t *bh) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     int i, j, ret = 0, *new_pg_end;
 
     if (!bh)
@@ -1495,7 +1495,7 @@ static int sam_hdr_link_pg(sam_hdr_t *bh) {
 
     for (i = 0; i < hrecs->npg; i++) {
         khint_t k;
-        bam_hrec_tag_t *tag;
+        sam_hrec_tag_t *tag;
         char tmp;
 
         assert(hrecs->pg[i].ty != NULL);
@@ -1542,7 +1542,7 @@ static int sam_hdr_link_pg(sam_hdr_t *bh) {
  * this function.
  */
 const char *sam_hdr_pg_id(sam_hdr_t *bh, const char *name) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     size_t name_len;
     const size_t name_extra = 17;
     if (!bh || !name)
@@ -1593,7 +1593,7 @@ const char *sam_hdr_pg_id(sam_hdr_t *bh, const char *name) {
  *        -1 on failure
  */
 int sam_hdr_add_pg(sam_hdr_t *bh, const char *name, ...) {
-    bam_hrecs_t *hrecs;
+    sam_hrecs_t *hrecs;
     const char *specified_id = NULL, *specified_pn = NULL, *specified_pp = NULL;
     const char *key, *val;
     if (!bh)
@@ -1654,7 +1654,7 @@ int sam_hdr_add_pg(sam_hdr_t *bh, const char *name, ...) {
                 return -1;
             }
             va_start(args, name);
-            if (-1 == bam_hrecs_vadd(hrecs, "PG", args,
+            if (-1 == sam_hrecs_vadd(hrecs, "PG", args,
                                      "ID", id,
                                      "PN", !specified_pn ? name : "",
                                      "PP", hrecs->pg[end[i]].name,
@@ -1671,7 +1671,7 @@ int sam_hdr_add_pg(sam_hdr_t *bh, const char *name, ...) {
         if (!id)
             return -1;
         va_start(args, name);
-        if (-1 == bam_hrecs_vadd(hrecs, "PG", args,
+        if (-1 == sam_hrecs_vadd(hrecs, "PG", args,
                                  "ID", id,
                                  "PN", !specified_pn ? name : "",
                                  NULL))
@@ -1702,16 +1702,16 @@ void sam_hdr_incr_ref(sam_hdr_t *bh) {
  * Creates an empty SAM header.  Allocates space for the SAM header
  * structures (hash tables) ready to be populated.
  *
- * Returns a bam_hrecs_t struct on success (free with bam_hrecs_free())
+ * Returns a sam_hrecs_t struct on success (free with sam_hrecs_free())
  *         NULL on failure
  */
-bam_hrecs_t *bam_hrecs_new() {
-    bam_hrecs_t *hrecs = calloc(1, sizeof(*hrecs));
+sam_hrecs_t *sam_hrecs_new() {
+    sam_hrecs_t *hrecs = calloc(1, sizeof(*hrecs));
 
     if (!hrecs)
         return NULL;
 
-    hrecs->h = kh_init(bam_hrecs_t);
+    hrecs->h = kh_init(sam_hrecs_t);
     if (!hrecs->h)
         goto err;
 
@@ -1738,23 +1738,23 @@ bam_hrecs_t *bam_hrecs_new() {
     if (!(hrecs->pg_hash = kh_init(m_s2i)))
         goto err;
 
-    if (!(hrecs->tag_pool = pool_create(sizeof(bam_hrec_tag_t))))
+    if (!(hrecs->tag_pool = pool_create(sizeof(sam_hrec_tag_t))))
         goto err;
 
-    if (!(hrecs->type_pool = pool_create(sizeof(bam_hrec_type_t))))
+    if (!(hrecs->type_pool = pool_create(sizeof(sam_hrec_type_t))))
         goto err;
 
     if (!(hrecs->str_pool = string_pool_create(65536)))
         goto err;
 
-    if (bam_hrecs_init_type_order(hrecs, NULL))
+    if (sam_hrecs_init_type_order(hrecs, NULL))
         goto err;
 
     return hrecs;
 
 err:
     if (hrecs->h)
-        kh_destroy(bam_hrecs_t, hrecs->h);
+        kh_destroy(sam_hrecs_t, hrecs->h);
 
     if (hrecs->tag_pool)
         pool_destroy(hrecs->tag_pool);
@@ -1774,23 +1774,23 @@ err:
  * Produces a duplicate copy of source and returns it.
  * Returns NULL on failure
  */
-bam_hrecs_t *bam_hrecs_dup(bam_hrecs_t *source) {
+sam_hrecs_t *sam_hrecs_dup(sam_hrecs_t *source) {
         return NULL;
 }
 #endif
-/*! Deallocates all storage used by a bam_hrecs_t struct.
+/*! Deallocates all storage used by a sam_hrecs_t struct.
  *
  * This also decrements the header reference count. If after decrementing
  * it is still non-zero then the header is assumed to be in use by another
  * caller and the free is not done.
  *
  */
-void bam_hrecs_free(bam_hrecs_t *hrecs) {
+void sam_hrecs_free(sam_hrecs_t *hrecs) {
     if (!hrecs)
         return;
 
     if (hrecs->h)
-        kh_destroy(bam_hrecs_t, hrecs->h);
+        kh_destroy(sam_hrecs_t, hrecs->h);
 
     if (hrecs->ref_hash)
         kh_destroy(m_s2i, hrecs->ref_hash);
@@ -1838,11 +1838,11 @@ void bam_hrecs_free(bam_hrecs_t *hrecs) {
  *
  * Returns NULL if no type/ID is found
  */
-bam_hrec_type_t *bam_hrecs_find_type_id(bam_hrecs_t *hrecs, const char *type,
+sam_hrec_type_t *sam_hrecs_find_type_id(sam_hrecs_t *hrecs, const char *type,
                                      const char *ID_key, const char *ID_value) {
     if (!hrecs || !type)
         return NULL;
-    bam_hrec_type_t *t1, *t2;
+    sam_hrec_type_t *t1, *t2;
     int itype = (type[0]<<8)|(type[1]);
     khint_t k;
 
@@ -1876,7 +1876,7 @@ bam_hrec_type_t *bam_hrecs_find_type_id(bam_hrecs_t *hrecs, const char *type,
         }
     }
 
-    k = kh_get(bam_hrecs_t, hrecs->h, itype);
+    k = kh_get(sam_hrecs_t, hrecs->h, itype);
     if (k == kh_end(hrecs->h))
         return NULL;
 
@@ -1885,7 +1885,7 @@ bam_hrec_type_t *bam_hrecs_find_type_id(bam_hrecs_t *hrecs, const char *type,
 
     t1 = t2 = kh_val(hrecs->h, k);
     do {
-        bam_hrec_tag_t *tag;
+        sam_hrec_tag_t *tag;
         for (tag = t1->tag; tag; tag = tag->next) {
             if (tag->str[0] == ID_key[0] && tag->str[1] == ID_key[1]) {
                 char *cp1 = tag->str+3;
@@ -1913,20 +1913,20 @@ bam_hrec_type_t *bam_hrecs_find_type_id(bam_hrecs_t *hrecs, const char *type,
  * Returns 0 on success
  *        -1 on failure
  */
-int bam_hrecs_update(bam_hrecs_t *hrecs, bam_hrec_type_t *type, va_list ap) {
+int sam_hrecs_update(sam_hrecs_t *hrecs, sam_hrec_type_t *type, va_list ap) {
     if (!hrecs)
         return -1;
 
     for (;;) {
         char *k, *v;
-        bam_hrec_tag_t *tag, *prev = NULL;
+        sam_hrec_tag_t *tag, *prev = NULL;
 
         if (!(k = (char *)va_arg(ap, char *)))
             break;
         if (!(v = va_arg(ap, char *)))
             v = "";
 
-        tag = bam_hrecs_find_key(type, k, &prev);
+        tag = sam_hrecs_find_key(type, k, &prev);
         if (!tag) {
             if (!(tag = pool_alloc(hrecs->tag_pool)))
                 return -1;
@@ -1962,10 +1962,10 @@ int bam_hrecs_update(bam_hrecs_t *hrecs, bam_hrec_type_t *type, va_list ap) {
  * Returns the tag pointer on success
  *         NULL on failure
  */
-bam_hrec_tag_t *bam_hrecs_find_key(bam_hrec_type_t *type,
+sam_hrec_tag_t *sam_hrecs_find_key(sam_hrec_type_t *type,
                                    const char *key,
-                                   bam_hrec_tag_t **prev) {
-    bam_hrec_tag_t *tag, *p = NULL;
+                                   sam_hrec_tag_t **prev) {
+    sam_hrec_tag_t *tag, *p = NULL;
     if (!type)
         return NULL;
 
@@ -1983,13 +1983,13 @@ bam_hrec_tag_t *bam_hrecs_find_key(bam_hrec_type_t *type,
     return NULL;
 }
 
-int bam_hrecs_remove_key(bam_hrecs_t *hrecs,
-                         bam_hrec_type_t *type,
+int sam_hrecs_remove_key(sam_hrecs_t *hrecs,
+                         sam_hrec_type_t *type,
                          const char *key) {
-    bam_hrec_tag_t *tag, *prev;
+    sam_hrec_tag_t *tag, *prev;
     if (!hrecs)
         return -1;
-    tag = bam_hrecs_find_key(type, key, &prev);
+    tag = sam_hrecs_find_key(type, key, &prev);
     if (!tag)
         return 0; // Not there anyway
 
@@ -2010,20 +2010,20 @@ int bam_hrecs_remove_key(bam_hrecs_t *hrecs,
  *
  * Returns NULL on failure
  */
-bam_hrec_rg_t *bam_hrecs_find_rg(bam_hrecs_t *hrecs, const char *rg) {
+sam_hrec_rg_t *sam_hrecs_find_rg(sam_hrecs_t *hrecs, const char *rg) {
     khint_t k = kh_get(m_s2i, hrecs->rg_hash, rg);
     return k == kh_end(hrecs->rg_hash)
         ? NULL
         : &hrecs->rg[kh_val(hrecs->rg_hash, k)];
 }
 
-void bam_hrecs_dump(bam_hrecs_t *hrecs) {
+void sam_hrecs_dump(sam_hrecs_t *hrecs) {
     khint_t k;
     int i;
 
     printf("===DUMP===\n");
     for (k = kh_begin(hrecs->h); k != kh_end(hrecs->h); k++) {
-        bam_hrec_type_t *t1, *t2;
+        sam_hrec_type_t *t1, *t2;
         char c[2];
         int idx = 0;
 
@@ -2036,7 +2036,7 @@ void bam_hrecs_dump(bam_hrecs_t *hrecs) {
         printf("Type %.2s\n", c);
 
         do {
-            bam_hrec_tag_t *tag;
+            sam_hrec_tag_t *tag;
             printf(">>>%d ", idx++);
             for (tag = t1->tag; tag; tag=tag->next) {
                 if (strncmp(c, "CO", 2))
@@ -2068,15 +2068,15 @@ void bam_hrecs_dump(bam_hrecs_t *hrecs) {
 /*
  * Returns the sort order:
  */
-enum sam_sort_order bam_hrecs_sort_order(bam_hrecs_t *hrecs) {
+enum sam_sort_order sam_hrecs_sort_order(sam_hrecs_t *hrecs) {
     khint_t k;
     enum sam_sort_order so;
 
     so = ORDER_UNKNOWN;
-    k = kh_get(bam_hrecs_t, hrecs->h, K("HD"));
+    k = kh_get(sam_hrecs_t, hrecs->h, K("HD"));
     if (k != kh_end(hrecs->h)) {
-        bam_hrec_type_t *ty = kh_val(hrecs->h, k);
-        bam_hrec_tag_t *tag;
+        sam_hrec_type_t *ty = kh_val(hrecs->h, k);
+        sam_hrec_tag_t *tag;
         for (tag = ty->tag; tag; tag = tag->next) {
             if (tag->str[0] == 'S' && tag->str[1] == 'O') {
                 if (strcmp(tag->str+3, "unsorted") == 0)
@@ -2094,15 +2094,15 @@ enum sam_sort_order bam_hrecs_sort_order(bam_hrecs_t *hrecs) {
     return so;
 }
 
-enum sam_group_order bam_hrecs_group_order(bam_hrecs_t *hrecs) {
+enum sam_group_order sam_hrecs_group_order(sam_hrecs_t *hrecs) {
     khint_t k;
     enum sam_group_order go;
 
     go = ORDER_NONE;
-    k = kh_get(bam_hrecs_t, hrecs->h, K("HD"));
+    k = kh_get(sam_hrecs_t, hrecs->h, K("HD"));
     if (k != kh_end(hrecs->h)) {
-        bam_hrec_type_t *ty = kh_val(hrecs->h, k);
-        bam_hrec_tag_t *tag;
+        sam_hrec_type_t *ty = kh_val(hrecs->h, k);
+        sam_hrec_tag_t *tag;
         for (tag = ty->tag; tag; tag = tag->next) {
             if (tag->str[0] == 'G' && tag->str[1] == 'O') {
                 if (strcmp(tag->str+3, "query") == 0)
