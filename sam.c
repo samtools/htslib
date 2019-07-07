@@ -32,6 +32,12 @@ DEALINGS IN THE SOFTWARE.  */
 #include <errno.h>
 #include <zlib.h>
 #include <assert.h>
+
+// Suppress deprecation message for cigar_tab, which we initialise
+#include "htslib/hts_defs.h"
+#undef HTS_DEPRECATED
+#define HTS_DEPRECATED(message)
+
 #include "htslib/sam.h"
 #include "htslib/bgzf.h"
 #include "cram/cram.h"
@@ -51,22 +57,44 @@ KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
  *** BAM header I/O ***
  **********************/
 
-static int8_t cigar_tab[128];
+const int8_t bam_cigar_table[256] = {
+    // 0 .. 47
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
 
-static int8_t *cigar_tab_init() {
-    int i;
-    for (i = 0; i < 128; ++i)
-        cigar_tab[i] = -1;
-    for (i = 0; BAM_CIGAR_STR[i]; ++i)
-        cigar_tab[(int) BAM_CIGAR_STR[i]] = i;
+    // 48 .. 63  (including =)
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, BAM_CEQUAL, -1, -1,
 
-    return cigar_tab;
-}
+    // 64 .. 79  (including MIDNHB)
+    -1, -1, BAM_CBACK, -1,  BAM_CDEL, -1, -1, -1,
+        BAM_CHARD_CLIP, BAM_CINS, -1, -1,  -1, BAM_CMATCH, BAM_CREF_SKIP, -1,
+
+    // 80 .. 95  (including SPX)
+    BAM_CPAD, -1, -1, BAM_CSOFT_CLIP,  -1, -1, -1, -1,
+        BAM_CDIFF, -1, -1, -1,  -1, -1, -1, -1,
+
+    // 96 .. 127
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+
+    // 128 .. 255
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+    -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1
+};
 
 sam_hdr_t *sam_hdr_init()
 {
     sam_hdr_t *bh = (sam_hdr_t*)calloc(1, sizeof(sam_hdr_t));
+    if (bh == NULL) return NULL;
 
+    bh->cigar_tab = bam_cigar_table;
     return bh;
 }
 
@@ -101,8 +129,8 @@ sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
     h->n_targets = 0;
     h->ignore_sam_err = h0->ignore_sam_err;
     h->l_text = 0;
+
     // Then the pointery stuff
-    h->cigar_tab = NULL;
 
     if (!h0->hrecs) {
         h->target_len = (uint32_t*)calloc(h0->n_targets, sizeof(uint32_t));
@@ -1629,9 +1657,6 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     str.l = b->l_data = 0;
     str.s = (char*)b->data; str.m = b->m_data;
     memset(c, 0, 32);
-    if (h->cigar_tab == 0) {
-        h->cigar_tab = cigar_tab_init();
-    }
 
     // qname
     q = _read_token(p);
@@ -1683,10 +1708,10 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         _parse_err(n_cigar >= 2147483647, "too many CIGAR operations");
         c->n_cigar = n_cigar;
         _get_mem(uint32_t, &cigar, &str, c->n_cigar * sizeof(uint32_t));
-        for (i = 0; i < c->n_cigar; ++i, ++q) {
+        for (i = 0; i < c->n_cigar; ++i) {
             int op;
             cigar[i] = STRTOL64(q, &q, 10)<<BAM_CIGAR_SHIFT;
-            op = (uint8_t)*q >= 128? -1 : h->cigar_tab[(int)*q];
+            op = bam_cigar_table[(unsigned char)*q++];
             _parse_err(op < 0, "unrecognized CIGAR operator");
             cigar[i] |= op;
         }

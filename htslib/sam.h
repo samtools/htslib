@@ -71,7 +71,7 @@ typedef struct sam_hdr_t {
     int32_t n_targets, ignore_sam_err;
     size_t l_text;
     uint32_t *target_len;
-    int8_t *cigar_tab;
+    const int8_t *cigar_tab HTS_DEPRECATED("Use bam_cigar_table[] instead");
     char **target_name;
     char *text;
     void *sdict HTS_DEPRECATED("Unused since 1.10");
@@ -103,6 +103,12 @@ typedef sam_hdr_t bam_hdr_t;
 #define BAM_CIGAR_SHIFT 4
 #define BAM_CIGAR_MASK  0xf
 #define BAM_CIGAR_TYPE  0x3C1A7
+
+/*! @abstract Table for converting a CIGAR operator character to BAM_CMATCH etc.
+Result is operator code or -1. Be sure to cast the index if it is a plain char:
+    int op = bam_cigar_table[(unsigned char) ch];
+*/
+extern const int8_t bam_cigar_table[256];
 
 #define bam_cigar_op(c) ((c)&BAM_CIGAR_MASK)
 #define bam_cigar_oplen(c) ((c)>>BAM_CIGAR_SHIFT)

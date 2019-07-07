@@ -903,6 +903,21 @@ static void check_enum1(void)
     if (bgzf != 2) fail("bgzf is %d", bgzf);
 }
 
+static void check_cigar_tab(void)
+{
+    int i, n_neg = 0;
+
+    for (i = 0; i < 256; ++i)
+        if (bam_cigar_table[i] < 0) n_neg++;
+
+    if (n_neg + strlen(BAM_CIGAR_STR) != 256)
+        fail("bam_cigar_table has %d unset entries", n_neg);
+
+    for (i = 0; BAM_CIGAR_STR[i]; ++i)
+        if (bam_cigar_table[(unsigned char) BAM_CIGAR_STR[i]] != i)
+            fail("bam_cigar_table['%c'] is not %d", BAM_CIGAR_STR[i], i);
+}
+
 int main(int argc, char **argv)
 {
     int i;
@@ -915,6 +930,7 @@ int main(int argc, char **argv)
     use_header_api();
     test_header_pg_lines();
     check_enum1();
+    check_cigar_tab();
     for (i = 1; i < argc; i++) faidx1(argv[i]);
 
     return status;

@@ -49,7 +49,8 @@ Noteworthy changes in release a.b
     and l_text fields have been left for backwards compatibility, but
     should not be accessed directly in code that uses the new header API.
     To access the header text, the new functions sam_hdr_length() and
-    sam_hdr_str() should be used instead.
+    sam_hdr_str() should be used instead.  The old cigar_tab field is
+    now marked as deprecated; use the new bam_cigar_table[] instead.
 
   - bcf_index_load() no longer tries the '.tbi' suffix when looking for
     BCF index files (.tbi indexes are for text files, not binary BCF).
