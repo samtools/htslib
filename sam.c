@@ -1588,19 +1588,23 @@ static inline int64_t STRTOL64(const char *v, char **rv, int b) {
 
     v++;
 
-    while (*v>='0' && *v<='9')
-        n = n*10 + *v++ - '0';
+    while (*v>='0' && *v<='9') {
+        int digit = *v++ - '0';
+        n = n*10 + digit;
+    }
     *rv = (char *)v;
     return neg*n;
 }
 
-static inline int64_t STRTOUL64(const char *v, char **rv, int b) {
-    int64_t n = 0;
+static inline uint64_t STRTOUL64(const char *v, char **rv, int b) {
+    uint64_t n = 0;
     if (*v == '+')
         v++;
 
-    while (*v>='0' && *v<='9')
-        n = n*10 + *v++ - '0';
+    while (*v>='0' && *v<='9') {
+        int digit = *v++ - '0';
+        n = n*10 + digit;
+    }
     *rv = (char *)v;
     return n;
 }
