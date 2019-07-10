@@ -611,16 +611,36 @@ int sam_hdr_remove_tag_id(sam_hdr_t *h, const char *type, const char *ID_key, co
  * Looks up a reference sequence by name in the reference hash table
  * and returns the numerical target id.
  */
-int sam_hdr_name2ref(sam_hdr_t *h, const char *ref);
+int sam_hdr_name2id(sam_hdr_t *h, const char *ref);
 
-/// Alias of sam_hdr_name2ref(), for backwards compatibility.
+/// Get the reference sequence name from a target index
+/*!
+ * @param tid  Target index
+ * @return     Valid reference name on success, NULL on failure
+ *
+ * Fetch the reference sequence name from the target name array,
+ * using the numerical target id.
+ */
+const char *sam_hdr_id2name(sam_hdr_t *h, int tid);
+
+/// Get the reference sequence length from a target index
+/*!
+ * @param tid  Target index
+ * @return     Strictly positive value on success, 0 on failure
+ *
+ * Fetch the reference sequence length from the target length array,
+ * using the numerical target id.
+ */
+uint32_t sam_hdr_id2len(sam_hdr_t *h, int tid);
+
+/// Alias of sam_hdr_name2id(), for backwards compatibility.
 /*!
  * @param ref  Reference name
  * @return     Positive value on success,
  *             -1 if unknown reference,
  *             -2 if the header could not be parsed
  */
-static inline int bam_name2id(sam_hdr_t *h, const char *ref) { return sam_hdr_name2ref(h, ref); }
+static inline int bam_name2id(sam_hdr_t *h, const char *ref) { return sam_hdr_name2id(h, ref); }
 
 /// Generate a unique \@PG ID: value
 /*!
