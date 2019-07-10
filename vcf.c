@@ -186,6 +186,7 @@ int bcf_hdr_sync(bcf_hdr_t *h)
 
 void bcf_hrec_destroy(bcf_hrec_t *hrec)
 {
+    if (!hrec) return;
     free(hrec->key);
     if ( hrec->value ) free(hrec->value);
     int i;
@@ -1847,7 +1848,10 @@ int bcf_hdr_set(bcf_hdr_t *hdr, const char *fname)
         int k;
         bcf_hrec_t *hrec = bcf_hdr_parse_line(hdr,lines[i],&k);
         if (!hrec) goto fail;
-        if (bcf_hdr_add_hrec(hdr, hrec) < 0) goto fail;
+        if (bcf_hdr_add_hrec(hdr, hrec) < 0) {
+            bcf_hrec_destroy(hrec);
+            goto fail;
+        }
         free(lines[i]);
         lines[i] = NULL;
     }
@@ -2168,6 +2172,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
             free(tmp.s);
             int res = hrec ? bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) : -1;
+            if (res < 0) bcf_hrec_destroy(hrec);
             if (res > 0) res = bcf_hdr_sync((bcf_hdr_t*)h);
 
             k = kh_get(vdict, d, t);
@@ -2439,6 +2444,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                 bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
                 free(tmp.s);
                 int res = hrec ? bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) : -1;
+                if (res < 0) bcf_hrec_destroy(hrec);
                 if (res > 0) res = bcf_hdr_sync((bcf_hdr_t*)h);
                 k = kh_get(vdict, d, p);
                 v->errcode = BCF_ERR_CTG_UNDEF;
@@ -2506,6 +2512,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
                         free(tmp.s);
                         int res = hrec ? bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) : -1;
+                        if (res < 0) bcf_hrec_destroy(hrec);
                         if (res > 0) res = bcf_hdr_sync((bcf_hdr_t*)h);
                         k = kh_get(vdict, d, t);
                         v->errcode = BCF_ERR_TAG_UNDEF;
@@ -2549,6 +2556,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
                         free(tmp.s);
                         int res = hrec ? bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) : -1;
+                        if (res < 0) bcf_hrec_destroy(hrec);
                         if (res > 0) res = bcf_hdr_sync((bcf_hdr_t*)h);
                         k = kh_get(vdict, d, key);
                         v->errcode = BCF_ERR_TAG_UNDEF;
