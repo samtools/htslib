@@ -621,7 +621,7 @@ int sam_hdr_name2id(sam_hdr_t *h, const char *ref);
  * Fetch the reference sequence name from the target name array,
  * using the numerical target id.
  */
-const char *sam_hdr_id2name(sam_hdr_t *h, int tid);
+const char *sam_hdr_id2name(const sam_hdr_t *h, int tid);
 
 /// Get the reference sequence length from a target index
 /*!
@@ -631,7 +631,7 @@ const char *sam_hdr_id2name(sam_hdr_t *h, int tid);
  * Fetch the reference sequence length from the target length array,
  * using the numerical target id.
  */
-uint32_t sam_hdr_id2len(sam_hdr_t *h, int tid);
+uint32_t sam_hdr_id2len(const sam_hdr_t *h, int tid);
 
 /// Alias of sam_hdr_name2id(), for backwards compatibility.
 /*!

@@ -1455,19 +1455,13 @@ int sam_hdr_name2id(sam_hdr_t *bh, const char *ref) {
     return k == kh_end(hrecs->ref_hash) ? -1 : kh_val(hrecs->ref_hash, k);
 }
 
-const char *sam_hdr_id2name(sam_hdr_t *h, int tid) {
+const char *sam_hdr_id2name(const sam_hdr_t *h, int tid) {
     sam_hrecs_t *hrecs;
 
     if (!h)
         return NULL;
 
-    if (!(hrecs = h->hrecs)) {
-        if (sam_hdr_fill_hrecs(h) != 0)
-            return NULL;
-        hrecs = h->hrecs;
-    }
-
-    if (tid < hrecs->nref) {
+    if ((hrecs = h->hrecs) != NULL && tid < hrecs->nref) {
         return hrecs->ref[tid].name;
     } else {
         if (tid < h->n_targets)
@@ -1477,19 +1471,13 @@ const char *sam_hdr_id2name(sam_hdr_t *h, int tid) {
     return NULL;
 }
 
-uint32_t sam_hdr_id2len(sam_hdr_t *h, int tid) {
+uint32_t sam_hdr_id2len(const sam_hdr_t *h, int tid) {
     sam_hrecs_t *hrecs;
 
     if (!h)
         return 0;
 
-    if (!(hrecs = h->hrecs)) {
-        if (sam_hdr_fill_hrecs(h) != 0)
-            return 0;
-        hrecs = h->hrecs;
-    }
-
-    if (tid < hrecs->nref) {
+    if ((hrecs = h->hrecs) != NULL && tid < hrecs->nref) {
         return hrecs->ref[tid].len;
     } else {
         if (tid < h->n_targets)
