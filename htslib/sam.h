@@ -518,6 +518,16 @@ int sam_hdr_remove_line_pos(sam_hdr_t *h, const char *type, int position);
  *
  * Specify multiple key,value pairs ending in NULL. Eg.
  * sam_hdr_update_line(h, "RG", "ID", "rg1", "DS", "description", "PG", "samtools", NULL)
+ *
+ * Attempting to update the record name (i.e. @SQ SN or @RG ID) will
+ * work as long as the new name is not already in use, however doing this
+ * on a file opened for reading may produce unexpected results.
+ *
+ * Renaming an @RG record in this way will only change the header.  Alignment
+ * records written later will not be updated automatically even if they
+ * reference the old read group name.
+ *
+ * Attempting to change an @PG ID tag is not permitted.
  */
 int sam_hdr_update_line(sam_hdr_t *h, const char *type,
         const char *ID_key, const char *ID_value, ...);

@@ -126,6 +126,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                                     name);
                 } else { // Updating
                     hrecs->ref[nref].len = len;
+                    hrecs->ref[nref].name = name;
                 }
             } else {
                 // Attach header line to existing stub entry.
@@ -138,6 +139,8 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                         return -1;
                 }
             }
+            if (hrecs->refs_changed < 0 || hrecs->refs_changed > nref)
+                hrecs->refs_changed = nref;
             return 0;
         }
 
@@ -165,8 +168,30 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
 
     /* Add to read-group hash? */
     if ((type>>8) == 'R' && (type&0xff) == 'G') {
-        sam_hrec_tag_t *tag;
-        int nrg = hrecs->nrg;
+        sam_hrec_tag_t *tag = sam_hrecs_find_key(h_type, "ID", NULL);
+        int nrg = hrecs->nrg, r;
+        khint_t k;
+
+        if (!tag) {
+            hts_log_error("Header includes @RG line with no ID: tag");
+            return -1;  // ID should be present, according to spec.
+        }
+        assert(tag->str && tag->len >= 3);
+
+        // Seen already?
+        k = kh_get(m_s2i, hrecs->rg_hash, tag->str + 3);
+        if (k < kh_end(hrecs->rg_hash)) {
+            nrg = kh_val(hrecs->rg_hash, k);
+            assert(hrecs->rg[nrg].ty != NULL);
+            if (hrecs->rg[nrg].ty != h_type) {
+                hts_log_warning("Duplicate entry \"%s\" in sam header",
+                                tag->str + 3);
+            } else {
+                hrecs->rg[nrg].name = tag->str + 3;
+                hrecs->rg[nrg].name_len = tag->len - 3;
+            }
+            return 0;
+        }
 
         if (nrg == hrecs->rg_sz) {
             size_t new_sz = hrecs->rg_sz >= 4 ? hrecs->rg_sz + hrecs->rg_sz / 4 : 4;
@@ -177,30 +202,14 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
             hrecs->rg_sz = new_sz;
         }
 
-        tag = h_type->tag;
-        hrecs->rg[nrg].name = NULL;
-        hrecs->rg[nrg].name_len = 0;
+        hrecs->rg[nrg].name = tag->str + 3;
+        hrecs->rg[nrg].name_len = tag->len - 3;
         hrecs->rg[nrg].ty   = h_type;
         hrecs->rg[nrg].id   = nrg;
 
-        while (tag) {
-            if (tag->str[0] == 'I' && tag->str[1] == 'D') {
-                assert(tag->len >= 3);
-                hrecs->rg[nrg].name = tag->str + 3;
-                hrecs->rg[nrg].name_len = tag->len - 3;
-            }
-            tag = tag->next;
-        }
-
-        if (hrecs->rg[nrg].name) {
-            khint_t k;
-            int r;
-            k = kh_put(m_s2i, hrecs->rg_hash, hrecs->rg[nrg].name, &r);
-            if (-1 == r) return -1;
-            kh_val(hrecs->rg_hash, k) = nrg;
-        } else {
-            return -1; // ID should be present, according to spec.
-        }
+        k = kh_put(m_s2i, hrecs->rg_hash, hrecs->rg[nrg].name, &r);
+        if (-1 == r) return -1;
+        kh_val(hrecs->rg_hash, k) = nrg;
 
         hrecs->nrg++;
     }
@@ -1312,6 +1321,60 @@ int sam_hdr_remove_line_pos(sam_hdr_t *bh, const char *type, int position) {
     return ret;
 }
 
+/*
+ * Check if sam_hdr_update_line() is being used to change the name of
+ * a record, and if the new name is going to clash with an existing one.
+ *
+ * If ap includes repeated keys, we go with the last one as sam_hrecs_vupdate()
+ * will go through them all and leave the final one in place.
+ *
+ * Returns 0 if the name does not change
+ *         1 if the name changes but does not clash
+ *        -1 if the name changes and the new one is already in use
+ */
+static int check_for_name_update(sam_hrecs_t *hrecs, sam_hrec_type_t *rec,
+                                 va_list ap, const char **old_name,
+                                 const char **new_name,
+                                 char id_tag_out[3],
+                                 khash_t(m_s2i) **hash_out) {
+    char *key, *val;
+    const char *id_tag;
+    sam_hrec_tag_t *tag, *prev;
+    khash_t(m_s2i) *hash;
+    khint_t k;
+    int ret = 0;
+
+    if        (rec->type == TYPEKEY("SQ")) {
+        id_tag = "SN"; hash = hrecs->ref_hash;
+    } else if (rec->type == TYPEKEY("RG")) {
+        id_tag = "ID"; hash = hrecs->rg_hash;
+    } else if (rec->type == TYPEKEY("PG")) {
+        id_tag = "ID"; hash = hrecs->pg_hash;
+    } else {
+        return 0;
+    }
+
+    memcpy(id_tag_out, id_tag, 3);
+    *hash_out = hash;
+
+    tag = sam_hrecs_find_key(rec, id_tag, &prev);
+    if (!tag)
+        return 0;
+    assert(tag->len >= 3);
+    *old_name = tag->str + 3;
+
+    while ((key = va_arg(ap, char *)) != NULL) {
+        val = va_arg(ap, char *);
+        if (!val) val = "";
+        if (strcmp(key, id_tag) != 0) continue;
+        if (strcmp(val, tag->str + 3) == 0) { ret = 0; continue; }
+        k = kh_get(m_s2i, hash, val);
+        ret = k < kh_end(hash) ? -1 : 1;
+        *new_name = val;
+    }
+    return ret;
+}
+
 int sam_hdr_update_line(sam_hdr_t *bh, const char *type,
         const char *ID_key, const char *ID_value, ...) {
     sam_hrecs_t *hrecs;
@@ -1324,15 +1387,59 @@ int sam_hdr_update_line(sam_hdr_t *bh, const char *type,
         hrecs = bh->hrecs;
     }
 
-    int ret;
+    int ret, rename;
     sam_hrec_type_t *ty = sam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
     if (!ty)
         return -1;
 
     va_list args;
+    const char *old_name = "?", *new_name = "?";
+    char id_tag[3];
+    khash_t(m_s2i) *hash = NULL;
+    va_start(args, ID_value);
+    rename = check_for_name_update(hrecs, ty, args,
+                                   &old_name, &new_name, id_tag, &hash);
+    va_end(args);
+    if (rename < 0) {
+        hts_log_error("Cannot rename @%s \"%s\" to \"%s\" : already exists",
+                      type, old_name, new_name);
+        return -1;
+    }
+    if (rename > 0 && TYPEKEY(type) == TYPEKEY("PG")) {
+        // This is just too complicated
+        hts_log_error("Renaming @PG records is not supported");
+        return -1;
+    }
     va_start(args, ID_value);
     ret = sam_hrecs_vupdate(hrecs, ty, args);
     va_end(args);
+
+    if (ret)
+        return ret;
+
+    if (rename) {
+        // Adjust the hash table to point to the new name
+        // sam_hrecs_update_hashes() should sort out everything else
+        khint_t k = kh_get(m_s2i, hash, old_name);
+        sam_hrec_tag_t *new_tag = sam_hrecs_find_key(ty, id_tag, NULL);
+        int r, pos;
+        assert(k < kh_end(hash));        // Or we wouldn't have found it earlier
+        assert(new_tag && new_tag->str); // id_tag should exist
+        assert(new_tag->len > 3);
+        pos = kh_val(hash, k);
+        kh_del(m_s2i, hash, k);
+        k = kh_put(m_s2i, hash, new_tag->str + 3, &r);
+        if (r < 1) {
+            hts_log_error("Failed to rename item in hash table");
+            return -1;
+        }
+        kh_val(hash, k) = pos;
+    }
+
+    ret = sam_hrecs_update_hashes(hrecs, TYPEKEY(type), ty);
+
+    if (!ret && hrecs->refs_changed >= 0)
+        ret = rebuild_target_arrays(bh);
 
     if (!ret && hrecs->dirty)
         redact_header_text(bh);
@@ -2285,7 +2392,7 @@ enum sam_sort_order sam_hrecs_sort_order(sam_hrecs_t *hrecs) {
     enum sam_sort_order so;
 
     so = ORDER_UNKNOWN;
-    k = kh_get(sam_hrecs_t, hrecs->h, K("HD"));
+    k = kh_get(sam_hrecs_t, hrecs->h, TYPEKEY("HD"));
     if (k != kh_end(hrecs->h)) {
         sam_hrec_type_t *ty = kh_val(hrecs->h, k);
         sam_hrec_tag_t *tag;
@@ -2311,7 +2418,7 @@ enum sam_group_order sam_hrecs_group_order(sam_hrecs_t *hrecs) {
     enum sam_group_order go;
 
     go = ORDER_NONE;
-    k = kh_get(sam_hrecs_t, hrecs->h, K("HD"));
+    k = kh_get(sam_hrecs_t, hrecs->h, TYPEKEY("HD"));
     if (k != kh_end(hrecs->h)) {
         sam_hrec_type_t *ty = kh_val(hrecs->h, k);
         sam_hrec_tag_t *tag;

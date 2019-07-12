@@ -515,7 +515,43 @@ static void copy_check_alignment(const char *infname, const char *informat,
     if (out) sam_close(out);
 }
 
-static void use_header_api() {
+static int check_target_names(sam_hdr_t *header, int expected_n_targets,
+                              const char **expected_targets,
+                              const int   *expected_lengths) {
+    int i;
+
+    // Check consistency of target_names array
+    if (!header->target_name) {
+        fail("target_name is NULL");
+        return -1;
+    }
+    if (!header->target_len) {
+        fail("target_len is NULL");
+        return -1;
+    }
+    if (header->n_targets != expected_n_targets) {
+        fail("header->n_targets (%d) != expected_n_targets (%d)",
+             header->n_targets, expected_n_targets);
+        return -1;
+    }
+    for (i = 0; i < expected_n_targets; i++) {
+        if (!header->target_name[i]
+            || strcmp(header->target_name[i], expected_targets[i]) != 0) {
+            fail("header->target_name[%d] (%s) != \"%s\"",
+                 i, header->target_name[i] ? header->target_name[i] : "NULL",
+                 expected_targets[i]);
+            return -1;
+        }
+        if (header->target_len[i] != expected_lengths[i]) {
+            fail("header->target_len[%d] (%d) != %d",
+                 i, header->target_len[i], expected_lengths[i]);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static void use_header_api(void) {
     static const char header_text[] = "data:,"
             "@HD\tVN:1.4\tGO:group\tSS:coordinate:queryname\n"
             "@SQ\tSN:ref0\tLN:100\n"
@@ -553,7 +589,7 @@ static void use_header_api() {
     sam_hdr_t *header = NULL;
     kstring_t ks = { 0, 0, NULL };
     size_t bytes;
-    int r, i;
+    int r;
 
     if (!in) {
         fail("couldn't open file");
@@ -647,34 +683,9 @@ static void use_header_api() {
         fail("sam_hdr_update_hd");
     }
 
-    // Check consistency of target_names array
-    if (!header->target_name) {
-        fail("target_name is NULL");
+    if (check_target_names(header, expected_n_targets, expected_targets,
+                           expected_lengths) < 0) {
         goto err;
-    }
-    if (!header->target_len) {
-        fail("target_len is NULL");
-        goto err;
-    }
-    if (header->n_targets != expected_n_targets) {
-        fail("header->n_targets (%d) != expected_n_targets (%d)",
-             header->n_targets, expected_n_targets);
-        goto err;
-    }
-
-    for (i = 0; i < expected_n_targets; i++) {
-        if (!header->target_name[i]
-            || strcmp(header->target_name[i], expected_targets[i]) != 0) {
-            fail("header->target_name[%d] (%s) != \"%s\"",
-                 i, header->target_name[i] ? header->target_name[i] : "NULL",
-                 expected_targets[i]);
-            goto err;
-        }
-        if (header->target_len[i] != expected_lengths[i]) {
-            fail("header->target_len[%d] (%d) != %d",
-                 i, header->target_len[i], expected_lengths[i]);
-            goto err;
-        }
     }
 
     if ((r = sam_hdr_count_lines(header, "HD")) != 1) {
@@ -822,6 +833,101 @@ static void test_header_pg_lines() {
     return;
 }
 
+static void test_header_updates(void) {
+    static const char header_text[] =
+        "@HD\tVN:1.4\n"
+        "@SQ\tSN:chr1\tLN:100\n"
+        "@SQ\tSN:chr2\tLN:200\n"
+        "@SQ\tSN:chr3\tLN:300\n"
+        "@RG\tID:run1\n"
+        "@RG\tID:run2\n"
+        "@RG\tID:run3\n"
+        "@PG\tID:prog1\tPN:prog1\n";
+
+    static const char expected[] =
+        "@HD\tVN:1.4\n"
+        "@SQ\tSN:1\tLN:100\n"
+        "@SQ\tSN:chr2\tLN:2000\n"
+        "@SQ\tSN:chr3\tLN:300\n"
+        "@RG\tID:run1\tDS:hello\n"
+        "@RG\tID:aliquot2\n"
+        "@RG\tID:run3\n"
+        "@PG\tID:prog1\tPN:prog1\n";
+
+    static const char *expected_targets[] = { "1", "chr2", "chr3" };
+    static const int   expected_lengths[] = { 100, 2000, 300 };
+    const int expected_n_targets = sizeof(expected_targets) / sizeof(char *);
+
+    sam_hdr_t *header = sam_hdr_parse(sizeof(header_text) - 1, header_text);
+    const char *hdr_str;
+    int r, i, old_log_level;
+
+    if (!header) {
+        fail("creating sam header");
+        goto err;
+    }
+
+    if (sam_hdr_name2tid(header, "chr1") != 0) { // Should now be unknown
+        fail("sam_hdr_name2tid(\"chr1\") != 0");
+        goto err;
+    }
+
+    r = sam_hdr_update_line(header, "SQ", "SN", "chr2", "LN", "2000", NULL);
+    if (r != 0) { fail("sam_hdr_update_line SQ SN chr2 LN 2000"); goto err; }
+    r = sam_hdr_update_line(header, "SQ", "SN", "chr1", "SN", "1", NULL);
+    if (r != 0) { fail("sam_hdr_update_line SQ SN chr1 SN 1"); goto err; }
+    r = sam_hdr_update_line(header, "RG", "ID", "run1", "DS", "hello", NULL);
+    if (r != 0) { fail("sam_hdr_update_line RG ID run1 DS hello"); goto err; }
+    r = sam_hdr_update_line(header, "RG", "ID", "run2", "ID", "aliquot2", NULL);
+    if (r != 0) { fail("sam_hdr_update_line RG ID run2 ID aliquot2"); goto err; }
+
+    // These should fail
+    old_log_level = hts_get_log_level();
+    hts_set_log_level(HTS_LOG_OFF);
+
+    r = sam_hdr_update_line(header, "PG", "ID", "prog1", "ID", "prog2", NULL);
+    if (r == 0) { fail("sam_hdr_update_line PG ID prog1 ID prog2"); goto err; }
+
+    r = sam_hdr_update_line(header, "SQ", "SN", "chr3", "SN", "chr2", NULL);
+    if (r == 0) { fail("sam_hdr_update_line SQ SN chr3 SN chr2"); goto err; }
+
+    r = sam_hdr_update_line(header, "RG", "ID", "run3", "ID", "run1", NULL);
+    if (r == 0) { fail("sam_hdr_update_line RG ID run3 ID run1"); goto err; }
+
+    hts_set_log_level(old_log_level);
+    // End failing tests
+
+    if (check_target_names(header, expected_n_targets, expected_targets,
+                           expected_lengths) < 0) {
+        goto err;
+    }
+
+    for (i = 0; i < expected_n_targets; i++) {
+        if (sam_hdr_name2tid(header, expected_targets[i]) != i) {
+            fail("sam_hdr_name2tid unexpected result");
+            goto err;
+        }
+    }
+    if (sam_hdr_name2tid(header, "chr1") != -1) { // Should now be unknown
+        fail("sam_hdr_name2tid(\"chr1\") != -1");
+        goto err;
+    }
+
+    hdr_str = sam_hdr_str(header);
+    if (!hdr_str || strcmp(hdr_str, expected) != 0) {
+        fail("edited header does not match expected version");
+        fprintf(stderr,
+                "---------- Expected:\n%s\n"
+                "++++++++++ Got:\n%s\n"
+                "====================\n",
+                expected, hdr_str ? hdr_str : "<NULL>");
+        goto err;
+    }
+
+ err:
+    sam_hdr_destroy(header);
+}
+
 static void samrecord_layout(void)
 {
     static const char qnames[] = "data:,"
@@ -929,6 +1035,7 @@ int main(int argc, char **argv)
     samrecord_layout();
     use_header_api();
     test_header_pg_lines();
+    test_header_updates();
     check_enum1();
     check_cigar_tab();
     for (i = 1; i < argc; i++) faidx1(argv[i]);

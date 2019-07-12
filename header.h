@@ -62,7 +62,7 @@ extern "C" {
 // Frees the string subfield only. Assumes 's' itself is static.
 #define KS_FREE(ks) do { if ((ks)->s) {free((ks)->s); (ks)->s = NULL;} } while(0)
 
-#define K(a) (((a)[0]<<8)|((a)[1]))
+#define TYPEKEY(a) (((a)[0]<<8)|((a)[1]))
 
 #define SAM_HDR_LINES 32
 
