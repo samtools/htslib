@@ -645,14 +645,15 @@ static int bgzf_uncompress(uint8_t *dst, size_t *dlen,
 static int bgzf_uncompress(uint8_t *dst, size_t *dlen,
                            const uint8_t *src, size_t slen,
                            uint32_t expected_crc) {
-    z_stream zs;
-    zs.zalloc = NULL;
-    zs.zfree = NULL;
-    zs.msg = NULL;
-    zs.next_in = (Bytef*)src;
-    zs.avail_in = slen;
-    zs.next_out = (Bytef*)dst;
-    zs.avail_out = *dlen;
+    z_stream zs = {
+        .zalloc = NULL,
+        .zfree = NULL,
+        .msg = NULL,
+        .next_in = (Bytef*)src,
+        .avail_in = slen,
+        .next_out = (Bytef*)dst,
+        .avail_out = *dlen
+    };
 
     int ret = inflateInit2(&zs, -15);
     if (ret != Z_OK) {
