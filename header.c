@@ -1435,7 +1435,7 @@ int sam_hrecs_rebuild_text(const sam_hrecs_t *hrecs, kstring_t *ks) {
  * Looks up a reference sequence by name and returns the numerical ID.
  * Returns -1 if unknown reference; -2 if header could not be parsed.
  */
-int sam_hdr_name2id(sam_hdr_t *bh, const char *ref) {
+int sam_hdr_name2tid(sam_hdr_t *bh, const char *ref) {
     sam_hrecs_t *hrecs;
     khint_t k;
 
@@ -1455,7 +1455,7 @@ int sam_hdr_name2id(sam_hdr_t *bh, const char *ref) {
     return k == kh_end(hrecs->ref_hash) ? -1 : kh_val(hrecs->ref_hash, k);
 }
 
-const char *sam_hdr_id2name(const sam_hdr_t *h, int tid) {
+const char *sam_hdr_tid2name(const sam_hdr_t *h, int tid) {
     sam_hrecs_t *hrecs;
 
     if (!h)
@@ -1471,7 +1471,7 @@ const char *sam_hdr_id2name(const sam_hdr_t *h, int tid) {
     return NULL;
 }
 
-uint32_t sam_hdr_id2len(const sam_hdr_t *h, int tid) {
+uint32_t sam_hdr_tid2len(const sam_hdr_t *h, int tid) {
     sam_hrecs_t *hrecs;
 
     if (!h)

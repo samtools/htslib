@@ -1024,7 +1024,7 @@ hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end)
 static int cram_name2id(void *fdv, const char *ref)
 {
     cram_fd *fd = (cram_fd *) fdv;
-    return sam_hdr_name2id(fd->header, ref);
+    return sam_hdr_name2tid(fd->header, ref);
 }
 
 hts_itr_t *sam_itr_querys(const hts_idx_t *idx, sam_hdr_t *hdr, const char *region)
