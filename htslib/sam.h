@@ -381,7 +381,7 @@ int sam_hdr_write(samFile *fp, const sam_hdr_t *h) HTS_RESULT_USED;
 
 /// Returns the current length of the header text.
 /*!
- * @return  >= 0 on success, -1 on failure
+ * @return  >= 0 on success, SIZE_MAX on failure
  */
 size_t sam_hdr_length(sam_hdr_t *h);
 

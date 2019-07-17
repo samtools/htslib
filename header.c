@@ -1051,7 +1051,7 @@ static sam_hrec_type_t *sam_hrecs_find_type_pos(sam_hrecs_t *hrecs,
 
 size_t sam_hdr_length(sam_hdr_t *bh) {
     if (!bh || -1 == sam_hdr_rebuild(bh))
-        return -1;
+        return SIZE_MAX;
 
     return bh->l_text;
 }
@@ -1071,7 +1071,7 @@ int sam_hdr_nref(const sam_hdr_t *bh) {
 }
 
 /*
- * Reconstructs the kstring from the header hash table.
+ * Reconstructs the text representation from the header hash table.
  * Returns 0 on success
  *        -1 on failure
  */
@@ -1084,8 +1084,10 @@ int sam_hdr_rebuild(sam_hdr_t *bh) {
         return bh->text ? 0 : -1;
 
     if (hrecs->refs_changed >= 0) {
-        if (rebuild_target_arrays(bh) < 0)
+        if (rebuild_target_arrays(bh) < 0) {
+            hts_log_error("Header target array rebuild has failed");
             return -1;
+        }
     }
 
     /* If header text wasn't changed or header is empty, don't rebuild it. */
@@ -1098,6 +1100,7 @@ int sam_hdr_rebuild(sam_hdr_t *bh) {
     kstring_t ks = KS_INITIALIZER;
     if (sam_hrecs_rebuild_text(hrecs, &ks) != 0) {
         KS_FREE(&ks);
+        hts_log_error("Header text rebuild has failed");
         return -1;
     }
 
