@@ -48,6 +48,10 @@ LIBS     = @LIBS@
 PLATFORM   = @PLATFORM@
 PLUGIN_EXT = @PLUGIN_EXT@
 
+# The default Makefile enables some of the optional files, but we blank
+# them so they can be controlled by configure instead.
+NONCONFIGURE_OBJS =
+
 # Lowercase here indicates these are "local" to config.mk
 plugin_OBJS =
 noplugin_LDFLAGS =

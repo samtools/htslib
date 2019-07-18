@@ -27,7 +27,7 @@ AR     = ar
 RANLIB = ranlib
 
 # Default libraries to link if configure is not used
-htslib_default_libs = -lz -lm -lbz2 -llzma
+htslib_default_libs = -lz -lm -lbz2 -llzma -lcurl
 
 CPPFLAGS =
 # TODO: probably update cram code to make it compile cleanly with -Wc++-compat
@@ -174,7 +174,13 @@ LIBHTS_OBJS = \
 	cram/open_trace_file.o \
 	cram/pooled_alloc.o \
 	cram/rANS_static.o \
-	cram/string_alloc.o
+	cram/string_alloc.o \
+	$(NONCONFIGURE_OBJS)
+
+# Without configure we wish to have a rich set of default figures,
+# but we still need conditional inclusion as we wish to still
+# support ./configure --disable-blah.
+NONCONFIGURE_OBJS = hfile_libcurl.o
 
 PLUGIN_EXT  =
 PLUGIN_OBJS =
@@ -212,6 +218,7 @@ config.h:
 	echo '#define HAVE_LZMA_H 1' >> $@
 	echo '#define HAVE_FSEEKO 1' >> $@
 	echo '#define HAVE_DRAND48 1' >> $@
+	echo '#define HAVE_LIBCURL 1' >> $@
 
 # And similarly for htslib.pc.tmp ("pkg-config template").  No dependency
 # on htslib.pc.in listed, as if that file is newer the usual way to regenerate
