@@ -1411,6 +1411,10 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     /* Detect if a multi-seq container */
     cram_stats_encoding(fd, c->stats[DS_RI]);
     multi_ref = c->stats[DS_RI]->nvals > 1;
+    pthread_mutex_lock(&fd->metrics_lock);
+    fd->last_RI = c->stats[DS_RI]->nvals;
+    pthread_mutex_unlock(&fd->metrics_lock);
+
 
     if (multi_ref) {
         hts_log_info("Multi-ref container");
@@ -3119,13 +3123,23 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
          *
          * This option isn't available if we choose to embed references
          * since we can only have one per slice.
+         *
+         * The multi_seq var here refers to our intention for the next slice.
+         * This slice has already been encoded so we output as-is.
          */
         if (fd->multi_seq == -1 && c->curr_rec < c->max_rec/4+10 &&
             fd->last_slice && fd->last_slice < c->max_rec/4+10 &&
             !fd->embed_ref) {
             if (!c->multi_seq)
-                hts_log_info("Multi-ref enabled for this container");
+                hts_log_info("Multi-ref enabled for next container");
             multi_seq = 1;
+        } else if (fd->multi_seq == 1) {
+            pthread_mutex_lock(&fd->metrics_lock);
+            if (fd->last_RI <= c->max_slice) {
+                multi_seq = 0;
+                hts_log_info("Multi-ref disabled for next container");
+            }
+            pthread_mutex_unlock(&fd->metrics_lock);
         }
 
         slice_rec = c->slice_rec;
@@ -3150,7 +3164,9 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
          * multiple sequences per container we emit the small partial
          * container as-is and then start a fresh one in a different mode.
          */
-        if (multi_seq) {
+        if (multi_seq == 0 && fd->multi_seq == 1 && fd->multi_seq_user == -1) {
+            fd->multi_seq = -1;
+        } else if (multi_seq || fd->multi_seq == 1) {
             fd->multi_seq = 1;
             c->multi_seq = 1;
             c->pos_sorted = 0; // required atm for multi_seq slices

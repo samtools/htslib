@@ -4251,10 +4251,12 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->use_rans = (CRAM_MAJOR_VERS(fd->version) >= 3);
     fd->use_lzma = 0;
     fd->multi_seq = -1;
+    fd->multi_seq_user = -1;
     fd->unsorted   = 0;
     fd->shared_ref = 0;
     fd->store_md = 0;
     fd->store_nm = 0;
+    fd->last_RI = 0;
 
     fd->index       = NULL;
     fd->own_pool    = 0;
@@ -4616,7 +4618,7 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
     }
 
     case CRAM_OPT_MULTI_SEQ_PER_SLICE:
-        fd->multi_seq = va_arg(args, int);
+        fd->multi_seq_user = fd->multi_seq = va_arg(args, int);
         break;
 
     case CRAM_OPT_NTHREADS: {
