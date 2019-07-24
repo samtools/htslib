@@ -545,8 +545,6 @@ int bam_read1(BGZF *fp, bam1_t *b)
     c->tid = x[0]; c->pos = x[1];
     c->bin = x[2]>>16; c->qual = x[2]>>8&0xff; c->l_qname = x[2]&0xff;
     c->l_extranul = (c->l_qname%4 != 0)? (4 - c->l_qname%4) : 0;
-    if ((uint32_t) c->l_qname + c->l_extranul > 255) // l_qname would overflow
-        return -4;
     c->flag = x[3]>>16; c->n_cigar = x[3]&0xffff;
     c->l_qseq = x[4];
     c->mtid = x[5]; c->mpos = x[6]; c->isize = x[7];
@@ -1662,7 +1660,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     q = _read_token(p);
 
     _parse_warn(p - q <= 1, "empty query name");
-    _parse_err(p - q > 252, "query name too long");
+    _parse_err(p - q > 255, "query name too long");
     // resize large enough for name + extranul
     if ((p-q)+4 > SIZE_MAX - s->l || ks_resize(&str, str.l+(p-q)+4) < 0) goto err_ret;
     memcpy(str.s+str.l, q, p-q); str.l += p-q;
