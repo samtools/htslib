@@ -83,7 +83,7 @@ static inline int fai_insert_index(faidx_t *idx, const char *name, uint64_t len,
     faidx1_t *v = &kh_value(idx->hash, k);
 
     if (! absent) {
-        hts_log_warning("Ignoring duplicate sequence \"%s\" at byte offset %"PRIu64"", name, seq_offset);
+        hts_log_warning("Ignoring duplicate sequence \"%s\" at byte offset %" PRIu64, name, seq_offset);
         free(name_key);
         return 0;
     }
@@ -384,14 +384,14 @@ static faidx_t *fai_read(hFILE *fp, const char *fname, int format)
         }
 
         if (format == FAI_FASTA) {
-            n = sscanf(p, "%"SCNu64"%"SCNu64"%"SCNu32"%"SCNu32"", &len, &seq_offset, &line_blen, &line_len);
+            n = sscanf(p, "%"SCNu64"%"SCNu64"%"SCNu32"%"SCNu32, &len, &seq_offset, &line_blen, &line_len);
 
             if (n != 4) {
                 hts_log_error("Could not understand FASTA index %s line %zd", fname, lnum);
                 goto fail;
             }
         } else {
-            n = sscanf(p, "%"SCNu64"%"SCNu64"%"SCNu32"%"SCNu32"%"SCNu64"", &len, &seq_offset, &line_blen, &line_len, &qual_offset);
+            n = sscanf(p, "%"SCNu64"%"SCNu64"%"SCNu32"%"SCNu32"%"SCNu64, &len, &seq_offset, &line_blen, &line_len, &qual_offset);
 
             if (n != 5) {
                 if (n == 4) {

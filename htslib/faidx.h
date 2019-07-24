@@ -29,7 +29,7 @@
 #ifndef HTSLIB_FAIDX_H
 #define HTSLIB_FAIDX_H
 
-#include <inttypes.h>
+#include <stdint.h>
 #include "hts_defs.h"
 
 #ifdef __cplusplus

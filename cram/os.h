@@ -76,7 +76,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define CRAM_OS_H
 
 #include <limits.h>
-#include <inttypes.h>
+#include <stdint.h>
 #include "htslib/hts_endian.h"
 
 #ifdef __cplusplus
