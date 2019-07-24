@@ -201,7 +201,7 @@ typedef struct BGZF BGZF;
      * call to bgzf_seek can be used to position the file at the same point.
      * Return value is non-negative on success.
      */
-    #define bgzf_tell(fp) (((fp)->block_address << 16) | ((fp)->block_offset & 0xFFFF))
+    #define bgzf_tell(fp) ((fp)->is_compressed ? ((fp)->block_address << 16) | ((fp)->block_offset & 0xFFFF) : (fp)->block_address + (fp)->block_offset)
 
     /**
      * Set the file to read from the location specified by _pos_.

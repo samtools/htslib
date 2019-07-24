@@ -972,6 +972,9 @@ int bgzf_read_block(BGZF *fp)
  single_threaded:
     size = 0;
 
+    int64_t block_address;
+    block_address = bgzf_htell(fp);
+
     // Reading an uncompressed file
     if ( !fp->is_compressed )
     {
@@ -986,15 +989,13 @@ int bgzf_read_block(BGZF *fp)
             fp->block_length = 0;
             return 0;
         }
-        if (fp->block_length != 0) fp->block_offset = 0;
-        fp->block_address += count;
+        if (fp->block_length != 0) fp->block_offset = 0; // Seeks in uncompressed files do not use block_offset.
         fp->block_length = count;
+        fp->block_address = block_address;
         return 0;
     }
 
-    // Reading compressed file
-    int64_t block_address;
-    block_address = bgzf_htell(fp);
+    // Reading non-block compressed file
     if ( fp->is_gzip && fp->gz_stream ) // is this is an initialized gzip stream?
     {
         count = inflate_gzip_block(fp);
@@ -1986,7 +1987,13 @@ int64_t bgzf_seek(BGZF* fp, int64_t pos, int where)
         fp->errcode |= BGZF_ERR_MISUSE;
         return -1;
     }
-    return bgzf_seek_common(fp, pos >> 16, pos & 0xFFFF);
+    if (fp->is_compressed) {
+        // Virtual offsets are packed block start and offset
+        return bgzf_seek_common(fp, pos >> 16, pos & 0xFFFF);
+    } else {
+        // Virtual offsets are real
+        return bgzf_seek_common(fp, pos, 0);
+    }
 }
 
 int bgzf_is_bgzf(const char *fn)
