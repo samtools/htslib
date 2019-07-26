@@ -588,6 +588,11 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     const bam1_core_t *c = &b->core;
     uint32_t x[8], block_len = b->l_data - c->l_extranul + 32, y;
     int i, ok;
+    if (c->l_qname - c->l_extranul > 255) {
+        hts_log_error("QNAME \"%s\" is longer than 254 characters", bam_get_qname(b));
+        errno = EOVERFLOW;
+        return -1;
+    }
     if (c->n_cigar > 0xffff) block_len += 16; // "16" for "CGBI", 4-byte tag length and 8-byte fake CIGAR
     x[0] = c->tid;
     x[1] = c->pos;
