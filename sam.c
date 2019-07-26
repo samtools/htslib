@@ -1609,6 +1609,22 @@ static inline uint64_t STRTOUL64(const char *v, char **rv, int b) {
     return n;
 }
 
+static inline unsigned int parse_sam_flag(char *v, char **rv) {
+    if (*v >= '1' && *v <= '9') {
+        return STRTOUL64(v, rv, 10);
+    }
+    else if (*v == '0') {
+        // handle single-digit "0" directly; otherwise it's hex or octal
+        if (v[1] == '\t') { *rv = v+1; return 0; }
+        else return strtoul(v, rv, 0);
+    }
+    else {
+        // TODO implement symbolic flag letters
+        *rv = v;
+        return 0;
+    }
+}
+
 int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 {
 #define _read_token(_p) (_p); do { char *tab = strchr((_p), '\t'); if (!tab) goto err_ret; *tab = '\0'; (_p) = tab + 1; } while (0)
@@ -1677,7 +1693,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     c->l_qname = p - q + c->l_extranul;
 
     // flag
-    c->flag = STRTOL64(p, &p, 0);
+    c->flag = parse_sam_flag(p, &p);
     if (*p++ != '\t') goto err_ret; // malformated flag
 
     // chr

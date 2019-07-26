@@ -222,10 +222,13 @@ static int aux_fields1(void)
     static const char sam[] = "data:,"
 "@SQ\tSN:one\tLN:1000\n"
 "@SQ\tSN:two\tLN:500\n"
-"r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tF2:d:2.46801\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\n";
+"r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tF2:d:2.46801\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\n"
+"r2\t0x8D\t*\t0\t0\t*\t*\t0\t0\tATGC\tqqqq\n"
+;
 
-    // Canonical form of the alignment record above, as output by sam_format1()
+    // Canonical form of the alignment records above, as output by sam_format1()
     static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" NEW_HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tF2:f:9.8765\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\tN0:i:-1234\tN1:i:1234\tN2:i:-2\tN3:i:3\tF1:f:4.5678\tN4:B:S,65535,32768,1,0\tN5:i:4242";
+    static const char r2[] = "r2\t141\t*\t0\t0\t*\t*\t0\t0\tATGC\tqqqq";
 
     samFile *in = sam_open(sam, "r");
     bam_hdr_t *header = sam_hdr_read(in);
@@ -438,14 +441,25 @@ static int aux_fields1(void)
 
         if (strcmp(ks.s, r1) != 0)
             fail("record formatted incorrectly: \"%s\"", ks.s);
-
-        free(ks.s);
     }
     else fail("can't read record");
+
+    if (sam_read1(in, header, aln) >= 0) {
+        if (sam_format1(header, aln, &ks) < 0)
+            fail("can't format record r2");
+
+        if (aln->core.flag != 0x8D)
+            fail("r2 flag value is 0x%X, expected 0x8D", aln->core.flag);
+
+        if (strcmp(ks.s, r2) != 0)
+            fail("record r2 formatted incorrectly: \"%s\"", ks.s);
+    }
+    else fail("can't read record r2");
 
     bam_destroy1(aln);
     bam_hdr_destroy(header);
     sam_close(in);
+    free(ks.s);
 
     return 1;
 }
