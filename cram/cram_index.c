@@ -98,8 +98,10 @@ static int kget_int32(kstring_t *k, size_t *pos, int32_t *val_p) {
     if (p >= k->l || !(k->s[p] >= '0' && k->s[p] <= '9'))
         return -1;
 
-    while (p < k->l && k->s[p] >= '0' && k->s[p] <= '9')
-        val = val*10 + k->s[p++]-'0';
+    while (p < k->l && k->s[p] >= '0' && k->s[p] <= '9') {
+        int digit = k->s[p++]-'0';
+        val = val*10 + digit;
+    }
 
     *pos = p;
     *val_p = sign*val;
@@ -121,8 +123,10 @@ static int kget_int64(kstring_t *k, size_t *pos, int64_t *val_p) {
     if (p >= k->l || !(k->s[p] >= '0' && k->s[p] <= '9'))
         return -1;
 
-    while (p < k->l && k->s[p] >= '0' && k->s[p] <= '9')
-        val = val*10 + k->s[p++]-'0';
+    while (p < k->l && k->s[p] >= '0' && k->s[p] <= '9') {
+        int digit = k->s[p++]-'0';
+        val = val*10 + digit;
+    }
 
     *pos = p;
     *val_p = sign*val;

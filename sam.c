@@ -1588,21 +1588,41 @@ static inline int64_t STRTOL64(const char *v, char **rv, int b) {
 
     v++;
 
-    while (*v>='0' && *v<='9')
-        n = n*10 + *v++ - '0';
+    while (*v>='0' && *v<='9') {
+        int digit = *v++ - '0';
+        n = n*10 + digit;
+    }
     *rv = (char *)v;
     return neg*n;
 }
 
-static inline int64_t STRTOUL64(const char *v, char **rv, int b) {
-    int64_t n = 0;
+static inline uint64_t STRTOUL64(const char *v, char **rv, int b) {
+    uint64_t n = 0;
     if (*v == '+')
         v++;
 
-    while (*v>='0' && *v<='9')
-        n = n*10 + *v++ - '0';
+    while (*v>='0' && *v<='9') {
+        int digit = *v++ - '0';
+        n = n*10 + digit;
+    }
     *rv = (char *)v;
     return n;
+}
+
+static inline unsigned int parse_sam_flag(char *v, char **rv) {
+    if (*v >= '1' && *v <= '9') {
+        return STRTOUL64(v, rv, 10);
+    }
+    else if (*v == '0') {
+        // handle single-digit "0" directly; otherwise it's hex or octal
+        if (v[1] == '\t') { *rv = v+1; return 0; }
+        else return strtoul(v, rv, 0);
+    }
+    else {
+        // TODO implement symbolic flag letters
+        *rv = v;
+        return 0;
+    }
 }
 
 int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
@@ -1673,7 +1693,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     c->l_qname = p - q + c->l_extranul;
 
     // flag
-    c->flag = STRTOL64(p, &p, 0);
+    c->flag = parse_sam_flag(p, &p);
     if (*p++ != '\t') goto err_ret; // malformated flag
 
     // chr
