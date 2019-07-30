@@ -980,6 +980,9 @@ int bgzf_read_block(BGZF *fp)
  single_threaded:
     size = 0;
 
+    int64_t block_address;
+    block_address = bgzf_htell(fp);
+
     // Reading an uncompressed file
     if ( !fp->is_compressed )
     {
@@ -995,14 +998,12 @@ int bgzf_read_block(BGZF *fp)
             return 0;
         }
         if (fp->block_length != 0) fp->block_offset = 0;
-        fp->block_address += count;
+        fp->block_address = block_address;
         fp->block_length = count;
         return 0;
     }
 
     // Reading compressed file
-    int64_t block_address;
-    block_address = bgzf_htell(fp);
     if ( fp->is_gzip && fp->gz_stream ) // is this is an initialized gzip stream?
     {
         count = inflate_gzip_block(fp);
