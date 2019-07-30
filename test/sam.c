@@ -942,6 +942,9 @@ static void test_header_updates(void) {
     sam_hdr_destroy(header);
 }
 
+#define ABC50   "abcdefghijklmnopqrstuvwxyabcdefghijklmnopqrstuvwxy"
+#define ABC250  ABC50 ABC50 ABC50 ABC50 ABC50
+
 static void samrecord_layout(void)
 {
     static const char qnames[] = "data:,"
@@ -950,7 +953,13 @@ static void samrecord_layout(void)
    "bc\t0\tCHROMOSOME_II\t200\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
   "def\t0\tCHROMOSOME_II\t300\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
  "ghij\t0\tCHROMOSOME_II\t400\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
-"klmno\t0\tCHROMOSOME_II\t500\t10\t4M\t*\t0\t0\tATGC\tqqqq\n";
+"klmno\t0\tCHROMOSOME_II\t500\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+     ABC250 "\t0\tCHROMOSOME_II\t600\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+    ABC250 "1\t0\tCHROMOSOME_II\t650\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+   ABC250 "12\t0\tCHROMOSOME_II\t700\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+  ABC250 "123\t0\tCHROMOSOME_II\t750\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+ ABC250 "1234\t0\tCHROMOSOME_II\t800\t10\t4M\t*\t0\t0\tATGC\tqqqq\n"
+;
 
     size_t bam1_t_size, bam1_t_size2;
 

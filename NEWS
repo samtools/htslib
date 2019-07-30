@@ -52,6 +52,12 @@ Noteworthy changes in release a.b
     sam_hdr_str() should be used instead.  The old cigar_tab field is
     now marked as deprecated; use the new bam_cigar_table[] instead.
 
+  - The bam1_core_t structure's l_qname and l_extranul fields have been
+    rearranged and enlarged; l_qname still includes the extra NULs.
+    (Almost all code should use bam_get_qname(), bam_get_cigar(), etc,
+    and has no need to use these fields directly.)  HTSlib now supports
+    the SAM specification's full 254 QNAME length again.  (#520)
+
   - bcf_index_load() no longer tries the '.tbi' suffix when looking for
     BCF index files (.tbi indexes are for text files, not binary BCF).
 

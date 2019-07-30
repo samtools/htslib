@@ -188,10 +188,9 @@ typedef struct {
     int32_t pos;
     uint16_t bin;
     uint8_t qual;
-    uint8_t l_qname;
-    uint16_t flag;
-    uint8_t unused1;
     uint8_t l_extranul;
+    uint16_t flag;
+    uint16_t l_qname;
     uint32_t n_cigar;
     int32_t l_qseq;
     int32_t mtid;
