@@ -1818,8 +1818,12 @@ int bgzf_flush_try(BGZF *fp, ssize_t size)
 
 ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
 {
-    if ( !fp->is_compressed )
+    if ( !fp->is_compressed ) {
+        size_t push = length + (size_t) fp->block_offset;
+        fp->block_offset = push % BGZF_MAX_BLOCK_SIZE;
+        fp->block_address += (push - fp->block_offset);
         return hwrite(fp->fp, data, length);
+    }
 
     const uint8_t *input = (const uint8_t*)data;
     ssize_t remaining = length;
@@ -1841,8 +1845,12 @@ ssize_t bgzf_write(BGZF *fp, const void *data, size_t length)
 
 ssize_t bgzf_block_write(BGZF *fp, const void *data, size_t length)
 {
-    if ( !fp->is_compressed )
+    if ( !fp->is_compressed ) {
+        size_t push = length + (size_t) fp->block_offset;
+        fp->block_offset = push % BGZF_MAX_BLOCK_SIZE;
+        fp->block_address += (push - fp->block_offset);
         return hwrite(fp->fp, data, length);
+    }
 
     const uint8_t *input = (const uint8_t*)data;
     ssize_t remaining = length;
