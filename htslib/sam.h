@@ -74,7 +74,7 @@ typedef struct sam_hdr_t {
     const int8_t *cigar_tab HTS_DEPRECATED("Use bam_cigar_table[] instead");
     char **target_name;
     char *text;
-    void *sdict HTS_DEPRECATED("Unused since 1.10");
+    void *sdict;
     sam_hrecs_t *hrecs;
     uint32_t ref_count;
 } sam_hdr_t;
@@ -704,7 +704,7 @@ const char *sam_hdr_tid2name(const sam_hdr_t *h, int tid);
  * Fetch the reference sequence length from the target length array,
  * using the numerical target id.
  */
-uint32_t sam_hdr_tid2len(const sam_hdr_t *h, int tid);
+hts_pos_t sam_hdr_tid2len(const sam_hdr_t *h, int tid);
 
 /// Alias of sam_hdr_name2tid(), for backwards compatibility.
 /*!

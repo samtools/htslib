@@ -124,6 +124,8 @@ void sam_hdr_destroy(sam_hdr_t *bh)
     free(bh->text);
     if (bh->hrecs)
         sam_hrecs_free(bh->hrecs);
+    if (bh->sdict)
+        kh_destroy(s2i, (khash_t(s2i) *) bh->sdict);
     free(bh);
 }
 
@@ -696,9 +698,11 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
     h = sam_hdr_read(fp);
     if (h == NULL) return NULL;
     if (min_shift > 0) {
-        int64_t max_len = 0, s;
-        for (i = 0; i < h->n_targets; ++i)
-            if (max_len < h->target_len[i]) max_len = h->target_len[i];
+        hts_pos_t max_len = 0, s;
+        for (i = 0; i < h->n_targets; ++i) {
+            hts_pos_t len = sam_hdr_tid2len(h, i);
+            if (max_len < len) max_len = len;
+        }
         max_len += 256;
         for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
         fmt = HTS_FMT_CSI;
@@ -1211,6 +1215,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
     const char *q, *r;
     char* sn = NULL;
     khash_t(s2i) *d = kh_init(s2i);
+    khash_t(s2i) *long_refs = NULL;
     if (!h || !d)
         goto error;
 
@@ -1222,7 +1227,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
 
         if (fp->line.l > 3 && strncmp(fp->line.s, "@SQ", 3) == 0) {
             has_SQ = 1;
-            int ln = -1;
+            hts_pos_t ln = -1;
             for (q = fp->line.s + 4;; ++q) {
                 if (strncmp(q, "SN:", 3) == 0) {
                     q += 3;
@@ -1240,7 +1245,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                     q = r;
                 } else {
                     if (strncmp(q, "LN:", 3) == 0)
-                        ln = strtol(q + 3, (char**)&q, 10);
+                        ln = strtoll(q + 3, (char**)&q, 10);
                 }
 
                 while (*q != '\t' && *q != '\n' && *q != '\0')
@@ -1259,7 +1264,24 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                         hts_log_warning("Duplicated sequence '%s'", sn);
                         free(sn);
                     } else {
-                        kh_val(d, k) = (int64_t) (kh_size(d) - 1) << 32 | ln;
+                        if (ln >= UINT32_MAX) {
+                            // Stash away ref length that
+                            // doesn't fit in target_len array
+                            int k2;
+                            if (!long_refs) {
+                                long_refs = kh_init(s2i);
+                                if (!long_refs)
+                                    goto error;
+                            }
+                            k2 = kh_put(s2i, long_refs, sn, &absent);
+                            if (absent < 0)
+                                goto error;
+                            kh_val(long_refs, k2) = ln;
+                            kh_val(d, k) = ((int64_t) (kh_size(d) - 1) << 32
+                                            | UINT32_MAX);
+                        } else {
+                            kh_val(d, k) = (int64_t) (kh_size(d) - 1) << 32 | ln;
+                        }
                     }
                 } else {
                     hts_log_warning("Ignored @SQ SN:%s : bad or missing LN tag", sn);
@@ -1301,6 +1323,8 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
 
         while (line.l = 0, kgetline(&line, (kgets_func*) hgets, f) >= 0) {
             char* tab = strchr(line.s, '\t');
+            hts_pos_t ln;
+
             if (tab == NULL)
                 continue;
 
@@ -1312,18 +1336,38 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
             if (absent < 0)
                 break;
 
+            ln = strtoll(tab, NULL, 10);
+
             if (!absent) {
                 hts_log_warning("Duplicated sequence '%s'", sn);
                 free(sn);
             } else {
-                kh_val(d, k) = (int64_t) (kh_size(d) - 1) << 32 | atol(tab);
+                if (ln >= UINT32_MAX) {
+                    // Stash away ref length that
+                    // doesn't fit in target_len array
+                    khint_t k2;
+                    int absent = -1;
+                    if (!long_refs) {
+                        long_refs = kh_init(s2i);
+                        if (!long_refs)
+                            goto error;
+                    }
+                    k2 = kh_put(s2i, long_refs, sn, &absent);
+                    if (absent < 0)
+                        goto error;
+                    kh_val(long_refs, k2) = ln;
+                    kh_val(d, k) = ((int64_t) (kh_size(d) - 1) << 32
+                                    | UINT32_MAX);
+                } else {
+                    kh_val(d, k) = (int64_t) (kh_size(d) - 1) << 32 | ln;
+                }
                 has_SQ = 1;
             }
 
             e |= kputs("@SQ\tSN:", &str) < 0;
             e |= kputsn(line.s, tab - line.s, &str) < 0;
             e |= kputs("\tLN:", &str) < 0;
-            e |= kputl(atol(tab), &str) < 0;
+            e |= kputll(ln, &str) < 0;
             e |= kputc('\n', &str) < 0;
             if (e)
                 break;
@@ -1360,6 +1404,9 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
         }
     }
 
+    // Repurpose sdict to hold any references longer than UINT32_MAX
+    h->sdict = long_refs;
+
     kh_destroy(s2i, d);
 
     if (str.l == 0)
@@ -1375,6 +1422,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
     sam_hdr_destroy(h);
     ks_free(&str);
     kh_destroy(s2i, d);
+    kh_destroy(s2i, long_refs);
     if (sn) free(sn);
     return NULL;
 }

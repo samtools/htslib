@@ -1853,7 +1853,7 @@ static void sanitise_SQ_lines(cram_fd *fd) {
 
             // Should we also check MD5sums here to ensure the correct
             // reference was given?
-            hts_log_warning("Header @SQ length mismatch for ref %s, %d vs %d",
+            hts_log_warning("Header @SQ length mismatch for ref %s, %"PRIhts_pos" vs %d",
                             r->name, fd->header->hrecs->ref[i].len, (int)r->length);
 
             // Fixing the parsed @SQ header will make MD:Z: strings work
