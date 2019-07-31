@@ -187,21 +187,22 @@ extern const int8_t bam_cigar_table[256];
 
 /*! @typedef
  @abstract Structure for core alignment information.
- @field  tid     chromosome ID, defined by sam_hdr_t
  @field  pos     0-based leftmost coordinate
+ @field  tid     chromosome ID, defined by sam_hdr_t
  @field  bin     bin calculated by bam_reg2bin()
  @field  qual    mapping quality
- @field  l_qname length of the query name
- @field  flag    bitwise flag
  @field  l_extranul length of extra NULs between qname & cigar (for alignment)
+ @field  flag    bitwise flag
+ @field  l_qname length of the query name
  @field  n_cigar number of CIGAR operations
  @field  l_qseq  length of the query sequence (read)
  @field  mtid    chromosome ID of next read in template, defined by sam_hdr_t
  @field  mpos    0-based leftmost coordinate of next read in template
+ @field  isize   observed template length ("insert size")
  */
 typedef struct {
-    int32_t tid;
     hts_pos_t pos;
+    int32_t tid;
     uint16_t bin; // NB: invalid on 64-bit pos
     uint8_t qual;
     uint8_t l_extranul;
@@ -217,9 +218,10 @@ typedef struct {
 /*! @typedef
  @abstract Structure for one alignment.
  @field  core       core information about the alignment
+ @field  id
+ @field  data       all variable-length data, concatenated; structure: qname-cigar-seq-qual-aux
  @field  l_data     current length of bam1_t::data
  @field  m_data     maximum length of bam1_t::data
- @field  data       all variable-length data, concatenated; structure: qname-cigar-seq-qual-aux
  @field  mempolicy  memory handling policy, see bam_set_mempolicy()
 
  @discussion Notes:
@@ -239,9 +241,9 @@ typedef struct {
  */
 typedef struct {
     bam1_core_t core;
-    int l_data;
-    uint8_t *data;
     uint64_t id;
+    uint8_t *data;
+    int l_data;
     uint32_t m_data;
     uint32_t mempolicy:2, :30 /* Reserved */;
 } bam1_t;

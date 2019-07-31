@@ -1151,13 +1151,14 @@ static void samrecord_layout(void)
     size_t bam1_t_size, bam1_t_size2;
 
     assert(sizeof(hts_pos_t) == 8 || sizeof(hts_pos_t) == 4);
-    int core_size = sizeof(hts_pos_t) == 8 ? 56 : 36;
+    int core_size = sizeof(hts_pos_t) == 8 ? 48 : 36;
     bam1_t_size = (core_size + sizeof(int) + sizeof(char *) + sizeof(uint64_t)
                    + 2 * sizeof(uint32_t));
     bam1_t_size2 = bam1_t_size + 4;  // Account for padding on some platforms
 
     if (sizeof (bam1_core_t) != core_size)
-        fail("sizeof bam1_core_t is %zu, expected 56", sizeof (bam1_core_t));
+        fail("sizeof bam1_core_t is %zu, expected %d",
+             sizeof (bam1_core_t), core_size);
 
     if (sizeof (bam1_t) != bam1_t_size && sizeof (bam1_t) != bam1_t_size2)
         fail("sizeof bam1_t is %zu, expected either %zu or %zu",
