@@ -1595,6 +1595,80 @@ int sam_hdr_count_lines(sam_hdr_t *bh, const char *type) {
     return count;
 }
 
+int sam_hdr_line_index(sam_hdr_t *bh,
+                       const char *type,
+                       const char *key) {
+    sam_hrecs_t *hrecs;
+    if (!bh || !type || !key)
+        return -2;
+
+    if (!(hrecs = bh->hrecs)) {
+        if (sam_hdr_fill_hrecs(bh) != 0)
+            return -2;
+        hrecs = bh->hrecs;
+    }
+
+    khint_t k;
+    int idx = -1;
+    switch (type[0]) {
+    case 'S':
+        if (type[1] == 'Q') {
+            k = kh_get(m_s2i, hrecs->ref_hash, key);
+            if (k != kh_end(hrecs->ref_hash))
+                idx = kh_val(hrecs->ref_hash, k);
+        }
+        break;
+    case 'R':
+        if (type[1] == 'G') {
+            k = kh_get(m_s2i, hrecs->rg_hash, key);
+            if (k != kh_end(hrecs->rg_hash))
+                idx = kh_val(hrecs->rg_hash, k);
+        }
+        break;
+    case 'P':
+        if (type[1] == 'G') {
+            k = kh_get(m_s2i, hrecs->pg_hash, key);
+            if (k != kh_end(hrecs->pg_hash))
+                idx = kh_val(hrecs->pg_hash, k);
+        }
+        break;
+    default:
+        break;
+    }
+
+    return idx;
+}
+
+const char *sam_hdr_line_name(sam_hdr_t *bh,
+                              const char *type,
+                              int pos) {
+    sam_hrecs_t *hrecs;
+    if (!bh || !type || pos < 0)
+        return NULL;
+
+    if (!(hrecs = bh->hrecs)) {
+        if (sam_hdr_fill_hrecs(bh) != 0)
+            return NULL;
+        hrecs = bh->hrecs;
+    }
+
+    switch (type[0]) {
+    case 'S':
+        if (type[1] == 'Q' && pos < hrecs->nref)
+            return hrecs->ref[pos].name;
+    case 'R':
+        if (type[1] == 'G' && pos < hrecs->nrg)
+            return hrecs->rg[pos].name;
+    case 'P':
+        if (type[1] == 'G' && pos < hrecs->npg)
+            return hrecs->pg[pos].name;
+    default:
+        break;
+    }
+
+    return NULL;
+}
+
 /* ==== Key:val level methods ==== */
 
 int sam_hdr_find_tag_id(sam_hdr_t *bh,
