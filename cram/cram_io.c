@@ -4256,7 +4256,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->shared_ref = 0;
     fd->store_md = 0;
     fd->store_nm = 0;
-    fd->last_RI = 0;
+    fd->last_RI_count = 0;
 
     fd->index       = NULL;
     fd->own_pool    = 0;

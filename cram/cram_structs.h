@@ -741,9 +741,9 @@ typedef struct cram_fd {
     off_t curr_position;
     int eof;
     int last_slice;                     // number of recs encoded in last slice
-    int last_RI;                        // number of references encoded in last container
-    int multi_seq;
-    int multi_seq_user;
+    int last_RI_count;                  // number of references encoded in last container
+    int multi_seq;                      // -1 is auto, 0 is one ref per container, 1 is multi...
+    int multi_seq_user;                 // Original user setting (CRAM_OPT_MULTI_SEQ_PER_SLICE)
     int unsorted;
     int empty_container;                // Marker for EOF block
 
