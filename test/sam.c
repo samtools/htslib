@@ -604,6 +604,7 @@ static void use_header_api(void) {
     kstring_t ks = { 0, 0, NULL };
     size_t bytes;
     int r;
+    const char *name;
 
     if (!in) {
         fail("couldn't open file");
@@ -649,6 +650,18 @@ static void use_header_api(void) {
     r = sam_hdr_add_line(header, "RG", "ID", "run4", NULL);
     if (r < 0) { fail("sam_hdr_add_line"); goto err; }
 
+    r = sam_hdr_line_index(header, "RG", "run4");
+    if (r != 3) { fail("sam_hdr_line_index - run4~3"); goto err; }
+
+    r = sam_hdr_line_index(header, "RG", "run5");
+    if (r != -1) { fail("sam_hdr_line_index - run5~-1"); goto err; }
+
+    name = sam_hdr_line_name(header, "RG", 2);
+    if (!name || strcmp(name, "run3")) { fail("sam_hdr_line_name - 2~run3"); goto err; }
+
+    name = sam_hdr_line_name(header, "RG", 10);
+    if (name) { fail("sam_hdr_line_name - 10~NULL"); goto err; }
+
     r = sam_hdr_remove_line_id(header, "RG", "ID", "run2");
     if (r < 0) { fail("sam_hdr_remove_line_id"); goto err; }
 
@@ -674,6 +687,12 @@ static void use_header_api(void) {
              r == 0 && ks.s ? ks.s : "NULL");
         goto err;
     }
+
+    r = sam_hdr_line_index(header, "RG", "run4");
+    if (r != 1) { fail("sam_hdr_line_index - run4~1"); goto err; }
+
+    name = sam_hdr_line_name(header, "RG", 2);
+    if (name) { fail("sam_hdr_line_name - 2~NULL"); goto err; }
 
     r = sam_hdr_remove_tag_hd(header, "SS");
     if (r < 0) {

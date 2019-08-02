@@ -587,6 +587,24 @@ int sam_hdr_remove_lines(sam_hdr_t *h, const char *type, const char *id, void *r
  */
 int sam_hdr_count_lines(sam_hdr_t *h, const char *type);
 
+/// Index of the line for the types that have dedicated look-up tables (SQ, RG, PG)
+/*!
+ * @param h     BAM header
+ * @param type  Type of the searched line. Eg. "RG"
+ * @param key   The value of the identifying key. Eg. "rg1"
+ * @return  0-based index on success; -1 if line does not exist; -2 on failure
+ */
+int sam_hdr_line_index(sam_hdr_t *bh, const char *type, const char *key);
+
+/// Id key of the line for the types that have dedicated look-up tables (SQ, RG, PG)
+/*!
+ * @param h     BAM header
+ * @param type  Type of the searched line. Eg. "RG"
+ * @param pos   Zero-based index inside the type group. Eg. 2 (for the third RG line)
+ * @return  Valid key string on success; NULL on failure
+ */
+const char *sam_hdr_line_name(sam_hdr_t *bh, const char *type, int pos);
+
 /* ==== Key:val level methods ==== */
 
 /// Return the value associated with a key for a header line identified by ID_key:ID_val
