@@ -1572,12 +1572,15 @@ int sam_hdr_count_lines(sam_hdr_t *bh, const char *type) {
     case 'S':
         if (type[1] == 'Q')
             return bh->hrecs->nref;
+        break;
     case 'R':
         if (type[1] == 'G')
             return bh->hrecs->nrg;
+        break;
     case 'P':
         if (type[1] == 'G')
             return bh->hrecs->npg;
+        break;
     default:
         break;
     }
@@ -1616,6 +1619,8 @@ int sam_hdr_line_index(sam_hdr_t *bh,
             k = kh_get(m_s2i, hrecs->ref_hash, key);
             if (k != kh_end(hrecs->ref_hash))
                 idx = kh_val(hrecs->ref_hash, k);
+        } else {
+            hts_log_warning("Type '%s' not supported. Only @SQ, @RG and @PG lines are indexed", type);
         }
         break;
     case 'R':
@@ -1623,6 +1628,8 @@ int sam_hdr_line_index(sam_hdr_t *bh,
             k = kh_get(m_s2i, hrecs->rg_hash, key);
             if (k != kh_end(hrecs->rg_hash))
                 idx = kh_val(hrecs->rg_hash, k);
+        } else {
+            hts_log_warning("Type '%s' not supported. Only @SQ, @RG and @PG lines are indexed", type);
         }
         break;
     case 'P':
@@ -1630,10 +1637,12 @@ int sam_hdr_line_index(sam_hdr_t *bh,
             k = kh_get(m_s2i, hrecs->pg_hash, key);
             if (k != kh_end(hrecs->pg_hash))
                 idx = kh_val(hrecs->pg_hash, k);
+        } else {
+            hts_log_warning("Type '%s' not supported. Only @SQ, @RG and @PG lines are indexed", type);
         }
         break;
     default:
-        break;
+        hts_log_warning("Type '%s' not supported. Only @SQ, @RG and @PG lines are indexed", type);
     }
 
     return idx;
@@ -1654,16 +1663,31 @@ const char *sam_hdr_line_name(sam_hdr_t *bh,
 
     switch (type[0]) {
     case 'S':
-        if (type[1] == 'Q' && pos < hrecs->nref)
-            return hrecs->ref[pos].name;
-    case 'R':
-        if (type[1] == 'G' && pos < hrecs->nrg)
-            return hrecs->rg[pos].name;
-    case 'P':
-        if (type[1] == 'G' && pos < hrecs->npg)
-            return hrecs->pg[pos].name;
-    default:
+        if (type[1] == 'Q') {
+            if (pos < hrecs->nref)
+                return hrecs->ref[pos].name;
+        } else {
+            hts_log_warning("Type '%s' not supported. Only @SQ, @RG and @PG lines are indexed", type);
+        }
         break;
+    case 'R':
+        if (type[1] == 'G') {
+            if (pos < hrecs->nrg)
+                return hrecs->rg[pos].name;
+        } else {
+            hts_log_warning("Type '%s' not supported. Only @SQ, @RG and @PG lines are indexed", type);
+        }
+        break;
+    case 'P':
+        if (type[1] == 'G') {
+            if (pos < hrecs->npg)
+                return hrecs->pg[pos].name;
+        } else {
+            hts_log_warning("Type '%s' not supported. Only @SQ, @RG and @PG lines are indexed", type);
+        }
+        break;
+    default:
+        hts_log_warning("Type '%s' not supported. Only @SQ, @RG and @PG lines are indexed", type);
     }
 
     return NULL;
