@@ -101,7 +101,9 @@ typedef struct bgzf_job {
 enum mtaux_cmd {
     NONE = 0,
     SEEK,
+    SEEK_DONE,
     HAS_EOF,
+    HAS_EOF_DONE,
     CLOSE,
 };
 
@@ -1408,10 +1410,10 @@ static int bgzf_check_EOF_common(BGZF *fp)
 static void bgzf_mt_eof(BGZF *fp) {
     mtaux_t *mt = fp->mt;
 
-    mt->command = NONE;
     pthread_mutex_lock(&mt->job_pool_m);
     mt->eof = bgzf_check_EOF_common(fp);
     pthread_mutex_unlock(&mt->job_pool_m);
+    mt->command = HAS_EOF_DONE;
     pthread_cond_signal(&mt->command_c);
 }
 
@@ -1427,13 +1429,13 @@ static void bgzf_mt_seek(BGZF *fp) {
 
     hts_tpool_process_reset(mt->out_queue, 0);
     pthread_mutex_lock(&mt->job_pool_m);
-    mt->command = NONE;
     mt->errcode = 0;
 
     if (hseek(fp->fp, mt->block_address, SEEK_SET) < 0)
         mt->errcode = BGZF_ERR_IO;
 
     pthread_mutex_unlock(&mt->job_pool_m);
+    mt->command = SEEK_DONE;
     pthread_cond_signal(&mt->command_c);
 }
 
@@ -1468,12 +1470,17 @@ restart:
         pthread_mutex_lock(&mt->command_m);
         switch (mt->command) {
         case SEEK:
-            bgzf_mt_seek(fp);  // Resets mt->command
+            bgzf_mt_seek(fp);  // Sets mt->command to SEEK_DONE
             pthread_mutex_unlock(&mt->command_m);
             goto restart;
 
         case HAS_EOF:
-            bgzf_mt_eof(fp);   // Resets mt->command
+            bgzf_mt_eof(fp);   // Sets mt->command to HAS_EOF_DONE
+            break;
+
+        case SEEK_DONE:
+        case HAS_EOF_DONE:
+            pthread_cond_signal(&mt->command_c);
             break;
 
         case CLOSE:
@@ -1551,9 +1558,15 @@ restart:
             goto restart;
 
         case HAS_EOF:
-            bgzf_mt_eof(fp);
+            bgzf_mt_eof(fp);   // Sets mt->command to HAS_EOF_DONE
             pthread_mutex_unlock(&mt->command_m);
-            continue;
+            break;
+
+        case SEEK_DONE:
+        case HAS_EOF_DONE:
+            pthread_cond_signal(&mt->command_c);
+            pthread_mutex_unlock(&mt->command_m);
+            break;
 
         case CLOSE:
             pthread_cond_signal(&mt->command_c);
@@ -1922,10 +1935,25 @@ int bgzf_check_EOF(BGZF *fp) {
 
     if (fp->mt) {
         pthread_mutex_lock(&fp->mt->command_m);
+        // fp->mt->command state transitions should be:
+        // NONE -> HAS_EOF -> HAS_EOF_DONE -> NONE
+        // (HAS_EOF -> HAS_EOF_DONE happens in bgzf_mt_reader thread)
         fp->mt->command = HAS_EOF;
         pthread_cond_signal(&fp->mt->command_c);
         hts_tpool_wake_dispatch(fp->mt->out_queue);
-        pthread_cond_wait(&fp->mt->command_c, &fp->mt->command_m);
+        do {
+            pthread_cond_wait(&fp->mt->command_c, &fp->mt->command_m);
+            switch (fp->mt->command) {
+            case HAS_EOF_DONE: break;
+            case HAS_EOF:
+                // Resend signal intended for bgzf_mt_reader()
+                pthread_cond_signal(&fp->mt->command_c);
+                break;
+            default:
+                abort();  // Should not get to any other state
+            }
+        } while (fp->mt->command != HAS_EOF_DONE);
+        fp->mt->command = NONE;
         has_eof = fp->mt->eof;
         pthread_mutex_unlock(&fp->mt->command_m);
     } else {
@@ -1956,11 +1984,26 @@ static inline int64_t bgzf_seek_common(BGZF* fp,
         // know the seek succeeded.
         pthread_mutex_lock(&fp->mt->command_m);
         fp->mt->hit_eof = 0;
+        // fp->mt->command state transitions should be:
+        // NONE -> SEEK -> SEEK_DONE -> NONE
+        // (SEEK -> SEEK_DONE happens in bgzf_mt_reader thread)
         fp->mt->command = SEEK;
         fp->mt->block_address = block_address;
         pthread_cond_signal(&fp->mt->command_c);
         hts_tpool_wake_dispatch(fp->mt->out_queue);
-        pthread_cond_wait(&fp->mt->command_c, &fp->mt->command_m);
+        do {
+            pthread_cond_wait(&fp->mt->command_c, &fp->mt->command_m);
+            switch (fp->mt->command) {
+            case SEEK_DONE: break;
+            case SEEK:
+                // Resend signal intended for bgzf_mt_reader()
+                pthread_cond_signal(&fp->mt->command_c);
+                break;
+            default:
+                abort();  // Should not get to any other state
+            }
+        } while (fp->mt->command != SEEK_DONE);
+        fp->mt->command = NONE;
 
         fp->block_length = 0;  // indicates current block has not been loaded
         fp->block_address = block_address;
