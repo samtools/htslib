@@ -2292,7 +2292,7 @@ static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end)
     switch (size) {
     case 'Z':
     case 'H':
-        while (*s && s < end) ++s;
+        while (s < end && *s) ++s;
         return s < end ? s + 1 : end;
     case 'B':
         if (end - s < 5) return NULL;
