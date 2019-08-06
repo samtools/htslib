@@ -1450,7 +1450,7 @@ int sam_hdr_update_line(sam_hdr_t *bh, const char *type,
     return ret;
 }
 
-int sam_hdr_keep_line(sam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
+int sam_hdr_remove_except(sam_hdr_t *bh, const char *type, const char *ID_key, const char *ID_value) {
     sam_hrecs_t *hrecs;
     if (!bh || !type)
         return -1;

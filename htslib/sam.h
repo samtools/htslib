@@ -531,7 +531,7 @@ int sam_hdr_remove_line_pos(sam_hdr_t *h, const char *type, int position);
 int sam_hdr_update_line(sam_hdr_t *h, const char *type,
         const char *ID_key, const char *ID_value, ...);
 
-/// Remove all lines of a given type from a header, except one matching an ID
+/// Remove all lines of a given type from a header, except the one matching an ID
 /*!
  * @param type      Type of the searched line. Eg. "SQ"
  * @param ID_key    Tag key defining the line. Eg. "SN"
@@ -540,8 +540,11 @@ int sam_hdr_update_line(sam_hdr_t *h, const char *type,
  *
  * Remove all lines of type <type> from the header, except the one
  * specified by tag:value, i.e. the @SQ line containing "SN:ref1".
+ *
+ * If no line matches the key:value ID, all lines of the given type are removed.
+ * To remove all lines of a given type, use NULL for both ID_key and ID_value.
  */
-int sam_hdr_keep_line(sam_hdr_t *h, const char *type, const char *ID_key, const char *ID_value);
+int sam_hdr_remove_except(sam_hdr_t *h, const char *type, const char *ID_key, const char *ID_value);
 
 /// Remove header lines of a given type, except those in a given ID set
 /*!
