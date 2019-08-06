@@ -531,11 +531,12 @@ int int32_get_blk(cram_block *b, int32_t *val) {
     if (b->uncomp_size - BLOCK_SIZE(b) < 4)
         return -1;
 
-    *val =
-         b->data[b->byte  ]        |
-        (b->data[b->byte+1] <<  8) |
-        (b->data[b->byte+2] << 16) |
-        (b->data[b->byte+3] << 24);
+    uint32_t v =
+         ((uint32_t) b->data[b->byte  ])        |
+        (((uint32_t) b->data[b->byte+1]) <<  8) |
+        (((uint32_t) b->data[b->byte+2]) << 16) |
+        (((uint32_t) b->data[b->byte+3]) << 24);
+    *val = v < 0x80000000U ? v : -((int32_t) (0xffffffffU - v)) - 1;
     BLOCK_SIZE(b) += 4;
     return 4;
 }
@@ -543,10 +544,11 @@ int int32_get_blk(cram_block *b, int32_t *val) {
 /* As int32_decoded/encode, but from/to blocks instead of cram_fd */
 int int32_put_blk(cram_block *b, int32_t val) {
     unsigned char cp[4];
-    cp[0] = ( val      & 0xff);
-    cp[1] = ((val>>8)  & 0xff);
-    cp[2] = ((val>>16) & 0xff);
-    cp[3] = ((val>>24) & 0xff);
+    uint32_t v = val;
+    cp[0] = ( v      & 0xff);
+    cp[1] = ((v>>8)  & 0xff);
+    cp[2] = ((v>>16) & 0xff);
+    cp[3] = ((v>>24) & 0xff);
 
     BLOCK_APPEND(b, cp, 4);
     return b->data ? 0 : -1;

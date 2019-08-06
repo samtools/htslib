@@ -56,7 +56,7 @@ extern "C" {
  */
 
 /*! INTERNAL: Converts two characters into an integer for use in switch{} */
-#define CRAM_KEY(a,b) (((a)<<8)|((b)))
+#define CRAM_KEY(a,b) ((((unsigned char) a)<<8)|(((unsigned char) b)))
 
 /*! Reads an integer in ITF-8 encoding from 'fd' and stores it in
  * *val.
