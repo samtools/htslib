@@ -372,8 +372,8 @@ int ltf8_decode(cram_fd *fd, int64_t *val_p) {
 
 int ltf8_decode_crc(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
     unsigned char c[9];
-    int64_t val = (unsigned char)hgetc(fd->fp);
-    if (val == -1)
+    int64_t val = hgetc(fd->fp);
+    if (val < 0)
         return -1;
 
     c[0] = val;
@@ -384,79 +384,98 @@ int ltf8_decode_crc(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
         return 1;
 
     } else if (val < 0xc0) {
-        val = (val<<8) | (c[1]=hgetc(fd->fp));;
+        int v = hgetc(fd->fp);
+        if (v < 0)
+            return -1;
+        val = (val<<8) | (c[1]=v);
         *val_p = val & (((1LL<<(6+8)))-1);
         *crc = crc32(*crc, c, 2);
         return 2;
 
     } else if (val < 0xe0) {
-        val = (val<<8) | (c[1]=hgetc(fd->fp));;
-        val = (val<<8) | (c[2]=hgetc(fd->fp));;
+        if (hread(fd->fp, &c[1], 2) < 2)
+            return -1;
+        val = (val<<8) | c[1];
+        val = (val<<8) | c[2];
         *val_p = val & ((1LL<<(5+2*8))-1);
         *crc = crc32(*crc, c, 3);
         return 3;
 
     } else if (val < 0xf0) {
-        val = (val<<8) | (c[1]=hgetc(fd->fp));;
-        val = (val<<8) | (c[2]=hgetc(fd->fp));;
-        val = (val<<8) | (c[3]=hgetc(fd->fp));;
+        if (hread(fd->fp, &c[1], 3) < 3)
+            return -1;
+        val = (val<<8) | c[1];
+        val = (val<<8) | c[2];
+        val = (val<<8) | c[3];
         *val_p = val & ((1LL<<(4+3*8))-1);
         *crc = crc32(*crc, c, 4);
         return 4;
 
     } else if (val < 0xf8) {
-        val = (val<<8) | (c[1]=hgetc(fd->fp));;
-        val = (val<<8) | (c[2]=hgetc(fd->fp));;
-        val = (val<<8) | (c[3]=hgetc(fd->fp));;
-        val = (val<<8) | (c[4]=hgetc(fd->fp));;
+        if (hread(fd->fp, &c[1], 4) < 4)
+            return -1;
+        val = (val<<8) | c[1];
+        val = (val<<8) | c[2];
+        val = (val<<8) | c[3];
+        val = (val<<8) | c[4];
         *val_p = val & ((1LL<<(3+4*8))-1);
         *crc = crc32(*crc, c, 5);
         return 5;
 
     } else if (val < 0xfc) {
-        val = (val<<8) | (c[1]=hgetc(fd->fp));;
-        val = (val<<8) | (c[2]=hgetc(fd->fp));;
-        val = (val<<8) | (c[3]=hgetc(fd->fp));;
-        val = (val<<8) | (c[4]=hgetc(fd->fp));;
-        val = (val<<8) | (c[5]=hgetc(fd->fp));;
+        if (hread(fd->fp, &c[1], 5) < 5)
+            return -1;
+        val = (val<<8) | c[1];
+        val = (val<<8) | c[2];
+        val = (val<<8) | c[3];
+        val = (val<<8) | c[4];
+        val = (val<<8) | c[5];
         *val_p = val & ((1LL<<(2+5*8))-1);
         *crc = crc32(*crc, c, 6);
         return 6;
 
     } else if (val < 0xfe) {
-        val = (val<<8) | (c[1]=hgetc(fd->fp));;
-        val = (val<<8) | (c[2]=hgetc(fd->fp));;
-        val = (val<<8) | (c[3]=hgetc(fd->fp));;
-        val = (val<<8) | (c[4]=hgetc(fd->fp));;
-        val = (val<<8) | (c[5]=hgetc(fd->fp));;
-        val = (val<<8) | (c[6]=hgetc(fd->fp));;
+        if (hread(fd->fp, &c[1], 6) < 6)
+            return -1;
+        val = (val<<8) | c[1];
+        val = (val<<8) | c[2];
+        val = (val<<8) | c[3];
+        val = (val<<8) | c[4];
+        val = (val<<8) | c[5];
+        val = (val<<8) | c[6];
         *val_p = val & ((1LL<<(1+6*8))-1);
         *crc = crc32(*crc, c, 7);
         return 7;
 
     } else if (val < 0xff) {
-        val = (val<<8) | (c[1]=hgetc(fd->fp));;
-        val = (val<<8) | (c[2]=hgetc(fd->fp));;
-        val = (val<<8) | (c[3]=hgetc(fd->fp));;
-        val = (val<<8) | (c[4]=hgetc(fd->fp));;
-        val = (val<<8) | (c[5]=hgetc(fd->fp));;
-        val = (val<<8) | (c[6]=hgetc(fd->fp));;
-        val = (val<<8) | (c[7]=hgetc(fd->fp));;
-        *val_p = val & ((1LL<<(7*8))-1);
+        uint64_t uval = val;
+        if (hread(fd->fp, &c[1], 7) < 7)
+            return -1;
+        uval = (uval<<8) | c[1];
+        uval = (uval<<8) | c[2];
+        uval = (uval<<8) | c[3];
+        uval = (uval<<8) | c[4];
+        uval = (uval<<8) | c[5];
+        uval = (uval<<8) | c[6];
+        uval = (uval<<8) | c[7];
+        *val_p = uval & ((1ULL<<(7*8))-1);
         *crc = crc32(*crc, c, 8);
         return 8;
 
     } else {
-        val = (val<<8) | (c[1]=hgetc(fd->fp));;
-        val = (val<<8) | (c[2]=hgetc(fd->fp));;
-        val = (val<<8) | (c[3]=hgetc(fd->fp));;
-        val = (val<<8) | (c[4]=hgetc(fd->fp));;
-        val = (val<<8) | (c[5]=hgetc(fd->fp));;
-        val = (val<<8) | (c[6]=hgetc(fd->fp));;
-        val = (val<<8) | (c[7]=hgetc(fd->fp));;
-        val = (val<<8) | (c[8]=hgetc(fd->fp));;
+        uint64_t uval;
+        if (hread(fd->fp, &c[1], 8) < 8)
+            return -1;
+        uval =             c[1];
+        uval = (uval<<8) | c[2];
+        uval = (uval<<8) | c[3];
+        uval = (uval<<8) | c[4];
+        uval = (uval<<8) | c[5];
+        uval = (uval<<8) | c[6];
+        uval = (uval<<8) | c[7];
+        uval = (uval<<8) | c[8];
         *crc = crc32(*crc, c, 9);
-        *val_p = val;
+        *val_p = c[1] < 0x80 ? uval : -((int64_t) (0xffffffffffffffffULL - uval)) - 1;
     }
 
     return 9;
