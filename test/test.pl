@@ -40,6 +40,9 @@ ce_fa_to_md5_cache($opts);
 test_index($opts, 0);
 test_index($opts, 4);
 
+test_multi_ref($opts,0);
+test_multi_ref($opts,4);
+
 test_view($opts,0);
 test_view($opts,4);
 
@@ -448,6 +451,60 @@ sub testv {
         if ($$opts{fail_fast}) {
           die "\n";
         }
+    }
+}
+
+sub fake_multi_ref_data
+{
+    open(SAM, ">multi_ref.sam") || die;
+    for (my $r=0;$r<1000;$r++) {
+        print SAM "\@SQ\tSN:c$r\tLN:10000\n";
+    }
+
+    # Single ref
+    my $rnum=0;
+    for (my $p=1;$p<1000;$p++) {
+        print SAM "X\t0\tc$rnum\t$p\t40\t10M\t*\t0\t0\tCCTAGCCCTA\tB?8B?BACCD\n";
+    }
+
+    # Multi ref; 1 seq per ref
+    for (my $r=1;$r<300;$r++) {
+        print SAM "X\t0\tc$rnum\t1\t40\t10M\t*\t0\t0\tCCTAGCCCTA\tB?8B?BACCD\n";
+        $rnum++;
+    }
+
+    # Single ref again
+    for (my $p=1;$p<1000;$p++) {
+        print SAM "X\t0\tc$rnum\t$p\t40\t10M\t*\t0\t0\tCCTAGCCCTA\tB?8B?BACCD\n";
+    }
+
+    # Multi ref; 1 seq per ref
+    for (my $r=1;$r<300;$r++) {
+        print SAM "X\t0\tc$rnum\t1\t40\t10M\t*\t0\t0\tCCTAGCCCTA\tB?8B?BACCD\n";
+        $rnum++;
+    }
+    close(SAM);
+}
+
+sub test_multi_ref
+{
+    my ($opts, $nthreads) = @_;
+    my $tv_args = $nthreads ? "-\@$nthreads" : "";
+
+    fake_multi_ref_data;
+    print "test_view testing multi-ref CRAM modes:\n";
+    $test_view_failures = 0;
+
+    for (my $mf = -1; $mf <= 1; $mf++) {
+        testv $opts, "./test_view $tv_args -o seqs_per_slice=100 -o no_ref=1 -o multi_seq_per_slice=$mf -S -C multi_ref.sam > multi_ref.cram";
+        testv $opts, "./test_view $tv_args multi_ref.cram > multi_ref.sam_";
+        testv $opts, "./compare_sam.pl multi_ref.sam multi_ref.sam_";
+    }
+
+    if ($test_view_failures == 0) {
+        passed($opts, "multi-ref conversions");
+    } else {
+        failed($opts, "multi-ref conversions", "$test_view_failures subtests failed");
     }
 }
 
