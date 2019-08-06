@@ -685,7 +685,7 @@ static int sam_hrecs_parse_lines(sam_hrecs_t *hrecs, const char *hdr, size_t len
             return -1;
         }
 
-        type = (hdr[i+1]<<8) | hdr[i+2];
+        type = (((uint8_t) hdr[i+1])<<8) | (uint8_t) hdr[i+2];
         if (!isalpha_c(hdr[i+1]) || !isalpha_c(hdr[i+2])) {
             sam_hrecs_error("Header line does not have a two character key",
                           &hdr[l_start], len - l_start, lno);

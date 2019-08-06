@@ -1210,7 +1210,6 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 
 static int bcf_dec_typed_int1_safe(uint8_t *p, uint8_t *end, uint8_t **q,
                                    int32_t *val) {
-    uint32_t v;
     uint32_t t;
     if (end - p < 2) return -1;
     t = *p++ & 0xf;
@@ -1222,13 +1221,11 @@ static int bcf_dec_typed_int1_safe(uint8_t *p, uint8_t *end, uint8_t **q,
     } else if (t == BCF_BT_INT16) {
         if (end - p < 2) return -1;
         *q = p + 2;
-        v = p[0] | (p[1] << 8);
-        *val = v < 0x8000 ? v : -((int32_t) (0xffff - v)) - 1;
+        *val = le_to_i16(p);
     } else if (t == BCF_BT_INT32) {
         if (end - p < 4) return -1;
         *q = p + 4;
-        v = p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
-        *val = v < 0x80000000UL ? v : -((int32_t) (0xffffffffUL - v)) - 1;
+        *val = le_to_i32(p);
     } else {
         return -1;
     }
