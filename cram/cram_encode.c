@@ -3135,7 +3135,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
             multi_seq = 1;
         } else if (fd->multi_seq == 1) {
             pthread_mutex_lock(&fd->metrics_lock);
-            if (fd->last_RI_count <= c->max_slice) {
+            if (fd->last_RI_count <= c->max_slice && fd->multi_seq_user != 1) {
                 multi_seq = 0;
                 hts_log_info("Multi-ref disabled for next container");
             }
@@ -3168,8 +3168,8 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
             // User selected auto-mode, we're currently using multi-seq, but
             // have detected we don't need to.  Switch back to auto.
             fd->multi_seq = -1;
-        } else if (multi_seq || fd->multi_seq == 1) {
-            // We either detected multi-seq needed or user explicitly asked for it.
+        } else if (multi_seq) {
+            // We detected we need multi-seq
             fd->multi_seq = 1;
             c->multi_seq = 1;
             c->pos_sorted = 0; // required atm for multi_seq slices
