@@ -249,7 +249,7 @@ static inline int kputc_(int c, kstring_t *s)
 static inline int kputsn_(const void *p, size_t l, kstring_t *s)
 {
 	size_t new_sz = s->l + l;
-	if (new_sz < s->l || ks_resize(s, new_sz) < 0)
+	if (new_sz < s->l || ks_resize(s, new_sz ? new_sz : 1) < 0)
 		return EOF;
 	memcpy(s->s + s->l, p, l);
 	s->l += l;
