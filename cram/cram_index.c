@@ -496,10 +496,12 @@ int cram_seek_to_refpos(cram_fd *fd, cram_range *r) {
 
     pthread_mutex_lock(&fd->range_lock);
     fd->range = *r;
-    if (r->refid == HTS_IDX_NOCOOR)
+    if (r->refid == HTS_IDX_NOCOOR) {
         fd->range.refid = -1;
-    else if (r->refid == HTS_IDX_START || r->refid == HTS_IDX_REST)
+        fd->range.start = 0;
+    } else if (r->refid == HTS_IDX_START || r->refid == HTS_IDX_REST) {
         fd->range.refid = -2; // special case in cram_next_slice
+    }
     pthread_mutex_unlock(&fd->range_lock);
 
     if (fd->ctr) {
