@@ -238,7 +238,8 @@ int itf8_decode_crc(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
             uv = (uv<<8) |   (c[2]=hgetc(fd->fp));
             uv = (uv<<8) |   (c[3]=hgetc(fd->fp));
             uv = (uv<<4) | (((c[4]=hgetc(fd->fp))) & 0x0f);
-            *val_p = uv < 0x80000000UL ? uv : -((int32_t) (0xffffffffUL - uv)) - 1;
+            // Avoid implementation-defined behaviour on negative values
+            *val_p = uv < 0x80000000UL ? (int32_t) uv : -((int32_t) (0xffffffffUL - uv)) - 1;
             *crc = crc32(*crc, c, 5);
         }
     }
@@ -475,7 +476,8 @@ int ltf8_decode_crc(cram_fd *fd, int64_t *val_p, uint32_t *crc) {
         uval = (uval<<8) | c[7];
         uval = (uval<<8) | c[8];
         *crc = crc32(*crc, c, 9);
-        *val_p = c[1] < 0x80 ? uval : -((int64_t) (0xffffffffffffffffULL - uval)) - 1;
+        // Avoid implementation-defined behaviour on negative values
+        *val_p = c[1] < 0x80 ? (int64_t) uval : -((int64_t) (0xffffffffffffffffULL - uval)) - 1;
     }
 
     return 9;
@@ -536,7 +538,8 @@ int int32_get_blk(cram_block *b, int32_t *val) {
         (((uint32_t) b->data[b->byte+1]) <<  8) |
         (((uint32_t) b->data[b->byte+2]) << 16) |
         (((uint32_t) b->data[b->byte+3]) << 24);
-    *val = v < 0x80000000U ? v : -((int32_t) (0xffffffffU - v)) - 1;
+    // Avoid implementation-defined behaviour on negative values
+    *val = v < 0x80000000U ? (int32_t) v : -((int32_t) (0xffffffffU - v)) - 1;
     BLOCK_SIZE(b) += 4;
     return 4;
 }
