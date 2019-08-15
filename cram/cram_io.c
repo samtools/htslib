@@ -204,6 +204,11 @@ int itf8_decode_crc(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
     int i = nbytes[val>>4];
     val &= nbits[val>>4];
 
+    if (i > 0) {
+        if (hread(fd->fp, &c[1], i) < i)
+            return -1;
+    }
+
     switch(i) {
     case 0:
         *val_p = val;
@@ -211,22 +216,22 @@ int itf8_decode_crc(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
         return 1;
 
     case 1:
-        val = (val<<8) | (c[1]=hgetc(fd->fp));
+        val = (val<<8) | c[1];
         *val_p = val;
         *crc = crc32(*crc, c, 2);
         return 2;
 
     case 2:
-        val = (val<<8) | (c[1]=hgetc(fd->fp));
-        val = (val<<8) | (c[2]=hgetc(fd->fp));
+        val = (val<<8) | c[1];
+        val = (val<<8) | c[2];
         *val_p = val;
         *crc = crc32(*crc, c, 3);
         return 3;
 
     case 3:
-        val = (val<<8) | (c[1]=hgetc(fd->fp));
-        val = (val<<8) | (c[2]=hgetc(fd->fp));
-        val = (val<<8) | (c[3]=hgetc(fd->fp));
+        val = (val<<8) | c[1];
+        val = (val<<8) | c[2];
+        val = (val<<8) | c[3];
         *val_p = val;
         *crc = crc32(*crc, c, 4);
         return 4;
@@ -234,10 +239,10 @@ int itf8_decode_crc(cram_fd *fd, int32_t *val_p, uint32_t *crc) {
     case 4: // really 3.5 more, why make it different?
         {
             uint32_t uv = val;
-            uv = (uv<<8) |   (c[1]=hgetc(fd->fp));
-            uv = (uv<<8) |   (c[2]=hgetc(fd->fp));
-            uv = (uv<<8) |   (c[3]=hgetc(fd->fp));
-            uv = (uv<<4) | (((c[4]=hgetc(fd->fp))) & 0x0f);
+            uv = (uv<<8) |  c[1];
+            uv = (uv<<8) |  c[2];
+            uv = (uv<<8) |  c[3];
+            uv = (uv<<4) | (c[4] & 0x0f);
             // Avoid implementation-defined behaviour on negative values
             *val_p = uv < 0x80000000UL ? (int32_t) uv : -((int32_t) (0xffffffffUL - uv)) - 1;
             *crc = crc32(*crc, c, 5);
