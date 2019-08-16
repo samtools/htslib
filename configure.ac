@@ -89,7 +89,6 @@ AC_ARG_ENABLE([gcs],
   [], [enable_gcs=check])
 
 AC_SYS_LARGEFILE
-AC_FUNC_FSEEKO
 
 AC_ARG_ENABLE([libcurl],
   [AS_HELP_STRING([--enable-libcurl],
