@@ -457,17 +457,6 @@ static inline void sam_hdr_free(SAM_hdr *hdr) { sam_hdr_destroy(hdr); }
  */
 #define sam_hdr_add_PG sam_hdr_add_pg
 
-/*!
- * A function to help with construction of CL tags in @PG records.
- * Takes an argc, argv pair and returns a single space-separated string.
- * This string should be deallocated by the calling function.
- *
- * @return
- * Returns malloced char * on success;
- *         NULL on failure
- */
-char *stringify_argv(int argc, char *argv[]);
-
 /**@{ -------------------------------------------------------------------*/
 
 /*!

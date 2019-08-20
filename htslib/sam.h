@@ -724,6 +724,17 @@ const char *sam_hdr_pg_id(sam_hdr_t *h, const char *name);
  */
 int sam_hdr_add_pg(sam_hdr_t *h, const char *name, ...);
 
+/*!
+ * A function to help with construction of CL tags in @PG records.
+ * Takes an argc, argv pair and returns a single space-separated string.
+ * This string should be deallocated by the calling function.
+ *
+ * @return
+ * Returns malloced char * on success;
+ *         NULL on failure
+ */
+char *stringify_argv(int argc, char *argv[]);
+
 /// Increments the reference count on a header
 /*!
  * This permits multiple files to share the same header, all calling
