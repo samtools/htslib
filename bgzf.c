@@ -1927,6 +1927,7 @@ int bgzf_close(BGZF* fp)
 
 void bgzf_set_cache_size(BGZF *fp, int cache_size)
 {
+    if (fp && fp->mt) return; // Not appropriate when multi-threading
     if (fp && fp->cache) fp->cache_size = cache_size;
 }
 
