@@ -428,6 +428,9 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     if (strchr(mode, 'w') && fmt && fmt->compression == bgzf) {
         if (fmt->format == sam || fmt->format == vcf || fmt->format == text_format)
             *mode_c = 'z';
+    } else if (!*mode_c && !strchr(smode, 'z') &&
+               strlen(fn) > 3 && strcmp(fn+strlen(fn)-3, ".gz") == 0) {
+        *mode_c = 'z';
     }
 
     char *rmme = NULL, *fnidx = strstr(fn, HTS_IDX_DELIM);
