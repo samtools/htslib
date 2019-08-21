@@ -3400,7 +3400,11 @@ static int find_file_extension(const char *fn, char ext_out[5])
     if (!fn) return -1;
     if (!delim) delim = fn + strlen(fn);
     for (ext = delim; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
-    if (*ext != '.' || delim - ext > 5 || delim - ext < 4) return -1;
+    if (*ext == '.' && delim - ext == 3 && ext[1] == 'g' && ext[2] == 'z') {
+        // permit .sam.gz as a valid file extension
+        for (ext--; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
+    }
+    if (*ext != '.' || delim - ext > 7 || delim - ext < 4) return -1;
     memcpy(ext_out, ext + 1, delim - ext - 1);
     ext_out[delim - ext - 1] = '\0';
     return 0;
@@ -3411,13 +3415,14 @@ int sam_open_mode(char *mode, const char *fn, const char *format)
     // TODO Parse "bam5" etc for compression level
     if (format == NULL) {
         // Try to pick a format based on the filename extension
-        char extension[5];
+        char extension[7];
         if (find_file_extension(fn, extension) < 0) return -1;
         return sam_open_mode(mode, fn, extension);
     }
     else if (strcmp(format, "bam") == 0) strcpy(mode, "b");
     else if (strcmp(format, "cram") == 0) strcpy(mode, "c");
     else if (strcmp(format, "sam") == 0) strcpy(mode, "");
+    else if (strcmp(format, "sam.gz") == 0) strcpy(mode, "z");
     else return -1;
 
     return 0;
@@ -3443,7 +3448,7 @@ char *sam_open_mode_opts(const char *fn,
 
     if (format == NULL) {
         // Try to pick a format based on the filename extension
-        char extension[5];
+        char extension[7];
         if (find_file_extension(fn, extension) < 0) {
             free(mode_opts);
             return NULL;
@@ -3477,6 +3482,8 @@ char *sam_open_mode_opts(const char *fn,
         cp += 12;
     } else if (strncmp(format, "sam", format_len) == 0) {
         ; // format mode=""
+    } else if (strncmp(format, "sam.gz", format_len) == 0) {
+        *cp++ = 'z';
     } else {
         free(mode_opts);
         return NULL;

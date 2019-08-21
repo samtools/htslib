@@ -428,9 +428,6 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     if (strchr(mode, 'w') && fmt && fmt->compression == bgzf) {
         if (fmt->format == sam || fmt->format == vcf || fmt->format == text_format)
             *mode_c = 'z';
-    } else if (!*mode_c && !strchr(smode, 'z') &&
-               strlen(fn) > 3 && strcmp(fn+strlen(fn)-3, ".gz") == 0) {
-        *mode_c = 'z';
     }
 
     char *rmme = NULL, *fnidx = strstr(fn, HTS_IDX_DELIM);
@@ -760,6 +757,11 @@ int hts_parse_format(htsFormat *format, const char *str) {
         format->format            = sam;
         format->compression       = no_compression;;
         format->compression_level = 0;
+    } else if (strcmp(fmt, "sam.gz") == 0) {
+        format->category          = sequence_data;
+        format->format            = sam;
+        format->compression       = bgzf;
+        format->compression_level = -1;
     } else if (strcmp(fmt, "bam") == 0) {
         format->category          = sequence_data;
         format->format            = bam;
