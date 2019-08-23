@@ -208,9 +208,9 @@ typedef struct {
     line must be formatted in vcf_format.
  */
 typedef struct {
-    int32_t rid;  // CHROM
     hts_pos_t pos;  // POS
     hts_pos_t rlen; // length of REF
+    int32_t rid;  // CHROM
     float qual;   // QUAL
     uint32_t n_info:16, n_allele:16;
     uint32_t n_fmt:8, n_sample:24;
