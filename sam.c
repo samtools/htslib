@@ -43,6 +43,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/bgzf.h"
 #include "cram/cram.h"
 #include "hts_internal.h"
+#include "sam_internal.h"
 #include "htslib/hfile.h"
 #include "htslib/hts_endian.h"
 #include "header.h"
@@ -800,7 +801,11 @@ int sam_idx_init(htsFile *fp, sam_hdr_t *h, int min_shift, const char *fnidx) {
 int sam_idx_save(htsFile *fp) {
     if (fp->format.format == bam || fp->format.format == bcf ||
         fp->format.format == vcf || fp->format.format == sam) {
-        sam_state_destroy(fp);
+        int ret;
+        if ((ret = sam_state_destroy(fp)) < 0) {
+            errno = -ret;
+            return -1;
+        }
         if (bgzf_flush(fp->fp.bgzf) < 0)
             return -1;
         hts_idx_amend_last(fp->idx, bgzf_tell(fp->fp.bgzf));
@@ -1681,10 +1686,6 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 
     uint8_t *t;
 
-    // Ensure kstring has at least 7 bytes more, so we can work in 8-byte chunks.
-    // (It doesn't have to be initialised, but we do so to silence valgrind.)
-    ks_resize(s, s->l+7);
-
     char *p = s->s, *q;
     int i;
     kstring_t str;
@@ -1999,6 +2000,7 @@ typedef struct SAM_state {
     pthread_cond_t command_c;
     enum sam_cmd command;
 
+    // One of the E* errno codes
     int errcode;
 
     htsFile *fp;
@@ -2025,9 +2027,16 @@ static SAM_state *sam_state_create(htsFile *fp) {
     return fd;
 }
 
-// Destroys the state produce by sam_state_create.
 static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *str);
 static void *sam_format_worker(void *arg);
+
+static void sam_state_err(SAM_state *fd, int errcode) {
+    pthread_mutex_lock(&fd->command_m);
+    fd->errcode = errcode;
+    pthread_mutex_unlock(&fd->command_m);
+}
+
+// Destroys the state produce by sam_state_create.
 int sam_state_destroy(htsFile *fp) {
     int ret = 0;
 
@@ -2049,22 +2058,18 @@ int sam_state_destroy(htsFile *fp) {
                 // Dispatch the last partial block.
                 sp_bams *gb = fd->curr_bam;
                 if (!ret && gb && gb->nbams > 0)
-                    hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb);
+                  ret = hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb);
 
                 // Flush and drain output
-                pthread_mutex_lock(&fd->command_m);
-                ret = -fd->errcode;
-                pthread_mutex_unlock(&fd->command_m);
-
                 hts_tpool_process_flush(fd->q);
                 pthread_mutex_lock(&fd->command_m);
-                ret = -fd->errcode;
+                if (!ret) ret = -fd->errcode;
                 pthread_mutex_unlock(&fd->command_m);
 
                 while (!ret && !hts_tpool_process_empty(fd->q)) {
                     usleep(10000);
                     pthread_mutex_lock(&fd->command_m);
-                    ret = -fd->errcode;
+                    if (!ret) ret = -fd->errcode;
                     pthread_mutex_unlock(&fd->command_m);
                 }
                 hts_tpool_process_shutdown(fd->q);
@@ -2072,7 +2077,7 @@ int sam_state_destroy(htsFile *fp) {
 
             // Wait for it to acknowledge
             pthread_join(fd->dispatcher, NULL);
-            ret = fd->errcode;
+            if (!ret) ret = -fd->errcode;
         }
 
         // Tidy up memory
@@ -2148,8 +2153,17 @@ void *sam_parse_worker(void *arg) {
         fd->bams = gb->next;
     } else {
         gb = calloc(1, sizeof(*gb));
+        if (!gb) {
+            pthread_mutex_unlock(&fd->lines_m);
+            return NULL;
+        }
         gb->abams = 100;
         gb->bams = b = calloc(gb->abams, sizeof(*b));
+        if (!gb->bams) {
+            free(gb);
+            pthread_mutex_unlock(&fd->lines_m);
+            return NULL;
+        }
         gb->nbams = 0;
     }
     gb->serial = gl->serial;
@@ -2187,7 +2201,7 @@ void *sam_parse_worker(void *arg) {
         if (*nl) *nl++ = '\0';
         kstring_t ks = {nl-cp, gl->alloc, cp};
         if (sam_parse1(&ks, fd->h, &b[i]) < 0) {
-            fd->errcode = EIO;
+            sam_state_err(fd, EIO);
             return NULL;
         }
         cp = nl;
@@ -2206,7 +2220,7 @@ void *sam_parse_eof(void *arg) {
     return NULL;
 }
 
-// Runs in the main thread.
+// Runs in its own thread.
 // Reads a block of text (SAM) and sends a new job to the thread queue to
 // translate this to BAM.
 static void *sam_dispatcher_read(void *vp) {
@@ -2241,8 +2255,18 @@ static void *sam_dispatcher_read(void *vp) {
         } else {
             // none to reuse, to create a new one
             l = calloc(1, sizeof(*l));
+            if (!l) {
+                sam_state_err(fd, ENOMEM);
+                goto err;
+            }
             l->alloc = NM+8; // +8 for optimisation in sam_parse1
             l->data = malloc(l->alloc);
+            if (!l->data) {
+                free(l);
+                l = NULL;
+                sam_state_err(fd, ENOMEM);
+                goto err;
+            }
             l->fd = fd;
         }
         l->next = NULL;
@@ -2251,7 +2275,7 @@ static void *sam_dispatcher_read(void *vp) {
         if (l->alloc+NM/2 < line_frag) {
             char *rp = realloc(l->data, line_frag+NM/2);
             if (!rp)
-                goto tidyup;
+                goto err;
             l->alloc = line_frag+NM/2;
             l->data = rp;
         }
@@ -2264,8 +2288,8 @@ static void *sam_dispatcher_read(void *vp) {
             nbytes = bgzf_read(fp->fp.bgzf, l->data + line_frag, l->alloc - line_frag);
         else
             nbytes = hread(fp->fp.hfile, l->data + line_frag, l->alloc - line_frag);
-        l->data_size += nbytes;
         if (nbytes <= 0) break; // EOF
+        l->data_size += nbytes;
 
         // trim to last \n. Maybe \r\n, but that's still fine
         if (nbytes == l->alloc - line_frag) {
@@ -2280,8 +2304,8 @@ static void *sam_dispatcher_read(void *vp) {
                 line_frag = l->data_size;
                 char *rp = realloc(l->data, l->alloc * 2);
                 if (!rp) {
-                    fd->errcode = ENOMEM;
-                    goto tidyup;
+                    sam_state_err(fd, ENOMEM);
+                    goto err;
                 }
                 l->alloc *= 2;
                 l->data = rp;
@@ -2293,7 +2317,10 @@ static void *sam_dispatcher_read(void *vp) {
             cp++;
 
             // line holds the remainder of our line.
-            ks_resize(&line, cp_end - cp);
+            if (ks_resize(&line, cp_end - cp) < 0) {
+                sam_state_err(fd, ENOMEM);
+                goto err;
+            }
             memcpy(line.s, cp, cp_end - cp);
             line_frag = cp_end - cp;
             l->data_size = l->alloc - line_frag;
@@ -2304,12 +2331,19 @@ static void *sam_dispatcher_read(void *vp) {
 
         l->serial = fd->serial++;
         //fprintf(stderr, "Dispatching %p, %d bytes, serial %d\n", l, l->data_size, l->serial);
-        hts_tpool_dispatch(fd->p, fd->q, sam_parse_worker, l);
+        if (hts_tpool_dispatch(fd->p, fd->q, sam_parse_worker, l) < 0) {
+            sam_state_err(fd, ENOMEM);
+            goto err;
+        }
     }
 
-    hts_tpool_dispatch(fd->p, fd->q, sam_parse_eof, NULL);
+    if (hts_tpool_dispatch(fd->p, fd->q, sam_parse_eof, NULL) < 0) {
+        sam_state_err(fd, ENOMEM);
+        goto err;
+    }
 
-    // At EOF, but there is potential for the caller to then do another seek.
+    // At EOF, wait for close request.
+    // (In future if we add support for seek, this is where we need to catch it.)
     for (;;) {
         pthread_mutex_lock(&fd->command_m);
         if (fd->command == SAM_NONE)
@@ -2336,9 +2370,14 @@ static void *sam_dispatcher_read(void *vp) {
     free(line.s);
 
     return NULL;
+
+ err:
+    hts_tpool_process_destroy(fd->q);
+    fd->q = NULL;
+    goto tidyup;
 }
 
-// Runs in the main thread.
+// Runs in its own thread.
 // Takes encoded blocks of SAM off the thread results queue and writes them
 // to our output stream.
 static void *sam_dispatcher_write(void *vp) {
@@ -2364,18 +2403,12 @@ static void *sam_dispatcher_write(void *vp) {
 
                 if (fp->format.compression == bgzf) {
                     if (bgzf_write(fp->fp.bgzf, &gl->data[j], i-j) != i-j) {
-                        pthread_mutex_lock(&fd->command_m);
-                        fd->errcode |= BGZF_ERR_IO;
-                        pthread_mutex_unlock(&fd->command_m);
-                        fd->errcode |= BGZF_ERR_IO;
+                        sam_state_err(fd, EIO);
                         goto err;
                     }
                 } else {
                     if (hwrite(fp->fp.hfile, &gl->data[j], i-j) != i-j) {
-                        pthread_mutex_lock(&fd->command_m);
-                        fd->errcode |= BGZF_ERR_IO;
-                        pthread_mutex_unlock(&fd->command_m);
-                        fd->errcode |= BGZF_ERR_IO;
+                        sam_state_err(fd, EIO);
                         goto err;
                     }
                 }
@@ -2386,13 +2419,13 @@ static void *sam_dispatcher_write(void *vp) {
                                       b->core.tid, b->core.pos, bam_endpos(b),
                                       bgzf_tell(fp->fp.bgzf),
                                       !(b->core.flag&BAM_FUNMAP)) < 0) {
-                        fd->errcode = EIO;
+                        sam_state_err(fd, EIO);
                         goto err;
                     }
                 } else {
                     if (hts_idx_push(fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
                                      bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0) {
-                        fd->errcode = EIO;
+                        sam_state_err(fd, EIO);
                         goto err;
                     }
                 }
@@ -2409,16 +2442,12 @@ static void *sam_dispatcher_write(void *vp) {
         } else {
             if (fp->format.compression == bgzf) {
                 if (bgzf_write(fp->fp.bgzf, gl->data, gl->data_size) != gl->data_size) {
-                    pthread_mutex_lock(&fd->command_m);
-                    fd->errcode |= BGZF_ERR_IO;
-                    pthread_mutex_unlock(&fd->command_m);
+                    sam_state_err(fd, EIO);
                     goto err;
                 }
             } else {
                 if (hwrite(fp->fp.hfile, gl->data, gl->data_size) != gl->data_size) {
-                    pthread_mutex_lock(&fd->command_m);
-                    fd->errcode |= BGZF_ERR_IO;
-                    pthread_mutex_unlock(&fd->command_m);
+                    sam_state_err(fd, EIO);
                     goto err;
                 }
             }
@@ -2433,9 +2462,7 @@ static void *sam_dispatcher_write(void *vp) {
         pthread_mutex_unlock(&fd->lines_m);
     }
 
-    pthread_mutex_lock(&fd->command_m);
-    fd->errcode = 0;
-    pthread_mutex_unlock(&fd->command_m);
+    sam_state_err(fd, 0); // success
     hts_tpool_process_destroy(fd->q);
     fd->q = NULL;
     return NULL;
@@ -2462,7 +2489,8 @@ static void *sam_format_worker(void *arg) {
     } else {
         gl = calloc(1, sizeof(*gl));
         if (!gl) {
-            fd->errcode = ENOMEM;
+            pthread_mutex_unlock(&fd->lines_m);
+            sam_state_err(fd, ENOMEM);
             return NULL;
         }
         gl->alloc = gl->data_size = 0;
@@ -2476,7 +2504,7 @@ static void *sam_format_worker(void *arg) {
 
     for (i = 0; i < gb->nbams; i++) {
         if (sam_format1_append(fd->h, &gb->bams[i], &ks) < 0) {
-            fd->errcode = EIO;
+            sam_state_err(fd, EIO);
             return NULL;
         }
         kputc('\n', &ks);
@@ -2552,6 +2580,7 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
         int r = bam_read1(fp->fp.bgzf, b);
         if (h && r >= 0) {
             if (b->core.tid  >= h->n_targets || b->core.tid  < -1 ||
+
                 b->core.mtid >= h->n_targets || b->core.mtid < -1)
                 return -3;
         }
@@ -2582,7 +2611,11 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
             if (fp->format.compression == bgzf && fp->fp.bgzf->seeked) {
                 // We don't support multi-threaded SAM parsing with seeks yet.
                 if (fd->h) {
-                    sam_state_destroy(fp);
+                    int ret;
+                    if ((ret = sam_state_destroy(fp)) < 0) {
+                        errno = -ret;
+                        return -2;
+                    }
                     if (bgzf_seek(fp->fp.bgzf, fp->fp.bgzf->seeked, SEEK_SET) < 0)
                         return -1;
                     fp->fp.bgzf->seeked = 0;
@@ -2597,10 +2630,12 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
                 fd->h->ref_count++;
                 // Ensure hrecs is initialised now as we don't want multiple
                 // threads trying to do this simultaneously.
-                sam_hdr_fill_hrecs(fd->h);
+                if (!fd->h->hrecs && sam_hdr_fill_hrecs(fd->h) < 0)
+                    return -2;
 
                 // We can only do this once we've got a header
-                pthread_create(&fd->dispatcher, NULL, sam_dispatcher_read, fp);
+                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_read, fp) != 0)
+                    return -2;
             }
 
             if (fd->h != h) {
@@ -2610,7 +2645,14 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
 
             sp_bams *gb = fd->curr_bam;
             if (!gb) {
+                if (fd->errcode) {
+                    // Incase reader failed
+                    errno = fd->errcode;
+                    return -2;
+                }
                 hts_tpool_result *r = hts_tpool_next_result_wait(fd->q);
+                if (!r)
+                    return -2;
                 fd->curr_bam = gb = (sp_bams *)hts_tpool_result_data(r);
                 hts_tpool_delete_result(r, 0);
             }
@@ -2618,7 +2660,8 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
                 return fd->errcode ? -2 : -1;
             bam1_t *b_array = (bam1_t *)gb->bams;
             if (fd->curr_idx < gb->nbams)
-                bam_copy1(b, &b_array[fd->curr_idx++]);
+                if (!bam_copy1(b, &b_array[fd->curr_idx++]))
+                    return -2;
             if (fd->curr_idx == gb->nbams) {
                 pthread_mutex_lock(&fd->lines_m);
                 gb->next = fd->bams;
@@ -2660,7 +2703,7 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
     const bam1_core_t *c = &b->core;
 
     if (c->l_qname == 0)
-        abort();
+        return -1;
     kputsn_(bam_get_qname(b), c->l_qname-1-c->l_extranul, str); kputc_('\t', str); // query name
     kputw(c->flag, str); kputc_('\t', str); // flag
     if (c->tid >= 0) { // chr
@@ -2886,7 +2929,8 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
                 fd->h = (sam_hdr_t *)h;
                 fd->h->ref_count++;
 
-                pthread_create(&fd->dispatcher, NULL, sam_dispatcher_write, fp);
+                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_write, fp) != 0)
+                    return -2;
             }
 
             if (fd->h != h) {
@@ -2916,7 +2960,8 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
                 }
             }
 
-            bam_copy1(&gb->bams[gb->nbams++], b);
+            if (!bam_copy1(&gb->bams[gb->nbams++], b))
+                return -2;
 
             // Dispatch if full
             if (gb->nbams == NB) {
@@ -2927,7 +2972,10 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
                     pthread_mutex_unlock(&fd->command_m);
                     return -fd->errcode;
                 }
-                hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb);
+                if (hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb) < 0) {
+                    pthread_mutex_unlock(&fd->command_m);
+                    return -1;
+                }
                 pthread_mutex_unlock(&fd->command_m);
                 fd->curr_bam = NULL;
             }

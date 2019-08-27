@@ -44,6 +44,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "version.h"
 #include "hts_internal.h"
 #include "hfile_internal.h"
+#include "sam_internal.h"
 #include "htslib/hts_os.h" // drand48
 
 #include "htslib/khash.h"
@@ -968,12 +969,12 @@ int hts_close(htsFile *fp)
     case sam:
     case text_format:
     case vcf:
-        sam_state_destroy(fp);
+        ret = sam_state_destroy(fp);
 
         if (fp->format.compression != no_compression)
-            ret = bgzf_close(fp->fp.bgzf);
+            ret |= bgzf_close(fp->fp.bgzf);
         else
-            ret = hclose(fp->fp.hfile);
+            ret |= hclose(fp->fp.hfile);
         break;
 
     default:
