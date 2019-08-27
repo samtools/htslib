@@ -3358,9 +3358,7 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
             return 0;
         }
         bam_copy1(&iter->tail->b, b);
-#ifndef BAM_NO_ID
         iter->tail->b.id = iter->id++;
-#endif
         iter->tail->beg = b->core.pos;
         iter->tail->end = bam_endpos(b);
         iter->tail->s = g_cstate_null; iter->tail->s.end = iter->tail->end - 1; // initialize cstate_t

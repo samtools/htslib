@@ -982,10 +982,7 @@ static void samrecord_layout(void)
 
     size_t bam1_t_size, bam1_t_size2;
 
-    bam1_t_size = 36 + sizeof (int) + 4 + sizeof (char *);
-#ifndef BAM_NO_ID
-    bam1_t_size += 8;
-#endif
+    bam1_t_size = 36 + sizeof(int) + 4 + sizeof (char *) + sizeof(uint64_t);
     bam1_t_size2 = bam1_t_size + 4;  // Account for padding on some platforms
 
     if (sizeof (bam1_core_t) != 36)
