@@ -225,9 +225,7 @@ typedef struct {
     int l_data;
     uint32_t m_data;
     uint8_t *data;
-#ifndef BAM_NO_ID
     uint64_t id;
-#endif
 } bam1_t;
 
 /*! @function
