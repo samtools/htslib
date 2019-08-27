@@ -456,7 +456,7 @@ sub testv {
 
 sub fake_multi_ref_data
 {
-    open(SAM, ">multi_ref.sam") || die;
+    open(SAM, ">multi_ref.tmp.sam") || die;
     for (my $r=0;$r<1000;$r++) {
         print SAM "\@SQ\tSN:c$r\tLN:10000\n";
     }
@@ -496,9 +496,9 @@ sub test_multi_ref
     $test_view_failures = 0;
 
     for (my $mf = -1; $mf <= 1; $mf++) {
-        testv $opts, "./test_view $tv_args -o seqs_per_slice=100 -o no_ref=1 -o multi_seq_per_slice=$mf -S -C multi_ref.sam > multi_ref.cram";
-        testv $opts, "./test_view $tv_args multi_ref.cram > multi_ref.sam_";
-        testv $opts, "./compare_sam.pl multi_ref.sam multi_ref.sam_";
+        testv $opts, "./test_view $tv_args -o seqs_per_slice=100 -o no_ref=1 -o multi_seq_per_slice=$mf -S -C multi_ref.tmp.sam > multi_ref.tmp.cram";
+        testv $opts, "./test_view $tv_args multi_ref.tmp.cram > multi_ref.tmp.sam_";
+        testv $opts, "./compare_sam.pl multi_ref.tmp.sam multi_ref.tmp.sam_";
     }
 
     if ($test_view_failures == 0) {
