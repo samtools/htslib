@@ -2036,6 +2036,21 @@ static void sam_state_err(SAM_state *fd, int errcode) {
     pthread_mutex_unlock(&fd->command_m);
 }
 
+static void sam_free_sp_bams(sp_bams *b) {
+    if (!b)
+        return;
+
+    if (b->bams) {
+        int i;
+        for (i = 0; i < b->abams; i++) {
+            if (b->bams[i].data)
+                free(b->bams[i].data);
+        }
+        free(b->bams);
+    }
+    free(b);
+}
+
 // Destroys the state produce by sam_state_create.
 int sam_state_destroy(htsFile *fp) {
     int ret = 0;
@@ -2105,23 +2120,12 @@ int sam_state_destroy(htsFile *fp) {
             if (fd->curr_bam == b)
                 fd->curr_bam = NULL;
             sp_bams *n = b->next;
-            int i;
-            for (i = 0; i < b->abams; i++)
-                if (b->bams[i].data)
-                    free(b->bams[i].data);
-            free(b->bams);
-            free(b);
+            sam_free_sp_bams(b);
             b = n;
         }
 
-        if (fd->curr_bam) {
-            int i;
-            for (i = 0; i < fd->curr_bam->abams; i++)
-                if (fd->curr_bam->bams[i].data)
-                    free(fd->curr_bam->bams[i].data);
-            free(fd->curr_bam->bams);
-            free(fd->curr_bam);
-        }
+        if (fd->curr_bam)
+            sam_free_sp_bams(fd->curr_bam);
 
         // Decrement counter by one, maybe destroying too.
         // This is to permit the caller using bam_hdr_destroy
@@ -2161,10 +2165,8 @@ void *sam_parse_worker(void *arg) {
         }
         gb->abams = 100;
         gb->bams = b = calloc(gb->abams, sizeof(*b));
-        if (!gb->bams) {
-            free(gb);
-            return NULL;
-        }
+        if (!gb->bams)
+            goto err;
         gb->nbams = 0;
     }
     gb->serial = gl->serial;
@@ -2172,7 +2174,7 @@ void *sam_parse_worker(void *arg) {
 
     b = (bam1_t *)gb->bams;
     if (!b)
-        return NULL;
+        goto err;
 
     i = 0;
     char *cp = lines, *cp_end = lines + gl->data_size;
@@ -2182,7 +2184,7 @@ void *sam_parse_worker(void *arg) {
             gb->abams *= 2;
             b = (bam1_t *)realloc(gb->bams, gb->abams*sizeof(bam1_t));
             if (!b)
-                return NULL;
+                goto err;
             memset(&b[old_abams], 0, (gb->abams - old_abams)*sizeof(*b));
             gb->bams = b;
         }
@@ -2202,7 +2204,7 @@ void *sam_parse_worker(void *arg) {
         kstring_t ks = {nl-cp, gl->alloc, cp};
         if (sam_parse1(&ks, fd->h, &b[i]) < 0) {
             sam_state_err(fd, EIO);
-            return NULL;
+            goto err;
         }
         cp = nl;
         i++;
@@ -2214,6 +2216,10 @@ void *sam_parse_worker(void *arg) {
     fd->lines = gl;
     pthread_mutex_unlock(&fd->lines_m);
     return gb;
+
+ err:
+    sam_free_sp_bams(gb);
+    return NULL;
 }
 
 void *sam_parse_eof(void *arg) {
@@ -2393,8 +2399,10 @@ static void *sam_dispatcher_write(void *vp) {
     // Iterates until result queue is shutdown, where it returns NULL.
     while ((r = hts_tpool_next_result_wait(fd->q))) {
         sp_lines *gl = (sp_lines *)hts_tpool_result_data(r);
-        if (!gl)
-            continue;
+        if (!gl) {
+            sam_state_err(fd, EIO);
+            goto err;
+        }
 
         if (fp->idx) {
             sp_bams *gb = gl->bams;
@@ -2511,7 +2519,7 @@ static void *sam_format_worker(void *arg) {
     for (i = 0; i < gb->nbams; i++) {
         if (sam_format1_append(fd->h, &gb->bams[i], &ks) < 0) {
             sam_state_err(fd, EIO);
-            return NULL;
+            goto err;
         }
         kputc('\n', &ks);
     }
@@ -2533,6 +2541,14 @@ static void *sam_format_worker(void *arg) {
     pthread_mutex_unlock(&fd->lines_m);
 
     return gl;
+
+ err:
+    sam_free_sp_bams(gb);
+    if (gl) {
+        free(gl->data);
+        free(gl);
+    }
+    return NULL;
 }
 
 int sam_set_thread_pool(htsFile *fp, htsThreadPool *p) {
