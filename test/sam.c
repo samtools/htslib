@@ -1043,6 +1043,41 @@ static void faidx1(const char *filename)
     fai_destroy(fai);
 }
 
+static void test_empty_sam_file(const char *filename)
+{
+    samFile *in = sam_open(filename, "r");
+    if (in) {
+        bam1_t *aln = bam_init1();
+
+        sam_hdr_t *header = sam_hdr_read(in);
+        if (header)
+            fail("sam_hdr_read() from %s should fail\n", filename);
+        if (sam_read1(in, header, aln) >= 0)
+            fail("sam_read1() from %s should fail\n", filename);
+
+        bam_destroy1(aln);
+        sam_hdr_destroy(header);
+        sam_close(in);
+    }
+    else fail("can't open %s to read as SAM", filename);
+}
+
+static void test_empty_text_file(const char *filename)
+{
+    htsFile *in = hts_open(filename, "r");
+    if (in) {
+        kstring_t str = KS_INITIALIZE;
+        int ret, n = 0;
+        while ((ret = hts_getline(in, '\n', &str)) >= 0) n++;
+        if (ret != -1) fail("hts_getline got an error from %s\n", filename);
+        if (n != 0) fail("hts_getline read %d lines from %s\n", n, filename);
+
+        hts_close(in);
+        free(str.s);
+    }
+    else fail("can't open %s to read as text", filename);
+}
+
 static void check_enum1(void)
 {
     // bgzf_compression() returns int, but enjoys this correspondence
@@ -1078,6 +1113,8 @@ int main(int argc, char **argv)
     use_header_api();
     test_header_pg_lines();
     test_header_updates();
+    test_empty_sam_file("test/emptyfile");
+    test_empty_text_file("test/emptyfile");
     check_enum1();
     check_cigar_tab();
     for (i = 1; i < argc; i++) faidx1(argv[i]);

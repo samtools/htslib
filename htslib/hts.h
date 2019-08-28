@@ -187,6 +187,7 @@ enum htsExactFormat {
     sam, bam, bai, cram, crai, vcf, bcf, csi, gzi, tbi, bed,
     htsget,
     json HTS_DEPRECATED_ENUM("Use htsExactFormat 'htsget' instead") = htsget,
+    empty_format,  // File is empty (or empty after decompression)
     format_maximum = 32767
 };
 

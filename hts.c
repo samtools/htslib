@@ -121,6 +121,7 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
     case unknown_format:
     case binary_format:
     case text_format:
+    case empty_format:
     case format_maximum:
         break;
     }
@@ -241,6 +242,11 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
     }
     if (len < 0) return -1;
 
+    if (len == 0) {
+        fmt->format = empty_format;
+        return 0;
+    }
+
     if (len >= 6 && memcmp(s,"CRAM",4) == 0 && s[4]>=1 && s[4]<=3 && s[5]<=1) {
         fmt->category = sequence_data;
         fmt->format = cram;
@@ -347,6 +353,7 @@ char *hts_format_description(const htsFormat *format)
     case csi:   kputs("CSI", &str); break;
     case tbi:   kputs("Tabix", &str); break;
     case htsget: kputs("htsget", &str); break;
+    case empty_format:  kputs("empty", &str); break;
     default:    kputs("unknown", &str); break;
     }
 
@@ -396,6 +403,9 @@ char *hts_format_description(const htsFormat *format)
         case bed:
         case htsget:
             kputs(" text", &str);
+            break;
+
+        case empty_format:
             break;
 
         default:
@@ -912,6 +922,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
         fp->is_cram = 1;
         break;
 
+    case empty_format:
     case text_format:
     case sam:
     case vcf:
@@ -977,6 +988,7 @@ int hts_close(htsFile *fp)
         ret = cram_close(fp->fp.cram);
         break;
 
+    case empty_format:
     case text_format:
     case sam:
     case vcf:

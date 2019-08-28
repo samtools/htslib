@@ -80,6 +80,12 @@ Noteworthy changes in release a.b
   may report "invalid QUAL character" instead of "SEQ and QUAL are of
   different length".
 
+* Empty (0-length) files are no longer considered to be valid SAM files.
+  Input files without any headers or records at all are usually seen in
+  pipelines such as `somecmd | samtools ...` with `somecmd` aborting and
+  outputting nothing, and it is beneficial for the second command to
+  propagate the error.  (#261)
+
 * New API functions hts_reglist_create() and sam_itr_regarray() are added
   to create hts_reglist_t region lists from `chr:<from>-<to>` type region
   specifiers.
