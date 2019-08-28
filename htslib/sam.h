@@ -802,7 +802,7 @@ int bam_write1(BGZF *fp, const bam1_t *b) HTS_RESULT_USED;
    @param bsrc  Source alignment record
    @return bdst on success; NULL on failure
  */
-bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc);
+bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc) HTS_RESULT_USED;
 
 /// Create a duplicate alignment record
 /**

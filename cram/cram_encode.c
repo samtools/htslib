@@ -3225,11 +3225,14 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
     }
 
     /* Copy or alloc+copy the bam record, for later encoding */
-    if (c->bams[c->curr_c_rec])
-        bam_copy1(c->bams[c->curr_c_rec], b);
-    else
-        c->bams[c->curr_c_rec] = bam_dup(b);
-
+    if (c->bams[c->curr_c_rec]) {
+        if (bam_copy1(c->bams[c->curr_c_rec], b) == NULL)
+            return -1;
+    } else {
+        c->bams[c->curr_c_rec] = bam_dup1(b);
+        if (c->bams[c->curr_c_rec] == NULL)
+            return -1;
+    }
     c->curr_rec++;
     c->curr_c_rec++;
     c->s_num_bases += bam_seq_len(b);
