@@ -442,7 +442,8 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
 
     if (!(h_type = pool_alloc(hrecs->type_pool)))
         return -1;
-    if (-1 == (k = kh_put(sam_hrecs_t, hrecs->h, type_i, &new)))
+    k = kh_put(sam_hrecs_t, hrecs->h, type_i, &new);
+    if (new < 0)
         return -1;
 
     h_type->type = type_i;
@@ -699,7 +700,8 @@ static int sam_hrecs_parse_lines(sam_hrecs_t *hrecs, const char *hdr, size_t len
         // Add the header line type
         if (!(h_type = pool_alloc(hrecs->type_pool)))
             return -1;
-        if (-1 == (k = kh_put(sam_hrecs_t, hrecs->h, type, &new)))
+        k = kh_put(sam_hrecs_t, hrecs->h, type, &new);
+        if (new < 0)
             return -1;
 
         h_type->type = type;
