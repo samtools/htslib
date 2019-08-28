@@ -755,14 +755,92 @@ void sam_hdr_incr_ref(sam_hdr_t *h);
 
 /* Alignment */
 
+/// Create a new bam1_t alignment structure
+/**
+   @return An empty bam1_t structure on success, NULL on failure
+ */
 bam1_t *bam_init1(void);
+
+/// Destory a bam1_t structure
+/**
+   @param b  structure to destroy
+
+   Does nothing if @p b is NULL.  If not, all memory associated with @p b
+   will be freed, along with the structure itself.  @p b should not be
+   accessed after calling this function.
+ */
 void bam_destroy1(bam1_t *b);
+
+/// Read a BAM format alignment record
+/**
+   @param fp   BGZF file being read
+   @param b    Destination for the alignment data
+   @return number of bytes read on success
+           -1 at end of file
+           < -1 on failure
+
+   This function can only read BAM format files.  Most code should use
+   sam_read1() instead, which can be used with BAM, SAM and CRAM formats.
+*/
 int bam_read1(BGZF *fp, bam1_t *b) HTS_RESULT_USED;
+
+/// Write a BAM format alignment record
+/**
+   @param fp  BGZF file being written
+   @param b   Alignment record to write
+   @return number of bytes written on success
+           -1 on error
+
+   This function can only write BAM format files.  Most code should use
+   sam_write1() instead, which can be used with BAM, SAM and CRAM formats.
+*/
 int bam_write1(BGZF *fp, const bam1_t *b) HTS_RESULT_USED;
+
+/// Copy alignment record data
+/**
+   @param bdst  Destination alignment record
+   @param bsrc  Source alignment record
+   @return bdst on success; NULL on failure
+ */
 bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc);
+
+/// Create a duplicate alignment record
+/**
+   @param bsrc  Source alignment record
+   @return Pointer to a new alignment record on success; NULL on failure
+ */
 bam1_t *bam_dup1(const bam1_t *bsrc);
 
+/// Calculate query length from CIGAR data
+/**
+   @param n_cigar   Number of items in @p cigar
+   @param cigar     CIGAR data
+   @return Query length
+
+   CIGAR data is stored as in the BAM format, i.e. (op_len << 4) | op
+   where op_len is the length in bases and op is a value between 0 and 8
+   representing one of the operations "MIDNSHP=X" (M = 0; X = 8)
+
+   This function returns the sum of the lengths of the M, I, S, = and X
+   operations in @p cigar (these are the operations that "consume" query
+   bases).  All other operations (including invalid ones) are ignored.
+ */
 int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
+
+/// Calculate reference length from CIGAR data
+/**
+   @param n_cigar   Number of items in @p cigar
+   @param cigar     CIGAR data
+   @return Reference length
+
+   CIGAR data is stored as in the BAM format, i.e. (op_len << 4) | op
+   where op_len is the length in bases and op is a value between 0 and 8
+   representing one of the operations "MIDNSHP=X" (M = 0; X = 8)
+
+   This function returns the sum of the lengths of the M, D, N, = and X
+   operations in @p cigar (these are the operations that "consume" reference
+   bases).  All other operations (including invalid ones) are ignored.
+ */
 int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
 
 /*!
