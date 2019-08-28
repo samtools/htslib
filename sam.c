@@ -1385,6 +1385,10 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
     case sam:
         return sam_hdr_create(fp);
 
+    case empty_format:
+        errno = EPIPE;
+        return NULL;
+
     default:
         errno = EFTYPE;
         return NULL;
@@ -2728,6 +2732,10 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
             return ret;
         }
     }
+
+    case empty_format:
+        errno = EPIPE;
+        return -3;
 
     default:
         errno = EFTYPE;
