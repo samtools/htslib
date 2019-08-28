@@ -78,7 +78,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
                                            cram_block_compression_hdr *h) {
     cram_block *cb  = cram_new_block(COMPRESSION_HEADER, 0);
     cram_block *map = cram_new_block(COMPRESSION_HEADER, 0);
-    int i, mc;
+    int i, mc, r = 0;
 
     if (!cb || !map)
         return NULL;
@@ -94,13 +94,13 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 
     // Duplicated from container itself, and removed in 1.1
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
-        itf8_put_blk(cb, h->ref_seq_id);
-        itf8_put_blk(cb, h->ref_seq_start);
-        itf8_put_blk(cb, h->ref_seq_span);
-        itf8_put_blk(cb, h->num_records);
-        itf8_put_blk(cb, h->num_landmarks);
+        r |= itf8_put_blk(cb, h->ref_seq_id);
+        r |= itf8_put_blk(cb, h->ref_seq_start);
+        r |= itf8_put_blk(cb, h->ref_seq_span);
+        r |= itf8_put_blk(cb, h->num_records);
+        r |= itf8_put_blk(cb, h->num_landmarks);
         for (i = 0; i < h->num_landmarks; i++) {
-            itf8_put_blk(cb, h->landmark[i]);
+            r |= itf8_put_blk(cb, h->landmark[i]);
         }
     }
 
@@ -232,7 +232,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
             }
 
             case CRAM_KEY('T','D'): {
-                itf8_put_blk(map, BLOCK_SIZE(h->TD_blk));
+                r |= itf8_put_blk(map, BLOCK_SIZE(h->TD_blk));
                 BLOCK_APPEND(map,
                              BLOCK_DATA(h->TD_blk),
                              BLOCK_SIZE(h->TD_blk));
@@ -247,8 +247,8 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
             mc++;
         }
     }
-    itf8_put_blk(cb, BLOCK_SIZE(map) + itf8_size(mc));
-    itf8_put_blk(cb, mc);
+    r |= itf8_put_blk(cb, BLOCK_SIZE(map) + itf8_size(mc));
+    r |= itf8_put_blk(cb, mc);
     BLOCK_APPEND(cb, BLOCK_DATA(map), BLOCK_SIZE(map));
 
     /* rec encoding map */
@@ -448,8 +448,8 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
             return NULL;
         mc++;
     }
-    itf8_put_blk(cb, BLOCK_SIZE(map) + itf8_size(mc));
-    itf8_put_blk(cb, mc);
+    r |= itf8_put_blk(cb, BLOCK_SIZE(map) + itf8_size(mc));
+    r |= itf8_put_blk(cb, mc);
     BLOCK_APPEND(cb, BLOCK_DATA(map), BLOCK_SIZE(map));
 
     /* tag encoding map */
@@ -488,7 +488,7 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
             key = kh_key(c->tags_used, k);
             cram_codec *cd = kh_val(c->tags_used, k)->codec;
 
-            itf8_put_blk(map, key);
+            r |= itf8_put_blk(map, key);
             if (-1 == cd->store(cd, map, NULL, fd->version))
                 return NULL;
 
@@ -496,8 +496,8 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
         }
     }
 #endif
-    itf8_put_blk(cb, BLOCK_SIZE(map) + itf8_size(mc));
-    itf8_put_blk(cb, mc);
+    r |= itf8_put_blk(cb, BLOCK_SIZE(map) + itf8_size(mc));
+    r |= itf8_put_blk(cb, mc);
     BLOCK_APPEND(cb, BLOCK_DATA(map), BLOCK_SIZE(map));
 
     hts_log_info("Wrote compression block header in %d bytes", (int)BLOCK_SIZE(cb));
@@ -506,7 +506,11 @@ cram_block *cram_encode_compression_header(cram_fd *fd, cram_container *c,
 
     cram_free_block(map);
 
-    return cb;
+    if (r >= 0)
+        return cb;
+
+ block_err:
+    return NULL;
 }
 
 
@@ -1082,6 +1086,9 @@ static int cram_encode_slice(cram_fd *fd, cram_container *c,
     }
 
     return r ? -1 : 0;
+
+ block_err:
+    return -1;
 }
 
 /*
@@ -1219,8 +1226,8 @@ static int lossy_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
  * Output is an update s->name_blk, and cr->name / cr->name_len
  * fields.
  */
-static void add_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
-                           int bam_start) {
+static int add_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
+                          int bam_start) {
     int r1, r2;
     int keep_names = !fd->lossy_read_names;
 
@@ -1238,8 +1245,14 @@ static void add_read_names(cram_fd *fd, cram_container *c, cram_slice *s,
             // Can only discard duplicate names if not detached
             cr->name_len = 0;
         }
-        cram_stats_add(c->stats[DS_RN], cr->name_len);
+        if (cram_stats_add(c->stats[DS_RN], cr->name_len) < 0)
+            goto block_err;
     }
+
+    return 0;
+
+ block_err:
+    return -1;
 }
 
 /*
@@ -1254,6 +1267,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     int multi_ref = 0;
     int r1, r2, sn, nref;
     spare_bams *spares;
+
+//#define goto_err {fprintf(stderr, "ERR at %s:%d\n", __FILE__, __LINE__);goto err;}
+#define goto_err goto err
 
     /* Cache references up-front if we have unsorted access patterns */
     pthread_mutex_lock(&fd->ref_lock);
@@ -1270,10 +1286,11 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     /* To create M5 strings */
     /* Fetch reference sequence */
     if (!fd->no_ref) {
+        if (!c->bams || !c->bams[0])
+            goto_err;
         bam_seq_t *b = c->bams[0];
-        char *ref;
 
-        ref = cram_get_ref(fd, bam_ref(b), 1, 0);
+        char *ref = cram_get_ref(fd, bam_ref(b), 1, 0);
         if (!ref && bam_ref(b) >= 0) {
             hts_log_error("Failed to load reference #%d", bam_ref(b));
             return -1;
@@ -1357,7 +1374,8 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         // of earlier records (if it detects the auto-generation of
         // TLEN is incorrect).  This affects which read-names can be
         // lossily compressed, so we do these in another pass.
-        add_read_names(fd, c, s, r1_start);
+        if (add_read_names(fd, c, s, r1_start) < 0)
+            return -1;
 
         if (c->multi_seq) {
             s->hdr->ref_seq_id    = -2;
@@ -1386,6 +1404,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                     continue;
 
                 cram_tag_map *tm = kh_val(c->tags_used, k);
+                if (!tm) goto_err;
                 if (!tm->blk) continue;
                 s->aux_block[s->naux_block++] = tm->blk;
                 tm->blk = NULL;
@@ -1401,6 +1420,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
     /* Link our bams[] array onto the spare bam list for reuse */
     spares = malloc(sizeof(*spares));
+    if (!spares) goto_err;
     pthread_mutex_lock(&fd->bam_list_lock);
     spares->bams = c->bams;
     spares->next = fd->bl;
@@ -1452,11 +1472,14 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     h->codecs[DS_BF] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_BF]),
                                          c->stats[DS_BF], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_BF]->nvals && !h->codecs[DS_BF]) goto_err;
 
     //fprintf(stderr, "=== CF ===\n");
     h->codecs[DS_CF] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_CF]),
                                          c->stats[DS_CF], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_CF]->nvals && !h->codecs[DS_CF]) goto_err;
+
     //fprintf(stderr, "=== RN ===\n");
     //h->codecs[DS_RN] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_RN]),
     //                                     c->stats[DS_RN], E_BYTE_ARRAY, NULL,
@@ -1472,69 +1495,85 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         h->codecs[DS_AP] = cram_encoder_init(E_BETA, NULL, E_INT, p,
                                              fd->version);
     }
+    if (!h->codecs[DS_AP]) goto_err;
 
     //fprintf(stderr, "=== RG ===\n");
     h->codecs[DS_RG] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_RG]),
                                          c->stats[DS_RG], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_RG]->nvals && !h->codecs[DS_RG]) goto_err;
 
     //fprintf(stderr, "=== MQ ===\n");
     h->codecs[DS_MQ] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_MQ]),
                                          c->stats[DS_MQ], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_MQ]->nvals && !h->codecs[DS_MQ]) goto_err;
 
     //fprintf(stderr, "=== NS ===\n");
     h->codecs[DS_NS] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_NS]),
                                          c->stats[DS_NS], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_NS]->nvals && !h->codecs[DS_NS]) goto_err;
 
     //fprintf(stderr, "=== MF ===\n");
     h->codecs[DS_MF] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_MF]),
                                          c->stats[DS_MF], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_MF]->nvals && !h->codecs[DS_MF]) goto_err;
 
     //fprintf(stderr, "=== TS ===\n");
     h->codecs[DS_TS] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_TS]),
                                          c->stats[DS_TS], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_TS]->nvals && !h->codecs[DS_TS]) goto_err;
+
     //fprintf(stderr, "=== NP ===\n");
     h->codecs[DS_NP] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_NP]),
                                          c->stats[DS_NP], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_NP]->nvals && !h->codecs[DS_NP]) goto_err;
+
     //fprintf(stderr, "=== NF ===\n");
     h->codecs[DS_NF] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_NF]),
                                          c->stats[DS_NF], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_NF]->nvals && !h->codecs[DS_NF]) goto_err;
 
     //fprintf(stderr, "=== RL ===\n");
     h->codecs[DS_RL] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_RL]),
                                          c->stats[DS_RL], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_RL]->nvals && !h->codecs[DS_RL]) goto_err;
 
     //fprintf(stderr, "=== FN ===\n");
     h->codecs[DS_FN] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_FN]),
                                          c->stats[DS_FN], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_FN]->nvals && !h->codecs[DS_FN]) goto_err;
 
     //fprintf(stderr, "=== FC ===\n");
     h->codecs[DS_FC] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_FC]),
                                          c->stats[DS_FC], E_BYTE, NULL,
                                          fd->version);
+    if (c->stats[DS_FC]->nvals && !h->codecs[DS_FC]) goto_err;
 
     //fprintf(stderr, "=== FP ===\n");
     h->codecs[DS_FP] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_FP]),
                                          c->stats[DS_FP], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_FP]->nvals && !h->codecs[DS_FP]) goto_err;
 
     //fprintf(stderr, "=== DL ===\n");
     h->codecs[DS_DL] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_DL]),
                                          c->stats[DS_DL], E_INT, NULL,
                                          fd->version);
+    if (c->stats[DS_DL]->nvals && !h->codecs[DS_DL]) goto_err;
 
     //fprintf(stderr, "=== BA ===\n");
     h->codecs[DS_BA] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_BA]),
                                          c->stats[DS_BA], E_BYTE, NULL,
                                          fd->version);
+    if (c->stats[DS_BA]->nvals && !h->codecs[DS_BA]) goto_err;
 
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
         cram_byte_array_len_encoder e;
@@ -1549,6 +1588,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         h->codecs[DS_BB] = cram_encoder_init(E_BYTE_ARRAY_LEN, NULL,
                                              E_BYTE_ARRAY, (void *)&e,
                                              fd->version);
+        if (!h->codecs[DS_BB]) goto_err;
     } else {
         h->codecs[DS_BB] = NULL;
     }
@@ -1557,6 +1597,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     h->codecs[DS_BS] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_BS]),
                                          c->stats[DS_BS], E_BYTE, NULL,
                                          fd->version);
+    if (c->stats[DS_BS]->nvals && !h->codecs[DS_BS]) goto_err;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
         h->codecs[DS_TL] = NULL;
@@ -1570,11 +1611,13 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         h->codecs[DS_TC] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_TC]),
                                              c->stats[DS_TC], E_BYTE, NULL,
                                              fd->version);
+        if (c->stats[DS_TC]->nvals && !h->codecs[DS_TC]) goto_err;
 
         //fprintf(stderr, "=== TN ===\n");
         h->codecs[DS_TN] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_TN]),
                                              c->stats[DS_TN], E_INT, NULL,
                                              fd->version);
+        if (c->stats[DS_TN]->nvals && !h->codecs[DS_TN]) goto_err;
     } else {
         h->codecs[DS_TC] = NULL;
         h->codecs[DS_TN] = NULL;
@@ -1583,27 +1626,32 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         h->codecs[DS_TL] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_TL]),
                                              c->stats[DS_TL], E_INT, NULL,
                                              fd->version);
+        if (c->stats[DS_TL]->nvals && !h->codecs[DS_TL]) goto_err;
 
 
         //fprintf(stderr, "=== RI ===\n");
         h->codecs[DS_RI] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_RI]),
                                              c->stats[DS_RI], E_INT, NULL,
                                              fd->version);
+        if (c->stats[DS_RI]->nvals && !h->codecs[DS_RI]) goto_err;
 
         //fprintf(stderr, "=== RS ===\n");
         h->codecs[DS_RS] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_RS]),
                                              c->stats[DS_RS], E_INT, NULL,
                                              fd->version);
+        if (c->stats[DS_RS]->nvals && !h->codecs[DS_RS]) goto_err;
 
         //fprintf(stderr, "=== PD ===\n");
         h->codecs[DS_PD] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_PD]),
                                              c->stats[DS_PD], E_INT, NULL,
                                              fd->version);
+        if (c->stats[DS_PD]->nvals && !h->codecs[DS_PD]) goto_err;
 
         //fprintf(stderr, "=== HC ===\n");
         h->codecs[DS_HC] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_HC]),
                                              c->stats[DS_HC], E_INT, NULL,
                                              fd->version);
+        if (c->stats[DS_HC]->nvals && !h->codecs[DS_HC]) goto_err;
 
         //fprintf(stderr, "=== SC ===\n");
         if (1) {
@@ -1628,6 +1676,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
                                                  E_BYTE_ARRAY, (void *)&e,
                                                  fd->version);
         }
+        if (!h->codecs[DS_SC]) goto_err;
     }
 
     //fprintf(stderr, "=== IN ===\n");
@@ -1636,16 +1685,19 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         h->codecs[DS_IN] = cram_encoder_init(E_BYTE_ARRAY_STOP, NULL,
                                              E_BYTE_ARRAY, (void *)i2,
                                              fd->version);
+        if (!h->codecs[DS_IN]) goto_err;
     }
 
     h->codecs[DS_QS] = cram_encoder_init(E_EXTERNAL, NULL, E_BYTE,
                                          (void *)DS_QS,
                                          fd->version);
+    if (!h->codecs[DS_QS]) goto_err;
     {
         int i2[2] = {0, DS_RN};
         h->codecs[DS_RN] = cram_encoder_init(E_BYTE_ARRAY_STOP, NULL,
                                              E_BYTE_ARRAY, (void *)i2,
                                              fd->version);
+        if (!h->codecs[DS_RN]) goto_err;
     }
 
 
@@ -1747,6 +1799,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     }
 
     return 0;
+
+ err:
+    return -1;
 }
 
 
@@ -1770,12 +1825,16 @@ static int cram_add_feature(cram_container *c, cram_slice *s,
 
     if (!r->nfeature++) {
         r->feature = s->nfeatures;
-        cram_stats_add(c->stats[DS_FP], f->X.pos);
+        if (cram_stats_add(c->stats[DS_FP], f->X.pos) < 0)
+            return -1;
     } else {
-        cram_stats_add(c->stats[DS_FP],
-                       f->X.pos - s->features[r->feature + r->nfeature-2].X.pos);
+        if (cram_stats_add(c->stats[DS_FP],
+                           f->X.pos - s->features[r->feature + r->nfeature-2].X.pos) < 0)
+            return -1;
+
     }
-    cram_stats_add(c->stats[DS_FC], f->X.code);
+    if (cram_stats_add(c->stats[DS_FC], f->X.code) < 0)
+        return -1;
 
     s->features[s->nfeatures++] = *f;
 
@@ -1792,17 +1851,21 @@ static int cram_add_substitution(cram_fd *fd, cram_container *c,
         f.X.pos = pos+1;
         f.X.code = 'X';
         f.X.base = fd->cram_sub_matrix[ref&0x1f][base&0x1f];
-        cram_stats_add(c->stats[DS_BS], f.X.base);
+        if (cram_stats_add(c->stats[DS_BS], f.X.base) < 0)
+            return -1;
     } else {
         f.B.pos = pos+1;
         f.B.code = 'B';
         f.B.base = base;
         f.B.qual = qual;
-        cram_stats_add(c->stats[DS_BA], f.B.base);
-        cram_stats_add(c->stats[DS_QS], f.B.qual);
+        if (cram_stats_add(c->stats[DS_BA], f.B.base) < 0) return -1;
+        if (cram_stats_add(c->stats[DS_QS], f.B.qual) < 0) return -1;
         BLOCK_APPEND_CHAR(s->qual_blk, qual);
     }
     return cram_add_feature(c, s, r, &f);
+
+ block_err:
+    return -1;
 }
 
 static int cram_add_bases(cram_fd *fd, cram_container *c,
@@ -1826,10 +1889,13 @@ static int cram_add_base(cram_fd *fd, cram_container *c,
     f.B.code = 'B';
     f.B.base = base;
     f.B.qual = qual;
-    cram_stats_add(c->stats[DS_BA], base);
-    cram_stats_add(c->stats[DS_QS], qual);
+    if (cram_stats_add(c->stats[DS_BA], base) < 0) return -1;
+    if (cram_stats_add(c->stats[DS_QS], qual) < 0) return -1;
     BLOCK_APPEND_CHAR(s->qual_blk, qual);
     return cram_add_feature(c, s, r, &f);
+
+ block_err:
+    return -1;
 }
 
 static int cram_add_quality(cram_fd *fd, cram_container *c,
@@ -1839,9 +1905,12 @@ static int cram_add_quality(cram_fd *fd, cram_container *c,
     f.Q.pos = pos+1;
     f.Q.code = 'Q';
     f.Q.qual = qual;
-    cram_stats_add(c->stats[DS_QS], qual);
+    if (cram_stats_add(c->stats[DS_QS], qual) < 0) return -1;
     BLOCK_APPEND_CHAR(s->qual_blk, qual);
     return cram_add_feature(c, s, r, &f);
+
+ block_err:
+    return -1;
 }
 
 static int cram_add_deletion(cram_container *c, cram_slice *s, cram_record *r,
@@ -1850,7 +1919,7 @@ static int cram_add_deletion(cram_container *c, cram_slice *s, cram_record *r,
     f.D.pos = pos+1;
     f.D.code = 'D';
     f.D.len = len;
-    cram_stats_add(c->stats[DS_DL], len);
+    if (cram_stats_add(c->stats[DS_DL], len) < 0) return -1;
     return cram_add_feature(c, s, r, &f);
 }
 
@@ -1885,6 +1954,9 @@ static int cram_add_softclip(cram_container *c, cram_slice *s, cram_record *r,
         //    f.S.seq_idx = BLOCK_SIZE(s->soft_blk);
     }
     return cram_add_feature(c, s, r, &f);
+
+ block_err:
+    return -1;
 }
 
 static int cram_add_hardclip(cram_container *c, cram_slice *s, cram_record *r,
@@ -1893,7 +1965,7 @@ static int cram_add_hardclip(cram_container *c, cram_slice *s, cram_record *r,
     f.S.pos = pos+1;
     f.S.code = 'H';
     f.S.len = len;
-    cram_stats_add(c->stats[DS_HC], len);
+    if (cram_stats_add(c->stats[DS_HC], len) < 0) return -1;
     return cram_add_feature(c, s, r, &f);
 }
 
@@ -1903,7 +1975,7 @@ static int cram_add_skip(cram_container *c, cram_slice *s, cram_record *r,
     f.S.pos = pos+1;
     f.S.code = 'N';
     f.S.len = len;
-    cram_stats_add(c->stats[DS_RS], len);
+    if (cram_stats_add(c->stats[DS_RS], len) < 0) return -1;
     return cram_add_feature(c, s, r, &f);
 }
 
@@ -1913,7 +1985,7 @@ static int cram_add_pad(cram_container *c, cram_slice *s, cram_record *r,
     f.S.pos = pos+1;
     f.S.code = 'P';
     f.S.len = len;
-    cram_stats_add(c->stats[DS_PD], len);
+    if (cram_stats_add(c->stats[DS_PD], len) < 0) return -1;
     return cram_add_feature(c, s, r, &f);
 }
 
@@ -1925,7 +1997,7 @@ static int cram_add_insertion(cram_container *c, cram_slice *s, cram_record *r,
         char b = base ? *base : 'N';
         f.i.code = 'i';
         f.i.base = b;
-        cram_stats_add(c->stats[DS_BA], b);
+        if (cram_stats_add(c->stats[DS_BA], b) < 0) return -1;
     } else {
         f.I.code = 'I';
         f.I.len = len;
@@ -1940,6 +2012,9 @@ static int cram_add_insertion(cram_container *c, cram_slice *s, cram_record *r,
         BLOCK_APPEND_CHAR(s->base_blk, '\0');
     }
     return cram_add_feature(c, s, r, &f);
+
+ block_err:
+    return -1;
 }
 
 /*
@@ -1997,7 +2072,8 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
                 return NULL;
         }
         s->TN[s->nTN++] = i32;
-        cram_stats_add(c->stats[DS_TN], i32);
+        if (cram_stats_add(c->stats[DS_TN], i32) < 0)
+            goto block_err;
 
         switch(aux[2]) {
         case 'A': case 'C': case 'c':
@@ -2068,7 +2144,8 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
             return NULL;
         }
     }
-    cram_stats_add(c->stats[DS_TC], cr->ntags);
+    if (cram_stats_add(c->stats[DS_TC], cr->ntags) < 0)
+        goto block_err;
 
     cr->aux = BLOCK_SIZE(s->aux_blk);
     cr->aux_size = (uc *)tmp - (BLOCK_DATA(s->aux_blk) + cr->aux);
@@ -2076,6 +2153,9 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
     assert(s->aux_blk->byte <= s->aux_blk->alloc);
 
     return rg;
+
+ block_err:
+    return NULL;
 }
 
 /*
@@ -2083,18 +2163,21 @@ static char *cram_encode_aux_1_0(cram_fd *fd, bam_seq_t *b, cram_container *c,
  * keep it simple and avoid a myriad of version ifs.
  *
  * Returns the read-group parsed out of the BAM aux fields on success
- *         NULL on failure or no rg present (FIXME)
+ *         NULL on failure or no rg present, also sets "*err" to non-zero
  */
 static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                              cram_slice *s, cram_record *cr,
                              int verbatim_NM, int verbatim_MD,
-                             int NM, kstring_t *MD) {
+                             int NM, kstring_t *MD,
+                             int *err) {
     char *aux, *orig, *rg = NULL;
     int aux_size = bam_get_l_aux(b);
     cram_block *td_b = c->comp_hdr->TD_blk;
     int TD_blk_size = BLOCK_SIZE(td_b), new;
     char *key;
     khint_t k;
+
+    if (err) *err = 1;
 
     orig = aux = (char *)bam_aux(b);
 
@@ -2145,6 +2228,8 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
         k = kh_put(m_tagmap, c->tags_used, key, &r);
         if (-1 == r)
             return NULL;
+        else if (r != 0)
+            kh_val(c->tags_used, k) = NULL;
 
         if (r == 1) {
             khint_t k_global;
@@ -2152,16 +2237,23 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
             // Global tags_used for cram_metrics support
             pthread_mutex_lock(&fd->metrics_lock);
             k_global = kh_put(m_metrics, fd->tags_used, key, &r);
-            if (-1 == r)
+            if (-1 == r) {
+                pthread_mutex_unlock(&fd->metrics_lock);
                 return NULL;
-            if (r == 1)
+            }
+            if (r == 1) {
                 kh_val(fd->tags_used, k_global) = cram_new_metrics();
+                if (!kh_val(fd->tags_used, k_global))
+                    goto err;
+            }
 
             pthread_mutex_unlock(&fd->metrics_lock);
 
             int i2[2] = {'\t',key};
             size_t sk = key;
             cram_tag_map *m = calloc(1, sizeof(*m));
+            if (!m)
+                goto_err;
             kh_val(c->tags_used, k) = m;
 
             cram_codec *c;
@@ -2184,7 +2276,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                 e.len_encoding = E_HUFFMAN;
                 e.len_dat = NULL;
                 memset(&st, 0, sizeof(st));
-                cram_stats_add(&st, 1);
+                if (cram_stats_add(&st, 1) < 0) goto block_err;
                 cram_stats_encoding(fd, &st);
 
                 e.val_encoding = E_EXTERNAL;
@@ -2204,7 +2296,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                 e.len_encoding = E_HUFFMAN;
                 e.len_dat = NULL;
                 memset(&st, 0, sizeof(st));
-                cram_stats_add(&st, 2);
+                if (cram_stats_add(&st, 2) < 0) goto block_err;
                 cram_stats_encoding(fd, &st);
 
                 e.val_encoding = E_EXTERNAL;
@@ -2223,7 +2315,7 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                 e.len_encoding = E_HUFFMAN;
                 e.len_dat = NULL;
                 memset(&st, 0, sizeof(st));
-                cram_stats_add(&st, 4);
+                if (cram_stats_add(&st, 4) < 0) goto block_err;
                 cram_stats_encoding(fd, &st);
 
                 e.val_encoding = E_EXTERNAL;
@@ -2260,6 +2352,9 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                 c = NULL;
             }
 
+            if (!c)
+                goto_err;
+
             m->codec = c;
 
             // Link to fd-global tag metrics
@@ -2269,7 +2364,9 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
         }
 
         cram_tag_map *tm = (cram_tag_map *)kh_val(c->tags_used, k);
+        if (!tm) goto_err;
         cram_codec *codec = tm->codec;
+        if (!tm->codec) goto_err;
 
         switch(aux[2]) {
         case 'A': case 'C': case 'c':
@@ -2337,7 +2434,8 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                 aux += 3;
                 aux_s = aux;
                 while (*aux++);
-                codec->encode(s, codec, aux_s, aux - aux_s);
+                if (codec->encode(s, codec, aux_s, aux - aux_s) < 0)
+                    return NULL;
             }
             break;
 
@@ -2375,7 +2473,8 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
 
             blen += 5; // sub-type & length
 
-            codec->encode(s, codec, aux, blen);
+            if (codec->encode(s, codec, aux, blen) < 0)
+                return NULL;
             aux += blen;
             break;
         }
@@ -2406,9 +2505,15 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
     }
 
     cr->TL = kh_val(c->comp_hdr->TD_hash, k);
-    cram_stats_add(c->stats[DS_TL], cr->TL);
+    if (cram_stats_add(c->stats[DS_TL], cr->TL) < 0)
+        goto block_err;
 
+    if (err) *err = 0;
     return rg;
+
+ err:
+ block_err:
+    return NULL;
 }
 
 /*
@@ -2595,8 +2700,11 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     //fprintf(stderr, "%s => %d\n", rg ? rg : "\"\"", cr->rg);
 
-    cr->ref_id      = bam_ref(b);  cram_stats_add(c->stats[DS_RI], cr->ref_id);
-    cram_stats_add(c->stats[DS_BF], fd->cram_flag_swap[cr->flags & 0xfff]);
+    cr->ref_id      = bam_ref(b);
+    if (cram_stats_add(c->stats[DS_RI], cr->ref_id) < 0)
+        goto block_err;
+    if (cram_stats_add(c->stats[DS_BF], fd->cram_flag_swap[cr->flags & 0xfff]) < 0)
+        goto block_err;
 
     // Non reference based encoding means storing the bases verbatim as features, which in
     // turn means every base also has a quality already stored.
@@ -2613,7 +2721,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         if (cr->apos < s->last_apos) {
             c->pos_sorted = 0;
         } else {
-            cram_stats_add(c->stats[DS_AP], cr->apos - s->last_apos);
+            if (cram_stats_add(c->stats[DS_AP], cr->apos - s->last_apos) < 0)
+                goto block_err;
             s->last_apos = cr->apos;
         }
     } else {
@@ -2696,8 +2805,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                             // Build our own MD tag if one is on the sequence, so
                             // we can ensure it matches and thus can be discarded.
                             if (MD && ref) {
-                                kputuw(apos+l - MD_last, MD);
-                                kputc(rp[l], MD);
+                                if (kputuw(apos+l - MD_last, MD) < 0) goto err;
+                                if (kputc(rp[l], MD) < 0) goto err;
                                 MD_last = apos+l+1;
                             }
                             NM++;
@@ -2766,10 +2875,11 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
             case BAM_CDEL:
                 if (MD && ref) {
-                    kputuw(apos - MD_last, MD);
+                    if (kputuw(apos - MD_last, MD) < 0) goto err;
                     if (apos < c->ref_end) {
-                        kputc_('^', MD);
-                        kputsn(&ref[apos], MIN(c->ref_end - apos, cig_len), MD);
+                        if (kputc_('^', MD) < 0) goto err;
+                        if (kputsn(&ref[apos], MIN(c->ref_end - apos, cig_len), MD) < 0)
+                            goto err;
                     }
                 }
                 NM += cig_len;
@@ -2844,10 +2954,11 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         }
         fake_qual = spos;
         cr->aend = fd->no_ref ? apos : MIN(apos, c->ref_end);
-        cram_stats_add(c->stats[DS_FN], cr->nfeature);
+        if (cram_stats_add(c->stats[DS_FN], cr->nfeature) < 0)
+            goto block_err;
 
         if (MD && ref)
-            kputuw(apos - MD_last, MD);
+            if (kputuw(apos - MD_last, MD) < 0) goto err;
     } else {
         // Unmapped
         cr->cram_flags |= CRAM_FLAG_PRESERVE_QUAL_SCORES;
@@ -2856,15 +2967,19 @@ static int process_one_read(cram_fd *fd, cram_container *c,
         cr->nfeature = 0;
         cr->aend = cr->apos;
         for (i = 0; i < cr->len; i++)
-            cram_stats_add(c->stats[DS_BA], seq[i]);
+            if (cram_stats_add(c->stats[DS_BA], seq[i]) < 0)
+                goto block_err;
         fake_qual = 0;
     }
 
     cr->ntags      = 0; //cram_stats_add(c->stats[DS_TC], cr->ntags);
+    int err = 0;
     if (CRAM_MAJOR_VERS(fd->version) == 1)
         rg = cram_encode_aux_1_0(fd, b, c, s, cr);
     else
-        rg = cram_encode_aux(fd, b, c, s, cr, verbatim_NM, verbatim_MD, NM, MD);
+        rg = cram_encode_aux(fd, b, c, s, cr, verbatim_NM, verbatim_MD, NM, MD, &err);
+    if (err)
+        goto block_err;
 
     /* Read group, identified earlier */
     if (rg) {
@@ -2876,7 +2991,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     } else {
         cr->rg = -1;
     }
-    cram_stats_add(c->stats[DS_RG], cr->rg);
+    if (cram_stats_add(c->stats[DS_RG], cr->rg) < 0)
+        goto block_err;
 
     /*
      * Append to the qual block now. We do this here as
@@ -2904,7 +3020,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
             cr->len = fake_qual >= 0 ? fake_qual : cr->aend - cr->apos + 1;
     }
 
-    cram_stats_add(c->stats[DS_RL], cr->len);
+    if (cram_stats_add(c->stats[DS_RL], cr->len) < 0)
+        goto block_err;
 
     /* Now we know apos and aend both, update mate-pair information */
     {
@@ -3034,7 +3151,8 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
             // Clear detached from cr flags
             cr->cram_flags &= ~CRAM_FLAG_DETACHED;
-            cram_stats_add(c->stats[DS_CF], cr->cram_flags & CRAM_FLAG_MASK);
+            if (cram_stats_add(c->stats[DS_CF], cr->cram_flags & CRAM_FLAG_MASK) < 0)
+                goto block_err;
 
             // Clear detached from p flags and set downstream
             if (p->cram_flags & CRAM_FLAG_STATS_ADDED) {
@@ -3044,10 +3162,12 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
             p->cram_flags  &= ~CRAM_FLAG_DETACHED;
             p->cram_flags  |=  CRAM_FLAG_MATE_DOWNSTREAM;
-            cram_stats_add(c->stats[DS_CF], p->cram_flags & CRAM_FLAG_MASK);
+            if (cram_stats_add(c->stats[DS_CF], p->cram_flags & CRAM_FLAG_MASK) < 0)
+                goto block_err;
 
             p->mate_line = rnum - (kh_val(s->pair[sec], k) + 1);
-            cram_stats_add(c->stats[DS_NF], p->mate_line);
+            if (cram_stats_add(c->stats[DS_NF], p->mate_line) < 0)
+                goto block_err;
 
             kh_val(s->pair[sec], k) = rnum;
         } else {
@@ -3061,24 +3181,30 @@ static int process_one_read(cram_fd *fd, cram_container *c,
             if (bam_flag(b) & BAM_FMREVERSE)
                 cr->mate_flags |= CRAM_M_REVERSE;
 
-            cram_stats_add(c->stats[DS_MF], cr->mate_flags);
+            if (cram_stats_add(c->stats[DS_MF], cr->mate_flags) < 0)
+                goto block_err;
 
             cr->mate_pos    = MAX(bam_mate_pos(b)+1, 0);
-            cram_stats_add(c->stats[DS_NP], cr->mate_pos);
+            if (cram_stats_add(c->stats[DS_NP], cr->mate_pos) < 0)
+                goto block_err;
 
             cr->tlen        = bam_ins_size(b);
-            cram_stats_add(c->stats[DS_TS], cr->tlen);
+            if (cram_stats_add(c->stats[DS_TS], cr->tlen) < 0)
+                goto block_err;
 
             cr->cram_flags |= CRAM_FLAG_DETACHED;
-            cram_stats_add(c->stats[DS_CF], cr->cram_flags & CRAM_FLAG_MASK);
-            cram_stats_add(c->stats[DS_NS], bam_mate_ref(b));
+            if (cram_stats_add(c->stats[DS_CF], cr->cram_flags & CRAM_FLAG_MASK) < 0)
+                goto block_err;
+            if (cram_stats_add(c->stats[DS_NS], bam_mate_ref(b)) < 0)
+                goto block_err;
 
             cr->cram_flags |= CRAM_FLAG_STATS_ADDED;
         }
     }
 
     cr->mqual       = bam_map_qual(b);
-    cram_stats_add(c->stats[DS_MQ], cr->mqual);
+    if (cram_stats_add(c->stats[DS_MQ], cr->mqual) < 0)
+        goto block_err;
 
     cr->mate_ref_id = bam_mate_ref(b);
 
@@ -3091,6 +3217,10 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     }
 
     return 0;
+
+ block_err:
+ err:
+    return -1;
 }
 
 /*
@@ -3218,8 +3348,10 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
             free(spare);
         } else {
             c->bams = calloc(c->max_c_rec, sizeof(bam_seq_t *));
-            if (!c->bams)
+            if (!c->bams) {
+                pthread_mutex_unlock(&fd->bam_list_lock);
                 return -1;
+            }
         }
         pthread_mutex_unlock(&fd->bam_list_lock);
     }

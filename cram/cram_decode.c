@@ -126,6 +126,10 @@ int cram_decode_TD(char *cp, const char *endp, cram_block_compression_hdr *h) {
     h->nTL = nTL;
 
     return sz;
+
+ block_err:
+    cram_free_block(b);
+    return -1;
 }
 
 /*
@@ -482,7 +486,7 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
         m = malloc(sizeof(*m));
         if (!m) {
             cram_free_compression_header(hdr);
-            free(m);
+            return NULL;
         }
         m->key = CRAM_KEY(key[0], key[1]);
         m->encoding = encoding;
@@ -1064,12 +1068,16 @@ static int sort_freqs(const void *vp1, const void *vp2) {
  * Primary CRAM sequence decoder
  */
 
-static inline void add_md_char(cram_slice *s, int decode_md, char c, int32_t *md_dist) {
+static inline int add_md_char(cram_slice *s, int decode_md, char c, int32_t *md_dist) {
     if (decode_md) {
         BLOCK_APPEND_UINT(s->aux_blk, *md_dist);
         BLOCK_APPEND_CHAR(s->aux_blk, c);
         *md_dist = 0;
     }
+    return 0;
+
+ block_err:
+    return -1;
 }
 
 /*
@@ -1197,9 +1205,10 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                             // FIXME: not N, but nt16 lookup == 15?
                             char base = s->ref[ref_pos - s->ref_start + 1 + i];
                             if (base == 'N') {
-                                add_md_char(s, decode_md,
-                                            s->ref[ref_pos - s->ref_start + 1 + i],
-                                            &md_dist);
+                                if (add_md_char(s, decode_md,
+                                                s->ref[ref_pos - s->ref_start + 1 + i],
+                                                &md_dist) < 0)
+                                    return -1;
                                 nm++;
                             } else {
                                 md_dist++;
@@ -1333,7 +1342,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                     if (pos-1 < cr->len)
                         seq[pos-1] = c->comp_hdr->
                             substitution_matrix[ref_base][base];
-                    add_md_char(s, decode_md, ref_call, &md_dist);
+                    if (add_md_char(s, decode_md, ref_call, &md_dist) < 0)
+                        return -1;
                 }
             }
             cig_op = BAM_CMATCH;
@@ -1679,7 +1689,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                             for (i = seq_pos-1, j -= i; i < cr->len; i++) {
                                 char base = s->ref[j+i];
                                 if (base == 'N') {
-                                    add_md_char(s, decode_md, 'N', &md_dist);
+                                    if (add_md_char(s, decode_md, 'N', &md_dist) < 0)
+                                        return -1;
                                     nm++;
                                 } else {
                                     md_dist++;
@@ -1814,6 +1825,9 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     // error reporting in only one.
     hts_log_error("CRAM CIGAR extends beyond slice reference extents");
     return -1;
+
+ block_err:
+    return -1;
 }
 
 /*
@@ -1877,6 +1891,9 @@ static int cram_decode_aux_1_0(cram_container *c, cram_slice *s,
     }
 
     return r;
+
+ block_err:
+    return -1;
 }
 
 static int cram_decode_aux(cram_container *c, cram_slice *s,
@@ -1937,6 +1954,9 @@ static int cram_decode_aux(cram_container *c, cram_slice *s,
     }
 
     return r;
+
+ block_err:
+    return -1;
 }
 
 /* Resolve mate pair cross-references between recs within this slice */
@@ -2187,11 +2207,12 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             //s->ref = cram_get_ref(fd, s->hdr->ref_seq_id, 1, 0);
             //s->ref_start = 1;
 
-            if (fd->required_fields & SAM_SEQ)
+            if (fd->required_fields & SAM_SEQ) {
                 s->ref =
                 cram_get_ref(fd, s->hdr->ref_seq_id,
                              s->hdr->ref_seq_start,
                              s->hdr->ref_seq_start + s->hdr->ref_seq_span -1);
+            }
             s->ref_start = s->hdr->ref_seq_start;
             s->ref_end   = s->hdr->ref_seq_start + s->hdr->ref_seq_span-1;
 
@@ -2677,6 +2698,9 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     BLOCK_RESIZE_EXACT(s->aux_blk,  BLOCK_SIZE(s->aux_blk)+1);
 
     return r;
+
+ block_err:
+    return -1;
 }
 
 typedef struct {

@@ -47,7 +47,7 @@ cram_stats *cram_stats_create(void) {
     return calloc(1, sizeof(cram_stats));
 }
 
-void cram_stats_add(cram_stats *st, int32_t val) {
+int cram_stats_add(cram_stats *st, int32_t val) {
     st->nsamp++;
 
     //assert(val >= 0);
@@ -60,6 +60,8 @@ void cram_stats_add(cram_stats *st, int32_t val) {
 
         if (!st->h) {
             st->h = kh_init(m_i2i);
+            if (!st->h)
+                return -1;
         }
 
         k = kh_put(m_i2i, st->h, val, &r);
@@ -68,8 +70,9 @@ void cram_stats_add(cram_stats *st, int32_t val) {
         else if (r != -1)
             kh_val(st->h, k) = 1;
         else
-            ; // FIXME: handle error
+            return -1;
     }
+    return 0;
 }
 
 void cram_stats_del(cram_stats *st, int32_t val) {

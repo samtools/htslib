@@ -211,7 +211,10 @@ void cram_block_set_size(cram_block *b, int32_t size) { BLOCK_SIZE(b) = size; }
 
 int cram_block_append(cram_block *b, const void *data, int size) {
     BLOCK_APPEND(b, data, size);
-    return BLOCK_DATA(b) ? 0 : -1; // It'll do for now...
+    return 0;
+
+ block_err:
+    return -1;
 }
 void cram_block_update_size(cram_block *b) { BLOCK_UPLEN(b); }
 

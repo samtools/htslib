@@ -505,48 +505,72 @@ static inline cram_block *cram_get_block_by_id(cram_slice *slice, int id) {
 /* Returns the address one past the end of the block */
 #define BLOCK_END(b) (&(b)->data[(b)->byte])
 
-/* Request block to be at least 'l' bytes long */
-#define BLOCK_RESIZE(b,l)                                       \
-    do {                                                        \
-        while((b)->alloc <= (l)) {                              \
-            (b)->alloc = (b)->alloc ? (b)->alloc*1.5 : 1024;    \
-            (b)->data = realloc((b)->data, (b)->alloc);         \
-        }                                                       \
-     } while(0)
-
 /* Make block exactly 'l' bytes long */
-#define BLOCK_RESIZE_EXACT(b,l)                                 \
-    do {                                                        \
-        (b)->alloc = (l);                                       \
-        (b)->data = realloc((b)->data, (b)->alloc);             \
-     } while(0)
+static inline int block_resize_exact(cram_block *b, size_t len) {
+    unsigned char *tmp = realloc(b->data, len);
+    if (!tmp)
+        return -1;
+    b->alloc = len;
+    b->data = tmp;
+    return 0;
+}
+
+/* Request block to be at least 'l' bytes long */
+static inline int block_resize(cram_block *b, size_t len) {
+    if (b->alloc > len)
+        return 0;
+
+    size_t alloc = b->alloc;
+    while (alloc <= len)
+        alloc = alloc ? alloc*1.5 : 1024;
+
+    return block_resize_exact(b, alloc);
+}
+
 
 /* Ensure the block can hold at least another 'l' bytes */
-#define BLOCK_GROW(b,l) BLOCK_RESIZE((b), BLOCK_SIZE((b)) + (l))
+static inline int block_grow(cram_block *b, size_t len) {
+    return block_resize(b, BLOCK_SIZE(b) + len);
+}
 
-/* Append string 's' of length 'l' */
-#define BLOCK_APPEND(b,s,l)               \
-    do {                                  \
-        BLOCK_GROW((b),(l));              \
-        memcpy(BLOCK_END((b)), (s), (l)); \
-        BLOCK_SIZE((b)) += (l);           \
-    } while (0)
+/* Append string 's' of length 'l'. */
+static inline int block_append(cram_block *b, const void *s, size_t len) {
+    if (block_grow(b, len) < 0)
+        return -1;
+
+    memcpy(BLOCK_END(b), s, len);
+    BLOCK_SIZE(b) += len;
+
+    return 0;
+}
 
 /* Append as single character 'c' */
-#define BLOCK_APPEND_CHAR(b,c)            \
-    do {                                  \
-        BLOCK_GROW((b),1);                \
-        (b)->data[(b)->byte++] = (c);     \
-    } while (0)
+static inline int block_append_char(cram_block *b, char c) {
+    if (block_grow(b, 1) < 0)
+        return -1;
+
+    b->data[b->byte++] = c;
+    return 0;
+}
 
 /* Append a single unsigned integer */
-#define BLOCK_APPEND_UINT(b,i)                       \
-    do {                                             \
-        unsigned char *cp;                           \
-        BLOCK_GROW((b),11);                          \
-        cp = &(b)->data[(b)->byte];                  \
-        (b)->byte += append_uint32(cp, (i)) - cp;       \
-    } while (0)
+static inline unsigned char *append_uint32(unsigned char *cp, uint32_t i);
+static inline int block_append_uint(cram_block *b, unsigned int i) {
+    if (block_grow(b, 11) < 0)
+        return -1;
+
+    unsigned char *cp = &b->data[b->byte];
+    b->byte += append_uint32(cp, i) - cp;
+    return 0;
+}
+
+// Versions of above with built in goto block_err calls.
+#define BLOCK_RESIZE_EXACT(b,l) if (block_resize_exact((b),(l))<0) goto block_err
+#define BLOCK_RESIZE(b,l)       if (block_resize((b),(l))      <0) goto block_err
+#define BLOCK_GROW(b,l)         if (block_grow((b),(l))        <0) goto block_err
+#define BLOCK_APPEND(b,s,l)     if (block_append((b),(s),(l))  <0) goto block_err
+#define BLOCK_APPEND_CHAR(b,c)  if (block_append_char((b),(c)) <0) goto block_err
+#define BLOCK_APPEND_UINT(b,i)  if (block_append_uint((b),(i)) <0) goto block_err
 
 static inline unsigned char *append_uint32(unsigned char *cp, uint32_t i) {
     uint32_t j;

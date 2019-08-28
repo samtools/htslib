@@ -39,11 +39,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * - Reference sequence handling
  */
 
-/*
- * TODO: BLOCK_GROW, BLOCK_RESIZE, BLOCK_APPEND and itf8_put_blk all need
- * a way to return errors for when malloc fails.
- */
-
 #include <config.h>
 
 #include <stdio.h>
@@ -502,6 +497,9 @@ int itf8_put_blk(cram_block *blk, int val) {
     sz = itf8_put(buf, val);
     BLOCK_APPEND(blk, buf, sz);
     return sz;
+
+ block_err:
+    return -1;
 }
 
 /*
@@ -559,7 +557,10 @@ int int32_put_blk(cram_block *b, int32_t val) {
     cp[3] = ((v>>24) & 0xff);
 
     BLOCK_APPEND(b, cp, 4);
-    return b->data ? 0 : -1;
+    return 0;
+
+ block_err:
+    return -1;
 }
 
 /* ----------------------------------------------------------------------
@@ -1911,8 +1912,10 @@ static int refs_from_header(cram_fd *fd) {
     //fprintf(stderr, "refs_from_header for %p mode %c\n", fd, fd->mode);
 
     /* Existing refs are fine, as long as they're compatible with the hdr. */
-    if (!(r->ref_id = realloc(r->ref_id, (r->nref + h->hrecs->nref) * sizeof(*r->ref_id))))
+    ref_entry **new_ref_id = realloc(r->ref_id, (r->nref + h->hrecs->nref) * sizeof(*r->ref_id));
+    if (!new_ref_id)
         return -1;
+    r->ref_id = new_ref_id;
 
     int i, j;
     /* Copy info from h->ref[i] over to r */
@@ -1934,6 +1937,7 @@ static int refs_from_header(cram_fd *fd) {
             return -1;
 
         r->ref_id[j]->name = string_dup(r->pool, h->hrecs->ref[i].name);
+        if (!r->ref_id[j]->name) return -1;
         r->ref_id[j]->length = 0; // marker for not yet loaded
 
         /* Initialise likely filename if known */
@@ -2489,6 +2493,9 @@ ref_entry *cram_ref_load(refs_t *r, int id, int is_md5) {
         }
     }
 
+    if (!r->fn)
+        return NULL;
+
     /* Open file if it's not already the current open reference */
     if (strcmp(r->fn, e->fn) || r->fp == NULL) {
         if (r->fp)
@@ -2690,7 +2697,7 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
      */
 
     /* Unmapped ref ID */
-    if (id < 0) {
+    if (id < 0 || !fd->refs->fn) {
         if (fd->ref_free) {
             free(fd->ref_free);
             fd->ref_free = NULL;
@@ -2733,7 +2740,7 @@ char *cram_get_ref(cram_fd *fd, int id, int start, int end) {
     pthread_mutex_unlock(&fd->refs->lock);
     pthread_mutex_unlock(&fd->ref_lock);
 
-    return seq + ostart - start;
+    return seq ? seq + ostart - start : NULL;
 }
 
 /*
@@ -2884,10 +2891,12 @@ void cram_free_container(cram_container *c) {
                 continue;
 
             cram_tag_map *tm = (cram_tag_map *)kh_val(c->tags_used, k);
-            cram_codec *c = tm->codec;
+            if (tm) {
+                cram_codec *c = tm->codec;
 
-            if (c) c->free(c);
-            free(tm);
+                if (c) c->free(c);
+                free(tm);
+            }
         }
 
         kh_destroy(m_tagmap, c->tags_used);
@@ -2973,8 +2982,7 @@ cram_container *cram_read_container(cram_fd *fd) {
 
     *c = c2;
 
-    if (!(c->landmark = malloc(c->num_landmarks * sizeof(int32_t))) &&
-        c->num_landmarks) {
+    if (c->num_landmarks && !(c->landmark = malloc(c->num_landmarks * sizeof(int32_t)))) {
         fd->err = errno;
         cram_free_container(c);
         return NULL;
@@ -3447,6 +3455,8 @@ void cram_free_slice(cram_slice *s) {
 
         if (s->hdr) {
             for (i = 0; i < s->hdr->num_blocks; i++) {
+                if (i > 0 && s->block[i] == s->block[0])
+                    continue;
                 cram_free_block(s->block[i]);
             }
         }
@@ -3974,14 +3984,16 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
             return -1;
         }
 
-        int32_put_blk(b, header_len);
+        if (int32_put_blk(b, header_len) < 0)
+            return -1;
         if (header_len)
             BLOCK_APPEND(b, sam_hdr_str(hdr), header_len);
         BLOCK_UPLEN(b);
 
         // Compress header block if V3.0 and above
         if (CRAM_MAJOR_VERS(fd->version) >= 3)
-            cram_compress_block(fd, b, NULL, -1, -1);
+            if (cram_compress_block(fd, b, NULL, -1, -1) < 0)
+                return -1;
 
         if (blank_block) {
             c->length = b->comp_size + 2 + 4*is_cram_3 +
@@ -4070,6 +4082,9 @@ int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr) {
     RP("=== Finishing saving header ===\n");
 
     return 0;
+
+ block_err:
+    return -1;
 }
 
 /* ----------------------------------------------------------------------
@@ -4295,8 +4310,11 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->ooc         = 0;
     fd->required_fields = INT_MAX;
 
-    for (i = 0; i < DS_END; i++)
+    for (i = 0; i < DS_END; i++) {
         fd->m[i] = cram_new_metrics();
+        if (!fd->m[i])
+            goto err;
+    }
 
     if (!(fd->tags_used = kh_init(m_metrics)))
         goto err;
