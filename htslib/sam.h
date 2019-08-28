@@ -295,6 +295,14 @@ typedef struct {
  */
 #define bam_seqi(s, i) ((s)[(i)>>1] >> ((~(i)&1)<<2) & 0xf)
 
+/*! @function
+ @abstract Modifies a single base in the bam structure.
+ @param s    Seq buffer, from bam_get_seq(bam1_t*)
+ @param i    Position in sequence, starting from zero
+ @param b    Base in nt16 nomenclature (see seq_nt16_table)
+ */
+#define bam_set_seqi(s,i,b) ((s)[(i)>>1] = ((s)[(i)>>1] & (0xf0 >> ((~(i)&1)<<2))) | ((b)<<((~(i)&1)<<2)))
+
 /**************************
  *** Exported functions ***
  **************************/
@@ -782,6 +790,38 @@ int32_t bam_endpos(const bam1_t *b);
 
 int   bam_str2flag(const char *str);    /** returns negative value on error */
 char *bam_flag2str(int flag);   /** The string must be freed by the user */
+
+/*!
+ * @abstract
+ * Extracts the sequence (in current alignment orientation) from
+ * a bam record and places it in buf, which is nul terminated.
+ *
+ * @param b     The bam structure
+ * @param buf   A buffer at least b->core.l_qseq+1 bytes long
+ */
+void bam_to_seq(bam1_t *b, char *buf);
+
+/*!
+ * @abstract
+ * Writes a new sequence, of length b->core.l_qseq, to a BAM record.
+ *
+ * If a sequence of a new length is required the caller must first make
+ * room for it by updating the bam1_t struct.
+ *
+ * @param b     The bam structure
+ * @param buf   A buffer at least b->core.l_qseq bytes long
+ */
+void seq_to_bam(bam1_t *b, char *buf);
+
+/*!
+ * @abstract Reverse complements a BAM record.
+ *
+ * @param b  Pointer to a BAM alignment
+ *
+ * @return   0 on success, -1 on failure (ENOMEM)
+ */
+int bam_complement(bam1_t *b);
+
 
 /*************************
  *** BAM/CRAM indexing ***

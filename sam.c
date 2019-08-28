@@ -661,6 +661,102 @@ static int bam_write_idx1(htsFile *fp, const bam1_t *b) {
     return ret;
 }
 
+/*!
+ * @abstract
+ * Extracts the sequence (in current alignment orientation) from
+ * a bam record and places it in buf, which is nul terminated.
+ *
+ * @param b     The bam structure
+ * @param buf   A buffer at least b->core.l_qseq+1 bytes long
+ */
+void bam_to_seq(bam1_t *b, char *buf) {
+    int i;
+    uint8_t *seq = bam_get_seq(b);
+    for (i = 0; i < b->core.l_qseq; i++)
+        buf[i] = seq_nt16_str[bam_seqi(seq, i)];
+    buf[i] = 0;
+}
+
+/*!
+ * @abstract
+ * Writes a new sequence, of length b->core.l_qseq, to a BAM record.
+ *
+ * If a sequence of a new length is required the caller must first make
+ * room for it by updating the bam1_t struct.
+ *
+ * @param b     The bam structure
+ * @param buf   A buffer at least b->core.l_qseq bytes long
+ */
+void seq_to_bam(bam1_t *b, char *buf) {
+    int i;
+    uint8_t *seq = bam_get_seq(b);
+    for (i = 0; i < b->core.l_qseq; i++)
+        bam_set_seqi(seq, i, seq_nt16_table[(unsigned char)buf[i]]);
+}
+
+/*!
+ * @abstract Reverse complements a BAM record.
+ *
+ * It's possible to do this inline, but complex due to the 4-bit sequence
+ * encoding.  For now I take the easy but less efficient approach.
+ *
+ * @param b  Pointer to a BAM alignment
+ *
+ * @return   0 on success, -1 on failure (ENOMEM)
+ */
+int bam_complement(bam1_t *b) {
+    static char comp[256] = {
+        'N','N','N','N', 'N','N','N','N', 'N','N','N','N', 'N','N','N','N',//00
+        'N','N','N','N', 'N','N','N','N', 'N','N','N','N', 'N','N','N','N',//10
+        'N','N','N','N', 'N','N','N','N', 'N','N','N','N', 'N','N','N','N',//20
+        'N','N','N','N', 'N','N','N','N', 'N','N','N','N', 'N','N','N','N',//30
+
+        '@','T','V','G', 'H','E','F','C', 'D','I','H','M', 'L','K','N','O',//40
+        'P','Q','Y','S', 'A','A','B','W', 'X','Y','Z','[','\\','[','^','_',//50
+        '`','t','v','g', 'h','e','f','c', 'd','i','j','m', 'l','k','n','o',//60
+        'p','q','y','s', 'a','a','b','w', 'x','y','z','{', '|','}','~',127,//70
+
+        'N','N','N','N', 'N','N','N','N', 'N','N','N','N', 'N','N','N','N',//80
+        'N','N','N','N', 'N','N','N','N', 'N','N','N','N', 'N','N','N','N',//90
+        'N','N','N','N', 'N','N','N','N', 'N','N','N','N', 'N','N','N','N',//A0
+        'N','N','N','N', 'N','N','N','N', 'N','N','N','N', 'N','N','N','N',//B0
+
+        'N','N','N','N', 'N','N','N','N', 'N','N','N','N', 'N','N','N','N',//C0
+        'N','N','N','N', 'N','N','N','N', 'N','N','N','N', 'N','N','N','N',//D0
+        'N','N','N','N', 'N','N','N','N', 'N','N','N','N', 'N','N','N','N',//E0
+        'N','N','N','N', 'N','N','N','N', 'N','N','N','N', 'N','N','N','N',//F0
+    };
+    char seq_[10000], *seq = seq_;
+    uint8_t *qual = bam_get_qual(b);
+    int i, j;
+
+    if (b->core.l_qseq >= 10000)
+        if (!(seq = malloc(b->core.l_qseq+1)))
+            return -1;
+
+    bam_to_seq(b, seq);
+
+    for (i = 0, j = b->core.l_qseq-1; i < j; i++, j--) {
+        unsigned char tmp = seq[i];
+        seq[i] = comp[(unsigned char)seq[j]];
+        seq[j] = comp[tmp];
+        tmp = qual[i];
+        qual[i] = qual[j];
+        qual[j] = tmp;
+    }
+    if (i ==j)
+        seq[i] = comp[(unsigned char)seq[i]];
+
+    seq_to_bam(b, seq);
+
+    if (seq != seq_)
+        free(seq);
+
+    b->core.flag ^= 0x10;
+
+    return 0;
+}
+
 /********************
  *** BAM indexing ***
  ********************/
