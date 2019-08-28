@@ -52,8 +52,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define bam_cigar(b)     bam_get_cigar((b))
 #define bam_aux(b)       bam_get_aux((b))
 
-#define bam_dup(b)       bam_copy1(bam_init1(), (b))
-
 #define bam_free(b)      bam_destroy1((b))
 
 #define bam_reg2bin(beg,end) hts_reg2bin((beg),(end),14,5)

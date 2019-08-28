@@ -412,8 +412,8 @@ void bam_destroy1(bam1_t *b)
 bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc)
 {
     uint8_t *data = bdst->data;
-    int m_data = bdst->m_data;   // backup data and m_data
-    if (m_data < bsrc->l_data) {
+    uint32_t m_data = bdst->m_data;   // backup data and m_data
+    if (m_data < bsrc->l_data) { // increase the capacity
         m_data = bsrc->l_data; kroundup32(m_data);
         data = (uint8_t*)realloc(data, m_data);
         if (!data) return NULL;
@@ -431,7 +431,11 @@ bam1_t *bam_dup1(const bam1_t *bsrc)
     if (bsrc == NULL) return NULL;
     bam1_t *bdst = bam_init1();
     if (bdst == NULL) return NULL;
-    return bam_copy1(bdst, bsrc);
+    if (bam_copy1(bdst, bsrc) == NULL) {
+        bam_destroy1(bdst);
+        return NULL;
+    }
+    return bdst;
 }
 
 void bam_cigar2rqlens(int n_cigar, const uint32_t *cigar, int *rlen, int *qlen)
@@ -4227,7 +4231,8 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
             overlap_remove(iter, b);
             return 0;
         }
-        bam_copy1(&iter->tail->b, b);
+        if (bam_copy1(&iter->tail->b, b) == NULL)
+            return -1;
         iter->tail->b.id = iter->id++;
         iter->tail->beg = b->core.pos;
         iter->tail->end = bam_endpos(b);
