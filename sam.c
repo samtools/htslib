@@ -2140,7 +2140,7 @@ int sam_state_destroy(htsFile *fp) {
 // the result back to the thread queue.
 void *sam_parse_worker(void *arg) {
     sp_lines *gl = (sp_lines *)arg;
-    sp_bams *gb;
+    sp_bams *gb = NULL;
     char *lines = gl->data;
     int i;
     bam1_t *b;
@@ -2151,24 +2151,24 @@ void *sam_parse_worker(void *arg) {
     if (fd->bams) {
         gb = fd->bams;
         fd->bams = gb->next;
-    } else {
+    }
+    pthread_mutex_unlock(&fd->lines_m);
+
+    if (gb == NULL) {
         gb = calloc(1, sizeof(*gb));
         if (!gb) {
-            pthread_mutex_unlock(&fd->lines_m);
             return NULL;
         }
         gb->abams = 100;
         gb->bams = b = calloc(gb->abams, sizeof(*b));
         if (!gb->bams) {
             free(gb);
-            pthread_mutex_unlock(&fd->lines_m);
             return NULL;
         }
         gb->nbams = 0;
     }
     gb->serial = gl->serial;
     gb->next = NULL;
-    pthread_mutex_unlock(&fd->lines_m);
 
     b = (bam1_t *)gb->bams;
     if (!b)
@@ -2252,7 +2252,10 @@ static void *sam_dispatcher_read(void *vp) {
             // reuse existing line buffer
             l = fd->lines;
             fd->lines = l->next;
-        } else {
+        }
+        pthread_mutex_unlock(&fd->lines_m);
+
+        if (l == NULL) {
             // none to reuse, to create a new one
             l = calloc(1, sizeof(*l));
             if (!l) {
@@ -2270,7 +2273,6 @@ static void *sam_dispatcher_read(void *vp) {
             l->fd = fd;
         }
         l->next = NULL;
-        pthread_mutex_unlock(&fd->lines_m);
 
         if (l->alloc+NM/2 < line_frag) {
             char *rp = realloc(l->data, line_frag+NM/2);
@@ -2335,6 +2337,7 @@ static void *sam_dispatcher_read(void *vp) {
             sam_state_err(fd, ENOMEM);
             goto err;
         }
+        l = NULL;  // Now "owned" by sam_parse_worker()
     }
 
     if (hts_tpool_dispatch(fd->p, fd->q, sam_parse_eof, NULL) < 0) {
@@ -2364,8 +2367,10 @@ static void *sam_dispatcher_read(void *vp) {
 
  tidyup:
     if (l) {
+        pthread_mutex_lock(&fd->lines_m);
         l->next = fd->lines;
         fd->lines = l;
+        pthread_mutex_unlock(&fd->lines_m);
     }
     free(line.s);
 
@@ -2486,10 +2491,12 @@ static void *sam_format_worker(void *arg) {
     if (fd->lines) {
         gl = fd->lines;
         fd->lines = gl->next;
-    } else {
+    }
+    pthread_mutex_unlock(&fd->lines_m);
+
+    if (gl == NULL) {
         gl = calloc(1, sizeof(*gl));
         if (!gl) {
-            pthread_mutex_unlock(&fd->lines_m);
             sam_state_err(fd, ENOMEM);
             return NULL;
         }
@@ -2498,7 +2505,6 @@ static void *sam_format_worker(void *arg) {
     }
     gl->serial = gb->serial;
     gl->next = NULL;
-    pthread_mutex_unlock(&fd->lines_m);
 
     kstring_t ks = {0, gl->alloc, gl->data};
 
