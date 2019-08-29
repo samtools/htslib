@@ -235,7 +235,7 @@ static inline int kputc(int c, kstring_t *s)
 		return EOF;
 	s->s[s->l++] = c;
 	s->s[s->l] = 0;
-	return c;
+	return (unsigned char)c;
 }
 
 static inline int kputc_(int c, kstring_t *s)
