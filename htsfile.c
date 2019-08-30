@@ -38,6 +38,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/sam.h"
 #include "htslib/vcf.h"
 
+#ifndef EFTYPE
+#define EFTYPE ENOEXEC
+#endif
+
 enum { identify, view_headers, view_all, copy } mode = identify;
 int show_headers = 1;
 int verbose = 0;
@@ -312,7 +316,7 @@ int main(int argc, char **argv)
                 if (hts_close(hts) < 0) error("closing \"%s\" failed", argv[i]);
                 fp = NULL;
             }
-            else if (errno == ENOEXEC && verbose)
+            else if ((errno == EFTYPE || errno == ENOEXEC) && verbose)
                 view_raw(fp, argv[i]);
             else
                 error("can't view \"%s\"", argv[i]);
