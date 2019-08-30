@@ -52,6 +52,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/ksort.h"
 #include "htslib/tbx.h"
 
+#ifndef EFTYPE
+#define EFTYPE ENOEXEC
+#endif
+
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
 int hts_verbose = HTS_LOG_WARNING;
@@ -921,7 +925,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
         break;
 
     default:
-        errno = ENOEXEC;
+        errno = EFTYPE;
         goto error;
     }
 
