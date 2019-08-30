@@ -204,6 +204,7 @@ typedef struct {
  @field  l_data     current length of bam1_t::data
  @field  m_data     maximum length of bam1_t::data
  @field  data       all variable-length data, concatenated; structure: qname-cigar-seq-qual-aux
+ @field  mempolicy  memory handling policy, see bam_set_mempolicy()
 
  @discussion Notes:
 
@@ -223,9 +224,10 @@ typedef struct {
 typedef struct {
     bam1_core_t core;
     int l_data;
-    uint32_t m_data;
     uint8_t *data;
     uint64_t id;
+    uint32_t m_data;
+    uint32_t mempolicy:2, :30 /* Reserved */;
 } bam1_t;
 
 /*! @function
@@ -773,6 +775,106 @@ bam1_t *bam_init1(void);
    accessed after calling this function.
  */
 void bam_destroy1(bam1_t *b);
+
+#define BAM_USER_OWNS_STRUCT 1
+#define BAM_USER_OWNS_DATA   2
+
+/// Set alignment record memory policy
+/**
+   @param b       Alignment record
+   @param policy  Desired policy
+
+   Allows the way HTSlib reallocates and frees bam1_t data to be
+   changed.  @policy can be set to the bitwise-or of the following
+   values:
+
+   \li \c BAM_USER_OWNS_STRUCT
+   If this is set then bam_destroy1() will not try to free the bam1_t struct.
+
+   \li \c BAM_USER_OWNS_DATA
+   If this is set, bam_destroy1() will not free the bam1_t::data pointer.
+   Also, functions which need to expand bam1_t::data memory will change
+   behaviour.  Instead of calling realloc() on the pointer, they will
+   allocate a new data buffer and copy any existing content in to it.
+   The existing memory will \b not be freed.  bam1_t::data will be
+   set to point to the new memory and the BAM_USER_OWNS_DATA flag will be
+   cleared.
+
+   BAM_USER_OWNS_STRUCT allows bam_destroy1() to be called on bam1_t
+   structures that are members of an array.
+
+   BAM_USER_OWNS_DATA can be used by applications that want more control
+   over where the variable-length parts of the bam record will be stored.
+   By preventing calls to free() and realloc(), it allows bam1_t::data
+   to hold pointers to memory that cannot be passed to those functions.
+
+   Example:  Read a block of alignment records, storing the variable-length
+   data in a single buffer and the records in an array.  Stop when either
+   the array or the buffer is full.
+
+   \code{.c}
+   #define MAX_RECS 1000
+   #define REC_LENGTH 400  // Average length estimate, to get buffer size
+   size_t bufsz = MAX_RECS * REC_LENGTH, nrecs, buff_used = 0;
+   bam1_t *recs = calloc(MAX_RECS, sizeof(bam1_t));
+   uint8_t *buffer = malloc(bufsz);
+   int res = 0, result = EXIT_FAILURE;
+   uint32_t new_m_data;
+
+   if (!recs || !buffer) goto cleanup;
+   for (nrecs = 0; nrecs < MAX_RECS; nrecs++) {
+      bam_set_mempolicy(BAM_USER_OWNS_STRUCT|BAM_USER_OWNS_DATA);
+
+      // Set data pointer to unused part of buffer
+      recs[nrecs].data = &buffer[buff_used];
+
+      // Set m_data to size of unused part of buffer.  On 64-bit platforms it
+      // will be necessary to limit this to UINT32_MAX due to the size of
+      // bam1_t::m_data (not done here as our buffer is only 400K).
+      recs[nrecs].m_data = bufsz - buff_used;
+
+      // Read the record
+      res = sam_read1(file_handle, header, &recs[nrecs]);
+      if (res <= 0) break; // EOF or error
+
+      // Check if the record data didn't fit - if not, stop reading
+      if ((bam_get_mempolicy(&recs[nrecs]) & BAM_USER_OWNS_DATA) == 0) {
+         nrecs++; // Include last record in count
+         break;
+      }
+
+      // Adjust m_data to the space actually used.  If space is available,
+      // round up to eight bytes so the next record aligns nicely.
+      new_m_data = ((uint32_t) recs[nrecs].l_data + 7) & (~7U);
+      if (new_m_data < recs[nrecs].m_data) recs[nrecs].m_data = new_m_data;
+
+      buff_used += recs[nrecs].m_data;
+   }
+   if (res < 0) goto cleanup;
+   result = EXIT_SUCCESS;
+
+   // ... use data ...
+
+ cleanup:
+   for (size_t i = 0; i < nrecs; i++)
+     bam_destroy1(i);
+   free(buffer);
+   free(recs);
+
+   \endcode
+*/
+static inline void bam_set_mempolicy(bam1_t *b, uint32_t policy) {
+    b->mempolicy = policy;
+}
+
+/// Get alignment record memory policy
+/** @param b    Alignment record
+
+    See bam_set_mempolicy()
+ */
+static inline uint32_t bam_get_mempolicy(bam1_t *b) {
+    return b->mempolicy;
+}
 
 /// Read a BAM format alignment record
 /**

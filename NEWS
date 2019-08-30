@@ -63,6 +63,9 @@ Noteworthy changes in release a.b
 
   - htsFile has a new 'state' member to support SAM multi-threading.
 
+  - A new field has been added to the bam1_t structure, and others
+    have been rearranged to remove structure holes.
+
 * A new SAM/BAM/CRAM header API has been added to HTSlib, allowing header
   data to be updated without having to parse or rewrite large parts of the
   header text.  See htslib/sam.h for function definitions and documentation.
@@ -137,6 +140,11 @@ Noteworthy changes in release a.b
   attempting to download a remote index.  It also checks that the remote
   file it downloads is actually an index before trying to save and use
   it.  (https://github.com/samtools/samtools/issues/1045)
+
+* New API functions bam_set_mempolicy() and bam_get_mempolicy() have
+  been added.  These allow more control over the ownership of bam1_t
+  alignment record data; see documentation in htslib/sam.h for more
+  information.
 
 * Changes to hfile_s3, which provides support for the AWS S3 API.
 

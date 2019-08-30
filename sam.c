@@ -369,7 +369,7 @@ bam1_t *bam_init1()
     return (bam1_t*)calloc(1, sizeof(bam1_t));
 }
 
-static int do_realloc_bam_data(bam1_t *b, size_t desired)
+int sam_realloc_bam_data(bam1_t *b, size_t desired)
 {
     uint32_t new_m_data;
     uint8_t *new_data;
@@ -379,50 +379,46 @@ static int do_realloc_bam_data(bam1_t *b, size_t desired)
         errno = ENOMEM; // Not strictly true but we can't store the size
         return -1;
     }
-    new_data = realloc(b->data, new_m_data);
+    if ((bam_get_mempolicy(b) & BAM_USER_OWNS_DATA) == 0) {
+        new_data = realloc(b->data, new_m_data);
+    } else {
+        if ((new_data = malloc(new_m_data)) != NULL) {
+            if (b->l_data > 0)
+                memcpy(new_data, b->data,
+                       b->l_data < b->m_data ? b->l_data : b->m_data);
+            bam_set_mempolicy(b, bam_get_mempolicy(b) & (~BAM_USER_OWNS_DATA));
+        }
+    }
     if (!new_data) return -1;
     b->data = new_data;
     b->m_data = new_m_data;
     return 0;
 }
 
-static inline int realloc_bam_data(bam1_t *b, size_t desired)
-{
-    if (desired <= b->m_data) return 0;
-    return do_realloc_bam_data(b, desired);
-}
-
-static inline int possibly_expand_bam_data(bam1_t *b, size_t bytes) {
-    uint32_t new_len = b->l_data + bytes;
-
-    if (new_len > INT32_MAX || new_len < b->l_data) {
-        errno = ENOMEM;
-        return -1;
-    }
-    if (new_len <= b->m_data) return 0;
-    return do_realloc_bam_data(b, new_len);
-}
-
 void bam_destroy1(bam1_t *b)
 {
     if (b == 0) return;
-    free(b->data); free(b);
+    if ((bam_get_mempolicy(b) & BAM_USER_OWNS_DATA) == 0) {
+        free(b->data);
+        if ((bam_get_mempolicy(b) & BAM_USER_OWNS_STRUCT) != 0) {
+            // In case of reuse
+            b->data = NULL;
+            b->m_data = 0;
+            b->l_data = 0;
+        }
+    }
+
+    if ((bam_get_mempolicy(b) & BAM_USER_OWNS_STRUCT) == 0)
+        free(b);
 }
 
 bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc)
 {
-    uint8_t *data = bdst->data;
-    uint32_t m_data = bdst->m_data;   // backup data and m_data
-    if (m_data < bsrc->l_data) { // increase the capacity
-        m_data = bsrc->l_data; kroundup32(m_data);
-        data = (uint8_t*)realloc(data, m_data);
-        if (!data) return NULL;
-    }
-    memcpy(data, bsrc->data, bsrc->l_data); // copy var-len data
-    *bdst = *bsrc; // copy the rest
-    // restore the backup
-    bdst->m_data = m_data;
-    bdst->data = data;
+    if (realloc_bam_data(bdst, bsrc->l_data) < 0) return NULL;
+    memcpy(bdst->data, bsrc->data, bsrc->l_data); // copy var-len data
+    memcpy(&bdst->core, &bsrc->core, sizeof(bsrc->core)); // copy the rest
+    bdst->l_data = bsrc->l_data;
+    bdst->id = bsrc->id;
     return bdst;
 }
 
@@ -546,6 +542,9 @@ int bam_read1(BGZF *fp, bam1_t *b)
     bam1_core_t *c = &b->core;
     int32_t block_len, ret, i;
     uint32_t x[8], new_l_data;
+
+    b->l_data = 0;
+
     if ((ret = bgzf_read(fp, &block_len, 4)) != 4) {
         if (ret == 0) return -1; // normal end-of-file
         else return -2; // truncated
@@ -1692,7 +1691,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 
 #endif
 
-#define _get_mem(type_t, _x, _s, _l) if (ks_resize((_s), (_s)->l + (_l)) < 0) goto err_ret; *(_x) = (type_t*)((_s)->s + (_s)->l); (_s)->l += (_l)
+#define _get_mem(type_t, x, b, l) if (possibly_expand_bam_data((b), (l)) < 0) goto err_ret; *(x) = (type_t*)((b)->data + (b)->l_data); (b)->l_data += (l)
 #define _parse_err(cond, msg) do { if (cond) { hts_log_error(msg); goto err_ret; } } while (0)
 #define _parse_err_param(cond, msg, param) do { if (cond) { hts_log_error(msg, param); goto err_ret; } } while (0)
 #define _parse_warn(cond, msg) do { if (cond) { hts_log_warning(msg); } } while (0)
@@ -1701,11 +1700,9 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 
     char *p = s->s, *q;
     int i;
-    kstring_t str;
     bam1_core_t *c = &b->core;
 
-    str.l = b->l_data = 0;
-    str.s = (char*)b->data; str.m = b->m_data;
+    b->l_data = 0;
     memset(c, 0, 32);
 
     // qname
@@ -1714,11 +1711,12 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     _parse_warn(p - q <= 1, "empty query name");
     _parse_err(p - q > 255, "query name too long");
     // resize large enough for name + extranul
-    if ((p-q)+4 > SIZE_MAX - s->l || ks_resize(&str, str.l+(p-q)+4) < 0) goto err_ret;
-    memcpy(str.s+str.l, q, p-q); str.l += p-q;
+    if (possibly_expand_bam_data(b, (p - q) + 4) < 0) goto err_ret;
+    memcpy(b->data + b->l_data, q, p-q); b->l_data += p-q;
 
-    c->l_extranul = (4 - (str.l & 3)) & 3;
-    memcpy(str.s+str.l, "\0\0\0\0", c->l_extranul); str.l += c->l_extranul;
+    c->l_extranul = (4 - (b->l_data & 3)) & 3;
+    memcpy(b->data + b->l_data, "\0\0\0\0", c->l_extranul);
+    b->l_data += c->l_extranul;
 
     c->l_qname = p - q + c->l_extranul;
 
@@ -1757,7 +1755,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         _parse_err(n_cigar == 0, "no CIGAR operations");
         _parse_err(n_cigar >= 2147483647, "too many CIGAR operations");
         c->n_cigar = n_cigar;
-        _get_mem(uint32_t, &cigar, &str, c->n_cigar * sizeof(uint32_t));
+        _get_mem(uint32_t, &cigar, b, c->n_cigar * sizeof(uint32_t));
         for (i = 0; i < c->n_cigar; ++i) {
             int op;
             cigar[i] = STRTOL64(q, &q, 10)<<BAM_CIGAR_SHIFT;
@@ -1800,10 +1798,10 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     if (strcmp(q, "*")) {
         _parse_err(p - q - 1 > INT32_MAX, "read sequence is too long");
         c->l_qseq = p - q - 1;
-        i = bam_cigar2qlen(c->n_cigar, (uint32_t*)(str.s + c->l_qname));
+        i = bam_cigar2qlen(c->n_cigar, (uint32_t*)(b->data + c->l_qname));
         _parse_err(c->n_cigar && i != c->l_qseq, "CIGAR and query sequence are of different length");
         i = (c->l_qseq + 1) >> 1;
-        _get_mem(uint8_t, &t, &str, i);
+        _get_mem(uint8_t, &t, b, i);
 
         unsigned int lqs2 = c->l_qseq&~1, i;
         for (i = 0; i < lqs2; i+=2)
@@ -1812,7 +1810,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
             t[i>>1] = seq_nt16_table[(unsigned char)q[i]] << ((~i&1)<<2);
     } else c->l_qseq = 0;
     // qual
-    _get_mem(uint8_t, &t, &str, c->l_qseq);
+    _get_mem(uint8_t, &t, b, c->l_qseq);
     if (p[0] == '*' && (p[1] == '\t' || p[1] == '\0')) {
         memset(t, 0xff, c->l_qseq);
         p += 2;
@@ -1832,66 +1830,67 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         uint8_t type;
         _parse_err(p - q < 5, "incomplete aux field");
         _parse_err(q[0] < '!' || q[1] < '!', "invalid aux tag id");
-        kputsn_(q, 2, &str);
+        // Copy over id
+        if (possibly_expand_bam_data(b, 2) < 0) goto err_ret;
+        memcpy(b->data + b->l_data, q, 2); b->l_data += 2;
         q += 3; type = *q++; ++q; // q points to value
         if (type != 'Z' && type != 'H') // the only zero length acceptable fields
             _parse_err(*q <= '\t', "incomplete aux field");
 
-        // Ensure str has enough space for a double + type allocated.
-        // This is so we can stuff bigger integers and floats directly into
-        // the kstring.  Sorry.
-        _parse_err(ks_resize(&str, str.l + 16), "out of memory");
+        // Ensure enough space for a double + type allocated.
+        if (possibly_expand_bam_data(b, 16) < 0) goto err_ret;
 
         if (type == 'A' || type == 'a' || type == 'c' || type == 'C') {
-            str.s[str.l++] = 'A';
-            str.s[str.l++] = *q++;
+            b->data[b->l_data++] = 'A';
+            b->data[b->l_data++] = *q++;
         } else if (type == 'i' || type == 'I') {
             if (*q == '-') {
                 long x = STRTOL64(q, &q, 10);
                 if (x >= INT8_MIN) {
-                    str.s[str.l++] = 'c';
-                    str.s[str.l++] = x;
+                    b->data[b->l_data++] = 'c';
+                    b->data[b->l_data++] = x;
                 } else if (x >= INT16_MIN) {
-                    str.s[str.l++] = 's';
-                    i16_to_le(x, (uint8_t *) str.s + str.l);
-                    str.l += 2;
+                    b->data[b->l_data++] = 's';
+                    i16_to_le(x, b->data + b->l_data);
+                    b->l_data += 2;
                 } else {
-                    str.s[str.l++] = 'i';
-                    i32_to_le(x, (uint8_t *) str.s + str.l);
-                    str.l += 4;
+                    b->data[b->l_data++] = 'i';
+                    i32_to_le(x, b->data + b->l_data);
+                    b->l_data += 4;
                 }
             } else {
                 unsigned long x = STRTOUL64(q, &q, 10);
                 if (x <= UINT8_MAX) {
-                    str.s[str.l++] = 'C';
-                    *((uint8_t *) str.s + str.l) = x;
-                    str.l++;
+                    b->data[b->l_data++] = 'C';
+                    b->data[b->l_data++] = x;
                 } else if (x <= UINT16_MAX) {
-                    str.s[str.l++] = 'S';
-                    u16_to_le(x, (uint8_t *) str.s + str.l);
-                    str.l += 2;
+                    b->data[b->l_data++] = 'S';
+                    u16_to_le(x, b->data + b->l_data);
+                    b->l_data += 2;
                 } else {
-                    str.s[str.l++] = 'I';
-                    u32_to_le(x, (uint8_t *) str.s + str.l);
-                    str.l += 4;
+                    b->data[b->l_data++] = 'I';
+                    u32_to_le(x, b->data + b->l_data);
+                    b->l_data += 4;
                 }
             }
         } else if (type == 'f') {
-            str.s[str.l++] = 'f';
-            float_to_le(strtod(q, &q), (uint8_t *) str.s + str.l);
-            str.l += sizeof(float);
+            b->data[b->l_data++] = 'f';
+            float_to_le(strtod(q, &q), b->data + b->l_data);
+            b->l_data += sizeof(float);
         } else if (type == 'd') {
-            str.s[str.l++] = 'd';
-            double_to_le(strtod(q, &q), (uint8_t *) str.s + str.l);
-            str.l += sizeof(double);
+            b->data[b->l_data++] = 'd';
+            double_to_le(strtod(q, &q), b->data + b->l_data);
+            b->l_data += sizeof(double);
         } else if (type == 'Z' || type == 'H') {
             char *end = strchr(q, '\t');
             if (!end) end = q + strlen(q);
             _parse_err(type == 'H' && ((end-q)&1) != 0,
                        "hex field does not have an even number of digits");
-            str.s[str.l++] = type;
-            kputsn(q, end - q, &str);
-            str.l++; // include the trailing NULL
+            b->data[b->l_data++] = type;
+            if (possibly_expand_bam_data(b, end - q + 1) < 0) goto err_ret;
+            memcpy(b->data + b->l_data, q, end - q);
+            b->l_data += end - q;
+            b->data[b->l_data++] = '\0';
             q = end;
         } else if (type == 'B') {
             int32_t n, size;
@@ -1910,24 +1909,24 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
             // Ensure space for type + values
             bytes = (size_t) n * (size_t) size;
             _parse_err(bytes / size != n
-                       || ks_resize(&str, str.l + bytes + 2 + sizeof(uint32_t)),
+                       || possibly_expand_bam_data(b, bytes + 2 + sizeof(uint32_t)) < 0,
                        "out of memory");
-            str.s[str.l++] = 'B';
-            str.s[str.l++] = type;
-            i32_to_le(n, (uint8_t *) str.s + str.l);
-            str.l += sizeof(uint32_t);
+            b->data[b->l_data++] = 'B';
+            b->data[b->l_data++] = type;
+            i32_to_le(n, b->data + b->l_data);
+            b->l_data += sizeof(uint32_t);
 
             // This ensures that q always ends up at the next comma after
             // reading a number even if it's followed by junk.  It
             // prevents the possibility of trying to read more than n items.
 #define skip_to_comma_(q) do { while (*(q) > '\t' && *(q) != ',') (q)++; } while (0)
-            if (type == 'c')      while (q < r) { *(str.s + str.l) = STRTOL64(q + 1, &q, 0); str.l++; skip_to_comma_(q); }
-            else if (type == 'C') while (q < r) { *((uint8_t *) str.s + str.l) = STRTOUL64(q + 1, &q, 0); str.l++; skip_to_comma_(q); }
-            else if (type == 's') while (q < r) { i16_to_le(STRTOL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 2; skip_to_comma_(q); }
-            else if (type == 'S') while (q < r) { u16_to_le(STRTOUL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 2; skip_to_comma_(q); }
-            else if (type == 'i') while (q < r) { i32_to_le(STRTOL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; skip_to_comma_(q); }
-            else if (type == 'I') while (q < r) { u32_to_le(STRTOUL64(q + 1, &q, 0), (uint8_t *) str.s + str.l); str.l += 4; skip_to_comma_(q); }
-            else if (type == 'f') while (q < r) { float_to_le(strtod(q + 1, &q), (uint8_t *) str.s + str.l); str.l += 4; skip_to_comma_(q); }
+            if (type == 'c')      while (q < r) { *(b->data + b->l_data) = STRTOL64(q + 1, &q, 0); b->l_data++; skip_to_comma_(q); }
+            else if (type == 'C') while (q < r) { *(b->data + b->l_data) = STRTOUL64(q + 1, &q, 0); b->l_data++; skip_to_comma_(q); }
+            else if (type == 's') while (q < r) { i16_to_le(STRTOL64(q + 1, &q, 0), b->data + b->l_data); b->l_data += 2; skip_to_comma_(q); }
+            else if (type == 'S') while (q < r) { u16_to_le(STRTOUL64(q + 1, &q, 0), b->data + b->l_data); b->l_data += 2; skip_to_comma_(q); }
+            else if (type == 'i') while (q < r) { i32_to_le(STRTOL64(q + 1, &q, 0), b->data + b->l_data); b->l_data += 4; skip_to_comma_(q); }
+            else if (type == 'I') while (q < r) { u32_to_le(STRTOUL64(q + 1, &q, 0), b->data + b->l_data); b->l_data += 4; skip_to_comma_(q); }
+            else if (type == 'f') while (q < r) { float_to_le(strtod(q + 1, &q), b->data + b->l_data); b->l_data += 4; skip_to_comma_(q); }
             else _parse_err_param(1, "unrecognized type B:%c", type);
 #undef skip_to_comma_
 
@@ -1936,7 +1935,6 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         while (*q > '\t') { q++; } // Skip any junk to next tab
         q++;
     }
-    b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
     if (bam_tag2cigar(b, 1, 1) < 0)
         return -2;
     return 0;
@@ -1947,7 +1945,6 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 #undef _get_mem
 #undef _read_token
 err_ret:
-    b->data = (uint8_t*)str.s; b->l_data = str.l; b->m_data = str.m;
     return -2;
 }
 

@@ -346,7 +346,7 @@ cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) 
 cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htslib_hfile_h) $(cram_h)
 cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h)
 cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
-cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c config.h $(cram_h) $(htslib_sam_h)
+cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c config.h $(cram_h) $(htslib_sam_h) $(sam_internal_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c config.h $(cram_h) $(cram_os_h)
 cram/mFILE.o cram/mFILE.pico: cram/mFILE.c config.h $(htslib_hts_log_h) $(cram_os_h) cram/mFILE.h
 cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c config.h $(cram_os_h) $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h) $(htslib_hts_log_h)

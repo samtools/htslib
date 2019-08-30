@@ -1048,7 +1048,8 @@ static void samrecord_layout(void)
 
     size_t bam1_t_size, bam1_t_size2;
 
-    bam1_t_size = 36 + sizeof(int) + 4 + sizeof (char *) + sizeof(uint64_t);
+    bam1_t_size = (36 + sizeof(int) + 4 + sizeof (char *) + sizeof(uint64_t)
+                   + sizeof(uint32_t));
     bam1_t_size2 = bam1_t_size + 4;  // Account for padding on some platforms
 
     if (sizeof (bam1_core_t) != 36)
@@ -1168,6 +1169,291 @@ static void check_cigar_tab(void)
             fail("bam_cigar_table['%c'] is not %d", BAM_CIGAR_STR[i], i);
 }
 
+#define MAX_RECS 1000
+#define SEQ_LEN 100
+#define REC_LENGTH 150 // Undersized so some won't fit.
+
+static int generator(const char *name)
+{
+    FILE *f = fopen(name, "w");
+    char *ref = NULL;
+    char qual[101];
+    size_t i;
+    uint32_t lfsr = 0xbadcafe;
+    int res = -1;
+
+    if (!f) {
+        fail("Couldn't open \"%s\"", name);
+        return -1;
+    }
+
+    ref = malloc(MAX_RECS + SEQ_LEN + 1);
+    if (!ref) goto cleanup;
+    for (i = 0; i < MAX_RECS + SEQ_LEN; i++) {
+        // Linear-feedback shift register to make random reference
+        lfsr ^= lfsr << 13;
+        lfsr ^= lfsr >> 17;
+        lfsr ^= lfsr << 5;
+        ref[i] = "ACGT"[lfsr & 3];
+    }
+    ref[MAX_RECS + SEQ_LEN] = '\0';
+    for (i = 0; i < SEQ_LEN; i++) {
+        qual[i] = 'A' + (i & 0xf);
+    }
+
+    if (fputs("@HD\tVN:1.4\n", f) < 0) goto cleanup;
+    if (fprintf(f, "@SQ\tSN:ref1\tLN:%u\n", MAX_RECS + SEQ_LEN) < 0)
+        goto cleanup;
+    for (i = 0; i < MAX_RECS; i++) {
+        if (fprintf(f, "read%zu\t0\tref1\t%zu\t64\t100M\t*\t0\t0\t%.*s\t%.*s\n",
+                    i + 1, i + 1, SEQ_LEN, ref + i, SEQ_LEN, qual) < 0)
+            goto cleanup;
+    }
+
+    if (fclose(f) == 0)
+        res = 0;
+    f = NULL;
+
+ cleanup:
+    if (f) fclose(f);
+    free(ref);
+    return res;
+}
+
+static int read_data_block(const char *in_name, samFile *fp_in,
+                           const char *out_name, samFile *fp_out,
+                           sam_hdr_t *header, bam1_t *recs, size_t max_recs,
+                           uint8_t *buffer, size_t bufsz, size_t *nrecs_out) {
+    size_t buff_used = 0, nrecs;
+    uint32_t new_m_data;
+    int ret = -1, res = -1;
+
+    for (nrecs = 0; nrecs < max_recs; nrecs++) {
+        bam_set_mempolicy(&recs[nrecs],
+                          BAM_USER_OWNS_STRUCT|BAM_USER_OWNS_DATA);
+
+        recs[nrecs].data = &buffer[buff_used];
+        recs[nrecs].m_data = bufsz - buff_used;
+
+        res = sam_read1(fp_in, header, &recs[nrecs]);
+        if (res < 0) break; // EOF or error
+
+        if (fp_out) {
+            if (sam_write1(fp_out, header, &recs[nrecs]) < 0) {
+                nrecs++; // To return correct count
+                fail("sam_write1() to \"%s\"", out_name);
+                goto out;
+            }
+        }
+
+        if ((bam_get_mempolicy(&recs[nrecs]) & BAM_USER_OWNS_DATA) == 0) {
+            continue;  // Data not put in buffer
+        }
+
+        new_m_data = ((uint32_t) recs[nrecs].l_data + 7) & (~7U);
+        if (new_m_data < recs[nrecs].m_data) recs[nrecs].m_data = new_m_data;
+
+        buff_used += recs[nrecs].m_data;
+    }
+    if (res < -1) {
+        fail("sam_read1() from \"%s\" failed", in_name);
+    } else {
+        ret = 0;
+    }
+
+ out:
+    *nrecs_out = nrecs;
+    return ret;
+}
+
+static void test_mempolicy(void)
+{
+    size_t bufsz = MAX_RECS * REC_LENGTH, nrecs = 0, i;
+    bam1_t *recs = calloc(MAX_RECS, sizeof(bam1_t));
+    uint8_t *buffer = malloc(bufsz);
+    const char *fname = "test/sam_alignment.tmp.sam";
+    const char *bam_name = "test/sam_alignment.tmp.bam";
+    const char *cram_name = "test/sam_alignment.tmp.cram";
+    const char *tag_text =
+        "lengthy text ... lengthy text ... lengthy text ... lengthy text ... "
+        "lengthy text ... lengthy text ... lengthy text ... lengthy text ... "
+        "lengthy text ... lengthy text ... lengthy text ... lengthy text ... "
+        "lengthy text ... lengthy text ... lengthy text ... lengthy text ... "
+        "lengthy text ... lengthy text ... lengthy text ... lengthy text ... ";
+    int res = 0;
+    samFile *fp = NULL, *bam_fp = NULL, *cram_fp = NULL;
+    htsFormat cram_fmt;
+    sam_hdr_t *header = NULL;
+
+    if (!recs || !buffer) {
+        fail("Allocating buffer");
+        goto cleanup;
+    }
+
+    memset(&cram_fmt, 0, sizeof(cram_fmt));
+
+    // Make test file
+    if (generator(fname) < 0)
+        goto cleanup;
+
+    // Open and read header
+    fp = sam_open(fname, "r");
+    if (!fp) {
+        fail("sam_open(\"%s\")", fname);
+        goto cleanup;
+    }
+
+    bam_fp = sam_open(bam_name, "wb");
+    if (!fp) {
+        fail("sam_open(\"%s\")", bam_name);
+        goto cleanup;
+    }
+
+    header = sam_hdr_read(fp);
+    if (!header) {
+        fail("read header from \"%s\"", fname);
+        goto cleanup;
+    }
+
+    if (sam_hdr_write(bam_fp, header) < 0) {
+        fail("sam_hdr_write() to \"%s\"", bam_name);
+        goto cleanup;
+    }
+
+    if (read_data_block(fname, fp, bam_name, bam_fp, header, recs,
+                        MAX_RECS, buffer, bufsz, &nrecs) < 0)
+        goto cleanup;
+
+    res = sam_close(bam_fp);
+    bam_fp = NULL;
+    if (res < 0) {
+        fail("sam_close(\"%s\")", bam_name);
+        goto cleanup;
+    }
+
+    // Add a big tag to some records so they no longer fit in the allocated
+    // buffer space.
+    for (i = 0; i < MAX_RECS; i += 11) {
+        if (bam_aux_update_str(&recs[i], "ZZ",
+                               sizeof(tag_text) - 1, tag_text) < 0) {
+            fail("bam_aux_update_str()");
+            goto cleanup;
+        }
+    }
+
+    // Delete all the records.  bam_destroy1() should free the data
+    // for the ones that were expanded.
+    for (i = 0; i < nrecs; i++) {
+        bam_destroy1(&recs[i]);
+    }
+
+    res = sam_close(fp);
+    fp = NULL;
+    if (res < 0) {
+        fail("sam_close(\"%s\")", fname);
+        goto cleanup;
+    }
+
+    // Same test but reading BAM, writing CRAM
+    nrecs = 0;
+    sam_hdr_destroy(header);
+    header = NULL;
+
+    bam_fp = sam_open(bam_name, "r");
+    if (!bam_fp) {
+        fail("sam_open(\"%s\", \"r\")", bam_name);
+        goto cleanup;
+    }
+
+    if (hts_parse_format(&cram_fmt, "cram,no_ref") < 0) {
+        fail("hts_parse_format");
+        goto cleanup;
+    }
+    cram_fp = hts_open_format(cram_name, "wc", &cram_fmt);
+    if (!cram_fp) {
+        fail("hts_open_format(\"%s\", \"wc\")", cram_name);
+        goto cleanup;
+    }
+
+    header = sam_hdr_read(bam_fp);
+    if (!header) {
+        fail("read header from \"%s\"", bam_name);
+        goto cleanup;
+    }
+
+    if (sam_hdr_write(cram_fp, header) < 0) {
+        fail("sam_hdr_write() to \"%s\"", cram_name);
+        goto cleanup;
+    }
+
+    if (read_data_block(bam_name, bam_fp, cram_name, cram_fp, header, recs,
+                        MAX_RECS, buffer, bufsz, &nrecs) < 0)
+        goto cleanup;
+
+    res = sam_close(cram_fp);
+    cram_fp = NULL;
+    if (res < 0) {
+        fail("sam_close(\"%s\")", cram_name);
+        goto cleanup;
+    }
+
+    for (i = 0; i < MAX_RECS; i += 11) {
+        if (bam_aux_update_str(&recs[i], "ZZ",
+                               sizeof(tag_text) - 1, tag_text) < 0) {
+            fail("bam_aux_update_str()");
+            goto cleanup;
+        }
+    }
+
+    for (i = 0; i < nrecs; i++) {
+        bam_destroy1(&recs[i]);
+    }
+
+    // Now try reading the cram file
+    nrecs = 0;
+    sam_hdr_destroy(header);
+    header = NULL;
+
+    cram_fp = sam_open(cram_name, "r");
+    if (!cram_fp) {
+        fail("sam_open(\"%s\", \"r\")", cram_name);
+        goto cleanup;
+    }
+
+    header = sam_hdr_read(cram_fp);
+    if (!header) {
+        fail("read header from \"%s\"", cram_name);
+        goto cleanup;
+    }
+
+    if (read_data_block(cram_name, cram_fp, NULL, NULL, header, recs,
+                        MAX_RECS, buffer, bufsz, &nrecs) < 0)
+        goto cleanup;
+
+    for (i = 0; i < MAX_RECS; i += 11) {
+        if (bam_aux_update_str(&recs[i], "ZZ",
+                               sizeof(tag_text) - 1, tag_text) < 0) {
+            fail("bam_aux_update_str()");
+            goto cleanup;
+        }
+    }
+
+ cleanup:
+    sam_hdr_destroy(header);
+    if (fp) sam_close(fp);
+    if (bam_fp) sam_close(bam_fp);
+    if (cram_fp) sam_close(cram_fp);
+
+    for (i = 0; i < nrecs; i++) {
+        bam_destroy1(&recs[i]);
+    }
+    free(buffer);
+    free(recs);
+    if (cram_fmt.specific) {
+        hts_opt_free(cram_fmt.specific);
+    }
+}
+
 int main(int argc, char **argv)
 {
     int i;
@@ -1188,6 +1474,7 @@ int main(int argc, char **argv)
     test_text_file("test/fastqs.fq", 500);
     check_enum1();
     check_cigar_tab();
+    test_mempolicy();
     for (i = 1; i < argc; i++) faidx1(argv[i]);
 
     return status;
