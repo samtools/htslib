@@ -2143,7 +2143,7 @@ int sam_state_destroy(htsFile *fp) {
 // Run from one of the worker threads.
 // Convert a passed in array of lines to array of BAMs, returning
 // the result back to the thread queue.
-void *sam_parse_worker(void *arg) {
+static void *sam_parse_worker(void *arg) {
     sp_lines *gl = (sp_lines *)arg;
     sp_bams *gb = NULL;
     char *lines = gl->data;
