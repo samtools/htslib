@@ -32,6 +32,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <errno.h>
 #include <zlib.h>
 #include <assert.h>
+#include <signal.h>
 
 // Suppress deprecation message for cigar_tab, which we initialise
 #include "htslib/hts_defs.h"
@@ -42,6 +43,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/bgzf.h"
 #include "cram/cram.h"
 #include "hts_internal.h"
+#include "sam_internal.h"
 #include "htslib/hfile.h"
 #include "htslib/hts_endian.h"
 #include "header.h"
@@ -108,6 +110,7 @@ void sam_hdr_destroy(sam_hdr_t *bh)
         --bh->ref_count;
         return;
     }
+
     if (bh->target_name) {
         for (i = 0; i < bh->n_targets; ++i)
             free(bh->target_name[i]);
@@ -407,9 +410,10 @@ bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc)
 {
     uint8_t *data = bdst->data;
     int m_data = bdst->m_data;   // backup data and m_data
-    if (m_data < bsrc->l_data) { // double the capacity
+    if (m_data < bsrc->l_data) {
         m_data = bsrc->l_data; kroundup32(m_data);
         data = (uint8_t*)realloc(data, m_data);
+        if (!data) return NULL;
     }
     memcpy(data, bsrc->data, bsrc->l_data); // copy var-len data
     *bdst = *bsrc; // copy the rest
@@ -526,6 +530,10 @@ static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data, int is_ho
     for (i = 0; i < c->n_cigar; ++i) ed_swap_4p(&cigar[i]);
 }
 
+/*
+ * Note a second interface that returns a bam pointer instead would avoid bam_copy1
+ * in multi-threaded handling.  This may be worth considering for htslib2.
+ */
 int bam_read1(BGZF *fp, bam1_t *b)
 {
     bam1_core_t *c = &b->core;
@@ -793,6 +801,11 @@ int sam_idx_init(htsFile *fp, sam_hdr_t *h, int min_shift, const char *fnidx) {
 int sam_idx_save(htsFile *fp) {
     if (fp->format.format == bam || fp->format.format == bcf ||
         fp->format.format == vcf || fp->format.format == sam) {
+        int ret;
+        if ((ret = sam_state_destroy(fp)) < 0) {
+            errno = -ret;
+            return -1;
+        }
         if (bgzf_flush(fp->fp.bgzf) < 0)
             return -1;
         hts_idx_amend_last(fp->idx, bgzf_tell(fp->fp.bgzf));
@@ -1672,6 +1685,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 #define _parse_warn(cond, msg) do { if (cond) { hts_log_warning(msg); } } while (0)
 
     uint8_t *t;
+
     char *p = s->s, *q;
     int i;
     kstring_t str;
@@ -1924,6 +1938,677 @@ err_ret:
     return -2;
 }
 
+/*
+ * -----------------------------------------------------------------------------
+ * SAM threading
+ */
+// Size of SAM text block (reading)
+#define NM 240000
+// Number of BAM records (writing)
+#define NB 1000
+
+struct SAM_state;
+
+// Output job - a block of BAM records
+typedef struct sp_bams {
+    struct sp_bams *next;
+    int serial;
+
+    bam1_t *bams;
+    int nbams, abams; // used and alloc
+
+    struct SAM_state *fd;
+} sp_bams;
+
+// Input job - a block of SAM text
+typedef struct sp_lines {
+    struct sp_lines *next;
+    int serial;
+
+    char *data;
+    int data_size;
+    int alloc;
+
+    struct SAM_state *fd;
+    sp_bams *bams;
+} sp_lines;
+
+enum sam_cmd {
+    SAM_NONE = 0,
+    SAM_CLOSE,
+};
+
+typedef struct SAM_state {
+    sam_hdr_t *h;
+
+    hts_tpool *p;
+    int own_pool;
+    pthread_mutex_t lines_m;
+    hts_tpool_process *q;
+    pthread_t dispatcher;
+
+    sp_lines *lines;
+    sp_bams *bams;
+
+    sp_bams *curr_bam;
+    int curr_idx;
+    int serial;
+
+    // Be warned: moving these mutexes around in this struct can reduce
+    // threading performance by up to 70%!
+    pthread_mutex_t command_m;
+    pthread_cond_t command_c;
+    enum sam_cmd command;
+
+    // One of the E* errno codes
+    int errcode;
+
+    htsFile *fp;
+} SAM_state;
+
+// Returns a SAM_state struct from a generic hFILE.
+//
+// Returns NULL on failure.
+static SAM_state *sam_state_create(htsFile *fp) {
+    // Ideally sam_open wouldn't be a #define to hts_open but instead would
+    // be a redirect call with an additional 'S' mode.  This in turn would
+    // correctly set the designed format to sam instead of a generic
+    // text_format.
+    if (fp->format.format != sam && fp->format.format != text_format)
+        return NULL;
+
+    SAM_state *fd = calloc(1, sizeof(*fd));
+    if (!fd)
+        return NULL;
+
+    fp->state = fd;
+    fd->fp = fp;
+
+    return fd;
+}
+
+static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *str);
+static void *sam_format_worker(void *arg);
+
+static void sam_state_err(SAM_state *fd, int errcode) {
+    pthread_mutex_lock(&fd->command_m);
+    if (!fd->errcode)
+        fd->errcode = errcode;
+    pthread_mutex_unlock(&fd->command_m);
+}
+
+static void sam_free_sp_bams(sp_bams *b) {
+    if (!b)
+        return;
+
+    if (b->bams) {
+        int i;
+        for (i = 0; i < b->abams; i++) {
+            if (b->bams[i].data)
+                free(b->bams[i].data);
+        }
+        free(b->bams);
+    }
+    free(b);
+}
+
+// Destroys the state produce by sam_state_create.
+int sam_state_destroy(htsFile *fp) {
+    int ret = 0;
+
+    if (!fp->state)
+        return 0;
+
+    SAM_state *fd = fp->state;
+    if (fd->p) {
+        if (fd->h) {
+            // Notify sam_dispatcher we're closing
+            pthread_mutex_lock(&fd->command_m);
+            fd->command = SAM_CLOSE;
+            pthread_cond_signal(&fd->command_c);
+            ret = -fd->errcode;
+            if (!ret) hts_tpool_wake_dispatch(fd->q); // unstick the reader
+            pthread_mutex_unlock(&fd->command_m);
+
+            if (fp->is_write) {
+                // Dispatch the last partial block.
+                sp_bams *gb = fd->curr_bam;
+                if (!ret && gb && gb->nbams > 0)
+                  ret = hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb);
+
+                // Flush and drain output
+                hts_tpool_process_flush(fd->q);
+                pthread_mutex_lock(&fd->command_m);
+                if (!ret) ret = -fd->errcode;
+                pthread_mutex_unlock(&fd->command_m);
+
+                while (!ret && !hts_tpool_process_empty(fd->q)) {
+                    usleep(10000);
+                    pthread_mutex_lock(&fd->command_m);
+                    if (!ret) ret = -fd->errcode;
+                    pthread_mutex_unlock(&fd->command_m);
+                }
+                hts_tpool_process_shutdown(fd->q);
+            }
+
+            // Wait for it to acknowledge
+            pthread_join(fd->dispatcher, NULL);
+            if (!ret) ret = -fd->errcode;
+        }
+
+        // Tidy up memory
+        if (fd->q)
+            hts_tpool_process_destroy(fd->q);
+
+        if (fd->own_pool && fp->format.compression == no_compression) {
+            hts_tpool_destroy(fd->p);
+            fd->p = NULL;
+        }
+        pthread_mutex_destroy(&fd->lines_m);
+        pthread_mutex_destroy(&fd->command_m);
+        pthread_cond_destroy(&fd->command_c);
+
+        sp_lines *l = fd->lines;
+        while (l) {
+            sp_lines *n = l->next;
+            free(l->data);
+            free(l);
+            l = n;
+        }
+
+        sp_bams *b = fd->bams;
+        while (b) {
+            if (fd->curr_bam == b)
+                fd->curr_bam = NULL;
+            sp_bams *n = b->next;
+            sam_free_sp_bams(b);
+            b = n;
+        }
+
+        if (fd->curr_bam)
+            sam_free_sp_bams(fd->curr_bam);
+
+        // Decrement counter by one, maybe destroying too.
+        // This is to permit the caller using bam_hdr_destroy
+        // before sam_close without triggering decode errors
+        // in the background threads.
+        bam_hdr_destroy(fd->h);
+    }
+
+    free(fp->state);
+    fp->state = NULL;
+    return ret;
+}
+
+// Run from one of the worker threads.
+// Convert a passed in array of lines to array of BAMs, returning
+// the result back to the thread queue.
+static void *sam_parse_worker(void *arg) {
+    sp_lines *gl = (sp_lines *)arg;
+    sp_bams *gb = NULL;
+    char *lines = gl->data;
+    int i;
+    bam1_t *b;
+    SAM_state *fd = gl->fd;
+
+    // Use a block of BAM structs we had earlier if available.
+    pthread_mutex_lock(&fd->lines_m);
+    if (fd->bams) {
+        gb = fd->bams;
+        fd->bams = gb->next;
+    }
+    pthread_mutex_unlock(&fd->lines_m);
+
+    if (gb == NULL) {
+        gb = calloc(1, sizeof(*gb));
+        if (!gb) {
+            return NULL;
+        }
+        gb->abams = 100;
+        gb->bams = b = calloc(gb->abams, sizeof(*b));
+        if (!gb->bams) {
+            sam_state_err(fd, ENOMEM);
+            goto err;
+        }
+        gb->nbams = 0;
+    }
+    gb->serial = gl->serial;
+    gb->next = NULL;
+
+    b = (bam1_t *)gb->bams;
+    if (!b) {
+        sam_state_err(fd, ENOMEM);
+        goto err;
+    }
+
+    i = 0;
+    char *cp = lines, *cp_end = lines + gl->data_size;
+    while (cp < cp_end) {
+        if (i >= gb->abams) {
+            int old_abams = gb->abams;
+            gb->abams *= 2;
+            b = (bam1_t *)realloc(gb->bams, gb->abams*sizeof(bam1_t));
+            if (!b) {
+                sam_state_err(fd, ENOMEM);
+                goto err;
+            }
+            memset(&b[old_abams], 0, (gb->abams - old_abams)*sizeof(*b));
+            gb->bams = b;
+        }
+
+        // Ideally we'd get sam_parse1 to return the number of
+        // bytes decoded and to be able to stop on newline as
+        // well as \0.
+        //
+        // We can then avoid the additional strchr loop.
+        // It's around 6% of our CPU cost, albeit threadable.
+        //
+        // However this is an API change so for now we copy.
+
+        char *nl = strchr(cp, '\n');
+        nl = nl ? nl : cp_end;
+        if (*nl) *nl++ = '\0';
+        kstring_t ks = {nl-cp, gl->alloc, cp};
+        if (sam_parse1(&ks, fd->h, &b[i]) < 0) {
+            sam_state_err(fd, EIO);
+            goto err;
+        }
+        cp = nl;
+        i++;
+    }
+    gb->nbams = i;
+
+    pthread_mutex_lock(&fd->lines_m);
+    gl->next = fd->lines;
+    fd->lines = gl;
+    pthread_mutex_unlock(&fd->lines_m);
+    return gb;
+
+ err:
+    sam_free_sp_bams(gb);
+    return NULL;
+}
+
+void *sam_parse_eof(void *arg) {
+    return NULL;
+}
+
+// Cleanup function - job for sam_parse_worker; result for sam_format_worker
+static void cleanup_sp_lines(void *arg) {
+    sp_lines *gl = (sp_lines *)arg;
+
+    if (!gl) return;
+
+    // Should always be true for lines passed to / from thread workers
+    assert(gl->next == NULL);
+
+    free(gl->data);
+    sam_free_sp_bams(gl->bams);
+    free(gl);
+}
+
+// Cleanup function - result for sam_parse_worker; job for sam_format_worker
+static void cleanup_sp_bams(void *arg) {
+    sam_free_sp_bams((sp_bams *) arg);
+}
+
+// Runs in its own thread.
+// Reads a block of text (SAM) and sends a new job to the thread queue to
+// translate this to BAM.
+static void *sam_dispatcher_read(void *vp) {
+    htsFile *fp = vp;
+    kstring_t line = {0};
+    int line_frag = 0;
+    SAM_state *fd = fp->state;
+    sp_lines *l = NULL;
+
+    for (;;) {
+        // Check for command
+        pthread_mutex_lock(&fd->command_m);
+        switch (fd->command) {
+
+        case SAM_CLOSE:
+            pthread_cond_signal(&fd->command_c);
+            pthread_mutex_unlock(&fd->command_m);
+            hts_tpool_process_destroy(fd->q);
+            fd->q = NULL;
+            goto tidyup;
+
+        default:
+            break;
+        }
+        pthread_mutex_unlock(&fd->command_m);
+
+        pthread_mutex_lock(&fd->lines_m);
+        if (fd->lines) {
+            // reuse existing line buffer
+            l = fd->lines;
+            fd->lines = l->next;
+        }
+        pthread_mutex_unlock(&fd->lines_m);
+
+        if (l == NULL) {
+            // none to reuse, to create a new one
+            l = calloc(1, sizeof(*l));
+            if (!l)
+                goto err;
+            l->alloc = NM+8; // +8 for optimisation in sam_parse1
+            l->data = malloc(l->alloc);
+            if (!l->data) {
+                free(l);
+                l = NULL;
+                goto err;
+            }
+            l->fd = fd;
+        }
+        l->next = NULL;
+
+        if (l->alloc+NM/2 < line_frag) {
+            char *rp = realloc(l->data, line_frag+NM/2);
+            if (!rp)
+                goto err;
+            l->alloc = line_frag+NM/2;
+            l->data = rp;
+        }
+        memcpy(l->data, line.s, line_frag);
+
+        l->data_size = line_frag;
+        ssize_t nbytes;
+    longer_line:
+        if (fp->is_bgzf)
+            nbytes = bgzf_read(fp->fp.bgzf, l->data + line_frag, l->alloc - line_frag);
+        else
+            nbytes = hread(fp->fp.hfile, l->data + line_frag, l->alloc - line_frag);
+        if (nbytes < 0) {
+            sam_state_err(fd, EIO);
+            goto err;
+        } else if (nbytes == 0)
+            break; // EOF
+        l->data_size += nbytes;
+
+        // trim to last \n. Maybe \r\n, but that's still fine
+        if (nbytes == l->alloc - line_frag) {
+            char *cp_end = l->data + l->data_size;
+            char *cp = cp_end-1;
+
+            while (cp > (char *)l->data && *cp != '\n')
+                cp--;
+
+            // entire buffer is part of a single line
+            if (cp == l->data) {
+                line_frag = l->data_size;
+                char *rp = realloc(l->data, l->alloc * 2);
+                if (!rp)
+                    goto err;
+                l->alloc *= 2;
+                l->data = rp;
+                assert(l->alloc >= l->data_size);
+                assert(l->alloc >= line_frag);
+                assert(l->alloc >= l->alloc - line_frag);
+                goto longer_line;
+            }
+            cp++;
+
+            // line holds the remainder of our line.
+            if (ks_resize(&line, cp_end - cp) < 0)
+                goto err;
+            memcpy(line.s, cp, cp_end - cp);
+            line_frag = cp_end - cp;
+            l->data_size = l->alloc - line_frag;
+        } else {
+            // out of buffer
+            line_frag = 0;
+        }
+
+        l->serial = fd->serial++;
+        //fprintf(stderr, "Dispatching %p, %d bytes, serial %d\n", l, l->data_size, l->serial);
+        if (hts_tpool_dispatch3(fd->p, fd->q, sam_parse_worker, l,
+                                cleanup_sp_lines, cleanup_sp_bams, 0) < 0)
+            goto err;
+        l = NULL;  // Now "owned" by sam_parse_worker()
+    }
+
+    if (hts_tpool_dispatch(fd->p, fd->q, sam_parse_eof, NULL) < 0)
+        goto err;
+
+    // At EOF, wait for close request.
+    // (In future if we add support for seek, this is where we need to catch it.)
+    for (;;) {
+        pthread_mutex_lock(&fd->command_m);
+        if (fd->command == SAM_NONE)
+            pthread_cond_wait(&fd->command_c, &fd->command_m);
+        switch (fd->command) {
+        case SAM_CLOSE:
+            pthread_cond_signal(&fd->command_c);
+            pthread_mutex_unlock(&fd->command_m);
+            hts_tpool_process_destroy(fd->q);
+            fd->q = NULL;
+            goto tidyup;
+
+        default:
+            pthread_mutex_unlock(&fd->command_m);
+            break;
+        }
+    }
+
+ tidyup:
+    if (l) {
+        pthread_mutex_lock(&fd->lines_m);
+        l->next = fd->lines;
+        fd->lines = l;
+        pthread_mutex_unlock(&fd->lines_m);
+    }
+    free(line.s);
+
+    return NULL;
+
+ err:
+    sam_state_err(fd, ENOMEM);
+    hts_tpool_process_destroy(fd->q);
+    fd->q = NULL;
+    goto tidyup;
+}
+
+// Runs in its own thread.
+// Takes encoded blocks of SAM off the thread results queue and writes them
+// to our output stream.
+static void *sam_dispatcher_write(void *vp) {
+    htsFile *fp = vp;
+    SAM_state *fd = fp->state;
+    hts_tpool_result *r;
+
+    // Iterates until result queue is shutdown, where it returns NULL.
+    while ((r = hts_tpool_next_result_wait(fd->q))) {
+        sp_lines *gl = (sp_lines *)hts_tpool_result_data(r);
+        if (!gl) {
+            sam_state_err(fd, ENOMEM);
+            goto err;
+        }
+
+        if (fp->idx) {
+            sp_bams *gb = gl->bams;
+            int i = 0, count = 0;
+            while (i < gl->data_size) {
+                int j = i;
+                while (i < gl->data_size && gl->data[i] != '\n')
+                    i++;
+                if (i < gl->data_size)
+                    i++;
+
+                if (fp->format.compression == bgzf) {
+                    if (bgzf_write(fp->fp.bgzf, &gl->data[j], i-j) != i-j)
+                        goto err;
+                } else {
+                    if (hwrite(fp->fp.hfile, &gl->data[j], i-j) != i-j)
+                        goto err;
+                }
+
+                bam1_t *b = &gb->bams[count++];
+                if (fp->format.compression == bgzf) {
+                    if (bgzf_idx_push(fp->fp.bgzf, fp->idx,
+                                      b->core.tid, b->core.pos, bam_endpos(b),
+                                      bgzf_tell(fp->fp.bgzf),
+                                      !(b->core.flag&BAM_FUNMAP)) < 0) {
+                        sam_state_err(fd, ENOMEM);
+                        goto err;
+                    }
+                } else {
+                    if (hts_idx_push(fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
+                                     bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0) {
+                        sam_state_err(fd, ENOMEM);
+                        goto err;
+                    }
+                }
+            }
+
+            assert(count == gb->nbams);
+
+            // Add bam array to free-list
+            pthread_mutex_lock(&fd->lines_m);
+            gb->next = fd->bams;
+            fd->bams = gl->bams;
+            gl->bams = NULL;
+            pthread_mutex_unlock(&fd->lines_m);
+        } else {
+            if (fp->format.compression == bgzf) {
+                if (bgzf_write(fp->fp.bgzf, gl->data, gl->data_size) != gl->data_size)
+                    goto err;
+            } else {
+                if (hwrite(fp->fp.hfile, gl->data, gl->data_size) != gl->data_size)
+                    goto err;
+            }
+        }
+
+        hts_tpool_delete_result(r, 0);
+
+        // Also updated by main thread
+        pthread_mutex_lock(&fd->lines_m);
+        gl->next = fd->lines;
+        fd->lines = gl;
+        pthread_mutex_unlock(&fd->lines_m);
+    }
+
+    sam_state_err(fd, 0); // success
+    hts_tpool_process_destroy(fd->q);
+    fd->q = NULL;
+    return NULL;
+
+ err:
+    sam_state_err(fd, EIO);
+    return (void *)-1;
+}
+
+// Run from one of the worker threads.
+// Convert a passed in array of BAMs (sp_bams) and converts to a block
+// of text SAM records (sp_lines).
+static void *sam_format_worker(void *arg) {
+    sp_bams *gb = (sp_bams *)arg;
+    sp_lines *gl = NULL;
+    int i;
+    SAM_state *fd = gb->fd;
+    htsFile *fp = fd->fp;
+
+    // Use a block of SAM strings we had earlier if available.
+    pthread_mutex_lock(&fd->lines_m);
+    if (fd->lines) {
+        gl = fd->lines;
+        fd->lines = gl->next;
+    }
+    pthread_mutex_unlock(&fd->lines_m);
+
+    if (gl == NULL) {
+        gl = calloc(1, sizeof(*gl));
+        if (!gl) {
+            sam_state_err(fd, ENOMEM);
+            return NULL;
+        }
+        gl->alloc = gl->data_size = 0;
+        gl->data = NULL;
+    }
+    gl->serial = gb->serial;
+    gl->next = NULL;
+
+    kstring_t ks = {0, gl->alloc, gl->data};
+
+    for (i = 0; i < gb->nbams; i++) {
+        if (sam_format1_append(fd->h, &gb->bams[i], &ks) < 0) {
+            sam_state_err(fd, EIO);
+            goto err;
+        }
+        kputc('\n', &ks);
+    }
+
+    pthread_mutex_lock(&fd->lines_m);
+    gl->data_size = ks.l;
+    gl->alloc = ks.m;
+    gl->data = ks.s;
+
+    if (fp->idx) {
+        // Keep hold of the bam array a little longer as
+        // sam_dispatcher_write needs to use them for building the index.
+        gl->bams = gb;
+    } else {
+        // Add bam array to free-list
+        gb->next = fd->bams;
+        fd->bams = gb;
+    }
+    pthread_mutex_unlock(&fd->lines_m);
+
+    return gl;
+
+ err:
+    sam_free_sp_bams(gb);
+    if (gl) {
+        free(gl->data);
+        free(gl);
+    }
+    return NULL;
+}
+
+int sam_set_thread_pool(htsFile *fp, htsThreadPool *p) {
+    if (fp->state)
+        return 0;
+
+    if (!(fp->state = sam_state_create(fp)))
+        return -1;
+    SAM_state *fd = (SAM_state *)fp->state;
+
+    pthread_mutex_init(&fd->lines_m, NULL);
+    pthread_mutex_init(&fd->command_m, NULL);
+    pthread_cond_init(&fd->command_c, NULL);
+    fd->p = p->pool;
+    int qsize = p->qsize;
+    if (!qsize)
+        qsize = 2*hts_tpool_size(fd->p);
+    fd->q = hts_tpool_process_init(fd->p, qsize, 0);
+
+    if (fp->format.compression == bgzf)
+        return bgzf_thread_pool(fp->fp.bgzf, p->pool, p->qsize);
+
+    return 0;
+}
+
+int sam_set_threads(htsFile *fp, int nthreads) {
+    if (nthreads <= 0)
+        return 0;
+
+    htsThreadPool p;
+    p.pool = hts_tpool_init(nthreads);
+    p.qsize = nthreads*2;
+
+    int ret = sam_set_thread_pool(fp, &p);
+    if (ret < 0)
+        return ret;
+
+    SAM_state *fd = (SAM_state *)fp->state;
+    fd->own_pool = 1;
+
+    return 0;
+}
+
+// Returns 0 on success,
+//        -1 on EOF,
+//       <-1 on error
 int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
 {
     switch (fp->format.format) {
@@ -1948,19 +2633,93 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
     }
 
     case sam: {
-        int ret;
-err_recover:
-        if (fp->line.l == 0) {
+        // Consume 1st line after header parsing as it wasn't using peek
+        if (fp->line.l != 0) {
+            int ret = sam_parse1(&fp->line, h, b);
+            fp->line.l = 0;
+            return ret;
+        }
+
+        if (fp->state) {
+            SAM_state *fd = (SAM_state *)fp->state;
+
+            if (fp->format.compression == bgzf && fp->fp.bgzf->seeked) {
+                // We don't support multi-threaded SAM parsing with seeks yet.
+                int ret;
+                if ((ret = sam_state_destroy(fp)) < 0) {
+                    errno = -ret;
+                    return -2;
+                }
+                if (bgzf_seek(fp->fp.bgzf, fp->fp.bgzf->seeked, SEEK_SET) < 0)
+                    return -1;
+                fp->fp.bgzf->seeked = 0;
+                goto err_recover;
+            }
+
+            if (!fd->h) {
+                fd->h = h;
+                fd->h->ref_count++;
+                // Ensure hrecs is initialised now as we don't want multiple
+                // threads trying to do this simultaneously.
+                if (!fd->h->hrecs && sam_hdr_fill_hrecs(fd->h) < 0)
+                    return -2;
+
+                // We can only do this once we've got a header
+                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_read, fp) != 0)
+                    return -2;
+            }
+
+            if (fd->h != h) {
+                hts_log_error("SAM multi-threaded decoding does not support changing header");
+                return -1;
+            }
+
+            sp_bams *gb = fd->curr_bam;
+            if (!gb) {
+                if (fd->errcode) {
+                    // Incase reader failed
+                    errno = fd->errcode;
+                    return -2;
+                }
+                hts_tpool_result *r = hts_tpool_next_result_wait(fd->q);
+                if (!r)
+                    return -2;
+                fd->curr_bam = gb = (sp_bams *)hts_tpool_result_data(r);
+                hts_tpool_delete_result(r, 0);
+            }
+            if (!gb)
+                return fd->errcode ? -2 : -1;
+            bam1_t *b_array = (bam1_t *)gb->bams;
+            if (fd->curr_idx < gb->nbams)
+                if (!bam_copy1(b, &b_array[fd->curr_idx++]))
+                    return -2;
+            if (fd->curr_idx == gb->nbams) {
+                pthread_mutex_lock(&fd->lines_m);
+                gb->next = fd->bams;
+                fd->bams = gb;
+                pthread_mutex_unlock(&fd->lines_m);
+
+                fd->curr_bam = NULL;
+                fd->curr_idx = 0;
+            }
+
+            return 0;
+
+        } else  {
+            int ret;
+        err_recover:
+
             ret = hts_getline(fp, KS_SEP_LINE, &fp->line);
             if (ret < 0) return ret;
+
+            ret = sam_parse1(&fp->line, h, b);
+            fp->line.l = 0;
+            if (ret < 0) {
+                hts_log_warning("Parse error at line %lld", (long long)fp->lineno);
+                if (h->ignore_sam_err) goto err_recover;
+            }
+            return ret;
         }
-        ret = sam_parse1(&fp->line, h, b);
-        fp->line.l = 0;
-        if (ret < 0) {
-            hts_log_warning("Parse error at line %lld", (long long)fp->lineno);
-            if (h->ignore_sam_err) goto err_recover;
-        }
-        return ret;
     }
 
     default:
@@ -1968,13 +2727,14 @@ err_recover:
     }
 }
 
-int sam_format1(const sam_hdr_t *h, const bam1_t *b, kstring_t *str)
+static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 {
     int i;
     uint8_t *s, *end;
     const bam1_core_t *c = &b->core;
 
-    str->l = 0;
+    if (c->l_qname == 0)
+        return -1;
     kputsn_(bam_get_qname(b), c->l_qname-1-c->l_extranul, str); kputc_('\t', str); // query name
     kputw(c->flag, str); kputc_('\t', str); // flag
     if (c->tid >= 0) { // chr
@@ -2158,6 +2918,14 @@ int sam_format1(const sam_hdr_t *h, const bam1_t *b, kstring_t *str)
     return -1;
 }
 
+int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
+{
+    str->l = 0;
+    return sam_format1_append(h, b, str);
+}
+
+// Sadly we need to be able to modify the bam_hdr here so we can
+// reference count the structure.
 int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
 {
     switch (fp->format.format) {
@@ -2176,27 +2944,105 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
         fp->format.format = sam;
         /* fall-through */
     case sam:
-        if (sam_format1(h, b, &fp->line) < 0) return -1;
-        kputc('\n', &fp->line);
-        if (fp->format.compression == bgzf) {
-            if ( bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l ) return -1;
-        } else {
-            if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
-        }
+        if (fp->state) {
+            SAM_state *fd = (SAM_state *)fp->state;
 
-        if (fp->idx) {
-            if (fp->format.compression == bgzf) {
-                if (bgzf_idx_push(fp->fp.bgzf, fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
-                                  bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0)
-                    return -1;
-            } else {
-                if (hts_idx_push(fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
-                                 bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0)
-                    return -1;
+            // Threaded output
+            if (!fd->h) {
+                // NB: discard const.  We don't actually modify sam_hdr_t here,
+                // just data pointed to by it (which is a bit weasely still),
+                // but out cached pointer must be non-const as we want to
+                // destroy it later on and sam_hdr_destroy takes non-const.
+                //
+                // We do this because some tools do sam_hdr_destroy; sam_close
+                // while others do sam_close; sam_hdr_destroy.  The former is an
+                // issue as we need the header still when flushing.
+                fd->h = (sam_hdr_t *)h;
+                fd->h->ref_count++;
+
+                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_write, fp) != 0)
+                    return -2;
             }
-        }
 
-        return fp->line.l;
+            if (fd->h != h) {
+                hts_log_error("SAM multi-threaded decoding does not support changing header");
+                return -2;
+            }
+
+            // Find a suitable BAM array to copy to
+            sp_bams *gb = fd->curr_bam;
+            if (!gb) {
+                pthread_mutex_lock(&fd->lines_m);
+                if (fd->bams) {
+                    fd->curr_bam = gb = fd->bams;
+                    fd->bams = gb->next;
+                    gb->next = NULL;
+                    gb->nbams = 0;
+                    pthread_mutex_unlock(&fd->lines_m);
+                } else {
+                    pthread_mutex_unlock(&fd->lines_m);
+                    if (!(gb = calloc(1, sizeof(*gb)))) return -1;
+                    if (!(gb->bams = calloc(NB, sizeof(*gb->bams)))) {
+                        free(gb);
+                        return -1;
+                    }
+                    gb->nbams = 0;
+                    gb->abams = NB;
+                    gb->fd = fd;
+                    fd->curr_idx = 0;
+                    fd->curr_bam = gb;
+                }
+            }
+
+            if (!bam_copy1(&gb->bams[gb->nbams++], b))
+                return -2;
+
+            // Dispatch if full
+            if (gb->nbams == NB) {
+                gb->serial = fd->serial++;
+                //fprintf(stderr, "Dispatch another %d bams\n", NB);
+                pthread_mutex_lock(&fd->command_m);
+                if (fd->errcode != 0) {
+                    pthread_mutex_unlock(&fd->command_m);
+                    return -fd->errcode;
+                }
+                if (hts_tpool_dispatch3(fd->p, fd->q, sam_format_worker, gb,
+                                        cleanup_sp_bams,
+                                        cleanup_sp_lines, 0) < 0) {
+                    pthread_mutex_unlock(&fd->command_m);
+                    return -1;
+                }
+                pthread_mutex_unlock(&fd->command_m);
+                fd->curr_bam = NULL;
+            }
+
+            // Dummy value as we don't know how long it really is.
+            // We could track file sizes via a SAM_state field, but I don't think
+            // it is necessary.
+            return 1;
+        } else {
+            if (sam_format1(h, b, &fp->line) < 0) return -1;
+            kputc('\n', &fp->line);
+            if (fp->format.compression == bgzf) {
+                if ( bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l ) return -1;
+            } else {
+                if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
+            }
+
+            if (fp->idx) {
+                if (fp->format.compression == bgzf) {
+                    if (bgzf_idx_push(fp->fp.bgzf, fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
+                                      bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0)
+                        return -1;
+                } else {
+                    if (hts_idx_push(fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
+                                     bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0)
+                        return -1;
+                }
+            }
+
+            return fp->line.l;
+        }
 
     default:
         abort();
@@ -2638,7 +3484,11 @@ static int find_file_extension(const char *fn, char ext_out[5])
     if (!fn) return -1;
     if (!delim) delim = fn + strlen(fn);
     for (ext = delim; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
-    if (*ext != '.' || delim - ext > 5 || delim - ext < 4) return -1;
+    if (*ext == '.' && delim - ext == 3 && ext[1] == 'g' && ext[2] == 'z') {
+        // permit .sam.gz as a valid file extension
+        for (ext--; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
+    }
+    if (*ext != '.' || delim - ext > 7 || delim - ext < 4) return -1;
     memcpy(ext_out, ext + 1, delim - ext - 1);
     ext_out[delim - ext - 1] = '\0';
     return 0;
@@ -2649,13 +3499,14 @@ int sam_open_mode(char *mode, const char *fn, const char *format)
     // TODO Parse "bam5" etc for compression level
     if (format == NULL) {
         // Try to pick a format based on the filename extension
-        char extension[5];
+        char extension[7];
         if (find_file_extension(fn, extension) < 0) return -1;
         return sam_open_mode(mode, fn, extension);
     }
     else if (strcmp(format, "bam") == 0) strcpy(mode, "b");
     else if (strcmp(format, "cram") == 0) strcpy(mode, "c");
     else if (strcmp(format, "sam") == 0) strcpy(mode, "");
+    else if (strcmp(format, "sam.gz") == 0) strcpy(mode, "z");
     else return -1;
 
     return 0;
@@ -2681,7 +3532,7 @@ char *sam_open_mode_opts(const char *fn,
 
     if (format == NULL) {
         // Try to pick a format based on the filename extension
-        char extension[5];
+        char extension[7];
         if (find_file_extension(fn, extension) < 0) {
             free(mode_opts);
             return NULL;
@@ -2715,6 +3566,8 @@ char *sam_open_mode_opts(const char *fn,
         cp += 12;
     } else if (strncmp(format, "sam", format_len) == 0) {
         ; // format mode=""
+    } else if (strncmp(format, "sam.gz", format_len) == 0) {
+        *cp++ = 'z';
     } else {
         free(mode_opts);
         return NULL;

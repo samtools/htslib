@@ -61,6 +61,8 @@ Noteworthy changes in release a.b
   - bcf_index_load() no longer tries the '.tbi' suffix when looking for
     BCF index files (.tbi indexes are for text files, not binary BCF).
 
+  - htsFile has a new 'state' member to support SAM multi-threading.
+
 * A new SAM/BAM/CRAM header API has been added to HTSlib, allowing header
   data to be updated without having to parse or rewrite large parts of the
   header text.  See htslib/sam.h for function definitions and documentation.
@@ -79,6 +81,16 @@ Noteworthy changes in release a.b
   For example some records where the QUAL string is shorter than SEQ
   may report "invalid QUAL character" instead of "SEQ and QUAL are of
   different length".
+
+* The SAM reader and writer can now by run in multi-threaded mode using the
+  thread pool.  This means all supported sequence formats (SAM, BAM and CRAM)
+  now support multi-threaded reading and writing.
+
+  Note that the multi-threaded SAM reader does not currently support seek
+  operations.  Trying to do this (for example with an iterator range request)
+  will result in the SAM readers dropping back to single-threaded mode.
+
+* Saving a file with a '.sam.gz' suffix will write BGZF-compressed SAM format.
 
 * New API functions hts_reglist_create() and sam_itr_regarray() are added
   to create hts_reglist_t region lists from `chr:<from>-<to>` type region
