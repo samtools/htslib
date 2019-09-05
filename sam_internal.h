@@ -25,6 +25,10 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/sam.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Used internally in the SAM format multi-threading.
 int sam_state_destroy(samFile *fp);
 int sam_set_thread_pool(htsFile *fp, htsThreadPool *p);
