@@ -2233,6 +2233,25 @@ void *sam_parse_eof(void *arg) {
     return NULL;
 }
 
+// Cleanup function - job for sam_parse_worker; result for sam_format_worker
+static void cleanup_sp_lines(void *arg) {
+    sp_lines *gl = (sp_lines *)arg;
+
+    if (!gl) return;
+
+    // Should always be true for lines passed to / from thread workers
+    assert(gl->next == NULL);
+
+    free(gl->data);
+    sam_free_sp_bams(gl->bams);
+    free(gl);
+}
+
+// Cleanup function - result for sam_parse_worker; job for sam_format_worker
+static void cleanup_sp_bams(void *arg) {
+    sam_free_sp_bams((sp_bams *) arg);
+}
+
 // Runs in its own thread.
 // Reads a block of text (SAM) and sends a new job to the thread queue to
 // translate this to BAM.
@@ -2343,7 +2362,8 @@ static void *sam_dispatcher_read(void *vp) {
 
         l->serial = fd->serial++;
         //fprintf(stderr, "Dispatching %p, %d bytes, serial %d\n", l, l->data_size, l->serial);
-        if (hts_tpool_dispatch(fd->p, fd->q, sam_parse_worker, l) < 0)
+        if (hts_tpool_dispatch3(fd->p, fd->q, sam_parse_worker, l,
+                                cleanup_sp_lines, cleanup_sp_bams, 0) < 0)
             goto err;
         l = NULL;  // Now "owned" by sam_parse_worker()
     }
@@ -2990,7 +3010,9 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
                     pthread_mutex_unlock(&fd->command_m);
                     return -fd->errcode;
                 }
-                if (hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb) < 0) {
+                if (hts_tpool_dispatch3(fd->p, fd->q, sam_format_worker, gb,
+                                        cleanup_sp_bams,
+                                        cleanup_sp_lines, 0) < 0) {
                     pthread_mutex_unlock(&fd->command_m);
                     return -1;
                 }
