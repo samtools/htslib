@@ -2596,7 +2596,6 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
         int r = bam_read1(fp->fp.bgzf, b);
         if (h && r >= 0) {
             if (b->core.tid  >= h->n_targets || b->core.tid  < -1 ||
-
                 b->core.mtid >= h->n_targets || b->core.mtid < -1)
                 return -3;
         }
