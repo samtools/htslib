@@ -2967,7 +2967,10 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
                 } else {
                     pthread_mutex_unlock(&fd->lines_m);
                     if (!(gb = calloc(1, sizeof(*gb)))) return -1;
-                    if (!(gb->bams = calloc(NB, sizeof(*gb->bams)))) return -1;
+                    if (!(gb->bams = calloc(NB, sizeof(*gb->bams)))) {
+                        free(gb);
+                        return -1;
+                    }
                     gb->nbams = 0;
                     gb->abams = NB;
                     gb->fd = fd;
