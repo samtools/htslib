@@ -2645,19 +2645,15 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
 
             if (fp->format.compression == bgzf && fp->fp.bgzf->seeked) {
                 // We don't support multi-threaded SAM parsing with seeks yet.
-                if (fd->h) {
-                    int ret;
-                    if ((ret = sam_state_destroy(fp)) < 0) {
-                        errno = -ret;
-                        return -2;
-                    }
-                    if (bgzf_seek(fp->fp.bgzf, fp->fp.bgzf->seeked, SEEK_SET) < 0)
-                        return -1;
-                    fp->fp.bgzf->seeked = 0;
-                    goto err_recover;
-                } else {
-                    fp->fp.bgzf->seeked = 0;
+                int ret;
+                if ((ret = sam_state_destroy(fp)) < 0) {
+                    errno = -ret;
+                    return -2;
                 }
+                if (bgzf_seek(fp->fp.bgzf, fp->fp.bgzf->seeked, SEEK_SET) < 0)
+                    return -1;
+                fp->fp.bgzf->seeked = 0;
+                goto err_recover;
             }
 
             if (!fd->h) {
