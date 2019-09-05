@@ -88,7 +88,7 @@ int file_type(const char *fname)
             error("Couldn't open \"%s\" : %s\n", fname, strerror(errno));
         }
     }
-    enum htsExactFormat format = fp->format.format;
+    enum htsExactFormat format = hts_get_format(fp)->format;
     hts_close(fp);
     if ( format == bcf ) return IS_BCF;
     if ( format == bam ) return IS_BAM;
