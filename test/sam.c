@@ -62,9 +62,9 @@ uint8_t *check_bam_aux_get(const bam1_t *aln, const char *tag, char type)
     uint8_t *p = bam_aux_get(aln, tag);
     if (p) {
         if (*p == type) return p;
-        else fail("%s field of type '%c', expected '%c'\n", tag, *p, type);
+        else fail("%s field of type '%c', expected '%c'", tag, *p, type);
     }
-    else fail("can't find %s field\n", tag);
+    else fail("can't find %s field", tag);
 
     return NULL;
 }
@@ -76,18 +76,18 @@ static void check_int_B_array(bam1_t *aln, char *tag,
         uint32_t i;
 
         if (bam_auxB_len(p) != nvals)
-            fail("Wrong length reported for %s field, got %u, expected %u\n",
+            fail("Wrong length reported for %s field, got %u, expected %u",
                  tag, bam_auxB_len(p), nvals);
 
         for (i = 0; i < nvals; i++) {
             if (bam_auxB2i(p, i) != vals[i]) {
                 fail("Wrong value from bam_auxB2i for %s field index %u, "
-                     "got %"PRId64" expected %"PRId64"\n",
+                     "got %"PRId64" expected %"PRId64,
                      tag, i, bam_auxB2i(p, i), vals[i]);
             }
             if (bam_auxB2f(p, i) != (double) vals[i]) {
                 fail("Wrong value from bam_auxB2f for %s field index %u, "
-                     "got %f expected %f\n",
+                     "got %f expected %f",
                      tag, i, bam_auxB2f(p, i), (double) vals[i]);
             }
         }
@@ -304,13 +304,13 @@ static int aux_fields1(void)
         nvals = NELE(bfvals);
         if ((p = check_bam_aux_get(aln, "Bf", 'B')) != NULL) {
             if (bam_auxB_len(p) != nvals)
-                fail("Wrong length reported for Bf field, got %d, expected %zd\n",
+                fail("Wrong length reported for Bf field, got %d, expected %zd",
                      bam_auxB_len(p), nvals);
 
             for (i = 0; i < nvals; i++) {
                 if (bam_auxB2f(p, i) != bfvals[i]) {
                     fail("Wrong value from bam_auxB2f for Bf field index %zd, "
-                         "got %f expected %f\n",
+                         "got %f expected %f",
                          i, bam_auxB2f(p, i), bfvals[i]);
                 }
             }
@@ -1011,10 +1011,10 @@ static void faidx1(const char *filename)
     faidx_t *fai;
 
     fin = fopen(filename, "rb");
-    if (fin == NULL) fail("can't open %s\n", filename);
+    if (fin == NULL) fail("can't open %s", filename);
     sprintf(tmpfilename, "%s.tmp", filename);
     fout = fopen(tmpfilename, "wb");
-    if (fout == NULL) fail("can't create temporary %s\n", tmpfilename);
+    if (fout == NULL) fail("can't create temporary %s", tmpfilename);
     while (fgets(line, sizeof line, fin)) {
         if (line[0] == '>') n_exp++;
         if (line[0] == '+' && line[1] == '\n') n_fq_exp++;
@@ -1049,15 +1049,15 @@ static void test_empty_sam_file(const char *filename)
     if (in) {
         enum htsExactFormat format = hts_get_format(in)->format;
         bam1_t *aln = bam_init1();
-
         sam_hdr_t *header = sam_hdr_read(in);
-        if (header)
-            fail("sam_hdr_read() from %s should fail\n", filename);
-        if (sam_read1(in, header, aln) >= 0)
-            fail("sam_read1() from %s should fail\n", filename);
+        int ret = sam_read1(in, header, aln);
 
         if (format != empty_format)
             fail("detected %s as %d (expected empty_format)", filename, format);
+        if (header)
+            fail("sam_hdr_read() from %s should fail", filename);
+        if (ret >= -1)
+            fail("sam_read1() from %s returned %d but should fail", filename, ret);
 
         bam_destroy1(aln);
         sam_hdr_destroy(header);
@@ -1073,8 +1073,8 @@ static void test_text_file(const char *filename, int nexp)
         kstring_t str = KS_INITIALIZE;
         int ret, n = 0;
         while ((ret = hts_getline(in, '\n', &str)) >= 0) n++;
-        if (ret != -1) fail("hts_getline got an error from %s\n", filename);
-        if (n != nexp) fail("hts_getline read %d lines from %s (expected %d)\n", n, filename, nexp);
+        if (ret != -1) fail("hts_getline got an error from %s", filename);
+        if (n != nexp) fail("hts_getline read %d lines from %s (expected %d)", n, filename, nexp);
 
         hts_close(in);
         free(str.s);
