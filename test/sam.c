@@ -1047,6 +1047,7 @@ static void test_empty_sam_file(const char *filename)
 {
     samFile *in = sam_open(filename, "r");
     if (in) {
+        enum htsExactFormat format = hts_get_format(in)->format;
         bam1_t *aln = bam_init1();
 
         sam_hdr_t *header = sam_hdr_read(in);
@@ -1054,6 +1055,9 @@ static void test_empty_sam_file(const char *filename)
             fail("sam_hdr_read() from %s should fail\n", filename);
         if (sam_read1(in, header, aln) >= 0)
             fail("sam_read1() from %s should fail\n", filename);
+
+        if (format != empty_format)
+            fail("detected %s as %d (expected empty_format)", filename, format);
 
         bam_destroy1(aln);
         sam_hdr_destroy(header);
