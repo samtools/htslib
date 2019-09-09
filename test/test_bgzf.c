@@ -818,6 +818,56 @@ static int test_tell_seek_getc(Files *f, const char *mode,
     return -1;
 }
 
+static int test_tell_read(Files *f, const char *mode) {
+
+    BGZF* bgz = NULL;
+    ssize_t bg_put;
+    size_t num_points = 10;
+    size_t i, iskip = f->ltext / num_points;
+    int64_t point_vos[num_points];
+
+    unsigned char *bg_buf = calloc(iskip+1,1);
+    if (!bg_buf) return -1;
+
+    bgz = try_bgzf_open(f->tmp_bgzf, mode, __func__);
+    if (!bgz) goto fail;
+
+    for (i = 0; i < num_points; i++) {
+        point_vos[i] = try_bgzf_tell(bgz, f->tmp_bgzf, __func__);
+        if (point_vos[i] < 0) goto fail;
+        bg_put = try_bgzf_write(bgz, f->text + i * iskip, iskip, f->tmp_bgzf, __func__);
+        if (bg_put < 0) goto fail;
+    }
+
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+
+    bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);
+    if (!bgz) goto fail;
+
+    for (i = 0; i < f->ltext; i += iskip) {
+        if (try_bgzf_tell_expect(bgz, point_vos[i/iskip], f->tmp_bgzf, __func__) < 0) {
+            goto fail;
+        }
+        if (try_bgzf_read(bgz, bg_buf, iskip, f->tmp_bgzf, __func__) < 0) {
+            goto fail;
+        }
+        if (compare_buffers(f->text+i, bg_buf, iskip, iskip,
+                f->tmp_bgzf, f->tmp_bgzf, __func__) != 0) {
+            goto fail;
+        }
+    }
+
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    free(bg_buf);
+    return 0;
+
+ fail:
+    fprintf(stderr, "%s: failed\n", __func__);
+    if (bgz) bgzf_close(bgz);
+    free(bg_buf);
+    return -1;
+}
+
 static int test_bgzf_getline(Files *f, const char *mode, int nthreads) {
     BGZF* bgz = NULL;
     ssize_t bg_put;
@@ -938,6 +988,10 @@ int main(int argc, char **argv) {
     if (test_tell_seek_getc(&f, "w", 1000000, 2) != 0) goto out;
     if (test_tell_seek_getc(&f, "wu", 1000000, 1) != 0) goto out;
     if (test_tell_seek_getc(&f, "wu", 1000000, 2) != 0) goto out;
+
+    // bgzf_tell and bgzf_read
+    if (test_tell_read(&f, "w") != 0) goto out;
+    if (test_tell_read(&f, "wu") != 0) goto out;
 
     // getline
     if (test_bgzf_getline(&f, "w", 0) != 0) goto out;
