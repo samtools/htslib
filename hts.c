@@ -3119,8 +3119,6 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
     if (!hts_parse_region(reg, &tid, &beg, &end, getid, hdr, HTS_PARSE_THOUSANDS_SEP))
         return NULL;
 
-    if (end > INT_MAX) end = INT_MAX; // Remove when fully 64-bit compliant
-
     return itr_query(idx, tid, beg, end, readrec);
 }
 

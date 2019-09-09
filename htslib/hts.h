@@ -593,13 +593,10 @@ typedef int64_t hts_pos_t;
 // typedef int32_t hts_pos_t;
 
 typedef struct {
-    //uint32_t beg, end;
-   hts_pos_t beg, end; // sorry for the bad naming: FIXME!
-} hts_pair32_t;
-
-typedef struct {
    hts_pos_t beg, end;
 } hts_pair_pos_t;
+
+typedef hts_pair_pos_t hts_pair32_t;  // For backwards compatibility
 
 typedef struct {
     uint64_t u, v;
@@ -612,7 +609,7 @@ typedef struct {
 
 typedef struct {
     const char *reg;
-    hts_pair32_t *intervals;
+    hts_pair_pos_t *intervals;
     int tid;
     uint32_t count;
     hts_pos_t min_beg, max_end;

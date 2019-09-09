@@ -110,7 +110,8 @@ enum mtaux_cmd {
 // When multi-threaded bgzf_tell won't work, so we delay the hts_idx_push
 // until we've written the last block.
 typedef struct {
-    int tid, beg, end, is_mapped;  // args for hts_idx_push
+    hts_pos_t beg, end;
+    int tid, is_mapped;  // args for hts_idx_push
     uint64_t offset, block_number;
 } hts_idx_cache_entry;
 
@@ -183,7 +184,7 @@ struct __bgzidx_t
  * Returns 0 on success,
  *        -1 on failure
  */
-int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, int beg, int end, uint64_t offset, int is_mapped) {
+int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t offset, int is_mapped) {
     hts_idx_cache_entry *e;
     mtaux_t *mt = fp->mt;
 

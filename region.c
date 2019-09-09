@@ -30,17 +30,21 @@ DEALINGS IN THE SOFTWARE.  */
 typedef struct reglist
 {
     uint32_t n, m;
-    uint64_t *a;
+    hts_pair_pos_t *a;
     int tid;
 } reglist_t;
 
 KHASH_MAP_INIT_INT(reg, reglist_t)
 typedef kh_reg_t reghash_t;
 
-static int compare_uint64 (const void * a, const void * b)
+static int compare_hts_pair_pos_t (const void *av, const void *bv)
 {
-    if (*(uint64_t *)a < *(uint64_t *)b) return -1;
-    if (*(uint64_t *)a > *(uint64_t *)b) return 1;
+    hts_pair_pos_t *a = (hts_pair_pos_t *) av;
+    hts_pair_pos_t *b = (hts_pair_pos_t *) bv;
+    if (a->beg < b->beg) return -1;
+    if (a->beg > b->beg) return  1;
+    if (a->end < b->end) return -1;
+    if (a->end > b->end) return  1;
 
     return 0;
 }
@@ -54,7 +58,6 @@ static void reg_print(reghash_t *h) {
     khint_t k;
     uint32_t i;
     khint32_t key;
-    uint32_t beg, end;
 
     if (!h) {
         fprintf(stderr, "Hash table is empty!\n");
@@ -66,9 +69,8 @@ static void reg_print(reghash_t *h) {
             fprintf(stderr, "Region: key %u tid %d\n", key, p->tid);
             if ((p = &kh_val(h,k)) != NULL && p->n > 0) {
                 for (i=0; i<p->n; i++) {
-                    beg = (uint32_t)(p->a[i]>>32);
-                    end = (uint32_t)(p->a[i]);
-                    fprintf(stderr, "\tinterval[%d]: %d-%d\n", i, beg, end);
+                    fprintf(stderr, "\tinterval[%d]: %"PRIhts_pos"-%"PRIhts_pos"\n", i,
+                            p->a[i].beg, p->a[i].end);
                 }
             } else {
                 fprintf(stderr, "Region key %u has no intervals!\n", key);
@@ -94,23 +96,30 @@ static int reg_compact(reghash_t *h) {
         if (!kh_exist(h,i) || !(p = &kh_val(h,i)) || !(p->n))
             continue;
 
-        qsort(p->a, p->n, sizeof(uint64_t), compare_uint64);
+        qsort(p->a, p->n, sizeof(p->a[0]), compare_hts_pair_pos_t);
         for (new_n = 0, j = 1; j < p->n; j++) {
-            if ((uint32_t)p->a[new_n] < (uint32_t)(p->a[j]>>32)) {
-                p->a[++new_n] = p->a[j];
+            if (p->a[new_n].end < p->a[j].beg) {
+                p->a[++new_n].beg = p->a[j].beg;
+                p->a[new_n].end = p->a[j].end;
             } else {
-                if ((uint32_t)p->a[new_n] < (uint32_t)p->a[j])
-                    p->a[new_n] = (p->a[new_n] & 0xFFFFFFFF00000000) | (uint32_t)(p->a[j]);
+                if (p->a[new_n].end < p->a[j].end)
+                    p->a[new_n].end = p->a[j].end;
             }
         }
-        p->n = ++new_n;
+        ++new_n;
+        if (p->n > new_n) {
+            // Shrink array to required size.
+            hts_pair_pos_t *new_a = realloc(p->a, new_n * sizeof(p->a[0]));
+            if (new_a) p->a = new_a;
+        }
+        p->n = new_n;
         count++;
     }
 
     return count;
 }
 
-static int reg_insert(reghash_t *h, int tid, unsigned int beg, unsigned int end) {
+static int reg_insert(reghash_t *h, int tid, hts_pos_t beg, hts_pos_t end) {
 
     khint_t k;
     reglist_t *p;
@@ -135,12 +144,13 @@ static int reg_insert(reghash_t *h, int tid, unsigned int beg, unsigned int end)
     if (p->n == p->m) {
         uint32_t new_m = p->m ? p->m<<1 : 4;
         if (new_m == 0) return -1;
-        uint64_t *new_a = realloc(p->a, new_m * sizeof(uint64_t));
+        hts_pair_pos_t *new_a = realloc(p->a, new_m * sizeof(p->a[0]));
         if (new_a == NULL) return -1;
         p->m = new_m;
         p->a = new_a;
     }
-    p->a[p->n++] = (uint64_t)beg<<32 | end;
+    p->a[p->n].beg = beg;
+    p->a[p->n++].end = end;
 
     return 0;
 }
@@ -174,9 +184,8 @@ hts_reglist_t *hts_reglist_create(char **argv, int argc, int *r_count, void *hdr
 
     khint_t k;
     int i, l_count = 0, tid;
-    uint32_t j;
     const char *q;
-    int64_t beg, end;
+    hts_pos_t beg, end;
 
     /* First, transform the char array into a hash table */
     h = kh_init(reg);
@@ -207,9 +216,6 @@ hts_reglist_t *hts_reglist_create(char **argv, int argc, int *r_count, void *hdr
             }
         }
 
-        if (beg > INT_MAX) beg = INT_MAX; // Remove when fully 64-bit compliant
-        if (end > INT_MAX) end = INT_MAX; // Remove when fully 64-bit compliant
-
         if (reg_insert(h, tid, beg, end) != 0) {
             hts_log_error("Error when inserting region='%s' in the bed hash table at address=%p", argv[i], (void *) h);
             goto fail;
@@ -230,21 +236,19 @@ hts_reglist_t *hts_reglist_create(char **argv, int argc, int *r_count, void *hdr
             continue;
 
         h_reglist[l_count].tid = p->tid;
-        h_reglist[l_count].intervals = calloc(p->n, sizeof(h_reglist[l_count].intervals[0]));
-        if(!(h_reglist[l_count].intervals)) {
-            hts_log_error("Could not allocate memory for intervals");
-            goto fail;
-        }
+        h_reglist[l_count].intervals = p->a;
         h_reglist[l_count].count = p->n;
-        h_reglist[l_count].max_end = 0;
+        p->a = NULL; // As we stole it.
 
-        for (j = 0; j < p->n; j++) {
-            h_reglist[l_count].intervals[j].beg = (uint32_t)(p->a[j]>>32);
-            h_reglist[l_count].intervals[j].end = (uint32_t)(p->a[j] & 0xffffffffU);
-
-            if (h_reglist[l_count].intervals[j].end > h_reglist[l_count].max_end)
-                h_reglist[l_count].max_end = h_reglist[l_count].intervals[j].end;
+        // After reg_compact(), list is ordered and non-overlapping, so...
+        if (p->n > 0) {
+            h_reglist[l_count].min_beg = h_reglist[l_count].intervals[0].beg;
+            h_reglist[l_count].max_end = h_reglist[l_count].intervals[p->n - 1].end;
+        } else {
+            h_reglist[l_count].min_beg = 0;
+            h_reglist[l_count].max_end = 0;
         }
+
         l_count++;
     }
     reg_destroy(h);

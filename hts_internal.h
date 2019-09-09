@@ -91,7 +91,7 @@ void close_plugin(void *plugin);
  * Returns 0 on success,
  *        -1 on failure
  */
-int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, int beg, int end, uint64_t offset, int is_mapped);
+int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t offset, int is_mapped);
 
 #ifdef __cplusplus
 }
