@@ -2439,6 +2439,7 @@ sam_hrec_rg_t *sam_hrecs_find_rg(sam_hrecs_t *hrecs, const char *rg) {
         : &hrecs->rg[kh_val(hrecs->rg_hash, k)];
 }
 
+#if DEBUG_HEADER
 void sam_hrecs_dump(sam_hrecs_t *hrecs) {
     khint_t k;
     int i;
@@ -2486,6 +2487,7 @@ void sam_hrecs_dump(sam_hrecs_t *hrecs) {
 
     puts("===END DUMP===");
 }
+#endif
 
 /*
  * Returns the sort order:

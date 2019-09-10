@@ -3011,7 +3011,7 @@ int bcf_index_build(const char *fn, int min_shift)
 
 // Initialise fp->idx for the current format type.
 // This must be called after the header has been written but no other data.
-int vcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
+static int vcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
     int n_lvls, i, fmt;
     int64_t max_len = 0;
 

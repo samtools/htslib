@@ -194,7 +194,7 @@ static void cleanup(hFILE_s3_write *fp) {
 }
 
 
-struct curl_slist *set_html_headers(hFILE_s3_write *fp, kstring_t *auth, kstring_t *date, kstring_t *content, kstring_t *token) {
+static struct curl_slist *set_html_headers(hFILE_s3_write *fp, kstring_t *auth, kstring_t *date, kstring_t *content, kstring_t *token) {
     struct curl_slist *headers = NULL;
 
     headers = curl_slist_append(headers, "Content-Type:"); // get rid of this

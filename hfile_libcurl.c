@@ -739,7 +739,9 @@ static size_t recv_callback(char *ptr, size_t size, size_t nmemb, void *fpv)
 }
 
 
-size_t header_callback(void *contents, size_t size, size_t nmemb, void *userp) {
+static size_t header_callback(void *contents, size_t size, size_t nmemb,
+                              void *userp)
+{
     size_t realsize = size * nmemb;
     kstring_t *resp = (kstring_t *)userp;
 

@@ -2242,7 +2242,7 @@ static void *sam_parse_worker(void *arg) {
     return NULL;
 }
 
-void *sam_parse_eof(void *arg) {
+static void *sam_parse_eof(void *arg) {
     return NULL;
 }
 
