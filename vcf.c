@@ -2466,7 +2466,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             }
             v->rid = kh_val(d, k).id;
         } else if (i == 1) { // POS
-            v->pos = atoi(p) - 1;
+            v->pos = strtoll(p, NULL, 10) - 1;
         } else if (i == 2) { // ID
             if (strcmp(p, ".")) bcf_enc_vchar(str, q - p, p);
             else bcf_enc_size(str, 0, BCF_BT_CHAR);
@@ -2766,7 +2766,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
     int i;
     bcf_unpack((bcf1_t*)v, BCF_UN_ALL);
     kputs(h->id[BCF_DT_CTG][v->rid].key, s); // CHROM
-    kputc('\t', s); kputw(v->pos + 1, s); // POS
+    kputc('\t', s); kputll(v->pos + 1, s); // POS
     kputc('\t', s); kputs(v->d.id ? v->d.id : ".", s); // ID
     kputc('\t', s); // REF
     if (v->n_allele > 0) kputs(v->d.allele[0], s);
