@@ -125,6 +125,7 @@ typedef struct kstring_t {
         }                                                               \
     } while (0)
 
+// For internal use (by hts_resize()) only
 int hts_resize_array_(size_t, size_t, size_t, void *, void **, int,
                       const char *);
 
@@ -140,6 +141,8 @@ int hts_resize_array_(size_t, size_t, size_t, void *, void **, int,
                             array is stored.
  * @param[in,out] ptr       Location of the pointer to the array
  * @param[in]     flags     Option flags
+ *
+ * @return        0 for success, or negative if an error occurred.
  *
  * @discussion
  * The array *ptr will be expanded if necessary so that it can hold @p num
