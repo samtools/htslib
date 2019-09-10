@@ -196,9 +196,9 @@ bcf_sr_sort_h = bcf_sr_sort.h $(htslib_synced_bcf_reader_h) $(htslib_kbitset_h)
 header_h = header.h cram/string_alloc.h cram/pooled_alloc.h $(htslib_khash_h) $(htslib_kstring_h) $(htslib_sam_h)
 hfile_internal_h = hfile_internal.h $(htslib_hfile_h) $(textutils_internal_h)
 hts_internal_h = hts_internal.h $(htslib_hts_h) $(textutils_internal_h)
+sam_internal_h = sam_internal.h $(htslib_sam_h)
 textutils_internal_h = textutils_internal.h $(htslib_kstring_h)
 thread_pool_internal_h = thread_pool_internal.h $(htslib_thread_pool_h)
-sam_internal_h = sam_internal.h $(htslib_sam_h)
 
 
 # To be effective, config.mk needs to appear after most Makefile variables are
@@ -318,7 +318,7 @@ hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(hts
 hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(hfile_internal_h)
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_net.o hfile_net.pico: hfile_net.c config.h $(hfile_internal_h) $(htslib_knetfile_h)
-hfile_s3_write.o hfile_s3_write.pico: hfile_s3_write.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
+hfile_s3_write.o hfile_s3_write.pico: hfile_s3_write.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
 hts.o hts.pico: hts.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h)
 hts_os.o hts_os.pico: hts_os.c config.h os/rand.c
@@ -453,7 +453,7 @@ test/pileup.o: test/pileup.c config.h $(htslib_sam_h) $(htslib_kstring_h)
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_kstring_h) $(htslib_hts_log_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
-test/test-parse-reg.o: test/test-parse-reg.c $(htslib_hts_h) $(htslib_sam_h)
+test/test-parse-reg.o: test/test-parse-reg.c config.h $(htslib_hts_h) $(htslib_sam_h)
 test/test_realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
 test/test-regidx.o: test/test-regidx.c config.h $(htslib_regidx_h) $(hts_internal_h)
 test/test_view.o: test/test_view.c config.h $(cram_h) $(htslib_sam_h) $(htslib_vcf_h)
