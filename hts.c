@@ -342,7 +342,7 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         return 0;
     }
 
-    if (len >= 6 && memcmp(s,"CRAM",4) == 0 && s[4]>=1 && s[4]<=3 && s[5]<=1) {
+    if (len >= 6 && memcmp(s,"CRAM",4) == 0 && s[4]>=1 && s[4]<=7 && s[5]<=7) {
         fmt->category = sequence_data;
         fmt->format = cram;
         fmt->version.major = s[4], fmt->version.minor = s[5];
