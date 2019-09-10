@@ -2916,26 +2916,41 @@ int bcf_hdr_id2int(const bcf_hdr_t *h, int which, const char *id)
  *** BCF indexing ***
  ********************/
 
+// Calculate number of index levels given min_shift and the header contig
+// list.  Also returns number of contigs in *nids_out.
+static int idx_calc_n_lvls_ids(const bcf_hdr_t *h, int min_shift,
+                               int starting_n_lvls, int *nids_out)
+{
+    int n_lvls, i, nids = 0;
+    int64_t max_len = 0, s;
+
+    for (i = 0; i < h->n[BCF_DT_CTG]; ++i)
+    {
+        if ( !h->id[BCF_DT_CTG][i].val ) continue;
+        if ( max_len < h->id[BCF_DT_CTG][i].val->info[0] )
+            max_len = h->id[BCF_DT_CTG][i].val->info[0];
+        nids++;
+    }
+    if ( !max_len ) max_len = (1LL<<31) - 1;  // In case contig line is broken.
+    max_len += 256;
+    s = 1LL << (min_shift + starting_n_lvls * 3);
+    for (n_lvls = starting_n_lvls; max_len > s; ++n_lvls, s <<= 3);
+
+    if (nids_out) *nids_out = nids;
+    return n_lvls;
+}
+
 hts_idx_t *bcf_index(htsFile *fp, int min_shift)
 {
-    int n_lvls, i;
+    int n_lvls;
     bcf1_t *b = NULL;
     hts_idx_t *idx = NULL;
     bcf_hdr_t *h;
-    int64_t max_len = 0, s;
     int r;
     h = bcf_hdr_read(fp);
     if ( !h ) return NULL;
     int nids = 0;
-    for (i = 0; i < h->n[BCF_DT_CTG]; ++i)
-    {
-        if ( !h->id[BCF_DT_CTG][i].val ) continue;
-        if ( max_len < h->id[BCF_DT_CTG][i].val->info[0] ) max_len = h->id[BCF_DT_CTG][i].val->info[0];
-        nids++;
-    }
-    if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
-    max_len += 256;
-    for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+    n_lvls = idx_calc_n_lvls_ids(h, min_shift, 0, &nids);
     idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     if (!idx) goto fail;
     b = bcf_init1();
@@ -3025,23 +3040,17 @@ int bcf_index_build(const char *fn, int min_shift)
 // Initialise fp->idx for the current format type.
 // This must be called after the header has been written but no other data.
 static int vcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
-    int n_lvls, i, fmt;
-    int64_t max_len = 0;
-
-    for (i = 0; i < h->n[BCF_DT_CTG]; i++) {
-        if (!h->id[BCF_DT_CTG][i].val) continue;
-        if (max_len < h->id[BCF_DT_CTG][i].val->info[0])
-            max_len = h->id[BCF_DT_CTG][i].val->info[0];
-    }
-    if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
-    max_len += 256;
+    int n_lvls, fmt;
 
     if (min_shift == 0) {
         min_shift = 14;
         n_lvls = 5;
         fmt = HTS_FMT_TBI;
     } else {
-        n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3;
+        // Set initial n_lvls to match tbx_index()
+        int starting_n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3;
+        // Increase if necessary
+        n_lvls = idx_calc_n_lvls_ids(h, min_shift, starting_n_lvls, NULL);
         fmt = HTS_FMT_CSI;
     }
 
@@ -3071,8 +3080,6 @@ static int vcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fn
 // This must be called after the header has been written but no other data.
 int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
     int n_lvls, nids = 0;
-    int64_t max_len = 0, s;
-    int i;
 
     if (fp->format.format == vcf)
         return vcf_idx_init(fp, h, min_shift, fnidx);
@@ -3080,15 +3087,7 @@ int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
     if (!min_shift)
         min_shift = 14;
 
-    for (i = 0; i < h->n[BCF_DT_CTG]; i++) {
-        if (!h->id[BCF_DT_CTG][i].val) continue;
-        if (max_len < h->id[BCF_DT_CTG][i].val->info[0])
-            max_len = h->id[BCF_DT_CTG][i].val->info[0];
-        nids++;
-    }
-    if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
-    max_len += 256;
-    for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+    n_lvls = idx_calc_n_lvls_ids(h, min_shift, 0, &nids);
 
     fp->idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     if (!fp->idx) return -1;
