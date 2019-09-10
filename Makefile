@@ -532,7 +532,7 @@ htslib-uninstalled.pc: htslib.pc.tmp
 
 
 testclean:
-	-rm -f test/*.tmp test/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL*
+	-rm -f test/*.tmp test/*.tmp.* test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL*
 
 mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h
