@@ -1464,7 +1464,7 @@ int sam_hdr_remove_except(sam_hdr_t *bh, const char *type, const char *ID_key, c
     }
 
     sam_hrec_type_t *step;
-    int ret = 1, remove_all = 0;
+    int ret = 1, remove_all = (ID_key == NULL);
 
     if (!strncmp(type, "PG", 2) || !strncmp(type, "CO", 2)) {
         hts_log_warning("Removing PG or CO lines is not supported!");
