@@ -499,18 +499,23 @@ static int bcf_hdr_set_idx(bcf_hdr_t *hdr, int dict_type, const char *tag, bcf_i
 static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 {
     // contig
-    int i,j, ret, replacing = 0;
+    int i, ret, replacing = 0;
     khint_t k;
     char *str;
 
     if ( !strcmp(hrec->key, "contig") )
     {
+        hts_pos_t len = 0;
         hrec->type = BCF_HL_CTG;
 
         // Get the contig ID ($str) and length ($j)
         i = bcf_hrec_find_key(hrec,"length");
-        if ( i<0 ) j = 0;
-        else if ( sscanf(hrec->vals[i],"%d",&j)!=1 ) return 0;
+        if ( i<0 ) len = 0;
+        else {
+            char *end = hrec->vals[i];
+            len = strtoll(hrec->vals[i], &end, 10);
+            if (end == hrec->vals[i] || len < 0) return 0;
+        }
 
         i = bcf_hrec_find_key(hrec,"ID");
         if ( i<0 ) return 0;
@@ -548,7 +553,7 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
         kh_val(d, k) = bcf_idinfo_def;
         kh_val(d, k).id = idx;
-        kh_val(d, k).info[0] = j;
+        kh_val(d, k).info[0] = len;
         kh_val(d, k).hrec[0] = hrec;
         if (bcf_hdr_set_idx(hdr, BCF_DT_CTG, kh_key(d,k), &kh_val(d,k)) < 0) {
             if (!replacing) {
