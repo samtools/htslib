@@ -263,6 +263,11 @@ sub test_compare
         }
     }
 
+    if (exists($args{fix_newlines})) {
+        $exp =~ s/\015\012/\n/g;
+        $out =~ s/\015\012/\n/g;
+    }
+
     if ( $exp ne $out )
     {
         failed($opts,$test,"The outputs differ:\n\t\t$exp_fn\n\t\t$out_fn");
@@ -648,6 +653,19 @@ sub test_view
     testv $opts, "./compare_sam.pl longrefs/longref_itr.expected.sam longrefs/longref_itr.tmp.sam";
     testv $opts, "./test_view $tv_args -M -p longrefs/longref_multi.tmp.sam longrefs/longref.tmp.sam.gz CHROMOSOME_I:10000000000-10000000003 CHROMOSOME_I:10000000100-10000000110";
     testv $opts, "./compare_sam.pl longrefs/longref_multi.expected.sam longrefs/longref_multi.tmp.sam";
+
+    # VCF round trip
+    unlink("longrefs/index.tmp.vcf.gz.csi"); # To stop vcf_hdr_read from reading a stale index
+    testv $opts, "./test_view $tv_args -z -p longrefs/index.tmp.vcf.gz -x longrefs/index.tmp.vcf.gz.csi.otf -m 14 longrefs/index.vcf";
+    testv $opts, "./test_view $tv_args -p longrefs/index.tmp.vcf_ longrefs/index.tmp.vcf.gz";
+    testv $opts, "cmp longrefs/index.vcf longrefs/index.tmp.vcf_";
+
+    # Build index and compare with on-the-fly one made earlier.
+    test_compare $opts, "$$opts{path}/test_index -c longrefs/index.tmp.vcf.gz", "longrefs/index.tmp.vcf.gz.csi.otf", "longrefs/index.tmp.vcf.gz.csi", gz=>1;
+
+    # test_view can't do indexed look-ups on vcf, but we can use tabix
+    test_compare $opts, "$$opts{bin}/tabix longrefs/index.tmp.vcf.gz 1:10010000100-10010000105 > longrefs/index.tmp.tabix1.vcf", "longrefs/index.expected1.vcf", "longrefs/index.tmp.tabix1.vcf", fix_newlines => 1;
+    test_compare $opts, "$$opts{bin}/tabix longrefs/index.tmp.vcf.gz 1:10010000120-10010000130 > longrefs/index.tmp.tabix2.vcf", "longrefs/index.expected2.vcf", "longrefs/index.tmp.tabix2.vcf", fix_newlines => 1;
 
     if ($test_view_failures == 0) {
         passed($opts, "large position tests");
