@@ -2027,6 +2027,24 @@ int bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
     return 0; // FIXME: check for errs in this function
 }
 
+static int bcf_enc_long1(kstring_t *s, int64_t x) {
+    uint32_t e = 0;
+    if (x <= BCF_MAX_BT_INT32 && x >= BCF_MIN_BT_INT32)
+        return bcf_enc_int1(s, x);
+    if (x == bcf_int64_vector_end) {
+        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
+        e |= kputc(bcf_int8_vector_end, s) < 0;
+    } else if (x == bcf_int64_missing) {
+        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
+        e |= kputc(bcf_int8_missing, s) < 0;
+    } else {
+        e |= bcf_enc_size(s, 1, BCF_BT_INT64);
+        e |= ks_expand(s, 8);
+        if (e == 0) { u64_to_le(x, (uint8_t *) s->s + s->l); s->l += 8; }
+    }
+    return e == 0 ? 0 : -1;
+}
+
 static inline int serialize_float_array(kstring_t *s, size_t n, const float *a) {
     uint8_t *p;
     size_t i;
@@ -2606,29 +2624,39 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                             val_a = z;
                         }
                         if ((y>>4&0xf) == BCF_HT_INT) {
-                            for (i = 0, t = val; i < n_val; ++i, ++t)
+                            // Allow first value only to be 64 bit
+                            // (for large END value)
+                            int64_t v64 = strtoll(val, &te, 10);
+                            if ( te==val ) { // conversion failed
+                                val_a[0] = bcf_int32_missing;
+                                v64 = bcf_int64_missing;
+                            } else {
+                                val_a[0] = v64 >= BCF_MIN_BT_INT32 && v64 <= BCF_MAX_BT_INT32 ? v64 : bcf_int32_missing;
+                            }
+                            for (t = te; *t && *t != ','; t++);
+                            if (*t == ',') ++t;
+                            for (i = 1; i < n_val; ++i, ++t)
                             {
                                 val_a[i] = strtol(t, &te, 10);
                                 if ( te==t ) // conversion failed
-                                {
                                     val_a[i] = bcf_int32_missing;
-                                    while ( *te && *te!=',' ) te++;
-                                }
-                                t = te;
+                                for (t = te; *t && *t != ','; t++);
                             }
-                            bcf_enc_vint(str, n_val, val_a, -1);
-                            if (strcmp(key, "END") == 0) v->rlen = val_a[0] - v->pos;
+                            if (n_val == 1) {
+                                bcf_enc_long1(str, v64);
+                            } else {
+                                bcf_enc_vint(str, n_val, val_a, -1);
+                            }
+                            if (strcmp(key, "END") == 0)
+                                v->rlen = v64 - v->pos;
                         } else if ((y>>4&0xf) == BCF_HT_REAL) {
                             float *val_f = (float *)val_a;
                             for (i = 0, t = val; i < n_val; ++i, ++t)
                             {
                                 val_f[i] = strtod(t, &te);
                                 if ( te==t ) // conversion failed
-                                {
                                     bcf_float_set_missing(val_f[i]);
-                                    while ( *te && *te!=',' ) te++;
-                                }
-                                t = te;
+                                for (t = te; *t && *t != ','; t++);
                             }
                             bcf_enc_vfloat(str, n_val, val_f);
                         }
@@ -2691,6 +2719,7 @@ static inline uint8_t *bcf_unpack_info_core1(uint8_t *ptr, bcf_info_t *info)
         else if (info->type == BCF_BT_INT32) info->v1.i = le_to_i32(ptr);
         else if (info->type == BCF_BT_FLOAT) info->v1.f = le_to_float(ptr);
         else if (info->type == BCF_BT_INT16) info->v1.i = le_to_i16(ptr);
+        else if (info->type == BCF_BT_INT64) info->v1.i = le_to_i64(ptr);
     }
     ptr += info->len << bcf_type_shift[info->type];
     info->vptr_len = ptr - info->vptr;
@@ -2816,6 +2845,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                     case BCF_BT_INT8:  if ( z->v1.i==bcf_int8_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
                     case BCF_BT_INT16: if ( z->v1.i==bcf_int16_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
                     case BCF_BT_INT32: if ( z->v1.i==bcf_int32_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
+                    case BCF_BT_INT64: if ( z->v1.i==bcf_int64_missing ) kputc('.', s); else kputll(z->v1.i, s); break;
                     case BCF_BT_FLOAT: if ( bcf_float_is_missing(z->v1.f) ) kputc('.', s); else kputd(z->v1.f, s); break;
                     case BCF_BT_CHAR:  kputc(z->v1.i, s); break;
                     default: hts_log_error("Unexpected type %d", z->type); exit(1); break;
@@ -3756,6 +3786,14 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
         else
             bcf_enc_vchar(&str, strlen((char*)values), (char*)values);
     }
+    else if ( type==BCF_HT_LONG )
+    {
+        if (n != 1) {
+            hts_log_error("Only storing a single BCF_HT_LONG value is supported");
+            abort();
+        }
+        bcf_enc_long1(&str, *(int64_t *) values);
+    }
     else
     {
         hts_log_error("The type %d not implemented yet", type);
@@ -3797,7 +3835,11 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
     }
     line->unpacked |= BCF_UN_INFO;
 
-    if ( n==1 && !strcmp("END",key) ) line->rlen = ((int32_t*)values)[0] - line->pos;
+    if ( n==1 && !strcmp("END",key) ) {
+        assert(type == BCF_HT_INT || type == BCF_HT_LONG);
+        int64_t end = type == BCF_HT_INT ? *(int32_t *) values : *(int64_t *) values;
+        line->rlen = end - line->pos;
+    }
     return 0;
 }
 
@@ -4140,7 +4182,7 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
 {
     int i, ret = -4, tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag);
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_INFO,tag_id) ) return -1;    // no such INFO field in the header
-    if ( bcf_hdr_id2type(hdr,BCF_HL_INFO,tag_id)!=type ) return -2;     // expected different type
+    if ( bcf_hdr_id2type(hdr,BCF_HL_INFO,tag_id)!=(type & 0xff) ) return -2;     // expected different type
 
     if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
 
@@ -4164,7 +4206,15 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
     }
 
     // Make sure the buffer is big enough
-    int size1 = type==BCF_HT_INT ? sizeof(int32_t) : sizeof(float);
+    int size1;
+    switch (type) {
+        case BCF_HT_INT:  size1 = sizeof(int32_t); break;
+        case BCF_HT_LONG: size1 = sizeof(int64_t); break;
+        case BCF_HT_REAL: size1 = sizeof(float); break;
+        default:
+            hts_log_error("Unexpected output type %d", type);
+            return -2;
+    }
     if ( *ndst < info->len )
     {
         *ndst = info->len;
@@ -4185,11 +4235,28 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
         ret = j; \
     } while (0)
     switch (info->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
-        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
-        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, p==bcf_int32_missing, p==bcf_int32_vector_end, *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
+        case BCF_BT_INT8:
+            if (type == BCF_HT_LONG) {
+                BRANCH(int8_t,  le_to_i8,  p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int64_missing, *tmp=p, int64_t);
+            } else {
+                BRANCH(int8_t,  le_to_i8,  p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=p, int32_t);
+            }
+            break;
+        case BCF_BT_INT16:
+            if (type == BCF_HT_LONG) {
+                BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int64_missing, *tmp=p, int64_t);
+            } else {
+                BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=p, int32_t);
+            }
+            break;
+        case BCF_BT_INT32:
+            if (type == BCF_HT_LONG) {
+                BRANCH(int32_t, le_to_i32, p==bcf_int32_missing, p==bcf_int32_vector_end, *tmp=bcf_int64_missing, *tmp=p, int64_t); break;
+            } else {
+                BRANCH(int32_t, le_to_i32, p==bcf_int32_missing, p==bcf_int32_vector_end, *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
+            }
         case BCF_BT_FLOAT: BRANCH(uint32_t, le_to_u32, p==bcf_float_missing, p==bcf_float_vector_end, bcf_float_set_missing(*tmp), bcf_float_set(tmp, p), float); break;
-        default: hts_log_error("Unexpected type %d", info->type); exit(1);
+        default: hts_log_error("Unexpected type %d", info->type); return -2;
     }
     #undef BRANCH
     return ret;  // set by BRANCH

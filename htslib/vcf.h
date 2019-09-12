@@ -61,6 +61,7 @@ extern "C" {
 #define BCF_HT_INT  1
 #define BCF_HT_REAL 2
 #define BCF_HT_STR  3
+#define BCF_HT_LONG (BCF_HT_INT | 0x100) // BCF_HT_INT, but for int64_t values; VCF only!
 
 #define BCF_VL_FIXED 0 // variable length
 #define BCF_VL_VAR   1
@@ -130,6 +131,7 @@ extern uint8_t bcf_type_shift[];
 #define BCF_BT_INT8     1
 #define BCF_BT_INT16    2
 #define BCF_BT_INT32    3
+#define BCF_BT_INT64    4  // Unofficial, for internal use only.
 #define BCF_BT_FLOAT    5
 #define BCF_BT_CHAR     7
 
@@ -155,9 +157,9 @@ typedef struct {
 
 typedef struct {
     int key;        // key: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$key].key
-    int type, len;  // type: one of BCF_BT_* types; len: vector length, 1 for scalars
+    int type;  // type: one of BCF_BT_* types
     union {
-        int32_t i; // integer value
+        int64_t i; // integer value
         float f;   // float value
     } v1; // only set if $len==1; for easier access
     uint8_t *vptr;          // pointer to data array in bcf1_t->shared.s, excluding the size+type and tag id bytes
@@ -165,6 +167,7 @@ typedef struct {
     uint32_t vptr_off:31,   // vptr offset, i.e., the size of the INFO key plus size+type bytes
             vptr_free:1;    // indicates that vptr-vptr_off must be freed; set only when modified and the new
                             //    data block is bigger than the original
+    int len;                // vector length, 1 for scalars
 } bcf_info_t;
 
 
@@ -680,6 +683,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  Returns 0 on success or negative value on error.
      */
     #define bcf_update_info_int32(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_INT)
+    #define bcf_update_info_int64(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_LONG)
     #define bcf_update_info_float(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
     #define bcf_update_info_flag(hdr,line,key,string,n)    bcf_update_info((hdr),(line),(key),(string),(n),BCF_HT_FLAG)
     #define bcf_update_info_string(hdr,line,key,string)    bcf_update_info((hdr),(line),(key),(string),1,BCF_HT_STR)
@@ -1067,10 +1071,12 @@ which works for both BCF and VCF.
 #define bcf_int8_vector_end  (-127)         /* INT8_MIN  + 1 */
 #define bcf_int16_vector_end (-32767)       /* INT16_MIN + 1 */
 #define bcf_int32_vector_end (-2147483647)  /* INT32_MIN + 1 */
+#define bcf_int64_vector_end (-9223372036854775807LL)  /* INT64_MIN + 1 */
 #define bcf_str_vector_end   0
 #define bcf_int8_missing     (-128)          /* INT8_MIN  */
 #define bcf_int16_missing    (-32767-1)      /* INT16_MIN */
 #define bcf_int32_missing    (-2147483647-1) /* INT32_MIN */
+#define bcf_int64_missing    (-9223372036854775807LL - 1LL)  /* INT64_MIN */
 #define bcf_str_missing      0x07
 
 // Limits on BCF values stored in given types.  Max values are the same
@@ -1200,7 +1206,7 @@ Cautious callers can detect invalid type codes by checking that *q has
 actually been updated.
 */
 
-static inline int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
+static inline int64_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
 {
     if (type == BCF_BT_INT8) {
         *q = (uint8_t*)p + 1;
@@ -1211,6 +1217,9 @@ static inline int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
     } else if (type == BCF_BT_INT32) {
         *q = (uint8_t*)p + 4;
         return le_to_i32(p);
+    } else if (type == BCF_BT_INT64) {
+        *q = (uint8_t*)p + 4;
+        return le_to_i64(p);
     } else { // Invalid type.
         return 0;
     }
@@ -1232,7 +1241,7 @@ the integer value.
 Cautious callers can detect invalid type codes by checking that *q has
 actually been updated.
 */
-static inline int32_t bcf_dec_typed_int1(const uint8_t *p, uint8_t **q)
+static inline int64_t bcf_dec_typed_int1(const uint8_t *p, uint8_t **q)
 {
     return bcf_dec_int1(p + 1, *p&0xf, q);
 }
