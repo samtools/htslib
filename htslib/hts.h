@@ -394,6 +394,18 @@ extern const int seq_nt16_int[];
 const char *hts_version(void);
 
 /*!
+  @abstract  Compile-time HTSlib version number, for use in #if checks
+  @return    For released versions X.Y[.Z], an integer of the form XYYYZZ;
+  useful for preprocessor conditionals such as
+      #if HTS_VERSION >= 101000  // Check for v1.10 or later
+*/
+// Maintainers: Bump this in the final stage of preparing a new release.
+// Immediately after release, bump ZZ to 90 to distinguish in-development
+// Git repository builds from the release; you may wish to increment this
+// further when significant features are merged.
+#define HTS_VERSION 100990
+
+/*!
   @abstract    Determine format by peeking at the start of a file
   @param fp    File opened for reading, positioned at the beginning
   @param fmt   Format structure that will be filled out on return

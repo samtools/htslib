@@ -47,6 +47,13 @@ DEALINGS IN THE SOFTWARE.  */
 KHASH_SET_INIT_STR(keep)
 typedef khash_t(keep) *keephash_t;
 
+#ifndef HTS_VERSION
+#error HTS_VERSION not defined
+#endif
+#if HTS_VERSION < 100900
+#error HTS_VERSION comparison incorrect
+#endif
+
 int status;
 
 static void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) fail(const char *fmt, ...)

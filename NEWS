@@ -162,6 +162,11 @@ Noteworthy changes in release a.b
   alignment record data; see documentation in htslib/sam.h for more
   information.
 
+* In addition to the existing hts_version() function, which reflects the
+  HTSlib version being used at runtime, <htslib/hts.h> now also provides
+  HTS_VERSION, a preprocessor macro reflecting the HTSlib version that
+  a program is being compiled against.  (#794, PR #951)
+
 * Changes to hfile_s3, which provides support for the AWS S3 API.
 
   - hfile_s3 now uses version 4 signatures by default.  Attempting to write to
