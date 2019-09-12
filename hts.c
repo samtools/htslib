@@ -64,7 +64,7 @@ int hts_verbose = HTS_LOG_WARNING;
 
 const char *hts_version()
 {
-    return HTS_VERSION;
+    return HTS_VERSION_TEXT;
 }
 
 const unsigned char seq_nt16_table[256] = {

@@ -1435,7 +1435,8 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_libcurl)(struct hFILE_plugin *self)
 
 #ifdef ENABLE_PLUGINS
     // Embed version string for examination via strings(1) or what(1)
-    static const char id[] = "@(#)hfile_libcurl plugin (htslib)\t" HTS_VERSION;
+    static const char id[] =
+        "@(#)hfile_libcurl plugin (htslib)\t" HTS_VERSION_TEXT;
     const char *version = strchr(id, '\t')+1;
 #else
     const char *version = hts_version();

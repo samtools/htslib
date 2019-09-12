@@ -841,7 +841,8 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_s3_write)(struct hFILE_plugin *self) {
 
 #ifdef ENABLE_PLUGINS
     // Embed version string for examination via strings(1) or what(1)
-    static const char id[] = "@(#)hfile_s3_write plugin (htslib)\t" HTS_VERSION;
+    static const char id[] =
+        "@(#)hfile_s3_write plugin (htslib)\t" HTS_VERSION_TEXT;
     const char *version = strchr(id, '\t') + 1;
 
     if (hts_verbose >= 9)

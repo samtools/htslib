@@ -117,7 +117,7 @@ NUMERIC_VERSION := $(shell ./version.sh numeric)
 version.h: $(if $(wildcard version.h),$(if $(findstring "$(PACKAGE_VERSION)",$(shell cat version.h)),,force))
 
 version.h:
-	echo '#define HTS_VERSION "$(PACKAGE_VERSION)"' > $@
+	echo '#define HTS_VERSION_TEXT "$(PACKAGE_VERSION)"' > $@
 
 print-version:
 	@echo $(PACKAGE_VERSION)
