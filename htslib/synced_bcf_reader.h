@@ -125,8 +125,9 @@ typedef struct _bcf_sr_regions_t
     char **seq_names;       // sequence names
     int nseqs;              // number of sequences (chromosomes) in the file
     int iseq;               // current position: chr name, index to snames
-    int start, end;         // current position: start, end of the region (0-based)
-    int prev_seq, prev_start;
+    hts_pos_t start, end;   // current position: start, end of the region (0-based)
+    int prev_seq;
+    hts_pos_t prev_start;
 }
 bcf_sr_regions_t;
 
@@ -241,7 +242,7 @@ int bcf_sr_next_line(bcf_srs_t *readers);
  *  @seq:  sequence name; NULL to seek to start
  *  @pos:  0-based coordinate
  */
-int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos);
+int bcf_sr_seek(bcf_srs_t *readers, const char *seq, hts_pos_t pos);
 
 /**
  * bcf_sr_set_samples() - sets active samples
@@ -336,7 +337,7 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg);
  *  regions and more regions exist; -2 if not in the regions and there are no more
  *  regions left.
  */
-int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, int end);
+int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, hts_pos_t start, hts_pos_t end);
 
 /*
  *  bcf_sr_regions_flush() - calls repeatedly regs->missed_reg_handler() until
