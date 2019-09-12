@@ -93,7 +93,7 @@ int tbx_parse1(const tbx_conf_t *conf, int len, char *line, tbx_intv_t *intv)
                 intv->ss = line + b; intv->se = line + i;
             } else if (id == conf->bc) {
                 // here ->beg is 0-based.
-                intv->beg = intv->end = strtol(line + b, &s, 0);
+                intv->beg = intv->end = strtoll(line + b, &s, 0);
                 if ( s==line+b ) return -1; // expected int
                 if (!(conf->preset&TBX_UCSC)) --intv->beg;
                 else ++intv->end;
@@ -103,7 +103,7 @@ int tbx_parse1(const tbx_conf_t *conf, int len, char *line, tbx_intv_t *intv)
                 if ((conf->preset&0xffff) == TBX_GENERIC) {
                     if (id == conf->ec)
                     {
-                        intv->end = strtol(line + b, &s, 0);
+                        intv->end = strtoll(line + b, &s, 0);
                         if ( s==line+b ) return -1; // expected int
                     }
                 } else if ((conf->preset&0xffff) == TBX_SAM) {
@@ -131,7 +131,7 @@ int tbx_parse1(const tbx_conf_t *conf, int len, char *line, tbx_intv_t *intv)
                             s = strstr(line + b, ";END=");
                             if (s) s += 5;
                         }
-                        if (s) intv->end = strtol(s, &s, 0);
+                        if (s) intv->end = strtoll(s, &s, 0);
                         line[i] = c;
                     }
                 }
@@ -220,6 +220,44 @@ static int tbx_set_meta(tbx_t *tbx)
     return 0;
 }
 
+// Minimal effort parser to extract reference length out of VCF header line
+// This is used only used to adjust the number of levels if necessary,
+// so not a major problem if it doesn't always work.
+static void adjust_max_ref_len_vcf(const char *str, int64_t *max_ref_len)
+{
+    const char *ptr;
+    int64_t len;
+    if (strncmp(str, "##contig", 8) != 0) return;
+    ptr = strstr(str + 8, "length");
+    if (!ptr) return;
+    for (ptr += 6; *ptr == ' ' || *ptr == '='; ptr++) {}
+    len = strtoll(ptr, NULL, 10);
+    if (*max_ref_len < len) *max_ref_len = len;
+}
+
+// Same for sam files
+static void adjust_max_ref_len_sam(const char *str, int64_t *max_ref_len)
+{
+    const char *ptr;
+    int64_t len;
+    if (strncmp(str, "@SQ", 3) != 0) return;
+    ptr = strstr(str + 3, "\tLN:");
+    if (!ptr) return;
+    ptr += 4;
+    len = strtoll(ptr, NULL, 10);
+    if (*max_ref_len < len) *max_ref_len = len;
+}
+
+// Adjusts number of levels if not big enough.  This can happen for
+// files with very large contigs.
+static int adjust_n_lvls(int min_shift, int n_lvls, int64_t max_len)
+{
+    int64_t s = 1LL << (min_shift + n_lvls * 3);
+    max_len += 256;
+    for (; max_len > s; ++n_lvls, s <<= 3) {}
+    return n_lvls;
+}
+
 tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
 {
     tbx_t *tbx;
@@ -228,6 +266,7 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
     int64_t lineno = 0;
     uint64_t last_off = 0;
     tbx_intv_t intv;
+    int64_t max_ref_len = 0;
 
     str.s = 0; str.l = str.m = 0;
     tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
@@ -237,11 +276,23 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
     else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_TBI;
     while ((ret = bgzf_getline(fp, '\n', &str)) >= 0) {
         ++lineno;
+        if (str.s[0] == tbx->conf.meta_char && fmt == HTS_FMT_CSI) {
+            switch (tbx->conf.preset) {
+                case TBX_SAM:
+                    adjust_max_ref_len_sam(str.s, &max_ref_len); break;
+                case TBX_VCF:
+                    adjust_max_ref_len_vcf(str.s, &max_ref_len); break;
+                default:
+                    break;
+            }
+        }
         if (lineno <= tbx->conf.line_skip || str.s[0] == tbx->conf.meta_char) {
             last_off = bgzf_tell(fp);
             continue;
         }
         if (first == 0) {
+            if (fmt == HTS_FMT_CSI)
+                n_lvls = adjust_n_lvls(min_shift, n_lvls, max_ref_len);
             tbx->idx = hts_idx_init(0, fmt, last_off, min_shift, n_lvls);
             if (!tbx->idx) goto fail;
             first = 1;
