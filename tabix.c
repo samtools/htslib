@@ -120,11 +120,11 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
         for (iseq=0; iseq<nseq; iseq++)
         {
             regitr_t itr;
-            regidx_overlap(idx, seqs[iseq], 0, UINT32_MAX, &itr);
+            regidx_overlap(idx, seqs[iseq], 0, HTS_POS_MAX, &itr);
             while ( itr.i < itr.n )
             {
                 str.l = 0;
-                ksprintf(&str, "%s:%d-%d", seqs[iseq], REGITR_START(itr)+1, REGITR_END(itr)+1);
+                ksprintf(&str, "%s:%"PRIhts_pos"-%"PRIhts_pos, seqs[iseq], REGITR_START(itr)+1, REGITR_END(itr)+1);
                 regs[ireg++] = strdup(str.s);
                 itr.i++;
             }
