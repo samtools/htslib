@@ -26,6 +26,13 @@ dnl Process this file with autoconf to produce a configure script
 AC_INIT([HTSlib], m4_esyscmd_s([./version.sh 2>/dev/null]),
         [samtools-help@lists.sourceforge.net], [], [http://www.htslib.org/])
 AC_PREREQ(2.63)  dnl This version introduced 4-argument AC_CHECK_HEADER
+
+dnl Build htscodecs as a static library so we don't add an additional
+dnl dependency, but using -fPIC so it can be included in libhts.so.
+AC_CONFIG_MACRO_DIR([m4])
+AC_CONFIG_AUX_DIR([htscodecs])
+AX_SUBDIRS_CONFIGURE([htscodecs],[[--disable-shared],[--with-pic]])
+
 AC_CONFIG_SRCDIR(hts.c)
 AC_CONFIG_HEADERS(config.h)
 

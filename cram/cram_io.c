@@ -74,7 +74,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/os.h"
 #include "htslib/hts.h"
 #include "cram/open_trace_file.h"
-#include "cram/rANS_static.h"
+#include "htscodecs/rANS_static.h"
 
 //#define REF_DEBUG
 

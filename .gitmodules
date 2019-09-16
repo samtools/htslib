@@ -1,0 +1,3 @@
+[submodule "htscodecs"]
+	path = htscodecs
+	url = git@github.com:jkbonfield/htscodecs.git

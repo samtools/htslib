@@ -17,6 +17,8 @@ In addition, building the configure script requires:
 
     autoheader
     autoconf
+    automake
+    libtool
 
 Running the configure script uses awk, along with a number of
 standard UNIX tools (cat, cp, grep, mv, rm, sed, among others).  Almost
@@ -64,12 +66,12 @@ This step is only needed if configure.ac has been changed, or if configure
 does not exist (for example, when building from a git clone).  The
 configure script and config.h.in can be built by running:
 
-    autoheader
-    autoconf
+    (cd htscodecs; autoreconf -i) && autoreconf -I m4
 
-If you have a full GNU autotools install, you can alternatively run:
-
-    autoreconf
+Note if you're using git clone to obtain the source, note you either
+need to use "git clone -r" or follow up the git clone command with
+"git submodule update --init --recursive" in order to get the
+htscodecs submodule cloned too.
 
 Basic Installation
 ==================

@@ -22,7 +22,7 @@ matrix:
   - compiler: gcc-8
     os: linux
     dist: xenial
-    env: USE_CONFIG=yes USE_LIBDEFLATE=yes CC=gcc-8 AR=gcc-ar-8 CFLAGS="-g -Wall -O3 -fsanitize=address" LDFLAGS="-fsanitize=address"
+    env: USE_CONFIG=yes USE_LIBDEFLATE=yes CC=gcc-8 AR=gcc-ar-8 CFLAGS="-g -Wall -O3 -fsanitize=address" LDFLAGS="-fsanitize=address -lpthread"
     addons:
       apt:
         sources:

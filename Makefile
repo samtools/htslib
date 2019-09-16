@@ -27,7 +27,7 @@ AR     = ar
 RANLIB = ranlib
 
 # Default libraries to link if configure is not used
-htslib_default_libs = -lz -lm -lbz2 -llzma -lcurl
+htslib_default_libs = -lz -lbz2 -llzma -lcurl -lm
 
 CPPFLAGS =
 # TODO: make the 64-bit support for VCF optional via configure, for now add -DVCF_ALLOW_INT64
@@ -98,8 +98,11 @@ BUILT_THRASH_PROGRAMS = \
 	test/thrash_threads6 \
 	test/thrash_threads7
 
-all: lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS) \
+all: htscodecs lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS) \
      htslib_static.mk htslib-uninstalled.pc
+
+htscodecs:
+	$(MAKE) -C htscodecs
 
 HTSPREFIX =
 include htslib_vars.mk
@@ -131,10 +134,10 @@ show-version:
 .SUFFIXES: .bundle .c .cygdll .dll .o .pico .so
 
 .c.o:
-	$(CC) $(CFLAGS) -I. $(CPPFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -I. -Ihtscodecs $(CPPFLAGS) -c -o $@ $<
 
 .c.pico:
-	$(CC) $(CFLAGS) -I. $(CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
+	$(CC) $(CFLAGS) -I. -Ihtscodecs $(CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
 
 
 LIBHTS_OBJS = \
@@ -175,9 +178,14 @@ LIBHTS_OBJS = \
 	cram/mFILE.o \
 	cram/open_trace_file.o \
 	cram/pooled_alloc.o \
-	cram/rANS_static.o \
 	cram/string_alloc.o \
 	$(NONCONFIGURE_OBJS)
+
+# We use htscodecs as a list of objects rather than a library.
+# This avoids installing an extra library and having additional
+# dependencies.  Instead we subsume this git submodule into htslib
+# itself.
+LIBCODEC_OBJS = htscodecs/htscodecs/*.o
 
 # Without configure we wish to have a rich set of default figures,
 # but we still need conditional inclusion as we wish to still
@@ -228,7 +236,7 @@ config.h:
 # on htslib.pc.in listed, as if that file is newer the usual way to regenerate
 # this target is via configure or config.status rather than this rule.
 htslib.pc.tmp:
-	sed -e '/^static_libs=/s/@static_LIBS@/$(htslib_default_libs)/;s#@[^-][^@]*@##g' htslib.pc.in > $@
+	sed -e '/^static_libs=/s#@static_LIBS@#$(htslib_default_libs)#;s#@[^-][^@]*@##g' htslib.pc.in > $@
 
 # Create a makefile fragment listing the libraries and LDFLAGS needed for
 # static linking.  This can be included by projects that want to build
@@ -266,14 +274,15 @@ BUILT_PLUGINS = $(PLUGIN_OBJS:.o=$(PLUGIN_EXT))
 plugins: $(BUILT_PLUGINS)
 
 
-libhts.a: $(LIBHTS_OBJS)
+libhts.a: $(LIBHTS_OBJS) htscodecs
 	@-rm -f $@
-	$(AR) -rc $@ $(LIBHTS_OBJS)
+	$(AR) -rc $@ $(LIBHTS_OBJS) $(LIBCODEC_OBJS)
 	-$(RANLIB) $@
 
 print-config:
 	@echo LDFLAGS = $(LDFLAGS)
 	@echo LIBHTS_OBJS = $(LIBHTS_OBJS)
+	@echo LIBCODEC_OBJS = $(LIBCODEC_OBJS)
 	@echo LIBS = $(LIBS)
 	@echo PLATFORM = $(PLATFORM)
 
@@ -282,23 +291,23 @@ print-config:
 # As a byproduct invisible to make, libhts.so.NN is also created, as it is the
 # file used at runtime (when $LD_LIBRARY_PATH includes the build directory).
 
-libhts.so: $(LIBHTS_OBJS:.o=.pico)
-	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LIBS) -lpthread
+libhts.so: $(LIBHTS_OBJS:.o=.pico) $(LIBCODEC_OBJS)
+	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LIBCODEC_OBJS) $(LIBS) -lpthread
 	ln -sf $@ libhts.so.$(LIBHTS_SOVERSION)
 
 # Similarly this also creates libhts.NN.dylib as a byproduct, so that programs
 # when run can find this uninstalled shared library (when $DYLD_LIBRARY_PATH
 # includes this project's build directory).
 
-libhts.dylib: $(LIBHTS_OBJS)
-	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(MACH_O_COMPATIBILITY_VERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) $(LIBS)
+libhts.dylib: $(LIBHTS_OBJS) $(LIBCODEC_OBJS)
+	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(MACH_O_COMPATIBILITY_VERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) $(LIBCODEC_OBJS) $(LIBS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
-cyghts-$(LIBHTS_SOVERSION).dll libhts.dll.a: $(LIBHTS_OBJS)
-	$(CC) -shared -Wl,--out-implib=libhts.dll.a -Wl,--enable-auto-import $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
+cyghts-$(LIBHTS_SOVERSION).dll libhts.dll.a: $(LIBHTS_OBJS) $(LIBCODEC_OBJS)
+	$(CC) -shared -Wl,--out-implib=libhts.dll.a -Wl,--enable-auto-import $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) $(LIBCODEC_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
 
-hts-$(LIBHTS_SOVERSION).dll hts.dll.a: $(LIBHTS_OBJS)
-	$(CC) -shared -Wl,--out-implib=hts.dll.a -Wl,--enable-auto-import -Wl,--exclude-all-symbols $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
+hts-$(LIBHTS_SOVERSION).dll hts.dll.a: $(LIBHTS_OBJS) $(LIBCODEC_OBJS)
+	$(CC) -shared -Wl,--out-implib=hts.dll.a -Wl,--enable-auto-import -Wl,--exclude-all-symbols $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) $(LIBCODEC_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
 
 # Target to allow htslib.mk to build all the object files before it
 # links the shared and static libraries.
@@ -354,13 +363,11 @@ cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) 
 cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(htslib_hts_endian_h)
 cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htslib_hfile_h) $(cram_h)
 cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h)
-cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
-cram/cram_samtools.o cram/cram_samtools.pico: cram/cram_samtools.c config.h $(cram_h) $(htslib_sam_h) $(sam_internal_h)
+cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(cram_open_trace_file_h) $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c config.h $(cram_h) $(cram_os_h)
 cram/mFILE.o cram/mFILE.pico: cram/mFILE.c config.h $(htslib_hts_log_h) $(cram_os_h) cram/mFILE.h
 cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c config.h $(cram_os_h) $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h) $(htslib_hts_log_h) $(htslib_hts_h)
 cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c config.h cram/pooled_alloc.h $(cram_misc_h)
-cram/rANS_static.o cram/rANS_static.pico: cram/rANS_static.c config.h cram/rANS_static.h cram/rANS_byte.h
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
 thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h)
 
@@ -390,7 +397,7 @@ maintainer-check:
 #
 # If using MSYS, avoid poor shell expansion via:
 #    MSYS2_ARG_CONV_EXCL="*" make check
-check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
+check test: htscodecs $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 	test/hts_endian
 	test/test_kstring
 	test/test_str2int
@@ -581,6 +588,7 @@ testclean:
 mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h
 	-rm -f hts-object-files
+	-rm -f htscodecs/htscodecs/*.o htscodecs/htscodecs/*.lo htscodecs/tests/*.o
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 	-rm -f libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) $(BUILT_TEST_PROGRAMS) $(BUILT_THRASH_PROGRAMS)
@@ -630,3 +638,4 @@ force:
 .PHONY: clean-cygdll install-cygdll
 .PHONY: clean-dll install-dll
 .PHONY: clean-dylib install-dylib
+.PHONY: htscodecs

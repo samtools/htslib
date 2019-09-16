@@ -140,9 +140,6 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/os.h \
 	$(HTSDIR)/cram/pooled_alloc.c \
 	$(HTSDIR)/cram/pooled_alloc.h \
-	$(HTSDIR)/cram/rANS_byte.h \
-	$(HTSDIR)/cram/rANS_static.c \
-	$(HTSDIR)/cram/rANS_static.h \
 	$(HTSDIR)/cram/string_alloc.c \
 	$(HTSDIR)/cram/string_alloc.h \
 	$(HTSDIR)/os/lzma_stub.h \
