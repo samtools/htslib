@@ -194,15 +194,7 @@ struct cram_slice;
 
 /* Now in htslib/cram.h
 enum cram_block_method {
-    BM_ERROR = -1,
-    RAW      = 0,
-    GZIP     = 1,
-    BZIP2    = 2,
-    LZMA     = 3,
-    RANS     = 4,  // Generic; either order
-    RANS0    = 4,
-    RANS1    = 10, // Not externalised; stored as RANS (generic)
-    GZIP_RLE = 11, // NB: not externalised in CRAM
+  ...
 };
 */
 
@@ -218,39 +210,29 @@ enum cram_content_type {
 };
 */
 
+/* Maximum simultaneous codecs allowed, 1 per bit */
+#define CRAM_MAX_METHOD 32
+
 /* Compression metrics */
 struct cram_metrics {
     // number of trials and time to next trial
     int trial;
     int next_trial;
+    int consistency;
 
     // aggregate sizes during trials
-    int sz_gz_rle;
-    int sz_gz_def;
-    int sz_rans0;
-    int sz_rans1;
-    int sz_bzip2;
-    int sz_lzma;
+    int sz[CRAM_MAX_METHOD];
 
     // resultant method from trials
-    int method;
+    int method, revised_method;
     int strat;
 
     // Revisions of method, to allow culling of continually failing ones.
-    int gz_rle_cnt;
-    int gz_def_cnt;
-    int rans0_cnt;
-    int rans1_cnt;
-    int bzip2_cnt;
-    int lzma_cnt;
-    int revised_method;
+    int cnt[CRAM_MAX_METHOD];
 
-    double gz_rle_extra;
-    double gz_def_extra;
-    double rans0_extra;
-    double rans1_extra;
-    double bzip2_extra;
-    double lzma_extra;
+    double extra[CRAM_MAX_METHOD];
+
+    cram_stats *stats;
 };
 
 // Hash aux key (XX:i) to cram_metrics
@@ -729,6 +711,9 @@ struct cram_fd {
     int use_bz2;
     int use_rans;
     int use_lzma;
+    int use_fqz;
+    int use_tok;
+    int use_arith;
     int shared_ref;
     unsigned int required_fields;
     int store_md;

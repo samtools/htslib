@@ -316,6 +316,9 @@ enum hts_fmt_option {
     CRAM_OPT_STORE_MD,
     CRAM_OPT_STORE_NM,
     CRAM_OPT_RANGE_NOSEEK, // CRAM_OPT_RANGE minus the seek
+    CRAM_OPT_USE_TOK,
+    CRAM_OPT_USE_FQZ,
+    CRAM_OPT_USE_ARITH,
 
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,
@@ -324,6 +327,16 @@ enum hts_fmt_option {
     HTS_OPT_CACHE_SIZE,
     HTS_OPT_BLOCK_SIZE,
     HTS_OPT_FILTER,
+    HTS_OPT_PROFILE,
+};
+
+// Profile options for encoding; primarily used at present in CRAM
+// but also usable in BAM as a synonym for deflate compression levels.
+enum hts_profile_option {
+    HTS_PROFILE_FAST,
+    HTS_PROFILE_NORMAL,
+    HTS_PROFILE_SMALL,
+    HTS_PROFILE_ARCHIVE,
 };
 
 // For backwards compatibility

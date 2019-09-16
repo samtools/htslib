@@ -53,10 +53,46 @@ enum cram_block_method {
     GZIP     = 1,
     BZIP2    = 2,
     LZMA     = 3,
-    RANS     = 4,  // Generic; either order
-    RANS0    = 4,
-    RANS1    = 10, // Not externalised; stored as RANS (generic)
+    RANS     = 4, RANS0 = RANS,
+    RANSPR   = 5, RANS_PR0  = RANSPR,
+    ARITH    = 6, ARITH_PR0 = ARITH,
+    FQZ      = 7,
+    TOK3     = 8, NAME_TOK3 = TOK3,
+
+    // Methods not externalised, but used in metrics.
+    // Externally they become one of the above methods.
     GZIP_RLE = 11, // NB: not externalised in CRAM
+    GZIP_1,        // Z_DEFAULT_STRATEGY level 1, NB: not externalised in CRAM
+
+    FQZ_b, FQZ_c, FQZ_d, // Various preset FQZ methods
+
+  //RANS0,       // Order 0
+    RANS1,
+
+  //RANS_PR0,    // Order 0
+    RANS_PR1,    // Order 1
+    RANS_PR64,   // O0 + RLE
+    RANS_PR9,    // O1 + X4
+    RANS_PR128,  // O0 + Pack
+    RANS_PR129,  // O1 + Pack
+    RANS_PR192,  // O0 + RLE + pack
+    RANS_PR193,  // O1 + RLE + pack
+
+  //NAME_TOK3,   // tok+rans
+    NAME_TOKA,   // tok+arith
+
+  //ARITH_PR0,   // Order 0
+    ARITH_PR1,   // Order 1
+    ARITH_PR64,  // O0 + RLE
+    ARITH_PR9,   // O1 + X4
+    ARITH_PR128, // O0 + Pack
+    ARITH_PR129, // O1 + Pack
+    ARITH_PR192, // O0 + RLE + pack
+    ARITH_PR193, // O1 + RLE + pack
+
+    // NB: must end on no more than 31 unless we change to a
+    // 64-bit method type.
+
 };
 
 enum cram_content_type {
@@ -306,6 +342,9 @@ int cram_uncompress_block(cram_block *b);
 HTSLIB_EXPORT
 int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
                         int method, int level);
+int cram_compress_block2(cram_fd *fd, cram_slice *s,
+                         cram_block *b, cram_metrics *metrics,
+                         int method, int level);
 
 /**@}*/
 /**@{ ----------------------------------------------------------------------
