@@ -25,6 +25,7 @@ libdeflate_template: &LIBDEFLATE
 
 compile_template: &COMPILE
   compile_script: |
+    git submodule update --init --recursive
     if test "x$USE_LIBDEFLATE" = "xyes"; then
       CONFIG_OPTS='CPPFLAGS="-I$HOME/libdeflate" LDFLAGS="$LDFLAGS -L$HOME/libdeflate" --with-libdeflate'
     else
@@ -132,7 +133,7 @@ centos_task:
   install_script: |
     yum install -y autoconf automake make gcc perl-Data-Dumper zlib-devel \
         bzip2 bzip2-devel xz-devel curl-devel openssl-devel ncurses-devel \
-        diffutils
+        diffutils git
 
   << : *COMPILE
   << : *TEST
@@ -158,7 +159,7 @@ macosx_task:
        USE_LIBDEFLATE: yes
 
   package_install_script:
-    - HOMEBREW_NO_AUTO_UPDATE=1 brew install autoconf automake libtool xz
+    - HOMEBREW_NO_AUTO_UPDATE=1 brew install autoconf automake libtool xz git
 
   << : *LIBDEFLATE
   << : *COMPILE

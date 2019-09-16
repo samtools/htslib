@@ -28,6 +28,7 @@ hfile_*.so
 
 hts-object-files
 htslib_static.mk
+htscodecs.mk
 
 cyg*.dll
 lib*.a

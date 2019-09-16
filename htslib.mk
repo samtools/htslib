@@ -35,6 +35,13 @@
 HTSPREFIX = $(HTSDIR)/
 include $(HTSDIR)/htslib_vars.mk
 
+# This file provides the HTSCODECS_SOURCES variable.  It may not be present
+# in a freshly checked-out htslib, so is only included if available.  The
+# absence is unlikely to cause a problem as there will be plenty of other
+# missing files that will trigger a build in htslib, and when that happens
+# htslib's makefile will create it.
+-include $(HTSDIR)/htscodecs.mk
+
 # Rules for rebuilding an in-development htslib's static and shared libraries.
 # If your program foo links with libhts, adding the appropriate prerequisite
 # will cause the library to be rebuilt as necessary:
@@ -138,13 +145,11 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/os.h \
 	$(HTSDIR)/cram/pooled_alloc.c \
 	$(HTSDIR)/cram/pooled_alloc.h \
-	$(HTSDIR)/cram/rANS_byte.h \
-	$(HTSDIR)/cram/rANS_static.c \
-	$(HTSDIR)/cram/rANS_static.h \
 	$(HTSDIR)/cram/string_alloc.c \
 	$(HTSDIR)/cram/string_alloc.h \
 	$(HTSDIR)/os/lzma_stub.h \
-	$(HTSDIR)/os/rand.c
+	$(HTSDIR)/os/rand.c \
+	$(HTSCODECS_SOURCES)
 
 $(HTSDIR)/config.h:
 	+cd $(HTSDIR) && $(MAKE) config.h

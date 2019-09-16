@@ -1,6 +1,6 @@
 # Configure script for htslib, a C library for high-throughput sequencing data.
 #
-#    Copyright (C) 2015-2019 Genome Research Ltd.
+#    Copyright (C) 2015-2020 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -34,7 +34,7 @@ m4_include([m4/hts_hide_dynamic_syms.m4])
 m4_include([m4/pkg.m4])
 
 dnl Copyright notice to be copied into the generated configure script
-AC_COPYRIGHT([Portions copyright (C) 2018 Genome Research Ltd.
+AC_COPYRIGHT([Portions copyright (C) 2020 Genome Research Ltd.
 
 This configure script is free software: you are free to change and
 redistribute it.  There is NO WARRANTY, to the extent permitted by law.])
@@ -107,6 +107,12 @@ AC_ARG_ENABLE([plugins],
                   [enable separately-compiled plugins for file access])],
   [], [enable_plugins=no])
 AC_SUBST(enable_plugins)
+
+AC_ARG_WITH([external-htscodecs],
+  [AS_HELP_STRING([--with-external-htscodecs],
+                  [get htscodecs functions from a shared library])],
+  [], [with_external_htscodecs=no])
+AC_SUBST(with_external_htscodecs)
 
 AC_ARG_WITH([libdeflate],
   [AS_HELP_STRING([--with-libdeflate],
@@ -280,6 +286,29 @@ produced elsewhere unreadable) or resolve this error to build HTSlib.])
   static_LIBS="$static_LIBS -llzma"
 fi
 
+AS_IF([test "x$with_external_htscodecs" != "xno"],
+  [libhtscodecs=ok
+   AC_CHECK_HEADER([htscodecs/rANS_static4x16.h],[],
+                   [libhtscodecs='missing header'],[;])
+   AC_CHECK_LIB([htscodecs],[rans_compress_bound_4x16],
+                [:],[libhtscodecs='missing library'])
+   AS_IF([test "$libhtscodecs" = "ok"],
+     [AC_DEFINE([HAVE_EXTERNAL_LIBHTSCODECS], 1, [Define if using an external libhtscodecs])
+      LIBS="-lhtscodecs $LIBS"
+      private_LIBS="-lhtscodecs $private_LIBS"
+      static_LIBS="-lhtscodecs $static_LIBS"
+      selected_htscodecs_mk="htscodecs_external.mk"],
+      [MSG_ERROR([libhtscodecs development files not found: $libhtscodecs
+
+You asked to use an external htscodecs library, but do not have the
+required header / library files.  You either need to supply these and
+if necessary set CPPFLAGS and LDFLAGS so the compiler can find them;
+or configure using --without-external-htscodecs to build the required
+functions from the htscodecs submodule.
+])])],
+  [selected_htscodecs_mk="htscodecs_bundled.mk"])
+AC_SUBST([selected_htscodecs_mk])
+
 AS_IF([test "x$with_libdeflate" != "xno"],
   [libdeflate=ok
    AC_CHECK_HEADER([libdeflate.h],[],[libdeflate='missing header'],[;])
@@ -421,5 +450,5 @@ AC_SUBST([private_LIBS])
 AC_SUBST([static_LDFLAGS])
 AC_SUBST([static_LIBS])
 
-AC_CONFIG_FILES([config.mk htslib.pc.tmp:htslib.pc.in])
+AC_CONFIG_FILES([config.mk htscodecs.mk htslib.pc.tmp:htslib.pc.in])
 AC_OUTPUT

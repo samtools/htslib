@@ -1,0 +1,3 @@
+HTSCODECS_SOURCES = $(HTSPREFIX)htscodecs/htscodecs/rANS_static.c
+
+HTSCODECS_OBJS = $(HTSCODECS_SOURCES:.c=.o)

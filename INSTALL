@@ -58,6 +58,20 @@ test temporary directory with e.g.: make check TEST_OPTS="-t C:/msys64/tmp/_"
 Whilst the code may work on Windows with other environments, these have
 not be verified.
 
+Update htscodecs submodule
+==========================
+
+Note that this section only applies to git checkouts.  If you're building
+from a release tar file, you can skip this section.
+
+Some parts of HTSlib are provided by the external "htscodecs" project.  This
+is included as a submodule.  When building from the git repository,
+either clone the project using "git clone -r", or run:
+
+    git submodule update --init --recursive
+
+to ensure the correct version of the submodule is present.
+
 Building Configure
 ==================
 
