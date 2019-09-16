@@ -1099,9 +1099,9 @@ int sam_hdr_rebuild(sam_hdr_t *bh) {
     if (hrecs->pgs_changed)
         sam_hdr_link_pg(bh);
 
-    kstring_t ks = KS_INITIALIZER;
+    kstring_t ks = KS_INITIALIZE;
     if (sam_hrecs_rebuild_text(hrecs, &ks) != 0) {
-        KS_FREE(&ks);
+        ks_free(&ks);
         hts_log_error("Header text rebuild has failed");
         return -1;
     }

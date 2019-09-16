@@ -1322,7 +1322,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                 break;
         }
 
-        KS_FREE(&line);
+        ks_free(&line);
         if (hclose(f) != 0) {
             hts_log_error("Error on closing %s", fp->fn_aux);
             e = 1;
@@ -1366,7 +1366,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
 
  error:
     sam_hdr_destroy(h);
-    KS_FREE(&str);
+    ks_free(&str);
     kh_destroy(s2i, d);
     if (sn) free(sn);
     return NULL;
