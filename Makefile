@@ -291,7 +291,7 @@ print-config:
 # As a byproduct invisible to make, libhts.so.NN is also created, as it is the
 # file used at runtime (when $LD_LIBRARY_PATH includes the build directory).
 
-libhts.so: $(LIBHTS_OBJS:.o=.pico) $(LIBCODEC_OBJS)
+libhts.so: $(LIBHTS_OBJS:.o=.pico)
 	$(CC) -shared -Wl,-soname,libhts.so.$(LIBHTS_SOVERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS:.o=.pico) $(LIBCODEC_OBJS) $(LIBS) -lpthread
 	ln -sf $@ libhts.so.$(LIBHTS_SOVERSION)
 
@@ -299,7 +299,7 @@ libhts.so: $(LIBHTS_OBJS:.o=.pico) $(LIBCODEC_OBJS)
 # when run can find this uninstalled shared library (when $DYLD_LIBRARY_PATH
 # includes this project's build directory).
 
-libhts.dylib: $(LIBHTS_OBJS) $(LIBCODEC_OBJS)
+libhts.dylib: $(LIBHTS_OBJS)
 	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(MACH_O_COMPATIBILITY_VERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) $(LIBCODEC_OBJS) $(LIBS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 

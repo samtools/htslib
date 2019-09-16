@@ -824,86 +824,139 @@ static int cram_compress_slice(cram_fd *fd, cram_container *c, cram_slice *s) {
 
     /* Compress the CORE Block too, with minimal zlib level */
     if (level > 5 && s->block[0]->uncomp_size > 500)
-        cram_compress_block(fd, s->block[0], NULL, 1<<GZIP, 1);
+        cram_compress_block2(fd, s, s->block[0], NULL, 1<<GZIP, 1);
 
     if (fd->use_bz2)
         method |= 1<<BZIP2;
 
-    if (fd->use_rans)
-        method |= (1<<RANS0) | (1<<RANS1);
+    int method_rans   = (1<<RANS0) | (1<<RANS1);
+    int method_ranspr = method_rans;
+
+    if (fd->use_rans) {
+        method_ranspr = (1<<RANS_PR0)   | (1<<RANS_PR1);
+        if (level > 1)
+            method_ranspr |=
+                  (1<<RANS_PR64)  | (1<<RANS_PR9)
+                | (1<<RANS_PR128) | (1<<RANS_PR193);
+        if (level > 5)
+            method_ranspr |= (1<<RANS_PR129) | (1<<RANS_PR192);
+    }
+
+    int v31_or_above = (fd->version >= (3<<8)+1);
+    if (fd->use_rans) {
+        methodF |= v31_or_above ? method_ranspr : method_rans;
+        method  |= v31_or_above ? method_ranspr : method_rans;
+    }
+
+    int method_arith   = 0;
+    if (fd->use_arith) {
+        method_arith = (1<<ARITH_PR0)   | (1<<ARITH_PR1);
+        if (level > 1)
+            method_arith |=
+                  (1<<ARITH_PR64)  | (1<<ARITH_PR9)
+                | (1<<ARITH_PR128) | (1<<ARITH_PR129)
+                | (1<<ARITH_PR192) | (1<<ARITH_PR193);
+    }
+    if (fd->use_arith && v31_or_above) {
+        methodF |= method_arith;
+        method  |= method_arith;
+    }
 
     if (fd->use_lzma)
         method |= (1<<LZMA);
 
     /* Faster method for data series we only need entropy encoding on */
     methodF = method & ~(1<<GZIP | 1<<BZIP2 | 1<<LZMA);
-    if (level >= 6)
+    if (level >= 5) {
+        method |= 1<<GZIP_1;
         methodF = method;
+    }
+    if (level == 1) {
+        method &= ~(1<<GZIP);
+        method |=   1<<GZIP_1;
+        methodF = method;
+    }
 
+    int qmethod  = method;
+    int qmethodF = method;
+    if (v31_or_above && fd->use_fqz) {
+        qmethod  |= 1<<FQZ;
+        qmethodF |= 1<<FQZ;
+        if (fd->level > 4) {
+            qmethod  |= 1<<FQZ_b;
+            qmethodF |= 1<<FQZ_b;
+        }
+        if (fd->level > 6) {
+            qmethod  |= (1<<FQZ_c) | (1<<FQZ_d);
+            qmethodF |= (1<<FQZ_c) | (1<<FQZ_d);
+        }
+    }
 
     /* Specific compression methods for certain block types */
-    if (cram_compress_block(fd, s->block[DS_IN], fd->m[DS_IN], //IN (seq)
-                            method, level))
+    if (cram_compress_block2(fd, s, s->block[DS_IN], fd->m[DS_IN], //IN (seq)
+                             method, level))
         return -1;
 
     if (fd->level == 0) {
         /* Do nothing */
     } else if (fd->level == 1) {
-        if (cram_compress_block(fd, s->block[DS_QS], fd->m[DS_QS],
-                                methodF, 1))
+        if (cram_compress_block2(fd, s, s->block[DS_QS], fd->m[DS_QS],
+                                 qmethodF, 1))
             return -1;
         for (i = DS_aux; i <= DS_aux_oz; i++) {
             if (s->block[i])
-                if (cram_compress_block(fd, s->block[i], fd->m[i],
-                                        method, 1))
+                if (cram_compress_block2(fd, s, s->block[i], fd->m[i],
+                                         method, 1))
                     return -1;
         }
     } else if (fd->level < 3) {
-        if (cram_compress_block(fd, s->block[DS_QS], fd->m[DS_QS],
-                                method, 1))
+        if (cram_compress_block2(fd, s, s->block[DS_QS], fd->m[DS_QS],
+                                 qmethod, 1))
             return -1;
-        if (cram_compress_block(fd, s->block[DS_BA], fd->m[DS_BA],
-                                method, 1))
+        if (cram_compress_block2(fd, s, s->block[DS_BA], fd->m[DS_BA],
+                                 method, 1))
             return -1;
         if (s->block[DS_BB])
-            if (cram_compress_block(fd, s->block[DS_BB], fd->m[DS_BB],
-                                    method, 1))
+            if (cram_compress_block2(fd, s, s->block[DS_BB], fd->m[DS_BB],
+                                     method, 1))
                 return -1;
         for (i = DS_aux; i <= DS_aux_oz; i++) {
             if (s->block[i])
-                if (cram_compress_block(fd, s->block[i], fd->m[i],
-                                        method, level))
+                if (cram_compress_block2(fd, s, s->block[i], fd->m[i],
+                                         method, level))
                     return -1;
         }
     } else {
-        if (cram_compress_block(fd, s->block[DS_QS], fd->m[DS_QS],
-                                method, level))
+        if (cram_compress_block2(fd, s, s->block[DS_QS], fd->m[DS_QS],
+                                 qmethod, level))
             return -1;
-        if (cram_compress_block(fd, s->block[DS_BA], fd->m[DS_BA],
-                                method, level))
+        if (cram_compress_block2(fd, s, s->block[DS_BA], fd->m[DS_BA],
+                                 method, level))
             return -1;
         if (s->block[DS_BB])
-            if (cram_compress_block(fd, s->block[DS_BB], fd->m[DS_BB],
-                                    method, level))
+            if (cram_compress_block2(fd, s, s->block[DS_BB], fd->m[DS_BB],
+                                     method, level))
                 return -1;
         for (i = DS_aux; i <= DS_aux_oz; i++) {
             if (s->block[i])
-                if (cram_compress_block(fd, s->block[i], fd->m[i],
-                                        method, level))
+                if (cram_compress_block2(fd, s, s->block[i], fd->m[i],
+                                         method, level))
                     return -1;
         }
     }
 
     // NAME: best is generally xz, bzip2, zlib then rans1
-    if (cram_compress_block(fd, s->block[DS_RN], fd->m[DS_RN],
-                            method & ~(1<<RANS0 | 1<<GZIP_RLE),
-                            level))
+    int method_rn = method & ~(method_rans | method_ranspr | 1<<GZIP_RLE);
+    if (fd->version >= (3<<8)+1 && fd->use_tok)
+        method_rn |= fd->use_arith ? (1<<NAME_TOKA) : (1<<NAME_TOK3);
+    if (cram_compress_block2(fd, s, s->block[DS_RN], fd->m[DS_RN],
+                             method_rn, level))
         return -1;
 
     // NS shows strong local correlation as rearrangements are localised
     if (s->block[DS_NS] != s->block[0])
-        if (cram_compress_block(fd, s->block[DS_NS], fd->m[DS_NS],
-                                method, level))
+        if (cram_compress_block2(fd, s, s->block[DS_NS], fd->m[DS_NS],
+                                 method, level))
             return -1;
 
 
@@ -919,8 +972,8 @@ static int cram_compress_slice(cram_fd *fd, cram_container *c, cram_slice *s) {
             if (s->aux_block[i]->method != RAW)
                 continue;
 
-            if (cram_compress_block(fd, s->aux_block[i], s->aux_block[i]->m,
-                                    method, level))
+            if (cram_compress_block2(fd, s, s->aux_block[i], s->aux_block[i]->m,
+                                     method, level))
                 return -1;
         }
     }
@@ -937,7 +990,7 @@ static int cram_compress_slice(cram_fd *fd, cram_container *c, cram_slice *s) {
             if (s->block[i]->method != RAW)
                 continue;
 
-            if (cram_compress_block(fd, s->block[i], fd->m[i],
+            if (cram_compress_block2(fd, s, s->block[i], fd->m[i],
                                     methodF, level))
                 return -1;
         }

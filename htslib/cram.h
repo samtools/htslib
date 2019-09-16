@@ -306,6 +306,9 @@ int cram_uncompress_block(cram_block *b);
 HTSLIB_EXPORT
 int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
                         int method, int level);
+int cram_compress_block2(cram_fd *fd, cram_slice *s,
+                         cram_block *b, cram_metrics *metrics,
+                         int method, int level);
 
 /**@}*/
 /**@{ ----------------------------------------------------------------------

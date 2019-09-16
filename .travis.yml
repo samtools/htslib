@@ -71,6 +71,7 @@ before_script:
         popd && \
         popd
     fi
+    git submodule update --init --recursive
 
 script:
   - |
@@ -80,12 +81,14 @@ script:
       CONFIG_OPTS='--without-libdeflate'
     fi
   - |
+    (cd htscodecs; autoreconf -i)
     if test "$USE_CONFIG" = "yes"; then
       MAKE_OPTS= ;
       autoreconf && \
         eval ./configure --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3 $CFLAGS\" || \
         ( cat config.log; false )
     else
+      (cd htscodecs; ./configure --disable-shared --with-pic)
       MAKE_OPTS=-e
     fi && \
     if test "x$DO_MAINTAINER_CHECKS" = "xyes"; then
