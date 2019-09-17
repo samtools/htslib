@@ -160,6 +160,13 @@ Noteworthy changes in release a.b
     been escaped (detected by looking for '%' followed by two hexadecimal
     digits.)
 
+* The htsfile utility can now copy files (including to/from URLs using
+  HTSlib's remote access facilities), in addition to its existing uses
+  of identifying file formats and displaying sequence or variant data.
+
+* The bgzip utility can now decompress files with non-.gz extensions;
+  for example, bgzip -d gnomad.sites.vcf.bgz  (#129)
+
 * Fixed bug where some 8 or 16-bit negative integers were stored using values
   reserved by the BCF specification.  These numbers are now promoted to the
   next size up, so -121 to -128 are stored using at least 16 bits, and -32761
@@ -239,8 +246,8 @@ Noteworthy changes in release 1.9 (18th July 2018)
   - sam_hdr_read() and sam_hdr_write() will now return an error code
     if passed a NULL file pointer, instead of crashing.
 
-  - Fixed possible negative array look-up in sam_parse1() that somehow
-    escaped previous fuzz testing. (#731, reported by @fCorleone)
+  - Fixed possible negative array look-up in sam_parse1() that somehow escaped
+    previous fuzz testing. (CVE-2018-13845, #731, reported by @fCorleone)
 
   - Fixed bug where cram range queries could incorrectly report an error
     when using multiple threads. (#734, reported by Brent Pedersen)
@@ -393,7 +400,8 @@ Noteworthy changes in release 1.4.1  (8th May 2017)
 
 This is primarily a security bug fix update.
 
-* Fixed SECURITY (CVE-2017-1000206) issue with buffer overruns with malicious data. (#514).
+* Fixed SECURITY (CVE-2017-1000206) issue with buffer overruns with
+  malicious data. (#514)
 
 * S3 support for non Amazon AWS endpoints. (#506)
 
