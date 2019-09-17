@@ -294,16 +294,14 @@ int main(int argc, char **argv)
                 fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), argv[optind]);
                 return 1;
             }
-            char *name;
-            int len = strlen(argv[optind]);
-            if ( strcmp(argv[optind]+len-3,".gz") && !test)
-            {
-                fprintf(stderr, "[bgzip] %s: unknown suffix -- ignored\n", argv[optind]);
-                return 1;
-            }
             fp = bgzf_open(argv[optind], "r");
             if (fp == NULL) {
                 fprintf(stderr, "[bgzip] Could not open file: %s\n", argv[optind]);
+                return 1;
+            }
+            if (bgzf_compression(fp) == no_compression) {
+                fprintf(stderr, "[bgzip] %s: not a compressed file -- ignored\n", argv[optind]);
+                bgzf_close(fp);
                 return 1;
             }
 
@@ -312,8 +310,17 @@ int main(int argc, char **argv)
             }
             else {
                 const int wrflags = O_WRONLY | O_CREAT | O_TRUNC;
+                char *name = argv[optind];
+                size_t pos;
+                for (pos = strlen(name); pos > 0; --pos)
+                    if (name[pos] == '.' || name[pos] == '/') break;
+                if (pos == 0 || name[pos] != '.') {
+                    fprintf(stderr, "[bgzip] can't remove an extension from %s -- please rename\n", argv[optind]);
+                    bgzf_close(fp);
+                    return 1;
+                }
                 name = strdup(argv[optind]);
-                name[strlen(name) - 3] = '\0';
+                name[pos] = '\0';
                 f_dst = open(name, is_forced? wrflags : wrflags|O_EXCL, 0666);
                 if (f_dst < 0 && errno == EEXIST && confirm_overwrite(name))
                     f_dst = open(name, wrflags, 0666);
@@ -335,11 +342,11 @@ int main(int argc, char **argv)
                 fprintf(stderr, "[bgzip] Could not read from stdin: %s\n", strerror(errno));
                 return 1;
             }
-        }
-
-        if (!fp->is_compressed) {
-            fprintf(stderr, "[bgzip] Expected compressed file -- ignored\n");
-            return 1;
+            if (bgzf_compression(fp) == no_compression) {
+                fprintf(stderr, "[bgzip] stdin is not compressed -- ignored\n");
+                bgzf_close(fp);
+                return 1;
+            }
         }
 
         buffer = malloc(WINDOW_SIZE);
