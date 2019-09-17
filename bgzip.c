@@ -33,7 +33,6 @@
 #include <stdarg.h>
 #include <getopt.h>
 #include <inttypes.h>
-#include <sys/stat.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 
@@ -149,7 +148,6 @@ int main(int argc, char **argv)
         return 1;
     }
     if (compress == 1) {
-        struct stat sbuf;
         int f_src = fileno(stdin);
         char out_mode[3] = "w\0";
         char out_mode_exclusive[4] = "wx\0";
@@ -165,12 +163,6 @@ int main(int argc, char **argv)
 
         if ( argc>optind )
         {
-            if ( stat(argv[optind],&sbuf)<0 )
-            {
-                fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), argv[optind]);
-                return 1;
-            }
-
             if ((f_src = open(argv[optind], O_RDONLY)) < 0) {
                 fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), argv[optind]);
                 return 1;
@@ -284,19 +276,13 @@ int main(int argc, char **argv)
     }
     else
     {
-        struct stat sbuf;
         int f_dst;
 
         if ( argc>optind )
         {
-            if ( stat(argv[optind],&sbuf)<0 )
-            {
-                fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), argv[optind]);
-                return 1;
-            }
             fp = bgzf_open(argv[optind], "r");
             if (fp == NULL) {
-                fprintf(stderr, "[bgzip] Could not open file: %s\n", argv[optind]);
+                fprintf(stderr, "[bgzip] Could not open %s: %s\n", argv[optind], strerror(errno));
                 return 1;
             }
             if (bgzf_compression(fp) == no_compression) {
