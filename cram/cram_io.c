@@ -100,7 +100,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define PATH_MAX FILENAME_MAX
 #endif
 
-#define TRIAL_SPAN 50
+#define TRIAL_SPAN 70
 #define NTRIALS 3
 
 #define CRAM_DEFAULT_LEVEL 5
@@ -1565,11 +1565,11 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                     // Externally defined methods
                     1,    // 0  raw
                     1.04, // 1  gzip (Z_FILTERED)
-                    1.08, // 2  bzip2
-                    1.04, // 3  lzma
+                    1.07, // 2  bzip2
+                    1.08, // 3  lzma
                     1.00, // 4  rans    (O0)
                     1.00, // 5  ranspr  (O0)
-                    1.03, // 6  arithpr (O0)
+                    1.04, // 6  arithpr (O0)
                     1.05, // 7  fqz
                     1.05, // 8  tok3 (rans)
                     9, 9, // 9,10 reserved
@@ -1579,7 +1579,7 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                     1.01, // rans O1
 
                     1.01, // gzip rle
-                    1.02, // gzip -1
+                    1.01, // gzip -1
 
                     1.01, // rans_pr1
                     1.00, // rans_pr64; if smaller, usually fast
@@ -1736,7 +1736,7 @@ cram_metrics *cram_new_metrics(void) {
     if (!m)
         return NULL;
     m->trial = NTRIALS-1;
-    m->next_trial = TRIAL_SPAN;
+    m->next_trial = TRIAL_SPAN/2; // learn quicker at start
     m->method = RAW;
     m->strat = 0;
     m->revised_method = 0;
