@@ -38,6 +38,9 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdarg.h>
 #include <unistd.h>
 #include <limits.h>
+#ifdef __APPLE__
+#include <sys/resource.h>
+#endif
 
 #include "thread_pool_internal.h"
 
@@ -713,13 +716,35 @@ hts_tpool *hts_tpool_init(int n) {
 
     pthread_mutex_lock(&p->pool_m);
 
+#ifdef __APPLE__
+    // MacOS defaults to 8Mb stack on primary thread and 512Kb on secondaries.
+    // This is too strict for some of our code and we don't wish to change
+    // function limits between single and multi-threaded usage.  We take the
+    // same approach as Linux and apply the user specified stack size to all
+    // threads instead of main only.
+    struct rlimit rlim_stack;
+    if (getrlimit(RLIMIT_STACK, &rlim_stack) < 0)
+        return NULL;
+
+    pthread_attr_t pattr;
+    if (pthread_attr_init(&pattr) < 0)
+        return NULL;
+    if (pthread_attr_setstacksize(&pattr, rlim_stack.rlim_cur) < 0)
+        return NULL;
+#endif
+
     for (i = 0; i < n; i++) {
         hts_tpool_worker *w = &p->t[i];
         p->t_stack[i] = 0;
         w->p = p;
         w->idx = i;
         pthread_cond_init(&w->pending_c, NULL);
-        if (0 != pthread_create(&w->tid, NULL, tpool_worker, w)) {
+#ifdef __APPLE__
+        if (0 != pthread_create(&w->tid, &pattr, tpool_worker, w))
+#else
+        if (0 != pthread_create(&w->tid, NULL, tpool_worker, w))
+#endif
+        {
             pthread_mutex_unlock(&p->pool_m);
             return NULL;
         }
