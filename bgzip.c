@@ -26,6 +26,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -52,19 +53,53 @@ static void error(const char *format, ...)
     exit(EXIT_FAILURE);
 }
 
+static int ask_yn()
+{
+    char line[1024];
+    if (fgets(line, sizeof line, stdin) == NULL)
+        return 0;
+    return line[0] == 'Y' || line[0] == 'y';
+}
+
 static int confirm_overwrite(const char *fn)
 {
     int save_errno = errno;
     int ret = 0;
 
     if (isatty(STDIN_FILENO)) {
-        char c;
         fprintf(stderr, "[bgzip] %s already exists; do you wish to overwrite (y or n)? ", fn);
-        if (scanf("%c", &c) == 1 && (c == 'Y' || c == 'y')) ret = 1;
+        if (ask_yn()) ret = 1;
     }
 
     errno = save_errno;
     return ret;
+}
+
+static int known_extension(const char *ext)
+{
+    static const char *known[] = {
+        "gz", "bgz", "bgzf",
+        NULL
+    };
+
+    const char **p;
+    for (p = known; *p; p++)
+        if (strcasecmp(ext, *p) == 0) return 1;
+    return 0;
+}
+
+static int confirm_filename(int *is_forced, const char *name, const char *ext)
+{
+    if (*is_forced) {
+        (*is_forced)--;
+        return 1;
+    }
+
+    if (!isatty(STDIN_FILENO))
+        return 0;
+
+    fprintf(stderr, "[bgzip] .%s is not a known extension; do you wish to decompress to %s (y or n)? ", ext, name);
+    return ask_yn();
 }
 
 static int bgzip_main_usage(FILE *fp, int status)
@@ -125,7 +160,7 @@ int main(int argc, char **argv)
         case 'c': pstdout = 1; break;
         case 'b': start = atol(optarg); compress = 0; pstdout = 1; break;
         case 's': size = atol(optarg); pstdout = 1; break;
-        case 'f': is_forced = 1; break;
+        case 'f': is_forced++; break;
         case 'i': index = 1; break;
         case 'I': index_fname = optarg; break;
         case 'l': compress_level = atol(optarg); break;
@@ -296,7 +331,7 @@ int main(int argc, char **argv)
             }
             else {
                 const int wrflags = O_WRONLY | O_CREAT | O_TRUNC;
-                char *name = argv[optind];
+                char *name = argv[optind], *ext;
                 size_t pos;
                 for (pos = strlen(name); pos > 0; --pos)
                     if (name[pos] == '.' || name[pos] == '/') break;
@@ -307,6 +342,13 @@ int main(int argc, char **argv)
                 }
                 name = strdup(argv[optind]);
                 name[pos] = '\0';
+                ext = &name[pos+1];
+                if (! (known_extension(ext) || confirm_filename(&is_forced, name, ext))) {
+                    fprintf(stderr, "[bgzip] unknown extension .%s -- declining to decompress to %s\n", ext, name);
+                    bgzf_close(fp);
+                    free(name);
+                    return 1;
+                }
                 f_dst = open(name, is_forced? wrflags : wrflags|O_EXCL, 0666);
                 if (f_dst < 0 && errno == EEXIST && confirm_overwrite(name))
                     f_dst = open(name, wrflags, 0666);
