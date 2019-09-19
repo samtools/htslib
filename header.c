@@ -1501,8 +1501,13 @@ int sam_hdr_remove_except(sam_hdr_t *bh, const char *type, const char *ID_key, c
 
 int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *h) {
     sam_hrecs_t *hrecs;
-    rmhash_t *rh;
-    if (!bh || !type || !id || !(rh = (rmhash_t *)h))
+    rmhash_t *rh = (rmhash_t *)h;
+
+    if (!bh || !type)
+        return -1;
+    if (!rh) // remove all lines
+        return sam_hdr_remove_except(bh, type, NULL, NULL);
+    if (!id)
         return -1;
 
     if (!(hrecs = bh->hrecs)) {

@@ -549,29 +549,32 @@ int sam_hdr_remove_except(sam_hdr_t *h, const char *type, const char *ID_key, co
  * @param type  Type of the searched line. Eg. "RG"
  * @param id    Tag key defining the line. Eg. "ID"
  * @param rh    Hash set initialised by the caller with the values to be kept.
- *              See description for how to create this.
+ *              See description for how to create this. If @p rh is NULL, all
+ *              lines of this type will be removed.
  * @return      0 on success, -1 on failure
  *
- * Remove all lines of type <type> from the header, except the one
- * specified in the hash set @p rh.
- * Declaration of @rh is done using KHASH_SET_INIT_STR macro. Eg.
+ * Remove all lines of type @p type from the header, except the ones
+ * specified in the hash set @p rh. If @p rh is NULL, all lines of
+ * this type will be removed.
+ * Declaration of @p rh is done using KHASH_SET_INIT_STR macro. Eg.
  * @code{.c}
- *              KHASH_SET_INIT_STR(remove)
- *              typedef khash_t(remove) *remhash_t;
+ *              #include "htslib/khash.h"
+ *              KHASH_SET_INIT_STR(keep)
+ *              typedef khash_t(keep) *keephash_t;
  *
  *              void your_method() {
  *                  samFile *sf = sam_open("alignment.bam", "r");
  *                  sam_hdr_t *h = sam_hdr_read(sf);
- *                  remhash_t rh = kh_init(remove);
+ *                  keephash_t rh = kh_init(keep);
  *                  int ret = 0;
- *                  kh_put(remove, rh, strdup("chr2"), &ret);
- *                  kh_put(remove, rh, strdup("chr3"), &ret);
+ *                  kh_put(keep, rh, strdup("chr2"), &ret);
+ *                  kh_put(keep, rh, strdup("chr3"), &ret);
  *                  if (sam_hdr_remove_lines(h, "SQ", "SN", rh) == -1)
  *                      fprintf(stderr, "Error removing lines\n");
  *                  khint_t k;
  *                  for (k = 0; k < kh_end(rh); ++k)
  *                     if (kh_exist(rh, k)) free((char*)kh_key(rh, k));
- *                  kh_destroy(remove, rh);
+ *                  kh_destroy(keep, rh);
  *                  sam_hdr_destroy(h);
  *                  sam_close(sf);
  *              }
