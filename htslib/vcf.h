@@ -669,25 +669,47 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id);
     int bcf_add_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id);
 
-    /*
+    /**
      *  bcf_update_info_*() - functions for updating INFO fields
-     *  @hdr:       the BCF header
-     *  @line:      VCF line to be edited
-     *  @key:       the INFO tag to be updated
-     *  @values:    pointer to the array of values. Pass NULL to remove the tag.
-     *  @n:         number of values in the array. When set to 0, the INFO tag is removed
+     *  @param hdr:       the BCF header
+     *  @param line:      VCF line to be edited
+     *  @param key:       the INFO tag to be updated
+     *  @param values:    pointer to the array of values. Pass NULL to remove the tag.
+     *  @param n:         number of values in the array. When set to 0, the INFO tag is removed
+     *  @return 0 on success or negative value on error.
      *
-     *  The @string in bcf_update_info_flag() is optional, @n indicates whether
-     *  the flag is set or removed.
+     *  The @p string in bcf_update_info_flag() is optional,
+     *  @p n indicates whether the flag is set or removed.
      *
-     *  Returns 0 on success or negative value on error.
      */
     #define bcf_update_info_int32(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_INT)
-    #define bcf_update_info_int64(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_LONG)
     #define bcf_update_info_float(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
     #define bcf_update_info_flag(hdr,line,key,string,n)    bcf_update_info((hdr),(line),(key),(string),(n),BCF_HT_FLAG)
     #define bcf_update_info_string(hdr,line,key,string)    bcf_update_info((hdr),(line),(key),(string),1,BCF_HT_STR)
     int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type);
+
+    /// Set or update 64-bit integer INFO values
+    /**
+     *  @param hdr:       the BCF header
+     *  @param line:      VCF line to be edited
+     *  @param key:       the INFO tag to be updated
+     *  @param values:    pointer to the array of values. Pass NULL to remove the tag.
+     *  @param n:         number of values in the array. When set to 0, the INFO tag is removed
+     *  @return 0 on success or negative value on error.
+     *
+     *  This function takes an int64_t values array as input.  The data
+     *  actually stored will be shrunk to the minimum size that can
+     *  accept all of the values.
+     *
+     *  INFO values outside of the range BCF_MIN_BT_INT32 to BCF_MAX_BT_INT32
+     *  can only be written to VCF files.
+     */
+    static inline int bcf_update_info_int64(const bcf_hdr_t *hdr, bcf1_t *line,
+                                            const char *key,
+                                            const int64_t *values, int n)
+    {
+        return bcf_update_info(hdr, line, key, values, n, BCF_HT_LONG);
+    }
 
     /*
      *  bcf_update_format_*() - functions for updating FORMAT fields
@@ -756,28 +778,58 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
 
     /**
      *  bcf_get_info_*() - get INFO values, integers or floats
-     *  @hdr:       BCF header
-     *  @line:      BCF record
-     *  @tag:       INFO tag to retrieve
-     *  @dst:       *dst is pointer to a memory location, can point to NULL
-     *  @ndst:      pointer to the size of allocated memory
+     *  @param hdr:    BCF header
+     *  @param line:   BCF record
+     *  @param tag:    INFO tag to retrieve
+     *  @param dst:    *dst is pointer to a memory location, can point to NULL
+     *  @param ndst:   pointer to the size of allocated memory
+     *  @return  >=0 on success
+     *          -1 .. no such INFO tag defined in the header
+     *          -2 .. clash between types defined in the header and encountered in the VCF record
+     *          -3 .. tag is not present in the VCF record
+     *          -4 .. the operation could not be completed (e.g. out of memory)
      *
-     *  Returns negative value on error or the number of written values
-     *  (including missing values) on success. bcf_get_info_string() returns
-     *  on success the number of characters written excluding the null-
-     *  terminating byte. bcf_get_info_flag() returns 1 when flag is set or 0
-     *  if not.
+     *  Returns negative value on error or the number of values (including
+     *  missing values) put in *dst on success. bcf_get_info_string() returns
+     *  on success the number of characters stored excluding the nul-
+     *  terminating byte. bcf_get_info_flag() does not store anything in *dst
+     *  but returns 1 if the flag is set or 0 if not.
      *
-     *  List of return codes:
-     *      -1 .. no such INFO tag defined in the header
-     *      -2 .. clash between types defined in the header and encountered in the VCF record
-     *      -3 .. tag is not present in the VCF record
+     *  *dst will be reallocated if it is not big enough (i.e. *ndst is too
+     *  small) or NULL on entry.  The new size will be stored in *ndst.
      */
     #define bcf_get_info_int32(hdr,line,tag,dst,ndst)  bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
     #define bcf_get_info_float(hdr,line,tag,dst,ndst)  bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)
     #define bcf_get_info_string(hdr,line,tag,dst,ndst) bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_STR)
     #define bcf_get_info_flag(hdr,line,tag,dst,ndst)   bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_FLAG)
     int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type);
+
+    /// Put integer INFO values into an int64_t array
+    /**
+     *  @param hdr:    BCF header
+     *  @param line:   BCF record
+     *  @param tag:    INFO tag to retrieve
+     *  @param dst:    *dst is pointer to a memory location, can point to NULL
+     *  @param ndst:   pointer to the size of allocated memory
+     *  @return  >=0 on success
+     *          -1 .. no such INFO tag defined in the header
+     *          -2 .. clash between types defined in the header and encountered in the VCF record
+     *          -3 .. tag is not present in the VCF record
+     *          -4 .. the operation could not be completed (e.g. out of memory)
+     *
+     *  Returns negative value on error or the number of values (including
+     *  missing values) put in *dst on success.
+     *
+     *  *dst will be reallocated if it is not big enough (i.e. *ndst is too
+     *  small) or NULL on entry.  The new size will be stored in *ndst.
+     */
+    static inline int bcf_get_info_int64(const bcf_hdr_t *hdr, bcf1_t *line,
+                                         const char *tag, int64_t **dst,
+                                         int *ndst)
+    {
+        return bcf_get_info_values(hdr, line, tag,
+                                   (void **) dst, ndst, BCF_HT_LONG);
+    }
 
     /**
      *  bcf_get_format_*() - same as bcf_get_info*() above
