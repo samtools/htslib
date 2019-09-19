@@ -591,8 +591,6 @@ static int sam_hrecs_remove_line(sam_hrecs_t *hrecs, const char *type_name, sam_
     if (k == kh_end(hrecs->h))
         return -1;
 
-    sam_hrecs_free_tags(hrecs, type_found->tag);
-
     // Remove from global list (remembering it could be the only line)
     if (hrecs->first_line == type_found) {
         hrecs->first_line = (type_found->global_next != type_found
@@ -615,6 +613,7 @@ static int sam_hrecs_remove_line(sam_hrecs_t *hrecs, const char *type_name, sam_
     if (!strncmp(type_name, "SQ", 2) || !strncmp(type_name, "RG", 2))
         sam_hrecs_remove_hash_entry(hrecs, itype, type_found);
 
+    sam_hrecs_free_tags(hrecs, type_found->tag);
     pool_free(hrecs->type_pool, type_found);
 
     hrecs->dirty = 1;

@@ -37,6 +37,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/pooled_alloc.h"
 #include "cram/misc.h"
 
+//#define DISABLE_POOLED_ALLOC
 //#define TEST_MAIN
 
 #define PSIZE 1024*1024
@@ -79,6 +80,18 @@ pool_alloc_t *pool_create(size_t dsize) {
     return p;
 }
 
+void pool_destroy(pool_alloc_t *p) {
+    size_t i;
+
+    for (i = 0; i < p->npools; i++) {
+        free(p->pools[i].pool);
+    }
+    free(p->pools);
+    free(p);
+}
+
+#ifndef DISABLE_POOLED_ALLOC
+
 static pool_t *new_pool(pool_alloc_t *p) {
     size_t n = p->psize / p->dsize;
     pool_t *pool;
@@ -96,16 +109,6 @@ static pool_t *new_pool(pool_alloc_t *p) {
     p->npools++;
 
     return pool;
-}
-
-void pool_destroy(pool_alloc_t *p) {
-    size_t i;
-
-    for (i = 0; i < p->npools; i++) {
-        free(p->pools[i].pool);
-    }
-    free(p->pools);
-    free(p);
 }
 
 void *pool_alloc(pool_alloc_t *p) {
@@ -141,6 +144,18 @@ void pool_free(pool_alloc_t *p, void *ptr) {
     *(void **)ptr = p->free;
     p->free = ptr;
 }
+
+#else
+
+void *pool_alloc(pool_alloc_t *p) {
+    return malloc(p->dsize);
+}
+
+void pool_free(pool_alloc_t *p, void *ptr) {
+    free(ptr);
+}
+
+#endif
 
 #ifdef TEST_MAIN
 typedef struct {
