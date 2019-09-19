@@ -580,6 +580,34 @@ sub test_view
         testv $opts, "./test_view $tv_args $cram > $cram.sam_";
         testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
 
+        ## Experimental CRAM 3.1 support.
+        # SAM -> CRAM31u -> SAM
+        foreach my $profile (qw/fast normal small archive/) {
+            $cram = "$base.tmp.cram";
+            testv $opts, "./test_view $tv_args -t $ref -S -l7 -C -o VERSION=3.1 -o $profile $sam > $cram";
+            testv $opts, "./test_view $tv_args -D $cram > $cram.sam_";
+            testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
+        }
+
+        # BAM -> CRAM31 -> BAM -> SAM
+        $cram = "$bam.cram";
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.1 $bam > $cram";
+        testv $opts, "./test_view $tv_args -b -D $cram > $cram.bam";
+        testv $opts, "./test_view $tv_args $cram.bam > $cram.bam.sam_";
+        testv $opts, "./compare_sam.pl $md $sam $cram.bam.sam_";
+
+        # CRAM31 -> CRAM30
+        $cram = "$base.tmp.cram";
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.0 $cram > $cram.cram";
+
+        # CRAM30 -> CRAM31
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.1 $cram.cram > $cram";
+
+        # CRAM31 -> CRAM31 + multi-slice
+        testv $opts, "./test_view $tv_args -t $ref -C -o VERSION=3.1 -o seqs_per_slice=7 -o slices_per_container=5 $cram.cram > $cram";
+        testv $opts, "./test_view $tv_args $cram > $cram.sam_";
+        testv $opts, "./compare_sam.pl $md $sam $cram.sam_";
+
         # Java pre-made CRAM -> SAM
         my $jcram = "${base}_java.cram";
         if (-e $jcram) {

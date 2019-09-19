@@ -410,6 +410,7 @@ check test: htscodecs $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
 	REF_PATH=: test/sam test/ce.fa test/faidx.fa test/fastqs.fq
 	test/test-regidx
 	cd test && REF_PATH=: ./test.pl $${TEST_OPTS:-}
+	cd htscodecs && $(MAKE) check
 
 test/hts_endian: test/hts_endian.o
 	$(CC) $(LDFLAGS) -o $@ test/hts_endian.o $(LIBS)

@@ -30,7 +30,8 @@ build_script:
   - set HOME=.
   - set MSYSTEM=MINGW64
   - set PATH=C:/msys64/usr/bin;C:/msys64/mingw64/bin;%PATH%
-  - "sh -lc \"aclocal && autoheader && autoconf && ./configure --enable-werror CFLAGS='-g -O3' && make -j2\""
+  - git submodule update --init --recursive
+  - "sh -lc \"autoreconf -I m4 && (cd htscodecs; autoreconf -i) && ./configure --enable-werror CFLAGS='-g -O3' && make -j2\""
 
 #build_script:
 #  - make
