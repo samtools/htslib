@@ -4015,9 +4015,9 @@ void bam_plp_destructor(bam_plp_t plp,
  *  Returns BAM_CMATCH, -1 when there is no more cigar to process or the requested position is not covered,
  *  or -2 on error.
  */
-static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, int *icig, int *iseq, hts_pos_t *iref)
+static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, hts_pos_t *icig, hts_pos_t *iseq, hts_pos_t *iref)
 {
-    int pos = *iref;
+    hts_pos_t pos = *iref;
     if ( pos < 0 ) return -1;
     *icig = 0;
     *iseq = 0;
@@ -4050,7 +4050,7 @@ static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, int
     *iseq = -1;
     return -1;
 }
-static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, int *icig, int *iseq, hts_pos_t *iref)
+static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, hts_pos_t *icig, hts_pos_t *iseq, hts_pos_t *iref)
 {
     while ( *cigar < cigar_max )
     {
@@ -4079,8 +4079,8 @@ static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
 {
     uint32_t *a_cigar = bam_get_cigar(a), *a_cigar_max = a_cigar + a->core.n_cigar;
     uint32_t *b_cigar = bam_get_cigar(b), *b_cigar_max = b_cigar + b->core.n_cigar;
-    int a_icig = 0, a_iseq = 0;
-    int b_icig = 0, b_iseq = 0;
+    hts_pos_t a_icig = 0, a_iseq = 0;
+    hts_pos_t b_icig = 0, b_iseq = 0;
     uint8_t *a_qual = bam_get_qual(a), *b_qual = bam_get_qual(b);
     uint8_t *a_seq  = bam_get_seq(a), *b_seq = bam_get_seq(b);
 
@@ -4113,6 +4113,9 @@ static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
 
         iref++;
         if ( a_iref+a->core.pos != b_iref+b->core.pos ) continue;   // only CMATCH positions, don't know what to do with indels
+
+        if (a_iseq > a->core.l_qseq || b_iseq > b->core.l_qseq)
+            return -1;  // Fell off end of sequence, bad CIGAR?
 
         if ( bam_seqi(a_seq,a_iseq) == bam_seqi(b_seq,b_iseq) )
         {
