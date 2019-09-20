@@ -784,7 +784,7 @@ static void use_header_api(void) {
     free(ks_release(&ks));
 }
 
-static void test_header_pg_lines() {
+static void test_header_pg_lines(void) {
     static const char header_text[] = "data:,"
         "@HD\tVN:1.5\n"
         "@PG\tID:prog1\tPN:prog1\n"
@@ -1025,6 +1025,64 @@ static void test_header_remove_lines(void) {
         kh_destroy(keep, rh);
     }
     if (header) sam_hdr_destroy(header);
+}
+
+static void check_ref_lookup(sam_hdr_t *header, const char *msg, ...) {
+    const char *name;
+    va_list args;
+    va_start(args, msg);
+    while ((name = va_arg(args, const char *)) != NULL) {
+        int exp = va_arg(args, int);
+        int tid = sam_hdr_name2tid(header, name);
+        if (tid != exp)
+            fail("%s: altname \"%s\" => %d (expected %d)", msg, name, tid, exp);
+    }
+    va_end(args);
+}
+
+static void test_header_ref_altnames(void) {
+    static const char initial_header[] =
+        "@SQ\tSN:1\tLN:100\tAN:chr1\n"
+        "@SQ\tSN:chr2\tAN:2\tLN:200\n"
+        "@SQ\tSN:3\tLN:300\n"
+        "@SQ\tSN:chrMT\tLN:16569\tAN:MT,chrM,M\n";
+
+    sam_hdr_t *header = sam_hdr_init();
+    if (header == NULL) { fail("sam_hdr_init"); return; }
+
+    if (sam_hdr_add_lines(header, initial_header, 0) < 0)
+        fail("sam_hdr_add_lines() for altnames");
+
+    check_ref_lookup(header, "initial",
+        "1", 0, "chr1", 0, "2", 1, "chr2", 1, "3", 2,
+        "chrMT", 3, "chrM", 3, "M", 3, "fred", -1, "barney", -1,
+        NULL);
+
+    if (sam_hdr_add_line(header, "SQ", "AN", "fred", "LN", "500", "SN", "barney", NULL) < 0)
+        fail("sam_hdr_add_line() for altnames");
+
+    check_ref_lookup(header, "barney added",
+        "1", 0, "chr1", 0, "2", 1, "chr2", 1, "3", 2,
+        "chrMT", 3, "chrM", 3, "M", 3, "fred", 4, "barney", 4,
+        NULL);
+
+    if (sam_hdr_remove_line_id(header, "SQ", "SN", "chr2") < 0)
+        fail("sam_hdr_remove_line_id() for altnames");
+
+    check_ref_lookup(header, "chr2 removed",
+        "1", 0, "chr1", 0, "2", -1, "chr2", -1, "3", 1,
+        "chrMT", 2, "chrM", 2, "M", 2, "fred", 3, "barney", 3,
+        NULL);
+
+    if (sam_hdr_remove_tag_id(header, "SQ", "SN", "1", "AN") < 0)
+        fail("sam_hdr_remove_tag_id() for altnames");
+
+    check_ref_lookup(header, "1's AN removed",
+        "1", 0, "chr1", -1, "CM000663", -1, "2", -1, "chr2", -1, "3", 1,
+        "chrMT", 2, "chrM", 2, "M", 2, "fred", 3, "barney", 3,
+        NULL);
+
+    sam_hdr_destroy(header);
 }
 
 #define ABC50   "abcdefghijklmnopqrstuvwxyabcdefghijklmnopqrstuvwxy"
@@ -1467,6 +1525,7 @@ int main(int argc, char **argv)
     test_header_pg_lines();
     test_header_updates();
     test_header_remove_lines();
+    test_header_ref_altnames();
     test_empty_sam_file("test/emptyfile");
     test_text_file("test/emptyfile", 0);
     test_text_file("test/xx#pair.sam", 7);

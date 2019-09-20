@@ -93,6 +93,10 @@ Noteworthy changes in release a.b
   operations.  Trying to do this (for example with an iterator range request)
   will result in the SAM readers dropping back to single-threaded mode.
 
+* HTSlib now supports the @SQ-AN header field, which lists alternative names
+  for reference sequences.  This means given "@SQ SN:1 AN:chr1", tools like
+  samtools can accept requests for "1" or "chr1" equivalently.  (PR #931)
+
 * Saving a file with a '.sam.gz' suffix will write BGZF-compressed SAM format.
 
 * hts_detect_format() no longer identifies arbitrary text files as SAM.

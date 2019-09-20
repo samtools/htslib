@@ -78,6 +78,46 @@ static int sam_hrecs_init_type_order(sam_hrecs_t *hrecs, char *type_list) {
     return 0;
 }
 
+static int sam_hrecs_add_ref_altnames(sam_hrecs_t *hrecs, int nref, const char *list) {
+    const char *token;
+    ks_tokaux_t aux;
+
+    if (!list)
+        return 0;
+
+    for (token = kstrtok(list, ",", &aux); token; token = kstrtok(NULL, NULL, &aux)) {
+        if (aux.p == token)
+            continue;
+
+        char *name = string_ndup(hrecs->str_pool, token, aux.p - token);
+        int r;
+        khint_t k = kh_put(m_s2i, hrecs->ref_hash, name, &r);
+        if (r < 0) return -1;
+
+        if (r > 0)
+            kh_val(hrecs->ref_hash, k) = nref;
+        else
+            hts_log_warning("Duplicate entry AN:\"%s\" in sam header", name);
+    }
+
+    return 0;
+}
+
+static void sam_hrecs_remove_ref_altnames(sam_hrecs_t *hrecs, int expected, const char *list) {
+    const char *token;
+    ks_tokaux_t aux;
+    kstring_t str = KS_INITIALIZE;
+
+    for (token = kstrtok(list, ",", &aux); token; token = kstrtok(NULL, NULL, &aux)) {
+        kputsn(token, aux.p - token, ks_clear(&str));
+        khint_t k = kh_get(m_s2i, hrecs->ref_hash, str.s);
+        if (k != kh_end(hrecs->ref_hash) && kh_val(hrecs->ref_hash, k) == expected)
+            kh_del(m_s2i, hrecs->ref_hash, k);
+    }
+
+    free(str.s);
+}
+
 /* Updates the hash tables in the sam_hrecs_t structure.
  *
  * Returns 0 on success;
@@ -91,6 +131,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
         sam_hrec_tag_t *tag = h_type->tag;
         int nref = hrecs->nref;
         const char *name = NULL;
+        const char *altnames = NULL;
         int len = -1, r;
         khint_t k;
 
@@ -101,6 +142,9 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
             } else if (tag->str[0] == 'L' && tag->str[1] == 'N') {
                 assert(tag->len >= 3);
                 len = atoi(tag->str+3);
+            } else if (tag->str[0] == 'A' && tag->str[1] == 'N') {
+                assert(tag->len >= 3);
+                altnames = tag->str+3;
             }
             tag = tag->next;
         }
@@ -127,6 +171,8 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                 } else { // Updating
                     hrecs->ref[nref].len = len;
                     hrecs->ref[nref].name = name;
+                    if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames) < 0)
+                        return -1;
                 }
             } else {
                 // Attach header line to existing stub entry.
@@ -138,6 +184,8 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                     if (sam_hrecs_update(hrecs, h_type, "LN", tmp, NULL) < 0)
                         return -1;
                 }
+                if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames) < 0)
+                    return -1;
             }
             if (hrecs->refs_changed < 0 || hrecs->refs_changed > nref)
                 hrecs->refs_changed = nref;
@@ -160,6 +208,9 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
         k = kh_put(m_s2i, hrecs->ref_hash, hrecs->ref[nref].name, &r);
         if (-1 == r) return -1;
         kh_val(hrecs->ref_hash, k) = nref;
+
+        if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames) < 0)
+            return -1;
 
         if (hrecs->refs_changed < 0 || hrecs->refs_changed > hrecs->nref)
             hrecs->refs_changed = hrecs->nref;
@@ -308,34 +359,43 @@ static int sam_hrecs_remove_hash_entry(sam_hrecs_t *hrecs, int type, sam_hrec_ty
     const char *key = NULL;
     khint_t k;
 
-    /* Remove from reference hash */
+    /* Remove name and any alternative names from reference hash */
     if ((type>>8) == 'S' && (type&0xff) == 'Q') {
+        const char *altnames = NULL;
+
         tag = h_type->tag;
 
         while (tag) {
             if (tag->str[0] == 'S' && tag->str[1] == 'N') {
                 assert(tag->len >= 3);
                 key = tag->str + 3;
-                k = kh_get(m_s2i, hrecs->ref_hash, key);
-                if (k != kh_end(hrecs->ref_hash)) {
-                    int idx = kh_val(hrecs->ref_hash, k);
-                    if (idx + 1 < hrecs->nref)
-                        memmove(&hrecs->ref[idx], &hrecs->ref[idx+1],
-                                sizeof(sam_hrec_sq_t)*(hrecs->nref - idx - 1));
-                    kh_del(m_s2i, hrecs->ref_hash, k);
-                    hrecs->nref--;
-                    if (hrecs->refs_changed < 0 || hrecs->refs_changed > idx)
-                        hrecs->refs_changed = idx;
-                    for (k = 0; k < kh_end(hrecs->ref_hash); k++) {
-                        if (kh_exist(hrecs->ref_hash, k)
-                            && kh_value(hrecs->ref_hash, k) > idx) {
-                            kh_value(hrecs->ref_hash, k)--;
-                        }
-                    }
-                }
-                break;
+            } else if (tag->str[0] == 'A' && tag->str[1] == 'N') {
+                assert(tag->len >= 3);
+                altnames = tag->str + 3;
             }
             tag = tag->next;
+        }
+
+        if (key) {
+            k = kh_get(m_s2i, hrecs->ref_hash, key);
+            if (k != kh_end(hrecs->ref_hash)) {
+                int idx = kh_val(hrecs->ref_hash, k);
+                if (idx + 1 < hrecs->nref)
+                    memmove(&hrecs->ref[idx], &hrecs->ref[idx+1],
+                            sizeof(sam_hrec_sq_t)*(hrecs->nref - idx - 1));
+                if (altnames)
+                    sam_hrecs_remove_ref_altnames(hrecs, idx, altnames);
+                kh_del(m_s2i, hrecs->ref_hash, k);
+                hrecs->nref--;
+                if (hrecs->refs_changed < 0 || hrecs->refs_changed > idx)
+                    hrecs->refs_changed = idx;
+                for (k = 0; k < kh_end(hrecs->ref_hash); k++) {
+                    if (kh_exist(hrecs->ref_hash, k)
+                        && kh_value(hrecs->ref_hash, k) > idx) {
+                        kh_value(hrecs->ref_hash, k)--;
+                    }
+                }
+            }
         }
     }
 
@@ -1421,6 +1481,8 @@ int sam_hdr_update_line(sam_hdr_t *bh, const char *type,
     if (ret)
         return ret;
 
+    // TODO Account for @SQ-AN altnames
+
     if (rename) {
         // Adjust the hash table to point to the new name
         // sam_hrecs_update_hashes() should sort out everything else
@@ -2418,6 +2480,17 @@ int sam_hrecs_remove_key(sam_hrecs_t *hrecs,
     tag = sam_hrecs_find_key(type, key, &prev);
     if (!tag)
         return 0; // Not there anyway
+
+    if (type->type == TYPEKEY("SQ") && tag->str[0] == 'A' && tag->str[1] == 'N') {
+        assert(tag->len >= 3);
+        sam_hrec_tag_t *sn_tag = sam_hrecs_find_key(type, "SN", NULL);
+        if (sn_tag) {
+            assert(sn_tag->len >= 3);
+            khint_t k = kh_get(m_s2i, hrecs->ref_hash, sn_tag->str + 3);
+            if (k != kh_end(hrecs->ref_hash))
+                sam_hrecs_remove_ref_altnames(hrecs, kh_val(hrecs->ref_hash, k), tag->str + 3);
+        }
+    }
 
     if (!prev) { //first tag
         type->tag = tag->next;
