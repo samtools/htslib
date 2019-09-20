@@ -39,8 +39,11 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/sam.h"
 #include "htslib/faidx.h"
-#include "htslib/kstring.h"
+#include "htslib/khash.h"
 #include "htslib/hts_log.h"
+
+KHASH_SET_INIT_STR(keep)
+typedef khash_t(keep) *keephash_t;
 
 int status;
 
@@ -961,6 +964,69 @@ static void test_header_updates(void) {
     sam_hdr_destroy(header);
 }
 
+static void test_header_remove_lines(void) {
+    static const char header_text[] =
+        "@HD\tVN:1.4\n"
+        "@SQ\tSN:chr1\tLN:100\n"
+        "@SQ\tSN:chr2\tLN:200\n"
+        "@SQ\tSN:chr3\tLN:300\n"
+        "@RG\tID:run1\n"
+        "@RG\tID:run2\n"
+        "@RG\tID:run3\n"
+        "@PG\tID:prog1\tPN:prog1\n";
+
+    static const char expected[] =
+        "@HD\tVN:1.4\n"
+        "@SQ\tSN:chr1\tLN:100\n"
+        "@SQ\tSN:chr3\tLN:300\n"
+        "@PG\tID:prog1\tPN:prog1\n";
+
+    sam_hdr_t *header = sam_hdr_parse(sizeof(header_text) - 1, header_text);
+    keephash_t rh = kh_init(keep);
+    khint_t k;
+    const char *hdr_str;
+    int r = 0;
+
+    if (!header) {
+        fail("creating sam header");
+        goto err;
+    }
+    if (!rh) {
+        fail("creating keep hash table");
+        goto err;
+    }
+
+    kh_put(keep, rh, strdup("chr3"), &r);
+    if (r < 0) { fail("adding chr3 to hash table"); goto err; }
+    kh_put(keep, rh, strdup("chr1"), &r);
+    if (r < 0) { fail("adding chr1 to hash table"); goto err; }
+
+    r = sam_hdr_remove_lines(header, "SQ", "SN", rh);
+    if (r != 0) { fail("sam_hdr_remove_lines SQ SN rh"); goto err; }
+
+    r = sam_hdr_remove_lines(header, "RG", "ID", NULL);
+    if (r != 0) { fail("sam_hdr_remove_lines RG ID NULL"); goto err; }
+
+    hdr_str = sam_hdr_str(header);
+    if (!hdr_str || strcmp(hdr_str, expected) != 0) {
+        fail("edited header does not match expected version");
+        fprintf(stderr,
+                "---------- Expected:\n%s\n"
+                "++++++++++ Got:\n%s\n"
+                "====================\n",
+                expected, hdr_str ? hdr_str : "<NULL>");
+        goto err;
+    }
+
+ err:
+    if (rh) {
+        for (k = 0; k < kh_end(rh); ++k)
+            if (kh_exist(rh, k)) free((char*)kh_key(rh, k));
+        kh_destroy(keep, rh);
+    }
+    if (header) sam_hdr_destroy(header);
+}
+
 #define ABC50   "abcdefghijklmnopqrstuvwxyabcdefghijklmnopqrstuvwxy"
 #define ABC250  ABC50 ABC50 ABC50 ABC50 ABC50
 
@@ -1114,6 +1180,7 @@ int main(int argc, char **argv)
     use_header_api();
     test_header_pg_lines();
     test_header_updates();
+    test_header_remove_lines();
     test_empty_sam_file("test/emptyfile");
     test_text_file("test/emptyfile", 0);
     test_text_file("test/xx#pair.sam", 7);
