@@ -4890,8 +4890,8 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
         }
         fd->version = major*256 + minor;
 
-        if (CRAM_MAJOR_VERS(fd->version) >= 3)
-            fd->use_rans = 1;
+        fd->use_rans = (CRAM_MAJOR_VERS(fd->version) >= 3) ? 1 : 0;
+
         break;
     }
 
