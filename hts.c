@@ -832,6 +832,9 @@ int hts_opt_apply(htsFile *fp, hts_opt *opts) {
     for (; opts;  opts = (last=opts)->next) {
         switch (opts->opt) {
             case CRAM_OPT_REFERENCE:
+                if (!(fp->fn_aux = strdup(opts->val.s)))
+                    return -1;
+                // fall through
             case CRAM_OPT_VERSION:
             case CRAM_OPT_PREFIX:
                 if (hts_set_opt(fp,  opts->opt,  opts->val.s) != 0)

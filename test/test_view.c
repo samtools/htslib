@@ -89,7 +89,7 @@ int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, 
     }
 
     /* CRAM output */
-    if (opts->flag & WRITE_CRAM) {
+    if ((opts->flag & WRITE_CRAM) && opts->fn_ref) {
         // Create CRAM references arrays
         int ret = hts_set_fai_filename(out, opts->fn_ref);
 
