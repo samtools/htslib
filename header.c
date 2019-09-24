@@ -90,13 +90,15 @@ static int sam_hrecs_add_ref_altnames(sam_hrecs_t *hrecs, int nref, const char *
             continue;
 
         char *name = string_ndup(hrecs->str_pool, token, aux.p - token);
+        if (!name)
+            return -1;
         int r;
         khint_t k = kh_put(m_s2i, hrecs->ref_hash, name, &r);
         if (r < 0) return -1;
 
         if (r > 0)
             kh_val(hrecs->ref_hash, k) = nref;
-        else
+        else if (kh_val(hrecs->ref_hash, k) != nref)
             hts_log_warning("Duplicate entry AN:\"%s\" in sam header", name);
     }
 
@@ -104,14 +106,20 @@ static int sam_hrecs_add_ref_altnames(sam_hrecs_t *hrecs, int nref, const char *
 }
 
 static void sam_hrecs_remove_ref_altnames(sam_hrecs_t *hrecs, int expected, const char *list) {
-    const char *token;
+    const char *token, *sn;
     ks_tokaux_t aux;
     kstring_t str = KS_INITIALIZE;
+
+    if (expected < 0 || expected >= hrecs->nref)
+        return;
+    sn = hrecs->ref[expected].name;
 
     for (token = kstrtok(list, ",", &aux); token; token = kstrtok(NULL, NULL, &aux)) {
         kputsn(token, aux.p - token, ks_clear(&str));
         khint_t k = kh_get(m_s2i, hrecs->ref_hash, str.s);
-        if (k != kh_end(hrecs->ref_hash) && kh_val(hrecs->ref_hash, k) == expected)
+        if (k != kh_end(hrecs->ref_hash)
+            && kh_val(hrecs->ref_hash, k) == expected
+            && strcmp(sn, str.s) != 0)
             kh_del(m_s2i, hrecs->ref_hash, k);
     }
 
@@ -164,17 +172,9 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
         k = kh_get(m_s2i, hrecs->ref_hash, name);
         if (k < kh_end(hrecs->ref_hash)) {
             nref = kh_val(hrecs->ref_hash, k);
-            if (hrecs->ref[nref].ty != NULL) {
-                if (hrecs->ref[nref].ty != h_type) {
-                    hts_log_warning("Duplicate entry \"%s\" in sam header",
-                                    name);
-                } else { // Updating
-                    hrecs->ref[nref].len = len;
-                    hrecs->ref[nref].name = name;
-                    if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames) < 0)
-                        return -1;
-                }
-            } else {
+
+            // Check for hash entry added by sam_hrecs_refs_from_targets_array()
+            if (hrecs->ref[nref].ty == NULL) {
                 // Attach header line to existing stub entry.
                 hrecs->ref[nref].ty = h_type;
                 // Check lengths match; correct if not.
@@ -186,10 +186,39 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                 }
                 if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames) < 0)
                     return -1;
+
+                if (hrecs->refs_changed < 0 || hrecs->refs_changed > nref)
+                    hrecs->refs_changed = nref;
+                return 0;
             }
-            if (hrecs->refs_changed < 0 || hrecs->refs_changed > nref)
-                hrecs->refs_changed = nref;
-            return 0;
+
+            // Check to see if an existing entry is being updated
+            if (hrecs->ref[nref].ty == h_type) {
+                hrecs->ref[nref].len = len;
+                hrecs->ref[nref].name = name;
+                if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames) < 0)
+                    return -1;
+
+                if (hrecs->refs_changed < 0 || hrecs->refs_changed > nref)
+                    hrecs->refs_changed = nref;
+                return 0;
+            }
+
+            // If here, the name is a duplicate.
+            // Check to see if it matches the SN: tag from the earlier
+            // record.  If it does, drop this and keep the existing one.
+            if (strcmp(hrecs->ref[nref].name, name) == 0) {
+                hts_log_warning("Duplicate entry \"%s\" in sam header",
+                                name);
+                return 0;
+            }
+
+            // Clash with an already-seen altname
+            // As SN: should be preferred to AN: add this as a new
+            // record and update the hash entry to point to it.
+            hts_log_warning("Duplicate entry AN:\"%s\" in "
+                            "sam header", name);
+            nref = hrecs->nref;
         }
 
         if (nref == hrecs->ref_sz) {

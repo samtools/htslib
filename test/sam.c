@@ -1083,6 +1083,48 @@ static void test_header_ref_altnames(void) {
         NULL);
 
     sam_hdr_destroy(header);
+
+    static const char initial_header_duplicates[] =
+        "@SQ\tSN:1\tLN:100\tAN:foo,2\n"
+        "@SQ\tSN:2\tLN:200\tAN:bar\n"
+        "@SQ\tSN:3\tLN:300\tAN:baz,3\n";
+
+    header = sam_hdr_init();
+    if (header == NULL) { fail("sam_hdr_init"); return; }
+
+    int old_log_level = hts_get_log_level();
+    hts_set_log_level(HTS_LOG_ERROR); // Silence "Duplicate entry AN:2" warning
+
+    if (sam_hdr_add_lines(header, initial_header_duplicates, 0) < 0)
+        fail("sam_hdr_add_lines() for altnames with duplicates");
+
+    hts_set_log_level(old_log_level);
+
+    // Check "2" is SN:2 and not AN:2
+    check_ref_lookup(header, "initial_header_duplicates",
+                     "1", 0, "foo", 0,
+                     "2", 1, "bar", 1,
+                     "3", 2, "baz", 2, NULL);
+
+    if (sam_hdr_remove_tag_id(header, "SQ", "SN", "1", "AN") < 0)
+        fail("sam_hdr_remove_tag_id() for duplicate altnames SN:1");
+
+    // Check "2" still works and "foo" does not
+    check_ref_lookup(header, "initial_header_duplicates",
+                     "1", 0, "foo", -1,
+                     "2", 1, "bar", 1,
+                     "3", 2, "baz", 2, NULL);
+
+    if (sam_hdr_remove_tag_id(header, "SQ", "SN", "3", "AN") < 0)
+        fail("sam_hdr_remove_tag_id() for duplicate altnames SN:3");
+
+    // Check "3" still works and "baz" does not
+    check_ref_lookup(header, "initial_header_duplicates",
+                     "1", 0, "foo", -1,
+                     "2", 1, "bar", 1,
+                     "3", 2, "baz", -1, NULL);
+
+    sam_hdr_destroy(header);
 }
 
 #define ABC50   "abcdefghijklmnopqrstuvwxyabcdefghijklmnopqrstuvwxy"
