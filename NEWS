@@ -4,6 +4,18 @@ Noteworthy changes in release a.b
 * Incompatible changes:  Several functions and data types have been changed
   in this release, and the shared library soversion has been bumped.
 
+  - HTSlib now supports 64 bit reference positions.  This means several
+    structures, function parameters, and return values have been made bigger
+    to allow larger values to be stored.  While most code that uses
+    HTSlib interfaces should still build after this change, some alterations
+    may be needed - notably to printf() formats where the values of structure
+    members are being printed.
+
+    Due to file format limitations, large positions are only supported
+    when reading and writing SAM and VCF files.
+
+    See README.large_positions.md for more information.
+
   - An extra field has been added to the kbitset_t struct so bitsets can
     be made smaller (and later enlarged) without involving memory allocation.
 

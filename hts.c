@@ -32,6 +32,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <stdint.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -1517,7 +1518,7 @@ KHASH_MAP_INIT_INT(bin, bins_t)
 typedef khash_t(bin) bidx_t;
 
 typedef struct {
-    int32_t n, m;
+    hts_pos_t n, m;
     uint64_t *offset;
 } lidx_t;
 
@@ -1532,7 +1533,8 @@ struct __hts_idx_t {
     int tbi_n, last_tbi_tid;
     struct {
         uint32_t last_bin, save_bin;
-        int last_coor, last_tid, save_tid, finished;
+        hts_pos_t last_coor;
+        int last_tid, save_tid, finished;
         uint64_t last_off, save_off;
         uint64_t off_beg, off_end;
         uint64_t n_mapped, n_unmapped;
@@ -1578,7 +1580,8 @@ static inline int insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
 
 static inline int insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t offset, int min_shift)
 {
-    int i, beg, end;
+    int i;
+    hts_pos_t beg, end;
     beg = _beg >> min_shift;
     end = (_end - 1) >> min_shift;
     if (l->m < end + 1) {
@@ -1732,7 +1735,7 @@ int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
     return ret;
 }
 
-int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped)
+int hts_idx_push(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t offset, int is_mapped)
 {
     int bin;
     int64_t maxpos = (int64_t) 1 << (idx->min_shift + idx->n_lvls * 3);
@@ -1773,12 +1776,12 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
         idx->z.last_tid = tid;
         idx->z.last_bin = 0xffffffffu;
     } else if (tid >= 0 && idx->z.last_coor > beg) { // test if positions are out of order
-        hts_log_error("Unsorted positions on sequence #%d: %d followed by %d", tid+1, idx->z.last_coor+1, beg+1);
+        hts_log_error("Unsorted positions on sequence #%d: %"PRIhts_pos" followed by %"PRIhts_pos, tid+1, idx->z.last_coor+1, beg+1);
         return -1;
     }
     else if (end < beg) {
         // Malformed ranges are errors. (Empty ranges (beg==end) are unusual but acceptable.)
-        hts_log_error("Invalid record on sequence #%d: end %d < begin %d", tid+1, end, beg+1);
+        hts_log_error("Invalid record on sequence #%d: end %"PRId64" < begin %"PRId64, tid+1, end, beg+1);
         return -1;
     }
     if ( tid>=0 )
@@ -1828,14 +1831,14 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
         }
 
         if (idx->fmt == HTS_FMT_CSI) {
-            hts_log_error("Region %d..%d cannot be stored in a csi index "
+            hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos" cannot be stored in a csi index "
                 "with min_shift = %d, n_lvls = %d. Try using "
                 "min_shift = 14, n_lvls >= %d",
                 beg, end,
                 idx->min_shift, idx->n_lvls,
                 n_lvls);
         } else {
-            hts_log_error("Region %d..%d cannot be stored in a %s index. "
+            hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos" cannot be stored in a %s index. "
                 "Try using a csi index with min_shift = 14, "
                 "n_lvls >= %d",
                 beg, end, idx_format_name(idx->fmt),
@@ -2269,13 +2272,15 @@ uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx)
  *** Iterator ***
  ****************/
 
+// Note: even with 32-bit hts_pos_t, end needs to be 64-bit here due to 1LL<<s.
 static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls)
 {
     int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
     if (beg >= end) return 0;
     if (end >= 1LL<<s) end = 1LL<<s;
     for (--end, l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
-        int b, e, n, i;
+        hts_pos_t b, e;
+        int n, i;
         b = t + (beg>>s); e = t + (end>>s); n = e - b + 1;
         if (itr->bins.n + n > itr->bins.m) {
             itr->bins.m = itr->bins.n + n;
@@ -2290,7 +2295,8 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
 static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
 {
     int l, t, s;
-    int b, e, i, j;
+    int i, j;
+    hts_pos_t b, e;
     hts_pair64_max_t *off;
     bidx_t *bidx;
     khint_t k;
@@ -2396,7 +2402,7 @@ uint64_t hts_itr_off(const hts_idx_t* idx, int tid) {
     return off0;
 }
 
-hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
+hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, hts_readrec_func *readrec)
 {
     int i, n_off, l, bin;
     hts_pair64_max_t *off;
@@ -2527,7 +2533,8 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off, max_off, t_off = (uint64_t)-1;
-    int tid, beg, end;
+    int tid;
+    hts_pos_t beg, end;
     hts_reglist_t *curr_reg;
 
     if (!idx || !iter || !iter->multi)
@@ -2646,7 +2653,8 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
 int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-    int tid, beg, end, i, j, l, n_off = 0;
+    int tid, i, j, l, n_off = 0;
+    hts_pos_t beg, end;
     hts_reglist_t *curr_reg;
     hts_pair32_t *curr_intv;
     hts_pair64_max_t *off = NULL;
@@ -2700,10 +2708,10 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
                         off[n_off].max = (uint64_t)tid<<32 | end;
                         n_off++;
                     } else {
-                        hts_log_warning("Could not set offset end for region %d:%d-%d. Skipping", tid, beg, end);
+                        hts_log_warning("Could not set offset end for region %d:%"PRIhts_pos"-%"PRIhts_pos". Skipping", tid, beg, end);
                     }
                 } else {
-                    hts_log_warning("No index entry for region %d:%d-%d", tid, beg, end);
+                    hts_log_warning("No index entry for region %d:%"PRIhts_pos"-%"PRIhts_pos"", tid, beg, end);
                 }
             }
         } else {
@@ -2957,7 +2965,7 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
 
     // No colon is simplest case; just check and return.
     if (colon == NULL) {
-        *beg = 0; *end = INT64_MAX;
+        *beg = 0; *end = HTS_POS_MAX;
         kputsn(s, s_len-quoted, &ks); // convert to nul terminated string
         if (!ks.s) {
             *tid = -2;
@@ -2972,7 +2980,7 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
 
     // Has a colon, but check whole name first.
     if (!quoted) {
-        *beg = 0; *end = INT64_MAX;
+        *beg = 0; *end = HTS_POS_MAX;
         kputsn(s, s_len, &ks); // convert to nul terminated string
         if (!ks.s) {
             *tid = -2;
@@ -3023,7 +3031,7 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
     if (*beg < 0) {
         if (isdigit(*hyphen) || *hyphen == '\0' || *hyphen == ',') {
             // interpret chr:-100 as chr:1-100
-            *end = *beg==-1 ? INT64_MAX : -(*beg+1);
+            *end = *beg==-1 ? HTS_POS_MAX : -(*beg+1);
             *beg = 0;
             return s_end;
         } else if (*hyphen == '-') {
@@ -3035,7 +3043,7 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
     }
 
     if (*hyphen == '\0' || ((flags & HTS_PARSE_LIST) && *hyphen == ',')) {
-        *end = flags & HTS_PARSE_ONE_COORD ? *beg+1 : INT64_MAX;
+        *end = flags & HTS_PARSE_ONE_COORD ? *beg+1 : HTS_POS_MAX;
     } else if (*hyphen == '-') {
         *end = hts_parse_decimal(hyphen+1, &hyphen, flags);
         if (*hyphen != '\0' && *hyphen != ',') {
@@ -3048,7 +3056,7 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
     }
 
     if (*end == 0)
-        *end = INT64_MAX; // interpret chr:100- as chr:100-<end>
+        *end = HTS_POS_MAX; // interpret chr:100- as chr:100-<end>
 
     if (*beg >= *end) return NULL;
 
@@ -3057,19 +3065,19 @@ const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end
 
 // Next release we should mark this as deprecated?
 // Use hts_parse_region above instead.
-const char *hts_parse_reg(const char *s, int *beg, int *end)
+const char *hts_parse_reg64(const char *s, hts_pos_t *beg, hts_pos_t *end)
 {
     char *hyphen;
     const char *colon = strrchr(s, ':');
     if (colon == NULL) {
-        *beg = 0; *end = INT_MAX;
+        *beg = 0; *end = HTS_POS_MAX;
         return s + strlen(s);
     }
 
     *beg = hts_parse_decimal(colon+1, &hyphen, HTS_PARSE_THOUSANDS_SEP) - 1;
     if (*beg < 0) *beg = 0;
 
-    if (*hyphen == '\0') *end = INT_MAX;
+    if (*hyphen == '\0') *end = HTS_POS_MAX;
     else if (*hyphen == '-') *end = hts_parse_decimal(hyphen+1, NULL, HTS_PARSE_THOUSANDS_SEP);
     else return NULL;
 
@@ -3077,10 +3085,31 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
     return colon;
 }
 
+const char *hts_parse_reg(const char *s, int *beg, int *end)
+{
+    int64_t beg64 = 0, end64 = 0;
+    const char *colon = hts_parse_reg64(s, &beg64, &end64);
+    if (beg64 > INT_MAX) {
+        hts_log_error("Position %"PRId64" too large", beg64);
+        return NULL;
+    }
+    if (end64 > INT_MAX) {
+        if (end64 == HTS_POS_MAX) {
+            end64 = INT_MAX;
+        } else {
+            hts_log_error("Position %"PRId64" too large", end64);
+            return NULL;
+        }
+    }
+    *beg = beg64;
+    *end = end64;
+    return colon;
+}
+
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
     int tid;
-    int64_t beg, end;
+    hts_pos_t beg, end;
 
     if (strcmp(reg, ".") == 0)
         return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
@@ -3089,8 +3118,6 @@ hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f g
 
     if (!hts_parse_region(reg, &tid, &beg, &end, getid, hdr, HTS_PARSE_THOUSANDS_SEP))
         return NULL;
-
-    if (end > INT_MAX) end = INT_MAX; // Remove when fully 64-bit compliant
 
     return itr_query(idx, tid, beg, end, readrec);
 }
@@ -3152,7 +3179,8 @@ hts_itr_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int cou
 
 int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 {
-    int ret, tid, beg, end;
+    int ret, tid;
+    hts_pos_t beg, end;
     if (iter == NULL || iter->finished) return -1;
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
@@ -3196,7 +3224,8 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
 {
     void *fp;
-    int ret, tid, beg, end, i, cr, ci;
+    int ret, tid, i, cr, ci;
+    hts_pos_t beg, end;
     hts_reglist_t *found_reg;
 
     if (iter == NULL || iter->finished) return -1;

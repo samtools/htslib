@@ -122,7 +122,7 @@ typedef struct sam_hrec_type_s {
 /*! Parsed \@SQ lines */
 typedef struct {
     const char *name;
-    uint32_t len;
+    hts_pos_t len;
     sam_hrec_type_t *ty;
 } sam_hrec_sq_t;
 

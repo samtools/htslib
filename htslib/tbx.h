@@ -64,7 +64,7 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
 
     /* Internal helper function used by tbx_itr_next() */
     BGZF *hts_get_bgzfp(htsFile *fp);
-    int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end);
+    int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, hts_pos_t *beg, hts_pos_t *end);
 
     tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf);
 /*

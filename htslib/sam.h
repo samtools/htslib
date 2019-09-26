@@ -74,7 +74,7 @@ typedef struct sam_hdr_t {
     const int8_t *cigar_tab HTS_DEPRECATED("Use bam_cigar_table[] instead");
     char **target_name;
     char *text;
-    void *sdict HTS_DEPRECATED("Unused since 1.10");
+    void *sdict;
     sam_hrecs_t *hrecs;
     uint32_t ref_count;
 } sam_hdr_t;
@@ -169,24 +169,41 @@ extern const int8_t bam_cigar_table[256];
  *** Alignment records ***
  *************************/
 
+/*
+ * Assumptions made here.  While pos can be 64-bit, no sequence
+ * itself is that long, but due to ref skip CIGAR fields it
+ * may span more than that.  (CIGAR itself is 28-bit len + 4 bit
+ * type, but in theory we can combine multiples together.)
+ *
+ * Mate position and insert size also need to be 64-bit, but
+ * we won't accept more than 32-bit for tid.
+ *
+ * The bam_core_t structure is the *in memory* layout and not
+ * the same as the on-disk format.  64-bit changes here permit
+ * SAM to work with very long chromosomes and permit BAM and CRAM
+ * to seamlessly update in the future without further API/ABI
+ * revisions.
+ */
+
 /*! @typedef
  @abstract Structure for core alignment information.
- @field  tid     chromosome ID, defined by sam_hdr_t
  @field  pos     0-based leftmost coordinate
+ @field  tid     chromosome ID, defined by sam_hdr_t
  @field  bin     bin calculated by bam_reg2bin()
  @field  qual    mapping quality
- @field  l_qname length of the query name
- @field  flag    bitwise flag
  @field  l_extranul length of extra NULs between qname & cigar (for alignment)
+ @field  flag    bitwise flag
+ @field  l_qname length of the query name
  @field  n_cigar number of CIGAR operations
  @field  l_qseq  length of the query sequence (read)
  @field  mtid    chromosome ID of next read in template, defined by sam_hdr_t
  @field  mpos    0-based leftmost coordinate of next read in template
+ @field  isize   observed template length ("insert size")
  */
 typedef struct {
+    hts_pos_t pos;
     int32_t tid;
-    int32_t pos;
-    uint16_t bin;
+    uint16_t bin; // NB: invalid on 64-bit pos
     uint8_t qual;
     uint8_t l_extranul;
     uint16_t flag;
@@ -194,16 +211,17 @@ typedef struct {
     uint32_t n_cigar;
     int32_t l_qseq;
     int32_t mtid;
-    int32_t mpos;
-    int32_t isize;
+    hts_pos_t mpos;
+    hts_pos_t isize;
 } bam1_core_t;
 
 /*! @typedef
  @abstract Structure for one alignment.
  @field  core       core information about the alignment
+ @field  id
+ @field  data       all variable-length data, concatenated; structure: qname-cigar-seq-qual-aux
  @field  l_data     current length of bam1_t::data
  @field  m_data     maximum length of bam1_t::data
- @field  data       all variable-length data, concatenated; structure: qname-cigar-seq-qual-aux
  @field  mempolicy  memory handling policy, see bam_set_mempolicy()
 
  @discussion Notes:
@@ -223,9 +241,9 @@ typedef struct {
  */
 typedef struct {
     bam1_core_t core;
-    int l_data;
-    uint8_t *data;
     uint64_t id;
+    uint8_t *data;
+    int l_data;
     uint32_t m_data;
     uint32_t mempolicy:2, :30 /* Reserved */;
 } bam1_t;
@@ -688,7 +706,7 @@ const char *sam_hdr_tid2name(const sam_hdr_t *h, int tid);
  * Fetch the reference sequence length from the target length array,
  * using the numerical target id.
  */
-uint32_t sam_hdr_tid2len(const sam_hdr_t *h, int tid);
+hts_pos_t sam_hdr_tid2len(const sam_hdr_t *h, int tid);
 
 /// Alias of sam_hdr_name2tid(), for backwards compatibility.
 /*!
@@ -946,7 +964,7 @@ int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
    operations in @p cigar (these are the operations that "consume" reference
    bases).  All other operations (including invalid ones) are ignored.
  */
-int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
+hts_pos_t bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
 
 /*!
       @abstract Calculate the rightmost base position of an alignment on the
@@ -959,7 +977,7 @@ int bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
       For an unmapped read (either according to its flags or if it has no cigar
       string), we return b->core.pos + 1 by convention.
  */
-int32_t bam_endpos(const bam1_t *b);
+hts_pos_t bam_endpos(const bam1_t *b);
 
 int   bam_str2flag(const char *str);    /** returns negative value on error */
 char *bam_flag2str(int flag);   /** The string must be freed by the user */
@@ -1084,7 +1102,7 @@ When using one of these values, @p beg and @p end are ignored.
 
 When using HTS_IDX_REST or HTS_IDX_NONE, NULL can be passed in to @p idx.
  */
-hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, int beg, int end);
+hts_itr_t *sam_itr_queryi(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end);
 
 /// Create a SAM/BAM/CRAM iterator
 /** @param idx     Index
@@ -1485,6 +1503,8 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     int bam_plp_push(bam_plp_t iter, const bam1_t *b);
     const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp);
     const bam_pileup1_t *bam_plp_auto(bam_plp_t iter, int *_tid, int *_pos, int *_n_plp);
+    const bam_pileup1_t *bam_plp64_next(bam_plp_t iter, int *_tid, hts_pos_t *_pos, int *_n_plp);
+    const bam_pileup1_t *bam_plp64_auto(bam_plp_t iter, int *_tid, hts_pos_t *_pos, int *_n_plp);
     void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt);
     void bam_plp_reset(bam_plp_t iter);
 
@@ -1533,6 +1553,7 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     void bam_mplp_destroy(bam_mplp_t iter);
     void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
     int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
+    int bam_mplp64_auto(bam_mplp_t iter, int *_tid, hts_pos_t *_pos, int *n_plp, const bam_pileup1_t **plp);
     void bam_mplp_reset(bam_mplp_t iter);
     void bam_mplp_constructor(bam_mplp_t iter,
                               int (*func)(void *data, const bam1_t *b, bam_pileup_cd *cd));
@@ -1546,7 +1567,7 @@ typedef struct __bam_mplp_t *bam_mplp_t;
  * BAQ calculation and realignment *
  ***********************************/
 
-int sam_cap_mapq(bam1_t *b, const char *ref, int ref_len, int thres);
+int sam_cap_mapq(bam1_t *b, const char *ref, hts_pos_t ref_len, int thres);
 
 /// Calculate BAQ scores
 /** @param b   BAM record
@@ -1588,7 +1609,7 @@ Depending on what previous processing happened, this may or may not be the
 correct thing to do.  It would be wise to avoid this situation if possible.
 */
 
-int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag);
+int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag);
 
 #ifdef __cplusplus
 }

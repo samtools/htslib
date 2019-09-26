@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <limits.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <errno.h>
 
 #include "htslib/vcf.h"
@@ -498,18 +499,23 @@ static int bcf_hdr_set_idx(bcf_hdr_t *hdr, int dict_type, const char *tag, bcf_i
 static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 {
     // contig
-    int i,j, ret, replacing = 0;
+    int i, ret, replacing = 0;
     khint_t k;
     char *str;
 
     if ( !strcmp(hrec->key, "contig") )
     {
+        hts_pos_t len = 0;
         hrec->type = BCF_HL_CTG;
 
         // Get the contig ID ($str) and length ($j)
         i = bcf_hrec_find_key(hrec,"length");
-        if ( i<0 ) j = 0;
-        else if ( sscanf(hrec->vals[i],"%d",&j)!=1 ) return 0;
+        if ( i<0 ) len = 0;
+        else {
+            char *end = hrec->vals[i];
+            len = strtoll(hrec->vals[i], &end, 10);
+            if (end == hrec->vals[i] || len < 0) return 0;
+        }
 
         i = bcf_hrec_find_key(hrec,"ID");
         if ( i<0 ) return 0;
@@ -547,7 +553,7 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
 
         kh_val(d, k) = bcf_idinfo_def;
         kh_val(d, k).id = idx;
-        kh_val(d, k).info[0] = j;
+        kh_val(d, k).info[0] = len;
         kh_val(d, k).hrec[0] = hrec;
         if (bcf_hdr_set_idx(hdr, BCF_DT_CTG, kh_key(d,k), &kh_val(d,k)) < 0) {
             if (!replacing) {
@@ -1180,21 +1186,27 @@ void bcf_destroy(bcf1_t *v)
 
 static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 {
-    uint32_t x[8];
+    union {
+        uint32_t i;
+        float f;
+    } x[8];
     ssize_t ret;
     if ((ret = bgzf_read(fp, x, 32)) != 32) {
         if (ret == 0) return -1;
         return -2;
     }
     bcf_clear1(v);
-    if (x[0] < 24) return -2;
-    x[0] -= 24; // to exclude six 32-bit integers
-    if (ks_resize(&v->shared, x[0]) != 0) return -2;
-    if (ks_resize(&v->indiv, x[1]) != 0) return -2;
-    memcpy(v, x + 2, 16);
-    v->n_allele = x[6]>>16; v->n_info = x[6]&0xffff;
-    v->n_fmt = x[7]>>24; v->n_sample = x[7]&0xffffff;
-    v->shared.l = x[0], v->indiv.l = x[1];
+    if (x[0].i < 24) return -2;
+    x[0].i -= 24; // to exclude six 32-bit integers
+    if (ks_resize(&v->shared, x[0].i) != 0) return -2;
+    if (ks_resize(&v->indiv, x[1].i) != 0) return -2;
+    v->rid  = x[2].i;
+    v->pos  = x[3].i;
+    v->rlen = x[4].i;
+    v->qual = x[5].f;
+    v->n_allele = x[6].i>>16; v->n_info = x[6].i&0xffff;
+    v->n_fmt = x[7].i>>24; v->n_sample = x[7].i&0xffffff;
+    v->shared.l = x[0].i, v->indiv.l = x[1].i;
     // silent fix of broken BCFs produced by earlier versions of bcf_subset, prior to and including bd6ed8b4
     if ( (!v->indiv.l || !v->n_sample) && v->n_fmt ) v->n_fmt = 0;
 
@@ -1436,7 +1448,7 @@ int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
     return bcf_subset_format(h,v);
 }
 
-int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, int *beg, int *end)
+int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, hts_pos_t *beg, hts_pos_t *end)
 {
     bcf1_t *v = (bcf1_t *) vv;
     int ret;
@@ -1684,7 +1696,7 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     }
     if ( bcf_hdr_nsamples(h)!=v->n_sample )
     {
-        hts_log_error("Broken VCF record, the number of columns at %s:%d does not match the number of samples (%d vs %d)",
+        hts_log_error("Broken VCF record, the number of columns at %s:%"PRIhts_pos" does not match the number of samples (%d vs %d)",
             bcf_seqname(h,v), v->pos+1, v->n_sample, bcf_hdr_nsamples(h));
         return -1;
     }
@@ -1704,12 +1716,18 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     bcf1_sync(v);   // check if the BCF record was modified
 
     BGZF *fp = hfp->fp.bgzf;
-    uint32_t x[8];
-    x[0] = v->shared.l + 24; // to include six 32-bit integers
-    x[1] = v->indiv.l;
-    memcpy(x + 2, v, 16);
-    x[6] = (uint32_t)v->n_allele<<16 | v->n_info;
-    x[7] = (uint32_t)v->n_fmt<<24 | v->n_sample;
+    union {
+        uint32_t i;
+        float f;
+    } x[8];
+    x[0].i = v->shared.l + 24; // to include six 32-bit integers
+    x[1].i = v->indiv.l;
+    x[2].i = v->rid;
+    x[3].i = v->pos;
+    x[4].i = v->rlen;
+    x[5].f = v->qual;
+    x[6].i = (uint32_t)v->n_allele<<16 | v->n_info;
+    x[7].i = (uint32_t)v->n_fmt<<24 | v->n_sample;
     if ( bgzf_write(fp, x, 32) != 32 ) return -1;
     if ( bgzf_write(fp, v->shared.s, v->shared.l) != v->shared.l ) return -1;
     if ( bgzf_write(fp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;
@@ -2009,6 +2027,24 @@ int bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
     return 0; // FIXME: check for errs in this function
 }
 
+static int bcf_enc_long1(kstring_t *s, int64_t x) {
+    uint32_t e = 0;
+    if (x <= BCF_MAX_BT_INT32 && x >= BCF_MIN_BT_INT32)
+        return bcf_enc_int1(s, x);
+    if (x == bcf_int64_vector_end) {
+        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
+        e |= kputc(bcf_int8_vector_end, s) < 0;
+    } else if (x == bcf_int64_missing) {
+        e |= bcf_enc_size(s, 1, BCF_BT_INT8);
+        e |= kputc(bcf_int8_missing, s) < 0;
+    } else {
+        e |= bcf_enc_size(s, 1, BCF_BT_INT64);
+        e |= ks_expand(s, 8);
+        if (e == 0) { u64_to_le(x, (uint8_t *) s->s + s->l); s->l += 8; }
+    }
+    return e == 0 ? 0 : -1;
+}
+
 static inline int serialize_float_array(kstring_t *s, size_t n, const float *a) {
     uint8_t *p;
     size_t i;
@@ -2132,7 +2168,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
     char *end = s->s + s->l;
     if ( q>=end )
     {
-        hts_log_error("FORMAT column with no sample columns starting at %s:%d", s->s, v->pos+1);
+        hts_log_error("FORMAT column with no sample columns starting at %s:%"PRIhts_pos"", s->s, v->pos+1);
         v->errcode |= BCF_ERR_NCOLS;
         return -1;
     }
@@ -2148,7 +2184,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
     for (j = 0, t = kstrtok(p, ":", &aux1); t; t = kstrtok(0, 0, &aux1), ++j) {
         if (j >= MAX_N_FMT) {
             v->errcode |= BCF_ERR_LIMITS;
-            hts_log_error("FORMAT column at %s:%d lists more identifiers than htslib can handle",
+            hts_log_error("FORMAT column at %s:%"PRIhts_pos" lists more identifiers than htslib can handle",
                 bcf_seqname(h,v), v->pos+1);
             return -1;
         }
@@ -2220,7 +2256,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                     j++;
                     if ( j>=v->n_fmt )
                     {
-                        hts_log_error("Incorrect number of FORMAT fields at %s:%d",
+                        hts_log_error("Incorrect number of FORMAT fields at %s:%"PRIhts_pos"",
                             h->id[BCF_DT_CTG][v->rid].key, v->pos+1);
                         v->errcode |= BCF_ERR_NCOLS;
                         return -1;
@@ -2327,7 +2363,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             }
             else {
                 char buffer[8];
-                hts_log_error("Invalid character '%s' in '%s' FORMAT field at %s:%d",
+                hts_log_error("Invalid character '%s' in '%s' FORMAT field at %s:%"PRIhts_pos"",
                     dump_char(buffer, *t), h->id[BCF_DT_ID][z->key].key, bcf_seqname(h,v), v->pos+1);
                 v->errcode |= BCF_ERR_CHAR;
                 return -1;
@@ -2386,14 +2422,14 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
 
     if ( v->n_sample!=bcf_hdr_nsamples(h) )
     {
-        hts_log_error("Number of columns at %s:%d does not match the number of samples (%d vs %d)",
+        hts_log_error("Number of columns at %s:%"PRIhts_pos" does not match the number of samples (%d vs %d)",
             bcf_seqname(h,v), v->pos+1, v->n_sample, bcf_hdr_nsamples(h));
         v->errcode |= BCF_ERR_NCOLS;
         return -1;
     }
     if ( v->indiv.l > 0xffffffff )
     {
-        hts_log_error("The FORMAT at %s:%d is too long", bcf_seqname(h,v), v->pos+1);
+        hts_log_error("The FORMAT at %s:%"PRIhts_pos" is too long", bcf_seqname(h,v), v->pos+1);
         v->errcode |= BCF_ERR_LIMITS;
 
         // Error recovery: return -1 if this is a critical error or 0 if we want to ignore the FORMAT and proceed
@@ -2453,7 +2489,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             }
             v->rid = kh_val(d, k).id;
         } else if (i == 1) { // POS
-            v->pos = atoi(p) - 1;
+            v->pos = strtoll(p, NULL, 10) - 1;
         } else if (i == 2) { // ID
             if (strcmp(p, ".")) bcf_enc_vchar(str, q - p, p);
             else bcf_enc_size(str, 0, BCF_BT_CHAR);
@@ -2588,29 +2624,39 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                             val_a = z;
                         }
                         if ((y>>4&0xf) == BCF_HT_INT) {
-                            for (i = 0, t = val; i < n_val; ++i, ++t)
+                            // Allow first value only to be 64 bit
+                            // (for large END value)
+                            int64_t v64 = strtoll(val, &te, 10);
+                            if ( te==val ) { // conversion failed
+                                val_a[0] = bcf_int32_missing;
+                                v64 = bcf_int64_missing;
+                            } else {
+                                val_a[0] = v64 >= BCF_MIN_BT_INT32 && v64 <= BCF_MAX_BT_INT32 ? v64 : bcf_int32_missing;
+                            }
+                            for (t = te; *t && *t != ','; t++);
+                            if (*t == ',') ++t;
+                            for (i = 1; i < n_val; ++i, ++t)
                             {
                                 val_a[i] = strtol(t, &te, 10);
                                 if ( te==t ) // conversion failed
-                                {
                                     val_a[i] = bcf_int32_missing;
-                                    while ( *te && *te!=',' ) te++;
-                                }
-                                t = te;
+                                for (t = te; *t && *t != ','; t++);
                             }
-                            bcf_enc_vint(str, n_val, val_a, -1);
-                            if (strcmp(key, "END") == 0) v->rlen = val_a[0] - v->pos;
+                            if (n_val == 1) {
+                                bcf_enc_long1(str, v64);
+                            } else {
+                                bcf_enc_vint(str, n_val, val_a, -1);
+                            }
+                            if (strcmp(key, "END") == 0)
+                                v->rlen = v64 - v->pos;
                         } else if ((y>>4&0xf) == BCF_HT_REAL) {
                             float *val_f = (float *)val_a;
                             for (i = 0, t = val; i < n_val; ++i, ++t)
                             {
                                 val_f[i] = strtod(t, &te);
                                 if ( te==t ) // conversion failed
-                                {
                                     bcf_float_set_missing(val_f[i]);
-                                    while ( *te && *te!=',' ) te++;
-                                }
-                                t = te;
+                                for (t = te; *t && *t != ','; t++);
                             }
                             bcf_enc_vfloat(str, n_val, val_f);
                         }
@@ -2673,6 +2719,7 @@ static inline uint8_t *bcf_unpack_info_core1(uint8_t *ptr, bcf_info_t *info)
         else if (info->type == BCF_BT_INT32) info->v1.i = le_to_i32(ptr);
         else if (info->type == BCF_BT_FLOAT) info->v1.f = le_to_float(ptr);
         else if (info->type == BCF_BT_INT16) info->v1.i = le_to_i16(ptr);
+        else if (info->type == BCF_BT_INT64) info->v1.i = le_to_i64(ptr);
     }
     ptr += info->len << bcf_type_shift[info->type];
     info->vptr_len = ptr - info->vptr;
@@ -2753,7 +2800,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
     int i;
     bcf_unpack((bcf1_t*)v, BCF_UN_ALL);
     kputs(h->id[BCF_DT_CTG][v->rid].key, s); // CHROM
-    kputc('\t', s); kputw(v->pos + 1, s); // POS
+    kputc('\t', s); kputll(v->pos + 1, s); // POS
     kputc('\t', s); kputs(v->d.id ? v->d.id : ".", s); // ID
     kputc('\t', s); // REF
     if (v->n_allele > 0) kputs(v->d.allele[0], s);
@@ -2798,6 +2845,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                     case BCF_BT_INT8:  if ( z->v1.i==bcf_int8_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
                     case BCF_BT_INT16: if ( z->v1.i==bcf_int16_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
                     case BCF_BT_INT32: if ( z->v1.i==bcf_int32_missing ) kputc('.', s); else kputw(z->v1.i, s); break;
+                    case BCF_BT_INT64: if ( z->v1.i==bcf_int64_missing ) kputc('.', s); else kputll(z->v1.i, s); break;
                     case BCF_BT_FLOAT: if ( bcf_float_is_missing(z->v1.f) ) kputc('.', s); else kputd(z->v1.f, s); break;
                     case BCF_BT_CHAR:  kputc(z->v1.i, s); break;
                     default: hts_log_error("Unexpected type %d", z->type); exit(1); break;
@@ -2903,26 +2951,41 @@ int bcf_hdr_id2int(const bcf_hdr_t *h, int which, const char *id)
  *** BCF indexing ***
  ********************/
 
+// Calculate number of index levels given min_shift and the header contig
+// list.  Also returns number of contigs in *nids_out.
+static int idx_calc_n_lvls_ids(const bcf_hdr_t *h, int min_shift,
+                               int starting_n_lvls, int *nids_out)
+{
+    int n_lvls, i, nids = 0;
+    int64_t max_len = 0, s;
+
+    for (i = 0; i < h->n[BCF_DT_CTG]; ++i)
+    {
+        if ( !h->id[BCF_DT_CTG][i].val ) continue;
+        if ( max_len < h->id[BCF_DT_CTG][i].val->info[0] )
+            max_len = h->id[BCF_DT_CTG][i].val->info[0];
+        nids++;
+    }
+    if ( !max_len ) max_len = (1LL<<31) - 1;  // In case contig line is broken.
+    max_len += 256;
+    s = 1LL << (min_shift + starting_n_lvls * 3);
+    for (n_lvls = starting_n_lvls; max_len > s; ++n_lvls, s <<= 3);
+
+    if (nids_out) *nids_out = nids;
+    return n_lvls;
+}
+
 hts_idx_t *bcf_index(htsFile *fp, int min_shift)
 {
-    int n_lvls, i;
+    int n_lvls;
     bcf1_t *b = NULL;
     hts_idx_t *idx = NULL;
     bcf_hdr_t *h;
-    int64_t max_len = 0, s;
     int r;
     h = bcf_hdr_read(fp);
     if ( !h ) return NULL;
     int nids = 0;
-    for (i = 0; i < h->n[BCF_DT_CTG]; ++i)
-    {
-        if ( !h->id[BCF_DT_CTG][i].val ) continue;
-        if ( max_len < h->id[BCF_DT_CTG][i].val->info[0] ) max_len = h->id[BCF_DT_CTG][i].val->info[0];
-        nids++;
-    }
-    if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
-    max_len += 256;
-    for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+    n_lvls = idx_calc_n_lvls_ids(h, min_shift, 0, &nids);
     idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     if (!idx) goto fail;
     b = bcf_init1();
@@ -3012,23 +3075,17 @@ int bcf_index_build(const char *fn, int min_shift)
 // Initialise fp->idx for the current format type.
 // This must be called after the header has been written but no other data.
 static int vcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
-    int n_lvls, i, fmt;
-    int64_t max_len = 0;
-
-    for (i = 0; i < h->n[BCF_DT_CTG]; i++) {
-        if (!h->id[BCF_DT_CTG][i].val) continue;
-        if (max_len < h->id[BCF_DT_CTG][i].val->info[0])
-            max_len = h->id[BCF_DT_CTG][i].val->info[0];
-    }
-    if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
-    max_len += 256;
+    int n_lvls, fmt;
 
     if (min_shift == 0) {
         min_shift = 14;
         n_lvls = 5;
         fmt = HTS_FMT_TBI;
     } else {
-        n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3;
+        // Set initial n_lvls to match tbx_index()
+        int starting_n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3;
+        // Increase if necessary
+        n_lvls = idx_calc_n_lvls_ids(h, min_shift, starting_n_lvls, NULL);
         fmt = HTS_FMT_CSI;
     }
 
@@ -3058,8 +3115,6 @@ static int vcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fn
 // This must be called after the header has been written but no other data.
 int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
     int n_lvls, nids = 0;
-    int64_t max_len = 0, s;
-    int i;
 
     if (fp->format.format == vcf)
         return vcf_idx_init(fp, h, min_shift, fnidx);
@@ -3067,15 +3122,7 @@ int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
     if (!min_shift)
         min_shift = 14;
 
-    for (i = 0; i < h->n[BCF_DT_CTG]; i++) {
-        if (!h->id[BCF_DT_CTG][i].val) continue;
-        if (max_len < h->id[BCF_DT_CTG][i].val->info[0])
-            max_len = h->id[BCF_DT_CTG][i].val->info[0];
-        nids++;
-    }
-    if ( !max_len ) max_len = ((int64_t)1<<31) - 1;  // In case contig line is broken.
-    max_len += 256;
-    for (n_lvls = 0, s = 1<<min_shift; max_len > s; ++n_lvls, s <<= 3);
+    n_lvls = idx_calc_n_lvls_ids(h, min_shift, 0, &nids);
 
     fp->idx = hts_idx_init(nids, HTS_FMT_CSI, bgzf_tell(fp->fp.bgzf), min_shift, n_lvls);
     if (!fp->idx) return -1;
@@ -3739,6 +3786,14 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
         else
             bcf_enc_vchar(&str, strlen((char*)values), (char*)values);
     }
+    else if ( type==BCF_HT_LONG )
+    {
+        if (n != 1) {
+            hts_log_error("Only storing a single BCF_HT_LONG value is supported");
+            abort();
+        }
+        bcf_enc_long1(&str, *(int64_t *) values);
+    }
     else
     {
         hts_log_error("The type %d not implemented yet", type);
@@ -3780,7 +3835,11 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
     }
     line->unpacked |= BCF_UN_INFO;
 
-    if ( n==1 && !strcmp("END",key) ) line->rlen = ((int32_t*)values)[0] - line->pos;
+    if ( n==1 && !strcmp("END",key) ) {
+        assert(type == BCF_HT_INT || type == BCF_HT_LONG);
+        int64_t end = type == BCF_HT_INT ? *(int32_t *) values : *(int64_t *) values;
+        line->rlen = end - line->pos;
+    }
     return 0;
 }
 
@@ -4123,7 +4182,7 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
 {
     int i, ret = -4, tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag);
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_INFO,tag_id) ) return -1;    // no such INFO field in the header
-    if ( bcf_hdr_id2type(hdr,BCF_HL_INFO,tag_id)!=type ) return -2;     // expected different type
+    if ( bcf_hdr_id2type(hdr,BCF_HL_INFO,tag_id)!=(type & 0xff) ) return -2;     // expected different type
 
     if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
 
@@ -4147,7 +4206,15 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
     }
 
     // Make sure the buffer is big enough
-    int size1 = type==BCF_HT_INT ? sizeof(int32_t) : sizeof(float);
+    int size1;
+    switch (type) {
+        case BCF_HT_INT:  size1 = sizeof(int32_t); break;
+        case BCF_HT_LONG: size1 = sizeof(int64_t); break;
+        case BCF_HT_REAL: size1 = sizeof(float); break;
+        default:
+            hts_log_error("Unexpected output type %d", type);
+            return -2;
+    }
     if ( *ndst < info->len )
     {
         *ndst = info->len;
@@ -4168,11 +4235,28 @@ int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, voi
         ret = j; \
     } while (0)
     switch (info->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
-        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
-        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, p==bcf_int32_missing, p==bcf_int32_vector_end, *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
+        case BCF_BT_INT8:
+            if (type == BCF_HT_LONG) {
+                BRANCH(int8_t,  le_to_i8,  p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int64_missing, *tmp=p, int64_t);
+            } else {
+                BRANCH(int8_t,  le_to_i8,  p==bcf_int8_missing,  p==bcf_int8_vector_end,  *tmp=bcf_int32_missing, *tmp=p, int32_t);
+            }
+            break;
+        case BCF_BT_INT16:
+            if (type == BCF_HT_LONG) {
+                BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int64_missing, *tmp=p, int64_t);
+            } else {
+                BRANCH(int16_t, le_to_i16, p==bcf_int16_missing, p==bcf_int16_vector_end, *tmp=bcf_int32_missing, *tmp=p, int32_t);
+            }
+            break;
+        case BCF_BT_INT32:
+            if (type == BCF_HT_LONG) {
+                BRANCH(int32_t, le_to_i32, p==bcf_int32_missing, p==bcf_int32_vector_end, *tmp=bcf_int64_missing, *tmp=p, int64_t); break;
+            } else {
+                BRANCH(int32_t, le_to_i32, p==bcf_int32_missing, p==bcf_int32_vector_end, *tmp=bcf_int32_missing, *tmp=p, int32_t); break;
+            }
         case BCF_BT_FLOAT: BRANCH(uint32_t, le_to_u32, p==bcf_float_missing, p==bcf_float_vector_end, bcf_float_set_missing(*tmp), bcf_float_set(tmp, p), float); break;
-        default: hts_log_error("Unexpected type %d", info->type); exit(1);
+        default: hts_log_error("Unexpected type %d", info->type); return -2;
     }
     #undef BRANCH
     return ret;  // set by BRANCH

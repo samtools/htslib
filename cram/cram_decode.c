@@ -45,6 +45,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <math.h>
 #include <stdint.h>
+#include <inttypes.h>
 
 #include "cram/cram.h"
 #include "cram/os.h"
@@ -158,9 +159,25 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
     endp = cp + b->uncomp_size;
 
     if (CRAM_MAJOR_VERS(fd->version) == 1) {
+        int32_t i32;
         cp += safe_itf8_get(cp, endp, &hdr->ref_seq_id);
-        cp += safe_itf8_get(cp, endp, &hdr->ref_seq_start);
-        cp += safe_itf8_get(cp, endp, &hdr->ref_seq_span);
+/*
+ * LARGE_POS used in this code is purely a debugging mechanism for testing
+ * whether the htslib API can cope with 64-bit quantities.  These are
+ * possible in SAM, but not *yet* in BAM or CRAM.
+ *
+ * DO NOT ENABLE LARGE_POS for anything other than debugging / testing.
+ *
+ * At some point it is expected these ifdefs will become a version check
+ * instead.
+ */
+#ifdef LARGE_POS
+        cp += safe_ltf8_get(cp, endp, &hdr->ref_seq_start);
+        cp += safe_ltf8_get(cp, endp, &hdr->ref_seq_span);
+#else
+        cp += safe_itf8_get(cp, endp, &i32); hdr->ref_seq_start=i32;
+        cp += safe_itf8_get(cp, endp, &i32); hdr->ref_seq_span=i32;
+#endif
         cp += safe_itf8_get(cp, endp, &hdr->num_records);
         cp += safe_itf8_get(cp, endp, &hdr->num_landmarks);
         if (hdr->num_landmarks < 0 ||
@@ -409,7 +426,12 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
         } else if (key[0] == 'R' && key[1] == 'L') {
             ds_id = DS_RL; type = E_INT;
         } else if (key[0] == 'A' && key[1] == 'P') {
-            ds_id = DS_AP; type = E_INT;
+            ds_id = DS_AP;
+#ifdef LARGE_POS
+            type = E_LONG,
+#else
+            type = E_INT;
+#endif
         } else if (key[0] == 'R' && key[1] == 'G') {
             ds_id = DS_RG; type = E_INT;
         } else if (key[0] == 'M' && key[1] == 'F') {
@@ -417,9 +439,19 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
         } else if (key[0] == 'N' && key[1] == 'S') {
             ds_id = DS_NS; type = E_INT;
         } else if (key[0] == 'N' && key[1] == 'P') {
-            ds_id = DS_NP; type = E_INT;
+            ds_id = DS_NP;
+#ifdef LARGE_POS
+            type = E_LONG,
+#else
+            type = E_INT;
+#endif
         } else if (key[0] == 'T' && key[1] == 'S') {
-            ds_id = DS_TS; type = E_INT;
+            ds_id = DS_TS;
+#ifdef LARGE_POS
+            type = E_LONG,
+#else
+            type = E_INT;
+#endif
         } else if (key[0] == 'N' && key[1] == 'F') {
             ds_id = DS_NF; type = E_INT;
         } else if (key[0] == 'T' && key[1] == 'C') {
@@ -978,8 +1010,16 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
 
     if (b->content_type == MAPPED_SLICE) {
         cp += safe_itf8_get((char *)cp,  (char *)cp_end, &hdr->ref_seq_id);
-        cp += safe_itf8_get((char *)cp,  (char *)cp_end, &hdr->ref_seq_start);
-        cp += safe_itf8_get((char *)cp,  (char *)cp_end, &hdr->ref_seq_span);
+#ifdef LARGE_POS
+        cp += safe_ltf8_get((char *)cp,  (char *)cp_end, &hdr->ref_seq_start);
+        cp += safe_ltf8_get((char *)cp,  (char *)cp_end, &hdr->ref_seq_span);
+#else
+        int32_t i32;
+        cp += safe_itf8_get((char *)cp,  (char *)cp_end, &i32);
+        hdr->ref_seq_start = i32;
+        cp += safe_itf8_get((char *)cp,  (char *)cp_end, &i32);
+        hdr->ref_seq_span = i32;
+#endif
     }
     cp += safe_itf8_get((char *)cp,  (char *)cp_end, &hdr->num_records);
     hdr->record_counter = 0;
@@ -1090,7 +1130,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                            int has_MD, int has_NM) {
     int prev_pos = 0, f, r = 0, out_sz = 1;
     int seq_pos = 1;
-    int cig_len = 0, ref_pos = cr->apos;
+    int cig_len = 0;
+    int64_t ref_pos = cr->apos;
     int32_t fn, i32;
     enum cigar_op cig_op = BAM_CMATCH;
     uint32_t *cigar = s->cigar;
@@ -1995,8 +2036,8 @@ static int cram_decode_slice_xref(cram_slice *s, int required_fields) {
                  */
                 if (cr->tlen == INT_MIN) {
                     int id1 = rec, id2 = rec;
-                    int aleft = cr->apos, aright = cr->aend;
-                    int tlen;
+                    int64_t aleft = cr->apos, aright = cr->aend;
+                    int64_t tlen;
                     int ref = cr->ref_id;
 
                     // number of segments starting at the same point.
@@ -2235,7 +2276,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
     if ((fd->required_fields & SAM_SEQ) &&
         s->ref == NULL && s->hdr->ref_seq_id >= 0 && !c->comp_hdr->no_ref) {
-        hts_log_error("Unable to fetch reference #%d %d..%d",
+        hts_log_error("Unable to fetch reference #%d %"PRId64"..%"PRId64"\n",
                       s->hdr->ref_seq_id, s->hdr->ref_seq_start,
                       s->hdr->ref_seq_start + s->hdr->ref_seq_span-1);
         return -1;
@@ -2429,9 +2470,17 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
         if (ds & CRAM_AP) {
             if (!c->comp_hdr->codecs[DS_AP]) return -1;
+#ifdef LARGE_POS
             r |= c->comp_hdr->codecs[DS_AP]
                             ->decode(s, c->comp_hdr->codecs[DS_AP], blk,
                                      (char *)&cr->apos, &out_sz);
+#else
+            int32_t i32;
+            r |= c->comp_hdr->codecs[DS_AP]
+                            ->decode(s, c->comp_hdr->codecs[DS_AP], blk,
+                                     (char *)&i32, &out_sz);
+            cr->apos = i32;
+#endif
             if (r) return r;
             if (c->comp_hdr->AP_delta)
                 cr->apos += s->last_apos;
@@ -2528,17 +2577,33 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
             if (ds & CRAM_NP) {
                 if (!c->comp_hdr->codecs[DS_NP]) return -1;
+#ifdef LARGE_POS
                 r |= c->comp_hdr->codecs[DS_NP]
                                 ->decode(s, c->comp_hdr->codecs[DS_NP], blk,
                                          (char *)&cr->mate_pos, &out_sz);
+#else
+                int32_t i32;
+                r |= c->comp_hdr->codecs[DS_NP]
+                                ->decode(s, c->comp_hdr->codecs[DS_NP], blk,
+                                         (char *)&i32, &out_sz);
+                cr->mate_pos = i32;
+#endif
                 if (r) return r;
             }
 
             if (ds & CRAM_TS) {
                 if (!c->comp_hdr->codecs[DS_TS]) return -1;
+#ifdef LARGE_POS
                 r |= c->comp_hdr->codecs[DS_TS]
                                 ->decode(s, c->comp_hdr->codecs[DS_TS], blk,
                                          (char *)&cr->tlen, &out_sz);
+#else
+                int32_t i32;
+                r |= c->comp_hdr->codecs[DS_TS]
+                                ->decode(s, c->comp_hdr->codecs[DS_TS], blk,
+                                         (char *)&i32, &out_sz);
+                cr->tlen = i32;
+#endif
                 if (r) return r;
             } else {
                 cr->tlen = INT_MIN;
@@ -2609,7 +2674,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
         if (!(bf & BAM_FUNMAP)) {
             if ((ds & CRAM_AP) && cr->apos <= 0) {
-                hts_log_error("Read has alignment position %d but no unmapped flag",
+                hts_log_error("Read has alignment position %"PRId64
+                              " but no unmapped flag",
                               cr->apos);
                 return -1;
             }

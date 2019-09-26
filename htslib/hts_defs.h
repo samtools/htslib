@@ -25,6 +25,8 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTSLIB_HTS_DEFS_H
 #define HTSLIB_HTS_DEFS_H
 
+#include <stdio.h>     // For __MINGW_PRINTF_FORMAT macro
+
 #ifdef __clang__
 #ifdef __has_attribute
 #define HTS_COMPILER_HAS(attribute) __has_attribute(attribute)

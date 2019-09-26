@@ -38,6 +38,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // Hash table for removing multiple lines from the header
 KHASH_SET_INIT_STR(rm)
+// Used for long refs in SAM files
+KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
+
 typedef khash_t(rm) rmhash_t;
 
 static int sam_hdr_link_pg(sam_hdr_t *bh);
@@ -140,7 +143,8 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
         int nref = hrecs->nref;
         const char *name = NULL;
         const char *altnames = NULL;
-        int len = -1, r;
+        hts_pos_t len = -1;
+        int r;
         khint_t k;
 
         while (tag) {
@@ -149,7 +153,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                 name = tag->str+3;
             } else if (tag->str[0] == 'L' && tag->str[1] == 'N') {
                 assert(tag->len >= 3);
-                len = atoi(tag->str+3);
+                len = strtoll(tag->str+3, NULL, 10);
             } else if (tag->str[0] == 'A' && tag->str[1] == 'N') {
                 assert(tag->len >= 3);
                 altnames = tag->str+3;
@@ -180,7 +184,8 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                 // Check lengths match; correct if not.
                 if (len != hrecs->ref[nref].len) {
                     char tmp[32];
-                    snprintf(tmp, sizeof(tmp), "%u", hrecs->ref[nref].len);
+                    snprintf(tmp, sizeof(tmp), "%" PRIhts_pos,
+                             hrecs->ref[nref].len);
                     if (sam_hrecs_update(hrecs, h_type, "LN", tmp, NULL) < 0)
                         return -1;
                 }
@@ -921,7 +926,11 @@ int sam_hdr_update_target_arrays(sam_hdr_t *bh, const sam_hrecs_t *hrecs,
             if (!bh->target_name[i])
                 return -1;
         }
-        bh->target_len[i] = hrecs->ref[i].len;
+        if (hrecs->ref[i].len < UINT32_MAX) {
+            bh->target_len[i] = hrecs->ref[i].len;
+        } else {
+            bh->target_len[i] = UINT32_MAX;
+        }
     }
 
     // Free up any names that have been removed
@@ -991,7 +1000,17 @@ static int sam_hrecs_refs_from_targets_array(sam_hrecs_t *hrecs,
         int r;
         hrecs->ref[tid].name = string_dup(hrecs->str_pool, bh->target_name[tid]);
         if (!hrecs->ref[tid].name) goto fail;
-        hrecs->ref[tid].len  = bh->target_len[tid];
+        if (bh->target_len[tid] < UINT32_MAX || !bh->sdict) {
+            hrecs->ref[tid].len  = bh->target_len[tid];
+        } else {
+            khash_t(s2i) *long_refs = (khash_t(s2i) *) bh->sdict;
+            k = kh_get(s2i, long_refs, hrecs->ref[tid].name);
+            if (k < kh_end(long_refs)) {
+                hrecs->ref[tid].len = kh_val(long_refs, k);
+            } else {
+                hrecs->ref[tid].len = UINT32_MAX;
+            }
+        }
         hrecs->ref[tid].ty   = NULL;
         k = kh_put(m_s2i, hrecs->ref_hash, hrecs->ref[tid].name, &r);
         if (r < 0) goto fail;
@@ -1038,7 +1057,7 @@ static int add_stub_ref_sq_lines(sam_hrecs_t *hrecs) {
 
     for (tid = 0; tid < hrecs->nref; tid++) {
         if (hrecs->ref[tid].ty == NULL) {
-            snprintf(len, sizeof(len), "%d", hrecs->ref[tid].len);
+            snprintf(len, sizeof(len), "%"PRIhts_pos, hrecs->ref[tid].len);
             if (sam_hrecs_add(hrecs, "SQ",
                               "SN", hrecs->ref[tid].name,
                               "LN", len, NULL) != 0)
@@ -1938,7 +1957,7 @@ const char *sam_hdr_tid2name(const sam_hdr_t *h, int tid) {
     return NULL;
 }
 
-uint32_t sam_hdr_tid2len(const sam_hdr_t *h, int tid) {
+hts_pos_t sam_hdr_tid2len(const sam_hdr_t *h, int tid) {
     sam_hrecs_t *hrecs;
 
     if (!h)
@@ -1947,8 +1966,19 @@ uint32_t sam_hdr_tid2len(const sam_hdr_t *h, int tid) {
     if ((hrecs = h->hrecs) != NULL && tid < hrecs->nref) {
         return hrecs->ref[tid].len;
     } else {
-        if (tid < h->n_targets)
-            return h->target_len[tid];
+        if (tid < h->n_targets) {
+            if (h->target_len[tid] < UINT32_MAX || !h->sdict) {
+                return h->target_len[tid];
+            } else {
+                khash_t(s2i) *long_refs = (khash_t(s2i) *) h->sdict;
+                khint_t k = kh_get(s2i, long_refs, h->target_name[tid]);
+                if (k < kh_end(long_refs)) {
+                    return kh_val(long_refs, k);
+                } else {
+                    return UINT32_MAX;
+                }
+            }
+        }
     }
 
     return 0;

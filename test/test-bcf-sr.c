@@ -31,6 +31,7 @@
 #include <getopt.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <inttypes.h>
 #include <htslib/synced_bcf_reader.h>
 
 void error(const char *format, ...)
@@ -103,7 +104,7 @@ int main(int argc, char *argv[])
         {
             if ( !bcf_sr_has_line(sr,i) ) continue;
             bcf1_t *rec = bcf_sr_get_line(sr, i);
-            printf("%s:%d", bcf_seqname(bcf_sr_get_header(sr,i),rec),rec->pos+1);
+            printf("%s:%"PRIhts_pos, bcf_seqname(bcf_sr_get_header(sr,i),rec),rec->pos+1);
             break;
         }
 

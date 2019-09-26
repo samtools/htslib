@@ -693,7 +693,7 @@ faidx_t *fai_load_format(const char *fn, enum fai_format_options format) {
 
 
 static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
-                          uint64_t offset, int64_t beg, int64_t end, int *len) {
+                          uint64_t offset, hts_pos_t beg, hts_pos_t end, hts_pos_t *len) {
     char *s;
     size_t l;
     int c = 0;
@@ -739,7 +739,7 @@ static char *fai_retrieve(const faidx_t *fai, const faidx1_t *val,
 }
 
 static int fai_get_val(const faidx_t *fai, const char *str,
-                       int *len, faidx1_t *val, int64_t *fbeg, int64_t *fend) {
+                       hts_pos_t *len, faidx1_t *val, hts_pos_t *fbeg, hts_pos_t *fend) {
     khiter_t iter;
     khash_t(s) *h;
     int id;
@@ -770,7 +770,7 @@ static int fai_get_val(const faidx_t *fai, const char *str,
 }
 
 
-char *fai_fetch(const faidx_t *fai, const char *str, int *len)
+char *fai_fetch64(const faidx_t *fai, const char *str, hts_pos_t *len)
 {
     faidx1_t val;
     int64_t beg, end;
@@ -783,8 +783,15 @@ char *fai_fetch(const faidx_t *fai, const char *str, int *len)
     return fai_retrieve(fai, &val, val.seq_offset, beg, end, len);
 }
 
+char *fai_fetch(const faidx_t *fai, const char *str, int *len)
+{
+    hts_pos_t len64;
+    char *ret = fai_fetch64(fai, str, &len64);
+    *len = len64; // trunc
+    return ret;
+}
 
-char *fai_fetchqual(const faidx_t *fai, const char *str, int *len) {
+char *fai_fetchqual64(const faidx_t *fai, const char *str, hts_pos_t *len) {
     faidx1_t val;
     int64_t beg, end;
 
@@ -796,6 +803,12 @@ char *fai_fetchqual(const faidx_t *fai, const char *str, int *len) {
     return fai_retrieve(fai, &val, val.qual_offset, beg, end, len);
 }
 
+char *fai_fetchqual(const faidx_t *fai, const char *str, int *len) {
+    hts_pos_t len64;
+    char *ret = fai_fetchqual64(fai, str, &len64);
+    *len = len64; // trunc
+    return ret;
+}
 
 int faidx_fetch_nseq(const faidx_t *fai)
 {
@@ -819,8 +832,7 @@ int faidx_seq_len(const faidx_t *fai, const char *seq)
     return kh_val(fai->hash, k).len;
 }
 
-
-static int faidx_adjust_position(const faidx_t *fai, faidx1_t *val, const char *c_name, int *p_beg_i, int *p_end_i, int *len) {
+static int faidx_adjust_position(const faidx_t *fai, faidx1_t *val, const char *c_name, hts_pos_t *p_beg_i, hts_pos_t *p_end_i, hts_pos_t *len) {
     khiter_t iter;
 
     // Adjust position
@@ -850,22 +862,28 @@ static int faidx_adjust_position(const faidx_t *fai, faidx1_t *val, const char *
     return 0;
 }
 
+char *faidx_fetch_seq64(const faidx_t *fai, const char *c_name, hts_pos_t p_beg_i, hts_pos_t p_end_i, hts_pos_t *len)
+{
+    faidx1_t val;
+
+    // Adjust position
+    if (faidx_adjust_position(fai, &val, c_name, &p_beg_i, &p_end_i, len)) {
+        return NULL;
+    }
+
+    // Now retrieve the sequence
+    return fai_retrieve(fai, &val, val.seq_offset, p_beg_i, p_end_i + 1, len);
+}
 
 char *faidx_fetch_seq(const faidx_t *fai, const char *c_name, int p_beg_i, int p_end_i, int *len)
 {
-    faidx1_t val;
-
-    // Adjust position
-    if (faidx_adjust_position(fai, &val, c_name, &p_beg_i, &p_end_i, len)) {
-        return NULL;
-    }
-
-    // Now retrieve the sequence
-    return fai_retrieve(fai, &val, val.seq_offset, p_beg_i, (long) p_end_i + 1, len);
+    hts_pos_t len64;
+    char *ret = faidx_fetch_seq64(fai, c_name, p_beg_i, p_end_i, &len64);
+    *len = len64;  // trunc
+    return ret;
 }
 
-
-char *faidx_fetch_qual(const faidx_t *fai, const char *c_name, int p_beg_i, int p_end_i, int *len)
+char *faidx_fetch_qual64(const faidx_t *fai, const char *c_name, hts_pos_t p_beg_i, hts_pos_t p_end_i, hts_pos_t *len)
 {
     faidx1_t val;
 
@@ -875,9 +893,16 @@ char *faidx_fetch_qual(const faidx_t *fai, const char *c_name, int p_beg_i, int 
     }
 
     // Now retrieve the sequence
-    return fai_retrieve(fai, &val, val.qual_offset, p_beg_i, (long) p_end_i + 1, len);
+    return fai_retrieve(fai, &val, val.qual_offset, p_beg_i, p_end_i + 1, len);
 }
 
+char *faidx_fetch_qual(const faidx_t *fai, const char *c_name, int p_beg_i, int p_end_i, int *len)
+{
+    hts_pos_t len64;
+    char *ret = faidx_fetch_qual64(fai, c_name, p_beg_i, p_end_i, &len64);
+    *len = len64;  // trunc
+    return ret;
+}
 
 int faidx_has_seq(const faidx_t *fai, const char *seq)
 {

@@ -61,6 +61,7 @@ extern "C" {
 #define BCF_HT_INT  1
 #define BCF_HT_REAL 2
 #define BCF_HT_STR  3
+#define BCF_HT_LONG (BCF_HT_INT | 0x100) // BCF_HT_INT, but for int64_t values; VCF only!
 
 #define BCF_VL_FIXED 0 // variable length
 #define BCF_VL_VAR   1
@@ -94,7 +95,7 @@ typedef struct {
 } bcf_hrec_t;
 
 typedef struct {
-    uint32_t info[3];  // stores Number:20, var:4, Type:4, ColType:4 in info[0..2]
+    uint64_t info[3];  // stores Number:20, var:4, Type:4, ColType:4 in info[0..2]
                        // for BCF_HL_FLT,INFO,FMT and contig length in info[0] for BCF_HL_CTG
     bcf_hrec_t *hrec[3];
     int id;
@@ -130,6 +131,7 @@ extern uint8_t bcf_type_shift[];
 #define BCF_BT_INT8     1
 #define BCF_BT_INT16    2
 #define BCF_BT_INT32    3
+#define BCF_BT_INT64    4  // Unofficial, for internal use only.
 #define BCF_BT_FLOAT    5
 #define BCF_BT_CHAR     7
 
@@ -155,9 +157,9 @@ typedef struct {
 
 typedef struct {
     int key;        // key: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$key].key
-    int type, len;  // type: one of BCF_BT_* types; len: vector length, 1 for scalars
+    int type;  // type: one of BCF_BT_* types
     union {
-        int32_t i; // integer value
+        int64_t i; // integer value
         float f;   // float value
     } v1; // only set if $len==1; for easier access
     uint8_t *vptr;          // pointer to data array in bcf1_t->shared.s, excluding the size+type and tag id bytes
@@ -165,6 +167,7 @@ typedef struct {
     uint32_t vptr_off:31,   // vptr offset, i.e., the size of the INFO key plus size+type bytes
             vptr_free:1;    // indicates that vptr-vptr_off must be freed; set only when modified and the new
                             //    data block is bigger than the original
+    int len;                // vector length, 1 for scalars
 } bcf_info_t;
 
 
@@ -208,9 +211,9 @@ typedef struct {
     line must be formatted in vcf_format.
  */
 typedef struct {
+    hts_pos_t pos;  // POS
+    hts_pos_t rlen; // length of REF
     int32_t rid;  // CHROM
-    int32_t pos;  // POS
-    int32_t rlen; // length of REF
     float qual;   // QUAL
     uint32_t n_info:16, n_allele:16;
     uint32_t n_fmt:8, n_sample:24;
@@ -427,7 +430,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     int vcf_write(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v) HTS_RESULT_USED;
 
     /** Helper function for the bcf_itr_next() macro; internal use, ignore it */
-    int bcf_readrec(BGZF *fp, void *null, void *v, int *tid, int *beg, int *end);
+    int bcf_readrec(BGZF *fp, void *null, void *v, int *tid, hts_pos_t *beg, hts_pos_t *end);
 
 
 
@@ -666,24 +669,47 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     int bcf_update_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id);
     int bcf_add_id(const bcf_hdr_t *hdr, bcf1_t *line, const char *id);
 
-    /*
+    /**
      *  bcf_update_info_*() - functions for updating INFO fields
-     *  @hdr:       the BCF header
-     *  @line:      VCF line to be edited
-     *  @key:       the INFO tag to be updated
-     *  @values:    pointer to the array of values. Pass NULL to remove the tag.
-     *  @n:         number of values in the array. When set to 0, the INFO tag is removed
+     *  @param hdr:       the BCF header
+     *  @param line:      VCF line to be edited
+     *  @param key:       the INFO tag to be updated
+     *  @param values:    pointer to the array of values. Pass NULL to remove the tag.
+     *  @param n:         number of values in the array. When set to 0, the INFO tag is removed
+     *  @return 0 on success or negative value on error.
      *
-     *  The @string in bcf_update_info_flag() is optional, @n indicates whether
-     *  the flag is set or removed.
+     *  The @p string in bcf_update_info_flag() is optional,
+     *  @p n indicates whether the flag is set or removed.
      *
-     *  Returns 0 on success or negative value on error.
      */
     #define bcf_update_info_int32(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf_update_info_float(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
     #define bcf_update_info_flag(hdr,line,key,string,n)    bcf_update_info((hdr),(line),(key),(string),(n),BCF_HT_FLAG)
     #define bcf_update_info_string(hdr,line,key,string)    bcf_update_info((hdr),(line),(key),(string),1,BCF_HT_STR)
     int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type);
+
+    /// Set or update 64-bit integer INFO values
+    /**
+     *  @param hdr:       the BCF header
+     *  @param line:      VCF line to be edited
+     *  @param key:       the INFO tag to be updated
+     *  @param values:    pointer to the array of values. Pass NULL to remove the tag.
+     *  @param n:         number of values in the array. When set to 0, the INFO tag is removed
+     *  @return 0 on success or negative value on error.
+     *
+     *  This function takes an int64_t values array as input.  The data
+     *  actually stored will be shrunk to the minimum size that can
+     *  accept all of the values.
+     *
+     *  INFO values outside of the range BCF_MIN_BT_INT32 to BCF_MAX_BT_INT32
+     *  can only be written to VCF files.
+     */
+    static inline int bcf_update_info_int64(const bcf_hdr_t *hdr, bcf1_t *line,
+                                            const char *key,
+                                            const int64_t *values, int n)
+    {
+        return bcf_update_info(hdr, line, key, values, n, BCF_HT_LONG);
+    }
 
     /*
      *  bcf_update_format_*() - functions for updating FORMAT fields
@@ -752,28 +778,58 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
 
     /**
      *  bcf_get_info_*() - get INFO values, integers or floats
-     *  @hdr:       BCF header
-     *  @line:      BCF record
-     *  @tag:       INFO tag to retrieve
-     *  @dst:       *dst is pointer to a memory location, can point to NULL
-     *  @ndst:      pointer to the size of allocated memory
+     *  @param hdr:    BCF header
+     *  @param line:   BCF record
+     *  @param tag:    INFO tag to retrieve
+     *  @param dst:    *dst is pointer to a memory location, can point to NULL
+     *  @param ndst:   pointer to the size of allocated memory
+     *  @return  >=0 on success
+     *          -1 .. no such INFO tag defined in the header
+     *          -2 .. clash between types defined in the header and encountered in the VCF record
+     *          -3 .. tag is not present in the VCF record
+     *          -4 .. the operation could not be completed (e.g. out of memory)
      *
-     *  Returns negative value on error or the number of written values
-     *  (including missing values) on success. bcf_get_info_string() returns
-     *  on success the number of characters written excluding the null-
-     *  terminating byte. bcf_get_info_flag() returns 1 when flag is set or 0
-     *  if not.
+     *  Returns negative value on error or the number of values (including
+     *  missing values) put in *dst on success. bcf_get_info_string() returns
+     *  on success the number of characters stored excluding the nul-
+     *  terminating byte. bcf_get_info_flag() does not store anything in *dst
+     *  but returns 1 if the flag is set or 0 if not.
      *
-     *  List of return codes:
-     *      -1 .. no such INFO tag defined in the header
-     *      -2 .. clash between types defined in the header and encountered in the VCF record
-     *      -3 .. tag is not present in the VCF record
+     *  *dst will be reallocated if it is not big enough (i.e. *ndst is too
+     *  small) or NULL on entry.  The new size will be stored in *ndst.
      */
     #define bcf_get_info_int32(hdr,line,tag,dst,ndst)  bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_INT)
     #define bcf_get_info_float(hdr,line,tag,dst,ndst)  bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_REAL)
     #define bcf_get_info_string(hdr,line,tag,dst,ndst) bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_STR)
     #define bcf_get_info_flag(hdr,line,tag,dst,ndst)   bcf_get_info_values(hdr,line,tag,(void**)(dst),ndst,BCF_HT_FLAG)
     int bcf_get_info_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, void **dst, int *ndst, int type);
+
+    /// Put integer INFO values into an int64_t array
+    /**
+     *  @param hdr:    BCF header
+     *  @param line:   BCF record
+     *  @param tag:    INFO tag to retrieve
+     *  @param dst:    *dst is pointer to a memory location, can point to NULL
+     *  @param ndst:   pointer to the size of allocated memory
+     *  @return  >=0 on success
+     *          -1 .. no such INFO tag defined in the header
+     *          -2 .. clash between types defined in the header and encountered in the VCF record
+     *          -3 .. tag is not present in the VCF record
+     *          -4 .. the operation could not be completed (e.g. out of memory)
+     *
+     *  Returns negative value on error or the number of values (including
+     *  missing values) put in *dst on success.
+     *
+     *  *dst will be reallocated if it is not big enough (i.e. *ndst is too
+     *  small) or NULL on entry.  The new size will be stored in *ndst.
+     */
+    static inline int bcf_get_info_int64(const bcf_hdr_t *hdr, bcf1_t *line,
+                                         const char *tag, int64_t **dst,
+                                         int *ndst)
+    {
+        return bcf_get_info_values(hdr, line, tag,
+                                   (void **) dst, ndst, BCF_HT_LONG);
+    }
 
     /**
      *  bcf_get_format_*() - same as bcf_get_info*() above
@@ -876,8 +932,8 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      */
     #define bcf_hdr_id2length(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>8 & 0xf)
     #define bcf_hdr_id2number(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>12)
-    #define bcf_hdr_id2type(hdr,type,int_id)    ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>4 & 0xf)
-    #define bcf_hdr_id2coltype(hdr,type,int_id) ((hdr)->id[BCF_DT_ID][int_id].val->info[type] & 0xf)
+    #define bcf_hdr_id2type(hdr,type,int_id)    (uint32_t)((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>4 & 0xf)
+    #define bcf_hdr_id2coltype(hdr,type,int_id) (uint32_t)((hdr)->id[BCF_DT_ID][int_id].val->info[type] & 0xf)
     #define bcf_hdr_idinfo_exists(hdr,type,int_id)  ((int_id<0 || bcf_hdr_id2coltype(hdr,type,int_id)==0xf) ? 0 : 1)
     #define bcf_hdr_id2hrec(hdr,dict_type,col_type,int_id)    ((hdr)->id[(dict_type)==BCF_DT_CTG?BCF_DT_CTG:BCF_DT_ID][int_id].val->hrec[(dict_type)==BCF_DT_CTG?0:(col_type)])
     /// Convert BCF FORMAT data to string form
@@ -1067,10 +1123,12 @@ which works for both BCF and VCF.
 #define bcf_int8_vector_end  (-127)         /* INT8_MIN  + 1 */
 #define bcf_int16_vector_end (-32767)       /* INT16_MIN + 1 */
 #define bcf_int32_vector_end (-2147483647)  /* INT32_MIN + 1 */
+#define bcf_int64_vector_end (-9223372036854775807LL)  /* INT64_MIN + 1 */
 #define bcf_str_vector_end   0
 #define bcf_int8_missing     (-128)          /* INT8_MIN  */
 #define bcf_int16_missing    (-32767-1)      /* INT16_MIN */
 #define bcf_int32_missing    (-2147483647-1) /* INT32_MIN */
+#define bcf_int64_missing    (-9223372036854775807LL - 1LL)  /* INT64_MIN */
 #define bcf_str_missing      0x07
 
 // Limits on BCF values stored in given types.  Max values are the same
@@ -1200,7 +1258,7 @@ Cautious callers can detect invalid type codes by checking that *q has
 actually been updated.
 */
 
-static inline int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
+static inline int64_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
 {
     if (type == BCF_BT_INT8) {
         *q = (uint8_t*)p + 1;
@@ -1211,6 +1269,9 @@ static inline int32_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
     } else if (type == BCF_BT_INT32) {
         *q = (uint8_t*)p + 4;
         return le_to_i32(p);
+    } else if (type == BCF_BT_INT64) {
+        *q = (uint8_t*)p + 4;
+        return le_to_i64(p);
     } else { // Invalid type.
         return 0;
     }
@@ -1232,7 +1293,7 @@ the integer value.
 Cautious callers can detect invalid type codes by checking that *q has
 actually been updated.
 */
-static inline int32_t bcf_dec_typed_int1(const uint8_t *p, uint8_t **q)
+static inline int64_t bcf_dec_typed_int1(const uint8_t *p, uint8_t **q)
 {
     return bcf_dec_int1(p + 1, *p&0xf, q);
 }

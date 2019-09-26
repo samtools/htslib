@@ -105,7 +105,7 @@ PACKAGE_VERSION := $(shell ./version.sh)
 
 # Increment this for each ABI breaking change until ABI version 3 becomes
 # stable
-TWO_TO_THREE_TRANSITION_COUNT = 11
+TWO_TO_THREE_TRANSITION_COUNT = 12
 LIBHTS_SOVERSION = 2to3part$(TWO_TO_THREE_TRANSITION_COUNT)
 MACH_O_COMPATIBILITY_VERSION = 2.$(TWO_TO_THREE_TRANSITION_COUNT)
 
@@ -532,7 +532,7 @@ htslib-uninstalled.pc: htslib.pc.tmp
 
 
 testclean:
-	-rm -f test/*.tmp test/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL*
+	-rm -f test/*.tmp test/*.tmp.* test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL*
 
 mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h

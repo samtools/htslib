@@ -31,6 +31,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 #include <inttypes.h>
 #include <math.h>
+#include <assert.h>
+#include <unistd.h>
 
 // Suppress message for faidx_fetch_nseq(), which we're intentionally testing
 #include "htslib/hts_defs.h"
@@ -1148,12 +1150,15 @@ static void samrecord_layout(void)
 
     size_t bam1_t_size, bam1_t_size2;
 
-    bam1_t_size = (36 + sizeof(int) + 4 + sizeof (char *) + sizeof(uint64_t)
-                   + sizeof(uint32_t));
+    assert(sizeof(hts_pos_t) == 8 || sizeof(hts_pos_t) == 4);
+    int core_size = sizeof(hts_pos_t) == 8 ? 48 : 36;
+    bam1_t_size = (core_size + sizeof(int) + sizeof(char *) + sizeof(uint64_t)
+                   + 2 * sizeof(uint32_t));
     bam1_t_size2 = bam1_t_size + 4;  // Account for padding on some platforms
 
-    if (sizeof (bam1_core_t) != 36)
-        fail("sizeof bam1_core_t is %zu, expected 36", sizeof (bam1_core_t));
+    if (sizeof (bam1_core_t) != core_size)
+        fail("sizeof bam1_core_t is %zu, expected %d",
+             sizeof (bam1_core_t), core_size);
 
     if (sizeof (bam1_t) != bam1_t_size && sizeof (bam1_t) != bam1_t_size2)
         fail("sizeof bam1_t is %zu, expected either %zu or %zu",
@@ -1165,6 +1170,166 @@ static void samrecord_layout(void)
                          "test/sam_alignment.tmp.cram", "wc", "test/ce.fa");
     copy_check_alignment("test/sam_alignment.tmp.cram", "CRAM",
                          "test/sam_alignment.tmp.sam_", "w", NULL);
+}
+
+static void check_big_ref(int parse_header)
+{
+    static const char sam_text[] = "data:,"
+        "@HD\tVN:1.4\n"
+        "@SQ\tSN:large#1\tLN:5000000000\n"
+        "@SQ\tSN:small#1\tLN:100\n"
+        "@SQ\tSN:large#2\tLN:9223372034707292158\n"
+        "@SQ\tSN:small#2\tLN:1\n"
+        "r1\t0\tlarge#1\t4999999000\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n"
+        "r2\t0\tsmall#1\t1\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n"
+        "r3\t0\tlarge#2\t9223372034707292000\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n"
+        "p1\t99\tlarge#2\t1\t50\t8M\t=\t9223372034707292150\t9223372034707292158\tACGTACGT\tabcdefgh\n"
+        "p1\t147\tlarge#2\t9223372034707292150\t50\t8M\t=\t1\t-9223372034707292158\tACGTACGT\tabcdefgh\n"
+        "r4\t0\tsmall#2\t2\t50\t8M\t*\t0\t0\tACGTACGT\tabcdefgh\n";
+    const hts_pos_t expected_lengths[] = {
+        5000000000LL, 100LL, 9223372034707292158LL, 1LL
+    };
+    const int expected_tids[] = {
+        0, 1, 2, 2, 2, 3
+    };
+    const int expected_mtid[] = {
+        -1, -1, -1, 2, 2, -1
+    };
+    const hts_pos_t expected_positions[] = {
+        4999999000LL - 1, 1LL - 1, 9223372034707292000LL - 1, 1LL - 1,
+        9223372034707292150LL - 1, 2LL - 1
+    };
+    const hts_pos_t expected_mpos[] = {
+        -1, -1, -1, 9223372034707292150LL - 1, 1LL - 1, -1
+    };
+    samFile *in = NULL, *out = NULL;
+    sam_hdr_t *header = NULL;
+    bam1_t *aln = bam_init1();
+    const int num_refs = sizeof(expected_lengths) / sizeof(expected_lengths[0]);
+    const int num_align = sizeof(expected_tids) / sizeof(expected_tids[0]);
+    const char *outfname = "test/sam_big_ref.tmp.sam_";
+    int i, r;
+    char buffer[sizeof(sam_text) + 1024];
+    FILE *inf = NULL;
+    size_t bytes;
+
+    if (!aln) {
+        fail("Out of memory");
+        goto cleanup;
+    }
+
+    in = sam_open(sam_text, "r");
+    if (!in) {
+        fail("Opening SAM file");
+        goto cleanup;
+    }
+    out = sam_open(outfname, "w");
+    if (!out) {
+        fail("Opening output SAM file \"%s\"", outfname);
+        goto cleanup;
+    }
+    header = sam_hdr_read(in);
+    if (!header) {
+        fail("Reading SAM header");
+        goto cleanup;
+    }
+    if (parse_header) {
+        // This will force the reader to be parsed
+        if (sam_hdr_count_lines(header, "SQ") != num_refs) {
+            fail("Wrong number of SQ lines in header");
+            goto cleanup;
+        }
+    }
+    for (i = 0; i < num_refs; i++) {
+        hts_pos_t ln = sam_hdr_tid2len(header, i);
+        if (ln != expected_lengths[i]) {
+            fail("Wrong length for ref %d : "
+                 "expected %"PRIhts_pos" got %"PRIhts_pos"\n",
+                 i, expected_lengths[i], ln);
+            goto cleanup;
+        }
+    }
+    if (sam_hdr_write(out, header) < 0) {
+        fail("Failed to write SAM header");
+        goto cleanup;
+    }
+    i = 0;
+    while ((r = sam_read1(in, header, aln)) >= 0) {
+        if (i >= num_align) {
+            fail("Too many alignment records.\n");
+            goto cleanup;
+        }
+        if (aln->core.tid != expected_tids[i]) {
+            fail("Wrong tid for record %d : expected %d got %d\n",
+                 i, expected_tids[i], aln->core.tid);
+            goto cleanup;
+        }
+        if (aln->core.mtid != expected_mtid[i]) {
+            fail("Wrong mate tid for record %d : expected %d got %d\n",
+                 i, expected_mtid[i], aln->core.mtid);
+            goto cleanup;
+        }
+        if (aln->core.pos != expected_positions[i]) {
+            fail("Wrong position for record %d : "
+                 "expected %"PRIhts_pos" got %"PRIhts_pos"\n",
+                 i, expected_positions[i], aln->core.pos);
+        }
+        if (aln->core.mpos != expected_mpos[i]) {
+            fail("Wrong mate position for record %d : "
+                 "expected %"PRIhts_pos" got %"PRIhts_pos"\n",
+                 i, expected_mpos[i], aln->core.mpos);
+        }
+        if (sam_write1(out, header, aln) < 0) {
+            fail("Failed to write alignment record %d\n", i);
+            goto cleanup;
+        }
+        i++;
+    }
+    if (r < -1) {
+        fail("Error reading SAM alignment\n");
+        goto cleanup;
+    }
+    if (i < num_align) {
+        fail("Not enough alignment records\n");
+        goto cleanup;
+    }
+    r = sam_close(in); in = NULL;
+    if (r < 0) {
+        fail("sam_close(in)");
+        goto cleanup;
+    }
+    r = sam_close(out); out = NULL;
+    if (r < 0) {
+        fail("sam_close(out)");
+        goto cleanup;
+    }
+
+    inf = fopen(outfname, "r");
+    if (!inf) {
+        fail("Opening \"%s\"", outfname);
+        goto cleanup;
+    }
+    bytes = fread(buffer, 1, sizeof(buffer), inf);
+    if (bytes != sizeof(sam_text) - 7
+        || memcmp(buffer, sam_text + 6, bytes - 7) != 0) {
+        fail("Output file does not match original version");
+        fprintf(stderr,
+                "---------- Expected:\n%.*s\n"
+                "++++++++++ Got:\n%.*s\n"
+                "====================\n",
+                (int) sizeof(sam_text) - 7, sam_text + 6,
+                (int) bytes, buffer);
+        goto cleanup;
+    }
+
+ cleanup:
+    bam_destroy1(aln);
+    sam_hdr_destroy(header);
+    if (in) sam_close(in);
+    if (out) sam_close(out);
+    if (inf) fclose(inf);
+    unlink(outfname);
+    return;
 }
 
 static void faidx1(const char *filename)
@@ -1575,6 +1740,8 @@ int main(int argc, char **argv)
     test_text_file("test/fastqs.fq", 500);
     check_enum1();
     check_cigar_tab();
+    check_big_ref(0);
+    check_big_ref(1);
     test_mempolicy();
     for (i = 1; i < argc; i++) faidx1(argv[i]);
 

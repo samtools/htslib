@@ -60,7 +60,7 @@ extern "C" {
 #endif
 
 // Generic hash-map integer -> integer
-KHASH_MAP_INIT_INT(m_i2i, int)
+KHASH_MAP_INIT_INT64(m_i2i, int)
 
 // Generic hash-set integer -> (existance)
 KHASH_SET_INIT_INT(s_i2i)
@@ -281,8 +281,8 @@ struct cram_map;
 /* Compression header block */
 typedef struct cram_block_compression_hdr {
     int32_t ref_seq_id;
-    int32_t ref_seq_start;
-    int32_t ref_seq_span;
+    int64_t ref_seq_start;
+    int64_t ref_seq_span;
     int32_t num_records;
     int32_t num_landmarks;
     int32_t *landmark;
@@ -337,8 +337,8 @@ KHASH_MAP_INIT_INT(m_tagmap, cram_tag_map*)
 typedef struct cram_block_slice_hdr {
     enum cram_content_type content_type;
     int32_t ref_seq_id;     /* if content_type == MAPPED_SLICE */
-    int32_t ref_seq_start;  /* if content_type == MAPPED_SLICE */
-    int32_t ref_seq_span;   /* if content_type == MAPPED_SLICE */
+    int64_t ref_seq_start;  /* if content_type == MAPPED_SLICE */
+    int64_t ref_seq_span;   /* if content_type == MAPPED_SLICE */
     int32_t num_records;
     int64_t record_counter;
     int32_t num_blocks;
@@ -362,8 +362,8 @@ struct ref_entry;
 typedef struct cram_container {
     int32_t  length;
     int32_t  ref_seq_id;
-    int32_t  ref_seq_start;
-    int32_t  ref_seq_span;
+    int64_t  ref_seq_start;
+    int64_t  ref_seq_span;
     int64_t  record_counter;
     int64_t  num_bases;
     int32_t  num_records;
@@ -385,10 +385,10 @@ typedef struct cram_container {
     int max_c_rec, curr_c_rec;   // current and max recs per container
     int slice_rec;               // rec no. for start of this slice
     int curr_ref;                // current ref ID. -2 for no previous
-    int last_pos;                // last record position
+    int64_t last_pos;                // last record position
     struct cram_slice **slices, *slice;
     int pos_sorted;              // boolean, 1=>position sorted data
-    int max_apos;                // maximum position, used if pos_sorted==0
+    int64_t max_apos;                // maximum position, used if pos_sorted==0
     int last_slice;              // number of reads in last slice (0 for 1st)
     int multi_seq;               // true if packing multi seqs per cont/slice
     int unsorted;                // true is AP_delta is 0.
@@ -422,14 +422,14 @@ typedef struct cram_record {
     int32_t flags;        // BF
     int32_t cram_flags;   // CF
     int32_t len;          // RL
-    int32_t apos;         // AP
+    int64_t apos;         // AP
     int32_t rg;           // RG
     int32_t name;         // RN; idx to s->names_blk
     int32_t name_len;
     int32_t mate_line;    // index to another cram_record
     int32_t mate_ref_id;
-    int32_t mate_pos;     // NP
-    int32_t tlen;         // TS
+    int64_t mate_pos;     // NP
+    int64_t tlen;         // TS
 
     // Auxiliary data
     int32_t ntags;        // TC
@@ -446,7 +446,7 @@ typedef struct cram_record {
     int32_t qual;         // idx to s->qual_blk
     int32_t cigar;        // idx to s->cigar
     int32_t ncigar;
-    int32_t aend;         // alignment end
+    int64_t aend;         // alignment end
     int32_t mqual;        // MQ
 
     int32_t feature;      // idx to s->feature
@@ -543,7 +543,7 @@ typedef struct cram_slice {
     cram_block **block_by_id;
 
     /* State used during encoding/decoding */
-    int last_apos, max_apos;
+    int64_t last_apos, max_apos;
 
     /* Array of decoded cram records */
     cram_record *crecs;
@@ -661,8 +661,8 @@ typedef struct cram_index {
 
 typedef struct {
     int refid;
-    int start;
-    int end;
+    int64_t start;
+    int64_t end;
 } cram_range;
 
 /*-----------------------------------------------------------------------------

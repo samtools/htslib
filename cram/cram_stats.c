@@ -39,6 +39,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <math.h>
+#include <inttypes.h>
 
 #include "cram/cram.h"
 #include "cram/os.h"
@@ -47,7 +48,7 @@ cram_stats *cram_stats_create(void) {
     return calloc(1, sizeof(cram_stats));
 }
 
-int cram_stats_add(cram_stats *st, int32_t val) {
+int cram_stats_add(cram_stats *st, int64_t val) {
     st->nsamp++;
 
     //assert(val >= 0);
@@ -75,7 +76,7 @@ int cram_stats_add(cram_stats *st, int32_t val) {
     return 0;
 }
 
-void cram_stats_del(cram_stats *st, int32_t val) {
+void cram_stats_del(cram_stats *st, int64_t val) {
     st->nsamp--;
 
     //assert(val >= 0);
@@ -90,11 +91,11 @@ void cram_stats_del(cram_stats *st, int32_t val) {
             if (--kh_val(st->h, k) == 0)
                 kh_del(m_i2i, st->h, k);
         } else {
-            hts_log_warning("Failed to remove val %d from cram_stats", val);
+            hts_log_warning("Failed to remove val %"PRId64" from cram_stats", val);
             st->nsamp++;
         }
     } else {
-        hts_log_warning("Failed to remove val %d from cram_stats", val);
+        hts_log_warning("Failed to remove val %"PRId64" from cram_stats", val);
         st->nsamp++;
     }
 }

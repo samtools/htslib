@@ -30,8 +30,8 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stddef.h>
 #include <stdint.h>
+#include <inttypes.h>
 
-#include "hts_defs.h"
 #include "hts_log.h"
 
 #ifdef __cplusplus
@@ -577,9 +577,26 @@ When REST or NONE is used, idx is also ignored and may be NULL.
 #define HTS_FMT_TBI 2
 #define HTS_FMT_CRAI 3
 
+// Almost INT64_MAX, but when cast into a 32-bit int it's
+// also INT_MAX instead of -1.  This avoids bugs with old code
+// using the new hts_pos_t data type.
+#define HTS_POS_MAX ((((int64_t)INT_MAX)<<32)|INT_MAX)
+#define HTS_POS_MIN INT64_MIN
+#define PRIhts_pos PRId64
+typedef int64_t hts_pos_t;
+
+// For comparison with previous release:
+//
+// #define HTS_POS_MAX INT_MAX
+// #define HTS_POS_MIN INT_MIN
+// #define PRIhts_pos PRId32
+// typedef int32_t hts_pos_t;
+
 typedef struct {
-    uint32_t beg, end;
-} hts_pair32_t;
+   hts_pos_t beg, end;
+} hts_pair_pos_t;
+
+typedef hts_pair_pos_t hts_pair32_t;  // For backwards compatibility
 
 typedef struct {
     uint64_t u, v;
@@ -592,21 +609,23 @@ typedef struct {
 
 typedef struct {
     const char *reg;
-    hts_pair32_t *intervals;
+    hts_pair_pos_t *intervals;
     int tid;
     uint32_t count;
-    uint32_t min_beg, max_end;
+    hts_pos_t min_beg, max_end;
 } hts_reglist_t;
 
-typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, int *beg, int *end);
+typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, hts_pos_t *beg, hts_pos_t *end);
 typedef int hts_seek_func(void *fp, int64_t offset, int where);
 typedef int64_t hts_tell_func(void *fp);
 
 typedef struct {
     uint32_t read_rest:1, finished:1, is_cram:1, nocoor:1, multi:1, dummy:27;
-    int tid, beg, end, n_off, i, n_reg;
+    int tid, n_off, i, n_reg;
+    hts_pos_t beg, end;
     hts_reglist_t *reg_list;
-    int curr_tid, curr_beg, curr_end, curr_reg, curr_intv;
+    int curr_tid, curr_reg, curr_intv;
+    hts_pos_t curr_beg, curr_end;
     uint64_t curr_off, nocoor_off;
     hts_pair64_max_t *off;
     hts_readrec_func *readrec;
@@ -658,7 +677,7 @@ void hts_idx_destroy(hts_idx_t *idx);
 The @p is_mapped parameter is used to update the n_mapped / n_unmapped counts
 stored in the meta-data bin.
  */
-int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped);
+int hts_idx_push(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t offset, int is_mapped);
 
 /// Finish building an index
 /** @param idx          Index
@@ -844,6 +863,9 @@ uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx);
 */
 long long hts_parse_decimal(const char *str, char **strend, int flags);
 
+typedef int (*hts_name2id_f)(void*, const char*);
+typedef const char *(*hts_id2name_f)(void*, int);
+
 /// Parse a "CHR:START-END"-style region string
 /** @param str  String to be parsed
     @param beg  Set on return to the 0-based start of the region
@@ -851,10 +873,15 @@ long long hts_parse_decimal(const char *str, char **strend, int flags);
     @return  Pointer to the colon or '\0' after the reference sequence name,
              or NULL if @a str could not be parsed.
 */
+const char *hts_parse_reg64(const char *str, hts_pos_t *beg, hts_pos_t *end);
 
-typedef int (*hts_name2id_f)(void*, const char*);
-typedef const char *(*hts_id2name_f)(void*, int);
-
+/// Parse a "CHR:START-END"-style region string
+/** @param str  String to be parsed
+    @param beg  Set on return to the 0-based start of the region
+    @param end  Set on return to the 1-based end of the region
+    @return  Pointer to the colon or '\0' after the reference sequence name,
+             or NULL if @a str could not be parsed.
+*/
 const char *hts_parse_reg(const char *str, int *beg, int *end);
 
 /// Parse a "CHR:START-END"-style region string
@@ -940,14 +967,14 @@ const char *hts_parse_region(const char *str, int *tid, int64_t *beg, int64_t *e
     @param readrec  Callback to read a record from the input file
     @return An iterator on success; NULL on failure
  */
-hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
+hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, hts_readrec_func *readrec);
 
 /// Free an iterator
 /** @param iter   Iterator to free
  */
 void hts_itr_destroy(hts_itr_t *iter);
 
-typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec);
+typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, hts_readrec_func *readrec);
 
 /// Create a single-region iterator from a text region specification
 /** @param idx       Index
@@ -1148,7 +1175,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
     void hts_md5_destroy(hts_md5_context *ctx);
 
 
-static inline int hts_reg2bin(int64_t beg, int64_t end, int min_shift, int n_lvls)
+static inline int hts_reg2bin(hts_pos_t beg, hts_pos_t end, int min_shift, int n_lvls)
 {
     int l, s = min_shift, t = ((1<<((n_lvls<<1) + n_lvls)) - 1) / 7;
     for (--end, l = n_lvls; l > 0; --l, s += 3, t -= 1<<((l<<1)+l))

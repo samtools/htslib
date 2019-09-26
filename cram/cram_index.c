@@ -544,7 +544,8 @@ static int cram_index_build_multiref(cram_fd *fd,
                                      off_t cpos,
                                      int32_t landmark,
                                      int sz) {
-    int i, ref = -2, ref_start = 0, ref_end;
+    int i, ref = -2;
+    int64_t ref_start = 0, ref_end;
     char buf[1024];
 
     if (fd->mode != 'w') {
@@ -571,7 +572,7 @@ static int cram_index_build_multiref(cram_fd *fd,
         }
 
         if (ref != -2) {
-            sprintf(buf, "%d\t%d\t%d\t%"PRId64"\t%d\t%d\n",
+            sprintf(buf, "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
                     ref, ref_start, ref_end - ref_start + 1,
                     (int64_t)cpos, landmark, sz);
             if (bgzf_write(fp, buf, strlen(buf)) < 0)
@@ -584,7 +585,7 @@ static int cram_index_build_multiref(cram_fd *fd,
     }
 
     if (ref != -2) {
-        sprintf(buf, "%d\t%d\t%d\t%"PRId64"\t%d\t%d\n",
+        sprintf(buf, "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
                 ref, ref_start, ref_end - ref_start + 1,
                 (int64_t)cpos, landmark, sz);
         if (bgzf_write(fp, buf, strlen(buf)) < 0)
@@ -616,7 +617,7 @@ int cram_index_slice(cram_fd *fd,
     if (s->hdr->ref_seq_id == -2) {
         ret = cram_index_build_multiref(fd, c, s, fp, cpos, spos, sz);
     } else {
-        sprintf(buf, "%d\t%d\t%d\t%"PRId64"\t%d\t%d\n",
+        sprintf(buf, "%d\t%"PRId64"\t%"PRId64"\t%"PRId64"\t%d\t%d\n",
                 s->hdr->ref_seq_id, s->hdr->ref_seq_start,
                 s->hdr->ref_seq_span, (int64_t)cpos, (int)spos, (int)sz);
         ret = (bgzf_write(fp, buf, strlen(buf)) >= 0)? 0 : -4;
@@ -684,7 +685,7 @@ int cram_index_build(cram_fd *fd, const char *fn_base, const char *fn_idx) {
     off_t cpos, hpos;
     BGZF *fp;
     kstring_t fn_idx_str = {0};
-    int32_t last_ref = -9, last_start = -9;
+    int64_t last_ref = -9, last_start = -9;
 
     // Useful for cram_index_build_multiref
     cram_set_option(fd, CRAM_OPT_REQUIRED_FIELDS, SAM_RNAME | SAM_POS | SAM_CIGAR);
