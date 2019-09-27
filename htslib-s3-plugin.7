@@ -99,6 +99,9 @@ Sets the host.  Defaults to
 .B HTS_S3_V2
 If set use signature v2 rather the default v4.  This will limit the plugin to
 reading only.
+.TP
+.B HTS_S3_PART_SIZE
+Sets the upload part size in Mb.  The minimum and default is 5Mb.
 .LP
 In the absence of an ID from the previous two methods the credential/config
 files will be used.  The default file locations are either

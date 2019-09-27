@@ -127,6 +127,7 @@ typedef struct {
     int aborted;
     size_t index;
     long verbose;
+    int part_size;
 } hFILE_s3_write;
 
 
@@ -435,7 +436,7 @@ static ssize_t s3_write(hFILE *fpv, const void *bufferv, size_t nbytes) {
         return -1;
     }
 
-    if (fp->buffer.l > MINIMUM_S3_WRITE_SIZE) {
+    if (fp->buffer.l > fp->part_size) {
         // time to write out our data
         kstring_t response = {0, 0, NULL};
         int ret;
@@ -655,6 +656,7 @@ static hFILE *s3_write_open(const char *url, s3_authorisation *auth) {
     kstring_t header   = {0, 0, NULL};
     int ret, has_user_query = 0;
     char *query_start;
+    const char *env;
 
 
     if (!auth || !auth->callback || !auth->callback_data) {
@@ -682,6 +684,15 @@ static hFILE *s3_write_open(const char *url, s3_authorisation *auth) {
     ksinit(&fp->url);
     ksinit(&fp->completion_message);
     fp->aborted = 0;
+
+    fp->part_size = MINIMUM_S3_WRITE_SIZE;
+
+    if ((env = getenv("HTS_S3_PART_SIZE")) != NULL) {
+        int part_size = atoi(env) * 1024 * 1024;
+
+        if (part_size > fp->part_size)
+            fp->part_size = part_size;
+    }
 
     if (hts_verbose >= 8) {
         fp->verbose = 1L;
