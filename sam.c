@@ -3914,6 +3914,7 @@ int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) {
             // eg cigar 1M2I1D gives mpileup output in T+2AA-1C style
             if (del_len)
                 *del_len = cigar[k]>>BAM_CIGAR_SHIFT;
+            // fall through
         default:
             k = p->b->core.n_cigar;
             break;
