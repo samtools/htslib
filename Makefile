@@ -33,9 +33,9 @@ CPPFLAGS =
 # TODO: probably update cram code to make it compile cleanly with -Wc++-compat
 # For testing strict C99 support add -std=c99 -D_XOPEN_SOURCE=600
 #CFLAGS   = -g -Wall -O2 -pedantic -std=c99 -D_XOPEN_SOURCE=600
-CFLAGS   = -g -Wall -O2
+CFLAGS   = -g -Wall -O2 -fvisibility=hidden
 EXTRA_CFLAGS_PIC = -fpic
-LDFLAGS  =
+LDFLAGS  = -fvisibility=hidden
 LIBS     = $(htslib_default_libs)
 
 prefix      = /usr/local
@@ -191,14 +191,14 @@ cram_io_h = cram/cram_io.h $(cram_misc_h)
 cram_misc_h = cram/misc.h
 cram_os_h = cram/os.h $(htslib_hts_endian_h)
 cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h)
-cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) cram/string_alloc.h cram/mFILE.h $(htslib_khash_h)
+cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) $(htslib_cram_h) cram/string_alloc.h cram/mFILE.h $(htslib_khash_h)
 cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
 bcf_sr_sort_h = bcf_sr_sort.h $(htslib_synced_bcf_reader_h) $(htslib_kbitset_h)
 header_h = header.h cram/string_alloc.h cram/pooled_alloc.h $(htslib_khash_h) $(htslib_kstring_h) $(htslib_sam_h)
-hfile_internal_h = hfile_internal.h $(htslib_hfile_h) $(textutils_internal_h)
+hfile_internal_h = hfile_internal.h $(htslib_hts_defs_h) $(htslib_hfile_h) $(textutils_internal_h)
 hts_internal_h = hts_internal.h $(htslib_hts_h) $(textutils_internal_h)
 sam_internal_h = sam_internal.h $(htslib_sam_h)
-textutils_internal_h = textutils_internal.h $(htslib_kstring_h)
+textutils_internal_h = textutils_internal.h $(htslib_kstring_h) $(htslib_sam_h)
 thread_pool_internal_h = thread_pool_internal.h $(htslib_thread_pool_h)
 
 

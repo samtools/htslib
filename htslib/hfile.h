@@ -63,6 +63,7 @@ The usual `fopen(3)` _mode_ letters are supported: one of
 `+` (update), `e` (close on `exec(2)`), `x` (create exclusively),
 `:` (indicates scheme-specific variable arguments follow).
 */
+HTSLIB_EXPORT
 hFILE *hopen(const char *filename, const char *mode, ...) HTS_RESULT_USED;
 
 /// Associate a stream with an existing open file descriptor
@@ -74,6 +75,7 @@ between text and binary mode.
 
 For socket descriptors (on Windows), _mode_ should contain `s`.
 */
+HTSLIB_EXPORT
 hFILE *hdopen(int fd, const char *mode) HTS_RESULT_USED;
 
 /// Report whether the file name or URL denotes remote storage
@@ -82,6 +84,7 @@ hFILE *hdopen(int fd, const char *mode) HTS_RESULT_USED;
 "Remote" means involving e.g. explicit network access, with the implication
 that callers may wish to cache such files' contents locally.
 */
+HTSLIB_EXPORT
 int hisremote(const char *filename) HTS_RESULT_USED;
 
 /// Append an extension or replace an existing extension
@@ -95,17 +98,20 @@ int hisremote(const char *filename) HTS_RESULT_USED;
 If _filename_ is an URL, alters extensions at the end of the `hier-part`,
 leaving any trailing `?query` or `#fragment` unchanged.
 */
+HTSLIB_EXPORT
 char *haddextension(struct kstring_t *buffer, const char *filename,
                     int replace, const char *extension) HTS_RESULT_USED;
 
 /// Flush (for output streams) and close the stream
 /** @return  0 if successful, or `EOF` (with _errno_ set) if an error occurred.
 */
+HTSLIB_EXPORT
 int hclose(hFILE *fp) HTS_RESULT_USED;
 
 /// Close the stream, without flushing or propagating errors
 /** For use while cleaning up after an error only.  Preserves _errno_.
 */
+HTSLIB_EXPORT
 void hclose_abruptly(hFILE *fp);
 
 /// Return the stream's error indicator
@@ -129,6 +135,7 @@ static inline void hclearerr(hFILE *fp)
 /** @return  The resulting offset within the stream (as per `lseek(2)`),
     or negative if an error occurred.
 */
+HTSLIB_EXPORT
 off_t hseek(hFILE *fp, off_t offset, int whence) HTS_RESULT_USED;
 
 /// Report the current stream offset
@@ -160,6 +167,7 @@ Bytes will be read into the buffer up to and including a delimiter, until
 EOF is reached, or _size-1_ bytes have been written, whichever comes first.
 The string will then be terminated with a NUL byte (`\0`).
 */
+HTSLIB_EXPORT
 ssize_t hgetdelim(char *buffer, size_t size, int delim, hFILE *fp)
     HTS_RESULT_USED;
 
@@ -188,6 +196,7 @@ hgetln(char *buffer, size_t size, hFILE *fp)
 This function can be used as a replacement for `fgets(3)`, or together with
 kstring's `kgetline()` to read arbitrarily-long lines into a _kstring_t_.
 */
+HTSLIB_EXPORT
 char *hgets(char *buffer, int size, hFILE *fp) HTS_RESULT_USED;
 
 /// Peek at characters to be read without removing them from buffers
@@ -201,6 +210,7 @@ char *hgets(char *buffer, int size, hFILE *fp) HTS_RESULT_USED;
 The characters peeked at remain in the stream's internal buffer, and will be
 returned by later hread() etc calls.
 */
+HTSLIB_EXPORT
 ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes) HTS_RESULT_USED;
 
 /// Read a block of characters from the file
@@ -282,6 +292,7 @@ hwrite(hFILE *fp, const void *buffer, size_t nbytes)
 
 This includes low-level flushing such as via `fdatasync(2)`.
 */
+HTSLIB_EXPORT
 int hflush(hFILE *fp) HTS_RESULT_USED;
 
 /// For hfile_mem: get the internal buffer and it's size from a hfile
@@ -290,6 +301,7 @@ int hflush(hFILE *fp) HTS_RESULT_USED;
 The buffer returned should not be freed as this will happen when the
 hFILE is closed.
 */
+HTSLIB_EXPORT
 char *hfile_mem_get_buffer(hFILE *file, size_t *length);
 
 /// For hfile_mem: get the internal buffer and it's size from a hfile.
@@ -300,6 +312,7 @@ buffer is granted to the caller, who now has responsibility for freeing
 it.  From this point onwards, the hFILE should not be used for any
 purpose other than closing.
 */
+HTSLIB_EXPORT
 char *hfile_mem_steal_buffer(hFILE *file, size_t *length);
 
 #ifdef __cplusplus

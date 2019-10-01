@@ -51,10 +51,15 @@ KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
 typedef khash_t(vdict) vdict_t;
 
 #include "htslib/kseq.h"
-
+HTSLIB_EXPORT
 uint32_t bcf_float_missing    = 0x7F800001;
+
+HTSLIB_EXPORT
 uint32_t bcf_float_vector_end = 0x7F800002;
+
+HTSLIB_EXPORT
 uint8_t bcf_type_shift[] = { 0, 0, 1, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
 static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, NULL, NULL}, .id = -1 };
 
 static const char *dump_char(char *buffer, char c)

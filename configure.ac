@@ -30,6 +30,7 @@ AC_CONFIG_SRCDIR(hts.c)
 AC_CONFIG_HEADERS(config.h)
 
 m4_include([m4/hts_prog_cc_warnings.m4])
+m4_include([m4/hts_hide_dynamic_syms.m4])
 
 dnl Copyright notice to be copied into the generated configure script
 AC_COPYRIGHT([Portions copyright (C) 2018 Genome Research Ltd.
@@ -165,6 +166,10 @@ case $host_alias in
 esac
 AC_MSG_RESULT([$host_result])
 AC_SUBST([PLATFORM])
+
+dnl Try to get more control over which symbols are exported in the shared
+dnl library.
+HTS_HIDE_DYNAMIC_SYMBOLS
 
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP

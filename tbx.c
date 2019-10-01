@@ -38,10 +38,19 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 
+HTSLIB_EXPORT
 const tbx_conf_t tbx_conf_gff = { 0, 1, 4, 5, '#', 0 };
+
+HTSLIB_EXPORT
 const tbx_conf_t tbx_conf_bed = { TBX_UCSC, 1, 2, 3, '#', 0 };
+
+HTSLIB_EXPORT
 const tbx_conf_t tbx_conf_psltbl = { TBX_UCSC, 15, 17, 18, '#', 0 };
+
+HTSLIB_EXPORT
 const tbx_conf_t tbx_conf_sam = { TBX_SAM, 3, 4, 0, '@', 0 };
+
+HTSLIB_EXPORT
 const tbx_conf_t tbx_conf_vcf = { TBX_VCF, 1, 2, 0, '#', 0 };
 
 typedef struct {

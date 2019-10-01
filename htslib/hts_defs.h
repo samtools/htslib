@@ -95,4 +95,13 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_FORMAT(type, idx, first)
 #endif
 
+#if HTS_COMPILER_HAS(__visibility__) || HTS_GCC_AT_LEAST(4,0)
+#define HTS_DLL_EXPORT __attribute__((__visibility__("default")))
+#elif defined(__SUNPRO_C) && __SUNPRO_C >= 0x550
+#define HTS_DLL_EXPORT __global
+#else
+#define HTS_DLL_EXPORT
+#endif
+#define HTSLIB_EXPORT HTS_DLL_EXPORT
+
 #endif

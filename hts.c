@@ -60,6 +60,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
+HTSLIB_EXPORT
 int hts_verbose = HTS_LOG_WARNING;
 
 const char *hts_version()
@@ -67,6 +68,7 @@ const char *hts_version()
     return HTS_VERSION_TEXT;
 }
 
+HTSLIB_EXPORT
 const unsigned char seq_nt16_table[256] = {
     15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
     15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
@@ -87,8 +89,10 @@ const unsigned char seq_nt16_table[256] = {
     15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15
 };
 
+HTSLIB_EXPORT
 const char seq_nt16_str[] = "=ACMGRSVTWYHKDBN";
 
+HTSLIB_EXPORT
 const int seq_nt16_int[] = { 4, 0, 1, 4, 2, 4, 4, 4, 3, 4, 4, 4, 4, 4, 4, 4 };
 
 /**********************
@@ -3700,6 +3704,7 @@ hts_idx_t *hts_idx_load3(const char *fn, const char *fnidx, int fmt, int flags)
  **********************/
 
 /* For use with hts_expand macros *only* */
+HTSLIB_EXPORT
 size_t hts_realloc_or_die(size_t n, size_t m, size_t m_sz, size_t size,
                           int clear, void **ptr, const char *func) {
     /* If new_m and size are both below this limit, multiplying them

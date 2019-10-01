@@ -46,9 +46,11 @@ enum htsLogLevel {
 };
 
 /// Sets the selected log level.
+HTSLIB_EXPORT
 void hts_set_log_level(enum htsLogLevel level);
 
 /// Gets the selected log level.
+HTSLIB_EXPORT
 enum htsLogLevel hts_get_log_level(void);
 
 /// Selected log level.
@@ -68,6 +70,7 @@ extern int hts_verbose;
 * \param context       Context where the event occurred. Typically set to "__func__".
 * \param format        Format string with placeholders, like printf.
 */
+HTSLIB_EXPORT
 void hts_log(enum htsLogLevel severity, const char *context, const char *format, ...)
 HTS_FORMAT(HTS_PRINTF_FMT, 3, 4);
 

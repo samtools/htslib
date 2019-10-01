@@ -119,9 +119,13 @@ typedef void (*regidx_free_f)(void *payload);
  *      - leading spaces are ignored
  *      - lines starting with "#" are ignored
  */
+HTSLIB_EXPORT
 int regidx_parse_bed(const char*,char**,char**,hts_pos_t*,hts_pos_t*,void*,void*);   // CHROM or whitespace-sepatated CHROM,FROM,TO (0-based,right-open)
+HTSLIB_EXPORT
 int regidx_parse_tab(const char*,char**,char**,hts_pos_t*,hts_pos_t*,void*,void*);   // CHROM or whitespace-separated CHROM,POS (1-based, inclusive)
+HTSLIB_EXPORT
 int regidx_parse_reg(const char*,char**,char**,hts_pos_t*,hts_pos_t*,void*,void*);   // CHROM, CHROM:POS, CHROM:FROM-TO, CHROM:FROM- (1-based, inclusive)
+HTSLIB_EXPORT
 int regidx_parse_vcf(const char*,char**,char**,hts_pos_t*,hts_pos_t*,void*,void*);
 
 /*
@@ -139,12 +143,15 @@ int regidx_parse_vcf(const char*,char**,char**,hts_pos_t*,hts_pos_t*,void*,void*
  *
  *  Returns index on success or NULL on error.
  */
+HTSLIB_EXPORT
 regidx_t *regidx_init(const char *fname, regidx_parse_f parsef, regidx_free_f freef, size_t payload_size, void *usr);
+HTSLIB_EXPORT
 regidx_t *regidx_init_string(const char *string, regidx_parse_f parsef, regidx_free_f freef, size_t payload_size, void *usr);
 
 /*
  *  regidx_destroy() - free memory allocated by regidx_init
  */
+HTSLIB_EXPORT
 void regidx_destroy(regidx_t *idx);
 
 /*
@@ -155,6 +162,7 @@ void regidx_destroy(regidx_t *idx);
  *  Returns 0 if there is no overlap or 1 if overlap is found. The overlapping
  *  regions can be iterated as shown in the example above.
  */
+HTSLIB_EXPORT
 int regidx_overlap(regidx_t *idx, const char *chr, hts_pos_t beg, hts_pos_t end, regitr_t *itr);
 
 /*
@@ -164,20 +172,27 @@ int regidx_overlap(regidx_t *idx, const char *chr, hts_pos_t beg, hts_pos_t end,
  *
  *  Returns 0 on success or -1 on error.
  */
+HTSLIB_EXPORT
 int regidx_insert(regidx_t *idx, char *line);
+HTSLIB_EXPORT
 int regidx_insert_list(regidx_t *idx, char *line, char delim);
+HTSLIB_EXPORT
 int regidx_push(regidx_t *idx, char *chr_beg, char *chr_end, hts_pos_t beg, hts_pos_t end, void *payload);
 
 /*
  *  regidx_seq_names() - return list of all sequence names
  */
+HTSLIB_EXPORT
 char **regidx_seq_names(regidx_t *idx, int *n);
 
 /*
  *  regidx_seq_nregs() - number of regions
  *  regidx_nregs()  - total number of regions
  */
+HTSLIB_EXPORT
 int regidx_seq_nregs(regidx_t *idx, const char *seq);
+
+HTSLIB_EXPORT
 int regidx_nregs(regidx_t *idx);
 
 /*
@@ -188,25 +203,31 @@ int regidx_nregs(regidx_t *idx);
  *  regitr_reset() - initialize an iterator for a repeated regitr_loop cycle.
  *                  Not required with regitr_overlap.
  */
+HTSLIB_EXPORT
 regitr_t *regitr_init(regidx_t *idx);
+HTSLIB_EXPORT
 void regitr_destroy(regitr_t *itr);
+HTSLIB_EXPORT
 void regitr_reset(regidx_t *idx, regitr_t *itr);
 
 /*
  *  regitr_overlap() - next overlapping region
  *  Returns 0 when done or 1 when itr is set to next region
  */
+HTSLIB_EXPORT
 int regitr_overlap(regitr_t *itr);
 
 /*
  *  regitr_loop() - loop over all regions
  *  Returns 0 when done or 1 when itr is set to next region
  */
+HTSLIB_EXPORT
 int regitr_loop(regitr_t *itr);
 
 /*
  *  regitr_copy() - create a copy of an iterator for a repeated iteration with regitr_loop
  */
+HTSLIB_EXPORT
 void regitr_copy(regitr_t *dst, regitr_t *src);
 
 #ifdef __cplusplus

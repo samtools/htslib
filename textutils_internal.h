@@ -150,8 +150,6 @@ or array.
 */
 char hts_json_fskip_value(struct hFILE *fp, char type);
 
-char *stringify_argv(int argc, char *argv[]);
-
 // The <ctype.h> functions operate on ints such as are returned by fgetc(),
 // i.e., characters represented as unsigned-char-valued ints, or EOF.
 // To operate on plain chars (and to avoid warnings on some platforms),

@@ -63,6 +63,7 @@ KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
  *** BAM header I/O ***
  **********************/
 
+HTSLIB_EXPORT
 const int8_t bam_cigar_table[256] = {
     // 0 .. 47
     -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
