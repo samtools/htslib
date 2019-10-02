@@ -1,6 +1,6 @@
 /*  sam.c -- SAM and BAM file I/O and manipulation.
 
-    Copyright (C) 2008-2010, 2012-2018 Genome Research Ltd.
+    Copyright (C) 2008-2010, 2012-2019 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -693,23 +693,22 @@ int bam_set_qname(bam1_t *rec, char *qname)
     if (!rec) return -1;
     if (!qname || !*qname) return -1;
 
-    int old_len = rec->core.l_qname;
-    int new_len = strlen(qname) + 1;
+    size_t old_len = rec->core.l_qname;
+    size_t new_len = strlen(qname) + 1;
+    if (new_len < 1 || new_len > 255) return -1;
 
     int extranul = (new_len%4 != 0) ? (4 - new_len%4) : 0;
 
-    int new_data_len = rec->l_data - old_len + new_len + extranul;
-    if (new_data_len > rec->l_data)
-        if (possibly_expand_bam_data(rec, new_data_len - rec->l_data)) return -1;
+    size_t new_data_len = rec->l_data - old_len + new_len + extranul;
+    if (realloc_bam_data(rec, new_data_len) < 0) return -1;
 
-    uint8_t *new_data = calloc(1, rec->m_data);
-    if (!new_data) return -1;
-    memcpy(new_data, qname, new_len);
-    uint8_t *p = new_data + new_len;
-    for (int n=0; n<extranul; n++) *p++=0;
-    memcpy(p, rec->data + rec->core.l_qname, rec->l_data - rec->core.l_qname);
+    // Make room
+    if (new_len + extranul != rec->core.l_qname)
+        memmove(rec->data + new_len + extranul, rec->data + rec->core.l_qname, rec->l_data - rec->core.l_qname);
+    // Copy in new name and pad if needed
+    memcpy(rec->data, qname, new_len);
+    for (int n = 0; n < extranul; n++) rec->data[new_len + n] = '\0';
 
-    free(rec->data); rec->data=new_data;
     rec->l_data = new_data_len;
     rec->core.l_qname = new_len + extranul;
     rec->core.l_extranul = extranul;
