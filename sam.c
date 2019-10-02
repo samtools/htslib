@@ -685,6 +685,38 @@ static int bam_write_idx1(htsFile *fp, const bam1_t *b) {
     return ret;
 }
 
+/*
+ * Set the qname in a BAM record
+ */
+int bam_set_qname(bam1_t *rec, char *qname)
+{
+    if (!rec) return -1;
+    if (!qname || !*qname) return -1;
+
+    int old_len = rec->core.l_qname;
+    int new_len = strlen(qname) + 1;
+
+    int extranul = (new_len%4 != 0) ? (4 - new_len%4) : 0;
+
+    int new_data_len = rec->l_data - old_len + new_len + extranul;
+    if (new_data_len > rec->l_data)
+        if (possibly_expand_bam_data(rec, new_data_len - rec->l_data)) return -1;
+
+    uint8_t *new_data = calloc(1, rec->m_data);
+    if (!new_data) return -1;
+    memcpy(new_data, qname, new_len);
+    uint8_t *p = new_data + new_len;
+    for (int n=0; n<extranul; n++) *p++=0;
+    memcpy(p, rec->data + rec->core.l_qname, rec->l_data - rec->core.l_qname);
+
+    free(rec->data); rec->data=new_data;
+    rec->l_data = new_data_len;
+    rec->core.l_qname = new_len + extranul;
+    rec->core.l_extranul = extranul;
+
+    return 0;
+}
+
 /********************
  *** BAM indexing ***
  ********************/

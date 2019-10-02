@@ -469,6 +469,53 @@ static int aux_fields1(void)
     return 1;
 }
 
+static void set_qname(void)
+{
+    static const char sam[] = "data:,"
+"@SQ\tSN:one\tLN:1000\n"
+"@SQ\tSN:two\tLN:500\n"
+"r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:" xstr(PI) "\tXd:d:" xstr(E) "\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,+2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tF2:d:2.46801\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\n"
+"r22\t0x8D\t*\t0\t0\t*\t*\t0\t0\tATGC\tqqqq\n"
+"r12345678\t0x8D\t*\t0\t0\t*\t*\t0\t0\tATGC\tqqqq\n"
+;
+
+    // Canonical form of the alignment records above, as output by sam_format1()
+    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXA:A:k\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tF2:d:2.46801\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295";
+    static const char r2[] = "r234\t141\t*\t0\t0\t*\t*\t0\t0\tATGC\tqqqq";
+    static const char r3[] = "xyz\t141\t*\t0\t0\t*\t*\t0\t0\tATGC\tqqqq";
+
+    samFile *in = sam_open(sam, "r");
+    bam_hdr_t *header = sam_hdr_read(in);
+    bam1_t *aln = bam_init1();
+    kstring_t ks = { 0, 0, NULL };
+
+    if (sam_read1(in, header, aln) >= 0) {
+        bam_set_qname(aln, "r1");
+        if (sam_format1(header, aln, &ks) < 0) fail("can't format record");
+        if (strcmp(ks.s, r1) != 0) fail("record formatted incorrectly:\nGot: \"%s\"\nExp: \"%s\"\n", ks.s, r1);
+    }
+    else fail("can't read record");
+
+    if (sam_read1(in, header, aln) >= 0) {
+        bam_set_qname(aln, "r234");
+        if (sam_format1(header, aln, &ks) < 0) fail("can't format record");
+        if (strcmp(ks.s, r2) != 0) fail("record formatted incorrectly:\nGot: \"%s\"\nExp: \"%s\"\n", ks.s, r2);
+    }
+    else fail("can't read record");
+
+    if (sam_read1(in, header, aln) >= 0) {
+        bam_set_qname(aln, "xyz");
+        if (sam_format1(header, aln, &ks) < 0) fail("can't format record");
+        if (strcmp(ks.s, r3) != 0) fail("record formatted incorrectly:\nGot: \"%s\"\nExp: \"%s\"\n", ks.s, r3);
+    }
+    else fail("can't read record");
+
+    bam_destroy1(aln);
+    bam_hdr_destroy(header);
+    sam_close(in);
+    free(ks.s);
+}
+
 static void iterators1(void)
 {
     hts_itr_destroy(sam_itr_queryi(NULL, HTS_IDX_REST, 0, 0));
@@ -1743,6 +1790,7 @@ int main(int argc, char **argv)
     check_big_ref(0);
     check_big_ref(1);
     test_mempolicy();
+    set_qname();
     for (i = 1; i < argc; i++) faidx1(argv[i]);
 
     return status;
