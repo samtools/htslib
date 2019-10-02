@@ -22,6 +22,7 @@
     THE SOFTWARE.
 */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 #include <strings.h>
 #include <assert.h>

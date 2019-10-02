@@ -252,6 +252,9 @@ lib-shared: cyghts-$(LIBHTS_SOVERSION).dll
 else ifeq "$(findstring MSYS,$(PLATFORM))" "MSYS"
 SHLIB_FLAVOUR = dll
 lib-shared: hts-$(LIBHTS_SOVERSION).dll
+else ifeq "$(findstring MINGW,$(PLATFORM))" "MINGW"
+SHLIB_FLAVOUR = dll
+lib-shared: hts-$(LIBHTS_SOVERSION).dll
 else
 SHLIB_FLAVOUR = so
 lib-shared: libhts.so
@@ -291,10 +294,10 @@ libhts.dylib: $(LIBHTS_OBJS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 cyghts-$(LIBHTS_SOVERSION).dll: $(LIBHTS_OBJS)
-	$(CC) -shared -Wl,--out-implib=libhts.dll.a -Wl,--export-all-symbols -Wl,--enable-auto-import $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
+	$(CC) -shared -Wl,--out-implib=libhts.dll.a -Wl,--enable-auto-import $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
 
-hts-$(LIBHTS_SOVERSION).dll: $(LIBHTS_OBJS)
-	$(CC) -shared -Wl,--out-implib=hts.dll.a -Wl,--export-all-symbols -Wl,--enable-auto-import $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
+hts-$(LIBHTS_SOVERSION).dll hts.dll.a: $(LIBHTS_OBJS)
+	$(CC) -shared -Wl,--out-implib=hts.dll.a -Wl,--enable-auto-import -Wl,--exclude-all-symbols $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
 
 
 .pico.so:
@@ -514,6 +517,9 @@ shlib-exports-so.txt: libhts.so
 
 shlib-exports-dylib.txt: libhts.dylib
 	nm -Ug libhts.dylib | awk '$$2 == "T" { sub("^_", "", $$3); print $$3 }' | sort -u -o $@
+
+shlib-exports-dll.txt: hts.dll.a
+	nm -g hts.dll.a | awk '$$2 == "T" { print $$3 }' | sort -u -o $@
 
 install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)

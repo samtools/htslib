@@ -4,6 +4,7 @@
 *.dSYM
 *.exe
 *.dll
+*.dll.a
 *.pc.tmp
 *-uninstalled.pc
 /version.h
