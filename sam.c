@@ -688,7 +688,7 @@ static int bam_write_idx1(htsFile *fp, const bam1_t *b) {
 /*
  * Set the qname in a BAM record
  */
-int bam_set_qname(bam1_t *rec, char *qname)
+int bam_set_qname(bam1_t *rec, const char *qname)
 {
     if (!rec) return -1;
     if (!qname || !*qname) return -1;

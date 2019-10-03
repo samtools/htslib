@@ -987,7 +987,7 @@ char *bam_flag2str(int flag);   /** The string must be freed by the user */
  @param  b  pointer to an alignment
  @return    0 on success, -1 on failure
  */
-int bam_set_qname(bam1_t *b, char *qname);
+int bam_set_qname(bam1_t *b, const char *qname);
 
 /*************************
  *** BAM/CRAM indexing ***
