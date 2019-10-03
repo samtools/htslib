@@ -982,6 +982,13 @@ hts_pos_t bam_endpos(const bam1_t *b);
 int   bam_str2flag(const char *str);    /** returns negative value on error */
 char *bam_flag2str(int flag);   /** The string must be freed by the user */
 
+/*! @function
+ @abstract  Set the name of the query
+ @param  b  pointer to an alignment
+ @return    0 on success, -1 on failure
+ */
+int bam_set_qname(bam1_t *b, const char *qname);
+
 /*************************
  *** BAM/CRAM indexing ***
  *************************/
