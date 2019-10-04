@@ -707,7 +707,8 @@ int bam_set_qname(bam1_t *rec, const char *qname)
         memmove(rec->data + new_len + extranul, rec->data + rec->core.l_qname, rec->l_data - rec->core.l_qname);
     // Copy in new name and pad if needed
     memcpy(rec->data, qname, new_len);
-    for (int n = 0; n < extranul; n++) rec->data[new_len + n] = '\0';
+    int n;
+    for (n = 0; n < extranul; n++) rec->data[new_len + n] = '\0';
 
     rec->l_data = new_data_len;
     rec->core.l_qname = new_len + extranul;
