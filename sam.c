@@ -663,7 +663,7 @@ int bam_write1(BGZF *fp, const bam1_t *b)
 /*
  * Write a BAM file and append to the in-memory index simultaneously.
  */
-static int bam_write_idx1(htsFile *fp, const bam1_t *b) {
+static int bam_write_idx1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b) {
     BGZF *bfp = fp->fp.bgzf;
 
     if (!fp->idx)
@@ -679,8 +679,11 @@ static int bam_write_idx1(htsFile *fp, const bam1_t *b) {
     if (ret < 0)
         return -1;
 
-    if (bgzf_idx_push(bfp, fp->idx, b->core.tid, b->core.pos, bam_endpos(b), bgzf_tell(bfp), !(b->core.flag&BAM_FUNMAP)) < 0)
+    if (bgzf_idx_push(bfp, fp->idx, b->core.tid, b->core.pos, bam_endpos(b), bgzf_tell(bfp), !(b->core.flag&BAM_FUNMAP)) < 0) {
+        hts_log_error("Read '%s' with ref_name='%s', ref_length=%"PRIhts_pos", flags=%d, pos=%"PRIhts_pos" cannot be indexed",
+                bam_get_qname(b), sam_hdr_tid2name(h, b->core.tid), sam_hdr_tid2len(h, b->core.tid), b->core.flag, b->core.pos+1);
         ret = -1;
+    }
 
     return ret;
 }
@@ -743,7 +746,10 @@ static hts_idx_t *sam_index(htsFile *fp, int min_shift)
     b = bam_init1();
     while ((ret = sam_read1(fp, h, b)) >= 0) {
         ret = hts_idx_push(idx, b->core.tid, b->core.pos, bam_endpos(b), bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP));
-        if (ret < 0) goto err; // unsorted
+        if (ret < 0) { // unsorted or doesn't fit
+            hts_log_error("Read '%s' with ref_name='%s', ref_length=%"PRIhts_pos", flags=%d, pos=%"PRIhts_pos" cannot be indexed", bam_get_qname(b), sam_hdr_tid2name(h, b->core.tid), sam_hdr_tid2len(h, b->core.tid), b->core.flag, b->core.pos+1);
+            goto err;
+        }
     }
     if (ret < -1) goto err; // corrupted BAM file
 
@@ -2547,13 +2553,17 @@ static void *sam_dispatcher_write(void *vp) {
                                       b->core.tid, b->core.pos, bam_endpos(b),
                                       bgzf_tell(fp->fp.bgzf),
                                       !(b->core.flag&BAM_FUNMAP)) < 0) {
-                        sam_state_err(fd, ENOMEM);
+                        sam_state_err(fd, errno ? errno : ENOMEM);
+                        hts_log_error("Read '%s' with ref_name='%s', ref_length=%"PRIhts_pos", flags=%d, pos=%"PRIhts_pos" cannot be indexed",
+                                bam_get_qname(b), sam_hdr_tid2name(fd->h, b->core.tid), sam_hdr_tid2len(fd->h, b->core.tid), b->core.flag, b->core.pos+1);
                         goto err;
                     }
                 } else {
                     if (hts_idx_push(fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
                                      bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0) {
-                        sam_state_err(fd, ENOMEM);
+                        sam_state_err(fd, errno ? errno : ENOMEM);
+                        hts_log_error("Read '%s' with ref_name='%s', ref_length=%"PRIhts_pos", flags=%d, pos=%"PRIhts_pos" cannot be indexed",
+                                bam_get_qname(b), sam_hdr_tid2name(fp->bam_header, b->core.tid), sam_hdr_tid2len(fp->bam_header, b->core.tid), b->core.flag, b->core.pos+1);
                         goto err;
                     }
                 }
@@ -3032,7 +3042,7 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
         fp->format.format = bam;
         /* fall-through */
     case bam:
-        return bam_write_idx1(fp, b);
+        return bam_write_idx1(fp, h, b);
 
     case cram:
         return cram_put_bam_seq(fp->fp.cram, (bam1_t *)b);
@@ -3130,12 +3140,18 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
             if (fp->idx) {
                 if (fp->format.compression == bgzf) {
                     if (bgzf_idx_push(fp->fp.bgzf, fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
-                                      bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0)
+                                      bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0) {
+                        hts_log_error("Read '%s' with ref_name='%s', ref_length=%"PRIhts_pos", flags=%d, pos=%"PRIhts_pos" cannot be indexed",
+                                bam_get_qname(b), sam_hdr_tid2name(h, b->core.tid), sam_hdr_tid2len(h, b->core.tid), b->core.flag, b->core.pos+1);
                         return -1;
+                    }
                 } else {
                     if (hts_idx_push(fp->idx, b->core.tid, b->core.pos, bam_endpos(b),
-                                     bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0)
+                                     bgzf_tell(fp->fp.bgzf), !(b->core.flag&BAM_FUNMAP)) < 0) {
+                        hts_log_error("Read '%s' with ref_name='%s', ref_length=%"PRIhts_pos", flags=%d, pos=%"PRIhts_pos" cannot be indexed",
+                                bam_get_qname(b), sam_hdr_tid2name(h, b->core.tid), sam_hdr_tid2len(h, b->core.tid), b->core.flag, b->core.pos+1);
                         return -1;
+                    }
                 }
             }
 
