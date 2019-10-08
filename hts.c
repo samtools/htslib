@@ -1735,14 +1735,42 @@ int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
     return ret;
 }
 
+int hts_idx_check_range(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end)
+{
+    int64_t maxpos = (int64_t) 1 << (idx->min_shift + idx->n_lvls * 3);
+    if (tid < 0 || (beg <= maxpos && end <= maxpos))
+        return 0;
+    int64_t max = end > beg ? end : beg, s = 1 << 14;
+    int n_lvls = 0;
+    while (max > s) {
+        n_lvls++;
+        s <<= 3;
+    }
+
+    if (idx->fmt == HTS_FMT_CSI) {
+        hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos" cannot be stored in a csi index "
+                      "with min_shift = %d, n_lvls = %d. Try using "
+                      "min_shift = 14, n_lvls >= %d",
+                      beg, end,
+                      idx->min_shift, idx->n_lvls,
+                      n_lvls);
+    } else {
+        hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos" cannot be stored in a %s index. "
+                      "Try using a csi index with min_shift = 14, "
+                      "n_lvls >= %d",
+                      beg, end, idx_format_name(idx->fmt),
+                      n_lvls);
+    }
+    errno = ERANGE;
+    return -1;
+}
+
 int hts_idx_push(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t offset, int is_mapped)
 {
     int bin;
-    int64_t maxpos = (int64_t) 1 << (idx->min_shift + idx->n_lvls * 3);
     if (tid<0) beg = -1, end = 0;
-    if (tid >= 0 && (beg > maxpos || end > maxpos)) {
-        goto pos_too_big;
-    }
+    if (hts_idx_check_range(idx, tid, beg, end) < 0)
+        return -1;
     if (tid >= idx->m) { // enlarge the index
         uint32_t new_m = idx->m * 2 > tid + 1 ? idx->m * 2 : tid + 1;
         bidx_t **new_bidx;
@@ -1821,32 +1849,6 @@ int hts_idx_push(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t
     idx->z.last_off = offset;
     idx->z.last_coor = beg;
     return 0;
-
- pos_too_big: {
-        int64_t max = end > beg ? end : beg, s = 1 << 14;
-        int n_lvls = 0;
-        while (max > s) {
-            n_lvls++;
-            s <<= 3;
-        }
-
-        if (idx->fmt == HTS_FMT_CSI) {
-            hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos" cannot be stored in a csi index "
-                "with min_shift = %d, n_lvls = %d. Try using "
-                "min_shift = 14, n_lvls >= %d",
-                beg, end,
-                idx->min_shift, idx->n_lvls,
-                n_lvls);
-        } else {
-            hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos" cannot be stored in a %s index. "
-                "Try using a csi index with min_shift = 14, "
-                "n_lvls >= %d",
-                beg, end, idx_format_name(idx->fmt),
-                n_lvls);
-        }
-        errno = ERANGE;
-        return -1;
-    }
 }
 
 // Needed for TBI only.  Ensure 'tid' with 'name' is in the index meta data.
