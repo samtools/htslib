@@ -54,6 +54,9 @@ void hts_idx_amend_last(hts_idx_t *idx, uint64_t offset);
 
 int hts_idx_fmt(hts_idx_t *idx);
 
+// Check that index is capable of storing items in range beg..end
+int hts_idx_check_range(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end);
+
 // The CRAM implementation stores the loaded index within the cram_fd rather
 // than separately as is done elsewhere in htslib.  So if p is a pointer to
 // an hts_idx_t with p->fmt == HTS_FMT_CRAI, then it actually points to an

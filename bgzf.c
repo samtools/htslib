@@ -45,6 +45,7 @@
 #include "htslib/thread_pool.h"
 #include "htslib/hts_endian.h"
 #include "cram/pooled_alloc.h"
+#include "hts_internal.h"
 
 #define BGZF_CACHE
 #define BGZF_MT
@@ -190,6 +191,10 @@ int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t e
 
     if (!mt)
         return hts_idx_push(hidx, tid, beg, end, offset, is_mapped);
+
+    // Early check for out of range positions which would fail in hts_idx_push()
+    if (hts_idx_check_range(hidx, tid, beg, end) < 0)
+        return -1;
 
     pthread_mutex_lock(&mt->idx_m);
 
