@@ -88,6 +88,10 @@ Andrew Whitwham, January 2019
 #define S3_MOVED_PERMANENTLY 301
 #define S3_BAD_REQUEST 400
 
+// Lets the part memory size grow to about 1Gb giving a 2.5Tb max file size.
+// Max. parts allowed by AWS is 10000, so use ceil(10000.0/9.0)
+#define EXPAND_ON 1112
+
 static struct {
     kstring_t useragent;
     CURLSH *share;
@@ -128,6 +132,7 @@ typedef struct {
     size_t index;
     long verbose;
     int part_size;
+    int expand;
 } hFILE_s3_write;
 
 
@@ -472,6 +477,10 @@ static ssize_t s3_write(hFILE *fpv, const void *bufferv, size_t nbytes) {
 
         fp->part_no++;
         fp->buffer.l = 0;
+
+        if (fp->expand && (fp->part_no % EXPAND_ON == 0)) {
+            fp->part_size *= 2;
+        }
     }
 
     return nbytes;
@@ -686,12 +695,15 @@ static hFILE *s3_write_open(const char *url, s3_authorisation *auth) {
     fp->aborted = 0;
 
     fp->part_size = MINIMUM_S3_WRITE_SIZE;
+    fp->expand = 1;
 
     if ((env = getenv("HTS_S3_PART_SIZE")) != NULL) {
         int part_size = atoi(env) * 1024 * 1024;
 
         if (part_size > fp->part_size)
             fp->part_size = part_size;
+
+        fp->expand = 0;
     }
 
     if (hts_verbose >= 8) {

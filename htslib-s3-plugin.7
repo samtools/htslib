@@ -101,7 +101,10 @@ If set use signature v2 rather the default v4.  This will limit the plugin to
 reading only.
 .TP
 .B HTS_S3_PART_SIZE
-Sets the upload part size in Mb.  The minimum and default is 5Mb.
+Sets the upload part size in Mb, the minimum being 5Mb.
+By default the part size starts at 5Mb and expands at regular intervals to
+accommodate bigger files (up to 2.5 Tbytes with the current rate).
+Using this setting disables the automatic part size expansion.
 .LP
 In the absence of an ID from the previous two methods the credential/config
 files will be used.  The default file locations are either
