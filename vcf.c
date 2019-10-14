@@ -2285,7 +2285,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         } else
         {
             hts_log_error("The format type %d is currently not supported", f->y>>4&0xf);
-            abort(); // I do not know how to do with Flag in the genotype fields
+            return -1;
         }
         align_mem(mem);
         f->offset = mem->l;
@@ -2353,7 +2353,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 }
                 if ( !l ) bcf_float_set_missing(x[l++]);    // An empty field, insert missing value
                 for (; l < z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
-            } else abort();
+            } else return -1;
 
             if (*t == '\0') {
                 break;
