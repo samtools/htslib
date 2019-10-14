@@ -2450,6 +2450,8 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     int max_n_flt = 0, max_n_val = 0;
     int32_t *flt_a = NULL, *val_a = NULL;
     int ret = -2;
+    const uint32_t MAX_ALLELES = 65535; // n_allele is 16 bits
+    const uint32_t MAX_INFO    = 65535; // n_info   is 16 bits
 
     if (!s || !h || !v || !(s->s))
         return ret;
@@ -2500,6 +2502,12 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             if (strcmp(p, ".")) {
                 for (r = t = p;; ++r) {
                     if (*r == ',' || *r == 0) {
+                        if (v->n_allele == MAX_ALLELES) {
+                            hts_log_error("Too many ALT alleles at %s:%"PRIhts_pos,
+                                           bcf_seqname(h,v), v->pos+1);
+                            v->errcode |= BCF_ERR_LIMITS;
+                            goto err;
+                        }
                         bcf_enc_vchar(str, r - t, t);
                         t = r + 1;
                         ++v->n_allele;
@@ -2571,6 +2579,12 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                     int c;
                     char *val, *end;
                     if (*r != ';' && *r != '=' && *r != 0) continue;
+                    if (v->n_info == MAX_INFO) {
+                        hts_log_error("Too many INFO entries at %s:%"PRIhts_pos,
+                                      bcf_seqname(h,v), v->pos+1);
+                        v->errcode |= BCF_ERR_LIMITS;
+                        goto err;
+                    }
                     val = end = 0;
                     c = *r; *r = 0;
                     if (c == '=') {
