@@ -537,6 +537,24 @@ static void swap_data(const bam1_core_t *c, int l_data, uint8_t *data, int is_ho
     for (i = 0; i < c->n_cigar; ++i) ed_swap_4p(&cigar[i]);
 }
 
+// Fix bad records where qname is not terminated correctly.
+static int fixup_missing_qname_nul(bam1_t *b) {
+    bam1_core_t *c = &b->core;
+
+    // Note this is called before c->l_extranul is added to c->l_qname
+    if (c->l_extranul > 0) {
+        b->data[c->l_qname++] = '\0';
+        c->l_extranul--;
+    } else {
+        if (b->l_data > INT_MAX - 4) return -1;
+        if (realloc_bam_data(b, b->l_data + 4) < 0) return -1;
+        b->l_data += 4;
+        b->data[c->l_qname++] = '\0';
+        c->l_extranul = 3;
+    }
+    return 0;
+}
+
 /*
  * Note a second interface that returns a bam pointer instead would avoid bam_copy1
  * in multi-threaded handling.  This may be worth considering for htslib2.
@@ -576,6 +594,9 @@ int bam_read1(BGZF *fp, bam1_t *b)
     b->l_data = new_l_data;
 
     if (bgzf_read(fp, b->data, c->l_qname) != c->l_qname) return -4;
+    if (b->data[c->l_qname - 1] != '\0') { // Try to fix missing NUL termination
+        if (fixup_missing_qname_nul(b) < 0) return -4;
+    }
     for (i = 0; i < c->l_extranul; ++i) b->data[c->l_qname+i] = '\0';
     c->l_qname += c->l_extranul;
     if (b->l_data < c->l_qname ||
