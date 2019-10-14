@@ -1268,7 +1268,7 @@ static const char *get_type_name(int type) {
     return types[t];
 }
 
-static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
+static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec, int is_internal) {
     uint8_t *ptr, *end;
     size_t bytes;
     uint32_t err = 0;
@@ -1281,8 +1281,8 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     const uint32_t is_valid_type = (is_integer          |
                                     (1 << BCF_BT_NULL)  |
                                     (1 << BCF_BT_FLOAT) |
-                                    (1 << BCF_BT_CHAR));
-
+                                    (1 << BCF_BT_CHAR) |
+                                    (is_internal << BCF_BT_INT64));
 
     // Check for valid contig ID
     if (rec->rid < 0 || rec->rid >= hdr->n[BCF_DT_CTG]) {
@@ -1443,7 +1443,7 @@ int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 {
     if (fp->format.format == vcf) return vcf_read(fp,h,v);
     int ret = bcf_read1_core(fp->fp.bgzf, v);
-    if (ret == 0) ret = bcf_record_check(h, v);
+    if (ret == 0) ret = bcf_record_check(h, v, 0);
     if ( ret!=0 || !h->keep_samples ) return ret;
     return bcf_subset_format(h,v);
 }
@@ -2668,18 +2668,22 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             }
             if ( v->max_unpack && !(v->max_unpack>>3) ) goto end;
         } else if (i == 8) {// FORMAT
-            free(flt_a);
-            free(val_a);
-            return vcf_parse_format(s, h, v, p, q) == 0 ? 0 : -2;
+            ret = vcf_parse_format(s, h, v, p, q) == 0 ? 0 : -2;
+            goto end_with_ret;
         }
     }
 
  end:
     ret = 0;
 
+ end_with_ret:
  err:
     free(flt_a);
     free(val_a);
+
+    // A catch-all for any broken data we failed to notice in parsing.
+    if (ret == 0)
+        ret = bcf_record_check(h, v, 1);
     return ret;
 }
 
@@ -2830,7 +2834,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             if ( !z->vptr ) continue;
             if ( !first ) kputc(';', s);
             first = 0;
-            if (z->key >= h->n[BCF_DT_ID]) {
+            if (z->key >= h->n[BCF_DT_ID] || z->key < 0) {
                 hts_log_error("Invalid BCF, the INFO index is too large");
                 errno = EINVAL;
                 return -1;
