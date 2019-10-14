@@ -2830,8 +2830,9 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             if ( !z->vptr ) continue;
             if ( !first ) kputc(';', s);
             first = 0;
-            if (z->key >= h->n[BCF_DT_ID]) {
-                hts_log_error("Invalid BCF, the INFO index is too large");
+            if (z->key < 0 || z->key >= h->n[BCF_DT_ID]) {
+                hts_log_error("Invalid BCF, the INFO index %d is %s",
+                              z->key, z->key < 0 ? "negative" : "too large");
                 errno = EINVAL;
                 return -1;
             }
