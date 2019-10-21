@@ -437,7 +437,8 @@ bam1_t *bam_dup1(const bam1_t *bsrc)
     return bdst;
 }
 
-void bam_cigar2rqlens(int n_cigar, const uint32_t *cigar, int *rlen, int *qlen)
+static void bam_cigar2rqlens(int n_cigar, const uint32_t *cigar,
+                             hts_pos_t *rlen, hts_pos_t *qlen)
 {
     int k;
     *rlen = *qlen = 0;
@@ -607,7 +608,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
         return -4;
 
     if (c->n_cigar > 0) { // recompute "bin" and check CIGAR-qlen consistency
-        int rlen, qlen;
+        hts_pos_t rlen, qlen;
         bam_cigar2rqlens(c->n_cigar, bam_get_cigar(b), &rlen, &qlen);
         if ((b->core.flag & BAM_FUNMAP)) rlen=1;
         b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + rlen, 14, 5);
