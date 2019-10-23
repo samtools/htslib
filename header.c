@@ -210,19 +210,17 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
             }
 
             // If here, the name is a duplicate.
-            // Check to see if it matches the SN: tag from the earlier
-            // record.  If it does, drop this and keep the existing one.
+            // Check to see if it matches the SN: tag from the earlier record.
             if (strcmp(hrecs->ref[nref].name, name) == 0) {
-                hts_log_warning("Duplicate entry \"%s\" in sam header",
+                hts_log_error("Duplicate entry \"%s\" in sam header",
                                 name);
-                return 0;
+                return -1;
             }
 
             // Clash with an already-seen altname
             // As SN: should be preferred to AN: add this as a new
             // record and update the hash entry to point to it.
-            hts_log_warning("Duplicate entry AN:\"%s\" in "
-                            "sam header", name);
+            hts_log_warning("Ref name SN:\"%s\" is a duplicate of an existing AN key", name);
             nref = hrecs->nref;
         }
 
@@ -1015,8 +1013,9 @@ static int sam_hrecs_refs_from_targets_array(sam_hrecs_t *hrecs,
         k = kh_put(m_s2i, hrecs->ref_hash, hrecs->ref[tid].name, &r);
         if (r < 0) goto fail;
         if (r == 0) {
-            hts_log_warning("Duplicate entry \"%s\" in target list",
+            hts_log_error("Duplicate entry \"%s\" in target list",
                             hrecs->ref[tid].name);
+            return -1;
         } else {
             kh_val(hrecs->ref_hash, k) = tid;
         }
@@ -1062,8 +1061,13 @@ static int add_stub_ref_sq_lines(sam_hrecs_t *hrecs) {
                               "SN", hrecs->ref[tid].name,
                               "LN", len, NULL) != 0)
                 return -1;
-            // This should be true after adding the new line
-            assert(hrecs->ref[tid].ty != NULL);
+
+            // Check that the stub has actually been filled
+            if(hrecs->ref[tid].ty == NULL) {
+                hts_log_error("Reference stub with tid=%d, name=\"%s\", len=%"PRIhts_pos" could not be filled",
+                        tid, hrecs->ref[tid].name, hrecs->ref[tid].len);
+                return -1;
+            }
         }
     }
     return 0;
