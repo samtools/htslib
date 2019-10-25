@@ -576,6 +576,95 @@ int int32_put_blk(cram_block *b, int32_t val) {
     return -1;
 }
 
+#ifdef HAVE_LIBDEFLATE
+/* ----------------------------------------------------------------------
+ * libdeflate compression code, with interface to match
+ * zlib_mem_{in,de}flate for simplicity elsewhere.
+ */
+
+// Named the same as the version that uses zlib as we always use libdeflate for
+// decompression when available.
+char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
+    struct libdeflate_decompressor *z = libdeflate_alloc_decompressor();
+    if (!z) {
+        hts_log_error("Call to libdeflate_alloc_decompressor failed");
+        return NULL;
+    }
+
+    uint8_t *data = NULL, *new_data;
+    if (!*size)
+        *size = csize*2;
+    for(;;) {
+        new_data = realloc(data, *size);
+        if (!new_data) {
+            hts_log_error("Memory allocation failure");
+            goto fail;
+        }
+        data = new_data;
+
+        int ret = libdeflate_gzip_decompress(z, cdata, csize, data, *size, size);
+
+        // Auto grow output buffer size if needed and try again.
+        // Fortunately for all bar one call of this we know the size already.
+        if (ret == LIBDEFLATE_INSUFFICIENT_SPACE) {
+            (*size) *= 1.5;
+            continue;
+        }
+
+        if (ret != LIBDEFLATE_SUCCESS) {
+            hts_log_error("Inflate operation failed: %d", ret);
+            goto fail;
+        } else {
+            break;
+        }
+    }
+
+    libdeflate_free_decompressor(z);
+    return (char *)data;
+
+ fail:
+    libdeflate_free_decompressor(z);
+    free(data);
+    return NULL;
+}
+
+// Named differently as we use both zlib/libdeflate for compression.
+static char *libdeflate_deflate(char *data, size_t size, size_t *cdata_size,
+                                int level, int strat) {
+    level = level > 0 ? level : 6; // libdeflate doesn't honour -1 as default
+    level *= 1.2; // NB levels go up to 12 here; 5 onwards is +1
+    if (level >= 8) level += level/8; // 8->10, 9->12
+    if (level > 12) level = 12;
+
+    struct libdeflate_compressor *z = libdeflate_alloc_compressor(level);
+    if (!z) {
+        hts_log_error("Call to libdeflate_alloc_compressor failed");
+        return NULL;
+    }
+
+    unsigned char *cdata = NULL; /* Compressed output */
+    size_t cdata_alloc;
+    cdata = malloc(cdata_alloc = size*1.05+100);
+    if (!cdata) {
+        hts_log_error("Memory allocation failure");
+        libdeflate_free_compressor(z);
+        return NULL;
+    }
+
+    *cdata_size = libdeflate_gzip_compress(z, data, size, cdata, cdata_alloc);
+    libdeflate_free_compressor(z);
+
+    if (*cdata_size == 0) {
+        hts_log_error("Call to libdeflate_gzip_compress failed");
+        free(cdata);
+        return NULL;
+    }
+
+    return (char *)cdata;
+}
+
+#else
+
 /* ----------------------------------------------------------------------
  * zlib compression code - from Gap5's tg_iface_g.c
  * They're static here as they're only used within the cram_compress_block
@@ -643,6 +732,7 @@ char *zlib_mem_inflate(char *cdata, size_t csize, size_t *size) {
     *size = s.total_out;
     return (char *)data;
 }
+#endif
 
 static char *zlib_mem_deflate(char *data, size_t size, size_t *cdata_size,
                               int level, int strat) {
@@ -1004,7 +1094,9 @@ int cram_uncompress_block(cram_block *b) {
         return 0;
 
     case GZIP:
+        uncomp_size = b->uncomp_size;
         uncomp = zlib_mem_inflate((char *)b->data, b->comp_size, &uncomp_size);
+
         if (!uncomp)
             return -1;
         if (uncomp_size != b->uncomp_size) {
@@ -1088,12 +1180,25 @@ int cram_uncompress_block(cram_block *b) {
 }
 
 static char *cram_compress_by_method(char *in, size_t in_size,
-                                     size_t *out_size,
+                                     int content_id, size_t *out_size,
                                      enum cram_block_method method,
                                      int level, int strat) {
     switch (method) {
     case GZIP:
+        // Read names bizarrely benefit from zlib over libdeflate for
+        // mid-range compression levels.  Focusing purely of ratio or
+        // speed, libdeflate still wins.  It also seems to win for
+        // other data series too.
+        //
+        // Eg RN at level 5;  libdeflate=55.9MB  zlib=51.6MB
+#ifdef HAVE_LIBDEFLATE
+        if (content_id == DS_RN && level >= 4 && level <= 7)
+            return zlib_mem_deflate(in, in_size, out_size, level, strat);
+        else
+            return libdeflate_deflate(in, in_size, out_size, level, strat);
+#else
         return zlib_mem_deflate(in, in_size, out_size, level, strat);
+#endif
 
     case BZIP2: {
 #ifdef HAVE_LIBBZ2
@@ -1229,7 +1334,7 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 
             if (method & (1<<GZIP_RLE)) {
                 c = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                            &sz_gz_rle, GZIP, 1, Z_RLE);
+                                            b->content_id, &sz_gz_rle, GZIP, 1, Z_RLE);
                 if (c && sz_best > sz_gz_rle) {
                     sz_best = sz_gz_rle;
                     method_best = GZIP_RLE;
@@ -1247,7 +1352,7 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 
             if (method & (1<<GZIP)) {
                 c = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                            &sz_gz_def, GZIP, level,
+                                            b->content_id, &sz_gz_def, GZIP, level,
                                             Z_FILTERED);
                 if (c && sz_best > sz_gz_def) {
                     sz_best = sz_gz_def;
@@ -1266,7 +1371,7 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 
             if (method & (1<<RANS0)) {
                 c = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                            &sz_rans0, RANS0, 0, 0);
+                                            b->content_id, &sz_rans0, RANS0, 0, 0);
                 if (c && sz_best > sz_rans0) {
                     sz_best = sz_rans0;
                     method_best = RANS0;
@@ -1282,7 +1387,7 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 
             if (method & (1<<RANS1)) {
                 c = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                            &sz_rans1, RANS1, 0, 0);
+                                            b->content_id, &sz_rans1, RANS1, 0, 0);
                 if (c && sz_best > sz_rans1) {
                     sz_best = sz_rans1;
                     method_best = RANS1;
@@ -1298,7 +1403,7 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 
             if (method & (1<<BZIP2)) {
                 c = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                            &sz_bzip2, BZIP2, level, 0);
+                                            b->content_id, &sz_bzip2, BZIP2, level, 0);
                 if (c && sz_best > sz_bzip2) {
                     sz_best = sz_bzip2;
                     method_best = BZIP2;
@@ -1314,7 +1419,7 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 
             if (method & (1<<LZMA)) {
                 c = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                            &sz_lzma, LZMA, level, 0);
+                                            b->content_id, &sz_lzma, LZMA, level, 0);
                 if (c && sz_best > sz_lzma) {
                     sz_best = sz_lzma;
                     method_best = LZMA;
@@ -1464,7 +1569,7 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
 
             pthread_mutex_unlock(&fd->metrics_lock);
             comp = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                           &comp_size, method,
+                                           b->content_id, &comp_size, method,
                                            level, strat);
             if (!comp)
                 return -1;
@@ -1477,7 +1582,7 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
     } else {
         // no cached metrics, so just do zlib?
         comp = cram_compress_by_method((char *)b->data, b->uncomp_size,
-                                       &comp_size, GZIP, level, Z_FILTERED);
+                                       b->content_id, &comp_size, GZIP, level, Z_FILTERED);
         if (!comp) {
             hts_log_error("Compression failed");
             return -1;

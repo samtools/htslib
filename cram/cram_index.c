@@ -203,7 +203,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 
     // Uncompress if required
     if (kstr.s[0] == 31 && (uc)kstr.s[1] == 139) {
-        size_t l;
+        size_t l = 0;
         char *s = zlib_mem_inflate(kstr.s, kstr.l, &l);
         if (!s)
             goto fail;
