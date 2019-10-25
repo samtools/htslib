@@ -917,3 +917,7 @@ const char *fai_parse_region(const faidx_t *fai, const char *s,
 {
     return hts_parse_region(s, tid, beg, end, (hts_name2id_f)fai_name2id, (void *)fai, flags);
 }
+
+void fai_set_cache_size(faidx_t *fai, int cache_size) {
+    bgzf_set_cache_size(fai->bgzf, cache_size);
+}

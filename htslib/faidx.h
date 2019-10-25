@@ -296,6 +296,13 @@ int faidx_seq_len(const faidx_t *fai, const char *seq);
 HTSLIB_EXPORT
 const char *fai_parse_region(const faidx_t *fai, const char *s, int *tid, int64_t *beg, int64_t *end, int flags);
 
+/// Sets the cache size of the underlying BGZF compressed file
+/** @param  fai         Pointer to the faidx_t struct
+ *  @param  cache_size  Selected cache size in bytes
+ */
+HTSLIB_EXPORT
+void fai_set_cache_size(faidx_t *fai, int cache_size);
+
 #ifdef __cplusplus
 }
 #endif
