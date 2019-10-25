@@ -1948,7 +1948,7 @@ int sam_hdr_name2tid(sam_hdr_t *bh, const char *ref) {
 const char *sam_hdr_tid2name(const sam_hdr_t *h, int tid) {
     sam_hrecs_t *hrecs;
 
-    if (!h)
+    if (!h || tid < 0)
         return NULL;
 
     if ((hrecs = h->hrecs) != NULL && tid < hrecs->nref) {
@@ -1964,7 +1964,7 @@ const char *sam_hdr_tid2name(const sam_hdr_t *h, int tid) {
 hts_pos_t sam_hdr_tid2len(const sam_hdr_t *h, int tid) {
     sam_hrecs_t *hrecs;
 
-    if (!h)
+    if (!h || tid < 0)
         return 0;
 
     if ((hrecs = h->hrecs) != NULL && tid < hrecs->nref) {
