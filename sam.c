@@ -4548,7 +4548,7 @@ int bam_mplp64_auto(bam_mplp_t iter, int *_tid, hts_pos_t *_pos, int *n_plp, con
             if (iter->tid[i] < new_min_tid) {
                 new_min_tid = iter->tid[i];
                 new_min_pos = iter->pos[i];
-            } else if (iter->pos[i] < new_min_pos) {
+            } else if (iter->tid[i] == new_min_tid && iter->pos[i] < new_min_pos) {
                 new_min_pos = iter->pos[i];
             }
         }
