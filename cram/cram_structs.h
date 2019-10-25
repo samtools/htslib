@@ -411,6 +411,8 @@ struct cram_container {
     uint32_t crc32;       // CRC32
 
     uint64_t s_num_bases; // number of bases in this slice
+
+    uint32_t n_mapped;    // Number of mapped reads
 };
 
 /*
@@ -746,6 +748,7 @@ struct cram_fd {
     int multi_seq;                      // -1 is auto, 0 is one ref per container, 1 is multi...
     int multi_seq_user;                 // Original user setting (CRAM_OPT_MULTI_SEQ_PER_SLICE)
     int unsorted;
+    int last_mapped;                    // number of mapped reads in last container
     int empty_container;                // Marker for EOF block
 
     // thread pool

@@ -2630,13 +2630,9 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
                      c->ref_seq_start + c->ref_seq_span -1);
 
         /* Encode slices */
-        if (fd->pool) {
-            if (-1 == cram_flush_container_mt(fd, c))
-                return NULL;
-        } else {
-            if (-1 == cram_flush_container(fd, c))
-                return NULL;
-
+        if (-1 == cram_flush_container_mt(fd, c))
+            return NULL;
+        if (!fd->pool) {
             // Move to sep func, as we need cram_flush_container for
             // the closing phase to flush the partial container.
             for (i = 0; i < c->max_slice; i++) {
@@ -2680,6 +2676,7 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
 
     c->curr_rec = 0;
     c->s_num_bases = 0;
+    c->n_mapped = 0;
 
     return c;
 }
@@ -3425,6 +3422,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
     c->curr_rec++;
     c->curr_c_rec++;
     c->s_num_bases += bam_seq_len(b);
+    c->n_mapped += (bam_flag(b) & BAM_FUNMAP) ? 0 : 1;
     fd->record_counter++;
 
     return 0;
