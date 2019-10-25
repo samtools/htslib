@@ -201,6 +201,7 @@ File htslib/regidx.h:
 File htslib/sam.h:
 
    [new]        sam_hdr_tid2len()
+   [return]     bam_cigar2qlen()
    [return]     bam_cigar2rlen()
    [return]     bam_endpos()
    [parameters] bam_itr_queryi()
