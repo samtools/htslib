@@ -450,7 +450,7 @@ static void bam_cigar2rqlens(int n_cigar, const uint32_t *cigar,
     }
 }
 
-int bam_cigar2qlen(int n_cigar, const uint32_t *cigar)
+hts_pos_t bam_cigar2qlen(int n_cigar, const uint32_t *cigar)
 {
     int k, l;
     for (k = l = 0; k < n_cigar; ++k)
@@ -1914,8 +1914,8 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     if (strcmp(q, "*")) {
         _parse_err(p - q - 1 > INT32_MAX, "read sequence is too long");
         c->l_qseq = p - q - 1;
-        i = bam_cigar2qlen(c->n_cigar, (uint32_t*)(b->data + c->l_qname));
-        _parse_err(c->n_cigar && i != c->l_qseq, "CIGAR and query sequence are of different length");
+        hts_pos_t ql = bam_cigar2qlen(c->n_cigar, (uint32_t*)(b->data + c->l_qname));
+        _parse_err(c->n_cigar && ql != c->l_qseq, "CIGAR and query sequence are of different length");
         i = (c->l_qseq + 1) >> 1;
         _get_mem(uint8_t, &t, b, i);
 

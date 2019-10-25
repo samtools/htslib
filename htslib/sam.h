@@ -947,8 +947,14 @@ bam1_t *bam_dup1(const bam1_t *bsrc);
    This function returns the sum of the lengths of the M, I, S, = and X
    operations in @p cigar (these are the operations that "consume" query
    bases).  All other operations (including invalid ones) are ignored.
+
+   @note This return type of this function is hts_pos_t so that it can
+   correctly return the length of CIGAR sequences including many long
+   operations without overflow. However, other restrictions (notably the sizes
+   of bam1_core_t::l_qseq and bam1_t::data) limit the maximum query sequence
+   length supported by HTSlib to fewer than INT_MAX bases.
  */
-int bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
+hts_pos_t bam_cigar2qlen(int n_cigar, const uint32_t *cigar);
 
 /// Calculate reference length from CIGAR data
 /**
