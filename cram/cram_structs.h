@@ -288,10 +288,6 @@ typedef struct cram_block_compression_hdr {
     int32_t *landmark;
 
     /* Flags from preservation map */
-    int mapped_qs_included;
-    int unmapped_qs_included;
-    int unmapped_placed;
-    int qs_included;
     int read_names_included;
     int AP_delta;
     // indexed by ref-base and subst. code
