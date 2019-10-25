@@ -79,7 +79,7 @@ extern "C" {
 // Limit is set to ensure some internal values used by regidx keep within 32
 // bits.
 
-#define REGIDX_MAX (1ULL << 44)
+#define REGIDX_MAX (1ULL << 40)
 
 typedef struct regidx_t regidx_t;
 typedef struct
