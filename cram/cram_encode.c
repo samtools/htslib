@@ -1774,11 +1774,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         h->ref_seq_start = c->ref_seq_start;
         h->ref_seq_span  = c->ref_seq_span;
         h->num_records   = c->num_records;
-
-        h->mapped_qs_included = 0;   // fixme
-        h->unmapped_qs_included = 0; // fixme
         h->AP_delta = c->pos_sorted;
-        // h->...  fixme
         memcpy(h->substitution_matrix, CRAM_SUBST_MATRIX, 20);
 
         if (!(c_hdr = cram_encode_compression_header(fd, c, h)))
