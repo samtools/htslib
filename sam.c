@@ -452,7 +452,8 @@ static void bam_cigar2rqlens(int n_cigar, const uint32_t *cigar,
 
 hts_pos_t bam_cigar2qlen(int n_cigar, const uint32_t *cigar)
 {
-    int k, l;
+    int k;
+    hts_pos_t l;
     for (k = l = 0; k < n_cigar; ++k)
         if (bam_cigar_type(bam_cigar_op(cigar[k]))&1)
             l += bam_cigar_oplen(cigar[k]);
