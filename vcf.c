@@ -2327,11 +2327,20 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 if (z->is_gt) { // genotypes
                     int32_t is_phased = 0, *x = (int32_t*)(z->buf + z->size * m);
                     for (l = 0;; ++t) {
-                        if (*t == '.') ++t, x[l++] = is_phased;
-                        else x[l++] = (strtol(t, &t, 10) + 1) << 1 | is_phased;
-#if THOROUGH_SANITY_CHECKS
-                        assert( 0 );    // success of strtol,strtod not checked
-#endif
+                        if (*t == '.') {
+                            ++t, x[l++] = is_phased;
+                        } else {
+                            char *tt = t;
+                            errno = 0;
+                            long val = strtol(t, &t, 10);
+                            if (errno == ERANGE || val > (INT32_MAX>>1)-1 || val < 0) {
+                                hts_log_error("Unsupported value:'%s' (too large or negative)", tt);
+                                return -1;
+                            } else {
+                                x[l] = (val + 1) << 1 | is_phased;
+                                l++;
+                            }
+                        }
                         is_phased = (*t == '|');
                         if (*t != '|' && *t != '/') break;
                     }
@@ -2502,7 +2511,14 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             }
             v->rid = kh_val(d, k).id;
         } else if (i == 1) { // POS
-            v->pos = strtoll(p, NULL, 10) - 1;
+            errno = 0;
+            v->pos = strtoll(p, NULL, 10);
+            if (errno == ERANGE || v->pos == INT64_MIN) {
+                hts_log_error("Position value '%s' is too large", p);
+                goto err;
+            } else {
+                v->pos -= 1;
+            }
         } else if (i == 2) { // ID
             if (strcmp(p, ".")) bcf_enc_vchar(str, q - p, p);
             else bcf_enc_size(str, 0, BCF_BT_CHAR);
