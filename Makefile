@@ -491,6 +491,30 @@ test/thrash_threads7: test/thrash_threads7.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/thrash_threads7.o libhts.a -lz $(LIBS) -lpthread
 test_thrash: $(BUILT_THRASH_PROGRAMS)
 
+# Test to ensure the functions in the header files are exported by the shared
+# library.  This currently works by comparing the output from ctags on
+# the headers with the list of functions exported by the shared library.
+# Note that functions marked as exported in the .c files and not the public
+# headers will be missed by this test.
+test-shlib-exports: header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
+	@echo "Checking shared library exports"
+	@if test ! -s header-exports.txt ; then echo "Error: header-exports.txt empty" ; false ; fi
+	@if test ! -s shlib-exports-$(SHLIB_FLAVOUR).txt ; then echo "Error: shlib-exports-$(SHLIB_FLAVOUR).txt empty" ; false ; fi
+	@! comm -23 header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt | grep . || \
+	( echo "Error: Found unexported symbols (listed above)" ; false )
+
+# Extract symbols that should be exported from public headers using ctags
+# Filter out macros in htslib/hts_defs.h, and knet_win32_ functions that
+# aren't needed on non-Windows platforms.
+header-exports.txt: test/header_syms.pl htslib/*.h
+	test/header_syms.pl htslib/*.h | sort -u -o $@
+
+shlib-exports-so.txt: libhts.so
+	nm -D -g libhts.so | awk '$$2 == "T" { print $$3 }' | sort -u -o $@
+
+shlib-exports-dylib.txt: libhts.dylib
+	nm -Ug libhts.dylib | awk '$$2 == "T" { sub("^_", "", $$3); print $$3 }' | sort -u -o $@
+
 install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	if test -n "$(BUILT_PLUGINS)"; then $(INSTALL_PROGRAM) $(BUILT_PLUGINS) $(DESTDIR)$(plugindir); fi
@@ -538,7 +562,7 @@ htslib-uninstalled.pc: htslib.pc.tmp
 
 
 testclean:
-	-rm -f test/*.tmp test/*.tmp.* test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL*
+	-rm -f test/*.tmp test/*.tmp.* test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL* header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
 
 mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h

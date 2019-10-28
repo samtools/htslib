@@ -31,6 +31,9 @@ lib*.dylib
 lib*.so
 lib*.so.*
 
+header-exports.txt
+shlib-exports-*.txt
+
 /bgzip
 /htsfile
 /tabix
