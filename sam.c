@@ -2389,6 +2389,11 @@ static void *sam_dispatcher_read(void *vp) {
     SAM_state *fd = fp->state;
     sp_lines *l = NULL;
 
+    // Pre-allocate buffer for left-over bits of line (exact size doesn't
+    // matter as it will grow if necessary).
+    if (ks_resize(&line, 1000) < 0)
+        goto err;
+
     for (;;) {
         // Check for command
         pthread_mutex_lock(&fd->command_m);
