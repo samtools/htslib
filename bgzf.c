@@ -34,6 +34,7 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <inttypes.h>
+#include <zlib.h>
 
 #ifdef HAVE_LIBDEFLATE
 #include <libdeflate.h>

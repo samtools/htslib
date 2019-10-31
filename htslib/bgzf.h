@@ -32,7 +32,6 @@
 
 #include <stdint.h>
 #include <stdio.h>
-#include <zlib.h>
 #include <sys/types.h>
 
 #include "hts_defs.h"
@@ -57,6 +56,7 @@ struct kstring_t;
 struct bgzf_mtaux_t;
 typedef struct __bgzidx_t bgzidx_t;
 typedef struct bgzf_cache_t bgzf_cache_t;
+struct z_stream_s;
 
 struct BGZF {
     // Reserved bits should be written as 0; read as "don't care"
@@ -72,7 +72,7 @@ struct BGZF {
     struct bgzf_mtaux_t *mt; // only used for multi-threading
     bgzidx_t *idx;      // BGZF index
     int idx_build_otf;  // build index on the fly, set by bgzf_index_build_init()
-    z_stream *gz_stream;// for gzip-compressed files
+    struct z_stream_s *gz_stream; // for gzip-compressed files
     int64_t seeked;     // virtual offset of last seek
 };
 #ifndef HTS_BGZF_TYPEDEF
