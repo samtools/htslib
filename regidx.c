@@ -367,27 +367,29 @@ static int reglist_build_index_(regidx_t *regidx, reglist_t *list)
     }
 
     list->nidx = 0;
-    int j,k, midx = 0;
+    uint32_t j,k, midx = 0;
+    // Find highest index bin.  It's possible that we could just look at
+    // the last region, but go through the list in case some entries overlap.
+    for (j=0; j<list->nreg; j++) {
+        int iend = iBIN(list->reg[j].end);
+        if (midx <= iend) midx = iend;
+    }
+    midx++;
+    uint32_t *new_idx = calloc(midx, sizeof(uint32_t));
+    if (!new_idx) return -1;
+    free(list->idx); // Should be NULL on entry, but just in case...
+    list->idx = new_idx;
+    list->nidx = midx;
+
     for (j=0; j<list->nreg; j++) {
         int ibeg = iBIN(list->reg[j].beg);
         int iend = iBIN(list->reg[j].end);
-        if ( midx <= iend )
-        {
-            int old_midx = midx;
-            midx = iend + 1;
-            kroundup32(midx);
-            uint32_t *new_idx = realloc(list->idx, midx*sizeof(uint32_t));
-            if (!new_idx) return -1;
-            list->idx = new_idx;
-            memset(list->idx+old_midx, 0, sizeof(uint32_t)*(midx-old_midx));
-        }
         if ( ibeg==iend ) {
             if ( !list->idx[ibeg] ) list->idx[ibeg] = j + 1;
         } else {
             for (k=ibeg; k<=iend; k++)
                 if ( !list->idx[k] ) list->idx[k] = j + 1;
         }
-        if ( list->nidx < iend+1 ) list->nidx = iend+1;
     }
 
     return 0;
