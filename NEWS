@@ -31,6 +31,13 @@ Noteworthy changes in release a.b
     is now an alias for sam_itr_next() and hts_itr_multi_destroy() is an alias
     for hts_itr_destroy().
 
+  - An improved regidx interface has been added.  To allow this, struct
+    reg_t has been removed, regitr_t has been modified and various new
+    API functions have been added to htslib/regidx.h.  While parts of
+    the old regidx API have been retained for backwards compatibility,
+    it is recommended that all code using regidx should be changed to use
+    the new interface.
+
   - Elements in the hts_reglist_t structure have been reordered slightly
     so that they pack together better.
 

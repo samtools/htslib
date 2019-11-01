@@ -112,6 +112,9 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
         regidx_t *idx = regidx_init(regions_fname, NULL, NULL, 0, NULL);
         if ( !idx ) error("Could not read %s\n", regions_fname);
 
+        regitr_t *itr = regitr_init(idx);
+        if ( !itr ) error("Could not initialize an iterator over %s\n", regions_fname);
+
         (*nregs) += regidx_nregs(idx);
         regs = (char**) malloc(sizeof(char*)*(*nregs));
 
@@ -119,17 +122,16 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
         char **seqs = regidx_seq_names(idx, &nseq);
         for (iseq=0; iseq<nseq; iseq++)
         {
-            regitr_t itr;
-            regidx_overlap(idx, seqs[iseq], 0, HTS_POS_MAX, &itr);
-            while ( itr.i < itr.n )
+            regidx_overlap(idx, seqs[iseq], 0, HTS_POS_MAX, itr);
+            while ( regitr_overlap(itr) )
             {
                 str.l = 0;
-                ksprintf(&str, "%s:%"PRIhts_pos"-%"PRIhts_pos, seqs[iseq], REGITR_START(itr)+1, REGITR_END(itr)+1);
+                ksprintf(&str, "%s:%"PRIhts_pos"-%"PRIhts_pos, seqs[iseq], itr->beg+1, itr->end+1);
                 regs[ireg++] = strdup(str.s);
-                itr.i++;
             }
         }
         regidx_destroy(idx);
+        regitr_destroy(itr);
     }
     free(str.s);
 
