@@ -432,7 +432,7 @@ static int is_escaped(const char *str) {
 
     while (*c != '\0') {
         if (*c == '%' && c[1] != '\0' && c[2] != '\0') {
-            if (isxdigit(c[1]) && isxdigit(c[2])) {
+            if (isxdigit_c(c[1]) && isxdigit_c(c[2])) {
                 escaped = 1;
                 c += 3;
                 continue;
@@ -465,7 +465,7 @@ static int redirect_endpoint_callback(void *auth, long response,
         new_region += strlen("x-amz-bucket-region: ");
         end = new_region;
 
-        while (isalnum(*end) || ispunct(*end)) end++;
+        while (isalnum_c(*end) || ispunct_c(*end)) end++;
 
         *end = 0;
 

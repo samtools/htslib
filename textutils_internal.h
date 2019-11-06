@@ -164,8 +164,10 @@ static inline int isdigit_c(char c) { return isdigit((unsigned char) c); }
 static inline int isgraph_c(char c) { return isgraph((unsigned char) c); }
 static inline int islower_c(char c) { return islower((unsigned char) c); }
 static inline int isprint_c(char c) { return isprint((unsigned char) c); }
+static inline int ispunct_c(char c) { return ispunct((unsigned char) c); }
 static inline int isspace_c(char c) { return isspace((unsigned char) c); }
 static inline int isupper_c(char c) { return isupper((unsigned char) c); }
+static inline int isxdigit_c(char c) { return isxdigit((unsigned char) c); }
 static inline char tolower_c(char c) { return tolower((unsigned char) c); }
 static inline char toupper_c(char c) { return toupper((unsigned char) c); }
 

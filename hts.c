@@ -3037,7 +3037,7 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
     char *hyphen;
     *beg = hts_parse_decimal(colon+1, &hyphen, flags) - 1;
     if (*beg < 0) {
-        if (isdigit(*hyphen) || *hyphen == '\0' || *hyphen == ',') {
+        if (isdigit_c(*hyphen) || *hyphen == '\0' || *hyphen == ',') {
             // interpret chr:-100 as chr:1-100
             *end = *beg==-1 ? HTS_POS_MAX : -(*beg+1);
             *beg = 0;
