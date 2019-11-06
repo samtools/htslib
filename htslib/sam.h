@@ -1272,7 +1272,8 @@ static inline int sam_itr_next(htsFile *htsfp, hts_itr_t *itr, bam1_t *r) {
 #define sam_itr_multi_next(htsfp, itr, r) sam_itr_next(htsfp, itr, r)
 
 HTSLIB_EXPORT
-const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid, int64_t *beg, int64_t *end, int flags);
+const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
+                             hts_pos_t *beg, hts_pos_t *end, int flags);
 
     /***************
      *** SAM I/O ***

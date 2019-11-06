@@ -2916,8 +2916,9 @@ static void *hts_memrchr(const void *s, int c, size_t n) {
  *            beg & end will be set.
  * On failure NULL is returned.
  */
-const char *hts_parse_region(const char *s, int *tid, int64_t *beg, int64_t *end,
-                             hts_name2id_f getid, void *hdr, int flags)
+const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
+                             hts_pos_t *end, hts_name2id_f getid, void *hdr,
+                             int flags)
 {
     if (!s || !tid || !beg || !end || !getid)
         return NULL;
@@ -3094,7 +3095,7 @@ const char *hts_parse_reg64(const char *s, hts_pos_t *beg, hts_pos_t *end)
 
 const char *hts_parse_reg(const char *s, int *beg, int *end)
 {
-    int64_t beg64 = 0, end64 = 0;
+    hts_pos_t beg64 = 0, end64 = 0;
     const char *colon = hts_parse_reg64(s, &beg64, &end64);
     if (beg64 > INT_MAX) {
         hts_log_error("Position %"PRId64" too large", beg64);
