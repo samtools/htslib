@@ -293,7 +293,7 @@ libhts.dylib: $(LIBHTS_OBJS)
 	$(CC) -dynamiclib -install_name $(libdir)/libhts.$(LIBHTS_SOVERSION).dylib -current_version $(NUMERIC_VERSION) -compatibility_version $(MACH_O_COMPATIBILITY_VERSION) $(LDFLAGS) -o $@ $(LIBHTS_OBJS) $(LIBS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
-cyghts-$(LIBHTS_SOVERSION).dll: $(LIBHTS_OBJS)
+cyghts-$(LIBHTS_SOVERSION).dll libhts.dll.a: $(LIBHTS_OBJS)
 	$(CC) -shared -Wl,--out-implib=libhts.dll.a -Wl,--enable-auto-import $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
 
 hts-$(LIBHTS_SOVERSION).dll hts.dll.a: $(LIBHTS_OBJS)
@@ -310,10 +310,10 @@ hts-object-files: $(LIBHTS_OBJS)
 .o.bundle:
 	$(CC) -bundle -Wl,-undefined,dynamic_lookup $(LDFLAGS) -o $@ $< $(LIBS)
 
-.o.cygdll:
+%.cygdll: %.o libhts.dll.a
 	$(CC) -shared $(LDFLAGS) -o $@ $< libhts.dll.a $(LIBS)
 
-.o.dll:
+%.dll: %.o hts.dll.a
 	$(CC) -shared $(LDFLAGS) -o $@ $< hts.dll.a $(LIBS)
 
 
