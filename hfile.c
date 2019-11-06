@@ -34,6 +34,13 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <pthread.h>
 
+#ifdef ENABLE_PLUGINS
+#if defined(_WIN32) || defined(__CYGWIN__) || defined(__MSYS__)
+#define USING_WINDOWS_PLUGIN_DLLS
+#include <dlfcn.h>
+#endif
+#endif
+
 #include "htslib/hfile.h"
 #include "hfile_internal.h"
 #include "htslib/kstring.h"
@@ -906,11 +913,54 @@ static inline int priority(const struct hFILE_scheme_handler *handler)
     return handler->priority % 1000;
 }
 
+#ifdef USING_WINDOWS_PLUGIN_DLLS
+/*
+ * Work-around for Windows plug-in dlls where the plug-in could be
+ * using a different HTSlib library to the executable (for example
+ * because the latter was build against a static libhts.a).  When this
+ * happens, the plug-in can call the wrong copy of hfile_add_scheme_handler().
+ * If this is detected, it calls this function which attempts to fix the
+ * problem by redirecting to the hfile_add_scheme_handler() in the main
+ * executable.
+ */
+static int try_exe_add_scheme_handler(const char *scheme,
+                                      const struct hFILE_scheme_handler *handler)
+{
+    static void (*add_scheme_handler)(const char *scheme,
+                                      const struct hFILE_scheme_handler *handler);
+    if (!add_scheme_handler) {
+        // dlopen the main executable and resolve hfile_add_scheme_handler
+        void *exe_handle = dlopen(NULL, RTLD_LAZY);
+        if (!exe_handle) return -1;
+        *(void **) (&add_scheme_handler) = dlsym(exe_handle, "hfile_add_scheme_handler");
+        dlclose(exe_handle);
+    }
+    // Check that the symbol was obtained and isn't the one in this copy
+    // of the library (to avoid infinite recursion)
+    if (!add_scheme_handler || add_scheme_handler == hfile_add_scheme_handler)
+        return -1;
+    add_scheme_handler(scheme, handler);
+    return 0;
+}
+#else
+static int try_exe_add_scheme_handler(const char *scheme,
+                                      const struct hFILE_scheme_handler *handler)
+{
+    return -1;
+}
+#endif
+
 HTSLIB_EXPORT
 void hfile_add_scheme_handler(const char *scheme,
                               const struct hFILE_scheme_handler *handler)
 {
     int absent;
+    if (!schemes) {
+        if (try_exe_add_scheme_handler(scheme, handler) != 0) {
+            hts_log_warning("Couldn't register scheme handler for %s", scheme);
+        }
+        return;
+    }
     khint_t k = kh_put(scheme_string, schemes, scheme, &absent);
     if (absent || priority(handler) > priority(kh_value(schemes, k))) {
         kh_value(schemes, k) = handler;
