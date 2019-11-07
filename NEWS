@@ -4,6 +4,13 @@ Noteworthy changes in release a.b
 * Incompatible changes:  Several functions and data types have been changed
   in this release, and the shared library soversion has been bumped.
 
+  - On systems that support it, the default symbol visibility has been
+    changed to hidden and the only exported symbols are ones that form part
+    of the officially supported ABI.  This is to make clear exactly which
+    symbols are considered parts of the library interface.  It also
+    helps packagers who want to check compatibility between HTSlib versions
+    (see for example #311, #616, #695).
+
   - HTSlib now supports 64 bit reference positions.  This means several
     structures, function parameters, and return values have been made bigger
     to allow larger values to be stored.  While most code that uses

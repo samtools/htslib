@@ -33,9 +33,9 @@ CPPFLAGS =
 # TODO: probably update cram code to make it compile cleanly with -Wc++-compat
 # For testing strict C99 support add -std=c99 -D_XOPEN_SOURCE=600
 #CFLAGS   = -g -Wall -O2 -pedantic -std=c99 -D_XOPEN_SOURCE=600
-CFLAGS   = -g -Wall -O2
+CFLAGS   = -g -Wall -O2 -fvisibility=hidden
 EXTRA_CFLAGS_PIC = -fpic
-LDFLAGS  =
+LDFLAGS  = -fvisibility=hidden
 LIBS     = $(htslib_default_libs)
 
 prefix      = /usr/local
@@ -191,14 +191,14 @@ cram_io_h = cram/cram_io.h $(cram_misc_h)
 cram_misc_h = cram/misc.h
 cram_os_h = cram/os.h $(htslib_hts_endian_h)
 cram_samtools_h = cram/cram_samtools.h $(htslib_sam_h)
-cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) cram/string_alloc.h cram/mFILE.h $(htslib_khash_h)
+cram_structs_h = cram/cram_structs.h $(htslib_thread_pool_h) $(htslib_cram_h) cram/string_alloc.h cram/mFILE.h $(htslib_khash_h)
 cram_open_trace_file_h = cram/open_trace_file.h cram/mFILE.h
 bcf_sr_sort_h = bcf_sr_sort.h $(htslib_synced_bcf_reader_h) $(htslib_kbitset_h)
 header_h = header.h cram/string_alloc.h cram/pooled_alloc.h $(htslib_khash_h) $(htslib_kstring_h) $(htslib_sam_h)
-hfile_internal_h = hfile_internal.h $(htslib_hfile_h) $(textutils_internal_h)
+hfile_internal_h = hfile_internal.h $(htslib_hts_defs_h) $(htslib_hfile_h) $(textutils_internal_h)
 hts_internal_h = hts_internal.h $(htslib_hts_h) $(textutils_internal_h)
 sam_internal_h = sam_internal.h $(htslib_sam_h)
-textutils_internal_h = textutils_internal.h $(htslib_kstring_h)
+textutils_internal_h = textutils_internal.h $(htslib_kstring_h) $(htslib_sam_h)
 thread_pool_internal_h = thread_pool_internal.h $(htslib_thread_pool_h)
 
 
@@ -252,6 +252,9 @@ lib-shared: cyghts-$(LIBHTS_SOVERSION).dll
 else ifeq "$(findstring MSYS,$(PLATFORM))" "MSYS"
 SHLIB_FLAVOUR = dll
 lib-shared: hts-$(LIBHTS_SOVERSION).dll
+else ifeq "$(findstring MINGW,$(PLATFORM))" "MINGW"
+SHLIB_FLAVOUR = dll
+lib-shared: hts-$(LIBHTS_SOVERSION).dll
 else
 SHLIB_FLAVOUR = so
 lib-shared: libhts.so
@@ -291,10 +294,10 @@ libhts.dylib: $(LIBHTS_OBJS)
 	ln -sf $@ libhts.$(LIBHTS_SOVERSION).dylib
 
 cyghts-$(LIBHTS_SOVERSION).dll: $(LIBHTS_OBJS)
-	$(CC) -shared -Wl,--out-implib=libhts.dll.a -Wl,--export-all-symbols -Wl,--enable-auto-import $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
+	$(CC) -shared -Wl,--out-implib=libhts.dll.a -Wl,--enable-auto-import $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
 
-hts-$(LIBHTS_SOVERSION).dll: $(LIBHTS_OBJS)
-	$(CC) -shared -Wl,--out-implib=hts.dll.a -Wl,--export-all-symbols -Wl,--enable-auto-import $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
+hts-$(LIBHTS_SOVERSION).dll hts.dll.a: $(LIBHTS_OBJS)
+	$(CC) -shared -Wl,--out-implib=hts.dll.a -Wl,--enable-auto-import -Wl,--exclude-all-symbols $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
 
 
 .pico.so:
@@ -491,6 +494,33 @@ test/thrash_threads7: test/thrash_threads7.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/thrash_threads7.o libhts.a -lz $(LIBS) -lpthread
 test_thrash: $(BUILT_THRASH_PROGRAMS)
 
+# Test to ensure the functions in the header files are exported by the shared
+# library.  This currently works by comparing the output from ctags on
+# the headers with the list of functions exported by the shared library.
+# Note that functions marked as exported in the .c files and not the public
+# headers will be missed by this test.
+test-shlib-exports: header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
+	@echo "Checking shared library exports"
+	@if test ! -s header-exports.txt ; then echo "Error: header-exports.txt empty" ; false ; fi
+	@if test ! -s shlib-exports-$(SHLIB_FLAVOUR).txt ; then echo "Error: shlib-exports-$(SHLIB_FLAVOUR).txt empty" ; false ; fi
+	@! comm -23 header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt | grep . || \
+	( echo "Error: Found unexported symbols (listed above)" ; false )
+
+# Extract symbols that should be exported from public headers using ctags
+# Filter out macros in htslib/hts_defs.h, and knet_win32_ functions that
+# aren't needed on non-Windows platforms.
+header-exports.txt: test/header_syms.pl htslib/*.h
+	test/header_syms.pl htslib/*.h | sort -u -o $@
+
+shlib-exports-so.txt: libhts.so
+	nm -D -g libhts.so | awk '$$2 == "T" { print $$3 }' | sort -u -o $@
+
+shlib-exports-dylib.txt: libhts.dylib
+	nm -Ug libhts.dylib | awk '$$2 == "T" { sub("^_", "", $$3); print $$3 }' | sort -u -o $@
+
+shlib-exports-dll.txt: hts.dll.a
+	nm -g hts.dll.a | awk '$$2 == "T" { print $$3 }' | sort -u -o $@
+
 install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB_FLAVOUR) install-pkgconfig
 	$(INSTALL_PROGRAM) $(BUILT_PROGRAMS) $(DESTDIR)$(bindir)
 	if test -n "$(BUILT_PLUGINS)"; then $(INSTALL_PROGRAM) $(BUILT_PLUGINS) $(DESTDIR)$(plugindir); fi
@@ -538,7 +568,7 @@ htslib-uninstalled.pc: htslib.pc.tmp
 
 
 testclean:
-	-rm -f test/*.tmp test/*.tmp.* test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL*
+	-rm -f test/*.tmp test/*.tmp.* test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL* header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
 
 mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h

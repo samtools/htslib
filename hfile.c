@@ -22,6 +22,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <stdio.h>
@@ -93,7 +94,7 @@ for seek():
    abcdefghijkLMNOPQRSTUVWXYZ------
    ^buffer    ^begin         ^end  ^limit
 */
-
+HTSLIB_EXPORT
 hFILE *hfile_init(size_t struct_size, const char *mode, size_t capacity)
 {
     hFILE *fp = (hFILE *) malloc(struct_size);
@@ -141,6 +142,7 @@ hFILE *hfile_init_fixed(size_t struct_size, const char *mode,
 
 static const struct hFILE_backend mem_backend;
 
+HTSLIB_EXPORT
 void hfile_destroy(hFILE *fp)
 {
     int save = errno;
@@ -190,6 +192,7 @@ static ssize_t refill_buffer(hFILE *fp)
  * Returns 0 on success;
  *        -1 on failure.
  */
+HTSLIB_EXPORT
 int hfile_set_blksize(hFILE *fp, size_t bufsiz) {
     char *buffer;
     ptrdiff_t curr_used;
@@ -212,6 +215,7 @@ int hfile_set_blksize(hFILE *fp, size_t bufsiz) {
 }
 
 /* Called only from hgetc(), when our buffer is empty.  */
+HTSLIB_EXPORT
 int hgetc2(hFILE *fp)
 {
     return (refill_buffer(fp) > 0)? (unsigned char) *(fp->begin++) : EOF;
@@ -293,6 +297,7 @@ ssize_t hpeek(hFILE *fp, void *buffer, size_t nbytes)
 
 /* Called only from hread(); when called, our buffer is empty and nread bytes
    have already been placed in the destination buffer.  */
+HTSLIB_EXPORT
 ssize_t hread2(hFILE *fp, void *destv, size_t nbytes, size_t nread)
 {
     const size_t capacity = fp->limit - fp->buffer;
@@ -362,6 +367,7 @@ int hflush(hFILE *fp)
 }
 
 /* Called only from hputc(), when our buffer is already full.  */
+HTSLIB_EXPORT
 int hputc2(int c, hFILE *fp)
 {
     if (flush_buffer(fp) < 0) return EOF;
@@ -373,6 +379,7 @@ int hputc2(int c, hFILE *fp)
    full and ncopied bytes from the source have already been copied to our
    buffer; or completely empty, ncopied is zero and totalbytes is greater than
    the buffer size.  */
+HTSLIB_EXPORT
 ssize_t hwrite2(hFILE *fp, const void *srcv, size_t totalbytes, size_t ncopied)
 {
     const char *src = (const char *) srcv;
@@ -400,6 +407,7 @@ ssize_t hwrite2(hFILE *fp, const void *srcv, size_t totalbytes, size_t ncopied)
 }
 
 /* Called only from hputs(), when our buffer is already full.  */
+HTSLIB_EXPORT
 int hputs2(const char *text, size_t totalbytes, size_t ncopied, hFILE *fp)
 {
     return (hwrite2(fp, text, totalbytes, ncopied) >= 0)? 0 : EOF;
@@ -704,6 +712,7 @@ static hFILE *hopen_fd_stdinout(const char *mode)
     return hdopen(fd, mode);
 }
 
+HTSLIB_EXPORT
 int hfile_oflags(const char *mode)
 {
     int rdwr = 0, flags = 0;
@@ -897,6 +906,7 @@ static inline int priority(const struct hFILE_scheme_handler *handler)
     return handler->priority % 1000;
 }
 
+HTSLIB_EXPORT
 void hfile_add_scheme_handler(const char *scheme,
                               const struct hFILE_scheme_handler *handler)
 {
@@ -1043,7 +1053,10 @@ hFILE *hopen(const char *fname, const char *mode, ...)
     else return hopen_fd(fname, mode);
 }
 
+HTSLIB_EXPORT
 int hfile_always_local (const char *fname) { return 0; }
+
+HTSLIB_EXPORT
 int hfile_always_remote(const char *fname) { return 1; }
 
 int hisremote(const char *fname)

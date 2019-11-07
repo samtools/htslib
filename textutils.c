@@ -22,6 +22,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <stdio.h>
@@ -29,6 +30,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/hfile.h"
 #include "htslib/kstring.h"
+#include "htslib/sam.h"
 
 #include "hts_internal.h"
 
@@ -217,22 +219,27 @@ static char token_type(hts_json_token *token)
     }
 }
 
+HTSLIB_EXPORT
 hts_json_token * hts_json_alloc_token() {
     return calloc(1, sizeof(hts_json_token));
 }
 
+HTSLIB_EXPORT
 char hts_json_token_type(hts_json_token *token) {
     return token->type;
 }
 
+HTSLIB_EXPORT
 void hts_json_free_token(hts_json_token *token) {
     free(token);
 }
 
+HTSLIB_EXPORT
 char *hts_json_token_str(hts_json_token *token) {
     return token->str;
 }
 
+HTSLIB_EXPORT
 char hts_json_snext(char *str, size_t *state, hts_json_token *token)
 {
     char *s = &str[*state >> 2];
@@ -282,6 +289,7 @@ char hts_json_snext(char *str, size_t *state, hts_json_token *token)
 #undef STATE
 }
 
+HTSLIB_EXPORT
 char hts_json_fnext(struct hFILE *fp, hts_json_token *token, kstring_t *kstr)
 {
     char peek;
@@ -379,6 +387,8 @@ static char snext(void *arg1, void *arg2, hts_json_token *token)
 {
     return hts_json_snext(arg1, arg2, token);
 }
+
+HTSLIB_EXPORT
 char hts_json_sskip_value(char *str, size_t *state, char type)
 {
     return skip_value(type, snext, str, state);
@@ -388,6 +398,8 @@ static char fnext(void *arg1, void *arg2, hts_json_token *token)
 {
     return hts_json_fnext(arg1, token, arg2);
 }
+
+HTSLIB_EXPORT
 char hts_json_fskip_value(struct hFILE *fp, char type)
 {
     kstring_t str = { 0, 0, NULL };

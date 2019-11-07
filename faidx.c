@@ -23,6 +23,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <ctype.h>
@@ -915,4 +916,8 @@ const char *fai_parse_region(const faidx_t *fai, const char *s,
                              int *tid, int64_t *beg, int64_t *end, int flags)
 {
     return hts_parse_region(s, tid, beg, end, (hts_name2id_f)fai_name2id, (void *)fai, flags);
+}
+
+void fai_set_cache_size(faidx_t *fai, int cache_size) {
+    bgzf_set_cache_size(fai->bgzf, cache_size);
 }

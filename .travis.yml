@@ -92,4 +92,5 @@ script:
       make maintainer-check
     fi && \
     make -j 2 $MAKE_OPTS && \
+    make test-shlib-exports && \
     make test
