@@ -184,9 +184,12 @@ if test $enable_plugins != no; then
 
 Plugin support requires dynamic linking facilities from the operating system.
 Either configure with --disable-plugins or resolve this error to build HTSlib.])])
+  # Check if the compiler understands -rdynamic 
   # TODO Test whether this is required and/or needs tweaking per-platform
-  LDFLAGS="$LDFLAGS -rdynamic"
-  static_LDFLAGS="$static_LDFLAGS -rdynamic"
+  HTS_TEST_CC_C_LD_FLAG([-rdynamic],[rdynamic_flag])
+  AS_IF([test x"$rdynamic_flag" != "xno"],
+    [LDFLAGS="$LDFLAGS $rdynamic_flag"
+     static_LDFLAGS="$static_LDFLAGS $rdynamic_flag"])
   case "$ac_cv_search_dlopen" in
     -l*) static_LIBS="$static_LIBS $ac_cv_search_dlopen" ;;
   esac
