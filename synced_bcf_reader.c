@@ -47,14 +47,14 @@ DEALINGS IN THE SOFTWARE.  */
 
 typedef struct
 {
-    hts_pos_t start, end;
+    hts_pos_t start, end;   // records are marked for skipping have start>end
 }
 region1_t;
 
 typedef struct _region_t
 {
-    region1_t *regs;
-    int nregs, mregs, creg;
+    region1_t *regs;            // regions will sorted and merged, redundant records marked for skipping have start>end
+    int nregs, mregs, creg;     // creg: the current active region
 }
 region_t;
 
@@ -68,6 +68,7 @@ aux_t;
 static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start, hts_pos_t end);
 static bcf_sr_regions_t *_regions_init_string(const char *str);
 static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *rec);
+static void _regions_sort_and_merge(bcf_sr_regions_t *reg);
 
 char *bcf_sr_strerror(int errnum)
 {
@@ -321,6 +322,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
                 _regions_add(files->regions, names[i], -1, -1);
         }
         free(names);
+        _regions_sort_and_merge(files->regions);
     }
 
     return 1;
@@ -473,8 +475,11 @@ static int _readers_next_region(bcf_srs_t *files)
         return 0;
     }
 
-    // No lines in the buffer, need to open new region or quit
+    // No lines in the buffer, need to open new region or quit.
+    int prev_iseq = files->regions->iseq;
+    hts_pos_t prev_end = files->regions->end;
     if ( bcf_sr_regions_next(files->regions)<0 ) return -1;
+    files->regions->prev_end = prev_iseq==files->regions->iseq ? prev_end : -1;
 
     for (i=0; i<files->nreaders; i++)
         _reader_seek(&files->readers[i],files->regions->seq_names[files->regions->iseq],files->regions->start,files->regions->end);
@@ -542,6 +547,9 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             if ( ret < 0 ) break; // no more lines or an error
             bcf_subset_format(reader->header,reader->buffer[reader->nbuffer+1]);
         }
+
+        // prevent creation of duplicates from records overlapping multiple regions
+        if ( files->regions && reader->buffer[reader->nbuffer+1]->pos <= files->regions->prev_end ) continue;
 
         // apply filter
         if ( !reader->nfilter_ids )
@@ -770,8 +778,8 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
     return 1;
 }
 
-// Add a new region into a list sorted by start,end. On input the coordinates
-// are 1-based, stored 0-based, inclusive.
+// Add a new region into a list. On input the coordinates are 1-based, inclusive, then stored 0-based,
+// inclusive. Sorting and merging step needed afterwards: qsort(..,cmp_regions) and merge_regions().
 static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start, hts_pos_t end)
 {
     if ( start==-1 && end==-1 )
@@ -800,28 +808,49 @@ static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start,
     }
 
     region_t *creg = &reg->regs[iseq];
-
-    // the regions may not be sorted on input: binary search
-    int i, min = 0, max = creg->nregs - 1;
-    while ( min<=max )
-    {
-        i = (max+min)/2;
-        if ( start < creg->regs[i].start ) max = i - 1;
-        else if ( start > creg->regs[i].start ) min = i + 1;
-        else break;
-    }
-    if ( min>max || creg->regs[i].start!=start || creg->regs[i].end!=end )
-    {
-        // no such region, insert a new one just after max
-        hts_expand(region1_t,creg->nregs+1,creg->mregs,creg->regs);
-        if ( ++max < creg->nregs )
-            memmove(&creg->regs[max+1],&creg->regs[max],(creg->nregs - max)*sizeof(region1_t));
-        creg->regs[max].start = start;
-        creg->regs[max].end   = end;
-        creg->nregs++;
-    }
+    hts_expand(region1_t,creg->nregs+1,creg->mregs,creg->regs);
+    creg->regs[creg->nregs].start = start;
+    creg->regs[creg->nregs].end   = end;
+    creg->nregs++;
 
     return 0; // FIXME: check for errs in this function
+}
+
+int _regions_cmp(const void *aptr, const void *bptr)
+{
+    region1_t *a = (region1_t*)aptr;
+    region1_t *b = (region1_t*)bptr;
+    if ( a->start < b->start ) return -1;
+    if ( a->start > b->start ) return 1;
+    if ( a->end < b->end ) return -1;
+    if ( a->end > b->end ) return 1;
+    return 0;
+}
+void _regions_merge(region_t *reg)
+{
+    int i = 0, j;
+    while ( i<reg->nregs )
+    {
+        j = i + 1;
+        while ( j<reg->nregs && reg->regs[i].end >= reg->regs[j].start )
+        {
+            if ( reg->regs[i].end < reg->regs[j].end ) reg->regs[i].end = reg->regs[j].end;
+            reg->regs[j].start = 1;  reg->regs[j].end = 0;  // if beg>end, this region marked for skipping
+            j++;
+        }
+        i = j;
+    }
+}
+void _regions_sort_and_merge(bcf_sr_regions_t *reg)
+{
+    if ( !reg ) return;
+
+    int i;
+    for (i=0; i<reg->nseqs; i++)
+    {
+        qsort(reg->regs[i].regs, reg->regs[i].nregs, sizeof(*reg->regs[i].regs), _regions_cmp);
+        _regions_merge(&reg->regs[i]);
+    }
 }
 
 // File name or a list of genomic locations. If file name, NULL is returned.
@@ -829,7 +858,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
 {
     bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
     reg->start = reg->end = -1;
-    reg->prev_start = reg->prev_seq = -1;
+    reg->prev_start = reg->prev_end = reg->prev_seq = -1;
 
     kstring_t tmp = {0,0,0};
     const char *sp = str, *ep = str;
@@ -948,11 +977,16 @@ static int _regions_parse_line(char *line, int ichr, int ifrom, int ito, char **
 bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr, int ifrom, int ito)
 {
     bcf_sr_regions_t *reg;
-    if ( !is_file ) return _regions_init_string(regions);
+    if ( !is_file )
+    {
+        reg = _regions_init_string(regions);
+        _regions_sort_and_merge(reg);
+        return reg;
+    }
 
     reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
     reg->start = reg->end = -1;
-    reg->prev_start = reg->prev_seq = -1;
+    reg->prev_start = reg->prev_end = reg->prev_seq = -1;
 
     reg->file = hts_open(regions, "rb");
     if ( !reg->file )
@@ -998,6 +1032,7 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         }
         hts_close(reg->file); reg->file = NULL;
         if ( !reg->nseqs ) { free(reg); return NULL; }
+        _regions_sort_and_merge(reg);
         return reg;
     }
 
@@ -1059,6 +1094,16 @@ int bcf_sr_regions_seek(bcf_sr_regions_t *reg, const char *seq)
     return -1;
 }
 
+// Returns 0 on success, -1 when done
+int advance_creg(region_t *reg)
+{
+    int i = reg->creg + 1;
+    while ( i<reg->nregs && reg->regs[i].start > reg->regs[i].end ) i++;    // regions with start>end are marked to skip by merge_regions()
+    reg->creg = i;
+    if ( i>=reg->nregs ) return -1;
+    return 0;
+}
+
 int bcf_sr_regions_next(bcf_sr_regions_t *reg)
 {
     if ( reg->iseq<0 ) return -1;
@@ -1070,8 +1115,7 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
     {
         while ( reg->iseq < reg->nseqs )
         {
-            reg->regs[reg->iseq].creg++;
-            if ( reg->regs[reg->iseq].creg < reg->regs[reg->iseq].nregs ) break;
+            if ( advance_creg(&reg->regs[reg->iseq])==0 ) break;    // a valid record was found
             reg->iseq++;
         }
         if ( reg->iseq >= reg->nseqs ) { reg->iseq = -1; return -1; } // no more regions left

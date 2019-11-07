@@ -127,7 +127,7 @@ typedef struct _bcf_sr_regions_t
     int iseq;               // current position: chr name, index to snames
     hts_pos_t start, end;   // current position: start, end of the region (0-based)
     int prev_seq;
-    hts_pos_t prev_start;
+    hts_pos_t prev_start, prev_end;
 }
 bcf_sr_regions_t;
 
