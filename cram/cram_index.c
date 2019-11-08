@@ -143,7 +143,8 @@ static int kget_int64(kstring_t *k, size_t *pos, int64_t *val_p) {
  *        -1 for failure
  */
 int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
-    char *fn2 = NULL;
+
+    char *tfn_idx = NULL;
     char buf[65536];
     ssize_t len;
     kstring_t kstr = {0};
@@ -173,15 +174,18 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
     idx_stack[idx_stack_ptr] = idx;
 
     if (!fn_idx) {
-        fn2 = hts_idx_getfn(fn, ".crai");
-        if (!fn2)
-            goto fail;
+        if (hts_idx_check_local(fn, HTS_FMT_CRAI, &tfn_idx) == 0 && hisremote(fn))
+            tfn_idx = hts_idx_getfn(fn, ".crai");
 
-        fn_idx = fn2;
+        if (!tfn_idx) {
+            hts_log_error("Could not retrieve index file for '%s'", fn);
+            goto fail;
+        }
+        fn_idx = tfn_idx;
     }
 
     if (!(fp = hopen(fn_idx, "r"))) {
-        perror(fn_idx);
+        hts_log_error("Could not open index file '%s'", fn_idx);
         goto fail;
     }
 
@@ -302,7 +306,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 
     free(idx_stack);
     free(kstr.s);
-    free(fn2);
+    free(tfn_idx);
 
     // dump_index(fd);
 
@@ -311,7 +315,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
  fail:
     free(kstr.s);
     free(idx_stack);
-    free(fn2);
+    free(tfn_idx);
     cram_index_free(fd); // Also sets fd->index = NULL
     return -1;
 }

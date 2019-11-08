@@ -3397,7 +3397,8 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
             hts_log_error("Failed to detect format of index file '%s'", fn);
             goto fail;
         }
-        if (fmt.category != index_file || (fmt.format != bai &&  fmt.format != csi && fmt.format != tbi)) {
+        if (fmt.category != index_file || (fmt.format != bai &&  fmt.format != csi && fmt.format != tbi
+                && fmt.format != crai)) {
             hts_log_error("Format of index file '%s' is not supported", fn);
             goto fail;
         }
@@ -3471,13 +3472,14 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
  * @param fnidx - pointer to the index file name placeholder
  * @return        1 for success, 0 for failure
  */
-static int idx_check_local(const char *fn, int fmt, char **fnidx) {
+int hts_idx_check_local(const char *fn, int fmt, char **fnidx) {
     int i, l_fn, l_ext;
     const char *fn_tmp = NULL;
     char *fnidx_tmp;
     char *csi_ext = ".csi";
     char *bai_ext = ".bai";
     char *tbi_ext = ".tbi";
+    char *crai_ext = ".crai";
 
     if (!fn)
         return 0;
@@ -3502,7 +3504,7 @@ static int idx_check_local(const char *fn, int fmt, char **fnidx) {
 
     if (!fn_tmp) return 0;
     hts_log_info("Using alignment file '%s'", fn_tmp);
-    l_fn = strlen(fn_tmp); l_ext = 4;
+    l_fn = strlen(fn_tmp); l_ext = 5;
     fnidx_tmp = (char*)calloc(l_fn + l_ext + 1, 1);
     if (!fnidx_tmp) return 0;
 
@@ -3541,7 +3543,7 @@ static int idx_check_local(const char *fn, int fmt, char **fnidx) {
                     break;
                 }
         }
-    } else { // Or .tbi
+    } else if (fmt == HTS_FMT_TBI) { // Or .tbi
         strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, tbi_ext);
         if(stat(fnidx_tmp, &sbuf) == 0) {
             *fnidx = fnidx_tmp;
@@ -3550,6 +3552,22 @@ static int idx_check_local(const char *fn, int fmt, char **fnidx) {
             for (i = l_fn - 1; i > 0; --i)
                 if (fnidx_tmp[i] == '.') {
                     strcpy(fnidx_tmp + i, tbi_ext);
+                    if(stat(fnidx_tmp, &sbuf) == 0) {
+                        *fnidx = fnidx_tmp;
+                        return 1;
+                    }
+                    break;
+                }
+        }
+    } else if (fmt == HTS_FMT_CRAI) { // Or .crai
+        strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, crai_ext);
+        if(stat(fnidx_tmp, &sbuf) == 0) {
+            *fnidx = fnidx_tmp;
+            return 1;
+        } else {
+            for (i = l_fn - 1; i > 0; --i)
+                if (fnidx_tmp[i] == '.') {
+                    strcpy(fnidx_tmp + i, crai_ext);
                     if(stat(fnidx_tmp, &sbuf) == 0) {
                         *fnidx = fnidx_tmp;
                         return 1;
@@ -3616,7 +3634,7 @@ static hts_idx_t *idx_find_and_load(const char *fn, int fmt, int flags)
         return idx;
     }
 
-    if (idx_check_local(fn, fmt, &fnidx) == 0 && hisremote(fn)) {
+    if (hts_idx_check_local(fn, fmt, &fnidx) == 0 && hisremote(fn)) {
         if (flags & HTS_IDX_SAVE_REMOTE) {
             fnidx = hts_idx_getfn(fn, ".csi");
             if (!fnidx) {

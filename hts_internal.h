@@ -46,6 +46,15 @@ struct hts_json_token {
 
 struct cram_fd;
 
+/*
+ * Check the existence of a local index file using part of the alignment file name.
+ * The order is alignment.bam.csi, alignment.csi, alignment.bam.bai, alignment.bai
+ * @param fn    - pointer to the file name
+ * @param fnidx - pointer to the index file name placeholder
+ * @return        1 for success, 0 for failure
+ */
+int hts_idx_check_local(const char *fn, int fmt, char **fnidx);
+
 // Retrieve the name of the index file and also download it, if it is remote
 char *hts_idx_getfn(const char *fn, const char *ext);
 
