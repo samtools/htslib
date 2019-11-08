@@ -294,7 +294,9 @@ int faidx_seq_len(const faidx_t *fai, const char *seq);
     Thus "{chr1}:100-200" and "{chr1:100-200}" disambiguate the above example.
 */
 HTSLIB_EXPORT
-const char *fai_parse_region(const faidx_t *fai, const char *s, int *tid, int64_t *beg, int64_t *end, int flags);
+const char *fai_parse_region(const faidx_t *fai, const char *s,
+                             int *tid, hts_pos_t *beg, hts_pos_t *end,
+                             int flags);
 
 /// Sets the cache size of the underlying BGZF compressed file
 /** @param  fai         Pointer to the faidx_t struct

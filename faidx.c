@@ -744,7 +744,7 @@ static int fai_get_val(const faidx_t *fai, const char *str,
     khiter_t iter;
     khash_t(s) *h;
     int id;
-    int64_t beg, end;
+    hts_pos_t beg, end;
 
     if (!fai_parse_region(fai, str, &id, &beg, &end, 0)) {
         hts_log_warning("Reference %s not found in FASTA file, returning empty sequence", str);
@@ -913,7 +913,8 @@ int faidx_has_seq(const faidx_t *fai, const char *seq)
 }
 
 const char *fai_parse_region(const faidx_t *fai, const char *s,
-                             int *tid, int64_t *beg, int64_t *end, int flags)
+                             int *tid, hts_pos_t *beg, hts_pos_t *end,
+                             int flags)
 {
     return hts_parse_region(s, tid, beg, end, (hts_name2id_f)fai_name2id, (void *)fai, flags);
 }

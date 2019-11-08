@@ -925,6 +925,9 @@ typedef const char *(*hts_id2name_f)(void*, int);
     @param end  Set on return to the 1-based end of the region
     @return  Pointer to the colon or '\0' after the reference sequence name,
              or NULL if @a str could not be parsed.
+
+    NOTE: For compatibility with hts_parse_reg only.
+    Please use hts_parse_region instead.
 */
 HTSLIB_EXPORT
 const char *hts_parse_reg64(const char *str, hts_pos_t *beg, hts_pos_t *end);
@@ -1001,8 +1004,9 @@ const char *hts_parse_reg(const char *str, int *beg, int *end);
         >= 0 The specified range in @p str could not be parsed
 */
 HTSLIB_EXPORT
-const char *hts_parse_region(const char *str, int *tid, int64_t *beg, int64_t *end,
-                             hts_name2id_f getid, void *hdr, int flags);
+const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
+                             hts_pos_t *end, hts_name2id_f getid, void *hdr,
+                             int flags);
 
 
 ///////////////////////////////////////////////////////////

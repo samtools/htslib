@@ -361,7 +361,8 @@ int bam_hdr_write(BGZF *fp, const sam_hdr_t *h)
     return 0;
 }
 
-const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid, int64_t *beg, int64_t *end, int flags) {
+const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
+                             hts_pos_t *beg, hts_pos_t *end, int flags) {
     return hts_parse_region(s, tid, beg, end, (hts_name2id_f)bam_name2id, h, flags);
 }
 
