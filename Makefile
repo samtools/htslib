@@ -299,6 +299,10 @@ cyghts-$(LIBHTS_SOVERSION).dll: $(LIBHTS_OBJS)
 hts-$(LIBHTS_SOVERSION).dll hts.dll.a: $(LIBHTS_OBJS)
 	$(CC) -shared -Wl,--out-implib=hts.dll.a -Wl,--enable-auto-import -Wl,--exclude-all-symbols $(LDFLAGS) -o $@ -Wl,--whole-archive $(LIBHTS_OBJS) -Wl,--no-whole-archive $(LIBS) -lpthread
 
+# Target to allow htslib.mk to build all the object files before it
+# links the shared and static libraries.
+hts-object-files: $(LIBHTS_OBJS)
+	touch $@
 
 .pico.so:
 	$(CC) -shared -Wl,-E $(LDFLAGS) -o $@ $< $(LIBS) -lpthread
@@ -572,6 +576,7 @@ testclean:
 
 mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h
+	-rm -f hts-object-files
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 	-rm -f libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) $(BUILT_TEST_PROGRAMS) $(BUILT_THRASH_PROGRAMS)
