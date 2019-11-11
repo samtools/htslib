@@ -700,8 +700,19 @@ static int wait_perform(hFILE_libcurl *fp)
                 timeout = 10000;  // as recommended by curl_multi_timeout(3)
             }
         }
-        if (maxfd < 0 && timeout > 100)
-            timeout = 100; // as recommended by curl_multi_fdset(3)
+        if (maxfd < 0) {
+            if (timeout > 100)
+                timeout = 100; // as recommended by curl_multi_fdset(3)
+#ifdef _WIN32
+            /* Windows ignores the first argument of select, so calling select
+             * with maxfd=-1 does not give the expected result of sleeping for
+             * timeout milliseconds in the conditional block below.
+             * So sleep here and skip the next block.
+             */
+            Sleep(timeout);
+            timeout = 0;
+#endif
+        }
 
         if (timeout > 0) {
             struct timeval tval;
