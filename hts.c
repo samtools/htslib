@@ -3370,8 +3370,8 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
         const int buf_size = 1 * 1024 * 1024;
         int l;
         const char *p, *e;
-        // Ignore ?# params: eg any file.fmt?param=val
-        e = fn + strcspn(fn, "?#");
+        // Ignore ?# params: eg any file.fmt?param=val, except for S3 URLs
+        e = fn + ((strncmp(fn, "s3://", 5) && strncmp(fn, "s3+http://", 10) && strncmp(fn, "s3+https://", 11)) ? strcspn(fn, "?#") : strcspn(fn, "?"));
         // Find the previous slash from there.
         p = e;
         while (p > fn && *p != '/') p--;

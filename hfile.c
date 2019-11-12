@@ -1085,7 +1085,8 @@ char *haddextension(struct kstring_t *buffer, const char *filename,
 
     if (find_scheme_handler(filename)) {
         // URL, so alter extensions before any trailing query or fragment parts
-        trailing = filename + strcspn(filename, "?#");
+        // Allow # symbols in s3 URLs
+        trailing = filename + ((strncmp(filename, "s3://", 5) && strncmp(filename, "s3+http://", 10) && strncmp(filename, "s3+https://", 11))  ? strcspn(filename, "?#") : strcspn(filename, "?"));
     }
     else {
         // Local path, so alter extensions at the end of the filename
