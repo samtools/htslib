@@ -54,6 +54,24 @@ matrix:
     os: linux
     env: CFLAGS="-std=c99 -pedantic" USE_CONFIG=yes
 
+  # Big-endian
+  - compiler: gcc
+    arch: s390x
+    os: linux
+    env: USE_CONFIG=yes
+    addons:
+      apt:
+        packages:
+          - libbz2-dev
+          - liblzma-dev
+
+  allow_failures:
+  # The build is failed in big-endian environment (arch: s390x).
+  # BCF header code makes no attempt to account for endianness
+  # https://github.com/samtools/htslib/issues/355
+  - arch: s390x
+  fast_finish: true
+
 # For MacOSX systems
 before_install:
   - |
