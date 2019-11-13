@@ -82,6 +82,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/config.h \
 	$(HTSDIR)/errmod.c \
 	$(HTSDIR)/faidx.c \
+	$(HTSDIR)/header.c \
 	$(HTSDIR)/header.h \
 	$(HTSDIR)/hfile_internal.h \
 	$(HTSDIR)/hfile.c \
@@ -89,6 +90,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/hfile_libcurl.c \
 	$(HTSDIR)/hfile_net.c \
 	$(HTSDIR)/hfile_s3.c \
+	$(HTSDIR)/hfile_s3_write.c \
 	$(HTSDIR)/hts.c \
 	$(HTSDIR)/hts_internal.h \
 	$(HTSDIR)/hts_os.c \
@@ -103,6 +105,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/regidx.c \
 	$(HTSDIR)/region.c \
 	$(HTSDIR)/sam.c \
+	$(HTSDIR)/sam_internal.h \
 	$(HTSDIR)/synced_bcf_reader.c \
 	$(HTSDIR)/tbx.c \
 	$(HTSDIR)/textutils.c \
@@ -148,19 +151,27 @@ HTSLIB_ALL = \
 $(HTSDIR)/config.h:
 	+cd $(HTSDIR) && $(MAKE) config.h
 
-$(HTSDIR)/libhts.a: $(HTSLIB_ALL)
+$(HTSDIR)/hts-object-files : $(HTSLIB_ALL)
+	+cd $(HTSDIR) && $(MAKE) hts-object-files
+
+$(HTSDIR)/libhts.a: $(HTSDIR)/hts-object-files
 	+cd $(HTSDIR) && $(MAKE) lib-static
 
-$(HTSDIR)/libhts.so $(HTSDIR)/libhts.dylib $(HTSDIR)/libhts.dll.a $(HTSDIR)/hts.dll.a: $(HTSLIB_ALL)
+$(HTSDIR)/libhts.so: $(HTSLIB_ALL)
 	+cd $(HTSDIR) && $(MAKE) lib-shared
 
-$(HTSDIR)/bgzip: $(HTSDIR)/bgzip.c $(HTSLIB_PUBLIC_HEADERS)
+$(HTSDIR)/libhts.dylib $(HTSDIR)/libhts.dll.a $(HTSDIR)/hts.dll.a: $(HTSDIR)/hts-object-files
+	+cd $(HTSDIR) && $(MAKE) lib-shared
+
+$(HTSDIR)/bgzip: $(HTSDIR)/bgzip.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
 	+cd $(HTSDIR) && $(MAKE) bgzip
 
-$(HTSDIR)/htsfile: $(HTSDIR)/htsfile.c $(HTSLIB_PUBLIC_HEADERS)
+$(HTSDIR)/htsfile: $(HTSDIR)/htsfile.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
+
 	+cd $(HTSDIR) && $(MAKE) htsfile
 
-$(HTSDIR)/tabix: $(HTSDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS)
+$(HTSDIR)/tabix: $(HTSDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
+
 	+cd $(HTSDIR) && $(MAKE) tabix
 
 $(HTSDIR)/htslib_static.mk: $(HTSDIR)/htslib.pc.tmp
