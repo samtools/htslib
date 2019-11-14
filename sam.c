@@ -669,10 +669,19 @@ int bam_write1(BGZF *fp, const bam1_t *b)
     } else { // with long CIGAR, insert a fake CIGAR record and move the real CIGAR to the CG:B,I tag
         uint8_t buf[8];
         uint32_t cigar_st, cigar_en, cigar[2];
+        hts_pos_t cigreflen = bam_cigar2rlen(c->n_cigar, bam_get_cigar(b));
+        if (cigreflen >= (1<<28)) {
+            // Length of reference covered is greater than the biggest
+            // CIGAR operation currently allowed.
+            hts_log_error("Record %s with %d CIGAR ops and ref length %"PRIhts_pos
+                          " cannot be written in BAM.  Try writing SAM or CRAM instead.\n",
+                          bam_get_qname(b), c->n_cigar, cigreflen);
+            return -1;
+        }
         cigar_st = (uint8_t*)bam_get_cigar(b) - b->data;
         cigar_en = cigar_st + c->n_cigar * 4;
         cigar[0] = (uint32_t)c->l_qseq << 4 | BAM_CSOFT_CLIP;
-        cigar[1] = (uint32_t)bam_cigar2rlen(c->n_cigar, bam_get_cigar(b)) << 4 | BAM_CREF_SKIP;
+        cigar[1] = (uint32_t)cigreflen << 4 | BAM_CREF_SKIP;
         u32_to_le(cigar[0], buf);
         u32_to_le(cigar[1], buf + 4);
         if (ok) ok = (bgzf_write(fp, buf, 8) >= 0); // write cigar: <read_length>S<ref_length>N
