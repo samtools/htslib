@@ -2773,6 +2773,10 @@ static int process_one_read(cram_fd *fd, cram_container *c,
 
     c->num_bases   += cr->len;
     cr->apos        = bam_pos(b)+1;
+    if (cr->apos >= UINT32_MAX) {
+        hts_log_error("Sequence position out of valid range");
+        goto err;
+    }
     if (c->pos_sorted) {
         if (cr->apos < s->last_apos) {
             c->pos_sorted = 0;
