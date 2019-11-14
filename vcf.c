@@ -942,19 +942,26 @@ void bcf_hdr_remove(bcf_hdr_t *hdr, int type, const char *key)
 
 int bcf_hdr_printf(bcf_hdr_t *hdr, const char *fmt, ...)
 {
+    char tmp[256], *line = tmp;
     va_list ap;
     va_start(ap, fmt);
-    int n = vsnprintf(NULL, 0, fmt, ap) + 2;
+    int n = vsnprintf(line, sizeof(tmp), fmt, ap);
     va_end(ap);
 
-    char *line = (char*)malloc(n);
-    va_start(ap, fmt);
-    vsnprintf(line, n, fmt, ap);
-    va_end(ap);
+    if (n >= sizeof(tmp)) {
+        n++; // For trailing NUL
+        line = (char*)malloc(n);
+        if (!line)
+            return -1;
+
+        va_start(ap, fmt);
+        vsnprintf(line, n, fmt, ap);
+        va_end(ap);
+    }
 
     int ret = bcf_hdr_append(hdr, line);
 
-    free(line);
+    if (line != tmp) free(line);
     return ret;
 }
 
