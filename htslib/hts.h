@@ -38,6 +38,15 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
+// Separator used to split HTS_PATH (for plugins); REF_PATH (cram references)
+#if defined(_WIN32) || defined(__MSYS__)
+#define HTS_PATH_SEPARATOR_CHAR ';'
+#define HTS_PATH_SEPARATOR_STR  ";"
+#else
+#define HTS_PATH_SEPARATOR_CHAR ':'
+#define HTS_PATH_SEPARATOR_STR  ":"
+#endif
+
 #ifndef HTS_BGZF_TYPEDEF
 typedef struct BGZF BGZF;
 #define HTS_BGZF_TYPEDEF
