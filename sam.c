@@ -1915,6 +1915,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 
     char *p = s->s, *q;
     int i, overflow = 0;
+    hts_pos_t cigreflen;
     bam1_core_t *c = &b->core;
 
     b->l_data = 0;
@@ -1979,14 +1980,16 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
             cigar[i] |= op;
         }
         // can't use bam_endpos() directly as some fields not yet set up
-        i = (!(c->flag&BAM_FUNMAP))? bam_cigar2rlen(c->n_cigar, cigar) : 1;
+        cigreflen = (!(c->flag&BAM_FUNMAP))? bam_cigar2rlen(c->n_cigar, cigar) : 1;
     } else {
         _parse_warn(!(c->flag&BAM_FUNMAP), "mapped query must have a CIGAR; treated as unmapped");
         c->flag |= BAM_FUNMAP;
         q = _read_token(p);
-        i = 1;
+        cigreflen = 1;
     }
-    c->bin = hts_reg2bin(c->pos, c->pos + i, 14, 5);
+    _parse_err(HTS_POS_MAX - cigreflen <= c->pos,
+               "read ends beyond highest supported position");
+    c->bin = hts_reg2bin(c->pos, c->pos + cigreflen, 14, 5);
     // mate chr
     q = _read_token(p);
     if (strcmp(q, "=") == 0) {
