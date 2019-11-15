@@ -47,7 +47,6 @@ typedef khash_t(rm) rmhash_t;
 static int sam_hdr_link_pg(sam_hdr_t *bh);
 
 static int sam_hrecs_vupdate(sam_hrecs_t *hrecs, sam_hrec_type_t *type, va_list ap);
-static int sam_hrecs_update(sam_hrecs_t *hrecs, sam_hrec_type_t *type, ...);
 
 
 #define MAX_ERROR_QUOTE 320 // Prevent over-long error messages
@@ -182,14 +181,10 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
             if (hrecs->ref[nref].ty == NULL) {
                 // Attach header line to existing stub entry.
                 hrecs->ref[nref].ty = h_type;
-                // Check lengths match; correct if not.
-                if (len != hrecs->ref[nref].len) {
-                    char tmp[32];
-                    snprintf(tmp, sizeof(tmp), "%" PRIhts_pos,
-                             hrecs->ref[nref].len);
-                    if (sam_hrecs_update(hrecs, h_type, "LN", tmp, NULL) < 0)
-                        return -1;
-                }
+                // The old hrecs length may be incorrect as it is initially
+                // populated from h->target_len which has a max 32-bit size.
+                // We always take our latest data as canonical.
+                hrecs->ref[nref].len = len;
                 if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames) < 0)
                     return -1;
 
@@ -2483,25 +2478,6 @@ int sam_hrecs_vupdate(sam_hrecs_t *hrecs, sam_hrec_type_t *type, va_list ap) {
     hrecs->dirty = 1; //mark text as dirty and force a rebuild
 
     return 0;
-}
-
-/*
- * Adds or updates tag key,value pairs in a header line.
- * Eg for adding M5 tags to @SQ lines or updating sort order for the
- * @HD line.
- *
- * Specify multiple key,value pairs ending in NULL.
- *
- * Returns 0 on success
- *        -1 on failure
- */
-static int sam_hrecs_update(sam_hrecs_t *hrecs, sam_hrec_type_t *type, ...) {
-    va_list args;
-    int res;
-    va_start(args, type);
-    res = sam_hrecs_vupdate(hrecs, type, args);
-    va_end(args);
-    return res;
 }
 
 /*

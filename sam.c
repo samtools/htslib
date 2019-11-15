@@ -131,6 +131,53 @@ void sam_hdr_destroy(sam_hdr_t *bh)
     free(bh);
 }
 
+/*
+ * Create or update the header sdict field from the new
+ * parsed hrecs data.  This is important for sam_hdr_dup or
+ * when reading / creating a new header.
+ *
+ * Returns  0 on success,
+ *         -1 on failure
+ */
+static int sam_hdr_update_sdict(sam_hdr_t *h) {
+    int i;
+    khash_t(s2i) *long_refs = h->sdict;
+
+    if (!h->hrecs)
+        return 0;
+
+    for (i = 0; i < h->n_targets; i++) {
+        hts_pos_t len = sam_hdr_tid2len(h, i);
+        const char *name = sam_hdr_tid2name(h, i);
+        khint_t k;
+        if (len < UINT32_MAX) {
+            if (!long_refs)
+                continue;
+
+            // Check if we have an old length, if so remove it.
+            k = kh_get(s2i, long_refs, name);
+            if (k < kh_end(long_refs))
+                kh_del(s2i, long_refs, k);
+        }
+
+        if (!long_refs) {
+            if (!(h->sdict = long_refs = kh_init(s2i)))
+                goto err;
+        }
+
+        // Add / update length
+        int absent;
+        k = kh_put(s2i, long_refs, name, &absent);
+        if (absent < 0)
+            goto err;
+        kh_val(long_refs, k) = len;
+    }
+    return 0;
+
+ err:
+    return -1;
+}
+
 sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
 {
     if (h0 == NULL) return NULL;
@@ -177,6 +224,14 @@ sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
         if (!h->text) goto fail;
         memcpy(h->text, h0->text, h->l_text);
         h->text[h->l_text] = '\0';
+    }
+
+    if (h0->sdict) {
+        // We have a reason to use new API, so build it so we
+        // can replicate sdict.
+        if (sam_hdr_fill_hrecs(h) < 0 ||
+            sam_hdr_update_sdict(h) < 0)
+            goto fail;
     }
 
     return h;
