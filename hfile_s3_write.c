@@ -171,13 +171,12 @@ static int get_entry(char *in, char *start_tag, char *end_tag, kstring_t *out) {
     }
 
     start = strstr(in, start_tag);
+    if (!start) return EOF;
 
-    if (start) {
-        start += strlen(start_tag);
-        end = strstr(start, end_tag);
-    }
+    start += strlen(start_tag);
+    end = strstr(start, end_tag);
 
-    if (!start || !end) return EOF;
+    if (!end) return EOF;
 
     return kputsn(start, end - start, out);
 }
