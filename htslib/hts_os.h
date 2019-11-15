@@ -1,7 +1,7 @@
 /// @file hts_os.h
 /// Operating System specific tweaks, for compatibility with POSIX.
 /*
-   Copyright (C) 2017 Genome Research Ltd.
+   Copyright (C) 2017, 2019 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 

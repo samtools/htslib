@@ -1,7 +1,7 @@
 /// @file htslib/tbx.h
 /// Tabix API functions.
 /*
-    Copyright (C) 2009, 2012-2015 Genome Research Ltd.
+    Copyright (C) 2009, 2012-2015, 2019 Genome Research Ltd.
     Copyright (C) 2010, 2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>

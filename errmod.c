@@ -1,7 +1,7 @@
 /*  errmod.c -- revised MAQ error model.
 
     Copyright (C) 2010 Broad Institute.
-    Copyright (C) 2012, 2013, 2016 Genome Research Ltd.
+    Copyright (C) 2012, 2013, 2016, 2019 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 

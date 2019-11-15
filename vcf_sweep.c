@@ -1,6 +1,6 @@
 /*  vcf_sweep.c -- forward/reverse sweep API.
 
-    Copyright (C) 2013 Genome Research Ltd.
+    Copyright (C) 2013, 2019 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 

@@ -1,6 +1,6 @@
 /*  test/sam.c -- SAM/BAM/CRAM API test cases.
 
-    Copyright (C) 2014-2017 Genome Research Ltd.
+    Copyright (C) 2014-2017, 2019 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 

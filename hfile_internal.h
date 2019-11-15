@@ -1,6 +1,6 @@
 /*  hfile_internal.h -- internal parts of low-level input/output streams.
 
-    Copyright (C) 2013-2016 Genome Research Ltd.
+    Copyright (C) 2013-2016, 2019 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 

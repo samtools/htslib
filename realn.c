@@ -1,6 +1,6 @@
 /*  realn.c -- BAQ calculation and realignment.
 
-    Copyright (C) 2009-2011, 2014-2015 Genome Research Ltd.
+    Copyright (C) 2009-2011, 2014-2015, 2019 Genome Research Ltd.
     Portions copyright (C) 2009-2011 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>

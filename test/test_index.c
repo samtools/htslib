@@ -1,6 +1,6 @@
 /*  test/test_index.c -- simple tool to build an index, for the test harness.
 
-    Copyright (C) 2018 Genome Research Ltd.
+    Copyright (C) 2018-2019 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
