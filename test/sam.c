@@ -1226,6 +1226,23 @@ static void samrecord_layout(void)
                          "test/sam_alignment.tmp.sam_", "w", NULL);
 }
 
+static int check_ref_lengths(const sam_hdr_t *header,
+                             const hts_pos_t *expected_lengths,
+                             int num_refs, const char *hdr_name)
+{
+    int i;
+    for (i = 0; i < num_refs; i++) {
+        hts_pos_t ln = sam_hdr_tid2len(header, i);
+        if (ln != expected_lengths[i]) {
+            fail("Wrong length for %s ref %d : "
+                 "expected %"PRIhts_pos" got %"PRIhts_pos"\n",
+                 hdr_name, i, expected_lengths[i], ln);
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static void check_big_ref(int parse_header)
 {
     static const char sam_text[] = "data:,"
@@ -1257,7 +1274,7 @@ static void check_big_ref(int parse_header)
         -1, -1, -1, 9223372034707292150LL - 1, 1LL - 1, -1
     };
     samFile *in = NULL, *out = NULL;
-    sam_hdr_t *header = NULL;
+    sam_hdr_t *header = NULL, *dup_header = NULL;
     bam1_t *aln = bam_init1();
     const int num_refs = sizeof(expected_lengths) / sizeof(expected_lengths[0]);
     const int num_align = sizeof(expected_tids) / sizeof(expected_tids[0]);
@@ -1288,21 +1305,33 @@ static void check_big_ref(int parse_header)
         goto cleanup;
     }
     if (parse_header) {
-        // This will force the reader to be parsed
+        // This will force the header to be parsed
         if (sam_hdr_count_lines(header, "SQ") != num_refs) {
             fail("Wrong number of SQ lines in header");
             goto cleanup;
         }
     }
-    for (i = 0; i < num_refs; i++) {
-        hts_pos_t ln = sam_hdr_tid2len(header, i);
-        if (ln != expected_lengths[i]) {
-            fail("Wrong length for ref %d : "
-                 "expected %"PRIhts_pos" got %"PRIhts_pos"\n",
-                 i, expected_lengths[i], ln);
-            goto cleanup;
-        }
+    if (check_ref_lengths(header, expected_lengths, num_refs, "header") < 0)
+        goto cleanup;
+
+    dup_header = sam_hdr_dup(header);
+    if (!dup_header) {
+        fail("Failed to duplicate header");
     }
+
+    if (check_ref_lengths(dup_header, expected_lengths,
+                          num_refs, "duplicate header") < 0)
+        goto cleanup;
+
+    if (sam_hdr_count_lines(dup_header, "SQ") != num_refs) {
+        fail("Wrong number of SQ lines in duplicate header");
+        goto cleanup;
+    }
+
+    if (check_ref_lengths(dup_header, expected_lengths,
+                          num_refs, "parsed duplicate header") < 0)
+        goto cleanup;
+
     if (sam_hdr_write(out, header) < 0) {
         fail("Failed to write SAM header");
         goto cleanup;
@@ -1379,6 +1408,7 @@ static void check_big_ref(int parse_header)
  cleanup:
     bam_destroy1(aln);
     sam_hdr_destroy(header);
+    sam_hdr_destroy(dup_header);
     if (in) sam_close(in);
     if (out) sam_close(out);
     if (inf) fclose(inf);

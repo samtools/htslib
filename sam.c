@@ -131,6 +131,33 @@ void sam_hdr_destroy(sam_hdr_t *bh)
     free(bh);
 }
 
+// Copy the sam_hdr_t::sdict hash, used to store the real lengths of long
+// references before sam_hdr_t::hrecs is populated
+int sam_hdr_dup_sdict(const sam_hdr_t *h0, sam_hdr_t *h)
+{
+    const khash_t(s2i) *src_long_refs = (khash_t(s2i) *) h0->sdict;
+    khash_t(s2i) *dest_long_refs = kh_init(s2i);
+    int i;
+    if (!dest_long_refs) return -1;
+
+    for (i = 0; i < h->n_targets; i++) {
+        int ret;
+        khiter_t ksrc, kdest;
+        if (h->target_len[i] < UINT32_MAX) continue;
+        ksrc = kh_get(s2i, src_long_refs, h->target_name[i]);
+        if (ksrc == kh_end(src_long_refs)) continue;
+        kdest = kh_put(s2i, dest_long_refs, h->target_name[i], &ret);
+        if (ret < 0) {
+            kh_destroy(s2i, dest_long_refs);
+            return -1;
+        }
+        kh_val(dest_long_refs, kdest) = kh_val(src_long_refs, ksrc);
+    }
+
+    h->sdict = dest_long_refs;
+    return 0;
+}
+
 sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
 {
     if (h0 == NULL) return NULL;
@@ -157,6 +184,10 @@ sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0)
         }
         h->n_targets = i;
         if (i < h0->n_targets) goto fail;
+
+        if (h0->sdict) {
+            if (sam_hdr_dup_sdict(h0, h) < 0) goto fail;
+        }
     }
 
     if (h0->hrecs) {
