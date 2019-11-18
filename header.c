@@ -916,6 +916,8 @@ int sam_hdr_update_target_arrays(sam_hdr_t *bh, const sam_hrecs_t *hrecs,
     // hrecs->refs_changed is the first ref that has been updated, so ones
     // before that can be skipped.
     int i;
+    khint_t k;
+    khash_t(s2i) *long_refs = (khash_t(s2i) *) bh->sdict;
     for (i = refs_changed; i < hrecs->nref; i++) {
         if (i >= bh->n_targets
             || strcmp(bh->target_name[i], hrecs->ref[i].name) != 0) {
@@ -927,13 +929,40 @@ int sam_hdr_update_target_arrays(sam_hdr_t *bh, const sam_hrecs_t *hrecs,
         }
         if (hrecs->ref[i].len < UINT32_MAX) {
             bh->target_len[i] = hrecs->ref[i].len;
+
+            if (!long_refs)
+                continue;
+
+            // Check if we have an old length, if so remove it.
+            k = kh_get(s2i, long_refs, bh->target_name[i]);
+            if (k < kh_end(long_refs))
+                kh_del(s2i, long_refs, k);
         } else {
             bh->target_len[i] = UINT32_MAX;
+            if (bh->hrecs != hrecs) {
+                // Called from sam_hdr_dup; need to add sdict entries
+                if (!long_refs) {
+                    if (!(bh->sdict = long_refs = kh_init(s2i)))
+                        return -1;
+                }
+
+                // Add / update length
+                int absent;
+                k = kh_put(s2i, long_refs, bh->target_name[i], &absent);
+                if (absent < 0)
+                    return -1;
+                kh_val(long_refs, k) = hrecs->ref[i].len;
+            }
         }
     }
 
     // Free up any names that have been removed
     for (; i < bh->n_targets; i++) {
+        if (long_refs) {
+            k = kh_get(s2i, long_refs, bh->target_name[i]);
+            if (k < kh_end(long_refs))
+                kh_del(s2i, long_refs, k);
+        }
         free(bh->target_name[i]);
     }
 
