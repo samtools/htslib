@@ -744,6 +744,23 @@ static int sam_hrecs_rebuild_lines(const sam_hrecs_t *hrecs, kstring_t *ks) {
     return 0;
 }
 
+/*
+ * Reconstructs a kstring from the header hash table.
+ * Returns 0 on success
+ *        -1 on failure
+ */
+int sam_hrecs_rebuild_text(const sam_hrecs_t *hrecs, kstring_t *ks) {
+    ks->l = 0;
+
+    if (!hrecs->h || !hrecs->h->size) {
+        return kputsn("", 0, ks) >= 0 ? 0 : -1;
+    }
+    if (sam_hrecs_rebuild_lines(hrecs, ks) != 0)
+        return -1;
+
+    return 0;
+}
+
 static int sam_hrecs_parse_lines(sam_hrecs_t *hrecs, const char *hdr, size_t len) {
     size_t i, lno;
 
@@ -911,6 +928,8 @@ int sam_hdr_update_target_arrays(sam_hdr_t *bh, const sam_hrecs_t *hrecs,
     // hrecs->refs_changed is the first ref that has been updated, so ones
     // before that can be skipped.
     int i;
+    khint_t k;
+    khash_t(s2i) *long_refs = bh->sdict;
     for (i = refs_changed; i < hrecs->nref; i++) {
         if (i >= bh->n_targets
             || strcmp(bh->target_name[i], hrecs->ref[i].name) != 0) {
@@ -922,13 +941,38 @@ int sam_hdr_update_target_arrays(sam_hdr_t *bh, const sam_hrecs_t *hrecs,
         }
         if (hrecs->ref[i].len < UINT32_MAX) {
             bh->target_len[i] = hrecs->ref[i].len;
+
+            if (!long_refs)
+                continue;
+
+            // Check if we have an old length, if so remove it.
+            k = kh_get(s2i, long_refs, bh->target_name[i]);
+            if (k < kh_end(long_refs))
+                kh_del(s2i, long_refs, k);
         } else {
             bh->target_len[i] = UINT32_MAX;
+
+            if (!long_refs) {
+                if (!(bh->sdict = long_refs = kh_init(s2i)))
+                    return -1;
+            }
+
+            // Add / update length
+            int absent;
+            k = kh_put(s2i, long_refs, bh->target_name[i], &absent);
+            if (absent < 0)
+                return -1;
+            kh_val(long_refs, k) = hrecs->ref[i].len;
         }
     }
 
     // Free up any names that have been removed
     for (; i < bh->n_targets; i++) {
+        if (long_refs) {
+            k = kh_get(s2i, long_refs, bh->target_name[i]);
+            if (k < kh_end(long_refs))
+                kh_del(s2i, long_refs, k);
+        }
         free(bh->target_name[i]);
     }
 
@@ -936,7 +980,11 @@ int sam_hdr_update_target_arrays(sam_hdr_t *bh, const sam_hrecs_t *hrecs,
     return 0;
 }
 
-static int rebuild_target_arrays(sam_hdr_t *bh) {
+/*! Rebuild own target_name and target_len arrays from internal hrecs
+ *
+ *  @return 0 on success; -1 on failure
+ */
+static int sam_hdr_rebuild_target_arrays(sam_hdr_t *bh) {
     if (!bh || !bh->hrecs)
         return -1;
 
@@ -1097,7 +1145,7 @@ int sam_hdr_fill_hrecs(sam_hdr_t *bh) {
 
     bh->hrecs = hrecs;
 
-    if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
+    if (sam_hdr_rebuild_target_arrays(bh) != 0)
         return -1;
 
     return 0;
@@ -1192,11 +1240,9 @@ int sam_hdr_rebuild(sam_hdr_t *bh) {
     if (!(hrecs = bh->hrecs))
         return bh->text ? 0 : -1;
 
-    if (hrecs->refs_changed >= 0) {
-        if (rebuild_target_arrays(bh) < 0) {
-            hts_log_error("Header target array rebuild has failed");
-            return -1;
-        }
+    if (sam_hdr_rebuild_target_arrays(bh) < 0) {
+        hts_log_error("Header target array rebuild has failed");
+        return -1;
     }
 
     /* If header text wasn't changed or header is empty, don't rebuild it. */
@@ -1253,7 +1299,7 @@ int sam_hdr_add_lines(sam_hdr_t *bh, const char *lines, size_t len) {
     if (sam_hrecs_parse_lines(hrecs, lines, len) != 0)
         return -1;
 
-    if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
+    if (sam_hdr_rebuild_target_arrays(bh) != 0)
         return -1;
 
     hrecs->dirty = 1;
@@ -1288,7 +1334,7 @@ int sam_hdr_add_line(sam_hdr_t *bh, const char *type, ...) {
     va_end(args);
 
     if (ret == 0) {
-        if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
+        if (sam_hdr_rebuild_target_arrays(bh) != 0)
             return -1;
 
         if (hrecs->dirty)
@@ -1383,7 +1429,7 @@ int sam_hdr_remove_line_id(sam_hdr_t *bh, const char *type, const char *ID_key, 
 
     int ret = sam_hrecs_remove_line(hrecs, type, type_found);
     if (ret == 0) {
-        if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
+        if (sam_hdr_rebuild_target_arrays(bh) != 0)
             return -1;
 
         if (hrecs->dirty)
@@ -1423,7 +1469,7 @@ int sam_hdr_remove_line_pos(sam_hdr_t *bh, const char *type, int position) {
 
     int ret = sam_hrecs_remove_line(hrecs, type, type_found);
     if (ret == 0) {
-        if (hrecs->refs_changed >= 0 && rebuild_target_arrays(bh) != 0)
+        if (sam_hdr_rebuild_target_arrays(bh) != 0)
             return -1;
 
         if (hrecs->dirty)
@@ -1553,7 +1599,7 @@ int sam_hdr_update_line(sam_hdr_t *bh, const char *type,
     ret = sam_hrecs_update_hashes(hrecs, TYPEKEY(type), ty);
 
     if (!ret && hrecs->refs_changed >= 0)
-        ret = rebuild_target_arrays(bh);
+        ret = sam_hdr_rebuild_target_arrays(bh);
 
     if (!ret && hrecs->dirty)
         redact_header_text(bh);
@@ -1898,23 +1944,6 @@ int sam_hdr_remove_tag_id(sam_hdr_t *bh,
         redact_header_text(bh);
 
     return ret;
-}
-
-/*
- * Reconstructs a kstring from the header hash table.
- * Returns 0 on success
- *        -1 on failure
- */
-int sam_hrecs_rebuild_text(const sam_hrecs_t *hrecs, kstring_t *ks) {
-    ks->l = 0;
-
-    if (!hrecs->h || !hrecs->h->size) {
-        return kputsn("", 0, ks) >= 0 ? 0 : -1;
-    }
-    if (sam_hrecs_rebuild_lines(hrecs, ks) != 0)
-        return -1;
-
-    return 0;
 }
 
 /*
