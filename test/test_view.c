@@ -1,7 +1,7 @@
 /*  test/test_view.c -- simple view tool, purely for use in a test harness.
 
     Copyright (C) 2012 Broad Institute.
-    Copyright (C) 2013-2014 Genome Research Ltd.
+    Copyright (C) 2013-2019 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 

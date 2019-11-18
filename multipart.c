@@ -1,6 +1,6 @@
 /*  multipart.c -- GA4GH redirection and multipart backend for file streams.
 
-    Copyright (C) 2016 Genome Research Ltd.
+    Copyright (C) 2016-2017 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 

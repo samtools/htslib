@@ -1,7 +1,7 @@
 #!/bin/sh
 # simple_test_driver.sh -- shell functions for test scripts
 #
-#    Copyright (C) 2017 Genome Research Ltd.
+#    Copyright (C) 2017-2018 Genome Research Ltd.
 #
 #    Author: Robert Davies <rmd@sanger.ac.uk>
 #

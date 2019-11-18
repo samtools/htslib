@@ -1,6 +1,6 @@
 /*  test/test-bcf-translate.c
 
-    Copyright (C) 2017 Genome Research Ltd.
+    Copyright (C) 2017-2018 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2010 Genome Research Ltd.
+Copyright (c) 2010, 2013, 2018 Genome Research Ltd.
 Author: Andrew Whitwham <aw7@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without

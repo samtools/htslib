@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2005-2006, 2008-2009 Genome Research Ltd.
+Copyright (c) 2005-2006, 2008-2009, 2013, 2018 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without

@@ -1,7 +1,7 @@
 /// @file htslib/thread_pool.h
 /// Thread pool for multi-threading applications.
 /*
-    Copyright (c) 2013-2017 Genome Research Ltd.
+    Copyright (c) 2013-2017, 2019 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
