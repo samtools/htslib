@@ -1153,7 +1153,7 @@ hts_itr_t *sam_itr_regarray(const hts_idx_t *idx, sam_hdr_t *hdr, char **regarra
 
     hts_itr_t *itr = NULL;
     if (cidx->fmt == HTS_FMT_CRAI) {
-        r_list = hts_reglist_create(regarray, regcount, &r_count, hdr, cram_name2id);
+        r_list = hts_reglist_create(regarray, regcount, &r_count, cidx->cram, cram_name2id);
         if (!r_list)
             return NULL;
         itr = hts_itr_regions(idx, r_list, r_count, cram_name2id, cidx->cram,
