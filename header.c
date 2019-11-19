@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2018 Genome Research Ltd.
+Copyright (c) 2018-2019 Genome Research Ltd.
 Authors: James Bonfield <jkb@sanger.ac.uk>, Valeriu Ohan <vo2@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without

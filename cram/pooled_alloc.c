@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009 Genome Research Ltd.
+Copyright (c) 2009, 2013, 2015, 2018-2019 Genome Research Ltd.
 Author: Rob Davies <rmd@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without

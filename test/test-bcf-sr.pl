@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # test-bcf-sr.pl -- Test bcf synced reader's allele pairing
 #
-#     Copyright (C) 2017 Genome Research Ltd.
+#     Copyright (C) 2017-2018 Genome Research Ltd.
 #
 #     Author: petr.danecek@sanger
 #

@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-#    Copyright (C) 2013 Genome Research Ltd.
+#    Copyright (C) 2013-2018 Genome Research Ltd.
 #
 #    Author: James Bonfield <jkb@sanger.ac.uk>
 #

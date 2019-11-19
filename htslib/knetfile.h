@@ -1,6 +1,6 @@
 /* The MIT License
 
-   Copyright (c) 2008 by Genome Research Ltd (GRL).
+   Copyright (c) 2008, 2012, 2014 Genome Research Ltd (GRL).
                  2010 by Attractive Chaos <attractor@live.co.uk>
 
    Permission is hereby granted, free of charge, to any person obtaining
