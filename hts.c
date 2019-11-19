@@ -241,7 +241,8 @@ secondline_is_bases(const unsigned char *u, const unsigned char *ulim)
 //     i: integer, s: strand sign, C: CIGAR, O: SAM optional field, Z: anything
 static int
 parse_tabbed_text(char *columns, int column_len,
-                  const unsigned char *u, const unsigned char *ulim)
+                  const unsigned char *u, const unsigned char *ulim,
+                  int *complete)
 {
     const char *str  = (const char *) u;
     const char *slim = (const char *) ulim;
@@ -250,6 +251,7 @@ parse_tabbed_text(char *columns, int column_len,
 
     enum { digit = 1, leading_sign = 2, cigar_operator = 4, other = 8 };
     unsigned seen = 0;
+    *complete = 0;
 
     for (s = str; s < slim; s++)
         if (*s >= ' ') {
@@ -278,7 +280,10 @@ parse_tabbed_text(char *columns, int column_len,
             else type = 'Z';
 
             columns[ncolumns++] = type;
-            if (*s != '\t' || ncolumns >= column_len - 1) break;
+            if (*s != '\t' || ncolumns >= column_len - 1) {
+                *complete = 1; // finished the line or more columns than needed
+                break;
+            }
 
             str = s + 1;
             seen = 0;
@@ -306,6 +311,7 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
 {
     char columns[24];
     unsigned char s[1024];
+    int complete = 0;
     ssize_t len = hpeek(hfile, s, 18);
     if (len < 0) return -1;
 
@@ -429,8 +435,13 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         fmt->format = fastq_format;
         return 0;
     }
-    else if (parse_tabbed_text(columns, sizeof columns, s, &s[len]) > 0) {
-        if (colmatch(columns, "ZiZiiCZiiZZOOOOOOOOOOOOOOOOOOOO+") >= 11) {
+    else if (parse_tabbed_text(columns, sizeof columns, s,
+                               &s[len], &complete) > 0) {
+        // A complete SAM line is at least 11 columns.  On unmapped long reads may
+        // be missing two.  (On mapped long reads we must have an @ header so long
+        // CIGAR is irrelevant.)
+        if (colmatch(columns, "ZiZiiCZiiZZOOOOOOOOOOOOOOOOOOOO+")
+            >= 9 + 2*complete) {
             fmt->category = sequence_data;
             fmt->format = sam;
             fmt->version.major = 1, fmt->version.minor = -1;
