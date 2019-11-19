@@ -645,6 +645,12 @@ sub test_view
     testv $opts, "./test_view $tv_args -p longrefs/longref.tmp.sam_ longrefs/longref.tmp.sam.gz";
     testv $opts, "./compare_sam.pl longrefs/longref.sam longrefs/longref.tmp.sam_";
 
+    # CRAM disabled for now as the positions cannot be 32-bit.  (These tests are useful for
+    # checking SQ headers only.)
+    # testv $opts, "./test_view $tv_args -C -o no_ref -p longrefs/longref.tmp.cram longrefs/longref.sam";
+    # testv $opts, "./test_view $tv_args -p longrefs/longref.tmp.sam_ longrefs/longref.tmp.cram";
+    # testv $opts, "./compare_sam.pl longrefs/longref.sam longrefs/longref.tmp.sam_";
+
     # Build index and compare with on-the-fly one made earlier.
     test_compare $opts, "$$opts{path}/test_index -c longrefs/longref.tmp.sam.gz", "longrefs/longref.tmp.sam.gz.csi.otf", "longrefs/longref.tmp.sam.gz.csi", gz=>1;
 

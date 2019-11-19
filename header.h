@@ -249,7 +249,7 @@ sam_hrecs_t *sam_hrecs_new(void);
  */
 sam_hrecs_t *sam_hrecs_dup(sam_hrecs_t *hrecs);
 
-/*! Update sam_hdr_t target_name and target_len arrays
+/*! Update sam_hdr_t target_name and target_len arrays from source sam_hrecs_t
  *
  *  sam_hdr_t and sam_hrecs_t are specified separately so that sam_hdr_dup
  *  can use it to construct target arrays from the source header.

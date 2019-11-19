@@ -1087,6 +1087,25 @@ static inline int add_md_char(cram_slice *s, int decode_md, char c, int32_t *md_
     return -1;
 }
 
+static int add_cigar(cram_slice *s, uint64_t cig_len, int cig_op) {
+    int nlen = 1 + cig_len/(1<<28);
+    if (s->ncigar +  nlen >= s->cigar_alloc) {
+        s->cigar_alloc = (s->ncigar + nlen) < 1024 ? 1024 : (s->ncigar + nlen)*2;
+        uint32_t *c2 = realloc(s->cigar, s->cigar_alloc * sizeof(*s->cigar));
+        if (!c2)
+            return -1;
+        s->cigar = c2;
+    }
+
+    while (cig_len) {
+        int sub_len = cig_len < (1<<28) ? cig_len : (1<<28)-1;
+        s->cigar[s->ncigar++] = (sub_len<<4) + cig_op;
+        cig_len -= sub_len;
+    }
+
+    return 0;
+}
+
 /*
  * Internal part of cram_decode_slice().
  * Generates the sequence, quality and cigar components.
@@ -1097,13 +1116,10 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                            int has_MD, int has_NM) {
     int prev_pos = 0, f, r = 0, out_sz = 1;
     int seq_pos = 1;
-    int cig_len = 0;
+    uint64_t cig_len = 0;
     int64_t ref_pos = cr->apos;
     int32_t fn, i32;
     enum cigar_op cig_op = BAM_CMATCH;
-    uint32_t *cigar = s->cigar;
-    uint32_t ncigar = s->ncigar;
-    uint32_t cigar_alloc = s->cigar_alloc;
     uint32_t nm = 0;
     int32_t md_dist = 0;
     int orig_aux = 0;
@@ -1134,7 +1150,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     }
 
     ref_pos--; // count from 0
-    cr->cigar = ncigar;
+    cr->cigar = s->ncigar;
 
     if (!(ds & (CRAM_FC | CRAM_FP)))
         goto skip_cigar;
@@ -1142,13 +1158,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     for (f = 0; f < fn; f++) {
         int32_t pos = 0;
         char op;
-
-        if (ncigar+2 >= cigar_alloc) {
-            cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-            if (!(cigar = realloc(cigar, cigar_alloc * sizeof(*cigar))))
-                return -1;
-            s->cigar = cigar;
-        }
 
         if (ds & CRAM_FC) {
             if (!c->comp_hdr->codecs[DS_FC]) return -1;
@@ -1231,13 +1240,15 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             }
 #ifdef USE_X
             if (cig_len && cig_op != BAM_CBASE_MATCH) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
             cig_op = BAM_CBASE_MATCH;
 #else
             if (cig_len && cig_op != BAM_CMATCH) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
             cig_op = BAM_CMATCH;
@@ -1258,7 +1269,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             int have_sc = 0;
 
             if (cig_len) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
             switch (CRAM_MAJOR_VERS(fd->version)) {
@@ -1297,7 +1309,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             }
             if (have_sc) {
                 if (r) return r;
-                cigar[ncigar++] = (out_sz2<<4) + BAM_CSOFT_CLIP;
+                if (add_cigar(s, out_sz2, BAM_CSOFT_CLIP) < 0)
+                    goto err;
                 cig_op = BAM_CSOFT_CLIP;
                 seq_pos += out_sz2;
             }
@@ -1308,7 +1321,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             unsigned char base;
 #ifdef USE_X
             if (cig_len && cig_op != BAM_CBASE_MISMATCH) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
             if (ds & CRAM_BS) {
@@ -1323,7 +1337,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 #else
             int ref_base;
             if (cig_len && cig_op != BAM_CMATCH) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
             if (ds & CRAM_BS) {
@@ -1365,7 +1380,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
         case 'D': { // Deletion; DL
             if (cig_len && cig_op != BAM_CDEL) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
             if (ds & CRAM_DL) {
@@ -1419,7 +1435,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             int32_t out_sz2 = 1;
 
             if (cig_len && cig_op != BAM_CINS) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
 
@@ -1441,7 +1458,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
         case 'i': { // Insertion (single base); BA
             if (cig_len && cig_op != BAM_CINS) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
             if (ds & CRAM_BA) {
@@ -1463,7 +1481,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             int32_t len = 1;
 
             if (cig_len && cig_op != BAM_CMATCH) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
 
@@ -1513,7 +1532,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             int32_t len = 1;
 
             if (cig_len && cig_op != BAM_CMATCH) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
 
@@ -1537,12 +1557,14 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
         case 'B': { // Read base; BA, QS
 #ifdef USE_X
             if (cig_len && cig_op != BAM_CBASE_MISMATCH) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
 #else
             if (cig_len && cig_op != BAM_CMATCH) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
 #endif
@@ -1601,7 +1623,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
         case 'H': { // hard clip; HC
             if (cig_len && cig_op != BAM_CHARD_CLIP) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
             if (ds & CRAM_HC) {
@@ -1618,7 +1641,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
         case 'P': { // padding; PD
             if (cig_len && cig_op != BAM_CPAD) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
             if (ds & CRAM_PD) {
@@ -1635,7 +1659,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
         case 'N': { // Ref skip; RS
             if (cig_len && cig_op != BAM_CREF_SKIP) {
-                cigar[ncigar++] = (cig_len<<4) + cig_op;
+                if (add_cigar(s, cig_len, cig_op) < 0)
+                    goto err;
                 cig_len = 0;
             }
             if (ds & CRAM_RS) {
@@ -1722,21 +1747,17 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             ref_pos += cr->len - seq_pos + 1;
         }
 
-        if (ncigar+1 >= cigar_alloc) {
-            cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-            if (!(cigar = realloc(cigar, cigar_alloc * sizeof(*cigar))))
-                return -1;
-            s->cigar = cigar;
-        }
 #ifdef USE_X
         if (cig_len && cig_op != BAM_CBASE_MATCH) {
-            cigar[ncigar++] = (cig_len<<4) + cig_op;
+            if (add_cigar(s, cig_len, cig_op) < 0)
+                goto err;
             cig_len = 0;
         }
         cig_op = BAM_CBASE_MATCH;
 #else
         if (cig_len && cig_op != BAM_CMATCH) {
-            cigar[ncigar++] = (cig_len<<4) + cig_op;
+            if (add_cigar(s, cig_len, cig_op) < 0)
+                goto err;
             cig_len = 0;
         }
         cig_op = BAM_CMATCH;
@@ -1752,17 +1773,11 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     }
 
     if (cig_len) {
-        if (ncigar >= cigar_alloc) {
-            cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-            if (!(cigar = realloc(cigar, cigar_alloc * sizeof(*cigar))))
-                return -1;
-            s->cigar = cigar;
-        }
-
-        cigar[ncigar++] = (cig_len<<4) + cig_op;
+        if (add_cigar(s, cig_len, cig_op) < 0)
+            goto err;
     }
 
-    cr->ncigar = ncigar - cr->cigar;
+    cr->ncigar = s->ncigar - cr->cigar;
     cr->aend = ref_pos;
 
     //printf("2: %.*s %d .. %d\n", cr->name_len, DSTRING_STR(name_ds) + cr->name, cr->apos, ref_pos);
@@ -1786,10 +1801,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                                      qual, &out_sz2);
         }
     }
-
-    s->cigar = cigar;
-    s->cigar_alloc = cigar_alloc;
-    s->ncigar = ncigar;
 
     if (cr->cram_flags & CRAM_FLAG_NO_SEQ)
         cr->len = 0;
@@ -1834,6 +1845,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     hts_log_error("CRAM CIGAR extends beyond slice reference extents");
     return -1;
 
+ err:
  block_err:
     return -1;
 }
