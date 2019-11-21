@@ -55,6 +55,7 @@ shlib-exports-*.txt
 /test/test-parse-reg
 /test/test_realn
 /test/test-regidx
+/test/test_str2int
 /test/test-vcf-api
 /test/test-vcf-sweep
 /test/test_view

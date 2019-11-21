@@ -32,6 +32,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 #include <inttypes.h>
 
+#include "hts_defs.h"
 #include "hts_log.h"
 
 #ifdef __cplusplus

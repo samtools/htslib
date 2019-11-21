@@ -30,7 +30,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "htslib/hfile.h"
 #include "htslib/kstring.h"
-#include "htslib/sam.h"
+#include "htslib/sam.h"  // For stringify_argv() declaration
 
 #include "hts_internal.h"
 

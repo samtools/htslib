@@ -30,6 +30,7 @@
 #define HTSLIB_FAIDX_H
 
 #include <stdint.h>
+#include "hts_defs.h"
 #include "hts.h"
 
 #ifdef __cplusplus
