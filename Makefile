@@ -48,6 +48,7 @@ datarootdir = $(prefix)/share
 mandir      = $(datarootdir)/man
 man1dir     = $(mandir)/man1
 man5dir     = $(mandir)/man5
+man7dir     = $(mandir)/man7
 pkgconfigdir= $(libdir)/pkgconfig
 
 MKDIR_P = mkdir -p
@@ -529,9 +530,10 @@ install: libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) installdirs install-$(SHLIB
 	$(INSTALL_DATA) libhts.a $(DESTDIR)$(libdir)/libhts.a
 	$(INSTALL_MAN) bgzip.1 htsfile.1 tabix.1 $(DESTDIR)$(man1dir)
 	$(INSTALL_MAN) faidx.5 sam.5 vcf.5 $(DESTDIR)$(man5dir)
+	$(INSTALL_MAN) htslib-s3-plugin.7 $(DESTDIR)$(man7dir)
 
 installdirs:
-	$(INSTALL_DIR) $(DESTDIR)$(bindir) $(DESTDIR)$(includedir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir) $(DESTDIR)$(pkgconfigdir)
+	$(INSTALL_DIR) $(DESTDIR)$(bindir) $(DESTDIR)$(includedir) $(DESTDIR)$(includedir)/htslib $(DESTDIR)$(libdir) $(DESTDIR)$(man1dir) $(DESTDIR)$(man5dir) $(DESTDIR)/$(man7dir) $(DESTDIR)$(pkgconfigdir)
 	if test -n "$(plugindir)"; then $(INSTALL_DIR) $(DESTDIR)$(plugindir); fi
 
 # After installation, the real file in $(libdir) will be libhts.so.X.Y.Z,
