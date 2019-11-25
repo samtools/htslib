@@ -104,11 +104,8 @@ include htslib_vars.mk
 # into here.
 PACKAGE_VERSION := $(shell ./version.sh)
 
-# Increment this for each ABI breaking change until ABI version 3 becomes
-# stable
-TWO_TO_THREE_TRANSITION_COUNT = 13
-LIBHTS_SOVERSION = 2to3part$(TWO_TO_THREE_TRANSITION_COUNT)
-MACH_O_COMPATIBILITY_VERSION = 2.$(TWO_TO_THREE_TRANSITION_COUNT)
+LIBHTS_SOVERSION = 3
+MACH_O_COMPATIBILITY_VERSION = $(LIBHTS_SOVERSION)
 
 # $(NUMERIC_VERSION) is for items that must have a numeric X.Y.Z string
 # even if this is a dirty or untagged Git working tree.
