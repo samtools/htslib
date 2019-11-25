@@ -885,13 +885,10 @@ cram_block *cram_read_block(cram_fd *fd) {
             return NULL;
         }
 
-        crc = crc32(crc, b->data ? b->data : (uc *)"", b->alloc);
-        if (crc != b->crc32) {
-            hts_log_error("Block CRC32 failure");
-            free(b->data);
-            free(b);
-            return NULL;
-        }
+        b->crc32_checked = fd->ignore_md5;
+        b->crc_part = crc;
+    } else {
+        b->crc32_checked = 1; // CRC not present
     }
 
     b->orig_method = b->method;
@@ -991,6 +988,15 @@ void cram_free_block(cram_block *b) {
 int cram_uncompress_block(cram_block *b) {
     char *uncomp;
     size_t uncomp_size = 0;
+
+    if (b->crc32_checked == 0) {
+        uint32_t crc = crc32(b->crc_part, b->data ? b->data : (uc *)"", b->alloc);
+        b->crc32_checked = 1;
+        if (crc != b->crc32) {
+            hts_log_error("Block CRC32 failure");
+            return -1;
+        }
+    }
 
     if (b->uncomp_size == 0) {
         // blank block
