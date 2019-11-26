@@ -70,6 +70,10 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
     HTSLIB_EXPORT
     int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, hts_pos_t *beg, hts_pos_t *end);
 
+/// Build an index of the lines in a BGZF-compressed file
+/** The index struct returned by a successful call should be freed
+    via tbx_destroy() when it is no longer needed.
+*/
     HTSLIB_EXPORT
     tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf);
 /*
@@ -118,6 +122,9 @@ extern const tbx_conf_t tbx_conf_gff, tbx_conf_bed, tbx_conf_psltbl, tbx_conf_sa
 
         HTS_IDX_SAVE_REMOTE   Save a local copy of any remote indexes
         HTS_IDX_SILENT_FAIL   Fail silently if the index is not present
+
+    The index struct returned by a successful call should be freed
+    via tbx_destroy() when it is no longer needed.
 */
     HTSLIB_EXPORT
     tbx_t *tbx_index_load3(const char *fn, const char *fnidx, int flags);

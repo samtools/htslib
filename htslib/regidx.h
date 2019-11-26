@@ -142,6 +142,9 @@ int regidx_parse_vcf(const char*,char**,char**,hts_pos_t*,hts_pos_t*,void*,void*
  *  @param usr:    optional user data passed to regidx_parse_f
  *
  *  Returns index on success or NULL on error.
+ *
+ *  The regidx_t index struct returned by a successful call should be freed
+ *  via regidx_destroy() when it is no longer needed.
  */
 HTSLIB_EXPORT
 regidx_t *regidx_init(const char *fname, regidx_parse_f parsef, regidx_free_f freef, size_t payload_size, void *usr);
@@ -199,6 +202,10 @@ int regidx_nregs(regidx_t *idx);
  *  regitr_init() - initialize an iterator. The idx parameter is required only
  *                  with regitr_loop. If only regitr_overlap is called, NULL
  *                  can be given.
+ *
+ *                  The regitr_t struct returned by a successful regitr_init()
+ *                  call should be freed via regitr_destroy() when it is no
+ *                  longer needed.
  *
  *  regitr_reset() - initialize an iterator for a repeated regitr_loop cycle.
  *                  Not required with regitr_overlap.

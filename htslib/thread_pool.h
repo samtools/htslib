@@ -100,6 +100,9 @@ typedef struct hts_tpool_result hts_tpool_result;
  *
  * Returns pool pointer on success;
  *         NULL on failure
+ *
+ * The hts_tpool struct returned by a successful call should be freed
+ * via hts_tpool_destroy() when it is no longer needed.
  */
 HTSLIB_EXPORT
 hts_tpool *hts_tpool_init(int n);
@@ -298,6 +301,9 @@ void *hts_tpool_result_data(hts_tpool_result *r);
  *
  * Results hts_tpool_process pointer on success;
  *         NULL on failure
+ *
+ * The hts_tpool_process struct returned by a successful call should be freed
+ * via hts_tpool_process_destroy() when it is no longer needed.
  */
 HTSLIB_EXPORT
 hts_tpool_process *hts_tpool_process_init(hts_tpool *p, int qsize, int in_only);

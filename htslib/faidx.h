@@ -121,6 +121,9 @@ The bgzip index is only needed if fn is compressed.
 
 If (flags & FAI_CREATE) is true, the index files will be built using
 fai_build3() if they are not already present.
+
+The struct returned by a successful call should be freed via fai_destroy()
+when it is no longer needed.
 */
 HTSLIB_EXPORT
 faidx_t *fai_load3(const char *fn, const char *fnfai, const char *fngzi,
@@ -149,6 +152,9 @@ The bgzip index is only needed if fn is compressed.
 
 If (flags & FAI_CREATE) is true, the index files will be built using
 fai_build3() if they are not already present.
+
+The struct returned by a successful call should be freed via fai_destroy()
+when it is no longer needed.
 */
 HTSLIB_EXPORT
 faidx_t *fai_load3_format(const char *fn, const char *fnfai, const char *fngzi,

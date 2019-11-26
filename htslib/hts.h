@@ -704,6 +704,9 @@ typedef hts_itr_t hts_itr_multi_t;
     @param min_shift  Number of bits for the minimal interval
     @param n_lvls     Number of levels in the binning index
     @return An initialised hts_idx_t struct on success; NULL on failure
+
+The struct returned by a successful call should be freed via hts_idx_destroy()
+when it is no longer needed.
 */
 HTSLIB_EXPORT
 hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_lvls);
@@ -837,6 +840,9 @@ hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx);
 
         HTS_IDX_SAVE_REMOTE   Save a local copy of any remote indexes
         HTS_IDX_SILENT_FAIL   Fail silently if the index is not present
+
+    The index struct returned by a successful call should be freed
+    via hts_idx_destroy() when it is no longer needed.
 */
 HTSLIB_EXPORT
 hts_idx_t *hts_idx_load3(const char *fn, const char *fnidx, int fmt, int flags);
@@ -1036,6 +1042,9 @@ const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
     @param end      End of region
     @param readrec  Callback to read a record from the input file
     @return An iterator on success; NULL on failure
+
+    The iterator struct returned by a successful call should be freed
+    via hts_itr_destroy() when it is no longer needed.
  */
 HTSLIB_EXPORT
 hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, hts_readrec_func *readrec);
@@ -1057,6 +1066,9 @@ typedef hts_itr_t *hts_itr_query_func(const hts_idx_t *idx, int tid, hts_pos_t b
                      start and end position
     @param readrec   Callback to read a record from the input file
     @return An iterator on success; NULL on error
+
+    The iterator struct returned by a successful call should be freed
+    via hts_itr_destroy() when it is no longer needed.
  */
 HTSLIB_EXPORT
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec);
@@ -1105,6 +1117,9 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter);
     @param seek         Callback to seek in the input file
     @param tell         Callback to return current input file location
     @return An iterator on success; NULL on failure
+
+    The iterator struct returned by a successful call should be freed
+    via hts_itr_destroy() when it is no longer needed.
  */
 HTSLIB_EXPORT
 hts_itr_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell);
@@ -1125,6 +1140,9 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r);
     @param hdr       Header for the sam/bam/cram file
     @param getid     Callback to convert target names to target ids.
     @return  A region list on success, NULL on failure
+
+    The hts_reglist_t struct returned by a successful call should be freed
+    via hts_reglist_free() when it is no longer needed.
  */
 HTSLIB_EXPORT
 hts_reglist_t *hts_reglist_create(char **argv, int argc, int *r_count, void *hdr,  hts_name2id_f getid);

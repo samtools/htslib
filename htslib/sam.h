@@ -327,6 +327,9 @@ typedef struct {
 /*!
  *
  * @return  A valid pointer to new header on success, NULL on failure
+ *
+ * The sam_hdr_t struct returned by a successful call should be freed
+ * via sam_hdr_destroy() when it is no longer needed.
  */
 HTSLIB_EXPORT
 sam_hdr_t *sam_hdr_init(void);
@@ -338,6 +341,9 @@ sam_hdr_t *sam_hdr_init(void);
  *
  * This function only works with BAM files.  It is usually better to use
  * sam_hdr_read(), which works on SAM, BAM and CRAM files.
+ *
+ * The sam_hdr_t struct returned by a successful call should be freed
+ * via sam_hdr_destroy() when it is no longer needed.
  */
 HTSLIB_EXPORT
 sam_hdr_t *bam_hdr_read(BGZF *fp);
@@ -363,6 +369,9 @@ void sam_hdr_destroy(sam_hdr_t *h);
 /// Duplicate a header structure.
 /*!
  * @return  A valid pointer to new header on success, NULL on failure
+ *
+ * The sam_hdr_t struct returned by a successful call should be freed
+ * via sam_hdr_destroy() when it is no longer needed.
  */
 HTSLIB_EXPORT
 sam_hdr_t *sam_hdr_dup(const sam_hdr_t *h0);
@@ -383,6 +392,9 @@ typedef htsFile samFile;
  * @return A populated sam_hdr_t structure on success; NULL on failure.
  * @note The text field of the returned header will be NULL, and the l_text
  * field will be zero.
+ *
+ * The sam_hdr_t struct returned by a successful call should be freed
+ * via sam_hdr_destroy() when it is no longer needed.
  */
 HTSLIB_EXPORT
 sam_hdr_t *sam_hdr_parse(size_t l_text, const char *text);
@@ -391,6 +403,9 @@ sam_hdr_t *sam_hdr_parse(size_t l_text, const char *text);
 /*!
  * @param fp    Pointer to a SAM, BAM or CRAM file handle
  * @return  A populated sam_hdr_t struct on success; NULL on failure.
+ *
+ * The sam_hdr_t struct returned by a successful call should be freed
+ * via sam_hdr_destroy() when it is no longer needed.
  */
 HTSLIB_EXPORT
 sam_hdr_t *sam_hdr_read(samFile *fp);
@@ -814,11 +829,14 @@ void sam_hdr_incr_ref(sam_hdr_t *h);
 /// Create a new bam1_t alignment structure
 /**
    @return An empty bam1_t structure on success, NULL on failure
+
+   The bam1_t struct returned by a successful call should be freed
+   via bam_destroy1() when it is no longer needed.
  */
 HTSLIB_EXPORT
 bam1_t *bam_init1(void);
 
-/// Destory a bam1_t structure
+/// Destroy a bam1_t structure
 /**
    @param b  structure to destroy
 
@@ -969,6 +987,9 @@ bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc) HTS_RESULT_USED;
 /**
    @param bsrc  Source alignment record
    @return Pointer to a new alignment record on success; NULL on failure
+
+   The bam1_t struct returned by a successful call should be freed
+   via bam_destroy1() when it is no longer needed.
  */
 HTSLIB_EXPORT
 bam1_t *bam_dup1(const bam1_t *bsrc);
@@ -1113,6 +1134,9 @@ The @p flags parameter can be set to a combination of the following values:
 
 Note that HTS_IDX_SAVE_REMOTE has no effect for remote CRAM indexes.  They
 are always downloaded and never cached locally.
+
+The index struct returned by a successful call should be freed
+via hts_idx_destroy() when it is no longer needed.
 */
 HTSLIB_EXPORT
 hts_idx_t *sam_index_load3(htsFile *fp, const char *fn, const char *fnidx, int flags);
@@ -1591,6 +1615,9 @@ typedef struct __bam_mplp_t *bam_mplp_t;
      *  @func:      see mplp_func in bam_plcmd.c in samtools for an example. Expected return
      *              status: 0 on success, -1 on end, < -1 on non-recoverable errors
      *  @data:      user data to pass to @func
+     *
+     *  The struct returned by a successful call should be freed
+     *  via bam_plp_destroy() when it is no longer needed.
      */
     HTSLIB_EXPORT
     bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data);
@@ -1650,8 +1677,13 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     HTSLIB_EXPORT
     int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) HTS_RESULT_USED;
 
+    /// Create a new bam_mplp_t structure
+    /** The struct returned by a successful call should be freed
+     *  via bam_mplp_destroy() when it is no longer needed.
+     */
     HTSLIB_EXPORT
     bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data);
+
     /// Set up mpileup overlap detection
     /**
      * @param iter    mpileup iterator

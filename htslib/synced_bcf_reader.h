@@ -185,11 +185,15 @@ typedef struct
 }
 bcf_srs_t;
 
-/** Init bcf_srs_t struct */
+/** Allocate and initialize a bcf_srs_t struct.
+ *
+ *  The bcf_srs_t struct returned by a successful call should be freed
+ *  via bcf_sr_destroy() when it is no longer needed.
+ */
 HTSLIB_EXPORT
 bcf_srs_t *bcf_sr_init(void);
 
-/** Destroy  bcf_srs_t struct */
+/** Destroy a bcf_srs_t struct */
 HTSLIB_EXPORT
 void bcf_sr_destroy(bcf_srs_t *readers);
 
@@ -323,6 +327,9 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file);
  *              supply 'from' in place of 'to'. When 'to' is negative, first
  *              abs(to) will be attempted and if that fails, 'from' will be used
  *              instead.
+ *
+ *  The bcf_sr_regions_t struct returned by a successful call should be freed
+ *  via bcf_sr_regions_destroy() when it is no longer needed.
  */
 HTSLIB_EXPORT
 bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int chr, int from, int to);
