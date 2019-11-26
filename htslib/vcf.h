@@ -259,6 +259,9 @@ typedef struct {
      *
      *  When opened for writing, the mandatory fileFormat and
      *  FILTER=PASS lines are added automatically.
+     *
+     * The bcf_hdr_t struct returned by a successful call should be freed
+     * via bcf_hdr_destroy() when it is no longer needed.
      */
     HTSLIB_EXPORT
     bcf_hdr_t *bcf_hdr_init(const char *mode);
@@ -267,7 +270,11 @@ typedef struct {
     HTSLIB_EXPORT
     void bcf_hdr_destroy(bcf_hdr_t *h);
 
-    /** Initialize a bcf1_t object; equivalent to calloc(1, sizeof(bcf1_t)) */
+    /** Allocate and initialize a bcf1_t object.
+     *
+     * The bcf1_t struct returned by a successful call should be freed
+     * via bcf_destroy() when it is no longer needed.
+     */
     HTSLIB_EXPORT
     bcf1_t *bcf_init(void);
 
@@ -302,6 +309,9 @@ typedef struct {
     /** @param  fp  The file to read the header from
         @return Pointer to a populated header structure on success;
                 NULL on failure
+
+        The bcf_hdr_t struct returned by a successful call should be freed
+        via bcf_hdr_destroy() when it is no longer needed.
     */
     HTSLIB_EXPORT
     bcf_hdr_t *bcf_hdr_read(htsFile *fp) HTS_RESULT_USED;
@@ -389,6 +399,9 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  Note that bcf_unpack() must be called on the returned copy as if it was
      *  obtained from bcf_read(). Also note that bcf_dup() calls bcf_sync1(src)
      *  internally to reflect any changes made by bcf_update_* functions.
+     *
+     *  The bcf1_t struct returned by a successful call should be freed
+     *  via bcf_destroy() when it is no longer needed.
      */
     HTSLIB_EXPORT
     bcf1_t *bcf_dup(bcf1_t *src);
@@ -415,7 +428,10 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
         @return Pointer to a populated header structure on success;
                 NULL on failure
 
-        Use bcf_hdr_read() instead
+        Use bcf_hdr_read() instead.
+
+        The bcf_hdr_t struct returned by a successful call should be freed
+        via bcf_hdr_destroy() when it is no longer needed.
     */
     HTSLIB_EXPORT
     bcf_hdr_t *vcf_hdr_read(htsFile *fp) HTS_RESULT_USED;
@@ -472,7 +488,11 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  Header querying and manipulation routines
      **************************************************************************/
 
-    /** Create a new header using the supplied template */
+    /** Create a new header using the supplied template
+     *
+     *  The bcf_hdr_t struct returned by a successful call should be freed
+     *  via bcf_hdr_destroy() when it is no longer needed.
+     */
     HTSLIB_EXPORT
     bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr);
 
@@ -574,6 +594,8 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  by comparing n and bcf_hdr_nsamples(out_hdr).
      *  This function can be used to reorder samples.
      *  See also bcf_subset() which subsets individual records.
+     *  The bcf_hdr_t struct returned by a successful call should be freed
+     *  via bcf_hdr_destroy() when it is no longer needed.
      */
     HTSLIB_EXPORT
     bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int *imap);
@@ -629,6 +651,9 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     /// Duplicate a header record
     /** @param hrec   Header record to copy
         @return A new header record on success; NULL on failure
+
+        The bcf_hrec_t struct returned by a successful call should be freed
+        via bcf_hrec_destroy() when it is no longer needed.
     */
     HTSLIB_EXPORT
     bcf_hrec_t *bcf_hrec_dup(bcf_hrec_t *hrec);

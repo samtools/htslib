@@ -247,6 +247,9 @@ int cram_copy_slice(cram_fd *in, cram_fd *out, int32_t num_slice);
  * @return
  * Returns block pointer on success;
  *         NULL on failure
+ *
+ * The cram_block struct returned by a successful call should be freed
+ * via cram_free_block() when it is no longer needed.
  */
 HTSLIB_EXPORT
 cram_block *cram_new_block(enum cram_content_type content_type,
@@ -257,6 +260,9 @@ cram_block *cram_new_block(enum cram_content_type content_type,
  * @return
  * Returns cram_block pointer on success;
  *         NULL on failure
+ *
+ * The cram_block struct returned by a successful call should be freed
+ * via cram_free_block() when it is no longer needed.
  */
 HTSLIB_EXPORT
 cram_block *cram_read_block(cram_fd *fd);
@@ -312,6 +318,9 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
  * @return
  * Returns cram_container ptr on success;
  *         NULL on failure
+ *
+ * The cram_container struct returned by a successful call should be freed
+ * via cram_free_container() when it is no longer needed.
  */
 HTSLIB_EXPORT
 cram_container *cram_new_container(int nrec, int nslice);
@@ -323,6 +332,9 @@ void cram_free_container(cram_container *c);
  * @return
  * Returns cram_container on success;
  *         NULL on failure or no container left (fd->err == 0).
+ *
+ * The cram_container struct returned by a successful call should be freed
+ * via cram_free_container() when it is no longer needed.
  */
 HTSLIB_EXPORT
 cram_container *cram_read_container(cram_fd *fd);
