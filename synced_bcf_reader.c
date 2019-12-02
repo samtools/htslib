@@ -817,7 +817,7 @@ static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start,
     return 0; // FIXME: check for errs in this function
 }
 
-int _regions_cmp(const void *aptr, const void *bptr)
+static int regions_cmp(const void *aptr, const void *bptr)
 {
     region1_t *a = (region1_t*)aptr;
     region1_t *b = (region1_t*)bptr;
@@ -827,7 +827,7 @@ int _regions_cmp(const void *aptr, const void *bptr)
     if ( a->end > b->end ) return 1;
     return 0;
 }
-void _regions_merge(region_t *reg)
+static void regions_merge(region_t *reg)
 {
     int i = 0, j;
     while ( i<reg->nregs )
@@ -849,8 +849,8 @@ void _regions_sort_and_merge(bcf_sr_regions_t *reg)
     int i;
     for (i=0; i<reg->nseqs; i++)
     {
-        qsort(reg->regs[i].regs, reg->regs[i].nregs, sizeof(*reg->regs[i].regs), _regions_cmp);
-        _regions_merge(&reg->regs[i]);
+        qsort(reg->regs[i].regs, reg->regs[i].nregs, sizeof(*reg->regs[i].regs), regions_cmp);
+        regions_merge(&reg->regs[i]);
     }
 }
 
@@ -1096,7 +1096,7 @@ int bcf_sr_regions_seek(bcf_sr_regions_t *reg, const char *seq)
 }
 
 // Returns 0 on success, -1 when done
-int advance_creg(region_t *reg)
+static int advance_creg(region_t *reg)
 {
     int i = reg->creg + 1;
     while ( i<reg->nregs && reg->regs[i].start > reg->regs[i].end ) i++;    // regions with start>end are marked to skip by merge_regions()
