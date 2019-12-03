@@ -1145,7 +1145,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
         if (ncigar+2 >= cigar_alloc) {
             cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-            if (!(cigar = realloc(cigar, cigar_alloc * sizeof(*cigar))))
+            if (!(cigar = realloc(s->cigar, cigar_alloc * sizeof(*cigar))))
                 return -1;
             s->cigar = cigar;
         }
@@ -1724,7 +1724,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
         if (ncigar+1 >= cigar_alloc) {
             cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-            if (!(cigar = realloc(cigar, cigar_alloc * sizeof(*cigar))))
+            if (!(cigar = realloc(s->cigar, cigar_alloc * sizeof(*cigar))))
                 return -1;
             s->cigar = cigar;
         }
@@ -1754,7 +1754,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     if (cig_len) {
         if (ncigar >= cigar_alloc) {
             cigar_alloc = cigar_alloc ? cigar_alloc*2 : 1024;
-            if (!(cigar = realloc(cigar, cigar_alloc * sizeof(*cigar))))
+            if (!(cigar = realloc(s->cigar, cigar_alloc * sizeof(*cigar))))
                 return -1;
             s->cigar = cigar;
         }
@@ -1876,9 +1876,8 @@ static int cram_decode_aux_1_0(cram_container *c, cram_slice *s,
         r |= c->comp_hdr->codecs[DS_TN]->decode(s, c->comp_hdr->codecs[DS_TN],
                                                 blk, (char *)&id, &out_sz);
         if (out_sz == 3) {
-            tag_data[0] = ((char *)&id)[0];
-            tag_data[1] = ((char *)&id)[1];
-            tag_data[2] = ((char *)&id)[2];
+            // Tag name stored as 3 chars instead of an int?
+            memcpy(tag_data, &id, 3);
         } else {
             tag_data[0] = (id>>16) & 0xff;
             tag_data[1] = (id>>8)  & 0xff;

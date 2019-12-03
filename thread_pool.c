@@ -57,10 +57,11 @@ static int worker_id(hts_tpool *p) {
     return -1;
 }
 
-int DBG_OUT(FILE *fp, char *fmt, ...) {
+void DBG_OUT(FILE *fp, char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    return vfprintf(fp, fmt, args);
+    vfprintf(fp, fmt, args);
+    va_end(args);
 }
 #else
 #define DBG_OUT(...) do{}while(0)

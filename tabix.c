@@ -176,6 +176,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
             if ( bcf_hdr_write(out,hdr)!=0 ) error("Failed to write to %s\n", fname);
         if ( !args->header_only )
         {
+            assert(regs != NULL);
             bcf1_t *rec = bcf_init();
             for (i=0; i<nregs; i++)
             {

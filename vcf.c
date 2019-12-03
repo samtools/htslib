@@ -523,7 +523,7 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
     // contig
     int i, ret, replacing = 0;
     khint_t k;
-    char *str;
+    char *str = NULL;
 
     if ( !strcmp(hrec->key, "contig") )
     {
@@ -548,7 +548,7 @@ static int bcf_hdr_register_hrec(bcf_hdr_t *hdr, bcf_hrec_t *hrec)
         vdict_t *d = (vdict_t*)hdr->dict[BCF_DT_CTG];
         khint_t k = kh_get(vdict, d, str);
         if ( k != kh_end(d) ) { // already present
-            free(str);
+            free(str); str=NULL;
             if (kh_val(d, k).hrec[0] != NULL) // and not removed
                 return 0;
             replacing = 1;
@@ -3554,8 +3554,8 @@ int bcf_translate(const bcf_hdr_t *dst_hdr, bcf_hdr_t *src_hdr, bcf1_t *line)
         {
             uint8_t *p = line->d.fmt[i].p - line->d.fmt[i].p_off;    // pointer to the vector size (4bits) and BT type (4bits)
             if ( dst_size==BCF_BT_INT8 ) { p[1] = dst_id; }
-            else if ( dst_size==BCF_BT_INT16 ) { uint8_t *x = (uint8_t*) &dst_id; p[1] = x[0]; p[2] = x[1]; }
-            else { uint8_t *x = (uint8_t*) &dst_id; p[1] = x[0]; p[2] = x[1]; p[3] = x[2]; p[4] = x[3]; }
+            else if ( dst_size==BCF_BT_INT16 ) { i16_to_le(dst_id, p + 1); }
+            else { i32_to_le(dst_id, p + 1); }
         }
         else    // must realloc
         {
@@ -4061,6 +4061,7 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
     // Encode the values and determine the size required to accommodate the values
     kstring_t str = {0,0,0};
     bcf_enc_int1(&str, fmt_id);
+    assert(values != NULL);
     if ( type==BCF_HT_INT )
         bcf_enc_vint(&str, n, (int32_t*)values, nps);
     else if ( type==BCF_HT_REAL )

@@ -321,7 +321,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     // Update list of chromosomes
     if ( !files->explicit_regs && !files->streaming )
     {
-        int n,i;
+        int n = 0, i;
         const char **names = reader->tbx_idx ? tbx_seqnames(reader->tbx_idx, &n) : bcf_hdr_seqnames(reader->header, &n);
         for (i=0; i<n; i++)
         {

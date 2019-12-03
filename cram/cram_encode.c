@@ -547,7 +547,8 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s) {
     if (!b)
         return NULL;
 
-    if (NULL == (cp = buf = malloc(16+5*(8+s->hdr->num_blocks)))) {
+    cp = buf = malloc(16+5*(8+s->hdr->num_blocks));
+    if (NULL == buf) {
         cram_free_block(b);
         return NULL;
     }

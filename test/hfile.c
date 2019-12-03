@@ -180,6 +180,8 @@ int main(void)
         text = slurp(buffer);
         if (strcmp(original, text) != 0) {
             fprintf(stderr, "%s differs from vcf.c\n", buffer);
+            free(text);
+            free(original);
             return EXIT_FAILURE;
         }
         free(text);

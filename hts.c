@@ -2062,6 +2062,7 @@ static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
 int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
 {
     int ret, save;
+    if (idx == NULL || fn == NULL) { errno = EINVAL; return -1; }
     char *fnidx = (char*)calloc(1, strlen(fn) + 5);
     if (fnidx == NULL) return -1;
 

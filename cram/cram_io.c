@@ -537,8 +537,8 @@ static int int32_decode(cram_fd *fd, int32_t *val) {
  *         -1 on failure
  */
 static int int32_encode(cram_fd *fd, int32_t val) {
-    val = le_int4(val);
-    if (4 != hwrite(fd->fp, &val, 4))
+    uint32_t v = le_int4(val);
+    if (4 != hwrite(fd->fp, &v, 4))
         return -1;
 
     return 4;
@@ -2465,7 +2465,9 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
 }
 
 static void cram_ref_incr_locked(refs_t *r, int id) {
-    RP("%d INC REF %d, %d %p\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count+1:-999), id>=0?r->ref_id[id]->seq:(char *)1);
+    RP("%d INC REF %d, %d %p\n", gettid(), id,
+       (int)(id>=0 && r->ref_id[id]?r->ref_id[id]->count+1:-999),
+       id>=0 && r->ref_id[id]?r->ref_id[id]->seq:(char *)1);
 
     if (id < 0 || !r->ref_id[id] || !r->ref_id[id]->seq)
         return;
@@ -2483,10 +2485,11 @@ void cram_ref_incr(refs_t *r, int id) {
 }
 
 static void cram_ref_decr_locked(refs_t *r, int id) {
-    RP("%d DEC REF %d, %d %p\n", gettid(), id, (int)(id>=0?r->ref_id[id]->count-1:-999), id>=0?r->ref_id[id]->seq:(char *)1);
+    RP("%d DEC REF %d, %d %p\n", gettid(), id,
+       (int)(id>=0 && r->ref_id[id]?r->ref_id[id]->count-1:-999),
+       id>=0 && r->ref_id[id]?r->ref_id[id]->seq:(char *)1);
 
     if (id < 0 || !r->ref_id[id] || !r->ref_id[id]->seq) {
-        assert(r->ref_id[id]->count >= 0);
         return;
     }
 
@@ -2638,7 +2641,7 @@ ref_entry *cram_ref_load(refs_t *r, int id, int is_md5) {
 
     RP("%d Loaded ref %d (%d..%d) = %p\n", gettid(), id, start, end, seq);
 
-    RP("%d INC REF %d, %d\n", gettid(), id, (int)(e->count+1));
+    RP("%d INC REF %d, %"PRId64"\n", gettid(), id, (e->count+1));
     e->seq = seq;
     e->mf = NULL;
     e->count++;
@@ -2647,7 +2650,7 @@ ref_entry *cram_ref_load(refs_t *r, int id, int is_md5) {
      * Also keep track of last used ref so incr/decr loops on the same
      * sequence don't cause load/free loops.
      */
-    RP("%d cram_ref_load INCR %d => %d\n", gettid(), id, e->count+1);
+    RP("%d cram_ref_load INCR %d => %"PRId64"\n", gettid(), id, e->count+1);
     r->last = e;
     e->count++;
 
