@@ -2938,7 +2938,7 @@ cram_container *cram_new_container(int nrec, int nslice) {
 
     c->bams = NULL;
 
-    if (!(c->slices = (cram_slice **)calloc(nslice, sizeof(cram_slice *))))
+    if (!(c->slices = calloc(nslice != 0 ? nslice : 1, sizeof(cram_slice *))))
         goto err;
     c->slice = NULL;
 

@@ -617,6 +617,7 @@ static void *tpool_worker(void *arg) {
 }
 
 static void wake_next_worker(hts_tpool_process *q, int locked) {
+    if (!q) return;
     hts_tpool *p = q->p;
     if (!locked)
         pthread_mutex_lock(&p->pool_m);
@@ -641,7 +642,7 @@ static void wake_next_worker(hts_tpool_process *q, int locked) {
 
     int running = p->tsize - p->nwaiting;
     int sig = p->t_stack_top >= 0 && p->njobs > p->tsize - p->nwaiting
-        && (!q || q->n_processing < q->qsize - q->n_output);
+        && (q->n_processing < q->qsize - q->n_output);
 
 //#define AVG_USAGE
 #ifdef AVG_USAGE

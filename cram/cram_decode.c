@@ -1779,12 +1779,10 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
     if ((ds & CRAM_QS) && (cf & CRAM_FLAG_PRESERVE_QUAL_SCORES)) {
         int32_t out_sz2 = cr->len;
 
-        if (ds & CRAM_QS) {
-            if (!c->comp_hdr->codecs[DS_QS]) return -1;
-            r |= c->comp_hdr->codecs[DS_QS]
-                            ->decode(s, c->comp_hdr->codecs[DS_QS], blk,
-                                     qual, &out_sz2);
-        }
+        if (!c->comp_hdr->codecs[DS_QS]) return -1;
+        r |= c->comp_hdr->codecs[DS_QS]
+            ->decode(s, c->comp_hdr->codecs[DS_QS], blk,
+                     qual, &out_sz2);
     }
 
     s->cigar = cigar;

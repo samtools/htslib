@@ -3600,6 +3600,7 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
     bcf_hdr_t *h = bcf_hdr_init("w");
     if (!h) {
         hts_log_error("Failed to allocate bcf header");
+        khash_str2int_destroy(names_hash);
         return NULL;
     }
     bcf_hdr_format(h0, 1, &htxt);

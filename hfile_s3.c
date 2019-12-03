@@ -890,19 +890,19 @@ static int query_cmp(const void *p1, const void *p2) {
 /* Query strings must be in alphabetical order for authorisation */
 
 static int order_query_string(kstring_t *qs) {
-    int *query_offset;
+    int *query_offset = NULL;
     int num_queries, i;
-    char **queries;
+    char **queries = NULL;
     kstring_t ordered = {0, 0, NULL};
-    char *escaped;
+    char *escaped = NULL;
+    int ret = -1;
 
     if ((query_offset = ksplit(qs, '&', &num_queries)) == NULL) {
         return -1;
     }
 
-    if ((queries = malloc(num_queries * sizeof(char*))) == NULL) {
-        return -1;
-    }
+    if ((queries = malloc(num_queries * sizeof(char*))) == NULL)
+        goto err;
 
     for (i = 0; i < num_queries; i++) {
         queries[i] = qs->s + query_offset[i];
@@ -918,19 +918,20 @@ static int order_query_string(kstring_t *qs) {
         kputs(queries[i], &ordered);
     }
 
-    if ((escaped = escape_query(ordered.s)) == NULL) {
-        return -1;
-    }
+    if ((escaped = escape_query(ordered.s)) == NULL)
+        goto err;
 
     qs->l = 0;
     kputs(escaped, qs);
 
+    ret = 0;
+ err:
     free(ordered.s);
     free(queries);
     free(query_offset);
     free(escaped);
 
-    return 0;
+    return ret;
 }
 
 

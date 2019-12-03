@@ -2176,6 +2176,7 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
         // FIXME: we huffman and e_huffman structs amended, we could
         // unify this.
         cram_codec *t = malloc(sizeof(*t));
+        if (!t) return -1;
         t->codec = E_HUFFMAN;
         t->free = cram_huffman_encode_free;
         t->store = cram_huffman_encode_store;
@@ -2224,6 +2225,7 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
 
     case E_BYTE_ARRAY_LEN: {
         cram_codec *t = malloc(sizeof(*t));
+        if (!t) return -1;
         t->codec = E_BYTE_ARRAY_LEN;
         t->free   = cram_byte_array_len_encode_free;
         t->store  = cram_byte_array_len_encode_store;
@@ -2239,7 +2241,6 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
         // {len,val}_{encoding,dat} are undefined, but unused.
         // Leaving them unset here means we can test that assertion.
         *c = *t;
-        free(t);
         break;
     }
 
