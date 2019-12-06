@@ -1,7 +1,7 @@
 /* bgzip.c -- Block compression/decompression utility.
 
    Copyright (C) 2008, 2009 Broad Institute / Massachusetts Institute of Technology
-   Copyright (C) 2010, 2013-2018 Genome Research Ltd.
+   Copyright (C) 2010, 2013-2019 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -33,7 +34,6 @@
 #include <stdarg.h>
 #include <getopt.h>
 #include <inttypes.h>
-#include <sys/stat.h>
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 
@@ -53,42 +53,76 @@ static void error(const char *format, ...)
     exit(EXIT_FAILURE);
 }
 
+static int ask_yn()
+{
+    char line[1024];
+    if (fgets(line, sizeof line, stdin) == NULL)
+        return 0;
+    return line[0] == 'Y' || line[0] == 'y';
+}
+
 static int confirm_overwrite(const char *fn)
 {
     int save_errno = errno;
     int ret = 0;
 
     if (isatty(STDIN_FILENO)) {
-        char c;
         fprintf(stderr, "[bgzip] %s already exists; do you wish to overwrite (y or n)? ", fn);
-        if (scanf("%c", &c) == 1 && (c == 'Y' || c == 'y')) ret = 1;
+        if (ask_yn()) ret = 1;
     }
 
     errno = save_errno;
     return ret;
 }
 
-static int bgzip_main_usage(void)
+static int known_extension(const char *ext)
 {
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Version: %s\n", hts_version());
-    fprintf(stderr, "Usage:   bgzip [OPTIONS] [FILE] ...\n");
-    fprintf(stderr, "Options:\n");
-    fprintf(stderr, "   -b, --offset INT           decompress at virtual file pointer (0-based uncompressed offset)\n");
-    fprintf(stderr, "   -c, --stdout               write on standard output, keep original files unchanged\n");
-    fprintf(stderr, "   -d, --decompress           decompress\n");
-    fprintf(stderr, "   -f, --force                overwrite files without asking\n");
-    fprintf(stderr, "   -h, --help                 give this help\n");
-    fprintf(stderr, "   -i, --index                compress and create BGZF index\n");
-    fprintf(stderr, "   -I, --index-name FILE      name of BGZF index file [file.gz.gzi]\n");
-    fprintf(stderr, "   -l, --compress-level INT   Compression level to use when compressing; 0 to 9, or -1 for default [-1]\n");
-    fprintf(stderr, "   -r, --reindex              (re)index compressed file\n");
-    fprintf(stderr, "   -g, --rebgzip              use an index file to bgzip a file\n");
-    fprintf(stderr, "   -s, --size INT             decompress INT bytes (uncompressed size)\n");
-    fprintf(stderr, "   -@, --threads INT          number of compression threads to use [1]\n");
-    fprintf(stderr, "   -t, --test                 test integrity of compressed file");
-    fprintf(stderr, "\n");
-    return 1;
+    static const char *known[] = {
+        "gz", "bgz", "bgzf",
+        NULL
+    };
+
+    const char **p;
+    for (p = known; *p; p++)
+        if (strcasecmp(ext, *p) == 0) return 1;
+    return 0;
+}
+
+static int confirm_filename(int *is_forced, const char *name, const char *ext)
+{
+    if (*is_forced) {
+        (*is_forced)--;
+        return 1;
+    }
+
+    if (!isatty(STDIN_FILENO))
+        return 0;
+
+    fprintf(stderr, "[bgzip] .%s is not a known extension; do you wish to decompress to %s (y or n)? ", ext, name);
+    return ask_yn();
+}
+
+static int bgzip_main_usage(FILE *fp, int status)
+{
+    fprintf(fp, "\n");
+    fprintf(fp, "Version: %s\n", hts_version());
+    fprintf(fp, "Usage:   bgzip [OPTIONS] [FILE] ...\n");
+    fprintf(fp, "Options:\n");
+    fprintf(fp, "   -b, --offset INT           decompress at virtual file pointer (0-based uncompressed offset)\n");
+    fprintf(fp, "   -c, --stdout               write on standard output, keep original files unchanged\n");
+    fprintf(fp, "   -d, --decompress           decompress\n");
+    fprintf(fp, "   -f, --force                overwrite files without asking\n");
+    fprintf(fp, "   -h, --help                 give this help\n");
+    fprintf(fp, "   -i, --index                compress and create BGZF index\n");
+    fprintf(fp, "   -I, --index-name FILE      name of BGZF index file [file.gz.gzi]\n");
+    fprintf(fp, "   -l, --compress-level INT   Compression level to use when compressing; 0 to 9, or -1 for default [-1]\n");
+    fprintf(fp, "   -r, --reindex              (re)index compressed file\n");
+    fprintf(fp, "   -g, --rebgzip              use an index file to bgzip a file\n");
+    fprintf(fp, "   -s, --size INT             decompress INT bytes (uncompressed size)\n");
+    fprintf(fp, "   -@, --threads INT          number of compression threads to use [1]\n");
+    fprintf(fp, "   -t, --test                 test integrity of compressed file");
+    fprintf(fp, "\n");
+    return status;
 }
 
 int main(int argc, char **argv)
@@ -126,7 +160,7 @@ int main(int argc, char **argv)
         case 'c': pstdout = 1; break;
         case 'b': start = atol(optarg); compress = 0; pstdout = 1; break;
         case 's': size = atol(optarg); pstdout = 1; break;
-        case 'f': is_forced = 1; break;
+        case 'f': is_forced++; break;
         case 'i': index = 1; break;
         case 'I': index_fname = optarg; break;
         case 'l': compress_level = atol(optarg); break;
@@ -137,10 +171,10 @@ int main(int argc, char **argv)
         case 1:
             printf(
 "bgzip (htslib) %s\n"
-"Copyright (C) 2018 Genome Research Ltd.\n", hts_version());
+"Copyright (C) 2019 Genome Research Ltd.\n", hts_version());
             return EXIT_SUCCESS;
-        case 'h':
-        case '?': return bgzip_main_usage();
+        case 'h': return bgzip_main_usage(stdout, EXIT_SUCCESS);
+        case '?': return bgzip_main_usage(stderr, EXIT_FAILURE);
         }
     }
     if (size >= 0) end = start + size;
@@ -149,7 +183,6 @@ int main(int argc, char **argv)
         return 1;
     }
     if (compress == 1) {
-        struct stat sbuf;
         int f_src = fileno(stdin);
         char out_mode[3] = "w\0";
         char out_mode_exclusive[4] = "wx\0";
@@ -165,12 +198,6 @@ int main(int argc, char **argv)
 
         if ( argc>optind )
         {
-            if ( stat(argv[optind],&sbuf)<0 )
-            {
-                fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), argv[optind]);
-                return 1;
-            }
-
             if ((f_src = open(argv[optind], O_RDONLY)) < 0) {
                 fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), argv[optind]);
                 return 1;
@@ -195,7 +222,7 @@ int main(int argc, char **argv)
             }
         }
         else if (!pstdout && isatty(fileno((FILE *)stdout)) )
-            return bgzip_main_usage();
+            return bgzip_main_usage(stderr, EXIT_FAILURE);
         else if ( index && !index_fname )
         {
             fprintf(stderr, "[bgzip] Index file name expected when writing to stdout\n");
@@ -216,10 +243,10 @@ int main(int argc, char **argv)
             return 1;
         }
 
+        if ( index ) bgzf_index_build_init(fp);
         if (threads > 1)
             bgzf_mt(fp, threads, 256);
 
-        if ( index ) bgzf_index_build_init(fp);
         buffer = malloc(WINDOW_SIZE);
 #ifdef _WIN32
         _setmode(f_src, O_BINARY);
@@ -284,26 +311,18 @@ int main(int argc, char **argv)
     }
     else
     {
-        struct stat sbuf;
         int f_dst;
 
         if ( argc>optind )
         {
-            if ( stat(argv[optind],&sbuf)<0 )
-            {
-                fprintf(stderr, "[bgzip] %s: %s\n", strerror(errno), argv[optind]);
-                return 1;
-            }
-            char *name;
-            int len = strlen(argv[optind]);
-            if ( strcmp(argv[optind]+len-3,".gz") && !test)
-            {
-                fprintf(stderr, "[bgzip] %s: unknown suffix -- ignored\n", argv[optind]);
-                return 1;
-            }
             fp = bgzf_open(argv[optind], "r");
             if (fp == NULL) {
-                fprintf(stderr, "[bgzip] Could not open file: %s\n", argv[optind]);
+                fprintf(stderr, "[bgzip] Could not open %s: %s\n", argv[optind], strerror(errno));
+                return 1;
+            }
+            if (bgzf_compression(fp) == no_compression) {
+                fprintf(stderr, "[bgzip] %s: not a compressed file -- ignored\n", argv[optind]);
+                bgzf_close(fp);
                 return 1;
             }
 
@@ -312,8 +331,24 @@ int main(int argc, char **argv)
             }
             else {
                 const int wrflags = O_WRONLY | O_CREAT | O_TRUNC;
+                char *name = argv[optind], *ext;
+                size_t pos;
+                for (pos = strlen(name); pos > 0; --pos)
+                    if (name[pos] == '.' || name[pos] == '/') break;
+                if (pos == 0 || name[pos] != '.') {
+                    fprintf(stderr, "[bgzip] can't remove an extension from %s -- please rename\n", argv[optind]);
+                    bgzf_close(fp);
+                    return 1;
+                }
                 name = strdup(argv[optind]);
-                name[strlen(name) - 3] = '\0';
+                name[pos] = '\0';
+                ext = &name[pos+1];
+                if (! (known_extension(ext) || confirm_filename(&is_forced, name, ext))) {
+                    fprintf(stderr, "[bgzip] unknown extension .%s -- declining to decompress to %s\n", ext, name);
+                    bgzf_close(fp);
+                    free(name);
+                    return 1;
+                }
                 f_dst = open(name, is_forced? wrflags : wrflags|O_EXCL, 0666);
                 if (f_dst < 0 && errno == EEXIST && confirm_overwrite(name))
                     f_dst = open(name, wrflags, 0666);
@@ -326,7 +361,7 @@ int main(int argc, char **argv)
             }
         }
         else if (!pstdout && isatty(fileno((FILE *)stdin)) )
-            return bgzip_main_usage();
+            return bgzip_main_usage(stderr, EXIT_FAILURE);
         else
         {
             f_dst = fileno(stdout);
@@ -335,22 +370,33 @@ int main(int argc, char **argv)
                 fprintf(stderr, "[bgzip] Could not read from stdin: %s\n", strerror(errno));
                 return 1;
             }
+            if (bgzf_compression(fp) == no_compression) {
+                fprintf(stderr, "[bgzip] stdin is not compressed -- ignored\n");
+                bgzf_close(fp);
+                return 1;
+            }
         }
 
-        if (!fp->is_compressed) {
-            fprintf(stderr, "[bgzip] Expected compressed file -- ignored\n");
-            return 1;
+        buffer = malloc(WINDOW_SIZE);
+        if ( start>0 )
+        {
+            if (index_fname) {
+                if ( bgzf_index_load(fp, index_fname, NULL) < 0 )
+                    error("Could not load index: %s\n", index_fname);
+            } else {
+                if (optind >= argc) {
+                    error("The -b option requires -I when reading from stdin "
+                          "(and stdin must be seekable)\n");
+                }
+                if ( bgzf_index_load(fp, argv[optind], ".gzi") < 0 )
+                    error("Could not load index: %s.gzi\n", argv[optind]);
+            }
+            if ( bgzf_useek(fp, start, SEEK_SET) < 0 ) error("Could not seek to %d-th (uncompressd) byte\n", start);
         }
 
         if (threads > 1)
             bgzf_mt(fp, threads, 256);
 
-        buffer = malloc(WINDOW_SIZE);
-        if ( start>0 )
-        {
-            if ( bgzf_index_load(fp, argv[optind], ".gzi") < 0 ) error("Could not load index: %s.gzi\n", argv[optind]);
-            if ( bgzf_useek(fp, start, SEEK_SET) < 0 ) error("Could not seek to %d-th (uncompressd) byte\n", start);
-        }
 #ifdef _WIN32
         _setmode(f_dst, O_BINARY);
 #endif
@@ -370,7 +416,7 @@ int main(int argc, char **argv)
         }
         free(buffer);
         if (bgzf_close(fp) < 0) error("Close failed: Error %d\n",fp->errcode);
-        if (!pstdout && !test) unlink(argv[optind]);
+        if (argc > optind && !pstdout && !test) unlink(argv[optind]);
         return 0;
     }
 }

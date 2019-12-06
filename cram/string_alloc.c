@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2010 Genome Research Ltd.
+Copyright (c) 2010, 2013, 2018-2019 Genome Research Ltd.
 Author: Andrew Whitwham <aw7@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -36,6 +36,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
    Andrew Whitwham, September 2010.
 */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <string.h>
@@ -61,6 +62,7 @@ string_alloc_t *string_pool_create(size_t max_length) {
     if (max_length < MIN_STR_SIZE) max_length = MIN_STR_SIZE;
 
     a_str->nstrings    = 0;
+    a_str->max_strings = 0;
     a_str->max_length  = max_length;
     a_str->strings     = NULL;
 
@@ -73,14 +75,19 @@ string_alloc_t *string_pool_create(size_t max_length) {
 static string_t *new_string_pool(string_alloc_t *a_str) {
     string_t *str;
 
-    str = realloc(a_str->strings, (a_str->nstrings + 1) * sizeof(*a_str->strings));
+    if (a_str->nstrings == a_str->max_strings) {
+        size_t new_max = (a_str->max_strings | (a_str->max_strings >> 2)) + 1;
+        str = realloc(a_str->strings, new_max * sizeof(*a_str->strings));
 
-    if (NULL == str) return NULL;
+        if (NULL == str) return NULL;
 
-    a_str->strings = str;
+        a_str->strings = str;
+        a_str->max_strings = new_max;
+    }
+
     str = &a_str->strings[a_str->nstrings];
 
-    str->str = malloc(a_str->max_length);;
+    str->str = malloc(a_str->max_length);
 
     if (NULL == str->str) return NULL;
 
@@ -139,16 +146,16 @@ char *string_alloc(string_alloc_t *a_str, size_t length) {
 
 /* equivalent to strdup */
 
-char *string_dup(string_alloc_t *a_str, char *instr) {
+char *string_dup(string_alloc_t *a_str, const char *instr) {
     return string_ndup(a_str, instr, strlen(instr));
 }
 
-char *string_ndup(string_alloc_t *a_str, char *instr, size_t len) {
+char *string_ndup(string_alloc_t *a_str, const char *instr, size_t len) {
     char *str = string_alloc(a_str, len + 1);
 
     if (NULL == str) return NULL;
 
-    strncpy(str, instr, len);
+    memcpy(str, instr, len);
     str[len] = 0;
 
     return str;

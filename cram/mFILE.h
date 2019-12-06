@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2005-2006, 2008-2009 Genome Research Ltd.
+Copyright (c) 2005-2006, 2008-2009, 2013, 2018 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -28,8 +28,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef _MFILE_H_
-#define _MFILE_H_
+#ifndef CRAM_MFILE_H
+#define CRAM_MFILE_H
 
 #include <stdio.h>
 
@@ -90,4 +90,4 @@ void mfascii(mFILE *mf);
 }
 #endif
 
-#endif /* _MFILE_H_ */
+#endif /* CRAM_MFILE_H */

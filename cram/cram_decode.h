@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2013 Genome Research Ltd.
+Copyright (c) 2012-2013, 2018 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -38,8 +38,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * cram_codecs.[ch] for the actual encoding functions themselves.
  */
 
-#ifndef _CRAM_READ_H_
-#define _CRAM_READ_H_
+#ifndef CRAM_DECODE_H
+#define CRAM_DECODE_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -102,7 +102,7 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b);
  *        -1 on failure
  */
 int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
-                      SAM_hdr *hdr);
+                      sam_hdr_t *hdr);
 
 
 /*

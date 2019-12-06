@@ -13,16 +13,17 @@
 ##INFO=<ID=DB,Number=0,Type=Flag,Description="dbSNP membership, build 129">
 ##INFO=<ID=H2,Number=0,Type=Flag,Description="HapMap2 membership">
 ##FILTER=<ID=q10,Description="Quality below 10">
-##FILTER=<ID=s50,Description="Less than 50% of samples have data">
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
 ##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
 ##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read Depth">
 ##FORMAT=<ID=HQ,Number=2,Type=Integer,Description="Haplotype Quality">
 ##FORMAT=<ID=TS,Number=1,Type=String,Description="Test String">
+##INFO=<ID=NEG,Number=.,Type=Integer,Description="Test Negative Numbers">
+##FILTER=<ID=s50,Description="Less than 50% of samples have data">
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NA00001	NA00002	NA00003
-20	14370	rs6054257	G	A	29	PASS	NS=3;DP=14;AF=0.5;DB;H2	GT:GQ:DP:HQ:TS	0|0:48:1:51,51:String1	1|0:48:8:51,51:SomeOtherString2	1/1:43:5:.,.:YetAnotherString3
-20	14370	.	G	A	29	PASS	NS=3;DP=14;AF=0.5;DB;H2	GT:DP:HQ:TS	0|0:1:51,51:String1	1|0:8:51,51:SomeOtherString2	1/1:5:.,.:YetAnotherString3
-20	14370	.	G	A	29	PASS	NS=3;DP=99;AF=0.5;DB;H2	GT:DP:HQ:TS	0|0:9:51,51:String1	1|0:9:51,51:SomeOtherString2	1/1:9:.,.:YetAnotherString3
-20	1110696	.	A	G,T	67	.	NS=2;DP=10;AF=0.333,.;AA=T;DB	GT	2	1	./.
-20	1110696	.	A	G,T	67	.	NS=2;DP=10;AF=0.333,.;AA=T;DB	GT	2	1	./.
-20	1110696	.	G	A	67	.	NS=2;DP=99;AF=0.333,.;AA=T;DB	GT:DP	2:9	1:9	./.:9
+20	14370	rs6054257	G	A	29	PASS	NS=3;DP=14;NEG=-127;AF=0.5;DB;H2	GT:GQ:DP:HQ:TS	0|0:48:1:51,51:String1	1|0:48:8:51,51:SomeOtherString2	1/1:43:5:.,.:YetAnotherString3
+20	14370	.	G	A	29	PASS	NS=3;DP=14;NEG=-127;AF=0.5;DB;H2	GT:DP:HQ:TS	0|0:1:51,51:String1	1|0:8:51,51:SomeOtherString2	1/1:5:.,.:YetAnotherString3
+20	14370	.	G	A	29	PASS	NS=3;DP=99;NEG=-127;AF=0.5;DB;H2	GT:DP:HQ:TS	0|0:9:51,51:String1	1|0:9:51,51:SomeOtherString2	1/1:9:.,.:YetAnotherString3
+20	1110696	.	A	G,T	67	.	NS=2;DP=10;NEG=-128;AF=0.333,.;AA=T;DB	GT	2	1	./.
+20	1110696	.	A	G,T	67	.	NS=2;DP=10;NEG=-128;AF=0.333,.;AA=T;DB	GT	2	1	./.
+20	1110696	.	G	A	67	.	NS=2;DP=99;NEG=-128;AF=0.333,.;AA=T;DB	GT:DP	2:9	1:9	./.:9

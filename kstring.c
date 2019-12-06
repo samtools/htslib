@@ -1,6 +1,7 @@
 /* The MIT License
 
    Copyright (C) 2011 by Attractive Chaos <attractor@live.co.uk>
+   Copyright (C) 2013-2018 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -23,6 +24,7 @@
    SOFTWARE.
 */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <stdarg.h>
@@ -271,6 +273,30 @@ int kgetline(kstring_t *s, kgets_func *fgets_fn, void *fp)
 	return 0;
 }
 
+int kgetline2(kstring_t *s, kgets_func2 *fgets_fn, void *fp)
+{
+	size_t l0 = s->l;
+
+	while (s->l == l0 || s->s[s->l-1] != '\n') {
+		if (s->m - s->l < 200) {
+			if (ks_resize(s, s->m + 200) < 0)
+				return EOF;
+		}
+		ssize_t len = fgets_fn(s->s + s->l, s->m - s->l, fp);
+		if (len <= 0) break;
+		s->l += len;
+	}
+
+	if (s->l == l0) return EOF;
+
+	if (s->l > l0 && s->s[s->l-1] == '\n') {
+		s->l--;
+		if (s->l > l0 && s->s[s->l-1] == '\r') s->l--;
+	}
+	s->s[s->l] = '\0';
+	return 0;
+}
+
 /**********************
  * Boyer-Moore search *
  **********************/
@@ -282,12 +308,14 @@ static int *ksBM_prep(const ubyte_t *pat, int m)
 {
 	int i, *suff, *prep, *bmGs, *bmBc;
 	prep = (int*)calloc(m + 256, sizeof(int));
+    if (!prep) return NULL;
 	bmGs = prep; bmBc = prep + m;
 	{ // preBmBc()
 		for (i = 0; i < 256; ++i) bmBc[i] = m;
 		for (i = 0; i < m - 1; ++i) bmBc[pat[i]] = m - i - 1;
 	}
 	suff = (int*)calloc(m, sizeof(int));
+    if (!suff) { free(prep); return NULL; }
 	{ // suffixes()
 		int f = 0, g;
 		suff[m - 1] = m;
@@ -324,6 +352,7 @@ void *kmemmem(const void *_str, int n, const void *_pat, int m, int **_prep)
 	const ubyte_t *str, *pat;
 	str = (const ubyte_t*)_str; pat = (const ubyte_t*)_pat;
 	prep = (_prep == 0 || *_prep == 0)? ksBM_prep(pat, m) : *_prep;
+    if (!prep) return NULL;
 	if (_prep && *_prep == 0) *_prep = prep;
 	bmGs = prep; bmBc = prep + m;
 	j = 0;

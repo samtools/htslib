@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2013 Genome Research Ltd.
+Copyright (c) 2012-2015, 2018 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -28,10 +28,10 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef _CRAM_ENCODINGS_H_
-#define _CRAM_ENCODINGS_H_
+#ifndef CRAM_CODECS_H
+#define CRAM_CODECS_H
 
-#include <inttypes.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,7 +49,7 @@ struct cram_codec;
  * appears.
  */
 typedef struct {
-    int32_t symbol;
+    int64_t symbol;
     int32_t p; // next code start value, minus index to codes[]
     int32_t code;
     int32_t len;
@@ -65,6 +65,7 @@ typedef struct {
     cram_huffman_code *codes;
     int nvals;
     int val2code[MAX_HUFF+1]; // value to code lookup for small values
+    int option;
 } cram_huffman_encoder;
 
 typedef struct {
@@ -108,9 +109,6 @@ typedef struct {
 /*
  * A generic codec structure.
  */
-#ifdef __SUNPRO_C
-#  pragma error_messages(off, E_ANONYMOUS_UNION_DECL)
-#endif
 typedef struct cram_codec {
     enum cram_encoding codec;
     cram_block *out;
@@ -136,11 +134,8 @@ typedef struct cram_codec {
         cram_byte_array_stop_decoder e_byte_array_stop;
         cram_byte_array_len_encoder  e_byte_array_len;
         cram_beta_decoder            e_beta;
-    };
+    } u;
 } cram_codec;
-#ifdef __SUNPRO_C
-#  pragma error_messages(default, E_ANONYMOUS_UNION_DECL)
-#endif
 
 const char *cram_encoding2str(enum cram_encoding t);
 
@@ -198,4 +193,4 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c);
 }
 #endif
 
-#endif /* _CRAM_ENCODINGS_H_ */
+#endif /* CRAM_CODECS_H */

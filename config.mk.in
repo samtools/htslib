@@ -1,6 +1,6 @@
 #  Optional configure Makefile overrides for htslib.
 #
-#    Copyright (C) 2015-2017 Genome Research Ltd.
+#    Copyright (C) 2015-2017, 2019 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -48,6 +48,10 @@ LIBS     = @LIBS@
 PLATFORM   = @PLATFORM@
 PLUGIN_EXT = @PLUGIN_EXT@
 
+# The default Makefile enables some of the optional files, but we blank
+# them so they can be controlled by configure instead.
+NONCONFIGURE_OBJS =
+
 # Lowercase here indicates these are "local" to config.mk
 plugin_OBJS =
 noplugin_LDFLAGS =
@@ -74,10 +78,12 @@ endif
 
 ifeq "s3-@s3@" "s3-enabled"
 plugin_OBJS += hfile_s3.o
+plugin_OBJS += hfile_s3_write.o
 
 CRYPTO_LIBS = @CRYPTO_LIBS@
 noplugin_LIBS += $(CRYPTO_LIBS)
 hfile_s3$(PLUGIN_EXT): LIBS += $(CRYPTO_LIBS)
+hfile_s3_write$(PLUGIN_EXT): LIBS += $(CRYPTO_LIBS) $(LIBCURL_LIBS)
 endif
 
 ifeq "plugins-@enable_plugins@" "plugins-yes"
@@ -94,6 +100,7 @@ plugin.o plugin.pico: CPPFLAGS += -DPLUGINPATH=\"$(pluginpath)\"
 hfile_gcs.o hfile_gcs.pico: version.h
 hfile_libcurl.o hfile_libcurl.pico: version.h
 hfile_s3.o hfile_s3.pico: version.h
+hfile_s3_write.o hfile_s3_write.pico: version.h
 
 # Windows DLL plugins depend on the import library, built as a byproduct.
 $(plugin_OBJS:.o=.cygdll): cyghts-$(LIBHTS_SOVERSION).dll

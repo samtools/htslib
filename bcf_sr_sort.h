@@ -31,8 +31,8 @@
 
 */
 
-#ifndef __BCF_SR_SORT_H__
-#define __BCF_SR_SORT_H__
+#ifndef BCF_SR_SORT_H
+#define BCF_SR_SORT_H
 
 #include "htslib/synced_bcf_reader.h"
 #include "htslib/kbitset.h"
@@ -90,7 +90,8 @@ typedef struct
     int moff, noff, *off, mcharp;
     char **charp;
     const char *chr;
-    int pos, nsr, msr;
+    hts_pos_t pos;
+    int nsr, msr;
     int pair;
     int nactive, mactive, *active;  // list of readers with lines at the current pos
 }
@@ -98,7 +99,7 @@ sr_sort_t;
 
 sr_sort_t *bcf_sr_sort_init(sr_sort_t *srt);
 void bcf_sr_sort_reset(sr_sort_t *srt);
-int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int pos);
+int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, hts_pos_t pos);
 int bcf_sr_sort_set_active(sr_sort_t *srt, int i);
 int bcf_sr_sort_add_active(sr_sort_t *srt, int i);
 void bcf_sr_sort_destroy(sr_sort_t *srt);

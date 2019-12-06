@@ -1,5 +1,5 @@
 /*
-    Copyright (C) 2017 Genome Research Ltd.
+    Copyright (C) 2017-2019 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -22,34 +22,20 @@
     THE SOFTWARE.
 */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <strings.h>
 
 #include "bcf_sr_sort.h"
 #include "htslib/khash_str2int.h"
+#include "htslib/kbitset.h"
 
 #define SR_REF   1
 #define SR_SNP   2
 #define SR_INDEL 4
 #define SR_OTHER 8
 #define SR_SCORE(srt,a,b) (srt)->score[((a)<<4)|(b)]
-
-// Resize a bit set.
-static inline kbitset_t *kbs_resize(kbitset_t *bs, size_t ni)
-{
-    if ( !bs ) return kbs_init(ni);
-    size_t n = (ni + KBS_ELTBITS-1) / KBS_ELTBITS;
-    if ( n==bs->n ) return bs;
-
-    bs = (kbitset_t *) realloc(bs, sizeof(kbitset_t) + n * sizeof(unsigned long));
-    if ( bs==NULL ) return NULL;
-    if ( n > bs->n )
-        memset(bs->b + bs->n, 0, (n - bs->n) * sizeof (unsigned long));
-    bs->n = n;
-    bs->b[n] = ~0UL;
-    return bs;
-}
 
 // Logical AND
 static inline int kbs_logical_and(kbitset_t *bs1, kbitset_t *bs2)
@@ -162,7 +148,7 @@ static int multi_is_subset(var_t *avar, var_t *bvar)
     }
     return 0;
 }
-int32_t pairing_score(sr_sort_t *srt, int ivset, int jvset)
+static uint32_t pairing_score(sr_sort_t *srt, int ivset, int jvset)
 {
     varset_t *iv = &srt->vset[ivset];
     varset_t *jv = &srt->vset[jvset];
@@ -200,9 +186,9 @@ int32_t pairing_score(sr_sort_t *srt, int ivset, int jvset)
     for (i=0; i<iv->nvar; i++) cnt += srt->var[iv->var[i]].nvcf;
     for (j=0; j<jv->nvar; j++) cnt += srt->var[jv->var[j]].nvcf;
 
-    return (1<<(28+min)) + cnt;
+    return (1u<<(28+min)) + cnt;
 }
-void remove_vset(sr_sort_t *srt, int jvset)
+static void remove_vset(sr_sort_t *srt, int jvset)
 {
     if ( jvset+1 < srt->nvset )
     {
@@ -217,7 +203,7 @@ void remove_vset(sr_sort_t *srt, int jvset)
     }
     srt->nvset--;
 }
-int merge_vsets(sr_sort_t *srt, int ivset, int jvset)
+static int merge_vsets(sr_sort_t *srt, int ivset, int jvset)
 {
     int i,j;
     if ( ivset > jvset ) { i = ivset; ivset = jvset; jvset = i; }
@@ -241,7 +227,8 @@ int merge_vsets(sr_sort_t *srt, int ivset, int jvset)
 
     return ivset;
 }
-void push_vset(sr_sort_t *srt, int ivset)
+
+static int push_vset(sr_sort_t *srt, int ivset)
 {
     varset_t *iv = &srt->vset[ivset];
     int i,j;
@@ -263,6 +250,7 @@ void push_vset(sr_sort_t *srt, int ivset)
         }
     }
     remove_vset(srt, ivset);
+    return 0; // FIXME: check for errs in this function
 }
 
 static int cmpstringp(const void *p1, const void *p2)
@@ -301,14 +289,14 @@ void debug_vbuf(sr_sort_t *srt)
         for (i=0; i<srt->sr->nreaders; i++)
         {
             vcf_buf_t *buf = &srt->vcf_buf[i];
-            fprintf(stderr,"\t%d", buf->rec[j] ? buf->rec[j]->pos+1 : 0);
+            fprintf(stderr,"\t%"PRIhts_pos, buf->rec[j] ? buf->rec[j]->pos+1 : 0);
         }
         fprintf(stderr,"\n");
     }
 }
 #endif
 
-char *grp_create_key(sr_sort_t *srt)
+static char *grp_create_key(sr_sort_t *srt)
 {
     if ( !srt->str.l ) return strdup("");
     int i;
@@ -334,16 +322,16 @@ int bcf_sr_sort_set_active(sr_sort_t *srt, int idx)
     hts_expand(int,idx+1,srt->mactive,srt->active);
     srt->nactive = 1;
     srt->active[srt->nactive - 1] = idx;
-    return 0;
+    return 0; // FIXME: check for errs in this function
 }
 int bcf_sr_sort_add_active(sr_sort_t *srt, int idx)
 {
     hts_expand(int,idx+1,srt->mactive,srt->active);
     srt->nactive++;
     srt->active[srt->nactive - 1] = idx;
-    return 0;
+    return 0; // FIXME: check for errs in this function
 }
-static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int min_pos)
+static int bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, hts_pos_t min_pos)
 {
     if ( !srt->grp_str2int )
     {
@@ -469,7 +457,11 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
     // initialize bitmask - which groups is the variant present in
     for (ivar=0; ivar<srt->nvar; ivar++)
     {
-        srt->var[ivar].mask = kbs_resize(srt->var[ivar].mask, srt->ngrp);
+        if ( kbs_resize(&srt->var[ivar].mask, srt->ngrp) < 0 )
+        {
+            fprintf(stderr, "[%s:%d %s] kbs_resize failed\n", __FILE__,__LINE__,__func__);
+            exit(1);
+        }
         kbs_clear(srt->var[ivar].mask);
     }
     for (igrp=0; igrp<srt->ngrp; igrp++)
@@ -493,7 +485,11 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
         vset->var[vset->nvar-1] = ivar;
         var_t *var  = &srt->var[ivar];
         vset->cnt   = var->nvcf;
-        vset->mask  = kbs_resize(vset->mask, srt->ngrp);
+        if ( kbs_resize(&vset->mask, srt->ngrp) < 0 )
+        {
+            fprintf(stderr, "[%s:%d %s] kbs_resize failed\n", __FILE__,__LINE__,__func__);
+            exit(1);
+        }
         kbs_clear(vset->mask);
         kbs_bitwise_or(vset->mask, var->mask);
 
@@ -557,9 +553,11 @@ static void bcf_sr_sort_set(bcf_srs_t *readers, sr_sort_t *srt, const char *chr,
 
     srt->chr = chr;
     srt->pos = min_pos;
+
+    return 0;  // FIXME: check for errs in this function
 }
 
-int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, int min_pos)
+int bcf_sr_sort_next(bcf_srs_t *readers, sr_sort_t *srt, const char *chr, hts_pos_t min_pos)
 {
     int i,j;
     assert( srt->nactive>0 );

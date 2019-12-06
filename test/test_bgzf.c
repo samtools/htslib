@@ -1,6 +1,6 @@
 /* test/test_bgzf.c -- bgzf unit tests
 
-   Copyright (C) 2017 Genome Research Ltd
+   Copyright (C) 2017, 2019 Genome Research Ltd
 
    Author: Robert Davies <rmd@sanger.ac.uk>
 
@@ -31,7 +31,9 @@ DEALINGS IN THE SOFTWARE.
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <inttypes.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include "htslib/bgzf.h"
 #include "htslib/hfile.h"
 #include "hfile_internal.h"
@@ -242,6 +244,39 @@ static int try_bgzf_index_dump(BGZF *fp, const char *bname, const char *suffix,
     return 0;
 }
 
+static int64_t try_bgzf_tell(BGZF *fp, const char *name, const char *func) {
+    int64_t told = bgzf_tell(fp);
+    if (told < 0) {
+        fprintf(stderr, "%s : %s %s : %s\n",
+                func, "Error telling in",
+                name, strerror(errno));
+        return -1;
+    }
+
+    return told;
+}
+
+static int64_t try_bgzf_tell_expect(BGZF *fp, int64_t expected, const char *name, const char *func) {
+    int64_t told = try_bgzf_tell(fp, name, func);
+    if (told != expected) {
+        fprintf(stderr, "%s : Unexpected value (%" PRId64 ") from bgzf_tell on %s; "
+                "expected %" PRId64 "\n",
+                func, told, name, expected);
+        return -1;
+    }
+    return told;
+}
+
+static int try_bgzf_seek(BGZF *fp, int64_t pos, int whence,
+                          const char *name, const char *func) {
+    if (bgzf_seek(fp, pos, whence) < 0) {
+        fprintf(stderr, "%s : Error from bgzf_seek(%s, %" PRId64 ", %d) : %s\n",
+                func, name, pos, whence, strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
 static int try_bgzf_useek(BGZF *fp, long uoffset, int where,
                           const char *name, const char *func) {
     if (bgzf_useek(fp, uoffset, where) < 0) {
@@ -263,6 +298,22 @@ static int try_bgzf_getc(BGZF *fp, size_t pos, int expected,
         return -1;
     }
     return c;
+}
+
+static int try_skip(BGZF *fp, size_t count,
+                   const char *name, const char *func) {
+    size_t i;
+    int c;
+    for (i = 0; i < count; i++) {
+        c = bgzf_getc(fp);
+        if (c < 0) {
+            fprintf(stderr,
+                    "%s : Error from bgzf_getc on %s\n",
+                    func, name);
+            return -1;
+        }
+    }
+    return 0;
 }
 
 static int compare_buffers(const unsigned char *b1, const unsigned char *b2,
@@ -575,12 +626,13 @@ static int test_check_EOF(char *name, int expected) {
     return try_bgzf_close(&bgz, name, __func__);
 }
 
-static int test_index_seek_getc(Files *f, const char *mode,
-                                int cache_size, int nthreads) {
+static int test_index_useek_getc(Files *f, const char *mode,
+                                 int cache_size, int nthreads) {
     BGZF* bgz = NULL;
     ssize_t bg_put;
-    size_t i, j, iskip = f->ltext / 10;
+    size_t i, j, k, iskip = f->ltext / 10;
     int is_uncompressed = strchr(mode, 'u') != NULL;
+    size_t offsets[3] = { 0, 100, 50 };
 
     bgz = try_bgzf_open(f->tmp_bgzf, mode, __func__);
     if (!bgz) goto fail;
@@ -612,13 +664,16 @@ static int test_index_seek_getc(Files *f, const char *mode,
     }
 
     for (i = 0; i < f->ltext; i += iskip) {
-        if (try_bgzf_useek(bgz, i, SEEK_SET, f->tmp_bgzf, __func__) != 0) {
-            goto fail;
-        }
+        for (k = 0; k < sizeof(offsets) / sizeof(offsets[0]); k++) {
+            size_t o = offsets[k];
+            if (try_bgzf_useek(bgz, i + o, SEEK_SET, f->tmp_bgzf, __func__) != 0) {
+                goto fail;
+            }
 
-        for (j = 0; j < 16 && i + j < f->ltext; j++) {
-            if (try_bgzf_getc(bgz, i + j, f->text[i + j],
-                              f->tmp_bgzf, __func__) < 0) goto fail;
+            for (j = 0; j < 16 && i + o + j < f->ltext; j++) {
+                if (try_bgzf_getc(bgz, i + o + j, f->text[i + o + j],
+                                  f->tmp_bgzf, __func__) < 0) goto fail;
+            }
         }
     }
 
@@ -660,6 +715,157 @@ static int test_index_seek_getc(Files *f, const char *mode,
 
  fail:
     if (bgz) bgzf_close(bgz);
+    return -1;
+}
+
+static int test_tell_seek_getc(Files *f, const char *mode,
+                               int cache_size, int nthreads) {
+
+    BGZF* bgz = NULL;
+    ssize_t bg_put;
+    size_t num_points = 10;
+    size_t i, j, k, iskip = f->ltext / num_points;
+    size_t offsets[3] = { 0, 100, 50 };
+    size_t points[num_points];
+    int64_t point_vos[num_points];
+
+    bgz = try_bgzf_open(f->tmp_bgzf, mode, __func__);
+    if (!bgz) goto fail;
+
+    for (i = 0; i < num_points; i++) {
+        point_vos[i] = try_bgzf_tell(bgz, f->tmp_bgzf, __func__);
+        if (point_vos[i] < 0) goto fail;
+        points[i] = i * iskip;
+        bg_put = try_bgzf_write(bgz, f->text + i * iskip, iskip, f->tmp_bgzf, __func__);
+        if (bg_put < 0) goto fail;
+    }
+
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+
+    bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);
+    if (!bgz) goto fail;
+
+    if (nthreads > 0 && try_bgzf_mt(bgz, nthreads, __func__) != 0) goto fail;
+
+    for (i = 0; i < f->ltext; i += iskip) {
+        for (k = 0; k < sizeof(offsets) / sizeof(offsets[0]); k++) {
+            size_t o = offsets[k];
+
+            if (try_bgzf_seek(bgz, point_vos[i/iskip], SEEK_SET, f->tmp_bgzf, __func__) != 0) {
+                goto fail;
+            }
+            if (try_bgzf_tell_expect(bgz, point_vos[i/iskip], f->tmp_bgzf, __func__) < 0) {
+                goto fail;
+            }
+
+            if (try_skip(bgz, o, f->tmp_bgzf, __func__) != 0) {
+                goto fail;
+            }
+            for (j = 0; j < 16 && i + o + j < f->ltext; j++) {
+                if (try_bgzf_getc(bgz, i + o + j, f->text[i + o + j],
+                                  f->tmp_bgzf, __func__) < 0) goto fail;
+            }
+        }
+    }
+
+    if (try_bgzf_seek(bgz, 0, SEEK_SET, f->tmp_bgzf, __func__) != 0) {
+        goto fail;
+    }
+    if (try_bgzf_tell_expect(bgz, 0, f->tmp_bgzf, __func__) < 0) {
+        goto fail;
+    }
+    for (j = 0; j < 70000 && j < f->ltext; j++) { // Should force a block load
+        if (try_bgzf_getc(bgz, j, f->text[j],
+                          f->tmp_bgzf, __func__) < 0) goto fail;
+    }
+
+    if (cache_size > 0) {
+        size_t mid = points[num_points / 2];
+        int64_t mid_vo = point_vos[num_points / 2];
+        bgzf_set_cache_size(bgz, cache_size);
+
+        for (i = 0; i < 10; i++) {
+            if (try_bgzf_seek(bgz, 0, SEEK_SET, f->tmp_bgzf, __func__) != 0) {
+                goto fail;
+            }
+            if (try_bgzf_tell_expect(bgz, 0, f->tmp_bgzf, __func__) < 0) {
+                goto fail;
+            }
+            for (j = 0; j < 64 && j < f->ltext; j++) {
+                if (try_bgzf_getc(bgz, j, f->text[j],
+                                  f->tmp_bgzf, __func__) < 0) goto fail;
+            }
+
+            if (try_bgzf_seek(bgz, mid_vo, SEEK_SET,
+                               f->tmp_bgzf, __func__) != 0) {
+                goto fail;
+            }
+            if (try_bgzf_tell_expect(bgz, mid_vo, f->tmp_bgzf, __func__) < 0) {
+                goto fail;
+            }
+            for (j = 0; j < 64 && j + mid < f->ltext; j++) {
+                if (try_bgzf_getc(bgz, j + mid, f->text[j + mid],
+                                  f->tmp_bgzf, __func__) < 0) goto fail;
+            }
+        }
+    }
+
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+
+    return 0;
+
+ fail:
+    if (bgz) bgzf_close(bgz);
+    return -1;
+}
+
+static int test_tell_read(Files *f, const char *mode) {
+
+    BGZF* bgz = NULL;
+    ssize_t bg_put;
+    size_t num_points = 10;
+    size_t i, iskip = f->ltext / num_points;
+    int64_t point_vos[num_points];
+
+    unsigned char *bg_buf = calloc(iskip+1,1);
+    if (!bg_buf) return -1;
+
+    bgz = try_bgzf_open(f->tmp_bgzf, mode, __func__);
+    if (!bgz) goto fail;
+
+    for (i = 0; i < num_points; i++) {
+        point_vos[i] = try_bgzf_tell(bgz, f->tmp_bgzf, __func__);
+        if (point_vos[i] < 0) goto fail;
+        bg_put = try_bgzf_write(bgz, f->text + i * iskip, iskip, f->tmp_bgzf, __func__);
+        if (bg_put < 0) goto fail;
+    }
+
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+
+    bgz = try_bgzf_open(f->tmp_bgzf, "r", __func__);
+    if (!bgz) goto fail;
+
+    for (i = 0; i < f->ltext; i += iskip) {
+        if (try_bgzf_tell_expect(bgz, point_vos[i/iskip], f->tmp_bgzf, __func__) < 0) {
+            goto fail;
+        }
+        if (try_bgzf_read(bgz, bg_buf, iskip, f->tmp_bgzf, __func__) < 0) {
+            goto fail;
+        }
+        if (compare_buffers(f->text+i, bg_buf, iskip, iskip,
+                f->tmp_bgzf, f->tmp_bgzf, __func__) != 0) {
+            goto fail;
+        }
+    }
+
+    if (try_bgzf_close(&bgz, f->tmp_bgzf, __func__) != 0) goto fail;
+    free(bg_buf);
+    return 0;
+
+ fail:
+    fprintf(stderr, "%s: failed\n", __func__);
+    if (bgz) bgzf_close(bgz);
+    free(bg_buf);
     return -1;
 }
 
@@ -761,15 +967,32 @@ int main(int argc, char **argv) {
     if (test_index_load_dump(&f) != 0) goto out;
 
     // Index building on the fly and bgzf_useek
-    if (test_index_seek_getc(&f, "w", 1000000, 0) != 0) goto out;
+    if (test_index_useek_getc(&f, "w", 1000000, 0) != 0) goto out;
 
     // Index building on the fly and bgzf_useek, with threads
-    // ** Not implemented yet **
-    // if (test_index_seek_getc(&f, "w", 1000000, 1) != 0) goto out;
-    // if (test_index_seek_getc(&f, "w", 1000000, 2) != 0) goto out;
+    if (test_index_useek_getc(&f, "w", 1000000, 1) != 0) goto out;
+    if (test_index_useek_getc(&f, "w", 1000000, 2) != 0) goto out;
 
     // bgzf_useek on an uncompressed file
-    if (test_index_seek_getc(&f, "wu", 0, 0) != 0) goto out;
+    if (test_index_useek_getc(&f, "wu", 0, 0) != 0) goto out;
+
+    // bgzf_tell and bgzf_seek
+    if (test_tell_seek_getc(&f, "w", 0, 0) != 0) goto out;
+    if (test_tell_seek_getc(&f, "wu", 0, 0) != 0) goto out;
+    if (test_tell_seek_getc(&f, "w", 1000000, 0) != 0) goto out;
+    if (test_tell_seek_getc(&f, "wu", 1000000, 0) != 0) goto out;
+    if (test_tell_seek_getc(&f, "w", 0, 1) != 0) goto out;
+    if (test_tell_seek_getc(&f, "w", 0, 2) != 0) goto out;
+    if (test_tell_seek_getc(&f, "wu", 0, 1) != 0) goto out;
+    if (test_tell_seek_getc(&f, "wu", 0, 2) != 0) goto out;
+    if (test_tell_seek_getc(&f, "w", 1000000, 1) != 0) goto out;
+    if (test_tell_seek_getc(&f, "w", 1000000, 2) != 0) goto out;
+    if (test_tell_seek_getc(&f, "wu", 1000000, 1) != 0) goto out;
+    if (test_tell_seek_getc(&f, "wu", 1000000, 2) != 0) goto out;
+
+    // bgzf_tell and bgzf_read
+    if (test_tell_read(&f, "w") != 0) goto out;
+    if (test_tell_read(&f, "wu") != 0) goto out;
 
     // getline
     if (test_bgzf_getline(&f, "w", 0) != 0) goto out;

@@ -1,7 +1,7 @@
 /*  test/test_view.c -- simple view tool, purely for use in a test harness.
 
     Copyright (C) 2012 Broad Institute.
-    Copyright (C) 2013-2014 Genome Research Ltd.
+    Copyright (C) 2013-2019 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -33,56 +33,294 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 
 #include "cram/cram.h"
-
 #include "htslib/sam.h"
+#include "htslib/vcf.h"
+#include "htslib/hts_log.h"
+
+struct opts {
+    char *fn_ref;
+    int flag;
+    int clevel;
+    int ignore_sam_err;
+    int nreads;
+    int extra_hdr_nuls;
+    int benchmark;
+    int nthreads;
+    int multi_reg;
+    char *index;
+    int min_shift;
+};
 
 enum test_op {
     READ_COMPRESSED    = 1,
-    WRITE_COMPRESSED   = 2,
+    WRITE_BINARY_COMP  = 2, // eg bam, bcf
     READ_CRAM          = 4,
     WRITE_CRAM         = 8,
     WRITE_UNCOMPRESSED = 16,
+    WRITE_COMPRESSED   = 32, // eg vcf.gz, sam.gz
 };
+
+int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, htsFile *out) {
+    int r = 0;
+    sam_hdr_t *h = NULL;
+    hts_idx_t *idx = NULL;
+    bam1_t *b = NULL;
+
+    h = sam_hdr_read(in);
+    if (h == NULL) {
+        fprintf(stderr, "Couldn't read header for \"%s\"\n", argv[optind]);
+        return EXIT_FAILURE;
+    }
+    h->ignore_sam_err = opts->ignore_sam_err;
+    if (opts->extra_hdr_nuls > 0) {
+        char *new_text = realloc(h->text, h->l_text + opts->extra_hdr_nuls);
+        if (new_text == NULL) {
+            fprintf(stderr, "Error reallocing header text\n");
+            goto fail;
+        }
+        h->text = new_text;
+        memset(&h->text[h->l_text], 0, opts->extra_hdr_nuls);
+        h->l_text += opts->extra_hdr_nuls;
+    }
+
+    b = bam_init1();
+    if (b == NULL) {
+        fprintf(stderr, "Out of memory allocating BAM struct\n");
+        goto fail;
+    }
+
+    /* CRAM output */
+    if ((opts->flag & WRITE_CRAM) && opts->fn_ref) {
+        // Create CRAM references arrays
+        int ret = hts_set_fai_filename(out, opts->fn_ref);
+
+        if (ret != 0)
+            goto fail;
+    }
+
+    if (!opts->benchmark && sam_hdr_write(out, h) < 0) {
+        fprintf(stderr, "Error writing output header.\n");
+        goto fail;
+    }
+
+    if (opts->index) {
+        if (sam_idx_init(out, h, opts->min_shift, opts->index) < 0) {
+            fprintf(stderr, "Failed to initialise index\n");
+            goto fail;
+        }
+    }
+
+    if (optind + 1 < argc && !(opts->flag & READ_COMPRESSED)) { // BAM input and has a region
+        int i;
+        if ((idx = sam_index_load(in, argv[optind])) == 0) {
+            fprintf(stderr, "[E::%s] fail to load the BAM index\n", __func__);
+            goto fail;
+        }
+        if (opts->multi_reg) {
+            hts_itr_t *iter = sam_itr_regarray(idx, h, &argv[optind + 1], argc - optind-1);
+            if (!iter)
+                goto fail;
+            while ((r = sam_itr_next(in, iter, b)) >= 0) {
+                if (!opts->benchmark && sam_write1(out, h, b) < 0) {
+                    fprintf(stderr, "Error writing output.\n");
+                    hts_itr_destroy(iter);
+                    goto fail;
+                }
+                if (opts->nreads && --opts->nreads == 0)
+                    break;
+            }
+            hts_itr_destroy(iter);
+            if (r < -1) {
+                fprintf(stderr, "Error reading input.\n");
+                goto fail;
+            }
+        } else {
+            for (i = optind + 1; i < argc; ++i) {
+                hts_itr_t *iter;
+                if ((iter = sam_itr_querys(idx, h, argv[i])) == 0) {
+                    fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
+                    goto fail;
+                }
+                while ((r = sam_itr_next(in, iter, b)) >= 0) {
+                    if (!opts->benchmark && sam_write1(out, h, b) < 0) {
+                        fprintf(stderr, "Error writing output.\n");
+                        hts_itr_destroy(iter);
+                        goto fail;
+                    }
+                    if (opts->nreads && --opts->nreads == 0)
+                        break;
+                }
+                hts_itr_destroy(iter);
+                if (r < -1) {
+                    fprintf(stderr, "Error reading input.\n");
+                    goto fail;
+                }
+            }
+        }
+        hts_idx_destroy(idx); idx = NULL;
+    } else while ((r = sam_read1(in, h, b)) >= 0) {
+        if (!opts->benchmark && sam_write1(out, h, b) < 0) {
+            fprintf(stderr, "Error writing output.\n");
+            goto fail;
+        }
+        if (opts->nreads && --opts->nreads == 0)
+            break;
+    }
+
+    if (r < -1) {
+        fprintf(stderr, "Error parsing input.\n");
+        goto fail;
+    }
+
+    if (opts->index) {
+        if (sam_idx_save(out) < 0) {
+            fprintf(stderr, "Error saving index\n");
+            goto fail;
+        }
+    }
+
+    bam_destroy1(b);
+    sam_hdr_destroy(h);
+
+    return 0;
+ fail:
+    if (b) bam_destroy1(b);
+    if (h) sam_hdr_destroy(h);
+    if (idx) hts_idx_destroy(idx);
+
+    return 1;
+}
+
+int vcf_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, htsFile *out) {
+    bcf_hdr_t *h = bcf_hdr_read(in);
+    bcf1_t *b = bcf_init1();
+    hts_idx_t *idx;
+    int i, exit_code = 0, r = 0;
+
+    if (!h)
+        return 1;
+    if (!b)
+        return 1;
+
+    if (!opts->benchmark && bcf_hdr_write(out, h) < 0)
+        return 1;
+
+    if (opts->index) {
+        if (bcf_idx_init(out, h, opts->min_shift, opts->index) < 0) {
+            fprintf(stderr, "Failed to initialise index\n");
+            return 1;
+        }
+    }
+
+    if (optind + 1 < argc) {
+        // A series of regions.
+        if ((idx = bcf_index_load(argv[optind])) == 0) {
+            fprintf(stderr, "[E::%s] fail to load the BVCF index\n", __func__);
+            return 1;
+        }
+
+        for (i = optind + 1; i < argc; i++) {
+            hts_itr_t *iter;
+            if ((iter = bcf_itr_querys(idx, h, argv[i])) == 0) {
+                fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
+                continue;
+            }
+            while ((r = bcf_itr_next(in, iter, b)) >= 0) {
+                if (!opts->benchmark && bcf_write1(out, h, b) < 0) {
+                    fprintf(stderr, "Error writing output.\n");
+                    exit_code = 1;
+                    break;
+                }
+                if (opts->nreads && --opts->nreads == 0)
+                    break;
+            }
+            if (r < -1) {
+                fprintf(stderr, "Error reading input.\n");
+                exit_code = 1;
+            }
+            hts_itr_destroy(iter);
+            if (exit_code != 0) break;
+        }
+
+        hts_idx_destroy(idx);
+
+    } else {
+        // Whole file
+        while ((r = bcf_read1(in, h, b)) >= 0) {
+            if (!opts->benchmark && bcf_write1(out, h, b) < 0) {
+                fprintf(stderr, "Error writing output.\n");
+                exit_code = 1;
+                break;
+            }
+            if (opts->nreads && --opts->nreads == 0)
+                break;
+        }
+        if (r < -1) {
+            fprintf(stderr, "Error reading input.\n");
+            exit_code = 1;
+        }
+    }
+
+    if (exit_code == 0 && opts->index) {
+        if (bcf_idx_save(out) < 0) {
+            fprintf(stderr, "Error saving index\n");
+            exit_code = 1;
+        }
+    }
+
+    bcf_destroy1(b);
+    bcf_hdr_destroy(h);
+    return exit_code;
+}
 
 int main(int argc, char *argv[])
 {
-    samFile *in;
-    char *fn_ref = 0;
-    int flag = 0, c, clevel = -1, ignore_sam_err = 0;
+    htsFile *in, *out;
     char moder[8];
-    bam_hdr_t *h;
-    bam1_t *b;
-    htsFile *out;
     char modew[800];
-    int r = 0, exit_code = 0;
+    int c, exit_code = EXIT_SUCCESS;
     hts_opt *in_opts = NULL, *out_opts = NULL;
-    int nreads = 0;
-    int extra_hdr_nuls = 0;
-    int benchmark = 0;
-    int nthreads = 0; // shared pool
-    int multi_reg = 0;
+    char *out_fn = "-";
 
-    while ((c = getopt(argc, argv, "DSIt:i:bCul:o:N:BZ:@:M")) >= 0) {
+    struct opts opts;
+    opts.fn_ref = NULL;
+    opts.flag = 0;
+    opts.clevel = -1;
+    opts.ignore_sam_err = 0;
+    opts.nreads = 0;
+    opts.extra_hdr_nuls = 0;
+    opts.benchmark = 0;
+    opts.nthreads = 0; // shared pool
+    opts.multi_reg = 0;
+    opts.index = NULL;
+    opts.min_shift = 0;
+
+    while ((c = getopt(argc, argv, "DSIt:i:bzCul:o:N:BZ:@:Mx:m:p:v")) >= 0) {
         switch (c) {
-        case 'D': flag |= READ_CRAM; break;
-        case 'S': flag |= READ_COMPRESSED; break;
-        case 'I': ignore_sam_err = 1; break;
-        case 't': fn_ref = optarg; break;
+        case 'D': opts.flag |= READ_CRAM; break;
+        case 'S': opts.flag |= READ_COMPRESSED; break;
+        case 'I': opts.ignore_sam_err = 1; break;
+        case 't': opts.fn_ref = optarg; break;
         case 'i': if (hts_opt_add(&in_opts, optarg)) return 1; break;
-        case 'b': flag |= WRITE_COMPRESSED; break;
-        case 'C': flag |= WRITE_CRAM; break;
-        case 'u': flag |= WRITE_UNCOMPRESSED; break; // eg u-BAM not SAM
-        case 'l': clevel = atoi(optarg); flag |= WRITE_COMPRESSED; break;
+        case 'b': opts.flag |= WRITE_BINARY_COMP; break;
+        case 'z': opts.flag |= WRITE_COMPRESSED; break;
+        case 'C': opts.flag |= WRITE_CRAM; break;
+        case 'u': opts.flag |= WRITE_UNCOMPRESSED; break; // eg u-BAM not SAM
+        case 'l': opts.clevel = atoi(optarg); break;
         case 'o': if (hts_opt_add(&out_opts, optarg)) return 1; break;
-        case 'N': nreads = atoi(optarg); break;
-        case 'B': benchmark = 1; break;
-        case 'Z': extra_hdr_nuls = atoi(optarg); break;
-        case 'M': multi_reg = 1; break;
-        case '@': nthreads = atoi(optarg); break;
+        case 'N': opts.nreads = atoi(optarg); break;
+        case 'B': opts.benchmark = 1; break;
+        case 'Z': opts.extra_hdr_nuls = atoi(optarg); break;
+        case 'M': opts.multi_reg = 1; break;
+        case '@': opts.nthreads = atoi(optarg); break;
+        case 'x': opts.index = optarg; break;
+        case 'm': opts.min_shift = atoi(optarg); break;
+        case 'p': out_fn = optarg; break;
+        case 'v': hts_verbose++; break;
         }
     }
     if (argc == optind) {
-        fprintf(stderr, "Usage: test_view [-DSI] [-t fn_ref] [-i option=value] [-bC] [-l level] [-o option=value] [-N num_reads] [-B] [-Z hdr_nuls] [-@ num_threads] <in.bam>|<in.sam>|<in.cram> [region]\n");
+        fprintf(stderr, "Usage: test_view [-DSI] [-t fn_ref] [-i option=value] [-bC] [-l level] [-o option=value] [-N num_reads] [-B] [-Z hdr_nuls] [-@ num_threads] [-x index_fn] [-m min_shift] [-p out] [-v] <in.bam>|<in.sam>|<in.cram> [region]\n");
         fprintf(stderr, "\n");
         fprintf(stderr, "-D: read CRAM format (mode 'c')\n");
         fprintf(stderr, "-S: read compressed BCF, BAM, FAI (mode 'b')\n");
@@ -90,7 +328,8 @@ int main(int argc, char *argv[])
         fprintf(stderr, "-t: fn_ref: load CRAM references from the specificed fasta file instead of @SQ headers when writing a CRAM file\n");
         fprintf(stderr, "-i: option=value: set an option for CRAM input\n");
         fprintf(stderr, "\n");
-        fprintf(stderr, "-b: write compressed BCF, BAM, FAI (mode 'b')\n");
+        fprintf(stderr, "-b: write binary compressed BCF, BAM, FAI (mode 'b')\n");
+        fprintf(stderr, "-z: write text compressed VCF.gz, SAM.gz (mode 'z')\n");
         fprintf(stderr, "-C: write CRAM format (mode 'c')\n");
         fprintf(stderr, "-l 0-9: set zlib compression level\n");
         fprintf(stderr, "-o option=value: set an option for CRAM output\n");
@@ -100,64 +339,33 @@ int main(int argc, char *argv[])
         fprintf(stderr, "-M: use hts_itr_multi iterator\n");
         fprintf(stderr, "-Z hdr_nuls: append specified number of null bytes to the SAM header\n");
         fprintf(stderr, "-@ num_threads: use thread pool with specified number of threads\n\n");
+        fprintf(stderr, "-x fn: write index to fn\n");
+        fprintf(stderr, "-m min_shift: specifies BAI/CSI bin size; 0 is BAI(BAM) or TBI(VCF), 14 is CSI default\n");
+        fprintf(stderr, "-p out_fn: output to out_fn instead of stdout\n");
+        fprintf(stderr, "-v: increase verbosity\n");
         fprintf(stderr, "The region list entries should be specified as 'reg:beg-end', with intervals of a region being disjunct and sorted by the starting coordinate.\n");
         return 1;
     }
     strcpy(moder, "r");
-    if (flag & READ_CRAM) strcat(moder, "c");
-    else if ((flag & READ_COMPRESSED) == 0) strcat(moder, "b");
+    if (opts.flag & READ_CRAM) strcat(moder, "c");
+    else if ((opts.flag & READ_COMPRESSED) == 0) strcat(moder, "b");
 
-    in = sam_open(argv[optind], moder);
+    in = hts_open(argv[optind], moder);
     if (in == NULL) {
         fprintf(stderr, "Error opening \"%s\"\n", argv[optind]);
         return EXIT_FAILURE;
     }
-    h = sam_hdr_read(in);
-    if (h == NULL) {
-        fprintf(stderr, "Couldn't read header for \"%s\"\n", argv[optind]);
-        return EXIT_FAILURE;
-    }
-    h->ignore_sam_err = ignore_sam_err;
-    if (extra_hdr_nuls) {
-        char *new_text = realloc(h->text, h->l_text + extra_hdr_nuls);
-        if (new_text == NULL) {
-            fprintf(stderr, "Error reallocing header text\n");
-            return EXIT_FAILURE;
-        }
-        h->text = new_text;
-        memset(&h->text[h->l_text], 0, extra_hdr_nuls);
-        h->l_text += extra_hdr_nuls;
-    }
-
-    b = bam_init1();
 
     strcpy(modew, "w");
-    if (clevel >= 0 && clevel <= 9) sprintf(modew + 1, "%d", clevel);
-    if (flag & WRITE_CRAM) strcat(modew, "c");
-    else if (flag & WRITE_COMPRESSED) strcat(modew, "b");
-    else if (flag & WRITE_UNCOMPRESSED) strcat(modew, "bu");
-    out = hts_open("-", modew);
+    if (opts.clevel >= 0 && opts.clevel <= 9) sprintf(modew + 1, "%d", opts.clevel);
+    if (opts.flag & WRITE_CRAM) strcat(modew, "c");
+    else if (opts.flag & WRITE_BINARY_COMP) strcat(modew, "b");
+    else if (opts.flag & WRITE_COMPRESSED) strcat(modew, "z");
+    else if (opts.flag & WRITE_UNCOMPRESSED) strcat(modew, "bu");
+    out = hts_open(out_fn, modew);
     if (out == NULL) {
         fprintf(stderr, "Error opening standard output\n");
         return EXIT_FAILURE;
-    }
-
-    /* CRAM output */
-    if (flag & WRITE_CRAM) {
-        int ret;
-
-        // Parse input header and use for CRAM output
-        out->fp.cram->header = sam_hdr_parse_(h->text, h->l_text);
-
-        // Create CRAM references arrays
-        if (fn_ref)
-            ret = cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, fn_ref);
-        else
-            // Attempt to fill out a cram->refs[] array from @SQ headers
-            ret = cram_set_option(out->fp.cram, CRAM_OPT_REFERENCE, NULL);
-
-        if (ret != 0)
-            return EXIT_FAILURE;
     }
 
     // Process any options; currently cram only.
@@ -171,8 +379,8 @@ int main(int argc, char *argv[])
 
     // Create and share the thread pool
     htsThreadPool p = {NULL, 0};
-    if (nthreads > 0) {
-        p.pool = hts_tpool_init(nthreads);
+    if (opts.nthreads > 0) {
+        p.pool = hts_tpool_init(opts.nthreads);
         if (!p.pool) {
             fprintf(stderr, "Error creating thread pool\n");
             exit_code = 1;
@@ -182,137 +390,33 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (!benchmark && sam_hdr_write(out, h) < 0) {
-        fprintf(stderr, "Error writing output header.\n");
-        exit_code = 1;
-    }
-    if (optind + 1 < argc && !(flag & READ_COMPRESSED)) { // BAM input and has a region
-        int i;
-        hts_idx_t *idx;
-        if ((idx = sam_index_load(in, argv[optind])) == 0) {
-            fprintf(stderr, "[E::%s] fail to load the BAM index\n", __func__);
-            return 1;
-        }
-        if (multi_reg) {
-            int reg_count = 0;
-            hts_reglist_t *reg_list = calloc(argc-(optind+1), sizeof(*reg_list));
-            if (!reg_list)
-                return 1;
+    int ret;
+    switch (hts_get_format(in)->category) {
+    case sequence_data:
+        ret = sam_loop(argc, argv, optind, &opts, in, out);
+        break;
 
-            // We need a public function somewhere to turn an array of region strings
-            // into a region list, but for testing this will suffice for now.
-            // Consider moving a derivation of this into htslib proper sometime.
-            for (i = optind + 1; i < argc; ++i) {
-                int j;
-                uint32_t beg, end;
-                char *cp = strrchr(argv[i], ':');
-                if (cp) *cp = 0;
+    case variant_data:
+        ret = vcf_loop(argc, argv, optind, &opts, in, out);
+        break;
 
-                for (j = 0; j < reg_count; j++)
-                    if (strcmp(reg_list[j].reg, argv[i]) == 0)
-                        break;
-                if (j == reg_count) {
-                    reg_list[reg_count++].reg = argv[i];
-                    if (strcmp(".", argv[i]) == 0) {
-                        reg_list[j].tid = HTS_IDX_START;
-
-                    } else if (strcmp("*", argv[i]) == 0) {
-                        reg_list[j].tid = HTS_IDX_NOCOOR;
-
-                    } else {
-                        int k; // need the header API here!
-                        for (k = 0; k < h->n_targets; k++)
-                            if (strcmp(h->target_name[k], argv[i]) == 0)
-                                break;
-                        if (k == h->n_targets)
-                            return 1;
-                        reg_list[j].tid = k;
-                        reg_list[j].min_beg = h->target_len[k];
-                        reg_list[j].max_end = 0;
-                    }
-                }
-
-                hts_reglist_t *r = &reg_list[j];
-                r->intervals = realloc(r->intervals, ++r->count * sizeof(*r->intervals));
-                if (!r->intervals)
-                    return 1;
-                beg = 1;
-                end = r->tid >= 0 ? h->target_len[r->tid] : 0;
-                if (cp) {
-                    *cp = 0;
-                    // hts_parse_reg() is better, but awkward here
-                    sscanf(cp+1, "%d-%d", &beg, &end);
-                }
-                r->intervals[r->count-1].beg = beg-1; // BED syntax
-                r->intervals[r->count-1].end = end;
-
-                if (r->min_beg > beg)
-                    r->min_beg = beg;
-                if (r->max_end < end)
-                    r->max_end = end;
-            }
-
-            hts_itr_multi_t *iter = sam_itr_regions(idx, h, reg_list, reg_count);
-            if (!iter)
-                return 1;
-            while ((r = sam_itr_multi_next(in, iter, b)) >= 0) {
-                if (!benchmark && sam_write1(out, h, b) < 0) {
-                    fprintf(stderr, "Error writing output.\n");
-                    exit_code = 1;
-                    break;
-                }
-                if (nreads && --nreads == 0)
-                    break;
-            }
-            hts_itr_multi_destroy(iter);
-        } else {
-            for (i = optind + 1; i < argc; ++i) {
-                hts_itr_t *iter;
-                if ((iter = sam_itr_querys(idx, h, argv[i])) == 0) {
-                    fprintf(stderr, "[E::%s] fail to parse region '%s'\n", __func__, argv[i]);
-                    continue;
-                }
-                while ((r = sam_itr_next(in, iter, b)) >= 0) {
-                    if (!benchmark && sam_write1(out, h, b) < 0) {
-                        fprintf(stderr, "Error writing output.\n");
-                        exit_code = 1;
-                        break;
-                    }
-                    if (nreads && --nreads == 0)
-                        break;
-                }
-                hts_itr_destroy(iter);
-            }
-        }
-        hts_idx_destroy(idx);
-    } else while ((r = sam_read1(in, h, b)) >= 0) {
-        if (!benchmark && sam_write1(out, h, b) < 0) {
-            fprintf(stderr, "Error writing output.\n");
-            exit_code = 1;
-            break;
-        }
-        if (nreads && --nreads == 0)
-            break;
+    default:
+        fprintf(stderr, "Unsupported or unknown category of data in input file\n");
+        return EXIT_FAILURE;
     }
 
-    if (r < -1) {
-        fprintf(stderr, "Error parsing input.\n");
-        exit_code = 1;
-    }
+    if (ret != 0)
+        exit_code = EXIT_FAILURE;
 
-    r = sam_close(out);
-    if (r < 0) {
+    ret = hts_close(out);
+    if (ret < 0) {
         fprintf(stderr, "Error closing output.\n");
-        exit_code = 1;
+        exit_code = EXIT_FAILURE;
     }
-
-    bam_destroy1(b);
-    bam_hdr_destroy(h);
-
-    r = sam_close(in);
-    if (r < 0) {
+    ret = hts_close(in);
+    if (ret < 0) {
         fprintf(stderr, "Error closing input.\n");
-        exit_code = 1;
+        exit_code = EXIT_FAILURE;
     }
 
     if (p.pool)

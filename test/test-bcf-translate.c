@@ -1,6 +1,6 @@
 /*  test/test-bcf-translate.c
 
-    Copyright (C) 2017 Genome Research Ltd.
+    Copyright (C) 2017-2018 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -26,6 +26,15 @@
 #include <config.h>
 #include <stdio.h>
 #include <htslib/vcf.h>
+
+void error(const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    vfprintf(stderr, format, ap);
+    va_end(ap);
+    exit(-1);
+}
 
 int main(int argc, char **argv)
 {
@@ -63,12 +72,12 @@ int main(int argc, char **argv)
     bcf_hdr_add_sample(hdr1,"SMPL2");
     bcf_hdr_add_sample(hdr2,"SMPL1");
     bcf_hdr_add_sample(hdr2,"SMPL2");
-    bcf_hdr_sync(hdr1);
-    bcf_hdr_sync(hdr2);
+    if (bcf_hdr_sync(hdr1) < 0) error("bcf_hdr_sync(hdr1)");
+    if (bcf_hdr_sync(hdr2) < 0) error("bcf_hdr_sync(hdr2)");
 
     hdr2 = bcf_hdr_merge(hdr2,hdr1);
-    bcf_hdr_sync(hdr2);
-    bcf_hdr_write(fp, hdr2);
+    if (bcf_hdr_sync(hdr2) < 0) error("bcf_hdr_sync(hdr2) after merge");
+    if ( bcf_hdr_write(fp, hdr2)!=0 ) error("Failed to write to %s\n", fname);
 
     bcf1_t *rec = bcf_init1();
     rec->rid = bcf_hdr_name2id(hdr1, "1");
@@ -91,7 +100,7 @@ int main(int argc, char **argv)
     bcf_update_format_int32(hdr1, rec, "FMT2", NULL, 0);
 
     bcf_translate(hdr2, hdr1, rec);
-    bcf_write(fp, hdr2, rec);
+    if ( bcf_write(fp, hdr2, rec)!=0 ) error("Faild to write to %s\n", fname);
 
     // Clean
     bcf_destroy1(rec);

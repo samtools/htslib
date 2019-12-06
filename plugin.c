@@ -1,6 +1,6 @@
 /*  plugin.c -- low-level path parsing and plugin functions.
 
-    Copyright (C) 2015 Genome Research Ltd.
+    Copyright (C) 2015-2016 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -44,7 +44,7 @@ static DIR *open_nextdir(struct hts_path_itr *itr)
     DIR *dir;
 
     while (1) {
-        const char *colon = strchr(itr->pathdir, ':');
+        const char *colon = strchr(itr->pathdir, HTS_PATH_SEPARATOR_CHAR);
         if (colon == NULL) return NULL;
 
         itr->entry.l = 0;
@@ -86,13 +86,13 @@ void hts_path_itr_setup(struct hts_path_itr *itr, const char *path,
     }
 
     while (1) {
-        size_t len = strcspn(path, ":");
+        size_t len = strcspn(path, HTS_PATH_SEPARATOR_STR);
         if (len == 0) kputs(builtin_path, &itr->path);
         else kputsn(path, len, &itr->path);
-        kputc(':', &itr->path);
+        kputc(HTS_PATH_SEPARATOR_CHAR, &itr->path);
 
         path += len;
-        if (*path == ':') path++;
+        if (*path == HTS_PATH_SEPARATOR_CHAR) path++;
         else break;
     }
 

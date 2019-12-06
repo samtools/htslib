@@ -1,6 +1,6 @@
 /* The MIT License
 
-   Copyright (c) 2008 by Genome Research Ltd (GRL).
+   Copyright (c) 2008, 2012, 2014 Genome Research Ltd (GRL).
                  2010 by Attractive Chaos <attractor@live.co.uk>
 
    Permission is hereby granted, free of charge, to any person obtaining
@@ -30,6 +30,8 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <sys/types.h>
+
+#include "hts_defs.h"
 
 #ifndef _WIN32
 #define netread(fd, ptr, len) read(fd, ptr, len)
@@ -75,24 +77,29 @@ extern "C" {
 	void knet_win32_destroy();
 #endif
 
+    HTSLIB_EXPORT
 	knetFile *knet_open(const char *fn, const char *mode);
 
 	/*
 	   This only works with local files.
 	 */
+    HTSLIB_EXPORT
 	knetFile *knet_dopen(int fd, const char *mode);
 
 	/*
 	  If ->is_ready==0, this routine updates ->fd; otherwise, it simply
 	  reads from ->fd.
 	 */
+    HTSLIB_EXPORT
 	ssize_t knet_read(knetFile *fp, void *buf, size_t len);
 
 	/*
 	  This routine only sets ->offset and ->is_ready=0. It does not
 	  communicate with the FTP server.
 	 */
+    HTSLIB_EXPORT
 	off_t knet_seek(knetFile *fp, off_t off, int whence);
+    HTSLIB_EXPORT
 	int knet_close(knetFile *fp);
 
 #ifdef __cplusplus

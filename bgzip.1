@@ -1,4 +1,4 @@
-.TH bgzip 1 "18 July 2018" "htslib-1.9" "Bioinformatics tools"
+.TH bgzip 1 "6 December 2019" "htslib-1.10" "Bioinformatics tools"
 .SH NAME
 .PP
 bgzip \- Block compression/decompression utility
@@ -86,7 +86,9 @@ Write to standard output, keep original files unchanged.
 Decompress.
 .TP
 .B "-f, --force"
-Overwrite files without asking.
+Overwrite files without asking, or decompress files that don't have a known
+compression filename extension (e.g., \fI.gz\fR) without asking.
+Use \fB--force\fR twice to do both without asking.
 .TP
 .B "-h, --help"
 Displays a help message.

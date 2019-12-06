@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2014 Genome Research Ltd.
+Copyright (c) 2012-2019 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -39,8 +39,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * maps, bitwise I/O, etc.
  */
 
-#ifndef _CRAM_IO_H_
-#define _CRAM_IO_H_
+#ifndef CRAM_IO_H
+#define CRAM_IO_H
 
 #include <stdint.h>
 #include <cram/misc.h>
@@ -56,7 +56,7 @@ extern "C" {
  */
 
 /*! INTERNAL: Converts two characters into an integer for use in switch{} */
-#define CRAM_KEY(a,b) (((a)<<8)|((b)))
+#define CRAM_KEY(a,b) ((((unsigned char) a)<<8)|(((unsigned char) b)))
 
 /*! Reads an integer in ITF-8 encoding from 'fd' and stores it in
  * *val.
@@ -377,7 +377,8 @@ static inline int safe_ltf8_get(const char *cp, const char *endp,
  * @return
  * Returns the number of bytes written
  */
-int itf8_put_blk(cram_block *blk, int val);
+int itf8_put_blk(cram_block *blk, int32_t val);
+int ltf8_put_blk(cram_block *blk, int64_t val);
 
 /*! Pulls a literal 32-bit value from a block.
  *
@@ -505,48 +506,72 @@ static inline cram_block *cram_get_block_by_id(cram_slice *slice, int id) {
 /* Returns the address one past the end of the block */
 #define BLOCK_END(b) (&(b)->data[(b)->byte])
 
-/* Request block to be at least 'l' bytes long */
-#define BLOCK_RESIZE(b,l)                                       \
-    do {                                                        \
-        while((b)->alloc <= (l)) {                              \
-            (b)->alloc = (b)->alloc ? (b)->alloc*1.5 : 1024;    \
-            (b)->data = realloc((b)->data, (b)->alloc);         \
-        }                                                       \
-     } while(0)
-
 /* Make block exactly 'l' bytes long */
-#define BLOCK_RESIZE_EXACT(b,l)                                 \
-    do {                                                        \
-        (b)->alloc = (l);                                       \
-        (b)->data = realloc((b)->data, (b)->alloc);             \
-     } while(0)
+static inline int block_resize_exact(cram_block *b, size_t len) {
+    unsigned char *tmp = realloc(b->data, len);
+    if (!tmp)
+        return -1;
+    b->alloc = len;
+    b->data = tmp;
+    return 0;
+}
+
+/* Request block to be at least 'l' bytes long */
+static inline int block_resize(cram_block *b, size_t len) {
+    if (b->alloc > len)
+        return 0;
+
+    size_t alloc = b->alloc;
+    while (alloc <= len)
+        alloc = alloc ? alloc*1.5 : 1024;
+
+    return block_resize_exact(b, alloc);
+}
+
 
 /* Ensure the block can hold at least another 'l' bytes */
-#define BLOCK_GROW(b,l) BLOCK_RESIZE((b), BLOCK_SIZE((b)) + (l))
+static inline int block_grow(cram_block *b, size_t len) {
+    return block_resize(b, BLOCK_SIZE(b) + len);
+}
 
-/* Append string 's' of length 'l' */
-#define BLOCK_APPEND(b,s,l)               \
-    do {                                  \
-        BLOCK_GROW((b),(l));              \
-        memcpy(BLOCK_END((b)), (s), (l)); \
-        BLOCK_SIZE((b)) += (l);           \
-    } while (0)
+/* Append string 's' of length 'l'. */
+static inline int block_append(cram_block *b, const void *s, size_t len) {
+    if (block_grow(b, len) < 0)
+        return -1;
+
+    memcpy(BLOCK_END(b), s, len);
+    BLOCK_SIZE(b) += len;
+
+    return 0;
+}
 
 /* Append as single character 'c' */
-#define BLOCK_APPEND_CHAR(b,c)            \
-    do {                                  \
-        BLOCK_GROW((b),1);                \
-        (b)->data[(b)->byte++] = (c);     \
-    } while (0)
+static inline int block_append_char(cram_block *b, char c) {
+    if (block_grow(b, 1) < 0)
+        return -1;
+
+    b->data[b->byte++] = c;
+    return 0;
+}
 
 /* Append a single unsigned integer */
-#define BLOCK_APPEND_UINT(b,i)                       \
-    do {                                             \
-        unsigned char *cp;                           \
-        BLOCK_GROW((b),11);                          \
-        cp = &(b)->data[(b)->byte];                  \
-        (b)->byte += append_uint32(cp, (i)) - cp;       \
-    } while (0)
+static inline unsigned char *append_uint32(unsigned char *cp, uint32_t i);
+static inline int block_append_uint(cram_block *b, unsigned int i) {
+    if (block_grow(b, 11) < 0)
+        return -1;
+
+    unsigned char *cp = &b->data[b->byte];
+    b->byte += append_uint32(cp, i) - cp;
+    return 0;
+}
+
+// Versions of above with built in goto block_err calls.
+#define BLOCK_RESIZE_EXACT(b,l) if (block_resize_exact((b),(l))<0) goto block_err
+#define BLOCK_RESIZE(b,l)       if (block_resize((b),(l))      <0) goto block_err
+#define BLOCK_GROW(b,l)         if (block_grow((b),(l))        <0) goto block_err
+#define BLOCK_APPEND(b,s,l)     if (block_append((b),(s),(l))  <0) goto block_err
+#define BLOCK_APPEND_CHAR(b,c)  if (block_append_char((b),(c)) <0) goto block_err
+#define BLOCK_APPEND_UINT(b,i)  if (block_append_uint((b),(i)) <0) goto block_err
 
 static inline unsigned char *append_uint32(unsigned char *cp, uint32_t i) {
     uint32_t j;
@@ -634,7 +659,7 @@ static inline unsigned char *append_uint64(unsigned char *cp, uint64_t i) {
  */
 int cram_load_reference(cram_fd *fd, char *fn);
 
-/*! Generates a lookup table in refs based on the SQ headers in SAM_hdr.
+/*! Generates a lookup table in refs based on the SQ headers in sam_hdr_t.
  *
  * Indexes references by the order they appear in a BAM file. This may not
  * necessarily be the same order they appear in the fasta reference file.
@@ -643,7 +668,7 @@ int cram_load_reference(cram_fd *fd, char *fn);
  * Returns 0 on success;
  *        -1 on failure
  */
-int refs2id(refs_t *r, SAM_hdr *bfd);
+int refs2id(refs_t *r, sam_hdr_t *hdr);
 
 void refs_free(refs_t *r);
 
@@ -800,7 +825,7 @@ void cram_free_file_def(cram_file_def *def);
  * Returns SAM hdr ptr on success;
  *         NULL on failure
  */
-SAM_hdr *cram_read_SAM_hdr(cram_fd *fd);
+sam_hdr_t *cram_read_SAM_hdr(cram_fd *fd);
 
 /*! Writes a CRAM SAM header.
  *
@@ -808,7 +833,7 @@ SAM_hdr *cram_read_SAM_hdr(cram_fd *fd);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_write_SAM_hdr(cram_fd *fd, SAM_hdr *hdr);
+int cram_write_SAM_hdr(cram_fd *fd, sam_hdr_t *hdr);
 
 
 /**@}*/
@@ -849,8 +874,6 @@ int cram_close(cram_fd *fd);
  *        -1 on failure
  */
 int cram_seek(cram_fd *fd, off_t offset, int whence);
-
-int64_t cram_tell(cram_fd *fd);
 
 /*
  * Flushes a CRAM file.
@@ -896,14 +919,14 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
  * Attaches a header to a cram_fd.
  *
  * This should be used when creating a new cram_fd for writing where
- * we have an SAM_hdr already constructed (eg from a file we've read
+ * we have an sam_hdr_t already constructed (eg from a file we've read
  * in).
  *
  * @return
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_set_header(cram_fd *fd, SAM_hdr *hdr);
+int cram_set_header2(cram_fd *fd, const sam_hdr_t *hdr);
 
 /*!
  * Returns the hFILE connected to a cram_fd.
@@ -916,4 +939,4 @@ static inline struct hFILE *cram_hfile(cram_fd *fd) {
 }
 #endif
 
-#endif /* _CRAM_IO_H_ */
+#endif /* CRAM_IO_H */

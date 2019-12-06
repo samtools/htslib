@@ -1,6 +1,6 @@
 /* The MIT License
 
-   Copyright (C) 2010, 2013 Genome Research Ltd.
+   Copyright (C) 2010, 2013-2014 Genome Research Ltd.
    Copyright (C) 2011 Attractive Chaos <attractor@live.co.uk>
 
    Permission is hereby granted, free of charge, to any person obtaining
@@ -27,6 +27,8 @@
 #ifndef HTSLIB_KFUNC_H
 #define HTSLIB_KFUNC_H
 
+#include "hts_defs.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -35,12 +37,14 @@ extern "C" {
  * \log{\Gamma(z)}
  * AS245, 2nd algorithm, http://lib.stat.cmu.edu/apstat/245
  */
+HTSLIB_EXPORT
 double kf_lgamma(double z);
 
 /* complementary error function
  * \frac{2}{\sqrt{\pi}} \int_x^{\infty} e^{-t^2} dt
  * AS66, 2nd algorithm, http://lib.stat.cmu.edu/apstat/66
  */
+HTSLIB_EXPORT
 double kf_erfc(double x);
 
 /* The following computes regularized incomplete gamma functions.
@@ -56,7 +60,9 @@ double kf_erfc(double x);
  * kf_gammaq(s,z)*tgamma(s).
  */
 
+HTSLIB_EXPORT
 double kf_gammap(double s, double z);
+HTSLIB_EXPORT
 double kf_gammaq(double s, double z);
 
 /* Regularized incomplete beta function. The method is taken from
@@ -66,6 +72,7 @@ double kf_gammaq(double s, double z);
  *
  *   http://www.danielsoper.com/statcalc/calc36.aspx
  */
+HTSLIB_EXPORT
 double kf_betai(double a, double b, double x);
 
 /*
@@ -74,6 +81,7 @@ double kf_betai(double a, double b, double x);
  *   -----------+----
  *    n_1  n_2  | n
  */
+HTSLIB_EXPORT
 double kt_fisher_exact(int n11, int n12, int n21, int n22, double *_left, double *_right, double *two);
 
 #ifdef __cplusplus

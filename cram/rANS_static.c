@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Genome Research Ltd.
+ * Copyright (c) 2014-2019 Genome Research Ltd.
  * Author(s): James Bonfield
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,7 @@
  * Author: James Bonfield, Wellcome Trust Sanger Institute. 2014
  */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <stdint.h>
@@ -44,6 +45,7 @@
 #include <assert.h>
 #include <string.h>
 #include <sys/time.h>
+#include <limits.h>
 
 #include "cram/rANS_static.h"
 #include "cram/rANS_byte.h"
@@ -220,10 +222,15 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
     if (*in++ != 0) // Order-0 check
         return NULL;
 
-    in_sz  = ((in[0])<<0) | ((in[1])<<8) | ((in[2])<<16) | ((in[3])<<24);
-    out_sz = ((in[4])<<0) | ((in[5])<<8) | ((in[6])<<16) | ((in[7])<<24);
+    in_sz  = ((((uint32_t) in[0])<<0) | (((uint32_t) in[1])<<8) |
+              (((uint32_t) in[2])<<16) | (((uint32_t) in[3])<<24));
+    out_sz = ((((uint32_t) in[4])<<0) | (((uint32_t) in[5])<<8) |
+              (((uint32_t) in[6])<<16) | (((uint32_t) in[7])<<24));
     if (in_sz != in_size-9)
         return NULL;
+
+    if (out_sz >= INT_MAX)
+        return NULL; // protect against some overflow cases
 
     // Precompute reverse lookup of frequency.
     rle = x = 0;
@@ -582,10 +589,15 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     if (*in++ != 1) // Order-1 check
         return NULL;
 
-    in_sz  = ((in[0])<<0) | ((in[1])<<8) | ((in[2])<<16) | ((in[3])<<24);
-    out_sz = ((in[4])<<0) | ((in[5])<<8) | ((in[6])<<16) | ((in[7])<<24);
+    in_sz  = ((((uint32_t) in[0])<<0) | (((uint32_t) in[1])<<8) |
+              (((uint32_t) in[2])<<16) | (((uint32_t) in[3])<<24));
+    out_sz = ((((uint32_t) in[4])<<0) | (((uint32_t) in[5])<<8) |
+              (((uint32_t) in[6])<<16) | (((uint32_t) in[7])<<24));
     if (in_sz != in_size-9)
         return NULL;
+
+    if (out_sz >= INT_MAX)
+        return NULL; // protect against some overflow cases
 
     // calloc may add 2% overhead to CRAM decode, but on linux with glibc it's
     // often the same thing due to using mmap.

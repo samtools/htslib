@@ -32,7 +32,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 /*
-Copyright (c) 2008, 2009, 2013, 2014 Genome Research Ltd.
+Copyright (c) 2008, 2009, 2013, 2014-2015, 2018-2019 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -61,6 +61,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <stdlib.h>
@@ -80,6 +81,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/misc.h"
 #include "htslib/hfile.h"
 #include "htslib/hts_log.h"
+#include "htslib/hts.h"
+
+/*
+ * Returns whether the path refers to a regular file.
+ */
+static int is_file(char *fn) {
+    struct stat buf;
+    if ( stat(fn,&buf) ) return 0;
+    return S_ISREG(buf.st_mode);
+}
 
 /*
  * Tokenises the search path splitting on colons (unix) or semicolons
@@ -93,15 +104,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * The returned data has been malloced. It is up to the caller to free this
  * memory.
  */
-char *tokenise_search_path(char *searchpath) {
+char *tokenise_search_path(const char *searchpath) {
     char *newsearch;
     unsigned int i, j;
     size_t len;
-#ifdef _WIN32
-    char path_sep = ';';
-#else
-    char path_sep = ':';
-#endif
+    char path_sep = HTS_PATH_SEPARATOR_CHAR;
 
     if (!searchpath)
         searchpath="";
@@ -168,45 +175,48 @@ char *tokenise_search_path(char *searchpath) {
     return newsearch;
 }
 
-mFILE *find_file_url(char *file, char *url) {
-    char buf[8192], *cp;
+static char *expand_path(const char *file, char *dirname, int max_s_digits);
+
+mFILE *find_file_url(const char *file, char *url) {
+    char *path = NULL, buf[8192];
     mFILE *mf = NULL;
-    int maxlen = 8190 - strlen(file), len;
-    hFILE *hf;
+    ssize_t len;
+    hFILE *hf = NULL;
 
-    /* Expand %s for the trace name */
-    for (cp = buf; *url && cp - buf < maxlen; url++) {
-        if (*url == '%' && *(url+1) == 's') {
-            url++;
-            cp += strlen(strcpy(cp, file));
-        } else {
-            *cp++ = *url;
-        }
-    }
-    *cp++ = 0;
+    /* Expand %s for the trace name.  Only one digit is allowed between
+       The % and s to avoid ambiguity with percent-encoded URLs */
 
-    if (!(hf = hopen(buf, "r"))) {
-        if (errno != ENOENT)
-            hts_log_warning("Failed to open reference \"%s\": %s", buf, strerror(errno));
+    path = expand_path(file, url, 1);
+    if (!path)
         return NULL;
+
+    if (!(hf = hopen(path, "r"))) {
+        if (errno != ENOENT)
+            hts_log_warning("Failed to open reference \"%s\": %s", path, strerror(errno));
+        goto fail;
     }
 
     if (NULL == (mf = mfcreate(NULL, 0)))
-        return NULL;
-    while ((len = hread(hf, buf, 8192)) > 0) {
+        goto fail;
+    while ((len = hread(hf, buf, sizeof(buf))) > 0) {
         if (mfwrite(buf, len, 1, mf) <= 0) {
             hclose_abruptly(hf);
-            mfdestroy(mf);
-            return NULL;
+            goto fail;
         }
     }
     if (hclose(hf) < 0 || len < 0) {
-        mfdestroy(mf);
-        return NULL;
+        hts_log_warning("Failed to read reference \"%s\": %s", path, strerror(errno));
+        goto fail;
     }
 
+    free(path);
     mrewind(mf);
     return mf;
+
+ fail:
+    mfdestroy(mf);
+    free(path);
+    return NULL;
 }
 
 /*
@@ -215,14 +225,16 @@ mFILE *find_file_url(char *file, char *url) {
  *
  * Returns expanded pathname or NULL for malloc failure.
  */
-static char *expand_path(char *file, char *dirname) {
+static char *expand_path(const char *file, char *dirname, int max_s_digits) {
     size_t len = strlen(dirname);
     size_t lenf = strlen(file);
     char *cp, *path;
 
     path = malloc(len+lenf+2); // worst expansion DIR/FILE
-    if (!path)
+    if (!path) {
+        hts_log_error("Out of memory");
         return NULL;
+    }
 
     if (dirname[len-1] == '/')
         len--;
@@ -237,7 +249,7 @@ static char *expand_path(char *file, char *dirname) {
         while ((cp = strchr(dirname, '%'))) {
             char *endp;
             long l = strtol(cp+1, &endp, 10);
-            if (*endp != 's') {
+            if (*endp != 's' || endp - cp - 1 > max_s_digits) {
                 strncpy(path_end, dirname, (endp+1)-dirname);
                 path_end += (endp+1)-dirname;
                 dirname = endp+1;
@@ -279,11 +291,13 @@ static char *expand_path(char *file, char *dirname) {
  * Returns mFILE pointer if found
  *         NULL if not
  */
-static mFILE *find_file_dir(char *file, char *dirname) {
+static mFILE *find_file_dir(const char *file, char *dirname) {
     char *path;
     mFILE *mf = NULL;
 
-    path = expand_path(file, dirname);
+    path = expand_path(file, dirname, INT_MAX);
+    if (!path)
+        return NULL;
 
     if (is_file(path))
         mf = mfopen(path, "rbm");
@@ -312,7 +326,7 @@ static mFILE *find_file_dir(char *file, char *dirname) {
  * Returns a mFILE pointer when found.
  *           NULL otherwise.
  */
-mFILE *open_path_mfile(char *file, char *path, char *relative_to) {
+mFILE *open_path_mfile(const char *file, char *path, char *relative_to) {
     char *newsearch;
     char *ele;
     mFILE *fp;
@@ -387,7 +401,7 @@ mFILE *open_path_mfile(char *file, char *path, char *relative_to) {
  * Returns the expanded pathname if found.
  *         NULL if not
  */
-char *find_path(char *file, char *path) {
+char *find_path(const char *file, const char *path) {
     char *newsearch;
     char *ele;
     char *outpath = NULL;
@@ -407,7 +421,7 @@ char *find_path(char *file, char *path) {
             !strncmp(ele2, "ftp:", 4)) {
             continue;
         } else {
-            outpath = expand_path(file, ele2);
+            outpath = expand_path(file, ele2, INT_MAX);
             if (is_file(outpath)) {
                 free(newsearch);
                 return outpath;

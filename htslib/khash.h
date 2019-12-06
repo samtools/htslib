@@ -1,6 +1,7 @@
 /* The MIT License
 
    Copyright (c) 2008, 2009, 2011 by Attractive Chaos <attractor@live.co.uk>
+   Copyright (C) 2014-2015, 2018 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -128,6 +129,7 @@ int main() {
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <htslib/kstring.h>
 
 /* compiler specific configuration */
 
@@ -400,7 +402,7 @@ static kh_inline khint_t __ac_X31_hash_string(const char *s)
 }
 /*! @function
   @abstract     Another interface to const char* hash function
-  @param  key   Pointer to a null terminated string [const char*]
+  @param  key   Pointer to a nul terminated string [const char*]
   @return       The hash value [khint_t]
  */
 #define kh_str_hash_func(key) __ac_X31_hash_string(key)
@@ -408,6 +410,30 @@ static kh_inline khint_t __ac_X31_hash_string(const char *s)
   @abstract     Const char* comparison function
  */
 #define kh_str_hash_equal(a, b) (strcmp(a, b) == 0)
+
+/*! @function
+  @abstract     Kstring hash function
+  @param  s     Pointer to a kstring
+  @return       The hash value
+ */
+static kh_inline khint_t __ac_X31_hash_kstring(const kstring_t ks)
+{
+	khint_t h = 0;
+	size_t i;
+	for (i = 0; i < ks.l; i++)
+		h = (h << 5) - h + (khint_t)ks.s[i];
+	return h;
+}
+/*! @function
+  @abstract     Interface to kstring hash function.
+  @param  key   Pointer to a khash; permits hashing on non-nul terminated strings.
+  @return       The hash value [khint_t]
+ */
+#define kh_kstr_hash_func(key) __ac_X31_hash_kstring(key)
+/*! @function
+  @abstract     kstring comparison function
+ */
+#define kh_kstr_hash_equal(a, b) ((a).l == (b).l && strncmp((a).s, (b).s, (a).l) == 0)
 
 static kh_inline khint_t __ac_Wang_hash(khint_t key)
 {
@@ -623,5 +649,20 @@ typedef const char *kh_cstr_t;
  */
 #define KHASH_MAP_INIT_STR(name, khval_t)								\
 	KHASH_INIT(name, kh_cstr_t, khval_t, 1, kh_str_hash_func, kh_str_hash_equal)
+
+/*! @function
+  @abstract     Instantiate a hash set containing kstring_t keys
+  @param  name  Name of the hash table [symbol]
+ */
+#define KHASH_SET_INIT_KSTR(name)										\
+	KHASH_INIT(name, kstring_t, char, 0, kh_kstr_hash_func, kh_kstr_hash_equal)
+
+/*! @function
+  @abstract     Instantiate a hash map containing kstring_t keys
+  @param  name  Name of the hash table [symbol]
+  @param  khval_t  Type of values [type]
+ */
+#define KHASH_MAP_INIT_KSTR(name, khval_t)								\
+	KHASH_INIT(name, kstring_t, khval_t, 1, kh_kstr_hash_func, kh_kstr_hash_equal)
 
 #endif /* __AC_KHASH_H */

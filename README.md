@@ -1,3 +1,7 @@
+[![Build Status](https://travis-ci.org/samtools/htslib.svg?branch=develop)](https://travis-ci.org/samtools/htslib)
+[![Build status](https://ci.appveyor.com/api/projects/status/v46hkwyfjp3l8nd3/branch/develop?svg=true)](https://ci.appveyor.com/project/samtools/htslib/branch/develop)
+[![Github All Releases](https://img.shields.io/github/downloads/samtools/htslib/total.svg)](https://github.com/samtools/htslib)
+
 HTSlib is an implementation of a unified C library for accessing common file
 formats, such as [SAM, CRAM and VCF][1], used for high-throughput sequencing
 data, and is the core library used by [samtools][2] and [bcftools][3].
@@ -26,7 +30,7 @@ requires extra steps:
 ```sh
 autoheader     # If using configure, generate the header template...
 autoconf       # ...and configure script (or use autoreconf to do both)
-./configure    # Optional, needed for choosing optional functionality
+./configure    # Optional but recommended, for choosing extra functionality
 make
 make install
 ```

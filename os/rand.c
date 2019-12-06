@@ -62,8 +62,8 @@ _dorand48(unsigned short xseed[3])
 	xseed[2] = (unsigned short) accu;
 }
 
-void
-hts_srand48(long seed)
+HTSLIB_EXPORT
+void hts_srand48(long seed)
 {
 	_rand48_seed[0] = RAND48_SEED_0;
 	_rand48_seed[1] = (unsigned short) seed;
@@ -74,8 +74,8 @@ hts_srand48(long seed)
 	_rand48_add = RAND48_ADD;
 }
 
-double
-hts_erand48(unsigned short xseed[3])
+HTSLIB_EXPORT
+double hts_erand48(unsigned short xseed[3])
 {
 	_dorand48(xseed);
 	return ldexp((double) xseed[0], -48) +
@@ -83,14 +83,14 @@ hts_erand48(unsigned short xseed[3])
 	       ldexp((double) xseed[2], -16);
 }
 
-double
-hts_drand48(void)
+HTSLIB_EXPORT
+double hts_drand48(void)
 {
 	return hts_erand48(_rand48_seed);
 }
 
-long
-hts_lrand48(void)
+HTSLIB_EXPORT
+long hts_lrand48(void)
 {
 	_dorand48(_rand48_seed);
 	return ((long) _rand48_seed[2] << 15) + ((long) _rand48_seed[1] >> 1);

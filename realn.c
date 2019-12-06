@@ -1,6 +1,6 @@
 /*  realn.c -- BAQ calculation and realignment.
 
-    Copyright (C) 2009-2011, 2014-2015 Genome Research Ltd.
+    Copyright (C) 2009-2011, 2014-2016, 2018 Genome Research Ltd.
     Portions copyright (C) 2009-2011 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -23,6 +23,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <stdlib.h>
@@ -35,12 +36,13 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts.h"
 #include "htslib/sam.h"
 
-int sam_cap_mapq(bam1_t *b, const char *ref, int ref_len, int thres)
+int sam_cap_mapq(bam1_t *b, const char *ref, hts_pos_t ref_len, int thres)
 {
     uint8_t *seq = bam_get_seq(b), *qual = bam_get_qual(b);
     uint32_t *cigar = bam_get_cigar(b);
     bam1_core_t *c = &b->core;
-    int i, x, y, mm, q, len, clip_l, clip_q;
+    int i, y, mm, q, len, clip_l, clip_q;
+    hts_pos_t x;
     double t;
     if (thres < 0) thres = 40; // set the default
     mm = q = len = clip_l = clip_q = 0;
@@ -50,7 +52,7 @@ int sam_cap_mapq(bam1_t *b, const char *ref, int ref_len, int thres)
             for (j = 0; j < l; ++j) {
                 int c1, c2, z = y + j;
                 if (x+j >= ref_len || ref[x+j] == '\0') break; // out of bounds
-                c1 = bam_seqi(seq, z), c2 = seq_nt16_table[(int)ref[x+j]];
+                c1 = bam_seqi(seq, z), c2 = seq_nt16_table[(unsigned char)ref[x+j]];
                 if (c2 != 15 && c1 != 15 && qual[z] >= 13) { // not ambiguous
                     ++len;
                     if (c1 && c1 != c2 && qual[z] >= 13) { // mismatch
@@ -101,9 +103,10 @@ static int realn_check_tag(const uint8_t *tg, enum htsLogLevel severity,
     return 0;
 }
 
-int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
+int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag)
 {
-    int k, i, bw, x, y, yb, ye, xb, xe, apply_baq = flag&1, extend_baq = flag>>1&1, redo_baq = flag&4, fix_bq = 0;
+    int k, bw, y, yb, ye, xb, xe, apply_baq = flag&1, extend_baq = flag>>1&1, redo_baq = flag&4, fix_bq = 0;
+    hts_pos_t i, x;
     uint32_t *cigar = bam_get_cigar(b);
     bam1_core_t *c = &b->core;
     probaln_par_t conf = { 0.001, 0.1, 10 };
@@ -220,6 +223,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
         if (!extend_baq) { // in this block, bq[] is capped by base quality qual[]
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;
+                if (l == 0) continue;
                 if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
                     // Sanity check running off the end of the sequence
                     // Can only happen if the alignment is broken
@@ -246,6 +250,7 @@ int sam_prob_realn(bam1_t *b, const char *ref, int ref_len, int flag)
             uint8_t *rght = tref;
             for (k = 0, x = c->pos, y = 0; k < c->n_cigar; ++k) {
                 int op = cigar[k]&0xf, l = cigar[k]>>4;
+                if (l == 0) continue;
                 if (op == BAM_CMATCH || op == BAM_CEQUAL || op == BAM_CDIFF) {
                     // Sanity check running off the end of the sequence
                     // Can only happen if the alignment is broken

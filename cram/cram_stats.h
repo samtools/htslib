@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2013 Genome Research Ltd.
+Copyright (c) 2012-2013, 2018 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -28,16 +28,16 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef _CRAM_STATS_H_
-#define _CRAM_STATS_H_
+#ifndef CRAM_STATS_H
+#define CRAM_STATS_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 cram_stats *cram_stats_create(void);
-void cram_stats_add(cram_stats *st, int32_t val);
-void cram_stats_del(cram_stats *st, int32_t val);
+int cram_stats_add(cram_stats *st, int64_t val);
+void cram_stats_del(cram_stats *st, int64_t val);
 void cram_stats_dump(cram_stats *st);
 void cram_stats_free(cram_stats *st);
 

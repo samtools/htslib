@@ -1,7 +1,7 @@
 /*  tabix.c -- Generic indexer for TAB-delimited genome position files.
 
     Copyright (C) 2009-2011 Broad Institute.
-    Copyright (C) 2010-2012, 2014-2018 Genome Research Ltd.
+    Copyright (C) 2010-2012, 2014-2019 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -79,7 +79,16 @@ int file_type(const char *fname)
     else if (l>=4 && strcasecmp(fname+l-5, ".cram") == 0) return IS_CRAM;
 
     htsFile *fp = hts_open(fname,"r");
-    enum htsExactFormat format = fp->format.format;
+    if (!fp) {
+        if (errno == ENOEXEC) {
+            // hts_open() uses this to report that it didn't understand the
+            // file format.
+            error("Couldn't understand format of \"%s\"\n", fname);
+        } else {
+            error("Couldn't open \"%s\" : %s\n", fname, strerror(errno));
+        }
+    }
+    enum htsExactFormat format = hts_get_format(fp)->format;
     hts_close(fp);
     if ( format == bcf ) return IS_BCF;
     if ( format == bam ) return IS_BAM;
@@ -103,6 +112,9 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
         regidx_t *idx = regidx_init(regions_fname, NULL, NULL, 0, NULL);
         if ( !idx ) error("Could not read %s\n", regions_fname);
 
+        regitr_t *itr = regitr_init(idx);
+        if ( !itr ) error("Could not initialize an iterator over %s\n", regions_fname);
+
         (*nregs) += regidx_nregs(idx);
         regs = (char**) malloc(sizeof(char*)*(*nregs));
 
@@ -110,17 +122,16 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
         char **seqs = regidx_seq_names(idx, &nseq);
         for (iseq=0; iseq<nseq; iseq++)
         {
-            regitr_t itr;
-            regidx_overlap(idx, seqs[iseq], 0, UINT32_MAX, &itr);
-            while ( itr.i < itr.n )
+            regidx_overlap(idx, seqs[iseq], 0, HTS_POS_MAX, itr);
+            while ( regitr_overlap(itr) )
             {
                 str.l = 0;
-                ksprintf(&str, "%s:%d-%d", seqs[iseq], REGITR_START(itr)+1, REGITR_END(itr)+1);
+                ksprintf(&str, "%s:%"PRIhts_pos"-%"PRIhts_pos, seqs[iseq], itr->beg+1, itr->end+1);
                 regs[ireg++] = strdup(str.s);
-                itr.i++;
             }
         }
         regidx_destroy(idx);
+        regitr_destroy(itr);
     }
     free(str.s);
 
@@ -139,7 +150,7 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
     for (iseq=0; iseq<argc; iseq++) regs[ireg++] = strdup(argv[iseq]);
     return regs;
 }
-static int query_regions(args_t *args, char *fname, char **regs, int nregs)
+static int query_regions(args_t *args, char *fname, char **regs, int nregs, int download)
 {
     int i;
     htsFile *fp = hts_open(fname,"r");
@@ -157,12 +168,12 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
     {
         htsFile *out = hts_open("-","w");
         if ( !out ) error("Could not open stdout\n", fname);
-        hts_idx_t *idx = bcf_index_load(fname);
+        hts_idx_t *idx = bcf_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !idx ) error("Could not load .csi index of %s\n", fname);
         bcf_hdr_t *hdr = bcf_hdr_read(fp);
         if ( !hdr ) error("Could not read the header: %s\n", fname);
         if ( args->print_header )
-            bcf_hdr_write(out,hdr);
+            if ( bcf_hdr_write(out,hdr)!=0 ) error("Failed to write to %s\n", fname);
         if ( !args->header_only )
         {
             bcf1_t *rec = bcf_init();
@@ -172,7 +183,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
                 while ( bcf_itr_next(fp, itr, rec) >=0 )
                 {
                     if ( reg_idx && !regidx_overlap(reg_idx, bcf_seqname(hdr,rec),rec->pos,rec->pos+rec->rlen-1, NULL) ) continue;
-                    bcf_write(out,hdr,rec);
+                    if ( bcf_write(out,hdr,rec)!=0 ) error("Failed to write to %s\n", fname);
                 }
                 tbx_itr_destroy(itr);
             }
@@ -182,9 +193,9 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
         bcf_hdr_destroy(hdr);
         hts_idx_destroy(idx);
     }
-    else if ( format==vcf || format==sam || format==unknown_format )
+    else if ( format==vcf || format==sam || format==bed || format==text_format || format==unknown_format )
     {
-        tbx_t *tbx = tbx_index_load(fname);
+        tbx_t *tbx = tbx_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !tbx ) error("Could not load .tbi/.csi index of %s\n", fname);
         kstring_t str = {0,0,0};
         if ( args->print_header )
@@ -206,7 +217,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
                 if ( !itr ) continue;
                 while (tbx_itr_next(fp, tbx, itr, &str) >= 0)
                 {
-                    if ( reg_idx && !regidx_overlap(reg_idx,seq[itr->curr_tid],itr->curr_beg,itr->curr_end, NULL) ) continue;
+                    if ( reg_idx && !regidx_overlap(reg_idx,seq[itr->curr_tid],itr->curr_beg,itr->curr_end-1, NULL) ) continue;
                     puts(str.s);
                 }
                 tbx_itr_destroy(itr);
@@ -226,13 +237,13 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs)
     free(regs);
     return 0;
 }
-static int query_chroms(char *fname)
+static int query_chroms(char *fname, int download)
 {
     const char **seq;
     int i, nseq, ftype = file_type(fname);
     if ( ftype & IS_TXT || !ftype )
     {
-        tbx_t *tbx = tbx_index_load(fname);
+        tbx_t *tbx = tbx_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !tbx ) error("Could not load .tbi index of %s\n", fname);
         seq = tbx_seqnames(tbx, &nseq);
         for (i=0; i<nseq; i++)
@@ -247,7 +258,7 @@ static int query_chroms(char *fname)
         bcf_hdr_t *hdr = bcf_hdr_read(fp);
         if ( !hdr ) error("Could not read the header: %s\n", fname);
         hts_close(fp);
-        hts_idx_t *idx = bcf_index_load(fname);
+        hts_idx_t *idx = bcf_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !idx ) error("Could not load .csi index of %s\n", fname);
         seq = bcf_index_seqnames(idx, hdr, &nseq);
         for (i=0; i<nseq; i++)
@@ -335,38 +346,39 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
     return 0;
 }
 
-static int usage(void)
+static int usage(FILE *fp, int status)
 {
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Version: %s\n", hts_version());
-    fprintf(stderr, "Usage:   tabix [OPTIONS] [FILE] [REGION [...]]\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Indexing Options:\n");
-    fprintf(stderr, "   -0, --zero-based           coordinates are zero-based\n");
-    fprintf(stderr, "   -b, --begin INT            column number for region start [4]\n");
-    fprintf(stderr, "   -c, --comment CHAR         skip comment lines starting with CHAR [null]\n");
-    fprintf(stderr, "   -C, --csi                  generate CSI index for VCF (default is TBI)\n");
-    fprintf(stderr, "   -e, --end INT              column number for region end (if no end, set INT to -b) [5]\n");
-    fprintf(stderr, "   -f, --force                overwrite existing index without asking\n");
-    fprintf(stderr, "   -m, --min-shift INT        set minimal interval size for CSI indices to 2^INT [14]\n");
-    fprintf(stderr, "   -p, --preset STR           gff, bed, sam, vcf\n");
-    fprintf(stderr, "   -s, --sequence INT         column number for sequence names (suppressed by -p) [1]\n");
-    fprintf(stderr, "   -S, --skip-lines INT       skip first INT lines [0]\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Querying and other options:\n");
-    fprintf(stderr, "   -h, --print-header         print also the header lines\n");
-    fprintf(stderr, "   -H, --only-header          print only the header lines\n");
-    fprintf(stderr, "   -l, --list-chroms          list chromosome names\n");
-    fprintf(stderr, "   -r, --reheader FILE        replace the header with the content of FILE\n");
-    fprintf(stderr, "   -R, --regions FILE         restrict to regions listed in the file\n");
-    fprintf(stderr, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
-    fprintf(stderr, "\n");
-    return 1;
+    fprintf(fp, "\n");
+    fprintf(fp, "Version: %s\n", hts_version());
+    fprintf(fp, "Usage:   tabix [OPTIONS] [FILE] [REGION [...]]\n");
+    fprintf(fp, "\n");
+    fprintf(fp, "Indexing Options:\n");
+    fprintf(fp, "   -0, --zero-based           coordinates are zero-based\n");
+    fprintf(fp, "   -b, --begin INT            column number for region start [4]\n");
+    fprintf(fp, "   -c, --comment CHAR         skip comment lines starting with CHAR [null]\n");
+    fprintf(fp, "   -C, --csi                  generate CSI index for VCF (default is TBI)\n");
+    fprintf(fp, "   -e, --end INT              column number for region end (if no end, set INT to -b) [5]\n");
+    fprintf(fp, "   -f, --force                overwrite existing index without asking\n");
+    fprintf(fp, "   -m, --min-shift INT        set minimal interval size for CSI indices to 2^INT [14]\n");
+    fprintf(fp, "   -p, --preset STR           gff, bed, sam, vcf\n");
+    fprintf(fp, "   -s, --sequence INT         column number for sequence names (suppressed by -p) [1]\n");
+    fprintf(fp, "   -S, --skip-lines INT       skip first INT lines [0]\n");
+    fprintf(fp, "\n");
+    fprintf(fp, "Querying and other options:\n");
+    fprintf(fp, "   -h, --print-header         print also the header lines\n");
+    fprintf(fp, "   -H, --only-header          print only the header lines\n");
+    fprintf(fp, "   -l, --list-chroms          list chromosome names\n");
+    fprintf(fp, "   -r, --reheader FILE        replace the header with the content of FILE\n");
+    fprintf(fp, "   -R, --regions FILE         restrict to regions listed in the file\n");
+    fprintf(fp, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
+    fprintf(fp, "   -D                         do not download the index file\n");
+    fprintf(fp, "\n");
+    return status;
 }
 
 int main(int argc, char *argv[])
 {
-    int c, detect = 1, min_shift = 0, is_force = 0, list_chroms = 0, do_csi = 0;
+    int c, detect = 1, min_shift = 0, is_force = 0, list_chroms = 0, do_csi = 0, download_index = 1;
     tbx_conf_t conf = tbx_conf_gff;
     char *reheader = NULL;
     args_t args;
@@ -385,6 +397,7 @@ int main(int argc, char *argv[])
         {"comment", required_argument, NULL, 'c'},
         {"end", required_argument, NULL, 'e'},
         {"force", no_argument, NULL, 'f'},
+        {"min-shift", required_argument, NULL, 'm'},
         {"preset", required_argument, NULL, 'p'},
         {"sequence", required_argument, NULL, 's'},
         {"skip-lines", required_argument, NULL, 'S'},
@@ -395,7 +408,7 @@ int main(int argc, char *argv[])
     };
 
     char *tmp;
-    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:", loptions,NULL)) >= 0)
+    while ((c = getopt_long(argc, argv, "hH?0b:c:e:fm:p:s:S:lr:CR:T:D", loptions,NULL)) >= 0)
     {
         switch (c)
         {
@@ -443,19 +456,24 @@ int main(int argc, char *argv[])
                 if ( *tmp ) error("Could not parse argument: -S %s\n", optarg);
                 detect = 0;
                 break;
+            case 'D':
+                download_index = 0;
+                break;
             case 1:
                 printf(
 "tabix (htslib) %s\n"
-"Copyright (C) 2018 Genome Research Ltd.\n", hts_version());
+"Copyright (C) 2019 Genome Research Ltd.\n", hts_version());
                 return EXIT_SUCCESS;
-            default: return usage();
+            case 2:
+                return usage(stdout, EXIT_SUCCESS);
+            default: return usage(stderr, EXIT_FAILURE);
         }
     }
 
-    if ( optind==argc ) return usage();
+    if ( optind==argc ) return usage(stderr, EXIT_FAILURE);
 
     if ( list_chroms )
-        return query_chroms(argv[optind]);
+        return query_chroms(argv[optind], download_index);
 
     if ( argc > optind+1 || args.header_only || args.regions_fname || args.targets_fname )
     {
@@ -463,7 +481,7 @@ int main(int argc, char *argv[])
         char **regs = NULL;
         if ( !args.header_only )
             regs = parse_regions(args.regions_fname, argv+optind+1, argc-optind-1, &nregs);
-        return query_regions(&args, argv[optind], regs, nregs);
+        return query_regions(&args, argv[optind], regs, nregs, download_index);
     }
 
     char *fname = argv[optind];
@@ -517,6 +535,7 @@ int main(int argc, char *argv[])
     }
     free(idx_fname);
 
+    int ret;
     if ( ftype==IS_CRAM )
     {
         if ( bam_index_build(fname, min_shift)!=0 ) error("bam_index_build failed: %s\n", fname);
@@ -534,12 +553,29 @@ int main(int argc, char *argv[])
             if ( bam_index_build(fname, min_shift)!=0 ) error("bam_index_build failed: %s\n", fname);
             return 0;
         }
-        if ( tbx_index_build(fname, min_shift, &conf)!=0 ) error("tbx_index_build failed: %s\n", fname);
-        return 0;
+
+        switch (ret = tbx_index_build(fname, min_shift, &conf))
+        {
+            case 0:
+                return 0;
+            case -2:
+                error("[tabix] the compression of '%s' is not BGZF\n", fname);
+            default:
+                error("tbx_index_build failed: %s\n", fname);
+        }
     }
     else    // TBI index
     {
-        if ( tbx_index_build(fname, min_shift, &conf) ) error("tbx_index_build failed: %s\n", fname);
-        return 0;
+        switch (ret = tbx_index_build(fname, min_shift, &conf))
+        {
+            case 0:
+                return 0;
+            case -2:
+                error("[tabix] the compression of '%s' is not BGZF\n", fname);
+            default:
+                error("tbx_index_build failed: %s\n", fname);
+        }
     }
+
+    return 0;
 }

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2013 Genome Research Ltd.
+Copyright (c) 2012-2014, 2016, 2018 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -28,6 +28,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <stdio.h>
@@ -39,6 +40,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <math.h>
+#include <inttypes.h>
 
 #include "cram/cram.h"
 #include "cram/os.h"
@@ -47,7 +49,7 @@ cram_stats *cram_stats_create(void) {
     return calloc(1, sizeof(cram_stats));
 }
 
-void cram_stats_add(cram_stats *st, int32_t val) {
+int cram_stats_add(cram_stats *st, int64_t val) {
     st->nsamp++;
 
     //assert(val >= 0);
@@ -60,6 +62,8 @@ void cram_stats_add(cram_stats *st, int32_t val) {
 
         if (!st->h) {
             st->h = kh_init(m_i2i);
+            if (!st->h)
+                return -1;
         }
 
         k = kh_put(m_i2i, st->h, val, &r);
@@ -68,11 +72,12 @@ void cram_stats_add(cram_stats *st, int32_t val) {
         else if (r != -1)
             kh_val(st->h, k) = 1;
         else
-            ; // FIXME: handle error
+            return -1;
     }
+    return 0;
 }
 
-void cram_stats_del(cram_stats *st, int32_t val) {
+void cram_stats_del(cram_stats *st, int64_t val) {
     st->nsamp--;
 
     //assert(val >= 0);
@@ -87,11 +92,11 @@ void cram_stats_del(cram_stats *st, int32_t val) {
             if (--kh_val(st->h, k) == 0)
                 kh_del(m_i2i, st->h, k);
         } else {
-            hts_log_warning("Failed to remove val %d from cram_stats", val);
+            hts_log_warning("Failed to remove val %"PRId64" from cram_stats", val);
             st->nsamp++;
         }
     } else {
-        hts_log_warning("Failed to remove val %d from cram_stats", val);
+        hts_log_warning("Failed to remove val %"PRId64" from cram_stats", val);
         st->nsamp++;
     }
 }

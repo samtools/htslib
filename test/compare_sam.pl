@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-#    Copyright (C) 2013 Genome Research Ltd.
+#    Copyright (C) 2013-2018 Genome Research Ltd.
 #
 #    Author: James Bonfield <jkb@sanger.ac.uk>
 #
@@ -29,7 +29,7 @@ use strict;
 use Getopt::Long;
 
 my %opts;
-GetOptions(\%opts, 'noqual', 'noaux', 'notemplate', 'unknownrg', 'nomd', 'template-1', 'noflag', 'Baux');
+GetOptions(\%opts, 'noqual', 'noaux', 'notemplate', 'unknownrg', 'nomd', 'partialmd=i', 'template-1', 'noflag', 'Baux');
 
 my ($fn1, $fn2) = @ARGV;
 open(my $fd1, "<", $fn1) || die $!;
@@ -80,6 +80,23 @@ while ($ln1 && $ln2) {
         $ln2 =~ s/\tMD:Z:[A-Z0-9^]*//;
         $ln1 =~ s/\tNM:i:\d+//;
         $ln2 =~ s/\tNM:i:\d+//;
+    }
+
+    # Validate MD and NM only if partialmd & 'file' set, otherwise
+    # discard it.  Ie:
+    #
+    # 1: if file 1 has NM/MD keep in file 2, othewise discard from file2
+    # 2: if file 2 has NM/MD keep in file 1, othewise discard from file1
+    # 3: if file 1 and file 2 both have NM/MD keep, otherwise discard.
+    if (exists $opts{partialmd}) {
+        if ($opts{partialmd} & 2) {
+            $ln1 =~ s/\tNM:i:\d+//        unless ($ln2 =~ /\tNM:i:\d+/);
+            $ln1 =~ s/\tMD:Z:[A-Z0-9^]*// unless ($ln2 =~ /\tMD:Z:[A-Z0-9^]*/);
+        }
+        if ($opts{partialmd} & 1) {
+            $ln2 =~ s/\tNM:i:\d+//        unless ($ln1 =~ /\tNM:i:\d+/);
+            $ln2 =~ s/\tMD:Z:[A-Z0-9^]*// unless ($ln1 =~ /\tMD:Z:[A-Z0-9^]*/);
+        }
     }
 
     my @ln1 = split("\t", $ln1);

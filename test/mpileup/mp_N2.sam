@@ -1,0 +1,46 @@
+@HD	VN:1.6	SO:coordinate
+@SQ	SN:z	LN:13
+@CO	
+@CO	Copyright (c) 2018 Genome Research Ltd.
+@CO	
+@CO	Permission is hereby granted, free of charge, to any person obtaining
+@CO	a copy of this software and associated documentation files (the
+@CO	"Software"), to deal in the Software without restriction, including
+@CO	without limitation the rights to use, copy, modify, merge, publish,
+@CO	distribute, sublicense, and/or sell copies of the Software, and to
+@CO	permit persons to whom the Software is furnished to do so, subject
+@CO	to the following conditions:
+@CO	
+@CO	The above copyright notice and this permission notice shall be included
+@CO	in all copies or substantial portions of the Software.
+@CO	
+@CO	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+@CO	OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+@CO	MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+@CO	IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+@CO	CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+@CO	TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+@CO	SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+@CO	
+@CO	Various I combinations
+@CO	Starting with I isn't handled due to the pileup ordering.
+@CO	The record only appears in the pileup list when the first base
+@CO	is placed against the reference, which is too late.
+@CO	
+@CO	                  1
+@CO	     1234  56789  0123 Depadded base numbering
+@CO	ref  TAGC  TTAGC  AGGT
+@CO	sD1  TAGCAA*****TTAGGT 4M 2I 5D 2I 4M
+@CO	sD2  TAGCA*******TAGGT 4M 1I 1P 5D 1P 1I 4M
+@CO	sD3  TAGC*A*****T*AGGT 4M 1P 1II 5D 1I 1P 4M
+@CO	sN1  TAGCAA>>>>>TTAGGT 4M 2I 5N 2I 4M
+@CO	sN2  TAGCA*>>>>>*TAGGT 4M 1I 1P 5N 1P 1I 4M
+@CO	sN3  TAGC*A>>>>>T*AGGT 4M 1P 1I 5N 1I 1P 4M
+@CO	qual ABCDEF     GHIJKL
+@CO	
+sD1	0	z	1	0	4M2I5D2I4M	*	0	0	TAGCAATTAGGT	ABCDEFGHIJKL
+sD2	0	z	1	0	4M1I1P5D1P1I4M	*	0	0	TAGCATAGGT	ABCDEHIJKL
+sD3	0	z	1	0	4M1P1II5D1I1P4M	*	0	0	TAGCATAGGT	ABCDFGIJKL
+sN1	0	z	1	0	4M2I5N2I4M	*	0	0	TAGCAATTAGGT	ABCDEFGHIJKL
+sN2	0	z	1	0	4M1I1P5N1P1I4M	*	0	0	TAGCATAGGT	ABCDEHIJKL
+sN3	0	z	1	0	4M1P1I5N1I1P4M	*	0	0	TAGCATAGGT	ABCDFGIJKL

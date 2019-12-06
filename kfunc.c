@@ -1,6 +1,6 @@
 /* The MIT License
 
-   Copyright (C) 2010, 2013 Genome Research Ltd.
+   Copyright (C) 2010, 2013-2014 Genome Research Ltd.
    Copyright (C) 2011 Attractive Chaos <attractor@live.co.uk>
 
    Permission is hereby granted, free of charge, to any person obtaining
@@ -24,6 +24,7 @@
    SOFTWARE.
 */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <math.h>

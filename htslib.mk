@@ -1,6 +1,6 @@
 # Makefile rules useful for third-party code using htslib's public API.
 #
-#    Copyright (C) 2013-2016 Genome Research Ltd.
+#    Copyright (C) 2013-2017, 2019 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -82,12 +82,15 @@ HTSLIB_ALL = \
 	$(HTSDIR)/config.h \
 	$(HTSDIR)/errmod.c \
 	$(HTSDIR)/faidx.c \
+	$(HTSDIR)/header.c \
+	$(HTSDIR)/header.h \
 	$(HTSDIR)/hfile_internal.h \
 	$(HTSDIR)/hfile.c \
 	$(HTSDIR)/hfile_gcs.c \
 	$(HTSDIR)/hfile_libcurl.c \
 	$(HTSDIR)/hfile_net.c \
 	$(HTSDIR)/hfile_s3.c \
+	$(HTSDIR)/hfile_s3_write.c \
 	$(HTSDIR)/hts.c \
 	$(HTSDIR)/hts_internal.h \
 	$(HTSDIR)/hts_os.c \
@@ -100,7 +103,9 @@ HTSLIB_ALL = \
 	$(HTSDIR)/probaln.c \
 	$(HTSDIR)/realn.c \
 	$(HTSDIR)/regidx.c \
+	$(HTSDIR)/region.c \
 	$(HTSDIR)/sam.c \
+	$(HTSDIR)/sam_internal.h \
 	$(HTSDIR)/synced_bcf_reader.c \
 	$(HTSDIR)/tbx.c \
 	$(HTSDIR)/textutils.c \
@@ -127,7 +132,6 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/cram_stats.c \
 	$(HTSDIR)/cram/cram_stats.h \
 	$(HTSDIR)/cram/cram_structs.h \
-	$(HTSDIR)/cram/files.c \
 	$(HTSDIR)/cram/mFILE.c \
 	$(HTSDIR)/cram/mFILE.h \
 	$(HTSDIR)/cram/misc.h \
@@ -139,8 +143,6 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/rANS_byte.h \
 	$(HTSDIR)/cram/rANS_static.c \
 	$(HTSDIR)/cram/rANS_static.h \
-	$(HTSDIR)/cram/sam_header.c \
-	$(HTSDIR)/cram/sam_header.h \
 	$(HTSDIR)/cram/string_alloc.c \
 	$(HTSDIR)/cram/string_alloc.h \
 	$(HTSDIR)/os/lzma_stub.h \
@@ -149,19 +151,27 @@ HTSLIB_ALL = \
 $(HTSDIR)/config.h:
 	+cd $(HTSDIR) && $(MAKE) config.h
 
-$(HTSDIR)/libhts.a: $(HTSLIB_ALL)
+$(HTSDIR)/hts-object-files : $(HTSLIB_ALL)
+	+cd $(HTSDIR) && $(MAKE) hts-object-files
+
+$(HTSDIR)/libhts.a: $(HTSDIR)/hts-object-files
 	+cd $(HTSDIR) && $(MAKE) lib-static
 
-$(HTSDIR)/libhts.so $(HTSDIR)/libhts.dylib: $(HTSLIB_ALL)
+$(HTSDIR)/libhts.so: $(HTSLIB_ALL)
 	+cd $(HTSDIR) && $(MAKE) lib-shared
 
-$(HTSDIR)/bgzip: $(HTSDIR)/bgzip.c $(HTSLIB_PUBLIC_HEADERS)
+$(HTSDIR)/libhts.dylib $(HTSDIR)/libhts.dll.a $(HTSDIR)/hts.dll.a: $(HTSDIR)/hts-object-files
+	+cd $(HTSDIR) && $(MAKE) lib-shared
+
+$(HTSDIR)/bgzip: $(HTSDIR)/bgzip.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
 	+cd $(HTSDIR) && $(MAKE) bgzip
 
-$(HTSDIR)/htsfile: $(HTSDIR)/htsfile.c $(HTSLIB_PUBLIC_HEADERS)
+$(HTSDIR)/htsfile: $(HTSDIR)/htsfile.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
+
 	+cd $(HTSDIR) && $(MAKE) htsfile
 
-$(HTSDIR)/tabix: $(HTSDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS)
+$(HTSDIR)/tabix: $(HTSDIR)/tabix.c $(HTSLIB_PUBLIC_HEADERS) $(HTSDIR)/libhts.a
+
 	+cd $(HTSDIR) && $(MAKE) tabix
 
 $(HTSDIR)/htslib_static.mk: $(HTSDIR)/htslib.pc.tmp

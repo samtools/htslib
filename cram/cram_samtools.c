@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2010-2013 Genome Research Ltd.
+Copyright (c) 2010-2013, 2017-2019 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -28,6 +28,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <assert.h>
@@ -36,6 +37,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/cram.h"
 #include "htslib/sam.h"
+#include "../sam_internal.h"
 
 /*---------------------------------------------------------------------------
  * Samtools compatibility portion
@@ -44,13 +46,13 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
                       const char *qname, size_t qname_len,
                       int flag,
                       int rname,      // Ref ID
-                      int pos,
-                      int end,        // aligned start/end coords
+                      int64_t pos,
+                      int64_t end,        // aligned start/end coords
                       int mapq,
                       uint32_t ncigar, const uint32_t *cigar,
                       int mrnm,       // Mate Ref ID
-                      int mpos,
-                      int isize,
+                      int64_t mpos,
+                      int64_t isize,
                       int len,
                       const char *seq,
                       const char *qual) {
@@ -79,16 +81,9 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
     //b->l_aux = extra_len; // we fill this out later
 
     qname_nuls = 4 - qname_len%4;
-    if (qname_len + qname_nuls > 255) // Check for core.l_qname overflow
-        return -1;
     bam_len = qname_len + qname_nuls + ncigar*4 + (len+1)/2 + len + extra_len;
-    if (b->m_data < bam_len) {
-        b->m_data = bam_len;
-        kroundup32(b->m_data);
-        b->data = (uint8_t*)realloc(b->data, b->m_data);
-        if (!b->data)
-            return -1;
-    }
+    if (realloc_bam_data(b, bam_len) < 0)
+        return -1;
     b->l_data = bam_len;
 
     b->core.tid     = rname;
@@ -125,30 +120,4 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
         memset(cp, '\xff', len);
 
     return bam_len;
-}
-
-bam_hdr_t *cram_header_to_bam(SAM_hdr *h) {
-    int i;
-    bam_hdr_t *header = bam_hdr_init();
-
-    header->l_text = ks_len(&h->text);
-    header->text = malloc(header->l_text+1);
-    memcpy(header->text, ks_str(&h->text), header->l_text);
-    header->text[header->l_text] = 0;
-
-    header->n_targets = h->nref;
-    header->target_name = (char **)calloc(header->n_targets,
-                                          sizeof(char *));
-    header->target_len = (uint32_t *)calloc(header->n_targets, 4);
-
-    for (i = 0; i < h->nref; i++) {
-        header->target_name[i] = strdup(h->ref[i].name);
-        header->target_len[i] = h->ref[i].len;
-    }
-
-    return header;
-}
-
-SAM_hdr *bam_header_to_cram(bam_hdr_t *h) {
-    return sam_hdr_parse_(h->text, h->l_text);
 }

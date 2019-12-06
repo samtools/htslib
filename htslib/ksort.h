@@ -1,6 +1,6 @@
 /* The MIT License
 
-   Copyright (c) 2008 Genome Research Ltd (GRL).
+   Copyright (c) 2008, 2012-2013, 2017-2019 Genome Research Ltd (GRL).
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -65,6 +65,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef klib_unused
+#if (defined __clang__ && __clang_major__ >= 3) || (defined __GNUC__ && __GNUC__ >= 3)
+#define klib_unused __attribute__ ((__unused__))
+#else
+#define klib_unused
+#endif
+#endif /* klib_unused */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -82,9 +90,12 @@ typedef struct {
 
 #define KSORT_SWAP(type_t, a, b) { register type_t t=(a); (a)=(b); (b)=t; }
 
-#define KSORT_INIT(name, type_t, __sort_lt)	KSORT_INIT_(_ ## name, type_t, __sort_lt)
-#define KSORT_INIT_(name, type_t, __sort_lt)								\
-	void ks_mergesort##name(size_t n, type_t array[], type_t temp[])	\
+#define KSORT_INIT(name, type_t, __sort_lt)	KSORT_INIT_(_ ## name, , type_t, __sort_lt)
+#define KSORT_INIT_STATIC(name, type_t, __sort_lt)	KSORT_INIT_(_ ## name, static klib_unused, type_t, __sort_lt)
+#define KSORT_INIT2(name, SCOPE, type_t, __sort_lt)	KSORT_INIT_(_ ## name, SCOPE, type_t, __sort_lt)
+
+#define KSORT_INIT_(name, SCOPE, type_t, __sort_lt)						\
+	SCOPE int ks_mergesort##name(size_t n, type_t array[], type_t temp[]) \
 	{																	\
 		type_t *a2[2], *a, *b;											\
 		int curr, shift;												\
@@ -131,8 +142,9 @@ typedef struct {
 			for (; p < eb; ++i) *p++ = *i;								\
 		}																\
 		if (temp == 0) free(a2[1]);										\
+		return 0;															\
 	}																	\
-	void ks_heapadjust##name(size_t i, size_t n, type_t l[])			\
+	SCOPE void ks_heapadjust##name(size_t i, size_t n, type_t l[])		\
 	{																	\
 		size_t k = i;													\
 		type_t tmp = l[i];												\
@@ -143,13 +155,13 @@ typedef struct {
 		}																\
 		l[i] = tmp;														\
 	}																	\
-	void ks_heapmake##name(size_t lsize, type_t l[])					\
+	SCOPE void ks_heapmake##name(size_t lsize, type_t l[])				\
 	{																	\
 		size_t i;														\
 		for (i = (lsize >> 1) - 1; i != (size_t)(-1); --i)				\
 			ks_heapadjust##name(i, lsize, l);							\
 	}																	\
-	void ks_heapsort##name(size_t lsize, type_t l[])					\
+	SCOPE void ks_heapsort##name(size_t lsize, type_t l[])				\
 	{																	\
 		size_t i;														\
 		for (i = lsize - 1; i > 0; --i) {								\
@@ -165,7 +177,7 @@ typedef struct {
 				swap_tmp = *j; *j = *(j-1); *(j-1) = swap_tmp;			\
 			}															\
 	}																	\
-	void ks_combsort##name(size_t n, type_t a[])						\
+	SCOPE void ks_combsort##name(size_t n, type_t a[])					\
 	{																	\
 		const double shrink_factor = 1.2473309501039786540366528676643; \
 		int do_swap;													\
@@ -187,17 +199,17 @@ typedef struct {
 		} while (do_swap || gap > 2);									\
 		if (gap != 1) __ks_insertsort##name(a, a + n);					\
 	}																	\
-	void ks_introsort##name(size_t n, type_t a[])						\
+	SCOPE int ks_introsort##name(size_t n, type_t a[])					\
 	{																	\
 		int d;															\
 		ks_isort_stack_t *top, *stack;									\
 		type_t rp, swap_tmp;											\
 		type_t *s, *t, *i, *j, *k;										\
 																		\
-		if (n < 1) return;												\
+		if (n < 1) return 0;												\
 		else if (n == 2) {												\
 			if (__sort_lt(a[1], a[0])) { swap_tmp = a[0]; a[0] = a[1]; a[1] = swap_tmp; } \
-			return;														\
+			return 0;														\
 		}																\
 		for (d = 2; 1ul<<d < n; ++d);									\
 		stack = (ks_isort_stack_t*)malloc(sizeof(ks_isort_stack_t) * ((sizeof(size_t)*d)+2)); \
@@ -233,14 +245,15 @@ typedef struct {
 				if (top == stack) {										\
 					free(stack);										\
 					__ks_insertsort##name(a, a+n);						\
-					return;												\
+					return 0;												\
 				} else { --top; s = (type_t*)top->left; t = (type_t*)top->right; d = top->depth; } \
 			}															\
 		}																\
+		return 0;															\
 	}																	\
 	/* This function is adapted from: http://ndevilla.free.fr/median/ */ \
 	/* 0 <= kk < n */													\
-	type_t ks_ksmall##name(size_t n, type_t arr[], size_t kk)			\
+	SCOPE type_t ks_ksmall##name(size_t n, type_t arr[], size_t kk)		\
 	{																	\
 		type_t *low, *high, *k, *ll, *hh, *mid;							\
 		low = arr; high = arr + n - 1; k = arr + kk;					\
@@ -267,7 +280,7 @@ typedef struct {
 			if (hh >= k) high = hh - 1;									\
 		}																\
 	}																	\
-	void ks_shuffle##name(size_t n, type_t a[])						\
+	SCOPE void ks_shuffle##name(size_t n, type_t a[])					\
 	{																	\
 		int i, j;														\
 		for (i = n; i > 1; --i) {										\
@@ -291,8 +304,14 @@ typedef struct {
 
 typedef const char *ksstr_t;
 
-#define KSORT_INIT_GENERIC(type_t) KSORT_INIT_(_ ## type_t, type_t, ks_lt_generic)
+#define KSORT_INIT_GENERIC(type_t) KSORT_INIT_(_ ## type_t, , type_t, ks_lt_generic)
 #define KSORT_INIT_STR KSORT_INIT(str, ksstr_t, ks_lt_str)
+
+#define KSORT_INIT_STATIC_GENERIC(type_t) KSORT_INIT_(_ ## type_t, static klib_unused, type_t, ks_lt_generic)
+#define KSORT_INIT_STATIC_STR KSORT_INIT_STATIC(str, ksstr_t, ks_lt_str)
+
+#define KSORT_INIT2_GENERIC(type_t, SCOPE) KSORT_INIT_(_ ## type_t, SCOPE, type_t, ks_lt_generic)
+#define KSORT_INIT2_STR KSORT_INIT2(str, SCOPE, ksstr_t, ks_lt_str)
 
 #ifdef __cplusplus
 }

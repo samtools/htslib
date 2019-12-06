@@ -22,6 +22,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <stdarg.h>
@@ -124,7 +125,7 @@ int PLUGIN_GLOBAL(hfile_plugin_init,_gcs)(struct hFILE_plugin *self)
 
 #ifdef ENABLE_PLUGINS
     // Embed version string for examination via strings(1) or what(1)
-    static const char id[] = "@(#)hfile_gcs plugin (htslib)\t" HTS_VERSION;
+    static const char id[] = "@(#)hfile_gcs plugin (htslib)\t" HTS_VERSION_TEXT;
     if (hts_verbose >= 9)
         fprintf(stderr, "[M::hfile_gcs.init] version %s\n", strchr(id, '\t')+1);
 #endif

@@ -1,6 +1,6 @@
 /*  vcf_sweep.c -- forward/reverse sweep API.
 
-    Copyright (C) 2013 Genome Research Ltd.
+    Copyright (C) 2013-2014, 2019 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -22,6 +22,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include "htslib/vcf_sweep.h"
@@ -49,8 +50,8 @@ struct _bcf_sweep_t
 };
 
 BGZF *hts_get_bgzfp(htsFile *fp);
-int hts_useek(htsFile *file, long uoffset, int where);
-long hts_utell(htsFile *file);
+int hts_useek(htsFile *file, off_t uoffset, int where);
+off_t hts_utell(htsFile *file);
 
 static inline int sw_rec_equal(bcf_sweep_t *sw, bcf1_t *rec)
 {
@@ -66,7 +67,7 @@ static inline int sw_rec_equal(bcf_sweep_t *sw, bcf1_t *rec)
     return 1;
 }
 
-static void sw_rec_save(bcf_sweep_t *sw, bcf1_t *rec)
+static int sw_rec_save(bcf_sweep_t *sw, bcf1_t *rec)
 {
     sw->lrid  = rec->rid;
     sw->lpos  = rec->pos;
@@ -78,11 +79,13 @@ static void sw_rec_save(bcf_sweep_t *sw, bcf1_t *rec)
     sw->lals_len = len;
     hts_expand(char, len, sw->mlals, sw->lals);
     memcpy(sw->lals, rec->d.allele[0], len);
+
+    return 0; // FIXME: check for errs in this function
 }
 
-static void sw_fill_buffer(bcf_sweep_t *sw)
+static int sw_fill_buffer(bcf_sweep_t *sw)
 {
-    if ( !sw->iidx ) return;
+    if ( !sw->iidx ) return 0;
     sw->iidx--;
 
     int ret = hts_useek(sw->file, sw->idx[sw->iidx], 0);
@@ -102,6 +105,8 @@ static void sw_fill_buffer(bcf_sweep_t *sw)
         rec = &sw->rec[sw->nrec];
     }
     sw_rec_save(sw, &sw->rec[0]);
+
+    return 0; // FIXME: check for errs in this function
 }
 
 bcf_sweep_t *bcf_sweep_init(const char *fname)
@@ -146,7 +151,7 @@ bcf1_t *bcf_sweep_fwd(bcf_sweep_t *sw)
 {
     if ( sw->direction==SW_BWD ) sw_seek(sw, SW_FWD);
 
-    long pos = hts_utell(sw->file);
+    off_t pos = hts_utell(sw->file);
 
     bcf1_t *rec = &sw->rec[0];
     int ret = bcf_read1(sw->file, sw->hdr, rec);

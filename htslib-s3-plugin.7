@@ -1,0 +1,122 @@
+.TH htslib-s3-plugin 7 "6 December 2019" "htslib-1.10" "Bioinformatics tools"
+.SH NAME
+s3 plugin \- htslib AWS S3 plugin
+.\"
+.\" Copyright (C) 2019 Genome Research Ltd.
+.\"
+.\" Author: Andrew Whitwham <aw7@sanger.ac.uk>
+.\"
+.\" Permission is hereby granted, free of charge, to any person obtaining a
+.\" copy of this software and associated documentation files (the "Software"),
+.\" to deal in the Software without restriction, including without limitation
+.\" the rights to use, copy, modify, merge, publish, distribute, sublicense,
+.\" and/or sell copies of the Software, and to permit persons to whom the
+.\" Software is furnished to do so, subject to the following conditions:
+.\"
+.\" The above copyright notice and this permission notice shall be included in
+.\" all copies or substantial portions of the Software.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+.\" IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+.\" FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+.\" THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+.\" LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+.\" FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+.\" DEALINGS IN THE SOFTWARE.
+.\"
+.SH DESCRIPTION
+The S3 plugin allows htslib file functions to communicate with servers that use
+the AWS S3 protocol.  Files are identified by their bucket and object key in a
+URL format e.g.
+
+.B s3://mybucket/path/to/file
+
+With \fIpath/to/file\fR being the object key.
+
+Necessary security information can be provided in as part of the URL, in
+environment variables or from configuration files.
+
+The full URL format is:
+
+.B s3[+SCHEME]://[ID[:SECRET[:TOKEN]]@]BUCKET/PATH
+
+The elements are:
+.TP
+.I SCHEME
+The protocol used.  Defaults to \fIhttps\fR.
+.TP
+.I ID
+The user AWS access key.
+.TP
+.I SECRET
+The secret key for use with the access key.
+.TP
+.I TOKEN
+Token used for temporary security credentials.
+.TP
+.I BUCKET
+AWS S3 bucket.
+.TP
+.I PATH
+Path to the object under the bucket.
+.LP
+
+The environment variables below will be used if the user ID is not set.
+.TP
+.B AWS_ACCESS_KEY_ID
+The user AWS access key.
+.TP
+.B AWS_SECRET_ACCESS_KEY
+The secret key for use with the access key.
+.TP
+.B AWS_DEFAULT_REGION
+The region to use. Defaults to
+.IR us-east-1 .
+.TP
+.B AWS_SESSION_TOKEN
+Token used for temporary security credentials.
+.TP
+.B AWS_DEFAULT_PROFILE
+The profile to use in \fIcredentials\fR, \fIconfig\fR or \fIs3cfg\fR files.
+Defaults to
+.IR default .
+.TP
+.B AWS_PROFILE
+Same as above.
+.TP
+.B AWS_SHARED_CREDENTIALS_FILE
+Location of the credentials file.  Defaults to
+.IR ~/.aws/credentials .
+.TP
+.B HTS_S3_S3CFG
+Location of the s3cfg file.  Defaults to
+.IR ~/.s3cfg .
+.TP
+.B HTS_S3_HOST
+Sets the host.  Defaults to
+.IR s3.amazonaws.com .
+.TP
+.B HTS_S3_V2
+If set use signature v2 rather the default v4.  This will limit the plugin to
+reading only.
+.TP
+.B HTS_S3_PART_SIZE
+Sets the upload part size in Mb, the minimum being 5Mb.
+By default the part size starts at 5Mb and expands at regular intervals to
+accommodate bigger files (up to 2.5 Tbytes with the current rate).
+Using this setting disables the automatic part size expansion.
+.LP
+In the absence of an ID from the previous two methods the credential/config
+files will be used.  The default file locations are either
+\fI~/.aws/credentials\fR or \fI~/.s3cfg\fR (in that order).
+.SH NOTES
+In most cases this plugin transforms the given URL into a virtual host-style
+format e.g. \fIhttps://bucket.host/path/to/file\fR.  A path-style format is used
+where the URL is not DNS compliant or the bucket name contains a dot e.g.
+\fIhttps://host/bu.cket/path/to/file\fR.
+
+.SH "SEE ALSO"
+.BR htsfile (1)
+.BR samtools (1)
+.PP
+htslib website: <http://www.htslib.org/>

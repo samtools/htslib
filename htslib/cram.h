@@ -1,7 +1,7 @@
 /// @file htslib/cram.h
 /// CRAM format-specific API functions.
 /*
-    Copyright (C) 2015, 2016 Genome Research Ltd.
+    Copyright (C) 2015, 2016, 2018-2019 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
@@ -39,15 +39,16 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 #include <sys/types.h>
 
+#include "hts_defs.h"
 #include "hts.h"
+#include "sam.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#ifndef _CRAM_STRUCTS_H_
 enum cram_block_method {
-    ERROR    = -1,
+    BM_ERROR = -1,
     RAW      = 0,
     GZIP     = 1,
     BZIP2    = 2,
@@ -69,7 +70,6 @@ enum cram_content_type {
 };
 
 // Opaque data types, see cram_structs for the fully fledged versions.
-typedef struct SAM_hdr SAM_hdr;
 typedef struct cram_file_def cram_file_def;
 typedef struct cram_fd cram_fd;
 typedef struct cram_container cram_container;
@@ -81,7 +81,6 @@ typedef struct cram_block_compression_hdr cram_block_compression_hdr;
 typedef struct refs_t refs_t;
 
 struct hFILE;
-#endif
 
 // Accessor functions
 
@@ -89,16 +88,26 @@ struct hFILE;
  *-----------------------------------------------------------------------------
  * cram_fd
  */
-SAM_hdr *cram_fd_get_header(cram_fd *fd);
-void cram_fd_set_header(cram_fd *fd, SAM_hdr *hdr);
+HTSLIB_EXPORT
+sam_hdr_t *cram_fd_get_header(cram_fd *fd);
 
+HTSLIB_EXPORT
+void cram_fd_set_header(cram_fd *fd, sam_hdr_t *hdr);
+
+HTSLIB_EXPORT
 int cram_fd_get_version(cram_fd *fd);
+
+HTSLIB_EXPORT
 void cram_fd_set_version(cram_fd *fd, int vers);
 
+HTSLIB_EXPORT
 int cram_major_vers(cram_fd *fd);
+HTSLIB_EXPORT
 int cram_minor_vers(cram_fd *fd);
 
+HTSLIB_EXPORT
 struct hFILE *cram_fd_get_fp(cram_fd *fd);
+HTSLIB_EXPORT
 void cram_fd_set_fp(cram_fd *fd, struct hFILE *fp);
 
 
@@ -106,15 +115,22 @@ void cram_fd_set_fp(cram_fd *fd, struct hFILE *fp);
  *-----------------------------------------------------------------------------
  * cram_container
  */
+HTSLIB_EXPORT
 int32_t cram_container_get_length(cram_container *c);
+HTSLIB_EXPORT
 void cram_container_set_length(cram_container *c, int32_t length);
+HTSLIB_EXPORT
 int32_t cram_container_get_num_blocks(cram_container *c);
+HTSLIB_EXPORT
 void cram_container_set_num_blocks(cram_container *c, int32_t num_blocks);
+HTSLIB_EXPORT
 int32_t *cram_container_get_landmarks(cram_container *c, int32_t *num_landmarks);
+HTSLIB_EXPORT
 void cram_container_set_landmarks(cram_container *c, int32_t num_landmarks,
                                   int32_t *landmarks);
 
 /* Returns true if the container is empty (EOF marker) */
+HTSLIB_EXPORT
 int cram_container_is_empty(cram_fd *fd);
 
 
@@ -122,31 +138,47 @@ int cram_container_is_empty(cram_fd *fd);
  *-----------------------------------------------------------------------------
  * cram_block
  */
+HTSLIB_EXPORT
 int32_t cram_block_get_content_id(cram_block *b);
+HTSLIB_EXPORT
 int32_t cram_block_get_comp_size(cram_block *b);
+HTSLIB_EXPORT
 int32_t cram_block_get_uncomp_size(cram_block *b);
+HTSLIB_EXPORT
 int32_t cram_block_get_crc32(cram_block *b);
+HTSLIB_EXPORT
 void *  cram_block_get_data(cram_block *b);
 
+HTSLIB_EXPORT
 enum cram_content_type cram_block_get_content_type(cram_block *b);
 
+HTSLIB_EXPORT
 void cram_block_set_content_id(cram_block *b, int32_t id);
+HTSLIB_EXPORT
 void cram_block_set_comp_size(cram_block *b, int32_t size);
+HTSLIB_EXPORT
 void cram_block_set_uncomp_size(cram_block *b, int32_t size);
+HTSLIB_EXPORT
 void cram_block_set_crc32(cram_block *b, int32_t crc);
+HTSLIB_EXPORT
 void cram_block_set_data(cram_block *b, void *data);
 
-int cram_block_append(cram_block *b, void *data, int size);
+HTSLIB_EXPORT
+int cram_block_append(cram_block *b, const void *data, int size);
+HTSLIB_EXPORT
 void cram_block_update_size(cram_block *b);
 
 // Offset is known as "size" internally, but it can be confusing.
+HTSLIB_EXPORT
 size_t cram_block_get_offset(cram_block *b);
+HTSLIB_EXPORT
 void cram_block_set_offset(cram_block *b, size_t offset);
 
 /*
  * Computes the size of a cram block, including the block
  * header itself.
  */
+HTSLIB_EXPORT
 uint32_t cram_block_size(cram_block *b);
 
 /*
@@ -179,6 +211,7 @@ uint32_t cram_block_size(cram_block *b);
  *        -1 if unable to edit;
  *        -2 on other errors (eg I/O).
  */
+HTSLIB_EXPORT
 int cram_transcode_rg(cram_fd *in, cram_fd *out,
                       cram_container *c,
                       int nrg, int *in_rg, int *out_rg);
@@ -192,23 +225,8 @@ int cram_transcode_rg(cram_fd *in, cram_fd *out,
  * Returns 0 on success
  *        -1 on failure
  */
+HTSLIB_EXPORT
 int cram_copy_slice(cram_fd *in, cram_fd *out, int32_t num_slice);
-
-/*
- *-----------------------------------------------------------------------------
- * SAM_hdr
- */
-
-/*! Tokenises a SAM header into a hash table.
- *
- * Also extracts a few bits on specific data types, such as @RG lines.
- *
- * @return
- * Returns a SAM_hdr struct on success (free with sam_hdr_free());
- *         NULL on failure
- */
-SAM_hdr *sam_hdr_parse_(const char *hdr, int len);
-
 
 /*
  *-----------------------------------------------------------------------------
@@ -229,7 +247,11 @@ SAM_hdr *sam_hdr_parse_(const char *hdr, int len);
  * @return
  * Returns block pointer on success;
  *         NULL on failure
+ *
+ * The cram_block struct returned by a successful call should be freed
+ * via cram_free_block() when it is no longer needed.
  */
+HTSLIB_EXPORT
 cram_block *cram_new_block(enum cram_content_type content_type,
                            int content_id);
 
@@ -238,7 +260,11 @@ cram_block *cram_new_block(enum cram_content_type content_type,
  * @return
  * Returns cram_block pointer on success;
  *         NULL on failure
+ *
+ * The cram_block struct returned by a successful call should be freed
+ * via cram_free_block() when it is no longer needed.
  */
+HTSLIB_EXPORT
 cram_block *cram_read_block(cram_fd *fd);
 
 /*! Writes a CRAM block.
@@ -247,10 +273,12 @@ cram_block *cram_read_block(cram_fd *fd);
  * Returns 0 on success;
  *        -1 on failure
  */
+HTSLIB_EXPORT
 int cram_write_block(cram_fd *fd, cram_block *b);
 
 /*! Frees a CRAM block, deallocating internal data too.
  */
+HTSLIB_EXPORT
 void cram_free_block(cram_block *b);
 
 /*! Uncompresses a CRAM block, if compressed.
@@ -259,6 +287,7 @@ void cram_free_block(cram_block *b);
  * Returns 0 on success;
  *        -1 on failure
  */
+HTSLIB_EXPORT
 int cram_uncompress_block(cram_block *b);
 
 /*! Compresses a block.
@@ -274,6 +303,7 @@ int cram_uncompress_block(cram_block *b);
  * Returns 0 on success;
  *        -1 on failure
  */
+HTSLIB_EXPORT
 int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
                         int method, int level);
 
@@ -288,8 +318,13 @@ int cram_compress_block(cram_fd *fd, cram_block *b, cram_metrics *metrics,
  * @return
  * Returns cram_container ptr on success;
  *         NULL on failure
+ *
+ * The cram_container struct returned by a successful call should be freed
+ * via cram_free_container() when it is no longer needed.
  */
+HTSLIB_EXPORT
 cram_container *cram_new_container(int nrec, int nslice);
+HTSLIB_EXPORT
 void cram_free_container(cram_container *c);
 
 /*! Reads a container header.
@@ -297,7 +332,11 @@ void cram_free_container(cram_container *c);
  * @return
  * Returns cram_container on success;
  *         NULL on failure or no container left (fd->err == 0).
+ *
+ * The cram_container struct returned by a successful call should be freed
+ * via cram_free_container() when it is no longer needed.
  */
+HTSLIB_EXPORT
 cram_container *cram_read_container(cram_fd *fd);
 
 /*! Writes a container structure.
@@ -306,6 +345,7 @@ cram_container *cram_read_container(cram_fd *fd);
  * Returns 0 on success;
  *        -1 on failure
  */
+HTSLIB_EXPORT
 int cram_write_container(cram_fd *fd, cram_container *h);
 
 /*
@@ -316,8 +356,10 @@ int cram_write_container(cram_fd *fd, cram_container *h);
  * Returns 0 on success;
  *        -1 on failure
  */
+HTSLIB_EXPORT
 int cram_store_container(cram_fd *fd, cram_container *c, char *dat, int *size);
 
+HTSLIB_EXPORT
 int cram_container_size(cram_container *c);
 
 /**@}*/
@@ -333,6 +375,7 @@ int cram_container_size(cram_container *c);
  * Returns file handle on success;
  *         NULL on failure.
  */
+HTSLIB_EXPORT
 cram_fd *cram_open(const char *filename, const char *mode);
 
 /*! Opens an existing stream for reading or writing.
@@ -341,6 +384,7 @@ cram_fd *cram_open(const char *filename, const char *mode);
  * Returns file handle on success;
  *         NULL on failure.
  */
+HTSLIB_EXPORT
 cram_fd *cram_dopen(struct hFILE *fp, const char *filename, const char *mode);
 
 /*! Closes a CRAM file.
@@ -349,6 +393,7 @@ cram_fd *cram_dopen(struct hFILE *fp, const char *filename, const char *mode);
  * Returns 0 on success;
  *        -1 on failure
  */
+HTSLIB_EXPORT
 int cram_close(cram_fd *fd);
 
 /*
@@ -357,6 +402,7 @@ int cram_close(cram_fd *fd);
  * Returns 0 on success
  *        -1 on failure
  */
+HTSLIB_EXPORT
 int cram_seek(cram_fd *fd, off_t offset, int whence);
 
 /*
@@ -366,6 +412,7 @@ int cram_seek(cram_fd *fd, off_t offset, int whence);
  * Returns 0 on success
  *        -1 on failure
  */
+HTSLIB_EXPORT
 int cram_flush(cram_fd *fd);
 
 /*! Checks for end of file on a cram_fd stream.
@@ -375,6 +422,7 @@ int cram_flush(cram_fd *fd);
  *         1 if we hit an expected EOF (end of range or EOF block)
  *         2 for other EOF (end of stream without EOF block)
  */
+HTSLIB_EXPORT
 int cram_eof(cram_fd *fd);
 
 /*! Sets options on the cram_fd.
@@ -386,6 +434,7 @@ int cram_eof(cram_fd *fd);
  * Returns 0 on success;
  *        -1 on failure
  */
+HTSLIB_EXPORT
 int cram_set_option(cram_fd *fd, enum hts_fmt_option opt, ...);
 
 /*! Sets options on the cram_fd.
@@ -397,6 +446,7 @@ int cram_set_option(cram_fd *fd, enum hts_fmt_option opt, ...);
  * Returns 0 on success;
  *        -1 on failure
  */
+HTSLIB_EXPORT
 int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
 
 /*!
@@ -410,7 +460,8 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args);
  * Returns 0 on success;
  *        -1 on failure
  */
-int cram_set_header(cram_fd *fd, SAM_hdr *hdr);
+HTSLIB_EXPORT
+int cram_set_header(cram_fd *fd, sam_hdr_t *hdr);
 
 /*! Check if this file has a proper EOF block
  *
@@ -422,78 +473,60 @@ int cram_set_header(cram_fd *fd, SAM_hdr *hdr);
  *        -1 if an error occured whilst reading the file or we could not seek back to where we were
  *
  */
+HTSLIB_EXPORT
 int cram_check_EOF(cram_fd *fd);
 
 /* As int32_decoded/encode, but from/to blocks instead of cram_fd */
+HTSLIB_EXPORT
 int int32_put_blk(cram_block *b, int32_t val);
 
 /**@}*/
-/**@{ -------------------------------------------------------------------*/
+/**@{ -------------------------------------------------------------------
+ * Old typedef and function names for compatibility with existing code.
+ * Header functionality is now provided by sam.h's sam_hdr_t functions.
+ */
+
+typedef sam_hdr_t SAM_hdr;
+
+/*! Tokenises a SAM header into a hash table.
+ *
+ * Also extracts a few bits on specific data types, such as @RG lines.
+ *
+ * @return
+ * Returns a SAM_hdr struct on success (free with sam_hdr_free());
+ *         NULL on failure
+ */
+static inline SAM_hdr *sam_hdr_parse_(const char *hdr, size_t len) { return sam_hdr_parse(len, hdr); }
+
 /*! Deallocates all storage used by a SAM_hdr struct.
  *
  * This also decrements the header reference count. If after decrementing
  * it is still non-zero then the header is assumed to be in use by another
  * caller and the free is not done.
- *
- * This is a synonym for sam_hdr_dec_ref().
  */
-void sam_hdr_free(SAM_hdr *hdr);
+static inline void sam_hdr_free(SAM_hdr *hdr) { sam_hdr_destroy(hdr); }
 
-/*! Returns the current length of the SAM_hdr in text form.
- *
- * Call sam_hdr_rebuild() first if editing has taken place.
- */
-int sam_hdr_length(SAM_hdr *hdr);
-
-/*! Returns the string form of the SAM_hdr.
- *
- * Call sam_hdr_rebuild() first if editing has taken place.
- */
-char *sam_hdr_str(SAM_hdr *hdr);
-
-/*! Appends a formatted line to an existing SAM header.
- *
- * Line is a full SAM header record, eg "@SQ\tSN:foo\tLN:100", with
- * optional new-line. If it contains more than 1 line then multiple lines
- * will be added in order.
- *
- * Len is the length of the text data, or 0 if unknown (in which case
- * it should be null terminated).
- *
- * @return
- * Returns 0 on success;
- *        -1 on failure
- */
+/* sam_hdr_length() and sam_hdr_str() are now provided by sam.h. */
 
 /*! Add an @PG line.
  *
- * If we wish complete control over this use sam_hdr_add() directly. This
+ * If we wish complete control over this use sam_hdr_add_line() directly. This
  * function uses that, but attempts to do a lot of tedious house work for
  * you too.
  *
  * - It will generate a suitable ID if the supplied one clashes.
  * - It will generate multiple @PG records if we have multiple PG chains.
  *
- * Call it as per sam_hdr_add() with a series of key,value pairs ending
+ * Call it as per sam_hdr_add_line() with a series of key,value pairs ending
  * in NULL.
  *
  * @return
  * Returns 0 on success;
  *        -1 on failure
  */
-int sam_hdr_add_PG(SAM_hdr *sh, const char *name, ...);
+#define sam_hdr_add_PG sam_hdr_add_pg
 
-/*!
- * A function to help with construction of CL tags in @PG records.
- * Takes an argc, argv pair and returns a single space-separated string.
- * This string should be deallocated by the calling function.
- *
- * @return
- * Returns malloced char * on success;
- *         NULL on failure
- */
-char *stringify_argv(int argc, char *argv[]);
-
+/**@{ -------------------------------------------------------------------*/
 
 /*!
  * Returns the refs_t structure used by a cram file handle.
@@ -504,6 +537,7 @@ char *stringify_argv(int argc, char *argv[]);
  * @return
  * Returns NULL if none exists or the file handle is not a CRAM file.
  */
+HTSLIB_EXPORT
 refs_t *cram_get_refs(htsFile *fd);
 
 /**@}*/

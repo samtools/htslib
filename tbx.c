@@ -1,6 +1,6 @@
 /*  tbx.c -- tabix API functions.
 
-    Copyright (C) 2009, 2010, 2012-2015, 2017 Genome Research Ltd.
+    Copyright (C) 2009, 2010, 2012-2015, 2017-2019 Genome Research Ltd.
     Copyright (C) 2010-2012 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -23,6 +23,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <stdlib.h>
@@ -38,10 +39,19 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 
+HTSLIB_EXPORT
 const tbx_conf_t tbx_conf_gff = { 0, 1, 4, 5, '#', 0 };
+
+HTSLIB_EXPORT
 const tbx_conf_t tbx_conf_bed = { TBX_UCSC, 1, 2, 3, '#', 0 };
+
+HTSLIB_EXPORT
 const tbx_conf_t tbx_conf_psltbl = { TBX_UCSC, 15, 17, 18, '#', 0 };
+
+HTSLIB_EXPORT
 const tbx_conf_t tbx_conf_sam = { TBX_SAM, 3, 4, 0, '@', 0 };
+
+HTSLIB_EXPORT
 const tbx_conf_t tbx_conf_vcf = { TBX_VCF, 1, 2, 0, '#', 0 };
 
 typedef struct {
@@ -55,6 +65,7 @@ static inline int get_tid(tbx_t *tbx, const char *ss, int is_add)
     khint_t k;
     khash_t(s2i) *d;
     if (tbx->dict == 0) tbx->dict = kh_init(s2i);
+    if (!tbx->dict) return -1; // Out of memory
     d = (khash_t(s2i)*)tbx->dict;
     if (is_add) {
         int absent;
@@ -92,7 +103,7 @@ int tbx_parse1(const tbx_conf_t *conf, int len, char *line, tbx_intv_t *intv)
                 intv->ss = line + b; intv->se = line + i;
             } else if (id == conf->bc) {
                 // here ->beg is 0-based.
-                intv->beg = intv->end = strtol(line + b, &s, 0);
+                intv->beg = intv->end = strtoll(line + b, &s, 0);
                 if ( s==line+b ) return -1; // expected int
                 if (!(conf->preset&TBX_UCSC)) --intv->beg;
                 else ++intv->end;
@@ -102,7 +113,7 @@ int tbx_parse1(const tbx_conf_t *conf, int len, char *line, tbx_intv_t *intv)
                 if ((conf->preset&0xffff) == TBX_GENERIC) {
                     if (id == conf->ec)
                     {
-                        intv->end = strtol(line + b, &s, 0);
+                        intv->end = strtoll(line + b, &s, 0);
                         if ( s==line+b ) return -1; // expected int
                     }
                 } else if ((conf->preset&0xffff) == TBX_SAM) {
@@ -130,7 +141,7 @@ int tbx_parse1(const tbx_conf_t *conf, int len, char *line, tbx_intv_t *intv)
                             s = strstr(line + b, ";END=");
                             if (s) s += 5;
                         }
-                        if (s) intv->end = strtol(s, &s, 0);
+                        if (s) intv->end = strtoll(s, &s, 0);
                         line[i] = c;
                     }
                 }
@@ -148,7 +159,8 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
     if (tbx_parse1(&tbx->conf, str->l, str->s, intv) == 0) {
         int c = *intv->se;
         *intv->se = '\0'; intv->tid = get_tid(tbx, intv->ss, is_add); *intv->se = c;
-        return (intv->tid >= 0 && intv->beg >= 0 && intv->end >= 0)? 0 : -1;
+        if (intv->tid < 0) return -2;  // get_tid out of memory
+        return (intv->beg >= 0 && intv->end >= 0)? 0 : -1;
     } else {
         char *type = NULL;
         switch (tbx->conf.preset&0xffff)
@@ -164,20 +176,27 @@ static inline int get_intv(tbx_t *tbx, kstring_t *str, tbx_intv_t *intv, int is_
     }
 }
 
-int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, int *beg, int *end)
+/*
+ * Called by tabix iterator to read the next record.
+ * Returns    >=  0 on success
+ *               -1 on EOF
+ *            <= -2 on error
+ */
+int tbx_readrec(BGZF *fp, void *tbxv, void *sv, int *tid, hts_pos_t *beg, hts_pos_t *end)
 {
     tbx_t *tbx = (tbx_t *) tbxv;
     kstring_t *s = (kstring_t *) sv;
     int ret;
     if ((ret = bgzf_getline(fp, '\n', s)) >= 0) {
         tbx_intv_t intv;
-        get_intv(tbx, s, &intv, 0);
+        if (get_intv(tbx, s, &intv, 0) < 0)
+            return -2;
         *tid = intv.tid; *beg = intv.beg; *end = intv.end;
     }
     return ret;
 }
 
-void tbx_set_meta(tbx_t *tbx)
+static int tbx_set_meta(tbx_t *tbx)
 {
     int i, l = 0, l_nm;
     uint32_t x[7];
@@ -188,6 +207,7 @@ void tbx_set_meta(tbx_t *tbx)
 
     memcpy(x, &tbx->conf, 24);
     name = (char**)malloc(sizeof(char*) * kh_size(d));
+    if (!name) return -1;
     for (k = kh_begin(d), l = 0; k != kh_end(d); ++k) {
         if (!kh_exist(d, k)) continue;
         name[kh_val(d, k)] = (char*)kh_key(d, k);
@@ -195,6 +215,7 @@ void tbx_set_meta(tbx_t *tbx)
     }
     l_nm = x[6] = l;
     meta = (uint8_t*)malloc(l_nm + 28);
+    if (!meta) { free(name); return -1; }
     if (ed_is_big())
         for (i = 0; i < 7; ++i)
             x[i] = ed_swap_4(x[i]);
@@ -206,6 +227,45 @@ void tbx_set_meta(tbx_t *tbx)
     }
     free(name);
     hts_idx_set_meta(tbx->idx, l, meta, 0);
+    return 0;
+}
+
+// Minimal effort parser to extract reference length out of VCF header line
+// This is used only used to adjust the number of levels if necessary,
+// so not a major problem if it doesn't always work.
+static void adjust_max_ref_len_vcf(const char *str, int64_t *max_ref_len)
+{
+    const char *ptr;
+    int64_t len;
+    if (strncmp(str, "##contig", 8) != 0) return;
+    ptr = strstr(str + 8, "length");
+    if (!ptr) return;
+    for (ptr += 6; *ptr == ' ' || *ptr == '='; ptr++) {}
+    len = strtoll(ptr, NULL, 10);
+    if (*max_ref_len < len) *max_ref_len = len;
+}
+
+// Same for sam files
+static void adjust_max_ref_len_sam(const char *str, int64_t *max_ref_len)
+{
+    const char *ptr;
+    int64_t len;
+    if (strncmp(str, "@SQ", 3) != 0) return;
+    ptr = strstr(str + 3, "\tLN:");
+    if (!ptr) return;
+    ptr += 4;
+    len = strtoll(ptr, NULL, 10);
+    if (*max_ref_len < len) *max_ref_len = len;
+}
+
+// Adjusts number of levels if not big enough.  This can happen for
+// files with very large contigs.
+static int adjust_n_lvls(int min_shift, int n_lvls, int64_t max_len)
+{
+    int64_t s = 1LL << (min_shift + n_lvls * 3);
+    max_len += 256;
+    for (; max_len > s; ++n_lvls, s <<= 3) {}
+    return n_lvls;
 }
 
 tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
@@ -216,37 +276,59 @@ tbx_t *tbx_index(BGZF *fp, int min_shift, const tbx_conf_t *conf)
     int64_t lineno = 0;
     uint64_t last_off = 0;
     tbx_intv_t intv;
+    int64_t max_ref_len = 0;
 
     str.s = 0; str.l = str.m = 0;
     tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
+    if (!tbx) return NULL;
     tbx->conf = *conf;
     if (min_shift > 0) n_lvls = (TBX_MAX_SHIFT - min_shift + 2) / 3, fmt = HTS_FMT_CSI;
     else min_shift = 14, n_lvls = 5, fmt = HTS_FMT_TBI;
     while ((ret = bgzf_getline(fp, '\n', &str)) >= 0) {
         ++lineno;
+        if (str.s[0] == tbx->conf.meta_char && fmt == HTS_FMT_CSI) {
+            switch (tbx->conf.preset) {
+                case TBX_SAM:
+                    adjust_max_ref_len_sam(str.s, &max_ref_len); break;
+                case TBX_VCF:
+                    adjust_max_ref_len_vcf(str.s, &max_ref_len); break;
+                default:
+                    break;
+            }
+        }
         if (lineno <= tbx->conf.line_skip || str.s[0] == tbx->conf.meta_char) {
             last_off = bgzf_tell(fp);
             continue;
         }
         if (first == 0) {
+            if (fmt == HTS_FMT_CSI)
+                n_lvls = adjust_n_lvls(min_shift, n_lvls, max_ref_len);
             tbx->idx = hts_idx_init(0, fmt, last_off, min_shift, n_lvls);
+            if (!tbx->idx) goto fail;
             first = 1;
         }
-        get_intv(tbx, &str, &intv, 1);
-        ret = hts_idx_push(tbx->idx, intv.tid, intv.beg, intv.end, bgzf_tell(fp), 1);
-        if (ret < 0)
-        {
-            free(str.s);
-            tbx_destroy(tbx);
-            return NULL;
+        ret = get_intv(tbx, &str, &intv, 1);
+        if (ret < -1) goto fail;  // Out of memory
+        if (ret < 0) continue; // Skip unparsable lines
+        if (hts_idx_push(tbx->idx, intv.tid, intv.beg, intv.end,
+                         bgzf_tell(fp), 1) < 0) {
+            goto fail;
         }
     }
+    if (ret < -1) goto fail;
     if ( !tbx->idx ) tbx->idx = hts_idx_init(0, fmt, last_off, min_shift, n_lvls);   // empty file
+    if (!tbx->idx) goto fail;
     if ( !tbx->dict ) tbx->dict = kh_init(s2i);
-    hts_idx_finish(tbx->idx, bgzf_tell(fp));
-    tbx_set_meta(tbx);
+    if (!tbx->dict) goto fail;
+    if (hts_idx_finish(tbx->idx, bgzf_tell(fp)) != 0) goto fail;
+    if (tbx_set_meta(tbx) != 0) goto fail;
     free(str.s);
     return tbx;
+
+ fail:
+    free(str.s);
+    tbx_destroy(tbx);
+    return NULL;
 }
 
 void tbx_destroy(tbx_t *tbx)
@@ -270,7 +352,7 @@ int tbx_index_build3(const char *fn, const char *fnidx, int min_shift, int n_thr
     int ret;
     if ((fp = bgzf_open(fn, "r")) == 0) return -1;
     if ( n_threads ) bgzf_mt(fp, n_threads, 256);
-    if ( bgzf_compression(fp) != bgzf ) { bgzf_close(fp); return -1; }
+    if ( bgzf_compression(fp) != bgzf ) { bgzf_close(fp); return -2; }
     tbx = tbx_index(fp, min_shift, conf);
     bgzf_close(fp);
     if ( !tbx ) return -1;
@@ -289,14 +371,14 @@ int tbx_index_build(const char *fn, int min_shift, const tbx_conf_t *conf)
     return tbx_index_build3(fn, NULL, min_shift, 0, conf);
 }
 
-tbx_t *tbx_index_load2(const char *fn, const char *fnidx)
+static tbx_t *index_load(const char *fn, const char *fnidx, int flags)
 {
     tbx_t *tbx;
     uint8_t *meta;
     char *nm, *p;
     uint32_t l_meta, l_nm;
     tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
-    tbx->idx = fnidx? hts_idx_load2(fn, fnidx) : hts_idx_load(fn, HTS_FMT_TBI);
+    tbx->idx = hts_idx_load3(fn, fnidx, HTS_FMT_TBI, flags);
     if ( !tbx->idx )
     {
         free(tbx);
@@ -334,9 +416,19 @@ tbx_t *tbx_index_load2(const char *fn, const char *fnidx)
     return NULL;
 }
 
+tbx_t *tbx_index_load3(const char *fn, const char *fnidx, int flags)
+{
+    return index_load(fn, fnidx, flags);
+}
+
+tbx_t *tbx_index_load2(const char *fn, const char *fnidx)
+{
+    return index_load(fn, fnidx, 1);
+}
+
 tbx_t *tbx_index_load(const char *fn)
 {
-    return tbx_index_load2(fn, NULL);
+    return index_load(fn, NULL, 1);
 }
 
 const char **tbx_seqnames(tbx_t *tbx, int *n)
@@ -345,11 +437,15 @@ const char **tbx_seqnames(tbx_t *tbx, int *n)
     if (d == NULL)
     {
         *n = 0;
-        return NULL;
+        return calloc(1, sizeof(char *));
     }
     int tid, m = kh_size(d);
     const char **names = (const char**) calloc(m,sizeof(const char*));
     khint_t k;
+    if (!names) {
+        *n = 0;
+        return NULL;
+    }
     for (k=kh_begin(d); k<kh_end(d); k++)
     {
         if ( !kh_exist(d,k) ) continue;

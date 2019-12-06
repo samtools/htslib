@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009 Genome Research Ltd.
+Copyright (c) 2009, 2013, 2018 Genome Research Ltd.
 Author: Rob Davies <rmd@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -28,8 +28,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef _POOLED_ALLOC_H_
-#define _POOLED_ALLOC_H_
+#ifndef POOLED_ALLOC_H
+#define POOLED_ALLOC_H
 
 #include <stddef.h>
 
@@ -63,4 +63,4 @@ void pool_free(pool_alloc_t *p, void *ptr);
 }
 #endif
 
-#endif /*_POOLED_ALLOC_H_*/
+#endif /* POOLED_ALLOC_H */

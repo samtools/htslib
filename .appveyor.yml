@@ -30,10 +30,10 @@ build_script:
   - set HOME=.
   - set MSYSTEM=MINGW64
   - set PATH=C:/msys64/usr/bin;C:/msys64/mingw64/bin;%PATH%
-  - "sh -lc \"aclocal && autoheader && autoconf && ./configure && make -j2\""
+  - "sh -lc \"aclocal && autoheader && autoconf && ./configure --enable-werror CFLAGS='-g -O3' && make -j2\""
 
 #build_script:
 #  - make
 
 test_script:
-  - "sh -lc \"make test\""
+  - "sh -lc \"make test-shlib-exports && make test\""

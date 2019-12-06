@@ -1,8 +1,8 @@
-.TH htsfile 1 "18 July 2018" "htslib-1.9" "Bioinformatics tools"
+.TH htsfile 1 "6 December 2019" "htslib-1.10" "Bioinformatics tools"
 .SH NAME
 htsfile \- identify high-throughput sequencing data files
 .\"
-.\" Copyright (C) 2015, 2017 Genome Research Ltd.
+.\" Copyright (C) 2015, 2017-2018 Genome Research Ltd.
 .\"
 .\" Author: John Marshall <jm18@sanger.ac.uk>
 .\"
@@ -28,6 +28,10 @@ htsfile \- identify high-throughput sequencing data files
 .B htsfile
 .RB [ -chHv ]
 .IR FILE ...
+.br
+.B htsfile --copy
+.RB [ -v ]
+.I FILE DESTFILE
 .SH DESCRIPTION
 The \fBhtsfile\fR utility attempts to identify what kind of high-throughput
 sequencing data files the specified files are, and provides minimal viewing
@@ -52,6 +56,11 @@ only headers or only data records, but has no other filtering capabilities.
 Use \fBsamtools\fR or \fBbcftools\fR if you need more extensive viewing or
 filtering capabilities.
 .P
+Alternatively, when \fB--copy\fR is used, \fBhtsfile\fR takes exactly two
+arguments and performs a byte-for-byte copy from \fIFILE\fR to \fIDESTFILE\fR.
+This is similar to \fBcp\fR(1), but HTSlib's remote file access facilities
+are available for both source and destination.
+.P
 The following options are accepted:
 .TP 4n
 .BR -c ", " --view
@@ -62,6 +71,11 @@ By default, \fB--view\fR refuses to display files in unknown formats.
 When \fB--verbose\fR is also given, the raw contents of such files are
 displayed, with non-printable characters shown via C-style "\\x" hexadecimal
 escape sequences.
+.TP
+.BR -C ", " --copy
+Instead of identifying or displaying the specified files, copy the source
+\fIFILE\fR to the destination \fIDESTFILE\fR.
+Only \fB--verbose\fR may be used in conjunction with \fB--copy\fR.
 .TP
 .BR -h ", " --header-only
 Display data file headers only.

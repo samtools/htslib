@@ -1,6 +1,6 @@
 /*  synced_bcf_reader.c -- stream through multiple VCF files.
 
-    Copyright (C) 2012-2014 Genome Research Ltd.
+    Copyright (C) 2012-2019 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -22,6 +22,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <stdio.h>
@@ -29,6 +30,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 #include <strings.h>
 #include <limits.h>
+#include <inttypes.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include "htslib/synced_bcf_reader.h"
@@ -38,18 +40,22 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/thread_pool.h"
 #include "bcf_sr_sort.h"
 
-#define MAX_CSI_COOR 0x7fffffff     // maximum indexable coordinate of .csi
+// Maximum indexable coordinate of .csi, for default min_shift of 14.
+// This comes out to about 17 Tbp.  Limiting factor is the bin number,
+// which is a uint32_t in CSI.  The highest number of levels compatible
+// with this is 10 (needs 31 bits).
+#define MAX_CSI_COOR ((1LL << (14 + 30)) - 1)
 
 typedef struct
 {
-    uint32_t start, end;
+    hts_pos_t start, end;   // records are marked for skipping have start>end
 }
 region1_t;
 
 typedef struct _region_t
 {
-    region1_t *regs;
-    int nregs, mregs, creg;
+    region1_t *regs;            // regions will sorted and merged, redundant records marked for skipping have start>end
+    int nregs, mregs, creg;     // creg: the current active region
 }
 region_t;
 
@@ -60,9 +66,10 @@ typedef struct
 }
 aux_t;
 
-static void _regions_add(bcf_sr_regions_t *reg, const char *chr, int start, int end);
+static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start, hts_pos_t end);
 static bcf_sr_regions_t *_regions_init_string(const char *str);
 static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *rec);
+static void _regions_sort_and_merge(bcf_sr_regions_t *reg);
 
 char *bcf_sr_strerror(int errnum)
 {
@@ -316,6 +323,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
                 _regions_add(files->regions, names[i], -1, -1);
         }
         free(names);
+        _regions_sort_and_merge(files->regions);
     }
 
     return 1;
@@ -376,14 +384,14 @@ void bcf_sr_remove_reader(bcf_srs_t *files, int i)
     files->nreaders--;
 }
 
-
+#if DEBUG_SYNCED_READER
 void debug_buffer(FILE *fp, bcf_sr_t *reader)
 {
     int j;
     for (j=0; j<=reader->nbuffer; j++)
     {
         bcf1_t *line = reader->buffer[j];
-        fprintf(fp,"\t%p\t%s%s\t%s:%d\t%s ", (void*)line,reader->fname,j==0?"*":" ",reader->header->id[BCF_DT_CTG][line->rid].key,line->pos+1,line->n_allele?line->d.allele[0]:"");
+        fprintf(fp,"\t%p\t%s%s\t%s:%"PRIhts_pos"\t%s ", (void*)line,reader->fname,j==0?"*":" ",reader->header->id[BCF_DT_CTG][line->rid].key,line->pos+1,line->n_allele?line->d.allele[0]:"");
         int k;
         for (k=1; k<line->n_allele; k++) fprintf(fp," %s", line->d.allele[k]);
         fprintf(fp,"\n");
@@ -400,6 +408,7 @@ void debug_buffers(FILE *fp, bcf_srs_t *files)
     }
     fprintf(fp,"\n");
 }
+#endif
 
 static inline int has_filter(bcf_sr_t *reader, bcf1_t *line)
 {
@@ -418,11 +427,11 @@ static inline int has_filter(bcf_sr_t *reader, bcf1_t *line)
     return 0;
 }
 
-static int _reader_seek(bcf_sr_t *reader, const char *seq, int start, int end)
+static int _reader_seek(bcf_sr_t *reader, const char *seq, hts_pos_t start, hts_pos_t end)
 {
     if ( end>=MAX_CSI_COOR )
     {
-        hts_log_error("The coordinate is out of csi index limit: %d", end+1);
+        hts_log_error("The coordinate is out of csi index limit: %"PRIhts_pos, end+1);
         exit(1);
     }
     if ( reader->itr )
@@ -444,7 +453,7 @@ static int _reader_seek(bcf_sr_t *reader, const char *seq, int start, int end)
         reader->itr = bcf_itr_queryi(reader->bcf_idx,tid,start,end+1);
     }
     if (!reader->itr) {
-        hts_log_error("Could not seek: %s:%d-%d", seq, start + 1, end + 1);
+        hts_log_error("Could not seek: %s:%"PRIhts_pos"-%"PRIhts_pos, seq, start + 1, end + 1);
         assert(0);
     }
     return 0;
@@ -467,8 +476,11 @@ static int _readers_next_region(bcf_srs_t *files)
         return 0;
     }
 
-    // No lines in the buffer, need to open new region or quit
+    // No lines in the buffer, need to open new region or quit.
+    int prev_iseq = files->regions->iseq;
+    hts_pos_t prev_end = files->regions->end;
     if ( bcf_sr_regions_next(files->regions)<0 ) return -1;
+    files->regions->prev_end = prev_iseq==files->regions->iseq ? prev_end : -1;
 
     for (i=0; i<files->nreaders; i++)
         _reader_seek(&files->readers[i],files->regions->seq_names[files->regions->iseq],files->regions->start,files->regions->end);
@@ -479,13 +491,13 @@ static int _readers_next_region(bcf_srs_t *files)
 /*
  *  _reader_fill_buffer() - buffers all records with the same coordinate
  */
-static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
+static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
 {
     // Return if the buffer is full: the coordinate of the last buffered record differs
-    if ( reader->nbuffer && reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) return;
+    if ( reader->nbuffer && reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) return 0;
 
     // No iterator (sequence not present in this file) and not streaming
-    if ( !reader->itr && !files->streaming ) return;
+    if ( !reader->itr && !files->streaming ) return 0;
 
     // Fill the buffer with records starting at the same position
     int i, ret = 0;
@@ -537,6 +549,9 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
             bcf_subset_format(reader->header,reader->buffer[reader->nbuffer+1]);
         }
 
+        // prevent creation of duplicates from records overlapping multiple regions
+        if ( files->regions && reader->buffer[reader->nbuffer+1]->pos <= files->regions->prev_end ) continue;
+
         // apply filter
         if ( !reader->nfilter_ids )
             bcf_unpack(reader->buffer[reader->nbuffer+1], BCF_UN_STR);
@@ -555,6 +570,7 @@ static void _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         tbx_itr_destroy(reader->itr);
         reader->itr = NULL;
     }
+    return 0; // FIXME: Check for more errs in this function
 }
 
 /*
@@ -576,9 +592,10 @@ static void _reader_shift_buffer(bcf_sr_t *reader)
         reader->nbuffer = 0;    // no other line
 }
 
-int _reader_next_line(bcf_srs_t *files)
+static int next_line(bcf_srs_t *files)
 {
-    int i, min_pos = INT_MAX;
+    int i;
+    hts_pos_t min_pos = HTS_POS_MAX;
     const char *chr = NULL;
 
     // Loop until next suitable line is found or all readers have finished
@@ -603,7 +620,7 @@ int _reader_next_line(bcf_srs_t *files)
             else if ( min_pos==files->readers[i].buffer[1]->pos )
                 bcf_sr_sort_add_active(&BCF_SR_AUX(files)->sort, i);
         }
-        if ( min_pos==INT_MAX )
+        if ( min_pos==HTS_POS_MAX )
         {
             if ( !files->regions ) break;
             continue;
@@ -619,7 +636,7 @@ int _reader_next_line(bcf_srs_t *files)
                 for (i=0; i<files->nreaders; i++)
                     if ( files->readers[i].nbuffer && files->readers[i].buffer[1]->pos==min_pos )
                         _reader_shift_buffer(&files->readers[i]);
-                min_pos = INT_MAX;
+                min_pos = HTS_POS_MAX;
                 chr = NULL;
                 continue;
             }
@@ -635,11 +652,11 @@ int _reader_next_line(bcf_srs_t *files)
 int bcf_sr_next_line(bcf_srs_t *files)
 {
     if ( !files->targets_als )
-        return _reader_next_line(files);
+        return next_line(files);
 
     while (1)
     {
-        int i, ret = _reader_next_line(files);
+        int i, ret = next_line(files);
         if ( !ret ) return ret;
 
         for (i=0; i<files->nreaders; i++)
@@ -669,7 +686,7 @@ static void bcf_sr_seek_start(bcf_srs_t *readers)
 }
 
 
-int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos)
+int bcf_sr_seek(bcf_srs_t *readers, const char *seq, hts_pos_t pos)
 {
     if ( !readers->regions ) return 0;
     bcf_sr_sort_reset(&BCF_SR_AUX(readers)->sort);
@@ -762,9 +779,9 @@ int bcf_sr_set_samples(bcf_srs_t *files, const char *fname, int is_file)
     return 1;
 }
 
-// Add a new region into a list sorted by start,end. On input the coordinates
-// are 1-based, stored 0-based, inclusive.
-static void _regions_add(bcf_sr_regions_t *reg, const char *chr, int start, int end)
+// Add a new region into a list. On input the coordinates are 1-based, inclusive, then stored 0-based,
+// inclusive. Sorting and merging step needed afterwards: qsort(..,cmp_regions) and merge_regions().
+static int _regions_add(bcf_sr_regions_t *reg, const char *chr, hts_pos_t start, hts_pos_t end)
 {
     if ( start==-1 && end==-1 )
     {
@@ -792,25 +809,48 @@ static void _regions_add(bcf_sr_regions_t *reg, const char *chr, int start, int 
     }
 
     region_t *creg = &reg->regs[iseq];
+    hts_expand(region1_t,creg->nregs+1,creg->mregs,creg->regs);
+    creg->regs[creg->nregs].start = start;
+    creg->regs[creg->nregs].end   = end;
+    creg->nregs++;
 
-    // the regions may not be sorted on input: binary search
-    int i, min = 0, max = creg->nregs - 1;
-    while ( min<=max )
+    return 0; // FIXME: check for errs in this function
+}
+
+static int regions_cmp(const void *aptr, const void *bptr)
+{
+    region1_t *a = (region1_t*)aptr;
+    region1_t *b = (region1_t*)bptr;
+    if ( a->start < b->start ) return -1;
+    if ( a->start > b->start ) return 1;
+    if ( a->end < b->end ) return -1;
+    if ( a->end > b->end ) return 1;
+    return 0;
+}
+static void regions_merge(region_t *reg)
+{
+    int i = 0, j;
+    while ( i<reg->nregs )
     {
-        i = (max+min)/2;
-        if ( start < creg->regs[i].start ) max = i - 1;
-        else if ( start > creg->regs[i].start ) min = i + 1;
-        else break;
+        j = i + 1;
+        while ( j<reg->nregs && reg->regs[i].end >= reg->regs[j].start )
+        {
+            if ( reg->regs[i].end < reg->regs[j].end ) reg->regs[i].end = reg->regs[j].end;
+            reg->regs[j].start = 1;  reg->regs[j].end = 0;  // if beg>end, this region marked for skipping
+            j++;
+        }
+        i = j;
     }
-    if ( min>max || creg->regs[i].start!=start || creg->regs[i].end!=end )
+}
+void _regions_sort_and_merge(bcf_sr_regions_t *reg)
+{
+    if ( !reg ) return;
+
+    int i;
+    for (i=0; i<reg->nseqs; i++)
     {
-        // no such region, insert a new one just after max
-        hts_expand(region1_t,creg->nregs+1,creg->mregs,creg->regs);
-        if ( ++max < creg->nregs )
-            memmove(&creg->regs[max+1],&creg->regs[max],(creg->nregs - max)*sizeof(region1_t));
-        creg->regs[max].start = start;
-        creg->regs[max].end   = end;
-        creg->nregs++;
+        qsort(reg->regs[i].regs, reg->regs[i].nregs, sizeof(*reg->regs[i].regs), regions_cmp);
+        regions_merge(&reg->regs[i]);
     }
 }
 
@@ -819,11 +859,11 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
 {
     bcf_sr_regions_t *reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
     reg->start = reg->end = -1;
-    reg->prev_start = reg->prev_seq = -1;
+    reg->prev_start = reg->prev_end = reg->prev_seq = -1;
 
     kstring_t tmp = {0,0,0};
     const char *sp = str, *ep = str;
-    int from, to;
+    hts_pos_t from, to;
     while ( 1 )
     {
         while ( *ep && *ep!=',' && *ep!=':' ) ep++;
@@ -875,7 +915,7 @@ static bcf_sr_regions_t *_regions_init_string(const char *str)
 
 // ichr,ifrom,ito are 0-based;
 // returns -1 on error, 0 if the line is a comment line, 1 on success
-static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **chr,char **chr_end,int *from,int *to)
+static int _regions_parse_line(char *line, int ichr, int ifrom, int ito, char **chr, char **chr_end, hts_pos_t *from, hts_pos_t *to)
 {
     if (ifrom < 0 || ito < 0) return -1;
     *chr_end = NULL;
@@ -938,11 +978,16 @@ static int _regions_parse_line(char *line, int ichr,int ifrom,int ito, char **ch
 bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr, int ifrom, int ito)
 {
     bcf_sr_regions_t *reg;
-    if ( !is_file ) return _regions_init_string(regions);
+    if ( !is_file )
+    {
+        reg = _regions_init_string(regions);
+        _regions_sort_and_merge(reg);
+        return reg;
+    }
 
     reg = (bcf_sr_regions_t *) calloc(1, sizeof(bcf_sr_regions_t));
     reg->start = reg->end = -1;
-    reg->prev_start = reg->prev_seq = -1;
+    reg->prev_start = reg->prev_end = reg->prev_seq = -1;
 
     reg->file = hts_open(regions, "rb");
     if ( !reg->file )
@@ -952,7 +997,7 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         return NULL;
     }
 
-    reg->tbx = tbx_index_load(regions);
+    reg->tbx = tbx_index_load3(regions, NULL, HTS_IDX_SAVE_REMOTE|HTS_IDX_SILENT_FAIL);
     if ( !reg->tbx )
     {
         int len = strlen(regions);
@@ -965,7 +1010,8 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         while ( hts_getline(reg->file, KS_SEP_LINE, &reg->line) > 0 )
         {
             char *chr, *chr_end;
-            int from, to, ret;
+            hts_pos_t from, to;
+            int ret;
             ret = _regions_parse_line(reg->line.s, ichr,ifrom,abs(ito), &chr,&chr_end,&from,&to);
             if ( ret < 0 )
             {
@@ -987,6 +1033,7 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         }
         hts_close(reg->file); reg->file = NULL;
         if ( !reg->nseqs ) { free(reg); return NULL; }
+        _regions_sort_and_merge(reg);
         return reg;
     }
 
@@ -1048,6 +1095,16 @@ int bcf_sr_regions_seek(bcf_sr_regions_t *reg, const char *seq)
     return -1;
 }
 
+// Returns 0 on success, -1 when done
+static int advance_creg(region_t *reg)
+{
+    int i = reg->creg + 1;
+    while ( i<reg->nregs && reg->regs[i].start > reg->regs[i].end ) i++;    // regions with start>end are marked to skip by merge_regions()
+    reg->creg = i;
+    if ( i>=reg->nregs ) return -1;
+    return 0;
+}
+
 int bcf_sr_regions_next(bcf_sr_regions_t *reg)
 {
     if ( reg->iseq<0 ) return -1;
@@ -1059,8 +1116,7 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
     {
         while ( reg->iseq < reg->nseqs )
         {
-            reg->regs[reg->iseq].creg++;
-            if ( reg->regs[reg->iseq].creg < reg->regs[reg->iseq].nregs ) break;
+            if ( advance_creg(&reg->regs[reg->iseq])==0 ) break;    // a valid record was found
             reg->iseq++;
         }
         if ( reg->iseq >= reg->nseqs ) { reg->iseq = -1; return -1; } // no more regions left
@@ -1072,7 +1128,8 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg)
 
     // reading from tabix
     char *chr, *chr_end;
-    int ichr = 0, ifrom = 1, ito = 2, is_bed = 0, from, to;
+    int ichr = 0, ifrom = 1, ito = 2, is_bed = 0;
+    hts_pos_t from, to;
     if ( reg->tbx )
     {
         ichr   = reg->tbx->conf.sc-1;
@@ -1191,7 +1248,7 @@ static int _regions_match_alleles(bcf_sr_regions_t *reg, int als_idx, bcf1_t *re
     return !(type & VCF_INDEL) ? 1 : 0;
 }
 
-int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, int end)
+int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, hts_pos_t start, hts_pos_t end)
 {
     int iseq;
     if ( khash_str2int_get(reg->seq_hash, seq, &iseq)<0 ) return -1;    // no such sequence
@@ -1219,10 +1276,10 @@ int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, in
     return -1;  // no overlap
 }
 
-void bcf_sr_regions_flush(bcf_sr_regions_t *reg)
+int bcf_sr_regions_flush(bcf_sr_regions_t *reg)
 {
-    if ( !reg->missed_reg_handler || reg->prev_seq==-1 ) return;
+    if ( !reg->missed_reg_handler || reg->prev_seq==-1 ) return 0;
     while ( !bcf_sr_regions_next(reg) ) reg->missed_reg_handler(reg, reg->missed_reg_data);
-    return;
+    return 0; // FIXME: check for errs in this function
 }
 

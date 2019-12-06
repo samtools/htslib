@@ -1,6 +1,6 @@
 /*  hts.c -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2008, 2009, 2012-2017 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2012-2019 Genome Research Ltd.
     Copyright (C) 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -23,6 +23,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <zlib.h>
@@ -30,7 +31,9 @@ DEALINGS IN THE SOFTWARE.  */
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
+#include <inttypes.h>
 #include <limits.h>
+#include <stdint.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -44,21 +47,29 @@ DEALINGS IN THE SOFTWARE.  */
 #include "version.h"
 #include "hts_internal.h"
 #include "hfile_internal.h"
+#include "sam_internal.h"
 #include "htslib/hts_os.h" // drand48
 
 #include "htslib/khash.h"
 #include "htslib/kseq.h"
 #include "htslib/ksort.h"
+#include "htslib/tbx.h"
+
+#ifndef EFTYPE
+#define EFTYPE ENOEXEC
+#endif
 
 KHASH_INIT2(s2i,, kh_cstr_t, int64_t, 1, kh_str_hash_func, kh_str_hash_equal)
 
+HTSLIB_EXPORT
 int hts_verbose = HTS_LOG_WARNING;
 
 const char *hts_version()
 {
-    return HTS_VERSION;
+    return HTS_VERSION_TEXT;
 }
 
+HTSLIB_EXPORT
 const unsigned char seq_nt16_table[256] = {
     15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
     15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15,
@@ -79,8 +90,10 @@ const unsigned char seq_nt16_table[256] = {
     15,15,15,15, 15,15,15,15, 15,15,15,15, 15,15,15,15
 };
 
+HTSLIB_EXPORT
 const char seq_nt16_str[] = "=ACMGRSVTWYHKDBN";
 
+HTSLIB_EXPORT
 const int seq_nt16_int[] = { 4, 0, 1, 4, 2, 4, 4, 4, 3, 4, 4, 4, 4, 4, 4, 4 };
 
 /**********************
@@ -93,6 +106,7 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
     case bam:
     case sam:
     case cram:
+    case fastq_format:
         return sequence_data;
 
     case vcf:
@@ -102,6 +116,8 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
     case bai:
     case crai:
     case csi:
+    case fai_format:
+    case fqi_format:
     case gzi:
     case tbi:
         return index_file;
@@ -109,12 +125,14 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
     case bed:
         return region_list;
 
+    case fasta_format:
     case htsget:
         return unknown_category;
 
     case unknown_format:
     case binary_format:
     case text_format:
+    case empty_format:
     case format_maximum:
         break;
     }
@@ -122,14 +140,11 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
     return unknown_category;
 }
 
-// Decompress up to ten or so bytes by peeking at the file, which must be
+// Decompress several hundred bytes by peeking at the file, which must be
 // positioned at the start of a GZIP block.
 static size_t decompress_peek(hFILE *fp, unsigned char *dest, size_t destsize)
 {
-    // Typically at most a couple of hundred bytes of input are required
-    // to get a few bytes of output from inflate(), so hopefully this buffer
-    // size suffices in general.
-    unsigned char buffer[512];
+    unsigned char buffer[2048];
     z_stream zs;
     ssize_t npeek = hpeek(fp, buffer, sizeof buffer);
 
@@ -195,29 +210,151 @@ cmp_nonblank(const char *key, const unsigned char *u, const unsigned char *ulim)
     return 0;
 }
 
+static int is_text_only(const unsigned char *u, const unsigned char *ulim)
+{
+    for (; u < ulim; u++)
+        if (! (*u >= ' ' || *u == '\t' || *u == '\r' || *u == '\n'))
+            return 0;
+
+    return 1;
+}
+
+static int
+secondline_is_bases(const unsigned char *u, const unsigned char *ulim)
+{
+    // Skip to second line, returning false if there isn't one
+    u = memchr(u, '\n', ulim - u);
+    if (u == NULL || ++u == ulim) return 0;
+
+    // Scan over all base-encoding letters (including 'N' but not SEQ's '=')
+    while (u < ulim && (seq_nt16_table[*u] != 15 || toupper(*u) == 'N')) {
+        if (*u == '=') return 0;
+        u++;
+    }
+
+    return (u == ulim || *u == '\r' || *u == '\n')? 1 : 0;
+}
+
+// Parse tab-delimited text, filling in a string of column types and returning
+// the number of columns spotted (within [u,ulim), and up to column_len) or -1
+// if non-printable characters were seen.  Column types:
+//     i: integer, s: strand sign, C: CIGAR, O: SAM optional field, Z: anything
+static int
+parse_tabbed_text(char *columns, int column_len,
+                  const unsigned char *u, const unsigned char *ulim,
+                  int *complete)
+{
+    const char *str  = (const char *) u;
+    const char *slim = (const char *) ulim;
+    const char *s;
+    int ncolumns = 0;
+
+    enum { digit = 1, leading_sign = 2, cigar_operator = 4, other = 8 };
+    unsigned seen = 0;
+    *complete = 0;
+
+    for (s = str; s < slim; s++)
+        if (*s >= ' ') {
+            if (isdigit_c(*s))
+                seen |= digit;
+            else if ((*s == '+' || *s == '-') && s == str)
+                seen |= leading_sign;
+            else if (strchr(BAM_CIGAR_STR, *s) && s > str && isdigit_c(s[-1]))
+                seen |= cigar_operator;
+            else
+                seen |= other;
+        }
+        else if (*s == '\t' || *s == '\r' || *s == '\n') {
+            size_t len = s - str;
+            char type;
+
+            if (seen == digit || seen == (leading_sign|digit)) type = 'i';
+            else if (seen == (digit|cigar_operator)) type = 'C';
+            else if (len == 1)
+                switch (str[0]) {
+                case '*': type = 'C'; break;
+                case '+': case '-': case '.': type = 's'; break;
+                default: type = 'Z'; break;
+                }
+            else if (len >= 5 && str[2] == ':' && str[4] == ':') type = 'O';
+            else type = 'Z';
+
+            columns[ncolumns++] = type;
+            if (*s != '\t' || ncolumns >= column_len - 1) {
+                *complete = 1; // finished the line or more columns than needed
+                break;
+            }
+
+            str = s + 1;
+            seen = 0;
+        }
+        else return -1;
+
+    columns[ncolumns] = '\0';
+    return ncolumns;
+}
+
+// Match COLUMNS as a prefix against PATTERN (so COLUMNS may run out first).
+// Returns len(COLUMNS) (modulo '+'), or 0 if there is a mismatched entry.
+static int colmatch(const char *columns, const char *pattern)
+{
+    int i;
+    for (i = 0; columns[i] != '\0'; i++) {
+        if (pattern[i] == '+') return i;
+        if (! (columns[i] == pattern[i] || pattern[i] == 'Z')) return 0;
+    }
+
+    return i;
+}
+
 int hts_detect_format(hFILE *hfile, htsFormat *fmt)
 {
-    unsigned char s[32];
+    char columns[24];
+    unsigned char s[1024];
+    int complete = 0;
     ssize_t len = hpeek(hfile, s, 18);
     if (len < 0) return -1;
 
+    fmt->category = unknown_category;
+    fmt->format = unknown_format;
+    fmt->version.major = fmt->version.minor = -1;
+    fmt->compression = no_compression;
+    fmt->compression_level = -1;
+    fmt->specific = NULL;
+
     if (len >= 2 && s[0] == 0x1f && s[1] == 0x8b) {
         // The stream is either gzip-compressed or BGZF-compressed.
-        // Determine which, and decompress the first few bytes.
+        // Determine which, and decompress the first few records or lines.
         fmt->compression = (len >= 18 && (s[3] & 4) &&
                             memcmp(&s[12], "BC\2\0", 4) == 0)? bgzf : gzip;
+        if (len >= 9 && s[2] == 8)
+            fmt->compression_level = (s[8] == 2)? 9 : (s[8] == 4)? 1 : -1;
+
         len = decompress_peek(hfile, s, sizeof s);
     }
+    else if (len >= 10 && memcmp(s, "BZh", 3) == 0 &&
+             (memcmp(&s[4], "\x31\x41\x59\x26\x53\x59", 6) == 0 ||
+              memcmp(&s[4], "\x17\x72\x45\x38\x50\x90", 6) == 0)) {
+        fmt->compression = bzip2_compression;
+        fmt->compression_level = s[3] - '0';
+        // Decompressing via libbz2 produces no output until it has a whole
+        // block (of size 100Kb x level), which is too large for peeking.
+        // So unfortunately we can recognise bzip2 but not the contents,
+        // except that \x1772... magic indicates the stream is empty.
+        if (s[4] == '\x31') return 0;
+        else len = 0;
+    }
     else {
-        fmt->compression = no_compression;
         len = hpeek(hfile, s, sizeof s);
     }
     if (len < 0) return -1;
 
-    fmt->compression_level = -1;
-    fmt->specific = NULL;
+    if (len == 0) {
+        fmt->format = empty_format;
+        return 0;
+    }
 
-    if (len >= 6 && memcmp(s,"CRAM",4) == 0 && s[4]>=1 && s[4]<=3 && s[5]<=1) {
+    if (len >= 6 && memcmp(s,"CRAM",4) == 0 && s[4]>=1 && s[4]<=7 && s[5]<=7) {
         fmt->category = sequence_data;
         fmt->format = cram;
         fmt->version.major = s[4], fmt->version.minor = s[5];
@@ -260,7 +397,6 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         else if (memcmp(s, "TBI\1", 4) == 0) {
             fmt->category = index_file;
             fmt->format = tbi;
-            fmt->version.major = -1, fmt->version.minor = -1;
             return 0;
         }
     }
@@ -269,13 +405,12 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         fmt->format = vcf;
         if (len >= 21 && s[16] == 'v')
             parse_version(fmt, &s[17], &s[len]);
-        else
-            fmt->version.major = fmt->version.minor = -1;
         return 0;
     }
     else if (len >= 4 && s[0] == '@' &&
              (memcmp(s, "@HD\t", 4) == 0 || memcmp(s, "@SQ\t", 4) == 0 ||
-              memcmp(s, "@RG\t", 4) == 0 || memcmp(s, "@PG\t", 4) == 0)) {
+              memcmp(s, "@RG\t", 4) == 0 || memcmp(s, "@PG\t", 4) == 0 ||
+              memcmp(s, "@CO\t", 4) == 0)) {
         fmt->category = sequence_data;
         fmt->format = sam;
         // @HD-VN is not guaranteed to be the first tag, but then @HD is
@@ -289,26 +424,55 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
     else if (cmp_nonblank("{\"htsget\":", s, &s[len]) == 0) {
         fmt->category = unknown_category;
         fmt->format = htsget;
-        fmt->version.major = fmt->version.minor = -1;
         return 0;
     }
-    else {
-        // Various possibilities for tab-delimited text:
-        // .crai   (gzipped tab-delimited six columns: seqid 5*number)
-        // .bed    ([3..12] tab-delimited columns)
-        // .bedpe  (>= 10 tab-delimited columns)
-        // .sam    (tab-delimited >= 11 columns: seqid number seqid...)
-        // FIXME For now, assume it's SAM
-        fmt->category = sequence_data;
-        fmt->format = sam;
-        fmt->version.major = 1, fmt->version.minor = -1;
+    else if (len >= 1 && s[0] == '>' && secondline_is_bases(s, &s[len])) {
+        fmt->format = fasta_format;
         return 0;
+    }
+    else if (len >= 1 && s[0] == '@' && secondline_is_bases(s, &s[len])) {
+        fmt->category = sequence_data;
+        fmt->format = fastq_format;
+        return 0;
+    }
+    else if (parse_tabbed_text(columns, sizeof columns, s,
+                               &s[len], &complete) > 0) {
+        // A complete SAM line is at least 11 columns.  On unmapped long reads may
+        // be missing two.  (On mapped long reads we must have an @ header so long
+        // CIGAR is irrelevant.)
+        if (colmatch(columns, "ZiZiiCZiiZZOOOOOOOOOOOOOOOOOOOO+")
+            >= 9 + 2*complete) {
+            fmt->category = sequence_data;
+            fmt->format = sam;
+            fmt->version.major = 1, fmt->version.minor = -1;
+            return 0;
+        }
+        else if (fmt->compression == gzip && colmatch(columns, "iiiiii") == 6) {
+            fmt->category = index_file;
+            fmt->format = crai;
+            return 0;
+        }
+        else if (colmatch(columns, "Ziiiii") == 6) {
+            fmt->category = index_file;
+            fmt->format = fqi_format;
+            return 0;
+        }
+        else if (colmatch(columns, "Ziiii") == 5) {
+            fmt->category = index_file;
+            fmt->format = fai_format;
+            return 0;
+        }
+        else if (colmatch(columns, "Zii+") >= 3) {
+            fmt->category = region_list;
+            fmt->format = bed;
+            return 0;
+        }
     }
 
-    fmt->category = unknown_category;
-    fmt->format = unknown_format;
-    fmt->version.major = fmt->version.minor = -1;
-    fmt->compression = no_compression;
+    // Arbitrary text files can be read using hts_getline().
+    if (is_text_only(s, &s[len])) fmt->format = text_format;
+
+    // Nothing recognised: leave unset fmt-> fields as unknown.
     return 0;
 }
 
@@ -320,6 +484,8 @@ char *hts_format_description(const htsFormat *format)
     case sam:   kputs("SAM", &str); break;
     case bam:   kputs("BAM", &str); break;
     case cram:  kputs("CRAM", &str); break;
+    case fasta_format:  kputs("FASTA", &str); break;
+    case fastq_format:  kputs("FASTQ", &str); break;
     case vcf:   kputs("VCF", &str); break;
     case bcf:
         if (format->version.major == 1) kputs("Legacy BCF", &str);
@@ -328,8 +494,13 @@ char *hts_format_description(const htsFormat *format)
     case bai:   kputs("BAI", &str); break;
     case crai:  kputs("CRAI", &str); break;
     case csi:   kputs("CSI", &str); break;
+    case fai_format:    kputs("FASTA-IDX", &str); break;
+    case fqi_format:    kputs("FASTQ-IDX", &str); break;
+    case gzi:   kputs("GZI", &str); break;
     case tbi:   kputs("Tabix", &str); break;
+    case bed:   kputs("BED", &str); break;
     case htsget: kputs("htsget", &str); break;
+    case empty_format:  kputs("empty", &str); break;
     default:    kputs("unknown", &str); break;
     }
 
@@ -343,6 +514,7 @@ char *hts_format_description(const htsFormat *format)
     }
 
     switch (format->compression) {
+    case bzip2_compression:  kputs(" bzip2-compressed", &str); break;
     case custom: kputs(" compressed", &str); break;
     case gzip:   kputs(" gzip-compressed", &str); break;
     case bgzf:
@@ -372,12 +544,20 @@ char *hts_format_description(const htsFormat *format)
 
     if (format->compression == no_compression)
         switch (format->format) {
+        case text_format:
         case sam:
         case crai:
         case vcf:
         case bed:
+        case fai_format:
+        case fqi_format:
+        case fasta_format:
+        case fastq_format:
         case htsget:
             kputs(" text", &str);
+            break;
+
+        case empty_format:
             break;
 
         default:
@@ -392,13 +572,14 @@ char *hts_format_description(const htsFormat *format)
 
 htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
 {
-    char smode[102], *cp, *cp2, *mode_c;
+    char smode[101], *cp, *cp2, *mode_c;
     htsFile *fp = NULL;
-    hFILE *hfile;
+    hFILE *hfile = NULL;
     char fmt_code = '\0';
+    const char format_to_mode[] = "\0g\0\0b\0c\0\0b\0g\0\0";
 
-    strncpy(smode, mode, 100);
-    smode[100]=0;
+    strncpy(smode, mode, 99);
+    smode[99]=0;
     if ((cp = strchr(smode, ',')))
         *cp = '\0';
 
@@ -414,11 +595,27 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     mode_c = cp2;
     *cp2++ = fmt_code;
     *cp2++ = 0;
-    *cp2++ = 0;
 
     // Set or reset the format code if opts->format is used
-    if (fmt && fmt->format != unknown_format)
-        *mode_c = "\0g\0\0b\0c\0\0b\0g\0\0"[fmt->format];
+    if (fmt && fmt->format > unknown_format
+        && fmt->format < sizeof(format_to_mode)) {
+        *mode_c = format_to_mode[fmt->format];
+    }
+
+    // If we really asked for a compressed text format then mode_c above will
+    // point to nul.  We set to 'z' to enable bgzf.
+    if (strchr(mode, 'w') && fmt && fmt->compression == bgzf) {
+        if (fmt->format == sam || fmt->format == vcf || fmt->format == text_format)
+            *mode_c = 'z';
+    }
+
+    char *rmme = NULL, *fnidx = strstr(fn, HTS_IDX_DELIM);
+    if ( fnidx ) {
+        rmme = strdup(fn);
+        if ( !rmme ) goto error;
+        rmme[fnidx-fn] = 0;
+        fn = rmme;
+    }
 
     hfile = hopen(fn, smode);
     if (hfile == NULL) goto error;
@@ -426,14 +623,27 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     fp = hts_hopen(hfile, fn, smode);
     if (fp == NULL) goto error;
 
+    // Compensate for the loss of exactness in htsExactFormat.
+    // hts_hopen returns generics such as binary or text, but we
+    // have been given something explicit here so use that instead.
+    if (fp->is_write && fmt &&
+        (fmt->format == bam || fmt->format == sam ||
+         fmt->format == vcf || fmt->format == bcf ||
+         fmt->format == bed || fmt->format == fasta_format ||
+         fmt->format == fastq_format))
+        fp->format.format = fmt->format;
+
     if (fmt && fmt->specific)
         if (hts_opt_apply(fp, fmt->specific) != 0)
             goto error;
 
+    if ( rmme ) free(rmme);
     return fp;
 
 error:
-    hts_log_error("Failed to open file %s", fn);
+    hts_log_error("Failed to open file \"%s\"%s%s", fn,
+                  errno ? " : " : "", errno ? strerror(errno) : "");
+    if ( rmme ) free(rmme);
 
     if (hfile)
         hclose_abruptly(hfile);
@@ -639,6 +849,9 @@ int hts_opt_apply(htsFile *fp, hts_opt *opts) {
     for (; opts;  opts = (last=opts)->next) {
         switch (opts->opt) {
             case CRAM_OPT_REFERENCE:
+                if (!(fp->fn_aux = strdup(opts->val.s)))
+                    return -1;
+                // fall through
             case CRAM_OPT_VERSION:
             case CRAM_OPT_PREFIX:
                 if (hts_set_opt(fp,  opts->opt,  opts->val.s) != 0)
@@ -727,6 +940,11 @@ int hts_parse_format(htsFormat *format, const char *str) {
         format->format            = sam;
         format->compression       = no_compression;;
         format->compression_level = 0;
+    } else if (strcmp(fmt, "sam.gz") == 0) {
+        format->category          = sequence_data;
+        format->format            = sam;
+        format->compression       = bgzf;
+        format->compression_level = -1;
     } else if (strcmp(fmt, "bam") == 0) {
         format->category          = sequence_data;
         format->format            = bam;
@@ -865,7 +1083,11 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
         fp->is_cram = 1;
         break;
 
+    case empty_format:
     case text_format:
+    case bed:
+    case fasta_format:
+    case fastq_format:
     case sam:
     case vcf:
         if (fp->format.compression != no_compression) {
@@ -878,7 +1100,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
         break;
 
     default:
-        errno = ENOEXEC;
+        errno = EFTYPE;
         goto error;
     }
 
@@ -930,13 +1152,19 @@ int hts_close(htsFile *fp)
         ret = cram_close(fp->fp.cram);
         break;
 
+    case empty_format:
     case text_format:
+    case bed:
+    case fasta_format:
+    case fastq_format:
     case sam:
     case vcf:
+        ret = sam_state_destroy(fp);
+
         if (fp->format.compression != no_compression)
-            ret = bgzf_close(fp->fp.bgzf);
+            ret |= bgzf_close(fp->fp.bgzf);
         else
-            ret = hclose(fp->fp.hfile);
+            ret |= hclose(fp->fp.hfile);
         break;
 
     default:
@@ -945,6 +1173,8 @@ int hts_close(htsFile *fp)
     }
 
     save = errno;
+    sam_hdr_destroy(fp->bam_header);
+    hts_idx_destroy(fp->idx);
     free(fp->fn);
     free(fp->fn_aux);
     free(fp->line.s);
@@ -971,20 +1201,28 @@ const char *hts_format_file_extension(const htsFormat *format) {
     case vcf:  return "vcf";
     case bcf:  return "bcf";
     case csi:  return "csi";
+    case fai_format:   return "fai";
+    case fqi_format:   return "fqi";
     case gzi:  return "gzi";
     case tbi:  return "tbi";
     case bed:  return "bed";
+    case fasta_format: return "fa";
+    case fastq_format: return "fq";
     default:   return "?";
     }
 }
 
 static hFILE *hts_hfile(htsFile *fp) {
     switch (fp->format.format) {
-    case binary_format: // fall through; still valid if bcf?
+    case binary_format:// fall through
+    case bcf:          // fall through
     case bam:          return bgzf_hfile(fp->fp.bgzf);
     case cram:         return cram_hfile(fp->fp.cram);
     case text_format:  return fp->fp.hfile;
-    case sam:          return fp->fp.hfile;
+    case vcf:          // fall through
+    case sam:          return fp->format.compression != no_compression
+                              ? bgzf_hfile(fp->fp.bgzf)
+                              : fp->fp.hfile;
     default:           return NULL;
     }
 }
@@ -1059,7 +1297,9 @@ BGZF *hts_get_bgzfp(htsFile *fp);
 
 int hts_set_threads(htsFile *fp, int n)
 {
-    if (fp->format.compression == bgzf) {
+    if (fp->format.format == sam) {
+        return sam_set_threads(fp, n);
+    } else if (fp->format.compression == bgzf) {
         return bgzf_mt(hts_get_bgzfp(fp), n, 256/*unused*/);
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_NTHREADS, n);
@@ -1068,7 +1308,9 @@ int hts_set_threads(htsFile *fp, int n)
 }
 
 int hts_set_thread_pool(htsFile *fp, htsThreadPool *p) {
-    if (fp->format.compression == bgzf) {
+    if (fp->format.format == sam || fp->format.format == text_format) {
+        return sam_set_thread_pool(fp, p);
+    } else if (fp->format.compression == bgzf) {
         return bgzf_thread_pool(hts_get_bgzfp(fp), p->pool, p->qsize);
     } else if (fp->format.format == cram) {
         return hts_set_opt(fp, CRAM_OPT_THREAD_POOL, p);
@@ -1107,14 +1349,14 @@ BGZF *hts_get_bgzfp(htsFile *fp)
     else
         return NULL;
 }
-int hts_useek(htsFile *fp, long uoffset, int where)
+int hts_useek(htsFile *fp, off_t uoffset, int where)
 {
     if (fp->is_bgzf)
         return bgzf_useek(fp->fp.bgzf, uoffset, where);
     else
         return (hseek(fp->fp.hfile, uoffset, SEEK_SET) >= 0)? 0 : -1;
 }
-long hts_utell(htsFile *fp)
+off_t hts_utell(htsFile *fp)
 {
     if (fp->is_bgzf)
         return bgzf_utell(fp->fp.bgzf);
@@ -1133,7 +1375,7 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
     switch (fp->format.compression) {
     case no_compression:
         str->l = 0;
-        ret = kgetline(str, (kgets_func *) hgets, fp->fp.hfile);
+        ret = kgetline2(str, (kgets_func2 *) hgetln, fp->fp.hfile);
         if (ret >= 0) ret = str->l;
         else if (herrno(fp->fp.hfile)) ret = -2, errno = herrno(fp->fp.hfile);
         else ret = -1;
@@ -1279,8 +1521,8 @@ int hts_check_EOF(htsFile *fp)
 
 #define pair64_lt(a,b) ((a).u < (b).u)
 
-KSORT_INIT(_off, hts_pair64_t, pair64_lt)
-KSORT_INIT(_off_max, hts_pair64_max_t, pair64_lt)
+KSORT_INIT_STATIC(_off, hts_pair64_t, pair64_lt)
+KSORT_INIT_STATIC(_off_max, hts_pair64_max_t, pair64_lt)
 
 typedef struct {
     int32_t m, n;
@@ -1292,7 +1534,7 @@ KHASH_MAP_INIT_INT(bin, bins_t)
 typedef khash_t(bin) bidx_t;
 
 typedef struct {
-    int32_t n, m;
+    hts_pos_t n, m;
     uint64_t *offset;
 } lidx_t;
 
@@ -1304,9 +1546,11 @@ struct __hts_idx_t {
     bidx_t **bidx;
     lidx_t *lidx;
     uint8_t *meta; // MUST have a terminating NUL on the end
+    int tbi_n, last_tbi_tid;
     struct {
         uint32_t last_bin, save_bin;
-        int last_coor, last_tid, save_tid, finished;
+        hts_pos_t last_coor;
+        int last_tid, save_tid, finished;
         uint64_t last_off, save_off;
         uint64_t off_beg, off_end;
         uint64_t n_mapped, n_unmapped;
@@ -1352,7 +1596,8 @@ static inline int insert_to_b(bidx_t *b, int bin, uint64_t beg, uint64_t end)
 
 static inline int insert_to_l(lidx_t *l, int64_t _beg, int64_t _end, uint64_t offset, int min_shift)
 {
-    int i, beg, end;
+    int i;
+    hts_pos_t beg, end;
     beg = _beg >> min_shift;
     end = (_end - 1) >> min_shift;
     if (l->m < end + 1) {
@@ -1393,6 +1638,8 @@ hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_l
         idx->lidx = (lidx_t*) calloc(n, sizeof(lidx_t));
         if (idx->lidx == NULL) { free(idx->bidx); free(idx); return NULL; }
     }
+    idx->tbi_n = -1;
+    idx->last_tbi_tid = -1;
     return idx;
 }
 
@@ -1433,12 +1680,12 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
     }
 }
 
-static void compress_binning(hts_idx_t *idx, int i)
+static int compress_binning(hts_idx_t *idx, int i)
 {
     bidx_t *bidx = idx->bidx[i];
     khint_t k;
     int l, m;
-    if (bidx == 0) return;
+    if (bidx == 0) return 0;
     // merge a bin to its parent if the bin is too small
     for (l = idx->n_lvls; l > 0; --l) {
         unsigned start = hts_bin_first(l);
@@ -1453,9 +1700,14 @@ static void compress_binning(hts_idx_t *idx, int i)
                 if (kp == kh_end(bidx)) continue;
                 q = &kh_val(bidx, kp);
                 if (q->n + p->n > q->m) {
-                    q->m = q->n + p->n;
-                    kroundup32(q->m);
-                    q->list = (hts_pair64_t*)realloc(q->list, q->m * sizeof(hts_pair64_t));
+                    uint32_t new_m = q->n + p->n;
+                    hts_pair64_t *new_list;
+                    kroundup32(new_m);
+                    if (new_m > INT32_MAX) return -1; // Limited by index format
+                    new_list = realloc(q->list, new_m * sizeof(*new_list));
+                    if (!new_list) return -1;
+                    q->m = new_m;
+                    q->list = new_list;
                 }
                 memcpy(q->list + q->n, p->list, p->n * sizeof(hts_pair64_t));
                 q->n += p->n;
@@ -1478,32 +1730,63 @@ static void compress_binning(hts_idx_t *idx, int i)
         }
         p->n = m + 1;
     }
+    return 0;
 }
 
-void hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
+int hts_idx_finish(hts_idx_t *idx, uint64_t final_offset)
 {
-    int i;
-    if (idx == NULL || idx->z.finished) return; // do not run this function on an empty index or multiple times
+    int i, ret = 0;
+    if (idx == NULL || idx->z.finished) return 0; // do not run this function on an empty index or multiple times
     if (idx->z.save_tid >= 0) {
-        insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, final_offset);
-        insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.off_beg, final_offset);
-        insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.n_mapped, idx->z.n_unmapped);
+        ret |= insert_to_b(idx->bidx[idx->z.save_tid], idx->z.save_bin, idx->z.save_off, final_offset);
+        ret |= insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.off_beg, final_offset);
+        ret |= insert_to_b(idx->bidx[idx->z.save_tid], META_BIN(idx), idx->z.n_mapped, idx->z.n_unmapped);
     }
     for (i = 0; i < idx->n; ++i) {
         update_loff(idx, i, (idx->fmt == HTS_FMT_CSI));
-        compress_binning(idx, i);
+        ret |= compress_binning(idx, i);
     }
     idx->z.finished = 1;
+
+    return ret;
 }
 
-int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int is_mapped)
+int hts_idx_check_range(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end)
+{
+    int64_t maxpos = (int64_t) 1 << (idx->min_shift + idx->n_lvls * 3);
+    if (tid < 0 || (beg <= maxpos && end <= maxpos))
+        return 0;
+    int64_t max = end > beg ? end : beg, s = 1 << 14;
+    int n_lvls = 0;
+    while (max > s) {
+        n_lvls++;
+        s <<= 3;
+    }
+
+    if (idx->fmt == HTS_FMT_CSI) {
+        hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos" cannot be stored in a csi index "
+                      "with min_shift = %d, n_lvls = %d. Try using "
+                      "min_shift = 14, n_lvls >= %d",
+                      beg, end,
+                      idx->min_shift, idx->n_lvls,
+                      n_lvls);
+    } else {
+        hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos" cannot be stored in a %s index. "
+                      "Try using a csi index with min_shift = 14, "
+                      "n_lvls >= %d",
+                      beg, end, idx_format_name(idx->fmt),
+                      n_lvls);
+    }
+    errno = ERANGE;
+    return -1;
+}
+
+int hts_idx_push(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t offset, int is_mapped)
 {
     int bin;
-    int64_t maxpos = (int64_t) 1 << (idx->min_shift + idx->n_lvls * 3);
     if (tid<0) beg = -1, end = 0;
-    if (tid >= 0 && (beg > maxpos || end > maxpos)) {
-        goto pos_too_big;
-    }
+    if (hts_idx_check_range(idx, tid, beg, end) < 0)
+        return -1;
     if (tid >= idx->m) { // enlarge the index
         uint32_t new_m = idx->m * 2 > tid + 1 ? idx->m * 2 : tid + 1;
         bidx_t **new_bidx;
@@ -1537,7 +1820,12 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
         idx->z.last_tid = tid;
         idx->z.last_bin = 0xffffffffu;
     } else if (tid >= 0 && idx->z.last_coor > beg) { // test if positions are out of order
-        hts_log_error("Unsorted positions on sequence #%d: %d followed by %d", tid+1, idx->z.last_coor+1, beg+1);
+        hts_log_error("Unsorted positions on sequence #%d: %"PRIhts_pos" followed by %"PRIhts_pos, tid+1, idx->z.last_coor+1, beg+1);
+        return -1;
+    }
+    else if (end < beg) {
+        // Malformed ranges are errors. (Empty ranges (beg==end) are unusual but acceptable.)
+        hts_log_error("Invalid record on sequence #%d: end %"PRId64" < begin %"PRId64, tid+1, end, beg+1);
         return -1;
     }
     if ( tid>=0 )
@@ -1577,32 +1865,51 @@ int hts_idx_push(hts_idx_t *idx, int tid, int beg, int end, uint64_t offset, int
     idx->z.last_off = offset;
     idx->z.last_coor = beg;
     return 0;
+}
 
- pos_too_big: {
-        int64_t max = end > beg ? end : beg, s = 1 << 14;
-        int n_lvls = 0;
-        while (max > s) {
-            n_lvls++;
-            s <<= 3;
-        }
+// Needed for TBI only.  Ensure 'tid' with 'name' is in the index meta data.
+// idx->meta needs to have been initialsed first with an appropriate Tabix
+// configuration via hts_idx_set_meta.
+//
+// NB number of references (first 4 bytes of tabix header) aren't in
+// idx->meta, but held in idx->n instead.
+int hts_idx_tbi_name(hts_idx_t *idx, int tid, const char *name) {
+    // Horrid - we have to map incoming tid to a tbi alternative tid.
+    // This is because TBI counts tids by "covered" refs while everything
+    // else counts by Nth SQ/contig record in header.
+    if (tid == idx->last_tbi_tid || tid < 0 || !name)
+        return idx->tbi_n;
 
-        if (idx->fmt == HTS_FMT_CSI) {
-            hts_log_error("Region %d..%d cannot be stored in a csi index "
-                "with min_shift = %d, n_lvls = %d. Try using "
-                "min_shift = 14, n_lvls >= %d",
-                beg, end,
-                idx->min_shift, idx->n_lvls,
-                n_lvls);
-        } else {
-            hts_log_error("Region %d..%d cannot be stored in a %s index. "
-                "Try using a csi index with min_shift = 14, "
-                "n_lvls >= %d",
-                beg, end, idx_format_name(idx->fmt),
-                n_lvls);
-        }
-        errno = ERANGE;
+    uint32_t len = strlen(name)+1;
+    uint8_t *tmp = (uint8_t *)realloc(idx->meta, idx->l_meta + len);
+    if (!tmp)
         return -1;
-    }
+
+    // Append name
+    idx->meta = tmp;
+    strcpy((char *)idx->meta + idx->l_meta, name);
+    idx->l_meta += len;
+
+    // Update seq length
+    u32_to_le(le_to_u32(idx->meta+24)+len, idx->meta+24);
+
+    idx->last_tbi_tid = tid;
+    return ++idx->tbi_n;
+}
+
+// When doing samtools index we have a read_bam / hts_idx_push(bgzf_tell())
+// loop.  idx->z.last_off is the previous bzgf_tell location, so we know
+// the location the current bam record started at as well as where it ends.
+//
+// When building an index on the fly via a write_bam / hts_idx_push loop,
+// this isn't quite identical as we may amend the virtual coord returned
+// by bgzf_tell to the start of a new block if the next bam struct doesn't
+// fit.  It's essentially the same thing, but for bit-identical indices
+// we need to amend the idx->z.last_off when we know we're starting a new
+// block.
+void hts_idx_amend_last(hts_idx_t *idx, uint64_t offset)
+{
+    idx->z.last_off = offset;
 }
 
 void hts_idx_destroy(hts_idx_t *idx)
@@ -1630,6 +1937,10 @@ void hts_idx_destroy(hts_idx_t *idx)
     }
     free(idx->bidx); free(idx->lidx); free(idx->meta);
     free(idx);
+}
+
+int hts_idx_fmt(hts_idx_t *idx) {
+    return idx->fmt;
 }
 
 // The optimizer eliminates these ed_is_big() calls; still it would be good to
@@ -1668,7 +1979,18 @@ static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
 
     #define check(ret) if ((ret) < 0) return -1
 
-    check(idx_write_int32(fp, idx->n));
+    // VCF TBI/CSI only writes IDs for non-empty bins (ie covered references)
+    //
+    // NOTE: CSI meta is undefined in spec, so this code has an assumption
+    // that we're only using it for Tabix data.
+    int nids = idx->n;
+    if (idx->meta && idx->l_meta >= 4 && le_to_u32(idx->meta) == TBX_VCF) {
+        for (i = nids = 0; i < idx->n; ++i) {
+            if (idx->bidx[i])
+                nids++;
+        }
+    }
+    check(idx_write_int32(fp, nids));
     if (fmt == HTS_FMT_TBI && idx->l_meta)
         check(bgzf_write(fp, idx->meta, idx->l_meta));
 
@@ -1676,8 +1998,10 @@ static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
         khint_t k;
         bidx_t *bidx = idx->bidx[i];
         lidx_t *lidx = &idx->lidx[i];
+
         // write binning index
-        check(idx_write_int32(fp, bidx? kh_size(bidx) : 0));
+        if (nids == idx->n || bidx)
+            check(idx_write_int32(fp, bidx? kh_size(bidx) : 0));
         if (bidx)
             for (k = kh_begin(bidx); k != kh_end(bidx); ++k)
                 if (kh_exist(bidx, k)) {
@@ -1687,6 +2011,7 @@ static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
                     //int j;for(j=0;j<p->n;++j)fprintf(stderr,"%d,%llx,%d,%llx:%llx\n",kh_key(bidx,k),kh_val(bidx, k).loff,j,p->list[j].u,p->list[j].v);
                     check(idx_write_int32(fp, p->n));
                     for (j = 0; j < p->n; ++j) {
+                        //fprintf(stderr, "\t%ld\t%ld\n", p->list[j].u, p->list[j].v);
                         check(idx_write_uint64(fp, p->list[j].u));
                         check(idx_write_uint64(fp, p->list[j].v));
                     }
@@ -1759,7 +2084,7 @@ fail:
     return -1;
 }
 
-static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
+static int idx_read_core(hts_idx_t *idx, BGZF *fp, int fmt)
 {
     int32_t i, n, is_be;
     is_be = ed_is_big();
@@ -1773,12 +2098,14 @@ static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
         h = idx->bidx[i] = kh_init(bin);
         if (bgzf_read(fp, &n, 4) != 4) return -1;
         if (is_be) ed_swap_4p(&n);
+        if (n < 0) return -3;
         for (j = 0; j < n; ++j) {
             khint_t k;
             if (bgzf_read(fp, &key, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&key);
             k = kh_put(bin, h, key, &absent);
-            if (absent <= 0) return -3; // Duplicate bin number
+            if (absent <  0) return -2; // No memory
+            if (absent == 0) return -3; // Duplicate bin number
             p = &kh_val(h, k);
             if (fmt == HTS_FMT_CSI) {
                 if (bgzf_read(fp, &p->loff, 8) != 8) return -1;
@@ -1786,16 +2113,20 @@ static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
             } else p->loff = 0;
             if (bgzf_read(fp, &p->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&p->n);
+            if (p->n < 0) return -3;
+            if ((size_t) p->n > SIZE_MAX / sizeof(hts_pair64_t)) return -2;
             p->m = p->n;
             p->list = (hts_pair64_t*)malloc(p->m * sizeof(hts_pair64_t));
             if (p->list == NULL) return -2;
-            if (bgzf_read(fp, p->list, p->n<<4) != p->n<<4) return -1;
+            if (bgzf_read(fp, p->list, ((size_t) p->n)<<4) != ((size_t) p->n)<<4) return -1;
             if (is_be) swap_bins(p);
         }
         if (fmt != HTS_FMT_CSI) { // load linear index
             int j;
             if (bgzf_read(fp, &l->n, 4) != 4) return -1;
             if (is_be) ed_swap_4p(&l->n);
+            if (l->n < 0) return -3;
+            if ((size_t) l->n > SIZE_MAX / sizeof(uint64_t)) return -2;
             l->m = l->n;
             l->offset = (uint64_t*)malloc(l->n * sizeof(uint64_t));
             if (l->offset == NULL) return -2;
@@ -1811,7 +2142,7 @@ static int hts_idx_load_core(hts_idx_t *idx, BGZF *fp, int fmt)
     return 0;
 }
 
-static hts_idx_t *hts_idx_load_local(const char *fn)
+static hts_idx_t *idx_read(const char *fn)
 {
     uint8_t magic[4];
     int i, is_be;
@@ -1835,11 +2166,12 @@ static hts_idx_t *hts_idx_load_local(const char *fn)
         }
         if (bgzf_read(fp, &n, 4) != 4) goto fail;
         if (is_be) ed_swap_4p(&n);
+        if (n > INT32_MAX) goto fail;
         if ((idx = hts_idx_init(n, HTS_FMT_CSI, 0, x[0], x[1])) == NULL) goto fail;
         idx->l_meta = x[2];
         idx->meta = meta;
         meta = NULL;
-        if (hts_idx_load_core(idx, fp, HTS_FMT_CSI) < 0) goto fail;
+        if (idx_read_core(idx, fp, HTS_FMT_CSI) < 0) goto fail;
     }
     else if (memcmp(magic, "TBI\1", 4) == 0) {
         uint8_t x[8 * 4];
@@ -1847,6 +2179,7 @@ static hts_idx_t *hts_idx_load_local(const char *fn)
         // Read file header
         if (bgzf_read(fp, x, sizeof(x)) != sizeof(x)) goto fail;
         n = le_to_u32(&x[0]); // location of n_ref
+        if (n > INT32_MAX) goto fail;
         if ((idx = hts_idx_init(n, HTS_FMT_TBI, 0, 14, 5)) == NULL) goto fail;
         n = le_to_u32(&x[7*4]); // location of l_nm
         if (n > UINT32_MAX - 29) goto fail; // Prevent possible overflow
@@ -1859,14 +2192,15 @@ static hts_idx_t *hts_idx_load_local(const char *fn)
         if (bgzf_read(fp, idx->meta + 28, n) != n) goto fail;
         // Prevent possible strlen past the end in tbx_index_load2
         idx->meta[idx->l_meta] = '\0';
-        if (hts_idx_load_core(idx, fp, HTS_FMT_TBI) < 0) goto fail;
+        if (idx_read_core(idx, fp, HTS_FMT_TBI) < 0) goto fail;
     }
     else if (memcmp(magic, "BAI\1", 4) == 0) {
         uint32_t n;
         if (bgzf_read(fp, &n, 4) != 4) goto fail;
         if (is_be) ed_swap_4p(&n);
-        idx = hts_idx_init(n, HTS_FMT_BAI, 0, 14, 5);
-        if (hts_idx_load_core(idx, fp, HTS_FMT_BAI) < 0) goto fail;
+        if (n > INT32_MAX) goto fail;
+        if ((idx = hts_idx_init(n, HTS_FMT_BAI, 0, 14, 5)) == NULL) goto fail;
+        if (idx_read_core(idx, fp, HTS_FMT_BAI) < 0) goto fail;
     }
     else { errno = EINVAL; goto fail; }
 
@@ -1894,7 +2228,7 @@ int hts_idx_set_meta(hts_idx_t *idx, uint32_t l_meta, uint8_t *meta,
         if (!new_meta) return -1;
         memcpy(new_meta, meta, l);
         // Prevent possible strlen past the end in tbx_index_load2
-        meta[l + 1] = '\0';
+        new_meta[l] = '\0';
     }
     if (idx->meta) free(idx->meta);
     idx->l_meta = l_meta;
@@ -1956,13 +2290,15 @@ uint64_t hts_idx_get_n_no_coor(const hts_idx_t* idx)
  *** Iterator ***
  ****************/
 
+// Note: even with 32-bit hts_pos_t, end needs to be 64-bit here due to 1LL<<s.
 static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shift, int n_lvls)
 {
     int l, t, s = min_shift + (n_lvls<<1) + n_lvls;
     if (beg >= end) return 0;
     if (end >= 1LL<<s) end = 1LL<<s;
     for (--end, l = 0, t = 0; l <= n_lvls; s -= 3, t += 1<<((l<<1)+l), ++l) {
-        int b, e, n, i;
+        hts_pos_t b, e;
+        int n, i;
         b = t + (beg>>s); e = t + (end>>s); n = e - b + 1;
         if (itr->bins.n + n > itr->bins.m) {
             itr->bins.m = itr->bins.n + n;
@@ -1974,10 +2310,11 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
     return itr->bins.n;
 }
 
-static inline int reg2intervals(hts_itr_multi_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
+static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
 {
     int l, t, s;
-    int b, e, i, j;
+    int i, j;
+    hts_pos_t b, e;
     hts_pair64_max_t *off;
     bidx_t *bidx;
     khint_t k;
@@ -2083,14 +2420,23 @@ uint64_t hts_itr_off(const hts_idx_t* idx, int tid) {
     return off0;
 }
 
-hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_readrec_func *readrec)
+hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, hts_readrec_func *readrec)
 {
     int i, n_off, l, bin;
-    hts_pair64_t *off;
+    hts_pair64_max_t *off;
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off, max_off;
-    hts_itr_t *iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
+    hts_itr_t *iter;
+
+    // It's possible to call this function with NULL idx iff
+    // tid is one of the special values HTS_IDX_REST or HTS_IDX_NONE
+    if (!idx && !(tid == HTS_IDX_REST || tid == HTS_IDX_NONE)) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    iter = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
     if (iter) {
         if (tid < 0) {
             uint64_t off = hts_itr_off(idx, tid);
@@ -2106,8 +2452,14 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
             }
         } else {
             if (beg < 0) beg = 0;
-            if (end < beg) return 0;
-            if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL) return 0;
+            if (end < beg) {
+              free(iter);
+              return NULL;
+            }
+            if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL) {
+              free(iter);
+              return NULL;
+            }
 
             iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
             iter->readrec = readrec;
@@ -2152,14 +2504,17 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
                 iter->finished = 1;
                 return iter;
             }
-            off = (hts_pair64_t*)calloc(n_off, sizeof(hts_pair64_t));
+            off = (hts_pair64_max_t*)calloc(n_off, sizeof(hts_pair64_max_t));
             for (i = n_off = 0; i < iter->bins.n; ++i) {
                 if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
                     int j;
                     bins_t *p = &kh_value(bidx, k);
                     for (j = 0; j < p->n; ++j)
-                        if (p->list[j].v > min_off && p->list[j].u < max_off)
-                            off[n_off++] = p->list[j];
+                        if (p->list[j].v > min_off && p->list[j].u < max_off) {
+                            off[n_off].u = p->list[j].u;
+                            off[n_off].v = p->list[j].v;
+                            n_off++;
+                        }
                 }
             }
 
@@ -2168,7 +2523,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
                 iter->finished = 1;
                 return iter;
             }
-            ks_introsort(_off, n_off, off);
+            ks_introsort(_off_max, n_off, off);
             // resolve completely contained adjacent blocks
             for (i = 1, l = 0; i < n_off; ++i)
                 if (off[l].v < off[i].v) off[++l] = off[i];
@@ -2185,141 +2540,146 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, int beg, int end, hts_re
             iter->n_off = n_off; iter->off = off;
         }
     }
+
     return iter;
 }
 
-hts_itr_multi_t *hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_multi_t *iter)
+int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
 {
     int i, j, l, n_off = 0, bin;
     hts_pair64_max_t *off = NULL;
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off, max_off, t_off = (uint64_t)-1;
-    int tid, beg, end;
+    int tid;
+    hts_pos_t beg, end;
     hts_reglist_t *curr_reg;
 
-    if (iter) {
-        iter->i = -1;
-        for (i=0; i<iter->n_reg; i++) {
+    if (!idx || !iter || !iter->multi)
+        return -1;
 
-            curr_reg = &iter->reg_list[i];
-            tid = curr_reg->tid;
+    iter->i = -1;
+    for (i=0; i<iter->n_reg; i++) {
 
-            if (tid < 0) {
-                t_off = hts_itr_off(idx, tid);
-                if (t_off != (uint64_t)-1) {
-                    switch (tid) {
-                        case HTS_IDX_NONE:
-                            iter->finished = 1;
-                        case HTS_IDX_START:
-                        case HTS_IDX_REST:
-                            iter->curr_off = t_off;
-                            iter->n_reg = 0;
-                            iter->reg_list = NULL;
-                            iter->read_rest = 1;
-                            return iter;
-                        case HTS_IDX_NOCOOR:
-                            iter->nocoor = 1;
-                            iter->nocoor_off = t_off;
-                    }
+        curr_reg = &iter->reg_list[i];
+        tid = curr_reg->tid;
+
+        if (tid < 0) {
+            t_off = hts_itr_off(idx, tid);
+            if (t_off != (uint64_t)-1) {
+                switch (tid) {
+                case HTS_IDX_NONE:
+                    iter->finished = 1;
+                case HTS_IDX_START:
+                case HTS_IDX_REST:
+                    iter->curr_off = t_off;
+                    iter->n_reg = 0;
+                    iter->reg_list = NULL;
+                    iter->read_rest = 1;
+                    return 0;
+                case HTS_IDX_NOCOOR:
+                    iter->nocoor = 1;
+                    iter->nocoor_off = t_off;
                 }
-            } else {
-                if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL || !kh_size(bidx))
+            }
+        } else {
+            if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL || !kh_size(bidx))
+                continue;
+
+            for(j=0; j<curr_reg->count; j++) {
+                hts_pair32_t *curr_intv = &curr_reg->intervals[j];
+                if (curr_intv->end < curr_intv->beg)
                     continue;
 
-                for(j=0; j<curr_reg->count; j++) {
-                    hts_pair32_t *curr_intv = &curr_reg->intervals[j];
-                    if (curr_intv->end < curr_intv->beg)
-                        continue;
+                beg = curr_intv->beg;
+                end = curr_intv->end;
 
-                    beg = curr_intv->beg;
-                    end = curr_intv->end;
-
-                    /* Compute 'min_off' by searching the lowest level bin containing 'beg'.
+                /* Compute 'min_off' by searching the lowest level bin containing 'beg'.
                        If the computed bin is not in the index, try the next bin to the
                        left, belonging to the same parent. If it is the first sibling bin,
                        try the parent bin. */
-                    bin = hts_bin_first(idx->n_lvls) + (beg>>idx->min_shift);
-                    do {
-                        int first;
-                        k = kh_get(bin, bidx, bin);
-                        if (k != kh_end(bidx)) break;
-                        first = (hts_bin_parent(bin)<<3) + 1;
-                        if (bin > first) --bin;
-                        else bin = hts_bin_parent(bin);
-                    } while (bin);
-                    if (bin == 0)
-                        k = kh_get(bin, bidx, bin);
-                    min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
+                bin = hts_bin_first(idx->n_lvls) + (beg>>idx->min_shift);
+                do {
+                    int first;
+                    k = kh_get(bin, bidx, bin);
+                    if (k != kh_end(bidx)) break;
+                    first = (hts_bin_parent(bin)<<3) + 1;
+                    if (bin > first) --bin;
+                    else bin = hts_bin_parent(bin);
+                } while (bin);
+                if (bin == 0)
+                    k = kh_get(bin, bidx, bin);
+                min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
 
-                    // compute max_off: a virtual offset from a bin to the right of end
-                    bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
-                    if (bin >= idx->n_bins) bin = 0;
-                    while (1) {
+                // compute max_off: a virtual offset from a bin to the right of end
+                bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
+                if (bin >= idx->n_bins) bin = 0;
+                while (1) {
                     // search for an extant bin by moving right, but moving up to the
                     // parent whenever we get to a first child (which also covers falling
                     // off the RHS, which wraps around and immediately goes up to bin 0)
-                        while (bin % 8 == 1) bin = hts_bin_parent(bin);
-                        if (bin == 0) { max_off = (uint64_t)-1; break; }
-                        k = kh_get(bin, bidx, bin);
-                        if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) {
-                            max_off = kh_val(bidx, k).list[0].u;
-                            break;
-                        }
-                        bin++;
+                    while (bin % 8 == 1) bin = hts_bin_parent(bin);
+                    if (bin == 0) { max_off = (uint64_t)-1; break; }
+                    k = kh_get(bin, bidx, bin);
+                    if (k != kh_end(bidx) && kh_val(bidx, k).n > 0) {
+                        max_off = kh_val(bidx, k).list[0].u;
+                        break;
                     }
-
-                    //convert coordinates to file offsets
-                    reg2intervals(iter, idx, tid, beg, end, min_off, max_off, idx->min_shift, idx->n_lvls);
+                    bin++;
                 }
+
+                //convert coordinates to file offsets
+                reg2intervals(iter, idx, tid, beg, end, min_off, max_off, idx->min_shift, idx->n_lvls);
             }
         }
-
-        off = iter->off;
-        n_off = iter->n_off;
-
-        if (n_off) {
-            ks_introsort(_off_max, n_off, off);
-            // resolve completely contained adjacent blocks
-            for (i = 1, l = 0; i < n_off; ++i) {
-                if (off[l].v < off[i].v) {
-                    off[++l] = off[i];
-                } else {
-                    off[l].max = (off[i].max > off[l].max ? off[i].max : off[l].max);
-                }
-            }
-            n_off = l + 1;
-            // resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
-            for (i = 1; i < n_off; ++i)
-                if (off[i-1].v >= off[i].u) off[i-1].v = off[i].u;
-            // merge adjacent blocks
-            for (i = 1, l = 0; i < n_off; ++i) {
-                if (off[l].v>>16 == off[i].u>>16) {
-                    off[l].v = off[i].v;
-                    off[l].max = (off[i].max > off[l].max ? off[i].max : off[l].max);
-                } else off[++l] = off[i];
-            }
-            n_off = l + 1;
-            iter->n_off = n_off; iter->off = off;
-        }
-
-        if(!n_off && !iter->nocoor)
-            iter->finished = 1;
     }
-    return iter;
+
+    off = iter->off;
+    n_off = iter->n_off;
+
+    if (n_off) {
+        ks_introsort(_off_max, n_off, off);
+        // resolve completely contained adjacent blocks
+        for (i = 1, l = 0; i < n_off; ++i) {
+            if (off[l].v < off[i].v) {
+                off[++l] = off[i];
+            } else {
+                off[l].max = (off[i].max > off[l].max ? off[i].max : off[l].max);
+            }
+        }
+        n_off = l + 1;
+        // resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
+        for (i = 1; i < n_off; ++i)
+            if (off[i-1].v >= off[i].u) off[i-1].v = off[i].u;
+        // merge adjacent blocks
+        for (i = 1, l = 0; i < n_off; ++i) {
+            if (off[l].v>>16 == off[i].u>>16) {
+                off[l].v = off[i].v;
+                off[l].max = (off[i].max > off[l].max ? off[i].max : off[l].max);
+            } else off[++l] = off[i];
+        }
+        n_off = l + 1;
+        iter->n_off = n_off; iter->off = off;
+    }
+
+    if(!n_off && !iter->nocoor)
+        iter->finished = 1;
+
+    return 0;
 }
 
-hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
+int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-    int tid, beg, end, i, j, l, n_off = 0;
+    int tid, i, j, l, n_off = 0;
+    hts_pos_t beg, end;
     hts_reglist_t *curr_reg;
     hts_pair32_t *curr_intv;
     hts_pair64_max_t *off = NULL;
     cram_index *e = NULL;
 
-    if (!cidx || !iter)
-        return NULL;
+    if (!cidx || !iter || !iter->multi)
+        return -1;
 
     iter->is_cram = 1;
     iter->read_rest = 0;
@@ -2336,7 +2696,7 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
         if (tid >= 0) {
             off = (hts_pair64_max_t*)realloc(off, (n_off + curr_reg->count) * sizeof(hts_pair64_max_t));
             if (!off)
-                return NULL;
+                return -1;
 
             for (j=0; j < curr_reg->count; j++) {
                 curr_intv = &curr_reg->intervals[j];
@@ -2347,7 +2707,7 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
                 end = curr_intv->end;
 
 /* First, fetch the container overlapping 'beg' and assign its file offset to u, then
- * find the container overlapping 'end' and assing the relative end of the slice to v.
+ * find the container overlapping 'end' and assign the relative end of the slice to v.
  * The cram_ptell function will adjust with the container offset, which is not stored
  * in the index.
  */
@@ -2366,10 +2726,10 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
                         off[n_off].max = (uint64_t)tid<<32 | end;
                         n_off++;
                     } else {
-                        hts_log_warning("Could not set offset end for region %d(%s):%d-%d. Skipping", tid, curr_reg->reg, beg, end);
+                        hts_log_warning("Could not set offset end for region %d:%"PRIhts_pos"-%"PRIhts_pos". Skipping", tid, beg, end);
                     }
                 } else {
-                    hts_log_warning("No index entry for region %d:%d-%d", tid, beg, end);
+                    hts_log_warning("No index entry for region %d:%"PRIhts_pos"-%"PRIhts_pos"", tid, beg, end);
                 }
             }
         } else {
@@ -2435,33 +2795,18 @@ hts_itr_multi_t *hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_multi_t *iter)
     if(!n_off && !iter->nocoor)
         iter->finished = 1;
 
-    return iter;
+    return 0;
 }
 
 void hts_itr_destroy(hts_itr_t *iter)
 {
-    if (iter) { free(iter->off); free(iter->bins.a); free(iter); }
-}
-
-void hts_reglist_free(hts_reglist_t *reglist, int count) {
-
-    int i;
-    if(reglist) {
-        for (i=0;i<count;i++) {
-            if (reglist[i].intervals)
-                free(reglist[i].intervals);
-        }
-        free(reglist);
-    }
-}
-
-void hts_itr_multi_destroy(hts_itr_multi_t *iter) {
-
     if (iter) {
-        if (iter->reg_list && iter->n_reg)
+        if (iter->multi)
             hts_reglist_free(iter->reg_list, iter->n_reg);
+        else
+            free(iter->bins.a);
 
-        if (iter->off && iter->n_off)
+        if (iter->off)
             free(iter->off);
         free(iter);
     }
@@ -2502,6 +2847,12 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
         if (esign == '-') e = -e;
     }
 
+    switch (*s) {
+    case 'k': case 'K': e += 3; s++; break;
+    case 'm': case 'M': e += 6; s++; break;
+    case 'g': case 'G': e += 9; s++; break;
+    }
+
     e -= decimals;
     while (e > 0) n *= 10, e--;
     while (e < 0) lost += n % 10, n /= 10, e++;
@@ -2513,25 +2864,239 @@ long long hts_parse_decimal(const char *str, char **strend, int flags)
     if (strend) {
         *strend = (char *)s;
     } else if (*s) {
-        hts_log_warning("Ignoring unknown characters after %.*s[%s]", (int)(s - str), str, s);
+        if ((flags & HTS_PARSE_THOUSANDS_SEP) || (!(flags & HTS_PARSE_THOUSANDS_SEP) && *s != ','))
+            hts_log_warning("Ignoring unknown characters after %.*s[%s]", (int)(s - str), str, s);
     }
 
     return (sign == '+')? n : -n;
 }
 
-const char *hts_parse_reg(const char *s, int *beg, int *end)
+static void *hts_memrchr(const void *s, int c, size_t n) {
+    size_t i;
+    unsigned char *u = (unsigned char *)s;
+    for (i = n; i > 0; i--) {
+        if (u[i-1] == c)
+            return u+i-1;
+    }
+
+    return NULL;
+}
+
+/*
+ * A variant of hts_parse_reg which is reference-id aware.  It uses
+ * the iterator name2id callbacks to validate the region tokenisation works.
+ *
+ * This is necessary due to GRCh38 HLA additions which have reference names
+ * like "HLA-DRB1*12:17".
+ *
+ * All parameters are mandatory.
+ *
+ * To work around ambiguous parsing issues, eg both "chr1" and "chr1:100-200"
+ * are reference names, we may quote using curly braces.
+ * Thus "{chr1}:100-200" and "{chr1:100-200}" disambiguate the above example.
+ *
+ * Flags are used to control how parsing works, and can be one of the below.
+ *
+ * HTS_PARSE_LIST:
+ *     If present, the region is assmed to be a comma separated list and
+ *     position parsing will not contain commas (this implicitly
+ *     clears HTS_PARSE_THOUSANDS_SEP in the call to hts_parse_decimal).
+ *     On success the return pointer will be the start of the next region, ie
+ *     the character after the comma.  (If *ret != '\0' then the caller can
+ *     assume another region is present in the list.)
+ *
+ *     If not set then positions may contain commas.  In this case the return
+ *     value should point to the end of the string, or NULL on failure.
+ *
+ * HTS_PARSE_ONE_COORD:
+ *     If present, X:100 is treated as the single base pair region X:100-100.
+ *     In this case X:-100 is shorthand for X:1-100 and X:100- is X:100-<end>.
+ *     (This is the standard bcftools region convention.)
+ *
+ *     When not set X:100 is considered to be X:100-<end> where <end> is
+ *     the end of chromosome X (set to INT_MAX here).  X:100- and X:-100 are
+ *     invalid.
+ *     (This is the standard samtools region convention.)
+ *
+ * Note the supplied string expects 1 based inclusive coordinates, but the
+ * returned coordinates start from 0 and are half open, so pos0 is valid
+ * for use in e.g. "for (pos0 = beg; pos0 < end; pos0++) {...}"
+ *
+ * On success a pointer to the byte after the end of the entire region
+ *            specifier is returned (plus any trailing comma), and tid,
+ *            beg & end will be set.
+ * On failure NULL is returned.
+ */
+const char *hts_parse_region(const char *s, int *tid, hts_pos_t *beg,
+                             hts_pos_t *end, hts_name2id_f getid, void *hdr,
+                             int flags)
+{
+    if (!s || !tid || !beg || !end || !getid)
+        return NULL;
+
+    size_t s_len = strlen(s);
+    kstring_t ks = { 0, 0, NULL };
+
+    const char *colon = NULL, *comma = NULL;
+    int quoted = 0;
+
+    if (flags & HTS_PARSE_LIST)
+        flags &= ~HTS_PARSE_THOUSANDS_SEP;
+    else
+        flags |= HTS_PARSE_THOUSANDS_SEP;
+
+    const char *s_end = s + s_len;
+
+    // Braced quoting of references is permitted to resolve ambiguities.
+    if (*s == '{') {
+        const char *close = memchr(s, '}', s_len);
+        if (!close) {
+            hts_log_error("Mismatching braces in \"%s\"", s);
+            *tid = -1;
+            return NULL;
+        }
+        s++;
+        s_len--;
+        if (close[1] == ':')
+            colon = close+1;
+        quoted = 1; // number of trailing characters to trim
+
+        // Truncate to this item only, if appropriate.
+        if (flags & HTS_PARSE_LIST) {
+            comma = strchr(close, ',');
+            if (comma) {
+                s_len = comma-s;
+                s_end = comma+1;
+            }
+        }
+    } else {
+        // Truncate to this item only, if appropriate.
+        if (flags & HTS_PARSE_LIST) {
+            comma = strchr(s, ',');
+            if (comma) {
+                s_len = comma-s;
+                s_end = comma+1;
+            }
+        }
+
+        colon = hts_memrchr(s, ':', s_len);
+    }
+
+    // No colon is simplest case; just check and return.
+    if (colon == NULL) {
+        *beg = 0; *end = HTS_POS_MAX;
+        kputsn(s, s_len-quoted, &ks); // convert to nul terminated string
+        if (!ks.s) {
+            *tid = -2;
+            return NULL;
+        }
+
+        *tid = getid(hdr, ks.s);
+        free(ks.s);
+
+        return *tid >= 0 ? s_end : NULL;
+    }
+
+    // Has a colon, but check whole name first.
+    if (!quoted) {
+        *beg = 0; *end = HTS_POS_MAX;
+        kputsn(s, s_len, &ks); // convert to nul terminated string
+        if (!ks.s) {
+            *tid = -2;
+            return NULL;
+        }
+        if ((*tid = getid(hdr, ks.s)) >= 0) {
+            // Entire name matches, but also check this isn't
+            // ambiguous.  eg we have ref chr1 and ref chr1:100-200
+            // both present.
+            ks.l = 0;
+            kputsn(s, colon-s, &ks); // convert to nul terminated string
+            if (!ks.s) {
+                *tid = -2;
+                return NULL;
+            }
+            if (getid(hdr, ks.s) >= 0) {
+                free(ks.s);
+                *tid = -1;
+                hts_log_error("Range is ambiguous. "
+                              "Use {%s} or {%.*s}%s instead",
+                              s, (int)(colon-s), s, colon);
+                return NULL;
+            }
+            free(ks.s);
+
+            return s_end;
+        }
+        if (*tid < -1) // Failed to parse header
+            return NULL;
+    }
+
+    // Quoted, or unquoted and whole string isn't a name.
+    // Check the pre-colon part is valid.
+    ks.l = 0;
+    kputsn(s, colon-s-quoted, &ks); // convert to nul terminated string
+    if (!ks.s) {
+        *tid = -2;
+        return NULL;
+    }
+    *tid = getid(hdr, ks.s);
+    free(ks.s);
+    if (*tid < 0)
+        return NULL;
+
+    // Finally parse the post-colon coordinates
+    char *hyphen;
+    *beg = hts_parse_decimal(colon+1, &hyphen, flags) - 1;
+    if (*beg < 0) {
+        if (isdigit_c(*hyphen) || *hyphen == '\0' || *hyphen == ',') {
+            // interpret chr:-100 as chr:1-100
+            *end = *beg==-1 ? HTS_POS_MAX : -(*beg+1);
+            *beg = 0;
+            return s_end;
+        } else if (*hyphen == '-') {
+            *beg = 0;
+        } else {
+            hts_log_error("Unexpected string \"%s\" after region", hyphen);
+            return NULL;
+        }
+    }
+
+    if (*hyphen == '\0' || ((flags & HTS_PARSE_LIST) && *hyphen == ',')) {
+        *end = flags & HTS_PARSE_ONE_COORD ? *beg+1 : HTS_POS_MAX;
+    } else if (*hyphen == '-') {
+        *end = hts_parse_decimal(hyphen+1, &hyphen, flags);
+        if (*hyphen != '\0' && *hyphen != ',') {
+            hts_log_error("Unexpected string \"%s\" after region", hyphen);
+            return NULL;
+        }
+    } else {
+        hts_log_error("Unexpected string \"%s\" after region", hyphen);
+        return NULL;
+    }
+
+    if (*end == 0)
+        *end = HTS_POS_MAX; // interpret chr:100- as chr:100-<end>
+
+    if (*beg >= *end) return NULL;
+
+    return s_end;
+}
+
+// Next release we should mark this as deprecated?
+// Use hts_parse_region above instead.
+const char *hts_parse_reg64(const char *s, hts_pos_t *beg, hts_pos_t *end)
 {
     char *hyphen;
     const char *colon = strrchr(s, ':');
     if (colon == NULL) {
-        *beg = 0; *end = INT_MAX;
+        *beg = 0; *end = HTS_POS_MAX;
         return s + strlen(s);
     }
 
     *beg = hts_parse_decimal(colon+1, &hyphen, HTS_PARSE_THOUSANDS_SEP) - 1;
     if (*beg < 0) *beg = 0;
 
-    if (*hyphen == '\0') *end = INT_MAX;
+    if (*hyphen == '\0') *end = HTS_POS_MAX;
     else if (*hyphen == '-') *end = hts_parse_decimal(hyphen+1, NULL, HTS_PARSE_THOUSANDS_SEP);
     else return NULL;
 
@@ -2539,46 +3104,51 @@ const char *hts_parse_reg(const char *s, int *beg, int *end)
     return colon;
 }
 
+const char *hts_parse_reg(const char *s, int *beg, int *end)
+{
+    hts_pos_t beg64 = 0, end64 = 0;
+    const char *colon = hts_parse_reg64(s, &beg64, &end64);
+    if (beg64 > INT_MAX) {
+        hts_log_error("Position %"PRId64" too large", beg64);
+        return NULL;
+    }
+    if (end64 > INT_MAX) {
+        if (end64 == HTS_POS_MAX) {
+            end64 = INT_MAX;
+        } else {
+            hts_log_error("Position %"PRId64" too large", end64);
+            return NULL;
+        }
+    }
+    *beg = beg64;
+    *end = end64;
+    return colon;
+}
+
 hts_itr_t *hts_itr_querys(const hts_idx_t *idx, const char *reg, hts_name2id_f getid, void *hdr, hts_itr_query_func *itr_query, hts_readrec_func *readrec)
 {
-    int tid, beg, end;
-    const char *q;
+    int tid;
+    hts_pos_t beg, end;
 
     if (strcmp(reg, ".") == 0)
         return itr_query(idx, HTS_IDX_START, 0, 0, readrec);
     else if (strcmp(reg, "*") == 0)
         return itr_query(idx, HTS_IDX_NOCOOR, 0, 0, readrec);
 
-    q = hts_parse_reg(reg, &beg, &end);
-    if (q) {
-        char tmp_a[1024], *tmp = tmp_a;
-        if (q - reg + 1 > 1024)
-            if (!(tmp = malloc(q - reg + 1)))
-                return NULL;
-        strncpy(tmp, reg, q - reg);
-        tmp[q - reg] = 0;
-        tid = getid(hdr, tmp);
-        if (tmp != tmp_a)
-            free(tmp);
-    }
-    else {
-        // not parsable as a region, but possibly a sequence named "foo:a"
-        tid = getid(hdr, reg);
-        beg = 0; end = INT_MAX;
-    }
+    if (!hts_parse_region(reg, &tid, &beg, &end, getid, hdr, HTS_PARSE_THOUSANDS_SEP))
+        return NULL;
 
-    if (tid < 0) return NULL;
     return itr_query(idx, tid, beg, end, readrec);
 }
 
-hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell) {
+hts_itr_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int count, hts_name2id_f getid, void *hdr, hts_itr_multi_query_func *itr_specific, hts_readrec_func *readrec, hts_seek_func *seek, hts_tell_func *tell) {
 
     int i;
 
     if (!reglist)
         return NULL;
 
-    hts_itr_multi_t *itr = (hts_itr_multi_t*)calloc(1, sizeof(hts_itr_multi_t));
+    hts_itr_t *itr = (hts_itr_t*)calloc(1, sizeof(hts_itr_t));
     if (itr) {
         itr->n_reg = count;
         itr->readrec = readrec;
@@ -2587,33 +3157,49 @@ hts_itr_multi_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, i
         itr->reg_list = reglist;
         itr->finished = 0;
         itr->nocoor = 0;
+        itr->multi = 1;
 
 
         for (i = 0; i < itr->n_reg; i++) {
-            if (!strcmp(itr->reg_list[i].reg, ".")) {
-                itr->reg_list[i].tid = HTS_IDX_START;
-                continue;
-            }
+            if (itr->reg_list[i].reg) {
+                if (!strcmp(itr->reg_list[i].reg, ".")) {
+                    itr->reg_list[i].tid = HTS_IDX_START;
+                    continue;
+                }
 
-            if (!strcmp(itr->reg_list[i].reg, "*")) {
-                itr->reg_list[i].tid = HTS_IDX_NOCOOR;
-                continue;
-            }
+                if (!strcmp(itr->reg_list[i].reg, "*")) {
+                    itr->reg_list[i].tid = HTS_IDX_NOCOOR;
+                    continue;
+                }
 
-            itr->reg_list[i].tid = getid(hdr, reglist[i].reg);
-            if (itr->reg_list[i].tid < 0)
-                hts_log_warning("Region '%s' specifies an unknown reference name. Continue anyway", reglist[i].reg);
+                itr->reg_list[i].tid = getid(hdr, reglist[i].reg);
+                if (itr->reg_list[i].tid < 0) {
+                    if (itr->reg_list[i].tid < -1) {
+                        hts_log_error("Failed to parse header");
+                        hts_itr_destroy(itr);
+                        return NULL;
+                    } else {
+                        hts_log_warning("Region '%s' specifies an unknown reference name. Continue anyway", reglist[i].reg);
+                    }
+                }
+            }
         }
 
         qsort(itr->reg_list, itr->n_reg, sizeof(hts_reglist_t), compare_regions);
-        itr_specific(idx, itr);
+        if (itr_specific(idx, itr) != 0) {
+            hts_log_error("Failed to create the multi-region iterator!");
+            hts_itr_destroy(itr);
+            itr = NULL;
+        }
     }
+
     return itr;
 }
 
 int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
 {
-    int ret, tid, beg, end;
+    int ret, tid;
+    hts_pos_t beg, end;
     if (iter == NULL || iter->finished) return -1;
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
@@ -2654,10 +3240,11 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
     return ret;
 }
 
-int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
+int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
 {
     void *fp;
-    int ret, tid, beg, end, i, cr, ci;
+    int ret, tid, i, cr, ci;
+    hts_pos_t beg, end;
     hts_reglist_t *found_reg;
 
     if (iter == NULL || iter->finished) return -1;
@@ -2671,15 +3258,15 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
             if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
+                hts_log_error("Seek at offset %" PRIu64 " failed.", iter->curr_off);
                 return -1;
             }
             iter->curr_off = 0; // only seek once
         }
 
         ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
-        if (ret < 0) {
+        if (ret < 0)
             iter->finished = 1;
-        }
 
         iter->curr_tid = tid;
         iter->curr_beg = beg;
@@ -2693,24 +3280,39 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
     for (;;) {
         if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
             if (iter->i == iter->n_off - 1) { // no more chunks, except NOCOORs
-               if (iter->nocoor) {
-                   iter->read_rest = 1;
-                   iter->curr_off = iter->nocoor_off;
+                if (iter->nocoor) {
+                    if (iter->seek(fp, iter->nocoor_off, SEEK_SET) < 0) {
+                        hts_log_error("Seek at offset %" PRIu64 " failed.", iter->nocoor_off);
+                        return -1;
+                    }
 
-                   return hts_itr_multi_next(fd, iter, r);
-               } else {
-                   ret = -1; break;
-               }
-            }
+                    //The first slice covering the unmapped reads might contain a few mapped reads, so scroll
+                    //forward until finding the first unmapped read.
+                    do {
+                        ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
+                    } while (tid >= 0 && ret >=0);
 
-            if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-                if (iter->seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) {
+                    if (ret < 0)
+                        iter->finished = 1;
+                    else
+                        iter->read_rest = 1;
+
+                    iter->curr_off = 0; // don't seek any more
+                    iter->curr_tid = tid;
+                    iter->curr_beg = beg;
+                    iter->curr_end = end;
+
+                    return ret;
+                } else {
+                    ret = -1; break;
+                }
+            } else if (iter->i < iter->n_off - 1) {
+                iter->curr_off = iter->off[++iter->i].u;
+                if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
+                    hts_log_error("Seek at offset %" PRIu64 " failed.", iter->curr_off);
                     return -1;
                 }
-
-                iter->curr_off = iter->tell(fp);
             }
-            ++iter->i;
         }
 
         ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
@@ -2718,6 +3320,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
             break;
 
         iter->curr_off = iter->tell(fp);
+
         if (tid != iter->curr_tid) {
             hts_reglist_t key;
             key.tid = tid;
@@ -2759,64 +3362,107 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_multi_t *iter, void *r)
 /**********************
  *** Retrieve index ***
  **********************/
+// Local_fn and local_len will return a sub-region of 'fn'.
+// Eg http://elsewhere/dir/foo.bam.bai?a=b may return
+// foo.bam.bai via local_fn and local_len.
+//
 // Returns -1 if index couldn't be opened.
 //         -2 on other errors
-static int test_and_fetch(const char *fn, const char **local_fn)
+static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_len, int download)
 {
     hFILE *remote_hfp;
     FILE *local_fp = NULL;
     uint8_t *buf = NULL;
     int save_errno;
+    htsFormat fmt;
+    kstring_t s = KS_INITIALIZE;
 
     if (hisremote(fn)) {
         const int buf_size = 1 * 1024 * 1024;
         int l;
-        const char *p;
-        for (p = fn + strlen(fn) - 1; p >= fn; --p)
-            if (*p == '/') break;
-        ++p; // p now points to the local file name
+        const char *p, *e;
+        // Ignore ?# params: eg any file.fmt?param=val, except for S3 URLs
+        e = fn + ((strncmp(fn, "s3://", 5) && strncmp(fn, "s3+http://", 10) && strncmp(fn, "s3+https://", 11)) ? strcspn(fn, "?#") : strcspn(fn, "?"));
+        // Find the previous slash from there.
+        p = e;
+        while (p > fn && *p != '/') p--;
+        if (*p == '/') p++;
+
         // Attempt to open local file first
-        if ((local_fp = fopen((char*)p, "rb")) != 0)
+        kputsn(p, e-p, &s);
+        if ((local_fp = fopen(s.s, "rb")) != 0)
         {
             fclose(local_fp);
+            free(s.s);
             *local_fn = p;
             return 0;
         }
-        // Attempt to open remote file. Stay quiet on failure, it is OK to fail when trying first .csi then .tbi index.
-        if ((remote_hfp = hopen(fn, "r")) == 0) return -1;
-        if ((local_fp = fopen(p, "w")) == 0) {
-            hts_log_error("Failed to create file %s in the working directory", p);
+
+        // Attempt to open remote file. Stay quiet on failure, it is OK to fail when trying first .csi then .bai or .tbi index.
+        if ((remote_hfp = hopen(fn, "r")) == 0) {
+            hts_log_info("Failed to open index file '%s'", fn);
+            free(s.s);
+            return -1;
+        }
+        if (hts_detect_format(remote_hfp, &fmt)) {
+            hts_log_error("Failed to detect format of index file '%s'", fn);
             goto fail;
         }
-        hts_log_info("Downloading file %s to local directory", fn);
-        buf = (uint8_t*)calloc(buf_size, 1);
-        if (!buf) {
-            hts_log_error("%s", strerror(errno));
+        if (fmt.category != index_file || (fmt.format != bai &&  fmt.format != csi && fmt.format != tbi
+                && fmt.format != crai)) {
+            hts_log_error("Format of index file '%s' is not supported", fn);
             goto fail;
         }
-        while ((l = hread(remote_hfp, buf, buf_size)) > 0) {
-            if (fwrite(buf, 1, l, local_fp) != l) {
-                hts_log_error("Failed to write data to %s : %s",
-                              fn, strerror(errno));
+
+        if (download) {
+            if ((local_fp = fopen(s.s, "w")) == 0) {
+                hts_log_error("Failed to create file %s in the working directory", p);
                 goto fail;
             }
+            hts_log_info("Downloading file %s to local directory", fn);
+            buf = (uint8_t*)calloc(buf_size, 1);
+            if (!buf) {
+                hts_log_error("%s", strerror(errno));
+                goto fail;
+            }
+            while ((l = hread(remote_hfp, buf, buf_size)) > 0) {
+                if (fwrite(buf, 1, l, local_fp) != l) {
+                    hts_log_error("Failed to write data to %s : %s",
+                            fn, strerror(errno));
+                    free(buf);
+                    goto fail;
+                }
+            }
+            free(buf);
+            if (l < 0) {
+                hts_log_error("Error reading \"%s\"", fn);
+                goto fail;
+            }
+            if (fclose(local_fp) < 0) {
+                hts_log_error("Error closing %s : %s", fn, strerror(errno));
+                local_fp = NULL;
+                goto fail;
+            }
+
+            *local_fn = p;
+            *local_len = e-p;
+        } else {
+            *local_fn = fn;
+            *local_len = e-fn;
         }
-        free(buf);
-        if (fclose(local_fp) < 0) {
-            hts_log_error("Error closing %s : %s", fn, strerror(errno));
-            local_fp = NULL;
-            goto fail;
-        }
+
         if (hclose(remote_hfp) != 0) {
             hts_log_error("Failed to close remote file %s", fn);
         }
-        *local_fn = p;
+
+        free(s.s);
         return 0;
     } else {
         hFILE *local_hfp;
         if ((local_hfp = hopen(fn, "r")) == 0) return -1;
         hclose_abruptly(local_hfp);
         *local_fn = fn;
+        *local_len = strlen(fn);
         return 0;
     }
 
@@ -2825,62 +3471,261 @@ static int test_and_fetch(const char *fn, const char **local_fn)
     hclose_abruptly(remote_hfp);
     if (local_fp) fclose(local_fp);
     free(buf);
+    free(s.s);
     errno = save_errno;
     return -2;
 }
 
-char *hts_idx_getfn(const char *fn, const char *ext)
-{
-    int i, l_fn, l_ext, ret;
-    char *fnidx;
-    const char *local_fn = NULL;
-    l_fn = strlen(fn); l_ext = strlen(ext);
-    fnidx = (char*)calloc(l_fn + l_ext + 1, 1);
-    if (!fnidx) return NULL;
-    // First try : append `ext` to `fn`
-    strcpy(fnidx, fn); strcpy(fnidx + l_fn, ext);
-    if ((ret = test_and_fetch(fnidx, &local_fn)) == -1) {
-        // Second try : replace suffix of `fn` with `ext`
+/*
+ * Check the existence of a local index file using part of the alignment file name.
+ * The order is alignment.bam.csi, alignment.csi, alignment.bam.bai, alignment.bai
+ * @param fn    - pointer to the file name
+ * @param fnidx - pointer to the index file name placeholder
+ * @return        1 for success, 0 for failure
+ */
+int hts_idx_check_local(const char *fn, int fmt, char **fnidx) {
+    int i, l_fn, l_ext;
+    const char *fn_tmp = NULL;
+    char *fnidx_tmp;
+    char *csi_ext = ".csi";
+    char *bai_ext = ".bai";
+    char *tbi_ext = ".tbi";
+    char *crai_ext = ".crai";
+
+    if (!fn)
+        return 0;
+
+    if (hisremote(fn)) {
+        for (i = strlen(fn) - 1; i >= 0; --i)
+            if (fn[i] == '/') {
+                fn_tmp = (char *)&fn[i+1];
+                break;
+            }
+    } else {
+        // Borrowed from hopen_fd_fileuri()
+        if (strncmp(fn, "file://localhost/", 17) == 0) fn_tmp = fn + 16;
+        else if (strncmp(fn, "file:///", 8) == 0) fn_tmp = fn + 7;
+        else fn_tmp = fn;
+#if defined(_WIN32) || defined(__MSYS__)
+        // For cases like C:/foo
+        if (fn_tmp[0] == '/' && fn_tmp[1] && fn_tmp[2] == ':' && fn_tmp[3] == '/')
+            fn_tmp++;
+#endif
+    }
+
+    if (!fn_tmp) return 0;
+    hts_log_info("Using alignment file '%s'", fn_tmp);
+    l_fn = strlen(fn_tmp); l_ext = 5;
+    fnidx_tmp = (char*)calloc(l_fn + l_ext + 1, 1);
+    if (!fnidx_tmp) return 0;
+
+    struct stat sbuf;
+
+    // Try alignment.bam.csi first
+    strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, csi_ext);
+    if(stat(fnidx_tmp, &sbuf) == 0) {
+        *fnidx = fnidx_tmp;
+        return 1;
+    } else { // Then try alignment.csi
         for (i = l_fn - 1; i > 0; --i)
-            if (fnidx[i] == '.' || fnidx[i] == '/') break;
-        if (fnidx[i] == '.') {
-            strcpy(fnidx + i, ext);
-            ret = test_and_fetch(fnidx, &local_fn);
+            if (fnidx_tmp[i] == '.') {
+                strcpy(fnidx_tmp + i, csi_ext);
+                if(stat(fnidx_tmp, &sbuf) == 0) {
+                    *fnidx = fnidx_tmp;
+                    return 1;
+                }
+                break;
+            }
+    }
+    if (fmt == HTS_FMT_BAI) {
+        // Next, try alignment.bam.bai
+        strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, bai_ext);
+        if(stat(fnidx_tmp, &sbuf) == 0) {
+            *fnidx = fnidx_tmp;
+            return 1;
+        } else { // And finally, try alignment.bai
+            for (i = l_fn - 1; i > 0; --i)
+                if (fnidx_tmp[i] == '.') {
+                    strcpy(fnidx_tmp + i, bai_ext);
+                    if(stat(fnidx_tmp, &sbuf) == 0) {
+                        *fnidx = fnidx_tmp;
+                        return 1;
+                    }
+                    break;
+                }
+        }
+    } else if (fmt == HTS_FMT_TBI) { // Or .tbi
+        strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, tbi_ext);
+        if(stat(fnidx_tmp, &sbuf) == 0) {
+            *fnidx = fnidx_tmp;
+            return 1;
+        } else {
+            for (i = l_fn - 1; i > 0; --i)
+                if (fnidx_tmp[i] == '.') {
+                    strcpy(fnidx_tmp + i, tbi_ext);
+                    if(stat(fnidx_tmp, &sbuf) == 0) {
+                        *fnidx = fnidx_tmp;
+                        return 1;
+                    }
+                    break;
+                }
+        }
+    } else if (fmt == HTS_FMT_CRAI) { // Or .crai
+        strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, crai_ext);
+        if(stat(fnidx_tmp, &sbuf) == 0) {
+            *fnidx = fnidx_tmp;
+            return 1;
+        } else {
+            for (i = l_fn - 1; i > 0; --i)
+                if (fnidx_tmp[i] == '.') {
+                    strcpy(fnidx_tmp + i, crai_ext);
+                    if(stat(fnidx_tmp, &sbuf) == 0) {
+                        *fnidx = fnidx_tmp;
+                        return 1;
+                    }
+                    break;
+                }
         }
     }
-    if (ret < 0) {
-        free(fnidx);
+
+    free(fnidx_tmp);
+    return 0;
+}
+
+static char *idx_filename(const char *fn, const char *ext, int download) {
+    int ret, local_len;
+    char *fnidx;
+    const char *local_fn = NULL;
+    kstring_t buffer = KS_INITIALIZE;
+
+    // First try : append `ext` to `fn`
+    if (!(fnidx = haddextension(&buffer, fn, 0, ext))) {
+        free(buffer.s);
         return NULL;
     }
-    l_fn = strlen(local_fn);
-    memmove(fnidx, local_fn, l_fn + 1);
+    if ((ret = idx_test_and_fetch(fnidx, &local_fn, &local_len, download)) == -1) {
+        // Second try : replace suffix of `fn` with `ext`
+        if (!(fnidx = haddextension(&buffer, fn, 1, ext))) {
+            free(buffer.s);
+            return NULL;
+        }
+        ret = idx_test_and_fetch(fnidx, &local_fn, &local_len, download);
+    }
+
+    if (ret < 0) {
+        free(buffer.s);
+        return NULL;
+    }
+
+    memmove(fnidx, local_fn, local_len);
+    fnidx[local_len] = 0;
     return fnidx;
 }
 
-hts_idx_t *hts_idx_load(const char *fn, int fmt)
+char *hts_idx_getfn(const char *fn, const char *ext)
 {
-    char *fnidx;
-    hts_idx_t *idx;
-    fnidx = hts_idx_getfn(fn, ".csi");
-    if (! fnidx) fnidx = hts_idx_getfn(fn, fmt == HTS_FMT_BAI? ".bai" : ".tbi");
-    if (fnidx == 0) return 0;
+    return idx_filename(fn, ext, 1);
+}
 
-    idx = hts_idx_load2(fn, fnidx);
+static hts_idx_t *idx_find_and_load(const char *fn, int fmt, int flags)
+{
+    char *fnidx = strstr(fn, HTS_IDX_DELIM);
+    hts_idx_t *idx;
+
+    if ( fnidx ) {
+        char *fn2 = strdup(fn);
+        if (!fn2) {
+            hts_log_error("%s", strerror(errno));
+            return NULL;
+        }
+        fn2[fnidx - fn] = '\0';
+        fnidx += strlen(HTS_IDX_DELIM);
+        idx = hts_idx_load2(fn2, fnidx);
+        free(fn2);
+        return idx;
+    }
+
+    if (hts_idx_check_local(fn, fmt, &fnidx) == 0 && hisremote(fn)) {
+        if (flags & HTS_IDX_SAVE_REMOTE) {
+            fnidx = hts_idx_getfn(fn, ".csi");
+            if (!fnidx) {
+                switch (fmt) {
+                case HTS_FMT_BAI: fnidx = hts_idx_getfn(fn, ".bai"); break;
+                case HTS_FMT_TBI: fnidx = hts_idx_getfn(fn, ".tbi"); break;
+                default: break;
+                }
+            }
+        } else {
+            fnidx = idx_filename(fn, ".csi", 0);
+            if (!fnidx) {
+                switch (fmt) {
+                case HTS_FMT_BAI: fnidx = idx_filename(fn, ".bai", 0); break;
+                case HTS_FMT_TBI: fnidx = idx_filename(fn, ".tbi", 0); break;
+                default: break;
+                }
+            }
+        }
+    }
+    if (!fnidx) {
+        if (!(flags & HTS_IDX_SILENT_FAIL))
+            hts_log_error("Could not retrieve index file for '%s'", fn);
+        return 0;
+    }
+
+    if (flags & HTS_IDX_SAVE_REMOTE)
+        idx = hts_idx_load3(fn, fnidx, fmt, flags);
+    else
+        idx = idx_read(fnidx);
     free(fnidx);
     return idx;
 }
 
+hts_idx_t *hts_idx_load(const char *fn, int fmt) {
+    return idx_find_and_load(fn, fmt, 1);
+}
+
 hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx)
 {
+    return hts_idx_load3(fn, fnidx, 0, 0);
+}
+
+hts_idx_t *hts_idx_load3(const char *fn, const char *fnidx, int fmt, int flags)
+{
+    const char *local_fn = NULL;
+    char *local_fnidx = NULL;
+    int local_len;
+    if (!fnidx)
+        return idx_find_and_load(fn, fmt, flags);
+
     // Check that the index file is up to date, the main file might have changed
     struct stat stat_idx,stat_main;
-    if ( !stat(fn, &stat_main) && !stat(fnidx, &stat_idx) )
+    int remote_fn = hisremote(fn), remote_fnidx = hisremote(fnidx);
+    if ( !remote_fn && !remote_fnidx
+         && !stat(fn, &stat_main) && !stat(fnidx, &stat_idx) )
     {
         if ( stat_idx.st_mtime < stat_main.st_mtime )
             hts_log_warning("The index file is older than the data file: %s", fnidx);
     }
 
-    return hts_idx_load_local(fnidx);
+    if (remote_fnidx && (flags & HTS_IDX_SAVE_REMOTE))
+    {
+        int ret = idx_test_and_fetch(fnidx, &local_fn, &local_len, 1);
+        if (ret == 0) {
+            local_fnidx = strdup(local_fn);
+            if (local_fnidx) {
+                local_fnidx[local_len] = '\0';
+                fnidx = local_fnidx;
+            }
+        }
+    }
+
+    hts_idx_t *idx = idx_read(fnidx);
+    if (!idx && !(flags & HTS_IDX_SILENT_FAIL))
+        hts_log_error("Could not load local index file '%s'", fnidx);
+
+    free(local_fnidx);
+
+    return idx;
 }
 
 
@@ -2890,6 +3735,7 @@ hts_idx_t *hts_idx_load2(const char *fn, const char *fnidx)
  **********************/
 
 /* For use with hts_expand macros *only* */
+HTSLIB_EXPORT
 size_t hts_realloc_or_die(size_t n, size_t m, size_t m_sz, size_t size,
                           int clear, void **ptr, const char *func) {
     /* If new_m and size are both below this limit, multiplying them
@@ -2929,6 +3775,84 @@ size_t hts_realloc_or_die(size_t n, size_t m, size_t m_sz, size_t size,
  die:
     hts_log_error("%s", strerror(errno));
     exit(1);
+}
+
+/*
+ * Companion to hts_resize() macro that does the actual allocation.
+ *
+ * Somewhat complicated as hts_resize() needs to write the new allocated
+ * size back into *size_in_out, and the value pointed to may either be
+ * int32_t, uint32_t or size_t depending on which array is being resized.
+ * This is solved by making `size_in_out` a void pointer, getting the macro
+ * to pass in the size of the item pointed to (in `size_sz`) and then using
+ * an appropriate cast (based on the value of size_sz).  The function
+ * ensures that the maximum size will be storable in a signed type of
+ * the given size so storing to an int32_t should work correctly.
+ *
+ * Assumes that sizeof(uint32_t) and sizeof(int32_t) is 4,
+ * sizeof(uint64_t) and sizeof(int64_t) is 8 and sizeof(size_t) is
+ * either 4 or 8.  It also assumes casting from unsigned to signed will
+ * work as long as the top bit isn't set.
+ */
+
+int hts_resize_array_(size_t item_size, size_t num, size_t size_sz,
+                      void *size_in_out, void **ptr_in_out, int flags,
+                      const char *func) {
+    /* If new_size and item_size are both below this limit, multiplying them
+       together can't overflow */
+    const size_t safe = (size_t) 1 << (sizeof(size_t) * 4);
+    void *new_ptr;
+    size_t bytes, new_size;
+
+    new_size = num;
+    kroundup_size_t(new_size);
+    bytes = item_size * new_size;
+
+    /* Check for overflow.  Both ensure that alloc will fit in alloc_in_out (we
+       make the pessimistic assumption that *alloc_in_out is signed), and that
+       bytes has not wrapped around. */
+
+    if ((new_size > (((size_t) 1 << (size_sz * 8 - 1)) - 1))
+        || (((item_size > safe) || (new_size > safe))
+            && bytes / new_size != item_size)) {
+        hts_log(HTS_LOG_ERROR, func, "Memory allocation too large");
+        errno = ENOMEM;
+        return -1;
+    }
+
+    new_ptr = realloc(*ptr_in_out, bytes);
+    if (new_ptr == NULL) {
+        int save_errno = errno;
+        hts_log(HTS_LOG_ERROR, func, "%s", strerror(errno));
+        errno = save_errno;
+        return -1;
+    }
+
+    if (flags & HTS_RESIZE_CLEAR) {
+        size_t old_size;
+        switch (size_sz) {
+        case 4: old_size = *((uint32_t *) size_in_out); break;
+        case 8: old_size = *((uint64_t *) size_in_out); break;
+        default: abort();
+        }
+        if (new_size > old_size) {
+            memset((char *) new_ptr + old_size * item_size, 0,
+                   (new_size - old_size) * item_size);
+        }
+    }
+
+    switch (size_sz) {
+    case 4: *((uint32_t *) size_in_out) = new_size; break;
+    case 8: *((uint64_t *) size_in_out) = new_size; break;
+    default: abort();
+    }
+
+    *ptr_in_out = new_ptr;
+    return 0;
+}
+
+void hts_free(void *ptr) {
+    free(ptr);
 }
 
 void hts_set_log_level(enum htsLogLevel level)

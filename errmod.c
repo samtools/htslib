@@ -1,7 +1,7 @@
 /*  errmod.c -- revised MAQ error model.
 
     Copyright (C) 2010 Broad Institute.
-    Copyright (C) 2012, 2013, 2016 Genome Research Ltd.
+    Copyright (C) 2012, 2013, 2016-2017, 2019 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -23,6 +23,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <math.h>
@@ -30,7 +31,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/ksort.h"
 #include "htslib/hts_os.h" // for drand48
 
-KSORT_INIT_GENERIC(uint16_t)
+KSORT_INIT_STATIC_GENERIC(uint16_t)
 
 struct errmod_t {
     double depcorr;
@@ -53,6 +54,7 @@ static double* logbinomial_table( const int n_size )
     /* this calcs p(k) = {log(n!) - log(k!) - log((n-k)!) */
     int k, n;
     double *logbinom = (double*)calloc(n_size * n_size, sizeof(double));
+    if (!logbinom) return NULL;
     for (n = 1; n < n_size; ++n) {
         double lfn = lfact(n);
         for (k = 1; k <= n; ++k)
@@ -61,7 +63,7 @@ static double* logbinomial_table( const int n_size )
     return logbinom;
 }
 
-static void cal_coef(errmod_t *em, double depcorr, double eta)
+static int cal_coef(errmod_t *em, double depcorr, double eta)
 {
     int k, n, q;
     double sum, sum1;
@@ -69,14 +71,17 @@ static void cal_coef(errmod_t *em, double depcorr, double eta)
 
     // initialize ->fk
     em->fk = (double*)calloc(256, sizeof(double));
+    if (!em->fk) return -1;
     em->fk[0] = 1.0;
     for (n = 1; n < 256; ++n)
         em->fk[n] = pow(1. - depcorr, n) * (1.0 - eta) + eta;
 
     // initialize ->beta
     em->beta = (double*)calloc(256 * 256 * 64, sizeof(double));
+    if (!em->beta) return -1;
 
     lC = logbinomial_table( 256 );
+    if (!lC) return -1;
 
     for (q = 1; q < 64; ++q) {
         double e = pow(10.0, -q/10.0);
@@ -95,10 +100,15 @@ static void cal_coef(errmod_t *em, double depcorr, double eta)
 
     // initialize ->lhet
     em->lhet = (double*)calloc(256 * 256, sizeof(double));
+    if (!em->lhet) {
+        free(lC);
+        return -1;
+    }
     for (n = 0; n < 256; ++n)
         for (k = 0; k < 256; ++k)
             em->lhet[n<<8|k] = lC[n<<8|k] - M_LN2 * n;
     free(lC);
+    return 0;
 }
 
 /**
@@ -108,6 +118,7 @@ errmod_t *errmod_init(double depcorr)
 {
     errmod_t *em;
     em = (errmod_t*)calloc(1, sizeof(errmod_t));
+    if (!em) return NULL;
     em->depcorr = depcorr;
     cal_coef(em, depcorr, 0.03);
     return em;

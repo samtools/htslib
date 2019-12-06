@@ -1,7 +1,7 @@
 /// @file htslib/synced_bcf_reader.h
 /// Stream through multiple VCF files.
 /*
-    Copyright (C) 2012-2014 Genome Research Ltd.
+    Copyright (C) 2012-2017, 2019 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -125,8 +125,9 @@ typedef struct _bcf_sr_regions_t
     char **seq_names;       // sequence names
     int nseqs;              // number of sequences (chromosomes) in the file
     int iseq;               // current position: chr name, index to snames
-    int start, end;         // current position: start, end of the region (0-based)
-    int prev_seq, prev_start;
+    hts_pos_t start, end;   // current position: start, end of the region (0-based)
+    int prev_seq;
+    hts_pos_t prev_start, prev_end;
 }
 bcf_sr_regions_t;
 
@@ -184,14 +185,22 @@ typedef struct
 }
 bcf_srs_t;
 
-/** Init bcf_srs_t struct */
+/** Allocate and initialize a bcf_srs_t struct.
+ *
+ *  The bcf_srs_t struct returned by a successful call should be freed
+ *  via bcf_sr_destroy() when it is no longer needed.
+ */
+HTSLIB_EXPORT
 bcf_srs_t *bcf_sr_init(void);
 
-/** Destroy  bcf_srs_t struct */
+/** Destroy a bcf_srs_t struct */
+HTSLIB_EXPORT
 void bcf_sr_destroy(bcf_srs_t *readers);
 
+HTSLIB_EXPORT
 char *bcf_sr_strerror(int errnum);
 
+HTSLIB_EXPORT
 int bcf_sr_set_opt(bcf_srs_t *readers, bcf_sr_opt_t opt, ...);
 
 
@@ -201,9 +210,11 @@ int bcf_sr_set_opt(bcf_srs_t *readers, bcf_sr_opt_t opt, ...);
  *
  * Returns 0 if the call succeeded, or <0 on error.
  */
+HTSLIB_EXPORT
 int bcf_sr_set_threads(bcf_srs_t *files, int n_threads);
 
 /** Deallocates thread memory, if owned by us. */
+HTSLIB_EXPORT
 void bcf_sr_destroy_threads(bcf_srs_t *files);
 
 /**
@@ -216,7 +227,10 @@ void bcf_sr_destroy_threads(bcf_srs_t *files);
  *  See also the bcf_srs_t data structure for parameters controlling
  *  the reader's logic.
  */
+HTSLIB_EXPORT
 int bcf_sr_add_reader(bcf_srs_t *readers, const char *fname);
+
+HTSLIB_EXPORT
 void bcf_sr_remove_reader(bcf_srs_t *files, int i);
 
 /**
@@ -227,7 +241,9 @@ void bcf_sr_remove_reader(bcf_srs_t *files, int i);
  * (bcf_sr_t.buffer[0]) set at this position. Use the bcf_sr_has_line macro to
  * determine which of the readers are set.
  */
+HTSLIB_EXPORT
 int bcf_sr_next_line(bcf_srs_t *readers);
+
 #define bcf_sr_has_line(readers, i) (readers)->has_line[i]
 #define bcf_sr_get_line(_readers, i) ((_readers)->has_line[i] ? ((_readers)->readers[i].buffer[0]) : NULL)
 #define bcf_sr_swap_line(_readers, i, lieu) { bcf1_t *tmp = lieu; lieu = (_readers)->readers[i].buffer[0]; (_readers)->readers[i].buffer[0] = tmp; }
@@ -241,7 +257,8 @@ int bcf_sr_next_line(bcf_srs_t *readers);
  *  @seq:  sequence name; NULL to seek to start
  *  @pos:  0-based coordinate
  */
-int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos);
+HTSLIB_EXPORT
+int bcf_sr_seek(bcf_srs_t *readers, const char *seq, hts_pos_t pos);
 
 /**
  * bcf_sr_set_samples() - sets active samples
@@ -254,6 +271,7 @@ int bcf_sr_seek(bcf_srs_t *readers, const char *seq, int pos);
  *
  * Returns 1 if the call succeeded, or 0 on error.
  */
+HTSLIB_EXPORT
 int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples, int is_file);
 
 /**
@@ -282,7 +300,10 @@ int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples, int is_file);
  *  Targets (but not regions) can be prefixed with "^" to request logical complement,
  *  for example "^X,Y,MT" indicates that sequences X, Y and MT should be skipped.
  */
+HTSLIB_EXPORT
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles);
+
+HTSLIB_EXPORT
 int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file);
 
 
@@ -306,8 +327,14 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file);
  *              supply 'from' in place of 'to'. When 'to' is negative, first
  *              abs(to) will be attempted and if that fails, 'from' will be used
  *              instead.
+ *
+ *  The bcf_sr_regions_t struct returned by a successful call should be freed
+ *  via bcf_sr_regions_destroy() when it is no longer needed.
  */
+HTSLIB_EXPORT
 bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int chr, int from, int to);
+
+HTSLIB_EXPORT
 void bcf_sr_regions_destroy(bcf_sr_regions_t *regions);
 
 /*
@@ -316,6 +343,7 @@ void bcf_sr_regions_destroy(bcf_sr_regions_t *regions);
  *  Returns 0 on success or -1 on failure. Sets reg->seq appropriately and
  *  reg->start,reg->end to -1.
  */
+HTSLIB_EXPORT
 int bcf_sr_regions_seek(bcf_sr_regions_t *regions, const char *chr);
 
 /*
@@ -325,6 +353,7 @@ int bcf_sr_regions_seek(bcf_sr_regions_t *regions, const char *chr);
  *  NULL,-1,-1 when no region is available. The coordinates are 0-based,
  *  inclusive.
  */
+HTSLIB_EXPORT
 int bcf_sr_regions_next(bcf_sr_regions_t *reg);
 
 /*
@@ -336,13 +365,16 @@ int bcf_sr_regions_next(bcf_sr_regions_t *reg);
  *  regions and more regions exist; -2 if not in the regions and there are no more
  *  regions left.
  */
-int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, int start, int end);
+HTSLIB_EXPORT
+int bcf_sr_regions_overlap(bcf_sr_regions_t *reg, const char *seq, hts_pos_t start, hts_pos_t end);
 
 /*
  *  bcf_sr_regions_flush() - calls repeatedly regs->missed_reg_handler() until
  *  all remaining records are processed.
+ *  Returns 0 on success, <0 on error.
  */
-void bcf_sr_regions_flush(bcf_sr_regions_t *regs);
+HTSLIB_EXPORT
+int bcf_sr_regions_flush(bcf_sr_regions_t *regs);
 
 #ifdef __cplusplus
 }

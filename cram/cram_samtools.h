@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2010-2013 Genome Research Ltd.
+Copyright (c) 2010-2013, 2018 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -28,8 +28,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef _CRAM_SAMTOOLS_H_
-#define _CRAM_SAMTOOLS_H_
+#ifndef CRAM_SAMTOOLS_H
+#define CRAM_SAMTOOLS_H
 
 /* Samtools compatible API */
 #define bam_blk_size(b)  ((b)->l_data)
@@ -52,8 +52,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define bam_cigar(b)     bam_get_cigar((b))
 #define bam_aux(b)       bam_get_aux((b))
 
-#define bam_dup(b)       bam_copy1(bam_init1(), (b))
-
 #define bam_free(b)      bam_destroy1((b))
 
 #define bam_reg2bin(beg,end) hts_reg2bin((beg),(end),14,5)
@@ -74,26 +72,21 @@ enum cigar_op {
 
 typedef bam1_t bam_seq_t;
 
-#include "cram/sam_header.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-bam_hdr_t *cram_header_to_bam(SAM_hdr *h);
-SAM_hdr *bam_header_to_cram(bam_hdr_t *h);
 
 int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
                       const char *qname, size_t qname_len,
                       int flag,
                       int rname,      // Ref ID
-                      int pos,
-                      int end,        // aligned start/end coords
+                      int64_t pos,
+                      int64_t end,        // aligned start/end coords
                       int mapq,
                       uint32_t ncigar, const uint32_t *cigar,
                       int mrnm,       // Mate Ref ID
-                      int mpos,
-                      int isize,
+                      int64_t mpos,
+                      int64_t isize,
                       int len,
                       const char *seq,
                       const char *qual);
@@ -102,4 +95,4 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
 }
 #endif
 
-#endif /* _CRAM_SAMTOOLS_H_ */
+#endif /* CRAM_SAMTOOLS_H */

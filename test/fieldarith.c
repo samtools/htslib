@@ -1,6 +1,6 @@
 /*  test/fieldarith.c -- CIGAR field arithmetic test suite.
 
-    Copyright (C) 2013 Genome Research Ltd.
+    Copyright (C) 2013-2014 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -47,7 +47,7 @@ void check(const bam1_t *aln, const char *testname, const char *tag, int value)
 
 int main(int argc, char **argv)
 {
-    bam_hdr_t *header;
+    sam_hdr_t *header;
     bam1_t *aln = bam_init1();
     int i;
 
@@ -64,7 +64,7 @@ int main(int argc, char **argv)
             check(aln, "endpos", "XE", bam_endpos(aln));
         }
 
-        bam_hdr_destroy(header);
+        sam_hdr_destroy(header);
         sam_close(in);
     }
 
