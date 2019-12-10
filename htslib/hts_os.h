@@ -32,6 +32,11 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
+/* This is srand48_deterministic() on platforms that provide it, or srand48()
+   otherwise (or our own POSIX srand48() on platforms that provide neither).
+   Hence calling hts_srand48() will always set up the same POSIX-determined
+   sequence of pseudo-random numbers on any platform, while calling srand48()
+   may (e.g., on OpenBSD) set up a different non-deterministic sequence. */
 HTSLIB_EXPORT
 void hts_srand48(long seed);
 

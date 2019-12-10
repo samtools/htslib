@@ -1,6 +1,11 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* hts_srand48() now seeds the same POSIX-standard sequences of pseudo-random
+  numbers regardless of platform, including on OpenBSD where plain srand48()
+  produces a different cryptographically-strong non-deterministic sequence.
+
+
 Noteworthy changes in release 1.10.2 (19th December 2019)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
