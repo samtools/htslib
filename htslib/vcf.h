@@ -1411,7 +1411,7 @@ static inline int64_t bcf_dec_int1(const uint8_t *p, int type, uint8_t **q)
         *q = (uint8_t*)p + 4;
         return le_to_i32(p);
     } else if (type == BCF_BT_INT64) {
-        *q = (uint8_t*)p + 4;
+        *q = (uint8_t*)p + 8;
         return le_to_i64(p);
     } else { // Invalid type.
         return 0;
