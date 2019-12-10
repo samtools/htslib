@@ -9,7 +9,9 @@ which have, or are expected to have,  chromosomes longer than two gigabases.
 Currently 64 bit positions can only be stored in SAM and VCF format files.
 Binary BAM, CRAM and BCF cannot be used due to limitations in the formats
 themselves.  As SAM and VCF are text formats, they have no limit on the
-size of numeric values.
+size of numeric values. Note that while 64 bit positions are supported by
+default for SAM, for VCF they must be enabled explicitly at compile time
+by editing Makefile and adding -DVCF_ALLOW_INT64=1 to CFLAGS.
 
 # Compatibility issues to check
 
