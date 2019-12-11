@@ -78,6 +78,8 @@ static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, N
     #define BCF_MIN_BT_INT64 -9223372036854775800   /* INT64_MIN + 8, for internal use only */
 #endif
 
+#define BCF_IS_64BIT (1<<30)
+
 
 static const char *dump_char(char *buffer, char c)
 {
@@ -1753,9 +1755,9 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     }
     bcf1_sync(v);   // check if the BCF record was modified
 
-    if ( v->pos > BCF_MAX_BT_INT32  ) 
+    if ( v->unpacked & BCF_IS_64BIT )
     {
-        hts_log_error("64-bit coordinates are not supported with BCF output");
+        hts_log_error("Data contains 64-bit values not representable in BCF.  Please use VCF instead");
         return -1;
     }
 
@@ -2577,6 +2579,8 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             } else {
                 v->pos -= 1;
             }
+            if (v->pos >= INT32_MAX)
+                v->unpacked |= BCF_IS_64BIT;
         } else if (i == 2) { // ID
             if (strcmp(p, ".")) bcf_enc_vchar(str, q - p, p);
             else bcf_enc_size(str, 0, BCF_BT_CHAR);
@@ -2766,6 +2770,8 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                             }
                             if (n_val == 1) {
 #if VCF_ALLOW_INT64
+                                if ( val1<INT32_MIN || val1>BCF_MAX_BT_INT32 )
+                                    v->unpacked |= BCF_IS_64BIT;
                                 bcf_enc_long1(str, val1);
 #else
                                 val1 = val_a[0];
