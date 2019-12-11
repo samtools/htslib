@@ -47,6 +47,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/kstring.h"
 #include "htslib/sam.h"
 
+// A flag for bcf1_t->unpacked to indicate this contains 64-bit data.
+// Prevents us accidentally attempting to write invalid BCF records.
+#define BCF_IS_64BIT (1<<30)
+
 #include "htslib/khash.h"
 KHASH_MAP_INIT_STR(vdict, bcf_idinfo_t)
 typedef khash_t(vdict) vdict_t;
@@ -1728,6 +1732,11 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     }
     bcf1_sync(v);   // check if the BCF record was modified
 
+    if (v->unpacked & BCF_IS_64BIT) {
+        hts_log_error("Data contains 64-bit values not representable in BCF.  Please use VCF instead");
+        return -1;
+    }
+
     BGZF *fp = hfp->fp.bgzf;
     union {
         uint32_t i;
@@ -2526,6 +2535,8 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             } else {
                 v->pos -= 1;
             }
+            if (v->pos >= INT32_MAX)
+                v->unpacked |= BCF_IS_64BIT;
         } else if (i == 2) { // ID
             if (strcmp(p, ".")) bcf_enc_vchar(str, q - p, p);
             else bcf_enc_size(str, 0, BCF_BT_CHAR);
@@ -2691,6 +2702,8 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                                 for (t = te; *t && *t != ','; t++);
                             }
                             if (n_val == 1) {
+                                if (val_a[0] != v64 && v64 != bcf_int64_missing)
+                                    v->unpacked |= BCF_IS_64BIT;
                                 bcf_enc_long1(str, v64);
                             } else {
                                 bcf_enc_vint(str, n_val, val_a, -1);
