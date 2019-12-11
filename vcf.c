@@ -1755,7 +1755,7 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
 
     if ( v->pos > BCF_MAX_BT_INT32  ) 
     {
-        hts_log_error("64-bit coordinates are not supported with BCF output\n");
+        hts_log_error("64-bit coordinates are not supported with BCF output");
         return -1;
     }
 
@@ -2405,7 +2405,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                         {
                             if ( !extreme_int_warned )
                             {
-                                hts_log_warning("Extreme FORMAT values encountered and set to missing.");
+                                hts_log_warning("Extreme FORMAT/%s value encountered and set to missing at %s:%"PRIhts_pos,h->id[BCF_DT_ID][fmt[j-1].key].key,bcf_seqname(h,v), v->pos+1);
                                 extreme_int_warned = 1;
                             }
                             tmp_val = bcf_int32_missing;
@@ -2735,7 +2735,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                                 {
                                     if ( !extreme_int_warned )
                                     {
-                                        hts_log_warning("Extreme INFO value encountered and set to missing.");
+                                        hts_log_warning("Extreme INFO/%s value encountered and set to missing at %s:%"PRIhts_pos,key,bcf_seqname(h,v), v->pos+1);
                                         extreme_int_warned = 1;
                                     }
                                     tmp_val = bcf_int64_missing;
@@ -2756,7 +2756,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                                 {
                                     if ( !extreme_int_warned )
                                     {
-                                        hts_log_warning("Extreme INFO values encountered and set to missing.");
+                                        hts_log_warning("Extreme INFO/%s value encountered and set to missing at %s:%"PRIhts_pos,key,bcf_seqname(h,v), v->pos+1);
                                         extreme_int_warned = 1;
                                     }
                                     tmp_val = bcf_int32_missing;
