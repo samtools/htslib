@@ -2690,7 +2690,16 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                                 val_a[0] = bcf_int32_missing;
                                 v64 = bcf_int64_missing;
                             } else {
-                                val_a[0] = v64 >= BCF_MIN_BT_INT32 && v64 <= BCF_MAX_BT_INT32 ? v64 : bcf_int32_missing;
+                                if (v64 >= BCF_MIN_BT_INT32 && v64 <= BCF_MAX_BT_INT32) {
+                                    val_a[0] = v64;
+                                } else {
+                                    val_a[0] = bcf_int32_missing;
+                                    // Only permit 64-bit INFO values for END tag
+                                    if (strcmp(key, "END") != 0) {
+                                        hts_log_warning("INFO key %s has out of range value %"PRId64, key, v64);
+                                        v64 = bcf_int64_missing;
+                                    }
+                                }
                             }
                             for (t = te; *t && *t != ','; t++);
                             if (*t == ',') ++t;
@@ -2708,8 +2717,11 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                             } else {
                                 bcf_enc_vint(str, n_val, val_a, -1);
                             }
-                            if (strcmp(key, "END") == 0)
+                            if (strcmp(key, "END") == 0) {
                                 v->rlen = v64 - v->pos;
+                                if (v->rlen >= INT32_MAX)
+                                    v->unpacked |= BCF_IS_64BIT;
+                            }
                         } else if ((y>>4&0xf) == BCF_HT_REAL) {
                             float *val_f = (float *)val_a;
                             for (i = 0, t = val; i < n_val; ++i, ++t)
