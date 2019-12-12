@@ -71,9 +71,7 @@ static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, N
      - cannot output 64-bit BCF and if it does, it is not compatible with anything
      - experimental, use at your risk
 */
-#define VCF_ALLOW_INT64 0
-
-#if VCF_ALLOW_INT64
+#ifdef VCF_ALLOW_INT64
     #define BCF_MAX_BT_INT64 (0x7fffffffffffffff)   /* INT64_MAX, for internal use only */
     #define BCF_MIN_BT_INT64 -9223372036854775800   /* INT64_MIN + 8, for internal use only */
 #endif
@@ -1269,7 +1267,7 @@ static int bcf_dec_typed_int1_safe(uint8_t *p, uint8_t *end, uint8_t **q,
         if (end - p < 4) return -1;
         *q = p + 4;
         *val = le_to_i32(p);
-#if VCF_ALLOW_INT64
+#ifdef VCF_ALLOW_INT64
     } else if (t == BCF_BT_INT64) {
         if (end - p < 4) return -1;
         *q = p + 4;
@@ -1314,7 +1312,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     uint32_t i, reports;
     const uint32_t is_integer = ((1 << BCF_BT_INT8)  |
                                  (1 << BCF_BT_INT16) |
-#if VCF_ALLOW_INT64
+#ifdef VCF_ALLOW_INT64
                                  (1 << BCF_BT_INT64) |
 #endif
                                  (1 << BCF_BT_INT32));
@@ -2073,7 +2071,7 @@ int bcf_enc_vint(kstring_t *s, int n, int32_t *a, int wsize)
     return 0; // FIXME: check for errs in this function
 }
 
-#if VCF_ALLOW_INT64
+#ifdef VCF_ALLOW_INT64
 static int bcf_enc_long1(kstring_t *s, int64_t x) {
     uint32_t e = 0;
     if (x <= BCF_MAX_BT_INT32 && x >= BCF_MIN_BT_INT32)
@@ -2728,7 +2726,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         }
                         if ((y>>4&0xf) == BCF_HT_INT) {
                             i = 0, t = val;
-#if VCF_ALLOW_INT64
+#ifdef VCF_ALLOW_INT64
                             int64_t val1;
                             if ( n_val==1 )
                             {
@@ -2769,7 +2767,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                                 for (t = te; *t && *t != ','; t++);
                             }
                             if (n_val == 1) {
-#if VCF_ALLOW_INT64
+#ifdef VCF_ALLOW_INT64
                                 if ( val1<INT32_MIN || val1>BCF_MAX_BT_INT32 )
                                     v->unpacked |= BCF_IS_64BIT;
                                 bcf_enc_long1(str, val1);
@@ -3920,7 +3918,7 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
         else
             bcf_enc_vchar(&str, strlen((char*)values), (char*)values);
     }
-#if VCF_ALLOW_INT64
+#ifdef VCF_ALLOW_INT64
     else if ( type==BCF_HT_LONG )
     {
         if (n != 1) {
