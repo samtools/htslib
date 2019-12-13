@@ -2396,7 +2396,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 int32_t *x = (int32_t*)(z->buf + z->size * m);
                 for (l = 0;; ++t) {
                     if (*t == '.') x[l++] = bcf_int32_missing, ++t; // ++t to skip "."
-                    else    // x[l++] = strtol(t, &t, 10);
+                    else
                     {
                         errno = 0;
                         char *te;
@@ -2732,7 +2732,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                             {
                                 errno = 0;
                                 long long int tmp_val = strtoll(val, &te, 10);
-                                if ( te==val ) tmp_val = bcf_int64_missing;
+                                if ( te==val ) tmp_val = bcf_int32_missing;
                                 else if ( te==val || errno!=0 || tmp_val<BCF_MIN_BT_INT64 || tmp_val>BCF_MAX_BT_INT64 )
                                 {
                                     if ( !extreme_int_warned )
@@ -2740,7 +2740,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                                         hts_log_warning("Extreme INFO/%s value encountered and set to missing at %s:%"PRIhts_pos,key,bcf_seqname(h,v), v->pos+1);
                                         extreme_int_warned = 1;
                                     }
-                                    tmp_val = bcf_int64_missing;
+                                    tmp_val = bcf_int32_missing;
                                 }
                                 val1 = tmp_val;
                                 t = te;
