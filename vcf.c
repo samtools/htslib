@@ -2396,7 +2396,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 int32_t *x = (int32_t*)(z->buf + z->size * m);
                 for (l = 0;; ++t) {
                     if (*t == '.') x[l++] = bcf_int32_missing, ++t; // ++t to skip "."
-                    else    // x[l++] = strtol(t, &t, 10);
+                    else
                     {
                         errno = 0;
                         char *te;
@@ -2727,12 +2727,13 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         if ((y>>4&0xf) == BCF_HT_INT) {
                             i = 0, t = val;
 #ifdef VCF_ALLOW_INT64
+                            int is_int64 = 0;
                             int64_t val1;
                             if ( n_val==1 )
                             {
                                 errno = 0;
                                 long long int tmp_val = strtoll(val, &te, 10);
-                                if ( te==val ) tmp_val = bcf_int64_missing;
+                                if ( te==val ) tmp_val = bcf_int32_missing;
                                 else if ( te==val || errno!=0 || tmp_val<BCF_MIN_BT_INT64 || tmp_val>BCF_MAX_BT_INT64 )
                                 {
                                     if ( !extreme_int_warned )
@@ -2740,8 +2741,10 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                                         hts_log_warning("Extreme INFO/%s value encountered and set to missing at %s:%"PRIhts_pos,key,bcf_seqname(h,v), v->pos+1);
                                         extreme_int_warned = 1;
                                     }
-                                    tmp_val = bcf_int64_missing;
+                                    tmp_val = bcf_int32_missing;
                                 }
+                                else
+                                    is_int64 = 1;
                                 val1 = tmp_val;
                                 t = te;
                                 i = 1;  // this is just to avoid adding another nested block...
@@ -2768,9 +2771,13 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                             }
                             if (n_val == 1) {
 #ifdef VCF_ALLOW_INT64
-                                if ( val1<INT32_MIN || val1>BCF_MAX_BT_INT32 )
+                                if ( is_int64 )
+                                {
                                     v->unpacked |= BCF_IS_64BIT;
-                                bcf_enc_long1(str, val1);
+                                    bcf_enc_long1(str, val1);
+                                }
+                                else
+                                    bcf_enc_int1(str, val1);
 #else
                                 val1 = val_a[0];
                                 bcf_enc_int1(str, val1);
