@@ -2727,6 +2727,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         if ((y>>4&0xf) == BCF_HT_INT) {
                             i = 0, t = val;
 #ifdef VCF_ALLOW_INT64
+                            int is_int64 = 0;
                             int64_t val1;
                             if ( n_val==1 )
                             {
@@ -2742,6 +2743,8 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                                     }
                                     tmp_val = bcf_int32_missing;
                                 }
+                                else
+                                    is_int64 = 1;
                                 val1 = tmp_val;
                                 t = te;
                                 i = 1;  // this is just to avoid adding another nested block...
@@ -2768,7 +2771,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                             }
                             if (n_val == 1) {
 #ifdef VCF_ALLOW_INT64
-                                if ( val1<INT32_MIN || val1>BCF_MAX_BT_INT32 )
+                                if ( is_int64 )
                                 {
                                     v->unpacked |= BCF_IS_64BIT;
                                     bcf_enc_long1(str, val1);
