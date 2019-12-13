@@ -1390,10 +1390,10 @@ static inline int bcf_enc_int1(kstring_t *s, int32_t x)
     @param[out] q    Location to store an updated value for p
     @return The integer value, or zero if @p type is not valid.
 
-If @p type is not one of BCF_BT_INT8, BCF_BT_INT16 or BCF_BT_INT32, zero
-will be returned and @p *q will not be updated.  Otherwise, the integer
-value will be returned and @p *q will be set to the memory location
-immediately following the integer value.
+If @p type is not one of BCF_BT_INT8, BCF_BT_INT16, BCF_BT_INT32 or
+BCF_BT_INT64, zero will be returned and @p *q will not be updated.
+Otherwise, the integer value will be returned and @p *q will be set
+to the memory location immediately following the integer value.
 
 Cautious callers can detect invalid type codes by checking that *q has
 actually been updated.
