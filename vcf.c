@@ -2769,8 +2769,12 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                             if (n_val == 1) {
 #ifdef VCF_ALLOW_INT64
                                 if ( val1<INT32_MIN || val1>BCF_MAX_BT_INT32 )
+                                {
                                     v->unpacked |= BCF_IS_64BIT;
-                                bcf_enc_long1(str, val1);
+                                    bcf_enc_long1(str, val1);
+                                }
+                                else
+                                    bcf_enc_int1(str, val1);
 #else
                                 val1 = val_a[0];
                                 bcf_enc_int1(str, val1);
