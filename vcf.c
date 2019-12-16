@@ -72,8 +72,8 @@ static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, N
      - experimental, use at your risk
 */
 #ifdef VCF_ALLOW_INT64
-    #define BCF_MAX_BT_INT64 (0x7fffffffffffffff)   /* INT64_MAX, for internal use only */
-    #define BCF_MIN_BT_INT64 -9223372036854775800   /* INT64_MIN + 8, for internal use only */
+    #define BCF_MAX_BT_INT64 (0x7fffffffffffffff)       /* INT64_MAX, for internal use only */
+    #define BCF_MIN_BT_INT64 -9223372036854775800LL     /* INT64_MIN + 8, for internal use only */
 #endif
 
 #define BCF_IS_64BIT (1<<30)
@@ -1269,9 +1269,11 @@ static int bcf_dec_typed_int1_safe(uint8_t *p, uint8_t *end, uint8_t **q,
         *val = le_to_i32(p);
 #ifdef VCF_ALLOW_INT64
     } else if (t == BCF_BT_INT64) {
-        if (end - p < 4) return -1;
-        *q = p + 4;
-        *val = le_to_i32(p);
+        // This case should never happen because there should be no 64-bit BCFs
+        // at all, definitely not coming from htslib
+        if (end - p < 8) return -1;
+        *q = p + 8;
+        *val = le_to_i64(p);
 #endif
     } else {
         return -1;
@@ -2726,9 +2728,9 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         }
                         if ((y>>4&0xf) == BCF_HT_INT) {
                             i = 0, t = val;
+                            int64_t val1;
 #ifdef VCF_ALLOW_INT64
                             int is_int64 = 0;
-                            int64_t val1;
                             if ( n_val==1 )
                             {
                                 errno = 0;
@@ -2749,8 +2751,6 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                                 t = te;
                                 i = 1;  // this is just to avoid adding another nested block...
                             }
-#else
-                            int32_t val1;
 #endif
                             for (; i < n_val; ++i, ++t)
                             {
@@ -2777,10 +2777,10 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                                     bcf_enc_long1(str, val1);
                                 }
                                 else
-                                    bcf_enc_int1(str, val1);
+                                    bcf_enc_int1(str, (int32_t)val1);
 #else
                                 val1 = val_a[0];
-                                bcf_enc_int1(str, val1);
+                                bcf_enc_int1(str, (int32_t)val1);
 #endif
                             } else {
                                 bcf_enc_vint(str, n_val, val_a, -1);
