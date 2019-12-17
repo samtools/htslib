@@ -2521,7 +2521,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
 
 int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 {
-    static int extreme_int_warned = 0;
+    static int extreme_int_warned = 0, negative_rlen_warned = 0;
     int i = 0;
     char *p, *q, *r, *t;
     kstring_t *str;
@@ -2786,7 +2786,18 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                                 bcf_enc_vint(str, n_val, val_a, -1);
                             }
                             if (n_val==1 && strcmp(key, "END") == 0)
-                                v->rlen = val1 - v->pos;
+                            {
+                                if ( val1 <= v->pos )
+                                {
+                                    if ( !negative_rlen_warned )
+                                    {
+                                        hts_log_warning("INFO/END=%"PRIhts_pos" is smaller than POS at %s:%"PRIhts_pos,val1,bcf_seqname(h,v),v->pos+1);
+                                        negative_rlen_warned = 1;
+                                    }
+                                }
+                                else
+                                    v->rlen = val1 - v->pos;
+                            }
                         } else if ((y>>4&0xf) == BCF_HT_REAL) {
                             float *val_f = (float *)val_a;
                             for (i = 0, t = val; i < n_val; ++i, ++t)
