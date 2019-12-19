@@ -30,6 +30,8 @@ RANLIB = ranlib
 htslib_default_libs = -lz -lm -lbz2 -llzma -lcurl
 
 CPPFLAGS =
+# TODO: make the 64-bit support for VCF optional via configure, for now add -DVCF_ALLOW_INT64
+#       to CFLAGS manually, here or in config.mk if the latter exists.
 # TODO: probably update cram code to make it compile cleanly with -Wc++-compat
 # For testing strict C99 support add -std=c99 -D_XOPEN_SOURCE=600
 #CFLAGS   = -g -Wall -O2 -pedantic -std=c99 -D_XOPEN_SOURCE=600

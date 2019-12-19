@@ -1,3 +1,19 @@
+Noteworthy changes in release 1.10.2 (19th December 2019)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This is a release fix that corrects minor inconsistencies discovered in
+previous deliverables.
+
+
+Noteworthy changes in release 1.10.1 (17th December 2019)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The support for 64-bit coordinates in VCF brought problems for files
+not conforming to VCF/BCF specification. While previous versions would
+make out-of-range values silently overflow creating nonsense values
+but parseable file, the version 1.10 would silently create an invalid BCF.
+
+
 Noteworthy changes in release 1.10 (6th December 2019)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
