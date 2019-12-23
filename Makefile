@@ -98,7 +98,8 @@ BUILT_THRASH_PROGRAMS = \
 	test/thrash_threads6 \
 	test/thrash_threads7
 
-all: lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS)
+all: lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS) \
+     htslib_static.mk htslib-uninstalled.pc
 
 HTSPREFIX =
 include htslib_vars.mk
@@ -494,8 +495,10 @@ test/thrash_threads5: test/thrash_threads5.o libhts.a
 
 test/thrash_threads6: test/thrash_threads6.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/thrash_threads6.o libhts.a -lz $(LIBS) -lpthread
+
 test/thrash_threads7: test/thrash_threads7.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/thrash_threads7.o libhts.a -lz $(LIBS) -lpthread
+
 test_thrash: $(BUILT_THRASH_PROGRAMS)
 
 # Test to ensure the functions in the header files are exported by the shared
@@ -620,8 +623,9 @@ force:
 
 .PHONY: all check clean distclean distdir force
 .PHONY: install install-pkgconfig installdirs lib-shared lib-static
-.PHONY: maintainer-clean mostlyclean plugins print-config print-version
-.PHONY: show-version tags test testclean
+.PHONY: maintainer-check maintainer-clean mostlyclean plugins
+.PHONY: print-config print-version show-version tags
+.PHONY: test test-shlib-exports test_thrash testclean
 .PHONY: clean-so install-so
 .PHONY: clean-cygdll install-cygdll
 .PHONY: clean-dll install-dll
