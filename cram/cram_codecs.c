@@ -1922,7 +1922,7 @@ cram_codec *cram_byte_array_stop_decode_init(char *data, int size,
     c->u.byte_array_stop.stop = *cp++;
     if (CRAM_MAJOR_VERS(version) == 1) {
         c->u.byte_array_stop.content_id = cp[0] + (cp[1]<<8) + (cp[2]<<16)
-            + (cp[3]<<24);
+            + ((unsigned int) cp[3]<<24);
         cp += 4;
     } else {
         cp += safe_itf8_get((char *) cp, data + size,
