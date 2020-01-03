@@ -177,6 +177,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
         k = kh_get(m_s2i, hrecs->ref_hash, name);
         if (k < kh_end(hrecs->ref_hash)) {
             nref = kh_val(hrecs->ref_hash, k);
+            int ref_changed_flag = 0;
 
             // Check for hash entry added by sam_hrecs_refs_from_targets_array()
             if (hrecs->ref[nref].ty == NULL) {
@@ -189,23 +190,30 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
                              hrecs->ref[nref].len);
                     if (sam_hrecs_update(hrecs, h_type, "LN", tmp, NULL) < 0)
                         return -1;
+                    ref_changed_flag = 1;
                 }
                 if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames) < 0)
                     return -1;
 
-                if (hrecs->refs_changed < 0 || hrecs->refs_changed > nref)
+                if (ref_changed_flag && (hrecs->refs_changed < 0 || hrecs->refs_changed > nref))
                     hrecs->refs_changed = nref;
                 return 0;
             }
 
             // Check to see if an existing entry is being updated
             if (hrecs->ref[nref].ty == h_type) {
-                hrecs->ref[nref].len = len;
-                hrecs->ref[nref].name = name;
+                if (hrecs->ref[nref].len != len) {
+                    hrecs->ref[nref].len = len;
+                    ref_changed_flag = 1;
+                }
+                if (!hrecs->ref[nref].name || strcmp(hrecs->ref[nref].name, name)) {
+                    hrecs->ref[nref].name = name;
+                    ref_changed_flag = 1;
+                }
                 if (sam_hrecs_add_ref_altnames(hrecs, nref, altnames) < 0)
                     return -1;
 
-                if (hrecs->refs_changed < 0 || hrecs->refs_changed > nref)
+                if (ref_changed_flag && (hrecs->refs_changed < 0 || hrecs->refs_changed > nref))
                     hrecs->refs_changed = nref;
                 return 0;
             }
