@@ -42,7 +42,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef CRAM_ALL_H
 #define CRAM_ALL_H
 
-#include "cram/cram_samtools.h"
+#include "cram_samtools.h"
 #include "header.h"
 #include "cram_structs.h"
 #include "cram_io.h"

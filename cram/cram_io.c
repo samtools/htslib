@@ -70,11 +70,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define crc32(a,b,c) libdeflate_crc32((a),(b),(c))
 #endif
 
-#include "cram/cram.h"
-#include "cram/os.h"
+#include "cram.h"
+#include "os.h"
 #include "../htslib/hts.h"
-#include "cram/open_trace_file.h"
-#include "cram/rANS_static.h"
+#include "open_trace_file.h"
+#include "rANS_static.h"
 
 //#define REF_DEBUG
 

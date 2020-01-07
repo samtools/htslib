@@ -32,7 +32,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <getopt.h>
 #include <stdint.h>
 
-#include "cram/cram.h"
+#include "../cram/cram.h"
 #include "../htslib/sam.h"
 #include "../htslib/vcf.h"
 #include "../htslib/hts_log.h"

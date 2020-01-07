@@ -43,7 +43,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define CRAM_IO_H
 
 #include <stdint.h>
-#include <cram/misc.h>
+
+#include "misc.h"
 
 #ifdef __cplusplus
 extern "C" {

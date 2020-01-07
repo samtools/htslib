@@ -47,8 +47,8 @@
 #include <sys/time.h>
 #include <limits.h>
 
-#include "cram/rANS_static.h"
-#include "cram/rANS_byte.h"
+#include "rANS_static.h"
+#include "rANS_byte.h"
 
 #define TF_SHIFT 12
 #define TOTFREQ (1<<TF_SHIFT)

@@ -42,8 +42,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <math.h>
 #include <inttypes.h>
 
-#include "cram/cram.h"
-#include "cram/os.h"
+#include "cram.h"
+#include "os.h"
 
 cram_stats *cram_stats_create(void) {
     return calloc(1, sizeof(cram_stats));
