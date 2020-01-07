@@ -35,7 +35,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <stdlib.h>
 
-#include "cram/cram.h"
+#include "cram.h"
 #include "../htslib/sam.h"
 #include "sam_internal.h"
 

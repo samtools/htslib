@@ -52,8 +52,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "../htslib/thread_pool.h"
 #include "../htslib/cram.h"
-#include "cram/string_alloc.h"
-#include "cram/mFILE.h"
+#include "string_alloc.h"
+#include "mFILE.h"
 #include "../htslib/khash.h"
 
 #ifdef __cplusplus

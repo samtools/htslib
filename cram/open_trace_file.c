@@ -72,13 +72,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include "cram/os.h"
+
+#include "os.h"
 #ifndef PATH_MAX
 #  define PATH_MAX 1024
 #endif
 
-#include "cram/open_trace_file.h"
-#include "cram/misc.h"
+#include "open_trace_file.h"
+#include "misc.h"
 #include "../htslib/hfile.h"
 #include "../htslib/hts_log.h"
 #include "../htslib/hts.h"

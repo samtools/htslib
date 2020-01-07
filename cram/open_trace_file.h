@@ -64,7 +64,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef OPEN_TRACE_FILE_H
 #define OPEN_TRACE_FILE_H
 
-#include "cram/mFILE.h"
+#include "mFILE.h"
 
 #ifdef __cplusplus
 extern "C" {

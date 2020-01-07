@@ -43,7 +43,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "cram/string_alloc.h"
+#include "string_alloc.h"
 
 #define MIN_STR_SIZE 1024
 

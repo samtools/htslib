@@ -43,7 +43,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h>
 #include <errno.h>
 
-#include "cram/cram.h"
+#include "cram.h"
 
 /*
  * ---------------------------------------------------------------------------

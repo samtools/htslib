@@ -43,8 +43,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <math.h>
 #include <inttypes.h>
 
-#include "cram/cram.h"
-#include "cram/os.h"
+#include "cram.h"
+#include "os.h"
 #include "sam_internal.h" // for nibble2base
 #include "../htslib/hts.h"
 #include "../htslib/hts_endian.h"
