@@ -56,7 +56,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define bam_reg2bin(beg,end) hts_reg2bin((beg),(end),14,5)
 
-#include "htslib/sam.h"
+#include "../htslib/sam.h"
 
 enum cigar_op {
     BAM_CMATCH_=BAM_CMATCH,

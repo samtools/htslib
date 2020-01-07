@@ -25,7 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTSLIB_KHASH_STR2INT_H
 #define HTSLIB_KHASH_STR2INT_H
 
-#include <htslib/khash.h>
+#include "khash.h"
 
 KHASH_MAP_INIT_STR(str2int, int)
 

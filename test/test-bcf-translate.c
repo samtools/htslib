@@ -24,8 +24,10 @@
 */
 
 #include <config.h>
+
 #include <stdio.h>
-#include <htslib/vcf.h>
+
+#include "../htslib/vcf.h"
 
 void error(const char *format, ...)
 {

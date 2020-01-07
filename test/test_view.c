@@ -33,9 +33,9 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 
 #include "cram/cram.h"
-#include "htslib/sam.h"
-#include "htslib/vcf.h"
-#include "htslib/hts_log.h"
+#include "../htslib/sam.h"
+#include "../htslib/vcf.h"
+#include "../htslib/hts_log.h"
 
 struct opts {
     char *fn_ref;

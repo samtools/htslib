@@ -25,10 +25,11 @@ DEALINGS IN THE SOFTWARE.  */
 #include <config.h>
 
 #include <stdio.h>
-#include <htslib/hts.h>
-#include <htslib/vcf.h>
-#include <htslib/kstring.h>
-#include <htslib/kseq.h>
+
+#include "../htslib/hts.h"
+#include "../htslib/vcf.h"
+#include "../htslib/kstring.h"
+#include "../htslib/kseq.h"
 
 void error(const char *format, ...)
 {

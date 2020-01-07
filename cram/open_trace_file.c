@@ -79,9 +79,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/open_trace_file.h"
 #include "cram/misc.h"
-#include "htslib/hfile.h"
-#include "htslib/hts_log.h"
-#include "htslib/hts.h"
+#include "../htslib/hfile.h"
+#include "../htslib/hts_log.h"
+#include "../htslib/hts.h"
 
 /*
  * Returns whether the path refers to a regular file.

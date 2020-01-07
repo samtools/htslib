@@ -62,8 +62,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <math.h>
 
-#include "htslib/bgzf.h"
-#include "htslib/hfile.h"
+#include "../htslib/bgzf.h"
+#include "../htslib/hfile.h"
 #include "hts_internal.h"
 #include "cram/cram.h"
 #include "cram/os.h"
