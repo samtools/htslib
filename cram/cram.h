@@ -56,6 +56,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // This contains duplicated portions from cram_io.h and cram_structs.h,
 // so we want to ensure that the prototypes match.
-#include "htslib/cram.h"
+#include "../htslib/cram.h"
 
 #endif

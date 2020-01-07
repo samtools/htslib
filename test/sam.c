@@ -35,14 +35,14 @@ DEALINGS IN THE SOFTWARE.  */
 #include <unistd.h>
 
 // Suppress message for faidx_fetch_nseq(), which we're intentionally testing
-#include "htslib/hts_defs.h"
+#include "../htslib/hts_defs.h"
 #undef HTS_DEPRECATED
 #define HTS_DEPRECATED(message)
 
-#include "htslib/sam.h"
-#include "htslib/faidx.h"
-#include "htslib/khash.h"
-#include "htslib/hts_log.h"
+#include "../htslib/sam.h"
+#include "../htslib/faidx.h"
+#include "../htslib/khash.h"
+#include "../htslib/hts_log.h"
 
 KHASH_SET_INIT_STR(keep)
 typedef khash_t(keep) *keephash_t;

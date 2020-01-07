@@ -72,7 +72,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram/cram.h"
 #include "cram/os.h"
-#include "htslib/hts.h"
+#include "../htslib/hts.h"
 #include "cram/open_trace_file.h"
 #include "cram/rANS_static.h"
 
@@ -87,9 +87,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define RP(...)
 #endif
 
-#include "htslib/hfile.h"
-#include "htslib/bgzf.h"
-#include "htslib/faidx.h"
+#include "../htslib/hfile.h"
+#include "../htslib/bgzf.h"
+#include "../htslib/faidx.h"
 #include "hts_internal.h"
 
 #ifndef PATH_MAX

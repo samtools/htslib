@@ -36,8 +36,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>
 
 #include "cram/cram.h"
-#include "htslib/sam.h"
-#include "../sam_internal.h"
+#include "../htslib/sam.h"
+#include "sam_internal.h"
 
 /*---------------------------------------------------------------------------
  * Samtools compatibility portion

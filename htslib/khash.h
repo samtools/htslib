@@ -129,8 +129,9 @@ int main() {
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
-#include <htslib/kstring.h>
-#include <htslib/kroundup.h>
+
+#include "kstring.h"
+#include "kroundup.h"
 
 /* compiler specific configuration */
 

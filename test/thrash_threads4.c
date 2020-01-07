@@ -26,8 +26,9 @@ DEALINGS IN THE SOFTWARE.
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
-#include "htslib/bgzf.h"
-#include "htslib/thread_pool.h"
+
+#include "../htslib/bgzf.h"
+#include "../htslib/thread_pool.h"
 
 int main(int argc, char *argv[]) {
     if (argc <= 1) {

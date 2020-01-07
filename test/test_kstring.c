@@ -31,7 +31,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <inttypes.h>
 #include <getopt.h>
 
-#include <htslib/kstring.h>
+#include "../htslib/kstring.h"
 
 static inline void clamp(int64_t *val, int64_t min, int64_t max) {
     if (*val < min) *val = min;

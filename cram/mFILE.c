@@ -41,7 +41,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <unistd.h>
 #include <stdarg.h>
 
-#include "htslib/hts_log.h"
+#include "../htslib/hts_log.h"
 #include "cram/os.h"
 #include "cram/mFILE.h"
 
