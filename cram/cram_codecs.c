@@ -1158,6 +1158,10 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
         l = safe_itf8_get(cp, data_end, &codes[i].len);
         if (l < 1)
             break;
+        if (codes[i].len < 0) {
+            hts_log_error("Huffman code length (%d) is negative", codes[i].len);
+            goto malformed;
+        }
         if (max_len < codes[i].len)
             max_len = codes[i].len;
     }
