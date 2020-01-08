@@ -136,10 +136,10 @@ static void sam_hrecs_remove_ref_altnames(sam_hrecs_t *hrecs, int expected, cons
  *        -1 on failure
  */
 static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
-                                   int type,
+                                   khint32_t type,
                                    sam_hrec_type_t *h_type) {
     /* Add to reference hash? */
-    if ((type>>8) == 'S' && (type&0xff) == 'Q') {
+    if (type == TYPEKEY("SQ")) {
         sam_hrec_tag_t *tag = h_type->tag;
         int nref = hrecs->nref;
         const char *name = NULL;
@@ -259,7 +259,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
     }
 
     /* Add to read-group hash? */
-    if ((type>>8) == 'R' && (type&0xff) == 'G') {
+    if (type == TYPEKEY("RG")) {
         sam_hrec_tag_t *tag = sam_hrecs_find_key(h_type, "ID", NULL);
         int nrg = hrecs->nrg, r;
         khint_t k;
@@ -307,7 +307,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
     }
 
     /* Add to program hash? */
-    if ((type>>8) == 'P' && (type&0xff) == 'G') {
+    if (type == TYPEKEY("PG")) {
         sam_hrec_tag_t *tag;
         sam_hrec_pg_t *new_pg;
         int npg = hrecs->npg;
@@ -392,7 +392,7 @@ static int sam_hrecs_update_hashes(sam_hrecs_t *hrecs,
     return 0;
 }
 
-static int sam_hrecs_remove_hash_entry(sam_hrecs_t *hrecs, int type, sam_hrec_type_t *h_type) {
+static int sam_hrecs_remove_hash_entry(sam_hrecs_t *hrecs, khint32_t type, sam_hrec_type_t *h_type) {
     if (!hrecs || !h_type)
         return -1;
 
@@ -401,7 +401,7 @@ static int sam_hrecs_remove_hash_entry(sam_hrecs_t *hrecs, int type, sam_hrec_ty
     khint_t k;
 
     /* Remove name and any alternative names from reference hash */
-    if ((type>>8) == 'S' && (type&0xff) == 'Q') {
+    if (type == TYPEKEY("SQ")) {
         const char *altnames = NULL;
 
         tag = h_type->tag;
@@ -441,7 +441,7 @@ static int sam_hrecs_remove_hash_entry(sam_hrecs_t *hrecs, int type, sam_hrec_ty
     }
 
     /* Remove from read-group hash */
-    if ((type>>8) == 'R' && (type&0xff) == 'G') {
+    if (type == TYPEKEY("RG")) {
         tag = h_type->tag;
 
         while (tag) {
@@ -482,7 +482,7 @@ static int sam_hrecs_remove_hash_entry(sam_hrecs_t *hrecs, int type, sam_hrec_ty
 static void sam_hrecs_global_list_add(sam_hrecs_t *hrecs,
                                       sam_hrec_type_t *h_type,
                                       sam_hrec_type_t *after) {
-    const khint32_t hd_type = 'H' << 8 | 'D';
+    const khint32_t hd_type = TYPEKEY("HD");
     int update_first_line = 0;
 
     // First line seen
@@ -536,7 +536,7 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
     sam_hrec_type_t *h_type;
     sam_hrec_tag_t *h_tag, *last=NULL;
     int new;
-    khint32_t type_i = (type[0]<<8) | type[1], k;
+    khint32_t type_i = TYPEKEY(type), k;
 
     if (!strncmp(type, "HD", 2) && (h_type = sam_hrecs_find_type_id(hrecs, "HD", NULL, NULL)))
         return sam_hrecs_vupdate(hrecs, h_type, ap);
@@ -648,8 +648,7 @@ static int sam_hrecs_vadd(sam_hrecs_t *hrecs, const char *type, va_list ap, ...)
         last = h_tag;
     }
 
-    int itype = (type[0]<<8) | type[1];
-    if (-1 == sam_hrecs_update_hashes(hrecs, itype, h_type))
+    if (-1 == sam_hrecs_update_hashes(hrecs, TYPEKEY(type), h_type))
         return -1;
 
     if (!strncmp(type, "PG", 2))
@@ -687,7 +686,7 @@ static int sam_hrecs_remove_line(sam_hrecs_t *hrecs, const char *type_name, sam_
     if (!hrecs || !type_name || !type_found)
         return -1;
 
-    int itype = (type_name[0]<<8) | type_name[1];
+    khint32_t itype = TYPEKEY(type_name);
     khint_t k = kh_get(sam_hrecs_t, hrecs->h, itype);
     if (k == kh_end(hrecs->h))
         return -1;
@@ -786,12 +785,12 @@ static int sam_hrecs_parse_lines(sam_hrecs_t *hrecs, const char *hdr, size_t len
             return -1;
         }
 
-        type = (((uint8_t) hdr[i+1])<<8) | (uint8_t) hdr[i+2];
         if (!isalpha_c(hdr[i+1]) || !isalpha_c(hdr[i+2])) {
             sam_hrecs_error("Header line does not have a two character key",
                           &hdr[l_start], len - l_start, lno);
             return -1;
         }
+        type = TYPEKEY(&hdr[i+1]);
 
         i += 3;
         if (i == len || hdr[i] == '\n')
@@ -827,7 +826,7 @@ static int sam_hrecs_parse_lines(sam_hrecs_t *hrecs, const char *hdr, size_t len
 
         // Parse the tags on this line
         last = NULL;
-        if ((type>>8) == 'C' && (type&0xff) == 'O') {
+        if (type == TYPEKEY("CO")) {
             size_t j;
 
             if (i == len || hdr[i] != '\t') {
@@ -1624,8 +1623,7 @@ int sam_hdr_remove_except(sam_hdr_t *bh, const char *type, const char *ID_key, c
 
     sam_hrec_type_t *type_found = sam_hrecs_find_type_id(hrecs, type, ID_key, ID_value);
     if (!type_found) { // remove all line of this type
-        int itype = (type[0]<<8)|(type[1]);
-        khint_t k = kh_get(sam_hrecs_t, hrecs->h, itype);
+        khint_t k = kh_get(sam_hrecs_t, hrecs->h, TYPEKEY(type));
         if (k == kh_end(hrecs->h))
             return 0;
         type_found =  kh_val(hrecs->h, k);
@@ -1650,9 +1648,9 @@ int sam_hdr_remove_except(sam_hdr_t *bh, const char *type, const char *ID_key, c
     return 0;
 }
 
-int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *h) {
+int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *vrh) {
     sam_hrecs_t *hrecs;
-    rmhash_t *rh = (rmhash_t *)h;
+    rmhash_t *rh = (rmhash_t *)vrh;
 
     if (!bh || !type)
         return -1;
@@ -1667,8 +1665,7 @@ int sam_hdr_remove_lines(sam_hdr_t *bh, const char *type, const char *id, void *
         hrecs = bh->hrecs;
     }
 
-    int itype = (type[0]<<8)|(type[1]);
-    khint_t k = kh_get(sam_hrecs_t, hrecs->h, itype);
+    khint_t k = kh_get(sam_hrecs_t, hrecs->h, TYPEKEY(type));
     if (k == kh_end(hrecs->h)) // nothing to remove from
         return 0;
 
@@ -2411,7 +2408,6 @@ sam_hrec_type_t *sam_hrecs_find_type_id(sam_hrecs_t *hrecs, const char *type,
     if (!hrecs || !type)
         return NULL;
     sam_hrec_type_t *t1, *t2;
-    int itype = (type[0]<<8)|(type[1]);
     khint_t k;
 
     /* Special case for types we have prebuilt hashes on */
@@ -2444,7 +2440,7 @@ sam_hrec_type_t *sam_hrecs_find_type_id(sam_hrecs_t *hrecs, const char *type,
         }
     }
 
-    k = kh_get(sam_hrecs_t, hrecs->h, itype);
+    k = kh_get(sam_hrecs_t, hrecs->h, TYPEKEY(type));
     if (k == kh_end(hrecs->h))
         return NULL;
 
