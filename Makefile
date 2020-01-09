@@ -437,8 +437,8 @@ test/test-regidx: test/test-regidx.o libhts.a
 test/test-parse-reg: test/test-parse-reg.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-parse-reg.o libhts.a $(LIBS) -lpthread
 
-test/test_str2int: test/test_str2int.o
-	$(CC) $(LDFLAGS) -o $@ test/test_str2int.o
+test/test_str2int: test/test_str2int.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_str2int.o libhts.a $(LIBS) -lpthread
 
 test/test_view: test/test_view.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LIBS) -lpthread
