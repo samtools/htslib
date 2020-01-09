@@ -312,6 +312,8 @@ const char *fai_parse_region(const faidx_t *fai, const char *s,
 HTSLIB_EXPORT
 void fai_set_cache_size(faidx_t *fai, int cache_size);
 
+HTSLIB_EXPORT
+char *fai_path(const char *fa);
 #ifdef __cplusplus
 }
 #endif

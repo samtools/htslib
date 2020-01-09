@@ -58,6 +58,9 @@ int hts_idx_check_local(const char *fn, int fmt, char **fnidx);
 // Retrieve the name of the index file and also download it, if it is remote
 char *hts_idx_getfn(const char *fn, const char *ext);
 
+// Retrieve the name of the index file, but do not download it, if it is remote
+char *hts_idx_locatefn(const char *fn, const char *ext);
+
 // Used for on-the-fly indexing.  See the comments in hts.c.
 void hts_idx_amend_last(hts_idx_t *idx, uint64_t offset);
 

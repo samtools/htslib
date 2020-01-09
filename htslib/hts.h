@@ -623,6 +623,7 @@ When REST or NONE is used, idx is also ignored and may be NULL.
 #define HTS_FMT_BAI 1
 #define HTS_FMT_TBI 2
 #define HTS_FMT_CRAI 3
+#define HTS_FMT_FAI 4
 
 // Almost INT64_MAX, but when cast into a 32-bit int it's
 // also INT_MAX instead of -1.  This avoids bugs with old code

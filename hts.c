@@ -3449,7 +3449,7 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
             goto fail;
         }
         if (fmt.category != index_file || (fmt.format != bai &&  fmt.format != csi && fmt.format != tbi
-                && fmt.format != crai)) {
+                && fmt.format != crai && fmt.format != fai_format)) {
             hts_log_error("Format of index file '%s' is not supported", fn);
             goto fail;
         }
@@ -3531,6 +3531,7 @@ int hts_idx_check_local(const char *fn, int fmt, char **fnidx) {
     char *bai_ext = ".bai";
     char *tbi_ext = ".tbi";
     char *crai_ext = ".crai";
+    char *fai_ext = ".fai";
 
     if (!fn)
         return 0;
@@ -3626,6 +3627,13 @@ int hts_idx_check_local(const char *fn, int fmt, char **fnidx) {
                     break;
                 }
         }
+    } else if (fmt == HTS_FMT_FAI) { // Or .fai
+        strcpy(fnidx_tmp, fn_tmp); strcpy(fnidx_tmp + l_fn, fai_ext);
+        *fnidx = fnidx_tmp;
+        if(stat(fnidx_tmp, &sbuf) == 0)
+            return 1;
+        else
+            return 0;
     }
 
     free(fnidx_tmp);
@@ -3664,7 +3672,12 @@ static char *idx_filename(const char *fn, const char *ext, int download) {
 
 char *hts_idx_getfn(const char *fn, const char *ext)
 {
-    return idx_filename(fn, ext, 1);
+    return idx_filename(fn, ext, HTS_IDX_SAVE_REMOTE);
+}
+
+char *hts_idx_locatefn(const char *fn, const char *ext)
+{
+    return idx_filename(fn, ext, 0);
 }
 
 static hts_idx_t *idx_find_and_load(const char *fn, int fmt, int flags)

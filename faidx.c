@@ -922,3 +922,27 @@ const char *fai_parse_region(const faidx_t *fai, const char *s,
 void fai_set_cache_size(faidx_t *fai, int cache_size) {
     bgzf_set_cache_size(fai->bgzf, cache_size);
 }
+
+char *fai_path(const char *fa) {
+    char *fai = NULL;
+    if (!fa) {
+        hts_log_error("No reference file specified");
+
+    } else {
+        if (hisremote(fa)) {
+            char *fai = hts_idx_locatefn(fa, ".fai");       // get the remote fai file name, if any
+            if (!fai)
+                hts_log_error("Failed to locate index file for remote reference file '%s'", fa);
+        } else{
+            if (hts_idx_check_local(fa, HTS_FMT_FAI, &fai) && fai) {
+                if (fai_build3(fa, fai, NULL) == -1) {      // create local fai file by indexing local fasta
+                    hts_log_error("Failed to build index file for reference file '%s'", fa);
+                    free(fai);
+                    fai = NULL;
+                }
+            }
+        }
+    }
+
+    return fai;
+}
