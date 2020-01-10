@@ -1797,8 +1797,7 @@ static BGZF *bgzf_open_ref(char *fn, char *mode, int is_md5) {
  *         NULL on failure
  */
 static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
-    struct stat sb;
-    FILE *fp = NULL;
+    hFILE *fp = NULL;
     char fai_fn[PATH_MAX];
     char line[8192];
     refs_t *r = r_orig;
@@ -1810,13 +1809,6 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
     if (!r)
         if (!(r = refs_create()))
             goto err;
-
-    /* Open reference, for later use */
-    if (stat(fn, &sb) != 0) {
-        if (is_err)
-            perror(fn);
-        goto err;
-    }
 
     if (r->fp)
         if (bgzf_close(r->fp) != 0)
@@ -1835,17 +1827,12 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
     /* Parse .fai file and load meta-data */
     sprintf(fai_fn, "%.*s.fai", PATH_MAX-5, r->fn);
 
-    if (stat(fai_fn, &sb) != 0) {
+    if (!(fp = hopen(fai_fn, "r"))) {
         if (is_err)
             perror(fai_fn);
         goto err;
     }
-    if (!(fp = fopen(fai_fn, "r"))) {
-        if (is_err)
-            perror(fai_fn);
-        goto err;
-    }
-    while (fgets(line, 8192, fp) != NULL) {
+    while (hgets(line, 8192, fp) != NULL) {
         ref_entry *e = malloc(sizeof(*e));
         char *cp;
         int n;
@@ -1922,12 +1909,13 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         r->nref = ++id;
     }
 
-    fclose(fp);
+    if(hclose(fp) < 0)
+        goto err;
     return r;
 
  err:
     if (fp)
-        fclose(fp);
+        hclose_abruptly(fp);
 
     if (!r_orig)
         refs_free(r);
@@ -4079,6 +4067,15 @@ sam_hdr_t *cram_read_SAM_hdr(cram_fd *fd) {
  */
 static void full_path(char *out, char *in) {
     size_t in_l = strlen(in);
+    if (hisremote(in)) {
+        if (in_l > PATH_MAX) {
+            hts_log_error("Reference path is longer than %d", PATH_MAX);
+            return;
+        }
+        strncpy(out, in, PATH_MAX-1);
+        out[PATH_MAX-1] = 0;
+        return;
+    }
     if (*in == '/' ||
         // Windows paths
         (in_l > 3 && toupper_c(*in) >= 'A'  && toupper_c(*in) <= 'Z' &&
