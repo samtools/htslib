@@ -1,7 +1,9 @@
 #!/bin/sh
 # creating config.h
 hts_version="1.10.2"
-toolchain_file="/media/shan/OS/Hiruna/temp/android-sdk-linux/ndk-bundle/build/cmake/android.toolchain.cmake"
+
+# for armeabi-v7a and arm64-v8a cross compiling
+toolchain_file="set the path to /android-sdk-linux/ndk-bundle/build/cmake/android.toolchain.cmake"
 
 autoheader
 autoconf
