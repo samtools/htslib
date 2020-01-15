@@ -98,6 +98,12 @@ utilities, several manual pages, and a pkgconfig file to /usr/local.
 The installation location can be changed by configuring with --prefix=DIR
 or via 'make prefix=DIR install' (see Installation Locations below).
 
+CMake build
+==================
+
+set `hts_version` in the cmakerun.sh 
+set `toolchain_file` path in the cmakerun.sh #for android cross compiling
+run cmakerun.sh
 
 Configuration
 =============
