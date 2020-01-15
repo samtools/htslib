@@ -26,16 +26,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -rdynamic -Wall -O2 -std=c++11 ")
 
 include_directories(${PROJECT_SOURCE_DIR})
 
-# add_custom_command(
-#     COMMAND echo '#define HTS_VERSION_TEXT "1.10.2"' > ${PROJECT_SOURCE_DIR}/config.h
 
-#     # Display the given message before the commands are executed at build time
-#     COMMENT "Creating config.h"
-#     VERBATIM
-# )
-
-# set (headers bcf_sr_sort.h config.h header.h hfile_internal.h hts_internal.h sam_internal.h textutils_internal.h thread_pool_internal.h version.h
-	# cram_codecs.h cram_decode.h cram_encode.h cram.h cram_index.h cram_io.h cram_samtools.h cram_stats.h cram_structs.h mFILE.h misc.h open_trace_file.h os.h pooled_alloc.h rANS_byte.h rANS_static.h string_alloc.h )
 set (bcf_sr_sort bcf_sr_sort.c)
 set (bgzf bgzf.c)
 # set (bgzip bgzip.c) # has a main()
@@ -100,8 +91,6 @@ add_library(hts SHARED ${bcf_sr_sort} ${bgzf} ${hts} ${hts_os} ${kfunc}
 # 	${cram_encode} ${cram_external} ${cram_index} ${cram_io} ${cram_samtools} ${mFILE} ${open_trace_file} 
 # 	${pooled_alloc} ${rANS_static} ${string_alloc} ${multipart} )
 
-
-#add_subdirectory(${CMAKE_SOURCE_DIR}/example)
 
 IF (${DEPLOY_PLATFORM} STREQUAL "x86")
 	target_link_libraries(hts -lz -ldl -lm -lpthread)
