@@ -3,7 +3,7 @@
 hts_version="1.10.2"
 
 # for armeabi-v7a and arm64-v8a cross compiling
-toolchain_file="set the path to /android-sdk-linux/ndk-bundle/build/cmake/android.toolchain.cmake"
+toolchain_file="set path to /android-sdk-linux/ndk-bundle/build/cmake/android.toolchain.cmake"
 
 autoheader
 autoconf
@@ -28,9 +28,9 @@ cd build
 # make -j 8
 
 # # for architecture armeabi-V7a
-cmake .. -G Ninja -DCMAKE_TOOLCHAIN_FILE:STRING=$toolchain_file -DANDROID_PLATFORM=android-21 -DDEPLOY_PLATFORM:STRING="armeabi-v7a" -DANDROID_ABI="armeabi-v7a"
-ninja
+# cmake .. -G Ninja -DCMAKE_TOOLCHAIN_FILE:STRING=$toolchain_file -DANDROID_PLATFORM=android-21 -DDEPLOY_PLATFORM:STRING="armeabi-v7a" -DANDROID_ABI="armeabi-v7a"
+# ninja
 
 # # for architecture arm66-v8a
-# cmake .. -G Ninja -DCMAKE_TOOLCHAIN_FILE:STRING=/home/cyborg/Android/Sdk/ndk/20.0.5594570/build/cmake/android.toolchain.cmake -DANDROID_PLATFORM=android-21 -DDEPLOY_PLATFORM:STRING="arm64-v8a" -DANDROID_ABI="arm64-v8a"
-# ninja
+cmake .. -G Ninja -DCMAKE_TOOLCHAIN_FILE:STRING=$toolchain_file -DANDROID_PLATFORM=android-21 -DDEPLOY_PLATFORM:STRING="arm64-v8a" -DANDROID_ABI="arm64-v8a"
+ninja
