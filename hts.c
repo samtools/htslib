@@ -3395,6 +3395,7 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
             fclose(local_fp);
             free(s.s);
             *local_fn = p;
+            *local_len = e-p;
             return 0;
         }
 
