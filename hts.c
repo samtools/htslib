@@ -3416,7 +3416,7 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
         }
 
         if (download) {
-            if ((local_fp = fopen(s.s, "w")) == 0) {
+            if ((local_fp = fopen(s.s, "wb")) == 0) {
                 hts_log_error("Failed to create file %s in the working directory", p);
                 goto fail;
             }
@@ -3641,7 +3641,7 @@ static hts_idx_t *idx_find_and_load(const char *fn, int fmt, int flags)
         }
         fn2[fnidx - fn] = '\0';
         fnidx += strlen(HTS_IDX_DELIM);
-        idx = hts_idx_load2(fn2, fnidx);
+        idx = hts_idx_load3(fn2, fnidx, fmt, flags);
         free(fn2);
         return idx;
     }
