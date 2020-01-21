@@ -1960,14 +1960,14 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 #endif
 
 #define _get_mem(type_t, x, b, l) if (possibly_expand_bam_data((b), (l)) < 0) goto err_ret; *(x) = (type_t*)((b)->data + (b)->l_data); (b)->l_data += (l)
-#define _parse_err(cond, msg) do { if (cond) { hts_log_error(msg); goto err_ret; } } while (0)
-#define _parse_err_param(cond, msg, param) do { if (cond) { hts_log_error(msg, param); goto err_ret; } } while (0)
-#define _parse_warn(cond, msg) do { if (cond) { hts_log_warning(msg); } } while (0)
+#define _parse_err(cond, ...) do { if (cond) { hts_log_error(__VA_ARGS__); goto err_ret; } } while (0)
+#define _parse_warn(cond, ...) do { if (cond) { hts_log_warning(__VA_ARGS__); } } while (0)
 
     uint8_t *t;
 
     char *p = s->s, *q;
     int i, overflow = 0;
+    char logbuf[40];
     hts_pos_t cigreflen;
     bam1_core_t *c = &b->core;
 
@@ -1999,7 +1999,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         _parse_err(h->n_targets == 0, "no SQ lines present in the header");
         c->tid = bam_name2id(h, q);
         _parse_err(c->tid < -1, "failed to parse header");
-        _parse_warn(c->tid < 0, "urecognized reference name; treated as unmapped");
+        _parse_warn(c->tid < 0, "unrecognized reference name %s; treated as unmapped", hts_strprint(logbuf, sizeof logbuf, '"', q, SIZE_MAX));
     } else c->tid = -1;
 
     // pos
@@ -2051,8 +2051,8 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         c->mtid = -1;
     } else {
         c->mtid = bam_name2id(h, q);
-        _parse_err(c->tid < -1, "failed to parse header");
-        _parse_warn(c->mtid < 0, "urecognized mate reference name; treated as unmapped");
+        _parse_err(c->mtid < -1, "failed to parse header");
+        _parse_warn(c->mtid < 0, "unrecognized mate reference name %s; treated as unmapped", hts_strprint(logbuf, sizeof logbuf, '"', q, SIZE_MAX));
     }
     // mpos
     c->mpos = hts_str2uint(p, &p, 63, &overflow) - 1;
@@ -2098,7 +2098,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     q = p;
     p = s->s + s->l;
     while (q < p) {
-        uint8_t type;
+        char type;
         _parse_err(p - q < 5, "incomplete aux field");
         _parse_err(q[0] < '!' || q[1] < '!', "invalid aux tag id");
         // Copy over id
@@ -2175,7 +2175,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 
             if (sam_parse_B_vals(type, n, q, &q, r, b) < 0)
                 goto err_ret;
-        } else _parse_err_param(1, "unrecognized type %c", type);
+        } else _parse_err(1, "unrecognized type %s", hts_strprint(logbuf, sizeof logbuf, '\'', &type, 1));
 
         while (*q > '\t') { q++; } // Skip any junk to next tab
         q++;
@@ -2189,7 +2189,6 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 
 #undef _parse_warn
 #undef _parse_err
-#undef _parse_err_param
 #undef _get_mem
 #undef _read_token
 err_ret:
