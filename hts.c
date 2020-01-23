@@ -2747,7 +2747,7 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
                 if (e) {
                     off[n_off].u = e->offset;
 
-                    if (end == INT_MAX) {
+                    if (end >= HTS_POS_MAX) {
                        e = cram_index_last(cidx->cram, tid, NULL);
                     } else {
                        e = cram_index_query(cidx->cram, tid, end+1, NULL);
@@ -2953,8 +2953,8 @@ static void *hts_memrchr(const void *s, int c, size_t n) {
  *     (This is the standard bcftools region convention.)
  *
  *     When not set X:100 is considered to be X:100-<end> where <end> is
- *     the end of chromosome X (set to INT_MAX here).  X:100- and X:-100 are
- *     invalid.
+ *     the end of chromosome X (set to HTS_POS_MAX here).  X:100- and X:-100
+ *     are invalid.
  *     (This is the standard samtools region convention.)
  *
  * Note the supplied string expects 1 based inclusive coordinates, but the
