@@ -1420,7 +1420,14 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
 
     if (!has_SQ && fp->fn_aux) {
         kstring_t line = { 0, 0, NULL };
-        hFILE* f = hopen(fp->fn_aux, "r");
+
+        /* The reference index (.fai) is actually needed here */
+        char *fai_fn = fp->fn_aux;
+        char *fn_delim = strstr(fp->fn_aux, HTS_IDX_DELIM);
+        if (fn_delim)
+            fai_fn = fn_delim + strlen(HTS_IDX_DELIM);
+
+        hFILE* f = hopen(fai_fn, "r");
         int e = 0, absent;
         if (f == NULL)
             goto error;
@@ -1479,7 +1486,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
 
         ks_free(&line);
         if (hclose(f) != 0) {
-            hts_log_error("Error on closing %s", fp->fn_aux);
+            hts_log_error("Error on closing %s", fai_fn);
             e = 1;
         }
         if (e)

@@ -927,18 +927,25 @@ char *fai_path(const char *fa) {
     char *fai = NULL;
     if (!fa) {
         hts_log_error("No reference file specified");
-
     } else {
-        if (hisremote(fa)) {
-            char *fai = hts_idx_locatefn(fa, ".fai");       // get the remote fai file name, if any
+        char *fai_tmp = strstr(fa, HTS_IDX_DELIM);
+        if (fai_tmp) {
+            fai_tmp += strlen(HTS_IDX_DELIM);
+            fai = strdup(fai_tmp);
             if (!fai)
-                hts_log_error("Failed to locate index file for remote reference file '%s'", fa);
-        } else{
-            if (hts_idx_check_local(fa, HTS_FMT_FAI, &fai) && fai) {
-                if (fai_build3(fa, fai, NULL) == -1) {      // create local fai file by indexing local fasta
-                    hts_log_error("Failed to build index file for reference file '%s'", fa);
-                    free(fai);
-                    fai = NULL;
+                hts_log_error("Failed to allocate memory");
+        } else {
+            if (hisremote(fa)) {
+                char *fai = hts_idx_locatefn(fa, ".fai");       // get the remote fai file name, if any, but do not download the file
+                if (!fai)
+                    hts_log_error("Failed to locate index file for remote reference file '%s'", fa);
+            } else{
+                if (hts_idx_check_local(fa, HTS_FMT_FAI, &fai) == 0 && fai) {
+                    if (fai_build3(fa, fai, NULL) == -1) {      // create local fai file by indexing local fasta
+                        hts_log_error("Failed to build index file for reference file '%s'", fa);
+                        free(fai);
+                        fai = NULL;
+                    }
                 }
             }
         }

@@ -1764,7 +1764,7 @@ static refs_t *refs_create(void) {
 static BGZF *bgzf_open_ref(char *fn, char *mode, int is_md5) {
     BGZF *fp;
 
-    if (!is_md5) {
+    if (!is_md5 && !hisremote(fn)) {
         char fai_file[PATH_MAX];
 
         snprintf(fai_file, PATH_MAX, "%s.fai", fn);
@@ -1815,19 +1815,36 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
             goto err;
     r->fp = NULL;
 
-    if (!(r->fn = string_dup(r->pool, fn)))
+    /* Look for a FASTA##idx##FAI format */
+    char *fn_delim = strstr(fn, HTS_IDX_DELIM);
+    if (fn_delim) {
+        if (!(r->fn = string_ndup(r->pool, fn, fn_delim - fn)))
+            goto err;
+        fn_delim += strlen(HTS_IDX_DELIM);
+        snprintf(fai_fn, PATH_MAX, "%s", fn_delim);
+    } else {
+        /* An index file was provided, instead of the actual reference file */
+        if (fn_l > 4 && strcmp(&fn[fn_l-4], ".fai") == 0) {
+            if (!r->fn) {
+                if (!(r->fn = string_ndup(r->pool, fn, fn_l-4)))
+                    goto err;
+            }
+            snprintf(fai_fn, PATH_MAX, "%s", fn);
+        } else {
+        /* Only the reference file provided. Get the index file name from it */
+            if (!(r->fn = string_dup(r->pool, fn)))
+                goto err;
+            sprintf(fai_fn, "%.*s.fai", PATH_MAX-5, fn);
+        }
+    }
+
+    if (!(r->fp = bgzf_open_ref(r->fn, "r", 0))) {
+        hts_log_error("Failed to open reference file '%s'", r->fn);
         goto err;
-
-    if (fn_l > 4 && strcmp(&fn[fn_l-4], ".fai") == 0)
-        r->fn[fn_l-4] = 0;
-
-    if (!(r->fp = bgzf_open_ref(r->fn, "r", 0)))
-        goto err;
-
-    /* Parse .fai file and load meta-data */
-    sprintf(fai_fn, "%.*s.fai", PATH_MAX-5, r->fn);
+    }
 
     if (!(fp = hopen(fai_fn, "r"))) {
+        hts_log_error("Failed to open index file '%s'", fai_fn);
         if (is_err)
             perror(fai_fn);
         goto err;

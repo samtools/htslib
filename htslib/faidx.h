@@ -294,7 +294,7 @@ int faidx_seq_len(const faidx_t *fai, const char *seq);
     @param  beg   Returns the start of the region (0 based)
     @param  end   Returns the one past last of the region (0 based)
     @param  flags Parsing method, see HTS_PARSE_* in hts.h.
-    @return      pointer to end of parsed s if successs, NULL if not.
+    @return      pointer to end of parsed s if success, NULL if not.
 
     To work around ambiguous parsing issues, eg both "chr1" and "chr1:100-200"
     are reference names, quote using curly braces.
@@ -312,6 +312,19 @@ const char *fai_parse_region(const faidx_t *fai, const char *s,
 HTSLIB_EXPORT
 void fai_set_cache_size(faidx_t *fai, int cache_size);
 
+/// Determines the path to the reference index file
+/** @param  fa    String with the path to the reference file
+ *  @return       String with the path to the reference index file, or NULL on failure
+
+    If the reference path has the format reference.fa##idx##index.fa.fai,
+    the index path is taken directly from it as index.fa.fai.
+    If the reference file is local and the index file cannot be found, it
+    will be created alongside the reference file.
+    If the reference file is remote and the index file cannot be found,
+    the method returns NULL.
+
+    The returned string has to be freed by the user at the end of its scope.
+ */
 HTSLIB_EXPORT
 char *fai_path(const char *fa);
 #ifdef __cplusplus
