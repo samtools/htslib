@@ -2451,7 +2451,7 @@ static void *sam_parse_worker(void *arg) {
         // However this is an API change so for now we copy.
 
         char *nl = strchr(cp, '\n');
-        nl = nl ? nl : cp_end;
+        if (!nl)  nl = cp_end;
         if (*nl) *nl++ = '\0';
         kstring_t ks = {nl-cp, gl->alloc, cp};
         if (sam_parse1(&ks, fd->h, &b[i]) < 0) {

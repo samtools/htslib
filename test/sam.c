@@ -1551,7 +1551,7 @@ static int generator(const char *name)
     }
 
     if (fputs("@HD\tVN:1.4\n", f) < 0) goto cleanup;
-    if (fprintf(f, "@SQ\tSN:ref1\tLN:%u\n", MAX_RECS + SEQ_LEN) < 0)
+    if (fprintf(f, "@SQ\tSN:ref1\tLN:%d\n", MAX_RECS + SEQ_LEN) < 0)
         goto cleanup;
     for (i = 0; i < MAX_RECS; i++) {
         if (fprintf(f, "read%zu\t0\tref1\t%zu\t64\t100M\t*\t0\t0\t%.*s\t%.*s\n",

@@ -128,7 +128,10 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
     {
         if ( *tmp==',' || !*tmp )
         {
-            out = (int*) realloc(out, (nout+1)*sizeof(int));
+            int *otmp = (int*) realloc(out, (nout+1)*sizeof(int));
+            if (!otmp)
+                goto err;
+            out = otmp;
             if ( tmp-prev==1 && *prev=='.' )
             {
                 out[nout] = -1;
@@ -149,6 +152,11 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
     if ( str.m ) free(str.s);
     *nfilters = nout;
     return out;
+
+ err:
+    if (str.m) free(str.s);
+    free(out);
+    return NULL;
 }
 
 int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
@@ -313,7 +321,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     // Update list of chromosomes
     if ( !files->explicit_regs && !files->streaming )
     {
-        int n,i;
+        int n = 0, i;
         const char **names = reader->tbx_idx ? tbx_seqnames(reader->tbx_idx, &n) : bcf_hdr_seqnames(reader->header, &n);
         for (i=0; i<n; i++)
         {

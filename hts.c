@@ -1396,8 +1396,8 @@ int hts_getline(htsFile *fp, int delimiter, kstring_t *str)
 
 char **hts_readlist(const char *string, int is_file, int *_n)
 {
-    int m = 0, n = 0;
-    char **s = 0;
+    unsigned int m = 0, n = 0;
+    char **s = 0, **s_new;
     if ( is_file )
     {
         BGZF *fp = bgzf_open(string, "r");
@@ -1408,9 +1408,12 @@ char **hts_readlist(const char *string, int is_file, int *_n)
         while (bgzf_getline(fp, '\n', &str) >= 0)
         {
             if (str.l == 0) continue;
+            if (hts_resize(char*, n + 1, &m, &s, 0) < 0)
+                goto err;
+            s[n] = strdup(str.s);
+            if (!s[n])
+                goto err;
             n++;
-            hts_expand(char*,n,m,s);
-            s[n-1] = strdup(str.s);
         }
         bgzf_close(fp);
         free(str.s);
@@ -1422,57 +1425,83 @@ char **hts_readlist(const char *string, int is_file, int *_n)
         {
             if (*p == ',' || *p == 0)
             {
-                n++;
-                hts_expand(char*,n,m,s);
-                s[n-1] = (char*)calloc(p - q + 1, 1);
-                strncpy(s[n-1], q, p - q);
+                if (hts_resize(char*, n + 1, &m, &s, 0) < 0)
+                    goto err;
+                s[n] = (char*)calloc(p - q + 1, 1);
+                if (!s[n])
+                    goto err;
+                strncpy(s[n++], q, p - q);
                 q = p + 1;
             }
             if ( !*p ) break;
             p++;
         }
     }
-    s = (char**)realloc(s, n * sizeof(char*));
+    // Try to shrink s to the minimum size needed
+    s_new = (char**)realloc(s, n * sizeof(char*));
+    if (!s_new)
+        goto err;
+
+    s = s_new;
+    assert(n < INT_MAX); // hts_resize() should ensure this
     *_n = n;
     return s;
+
+ err:
+    for (m = 0; m < n; m++)
+        free(s[m]);
+    free(s);
+    return NULL;
 }
 
 char **hts_readlines(const char *fn, int *_n)
 {
-    int m = 0, n = 0;
-    char **s = 0;
+    unsigned int m = 0, n = 0;
+    char **s = 0, **s_new;
     BGZF *fp = bgzf_open(fn, "r");
     if ( fp ) { // read from file
         kstring_t str;
         str.s = 0; str.l = str.m = 0;
         while (bgzf_getline(fp, '\n', &str) >= 0) {
             if (str.l == 0) continue;
-            if (m == n) {
-                m = m? m<<1 : 16;
-                s = (char**)realloc(s, m * sizeof(char*));
-            }
-            s[n++] = strdup(str.s);
+            if (hts_resize(char *, n + 1, &m, &s, 0) < 0)
+                goto err;
+            s[n] = strdup(str.s);
+            if (!s[n])
+                goto err;
+            n++;
         }
         bgzf_close(fp);
-        s = (char**)realloc(s, n * sizeof(char*));
         free(str.s);
     } else if (*fn == ':') { // read from string
         const char *q, *p;
         for (q = p = fn + 1;; ++p)
             if (*p == ',' || *p == 0) {
-                if (m == n) {
-                    m = m? m<<1 : 16;
-                    s = (char**)realloc(s, m * sizeof(char*));
-                }
+                if (hts_resize(char *, n + 1, &m, &s, 0) < 0)
+                    goto err;
                 s[n] = (char*)calloc(p - q + 1, 1);
+                if (!s[n])
+                    goto err;
                 strncpy(s[n++], q, p - q);
                 q = p + 1;
                 if (*p == 0) break;
             }
     } else return 0;
-    s = (char**)realloc(s, n * sizeof(char*));
+    // Try to shrink s to the minimum size needed
+    s_new = (char**)realloc(s, n * sizeof(char*));
+    if (!s_new)
+        goto err;
+
+    s = s_new;
+    assert(n < INT_MAX); // hts_resize() should ensure this
     *_n = n;
     return s;
+
+ err:
+    for (m = 0; m < n; m++)
+        free(s[m]);
+    free(s);
+    return NULL;
 }
 
 // DEPRECATED: To be removed in a future HTSlib release
@@ -2033,6 +2062,7 @@ static int hts_idx_save_core(const hts_idx_t *idx, BGZF *fp, int fmt)
 int hts_idx_save(const hts_idx_t *idx, const char *fn, int fmt)
 {
     int ret, save;
+    if (idx == NULL || fn == NULL) { errno = EINVAL; return -1; }
     char *fnidx = (char*)calloc(1, strlen(fn) + 5);
     if (fnidx == NULL) return -1;
 
@@ -2675,7 +2705,7 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
     hts_pos_t beg, end;
     hts_reglist_t *curr_reg;
     hts_pair32_t *curr_intv;
-    hts_pair64_max_t *off = NULL;
+    hts_pair64_max_t *off = NULL, *tmp;
     cram_index *e = NULL;
 
     if (!cidx || !iter || !iter->multi)
@@ -2694,9 +2724,11 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
         tid = curr_reg->tid;
 
         if (tid >= 0) {
-            off = (hts_pair64_max_t*)realloc(off, (n_off + curr_reg->count) * sizeof(hts_pair64_max_t));
-            if (!off)
-                return -1;
+            tmp = (hts_pair64_max_t*)realloc(off, (n_off + curr_reg->count)
+                                             * sizeof(hts_pair64_max_t));
+            if (!tmp)
+                goto err;
+            off = tmp;
 
             for (j=0; j < curr_reg->count; j++) {
                 curr_intv = &curr_reg->intervals[j];
@@ -2747,7 +2779,10 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
                     e = cram_index_query(cidx->cram, tid, 1, NULL);
                     if (e) {
                         iter->read_rest = 1;
-                        off = (hts_pair64_max_t*)realloc(off, sizeof(hts_pair64_max_t));
+                        tmp = (hts_pair64_max_t*)realloc(off, sizeof(hts_pair64_max_t));
+                        if (!tmp)
+                            goto err;
+                        off = tmp;
                         off[0].u = e->offset;
                         off[0].v = 0;
                         off[0].max = 0;
@@ -2796,6 +2831,10 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
         iter->finished = 1;
 
     return 0;
+
+ err:
+    free(off);
+    return -1;
 }
 
 void hts_itr_destroy(hts_itr_t *iter)

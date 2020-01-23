@@ -1060,7 +1060,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     #define bcf_hdr_id2number(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>12)
     #define bcf_hdr_id2type(hdr,type,int_id)    (uint32_t)((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>4 & 0xf)
     #define bcf_hdr_id2coltype(hdr,type,int_id) (uint32_t)((hdr)->id[BCF_DT_ID][int_id].val->info[type] & 0xf)
-    #define bcf_hdr_idinfo_exists(hdr,type,int_id)  ((int_id<0 || bcf_hdr_id2coltype(hdr,type,int_id)==0xf) ? 0 : 1)
+    #define bcf_hdr_idinfo_exists(hdr,type,int_id)  ((int_id)>=0 && bcf_hdr_id2coltype((hdr),(type),(int_id))!=0xf)
     #define bcf_hdr_id2hrec(hdr,dict_type,col_type,int_id)    ((hdr)->id[(dict_type)==BCF_DT_CTG?BCF_DT_CTG:BCF_DT_ID][int_id].val->hrec[(dict_type)==BCF_DT_CTG?0:(col_type)])
     /// Convert BCF FORMAT data to string form
     /**

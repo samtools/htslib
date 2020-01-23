@@ -120,7 +120,7 @@ static int test_kputw_from_to(kstring_t *str, int s, int e) {
         }
         if (i != strtol(str->s, NULL, 10)) {
             fprintf(stderr,
-                    "kputw wrote the wrong value, expected %u, got %s\n",
+                    "kputw wrote the wrong value, expected %d, got %s\n",
                     i, str->s);
             return -1;
         }
