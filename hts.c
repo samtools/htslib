@@ -1551,7 +1551,6 @@ int hts_check_EOF(htsFile *fp)
 #define pair64_lt(a,b) ((a).u < (b).u)
 
 KSORT_INIT_STATIC(_off, hts_pair64_t, pair64_lt)
-KSORT_INIT_STATIC(_off_max, hts_pair64_max_t, pair64_lt)
 
 typedef struct {
     int32_t m, n;
@@ -2345,7 +2344,7 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
     int l, t, s;
     int i, j;
     hts_pos_t b, e;
-    hts_pair64_max_t *off;
+    hts_pair64_t *off;
     bidx_t *bidx;
     khint_t k;
 
@@ -2364,7 +2363,7 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
                 bins_t *p = &kh_value(bidx, k);
 
                 if (p->n) {
-                    off = (hts_pair64_max_t*)realloc(iter->off, (iter->n_off + p->n) * sizeof(hts_pair64_max_t));
+                    off = (hts_pair64_t*)realloc(iter->off, (iter->n_off + p->n) * sizeof(hts_pair64_t));
                     if (!off)
                         return -2;
 
@@ -2373,7 +2372,6 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
                         if (p->list[j].v > min_off && p->list[j].u < max_off) {
                             iter->off[iter->n_off].u = p->list[j].u;
                             iter->off[iter->n_off].v = p->list[j].v;
-                            iter->off[iter->n_off].max = ((uint64_t)tid<<32) | (end+1);
                             iter->n_off++;
                         }
                     }
@@ -2453,7 +2451,7 @@ uint64_t hts_itr_off(const hts_idx_t* idx, int tid) {
 hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, hts_readrec_func *readrec)
 {
     int i, n_off, l, bin;
-    hts_pair64_max_t *off;
+    hts_pair64_t *off;
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off, max_off;
@@ -2534,7 +2532,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                 iter->finished = 1;
                 return iter;
             }
-            off = (hts_pair64_max_t*)calloc(n_off, sizeof(hts_pair64_max_t));
+            off = (hts_pair64_t*)calloc(n_off, sizeof(hts_pair64_t));
             for (i = n_off = 0; i < iter->bins.n; ++i) {
                 if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
                     int j;
@@ -2553,7 +2551,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                 iter->finished = 1;
                 return iter;
             }
-            ks_introsort(_off_max, n_off, off);
+            ks_introsort(_off, n_off, off);
             // resolve completely contained adjacent blocks
             for (i = 1, l = 0; i < n_off; ++i)
                 if (off[l].v < off[i].v) off[++l] = off[i];
@@ -2577,7 +2575,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
 int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
 {
     int i, j, l, n_off = 0, bin;
-    hts_pair64_max_t *off = NULL;
+    hts_pair64_t *off = NULL;
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off, max_off, t_off = (uint64_t)-1;
@@ -2668,14 +2666,11 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
     n_off = iter->n_off;
 
     if (n_off) {
-        ks_introsort(_off_max, n_off, off);
+        ks_introsort(_off, n_off, off);
         // resolve completely contained adjacent blocks
         for (i = 1, l = 0; i < n_off; ++i) {
-            if (off[l].v < off[i].v) {
+            if (off[l].v < off[i].v)
                 off[++l] = off[i];
-            } else {
-                off[l].max = (off[i].max > off[l].max ? off[i].max : off[l].max);
-            }
         }
         n_off = l + 1;
         // resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
@@ -2685,7 +2680,6 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
         for (i = 1, l = 0; i < n_off; ++i) {
             if (off[l].v>>16 == off[i].u>>16) {
                 off[l].v = off[i].v;
-                off[l].max = (off[i].max > off[l].max ? off[i].max : off[l].max);
             } else off[++l] = off[i];
         }
         n_off = l + 1;
@@ -2705,7 +2699,7 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
     hts_pos_t beg, end;
     hts_reglist_t *curr_reg;
     hts_pair32_t *curr_intv;
-    hts_pair64_max_t *off = NULL, *tmp;
+    hts_pair64_t *off = NULL, *tmp;
     cram_index *e = NULL;
 
     if (!cidx || !iter || !iter->multi)
@@ -2724,8 +2718,8 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
         tid = curr_reg->tid;
 
         if (tid >= 0) {
-            tmp = (hts_pair64_max_t*)realloc(off, (n_off + curr_reg->count)
-                                             * sizeof(hts_pair64_max_t));
+            tmp = (hts_pair64_t*)realloc(off, (n_off + curr_reg->count)
+                                             * sizeof(hts_pair64_t));
             if (!tmp)
                 goto err;
             off = tmp;
@@ -2754,9 +2748,7 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
                     }
 
                     if (e) {
-                        off[n_off].v = e->offset + e->slice + e->len;
-                        off[n_off].max = (uint64_t)tid<<32 | end;
-                        n_off++;
+                        off[n_off++].v = e->offset + e->slice + e->len;
                     } else {
                         hts_log_warning("Could not set offset end for region %d:%"PRIhts_pos"-%"PRIhts_pos". Skipping", tid, beg, end);
                     }
@@ -2779,13 +2771,12 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
                     e = cram_index_query(cidx->cram, tid, 1, NULL);
                     if (e) {
                         iter->read_rest = 1;
-                        tmp = (hts_pair64_max_t*)realloc(off, sizeof(hts_pair64_max_t));
+                        tmp = (hts_pair64_t*)realloc(off, sizeof(hts_pair64_t));
                         if (!tmp)
                             goto err;
                         off = tmp;
                         off[0].u = e->offset;
                         off[0].v = 0;
-                        off[0].max = 0;
                         n_off=1;
                     } else {
                         hts_log_warning("No index entries");
@@ -2803,14 +2794,11 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
     }
 
     if (n_off) {
-        ks_introsort(_off_max, n_off, off);
+        ks_introsort(_off, n_off, off);
         // resolve completely contained adjacent blocks
         for (i = 1, l = 0; i < n_off; ++i) {
-            if (off[l].v < off[i].v) {
+            if (off[l].v < off[i].v)
                 off[++l] = off[i];
-            } else {
-                off[l].max = (off[i].max > off[l].max ? off[i].max : off[l].max);
-            }
         }
         n_off = l + 1;
         // resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
@@ -2818,9 +2806,8 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
             if (off[i-1].v >= off[i].u) off[i-1].v = off[i].u;
         // merge adjacent blocks
         for (i = 1, l = 0; i < n_off; ++i) {
-            if (off[l].v>>16 == off[i].u>>16) {
+            if (off[l].v == off[i].u) {
                 off[l].v = off[i].v;
-                off[l].max = (off[i].max > off[l].max ? off[i].max : off[l].max);
             } else off[++l] = off[i];
         }
         n_off = l + 1;
@@ -2840,10 +2827,11 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
 void hts_itr_destroy(hts_itr_t *iter)
 {
     if (iter) {
-        if (iter->multi)
+        if (iter->multi) {
             hts_reglist_free(iter->reg_list, iter->n_reg);
-        else
+        } else {
             free(iter->bins.a);
+        }
 
         if (iter->off)
             free(iter->off);
@@ -3198,7 +3186,6 @@ hts_itr_t *hts_itr_regions(const hts_idx_t *idx, hts_reglist_t *reglist, int cou
         itr->nocoor = 0;
         itr->multi = 1;
 
-
         for (i = 0; i < itr->n_reg; i++) {
             if (itr->reg_list[i].reg) {
                 if (!strcmp(itr->reg_list[i].reg, ".")) {
@@ -3376,11 +3363,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
         cr = iter->curr_reg;
         ci = iter->curr_intv;
 
-        if (beg >  iter->off[iter->i].max) {
-            iter->curr_off = iter->off[iter->i].v;
-            continue;
-        }
-        if (beg >  iter->reg_list[cr].max_end)
+        if (beg > iter->reg_list[cr].max_end)
             continue;
 
         for (i = ci; i < iter->reg_list[cr].count; i++) {

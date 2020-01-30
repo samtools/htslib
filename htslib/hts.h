@@ -675,7 +675,7 @@ typedef struct {
     int curr_tid, curr_reg, curr_intv;
     hts_pos_t curr_beg, curr_end;
     uint64_t curr_off, nocoor_off;
-    hts_pair64_max_t *off;
+    hts_pair64_t *off;
     hts_readrec_func *readrec;
     hts_seek_func *seek;
     hts_tell_func *tell;
