@@ -231,6 +231,9 @@ typedef struct __hts_idx_t hts_idx_t;
 //  - is_write and is_cram are used directly in samtools <= 1.1
 //  - fp is used directly in samtools (up to and including current develop)
 //  - line is used directly in bcftools (up to and including current develop)
+//  - is_bgzf and is_cram flags indicate which fp union member to use.
+//    Note is_bgzf being set does not indicate the flag is BGZF compressed,
+//    nor even whether it is compressed at all (eg on naked BAMs).
 typedef struct {
     uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, is_bgzf:1, dummy:27;
     int64_t lineno;

@@ -848,7 +848,7 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
 
     case bam:
     case sam:
-        if (!fp->is_bgzf) {
+        if (fp->format.compression != bgzf) {
             hts_log_error("%s file \"%s\" not BGZF compressed",
                           fp->format.format == bam ? "BAM" : "SAM", fn);
             ret = -1;
@@ -1402,7 +1402,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
         if (kputc('\n', &str) < 0)
             goto error;
 
-        if (fp->format.compression == bgzf) {
+        if (fp->is_bgzf) {
             next_c = bgzf_peek(fp->fp.bgzf);
         } else {
             unsigned char nc;
@@ -1620,7 +1620,7 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
             l_text = h->l_text;
         }
 
-        if (fp->format.compression == bgzf) {
+        if (fp->is_bgzf) {
             bytes = bgzf_write(fp->fp.bgzf, text, l_text);
         } else {
             bytes = hwrite(fp->fp.hfile, text, l_text);
@@ -1641,7 +1641,7 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
                 if (r != 0)
                     return -1;
 
-                if (fp->format.compression == bgzf) {
+                if (fp->is_bgzf) {
                     bytes = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
                 } else {
                     bytes = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
@@ -1650,7 +1650,7 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
                     return -1;
             }
         }
-        if (fp->format.compression == bgzf) {
+        if (fp->is_bgzf) {
             if (bgzf_flush(fp->fp.bgzf) != 0) return -1;
         } else {
             if (hflush(fp->fp.hfile) != 0) return -1;
@@ -2692,7 +2692,7 @@ static void *sam_dispatcher_write(void *vp) {
                 if (i < gl->data_size)
                     i++;
 
-                if (fp->format.compression == bgzf) {
+                if (fp->is_bgzf) {
                     if (bgzf_write(fp->fp.bgzf, &gl->data[j], i-j) != i-j)
                         goto err;
                 } else {
@@ -2731,7 +2731,7 @@ static void *sam_dispatcher_write(void *vp) {
             gl->bams = NULL;
             pthread_mutex_unlock(&fd->lines_m);
         } else {
-            if (fp->format.compression == bgzf) {
+            if (fp->is_bgzf) {
                 if (bgzf_write(fp->fp.bgzf, gl->data, gl->data_size) != gl->data_size)
                     goto err;
             } else {
@@ -3284,7 +3284,7 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
         } else {
             if (sam_format1(h, b, &fp->line) < 0) return -1;
             kputc('\n', &fp->line);
-            if (fp->format.compression == bgzf) {
+            if (fp->is_bgzf) {
                 if ( bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l ) return -1;
             } else {
                 if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
