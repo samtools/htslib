@@ -1215,27 +1215,30 @@ void bcf_destroy(bcf1_t *v)
 
 static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
 {
-    union {
-        uint32_t i;
-        float f;
-    } x[8];
+    uint8_t x[32];
     ssize_t ret;
+    uint32_t shared_len, indiv_len;
     if ((ret = bgzf_read(fp, x, 32)) != 32) {
         if (ret == 0) return -1;
         return -2;
     }
     bcf_clear1(v);
-    if (x[0].i < 24) return -2;
-    x[0].i -= 24; // to exclude six 32-bit integers
-    if (ks_resize(&v->shared, x[0].i) != 0) return -2;
-    if (ks_resize(&v->indiv, x[1].i) != 0) return -2;
-    v->rid  = x[2].i;
-    v->pos  = x[3].i;
-    v->rlen = x[4].i;
-    v->qual = x[5].f;
-    v->n_allele = x[6].i>>16; v->n_info = x[6].i&0xffff;
-    v->n_fmt = x[7].i>>24; v->n_sample = x[7].i&0xffffff;
-    v->shared.l = x[0].i, v->indiv.l = x[1].i;
+    shared_len = le_to_u32(x);
+    if (shared_len < 24) return -2;
+    shared_len -= 24; // to exclude six 32-bit integers
+    if (ks_resize(&v->shared, shared_len) != 0) return -2;
+    indiv_len = le_to_u32(x + 4);
+    if (ks_resize(&v->indiv, indiv_len) != 0) return -2;
+    v->rid  = le_to_i32(x + 8);
+    v->pos  = le_to_u32(x + 12);
+    v->rlen = le_to_u32(x + 16);
+    v->qual = le_to_float(x + 20);
+    v->n_info = le_to_u16(x + 24);
+    v->n_allele = le_to_u16(x + 26);
+    v->n_sample = le_to_u32(x + 28) & 0xffffff;
+    v->n_fmt = x[31];
+    v->shared.l = shared_len;
+    v->indiv.l = indiv_len;
     // silent fix of broken BCFs produced by earlier versions of bcf_subset, prior to and including bd6ed8b4
     if ( (!v->indiv.l || !v->n_sample) && v->n_fmt ) v->n_fmt = 0;
 
@@ -1762,18 +1765,16 @@ int bcf_write(htsFile *hfp, bcf_hdr_t *h, bcf1_t *v)
     }
 
     BGZF *fp = hfp->fp.bgzf;
-    union {
-        uint32_t i;
-        float f;
-    } x[8];
-    x[0].i = v->shared.l + 24; // to include six 32-bit integers
-    x[1].i = v->indiv.l;
-    x[2].i = v->rid;
-    x[3].i = v->pos;
-    x[4].i = v->rlen;
-    x[5].f = v->qual;
-    x[6].i = (uint32_t)v->n_allele<<16 | v->n_info;
-    x[7].i = (uint32_t)v->n_fmt<<24 | v->n_sample;
+    uint8_t x[32];
+    u32_to_le(v->shared.l + 24, x); // to include six 32-bit integers
+    u32_to_le(v->indiv.l, x + 4);
+    i32_to_le(v->rid, x + 8);
+    u32_to_le(v->pos, x + 12);
+    u32_to_le(v->rlen, x + 16);
+    float_to_le(v->qual, x + 20);
+    u16_to_le(v->n_info, x + 24);
+    u16_to_le(v->n_allele, x + 26);
+    u32_to_le((uint32_t)v->n_fmt<<24 | (v->n_sample & 0xffffff), x + 28);
     if ( bgzf_write(fp, x, 32) != 32 ) return -1;
     if ( bgzf_write(fp, v->shared.s, v->shared.l) != v->shared.l ) return -1;
     if ( bgzf_write(fp, v->indiv.s, v->indiv.l) != v->indiv.l ) return -1;

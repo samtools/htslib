@@ -54,18 +54,18 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
         if ( an>=0 && ac_ptr )
         {
             int nac = 0;
-            #define BRANCH_INT(type_t) {        \
-                type_t *p = (type_t *) ac_ptr;  \
+            #define BRANCH_INT(type_t, convert) {        \
                 for (i=0; i<ac_len; i++)        \
                 {                               \
-                    ac[i+1] = p[i];             \
-                    nac += p[i];                \
+                    type_t val = convert(ac_ptr + i * sizeof(type_t)); \
+                    ac[i+1] = val;             \
+                    nac += val;                \
                 }                               \
             }
             switch (ac_type) {
-                case BCF_BT_INT8:  BRANCH_INT(int8_t); break;
-                case BCF_BT_INT16: BRANCH_INT(int16_t); break;
-                case BCF_BT_INT32: BRANCH_INT(int32_t); break;
+                case BCF_BT_INT8:  BRANCH_INT(int8_t,  le_to_i8); break;
+                case BCF_BT_INT16: BRANCH_INT(int16_t, le_to_i16); break;
+                case BCF_BT_INT32: BRANCH_INT(int32_t, le_to_i32); break;
                 default: hts_log_error("Unexpected type %d at %s:%"PRIhts_pos, ac_type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
             }
             #undef BRANCH_INT
@@ -89,28 +89,29 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
         for (i=0; i<(int)line->n_fmt; i++)
             if ( line->d.fmt[i].id==gt_id ) { fmt_gt = &line->d.fmt[i]; break; }
         if ( !fmt_gt ) return 0;
-        #define BRANCH_INT(type_t,vector_end) { \
+        #define BRANCH_INT(type_t, convert, vector_end) { \
             for (i=0; i<line->n_sample; i++) \
             { \
-                type_t *p = (type_t*) (fmt_gt->p + i*fmt_gt->size); \
+                uint8_t *p = (fmt_gt->p + i*fmt_gt->size); \
                 int ial; \
                 for (ial=0; ial<fmt_gt->n; ial++) \
                 { \
-                    if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
-                    if ( bcf_gt_is_missing(p[ial]) ) continue; /* missing allele */ \
-                    if ( p[ial]>>1 > line->n_allele ) \
+                    int32_t val = convert(&p[ial * sizeof(type_t)]); \
+                    if ( val==vector_end ) break; /* smaller ploidy */ \
+                    if ( bcf_gt_is_missing(val) ) continue; /* missing allele */ \
+                    if ( val>>1 > line->n_allele ) \
                     { \
-                        hts_log_error("Incorrect allele (\"%d\") in %s at %s:%"PRIhts_pos, (p[ial]>>1)-1, header->samples[i], header->id[BCF_DT_CTG][line->rid].key, line->pos+1); \
+                        hts_log_error("Incorrect allele (\"%d\") in %s at %s:%"PRIhts_pos, (val>>1)-1, header->samples[i], header->id[BCF_DT_CTG][line->rid].key, line->pos+1); \
                         exit(1); \
                     } \
-                    ac[(p[ial]>>1)-1]++; \
+                    ac[(val>>1)-1]++; \
                 } \
             } \
         }
         switch (fmt_gt->type) {
-            case BCF_BT_INT8:  BRANCH_INT(int8_t,  bcf_int8_vector_end); break;
-            case BCF_BT_INT16: BRANCH_INT(int16_t, bcf_int16_vector_end); break;
-            case BCF_BT_INT32: BRANCH_INT(int32_t, bcf_int32_vector_end); break;
+            case BCF_BT_INT8:  BRANCH_INT(int8_t,  le_to_i8,  bcf_int8_vector_end); break;
+            case BCF_BT_INT16: BRANCH_INT(int16_t, le_to_i16, bcf_int16_vector_end); break;
+            case BCF_BT_INT32: BRANCH_INT(int32_t, le_to_i32, bcf_int32_vector_end); break;
             default: hts_log_error("Unexpected type %d at %s:%"PRIhts_pos, fmt_gt->type, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); exit(1); break;
         }
         #undef BRANCH_INT
@@ -122,13 +123,14 @@ int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which)
 int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial, int *_jal)
 {
     int i, nals = 0, has_ref = 0, has_alt = 0, ial = 0, jal = 0;
-    #define BRANCH_INT(type_t,vector_end) { \
-        type_t *p = (type_t*) (fmt_ptr->p + isample*fmt_ptr->size); \
+    #define BRANCH_INT(type_t, convert, vector_end) { \
+        uint8_t *p = fmt_ptr->p + isample*fmt_ptr->size; \
         for (i=0; i<fmt_ptr->n; i++) \
         { \
-            if ( p[i] == vector_end ) break; /* smaller ploidy */ \
-            if ( bcf_gt_is_missing(p[i]) ) return GT_UNKN; /* missing allele */ \
-            int tmp = p[i]>>1; \
+            int32_t val = convert(&p[i * sizeof(type_t)]); \
+            if ( val == vector_end ) break; /* smaller ploidy */ \
+            if ( bcf_gt_is_missing(val) ) return GT_UNKN; /* missing allele */ \
+            int tmp = val>>1; \
             if ( tmp>1 ) \
             { \
                 if ( !ial ) { ial = tmp; has_alt = 1; } \
@@ -151,9 +153,9 @@ int bcf_gt_type(bcf_fmt_t *fmt_ptr, int isample, int *_ial, int *_jal)
         } \
     }
     switch (fmt_ptr->type) {
-        case BCF_BT_INT8:  BRANCH_INT(int8_t,  bcf_int8_vector_end); break;
-        case BCF_BT_INT16: BRANCH_INT(int16_t, bcf_int16_vector_end); break;
-        case BCF_BT_INT32: BRANCH_INT(int32_t, bcf_int32_vector_end); break;
+        case BCF_BT_INT8:  BRANCH_INT(int8_t,  le_to_i8,  bcf_int8_vector_end); break;
+        case BCF_BT_INT16: BRANCH_INT(int16_t, le_to_i16, bcf_int16_vector_end); break;
+        case BCF_BT_INT32: BRANCH_INT(int32_t, le_to_i32, bcf_int32_vector_end); break;
         default: hts_log_error("Unexpected type %d", fmt_ptr->type); exit(1); break;
     }
     #undef BRANCH_INT
@@ -180,28 +182,29 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line)
     int *ac = (int*) calloc(line->n_allele,sizeof(int));
 
     // check if all alleles are populated
-    #define BRANCH(type_t,vector_end) { \
+    #define BRANCH(type_t, convert, vector_end) { \
         for (i=0; i<line->n_sample; i++) \
         { \
-            type_t *p = (type_t*) (gt->p + i*gt->size); \
+            uint8_t *p = gt->p + i*gt->size; \
             int ial; \
             for (ial=0; ial<gt->n; ial++) \
             { \
-                if ( p[ial]==vector_end ) break; /* smaller ploidy */ \
-                if ( bcf_gt_is_missing(p[ial]) ) continue; /* missing allele */ \
-                if ( (p[ial]>>1)-1 >= line->n_allele ) { \
+                int32_t val = convert(&p[ial * sizeof(type_t)]); \
+                if ( val==vector_end ) break; /* smaller ploidy */ \
+                if ( bcf_gt_is_missing(val) ) continue; /* missing allele */ \
+                if ( (val>>1)-1 >= line->n_allele ) { \
                     hts_log_error("Allele index is out of bounds at %s:%"PRIhts_pos, header->id[BCF_DT_CTG][line->rid].key, line->pos+1); \
                     ret = -1; \
                     goto clean; \
                 } \
-                ac[(p[ial]>>1)-1]++; \
+                ac[(val>>1)-1]++; \
             } \
         } \
     }
     switch (gt->type) {
-        case BCF_BT_INT8:  BRANCH(int8_t,  bcf_int8_vector_end); break;
-        case BCF_BT_INT16: BRANCH(int16_t, bcf_int16_vector_end); break;
-        case BCF_BT_INT32: BRANCH(int32_t, bcf_int32_vector_end); break;
+        case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8,  bcf_int8_vector_end); break;
+        case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, bcf_int16_vector_end); break;
+        case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, bcf_int32_vector_end); break;
         default: hts_log_error("Unexpected GT %d at %s:%"PRIhts_pos,
             gt->type, header->id[BCF_DT_CTG][line->rid].key, line->pos + 1);
             goto clean;
@@ -386,15 +389,15 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
         if (nret==1) // could be missing - check
         {
             int missing = 0;
-            #define BRANCH(type_t, is_missing) { \
-                type_t *p = (type_t *) info->vptr; \
+            #define BRANCH(type_t, convert, is_missing) { \
+                type_t val = convert(info->vptr); \
                 if ( is_missing ) missing = 1; \
             }
             switch (info->type) {
-                case BCF_BT_INT8:  BRANCH(int8_t,  p[0]==bcf_int8_missing); break;
-                case BCF_BT_INT16: BRANCH(int16_t, p[0]==bcf_int16_missing); break;
-                case BCF_BT_INT32: BRANCH(int32_t, p[0]==bcf_int32_missing); break;
-                case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[0])); break;
+                case BCF_BT_INT8:  BRANCH(int8_t, le_to_i8,  val==bcf_int8_missing); break;
+                case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, val==bcf_int16_missing); break;
+                case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, val==bcf_int32_missing); break;
+                case BCF_BT_FLOAT: BRANCH(float,   le_to_float, bcf_float_is_missing(val)); break;
                 default: hts_log_error("Unexpected type %d", info->type); goto err;
             }
             #undef BRANCH
@@ -684,18 +687,18 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
         if ( nori==1 && !(vlen==BCF_VL_A && nori==nA_ori) ) // all values may be missing - check
         {
             int all_missing = 1;
-            #define BRANCH(type_t, is_missing) { \
+            #define BRANCH(type_t, convert, is_missing) { \
                 for (j=0; j<line->n_sample; j++) \
                 { \
-                    type_t *p = (type_t*) (fmt->p + j*fmt->size); \
+                    type_t val = convert(fmt->p + j*fmt->size); \
                     if ( !(is_missing)) { all_missing = 0; break; } \
                 } \
             }
             switch (fmt->type) {
-                case BCF_BT_INT8:  BRANCH(int8_t,  p[0]==bcf_int8_missing); break;
-                case BCF_BT_INT16: BRANCH(int16_t, p[0]==bcf_int16_missing); break;
-                case BCF_BT_INT32: BRANCH(int32_t, p[0]==bcf_int32_missing); break;
-                case BCF_BT_FLOAT: BRANCH(float,   bcf_float_is_missing(p[0])); break;
+                case BCF_BT_INT8:  BRANCH(int8_t,  le_to_i8, val==bcf_int8_missing); break;
+                case BCF_BT_INT16: BRANCH(int16_t, le_to_i16, val==bcf_int16_missing); break;
+                case BCF_BT_INT32: BRANCH(int32_t, le_to_i32, val==bcf_int32_missing); break;
+                case BCF_BT_FLOAT: BRANCH(float,   le_to_float, bcf_float_is_missing(val)); break;
                 default: hts_log_error("Unexpected type %d", fmt->type); goto err;
             }
             #undef BRANCH

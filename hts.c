@@ -2152,8 +2152,10 @@ static int idx_read_core(hts_idx_t *idx, BGZF *fp, int fmt)
         }
         if (fmt != HTS_FMT_CSI) { // load linear index
             int j;
-            if (bgzf_read(fp, &l->n, 4) != 4) return -1;
-            if (is_be) ed_swap_4p(&l->n);
+            uint32_t x;
+            if (bgzf_read(fp, &x, 4) != 4) return -1;
+            if (is_be) ed_swap_4p(&x);
+            l->n = x;
             if (l->n < 0) return -3;
             if ((size_t) l->n > SIZE_MAX / sizeof(uint64_t)) return -2;
             l->m = l->n;
