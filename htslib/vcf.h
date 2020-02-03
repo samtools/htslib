@@ -1333,15 +1333,16 @@ static inline int bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 static inline int bcf_enc_size(kstring_t *s, int size, int type)
 {
     uint32_t e = 0;
+    uint8_t x[4];
     if (size >= 15) {
         e |= kputc(15<<4|type, s) < 0;
         if (size >= 128) {
             if (size >= 32768) {
-                int32_t x = size;
+                i32_to_le(size, x);
                 e |= kputc(1<<4|BCF_BT_INT32, s) < 0;
                 e |= kputsn((char*)&x, 4, s) < 0;
             } else {
-                int16_t x = size;
+                i16_to_le(size, x);
                 e |= kputc(1<<4|BCF_BT_INT16, s) < 0;
                 e |= kputsn((char*)&x, 2, s) < 0;
             }
@@ -1363,6 +1364,7 @@ static inline int bcf_enc_inttype(long x)
 static inline int bcf_enc_int1(kstring_t *s, int32_t x)
 {
     uint32_t e = 0;
+    uint8_t z[4];
     if (x == bcf_int32_vector_end) {
         e |= bcf_enc_size(s, 1, BCF_BT_INT8);
         e |= kputc(bcf_int8_vector_end, s) < 0;
@@ -1373,11 +1375,11 @@ static inline int bcf_enc_int1(kstring_t *s, int32_t x)
         e |= bcf_enc_size(s, 1, BCF_BT_INT8);
         e |= kputc(x, s) < 0;
     } else if (x <= BCF_MAX_BT_INT16 && x >= BCF_MIN_BT_INT16) {
-        int16_t z = x;
+        i16_to_le(x, z);
         e |= bcf_enc_size(s, 1, BCF_BT_INT16);
         e |= kputsn((char*)&z, 2, s) < 0;
     } else {
-        int32_t z = x;
+        i32_to_le(x, z);
         e |= bcf_enc_size(s, 1, BCF_BT_INT32);
         e |= kputsn((char*)&z, 4, s) < 0;
     }
