@@ -936,7 +936,7 @@ char *fai_path(const char *fa) {
                 hts_log_error("Failed to allocate memory");
         } else {
             if (hisremote(fa)) {
-                char *fai = hts_idx_locatefn(fa, ".fai");       // get the remote fai file name, if any, but do not download the file
+                fai = hts_idx_locatefn(fa, ".fai");       // get the remote fai file name, if any, but do not download the file
                 if (!fai)
                     hts_log_error("Failed to locate index file for remote reference file '%s'", fa);
             } else{
