@@ -2203,7 +2203,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
 
     static int extreme_int_warned = 0;
     char *r, *t;
-    int j, l, m, g;
+    int j, l, m, g, overflow = 0;
     khint_t k;
     ks_tokaux_t aux1;
     vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
@@ -2394,9 +2394,9 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                             ++t, x[l++] = is_phased;
                         } else {
                             char *tt = t;
-                            errno = 0;
-                            long val = strtol(t, &t, 10);
-                            if (errno == ERANGE || val > (INT32_MAX>>1)-1 || val < 0) {
+                            overflow = 0;
+                            long val = hts_str2int(t, &t, sizeof(val)*CHAR_BIT, &overflow);
+                            if (overflow || val < 0) {
                                 hts_log_error("Unsupported value:'%s' (too large or negative) at %s:%"PRIhts_pos, tt, bcf_seqname_safe(h,v), v->pos+1);
                                 return -1;
                             } else {
@@ -2420,10 +2420,10 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                     if (*t == '.') x[l++] = bcf_int32_missing, ++t; // ++t to skip "."
                     else
                     {
-                        errno = 0;
+                        overflow = 0;
                         char *te;
-                        long int tmp_val = strtol(t, &te, 10);
-                        if ( te==t || errno!=0 || tmp_val<BCF_MIN_BT_INT32 || tmp_val>BCF_MAX_BT_INT32 )
+                        long int tmp_val = hts_str2int(t, &te, sizeof(tmp_val)*CHAR_BIT, &overflow);
+                        if ( te==t || overflow )
                         {
                             if ( !extreme_int_warned )
                             {
@@ -2550,7 +2550,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     ks_tokaux_t aux;
     int max_n_flt = 0, max_n_val = 0;
     int32_t *flt_a = NULL, *val_a = NULL;
-    int ret = -2;
+    int ret = -2, overflow = 0;
     const uint32_t MAX_ALLELES = 65535; // n_allele is 16 bits
     const uint32_t MAX_INFO    = 65535; // n_info   is 16 bits
 
@@ -2592,9 +2592,9 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             }
             v->rid = kh_val(d, k).id;
         } else if (i == 1) { // POS
-            errno = 0;
-            v->pos = strtoll(p, NULL, 10);
-            if (errno == ERANGE || v->pos == INT64_MIN) {
+            overflow = 0;
+            v->pos = hts_str2uint(p, &p, 63, &overflow);
+            if (overflow) {
                 hts_log_error("Position value '%s' is too large", p);
                 goto err;
             } else {
@@ -2754,10 +2754,10 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 #ifdef VCF_ALLOW_INT64
                             if ( n_val==1 )
                             {
-                                errno = 0;
-                                long long int tmp_val = strtoll(val, &te, 10);
+                                overflow = 0;
+                                long long int tmp_val = hts_str2int(val, &te, sizeof(tmp_val)*CHAR_BIT, &overflow);
                                 if ( te==val ) tmp_val = bcf_int32_missing;
-                                else if ( te==val || errno!=0 || tmp_val<BCF_MIN_BT_INT64 || tmp_val>BCF_MAX_BT_INT64 )
+                                else if (overflow)
                                 {
                                     if ( !extreme_int_warned )
                                     {
@@ -2775,10 +2775,10 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 #endif
                             for (; i < n_val; ++i, ++t)
                             {
-                                errno = 0;
-                                long int tmp_val = strtol(t, &te, 10);
+                                overflow = 0;
+                                long int tmp_val = hts_str2int(t, &te, sizeof(tmp_val)*CHAR_BIT, &overflow);
                                 if ( te==t ) tmp_val = bcf_int32_missing;
-                                else if ( errno!=0 || tmp_val<BCF_MIN_BT_INT32 || tmp_val>BCF_MAX_BT_INT32 )
+                                else if (overflow)
                                 {
                                     if ( !extreme_int_warned )
                                     {
