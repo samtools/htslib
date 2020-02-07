@@ -48,15 +48,53 @@ extern "C" {
 #endif
 
 enum cram_block_method {
+    // Public methods as defined in the CRAM spec.
     BM_ERROR = -1,
+
+    // CRAM 2.x and 3.0
     RAW      = 0,
     GZIP     = 1,
     BZIP2    = 2,
     LZMA     = 3,
-    RANS     = 4,  // Generic; either order
-    RANS0    = 4,
-    RANS1    = 10, // Not externalised; stored as RANS (generic)
-    GZIP_RLE = 11, // NB: not externalised in CRAM
+    RANS     = 4,  RANS0 = RANS,
+
+    // CRAM 3.1 onwards
+    RANSPR   = 5,  RANS_PR0 = RANSPR,
+    ARITH    = 6,  ARITH_PR0 = ARITH,
+    FQZ      = 7,
+    TOK3     = 8,
+    // BSC = 9, ZSTD = 10.
+
+    // Paramaterised versions of the above and used by the encoder
+    // only for learning which parameters to use per data type.
+    FQZ_b=11, FQZ_c, FQZ_d, // Various preset FQZ methods
+
+  //RANS0,       // Order 0
+    RANS1,
+
+    GZIP_RLE,
+    GZIP_1,      // Z_DEFAULT_STRATEGY level 1, NB: not externalised in CRAM
+
+  //RANS_PR0,    // Order 0
+    RANS_PR1,    // Order 1
+    RANS_PR64,   // O0 + RLE
+    RANS_PR9,    // O1 + X4
+    RANS_PR128,  // O0 + Pack
+    RANS_PR129,  // O1 + Pack
+    RANS_PR192,  // O0 + RLE + pack
+    RANS_PR193,  // O1 + RLE + pack
+
+  //TOK3,   // tok+rans
+    TOKA,   // tok+arith
+
+  //ARITH_PR0,   // Order 0
+    ARITH_PR1,   // Order 1
+    ARITH_PR64,  // O0 + RLE
+    ARITH_PR9,   // O1 + X4
+    ARITH_PR128, // O0 + Pack
+    ARITH_PR129, // O1 + Pack
+    ARITH_PR192, // O0 + RLE + pack
+    ARITH_PR193, // O1 + RLE + pack
 };
 
 enum cram_content_type {
