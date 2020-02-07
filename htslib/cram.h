@@ -48,16 +48,22 @@ extern "C" {
 #endif
 
 enum cram_block_method {
+    // Public methods as defined in the CRAM spec.
     BM_ERROR = -1,
+
+    // CRAM 2.x and 3.0
     RAW      = 0,
     GZIP     = 1,
     BZIP2    = 2,
     LZMA     = 3,
     RANS     = 4, RANS0 = RANS,
+
+    // CRAM 3.1 onwards
     RANSPR   = 5, RANS_PR0  = RANSPR,
     ARITH    = 6, ARITH_PR0 = ARITH,
     FQZ      = 7,
-    TOK3     = 8, NAME_TOK3 = TOK3,
+    TOK3     = 8,
+    // BSC = 9, ZSTD = 10
 
     // Methods not externalised, but used in metrics.
     // Externally they become one of the above methods.
@@ -78,8 +84,8 @@ enum cram_block_method {
     RANS_PR192,  // O0 + RLE + pack
     RANS_PR193,  // O1 + RLE + pack
 
-  //NAME_TOK3,   // tok+rans
-    NAME_TOKA,   // tok+arith
+  //TOK3,   // tok+rans
+    TOKA,   // tok+arith
 
   //ARITH_PR0,   // Order 0
     ARITH_PR1,   // Order 1

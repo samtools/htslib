@@ -6,6 +6,7 @@ htscodecs_fqzcomp_qual_h =
 htscodecs_pack_h =
 htscodecs_rANS_static_h =
 htscodecs_rANS_static4x16_h =
+htscodecs_rle_h =
 htscodecs_tokenise_name3_h =
 htscodecs_varint_h =
 

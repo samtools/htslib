@@ -333,15 +333,17 @@ int cram_transcode_rg(cram_fd *in, cram_fd *out,
     char *op = cp;
     char *endp = cp + cram_block_get_uncomp_size(o_blk);
     //fprintf(stderr, "sz = %d\n", (int)(endp-cp));
-    int32_t i32;
+    int32_t i32, err = 0;
 
-    cp += safe_itf8_get(cp, endp, &i32);
+    i32 = in->vv.varint_get32(&cp, endp, &err);
     cp += i32;
-    cp += safe_itf8_get(cp, endp, &i32);
+    i32 = in->vv.varint_get32(&cp, endp, &err);
     cp += i32;
     op = cp;
-    cp += safe_itf8_get(cp, endp, &i32);
+    i32 = in->vv.varint_get32(&cp, endp, &err);
     i32 += (cp-op);
+    if (err)
+        return -2;
 
     //fprintf(stderr, "remaining %d bytes\n", i32);
     cram_block_set_size(n_blk, cram_block_get_size(n_blk)-2);

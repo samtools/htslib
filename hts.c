@@ -1169,7 +1169,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
         fp->fp.cram = cram_dopen(hfile, fn, simple_mode);
         if (fp->fp.cram == NULL) goto error;
         if (!fp->is_write)
-            cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, 1);
+            cram_set_option(fp->fp.cram, CRAM_OPT_DECODE_MD, -1); // auto
         fp->is_cram = 1;
         break;
 

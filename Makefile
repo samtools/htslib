@@ -217,6 +217,7 @@ htscodecs_fqzcomp_qual_h = htscodecs/htscodecs/fqzcomp_qual.h
 htscodecs_pack_h = htscodecs/htscodecs/pack.h
 htscodecs_rANS_static_h = htscodecs/htscodecs/rANS_static.h
 htscodecs_rANS_static4x16_h = htscodecs/htscodecs/rANS_static4x16.h
+htscodecs_rle_h = htscodecs/htscodecs/rle.h
 htscodecs_tokenise_name3_h = htscodecs/htscodecs/tokenise_name3.h
 htscodecs_varint_h = htscodecs/htscodecs/varint.h
 
@@ -378,12 +379,12 @@ probaln.o probaln.pico: probaln.c config.h $(htslib_hts_h)
 realn.o realn.pico: realn.c config.h $(htslib_hts_h) $(htslib_sam_h)
 textutils.o textutils.pico: textutils.c config.h $(htslib_hfile_h) $(htslib_kstring_h) $(htslib_sam_h) $(hts_internal_h)
 
-cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(cram_h)
+cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(htslib_hts_endian_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_rle_h) $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h)
 cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(sam_internal_h) $(htslib_hts_h) $(htslib_hts_endian_h)
 cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htslib_hfile_h) $(cram_h)
 cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h)
-cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(cram_open_trace_file_h) $(htscodecs_rANS_static_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_arith_dynamic_h) $(htscodecs_tokenise_name3_h) $(htscodecs_fqzcomp_qual_h) $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
+cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(cram_open_trace_file_h) $(htscodecs_rANS_static_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_arith_dynamic_h) $(htscodecs_tokenise_name3_h) $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
 cram/cram_stats.o cram/cram_stats.pico: cram/cram_stats.c config.h $(cram_h) $(cram_os_h)
 cram/mFILE.o cram/mFILE.pico: cram/mFILE.c config.h $(htslib_hts_log_h) $(cram_os_h) cram/mFILE.h
 cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c config.h $(cram_os_h) $(cram_open_trace_file_h) $(cram_misc_h) $(htslib_hfile_h) $(htslib_hts_log_h) $(htslib_hts_h)
@@ -394,8 +395,9 @@ thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h)
 htscodecs/htscodecs/arith_dynamic.o htscodecs/htscodecs/arith_dynamic.pico: htscodecs/htscodecs/arith_dynamic.c config.h $(htscodecs_arith_dynamic_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_c_simple_model.h)
 htscodecs/htscodecs/fqzcomp_qual.o htscodecs/htscodecs/fqzcomp_qual.pico: htscodecs/htscodecs/fqzcomp_qual.c config.h $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h) $(htscodecs_c_simple_model.h)
 htscodecs/htscodecs/pack.o htscodecs/htscodecs/pack.pico: htscodecs/htscodecs/pack.c config.h $(htscodecs_pack_h)
-htscodecs/htscodecs/rANS_static4x16pr.o htscodecs/htscodecs/rANS_static4x16pr.pico: htscodecs/htscodecs/rANS_static4x16pr.c config.h $(htscodecs_rANS_word_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_varint_h) $(htscodecs_pack_h)
+htscodecs/htscodecs/rANS_static4x16pr.o htscodecs/htscodecs/rANS_static4x16pr.pico: htscodecs/htscodecs/rANS_static4x16pr.c config.h $(htscodecs_rANS_word_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_varint_h) $(htscodecs_pack_h) $(htscodecs_rle_h)
 htscodecs/htscodecs/rANS_static.o htscodecs/htscodecs/rANS_static.pico: htscodecs/htscodecs/rANS_static.c config.h $(htscodecs_rANS_byte_h) $(htscodecs_rANS_static_h)
+htscodecs/htscodecs/rle.o htscodecs/htscodecs/rle.pico: htscodecs/htscodecs/rle.c config.h $(htscodecs_varint_h) $(htscodecs_rle_h)
 htscodecs/htscodecs/tokenise_name3.o htscodecs/htscodecs/tokenise_name3.pico: htscodecs/htscodecs/tokenise_name3.c config.h $(htscodecs_pooled_alloc_h) $(htscodecs_arith_dynamic_h) $(htscodecs_rANS_static4x16_h) $(htscodecs_tokenise_name3_h) $(htscodecs_varint_h)
 
 
