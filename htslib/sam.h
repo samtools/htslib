@@ -312,6 +312,13 @@ typedef struct {
  @return    4-bit integer representing the base.
  */
 #define bam_seqi(s, i) ((s)[(i)>>1] >> ((~(i)&1)<<2) & 0xf)
+/*!
+ @abstract  Modifies a single base in the bam structure.
+ @param s   Query sequence returned by bam_get_seq()
+ @param i   The i-th position, 0-based
+ @param b   Base in nt16 nomenclature (see seq_nt16_table)
+*/
+#define bam_set_seqi(s,i,b) ((s)[(i)>>1] = ((s)[(i)>>1] & (0xf0 >> ((~(i)&1)<<2))) | ((b)<<((~(i)&1)<<2)))
 
 /**************************
  *** Exported functions ***
