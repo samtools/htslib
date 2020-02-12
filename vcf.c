@@ -3919,10 +3919,15 @@ int bcf_get_variant_type(bcf1_t *rec, int ith_allele)
 
 int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const void *values, int n, int type)
 {
+    static int negative_rlen_warned = 0;
+    int is_end_tag;
+
     // Is the field already present?
     int i, inf_id = bcf_hdr_id2int(hdr,BCF_DT_ID,key);
     if ( !bcf_hdr_idinfo_exists(hdr,BCF_HL_INFO,inf_id) ) return -1;    // No such INFO field in the header
     if ( !(line->unpacked & BCF_UN_INFO) ) bcf_unpack(line, BCF_UN_INFO);
+
+    is_end_tag = strcmp(key, "END") == 0;
 
     for (i=0; i<line->n_info; i++)
         if ( inf_id==line->d.info[i].key ) break;
@@ -3930,7 +3935,7 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
 
     if ( !n || (type==BCF_HT_STR && !values) )
     {
-        if ( n==0 && !strcmp("END",key) )
+        if ( n==0 && is_end_tag )
             line->rlen = line->n_allele ? strlen(line->d.allele[0]) : 0;
         if ( inf )
         {
@@ -3945,6 +3950,22 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
             inf->vptr_off = inf->vptr_len = 0;
         }
         return 0;
+    }
+
+    if (is_end_tag)
+    {
+        if (n != 1)
+        {
+            hts_log_error("END info tag should only have one value");
+            line->errcode |= BCF_ERR_TAG_INVALID;
+            return -1;
+        }
+        if (type != BCF_HT_INT && type != BCF_HT_LONG)
+        {
+            hts_log_error("Wrong type (%d) for END info tag", type);
+            line->errcode |= BCF_ERR_TAG_INVALID;
+            return -1;
+        }
     }
 
     // Encode the values and determine the size required to accommodate the values
@@ -4012,10 +4033,22 @@ int bcf_update_info(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const v
     }
     line->unpacked |= BCF_UN_INFO;
 
-    if ( n==1 && !strcmp("END",key) ) {
-        assert(type == BCF_HT_INT || type == BCF_HT_LONG);
-        int64_t end = type == BCF_HT_INT ? *(int32_t *) values : *(int64_t *) values;
-        line->rlen = end - line->pos;
+   if ( n==1 && is_end_tag) {
+        hts_pos_t end = type == BCF_HT_INT ? *(int32_t *) values : *(int64_t *) values;
+        if ( (type == BCF_HT_INT && end!=bcf_int32_missing) || (type == BCF_HT_LONG && end!=bcf_int64_missing) )
+        {
+            if ( end <= line->pos )
+            {
+                if ( !negative_rlen_warned )
+                {
+                    hts_log_warning("INFO/END=%"PRIhts_pos" is smaller than POS at %s:%"PRIhts_pos,end,bcf_seqname(hdr,line),line->pos+1);
+                    negative_rlen_warned = 1;
+                }
+                line->rlen = line->n_allele ? strlen(line->d.allele[0]) : 0;
+            }
+            else
+                line->rlen = end - line->pos;
+        }
     }
     return 0;
 }
