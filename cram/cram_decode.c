@@ -987,6 +987,12 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
         cp += safe_itf8_get((char *)cp,  (char *)cp_end, &i32);
         hdr->ref_seq_span = i32;
 #endif
+        if (hdr->ref_seq_start < 0 || hdr->ref_seq_span < 0) {
+            free(hdr);
+            hts_log_error("Negative values not permitted for header "
+                          "sequence start or span fields");
+            return NULL;
+        }
     }
     cp += safe_itf8_get((char *)cp,  (char *)cp_end, &hdr->num_records);
     hdr->record_counter = 0;
