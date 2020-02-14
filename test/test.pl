@@ -49,6 +49,7 @@ test_view($opts,4);
 test_MD($opts);
 
 test_vcf_api($opts,out=>'test-vcf-api.out');
+test_bcf2vcf($opts);
 test_vcf_sweep($opts,out=>'test-vcf-sweep.out');
 test_vcf_various($opts);
 test_bcf_sr_sort($opts);
@@ -787,6 +788,14 @@ sub test_index
         $wtmp =~ s/\//\\\\/g;
     }
     test_cmd($opts,out=>'tabix.out',cmd=>"$$opts{bin}/tabix $wtmp/index.vcf.gz##idx##$wtmp/index.vcf.gz.tbi 1:10000060-10000060");
+}
+
+sub test_bcf2vcf
+{
+    my ($opts) = @_;
+    test_cmd($opts,
+             out => "tabix/vcf_file.vcf",
+             cmd => "$$opts{path}/test_view $$opts{path}/tabix/vcf_file.bcf");
 }
 
 sub test_vcf_api
