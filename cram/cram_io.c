@@ -3852,9 +3852,9 @@ cram_slice *cram_read_slice(cram_fd *fd) {
     for (i = 0; i < n; i++) {
         if (s->block[i]->content_type != EXTERNAL)
             continue;
-        int v = s->block[i]->content_id;
-        if (v < 0 || v >= 256)
-            v = 256 + (v > 0 ? v % 251 : (-v) % 251);
+        uint32_t v = s->block[i]->content_id;
+        if (v >= 256)
+            v = 256 + v % 251;
         s->block_by_id[v] = s->block[i];
     }
 
