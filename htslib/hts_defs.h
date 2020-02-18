@@ -25,7 +25,9 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTSLIB_HTS_DEFS_H
 #define HTSLIB_HTS_DEFS_H
 
+#if defined __MINGW32__
 #include <stdio.h>     // For __MINGW_PRINTF_FORMAT macro
+#endif
 
 #ifdef __clang__
 #ifdef __has_attribute

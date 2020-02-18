@@ -31,7 +31,6 @@
 #define HTSLIB_BGZF_H
 
 #include <stdint.h>
-#include <stdio.h>
 #include <sys/types.h>
 
 #include "hts_defs.h"

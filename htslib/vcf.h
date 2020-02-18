@@ -35,7 +35,6 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdint.h>
 #include <limits.h>
-#include <assert.h>
 #include <errno.h>
 #include "hts.h"
 #include "kstring.h"

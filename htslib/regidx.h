@@ -64,8 +64,6 @@
 #ifndef HTSLIB_REGIDX_H
 #define HTSLIB_REGIDX_H
 
-#include <stdio.h>
-#include <inttypes.h>
 #include "hts.h"
 
 #ifdef __cplusplus
