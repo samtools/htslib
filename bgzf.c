@@ -226,6 +226,38 @@ int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t e
     return 0;
 }
 
+/*
+ * bgzf analogue to hts_idx_amend_last.
+ *
+ * This is needed when multi-threading and writing indices on the fly.
+ * At the point of writing a record we know the virtual offset for start
+ * and end, but that end virtual offset may be the end of the current
+ * block.  In standard indexing our end virtual offset becomes the start
+ * of the next block.  Thus to ensure bit for bit compatibility we
+ * detect this boundary case and fix it up here.
+ *
+ * In theory this has no behavioural change, but it also works around
+ * a bug elsewhere which causes bgzf_read to return 0 when our offset
+ * is the end of a block rather than the start of the next.
+ */
+void bgzf_idx_amend_last(BGZF *fp, hts_idx_t *hidx, uint64_t offset) {
+    mtaux_t *mt = fp->mt;
+    if (!mt)
+        return hts_idx_amend_last(hidx, offset);
+
+    pthread_mutex_lock(&mt->idx_m);
+    hts_idx_cache_t *ic = &mt->idx_cache;
+    if (ic->nentries > 0) {
+        hts_idx_cache_entry *e = &ic->e[ic->nentries-1];
+        if ((offset & 0xffff) == 0 && e->offset != 0) {
+            // bumped to next block number
+            e->offset = 0;
+            e->block_number++;
+        }
+    }
+    pthread_mutex_unlock(&mt->idx_m);
+}
+
 static int bgzf_idx_flush(BGZF *fp) {
     mtaux_t *mt = fp->mt;
 

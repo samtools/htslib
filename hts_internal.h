@@ -108,6 +108,18 @@ void close_plugin(void *plugin);
  */
 int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t offset, int is_mapped);
 
+/*
+ * bgzf analogue to hts_idx_amend_last.
+ *
+ * This is needed when multi-threading and writing indices on the fly.
+ * At the point of writing a record we know the virtual offset for start
+ * and end, but that end virtual offset may be the end of the current
+ * block.  In standard indexing our end virtual offset becomes the start
+ * of the next block.  Thus to ensure bit for bit compatibility we
+ * detect this boundary case and fix it up here.
+ */
+void bgzf_idx_amend_last(BGZF *fp, hts_idx_t *hidx, uint64_t offset);
+
 #ifdef __cplusplus
 }
 #endif
