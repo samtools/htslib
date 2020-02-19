@@ -1155,7 +1155,21 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
                 return -1;
             }
             available = fp->block_length - fp->block_offset;
-            if (available <= 0) break;
+            if (available == 0) {
+                if (fp->block_length == 0)
+                    break; // EOF
+
+                // Offset was at end of block (see commit e9863a0)
+                fp->block_address = bgzf_htell(fp);
+                fp->block_offset = fp->block_length = 0;
+                continue;
+            } else if (available < 0) {
+                // Block offset was set to an invalid coordinate
+                hts_log_error("BGZF block offset %d set beyond block size %d",
+                              fp->block_offset, fp->block_length);
+                fp->errcode |= BGZF_ERR_MISUSE;
+                return -1;
+            }
         }
         copy_length = length - bytes_read < available? length - bytes_read : available;
         buffer = (uint8_t*)fp->uncompressed_block;
