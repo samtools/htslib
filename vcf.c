@@ -150,7 +150,7 @@ int HTS_RESULT_USED bcf_hdr_parse_sample_line(bcf_hdr_t *h, const char *str)
     const char *p, *q;
     // add samples
     for (p = q = str;; ++q) {
-        if (*q != '\t' && *q != 0 && *q != '\n') continue;
+        if (*q > '\n') continue;
         if (++i > 9) {
             if ( bcf_hdr_add_sample_len(h, p, q - p) < 0 ) ret = -1;
         }
@@ -2396,7 +2396,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                             char *tt = t;
                             overflow = 0;
                             long val = hts_str2int(t, &t, sizeof(val)*CHAR_BIT, &overflow);
-                            if (overflow || val < 0) {
+                            if (overflow || val > (INT32_MAX>>1)-1 || val < 0) {
                                 hts_log_error("Unsupported value:'%s' (too large or negative) at %s:%"PRIhts_pos, tt, bcf_seqname_safe(h,v), v->pos+1);
                                 return -1;
                             } else {
@@ -2423,7 +2423,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                         overflow = 0;
                         char *te;
                         long int tmp_val = hts_str2int(t, &te, sizeof(tmp_val)*CHAR_BIT, &overflow);
-                        if ( te==t || overflow )
+                        if ( te==t || overflow || tmp_val<BCF_MIN_BT_INT32 || tmp_val>BCF_MAX_BT_INT32 )
                         {
                             if ( !extreme_int_warned )
                             {
@@ -2540,19 +2540,250 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
     return 0;
 }
 
+static khint_t fix_chromosome(const bcf_hdr_t *h, vdict_t *d, const char *p) {
+    // Simple error recovery for chromosomes not defined in the header. It will not help when VCF header has
+    // been already printed, but will enable tools like vcfcheck to proceed.
+
+    kstring_t tmp = {0,0,0};
+    khint_t k;
+    int l;
+    ksprintf(&tmp, "##contig=<ID=%s>", p);
+    bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
+    free(tmp.s);
+    int res = hrec ? bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) : -1;
+    if (res < 0) bcf_hrec_destroy(hrec);
+    if (res > 0) res = bcf_hdr_sync((bcf_hdr_t*)h);
+    k = kh_get(vdict, d, p);
+
+    return k;
+}
+
+static int vcf_parse_filter(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p, char *q) {
+    int i, n_flt = 1, max_n_flt = 0;
+    char *r, *t;
+    int32_t *a_flt = NULL;
+    ks_tokaux_t aux1;
+    khint_t k;
+    vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
+    // count the number of filters
+    if (*(q-1) == ';') *(q-1) = 0;
+    for (r = p; *r; ++r)
+        if (*r == ';') ++n_flt;
+    if (n_flt > max_n_flt) {
+        a_flt = malloc(n_flt * sizeof(*a_flt));
+        if (!a_flt) {
+            hts_log_error("Could not allocate memory at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
+            v->errcode |= BCF_ERR_LIMITS; // No appropriate code?
+            return -1;
+        }
+        max_n_flt = n_flt;
+    }
+    // add filters
+    for (t = kstrtok(p, ";", &aux1), i = 0; t; t = kstrtok(0, 0, &aux1)) {
+        *(char*)aux1.p = 0;
+        k = kh_get(vdict, d, t);
+        if (k == kh_end(d))
+        {
+            // Simple error recovery for FILTERs not defined in the header. It will not help when VCF header has
+            // been already printed, but will enable tools like vcfcheck to proceed.
+            hts_log_warning("FILTER '%s' is not defined in the header", t);
+            kstring_t tmp = {0,0,0};
+            int l;
+            ksprintf(&tmp, "##FILTER=<ID=%s,Description=\"Dummy\">", t);
+            bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
+            free(tmp.s);
+            int res = hrec ? bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) : -1;
+            if (res < 0) bcf_hrec_destroy(hrec);
+            if (res > 0) res = bcf_hdr_sync((bcf_hdr_t*)h);
+            k = kh_get(vdict, d, t);
+            v->errcode |= BCF_ERR_TAG_UNDEF;
+            if (res || k == kh_end(d)) {
+                hts_log_error("Could not add dummy header for FILTER '%s' at %s:%"PRIhts_pos, t, bcf_seqname_safe(h,v), v->pos+1);
+                v->errcode |= BCF_ERR_TAG_INVALID;
+                free(a_flt);
+                return -1;
+            }
+        }
+        a_flt[i++] = kh_val(d, k).id;
+    }
+
+    bcf_enc_vint(str, n_flt, a_flt, -1);
+    free(a_flt);
+
+    return 0;
+}
+
+static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p, char *q) {
+    static int extreme_int_warned = 0, negative_rlen_warned = 0;
+    int max_n_val = 0, overflow = 0;
+    char *r, *key;
+    khint_t k;
+    vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
+    int32_t *a_val = NULL;
+
+    v->n_info = 0;
+    if (*(q-1) == ';') *(q-1) = 0;
+    for (r = key = p;; ++r) {
+        int c;
+        char *val, *end;
+        if (*r != ';' && *r != '=' && *r != 0) continue;
+        if (v->n_info == UINT16_MAX) {
+            hts_log_error("Too many INFO entries at %s:%"PRIhts_pos,
+                          bcf_seqname_safe(h,v), v->pos+1);
+            v->errcode |= BCF_ERR_LIMITS;
+            return -1;
+        }
+        val = end = 0;
+        c = *r; *r = 0;
+        if (c == '=') {
+            val = r + 1;
+            for (end = val; *end != ';' && *end != 0; ++end);
+            c = *end; *end = 0;
+        } else end = r;
+        if ( !*key ) { if (c==0) break; r = end; key = r + 1; continue; }  // faulty VCF, ";;" in the INFO
+        k = kh_get(vdict, d, key);
+        if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_INFO] == 15)
+        {
+            hts_log_warning("INFO '%s' is not defined in the header, assuming Type=String", key);
+            kstring_t tmp = {0,0,0};
+            int l;
+            ksprintf(&tmp, "##INFO=<ID=%s,Number=1,Type=String,Description=\"Dummy\">", key);
+            bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
+            free(tmp.s);
+            int res = hrec ? bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) : -1;
+            if (res < 0) bcf_hrec_destroy(hrec);
+            if (res > 0) res = bcf_hdr_sync((bcf_hdr_t*)h);
+            k = kh_get(vdict, d, key);
+            v->errcode = BCF_ERR_TAG_UNDEF;
+            if (res || k == kh_end(d)) {
+                hts_log_error("Could not add dummy header for INFO '%s' at %s:%"PRIhts_pos, key, bcf_seqname_safe(h,v), v->pos+1);
+                v->errcode |= BCF_ERR_TAG_INVALID;
+                return -1;
+            }
+        }
+        uint32_t y = kh_val(d, k).info[BCF_HL_INFO];
+        ++v->n_info;
+        bcf_enc_int1(str, kh_val(d, k).id);
+        if (val == 0) {
+            bcf_enc_size(str, 0, BCF_BT_NULL);
+        } else if ((y>>4&0xf) == BCF_HT_FLAG || (y>>4&0xf) == BCF_HT_STR) { // if Flag has a value, treat it as a string
+            bcf_enc_vchar(str, end - val, val);
+        } else { // int/float value/array
+            int i, n_val;
+            char *t, *te;
+            for (t = val, n_val = 1; *t; ++t) // count the number of values
+                if (*t == ',') ++n_val;
+            // Check both int and float size in one step for simplicity
+            if (n_val > max_n_val) {
+                int32_t *a_tmp = (int32_t *)realloc(a_val, n_val * sizeof(*a_val));
+                if (!a_tmp) {
+                    hts_log_error("Could not allocate memory at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
+                    v->errcode |= BCF_ERR_LIMITS; // No appropriate code?
+                    return -1;
+                }
+                a_val = a_tmp;
+                max_n_val = n_val;
+            }
+            if ((y>>4&0xf) == BCF_HT_INT) {
+                i = 0, t = val;
+                int64_t val1;
+                int is_int64 = 0;
+#ifdef VCF_ALLOW_INT64
+                if ( n_val==1 )
+                {
+                    overflow = 0;
+                    long long int tmp_val = hts_str2int(val, &te, sizeof(tmp_val)*CHAR_BIT, &overflow);
+                    if ( te==val ) tmp_val = bcf_int32_missing;
+                    else if ( overflow || tmp_val<BCF_MIN_BT_INT64 || tmp_val>BCF_MAX_BT_INT64 )
+                    {
+                        if ( !extreme_int_warned )
+                        {
+                            hts_log_warning("Extreme INFO/%s value encountered and set to missing at %s:%"PRIhts_pos,key,bcf_seqname_safe(h,v), v->pos+1);
+                            extreme_int_warned = 1;
+                        }
+                        tmp_val = bcf_int32_missing;
+                    }
+                    else
+                        is_int64 = 1;
+                    val1 = tmp_val;
+                    t = te;
+                    i = 1;  // this is just to avoid adding another nested block...
+                }
+#endif
+                for (; i < n_val; ++i, ++t)
+                {
+                    overflow = 0;
+                    long int tmp_val = hts_str2int(t, &te, sizeof(tmp_val)*CHAR_BIT, &overflow);
+                    if ( te==t ) tmp_val = bcf_int32_missing;
+                    else if ( overflow || tmp_val<BCF_MIN_BT_INT32 || tmp_val>BCF_MAX_BT_INT32 )
+                    {
+                        if ( !extreme_int_warned )
+                        {
+                            hts_log_warning("Extreme INFO/%s value encountered and set to missing at %s:%"PRIhts_pos,key,bcf_seqname_safe(h,v), v->pos+1);
+                            extreme_int_warned = 1;
+                        }
+                        tmp_val = bcf_int32_missing;
+                    }
+                    a_val[i] = tmp_val;
+                    for (t = te; *t && *t != ','; t++);
+                }
+                if (n_val == 1) {
+#ifdef VCF_ALLOW_INT64
+                    if ( is_int64 )
+                    {
+                        v->unpacked |= BCF_IS_64BIT;
+                        bcf_enc_long1(str, val1);
+                    }
+                    else
+                        bcf_enc_int1(str, (int32_t)val1);
+#else
+                    val1 = a_val[0];
+                    bcf_enc_int1(str, (int32_t)val1);
+#endif
+                } else {
+                    bcf_enc_vint(str, n_val, a_val, -1);
+                }
+                if (n_val==1 && (val1!=bcf_int32_missing || is_int64) && strcmp(key, "END") == 0)
+                {
+                    if ( val1 <= v->pos )
+                    {
+                        if ( !negative_rlen_warned )
+                        {
+                            hts_log_warning("INFO/END=%"PRIhts_pos" is smaller than POS at %s:%"PRIhts_pos,val1,bcf_seqname_safe(h,v),v->pos+1);
+                            negative_rlen_warned = 1;
+                        }
+                    }
+                    else
+                        v->rlen = val1 - v->pos;
+                }
+            } else if ((y>>4&0xf) == BCF_HT_REAL) {
+                float *val_f = (float *)a_val;
+                for (i = 0, t = val; i < n_val; ++i, ++t)
+                {
+                    val_f[i] = strtod(t, &te);
+                    if ( te==t ) // conversion failed
+                        bcf_float_set_missing(val_f[i]);
+                    for (t = te; *t && *t != ','; t++);
+                }
+                bcf_enc_vfloat(str, n_val, val_f);
+            }
+        }
+        if (c == 0) break;
+        r = end;
+        key = r + 1;
+    }
+
+    free(a_val);
+    return 0;
+}
+
 int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
 {
-    static int extreme_int_warned = 0, negative_rlen_warned = 0;
-    int i = 0;
+    int i = 0, ret = -2, overflow = 0;
     char *p, *q, *r, *t;
     kstring_t *str;
     khint_t k;
     ks_tokaux_t aux;
-    int max_n_flt = 0, max_n_val = 0;
-    int32_t *flt_a = NULL, *val_a = NULL;
-    int ret = -2, overflow = 0;
-    const uint32_t MAX_ALLELES = 65535; // n_allele is 16 bits
-    const uint32_t MAX_INFO    = 65535; // n_info   is 16 bits
 
     if (!s || !h || !v || !(s->s))
         return ret;
@@ -2571,20 +2802,9 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             k = kh_get(vdict, d, p);
             if (k == kh_end(d))
             {
-                // Simple error recovery for chromosomes not defined in the header. It will not help when VCF header has
-                // been already printed, but will enable tools like vcfcheck to proceed.
                 hts_log_warning("Contig '%s' is not defined in the header. (Quick workaround: index the file with tabix.)", p);
-                kstring_t tmp = {0,0,0};
-                int l;
-                ksprintf(&tmp, "##contig=<ID=%s>", p);
-                bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
-                free(tmp.s);
-                int res = hrec ? bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) : -1;
-                if (res < 0) bcf_hrec_destroy(hrec);
-                if (res > 0) res = bcf_hdr_sync((bcf_hdr_t*)h);
-                k = kh_get(vdict, d, p);
                 v->errcode = BCF_ERR_CTG_UNDEF;
-                if (res || k == kh_end(d)) {
+                if ((k = fix_chromosome(h, d, p)) == kh_end(d)) {
                     hts_log_error("Could not add dummy header for contig '%s'", p);
                     v->errcode |= BCF_ERR_CTG_INVALID;
                     goto err;
@@ -2612,9 +2832,9 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             if (strcmp(p, ".")) {
                 for (r = t = p;; ++r) {
                     if (*r == ',' || *r == 0) {
-                        if (v->n_allele == MAX_ALLELES) {
+                        if (v->n_allele == UINT16_MAX) {
                             hts_log_error("Too many ALT alleles at %s:%"PRIhts_pos,
-                                           bcf_seqname_safe(h,v), v->pos+1);
+                                          bcf_seqname_safe(h,v), v->pos+1);
                             v->errcode |= BCF_ERR_LIMITS;
                             goto err;
                         }
@@ -2631,215 +2851,15 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
             if ( v->max_unpack && !(v->max_unpack>>1) ) goto end; // BCF_UN_STR
         } else if (i == 6) { // FILTER
             if (strcmp(p, ".")) {
-                int n_flt = 1, i;
-                ks_tokaux_t aux1;
-                vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
-                // count the number of filters
-                if (*(q-1) == ';') *(q-1) = 0;
-                for (r = p; *r; ++r)
-                    if (*r == ';') ++n_flt;
-                if (n_flt > max_n_flt) {
-                    int32_t *a = realloc(flt_a, n_flt * sizeof(int32_t));
-                    if (!a) {
-                        hts_log_error("Could not allocate memory at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
-                        v->errcode |= BCF_ERR_LIMITS; // No appropriate code?
-                        goto err;
-                    }
-                    max_n_flt = n_flt;
-                    flt_a = a;
-                }
-                // add filters
-                for (t = kstrtok(p, ";", &aux1), i = 0; t; t = kstrtok(0, 0, &aux1)) {
-                    *(char*)aux1.p = 0;
-                    k = kh_get(vdict, d, t);
-                    if (k == kh_end(d))
-                    {
-                        // Simple error recovery for FILTERs not defined in the header. It will not help when VCF header has
-                        // been already printed, but will enable tools like vcfcheck to proceed.
-                        hts_log_warning("FILTER '%s' is not defined in the header", t);
-                        kstring_t tmp = {0,0,0};
-                        int l;
-                        ksprintf(&tmp, "##FILTER=<ID=%s,Description=\"Dummy\">", t);
-                        bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
-                        free(tmp.s);
-                        int res = hrec ? bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) : -1;
-                        if (res < 0) bcf_hrec_destroy(hrec);
-                        if (res > 0) res = bcf_hdr_sync((bcf_hdr_t*)h);
-                        k = kh_get(vdict, d, t);
-                        v->errcode = BCF_ERR_TAG_UNDEF;
-                        if (res || k == kh_end(d)) {
-                            hts_log_error("Could not add dummy header for FILTER '%s' at %s:%"PRIhts_pos, t, bcf_seqname_safe(h,v), v->pos+1);
-                            v->errcode |= BCF_ERR_TAG_INVALID;
-                            goto err;
-                        }
-                    }
-                    flt_a[i++] = kh_val(d, k).id;
-                }
-                n_flt = i;
-                bcf_enc_vint(str, n_flt, flt_a, -1);
+                if (vcf_parse_filter(str, h, v, p, q)) goto err;
             } else bcf_enc_vint(str, 0, 0, -1);
-            if ( v->max_unpack && !(v->max_unpack>>2) ) goto end;    // BCF_UN_FLT
+            if ( v->max_unpack && !(v->max_unpack>>2) ) goto end; // BCF_UN_FLT
         } else if (i == 7) { // INFO
-            char *key;
-            vdict_t *d = (vdict_t*)h->dict[BCF_DT_ID];
-            v->n_info = 0;
             if (strcmp(p, ".")) {
-                if (*(q-1) == ';') *(q-1) = 0;
-                for (r = key = p;; ++r) {
-                    int c;
-                    char *val, *end;
-                    if (*r != ';' && *r != '=' && *r != 0) continue;
-                    if (v->n_info == MAX_INFO) {
-                        hts_log_error("Too many INFO entries at %s:%"PRIhts_pos,
-                                      bcf_seqname_safe(h,v), v->pos+1);
-                        v->errcode |= BCF_ERR_LIMITS;
-                        goto err;
-                    }
-                    val = end = 0;
-                    c = *r; *r = 0;
-                    if (c == '=') {
-                        val = r + 1;
-                        for (end = val; *end != ';' && *end != 0; ++end);
-                        c = *end; *end = 0;
-                    } else end = r;
-                    if ( !*key ) { if (c==0) break; r = end; key = r + 1; continue; }  // faulty VCF, ";;" in the INFO
-                    k = kh_get(vdict, d, key);
-                    if (k == kh_end(d) || kh_val(d, k).info[BCF_HL_INFO] == 15)
-                    {
-                        hts_log_warning("INFO '%s' is not defined in the header, assuming Type=String", key);
-                        kstring_t tmp = {0,0,0};
-                        int l;
-                        ksprintf(&tmp, "##INFO=<ID=%s,Number=1,Type=String,Description=\"Dummy\">", key);
-                        bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
-                        free(tmp.s);
-                        int res = hrec ? bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) : -1;
-                        if (res < 0) bcf_hrec_destroy(hrec);
-                        if (res > 0) res = bcf_hdr_sync((bcf_hdr_t*)h);
-                        k = kh_get(vdict, d, key);
-                        v->errcode = BCF_ERR_TAG_UNDEF;
-                        if (res || k == kh_end(d)) {
-                            hts_log_error("Could not add dummy header for INFO '%s' at %s:%"PRIhts_pos, key, bcf_seqname_safe(h,v), v->pos+1);
-                            v->errcode |= BCF_ERR_TAG_INVALID;
-                            goto err;
-                        }
-                    }
-                    uint32_t y = kh_val(d, k).info[BCF_HL_INFO];
-                    ++v->n_info;
-                    bcf_enc_int1(str, kh_val(d, k).id);
-                    if (val == 0) {
-                        bcf_enc_size(str, 0, BCF_BT_NULL);
-                    } else if ((y>>4&0xf) == BCF_HT_FLAG || (y>>4&0xf) == BCF_HT_STR) { // if Flag has a value, treat it as a string
-                        bcf_enc_vchar(str, end - val, val);
-                    } else { // int/float value/array
-                        int i, n_val;
-                        char *t, *te;
-                        for (t = val, n_val = 1; *t; ++t) // count the number of values
-                            if (*t == ',') ++n_val;
-                        // Check both int and float size in one step for simplicity
-                        if (n_val > max_n_val) {
-                            int32_t *z;
-                            z = (int32_t *)realloc((void *)val_a, n_val * sizeof(*z));
-                            if (!z) {
-                                hts_log_error("Could not allocate memory at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
-                                v->errcode |= BCF_ERR_LIMITS; // No appropriate code?
-                                goto err;
-                            }
-                            max_n_val = n_val;
-                            val_a = z;
-                        }
-                        if ((y>>4&0xf) == BCF_HT_INT) {
-                            i = 0, t = val;
-                            int64_t val1;
-                            int is_int64 = 0;
-#ifdef VCF_ALLOW_INT64
-                            if ( n_val==1 )
-                            {
-                                overflow = 0;
-                                long long int tmp_val = hts_str2int(val, &te, sizeof(tmp_val)*CHAR_BIT, &overflow);
-                                if ( te==val ) tmp_val = bcf_int32_missing;
-                                else if (overflow)
-                                {
-                                    if ( !extreme_int_warned )
-                                    {
-                                        hts_log_warning("Extreme INFO/%s value encountered and set to missing at %s:%"PRIhts_pos,key,bcf_seqname_safe(h,v), v->pos+1);
-                                        extreme_int_warned = 1;
-                                    }
-                                    tmp_val = bcf_int32_missing;
-                                }
-                                else
-                                    is_int64 = 1;
-                                val1 = tmp_val;
-                                t = te;
-                                i = 1;  // this is just to avoid adding another nested block...
-                            }
-#endif
-                            for (; i < n_val; ++i, ++t)
-                            {
-                                overflow = 0;
-                                long int tmp_val = hts_str2int(t, &te, sizeof(tmp_val)*CHAR_BIT, &overflow);
-                                if ( te==t ) tmp_val = bcf_int32_missing;
-                                else if (overflow)
-                                {
-                                    if ( !extreme_int_warned )
-                                    {
-                                        hts_log_warning("Extreme INFO/%s value encountered and set to missing at %s:%"PRIhts_pos,key,bcf_seqname_safe(h,v), v->pos+1);
-                                        extreme_int_warned = 1;
-                                    }
-                                    tmp_val = bcf_int32_missing;
-                                }
-                                val_a[i] = tmp_val;
-                                for (t = te; *t && *t != ','; t++);
-                            }
-                            if (n_val == 1) {
-#ifdef VCF_ALLOW_INT64
-                                if ( is_int64 )
-                                {
-                                    v->unpacked |= BCF_IS_64BIT;
-                                    bcf_enc_long1(str, val1);
-                                }
-                                else
-                                    bcf_enc_int1(str, (int32_t)val1);
-#else
-                                val1 = val_a[0];
-                                bcf_enc_int1(str, (int32_t)val1);
-#endif
-                            } else {
-                                bcf_enc_vint(str, n_val, val_a, -1);
-                            }
-                            if (n_val==1 && (val1!=bcf_int32_missing || is_int64) && strcmp(key, "END") == 0)
-                            {
-                                if ( val1 <= v->pos )
-                                {
-                                    if ( !negative_rlen_warned )
-                                    {
-                                        hts_log_warning("INFO/END=%"PRIhts_pos" is smaller than POS at %s:%"PRIhts_pos,val1,bcf_seqname_safe(h,v),v->pos+1);
-                                        negative_rlen_warned = 1;
-                                    }
-                                }
-                                else
-                                    v->rlen = val1 - v->pos;
-                            }
-                        } else if ((y>>4&0xf) == BCF_HT_REAL) {
-                            float *val_f = (float *)val_a;
-                            for (i = 0, t = val; i < n_val; ++i, ++t)
-                            {
-                                val_f[i] = strtod(t, &te);
-                                if ( te==t ) // conversion failed
-                                    bcf_float_set_missing(val_f[i]);
-                                for (t = te; *t && *t != ','; t++);
-                            }
-                            bcf_enc_vfloat(str, n_val, val_f);
-                        }
-                    }
-                    if (c == 0) break;
-                    r = end;
-                    key = r + 1;
-                }
+                if (vcf_parse_info(str, h, v, p, q)) goto err;
             }
             if ( v->max_unpack && !(v->max_unpack>>3) ) goto end;
         } else if (i == 8) {// FORMAT
-            free(flt_a);
-            free(val_a);
             return vcf_parse_format(s, h, v, p, q) == 0 ? 0 : -2;
         }
     }
@@ -2848,8 +2868,6 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
     ret = 0;
 
  err:
-    free(flt_a);
-    free(val_a);
     return ret;
 }
 
