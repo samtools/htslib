@@ -242,8 +242,10 @@ int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t e
  */
 void bgzf_idx_amend_last(BGZF *fp, hts_idx_t *hidx, uint64_t offset) {
     mtaux_t *mt = fp->mt;
-    if (!mt)
-        return hts_idx_amend_last(hidx, offset);
+    if (!mt) {
+        hts_idx_amend_last(hidx, offset);
+        return;
+    }
 
     pthread_mutex_lock(&mt->idx_m);
     hts_idx_cache_t *ic = &mt->idx_cache;
@@ -1153,7 +1155,21 @@ ssize_t bgzf_read(BGZF *fp, void *data, size_t length)
                 return -1;
             }
             available = fp->block_length - fp->block_offset;
-            if (available <= 0) break;
+            if (available == 0) {
+                if (fp->block_length == 0)
+                    break; // EOF
+
+                // Offset was at end of block (see commit 116135b)
+                fp->block_address = bgzf_htell(fp);
+                fp->block_offset = fp->block_length = 0;
+                continue;
+            } else if (available < 0) {
+                // Block offset was set to an invalid coordinate
+                hts_log_error("BGZF block offset %d set beyond block size %d",
+                              fp->block_offset, fp->block_length);
+                fp->errcode |= BGZF_ERR_MISUSE;
+                return -1;
+            }
         }
         copy_length = length - bytes_read < available? length - bytes_read : available;
         buffer = (uint8_t*)fp->uncompressed_block;
