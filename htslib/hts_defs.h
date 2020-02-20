@@ -97,18 +97,16 @@ DEALINGS IN THE SOFTWARE.  */
 
 #if defined(_WIN32) || defined(__CYGWIN__)
 #if defined(HTS_BUILDING_LIBRARY)
-#define HTS_DLL_EXPORT __declspec(dllexport)
+#define HTSLIB_EXPORT __declspec(dllexport)
 #else
-#define HTS_DLL_EXPORT
+#define HTSLIB_EXPORT
 #endif
 #elif HTS_COMPILER_HAS(__visibility__) || HTS_GCC_AT_LEAST(4,0)
-#define HTS_DLL_EXPORT __attribute__((__visibility__("default")))
+#define HTSLIB_EXPORT __attribute__((__visibility__("default")))
 #elif defined(__SUNPRO_C) && __SUNPRO_C >= 0x550
-#define HTS_DLL_EXPORT __global
+#define HTSLIB_EXPORT __global
 #else
-#define HTS_DLL_EXPORT
+#define HTSLIB_EXPORT
 #endif
-
-#define HTSLIB_EXPORT HTS_DLL_EXPORT
 
 #endif
