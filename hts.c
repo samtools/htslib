@@ -2165,7 +2165,7 @@ static int idx_read_core(hts_idx_t *idx, BGZF *fp, int fmt)
             if (is_be) for (j = 0; j < l->n; ++j) ed_swap_8p(&l->offset[j]);
             for (j = 1; j < l->n; ++j) // fill missing values; may happen given older samtools and tabix
                 if (l->offset[j] == 0) l->offset[j] = l->offset[j-1];
-            update_loff(idx, i, 1);
+            update_loff(idx, i, 0);
         }
     }
     if (bgzf_read(fp, &idx->n_no_coor, 8) != 8) idx->n_no_coor = 0;
@@ -2508,6 +2508,10 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             } while (bin);
             if (bin == 0) k = kh_get(bin, bidx, bin);
             min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
+            if (idx->lidx[tid].offset
+                && beg>>idx->min_shift < idx->lidx[tid].n
+                && min_off < idx->lidx[tid].offset[beg>>idx->min_shift])
+                min_off = idx->lidx[tid].offset[beg>>idx->min_shift];
 
             // compute max_off: a virtual offset from a bin to the right of end
             bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
@@ -2541,8 +2545,10 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                     bins_t *p = &kh_value(bidx, k);
                     for (j = 0; j < p->n; ++j)
                         if (p->list[j].v > min_off && p->list[j].u < max_off) {
-                            off[n_off].u = p->list[j].u;
-                            off[n_off].v = p->list[j].v;
+                            off[n_off].u = min_off > p->list[j].u
+                                ? min_off : p->list[j].u;
+                            off[n_off].v = max_off < p->list[j].v
+                                ? max_off : p->list[j].v;
                             n_off++;
                         }
                 }
