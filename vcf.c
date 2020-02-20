@@ -2752,8 +2752,8 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                         if ((y>>4&0xf) == BCF_HT_INT) {
                             i = 0, t = val;
                             int64_t val1;
-#ifdef VCF_ALLOW_INT64
                             int is_int64 = 0;
+#ifdef VCF_ALLOW_INT64
                             if ( n_val==1 )
                             {
                                 errno = 0;
@@ -2808,7 +2808,7 @@ int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
                             } else {
                                 bcf_enc_vint(str, n_val, val_a, -1);
                             }
-                            if (n_val==1 && strcmp(key, "END") == 0)
+                            if (n_val==1 && (val1!=bcf_int32_missing || is_int64) && strcmp(key, "END") == 0)
                             {
                                 if ( val1 <= v->pos )
                                 {
@@ -4263,7 +4263,15 @@ static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nal
 
     // Update REF length. Note that END is 1-based while line->pos 0-based
     bcf_info_t *end_info = bcf_get_info(hdr,line,"END");
-    line->rlen = end_info ? end_info->v1.i - line->pos : strlen(line->d.allele[0]);
+    if ( end_info )
+    {
+        if ( end_info->type==BCF_HT_INT && end_info->v1.i==bcf_int32_missing ) end_info = NULL;
+        else if ( end_info->type==BCF_HT_LONG && end_info->v1.i==bcf_int64_missing ) end_info = NULL;
+    }
+    if ( end_info && end_info->v1.i > line->pos )
+        line->rlen = end_info->v1.i - line->pos;
+    else
+        line->rlen = strlen(line->d.allele[0]);
 
     return 0;
 }
