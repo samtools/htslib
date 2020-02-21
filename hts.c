@@ -2746,7 +2746,7 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
                     if (end >= HTS_POS_MAX) {
                        e = cram_index_last(cidx->cram, tid, NULL);
                     } else {
-                       e = cram_index_query(cidx->cram, tid, end+1, NULL);
+                       e = cram_index_query_last(cidx->cram, tid, end+1);
                     }
 
                     if (e) {
