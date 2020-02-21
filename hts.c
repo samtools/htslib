@@ -2372,8 +2372,10 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
                     iter->off = off;
                     for (j = 0; j < p->n; ++j) {
                         if (p->list[j].v > min_off && p->list[j].u < max_off) {
-                            iter->off[iter->n_off].u = p->list[j].u;
-                            iter->off[iter->n_off].v = p->list[j].v;
+                            iter->off[iter->n_off].u = min_off > p->list[j].u
+                                ? min_off : p->list[j].u;
+                            iter->off[iter->n_off].v = max_off < p->list[j].v
+                                ? max_off : p->list[j].v;
                             iter->n_off++;
                         }
                     }
@@ -2646,6 +2648,12 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                 if (bin == 0)
                     k = kh_get(bin, bidx, bin);
                 min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
+                // min_off can be calculated more accurately if the
+                // linear index is available
+                if (idx->lidx[tid].offset
+                    && beg>>idx->min_shift < idx->lidx[tid].n
+                    && min_off < idx->lidx[tid].offset[beg>>idx->min_shift])
+                    min_off = idx->lidx[tid].offset[beg>>idx->min_shift];
 
                 // compute max_off: a virtual offset from a bin to the right of end
                 bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
