@@ -1551,6 +1551,7 @@ int hts_check_EOF(htsFile *fp)
 #define pair64_lt(a,b) ((a).u < (b).u)
 
 KSORT_INIT_STATIC(_off, hts_pair64_t, pair64_lt)
+KSORT_INIT_STATIC(_off_max, hts_pair64_max_t, pair64_lt)
 
 typedef struct {
     int32_t m, n;
@@ -2341,14 +2342,15 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
     return itr->bins.n;
 }
 
-static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
+static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint32_t interval, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
 {
     int l, t, s;
     int i, j;
     hts_pos_t b, e;
-    hts_pair64_t *off;
+    hts_pair64_max_t *off;
     bidx_t *bidx;
     khint_t k;
+    int start_n_off = iter->n_off;
 
     if (!iter || !idx || (bidx = idx->bidx[tid]) == NULL || beg >= end)
         return -1;
@@ -2365,7 +2367,7 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
                 bins_t *p = &kh_value(bidx, k);
 
                 if (p->n) {
-                    off = (hts_pair64_t*)realloc(iter->off, (iter->n_off + p->n) * sizeof(hts_pair64_t));
+                    off = realloc(iter->off, (iter->n_off + p->n) * sizeof(*off));
                     if (!off)
                         return -2;
 
@@ -2376,12 +2378,32 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
                                 ? min_off : p->list[j].u;
                             iter->off[iter->n_off].v = max_off < p->list[j].v
                                 ? max_off : p->list[j].v;
+                            // hts_pair64_max_t::max is now used to link
+                            // file offsets to region list entries.
+                            // The iterator can use this to decide if it
+                            // can skip some file regions.
+                            iter->off[iter->n_off].max = ((uint64_t) tid << 32) | interval;
                             iter->n_off++;
                         }
                     }
                 }
             }
         }
+    }
+
+    if (iter->n_off - start_n_off > 1) {
+        ks_introsort(_off_max, iter->n_off - start_n_off, iter->off + start_n_off);
+        for (i = start_n_off, j = start_n_off + 1; j < iter->n_off; j++) {
+            if (iter->off[i].v >= iter->off[j].u) {
+                if (iter->off[i].v < iter->off[j].v)
+                    iter->off[i].v = iter->off[j].v;
+            } else {
+                i++;
+                if (i < j)
+                    iter->off[i] = iter->off[j];
+            }
+        }
+        iter->n_off = i + 1;
     }
 
     return iter->n_off;
@@ -2455,7 +2477,7 @@ uint64_t hts_itr_off(const hts_idx_t* idx, int tid) {
 hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, hts_readrec_func *readrec)
 {
     int i, n_off, l, bin;
-    hts_pair64_t *off;
+    hts_pair64_max_t *off;
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off, max_off;
@@ -2540,7 +2562,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                 iter->finished = 1;
                 return iter;
             }
-            off = (hts_pair64_t*)calloc(n_off, sizeof(hts_pair64_t));
+            off = calloc(n_off, sizeof(*off));
             for (i = n_off = 0; i < iter->bins.n; ++i) {
                 if ((k = kh_get(bin, bidx, iter->bins.a[i])) != kh_end(bidx)) {
                     int j;
@@ -2551,6 +2573,11 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                                 ? min_off : p->list[j].u;
                             off[n_off].v = max_off < p->list[j].v
                                 ? max_off : p->list[j].v;
+                            // hts_pair64_max_t::max is now used to link
+                            // file offsets to region list entries.
+                            // The iterator can use this to decide if it
+                            // can skip some file regions.
+                            off[n_off].max = ((uint64_t) tid << 32) | j;
                             n_off++;
                         }
                 }
@@ -2561,7 +2588,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                 iter->finished = 1;
                 return iter;
             }
-            ks_introsort(_off, n_off, off);
+            ks_introsort(_off_max, n_off, off);
             // resolve completely contained adjacent blocks
             for (i = 1, l = 0; i < n_off; ++i)
                 if (off[l].v < off[i].v) off[++l] = off[i];
@@ -2584,8 +2611,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
 
 int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
 {
-    int i, j, l, n_off = 0, bin;
-    hts_pair64_t *off = NULL;
+    int i, j, bin;
     khint_t k;
     bidx_t *bidx;
     uint64_t min_off, max_off, t_off = (uint64_t)-1;
@@ -2673,36 +2699,19 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                 }
 
                 //convert coordinates to file offsets
-                reg2intervals(iter, idx, tid, beg, end, min_off, max_off, idx->min_shift, idx->n_lvls);
+                if (reg2intervals(iter, idx, tid, beg, end, j,
+                                  min_off, max_off,
+                                  idx->min_shift, idx->n_lvls) < 0) {
+                    return -1;
+                }
             }
         }
     }
 
-    off = iter->off;
-    n_off = iter->n_off;
+    if (iter->n_off > 1)
+        ks_introsort(_off_max, iter->n_off, iter->off);
 
-    if (n_off) {
-        ks_introsort(_off, n_off, off);
-        // resolve completely contained adjacent blocks
-        for (i = 1, l = 0; i < n_off; ++i) {
-            if (off[l].v < off[i].v)
-                off[++l] = off[i];
-        }
-        n_off = l + 1;
-        // resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
-        for (i = 1; i < n_off; ++i)
-            if (off[i-1].v >= off[i].u) off[i-1].v = off[i].u;
-        // merge adjacent blocks
-        for (i = 1, l = 0; i < n_off; ++i) {
-            if (off[l].v>>16 == off[i].u>>16) {
-                off[l].v = off[i].v;
-            } else off[++l] = off[i];
-        }
-        n_off = l + 1;
-        iter->n_off = n_off; iter->off = off;
-    }
-
-    if(!n_off && !iter->nocoor)
+    if(!iter->n_off && !iter->nocoor)
         iter->finished = 1;
 
     return 0;
@@ -2711,11 +2720,12 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
 int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
 {
     const hts_cram_idx_t *cidx = (const hts_cram_idx_t *) idx;
-    int tid, i, j, l, n_off = 0;
+    int tid, i, n_off = 0;
+    uint32_t j;
     hts_pos_t beg, end;
     hts_reglist_t *curr_reg;
     hts_pair32_t *curr_intv;
-    hts_pair64_t *off = NULL, *tmp;
+    hts_pair64_max_t *off = NULL, *tmp;
     cram_index *e = NULL;
 
     if (!cidx || !iter || !iter->multi)
@@ -2734,8 +2744,7 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
         tid = curr_reg->tid;
 
         if (tid >= 0) {
-            tmp = (hts_pair64_t*)realloc(off, (n_off + curr_reg->count)
-                                             * sizeof(hts_pair64_t));
+            tmp = realloc(off, (n_off + curr_reg->count) * sizeof(*off));
             if (!tmp)
                 goto err;
             off = tmp;
@@ -2756,6 +2765,11 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
                 e = cram_index_query(cidx->cram, tid, beg+1, NULL);
                 if (e) {
                     off[n_off].u = e->offset;
+                    // hts_pair64_max_t::max is now used to link
+                    // file offsets to region list entries.
+                    // The iterator can use this to decide if it
+                    // can skip some file regions.
+                    off[n_off].max = ((uint64_t) tid << 32) | j;
 
                     if (end >= HTS_POS_MAX) {
                        e = cram_index_last(cidx->cram, tid, NULL);
@@ -2787,7 +2801,7 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
                     e = cram_index_query(cidx->cram, tid, 1, NULL);
                     if (e) {
                         iter->read_rest = 1;
-                        tmp = (hts_pair64_t*)realloc(off, sizeof(hts_pair64_t));
+                        tmp = realloc(off, sizeof(*off));
                         if (!tmp)
                             goto err;
                         off = tmp;
@@ -2810,23 +2824,7 @@ int hts_itr_multi_cram(const hts_idx_t *idx, hts_itr_t *iter)
     }
 
     if (n_off) {
-        ks_introsort(_off, n_off, off);
-        // resolve completely contained adjacent blocks
-        for (i = 1, l = 0; i < n_off; ++i) {
-            if (off[l].v < off[i].v)
-                off[++l] = off[i];
-        }
-        n_off = l + 1;
-        // resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
-        for (i = 1; i < n_off; ++i)
-            if (off[i-1].v >= off[i].u) off[i-1].v = off[i].u;
-        // merge adjacent blocks
-        for (i = 1, l = 0; i < n_off; ++i) {
-            if (off[l].v == off[i].u) {
-                off[l].v = off[i].v;
-            } else off[++l] = off[i];
-        }
-        n_off = l + 1;
+        ks_introsort(_off_max, n_off, off);
         iter->n_off = n_off; iter->off = off;
     }
 
@@ -3320,8 +3318,31 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
     assert(iter->off != NULL || iter->nocoor != 0);
 
     for (;;) {
-        if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
-            if (iter->i == iter->n_off - 1) { // no more chunks, except NOCOORs
+        // Note that due to the way bam indexing works, iter->off may contain
+        // file chunks that are not actually needed as they contain data
+        // beyond the end of the requested region.  These are filtered out
+        // by comparing the tid and index into hts_reglist_t::intervals
+        // (packed for reasons of convenience into iter->off[iter->i].max)
+        // associated with the file region with iter->curr_tid and
+        // iter->curr_intv.
+
+        if (iter->curr_off == 0
+            || iter->i >= iter->n_off
+            || iter->curr_off >= iter->off[iter->i].v
+            || (iter->off[iter->i].max >> 32 == iter->curr_tid
+                && (iter->off[iter->i].max & 0xffffffff) < iter->curr_intv)) {
+
+            // Jump to the next chunk.  It may be necessary to skip more
+            // than one as the iter->off list can include overlapping entries.
+
+            do {
+                iter->i++;
+            } while (iter->i < iter->n_off
+                     && (iter->curr_off >= iter->off[iter->i].v
+                         || (iter->off[iter->i].max >> 32 == iter->curr_tid
+                             && (iter->off[iter->i].max & 0xffffffff) < iter->curr_intv)));
+
+            if (iter->i >= iter->n_off) { // no more chunks, except NOCOORs
                 if (iter->nocoor) {
                     if (iter->seek(fp, iter->nocoor_off, SEEK_SET) < 0) {
                         hts_log_error("Seek at offset %" PRIu64 " failed.", iter->nocoor_off);
@@ -3348,11 +3369,15 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                 } else {
                     ret = -1; break;
                 }
-            } else if (iter->i < iter->n_off - 1) {
-                iter->curr_off = iter->off[++iter->i].u;
-                if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
-                    hts_log_error("Seek at offset %" PRIu64 " failed.", iter->curr_off);
-                    return -1;
+            } else if (iter->i < iter->n_off) {
+                // New chunk may overlap the last one, so ensure we
+                // only seek forwards.
+                if (iter->curr_off < iter->off[iter->i].u) {
+                    iter->curr_off = iter->off[iter->i].u;
+                    if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
+                        hts_log_error("Seek at offset %" PRIu64 " failed.", iter->curr_off);
+                        return -1;
+                    }
                 }
             }
         }
@@ -3379,9 +3404,6 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
         cr = iter->curr_reg;
         ci = iter->curr_intv;
 
-        if (beg > iter->reg_list[cr].max_end)
-            continue;
-
         for (i = ci; i < iter->reg_list[cr].count; i++) {
             if (end > iter->reg_list[cr].intervals[i].beg && iter->reg_list[cr].intervals[i].end > beg) {
                 iter->curr_beg = beg;
@@ -3390,6 +3412,15 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
 
                 return ret;
             }
+
+            // Check if the read starts beyond intervals[i].end
+            // If so, the interval is finished so move on to the next.
+            if (beg > iter->reg_list[cr].intervals[i].end)
+                iter->curr_intv = i + 1;
+
+            // No need to keep searching if the read ends before intervals[i].beg
+            if (end < iter->reg_list[cr].intervals[i].beg)
+                break;
         }
     }
     iter->finished = 1;
