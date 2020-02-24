@@ -464,6 +464,26 @@ cram_index *cram_index_last(cram_fd *fd, int refid, cram_index *from) {
     return &from->e[slice];
 }
 
+cram_index *cram_index_query_last(cram_fd *fd, int refid, hts_pos_t end) {
+    cram_index *first = cram_index_query(fd, refid, end, NULL);
+    cram_index *last =  cram_index_last(fd, refid, NULL);
+    if (!first || !last)
+        return NULL;
+
+    while (first < last && (first+1)->start <= end)
+        first++;
+
+    while (first->e) {
+        int count = 0;
+        int nslices = first->nslice;
+        first = first->e;
+        while (++count < nslices && (first+1)->start <= end)
+            first++;
+    }
+
+    return first;
+}
+
 /*
  * Skips to a container overlapping the start coordinate listed in
  * cram_range.
