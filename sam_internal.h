@@ -56,6 +56,43 @@ static inline int possibly_expand_bam_data(bam1_t *b, size_t bytes) {
     return sam_realloc_bam_data(b, new_len);
 }
 
+/*
+ * Convert a nibble encoded BAM sequence to a string of bases.
+ *
+ * We do this 2 bp at a time for speed. Equiv to:
+ *
+ * for (i = 0; i < len; i++)
+ *    seq[i] = seq_nt16_str[bam_seqi(nib, i)];
+ */
+static inline void nibble2base(uint8_t *nib, char *seq, int len) {
+    static const char code2base[512] =
+        "===A=C=M=G=R=S=V=T=W=Y=H=K=D=B=N"
+        "A=AAACAMAGARASAVATAWAYAHAKADABAN"
+        "C=CACCCMCGCRCSCVCTCWCYCHCKCDCBCN"
+        "M=MAMCMMMGMRMSMVMTMWMYMHMKMDMBMN"
+        "G=GAGCGMGGGRGSGVGTGWGYGHGKGDGBGN"
+        "R=RARCRMRGRRRSRVRTRWRYRHRKRDRBRN"
+        "S=SASCSMSGSRSSSVSTSWSYSHSKSDSBSN"
+        "V=VAVCVMVGVRVSVVVTVWVYVHVKVDVBVN"
+        "T=TATCTMTGTRTSTVTTTWTYTHTKTDTBTN"
+        "W=WAWCWMWGWRWSWVWTWWWYWHWKWDWBWN"
+        "Y=YAYCYMYGYRYSYVYTYWYYYHYKYDYBYN"
+        "H=HAHCHMHGHRHSHVHTHWHYHHHKHDHBHN"
+        "K=KAKCKMKGKRKSKVKTKWKYKHKKKDKBKN"
+        "D=DADCDMDGDRDSDVDTDWDYDHDKDDDBDN"
+        "B=BABCBMBGBRBSBVBTBWBYBHBKBDBBBN"
+        "N=NANCNMNGNRNSNVNTNWNYNHNKNDNBNN";
+
+    int i, len2 = len/2;
+    seq[0] = 0;
+
+    for (i = 0; i < len2; i++)
+        // Note size_t cast helps gcc optimiser.
+        memcpy(&seq[i*2], &code2base[(size_t)nib[i]*2], 2);
+
+    if ((i *= 2) < len)
+        seq[i] = seq_nt16_str[bam_seqi(nib, i)];
+}
 
 #ifdef __cplusplus
 }

@@ -3034,22 +3034,21 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
         uint8_t *s = bam_get_seq(b);
         if (ks_resize(str, str->l+2+2*c->l_qseq) < 0) goto mem_err;
         char *cp = str->s + str->l;
-        int lq2 = c->l_qseq / 2;
-        for (i = 0; i < lq2; i++) {
-            uint8_t b = s[i];
-            cp[i*2+0] = "=ACMGRSVTWYHKDBN"[b>>4];
-            cp[i*2+1] = "=ACMGRSVTWYHKDBN"[b&0xf];
-        }
-        for (i *= 2; i < c->l_qseq; ++i)
-            cp[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(s, i)];
-        cp[i++] = '\t';
-        cp += i;
+
+        // Sequence, 2 bases at a time
+        nibble2base(s, cp, c->l_qseq);
+        cp[c->l_qseq] = '\t';
+        cp += c->l_qseq+1;
+
+        // Quality
         s = bam_get_qual(b);
         i = 0;
         if (s[0] == 0xff) {
             cp[i++] = '*';
         } else {
-            for (i = 0; i < c->l_qseq; ++i)
+            // local copy of c->l_qseq to aid unrolling
+            uint32_t lqseq = c->l_qseq;
+            for (i = 0; i < lqseq; ++i)
                 cp[i]=s[i]+33;
         }
         cp[i] = 0;
