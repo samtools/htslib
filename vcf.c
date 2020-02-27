@@ -1231,7 +1231,7 @@ static inline int bcf_read1_core(BGZF *fp, bcf1_t *v)
     if (ks_resize(&v->indiv, indiv_len) != 0) return -2;
     v->rid  = le_to_i32(x + 8);
     v->pos  = le_to_u32(x + 12);
-    v->rlen = le_to_u32(x + 16);
+    v->rlen = le_to_i32(x + 16);
     v->qual = le_to_float(x + 20);
     v->n_info = le_to_u16(x + 24);
     v->n_allele = le_to_u16(x + 26);
@@ -1314,6 +1314,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     uint32_t err = 0;
     int type = 0;
     int num  = 0;
+    int reflen = 0;
     uint32_t i, reports;
     const uint32_t is_integer = ((1 << BCF_BT_INT8)  |
                                  (1 << BCF_BT_INT16) |
@@ -1328,7 +1329,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
 
 
     // Check for valid contig ID
-    if (rec->rid < 0 || rec->rid >= hdr->n[BCF_DT_CTG]) {
+    if (rec->rid < 0 || (hdr && rec->rid >= hdr->n[BCF_DT_CTG])) {
         hts_log_warning("Bad BCF record: Invalid %s id %d", "CONTIG", rec->rid);
         err |= BCF_ERR_CTG_INVALID;
     }
@@ -1354,6 +1355,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
                 hts_log_warning("Bad BCF record: Invalid %s type %d (%s)", "REF/ALT", type, get_type_name(type));
             err |= BCF_ERR_CHAR;
         }
+        if (i == 0) reflen = num;
         bytes = (size_t) num << bcf_type_shift[type];
         if (end - ptr < bytes) goto bad_shared;
         ptr += bytes;
@@ -1373,7 +1375,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             if (end - ptr < bytes) goto bad_shared;
             for (i = 0; i < num; i++) {
                 int32_t key = bcf_dec_int1(ptr, type, &ptr);
-                if (key < 0 || key >= hdr->n[BCF_DT_ID]) {
+                if (key < 0 || (hdr && key >= hdr->n[BCF_DT_ID])) {
                     if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
                         hts_log_warning("Bad BCF record: Invalid %s id %d", "FILTER", key);
                     err |= BCF_ERR_TAG_UNDEF;
@@ -1387,8 +1389,8 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     for (i = 0; i < rec->n_info; i++) {
         int32_t key = -1;
         if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) goto bad_shared;
-        if (key < 0 || key >= hdr->n[BCF_DT_ID]
-            || hdr->id[BCF_DT_ID][key].key == NULL) {
+        if (key < 0 || (hdr && key >= hdr->n[BCF_DT_ID])
+            || (hdr && hdr->id[BCF_DT_ID][key].key == NULL)) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
                 hts_log_warning("Bad BCF record: Invalid %s id %d", "INFO", key);
             err |= BCF_ERR_TAG_UNDEF;
@@ -1411,7 +1413,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     for (i = 0; i < rec->n_fmt; i++) {
         int32_t key = -1;
         if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) goto bad_indiv;
-        if (key < 0 || key >= hdr->n[BCF_DT_ID]) {
+        if (key < 0 || (hdr && key >= hdr->n[BCF_DT_ID])) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
                 hts_log_warning("Bad BCF record: Invalid %s id %d", "FORMAT", key);
             err |= BCF_ERR_TAG_UNDEF;
@@ -1425,6 +1427,19 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
         bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
         if (end - ptr < bytes) goto bad_indiv;
         ptr += bytes;
+    }
+
+    if (!err && rec->rlen < 0) {
+        // Treat bad rlen as a warning instead of an error, and try to
+        // fix up by using the length of the stored REF allele.
+        static int warned = 0;
+        if (!warned) {
+            hts_log_warning("BCF record has invalid RLEN (%"PRIhts_pos"). "
+                            "Only one invalid RLEN will be reported.",
+                            rec->rlen);
+            warned = 1;
+        }
+        rec->rlen = reflen >= 0 ? reflen : 0;
     }
 
     rec->errcode |= err;
@@ -1494,8 +1509,9 @@ int bcf_read(htsFile *fp, const bcf_hdr_t *h, bcf1_t *v)
 int bcf_readrec(BGZF *fp, void *null, void *vv, int *tid, hts_pos_t *beg, hts_pos_t *end)
 {
     bcf1_t *v = (bcf1_t *) vv;
-    int ret;
-    if ((ret = bcf_read1_core(fp, v)) >= 0)
+    int ret = bcf_read1_core(fp, v);
+    if (ret == 0) ret = bcf_record_check(NULL, v);
+    if (ret  >= 0)
         *tid = v->rid, *beg = v->pos, *end = v->pos + v->rlen;
     return ret;
 }
