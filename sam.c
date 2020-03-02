@@ -1345,7 +1345,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                     }
                     sn = (char*)calloc(r - q + 1, 1);
                     if (!sn)
-                    goto error;
+                        goto error;
 
                     strncpy(sn, q, r - q);
                     q = r;
@@ -1532,6 +1532,10 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
     return fp->bam_header;
 
  error:
+    if (h && d && (!h->target_name || !h->target_len)) {
+        for (k = kh_begin(d); k != kh_end(d); ++k)
+            if (kh_exist(d, k)) free((void *)kh_key(d, k));
+    }
     sam_hdr_destroy(h);
     ks_free(&str);
     kh_destroy(s2i, d);
