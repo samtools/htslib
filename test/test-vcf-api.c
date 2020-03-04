@@ -463,6 +463,69 @@ void test_get_format_values(const char *fname)
     check_format_values(fname);
 }
 
+void test_invalid_end_tag(void)
+{
+    static const char vcf_data[] = "data:,"
+        "##fileformat=VCFv4.1\n"
+        "##contig=<ID=X,length=155270560>\n"
+        "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End coordinate of this variant\">\n"
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+        "X\t86470037\trs59780433a\tTTTCA\tTGGTT,T\t.\t.\tEND=85725113\n"
+        "X\t86470038\trs59780433b\tT\tTGGTT,T\t.\t.\tEND=86470047\n";
+
+    htsFile *fp;
+    bcf_hdr_t *hdr;
+    bcf1_t *rec;
+    int ret;
+    int32_t tmpi;
+    enum htsLogLevel logging = hts_get_log_level();
+
+    // Silence warning messages
+    hts_set_log_level(HTS_LOG_ERROR);
+
+    fp = hts_open(vcf_data, "r");
+    if (!fp) error("Failed to open vcf data : %s", strerror(errno));
+    rec = bcf_init1();
+    if (!rec) error("Failed to allocate BCF record : %s", strerror(errno));
+
+    hdr = bcf_hdr_read(fp);
+    if (!hdr) error("Failed to read BCF header : %s", strerror(errno));
+
+    check0(bcf_read(fp, hdr, rec));
+    // rec->rlen should ignore the bogus END tag value on the first read
+    if (rec->rlen != 5) {
+        error("Incorrect rlen - expected 5 got %"PRIhts_pos"\n", rec->rlen);
+    }
+
+    check0(bcf_read(fp, hdr, rec));
+    // While on the second it should use it
+    if (rec->rlen != 10) {
+        error("Incorrect rlen - expected 10 got %"PRIhts_pos"\n", rec->rlen);
+    }
+
+    // Try to break it - will change rlen
+    tmpi = 85725113;
+    check0(bcf_update_info_int32(hdr, rec, "END", &tmpi, 1));
+
+    if (rec->rlen != 1) {
+        error("Incorrect rlen - expected 1 got %"PRIhts_pos"\n", rec->rlen);
+    }
+
+    ret = bcf_read(fp, hdr, rec);
+    if (ret != -1) {
+        error("Unexpected return code %d from bcf_read at EOF", ret);
+    }
+
+    bcf_destroy1(rec);
+    bcf_hdr_destroy(hdr);
+    ret = hts_close(fp);
+    if (ret != 0) {
+        error("Unexpected return code %d from hts_close", ret);
+    }
+
+    hts_set_log_level(logging);
+}
+
 int main(int argc, char **argv)
 {
     char *fname = argc>1 ? argv[1] : "rmme.bcf";
@@ -477,6 +540,6 @@ int main(int argc, char **argv)
 
     // additional tests. quiet unless there's a failure.
     test_get_info_values(fname);
-
+    test_invalid_end_tag();
     return 0;
 }
