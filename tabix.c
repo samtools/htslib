@@ -42,6 +42,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts.h"
 #include "htslib/regidx.h"
 #include "htslib/hts_defs.h"
+#include "htslib/hts_log.h"
 
 typedef struct
 {
@@ -455,6 +456,7 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "   -R, --regions FILE         restrict to regions listed in the file\n");
     fprintf(fp, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
     fprintf(fp, "   -D                         do not download the index file\n");
+    fprintf(fp, "       --verbosity INT        set verbosity [3]\n");
     fprintf(fp, "\n");
     return status;
 }
@@ -487,6 +489,7 @@ int main(int argc, char *argv[])
         {"list-chroms", no_argument, NULL, 'l'},
         {"reheader", required_argument, NULL, 'r'},
         {"version", no_argument, NULL, 1},
+        {"verbosity", required_argument, NULL, 3},
         {NULL, 0, NULL, 0}
     };
 
@@ -549,6 +552,12 @@ int main(int argc, char *argv[])
                 return EXIT_SUCCESS;
             case 2:
                 return usage(stdout, EXIT_SUCCESS);
+            case 3: {
+                int v = atoi(optarg);
+                if (v < 0) v = 0;
+                hts_set_log_level(v);
+                break;
+            }
             default: return usage(stderr, EXIT_FAILURE);
         }
     }

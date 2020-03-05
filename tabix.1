@@ -138,6 +138,13 @@ but the entire input will be read sequentially and regions not listed in FILE wi
 .TP
 .BI "-D "
 Do not download the index file before opening it. Valid for remote files only.
+.TP
+.BI "--verbosity " INT
+Set verbosity of logging messages printed to stderr.
+The default is 3, which turns on error and warning messages;
+2 reduces warning messages;
+1 prints only error messages and 0 is mostly silent.
+Values higher than 3 produce additional informational and debugging messages.
 .PP
 .SH EXAMPLE
 (grep ^"#" in.gff; grep -v ^"#" in.gff | sort -k1,1 -k4,4n) | bgzip > sorted.gff.gz;
