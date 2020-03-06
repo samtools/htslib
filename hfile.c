@@ -1,6 +1,6 @@
 /*  hfile.c -- buffered low-level input/output streams.
 
-    Copyright (C) 2013-2019 Genome Research Ltd.
+    Copyright (C) 2013-2020 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -870,6 +870,41 @@ int hfile_plugin_init_mem(struct hFILE_plugin *self)
     return 0;
 }
 
+/**********************************************************************
+ * Dummy crypt4gh plug-in.  Does nothing apart from advise how to get *
+ * the real one.  It will be overridden by the actual plug-in.        *
+ **********************************************************************/
+
+static hFILE *crypt4gh_needed(const char *url, const char *mode)
+{
+    const char *u = strncmp(url, "crypt4gh:", 9) == 0 ? url + 9 : url;
+#if defined(ENABLE_PLUGINS)
+    const char *enable_plugins = "";
+#else
+    const char *enable_plugins = "You also need to rebuild HTSlib with plug-ins enabled.\n";
+#endif
+
+    hts_log_error("Accessing \"%s\" needs the crypt4gh plug-in.\n"
+                  "It can be found at "
+                  "https://github.com/samtools/htslib-crypt4gh\n"
+                  "%s"
+                  "If you have the plug-in, please ensure it can be "
+                  "found on your HTS_PATH.",
+                  u, enable_plugins);
+
+    errno = EPROTONOSUPPORT;
+    return NULL;
+}
+
+int hfile_plugin_init_crypt4gh_needed(struct hFILE_plugin *self)
+{
+    static const struct hFILE_scheme_handler handler =
+        { crypt4gh_needed, NULL, "crypt4gh-needed", 0, NULL };
+    self->name = "crypt4gh-needed";
+    hfile_add_scheme_handler("crypt4gh", &handler);
+    return 0;
+}
+
 
 /*****************************************
  * Plugin and hopen() backend dispatcher *
@@ -1007,6 +1042,7 @@ static void load_hfile_plugins()
     hfile_add_scheme_handler("preload", &preload);
     init_add_plugin(NULL, hfile_plugin_init_net, "knetfile");
     init_add_plugin(NULL, hfile_plugin_init_mem, "mem");
+    init_add_plugin(NULL, hfile_plugin_init_crypt4gh_needed, "crypt4gh-needed");
 
 #ifdef ENABLE_PLUGINS
     struct hts_path_itr path;
