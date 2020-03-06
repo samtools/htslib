@@ -1,6 +1,6 @@
 /*  hts.c -- format-neutral I/O, indexing, and iterator API functions.
 
-    Copyright (C) 2008, 2009, 2012-2019 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2012-2020 Genome Research Ltd.
     Copyright (C) 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -127,6 +127,7 @@ static enum htsFormatCategory format_category(enum htsExactFormat fmt)
 
     case fasta_format:
     case htsget:
+    case hts_crypt4gh_format:
         return unknown_category;
 
     case unknown_format:
@@ -426,6 +427,11 @@ int hts_detect_format(hFILE *hfile, htsFormat *fmt)
         fmt->format = htsget;
         return 0;
     }
+    else if (len > 8 && memcmp(s, "crypt4gh", 8) == 0) {
+        fmt->category = unknown_category;
+        fmt->format = hts_crypt4gh_format;
+        return 0;
+    }
     else if (len >= 1 && s[0] == '>' && secondline_is_bases(s, &s[len])) {
         fmt->format = fasta_format;
         return 0;
@@ -500,6 +506,7 @@ char *hts_format_description(const htsFormat *format)
     case tbi:   kputs("Tabix", &str); break;
     case bed:   kputs("BED", &str); break;
     case htsget: kputs("htsget", &str); break;
+    case hts_crypt4gh_format: kputs("crypt4gh", &str); break;
     case empty_format:  kputs("empty", &str); break;
     default:    kputs("unknown", &str); break;
     }
@@ -1001,6 +1008,34 @@ static int hts_process_opts(htsFile *fp, const char *opts) {
     return 0;
 }
 
+static int hts_crypt4gh_redirect(const char *fn, const char *mode,
+                                 hFILE **hfile_ptr, htsFile *fp) {
+    hFILE *hfile1 = *hfile_ptr;
+    hFILE *hfile2 = NULL;
+    char fn_buf[512], *fn2 = fn_buf;
+    const char *prefix = "crypt4gh:";
+    size_t fn2_len = strlen(prefix) + strlen(fn) + 1;
+    int ret = -1;
+
+    if (fn2_len > sizeof(fn_buf)) {
+        fn2 = malloc(fn2_len);
+        if (!fn2) return -1;
+    }
+
+    // Reopen fn using the crypt4gh plug-in (if available)
+    snprintf(fn2, fn2_len, "%s%s", prefix, fn);
+    hfile2 = hopen(fn2, mode, "parent", hfile1, NULL);
+    if (hfile2) {
+        // Replace original hfile with the new one.  The original is now
+        // enclosed within hfile2
+        *hfile_ptr = hfile2;
+        ret = 0;
+    }
+
+    if (fn2 != fn_buf)
+        free(fn2);
+    return ret;
+}
 
 htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
 {
@@ -1025,14 +1060,33 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
     }
 
     if (strchr(simple_mode, 'r')) {
+        const int max_loops = 5; // Should be plenty
+        int loops = 0;
         if (hts_detect_format(hfile, &fp->format) < 0) goto error;
 
-        if (fp->format.format == htsget) {
-            hFILE *hfile2 = hopen_htsget_redirect(hfile, simple_mode);
-            if (hfile2 == NULL) goto error;
+        // Deal with formats that re-direct an underlying file via a plug-in.
+        // Loops as we may have crypt4gh served via htsget, or
+        // crypt4gh-in-crypt4gh.
+        while (fp->format.format == htsget ||
+               fp->format.format == hts_crypt4gh_format) {
+            // Ensure we don't get stuck in an endless redirect loop
+            if (++loops > max_loops) {
+                errno = ELOOP;
+                goto error;
+            }
 
-            // Build fp against the result of the redirection
-            hfile = hfile2;
+            if (fp->format.format == htsget) {
+                hFILE *hfile2 = hopen_htsget_redirect(hfile, simple_mode);
+                if (hfile2 == NULL) goto error;
+
+                hfile = hfile2;
+            }
+            else if (fp->format.format == hts_crypt4gh_format) {
+                if (hts_crypt4gh_redirect(fn, simple_mode, &hfile, fp) < 0)
+                    goto error;
+            }
+
+            // Re-detect format against the result of the redirection
             if (hts_detect_format(hfile, &fp->format) < 0) goto error;
         }
     }
