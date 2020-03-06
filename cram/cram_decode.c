@@ -2194,16 +2194,12 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
     ref_id = s->hdr->ref_seq_id;
     embed_ref = s->hdr->ref_base_id >= 0 ? 1 : 0;
 
-    const char *ref_str = (ref_id >= 0 && ref_id < fd->refs->nref)
-        ? fd->refs->ref_id[ref_id]->name
-        : "*";
-
     if (ref_id >= 0) {
         if (embed_ref) {
             cram_block *b;
             if (s->hdr->ref_base_id < 0) {
                 hts_log_error("No reference specified and no embedded reference is available"
-                              " at %s:%"PRId64"-%"PRId64, ref_str, s->hdr->ref_seq_start,
+                              " at #%d:%"PRId64"-%"PRId64, ref_id, s->hdr->ref_seq_start,
                               s->hdr->ref_seq_start + s->hdr->ref_seq_span-1);
                 return -1;
             }
@@ -2216,8 +2212,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             s->ref_start = s->hdr->ref_seq_start;
             s->ref_end   = s->hdr->ref_seq_start + s->hdr->ref_seq_span-1;
             if (s->ref_end - s->ref_start > b->uncomp_size) {
-                hts_log_error("Embedded reference is too small at %s:%d-%d",
-                              ref_str, s->ref_start, s->ref_end);
+                hts_log_error("Embedded reference is too small at #%d:%d-%d",
+                              ref_id, s->ref_start, s->ref_end);
                 return -1;
             }
         } else if (!c->comp_hdr->no_ref) {
@@ -2237,7 +2233,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             /* Sanity check */
             if (s->ref_start < 0) {
                 hts_log_warning("Slice starts before base 1"
-                                " at %s:%"PRId64"-%"PRId64, ref_str, s->hdr->ref_seq_start,
+                                " at #%d:%"PRId64"-%"PRId64, ref_id, s->hdr->ref_seq_start,
                                 s->hdr->ref_seq_start + s->hdr->ref_seq_span-1);
                 s->ref_start = 0;
             }
@@ -2255,8 +2251,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
 
     if ((fd->required_fields & SAM_SEQ) &&
         s->ref == NULL && s->hdr->ref_seq_id >= 0 && !c->comp_hdr->no_ref) {
-        hts_log_error("Unable to fetch reference %s:%"PRId64"-%"PRId64"\n",
-                      ref_str, s->hdr->ref_seq_start,
+        hts_log_error("Unable to fetch reference #%d:%"PRId64"-%"PRId64"\n",
+                      ref_id, s->hdr->ref_seq_start,
                       s->hdr->ref_seq_start + s->hdr->ref_seq_span-1);
         return -1;
     }
@@ -2275,16 +2271,16 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             if (s->hdr->ref_seq_start >= s->ref_start) {
                 start = s->hdr->ref_seq_start - s->ref_start;
             } else {
-                hts_log_warning("Slice starts before base 1 at %s:%d-%d",
-                                ref_str, s->ref_start, s->ref_end);
+                hts_log_warning("Slice starts before base 1 at #%d:%d-%d",
+                                ref_id, s->ref_start, s->ref_end);
                 start = 0;
             }
 
             if (s->hdr->ref_seq_span <= s->ref_end - s->ref_start + 1) {
                 len = s->hdr->ref_seq_span;
             } else {
-                hts_log_warning("Slice ends beyond reference end at %s:%d-%d",
-                                ref_str, s->ref_start, s->ref_end);
+                hts_log_warning("Slice ends beyond reference end at #%d:%d-%d",
+                                ref_id, s->ref_start, s->ref_end);
                 len = s->ref_end - s->ref_start + 1;
             }
 
@@ -2310,8 +2306,8 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         if ((!s->ref && s->hdr->ref_base_id < 0)
             || memcmp(digest, s->hdr->md5, 16) != 0) {
             char M[33];
-            hts_log_error("MD5 checksum reference mismatch at %s:%d-%d",
-                          ref_str, s->ref_start, s->ref_end);
+            hts_log_error("MD5 checksum reference mismatch at #%d:%d-%d",
+                          ref_id, s->ref_start, s->ref_end);
             hts_log_error("CRAM: %s", md5_print(s->hdr->md5, M));
             hts_log_error("Ref : %s", md5_print(digest, M));
             return -1;
