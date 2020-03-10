@@ -2193,8 +2193,7 @@ static inline int align_mem(kstring_t *s)
     int e = 0;
     if (s->l&7) {
         uint64_t zero = 0;
-        int l = ((s->l + 7)>>3<<3) - s->l;
-        e = kputsn((char*)&zero, l, s) < 0;
+        e = kputsn((char*)&zero, 8 - (s->l&7), s) < 0;
     }
     return e == 0 ? 0 : -1;
 }
@@ -2338,9 +2337,26 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             v->errcode |= BCF_ERR_TAG_INVALID;
             return -1;
         }
-        align_mem(mem);
+        if (align_mem(mem) < 0) {
+            hts_log_error("Memory allocation failure");
+            v->errcode |= BCF_ERR_LIMITS;
+            return -1;
+        }
         f->offset = mem->l;
-        ks_resize(mem, mem->l + v->n_sample * f->size);
+
+        // Limit the total memory to ~2Gb per VCF row.  This should mean
+        // malformed VCF data is less likely to take excessive memory and/or
+        // time.
+        if (v->n_sample * (uint64_t)f->size > INT_MAX) {
+            hts_log_error("Excessive memory required by FORMAT fields");
+            v->errcode |= BCF_ERR_LIMITS;
+            return -1;
+        }
+        if (ks_resize(mem, mem->l + v->n_sample * (size_t)f->size) < 0) {
+            hts_log_error("Memory allocation failure");
+            v->errcode |= BCF_ERR_LIMITS;
+            return -1;
+        }
         mem->l += v->n_sample * f->size;
     }
     for (j = 0; j < v->n_fmt; ++j)
@@ -2367,9 +2383,15 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         while ( t < end )
         {
             fmt_aux_t *z = &fmt[j++];
+            if (!z->buf) {
+                hts_log_error("Memory allocation failure for FORMAT field type %d",
+                              z->y>>4&0xf);
+                v->errcode |= BCF_ERR_LIMITS;
+                return -1;
+            }
             if ((z->y>>4&0xf) == BCF_HT_STR) {
                 if (z->is_gt) { // genotypes
-                    int32_t is_phased = 0, *x = (int32_t*)(z->buf + z->size * m);
+                    int32_t is_phased = 0, *x = (int32_t*)(z->buf + z->size * (size_t)m);
                     for (l = 0;; ++t) {
                         if (*t == '.') {
                             ++t, x[l++] = is_phased;
@@ -2391,12 +2413,12 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                     if ( !l ) x[l++] = 0;   // An empty field, insert missing value
                     for (; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
                 } else {
-                    char *x = (char*)z->buf + z->size * m;
+                    char *x = (char*)z->buf + z->size * (size_t)m;
                     for (r = t, l = 0; *t != ':' && *t; ++t) x[l++] = *t;
                     for (; l < z->size; ++l) x[l] = 0;
                 }
             } else if ((z->y>>4&0xf) == BCF_HT_INT) {
-                int32_t *x = (int32_t*)(z->buf + z->size * m);
+                int32_t *x = (int32_t*)(z->buf + z->size * (size_t)m);
                 for (l = 0;; ++t) {
                     if (*t == '.') x[l++] = bcf_int32_missing, ++t; // ++t to skip "."
                     else
@@ -2421,7 +2443,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
                 if ( !l ) x[l++] = bcf_int32_missing;
                 for (; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
             } else if ((z->y>>4&0xf) == BCF_HT_REAL) {
-                float *x = (float*)(z->buf + z->size * m);
+                float *x = (float*)(z->buf + z->size * (size_t)m);
                 for (l = 0;; ++t) {
                     if (*t == '.' && !isdigit_c(t[1])) bcf_float_set_missing(x[l++]), ++t; // ++t to skip "."
                     else x[l++] = strtod(t, &t);
@@ -2454,20 +2476,20 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             fmt_aux_t *z = &fmt[j];
             if ((z->y>>4&0xf) == BCF_HT_STR) {
                 if (z->is_gt) {
-                    int32_t *x = (int32_t*)(z->buf + z->size * m);
+                    int32_t *x = (int32_t*)(z->buf + z->size * (size_t)m);
                     if (z->size) x[0] = bcf_int32_missing;
                     for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
                 } else {
-                    char *x = (char*)z->buf + z->size * m;
+                    char *x = (char*)z->buf + z->size * (size_t)m;
                     if ( z->size ) x[0] = '.';
                     for (l = 1; l < z->size; ++l) x[l] = 0;
                 }
             } else if ((z->y>>4&0xf) == BCF_HT_INT) {
-                int32_t *x = (int32_t*)(z->buf + z->size * m);
+                int32_t *x = (int32_t*)(z->buf + z->size * (size_t)m);
                 x[0] = bcf_int32_missing;
                 for (l = 1; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
             } else if ((z->y>>4&0xf) == BCF_HT_REAL) {
-                float *x = (float*)(z->buf + z->size * m);
+                float *x = (float*)(z->buf + z->size * (size_t)m);
                 bcf_float_set_missing(x[0]);
                 for (l = 1; l < z->size>>2; ++l) bcf_float_set_vector_end(x[l]);
             }
@@ -2485,12 +2507,12 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             bcf_enc_int1(str, z->key);
             if ((z->y>>4&0xf) == BCF_HT_STR && !z->is_gt) {
                 bcf_enc_size(str, z->size, BCF_BT_CHAR);
-                kputsn((char*)z->buf, z->size * v->n_sample, str);
+                kputsn((char*)z->buf, z->size * (size_t)v->n_sample, str);
             } else if ((z->y>>4&0xf) == BCF_HT_INT || z->is_gt) {
                 bcf_enc_vint(str, (z->size>>2) * v->n_sample, (int32_t*)z->buf, z->size>>2);
             } else {
                 bcf_enc_size(str, z->size>>2, BCF_BT_FLOAT);
-                if (serialize_float_array(str, (z->size>>2) * v->n_sample,
+                if (serialize_float_array(str, (z->size>>2) * (size_t)v->n_sample,
                                           (float *) z->buf) != 0) {
                     v->errcode |= BCF_ERR_LIMITS;
                     hts_log_error("Out of memory");
@@ -3038,7 +3060,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                     if (gt_i == i)
                         bcf_format_gt(f,j,s);
                     else
-                        bcf_fmt_array(s, f->n, f->type, f->p + j * f->size);
+                        bcf_fmt_array(s, f->n, f->type, f->p + j * (size_t)f->size);
                 }
                 if ( first ) kputc('.', s);
             }

@@ -38,7 +38,7 @@
 #include "hts_defs.h"
 
 #ifndef kroundup32
-#define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
+#define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x),(x)=(x)?(x):(uint32_t)-1)
 #endif
 
 #ifndef kroundup_size_t
@@ -49,7 +49,7 @@
                             (x)|=(x)>>(sizeof(size_t)),   /*  4 or  8 */ \
                             (x)|=(x)>>(sizeof(size_t)*2), /*  8 or 16 */ \
                             (x)|=(x)>>(sizeof(size_t)*4), /* 16 or 32 */ \
-                            ++(x))
+                            ++(x),(x)=(x)?(x):(size_t)-1)
 #endif
 
 #if defined __GNUC__ && (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ > 4))
