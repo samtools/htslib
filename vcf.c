@@ -2347,7 +2347,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
         // Limit the total memory to ~2Gb per VCF row.  This should mean
         // malformed VCF data is less likely to take excessive memory and/or
         // time.
-        if (v->n_sample * (size_t)f->size > INT_MAX) {
+        if (v->n_sample * (uint64_t)f->size > INT_MAX) {
             hts_log_error("Excessive memory required by FORMAT fields");
             v->errcode |= BCF_ERR_LIMITS;
             return -1;
