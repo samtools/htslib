@@ -38,18 +38,30 @@
 #include "hts_defs.h"
 
 #ifndef kroundup32
-#define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x),(x)=(x)?(x):(uint32_t)-1)
+#define kroundup32(x) ((x)<INT_MAX                                      \
+  ? (--(x),                                                             \
+     (x)|=(x)>>1,                                                       \
+     (x)|=(x)>>2,                                                       \
+     (x)|=(x)>>4,                                                       \
+     (x)|=(x)>>8,                                                       \
+     (x)|=(x)>>16,                                                      \
+     ++(x))                                                             \
+  : ((x)=UINT_MAX))
 #endif
 
 #ifndef kroundup_size_t
-#define kroundup_size_t(x) (--(x),                                       \
-                            (x)|=(x)>>(sizeof(size_t)/8), /*  0 or  1 */ \
-                            (x)|=(x)>>(sizeof(size_t)/4), /*  1 or  2 */ \
-                            (x)|=(x)>>(sizeof(size_t)/2), /*  2 or  4 */ \
-                            (x)|=(x)>>(sizeof(size_t)),   /*  4 or  8 */ \
-                            (x)|=(x)>>(sizeof(size_t)*2), /*  8 or 16 */ \
-                            (x)|=(x)>>(sizeof(size_t)*4), /* 16 or 32 */ \
-                            ++(x),(x)=(x)?(x):(size_t)-1)
+// Equiv to SSIZE_MAX
+#define SIZE_OVERFLOW (((size_t)-1)   - (((size_t)-1)>>1))
+
+#define kroundup_size_t(x) (((x) < SIZE_OVERFLOW)                       \
+    ? (--(x),                                                           \
+       (x)|=(x)>>(sizeof(size_t)/8), /*  0 or  1 */                     \
+       (x)|=(x)>>(sizeof(size_t)/4), /*  1 or  2 */                     \
+       (x)|=(x)>>(sizeof(size_t)/2), /*  2 or  4 */                     \
+       (x)|=(x)>>(sizeof(size_t)),   /*  4 or  8 */                     \
+       (x)|=(x)>>(sizeof(size_t)*2), /*  8 or 16 */                     \
+       (x)|=(x)>>(sizeof(size_t)*4), /* 16 or 32 */                     \
+       ++(x)) : (x) /*don't round up*/)
 #endif
 
 #if defined __GNUC__ && (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ > 4))
