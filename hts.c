@@ -3243,7 +3243,12 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
     if (iter == NULL || iter->finished) return -1;
     if (iter->read_rest) {
         if (iter->curr_off) { // seek to the start
-            if (bgzf_seek(fp, iter->curr_off, SEEK_SET) < 0) return -1;
+            if (bgzf_seek(fp, iter->curr_off, SEEK_SET) < 0) {
+                hts_log_error("Failed to seek to offset %"PRIu64"%s%s",
+                              iter->curr_off,
+                              errno ? ": " : "", strerror(errno));
+                return -2;
+            }
             iter->curr_off = 0; // only seek once
         }
         ret = iter->readrec(fp, data, r, &tid, &beg, &end);
@@ -3259,7 +3264,12 @@ int hts_itr_next(BGZF *fp, hts_itr_t *iter, void *r, void *data)
         if (iter->curr_off == 0 || iter->curr_off >= iter->off[iter->i].v) { // then jump to the next chunk
             if (iter->i == iter->n_off - 1) { ret = -1; break; } // no more chunks
             if (iter->i < 0 || iter->off[iter->i].v != iter->off[iter->i+1].u) { // not adjacent chunks; then seek
-                if (bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) return -1;
+                if (bgzf_seek(fp, iter->off[iter->i+1].u, SEEK_SET) < 0) {
+                    hts_log_error("Failed to seek to offset %"PRIu64"%s%s",
+                                  iter->off[iter->i+1].u,
+                                  errno ? ": " : "", strerror(errno));
+                    return -2;
+                }
                 iter->curr_off = bgzf_tell(fp);
             }
             ++iter->i;
