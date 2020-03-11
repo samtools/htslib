@@ -74,6 +74,8 @@ HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) static void error_errno(const char *format, ...
     }
     if (eno) {
         fprintf(stderr, "%s%s\n", format ? ": " : "", strerror(eno));
+    } else {
+        fprintf(stderr, "\n");
     }
     fflush(stderr);
     exit(EXIT_FAILURE);
