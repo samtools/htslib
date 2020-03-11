@@ -3836,6 +3836,7 @@ static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *va
     {
         if ( alt[1]=='X' && alt[2]=='>' ) { var->n = 0; var->type = VCF_REF; return; }  // mpileup's X allele shouldn't be treated as variant
         if ( alt[1]=='*' && alt[2]=='>' ) { var->n = 0; var->type = VCF_REF; return; }
+        if ( !strcmp("NON_REF>",alt+1) ) { var->n = 0; var->type = VCF_REF; return; }
         var->type = VCF_OTHER;
         return;
     }
