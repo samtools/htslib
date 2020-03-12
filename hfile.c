@@ -45,6 +45,12 @@ DEALINGS IN THE SOFTWARE.  */
 #include "hfile_internal.h"
 #include "htslib/kstring.h"
 
+#ifdef HAVE_MMAP
+#include <sys/mman.h>
+#endif
+
+#include <sys/stat.h>
+
 #ifndef ENOTSUP
 #define ENOTSUP EINVAL
 #endif
@@ -871,6 +877,82 @@ int hfile_plugin_init_mem(struct hFILE_plugin *self)
 }
 
 
+/*******************
+ * MMapped backend *
+ *******************/
+
+static int hfile_mmaped_close(hFILE *fp)
+{
+#ifdef HAVE_MMAP
+    if(munmap(fp->buffer, fp->end - fp->buffer) == -1)
+        return 1;
+
+    fp->buffer = NULL;
+    return 0;
+#else
+    return 1;
+#endif
+}
+
+static const struct hFILE_backend mmap_backend =
+{
+    NULL, NULL, mem_seek, NULL, hfile_mmaped_close
+};
+
+static hFILE *create_hfile_mmapped(char* buffer, const char* mode, size_t buf_filled, size_t buf_size)
+{
+    hFILE *fp = hfile_init_fixed(sizeof(hFILE), mode, buffer, buf_filled, buf_size);
+    if (fp == NULL)
+        return NULL;
+
+    fp->backend = &mmap_backend;
+    return fp;
+}
+
+hFILE *hopen_mmap(const char *url, const char *mode)
+{
+#ifdef HAVE_MMAP
+    // TODO: think about writing
+    if (mode[0] != 'r' || mode[1] != 0)
+        return NULL;
+
+    FILE* fp;
+    if(!(fp = fopen(url + 5, mode)))
+        return NULL;
+
+    struct stat sb;
+    if (fstat(fileno(fp), &sb) != 0)
+        return NULL;
+
+    char* mmaped_memory = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fileno(fp), 0);
+    if(mmaped_memory == MAP_FAILED)
+        return NULL;
+
+    fclose(fp); // NOTE: we can close this as a reference to the file is still kept.
+                // See http://pubs.opengroup.org/onlinepubs/7908799/xsh/mmap.html
+
+    hFILE* out_hfile;
+    if(!(out_hfile = create_hfile_mmapped(mmaped_memory, mode, sb.st_size, sb.st_size))){
+        return NULL;
+    }
+
+    return out_hfile;
+#else
+    return NULL;
+#endif
+}
+
+int hfile_plugin_init_mmap(struct hFILE_plugin *self)
+{
+    // mem files are declared remote so they work with a tabix index
+    static const struct hFILE_scheme_handler handler =
+            {hopen_mmap, hfile_always_remote, "mmap", 2000 + 50, NULL};
+    self->name = "mmap";
+    hfile_add_scheme_handler("mmap", &handler);
+    return 0;
+}
+
+
 /*****************************************
  * Plugin and hopen() backend dispatcher *
  *****************************************/
@@ -1007,6 +1089,7 @@ static void load_hfile_plugins()
     hfile_add_scheme_handler("preload", &preload);
     init_add_plugin(NULL, hfile_plugin_init_net, "knetfile");
     init_add_plugin(NULL, hfile_plugin_init_mem, "mem");
+    init_add_plugin(NULL, hfile_plugin_init_mmap, "mmap");
 
 #ifdef ENABLE_PLUGINS
     struct hts_path_itr path;
