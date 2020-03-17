@@ -35,6 +35,19 @@
 #include <math.h>
 #include "htslib/kstring.h"
 
+HTSLIB_EXPORT
+int ks_resize2(kstring_t *s, size_t size)
+{
+	char *tmp;
+	kroundup_size_t(size);
+	tmp = (char*)realloc(s->s, size);
+	if (!tmp && size)
+		return -1;
+	s->s = tmp;
+	s->m = size;
+	return 0;
+}
+
 int kputd(double d, kstring_t *s) {
 	int len = 0;
 	char buf[21], *cp = buf+20, *ep;
