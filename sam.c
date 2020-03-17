@@ -1,6 +1,6 @@
 /*  sam.c -- SAM and BAM file I/O and manipulation.
 
-    Copyright (C) 2008-2010, 2012-2019 Genome Research Ltd.
+    Copyright (C) 2008-2010, 2012-2020 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -1669,6 +1669,22 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
         return -1;
     }
     return 0;
+}
+
+sam_hdr_t *sam_hdr_get(samFile *f) {
+    sam_hdr_t *hdr = NULL;
+    if (f) hdr = f->bam_header;
+
+    return hdr;
+}
+
+void sam_hdr_set(samFile *f, sam_hdr_t *hdr, int replace) {
+    if (!f || !hdr) return;
+    if (f->bam_header) {
+        if (replace) sam_hdr_destroy(f->bam_header);
+        else return;
+    }
+    f->bam_header = hdr;
 }
 
 static int old_sam_hdr_change_HD(sam_hdr_t *h, const char *key, const char *val)

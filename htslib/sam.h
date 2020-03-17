@@ -1,7 +1,7 @@
 /// @file htslib/sam.h
 /// High-level SAM/BAM/CRAM sequence file operations.
 /*
-    Copyright (C) 2008, 2009, 2013-2019 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2020 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -817,6 +817,19 @@ char *stringify_argv(int argc, char *argv[]);
  */
 HTSLIB_EXPORT
 void sam_hdr_incr_ref(sam_hdr_t *h);
+
+/// Gets the inner header from the sam file
+HTSLIB_EXPORT
+sam_hdr_t *sam_hdr_get(samFile *f);
+
+/// Sets the header of the sam file
+/*!
+ * The method sets samFile::bam_header to the new hdr, following the replace
+ * policy (1 - replace the old header, 0 - keep the old header, if there is
+ * one).
+ */
+HTSLIB_EXPORT
+void sam_hdr_set(samFile *f, sam_hdr_t *hdr, int replace);
 
 /*
  * Macros for changing the \@HD line. They eliminate the need to use NULL method arguments.
