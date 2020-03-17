@@ -3495,7 +3495,6 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
 {
     hFILE *remote_hfp;
     FILE *local_fp = NULL;
-    uint8_t *buf = NULL;
     int save_errno;
     htsFormat fmt;
     kstring_t s = KS_INITIALIZE;
@@ -3544,7 +3543,7 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
                 goto fail;
             }
             hts_log_info("Downloading file %s to local directory", fn);
-            buf = (uint8_t*)calloc(buf_size, 1);
+            uint8_t *buf = (uint8_t*)calloc(buf_size, 1);
             if (!buf) {
                 hts_log_error("%s", strerror(errno));
                 goto fail;
@@ -3594,7 +3593,6 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
     save_errno = errno;
     hclose_abruptly(remote_hfp);
     if (local_fp) fclose(local_fp);
-    free(buf);
     free(s.s);
     errno = save_errno;
     return -2;
