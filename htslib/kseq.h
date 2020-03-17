@@ -33,6 +33,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "kstring.h"
+
 #ifndef klib_unused
 #if (defined __clang__ && __clang_major__ >= 3) || (defined __GNUC__ && __GNUC__ >= 3)
 #define klib_unused __attribute__ ((__unused__))
@@ -87,18 +89,6 @@
 	} \
 	static inline klib_unused int ks_getuntil(kstream_t *ks, int delimiter, kstring_t *str, int *dret) \
 	{ return ks_getuntil2(ks, delimiter, str, dret, 0); }
-
-#ifndef KSTRING_T
-#define KSTRING_T kstring_t
-typedef struct kstring_t {
-	size_t l, m;
-	char *s;
-} kstring_t;
-#endif
-
-#ifndef kroundup32
-#define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
-#endif
 
 #define __KS_GETUNTIL(SCOPE, __read) \
 	SCOPE int ks_getuntil2(kstream_t *ks, int delimiter, kstring_t *str, int *dret, int append)  \

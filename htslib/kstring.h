@@ -33,24 +33,11 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <limits.h>
+#include <errno.h>
 #include <sys/types.h>
 
 #include "hts_defs.h"
-
-#ifndef kroundup32
-#define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x),(x)=(x)?(x):(uint32_t)-1)
-#endif
-
-#ifndef kroundup_size_t
-#define kroundup_size_t(x) (--(x),                                       \
-                            (x)|=(x)>>(sizeof(size_t)/8), /*  0 or  1 */ \
-                            (x)|=(x)>>(sizeof(size_t)/4), /*  1 or  2 */ \
-                            (x)|=(x)>>(sizeof(size_t)/2), /*  2 or  4 */ \
-                            (x)|=(x)>>(sizeof(size_t)),   /*  4 or  8 */ \
-                            (x)|=(x)>>(sizeof(size_t)*2), /*  8 or 16 */ \
-                            (x)|=(x)>>(sizeof(size_t)*4), /* 16 or 32 */ \
-                            ++(x),(x)=(x)?(x):(size_t)-1)
-#endif
+#include "kroundup.h"
 
 #if defined __GNUC__ && (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ > 4))
 #ifdef __MINGW_PRINTF_FORMAT

@@ -34,6 +34,8 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "hts_defs.h"
 #include "hts_log.h"
+#include "kstring.h"
+#include "kroundup.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,18 +58,6 @@ struct cram_fd;
 struct hFILE;
 struct hts_tpool;
 struct sam_hdr_t;
-
-#ifndef KSTRING_T
-#define KSTRING_T kstring_t
-typedef struct kstring_t {
-    size_t l, m;
-    char *s;
-} kstring_t;
-#endif
-
-#ifndef kroundup32
-#define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
-#endif
 
 /**
  * @hideinitializer
