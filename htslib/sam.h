@@ -820,16 +820,24 @@ void sam_hdr_incr_ref(sam_hdr_t *h);
 
 /// Gets the inner header from the sam file
 HTSLIB_EXPORT
-sam_hdr_t *sam_hdr_get(samFile *f);
+const sam_hdr_t *sam_hdr_get(samFile *f);
 
 /// Sets the header of the sam file
 /*!
  * The method sets samFile::bam_header to the new hdr, following the replace
  * policy (1 - replace the old header, 0 - keep the old header, if there is
  * one).
+ *
+ * If the new header struct (hdr) is attached to f, its memory will be freed
+ * by sam_close, so the user must not attempt to free hdr separately.
+ *
+ * @param f        SAM/BAM/CRAM file structure
+ * @param hdr      Detached header structure to be set to f
+ * @param replace  1 - replace the old header, 0 - keep the old header
+ * @return         -1 on failure, 0 header not replaced, 1 header replaced
  */
 HTSLIB_EXPORT
-void sam_hdr_set(samFile *f, sam_hdr_t *hdr, int replace);
+int sam_hdr_set(samFile *f, sam_hdr_t *hdr, int replace);
 
 /*
  * Macros for changing the \@HD line. They eliminate the need to use NULL method arguments.
