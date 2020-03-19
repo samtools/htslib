@@ -2186,11 +2186,7 @@ int bgzf_getline(BGZF *fp, int delim, kstring_t *str)
         for (l = fp->block_offset; l < fp->block_length && buf[l] != delim; ++l);
         if (l < fp->block_length) state = 1;
         l -= fp->block_offset;
-        if (str->l + l + 1 >= str->m) {
-            str->m = str->l + l + 2;
-            kroundup32(str->m);
-            str->s = (char*)realloc(str->s, str->m);
-        }
+        if (ks_expand(str, l + 2) < 0) { state = -3; break; }
         memcpy(str->s + str->l, buf + fp->block_offset, l);
         str->l += l;
         fp->block_offset += l + 1;

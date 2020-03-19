@@ -119,11 +119,7 @@
 				for (i = ks->begin; i < ks->end; ++i) \
 					if (isspace(ks->buf[i]) && ks->buf[i] != ' ') break;  \
 			} else i = 0; /* never come to here! */ \
-			if (str->m - str->l < (size_t)(i - ks->begin + 1)) { \
-				str->m = str->l + (i - ks->begin) + 1; \
-				kroundup32(str->m); \
-				str->s = (char*)realloc(str->s, str->m); \
-			} \
+			(void) ks_expand(str, i - ks->begin + 1); \
             seek_pos += i - ks->begin; if ( i < ks->end ) seek_pos++; \
 			gotany = 1; \
 			memcpy(str->s + str->l, ks->buf + ks->begin, i - ks->begin);  \
