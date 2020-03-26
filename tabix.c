@@ -47,7 +47,7 @@ DEALINGS IN THE SOFTWARE.  */
 typedef struct
 {
     char *regions_fname, *targets_fname;
-    int print_header, header_only;
+    int print_header, header_only, cache_megs;
 }
 args_t;
 
@@ -199,6 +199,9 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
     htsFile *fp = hts_open(fname,"r");
     if ( !fp ) error_errno("Could not open \"%s\"", fname);
     enum htsExactFormat format = hts_get_format(fp)->format;
+
+    if (args->cache_megs)
+        hts_set_cache_size(fp, args->cache_megs * 1048576);
 
     regidx_t *reg_idx = NULL;
     if ( args->targets_fname )
@@ -458,6 +461,7 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "   -R, --regions FILE         restrict to regions listed in the file\n");
     fprintf(fp, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
     fprintf(fp, "   -D                         do not download the index file\n");
+    fprintf(fp, "       --cache INT            set cache size to INT megabytes (0 disables) [10]\n");
     fprintf(fp, "       --verbosity INT        set verbosity [3]\n");
     fprintf(fp, "\n");
     return status;
@@ -470,6 +474,7 @@ int main(int argc, char *argv[])
     char *reheader = NULL;
     args_t args;
     memset(&args,0,sizeof(args_t));
+    args.cache_megs = 10;
 
     static const struct option loptions[] =
     {
@@ -492,6 +497,7 @@ int main(int argc, char *argv[])
         {"reheader", required_argument, NULL, 'r'},
         {"version", no_argument, NULL, 1},
         {"verbosity", required_argument, NULL, 3},
+        {"cache", required_argument, NULL, 4},
         {NULL, 0, NULL, 0}
     };
 
@@ -560,6 +566,14 @@ int main(int argc, char *argv[])
                 hts_set_log_level(v);
                 break;
             }
+            case 4:
+                args.cache_megs = atoi(optarg);
+                if (args.cache_megs < 0) {
+                    args.cache_megs = 0;
+                } else if (args.cache_megs >= INT_MAX / 1048576) {
+                    args.cache_megs = INT_MAX / 1048576;
+                }
+                break;
             default: return usage(stderr, EXIT_FAILURE);
         }
     }

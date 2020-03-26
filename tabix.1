@@ -139,6 +139,14 @@ but the entire input will be read sequentially and regions not listed in FILE wi
 .BI "-D "
 Do not download the index file before opening it. Valid for remote files only.
 .TP
+.BI "--cache " INT
+Set the BGZF block cache size to INT megabytes. [10]
+
+This is of most benefit when the
+.B -R
+option is used, which can cause blocks to be read more than once.
+Setting the size to 0 will disable the cache.
+.TP
 .BI "--verbosity " INT
 Set verbosity of logging messages printed to stderr.
 The default is 3, which turns on error and warning messages;
