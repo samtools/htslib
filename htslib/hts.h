@@ -509,6 +509,14 @@ HTSLIB_EXPORT
 const htsFormat *hts_get_format(htsFile *fp);
 
 /*!
+  @abstract  Returns the file's name
+  @param fp  The file handle
+  @return    Read-only pointer to the file's fn field.
+*/
+HTSLIB_EXPORT
+const char *hts_get_fn(htsFile *fp);
+
+/*!
   @ abstract      Returns a string containing the file format extension.
   @ param format  Format structure containing the file type.
   @ return        A string ("sam", "bam", etc) or "?" for unknown formats.

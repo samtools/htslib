@@ -894,7 +894,9 @@ int bam_index_build(const char *fn, int min_shift)
 // Initialise fp->idx for the current format type.
 // This must be called after the header has been written but no other data.
 int sam_idx_init(htsFile *fp, sam_hdr_t *h, int min_shift, const char *fnidx) {
-    fp->fnidx = fnidx;
+    fp->fnidx = strdup(fnidx);
+    if (!fp->fnidx) return -1;
+
     if (fp->format.format == bam || fp->format.format == bcf ||
         (fp->format.format == sam && fp->format.compression == bgzf)) {
         int n_lvls, fmt = HTS_FMT_CSI;
@@ -1669,6 +1671,30 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
         return -1;
     }
     return 0;
+}
+
+htsFile *sam_open_write(const char *fn, sam_hdr_t *hdr, const char *mode, const htsFormat *fmt) {
+    htsFile *sf = NULL;
+    if (fn && mode) {
+        if (strchr(mode, 'w')) {
+            sf = hts_open_format(fn, mode, fmt);
+            if (sf) {
+                if (sam_hdr_write(sf, hdr) < 0) {
+                    hts_log_error("Writing header to file \"%s\" failed", fn);
+                    sam_close(sf);
+                    sf = NULL;
+                } else {
+                    if (sf->bam_header)
+                        sam_hdr_destroy(sf->bam_header);
+                    sf->bam_header = hdr;
+                }
+            }
+        } else {
+            hts_log_error("Only write mode allowed");
+        }
+    }
+
+    return sf;
 }
 
 static int old_sam_hdr_change_HD(sam_hdr_t *h, const char *key, const char *val)
@@ -3192,8 +3218,10 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 
 // Sadly we need to be able to modify the bam_hdr here so we can
 // reference count the structure.
-int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
+int sam_write1(htsFile *fp, const sam_hdr_t *hdr, const bam1_t *b)
 {
+    const sam_hdr_t *h = hdr;
+    if (!h) h = fp->bam_header;
     switch (fp->format.format) {
     case binary_format:
         fp->format.category = sequence_data;

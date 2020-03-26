@@ -1089,8 +1089,7 @@ int bam_set_qname(bam1_t *b, const char *qname);
 /** @param fp        File handle for the data file being written.
     @param h         Bam header structured (needed for BAI and CSI).
     @param min_shift 0 for BAI, or larger for CSI (CSI defaults to 14).
-    @param fnidx     Filename to write index to.  This pointer must remain valid
-                     until after sam_idx_save is called.
+    @param fnidx     Filename to write index to.
     @return          0 on success, <0 on failure.
 
     @note This must be called after the header has been written, but before
@@ -1325,6 +1324,20 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
                              const char *mode,
                              const char *format);
 
+/// sam_open_write - Open a file for writing only
+/** The method opens a new alignment file for writing, writes header hdr to it
+ *  and attaches the header struct to the returned htsFile struct.
+ *  If successful, ownership of hdr is given to the htsFile struct and hdr
+ *  should not be freed separately.
+ *  @param fn      Name of the file
+ *  @param h       Pointer to the header previously read or created
+ *  @param mode    Pointer to the mode string (must contain "w")
+ *  @param fmt     Pointer to the format
+ *  @return        Pointer to the htsFile (with hdr) on success, NULL on failure
+ */
+    HTSLIB_EXPORT
+    htsFile *sam_open_write(const char *fn, sam_hdr_t *hdr, const char *mode, const htsFormat *fmt);
+
     HTSLIB_EXPORT
     int sam_hdr_change_HD(sam_hdr_t *h, const char *key, const char *val);
 
@@ -1343,7 +1356,8 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
     int sam_read1(samFile *fp, sam_hdr_t *h, bam1_t *b) HTS_RESULT_USED;
 /// sam_write1 - Write a record to a file
 /** @param fp    Pointer to the destination file
- *  @param h     Pointer to the header structure previously read
+ *  @param h     Pointer to the header structure previously read. Can be NULL,
+ *               if fp has a non-NULL pointer to a valid header struct.
  *  @param b     Pointer to the record to be written
  *  @return >= 0 on successfully writing the record, -1 on error
  */
