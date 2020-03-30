@@ -116,6 +116,9 @@ typedef struct {
 
     off_t delayed_seek;      // Location to seek to before reading
     off_t last_offset;       // Location we're seeking from
+    char *preserved;         // Preserved buffer content on seek
+    size_t preserved_bytes;  // Number of preserved bytes
+    size_t preserved_size;   // Size of preserved buffer
 } hFILE_libcurl;
 
 static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence);
@@ -778,6 +781,26 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
                && fp->base.begin == fp->base.buffer
                && fp->base.end == fp->base.buffer);
 
+        if (fp->preserved
+            && fp->last_offset > fp->delayed_seek
+            && fp->last_offset - fp->preserved_bytes <= fp->delayed_seek) {
+            // Can use buffer contents copied when seeking started, to
+            // avoid having to re-read data discarded by hseek().
+            // Note fp->last_offset is the offset of the *end* of the
+            // preserved buffer.
+            size_t n = fp->last_offset - fp->delayed_seek;
+            char *start = fp->preserved + (fp->preserved_bytes - n);
+            if (n > nbytes) n = nbytes;
+            memcpy(buffer, start, n);
+            fp->preserved_bytes -= n;
+            if (fp->preserved_bytes > 0) {
+                fp->delayed_seek += n;
+            } else {
+                fp->last_offset = fp->delayed_seek = -1;
+            }
+            return n;
+        }
+
         if (fp->last_offset >= 0
             && fp->delayed_seek > fp->last_offset
             && fp->delayed_seek - fp->last_offset < MIN_SEEK_FORWARD) {
@@ -791,6 +814,7 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
         }
         fp->delayed_seek = -1;
         fp->last_offset = -1;
+        fp->preserved_bytes = 0;
     }
 
     do {
@@ -874,6 +898,26 @@ static ssize_t libcurl_write(hFILE *fpv, const void *bufferv, size_t nbytes)
     return nbytes;
 }
 
+static void preserve_buffer_content(hFILE_libcurl *fp)
+{
+    if (fp->base.begin == fp->base.end) {
+        fp->preserved_bytes = 0;
+        return;
+    }
+    if (!fp->preserved
+        || fp->preserved_size < fp->base.limit - fp->base.buffer) {
+        fp->preserved = malloc(fp->base.limit - fp->base.buffer);
+        if (!fp->preserved) return;
+        fp->preserved_size = fp->base.limit - fp->base.buffer;
+    }
+
+    assert(fp->base.end - fp->base.begin <= fp->preserved_size);
+
+    memcpy(fp->preserved, fp->base.begin, fp->base.end - fp->base.begin);
+    fp->preserved_bytes = fp->base.end - fp->base.begin;
+    return;
+}
+
 static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
 {
     hFILE_libcurl *fp = (hFILE_libcurl *) fpv;
@@ -917,6 +961,8 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
            without any intervening reads. */
         if (fp->delayed_seek < 0) {
             fp->last_offset = fp->base.offset + (fp->base.end - fp->base.buffer);
+            // Stash the current hFILE buffer content in case it's useful later
+            preserve_buffer_content(fp);
         }
         fp->delayed_seek = pos;
         return pos;
@@ -1105,6 +1151,8 @@ static int libcurl_close(hFILE *fpv)
     free_headers(&fp->headers.fixed, 1);
     free_headers(&fp->headers.extra, 1);
 
+    free(fp->preserved);
+
     if (save_errno) { errno = save_errno; return -1; }
     else return 0;
 }
@@ -1155,6 +1203,8 @@ libcurl_open(const char *url, const char *modes, http_headers *headers)
     fp->can_seek = 1;
     fp->tried_seek = 0;
     fp->delayed_seek = fp->last_offset = -1;
+    fp->preserved = NULL;
+    fp->preserved_bytes = fp->preserved_size = 0;
     fp->is_recursive = is_recursive;
     fp->nrunning = 0;
     fp->easy = NULL;
