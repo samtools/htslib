@@ -789,6 +789,14 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  The @p string in bcf_update_info_flag() is optional,
      *  @p n indicates whether the flag is set or removed.
      *
+     *  Note that updating an END info tag will cause line->rlen to be
+     *  updated as a side-effect (removing the tag will set it to the
+     *  string length of the REF allele). If line->pos is being changed as
+     *  well, it is important that this is done before calling
+     *  bcf_update_info_int32() to update the END tag, otherwise rlen will be
+     *  set incorrectly.  If the new END value is less than or equal to
+     *  line->pos, a warning will be printed and line->rlen will be set to
+     *  the length of the REF allele.
      */
     #define bcf_update_info_int32(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf_update_info_float(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
