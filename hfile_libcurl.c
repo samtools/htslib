@@ -777,9 +777,7 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
     CURLcode err;
 
     if (fp->delayed_seek >= 0) {
-        assert(fp->base.offset == fp->delayed_seek
-               && fp->base.begin == fp->base.buffer
-               && fp->base.end == fp->base.buffer);
+        assert(fp->base.offset == fp->delayed_seek);
 
         if (fp->preserved
             && fp->last_offset > fp->delayed_seek
@@ -790,15 +788,14 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
             // preserved buffer.
             size_t n = fp->last_offset - fp->delayed_seek;
             char *start = fp->preserved + (fp->preserved_bytes - n);
-            if (n > nbytes) n = nbytes;
-            memcpy(buffer, start, n);
-            fp->preserved_bytes -= n;
-            if (fp->preserved_bytes > 0) {
-                fp->delayed_seek += n;
+            size_t bytes = n <= nbytes ? n : nbytes;
+            memcpy(buffer, start, bytes);
+            if (bytes < n) { // Part of the preserved buffer still left
+                fp->delayed_seek += bytes;
             } else {
                 fp->last_offset = fp->delayed_seek = -1;
             }
-            return n;
+            return bytes;
         }
 
         if (fp->last_offset >= 0
