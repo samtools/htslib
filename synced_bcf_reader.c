@@ -104,8 +104,12 @@ int bcf_sr_set_opt(bcf_srs_t *readers, bcf_sr_opt_t opt, ...)
     va_list args;
     switch (opt)
     {
-        case BCF_SR_REQUIRE_IDX:
-            readers->require_index = 1;
+        case BCF_SR_REQUIRE_IDX_THROW:
+            readers->require_index = BSF_SR_REQUIRE_INDEX_THROW;
+            return 0;
+
+        case BCF_SR_REQUIRE_IDX_WARN:
+            readers->require_index = BSF_SR_REQUIRE_INDEX_WARN;
             return 0;
 
         case BCF_SR_PAIR_LOGIC:
@@ -162,7 +166,7 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
     readers->regions = bcf_sr_regions_init(regions,is_file,0,1,-2);
     if ( !readers->regions ) return -1;
     readers->explicit_regs = 1;
-    readers->require_index = 1;
+    readers->require_index = BSF_SR_REQUIRE_INDEX_THROW;
     return 0;
 }
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles)
@@ -233,7 +237,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
             bgzf_thread_pool(bgzf, files->p->pool, files->p->qsize);
     }
 
-    if ( files->require_index )
+    if ( BSF_SR_REQUIRE_INDEX_THROW == files->require_index )
     {
         if ( reader->file->format.format==vcf )
         {
@@ -290,9 +294,16 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     }
     if ( files->streaming && files->nreaders>1 )
     {
-        files->errnum = api_usage_error;
-        hts_log_error("Must set require_index when the number of readers is greater than one");
-        return 0;
+        if ( BSF_SR_REQUIRE_INDEX_WARN == files->require_index )
+        {
+            hts_log_warning("Using multiple readers without indexes may produce errors");
+        }
+		else
+		{
+            files->errnum = api_usage_error;
+            hts_log_error("Must set require_index when the number of readers is greater than one");
+            return 0;
+		}
     }
     if ( files->streaming && files->regions )
     {

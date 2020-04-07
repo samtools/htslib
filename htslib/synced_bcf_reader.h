@@ -38,7 +38,7 @@ DEALINGS IN THE SOFTWARE.  */
 
         bcf_srs_t *sr = bcf_sr_init();
         bcf_sr_set_opt(sr, BCF_SR_PAIR_LOGIC, BCF_SR_PAIR_BOTH_REF);
-        bcf_sr_set_opt(sr, BCF_SR_REQUIRE_IDX);
+        bcf_sr_set_opt(sr, BCF_SR_REQUIRE_IDX_THROW);
         for (i=0; i<nfiles; i++)
             bcf_sr_add_reader(sr,files[i]);
         while ( bcf_sr_next_line(sr) )
@@ -92,9 +92,13 @@ extern "C" {
 #define BCF_SR_PAIR_BOTH       (BCF_SR_PAIR_SNPS|BCF_SR_PAIR_INDELS)
 #define BCF_SR_PAIR_BOTH_REF   (BCF_SR_PAIR_SNPS|BCF_SR_PAIR_INDELS|BCF_SR_PAIR_SNP_REF|BCF_SR_PAIR_INDEL_REF)
 
+#define BSF_SR_REQUIRE_INDEX_THROW 1  // Error when using multiple readers without indexes (default)
+#define BSF_SR_REQUIRE_INDEX_WARN  2  // Warn and proceed
+
 typedef enum
 {
-    BCF_SR_REQUIRE_IDX,
+    BCF_SR_REQUIRE_IDX_THROW,
+    BCF_SR_REQUIRE_IDX_WARN,
     BCF_SR_PAIR_LOGIC       // combination of the PAIR_* values above
 }
 bcf_sr_opt_t;

@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
 
     bcf_srs_t *sr = bcf_sr_init();
     bcf_sr_set_opt(sr, BCF_SR_PAIR_LOGIC, pair);
-    bcf_sr_set_opt(sr, BCF_SR_REQUIRE_IDX);
+    bcf_sr_set_opt(sr, BCF_SR_REQUIRE_IDX_THROW);
     for (i=0; i<nvcf; i++)
         if ( !bcf_sr_add_reader(sr,vcf[i]) ) error("Failed to open %s: %s\n", vcf[i],bcf_sr_strerror(sr->errnum));
 
