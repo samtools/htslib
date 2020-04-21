@@ -2388,24 +2388,32 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             }
             if ((z->y>>4&0xf) == BCF_HT_STR) {
                 if (z->is_gt) { // genotypes
-                    int32_t is_phased = 0, *x = (int32_t*)(z->buf + z->size * (size_t)m);
+                    int32_t is_phased = 0;
+                    uint32_t *x = (uint32_t*)(z->buf + z->size * (size_t)m);
+                    uint32_t unreadable = 0;
+                    uint32_t max = 0;
+                    overflow = 0;
                     for (l = 0;; ++t) {
                         if (*t == '.') {
                             ++t, x[l++] = is_phased;
                         } else {
                             char *tt = t;
-                            overflow = 0;
-                            long val = hts_str2int(t, &t, sizeof(val)*CHAR_BIT, &overflow);
-                            if (overflow || val > (INT32_MAX>>1)-1 || val < 0) {
-                                hts_log_error("Unsupported value:'%s' (too large or negative) at %s:%"PRIhts_pos, tt, bcf_seqname_safe(h,v), v->pos+1);
-                                return -1;
-                            } else {
-                                x[l] = (val + 1) << 1 | is_phased;
-                                l++;
-                            }
+                            uint32_t val = hts_str2uint(t, &t, sizeof(val) * CHAR_MAX - 2, &overflow);
+                            unreadable |= tt == t;
+                            if (max < val) max = val;
+                            x[l++] = (val + 1) << 1 | is_phased;
                         }
                         is_phased = (*t == '|');
                         if (*t != '|' && *t != '/') break;
+                    }
+                    // Possibly check max against v->n_allele instead?
+                    if (overflow || max > (INT32_MAX >> 1) - 1) {
+                        hts_log_error("Couldn't read GT data: value too large at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
+                        return -1;
+                    }
+                    if (unreadable) {
+                        hts_log_error("Couldn't read GT data: value not a number or '.' at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
+                        return -1;
                     }
                     if ( !l ) x[l++] = 0;   // An empty field, insert missing value
                     for (; l < z->size>>2; ++l) x[l] = bcf_int32_vector_end;
