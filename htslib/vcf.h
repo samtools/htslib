@@ -1046,8 +1046,26 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  bcf_hdr_id2name() - Translates numeric ID to sequence name
      */
     static inline int bcf_hdr_name2id(const bcf_hdr_t *hdr, const char *id) { return bcf_hdr_id2int(hdr, BCF_DT_CTG, id); }
-    static inline const char *bcf_hdr_id2name(const bcf_hdr_t *hdr, int rid) { return hdr->id[BCF_DT_CTG][rid].key; }
-    static inline const char *bcf_seqname(const bcf_hdr_t *hdr, bcf1_t *rec) { return hdr->id[BCF_DT_CTG][rec->rid].key; }
+    static inline const char *bcf_hdr_id2name(const bcf_hdr_t *hdr, int rid)
+    {
+        if ( !hdr || rid<0 || rid>=hdr->n[BCF_DT_CTG] ) return NULL;
+        return hdr->id[BCF_DT_CTG][rid].key;
+    }
+    static inline const char *bcf_seqname(const bcf_hdr_t *hdr, bcf1_t *rec) {
+        return bcf_hdr_id2name(hdr, rec ? rec->rid : -1);
+    }
+
+    /** Return CONTIG name, or "(unknown)"
+
+        Like bcf_seqname(), but this function will never return NULL.  If
+        the contig name cannot be found (either because @p hdr was not
+        supplied or rec->rid was out of range) it returns the string
+        "(unknown)".
+    */
+    static inline const char *bcf_seqname_safe(const bcf_hdr_t *hdr, bcf1_t *rec) {
+        const char *name = bcf_seqname(hdr, rec);
+        return name ? name : "(unknown)";
+    }
 
     /**
      *  bcf_hdr_id2*() - Macros for accessing bcf_idinfo_t

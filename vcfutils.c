@@ -271,7 +271,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
     if ( nR_new<=0 ) // should not be able to remove reference allele
     {
         hts_log_error("Cannot remove reference allele at %s:%"PRIhts_pos" [%d]",
-            bcf_seqname(header,line), line->pos+1, nR_new);
+            bcf_seqname_safe(header,line), line->pos+1, nR_new);
         goto err;
     }
     int nA_ori = nR_ori-1;
@@ -302,7 +302,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
         if ( nret<0 )
         {
             hts_log_error("Could not access INFO/%s at %s:%"PRIhts_pos" [%d]",
-                bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nret);
+                bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname_safe(header,line), line->pos+1, nret);
             goto err;
         }
         if ( nret==0 ) continue; // no data for this tag
@@ -340,7 +340,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 if ( j!=nexp )
                 {
                     hts_log_error("Unexpected number of values in INFO/%s at %s:%"PRIhts_pos"; expected Number=%c=%d, but found %d",
-                        bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, vlen==BCF_VL_A ? 'A' : 'R', nexp, j);
+                        bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname_safe(header,line), line->pos+1, vlen==BCF_VL_A ? 'A' : 'R', nexp, j);
                     goto err;
                 }
             }
@@ -371,7 +371,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 if ( n!=nG_ori )
                 {
                     hts_log_error("Unexpected number of values in INFO/%s at %s:%"PRIhts_pos"; expected Number=G=%d, but found %d",
-                        bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nG_ori, n);
+                        bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname_safe(header,line), line->pos+1, nG_ori, n);
                     goto err;
                 }
             }
@@ -380,7 +380,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
             if ( nret<0 )
             {
                 hts_log_error("Could not update INFO/%s at %s:%"PRIhts_pos" [%d]",
-                    bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nret);
+                    bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname_safe(header,line), line->pos+1, nret);
                 goto err;
             }
             continue;
@@ -412,7 +412,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 if ( nret!=nA_ori )
                 {
                     hts_log_error("Unexpected number of values in INFO/%s at %s:%"PRIhts_pos"; expected Number=A=%d, but found %d",
-                        bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nA_ori, nret);
+                        bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname_safe(header,line), line->pos+1, nA_ori, nret);
                     goto err;
                 }
                 ntop = nA_ori;
@@ -424,7 +424,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 if ( nret!=nR_ori )
                 {
                     hts_log_error("Unexpected number of values in INFO/%s at %s:%"PRIhts_pos"; expected Number=R=%d, but found %d",
-                        bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nR_ori, nret);
+                        bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname_safe(header,line), line->pos+1, nR_ori, nret);
                     goto err;
                 }
                 ntop = nR_ori;
@@ -456,7 +456,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
             if ( nret!=nG_ori )
             {
                 hts_log_error("Unexpected number of values in INFO/%s at %s:%"PRIhts_pos"; expected Number=R=%d, but found %d",
-                    bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nG_ori, nret);
+                    bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname_safe(header,line), line->pos+1, nG_ori, nret);
                 goto err;
             }
             int k, l_ori = -1, l_new = 0;
@@ -490,7 +490,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
         if ( nret<0 )
         {
             hts_log_error("Could not update INFO/%s at %s:%"PRIhts_pos" [%d]",
-                bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname(header,line), line->pos+1, nret);
+                bcf_hdr_int2id(header,BCF_DT_ID,info->key), bcf_seqname_safe(header,line), line->pos+1, nret);
             goto err;
         }
     }
@@ -516,7 +516,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                     if ( !( al<nR_ori && map[al]>=0 ) )
                     {
                         hts_log_error("Problem updating genotypes at %s:%"PRIhts_pos" [ al<nR_ori && map[al]>=0 :: al=%d,nR_ori=%d,map[al]=%d ]",
-                            bcf_seqname(header,line), line->pos+1, al, nR_ori, map[al]);
+                            bcf_seqname_safe(header,line), line->pos+1, al, nR_ori, map[al]);
                         goto err;
                     }
                     ptr[j] = (map[al]+1)<<1 | (ptr[j]&1);
@@ -527,7 +527,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
             if ( nret<0 )
             {
                 hts_log_error("Could not update FORMAT/GT at %s:%"PRIhts_pos" [%d]",
-                    bcf_seqname(header,line), line->pos+1, nret);
+                    bcf_seqname_safe(header,line), line->pos+1, nret);
                 goto err;
             }
         }
@@ -554,7 +554,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
         if ( nret<0 )
         {
             hts_log_error("Could not access FORMAT/%s at %s:%"PRIhts_pos" [%d]",
-                bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nret);
+                bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname_safe(header,line), line->pos+1, nret);
             goto err;
         }
         if ( nret == 0 ) continue; // no data for this tag
@@ -595,7 +595,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                     if ( k_src!=nexp )
                     {
                         hts_log_error("Unexpected number of values in FORMAT/%s at %s:%"PRIhts_pos"; expected Number=%c=%d, but found %d",
-                            bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, vlen==BCF_VL_A ? 'A' : 'R', nexp, k_src);
+                            bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname_safe(header,line), line->pos+1, vlen==BCF_VL_A ? 'A' : 'R', nexp, k_src);
                         goto err;
                     }
                     l = str.l - l;
@@ -620,7 +620,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                     if ( nexp!=nG_ori && nexp!=nR_ori )
                     {
                         hts_log_error("Unexpected number of values in FORMAT/%s at %s:%"PRIhts_pos"; expected Number=G=%d(diploid) or %d(haploid), but found %d",
-                            bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nG_ori, nR_ori, nexp);
+                            bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname_safe(header,line), line->pos+1, nG_ori, nR_ori, nexp);
                         goto err;
                     }
                     ptr = ss;
@@ -665,7 +665,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                         if ( k_src!=nR_ori )
                         {
                             hts_log_error("Unexpected number of values in FORMAT/%s at %s:%"PRIhts_pos"; expected Number=G=%d(haploid), but found %d",
-                                bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nR_ori, k_src);
+                                bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname_safe(header,line), line->pos+1, nR_ori, k_src);
                             goto err;
                         }
                         l = str.l - l;
@@ -677,7 +677,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
             if ( nret<0 )
             {
                 hts_log_error("Could not update FORMAT/%s at %s:%"PRIhts_pos" [%d]",
-                    bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nret);
+                    bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname_safe(header,line), line->pos+1, nret);
                 goto err;
             }
             continue;
@@ -713,7 +713,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 if ( nori!=nA_ori )
                 {
                     hts_log_error("Unexpected number of values in FORMAT/%s at %s:%"PRIhts_pos"; expected Number=A=%d, but found %d",
-                        bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nA_ori, nori);
+                        bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname_safe(header,line), line->pos+1, nA_ori, nori);
                     goto err;
                 }
                 ndat = nA_new*line->n_sample;
@@ -725,7 +725,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
                 if ( nori!=nR_ori )
                 {
                     hts_log_error("Unexpected number of values in FORMAT/%s at %s:%"PRIhts_pos"; expected Number=R=%d, but found %d",
-                        bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nR_ori, nori);
+                        bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname_safe(header,line), line->pos+1, nR_ori, nori);
                     goto err;
                 }
                 ndat = nR_new*line->n_sample;
@@ -761,7 +761,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
             if ( nori!=nG_ori )
             {
                 hts_log_error("Unexpected number of values in FORMAT/%s at %s:%"PRIhts_pos"; expected Number=G=%d, but found %d",
-                    bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nG_ori, nori);
+                    bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname_safe(header,line), line->pos+1, nG_ori, nori);
                 goto err;
             }
             ndat = nG_new*line->n_sample;
@@ -814,7 +814,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
         if ( nret<0 )
         {
             hts_log_error("Could not update FORMAT/%s at %s:%"PRIhts_pos" [%d]",
-                bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname(header,line), line->pos+1, nret);
+                bcf_hdr_int2id(header,BCF_DT_ID,fmt->id), bcf_seqname_safe(header,line), line->pos+1, nret);
             goto err;
         }
     }

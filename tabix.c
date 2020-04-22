@@ -239,7 +239,16 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
                 if (!itr) continue;
                 while ((ret = bcf_itr_next(fp, itr, rec)) >=0 )
                 {
-                    if ( reg_idx && !regidx_overlap(reg_idx, bcf_seqname(hdr,rec),rec->pos,rec->pos+rec->rlen-1, NULL) ) continue;
+                    if ( reg_idx )
+                    {
+                        const char *chr = bcf_seqname(hdr,rec);
+                        if (!chr) {
+                            error("Bad BCF record in \"%s\" : "
+                                  "Invalid CONTIG id %d\n",
+                                  fname, rec->rid);
+                        }
+                        if ( !regidx_overlap(reg_idx,chr,rec->pos,rec->pos+rec->rlen-1, NULL) ) continue;
+                    }
                     if ( bcf_write(out,hdr,rec)!=0 ) {
                         error_errno("Failed to write to stdout");
                     }

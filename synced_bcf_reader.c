@@ -1,6 +1,6 @@
 /*  synced_bcf_reader.c -- stream through multiple VCF files.
 
-    Copyright (C) 2012-2019 Genome Research Ltd.
+    Copyright (C) 2012-2020 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -624,6 +624,7 @@ static int next_line(bcf_srs_t *files)
             {
                 min_pos = files->readers[i].buffer[1]->pos;
                 chr = bcf_seqname(files->readers[i].header, files->readers[i].buffer[1]);
+                assert(chr);
                 bcf_sr_sort_set_active(&BCF_SR_AUX(files)->sort, i);
             }
             else if ( min_pos==files->readers[i].buffer[1]->pos )
@@ -1009,6 +1010,7 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
     reg->tbx = tbx_index_load3(regions, NULL, HTS_IDX_SAVE_REMOTE|HTS_IDX_SILENT_FAIL);
     if ( !reg->tbx )
     {
+        size_t iline = 0;
         int len = strlen(regions);
         int is_bed  = strcasecmp(".bed",regions+len-4) ? 0 : 1;
         if ( !is_bed && !strcasecmp(".bed.gz",regions+len-7) ) is_bed = 1;
@@ -1018,6 +1020,7 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         // read the whole file, tabix index is not present
         while ( hts_getline(reg->file, KS_SEP_LINE, &reg->line) > 0 )
         {
+            iline++;
             char *chr, *chr_end;
             hts_pos_t from, to;
             int ret;
@@ -1028,8 +1031,8 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
                     ret = _regions_parse_line(reg->line.s, ichr,ifrom,ifrom, &chr,&chr_end,&from,&to);
                 if ( ret<0 )
                 {
-                    hts_log_error("Could not parse the file %s, using the columns %d,%d[,%d]",
-                        regions,ichr+1,ifrom+1,ito+1);
+                    hts_log_error("Could not parse %zu-th line of file %s, using the columns %d,%d[,%d]",
+                        iline, regions,ichr+1,ifrom+1,ito+1);
                     hts_close(reg->file); reg->file = NULL; free(reg);
                     return NULL;
                 }
