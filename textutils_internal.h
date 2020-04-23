@@ -1,6 +1,6 @@
 /* textutils_internal.h -- non-bioinformatics utility routines for text etc.
 
-   Copyright (C) 2016,2018,2019 Genome Research Ltd.
+   Copyright (C) 2016,2018-2020 Genome Research Ltd.
 
    Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -302,6 +302,96 @@ static inline uint64_t hts_str2uint(const char *in, char **end, int bits,
 
     *end = (char *)v;
     return n;
+}
+
+/// Convert a string to a double, with overflow detection
+/** @param[in]  in     Input string
+    @param[out] end    Returned end pointer
+    @param[out] failed Location of overflow flag
+    @return String value converted to a double
+
+Converts a floating point value string to a double.  The string should
+have the format [+-]?[0-9]*[.]?[0-9]* with at least one and no more than 15
+digits.  Strings that do not match (inf, nan, values with exponents) will
+be passed on to strtod() for processing.
+
+If the value is too big, the largest possible value will be returned;
+if it is too small to be represented in a double zero will be returned.
+In both cases errno will be set to ERANGE.
+
+If no characters could be converted, *failed will be set to 1.
+
+The address of the first character following the converted number will
+be stored in *end.
+
+Both end and failed must be non-NULL.
+ */
+
+static inline double hts_str2dbl(const char *in, char **end, int *failed) {
+    uint64_t n = 0;
+    int max_len = 15;
+    const unsigned char *v = (const unsigned char *) in;
+    const unsigned int ascii_zero = '0'; // Prevents conversion to signed
+    int neg = 0, point = -1;
+    double d;
+    static double D[] = {1,1, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7,
+                         1e8, 1e9, 1e10,1e11,1e12,1e13,1e14,1e15,
+                         1e16,1e17,1e18,1e19,1e20};
+
+    while (isspace(*v))
+        v++;
+
+    if (*v == '-') {
+        neg = 1;
+        v++;
+    } else if (*v == '+') {
+        v++;
+    }
+
+    switch(*v) {
+    case '1': case '2': case '3': case '4':
+    case '5': case '6': case '7': case '8': case '9':
+        break;
+
+    case '0':
+        if (v[1] != 'x' && v[1] != 'X') break;
+        // else fall through (hex number)
+
+    default:
+        // Non numbers, like NaN, Inf
+        d = strtod(in, end);
+        if (*end == in)
+            *failed = 1;
+        return d;
+    }
+
+    while (*v == '0') ++v;
+
+    const unsigned char *start = v;
+
+    while (--max_len && *v>='0' && *v<='9')
+        n = n*10 + *v++ - ascii_zero;
+    if (max_len && *v == '.') {
+        point = v - start;
+        v++;
+        while (--max_len && *v>='0' && *v<='9')
+            n = n*10 + *v++ - ascii_zero;
+    }
+    if (point < 0)
+        point = v - start;
+
+    // Outside the scope of this quick and dirty parser.
+    if (!max_len || *v == 'e' || *v == 'E') {
+        d = strtod(in, end);
+        if (*end == in)
+            *failed = 1;
+        return d;
+    }
+
+    *end = (char *)v;
+    d = n / D[v - start - point];
+
+    return neg ? -d : d;
 }
 
 

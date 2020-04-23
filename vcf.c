@@ -2201,7 +2201,7 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
 {
     if ( !bcf_hdr_nsamples(h) ) return 0;
 
-    static int extreme_int_warned = 0;
+    static int extreme_val_warned = 0;
     char *r, *t;
     int j, l, m, g, overflow = 0;
     khint_t k;
@@ -2425,18 +2425,18 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             } else if ((z->y>>4&0xf) == BCF_HT_INT) {
                 int32_t *x = (int32_t*)(z->buf + z->size * (size_t)m);
                 for (l = 0;; ++t) {
-                    if (*t == '.') x[l++] = bcf_int32_missing, ++t; // ++t to skip "."
-                    else
-                    {
+                    if (*t == '.') {
+                        x[l++] = bcf_int32_missing, ++t; // ++t to skip "."
+                    } else {
                         overflow = 0;
                         char *te;
                         long int tmp_val = hts_str2int(t, &te, sizeof(tmp_val)*CHAR_BIT, &overflow);
                         if ( te==t || overflow || tmp_val<BCF_MIN_BT_INT32 || tmp_val>BCF_MAX_BT_INT32 )
                         {
-                            if ( !extreme_int_warned )
+                            if ( !extreme_val_warned )
                             {
-                                hts_log_warning("Extreme FORMAT/%s value encountered and set to missing at %s:%"PRIhts_pos,h->id[BCF_DT_ID][fmt[j-1].key].key,bcf_seqname_safe(h,v), v->pos+1);
-                                extreme_int_warned = 1;
+                                hts_log_warning("Extreme FORMAT/%s value encountered and set to missing at %s:%"PRIhts_pos, h->id[BCF_DT_ID][fmt[j-1].key].key, bcf_seqname_safe(h,v), v->pos+1);
+                                extreme_val_warned = 1;
                             }
                             tmp_val = bcf_int32_missing;
                         }
@@ -2450,8 +2450,20 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             } else if ((z->y>>4&0xf) == BCF_HT_REAL) {
                 float *x = (float*)(z->buf + z->size * (size_t)m);
                 for (l = 0;; ++t) {
-                    if (*t == '.' && !isdigit_c(t[1])) bcf_float_set_missing(x[l++]), ++t; // ++t to skip "."
-                    else x[l++] = strtod(t, &t);
+                    if (*t == '.' && !isdigit_c(t[1])) {
+                        bcf_float_set_missing(x[l++]), ++t; // ++t to skip "."
+                    } else {
+                        overflow = 0;
+                        char *te;
+                        float tmp_val = hts_str2dbl(t, &te, &overflow);
+                        if ( (te==t || overflow) && !extreme_val_warned )
+                        {
+                            hts_log_warning("Extreme FORMAT/%s value encountered at %s:%"PRIhts_pos, h->id[BCF_DT_ID][fmt[j-1].key].key, bcf_seqname(h,v), v->pos+1);
+                            extreme_val_warned = 1;
+                        }
+                        x[l++] = tmp_val;
+                        t = te;
+                    }
                     if (*t != ',') break;
                 }
                 if ( !l ) bcf_float_set_missing(x[l++]);    // An empty field, insert missing value
@@ -2768,8 +2780,9 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
                 float *val_f = (float *)a_val;
                 for (i = 0, t = val; i < n_val; ++i, ++t)
                 {
-                    val_f[i] = strtod(t, &te);
-                    if ( te==t ) // conversion failed
+                    overflow = 0;
+                    val_f[i] = hts_str2dbl(t, &te, &overflow);
+                    if ( te==t || overflow ) // conversion failed
                         bcf_float_set_missing(val_f[i]);
                     for (t = te; *t && *t != ','; t++);
                 }
