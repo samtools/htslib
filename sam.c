@@ -3220,8 +3220,10 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 // reference count the structure.
 int sam_write1(htsFile *fp, const sam_hdr_t *hdr, const bam1_t *b)
 {
-    const sam_hdr_t *h = hdr;
-    if (!h) h = fp->bam_header;
+    if (!fp || !b) { errno = EINVAL; return -1; }
+    const sam_hdr_t *h = hdr ? hdr : fp->bam_header;
+    if (!h) { hts_log_error("No header available for file \"%s\"", fp->fn); return -1; }
+
     switch (fp->format.format) {
     case binary_format:
         fp->format.category = sequence_data;
