@@ -4870,6 +4870,25 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
         return r;
     }
 
+    case CRAM_OPT_RANGE_NOSEEK: {
+        // As per CRAM_OPT_RANGE, but no seeking
+        pthread_mutex_lock(&fd->range_lock);
+        cram_range *r = va_arg(args, cram_range *);
+        fd->range = *r;
+        if (r->refid == HTS_IDX_NOCOOR) {
+            fd->range.refid = -1;
+            fd->range.start = 0;
+        } else if (r->refid == HTS_IDX_START || r->refid == HTS_IDX_REST) {
+            fd->range.refid = -2; // special case in cram_next_slice
+        }
+        if (fd->range.refid != -2)
+            fd->required_fields |= SAM_POS;
+        fd->ooc = 0;
+        fd->eof = 0;
+        pthread_mutex_unlock(&fd->range_lock);
+        return 0;
+    }
+
     case CRAM_OPT_REFERENCE:
         return cram_load_reference(fd, va_arg(args, char *));
 

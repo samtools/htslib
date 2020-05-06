@@ -297,6 +297,7 @@ enum hts_fmt_option {
     CRAM_OPT_BASES_PER_SLICE,
     CRAM_OPT_STORE_MD,
     CRAM_OPT_STORE_NM,
+    CRAM_OPT_RANGE_NOSEEK, // CRAM_OPT_RANGE minus the seek
 
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,

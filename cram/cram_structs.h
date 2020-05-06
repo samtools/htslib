@@ -663,6 +663,7 @@ typedef struct cram_index {
     int     slice;  // 1.0 landmark index, 1.1 landmark value
     int     len;    //                     1.1 - size of slice in bytes
     int64_t offset; // 1.0                 1.1
+    int64_t next;   // derived: offset of next container.
 } cram_index;
 
 typedef struct {
