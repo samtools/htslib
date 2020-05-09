@@ -506,10 +506,9 @@ hts_pos_t bam_cigar2rlen(int n_cigar, const uint32_t *cigar)
 
 hts_pos_t bam_endpos(const bam1_t *b)
 {
-    if (!(b->core.flag & BAM_FUNMAP) && b->core.n_cigar > 0)
-        return b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
-    else
-        return b->core.pos + 1;
+    hts_pos_t rlen = (b->core.flag & BAM_FUNMAP)? 0 : bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
+    if (rlen == 0) rlen = 1;
+    return b->core.pos + rlen;
 }
 
 static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
@@ -542,7 +541,7 @@ static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0
         memmove(b->data + CG_st + n_cigar4 - fake_bytes, b->data + CG_en + n_cigar4 - fake_bytes, ori_len - CG_en);
     b->l_data -= n_cigar4 + 8; // 8: CGBI (4 bytes) and CGBI length (4)
     if (recal_bin)
-        b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)), 14, 5);
+        b->core.bin = hts_reg2bin(b->core.pos, bam_endpos(b), 14, 5);
     if (give_warning)
         hts_log_error("%s encodes a CIGAR with %d operators at the CG tag", bam_get_qname(b), c->n_cigar);
     return 1;
@@ -645,7 +644,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
     if (c->n_cigar > 0) { // recompute "bin" and check CIGAR-qlen consistency
         hts_pos_t rlen, qlen;
         bam_cigar2rqlens(c->n_cigar, bam_get_cigar(b), &rlen, &qlen);
-        if ((b->core.flag & BAM_FUNMAP)) rlen=1;
+        if ((b->core.flag & BAM_FUNMAP) || rlen == 0) rlen = 1;
         b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + rlen, 14, 5);
         // Sanity check for broken CIGAR alignments
         if (c->l_qseq > 0 && !(c->flag & BAM_FUNMAP) && qlen != c->l_qseq) {
@@ -2034,6 +2033,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         }
         // can't use bam_endpos() directly as some fields not yet set up
         cigreflen = (!(c->flag&BAM_FUNMAP))? bam_cigar2rlen(c->n_cigar, cigar) : 1;
+        if (cigreflen == 0) cigreflen = 1;
     } else {
         _parse_warn(!(c->flag&BAM_FUNMAP), "mapped query must have a CIGAR; treated as unmapped");
         c->flag |= BAM_FUNMAP;
@@ -4510,7 +4510,8 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
             return -1;
         iter->tail->b.id = iter->id++;
         iter->tail->beg = b->core.pos;
-        iter->tail->end = bam_endpos(b);
+        // Use raw rlen rather than bam_endpos() which adjusts rlen=0 to rlen=1
+        iter->tail->end = b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
         iter->tail->s = g_cstate_null; iter->tail->s.end = iter->tail->end - 1; // initialize cstate_t
         if (b->core.tid < iter->max_tid) {
             hts_log_error("The input is not sorted (chromosomes out of order)");

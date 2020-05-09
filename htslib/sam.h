@@ -1050,7 +1050,8 @@ hts_pos_t bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
 
       @discussion For a mapped read, this is just b->core.pos + bam_cigar2rlen.
       For an unmapped read (either according to its flags or if it has no cigar
-      string), we return b->core.pos + 1 by convention.
+      string) or a read whose cigar string consumes no reference bases at all,
+      we return b->core.pos + 1 by convention.
  */
 HTSLIB_EXPORT
 hts_pos_t bam_endpos(const bam1_t *b);
