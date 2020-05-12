@@ -1244,8 +1244,10 @@ int sam_hdr_rebuild(sam_hdr_t *bh) {
     if (!hrecs->dirty)
         return 0;
 
-    if (hrecs->pgs_changed)
-        sam_hdr_link_pg(bh);
+    if (hrecs->pgs_changed && sam_hdr_link_pg(bh) < 0) {
+        hts_log_error("Linking @PG lines has failed");
+        return -1;
+    }
 
     kstring_t ks = KS_INITIALIZE;
     if (sam_hrecs_rebuild_text(hrecs, &ks) != 0) {
@@ -2081,7 +2083,8 @@ static int sam_hdr_link_pg(sam_hdr_t *bh) {
         k = kh_get(m_s2i, hrecs->pg_hash, tag->str+3);
 
         if (k == kh_end(hrecs->pg_hash)) {
-            ret = -1;
+            hts_log_warning("PG line with PN:%s has a PP link to missing program '%s'",
+                    hrecs->pg[i].name, tag->str+3);
             continue;
         }
 
