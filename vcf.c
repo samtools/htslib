@@ -2288,33 +2288,42 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
 
         // collect fmt stats: max vector size, length, number of alleles
         j = 0;  // j-th format field
-        for (;;)
-        {
-            if ( *r == '\t' ) *r = 0;
-            if ( *r == ':' || !*r )  // end of field or end of sample
-            {
-                if (fmt[j].max_m < m) fmt[j].max_m = m;
-                if (fmt[j].max_l < l) fmt[j].max_l = l;
-                if (fmt[j].is_gt && fmt[j].max_g < g) fmt[j].max_g = g;
+        fmt_aux_t *f = fmt;
+        for (;;) {
+            switch (*r) {
+            case ',':
+                m++;
+                break;
+
+            case '|':
+            case '/':
+                if (f->is_gt) g++;
+                break;
+
+            case '\t':
+                *r = 0; // fall through
+
+            case '\0':
+            case ':':
+                if (f->max_m < m) f->max_m = m;
+                if (f->max_l < l) f->max_l = l;
+                if (f->is_gt && f->max_g < g) f->max_g = g;
                 l = 0, m = g = 1;
-                if ( *r==':' )
-                {
-                    j++;
-                    if ( j>=v->n_fmt )
-                    {
+                if ( *r==':' ) {
+                    j++; f++;
+                    if ( j>=v->n_fmt ) {
                         hts_log_error("Incorrect number of FORMAT fields at %s:%"PRIhts_pos"",
-                            h->id[BCF_DT_CTG][v->rid].key, v->pos+1);
+                                      h->id[BCF_DT_CTG][v->rid].key, v->pos+1);
                         v->errcode |= BCF_ERR_NCOLS;
                         return -1;
                     }
-                }
-                else break;
+                } else goto end_for;
+                break;
             }
-            else if ( *r== ',' ) m++;
-            else if ( fmt[j].is_gt && (*r == '|' || *r == '/') ) g++;
             if ( r>=end ) break;
             r++; l++;
         }
+    end_for:
         v->n_sample++;
         if ( v->n_sample == bcf_hdr_nsamples(h) ) break;
         r++;
