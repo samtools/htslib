@@ -1906,7 +1906,7 @@ int hts_idx_push(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t
         hts_log_error("Unsorted positions on sequence #%d: %"PRIhts_pos" followed by %"PRIhts_pos, tid+1, idx->z.last_coor+1, beg+1);
         return -1;
     }
-    else if (end < beg) {
+    if (end < beg) {
         // Malformed ranges are errors. (Empty ranges (beg==end) are unusual but acceptable.)
         hts_log_error("Invalid record on sequence #%d: end %"PRId64" < begin %"PRId64, tid+1, end, beg+1);
         return -1;
