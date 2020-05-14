@@ -220,7 +220,7 @@ static inline void u64_to_le(uint64_t val, uint8_t *buf) {
  *  The input data is interpreted as 2's complement representation.
  */
 static inline int8_t le_to_i8(const uint8_t *buf) {
-    return *buf < 0x80 ? *buf : -((int8_t) (0xff - *buf)) - 1;
+    return *buf < 0x80 ? (int8_t) *buf : -((int8_t) (0xff - *buf)) - 1;
 }
 
 /// Get an int16_t value from an unsigned byte array
@@ -231,7 +231,7 @@ static inline int8_t le_to_i8(const uint8_t *buf) {
  */
 static inline int16_t le_to_i16(const uint8_t *buf) {
     uint16_t v = le_to_u16(buf);
-    return v < 0x8000 ? v : -((int16_t) (0xffff - v)) - 1;
+    return v < 0x8000 ? (int16_t) v : -((int16_t) (0xffff - v)) - 1;
 }
 
 /// Get an int32_t value from an unsigned byte array

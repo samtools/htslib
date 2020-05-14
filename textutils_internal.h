@@ -233,7 +233,7 @@ static inline int64_t hts_str2int(const char *in, char **end, int bits,
 
     *end = (char *)v;
 
-    return (n && neg < 0) ? -((int64_t) (n - 1)) - 1 : n;
+    return (n && neg < 0) ? -((int64_t) (n - 1)) - 1 : (int64_t) n;
 }
 
 /// Convert a string to an unsigned integer, with overflow detection
