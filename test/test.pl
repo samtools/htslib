@@ -822,7 +822,7 @@ sub test_vcf_various
     test_cmd($opts, %args, out => "formatcols.vcf",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatcols.vcf");
     test_cmd($opts, %args, out => "noroundtrip-out.vcf",
-        cmd => "$$opts{bin}/htsfile -c $$opts{path}/noroundtrip.vcf");
+        cmd => "$$opts{path}/test_view -b $$opts{path}/noroundtrip.vcf | $$opts{bin}/htsfile -c -");
     test_cmd($opts, %args, out => "formatmissing-out.vcf",
         cmd => "$$opts{bin}/htsfile -c $$opts{path}/formatmissing.vcf");
 }
