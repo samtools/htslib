@@ -71,6 +71,13 @@ Fast data retrieval also
 works over network if URI is given as a file name and in this case the
 index file will be downloaded if it is not present locally.
 
+The tabix
+.RI ( .tbi )
+and BAI index formats can handle individual chromosomes up to 512 Mbp
+(2^29 bases) in length.
+If your input file might contain data lines with begin or end positions
+greater than that, you will need to use a CSI index.
+
 .SH INDEXING OPTIONS
 .TP 10
 .B -0, --zero-based
