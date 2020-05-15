@@ -2211,7 +2211,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             s->ref = (char *)BLOCK_DATA(b);
             s->ref_start = s->hdr->ref_seq_start;
             s->ref_end   = s->hdr->ref_seq_start + s->hdr->ref_seq_span-1;
-            if (s->ref_end - s->ref_start > b->uncomp_size) {
+            if (s->hdr->ref_seq_span > b->uncomp_size) {
                 hts_log_error("Embedded reference is too small at #%d:%d-%d",
                               ref_id, s->ref_start, s->ref_end);
                 return -1;
