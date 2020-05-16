@@ -44,6 +44,7 @@ shlib-exports-*.txt
 /test/hts_endian
 /test/longrefs/*.tmp.*
 /test/pileup
+/test/plugins-dlhts
 /test/sam
 /test/tabix/*.tmp.*
 /test/tabix/FAIL*

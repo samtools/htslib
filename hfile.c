@@ -923,11 +923,14 @@ struct hFILE_plugin_list {
 static struct hFILE_plugin_list *plugins = NULL;
 static pthread_mutex_t plugins_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static void hfile_exit()
+void hfile_shutdown()
 {
     pthread_mutex_lock(&plugins_lock);
 
-    kh_destroy(scheme_string, schemes);
+    if (schemes) {
+        kh_destroy(scheme_string, schemes);
+        schemes = NULL;
+    }
 
     while (plugins != NULL) {
         struct hFILE_plugin_list *p = plugins;
@@ -940,6 +943,11 @@ static void hfile_exit()
     }
 
     pthread_mutex_unlock(&plugins_lock);
+}
+
+static void hfile_exit()
+{
+    hfile_shutdown();
     pthread_mutex_destroy(&plugins_lock);
 }
 

@@ -161,6 +161,16 @@ int hts_resize_array_(size_t, size_t, size_t, void *, void **, int,
                          (void **)(ptr), (flags), __func__) \
      : 0)
 
+/// Release resources when dlclosing a dynamically loaded HTSlib
+/** @discussion
+ *  Normally HTSlib cleans up automatically when your program exits,
+ *  whether that is via exit(3) or returning from main(). However if you
+ *  have dlopen(3)ed HTSlib and wish to close it before your main program
+ *  exits, you must call hts_lib_shutdown() before dlclose(3).
+*/
+HTSLIB_EXPORT
+void hts_lib_shutdown(void);
+
 /**
  * Wrapper function for free(). Enables memory deallocation across DLL
  * boundary. Should be used by all applications, which are compiled
