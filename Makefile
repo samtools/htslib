@@ -74,6 +74,7 @@ BUILT_TEST_PROGRAMS = \
 	test/fieldarith \
 	test/hfile \
 	test/pileup \
+	test/plugins-dlhts \
 	test/sam \
 	test/test_bgzf \
 	test/test_kstring \
@@ -305,11 +306,11 @@ hts-$(LIBHTS_SOVERSION).dll hts.dll.a: $(LIBHTS_OBJS)
 hts-object-files: $(LIBHTS_OBJS)
 	touch $@
 
-.pico.so:
-	$(CC) -shared -Wl,-E $(LDFLAGS) -o $@ $< $(LIBS) -lpthread
+%.so: %.pico libhts.so
+	$(CC) -shared -Wl,-E $(LDFLAGS) -o $@ $< libhts.so $(LIBS) -lpthread
 
-.o.bundle:
-	$(CC) -bundle -Wl,-undefined,dynamic_lookup $(LDFLAGS) -o $@ $< $(LIBS)
+%.bundle: %.o libhts.dylib
+	$(CC) -bundle -Wl,-undefined,dynamic_lookup $(LDFLAGS) -o $@ $< libhts.dylib $(LIBS)
 
 %.cygdll: %.o libhts.dll.a
 	$(CC) -shared $(LDFLAGS) -o $@ $< libhts.dll.a $(LIBS)
@@ -390,12 +391,14 @@ maintainer-check:
 #
 # If using MSYS, avoid poor shell expansion via:
 #    MSYS2_ARG_CONV_EXCL="*" make check
-check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
+check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) $(BUILT_PLUGINS)
 	test/hts_endian
 	test/test_kstring
 	test/test_str2int
 	test/fieldarith test/fieldarith.sam
 	test/hfile
+	HTS_PATH=. test/with-shlib.sh test/plugins-dlhts -g ./libhts.$(SHLIB_FLAVOUR)
+	HTS_PATH=. test/with-shlib.sh test/plugins-dlhts -l ./libhts.$(SHLIB_FLAVOUR)
 	test/test_bgzf test/bgziptest.txt
 	test/test-parse-reg -t test/colons.bam
 	cd test/tabix && ./test-tabix.sh tabix.tst
@@ -418,6 +421,9 @@ test/hfile: test/hfile.o libhts.a
 
 test/pileup: test/pileup.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/pileup.o libhts.a $(LIBS) -lpthread
+
+test/plugins-dlhts: test/plugins-dlhts.o
+	$(CC) $(LDFLAGS) -o $@ test/plugins-dlhts.o $(LIBS)
 
 test/sam: test/sam.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/sam.o libhts.a $(LIBS) -lpthread
@@ -463,6 +469,7 @@ test/fuzz/hts_open_fuzzer.o: test/fuzz/hts_open_fuzzer.c config.h $(htslib_hfile
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h) $(htslib_kstring_h)
 test/pileup.o: test/pileup.c config.h $(htslib_sam_h) $(htslib_kstring_h)
+test/plugins-dlhts.o: test/plugins-dlhts.c config.h
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_khash_h) $(htslib_hts_log_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
