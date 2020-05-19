@@ -171,6 +171,21 @@ static inline int isxdigit_c(char c) { return isxdigit((unsigned char) c); }
 static inline char tolower_c(char c) { return tolower((unsigned char) c); }
 static inline char toupper_c(char c) { return toupper((unsigned char) c); }
 
+/// Copy possibly malicious text data to a buffer
+/** @param buf     Destination buffer
+    @param buflen  Size of the destination buffer (>= 4; >= 6 when quotes used)
+    @param quote   Quote character (or '\0' for no quoting of the output)
+    @param s       String to be copied
+    @param len     Length of the input string, or SIZE_MAX to copy until '\0'
+    @return The destination buffer, @a buf.
+
+Copies the source text string (escaping any unprintable characters) to the
+destination buffer. The destination buffer will always be NUL-terminated;
+the text will be truncated (and "..." appended) if necessary to make it fit.
+ */
+const char *hts_strprint(char *buf, size_t buflen, char quote,
+                         const char *s, size_t len);
+
 // Faster replacements for strtol, for use when parsing lots of numbers.
 // Note that these only handle base 10 and do not skip leading whitespace
 

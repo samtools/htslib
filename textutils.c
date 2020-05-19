@@ -446,3 +446,52 @@ char *stringify_argv(int argc, char *argv[]) {
 
     return str;
 }
+
+/* Utility function for printing possibly malicious text data
+ */
+const char *
+hts_strprint(char *buf, size_t buflen, char quote, const char *s, size_t len)
+{
+    const char *slim = (len < SIZE_MAX)? &s[len] : NULL;
+    char *t = buf;
+
+    size_t qlen = quote? 1 : 0;
+    if (quote) *t++ = quote;
+
+    for (; slim? (s < slim) : (*s); s++) {
+        char c;
+        size_t clen;
+        switch (*s) {
+        case '\n': c = 'n'; clen = 2; break;
+        case '\r': c = 'r'; clen = 2; break;
+        case '\t': c = 't'; clen = 2; break;
+        case '\0': c = '0'; clen = 2; break;
+        case '\\': c = '\\'; clen = 2; break;
+        default:
+            c = *s;
+            if (c == quote) clen = 2;
+            else clen = isprint_c(c)? 1 : 4;
+            break;
+        }
+
+        if (t-buf + clen + qlen >= buflen) {
+            while (t-buf + 3 + qlen >= buflen) t--;
+            if (quote) *t++ = quote;
+            strcpy(t, "...");
+            return buf;
+        }
+
+        if (clen == 4) {
+            sprintf(t, "\\x%02X", (unsigned char) c);
+            t += clen;
+        }
+        else {
+            if (clen == 2) *t++ = '\\';
+            *t++ = c;
+        }
+    }
+
+    if (quote) *t++ = quote;
+    *t = '\0';
+    return buf;
+}
