@@ -50,11 +50,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h>
 #include <sys/types.h>
 
-#include "htslib/thread_pool.h"
-#include "htslib/cram.h"
-#include "cram/string_alloc.h"
-#include "cram/mFILE.h"
-#include "htslib/khash.h"
+#include "../htslib/thread_pool.h"
+#include "../htslib/cram.h"
+#include "string_alloc.h"
+#include "mFILE.h"
+#include "../htslib/khash.h"
 
 #ifdef __cplusplus
 extern "C" {

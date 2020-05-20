@@ -31,9 +31,9 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <sys/stat.h>
 
-#include "htslib/hfile.h"
-#include "htslib/hts_defs.h"
-#include "htslib/kstring.h"
+#include "../htslib/hfile.h"
+#include "../htslib/hts_defs.h"
+#include "../htslib/kstring.h"
 
 void HTS_NORETURN fail(const char *format, ...)
 {

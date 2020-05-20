@@ -31,10 +31,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "htslib/hfile.h"
-#include "htslib/hts.h"
-#include "htslib/sam.h"
-#include "htslib/vcf.h"
+#include "../../htslib/hfile.h"
+#include "../../htslib/hts.h"
+#include "../../htslib/sam.h"
+#include "../../htslib/vcf.h"
 
 static void hts_close_or_abort(htsFile* file) {
     if (hts_close(file) != 0) {

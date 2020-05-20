@@ -77,11 +77,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #  define PATH_MAX 1024
 #endif
 
-#include "cram/open_trace_file.h"
-#include "cram/misc.h"
-#include "htslib/hfile.h"
-#include "htslib/hts_log.h"
-#include "htslib/hts.h"
+#include "open_trace_file.h"
+#include "misc.h"
+#include "../htslib/hfile.h"
+#include "../htslib/hts_log.h"
+#include "../htslib/hts.h"
 
 /*
  * Returns whether the path refers to a regular file.

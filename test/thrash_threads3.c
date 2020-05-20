@@ -27,7 +27,7 @@ DEALINGS IN THE SOFTWARE.
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "htslib/bgzf.h"
+#include "../htslib/bgzf.h"
 
 int main(int argc, char *argv[]) {
     char buf[1000000];

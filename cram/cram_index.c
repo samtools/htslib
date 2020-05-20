@@ -62,11 +62,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <math.h>
 
-#include "htslib/bgzf.h"
-#include "htslib/hfile.h"
-#include "hts_internal.h"
-#include "cram/cram.h"
-#include "cram/os.h"
+#include "../htslib/bgzf.h"
+#include "../htslib/hfile.h"
+#include "../hts_internal.h"
+#include "cram.h"
+#include "os.h"
 
 #if 0
 static void dump_index_(cram_index *e, int level) {

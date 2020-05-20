@@ -46,8 +46,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cram/cram.h"
 #include "cram/os.h"
 #include "sam_internal.h" // for nibble2base
-#include "htslib/hts.h"
-#include "htslib/hts_endian.h"
+#include "../htslib/hts.h"
+#include "../htslib/hts_endian.h"
 
 KHASH_MAP_INIT_STR(m_s2u64, uint64_t)
 
