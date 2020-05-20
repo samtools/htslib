@@ -30,7 +30,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
-#include "textutils_internal.h"
+
+#include "../textutils_internal.h"
 
 // Test hts_str2int() and hts_str2uint() on various values around the
 // maximum (or minimum for negative numbers) allowed for the given

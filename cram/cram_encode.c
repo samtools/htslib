@@ -45,7 +45,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "cram.h"
 #include "os.h"
-#include "sam_internal.h" // for nibble2base
+#include "../sam_internal.h" // for nibble2base
 #include "../htslib/hts.h"
 #include "../htslib/hts_endian.h"
 

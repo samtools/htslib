@@ -56,7 +56,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifdef HAVE_LZMA_H
 #include <lzma.h>
 #else
-#include "os/lzma_stub.h"
+#include "../os/lzma_stub.h"
 #endif
 #endif
 #include <sys/types.h>
@@ -90,7 +90,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../htslib/hfile.h"
 #include "../htslib/bgzf.h"
 #include "../htslib/faidx.h"
-#include "hts_internal.h"
+#include "../hts_internal.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX FILENAME_MAX
