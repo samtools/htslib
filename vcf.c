@@ -79,25 +79,6 @@ static bcf_idinfo_t bcf_idinfo_def = { .info = { 15, 15, 15 }, .hrec = { NULL, N
 #define BCF_IS_64BIT (1<<30)
 
 
-static const char *dump_char(char *buffer, char c)
-{
-    switch (c) {
-    case '\n': strcpy(buffer, "\\n"); break;
-    case '\r': strcpy(buffer, "\\r"); break;
-    case '\t': strcpy(buffer, "\\t"); break;
-    case '\'':
-    case '\"':
-    case '\\':
-        sprintf(buffer, "\\%c", c);
-        break;
-    default:
-        if (isprint_c(c)) sprintf(buffer, "%c", c);
-        else sprintf(buffer, "\\x%02X", (unsigned char) c);
-        break;
-    }
-    return buffer;
-}
-
 static char *find_chrom_header_line(char *s)
 {
     char *nl;
@@ -2481,8 +2462,9 @@ static int vcf_parse_format(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v, char *p
             }
             else {
                 char buffer[8];
-                hts_log_error("Invalid character '%s' in '%s' FORMAT field at %s:%"PRIhts_pos"",
-                    dump_char(buffer, *t), h->id[BCF_DT_ID][z->key].key, bcf_seqname_safe(h,v), v->pos+1);
+                hts_log_error("Invalid character %s in '%s' FORMAT field at %s:%"PRIhts_pos"",
+                    hts_strprint(buffer, sizeof buffer, '\'', t, 1),
+                    h->id[BCF_DT_ID][z->key].key, bcf_seqname_safe(h,v), v->pos+1);
                 v->errcode |= BCF_ERR_CHAR;
                 return -1;
             }
