@@ -37,7 +37,7 @@ DEALINGS IN THE SOFTWARE.
 
 #include "../htslib/bgzf.h"
 #include "../htslib/hfile.h"
-#include "hfile_internal.h"
+#include "../hfile_internal.h"
 
 const char *bgzf_suffix = ".gz";
 const char *idx_suffix  = ".gzi";
