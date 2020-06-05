@@ -46,6 +46,12 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_GCC_AT_LEAST(major, minor) 0
 #endif
 
+#if HTS_COMPILER_HAS(__nonstring__) || HTS_GCC_AT_LEAST(8,1)
+#define HTS_NONSTRING __attribute__ ((__nonstring__))
+#else
+#define HTS_NONSTRING
+#endif
+
 #if HTS_COMPILER_HAS(__noreturn__) || HTS_GCC_AT_LEAST(3,0)
 #define HTS_NORETURN __attribute__ ((__noreturn__))
 #else
