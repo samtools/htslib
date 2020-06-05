@@ -1713,7 +1713,8 @@ hts_idx_t *hts_idx_init(int n, int fmt, uint64_t offset0, int min_shift, int n_l
     idx->min_shift = min_shift;
     idx->n_lvls = n_lvls;
     idx->n_bins = ((1<<(3 * n_lvls + 3)) - 1) / 7;
-    idx->z.save_bin = idx->z.save_tid = idx->z.last_tid = idx->z.last_bin = 0xffffffffu;
+    idx->z.save_tid = idx->z.last_tid = -1;
+    idx->z.save_bin = idx->z.last_bin = 0xffffffffu;
     idx->z.save_off = idx->z.last_off = idx->z.off_beg = idx->z.off_end = offset0;
     idx->z.last_coor = 0xffffffffu;
     if (n) {

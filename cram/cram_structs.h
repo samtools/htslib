@@ -184,7 +184,7 @@ struct cram_file_def {
     char    magic[4];
     uint8_t major_version;
     uint8_t minor_version;
-    char    file_id[20];      // Filename or SHA1 checksum
+    char    file_id[20] HTS_NONSTRING; // Filename or SHA1 checksum
 };
 
 #define CRAM_MAJOR_VERS(v) ((v) >> 8)
