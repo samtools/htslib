@@ -662,6 +662,45 @@ typedef int hts_readrec_func(BGZF *fp, void *data, void *r, int *tid, hts_pos_t 
 typedef int hts_seek_func(void *fp, int64_t offset, int where);
 typedef int64_t hts_tell_func(void *fp);
 
+/**
+ * @brief File iterator that can handle multiple target regions.
+ * This structure should be considered opaque by end users.
+ * It does both the stepping inside the file and the filtering of alignments.
+ * It can operate in single or multi-region mode, and depending on this,
+ * it uses different fields.
+ *
+ * read_rest (1) - read everything from the current offset, without filtering
+ * finished  (1) - no more iterations
+ * is_cram   (1) - current file has CRAM format
+ * nocoor    (1) - read all unmapped reads
+ *
+ * multi     (1) - multi-region moode
+ * reg_list  - List of target regions
+ * n_reg     - Size of the above list
+ * curr_reg  - List index of the current region of search
+ * curr_intv - Interval index inside the current region; points to a (beg, end)
+ * end       - Used for CRAM files, to preserve the max end coordinate
+ *
+ * multi     (0) - single-region mode
+ * tid       - Reference id of the target region
+ * beg       - Start position of the target region
+ * end       - End position of the target region
+ *
+ * Common fields:
+ * off        - List of file offsets computed from the index
+ * n_off      - Size of the above list
+ * i          - List index of the current file offset
+ * curr_off   - File offset for the next file read
+ * curr_tid   - Reference id of the current alignment
+ * curr_beg   - Start position of the current alignment
+ * curr_end   - End position of the current alignment
+ * nocoor_off - File offset where the unmapped reads start
+ *
+ * readrec    - File specific function that reads an alignment
+ * seek       - File specific function for changing the file offset
+ * tell       - File specific function for indicating the file offset
+ */
+
 typedef struct {
     uint32_t read_rest:1, finished:1, is_cram:1, nocoor:1, multi:1, dummy:27;
     int tid, n_off, i, n_reg;

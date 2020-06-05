@@ -3412,7 +3412,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                              && (iter->off[iter->i].max & 0xffffffff) < iter->curr_intv)));
 
             if (iter->is_cram && iter->i < iter->n_off) {
-                // Insure iter->curr_reg is correct.
+                // Ensure iter->curr_reg is correct.
                 //
                 // We need this for CRAM as we shortcut some of the later
                 // logic by getting an end-of-range and continuing to the
@@ -3448,7 +3448,7 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                         return -1;
                     }
                     if (iter->is_cram) {
-                        cram_range r = { -1 };
+                        cram_range r = { HTS_IDX_NOCOOR };
                         cram_set_option(fp, CRAM_OPT_RANGE_NOSEEK, &r);
                     }
 
@@ -3493,64 +3493,63 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                         // Next offset.[uv] tuple, but it's already been
                         // included in our cram range, so don't seek and don't
                         // reset range so we can efficiently multi-thread.
-                        if (!next_range && iter->curr_off < iter->end)
-                            goto range_already_known;
+                        if (next_range || iter->curr_off >= iter->end) {
+                            if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
+                                hts_log_error("Seek at offset %" PRIu64
+                                        " failed.", iter->curr_off);
+                                return -1;
+                            }
 
-                        if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
-                            hts_log_error("Seek at offset %" PRIu64
-                                          " failed.", iter->curr_off);
-                            return -1;
+                            // Find the genomic range matching this interval.
+                            int j;
+                            hts_reglist_t *rl = &iter->reg_list[iter->curr_reg];
+                            cram_range r = {
+                                    rl->tid,
+                                    rl->intervals[iter->curr_intv].beg,
+                                    rl->intervals[iter->curr_intv].end
+                            };
+
+                            // Expand it up to cover neighbouring intervals.
+                            // Note we can only have a single chromosome in a
+                            // range, so if we detect our blocks span chromosomes
+                            // or we have a multi-ref mode slice, we just use
+                            // HTS_IDX_START refid instead.  This doesn't actually
+                            // seek (due to CRAM_OPT_RANGE_NOSEEK) and is simply
+                            // and indicator of decoding with no end limit.
+                            //
+                            // That isn't as efficient as it could be, but it's
+                            // no poorer than before and it works.
+                            int tid = r.refid;
+                            int64_t end = r.end;
+                            int64_t v = iter->off[iter->i].v;
+                            j = iter->i+1;
+                            while (j < iter->n_off) {
+                                if (iter->off[j].u > v)
+                                    break;
+
+                                uint64_t max = iter->off[j].max;
+                                if ((max>>32) != tid)
+                                    tid = HTS_IDX_START; // => no range limit
+
+                                if (end < rl->intervals[max & 0xffffffff].end)
+                                    end = rl->intervals[max & 0xffffffff].end;
+                                if (v < iter->off[j].v)
+                                    v = iter->off[j].v;
+                                j++;
+                            }
+                            r.refid = tid;
+                            r.end = end;
+
+                            // Remember maximum 'v' here so we don't do
+                            // unnecessary subsequent seeks for the next
+                            // regions.  We can't change curr_off, but
+                            // beg/end are used only by single region iterator so
+                            // we cache it there to avoid changing the struct.
+                            iter->end = v;
+
+                            cram_set_option(fp, CRAM_OPT_RANGE_NOSEEK, &r);
+                            next_range = 0;
                         }
-
-                        // Find the genomic range matching this interval.
-                        int j;
-                        hts_reglist_t *rl = &iter->reg_list[iter->curr_reg];
-                        cram_range r = {
-                            rl->tid,
-                            rl->intervals[iter->curr_intv].beg,
-                            rl->intervals[iter->curr_intv].end
-                        };
-
-                        // Expand it up to cover neighbouring intervals.
-                        // Note we can only have a single chromosome in a
-                        // range, so if we detect our blocks span chromosomes
-                        // or we have a multi-ref mode slice, we just use
-                        // HTS_IDX_START refid instead.  This doesn't actually
-                        // seek (due to CRAM_OPT_RANGE_NOSEEK) and is simply
-                        // and indicator of decoding with no end limit.
-                        //
-                        // That isn't as efficient as it could be, but it's
-                        // no poorer than before and it works.
-                        int tid = r.refid;
-                        int64_t end = r.end;
-                        int64_t v = iter->off[iter->i].v;
-                        j = iter->i+1;
-                        while (j < iter->n_off) {
-                            if (iter->off[j].u > v)
-                                break;
-
-                            uint64_t max = iter->off[j].max;
-                            if ((max>>32) != tid)
-                                tid = HTS_IDX_START; // => no range limit
-
-                            if (end < rl->intervals[max & 0xffffffff].end)
-                                end = rl->intervals[max & 0xffffffff].end;
-                            if (v < iter->off[j].v)
-                                v = iter->off[j].v;
-                            j++;
-                        }
-                        r.refid = tid;
-                        r.end = end;
-
-                        // Remember maximum 'v' here so we don't do
-                        // unnecessary subsequent seeks for the next
-                        // regions.  We can't change curr_off, but
-                        // beg/end are used only by single region iterator so
-                        // we cache it there to avoid changing the struct.
-                        iter->end = v;
-
-                        cram_set_option(fp, CRAM_OPT_RANGE_NOSEEK, &r);
-
                     } else { // Not CRAM
                         if (iter->seek(fp, iter->curr_off, SEEK_SET) < 0) {
                             hts_log_error("Seek at offset %" PRIu64 " failed.",
@@ -3560,9 +3559,6 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
                     }
                 }
             }
-
-        range_already_known:
-            next_range = 0;
         }
 
         ret = iter->readrec(fp, fd, r, &tid, &beg, &end);
