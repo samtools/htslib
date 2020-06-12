@@ -95,7 +95,7 @@ script:
     if test "$USE_CONFIG" = "yes"; then
       MAKE_OPTS= ;
       autoreconf && \
-        eval ./configure --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3 $CFLAGS\" || \
+        eval ./configure --enable-plugins --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3 $CFLAGS\" || \
         ( cat config.log; false )
     else
       MAKE_OPTS=-e
