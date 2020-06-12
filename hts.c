@@ -4143,7 +4143,7 @@ int hts_resize_array_(size_t item_size, size_t num, size_t size_sz,
 
 void hts_lib_shutdown()
 {
-    hfile_shutdown();
+    hfile_shutdown(1);
 }
 
 void hts_free(void *ptr) {

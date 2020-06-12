@@ -60,7 +60,7 @@ struct hFILE *bgzf_hfile(struct BGZF *fp);
 /*!
   @abstract Closes all hFILE plugins that have been loaded
 */
-void hfile_shutdown(void);
+void hfile_shutdown(int do_close_plugin);
 
 struct hFILE_backend {
     /* As per read(2), returning the number of bytes read (possibly 0) or
