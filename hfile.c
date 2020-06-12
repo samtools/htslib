@@ -923,7 +923,7 @@ struct hFILE_plugin_list {
 static struct hFILE_plugin_list *plugins = NULL;
 static pthread_mutex_t plugins_lock = PTHREAD_MUTEX_INITIALIZER;
 
-void hfile_shutdown()
+void hfile_shutdown(int do_close_plugin)
 {
     pthread_mutex_lock(&plugins_lock);
 
@@ -936,7 +936,7 @@ void hfile_shutdown()
         struct hFILE_plugin_list *p = plugins;
         if (p->plugin.destroy) p->plugin.destroy();
 #ifdef ENABLE_PLUGINS
-        if (p->plugin.obj) close_plugin(p->plugin.obj);
+        if (p->plugin.obj && do_close_plugin) close_plugin(p->plugin.obj);
 #endif
         plugins = p->next;
         free(p);
@@ -947,7 +947,7 @@ void hfile_shutdown()
 
 static void hfile_exit()
 {
-    hfile_shutdown();
+    hfile_shutdown(0);
     pthread_mutex_destroy(&plugins_lock);
 }
 
