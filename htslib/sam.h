@@ -1650,6 +1650,17 @@ typedef struct __bam_mplp_t *bam_mplp_t;
     HTSLIB_EXPORT
     void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt);
 
+    /**
+     *  bam_plp_set_cntpos() - indicate which end of reach to apply maxcnt.
+     *  @plp:    The bam_plp_t initialised using bam_plp_init.
+     *  @end:    A fraction along the read from 0.0 (start) to 1.0 (end).
+     *           Defaults to 0.0 which makes maxcnt a true upper-bound value.
+     *           Using 1.0 makes maxcnt a lower-bound, with upper-bound
+     *           varying based on length and coordinate distribution.
+     */
+    HTSLIB_EXPORT
+    void bam_plp_set_cntpos(bam_plp_t iter, double end);
+
     HTSLIB_EXPORT
     void bam_plp_reset(bam_plp_t iter);
 
@@ -1711,6 +1722,18 @@ typedef struct __bam_mplp_t *bam_mplp_t;
 
     HTSLIB_EXPORT
     void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt);
+
+    /**
+     *  bam_mplp_set_cntpos() - indicate which end of reach to apply maxcnt.
+     *  @mplp:   The bam_mplp_t initialised using bam_mplp_init.
+     *  @end:    A fraction along the read from 0.0 (start) to 1.0 (end).
+     *           Defaults to 0.0 which makes maxcnt a true upper-bound value.
+     *           Using 1.0 makes maxcnt a lower-bound, with upper-bound
+     *           varying based on length and coordinate distribution.
+     */
+    HTSLIB_EXPORT
+    void bam_mplp_set_cntpos(bam_mplp_t iter, double end);
+
 
     HTSLIB_EXPORT
     int bam_mplp_auto(bam_mplp_t iter, int *_tid, int *_pos, int *n_plp, const bam_pileup1_t **plp);
