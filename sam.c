@@ -35,6 +35,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <assert.h>
 #include <signal.h>
 #include <inttypes.h>
+#include <math.h>
 
 // Suppress deprecation message for cigar_tab, which we initialise
 #include "htslib/hts_defs.h"
@@ -4139,7 +4140,7 @@ int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) {
 KHASH_MAP_INIT_STR(olap_hash, lbnode_t *)
 typedef khash_t(olap_hash) olap_hash_t;
 
-#define MAX_AHEAD 4096
+#define MAX_AHEAD (65536*8)
 
 struct __bam_plp_t {
     mempool_t *mp;
@@ -4155,14 +4156,16 @@ struct __bam_plp_t {
     void *data;
     olap_hash_t *overlaps;
 
-    uint32_t depth[MAX_AHEAD];
-    uint64_t last_depth_pos;
-    double depth_pos_fract;
-
     // For notification of creation and destruction events
     // and associated client-owned pointer.
     int (*plp_construct)(void *data, const bam1_t *b, bam_pileup_cd *cd);
     int (*plp_destruct )(void *data, const bam1_t *b, bam_pileup_cd *cd);
+
+    // Field used for automatic depth reduction
+    uint32_t depth[MAX_AHEAD]; // circular depth buffer from b->core.pos on.
+    uint64_t last_depth_pos;   // array filed out to this pos
+    uint64_t max_depth_pos;    // >= max depth up to this pos
+    double depth_pos_fract;    // (Simple method)
 };
 
 bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data)
@@ -4519,10 +4522,13 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
             return 0;
         } else if (iter->depth_pos_fract > 0
                    && iter->tid == b->core.tid
-                   && iter->pos == b->core.pos) {
+                   && b->core.pos - iter->pos <= b->core.l_qseq / 16
+                   ) {
             // Removal from depth somewhere else along read
             endpos = bam_endpos(b);
             uint32_t len = (uint32_t)(endpos - b->core.pos - 1);
+
+#if 1
             len = len * iter->depth_pos_fract + 0.4999;
             if (b->core.pos + len < iter->last_depth_pos
                 && iter->depth[(b->core.pos+len)%MAX_AHEAD] > iter->maxcnt) {
@@ -4532,6 +4538,27 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
                 overlap_remove(iter, b);
                 return 0;
             }
+#else
+            len = len * iter->depth_pos_fract + 0.4999;
+            if (len >= MAX_AHEAD) len = MAX_AHEAD-1;
+            int64_t pos_delta = (b->core.pos + len) - iter->max_depth_pos -1;
+            int last_depth = endpos > iter->last_depth_pos
+                ? 0
+                : iter->depth[(iter->last_depth_pos-1)%MAX_AHEAD];
+            int pos_depth = iter->depth[b->core.pos % MAX_AHEAD];
+
+#ifndef MIN
+#define MIN(a,b) ((a)<(b)?(a):(b))
+#endif
+            if (drand48() >
+                //(double)h / 0xffffffff >
+                  MIN(1.0, pow((double)pos_delta / (len+.01), 2))
+                * MIN(1.0, pow((1-(last_depth+.1)/iter->maxcnt), 2))
+                * MIN(1.0, pow((iter->maxcnt+.1)/pos_depth, 2)) *2) {
+                overlap_remove(iter, b);
+                return 0;
+            }
+#endif
 
             // Zero newly observed iter depth elemtns.
             uint64_t end_clipped = endpos, p;
@@ -4547,8 +4574,11 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
             }
 
             // Increment depth
-            for (p = b->core.pos; p < end_clipped; p++)
-                iter->depth[p % MAX_AHEAD]++;
+            for (p = b->core.pos; p < end_clipped; p++) {
+                if (++iter->depth[p % MAX_AHEAD] >= iter->maxcnt)
+                    if (iter->max_depth_pos < p)
+                        iter->max_depth_pos = p;
+            }
         }
         if (bam_copy1(&iter->tail->b, b) == NULL)
             return -1;
