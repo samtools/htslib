@@ -132,12 +132,13 @@ const char *hts_path_itr_next(struct hts_path_itr *itr)
 #define RTLD_NOLOAD 0
 #endif
 
-void *load_plugin(void **pluginp, const char *filename, const char *symbol)
+plugin_void_func *load_plugin(void **pluginp, const char *filename, const char *symbol)
 {
     void *lib = dlopen(filename, RTLD_NOW | RTLD_LOCAL);
     if (lib == NULL) goto error;
 
-    void *sym = dlsym(lib, symbol);
+    plugin_void_func *sym;
+    *(void **) &sym = dlsym(lib, symbol);
     if (sym == NULL) {
         // Reopen the plugin with RTLD_GLOBAL and check for uniquified symbol
         void *libg = dlopen(filename, RTLD_NOLOAD | RTLD_NOW | RTLD_GLOBAL);
@@ -152,7 +153,7 @@ void *load_plugin(void **pluginp, const char *filename, const char *symbol)
         const char *basename = slash? slash+1 : filename;
         kputsn(basename, strcspn(basename, ".-+"), &symbolg);
 
-        sym = dlsym(lib, symbolg.s);
+        *(void **) &sym = dlsym(lib, symbol);
         free(symbolg.s);
         if (sym == NULL) goto error;
     }
@@ -172,6 +173,13 @@ void *plugin_sym(void *plugin, const char *name, const char **errmsg)
 {
     void *sym = dlsym(plugin, name);
     if (sym == NULL) *errmsg = dlerror();
+    return sym;
+}
+
+plugin_void_func *plugin_func(void *plugin, const char *name, const char **errmsg)
+{
+    plugin_void_func *sym;
+    *(void **) &sym = plugin_sym(plugin, name, errmsg);
     return sym;
 }
 

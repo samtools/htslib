@@ -55,6 +55,13 @@ void *sym(void *htslib, const char *name)
     return ptr;
 }
 
+typedef void void_func(void);
+void_func *func(void *htslib, const char *name) {
+    void_func *fptr;
+    *(void **) &fptr = sym(htslib, name);
+    return fptr;
+}
+
 int errors = 0;
 int verbose = 0;
 
@@ -112,11 +119,11 @@ int main(int argc, char **argv)
         *hts_verbosep += verbose;
 
         typedef const char *cstr_func(void);
-        printf("Loaded HTSlib %s\n", ((cstr_func *) sym(htslib, "hts_version"))());
+        printf("Loaded HTSlib %s\n", ((cstr_func *) func(htslib, "hts_version"))());
     }
 
-    hopen_p = (hopen_func *) sym(htslib, "hopen");
-    hclose_abruptly_p = (hclose_abruptly_func *) sym(htslib, "hclose_abruptly");
+    hopen_p = (hopen_func *) func(htslib, "hopen");
+    hclose_abruptly_p = (hclose_abruptly_func *) func(htslib, "hclose_abruptly");
 
     test_hopen("bad-scheme:unsupported", 0);
 #ifdef HAVE_LIBCURL
@@ -129,8 +136,7 @@ int main(int argc, char **argv)
     test_hopen("s3:invalid", 1);
 #endif
 
-    typedef void void_func(void);
-    ((void_func *) sym(htslib, "hts_lib_shutdown"))();
+    (func(htslib, "hts_lib_shutdown"))();
 
     if (dlclose(htslib) < 0) {
         fprintf(stderr, "Can't dlclose \"%s\": %s\n", argv[optind], dlerror());
