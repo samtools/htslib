@@ -1503,6 +1503,7 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
                     }
 
                     nm += x;
+                    md_dist = 0;
                 }
             }
 
