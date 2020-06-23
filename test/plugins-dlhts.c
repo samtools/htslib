@@ -91,6 +91,13 @@ void test_hopen(const char *fname, int expected)
         printf("Opening \"%s\" produces %s\n", fname, strerror(errno));
 }
 
+void verbose_log(const char *message)
+{
+    fflush(stderr);
+    if (verbose) puts(message);
+    fflush(stdout);
+}
+
 int main(int argc, char **argv)
 {
     int dlflags = RTLD_NOW;
@@ -136,12 +143,16 @@ int main(int argc, char **argv)
     test_hopen("s3:invalid", 1);
 #endif
 
+    verbose_log("Calling hts_lib_shutdown()");
     (func(htslib, "hts_lib_shutdown"))();
 
+    verbose_log("Calling dlclose(htslib)");
     if (dlclose(htslib) < 0) {
         fprintf(stderr, "Can't dlclose \"%s\": %s\n", argv[optind], dlerror());
         errors++;
     }
+
+    verbose_log("Returning from main()");
 
     if (errors > 0) {
         printf("FAILED: %d errors\n", errors);
