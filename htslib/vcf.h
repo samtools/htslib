@@ -1061,7 +1061,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
         if ( !hdr || rid<0 || rid>=hdr->n[BCF_DT_CTG] ) return NULL;
         return hdr->id[BCF_DT_CTG][rid].key;
     }
-    static inline const char *bcf_seqname(const bcf_hdr_t *hdr, bcf1_t *rec) {
+    static inline const char *bcf_seqname(const bcf_hdr_t *hdr, const bcf1_t *rec) {
         return bcf_hdr_id2name(hdr, rec ? rec->rid : -1);
     }
 
@@ -1072,7 +1072,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
         supplied or rec->rid was out of range) it returns the string
         "(unknown)".
     */
-    static inline const char *bcf_seqname_safe(const bcf_hdr_t *hdr, bcf1_t *rec) {
+    static inline const char *bcf_seqname_safe(const bcf_hdr_t *hdr, const bcf1_t *rec) {
         const char *name = bcf_seqname(hdr, rec);
         return name ? name : "(unknown)";
     }
