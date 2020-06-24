@@ -228,6 +228,7 @@ static inline int kputsn(const char *p, size_t l, kstring_t *s)
 
 static inline int kputs(const char *p, kstring_t *s)
 {
+	if (!p) { errno = EFAULT; return -1; }
 	return kputsn(p, strlen(p), s);
 }
 
