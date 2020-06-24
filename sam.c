@@ -1,6 +1,6 @@
 /*  sam.c -- SAM and BAM file I/O and manipulation.
 
-    Copyright (C) 2008-2010, 2012-2019 Genome Research Ltd.
+    Copyright (C) 2008-2010, 2012-2020 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -3481,35 +3481,52 @@ int bam_aux_del(bam1_t *b, uint8_t *s)
 int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data)
 {
     // FIXME: This is not at all efficient!
-    uint8_t *s = bam_aux_get(b,tag);
-    if (!s) {
-        if (errno == ENOENT) {  // Tag doesn't exist - add a new one
-            return bam_aux_append(b, tag, 'Z', len, (const uint8_t *) data);
-        } else { // Invalid aux data, give up.
+    size_t ln = len >= 0 ? len : strlen(data) + 1;
+    size_t old_ln = 0;
+    int need_nul = ln == 0 || data[ln - 1] != '\0';
+    int save_errno = errno;
+    int new_tag = 0;
+    uint8_t *s = bam_aux_get(b,tag), *e;
+
+    if (s) {  // Replacing existing tag
+        char type = *s;
+        if (type != 'Z') {
+            hts_log_error("Called bam_aux_update_str for type '%c' instead of 'Z'", type);
+            errno = EINVAL;
             return -1;
         }
+        s++;
+        e = memchr(s, '\0', b->data + b->l_data - s);
+        old_ln = (e ? e - s : b->data + b->l_data - s) + 1;
+        s -= 3;
+    } else {
+        if (errno != ENOENT) { // Invalid aux data, give up
+            return -1;
+        } else { // Tag doesn't exist - put it on the end
+            errno = save_errno;
+            s = b->data + b->l_data;
+            new_tag = 3;
+        }
     }
-    char type = *s;
-    if (type != 'Z') {
-        hts_log_error("Called bam_aux_update_str for type '%c' instead of 'Z'", type);
-        errno = EINVAL;
-        return -1;
+
+    if (old_ln < ln + need_nul + new_tag) {
+        ptrdiff_t s_offset = s - b->data;
+        if (possibly_expand_bam_data(b, ln + need_nul + new_tag - old_ln) < 0)
+            return -1;
+        s = b->data + s_offset;
     }
+    if (!new_tag) {
+        memmove(s + 3 + ln + need_nul,
+                s + 3 + old_ln,
+                b->l_data - (s + 3 - b->data) - old_ln);
+    }
+    b->l_data += new_tag + ln + need_nul - old_ln;
 
-    bam_aux_del(b,s);
-    s -= 2;
-    int l_aux = bam_get_l_aux(b);
-
-    ptrdiff_t s_offset = s - b->data;
-    if (possibly_expand_bam_data(b, 3 + len) < 0) return -1;
-    s = b->data + s_offset;
-    b->l_data += 3 + len;
-
-    memmove(s+3+len, s, l_aux - (s - bam_get_aux(b)));
     s[0] = tag[0];
     s[1] = tag[1];
-    s[2] = type;
-    memmove(s+3,data,len);
+    s[2] = 'Z';
+    memmove(s+3,data,ln);
+    if (need_nul) s[3 + ln] = '\0';
     return 0;
 }
 
