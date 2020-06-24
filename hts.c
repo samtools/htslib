@@ -601,6 +601,12 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     }
     mode_c = cp2;
     *cp2++ = fmt_code;
+
+    // Permit ubam and ucram formats
+    if (fmt && fmt->compression_level >= 0 && fmt->compression_level <= 9
+        && (fmt->format == bam || fmt->format == cram))
+        *cp2++ = '0' + fmt->compression_level;
+
     *cp2++ = 0;
 
     // Set or reset the format code if opts->format is used
@@ -957,11 +963,21 @@ int hts_parse_format(htsFormat *format, const char *str) {
         format->format            = bam;
         format->compression       = bgzf;
         format->compression_level = -1;
+    } else if (strcmp(fmt, "ubam") == 0) {
+        format->category          = sequence_data;
+        format->format            = bam;
+        format->compression       = bgzf;
+        format->compression_level = 0;
     } else if (strcmp(fmt, "cram") == 0) {
         format->category          = sequence_data;
         format->format            = cram;
         format->compression       = custom;
         format->compression_level = -1;
+    } else if (strcmp(fmt, "ucram") == 0) {
+        format->category          = sequence_data;
+        format->format            = cram;
+        format->compression       = custom;
+        format->compression_level = 0;
     } else if (strcmp(fmt, "vcf") == 0) {
         format->category          = variant_data;
         format->format            = vcf;
