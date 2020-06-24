@@ -1307,10 +1307,12 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
                                     (1 << BCF_BT_NULL)  |
                                     (1 << BCF_BT_FLOAT) |
                                     (1 << BCF_BT_CHAR));
-
+    int32_t max_id = hdr ? hdr->n[BCF_DT_ID] : 0;
 
     // Check for valid contig ID
-    if (rec->rid < 0 || (hdr && rec->rid >= hdr->n[BCF_DT_CTG])) {
+    if (rec->rid < 0
+        || (hdr && (rec->rid >= hdr->n[BCF_DT_CTG]
+                    || hdr->id[BCF_DT_CTG][rec->rid].key == NULL))) {
         hts_log_warning("Bad BCF record at %"PRIhts_pos": Invalid %s id %d", rec->pos+1, "CONTIG", rec->rid);
         err |= BCF_ERR_CTG_INVALID;
     }
@@ -1356,7 +1358,9 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
             if (end - ptr < bytes) goto bad_shared;
             for (i = 0; i < num; i++) {
                 int32_t key = bcf_dec_int1(ptr, type, &ptr);
-                if (key < 0 || (hdr && key >= hdr->n[BCF_DT_ID])) {
+                if (key < 0
+                    || (hdr && (key >= max_id
+                                || hdr->id[BCF_DT_ID][key].key == NULL))) {
                     if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
                         hts_log_warning("Bad BCF record at %s:%"PRIhts_pos": Invalid %s id %d", bcf_seqname_safe(hdr,rec), rec->pos+1, "FILTER", key);
                     err |= BCF_ERR_TAG_UNDEF;
@@ -1370,8 +1374,8 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     for (i = 0; i < rec->n_info; i++) {
         int32_t key = -1;
         if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) goto bad_shared;
-        if (key < 0 || (hdr && key >= hdr->n[BCF_DT_ID])
-            || (hdr && hdr->id[BCF_DT_ID][key].key == NULL)) {
+        if (key < 0 || (hdr && (key >= max_id
+                                || hdr->id[BCF_DT_ID][key].key == NULL))) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
                 hts_log_warning("Bad BCF record at %s:%"PRIhts_pos": Invalid %s id %d", bcf_seqname_safe(hdr,rec), rec->pos+1, "INFO", key);
             err |= BCF_ERR_TAG_UNDEF;
@@ -1394,7 +1398,9 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
     for (i = 0; i < rec->n_fmt; i++) {
         int32_t key = -1;
         if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) goto bad_indiv;
-        if (key < 0 || (hdr && key >= hdr->n[BCF_DT_ID])) {
+        if (key < 0
+            || (hdr && (key >= max_id
+                        || hdr->id[BCF_DT_ID][key].key == NULL))) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
                 hts_log_warning("Bad BCF record at %s:%"PRIhts_pos": Invalid %s id %d", bcf_seqname_safe(hdr,rec), rec->pos+1, "FORMAT", key);
             err |= BCF_ERR_TAG_UNDEF;
