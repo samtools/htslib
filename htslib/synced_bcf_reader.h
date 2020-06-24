@@ -95,7 +95,8 @@ extern "C" {
 typedef enum
 {
     BCF_SR_REQUIRE_IDX,
-    BCF_SR_PAIR_LOGIC       // combination of the PAIR_* values above
+    BCF_SR_PAIR_LOGIC,          // combination of the PAIR_* values above
+    BCF_SR_ALLOW_NO_IDX         // allow to proceed even if required index is not present (at the user's risk)
 }
 bcf_sr_opt_t;
 
@@ -149,7 +150,7 @@ bcf_sr_t;
 typedef enum
 {
     open_failed, not_bgzf, idx_load_failed, file_type_error, api_usage_error,
-    header_error, no_eof, no_memory, vcf_parse_error, bcf_read_error
+    header_error, no_eof, no_memory, vcf_parse_error, bcf_read_error, noidx_error
 }
 bcf_sr_error;
 
