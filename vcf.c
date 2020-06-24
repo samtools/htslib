@@ -3022,8 +3022,16 @@ int bcf_unpack(bcf1_t *b, int which)
 int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
 {
     int i;
+    int32_t max_dt_id = h->n[BCF_DT_ID];
+    const char *chrom = bcf_seqname(h, v);
+    if (!chrom) {
+        hts_log_error("Invalid BCF, CONTIG id=%d not present in the header",
+                      v->rid);
+        errno = EINVAL;
+        return -1;
+    }
     bcf_unpack((bcf1_t*)v, BCF_UN_ALL);
-    kputs(h->id[BCF_DT_CTG][v->rid].key, s); // CHROM
+    kputs(chrom, s); // CHROM
     kputc('\t', s); kputll(v->pos + 1, s); // POS
     kputc('\t', s); kputs(v->d.id ? v->d.id : ".", s); // ID
     kputc('\t', s); // REF
@@ -3042,8 +3050,16 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
     kputc('\t', s); // FILTER
     if (v->d.n_flt) {
         for (i = 0; i < v->d.n_flt; ++i) {
+            int32_t idx = v->d.flt[i];
+            if (idx < 0 || idx >= max_dt_id
+                || h->id[BCF_DT_ID][idx].key == NULL) {
+                hts_log_error("Invalid BCF, the FILTER tag id=%d at %s:%"PRIhts_pos" not present in the header",
+                              idx, bcf_seqname_safe(h, v), v->pos + 1);
+                errno = EINVAL;
+                return -1;
+            }
             if (i) kputc(';', s);
-            kputs(h->id[BCF_DT_ID][v->d.flt[i]].key, s);
+            kputs(h->id[BCF_DT_ID][idx].key, s);
         }
     } else kputc('.', s);
     kputc('\t', s); // INFO
@@ -3054,9 +3070,13 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             if ( !z->vptr ) continue;
             if ( !first ) kputc(';', s);
             first = 0;
-            if (z->key < 0 || z->key >= h->n[BCF_DT_ID]) {
-                hts_log_error("Invalid BCF, the INFO index %d is %s at %s:%"PRIhts_pos,
-                              z->key, z->key < 0 ? "negative" : "too large", bcf_seqname_safe(h,(bcf1_t*)v), v->pos+1);
+            if (z->key < 0 || z->key >= max_dt_id
+                || h->id[BCF_DT_ID][z->key].key == NULL) {
+                hts_log_error("Invalid BCF, the INFO tag id=%d is %s at %s:%"PRIhts_pos,
+                              z->key,
+                              z->key < 0 ? "negative"
+                              : (z->key >= max_dt_id ? "too large" : "not present in the header"),
+                              bcf_seqname_safe(h, v), v->pos+1);
                 errno = EINVAL;
                 return -1;
             }
@@ -3073,7 +3093,7 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
                     case BCF_BT_INT64: if ( z->v1.i==bcf_int64_missing ) kputc('.', s); else kputll(z->v1.i, s); break;
                     case BCF_BT_FLOAT: if ( bcf_float_is_missing(z->v1.f) ) kputc('.', s); else kputd(z->v1.f, s); break;
                     case BCF_BT_CHAR:  kputc(z->v1.i, s); break;
-                    default: hts_log_error("Unexpected type %d at %s:%"PRIhts_pos, z->type, bcf_seqname_safe(h,(bcf1_t*)v), v->pos+1); exit(1); break;
+                    default: hts_log_error("Unexpected type %d at %s:%"PRIhts_pos, z->type, bcf_seqname_safe(h, v), v->pos+1); exit(1); break;
                 }
             }
             else bcf_fmt_array(s, z->len, z->type, z->vptr);
@@ -3092,10 +3112,12 @@ int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s)
             for (i = 0; i < (int)v->n_fmt; ++i) {
                 if ( !fmt[i].p ) continue;
                 kputc(!first ? ':' : '\t', s); first = 0;
-                if ( fmt[i].id<0 ) //!bcf_hdr_idinfo_exists(h,BCF_HL_FMT,fmt[i].id) )
+                if (fmt[i].id < 0 || fmt[i].id >= max_dt_id
+                    || h->id[BCF_DT_ID][fmt[i].id].key == NULL) //!bcf_hdr_idinfo_exists(h,BCF_HL_FMT,fmt[i].id) )
                 {
-                    hts_log_error("Invalid BCF, the FORMAT tag id=%d at %s:%"PRIhts_pos" not present in the header", fmt[i].id, bcf_seqname_safe(h,(bcf1_t*)v), v->pos+1);
-                    abort();
+                    hts_log_error("Invalid BCF, the FORMAT tag id=%d at %s:%"PRIhts_pos" not present in the header", fmt[i].id, bcf_seqname_safe(h, v), v->pos+1);
+                    errno = EINVAL;
+                    return -1;
                 }
                 kputs(h->id[BCF_DT_ID][fmt[i].id].key, s);
                 if (strcmp(h->id[BCF_DT_ID][fmt[i].id].key, "GT") == 0) gt_i = i;
