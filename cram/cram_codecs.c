@@ -2163,7 +2163,7 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
         c->store = cram_external_encode_store;
         if (c->decode == cram_external_decode_int)
             c->encode = cram_external_encode_int;
-        if (c->decode == cram_external_decode_long)
+        else if (c->decode == cram_external_decode_long)
             c->encode = cram_external_encode_long;
         else if (c->decode == cram_external_decode_char)
             c->encode = cram_external_encode_char;
