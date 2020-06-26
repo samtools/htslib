@@ -1536,9 +1536,6 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
             cig_op = BAM_CMATCH;
 
-            cig_len+=len;
-            seq_pos+=len;
-            ref_pos+=len;
             //prev_pos+=len;
             break;
         }
