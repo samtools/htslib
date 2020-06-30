@@ -120,6 +120,22 @@ int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t e
  */
 void bgzf_idx_amend_last(BGZF *fp, hts_idx_t *hidx, uint64_t offset);
 
+static inline int find_file_extension(const char *fn, char ext_out[5])
+{
+    const char *delim = fn ? strstr(fn, HTS_IDX_DELIM) : NULL, *ext;
+    if (!fn) return -1;
+    if (!delim) delim = fn + strlen(fn);
+    for (ext = delim; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
+    if (*ext == '.' && delim - ext == 3 && ext[1] == 'g' && ext[2] == 'z') {
+        // permit .sam.gz as a valid file extension
+        for (ext--; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
+    }
+    if (*ext != '.' || delim - ext > 7 || delim - ext < 4) return -1;
+    memcpy(ext_out, ext + 1, delim - ext - 1);
+    ext_out[delim - ext - 1] = '\0';
+    return 0;
+}
+
 #ifdef __cplusplus
 }
 #endif

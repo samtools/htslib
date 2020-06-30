@@ -358,6 +358,16 @@ typedef struct {
     HTSLIB_EXPORT
     int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v);
 
+    /**
+     * Complete the file opening mode, according to its extension.
+     * @param mode      Preallocated mode string to be completed.
+     * @param fn        File name to be opened.
+     * @param format    Format string (vcf|bcf|vcf.gz)
+     * @return          0 on success; -1 on failure
+     */
+    HTSLIB_EXPORT
+    int vcf_open_mode(char *mode, const char *fn, const char *format);
+
     /** The opposite of vcf_parse. It should rarely be called directly, see vcf_write */
     HTSLIB_EXPORT
     int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s);

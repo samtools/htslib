@@ -215,7 +215,10 @@ void bcf_sr_destroy_threads(bcf_srs_t *files) {
 
 int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 {
-    htsFile* file_ptr = hts_open(fname, "r");
+    char fmode[5];
+    strcpy(fmode, "r");
+    vcf_open_mode(fmode+1, fname, NULL);
+    htsFile* file_ptr = hts_open(fname, fmode);
     if ( ! file_ptr ) {
         files->errnum = open_failed;
         return 0;
