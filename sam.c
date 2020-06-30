@@ -4371,7 +4371,7 @@ static int overlap_push(bam_plp_t iter, lbnode_t *node)
     if ( node->b.core.flag&BAM_FMUNMAP || !(node->b.core.flag&BAM_FPROPER_PAIR) ) return 0;
 
     // no overlap possible, unless some wild cigar
-    if ( node->b.core.tid != node->b.core.mtid
+    if ( (node->b.core.mtid >= 0 && node->b.core.tid != node->b.core.mtid)
          || (llabs(node->b.core.isize) >= 2*node->b.core.l_qseq
          && node->b.core.mpos >= node->end) // for those wild cigars
        ) return 0;
@@ -4380,7 +4380,8 @@ static int overlap_push(bam_plp_t iter, lbnode_t *node)
     if ( kitr==kh_end(iter->overlaps) )
     {
         // Only add reads where the mate is still to arrive
-        if (node->b.core.mpos >= node->b.core.pos) {
+        if (node->b.core.mpos >= node->b.core.pos ||
+            ((node->b.core.flag & BAM_FPAIRED) && node->b.core.mpos == -1)) {
             int ret;
             kitr = kh_put(olap_hash, iter->overlaps, bam_get_qname(&node->b), &ret);
             if (ret < 0) return -1;
