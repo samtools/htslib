@@ -1,7 +1,7 @@
 /// @file htslib/sam.h
 /// High-level SAM/BAM/CRAM sequence file operations.
 /*
-    Copyright (C) 2008, 2009, 2013-2019 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2020 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -1463,6 +1463,15 @@ int bam_aux_del(bam1_t *b, uint8_t *s);
    @return 0 on success, -1 on failure
    This function will not change the ordering of tags in the bam record.
    New tags will be appended to any existing aux records.
+
+   If @p len is less than zero, the length of the input string will be
+   calculated using strlen().  Otherwise exactly @p len bytes will be
+   copied from @p data to make the new tag.  If these bytes do not
+   include a terminating NUL character, one will be added.  (Note that
+   versions of HTSlib up to 1.10.2 had different behaviour here and
+   simply copied @p len bytes from data.  To generate a valid tag it
+   was necessary to ensure the last character was a NUL, and include
+   it in @p len.)
 
    On failure, errno may be set to one of the following values:
 

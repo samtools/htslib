@@ -1,6 +1,6 @@
 /*  test/sam.c -- SAM/BAM/CRAM API test cases.
 
-    Copyright (C) 2014-2019 Genome Research Ltd.
+    Copyright (C) 2014-2020 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -110,6 +110,7 @@ static void check_int_B_array(bam1_t *aln, char *tag,
 #define E  2.718281828459045
 #define HELLO "Hello, world!"
 #define NEW_HELLO "Yo, dude"
+#define NEW_HELLO2 "Bonjour, tout le monde"
 #define BEEF "DEADBEEF"
 
 #define str(x) #x
@@ -239,7 +240,7 @@ static int aux_fields1(void)
 ;
 
     // Canonical form of the alignment records above, as output by sam_format1()
-    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" NEW_HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tF2:f:9.8765\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\tN0:i:-1234\tN1:i:1234\tN2:i:-2\tN3:i:3\tF1:f:4.5678\tN4:B:S,65535,32768,1,0\tN5:i:4242";
+    static const char r1[] = "r1\t0\tone\t500\t20\t8M\t*\t0\t0\tATGCATGC\tqqqqqqqq\tXi:i:37\tXf:f:3.14159\tXd:d:2.71828\tXZ:Z:" NEW_HELLO "\tXH:H:" BEEF "\tXB:B:c,-2,0,2\tB0:B:i,-2147483648,-1,0,1,2147483647\tB1:B:I,0,1,2147483648,4294967295\tB2:B:s,-32768,-1,0,1,32767\tB3:B:S,0,1,32768,65535\tB4:B:c,-128,-1,0,1,127\tB5:B:C,0,1,127,255\tBf:B:f,-3.14159,2.71828\tZZ:i:1000000\tF2:f:9.8765\tY1:i:-2147483648\tY2:i:-2147483647\tY3:i:-1\tY4:i:0\tY5:i:1\tY6:i:2147483647\tY7:i:2147483648\tY8:i:4294967295\tN0:i:-1234\tN1:i:1234\tN2:i:-2\tN3:i:3\tF1:f:4.5678\tN4:B:S,65535,32768,1,0\tN5:i:4242\tZa:Z:" HELLO "\tZb:Z:" NEW_HELLO2;
     static const char r2[] = "r2\t141\t*\t0\t0\t*\t*\t0\t0\tATGC\tqqqq";
 
     samFile *in = sam_open(sam, "r");
@@ -270,6 +271,7 @@ static int aux_fields1(void)
     uint32_t uval = 1234;
     float f1 = 4.5678;
     float f2 = 9.8765;
+    const char *hose = "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO";
 
     size_t nvals, i;
 
@@ -296,7 +298,20 @@ static int aux_fields1(void)
         bam_aux_update_str(aln,"XZ",strlen(NEW_HELLO)+1,NEW_HELLO);
         if ((p = check_bam_aux_get(aln, "XZ", 'Z')) && strcmp(bam_aux2Z(p), NEW_HELLO) != 0)
             fail("XZ field is \"%s\", expected \"%s\"", bam_aux2Z(p), NEW_HELLO);
+        if (!check_bam_aux_get(aln, "XH", 'H'))
+            fail("bam_aux_update_str(,,strlen(NEW_HELLO)+1,NEW_HELLO) corrupted XH tag");
 
+        bam_aux_update_str(aln,"XZ",strlen(NEW_HELLO2), NEW_HELLO2);
+        if ((p = check_bam_aux_get(aln, "XZ", 'Z')) && strcmp(bam_aux2Z(p), NEW_HELLO2) != 0)
+            fail("XZ field is \"%s\", expected \"%s\"", bam_aux2Z(p), NEW_HELLO2);
+        if (!check_bam_aux_get(aln, "XH", 'H'))
+            fail("bam_aux_update_str(,,strlen(NEW_HELLO2),NEW_HELLO2) corrupted XH tag");
+
+        bam_aux_update_str(aln,"XZ",-1,NEW_HELLO);
+        if ((p = check_bam_aux_get(aln, "XZ", 'Z')) && strcmp(bam_aux2Z(p), NEW_HELLO) != 0)
+            fail("XZ field is \"%s\", expected \"%s\"", bam_aux2Z(p), NEW_HELLO);
+        if (!check_bam_aux_get(aln, "XH", 'H'))
+            fail("bam_aux_update_str(,,-1,NEW_HELLO) corrupted XH tag");
 
         if ((p = check_bam_aux_get(aln, "XH", 'H')) && strcmp(bam_aux2Z(p), BEEF) != 0)
             fail("XH field is \"%s\", expected \"%s\"", bam_aux2Z(p), BEEF);
@@ -447,6 +462,24 @@ static int aux_fields1(void)
         if (i == 0)
             i = test_update_array(aln, "N4", 'S', NELE(n4v7), n4v7,
                                   "N5", 4242, 'S');
+
+        // Append a couple of strings
+        // First add and remove some data so that failure to NUL-terminate will
+        // be spotted
+        bam_aux_update_str(aln,"oo",strlen(hose) + 1,hose);
+        if ((p = check_bam_aux_get(aln, "oo", 'Z')) && strcmp(bam_aux2Z(p), hose) != 0)
+            fail("oo field is \"%s\", expected \"%s\"", bam_aux2Z(p), hose);
+        if (p) bam_aux_del(aln, p);
+        if (bam_aux_get(aln, "oo"))
+            fail("oo field wasn't deleted correctly");
+
+        bam_aux_update_str(aln,"Za",strlen(HELLO),HELLO);
+        if ((p = check_bam_aux_get(aln, "Za", 'Z')) && strcmp(bam_aux2Z(p), HELLO) != 0)
+            fail("Za field is \"%s\", expected \"%s\"", bam_aux2Z(p), HELLO);
+
+        bam_aux_update_str(aln,"Zb",strlen(NEW_HELLO2)+1,NEW_HELLO2);
+        if ((p = check_bam_aux_get(aln, "Zb", 'Z')) && strcmp(bam_aux2Z(p), NEW_HELLO2) != 0)
+            fail("Zb field is \"%s\", expected \"%s\"", bam_aux2Z(p), NEW_HELLO2);
 
         if (sam_format1(header, aln, &ks) < 0)
             fail("can't format record");
@@ -1624,7 +1657,7 @@ static void test_mempolicy(void)
     const char *fname = "test/sam_alignment.tmp.sam";
     const char *bam_name = "test/sam_alignment.tmp.bam";
     const char *cram_name = "test/sam_alignment.tmp.cram";
-    const char *tag_text =
+    const char tag_text[] =
         "lengthy text ... lengthy text ... lengthy text ... lengthy text ... "
         "lengthy text ... lengthy text ... lengthy text ... lengthy text ... "
         "lengthy text ... lengthy text ... lengthy text ... lengthy text ... "
