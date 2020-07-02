@@ -529,22 +529,35 @@ void test_invalid_end_tag(void)
 
 void test_open_format() {
     char mode[5];
+    int ret;
     strcpy(mode, "r");
-    vcf_open_mode(mode+1, "mode1.bcf", NULL);
-    if (strncmp(mode, "rb", 2))
+    ret = vcf_open_mode(mode+1, "mode1.bcf", NULL);
+    if (strncmp(mode, "rb", 2) || ret)
         error("Mode '%s' does not match the expected value '%s'", mode, "rb");
     mode[1] = 0;
-    vcf_open_mode(mode+1, "mode1.vcf", NULL);
-    if (strncmp(mode, "r", 1))
+    ret = vcf_open_mode(mode+1, "mode1.vcf", NULL);
+    if (strncmp(mode, "r", 1) || ret)
         error("Mode '%s' does not match the expected value '%s'", mode, "r");
     mode[1] = 0;
-    vcf_open_mode(mode+1, "mode1.vcf.gz", NULL);
-    if (strncmp(mode, "rz", 2))
+    ret = vcf_open_mode(mode+1, "mode1.vcf.gz", NULL);
+    if (strncmp(mode, "rz", 2) || ret)
         error("Mode '%s' does not match the expected value '%s'", mode, "rz");
     mode[1] = 0;
-    vcf_open_mode(mode+1, "mode1.vcf.bgz", NULL);
-    if (strncmp(mode, "rz", 2))
+    ret = vcf_open_mode(mode+1, "mode1.vcf.bgz", NULL);
+    if (strncmp(mode, "rz", 2) || ret)
         error("Mode '%s' does not match the expected value '%s'", mode, "rz");
+    mode[1] = 0;
+    ret = vcf_open_mode(mode+1, "mode1.xcf", NULL);
+    if (!ret)
+        error("Expected failure for wrong extension 'xcf'");
+    mode[1] = 0;
+    ret = vcf_open_mode(mode+1, "mode1.vcf.gbz", NULL);
+    if (!ret)
+        error("Expected failure for wrong extension 'vcf.gbz'");
+    mode[1] = 0;
+    ret = vcf_open_mode(mode+1, "mode1.bvcf.bgz", NULL);
+    if (!ret)
+        error("Expected failure for wrong extension 'vcf.bvcf.bgz'");
 }
 
 int main(int argc, char **argv)

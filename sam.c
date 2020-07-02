@@ -3755,7 +3755,7 @@ int sam_open_mode(char *mode, const char *fn, const char *format)
     // TODO Parse "bam5" etc for compression level
     if (format == NULL) {
         // Try to pick a format based on the filename extension
-        char extension[7];
+        char extension[HTS_MAX_EXT_LEN];
         if (find_file_extension(fn, extension) < 0) return -1;
         return sam_open_mode(mode, fn, extension);
     }
@@ -3788,7 +3788,7 @@ char *sam_open_mode_opts(const char *fn,
 
     if (format == NULL) {
         // Try to pick a format based on the filename extension
-        char extension[7];
+        char extension[HTS_MAX_EXT_LEN];
         if (find_file_extension(fn, extension) < 0) {
             free(mode_opts);
             return NULL;

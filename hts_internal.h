@@ -27,8 +27,9 @@ DEALINGS IN THE SOFTWARE.  */
 #include <ctype.h>
 
 #include "htslib/hts.h"
-
 #include "textutils_internal.h"
+
+#define HTS_MAX_EXT_LEN 8
 
 #ifdef __cplusplus
 extern "C" {
@@ -120,17 +121,19 @@ int bgzf_idx_push(BGZF *fp, hts_idx_t *hidx, int tid, hts_pos_t beg, hts_pos_t e
  */
 void bgzf_idx_amend_last(BGZF *fp, hts_idx_t *hidx, uint64_t offset);
 
-static inline int find_file_extension(const char *fn, char ext_out[5])
+static inline int find_file_extension(const char *fn, char ext_out[static HTS_MAX_EXT_LEN])
 {
     const char *delim = fn ? strstr(fn, HTS_IDX_DELIM) : NULL, *ext;
     if (!fn) return -1;
     if (!delim) delim = fn + strlen(fn);
     for (ext = delim; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
-    if (*ext == '.' && delim - ext == 3 && ext[1] == 'g' && ext[2] == 'z') {
-        // permit .sam.gz as a valid file extension
+    if (*ext == '.' &&
+        ((delim - ext == 3 && ext[1] == 'g' && ext[2] == 'z') || // permit .sam.gz as a valid file extension
+        (delim - ext == 4 && ext[1] == 'b' && ext[2] == 'g' && ext[3] == 'z'))) // permit .vcf.bgz as a valid file extension
+    {
         for (ext--; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
     }
-    if (*ext != '.' || delim - ext > 7 || delim - ext < 4) return -1;
+    if (*ext != '.' || delim - ext > HTS_MAX_EXT_LEN || delim - ext < 4) return -1;
     memcpy(ext_out, ext + 1, delim - ext - 1);
     ext_out[delim - ext - 1] = '\0';
     return 0;
