@@ -3767,35 +3767,19 @@ double bam_auxB2f(const uint8_t *s, uint32_t idx)
     else return get_int_aux_val(s[1], s + 6, idx);
 }
 
-static int find_file_extension(const char *fn, char ext_out[5])
-{
-    const char *delim = fn ? strstr(fn, HTS_IDX_DELIM) : NULL, *ext;
-    if (!fn) return -1;
-    if (!delim) delim = fn + strlen(fn);
-    for (ext = delim; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
-    if (*ext == '.' && delim - ext == 3 && ext[1] == 'g' && ext[2] == 'z') {
-        // permit .sam.gz as a valid file extension
-        for (ext--; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
-    }
-    if (*ext != '.' || delim - ext > 7 || delim - ext < 4) return -1;
-    memcpy(ext_out, ext + 1, delim - ext - 1);
-    ext_out[delim - ext - 1] = '\0';
-    return 0;
-}
-
 int sam_open_mode(char *mode, const char *fn, const char *format)
 {
     // TODO Parse "bam5" etc for compression level
     if (format == NULL) {
         // Try to pick a format based on the filename extension
-        char extension[7];
+        char extension[HTS_MAX_EXT_LEN];
         if (find_file_extension(fn, extension) < 0) return -1;
         return sam_open_mode(mode, fn, extension);
     }
-    else if (strcmp(format, "bam") == 0) strcpy(mode, "b");
-    else if (strcmp(format, "cram") == 0) strcpy(mode, "c");
-    else if (strcmp(format, "sam") == 0) strcpy(mode, "");
-    else if (strcmp(format, "sam.gz") == 0) strcpy(mode, "z");
+    else if (strcasecmp(format, "bam") == 0) strcpy(mode, "b");
+    else if (strcasecmp(format, "cram") == 0) strcpy(mode, "c");
+    else if (strcasecmp(format, "sam") == 0) strcpy(mode, "");
+    else if (strcasecmp(format, "sam.gz") == 0) strcpy(mode, "z");
     else return -1;
 
     return 0;
@@ -3821,7 +3805,7 @@ char *sam_open_mode_opts(const char *fn,
 
     if (format == NULL) {
         // Try to pick a format based on the filename extension
-        char extension[7];
+        char extension[HTS_MAX_EXT_LEN];
         if (find_file_extension(fn, extension) < 0) {
             free(mode_opts);
             return NULL;

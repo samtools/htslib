@@ -1,6 +1,9 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* New method vcf_open_mode() changes the opening mode of a variant call file,
+  based on its file extension. Similar to sam_open_mode().
+
 * hts_srand48() now seeds the same POSIX-standard sequences of pseudo-random
   numbers regardless of platform, including on OpenBSD where plain srand48()
   produces a different cryptographically-strong non-deterministic sequence.
