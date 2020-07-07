@@ -40,6 +40,12 @@ exit;
 
 #--------------------------------
 
+sub cygpath {
+    my ($path) = @_;
+    $path = `cygpath -m $path`;
+    $path =~ s/\r?\n//;
+    return $path
+}
 sub error
 {
     my (@msg) = @_;
@@ -66,6 +72,9 @@ sub parse_params
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
     $$opts{tmp} = exists($$opts{keep_files}) ? $$opts{keep_files} : tempdir(CLEANUP=>1);
+    if ($^O =~ /^msys/) {
+        $$opts{tmp} = cygpath($$opts{tmp});
+    }
     if ( $$opts{keep_files} ) { cmd("mkdir -p $$opts{keep_files}"); }
     if ( !exists($$opts{seed}) )
     {
@@ -568,6 +577,11 @@ sub test_no_index {
     my ($opts) = @_;
 
     my $vcfdir = "$FindBin::Bin/bcf-sr";
+    if ($^O =~ /^msys/) {
+        $vcfdir = `cygpath -w $vcfdir`;
+        $vcfdir =~ s/\r?\n//;
+        $vcfdir =~ s/\\/\\\\/g;
+    }
 
     # Positive test
     open(my $fh, '>', "$$opts{tmp}/no_index_1.txt")
@@ -583,7 +597,11 @@ sub test_no_index {
         error("The command failed [$ret]: $cmd\n");
     }
 
-    cmd("cmp $vcfdir/merge.noidx.abc.expected.out $$opts{tmp}/no_index_1.out");
+    if ($^O =~ /^msys/) {
+        cmd("diff --strip-trailing-cr $vcfdir/merge.noidx.abc.expected.out $$opts{tmp}/no_index_1.out");
+    } else {
+        cmd("cmp $vcfdir/merge.noidx.abc.expected.out $$opts{tmp}/no_index_1.out");
+    }
 
     # Check bad input detection
 
