@@ -4363,8 +4363,10 @@ static inline int _bcf1_sync_alleles(const bcf_hdr_t *hdr, bcf1_t *line, int nal
     }
     if ( end_info && end_info->v1.i > line->pos )
         line->rlen = end_info->v1.i - line->pos;
-    else
+    else if ( nals > 0 )
         line->rlen = strlen(line->d.allele[0]);
+    else
+        line->rlen = 0;
 
     return 0;
 }
@@ -4656,7 +4658,7 @@ int bcf_get_format_values(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, v
     {
         *ndst = fmt->n*nsmpl;
         *dst  = realloc(*dst, *ndst*size1);
-        if ( !dst ) return -4;     // could not alloc
+        if ( !*dst ) return -4;     // could not alloc
     }
 
     #define BRANCH(type_t, convert, is_missing, is_vector_end, set_missing, set_vector_end, set_regular, out_type_t) { \

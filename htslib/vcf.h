@@ -765,7 +765,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     HTSLIB_EXPORT
     int bcf_has_filter(const bcf_hdr_t *hdr, bcf1_t *line, char *filter);
     /**
-     *  bcf_update_alleles() and bcf_update_alleles_str() - update REF and ALLT column
+     *  bcf_update_alleles() and bcf_update_alleles_str() - update REF and ALT column
      *  @alleles:           Array of alleles
      *  @nals:              Number of alleles
      *  @alleles_string:    Comma-separated alleles, starting with the REF allele

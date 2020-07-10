@@ -54,6 +54,9 @@ void write_bcf(char *fname)
     bcf1_t *rec    = bcf_init1();
     if (!rec) error("bcf_init1 : %s", strerror(errno));
 
+    // Check no-op on fresh bcf1_t
+    check0(bcf_update_alleles(hdr, rec, NULL, 0));
+
     // Create VCF header
     kstring_t str = {0,0,0};
     check0(bcf_hdr_append(hdr, "##fileDate=20090805"));
@@ -109,6 +112,9 @@ void write_bcf(char *fname)
     // .. ID
     check0(bcf_update_id(hdr, rec, "rs6054257"));
     // .. REF and ALT
+    const char *alleles[2] = { "G", "A" };
+    check0(bcf_update_alleles(hdr, rec, alleles, 2));
+    check0(bcf_update_alleles(hdr, rec, NULL, 0));
     check0(bcf_update_alleles_str(hdr, rec, "G,A"));
     // .. QUAL
     rec->qual = 29;
