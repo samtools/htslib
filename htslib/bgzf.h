@@ -53,7 +53,7 @@ struct hFILE;
 struct hts_tpool;
 struct kstring_t;
 struct bgzf_mtaux_t;
-typedef struct __bgzidx_t bgzidx_t;
+typedef struct bgzidx_t bgzidx_t;
 typedef struct bgzf_cache_t bgzf_cache_t;
 struct z_stream_s;
 
