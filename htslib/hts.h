@@ -222,8 +222,8 @@ typedef struct htsFormat {
     void *specific;  // format specific options; see struct hts_opt.
 } htsFormat;
 
-struct __hts_idx_t;
-typedef struct __hts_idx_t hts_idx_t;
+struct hts_idx_t;
+typedef struct hts_idx_t hts_idx_t;
 
 // Maintainers note htsFile cannot be an opaque structure because some of its
 // fields are part of libhts.so's ABI (hence these fields must not be moved):

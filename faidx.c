@@ -52,7 +52,7 @@ typedef struct {
 } faidx1_t;
 KHASH_MAP_INIT_STR(s, faidx1_t)
 
-struct __faidx_t {
+struct faidx_t {
     BGZF *bgzf;
     int n, m;
     char **name;

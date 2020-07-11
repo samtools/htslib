@@ -100,7 +100,9 @@ typedef enum
 }
 bcf_sr_opt_t;
 
-typedef struct _bcf_sr_regions_t
+struct bcf_sr_region_t;
+
+typedef struct bcf_sr_regions_t
 {
     // for reading from tabix-indexed file (big data)
     tbx_t *tbx;             // tabix index
@@ -115,11 +117,11 @@ typedef struct _bcf_sr_regions_t
     int als_type;           // alleles type, currently VCF_SNP or VCF_INDEL
 
     // user handler to deal with skipped regions without a counterpart in VCFs
-    void (*missed_reg_handler)(struct _bcf_sr_regions_t *, void *);
+    void (*missed_reg_handler)(struct bcf_sr_regions_t *, void *);
     void *missed_reg_data;
 
     // for in-memory regions (small data)
-    struct _region_t *regs; // the regions
+    struct bcf_sr_region_t *regs; // the regions
 
     // shared by both tabix-index and in-memory regions
     void *seq_hash;         // keys: sequence names, values: index to seqs

@@ -33,7 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 #define SW_FWD 0
 #define SW_BWD 1
 
-struct _bcf_sweep_t
+struct bcf_sweep_t
 {
     htsFile *file;
     bcf_hdr_t *hdr;

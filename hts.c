@@ -1645,7 +1645,7 @@ typedef struct {
     uint64_t *offset;
 } lidx_t;
 
-struct __hts_idx_t {
+struct hts_idx_t {
     int fmt, min_shift, n_lvls, n_bins;
     uint32_t l_meta;
     int32_t n, m;

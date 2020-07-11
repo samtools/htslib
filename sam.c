@@ -4140,7 +4140,7 @@ int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) {
 KHASH_MAP_INIT_STR(olap_hash, lbnode_t *)
 typedef khash_t(olap_hash) olap_hash_t;
 
-struct __bam_plp_t {
+struct bam_plp_s {
     mempool_t *mp;
     lbnode_t *head, *tail;
     int32_t tid, max_tid;
@@ -4163,7 +4163,7 @@ struct __bam_plp_t {
 bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data)
 {
     bam_plp_t iter;
-    iter = (bam_plp_t)calloc(1, sizeof(struct __bam_plp_t));
+    iter = (bam_plp_t)calloc(1, sizeof(struct bam_plp_s));
     iter->mp = mp_init();
     iter->head = iter->tail = mp_alloc(iter->mp);
     iter->max_tid = iter->max_pos = -1;
@@ -4609,7 +4609,7 @@ void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt)
  *** Mpileup iterator ***
  ************************/
 
-struct __bam_mplp_t {
+struct bam_mplp_s {
     int n;
     int32_t min_tid, *tid;
     hts_pos_t min_pos, *pos;
@@ -4622,7 +4622,7 @@ bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data)
 {
     int i;
     bam_mplp_t iter;
-    iter = (bam_mplp_t)calloc(1, sizeof(struct __bam_mplp_t));
+    iter = (bam_mplp_t)calloc(1, sizeof(struct bam_mplp_s));
     iter->pos = (hts_pos_t*)calloc(n, sizeof(hts_pos_t));
     iter->tid = (int32_t*)calloc(n, sizeof(int32_t));
     iter->n_plp = (int*)calloc(n, sizeof(int));

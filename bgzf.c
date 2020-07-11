@@ -167,7 +167,7 @@ typedef struct
 }
 bgzidx1_t;
 
-struct __bgzidx_t
+struct bgzidx_t
 {
     int noffs, moffs;       // the size of the index, n:used, m:allocated
     bgzidx1_t *offs;        // offsets

@@ -1621,11 +1621,11 @@ typedef struct bam_pileup1_t {
 
 typedef int (*bam_plp_auto_f)(void *data, bam1_t *b);
 
-struct __bam_plp_t;
-typedef struct __bam_plp_t *bam_plp_t;
+struct bam_plp_s;
+typedef struct bam_plp_s *bam_plp_t;
 
-struct __bam_mplp_t;
-typedef struct __bam_mplp_t *bam_mplp_t;
+struct bam_mplp_s;
+typedef struct bam_mplp_s *bam_mplp_t;
 
     /**
      *  bam_plp_init() - sets an iterator over multiple

@@ -66,9 +66,9 @@ extern "C" {
     wrapped in the same way.
  */
 
-struct __faidx_t;
+struct faidx_t;
 /// Opaque structure representing FASTA index
-typedef struct __faidx_t faidx_t;
+typedef struct faidx_t faidx_t;
 
 /// File format to be dealing with.
 enum fai_format_options {

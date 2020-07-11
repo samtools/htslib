@@ -33,7 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 extern "C" {
 #endif
 
-typedef struct _bcf_sweep_t bcf_sweep_t;
+typedef struct bcf_sweep_t bcf_sweep_t;
 
 HTSLIB_EXPORT
 bcf_sweep_t *bcf_sweep_init(const char *fname);

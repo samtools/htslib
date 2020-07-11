@@ -56,7 +56,7 @@ typedef struct
 }
 region1_t;
 
-typedef struct _region_t
+typedef struct bcf_sr_region_t
 {
     region1_t *regs;            // regions will sorted and merged, redundant records marked for skipping have start>end
     int nregs, mregs, creg;     // creg: the current active region
