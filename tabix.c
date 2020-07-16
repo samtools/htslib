@@ -48,7 +48,7 @@ DEALINGS IN THE SOFTWARE.  */
 typedef struct
 {
     char *regions_fname, *targets_fname;
-    int print_header, header_only, cache_megs;
+    int print_header, header_only, cache_megs, separate_regs;
 }
 args_t;
 
@@ -234,7 +234,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
             if (!rec) error_errno(NULL);
             for (i=0; i<nregs; i++)
             {
-                int ret;
+                int ret, found = 0;
                 hts_itr_t *itr = bcf_itr_querys(idx,hdr,regs[i]);
                 if (!itr) continue;
                 while ((ret = bcf_itr_next(fp, itr, rec)) >=0 )
@@ -252,7 +252,9 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
                     if ( bcf_write(out,hdr,rec)!=0 ) {
                         error_errno("Failed to write to stdout");
                     }
+                    found = 1;
                 }
+                if (args->separate_regs && i < nregs-1 && found) puts("");
                 if (ret < -1) {
                     error_errno("Reading \"%s\" failed", fname);
                 }
@@ -292,7 +294,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
             }
             for (i=0; i<nregs; i++)
             {
-                int ret;
+                int ret, found = 0;
                 hts_itr_t *itr = tbx_itr_querys(tbx, regs[i]);
                 if ( !itr ) continue;
                 while ((ret = tbx_itr_next(fp, tbx, itr, &str)) >= 0)
@@ -300,7 +302,9 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
                     if ( reg_idx && !regidx_overlap(reg_idx,seq[itr->curr_tid],itr->curr_beg,itr->curr_end-1, NULL) ) continue;
                     if (puts(str.s) < 0)
                         error_errno("Failed to write to stdout");
+                    found = 1;
                 }
+                if (args->separate_regs && i < nregs-1 && found) puts("");
                 if (ret < -1) error_errno("Reading \"%s\" failed", fname);
                 tbx_itr_destroy(itr);
             }
@@ -472,6 +476,7 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
     fprintf(fp, "   -D                         do not download the index file\n");
     fprintf(fp, "       --cache INT            set cache size to INT megabytes (0 disables) [10]\n");
+    fprintf(fp, "       --separate-regs        separate the output by corresponding regions\n");
     fprintf(fp, "       --verbosity INT        set verbosity [3]\n");
     fprintf(fp, "\n");
     return status;
@@ -508,6 +513,7 @@ int main(int argc, char *argv[])
         {"version", no_argument, NULL, 1},
         {"verbosity", required_argument, NULL, 3},
         {"cache", required_argument, NULL, 4},
+        {"separate-regs", no_argument, NULL, 5},
         {NULL, 0, NULL, 0}
     };
 
@@ -583,6 +589,9 @@ int main(int argc, char *argv[])
                 } else if (args.cache_megs >= INT_MAX / 1048576) {
                     args.cache_megs = INT_MAX / 1048576;
                 }
+                break;
+            case 5:
+                args.separate_regs = 1;
                 break;
             default: return usage(stderr, EXIT_FAILURE);
         }
