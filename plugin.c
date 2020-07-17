@@ -1,6 +1,6 @@
 /*  plugin.c -- low-level path parsing and plugin functions.
 
-    Copyright (C) 2015-2016 Genome Research Ltd.
+    Copyright (C) 2015-2016, 2020 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 

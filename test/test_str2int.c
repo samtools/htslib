@@ -1,6 +1,6 @@
 /* test/test_str2int.c -- Test integer string conversion (and safe printing)
 
-   Copyright (C) 2019 Genome Research Ltd.
+   Copyright (C) 2019-2020 Genome Research Ltd.
 
    Author: Rob Davies <rmd@sanger.ac.uk>
 
