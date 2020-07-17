@@ -1,6 +1,6 @@
 /*  test_kstring.c -- kstring unit tests
 
-    Copyright (C) 2018 Genome Research Ltd.
+    Copyright (C) 2018, 2020 Genome Research Ltd.
 
     Author: Rob Davies <rmd@sanger.ac.uk>
 
