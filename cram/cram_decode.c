@@ -1526,7 +1526,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
 
             if (ds & CRAM_QQ) {
                 if (!c->comp_hdr->codecs[DS_QQ]) return -1;
-                if ((unsigned char)*qual == 255)
+                if ((ds & CRAM_QS) && !(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES)
+                    && (unsigned char)*qual == 255)
                     memset(qual, 30, cr->len); // ?
                 r |= c->comp_hdr->codecs[DS_QQ]
                     ->decode(s, c->comp_hdr->codecs[DS_QQ], blk,
@@ -1578,7 +1579,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
             }
             if (ds & CRAM_QS) {
                 if (!c->comp_hdr->codecs[DS_QS]) return -1;
-                if ((unsigned char)*qual == 255)
+                if (!(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES)
+                    && (unsigned char)*qual == 255)
                     memset(qual, 30, cr->len); // ASCII ?.  Same as htsjdk
                 r |= c->comp_hdr->codecs[DS_QS]
                                 ->decode(s, c->comp_hdr->codecs[DS_QS], blk,
@@ -1599,7 +1601,8 @@ static int cram_decode_seq(cram_fd *fd, cram_container *c, cram_slice *s,
         case 'Q': { // Quality score; QS
             if (ds & CRAM_QS) {
                 if (!c->comp_hdr->codecs[DS_QS]) return -1;
-                if ((unsigned char)*qual == 255)
+                if (!(cf & CRAM_FLAG_PRESERVE_QUAL_SCORES) &&
+                    (unsigned char)*qual == 255)
                     memset(qual, 30, cr->len); // ?
                 r |= c->comp_hdr->codecs[DS_QS]
                                 ->decode(s, c->comp_hdr->codecs[DS_QS], blk,
