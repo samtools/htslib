@@ -48,7 +48,7 @@ DEALINGS IN THE SOFTWARE.  */
 typedef struct
 {
     char *regions_fname, *targets_fname;
-    int print_header, header_only, cache_megs, separate_regs;
+    int print_header, header_only, cache_megs, download_index, separate_regs;
 }
 args_t;
 
@@ -194,7 +194,7 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
     }
     return regs;
 }
-static int query_regions(args_t *args, char *fname, char **regs, int nregs, int download)
+static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **regs, int nregs)
 {
     int i;
     htsFile *fp = hts_open(fname,"r");
@@ -217,7 +217,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
     {
         htsFile *out = hts_open("-","w");
         if ( !out ) error_errno("Could not open stdout");
-        hts_idx_t *idx = bcf_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
+        hts_idx_t *idx = bcf_index_load3(fname, NULL, args->download_index ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !idx ) error_errno("Could not load .csi index of \"%s\"", fname);
 
         bcf_hdr_t *hdr = bcf_hdr_read(fp);
@@ -249,12 +249,15 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
                         }
                         if ( !regidx_overlap(reg_idx,chr,rec->pos,rec->pos+rec->rlen-1, NULL) ) continue;
                     }
+                    if (!found) {
+                        if (args->separate_regs) printf("%c%s\n", conf->meta_char, regs[i]);
+                        found = 1;
+                    }
                     if ( bcf_write(out,hdr,rec)!=0 ) {
                         error_errno("Failed to write to stdout");
                     }
-                    found = 1;
                 }
-                if (args->separate_regs && i < nregs-1 && found) puts("");
+
                 if (ret < -1) {
                     error_errno("Reading \"%s\" failed", fname);
                 }
@@ -270,7 +273,7 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
     }
     else if ( format==vcf || format==sam || format==bed || format==text_format || format==unknown_format )
     {
-        tbx_t *tbx = tbx_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
+        tbx_t *tbx = tbx_index_load3(fname, NULL, args->download_index ? HTS_IDX_SAVE_REMOTE : 0);
         if ( !tbx ) error_errno("Could not load .tbi/.csi index of %s", fname);
         kstring_t str = {0,0,0};
         if ( args->print_header )
@@ -300,11 +303,13 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
                 while ((ret = tbx_itr_next(fp, tbx, itr, &str)) >= 0)
                 {
                     if ( reg_idx && !regidx_overlap(reg_idx,seq[itr->curr_tid],itr->curr_beg,itr->curr_end-1, NULL) ) continue;
+                    if (!found) {
+                        if (args->separate_regs) printf("%c%s\n", conf->meta_char, regs[i]);
+                        found = 1;
+                    }
                     if (puts(str.s) < 0)
                         error_errno("Failed to write to stdout");
-                    found = 1;
                 }
-                if (args->separate_regs && i < nregs-1 && found) puts("");
                 if (ret < -1) error_errno("Reading \"%s\" failed", fname);
                 tbx_itr_destroy(itr);
             }
@@ -476,7 +481,7 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
     fprintf(fp, "   -D                         do not download the index file\n");
     fprintf(fp, "       --cache INT            set cache size to INT megabytes (0 disables) [10]\n");
-    fprintf(fp, "       --separate-regs        separate the output by corresponding regions\n");
+    fprintf(fp, "       --separate-regions     separate the output by corresponding regions\n");
     fprintf(fp, "       --verbosity INT        set verbosity [3]\n");
     fprintf(fp, "\n");
     return status;
@@ -484,12 +489,13 @@ static int usage(FILE *fp, int status)
 
 int main(int argc, char *argv[])
 {
-    int c, detect = 1, min_shift = 0, is_force = 0, list_chroms = 0, do_csi = 0, download_index = 1;
+    int c, detect = 1, min_shift = 0, is_force = 0, list_chroms = 0, do_csi = 0;
     tbx_conf_t conf = tbx_conf_gff;
     char *reheader = NULL;
     args_t args;
     memset(&args,0,sizeof(args_t));
     args.cache_megs = 10;
+    args.download_index = 1;
 
     static const struct option loptions[] =
     {
@@ -513,7 +519,7 @@ int main(int argc, char *argv[])
         {"version", no_argument, NULL, 1},
         {"verbosity", required_argument, NULL, 3},
         {"cache", required_argument, NULL, 4},
-        {"separate-regs", no_argument, NULL, 5},
+        {"separate-regions", no_argument, NULL, 5},
         {NULL, 0, NULL, 0}
     };
 
@@ -567,7 +573,7 @@ int main(int argc, char *argv[])
                 detect = 0;
                 break;
             case 'D':
-                download_index = 0;
+                args.download_index = 0;
                 break;
             case 1:
                 printf(
@@ -600,16 +606,7 @@ int main(int argc, char *argv[])
     if ( optind==argc ) return usage(stderr, EXIT_FAILURE);
 
     if ( list_chroms )
-        return query_chroms(argv[optind], download_index);
-
-    if ( argc > optind+1 || args.header_only || args.regions_fname || args.targets_fname )
-    {
-        int nregs = 0;
-        char **regs = NULL;
-        if ( !args.header_only )
-            regs = parse_regions(args.regions_fname, argv+optind+1, argc-optind-1, &nregs);
-        return query_regions(&args, argv[optind], regs, nregs, download_index);
-    }
+        return query_chroms(argv[optind], args.download_index);
 
     char *fname = argv[optind];
     int ftype = file_type(fname);
@@ -631,6 +628,14 @@ int main(int argc, char *argv[])
         {
             if ( !min_shift ) min_shift = 14;
         }
+    }
+    if ( argc > optind+1 || args.header_only || args.regions_fname || args.targets_fname )
+    {
+        int nregs = 0;
+        char **regs = NULL;
+        if ( !args.header_only )
+            regs = parse_regions(args.regions_fname, argv+optind+1, argc-optind-1, &nregs);
+        return query_regions(&args, &conf, fname, regs, nregs);
     }
     if ( do_csi )
     {

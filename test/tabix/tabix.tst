@@ -63,3 +63,6 @@ P bed_file.Y.100200.out $tabix bed_file.tbi.tmp.bed.gz Y:100200-100200
 INIT $bgzip -c gff_file.gff > gff_file.tbi.tmp.gff.gz
 P . $tabix -f -p gff gff_file.tbi.tmp.gff.gz
 P gff_file.X.2934832.2935190.out $tabix gff_file.tbi.tmp.gff.gz X:2934832-2935190
+
+# tabix with --separate-regions
+P bed_file.separate.out $tabix --separate-regions bed_file.tbi.tmp.bed.gz X:1100-1400 Y:100000-100550 Z:100000-100005
