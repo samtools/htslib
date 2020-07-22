@@ -35,6 +35,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <assert.h>
 #include <signal.h>
 #include <inttypes.h>
+#include <math.h>
 
 // Suppress deprecation message for cigar_tab, which we initialise
 #include "htslib/hts_defs.h"
@@ -4140,6 +4141,8 @@ int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) {
 KHASH_MAP_INIT_STR(olap_hash, lbnode_t *)
 typedef khash_t(olap_hash) olap_hash_t;
 
+#define MAX_AHEAD (65536*8)
+
 struct __bam_plp_t {
     mempool_t *mp;
     lbnode_t *head, *tail;
@@ -4158,6 +4161,12 @@ struct __bam_plp_t {
     // and associated client-owned pointer.
     int (*plp_construct)(void *data, const bam1_t *b, bam_pileup_cd *cd);
     int (*plp_destruct )(void *data, const bam1_t *b, bam_pileup_cd *cd);
+
+    // Field used for automatic depth reduction
+    uint32_t depth[MAX_AHEAD]; // circular depth buffer from b->core.pos on.
+    uint64_t last_depth_pos;   // array filed out to this pos
+    uint64_t max_depth_pos;    // >= max depth up to this pos
+    double depth_pos_fract;    // (Simple method)
 };
 
 bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data)
@@ -4173,6 +4182,9 @@ bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data)
         iter->data = data;
         iter->b = bam_init1();
     }
+    memset(iter->depth, 0, MAX_AHEAD * sizeof(*iter->depth));
+    iter->depth_pos_fract = 0;  // fraction between 0 = left and 1 = right
+    iter->last_depth_pos = 0;
     return iter;
 }
 
@@ -4496,21 +4508,87 @@ const bam_pileup1_t *bam_plp_next(bam_plp_t iter, int *_tid, int *_pos, int *_n_
 
 int bam_plp_push(bam_plp_t iter, const bam1_t *b)
 {
+    uint64_t endpos = 0;
+
     if (iter->error) return -1;
     if (b) {
         if (b->core.tid < 0) { overlap_remove(iter, b); return 0; }
         // Skip only unmapped reads here, any additional filtering must be done in iter->func
         if (b->core.flag & BAM_FUNMAP) { overlap_remove(iter, b); return 0; }
-        if (iter->tid == b->core.tid && iter->pos == b->core.pos && iter->mp->cnt > iter->maxcnt)
-        {
+        if (iter->depth_pos_fract == 0
+            && iter->tid == b->core.tid
+            && iter->pos == b->core.pos
+            && iter->mp->cnt > iter->maxcnt) {
+            // Removal from left-end depth; mp->cnt
             overlap_remove(iter, b);
             return 0;
+        } else if (iter->depth_pos_fract > 0
+                   && iter->tid == b->core.tid
+                   && b->core.pos - iter->pos <= b->core.l_qseq / 16
+                   ) {
+            // Removal from depth somewhere else along read
+            endpos = bam_endpos(b);
+            uint32_t len = (uint32_t)(endpos - b->core.pos - 1);
+
+#if 1
+            len = len * iter->depth_pos_fract + 0.4999;
+            if (b->core.pos + len < iter->last_depth_pos
+                && iter->depth[(b->core.pos+len)%MAX_AHEAD] > iter->maxcnt) {
+                // NB this means read longer than MAX_AHEAD (after downsizing
+                // by depth_pos fraction) will be retained as by definition
+                // it'll have zero coverage that far out.
+                overlap_remove(iter, b);
+                return 0;
+            }
+#else
+            len = len * iter->depth_pos_fract + 0.4999;
+            if (len >= MAX_AHEAD) len = MAX_AHEAD-1;
+            int64_t pos_delta = (b->core.pos + len) - iter->max_depth_pos -1;
+            int last_depth = endpos > iter->last_depth_pos
+                ? 0
+                : iter->depth[(iter->last_depth_pos-1)%MAX_AHEAD];
+            int pos_depth = iter->depth[b->core.pos % MAX_AHEAD];
+
+#ifndef MIN
+#define MIN(a,b) ((a)<(b)?(a):(b))
+#endif
+            if (drand48() >
+                //(double)h / 0xffffffff >
+                  MIN(1.0, pow((double)pos_delta / (len+.01), 2))
+                * MIN(1.0, pow((1-(last_depth+.1)/iter->maxcnt), 2))
+                * MIN(1.0, pow((iter->maxcnt+.1)/pos_depth, 2)) *2) {
+                overlap_remove(iter, b);
+                return 0;
+            }
+#endif
+
+            // Zero newly observed iter depth elemtns.
+            uint64_t end_clipped = endpos, p;
+            if (end_clipped > iter->pos + MAX_AHEAD)
+                end_clipped = iter->pos + MAX_AHEAD;
+            if (iter->last_depth_pos < end_clipped) {
+                //iter->last_depth_pos = end_clipped;
+                if (iter->last_depth_pos < end_clipped-MAX_AHEAD)
+                    iter->last_depth_pos = end_clipped-MAX_AHEAD;
+                for (p = iter->last_depth_pos; p < end_clipped; p++)
+                    iter->depth[p % MAX_AHEAD] = 0;
+                iter->last_depth_pos = end_clipped;
+            }
+
+            // Increment depth
+            for (p = b->core.pos; p < end_clipped; p++) {
+                if (++iter->depth[p % MAX_AHEAD] >= iter->maxcnt)
+                    if (iter->max_depth_pos < p)
+                        iter->max_depth_pos = p;
+            }
         }
         if (bam_copy1(&iter->tail->b, b) == NULL)
             return -1;
         iter->tail->b.id = iter->id++;
         iter->tail->beg = b->core.pos;
-        iter->tail->end = bam_endpos(b);
+        if (!endpos)
+            endpos = bam_endpos(b);
+        iter->tail->end = endpos;
         iter->tail->s = g_cstate_null; iter->tail->s.end = iter->tail->end - 1; // initialize cstate_t
         if (b->core.tid < iter->max_tid) {
             hts_log_error("The input is not sorted (chromosomes out of order)");
@@ -4604,6 +4682,11 @@ void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt)
     iter->maxcnt = maxcnt;
 }
 
+void bam_plp_set_cntpos(bam_plp_t iter, double end)
+{
+    iter->depth_pos_fract = end;
+}
+
 /************************
  *** Mpileup iterator ***
  ************************/
@@ -4651,6 +4734,13 @@ void bam_mplp_set_maxcnt(bam_mplp_t iter, int maxcnt)
     int i;
     for (i = 0; i < iter->n; ++i)
         iter->iter[i]->maxcnt = maxcnt;
+}
+
+void bam_mplp_set_cntpos(bam_mplp_t iter, double end)
+{
+    int i;
+    for (i = 0; i < iter->n; ++i)
+        iter->iter[i]->depth_pos_fract = end;
 }
 
 void bam_mplp_destroy(bam_mplp_t iter)
