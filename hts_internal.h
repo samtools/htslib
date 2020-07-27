@@ -67,6 +67,9 @@ void hts_idx_amend_last(hts_idx_t *idx, uint64_t offset);
 
 int hts_idx_fmt(hts_idx_t *idx);
 
+// Construct a unique filename based on fname and open it.
+struct hFILE *hts_open_tmpfile(const char *fname, const char *mode, kstring_t *tmpname);
+
 // Check that index is capable of storing items in range beg..end
 int hts_idx_check_range(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end);
 

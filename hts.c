@@ -36,6 +36,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdint.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <time.h>
 #include <sys/stat.h>
 #include <assert.h>
 
@@ -1392,6 +1393,25 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
             return -1;
 
     return 0;
+}
+
+hFILE *hts_open_tmpfile(const char *fname, const char *mode, kstring_t *tmpname)
+{
+    int pid = (int) getpid();
+    unsigned ptr = (uintptr_t) tmpname;
+    int n = 0;
+    hFILE *fp;
+
+    do {
+        // Attempt to further uniquify the temporary filename
+        unsigned t = ((unsigned) time(NULL)) ^ ((unsigned) clock()) ^ ptr;
+        n++;
+
+        ksprintf(ks_clear(tmpname), "%s.tmp_%d_%d_%u", fname, pid, n, t);
+        fp = hopen(tmpname->s, mode);
+    } while (fp == NULL && errno == EEXIST && n < 100);
+
+    return fp;
 }
 
 // For VCF/BCF backward sweeper. Not exposing these functions because their
@@ -3648,11 +3668,12 @@ int hts_itr_multi_next(htsFile *fd, hts_itr_t *iter, void *r)
 //         -2 on other errors
 static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_len, int download)
 {
-    hFILE *remote_hfp;
-    FILE *local_fp = NULL;
+    hFILE *remote_hfp = NULL;
+    hFILE *local_fp = NULL;
     int save_errno;
     htsFormat fmt;
     kstring_t s = KS_INITIALIZE;
+    kstring_t tmps = KS_INITIALIZE;
 
     if (hisremote(fn)) {
         const int buf_size = 1 * 1024 * 1024;
@@ -3667,9 +3688,8 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
 
         // Attempt to open local file first
         kputsn(p, e-p, &s);
-        if ((local_fp = fopen(s.s, "rb")) != 0)
+        if (access(s.s, R_OK) == 0)
         {
-            fclose(local_fp);
             free(s.s);
             *local_fn = p;
             *local_len = e-p;
@@ -3693,7 +3713,7 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
         }
 
         if (download) {
-            if ((local_fp = fopen(s.s, "wb")) == 0) {
+            if ((local_fp = hts_open_tmpfile(s.s, "wx", &tmps)) == NULL) {
                 hts_log_error("Failed to create file %s in the working directory", p);
                 goto fail;
             }
@@ -3704,7 +3724,7 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
                 goto fail;
             }
             while ((l = hread(remote_hfp, buf, buf_size)) > 0) {
-                if (fwrite(buf, 1, l, local_fp) != l) {
+                if (hwrite(local_fp, buf, l) != l) {
                     hts_log_error("Failed to write data to %s : %s",
                             fn, strerror(errno));
                     free(buf);
@@ -3716,11 +3736,17 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
                 hts_log_error("Error reading \"%s\"", fn);
                 goto fail;
             }
-            if (fclose(local_fp) < 0) {
+            if (hclose(local_fp) < 0) {
                 hts_log_error("Error closing %s : %s", fn, strerror(errno));
                 local_fp = NULL;
                 goto fail;
             }
+            local_fp = NULL;
+            if (rename(tmps.s, s.s) < 0) {
+                hts_log_error("Error renaming %s : %s", tmps.s, strerror(errno));
+                goto fail;
+            }
+            ks_clear(&tmps);
 
             *local_fn = p;
             *local_len = e-p;
@@ -3733,6 +3759,7 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
             hts_log_error("Failed to close remote file %s", fn);
         }
 
+        free(tmps.s);
         free(s.s);
         return 0;
     } else {
@@ -3746,8 +3773,10 @@ static int idx_test_and_fetch(const char *fn, const char **local_fn, int *local_
 
  fail:
     save_errno = errno;
-    hclose_abruptly(remote_hfp);
-    if (local_fp) fclose(local_fp);
+    if (remote_hfp) hclose_abruptly(remote_hfp);
+    if (local_fp) hclose_abruptly(local_fp);
+    if (tmps.l > 0) unlink(tmps.s);
+    free(tmps.s);
     free(s.s);
     errno = save_errno;
     return -2;
