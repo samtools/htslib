@@ -2433,16 +2433,13 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
             return -1;
         }
 
-        if (hwrite(fp, r->seq, r->length) != r->length) {
-            perror(path);
-        }
-        if (hclose(fp) < 0) {
+        ssize_t length_written = hwrite(fp, r->seq, r->length);
+        if (hclose(fp) < 0 || length_written != r->length ||
+            chmod(path_tmp.s, 0444) < 0 ||
+            rename(path_tmp.s, path) < 0) {
+            hts_log_error("Creating reference at %s failed: %s",
+                          path, strerror(errno));
             unlink(path_tmp.s);
-        } else {
-            if (0 == chmod(path_tmp.s, 0444))
-                rename(path_tmp.s, path);
-            else
-                unlink(path_tmp.s);
         }
     }
 
