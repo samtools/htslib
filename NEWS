@@ -1,6 +1,9 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* Added tabix --separate-regions option, which lets the user group the output by
+  the number of corresponding target regions supplied in the command line.
+
 * New method vcf_open_mode() changes the opening mode of a variant call file,
   based on its file extension. Similar to sam_open_mode().
 

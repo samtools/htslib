@@ -154,6 +154,13 @@ This is of most benefit when the
 option is used, which can cause blocks to be read more than once.
 Setting the size to 0 will disable the cache.
 .TP
+.B --separate-regions
+This option can be used when multiple regions are supplied in the command line
+and the user needs to quickly see which file records belong to which region.
+For this, a line with the name of the region, preceded by the file specific
+comment symbol, is inserted in the output before its corresponding group of
+records.
+.TP
 .BI "--verbosity " INT
 Set verbosity of logging messages printed to stderr.
 The default is 3, which turns on error and warning messages;
