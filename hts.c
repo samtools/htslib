@@ -1400,14 +1400,16 @@ hFILE *hts_open_tmpfile(const char *fname, const char *mode, kstring_t *tmpname)
     int pid = (int) getpid();
     unsigned ptr = (uintptr_t) tmpname;
     int n = 0;
-    hFILE *fp;
+    hFILE *fp = NULL;
 
     do {
         // Attempt to further uniquify the temporary filename
         unsigned t = ((unsigned) time(NULL)) ^ ((unsigned) clock()) ^ ptr;
         n++;
 
-        ksprintf(ks_clear(tmpname), "%s.tmp_%d_%d_%u", fname, pid, n, t);
+        ks_clear(tmpname);
+        if (ksprintf(tmpname, "%s.tmp_%d_%d_%u", fname, pid, n, t) < 0) break;
+
         fp = hopen(tmpname->s, mode);
     } while (fp == NULL && errno == EEXIST && n < 100);
 
