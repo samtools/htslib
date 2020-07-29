@@ -132,7 +132,7 @@ typedef struct _bcf_sr_regions_t
 }
 bcf_sr_regions_t;
 
-typedef struct
+typedef struct bcf_sr_t
 {
     htsFile *file;
     tbx_t *tbx_idx;
@@ -154,7 +154,7 @@ typedef enum
 }
 bcf_sr_error;
 
-typedef struct
+typedef struct bcf_srs_t
 {
     // Parameters controlling the logic
     int collapse;           // Do not access directly, use bcf_sr_set_pairing_logic() instead

@@ -80,7 +80,7 @@ extern "C" {
 #define REGIDX_MAX (1ULL << 35)
 
 typedef struct regidx_t regidx_t;
-typedef struct
+typedef struct regitr_t
 {
     hts_pos_t beg,end;
     void *payload;

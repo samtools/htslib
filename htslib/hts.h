@@ -235,7 +235,7 @@ typedef struct __hts_idx_t hts_idx_t;
 //  - is_bgzf and is_cram flags indicate which fp union member to use.
 //    Note is_bgzf being set does not indicate the flag is BGZF compressed,
 //    nor even whether it is compressed at all (eg on naked BAMs).
-typedef struct {
+typedef struct htsFile {
     uint32_t is_bin:1, is_write:1, is_be:1, is_cram:1, is_bgzf:1, dummy:27;
     int64_t lineno;
     kstring_t line;
@@ -259,7 +259,7 @@ typedef struct {
 // Reasons for explicitly setting it could be where many more file
 // descriptors are in use than threads, so keeping memory low is
 // important.
-typedef struct {
+typedef struct htsThreadPool {
     struct hts_tpool *pool; // The shared thread pool itself
     int qsize;    // Size of I/O queue to use for this fp
 } htsThreadPool;
@@ -654,22 +654,22 @@ typedef int64_t hts_pos_t;
 // #define PRIhts_pos PRId32
 // typedef int32_t hts_pos_t;
 
-typedef struct {
+typedef struct hts_pair_pos_t {
    hts_pos_t beg, end;
 } hts_pair_pos_t;
 
 typedef hts_pair_pos_t hts_pair32_t;  // For backwards compatibility
 
-typedef struct {
+typedef struct hts_pair64_t {
     uint64_t u, v;
 } hts_pair64_t;
 
-typedef struct {
+typedef struct hts_pair64_max_t {
     uint64_t u, v;
     uint64_t max;
 } hts_pair64_max_t;
 
-typedef struct {
+typedef struct hts_reglist_t {
     const char *reg;
     hts_pair_pos_t *intervals;
     int tid;
@@ -720,7 +720,7 @@ typedef int64_t hts_tell_func(void *fp);
  * tell       - File specific function for indicating the file offset
  */
 
-typedef struct {
+typedef struct hts_itr_t {
     uint32_t read_rest:1, finished:1, is_cram:1, nocoor:1, multi:1, dummy:27;
     int tid, n_off, i, n_reg;
     hts_pos_t beg, end;
@@ -738,7 +738,7 @@ typedef struct {
     } bins;
 } hts_itr_t;
 
-typedef struct {
+typedef struct aux_key_t {
     int key;
     uint64_t min_off, max_off;
 } aux_key_t;

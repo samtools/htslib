@@ -200,7 +200,7 @@ extern const int8_t bam_cigar_table[256];
  @field  mpos    0-based leftmost coordinate of next read in template
  @field  isize   observed template length ("insert size")
  */
-typedef struct {
+typedef struct bam1_core_t {
     hts_pos_t pos;
     int32_t tid;
     uint16_t bin; // NB: invalid on 64-bit pos
@@ -239,7 +239,7 @@ typedef struct {
  5. Per base qualilties are stored in the Phred scale with no +33 offset.
     Ie as per the BAM specification and not the SAM ASCII printable method.
  */
-typedef struct {
+typedef struct bam1_t {
     bam1_core_t core;
     uint64_t id;
     uint8_t *data;
@@ -1610,7 +1610,7 @@ typedef union {
  implementation of alignment viewers, but calculating this has some
  overhead.
  */
-typedef struct {
+typedef struct bam_pileup1_t {
     bam1_t *b;
     int32_t qpos;
     int indel, level;
