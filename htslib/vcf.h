@@ -85,7 +85,7 @@ extern "C" {
 #define BCF_DT_SAMPLE   2
 
 // Complete textual representation of a header line
-typedef struct {
+typedef struct bcf_hrec_t {
     int type;       // One of the BCF_HL_* type
     char *key;      // The part before '=', i.e. FILTER/INFO/FORMAT/contig/fileformat etc.
     char *value;    // Set only for generic lines, NULL for FILTER/INFO, etc.
@@ -93,20 +93,20 @@ typedef struct {
     char **keys, **vals;    // The key=value pairs
 } bcf_hrec_t;
 
-typedef struct {
+typedef struct bcf_idinfo_t {
     uint64_t info[3];  // stores Number:20, var:4, Type:4, ColType:4 in info[0..2]
                        // for BCF_HL_FLT,INFO,FMT and contig length in info[0] for BCF_HL_CTG
     bcf_hrec_t *hrec[3];
     int id;
 } bcf_idinfo_t;
 
-typedef struct {
+typedef struct bcf_idpair_t {
     const char *key;
     const bcf_idinfo_t *val;
 } bcf_idpair_t;
 
 // Note that bcf_hdr_t structs must always be created via bcf_hdr_init()
-typedef struct {
+typedef struct bcf_hdr_t {
     int32_t n[3];           // n:the size of the dictionary block in use, (allocated size, m, is below to preserve ABI)
     bcf_idpair_t *id[3];
     void *dict[3];          // ID dictionary, contig dict and sample dict
@@ -142,11 +142,11 @@ extern uint8_t bcf_type_shift[];
 #define VCF_BND     16    // breakend
 #define VCF_OVERLAP 32    // overlapping deletion, ALT=*
 
-typedef struct {
+typedef struct variant_t {
     int type, n;    // variant type and the number of bases affected, negative for deletions
 } variant_t;
 
-typedef struct {
+typedef struct bcf_fmt_t {
     int id;             // id: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$id].key
     int n, size, type;  // n: number of values per-sample; size: number of bytes per-sample; type: one of BCF_BT_* types
     uint8_t *p;         // same as vptr and vptr_* in bcf_info_t below
@@ -154,7 +154,7 @@ typedef struct {
     uint32_t p_off:31, p_free:1;
 } bcf_fmt_t;
 
-typedef struct {
+typedef struct bcf_info_t {
     int key;        // key: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$key].key
     int type;  // type: one of BCF_BT_* types
     union {
@@ -175,7 +175,7 @@ typedef struct {
 #define BCF1_DIRTY_FLT 4
 #define BCF1_DIRTY_INF 8
 
-typedef struct {
+typedef struct bcf_dec_t {
     int m_fmt, m_info, m_id, m_als, m_allele, m_flt; // allocated size (high-water mark); do not change
     int n_flt;  // Number of FILTER fields
     int *flt;   // FILTER keys in the dictionary
@@ -209,7 +209,7 @@ typedef struct {
     shared.s, indiv.s, etc.) are written directly by bcf_write, whereas a VCF
     line must be formatted in vcf_format.
  */
-typedef struct {
+typedef struct bcf1_t {
     hts_pos_t pos;  // POS
     hts_pos_t rlen; // length of REF
     int32_t rid;  // CHROM

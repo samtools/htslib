@@ -40,13 +40,13 @@ extern "C" {
 #define TBX_VCF     2
 #define TBX_UCSC    0x10000
 
-typedef struct {
+typedef struct tbx_conf_t {
     int32_t preset;
     int32_t sc, bc, ec; // seq col., beg col. and end col.
     int32_t meta_char, line_skip;
 } tbx_conf_t;
 
-typedef struct {
+typedef struct tbx_t {
     tbx_conf_t conf;
     hts_idx_t *idx;
     void *dict;

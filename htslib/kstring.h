@@ -71,7 +71,7 @@ typedef struct kstring_t {
 } kstring_t;
 #endif
 
-typedef struct {
+typedef struct ks_tokaux_t {
 	uint64_t tab[4];
 	int sep, finished;
 	const char *p; // end of the current token
