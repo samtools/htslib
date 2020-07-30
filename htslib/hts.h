@@ -738,11 +738,6 @@ typedef struct hts_itr_t {
     } bins;
 } hts_itr_t;
 
-typedef struct aux_key_t {
-    int key;
-    uint64_t min_off, max_off;
-} aux_key_t;
-
 typedef hts_itr_t hts_itr_multi_t;
 
     #define hts_bin_first(l) (((1<<(((l)<<1) + (l))) - 1) / 7)
