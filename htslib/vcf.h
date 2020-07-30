@@ -142,9 +142,9 @@ extern uint8_t bcf_type_shift[];
 #define VCF_BND     16    // breakend
 #define VCF_OVERLAP 32    // overlapping deletion, ALT=*
 
-typedef struct variant_t {
+typedef struct bcf_variant_t {
     int type, n;    // variant type and the number of bases affected, negative for deletions
-} variant_t;
+} bcf_variant_t;
 
 typedef struct bcf_fmt_t {
     int id;             // id: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$id].key
@@ -183,7 +183,7 @@ typedef struct bcf_dec_t {
     char **allele;      // allele[0] is the REF (allele[] pointers to the als block); all null terminated
     bcf_info_t *info;   // INFO
     bcf_fmt_t *fmt;     // FORMAT and individual sample
-    variant_t *var;     // $var and $var_type set only when set_variant_types called
+    bcf_variant_t *var; // $var and $var_type set only when set_variant_types called
     int n_var, var_type;
     int shared_dirty;   // if set, shared.s must be recreated on BCF output
     int indiv_dirty;    // if set, indiv.s must be recreated on BCF output

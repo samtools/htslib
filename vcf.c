@@ -3965,7 +3965,7 @@ int bcf_is_snp(bcf1_t *v)
     return i == v->n_allele;
 }
 
-static void bcf_set_variant_type(const char *ref, const char *alt, variant_t *var)
+static void bcf_set_variant_type(const char *ref, const char *alt, bcf_variant_t *var)
 {
     if ( *alt == '*' && !alt[1] ) { var->n = 0; var->type = VCF_OVERLAP; return; }  // overlapping variant
 
@@ -4034,7 +4034,7 @@ static int bcf_set_variant_types(bcf1_t *b)
     bcf_dec_t *d = &b->d;
     if ( d->n_var < b->n_allele )
     {
-        d->var = (variant_t *) realloc(d->var, sizeof(variant_t)*b->n_allele);
+        d->var = (bcf_variant_t *) realloc(d->var, sizeof(bcf_variant_t)*b->n_allele);
         d->n_var = b->n_allele;
     }
     int i;
