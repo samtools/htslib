@@ -225,7 +225,13 @@ typedef struct htsFormat {
 struct hts_idx_t;
 typedef struct hts_idx_t hts_idx_t;
 
-// Maintainers note htsFile cannot be an opaque structure because some of its
+/**
+ * @brief File handle returned by hts_open() etc.
+ * This structure should be considered opaque by end users. There should be
+ * no need to access most fields directly in user code, and in cases where
+ * it is desirable accessor functions such as hts_get_format() are provided.
+ */
+// Maintainers note htsFile cannot be an incomplete struct because some of its
 // fields are part of libhts.so's ABI (hence these fields must not be moved):
 //  - fp is used in the public sam_itr_next()/etc macros
 //  - is_bin is used directly in samtools <= 1.1 and bcftools <= 1.1
