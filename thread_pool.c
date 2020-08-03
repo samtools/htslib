@@ -514,8 +514,9 @@ static void *tpool_worker(void *arg) {
             // Iterate over queues, finding one with jobs and also
             // room to put the result.
             //if (q && q->input_head && !hts_tpool_process_output_full(q)) {
-            if (q && q->input_head && q->qsize - q->n_output > p->tsize - p->nwaiting) {
-                //printf("Work\n");
+            if (q && q->input_head
+                && q->qsize - q->n_output > p->tsize - p->nwaiting
+                && !q->shutdown) {
                 work_to_do = 1;
                 break;
             }
@@ -559,6 +560,10 @@ static void *tpool_worker(void *arg) {
         while (q->input_head && q->qsize - q->n_output > q->n_processing) {
             if (p->shutdown)
                 goto shutdown;
+
+            if (q->shutdown)
+                // Queue shutdown, but there may be other queues
+                break;
 
             j = q->input_head;
             assert(j->p == p);
@@ -874,8 +879,15 @@ int hts_tpool_process_flush(hts_tpool_process *q) {
     if (q->qsize < q->n_output + q->n_input + q->n_processing)
         q->qsize = q->n_output + q->n_input + q->n_processing;
 
+    // When shutdown, we won't be launching more, but we can still
+    // wait for any processing jobs complete.
+    if (q->shutdown) {
+        while (q->n_processing)
+            pthread_cond_wait(&q->none_processing_c, &p->pool_m);
+    }
+
     // Wait for n_input and n_processing to hit zero.
-    while (q->n_input || q->n_processing) {
+    while (!q->shutdown && (q->n_input || q->n_processing)) {
         while (q->n_input)
             pthread_cond_wait(&q->input_empty_c, &p->pool_m);
         if (q->shutdown) break;

@@ -2239,6 +2239,7 @@ typedef struct sp_lines {
 enum sam_cmd {
     SAM_NONE = 0,
     SAM_CLOSE,
+    SAM_CLOSE_DONE,
 };
 
 typedef struct SAM_state {
@@ -2327,17 +2328,31 @@ int sam_state_destroy(htsFile *fp) {
         if (fd->h) {
             // Notify sam_dispatcher we're closing
             pthread_mutex_lock(&fd->command_m);
-            fd->command = SAM_CLOSE;
+            if (fd->command != SAM_CLOSE_DONE)
+                fd->command = SAM_CLOSE;
             pthread_cond_signal(&fd->command_c);
             ret = -fd->errcode;
-            if (!ret) hts_tpool_wake_dispatch(fd->q); // unstick the reader
+            if (fd->q)
+                hts_tpool_wake_dispatch(fd->q); // unstick the reader
+
+            if (!fp->is_write && fd->q && fd->dispatcher) {
+                for (;;) {
+                    // Avoid deadlocks with dispatcher
+                    if (fd->command == SAM_CLOSE_DONE)
+                        break;
+                    hts_tpool_wake_dispatch(fd->q);
+                    pthread_mutex_unlock(&fd->command_m);
+                    usleep(10000);
+                    pthread_mutex_lock(&fd->command_m);
+                }
+            }
             pthread_mutex_unlock(&fd->command_m);
 
             if (fp->is_write) {
                 // Dispatch the last partial block.
                 sp_bams *gb = fd->curr_bam;
                 if (!ret && gb && gb->nbams > 0)
-                  ret = hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb);
+                    ret = hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb);
 
                 // Flush and drain output
                 hts_tpool_process_flush(fd->q);
@@ -2401,6 +2416,19 @@ int sam_state_destroy(htsFile *fp) {
     free(fp->state);
     fp->state = NULL;
     return ret;
+}
+
+// Cleanup function - job for sam_parse_worker; result for sam_format_worker
+static void cleanup_sp_lines(void *arg) {
+    sp_lines *gl = (sp_lines *)arg;
+    if (!gl) return;
+
+    // Should always be true for lines passed to / from thread workers.
+    assert(gl->next == NULL);
+
+    free(gl->data);
+    sam_free_sp_bams(gl->bams);
+    free(gl);
 }
 
 // Run from one of the worker threads.
@@ -2473,7 +2501,8 @@ static void *sam_parse_worker(void *arg) {
         if (*nl) *nl++ = '\0';
         kstring_t ks = {nl-cp, gl->alloc, cp};
         if (sam_parse1(&ks, fd->h, &b[i]) < 0) {
-            sam_state_err(fd, EIO);
+            sam_state_err(fd, errno ? errno : EIO);
+            cleanup_sp_lines(gl);
             goto err;
         }
         cp = nl;
@@ -2494,20 +2523,6 @@ static void *sam_parse_worker(void *arg) {
 
 static void *sam_parse_eof(void *arg) {
     return NULL;
-}
-
-// Cleanup function - job for sam_parse_worker; result for sam_format_worker
-static void cleanup_sp_lines(void *arg) {
-    sp_lines *gl = (sp_lines *)arg;
-
-    if (!gl) return;
-
-    // Should always be true for lines passed to / from thread workers
-    assert(gl->next == NULL);
-
-    free(gl->data);
-    sam_free_sp_bams(gl->bams);
-    free(gl);
 }
 
 // Cleanup function - result for sam_parse_worker; job for sam_format_worker
@@ -2538,8 +2553,7 @@ static void *sam_dispatcher_read(void *vp) {
         case SAM_CLOSE:
             pthread_cond_signal(&fd->command_c);
             pthread_mutex_unlock(&fd->command_m);
-            hts_tpool_process_destroy(fd->q);
-            fd->q = NULL;
+            hts_tpool_process_shutdown(fd->q);
             goto tidyup;
 
         default:
@@ -2588,7 +2602,7 @@ static void *sam_dispatcher_read(void *vp) {
         else
             nbytes = hread(fp->fp.hfile, l->data + line_frag, l->alloc - line_frag);
         if (nbytes < 0) {
-            sam_state_err(fd, EIO);
+            sam_state_err(fd, errno ? errno : EIO);
             goto err;
         } else if (nbytes == 0)
             break; // EOF
@@ -2633,7 +2647,14 @@ static void *sam_dispatcher_read(void *vp) {
         if (hts_tpool_dispatch3(fd->p, fd->q, sam_parse_worker, l,
                                 cleanup_sp_lines, cleanup_sp_bams, 0) < 0)
             goto err;
+        pthread_mutex_lock(&fd->command_m);
+        if (fd->command == SAM_CLOSE) {
+            pthread_mutex_unlock(&fd->command_m);
+            l = NULL;
+            goto tidyup;
+        }
         l = NULL;  // Now "owned" by sam_parse_worker()
+        pthread_mutex_unlock(&fd->command_m);
     }
 
     if (hts_tpool_dispatch(fd->p, fd->q, sam_parse_eof, NULL) < 0)
@@ -2649,8 +2670,7 @@ static void *sam_dispatcher_read(void *vp) {
         case SAM_CLOSE:
             pthread_cond_signal(&fd->command_c);
             pthread_mutex_unlock(&fd->command_m);
-            hts_tpool_process_destroy(fd->q);
-            fd->q = NULL;
+            hts_tpool_process_shutdown(fd->q);
             goto tidyup;
 
         default:
@@ -2660,6 +2680,11 @@ static void *sam_dispatcher_read(void *vp) {
     }
 
  tidyup:
+    pthread_mutex_lock(&fd->command_m);
+    fd->command = SAM_CLOSE_DONE;
+    pthread_cond_signal(&fd->command_c);
+    pthread_mutex_unlock(&fd->command_m);
+
     if (l) {
         pthread_mutex_lock(&fd->lines_m);
         l->next = fd->lines;
@@ -2671,9 +2696,8 @@ static void *sam_dispatcher_read(void *vp) {
     return NULL;
 
  err:
-    sam_state_err(fd, ENOMEM);
-    hts_tpool_process_destroy(fd->q);
-    fd->q = NULL;
+    sam_state_err(fd, errno ? errno : ENOMEM);
+    hts_tpool_process_shutdown(fd->q);
     goto tidyup;
 }
 
@@ -2766,7 +2790,7 @@ static void *sam_dispatcher_write(void *vp) {
     return NULL;
 
  err:
-    sam_state_err(fd, EIO);
+    sam_state_err(fd, errno ? errno : EIO);
     return (void *)-1;
 }
 
@@ -2804,7 +2828,7 @@ static void *sam_format_worker(void *arg) {
 
     for (i = 0; i < gb->nbams; i++) {
         if (sam_format1_append(fd->h, &gb->bams[i], &ks) < 0) {
-            sam_state_err(fd, EIO);
+            sam_state_err(fd, errno ? errno : EIO);
             goto err;
         }
         kputc('\n', &ks);
