@@ -2560,8 +2560,8 @@ static void *sam_dispatcher_read(void *vp) {
             l = calloc(1, sizeof(*l));
             if (!l)
                 goto err;
-            l->alloc = NM+8; // +8 for optimisation in sam_parse1
-            l->data = malloc(l->alloc);
+            l->alloc = NM;
+            l->data = malloc(l->alloc+8); // +8 for optimisation in sam_parse1
             if (!l->data) {
                 free(l);
                 l = NULL;
@@ -2571,8 +2571,8 @@ static void *sam_dispatcher_read(void *vp) {
         }
         l->next = NULL;
 
-        if (l->alloc+NM/2 < line_frag) {
-            char *rp = realloc(l->data, line_frag+NM/2);
+        if (l->alloc < line_frag+NM/2) {
+            char *rp = realloc(l->data, line_frag+NM/2 +8);
             if (!rp)
                 goto err;
             l->alloc = line_frag+NM/2;
@@ -2605,7 +2605,7 @@ static void *sam_dispatcher_read(void *vp) {
             // entire buffer is part of a single line
             if (cp == l->data) {
                 line_frag = l->data_size;
-                char *rp = realloc(l->data, l->alloc * 2);
+                char *rp = realloc(l->data, l->alloc * 2 + 8);
                 if (!rp)
                     goto err;
                 l->alloc *= 2;
