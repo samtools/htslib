@@ -355,6 +355,8 @@ void *hts_tpool_result_data(hts_tpool_result *r) {
  */
 hts_tpool_process *hts_tpool_process_init(hts_tpool *p, int qsize, int in_only) {
     hts_tpool_process *q = malloc(sizeof(*q));
+    if (!q)
+        return NULL;
 
     pthread_cond_init(&q->output_avail_c,   NULL);
     pthread_cond_init(&q->input_not_full_c, NULL);
@@ -696,6 +698,8 @@ static void wake_next_worker(hts_tpool_process *q, int locked) {
 hts_tpool *hts_tpool_init(int n) {
     int i;
     hts_tpool *p = malloc(sizeof(*p));
+    if (!p)
+        return NULL;
     p->tsize = n;
     p->njobs = 0;
     p->nwaiting = 0;
@@ -705,6 +709,10 @@ hts_tpool *hts_tpool_init(int n) {
     p->n_count = 0;
     p->n_running = 0;
     p->t = malloc(n * sizeof(p->t[0]));
+    if (!p->t) {
+        free(p);
+        return NULL;
+    }
 
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);

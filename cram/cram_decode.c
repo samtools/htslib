@@ -2247,7 +2247,7 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
             pthread_mutex_lock(&fd->ref_lock);
             pthread_mutex_lock(&fd->refs->lock);
             if ((fd->required_fields & SAM_SEQ) &&
-                ref_id < fd->refs->nref &&
+                ref_id < fd->refs->nref && fd->refs->ref_id &&
                 s->ref_end > fd->refs->ref_id[ref_id]->length) {
                 s->ref_end = fd->refs->ref_id[ref_id]->length;
             }
@@ -2802,13 +2802,18 @@ int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
 
     nonblock = hts_tpool_process_sz(fd->rqueue) ? 1 : 0;
 
+    int saved_errno = errno;
+    errno = 0;
     if (-1 == hts_tpool_dispatch2(fd->pool, fd->rqueue, cram_decode_slice_thread,
                                   j, nonblock)) {
         /* Would block */
+        if (errno != EAGAIN)
+            return -1;
         fd->job_pending = j;
     } else {
         fd->job_pending = NULL;
     }
+    errno = saved_errno;
 
     // flush too
     return 0;
@@ -3350,12 +3355,14 @@ int cram_get_bam_seq(cram_fd *fd, bam_seq_t **bam) {
 void cram_drain_rqueue(cram_fd *fd) {
     cram_container *lc = NULL;
 
-    if (!fd->pool)
+    if (!fd->pool || !fd->rqueue)
         return;
 
     // drain queue of any in-flight decode jobs
     while (!hts_tpool_process_empty(fd->rqueue)) {
         hts_tpool_result *r = hts_tpool_next_result_wait(fd->rqueue);
+        if (!r)
+            break;
         cram_decode_job *j = (cram_decode_job *)hts_tpool_result_data(r);
         if (j->c->slice == j->s)
             j->c->slice = NULL;

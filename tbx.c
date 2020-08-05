@@ -395,6 +395,8 @@ static tbx_t *index_load(const char *fn, const char *fnidx, int flags)
     char *nm, *p;
     uint32_t l_meta, l_nm;
     tbx = (tbx_t*)calloc(1, sizeof(tbx_t));
+    if (!tbx)
+        return NULL;
     tbx->idx = hts_idx_load3(fn, fnidx, HTS_FMT_TBI, flags);
     if ( !tbx->idx )
     {

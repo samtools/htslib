@@ -1913,10 +1913,14 @@ static refs_t *refs_load_fai(refs_t *r_orig, const char *fn, int is_err) {
         }
 
         if (id >= id_alloc) {
+            ref_entry **new_refs;
             int x;
 
             id_alloc = id_alloc ?id_alloc*2 : 16;
-            r->ref_id = realloc(r->ref_id, id_alloc * sizeof(*r->ref_id));
+            new_refs = realloc(r->ref_id, id_alloc * sizeof(*r->ref_id));
+            if (!new_refs)
+                goto err;
+            r->ref_id = new_refs;
 
             for (x = id; x < id_alloc; x++)
                 r->ref_id[x] = NULL;
@@ -4622,7 +4626,7 @@ int cram_close(cram_fd *fd) {
     if (fd->mode != 'w')
         cram_drain_rqueue(fd);
 
-    if (fd->pool && fd->eof >= 0) {
+    if (fd->pool && fd->eof >= 0 && fd->rqueue) {
         hts_tpool_process_flush(fd->rqueue);
 
         if (0 != cram_flush_result(fd))

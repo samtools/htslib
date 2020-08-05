@@ -1530,10 +1530,7 @@ restart:
     pthread_mutex_lock(&mt->job_pool_m);
     bgzf_job *j = pool_alloc(mt->job_pool);
     pthread_mutex_unlock(&mt->job_pool_m);
-    if (!j) {
-        hts_tpool_process_destroy(mt->out_queue);
-        return NULL;
-    }
+    if (!j) goto err;
     j->errcode = 0;
     j->comp_len = 0;
     j->uncomp_len = 0;
@@ -1545,8 +1542,7 @@ restart:
         if (hts_tpool_dispatch3(mt->pool, mt->out_queue, bgzf_decode_func, j,
                                 job_cleanup, job_cleanup, 0) < 0) {
             job_cleanup(j);
-            hts_tpool_process_destroy(mt->out_queue);
-            return NULL;
+            goto err;
         }
 
         // Check for command
@@ -1658,6 +1654,14 @@ restart:
             return NULL;
         }
     }
+
+ err:
+    pthread_mutex_lock(&mt->command_m);
+    mt->command = CLOSE;
+    pthread_cond_signal(&mt->command_c);
+    pthread_mutex_unlock(&mt->command_m);
+    hts_tpool_process_destroy(mt->out_queue);
+    return NULL;
 }
 
 int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
@@ -1674,13 +1678,13 @@ int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
     mt->n_threads = hts_tpool_size(pool);
     if (!qsize)
         qsize = mt->n_threads*2;
-    if (!(mt->out_queue = hts_tpool_process_init(mt->pool, qsize, 0))) {
-        free(mt);
-        return -1;
-    }
+    if (!(mt->out_queue = hts_tpool_process_init(mt->pool, qsize, 0)))
+        goto err;
     hts_tpool_process_ref_incr(mt->out_queue);
 
     mt->job_pool = pool_create(sizeof(bgzf_job));
+    if (!mt->job_pool)
+        goto err;
 
     pthread_mutex_init(&mt->job_pool_m, NULL);
     pthread_mutex_init(&mt->command_m, NULL);
@@ -1694,6 +1698,11 @@ int bgzf_thread_pool(BGZF *fp, hts_tpool *pool, int qsize) {
                    fp->is_write ? bgzf_mt_writer : bgzf_mt_reader, fp);
 
     return 0;
+
+ err:
+    free(mt);
+    fp->mt = NULL;
+    return -1;
 }
 
 int bgzf_mt(BGZF *fp, int n_threads, int n_sub_blks)
@@ -2030,10 +2039,16 @@ int bgzf_check_EOF(BGZF *fp) {
         // fp->mt->command state transitions should be:
         // NONE -> HAS_EOF -> HAS_EOF_DONE -> NONE
         // (HAS_EOF -> HAS_EOF_DONE happens in bgzf_mt_reader thread)
-        fp->mt->command = HAS_EOF;
+        if (fp->mt->command != CLOSE)
+            fp->mt->command = HAS_EOF;
         pthread_cond_signal(&fp->mt->command_c);
         hts_tpool_wake_dispatch(fp->mt->out_queue);
         do {
+            if (fp->mt->command == CLOSE) {
+                // possible error in bgzf_mt_reader
+                pthread_mutex_unlock(&fp->mt->command_m);
+                return 0;
+            }
             pthread_cond_wait(&fp->mt->command_c, &fp->mt->command_m);
             switch (fp->mt->command) {
             case HAS_EOF_DONE: break;
@@ -2041,6 +2056,8 @@ int bgzf_check_EOF(BGZF *fp) {
                 // Resend signal intended for bgzf_mt_reader()
                 pthread_cond_signal(&fp->mt->command_c);
                 break;
+            case CLOSE:
+                continue;
             default:
                 abort();  // Should not get to any other state
             }

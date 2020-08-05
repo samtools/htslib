@@ -1005,6 +1005,11 @@ void hfile_add_scheme_handler(const char *scheme,
         return;
     }
     khint_t k = kh_put(scheme_string, schemes, scheme, &absent);
+    if (absent < 0) {
+        hts_log_warning("Couldn't register scheme handler for %s : %s",
+                        scheme, strerror(errno));
+        return;
+    }
     if (absent || priority(handler) > priority(kh_value(schemes, k))) {
         kh_value(schemes, k) = handler;
     }
@@ -1014,7 +1019,10 @@ static int init_add_plugin(void *obj, int (*init)(struct hFILE_plugin *),
                            const char *pluginname)
 {
     struct hFILE_plugin_list *p = malloc (sizeof (struct hFILE_plugin_list));
-    if (p == NULL) abort();
+    if (p == NULL) {
+        hts_log_debug("Failed to allocate memory for plugin \"%s\"", pluginname);
+        return -1;
+    }
 
     p->plugin.api_version = 1;
     p->plugin.obj = obj;
@@ -1035,7 +1043,11 @@ static int init_add_plugin(void *obj, int (*init)(struct hFILE_plugin *),
     return 0;
 }
 
-static void load_hfile_plugins()
+/*
+ * Returns 0 on success,
+ *        <0 on failure
+ */
+static int load_hfile_plugins()
 {
     static const struct hFILE_scheme_handler
         data = { hopen_mem, hfile_always_local, "built-in", 80 },
@@ -1043,7 +1055,8 @@ static void load_hfile_plugins()
         preload = { hopen_preload, is_preload_url_remote, "built-in", 80 };
 
     schemes = kh_init(scheme_string);
-    if (schemes == NULL) abort();
+    if (schemes == NULL)
+        return -1;
 
     hfile_add_scheme_handler("data", &data);
     hfile_add_scheme_handler("file", &file);
@@ -1085,6 +1098,8 @@ static void load_hfile_plugins()
     // carry on; then eventually when the program exits, we'll merely close
     // down the plugins uncleanly, as if we had aborted.
     (void) atexit(hfile_exit);
+
+    return 0;
 }
 
 /* A filename like "foo:bar" in which we don't recognise the scheme is
@@ -1118,7 +1133,10 @@ static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
     scheme[i] = '\0';
 
     pthread_mutex_lock(&plugins_lock);
-    if (! schemes) load_hfile_plugins();
+    if (!schemes && load_hfile_plugins() < 0) {
+        pthread_mutex_unlock(&plugins_lock);
+        return NULL;
+    }
     pthread_mutex_unlock(&plugins_lock);
 
     khint_t k = kh_get(scheme_string, schemes, scheme);

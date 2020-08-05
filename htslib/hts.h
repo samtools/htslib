@@ -537,8 +537,17 @@ const char *hts_format_file_extension(const htsFormat *format);
 HTSLIB_EXPORT
 int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...);
 
+/*!
+  @abstract         Read a line (and its \n or \r\n terminator) from a file
+  @param fp         The file handle
+  @param delimiter  Unused, but must be '\n' (or KS_SEP_LINE)
+  @param str        The line (not including the terminator) is written here
+  @return           Length of the string read;
+                    -1 on end-of-file; <= -2 on error
+*/
 HTSLIB_EXPORT
 int hts_getline(htsFile *fp, int delimiter, kstring_t *str);
+
 HTSLIB_EXPORT
 char **hts_readlines(const char *fn, int *_n);
 /*!

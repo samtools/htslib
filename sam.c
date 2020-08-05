@@ -2480,6 +2480,7 @@ static void *sam_parse_worker(void *arg) {
             gb->abams *= 2;
             b = (bam1_t *)realloc(gb->bams, gb->abams*sizeof(bam1_t));
             if (!b) {
+                gb->abams /= 2;
                 sam_state_err(fd, ENOMEM);
                 goto err;
             }
@@ -2877,6 +2878,10 @@ int sam_set_thread_pool(htsFile *fp, htsThreadPool *p) {
     if (!qsize)
         qsize = 2*hts_tpool_size(fd->p);
     fd->q = hts_tpool_process_init(fd->p, qsize, 0);
+    if (!fd->q) {
+        sam_state_destroy(fp);
+        return -1;
+    }
 
     if (fp->format.compression == bgzf)
         return bgzf_thread_pool(fp->fp.bgzf, p->pool, p->qsize);

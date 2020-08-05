@@ -2583,7 +2583,8 @@ static khint_t fix_chromosome(const bcf_hdr_t *h, vdict_t *d, const char *p) {
     kstring_t tmp = {0,0,0};
     khint_t k;
     int l;
-    ksprintf(&tmp, "##contig=<ID=%s>", p);
+    if (ksprintf(&tmp, "##contig=<ID=%s>", p) < 0)
+        return kh_end(d);
     bcf_hrec_t *hrec = bcf_hdr_parse_line(h,tmp.s,&l);
     free(tmp.s);
     int res = hrec ? bcf_hdr_add_hrec((bcf_hdr_t*)h, hrec) : -1;
