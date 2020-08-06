@@ -2298,10 +2298,13 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                 pthread_mutex_unlock(&fd->metrics_lock);
                 return NULL;
             }
-            if (r == 1) {
+            if (r >= 1) {
                 kh_val(fd->tags_used, k_global) = cram_new_metrics();
-                if (!kh_val(fd->tags_used, k_global))
+                if (!kh_val(fd->tags_used, k_global)) {
+                    kh_del(m_metrics, fd->tags_used, k_global);
+                    pthread_mutex_unlock(&fd->metrics_lock);
                     goto err;
+                }
             }
 
             pthread_mutex_unlock(&fd->metrics_lock);
@@ -2551,6 +2554,8 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
     key = string_ndup(c->comp_hdr->TD_keys,
                       (char *)BLOCK_DATA(td_b) + TD_blk_size,
                       BLOCK_SIZE(td_b) - TD_blk_size);
+    if (!key)
+        goto block_err;
     k = kh_put(m_s2i, c->comp_hdr->TD_hash, key, &new);
     if (new < 0) {
         return NULL;

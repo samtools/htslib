@@ -1730,17 +1730,27 @@ static int mt_destroy(mtaux_t *mt)
 {
     int ret = 0;
 
+    // Tell the reader to shut down
     pthread_mutex_lock(&mt->command_m);
     mt->command = CLOSE;
     pthread_cond_signal(&mt->command_c);
     hts_tpool_wake_dispatch(mt->out_queue); // unstick the reader
     pthread_mutex_unlock(&mt->command_m);
 
+    // Check for thread worker failure, indicated by is_shutdown returning 2
+    // It's possible really late errors might be missed, but we can live with
+    // that.
+    ret = -(hts_tpool_process_is_shutdown(mt->out_queue) > 1);
     // Destroying the queue first forces the writer to exit.
+    // mt->out_queue is reference counted, so destroy gets called in both
+    // ths and the IO threads.  The last to do it will clean up.
     hts_tpool_process_destroy(mt->out_queue);
+
+    // IO thread will now exit.  Wait for it and perform final clean-up.
+    // If it returned non-NULL, it was not happy.
     void *retval = NULL;
     pthread_join(mt->io_task, &retval);
-    ret = retval != NULL ? -1 : 0;
+    ret = retval != NULL ? -1 : ret;
 
     pthread_mutex_destroy(&mt->job_pool_m);
     pthread_mutex_destroy(&mt->command_m);
@@ -1818,12 +1828,18 @@ static int mt_flush_queue(BGZF *fp)
     // be to have one input queue per type of job, but we don't right now.
     //hts_tpool_flush(mt->pool);
     pthread_mutex_lock(&mt->job_pool_m);
+    int shutdown = 0;
     while (mt->jobs_pending != 0) {
+        if ((shutdown = hts_tpool_process_is_shutdown(mt->out_queue)))
+            break;
         pthread_mutex_unlock(&mt->job_pool_m);
         usleep(10000); // FIXME: replace by condition variable
         pthread_mutex_lock(&mt->job_pool_m);
     }
     pthread_mutex_unlock(&mt->job_pool_m);
+
+    if (shutdown)
+        return -1;
 
     // Wait on bgzf_mt_writer to drain the queue
     if (hts_tpool_process_flush(mt->out_queue) != 0)
@@ -2021,8 +2037,9 @@ int bgzf_close(BGZF* fp)
     bgzf_index_destroy(fp);
     free(fp->uncompressed_block);
     free_cache(fp);
+    ret = fp->errcode ? -1 : 0;
     free(fp);
-    return 0;
+    return ret;
 }
 
 void bgzf_set_cache_size(BGZF *fp, int cache_size)

@@ -321,6 +321,13 @@ void hts_tpool_process_shutdown(hts_tpool_process *q) {
     pthread_mutex_unlock(&q->p->pool_m);
 }
 
+int hts_tpool_process_is_shutdown(hts_tpool_process *q) {
+    pthread_mutex_lock(&q->p->pool_m);
+    int r = q->shutdown;
+    pthread_mutex_unlock(&q->p->pool_m);
+    return r;
+}
+
 /*
  * Frees a result 'r' and if free_data is true also frees
  * the internal r->data result too.
@@ -621,6 +628,17 @@ static void *tpool_worker(void *arg) {
 #ifdef DEBUG
     fprintf(stderr, "%d: Failed to add result\n", worker_id(p));
 #endif
+    // Hard failure, so shutdown all queues
+    pthread_mutex_lock(&p->pool_m);
+    hts_tpool_process *first = p->q_head, *q = first;
+    if (q) {
+        do {
+            hts_tpool_process_shutdown_locked(q);
+            q->shutdown = 2; // signify error.
+            q = q->next;
+        } while (q != first);
+    }
+    pthread_mutex_unlock(&p->pool_m);
     return NULL;
 }
 
@@ -896,11 +914,26 @@ int hts_tpool_process_flush(hts_tpool_process *q) {
 
     // Wait for n_input and n_processing to hit zero.
     while (!q->shutdown && (q->n_input || q->n_processing)) {
-        while (q->n_input)
-            pthread_cond_wait(&q->input_empty_c, &p->pool_m);
-        if (q->shutdown) break;
-        while (q->n_processing)
-            pthread_cond_wait(&q->none_processing_c, &p->pool_m);
+        struct timeval now;
+        struct timespec timeout;
+
+        while (q->n_input && !q->shutdown) {
+            gettimeofday(&now, NULL);
+            timeout.tv_sec = now.tv_sec + 1;
+            timeout.tv_nsec = now.tv_usec * 1000;
+            pthread_cond_timedwait(&q->input_empty_c, &p->pool_m, &timeout);
+        }
+
+        // Note: even if q->shutdown is set, we still have to wait until
+        // q->n_processing is zero as we cannot terminate while things are
+        // running otherwise we free up the data being worked on.
+        while (q->n_processing) {
+            gettimeofday(&now, NULL);
+            timeout.tv_sec = now.tv_sec + 1;
+            timeout.tv_nsec = now.tv_usec * 1000;
+            pthread_cond_timedwait(&q->none_processing_c, &p->pool_m,
+                                   &timeout);
+        }
         if (q->shutdown) break;
     }
 
@@ -945,14 +978,12 @@ int hts_tpool_process_reset(hts_tpool_process *q, int free_results) {
     // Release memory.  This can be done unlocked now the lists have been
     // removed from the queue
     for (j = j_head; j; j = jn) {
-        //fprintf(stderr, "Discard input %d\n", j->serial);
         jn = j->next;
         if (j->job_cleanup) j->job_cleanup(j->arg);
         free(j);
     }
 
     for (r = r_head; r; r = rn) {
-        //fprintf(stderr, "Discard output %d\n", r->serial);
         rn = r->next;
         if (r->result_cleanup) {
             r->result_cleanup(r->data);

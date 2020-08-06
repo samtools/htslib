@@ -1505,12 +1505,16 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
         h->n_targets = kh_size(d);
 
         h->target_name = (char**) malloc(sizeof(char*) * h->n_targets);
-        if (!h->target_name)
+        if (!h->target_name) {
+            h->n_targets = 0;
             goto error;
+        }
 
         h->target_len = (uint32_t*) malloc(sizeof(uint32_t) * h->n_targets);
-        if (!h->target_len)
+        if (!h->target_len) {
+            h->n_targets = 0;
             goto error;
+        }
 
         for (k = kh_begin(d); k != kh_end(d); ++k) {
             if (!kh_exist(d, k))
@@ -2351,22 +2355,27 @@ int sam_state_destroy(htsFile *fp) {
             if (fp->is_write) {
                 // Dispatch the last partial block.
                 sp_bams *gb = fd->curr_bam;
-                if (!ret && gb && gb->nbams > 0)
+                if (!ret && gb && gb->nbams > 0 && fd->q)
                     ret = hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb);
 
                 // Flush and drain output
-                hts_tpool_process_flush(fd->q);
+                if (fd->q)
+                    hts_tpool_process_flush(fd->q);
                 pthread_mutex_lock(&fd->command_m);
                 if (!ret) ret = -fd->errcode;
                 pthread_mutex_unlock(&fd->command_m);
 
-                while (!ret && !hts_tpool_process_empty(fd->q)) {
+                while (!ret && fd->q && !hts_tpool_process_empty(fd->q)) {
                     usleep(10000);
                     pthread_mutex_lock(&fd->command_m);
-                    if (!ret) ret = -fd->errcode;
+                    ret = -fd->errcode;
+                    // not empty but shutdown implies error
+                    if (hts_tpool_process_is_shutdown(fd->q) && !ret)
+                        ret = EIO;
                     pthread_mutex_unlock(&fd->command_m);
                 }
-                hts_tpool_process_shutdown(fd->q);
+                if (fd->q)
+                    hts_tpool_process_shutdown(fd->q);
             }
 
             // Wait for it to acknowledge
@@ -2786,8 +2795,7 @@ static void *sam_dispatcher_write(void *vp) {
     }
 
     sam_state_err(fd, 0); // success
-    hts_tpool_process_destroy(fd->q);
-    fd->q = NULL;
+    hts_tpool_process_shutdown(fd->q);
     return NULL;
 
  err:
@@ -2854,7 +2862,10 @@ static void *sam_format_worker(void *arg) {
     return gl;
 
  err:
-    sam_free_sp_bams(gb);
+    // Possible race between this and fd->curr_bam.
+    // Easier to not free and leave it on the input list so it
+    // gets freed there instead?
+    // sam_free_sp_bams(gb);
     if (gl) {
         free(gl->data);
         free(gl);

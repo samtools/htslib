@@ -148,8 +148,8 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
             int *vals_tmp  = realloc(vals,  vals_alloc * sizeof(int));
             int *freqs_tmp = realloc(freqs, vals_alloc * sizeof(int));
             if (!vals_tmp || !freqs_tmp) {
-                if (vals)  free(vals);
-                if (freqs) free(freqs);
+                free(vals_tmp  ? vals_tmp  : vals);
+                free(freqs_tmp ? freqs_tmp : freqs);
                 return E_HUFFMAN; // Cannot do much else atm
             }
             vals = vals_tmp;
@@ -175,8 +175,8 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
                 int *vals_tmp  = realloc(vals,  vals_alloc * sizeof(int));
                 int *freqs_tmp = realloc(freqs, vals_alloc * sizeof(int));
                 if (!vals_tmp || !freqs_tmp) {
-                    if (vals)  free(vals);
-                    if (freqs) free(freqs);
+                    free(vals_tmp  ? vals_tmp  : vals);
+                    free(freqs_tmp ? freqs_tmp : freqs);
                     return E_HUFFMAN; // Cannot do much else atm
                 }
                 vals = vals_tmp;
