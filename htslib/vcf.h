@@ -632,6 +632,23 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     HTSLIB_EXPORT
     int bcf_hdr_sync(bcf_hdr_t *h) HTS_RESULT_USED;
 
+    /**
+     * bcf_hdr_parse_line() - parse a single line of VCF textual header
+     * @param h     BCF header struct
+     * @param line  One or more lines of header text
+     * @param len   Filled out with length data parsed from 'line'.
+     * @return bcf_hrec_t* on success;
+     *         NULL on error or on end of header text.
+     *         NB: to distinguish error from end-of-header, check *len:
+     *           *len == 0 indiciates @p line did not start with "##"
+     *           *len == -1 indicates failure, likely due to out of memory
+     *           *len > 0 indicates a malformed header line
+     *
+     * If *len > 0 on exit, it will contain the full length of the line
+     * including any trailing newline (this includes cases where NULL was
+     * returned due to a malformed line).  Callers can use this to skip to
+     * the next header line.
+     */
     HTSLIB_EXPORT
     bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len);
     /// Convert a bcf header record to string form

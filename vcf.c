@@ -373,6 +373,7 @@ static inline int is_escaped(const char *min, const char *str)
 
 bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
 {
+    bcf_hrec_t *hrec = NULL;
     const char *p = line;
     if (p[0] != '#' || p[1] != '#') { *len = 0; return NULL; }
     p += 2;
@@ -380,10 +381,11 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     const char *q = p;
     while ( *q && *q!='=' && *q != '\n' ) q++;
     ptrdiff_t n = q-p;
-    if ( *q!='=' || !n ) { *len = q-line+1; return NULL; } // wrong format
+    if ( *q!='=' || !n ) // wrong format
+        goto malformed_line;
 
-    bcf_hrec_t *hrec = (bcf_hrec_t*) calloc(1,sizeof(bcf_hrec_t));
-    if (!hrec) return NULL;
+    hrec = (bcf_hrec_t*) calloc(1,sizeof(bcf_hrec_t));
+    if (!hrec) { *len = -1; return NULL; }
     hrec->key = (char*) malloc(sizeof(char)*(n+1));
     if (!hrec->key) goto fail;
     memcpy(hrec->key,p,n);
@@ -419,15 +421,8 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
         int m = 0;
         while ( *q && *q==' ' ) { q++; m++; }
         if ( *q!='=' || !n )
-        {
-            // wrong format
-            while ( *q && *q!='\n' ) q++;
-            hts_log_error("Could not parse the header line: \"%.*s\"",
-                (int) (q - line), line);
-            *len = q - line + (*q ? 1 : 0);
-            bcf_hrec_destroy(hrec);
-            return NULL;
-        }
+            goto malformed_line;
+
         if (bcf_hrec_add_key(hrec, p, q-p-m) < 0) goto fail;
         p = ++q;
         while ( *q && *q==' ' ) { p++; q++; }
@@ -458,15 +453,31 @@ bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len)
     p = q;
     while ( *q && *q!='\n' ) { nonspace |= !isspace_c(*q); q++; }
     if (nonspace) {
-        hts_log_warning("Dropped trailing junk from header line '%.*s'", (int) (q - line), line);
+        char buffer[320];
+        hts_log_warning("Dropped trailing junk from header line '%s'",
+                        hts_strprint(buffer, sizeof(buffer),
+                                     '"', line, q - line));
     }
 
     *len = q - line + (*q ? 1 : 0);
     return hrec;
 
  fail:
+    *len = -1;
     bcf_hrec_destroy(hrec);
     return NULL;
+
+ malformed_line:
+    {
+        char buffer[320];
+        while ( *q && *q!='\n' ) q++;  // Ensure *len includes full line
+        hts_log_error("Could not parse the header line: %s",
+                      hts_strprint(buffer, sizeof(buffer),
+                                   '"', line, q - line));
+        *len = q - line + (*q ? 1 : 0);
+        bcf_hrec_destroy(hrec);
+        return NULL;
+    }
 }
 
 static int bcf_hdr_set_idx(bcf_hdr_t *hdr, int dict_type, const char *tag, bcf_idinfo_t *idinfo)
@@ -804,7 +815,7 @@ int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt)
 
     // The filter PASS must appear first in the dictionary
     hrec = bcf_hdr_parse_line(hdr,"##FILTER=<ID=PASS,Description=\"All filters passed\">",&len);
-    if (bcf_hdr_add_hrec(hdr, hrec) < 0) {
+    if (!hrec || bcf_hdr_add_hrec(hdr, hrec) < 0) {
         bcf_hrec_destroy(hrec);
         return -1;
     }
@@ -818,6 +829,18 @@ int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt)
             }
             p += len;
         }
+        assert(hrec == NULL);
+        if (len < 0) {
+            // len < 0 indicates out-of-memory, or similar error
+            hts_log_error("Could not parse header line: %s", strerror(errno));
+            return -1;
+        } else if (len > 0) {
+            // Bad header line.  bcf_hdr_parse_line() will have logged it.
+            // Skip and try again on the next line (p + len will be the start
+            // of the next one).
+            p += len;
+            continue;
+        }
 
         // Next should be the sample line.  If not, it was a malformed
         // header, in which case print a warning and skip (many VCF
@@ -827,8 +850,11 @@ int bcf_hdr_parse(bcf_hdr_t *hdr, char *htxt)
         if ( strncmp("#CHROM\tPOS",p,10) != 0 ) {
             char *eol = strchr(p, '\n');
             if (*p != '\0') {
-                hts_log_warning("Could not parse header line: %.*s",
-                    eol ? (int)(eol - p) : INT_MAX, p);
+                char buffer[320];
+                hts_log_warning("Could not parse header line: %s",
+                                hts_strprint(buffer, sizeof(buffer),
+                                               '"', p,
+                                               eol ? (eol - p) : SIZE_MAX));
             }
             if (eol) {
                 p = eol + 1; // Try from the next line.
