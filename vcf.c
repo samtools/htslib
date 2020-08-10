@@ -1143,7 +1143,10 @@ int bcf_hdr_write(htsFile *hfp, bcf_hdr_t *h)
         hfp->format.format = bcf;
 
     kstring_t htxt = {0,0,0};
-    bcf_hdr_format(h, 1, &htxt);
+    if (bcf_hdr_format(h, 1, &htxt) < 0) {
+        free(htxt.s);
+        return -1;
+    }
     kputc('\0', &htxt); // include the \0 byte
 
     BGZF *fp = hfp->fp.bgzf;
@@ -1991,26 +1994,27 @@ int bcf_hrec_format(const bcf_hrec_t *hrec, kstring_t *str)
 
 int bcf_hdr_format(const bcf_hdr_t *hdr, int is_bcf, kstring_t *str)
 {
-    int i;
+    int i, r = 0;
     for (i=0; i<hdr->nhrec; i++)
-        _bcf_hrec_format(hdr->hrec[i], is_bcf, str);
+        r |= _bcf_hrec_format(hdr->hrec[i], is_bcf, str) < 0;
 
-    ksprintf(str, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO");
+    r |= ksprintf(str, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO") < 0;
     if ( bcf_hdr_nsamples(hdr) )
     {
-        ksprintf(str, "\tFORMAT");
+        r |= ksprintf(str, "\tFORMAT") < 0;
         for (i=0; i<bcf_hdr_nsamples(hdr); i++)
-            ksprintf(str, "\t%s", hdr->samples[i]);
+            r |= ksprintf(str, "\t%s", hdr->samples[i]) < 0;
     }
-    ksprintf(str, "\n");
+    r |= ksprintf(str, "\n") < 0;
 
-    return 0;
+    return r ? -1 : 0;
 }
 
 char *bcf_hdr_fmt_text(const bcf_hdr_t *hdr, int is_bcf, int *len)
 {
     kstring_t txt = {0,0,0};
-    bcf_hdr_format(hdr, is_bcf, &txt);
+    if (bcf_hdr_format(hdr, is_bcf, &txt) < 0)
+        return NULL;
     if ( len ) *len = txt.l;
     return txt.s;
 }
@@ -2038,7 +2042,10 @@ const char **bcf_hdr_seqnames(const bcf_hdr_t *h, int *n)
 int vcf_hdr_write(htsFile *fp, const bcf_hdr_t *h)
 {
     kstring_t htxt = {0,0,0};
-    bcf_hdr_format(h, 0, &htxt);
+    if (bcf_hdr_format(h, 0, &htxt) < 0) {
+        free(htxt.s);
+        return -1;
+    }
     while (htxt.l && htxt.s[htxt.l-1] == '\0') --htxt.l; // kill trailing zeros
     int ret;
     if ( fp->format.compression!=no_compression )
@@ -3520,7 +3527,10 @@ bcf_hdr_t *bcf_hdr_merge(bcf_hdr_t *dst, const bcf_hdr_t *src)
         // this will effectively strip existing IDX attributes from src to become dst
         dst = bcf_hdr_init("r");
         kstring_t htxt = {0,0,0};
-        bcf_hdr_format(src, 0, &htxt);
+        if (bcf_hdr_format(src, 0, &htxt) < 0) {
+            free(htxt.s);
+            return NULL;
+        }
         if ( bcf_hdr_parse(dst, htxt.s) < 0 ) {
             bcf_hdr_destroy(dst);
             dst = NULL;
@@ -3727,7 +3737,10 @@ bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr)
         return NULL;
     }
     kstring_t htxt = {0,0,0};
-    bcf_hdr_format(hdr, 1, &htxt);
+    if (bcf_hdr_format(hdr, 1, &htxt) < 0) {
+        free(htxt.s);
+        return NULL;
+    }
     if ( bcf_hdr_parse(hout, htxt.s) < 0 ) {
         bcf_hdr_destroy(hout);
         hout = NULL;
@@ -3747,7 +3760,12 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
         khash_str2int_destroy(names_hash);
         return NULL;
     }
-    bcf_hdr_format(h0, 1, &htxt);
+    if (bcf_hdr_format(h0, 1, &htxt) < 0) {
+        hts_log_error("Failed to allocate bcf header");
+        khash_str2int_destroy(names_hash);
+        free(htxt.s);
+        return NULL;
+    }
     bcf_hdr_set_version(h,bcf_hdr_get_version(h0));
     int j;
     for (j=0; j<n; j++) imap[j] = -1;

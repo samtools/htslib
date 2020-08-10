@@ -501,6 +501,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *
      *  The bcf_hdr_t struct returned by a successful call should be freed
      *  via bcf_hdr_destroy() when it is no longer needed.
+     *  @return NULL on failure, header otherwise
      */
     HTSLIB_EXPORT
     bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr);
@@ -518,6 +519,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  bcf_hdr_merge() - copy header lines from src to dst, see also bcf_translate()
      *  @param dst: the destination header to be merged into, NULL on the first pass
      *  @param src: the source header
+     *  @return NULL on failure, header otherwise
      *
      *  Notes:
      *      - use as:
@@ -598,6 +600,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  @param n:        number of samples to keep
      *  @param samples:  names of the samples to keep
      *  @param imap:     mapping from index in @samples to the sample index in the original file
+     *  @return NULL on failure, header otherwise
      *
      *  Sample names not present in h0 are ignored. The number of unmatched samples can be checked
      *  by comparing n and bcf_hdr_nsamples(out_hdr).
