@@ -3755,16 +3755,14 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
     kstring_t htxt = {0,0,0};
     kstring_t str = {0,0,0};
     bcf_hdr_t *h = bcf_hdr_init("w");
-    if (!h) {
+    int r = 0;
+    if (!h || !names_hash) {
         hts_log_error("Failed to allocate bcf header");
-        khash_str2int_destroy(names_hash);
-        return NULL;
+        goto err;
     }
     if (bcf_hdr_format(h0, 1, &htxt) < 0) {
-        hts_log_error("Failed to allocate bcf header");
-        khash_str2int_destroy(names_hash);
-        free(htxt.s);
-        return NULL;
+        hts_log_error("Failed to get header text");
+        goto err;
     }
     bcf_hdr_set_version(h,bcf_hdr_get_version(h0));
     int j;
@@ -3774,29 +3772,29 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
         int i = 0, end = n? 8 : 7;
         while ((p = strchr(p, '\t')) != 0 && i < end) ++i, ++p;
         if (i != end) {
-            free(h); free(str.s);
-            return 0; // malformated header
+            hts_log_error("Wrong number of columns in header #CHROM line");
+            goto err;
         }
-        kputsn(htxt.s, p - htxt.s, &str);
+        r |= kputsn(htxt.s, p - htxt.s, &str) < 0;
         for (i = 0; i < n; ++i) {
             if ( khash_str2int_has_key(names_hash,samples[i]) )
             {
                 hts_log_error("Duplicate sample name \"%s\"", samples[i]);
-                free(str.s);
-                free(htxt.s);
-                khash_str2int_destroy(names_hash);
-                bcf_hdr_destroy(h);
-                return NULL;
+                goto err;
             }
             imap[i] = bcf_hdr_id2int(h0, BCF_DT_SAMPLE, samples[i]);
             if (imap[i] < 0) continue;
-            kputc('\t', &str);
-            kputs(samples[i], &str);
-            khash_str2int_inc(names_hash,samples[i]);
+            r |= kputc('\t', &str) < 0;
+            r |= kputs(samples[i], &str) < 0;
+            r |= khash_str2int_inc(names_hash,samples[i]) < 0;
         }
-    } else kputsn(htxt.s, htxt.l, &str);
+    } else r |= kputsn(htxt.s, htxt.l, &str) < 0;
     while (str.l && (!str.s[str.l-1] || str.s[str.l-1]=='\n') ) str.l--; // kill trailing zeros and newlines
-    kputc('\n',&str);
+    r |= kputc('\n',&str) < 0;
+    if (r) {
+        hts_log_error("%s", strerror(errno));
+        goto err;
+    }
     if ( bcf_hdr_parse(h, str.s) < 0 ) {
         bcf_hdr_destroy(h);
         h = NULL;
@@ -3805,6 +3803,13 @@ bcf_hdr_t *bcf_hdr_subset(const bcf_hdr_t *h0, int n, char *const* samples, int 
     free(htxt.s);
     khash_str2int_destroy(names_hash);
     return h;
+
+ err:
+    ks_free(&str);
+    ks_free(&htxt);
+    khash_str2int_destroy(names_hash);
+    bcf_hdr_destroy(h);
+    return NULL;
 }
 
 int bcf_hdr_set_samples(bcf_hdr_t *hdr, const char *samples, int is_file)
