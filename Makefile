@@ -363,7 +363,7 @@ cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c config.
 cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c config.h cram/pooled_alloc.h $(cram_misc_h)
 cram/rANS_static.o cram/rANS_static.pico: cram/rANS_static.c config.h cram/rANS_static.h cram/rANS_byte.h
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
-thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h)
+thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h) $(htslib_hts_log_h)
 
 
 bgzip: bgzip.o libhts.a

@@ -1,6 +1,6 @@
 /*  thread_pool.c -- A pool of generic worker threads
 
-    Copyright (c) 2013-2019 Genome Research Ltd.
+    Copyright (c) 2013-2020 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
@@ -40,6 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <limits.h>
 
 #include "thread_pool_internal.h"
+#include "htslib/hts_log.h"
 
 static void hts_tpool_process_detach_locked(hts_tpool *p,
                                             hts_tpool_process *q);
@@ -714,7 +715,7 @@ static void wake_next_worker(hts_tpool_process *q, int locked) {
  *         NULL on failure
  */
 hts_tpool *hts_tpool_init(int n) {
-    int i;
+    int t_idx = 0;
     hts_tpool *p = malloc(sizeof(*p));
     if (!p)
         return NULL;
@@ -731,6 +732,13 @@ hts_tpool *hts_tpool_init(int n) {
         free(p);
         return NULL;
     }
+    p->t_stack = malloc(n * sizeof(*p->t_stack));
+    if (!p->t_stack) {
+        free(p->t);
+        free(p);
+        return NULL;
+    }
+    p->t_stack_top = -1;
 
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
@@ -738,27 +746,44 @@ hts_tpool *hts_tpool_init(int n) {
     pthread_mutex_init(&p->pool_m, &attr);
     pthread_mutexattr_destroy(&attr);
 
-    if (!(p->t_stack = malloc(n * sizeof(*p->t_stack))))
-        return NULL;
-    p->t_stack_top = -1;
-
     pthread_mutex_lock(&p->pool_m);
 
-    for (i = 0; i < n; i++) {
-        hts_tpool_worker *w = &p->t[i];
-        p->t_stack[i] = 0;
+    for (t_idx = 0; t_idx < n; t_idx++) {
+        hts_tpool_worker *w = &p->t[t_idx];
+        p->t_stack[t_idx] = 0;
         w->p = p;
-        w->idx = i;
+        w->idx = t_idx;
         pthread_cond_init(&w->pending_c, NULL);
         if (0 != pthread_create(&w->tid, NULL, tpool_worker, w)) {
-            pthread_mutex_unlock(&p->pool_m);
-            return NULL;
+            goto cleanup;
         }
     }
 
     pthread_mutex_unlock(&p->pool_m);
 
     return p;
+
+ cleanup: {
+        // Any threads started will be waiting for p->pool_m, so we can
+        // stop them cleanly by setting p->shutdown, releasing the mutex and
+        // waiting for them to finish.
+        int j;
+        int save_errno = errno;
+        hts_log_error("Couldn't start thread pool worker : %s",
+                      strerror(errno));
+        p->shutdown = 1;
+        pthread_mutex_unlock(&p->pool_m);
+        for (j = 0; j < t_idx; j++) {
+            pthread_join(p->t[j].tid, NULL);
+            pthread_cond_destroy(&p->t[j].pending_c);
+        }
+        pthread_mutex_destroy(&p->pool_m);
+        free(p->t_stack);
+        free(p->t);
+        free(p);
+        errno = save_errno;
+        return NULL;
+    }
 }
 
 /*
