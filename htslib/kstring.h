@@ -122,6 +122,10 @@ extern "C" {
     HTSLIB_EXPORT
 	int kgetline2(kstring_t *s, kgets_func2 *fgets, void *fp);
 
+    // Safely free the underlying buffer in a kstring.
+    HTSLIB_EXPORT
+    void ks_free(kstring_t *s);
+
 #ifdef __cplusplus
 }
 #endif
@@ -204,15 +208,6 @@ static inline char *ks_release(kstring_t *s)
 	s->l = s->m = 0;
 	s->s = NULL;
 	return ss;
-}
-
-/// Safely free the underlying buffer in a kstring.
-static inline void ks_free(kstring_t *s)
-{
-    if (s) {
-        free(s->s);
-        ks_initialize(s);
-    }
 }
 
 static inline int kputsn(const char *p, size_t l, kstring_t *s)

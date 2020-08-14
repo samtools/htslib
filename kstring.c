@@ -48,6 +48,15 @@ int ks_resize2(kstring_t *s, size_t size)
 	return 0;
 }
 
+HTSLIB_EXPORT
+void ks_free(kstring_t *s)
+{
+    if (s) {
+        free(s->s);
+        ks_initialize(s);
+    }
+}
+
 int kputd(double d, kstring_t *s) {
 	int len = 0;
 	char buf[21], *cp = buf+20, *ep;
