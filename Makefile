@@ -77,6 +77,7 @@ BUILT_TEST_PROGRAMS = \
 	test/plugins-dlhts \
 	test/sam \
 	test/test_bgzf \
+	test/test_kfunc \
 	test/test_kstring \
 	test/test_realn \
 	test/test-regidx \
@@ -393,6 +394,7 @@ maintainer-check:
 #    MSYS2_ARG_CONV_EXCL="*" make check
 check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) $(BUILT_PLUGINS)
 	test/hts_endian
+	test/test_kfunc
 	test/test_kstring
 	test/test_str2int
 	test/fieldarith test/fieldarith.sam
@@ -430,6 +432,9 @@ test/sam: test/sam.o libhts.a
 
 test/test_bgzf: test/test_bgzf.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a -lz $(LIBS) -lpthread
+
+test/test_kfunc: test/test_kfunc.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_kfunc.o libhts.a -lz $(LIBS) -lpthread
 
 test/test_kstring: test/test_kstring.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_kstring.o libhts.a -lz $(LIBS) -lpthread
@@ -472,6 +477,7 @@ test/pileup.o: test/pileup.c config.h $(htslib_sam_h) $(htslib_kstring_h)
 test/plugins-dlhts.o: test/plugins-dlhts.c config.h
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_khash_h) $(htslib_hts_log_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
+test/test_kfunc.o: test/test_kfunc.c config.h $(htslib_kfunc_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
 test/test-parse-reg.o: test/test-parse-reg.c config.h $(htslib_hts_h) $(htslib_sam_h)
 test/test_realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
