@@ -2101,6 +2101,137 @@ correct thing to do.  It would be wise to avoid this situation if possible.
 HTSLIB_EXPORT
 int sam_prob_realn(bam1_t *b, const char *ref, hts_pos_t ref_len, int flag);
 
+// ---------------------------
+// Base modification retrieval
+
+/*! @typedef
+ @abstract Holds a single base modification.
+ @field modified_base     The short base code (m, h, etc) or -ChEBI (negative)
+ @field canonical_base    The canonical base referred to in the MM tag.
+                          One of A, C, G, T or N.  Note this may not be the
+                          explicit base recorded in the SEQ column (esp. if N).
+ @field stran             0 or 1, indicating + or - strand from MM tag.
+ @field qual              Quality code (256*probability), or -1 if unknown
+
+ @discussion
+ Note this doesn't hold any location data or information on which other
+ modifications may be possible at this site.
+*/
+typedef struct hts_base_mod {
+    int modified_base;
+    int canonical_base;
+    int strand;
+    int qual;
+} hts_base_mod;
+
+/*! @typedef
+ @abstract An opaque type used for caching base modification state between
+ successive calls to bam_mods_* functions.
+*/
+typedef struct hts_base_mod_state hts_base_mod_state;
+
+/// Allocates an hts_base_mode_state.
+/**
+ * @return An hts_base_mode_state pointer on success,
+ *         NULL on failure.
+ *
+ * This just allocates the memory.  The initialisation of the contents is
+ * done using bam_parse_basemod.  Successive calls may be made to that
+ * without the need to free and allocate a new state.
+ *
+ * The state be destroyed using the hts_base_mode_state_free function.
+ */
+HTSLIB_EXPORT
+hts_base_mod_state *hts_base_mod_state_alloc(void);
+
+/// Destroys an  hts_base_mode_state.
+/**
+ * @param state    The base modification state pointer.
+ *
+ * The should have previously been created by hts_base_mode_state_alloc.
+ */
+HTSLIB_EXPORT
+void hts_base_mod_state_free(hts_base_mod_state *state);
+
+/// Parses the Mm and Ml tags out of a bam record.
+/**
+ * @param b        BAM alignment record
+ * @param state    The base modification state pointer.
+ * @return 0 on success,
+ *         -1 on failure.
+ *
+ * This fills out the contents of the modification state, resetting the
+ * iterator location to the first sequence base.
+ */
+HTSLIB_EXPORT
+int bam_parse_basemod(const bam1_t *b, hts_base_mod_state *state);
+
+/// Returns modification status for the next base position in the query seq.
+/**
+ * @param b        BAM alignment record
+ * @param state    The base modification state pointer.
+ * @param mods     A supplied array for returning base modifications
+ * @param n_mods   The size of the mods array
+ * @return The number of modifications found on success,
+ *         -1 on failure.
+ *
+ * This is intended to be used as an iterator, with one call per location
+ * along the query sequence.
+ *
+ * If no modifications are found, the returned value is zero.
+ * If more than n_mods modifications are found, the total found is returned.
+ * Note this means the caller needs to check whether this is higher than
+ * n_mods.
+ */
+HTSLIB_EXPORT
+int bam_mods_at_next_pos(const bam1_t *b, hts_base_mod_state *state,
+                         hts_base_mod *mods, int n_mods);
+
+/// Finds the next location containing base modifications and returns them
+/**
+ * @param b        BAM alignment record
+ * @param state    The base modification state pointer.
+ * @param mods     A supplied array for returning base modifications
+ * @param n_mods   The size of the mods array
+ * @return The number of modifications found on success,
+ *         0 if no more modifications are present,
+ *         -1 on failure.
+ *
+ * Unlike bam_mods_at_next_pos this skips ahead to the next site
+ * with modifications.
+ *
+ * If more than n_mods modifications are found, the total found is returned.
+ * Note this means the caller needs to check whether this is higher than
+ * n_mods.
+ */
+HTSLIB_EXPORT
+int bam_next_basemod(const bam1_t *b, hts_base_mod_state *state,
+                     hts_base_mod *mods, int n_mods, int *pos);
+
+/// Returns modification status for a specific query position.
+/**
+ * @param b        BAM alignment record
+ * @param state    The base modification state pointer.
+ * @param mods     A supplied array for returning base modifications
+ * @param n_mods   The size of the mods array
+ * @return The number of modifications found on success,
+ *         -1 on failure.
+ *
+ * Note if called multipled times, qpos must be higher than the previous call.
+ * Hence this is suitable for use from a pileup iterator.  If more random
+ * access is required, bam_parse_basemod must be called each time to reset
+ * the state although this has an efficiency cost.
+ *
+ * If no modifications are found, the returned value is zero.
+ * If more than n_mods modifications are found, the total found is returned.
+ * Note this means the caller needs to check whether this is higher than
+ * n_mods.
+ */
+HTSLIB_EXPORT
+int bam_mods_at_qpos(const bam1_t *b, int qpos, hts_base_mod_state *state,
+                     hts_base_mod *mods, int n_mods);
+
+
 #ifdef __cplusplus
 }
 #endif
