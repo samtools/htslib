@@ -2000,9 +2000,12 @@ int bgzf_close(BGZF* fp)
 {
     int ret, block_length;
     if (fp == 0) return -1;
+    uint16_t save_fp_errcode = fp->errcode;
+    fp->errcode = 0;
     if (fp->is_write && fp->is_compressed) {
         if (bgzf_flush(fp) != 0) {
             bgzf_close_mt(fp);
+            fp->errcode |= save_fp_errcode;
             return -1;
         }
         fp->compress_level = -1;
@@ -2010,12 +2013,14 @@ int bgzf_close(BGZF* fp)
         if (block_length < 0) {
             hts_log_debug("Deflate block operation failed: %s", bgzf_zerr(block_length, NULL));
             bgzf_close_mt(fp);
+            fp->errcode |= save_fp_errcode;
             return -1;
         }
         if (hwrite(fp->fp, fp->compressed_block, block_length) < 0
             || hflush(fp->fp) != 0) {
             hts_log_error("File write failed");
             fp->errcode |= BGZF_ERR_IO;
+            fp->errcode |= save_fp_errcode;
             return -1;
         }
     }
@@ -2033,7 +2038,10 @@ int bgzf_close(BGZF* fp)
         free(fp->gz_stream);
     }
     ret = hclose(fp->fp);
-    if (ret != 0) return -1;
+    if (ret != 0) {
+        fp->errcode |= save_fp_errcode;
+        return -1;
+    }
     bgzf_index_destroy(fp);
     free(fp->uncompressed_block);
     free_cache(fp);
