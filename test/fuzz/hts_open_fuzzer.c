@@ -147,6 +147,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         default:
             break;
     }
-    hts_close_or_abort(ht_file);
+    hts_close(ht_file);
     return 0;
 }
