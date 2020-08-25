@@ -4577,7 +4577,8 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
                 return -1;
             }
             if (iter->plp_construct)
-                iter->plp_construct(iter->data, b, &iter->tail->cd);
+                iter->plp_construct(iter->data, &iter->tail->b,
+                                    &iter->tail->cd);
             if (overlap_push(iter, iter->tail) < 0) {
                 mp_free(iter->mp, next);
                 iter->error = 1;
