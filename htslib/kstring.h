@@ -144,9 +144,15 @@ static inline void ks_initialize(kstring_t *s)
 /// Resize a kstring to a given capacity
 static inline int ks_resize(kstring_t *s, size_t size)
 {
-	extern HTSLIB_EXPORT int ks_resize2(kstring_t *s, size_t size);
-
-	if (s->m < size) return ks_resize2(s, size);
+	if (s->m < size) {
+	    char *tmp;
+	    size = (size > (SIZE_MAX>>2)) ? SIZE_MAX>>1 : size + (size >> 1);
+	    tmp = (char*)realloc(s->s, size);
+	    if (!tmp && size)
+	        return -1;
+	    s->s = tmp;
+	    s->m = size;
+	}
 	return 0;
 }
 
