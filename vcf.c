@@ -1270,27 +1270,27 @@ static int bcf_dec_typed_int1_safe(uint8_t *p, uint8_t *end, uint8_t **q,
     /* Use if .. else if ... else instead of switch to force order.  Assumption
        is that small integers are more frequent than big ones. */
     if (t == BCF_BT_INT8) {
-        *q = p + 1;
-        *val = *(int8_t *) p;
-    } else if (t == BCF_BT_INT16) {
-        if (end - p < 2) return -1;
-        *q = p + 2;
-        *val = le_to_i16(p);
-    } else if (t == BCF_BT_INT32) {
-        if (end - p < 4) return -1;
-        *q = p + 4;
-        *val = le_to_i32(p);
-#ifdef VCF_ALLOW_INT64
-    } else if (t == BCF_BT_INT64) {
-        // This case should never happen because there should be no 64-bit BCFs
-        // at all, definitely not coming from htslib
-        if (end - p < 8) return -1;
-        *q = p + 8;
-        *val = le_to_i64(p);
-#endif
+        *val = *(int8_t *) p++;
     } else {
-        return -1;
+        if (end - p < bcf_type_shift[t]) return -1;
+        if (t == BCF_BT_INT16) {
+            *val = le_to_i16(p);
+            p += 2;
+        } else if (t == BCF_BT_INT32) {
+            *val = le_to_i32(p);
+            p += 4;
+#ifdef VCF_ALLOW_INT64
+        } else if (t == BCF_BT_INT64) {
+            // This case should never happen because there should be no
+            // 64-bit BCFs at all, definitely not coming from htslib
+            *val = le_to_i64(p);
+            p += 8;
+#endif
+        } else {
+            return -1;
+        }
     }
+    *q = p;
     return 0;
 }
 
@@ -1316,6 +1316,15 @@ static const char *get_type_name(int type) {
     };
     int t = (type >= 0 && type < 8) ? type : 8;
     return types[t];
+}
+
+static void bcf_record_check_err(const bcf_hdr_t *hdr, bcf1_t *rec,
+                                 char *type, uint32_t *reports, int i) {
+    if (*reports == 0 || hts_verbose >= HTS_LOG_DEBUG)
+        hts_log_warning("Bad BCF record at %s:%"PRIhts_pos
+                        ": Invalid FORMAT %s %d",
+                        bcf_seqname_safe(hdr,rec), rec->pos+1, type, i);
+    (*reports)++;
 }
 
 static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
@@ -1400,11 +1409,12 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
 
     // Check INFO
     reports = 0;
+    bcf_idpair_t *id_tmp = hdr->id[BCF_DT_ID];
     for (i = 0; i < rec->n_info; i++) {
         int32_t key = -1;
         if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) goto bad_shared;
         if (key < 0 || (hdr && (key >= max_id
-                                || hdr->id[BCF_DT_ID][key].key == NULL))) {
+                                || id_tmp[key].key == NULL))) {
             if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
                 hts_log_warning("Bad BCF record at %s:%"PRIhts_pos": Invalid %s id %d", bcf_seqname_safe(hdr,rec), rec->pos+1, "INFO", key);
             err |= BCF_ERR_TAG_UNDEF;
@@ -1429,15 +1439,13 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
         if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) goto bad_indiv;
         if (key < 0
             || (hdr && (key >= max_id
-                        || hdr->id[BCF_DT_ID][key].key == NULL))) {
-            if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
-                hts_log_warning("Bad BCF record at %s:%"PRIhts_pos": Invalid %s id %d", bcf_seqname_safe(hdr,rec), rec->pos+1, "FORMAT", key);
+                        || id_tmp[key].key == NULL))) {
+            bcf_record_check_err(hdr, rec, "id", &reports, key);
             err |= BCF_ERR_TAG_UNDEF;
         }
         if (bcf_dec_size_safe(ptr, end, &ptr, &num, &type) != 0) goto bad_indiv;
         if (((1 << type) & is_valid_type) == 0) {
-            if (!reports++ || hts_verbose >= HTS_LOG_DEBUG)
-                hts_log_warning("Bad BCF record at %s:%"PRIhts_pos": Invalid %s type %d (%s)", bcf_seqname_safe(hdr,rec), rec->pos+1, "FORMAT", type, get_type_name(type));
+            bcf_record_check_err(hdr, rec, "type", &reports, type);
             err |= BCF_ERR_TAG_INVALID;
         }
         bytes = ((size_t) num << bcf_type_shift[type]) * rec->n_sample;
