@@ -146,9 +146,9 @@ static inline int ks_resize(kstring_t *s, size_t size)
 {
 	if (s->m < size) {
 	    char *tmp;
-	    size = (size > (SIZE_MAX>>2)) ? SIZE_MAX>>1 : size + (size >> 1);
+	    size = (size > (SIZE_MAX>>2)) ? size : size + (size >> 1);
 	    tmp = (char*)realloc(s->s, size);
-	    if (!tmp && size)
+	    if (!tmp)
 	        return -1;
 	    s->s = tmp;
 	    s->m = size;
