@@ -32,7 +32,7 @@
 /*
   Macro with value 1 if the highest bit in x is set for any integer type
 
-  This is written avoiding conditionals (?: operator) to reduce the liklihood
+  This is written avoiding conditionals (?: operator) to reduce the likelihood
   of gcc attempting jump thread optimisations for code paths where (x) is
   large.  These optimisations can cause gcc to issue warnings about excessively
   large memory allocations when the kroundup64() macro below is used with
