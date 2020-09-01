@@ -3025,17 +3025,18 @@ int bcf_unpack(bcf1_t *b, int which)
         hts_expand(char*, b->n_allele, d->m_allele, d->allele); // NM: hts_expand() is a macro
         tmp.l = 0; tmp.s = d->als; tmp.m = d->m_als;
         ptr_ori = ptr;
-        char *o = "";
         for (i = 0; i < b->n_allele; ++i) {
-            d->allele[i] = o + tmp.l;
+            // Use offset within tmp.s as realloc may change pointer
+            d->allele[i] = (char *)(intptr_t)tmp.l;
             ptr = bcf_fmt_sized_array(&tmp, ptr);
             kputc('\0', &tmp);
         }
         b->unpack_size[1] = ptr - ptr_ori;
         d->als = tmp.s; d->m_als = tmp.m;
 
+        // Convert our offsets within tmp.s back to pointers again
         for (i = 0; i < b->n_allele; ++i)
-            d->allele[i] = d->als + (d->allele[i]-o);
+            d->allele[i] = d->als + (ptrdiff_t)d->allele[i];
         b->unpacked |= BCF_UN_STR;
     }
     if ((which&BCF_UN_FLT) && !(b->unpacked&BCF_UN_FLT)) { // FILTER
