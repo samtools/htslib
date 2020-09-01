@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdint.h>
 #include "hts.h"
+#include "hts_endian.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -1354,6 +1355,188 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
     /*************************************
      *** Manipulating auxiliary fields ***
      *************************************/
+
+/// Converts a BAM aux tag to SAM format
+/*
+ * @param b   Pointer to the bam record
+ * @param tag Tag pointer, as returned by bam_aux_get.
+ * @param end Pointer to end of bam record (largest extent of tag).
+ * @param ks  Kstring to write the formatted tag to.
+ *
+ * @return pointer to end of tag on success,
+ *         NULL on failure.
+ */
+static inline uint8_t *sam_format_aux1(const bam1_t *b,
+                                       uint8_t *key, uint8_t *tag,
+                                       uint8_t *end, kstring_t *ks) {
+    int r = 0;
+    uint8_t type;
+    uint8_t *s = tag; // brevity and consistency with other code.
+    type = *s++;
+    r |= kputsn_((char*)key, 2, ks) < 0;
+    r |= kputc_(':', ks) < 0;
+    if (type == 'A') {
+        r |= kputsn_("A:", 2, ks) < 0;
+        r |= kputc_(*s, ks) < 0;
+        ++s;
+    } else if (type == 'C') {
+        r |= kputsn_("i:", 2, ks) < 0;
+        r |= kputw(*s, ks) < 0;
+        ++s;
+    } else if (type == 'c') {
+        r |= kputsn_("i:", 2, ks) < 0;
+        r |= kputw(*(int8_t*)s, ks) < 0;
+        ++s;
+    } else if (type == 'S') {
+        if (end - s >= 2) {
+            r |= kputsn_("i:", 2, ks) < 0;
+            r |= kputuw(le_to_u16(s), ks) < 0;
+            s += 2;
+        } else goto bad_aux;
+    } else if (type == 's') {
+        if (end - s >= 2) {
+            r |= kputsn_("i:", 2, ks) < 0;
+            r |= kputw(le_to_i16(s), ks) < 0;
+            s += 2;
+        } else goto bad_aux;
+    } else if (type == 'I') {
+        if (end - s >= 4) {
+            r |= kputsn_("i:", 2, ks) < 0;
+            r |= kputuw(le_to_u32(s), ks) < 0;
+            s += 4;
+        } else goto bad_aux;
+    } else if (type == 'i') {
+        if (end - s >= 4) {
+            r |= kputsn_("i:", 2, ks) < 0;
+            r |= kputw(le_to_i32(s), ks) < 0;
+            s += 4;
+        } else goto bad_aux;
+    } else if (type == 'f') {
+        if (end - s >= 4) {
+            ksprintf(ks, "f:%g", le_to_float(s));
+            s += 4;
+        } else goto bad_aux;
+
+    } else if (type == 'd') {
+        if (end - s >= 8) {
+            ksprintf(ks, "d:%g", le_to_double(s));
+            s += 8;
+        } else goto bad_aux;
+    } else if (type == 'Z' || type == 'H') {
+        r |= kputc_(type, ks) < 0;
+        r |= kputc_(':', ks) < 0;
+        while (s < end && *s) r |= kputc_(*s++, ks) < 0;
+        if (s >= end)
+            goto bad_aux;
+        ++s;
+    } else if (type == 'B') {
+        uint8_t sub_type = *(s++);
+        int sub_type_size;
+
+        // or externalise sam.c's aux_type2size fuction?
+        switch (sub_type) {
+        case 'A': case 'c': case 'C':
+            sub_type_size = 1;
+            break;
+        case 's': case 'S':
+            sub_type_size = 2;
+            break;
+        case 'i': case 'I': case 'f':
+            sub_type_size = 4;
+            break;
+        case 'd':
+            sub_type_size = 8;
+            break;
+        case 'Z': case 'H': case 'B':
+            sub_type_size = 99; // variable; just a place holder
+            break;
+        default:
+            sub_type_size = 0;
+            break;
+        }
+
+        uint32_t i, n;
+        if (sub_type_size == 0 || end - s < 4)
+            goto bad_aux;
+        n = le_to_u32(s);
+        s += 4; // now points to the start of the array
+        if ((end - s) / sub_type_size < n)
+            goto bad_aux;
+        r |= kputsn_("B:", 2, ks) < 0;
+        r |= kputc_(sub_type, ks) < 0; // write the type
+        switch (sub_type) {
+        case 'c':
+            if (ks_expand(ks, n*2) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                r |= kputc_(',', ks) < 0;
+                r |= kputw(*(int8_t*)s, ks) < 0;
+                ++s;
+            }
+            break;
+        case 'C':
+            if (ks_expand(ks, n*2) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                r |= kputc_(',', ks) < 0;
+                r |= kputw(*(uint8_t*)s, ks) < 0;
+                ++s;
+            }
+            break;
+        case 's':
+            if (ks_expand(ks, n*4) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                r |= kputc_(',', ks) < 0;
+                r |= kputw(le_to_i16(s), ks) < 0;
+                s += 2;
+            }
+            break;
+        case 'S':
+            if (ks_expand(ks, n*4) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                r |= kputc_(',', ks) < 0;
+                r |= kputw(le_to_u16(s), ks) < 0;
+                s += 2;
+            }
+            break;
+        case 'i':
+            if (ks_expand(ks, n*6) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                r |= kputc_(',', ks) < 0;
+                r |= kputw(le_to_i32(s), ks) < 0;
+                s += 4;
+            }
+            break;
+        case 'I':
+            if (ks_expand(ks, n*6) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                r |= kputc_(',', ks) < 0;
+                r |= kputuw(le_to_u32(s), ks) < 0;
+                s += 4;
+            }
+            break;
+        case 'f':
+            if (ks_expand(ks, n*8) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                r |= kputc_(',', ks) < 0;
+                r |= kputd(le_to_float(s), ks) < 0;
+                s += 4;
+            }
+            break;
+        default:
+            goto bad_aux;
+        }
+    } else { // Unknown type
+        goto bad_aux;
+    }
+    return r ? NULL : s;
+
+ bad_aux:
+    return NULL;
+
+ mem_err:
+    hts_log_error("Out of memory");
+    errno = ENOMEM;
+    return NULL;
+}
 
 /// Return a pointer to an aux record
 /** @param b   Pointer to the bam record
