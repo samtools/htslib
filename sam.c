@@ -3108,9 +3108,10 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
 
     s = bam_get_aux(b); // aux
     end = b->data + b->l_data;
+
     while (end - s >= 4) {
         r |= kputc_('\t', str);
-        if ((s = sam_format_aux1(b, s, s+2, end, str)) == NULL)
+        if ((s = (uint8_t *)sam_format_aux1(s, s[2], s+3, end, str)) == NULL)
             goto bad_aux;
     }
     r |= kputsn("", 0, str); // nul terminate
@@ -3406,6 +3407,7 @@ uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
     errno = EINVAL;
     return NULL;
 }
+
 // s MUST BE returned by bam_aux_get()
 int bam_aux_del(bam1_t *b, uint8_t *s)
 {

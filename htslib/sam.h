@@ -1358,28 +1358,33 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
 
 /// Converts a BAM aux tag to SAM format
 /*
- * @param b   Pointer to the bam record
- * @param tag Tag pointer, as returned by bam_aux_get.
- * @param end Pointer to end of bam record (largest extent of tag).
- * @param ks  Kstring to write the formatted tag to.
+ * @param b    Pointer to the bam record
+ * @param key  Two letter tag key
+ * @param type Single letter type code: ACcSsIifHZB.
+ * @param tag  Tag data pointer, in BAM format
+ * @param end  Pointer to end of bam record (largest extent of tag)
+ * @param ks   Kstring to write the formatted tag to
  *
  * @return pointer to end of tag on success,
  *         NULL on failure.
+ *
+ * @discussion The three separate parameters key, type, tag may be
+ * derived from a s=bam_aux_get() query as s-2, *s and s+1.  However
+ * it is recommended to use bam_aux_get_str in this situation.
+ * The desire to split these parameters up is for potential processing
+ * of non-BAM formats that encode using a BAM type mechanism
+ * (such as the internal CRAM representation).
  */
-static inline uint8_t *sam_format_aux1(const bam1_t *b,
-                                       uint8_t *key, uint8_t *tag,
-                                       uint8_t *end, kstring_t *ks) {
+static inline const uint8_t *sam_format_aux1(const uint8_t *key,
+                                             const uint8_t type,
+                                             const uint8_t *tag,
+                                             const uint8_t *end,
+                                             kstring_t *ks) {
     int r = 0;
-    uint8_t type;
-    uint8_t *s = tag; // brevity and consistency with other code.
-    type = *s++;
+    const uint8_t *s = tag; // brevity and consistency with other code.
     r |= kputsn_((char*)key, 2, ks) < 0;
     r |= kputc_(':', ks) < 0;
-    if (type == 'A') {
-        r |= kputsn_("A:", 2, ks) < 0;
-        r |= kputc_(*s, ks) < 0;
-        ++s;
-    } else if (type == 'C') {
+    if (type == 'C') {
         r |= kputsn_("i:", 2, ks) < 0;
         r |= kputw(*s, ks) < 0;
         ++s;
@@ -1411,6 +1416,10 @@ static inline uint8_t *sam_format_aux1(const bam1_t *b,
             r |= kputw(le_to_i32(s), ks) < 0;
             s += 4;
         } else goto bad_aux;
+    } else if (type == 'A') {
+        r |= kputsn_("A:", 2, ks) < 0;
+        r |= kputc_(*s, ks) < 0;
+        ++s;
     } else if (type == 'f') {
         if (end - s >= 4) {
             ksprintf(ks, "f:%g", le_to_float(s));
@@ -1418,6 +1427,10 @@ static inline uint8_t *sam_format_aux1(const bam1_t *b,
         } else goto bad_aux;
 
     } else if (type == 'd') {
+        // NB: "d" is not an official type in the SAM spec.
+        // However for unknown reasons samtools has always supported this.
+        // We believe, HOPE, it is not in general usage and we do not
+        // encourage it.
         if (end - s >= 8) {
             ksprintf(ks, "d:%g", le_to_double(s));
             s += 8;
@@ -1444,12 +1457,6 @@ static inline uint8_t *sam_format_aux1(const bam1_t *b,
         case 'i': case 'I': case 'f':
             sub_type_size = 4;
             break;
-        case 'd':
-            sub_type_size = 8;
-            break;
-        case 'Z': case 'H': case 'B':
-            sub_type_size = 99; // variable; just a place holder
-            break;
         default:
             sub_type_size = 0;
             break;
@@ -1463,12 +1470,12 @@ static inline uint8_t *sam_format_aux1(const bam1_t *b,
         if ((end - s) / sub_type_size < n)
             goto bad_aux;
         r |= kputsn_("B:", 2, ks) < 0;
-        r |= kputc_(sub_type, ks) < 0; // write the type
+        r |= kputc(sub_type, ks) < 0; // write the type
         switch (sub_type) {
         case 'c':
             if (ks_expand(ks, n*2) < 0) goto mem_err;
             for (i = 0; i < n; ++i) {
-                r |= kputc_(',', ks) < 0;
+                ks->s[ks->l++] = ',';
                 r |= kputw(*(int8_t*)s, ks) < 0;
                 ++s;
             }
@@ -1476,15 +1483,15 @@ static inline uint8_t *sam_format_aux1(const bam1_t *b,
         case 'C':
             if (ks_expand(ks, n*2) < 0) goto mem_err;
             for (i = 0; i < n; ++i) {
-                r |= kputc_(',', ks) < 0;
-                r |= kputw(*(uint8_t*)s, ks) < 0;
+                ks->s[ks->l++] = ',';
+                r |= kputuw(*(uint8_t*)s, ks) < 0;
                 ++s;
             }
             break;
         case 's':
             if (ks_expand(ks, n*4) < 0) goto mem_err;
             for (i = 0; i < n; ++i) {
-                r |= kputc_(',', ks) < 0;
+                ks->s[ks->l++] = ',';
                 r |= kputw(le_to_i16(s), ks) < 0;
                 s += 2;
             }
@@ -1492,15 +1499,15 @@ static inline uint8_t *sam_format_aux1(const bam1_t *b,
         case 'S':
             if (ks_expand(ks, n*4) < 0) goto mem_err;
             for (i = 0; i < n; ++i) {
-                r |= kputc_(',', ks) < 0;
-                r |= kputw(le_to_u16(s), ks) < 0;
+                ks->s[ks->l++] = ',';
+                r |= kputuw(le_to_u16(s), ks) < 0;
                 s += 2;
             }
             break;
         case 'i':
             if (ks_expand(ks, n*6) < 0) goto mem_err;
             for (i = 0; i < n; ++i) {
-                r |= kputc_(',', ks) < 0;
+                ks->s[ks->l++] = ',';
                 r |= kputw(le_to_i32(s), ks) < 0;
                 s += 4;
             }
@@ -1508,7 +1515,7 @@ static inline uint8_t *sam_format_aux1(const bam1_t *b,
         case 'I':
             if (ks_expand(ks, n*6) < 0) goto mem_err;
             for (i = 0; i < n; ++i) {
-                r |= kputc_(',', ks) < 0;
+                ks->s[ks->l++] = ',';
                 r |= kputuw(le_to_u32(s), ks) < 0;
                 s += 4;
             }
@@ -1516,7 +1523,7 @@ static inline uint8_t *sam_format_aux1(const bam1_t *b,
         case 'f':
             if (ks_expand(ks, n*8) < 0) goto mem_err;
             for (i = 0; i < n; ++i) {
-                r |= kputc_(',', ks) < 0;
+                ks->s[ks->l++] = ',';
                 r |= kputd(le_to_float(s), ks) < 0;
                 s += 4;
             }
@@ -1549,6 +1556,27 @@ static inline uint8_t *sam_format_aux1(const bam1_t *b,
  */
 HTSLIB_EXPORT
 uint8_t *bam_aux_get(const bam1_t *b, const char tag[2]);
+
+/// Return a SAM formatting string containing a BAM tag
+/** @param b   Pointer to the bam record
+    @param tag Desired aux tag
+    @param s   The kstring to write to.
+
+    @return The number of bytes written to s on success, or -1 on error.
+    A return value of zero means no tag was found and errno is set toENOENT.
+ */
+static inline ssize_t bam_aux_get_str(const bam1_t *b,
+                                      const char tag[2],
+                                      kstring_t *s) {
+    const uint8_t *t = bam_aux_get(b, tag);
+    if (!t) return 0;
+
+    size_t len = s->l;
+    if (!sam_format_aux1(t-2, *t, t+1, b->data + b->l_data, s))
+        return -1;
+
+    return s->l - len;
+}
 
 /// Get an integer aux value
 /** @param s Pointer to the tag data, as returned by bam_aux_get()
