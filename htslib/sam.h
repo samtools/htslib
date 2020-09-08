@@ -1537,6 +1537,7 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
     return r ? NULL : s;
 
  bad_aux:
+    errno = EINVAL;
     return NULL;
 
  mem_err:
@@ -1562,20 +1563,21 @@ uint8_t *bam_aux_get(const bam1_t *b, const char tag[2]);
     @param tag Desired aux tag
     @param s   The kstring to write to.
 
-    @return The number of bytes written to s on success, or -1 on error.
-    A return value of zero means no tag was found and errno is set toENOENT.
+    @return 1 on success,
+            0 on no tag found with errno = ENOENT,
+           -1 on error (errno will be either EINVAL or ENOMEM).
  */
-static inline ssize_t bam_aux_get_str(const bam1_t *b,
-                                      const char tag[2],
-                                      kstring_t *s) {
+static inline int bam_aux_get_str(const bam1_t *b,
+                                  const char tag[2],
+                                  kstring_t *s) {
     const uint8_t *t = bam_aux_get(b, tag);
-    if (!t) return 0;
+    if (!t)
+        return errno == ENOENT ? 0 : -1;
 
-    size_t len = s->l;
     if (!sam_format_aux1(t-2, *t, t+1, b->data + b->l_data, s))
         return -1;
 
-    return s->l - len;
+    return 1;
 }
 
 /// Get an integer aux value
