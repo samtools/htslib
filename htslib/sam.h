@@ -1948,10 +1948,13 @@ typedef struct bam_mplp_s *bam_mplp_t;
     /**
      *  bam_plp_constructor() - sets a callback to initialise any per-pileup1_t fields.
      *  @plp:       The bam_plp_t initialised using bam_plp_init.
-     *  @func:      The callback function itself.  When called, it is given the
-     *              data argument (specified in bam_plp_init), the bam structure and
-     *              a pointer to a locally allocated bam_pileup_cd union.  This union
-     *              will also be present in each bam_pileup1_t created.
+     *  @func:      The callback function itself.  When called, it is given
+     *              the data argument (specified in bam_plp_init), the bam
+     *              structure and a pointer to a locally allocated
+     *              bam_pileup_cd union.  This union will also be present in
+     *              each bam_pileup1_t created.
+     *              The callback function should have a negative return
+     *              value to indicate an error. (Similarly for destructor.)
      */
     HTSLIB_EXPORT
     void bam_plp_constructor(bam_plp_t plp,
