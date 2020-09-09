@@ -5612,9 +5612,14 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
                 iter->error = 1;
                 return -1;
             }
-            if (iter->plp_construct)
-                iter->plp_construct(iter->data, &iter->tail->b,
-                                    &iter->tail->cd);
+            if (iter->plp_construct) {
+                if (iter->plp_construct(iter->data, &iter->tail->b,
+                                        &iter->tail->cd) < 0) {
+                    mp_free(iter->mp, next);
+                    iter->error = 1;
+                    return -1;
+                }
+            }
             if (overlap_push(iter, iter->tail) < 0) {
                 mp_free(iter->mp, next);
                 iter->error = 1;
