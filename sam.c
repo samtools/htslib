@@ -5105,10 +5105,14 @@ static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
  * Fills out the kstring with the padded insertion sequence for the current
  * location in 'p'.  If this is not an insertion site, the string is blank.
  *
+ * This variant handles base modifications, but only when "m" is non-NULL.
+ *
  * Returns the length of insertion string on success;
  *        -1 on failure.
  */
-int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) {
+int bam_plp_insertion_mod(const bam_pileup1_t *p,
+                          hts_base_mod_state *m,
+                          kstring_t *ins, int *del_len) {
     int j, k, indel;
     uint32_t *cigar;
 
@@ -5159,6 +5163,34 @@ int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) {
                 c = seq_nt16_str[bam_seqi(bam_get_seq(p->b),
                                           p->qpos + j - p->is_del)];
                 ins->s[indel++] = c;
+                int nm;
+                hts_base_mod mod[256];
+                if (m && (nm = bam_mods_at_qpos(p->b, p->qpos + j - p->is_del,
+                                                m, mod, 256)) > 0) {
+                    if (ks_resize(ins, ins->l + nm*16+3) < 0)
+                        return -1;
+                    ins->s[indel++] = '[';
+                    int j;
+                    for (j = 0; j < nm; j++) {
+                        char qual[20];
+                        if (mod[j].qual >= 0)
+                            sprintf(qual, "%d", mod[j].qual);
+                        else
+                            *qual=0;
+                        if (mod[j].modified_base < 0)
+                            // ChEBI
+                            indel += sprintf(&ins->s[indel], "%c(%d)%s",
+                                             "+-"[mod[j].strand],
+                                             -mod[j].modified_base,
+                                             qual);
+                        else
+                            indel += sprintf(&ins->s[indel], "%c%c%s",
+                                             "+-"[mod[j].strand],
+                                             mod[j].modified_base,
+                                             qual);
+                    }
+                    ins->s[indel++] = ']';
+                }
             }
             break;
         case BAM_CDEL:
@@ -5175,6 +5207,20 @@ int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) {
     ins->s[indel] = '\0';
 
     return indel;
+}
+
+/*
+ * Fills out the kstring with the padded insertion sequence for the current
+ * location in 'p'.  If this is not an insertion site, the string is blank.
+ *
+ * This is the original interface with no capability for reporting base
+ * modifications.
+ *
+ * Returns the length of insertion string on success;
+ *        -1 on failure.
+ */
+int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) {
+    return bam_plp_insertion_mod(p, NULL, ins, del_len);
 }
 
 /***********************
