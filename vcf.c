@@ -1272,7 +1272,7 @@ static int bcf_dec_typed_int1_safe(uint8_t *p, uint8_t *end, uint8_t **q,
     if (t == BCF_BT_INT8) {
         *val = *(int8_t *) p++;
     } else {
-        if (end - p < bcf_type_shift[t]) return -1;
+        if (end - p < (1<<bcf_type_shift[t])) return -1;
         if (t == BCF_BT_INT16) {
             *val = le_to_i16(p);
             p += 2;
