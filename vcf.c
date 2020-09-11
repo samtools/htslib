@@ -1409,7 +1409,7 @@ static int bcf_record_check(const bcf_hdr_t *hdr, bcf1_t *rec) {
 
     // Check INFO
     reports = 0;
-    bcf_idpair_t *id_tmp = hdr->id[BCF_DT_ID];
+    bcf_idpair_t *id_tmp = hdr ? hdr->id[BCF_DT_ID] : NULL;
     for (i = 0; i < rec->n_info; i++) {
         int32_t key = -1;
         if (bcf_dec_typed_int1_safe(ptr, end, &ptr, &key) != 0) goto bad_shared;
