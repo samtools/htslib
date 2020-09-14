@@ -1,15 +1,182 @@
+
+
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Features and Updates
+--------------------
+
+* Support added for remote reference files.  fai_path() can take a remote
+  reference file and will return the corresponding index file.  Remote indexes
+  can be handle by refs_load_fai().  UR tags in @SQ lines can now be set to
+  remote URIs.
 
 * Added tabix --separate-regions option, which lets the user group the output by
   the number of corresponding target regions supplied in the command line.
 
+* Added tabix --cache option to set a BGZF block cache size.  Most beneficial
+  when the -R option is used and the same blocks need to be re-read multiple
+  times.
+
 * New method vcf_open_mode() changes the opening mode of a variant call file,
   based on its file extension. Similar to sam_open_mode().
+
+* VCF parser improvements to for greater code clarity and speed.
+
+* Support for simultaneous reading of unindexed VCF/BCF files.  Input files must
+  have the chromosomes in the same order as each other and be consistent with
+  the order sequences in the header.
 
 * hts_srand48() now seeds the same POSIX-standard sequences of pseudo-random
   numbers regardless of platform, including on OpenBSD where plain srand48()
   produces a different cryptographically-strong non-deterministic sequence.
+  
+* Iterator now works with 64 bit positions.
+
+* Alignments which consume no reference bases are now considered to have
+  length 1.  This would make such alignments cover 1 reference position in the
+  same manner as alignments that are unmapped or have no CIGAR strings.  These
+  alignments can now be returned by iterator based queries.  Thanks to John
+  Marshall. (Fixes samtools/#1240, see also hts-specs#521).   
+
+* Speed up bcf_check_record(), giving a 15% speed increase on an uncompressed
+  BCF file using gcc9.
+
+* Added a bam_set_seqi() function to modify a single base in the BAM structure.
+  Companion function to bam_seqi().
+
+* Improved SAM writing speed by around 30%. 
+
+* SAM threading improvements in error handling and memory management.
+
+* Added sam_format_aux1() which returns a BAM aux tag to SAM format string.
+
+* Improved bam_aux_update_str() by no longer requiring NUL-terminated strings,
+  reducing the number of memmove() calls needed and adding more tag size tests. 
+
+
+CRAM improvements
+-----------------
+
+* Delay CRAM crc32 checks to block decompression step.  CRC is not validated
+  until the data needs to be used.  With other changes this leads to a
+  20x speed up in indexing and other sub-query based actions.
+
+* CRAM now handles the transition from mapped to unmapped data in a better way.
+
+* CRAM can now use libdeflate. 
+
+* Harden rANS decoding against malicious or random input. (#510, #511, #512 and
+  #513)
+
+* CRAM fix for MD tag generation with "b" FC.
+
+* Fixed the multi-threaded CRAM multi-region iterator inefficiency regression
+  by taking a different approach.  It now works more like the single iterator
+  and does not preemptively decode the next container unless it will be used.
+  (#1061)  
+
+* Set CRAM default quality in lossy quality modes. If lossy quality is enabled
+  and 'B', 'q' or 'Q' features are used, CRAM starts off with QUAL being all 255
+  (as per BAM spec and "*" quality) and then modifies individual qualities as
+  dictated by the specific features.
+
+  However that then produces ASCII quality (q=-1) for the unmodified bases.
+  Instead ASCII quality "?" (q=30) is used, as per htsjdk. Quality 255 is still
+  used for sequences with no modifications at all.  
+
+
+Build changes
+-------------
+
+These are compiler, configuration and makefile based changes. 
+
+* Fixes to pass cppcheck-1.90 warnings. (#995)
+
+* Unify kroundup macros and fix gcc warnings.
+
+* Ensure HTSlib prefers its own headers when being compiled. Thanks to
+  John Marshall. (#347)
+
+* Link plugins against libhts.so/.dylib and fix dynamically unloading HTSlib.
+  Thanks to John Marshall.
+
+* Define HTSLIB_EXPORT without using a helper macro.  Thanks to John Marshall.
+
+* Fix dirty default build by including latest pkg.m4 instead of using 
+  aclocal.m4. Thanks to Damien Zammit.
+
+* Make kvsprintf format checking platform configurable.
+
+* Add struct tags to htslib/*.h public typedefs.  This makes it possible to
+  to forward declare htsFile without including htslib/hts.h. Thanks to
+  John Marshall. (#1106)
+
+* Have realloc and free in the same layer of kstring.  This prevents compilers
+  using different malloc() and free() implementations. (#1114)
+
+
+Bug fixes
+---------
+
+* Fixed missing return parameter value in idx_test_and_fetch(). Thanks to
+  Lilian Janin.
+  
+* Fixed nuances between gzip vs bgzf compressed files. [fuzz]
+
+* Added and/or fixed byte swapping code for big-endian platforms.  Thanks
+  to Jun Aruga, John Marshall, Michael R Crusoe and Gianfranco Costamagna
+  for their help. (#119 and #355)
+  
+* In sam_hdr_create(), free newly allocated SN strings when encountering an
+  error. [fuzz]
+  
+* Prevent double free in case of idx_test_and_fetch() failure. (#1033)
+
+* Prevent negative rlen on erroneous INFO/END when reading BCF. (bcftools/#1154)
+
+* In the header, link a new PG line only to valid chains. (samtools #1235)
+
+* Also in the header, when calling sam_hdr_update_line(), update target arrays
+  only when name or length is changed. (#1007)
+  
+* Fixed buffer overflow in hts_md5_update(). [fuzz]
+
+* Fix mpileup regression between 1.9 and 1.10.
+
+* kputs() now checks for null pointer in source string. [fuzz]
+
+* Error message typo "Number=R" instead of "Number=G" fixed in 
+  bcf_remove_allele_set(). Thanks to Ilya Vorontsov.
+  
+* Fixes potential bcf_update_alleles() crash on 0 alleles. Thanks to
+  John Marshall. (#994)
+
+* Fixed hfile_libcurl breakage when using libcurl 7.69.1 or later.  Thanks to
+  John Marshall for tracking down the exact libcurl change that caused the
+  incompatibility. (samtools/#1254 and samtools/#1284)
+
+* Download index files atomically in idx_test_and_fetch().  This prevents 
+  corruption when running parallel jobs on S3 files.  Thanks to John Marshall.
+  (samtools/#1242).
+  
+* The pileup constructor now called with its own copy of bam1_t struct.
+
+* Verify that the BCF input is within the length of its assigned type. [fuzz]
+
+* Fixed possible error in code_sort() on negative CRAM Huffman code length.
+
+* Fixed possible undefined shift in cram_byte_array_stop_decode_init().
+
+* Fix interval end comparison in CRAM iterator method. (samtools/#1173)
+
+* Fix integer overflow in cram_read_slice. [fuzz]
+
+* Fix parameter passed to cram_name2id. (#977)
+
+* Fix memory leak on failure in cram_decode_slice(). [fuzz]
+
+* Fixed incomplete decode to encode conversion in CRAM. (samtools/#1276)
 
 
 Noteworthy changes in release 1.10.2 (19th December 2019)
