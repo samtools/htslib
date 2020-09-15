@@ -426,7 +426,7 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
         if ( ferror(hdr) ) error_errno("Failed to read \"%s\"", header);
         if ( fclose(hdr) ) error_errno("Closing \"%s\" failed", header);
 
-        // Output all remainig data read with the header block
+        // Output all remaining data read with the header block
         if ( fp->block_length - skip_until > 0 )
         {
             if (bgzf_write(bgzf_out, buffer+skip_until, fp->block_length-skip_until) < 0) error_errno("Write error %d",fp->errcode);

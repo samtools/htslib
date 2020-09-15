@@ -56,7 +56,7 @@
 #define BLOCK_FOOTER_LENGTH 8
 
 
-/* BGZF/GZIP header (speciallized from RFC 1952; little endian):
+/* BGZF/GZIP header (specialized from RFC 1952; little endian):
  +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
  | 31|139|  8|  4|              0|  0|255|      6| 66| 67|      2|BLK_LEN|
  +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
@@ -1367,7 +1367,7 @@ static void *bgzf_mt_writer(void *vp) {
         /*
          * Periodically call hflush (which calls fsync when on a file).
          * This avoids the fsync being done at the bgzf_close stage,
-         * which can sometimes cause signficant delays.  As this is in
+         * which can sometimes cause significant delays.  As this is in
          * a separate thread, spreading the sync delays throughout the
          * program execution seems better.
          * Frequency of 1/512 has been chosen by experimentation
@@ -1743,7 +1743,7 @@ static int mt_destroy(mtaux_t *mt)
     ret = -(hts_tpool_process_is_shutdown(mt->out_queue) > 1);
     // Destroying the queue first forces the writer to exit.
     // mt->out_queue is reference counted, so destroy gets called in both
-    // ths and the IO threads.  The last to do it will clean up.
+    // this and the IO threads.  The last to do it will clean up.
     hts_tpool_process_destroy(mt->out_queue);
 
     // IO thread will now exit.  Wait for it and perform final clean-up.

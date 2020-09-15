@@ -85,8 +85,8 @@ while ($ln1 && $ln2) {
     # Validate MD and NM only if partialmd & 'file' set, otherwise
     # discard it.  Ie:
     #
-    # 1: if file 1 has NM/MD keep in file 2, othewise discard from file2
-    # 2: if file 2 has NM/MD keep in file 1, othewise discard from file1
+    # 1: if file 1 has NM/MD keep in file 2, otherwise discard from file2
+    # 2: if file 2 has NM/MD keep in file 1, otherwise discard from file1
     # 3: if file 1 and file 2 both have NM/MD keep, otherwise discard.
     if (exists $opts{partialmd}) {
         if ($opts{partialmd} & 2) {

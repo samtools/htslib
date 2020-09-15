@@ -49,7 +49,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 /* creates the string pool. max_length is the initial size
-   a single string can be.  Tha max_length can grow as
+   a single string can be.  The max_length can grow as
    needed */
 
 string_alloc_t *string_pool_create(size_t max_length) {

@@ -1976,7 +1976,7 @@ int hts_idx_push(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end, uint64_t
 }
 
 // Needed for TBI only.  Ensure 'tid' with 'name' is in the index meta data.
-// idx->meta needs to have been initialsed first with an appropriate Tabix
+// idx->meta needs to have been initialised first with an appropriate Tabix
 // configuration via hts_idx_set_meta.
 //
 // NB number of references (first 4 bytes of tabix header) aren't in

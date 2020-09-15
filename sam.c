@@ -889,7 +889,7 @@ int sam_index_build(const char *fn, int min_shift)
     return sam_index_build3(fn, NULL, min_shift, 0);
 }
 
-// Provide bam_index_build() symbol for binary compability with earlier HTSlib
+// Provide bam_index_build() symbol for binary compatibility with earlier HTSlib
 #undef bam_index_build
 int bam_index_build(const char *fn, int min_shift)
 {
@@ -925,7 +925,7 @@ int sam_idx_init(htsFile *fp, sam_hdr_t *h, int min_shift, const char *fnidx) {
     return -1;
 }
 
-// Finishes an index. Call afer the last record has been written.
+// Finishes an index. Call after the last record has been written.
 // Returns 0 on success, <0 on failure.
 int sam_idx_save(htsFile *fp) {
     if (fp->format.format == bam || fp->format.format == bcf ||
@@ -2991,7 +2991,7 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
             sp_bams *gb = fd->curr_bam;
             if (!gb) {
                 if (fd->errcode) {
-                    // Incase reader failed
+                    // In case reader failed
                     errno = fd->errcode;
                     return -2;
                 }
@@ -3920,7 +3920,7 @@ static inline void mp_free(mempool_t *mp, lbnode_t *p)
 
 /* s->k: the index of the CIGAR operator that has just been processed.
    s->x: the reference coordinate of the start of s->k
-   s->y: the query coordiante of the start of s->k
+   s->y: the query coordinate of the start of s->k
  */
 static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
 {

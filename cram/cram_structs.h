@@ -63,7 +63,7 @@ extern "C" {
 // Generic hash-map integer -> integer
 KHASH_MAP_INIT_INT64(m_i2i, int)
 
-// Generic hash-set integer -> (existance)
+// Generic hash-set integer -> (existence)
 KHASH_SET_INIT_INT(s_i2i)
 
 // For brevity
@@ -740,7 +740,7 @@ struct cram_fd {
     unsigned int cram_flag_swap[0x1000];// bam -> cram flags
     unsigned char L1[256];              // ACGT{*} ->0123{4}
     unsigned char L2[256];              // ACGTN{*}->01234{5}
-    char cram_sub_matrix[32][32];       // base substituion codes
+    char cram_sub_matrix[32][32];       // base substitution codes
 
     int         index_sz;
     cram_index *index;                  // array, sizeof index_sz

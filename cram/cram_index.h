@@ -48,7 +48,7 @@ void cram_index_free(cram_fd *fd);
  * Searches the index for the first slice overlapping a reference ID
  * and position.
  *
- * Returns the cram_index pointer on sucess
+ * Returns the cram_index pointer on success
  *         NULL on failure
  */
 cram_index *cram_index_query(cram_fd *fd, int refid, hts_pos_t pos, cram_index *frm);

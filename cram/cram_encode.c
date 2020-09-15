@@ -2620,7 +2620,7 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
     cram_container *c = fd->ctr;
     int i;
 
-    /* First occurence */
+    /* First occurrence */
     if (c->curr_ref == -2)
         c->curr_ref = bam_ref(b);
 

@@ -440,7 +440,7 @@ static int aux_fields1(void)
         // append a new array
         i = test_update_array(aln, "N4", 'c', NELE(n4v1), n4v1, "\0\0", 0, 0);
 
-        // Add a sentinal to check resizes work
+        // Add a sentinel to check resizes work
         if (i == 0) i = test_update_int(aln, "N5", 4242, 'S', "\0\0", 0, 0);
 
         // alter the array tag a few times

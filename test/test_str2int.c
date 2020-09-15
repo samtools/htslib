@@ -43,7 +43,7 @@ static int check_str2int(int verbose) {
     int64_t val;
     uint64_t num, uval;
     int failed = 0, efail, i, offset;
-    const char sentinal = '#';
+    const char sentinel = '#';
 
     // Positive value (unsigned)
     for (i = 1; i < 64; i++) {
@@ -51,11 +51,11 @@ static int check_str2int(int verbose) {
         for (offset = i < 5 ? -(1LL << (i - 1)) : -16; offset <= 30; offset++) {
             efail = (offset > 0);
             snprintf(buffer, sizeof(buffer), "%" PRIu64 "%c",
-                     num + offset, sentinal);
+                     num + offset, sentinel);
 
             uval = hts_str2uint(buffer, &end, i, &failed);
             if (failed != efail || uval != (!efail ? num + offset : num)
-                || *end != sentinal) {
+                || *end != sentinel) {
                 fprintf(stderr, "hts_str2uint failed: %d bit "
                         "%s %"PRIu64" '%c' %d (%d)\n",
                         i, buffer, uval, *end, failed, efail);
@@ -72,11 +72,11 @@ static int check_str2int(int verbose) {
         for (offset = i < 5 ? -(1LL << (i - 1)) : -16; offset <= 30; offset++) {
             efail = (offset > 0);
             snprintf(buffer, sizeof(buffer), "%" PRIu64 "%c",
-                     num + offset, sentinal);
+                     num + offset, sentinel);
 
             val = hts_str2int(buffer, &end, i + 1, &failed);
             if (failed != efail || val != (!efail ? num + offset : num)
-                || *end != sentinal) {
+                || *end != sentinel) {
                 fprintf(stderr,
                         "hts_str2int  failed: %d bit "
                         "%s %"PRId64" '%c' %d (%d)\n",
@@ -94,14 +94,14 @@ static int check_str2int(int verbose) {
         for (offset = i < 5 ? -(1LL << (i - 1)) : -16; offset <= 30; offset++) {
             efail = (offset > 0);
             snprintf(buffer, sizeof(buffer), "-%" PRIu64 "%c",
-                     num + offset + 1, sentinal);
+                     num + offset + 1, sentinel);
 
             val = hts_str2int(buffer, &end, i + 1, &failed);
             // Cast of val to unsigned in this comparison avoids undefined
             // behaviour when checking INT64_MIN.
             if (failed != efail
                 || -((uint64_t) val) != (!efail ? num + offset + 1 : num + 1)
-                || *end != sentinal) {
+                || *end != sentinel) {
                 fprintf(stderr,
                         "hts_str2int  failed: %d bit "
                         "%s %"PRId64" '%c' %d (%d)\n",
@@ -120,11 +120,11 @@ static int check_str2int(int verbose) {
     for (offset = 0; offset <= 999; offset++) {
         efail = offset > 615;
         snprintf(buffer, sizeof(buffer), "18446744073709551%03d%c",
-                 offset, sentinal);
+                 offset, sentinel);
         uval = hts_str2uint(buffer, &end, 64, &failed);
         if (failed != efail
             || uval != (efail ? UINT64_MAX : 18446744073709551000ULL + offset)
-            || *end != sentinal) {
+            || *end != sentinel) {
             fprintf(stderr, "hts_str2uint failed: 64 bit %s "
                     "%"PRIu64" '%c' %d (%d)\n",
                     buffer, uval, *end, failed, efail);
