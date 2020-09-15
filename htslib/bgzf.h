@@ -150,7 +150,7 @@ typedef struct BGZF BGZF;
 
     /**
      * Write _length_ bytes from _data_ to the file, the index will be used to
-     * decide the amount of uncompressed data to be writen to each bgzip block.
+     * decide the amount of uncompressed data to be written to each bgzip block.
      * If no I/O errors occur, the complete _length_ bytes will be written (or
      * queued for writing).
      * @param fp     BGZF file handler
@@ -294,7 +294,7 @@ typedef struct BGZF BGZF;
      * Read one line from a BGZF file. It is faster than bgzf_getc()
      *
      * @param fp     BGZF file handler
-     * @param delim  delimitor
+     * @param delim  delimiter
      * @param str    string to write to; must be initialized
      * @return       length of the string; -1 on end-of-file; <= -2 on error
      */

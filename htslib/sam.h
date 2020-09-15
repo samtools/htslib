@@ -1446,7 +1446,7 @@ static inline const uint8_t *sam_format_aux1(const uint8_t *key,
         uint8_t sub_type = *(s++);
         int sub_type_size;
 
-        // or externalise sam.c's aux_type2size fuction?
+        // or externalise sam.c's aux_type2size function?
         switch (sub_type) {
         case 'A': case 'c': case 'C':
             sub_type_size = 1;
@@ -1764,7 +1764,7 @@ int bam_aux_update_float(bam1_t *b, const char tag[2], float val);
 
    This function will not change the ordering of tags in the bam record.
    New tags will be appended to any existing aux records.  The bam record
-   will grow or shrink in order to accomodate the new data.
+   will grow or shrink in order to accommodate the new data.
 
    The data parameter must not point to any data in the bam record itself or
    undefined behaviour may result.

@@ -948,7 +948,7 @@ int hts_idx_set_meta(hts_idx_t *idx, uint32_t l_meta, uint8_t *meta, int is_copy
     BAI and CSI indexes store information on the number of reads for each
     target that were mapped or unmapped (unmapped reads will generally have
     a paired read that is mapped to the target).  This function returns this
-    infomation if it is available.
+    information if it is available.
 
     @note Cram CRAI indexes do not include this information.
 */
@@ -1298,7 +1298,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
     struct hts_md5_context;
     typedef struct hts_md5_context hts_md5_context;
 
-    /*! @abstract   Intialises an MD5 context.
+    /*! @abstract   Initialises an MD5 context.
      *  @discussion
      *    The expected use is to allocate an hts_md5_context using
      *    hts_md5_init().  This pointer is then passed into one or more calls

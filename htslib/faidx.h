@@ -294,7 +294,7 @@ int faidx_seq_len(const faidx_t *fai, const char *seq);
     @param  beg   Returns the start of the region (0 based)
     @param  end   Returns the one past last of the region (0 based)
     @param  flags Parsing method, see HTS_PARSE_* in hts.h.
-    @return      pointer to end of parsed s if success, NULL if not.
+    @return       Pointer to end of parsed s if successful, NULL if not.
 
     To work around ambiguous parsing issues, eg both "chr1" and "chr1:100-200"
     are reference names, quote using curly braces.

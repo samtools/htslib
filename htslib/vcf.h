@@ -70,7 +70,7 @@ extern "C" {
 
 /* === Dictionary ===
 
-   The header keeps three dictonaries. The first keeps IDs in the
+   The header keeps three dictionaries. The first keeps IDs in the
    "FILTER/INFO/FORMAT" lines, the second keeps the sequence names and lengths
    in the "contig" lines and the last keeps the sample names. bcf_hdr_t::dict[]
    is the actual hash table, which is opaque to the end users. In the hash
@@ -397,7 +397,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     #define BCF_UN_INFO 4       // up to INFO
     #define BCF_UN_SHR  (BCF_UN_STR|BCF_UN_FLT|BCF_UN_INFO) // all shared information
     #define BCF_UN_FMT  8                           // unpack format and each sample
-    #define BCF_UN_IND  BCF_UN_FMT                  // a synonymo of BCF_UN_FMT
+    #define BCF_UN_IND  BCF_UN_FMT                  // a synonym of BCF_UN_FMT
     #define BCF_UN_ALL  (BCF_UN_SHR|BCF_UN_FMT)     // everything
     HTSLIB_EXPORT
     int bcf_unpack(bcf1_t *b, int which);
@@ -643,7 +643,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      * @return bcf_hrec_t* on success;
      *         NULL on error or on end of header text.
      *         NB: to distinguish error from end-of-header, check *len:
-     *           *len == 0 indiciates @p line did not start with "##"
+     *           *len == 0 indicates @p line did not start with "##"
      *           *len == -1 indicates failure, likely due to out of memory
      *           *len > 0 indicates a malformed header line
      *

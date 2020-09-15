@@ -55,7 +55,7 @@ int bcf_trim_alleles(const bcf_hdr_t *header, bcf1_t *line);
  *
  *  If you have more than 31 alleles, then the integer bit mask will
  *  overflow, so use bcf_remove_allele_set instead
- *  Returns 0 on sucess, <0 on error
+ *  Returns 0 on success, <0 on error
  */
 HTSLIB_EXPORT
 int bcf_remove_alleles(const bcf_hdr_t *header, bcf1_t *line, int mask) HTS_DEPRECATED("Please use bcf_remove_allele_set instead");
@@ -85,8 +85,7 @@ int bcf_remove_allele_set(const bcf_hdr_t *header, bcf1_t *line, const struct kb
  *  be determined.
  *
  *  The value of @which determines if existing INFO/AC,AN can be
- *  used (BCF_UN_INFO) and and if indv fields can be splitted
- *  (BCF_UN_FMT).
+ *  used (BCF_UN_INFO) and and if indv fields can be split (BCF_UN_FMT).
  */
 HTSLIB_EXPORT
 int bcf_calc_ac(const bcf_hdr_t *header, bcf1_t *line, int *ac, int which);

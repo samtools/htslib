@@ -186,7 +186,7 @@ int hts_tpool_dispatch2(hts_tpool *p, hts_tpool_process *q,
  * when pulled from the queue.
  *
  * job_cleanup() and result_cleanup() are only called when discarding jobs.
- * For jobs that are processed normally, it is the resposibility of
+ * For jobs that are processed normally, it is the responsibility of
  * exec_func() and / or consumers of any results to do any cleaning up
  * necessary.
  */

@@ -65,7 +65,7 @@ extern "C" {
 #endif
 
 /*
-    When reading multiple files in paralel, duplicate records within each
+    When reading multiple files in parallel, duplicate records within each
     file will be reordered and offered in intuitive order. For example,
     when reading two files, each with unsorted SNP and indel record, the
     reader should return the SNP records together and the indel records
@@ -293,7 +293,7 @@ int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples, int is_file);
  *  and merely skip unlisted positions.
  *
  *  Moreover, bcf_sr_set_targets() accepts an optional parameter $alleles which
- *  is intepreted as a 1-based column index in the tab-delimited file where
+ *  is interpreted as a 1-based column index in the tab-delimited file where
  *  alleles are listed. This in principle enables to perform the COLLAPSE_*
  *  logic also with tab-delimited files. However, the current implementation
  *  considers the alleles merely as a suggestion for prioritizing one of possibly
@@ -352,7 +352,7 @@ int bcf_sr_regions_seek(bcf_sr_regions_t *regions, const char *chr);
 /*
  *  bcf_sr_regions_next() - retrieves next region. Returns 0 on success and -1
  *  when all regions have been read. The fields reg->seq, reg->start and
- *  reg->end are filled with the genomic coordinates on succes or with
+ *  reg->end are filled with the genomic coordinates on success or with
  *  NULL,-1,-1 when no region is available. The coordinates are 0-based,
  *  inclusive.
  */
