@@ -384,7 +384,7 @@ static inline int kputl(long c, kstring_t *s) {
 
 /*
  * Returns 's' split by delimiter, with *n being the number of components;
- *         NULL on failue.
+ *         NULL on failure.
  */
 static inline int *ksplit(kstring_t *s, int delimiter, int *n)
 {

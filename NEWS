@@ -818,11 +818,11 @@ Release 1.4 (13 March 2017)
 * hts_idx_push() will report when trying to add a range to an index that
   is beyond the limits that the given index can handle.  This means trying
   to index chromosomes longer than 2^29 bases with a .bai or .tbi index
-  will report an error instead of apparantly working but creating an invalid
+  will report an error instead of apparently working but creating an invalid
   index entry.
 
 * VCF formatting is now approximately 4x faster.  (Whether this is
-  noticable depends on what was creating the VCF.)
+  noticeable depends on what was creating the VCF.)
 
 * CRAM lossy_names mode now works with TLEN of 0 or TLEN within +/- 1
   of the computed value.  Note in these situations TLEN will be
@@ -917,7 +917,7 @@ Noteworthy changes in release 1.2  (2 February 2015)
 
 * By default, reference sequences are fetched from the EBI CRAM Reference
   Registry and cached in your $HOME cache directory.  This behaviour can
-  be controlled by setting REF_PATH and REF_CACHE enviroment variables
+  be controlled by setting REF_PATH and REF_CACHE environment variables
   (see the samtools(1) man page for details)
 
 * Numerous CRAM improvements:
@@ -938,7 +938,7 @@ Noteworthy changes in release 1.2  (2 February 2015)
 * Optional iRODS file access, disabled by default.  Configure with --with-irods
   to enable accessing iRODS data objects directly via 'irods:DATAOBJ'
 
-* All occurences of 2^29 in the source have been eliminated, so indexing
+* All occurrences of 2^29 in the source have been eliminated, so indexing
   and querying against reference sequences larger than 512Mbp works (when
   using CSI indices)
 

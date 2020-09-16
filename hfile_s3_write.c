@@ -1,5 +1,5 @@
 /*
-    hfile_s3_write.c - Code to handle mulitpart uploading to S3.
+    hfile_s3_write.c - Code to handle multipart uploading to S3.
 
     Copyright (C) 2019 Genome Research Ltd.
 
@@ -40,7 +40,7 @@ Initiate the upload and get an upload ID.  This ID is used in all other steps.
 --------------
 
 Upload a part of the data.  5Mb minimum part size (except for the last part).
-Each part is numbered and a succesful upload returns an Etag header value that
+Each part is numbered and a successful upload returns an Etag header value that
 needs to used for the completion step.
 
 Step repeated till all data is uploaded.
@@ -591,10 +591,10 @@ static int initialise_upload(hFILE_s3_write *fp, kstring_t *head, kstring_t *res
     int ret = -1;
     struct curl_slist *headers = NULL;
     char http_request[] = "POST";
-    char delimeter = '?';
+    char delimiter = '?';
 
     if (user_query) {
-        delimeter = '&';
+        delimiter = '&';
     }
 
     if (fp->au->callback(fp->au->callback_data,  http_request, NULL, "uploads=",
@@ -602,7 +602,7 @@ static int initialise_upload(hFILE_s3_write *fp, kstring_t *head, kstring_t *res
         goto out;
     }
 
-    if (ksprintf(&url, "%s%cuploads", fp->url.s, delimeter) < 0) {
+    if (ksprintf(&url, "%s%cuploads", fp->url.s, delimiter) < 0) {
         goto out;
     }
 

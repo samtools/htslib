@@ -258,7 +258,7 @@ mFILE *mfcreate_from(const char *path, const char *mode_str, FILE *fp) {
 
 /*
  * Converts a FILE * to an mFILE *.
- * Use this for wrapper functions to turn external prototypes requring
+ * Use this for wrapper functions to turn external prototypes requiring
  * FILE * as an argument into internal code using mFILE *.
  */
 mFILE *mfreopen(const char *path, const char *mode_str, FILE *fp) {

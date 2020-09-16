@@ -196,7 +196,7 @@ uint32_t cram_block_size(cram_block *b);
  * the container, meaning multiple compression headers to manipulate.
  * Changing RG may change the size of the compression header and
  * therefore the length field in the container.  Hence we rewrite all
- * blocks just incase and also emit the adjusted container.
+ * blocks just in case and also emit the adjusted container.
  *
  * The current implementation can only cope with renumbering a single
  * RG (and only then if it is using HUFFMAN or BETA codecs).  In
@@ -470,7 +470,7 @@ int cram_set_header(cram_fd *fd, sam_hdr_t *hdr);
  *         2 if the file is a stream and thus unseekable
  *         1 if the file contains an EOF block
  *         0 if the file does not contain an EOF block
- *        -1 if an error occured whilst reading the file or we could not seek back to where we were
+ *        -1 if an error occurred whilst reading the file or we could not seek back to where we were
  *
  */
 HTSLIB_EXPORT

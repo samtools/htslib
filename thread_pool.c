@@ -218,7 +218,7 @@ hts_tpool_result *hts_tpool_next_result_wait(hts_tpool_process *q) {
 
     pthread_mutex_lock(&q->p->pool_m);
     while (!(r = hts_tpool_next_result_locked(q))) {
-        /* Possible race here now avoided via _locked() call, but incase... */
+        /* Possible race here now avoided via _locked() call, but in case... */
         struct timeval now;
         struct timespec timeout;
 
@@ -586,7 +586,7 @@ static void *tpool_worker(void *arg) {
             // happening once (on the transition) rather than every time we
             // are below qsize.
             // (I wish I could remember why io_lib rev 3660 changed this from
-            //  == to >=, but keeping it just incase!)
+            //  == to >=, but keeping it just in case!)
             q->n_processing++;
             if (q->n_input-- >= q->qsize)
                 pthread_cond_broadcast(&q->input_not_full_c);
@@ -926,7 +926,7 @@ int hts_tpool_process_flush(hts_tpool_process *q) {
             pthread_cond_signal(&p->t[i].pending_c);
 
     // Ensure there is room for the final sprint.
-    // Shouldn't be possible to get here, but just incase.
+    // Shouldn't be possible to get here, but just in case.
     if (q->qsize < q->n_output + q->n_input + q->n_processing)
         q->qsize = q->n_output + q->n_input + q->n_processing;
 
@@ -1331,7 +1331,7 @@ int test_squareB(int n) {
  * Possible improvement: we only need the last stage to be ordered.  By
  * allocating our own serial numbers for the first job and manually setting
  * these serials in the last job, perhaps we can permit out of order execution
- * of all the inbetween stages.  (I doubt it'll affect speed much though.)
+ * of all the in-between stages.  (I doubt it'll affect speed much though.)
  */
 
 static void *pipe_input_thread(void *arg);

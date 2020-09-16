@@ -3441,7 +3441,7 @@ int bcf_idx_init(htsFile *fp, bcf_hdr_t *h, int min_shift, const char *fnidx) {
     return 0;
 }
 
-// Finishes an index. Call afer the last record has been written.
+// Finishes an index. Call after the last record has been written.
 // Returns 0 on success, <0 on failure.
 //
 // NB: same format as SAM/BAM as it uses bgzf.
@@ -4311,7 +4311,7 @@ int bcf_update_format(const bcf_hdr_t *hdr, bcf1_t *line, const char *key, const
     }
     else
     {
-        // The tag is already present, check if it is big enough to accomodate the new block
+        // The tag is already present, check if it is big enough to accommodate the new block
         if ( str.l <= fmt->p_len + fmt->p_off )
         {
             // good, the block is big enough

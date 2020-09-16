@@ -325,7 +325,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "-D: read CRAM format (mode 'c')\n");
         fprintf(stderr, "-S: read compressed BCF, BAM, FAI (mode 'b')\n");
         fprintf(stderr, "-I: ignore SAM parsing errors\n");
-        fprintf(stderr, "-t: fn_ref: load CRAM references from the specificed fasta file instead of @SQ headers when writing a CRAM file\n");
+        fprintf(stderr, "-t: fn_ref: load CRAM references from the specified fasta file instead of @SQ headers when writing a CRAM file\n");
         fprintf(stderr, "-i: option=value: set an option for CRAM input\n");
         fprintf(stderr, "\n");
         fprintf(stderr, "-b: write binary compressed BCF, BAM, FAI (mode 'b')\n");

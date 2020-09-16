@@ -1129,7 +1129,7 @@ int cram_uncompress_block(cram_block *b) {
         b->data = (unsigned char *)uncomp;
         b->alloc = usize;
         b->method = RAW;
-        b->uncomp_size = usize; // Just incase it differs
+        b->uncomp_size = usize; // Just in case it differs
         break;
     }
 #else
@@ -1172,7 +1172,7 @@ int cram_uncompress_block(cram_block *b) {
         b->data = (unsigned char *)uncomp;
         b->alloc = usize2;
         b->method = RAW;
-        b->uncomp_size = usize2; // Just incase it differs
+        b->uncomp_size = usize2; // Just in case it differs
         //fprintf(stderr, "Expanded %d to %d\n", b->comp_size, b->uncomp_size);
         break;
     }
@@ -1790,7 +1790,7 @@ static BGZF *bgzf_open_ref(char *fn, char *mode, int is_md5) {
  * Loads a FAI file for a reference.fasta.
  * "is_err" indicates whether failure to load is worthy of emitting an
  * error message. In some cases (eg with embedded references) we
- * speculatively load, just incase, and silently ignore errors.
+ * speculatively load, just in case, and silently ignore errors.
  *
  * Returns the refs_t struct on success (maybe newly allocated);
  *         NULL on failure
@@ -2245,7 +2245,7 @@ static const char *get_cache_basedir(const char **extra) {
  * Queries the M5 string from the header and attempts to populate the
  * reference from this using the REF_PATH environment.
  *
- * Returns 0 on sucess
+ * Returns 0 on success
  *        -1 on failure
  */
 static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
@@ -2302,7 +2302,7 @@ static int cram_populate_ref(cram_fd *fd, int id, ref_entry *r) {
     if (!local_path && (path2 = find_path(tag->str+3, ref_path))) {
         int len = snprintf(path, PATH_MAX, "%s", path2);
         free(path2);
-        if (len > 0 && len < PATH_MAX) // incase it's too long
+        if (len > 0 && len < PATH_MAX) // in case it's too long
             local_path = 1;
     }
 #endif

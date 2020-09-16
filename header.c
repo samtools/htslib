@@ -2027,7 +2027,7 @@ hts_pos_t sam_hdr_tid2len(const sam_hdr_t *h, int tid) {
 
 /*
  * Fixes any PP links in @PG headers.
- * If the entries are in order then this doesn't need doing, but incase
+ * If the entries are in order then this doesn't need doing, but in case
  * our header is out of order this goes through the hrecs->pg[] array
  * setting the prev_id field.
  *
