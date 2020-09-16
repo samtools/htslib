@@ -8,7 +8,7 @@ Features and Updates
 
 * Support added for remote reference files.  fai_path() can take a remote
   reference file and will return the corresponding index file.  Remote indexes
-  can be handle by refs_load_fai().  UR tags in @SQ lines can now be set to
+  can be handled by refs_load_fai().  UR tags in @SQ lines can now be set to
   remote URIs. (#1017)
 
 * Added tabix --separate-regions option, which lets the user group the output by
@@ -68,7 +68,8 @@ Features and Updates
   length 1.  This would make such alignments cover 1 reference position in the
   same manner as alignments that are unmapped or have no CIGAR strings.  These
   alignments can now be returned by iterator based queries.  Thanks to John
-  Marshall. (#1063; fixed samtools/#1240, see also hts-specs#521).
+  Marshall. (#1063; fixed samtools/samtools#1240, see also
+  samtools/hts-specs#521).
 
 * A bam_set_seqi() function to modify a single base in the BAM structure
   has been added.  This is a companion function to bam_seqi(). (#1022)
@@ -176,7 +177,8 @@ Bug fixes
 
 * Fixed hfile_libcurl breakage when using libcurl 7.69.1 or later.  Thanks to
   John Marshall for tracking down the exact libcurl change that caused the
-  incompatibility. (#1105; fixes samtools/#1254 and samtools/#1284)
+  incompatibility. (#1105; fixed samtools/samtools#1254 and
+  samtools/samtools#1284)
 
 * Fixed overflows kroundup32() and kroundup_size_t() which caused them to
   return zero when rounding up values where the most significant bit was
@@ -198,7 +200,8 @@ Bug fixes
   occasionally write virtual offsets pointing at the end of a BGZF block.
   Attempting to read from such an offset caused EOF to be incorrectly
   reported.  These offsets are now handled correctly, and the indexer
-  has been updated to avoid generating them.  (#1028; fixed samtools#1197)
+  has been updated to avoid generating them.  (#1028; fixed
+  samtools/samtools#1197)
 
 * In sam_hdr_create(), free newly allocated SN strings when encountering an
   error. [fuzz] (#1034)
@@ -207,8 +210,8 @@ Bug fixes
   @fanwayne for the bug report. (#1047; fixed #1033)
 
 * In the header, link a new PG line only to valid chains. Prevents an
-  explosive growth of PG tags on headers where PG tags are present
-  but not linked together correctly. (#1062; fixed samtools#1235)
+  explosive growth of PG lines on headers where PG lines are already present
+  but not linked together correctly. (#1062; fixed samtools/samtools#1235)
 
 * Also in the header, when calling sam_hdr_update_line(), update target arrays
   only when the name or length is changed. (#1007)
@@ -243,7 +246,7 @@ Bug fixes
 
 * Download index files atomically in idx_test_and_fetch().  This prevents
   corruption when running parallel jobs on S3 files.  Thanks to John Marshall.
-  (#1112; samtools/#1242).
+  (#1112; samtools/samtools#1242).
 
 * The pileup constructor callback is now given the copy of the bam1_t struct
   made by pileup instead of the original one passed to bam_plp_push().  This
@@ -257,14 +260,16 @@ Bug fixes
 * Fixed possible undefined shift in cram_byte_array_stop_decode_init(). (#1009)
 
 * Fixed a bug where range queries to the end of a given reference
-  would return incorrect results on CRAM files. (#1016; fixed samtools/#1173)
+  would return incorrect results on CRAM files. (#1016;
+  fixed samtools/samtools#1173)
 
 * Fixed an integer overflow in cram_read_slice. [fuzz] (#1026)
 
 * Fixed a memory leak on failure in cram_decode_slice(). [fuzz] (#1054)
 
 * Fixed a regression which caused cram_transcode_rg() to fail, resulting
-  in a crash in "samtools cat" on CRAM files. (#1093; fixes samtools/#1276)
+  in a crash in "samtools cat" on CRAM files. (#1093;
+  fixed samtools/samtools#1276)
 
 * Fixed an undersized string reallocation in the threaded SAM reader which
   caused it to crash when reading SAM files with very long lines.  Numerous
