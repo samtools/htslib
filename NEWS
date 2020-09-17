@@ -11,9 +11,9 @@ Features and Updates
   can be handled by refs_load_fai().  UR tags in @SQ lines can now be set to
   remote URIs. (#1017)
 
-* Added tabix --separate-regions option, which lets the user group the output by
-  the number of corresponding target regions supplied in the command line.
-  (#1108)
+* Added tabix --separate-regions option, which adds header comment lines
+  separating different regions' output records when multiple target regions
+  are supplied on the command line. (#1108)
 
 * Added tabix --cache option to set a BGZF block cache size.  Most beneficial
   when the -R option is used and the same blocks need to be re-read multiple
@@ -56,7 +56,7 @@ Features and Updates
 * hts_srand48() now seeds the same POSIX-standard sequences of pseudo-random
   numbers regardless of platform, including on OpenBSD where plain srand48()
   produces a different cryptographically-strong non-deterministic sequence.
-  Thanks to John Marshall.  (#1002)
+  Thanks to John Marshall. (#1002)
 
 * Iterators now work with 64 bit positions. (#1018)
 
@@ -65,10 +65,10 @@ Features and Updates
   The best improvement is on low-coverage data. (#1031)
 
 * Alignments which consume no reference bases are now considered to have
-  length 1.  This would make such alignments cover 1 reference position in the
-  same manner as alignments that are unmapped or have no CIGAR strings.  These
-  alignments can now be returned by iterator based queries.  Thanks to John
-  Marshall. (#1063; fixed samtools/samtools#1240, see also
+  length 1.  This would make such alignments cover 1 reference position in
+  the same manner as alignments that are unmapped or have no CIGAR strings.
+  These alignments can now be returned by iterator-based queries.  Thanks
+  to John Marshall. (#1063; fixed samtools/samtools#1240, see also
   samtools/hts-specs#521).
 
 * A bam_set_seqi() function to modify a single base in the BAM structure
@@ -100,7 +100,7 @@ Features and Updates
   test value was not affected by this problem. (#1126)
 
 * Improved error diagnostics in the CRAM decoder (#1042), BGZF (#1049),
-  the VCF and BCF readers (#1059), and the SAM parser (#1073)
+  the VCF and BCF readers (#1059), and the SAM parser (#1073).
 
 * ks_resize() now allocates 1.5 times the requested size when it needs
   to expand a kstring instead of rounding up to the next power of two.
@@ -135,9 +135,9 @@ CRAM improvements
   (as per BAM spec and "*" quality) and then modifies individual qualities as
   dictated by the specific features.
 
-  However that then produces ASCII quality (q=-1) for the unmodified bases.
-  Instead ASCII quality "?" (q=30) is used, as per htsjdk. Quality 255 is still
-  used for sequences with no modifications at all.  (#1094)
+  However that then produces ASCII quality " " (space, q=-1) for the unmodified
+  bases.  Instead ASCII quality "?" (q=30) is used, as per HTSJDK. Quality 255
+  is still used for sequences with no modifications at all. (#1094)
 
 
 Build changes
@@ -145,8 +145,8 @@ Build changes
 
 These are compiler, configuration and makefile based changes.
 
-* make all now builds htslib_static.mk and htslib-uninstalled.pc.  Thanks to
-  John Marshall. (#1011)
+* `make all` now also builds htslib_static.mk and htslib-uninstalled.pc.
+  Thanks to John Marshall. (#1011)
 
 * Various cppcheck-1.90 warnings have been fixed. (#995, #1011)
 
@@ -161,16 +161,13 @@ These are compiler, configuration and makefile based changes.
 * Fix dirty default build by including latest pkg.m4 instead of using
   aclocal.m4. Thanks to Damien Zammit. (#1091)
 
-* struct tags have been added to htslib/*.h public typedefs.  This makes it
+* Struct tags have been added to htslib/*.h public typedefs.  This makes it
   possible to forward declare htsFile without including htslib/hts.h. Thanks
-  to John Marshall. (#1106)
+  to Lucas Czech and John Marshall. (#1115; fixed #1106)
 
 * Fixed compiler warnings emitted by the latest gcc and clang releases
   when compiling HTSlib, along with some -Wextra warnings in the public
   include files.  Thanks to John Marshall. (#1066, #1063, #1083)
-
-* A large number of spelling mistakes have been fixed.  Thanks to
-  John Marshall. (#1137)
 
 Bug fixes
 ---------
@@ -263,7 +260,7 @@ Bug fixes
   would return incorrect results on CRAM files. (#1016;
   fixed samtools/samtools#1173)
 
-* Fixed an integer overflow in cram_read_slice. [fuzz] (#1026)
+* Fixed an integer overflow in cram_read_slice(). [fuzz] (#1026)
 
 * Fixed a memory leak on failure in cram_decode_slice(). [fuzz] (#1054)
 
@@ -274,6 +271,7 @@ Bug fixes
 * Fixed an undersized string reallocation in the threaded SAM reader which
   caused it to crash when reading SAM files with very long lines.  Numerous
   memory allocation checks have also been added. (#1117)
+
 
 Noteworthy changes in release 1.10.2 (19th December 2019)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
