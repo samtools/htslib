@@ -41,6 +41,9 @@ DEALINGS IN THE SOFTWARE.  */
 #include "hts_defs.h"
 #include "hts_endian.h"
 
+/* Included only for backwards compatibility with e.g. bcftools 1.10 */
+#include <assert.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
