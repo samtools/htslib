@@ -85,12 +85,12 @@ Features and Updates
 
 * It is now possible to use external plug-ins in language bindings that
   dynamically load HTSlib.  Note that a side-effect of this change is that
-  some plug-ins now link against libhts.so, which means that have to be able
-  to find the  shared library when they are started up.  Thanks to
+  some plug-ins now link against libhts.so, which means that they have to be
+  able to find the shared library when they are started up.  Thanks to
   John Marshall. (#1072)
 
 * bgzf_close(), and therefore hts_close(), will now return non-zero when
-  closing a bgzf handle on which errors have been detected.  (Part of #1117)
+  closing a BGZF handle on which errors have been detected.  (Part of #1117)
 
 * Added a special case to the kt_fisher_exact() test for when the table
   probability is too small to be represented in a double.  This fixes a
@@ -186,7 +186,7 @@ Bug fixes
 * Fixed missing return parameter value in idx_test_and_fetch(). Thanks to
   Lilian Janin. (#1014)
 
-* Fixed crashes due to inconsistent selection between bgzf and plain (hfile)
+* Fixed crashes due to inconsistent selection between BGZF and plain (hFILE)
   interfaces when reading files. [fuzz] (#1019)
 
 * Added and/or fixed byte swapping code for big-endian platforms.  Thanks
