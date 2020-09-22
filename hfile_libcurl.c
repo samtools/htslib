@@ -1,6 +1,6 @@
 /*  hfile_libcurl.c -- libcurl backend for low-level file streams.
 
-    Copyright (C) 2015-2017, 2019 Genome Research Ltd.
+    Copyright (C) 2015-2017, 2019-2020 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -116,6 +116,9 @@ typedef struct {
 
     off_t delayed_seek;      // Location to seek to before reading
     off_t last_offset;       // Location we're seeking from
+    char *preserved;         // Preserved buffer content on seek
+    size_t preserved_bytes;  // Number of preserved bytes
+    size_t preserved_size;   // Size of preserved buffer
 } hFILE_libcurl;
 
 static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence);
@@ -218,6 +221,8 @@ static int easy_errno(CURL *easy, CURLcode err)
         return EEXIST;
 
     default:
+        hts_log_error("Libcurl reported error %d (%s)", (int) err,
+                      curl_easy_strerror(err));
         return EIO;
     }
 }
@@ -238,6 +243,8 @@ static int multi_errno(CURLMcode errm)
         return ENOMEM;
 
     default:
+        hts_log_error("Libcurl reported error %d (%s)", (int) errm,
+                      curl_multi_strerror(errm));
         return EIO;
     }
 }
@@ -774,9 +781,26 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
     CURLcode err;
 
     if (fp->delayed_seek >= 0) {
-        assert(fp->base.offset == fp->delayed_seek
-               && fp->base.begin == fp->base.buffer
-               && fp->base.end == fp->base.buffer);
+        assert(fp->base.offset == fp->delayed_seek);
+
+        if (fp->preserved
+            && fp->last_offset > fp->delayed_seek
+            && fp->last_offset - fp->preserved_bytes <= fp->delayed_seek) {
+            // Can use buffer contents copied when seeking started, to
+            // avoid having to re-read data discarded by hseek().
+            // Note fp->last_offset is the offset of the *end* of the
+            // preserved buffer.
+            size_t n = fp->last_offset - fp->delayed_seek;
+            char *start = fp->preserved + (fp->preserved_bytes - n);
+            size_t bytes = n <= nbytes ? n : nbytes;
+            memcpy(buffer, start, bytes);
+            if (bytes < n) { // Part of the preserved buffer still left
+                fp->delayed_seek += bytes;
+            } else {
+                fp->last_offset = fp->delayed_seek = -1;
+            }
+            return bytes;
+        }
 
         if (fp->last_offset >= 0
             && fp->delayed_seek > fp->last_offset
@@ -791,14 +815,20 @@ static ssize_t libcurl_read(hFILE *fpv, void *bufferv, size_t nbytes)
         }
         fp->delayed_seek = -1;
         fp->last_offset = -1;
+        fp->preserved_bytes = 0;
     }
 
     do {
         fp->buffer.ptr.rd = buffer;
         fp->buffer.len = nbytes;
         fp->paused = 0;
-        err = curl_easy_pause(fp->easy, CURLPAUSE_CONT);
-        if (err != CURLE_OK) { errno = easy_errno(fp->easy, err); return -1; }
+        if (!fp->finished) {
+            err = curl_easy_pause(fp->easy, CURLPAUSE_CONT);
+            if (err != CURLE_OK) {
+                errno = easy_errno(fp->easy, err);
+                return -1;
+            }
+        }
 
         while (! fp->paused && ! fp->finished) {
             if (wait_perform(fp) < 0) return -1;
@@ -874,6 +904,26 @@ static ssize_t libcurl_write(hFILE *fpv, const void *bufferv, size_t nbytes)
     return nbytes;
 }
 
+static void preserve_buffer_content(hFILE_libcurl *fp)
+{
+    if (fp->base.begin == fp->base.end) {
+        fp->preserved_bytes = 0;
+        return;
+    }
+    if (!fp->preserved
+        || fp->preserved_size < fp->base.limit - fp->base.buffer) {
+        fp->preserved = malloc(fp->base.limit - fp->base.buffer);
+        if (!fp->preserved) return;
+        fp->preserved_size = fp->base.limit - fp->base.buffer;
+    }
+
+    assert(fp->base.end - fp->base.begin <= fp->preserved_size);
+
+    memcpy(fp->preserved, fp->base.begin, fp->base.end - fp->base.begin);
+    fp->preserved_bytes = fp->base.end - fp->base.begin;
+    return;
+}
+
 static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
 {
     hFILE_libcurl *fp = (hFILE_libcurl *) fpv;
@@ -917,6 +967,8 @@ static off_t libcurl_seek(hFILE *fpv, off_t offset, int whence)
            without any intervening reads. */
         if (fp->delayed_seek < 0) {
             fp->last_offset = fp->base.offset + (fp->base.end - fp->base.buffer);
+            // Stash the current hFILE buffer content in case it's useful later
+            preserve_buffer_content(fp);
         }
         fp->delayed_seek = pos;
         return pos;
@@ -1003,12 +1055,6 @@ static int restart_from_position(hFILE_libcurl *fp, off_t pos) {
     }
     temp_fp.nrunning = ++fp->nrunning;
 
-    err = curl_easy_pause(temp_fp.easy, CURLPAUSE_CONT);
-    if (err != CURLE_OK) {
-        save_errno = easy_errno(temp_fp.easy, err);
-        goto error_remove;
-    }
-
     while (! temp_fp.paused && ! temp_fp.finished)
         if (wait_perform(&temp_fp) < 0) {
             save_errno = errno;
@@ -1084,8 +1130,10 @@ static int libcurl_close(hFILE *fpv)
     fp->buffer.len = 0;
     fp->closing = 1;
     fp->paused = 0;
-    err = curl_easy_pause(fp->easy, CURLPAUSE_CONT);
-    if (err != CURLE_OK) save_errno = easy_errno(fp->easy, err);
+    if (!fp->finished) {
+        err = curl_easy_pause(fp->easy, CURLPAUSE_CONT);
+        if (err != CURLE_OK) save_errno = easy_errno(fp->easy, err);
+    }
 
     while (save_errno == 0 && ! fp->paused && ! fp->finished)
         if (wait_perform(fp) < 0) save_errno = errno;
@@ -1104,6 +1152,8 @@ static int libcurl_close(hFILE *fpv)
         fp->headers.callback(fp->headers.callback_data, NULL);
     free_headers(&fp->headers.fixed, 1);
     free_headers(&fp->headers.extra, 1);
+
+    free(fp->preserved);
 
     if (save_errno) { errno = save_errno; return -1; }
     else return 0;
@@ -1155,6 +1205,8 @@ libcurl_open(const char *url, const char *modes, http_headers *headers)
     fp->can_seek = 1;
     fp->tried_seek = 0;
     fp->delayed_seek = fp->last_offset = -1;
+    fp->preserved = NULL;
+    fp->preserved_bytes = fp->preserved_size = 0;
     fp->is_recursive = is_recursive;
     fp->nrunning = 0;
     fp->easy = NULL;

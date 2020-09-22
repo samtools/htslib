@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2016, 2018-2019 Genome Research Ltd.
+Copyright (c) 2012-2016, 2018-2020 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -50,11 +50,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h>
 #include <sys/types.h>
 
-#include "htslib/thread_pool.h"
-#include "htslib/cram.h"
-#include "cram/string_alloc.h"
-#include "cram/mFILE.h"
-#include "htslib/khash.h"
+#include "../htslib/thread_pool.h"
+#include "../htslib/cram.h"
+#include "string_alloc.h"
+#include "mFILE.h"
+#include "../htslib/khash.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,7 +63,7 @@ extern "C" {
 // Generic hash-map integer -> integer
 KHASH_MAP_INIT_INT64(m_i2i, int)
 
-// Generic hash-set integer -> (existance)
+// Generic hash-set integer -> (existence)
 KHASH_SET_INIT_INT(s_i2i)
 
 // For brevity
@@ -184,7 +184,7 @@ struct cram_file_def {
     char    magic[4];
     uint8_t major_version;
     uint8_t minor_version;
-    char    file_id[20];      // Filename or SHA1 checksum
+    char    file_id[20] HTS_NONSTRING; // Filename or SHA1 checksum
 };
 
 #define CRAM_MAJOR_VERS(v) ((v) >> 8)
@@ -275,6 +275,9 @@ struct cram_block {
 
     // To aid compression
     cram_metrics *m; // used to track aux block compression only
+
+    int crc32_checked;
+    uint32_t crc_part;
 };
 
 struct cram_codec; /* defined in cram_codecs.h */
@@ -411,6 +414,8 @@ struct cram_container {
     uint32_t crc32;       // CRC32
 
     uint64_t s_num_bases; // number of bases in this slice
+
+    uint32_t n_mapped;    // Number of mapped reads
 };
 
 /*
@@ -658,6 +663,7 @@ typedef struct cram_index {
     int     slice;  // 1.0 landmark index, 1.1 landmark value
     int     len;    //                     1.1 - size of slice in bytes
     int64_t offset; // 1.0                 1.1
+    int64_t next;   // derived: offset of next container.
 } cram_index;
 
 typedef struct {
@@ -734,7 +740,7 @@ struct cram_fd {
     unsigned int cram_flag_swap[0x1000];// bam -> cram flags
     unsigned char L1[256];              // ACGT{*} ->0123{4}
     unsigned char L2[256];              // ACGTN{*}->01234{5}
-    char cram_sub_matrix[32][32];       // base substituion codes
+    char cram_sub_matrix[32][32];       // base substitution codes
 
     int         index_sz;
     cram_index *index;                  // array, sizeof index_sz
@@ -746,6 +752,7 @@ struct cram_fd {
     int multi_seq;                      // -1 is auto, 0 is one ref per container, 1 is multi...
     int multi_seq_user;                 // Original user setting (CRAM_OPT_MULTI_SEQ_PER_SLICE)
     int unsorted;
+    int last_mapped;                    // number of mapped reads in last container
     int empty_container;                // Marker for EOF block
 
     // thread pool

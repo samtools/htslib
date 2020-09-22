@@ -129,7 +129,9 @@ int main() {
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
-#include <htslib/kstring.h>
+
+#include "kstring.h"
+#include "kroundup.h"
 
 /* compiler specific configuration */
 
@@ -602,7 +604,7 @@ static kh_inline khint_t __ac_Wang_hash(khint_t key)
 		code;												\
 	} }
 
-/* More conenient interfaces */
+/* More convenient interfaces */
 
 /*! @function
   @abstract     Instantiate a hash set containing integer keys

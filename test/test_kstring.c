@@ -1,6 +1,6 @@
 /*  test_kstring.c -- kstring unit tests
 
-    Copyright (C) 2018 Genome Research Ltd.
+    Copyright (C) 2018, 2020 Genome Research Ltd.
 
     Author: Rob Davies <rmd@sanger.ac.uk>
 
@@ -31,11 +31,93 @@ DEALINGS IN THE SOFTWARE.  */
 #include <inttypes.h>
 #include <getopt.h>
 
-#include <htslib/kstring.h>
+#include "../htslib/kstring.h"
 
 static inline void clamp(int64_t *val, int64_t min, int64_t max) {
     if (*val < min) *val = min;
     if (*val > max) *val = max;
+}
+
+static int test_kroundup_size_t(int verbose) {
+    size_t val, exp;
+    int ret = 0;
+
+    val = 0;
+    kroundup_size_t(val);
+    if (verbose) {
+        printf("kroundup_size_t(0) = 0x%zx\n", val);
+    }
+    if (val != 0) {
+        fprintf(stderr, "kroundup_size_t(0) produced 0x%zx, expected 0\n", val);
+        ret = -1;
+    }
+
+    for (exp = 0; exp < sizeof(val) * 8; exp++) {
+        size_t expected = ((size_t) 1) << exp;
+        ssize_t delta;
+        for (delta = exp > 1 ? -1 : 0; delta <= (exp < 2 ? 0 : 1); delta++) {
+            size_t val_in = expected + delta;
+            val = val_in;
+            kroundup_size_t(val);
+            if (verbose) {
+                printf("kroundup_size_t(0x%zx) = 0x%zx\n", val_in, val);
+            }
+            if (delta <= 0) {
+                if (val != expected) {
+                    fprintf(stderr, "kroundup_size_t(0x%zx) produced 0x%zx, "
+                            "expected 0x%zx\n",
+                            val_in, val, expected);
+                    ret = -1;
+                }
+            } else {
+                expected *= 2;
+                if (!expected) --expected;
+                if (val != expected) {
+                    fprintf(stderr, "kroundup_size_t(0x%zx) produced 0x%zx, "
+                            "expected 0x%zx\n",
+                            val_in, val, expected);
+                    ret = -1;
+                }
+            }
+        }
+    }
+    return ret;
+}
+
+static int test_kroundup_signed(int verbose) {
+    int32_t val, ret = 0;
+    size_t exp;
+    for (exp = 0; exp < sizeof(val) * 8 - 1; exp++) {
+        uint32_t expected = ((uint32_t) 1) << exp;
+        ssize_t delta;
+        for (delta = exp > 1 ? -1 : 0; delta <= (exp < 2 ? 0 : 1); delta++) {
+            int32_t val_in = expected + delta;
+            val = val_in;
+            kroundup32(val);
+            if (verbose) {
+                printf("kroundup32(%d) = %d\n", val_in, val);
+            }
+            if (delta <= 0) {
+                if ((uint32_t) val != expected) {
+                    fprintf(stderr, "kroundup32(%d) produced %d, expected %u\n",
+                            val_in, val, expected);
+                    ret = -1;
+                }
+            } else {
+                if (exp < sizeof(val) * 8 - 2) {
+                    expected *= 2;
+                } else {
+                    expected = ((expected - 1) << 1 | 1);
+                }
+                if ((uint32_t) val != expected) {
+                    fprintf(stderr, "kroundup32(%d) produced %d, expected %u\n",
+                            val_in, val, expected);
+                    ret = -1;
+                }
+            }
+        }
+    }
+    return ret;
 }
 
 static int test_kputuw_from_to(kstring_t *str, unsigned int s, unsigned int e) {
@@ -120,7 +202,7 @@ static int test_kputw_from_to(kstring_t *str, int s, int e) {
         }
         if (i != strtol(str->s, NULL, 10)) {
             fprintf(stderr,
-                    "kputw wrote the wrong value, expected %u, got %s\n",
+                    "kputw wrote the wrong value, expected %d, got %s\n",
                     i, str->s);
             return -1;
         }
@@ -184,8 +266,9 @@ int main(int argc, char **argv) {
     int64_t start = 0;
     int64_t end   = 0;
     char *test    = NULL;
+    int verbose = 0;
 
-    while ((opt = getopt(argc, argv, "e:s:t:")) != -1) {
+    while ((opt = getopt(argc, argv, "e:s:t:v")) != -1) {
         switch (opt) {
         case 's':
             start = strtoll(optarg, NULL, 0);
@@ -196,12 +279,21 @@ int main(int argc, char **argv) {
         case 't':
             test = optarg;
             break;
+        case 'v':
+            verbose++;
+            break;
         default:
             fprintf(stderr, "Usage : %s [-s <num>] [-e <num>] [-t <test>]\n",
                     argv[0]);
             return EXIT_FAILURE;
         }
     }
+
+    if (!test || strcmp(test, "kroundup_size_t") == 0)
+        if (test_kroundup_size_t(verbose) != 0) res = EXIT_FAILURE;
+
+    if (!test || strcmp(test, "kroundup_signed") == 0)
+        if (test_kroundup_signed(verbose) != 0) res = EXIT_FAILURE;
 
     if (!test || strcmp(test, "kputuw") == 0)
         if (test_kputuw(start, end) != 0) res = EXIT_FAILURE;

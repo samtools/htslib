@@ -41,8 +41,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
-#include "htslib/hfile.h"
-#include "cram/cram.h"
+#include "../htslib/hfile.h"
+#include "cram.h"
 
 /*
  *-----------------------------------------------------------------------------
@@ -282,7 +282,7 @@ int cram_copy_slice(cram_fd *in, cram_fd *out, int32_t num_slice) {
  * the container, meaning multiple compression headers to manipulate.
  * Changing RG may change the size of the compression header and
  * therefore the length field in the container.  Hence we rewrite all
- * blocks just incase and also emit the adjusted container.
+ * blocks just in case and also emit the adjusted container.
  *
  * The current implementation can only cope with renumbering a single
  * RG (and only then if it is using HUFFMAN or BETA codecs).  In
@@ -316,7 +316,8 @@ int cram_transcode_rg(cram_fd *in, cram_fd *out,
     ch = cram_decode_compression_header(in, o_blk);
     if (cram_block_compression_hdr_set_rg(ch, new_rg) != 0)
         return -1;
-    cram_block_compression_hdr_decoder2encoder(in, ch);
+    if (cram_block_compression_hdr_decoder2encoder(in, ch) != 0)
+        return -1;
     n_blk = cram_encode_compression_header(in, c, ch);
     cram_free_compression_header(ch);
 

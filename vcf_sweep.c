@@ -25,13 +25,15 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
+#include <assert.h>
+
 #include "htslib/vcf_sweep.h"
 #include "htslib/bgzf.h"
 
 #define SW_FWD 0
 #define SW_BWD 1
 
-struct _bcf_sweep_t
+struct bcf_sweep_t
 {
     htsFile *file;
     bcf_hdr_t *hdr;

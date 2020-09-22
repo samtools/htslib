@@ -42,8 +42,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef CRAM_ALL_H
 #define CRAM_ALL_H
 
-#include "cram/cram_samtools.h"
-#include "header.h"
+#include "cram_samtools.h"
+#include "../header.h"
 #include "cram_structs.h"
 #include "cram_io.h"
 #include "cram_encode.h"
@@ -56,6 +56,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // This contains duplicated portions from cram_io.h and cram_structs.h,
 // so we want to ensure that the prototypes match.
-#include "htslib/cram.h"
+#include "../htslib/cram.h"
 
 #endif

@@ -1,6 +1,6 @@
 /*  faidx.c -- FASTA and FASTQ random access.
 
-    Copyright (C) 2008, 2009, 2013-2019 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2020 Genome Research Ltd.
     Portions copyright (C) 2011 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -52,17 +52,13 @@ typedef struct {
 } faidx1_t;
 KHASH_MAP_INIT_STR(s, faidx1_t)
 
-struct __faidx_t {
+struct faidx_t {
     BGZF *bgzf;
     int n, m;
     char **name;
     khash_t(s) *hash;
     enum fai_format_options format;
 };
-
-#ifndef kroundup32
-#define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
-#endif
 
 static int fai_name2id(void *v, const char *ref)
 {
@@ -921,4 +917,35 @@ const char *fai_parse_region(const faidx_t *fai, const char *s,
 
 void fai_set_cache_size(faidx_t *fai, int cache_size) {
     bgzf_set_cache_size(fai->bgzf, cache_size);
+}
+
+char *fai_path(const char *fa) {
+    char *fai = NULL;
+    if (!fa) {
+        hts_log_error("No reference file specified");
+    } else {
+        char *fai_tmp = strstr(fa, HTS_IDX_DELIM);
+        if (fai_tmp) {
+            fai_tmp += strlen(HTS_IDX_DELIM);
+            fai = strdup(fai_tmp);
+            if (!fai)
+                hts_log_error("Failed to allocate memory");
+        } else {
+            if (hisremote(fa)) {
+                fai = hts_idx_locatefn(fa, ".fai");       // get the remote fai file name, if any, but do not download the file
+                if (!fai)
+                    hts_log_error("Failed to locate index file for remote reference file '%s'", fa);
+            } else{
+                if (hts_idx_check_local(fa, HTS_FMT_FAI, &fai) == 0 && fai) {
+                    if (fai_build3(fa, fai, NULL) == -1) {      // create local fai file by indexing local fasta
+                        hts_log_error("Failed to build index file for reference file '%s'", fa);
+                        free(fai);
+                        fai = NULL;
+                    }
+                }
+            }
+        }
+    }
+
+    return fai;
 }

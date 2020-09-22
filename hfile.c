@@ -1,6 +1,6 @@
 /*  hfile.c -- buffered low-level input/output streams.
 
-    Copyright (C) 2013-2019 Genome Research Ltd.
+    Copyright (C) 2013-2020 Genome Research Ltd.
 
     Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -870,6 +870,41 @@ int hfile_plugin_init_mem(struct hFILE_plugin *self)
     return 0;
 }
 
+/**********************************************************************
+ * Dummy crypt4gh plug-in.  Does nothing apart from advise how to get *
+ * the real one.  It will be overridden by the actual plug-in.        *
+ **********************************************************************/
+
+static hFILE *crypt4gh_needed(const char *url, const char *mode)
+{
+    const char *u = strncmp(url, "crypt4gh:", 9) == 0 ? url + 9 : url;
+#if defined(ENABLE_PLUGINS)
+    const char *enable_plugins = "";
+#else
+    const char *enable_plugins = "You also need to rebuild HTSlib with plug-ins enabled.\n";
+#endif
+
+    hts_log_error("Accessing \"%s\" needs the crypt4gh plug-in.\n"
+                  "It can be found at "
+                  "https://github.com/samtools/htslib-crypt4gh\n"
+                  "%s"
+                  "If you have the plug-in, please ensure it can be "
+                  "found on your HTS_PATH.",
+                  u, enable_plugins);
+
+    errno = EPROTONOSUPPORT;
+    return NULL;
+}
+
+int hfile_plugin_init_crypt4gh_needed(struct hFILE_plugin *self)
+{
+    static const struct hFILE_scheme_handler handler =
+        { crypt4gh_needed, NULL, "crypt4gh-needed", 0, NULL };
+    self->name = "crypt4gh-needed";
+    hfile_add_scheme_handler("crypt4gh", &handler);
+    return 0;
+}
+
 
 /*****************************************
  * Plugin and hopen() backend dispatcher *
@@ -888,23 +923,31 @@ struct hFILE_plugin_list {
 static struct hFILE_plugin_list *plugins = NULL;
 static pthread_mutex_t plugins_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static void hfile_exit()
+void hfile_shutdown(int do_close_plugin)
 {
     pthread_mutex_lock(&plugins_lock);
 
-    kh_destroy(scheme_string, schemes);
+    if (schemes) {
+        kh_destroy(scheme_string, schemes);
+        schemes = NULL;
+    }
 
     while (plugins != NULL) {
         struct hFILE_plugin_list *p = plugins;
         if (p->plugin.destroy) p->plugin.destroy();
 #ifdef ENABLE_PLUGINS
-        if (p->plugin.obj) close_plugin(p->plugin.obj);
+        if (p->plugin.obj && do_close_plugin) close_plugin(p->plugin.obj);
 #endif
         plugins = p->next;
         free(p);
     }
 
     pthread_mutex_unlock(&plugins_lock);
+}
+
+static void hfile_exit()
+{
+    hfile_shutdown(0);
     pthread_mutex_destroy(&plugins_lock);
 }
 
@@ -962,6 +1005,11 @@ void hfile_add_scheme_handler(const char *scheme,
         return;
     }
     khint_t k = kh_put(scheme_string, schemes, scheme, &absent);
+    if (absent < 0) {
+        hts_log_warning("Couldn't register scheme handler for %s : %s",
+                        scheme, strerror(errno));
+        return;
+    }
     if (absent || priority(handler) > priority(kh_value(schemes, k))) {
         kh_value(schemes, k) = handler;
     }
@@ -971,7 +1019,10 @@ static int init_add_plugin(void *obj, int (*init)(struct hFILE_plugin *),
                            const char *pluginname)
 {
     struct hFILE_plugin_list *p = malloc (sizeof (struct hFILE_plugin_list));
-    if (p == NULL) abort();
+    if (p == NULL) {
+        hts_log_debug("Failed to allocate memory for plugin \"%s\"", pluginname);
+        return -1;
+    }
 
     p->plugin.api_version = 1;
     p->plugin.obj = obj;
@@ -992,7 +1043,11 @@ static int init_add_plugin(void *obj, int (*init)(struct hFILE_plugin *),
     return 0;
 }
 
-static void load_hfile_plugins()
+/*
+ * Returns 0 on success,
+ *        <0 on failure
+ */
+static int load_hfile_plugins()
 {
     static const struct hFILE_scheme_handler
         data = { hopen_mem, hfile_always_local, "built-in", 80 },
@@ -1000,13 +1055,15 @@ static void load_hfile_plugins()
         preload = { hopen_preload, is_preload_url_remote, "built-in", 80 };
 
     schemes = kh_init(scheme_string);
-    if (schemes == NULL) abort();
+    if (schemes == NULL)
+        return -1;
 
     hfile_add_scheme_handler("data", &data);
     hfile_add_scheme_handler("file", &file);
     hfile_add_scheme_handler("preload", &preload);
     init_add_plugin(NULL, hfile_plugin_init_net, "knetfile");
     init_add_plugin(NULL, hfile_plugin_init_mem, "mem");
+    init_add_plugin(NULL, hfile_plugin_init_crypt4gh_needed, "crypt4gh-needed");
 
 #ifdef ENABLE_PLUGINS
     struct hts_path_itr path;
@@ -1041,6 +1098,8 @@ static void load_hfile_plugins()
     // carry on; then eventually when the program exits, we'll merely close
     // down the plugins uncleanly, as if we had aborted.
     (void) atexit(hfile_exit);
+
+    return 0;
 }
 
 /* A filename like "foo:bar" in which we don't recognise the scheme is
@@ -1074,7 +1133,10 @@ static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
     scheme[i] = '\0';
 
     pthread_mutex_lock(&plugins_lock);
-    if (! schemes) load_hfile_plugins();
+    if (!schemes && load_hfile_plugins() < 0) {
+        pthread_mutex_unlock(&plugins_lock);
+        return NULL;
+    }
     pthread_mutex_unlock(&plugins_lock);
 
     khint_t k = kh_get(scheme_string, schemes, scheme);

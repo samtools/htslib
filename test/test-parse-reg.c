@@ -44,8 +44,8 @@
 #include <stdint.h>
 #include <inttypes.h>
 
-#include <htslib/hts.h>
-#include <htslib/sam.h>
+#include "../htslib/hts.h"
+#include "../htslib/sam.h"
 
 void reg_expected(sam_hdr_t *hdr, const char *reg, int flags,
                  char *reg_exp, int tid_exp, hts_pos_t beg_exp, hts_pos_t end_exp) {

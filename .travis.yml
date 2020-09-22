@@ -54,6 +54,18 @@ matrix:
     os: linux
     env: CFLAGS="-std=c99 -pedantic" USE_CONFIG=yes
 
+  # Big-endian
+  - compiler: gcc
+    arch: s390x
+    os: linux
+    env: USE_CONFIG=yes
+    addons:
+      apt:
+        packages:
+          - libbz2-dev
+          - liblzma-dev
+
+
 # For MacOSX systems
 before_install:
   - |
@@ -83,7 +95,7 @@ script:
     if test "$USE_CONFIG" = "yes"; then
       MAKE_OPTS= ;
       autoreconf && \
-        eval ./configure --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3 $CFLAGS\" || \
+        eval ./configure --enable-plugins --enable-werror $CONFIG_OPTS CFLAGS=\"-g -O3 $CFLAGS\" || \
         ( cat config.log; false )
     else
       MAKE_OPTS=-e

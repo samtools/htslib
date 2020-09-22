@@ -35,8 +35,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 #include <stdint.h>
 
-#include "cram/pooled_alloc.h"
-#include "cram/misc.h"
+#include "pooled_alloc.h"
+#include "misc.h"
 
 //#define DISABLE_POOLED_ALLOC
 //#define TEST_MAIN
@@ -199,6 +199,7 @@ int main(void) {
         pool_free(p, item);
     }
 
+    free(items);
     return 0;
 }
 #endif

@@ -31,9 +31,9 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <sys/stat.h>
 
-#include "htslib/hfile.h"
-#include "htslib/hts_defs.h"
-#include "htslib/kstring.h"
+#include "../htslib/hfile.h"
+#include "../htslib/hts_defs.h"
+#include "../htslib/kstring.h"
 
 void HTS_NORETURN fail(const char *format, ...)
 {
@@ -180,6 +180,8 @@ int main(void)
         text = slurp(buffer);
         if (strcmp(original, text) != 0) {
             fprintf(stderr, "%s differs from vcf.c\n", buffer);
+            free(text);
+            free(original);
             return EXIT_FAILURE;
         }
         free(text);

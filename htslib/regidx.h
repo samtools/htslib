@@ -64,8 +64,6 @@
 #ifndef HTSLIB_REGIDX_H
 #define HTSLIB_REGIDX_H
 
-#include <stdio.h>
-#include <inttypes.h>
 #include "hts.h"
 
 #ifdef __cplusplus
@@ -82,7 +80,7 @@ extern "C" {
 #define REGIDX_MAX (1ULL << 35)
 
 typedef struct regidx_t regidx_t;
-typedef struct
+typedef struct regitr_t
 {
     hts_pos_t beg,end;
     void *payload;

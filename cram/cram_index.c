@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013-2019 Genome Research Ltd.
+Copyright (c) 2013-2020 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -62,11 +62,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <math.h>
 
-#include "htslib/bgzf.h"
-#include "htslib/hfile.h"
-#include "hts_internal.h"
-#include "cram/cram.h"
-#include "cram/os.h"
+#include "../htslib/bgzf.h"
+#include "../htslib/hfile.h"
+#include "../hts_internal.h"
+#include "cram.h"
+#include "os.h"
 
 #if 0
 static void dump_index_(cram_index *e, int level) {
@@ -203,7 +203,7 @@ int cram_index_load(cram_fd *fd, const char *fn, const char *fn_idx) {
 
     // Uncompress if required
     if (kstr.s[0] == 31 && (uc)kstr.s[1] == 139) {
-        size_t l;
+        size_t l = 0;
         char *s = zlib_mem_inflate(kstr.s, kstr.l, &l);
         if (!s)
             goto fail;
@@ -361,7 +361,7 @@ void cram_index_free(cram_fd *fd) {
  * Returns the cram_index pointer on success
  *         NULL on failure
  */
-cram_index *cram_index_query(cram_fd *fd, int refid, int pos,
+cram_index *cram_index_query(cram_fd *fd, int refid, hts_pos_t pos,
                              cram_index *from) {
     int i, j, k;
     cram_index *e;
@@ -462,6 +462,54 @@ cram_index *cram_index_last(cram_fd *fd, int refid, cram_index *from) {
     slice = fd->index[refid+1].nslice - 1;
 
     return &from->e[slice];
+}
+
+cram_index *cram_index_query_last(cram_fd *fd, int refid, hts_pos_t end) {
+    cram_index *first = cram_index_query(fd, refid, end, NULL);
+    cram_index *last =  cram_index_last(fd, refid, NULL);
+    if (!first || !last)
+        return NULL;
+
+    while (first < last && (first+1)->start <= end)
+        first++;
+
+    while (first->e) {
+        int count = 0;
+        int nslices = first->nslice;
+        first = first->e;
+        while (++count < nslices && (first+1)->start <= end)
+            first++;
+    }
+
+    // Compute the start location of next container.
+    //
+    // This is useful for stitching containers together in the multi-region
+    // iterator.  Sadly we can't compute this from the single index line.
+    //
+    // Note we can have neighbouring index entries at the same location
+    // for when we have multi-reference mode and/or multiple slices per
+    // container.
+    cram_index *next = first;
+    do {
+        if (next >= last) {
+            // Next non-empty reference
+            while (++refid+1 < fd->index_sz)
+                if (fd->index[refid+1].nslice)
+                    break;
+            if (refid+1 >= fd->index_sz) {
+                next = NULL;
+            } else {
+                next = fd->index[refid+1].e;
+                last = fd->index[refid+1].e + fd->index[refid+1].nslice;
+            }
+        } else {
+            next++;
+        }
+    } while (next && next->offset == first->offset);
+
+    first->next = next ? next->offset : 0;
+
+    return first;
 }
 
 /*

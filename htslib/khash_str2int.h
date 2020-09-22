@@ -1,6 +1,6 @@
 /*  khash_str2int.h -- C-string to integer hash table.
 
-    Copyright (C) 2013-2014 Genome Research Ltd.
+    Copyright (C) 2013-2014,2020 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -25,7 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTSLIB_KHASH_STR2INT_H
 #define HTSLIB_KHASH_STR2INT_H
 
-#include <htslib/khash.h>
+#include "khash.h"
 
 KHASH_MAP_INIT_STR(str2int, int)
 
@@ -100,6 +100,7 @@ static inline int khash_str2int_inc(void *_hash, const char *str)
     khash_t(str2int) *hash = (khash_t(str2int)*)_hash;
     if ( !hash ) return -1;
     k = kh_put(str2int, hash, str, &ret);
+    if (ret < 0) return -1;
     if (ret == 0) return kh_val(hash, k);
     kh_val(hash, k) = kh_size(hash) - 1;
     return kh_val(hash, k);
@@ -107,7 +108,7 @@ static inline int khash_str2int_inc(void *_hash, const char *str)
 
 /*
  *  Set a new key,value pair. On success returns the bin index, on
- *  error -1 is returned. Note that the key must contnue to exist
+ *  error -1 is returned. Note that the key must continue to exist
  *  throughout the whole life of _hash.
  */
 static inline int khash_str2int_set(void *_hash, const char *str, int value)
@@ -117,6 +118,7 @@ static inline int khash_str2int_set(void *_hash, const char *str, int value)
     khash_t(str2int) *hash = (khash_t(str2int)*)_hash;
     if ( !hash ) return -1;
     k = kh_put(str2int, hash, str, &ret);
+    if (ret < 0) return -1;
     kh_val(hash,k) = value;
     return k;
 }

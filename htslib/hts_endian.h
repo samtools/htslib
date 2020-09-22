@@ -220,7 +220,7 @@ static inline void u64_to_le(uint64_t val, uint8_t *buf) {
  *  The input data is interpreted as 2's complement representation.
  */
 static inline int8_t le_to_i8(const uint8_t *buf) {
-    return *buf < 0x80 ? *buf : -((int8_t) (0xff - *buf)) - 1;
+    return *buf < 0x80 ? (int8_t) *buf : -((int8_t) (0xff - *buf)) - 1;
 }
 
 /// Get an int16_t value from an unsigned byte array
@@ -231,7 +231,7 @@ static inline int8_t le_to_i8(const uint8_t *buf) {
  */
 static inline int16_t le_to_i16(const uint8_t *buf) {
     uint16_t v = le_to_u16(buf);
-    return v < 0x8000 ? v : -((int16_t) (0xffff - v)) - 1;
+    return v < 0x8000 ? (int16_t) v : -((int16_t) (0xffff - v)) - 1;
 }
 
 /// Get an int32_t value from an unsigned byte array
@@ -242,7 +242,7 @@ static inline int16_t le_to_i16(const uint8_t *buf) {
  */
 static inline int32_t le_to_i32(const uint8_t *buf) {
     uint32_t v = le_to_u32(buf);
-    return v < 0x80000000U ? v : -((int32_t) (0xffffffffU - v)) - 1;
+    return v < 0x80000000U ? (int32_t) v : -((int32_t) (0xffffffffU - v)) - 1;
 }
 
 /// Get an int64_t value from an unsigned byte array
@@ -254,7 +254,7 @@ static inline int32_t le_to_i32(const uint8_t *buf) {
 static inline int64_t le_to_i64(const uint8_t *buf) {
     uint64_t v = le_to_u64(buf);
     return (v < 0x8000000000000000ULL
-            ? v : -((int64_t) (0xffffffffffffffffULL - v)) - 1);
+            ? (int64_t) v : -((int64_t) (0xffffffffffffffffULL - v)) - 1);
 }
 
 // Converting the other way is easier as signed -> unsigned is well defined.

@@ -1,7 +1,7 @@
 /// @file htslib/thread_pool.h
 /// Thread pool for multi-threading applications.
 /*
-    Copyright (c) 2013-2017, 2019 Genome Research Ltd.
+    Copyright (c) 2013-2017, 2019, 2020 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
@@ -186,7 +186,7 @@ int hts_tpool_dispatch2(hts_tpool *p, hts_tpool_process *q,
  * when pulled from the queue.
  *
  * job_cleanup() and result_cleanup() are only called when discarding jobs.
- * For jobs that are processed normally, it is the resposibility of
+ * For jobs that are processed normally, it is the responsibility of
  * exec_func() and / or consumers of any results to do any cleaning up
  * necessary.
  */
@@ -343,6 +343,14 @@ int hts_tpool_process_sz(hts_tpool_process *q);
  */
 HTSLIB_EXPORT
 void hts_tpool_process_shutdown(hts_tpool_process *q);
+
+/*
+ * Returns whether this process queue has been shutdown.
+ * Return value of 1 signifies normal shutdown while >1 signifies it
+ * was shutdown due to an error condition.
+ */
+HTSLIB_EXPORT
+int hts_tpool_process_is_shutdown(hts_tpool_process *q);
 
 /*
  * Attach and detach a thread process-queue with / from the thread pool

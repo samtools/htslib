@@ -1,6 +1,6 @@
 # Makefile for htslib, a C library for high-throughput sequencing data formats.
 #
-#    Copyright (C) 2013-2019 Genome Research Ltd.
+#    Copyright (C) 2013-2020 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -74,8 +74,10 @@ BUILT_TEST_PROGRAMS = \
 	test/fieldarith \
 	test/hfile \
 	test/pileup \
+	test/plugins-dlhts \
 	test/sam \
 	test/test_bgzf \
+	test/test_kfunc \
 	test/test_kstring \
 	test/test_realn \
 	test/test-regidx \
@@ -98,7 +100,8 @@ BUILT_THRASH_PROGRAMS = \
 	test/thrash_threads6 \
 	test/thrash_threads7
 
-all: lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS)
+all: lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS) \
+     htslib_static.mk htslib-uninstalled.pc
 
 HTSPREFIX =
 include htslib_vars.mk
@@ -304,11 +307,11 @@ hts-$(LIBHTS_SOVERSION).dll hts.dll.a: $(LIBHTS_OBJS)
 hts-object-files: $(LIBHTS_OBJS)
 	touch $@
 
-.pico.so:
-	$(CC) -shared -Wl,-E $(LDFLAGS) -o $@ $< $(LIBS) -lpthread
+%.so: %.pico libhts.so
+	$(CC) -shared -Wl,-E $(LDFLAGS) -o $@ $< libhts.so $(LIBS) -lpthread
 
-.o.bundle:
-	$(CC) -bundle -Wl,-undefined,dynamic_lookup $(LDFLAGS) -o $@ $< $(LIBS)
+%.bundle: %.o libhts.dylib
+	$(CC) -bundle -Wl,-undefined,dynamic_lookup $(LDFLAGS) -o $@ $< libhts.dylib $(LIBS)
 
 %.cygdll: %.o libhts.dll.a
 	$(CC) -shared $(LDFLAGS) -o $@ $< libhts.dll.a $(LIBS)
@@ -350,7 +353,7 @@ textutils.o textutils.pico: textutils.c config.h $(htslib_hfile_h) $(htslib_kstr
 
 cram/cram_codecs.o cram/cram_codecs.pico: cram/cram_codecs.c config.h $(cram_h)
 cram/cram_decode.o cram/cram_decode.pico: cram/cram_decode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h)
-cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(htslib_hts_endian_h)
+cram/cram_encode.o cram/cram_encode.pico: cram/cram_encode.c config.h $(cram_h) $(cram_os_h) $(sam_internal_h) $(htslib_hts_h) $(htslib_hts_endian_h)
 cram/cram_external.o cram/cram_external.pico: cram/cram_external.c config.h $(htslib_hfile_h) $(cram_h)
 cram/cram_index.o cram/cram_index.pico: cram/cram_index.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hts_internal_h) $(cram_h) $(cram_os_h)
 cram/cram_io.o cram/cram_io.pico: cram/cram_io.c config.h os/lzma_stub.h $(cram_h) $(cram_os_h) $(htslib_hts_h) $(cram_open_trace_file_h) cram/rANS_static.h $(htslib_hfile_h) $(htslib_bgzf_h) $(htslib_faidx_h) $(hts_internal_h)
@@ -361,7 +364,7 @@ cram/open_trace_file.o cram/open_trace_file.pico: cram/open_trace_file.c config.
 cram/pooled_alloc.o cram/pooled_alloc.pico: cram/pooled_alloc.c config.h cram/pooled_alloc.h $(cram_misc_h)
 cram/rANS_static.o cram/rANS_static.pico: cram/rANS_static.c config.h cram/rANS_static.h cram/rANS_byte.h
 cram/string_alloc.o cram/string_alloc.pico: cram/string_alloc.c config.h cram/string_alloc.h
-thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h)
+thread_pool.o thread_pool.pico: thread_pool.c config.h $(thread_pool_internal_h) $(htslib_hts_log_h)
 
 
 bgzip: bgzip.o libhts.a
@@ -375,7 +378,7 @@ tabix: tabix.o libhts.a
 
 bgzip.o: bgzip.c config.h $(htslib_bgzf_h) $(htslib_hts_h)
 htsfile.o: htsfile.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
-tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_regidx_h)
+tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(htslib_hts_log_h)
 
 # Maintainer source code checks
 # - copyright boilerplate presence
@@ -389,12 +392,15 @@ maintainer-check:
 #
 # If using MSYS, avoid poor shell expansion via:
 #    MSYS2_ARG_CONV_EXCL="*" make check
-check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS)
+check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) $(BUILT_PLUGINS)
 	test/hts_endian
+	test/test_kfunc
 	test/test_kstring
 	test/test_str2int
 	test/fieldarith test/fieldarith.sam
 	test/hfile
+	HTS_PATH=. test/with-shlib.sh test/plugins-dlhts -g ./libhts.$(SHLIB_FLAVOUR)
+	HTS_PATH=. test/with-shlib.sh test/plugins-dlhts -l ./libhts.$(SHLIB_FLAVOUR)
 	test/test_bgzf test/bgziptest.txt
 	test/test-parse-reg -t test/colons.bam
 	cd test/tabix && ./test-tabix.sh tabix.tst
@@ -418,11 +424,17 @@ test/hfile: test/hfile.o libhts.a
 test/pileup: test/pileup.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/pileup.o libhts.a $(LIBS) -lpthread
 
+test/plugins-dlhts: test/plugins-dlhts.o
+	$(CC) $(LDFLAGS) -o $@ test/plugins-dlhts.o $(LIBS)
+
 test/sam: test/sam.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/sam.o libhts.a $(LIBS) -lpthread
 
 test/test_bgzf: test/test_bgzf.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a -lz $(LIBS) -lpthread
+
+test/test_kfunc: test/test_kfunc.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_kfunc.o libhts.a -lz $(LIBS) -lpthread
 
 test/test_kstring: test/test_kstring.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_kstring.o libhts.a -lz $(LIBS) -lpthread
@@ -436,8 +448,8 @@ test/test-regidx: test/test-regidx.o libhts.a
 test/test-parse-reg: test/test-parse-reg.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-parse-reg.o libhts.a $(LIBS) -lpthread
 
-test/test_str2int: test/test_str2int.o
-	$(CC) $(LDFLAGS) -o $@ test/test_str2int.o
+test/test_str2int: test/test_str2int.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_str2int.o libhts.a $(LIBS) -lpthread
 
 test/test_view: test/test_view.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_view.o libhts.a $(LIBS) -lpthread
@@ -462,8 +474,10 @@ test/fuzz/hts_open_fuzzer.o: test/fuzz/hts_open_fuzzer.c config.h $(htslib_hfile
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
 test/hfile.o: test/hfile.c config.h $(htslib_hfile_h) $(htslib_hts_defs_h) $(htslib_kstring_h)
 test/pileup.o: test/pileup.c config.h $(htslib_sam_h) $(htslib_kstring_h)
+test/plugins-dlhts.o: test/plugins-dlhts.c config.h
 test/sam.o: test/sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_faidx_h) $(htslib_khash_h) $(htslib_hts_log_h)
 test/test_bgzf.o: test/test_bgzf.c config.h $(htslib_bgzf_h) $(htslib_hfile_h) $(hfile_internal_h)
+test/test_kfunc.o: test/test_kfunc.c config.h $(htslib_kfunc_h)
 test/test_kstring.o: test/test_kstring.c config.h $(htslib_kstring_h)
 test/test-parse-reg.o: test/test-parse-reg.c config.h $(htslib_hts_h) $(htslib_sam_h)
 test/test_realn.o: test/test_realn.c config.h $(htslib_hts_h) $(htslib_sam_h) $(htslib_faidx_h)
@@ -494,8 +508,10 @@ test/thrash_threads5: test/thrash_threads5.o libhts.a
 
 test/thrash_threads6: test/thrash_threads6.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/thrash_threads6.o libhts.a -lz $(LIBS) -lpthread
+
 test/thrash_threads7: test/thrash_threads7.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/thrash_threads7.o libhts.a -lz $(LIBS) -lpthread
+
 test_thrash: $(BUILT_THRASH_PROGRAMS)
 
 # Test to ensure the functions in the header files are exported by the shared
@@ -620,8 +636,9 @@ force:
 
 .PHONY: all check clean distclean distdir force
 .PHONY: install install-pkgconfig installdirs lib-shared lib-static
-.PHONY: maintainer-clean mostlyclean plugins print-config print-version
-.PHONY: show-version tags test testclean
+.PHONY: maintainer-check maintainer-clean mostlyclean plugins
+.PHONY: print-config print-version show-version tags
+.PHONY: test test-shlib-exports test_thrash testclean
 .PHONY: clean-so install-so
 .PHONY: clean-cygdll install-cygdll
 .PHONY: clean-dll install-dll

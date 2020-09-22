@@ -1,6 +1,6 @@
 /*  thread_pool.c -- A pool of generic worker threads
 
-    Copyright (c) 2013-2019 Genome Research Ltd.
+    Copyright (c) 2013-2020 Genome Research Ltd.
 
     Author: James Bonfield <jkb@sanger.ac.uk>
 
@@ -40,6 +40,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <limits.h>
 
 #include "thread_pool_internal.h"
+#include "htslib/hts_log.h"
 
 static void hts_tpool_process_detach_locked(hts_tpool *p,
                                             hts_tpool_process *q);
@@ -57,10 +58,11 @@ static int worker_id(hts_tpool *p) {
     return -1;
 }
 
-int DBG_OUT(FILE *fp, char *fmt, ...) {
+void DBG_OUT(FILE *fp, char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    return vfprintf(fp, fmt, args);
+    vfprintf(fp, fmt, args);
+    va_end(args);
 }
 #else
 #define DBG_OUT(...) do{}while(0)
@@ -216,7 +218,7 @@ hts_tpool_result *hts_tpool_next_result_wait(hts_tpool_process *q) {
 
     pthread_mutex_lock(&q->p->pool_m);
     while (!(r = hts_tpool_next_result_locked(q))) {
-        /* Possible race here now avoided via _locked() call, but incase... */
+        /* Possible race here now avoided via _locked() call, but in case... */
         struct timeval now;
         struct timespec timeout;
 
@@ -320,6 +322,13 @@ void hts_tpool_process_shutdown(hts_tpool_process *q) {
     pthread_mutex_unlock(&q->p->pool_m);
 }
 
+int hts_tpool_process_is_shutdown(hts_tpool_process *q) {
+    pthread_mutex_lock(&q->p->pool_m);
+    int r = q->shutdown;
+    pthread_mutex_unlock(&q->p->pool_m);
+    return r;
+}
+
 /*
  * Frees a result 'r' and if free_data is true also frees
  * the internal r->data result too.
@@ -354,6 +363,8 @@ void *hts_tpool_result_data(hts_tpool_result *r) {
  */
 hts_tpool_process *hts_tpool_process_init(hts_tpool *p, int qsize, int in_only) {
     hts_tpool_process *q = malloc(sizeof(*q));
+    if (!q)
+        return NULL;
 
     pthread_cond_init(&q->output_avail_c,   NULL);
     pthread_cond_init(&q->input_not_full_c, NULL);
@@ -513,8 +524,9 @@ static void *tpool_worker(void *arg) {
             // Iterate over queues, finding one with jobs and also
             // room to put the result.
             //if (q && q->input_head && !hts_tpool_process_output_full(q)) {
-            if (q && q->input_head && q->qsize - q->n_output > p->tsize - p->nwaiting) {
-                //printf("Work\n");
+            if (q && q->input_head
+                && q->qsize - q->n_output > p->tsize - p->nwaiting
+                && !q->shutdown) {
                 work_to_do = 1;
                 break;
             }
@@ -559,6 +571,10 @@ static void *tpool_worker(void *arg) {
             if (p->shutdown)
                 goto shutdown;
 
+            if (q->shutdown)
+                // Queue shutdown, but there may be other queues
+                break;
+
             j = q->input_head;
             assert(j->p == p);
 
@@ -570,7 +586,7 @@ static void *tpool_worker(void *arg) {
             // happening once (on the transition) rather than every time we
             // are below qsize.
             // (I wish I could remember why io_lib rev 3660 changed this from
-            //  == to >=, but keeping it just incase!)
+            //  == to >=, but keeping it just in case!)
             q->n_processing++;
             if (q->n_input-- >= q->qsize)
                 pthread_cond_broadcast(&q->input_not_full_c);
@@ -613,10 +629,22 @@ static void *tpool_worker(void *arg) {
 #ifdef DEBUG
     fprintf(stderr, "%d: Failed to add result\n", worker_id(p));
 #endif
+    // Hard failure, so shutdown all queues
+    pthread_mutex_lock(&p->pool_m);
+    hts_tpool_process *first = p->q_head, *q = first;
+    if (q) {
+        do {
+            hts_tpool_process_shutdown_locked(q);
+            q->shutdown = 2; // signify error.
+            q = q->next;
+        } while (q != first);
+    }
+    pthread_mutex_unlock(&p->pool_m);
     return NULL;
 }
 
 static void wake_next_worker(hts_tpool_process *q, int locked) {
+    if (!q) return;
     hts_tpool *p = q->p;
     if (!locked)
         pthread_mutex_lock(&p->pool_m);
@@ -641,7 +669,7 @@ static void wake_next_worker(hts_tpool_process *q, int locked) {
 
     int running = p->tsize - p->nwaiting;
     int sig = p->t_stack_top >= 0 && p->njobs > p->tsize - p->nwaiting
-        && (!q || q->n_processing < q->qsize - q->n_output);
+        && (q->n_processing < q->qsize - q->n_output);
 
 //#define AVG_USAGE
 #ifdef AVG_USAGE
@@ -687,8 +715,10 @@ static void wake_next_worker(hts_tpool_process *q, int locked) {
  *         NULL on failure
  */
 hts_tpool *hts_tpool_init(int n) {
-    int i;
+    int t_idx = 0;
     hts_tpool *p = malloc(sizeof(*p));
+    if (!p)
+        return NULL;
     p->tsize = n;
     p->njobs = 0;
     p->nwaiting = 0;
@@ -698,6 +728,17 @@ hts_tpool *hts_tpool_init(int n) {
     p->n_count = 0;
     p->n_running = 0;
     p->t = malloc(n * sizeof(p->t[0]));
+    if (!p->t) {
+        free(p);
+        return NULL;
+    }
+    p->t_stack = malloc(n * sizeof(*p->t_stack));
+    if (!p->t_stack) {
+        free(p->t);
+        free(p);
+        return NULL;
+    }
+    p->t_stack_top = -1;
 
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
@@ -705,27 +746,44 @@ hts_tpool *hts_tpool_init(int n) {
     pthread_mutex_init(&p->pool_m, &attr);
     pthread_mutexattr_destroy(&attr);
 
-    if (!(p->t_stack = malloc(n * sizeof(*p->t_stack))))
-        return NULL;
-    p->t_stack_top = -1;
-
     pthread_mutex_lock(&p->pool_m);
 
-    for (i = 0; i < n; i++) {
-        hts_tpool_worker *w = &p->t[i];
-        p->t_stack[i] = 0;
+    for (t_idx = 0; t_idx < n; t_idx++) {
+        hts_tpool_worker *w = &p->t[t_idx];
+        p->t_stack[t_idx] = 0;
         w->p = p;
-        w->idx = i;
+        w->idx = t_idx;
         pthread_cond_init(&w->pending_c, NULL);
         if (0 != pthread_create(&w->tid, NULL, tpool_worker, w)) {
-            pthread_mutex_unlock(&p->pool_m);
-            return NULL;
+            goto cleanup;
         }
     }
 
     pthread_mutex_unlock(&p->pool_m);
 
     return p;
+
+ cleanup: {
+        // Any threads started will be waiting for p->pool_m, so we can
+        // stop them cleanly by setting p->shutdown, releasing the mutex and
+        // waiting for them to finish.
+        int j;
+        int save_errno = errno;
+        hts_log_error("Couldn't start thread pool worker : %s",
+                      strerror(errno));
+        p->shutdown = 1;
+        pthread_mutex_unlock(&p->pool_m);
+        for (j = 0; j < t_idx; j++) {
+            pthread_join(p->t[j].tid, NULL);
+            pthread_cond_destroy(&p->t[j].pending_c);
+        }
+        pthread_mutex_destroy(&p->pool_m);
+        free(p->t_stack);
+        free(p->t);
+        free(p);
+        errno = save_errno;
+        return NULL;
+    }
 }
 
 /*
@@ -868,17 +926,39 @@ int hts_tpool_process_flush(hts_tpool_process *q) {
             pthread_cond_signal(&p->t[i].pending_c);
 
     // Ensure there is room for the final sprint.
-    // Shouldn't be possible to get here, but just incase.
+    // Shouldn't be possible to get here, but just in case.
     if (q->qsize < q->n_output + q->n_input + q->n_processing)
         q->qsize = q->n_output + q->n_input + q->n_processing;
 
-    // Wait for n_input and n_processing to hit zero.
-    while (q->n_input || q->n_processing) {
-        while (q->n_input)
-            pthread_cond_wait(&q->input_empty_c, &p->pool_m);
-        if (q->shutdown) break;
+    // When shutdown, we won't be launching more, but we can still
+    // wait for any processing jobs complete.
+    if (q->shutdown) {
         while (q->n_processing)
             pthread_cond_wait(&q->none_processing_c, &p->pool_m);
+    }
+
+    // Wait for n_input and n_processing to hit zero.
+    while (!q->shutdown && (q->n_input || q->n_processing)) {
+        struct timeval now;
+        struct timespec timeout;
+
+        while (q->n_input && !q->shutdown) {
+            gettimeofday(&now, NULL);
+            timeout.tv_sec = now.tv_sec + 1;
+            timeout.tv_nsec = now.tv_usec * 1000;
+            pthread_cond_timedwait(&q->input_empty_c, &p->pool_m, &timeout);
+        }
+
+        // Note: even if q->shutdown is set, we still have to wait until
+        // q->n_processing is zero as we cannot terminate while things are
+        // running otherwise we free up the data being worked on.
+        while (q->n_processing) {
+            gettimeofday(&now, NULL);
+            timeout.tv_sec = now.tv_sec + 1;
+            timeout.tv_nsec = now.tv_usec * 1000;
+            pthread_cond_timedwait(&q->none_processing_c, &p->pool_m,
+                                   &timeout);
+        }
         if (q->shutdown) break;
     }
 
@@ -923,14 +1003,12 @@ int hts_tpool_process_reset(hts_tpool_process *q, int free_results) {
     // Release memory.  This can be done unlocked now the lists have been
     // removed from the queue
     for (j = j_head; j; j = jn) {
-        //fprintf(stderr, "Discard input %d\n", j->serial);
         jn = j->next;
         if (j->job_cleanup) j->job_cleanup(j->arg);
         free(j);
     }
 
     for (r = r_head; r; r = rn) {
-        //fprintf(stderr, "Discard output %d\n", r->serial);
         rn = r->next;
         if (r->result_cleanup) {
             r->result_cleanup(r->data);
@@ -1253,7 +1331,7 @@ int test_squareB(int n) {
  * Possible improvement: we only need the last stage to be ordered.  By
  * allocating our own serial numbers for the first job and manually setting
  * these serials in the last job, perhaps we can permit out of order execution
- * of all the inbetween stages.  (I doubt it'll affect speed much though.)
+ * of all the in-between stages.  (I doubt it'll affect speed much though.)
  */
 
 static void *pipe_input_thread(void *arg);

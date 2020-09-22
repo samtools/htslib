@@ -32,7 +32,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 /*
-Copyright (c) 2008, 2009, 2013, 2014-2015, 2018-2019 Genome Research Ltd.
+Copyright (c) 2008, 2009, 2013, 2014-2015, 2018-2020 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -72,16 +72,17 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include "cram/os.h"
+
+#include "os.h"
 #ifndef PATH_MAX
 #  define PATH_MAX 1024
 #endif
 
-#include "cram/open_trace_file.h"
-#include "cram/misc.h"
-#include "htslib/hfile.h"
-#include "htslib/hts_log.h"
-#include "htslib/hts.h"
+#include "open_trace_file.h"
+#include "misc.h"
+#include "../htslib/hfile.h"
+#include "../htslib/hts_log.h"
+#include "../htslib/hts.h"
 
 /*
  * Returns whether the path refers to a regular file.

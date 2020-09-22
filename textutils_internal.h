@@ -1,6 +1,6 @@
 /* textutils_internal.h -- non-bioinformatics utility routines for text etc.
 
-   Copyright (C) 2016,2018,2019 Genome Research Ltd.
+   Copyright (C) 2016,2018-2020 Genome Research Ltd.
 
    Author: John Marshall <jm18@sanger.ac.uk>
 
@@ -52,7 +52,7 @@ size_t hts_base64_decoded_length(size_t len);
 /// Decode base64-encoded data
 /** On input, _dest_ should be a sufficient buffer (see `hts_base64_length()`),
     and may be equal to _s_ to decode in place.  On output, the number of
-    bytes writen is stored in _destlen_.
+    bytes written is stored in _destlen_.
 */
 int hts_decode_base64(char *dest, size_t *destlen, const char *s);
 
@@ -70,7 +70,7 @@ hts_json_token *hts_json_alloc_token(void);
 /// Free a JSON token
 void hts_json_free_token(hts_json_token *token);
 
-/// Accessor funtion to get JSON token type
+/// Accessor function to get JSON token type
 /** @param  token Pointer to JSON token
     @return Character indicating the token type
 
@@ -87,7 +87,7 @@ as follows:
 */
 char hts_json_token_type(hts_json_token *token);
 
-/// Accessor funtion to get JSON token in string form
+/// Accessor function to get JSON token in string form
 /** @param  token Pointer to JSON token
     @return String representation of the JSON token; NULL if unset
 
@@ -171,6 +171,21 @@ static inline int isxdigit_c(char c) { return isxdigit((unsigned char) c); }
 static inline char tolower_c(char c) { return tolower((unsigned char) c); }
 static inline char toupper_c(char c) { return toupper((unsigned char) c); }
 
+/// Copy possibly malicious text data to a buffer
+/** @param buf     Destination buffer
+    @param buflen  Size of the destination buffer (>= 4; >= 6 when quotes used)
+    @param quote   Quote character (or '\0' for no quoting of the output)
+    @param s       String to be copied
+    @param len     Length of the input string, or SIZE_MAX to copy until '\0'
+    @return The destination buffer, @a buf.
+
+Copies the source text string (escaping any unprintable characters) to the
+destination buffer. The destination buffer will always be NUL-terminated;
+the text will be truncated (and "..." appended) if necessary to make it fit.
+ */
+const char *hts_strprint(char *buf, size_t buflen, char quote,
+                         const char *s, size_t len);
+
 // Faster replacements for strtol, for use when parsing lots of numbers.
 // Note that these only handle base 10 and do not skip leading whitespace
 
@@ -233,7 +248,7 @@ static inline int64_t hts_str2int(const char *in, char **end, int bits,
 
     *end = (char *)v;
 
-    return (n && neg < 0) ? -((int64_t) (n - 1)) - 1 : n;
+    return (n && neg < 0) ? -((int64_t) (n - 1)) - 1 : (int64_t) n;
 }
 
 /// Convert a string to an unsigned integer, with overflow detection
@@ -287,6 +302,96 @@ static inline uint64_t hts_str2uint(const char *in, char **end, int bits,
 
     *end = (char *)v;
     return n;
+}
+
+/// Convert a string to a double, with overflow detection
+/** @param[in]  in     Input string
+    @param[out] end    Returned end pointer
+    @param[out] failed Location of overflow flag
+    @return String value converted to a double
+
+Converts a floating point value string to a double.  The string should
+have the format [+-]?[0-9]*[.]?[0-9]* with at least one and no more than 15
+digits.  Strings that do not match (inf, nan, values with exponents) will
+be passed on to strtod() for processing.
+
+If the value is too big, the largest possible value will be returned;
+if it is too small to be represented in a double zero will be returned.
+In both cases errno will be set to ERANGE.
+
+If no characters could be converted, *failed will be set to 1.
+
+The address of the first character following the converted number will
+be stored in *end.
+
+Both end and failed must be non-NULL.
+ */
+
+static inline double hts_str2dbl(const char *in, char **end, int *failed) {
+    uint64_t n = 0;
+    int max_len = 15;
+    const unsigned char *v = (const unsigned char *) in;
+    const unsigned int ascii_zero = '0'; // Prevents conversion to signed
+    int neg = 0, point = -1;
+    double d;
+    static double D[] = {1,1, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7,
+                         1e8, 1e9, 1e10,1e11,1e12,1e13,1e14,1e15,
+                         1e16,1e17,1e18,1e19,1e20};
+
+    while (isspace(*v))
+        v++;
+
+    if (*v == '-') {
+        neg = 1;
+        v++;
+    } else if (*v == '+') {
+        v++;
+    }
+
+    switch(*v) {
+    case '1': case '2': case '3': case '4':
+    case '5': case '6': case '7': case '8': case '9':
+        break;
+
+    case '0':
+        if (v[1] != 'x' && v[1] != 'X') break;
+        // else fall through (hex number)
+
+    default:
+        // Non numbers, like NaN, Inf
+        d = strtod(in, end);
+        if (*end == in)
+            *failed = 1;
+        return d;
+    }
+
+    while (*v == '0') ++v;
+
+    const unsigned char *start = v;
+
+    while (--max_len && *v>='0' && *v<='9')
+        n = n*10 + *v++ - ascii_zero;
+    if (max_len && *v == '.') {
+        point = v - start;
+        v++;
+        while (--max_len && *v>='0' && *v<='9')
+            n = n*10 + *v++ - ascii_zero;
+    }
+    if (point < 0)
+        point = v - start;
+
+    // Outside the scope of this quick and dirty parser.
+    if (!max_len || *v == 'e' || *v == 'E') {
+        d = strtod(in, end);
+        if (*end == in)
+            *failed = 1;
+        return d;
+    }
+
+    *end = (char *)v;
+    d = n / D[v - start - point];
+
+    return neg ? -d : d;
 }
 
 

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2019 Genome Research Ltd.
+Copyright (c) 2012-2020 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h>
 #include <errno.h>
 
-#include "cram/cram.h"
+#include "cram.h"
 
 /*
  * ---------------------------------------------------------------------------
@@ -1158,6 +1158,10 @@ cram_codec *cram_huffman_decode_init(char *data, int size,
         l = safe_itf8_get(cp, data_end, &codes[i].len);
         if (l < 1)
             break;
+        if (codes[i].len < 0) {
+            hts_log_error("Huffman code length (%d) is negative", codes[i].len);
+            goto malformed;
+        }
         if (max_len < codes[i].len)
             max_len = codes[i].len;
     }
@@ -1922,7 +1926,7 @@ cram_codec *cram_byte_array_stop_decode_init(char *data, int size,
     c->u.byte_array_stop.stop = *cp++;
     if (CRAM_MAJOR_VERS(version) == 1) {
         c->u.byte_array_stop.content_id = cp[0] + (cp[1]<<8) + (cp[2]<<16)
-            + (cp[3]<<24);
+            + ((unsigned int) cp[3]<<24);
         cp += 4;
     } else {
         cp += safe_itf8_get((char *) cp, data + size,
@@ -2159,7 +2163,7 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
         c->store = cram_external_encode_store;
         if (c->decode == cram_external_decode_int)
             c->encode = cram_external_encode_int;
-        if (c->decode == cram_external_decode_long)
+        else if (c->decode == cram_external_decode_long)
             c->encode = cram_external_encode_long;
         else if (c->decode == cram_external_decode_char)
             c->encode = cram_external_encode_char;
@@ -2172,6 +2176,7 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
         // FIXME: we huffman and e_huffman structs amended, we could
         // unify this.
         cram_codec *t = malloc(sizeof(*t));
+        if (!t) return -1;
         t->codec = E_HUFFMAN;
         t->free = cram_huffman_encode_free;
         t->store = cram_huffman_encode_store;
@@ -2220,6 +2225,7 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
 
     case E_BYTE_ARRAY_LEN: {
         cram_codec *t = malloc(sizeof(*t));
+        if (!t) return -1;
         t->codec = E_BYTE_ARRAY_LEN;
         t->free   = cram_byte_array_len_encode_free;
         t->store  = cram_byte_array_len_encode_store;
@@ -2235,7 +2241,6 @@ int cram_codec_decoder2encoder(cram_fd *fd, cram_codec *c) {
         // {len,val}_{encoding,dat} are undefined, but unused.
         // Leaving them unset here means we can test that assertion.
         *c = *t;
-        free(t);
         break;
     }
 

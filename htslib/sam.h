@@ -1,7 +1,7 @@
 /// @file htslib/sam.h
 /// High-level SAM/BAM/CRAM sequence file operations.
 /*
-    Copyright (C) 2008, 2009, 2013-2019 Genome Research Ltd.
+    Copyright (C) 2008, 2009, 2013-2020 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdint.h>
 #include "hts.h"
+#include "hts_endian.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -200,7 +201,7 @@ extern const int8_t bam_cigar_table[256];
  @field  mpos    0-based leftmost coordinate of next read in template
  @field  isize   observed template length ("insert size")
  */
-typedef struct {
+typedef struct bam1_core_t {
     hts_pos_t pos;
     int32_t tid;
     uint16_t bin; // NB: invalid on 64-bit pos
@@ -239,7 +240,7 @@ typedef struct {
  5. Per base qualilties are stored in the Phred scale with no +33 offset.
     Ie as per the BAM specification and not the SAM ASCII printable method.
  */
-typedef struct {
+typedef struct bam1_t {
     bam1_core_t core;
     uint64_t id;
     uint8_t *data;
@@ -312,6 +313,13 @@ typedef struct {
  @return    4-bit integer representing the base.
  */
 #define bam_seqi(s, i) ((s)[(i)>>1] >> ((~(i)&1)<<2) & 0xf)
+/*!
+ @abstract  Modifies a single base in the bam structure.
+ @param s   Query sequence returned by bam_get_seq()
+ @param i   The i-th position, 0-based
+ @param b   Base in nt16 nomenclature (see seq_nt16_table)
+*/
+#define bam_set_seqi(s,i,b) ((s)[(i)>>1] = ((s)[(i)>>1] & (0xf0 >> ((~(i)&1)<<2))) | ((b)<<((~(i)&1)<<2)))
 
 /**************************
  *** Exported functions ***
@@ -1043,7 +1051,8 @@ hts_pos_t bam_cigar2rlen(int n_cigar, const uint32_t *cigar);
 
       @discussion For a mapped read, this is just b->core.pos + bam_cigar2rlen.
       For an unmapped read (either according to its flags or if it has no cigar
-      string), we return b->core.pos + 1 by convention.
+      string) or a read whose cigar string consumes no reference bases at all,
+      we return b->core.pos + 1 by convention.
  */
 HTSLIB_EXPORT
 hts_pos_t bam_endpos(const bam1_t *b);
@@ -1347,6 +1356,196 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
      *** Manipulating auxiliary fields ***
      *************************************/
 
+/// Converts a BAM aux tag to SAM format
+/*
+ * @param b    Pointer to the bam record
+ * @param key  Two letter tag key
+ * @param type Single letter type code: ACcSsIifHZB.
+ * @param tag  Tag data pointer, in BAM format
+ * @param end  Pointer to end of bam record (largest extent of tag)
+ * @param ks   Kstring to write the formatted tag to
+ *
+ * @return pointer to end of tag on success,
+ *         NULL on failure.
+ *
+ * @discussion The three separate parameters key, type, tag may be
+ * derived from a s=bam_aux_get() query as s-2, *s and s+1.  However
+ * it is recommended to use bam_aux_get_str in this situation.
+ * The desire to split these parameters up is for potential processing
+ * of non-BAM formats that encode using a BAM type mechanism
+ * (such as the internal CRAM representation).
+ */
+static inline const uint8_t *sam_format_aux1(const uint8_t *key,
+                                             const uint8_t type,
+                                             const uint8_t *tag,
+                                             const uint8_t *end,
+                                             kstring_t *ks) {
+    int r = 0;
+    const uint8_t *s = tag; // brevity and consistency with other code.
+    r |= kputsn_((char*)key, 2, ks) < 0;
+    r |= kputc_(':', ks) < 0;
+    if (type == 'C') {
+        r |= kputsn_("i:", 2, ks) < 0;
+        r |= kputw(*s, ks) < 0;
+        ++s;
+    } else if (type == 'c') {
+        r |= kputsn_("i:", 2, ks) < 0;
+        r |= kputw(*(int8_t*)s, ks) < 0;
+        ++s;
+    } else if (type == 'S') {
+        if (end - s >= 2) {
+            r |= kputsn_("i:", 2, ks) < 0;
+            r |= kputuw(le_to_u16(s), ks) < 0;
+            s += 2;
+        } else goto bad_aux;
+    } else if (type == 's') {
+        if (end - s >= 2) {
+            r |= kputsn_("i:", 2, ks) < 0;
+            r |= kputw(le_to_i16(s), ks) < 0;
+            s += 2;
+        } else goto bad_aux;
+    } else if (type == 'I') {
+        if (end - s >= 4) {
+            r |= kputsn_("i:", 2, ks) < 0;
+            r |= kputuw(le_to_u32(s), ks) < 0;
+            s += 4;
+        } else goto bad_aux;
+    } else if (type == 'i') {
+        if (end - s >= 4) {
+            r |= kputsn_("i:", 2, ks) < 0;
+            r |= kputw(le_to_i32(s), ks) < 0;
+            s += 4;
+        } else goto bad_aux;
+    } else if (type == 'A') {
+        r |= kputsn_("A:", 2, ks) < 0;
+        r |= kputc_(*s, ks) < 0;
+        ++s;
+    } else if (type == 'f') {
+        if (end - s >= 4) {
+            ksprintf(ks, "f:%g", le_to_float(s));
+            s += 4;
+        } else goto bad_aux;
+
+    } else if (type == 'd') {
+        // NB: "d" is not an official type in the SAM spec.
+        // However for unknown reasons samtools has always supported this.
+        // We believe, HOPE, it is not in general usage and we do not
+        // encourage it.
+        if (end - s >= 8) {
+            ksprintf(ks, "d:%g", le_to_double(s));
+            s += 8;
+        } else goto bad_aux;
+    } else if (type == 'Z' || type == 'H') {
+        r |= kputc_(type, ks) < 0;
+        r |= kputc_(':', ks) < 0;
+        while (s < end && *s) r |= kputc_(*s++, ks) < 0;
+        if (s >= end)
+            goto bad_aux;
+        ++s;
+    } else if (type == 'B') {
+        uint8_t sub_type = *(s++);
+        int sub_type_size;
+
+        // or externalise sam.c's aux_type2size function?
+        switch (sub_type) {
+        case 'A': case 'c': case 'C':
+            sub_type_size = 1;
+            break;
+        case 's': case 'S':
+            sub_type_size = 2;
+            break;
+        case 'i': case 'I': case 'f':
+            sub_type_size = 4;
+            break;
+        default:
+            sub_type_size = 0;
+            break;
+        }
+
+        uint32_t i, n;
+        if (sub_type_size == 0 || end - s < 4)
+            goto bad_aux;
+        n = le_to_u32(s);
+        s += 4; // now points to the start of the array
+        if ((end - s) / sub_type_size < n)
+            goto bad_aux;
+        r |= kputsn_("B:", 2, ks) < 0;
+        r |= kputc(sub_type, ks) < 0; // write the type
+        switch (sub_type) {
+        case 'c':
+            if (ks_expand(ks, n*2) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                ks->s[ks->l++] = ',';
+                r |= kputw(*(int8_t*)s, ks) < 0;
+                ++s;
+            }
+            break;
+        case 'C':
+            if (ks_expand(ks, n*2) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                ks->s[ks->l++] = ',';
+                r |= kputuw(*(uint8_t*)s, ks) < 0;
+                ++s;
+            }
+            break;
+        case 's':
+            if (ks_expand(ks, n*4) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                ks->s[ks->l++] = ',';
+                r |= kputw(le_to_i16(s), ks) < 0;
+                s += 2;
+            }
+            break;
+        case 'S':
+            if (ks_expand(ks, n*4) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                ks->s[ks->l++] = ',';
+                r |= kputuw(le_to_u16(s), ks) < 0;
+                s += 2;
+            }
+            break;
+        case 'i':
+            if (ks_expand(ks, n*6) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                ks->s[ks->l++] = ',';
+                r |= kputw(le_to_i32(s), ks) < 0;
+                s += 4;
+            }
+            break;
+        case 'I':
+            if (ks_expand(ks, n*6) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                ks->s[ks->l++] = ',';
+                r |= kputuw(le_to_u32(s), ks) < 0;
+                s += 4;
+            }
+            break;
+        case 'f':
+            if (ks_expand(ks, n*8) < 0) goto mem_err;
+            for (i = 0; i < n; ++i) {
+                ks->s[ks->l++] = ',';
+                r |= kputd(le_to_float(s), ks) < 0;
+                s += 4;
+            }
+            break;
+        default:
+            goto bad_aux;
+        }
+    } else { // Unknown type
+        goto bad_aux;
+    }
+    return r ? NULL : s;
+
+ bad_aux:
+    errno = EINVAL;
+    return NULL;
+
+ mem_err:
+    hts_log_error("Out of memory");
+    errno = ENOMEM;
+    return NULL;
+}
+
 /// Return a pointer to an aux record
 /** @param b   Pointer to the bam record
     @param tag Desired aux tag
@@ -1358,6 +1557,28 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
  */
 HTSLIB_EXPORT
 uint8_t *bam_aux_get(const bam1_t *b, const char tag[2]);
+
+/// Return a SAM formatting string containing a BAM tag
+/** @param b   Pointer to the bam record
+    @param tag Desired aux tag
+    @param s   The kstring to write to.
+
+    @return 1 on success,
+            0 on no tag found with errno = ENOENT,
+           -1 on error (errno will be either EINVAL or ENOMEM).
+ */
+static inline int bam_aux_get_str(const bam1_t *b,
+                                  const char tag[2],
+                                  kstring_t *s) {
+    const uint8_t *t = bam_aux_get(b, tag);
+    if (!t)
+        return errno == ENOENT ? 0 : -1;
+
+    if (!sam_format_aux1(t-2, *t, t+1, b->data + b->l_data, s))
+        return -1;
+
+    return 1;
+}
 
 /// Get an integer aux value
 /** @param s Pointer to the tag data, as returned by bam_aux_get()
@@ -1457,6 +1678,15 @@ int bam_aux_del(bam1_t *b, uint8_t *s);
    This function will not change the ordering of tags in the bam record.
    New tags will be appended to any existing aux records.
 
+   If @p len is less than zero, the length of the input string will be
+   calculated using strlen().  Otherwise exactly @p len bytes will be
+   copied from @p data to make the new tag.  If these bytes do not
+   include a terminating NUL character, one will be added.  (Note that
+   versions of HTSlib up to 1.10.2 had different behaviour here and
+   simply copied @p len bytes from data.  To generate a valid tag it
+   was necessary to ensure the last character was a NUL, and include
+   it in @p len.)
+
    On failure, errno may be set to one of the following values:
 
    EINVAL: The bam record's aux data is corrupt or an existing tag with the
@@ -1534,7 +1764,7 @@ int bam_aux_update_float(bam1_t *b, const char tag[2], float val);
 
    This function will not change the ordering of tags in the bam record.
    New tags will be appended to any existing aux records.  The bam record
-   will grow or shrink in order to accomodate the new data.
+   will grow or shrink in order to accommodate the new data.
 
    The data parameter must not point to any data in the bam record itself or
    undefined behaviour may result.
@@ -1593,7 +1823,7 @@ typedef union {
  implementation of alignment viewers, but calculating this has some
  overhead.
  */
-typedef struct {
+typedef struct bam_pileup1_t {
     bam1_t *b;
     int32_t qpos;
     int indel, level;
@@ -1604,11 +1834,11 @@ typedef struct {
 
 typedef int (*bam_plp_auto_f)(void *data, bam1_t *b);
 
-struct __bam_plp_t;
-typedef struct __bam_plp_t *bam_plp_t;
+struct bam_plp_s;
+typedef struct bam_plp_s *bam_plp_t;
 
-struct __bam_mplp_t;
-typedef struct __bam_mplp_t *bam_mplp_t;
+struct bam_mplp_s;
+typedef struct bam_mplp_s *bam_mplp_t;
 
     /**
      *  bam_plp_init() - sets an iterator over multiple

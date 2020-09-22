@@ -26,7 +26,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdio.h>
 
-#include "htslib/sam.h"
+#include "../htslib/sam.h"
 
 int ntests = 0;
 int nfailures = 0;

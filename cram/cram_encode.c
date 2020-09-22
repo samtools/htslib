@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2019 Genome Research Ltd.
+Copyright (c) 2012-2020 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -43,10 +43,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <math.h>
 #include <inttypes.h>
 
-#include "cram/cram.h"
-#include "cram/os.h"
-#include "htslib/hts.h"
-#include "htslib/hts_endian.h"
+#include "cram.h"
+#include "os.h"
+#include "../sam_internal.h" // for nibble2base
+#include "../htslib/hts.h"
+#include "../htslib/hts_endian.h"
 
 KHASH_MAP_INIT_STR(m_s2u64, uint64_t)
 
@@ -547,7 +548,8 @@ cram_block *cram_encode_slice_header(cram_fd *fd, cram_slice *s) {
     if (!b)
         return NULL;
 
-    if (NULL == (cp = buf = malloc(16+5*(8+s->hdr->num_blocks)))) {
+    cp = buf = malloc(16+5*(8+s->hdr->num_blocks));
+    if (NULL == buf) {
         cram_free_block(b);
         return NULL;
     }
@@ -894,10 +896,9 @@ static int cram_compress_slice(cram_fd *fd, cram_container *c, cram_slice *s) {
     }
 
     // NAME: best is generally xz, bzip2, zlib then rans1
-    // It benefits well from a little bit extra compression level.
     if (cram_compress_block(fd, s->block[DS_RN], fd->m[DS_RN],
                             method & ~(1<<RANS0 | 1<<GZIP_RLE),
-                            MIN(9,level)))
+                            level))
         return -1;
 
     // NS shows strong local correlation as rearrangements are localised
@@ -2297,10 +2298,13 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                 pthread_mutex_unlock(&fd->metrics_lock);
                 return NULL;
             }
-            if (r == 1) {
+            if (r >= 1) {
                 kh_val(fd->tags_used, k_global) = cram_new_metrics();
-                if (!kh_val(fd->tags_used, k_global))
+                if (!kh_val(fd->tags_used, k_global)) {
+                    kh_del(m_metrics, fd->tags_used, k_global);
+                    pthread_mutex_unlock(&fd->metrics_lock);
                     goto err;
+                }
             }
 
             pthread_mutex_unlock(&fd->metrics_lock);
@@ -2550,6 +2554,8 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
     key = string_ndup(c->comp_hdr->TD_keys,
                       (char *)BLOCK_DATA(td_b) + TD_blk_size,
                       BLOCK_SIZE(td_b) - TD_blk_size);
+    if (!key)
+        goto block_err;
     k = kh_put(m_s2i, c->comp_hdr->TD_hash, key, &new);
     if (new < 0) {
         return NULL;
@@ -2614,7 +2620,7 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
     cram_container *c = fd->ctr;
     int i;
 
-    /* First occurence */
+    /* First occurrence */
     if (c->curr_ref == -2)
         c->curr_ref = bam_ref(b);
 
@@ -2630,13 +2636,9 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
                      c->ref_seq_start + c->ref_seq_span -1);
 
         /* Encode slices */
-        if (fd->pool) {
-            if (-1 == cram_flush_container_mt(fd, c))
-                return NULL;
-        } else {
-            if (-1 == cram_flush_container(fd, c))
-                return NULL;
-
+        if (-1 == cram_flush_container_mt(fd, c))
+            return NULL;
+        if (!fd->pool) {
             // Move to sep func, as we need cram_flush_container for
             // the closing phase to flush the partial container.
             for (i = 0; i < c->max_slice; i++) {
@@ -2680,46 +2682,9 @@ static cram_container *cram_next_container(cram_fd *fd, bam_seq_t *b) {
 
     c->curr_rec = 0;
     c->s_num_bases = 0;
+    c->n_mapped = 0;
 
     return c;
-}
-
-/*
- * Convert a nibble encoded BAM sequence to a string of bases.
- *
- * We do this 2 bp at a time for speed. Equiv to:
- *
- * for (i = 0; i < len; i++)
- *    seq[i] = seq_nt16_str[bam_seqi(nib, i)];
- */
-static void nibble2base(uint8_t *nib, char *seq, int len) {
-    static const char code2base[512] =
-        "===A=C=M=G=R=S=V=T=W=Y=H=K=D=B=N"
-        "A=AAACAMAGARASAVATAWAYAHAKADABAN"
-        "C=CACCCMCGCRCSCVCTCWCYCHCKCDCBCN"
-        "M=MAMCMMMGMRMSMVMTMWMYMHMKMDMBMN"
-        "G=GAGCGMGGGRGSGVGTGWGYGHGKGDGBGN"
-        "R=RARCRMRGRRRSRVRTRWRYRHRKRDRBRN"
-        "S=SASCSMSGSRSSSVSTSWSYSHSKSDSBSN"
-        "V=VAVCVMVGVRVSVVVTVWVYVHVKVDVBVN"
-        "T=TATCTMTGTRTSTVTTTWTYTHTKTDTBTN"
-        "W=WAWCWMWGWRWSWVWTWWWYWHWKWDWBWN"
-        "Y=YAYCYMYGYRYSYVYTYWYYYHYKYDYBYN"
-        "H=HAHCHMHGHRHSHVHTHWHYHHHKHDHBHN"
-        "K=KAKCKMKGKRKSKVKTKWKYKHKKKDKBKN"
-        "D=DADCDMDGDRDSDVDTDWDYDHDKDDDBDN"
-        "B=BABCBMBGBRBSBVBTBWBYBHBKBDBBBN"
-        "N=NANCNMNGNRNSNVNTNWNYNHNKNDNBNN";
-
-    int i, len2 = len/2;
-    seq[0] = 0;
-
-    for (i = 0; i < len2; i++)
-        // Note size_t cast helps gcc optimiser.
-        memcpy(&seq[i*2], &code2base[(size_t)nib[i]*2], 2);
-
-    if ((i *= 2) < len)
-        seq[i] = seq_nt16_str[bam_seqi(nib, i)];
 }
 
 /*
@@ -3425,6 +3390,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
     c->curr_rec++;
     c->curr_c_rec++;
     c->s_num_bases += bam_seq_len(b);
+    c->n_mapped += (bam_flag(b) & BAM_FUNMAP) ? 0 : 1;
     fd->record_counter++;
 
     return 0;

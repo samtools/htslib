@@ -43,13 +43,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "cram/string_alloc.h"
+#include "string_alloc.h"
 
 #define MIN_STR_SIZE 1024
 
 
 /* creates the string pool. max_length is the initial size
-   a single string can be.  Tha max_length can grow as
+   a single string can be.  The max_length can grow as
    needed */
 
 string_alloc_t *string_pool_create(size_t max_length) {

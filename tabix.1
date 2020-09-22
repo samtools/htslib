@@ -1,10 +1,10 @@
-.TH tabix 1 "19 December 2019" "htslib-1.10.2" "Bioinformatics tools"
+.TH tabix 1 "22 September 2020" "htslib-1.11" "Bioinformatics tools"
 .SH NAME
 .PP
 tabix \- Generic indexer for TAB-delimited genome position files
 .\"
 .\" Copyright (C) 2009-2011 Broad Institute.
-.\" Copyright (C) 2014, 2016, 2018 Genome Research Ltd.
+.\" Copyright (C) 2014, 2016, 2018, 2020 Genome Research Ltd.
 .\"
 .\" Author: Heng Li <lh3@sanger.ac.uk>
 .\"
@@ -70,6 +70,13 @@ specified in the format "chr:beginPos-endPos".
 Fast data retrieval also
 works over network if URI is given as a file name and in this case the
 index file will be downloaded if it is not present locally.
+
+The tabix
+.RI ( .tbi )
+and BAI index formats can handle individual chromosomes up to 512 Mbp
+(2^29 bases) in length.
+If your input file might contain data lines with begin or end positions
+greater than that, you will need to use a CSI index.
 
 .SH INDEXING OPTIONS
 .TP 10
@@ -138,6 +145,28 @@ but the entire input will be read sequentially and regions not listed in FILE wi
 .TP
 .BI "-D "
 Do not download the index file before opening it. Valid for remote files only.
+.TP
+.BI "--cache " INT
+Set the BGZF block cache size to INT megabytes. [10]
+
+This is of most benefit when the
+.B -R
+option is used, which can cause blocks to be read more than once.
+Setting the size to 0 will disable the cache.
+.TP
+.B --separate-regions
+This option can be used when multiple regions are supplied in the command line
+and the user needs to quickly see which file records belong to which region.
+For this, a line with the name of the region, preceded by the file specific
+comment symbol, is inserted in the output before its corresponding group of
+records.
+.TP
+.BI "--verbosity " INT
+Set verbosity of logging messages printed to stderr.
+The default is 3, which turns on error and warning messages;
+2 reduces warning messages;
+1 prints only error messages and 0 is mostly silent.
+Values higher than 3 produce additional informational and debugging messages.
 .PP
 .SH EXAMPLE
 (grep ^"#" in.gff; grep -v ^"#" in.gff | sort -k1,1 -k4,4n) | bgzip > sorted.gff.gz;

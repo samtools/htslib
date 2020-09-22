@@ -1,6 +1,6 @@
 /*  synced_bcf_reader.c -- stream through multiple VCF files.
 
-    Copyright (C) 2012-2019 Genome Research Ltd.
+    Copyright (C) 2012-2020 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -25,6 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 #define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
+#include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
@@ -40,6 +41,9 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/thread_pool.h"
 #include "bcf_sr_sort.h"
 
+#define REQUIRE_IDX_      1
+#define ALLOW_NO_IDX_     2
+
 // Maximum indexable coordinate of .csi, for default min_shift of 14.
 // This comes out to about 17 Tbp.  Limiting factor is the bin number,
 // which is a uint32_t in CSI.  The highest number of levels compatible
@@ -52,7 +56,7 @@ typedef struct
 }
 region1_t;
 
-typedef struct _region_t
+typedef struct bcf_sr_region_t
 {
     region1_t *regs;            // regions will sorted and merged, redundant records marked for skipping have start>end
     int nregs, mregs, creg;     // creg: the current active region
@@ -95,6 +99,8 @@ char *bcf_sr_strerror(int errnum)
             return "VCF parse error";
         case bcf_read_error:
             return "BCF read error";
+        case noidx_error:
+            return "merge of unindexed files failed";
         default: return "";
     }
 }
@@ -105,7 +111,11 @@ int bcf_sr_set_opt(bcf_srs_t *readers, bcf_sr_opt_t opt, ...)
     switch (opt)
     {
         case BCF_SR_REQUIRE_IDX:
-            readers->require_index = 1;
+            readers->require_index = REQUIRE_IDX_;
+            return 0;
+
+        case BCF_SR_ALLOW_NO_IDX:
+            readers->require_index = ALLOW_NO_IDX_;
             return 0;
 
         case BCF_SR_PAIR_LOGIC:
@@ -128,7 +138,10 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
     {
         if ( *tmp==',' || !*tmp )
         {
-            out = (int*) realloc(out, (nout+1)*sizeof(int));
+            int *otmp = (int*) realloc(out, (nout+1)*sizeof(int));
+            if (!otmp)
+                goto err;
+            out = otmp;
             if ( tmp-prev==1 && *prev=='.' )
             {
                 out[nout] = -1;
@@ -149,6 +162,11 @@ static int *init_filters(bcf_hdr_t *hdr, const char *filters, int *nfilters)
     if ( str.m ) free(str.s);
     *nfilters = nout;
     return out;
+
+ err:
+    if (str.m) free(str.s);
+    free(out);
+    return NULL;
 }
 
 int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
@@ -162,7 +180,7 @@ int bcf_sr_set_regions(bcf_srs_t *readers, const char *regions, int is_file)
     readers->regions = bcf_sr_regions_init(regions,is_file,0,1,-2);
     if ( !readers->regions ) return -1;
     readers->explicit_regs = 1;
-    readers->require_index = 1;
+    readers->require_index = REQUIRE_IDX_;
     return 0;
 }
 int bcf_sr_set_targets(bcf_srs_t *readers, const char *targets, int is_file, int alleles)
@@ -206,7 +224,10 @@ void bcf_sr_destroy_threads(bcf_srs_t *files) {
 
 int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
 {
-    htsFile* file_ptr = hts_open(fname, "r");
+    char fmode[5];
+    strcpy(fmode, "r");
+    vcf_open_mode(fmode+1, fname, NULL);
+    htsFile* file_ptr = hts_open(fname, fmode);
     if ( ! file_ptr ) {
         files->errnum = open_failed;
         return 0;
@@ -233,7 +254,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
             bgzf_thread_pool(bgzf, files->p->pool, files->p->qsize);
     }
 
-    if ( files->require_index )
+    if ( files->require_index==REQUIRE_IDX_ )
     {
         if ( reader->file->format.format==vcf )
         {
@@ -290,9 +311,18 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     }
     if ( files->streaming && files->nreaders>1 )
     {
-        files->errnum = api_usage_error;
-        hts_log_error("Must set require_index when the number of readers is greater than one");
-        return 0;
+        static int no_index_warned = 0;
+        if ( files->require_index==ALLOW_NO_IDX_ && !no_index_warned )
+        {
+            hts_log_warning("Using multiple unindexed files may produce errors, make sure chromosomes are in the same order!");
+            no_index_warned = 1;
+        }
+        if ( files->require_index!=ALLOW_NO_IDX_ )
+        {
+            files->errnum = api_usage_error;
+            hts_log_error("Must set require_index when the number of readers is greater than one");
+            return 0;
+        }
     }
     if ( files->streaming && files->regions )
     {
@@ -313,7 +343,7 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
     // Update list of chromosomes
     if ( !files->explicit_regs && !files->streaming )
     {
-        int n,i;
+        int n = 0, i;
         const char **names = reader->tbx_idx ? tbx_seqnames(reader->tbx_idx, &n) : bcf_hdr_seqnames(reader->header, &n);
         for (i=0; i<n; i++)
         {
@@ -324,6 +354,28 @@ int bcf_sr_add_reader(bcf_srs_t *files, const char *fname)
         }
         free(names);
         _regions_sort_and_merge(files->regions);
+    }
+
+    if ( files->require_index==ALLOW_NO_IDX_ && files->nreaders > 1 )
+    {
+        bcf_hdr_t *hdr0 = files->readers[0].header;
+        bcf_hdr_t *hdr1 = reader->header;
+        if ( hdr0->n[BCF_DT_CTG]!=hdr1->n[BCF_DT_CTG] )
+        {
+            files->errnum = noidx_error;
+            hts_log_error("Different number of sequences in the header, refusing to stream multiple unindexed files");
+            return 0;
+        }
+        int i;
+        for (i=0; i<hdr0->n[BCF_DT_CTG]; i++)
+        {
+            if ( strcmp(bcf_hdr_id2name(hdr0,i),bcf_hdr_id2name(hdr1,i)) )
+            {
+                files->errnum = noidx_error;
+                hts_log_error("Sequences in the header appear in different order, refusing to stream multiple unindexed files");
+                return 0;
+            }
+        }
     }
 
     return 1;
@@ -562,6 +614,7 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         }
         reader->nbuffer++;
 
+        if ( files->require_index==ALLOW_NO_IDX_ && reader->buffer[reader->nbuffer]->rid != reader->buffer[1]->rid ) break;
         if ( reader->buffer[reader->nbuffer]->pos != reader->buffer[1]->pos ) break;    // the buffer is full
     }
     if ( ret<0 )
@@ -569,6 +622,11 @@ static int _reader_fill_buffer(bcf_srs_t *files, bcf_sr_t *reader)
         // done for this region
         tbx_itr_destroy(reader->itr);
         reader->itr = NULL;
+    }
+    if ( files->require_index==ALLOW_NO_IDX_ && reader->buffer[reader->nbuffer]->rid < reader->buffer[1]->rid )
+    {
+         hts_log_error("Sequences out of order, cannot stream multiple unindexed files: %s", reader->fname);
+         exit(1);
     }
     return 0; // FIXME: Check for more errs in this function
 }
@@ -594,9 +652,8 @@ static void _reader_shift_buffer(bcf_sr_t *reader)
 
 static int next_line(bcf_srs_t *files)
 {
-    int i;
-    hts_pos_t min_pos = HTS_POS_MAX;
     const char *chr = NULL;
+    hts_pos_t min_pos = HTS_POS_MAX;
 
     // Loop until next suitable line is found or all readers have finished
     while ( 1 )
@@ -604,17 +661,29 @@ static int next_line(bcf_srs_t *files)
         // Get all readers ready for the next region.
         if ( files->regions && _readers_next_region(files)<0 ) break;
 
-        // Fill buffers
+        // Fill buffers and find the minimum chromosome
+        int i, min_rid = INT32_MAX;
         for (i=0; i<files->nreaders; i++)
         {
             _reader_fill_buffer(files, &files->readers[i]);
+            if ( files->require_index==ALLOW_NO_IDX_ )
+            {
+                if ( !files->readers[i].nbuffer ) continue;
+                if ( min_rid > files->readers[i].buffer[1]->rid ) min_rid = files->readers[i].buffer[1]->rid;
+            }
+        }
+
+        for (i=0; i<files->nreaders; i++)
+        {
+            if ( !files->readers[i].nbuffer ) continue;
+            if ( files->require_index==ALLOW_NO_IDX_ && min_rid != files->readers[i].buffer[1]->rid ) continue;
 
             // Update the minimum coordinate
-            if ( !files->readers[i].nbuffer ) continue;
             if ( min_pos > files->readers[i].buffer[1]->pos )
             {
                 min_pos = files->readers[i].buffer[1]->pos;
                 chr = bcf_seqname(files->readers[i].header, files->readers[i].buffer[1]);
+                assert(chr);
                 bcf_sr_sort_set_active(&BCF_SR_AUX(files)->sort, i);
             }
             else if ( min_pos==files->readers[i].buffer[1]->pos )
@@ -1000,6 +1069,7 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
     reg->tbx = tbx_index_load3(regions, NULL, HTS_IDX_SAVE_REMOTE|HTS_IDX_SILENT_FAIL);
     if ( !reg->tbx )
     {
+        size_t iline = 0;
         int len = strlen(regions);
         int is_bed  = strcasecmp(".bed",regions+len-4) ? 0 : 1;
         if ( !is_bed && !strcasecmp(".bed.gz",regions+len-7) ) is_bed = 1;
@@ -1009,6 +1079,7 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
         // read the whole file, tabix index is not present
         while ( hts_getline(reg->file, KS_SEP_LINE, &reg->line) > 0 )
         {
+            iline++;
             char *chr, *chr_end;
             hts_pos_t from, to;
             int ret;
@@ -1019,8 +1090,8 @@ bcf_sr_regions_t *bcf_sr_regions_init(const char *regions, int is_file, int ichr
                     ret = _regions_parse_line(reg->line.s, ichr,ifrom,ifrom, &chr,&chr_end,&from,&to);
                 if ( ret<0 )
                 {
-                    hts_log_error("Could not parse the file %s, using the columns %d,%d[,%d]",
-                        regions,ichr+1,ifrom+1,ito+1);
+                    hts_log_error("Could not parse %zu-th line of file %s, using the columns %d,%d[,%d]",
+                        iline, regions,ichr+1,ifrom+1,ito+1);
                     hts_close(reg->file); reg->file = NULL; free(reg);
                     return NULL;
                 }

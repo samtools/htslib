@@ -1,7 +1,7 @@
 /*  tabix.c -- Generic indexer for TAB-delimited genome position files.
 
     Copyright (C) 2009-2011 Broad Institute.
-    Copyright (C) 2010-2012, 2014-2019 Genome Research Ltd.
+    Copyright (C) 2010-2012, 2014-2020 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -25,6 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -41,22 +42,46 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/bgzf.h"
 #include "htslib/hts.h"
 #include "htslib/regidx.h"
+#include "htslib/hts_defs.h"
+#include "htslib/hts_log.h"
 
 typedef struct
 {
     char *regions_fname, *targets_fname;
-    int print_header, header_only;
+    int print_header, header_only, cache_megs, download_index, separate_regs;
 }
 args_t;
 
-static void error(const char *format, ...)
+HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) static void error(const char *format, ...)
 {
     va_list ap;
+    fflush(stdout);
     va_start(ap, format);
     vfprintf(stderr, format, ap);
     va_end(ap);
+    fflush(stderr);
     exit(EXIT_FAILURE);
 }
+
+HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) static void error_errno(const char *format, ...)
+{
+    va_list ap;
+    int eno = errno;
+    fflush(stdout);
+    if (format) {
+        va_start(ap, format);
+        vfprintf(stderr, format, ap);
+        va_end(ap);
+    }
+    if (eno) {
+        fprintf(stderr, "%s%s\n", format ? ": " : "", strerror(eno));
+    } else {
+        fprintf(stderr, "\n");
+    }
+    fflush(stderr);
+    exit(EXIT_FAILURE);
+}
+
 
 #define IS_GFF  (1<<0)
 #define IS_BED  (1<<1)
@@ -85,7 +110,7 @@ int file_type(const char *fname)
             // file format.
             error("Couldn't understand format of \"%s\"\n", fname);
         } else {
-            error("Couldn't open \"%s\" : %s\n", fname, strerror(errno));
+            error_errno("Couldn't open \"%s\"", fname);
         }
     }
     enum htsExactFormat format = hts_get_format(fp)->format;
@@ -110,24 +135,35 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
         // improve me: this is a too heavy machinery for parsing regions...
 
         regidx_t *idx = regidx_init(regions_fname, NULL, NULL, 0, NULL);
-        if ( !idx ) error("Could not read %s\n", regions_fname);
-
+        if ( !idx ) {
+            error_errno("Could not build region list for \"%s\"", regions_fname);
+        }
         regitr_t *itr = regitr_init(idx);
-        if ( !itr ) error("Could not initialize an iterator over %s\n", regions_fname);
+        if ( !itr ) {
+            error_errno("Could not initialize an iterator over \"%s\"",
+                        regions_fname);
+        }
 
         (*nregs) += regidx_nregs(idx);
         regs = (char**) malloc(sizeof(char*)*(*nregs));
+        if (!regs) error_errno(NULL);
 
         int nseq;
         char **seqs = regidx_seq_names(idx, &nseq);
         for (iseq=0; iseq<nseq; iseq++)
         {
-            regidx_overlap(idx, seqs[iseq], 0, HTS_POS_MAX, itr);
+            if (regidx_overlap(idx, seqs[iseq], 0, HTS_POS_MAX, itr) < 0)
+                error_errno("Failed to build overlapping regions list");
+
             while ( regitr_overlap(itr) )
             {
                 str.l = 0;
-                ksprintf(&str, "%s:%"PRIhts_pos"-%"PRIhts_pos, seqs[iseq], itr->beg+1, itr->end+1);
-                regs[ireg++] = strdup(str.s);
+                if (ksprintf(&str, "%s:%"PRIhts_pos"-%"PRIhts_pos, seqs[iseq], itr->beg+1, itr->end+1) < 0) {
+                    error_errno(NULL);
+                }
+                regs[ireg] = strdup(str.s);
+                if (!regs[ireg]) error_errno(NULL);
+                ireg++;
             }
         }
         regidx_destroy(idx);
@@ -138,88 +174,143 @@ static char **parse_regions(char *regions_fname, char **argv, int argc, int *nre
     if ( !ireg )
     {
         if ( argc )
+        {
             regs = (char**) malloc(sizeof(char*)*argc);
+            if (!regs) error_errno(NULL);
+        }
         else
         {
             regs = (char**) malloc(sizeof(char*));
+            if (!regs) error_errno(NULL);
             regs[0] = strdup(".");
+            if (!regs[0]) error_errno(NULL);
             *nregs = 1;
         }
     }
 
-    for (iseq=0; iseq<argc; iseq++) regs[ireg++] = strdup(argv[iseq]);
+    for (iseq=0; iseq<argc; iseq++, ireg++) {
+        regs[ireg] = strdup(argv[iseq]);
+        if (!regs[ireg]) error_errno(NULL);
+    }
     return regs;
 }
-static int query_regions(args_t *args, char *fname, char **regs, int nregs, int download)
+static int query_regions(args_t *args, tbx_conf_t *conf, char *fname, char **regs, int nregs)
 {
     int i;
     htsFile *fp = hts_open(fname,"r");
-    if ( !fp ) error("Could not read %s\n", fname);
+    if ( !fp ) error_errno("Could not open \"%s\"", fname);
     enum htsExactFormat format = hts_get_format(fp)->format;
+
+    if (args->cache_megs)
+        hts_set_cache_size(fp, args->cache_megs * 1048576);
 
     regidx_t *reg_idx = NULL;
     if ( args->targets_fname )
     {
         reg_idx = regidx_init(args->targets_fname, NULL, NULL, 0, NULL);
-        if ( !reg_idx ) error("Could not read %s\n", args->targets_fname);
+        if (!reg_idx)
+            error_errno("Could not build region list for \"%s\"",
+                        args->targets_fname);
     }
 
     if ( format == bcf )
     {
         htsFile *out = hts_open("-","w");
-        if ( !out ) error("Could not open stdout\n", fname);
-        hts_idx_t *idx = bcf_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
-        if ( !idx ) error("Could not load .csi index of %s\n", fname);
+        if ( !out ) error_errno("Could not open stdout");
+        hts_idx_t *idx = bcf_index_load3(fname, NULL, args->download_index ? HTS_IDX_SAVE_REMOTE : 0);
+        if ( !idx ) error_errno("Could not load .csi index of \"%s\"", fname);
+
         bcf_hdr_t *hdr = bcf_hdr_read(fp);
-        if ( !hdr ) error("Could not read the header: %s\n", fname);
-        if ( args->print_header )
-            if ( bcf_hdr_write(out,hdr)!=0 ) error("Failed to write to %s\n", fname);
+        if ( !hdr ) error_errno("Could not read the header from \"%s\"", fname);
+
+        if ( args->print_header ) {
+            if ( bcf_hdr_write(out,hdr)!=0 )
+                error_errno("Failed to write to stdout");
+        }
         if ( !args->header_only )
         {
+            assert(regs != NULL);
             bcf1_t *rec = bcf_init();
+            if (!rec) error_errno(NULL);
             for (i=0; i<nregs; i++)
             {
+                int ret, found = 0;
                 hts_itr_t *itr = bcf_itr_querys(idx,hdr,regs[i]);
-                while ( bcf_itr_next(fp, itr, rec) >=0 )
+                if (!itr) continue;
+                while ((ret = bcf_itr_next(fp, itr, rec)) >=0 )
                 {
-                    if ( reg_idx && !regidx_overlap(reg_idx, bcf_seqname(hdr,rec),rec->pos,rec->pos+rec->rlen-1, NULL) ) continue;
-                    if ( bcf_write(out,hdr,rec)!=0 ) error("Failed to write to %s\n", fname);
+                    if ( reg_idx )
+                    {
+                        const char *chr = bcf_seqname(hdr,rec);
+                        if (!chr) {
+                            error("Bad BCF record in \"%s\" : "
+                                  "Invalid CONTIG id %d\n",
+                                  fname, rec->rid);
+                        }
+                        if ( !regidx_overlap(reg_idx,chr,rec->pos,rec->pos+rec->rlen-1, NULL) ) continue;
+                    }
+                    if (!found) {
+                        if (args->separate_regs) printf("%c%s\n", conf->meta_char, regs[i]);
+                        found = 1;
+                    }
+                    if ( bcf_write(out,hdr,rec)!=0 ) {
+                        error_errno("Failed to write to stdout");
+                    }
+                }
+
+                if (ret < -1) {
+                    error_errno("Reading \"%s\" failed", fname);
                 }
                 tbx_itr_destroy(itr);
             }
             bcf_destroy(rec);
         }
-        if ( hts_close(out) ) error("hts_close returned non-zero status for stdout\n");
+        if ( hts_close(out) )
+            error_errno("hts_close returned non-zero status for stdout");
+
         bcf_hdr_destroy(hdr);
         hts_idx_destroy(idx);
     }
     else if ( format==vcf || format==sam || format==bed || format==text_format || format==unknown_format )
     {
-        tbx_t *tbx = tbx_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
-        if ( !tbx ) error("Could not load .tbi/.csi index of %s\n", fname);
+        tbx_t *tbx = tbx_index_load3(fname, NULL, args->download_index ? HTS_IDX_SAVE_REMOTE : 0);
+        if ( !tbx ) error_errno("Could not load .tbi/.csi index of %s", fname);
         kstring_t str = {0,0,0};
         if ( args->print_header )
         {
-            while ( hts_getline(fp, KS_SEP_LINE, &str) >= 0 )
+            int ret;
+            while ((ret = hts_getline(fp, KS_SEP_LINE, &str)) >= 0)
             {
                 if ( !str.l || str.s[0]!=tbx->conf.meta_char ) break;
-                puts(str.s);
+                if (puts(str.s) < 0)
+                    error_errno("Error writing to stdout");
             }
+            if (ret < -1) error_errno("Reading \"%s\" failed", fname);
         }
         if ( !args->header_only )
         {
             int nseq;
             const char **seq = NULL;
-            if ( reg_idx ) seq = tbx_seqnames(tbx, &nseq);
+            if ( reg_idx ) {
+                seq = tbx_seqnames(tbx, &nseq);
+                if (!seq) error_errno("Failed to get sequence names list");
+            }
             for (i=0; i<nregs; i++)
             {
+                int ret, found = 0;
                 hts_itr_t *itr = tbx_itr_querys(tbx, regs[i]);
                 if ( !itr ) continue;
-                while (tbx_itr_next(fp, tbx, itr, &str) >= 0)
+                while ((ret = tbx_itr_next(fp, tbx, itr, &str)) >= 0)
                 {
                     if ( reg_idx && !regidx_overlap(reg_idx,seq[itr->curr_tid],itr->curr_beg,itr->curr_end-1, NULL) ) continue;
-                    puts(str.s);
+                    if (!found) {
+                        if (args->separate_regs) printf("%c%s\n", conf->meta_char, regs[i]);
+                        found = 1;
+                    }
+                    if (puts(str.s) < 0)
+                        error_errno("Failed to write to stdout");
                 }
+                if (ret < -1) error_errno("Reading \"%s\" failed", fname);
                 tbx_itr_destroy(itr);
             }
             free(seq);
@@ -231,7 +322,8 @@ static int query_regions(args_t *args, char *fname, char **regs, int nregs, int 
         error("Please use \"samtools view\" for querying BAM files.\n");
 
     if ( reg_idx ) regidx_destroy(reg_idx);
-    if ( hts_close(fp) ) error("hts_close returned non-zero status: %s\n", fname);
+    if ( hts_close(fp) )
+        error_errno("hts_close returned non-zero status: %s", fname);
 
     for (i=0; i<nregs; i++) free(regs[i]);
     free(regs);
@@ -244,25 +336,31 @@ static int query_chroms(char *fname, int download)
     if ( ftype & IS_TXT || !ftype )
     {
         tbx_t *tbx = tbx_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
-        if ( !tbx ) error("Could not load .tbi index of %s\n", fname);
+        if ( !tbx ) error_errno("Could not load .tbi index of %s", fname);
         seq = tbx_seqnames(tbx, &nseq);
-        for (i=0; i<nseq; i++)
-            printf("%s\n", seq[i]);
+        if (!seq) error_errno("Couldn't get list of sequence names");
+        for (i=0; i<nseq; i++) {
+            if (printf("%s\n", seq[i]) < 0)
+                error_errno("Couldn't write to stdout");
+        }
         free(seq);
         tbx_destroy(tbx);
     }
     else if ( ftype==IS_BCF )
     {
         htsFile *fp = hts_open(fname,"r");
-        if ( !fp ) error("Could not read %s\n", fname);
+        if ( !fp ) error_errno("Could not open \"%s\"", fname);
         bcf_hdr_t *hdr = bcf_hdr_read(fp);
-        if ( !hdr ) error("Could not read the header: %s\n", fname);
+        if ( !hdr ) error_errno("Could not read the header: \"%s\"", fname);
         hts_close(fp);
         hts_idx_t *idx = bcf_index_load3(fname, NULL, download ? HTS_IDX_SAVE_REMOTE : 0);
-        if ( !idx ) error("Could not load .csi index of %s\n", fname);
+        if ( !idx ) error_errno("Could not load .csi index of \"%s\"", fname);
         seq = bcf_index_seqnames(idx, hdr, &nseq);
-        for (i=0; i<nseq; i++)
-            printf("%s\n", seq[i]);
+        if (!seq) error_errno("Couldn't get list of sequence names");
+        for (i=0; i<nseq; i++) {
+            if (printf("%s\n", seq[i]) < 0)
+                error_errno("Couldn't write to stdout");
+        }
         free(seq);
         bcf_hdr_destroy(hdr);
         hts_idx_destroy(idx);
@@ -315,19 +413,26 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
         char *buf = malloc(page_size);
         BGZF *bgzf_out = bgzf_open("-", "w");
         ssize_t nread;
+
+        if (!buf) error("%s\n", strerror(errno));
+        if (!bgzf_out)
+            error_errno("Couldn't open output stream");
         while ( (nread=fread(buf,1,page_size-1,hdr))>0 )
         {
             if ( nread<page_size-1 && buf[nread-1]!='\n' ) buf[nread++] = '\n';
-            if (bgzf_write(bgzf_out, buf, nread) < 0) error("Error: %d\n",bgzf_out->errcode);
+            if (bgzf_write(bgzf_out, buf, nread) < 0)
+                error_errno("Write error %d", bgzf_out->errcode);
         }
-        if ( fclose(hdr) ) error("close failed: %s\n", header);
+        if ( ferror(hdr) ) error_errno("Failed to read \"%s\"", header);
+        if ( fclose(hdr) ) error_errno("Closing \"%s\" failed", header);
 
-        // Output all remainig data read with the header block
+        // Output all remaining data read with the header block
         if ( fp->block_length - skip_until > 0 )
         {
-            if (bgzf_write(bgzf_out, buffer+skip_until, fp->block_length-skip_until) < 0) error("Error: %d\n",fp->errcode);
+            if (bgzf_write(bgzf_out, buffer+skip_until, fp->block_length-skip_until) < 0) error_errno("Write error %d",fp->errcode);
         }
-        if (bgzf_flush(bgzf_out) < 0) error("Error: %d\n",bgzf_out->errcode);
+        if (bgzf_flush(bgzf_out) < 0)
+            error_errno("Write error %d", bgzf_out->errcode);
 
         while (1)
         {
@@ -335,10 +440,13 @@ int reheader_file(const char *fname, const char *header, int ftype, tbx_conf_t *
             if ( nread<=0 ) break;
 
             int count = bgzf_raw_write(bgzf_out, buf, nread);
-            if (count != nread) error("Write failed, wrote %d instead of %d bytes.\n", count,(int)nread);
+            if (count != nread) error_errno("Write failed, wrote %d instead of %d bytes", count,(int)nread);
         }
-        if (bgzf_close(bgzf_out) < 0) error("Error: %d\n",bgzf_out->errcode);
-        if (bgzf_close(fp) < 0) error("Error: %d\n",fp->errcode);
+        if (nread < 0) error_errno("Error reading \"%s\"", fname);
+        if (bgzf_close(bgzf_out) < 0)
+            error_errno("Error %d closing output", bgzf_out->errcode);
+        if (bgzf_close(fp) < 0)
+            error_errno("Error %d closing \"%s\"", bgzf_out->errcode, fname);
         free(buf);
     }
     else
@@ -372,17 +480,22 @@ static int usage(FILE *fp, int status)
     fprintf(fp, "   -R, --regions FILE         restrict to regions listed in the file\n");
     fprintf(fp, "   -T, --targets FILE         similar to -R but streams rather than index-jumps\n");
     fprintf(fp, "   -D                         do not download the index file\n");
+    fprintf(fp, "       --cache INT            set cache size to INT megabytes (0 disables) [10]\n");
+    fprintf(fp, "       --separate-regions     separate the output by corresponding regions\n");
+    fprintf(fp, "       --verbosity INT        set verbosity [3]\n");
     fprintf(fp, "\n");
     return status;
 }
 
 int main(int argc, char *argv[])
 {
-    int c, detect = 1, min_shift = 0, is_force = 0, list_chroms = 0, do_csi = 0, download_index = 1;
+    int c, detect = 1, min_shift = 0, is_force = 0, list_chroms = 0, do_csi = 0;
     tbx_conf_t conf = tbx_conf_gff;
     char *reheader = NULL;
     args_t args;
     memset(&args,0,sizeof(args_t));
+    args.cache_megs = 10;
+    args.download_index = 1;
 
     static const struct option loptions[] =
     {
@@ -404,6 +517,9 @@ int main(int argc, char *argv[])
         {"list-chroms", no_argument, NULL, 'l'},
         {"reheader", required_argument, NULL, 'r'},
         {"version", no_argument, NULL, 1},
+        {"verbosity", required_argument, NULL, 3},
+        {"cache", required_argument, NULL, 4},
+        {"separate-regions", no_argument, NULL, 5},
         {NULL, 0, NULL, 0}
     };
 
@@ -457,15 +573,32 @@ int main(int argc, char *argv[])
                 detect = 0;
                 break;
             case 'D':
-                download_index = 0;
+                args.download_index = 0;
                 break;
             case 1:
                 printf(
 "tabix (htslib) %s\n"
-"Copyright (C) 2019 Genome Research Ltd.\n", hts_version());
+"Copyright (C) 2020 Genome Research Ltd.\n", hts_version());
                 return EXIT_SUCCESS;
             case 2:
                 return usage(stdout, EXIT_SUCCESS);
+            case 3: {
+                int v = atoi(optarg);
+                if (v < 0) v = 0;
+                hts_set_log_level(v);
+                break;
+            }
+            case 4:
+                args.cache_megs = atoi(optarg);
+                if (args.cache_megs < 0) {
+                    args.cache_megs = 0;
+                } else if (args.cache_megs >= INT_MAX / 1048576) {
+                    args.cache_megs = INT_MAX / 1048576;
+                }
+                break;
+            case 5:
+                args.separate_regs = 1;
+                break;
             default: return usage(stderr, EXIT_FAILURE);
         }
     }
@@ -473,16 +606,7 @@ int main(int argc, char *argv[])
     if ( optind==argc ) return usage(stderr, EXIT_FAILURE);
 
     if ( list_chroms )
-        return query_chroms(argv[optind], download_index);
-
-    if ( argc > optind+1 || args.header_only || args.regions_fname || args.targets_fname )
-    {
-        int nregs = 0;
-        char **regs = NULL;
-        if ( !args.header_only )
-            regs = parse_regions(args.regions_fname, argv+optind+1, argc-optind-1, &nregs);
-        return query_regions(&args, argv[optind], regs, nregs, download_index);
-    }
+        return query_chroms(argv[optind], args.download_index);
 
     char *fname = argv[optind];
     int ftype = file_type(fname);
@@ -505,6 +629,14 @@ int main(int argc, char *argv[])
             if ( !min_shift ) min_shift = 14;
         }
     }
+    if ( argc > optind+1 || args.header_only || args.regions_fname || args.targets_fname )
+    {
+        int nregs = 0;
+        char **regs = NULL;
+        if ( !args.header_only )
+            regs = parse_regions(args.regions_fname, argv+optind+1, argc-optind-1, &nregs);
+        return query_regions(&args, &conf, fname, regs, nregs);
+    }
     if ( do_csi )
     {
         if ( !min_shift ) min_shift = 14;
@@ -520,7 +652,8 @@ int main(int argc, char *argv[])
     else if ( ftype==IS_BAM ) suffix = ".bai";
     else if ( ftype==IS_CRAM ) suffix = ".crai";
 
-    char *idx_fname = calloc(strlen(fname) + 5, 1);
+    char *idx_fname = calloc(strlen(fname) + 6, 1);
+    if (!idx_fname) error("%s\n", strerror(errno));
     strcat(strcpy(idx_fname, fname), suffix);
 
     struct stat stat_tbi, stat_file;

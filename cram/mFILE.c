@@ -41,9 +41,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <unistd.h>
 #include <stdarg.h>
 
-#include "htslib/hts_log.h"
-#include "cram/os.h"
-#include "cram/mFILE.h"
+#include "../htslib/hts_log.h"
+#include "os.h"
+#include "mFILE.h"
 
 #ifdef HAVE_MMAP
 #include <sys/mman.h>
@@ -258,7 +258,7 @@ mFILE *mfcreate_from(const char *path, const char *mode_str, FILE *fp) {
 
 /*
  * Converts a FILE * to an mFILE *.
- * Use this for wrapper functions to turn external prototypes requring
+ * Use this for wrapper functions to turn external prototypes requiring
  * FILE * as an argument into internal code using mFILE *.
  */
 mFILE *mfreopen(const char *path, const char *mode_str, FILE *fp) {

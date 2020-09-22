@@ -2,7 +2,7 @@
 /// High-level VCF/BCF variant calling file operations.
 /*
     Copyright (C) 2012, 2013 Broad Institute.
-    Copyright (C) 2012-2019 Genome Research Ltd.
+    Copyright (C) 2012-2020 Genome Research Ltd.
 
     Author: Heng Li <lh3@sanger.ac.uk>
 
@@ -35,12 +35,14 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdint.h>
 #include <limits.h>
-#include <assert.h>
 #include <errno.h>
 #include "hts.h"
 #include "kstring.h"
 #include "hts_defs.h"
 #include "hts_endian.h"
+
+/* Included only for backwards compatibility with e.g. bcftools 1.10 */
+#include <assert.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -71,7 +73,7 @@ extern "C" {
 
 /* === Dictionary ===
 
-   The header keeps three dictonaries. The first keeps IDs in the
+   The header keeps three dictionaries. The first keeps IDs in the
    "FILTER/INFO/FORMAT" lines, the second keeps the sequence names and lengths
    in the "contig" lines and the last keeps the sample names. bcf_hdr_t::dict[]
    is the actual hash table, which is opaque to the end users. In the hash
@@ -86,7 +88,7 @@ extern "C" {
 #define BCF_DT_SAMPLE   2
 
 // Complete textual representation of a header line
-typedef struct {
+typedef struct bcf_hrec_t {
     int type;       // One of the BCF_HL_* type
     char *key;      // The part before '=', i.e. FILTER/INFO/FORMAT/contig/fileformat etc.
     char *value;    // Set only for generic lines, NULL for FILTER/INFO, etc.
@@ -94,20 +96,20 @@ typedef struct {
     char **keys, **vals;    // The key=value pairs
 } bcf_hrec_t;
 
-typedef struct {
+typedef struct bcf_idinfo_t {
     uint64_t info[3];  // stores Number:20, var:4, Type:4, ColType:4 in info[0..2]
                        // for BCF_HL_FLT,INFO,FMT and contig length in info[0] for BCF_HL_CTG
     bcf_hrec_t *hrec[3];
     int id;
 } bcf_idinfo_t;
 
-typedef struct {
+typedef struct bcf_idpair_t {
     const char *key;
     const bcf_idinfo_t *val;
 } bcf_idpair_t;
 
 // Note that bcf_hdr_t structs must always be created via bcf_hdr_init()
-typedef struct {
+typedef struct bcf_hdr_t {
     int32_t n[3];           // n:the size of the dictionary block in use, (allocated size, m, is below to preserve ABI)
     bcf_idpair_t *id[3];
     void *dict[3];          // ID dictionary, contig dict and sample dict
@@ -143,11 +145,11 @@ extern uint8_t bcf_type_shift[];
 #define VCF_BND     16    // breakend
 #define VCF_OVERLAP 32    // overlapping deletion, ALT=*
 
-typedef struct {
+typedef struct bcf_variant_t {
     int type, n;    // variant type and the number of bases affected, negative for deletions
-} variant_t;
+} bcf_variant_t;
 
-typedef struct {
+typedef struct bcf_fmt_t {
     int id;             // id: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$id].key
     int n, size, type;  // n: number of values per-sample; size: number of bytes per-sample; type: one of BCF_BT_* types
     uint8_t *p;         // same as vptr and vptr_* in bcf_info_t below
@@ -155,7 +157,7 @@ typedef struct {
     uint32_t p_off:31, p_free:1;
 } bcf_fmt_t;
 
-typedef struct {
+typedef struct bcf_info_t {
     int key;        // key: numeric tag id, the corresponding string is bcf_hdr_t::id[BCF_DT_ID][$key].key
     int type;  // type: one of BCF_BT_* types
     union {
@@ -176,7 +178,7 @@ typedef struct {
 #define BCF1_DIRTY_FLT 4
 #define BCF1_DIRTY_INF 8
 
-typedef struct {
+typedef struct bcf_dec_t {
     int m_fmt, m_info, m_id, m_als, m_allele, m_flt; // allocated size (high-water mark); do not change
     int n_flt;  // Number of FILTER fields
     int *flt;   // FILTER keys in the dictionary
@@ -184,7 +186,7 @@ typedef struct {
     char **allele;      // allele[0] is the REF (allele[] pointers to the als block); all null terminated
     bcf_info_t *info;   // INFO
     bcf_fmt_t *fmt;     // FORMAT and individual sample
-    variant_t *var;     // $var and $var_type set only when set_variant_types called
+    bcf_variant_t *var; // $var and $var_type set only when set_variant_types called
     int n_var, var_type;
     int shared_dirty;   // if set, shared.s must be recreated on BCF output
     int indiv_dirty;    // if set, indiv.s must be recreated on BCF output
@@ -210,7 +212,7 @@ typedef struct {
     shared.s, indiv.s, etc.) are written directly by bcf_write, whereas a VCF
     line must be formatted in vcf_format.
  */
-typedef struct {
+typedef struct bcf1_t {
     hts_pos_t pos;  // POS
     hts_pos_t rlen; // length of REF
     int32_t rid;  // CHROM
@@ -359,6 +361,16 @@ typedef struct {
     HTSLIB_EXPORT
     int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v);
 
+    /**
+     * Complete the file opening mode, according to its extension.
+     * @param mode      Preallocated mode string to be completed.
+     * @param fn        File name to be opened.
+     * @param format    Format string (vcf|bcf|vcf.gz)
+     * @return          0 on success; -1 on failure
+     */
+    HTSLIB_EXPORT
+    int vcf_open_mode(char *mode, const char *fn, const char *format);
+
     /** The opposite of vcf_parse. It should rarely be called directly, see vcf_write */
     HTSLIB_EXPORT
     int vcf_format(const bcf_hdr_t *h, const bcf1_t *v, kstring_t *s);
@@ -388,7 +400,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     #define BCF_UN_INFO 4       // up to INFO
     #define BCF_UN_SHR  (BCF_UN_STR|BCF_UN_FLT|BCF_UN_INFO) // all shared information
     #define BCF_UN_FMT  8                           // unpack format and each sample
-    #define BCF_UN_IND  BCF_UN_FMT                  // a synonymo of BCF_UN_FMT
+    #define BCF_UN_IND  BCF_UN_FMT                  // a synonym of BCF_UN_FMT
     #define BCF_UN_ALL  (BCF_UN_SHR|BCF_UN_FMT)     // everything
     HTSLIB_EXPORT
     int bcf_unpack(bcf1_t *b, int which);
@@ -492,6 +504,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *
      *  The bcf_hdr_t struct returned by a successful call should be freed
      *  via bcf_hdr_destroy() when it is no longer needed.
+     *  @return NULL on failure, header otherwise
      */
     HTSLIB_EXPORT
     bcf_hdr_t *bcf_hdr_dup(const bcf_hdr_t *hdr);
@@ -509,6 +522,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  bcf_hdr_merge() - copy header lines from src to dst, see also bcf_translate()
      *  @param dst: the destination header to be merged into, NULL on the first pass
      *  @param src: the source header
+     *  @return NULL on failure, header otherwise
      *
      *  Notes:
      *      - use as:
@@ -589,6 +603,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  @param n:        number of samples to keep
      *  @param samples:  names of the samples to keep
      *  @param imap:     mapping from index in @samples to the sample index in the original file
+     *  @return NULL on failure, header otherwise
      *
      *  Sample names not present in h0 are ignored. The number of unmatched samples can be checked
      *  by comparing n and bcf_hdr_nsamples(out_hdr).
@@ -623,6 +638,23 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     HTSLIB_EXPORT
     int bcf_hdr_sync(bcf_hdr_t *h) HTS_RESULT_USED;
 
+    /**
+     * bcf_hdr_parse_line() - parse a single line of VCF textual header
+     * @param h     BCF header struct
+     * @param line  One or more lines of header text
+     * @param len   Filled out with length data parsed from 'line'.
+     * @return bcf_hrec_t* on success;
+     *         NULL on error or on end of header text.
+     *         NB: to distinguish error from end-of-header, check *len:
+     *           *len == 0 indicates @p line did not start with "##"
+     *           *len == -1 indicates failure, likely due to out of memory
+     *           *len > 0 indicates a malformed header line
+     *
+     * If *len > 0 on exit, it will contain the full length of the line
+     * including any trailing newline (this includes cases where NULL was
+     * returned due to a malformed line).  Callers can use this to skip to
+     * the next header line.
+     */
     HTSLIB_EXPORT
     bcf_hrec_t *bcf_hdr_parse_line(const bcf_hdr_t *h, const char *line, int *len);
     /// Convert a bcf header record to string form
@@ -756,7 +788,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     HTSLIB_EXPORT
     int bcf_has_filter(const bcf_hdr_t *hdr, bcf1_t *line, char *filter);
     /**
-     *  bcf_update_alleles() and bcf_update_alleles_str() - update REF and ALLT column
+     *  bcf_update_alleles() and bcf_update_alleles_str() - update REF and ALT column
      *  @alleles:           Array of alleles
      *  @nals:              Number of alleles
      *  @alleles_string:    Comma-separated alleles, starting with the REF allele
@@ -789,6 +821,14 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  The @p string in bcf_update_info_flag() is optional,
      *  @p n indicates whether the flag is set or removed.
      *
+     *  Note that updating an END info tag will cause line->rlen to be
+     *  updated as a side-effect (removing the tag will set it to the
+     *  string length of the REF allele). If line->pos is being changed as
+     *  well, it is important that this is done before calling
+     *  bcf_update_info_int32() to update the END tag, otherwise rlen will be
+     *  set incorrectly.  If the new END value is less than or equal to
+     *  line->pos, a warning will be printed and line->rlen will be set to
+     *  the length of the REF allele.
      */
     #define bcf_update_info_int32(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_INT)
     #define bcf_update_info_float(hdr,line,key,values,n)   bcf_update_info((hdr),(line),(key),(values),(n),BCF_HT_REAL)
@@ -1039,8 +1079,26 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
      *  bcf_hdr_id2name() - Translates numeric ID to sequence name
      */
     static inline int bcf_hdr_name2id(const bcf_hdr_t *hdr, const char *id) { return bcf_hdr_id2int(hdr, BCF_DT_CTG, id); }
-    static inline const char *bcf_hdr_id2name(const bcf_hdr_t *hdr, int rid) { return hdr->id[BCF_DT_CTG][rid].key; }
-    static inline const char *bcf_seqname(const bcf_hdr_t *hdr, bcf1_t *rec) { return hdr->id[BCF_DT_CTG][rec->rid].key; }
+    static inline const char *bcf_hdr_id2name(const bcf_hdr_t *hdr, int rid)
+    {
+        if ( !hdr || rid<0 || rid>=hdr->n[BCF_DT_CTG] ) return NULL;
+        return hdr->id[BCF_DT_CTG][rid].key;
+    }
+    static inline const char *bcf_seqname(const bcf_hdr_t *hdr, const bcf1_t *rec) {
+        return bcf_hdr_id2name(hdr, rec ? rec->rid : -1);
+    }
+
+    /** Return CONTIG name, or "(unknown)"
+
+        Like bcf_seqname(), but this function will never return NULL.  If
+        the contig name cannot be found (either because @p hdr was not
+        supplied or rec->rid was out of range) it returns the string
+        "(unknown)".
+    */
+    static inline const char *bcf_seqname_safe(const bcf_hdr_t *hdr, const bcf1_t *rec) {
+        const char *name = bcf_seqname(hdr, rec);
+        return name ? name : "(unknown)";
+    }
 
     /**
      *  bcf_hdr_id2*() - Macros for accessing bcf_idinfo_t
@@ -1060,7 +1118,7 @@ set to one of BCF_ERR* codes and must be checked before calling bcf_write().
     #define bcf_hdr_id2number(hdr,type,int_id)  ((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>12)
     #define bcf_hdr_id2type(hdr,type,int_id)    (uint32_t)((hdr)->id[BCF_DT_ID][int_id].val->info[type]>>4 & 0xf)
     #define bcf_hdr_id2coltype(hdr,type,int_id) (uint32_t)((hdr)->id[BCF_DT_ID][int_id].val->info[type] & 0xf)
-    #define bcf_hdr_idinfo_exists(hdr,type,int_id)  ((int_id<0 || bcf_hdr_id2coltype(hdr,type,int_id)==0xf) ? 0 : 1)
+    #define bcf_hdr_idinfo_exists(hdr,type,int_id)  ((int_id)>=0 && bcf_hdr_id2coltype((hdr),(type),(int_id))!=0xf)
     #define bcf_hdr_id2hrec(hdr,dict_type,col_type,int_id)    ((hdr)->id[(dict_type)==BCF_DT_CTG?BCF_DT_CTG:BCF_DT_ID][int_id].val->hrec[(dict_type)==BCF_DT_CTG?0:(col_type)])
     /// Convert BCF FORMAT data to string form
     /**
@@ -1333,15 +1391,16 @@ static inline int bcf_format_gt(bcf_fmt_t *fmt, int isample, kstring_t *str)
 static inline int bcf_enc_size(kstring_t *s, int size, int type)
 {
     uint32_t e = 0;
+    uint8_t x[4];
     if (size >= 15) {
         e |= kputc(15<<4|type, s) < 0;
         if (size >= 128) {
             if (size >= 32768) {
-                int32_t x = size;
+                i32_to_le(size, x);
                 e |= kputc(1<<4|BCF_BT_INT32, s) < 0;
                 e |= kputsn((char*)&x, 4, s) < 0;
             } else {
-                int16_t x = size;
+                i16_to_le(size, x);
                 e |= kputc(1<<4|BCF_BT_INT16, s) < 0;
                 e |= kputsn((char*)&x, 2, s) < 0;
             }
@@ -1363,6 +1422,7 @@ static inline int bcf_enc_inttype(long x)
 static inline int bcf_enc_int1(kstring_t *s, int32_t x)
 {
     uint32_t e = 0;
+    uint8_t z[4];
     if (x == bcf_int32_vector_end) {
         e |= bcf_enc_size(s, 1, BCF_BT_INT8);
         e |= kputc(bcf_int8_vector_end, s) < 0;
@@ -1373,11 +1433,11 @@ static inline int bcf_enc_int1(kstring_t *s, int32_t x)
         e |= bcf_enc_size(s, 1, BCF_BT_INT8);
         e |= kputc(x, s) < 0;
     } else if (x <= BCF_MAX_BT_INT16 && x >= BCF_MIN_BT_INT16) {
-        int16_t z = x;
+        i16_to_le(x, z);
         e |= bcf_enc_size(s, 1, BCF_BT_INT16);
         e |= kputsn((char*)&z, 2, s) < 0;
     } else {
-        int32_t z = x;
+        i32_to_le(x, z);
         e |= bcf_enc_size(s, 1, BCF_BT_INT32);
         e |= kputsn((char*)&z, 4, s) < 0;
     }

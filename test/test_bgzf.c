@@ -34,9 +34,10 @@ DEALINGS IN THE SOFTWARE.
 #include <inttypes.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include "htslib/bgzf.h"
-#include "htslib/hfile.h"
-#include "hfile_internal.h"
+
+#include "../htslib/bgzf.h"
+#include "../htslib/hfile.h"
+#include "../hfile_internal.h"
 
 const char *bgzf_suffix = ".gz";
 const char *idx_suffix  = ".gzi";
@@ -378,7 +379,7 @@ static int setup(const char *src, Files *f) {
         perror(__func__);
         goto fail;
     }
-    for (i = 0; i < max; i++) snprintf(text + i*8, text_sz - i*8, "%07d\n", i);
+    for (i = 0; i < max; i++) snprintf(text + i*8, text_sz - i*8, "%07u\n", i);
     f->text = (unsigned char *) text;
     f->ltext = text_sz - 1;
 

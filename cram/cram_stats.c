@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2012-2014, 2016, 2018 Genome Research Ltd.
+Copyright (c) 2012-2014, 2016, 2018, 2020 Genome Research Ltd.
 Author: James Bonfield <jkb@sanger.ac.uk>
 
 Redistribution and use in source and binary forms, with or without
@@ -42,8 +42,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <math.h>
 #include <inttypes.h>
 
-#include "cram/cram.h"
-#include "cram/os.h"
+#include "cram.h"
+#include "os.h"
 
 cram_stats *cram_stats_create(void) {
     return calloc(1, sizeof(cram_stats));
@@ -145,13 +145,15 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
             continue;
         if (nvals >= vals_alloc) {
             vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-            vals  = realloc(vals,  vals_alloc * sizeof(int));
-            freqs = realloc(freqs, vals_alloc * sizeof(int));
-            if (!vals || !freqs) {
-                if (vals)  free(vals);
-                if (freqs) free(freqs);
+            int *vals_tmp  = realloc(vals,  vals_alloc * sizeof(int));
+            int *freqs_tmp = realloc(freqs, vals_alloc * sizeof(int));
+            if (!vals_tmp || !freqs_tmp) {
+                free(vals_tmp  ? vals_tmp  : vals);
+                free(freqs_tmp ? freqs_tmp : freqs);
                 return E_HUFFMAN; // Cannot do much else atm
             }
+            vals = vals_tmp;
+            freqs = freqs_tmp;
         }
         vals[nvals] = i;
         freqs[nvals] = st->freqs[i];
@@ -170,10 +172,15 @@ enum cram_encoding cram_stats_encoding(cram_fd *fd, cram_stats *st) {
 
             if (nvals >= vals_alloc) {
                 vals_alloc = vals_alloc ? vals_alloc*2 : 1024;
-                vals  = realloc(vals,  vals_alloc * sizeof(int));
-                freqs = realloc(freqs, vals_alloc * sizeof(int));
-                if (!vals || !freqs)
+                int *vals_tmp  = realloc(vals,  vals_alloc * sizeof(int));
+                int *freqs_tmp = realloc(freqs, vals_alloc * sizeof(int));
+                if (!vals_tmp || !freqs_tmp) {
+                    free(vals_tmp  ? vals_tmp  : vals);
+                    free(freqs_tmp ? freqs_tmp : freqs);
                     return E_HUFFMAN; // Cannot do much else atm
+                }
+                vals = vals_tmp;
+                freqs = freqs_tmp;
             }
             i = kh_key(st->h, k);
             vals[nvals]=i;

@@ -1,7 +1,7 @@
 /* The MIT License
 
    Copyright (c) 2008, 2009, 2011 Attractive Chaos <attractor@live.co.uk>
-   Copyright (C) 2013, 2018 Genome Research Ltd.
+   Copyright (C) 2013, 2018, 2020 Genome Research Ltd.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -32,6 +32,8 @@
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
+
+#include "kstring.h"
 
 #ifndef klib_unused
 #if (defined __clang__ && __clang_major__ >= 3) || (defined __GNUC__ && __GNUC__ >= 3)
@@ -88,18 +90,6 @@
 	static inline klib_unused int ks_getuntil(kstream_t *ks, int delimiter, kstring_t *str, int *dret) \
 	{ return ks_getuntil2(ks, delimiter, str, dret, 0); }
 
-#ifndef KSTRING_T
-#define KSTRING_T kstring_t
-typedef struct kstring_t {
-	size_t l, m;
-	char *s;
-} kstring_t;
-#endif
-
-#ifndef kroundup32
-#define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
-#endif
-
 #define __KS_GETUNTIL(SCOPE, __read) \
 	SCOPE int ks_getuntil2(kstream_t *ks, int delimiter, kstring_t *str, int *dret, int append)  \
 	{ \
@@ -129,11 +119,7 @@ typedef struct kstring_t {
 				for (i = ks->begin; i < ks->end; ++i) \
 					if (isspace(ks->buf[i]) && ks->buf[i] != ' ') break;  \
 			} else i = 0; /* never come to here! */ \
-			if (str->m - str->l < (size_t)(i - ks->begin + 1)) { \
-				str->m = str->l + (i - ks->begin) + 1; \
-				kroundup32(str->m); \
-				str->s = (char*)realloc(str->s, str->m); \
-			} \
+			(void) ks_expand(str, i - ks->begin + 1); \
             seek_pos += i - ks->begin; if ( i < ks->end ) seek_pos++; \
 			gotany = 1; \
 			memcpy(str->s + str->l, ks->buf + ks->begin, i - ks->begin);  \

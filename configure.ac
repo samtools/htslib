@@ -1,6 +1,6 @@
 # Configure script for htslib, a C library for high-throughput sequencing data.
 #
-#    Copyright (C) 2015-2018 Genome Research Ltd.
+#    Copyright (C) 2015-2019 Genome Research Ltd.
 #
 #    Author: John Marshall <jm18@sanger.ac.uk>
 #
@@ -31,6 +31,7 @@ AC_CONFIG_HEADERS(config.h)
 
 m4_include([m4/hts_prog_cc_warnings.m4])
 m4_include([m4/hts_hide_dynamic_syms.m4])
+m4_include([m4/pkg.m4])
 
 dnl Copyright notice to be copied into the generated configure script
 AC_COPYRIGHT([Portions copyright (C) 2018 Genome Research Ltd.
@@ -173,14 +174,14 @@ HTS_HIDE_DYNAMIC_SYMBOLS
 
 dnl FIXME This pulls in dozens of standard header checks
 AC_FUNC_MMAP
-AC_CHECK_FUNCS([gmtime_r fsync drand48])
+AC_CHECK_FUNCS([gmtime_r fsync drand48 srand48_deterministic])
 
 # Darwin has a dubious fdatasync() symbol, but no declaration in <unistd.h>
 AC_CHECK_DECL([fdatasync(int)], [AC_CHECK_FUNCS(fdatasync)])
 
 if test $enable_plugins != no; then
-  AC_SEARCH_LIBS([dlopen], [dl], [],
-    [MSG_ERROR([dlopen() not found
+  AC_SEARCH_LIBS([dlsym], [dl], [],
+    [MSG_ERROR([dlsym() not found
 
 Plugin support requires dynamic linking facilities from the operating system.
 Either configure with --disable-plugins or resolve this error to build HTSlib.])])
@@ -190,8 +191,8 @@ Either configure with --disable-plugins or resolve this error to build HTSlib.])
   AS_IF([test x"$rdynamic_flag" != "xno"],
     [LDFLAGS="$LDFLAGS $rdynamic_flag"
      static_LDFLAGS="$static_LDFLAGS $rdynamic_flag"])
-  case "$ac_cv_search_dlopen" in
-    -l*) static_LIBS="$static_LIBS $ac_cv_search_dlopen" ;;
+  case "$ac_cv_search_dlsym" in
+    -l*) static_LIBS="$static_LIBS $ac_cv_search_dlsym" ;;
   esac
   AC_DEFINE([ENABLE_PLUGINS], 1, [Define if HTSlib should enable plugins.])
   AC_SUBST([PLUGIN_EXT])

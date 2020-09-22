@@ -104,7 +104,7 @@ static inline int kbs_resize2(kbitset_t **bsp, size_t ni_new, int fill)
 	size_t n_new = (ni_new + KBS_ELTBITS-1) / KBS_ELTBITS;
 	if (bs == NULL || n_new > bs->n_max) {
 		bs = (kbitset_t *)
-			realloc(bs, sizeof(kbitset_t) + n_new * sizeof(unsigned long));
+			realloc(*bsp, sizeof(kbitset_t) + n_new * sizeof(unsigned long));
 		if (bs == NULL) return -1;
 
 		bs->n_max = n_new;

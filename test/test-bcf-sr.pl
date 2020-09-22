@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # test-bcf-sr.pl -- Test bcf synced reader's allele pairing
 #
-#     Copyright (C) 2017-2018 Genome Research Ltd.
+#     Copyright (C) 2017-2018, 2020 Genome Research Ltd.
 #
 #     Author: petr.danecek@sanger
 #
@@ -34,11 +34,18 @@ use lib "$FindBin::Bin";
 
 my $opts = parse_params();
 run_test($opts);
+test_no_index($opts);
 
 exit;
 
 #--------------------------------
 
+sub cygpath {
+    my ($path) = @_;
+    $path = `cygpath -m $path`;
+    $path =~ s/\r?\n//;
+    return $path
+}
 sub error
 {
     my (@msg) = @_;
@@ -65,6 +72,9 @@ sub parse_params
         error("Unknown parameter \"$arg\". Run -h for help.\n");
     }
     $$opts{tmp} = exists($$opts{keep_files}) ? $$opts{keep_files} : tempdir(CLEANUP=>1);
+    if ($^O =~ /^msys/) {
+        $$opts{tmp} = cygpath($$opts{tmp});
+    }
     if ( $$opts{keep_files} ) { cmd("mkdir -p $$opts{keep_files}"); }
     if ( !exists($$opts{seed}) )
     {
@@ -563,4 +573,59 @@ sub pairing_score
     return (1<<(28+$min)) + $cnt;
 }
 
+sub test_no_index {
+    my ($opts) = @_;
 
+    my $vcfdir = "$FindBin::Bin/bcf-sr";
+    if ($^O =~ /^msys/) {
+        $vcfdir = `cygpath -w $vcfdir`;
+        $vcfdir =~ s/\r?\n//;
+        $vcfdir =~ s/\\/\\\\/g;
+    }
+
+    # Positive test
+    open(my $fh, '>', "$$opts{tmp}/no_index_1.txt")
+        || error("$$opts{tmp}/no_index_1.txt : $!");
+    print $fh "$vcfdir/merge.noidx.a.vcf\n";
+    print $fh "$vcfdir/merge.noidx.b.vcf\n";
+    print $fh "$vcfdir/merge.noidx.c.vcf\n";
+    close($fh) || error("$$opts{tmp}/no_index_1.txt : $!");
+
+    my $cmd = "$FindBin::Bin/test-bcf-sr --no-index -p all $$opts{tmp}/no_index_1.txt > $$opts{tmp}/no_index_1.out 2> $$opts{tmp}/no_index_1.err";
+    my ($ret) = _cmd($cmd);
+    if ($ret) {
+        error("The command failed [$ret]: $cmd\n");
+    }
+
+    if ($^O =~ /^msys/) {
+        cmd("diff --strip-trailing-cr $vcfdir/merge.noidx.abc.expected.out $$opts{tmp}/no_index_1.out");
+    } else {
+        cmd("cmp $vcfdir/merge.noidx.abc.expected.out $$opts{tmp}/no_index_1.out");
+    }
+
+    # Check bad input detection
+
+    my @bad_file_tests = (["out-of-order header",
+                           ["merge.noidx.a.vcf", "merge.noidx.hdr_order.vcf"]],
+                          ["out-of-order records",
+                           ["merge.noidx.a.vcf", "merge.noidx.rec_order.vcf"]],
+                          ["out-of-order records",
+                           ["merge.noidx.rec_order.vcf", "merge.noidx.a.vcf"]]);
+    my $count = 2;
+    foreach my $test_params (@bad_file_tests) {
+        my ($badness, $inputs) = @$test_params;
+        open($fh, '>', "$$opts{tmp}/no_index_$count.txt")
+            || error("$$opts{tmp}/no_index_$count.txt : $!");
+        foreach my $input (@$inputs) {
+            print $fh "$vcfdir/$input\n";
+        }
+        close($fh) || error("$$opts{tmp}/no_index_$count.txt : $!");
+
+        $cmd = "$FindBin::Bin/test-bcf-sr --no-index -p all $$opts{tmp}/no_index_$count.txt > $$opts{tmp}/no_index_$count.out 2> $$opts{tmp}/no_index_$count.err";
+        my ($ret) = _cmd($cmd);
+        if ($ret == 0) {
+            error("Failed to detect $badness: $cmd\n");
+        }
+        $count++;
+    }
+}

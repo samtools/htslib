@@ -1,6 +1,6 @@
 /*  sam.c -- SAM and BAM file I/O and manipulation.
 
-    Copyright (C) 2008-2010, 2012-2019 Genome Research Ltd.
+    Copyright (C) 2008-2010, 2012-2020 Genome Research Ltd.
     Copyright (C) 2010, 2012, 2013 Broad Institute.
 
     Author: Heng Li <lh3@sanger.ac.uk>
@@ -506,10 +506,9 @@ hts_pos_t bam_cigar2rlen(int n_cigar, const uint32_t *cigar)
 
 hts_pos_t bam_endpos(const bam1_t *b)
 {
-    if (!(b->core.flag & BAM_FUNMAP) && b->core.n_cigar > 0)
-        return b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
-    else
-        return b->core.pos + 1;
+    hts_pos_t rlen = (b->core.flag & BAM_FUNMAP)? 0 : bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
+    if (rlen == 0) rlen = 1;
+    return b->core.pos + rlen;
 }
 
 static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0 if CIGAR is untouched; 1 if CIGAR is updated with CG
@@ -523,7 +522,13 @@ static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0
     cigar0 = bam_get_cigar(b);
     if (bam_cigar_op(cigar0[0]) != BAM_CSOFT_CLIP || bam_cigar_oplen(cigar0[0]) != c->l_qseq) return 0;
     fake_bytes = c->n_cigar * 4;
-    if ((CG = bam_aux_get(b, "CG")) == 0) return 0; // no CG tag
+    int saved_errno = errno;
+    CG = bam_aux_get(b, "CG");
+    if (!CG) {
+        if (errno != ENOENT) return -1;  // Bad aux data
+        errno = saved_errno; // restore errno on expected no-CG-tag case
+        return 0;
+    }
     if (CG[0] != 'B' || CG[1] != 'I') return 0; // not of type B,I
     CG_len = le_to_u32(CG + 2);
     if (CG_len < c->n_cigar || CG_len >= 1U<<29) return 0; // don't move if the real CIGAR length is shorter than the fake cigar length
@@ -542,7 +547,7 @@ static int bam_tag2cigar(bam1_t *b, int recal_bin, int give_warning) // return 0
         memmove(b->data + CG_st + n_cigar4 - fake_bytes, b->data + CG_en + n_cigar4 - fake_bytes, ori_len - CG_en);
     b->l_data -= n_cigar4 + 8; // 8: CGBI (4 bytes) and CGBI length (4)
     if (recal_bin)
-        b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)), 14, 5);
+        b->core.bin = hts_reg2bin(b->core.pos, bam_endpos(b), 14, 5);
     if (give_warning)
         hts_log_error("%s encodes a CIGAR with %d operators at the CG tag", bam_get_qname(b), c->n_cigar);
     return 1;
@@ -645,7 +650,7 @@ int bam_read1(BGZF *fp, bam1_t *b)
     if (c->n_cigar > 0) { // recompute "bin" and check CIGAR-qlen consistency
         hts_pos_t rlen, qlen;
         bam_cigar2rqlens(c->n_cigar, bam_get_cigar(b), &rlen, &qlen);
-        if ((b->core.flag & BAM_FUNMAP)) rlen=1;
+        if ((b->core.flag & BAM_FUNMAP) || rlen == 0) rlen = 1;
         b->core.bin = hts_reg2bin(b->core.pos, b->core.pos + rlen, 14, 5);
         // Sanity check for broken CIGAR alignments
         if (c->l_qseq > 0 && !(c->flag & BAM_FUNMAP) && qlen != c->l_qseq) {
@@ -740,6 +745,8 @@ static int bam_write_idx1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b) {
         return -1;
     if (!bfp->mt)
         hts_idx_amend_last(fp->idx, bgzf_tell(bfp));
+    else
+        bgzf_idx_amend_last(bfp, fp->idx, bgzf_tell(bfp));
 
     int ret = bam_write1(bfp, b);
     if (ret < 0)
@@ -848,7 +855,7 @@ int sam_index_build3(const char *fn, const char *fnidx, int min_shift, int nthre
 
     case bam:
     case sam:
-        if (!fp->is_bgzf) {
+        if (fp->format.compression != bgzf) {
             hts_log_error("%s file \"%s\" not BGZF compressed",
                           fp->format.format == bam ? "BAM" : "SAM", fn);
             ret = -1;
@@ -882,7 +889,7 @@ int sam_index_build(const char *fn, int min_shift)
     return sam_index_build3(fn, NULL, min_shift, 0);
 }
 
-// Provide bam_index_build() symbol for binary compability with earlier HTSlib
+// Provide bam_index_build() symbol for binary compatibility with earlier HTSlib
 #undef bam_index_build
 int bam_index_build(const char *fn, int min_shift)
 {
@@ -918,7 +925,7 @@ int sam_idx_init(htsFile *fp, sam_hdr_t *h, int min_shift, const char *fnidx) {
     return -1;
 }
 
-// Finishes an index. Call afer the last record has been written.
+// Finishes an index. Call after the last record has been written.
 // Returns 0 on success, <0 on failure.
 int sam_idx_save(htsFile *fp) {
     if (fp->format.format == bam || fp->format.format == bcf ||
@@ -1343,7 +1350,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
                     }
                     sn = (char*)calloc(r - q + 1, 1);
                     if (!sn)
-                    goto error;
+                        goto error;
 
                     strncpy(sn, q, r - q);
                     q = r;
@@ -1402,7 +1409,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
         if (kputc('\n', &str) < 0)
             goto error;
 
-        if (fp->format.compression == bgzf) {
+        if (fp->is_bgzf) {
             next_c = bgzf_peek(fp->fp.bgzf);
         } else {
             unsigned char nc;
@@ -1420,7 +1427,14 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
 
     if (!has_SQ && fp->fn_aux) {
         kstring_t line = { 0, 0, NULL };
-        hFILE* f = hopen(fp->fn_aux, "r");
+
+        /* The reference index (.fai) is actually needed here */
+        char *fai_fn = fp->fn_aux;
+        char *fn_delim = strstr(fp->fn_aux, HTS_IDX_DELIM);
+        if (fn_delim)
+            fai_fn = fn_delim + strlen(HTS_IDX_DELIM);
+
+        hFILE* f = hopen(fai_fn, "r");
         int e = 0, absent;
         if (f == NULL)
             goto error;
@@ -1479,7 +1493,7 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
 
         ks_free(&line);
         if (hclose(f) != 0) {
-            hts_log_error("Error on closing %s", fp->fn_aux);
+            hts_log_error("Error on closing %s", fai_fn);
             e = 1;
         }
         if (e)
@@ -1491,12 +1505,16 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
         h->n_targets = kh_size(d);
 
         h->target_name = (char**) malloc(sizeof(char*) * h->n_targets);
-        if (!h->target_name)
+        if (!h->target_name) {
+            h->n_targets = 0;
             goto error;
+        }
 
         h->target_len = (uint32_t*) malloc(sizeof(uint32_t) * h->n_targets);
-        if (!h->target_len)
+        if (!h->target_len) {
+            h->n_targets = 0;
             goto error;
+        }
 
         for (k = kh_begin(d); k != kh_end(d); ++k) {
             if (!kh_exist(d, k))
@@ -1523,6 +1541,10 @@ static sam_hdr_t *sam_hdr_create(htsFile* fp) {
     return fp->bam_header;
 
  error:
+    if (h && d && (!h->target_name || !h->target_len)) {
+        for (k = kh_begin(d); k != kh_end(d); ++k)
+            if (kh_exist(d, k)) free((void *)kh_key(d, k));
+    }
     sam_hdr_destroy(h);
     ks_free(&str);
     kh_destroy(s2i, d);
@@ -1613,7 +1635,7 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
             l_text = h->l_text;
         }
 
-        if (fp->format.compression == bgzf) {
+        if (fp->is_bgzf) {
             bytes = bgzf_write(fp->fp.bgzf, text, l_text);
         } else {
             bytes = hwrite(fp->fp.hfile, text, l_text);
@@ -1634,7 +1656,7 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
                 if (r != 0)
                     return -1;
 
-                if (fp->format.compression == bgzf) {
+                if (fp->is_bgzf) {
                     bytes = bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l);
                 } else {
                     bytes = hwrite(fp->fp.hfile, fp->line.s, fp->line.l);
@@ -1643,7 +1665,7 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
                     return -1;
             }
         }
-        if (fp->format.compression == bgzf) {
+        if (fp->is_bgzf) {
             if (bgzf_flush(fp->fp.bgzf) != 0) return -1;
         } else {
             if (hflush(fp->fp.hfile) != 0) return -1;
@@ -1947,14 +1969,14 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 #endif
 
 #define _get_mem(type_t, x, b, l) if (possibly_expand_bam_data((b), (l)) < 0) goto err_ret; *(x) = (type_t*)((b)->data + (b)->l_data); (b)->l_data += (l)
-#define _parse_err(cond, msg) do { if (cond) { hts_log_error(msg); goto err_ret; } } while (0)
-#define _parse_err_param(cond, msg, param) do { if (cond) { hts_log_error(msg, param); goto err_ret; } } while (0)
-#define _parse_warn(cond, msg) do { if (cond) { hts_log_warning(msg); } } while (0)
+#define _parse_err(cond, ...) do { if (cond) { hts_log_error(__VA_ARGS__); goto err_ret; } } while (0)
+#define _parse_warn(cond, ...) do { if (cond) { hts_log_warning(__VA_ARGS__); } } while (0)
 
     uint8_t *t;
 
     char *p = s->s, *q;
     int i, overflow = 0;
+    char logbuf[40];
     hts_pos_t cigreflen;
     bam1_core_t *c = &b->core;
 
@@ -1986,7 +2008,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         _parse_err(h->n_targets == 0, "no SQ lines present in the header");
         c->tid = bam_name2id(h, q);
         _parse_err(c->tid < -1, "failed to parse header");
-        _parse_warn(c->tid < 0, "urecognized reference name; treated as unmapped");
+        _parse_warn(c->tid < 0, "unrecognized reference name %s; treated as unmapped", hts_strprint(logbuf, sizeof logbuf, '"', q, SIZE_MAX));
     } else c->tid = -1;
 
     // pos
@@ -2021,6 +2043,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         }
         // can't use bam_endpos() directly as some fields not yet set up
         cigreflen = (!(c->flag&BAM_FUNMAP))? bam_cigar2rlen(c->n_cigar, cigar) : 1;
+        if (cigreflen == 0) cigreflen = 1;
     } else {
         _parse_warn(!(c->flag&BAM_FUNMAP), "mapped query must have a CIGAR; treated as unmapped");
         c->flag |= BAM_FUNMAP;
@@ -2038,8 +2061,8 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         c->mtid = -1;
     } else {
         c->mtid = bam_name2id(h, q);
-        _parse_err(c->tid < -1, "failed to parse header");
-        _parse_warn(c->mtid < 0, "urecognized mate reference name; treated as unmapped");
+        _parse_err(c->mtid < -1, "failed to parse header");
+        _parse_warn(c->mtid < 0, "unrecognized mate reference name %s; treated as unmapped", hts_strprint(logbuf, sizeof logbuf, '"', q, SIZE_MAX));
     }
     // mpos
     c->mpos = hts_str2uint(p, &p, 63, &overflow) - 1;
@@ -2085,7 +2108,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     q = p;
     p = s->s + s->l;
     while (q < p) {
-        uint8_t type;
+        char type;
         _parse_err(p - q < 5, "incomplete aux field");
         _parse_err(q[0] < '!' || q[1] < '!', "invalid aux tag id");
         // Copy over id
@@ -2162,7 +2185,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 
             if (sam_parse_B_vals(type, n, q, &q, r, b) < 0)
                 goto err_ret;
-        } else _parse_err_param(1, "unrecognized type %c", type);
+        } else _parse_err(1, "unrecognized type %s", hts_strprint(logbuf, sizeof logbuf, '\'', &type, 1));
 
         while (*q > '\t') { q++; } // Skip any junk to next tab
         q++;
@@ -2176,7 +2199,6 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 
 #undef _parse_warn
 #undef _parse_err
-#undef _parse_err_param
 #undef _get_mem
 #undef _read_token
 err_ret:
@@ -2221,6 +2243,7 @@ typedef struct sp_lines {
 enum sam_cmd {
     SAM_NONE = 0,
     SAM_CLOSE,
+    SAM_CLOSE_DONE,
 };
 
 typedef struct SAM_state {
@@ -2309,31 +2332,50 @@ int sam_state_destroy(htsFile *fp) {
         if (fd->h) {
             // Notify sam_dispatcher we're closing
             pthread_mutex_lock(&fd->command_m);
-            fd->command = SAM_CLOSE;
+            if (fd->command != SAM_CLOSE_DONE)
+                fd->command = SAM_CLOSE;
             pthread_cond_signal(&fd->command_c);
             ret = -fd->errcode;
-            if (!ret) hts_tpool_wake_dispatch(fd->q); // unstick the reader
+            if (fd->q)
+                hts_tpool_wake_dispatch(fd->q); // unstick the reader
+
+            if (!fp->is_write && fd->q && fd->dispatcher) {
+                for (;;) {
+                    // Avoid deadlocks with dispatcher
+                    if (fd->command == SAM_CLOSE_DONE)
+                        break;
+                    hts_tpool_wake_dispatch(fd->q);
+                    pthread_mutex_unlock(&fd->command_m);
+                    usleep(10000);
+                    pthread_mutex_lock(&fd->command_m);
+                }
+            }
             pthread_mutex_unlock(&fd->command_m);
 
             if (fp->is_write) {
                 // Dispatch the last partial block.
                 sp_bams *gb = fd->curr_bam;
-                if (!ret && gb && gb->nbams > 0)
-                  ret = hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb);
+                if (!ret && gb && gb->nbams > 0 && fd->q)
+                    ret = hts_tpool_dispatch(fd->p, fd->q, sam_format_worker, gb);
 
                 // Flush and drain output
-                hts_tpool_process_flush(fd->q);
+                if (fd->q)
+                    hts_tpool_process_flush(fd->q);
                 pthread_mutex_lock(&fd->command_m);
                 if (!ret) ret = -fd->errcode;
                 pthread_mutex_unlock(&fd->command_m);
 
-                while (!ret && !hts_tpool_process_empty(fd->q)) {
+                while (!ret && fd->q && !hts_tpool_process_empty(fd->q)) {
                     usleep(10000);
                     pthread_mutex_lock(&fd->command_m);
-                    if (!ret) ret = -fd->errcode;
+                    ret = -fd->errcode;
+                    // not empty but shutdown implies error
+                    if (hts_tpool_process_is_shutdown(fd->q) && !ret)
+                        ret = EIO;
                     pthread_mutex_unlock(&fd->command_m);
                 }
-                hts_tpool_process_shutdown(fd->q);
+                if (fd->q)
+                    hts_tpool_process_shutdown(fd->q);
             }
 
             // Wait for it to acknowledge
@@ -2385,6 +2427,19 @@ int sam_state_destroy(htsFile *fp) {
     return ret;
 }
 
+// Cleanup function - job for sam_parse_worker; result for sam_format_worker
+static void cleanup_sp_lines(void *arg) {
+    sp_lines *gl = (sp_lines *)arg;
+    if (!gl) return;
+
+    // Should always be true for lines passed to / from thread workers.
+    assert(gl->next == NULL);
+
+    free(gl->data);
+    sam_free_sp_bams(gl->bams);
+    free(gl);
+}
+
 // Run from one of the worker threads.
 // Convert a passed in array of lines to array of BAMs, returning
 // the result back to the thread queue.
@@ -2434,6 +2489,7 @@ static void *sam_parse_worker(void *arg) {
             gb->abams *= 2;
             b = (bam1_t *)realloc(gb->bams, gb->abams*sizeof(bam1_t));
             if (!b) {
+                gb->abams /= 2;
                 sam_state_err(fd, ENOMEM);
                 goto err;
             }
@@ -2451,11 +2507,12 @@ static void *sam_parse_worker(void *arg) {
         // However this is an API change so for now we copy.
 
         char *nl = strchr(cp, '\n');
-        nl = nl ? nl : cp_end;
+        if (!nl)  nl = cp_end;
         if (*nl) *nl++ = '\0';
         kstring_t ks = {nl-cp, gl->alloc, cp};
         if (sam_parse1(&ks, fd->h, &b[i]) < 0) {
-            sam_state_err(fd, EIO);
+            sam_state_err(fd, errno ? errno : EIO);
+            cleanup_sp_lines(gl);
             goto err;
         }
         cp = nl;
@@ -2476,20 +2533,6 @@ static void *sam_parse_worker(void *arg) {
 
 static void *sam_parse_eof(void *arg) {
     return NULL;
-}
-
-// Cleanup function - job for sam_parse_worker; result for sam_format_worker
-static void cleanup_sp_lines(void *arg) {
-    sp_lines *gl = (sp_lines *)arg;
-
-    if (!gl) return;
-
-    // Should always be true for lines passed to / from thread workers
-    assert(gl->next == NULL);
-
-    free(gl->data);
-    sam_free_sp_bams(gl->bams);
-    free(gl);
 }
 
 // Cleanup function - result for sam_parse_worker; job for sam_format_worker
@@ -2520,8 +2563,7 @@ static void *sam_dispatcher_read(void *vp) {
         case SAM_CLOSE:
             pthread_cond_signal(&fd->command_c);
             pthread_mutex_unlock(&fd->command_m);
-            hts_tpool_process_destroy(fd->q);
-            fd->q = NULL;
+            hts_tpool_process_shutdown(fd->q);
             goto tidyup;
 
         default:
@@ -2542,8 +2584,8 @@ static void *sam_dispatcher_read(void *vp) {
             l = calloc(1, sizeof(*l));
             if (!l)
                 goto err;
-            l->alloc = NM+8; // +8 for optimisation in sam_parse1
-            l->data = malloc(l->alloc);
+            l->alloc = NM;
+            l->data = malloc(l->alloc+8); // +8 for optimisation in sam_parse1
             if (!l->data) {
                 free(l);
                 l = NULL;
@@ -2553,8 +2595,8 @@ static void *sam_dispatcher_read(void *vp) {
         }
         l->next = NULL;
 
-        if (l->alloc+NM/2 < line_frag) {
-            char *rp = realloc(l->data, line_frag+NM/2);
+        if (l->alloc < line_frag+NM/2) {
+            char *rp = realloc(l->data, line_frag+NM/2 +8);
             if (!rp)
                 goto err;
             l->alloc = line_frag+NM/2;
@@ -2570,7 +2612,7 @@ static void *sam_dispatcher_read(void *vp) {
         else
             nbytes = hread(fp->fp.hfile, l->data + line_frag, l->alloc - line_frag);
         if (nbytes < 0) {
-            sam_state_err(fd, EIO);
+            sam_state_err(fd, errno ? errno : EIO);
             goto err;
         } else if (nbytes == 0)
             break; // EOF
@@ -2587,7 +2629,7 @@ static void *sam_dispatcher_read(void *vp) {
             // entire buffer is part of a single line
             if (cp == l->data) {
                 line_frag = l->data_size;
-                char *rp = realloc(l->data, l->alloc * 2);
+                char *rp = realloc(l->data, l->alloc * 2 + 8);
                 if (!rp)
                     goto err;
                 l->alloc *= 2;
@@ -2615,7 +2657,14 @@ static void *sam_dispatcher_read(void *vp) {
         if (hts_tpool_dispatch3(fd->p, fd->q, sam_parse_worker, l,
                                 cleanup_sp_lines, cleanup_sp_bams, 0) < 0)
             goto err;
+        pthread_mutex_lock(&fd->command_m);
+        if (fd->command == SAM_CLOSE) {
+            pthread_mutex_unlock(&fd->command_m);
+            l = NULL;
+            goto tidyup;
+        }
         l = NULL;  // Now "owned" by sam_parse_worker()
+        pthread_mutex_unlock(&fd->command_m);
     }
 
     if (hts_tpool_dispatch(fd->p, fd->q, sam_parse_eof, NULL) < 0)
@@ -2631,8 +2680,7 @@ static void *sam_dispatcher_read(void *vp) {
         case SAM_CLOSE:
             pthread_cond_signal(&fd->command_c);
             pthread_mutex_unlock(&fd->command_m);
-            hts_tpool_process_destroy(fd->q);
-            fd->q = NULL;
+            hts_tpool_process_shutdown(fd->q);
             goto tidyup;
 
         default:
@@ -2642,6 +2690,11 @@ static void *sam_dispatcher_read(void *vp) {
     }
 
  tidyup:
+    pthread_mutex_lock(&fd->command_m);
+    fd->command = SAM_CLOSE_DONE;
+    pthread_cond_signal(&fd->command_c);
+    pthread_mutex_unlock(&fd->command_m);
+
     if (l) {
         pthread_mutex_lock(&fd->lines_m);
         l->next = fd->lines;
@@ -2653,9 +2706,8 @@ static void *sam_dispatcher_read(void *vp) {
     return NULL;
 
  err:
-    sam_state_err(fd, ENOMEM);
-    hts_tpool_process_destroy(fd->q);
-    fd->q = NULL;
+    sam_state_err(fd, errno ? errno : ENOMEM);
+    hts_tpool_process_shutdown(fd->q);
     goto tidyup;
 }
 
@@ -2685,7 +2737,7 @@ static void *sam_dispatcher_write(void *vp) {
                 if (i < gl->data_size)
                     i++;
 
-                if (fp->format.compression == bgzf) {
+                if (fp->is_bgzf) {
                     if (bgzf_write(fp->fp.bgzf, &gl->data[j], i-j) != i-j)
                         goto err;
                 } else {
@@ -2724,7 +2776,7 @@ static void *sam_dispatcher_write(void *vp) {
             gl->bams = NULL;
             pthread_mutex_unlock(&fd->lines_m);
         } else {
-            if (fp->format.compression == bgzf) {
+            if (fp->is_bgzf) {
                 if (bgzf_write(fp->fp.bgzf, gl->data, gl->data_size) != gl->data_size)
                     goto err;
             } else {
@@ -2743,12 +2795,11 @@ static void *sam_dispatcher_write(void *vp) {
     }
 
     sam_state_err(fd, 0); // success
-    hts_tpool_process_destroy(fd->q);
-    fd->q = NULL;
+    hts_tpool_process_shutdown(fd->q);
     return NULL;
 
  err:
-    sam_state_err(fd, EIO);
+    sam_state_err(fd, errno ? errno : EIO);
     return (void *)-1;
 }
 
@@ -2786,7 +2837,7 @@ static void *sam_format_worker(void *arg) {
 
     for (i = 0; i < gb->nbams; i++) {
         if (sam_format1_append(fd->h, &gb->bams[i], &ks) < 0) {
-            sam_state_err(fd, EIO);
+            sam_state_err(fd, errno ? errno : EIO);
             goto err;
         }
         kputc('\n', &ks);
@@ -2811,7 +2862,10 @@ static void *sam_format_worker(void *arg) {
     return gl;
 
  err:
-    sam_free_sp_bams(gb);
+    // Possible race between this and fd->curr_bam.
+    // Easier to not free and leave it on the input list so it
+    // gets freed there instead?
+    // sam_free_sp_bams(gb);
     if (gl) {
         free(gl->data);
         free(gl);
@@ -2835,6 +2889,10 @@ int sam_set_thread_pool(htsFile *fp, htsThreadPool *p) {
     if (!qsize)
         qsize = 2*hts_tpool_size(fd->p);
     fd->q = hts_tpool_process_init(fd->p, qsize, 0);
+    if (!fd->q) {
+        sam_state_destroy(fp);
+        return -1;
+    }
 
     if (fp->format.compression == bgzf)
         return bgzf_thread_pool(fp->fp.bgzf, p->pool, p->qsize);
@@ -2933,7 +2991,7 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
             sp_bams *gb = fd->curr_bam;
             if (!gb) {
                 if (fd->errcode) {
-                    // Incase reader failed
+                    // In case reader failed
                     errno = fd->errcode;
                     return -2;
                 }
@@ -2988,6 +3046,7 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
     }
 }
 
+
 static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
 {
     int i, r = 0;
@@ -3025,22 +3084,21 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
         uint8_t *s = bam_get_seq(b);
         if (ks_resize(str, str->l+2+2*c->l_qseq) < 0) goto mem_err;
         char *cp = str->s + str->l;
-        int lq2 = c->l_qseq / 2;
-        for (i = 0; i < lq2; i++) {
-            uint8_t b = s[i];
-            cp[i*2+0] = "=ACMGRSVTWYHKDBN"[b>>4];
-            cp[i*2+1] = "=ACMGRSVTWYHKDBN"[b&0xf];
-        }
-        for (i *= 2; i < c->l_qseq; ++i)
-            cp[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(s, i)];
-        cp[i++] = '\t';
-        cp += i;
+
+        // Sequence, 2 bases at a time
+        nibble2base(s, cp, c->l_qseq);
+        cp[c->l_qseq] = '\t';
+        cp += c->l_qseq+1;
+
+        // Quality
         s = bam_get_qual(b);
         i = 0;
         if (s[0] == 0xff) {
             cp[i++] = '*';
         } else {
-            for (i = 0; i < c->l_qseq; ++i)
+            // local copy of c->l_qseq to aid unrolling
+            uint32_t lqseq = c->l_qseq;
+            for (i = 0; i < lqseq; ++i)
                 cp[i]=s[i]+33;
         }
         cp[i] = 0;
@@ -3050,110 +3108,11 @@ static int sam_format1_append(const bam_hdr_t *h, const bam1_t *b, kstring_t *st
 
     s = bam_get_aux(b); // aux
     end = b->data + b->l_data;
-    while (end - s >= 4) {
-        uint8_t type, key[2];
-        key[0] = s[0]; key[1] = s[1];
-        s += 2; type = *s++;
-        r |= kputc_('\t', str); r |= kputsn_((char*)key, 2, str); r |= kputc_(':', str);
-        if (type == 'A') {
-            r |= kputsn_("A:", 2, str);
-            r |= kputc_(*s, str);
-            ++s;
-        } else if (type == 'C') {
-            r |= kputsn_("i:", 2, str);
-            r |= kputw(*s, str);
-            ++s;
-        } else if (type == 'c') {
-            r |= kputsn_("i:", 2, str);
-            r |= kputw(*(int8_t*)s, str);
-            ++s;
-        } else if (type == 'S') {
-            if (end - s >= 2) {
-                r |= kputsn_("i:", 2, str);
-                r |= kputuw(le_to_u16(s), str);
-                s += 2;
-            } else goto bad_aux;
-        } else if (type == 's') {
-            if (end - s >= 2) {
-                r |= kputsn_("i:", 2, str);
-                r |= kputw(le_to_i16(s), str);
-                s += 2;
-            } else goto bad_aux;
-        } else if (type == 'I') {
-            if (end - s >= 4) {
-                r |= kputsn_("i:", 2, str);
-                r |= kputuw(le_to_u32(s), str);
-                s += 4;
-            } else goto bad_aux;
-        } else if (type == 'i') {
-            if (end - s >= 4) {
-                r |= kputsn_("i:", 2, str);
-                r |= kputw(le_to_i32(s), str);
-                s += 4;
-            } else goto bad_aux;
-        } else if (type == 'f') {
-            if (end - s >= 4) {
-                ksprintf(str, "f:%g", le_to_float(s));
-                s += 4;
-            } else goto bad_aux;
 
-        } else if (type == 'd') {
-            if (end - s >= 8) {
-                ksprintf(str, "d:%g", le_to_double(s));
-                s += 8;
-            } else goto bad_aux;
-        } else if (type == 'Z' || type == 'H') {
-            r |= kputc_(type, str); r |= kputc_(':', str);
-            while (s < end && *s) r |= kputc_(*s++, str);
-            if (s >= end)
-                goto bad_aux;
-            ++s;
-        } else if (type == 'B') {
-            uint8_t sub_type = *(s++);
-            int sub_type_size = aux_type2size(sub_type);
-            uint32_t n;
-            if (sub_type_size == 0 || end - s < 4)
-                goto bad_aux;
-            n = le_to_u32(s);
-            s += 4; // now points to the start of the array
-            if ((end - s) / sub_type_size < n)
-                goto bad_aux;
-            r |= kputsn_("B:", 2, str); r |= kputc_(sub_type, str); // write the type
-            switch (sub_type) {
-            case 'c':
-                if (ks_resize(str, str->l + n*2) < 0) goto mem_err;
-                for (i = 0; i < n; ++i) {r |= kputc_(',', str); r |= kputw(*(int8_t*)s, str); ++s;}
-                break;
-            case 'C':
-                if (ks_resize(str, str->l + n*2) < 0) goto mem_err;
-                for (i = 0; i < n; ++i) {r |= kputc_(',', str); r |= kputw(*(uint8_t*)s, str); ++s;}
-                break;
-            case 's':
-                if (ks_resize(str, str->l + n*4) < 0) goto mem_err;
-                for (i = 0; i < n; ++i) {r |= kputc_(',', str); r |= kputw(le_to_i16(s), str); s += 2; }
-                break;
-            case 'S':
-                if (ks_resize(str, str->l + n*4) < 0) goto mem_err;
-                for (i = 0; i < n; ++i) {r |= kputc_(',', str); r |= kputw(le_to_u16(s), str); s += 2; }
-                break;
-            case 'i':
-                if (ks_resize(str, str->l + n*6) < 0) goto mem_err;
-                for (i = 0; i < n; ++i) {r |= kputc_(',', str); r |= kputw(le_to_i32(s), str); s += 4; }
-                break;
-            case 'I':
-                if (ks_resize(str, str->l + n*6) < 0) goto mem_err;
-                for (i = 0; i < n; ++i) {r |= kputc_(',', str); r |= kputuw(le_to_u32(s), str); s += 4; }
-                break;
-            case 'f':
-                if (ks_resize(str, str->l + n*8) < 0) goto mem_err;
-                for (i = 0; i < n; ++i) {r |= kputc_(',', str); r |= kputd(le_to_float(s), str); s += 4; }
-                break;
-            default:
-                goto bad_aux;
-            }
-        } else { // Unknown type
+    while (end - s >= 4) {
+        r |= kputc_('\t', str);
+        if ((s = (uint8_t *)sam_format_aux1(s, s[2], s+3, end, str)) == NULL)
             goto bad_aux;
-        }
     }
     r |= kputsn("", 0, str); // nul terminate
     if (r < 0) goto mem_err;
@@ -3277,7 +3236,7 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
         } else {
             if (sam_format1(h, b, &fp->line) < 0) return -1;
             kputc('\n', &fp->line);
-            if (fp->format.compression == bgzf) {
+            if (fp->is_bgzf) {
                 if ( bgzf_write(fp->fp.bgzf, fp->line.s, fp->line.l) != fp->line.l ) return -1;
             } else {
                 if ( hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l ) return -1;
@@ -3448,6 +3407,7 @@ uint8_t *bam_aux_get(const bam1_t *b, const char tag[2])
     errno = EINVAL;
     return NULL;
 }
+
 // s MUST BE returned by bam_aux_get()
 int bam_aux_del(bam1_t *b, uint8_t *s)
 {
@@ -3470,35 +3430,52 @@ int bam_aux_del(bam1_t *b, uint8_t *s)
 int bam_aux_update_str(bam1_t *b, const char tag[2], int len, const char *data)
 {
     // FIXME: This is not at all efficient!
-    uint8_t *s = bam_aux_get(b,tag);
-    if (!s) {
-        if (errno == ENOENT) {  // Tag doesn't exist - add a new one
-            return bam_aux_append(b, tag, 'Z', len, (const uint8_t *) data);
-        } else { // Invalid aux data, give up.
+    size_t ln = len >= 0 ? len : strlen(data) + 1;
+    size_t old_ln = 0;
+    int need_nul = ln == 0 || data[ln - 1] != '\0';
+    int save_errno = errno;
+    int new_tag = 0;
+    uint8_t *s = bam_aux_get(b,tag), *e;
+
+    if (s) {  // Replacing existing tag
+        char type = *s;
+        if (type != 'Z') {
+            hts_log_error("Called bam_aux_update_str for type '%c' instead of 'Z'", type);
+            errno = EINVAL;
             return -1;
         }
+        s++;
+        e = memchr(s, '\0', b->data + b->l_data - s);
+        old_ln = (e ? e - s : b->data + b->l_data - s) + 1;
+        s -= 3;
+    } else {
+        if (errno != ENOENT) { // Invalid aux data, give up
+            return -1;
+        } else { // Tag doesn't exist - put it on the end
+            errno = save_errno;
+            s = b->data + b->l_data;
+            new_tag = 3;
+        }
     }
-    char type = *s;
-    if (type != 'Z') {
-        hts_log_error("Called bam_aux_update_str for type '%c' instead of 'Z'", type);
-        errno = EINVAL;
-        return -1;
+
+    if (old_ln < ln + need_nul + new_tag) {
+        ptrdiff_t s_offset = s - b->data;
+        if (possibly_expand_bam_data(b, ln + need_nul + new_tag - old_ln) < 0)
+            return -1;
+        s = b->data + s_offset;
     }
+    if (!new_tag) {
+        memmove(s + 3 + ln + need_nul,
+                s + 3 + old_ln,
+                b->l_data - (s + 3 - b->data) - old_ln);
+    }
+    b->l_data += new_tag + ln + need_nul - old_ln;
 
-    bam_aux_del(b,s);
-    s -= 2;
-    int l_aux = bam_get_l_aux(b);
-
-    ptrdiff_t s_offset = s - b->data;
-    if (possibly_expand_bam_data(b, 3 + len) < 0) return -1;
-    s = b->data + s_offset;
-    b->l_data += 3 + len;
-
-    memmove(s+3+len, s, l_aux - (s - bam_get_aux(b)));
     s[0] = tag[0];
     s[1] = tag[1];
-    s[2] = type;
-    memmove(s+3,data,len);
+    s[2] = 'Z';
+    memmove(s+3,data,ln);
+    if (need_nul) s[3 + ln] = '\0';
     return 0;
 }
 
@@ -3739,35 +3716,19 @@ double bam_auxB2f(const uint8_t *s, uint32_t idx)
     else return get_int_aux_val(s[1], s + 6, idx);
 }
 
-static int find_file_extension(const char *fn, char ext_out[5])
-{
-    const char *delim = fn ? strstr(fn, HTS_IDX_DELIM) : NULL, *ext;
-    if (!fn) return -1;
-    if (!delim) delim = fn + strlen(fn);
-    for (ext = delim; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
-    if (*ext == '.' && delim - ext == 3 && ext[1] == 'g' && ext[2] == 'z') {
-        // permit .sam.gz as a valid file extension
-        for (ext--; ext > fn && *ext != '.' && *ext != '/'; --ext) {}
-    }
-    if (*ext != '.' || delim - ext > 7 || delim - ext < 4) return -1;
-    memcpy(ext_out, ext + 1, delim - ext - 1);
-    ext_out[delim - ext - 1] = '\0';
-    return 0;
-}
-
 int sam_open_mode(char *mode, const char *fn, const char *format)
 {
     // TODO Parse "bam5" etc for compression level
     if (format == NULL) {
         // Try to pick a format based on the filename extension
-        char extension[7];
+        char extension[HTS_MAX_EXT_LEN];
         if (find_file_extension(fn, extension) < 0) return -1;
         return sam_open_mode(mode, fn, extension);
     }
-    else if (strcmp(format, "bam") == 0) strcpy(mode, "b");
-    else if (strcmp(format, "cram") == 0) strcpy(mode, "c");
-    else if (strcmp(format, "sam") == 0) strcpy(mode, "");
-    else if (strcmp(format, "sam.gz") == 0) strcpy(mode, "z");
+    else if (strcasecmp(format, "bam") == 0) strcpy(mode, "b");
+    else if (strcasecmp(format, "cram") == 0) strcpy(mode, "c");
+    else if (strcasecmp(format, "sam") == 0) strcpy(mode, "");
+    else if (strcasecmp(format, "sam.gz") == 0) strcpy(mode, "z");
     else return -1;
 
     return 0;
@@ -3793,7 +3754,7 @@ char *sam_open_mode_opts(const char *fn,
 
     if (format == NULL) {
         // Try to pick a format based on the filename extension
-        char extension[7];
+        char extension[HTS_MAX_EXT_LEN];
         if (find_file_extension(fn, extension) < 0) {
             free(mode_opts);
             return NULL;
@@ -3959,7 +3920,7 @@ static inline void mp_free(mempool_t *mp, lbnode_t *p)
 
 /* s->k: the index of the CIGAR operator that has just been processed.
    s->x: the reference coordinate of the start of s->k
-   s->y: the query coordiante of the start of s->k
+   s->y: the query coordinate of the start of s->k
  */
 static inline int resolve_cigar2(bam_pileup1_t *p, hts_pos_t pos, cstate_t *s)
 {
@@ -4128,7 +4089,7 @@ int bam_plp_insertion(const bam_pileup1_t *p, kstring_t *ins, int *del_len) {
 KHASH_MAP_INIT_STR(olap_hash, lbnode_t *)
 typedef khash_t(olap_hash) olap_hash_t;
 
-struct __bam_plp_t {
+struct bam_plp_s {
     mempool_t *mp;
     lbnode_t *head, *tail;
     int32_t tid, max_tid;
@@ -4151,7 +4112,7 @@ struct __bam_plp_t {
 bam_plp_t bam_plp_init(bam_plp_auto_f func, void *data)
 {
     bam_plp_t iter;
-    iter = (bam_plp_t)calloc(1, sizeof(struct __bam_plp_t));
+    iter = (bam_plp_t)calloc(1, sizeof(struct bam_plp_s));
     iter->mp = mp_init();
     iter->head = iter->tail = mp_alloc(iter->mp);
     iter->max_tid = iter->max_pos = -1;
@@ -4360,7 +4321,7 @@ static int overlap_push(bam_plp_t iter, lbnode_t *node)
     if ( node->b.core.flag&BAM_FMUNMAP || !(node->b.core.flag&BAM_FPROPER_PAIR) ) return 0;
 
     // no overlap possible, unless some wild cigar
-    if ( node->b.core.tid != node->b.core.mtid
+    if ( (node->b.core.mtid >= 0 && node->b.core.tid != node->b.core.mtid)
          || (llabs(node->b.core.isize) >= 2*node->b.core.l_qseq
          && node->b.core.mpos >= node->end) // for those wild cigars
        ) return 0;
@@ -4369,7 +4330,8 @@ static int overlap_push(bam_plp_t iter, lbnode_t *node)
     if ( kitr==kh_end(iter->overlaps) )
     {
         // Only add reads where the mate is still to arrive
-        if (node->b.core.mpos >= node->b.core.pos) {
+        if (node->b.core.mpos >= node->b.core.pos ||
+            ((node->b.core.flag & BAM_FPAIRED) && node->b.core.mpos == -1)) {
             int ret;
             kitr = kh_put(olap_hash, iter->overlaps, bam_get_qname(&node->b), &ret);
             if (ret < 0) return -1;
@@ -4497,7 +4459,8 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
             return -1;
         iter->tail->b.id = iter->id++;
         iter->tail->beg = b->core.pos;
-        iter->tail->end = bam_endpos(b);
+        // Use raw rlen rather than bam_endpos() which adjusts rlen=0 to rlen=1
+        iter->tail->end = b->core.pos + bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b));
         iter->tail->s = g_cstate_null; iter->tail->s.end = iter->tail->end - 1; // initialize cstate_t
         if (b->core.tid < iter->max_tid) {
             hts_log_error("The input is not sorted (chromosomes out of order)");
@@ -4517,7 +4480,8 @@ int bam_plp_push(bam_plp_t iter, const bam1_t *b)
                 return -1;
             }
             if (iter->plp_construct)
-                iter->plp_construct(iter->data, b, &iter->tail->cd);
+                iter->plp_construct(iter->data, &iter->tail->b,
+                                    &iter->tail->cd);
             if (overlap_push(iter, iter->tail) < 0) {
                 mp_free(iter->mp, next);
                 iter->error = 1;
@@ -4595,7 +4559,7 @@ void bam_plp_set_maxcnt(bam_plp_t iter, int maxcnt)
  *** Mpileup iterator ***
  ************************/
 
-struct __bam_mplp_t {
+struct bam_mplp_s {
     int n;
     int32_t min_tid, *tid;
     hts_pos_t min_pos, *pos;
@@ -4608,7 +4572,7 @@ bam_mplp_t bam_mplp_init(int n, bam_plp_auto_f func, void **data)
 {
     int i;
     bam_mplp_t iter;
-    iter = (bam_mplp_t)calloc(1, sizeof(struct __bam_mplp_t));
+    iter = (bam_mplp_t)calloc(1, sizeof(struct bam_mplp_s));
     iter->pos = (hts_pos_t*)calloc(n, sizeof(hts_pos_t));
     iter->tid = (int32_t*)calloc(n, sizeof(int32_t));
     iter->n_plp = (int*)calloc(n, sizeof(int));

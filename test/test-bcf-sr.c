@@ -1,5 +1,5 @@
 /*
-    Copyright (C) 2017 Genome Research Ltd.
+    Copyright (C) 2017, 2020 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -32,7 +32,8 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <inttypes.h>
-#include <htslib/synced_bcf_reader.h>
+
+#include "../htslib/synced_bcf_reader.h"
 
 void error(const char *format, ...)
 {
@@ -58,10 +59,11 @@ int main(int argc, char *argv[])
     {
         {"help",no_argument,NULL,'h'},
         {"pair",required_argument,NULL,'p'},
+        {"no-index",no_argument,NULL,1000},
         {NULL,0,NULL,0}
     };
 
-    int c, pair = 0;
+    int c, pair = 0, use_index = 1;
     while ((c = getopt_long(argc, argv, "p:h", loptions, NULL)) >= 0)
     {
         switch (c)
@@ -81,6 +83,9 @@ int main(int argc, char *argv[])
                 else if ( !strcmp(optarg,"exact") )      pair  = BCF_SR_PAIR_EXACT;
                 else error("The --pair logic \"%s\" not recognised.\n", optarg);
                 break;
+            case 1000:
+                use_index = 0;
+                break;
             default: usage();
         }
     }
@@ -93,7 +98,11 @@ int main(int argc, char *argv[])
 
     bcf_srs_t *sr = bcf_sr_init();
     bcf_sr_set_opt(sr, BCF_SR_PAIR_LOGIC, pair);
-    bcf_sr_set_opt(sr, BCF_SR_REQUIRE_IDX);
+    if (use_index) {
+        bcf_sr_set_opt(sr, BCF_SR_REQUIRE_IDX);
+    } else {
+        bcf_sr_set_opt(sr, BCF_SR_ALLOW_NO_IDX);
+    }
     for (i=0; i<nvcf; i++)
         if ( !bcf_sr_add_reader(sr,vcf[i]) ) error("Failed to open %s: %s\n", vcf[i],bcf_sr_strerror(sr->errnum));
 
@@ -104,7 +113,7 @@ int main(int argc, char *argv[])
         {
             if ( !bcf_sr_has_line(sr,i) ) continue;
             bcf1_t *rec = bcf_sr_get_line(sr, i);
-            printf("%s:%"PRIhts_pos, bcf_seqname(bcf_sr_get_header(sr,i),rec),rec->pos+1);
+            printf("%s:%"PRIhts_pos, bcf_seqname_safe(bcf_sr_get_header(sr,i),rec),rec->pos+1);
             break;
         }
 

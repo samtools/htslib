@@ -65,7 +65,7 @@ extern "C" {
 #endif
 
 /*
-    When reading multiple files in paralel, duplicate records within each
+    When reading multiple files in parallel, duplicate records within each
     file will be reordered and offered in intuitive order. For example,
     when reading two files, each with unsorted SNP and indel record, the
     reader should return the SNP records together and the indel records
@@ -95,11 +95,14 @@ extern "C" {
 typedef enum
 {
     BCF_SR_REQUIRE_IDX,
-    BCF_SR_PAIR_LOGIC       // combination of the PAIR_* values above
+    BCF_SR_PAIR_LOGIC,          // combination of the PAIR_* values above
+    BCF_SR_ALLOW_NO_IDX         // allow to proceed even if required index is not present (at the user's risk)
 }
 bcf_sr_opt_t;
 
-typedef struct _bcf_sr_regions_t
+struct bcf_sr_region_t;
+
+typedef struct bcf_sr_regions_t
 {
     // for reading from tabix-indexed file (big data)
     tbx_t *tbx;             // tabix index
@@ -114,11 +117,11 @@ typedef struct _bcf_sr_regions_t
     int als_type;           // alleles type, currently VCF_SNP or VCF_INDEL
 
     // user handler to deal with skipped regions without a counterpart in VCFs
-    void (*missed_reg_handler)(struct _bcf_sr_regions_t *, void *);
+    void (*missed_reg_handler)(struct bcf_sr_regions_t *, void *);
     void *missed_reg_data;
 
     // for in-memory regions (small data)
-    struct _region_t *regs; // the regions
+    struct bcf_sr_region_t *regs; // the regions
 
     // shared by both tabix-index and in-memory regions
     void *seq_hash;         // keys: sequence names, values: index to seqs
@@ -131,7 +134,7 @@ typedef struct _bcf_sr_regions_t
 }
 bcf_sr_regions_t;
 
-typedef struct
+typedef struct bcf_sr_t
 {
     htsFile *file;
     tbx_t *tbx_idx;
@@ -149,11 +152,11 @@ bcf_sr_t;
 typedef enum
 {
     open_failed, not_bgzf, idx_load_failed, file_type_error, api_usage_error,
-    header_error, no_eof, no_memory, vcf_parse_error, bcf_read_error
+    header_error, no_eof, no_memory, vcf_parse_error, bcf_read_error, noidx_error
 }
 bcf_sr_error;
 
-typedef struct
+typedef struct bcf_srs_t
 {
     // Parameters controlling the logic
     int collapse;           // Do not access directly, use bcf_sr_set_pairing_logic() instead
@@ -245,7 +248,7 @@ HTSLIB_EXPORT
 int bcf_sr_next_line(bcf_srs_t *readers);
 
 #define bcf_sr_has_line(readers, i) (readers)->has_line[i]
-#define bcf_sr_get_line(_readers, i) ((_readers)->has_line[i] ? ((_readers)->readers[i].buffer[0]) : NULL)
+#define bcf_sr_get_line(_readers, i) ((_readers)->has_line[i] ? ((_readers)->readers[i].buffer[0]) : (bcf1_t *) NULL)
 #define bcf_sr_swap_line(_readers, i, lieu) { bcf1_t *tmp = lieu; lieu = (_readers)->readers[i].buffer[0]; (_readers)->readers[i].buffer[0] = tmp; }
 #define bcf_sr_region_done(_readers,i) (!(_readers)->has_line[i] && !(_readers)->readers[i].nbuffer ? 1 : 0)
 #define bcf_sr_get_header(_readers, i) (_readers)->readers[i].header
@@ -290,7 +293,7 @@ int bcf_sr_set_samples(bcf_srs_t *readers, const char *samples, int is_file);
  *  and merely skip unlisted positions.
  *
  *  Moreover, bcf_sr_set_targets() accepts an optional parameter $alleles which
- *  is intepreted as a 1-based column index in the tab-delimited file where
+ *  is interpreted as a 1-based column index in the tab-delimited file where
  *  alleles are listed. This in principle enables to perform the COLLAPSE_*
  *  logic also with tab-delimited files. However, the current implementation
  *  considers the alleles merely as a suggestion for prioritizing one of possibly
@@ -349,7 +352,7 @@ int bcf_sr_regions_seek(bcf_sr_regions_t *regions, const char *chr);
 /*
  *  bcf_sr_regions_next() - retrieves next region. Returns 0 on success and -1
  *  when all regions have been read. The fields reg->seq, reg->start and
- *  reg->end are filled with the genomic coordinates on succes or with
+ *  reg->end are filled with the genomic coordinates on success or with
  *  NULL,-1,-1 when no region is available. The coordinates are 0-based,
  *  inclusive.
  */

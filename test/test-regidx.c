@@ -2,7 +2,7 @@
 
     gcc -g -Wall -O0 -I. -I../htslib/ -L../htslib regidx.c -o test-regidx test-regidx.c -lhts
 
-    Copyright (C) 2014,2016,2018 Genome Research Ltd.
+    Copyright (C) 2014,2016,2018, 2020 Genome Research Ltd.
 
     Author: Petr Danecek <pd3@sanger.ac.uk>
 
@@ -33,10 +33,11 @@
 #include <string.h>
 #include <getopt.h>
 #include <time.h>
-#include "htslib/kstring.h"
-#include "htslib/regidx.h"
-#include "htslib/hts_defs.h"
-#include "textutils_internal.h"
+
+#include "../htslib/kstring.h"
+#include "../htslib/regidx.h"
+#include "../htslib/hts_defs.h"
+#include "../textutils_internal.h"
 
 static int verbose = 0;
 
@@ -188,9 +189,9 @@ void test_custom_payload(void)
 
 void get_random_region(uint32_t min, uint32_t max, uint32_t *beg, uint32_t *end)
 {
-    long int b = rand(), e = rand();
-    *beg = min + (float)b * (max-min) / RAND_MAX;
-    *end = *beg + (float)e * (max-*beg) / RAND_MAX;
+    uint64_t b = rand(), e = rand();
+    *beg = min + (b * (max-min)) / RAND_MAX;
+    *end = *beg + (e * (max-*beg)) / RAND_MAX;
 }
 
 void test_random(int nregs, uint32_t min, uint32_t max)
