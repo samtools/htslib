@@ -27,6 +27,7 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTSLIB_SAM_H
 #define HTSLIB_SAM_H
 
+#include <errno.h>
 #include <stdint.h>
 #include "hts.h"
 #include "hts_endian.h"

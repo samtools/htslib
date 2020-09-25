@@ -24,7 +24,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 #include <stdio.h>
-#include <getopt.h>
+#include <unistd.h>
 
 #include "../htslib/sam.h"
 #include "../htslib/vcf.h"

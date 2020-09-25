@@ -24,7 +24,9 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <config.h>
 
+#include <errno.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "../htslib/hts.h"
 #include "../htslib/vcf.h"

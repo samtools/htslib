@@ -37,9 +37,9 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <dlfcn.h>
 #include <errno.h>
-#include <getopt.h>
 #include <stdarg.h>
 #include <string.h>
+#include <unistd.h>
 
 #ifndef EPROTONOSUPPORT
 #define EPROTONOSUPPORT ENOSYS
