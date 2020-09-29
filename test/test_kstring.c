@@ -261,6 +261,118 @@ static int test_kputw(int64_t start, int64_t end) {
     return 0;
 }
 
+// callback used by test_kgetline
+static char *mock_fgets(char *str, int num, void *p) {
+    int *mock_state = (int*)p;
+    (*mock_state)++;
+    switch (*mock_state) {
+    case 1:
+    case 4:
+    case 7:
+        // a few characters, no endline
+        strcpy(str, "ABCD");
+        break;
+    case 2:
+    case 3:
+        // \n endline
+        strcpy(str, "\n");
+        break;
+    case 5:
+    case 6:
+        // \r\n endline
+        strcpy(str, "\r\n");
+        break;
+    default:
+        // eof
+        return 0;
+    }
+
+    return str;
+}
+
+static int test_kgetline() {
+    kstring_t s = KS_INITIALIZE;
+    int mock_state = 0;
+
+    // normal line, \n terminated, called with non-empty s
+    kputs("_", &s);
+    if (0 != kgetline(&s, mock_fgets, &mock_state) || 0 != strcmp("_ABCD", s.s) || 5 != s.l) return -1;
+    s.l = 0;
+    // empty line, \n terminated
+    if (0 != kgetline(&s, mock_fgets, &mock_state) || 0 != strcmp("", s.s) || 0 != s.l) return -1;
+    s.l = 0;
+    // normal line, \r\n terminated
+    if (0 != kgetline(&s, mock_fgets, &mock_state) || 0 != strcmp("ABCD", s.s) || 4 != s.l) return -1;
+    s.l = 0;
+    // empty line, \r\n terminated
+    if (0 != kgetline(&s, mock_fgets, &mock_state) || 0 != strcmp("", s.s) || 0 != s.l) return -1;
+    s.l = 0;
+    // line terminated by EOF
+    if (0 != kgetline(&s, mock_fgets, &mock_state) || 0 != strcmp("ABCD", s.s) || 4 != s.l) return -1;
+    s.l = 0;
+    // EOF
+    if (EOF != kgetline(&s, mock_fgets, &mock_state) || 0 != s.l) return -1;
+
+    ks_free(&s);
+    return EXIT_SUCCESS;
+}
+
+// callback used by test_kgetline2
+static ssize_t mock_fgets2(char *str, size_t num, void *p) {
+    int *mock_state = (int*)p;
+    (*mock_state)++;
+    switch (*mock_state) {
+    case 1:
+    case 4:
+    case 7:
+        // a few characters, no endline
+        strcpy(str, "ABCD");
+        break;
+    case 2:
+    case 3:
+        // \n endline
+        strcpy(str, "\n");
+        break;
+    case 5:
+    case 6:
+        // \r\n endline
+        strcpy(str, "\r\n");
+        break;
+    default:
+        // eof
+        return 0;
+    }
+
+    return strlen(str);
+}
+
+static int test_kgetline2() {
+    kstring_t s = KS_INITIALIZE;
+    int mock_state = 0;
+
+    // normal line, \n terminated, called with non-empty s
+    kputs("_", &s);
+    if (0 != kgetline2(&s, mock_fgets2, &mock_state) || 0 != strcmp("_ABCD", s.s) || 5 != s.l) return -1;
+    s.l = 0;
+    // empty line, \n terminated
+    if (0 != kgetline2(&s, mock_fgets2, &mock_state) || 0 != strcmp("", s.s) || 0 != s.l) return -1;
+    s.l = 0;
+    // normal line, \r\n terminated
+    if (0 != kgetline2(&s, mock_fgets2, &mock_state) || 0 != strcmp("ABCD", s.s) || 4 != s.l) return -1;
+    s.l = 0;
+    // empty line, \r\n terminated
+    if (0 != kgetline2(&s, mock_fgets2, &mock_state) || 0 != strcmp("", s.s) || 0 != s.l) return -1;
+    s.l = 0;
+    // line terminated by EOF
+    if (0 != kgetline2(&s, mock_fgets2, &mock_state) || 0 != strcmp("ABCD", s.s) || 4 != s.l) return -1;
+    s.l = 0;
+    // EOF
+    if (EOF != kgetline2(&s, mock_fgets2, &mock_state) || 0 != s.l) return -1;
+
+    ks_free(&s);
+    return EXIT_SUCCESS;
+}
+
 int main(int argc, char **argv) {
     int opt, res = EXIT_SUCCESS;
     int64_t start = 0;
@@ -300,6 +412,12 @@ int main(int argc, char **argv) {
 
     if (!test || strcmp(test, "kputw") == 0)
         if (test_kputw(start, end) != 0) res = EXIT_FAILURE;
+
+    if (!test || strcmp(test, "kgetline") == 0)
+        if (test_kgetline() != 0) res = EXIT_FAILURE;
+
+    if (!test || strcmp(test, "kgetline2") == 0)
+        if (test_kgetline2() != 0) res = EXIT_FAILURE;
 
     return res;
 }
