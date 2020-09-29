@@ -109,18 +109,21 @@ extern "C" {
     HTSLIB_EXPORT
 	char *kstrtok(const char *str, const char *sep, ks_tokaux_t *aux);
 
-	/* kgetline() uses the supplied fgets()-like function to read a "\n"-
-	 * or "\r\n"-terminated line from fp.  The line read is appended to the
-	 * kstring without its terminator and 0 is returned; EOF is returned at
-	 * EOF or on error (determined by querying fp, as per fgets()). */
-	typedef char *kgets_func(char *, int, void *);
+    /* kgetline() uses the supplied fgets()-like function to read a "\n"-
+     * or "\r\n"-terminated line from fp.  The line read is appended to the
+     * kstring without its terminator and 0 is returned; EOF is returned at
+     * EOF or on error (determined by querying fp, as per fgets()). */
+    typedef char *kgets_func(char *, int, void *);
     HTSLIB_EXPORT
-	int kgetline(kstring_t *s, kgets_func *fgets, void *fp);
+    int kgetline(kstring_t *s, kgets_func *fgets_fn, void *fp);
 
-    // This matches the signature of hgetln(), apart from the last pointer
-	typedef ssize_t kgets_func2(char *, size_t, void *);
+    /* kgetline2() uses the supplied hgetln()-like function to read a "\n"-
+     * or "\r\n"-terminated line from fp.  The line read is appended to the
+     * ksring without its terminator and 0 is returned; EOF is returned at
+     * EOF or on error (determined by querying fp, as per fgets()). */
+    typedef ssize_t kgets_func2(char *, size_t, void *);
     HTSLIB_EXPORT
-	int kgetline2(kstring_t *s, kgets_func2 *fgets, void *fp);
+    int kgetline2(kstring_t *s, kgets_func2 *fgets_fn, void *fp);
 
 #ifdef __cplusplus
 }
