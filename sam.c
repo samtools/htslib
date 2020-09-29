@@ -2508,9 +2508,17 @@ static void *sam_parse_worker(void *arg) {
         // However this is an API change so for now we copy.
 
         char *nl = strchr(cp, '\n');
-        if (!nl)  nl = cp_end;
-        if (*nl) *nl++ = '\0';
-        kstring_t ks = {nl-cp, gl->alloc, cp};
+        char *line_end;
+        if (nl) {
+            line_end = nl;
+            if (line_end > cp && *(line_end - 1) == '\r')
+                line_end--;
+            nl++;
+        } else {
+            nl = line_end = cp_end;
+        }
+        *line_end = '\0';
+        kstring_t ks = { line_end - cp, gl->alloc, cp };
         if (sam_parse1(&ks, fd->h, &b[i]) < 0) {
             sam_state_err(fd, errno ? errno : EIO);
             cleanup_sp_lines(gl);
