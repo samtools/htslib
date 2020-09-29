@@ -319,6 +319,7 @@ enum hts_fmt_option {
     CRAM_OPT_USE_TOK,
     CRAM_OPT_USE_FQZ,
     CRAM_OPT_USE_ARITH,
+    CRAM_OPT_POS_DELTA,  // force delta for AP, even on non-pos sorted data
 
     // General purpose
     HTS_OPT_COMPRESSION_LEVEL = 100,

@@ -802,6 +802,12 @@ struct cram_fd {
     // variable integer decoding callbacks.
     // This changed in CRAM4.0 to a data-size agnostic encoding.
     varint_vec vv;
+
+    // Force AP delta even on non positional sorted data.
+    // This can be beneficial for pairs where pairs are nearby each other.
+    // We suffer with delta to unrelated things (previous pair), but gain
+    // in delta between them.  (Ideal would be a per read setting.)
+    int ap_delta;
 };
 
 // Translation of required fields to cram data series

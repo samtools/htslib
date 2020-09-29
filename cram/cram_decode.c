@@ -2565,8 +2565,16 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
                 cr->apos = i32;
             }
             if (r) goto block_err;;
-            if (c->comp_hdr->AP_delta)
+            if (c->comp_hdr->AP_delta) {
+                if (cr->apos < 0 && c->unsorted == 0) {
+                    // cache locally in c->unsorted so we don't have an
+                    // excessive number of locks
+                    pthread_mutex_lock(&fd->ref_lock);
+                    c->unsorted = fd->unsorted = 1;
+                    pthread_mutex_unlock(&fd->ref_lock);
+                }
                 cr->apos += s->last_apos;
+            }
             s->last_apos=  cr->apos;
         } else {
             cr->apos = c->ref_seq_start;

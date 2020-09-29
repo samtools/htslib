@@ -5121,6 +5121,7 @@ cram_fd *cram_dopen(hFILE *fp, const char *filename, const char *mode) {
     fd->slices_per_container = SLICE_PER_CNT;
     fd->embed_ref = 0;
     fd->no_ref = 0;
+    fd->ap_delta = 0;
     fd->ignore_md5 = 0;
     fd->lossy_read_names = 0;
     fd->use_bz2 = 0;
@@ -5492,6 +5493,10 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
 
     case CRAM_OPT_NO_REF:
         fd->no_ref = va_arg(args, int);
+        break;
+
+    case CRAM_OPT_POS_DELTA:
+        fd->ap_delta = va_arg(args, int);
         break;
 
     case CRAM_OPT_IGNORE_MD5:

@@ -1866,6 +1866,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
         h->ref_seq_span  = c->ref_seq_span;
         h->num_records   = c->num_records;
         h->qs_seq_orient = c->qs_seq_orient;
+        // slight misnomer - sorted or treat as-if sorted (ap_delta force to 1)
         h->AP_delta      = c->pos_sorted;
         memcpy(h->substitution_matrix, CRAM_SUBST_MATRIX, 20);
 
@@ -2707,7 +2708,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
     c->num_bases   += cr->len;
     cr->apos        = bam_pos(b)+1;
     if (c->pos_sorted) {
-        if (cr->apos < s->last_apos) {
+        if (cr->apos < s->last_apos && !fd->ap_delta) {
             c->pos_sorted = 0;
         } else {
             if (cram_stats_add(c->stats[DS_AP], cr->apos - s->last_apos) < 0)
@@ -3320,7 +3321,7 @@ int cram_put_bam_seq(cram_fd *fd, bam_seq_t *b) {
             // We detected we need multi-seq
             fd->multi_seq = 1;
             c->multi_seq = 1;
-            c->pos_sorted = 0; // required atm for multi_seq slices
+            c->pos_sorted = 0;
 
             if (!c->refs_used) {
                 pthread_mutex_lock(&fd->ref_lock);

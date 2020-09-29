@@ -745,6 +745,10 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "NO_REF") == 0)
         o->opt = CRAM_OPT_NO_REF, o->val.i = atoi(val);
 
+    else if (strcmp(o->arg, "pos_delta") == 0 ||
+             strcmp(o->arg, "POS_DELTA") == 0)
+        o->opt = CRAM_OPT_POS_DELTA, o->val.i = atoi(val);
+
     else if (strcmp(o->arg, "ignore_md5") == 0 ||
              strcmp(o->arg, "IGNORE_MD5") == 0)
         o->opt = CRAM_OPT_IGNORE_MD5, o->val.i = atoi(val);
