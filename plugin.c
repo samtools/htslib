@@ -153,7 +153,7 @@ plugin_void_func *load_plugin(void **pluginp, const char *filename, const char *
         const char *basename = slash? slash+1 : filename;
         kputsn(basename, strcspn(basename, ".-+"), &symbolg);
 
-        *(void **) &sym = dlsym(lib, symbol);
+        *(void **) &sym = dlsym(lib, symbolg.s);
         free(symbolg.s);
         if (sym == NULL) goto error;
     }
