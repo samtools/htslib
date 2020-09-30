@@ -2804,6 +2804,7 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                             if (!sp[l])
                                 break;
                             if (0 && CRAM_MAJOR_VERS(fd->version) >= 3) {
+#if 0
                                 // Disabled for the time being as it doesn't
                                 // seem to gain us much.
                                 int ol=l;
@@ -2821,6 +2822,43 @@ static int process_one_read(cram_fd *fd, cram_container *c,
                                                               qp[l], rp[l]))
                                         return -1;
                                 }
+#else
+                                // With urmap pushed to the limit and lots
+                                // of unaligned data (should be soft-clipped)
+                                // this saves ~2-7%. Worth it?
+                                int nl = l;
+                                int max_end = nl, max_score = 0, score = 0;
+                                while (nl < end) {
+                                    if (rp[nl] != sp[nl]) {
+                                        score += 3;
+                                        if (max_score < score) {
+                                            max_score = score;
+                                            max_end = nl;
+                                        }
+                                    } else {
+                                        score--;
+                                        if (score < -2 ||
+                                            max_score - score > 7)
+                                            break;
+                                    }
+                                    nl++;
+                                }
+                                if (max_score > 20) {
+                                    cram_add_bases(fd, c, s, cr, spos+l,
+                                                   max_end-l, &seq[spos+l]);
+                                    l = max_end-1;
+                                } else {
+                                    while (l < nl) {
+                                        if (rp[l] != sp[l])
+                                            cram_add_substitution(fd, c, s,
+                                                                  cr, spos+l,
+                                                                  sp[l], qp[l],
+                                                                  rp[l]);
+                                        l++;
+                                    }
+                                    l--;
+                                }
+#endif
                             } else {
                                 if (cram_add_substitution(fd, c, s, cr, spos+l,
                                                           sp[l], qp[l], rp[l]))
