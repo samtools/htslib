@@ -1017,6 +1017,14 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "FILTER") == 0)
         o->opt = HTS_OPT_FILTER, o->val.s = val;
 
+    else if (strcmp(o->arg, "fastq_aux") == 0 ||
+        strcmp(o->arg, "FASTQ_AUX") == 0)
+        o->opt = FASTQ_OPT_AUX, o->val.i = 1;
+
+    else if (strcmp(o->arg, "fastq_casava") == 0 ||
+        strcmp(o->arg, "FASTQ_CASAVA") == 0)
+        o->opt = FASTQ_OPT_CASAVA, o->val.i = 1;
+
     else {
         hts_log_error("Unknown option '%s'", o->arg);
         free(o->arg);
@@ -1379,7 +1387,7 @@ error:
 
 int hts_close(htsFile *fp)
 {
-    int ret, save;
+    int ret = 0, save;
 
     switch (fp->format.format) {
     case binary_format:
@@ -1409,7 +1417,10 @@ int hts_close(htsFile *fp)
     case fastq_format:
     case sam:
     case vcf:
-        ret = sam_state_destroy(fp);
+        if (fp->format.format == sam)
+            ret = sam_state_destroy(fp);
+        else if (fp->format.format == fastq_format)
+            fastq_state_destroy(fp);
 
         if (fp->format.compression != no_compression)
             ret |= bgzf_close(fp->fp.bgzf);
@@ -1561,6 +1572,11 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         } // else CRAM manages this in its own way
         break;
     }
+
+    case FASTQ_OPT_CASAVA:
+    case FASTQ_OPT_AUX:
+        fastq_state_set(fp, opt);
+        return 0;
 
     default:
         break;

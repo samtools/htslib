@@ -329,6 +329,10 @@ enum hts_fmt_option {
     HTS_OPT_BLOCK_SIZE,
     HTS_OPT_FILTER,
     HTS_OPT_PROFILE,
+
+    // Fastq
+    FASTQ_OPT_CASAVA = 1000,
+    FASTQ_OPT_AUX,
 };
 
 // Profile options for encoding; primarily used at present in CRAM

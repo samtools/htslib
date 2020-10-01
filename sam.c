@@ -55,6 +55,20 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/khash.h"
 KHASH_DECLARE(s2i, kh_cstr_t, int64_t)
 
+// Surprising though it is, we've apparently never needed to read data
+// directly from htsFile before!  Everything else that supports both
+// compressed and uncompressed data instead bypasses htsFile and goes
+// direct to bgzf, but hts_open doesn't use the bgzf layer for
+// uncompressed data so we have to switch functions on the fly instead.
+static size_t hts_read(htsFile *fp, void *data, size_t length) {
+    return fp->is_bgzf
+        ? bgzf_read(fp->fp.bgzf, data, length)
+        : hread(fp->fp.hfile, data, length);
+}
+
+#include "htslib/kseq.h"
+KSEQ_INIT(htsFile*, hts_read)
+
 #ifndef EFTYPE
 #define EFTYPE ENOEXEC
 #endif
@@ -2027,6 +2041,9 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
     case sam:
         return sam_hdr_create(fp);
 
+    case fastq_format:
+        return sam_hdr_init();
+
     case empty_format:
         errno = EPIPE;
         return NULL;
@@ -2043,9 +2060,6 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
         errno = EINVAL;
         return -1;
     }
-
-    if (!h->hrecs && !h->text)
-        return 0;
 
     switch (fp->format.format) {
     case binary_format:
@@ -2070,6 +2084,8 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
         fp->format.format = sam;
         /* fall-through */
     case sam: {
+        if (!h->hrecs && !h->text)
+            return 0;
         char *text;
         kstring_t hdr_ks = { 0, 0, NULL };
         size_t l_text;
@@ -3488,6 +3504,184 @@ int sam_set_threads(htsFile *fp, int nthreads) {
     return 0;
 }
 
+typedef struct {
+    kseq_t *seq;
+    int parse_casava;
+    int parse_aux;
+} fastq_state;
+
+void fastq_state_set(samFile *fp, enum hts_fmt_option opt) {
+    if (!fp)
+        return;
+    if (!fp->state)
+        if (!(fp->state = calloc(1, sizeof(fastq_state))))
+            return;
+
+    fastq_state *x = (fastq_state *)fp->state;
+
+    switch (opt) {
+    case FASTQ_OPT_CASAVA:
+        x->parse_casava = 1;
+        break;
+
+    case FASTQ_OPT_AUX:
+        x->parse_aux = 1;
+        break;
+
+    default:
+        break;
+    }
+}
+
+int fastq_parse1(htsFile *fp, bam1_t *b) {
+    fastq_state *x = (fastq_state *)fp->state;
+    kseq_t *seq = x->seq;
+    int i, l = kseq_read(seq);
+    int ret = 0;
+
+    if (l <= 0) {
+        ret = l;
+        goto err;
+    }
+
+    // Decr qual
+    for (i = 0; i < seq->qual.l; i++)
+        seq->qual.s[i] -= '!';
+
+    int flag = BAM_FUNMAP; int pflag = BAM_FMUNMAP | BAM_FPAIRED;
+    if (seq->name.l > 2 &&
+        seq->name.s[seq->name.l-2] == '/' &&
+        isdigit(seq->name.s[seq->name.l-1])) {
+        switch(seq->name.s[seq->name.l-1]) {
+        case '1': flag |= BAM_FREAD1 | pflag; break;
+        case '2': flag |= BAM_FREAD2 | pflag; break;
+        default : flag |= BAM_FREAD1 | BAM_FREAD2 | pflag; break;
+        }
+        seq->name.s[seq->name.l-=2] = 0;
+    }
+
+    // Convert to BAM
+    ret = bam_set1(b,
+                   seq->name.l, seq->name.s,
+                   flag,
+                   -1, -1, 0, // ref '*', pos, mapq,
+                   0, NULL,     // no cigar,
+                   -1, -1, 0,    // mate
+                   seq->seq.l, seq->seq.s, seq->qual.s,
+                   0);
+
+    // FIXME: this code could be more efficient by appending all tags
+    // to a kstring and then supplying that as extra_len to bam_construct_seq
+    // and a memcpy.  That avoids needless reallocs.
+    //
+    // The use of bam_aux_update_* is inefficient too as we don't need to
+    // be checking what tags we've already set, but we lack an alternative API.
+
+    // Identify Illumina CASAVA strings.
+    // <read>:<is_filtered>:<control_bits>:<barcode_sequence>
+    char *barcode = NULL;
+    int barcode_len = 0;
+    kstring_t *kc = &seq->comment;
+    if (x->parse_casava &&
+        kc->l > 6 && (kc->s[1] | kc->s[3] | kc->s[5]) == ':' &&
+        isdigit(kc->s[0]) && isdigit(kc->s[4])) {
+
+        // read num
+        switch(kc->s[0]) {
+        case '1': b->core.flag |= BAM_FREAD1 | pflag; break;
+        case '2': b->core.flag |= BAM_FREAD2 | pflag; break;
+        default : b->core.flag |= BAM_FREAD1 | BAM_FREAD2 | pflag; break;
+        }
+
+        if (kc->s[2] == 'Y')
+            b->core.flag |= BAM_FQCFAIL;
+
+        // Barcode
+        barcode = kc->s + 6;
+        for (i = 6; i < kc->l; i++)
+            if (isspace(kc->s[i]))
+                break;
+
+        kc->s[i] = 0;
+        barcode_len = i+1-(barcode - kc->s);
+    }
+
+    if (ret >= 0 && barcode_len)
+        if (bam_aux_append(b, "BC", 'Z', barcode_len, (uint8_t *)barcode) < 0)
+            ret = -1;
+
+    if (!x->parse_aux)
+        return ret;
+
+    // Identify any SAM style aux tags in comments too.
+    i = barcode_len;
+
+    do {
+        int j;
+        while (i < kc->l && isspace(kc->s[i]))
+            i++;
+
+        if (i+5 /*XX:Z:*/ < kc->l) {
+            if ((kc->s[i+2] | kc->s[i+4]) == ':' &&
+                isalnum(kc->s[i]) && isalnum(kc->s[i+1])) {
+                switch (kc->s[i+3]) {
+                case 'Z':
+                    j = i+5;
+                    while (j < kc->l && kc->s[j++] > '\t')
+                        ;
+                    if (j < kc->l)
+                        kc->s[j-1]=0; // tab to nul
+                    bam_aux_update_str(b, &kc->s[i], j - (i+5), &kc->s[i+5]);
+                    break;
+
+                case 'i': {
+                    char *end;
+                    int err = 0;
+                    uint64_t i64 = hts_str2int(&kc->s[i+5], &end, 63, &err);
+                    if (!err)
+                        bam_aux_update_int(b, &kc->s[i], i64);
+                    j = end - kc->s;
+                    break;
+                }
+
+                case 'f': {
+                    char *end;
+                    int err = 0;
+                    double d = hts_str2dbl(&kc->s[i+5], &end, &err);
+                    if (!err)
+                        bam_aux_update_float(b, &kc->s[i], d);
+                    j = end - kc->s;
+                    break;
+                }
+
+                default:
+                    j = i+5;
+                    while (j < kc->l && kc->s[j++] != '\t')
+                        ;
+                    break;
+                }
+                i = j;
+            } else {
+                while (i < kc->l && !isspace(kc->s[i]))
+                    i++;
+            }
+        } else {
+            break;
+        }
+
+    } while(i < kc->l);
+
+ err:
+    return ret;
+}
+
+void fastq_state_destroy(htsFile *fp) {
+    if (fp->state) {
+        kseq_destroy(((fastq_state *)fp->state)->seq);
+        free(fp->state);
+    }
+}
+
 // Internal component of sam_read1 below
 static inline int sam_read1_bam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
     int ret = bam_read1(fp->fp.bgzf, b);
@@ -3627,6 +3821,20 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
         case sam:
             ret = sam_read1_sam(fp, h, b);
             break;
+
+        case fastq_format: {
+            fastq_state *x = (fastq_state *)fp->state;
+            if (!x) {
+                if (!(x = calloc(1, sizeof(fastq_state))))
+                    return -2;
+                fp->state = x;
+            }
+
+            if (!x->seq)
+                x->seq = kseq_init(fp);
+
+            return fastq_parse1(fp, b);
+        }
 
         case empty_format:
             errno = EPIPE;

@@ -36,6 +36,10 @@ int sam_state_destroy(samFile *fp);
 int sam_set_thread_pool(htsFile *fp, htsThreadPool *p);
 int sam_set_threads(htsFile *fp, int nthreads);
 
+// Fastq state
+void fastq_state_set(samFile *fp, enum hts_fmt_option opt);
+void fastq_state_destroy(samFile *fp);
+
 // bam1_t data (re)allocation
 int sam_realloc_bam_data(bam1_t *b, size_t desired);
 
