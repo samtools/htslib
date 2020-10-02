@@ -1,5 +1,7 @@
 /*  rand.c -- drand48 implementation from the FreeBSD source tree. */
 
+// NOTE this file is #included from hts_os.c and should be treated as a header file
+
 // This file is an amalgamation of the many small files in FreeBSD to do with
 // drand48 and friends implementations.
 // It comprises _rand48.c, rand48.h, srand48.c, drand48.c, erand48.c, lrand48.c
@@ -21,7 +23,6 @@
 //__FBSDID("$FreeBSD: src/lib/libc/gen/_rand48.c,v 1.2 2002/03/22 21:52:05 obrien Exp $");
 
 #include <math.h>
-#include "htslib/hts_defs.h"
 
 #define	RAND48_SEED_0	(0x330e)
 #define	RAND48_SEED_1	(0xabcd)
