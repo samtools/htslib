@@ -58,17 +58,19 @@ run_test() {
         y="exit_code"
     elif [ "x$e" != "x" -a "$e" != "." ]
     then
+        sed -n 's/.*/&/p' "$e" > _in.tmp2
         sed -n 's/.*/&/p' _out.tmp > _out.tmp2
-        if cmp -s _out.tmp2 "$e"
+        if cmp -s _in.tmp2 _out.tmp2
         then
             # Output was as expected
             r="P"
-            rm -f _out.tmp _out.tmp2 _err.tmp
+            rm -f _out.tmp _err.tmp
         else
             # Output differed
             r="F"
             y="output"
         fi
+        rm -f _in.tmp2 _out.tmp2
     else
         # Expected zero exit code and got it.
         r="P"
@@ -155,6 +157,8 @@ test_driver() {
             "#"*) # skip comments
                 ;;
             "")   # skip blank lines too
+                ;;
+            $'\r')   # skip Windows blank lines too
                 ;;
 
             "INIT")

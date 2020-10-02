@@ -182,6 +182,7 @@ sub check_outputs
     open(my $fh,'<',$fname_bin) or error("$fname_bin: $!");
     while (my $line=<$fh>)
     {
+        $line =~ s/\015?\012/\n/;
         my ($pos,@vals) = split(/\t/,$line);
         chomp($vals[-1]);
         $vals[-1] =~ s/\r$//;
@@ -201,6 +202,7 @@ sub check_outputs
     open($fh,'<',$fname_perl) or error("$fname_perl: $!");
     while (my $line=<$fh>)
     {
+        $line =~ s/\015?\012/\n/;
         chomp($line);
         $line =~ s/\r$//;
         push @plines,$line;
