@@ -2242,6 +2242,7 @@ typedef struct sp_lines {
 
 enum sam_cmd {
     SAM_NONE = 0,
+    SAM_RUN,
     SAM_CLOSE,
     SAM_CLOSE_DONE,
 };
@@ -2332,14 +2333,14 @@ int sam_state_destroy(htsFile *fp) {
         if (fd->h) {
             // Notify sam_dispatcher we're closing
             pthread_mutex_lock(&fd->command_m);
-            if (fd->command != SAM_CLOSE_DONE)
+            if (fd->command == SAM_RUN)
                 fd->command = SAM_CLOSE;
             pthread_cond_signal(&fd->command_c);
             ret = -fd->errcode;
             if (fd->q)
                 hts_tpool_wake_dispatch(fd->q); // unstick the reader
 
-            if (!fp->is_write && fd->q && fd->dispatcher) {
+            if (!fp->is_write && fd->q && fd->command == SAM_CLOSE) {
                 for (;;) {
                     // Avoid deadlocks with dispatcher
                     if (fd->command == SAM_CLOSE_DONE)
@@ -2674,7 +2675,7 @@ static void *sam_dispatcher_read(void *vp) {
     // (In future if we add support for seek, this is where we need to catch it.)
     for (;;) {
         pthread_mutex_lock(&fd->command_m);
-        if (fd->command == SAM_NONE)
+        if (fd->command == SAM_NONE || fd->command == SAM_RUN)
             pthread_cond_wait(&fd->command_c, &fd->command_m);
         switch (fd->command) {
         case SAM_CLOSE:
@@ -2981,6 +2982,7 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
                 // We can only do this once we've got a header
                 if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_read, fp) != 0)
                     return -2;
+                fd->command = SAM_RUN;
             }
 
             if (fd->h != h) {
@@ -3175,6 +3177,7 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
 
                 if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_write, fp) != 0)
                     return -2;
+                fd->command = SAM_RUN;
             }
 
             if (fd->h != h) {
