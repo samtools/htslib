@@ -1759,12 +1759,21 @@ static void update_loff(hts_idx_t *idx, int i, int free_lidx)
     khint_t k;
     int l;
     uint64_t offset0 = 0;
+    uint32_t unmapped = 0;
     if (bidx) {
         k = kh_get(bin, bidx, META_BIN(idx));
-        if (k != kh_end(bidx))
+        if (k != kh_end(bidx)) {
             offset0 = kh_val(bidx, k).list[0].u;
-        for (l = 0; l < lidx->n && lidx->offset[l] == (uint64_t)-1; ++l)
-            lidx->offset[l] = offset0;
+            unmapped = 1;
+        }
+        for (l = 0; l < lidx->n; ++l) {
+            if (lidx->offset[l] == (uint64_t)-1) {
+                lidx->offset[l] = offset0;
+            } else if (unmapped && offset0 < lidx->offset[l]) {
+                unmapped = 0;
+                lidx->offset[l] = offset0;
+            }
+        }
     } else l = 1;
     for (; l < lidx->n; ++l) // fill missing values
         if (lidx->offset[l] == (uint64_t)-1)
