@@ -1129,10 +1129,17 @@ void hts_tpool_kill(hts_tpool *p) {
 #ifdef TEST_MAIN
 
 #include <stdio.h>
+#include "htslib/hts_defs.h"
 
 #ifndef TASK_SIZE
 #define TASK_SIZE 1000
 #endif
+
+HTSLIB_EXPORT
+void hts_srand48(long seed);
+
+HTSLIB_EXPORT
+long hts_lrand48(void);
 
 /*-----------------------------------------------------------------------------
  * Unordered x -> x*x test.
@@ -1141,7 +1148,7 @@ void hts_tpool_kill(hts_tpool *p) {
 void *doit_square_u(void *arg) {
     int job = *(int *)arg;
 
-    usleep(random() % 100000); // to coerce job completion out of order
+    usleep(hts_lrand48() % 100000); // to coerce job completion out of order
 
     printf("RESULT: %d\n", job*job);
 
@@ -1182,7 +1189,7 @@ void *doit_square(void *arg) {
 
     // One excessively slow, to stress test output queue filling and
     // excessive out of order scenarios.
-    usleep(500000 * ((job&31)==31) + random() % 10000);
+    usleep(500000 * ((job&31)==31) + hts_lrand48() % 10000);
 
     res = malloc(sizeof(*res));
     *res = (job<0) ? -job*job : job*job;
@@ -1379,7 +1386,7 @@ static void *pipe_stage1(void *arg) {
     pipe_job *j = (pipe_job *)arg;
 
     j->x <<= 8;
-    usleep(random() % 10000); // fast job
+    usleep(hts_lrand48() % 10000); // fast job
     printf("1  %08x\n", j->x);
 
     return j;
@@ -1405,7 +1412,7 @@ static void *pipe_stage2(void *arg) {
     pipe_job *j = (pipe_job *)arg;
 
     j->x <<= 8;
-    usleep(random() % 100000); // slow job
+    usleep(hts_lrand48() % 100000); // slow job
     printf("2  %08x\n", j->x);
 
     return j;
@@ -1430,7 +1437,7 @@ static void *pipe_stage2to3(void *arg) {
 static void *pipe_stage3(void *arg) {
     pipe_job *j = (pipe_job *)arg;
 
-    usleep(random() % 10000); // fast job
+    usleep(hts_lrand48() % 10000); // fast job
     j->x <<= 8;
     return j;
 }
@@ -1486,7 +1493,7 @@ int test_pipe(int n) {
 /*-----------------------------------------------------------------------------*/
 int main(int argc, char **argv) {
     int n;
-    srandom(0);
+    hts_srand48(0);
 
     if (argc < 3) {
         fprintf(stderr, "Usage: %s command n_threads\n", argv[0]);
