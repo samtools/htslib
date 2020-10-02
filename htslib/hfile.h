@@ -151,7 +151,9 @@ static inline off_t htell(hFILE *fp)
 */
 static inline int hgetc(hFILE *fp)
 {
+    HTSLIB_EXPORT
     extern int hgetc2(hFILE *);
+
     return (fp->end > fp->begin)? (unsigned char) *(fp->begin++) : hgetc2(fp);
 }
 
@@ -222,6 +224,7 @@ or I/O errors.
 static inline ssize_t HTS_RESULT_USED
 hread(hFILE *fp, void *buffer, size_t nbytes)
 {
+    HTSLIB_EXPORT
     extern ssize_t hread2(hFILE *, void *, size_t, size_t);
 
     size_t n = fp->end - fp->begin;
@@ -236,7 +239,9 @@ hread(hFILE *fp, void *buffer, size_t nbytes)
 */
 static inline int hputc(int c, hFILE *fp)
 {
+    HTSLIB_EXPORT
     extern int hputc2(int, hFILE *);
+
     if (fp->begin < fp->limit) *(fp->begin++) = c;
     else c = hputc2(c, fp);
     return c;
@@ -247,6 +252,7 @@ static inline int hputc(int c, hFILE *fp)
 */
 static inline int hputs(const char *text, hFILE *fp)
 {
+    HTSLIB_EXPORT
     extern int hputs2(const char *, size_t, size_t, hFILE *);
 
     size_t nbytes = strlen(text), n = fp->limit - fp->begin;
@@ -264,7 +270,9 @@ In the absence of I/O errors, the full _nbytes_ will be written.
 static inline ssize_t HTS_RESULT_USED
 hwrite(hFILE *fp, const void *buffer, size_t nbytes)
 {
+    HTSLIB_EXPORT
     extern ssize_t hwrite2(hFILE *, const void *, size_t, size_t);
+    HTSLIB_EXPORT
     extern int hfile_set_blksize(hFILE *fp, size_t bufsiz);
 
     if (!fp->mobile) {
