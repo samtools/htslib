@@ -1865,26 +1865,16 @@ int hts_idx_check_range(hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t end)
     int64_t maxpos = (int64_t) 1 << (idx->min_shift + idx->n_lvls * 3);
     if (tid < 0 || (beg <= maxpos && end <= maxpos))
         return 0;
-    int64_t max = end > beg ? end : beg, s = 1 << 14;
-    int n_lvls = 0;
-    while (max > s) {
-        n_lvls++;
-        s <<= 3;
-    }
 
     if (idx->fmt == HTS_FMT_CSI) {
-        hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos" cannot be stored in a csi index "
-                      "with min_shift = %d, n_lvls = %d. Try using "
-                      "min_shift = 14, n_lvls >= %d",
-                      beg, end,
-                      idx->min_shift, idx->n_lvls,
-                      n_lvls);
+        hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos
+                      " cannot be stored in a csi index. "
+                      "Please check headers match the data",
+                      beg, end);
     } else {
-        hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos" cannot be stored in a %s index. "
-                      "Try using a csi index with min_shift = 14, "
-                      "n_lvls >= %d",
-                      beg, end, idx_format_name(idx->fmt),
-                      n_lvls);
+        hts_log_error("Region %"PRIhts_pos"..%"PRIhts_pos
+                      " cannot be stored in a %s index. Try using a csi index",
+                      beg, end, idx_format_name(idx->fmt));
     }
     errno = ERANGE;
     return -1;
