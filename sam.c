@@ -2340,7 +2340,7 @@ int sam_state_destroy(htsFile *fp) {
             if (fd->q)
                 hts_tpool_wake_dispatch(fd->q); // unstick the reader
 
-            if (!fp->is_write && fd->q && fd->dispatcher) {
+            if (!fp->is_write && fd->q) {
                 for (;;) {
                     // Avoid deadlocks with dispatcher
                     if (fd->command == SAM_CLOSE_DONE)
@@ -2417,10 +2417,10 @@ int sam_state_destroy(htsFile *fp) {
             sam_free_sp_bams(fd->curr_bam);
 
         // Decrement counter by one, maybe destroying too.
-        // This is to permit the caller using bam_hdr_destroy
+        // This is to permit the caller using sam_hdr_destroy
         // before sam_close without triggering decode errors
         // in the background threads.
-        bam_hdr_destroy(fd->h);
+        sam_hdr_destroy(fd->h);
     }
 
     free(fp->state);
@@ -2980,8 +2980,11 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
                     return -2;
 
                 // We can only do this once we've got a header
-                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_read, fp) != 0)
+                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_read, fp) != 0) {
+                    fd->h->ref_count--;
+                    fd->h = NULL;
                     return -2;
+                }
             }
 
             if (fd->h != h) {
@@ -3174,8 +3177,11 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
                 fd->h = (sam_hdr_t *)h;
                 fd->h->ref_count++;
 
-                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_write, fp) != 0)
+                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_write, fp) != 0) {
+                    fd->h->ref_count--;
+                    fd->h = NULL;
                     return -2;
+                }
             }
 
             if (fd->h != h) {
