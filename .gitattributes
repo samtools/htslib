@@ -16,3 +16,7 @@ README.md       export-ignore
 # line separators on Windows machines. It causes the index files to become out
 # of sync with the fasta files.
 *.fa* -text
+
+# Remove the text attribute from index_dos.sam, so that the line separators
+# for the test file don't get converted into Unix format.
+test/index_dos.sam -text
