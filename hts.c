@@ -2552,6 +2552,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
     bidx_t *bidx;
     uint64_t min_off, max_off;
     hts_itr_t *iter;
+    uint32_t unmapped = 0, rel_off;
 
     // It's possible to call this function with NULL idx iff
     // tid is one of the special values HTS_IDX_REST or HTS_IDX_NONE
@@ -2585,13 +2586,20 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
               return NULL;
             }
 
+            k = kh_get(bin, bidx, META_BIN(idx));
+            if (k != kh_end(bidx))
+                unmapped = kh_val(bidx, k).list[1].v;
+            else
+                unmapped = 1;
+
             iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
             iter->readrec = readrec;
 
             if ( !kh_size(bidx) ) { iter->finished = 1; return iter; }
 
+            rel_off = beg>>idx->min_shift;
             // compute min_off
-            bin = hts_bin_first(idx->n_lvls) + (beg>>idx->min_shift);
+            bin = hts_bin_first(idx->n_lvls) + rel_off;
             do {
                 int first;
                 k = kh_get(bin, bidx, bin);
@@ -2602,10 +2610,28 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
             } while (bin);
             if (bin == 0) k = kh_get(bin, bidx, bin);
             min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
+            // min_off can be calculated more accurately if the
+            // linear index is available
             if (idx->lidx[tid].offset
-                && beg>>idx->min_shift < idx->lidx[tid].n
-                && min_off < idx->lidx[tid].offset[beg>>idx->min_shift])
-                min_off = idx->lidx[tid].offset[beg>>idx->min_shift];
+                && rel_off < idx->lidx[tid].n) {
+                if (min_off < idx->lidx[tid].offset[rel_off])
+                    min_off = idx->lidx[tid].offset[rel_off];
+                if (unmapped) {
+                    int tmp_off;
+                    for (tmp_off = rel_off-1; tmp_off >= 0; tmp_off--) {
+                        if (idx->lidx[tid].offset[tmp_off] < min_off) {
+                            min_off = idx->lidx[tid].offset[tmp_off];
+                            break;
+                        }
+                    }
+
+                    if (k != kh_end(bidx) && (min_off < kh_val(bidx, k).list[0].u || tmp_off < 0))
+                        min_off = kh_val(bidx, k).list[0].u;
+                }
+            } else if (unmapped) { //CSI index
+                if (k != kh_end(bidx))
+                    min_off = kh_val(bidx, k).list[0].u;
+            }
 
             // compute max_off: a virtual offset from a bin to the right of end
             bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
@@ -2688,6 +2714,7 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
     int tid;
     hts_pos_t beg, end;
     hts_reglist_t *curr_reg;
+    uint32_t unmapped = 0, rel_off;
 
     if (!idx || !iter || !iter->multi)
         return -1;
@@ -2720,6 +2747,12 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
             if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL || !kh_size(bidx))
                 continue;
 
+            k = kh_get(bin, bidx, META_BIN(idx));
+            if (k != kh_end(bidx))
+                unmapped = kh_val(bidx, k).list[1].v;
+            else
+                unmapped = 1;
+
             for(j=0; j<curr_reg->count; j++) {
                 hts_pair32_t *curr_intv = &curr_reg->intervals[j];
                 if (curr_intv->end < curr_intv->beg)
@@ -2727,12 +2760,13 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
 
                 beg = curr_intv->beg;
                 end = curr_intv->end;
+                rel_off = beg>>idx->min_shift;
 
                 /* Compute 'min_off' by searching the lowest level bin containing 'beg'.
                        If the computed bin is not in the index, try the next bin to the
                        left, belonging to the same parent. If it is the first sibling bin,
                        try the parent bin. */
-                bin = hts_bin_first(idx->n_lvls) + (beg>>idx->min_shift);
+                bin = hts_bin_first(idx->n_lvls) + rel_off;
                 do {
                     int first;
                     k = kh_get(bin, bidx, bin);
@@ -2747,9 +2781,25 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                 // min_off can be calculated more accurately if the
                 // linear index is available
                 if (idx->lidx[tid].offset
-                    && beg>>idx->min_shift < idx->lidx[tid].n
-                    && min_off < idx->lidx[tid].offset[beg>>idx->min_shift])
-                    min_off = idx->lidx[tid].offset[beg>>idx->min_shift];
+                    && rel_off < idx->lidx[tid].n) {
+                    if (min_off < idx->lidx[tid].offset[rel_off])
+                        min_off = idx->lidx[tid].offset[rel_off];
+                    if (unmapped) {
+                        int tmp_off;
+                        for (tmp_off = rel_off-1; tmp_off >= 0; tmp_off--) {
+                            if (idx->lidx[tid].offset[tmp_off] < min_off) {
+                                min_off = idx->lidx[tid].offset[tmp_off];
+                                break;
+                            }
+                        }
+
+                        if (k != kh_end(bidx) && (min_off < kh_val(bidx, k).list[0].u || tmp_off < 0))
+                            min_off = kh_val(bidx, k).list[0].u;
+                    }
+                } else if (unmapped) { //CSI index
+                    if (k != kh_end(bidx))
+                        min_off = kh_val(bidx, k).list[0].u;
+                }
 
                 // compute max_off: a virtual offset from a bin to the right of end
                 bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
