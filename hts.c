@@ -2412,7 +2412,7 @@ static inline int reg2bins(int64_t beg, int64_t end, hts_itr_t *itr, int min_shi
     return itr->bins.n;
 }
 
-static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint32_t interval, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls)
+static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, int64_t beg, int64_t end, uint32_t interval, uint64_t min_off, uint64_t max_off, int min_shift, int n_lvls, uint32_t unmapped)
 {
     int l, t, s;
     int i, j;
@@ -2444,7 +2444,7 @@ static inline int reg2intervals(hts_itr_t *iter, const hts_idx_t *idx, int tid, 
                     iter->off = off;
                     for (j = 0; j < p->n; ++j) {
                         if (p->list[j].v > min_off && p->list[j].u < max_off) {
-                            iter->off[iter->n_off].u = min_off > p->list[j].u
+                            iter->off[iter->n_off].u = !unmapped && min_off > p->list[j].u
                                 ? min_off : p->list[j].u;
                             iter->off[iter->n_off].v = max_off < p->list[j].v
                                 ? max_off : p->list[j].v;
@@ -2552,6 +2552,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
     bidx_t *bidx;
     uint64_t min_off, max_off;
     hts_itr_t *iter;
+    uint32_t unmapped = 0;
 
     // It's possible to call this function with NULL idx iff
     // tid is one of the special values HTS_IDX_REST or HTS_IDX_NONE
@@ -2585,6 +2586,9 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
               return NULL;
             }
 
+            k = kh_get(bin, bidx, META_BIN(idx));
+            if (k != kh_end(bidx)) unmapped = 1;
+
             iter->tid = tid, iter->beg = beg, iter->end = end; iter->i = -1;
             iter->readrec = readrec;
 
@@ -2601,11 +2605,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                 else bin = hts_bin_parent(bin);
             } while (bin);
             if (bin == 0) k = kh_get(bin, bidx, bin);
-            min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
-            if (idx->lidx[tid].offset
-                && beg>>idx->min_shift < idx->lidx[tid].n
-                && min_off < idx->lidx[tid].offset[beg>>idx->min_shift])
-                min_off = idx->lidx[tid].offset[beg>>idx->min_shift];
+            min_off = k != kh_end(bidx) ? kh_val(bidx, k).loff : 0;
 
             // compute max_off: a virtual offset from a bin to the right of end
             bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
@@ -2639,7 +2639,7 @@ hts_itr_t *hts_itr_query(const hts_idx_t *idx, int tid, hts_pos_t beg, hts_pos_t
                     bins_t *p = &kh_value(bidx, k);
                     for (j = 0; j < p->n; ++j)
                         if (p->list[j].v > min_off && p->list[j].u < max_off) {
-                            off[n_off].u = min_off > p->list[j].u
+                            off[n_off].u = !unmapped && min_off > p->list[j].u
                                 ? min_off : p->list[j].u;
                             off[n_off].v = max_off < p->list[j].v
                                 ? max_off : p->list[j].v;
@@ -2688,6 +2688,7 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
     int tid;
     hts_pos_t beg, end;
     hts_reglist_t *curr_reg;
+    uint32_t unmapped = 0;
 
     if (!idx || !iter || !iter->multi)
         return -1;
@@ -2720,6 +2721,9 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
             if (tid >= idx->n || (bidx = idx->bidx[tid]) == NULL || !kh_size(bidx))
                 continue;
 
+            k = kh_get(bin, bidx, META_BIN(idx));
+            if (k != kh_end(bidx)) unmapped = 1;
+
             for(j=0; j<curr_reg->count; j++) {
                 hts_pair32_t *curr_intv = &curr_reg->intervals[j];
                 if (curr_intv->end < curr_intv->beg)
@@ -2743,13 +2747,7 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                 } while (bin);
                 if (bin == 0)
                     k = kh_get(bin, bidx, bin);
-                min_off = k != kh_end(bidx)? kh_val(bidx, k).loff : 0;
-                // min_off can be calculated more accurately if the
-                // linear index is available
-                if (idx->lidx[tid].offset
-                    && beg>>idx->min_shift < idx->lidx[tid].n
-                    && min_off < idx->lidx[tid].offset[beg>>idx->min_shift])
-                    min_off = idx->lidx[tid].offset[beg>>idx->min_shift];
+                min_off = k != kh_end(bidx) ? kh_val(bidx, k).loff : 0;
 
                 // compute max_off: a virtual offset from a bin to the right of end
                 bin = hts_bin_first(idx->n_lvls) + ((end-1) >> idx->min_shift) + 1;
@@ -2771,7 +2769,7 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                 //convert coordinates to file offsets
                 if (reg2intervals(iter, idx, tid, beg, end, j,
                                   min_off, max_off,
-                                  idx->min_shift, idx->n_lvls) < 0) {
+                                  idx->min_shift, idx->n_lvls, unmapped) < 0) {
                     return -1;
                 }
             }
