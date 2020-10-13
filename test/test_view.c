@@ -56,7 +56,7 @@ enum test_op {
     READ_CRAM          = 4,
     WRITE_CRAM         = 8,
     WRITE_UNCOMPRESSED = 16,
-    WRITE_COMPRESSED   = 32, // eg vcf.gz, sam.gz
+    WRITE_COMPRESSED   = 32, // eg vcf.gz, sam.gz, fastq.gz
     WRITE_FASTQ        = 64,
 };
 
@@ -330,7 +330,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "-i: option=value: set an option for CRAM input\n");
         fprintf(stderr, "\n");
         fprintf(stderr, "-b: write binary compressed BCF, BAM, FAI (mode 'b')\n");
-        fprintf(stderr, "-z: write text compressed VCF.gz, SAM.gz (mode 'z')\n");
+        fprintf(stderr, "-z: write text compressed VCF.gz, SAM.gz or FASTQ.gz (mode 'z')\n");
         fprintf(stderr, "-C: write CRAM format (mode 'c')\n");
         fprintf(stderr, "-f: write FASTQ format (mode 'f')\n");
         fprintf(stderr, "-l 0-9: set zlib compression level\n");
@@ -364,7 +364,7 @@ int main(int argc, char *argv[])
     else if (opts.flag & WRITE_BINARY_COMP) strcat(modew, "b");
     else if (opts.flag & WRITE_COMPRESSED) strcat(modew, "z");
     else if (opts.flag & WRITE_UNCOMPRESSED) strcat(modew, "bu");
-    else if (opts.flag & WRITE_FASTQ) strcat(modew, "f");
+    if (opts.flag & WRITE_FASTQ) strcat(modew, "f");
     out = hts_open(out_fn, modew);
     if (out == NULL) {
         fprintf(stderr, "Error opening standard output\n");

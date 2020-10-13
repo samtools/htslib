@@ -1020,7 +1020,15 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
 
     else if (strcmp(o->arg, "fastq_aux") == 0 ||
         strcmp(o->arg, "FASTQ_AUX") == 0)
-        o->opt = FASTQ_OPT_AUX, o->val.i = 1;
+        o->opt = FASTQ_OPT_AUX, o->val.s = val;
+
+    else if (strcmp(o->arg, "fastq_barcode") == 0 ||
+        strcmp(o->arg, "FASTQ_BARCODE") == 0)
+        o->opt = FASTQ_OPT_BARCODE, o->val.s = val;
+
+    else if (strcmp(o->arg, "fastq_rnum") == 0 ||
+        strcmp(o->arg, "FASTQ_RNUM") == 0)
+        o->opt = FASTQ_OPT_RNUM, o->val.i = 1;
 
     else if (strcmp(o->arg, "fastq_casava") == 0 ||
         strcmp(o->arg, "FASTQ_CASAVA") == 0)
@@ -1066,6 +1074,8 @@ int hts_opt_apply(htsFile *fp, hts_opt *opts) {
             case CRAM_OPT_VERSION:
             case CRAM_OPT_PREFIX:
             case HTS_OPT_FILTER:
+            case FASTQ_OPT_AUX:
+            case FASTQ_OPT_BARCODE:
                 if (hts_set_opt(fp,  opts->opt,  opts->val.s) != 0)
                     return -1;
                 break;
@@ -1542,6 +1552,31 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         return 0;
     }
 
+    case FASTQ_OPT_CASAVA:
+    case FASTQ_OPT_RNUM:
+        if (fp->format.format == fastq_format)
+            fastq_state_set(fp, opt);
+        return 0;
+
+    case FASTQ_OPT_AUX:
+        if (fp->format.format == fastq_format) {
+            va_start(args, opt);
+            char *list = va_arg(args, char *);
+            va_end(args);
+            fastq_state_set(fp, opt, list);
+        }
+        return 0;
+
+    case FASTQ_OPT_BARCODE:
+        if (fp->format.format == fastq_format) {
+            va_start(args, opt);
+            char *bc = va_arg(args, char *);
+            va_end(args);
+            fastq_state_set(fp, opt, bc);
+        }
+        return 0;
+
+    // Options below here flow through to cram_set_voption
     case HTS_OPT_COMPRESSION_LEVEL: {
         va_start(args, opt);
         int level = va_arg(args, int);
@@ -1581,11 +1616,6 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         } // else CRAM manages this in its own way
         break;
     }
-
-    case FASTQ_OPT_CASAVA:
-    case FASTQ_OPT_AUX:
-        fastq_state_set(fp, opt);
-        return 0;
 
     default:
         break;

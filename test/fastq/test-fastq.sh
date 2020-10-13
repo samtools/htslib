@@ -26,6 +26,7 @@
 
 echo "Testing fastq support"
 
-tview=../test_view
+# Eg set TEST_PRECMD=valgrind
+tview="${TEST_PRECMD} ../test_view"
 test_driver fastq.tst
 exit $?

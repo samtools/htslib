@@ -333,6 +333,8 @@ enum hts_fmt_option {
     // Fastq
     FASTQ_OPT_CASAVA = 1000,
     FASTQ_OPT_AUX,
+    FASTQ_OPT_RNUM,
+    FASTQ_OPT_BARCODE,
 };
 
 // Profile options for encoding; primarily used at present in CRAM

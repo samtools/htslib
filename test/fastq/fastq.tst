@@ -33,6 +33,15 @@
 #   Command to execute.  $pileup is replaced with the path to the pileup test
 # program
 
+# --------------------
+# Reading
+
+# Minimal
+P minimal.sam $tview minimal.fq
+
+# Multi-line FASTQ
+P multiline.sam $tview multiline.fq
+
 # Single file, unpaired data, with / without aux tags
 P single_noaux.sam $tview single.fq
 P single_aux.sam $tview -i fastq_aux single.fq
@@ -45,10 +54,10 @@ P inter_aux.sam $tview -i fastq_aux interleaved.fq
 
 # Single file, interleaved paired data, using CASAVA
 P inter_casava.sam $tview -i fastq_casava interleaved_casava.fq
+P inter_casavaOX.sam $tview -i fastq_barcode=OX -i fastq_casava interleaved_casava.fq
 
 # CASAVA with filtering
 P filter_casava.sam $tview -i fastq_casava filter_casava.fq
-
 
 # Paired data is mainly tested by the Samtools test harness.
 # Basically though it's just reading two files and relying on either
@@ -56,3 +65,26 @@ P filter_casava.sam $tview -i fastq_casava filter_casava.fq
 # We simply test here we can read r1 and r2 as separate files
 P r1.sam $tview -i fastq_aux r1.fq
 P r2.sam $tview -i fastq_aux r2.fq
+
+# --------------------
+# Writing
+
+# Minimal
+P minimal.fq $tview -f minimal.sam
+
+# Single file with unpaired data plus aux tags
+P single.fq $tview -f -o fastq_aux single_aux.sam
+
+# Single file, interleaved paired data, with aux and /rnum
+P interleaved.fq $tview -f -o fastq_aux -o fastq_rnum inter_aux.sam
+
+# CASAVA with interleaved data
+P interleaved_casava.fq $tview -f -o fastq_casava inter_casava.sam
+P interleaved_casava.fq $tview -f -o fastq_barcode=OX -o fastq_casava inter_casavaOX.sam
+
+# CASAVA with filtering
+P filter_casava.fq $tview -f -o fastq_casava filter_casava.sam
+
+# Paired data
+P r1.fq $tview -f -o fastq_aux -o fastq_rnum r1.sam
+P r2.fq $tview -f -o fastq_aux -o fastq_rnum r2.sam
