@@ -2146,6 +2146,10 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
         }
         break;
 
+    case fastq_format:
+        // Nothing to output; FASTQ has no file headers.
+        break;
+
     default:
         errno = EBADF;
         return -1;
@@ -2403,6 +2407,142 @@ static inline unsigned int parse_sam_flag(char *v, char **rv, int *overflow) {
     }
 }
 
+// Parse tag line and append to bam object b.
+// Shared by both SAM and FASTQ parsers.
+//
+// The difference between the two is how lenient we are to recognising
+// non-compliant strings.  The FASTQ parser glosses over arbitrary
+// non-SAM looking strings.
+static inline int aux_parse(char *start, char *end, bam1_t *b, int lenient) {
+    int overflow = 0;
+    char logbuf[40];
+    char *q = start, *p = end;
+
+#define _parse_err(cond, ...)                   \
+    do {                                        \
+        if (cond) {                             \
+            if (lenient) {                      \
+                while (q < p && !isspace(*q))   \
+                    q++;                        \
+                while (q < p && isspace(*q))    \
+                    q++;                        \
+                goto loop;                      \
+            } else {                            \
+                hts_log_error(__VA_ARGS__);     \
+                goto err_ret;                   \
+            }                                   \
+        }                                       \
+    } while (0)
+
+    while (q < p) loop: {
+        char type;
+        if (p - q < 5) {
+            if (lenient) {
+                break;
+            } else {
+                hts_log_error("Incomplete aux field");
+                goto err_ret;
+            }
+        }
+        _parse_err(q[0] < '!' || q[1] < '!', "invalid aux tag id");
+
+        if (lenient && (q[2] | q[4]) != ':') {
+            while (q < p && !isspace(*q))
+                q++;
+            while (q < p && isspace(*q))
+                q++;
+            continue;
+        }
+
+        // Copy over id
+        if (possibly_expand_bam_data(b, 2) < 0) goto err_ret;
+        memcpy(b->data + b->l_data, q, 2); b->l_data += 2;
+        q += 3; type = *q++; ++q; // q points to value
+        if (type != 'Z' && type != 'H') // the only zero length acceptable fields
+            _parse_err(*q <= '\t', "incomplete aux field");
+
+        // Ensure enough space for a double + type allocated.
+        if (possibly_expand_bam_data(b, 16) < 0) goto err_ret;
+
+        if (type == 'A' || type == 'a' || type == 'c' || type == 'C') {
+            b->data[b->l_data++] = 'A';
+            b->data[b->l_data++] = *q++;
+        } else if (type == 'i' || type == 'I') {
+            if (*q == '-') {
+                int32_t x = hts_str2int(q, &q, 32, &overflow);
+                if (x >= INT8_MIN) {
+                    b->data[b->l_data++] = 'c';
+                    b->data[b->l_data++] = x;
+                } else if (x >= INT16_MIN) {
+                    b->data[b->l_data++] = 's';
+                    i16_to_le(x, b->data + b->l_data);
+                    b->l_data += 2;
+                } else {
+                    b->data[b->l_data++] = 'i';
+                    i32_to_le(x, b->data + b->l_data);
+                    b->l_data += 4;
+                }
+            } else {
+                uint32_t x = hts_str2uint(q, &q, 32, &overflow);
+                if (x <= UINT8_MAX) {
+                    b->data[b->l_data++] = 'C';
+                    b->data[b->l_data++] = x;
+                } else if (x <= UINT16_MAX) {
+                    b->data[b->l_data++] = 'S';
+                    u16_to_le(x, b->data + b->l_data);
+                    b->l_data += 2;
+                } else {
+                    b->data[b->l_data++] = 'I';
+                    u32_to_le(x, b->data + b->l_data);
+                    b->l_data += 4;
+                }
+            }
+        } else if (type == 'f') {
+            b->data[b->l_data++] = 'f';
+            float_to_le(strtod(q, &q), b->data + b->l_data);
+            b->l_data += sizeof(float);
+        } else if (type == 'd') {
+            b->data[b->l_data++] = 'd';
+            double_to_le(strtod(q, &q), b->data + b->l_data);
+            b->l_data += sizeof(double);
+        } else if (type == 'Z' || type == 'H') {
+            char *end = strchr(q, '\t');
+            if (!end) end = q + strlen(q);
+            _parse_err(type == 'H' && ((end-q)&1) != 0,
+                       "hex field does not have an even number of digits");
+            b->data[b->l_data++] = type;
+            if (possibly_expand_bam_data(b, end - q + 1) < 0) goto err_ret;
+            memcpy(b->data + b->l_data, q, end - q);
+            b->l_data += end - q;
+            b->data[b->l_data++] = '\0';
+            q = end;
+        } else if (type == 'B') {
+            uint32_t n;
+            char *r;
+            type = *q++; // q points to the first ',' following the typing byte
+            _parse_err(*q && *q != ',' && *q != '\t',
+                       "B aux field type not followed by ','");
+
+            for (r = q, n = 0; *r > '\t'; ++r)
+                if (*r == ',') ++n;
+
+            if (sam_parse_B_vals(type, n, q, &q, r, b) < 0)
+                goto err_ret;
+        } else _parse_err(1, "unrecognized type %s", hts_strprint(logbuf, sizeof logbuf, '\'', &type, 1));
+
+        while (*q > '\t') { q++; } // Skip any junk to next tab
+        q++;
+    }
+
+    _parse_err(overflow != 0, "numeric value out of allowed range");
+#undef _parse_err
+
+    return 0;
+
+err_ret:
+    return -2;
+}
+
 int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 {
 #define _read_token(_p) (_p); do { char *tab = strchr((_p), '\t'); if (!tab) goto err_ret; *tab = '\0'; (_p) = tab + 1; } while (0)
@@ -2568,94 +2708,10 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
         _parse_err(failed, "invalid QUAL character");
         p += c->l_qseq + 1;
     }
+
     // aux
-    q = p;
-    p = s->s + s->l;
-    while (q < p) {
-        char type;
-        _parse_err(p - q < 5, "incomplete aux field");
-        _parse_err(q[0] < '!' || q[1] < '!', "invalid aux tag id");
-        // Copy over id
-        if (possibly_expand_bam_data(b, 2) < 0) goto err_ret;
-        memcpy(b->data + b->l_data, q, 2); b->l_data += 2;
-        q += 3; type = *q++; ++q; // q points to value
-        if (type != 'Z' && type != 'H') // the only zero length acceptable fields
-            _parse_err(*q <= '\t', "incomplete aux field");
-
-        // Ensure enough space for a double + type allocated.
-        if (possibly_expand_bam_data(b, 16) < 0) goto err_ret;
-
-        if (type == 'A' || type == 'a' || type == 'c' || type == 'C') {
-            b->data[b->l_data++] = 'A';
-            b->data[b->l_data++] = *q++;
-        } else if (type == 'i' || type == 'I') {
-            if (*q == '-') {
-                int32_t x = hts_str2int(q, &q, 32, &overflow);
-                if (x >= INT8_MIN) {
-                    b->data[b->l_data++] = 'c';
-                    b->data[b->l_data++] = x;
-                } else if (x >= INT16_MIN) {
-                    b->data[b->l_data++] = 's';
-                    i16_to_le(x, b->data + b->l_data);
-                    b->l_data += 2;
-                } else {
-                    b->data[b->l_data++] = 'i';
-                    i32_to_le(x, b->data + b->l_data);
-                    b->l_data += 4;
-                }
-            } else {
-                uint32_t x = hts_str2uint(q, &q, 32, &overflow);
-                if (x <= UINT8_MAX) {
-                    b->data[b->l_data++] = 'C';
-                    b->data[b->l_data++] = x;
-                } else if (x <= UINT16_MAX) {
-                    b->data[b->l_data++] = 'S';
-                    u16_to_le(x, b->data + b->l_data);
-                    b->l_data += 2;
-                } else {
-                    b->data[b->l_data++] = 'I';
-                    u32_to_le(x, b->data + b->l_data);
-                    b->l_data += 4;
-                }
-            }
-        } else if (type == 'f') {
-            b->data[b->l_data++] = 'f';
-            float_to_le(strtod(q, &q), b->data + b->l_data);
-            b->l_data += sizeof(float);
-        } else if (type == 'd') {
-            b->data[b->l_data++] = 'd';
-            double_to_le(strtod(q, &q), b->data + b->l_data);
-            b->l_data += sizeof(double);
-        } else if (type == 'Z' || type == 'H') {
-            char *end = strchr(q, '\t');
-            if (!end) end = q + strlen(q);
-            _parse_err(type == 'H' && ((end-q)&1) != 0,
-                       "hex field does not have an even number of digits");
-            b->data[b->l_data++] = type;
-            if (possibly_expand_bam_data(b, end - q + 1) < 0) goto err_ret;
-            memcpy(b->data + b->l_data, q, end - q);
-            b->l_data += end - q;
-            b->data[b->l_data++] = '\0';
-            q = end;
-        } else if (type == 'B') {
-            uint32_t n;
-            char *r;
-            type = *q++; // q points to the first ',' following the typing byte
-            _parse_err(*q && *q != ',' && *q != '\t',
-                       "B aux field type not followed by ','");
-
-            for (r = q, n = 0; *r > '\t'; ++r)
-                if (*r == ',') ++n;
-
-            if (sam_parse_B_vals(type, n, q, &q, r, b) < 0)
-                goto err_ret;
-        } else _parse_err(1, "unrecognized type %s", hts_strprint(logbuf, sizeof logbuf, '\'', &type, 1));
-
-        while (*q > '\t') { q++; } // Skip any junk to next tab
-        q++;
-    }
-
-    _parse_err(overflow != 0, "numeric value out of allowed range");
+    if (aux_parse(p, s->s + s->l, b, 0) < 0)
+        goto err_ret;
 
     if (bam_tag2cigar(b, 1, 1) < 0)
         return -2;
@@ -3570,13 +3626,6 @@ int fastq_parse1(htsFile *fp, bam1_t *b) {
                    seq->seq.l, seq->seq.s, seq->qual.s,
                    0);
 
-    // FIXME: this code could be more efficient by appending all tags
-    // to a kstring and then supplying that as extra_len to bam_construct_seq
-    // and a memcpy.  That avoids needless reallocs.
-    //
-    // The use of bam_aux_update_* is inefficient too as we don't need to
-    // be checking what tags we've already set, but we lack an alternative API.
-
     // Identify Illumina CASAVA strings.
     // <read>:<is_filtered>:<control_bits>:<barcode_sequence>
     char *barcode = NULL;
@@ -3614,62 +3663,8 @@ int fastq_parse1(htsFile *fp, bam1_t *b) {
         return ret;
 
     // Identify any SAM style aux tags in comments too.
-    i = barcode_len;
-
-    do {
-        int j;
-        while (i < kc->l && isspace(kc->s[i]))
-            i++;
-
-        if (i+5 /*XX:Z:*/ < kc->l) {
-            if ((kc->s[i+2] | kc->s[i+4]) == ':' &&
-                isalnum(kc->s[i]) && isalnum(kc->s[i+1])) {
-                switch (kc->s[i+3]) {
-                case 'Z':
-                    j = i+5;
-                    while (j < kc->l && kc->s[j++] > '\t')
-                        ;
-                    if (j < kc->l)
-                        kc->s[j-1]=0; // tab to nul
-                    bam_aux_update_str(b, &kc->s[i], j - (i+5), &kc->s[i+5]);
-                    break;
-
-                case 'i': {
-                    char *end;
-                    int err = 0;
-                    uint64_t i64 = hts_str2int(&kc->s[i+5], &end, 63, &err);
-                    if (!err)
-                        bam_aux_update_int(b, &kc->s[i], i64);
-                    j = end - kc->s;
-                    break;
-                }
-
-                case 'f': {
-                    char *end;
-                    int err = 0;
-                    double d = hts_str2dbl(&kc->s[i+5], &end, &err);
-                    if (!err)
-                        bam_aux_update_float(b, &kc->s[i], d);
-                    j = end - kc->s;
-                    break;
-                }
-
-                default:
-                    j = i+5;
-                    while (j < kc->l && kc->s[j++] != '\t')
-                        ;
-                    break;
-                }
-                i = j;
-            } else {
-                while (i < kc->l && !isspace(kc->s[i]))
-                    i++;
-            }
-        } else {
-            break;
-        }
-
-    } while(i < kc->l);
+    if (aux_parse(&kc->s[barcode_len], kc->s + kc->l, b, 1) < 0)
+        ret = -1;
 
  err:
     return ret;
@@ -3944,6 +3939,64 @@ int sam_format1(const bam_hdr_t *h, const bam1_t *b, kstring_t *str)
     return sam_format1_append(h, b, str);
 }
 
+int fastq_format1(const bam1_t *b, kstring_t *str)
+{
+    unsigned flag = b->core.flag;
+    int i, len = b->core.l_qseq;
+    uint8_t *seq, *qual;
+    int mode_slashes = 1, mode_colons = 1, mode_aux = 0;
+
+    str->l = 0;
+
+    if (len == 0) return 0;
+
+    if (kputc('@', str) == EOF || kputs(bam_get_qname(b), str) == EOF)
+        return -1;
+
+    if (mode_slashes && (flag & BAM_FPAIRED)) {
+        const char *suffix = (flag & BAM_FREAD1)? "/1" : (flag & BAM_FREAD2)? "/2" : "";
+        if (kputs(suffix, str) == EOF) return -1;
+    }
+
+    if (mode_colons) {
+        int rnum = (flag & BAM_FREAD1)? 1 : (flag & BAM_FREAD2)? 2 : 0;
+        char filtered = (flag & BAM_FQCFAIL)? 'Y' : 'N';
+        if (ksprintf(str, " %d:%c:0:0", rnum, filtered) < 0) return -1;
+    }
+
+    if (mode_aux) {
+        // ... FIXME
+    }
+
+    if (ks_resize(str, str->l + 1 + len+1 + 2 + len+1 + 1) < 0) return -1;
+
+    kputc_('\n', str);
+
+    seq = bam_get_seq(b);
+    if (flag & BAM_FREVERSE)
+        for (i = len-1; i >= 0; i--)
+            kputc_("!TGKCYSBAWRDMHVN"[bam_seqi(seq, i)], str);
+    else
+        for (i = 0; i < len; i++)
+            kputc_(seq_nt16_str[bam_seqi(seq, i)], str);
+
+    kputsn("\n+\n", 3, str);
+
+    qual = bam_get_qual(b);
+    if (qual[0] == 0xff)
+        for (i = 0; i < len; i++)
+            kputc_('B', str);
+    else if (flag & BAM_FREVERSE)
+        for (i = len-1; i >= 0; i--)
+            kputc_(33 + qual[i], str);
+    else
+        for (i = 0; i < len; i++)
+            kputc_(33 + qual[i], str);
+
+    kputc('\n', str);
+    return str->l;
+}
+
 // Sadly we need to be able to modify the bam_hdr here so we can
 // reference count the structure.
 int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
@@ -4071,6 +4124,13 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
 
             return fp->line.l;
         }
+
+
+    case fastq_format:
+        if (fastq_format1(b, &fp->line) < 0 ||
+            hwrite(fp->fp.hfile, fp->line.s, fp->line.l) != fp->line.l)
+            return -1;
+        return fp->line.l;
 
     default:
         errno = EBADF;
@@ -4538,6 +4598,8 @@ int sam_open_mode(char *mode, const char *fn, const char *format)
     else if (strcasecmp(format, "cram") == 0) strcpy(mode, "c");
     else if (strcasecmp(format, "sam") == 0) strcpy(mode, "");
     else if (strcasecmp(format, "sam.gz") == 0) strcpy(mode, "z");
+    else if (strcasecmp(format, "fastq") == 0 ||
+             strcasecmp(format, "fq") == 0) strcpy(mode, "f");
     else return -1;
 
     return 0;

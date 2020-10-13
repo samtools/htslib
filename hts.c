@@ -742,7 +742,8 @@ htsFile *hts_open_format(const char *fn, const char *mode, const htsFormat *fmt)
     htsFile *fp = NULL;
     hFILE *hfile = NULL;
     char fmt_code = '\0';
-    const char format_to_mode[] = "\0g\0\0b\0c\0\0b\0g\0\0";
+    // see enum htsExactFormat in htslib/hts.h
+    const char format_to_mode[] = "\0g\0\0b\0c\0\0b\0g\0\0\0\0\0\0f\0\0";
 
     strncpy(smode, mode, 99);
     smode[99]=0;
@@ -1149,7 +1150,7 @@ int hts_parse_format(htsFormat *format, const char *str) {
     if (strcmp(fmt, "sam") == 0) {
         format->category          = sequence_data;
         format->format            = sam;
-        format->compression       = no_compression;;
+        format->compression       = no_compression;
         format->compression_level = 0;
     } else if (strcmp(fmt, "sam.gz") == 0) {
         format->category          = sequence_data;
@@ -1169,13 +1170,18 @@ int hts_parse_format(htsFormat *format, const char *str) {
     } else if (strcmp(fmt, "vcf") == 0) {
         format->category          = variant_data;
         format->format            = vcf;
-        format->compression       = no_compression;;
+        format->compression       = no_compression;
         format->compression_level = 0;
     } else if (strcmp(fmt, "bcf") == 0) {
         format->category          = variant_data;
         format->format            = bcf;
         format->compression       = bgzf;
         format->compression_level = -1;
+    } else if (strcmp(fmt, "fastq") == 0 || strcmp(fmt, "fq") == 0) {
+        format->category          = sequence_data;
+        format->format            = fastq_format;
+        format->compression       = no_compression;
+        format->compression_level = 0;
     } else {
         return -1;
     }
@@ -1300,6 +1306,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
 
         if (strchr(simple_mode, 'b')) fmt->format = binary_format;
         else if (strchr(simple_mode, 'c')) fmt->format = cram;
+        else if (strchr(simple_mode, 'f')) fmt->format = fastq_format;
         else fmt->format = text_format;
 
         if (strchr(simple_mode, 'z')) fmt->compression = bgzf;
@@ -1310,6 +1317,7 @@ htsFile *hts_hopen(hFILE *hfile, const char *fn, const char *mode)
             switch (fmt->format) {
             case binary_format: fmt->compression = bgzf; break;
             case cram: fmt->compression = custom; break;
+            case fastq_format: fmt->compression = no_compression; break;
             case text_format: fmt->compression = no_compression; break;
             default: abort();
             }
@@ -1482,6 +1490,7 @@ static hFILE *hts_hfile(htsFile *fp) {
     case cram:         return cram_hfile(fp->fp.cram);
     case text_format:  return fp->fp.hfile;
     case vcf:          // fall through
+    case fastq_format: // fall through
     case sam:          return fp->format.compression != no_compression
                               ? bgzf_hfile(fp->fp.bgzf)
                               : fp->fp.hfile;

@@ -57,6 +57,7 @@ enum test_op {
     WRITE_CRAM         = 8,
     WRITE_UNCOMPRESSED = 16,
     WRITE_COMPRESSED   = 32, // eg vcf.gz, sam.gz
+    WRITE_FASTQ        = 64,
 };
 
 int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, htsFile *out) {
@@ -294,7 +295,7 @@ int main(int argc, char *argv[])
     opts.index = NULL;
     opts.min_shift = 0;
 
-    while ((c = getopt(argc, argv, "DSIt:i:bzCul:o:N:BZ:@:Mx:m:p:v")) >= 0) {
+    while ((c = getopt(argc, argv, "DSIt:i:bzCful:o:N:BZ:@:Mx:m:p:v")) >= 0) {
         switch (c) {
         case 'D': opts.flag |= READ_CRAM; break;
         case 'S': opts.flag |= READ_COMPRESSED; break;
@@ -304,6 +305,7 @@ int main(int argc, char *argv[])
         case 'b': opts.flag |= WRITE_BINARY_COMP; break;
         case 'z': opts.flag |= WRITE_COMPRESSED; break;
         case 'C': opts.flag |= WRITE_CRAM; break;
+        case 'f': opts.flag |= WRITE_FASTQ; break;
         case 'u': opts.flag |= WRITE_UNCOMPRESSED; break; // eg u-BAM not SAM
         case 'l': opts.clevel = atoi(optarg); break;
         case 'o': if (hts_opt_add(&out_opts, optarg)) return 1; break;
@@ -330,6 +332,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "-b: write binary compressed BCF, BAM, FAI (mode 'b')\n");
         fprintf(stderr, "-z: write text compressed VCF.gz, SAM.gz (mode 'z')\n");
         fprintf(stderr, "-C: write CRAM format (mode 'c')\n");
+        fprintf(stderr, "-f: write FASTQ format (mode 'f')\n");
         fprintf(stderr, "-l 0-9: set zlib compression level\n");
         fprintf(stderr, "-o option=value: set an option for CRAM output\n");
         fprintf(stderr, "-N: num_reads: limit the output to the first num_reads reads\n");
@@ -361,6 +364,7 @@ int main(int argc, char *argv[])
     else if (opts.flag & WRITE_BINARY_COMP) strcat(modew, "b");
     else if (opts.flag & WRITE_COMPRESSED) strcat(modew, "z");
     else if (opts.flag & WRITE_UNCOMPRESSED) strcat(modew, "bu");
+    else if (opts.flag & WRITE_FASTQ) strcat(modew, "f");
     out = hts_open(out_fn, modew);
     if (out == NULL) {
         fprintf(stderr, "Error opening standard output\n");
