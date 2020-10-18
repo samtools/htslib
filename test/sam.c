@@ -1901,7 +1901,7 @@ static void test_bam_construct_full()
 
     VERIFY(bam->core.l_qseq == strlen(seq), "l_seq not set correctly.");
     for (i = 0; i < strlen(seq); i++) {
-        VERIFY(bam_seqi(bam_get_seq(bam), i) == seq_nt16_table[seq[i]], "seq not set correctly.");
+        VERIFY(bam_seqi(bam_get_seq(bam), i) == seq_nt16_table[(uint8_t)seq[i]], "seq not set correctly.");
     }
     VERIFY(memcmp(bam_get_qual(bam), qual, strlen(seq)) == 0, "qual not set correctly.");
 
@@ -1937,7 +1937,7 @@ static void test_bam_construct_with_seq_but_no_qual()
 
     VERIFY(bam->core.l_qseq == strlen(seq), "l_seq not set correctly.");
     for (i = 0; i < strlen(seq); i++) {
-        VERIFY(bam_seqi(bam_get_seq(bam), i) == seq_nt16_table[seq[i]], "seq not set correctly.");
+        VERIFY(bam_seqi(bam_get_seq(bam), i) == seq_nt16_table[(uint8_t)seq[i]], "seq not set correctly.");
         VERIFY(bam_get_qual(bam)[i] == 0xff, "qual not set correctly");
     }
 
