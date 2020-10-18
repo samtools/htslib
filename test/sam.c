@@ -2047,7 +2047,6 @@ static void test_bam_construct_write_and_read_back()
 
     // close file
     r = hts_close(writer);
-    writer = NULL;
     VERIFY(r == 0, "failed to close bam file for writing.");
     sam_hdr_destroy(w_header);
 
@@ -2077,10 +2076,14 @@ static void test_bam_construct_write_and_read_back()
 
     r = sam_read1(reader, r_header, r_bam);
     VERIFY(r < 0, "expected no more alignments.");
+    bam_destroy1(r_bam);
+
+    // close file
+    r = hts_close(reader);
+    VERIFY(r == 0, "failed to close bam file for reading.");
+    sam_hdr_destroy(r_header);
 
 cleanup:
-    if (writer != NULL) hts_close(writer);
-    if (reader != NULL) hts_close(reader); // destroys the r_header as well
     ks_free(&ks);
 }
 
