@@ -55,69 +55,20 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
                       int64_t isize,
                       int len,
                       const char *seq,
-                      const char *qual) {
-    static const char L[256] = {
-        15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
-        15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
-        15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
-        15,15,15,15,15,15,15,15,15,15,15,15,15, 0,15,15,
-        15, 1,14, 2,13,15,15, 4,11,15,15,12,15, 3,15,15,
-        15,15, 5, 6, 8,15, 7, 9,15,10,15,15,15,15,15,15,
-        15, 1,14, 2,13,15,15, 4,11,15,15,12,15, 3,15,15,
-        15,15, 5, 6, 8,15, 7, 9,15,10,15,15,15,15,15,15,
-        15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
-        15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
-        15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
-        15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
-        15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
-        15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
-        15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
-        15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15
-    };
-    bam1_t *b = (bam1_t *)*bp;
-    uint8_t *cp;
-    int i, qname_nuls, bam_len;
-
-    //b->l_aux = extra_len; // we fill this out later
-
-    qname_nuls = 4 - qname_len%4;
-    bam_len = qname_len + qname_nuls + ncigar*4 + (len+1)/2 + len + extra_len;
-    if (realloc_bam_data(b, bam_len) < 0)
-        return -1;
-    b->l_data = bam_len;
-
-    b->core.tid     = rname;
-    b->core.pos     = pos-1;
-    b->core.bin     = bam_reg2bin(pos-1, end);
-    b->core.qual    = mapq;
-    b->core.l_qname = qname_len+qname_nuls;
-    b->core.l_extranul = qname_nuls-1;
-    b->core.flag    = flag;
-    b->core.n_cigar = ncigar;
-    b->core.l_qseq  = len;
-    b->core.mtid    = mrnm;
-    b->core.mpos    = mpos-1;
-    b->core.isize   = isize;
-
-    cp = b->data;
-
-    strncpy((char *)cp, qname, qname_len);
-    for (i = 0; i < qname_nuls; i++)
-        cp[qname_len+i] = '\0';
-    cp += qname_len+qname_nuls;
-    if (ncigar > 0) memcpy(cp, cigar, ncigar*4);
-    cp += ncigar*4;
-
-    for (i = 0; i+1 < len; i+=2) {
-        *cp++ = (L[(uc)seq[i]]<<4) + L[(uc)seq[i+1]];
+                      const char *qual)
+{
+    int r = bam_construct((bam1_t*)*bp,
+                          qname_len, qname,
+                          flag, rname, pos - 1, mapq,
+                          ncigar, cigar,
+                          mrnm, mpos - 1, isize,
+                          len, seq, qual,
+                          extra_len);
+    if (r < 0) {
+        return r;
     }
-    if (i < len)
-        *cp++ = L[(uc)seq[i]]<<4;
 
-    if (qual)
-        memcpy(cp, qual, len);
-    else
-        memset(cp, '\xff', len);
-
-    return bam_len;
+    // mark the buffer space allocated for aux data as containing actual aux data
+    ((bam1_t*)*bp)->l_data += extra_len;
+    return r + extra_len;
 }
