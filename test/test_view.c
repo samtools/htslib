@@ -58,6 +58,7 @@ enum test_op {
     WRITE_UNCOMPRESSED = 16,
     WRITE_COMPRESSED   = 32, // eg vcf.gz, sam.gz, fastq.gz
     WRITE_FASTQ        = 64,
+    WRITE_FASTA        = 128,
 };
 
 int sam_loop(int argc, char **argv, int optind, struct opts *opts, htsFile *in, htsFile *out) {
@@ -295,7 +296,7 @@ int main(int argc, char *argv[])
     opts.index = NULL;
     opts.min_shift = 0;
 
-    while ((c = getopt(argc, argv, "DSIt:i:bzCful:o:N:BZ:@:Mx:m:p:v")) >= 0) {
+    while ((c = getopt(argc, argv, "DSIt:i:bzCfFul:o:N:BZ:@:Mx:m:p:v")) >= 0) {
         switch (c) {
         case 'D': opts.flag |= READ_CRAM; break;
         case 'S': opts.flag |= READ_COMPRESSED; break;
@@ -306,6 +307,7 @@ int main(int argc, char *argv[])
         case 'z': opts.flag |= WRITE_COMPRESSED; break;
         case 'C': opts.flag |= WRITE_CRAM; break;
         case 'f': opts.flag |= WRITE_FASTQ; break;
+        case 'F': opts.flag |= WRITE_FASTA; break;
         case 'u': opts.flag |= WRITE_UNCOMPRESSED; break; // eg u-BAM not SAM
         case 'l': opts.clevel = atoi(optarg); break;
         case 'o': if (hts_opt_add(&out_opts, optarg)) return 1; break;
@@ -365,6 +367,7 @@ int main(int argc, char *argv[])
     else if (opts.flag & WRITE_COMPRESSED) strcat(modew, "z");
     else if (opts.flag & WRITE_UNCOMPRESSED) strcat(modew, "bu");
     if (opts.flag & WRITE_FASTQ) strcat(modew, "f");
+    else if (opts.flag & WRITE_FASTA) strcat(modew, "F");
     out = hts_open(out_fn, modew);
     if (out == NULL) {
         fprintf(stderr, "Error opening standard output\n");

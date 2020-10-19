@@ -29,7 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/hts.h"
 #include "textutils_internal.h"
 
-#define HTS_MAX_EXT_LEN 8
+#define HTS_MAX_EXT_LEN 9
 
 #ifdef __cplusplus
 extern "C" {

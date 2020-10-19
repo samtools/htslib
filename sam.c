@@ -2029,6 +2029,7 @@ sam_hdr_t *sam_hdr_read(htsFile *fp)
         return sam_hdr_create(fp);
 
     case fastq_format:
+    case fasta_format:
         return sam_hdr_init();
 
     case empty_format:
@@ -2134,6 +2135,7 @@ int sam_hdr_write(htsFile *fp, const sam_hdr_t *h)
         break;
 
     case fastq_format:
+    case fasta_format:
         // Nothing to output; FASTQ has no file headers.
         break;
 
@@ -3567,13 +3569,17 @@ typedef struct {
     int rnum;
     char BC[3];         // aux tag ID for barcode
     khash_t(tag) *tags; // which aux tags to use (if empty, use all).
+    char nprefix;
 } fastq_state;
 
-static fastq_state *fastq_state_init(void) {
+// Initialise fastq state.
+// Name char of '@' or '>' distinguishes fastq vs fasta variant
+static fastq_state *fastq_state_init(int name_char) {
     fastq_state *x = (fastq_state *)calloc(1, sizeof(*x));
     if (!x)
         return NULL;
     strcpy(x->BC, "BC");
+    x->nprefix = name_char;
 
     return x;
 }
@@ -3596,7 +3602,8 @@ void fastq_state_set(samFile *fp, enum hts_fmt_option opt, ...) {
     if (!fp)
         return;
     if (!fp->state)
-        if (!(fp->state = fastq_state_init()))
+        if (!(fp->state = fastq_state_init(fp->format.format == fastq_format
+                                           ? '@' : '>')))
             return;
 
     fastq_state *x = (fastq_state *)fp->state;
@@ -3653,15 +3660,27 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
     size_t i, l;
     int ret = 0;
 
-    // Read a FASTQ format entry.
-    ret = hts_getline(fp, KS_SEP_LINE, &x->name);
-    if (ret == -1)
-        return -1;  // EOF
-    else if (ret < -1)
-        return ret; // ERR
+    if (fp->format.format == fasta_format && fp->line.s) {
+        // For FASTA we've already read the >name line; steal it
+        // Not the most efficient, but we don't optimise for fasta reading.
+        if (fp->line.l == 0)
+            return -1; // EOF
+
+        free(x->name.s);
+        x->name = fp->line;
+        fp->line.l = fp->line.m = 0;
+        fp->line.s = NULL;
+    } else {
+        // Read a FASTQ format entry.
+        ret = hts_getline(fp, KS_SEP_LINE, &x->name);
+        if (ret == -1)
+            return -1;  // EOF
+        else if (ret < -1)
+            return ret; // ERR
+    }
 
     // Name
-    if (*x->name.s != '@')
+    if (*x->name.s != x->nprefix)
         return -2;
 
     i = 0; l = x->name.l;
@@ -3682,26 +3701,30 @@ static int fastq_parse1(htsFile *fp, bam1_t *b) {
     // Seq
     x->seq.l = 0;
     for (;;) {
-        if (hts_getline(fp, KS_SEP_LINE, &fp->line) < 0)
-            return -2;
-        if (*fp->line.s == '+')
+        if ((ret = hts_getline(fp, KS_SEP_LINE, &fp->line)) < 0)
+            if (fp->format.format == fastq_format || ret < -1)
+                return -2;
+        if (*fp->line.s == (fp->format.format == fastq_format ? '+' : '>')
+            || ret == -1)
             break;
         kputsn(fp->line.s, fp->line.l, &x->seq);
     }
 
     // Qual
-    size_t remainder = x->seq.l;
-    x->qual.l = 0;
-    do {
-        if (hts_getline(fp, KS_SEP_LINE, &fp->line) < 0)
-            return -2;
-        kputsn(fp->line.s, fp->line.l, &x->qual);
-        remainder -= fp->line.l;
-    } while (remainder > 0);
+    if (fp->format.format == fastq_format) {
+        size_t remainder = x->seq.l;
+        x->qual.l = 0;
+        do {
+            if (hts_getline(fp, KS_SEP_LINE, &fp->line) < 0)
+                return -2;
+            kputsn(fp->line.s, fp->line.l, &x->qual);
+            remainder -= fp->line.l;
+        } while (remainder > 0);
 
-    // Decr qual
-    for (i = 0; i < x->qual.l; i++)
-        x->qual.s[i] -= '!';
+        // Decr qual
+        for (i = 0; i < x->qual.l; i++)
+            x->qual.s[i] -= '!';
+    }
 
     int flag = BAM_FUNMAP; int pflag = BAM_FMUNMAP | BAM_FPAIRED;
     if (x->name.l > 2 &&
@@ -3913,10 +3936,12 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
             ret = sam_read1_sam(fp, h, b);
             break;
 
+        case fasta_format:
         case fastq_format: {
             fastq_state *x = (fastq_state *)fp->state;
             if (!x) {
-                if (!(fp->state = fastq_state_init()))
+                if (!(fp->state = fastq_state_init(fp->format.format
+                                                   == fastq_format ? '@' : '>')))
                     return -2;
             }
 
@@ -4043,7 +4068,7 @@ int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
     if (len == 0) return 0;
 
     // Name
-    if (kputc('@', str) == EOF || kputs(bam_get_qname(b), str) == EOF)
+    if (kputc(x->nprefix, str) == EOF || kputs(bam_get_qname(b), str) == EOF)
         return -1;
 
     // /1 or /2 suffix
@@ -4107,21 +4132,24 @@ int fastq_format1(fastq_state *x, const bam1_t *b, kstring_t *str)
         for (i = 0; i < len; i++)
             e |= kputc_(seq_nt16_str[bam_seqi(seq, i)], str) < 0;
 
-    kputsn("\n+\n", 3, str);
 
     // Qual line
-    qual = bam_get_qual(b);
-    if (qual[0] == 0xff)
-        for (i = 0; i < len; i++)
-            e |= kputc_('B', str) < 0;
-    else if (flag & BAM_FREVERSE)
-        for (i = len-1; i >= 0; i--)
-            e |= kputc_(33 + qual[i], str) < 0;
-    else
-        for (i = 0; i < len; i++)
-            e |= kputc_(33 + qual[i], str) < 0;
+    if (x->nprefix == '@') {
+        kputsn("\n+\n", 3, str);
+        qual = bam_get_qual(b);
+        if (qual[0] == 0xff)
+            for (i = 0; i < len; i++)
+                e |= kputc_('B', str) < 0;
+        else if (flag & BAM_FREVERSE)
+            for (i = len-1; i >= 0; i--)
+                e |= kputc_(33 + qual[i], str) < 0;
+        else
+            for (i = 0; i < len; i++)
+                e |= kputc_(33 + qual[i], str) < 0;
 
+    }
     e |= kputc('\n', str) < 0;
+
     return e ? -1 : str->l;
 }
 
@@ -4254,10 +4282,12 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
         }
 
 
+    case fasta_format:
     case fastq_format: {
         fastq_state *x = (fastq_state *)fp->state;
         if (!x) {
-            if (!(fp->state = fastq_state_init()))
+            if (!(fp->state = fastq_state_init(fp->format.format
+                                               == fastq_format ? '@' : '>')))
                 return -2;
         }
 
@@ -4741,6 +4771,12 @@ int sam_open_mode(char *mode, const char *fn, const char *format)
     else if (strcasecmp(format, "sam.gz") == 0) strcpy(mode, "z");
     else if (strcasecmp(format, "fastq") == 0 ||
              strcasecmp(format, "fq") == 0) strcpy(mode, "f");
+    else if (strcasecmp(format, "fastq.gz") == 0 ||
+             strcasecmp(format, "fq.gz") == 0) strcpy(mode, "fz");
+    else if (strcasecmp(format, "fasta") == 0 ||
+             strcasecmp(format, "fa") == 0) strcpy(mode, "F");
+    else if (strcasecmp(format, "fasta.gz") == 0 ||
+             strcasecmp(format, "fa.gz") == 0) strcpy(mode, "Fz");
     else return -1;
 
     return 0;
@@ -4801,6 +4837,20 @@ char *sam_open_mode_opts(const char *fn,
     } else if (strncmp(format, "sam", format_len) == 0) {
         ; // format mode=""
     } else if (strncmp(format, "sam.gz", format_len) == 0) {
+        *cp++ = 'z';
+    } else if (strncmp(format, "fastq", format_len) == 0 ||
+               strncmp(format, "fq", format_len) == 0) {
+        *cp++ = 'f';
+    } else if (strncmp(format, "fastq.gz", format_len) == 0 ||
+               strncmp(format, "fq.gz", format_len) == 0) {
+        *cp++ = 'f';
+        *cp++ = 'z';
+    } else if (strncmp(format, "fasta", format_len) == 0 ||
+               strncmp(format, "fa", format_len) == 0) {
+        *cp++ = 'F';
+    } else if (strncmp(format, "fasta.gz", format_len) == 0 ||
+               strncmp(format, "fa", format_len) == 0) {
+        *cp++ = 'F';
         *cp++ = 'z';
     } else {
         free(mode_opts);
