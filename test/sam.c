@@ -2008,6 +2008,35 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
+static void test_bam_construct_validate_size_limits()
+{
+    const uint32_t cigar[] = { 20 << BAM_CIGAR_SHIFT | BAM_CMATCH };
+    const char *seq = "TGGACTACGA";
+
+    int r;
+    bam1_t *bam = NULL;
+    bam = bam_init1();
+    VERIFY(bam != NULL, "failed to initialize BAM struct.");
+
+    // very long sequence. each base counts for 1/2 byte of sequence data and
+    // 1 byte of sequence quality data. the sum of all components may not exceed
+    // INT32_MAX, which is the maximum possible value that can be stored in l_data.
+    // In this case the 4 bytes of qname will cause it to overflow.
+    r = bam_construct(bam, 0, NULL, BAM_FUNMAP, -1, 0, 0xff, 0, NULL, -1, 0, 0, 2 * (size_t)INT32_MAX / 3, seq, NULL, 0);
+    VERIFY(r < 0, "call to bam_construct() should have failed.");
+
+    // very long CIGAR
+    r = bam_construct(bam, 0, NULL, BAM_FUNMAP, -1, 0, 0xff, (size_t)INT32_MAX / 4, cigar, -1, 0, 0, 0, NULL, NULL, 0);
+    VERIFY(r < 0, "call to bam_construct() should have failed.");
+
+    // very long aux
+    r = bam_construct(bam, 0, NULL, BAM_FUNMAP, -1, 0, 0xff, 0, NULL, -1, 0, 0, 0, NULL, NULL, INT32_MAX);
+    VERIFY(r < 0, "call to bam_construct() should have failed.");
+
+cleanup:
+    if (bam != NULL) bam_destroy1(bam);
+}
+
 static void test_bam_construct_write_and_read_back()
 {
     const char *qname = "q1";
@@ -2121,6 +2150,7 @@ int main(int argc, char **argv)
     test_bam_construct_validate_qname();
     test_bam_construct_validate_seq();
     test_bam_construct_validate_cigar();
+    test_bam_construct_validate_size_limits();
     test_bam_construct_write_and_read_back();
 
     return status;
