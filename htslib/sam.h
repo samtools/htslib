@@ -1023,7 +1023,7 @@ bam1_t *bam_dup1(const bam1_t *bsrc);
 @param qual     Sequence quality, may be NULL.
 @param l_aux    Length to be reserved for auxiliary field data, may be 0.
 
-@return >= 0 on success (number of bytes written to bam->data), negative on failure.
+@return >= 0 on success (number of bytes written to bam->data), negative (with errno set) on failure.
 */
 HTSLIB_EXPORT
 int bam_construct(bam1_t *bam,

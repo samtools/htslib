@@ -543,18 +543,22 @@ int bam_construct(bam1_t *bam,
     // validate parameters
     if (validate_qname(l_qname, qname) < 0) {
         hts_log_error("Invalid query name");
+        errno = EINVAL;
         return -1;
     }
     if (HTS_POS_MAX - rlen <= pos) {
         hts_log_error("Read ends beyond highest supported position");
+        errno = EINVAL;
         return -1;
     }
     if (!(flag & BAM_FUNMAP) && l_seq > 0 && n_cigar == 0) {
         hts_log_error("Mapped query must have a CIGAR");
+        errno = EINVAL;
         return -1;
     }
     if (!(flag & BAM_FUNMAP) && l_seq > 0 && l_seq != qlen) {
         hts_log_error("CIGAR and query sequence are of different length");
+        errno = EINVAL;
         return -1;
     }
 
@@ -566,6 +570,7 @@ int bam_construct(bam1_t *bam,
     u    += subtract_check_underflow(l_aux, &limit);
     if (u != 0) {
         hts_log_error("Size overflow");
+        errno = EINVAL;
         return -1;
     }
 

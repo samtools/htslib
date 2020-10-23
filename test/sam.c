@@ -1990,6 +1990,7 @@ static void test_bam_construct_validate_qname()
     const char too_long[255] = { 'A' };
     r = bam_construct(bam, sizeof(too_long), too_long, BAM_FUNMAP, -1, 0, 0xff, 0, NULL, -1, 0, 0, 0, NULL, NULL, 0);
     VERIFY(r < 0, "call to bam_construct() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
 
 cleanup:
     if (bam != NULL) bam_destroy1(bam);
@@ -2006,6 +2007,7 @@ static void test_bam_construct_validate_seq()
     const char *sequence = "C";
     r = bam_construct(bam, 0, NULL, BAM_FUNMAP, -1, 0, 0xff, 0, NULL, -1, 0, 0, (size_t)INT32_MAX + 1, sequence, NULL, 0);
     VERIFY(r < 0, "call to bam_construct() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
 
 cleanup:
     if (bam != NULL) bam_destroy1(bam);
@@ -2024,14 +2026,17 @@ static void test_bam_construct_validate_cigar()
     // mapped query must have a CIGAR
     r = bam_construct(bam, 0, NULL, 0, -1, 0, 0xff, 0, NULL, -1, 0, 0, strlen(seq), seq, NULL, 0);
     VERIFY(r < 0, "call to bam_construct() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
 
     // pos + ref len from CIGAR should be <= HTS_POS_MAX
     r = bam_construct(bam, 0, NULL, 0, -1, HTS_POS_MAX - 10, 0xff, sizeof(cigar) / 4, cigar, -1, 0, 0, 0, NULL, NULL, 0);
     VERIFY(r < 0, "call to bam_construct() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
 
     // query len from CIGAR should match the sequence length
     r = bam_construct(bam, 0, NULL, 0, -1, 0, 0xff, sizeof(cigar) / 4, cigar, -1, 0, 0, strlen(seq), seq, NULL, 0);
     VERIFY(r < 0, "call to bam_construct() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
 
 cleanup:
     if (bam != NULL) bam_destroy1(bam);
@@ -2053,14 +2058,17 @@ static void test_bam_construct_validate_size_limits()
     // In this case the 4 bytes of qname will cause it to overflow.
     r = bam_construct(bam, 0, NULL, BAM_FUNMAP, -1, 0, 0xff, 0, NULL, -1, 0, 0, 2 * (size_t)INT32_MAX / 3, seq, NULL, 0);
     VERIFY(r < 0, "call to bam_construct() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
 
     // very long CIGAR
     r = bam_construct(bam, 0, NULL, BAM_FUNMAP, -1, 0, 0xff, (size_t)INT32_MAX / 4, cigar, -1, 0, 0, 0, NULL, NULL, 0);
     VERIFY(r < 0, "call to bam_construct() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
 
     // very long aux
     r = bam_construct(bam, 0, NULL, BAM_FUNMAP, -1, 0, 0xff, 0, NULL, -1, 0, 0, 0, NULL, NULL, INT32_MAX);
     VERIFY(r < 0, "call to bam_construct() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
 
 cleanup:
     if (bam != NULL) bam_destroy1(bam);
