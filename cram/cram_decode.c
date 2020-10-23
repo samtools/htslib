@@ -2839,7 +2839,7 @@ int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
  */
 static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
                        cram_record *cr, int rec, bam_seq_t **bam) {
-    int bam_idx, rg_len;
+    int ret, rg_len;
     char name_a[1024], *name;
     int name_len;
     char *aux;
@@ -2895,20 +2895,16 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         qual = NULL;
     }
 
-    bam_idx = bam_set1(*bam,
-                       name_len, name,
-                       cr->flags, cr->ref_id, cr->apos - 1, cr->mqual,
-                       cr->ncigar, &s->cigar[cr->cigar],
-                       cr->mate_ref_id, cr->mate_pos - 1, cr->tlen,
-                       cr->len, seq, qual,
-                       cr->aux_size + rg_len);
-    if (bam_idx < 0) {
-        return bam_idx;
+    ret = bam_set1(*bam,
+                   name_len, name,
+                   cr->flags, cr->ref_id, cr->apos - 1, cr->mqual,
+                   cr->ncigar, &s->cigar[cr->cigar],
+                   cr->mate_ref_id, cr->mate_pos - 1, cr->tlen,
+                   cr->len, seq, qual,
+                   cr->aux_size + rg_len);
+    if (ret < 0) {
+        return ret;
     }
-
-    // mark the buffer space allocated for aux data as containing actual aux data
-    (*bam)->l_data += cr->aux_size + rg_len;
-    bam_idx += cr->aux_size + rg_len;
 
     aux = (char *)bam_aux(*bam);
 
@@ -2916,18 +2912,20 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
     if (cr->aux_size != 0) {
         memcpy(aux, BLOCK_DATA(s->aux_blk) + cr->aux, cr->aux_size);
         aux += cr->aux_size;
+        (*bam)->l_data += cr->aux_size;
     }
 
     /* RG:Z: */
-    if (cr->rg != -1) {
-        int len = bfd->rg[cr->rg].name_len;
+    if (rg_len > 0) {
         *aux++ = 'R'; *aux++ = 'G'; *aux++ = 'Z';
+        int len = bfd->rg[cr->rg].name_len;
         memcpy(aux, bfd->rg[cr->rg].name, len);
         aux += len;
         *aux++ = 0;
+        (*bam)->l_data += rg_len;
     }
 
-    return bam_idx;
+    return (*bam)->l_data;
 }
 
 /*
