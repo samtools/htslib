@@ -2842,7 +2842,7 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
     int bam_idx, rg_len;
     char name_a[1024], *name;
     int name_len;
-    char *aux, *aux_orig;
+    char *aux;
     char *seq, *qual;
     sam_hrecs_t *bfd = sh->hrecs;
 
@@ -2887,7 +2887,6 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         cr->len = 0;
     }
 
-
     if (fd->required_fields & SAM_QUAL) {
         if (!BLOCK_DATA(s->qual_blk))
             return -1;
@@ -2896,24 +2895,22 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         qual = NULL;
     }
 
-    bam_idx = bam_construct_seq(bam, cr->aux_size + rg_len,
-                                name, name_len,
-                                cr->flags,
-                                cr->ref_id,
-                                cr->apos,
-                                cr->aend,
-                                cr->mqual,
-                                cr->ncigar, &s->cigar[cr->cigar],
-                                cr->mate_ref_id,
-                                cr->mate_pos,
-                                cr->tlen,
-                                cr->len,
-                                seq,
-                                qual);
-    if (bam_idx == -1)
-        return -1;
+    bam_idx = bam_set1(*bam,
+                       name_len, name,
+                       cr->flags, cr->ref_id, cr->apos - 1, cr->mqual,
+                       cr->ncigar, &s->cigar[cr->cigar],
+                       cr->mate_ref_id, cr->mate_pos - 1, cr->tlen,
+                       cr->len, seq, qual,
+                       cr->aux_size + rg_len);
+    if (bam_idx < 0) {
+        return bam_idx;
+    }
 
-    aux = aux_orig = (char *)bam_aux(*bam);
+    // mark the buffer space allocated for aux data as containing actual aux data
+    (*bam)->l_data += cr->aux_size + rg_len;
+    bam_idx += cr->aux_size + rg_len;
+
+    aux = (char *)bam_aux(*bam);
 
     /* Auxiliary strings */
     if (cr->aux_size != 0) {
@@ -2930,7 +2927,7 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         *aux++ = 0;
     }
 
-    return bam_idx + (aux - aux_orig);
+    return bam_idx;
 }
 
 /*
