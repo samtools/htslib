@@ -1066,6 +1066,9 @@ static char *libdeflate_deflate(char *data, size_t size, size_t *cdata_size,
     if (level >= 8) level += level/8; // 8->10, 9->12
     if (level > 12) level = 12;
 
+    if (strat == Z_RLE) // not supported by libdeflate
+        level = 1;
+
     struct libdeflate_compressor *z = libdeflate_alloc_compressor(level);
     if (!z) {
         hts_log_error("Call to libdeflate_alloc_compressor failed");
@@ -1939,6 +1942,15 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                 if (method & (1u<<ARITH_PR193))
                     method = (method|(1<<ARITH_PR64)|(1<<ARITH_PR1))&~(1u<<ARITH_PR193);
             }
+
+            // Libdeflate doesn't have a Z_RLE strategy.
+            // We treat it as level 1, but iff we haven't also
+            // explicitly listed that in the method list.
+#ifdef HAVE_LIBDEFLATE
+            if ((method & (1<<GZIP_RLE)) && (method & (1<<GZIP_1)))
+                method &= ~(1<<GZIP_RLE);
+#endif
+
             pthread_mutex_unlock(&fd->metrics_lock);
 
             for (m = 0; m < CRAM_MAX_METHOD; m++) {
@@ -1986,7 +1998,11 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
             // Accumulate stats for all methods tried
             pthread_mutex_lock(&fd->metrics_lock);
             for (m = 0; m < CRAM_MAX_METHOD; m++)
-                metrics->sz[m] += sz[m]+50; // don't be overly sure on small blocks
+                // don't be overly sure on small blocks.
+                // +2000 means eg bzip2 vs gzip (1.07 to 1.04) or gz vs rans1
+                // needs to be at least 60 bytes smaller to overcome the
+                // fixed size addition.
+                metrics->sz[m] += sz[m]+2000;
 
             // When enough trials performed, find the best on average
             if (--metrics->trial == 0) {
@@ -2058,7 +2074,7 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                 }
 
                 if (best_method != metrics->method) {
-                    metrics->trial = (NTRIALS+1)/2; // be sure
+                    //metrics->trial = (NTRIALS+1)/2; // be sure
                     //metrics->next_trial /= 1.5;
                     metrics->consistency = 0;
                 } else {
