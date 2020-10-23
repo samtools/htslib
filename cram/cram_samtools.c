@@ -57,13 +57,13 @@ int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
                       const char *seq,
                       const char *qual)
 {
-    int r = bam_construct((bam1_t*)*bp,
-                          qname_len, qname,
-                          flag, rname, pos - 1, mapq,
-                          ncigar, cigar,
-                          mrnm, mpos - 1, isize,
-                          len, seq, qual,
-                          extra_len);
+    int r = bam_assign((bam1_t*)*bp,
+                       qname_len, qname,
+                       flag, rname, pos - 1, mapq,
+                       ncigar, cigar,
+                       mrnm, mpos - 1, isize,
+                       len, seq, qual,
+                       extra_len);
     if (r < 0) {
         return r;
     }
