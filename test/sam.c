@@ -2075,6 +2075,7 @@ static void test_bam_set1_write_and_read_back()
     const uint32_t cigar[] = { 6 << BAM_CIGAR_SHIFT | BAM_CMATCH, 2 << BAM_CIGAR_SHIFT | BAM_CINS, 2 << BAM_CIGAR_SHIFT | BAM_CMATCH };
     const char *seq = "TGGACTACGA";
     const char *qual = "DBBBB+=7=0";
+    const char *temp_fname = "test/test_bam_set1_write_and_read_back.tmp.bam";
 
     int r;
     htsFile *writer = NULL, *reader = NULL;
@@ -2083,7 +2084,7 @@ static void test_bam_set1_write_and_read_back()
     kstring_t ks = KS_INITIALIZE;
 
     // open file for writing
-    writer = hts_open("test_bam_set1_write_and_read_back.bam", "wb");
+    writer = hts_open(temp_fname, "wb");
     VERIFY(writer != NULL, "failed to open bam file for writing.");
 
     // write header
@@ -2112,7 +2113,7 @@ static void test_bam_set1_write_and_read_back()
     sam_hdr_destroy(w_header);
 
     // open file for reading
-    reader = hts_open("test_bam_set1_write_and_read_back.bam", "rb");
+    reader = hts_open(temp_fname, "rb");
     VERIFY(reader != NULL, "failed to open bam file for reading.");
 
     // read header
