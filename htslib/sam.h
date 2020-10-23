@@ -1003,6 +1003,37 @@ bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc) HTS_RESULT_USED;
 HTSLIB_EXPORT
 bam1_t *bam_dup1(const bam1_t *bsrc);
 
+/// Sets all components of an alignment structure
+/**
+   @param bam      Target alignment structure. Must be initialized by a call to bam_init1().
+                   The data field will be reallocated automatically as needed.
+   @param l_qname  Length of the query name. If set to 0, the placeholder query name "*" will be used.
+   @param qname    Query name, may be NULL if l_qname = 0
+   @param flag     Bitwise flag, a combination of the BAM_F* constants.
+   @param tid      Chromosome ID, defined by sam_hdr_t (a.k.a. RNAME).
+   @param pos      0-based leftmost coordinate.
+   @param mapq     Mapping quality.
+   @param n_cigar  Number of CIGAR operations.
+   @param cigar    CIGAR data, may be NULL if n_cigar = 0.
+   @param mtid     Chromosome ID of next read in template, defined by sam_hdr_t (a.k.a. RNEXT).
+   @param mpos     0-based leftmost coordinate of next read in template (a.k.a. PNEXT).
+   @param isize    Observed template length ("insert size") (a.k.a. TLEN).
+   @param l_seq    Length of the query sequence (read) and sequence quality string.
+   @param seq      Sequence, may be NULL if l_seq = 0.
+   @param qual     Sequence quality, may be NULL.
+   @param l_aux    Length to be reserved for auxiliary field data, may be 0.
+
+   @return >= 0 on success (number of bytes written to bam->data), negative (with errno set) on failure.
+*/
+HTSLIB_EXPORT
+int bam_set1(bam1_t *bam,
+             size_t l_qname, const char *qname,
+             uint16_t flag, int32_t tid, hts_pos_t pos, uint8_t mapq,
+             size_t n_cigar, const uint32_t *cigar,
+             int32_t mtid, hts_pos_t mpos, hts_pos_t isize,
+             size_t l_seq, const char *seq, const char *qual,
+             size_t l_aux);
+
 /// Calculate query length from CIGAR data
 /**
    @param n_cigar   Number of items in @p cigar

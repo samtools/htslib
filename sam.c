@@ -485,6 +485,128 @@ static void bam_cigar2rqlens(int n_cigar, const uint32_t *cigar,
     }
 }
 
+static int subtract_check_underflow(size_t length, size_t *limit)
+{
+    if (length <= *limit) {
+        *limit -= length;
+        return 0;
+    }
+
+    return -1;
+}
+
+int bam_set1(bam1_t *bam,
+             size_t l_qname, const char *qname,
+             uint16_t flag, int32_t tid, hts_pos_t pos, uint8_t mapq,
+             size_t n_cigar, const uint32_t *cigar,
+             int32_t mtid, hts_pos_t mpos, hts_pos_t isize,
+             size_t l_seq, const char *seq, const char *qual,
+             size_t l_aux)
+{
+    // use a default qname "*" if none is provided
+    if (l_qname == 0) {
+        l_qname = 1;
+        qname = "*";
+    }
+
+    // note: the qname is stored nul terminated and padded as described in the
+    // documentation for the bam1_t struct.
+    size_t qname_nuls = 4 - l_qname % 4;
+
+    // the aligment length, needed for bam_reg2bin(), is calculated as in bam_endpos().
+    // can't use bam_endpos() directly as some fields not yet set up.
+    hts_pos_t rlen = 0, qlen = 0;
+    if (!(flag & BAM_FUNMAP)) {
+        bam_cigar2rqlens((int)n_cigar, cigar, &rlen, &qlen);
+    }
+    if (rlen == 0) {
+        rlen = 1;
+    }
+
+    // validate parameters
+    if (l_qname > 254) {
+        hts_log_error("Query name too long");
+        errno = EINVAL;
+        return -1;
+    }
+    if (HTS_POS_MAX - rlen <= pos) {
+        hts_log_error("Read ends beyond highest supported position");
+        errno = EINVAL;
+        return -1;
+    }
+    if (!(flag & BAM_FUNMAP) && l_seq > 0 && n_cigar == 0) {
+        hts_log_error("Mapped query must have a CIGAR");
+        errno = EINVAL;
+        return -1;
+    }
+    if (!(flag & BAM_FUNMAP) && l_seq > 0 && l_seq != qlen) {
+        hts_log_error("CIGAR and query sequence are of different length");
+        errno = EINVAL;
+        return -1;
+    }
+
+    size_t limit = INT32_MAX;
+    int u = subtract_check_underflow(l_qname + qname_nuls, &limit);
+    u    += subtract_check_underflow(n_cigar * 4, &limit);
+    u    += subtract_check_underflow((l_seq + 1) / 2, &limit);
+    u    += subtract_check_underflow(l_seq, &limit);
+    u    += subtract_check_underflow(l_aux, &limit);
+    if (u != 0) {
+        hts_log_error("Size overflow");
+        errno = EINVAL;
+        return -1;
+    }
+
+    // re-allocate the data buffer as needed.
+    size_t data_len = l_qname + qname_nuls + n_cigar * 4 + (l_seq + 1) / 2 + l_seq;
+    if (realloc_bam_data(bam, data_len + l_aux) < 0) {
+        return -1;
+    }
+
+    bam->l_data = (int)data_len;
+    bam->core.pos = pos;
+    bam->core.tid = tid;
+    bam->core.bin = bam_reg2bin(pos, pos + rlen);
+    bam->core.qual = mapq;
+    bam->core.l_extranul = (uint8_t)(qname_nuls - 1);
+    bam->core.flag = flag;
+    bam->core.l_qname = (uint16_t)(l_qname + qname_nuls);
+    bam->core.n_cigar = (uint32_t)n_cigar;
+    bam->core.l_qseq = (int32_t)l_seq;
+    bam->core.mtid = mtid;
+    bam->core.mpos = mpos;
+    bam->core.isize = isize;
+
+    uint8_t *cp = bam->data;
+    strncpy((char *)cp, qname, l_qname);
+    int i;
+    for (i = 0; i < qname_nuls; i++) {
+        cp[l_qname + i] = '\0';
+    }
+    cp += l_qname + qname_nuls;
+
+    if (n_cigar > 0) {
+        memcpy(cp, cigar, n_cigar * 4);
+    }
+    cp += n_cigar * 4;
+
+    for (i = 0; i + 1 < l_seq; i += 2) {
+        *cp++ = (seq_nt16_table[(unsigned char)seq[i]] << 4) | seq_nt16_table[(unsigned char)seq[i + 1]];
+    }
+    for (; i < l_seq; i++) {
+        *cp++ = seq_nt16_table[(unsigned char)seq[i]] << 4;
+    }
+
+    if (qual) {
+        memcpy(cp, qual, l_seq);
+    }
+    else {
+        memset(cp, '\xff', l_seq);
+    }
+
+    return (int)data_len;
+}
+
 hts_pos_t bam_cigar2qlen(int n_cigar, const uint32_t *cigar)
 {
     int k;
