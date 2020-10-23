@@ -1886,9 +1886,9 @@ static void test_bam_construct_full()
     VERIFY(bam != NULL, "failed to initialize BAM struct.");
 
     r = bam_construct(bam, strlen(qname), qname,
-        BAM_FREVERSE, 1, 1000, 42,
-        sizeof(cigar) / 4, cigar, 2, 2000, 3000,
-        strlen(seq), seq, qual, 64);
+                      BAM_FREVERSE, 1, 1000, 42,
+                      sizeof(cigar) / 4, cigar, 2, 2000, 3000,
+                      strlen(seq), seq, qual, 64);
     // expected number of bytes written is qname: 12, cigar: 12, sequence: 5, qual: 10, aux: 0.
     VERIFY(r == 39, "call to bam_construct() failed or did not write the correct number of bytes.");
 
@@ -1920,6 +1920,36 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
+static void test_bam_construct_even_and_odd_seq_len()
+{
+    const char *seq_even = "TGGACTACGA";
+    const char *seq_odd  = "TGGACTACGAC";
+
+    int r, i;
+    bam1_t *bam = NULL;
+    bam = bam_init1();
+    VERIFY(bam != NULL, "failed to initialize BAM struct.");
+
+    r = bam_construct(bam, 0, NULL, BAM_FUNMAP, 0, 0, 0, 0, NULL, 0, 0, 0,
+                      strlen(seq_even), seq_even, NULL, 0);
+    VERIFY(r >= 0, "call to bam_construct() failed.");
+    VERIFY(bam->core.l_qseq == strlen(seq_even), "l_seq not set correctly.");
+    for (i = 0; i < strlen(seq_even); i++) {
+        VERIFY(bam_seqi(bam_get_seq(bam), i) == seq_nt16_table[(uint8_t)seq_even[i]], "seq not set correctly.");
+    }
+
+    r = bam_construct(bam, 0, NULL, BAM_FUNMAP, 0, 0, 0, 0, NULL, 0, 0, 0,
+                      strlen(seq_odd), seq_odd, NULL, 0);
+    VERIFY(r >= 0, "call to bam_construct() failed.");
+    VERIFY(bam->core.l_qseq == strlen(seq_odd), "l_seq not set correctly.");
+    for (i = 0; i < strlen(seq_odd); i++) {
+        VERIFY(bam_seqi(bam_get_seq(bam), i) == seq_nt16_table[(uint8_t)seq_odd[i]], "seq not set correctly.");
+    }
+
+cleanup:
+    if (bam != NULL) bam_destroy1(bam);
+}
+
 static void test_bam_construct_with_seq_but_no_qual()
 {
     const char *seq = "TGGACTACGA";
@@ -1930,11 +1960,10 @@ static void test_bam_construct_with_seq_but_no_qual()
     VERIFY(bam != NULL, "failed to initialize BAM struct.");
 
     r = bam_construct(bam, 0, NULL,
-        BAM_FUNMAP, 0, 0, 0,
-        0, NULL, 0, 0, 0,
-        strlen(seq), seq, NULL, 0);
+                      BAM_FUNMAP, 0, 0, 0,
+                      0, NULL, 0, 0, 0,
+                      strlen(seq), seq, NULL, 0);
     VERIFY(r >= 0, "call to bam_construct() failed.");
-
     VERIFY(bam->core.l_qseq == strlen(seq), "l_seq not set correctly.");
     for (i = 0; i < strlen(seq); i++) {
         VERIFY(bam_seqi(bam_get_seq(bam), i) == seq_nt16_table[(uint8_t)seq[i]], "seq not set correctly.");
@@ -2066,9 +2095,9 @@ static void test_bam_construct_write_and_read_back()
     w_bam = bam_init1();
     VERIFY(w_bam != NULL, "failed to initialize BAM struct.");
     r = bam_construct(w_bam, strlen(qname), qname,
-        BAM_FREVERSE, 0, 1000, 42,
-        sizeof(cigar) / 4, cigar, 0, 2000, 3000,
-        strlen(seq), seq, qual, 64);
+                      BAM_FREVERSE, 0, 1000, 42,
+                      sizeof(cigar) / 4, cigar, 0, 2000, 3000,
+                      strlen(seq), seq, qual, 64);
     VERIFY(r >= 0, "call to bam_construct() failed.");
     r = sam_write1(writer, w_header, w_bam);
     VERIFY(r >= 0, "failed to write alignment.");
@@ -2146,6 +2175,7 @@ int main(int argc, char **argv)
     hts_set_log_level(HTS_LOG_OFF);
     test_bam_construct_minimal();
     test_bam_construct_full();
+    test_bam_construct_even_and_odd_seq_len();
     test_bam_construct_with_seq_but_no_qual();
     test_bam_construct_validate_qname();
     test_bam_construct_validate_seq();
