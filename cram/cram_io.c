@@ -5053,6 +5053,15 @@ int cram_set_voption(cram_fd *fd, enum hts_fmt_option opt, va_list args) {
             errno = EINVAL;
             return -1;
         }
+
+        if (major > 3 || (major == 3 && minor > 0)) {
+            hts_log_warning(
+                "CRAM version %s is still in draft and is subject to\n"
+                "change. Please consider this a technology demonstration "
+                "and do not use for\n"
+                "long term archival of data.", s);
+        }
+
         fd->version = major*256 + minor;
 
         fd->use_rans = (CRAM_MAJOR_VERS(fd->version) >= 3) ? 1 : 0;
