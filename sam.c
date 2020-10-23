@@ -495,13 +495,13 @@ static int subtract_check_underflow(size_t length, size_t *limit)
     return -1;
 }
 
-int bam_assign(bam1_t *bam,
-               size_t l_qname, const char *qname,
-               uint16_t flag, int32_t tid, hts_pos_t pos, uint8_t mapq,
-               size_t n_cigar, const uint32_t *cigar,
-               int32_t mtid, hts_pos_t mpos, hts_pos_t isize,
-               size_t l_seq, const char *seq, const char *qual,
-               size_t l_aux)
+int bam_set1(bam1_t *bam,
+             size_t l_qname, const char *qname,
+             uint16_t flag, int32_t tid, hts_pos_t pos, uint8_t mapq,
+             size_t n_cigar, const uint32_t *cigar,
+             int32_t mtid, hts_pos_t mpos, hts_pos_t isize,
+             size_t l_seq, const char *seq, const char *qual,
+             size_t l_aux)
 {
     // use a default qname "*" if none is provided
     if (l_qname == 0) {

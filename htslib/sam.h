@@ -1003,7 +1003,7 @@ bam1_t *bam_copy1(bam1_t *bdst, const bam1_t *bsrc) HTS_RESULT_USED;
 HTSLIB_EXPORT
 bam1_t *bam_dup1(const bam1_t *bsrc);
 
-/// Assign all components to an alignment structure
+/// Sets all components of an alignment structure
 /**
    @param bam      Target alignment structure. Must be initialized by a call to bam_init1().
                    The data field will be reallocated automatically as needed.
@@ -1026,13 +1026,13 @@ bam1_t *bam_dup1(const bam1_t *bsrc);
    @return >= 0 on success (number of bytes written to bam->data), negative (with errno set) on failure.
 */
 HTSLIB_EXPORT
-int bam_assign(bam1_t *bam,
-               size_t l_qname, const char *qname,
-               uint16_t flag, int32_t tid, hts_pos_t pos, uint8_t mapq,
-               size_t n_cigar, const uint32_t *cigar,
-               int32_t mtid, hts_pos_t mpos, hts_pos_t isize,
-               size_t l_seq, const char *seq, const char *qual,
-               size_t l_aux);
+int bam_set1(bam1_t *bam,
+             size_t l_qname, const char *qname,
+             uint16_t flag, int32_t tid, hts_pos_t pos, uint8_t mapq,
+             size_t n_cigar, const uint32_t *cigar,
+             int32_t mtid, hts_pos_t mpos, hts_pos_t isize,
+             size_t l_seq, const char *seq, const char *qual,
+             size_t l_aux);
 
 /// Calculate query length from CIGAR data
 /**
