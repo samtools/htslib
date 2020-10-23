@@ -72,27 +72,4 @@ enum cigar_op {
 
 typedef bam1_t bam_seq_t;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-int bam_construct_seq(bam_seq_t **bp, size_t extra_len,
-                      const char *qname, size_t qname_len,
-                      int flag,
-                      int rname,      // Ref ID
-                      int64_t pos,
-                      int64_t end,        // aligned start/end coords
-                      int mapq,
-                      uint32_t ncigar, const uint32_t *cigar,
-                      int mrnm,       // Mate Ref ID
-                      int64_t mpos,
-                      int64_t isize,
-                      int len,
-                      const char *seq,
-                      const char *qual);
-
-#ifdef __cplusplus
-}
-#endif
-
 #endif /* CRAM_SAMTOOLS_H */

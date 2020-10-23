@@ -2839,10 +2839,10 @@ int cram_decode_slice_mt(cram_fd *fd, cram_container *c, cram_slice *s,
  */
 static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
                        cram_record *cr, int rec, bam_seq_t **bam) {
-    int bam_idx, rg_len;
+    int ret, rg_len;
     char name_a[1024], *name;
     int name_len;
-    char *aux, *aux_orig;
+    char *aux;
     char *seq, *qual;
     sam_hrecs_t *bfd = sh->hrecs;
 
@@ -2887,7 +2887,6 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         cr->len = 0;
     }
 
-
     if (fd->required_fields & SAM_QUAL) {
         if (!BLOCK_DATA(s->qual_blk))
             return -1;
@@ -2896,41 +2895,37 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         qual = NULL;
     }
 
-    bam_idx = bam_construct_seq(bam, cr->aux_size + rg_len,
-                                name, name_len,
-                                cr->flags,
-                                cr->ref_id,
-                                cr->apos,
-                                cr->aend,
-                                cr->mqual,
-                                cr->ncigar, &s->cigar[cr->cigar],
-                                cr->mate_ref_id,
-                                cr->mate_pos,
-                                cr->tlen,
-                                cr->len,
-                                seq,
-                                qual);
-    if (bam_idx == -1)
-        return -1;
+    ret = bam_set1(*bam,
+                   name_len, name,
+                   cr->flags, cr->ref_id, cr->apos - 1, cr->mqual,
+                   cr->ncigar, &s->cigar[cr->cigar],
+                   cr->mate_ref_id, cr->mate_pos - 1, cr->tlen,
+                   cr->len, seq, qual,
+                   cr->aux_size + rg_len);
+    if (ret < 0) {
+        return ret;
+    }
 
-    aux = aux_orig = (char *)bam_aux(*bam);
+    aux = (char *)bam_aux(*bam);
 
     /* Auxiliary strings */
     if (cr->aux_size != 0) {
         memcpy(aux, BLOCK_DATA(s->aux_blk) + cr->aux, cr->aux_size);
         aux += cr->aux_size;
+        (*bam)->l_data += cr->aux_size;
     }
 
     /* RG:Z: */
-    if (cr->rg != -1) {
-        int len = bfd->rg[cr->rg].name_len;
+    if (rg_len > 0) {
         *aux++ = 'R'; *aux++ = 'G'; *aux++ = 'Z';
+        int len = bfd->rg[cr->rg].name_len;
         memcpy(aux, bfd->rg[cr->rg].name, len);
         aux += len;
         *aux++ = 0;
+        (*bam)->l_data += rg_len;
     }
 
-    return bam_idx + (aux - aux_orig);
+    return (*bam)->l_data;
 }
 
 /*

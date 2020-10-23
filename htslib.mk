@@ -127,7 +127,6 @@ HTSLIB_ALL = \
 	$(HTSDIR)/cram/cram_index.h \
 	$(HTSDIR)/cram/cram_io.c \
 	$(HTSDIR)/cram/cram_io.h \
-	$(HTSDIR)/cram/cram_samtools.c \
 	$(HTSDIR)/cram/cram_samtools.h \
 	$(HTSDIR)/cram/cram_stats.c \
 	$(HTSDIR)/cram/cram_stats.h \
