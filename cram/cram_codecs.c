@@ -202,20 +202,20 @@ static inline unsigned int get_bits_MSB(cram_block *block, int nbits) {
     }
 
     switch(nbits) {
-//  case 15: GET_BIT_MSB(block, val);
-//  case 14: GET_BIT_MSB(block, val);
-//  case 13: GET_BIT_MSB(block, val);
-//  case 12: GET_BIT_MSB(block, val);
-//  case 11: GET_BIT_MSB(block, val);
-//  case 10: GET_BIT_MSB(block, val);
-//  case  9: GET_BIT_MSB(block, val);
-    case  8: GET_BIT_MSB(block, val);
-    case  7: GET_BIT_MSB(block, val);
-    case  6: GET_BIT_MSB(block, val);
-    case  5: GET_BIT_MSB(block, val);
-    case  4: GET_BIT_MSB(block, val);
-    case  3: GET_BIT_MSB(block, val);
-    case  2: GET_BIT_MSB(block, val);
+//  case 15: GET_BIT_MSB(block, val); // fall through
+//  case 14: GET_BIT_MSB(block, val); // fall through
+//  case 13: GET_BIT_MSB(block, val); // fall through
+//  case 12: GET_BIT_MSB(block, val); // fall through
+//  case 11: GET_BIT_MSB(block, val); // fall through
+//  case 10: GET_BIT_MSB(block, val); // fall through
+//  case  9: GET_BIT_MSB(block, val); // fall through
+    case  8: GET_BIT_MSB(block, val); // fall through
+    case  7: GET_BIT_MSB(block, val); // fall through
+    case  6: GET_BIT_MSB(block, val); // fall through
+    case  5: GET_BIT_MSB(block, val); // fall through
+    case  4: GET_BIT_MSB(block, val); // fall through
+    case  3: GET_BIT_MSB(block, val); // fall through
+    case  2: GET_BIT_MSB(block, val); // fall through
     case  1: GET_BIT_MSB(block, val);
         break;
 
