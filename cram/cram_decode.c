@@ -2842,7 +2842,7 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
     int bam_idx, rg_len;
     char name_a[1024], *name;
     int name_len;
-    char *aux;
+    char *aux, *aux_orig;
     char *seq, *qual;
     sam_hrecs_t *bfd = sh->hrecs;
 
@@ -2887,6 +2887,7 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         cr->len = 0;
     }
 
+
     if (fd->required_fields & SAM_QUAL) {
         if (!BLOCK_DATA(s->qual_blk))
             return -1;
@@ -2912,7 +2913,7 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
     if (bam_idx == -1)
         return -1;
 
-    aux = (char *)bam_aux(*bam);
+    aux = aux_orig = (char *)bam_aux(*bam);
 
     /* Auxiliary strings */
     if (cr->aux_size != 0) {
@@ -2929,7 +2930,7 @@ static int cram_to_bam(sam_hdr_t *sh, cram_fd *fd, cram_slice *s,
         *aux++ = 0;
     }
 
-    return bam_idx;
+    return bam_idx + (aux - aux_orig);
 }
 
 /*
