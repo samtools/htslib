@@ -524,6 +524,11 @@ int bam_assign(bam1_t *bam,
     }
 
     // validate parameters
+    if (l_qname > 254) {
+        hts_log_error("Query name too long");
+        errno = EINVAL;
+        return -1;
+    }
     if (HTS_POS_MAX - rlen <= pos) {
         hts_log_error("Read ends beyond highest supported position");
         errno = EINVAL;

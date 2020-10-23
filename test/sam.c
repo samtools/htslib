@@ -1974,6 +1974,23 @@ cleanup:
     if (bam != NULL) bam_destroy1(bam);
 }
 
+static void test_bam_construct_validate_qname()
+{
+    int r;
+    bam1_t *bam = NULL;
+    bam = bam_init1();
+    VERIFY(bam != NULL, "failed to initialize BAM struct.");
+
+    // qname too long
+    const char too_long[255] = { 'A' };
+    r = bam_assign(bam, sizeof(too_long), too_long, BAM_FUNMAP, -1, 0, 0xff, 0, NULL, -1, 0, 0, 0, NULL, NULL, 0);
+    VERIFY(r < 0, "call to bam_assign() should have failed.");
+    VERIFY(errno == EINVAL, "errno should be set.");
+
+cleanup:
+    if (bam != NULL) bam_destroy1(bam);
+}
+
 static void test_bam_construct_validate_seq()
 {
     int r;
@@ -2163,6 +2180,7 @@ int main(int argc, char **argv)
     test_bam_construct_full();
     test_bam_construct_even_and_odd_seq_len();
     test_bam_construct_with_seq_but_no_qual();
+    test_bam_construct_validate_qname();
     test_bam_construct_validate_seq();
     test_bam_construct_validate_cigar();
     test_bam_construct_validate_size_limits();
