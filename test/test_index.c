@@ -29,7 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "../htslib/sam.h"
 #include "../htslib/vcf.h"
 
-void usage(FILE *fp) {
+void HTS_NORETURN usage(FILE *fp) {
     fprintf(fp, "Usage: test_index [opts] in.{sam.gz,bam,cram}|in.{vcf.gz,bcf}\n\n");
     fprintf(fp, "  -b       Use BAI index (BAM, SAM)\n");
     fprintf(fp, "  -c       Use CSI index (BAM, SAM, VCF, BCF)\n");

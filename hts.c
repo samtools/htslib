@@ -784,8 +784,8 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
         // NB: Doesn't support floats, eg 1.5g
         // TODO: extend hts_parse_decimal? See also samtools sort.
         switch (*endp) {
-        case 'g': case 'G': o->val.i *= 1024;
-        case 'm': case 'M': o->val.i *= 1024;
+        case 'g': case 'G': o->val.i *= 1024; // fall through
+        case 'm': case 'M': o->val.i *= 1024; // fall through
         case 'k': case 'K': o->val.i *= 1024; break;
         case '\0': break;
         default:
@@ -2731,6 +2731,7 @@ int hts_itr_multi_bam(const hts_idx_t *idx, hts_itr_t *iter)
                 switch (tid) {
                 case HTS_IDX_NONE:
                     iter->finished = 1;
+                    // fall through
                 case HTS_IDX_START:
                 case HTS_IDX_REST:
                     iter->curr_off = t_off;

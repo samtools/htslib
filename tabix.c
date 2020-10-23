@@ -52,7 +52,8 @@ typedef struct
 }
 args_t;
 
-HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) static void error(const char *format, ...)
+static void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) HTS_NORETURN
+error(const char *format, ...)
 {
     va_list ap;
     fflush(stdout);
@@ -63,7 +64,8 @@ HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) static void error(const char *format, ...)
     exit(EXIT_FAILURE);
 }
 
-HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) static void error_errno(const char *format, ...)
+static void HTS_FORMAT(HTS_PRINTF_FMT, 1, 2) HTS_NORETURN
+error_errno(const char *format, ...)
 {
     va_list ap;
     int eno = errno;

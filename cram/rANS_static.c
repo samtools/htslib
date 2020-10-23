@@ -157,9 +157,9 @@ unsigned char *rans_compress_O0(unsigned char *in, unsigned int in_size,
     RansEncInit(&rans3);
 
     switch (i=(in_size&3)) {
-    case 3: RansEncPutSymbol(&rans2, &ptr, &syms[in[in_size-(i-2)]]);
-    case 2: RansEncPutSymbol(&rans1, &ptr, &syms[in[in_size-(i-1)]]);
-    case 1: RansEncPutSymbol(&rans0, &ptr, &syms[in[in_size-(i-0)]]);
+    case 3: RansEncPutSymbol(&rans2, &ptr, &syms[in[in_size-(i-2)]]); // fall through
+    case 2: RansEncPutSymbol(&rans1, &ptr, &syms[in[in_size-(i-1)]]); // fall through
+    case 1: RansEncPutSymbol(&rans0, &ptr, &syms[in[in_size-(i-0)]]); // fall through
     case 0:
         break;
     }
@@ -348,10 +348,13 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
     switch(out_sz&3) {
     case 3:
         out_buf[out_end+2] = D.R[RansDecGet(&R[2], TF_SHIFT)];
+        // fall through
     case 2:
         out_buf[out_end+1] = D.R[RansDecGet(&R[1], TF_SHIFT)];
+        // fall through
     case 1:
         out_buf[out_end] = D.R[RansDecGet(&R[0], TF_SHIFT)];
+        // fall through
     default:
         break;
     }
