@@ -485,23 +485,6 @@ static void bam_cigar2rqlens(int n_cigar, const uint32_t *cigar,
     }
 }
 
-static int validate_qname(size_t l_qname, const char *qname)
-{
-    // SAM specification: the query name must be on the format [!-?A-~]{1,254}
-    if (l_qname > 254) {
-        return -1;
-    }
-
-    int i;
-    for (i = 0; i < l_qname; i++) {
-        if (qname[i] < '!' || qname[i] > '~' || qname[i] == '@') {
-            return -1;
-        }
-    }
-
-    return 0;
-}
-
 static int subtract_check_underflow(size_t length, size_t *limit)
 {
     if (length <= *limit) {
@@ -541,11 +524,6 @@ int bam_assign(bam1_t *bam,
     }
 
     // validate parameters
-    if (validate_qname(l_qname, qname) < 0) {
-        hts_log_error("Invalid query name");
-        errno = EINVAL;
-        return -1;
-    }
     if (HTS_POS_MAX - rlen <= pos) {
         hts_log_error("Read ends beyond highest supported position");
         errno = EINVAL;
