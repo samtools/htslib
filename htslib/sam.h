@@ -1103,6 +1103,28 @@ char *bam_flag2str(int flag);   /** The string must be freed by the user */
 HTSLIB_EXPORT
 int bam_set_qname(bam1_t *b, const char *qname);
 
+/*! @function
+ @abstract  Parse a CIGAR string into a uint32_t array
+ @param  in      [in]  pointer to the source string
+ @param  end     [out] address of the pointer to the new end of the input string
+ @param  a_cigar [out]  address of the destination uint32_t buffer
+ @param  a_mem   [in/out]  address of the allocated number of buffer elements
+ @param  a_len   [in/out]  address of the used number of buffer elements
+ @return         number of processed CIGAR operators; 0 if error
+ */
+HTSLIB_EXPORT
+size_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, uint32_t *a_mem, uint32_t *a_len);
+
+/*! @function
+ @abstract  Parse a CIGAR string into a bam1_t struct
+ @param  in      [in]  pointer to the source string
+ @param  end     [out] address of the pointer to the new end of the input string
+ @param  b       [in/out]  address of the destination bam1_t struct
+ @return         number of processed CIGAR operators; 0 if error
+ */
+HTSLIB_EXPORT
+size_t sam_parse_cigar_b(const char *in, char **end, bam1_t *b);
+
 /*************************
  *** BAM/CRAM indexing ***
  *************************/

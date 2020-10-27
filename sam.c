@@ -2148,22 +2148,13 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     if (*p++ != '\t') goto err_ret;
     // cigar
     if (*p != '*') {
-        uint32_t *cigar;
-        size_t n_cigar = 0;
-        for (q = p; *p && *p != '\t'; ++p)
-            if (!isdigit_c(*p)) ++n_cigar;
-        if (*p++ != '\t') goto err_ret;
-        _parse_err(n_cigar == 0, "no CIGAR operations");
-        _parse_err(n_cigar >= 2147483647, "too many CIGAR operations");
+        uint32_t *cigar = NULL;
+        int old_l_data = b->l_data;
+        uint32_t n_cigar = sam_parse_cigar_b(p, &p, b);
+        if (!n_cigar || *p++ != '\t') goto err_ret;
+        cigar = (uint32_t *)(b->data + old_l_data);
         c->n_cigar = n_cigar;
-        _get_mem(uint32_t, &cigar, b, c->n_cigar * sizeof(uint32_t));
-        for (i = 0; i < c->n_cigar; ++i) {
-            int op;
-            cigar[i] = hts_str2uint(q, &q, 28, &overflow)<<BAM_CIGAR_SHIFT;
-            op = bam_cigar_table[(unsigned char)*q++];
-            _parse_err(op < 0, "unrecognized CIGAR operator");
-            cigar[i] |= op;
-        }
+
         // can't use bam_endpos() directly as some fields not yet set up
         cigreflen = (!(c->flag&BAM_FUNMAP))? bam_cigar2rlen(c->n_cigar, cigar) : 1;
         if (cigreflen == 0) cigreflen = 1;
@@ -2326,6 +2317,111 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
 #undef _read_token
 err_ret:
     return -2;
+}
+
+static uint32_t read_ncigar(const char *in) {
+    uint32_t n_cigar = 0;
+    char *q = (char *)in;
+    for (; *q && *q != '\t'; ++q)
+        if (!isdigit_c(*q)) ++n_cigar;
+    if (!n_cigar) {
+        hts_log_error("No CIGAR operations");
+        return 0;
+    }
+    if (n_cigar >= 2147483647) {
+        hts_log_error("Too many CIGAR operations");
+        return 0;
+    }
+
+    return n_cigar;
+}
+
+/*! @function
+ @abstract  Parse a CIGAR string into preallocated a uint32_t array
+ @param  in      [in]  pointer to the source string
+ @param  a_cigar [out]  address of the destination uint32_t buffer
+ @return         number of processed input characters; 0 if error
+ */
+static int parse_cigar(const char *in, uint32_t *a_cigar, uint32_t n_cigar) {
+    int i, overflow = 0;
+    char *p, *q = (char *)in;
+    for (i = 0; i < n_cigar; i++) {
+        uint32_t len;
+        int op;
+        p = q;
+        len = hts_str2uint(q, &q, 28, &overflow)<<BAM_CIGAR_SHIFT;
+        if (q == p) {
+            hts_log_error("CIGAR length invalid at position %d (%s)", (int)(i+1), p);
+            return 0;
+        }
+        if (overflow) {
+            hts_log_error("CIGAR length too long at position %d (%.*s)", (int)(i+1), (int)(q-p+1), p);
+            return 0;
+        }
+        op = bam_cigar_table[(unsigned char)*q++];
+        if (op < 0) {
+            hts_log_error("Unrecognized CIGAR operator");
+            return 0;
+        }
+        a_cigar[i] = len;
+        a_cigar[i] |= op;
+    }
+
+    return q-in;
+}
+
+size_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, uint32_t *a_mem, uint32_t *a_len) {
+    size_t n_cigar = 0;
+    int diff;
+
+    if (!in || !end || !a_cigar || !a_mem || !a_len) {
+        hts_log_error("NULL pointer arguments");
+        return 0;
+    }
+    *end = (char *)in;
+
+    n_cigar = read_ncigar(in);
+    if (!n_cigar) return 0;
+    if (n_cigar > (*a_mem - *a_len)) {
+        uint32_t *a_tmp = realloc(*a_cigar, 1.5*(n_cigar + *a_len)*sizeof(**a_cigar));
+        if (a_tmp) {
+            *a_cigar = a_tmp;
+            *a_mem = 1.5*(n_cigar + *a_len);
+        } else {
+            hts_log_error("Memory allocation error");
+            return 0;
+        }
+    }
+
+    if (!(diff = parse_cigar(in, *a_cigar + *a_len, n_cigar))) return 0;
+    *a_len += n_cigar;
+    *end = (char *)in+diff;
+
+    return n_cigar;
+}
+
+size_t sam_parse_cigar_b(const char *in, char **end, bam1_t *b) {
+    size_t n_cigar = 0;
+    int diff;
+
+    if (!in || !end || !b) {
+        hts_log_error("NULL pointer arguments");
+        return 0;
+    }
+    *end = (char *)in;
+
+    n_cigar = read_ncigar(in);
+    if (!n_cigar) return 0;
+    if (possibly_expand_bam_data(b, n_cigar * sizeof(uint32_t)) < 0) {
+        hts_log_error("Memory allocation error");
+        return 0;
+    }
+
+    if (!(diff = parse_cigar(in, (uint32_t *)(b->data + b->l_data), n_cigar))) return 0;
+    b->l_data += (n_cigar * sizeof(uint32_t));
+    *end = (char *)in+diff;
+
+    return n_cigar;
 }
 
 /*
