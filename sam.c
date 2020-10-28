@@ -2377,6 +2377,7 @@ typedef struct SAM_state {
     pthread_mutex_t lines_m;
     hts_tpool_process *q;
     pthread_t dispatcher;
+    int dispatcher_set;
 
     sp_lines *lines;
     sp_bams *bams;
@@ -2462,7 +2463,7 @@ int sam_state_destroy(htsFile *fp) {
             if (fd->q)
                 hts_tpool_wake_dispatch(fd->q); // unstick the reader
 
-            if (!fp->is_write && fd->q && fd->dispatcher) {
+            if (!fp->is_write && fd->q && fd->dispatcher_set) {
                 for (;;) {
                     // Avoid deadlocks with dispatcher
                     if (fd->command == SAM_CLOSE_DONE)
@@ -2502,7 +2503,8 @@ int sam_state_destroy(htsFile *fp) {
             }
 
             // Wait for it to acknowledge
-            pthread_join(fd->dispatcher, NULL);
+            if (fd->dispatcher_set)
+                pthread_join(fd->dispatcher, NULL);
             if (!ret) ret = -fd->errcode;
         }
 
@@ -3110,8 +3112,10 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
                     return -2;
 
                 // We can only do this once we've got a header
-                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_read, fp) != 0)
+                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_read,
+                                   fp) != 0)
                     return -2;
+                fd->dispatcher_set = 1;
             }
 
             if (fd->h != h) {
@@ -3299,13 +3303,15 @@ int sam_write1(htsFile *fp, const sam_hdr_t *h, const bam1_t *b)
                 // destroy it later on and sam_hdr_destroy takes non-const.
                 //
                 // We do this because some tools do sam_hdr_destroy; sam_close
-                // while others do sam_close; sam_hdr_destroy.  The former is an
-                // issue as we need the header still when flushing.
+                // while others do sam_close; sam_hdr_destroy.  The former is
+                // an issue as we need the header still when flushing.
                 fd->h = (sam_hdr_t *)h;
                 fd->h->ref_count++;
 
-                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_write, fp) != 0)
+                if (pthread_create(&fd->dispatcher, NULL, sam_dispatcher_write,
+                                   fp) != 0)
                     return -2;
+                fd->dispatcher_set = 1;
             }
 
             if (fd->h != h) {
