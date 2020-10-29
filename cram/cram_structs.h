@@ -679,6 +679,7 @@ struct cram_fd;
 typedef struct varint_vec {
     // Returns number of bytes decoded from fd, 0 on error
     int (*varint_decode32_crc)(struct cram_fd *fd, int32_t *val_p, uint32_t *crc);
+    int (*varint_decode32s_crc)(struct cram_fd *fd, int32_t *val_p, uint32_t *crc);
     int (*varint_decode64_crc)(struct cram_fd *fd, int64_t *val_p, uint32_t *crc);
 
     // Returns the value and increments *cp.  Sets err to 1 iff an error occurs.

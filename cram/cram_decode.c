@@ -392,7 +392,7 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
         } else if (key[0] == 'C' && key[1] == 'F') {
             ds_id = DS_CF; type = E_INT;
         } else if (key[0] == 'R' && key[1] == 'I') {
-            ds_id = DS_RI; type = E_INT;
+            ds_id = DS_RI; type = E_SINT;
         } else if (key[0] == 'R' && key[1] == 'L') {
             ds_id = DS_RL; type = E_INT;
         } else if (key[0] == 'A' && key[1] == 'P') {
@@ -404,7 +404,7 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
         } else if (key[0] == 'M' && key[1] == 'F') {
             ds_id = DS_MF; type = E_INT;
         } else if (key[0] == 'N' && key[1] == 'S') {
-            ds_id = DS_NS; type = E_INT;
+            ds_id = DS_NS; type = E_SINT;
         } else if (key[0] == 'N' && key[1] == 'P') {
             ds_id = DS_NP;
             type = is_v4 ? E_LONG : E_INT;
@@ -968,7 +968,7 @@ cram_block_slice_hdr *cram_decode_slice_header(cram_fd *fd, cram_block *b) {
     hdr->content_type = b->content_type;
 
     if (b->content_type == MAPPED_SLICE) {
-        hdr->ref_seq_id = fd->vv.varint_get32((char **)&cp, (char *)cp_end, &err);
+        hdr->ref_seq_id = fd->vv.varint_get32s((char **)&cp, (char *)cp_end, &err);
         if (CRAM_MAJOR_VERS(fd->version) >= 4) {
             hdr->ref_seq_start = fd->vv.varint_get64((char **)&cp, (char *)cp_end, &err);
             hdr->ref_seq_span  = fd->vv.varint_get64((char **)&cp, (char *)cp_end, &err);
@@ -2298,7 +2298,10 @@ int cram_decode_slice(cram_fd *fd, cram_container *c, cram_slice *s,
         return -1;
 
     ref_id = s->hdr->ref_seq_id;
-    embed_ref = s->hdr->ref_base_id >= 0 ? 1 : 0;
+    if (CRAM_MAJOR_VERS(fd->version) < 4)
+       embed_ref = s->hdr->ref_base_id >= 0 ? 1 : 0;
+    else
+       embed_ref = s->hdr->ref_base_id > 0 ? 1 : 0;
 
     if (ref_id >= 0) {
         if (embed_ref) {

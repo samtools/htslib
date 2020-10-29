@@ -4,7 +4,7 @@
 # Sadly though there is still a finite limit to macOS of one instance.
 # Can we cull our Mac test to just one instance?
 
-timeout_in: 10m
+timeout_in: 20m
 
 #--------------------------------------------------
 # Template: build libdeflate dependency
