@@ -58,6 +58,7 @@ typedef struct {
 typedef struct {
     int ncodes;
     cram_huffman_code *codes;
+    int option;
 } cram_huffman_decoder;
 
 #define MAX_HUFF 128
@@ -128,6 +129,12 @@ typedef struct {
 } cram_external_decoder;
 
 typedef struct {
+    int32_t content_id;
+    int64_t offset;
+    enum cram_external_type type;
+} cram_varint_decoder;
+
+typedef struct {
     struct cram_codec *len_codec;
     struct cram_codec *val_codec;
 } cram_byte_array_len_decoder;
@@ -145,6 +152,10 @@ typedef struct {
     struct cram_codec *len_codec;
     struct cram_codec *val_codec;
 } cram_byte_array_len_encoder;
+
+typedef struct {
+    int64_t val;
+} cram_const_codec;
 
 /*
  * A generic codec structure.
@@ -176,6 +187,8 @@ typedef struct cram_codec {
         cram_xpack_decoder           xpack;
         cram_xrle_decoder            xrle;
         cram_xdelta_decoder          xdelta;
+        cram_const_codec             xconst;
+        cram_varint_decoder          varint;
 
         cram_huffman_encoder         e_huffman;
         cram_external_decoder        e_external;
@@ -185,6 +198,8 @@ typedef struct cram_codec {
         cram_xpack_decoder           e_xpack;
         cram_xrle_decoder            e_xrle;
         cram_xdelta_decoder          e_xdelta;
+        cram_const_codec             e_xconst;
+        cram_varint_decoder          e_varint;
     } u;
 } cram_codec;
 

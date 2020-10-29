@@ -392,7 +392,7 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
         } else if (key[0] == 'C' && key[1] == 'F') {
             ds_id = DS_CF; type = E_INT;
         } else if (key[0] == 'R' && key[1] == 'I') {
-            ds_id = DS_RI; type = E_SINT;
+            ds_id = DS_RI; type = E_INT;
         } else if (key[0] == 'R' && key[1] == 'L') {
             ds_id = DS_RL; type = E_INT;
         } else if (key[0] == 'A' && key[1] == 'P') {
@@ -400,11 +400,11 @@ cram_block_compression_hdr *cram_decode_compression_header(cram_fd *fd,
             type = is_v4 ? E_SLONG : E_INT;
         } else if (key[0] == 'R' && key[1] == 'G') {
             ds_id = DS_RG;
-            type = is_v4 ? E_SINT : E_INT;
+            type = E_INT;
         } else if (key[0] == 'M' && key[1] == 'F') {
             ds_id = DS_MF; type = E_INT;
         } else if (key[0] == 'N' && key[1] == 'S') {
-            ds_id = DS_NS; type = E_SINT;
+            ds_id = DS_NS; type = E_INT;
         } else if (key[0] == 'N' && key[1] == 'P') {
             ds_id = DS_NP;
             type = is_v4 ? E_LONG : E_INT;

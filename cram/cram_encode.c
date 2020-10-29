@@ -995,8 +995,16 @@ static int cram_allocate_block(cram_codec *codec, cram_slice *s, int ds_id) {
         codec->out = s->block[0];
         break;
 
+    // Codecs which don't use external blocks
+    case E_CONST_BYTE:
+    case E_CONST_INT:
+       codec->out = NULL;
+       break;
+
     // Codecs that emit directly to external blocks
     case E_EXTERNAL:
+    case E_VARINT_UNSIGNED:
+    case E_VARINT_SIGNED:
         if (!(s->block[ds_id] = cram_new_block(EXTERNAL, ds_id)))
             return -1;
         codec->u.external.content_id = ds_id;
@@ -1624,15 +1632,25 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     //                                     fd->version);
 
     //fprintf(stderr, "=== AP ===\n");
-    if (c->pos_sorted) {
-        h->codecs[DS_AP] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_AP]),
-                                             c->stats[DS_AP],
-                                             is_v4 ? E_SLONG : E_INT,
-                                             NULL, fd->version, &fd->vv);
+    if (c->pos_sorted || CRAM_MAJOR_VERS(fd->version) >= 4) {
+        if (c->pos_sorted)
+            h->codecs[DS_AP] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_AP]),
+                                                 c->stats[DS_AP],
+                                                 is_v4 ? E_LONG : E_INT,
+                                                 NULL, fd->version, &fd->vv);
+        else
+            // Unsorted data has no stats, but hard-code VARINT_SIGNED / EXT.
+            h->codecs[DS_AP] = cram_encoder_init(is_v4 ? E_VARINT_SIGNED
+                                                       : E_EXTERNAL,
+                                                 NULL,
+                                                 is_v4 ? E_LONG : E_INT,
+                                                 NULL, fd->version, &fd->vv);
     } else {
+        // Removed BETA in v4.0.
+        // Should we consider dropping use of it for 3.0 too?
         int p[2] = {0, c->max_apos};
         h->codecs[DS_AP] = cram_encoder_init(E_BETA, NULL,
-                                             is_v4 ? E_SLONG : E_INT,
+                                             is_v4 ? E_LONG : E_INT,
                                              p, fd->version, &fd->vv);
 //      cram_xdelta_encoder e;
 //      e.word_size = is_v4 ? 8 : 4;
@@ -1648,7 +1666,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     //fprintf(stderr, "=== RG ===\n");
     h->codecs[DS_RG] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_RG]),
                                          c->stats[DS_RG],
-                                         is_v4 ? E_SINT : E_INT,
+                                         E_INT,
                                          NULL,
                                          fd->version, &fd->vv);
     if (c->stats[DS_RG]->nvals && !h->codecs[DS_RG]) goto_err;
@@ -1661,7 +1679,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
     //fprintf(stderr, "=== NS ===\n");
     h->codecs[DS_NS] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_NS]),
-                                         c->stats[DS_NS], E_SINT, NULL,
+                                         c->stats[DS_NS], E_INT, NULL,
                                          fd->version, &fd->vv);
     if (c->stats[DS_NS]->nvals && !h->codecs[DS_NS]) goto_err;
 
@@ -1674,7 +1692,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     //fprintf(stderr, "=== TS ===\n");
     h->codecs[DS_TS] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_TS]),
                                          c->stats[DS_TS],
-                                         is_v4 ? E_SLONG : E_INT,
+                                         is_v4 ? E_LONG : E_INT,
                                          NULL, fd->version, &fd->vv);
     if (c->stats[DS_TS]->nvals && !h->codecs[DS_TS]) goto_err;
 
@@ -1730,7 +1748,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
     if (CRAM_MAJOR_VERS(fd->version) >= 3) {
         cram_byte_array_len_encoder e;
 
-        e.len_encoding = E_EXTERNAL;
+        e.len_encoding = CRAM_MAJOR_VERS(fd->version) >= 4
+            ? E_VARINT_UNSIGNED
+            : E_EXTERNAL;
         e.len_dat = (void *)DS_BB_len;
         //e.len_dat = (void *)DS_BB;
 
@@ -1783,7 +1803,7 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
 
         //fprintf(stderr, "=== RI ===\n");
         h->codecs[DS_RI] = cram_encoder_init(cram_stats_encoding(fd, c->stats[DS_RI]),
-                                             c->stats[DS_RI], E_SINT, NULL,
+                                             c->stats[DS_RI], E_INT, NULL,
                                              fd->version, &fd->vv);
         if (c->stats[DS_RI]->nvals && !h->codecs[DS_RI]) goto_err;
 
@@ -1818,7 +1838,9 @@ int cram_encode_container(cram_fd *fd, cram_container *c) {
             // elements into the same external block.
             cram_byte_array_len_encoder e;
 
-            e.len_encoding = E_EXTERNAL;
+            e.len_encoding = CRAM_MAJOR_VERS(fd->version) >= 4
+                ? E_VARINT_UNSIGNED
+                : E_EXTERNAL;
             e.len_dat = (void *)DS_SC_len;
 
             e.val_encoding = E_EXTERNAL;
@@ -2291,8 +2313,13 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                 cram_byte_array_len_encoder e;
                 cram_stats st;
 
-                e.len_encoding = E_HUFFMAN;
-                e.len_dat = NULL;
+                if (CRAM_MAJOR_VERS(fd->version) <= 3) {
+                    e.len_encoding = E_HUFFMAN;
+                    e.len_dat = NULL; // will get codes from st
+                } else {
+                    e.len_encoding = E_CONST_INT;
+                    e.len_dat = NULL; // will get codes from st
+                }
                 memset(&st, 0, sizeof(st));
                 if (cram_stats_add(&st, 1) < 0) goto block_err;
                 cram_stats_encoding(fd, &st);
@@ -2311,8 +2338,13 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                 cram_byte_array_len_encoder e;
                 cram_stats st;
 
-                e.len_encoding = E_HUFFMAN;
-                e.len_dat = NULL;
+                if (CRAM_MAJOR_VERS(fd->version) <= 3) {
+                    e.len_encoding = E_HUFFMAN;
+                    e.len_dat = NULL; // will get codes from st
+                } else {
+                    e.len_encoding = E_CONST_INT;
+                    e.len_dat = NULL; // will get codes from st
+                }
                 memset(&st, 0, sizeof(st));
                 if (cram_stats_add(&st, 2) < 0) goto block_err;
                 cram_stats_encoding(fd, &st);
@@ -2330,8 +2362,13 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                 cram_byte_array_len_encoder e;
                 cram_stats st;
 
-                e.len_encoding = E_HUFFMAN;
-                e.len_dat = NULL;
+                if (CRAM_MAJOR_VERS(fd->version) <= 3) {
+                    e.len_encoding = E_HUFFMAN;
+                    e.len_dat = NULL; // will get codes from st
+                } else {
+                    e.len_encoding = E_CONST_INT;
+                    e.len_dat = NULL; // will get codes from st
+                }
                 memset(&st, 0, sizeof(st));
                 if (cram_stats_add(&st, 4) < 0) goto block_err;
                 cram_stats_encoding(fd, &st);
@@ -2353,7 +2390,9 @@ static char *cram_encode_aux(cram_fd *fd, bam_seq_t *b, cram_container *c,
                 // too.
                 cram_byte_array_len_encoder e;
 
-                e.len_encoding = E_EXTERNAL;
+                e.len_encoding = CRAM_MAJOR_VERS(fd->version) >= 4
+                    ? E_VARINT_UNSIGNED
+                    : E_EXTERNAL;
                 e.len_dat = (void *)sk; // or key+128 for len?
 
                 e.val_encoding = E_EXTERNAL;
