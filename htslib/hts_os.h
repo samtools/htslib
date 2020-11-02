@@ -77,4 +77,43 @@ extern int is_cygpty(int fd);
 #define random rand
 #endif
 
+/*! @abstract Introspection on the features enabled in htslib
+ *
+ * @return a bitfield of HTS_FEATURE_* macros.
+ */
+HTSLIB_EXPORT
+unsigned int htslib_features(void);
+
+HTSLIB_EXPORT
+const char *htslib_test_feature(int id);
+
+/*! @abstract Introspection on the features enabled in htslib, string form
+ *
+ * @return a string describing htslib build features
+ */
+HTSLIB_EXPORT
+const char *htslib_feature_string(void);
+
+// Whether ./configure was used or vanilla Makefile
+#define HTS_FEATURE_CONFIGURE    1
+
+// Also see htslib_plugin_path function
+#define HTS_FEATURE_PLUGINS      2
+
+// Transport specific
+#define HTS_FEATURE_LIBCURL      4
+#define HTS_FEATURE_S3           8
+#define HTS_FEATURE_GCS          16
+
+// Compression options
+#define HTS_FEATURE_LIBDEFLATE   32
+#define HTS_FEATURE_LZMA         64
+#define HTS_FEATURE_BZIP2        128
+
+// Build params
+#define HTS_FEATURE_CC           (1<<28)
+#define HTS_FEATURE_CFLAGS       (1<<29)
+#define HTS_FEATURE_LDFLAGS      (1<<30)
+#define HTS_FEATURE_CPPFLAGS     (1<<31)
+
 #endif
