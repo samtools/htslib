@@ -49,7 +49,7 @@ HTSLIB_EXPORT
 double hts_drand48(void) { return drand48(); }
 
 HTSLIB_EXPORT
-double hts_lrand48(void) { return lrand48(); }
+long hts_lrand48(void) { return lrand48(); }
 #endif
 
 // // On Windows when using the MSYS or Cygwin terminals, isatty fails
