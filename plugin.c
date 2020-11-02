@@ -191,3 +191,30 @@ void close_plugin(void *plugin)
                     __func__, dlerror());
     }
 }
+
+const char *htslib_plugin_path(void) {
+#ifdef ENABLE_PLUGINS
+    char *path = getenv("HTS_PATH");
+    if (!path) path = "";
+
+    kstring_t ks = {0};
+    while(1) {
+        size_t len = strcspn(path, HTS_PATH_SEPARATOR_STR);
+        if (len == 0) kputs(PLUGINPATH, &ks);
+        else kputsn(path, len, &ks);
+        kputc(HTS_PATH_SEPARATOR_CHAR, &ks);
+
+        path += len;
+        if (*path == HTS_PATH_SEPARATOR_CHAR) path++;
+        else break;
+    }
+
+    static char s_path[1024];
+    sprintf(s_path, "%.1023s", ks.s ? ks.s : "");
+    free(ks.s);
+
+    return s_path;
+#else
+    return NULL;
+#endif
+}

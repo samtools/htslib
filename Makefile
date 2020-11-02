@@ -89,7 +89,8 @@ BUILT_TEST_PROGRAMS = \
 	test/test-bcf-sr \
 	test/fuzz/hts_open_fuzzer.o \
 	test/test-bcf-translate \
-	test/test-parse-reg
+	test/test-parse-reg \
+	test/test_introspection
 
 BUILT_THRASH_PROGRAMS = \
 	test/thrash_threads1 \
@@ -333,6 +334,8 @@ hfile_s3_write.o hfile_s3_write.pico: hfile_s3_write.c config.h $(hfile_internal
 hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
 hts.o hts.pico: hts.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h)
 hts_os.o hts_os.pico: hts_os.c config.h $(htslib_hts_defs_h) os/rand.c
+hts_os.o hts_os.pico: TMP_CPPFLAGS := $(CPPFLAGS)
+hts_os.o hts_os.pico: CPPFLAGS += -DHTS_CPPFLAGS=\"$(TMP_CPPFLAGS)\" -DHTS_CFLAGS="\"$(CFLAGS)\"" -DHTS_LDFLAGS="\"$(LDFLAGS)\"" -DHTS_CC="\"$(CC)\""
 vcf.o vcf.pico: vcf.c config.h $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h)
 sam.o sam.pico: sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(hts_internal_h) $(sam_internal_h) $(htslib_hfile_h) $(htslib_hts_endian_h) $(header_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
 tbx.o tbx.pico: tbx.c config.h $(htslib_tbx_h) $(htslib_bgzf_h) $(htslib_hts_endian_h) $(hts_internal_h) $(htslib_khash_h)
@@ -469,6 +472,9 @@ test/test-bcf-sr: test/test-bcf-sr.o libhts.a
 test/test-bcf-translate: test/test-bcf-translate.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-bcf-translate.o libhts.a -lz $(LIBS) -lpthread
 
+test/test_introspection: test/test_introspection.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_introspection.o libhts.a $(LIBS) -lpthread
+
 test/hts_endian.o: test/hts_endian.c config.h $(htslib_hts_endian_h)
 test/fuzz/hts_open_fuzzer.o: test/fuzz/hts_open_fuzzer.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
 test/fieldarith.o: test/fieldarith.c config.h $(htslib_sam_h)
@@ -489,6 +495,7 @@ test/test-vcf-api.o: test/test-vcf-api.c config.h $(htslib_hts_h) $(htslib_vcf_h
 test/test-vcf-sweep.o: test/test-vcf-sweep.c config.h $(htslib_vcf_sweep_h)
 test/test-bcf-sr.o: test/test-bcf-sr.c config.h $(htslib_synced_bcf_reader_h)
 test/test-bcf-translate.o: test/test-bcf-translate.c config.h $(htslib_vcf_h)
+test/test_introspection.o: test/test_introspection.c config.h $(htslib_hts_h) $(htslib_hts_os_h)
 
 
 test/thrash_threads1: test/thrash_threads1.o libhts.a
