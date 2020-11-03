@@ -2150,7 +2150,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     if (*p != '*') {
         uint32_t *cigar = NULL;
         int old_l_data = b->l_data;
-        uint32_t n_cigar = sam_parse_cigar_b(p, &p, b);
+        uint32_t n_cigar = bam_parse_cigar(p, &p, b);
         if (!n_cigar || *p++ != '\t') goto err_ret;
         cigar = (uint32_t *)(b->data + old_l_data);
         c->n_cigar = n_cigar;
@@ -2370,45 +2370,44 @@ static int parse_cigar(const char *in, uint32_t *a_cigar, uint32_t n_cigar) {
     return q-in;
 }
 
-size_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, uint32_t *a_mem, uint32_t *a_len) {
+size_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, uint32_t *a_mem) {
     size_t n_cigar = 0;
     int diff;
 
-    if (!in || !end || !a_cigar || !a_mem || !a_len) {
+    if (!in || !a_cigar || !a_mem) {
         hts_log_error("NULL pointer arguments");
         return 0;
     }
-    *end = (char *)in;
+    if (end) *end = (char *)in;
 
     n_cigar = read_ncigar(in);
     if (!n_cigar) return 0;
-    if (n_cigar > (*a_mem - *a_len)) {
-        uint32_t *a_tmp = realloc(*a_cigar, 1.5*(n_cigar + *a_len)*sizeof(**a_cigar));
+    if (n_cigar > *a_mem) {
+        uint32_t *a_tmp = realloc(*a_cigar, n_cigar*sizeof(**a_cigar));
         if (a_tmp) {
             *a_cigar = a_tmp;
-            *a_mem = 1.5*(n_cigar + *a_len);
+            *a_mem = n_cigar;
         } else {
             hts_log_error("Memory allocation error");
             return 0;
         }
     }
 
-    if (!(diff = parse_cigar(in, *a_cigar + *a_len, n_cigar))) return 0;
-    *a_len += n_cigar;
-    *end = (char *)in+diff;
+    if (!(diff = parse_cigar(in, *a_cigar, n_cigar))) return 0;
+    if (end) *end = (char *)in+diff;
 
     return n_cigar;
 }
 
-size_t sam_parse_cigar_b(const char *in, char **end, bam1_t *b) {
+size_t bam_parse_cigar(const char *in, char **end, bam1_t *b) {
     size_t n_cigar = 0;
     int diff;
 
-    if (!in || !end || !b) {
+    if (!in || !b) {
         hts_log_error("NULL pointer arguments");
         return 0;
     }
-    *end = (char *)in;
+    if (end) *end = (char *)in;
 
     n_cigar = read_ncigar(in);
     if (!n_cigar) return 0;
@@ -2419,7 +2418,7 @@ size_t sam_parse_cigar_b(const char *in, char **end, bam1_t *b) {
 
     if (!(diff = parse_cigar(in, (uint32_t *)(b->data + b->l_data), n_cigar))) return 0;
     b->l_data += (n_cigar * sizeof(uint32_t));
-    *end = (char *)in+diff;
+    if (end) *end = (char *)in+diff;
 
     return n_cigar;
 }
