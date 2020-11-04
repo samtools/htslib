@@ -2709,7 +2709,7 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
             hts_log_error("Too many INFO entries at %s:%"PRIhts_pos,
                           bcf_seqname_safe(h,v), v->pos+1);
             v->errcode |= BCF_ERR_LIMITS;
-            return -1;
+            goto fail;
         }
         val = end = 0;
         c = *r; *r = 0;
@@ -2736,7 +2736,7 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
             if (res || k == kh_end(d)) {
                 hts_log_error("Could not add dummy header for INFO '%s' at %s:%"PRIhts_pos, key, bcf_seqname_safe(h,v), v->pos+1);
                 v->errcode |= BCF_ERR_TAG_INVALID;
-                return -1;
+                goto fail;
             }
         }
         uint32_t y = kh_val(d, k).info[BCF_HL_INFO];
@@ -2757,7 +2757,7 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
                 if (!a_tmp) {
                     hts_log_error("Could not allocate memory at %s:%"PRIhts_pos, bcf_seqname_safe(h,v), v->pos+1);
                     v->errcode |= BCF_ERR_LIMITS; // No appropriate code?
-                    return -1;
+                    goto fail;
                 }
                 a_val = a_tmp;
                 max_n_val = n_val;
@@ -2854,6 +2854,10 @@ static int vcf_parse_info(kstring_t *str, const bcf_hdr_t *h, bcf1_t *v, char *p
 
     free(a_val);
     return 0;
+
+ fail:
+    free(a_val);
+    return -1;
 }
 
 int vcf_parse(kstring_t *s, const bcf_hdr_t *h, bcf1_t *v)
