@@ -57,6 +57,7 @@ test_command($opts,cmd=>'test-bcf-translate -',out=>'test-bcf-translate.out');
 test_convert_padded_header($opts);
 test_rebgzip($opts);
 test_logging($opts);
+test_plugin_loading($opts);
 test_realn($opts);
 
 print "\nNumber of tests:\n";
@@ -934,6 +935,26 @@ sub test_logging
       failed($opts,$test);
   }
   else { passed($opts,$test); }
+}
+
+sub test_plugin_loading {
+    my ($opts) = @_;
+
+    my $test = "test_plugin_loading";
+
+    unless (-e "$$opts{bin}/hfile_libcurl.so" || -e "$$opts{bin}/hfile_libcurl.bundle") {
+        print "$test: .. skipping\n\n";
+        return;
+    }
+
+    # Test that plugins can be loaded from an executable statically linked to libhts.a
+    my $url = "https://localhost:99999/invalid_port";
+    my $cmd = "HTS_PATH=$$opts{bin} $$opts{path}/with-shlib.sh $$opts{bin}/htsfile $url";
+    print "$test:\n\t$cmd\n";
+    my ($ret, $out) = _cmd("$cmd 2>&1");
+    if ($ret == 0) { failed($opts, $test, "successful exit status"); }
+    elsif ($out =~ /couldn't register/i || $out =~ /not supported/i) { failed($opts, $test, $out); }
+    else { passed($opts, $test); }
 }
 
 sub test_realn {

@@ -307,11 +307,19 @@ hts-$(LIBHTS_SOVERSION).dll hts.dll.a: $(LIBHTS_OBJS)
 hts-object-files: $(LIBHTS_OBJS)
 	touch $@
 
+# On Unix dlopen("libhts.so.NN", RTLD_LAZY) may default to RTLD_LOCAL.
+# Hence plugins need to link to (shared) libhts.so.NN themselves, as they
+# may not be able to access libhts symbols via the main program's libhts
+# if that was dynamically loaded without an explicit RTLD_GLOBAL.
 %.so: %.pico libhts.so
 	$(CC) -shared -Wl,-E $(LDFLAGS) -o $@ $< libhts.so $(LIBS) -lpthread
 
-%.bundle: %.o libhts.dylib
-	$(CC) -bundle -Wl,-undefined,dynamic_lookup $(LDFLAGS) -o $@ $< libhts.dylib $(LIBS)
+# For programs *statically* linked to libhts.a, on macOS loading a plugin
+# linked to a shared libhts.NN.dylib would lead to conflicting duplicate
+# symbols.  Fortunately macOS dlopen() defaults to RTLD_GLOBAL so there
+# is less need for plugins to link back to libhts themselves.
+%.bundle: %.o
+	$(CC) -bundle -Wl,-undefined,dynamic_lookup $(LDFLAGS) -o $@ $< $(LIBS)
 
 %.cygdll: %.o libhts.dll.a
 	$(CC) -shared $(LDFLAGS) -o $@ $< libhts.dll.a $(LIBS)
