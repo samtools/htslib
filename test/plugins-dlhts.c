@@ -101,6 +101,7 @@ void verbose_log(const char *message)
 int main(int argc, char **argv)
 {
     int dlflags = RTLD_NOW;
+    int skip = 0;
     int c;
 
     while ((c = getopt(argc, argv, "glv")) >= 0)
@@ -133,15 +134,26 @@ int main(int argc, char **argv)
     hclose_abruptly_p = (hclose_abruptly_func *) func(htslib, "hclose_abruptly");
 
     test_hopen("bad-scheme:unsupported", 0);
+
+#ifdef __APPLE__
+    /* Skip -l tests as we don't link plugins back to libhts on macOS, as this
+       would conflict with a statically linked libhts.a on this platform. */
+    skip = (dlflags & RTLD_LOCAL) != 0;
+#endif
+
+    if (! skip) {
 #ifdef HAVE_LIBCURL
-    test_hopen("https://localhost:99999/invalid_port", 1);
+        test_hopen("https://localhost:99999/invalid_port", 1);
 #endif
 #ifdef ENABLE_GCS
-    test_hopen("gs:invalid", 1);
+        test_hopen("gs:invalid", 1);
 #endif
 #ifdef ENABLE_S3
-    test_hopen("s3:invalid", 1);
+        test_hopen("s3:invalid", 1);
 #endif
+    }
+    else
+        verbose_log("Skipping most tests");
 
     verbose_log("Calling hts_lib_shutdown()");
     (func(htslib, "hts_lib_shutdown"))();
