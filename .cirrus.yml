@@ -106,7 +106,7 @@ ubuntu_task:
   install_script: |
     apt-get update
     apt-get install -y --no-install-suggests --no-install-recommends     \
-        ca-certificates clang libc-dev make git autoconf automake make   \
+        ca-certificates clang libc-dev make git autoconf automake        \
         zlib1g-dev libbz2-dev liblzma-dev libcurl4-gnutls-dev libssl-dev \
         libdeflate-dev
 
