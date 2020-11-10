@@ -1112,7 +1112,7 @@ int bam_set_qname(bam1_t *b, const char *qname);
 #define bam_itr_destroy(iter) hts_itr_destroy(iter)
 #define bam_itr_queryi(idx, tid, beg, end) sam_itr_queryi(idx, tid, beg, end)
 #define bam_itr_querys(idx, hdr, region) sam_itr_querys(idx, hdr, region)
-#define bam_itr_next(htsfp, itr, r) hts_itr_next((htsfp)->fp.bgzf, (itr), (r), 0)
+#define bam_itr_next(htsfp, itr, r) sam_itr_next((htsfp), (itr), (r))
 
 // Load/build .csi or .bai BAM index file.  Does not work with CRAM.
 // It is recommended to use the sam_index_* functions below instead.
