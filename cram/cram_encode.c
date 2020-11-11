@@ -855,7 +855,8 @@ static int cram_compress_slice(cram_fd *fd, cram_container *c, cram_slice *s) {
 
     pthread_mutex_lock(&fd->metrics_lock);
     for (i = 0; i < DS_END; i++)
-        fd->m[i]->stats = c->stats[i];
+        if (c->stats[i] && c->stats[i]->nvals > 16)
+            fd->m[i]->unpackable = 1;
     pthread_mutex_unlock(&fd->metrics_lock);
 
     /* Specific compression methods for certain block types */

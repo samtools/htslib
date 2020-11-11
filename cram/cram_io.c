@@ -1949,7 +1949,7 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
     if (metrics) {
         pthread_mutex_lock(&fd->metrics_lock);
         if (metrics->trial > 0 || --metrics->next_trial <= 0) {
-            int m;
+            int m, unpackable = metrics->unpackable;
             size_t sz_best = b->uncomp_size;
             size_t sz[CRAM_MAX_METHOD] = {0};
             int method_best = 0; // RAW
@@ -1965,10 +1965,11 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                 metrics->trial = NTRIALS;
                 for (m = 0; m < CRAM_MAX_METHOD; m++)
                     metrics->sz[m] /= 2;
+                metrics->unpackable = 0;
             }
 
             // Compress this block using the best method
-            if (metrics->stats && metrics->stats->nvals > 16) {
+            if (unpackable && CRAM_MAJOR_VERS(fd->version) > 3) {
                 // No point trying bit-pack if 17+ symbols.
                 if (method & (1<<RANS_PR128))
                     method = (method|(1<<RANS_PR0))&~(1<<RANS_PR128);
@@ -2236,6 +2237,7 @@ cram_metrics *cram_new_metrics(void) {
     m->method = RAW;
     m->strat = 0;
     m->revised_method = 0;
+    m->unpackable = 0;
 
     return m;
 }
@@ -4138,6 +4140,7 @@ void reset_metrics(cram_fd *fd) {
         m->trial = NTRIALS;
         m->next_trial = TRIAL_SPAN;
         m->revised_method = 0;
+        m->unpackable = 0;
 
         memset(m->sz, 0, sizeof(m->sz));
     }

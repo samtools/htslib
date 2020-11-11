@@ -249,7 +249,8 @@ struct cram_metrics {
 
     double extra[CRAM_MAX_METHOD];
 
-    cram_stats *stats;
+    // Not amenable to rANS bit-packing techniques; cardinality > 16
+    int unpackable;
 };
 
 // Hash aux key (XX:i) to cram_metrics
