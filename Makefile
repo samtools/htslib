@@ -77,6 +77,7 @@ BUILT_TEST_PROGRAMS = \
 	test/plugins-dlhts \
 	test/sam \
 	test/test_bgzf \
+	test/test_expr \
 	test/test_kfunc \
 	test/test_kstring \
 	test/test_realn \
@@ -146,6 +147,7 @@ LIBHTS_OBJS = \
 	bcf_sr_sort.o \
 	bgzf.o \
 	errmod.o \
+	expr.o \
 	faidx.o \
 	header.o \
 	hfile.o \
@@ -322,6 +324,7 @@ hts-object-files: $(LIBHTS_OBJS)
 
 bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) $(htslib_hts_endian_h) cram/pooled_alloc.h $(hts_internal_h) $(htslib_khash_h)
 errmod.o errmod.pico: errmod.c config.h $(htslib_hts_h) $(htslib_ksort_h) $(htslib_hts_os_h)
+expr.o expr.pico: expr.c expr.h config.h $(htslib_kstring_h)
 kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
 knetfile.o knetfile.pico: knetfile.c config.h $(htslib_hts_log_h) $(htslib_knetfile_h)
 header.o header.pico: header.c config.h $(textutils_internal_h) $(header_h)
@@ -331,7 +334,7 @@ hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h)
 hfile_net.o hfile_net.pico: hfile_net.c config.h $(hfile_internal_h) $(htslib_knetfile_h)
 hfile_s3_write.o hfile_s3_write.pico: hfile_s3_write.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
-hts.o hts.pico: hts.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h)
+hts.o hts.pico: hts.c config.h expr.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h)
 hts_os.o hts_os.pico: hts_os.c config.h $(htslib_hts_defs_h) os/rand.c
 vcf.o vcf.pico: vcf.c config.h $(htslib_vcf_h) $(htslib_bgzf_h) $(htslib_tbx_h) $(htslib_hfile_h) $(hts_internal_h) $(htslib_khash_str2int_h) $(htslib_kstring_h) $(htslib_sam_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_hts_endian_h)
 sam.o sam.pico: sam.c config.h $(htslib_hts_defs_h) $(htslib_sam_h) $(htslib_bgzf_h) $(cram_h) $(hts_internal_h) $(sam_internal_h) $(htslib_hfile_h) $(htslib_hts_endian_h) $(header_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_kstring_h)
@@ -394,6 +397,7 @@ maintainer-check:
 #    MSYS2_ARG_CONV_EXCL="*" make check
 check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) $(BUILT_PLUGINS)
 	test/hts_endian
+	test/test_expr
 	test/test_kfunc
 	test/test_kstring
 	test/test_str2int
@@ -403,6 +407,7 @@ check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) $(BUILT_PLUGINS)
 	HTS_PATH=. test/with-shlib.sh test/plugins-dlhts -l ./libhts.$(SHLIB_FLAVOUR)
 	test/test_bgzf test/bgziptest.txt
 	test/test-parse-reg -t test/colons.bam
+	cd test/sam_filter && ./filter.sh filter.tst
 	cd test/tabix && ./test-tabix.sh tabix.tst
 	cd test/mpileup && ./test-pileup.sh mpileup.tst
 	REF_PATH=: test/sam test/ce.fa test/faidx.fa test/fastqs.fq
@@ -432,6 +437,9 @@ test/sam: test/sam.o libhts.a
 
 test/test_bgzf: test/test_bgzf.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_bgzf.o libhts.a -lz $(LIBS) -lpthread
+
+test/test_expr: test/test_expr.o libhts.a
+	$(CC) $(LDFLAGS) -o $@ test/test_expr.o libhts.a -lz $(LIBS) -lpthread
 
 test/test_kfunc: test/test_kfunc.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test_kfunc.o libhts.a -lz $(LIBS) -lpthread
