@@ -224,6 +224,7 @@ typedef struct htsFormat {
 
 struct hts_idx_t;
 typedef struct hts_idx_t hts_idx_t;
+typedef struct sam_filter_t sam_filter_t;
 
 /**
  * @brief File handle returned by hts_open() etc.
@@ -256,6 +257,7 @@ typedef struct htsFile {
     hts_idx_t *idx;
     const char *fnidx;
     struct sam_hdr_t *bam_header;
+    sam_filter_t *filter;
 } htsFile;
 
 // A combined thread pool and queue allocation size.
@@ -321,6 +323,7 @@ enum hts_fmt_option {
     HTS_OPT_THREAD_POOL,
     HTS_OPT_CACHE_SIZE,
     HTS_OPT_BLOCK_SIZE,
+    HTS_OPT_SAM_FILTER,
 };
 
 // For backwards compatibility
@@ -606,6 +609,15 @@ void hts_set_cache_size(htsFile *fp, int n);
 HTSLIB_EXPORT
 int hts_set_fai_filename(htsFile *fp, const char *fn_aux);
 
+
+/*!
+  @abstract  Sets a filter expression
+  @return    0 for success, negative on failure
+  @discussion
+      To clear an existing filter, specifying expr as NULL.
+*/
+HTSLIB_EXPORT
+int hts_set_filter_expression(htsFile *fp, const char *expr);
 
 /*!
   @abstract  Determine whether a given htsFile contains a valid EOF block
