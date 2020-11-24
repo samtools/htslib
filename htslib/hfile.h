@@ -316,7 +316,7 @@ purpose other than closing.
 HTSLIB_EXPORT
 char *hfile_mem_steal_buffer(hFILE *file, size_t *length);
 
-/// Fills out sc_list[] with the list of known schemes. 
+/// Fills out sc_list[] with the list of known schemes.
 /**
  * @param plugin   [in]     Restricts schemes to only those from 'plugin.
  * @param sc_list  [out]    Filled out with the scheme names
@@ -401,7 +401,7 @@ const char *htslib_feature_string(void);
 #define HTS_FEATURE_CC           (1<<28)
 #define HTS_FEATURE_CFLAGS       (1<<29)
 #define HTS_FEATURE_LDFLAGS      (1<<30)
-#define HTS_FEATURE_CPPFLAGS     (1<<31)
+#define HTS_FEATURE_CPPFLAGS     (1u<<31)
 
 #ifdef __cplusplus
 }

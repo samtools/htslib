@@ -1219,7 +1219,7 @@ int hts_list_plugins(const char *plist[], int *nplugins)
 
     if (*nplugins > np)
         *nplugins = np;
-        
+
     return np;
 }
 
