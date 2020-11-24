@@ -33,14 +33,14 @@
 #   Command to execute.  $tv is replaced with the path to test_view
 
 # String matches
-P string1.out $tv -i 'sam_filter=qname =~ "\.1" && cigar =~ "D"' ../ce#1000.sam
-P string2.out $tv -i 'sam_filter=rname=="CHROMOSOME_II"' ../ce#5b.sam
-P string3.out $tv -i 'sam_filter=rname=~"CHROMOSOME_II"' ../ce#5b.sam
-P string4.out $tv -i 'sam_filter=cigar=~"D"' ../ce#1000.sam
+P string1.out $tv -i 'filter=qname =~ "\.1" && cigar =~ "D"' ../ce#1000.sam
+P string2.out $tv -i 'filter=rname=="CHROMOSOME_II"' ../ce#5b.sam
+P string3.out $tv -i 'filter=rname=~"CHROMOSOME_II"' ../ce#5b.sam
+P string4.out $tv -i 'filter=cigar=~"D"' ../ce#1000.sam
 
 # Integer ops
-P int1.out    $tv -i 'sam_filter=pos % 23 == 11' ../ce#1000.sam |egrep -cv '^@'
-P int2.out    $tv -i 'sam_filter=qlen/(flag*mapq+pos)>5' ../ce#1000.sam |egrep -cv '^@'
+P int1.out    $tv -i 'filter=pos % 23 == 11' ../ce#1000.sam |egrep -cv '^@'
+P int2.out    $tv -i 'filter=qlen/(flag*mapq+pos)>5' ../ce#1000.sam |egrep -cv '^@'
 
 # Aux tags
-P int3.out    $tv -i 'sam_filter=[NM]>=10 || [MD]=~"A.*A.*A"' -t4 ../ce#1000.sam |egrep -cv '^@'
+P int3.out    $tv -i 'filter=[NM]>=10 || [MD]=~"A.*A.*A"' -t4 ../ce#1000.sam |egrep -cv '^@'

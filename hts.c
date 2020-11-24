@@ -50,7 +50,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "hts_internal.h"
 #include "hfile_internal.h"
 #include "sam_internal.h"
-#include "expr.h"
+#include "htslib/hts_expr.h"
 #include "htslib/hts_os.h" // drand48
 
 #include "htslib/khash.h"
@@ -825,9 +825,9 @@ int hts_opt_add(hts_opt **opts, const char *c_arg) {
              strcmp(o->arg, "LEVEL") == 0)
         o->opt = HTS_OPT_COMPRESSION_LEVEL, o->val.i = strtol(val, NULL, 0);
 
-    else if (strcmp(o->arg, "sam_filter") == 0 ||
-             strcmp(o->arg, "SAM_FILTER") == 0)
-        o->opt = HTS_OPT_SAM_FILTER, o->val.s = val;
+    else if (strcmp(o->arg, "filter") == 0 ||
+             strcmp(o->arg, "FILTER") == 0)
+        o->opt = HTS_OPT_FILTER, o->val.s = val;
 
     else {
         hts_log_error("Unknown option '%s'", o->arg);
@@ -868,7 +868,7 @@ int hts_opt_apply(htsFile *fp, hts_opt *opts) {
                 // fall through
             case CRAM_OPT_VERSION:
             case CRAM_OPT_PREFIX:
-            case HTS_OPT_SAM_FILTER:
+            case HTS_OPT_FILTER:
                 if (hts_set_opt(fp,  opts->opt,  opts->val.s) != 0)
                     return -1;
                 break;
@@ -1237,7 +1237,7 @@ int hts_close(htsFile *fp)
     save = errno;
     sam_hdr_destroy(fp->bam_header);
     hts_idx_destroy(fp->idx);
-    sam_filter_free(fp->filter);
+    hts_filter_free(fp->filter);
     free(fp->fn);
     free(fp->fn_aux);
     free(fp->line.s);
@@ -1342,7 +1342,7 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
             fp->fp.bgzf->compress_level = level;
     }
 
-    case HTS_OPT_SAM_FILTER: {
+    case HTS_OPT_FILTER: {
         va_start(args, opt);
         char *expr = va_arg(args, char *);
         va_end(args);
@@ -1413,12 +1413,12 @@ int hts_set_fai_filename(htsFile *fp, const char *fn_aux)
 int hts_set_filter_expression(htsFile *fp, const char *expr)
 {
     if (fp->filter)
-        sam_filter_free(fp->filter);
+        hts_filter_free(fp->filter);
 
     if (!expr)
         return 0;
 
-    return (fp->filter = sam_filter_init(expr))
+    return (fp->filter = hts_filter_init(expr))
         ? 0 : -1;
 }
 

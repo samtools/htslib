@@ -1,4 +1,4 @@
-/*  expr.c -- filter expression parsing and processing.
+/*  hts_expr.c -- filter expression parsing and processing.
 
     Copyright (C) 2020 Genome Research Ltd.
 
@@ -36,12 +36,12 @@ DEALINGS IN THE SOFTWARE.  */
 #include <float.h>
 #include <regex.h> // may need configure rule for this
 
-#include "expr.h"
+#include "htslib/hts_expr.h"
 #include "textutils_internal.h"
 
-// Could also cache fexpr_t stack here for kstring reuse?
+// Could also cache hts_expr_val_t stack here for kstring reuse?
 #define MAX_REGEX 10
-struct sam_filter_t {
+struct hts_filter_t {
     char *str;
     int parsed;
     int curr_regex, max_regex;
@@ -73,8 +73,8 @@ static char *ws(char *str) {
     return str;
 }
 
-static int expression(sam_filter_t *filt, void *data, sym_func *fn,
-                      char *str, char **end, fexpr_t *res);
+static int expression(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                      char *str, char **end, hts_expr_val_t *res);
 
 /*
  * simple_expr
@@ -83,8 +83,8 @@ static int expression(sam_filter_t *filt, void *data, sym_func *fn,
  * //  | string ?
  *     | '(' expression ')'
 */
-static int simple_expr(sam_filter_t *filt, void *data, sym_func *fn,
-                       char *str, char **end, fexpr_t *res) {
+static int simple_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                       char *str, char **end, hts_expr_val_t *res) {
     // Main recursion step
     str = ws(str);
     if (*str == '(') {
@@ -159,8 +159,8 @@ static int simple_expr(sam_filter_t *filt, void *data, sym_func *fn,
  *     | '!' unary_expr // higher precedence
  *     | '~' unary_expr // higher precedence
  */
-static int unary_expr(sam_filter_t *filt, void *data, sym_func *fn,
-                      char *str, char **end, fexpr_t *res) {
+static int unary_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                      char *str, char **end, hts_expr_val_t *res) {
     int err;
     str = ws(str);
     if (*str == '+') {
@@ -202,19 +202,19 @@ static int unary_expr(sam_filter_t *filt, void *data, sym_func *fn,
  *         | unary_expr '%' unary_expr
  *       )*
  */
-static int mul_expr(sam_filter_t *filt, void *data, sym_func *fn,
-                    char *str, char **end, fexpr_t *res) {
+static int mul_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                    char *str, char **end, hts_expr_val_t *res) {
     if (unary_expr(filt, data, fn, str, end, res))
         return -1;
 
     str = *end;
-    fexpr_t val = FEXPR_INIT;
+    hts_expr_val_t val = HTS_EXPR_VAL_INIT;
     while (*str) {
         str = ws(str);
         if (*str == '*' || *str == '/' || *str == '%') {
             if (unary_expr(filt, data, fn, str+1, end, &val)) return -1;
             if (val.is_str || res->is_str) {
-                fexpr_free(&val);
+                hts_expr_val_free(&val);
                 return -1; // arith on strings
             }
         }
@@ -230,7 +230,7 @@ static int mul_expr(sam_filter_t *filt, void *data, sym_func *fn,
 
         str = *end;
     }
-    fexpr_free(&val);
+    hts_expr_val_free(&val);
 
     return 0;
 }
@@ -242,19 +242,19 @@ static int mul_expr(sam_filter_t *filt, void *data, sym_func *fn,
  *         | mul_expr '-' mul_expr
  *       )*
  */
-static int add_expr(sam_filter_t *filt, void *data, sym_func *fn,
-                    char *str, char **end, fexpr_t *res) {
+static int add_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                    char *str, char **end, hts_expr_val_t *res) {
     if (mul_expr(filt, data, fn, str, end, res))
         return -1;
 
     str = *end;
-    fexpr_t val = FEXPR_INIT;
+    hts_expr_val_t val = HTS_EXPR_VAL_INIT;
     while (*str) {
         str = ws(str);
         if (*str == '+' || *str == '-') {
             if (mul_expr(filt, data, fn, str+1, end, &val)) return -1;
             if (val.is_str || res->is_str) {
-                fexpr_free(&val);
+                hts_expr_val_free(&val);
                 return -1; // arith on strings
             }
         }
@@ -268,7 +268,7 @@ static int add_expr(sam_filter_t *filt, void *data, sym_func *fn,
 
         str = *end;
     }
-    fexpr_free(&val);
+    hts_expr_val_free(&val);
 
     return 0;
 }
@@ -278,17 +278,17 @@ static int add_expr(sam_filter_t *filt, void *data, sym_func *fn,
  *     : add_expr
  *     | bitand_expr '&' add_expr
  */
-static int bitand_expr(sam_filter_t *filt, void *data, sym_func *fn,
-                       char *str, char **end, fexpr_t *res) {
+static int bitand_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                       char *str, char **end, hts_expr_val_t *res) {
     if (add_expr(filt, data, fn, str, end, res)) return -1;
 
-    fexpr_t val = FEXPR_INIT;
+    hts_expr_val_t val = HTS_EXPR_VAL_INIT;
     for (;;) {
         str = ws(*end);
         if (*str == '&' && str[1] != '&') {
             if (add_expr(filt, data, fn, str+1, end, &val)) return -1;
             if (res->is_str || val.is_str) {
-                fexpr_free(&val);
+                hts_expr_val_free(&val);
                 return -1;
             }
             res->is_true = res->d = (int64_t)res->d & (int64_t)val.d;
@@ -296,7 +296,7 @@ static int bitand_expr(sam_filter_t *filt, void *data, sym_func *fn,
             break;
         }
     }
-    fexpr_free(&val);
+    hts_expr_val_free(&val);
 
     return 0;
 }
@@ -306,17 +306,17 @@ static int bitand_expr(sam_filter_t *filt, void *data, sym_func *fn,
  *     : bitand_expr
  *     | bitxor_expr '^' bitand_expr
  */
-static int bitxor_expr(sam_filter_t *filt, void *data, sym_func *fn,
-                       char *str, char **end, fexpr_t *res) {
+static int bitxor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                       char *str, char **end, hts_expr_val_t *res) {
     if (bitand_expr(filt, data, fn, str, end, res)) return -1;
 
-    fexpr_t val = FEXPR_INIT;
+    hts_expr_val_t val = HTS_EXPR_VAL_INIT;
     for (;;) {
         str = ws(*end);
         if (*str == '^') {
             if (bitand_expr(filt, data, fn, str+1, end, &val)) return -1;
             if (res->is_str || val.is_str) {
-                fexpr_free(&val);
+                hts_expr_val_free(&val);
                 return -1;
             }
             res->is_true = res->d = (int64_t)res->d ^ (int64_t)val.d;
@@ -324,7 +324,7 @@ static int bitxor_expr(sam_filter_t *filt, void *data, sym_func *fn,
             break;
         }
     }
-    fexpr_free(&val);
+    hts_expr_val_free(&val);
 
     return 0;
 }
@@ -334,17 +334,17 @@ static int bitxor_expr(sam_filter_t *filt, void *data, sym_func *fn,
  *     : xor_expr
  *     | bitor_expr '|' xor_expr
  */
-static int bitor_expr(sam_filter_t *filt, void *data, sym_func *fn,
-                      char *str, char **end, fexpr_t *res) {
+static int bitor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                      char *str, char **end, hts_expr_val_t *res) {
     if (bitxor_expr(filt, data, fn, str, end, res)) return -1;
 
-    fexpr_t val = FEXPR_INIT;
+    hts_expr_val_t val = HTS_EXPR_VAL_INIT;
     for (;;) {
         str = ws(*end);
         if (*str == '|' && str[1] != '|') {
             if (bitxor_expr(filt, data, fn, str+1, end, &val)) return -1;
             if (res->is_str || val.is_str) {
-                fexpr_free(&val);
+                hts_expr_val_free(&val);
                 return -1;
             }
             res->is_true = res->d = (int64_t)res->d | (int64_t)val.d;
@@ -352,7 +352,7 @@ static int bitor_expr(sam_filter_t *filt, void *data, sym_func *fn,
             break;
         }
     }
-    fexpr_free(&val);
+    hts_expr_val_free(&val);
 
     return 0;
 }
@@ -365,12 +365,12 @@ static int bitor_expr(sam_filter_t *filt, void *data, sym_func *fn,
  *     | cmp_expr '>=' bitor_expr
  *     | cmp_expr '>'  bitor_expr
  */
-static int cmp_expr(sam_filter_t *filt, void *data, sym_func *fn,
-                    char *str, char **end, fexpr_t *res) {
+static int cmp_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                    char *str, char **end, hts_expr_val_t *res) {
     if (bitor_expr(filt, data, fn, str, end, res)) return -1;
 
     str = ws(*end);
-    fexpr_t val = FEXPR_INIT;
+    hts_expr_val_t val = HTS_EXPR_VAL_INIT;
     int err = 0;
 
     if (*str == '>' && str[1] == '=') {
@@ -398,7 +398,7 @@ static int cmp_expr(sam_filter_t *filt, void *data, sym_func *fn,
             : !res->is_str && !val.is_str && res->d < val.d;
         res->is_str = 0;
     }
-    fexpr_free(&val);
+    hts_expr_val_free(&val);
 
     return err ? -1 : 0;
 }
@@ -411,14 +411,14 @@ static int cmp_expr(sam_filter_t *filt, void *data, sym_func *fn,
  *     | eq_expr '=~' cmp_expr
  *     | eq_expr '!~' cmp_expr
  */
-static int eq_expr(sam_filter_t *filt, void *data, sym_func *fn,
-                   char *str, char **end, fexpr_t *res) {
+static int eq_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                   char *str, char **end, hts_expr_val_t *res) {
     if (cmp_expr(filt, data, fn, str, end, res)) return -1;
 
     str = ws(*end);
 
     int err = 0;
-    fexpr_t val = FEXPR_INIT;
+    hts_expr_val_t val = HTS_EXPR_VAL_INIT;
 
     // numeric vs numeric comparison is as expected
     // string vs string comparison is as expected
@@ -447,7 +447,7 @@ static int eq_expr(sam_filter_t *filt, void *data, sym_func *fn,
                (str[0] == '!' && str[1] == '~')) {
         err = eq_expr(filt, data, fn, str+2, end, &val);
         if (!val.is_str || !res->is_str) {
-            fexpr_free(&val);
+            hts_expr_val_free(&val);
             return -1;
         }
         if (val.s.s && res->s.s && val.is_true >= 0 && res->is_true >= 0) {
@@ -466,7 +466,7 @@ static int eq_expr(sam_filter_t *filt, void *data, sym_func *fn,
                     char errbuf[1024];
                     regerror(ec, preg, errbuf, 1024);
                     fprintf(stderr, "Failed regex: %.1024s\n", errbuf);
-                    fexpr_free(&val);
+                    hts_expr_val_free(&val);
                     return -1;
                 }
             } else {
@@ -485,7 +485,7 @@ static int eq_expr(sam_filter_t *filt, void *data, sym_func *fn,
         }
         res->is_str = 0;
     }
-    fexpr_free(&val);
+    hts_expr_val_free(&val);
 
     return err ? -1 : 0;
 }
@@ -496,11 +496,11 @@ static int eq_expr(sam_filter_t *filt, void *data, sym_func *fn,
  *     | and_expr 'and' eq_expr
  *     | and_expr 'or'  eq_expr
  */
-static int and_expr(sam_filter_t *filt, void *data, sym_func *fn,
-                    char *str, char **end, fexpr_t *res) {
+static int and_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                    char *str, char **end, hts_expr_val_t *res) {
     if (eq_expr(filt, data, fn, str, end, res)) return -1;
 
-    fexpr_t val = FEXPR_INIT;
+    hts_expr_val_t val = HTS_EXPR_VAL_INIT;
     for (;;) {
         str = ws(*end);
         if (str[0] == '&' && str[1] == '&') {
@@ -519,18 +519,18 @@ static int and_expr(sam_filter_t *filt, void *data, sym_func *fn,
             break;
         }
     }
-    fexpr_free(&val);
+    hts_expr_val_free(&val);
 
     return 0;
 }
 
-static int expression(sam_filter_t *filt, void *data, sym_func *fn,
-                      char *str, char **end, fexpr_t *res) {
+static int expression(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                      char *str, char **end, hts_expr_val_t *res) {
     return and_expr(filt, data, fn, str, end, res);
 }
 
-sam_filter_t *sam_filter_init(const char *str) {
-    sam_filter_t *f = calloc(1, sizeof(*f));
+hts_filter_t *hts_filter_init(const char *str) {
+    hts_filter_t *f = calloc(1, sizeof(*f));
     if (!f) return NULL;
 
     // Oversize to permit faster comparisons with memcmp over strcmp
@@ -543,7 +543,7 @@ sam_filter_t *sam_filter_init(const char *str) {
     return f;
 }
 
-void sam_filter_free(sam_filter_t *filt) {
+void hts_filter_free(hts_filter_t *filt) {
     if (!filt)
         return;
 
@@ -555,8 +555,9 @@ void sam_filter_free(sam_filter_t *filt) {
     free(filt);
 }
 
-int sam_filter_eval(sam_filter_t *filt, void *data, sym_func *fn,
-                    fexpr_t *res) {
+int hts_filter_eval(hts_filter_t *filt,
+                    void *data, hts_expr_sym_func *fn,
+                    hts_expr_val_t *res) {
     char *end = NULL;
 
     memset(res, 0, sizeof(*res));
