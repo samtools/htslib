@@ -27,7 +27,6 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "../htslib/hts.h"
 #include "../htslib/hfile.h"
-#include "../htslib/hts_os.h"
 
 int main(void) {
     printf("Version string: %s\n", hts_version());

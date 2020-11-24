@@ -1143,6 +1143,10 @@ static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
 }
 
 
+/***************************
+ * Library introspection functions
+ ***************************/
+
 /*
  * Fills out sc_list[] with the list of known schemes.
  * This can be restricted to just ones from a specific plugin,
@@ -1246,6 +1250,149 @@ int htslib_has_plugin(const char *name)
     return 0;
 }
 
+HTSLIB_EXPORT
+unsigned int htslib_features(void) {
+    unsigned int feat = 0;
+
+#ifdef PACKAGE_URL
+    feat |= HTS_FEATURE_CONFIGURE;
+#endif
+
+#ifdef ENABLE_PLUGINS
+    feat |= HTS_FEATURE_PLUGINS;
+#endif
+
+#ifdef HAVE_LIBCURL
+    feat |= HTS_FEATURE_LIBCURL;
+#endif
+
+#ifdef ENABLE_S3
+    feat |= HTS_FEATURE_S3;
+#endif
+
+#ifdef ENABLE_GCS
+    feat |= HTS_FEATURE_GCS;
+#endif
+
+#ifdef HAVE_LIBDEFLATE
+    feat |= HTS_FEATURE_LIBDEFLATE;
+#endif
+
+#ifdef HAVE_LIBLZMA
+    feat |= HTS_FEATURE_LZMA;
+#endif
+
+#ifdef HAVE_LIBBZ2
+    feat |= HTS_FEATURE_BZIP2;
+#endif
+
+    return feat;
+}
+
+HTSLIB_EXPORT
+const char *htslib_test_feature(int id) {
+    int feat = htslib_features();
+
+    switch (id) {
+    case HTS_FEATURE_CONFIGURE:
+        return feat & HTS_FEATURE_CONFIGURE ? "yes" : NULL;
+    case HTS_FEATURE_PLUGINS:
+        return feat & HTS_FEATURE_PLUGINS ? "yes" : NULL;
+    case HTS_FEATURE_LIBCURL:
+        return feat & HTS_FEATURE_LIBCURL ? "yes" : NULL;
+    case HTS_FEATURE_S3:
+        return feat & HTS_FEATURE_S3 ? "yes" : NULL;
+    case HTS_FEATURE_GCS:
+        return feat & HTS_FEATURE_GCS ? "yes" : NULL;
+    case HTS_FEATURE_LIBDEFLATE:
+        return feat & HTS_FEATURE_LIBDEFLATE ? "yes" : NULL;
+    case HTS_FEATURE_BZIP2:
+        return feat & HTS_FEATURE_BZIP2 ? "yes" : NULL;
+    case HTS_FEATURE_LZMA:
+        return feat & HTS_FEATURE_LZMA ? "yes" : NULL;
+
+    case HTS_FEATURE_CC:
+        return HTS_CC;
+    case HTS_FEATURE_CFLAGS:
+        return HTS_CFLAGS;
+    case HTS_FEATURE_LDFLAGS:
+        return HTS_LDFLAGS;
+    case HTS_FEATURE_CPPFLAGS:
+        return HTS_CPPFLAGS;
+
+    default:
+        fprintf(stderr, "Unknown feature code: %d\n", id);
+    }
+
+    return NULL;
+}
+
+// Note this implementation also means we can just "strings" the library
+// to find the configuration parameters.
+HTSLIB_EXPORT
+const char *htslib_feature_string(void) {
+    const char *fmt=
+
+#ifdef PACKAGE_URL
+    "build=configure "
+#else
+    "build=Makefile "
+#endif
+
+#ifdef ENABLE_PLUGINS
+    "plugins=yes, plugin-path=%.1000s "
+#else
+    "plugins=no "
+#endif
+
+#ifdef HAVE_LIBCURL
+    "libcurl=yes "
+#else
+    "libcurl=no "
+#endif
+
+#ifdef ENABLE_S3
+    "S3=yes "
+#else
+    "S3=no "
+#endif
+
+#ifdef ENABLE_GCS
+    "GCS=yes "
+#else
+    "GCS=no "
+#endif
+
+#ifdef HAVE_LIBDEFLATE
+    "libdeflate=yes "
+#else
+    "libdeflate=no "
+#endif
+
+#ifdef HAVE_LIBLZMA
+    "lzma=yes "
+#else
+    "lzma=no "
+#endif
+
+#ifdef HAVE_LIBBZ2
+    "bzip2=yes ";
+#else
+    "bzip2=no ";
+#endif
+
+#ifdef ENABLE_PLUGINS
+    static char config[1200];
+    sprintf(config, fmt, htslib_plugin_path());
+    return config;
+#else
+    return fmt;
+#endif
+}
+
+/***************************
+ * hFILE interface proper
+ ***************************/
 
 hFILE *hopen(const char *fname, const char *mode, ...)
 {
