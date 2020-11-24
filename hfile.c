@@ -1142,6 +1142,111 @@ static const struct hFILE_scheme_handler *find_scheme_handler(const char *s)
     return (k != kh_end(schemes))? kh_value(schemes, k) : &unknown_scheme;
 }
 
+
+/*
+ * Fills out sc_list[] with the list of known schemes.
+ * This can be restricted to just ones from a specific plugin,
+ * or all (plugin == NULL).
+ *
+ * Returns number of schemes found on success;
+ *        -1 on failure.
+ */
+HTSLIB_EXPORT
+int hts_list_schemes(const char *plugin, const char *sc_list[], int *nschemes)
+{
+    pthread_mutex_lock(&plugins_lock);
+    if (!schemes && load_hfile_plugins() < 0) {
+        pthread_mutex_unlock(&plugins_lock);
+        return -1;
+    }
+    pthread_mutex_unlock(&plugins_lock);
+
+    khiter_t k;
+    int ns = 0;
+
+    for (k = kh_begin(schemes); k != kh_end(schemes); k++) {
+        if (!kh_exist(schemes, k))
+            continue;
+
+        const struct hFILE_scheme_handler *s = kh_value(schemes, k);
+        if (plugin && strcmp(s->provider, plugin) != 0)
+            continue;
+
+        if (ns < *nschemes)
+            sc_list[ns] = kh_key(schemes, k);
+        ns++;
+    }
+
+    if (*nschemes > ns)
+        *nschemes = ns;
+
+    return ns;
+}
+
+
+/*
+ * Fills out plist[] with the list of known plugins.
+ *
+ * Returns number of schemes found on success;
+ *        -1 on failure
+ */
+HTSLIB_EXPORT
+int hts_list_plugins(const char *plist[], int *nplugins)
+{
+    pthread_mutex_lock(&plugins_lock);
+    if (!schemes && load_hfile_plugins() < 0) {
+        pthread_mutex_unlock(&plugins_lock);
+        return -1;
+    }
+    pthread_mutex_unlock(&plugins_lock);
+
+    int np = 0;
+    if (*nplugins)
+        plist[np++] = "built-in";
+
+    struct hFILE_plugin_list *p = plugins;
+    while (p) {
+        if (np < *nplugins)
+            plist[np] = p->plugin.name;
+
+        p = p->next;
+        np++;
+    }
+
+    if (*nplugins > np)
+        *nplugins = np;
+        
+    return np;
+}
+
+
+/*
+ * Tests for the presence of a specific plugin.
+ *
+ * Returns 1 if true
+ *         0 otherwise
+ */
+HTSLIB_EXPORT
+int htslib_has_plugin(const char *name)
+{
+    pthread_mutex_lock(&plugins_lock);
+    if (!schemes && load_hfile_plugins() < 0) {
+        pthread_mutex_unlock(&plugins_lock);
+        return -1;
+    }
+    pthread_mutex_unlock(&plugins_lock);
+
+    struct hFILE_plugin_list *p = plugins;
+    while (p) {
+        if (strcmp(p->plugin.name, name) == 0)
+            return 1;
+        p = p->next;
+    }
+
+    return 0;
+}
+
+
 hFILE *hopen(const char *fname, const char *mode, ...)
 {
     const struct hFILE_scheme_handler *handler = find_scheme_handler(fname);

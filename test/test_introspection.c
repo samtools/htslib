@@ -26,6 +26,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdio.h>
 
 #include "../htslib/hts.h"
+#include "../htslib/hfile.h"
 #include "../htslib/hts_os.h"
 
 int main(void) {
@@ -36,7 +37,7 @@ int main(void) {
     printf("CPPFLAGS:       %s\n", htslib_test_feature(HTS_FEATURE_CPPFLAGS));
     printf("CFLAGS:         %s\n", htslib_test_feature(HTS_FEATURE_CFLAGS));
     printf("LDFLAGS:        %s\n", htslib_test_feature(HTS_FEATURE_LDFLAGS));
-    
+
     unsigned int feat = htslib_features();
     printf("\nFeature number: 0x%x\n", feat);
     if (feat & HTS_FEATURE_CONFIGURE)
@@ -57,6 +58,27 @@ int main(void) {
 	printf("                HTS_FEATURE_BZIP2\n");
 
     printf("\nFeature string: %s\n", htslib_feature_string());
+
+
+    // Plugins and schemes
+    printf("\nPlugins present:\n");
+    const char *plugins[100];
+    int np = 100, i, j;
+
+    if (hts_list_plugins(plugins, &np) < 0)
+        return 1;
+
+    for (i = 0; i < np; i++) {
+        const char *sc_list[100];
+        int nschemes = 100;
+        if (hts_list_schemes(plugins[i], sc_list, &nschemes) < 0)
+            return 1;
+
+        printf("    %s:\n", plugins[i]);
+        for (j = 0; j < nschemes; j++)
+            printf("\t%s\n", sc_list[j]);
+        puts("");
+    }
 
     return 0;
 }
