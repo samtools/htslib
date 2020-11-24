@@ -34,6 +34,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include "hts_defs.h"
 #include "hts_log.h"
+#include "hts_expr.h"
 #include "kstring.h"
 #include "kroundup.h"
 
@@ -224,7 +225,6 @@ typedef struct htsFormat {
 
 struct hts_idx_t;
 typedef struct hts_idx_t hts_idx_t;
-typedef struct sam_filter_t sam_filter_t;
 
 /**
  * @brief File handle returned by hts_open() etc.
@@ -257,7 +257,7 @@ typedef struct htsFile {
     hts_idx_t *idx;
     const char *fnidx;
     struct sam_hdr_t *bam_header;
-    sam_filter_t *filter;
+    hts_filter_t *filter;
 } htsFile;
 
 // A combined thread pool and queue allocation size.
@@ -323,7 +323,7 @@ enum hts_fmt_option {
     HTS_OPT_THREAD_POOL,
     HTS_OPT_CACHE_SIZE,
     HTS_OPT_BLOCK_SIZE,
-    HTS_OPT_SAM_FILTER,
+    HTS_OPT_FILTER,
 };
 
 // For backwards compatibility

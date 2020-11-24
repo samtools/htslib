@@ -26,9 +26,9 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <stdio.h>
 #include <string.h>
-#include "../expr.h"
+#include "../htslib/hts_expr.h"
 
-int lookup(void *data, char *str, char **end, fexpr_t *res) {
+int lookup(void *data, char *str, char **end, hts_expr_val_t *res) {
     int foo = 15551; // my favourite palindromic prime
     int a = 1;
     int b = 2;
@@ -183,12 +183,12 @@ int test(void) {
     };
 
     int i;
-    fexpr_t r;
+    hts_expr_val_t r;
     for (i = 0; i < sizeof(tests) / sizeof(*tests); i++) {
-        sam_filter_t *filt = sam_filter_init(tests[i].str);
+        hts_filter_t *filt = hts_filter_init(tests[i].str);
         if (!filt)
             return 1;
-        if (sam_filter_eval(filt, NULL, lookup, &r)) {
+        if (hts_filter_eval(filt, NULL, lookup, &r)) {
             fprintf(stderr, "Failed to parse filter string %s\n",
                     tests[i].str);
             return 1;
@@ -205,8 +205,8 @@ int test(void) {
             return 1;
         }
 
-        fexpr_free(&r);
-        sam_filter_free(filt);
+        hts_expr_val_free(&r);
+        hts_filter_free(filt);
     }
 
     return 0;
@@ -214,9 +214,9 @@ int test(void) {
 
 int main(int argc, char **argv) {
     if (argc > 1) {
-        fexpr_t v;
-        sam_filter_t *filt = sam_filter_init(argv[1]);
-        if (sam_filter_eval(filt, NULL, lookup, &v))
+        hts_expr_val_t v;
+        hts_filter_t *filt = hts_filter_init(argv[1]);
+        if (hts_filter_eval(filt, NULL, lookup, &v))
             return 1;
 
         if (v.is_str)
@@ -224,8 +224,8 @@ int main(int argc, char **argv) {
         else
             printf("%g\n", v.d);
 
-        fexpr_free(&v);
-        sam_filter_free(filt);
+        hts_expr_val_free(&v);
+        hts_filter_free(filt);
         return 0;
     }
 
