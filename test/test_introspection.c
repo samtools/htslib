@@ -40,21 +40,21 @@ int main(void) {
     unsigned int feat = htslib_features();
     printf("\nFeature number: 0x%x\n", feat);
     if (feat & HTS_FEATURE_CONFIGURE)
-	printf("                HTS_FEATURE_CONFIGURE\n");
+        printf("                HTS_FEATURE_CONFIGURE\n");
     if (feat & HTS_FEATURE_PLUGINS)
-	printf("                HTS_FEATURE_PLUGINS\n");
+        printf("                HTS_FEATURE_PLUGINS\n");
     if (feat & HTS_FEATURE_LIBCURL)
-	printf("                HTS_FEATURE_LIBCURL\n");
+        printf("                HTS_FEATURE_LIBCURL\n");
     if (feat & HTS_FEATURE_S3)
-	printf("                HTS_FEATURE_S3\n");
+        printf("                HTS_FEATURE_S3\n");
     if (feat & HTS_FEATURE_GCS)
-	printf("                HTS_FEATURE_GCS\n");
+        printf("                HTS_FEATURE_GCS\n");
     if (feat & HTS_FEATURE_LIBDEFLATE)
-	printf("                HTS_FEATURE_LIBDEFLATE\n");
+        printf("                HTS_FEATURE_LIBDEFLATE\n");
     if (feat & HTS_FEATURE_LZMA)
-	printf("                HTS_FEATURE_LZMA\n");
+        printf("                HTS_FEATURE_LZMA\n");
     if (feat & HTS_FEATURE_BZIP2)
-	printf("                HTS_FEATURE_BZIP2\n");
+        printf("                HTS_FEATURE_BZIP2\n");
 
     printf("\nFeature string: %s\n", htslib_feature_string());
 
