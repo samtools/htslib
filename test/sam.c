@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <math.h>
 #include <assert.h>
 #include <unistd.h>
+#include <sys/types.h>
 
 // Suppress message for faidx_fetch_nseq(), which we're intentionally testing
 #include "../htslib/hts_defs.h"
@@ -2149,6 +2150,27 @@ cleanup:
     ks_free(&ks);
 }
 
+static void test_cigar_api(void)
+{
+    uint32_t *buf = NULL;
+    char *cig = "*";
+    char *end;
+    size_t m = 0;
+    int n;
+    n = sam_parse_cigar(cig, &end, &buf, &m);
+    VERIFY(n == 0 && m == 0 && (end-cig) == 1, "failed to parse undefined CIGAR");
+    cig = "2M3X1I10M5D";
+    n = sam_parse_cigar(cig, &end, &buf, &m);
+    VERIFY(n == 5 && m > 0 && (end-cig) == 11, "failed to parse CIGAR string: 2M3X1I10M5D");
+    n = sam_parse_cigar("722M15D187217376188323783284M67I", NULL, &buf, &m);
+    VERIFY(n == -1, "failed to flag CIGAR string with long op length: 722M15D187217376188323783284M67I");
+    n = sam_parse_cigar("53I722MD8X", NULL, &buf, &m);
+    VERIFY(n == -1, "failed to flag CIGAR string with no op length: 53I722MD8X");
+
+cleanup:
+    free(buf);
+}
+
 int main(int argc, char **argv)
 {
     int i;
@@ -2186,6 +2208,7 @@ int main(int argc, char **argv)
     test_bam_set1_validate_cigar();
     test_bam_set1_validate_size_limits();
     test_bam_set1_write_and_read_back();
+    test_cigar_api();
 
     return status;
 }
