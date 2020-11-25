@@ -1110,10 +1110,10 @@ int bam_set_qname(bam1_t *b, const char *qname);
                        can be NULL
  @param  a_cigar [out]  address of the destination uint32_t buffer
  @param  a_mem   [in/out]  address of the allocated number of buffer elements
- @return         number of processed CIGAR operators; 0 if error
+ @return         number of processed CIGAR operators; -1 on error
  */
 HTSLIB_EXPORT
-size_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, uint32_t *a_mem);
+ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, uint32_t *a_mem);
 
 /*! @function
  @abstract  Parse a CIGAR string into a bam1_t struct
@@ -1121,10 +1121,10 @@ size_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, uint32_t 
  @param  end     [out] address of the pointer to the new end of the input string
                        can be NULL
  @param  b       [in/out]  address of the destination bam1_t struct
- @return         number of processed CIGAR operators; 0 if error
+ @return         number of processed CIGAR operators; -1 on error
  */
 HTSLIB_EXPORT
-size_t bam_parse_cigar(const char *in, char **end, bam1_t *b);
+ssize_t bam_parse_cigar(const char *in, char **end, bam1_t *b);
 
 /*************************
  *** BAM/CRAM indexing ***
