@@ -1340,6 +1340,7 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         va_end(args);
         if (fp->is_bgzf)
             fp->fp.bgzf->compress_level = level;
+        return 0;
     }
 
     case HTS_OPT_FILTER: {
