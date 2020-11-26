@@ -2319,9 +2319,8 @@ err_ret:
     return -2;
 }
 
-static uint32_t read_ncigar(const char *in) {
+static uint32_t read_ncigar(const char *q) {
     uint32_t n_cigar = 0;
-    char *q = (char *)in;
     for (; *q && *q != '\t'; ++q)
         if (!isdigit_c(*q)) ++n_cigar;
     if (!n_cigar) {
@@ -2344,12 +2343,12 @@ static uint32_t read_ncigar(const char *in) {
  */
 static int parse_cigar(const char *in, uint32_t *a_cigar, uint32_t n_cigar) {
     int i, overflow = 0;
-    char *p, *q = (char *)in;
+    const char *p = in;
     for (i = 0; i < n_cigar; i++) {
         uint32_t len;
         int op;
-        p = q;
-        len = hts_str2uint(q, &q, 28, &overflow)<<BAM_CIGAR_SHIFT;
+        char *q;
+        len = hts_str2uint(p, &q, 28, &overflow)<<BAM_CIGAR_SHIFT;
         if (q == p) {
             hts_log_error("CIGAR length invalid at position %d (%s)", (int)(i+1), p);
             return 0;
@@ -2358,7 +2357,8 @@ static int parse_cigar(const char *in, uint32_t *a_cigar, uint32_t n_cigar) {
             hts_log_error("CIGAR length too long at position %d (%.*s)", (int)(i+1), (int)(q-p+1), p);
             return 0;
         }
-        op = bam_cigar_table[(unsigned char)*q++];
+        p = q;
+        op = bam_cigar_table[(unsigned char)*p++];
         if (op < 0) {
             hts_log_error("Unrecognized CIGAR operator");
             return 0;
@@ -2367,7 +2367,7 @@ static int parse_cigar(const char *in, uint32_t *a_cigar, uint32_t n_cigar) {
         a_cigar[i] |= op;
     }
 
-    return q-in;
+    return p-in;
 }
 
 ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, size_t *a_mem) {
