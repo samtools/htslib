@@ -2150,7 +2150,7 @@ int sam_parse1(kstring_t *s, sam_hdr_t *h, bam1_t *b)
     if (*p != '*') {
         uint32_t *cigar = NULL;
         int old_l_data = b->l_data;
-        int32_t n_cigar = bam_parse_cigar(p, &p, b);
+        int n_cigar = bam_parse_cigar(p, &p, b);
         if (n_cigar < 1 || *p++ != '\t') goto err_ret;
         cigar = (uint32_t *)(b->data + old_l_data);
         c->n_cigar = n_cigar;
@@ -2339,7 +2339,7 @@ static uint32_t read_ncigar(const char *q) {
  @abstract  Parse a CIGAR string into preallocated a uint32_t array
  @param  in      [in]  pointer to the source string
  @param  a_cigar [out]  address of the destination uint32_t buffer
- @return         number of processed input characters; 0 if error
+ @return         number of processed input characters; 0 on error
  */
 static int parse_cigar(const char *in, uint32_t *a_cigar, uint32_t n_cigar) {
     int i, overflow = 0;
@@ -2370,7 +2370,7 @@ static int parse_cigar(const char *in, uint32_t *a_cigar, uint32_t n_cigar) {
     return p-in;
 }
 
-ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, uint32_t *a_mem) {
+ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, size_t *a_mem) {
     size_t n_cigar = 0;
     int diff;
 
@@ -2397,7 +2397,7 @@ ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, uint32_t
         }
     }
 
-    if (!(diff = parse_cigar(in, *a_cigar, n_cigar))) return 0;
+    if (!(diff = parse_cigar(in, *a_cigar, n_cigar))) return -1;
     if (end) *end = (char *)in+diff;
 
     return n_cigar;
@@ -2424,7 +2424,7 @@ ssize_t bam_parse_cigar(const char *in, char **end, bam1_t *b) {
         return -1;
     }
 
-    if (!(diff = parse_cigar(in, (uint32_t *)(b->data + b->l_data), n_cigar))) return 0;
+    if (!(diff = parse_cigar(in, (uint32_t *)(b->data + b->l_data), n_cigar))) return -1;
     b->l_data += (n_cigar * sizeof(uint32_t));
     if (end) *end = (char *)in+diff;
 

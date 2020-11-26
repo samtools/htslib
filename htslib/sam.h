@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <errno.h>
 #include <stdint.h>
+#include <sys/types.h>
 #include "hts.h"
 #include "hts_endian.h"
 
@@ -1108,12 +1109,12 @@ int bam_set_qname(bam1_t *b, const char *qname);
  @param  in      [in]  pointer to the source string
  @param  end     [out] address of the pointer to the new end of the input string
                        can be NULL
- @param  a_cigar [out]  address of the destination uint32_t buffer
+ @param  a_cigar [in/out]  address of the destination uint32_t buffer
  @param  a_mem   [in/out]  address of the allocated number of buffer elements
  @return         number of processed CIGAR operators; -1 on error
  */
 HTSLIB_EXPORT
-ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, uint32_t *a_mem);
+ssize_t sam_parse_cigar(const char *in, char **end, uint32_t **a_cigar, size_t *a_mem);
 
 /*! @function
  @abstract  Parse a CIGAR string into a bam1_t struct

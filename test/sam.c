@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <math.h>
 #include <assert.h>
 #include <unistd.h>
+#include <sys/types.h>
 
 // Suppress message for faidx_fetch_nseq(), which we're intentionally testing
 #include "../htslib/hts_defs.h"
@@ -2154,17 +2155,17 @@ static void test_cigar_api(void)
     uint32_t *buf = NULL;
     char *cig = "*";
     char *end;
-    uint32_t m = 0;
-    int32_t n;
+    size_t m = 0;
+    int n;
     n = sam_parse_cigar(cig, &end, &buf, &m);
     VERIFY(n == 0 && m == 0 && (end-cig) == 1, "failed to parse undefined CIGAR");
     cig = "2M3X1I10M5D";
     n = sam_parse_cigar(cig, &end, &buf, &m);
     VERIFY(n == 5 && m > 0 && (end-cig) == 11, "failed to parse CIGAR string: 2M3X1I10M5D");
     n = sam_parse_cigar("722M15D187217376188323783284M67I", NULL, &buf, &m);
-    VERIFY(n == 0, "failed to flag CIGAR string with long op length: 722M15D187217376188323783284M67I");
+    VERIFY(n == -1, "failed to flag CIGAR string with long op length: 722M15D187217376188323783284M67I");
     n = sam_parse_cigar("53I722MD8X", NULL, &buf, &m);
-    VERIFY(n == 0, "failed to flag CIGAR string with no op length: 53I722MD8X");
+    VERIFY(n == -1, "failed to flag CIGAR string with no op length: 53I722MD8X");
 
 cleanup:
     free(buf);
