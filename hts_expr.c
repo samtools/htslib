@@ -23,9 +23,10 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
 // TODO:
-// - add maths functions.  pow, sqrt, log, min, max, ?
+// - add maths functions.  pow, sqrt, log, ?
 // - ?: operator for conditionals?
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <stdio.h>
@@ -34,7 +35,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include <stdlib.h>
 #include <stdint.h>
 #include <float.h>
-#include <regex.h> // may need configure rule for this
+#include <regex.h>
+#include <math.h>
 
 #include "htslib/hts_expr.h"
 #include "textutils_internal.h"
@@ -60,9 +62,9 @@ struct hts_filter_t {
  * Unary ops:     +, -, !, ~  eg -10 +10, !10 (0), ~5 (bitwise not)
  * Math ops:      *, /, %  [TODO: add // for floor division?]
  * Math ops:      +, -
- * Bit-wise:      &, |, ^  [NB as 3 precedence levels, in that order]
+ * Bit-wise:      &, ^, |  [NB as 3 precedence levels, in that order]
  * Conditionals:  >, >=, <, <=,
- * Equality:      ==, !=, =~ !~
+ * Equality:      ==, !=, =~, !~
  * Boolean:       &&, ||
  */
 
@@ -77,10 +79,126 @@ static int expression(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                       char *str, char **end, hts_expr_val_t *res);
 
 /*
+ * Simple functions operating on strings only.
+ * length, min, max, avg.
+ *
+ * All return 0 on success,
+ *           -1 on failure
+ */
+static int expr_func_length(hts_expr_val_t *res) {
+    if (!res->is_str)
+        return -1;
+
+    res->is_str = 0;
+    res->d = res->s.l;
+    return 0;
+}
+
+static int expr_func_min(hts_expr_val_t *res) {
+    if (!res->is_str)
+        return -1;
+
+    size_t l = res->s.l;
+    int v = INT_MAX;
+    const uint8_t *x = (uint8_t *)res->s.s;
+    for (l = 0; l < res->s.l; l++)
+        if (v > x[l])
+            v = x[l];
+
+    res->is_str = 0;
+    res->d = v == INT_MAX ? NAN : v;
+
+    return 0;
+}
+
+static int expr_func_max(hts_expr_val_t *res) {
+    if (!res->is_str)
+        return -1;
+
+    size_t l = res->s.l;
+    int v = INT_MIN;
+    const uint8_t *x = (uint8_t *)res->s.s;
+    for (l = 0; l < res->s.l; l++)
+        if (v < x[l])
+            v = x[l];
+
+    res->is_str = 0;
+    res->d = v == INT_MIN ? NAN : v;
+
+    return 0;
+}
+
+static int expr_func_avg(hts_expr_val_t *res) {
+    if (!res->is_str)
+        return -1;
+
+    size_t l = res->s.l;
+    double v = 0;
+    const uint8_t *x = (uint8_t *)res->s.s;
+    for (l = 0; l < res->s.l; l++)
+        v += x[l];
+    if (l)
+        v /= l;
+
+    res->is_str = 0;
+    res->d = v;
+
+    return 0;
+}
+
+/*
+ * functions:  FUNC(expr).
+ * Note for simplicity of parsing, the "(" must immediately follow FUNC,
+ * so "FUNC (x)" is invalid.
+ */
+static int func_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
+                     char *str, char **end, hts_expr_val_t *res) {
+    int func_ok = -1;
+    switch (*str) {
+    case 'a':
+        if (strncmp(str, "avg(", 4) == 0) {
+            if (expression(filt, data, fn, str+4, end, res)) return -1;
+            func_ok = expr_func_avg(res);
+        }
+        break;
+
+    case 'l':
+        if (strncmp(str, "length(", 7) == 0) {
+            if (expression(filt, data, fn, str+7, end, res)) return -1;
+            func_ok = expr_func_length(res);
+        }
+        break;
+
+    case 'm':
+        if (strncmp(str, "min(", 4) == 0) {
+            if (expression(filt, data, fn, str+4, end, res)) return -1;
+            func_ok = expr_func_min(res);
+        } else if (strncmp(str, "max(", 4) == 0) {
+            if (expression(filt, data, fn, str+4, end, res)) return -1;
+            func_ok = expr_func_max(res);
+        }
+        break;
+    }
+
+    if (func_ok < 0)
+        return -1;
+
+    str = ws(*end);
+    if (*str != ')') {
+        fprintf(stderr, "Missing ')'\n");
+        return -1;
+    }
+    *end = str+1;
+
+    return 0;
+}
+
+/*
  * simple_expr
  *     : identifier
  *     | constant
- * //  | string ?
+ *     | string
+ *     | func_expr
  *     | '(' expression ')'
 */
 static int simple_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
@@ -141,11 +259,15 @@ static int simple_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
             if (*e != '"')
                 return -1;
             *end = e+1;
-        } else if (fn)
-            // Look up variable.
-            return fn(data, str, end, res);
-        else
+        } else if (fn) {
+            // Try lookup as variable, if not as function
+            if (fn(data, str, end, res) == 0)
+                return 0;
+            else
+                return func_expr(filt, data, fn, str, end, res);
+        } else {
             return -1;
+        }
     }
 
     return 0;
@@ -197,9 +319,9 @@ static int unary_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
 /*
  * mul_expr
  *     : unary_expr (
- *           unary_expr '*' unary_expr
- *         | unary_expr '/' unary_expr
- *         | unary_expr '%' unary_expr
+ *           '*' unary_expr
+ *         | '/' unary_expr
+ *         | '%' unary_expr
  *       )*
  */
 static int mul_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
@@ -238,8 +360,8 @@ static int mul_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
 /*
  * add_expr
  *     : mul_expr (
- *           mul_expr '+' mul_expr
- *         | mul_expr '-' mul_expr
+ *           '+' mul_expr
+ *         | '-' mul_expr
  *       )*
  */
 static int add_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
@@ -331,8 +453,8 @@ static int bitxor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
 
 /*
  * bitor_expr
- *     : xor_expr
- *     | bitor_expr '|' xor_expr
+ *     : bitxor_expr
+ *     | bitor_expr '|' bitxor_expr
  */
 static int bitor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                       char *str, char **end, hts_expr_val_t *res) {

@@ -158,7 +158,7 @@ int test(void) {
 
         {  1, NULL, " (2*3)&7  > 4"},
         {  0, NULL, " (2*3)&(7 > 4)"}, // C precedence equiv
-        {  1, NULL, "((2*3)&7) > 4"}, // Python precendece equiv
+        {  1, NULL, "((2*3)&7) > 4"},  // Python precedence equiv
         {  1, NULL, "((2*3)&7) > 4 && 2*2 <= 4"},
 
         {  1, "plugh", "magic"},

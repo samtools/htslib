@@ -54,6 +54,7 @@ HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/hts.h \
 	$(HTSDIR)/htslib/hts_defs.h \
 	$(HTSDIR)/htslib/hts_endian.h \
+	$(HTSDIR)/htslib/hts_expr.h \
 	$(HTSDIR)/htslib/hts_log.h \
 	$(HTSDIR)/htslib/hts_os.h \
 	$(HTSDIR)/htslib/kbitset.h \
@@ -92,6 +93,7 @@ HTSLIB_ALL = \
 	$(HTSDIR)/hfile_s3.c \
 	$(HTSDIR)/hfile_s3_write.c \
 	$(HTSDIR)/hts.c \
+	$(HTSDIR)/hts_expr.c \
 	$(HTSDIR)/hts_internal.h \
 	$(HTSDIR)/hts_os.c \
 	$(HTSDIR)/kfunc.c \
