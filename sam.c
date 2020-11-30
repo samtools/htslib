@@ -1098,6 +1098,34 @@ static int sam_readrec_rest(BGZF *ignored, void *fpv, void *bv, int *tid, hts_po
     return ret;
 }
 
+// Internal (for now) func used by bam_sym_lookup.  This is copied from
+// samtools/bam.c.
+static const char *bam_get_library(const bam_hdr_t *h, const bam1_t *b)
+{
+    const char *rg;
+    kstring_t lib = { 0, 0, NULL };
+    rg = (char *)bam_aux_get(b, "RG");
+
+    if (!rg)
+        return NULL;
+    else
+        rg++;
+
+    if (sam_hdr_find_tag_id((bam_hdr_t *)h, "RG", "ID", rg, "LB", &lib)  < 0)
+        return NULL;
+
+    static char LB_text[1024];
+    int len = lib.l < sizeof(LB_text) - 1 ? lib.l : sizeof(LB_text) - 1;
+
+    memcpy(LB_text, lib.s, len);
+    LB_text[len] = 0;
+
+    free(lib.s);
+
+    return LB_text;
+}
+
+
 // Bam record pointer and SAM header combined
 typedef struct {
     const sam_hdr_t *h;
@@ -1196,6 +1224,16 @@ static int bam_sym_lookup(void *data, char *str, char **end,
         }
         break;
 
+    case 'l':
+        if (memcmp(str, "library", 7) == 0) {
+            *end = str+7;
+            res->is_str = 1;
+            const char *lib = bam_get_library(hb->h, b);
+            kputs(lib ? lib : "", ks_clear(&res->s));
+            return 0;
+        }
+        break;
+
     case 'm':
         if (memcmp(str, "mapq", 4) == 0) {
             *end = str+4;
@@ -1241,12 +1279,21 @@ static int bam_sym_lookup(void *data, char *str, char **end,
     case 'q':
         if (memcmp(str, "qlen", 4) == 0) {
             *end = str+4;
-            res->d = b->core.l_qseq;
+            res->d = bam_cigar2qlen(b->core.n_cigar, bam_get_cigar(b));
             return 0;
         } else if (memcmp(str, "qname", 5) == 0) {
             *end = str+5;
             res->is_str = 1;
             kputs(bam_get_qname(b), ks_clear(&res->s));
+            return 0;
+        } else if (memcmp(str, "qual", 4) == 0) {
+            *end = str+4;
+            ks_clear(&res->s);
+            if (ks_resize(&res->s, b->core.l_qseq+1) < 0)
+                return -1;
+            memcpy(res->s.s, bam_get_qual(b), b->core.l_qseq);
+            res->s.l = b->core.l_qseq;
+            res->is_str = 1;
             return 0;
         }
         break;
@@ -1271,6 +1318,20 @@ static int bam_sym_lookup(void *data, char *str, char **end,
         } else if (memcmp(str, "refid", 5) == 0) {
             *end = str+5;
             res->d = b->core.tid;
+            return 0;
+        }
+        break;
+
+    case 's':
+        if (memcmp(str, "seq", 3) == 0) {
+            *end = str+3;
+            ks_clear(&res->s);
+            if (ks_resize(&res->s, b->core.l_qseq+1) < 0)
+                return -1;
+            nibble2base(bam_get_seq(b), res->s.s, b->core.l_qseq);
+            res->s.s[b->core.l_qseq] = 0;
+            res->s.l = b->core.l_qseq;
+            res->is_str = 1;
             return 0;
         }
         break;
