@@ -23,9 +23,10 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.  */
 
 // TODO:
-// - add maths functions.  pow, sqrt, log, min, max, ?
+// - add maths functions.  pow, sqrt, log, ?
 // - ?: operator for conditionals?
 
+#define HTS_BUILDING_LIBRARY // Enables HTSLIB_EXPORT, see htslib/hts_defs.h
 #include <config.h>
 
 #include <stdio.h>
