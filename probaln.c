@@ -74,8 +74,9 @@ static float g_qual2prob[256];
 
    Returns phred-scaled likelihood score, or INT_MIN on failure.
  */
-int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_query,
-                   const uint8_t *iqual, const probaln_par_t *c, int *state, uint8_t *q)
+int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query,
+                   int l_query, const uint8_t *iqual, const probaln_par_t *c,
+                   int *state, uint8_t *q)
 {
     double *f = NULL, *b = NULL, *s = NULL, m[9], sI, sM, bI, bM;
     float *qual = NULL;
@@ -96,8 +97,10 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
     bw2 = bw * 2 + 1;
     size_t i_dim = bw2 < l_ref ? (size_t) bw2*3+6 : (size_t) l_ref*3+6;
 
-    // allocate the forward and backward matrices f[][] and b[][] and the scaling array s[]
-    // Ideally these callocs would be mallocs + initialisation of the few bits needed.
+    // allocate the forward and backward matrices f[][] and b[][]
+    // and the scaling array s[]
+    // Ideally these callocs would be mallocs + initialisation of
+    // the few bits needed.
     if (SIZE_MAX / (l_query+1) / i_dim < sizeof(double)) {
         errno = ENOMEM; // Allocation would fail
         return INT_MIN;
@@ -108,7 +111,9 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
         b = calloc((l_query+1)*i_dim, sizeof(double));
         if (!b) goto fail;
     }
-    s = malloc((l_query+2) * sizeof(double)); // s[] is the scaling factor to avoid underflow
+
+    // s[] is the scaling factor to avoid underflow
+    s = malloc((l_query+2) * sizeof(double));
     if (!s) goto fail;
 
     // initialize qual
@@ -122,11 +127,19 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
         qual[i] = g_qual2prob[iqual? iqual[i] : 30];
 
     // initialize transition probability
-    sM = sI = 1. / (2 * l_query + 2); // the value here seems not to affect results; FIXME: need proof
-    m[0*3+0] = (1 - c->d - c->d) * (1 - sM); m[0*3+1] = m[0*3+2] = c->d * (1 - sM);
-    m[1*3+0] = (1 - c->e) * (1 - sI); m[1*3+1] = c->e * (1 - sI); m[1*3+2] = 0.;
-    m[2*3+0] = 1 - c->e; m[2*3+1] = 0.; m[2*3+2] = c->e;
-    bM = (1 - c->d) / l_ref; bI = c->d / l_ref; // (bM+bI)*l_ref==1
+    // the value here seems not to affect results; FIXME: need proof
+    sM = sI = 1. / (2 * l_query + 2);
+    m[0*3+0] = (1 - c->d - c->d) * (1 - sM);
+    m[0*3+1] = m[0*3+2] = c->d * (1 - sM);
+    m[1*3+0] = (1 - c->e) * (1 - sI);
+    m[1*3+1] = c->e * (1 - sI);
+    m[1*3+2] = 0.;
+    m[2*3+0] = 1 - c->e;
+    m[2*3+1] = 0.;
+    m[2*3+2] = c->e;
+    bM = (1 - c->d) / l_ref; // (bM+bI)*l_ref==1
+    bI = c->d / l_ref;
+
     /*** forward ***/
     // f[0]
     set_u(k, bw, 0, 0);
@@ -150,6 +163,15 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
         uint8_t qyi = query[i - 1];
         x = i - bw; beg = beg > x? beg : x; // band start
         x = i + bw; end = end < x? end : x; // band end
+
+        // NB end-beg is almost always 14 (99.9% of the time)
+        // Hence not a large volume to parallelise.
+        //
+        // Maybe stripe in diagonal doing 14 lines together?
+        //
+        // Consider rotation? 150x14 vs 14x150 so inner loop
+        // takes longer.
+
         double E[] = {
             qli * EM, // 00
             1. - qli, // 01
@@ -157,19 +179,69 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
             1.,       // 11
         };
         double M = 1./s[i-1];
+
+        // Note this code has the original version listed here (albeit
+        // with improved formatting), but we do not compile using
+        // -DPROBALN_ORIG.  The purpose of this code is to act as an
+        // easier(?) to understand version of the heavily optimised
+        // version following it and as an easy validation path in case
+        // of any differences in results.
+#ifdef PROBALN_ORIG
         for (k = beg, sum = 0.; k <= end; ++k) {
             int u, v11, v01, v10;
             double e;
             e = E[(ref[k - 1] > 3 || qyi > 3)*2 + (ref[k - 1] == qyi)];
-            set_u(u, bw, i, k); set_u(v11, bw, i-1, k-1); set_u(v10, bw, i-1, k); set_u(v01, bw, i, k-1);
+            set_u(u, bw, i, k);
+            set_u(v11, bw, i-1, k-1);
+            set_u(v10, bw, i-1, k);
+            set_u(v01, bw, i, k-1);
             fi[u+0] = e * (m[0] * M*fi1[v11+0] + m[3] * M*fi1[v11+1] + m[6] * M*fi1[v11+2]);
             fi[u+1] = EI * (m[1] * M*fi1[v10+0] + m[4] * M*fi1[v10+1]);
             fi[u+2] = m[2] * fi[v01+0] + m[8] * fi[v01+2];
             sum += fi[u] + fi[u+1] + fi[u+2];
-//          fprintf(stderr, "F (%d,%d;%d): %lg,%lg,%lg\n", i, k, u, fi[u], fi[u+1], fi[u+2]); // DEBUG
         }
+#else
+        // We use EI*(M*m[1]*? + M*m[4]*?) a lot.  So factor it out here.
+        double xm[5];
+        xm[0] =    M*m[0];
+        xm[1] =    M*m[3];
+        xm[2] =    M*m[6];
+        xm[3] = EI*M*m[1];
+        xm[4] = EI*M*m[4];
+
+        {
+            int u, v11;
+            set_u(u,   bw, i,   beg);
+            set_u(v11, bw, i-1, beg-1);
+            // Rather than recompute k->{u,v01,v10,v11} each loop
+            // we just increment the pointers.
+            double *xi = &fi[u];
+            double *yi = &fi1[v11];
+            // Derived from xi[0,2] in previous loop iter.
+            double  l_x0 = m[2]*xi[0];
+            double  l_x2 = m[8]*xi[2];
+            for (k = beg, sum = 0.; k <= end; ++k, xi+=3, yi+=3) {
+                int cond = (ref[k-1] > 3 || qyi > 3)*2 + (ref[k-1] == qyi);
+
+                double z0 = xm[0]*yi[0];
+                double z1 = xm[1]*yi[1];
+                double z2 = xm[2]*yi[2];
+                double z3 = xm[3]*yi[3];
+                double z4 = xm[4]*yi[4];
+
+                xi[0] = E[cond] * (z0+z1+z2);
+                xi[1] = z3 + z4;
+                xi[2] = l_x0 + l_x2;
+                sum  += xi[0] + xi[1] + xi[2];
+
+                l_x0 = m[2]*xi[0];
+                l_x2 = m[8]*xi[2];
+            }
+        }
+#endif
         s[i] = sum;
     }
+
     { // f[l_query+1]
         double sum;
         double M = 1./s[l_query];
@@ -205,7 +277,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
     }
     // b[l_query-1..1]
     for (i = l_query - 1; i >= 1; --i) {
-        int beg = 1, end = l_ref, x, _beg, _end;
+        int beg = 1, end = l_ref, x;
         double *bi = &b[i*i_dim], *bi1 = &b[(i+1)*i_dim], y = (i > 1), qli1 = qual[i];
         uint8_t qyi1 = query[i];
         x = i - bw; beg = beg > x? beg : x;
@@ -217,10 +289,15 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
             1.,        //011
             //0,0,0,0    //1xx
         };
+
+#ifdef PROBALN_ORIG
         for (k = end; k >= beg; --k) {
             int u, v11, v01, v10;
             double e;
-            set_u(u, bw, i, k); set_u(v11, bw, i+1, k+1); set_u(v10, bw, i+1, k); set_u(v01, bw, i, k+1);
+            set_u(u, bw, i, k);
+            set_u(v11, bw, i+1, k+1);
+            set_u(v10, bw, i+1, k);
+            set_u(v01, bw, i, k+1);
             e = (k>=l_ref)?0 :E[(ref[k] > 3 || qyi1 > 3)*2 + (ref[k] == qyi1)] * bi1[v11];
             bi[u+0] = e * m[0] + EI * m[1] * bi1[v10+1] + m[2] * bi[v01+2]; // bi1[v11] has been foled into e.
             bi[u+1] = e * m[3] + EI * m[4] * bi1[v10+1];
@@ -228,8 +305,43 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
 //          fprintf(stderr, "B (%d,%d;%d): %lg,%lg,%lg\n", i, k, u, bi[u], bi[u+1], bi[u+2]); // DEBUG
         }
         // rescale
+        int _beg, _end;
         set_u(_beg, bw, i, beg); set_u(_end, bw, i, end); _end += 2;
         for (k = _beg, y = 1./s[i]; k <= _end; ++k) bi[k] *= y;
+#else
+        {
+            int u, v10;
+            set_u(u,   bw, i,   end);
+            set_u(v10, bw, i+1, end);
+            // Rather than recompute k->{u,v01,v10,v11} each loop
+            // we just increment the pointers.
+            double *xi = &bi[u];
+            double *yi = &bi1[v10];
+            // NB xi[5] is equiv to v01+2.
+            double xi_5 = xi[5];
+            // Manual loop invariant removal
+            double e1 = EI*m[1];
+            double e4 = EI*m[4];
+            // Do renorm too in the same pass.
+            double n = 1./s[i];
+            for (k = end; k >= beg; --k, xi -= 3, yi -= 3) {
+                double e = (k>=l_ref)
+                    ? 0
+                    : E[(ref[k]>3 || qyi1>3)*2 + (ref[k] == qyi1)] * yi[3];
+
+                xi[1] =  e * m[3] +   e4 * yi[1];
+                xi[0] =  e * m[0] +   e1 * yi[1]  + m[2] * xi_5;
+                xi[2] = (e * m[6] + m[8] * xi_5) * y;
+                // bi[u+2] from this iter becomes bi[v01+2] in next iter
+                xi_5 = xi[2];
+
+                // rescale
+                xi[1] *= n;
+                xi[0] *= n;
+                xi[2] *= n;
+            }
+        }
+#endif
     }
     { // b[0]
         int beg = 1, end = l_ref < bw + 1? l_ref : bw + 1;
@@ -251,13 +363,36 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
         x = i - bw; beg = beg > x? beg : x;
         x = i + bw; end = end < x? end : x;
         double M = 1./s[i];
+#ifdef PROBALN_ORIG
         for (k = beg; k <= end; ++k) {
             int u;
             double z;
             set_u(u, bw, i, k);
-            z = M*fi[u+0] * bi[u+0]; if (z > max) max = z, max_k = (k-1)<<2 | 0; sum += z;
-            z = M*fi[u+1] * bi[u+1]; if (z > max) max = z, max_k = (k-1)<<2 | 1; sum += z;
+            z = M*fi[u+0] * bi[u+0];
+            if (z > max) max = z, max_k = (k-1)<<2 | 0;
+            sum += z;
+            z = M*fi[u+1] * bi[u+1];
+            if (z > max) max = z, max_k = (k-1)<<2 | 1;
+            sum += z;
         }
+#else
+        {
+            int u;
+            set_u(u, bw, i, beg);
+            for (k = beg; k <= end; ++k, u+=3) {
+                double z1, z2;
+                z1 = M*fi[u+0] * bi[u+0];
+                z2 = M*fi[u+1] * bi[u+1];
+                int which = z2 > z1; // strictly z2 >= z1 matches old code
+                double zm = which ? z2 : z1;
+                if (zm > max) {
+                    max   = zm;
+                    max_k = (k-1)<<2 | which;
+                }
+                sum += z1 + z2;
+            }
+        }
+#endif
         max /= sum; sum *= s[i]; // if everything works as is expected, sum == 1.0
         if (state) state[i-1] = max_k;
         if (q) k = (int)(-4.343 * log(1. - max) + .499), q[i-1] = k > 100? 99 : k;
@@ -268,6 +403,7 @@ int probaln_glocal(const uint8_t *ref, int l_ref, const uint8_t *query, int l_qu
                 "ACGT"[query[i - 1]], "ACGT"[ref[(max_k>>2)]], max_k&3, max); // DEBUG
 #endif
     }
+
     /*** free ***/
     free(f); free(b); free(s); free(qual);
     return Pr;
