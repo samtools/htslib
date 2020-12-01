@@ -273,7 +273,7 @@ static int bgzf_idx_flush(BGZF *fp) {
     hts_idx_cache_entry *e = mt->idx_cache.e;
     int i;
 
-    assert(mt->idx_cache.nentries == 0 || mt->block_written >= e[0].block_number);
+    assert(mt->idx_cache.nentries == 0 || mt->block_written <= e[0].block_number);
 
     for (i = 0; i < mt->idx_cache.nentries && e[i].block_number == mt->block_written; i++) {
         if (hts_idx_push(mt->hts_idx, e[i].tid, e[i].beg, e[i].end,
