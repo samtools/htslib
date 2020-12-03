@@ -1407,6 +1407,9 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
     HTSLIB_EXPORT
     int sam_write1(samFile *fp, const sam_hdr_t *h, const bam1_t *b) HTS_RESULT_USED;
 
+// Forward declaration, see hts_expr.h for full.
+struct hts_filter_t;
+
 /// sam_passes_filter - Checks whether a record passes an hts_filter.
 /** @param h      Pointer to the header structure previously read
  *  @param b      Pointer to the BAM record to be checked
@@ -1414,7 +1417,8 @@ const char *sam_parse_region(sam_hdr_t *h, const char *s, int *tid,
  *  @return       1 if passes, 0 if not, and <0 on error.
  */
 HTSLIB_EXPORT
-int sam_passes_filter(const sam_hdr_t *h, const bam1_t *b, hts_filter_t *filt);
+int sam_passes_filter(const sam_hdr_t *h, const bam1_t *b,
+                      struct hts_filter_t *filt);
 
     /*************************************
      *** Manipulating auxiliary fields ***

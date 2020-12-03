@@ -49,6 +49,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include "sam_internal.h"
 #include "htslib/hfile.h"
 #include "htslib/hts_endian.h"
+#include "htslib/hts_expr.h"
 #include "header.h"
 
 #include "htslib/khash.h"
@@ -1423,7 +1424,7 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, hts_pos_t 
 {
     htsFile *fp = fpv;
     bam1_t *b = bv;
-    int filtered, ret;
+    int pass_filter, ret;
 
     do {
         ret = cram_get_bam_seq(fp->fp.cram, &b);
@@ -1437,10 +1438,14 @@ static int cram_readrec(BGZF *ignored, void *fpv, void *bv, int *tid, hts_pos_t 
         *beg = b->core.pos;
         *end = bam_endpos(b);
 
-        filtered = sam_passes_filter(fp->bam_header, b, fp->filter);
-        if (filtered < 0)
-            return -2;
-    } while (filtered == 0);
+        if (fp->filter) {
+            pass_filter = sam_passes_filter(fp->bam_header, b, fp->filter);
+            if (pass_filter < 0)
+                return -2;
+        } else {
+            pass_filter = 1;
+        }
+    } while (pass_filter == 0);
 
     return ret;
 }
@@ -3476,7 +3481,7 @@ int sam_set_threads(htsFile *fp, int nthreads) {
 }
 
 // Internal component of sam_read1 below
-static int sam_read1_bam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
+static inline int sam_read1_bam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
     int ret = bam_read1(fp->fp.bgzf, b);
     if (h && ret >= 0) {
         if (b->core.tid  >= h->n_targets || b->core.tid  < -1 ||
@@ -3489,7 +3494,7 @@ static int sam_read1_bam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
 }
 
 // Internal component of sam_read1 below
-static int sam_read1_cram(htsFile *fp, sam_hdr_t *h, bam1_t **b) {
+static inline int sam_read1_cram(htsFile *fp, sam_hdr_t *h, bam1_t **b) {
     int ret = cram_get_bam_seq(fp->fp.cram, b);
     if (ret < 0)
         return cram_eof(fp->fp.cram) ? -1 : -2;
@@ -3501,7 +3506,7 @@ static int sam_read1_cram(htsFile *fp, sam_hdr_t *h, bam1_t **b) {
 }
 
 // Internal component of sam_read1 below
-static int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
+static inline int sam_read1_sam(htsFile *fp, sam_hdr_t *h, bam1_t *b) {
     int ret;
 
     // Consume 1st line after header parsing as it wasn't using peek
@@ -3611,10 +3616,9 @@ int sam_read1(htsFile *fp, sam_hdr_t *h, bam1_t *b)
             ret = sam_read1_cram(fp, h, &b);
             break;
 
-        case sam: {
+        case sam:
             ret = sam_read1_sam(fp, h, b);
             break;
-        }
 
         case empty_format:
             errno = EPIPE;

@@ -25,7 +25,7 @@ DEALINGS IN THE SOFTWARE.  */
 #ifndef HTS_EXPR_H
 #define HTS_EXPR_H
 
-#include <htslib/kstring.h>
+#include "kstring.h"
 #include "hts_defs.h"
 
 /// Holds a filter variable.  This is also used to return the results.
@@ -38,7 +38,7 @@ DEALINGS IN THE SOFTWARE.  */
  * Take care when negating this. "[NM] != 0" will be true when
  * [NM] is absent, thus consider "[NM] && [NM] != 0".
  */
-typedef struct {
+typedef struct hts_expr_val_t {
     char is_str;  // Use .s vs .d
     char is_true; // Force true if even zero
     kstring_t s;  // is_str and empty s permitted (eval as false)
