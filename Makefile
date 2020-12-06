@@ -103,6 +103,8 @@ BUILT_THRASH_PROGRAMS = \
 all: lib-static lib-shared $(BUILT_PROGRAMS) plugins $(BUILT_TEST_PROGRAMS) \
      htslib_static.mk htslib-uninstalled.pc
 
+ALL_CPPFLAGS = -I. $(CPPFLAGS)
+
 HTSPREFIX =
 include htslib_vars.mk
 
@@ -133,10 +135,10 @@ show-version:
 .SUFFIXES: .bundle .c .cygdll .dll .o .pico .so
 
 .c.o:
-	$(CC) $(CFLAGS) -I. $(CPPFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(ALL_CPPFLAGS) -c -o $@ $<
 
 .c.pico:
-	$(CC) $(CFLAGS) -I. $(CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
+	$(CC) $(CFLAGS) $(ALL_CPPFLAGS) $(EXTRA_CFLAGS_PIC) -c -o $@ $<
 
 
 LIBHTS_OBJS = \
