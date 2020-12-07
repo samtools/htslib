@@ -498,6 +498,7 @@ int main(int argc, char *argv[])
     memset(&args,0,sizeof(args_t));
     args.cache_megs = 10;
     args.download_index = 1;
+    int32_t new_line_skip = -1;
 
     static const struct option loptions[] =
     {
@@ -570,7 +571,7 @@ int main(int argc, char *argv[])
                 detect = 0;
                 break;
             case 'S':
-                conf.line_skip = strtol(optarg,&tmp,10);
+                new_line_skip = strtol(optarg,&tmp,10);
                 if ( *tmp ) error("Could not parse argument: -S %s\n", optarg);
                 detect = 0;
                 break;
@@ -604,6 +605,9 @@ int main(int argc, char *argv[])
             default: return usage(stderr, EXIT_FAILURE);
         }
     }
+
+    if (new_line_skip >= 0)
+        conf.line_skip = new_line_skip;
 
     if ( optind==argc ) return usage(stderr, EXIT_FAILURE);
 
