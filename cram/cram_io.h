@@ -510,7 +510,7 @@ static inline cram_block *cram_get_block_by_id(cram_slice *slice, int id) {
 
 /* Make block exactly 'l' bytes long */
 static inline int block_resize_exact(cram_block *b, size_t len) {
-    unsigned char *tmp = realloc(b->data, len);
+    unsigned char *tmp = (unsigned char *)realloc(b->data, len);
     if (!tmp)
         return -1;
     b->alloc = len;
