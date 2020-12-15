@@ -1730,7 +1730,7 @@ int cram_uncompress_block(cram_block *b) {
 
 static char *cram_compress_by_method(cram_slice *s, char *in, size_t in_size,
                                      int content_id, size_t *out_size,
-                                     enum cram_block_method method,
+                                     enum cram_block_method_int method,
                                      int level, int strat) {
     switch (method) {
     case GZIP:
@@ -1899,7 +1899,7 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
 
     // Internally we have parameterised methods that externally map
     // to the same CRAM method value.
-    // See enum_cram_block_method.
+    // See enum_cram_block_method_int in cram_structs.h.
     int methmap[] = {
         // Externally defined values
         RAW, GZIP, BZIP2, LZMA, RANS, RANSPR, ARITH, FQZ, TOK3,
@@ -2056,7 +2056,8 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
                 int best_method = RAW;
                 int best_sz = INT_MAX;
 
-                // Relative costs of methods. See enum_cram_block_method and methmap
+                // Relative costs of methods. See enum_cram_block_method_int
+                // and methmap
                 double meth_cost[32] = {
                     // Externally defined methods
                     1,    // 0  raw
@@ -2090,7 +2091,7 @@ int cram_compress_block2(cram_fd *fd, cram_slice *s,
 
                     1.04, // arith_pr1
                     1.04, // arith_pr64
-                    1.04, // arith_pr65
+                    1.04, // arith_pr9
                     1.03, // arith_pr128
                     1.04, // arith_pr129
                     1.04, // arith_pr192
@@ -2242,7 +2243,7 @@ cram_metrics *cram_new_metrics(void) {
     return m;
 }
 
-char *cram_block_method2str(enum cram_block_method m) {
+char *cram_block_method2str(enum cram_block_method_int m) {
     switch(m) {
     case RAW:         return "RAW";
     case GZIP:        return "GZIP";
