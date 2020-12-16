@@ -7,3 +7,9 @@ HTSCODECS_SOURCES = $(HTSPREFIX)htscodecs/htscodecs/arith_dynamic.c \
         $(HTSPREFIX)htscodecs/htscodecs/tokenise_name3.c
 
 HTSCODECS_OBJS = $(HTSCODECS_SOURCES:.c=.o)
+
+# Add htscodecs tests into the HTSlib test framework
+
+HTSCODECS_TEST_TARGETS = test_htscodecs_rans4x8 \
+    test_htscodecs_rans4x16 test_htscodecs_arith test_htscodecs_tok3 \
+    test_htscodecs_fqzcomp test_htscodecs_varint

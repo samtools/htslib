@@ -426,7 +426,7 @@ maintainer-check:
 #
 # If using MSYS, avoid poor shell expansion via:
 #    MSYS2_ARG_CONV_EXCL="*" make check
-check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) $(BUILT_PLUGINS)
+check test: $(BUILT_PROGRAMS) $(BUILT_TEST_PROGRAMS) $(BUILT_PLUGINS) $(HTSCODECS_TEST_TARGETS)
 	test/hts_endian
 	test/test_expr
 	test/test_kfunc
@@ -507,6 +507,56 @@ test/test-bcf-sr: test/test-bcf-sr.o libhts.a
 
 test/test-bcf-translate: test/test-bcf-translate.o libhts.a
 	$(CC) $(LDFLAGS) -o $@ test/test-bcf-translate.o libhts.a -lz $(LIBS) -lpthread
+
+# Extra tests for bundled htscodecs
+test_htscodecs_rans4x8: htscodecs/tests/rans4x8
+	cd htscodecs/tests && srcdir=. && export srcdir && ./rans4x8.test
+
+test_htscodecs_rans4x16: htscodecs/tests/rans4x16pr
+	cd htscodecs/tests && srcdir=. && export srcdir && ./rans4x16.test
+
+test_htscodecs_arith: htscodecs/tests/arith_dynamic
+	cd htscodecs/tests && srcdir=. && export srcdir && ./arith.test
+
+test_htscodecs_tok3: htscodecs/tests/tokenise_name3
+	cd htscodecs/tests && srcdir=. && export srcdir && ./tok3.test
+
+test_htscodecs_fqzcomp: htscodecs/tests/fqzcomp_qual
+	cd htscodecs/tests && srcdir=. && export srcdir && ./fqzcomp.test
+
+test_htscodecs_varint: htscodecs/tests/varint
+	cd htscodecs/tests && ./varint
+
+htscodecs/tests/arith_dynamic: htscodecs/tests/arith_dynamic_test.o $(HTSCODECS_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS) -lm -lpthread
+
+htscodecs/tests/fqzcomp_qual: htscodecs/tests/fqzcomp_qual_test.o $(HTSCODECS_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS) -lm -lpthread
+
+htscodecs/tests/rans4x16pr: htscodecs/tests/rANS_static4x16pr_test.o $(HTSCODECS_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS) -lm -lpthread
+
+htscodecs/tests/rans4x8: htscodecs/tests/rANS_static_test.o $(HTSCODECS_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS) -lm -lpthread
+
+htscodecs/tests/tokenise_name3: htscodecs/tests/tokenise_name3_test.o $(HTSCODECS_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS) -lm -lpthread
+
+htscodecs/tests/varint: htscodecs/tests/varint_test.o $(HTSCODECS_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS) -lm -lpthread
+
+htscodecs/tests/arith_dynamic_test.o: CPPFLAGS += -Ihtscodecs -D_POSIX_C_SOURCE=200112L
+htscodecs/tests/arith_dynamic_test.o: htscodecs/tests/arith_dynamic_test.c $(htscodecs_arith_dynamic_h)
+htscodecs/tests/fqzcomp_qual_test.o: CPPFLAGS += -Ihtscodecs -D_POSIX_C_SOURCE=200112L
+htscodecs/tests/fqzcomp_qual_test.o: htscodecs/tests/fqzcomp_qual_test.c $(htscodecs_fqzcomp_qual_h) $(htscodecs_varint_h)
+htscodecs/tests/rANS_static4x16pr_test.o: CPPFLAGS += -Ihtscodecs -D_POSIX_C_SOURCE=200112L
+htscodecs/tests/rANS_static4x16pr_test.o: htscodecs/tests/rANS_static4x16pr_test.c $(htscodecs_rANS_static4x16_h)
+htscodecs/tests/rANS_static_test.o: CPPFLAGS += -Ihtscodecs -D_POSIX_C_SOURCE=200112L
+htscodecs/tests/rANS_static_test.o: htscodecs/tests/rANS_static_test.c $(htscodecs_rANS_static_h)
+htscodecs/tests/tokenise_name3_test.o: CPPFLAGS += -Ihtscodecs -D_POSIX_C_SOURCE=200112L
+htscodecs/tests/tokenise_name3_test.o: htscodecs/tests/tokenise_name3_test.c $(htscodecs_tokenise_name3_h)
+htscodecs/tests/varint_test.o: CPPFLAGS += -Ihtscodecs -D_POSIX_C_SOURCE=200112L
+htscodecs/tests/varint_test.o: htscodecs/tests/varint_test.c $(htscodecs_varint_h)
 
 test/hts_endian.o: test/hts_endian.c config.h $(htslib_hts_endian_h)
 test/fuzz/hts_open_fuzzer.o: test/fuzz/hts_open_fuzzer.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
@@ -629,14 +679,17 @@ htslib-uninstalled.pc: htslib.pc.tmp
 
 testclean:
 	-rm -f test/*.tmp test/*.tmp.* test/longrefs/*.tmp.* test/tabix/*.tmp.* test/tabix/FAIL* header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
+	-rm -rf htscodecs/tests/test.out
 
 mostlyclean: testclean
 	-rm -f *.o *.pico cram/*.o cram/*.pico test/*.o test/*.dSYM version.h
 	-rm -f htscodecs/htscodecs/*.o htscodecs/htscodecs/*.pico
 	-rm -f hts-object-files
+	-rm -f htscodecs/tests/*.o
 
 clean: mostlyclean clean-$(SHLIB_FLAVOUR)
 	-rm -f libhts.a $(BUILT_PROGRAMS) $(BUILT_PLUGINS) $(BUILT_TEST_PROGRAMS) $(BUILT_THRASH_PROGRAMS)
+	-rm -f htscodecs/tests/rans4x8 htscodecs/tests/rans4x16pr htscodecs/tests/arith_dynamic htscodecs/tests/tokenise_name3 htscodecs/tests/fqzcomp_qual htscodecs/tests/varint
 
 distclean maintainer-clean: clean
 	-rm -f config.cache config.h config.log config.mk config.status
@@ -683,3 +736,5 @@ force:
 .PHONY: clean-cygdll install-cygdll
 .PHONY: clean-dll install-dll
 .PHONY: clean-dylib install-dylib
+.PHONY: test_htscodecs_rans4x8 test_htscodecs_rans4x16 test_htscodecs_arith
+.PHONY: test_htscodecs_tok3 test_htscodecs_fqzcomp test_htscodecs_varint

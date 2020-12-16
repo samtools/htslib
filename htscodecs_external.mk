@@ -1,5 +1,6 @@
 HTSCODECS_SOURCES =
 HTSCODECS_OBJS =
+HTSCODECS_TEST_TARGETS =
 
 htscodecs_arith_dynamic_h =
 htscodecs_fqzcomp_qual_h =
