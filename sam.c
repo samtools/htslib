@@ -4448,7 +4448,7 @@ static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, hts
 }
 static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, hts_pos_t *icig, hts_pos_t *iseq, hts_pos_t *iref)
 {
-    bool last_in_match = true;
+    int last_in_match = 1;
     while ( *cigar < cigar_max )
     {
         int cig  = (**cigar) & BAM_CIGAR_MASK;
@@ -4468,10 +4468,10 @@ static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, ht
                 return BAM_CMATCH;
             }
         }
-        if ( cig==BAM_CDEL || cig==BAM_CREF_SKIP ) { last_in_match = false; (*cigar)++; (*iref) += ncig; *icig = 0; continue; }
-        if ( cig==BAM_CINS ) { last_in_match = false; (*cigar)++; *iseq += ncig; *icig = 0; continue; }
-        if ( cig==BAM_CSOFT_CLIP ) { last_in_match = false; (*cigar)++; *iseq += ncig; *icig = 0; continue; }
-        if ( cig==BAM_CHARD_CLIP || cig==BAM_CPAD ) { last_in_match = false; (*cigar)++; *icig = 0; continue; }
+        if ( cig==BAM_CDEL || cig==BAM_CREF_SKIP ) { last_in_match = 0; (*cigar)++; (*iref) += ncig; *icig = 0; continue; }
+        if ( cig==BAM_CINS ) { last_in_match = 0; (*cigar)++; *iseq += ncig; *icig = 0; continue; }
+        if ( cig==BAM_CSOFT_CLIP ) { last_in_match = 0; (*cigar)++; *iseq += ncig; *icig = 0; continue; }
+        if ( cig==BAM_CHARD_CLIP || cig==BAM_CPAD ) { last_in_match = 0; (*cigar)++; *icig = 0; continue; }
         hts_log_error("Unexpected cigar %d", cig);
         return -2;
     }
