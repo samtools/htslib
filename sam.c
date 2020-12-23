@@ -4816,14 +4816,14 @@ static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, ht
 
         if ( cig==BAM_CMATCH || cig==BAM_CEQUAL || cig==BAM_CDIFF )
         {
-            if ( *icig >= ncig - 1 ) { *icig = 0;  (*cigar)++; continue; }
+            if ( *icig >= ncig - 1 ) { *icig = -1;  (*cigar)++; continue; }
             (*iseq)++; (*icig)++; (*iref)++;
             return BAM_CMATCH;
         }
-        if ( cig==BAM_CDEL || cig==BAM_CREF_SKIP ) { (*cigar)++; (*iref) += ncig; *icig = 0; continue; }
-        if ( cig==BAM_CINS ) { (*cigar)++; *iseq += ncig; *icig = 0; continue; }
-        if ( cig==BAM_CSOFT_CLIP ) { (*cigar)++; *iseq += ncig; *icig = 0; continue; }
-        if ( cig==BAM_CHARD_CLIP || cig==BAM_CPAD ) { (*cigar)++; *icig = 0; continue; }
+        if ( cig==BAM_CDEL || cig==BAM_CREF_SKIP ) { (*cigar)++; (*iref) += ncig; *icig = -1; continue; }
+        if ( cig==BAM_CINS ) { (*cigar)++; *iseq += ncig; *icig = -1; continue; }
+        if ( cig==BAM_CSOFT_CLIP ) { (*cigar)++; *iseq += ncig; *icig = -1; continue; }
+        if ( cig==BAM_CHARD_CLIP || cig==BAM_CPAD ) { (*cigar)++; *icig = -1; continue; }
         hts_log_error("Unexpected cigar %d", cig);
         return -2;
     }
