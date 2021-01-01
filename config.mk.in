@@ -37,8 +37,9 @@ libexecdir   = @libexecdir@
 datarootdir  = @datarootdir@
 mandir       = @mandir@
 
-CC     = @CC@
-RANLIB = @RANLIB@
+CC       = @CC@
+INSTALL  = @INSTALL@
+RANLIB   = @RANLIB@
 
 CPPFLAGS = @CPPFLAGS@
 CFLAGS   = @CFLAGS@

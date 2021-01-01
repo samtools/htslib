@@ -28,6 +28,7 @@ committed to this repository, so building the code from a Git repository
 requires extra steps:
 
 ```sh
+cp ..etc.. .   # Copy config.guess, config.sub, and install-sh from elsewhere
 autoheader     # If using configure, generate the header template...
 autoconf       # ...and configure script (or use autoreconf to do both)
 ./configure    # Optional but recommended, for choosing extra functionality

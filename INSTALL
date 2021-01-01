@@ -64,12 +64,17 @@ This step is only needed if configure.ac has been changed, or if configure
 does not exist (for example, when building from a git clone).  The
 configure script and config.h.in can be built by running:
 
+    ...copy config.guess, config.sub, and install-sh from elsewhere
     autoheader
     autoconf
 
 If you have a full GNU autotools install, you can alternatively run:
 
-    autoreconf
+    autoreconf -i
+
+(With autoconf 2.70 or later, autoreconf -i/--install will create the
+config.guess, etc files; with earlier versions you will need to copy them
+from Gnulib, Autoconf, or elsewhere yourself.)
 
 Basic Installation
 ==================
