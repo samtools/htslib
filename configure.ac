@@ -137,9 +137,9 @@ AC_ARG_ENABLE([s3],
                   [support Amazon AWS S3 URLs])],
   [], [enable_s3=check])
 
-test -n "$host_alias" || host_alias=unknown-`uname -s`
-AC_MSG_CHECKING([shared library type for $host_alias])
-case $host_alias in
+basic_host=${host_alias:-unknown-`uname -s`}
+AC_MSG_CHECKING([shared library type for $basic_host])
+case $basic_host in
   *-cygwin* | *-CYGWIN*)
     host_result="Cygwin DLL"
     PLATFORM=CYGWIN
