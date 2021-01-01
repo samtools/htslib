@@ -11,12 +11,15 @@
 
 autom4te.cache
 config.cache
+config.guess
 config.h
 config.h.in
 config.log
 config.mk
 config.status
+config.sub
 configure
+install-sh
 
 hfile_*.bundle
 hfile_*.cygdll
