@@ -212,20 +212,6 @@ sam_internal_h = sam_internal.h $(htslib_sam_h)
 textutils_internal_h = textutils_internal.h $(htslib_kstring_h)
 thread_pool_internal_h = thread_pool_internal.h $(htslib_thread_pool_h)
 
-htscodecs_arith_dynamic_h = htscodecs/htscodecs/arith_dynamic.h
-htscodecs_fqzcomp_qual_h = htscodecs/htscodecs/fqzcomp_qual.h
-htscodecs_pack_h = htscodecs/htscodecs/pack.h
-htscodecs_rANS_static_h = htscodecs/htscodecs/rANS_static.h
-htscodecs_rANS_static4x16_h = htscodecs/htscodecs/rANS_static4x16.h
-htscodecs_rle_h = htscodecs/htscodecs/rle.h
-htscodecs_tokenise_name3_h = htscodecs/htscodecs/tokenise_name3.h
-htscodecs_varint_h = htscodecs/htscodecs/varint.h
-
-htscodecs_rANS_byte_h = htscodecs/htscodecs/rANS_byte.h
-htscodecs_c_range_coder_h = htscodecs/htscodecs/c_range_coder.h
-htscodecs_c_simple_model_h = htscodecs/htscodecs/c_simple_model.h $(htscodecs_c_range_coder_h)
-htscodecs_pooled_alloc_h = htscodecs/htscodecs/pooled_alloc.h
-
 # To be effective, config.mk needs to appear after most Makefile variables are
 # set but before most rules appear, so that it can both use previously-set
 # variables in its own rules' prerequisites and also update variables for use
@@ -413,6 +399,26 @@ tabix: tabix.o libhts.a
 bgzip.o: bgzip.c config.h $(htslib_bgzf_h) $(htslib_hts_h)
 htsfile.o: htsfile.c config.h $(htslib_hfile_h) $(htslib_hts_h) $(htslib_sam_h) $(htslib_vcf_h)
 tabix.o: tabix.c config.h $(htslib_tbx_h) $(htslib_sam_h) $(htslib_vcf_h) $(htslib_kseq_h) $(htslib_bgzf_h) $(htslib_hts_h) $(htslib_regidx_h) $(htslib_hts_defs_h) $(htslib_hts_log_h)
+
+# Runes to check that the htscodecs submodule is present
+ifdef HTSCODECS_SOURCES
+htscodecs/htscodecs/%.c: | htscodecs/htscodecs
+	;
+htscodecs/htscodecs/%.h: | htscodecs/htscodecs
+	;
+htscodecs/htscodecs:
+	@if test -e .git ; then \
+	printf "\\n\\nError: htscodecs submodule files not present.\\n\
+	Try running: \\n\
+	    git submodule update --init --recursive\\n\
+	and then re-run make.\\n\\n\\n" ; \
+	else \
+	  printf "\\n\\nError: htscodecs submodule files not present and this is not a git checkout.\\n\
+	  You have an incomplete distribution.  Please try downloading one of the\\n\
+	  official releases from https://www.htslib.org/\\n" ; \
+	fi
+	@false
+endif
 
 # Maintainer source code checks
 # - copyright boilerplate presence

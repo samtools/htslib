@@ -8,6 +8,20 @@ HTSCODECS_SOURCES = $(HTSPREFIX)htscodecs/htscodecs/arith_dynamic.c \
 
 HTSCODECS_OBJS = $(HTSCODECS_SOURCES:.c=.o)
 
+htscodecs_arith_dynamic_h = htscodecs/htscodecs/arith_dynamic.h
+htscodecs_fqzcomp_qual_h = htscodecs/htscodecs/fqzcomp_qual.h
+htscodecs_pack_h = htscodecs/htscodecs/pack.h
+htscodecs_rANS_static_h = htscodecs/htscodecs/rANS_static.h
+htscodecs_rANS_static4x16_h = htscodecs/htscodecs/rANS_static4x16.h
+htscodecs_rle_h = htscodecs/htscodecs/rle.h
+htscodecs_tokenise_name3_h = htscodecs/htscodecs/tokenise_name3.h
+htscodecs_varint_h = htscodecs/htscodecs/varint.h
+
+htscodecs_rANS_byte_h = htscodecs/htscodecs/rANS_byte.h
+htscodecs_c_range_coder_h = htscodecs/htscodecs/c_range_coder.h
+htscodecs_c_simple_model_h = htscodecs/htscodecs/c_simple_model.h $(htscodecs_c_range_coder_h)
+htscodecs_pooled_alloc_h = htscodecs/htscodecs/pooled_alloc.h
+
 # Add htscodecs tests into the HTSlib test framework
 
 HTSCODECS_TEST_TARGETS = test_htscodecs_rans4x8 \
