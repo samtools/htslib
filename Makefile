@@ -143,7 +143,6 @@ show-version:
 
 LIBHTS_OBJS = \
 	kfunc.o \
-	knetfile.o \
 	kstring.o \
 	bcf_sr_sort.o \
 	bgzf.o \
@@ -151,7 +150,6 @@ LIBHTS_OBJS = \
 	faidx.o \
 	header.o \
 	hfile.o \
-	hfile_net.o \
 	hts.o \
 	hts_os.o\
 	md5.o \
@@ -332,12 +330,10 @@ hts-object-files: $(LIBHTS_OBJS)
 bgzf.o bgzf.pico: bgzf.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(htslib_hfile_h) $(htslib_thread_pool_h) $(htslib_hts_endian_h) cram/pooled_alloc.h $(hts_internal_h) $(htslib_khash_h)
 errmod.o errmod.pico: errmod.c config.h $(htslib_hts_h) $(htslib_ksort_h) $(htslib_hts_os_h)
 kstring.o kstring.pico: kstring.c config.h $(htslib_kstring_h)
-knetfile.o knetfile.pico: knetfile.c config.h $(htslib_hts_log_h) $(htslib_knetfile_h)
 header.o header.pico: header.c config.h $(textutils_internal_h) $(header_h)
 hfile.o hfile.pico: hfile.c config.h $(htslib_hfile_h) $(hfile_internal_h) $(htslib_kstring_h) $(hts_internal_h) $(htslib_khash_h)
 hfile_gcs.o hfile_gcs.pico: hfile_gcs.c config.h $(htslib_hts_h) $(htslib_kstring_h) $(hfile_internal_h)
 hfile_libcurl.o hfile_libcurl.pico: hfile_libcurl.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
-hfile_net.o hfile_net.pico: hfile_net.c config.h $(hfile_internal_h) $(htslib_knetfile_h)
 hfile_s3_write.o hfile_s3_write.pico: hfile_s3_write.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h) $(htslib_khash_h)
 hfile_s3.o hfile_s3.pico: hfile_s3.c config.h $(hfile_internal_h) $(htslib_hts_h) $(htslib_kstring_h)
 hts.o hts.pico: hts.c config.h $(htslib_hts_h) $(htslib_bgzf_h) $(cram_h) $(htslib_hfile_h) $(htslib_hts_endian_h) version.h $(hts_internal_h) $(hfile_internal_h) $(sam_internal_h) $(htslib_hts_os_h) $(htslib_khash_h) $(htslib_kseq_h) $(htslib_ksort_h) $(htslib_tbx_h)
@@ -535,8 +531,7 @@ test-shlib-exports: header-exports.txt shlib-exports-$(SHLIB_FLAVOUR).txt
 	( echo "Error: Found unexported symbols (listed above)" ; false )
 
 # Extract symbols that should be exported from public headers using ctags
-# Filter out macros in htslib/hts_defs.h, and knet_win32_ functions that
-# aren't needed on non-Windows platforms.
+# Filter out macros in htslib/hts_defs.h.
 header-exports.txt: test/header_syms.pl htslib/*.h
 	test/header_syms.pl htslib/*.h | sort -u -o $@
 

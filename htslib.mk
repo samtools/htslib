@@ -61,7 +61,6 @@ HTSLIB_PUBLIC_HEADERS = \
 	$(HTSDIR)/htslib/khash.h \
 	$(HTSDIR)/htslib/khash_str2int.h \
 	$(HTSDIR)/htslib/klist.h \
-	$(HTSDIR)/htslib/knetfile.h \
 	$(HTSDIR)/htslib/kseq.h \
 	$(HTSDIR)/htslib/ksort.h \
 	$(HTSDIR)/htslib/kstring.h \
@@ -88,14 +87,12 @@ HTSLIB_ALL = \
 	$(HTSDIR)/hfile.c \
 	$(HTSDIR)/hfile_gcs.c \
 	$(HTSDIR)/hfile_libcurl.c \
-	$(HTSDIR)/hfile_net.c \
 	$(HTSDIR)/hfile_s3.c \
 	$(HTSDIR)/hfile_s3_write.c \
 	$(HTSDIR)/hts.c \
 	$(HTSDIR)/hts_internal.h \
 	$(HTSDIR)/hts_os.c \
 	$(HTSDIR)/kfunc.c \
-	$(HTSDIR)/knetfile.c \
 	$(HTSDIR)/kstring.c \
 	$(HTSDIR)/md5.c \
 	$(HTSDIR)/multipart.c \

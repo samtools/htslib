@@ -39,7 +39,6 @@ htslib_kfunc_h = $(HTSPREFIX)htslib/kfunc.h $(htslib_hts_defs_h)
 htslib_khash_h = $(HTSPREFIX)htslib/khash.h $(htslib_kstring_h) $(htslib_kroundup_h)
 htslib_khash_str2int_h = $(HTSPREFIX)htslib/khash_str2int.h $(htslib_khash_h)
 htslib_klist_h = $(HTSPREFIX)htslib/klist.h
-htslib_knetfile_h = $(HTSPREFIX)htslib/knetfile.h $(htslib_hts_defs_h)
 htslib_kroundup_h = $(HTSPREFIX)htslib/kroundup.h
 htslib_kseq_h = $(HTSPREFIX)htslib/kseq.h
 htslib_ksort_h = $(HTSPREFIX)htslib/ksort.h

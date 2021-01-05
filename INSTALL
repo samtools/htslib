@@ -41,9 +41,10 @@ a development ('-dev' or '-devel') package separate from the main library.
 Disabling libbzip2 and liblzma will make some CRAM files unreadable, so
 is not recommended.
 
-Using libcurl provides HTSlib with better network protocol support, for
-example it enables the use of https:// URLs.  It is also required if
-direct access to Amazon S3 or Google Cloud Storage is enabled.
+Using libcurl provides HTSlib with network protocol support, for
+example it enables the use of ftp://, http://, and https:// URLs.
+It is also required if direct access to Amazon S3 or Google Cloud
+Storage is enabled.
 
 Amazon S3 support requires an HMAC function to calculate a message
 authentication code.  On MacOS, the CCHmac function from the standard
@@ -131,8 +132,7 @@ various features and specify further optional external requirements:
 
 --enable-libcurl
     Use libcurl (<http://curl.haxx.se/>) to implement network access to
-    remote files via FTP, HTTP, HTTPS, etc.  By default, HTSlib uses its
-    own simple networking code to provide access via FTP and HTTP only.
+    remote files via FTP, HTTP, HTTPS, etc.
 
 --enable-gcs
     Implement network access to Google Cloud Storage.  By default or with
