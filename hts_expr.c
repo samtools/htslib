@@ -62,9 +62,9 @@ struct hts_filter_t {
  * Unary ops:     +, -, !, ~  eg -10 +10, !10 (0), ~5 (bitwise not)
  * Math ops:      *, /, %  [TODO: add // for floor division?]
  * Math ops:      +, -
- * Bit-wise:      &, |, ^  [NB as 3 precedence levels, in that order]
+ * Bit-wise:      &, ^, |  [NB as 3 precedence levels, in that order]
  * Conditionals:  >, >=, <, <=,
- * Equality:      ==, !=, =~ !~
+ * Equality:      ==, !=, =~, !~
  * Boolean:       &&, ||
  */
 
@@ -197,7 +197,8 @@ static int func_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
  * simple_expr
  *     : identifier
  *     | constant
- * //  | string ?
+ *     | string
+ *     | func_expr
  *     | '(' expression ')'
 */
 static int simple_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
@@ -318,9 +319,9 @@ static int unary_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
 /*
  * mul_expr
  *     : unary_expr (
- *           unary_expr '*' unary_expr
- *         | unary_expr '/' unary_expr
- *         | unary_expr '%' unary_expr
+ *           '*' unary_expr
+ *         | '/' unary_expr
+ *         | '%' unary_expr
  *       )*
  */
 static int mul_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
@@ -359,8 +360,8 @@ static int mul_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
 /*
  * add_expr
  *     : mul_expr (
- *           mul_expr '+' mul_expr
- *         | mul_expr '-' mul_expr
+ *           '+' mul_expr
+ *         | '-' mul_expr
  *       )*
  */
 static int add_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
@@ -452,8 +453,8 @@ static int bitxor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
 
 /*
  * bitor_expr
- *     : xor_expr
- *     | bitor_expr '|' xor_expr
+ *     : bitxor_expr
+ *     | bitor_expr '|' bitxor_expr
  */
 static int bitor_expr(hts_filter_t *filt, void *data, hts_expr_sym_func *fn,
                       char *str, char **end, hts_expr_val_t *res) {

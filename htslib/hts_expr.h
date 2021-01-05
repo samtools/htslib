@@ -85,7 +85,7 @@ typedef int (hts_expr_sym_func)(void *data, char *str, char **end,
  *
  *  The type of the returned result may be numeric of string, as defined by
  *  the is_str member.  It can also be explicitly defined to be true even
- *  for a null value.  This may be used to check for the existance of
+ *  for a null value.  This may be used to check for the existence of
  *  something, irrespective of whether that something evaluates to zero.
  */
 HTSLIB_EXPORT
