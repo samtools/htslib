@@ -306,7 +306,26 @@ if necessary set CPPFLAGS and LDFLAGS so the compiler can find them;
 or configure using --without-external-htscodecs to build the required
 functions from the htscodecs submodule.
 ])])],
-  [selected_htscodecs_mk="htscodecs_bundled.mk"])
+  [AC_MSG_CHECKING([whether htscodecs files are present])
+   AS_IF([test -e "$srcdir/htscodecs/htscodecs/rANS_static4x16.h"],
+     [AC_MSG_RESULT([yes])
+      selected_htscodecs_mk="htscodecs_bundled.mk"],
+     [AC_MSG_RESULT([no])
+      AS_IF([test -e "$srcdir/.git"],
+        [MSG_ERROR([htscodecs submodule files not present.
+
+HTSlib uses some functions from the htscodecs project, which is normally
+included as a submodule.  Try running:
+
+  git submodule update --init --recursive
+
+to update it, and then re-run configure.
+])],
+        [MSG_ERROR([htscodecs submodule files not present.
+
+You have an incomplete distribution.  Please try downloading one of the
+official releases from https://www.htslib.org
+])])])])
 AC_SUBST([selected_htscodecs_mk])
 
 AS_IF([test "x$with_libdeflate" != "xno"],
