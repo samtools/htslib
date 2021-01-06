@@ -1243,7 +1243,7 @@ typedef struct knetFile_s {
 
 HTSLIB_EXPORT
 knetFile *knet_open(const char *fn, const char *mode) {
-    knetFile *fp = malloc(sizeof(*fp));
+    knetFile *fp = calloc(1, sizeof(*fp));
     if (!fp) return NULL;
     if (!(fp->hf = hopen(fn, mode))) {
         free(fp);
@@ -1280,7 +1280,7 @@ ssize_t knet_read(knetFile *fp, void *buf, size_t len) {
 HTSLIB_EXPORT
 off_t knet_seek(knetFile *fp, off_t off, int whence) {
     off_t r = hseek(fp->hf, off, whence);
-    if (r > 0)
+    if (r >= 0)
         fp->offset = r;
     return r;
 }

@@ -74,7 +74,7 @@ extern "C" {
 #endif
 
     HTSLIB_EXPORT
-        knetFile *knet_open(const char *fn, const char *mode) lHTS_DEPRECATED("Please use hopen instead");
+        knetFile *knet_open(const char *fn, const char *mode) HTS_DEPRECATED("Please use hopen instead");
 
         /*
            This only works with local files.
