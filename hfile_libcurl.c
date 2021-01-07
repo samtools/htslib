@@ -1221,7 +1221,7 @@ libcurl_open(const char *url, const char *modes, http_headers *headers)
     err = curl_easy_setopt(fp->easy, CURLOPT_PRIVATE, fp);
 
     // Avoid many repeated CWD calls with FTP, instead requesting the filename
-    // by full path (as done in knet, but not strictly compliant with RFC1738).
+    // by full path (but not strictly compliant with RFC1738).
     err |= curl_easy_setopt(fp->easy, CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_NOCWD);
 
     if (mode == 'r') {

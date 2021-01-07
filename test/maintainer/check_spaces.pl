@@ -45,14 +45,12 @@ sub check {
 
     my %allow_tabs = map { ("$root/$_", 1) } (
 'kfunc.c',
-'knetfile.c',
 'kstring.c',
 'md5.c',
 'htslib/khash.h',
 'htslib/kseq.h',
 'htslib/ksort.h',
 'htslib/kstring.h',
-'htslib/knetfile.h',
 'htslib/klist.h',
 'htslib/kbitset.h',
 'os/rand.c',

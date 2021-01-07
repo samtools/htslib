@@ -1,7 +1,13 @@
 Noteworthy changes in release a.b
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* The knet networking code has been removed.  It only supported the http
+  and ftp protocols, and a better and safer alternative using libcurl
+  has been available since release 1.3.  If you need access to ftp:// and
+  http:// URLs, HTSlib should be built with libcurl support. (#1200)
 
+* The old htslib/knetfile.h interfaces have been marked as deprecated.  Any
+  code still using them should be updated to use hFILE instead. (#1200)
 
 Noteworthy changes in release 1.11 (22nd September 2020)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

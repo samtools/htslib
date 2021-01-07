@@ -31,7 +31,7 @@
 
 # Roughly equivalent Exuberant-ctags command is:
 # ctags -f - -n -I HTS_RESULT_USED -I HTS_DEPRECATED+ -I HTS_FORMAT+ \
-#       -I KS_ATTR_PRINTF+ -I knet_win32_destroy+ -I knet_win32_init+
+#       -I KS_ATTR_PRINTF+
 # Unfortunately this is not the default ctags on all platforms, hence this
 # script.
 
@@ -45,8 +45,9 @@ my $show_processed = 0;
 
 GetOptions('show-processed' => \$show_processed);
 
-# List of functions to strip from the output
-my %ignore = map { $_ => 1 } qw(knet_win32_init knet_win32_destroy);
+# List of functions to strip from the output.  Currently empty,
+# but this functionality is retained for potential future use.
+my %ignore = map { $_ => 1 } qw( );
 
 foreach my $file (@ARGV) {
     extract_symbols($file, $show_processed, \%ignore);

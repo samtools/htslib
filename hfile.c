@@ -1061,7 +1061,6 @@ static int load_hfile_plugins()
     hfile_add_scheme_handler("data", &data);
     hfile_add_scheme_handler("file", &file);
     hfile_add_scheme_handler("preload", &preload);
-    init_add_plugin(NULL, hfile_plugin_init_net, "knetfile");
     init_add_plugin(NULL, hfile_plugin_init_mem, "mem");
     init_add_plugin(NULL, hfile_plugin_init_crypt4gh_needed, "crypt4gh-needed");
 
@@ -1212,4 +1211,83 @@ char *haddextension(struct kstring_t *buffer, const char *filename,
         kputs(new_extension, buffer) >= 0 &&
         kputs(trailing, buffer) >= 0) return buffer->s;
     else return NULL;
+}
+
+
+/*
+ * ----------------------------------------------------------------------
+ * Minimal stub functions for knet, added after the removal of
+ * hfile_net.c and knetfile.c.
+ *
+ * They exist purely for ABI compatibility, but are simply wrappers to
+ * hFILE.  API should be compatible except knet_fileno (unused?).
+ *
+ * CULL THESE and knetfile.h at the next .so version bump.
+ */
+typedef struct knetFile_s {
+    // As per htslib/knetfile.h.  Duplicated here as we don't wish to
+    // have any dependence on the deprecated knetfile.h interface, plus
+    // it's hopefully only temporary.
+    int type, fd;
+    int64_t offset;
+    char *host, *port;
+    int ctrl_fd, pasv_ip[4], pasv_port, max_response, no_reconnect, is_ready;
+    char *response, *retr, *size_cmd;
+    int64_t seek_offset;
+    int64_t file_size;
+    char *path, *http_host;
+
+    // Our local addition
+    hFILE *hf;
+} knetFile;
+
+HTSLIB_EXPORT
+knetFile *knet_open(const char *fn, const char *mode) {
+    knetFile *fp = calloc(1, sizeof(*fp));
+    if (!fp) return NULL;
+    if (!(fp->hf = hopen(fn, mode))) {
+        free(fp);
+        fp = NULL;
+    }
+
+    // FD backend is the only one implementing knet_fileno
+    fp->fd = fp->hf->backend == &fd_backend
+        ? ((hFILE_fd *)fp->hf)->fd
+        : -1;
+
+    return fp;
+}
+
+HTSLIB_EXPORT
+knetFile *knet_dopen(int fd, const char *mode) {
+    knetFile *fp = calloc(1, sizeof(*fp));
+    if (!fp) return NULL;
+    if (!(fp->hf = hdopen(fd, mode))) {
+        free(fp);
+        fp = NULL;
+    }
+    fp->fd = fd;
+    return fp;
+}
+
+HTSLIB_EXPORT
+ssize_t knet_read(knetFile *fp, void *buf, size_t len) {
+    ssize_t r = hread(fp->hf, buf, len);
+    fp->offset += r>0?r:0;
+    return r;
+}
+
+HTSLIB_EXPORT
+off_t knet_seek(knetFile *fp, off_t off, int whence) {
+    off_t r = hseek(fp->hf, off, whence);
+    if (r >= 0)
+        fp->offset = r;
+    return r;
+}
+
+HTSLIB_EXPORT
+int knet_close(knetFile *fp) {
+    int r = hclose(fp->hf);
+    free(fp);
+    return r;
 }
