@@ -4772,7 +4772,11 @@ void bam_plp_destructor(bam_plp_t plp,
  *  Returns BAM_CMATCH, -1 when there is no more cigar to process or the requested position is not covered,
  *  or -2 on error.
  */
-static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, hts_pos_t *icig, hts_pos_t *iseq, hts_pos_t *iref)
+static inline int cigar_iref2iseq_set(const uint32_t **cigar,
+                                      const uint32_t *cigar_max,
+                                      hts_pos_t *icig,
+                                      hts_pos_t *iseq,
+                                      hts_pos_t *iref)
 {
     hts_pos_t pos = *iref;
     if ( pos < 0 ) return -1;
@@ -4807,7 +4811,11 @@ static inline int cigar_iref2iseq_set(uint32_t **cigar, uint32_t *cigar_max, hts
     *iseq = -1;
     return -1;
 }
-static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, hts_pos_t *icig, hts_pos_t *iseq, hts_pos_t *iref)
+static inline int cigar_iref2iseq_next(const uint32_t **cigar,
+                                       const uint32_t *cigar_max,
+                                       hts_pos_t *icig,
+                                       hts_pos_t *iseq,
+                                       hts_pos_t *iref)
 {
     while ( *cigar < cigar_max )
     {
@@ -4834,8 +4842,8 @@ static inline int cigar_iref2iseq_next(uint32_t **cigar, uint32_t *cigar_max, ht
 
 static int tweak_overlap_quality(bam1_t *a, bam1_t *b)
 {
-    uint32_t *a_cigar = bam_get_cigar(a), *a_cigar_max = a_cigar + a->core.n_cigar;
-    uint32_t *b_cigar = bam_get_cigar(b), *b_cigar_max = b_cigar + b->core.n_cigar;
+    const uint32_t *a_cigar = bam_get_cigar(a), *a_cigar_max = a_cigar + a->core.n_cigar;
+    const uint32_t *b_cigar = bam_get_cigar(b), *b_cigar_max = b_cigar + b->core.n_cigar;
     hts_pos_t a_icig = 0, a_iseq = 0;
     hts_pos_t b_icig = 0, b_iseq = 0;
     uint8_t *a_qual = bam_get_qual(a), *b_qual = bam_get_qual(b);
@@ -4945,8 +4953,6 @@ static int overlap_push(bam_plp_t iter, lbnode_t *node)
         int err = tweak_overlap_quality(&a->b, &node->b);
         kh_del(olap_hash, iter->overlaps, kitr);
         assert(a->end-1 == a->s.end);
-        a->end = bam_endpos(&a->b);
-        a->s.end = a->end - 1;
         return err;
     }
     return 0;
