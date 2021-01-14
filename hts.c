@@ -1340,6 +1340,8 @@ int hts_set_opt(htsFile *fp, enum hts_fmt_option opt, ...) {
         va_end(args);
         if (fp->is_bgzf)
             fp->fp.bgzf->compress_level = level;
+        else if (fp->format.format == cram)
+            return cram_set_option(fp->fp.cram, opt, level);
         return 0;
     }
 
